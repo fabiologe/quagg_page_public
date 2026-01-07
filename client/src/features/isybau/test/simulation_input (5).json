@@ -1,0 +1,4863 @@
+{
+  "nodes": [
+    [
+      "FK003",
+      {
+        "id": "FK003",
+        "type": "Standard",
+        "x": 370680.254,
+        "y": 5461047.098,
+        "z": 268.543,
+        "coverZ": 268.543,
+        "depth": 1,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK004",
+      {
+        "id": "FK004",
+        "type": "Standard",
+        "x": 370631.467,
+        "y": 5461024.557,
+        "z": 268.547,
+        "coverZ": 268.547,
+        "depth": 1,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK005",
+      {
+        "id": "FK005",
+        "type": "Standard",
+        "x": 370615.882,
+        "y": 5461021.876,
+        "z": 268.576,
+        "coverZ": 268.576,
+        "depth": 1,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK007",
+      {
+        "id": "FK007",
+        "type": "Standard",
+        "x": 370578.702,
+        "y": 5461004.286,
+        "z": 268.295,
+        "coverZ": 268.295,
+        "depth": 1,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK008",
+      {
+        "id": "FK008",
+        "type": "Standard",
+        "x": 370654.478,
+        "y": 5461034.833,
+        "z": 268.491,
+        "coverZ": 268.491,
+        "depth": 1.09,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK009",
+      {
+        "id": "FK009",
+        "type": "Standard",
+        "x": 370655.863,
+        "y": 5461035.505,
+        "z": 268.491,
+        "coverZ": 268.491,
+        "depth": 1.17,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK010",
+      {
+        "id": "FK010",
+        "type": "Standard",
+        "x": 370735.75,
+        "y": 5460996.328,
+        "z": 262.8,
+        "coverZ": 262.8,
+        "depth": 5.61,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK011",
+      {
+        "id": "FK011",
+        "type": "Standard",
+        "x": 370756.098,
+        "y": 5461005.691,
+        "z": 262.8,
+        "coverZ": 262.8,
+        "depth": 5.57,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK012",
+      {
+        "id": "FK012",
+        "type": 5,
+        "x": 370772.508,
+        "y": 5460941.762,
+        "z": 260,
+        "coverZ": 260,
+        "depth": 4.81,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK013",
+      {
+        "id": "FK013",
+        "type": 5,
+        "x": 370694.242,
+        "y": 5460959.276,
+        "z": 262.213,
+        "coverZ": 262.213,
+        "depth": 4,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "F001",
+      {
+        "id": "F001",
+        "type": "Standard",
+        "x": 370756.238,
+        "y": 5461090.827,
+        "z": 267.852,
+        "coverZ": 267.852,
+        "depth": 1.45,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S00",
+      {
+        "id": "S00",
+        "type": "Standard",
+        "x": 370656.806,
+        "y": 5460967.121,
+        "z": 265.254,
+        "coverZ": 265.254,
+        "depth": 3.72,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S00-1",
+      {
+        "id": "S00-1",
+        "type": "Standard",
+        "x": 370680.846,
+        "y": 5460975.868,
+        "z": 264.792,
+        "coverZ": 264.792,
+        "depth": 4.07,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S01",
+      {
+        "id": "S01",
+        "type": "Standard",
+        "x": 370637.903,
+        "y": 5460959.633,
+        "z": 265.273,
+        "coverZ": 265.273,
+        "depth": 3.9,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S02",
+      {
+        "id": "S02",
+        "type": "Standard",
+        "x": 370624.469,
+        "y": 5460953.616,
+        "z": 267.528,
+        "coverZ": 267.528,
+        "depth": 1.72,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S03",
+      {
+        "id": "S03",
+        "type": "Standard",
+        "x": 370601.677,
+        "y": 5460954.471,
+        "z": 267.601,
+        "coverZ": 267.601,
+        "depth": 1.5,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S04",
+      {
+        "id": "S04",
+        "type": "Standard",
+        "x": 370589.758,
+        "y": 5460980.313,
+        "z": 268.203,
+        "coverZ": 268.203,
+        "depth": 0.96,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S05",
+      {
+        "id": "S05",
+        "type": "Standard",
+        "x": 370762.211,
+        "y": 5461088.41,
+        "z": 267.58,
+        "coverZ": 267.58,
+        "depth": 1.7,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S05-1",
+      {
+        "id": "S05-1",
+        "type": "Standard",
+        "x": 370782.377,
+        "y": 5461038.171,
+        "z": 266.27,
+        "coverZ": 266.27,
+        "depth": 2.42,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S06",
+      {
+        "id": "S06",
+        "type": "Standard",
+        "x": 370770.12,
+        "y": 5461003.522,
+        "z": 265.451,
+        "coverZ": 265.451,
+        "depth": 2.67,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S07",
+      {
+        "id": "S07",
+        "type": "Standard",
+        "x": 370752.303,
+        "y": 5460989.595,
+        "z": 262.71,
+        "coverZ": 262.71,
+        "depth": 5.6,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S08",
+      {
+        "id": "S08",
+        "type": "Standard",
+        "x": 370722.334,
+        "y": 5460978.378,
+        "z": 263.583,
+        "coverZ": 263.583,
+        "depth": 5.18,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S09",
+      {
+        "id": "S09",
+        "type": "Standard",
+        "x": 370707.93,
+        "y": 5460986.943,
+        "z": 264.066,
+        "coverZ": 264.066,
+        "depth": 4.77,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S10",
+      {
+        "id": "S10",
+        "type": "Standard",
+        "x": 370694.513,
+        "y": 5461014.044,
+        "z": 267.144,
+        "coverZ": 267.144,
+        "depth": 2,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S11",
+      {
+        "id": "S11",
+        "type": "Standard",
+        "x": 370682.121,
+        "y": 5461040.275,
+        "z": 267.44,
+        "coverZ": 267.44,
+        "depth": 2,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "Zisterne-1",
+      {
+        "id": "Zisterne-1",
+        "type": "Standard",
+        "x": 370618.898,
+        "y": 5461019.266,
+        "z": 266.703,
+        "coverZ": 266.703,
+        "depth": 3,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "Zisterne-3",
+      {
+        "id": "Zisterne-3",
+        "type": "Standard",
+        "x": 370692.358,
+        "y": 5461050.843,
+        "z": 266.49,
+        "coverZ": 266.49,
+        "depth": 3,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "Zisterne_3",
+      {
+        "id": "Zisterne_3",
+        "type": "Standard",
+        "x": 370762.545,
+        "y": 5461076.405,
+        "z": 265.268,
+        "coverZ": 265.268,
+        "depth": 4,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06001",
+      {
+        "id": "06001",
+        "type": "Standard",
+        "x": 370693.024,
+        "y": 5460962.342,
+        "z": 263.59,
+        "coverZ": 263.59,
+        "depth": 5.35,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free",
+        "canOverflow": false
+      }
+    ],
+    [
+      "06002",
+      {
+        "id": "06002",
+        "type": "Standard",
+        "x": 370674.453,
+        "y": 5461003.389,
+        "z": 267.28,
+        "coverZ": 267.28,
+        "depth": 2.06,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06003",
+      {
+        "id": "06003",
+        "type": "Standard",
+        "x": 370668.843,
+        "y": 5461004.982,
+        "z": 267.41,
+        "coverZ": 267.41,
+        "depth": 1.85,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06004",
+      {
+        "id": "06004",
+        "type": "Standard",
+        "x": 370655.158,
+        "y": 5461035.179,
+        "z": 267.95,
+        "coverZ": 267.95,
+        "depth": 1.69,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06005",
+      {
+        "id": "06005",
+        "type": "Standard",
+        "x": 370646.392,
+        "y": 5461053.335,
+        "z": 268.86,
+        "coverZ": 268.86,
+        "depth": 4.48,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06005.2",
+      {
+        "id": "06005.2",
+        "type": "Standard",
+        "x": 370650.643,
+        "y": 5461057.712,
+        "z": 269.03,
+        "coverZ": 269.03,
+        "depth": 3.57,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06006",
+      {
+        "id": "06006",
+        "type": "Standard",
+        "x": 370615.967,
+        "y": 5461114.826,
+        "z": 270.06,
+        "coverZ": 270.06,
+        "depth": 3.11,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK019",
+      {
+        "id": "FK019",
+        "type": "Standard",
+        "x": 370580.073,
+        "y": 5461006.052,
+        "z": 268.345,
+        "coverZ": 268.345,
+        "depth": 0,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "GA001",
+      {
+        "id": "GA001",
+        "type": "Standard",
+        "x": 370596.043,
+        "y": 5460975.503,
+        "z": 268.113,
+        "coverZ": 268.113,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "GA002",
+      {
+        "id": "GA002",
+        "type": "Standard",
+        "x": 370598.064,
+        "y": 5460970.783,
+        "z": 268,
+        "coverZ": 268,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "GA003",
+      {
+        "id": "GA003",
+        "type": "Standard",
+        "x": 370599.67,
+        "y": 5460966.95,
+        "z": 267.913,
+        "coverZ": 267.913,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE001",
+      {
+        "id": "BE001",
+        "type": "Standard",
+        "x": 370694.492,
+        "y": 5461066.139,
+        "z": 268.9,
+        "coverZ": 268.9,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE002",
+      {
+        "id": "BE002",
+        "type": "Standard",
+        "x": 370700.39,
+        "y": 5461068.798,
+        "z": 268.872,
+        "coverZ": 268.872,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE003",
+      {
+        "id": "BE003",
+        "type": "Standard",
+        "x": 370706.224,
+        "y": 5461071.43,
+        "z": 268.829,
+        "coverZ": 268.829,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE004",
+      {
+        "id": "BE004",
+        "type": "Standard",
+        "x": 370712.214,
+        "y": 5461074.13,
+        "z": 268.796,
+        "coverZ": 268.796,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE005",
+      {
+        "id": "BE005",
+        "type": "Standard",
+        "x": 370716.516,
+        "y": 5461076.071,
+        "z": 268.764,
+        "coverZ": 268.764,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE006",
+      {
+        "id": "BE006",
+        "type": "Standard",
+        "x": 370725.568,
+        "y": 5461080.153,
+        "z": 268.72,
+        "coverZ": 268.72,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE007",
+      {
+        "id": "BE007",
+        "type": "Standard",
+        "x": 370732.624,
+        "y": 5461083.335,
+        "z": 268.69,
+        "coverZ": 268.69,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE008",
+      {
+        "id": "BE008",
+        "type": "Standard",
+        "x": 370740.391,
+        "y": 5461086.838,
+        "z": 268.64,
+        "coverZ": 268.64,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE010",
+      {
+        "id": "BE010",
+        "type": "Standard",
+        "x": 370755.836,
+        "y": 5461089.137,
+        "z": 268.965,
+        "coverZ": 268.965,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE011",
+      {
+        "id": "BE011",
+        "type": "Standard",
+        "x": 370747.17,
+        "y": 5461087.859,
+        "z": 268.993,
+        "coverZ": 268.993,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE012",
+      {
+        "id": "BE012",
+        "type": "Standard",
+        "x": 370759.658,
+        "y": 5461076.742,
+        "z": 268.981,
+        "coverZ": 268.981,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE013",
+      {
+        "id": "BE013",
+        "type": "Standard",
+        "x": 370785.489,
+        "y": 5461040.437,
+        "z": 268.48,
+        "coverZ": 268.48,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE014",
+      {
+        "id": "BE014",
+        "type": "Standard",
+        "x": 370789.939,
+        "y": 5461002.693,
+        "z": 267.309,
+        "coverZ": 267.309,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "BE015",
+      {
+        "id": "BE015",
+        "type": "Standard",
+        "x": 370652.293,
+        "y": 5460968.15,
+        "z": 268.578,
+        "coverZ": 268.578,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "SE016",
+      {
+        "id": "SE016",
+        "type": "Standard",
+        "x": 370656.791,
+        "y": 5460970.461,
+        "z": 268.544,
+        "coverZ": 268.544,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "SE017",
+      {
+        "id": "SE017",
+        "type": "Standard",
+        "x": 370707.095,
+        "y": 5460990.026,
+        "z": 268.476,
+        "coverZ": 268.476,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "SE018",
+      {
+        "id": "SE018",
+        "type": "Standard",
+        "x": 370714.236,
+        "y": 5460973.525,
+        "z": 268.208,
+        "coverZ": 268.208,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S01AP01",
+      {
+        "id": "S01AP01",
+        "type": "Standard",
+        "x": 370654.003,
+        "y": 5460966.01,
+        "z": 265.26,
+        "coverZ": 265.26,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK006AP01",
+      {
+        "id": "FK006AP01",
+        "type": "Standard",
+        "x": 370579.889,
+        "y": 5461004.847,
+        "z": 268.329,
+        "coverZ": 268.329,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S04AP01",
+      {
+        "id": "S04AP01",
+        "type": "Standard",
+        "x": 370592.58,
+        "y": 5460974.192,
+        "z": 268.06,
+        "coverZ": 268.06,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S04AP02",
+      {
+        "id": "S04AP02",
+        "type": "Standard",
+        "x": 370594.792,
+        "y": 5460969.397,
+        "z": 267.949,
+        "coverZ": 267.949,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S04AP03",
+      {
+        "id": "S04AP03",
+        "type": "Standard",
+        "x": 370596.472,
+        "y": 5460965.755,
+        "z": 267.864,
+        "coverZ": 267.864,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S00AP01",
+      {
+        "id": "S00AP01",
+        "type": "Standard",
+        "x": 370657.761,
+        "y": 5460967.468,
+        "z": 265.24,
+        "coverZ": 265.24,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "S10AP01",
+      {
+        "id": "S10AP01",
+        "type": "Standard",
+        "x": 370706.561,
+        "y": 5460989.707,
+        "z": 264.38,
+        "coverZ": 264.38,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "06002AP01",
+      {
+        "id": "06002AP01",
+        "type": "Standard",
+        "x": 370687.304,
+        "y": 5460974.984,
+        "z": 264.726,
+        "coverZ": 264.726,
+        "depth": 0,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ]
+  ],
+  "edges": [
+    [
+      "BE008",
+      {
+        "id": "BE008",
+        "type": "Haltung",
+        "from": "BE001",
+        "to": "FK003",
+        "coords": [
+          {
+            "x": 370694.432,
+            "y": 5461066.059,
+            "z": 268.9
+          },
+          {
+            "x": 370680.254,
+            "y": 5461047.098,
+            "z": 268.543
+          }
+        ],
+        "length": 23.78,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.9,
+        "z2": 268.543
+      }
+    ],
+    [
+      "BE009",
+      {
+        "id": "BE009",
+        "type": "Haltung",
+        "from": "BE008",
+        "to": "F001",
+        "coords": [
+          {
+            "x": 370740.488,
+            "y": 5461086.862,
+            "z": 268.64
+          },
+          {
+            "x": 370756.238,
+            "y": 5461090.827,
+            "z": 267.852
+          }
+        ],
+        "length": 16.36,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.64,
+        "z2": 267.852
+      }
+    ],
+    [
+      "FK003",
+      {
+        "id": "FK003",
+        "type": "Haltung",
+        "from": "FK003",
+        "to": "FK009",
+        "coords": [
+          {
+            "x": 370680.254,
+            "y": 5461047.098,
+            "z": 268.543
+          },
+          {
+            "x": 370655.863,
+            "y": 5461035.505,
+            "z": 268.491
+          }
+        ],
+        "length": 27.01,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.543,
+        "z2": 268.491
+      }
+    ],
+    [
+      "FK004",
+      {
+        "id": "FK004",
+        "type": "Haltung",
+        "from": "FK004",
+        "to": "FK008",
+        "coords": [
+          {
+            "x": 370631.467,
+            "y": 5461024.557,
+            "z": 268.547
+          },
+          {
+            "x": 370654.478,
+            "y": 5461034.833,
+            "z": 268.491
+          }
+        ],
+        "length": 25.2,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.547,
+        "z2": 268.491
+      }
+    ],
+    [
+      "FK006",
+      {
+        "id": "FK006",
+        "type": "Haltung",
+        "from": "FK005",
+        "to": "FK007",
+        "coords": [
+          {
+            "x": 370615.882,
+            "y": 5461021.876,
+            "z": 268.576
+          },
+          {
+            "x": 370578.702,
+            "y": 5461004.286,
+            "z": 268.295
+          }
+        ],
+        "length": 41.13,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.125,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.576,
+        "z2": 268.295
+      }
+    ],
+    [
+      "FK005",
+      {
+        "id": "FK005",
+        "type": "Haltung",
+        "from": "FK005",
+        "to": "FK004",
+        "coords": [
+          {
+            "x": 370615.882,
+            "y": 5461021.876,
+            "z": 268.576
+          },
+          {
+            "x": 370631.467,
+            "y": 5461024.557,
+            "z": 268.547
+          }
+        ],
+        "length": 15.81,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.576,
+        "z2": 268.547
+      }
+    ],
+    [
+      "FK008",
+      {
+        "id": "FK008",
+        "type": "Haltung",
+        "from": "FK007",
+        "to": "S04",
+        "coords": [
+          {
+            "x": 370578.702,
+            "y": 5461004.286,
+            "z": 268.295
+          },
+          {
+            "x": 370589.549,
+            "y": 5460980.767,
+            "z": 268.205
+          }
+        ],
+        "length": 26.4,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.295,
+        "z2": 268.203
+      }
+    ],
+    [
+      "FK010",
+      {
+        "id": "FK010",
+        "type": "Haltung",
+        "from": "FK010",
+        "to": "S07",
+        "coords": [
+          {
+            "x": 370735.75,
+            "y": 5460996.328,
+            "z": 262.8
+          },
+          {
+            "x": 370751.84,
+            "y": 5460989.783,
+            "z": 262.713
+          }
+        ],
+        "length": 17.87,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 262.8,
+        "z2": 262.71
+      }
+    ],
+    [
+      "FK011",
+      {
+        "id": "FK011",
+        "type": "Haltung",
+        "from": "FK011",
+        "to": "S07",
+        "coords": [
+          {
+            "x": 370756.098,
+            "y": 5461005.691,
+            "z": 262.8
+          },
+          {
+            "x": 370752.418,
+            "y": 5460990.082,
+            "z": 262.713
+          }
+        ],
+        "length": 16.54,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 262.8,
+        "z2": 262.71
+      }
+    ],
+    [
+      "S07",
+      {
+        "id": "S07",
+        "type": "Haltung",
+        "from": "F001",
+        "to": "S05",
+        "coords": [
+          {
+            "x": 370756.238,
+            "y": 5461090.827,
+            "z": 267.852
+          },
+          {
+            "x": 370761.748,
+            "y": 5461088.598,
+            "z": 267.66
+          }
+        ],
+        "length": 6.45,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.852,
+        "z2": 267.58
+      }
+    ],
+    [
+      "S00",
+      {
+        "id": "S00",
+        "type": "Haltung",
+        "from": "S00",
+        "to": "S00-1",
+        "coords": [
+          {
+            "x": 370657.276,
+            "y": 5460967.292,
+            "z": 265.245
+          },
+          {
+            "x": 370680.376,
+            "y": 5460975.697,
+            "z": 264.801
+          }
+        ],
+        "length": 25.59,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 265.254,
+        "z2": 264.792
+      }
+    ],
+    [
+      "S01",
+      {
+        "id": "S01",
+        "type": "Haltung",
+        "from": "S01",
+        "to": "S00",
+        "coords": [
+          {
+            "x": 370638.368,
+            "y": 5460959.817,
+            "z": 265.273
+          },
+          {
+            "x": 370656.341,
+            "y": 5460966.937,
+            "z": 265.254
+          }
+        ],
+        "length": 20.33,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 265.273,
+        "z2": 265.254
+      }
+    ],
+    [
+      "S02",
+      {
+        "id": "S02",
+        "type": "Haltung",
+        "from": "S02",
+        "to": "S01",
+        "coords": [
+          {
+            "x": 370624.925,
+            "y": 5460953.82,
+            "z": 267.451
+          },
+          {
+            "x": 370637.447,
+            "y": 5460959.429,
+            "z": 265.35
+          }
+        ],
+        "length": 14.88,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.528,
+        "z2": 265.273
+      }
+    ],
+    [
+      "S03",
+      {
+        "id": "S03",
+        "type": "Haltung",
+        "from": "S03",
+        "to": "S02",
+        "coords": [
+          {
+            "x": 370602.177,
+            "y": 5460954.452,
+            "z": 267.599
+          },
+          {
+            "x": 370623.969,
+            "y": 5460953.635,
+            "z": 267.53
+          }
+        ],
+        "length": 22.81,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.601,
+        "z2": 267.528
+      }
+    ],
+    [
+      "S04",
+      {
+        "id": "S04",
+        "type": "Haltung",
+        "from": "S04",
+        "to": "S03",
+        "coords": [
+          {
+            "x": 370589.967,
+            "y": 5460979.859,
+            "z": 268.192
+          },
+          {
+            "x": 370601.468,
+            "y": 5460954.925,
+            "z": 267.612
+          }
+        ],
+        "length": 28.46,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.203,
+        "z2": 267.601
+      }
+    ],
+    [
+      "S05",
+      {
+        "id": "S05",
+        "type": "Haltung",
+        "from": "S05",
+        "to": "S05-1",
+        "coords": [
+          {
+            "x": 370762.397,
+            "y": 5461087.946,
+            "z": 267.568
+          },
+          {
+            "x": 370782.191,
+            "y": 5461038.635,
+            "z": 266.282
+          }
+        ],
+        "length": 54.15,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.25,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.58,
+        "z2": 266.27
+      }
+    ],
+    [
+      "S05-1",
+      {
+        "id": "S05-1",
+        "type": "Haltung",
+        "from": "S05-1",
+        "to": "S06",
+        "coords": [
+          {
+            "x": 370782.21,
+            "y": 5461037.7,
+            "z": 266.259
+          },
+          {
+            "x": 370770.287,
+            "y": 5461003.993,
+            "z": 265.462
+          }
+        ],
+        "length": 36.76,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.25,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 266.27,
+        "z2": 265.451
+      }
+    ],
+    [
+      "S06",
+      {
+        "id": "S06",
+        "type": "Haltung",
+        "from": "S06",
+        "to": "S07",
+        "coords": [
+          {
+            "x": 370769.726,
+            "y": 5461003.214,
+            "z": 265.39
+          },
+          {
+            "x": 370752.697,
+            "y": 5460989.903,
+            "z": 262.771
+          }
+        ],
+        "length": 22.77,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.3,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 265.451,
+        "z2": 262.71
+      }
+    ],
+    [
+      "S12",
+      {
+        "id": "S12",
+        "type": "Haltung",
+        "from": "S07",
+        "to": "FK012",
+        "coords": [
+          {
+            "x": 370752.498,
+            "y": 5460989.134,
+            "z": 262.684
+          },
+          {
+            "x": 370772.508,
+            "y": 5460941.762,
+            "z": 260
+          }
+        ],
+        "length": 52,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.6,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 262.71,
+        "z2": 260
+      }
+    ],
+    [
+      "S08",
+      {
+        "id": "S08",
+        "type": "Haltung",
+        "from": "S08",
+        "to": "S07",
+        "coords": [
+          {
+            "x": 370722.802,
+            "y": 5460978.553,
+            "z": 263.569
+          },
+          {
+            "x": 370751.835,
+            "y": 5460989.42,
+            "z": 262.724
+          }
+        ],
+        "length": 32.01,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.3,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 263.583,
+        "z2": 262.71
+      }
+    ],
+    [
+      "S09",
+      {
+        "id": "S09",
+        "type": "Haltung",
+        "from": "S09",
+        "to": "S08",
+        "coords": [
+          {
+            "x": 370708.36,
+            "y": 5460986.687,
+            "z": 264.052
+          },
+          {
+            "x": 370721.904,
+            "y": 5460978.634,
+            "z": 263.597
+          }
+        ],
+        "length": 16.76,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 264.066,
+        "z2": 263.583
+      }
+    ],
+    [
+      "S10",
+      {
+        "id": "S10",
+        "type": "Haltung",
+        "from": "S10",
+        "to": "S09",
+        "coords": [
+          {
+            "x": 370694.735,
+            "y": 5461013.596,
+            "z": 267.093
+          },
+          {
+            "x": 370707.708,
+            "y": 5460987.391,
+            "z": 264.117
+          }
+        ],
+        "length": 30.39,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.144,
+        "z2": 264.066
+      }
+    ],
+    [
+      "S11",
+      {
+        "id": "S11",
+        "type": "Haltung",
+        "from": "S11",
+        "to": "S10",
+        "coords": [
+          {
+            "x": 370682.335,
+            "y": 5461039.823,
+            "z": 267.435
+          },
+          {
+            "x": 370694.299,
+            "y": 5461014.496,
+            "z": 267.149
+          }
+        ],
+        "length": 29.01,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.44,
+        "z2": 267.144
+      }
+    ],
+    [
+      "06001",
+      {
+        "id": "06001",
+        "type": "Haltung",
+        "from": "06001",
+        "to": "FK013",
+        "coords": [
+          {
+            "x": 370693.209,
+            "y": 5460961.877,
+            "z": 263.381
+          },
+          {
+            "x": 370694.242,
+            "y": 5460959.276,
+            "z": 262.213
+          }
+        ],
+        "length": 3.53,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.6,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 263.59,
+        "z2": 262.213
+      }
+    ],
+    [
+      "06002",
+      {
+        "id": "06002",
+        "type": "Haltung",
+        "from": "06002",
+        "to": "06001",
+        "coords": [
+          {
+            "x": 370674.659,
+            "y": 5461002.933,
+            "z": 267.239
+          },
+          {
+            "x": 370692.818,
+            "y": 5460962.798,
+            "z": 263.631
+          }
+        ],
+        "length": 45.2,
+        "material": "W",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.377,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 267.28,
+        "z2": 263.59
+      }
+    ],
+    [
+      "06003",
+      {
+        "id": "06003",
+        "type": "Haltung",
+        "from": "06003",
+        "to": "06002",
+        "coords": [
+          {
+            "x": 370669.324,
+            "y": 5461004.845,
+            "z": 267.399
+          },
+          {
+            "x": 370673.972,
+            "y": 5461003.526,
+            "z": 267.291
+          }
+        ],
+        "length": 5.83,
+        "material": "W",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.47,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 267.41,
+        "z2": 267.28
+      }
+    ],
+    [
+      "06004",
+      {
+        "id": "06004",
+        "type": "Haltung",
+        "from": "06004",
+        "to": "06003",
+        "coords": [
+          {
+            "x": 370655.364,
+            "y": 5461034.724,
+            "z": 267.942
+          },
+          {
+            "x": 370668.637,
+            "y": 5461005.437,
+            "z": 267.418
+          }
+        ],
+        "length": 33.16,
+        "material": "W",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.56,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 267.95,
+        "z2": 267.41
+      }
+    ],
+    [
+      "06005",
+      {
+        "id": "06005",
+        "type": "Haltung",
+        "from": "06005",
+        "to": "06004",
+        "coords": [
+          {
+            "x": 370646.609,
+            "y": 5461052.885,
+            "z": 268.87
+          },
+          {
+            "x": 370654.941,
+            "y": 5461035.629,
+            "z": 267.97
+          }
+        ],
+        "length": 20.18,
+        "material": "W",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.56,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 268.86,
+        "z2": 267.95
+      }
+    ],
+    [
+      "06005.2",
+      {
+        "id": "06005.2",
+        "type": "Haltung",
+        "from": "06005.2",
+        "to": "06005",
+        "coords": [
+          {
+            "x": 370650.295,
+            "y": 5461057.353,
+            "z": 269.016
+          },
+          {
+            "x": 370646.74,
+            "y": 5461053.694,
+            "z": 268.874
+          }
+        ],
+        "length": 6.1,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.4,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 269.03,
+        "z2": 268.86
+      }
+    ],
+    [
+      "06006",
+      {
+        "id": "06006",
+        "type": "Haltung",
+        "from": "06006",
+        "to": "06005",
+        "coords": [
+          {
+            "x": 370616.189,
+            "y": 5461114.378,
+            "z": 270.051
+          },
+          {
+            "x": 370646.17,
+            "y": 5461053.783,
+            "z": 268.869
+          }
+        ],
+        "length": 68.62,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.6,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 270.06,
+        "z2": 268.86
+      }
+    ],
+    [
+      "BE001",
+      {
+        "id": "BE001",
+        "type": "Leitung",
+        "from": "BE001",
+        "to": "BE002",
+        "coords": [
+          {
+            "x": 370694.583,
+            "y": 5461066.18,
+            "z": 268.9
+          },
+          {
+            "x": 370700.299,
+            "y": 5461068.757,
+            "z": 268.872
+          }
+        ],
+        "length": 6.47,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.9,
+        "z2": 268.872
+      }
+    ],
+    [
+      "BE002",
+      {
+        "id": "BE002",
+        "type": "Leitung",
+        "from": "BE002",
+        "to": "BE003",
+        "coords": [
+          {
+            "x": 370700.481,
+            "y": 5461068.839,
+            "z": 268.872
+          },
+          {
+            "x": 370706.133,
+            "y": 5461071.389,
+            "z": 268.829
+          }
+        ],
+        "length": 6.4,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.872,
+        "z2": 268.829
+      }
+    ],
+    [
+      "BE003",
+      {
+        "id": "BE003",
+        "type": "Leitung",
+        "from": "BE003",
+        "to": "BE004",
+        "coords": [
+          {
+            "x": 370706.315,
+            "y": 5461071.471,
+            "z": 268.829
+          },
+          {
+            "x": 370712.123,
+            "y": 5461074.089,
+            "z": 268.796
+          }
+        ],
+        "length": 6.57,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.829,
+        "z2": 268.796
+      }
+    ],
+    [
+      "BE004",
+      {
+        "id": "BE004",
+        "type": "Leitung",
+        "from": "BE004",
+        "to": "BE005",
+        "coords": [
+          {
+            "x": 370712.305,
+            "y": 5461074.171,
+            "z": 268.796
+          },
+          {
+            "x": 370716.425,
+            "y": 5461076.03,
+            "z": 268.764
+          }
+        ],
+        "length": 4.72,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.796,
+        "z2": 268.764
+      }
+    ],
+    [
+      "BE005",
+      {
+        "id": "BE005",
+        "type": "Leitung",
+        "from": "BE005",
+        "to": "BE006",
+        "coords": [
+          {
+            "x": 370716.607,
+            "y": 5461076.112,
+            "z": 268.764
+          },
+          {
+            "x": 370725.477,
+            "y": 5461080.112,
+            "z": 268.72
+          }
+        ],
+        "length": 9.93,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.764,
+        "z2": 268.72
+      }
+    ],
+    [
+      "BE006",
+      {
+        "id": "BE006",
+        "type": "Leitung",
+        "from": "BE006",
+        "to": "BE007",
+        "coords": [
+          {
+            "x": 370725.659,
+            "y": 5461080.194,
+            "z": 268.72
+          },
+          {
+            "x": 370732.533,
+            "y": 5461083.294,
+            "z": 268.69
+          }
+        ],
+        "length": 7.74,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.72,
+        "z2": 268.69
+      }
+    ],
+    [
+      "BE007",
+      {
+        "id": "BE007",
+        "type": "Leitung",
+        "from": "BE007",
+        "to": "BE008",
+        "coords": [
+          {
+            "x": 370732.715,
+            "y": 5461083.376,
+            "z": 268.69
+          },
+          {
+            "x": 370740.3,
+            "y": 5461086.797,
+            "z": 268.64
+          }
+        ],
+        "length": 8.52,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.69,
+        "z2": 268.64
+      }
+    ],
+    [
+      "BE010",
+      {
+        "id": "BE010",
+        "type": "Leitung",
+        "from": "BE010",
+        "to": "S05",
+        "coords": [
+          {
+            "x": 370755.96,
+            "y": 5461089.123,
+            "z": 268.965
+          },
+          {
+            "x": 370761.714,
+            "y": 5461088.467,
+            "z": 267.69
+          }
+        ],
+        "length": 6.55,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.965,
+        "z2": 267.58
+      }
+    ],
+    [
+      "BE011",
+      {
+        "id": "BE011",
+        "type": "Leitung",
+        "from": "BE011",
+        "to": "S05",
+        "coords": [
+          {
+            "x": 370747.295,
+            "y": 5461087.864,
+            "z": 268.993
+          },
+          {
+            "x": 370761.711,
+            "y": 5461088.392,
+            "z": 267.627
+          }
+        ],
+        "length": 15.12,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.993,
+        "z2": 267.58
+      }
+    ],
+    [
+      "BE012",
+      {
+        "id": "BE012",
+        "type": "Leitung",
+        "from": "BE012",
+        "to": "Zisterne_3",
+        "coords": [
+          {
+            "x": 370759.782,
+            "y": 5461076.728,
+            "z": 268.981
+          },
+          {
+            "x": 370762.048,
+            "y": 5461076.463,
+            "z": 265.935
+          }
+        ],
+        "length": 4.43,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.981,
+        "z2": 265.268
+      }
+    ],
+    [
+      "BE013",
+      {
+        "id": "BE013",
+        "type": "Leitung",
+        "from": "BE013",
+        "to": "S05-1",
+        "coords": [
+          {
+            "x": 370785.388,
+            "y": 5461040.363,
+            "z": 268.48
+          },
+          {
+            "x": 370782.781,
+            "y": 5461038.465,
+            "z": 267.59
+          }
+        ],
+        "length": 3.97,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.48,
+        "z2": 266.27
+      }
+    ],
+    [
+      "BE014",
+      {
+        "id": "BE014",
+        "type": "Leitung",
+        "from": "BE014",
+        "to": "S06",
+        "coords": [
+          {
+            "x": 370789.814,
+            "y": 5461002.698,
+            "z": 267.309
+          },
+          {
+            "x": 370770.62,
+            "y": 5461003.501,
+            "z": 265.498
+          }
+        ],
+        "length": 19.92,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.309,
+        "z2": 265.451
+      }
+    ],
+    [
+      "BE015",
+      {
+        "id": "BE015",
+        "type": "Leitung",
+        "from": "BE015",
+        "to": "S01AP01",
+        "coords": [
+          {
+            "x": 370652.371,
+            "y": 5460968.052,
+            "z": 268.578
+          },
+          {
+            "x": 370654.003,
+            "y": 5460966.01,
+            "z": 265.26
+          }
+        ],
+        "length": 4.35,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.578,
+        "z2": 265.26
+      }
+    ],
+    [
+      "FK019",
+      {
+        "id": "FK019",
+        "type": "Leitung",
+        "from": "FK019",
+        "to": "FK006AP01",
+        "coords": [
+          {
+            "x": 370580.05,
+            "y": 5461005.902,
+            "z": 268.345
+          },
+          {
+            "x": 370579.889,
+            "y": 5461004.847,
+            "z": 268.329
+          }
+        ],
+        "length": 1.22,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.345,
+        "z2": 268.329
+      }
+    ],
+    [
+      "GA001",
+      {
+        "id": "GA001",
+        "type": "Leitung",
+        "from": "GA001",
+        "to": "S04AP01",
+        "coords": [
+          {
+            "x": 370595.893,
+            "y": 5460975.446,
+            "z": 268.113
+          },
+          {
+            "x": 370592.58,
+            "y": 5460974.192,
+            "z": 268.06
+          }
+        ],
+        "length": 3.7,
+        "material": "PP",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 268.113,
+        "z2": 268.06
+      }
+    ],
+    [
+      "GA002",
+      {
+        "id": "GA002",
+        "type": "Leitung",
+        "from": "GA002",
+        "to": "S04AP02",
+        "coords": [
+          {
+            "x": 370597.914,
+            "y": 5460970.719,
+            "z": 268
+          },
+          {
+            "x": 370594.792,
+            "y": 5460969.397,
+            "z": 267.949
+          }
+        ],
+        "length": 3.55,
+        "material": "PP",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 268,
+        "z2": 267.949
+      }
+    ],
+    [
+      "GA003",
+      {
+        "id": "GA003",
+        "type": "Leitung",
+        "from": "GA003",
+        "to": "S04AP03",
+        "coords": [
+          {
+            "x": 370599.52,
+            "y": 5460966.894,
+            "z": 267.913
+          },
+          {
+            "x": 370596.472,
+            "y": 5460965.755,
+            "z": 267.864
+          }
+        ],
+        "length": 3.41,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 267.913,
+        "z2": 267.864
+      }
+    ],
+    [
+      "SE016",
+      {
+        "id": "SE016",
+        "type": "Leitung",
+        "from": "SE016",
+        "to": "S00AP01",
+        "coords": [
+          {
+            "x": 370656.83,
+            "y": 5460970.342,
+            "z": 268.544
+          },
+          {
+            "x": 370657.761,
+            "y": 5460967.468,
+            "z": 265.24
+          }
+        ],
+        "length": 4.6,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.544,
+        "z2": 265.24
+      }
+    ],
+    [
+      "SE017",
+      {
+        "id": "SE017",
+        "type": "Leitung",
+        "from": "SE017",
+        "to": "S10AP01",
+        "coords": [
+          {
+            "x": 370706.988,
+            "y": 5460989.962,
+            "z": 268.476
+          },
+          {
+            "x": 370706.561,
+            "y": 5460989.707,
+            "z": 264.38
+          }
+        ],
+        "length": 4.25,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.476,
+        "z2": 264.38
+      }
+    ],
+    [
+      "SE018",
+      {
+        "id": "SE018",
+        "type": "Leitung",
+        "from": "SE018",
+        "to": "S08",
+        "coords": [
+          {
+            "x": 370714.343,
+            "y": 5460973.589,
+            "z": 268.208
+          },
+          {
+            "x": 370721.905,
+            "y": 5460978.121,
+            "z": 263.831
+          }
+        ],
+        "length": 10.47,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.15,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 268.208,
+        "z2": 263.583
+      }
+    ],
+    [
+      "S00-1",
+      {
+        "id": "S00-1",
+        "type": "Leitung",
+        "from": "S00-1",
+        "to": "06002AP01",
+        "coords": [
+          {
+            "x": 370681.341,
+            "y": 5460975.8,
+            "z": 264.787
+          },
+          {
+            "x": 370687.304,
+            "y": 5460974.984,
+            "z": 264.726
+          }
+        ],
+        "length": 6.52,
+        "material": "PVC",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 90,
+        "z1": 264.792,
+        "z2": 264.726
+      }
+    ]
+  ],
+  "hydraulics": {
+    "catchments": [
+      {
+        "id": "DA17_1",
+        "nodeId": "FK003",
+        "area": 0.00455,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA17_2",
+        "nodeId": "FK009",
+        "area": 0.00455,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA18_1",
+        "nodeId": "FK003",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA18_2",
+        "nodeId": "FK009",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA19_1",
+        "nodeId": "FK003",
+        "area": 0.0087,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA19_2",
+        "nodeId": "FK009",
+        "area": 0.0058000000000000005,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA20_1",
+        "nodeId": "FK003",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA20_2",
+        "nodeId": "FK009",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA30_1",
+        "nodeId": "FK003",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA30_2",
+        "nodeId": "FK009",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA12_1",
+        "nodeId": "FK004",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA12_2",
+        "nodeId": "FK008",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "Da13_1",
+        "nodeId": "FK004",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "Da13_2",
+        "nodeId": "FK008",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA14_1",
+        "nodeId": "FK004",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA14_2",
+        "nodeId": "FK008",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA15_1",
+        "nodeId": "FK004",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA15_2",
+        "nodeId": "FK008",
+        "area": 0.00725,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA16_1",
+        "nodeId": "FK004",
+        "area": 0.00695,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA16_2",
+        "nodeId": "FK008",
+        "area": 0.00695,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA05_1",
+        "nodeId": "FK007",
+        "area": 0.0059,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA05_2",
+        "nodeId": "S04",
+        "area": 0.0059,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA06_1",
+        "nodeId": "FK007",
+        "area": 0.0053,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA06_2",
+        "nodeId": "S04",
+        "area": 0.0053,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA30_1",
+        "nodeId": "S01",
+        "area": 0.0042,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA30_2",
+        "nodeId": "S00",
+        "area": 0.0042,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA31_1",
+        "nodeId": "S01",
+        "area": 0.00495,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA31_2",
+        "nodeId": "S00",
+        "area": 0.00495,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA32_1",
+        "nodeId": "S01",
+        "area": 0.0054,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA32_2",
+        "nodeId": "S00",
+        "area": 0.0054,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA33_1",
+        "nodeId": "S01",
+        "area": 0.00435,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA33_2",
+        "nodeId": "S00",
+        "area": 0.00435,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA34_1",
+        "nodeId": "S01",
+        "area": 0.00395,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA34_2",
+        "nodeId": "S00",
+        "area": 0.00395,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA35_1",
+        "nodeId": "S01",
+        "area": 0.006,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA35_2",
+        "nodeId": "S00",
+        "area": 0.006,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA07_1",
+        "nodeId": "S02",
+        "area": 0.01075,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA07_2",
+        "nodeId": "S01",
+        "area": 0.01075,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA08_1",
+        "nodeId": "S02",
+        "area": 0.01215,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA08_2",
+        "nodeId": "S01",
+        "area": 0.01215,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA09_1",
+        "nodeId": "S02",
+        "area": 0.01775,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA09_2",
+        "nodeId": "S01",
+        "area": 0.01775,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA10_1",
+        "nodeId": "S02",
+        "area": 0.00575,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA10_2",
+        "nodeId": "S01",
+        "area": 0.00575,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA11_1",
+        "nodeId": "S02",
+        "area": 0.0116,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA11_2",
+        "nodeId": "S01",
+        "area": 0.0116,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA01_1",
+        "nodeId": "S03",
+        "area": 0.0067,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA01_2",
+        "nodeId": "S02",
+        "area": 0.0067,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA02_1",
+        "nodeId": "S04",
+        "area": 0.00455,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA02_2",
+        "nodeId": "S03",
+        "area": 0.00455,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA03_1",
+        "nodeId": "S04",
+        "area": 0.00695,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA03_2",
+        "nodeId": "S03",
+        "area": 0.00695,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA04_1",
+        "nodeId": "S04",
+        "area": 0.01145,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA04_2",
+        "nodeId": "S03",
+        "area": 0.01145,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA19_1",
+        "nodeId": "S05",
+        "area": 0.0436,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA19_2",
+        "nodeId": "S05-1",
+        "area": 0.0436,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA17_1",
+        "nodeId": "S06",
+        "area": 0.2086,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA17_2",
+        "nodeId": "S07",
+        "area": 0.2086,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA18_1",
+        "nodeId": "S11",
+        "area": 0.01715,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA18_2",
+        "nodeId": "S10",
+        "area": 0.01715,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA20_1",
+        "nodeId": "06002",
+        "area": 0.01925,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA20_2",
+        "nodeId": "06001",
+        "area": 0.01925,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA21_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA21_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA22_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA22_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA23_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA23_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA24_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA24_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA25_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA25_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA26_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA26_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA27_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA27_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA28_1",
+        "nodeId": "06002",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA28_2",
+        "nodeId": "06001",
+        "area": 0.00665,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA29_1",
+        "nodeId": "06002",
+        "area": 0.00715,
+        "runoffCoeff": 0.9
+      },
+      {
+        "id": "DA29_2",
+        "nodeId": "06001",
+        "area": 0.00715,
+        "runoffCoeff": 0.9
+      }
+    ],
+    "areas": [
+      {
+        "id": "DA17",
+        "points": [
+          {
+            "x": 370688.737,
+            "y": 5461021.703
+          },
+          {
+            "x": 370692.23,
+            "y": 5461023.309
+          },
+          {
+            "x": 370681.68,
+            "y": 5461046.232
+          },
+          {
+            "x": 370678.634,
+            "y": 5461044.832
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0091,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK003",
+        "nodeId": "FK003",
+        "nodeId2": "FK009",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA18",
+        "points": [
+          {
+            "x": 370683.508,
+            "y": 5461019.3
+          },
+          {
+            "x": 370688.737,
+            "y": 5461021.703
+          },
+          {
+            "x": 370678.634,
+            "y": 5461044.832
+          },
+          {
+            "x": 370673.405,
+            "y": 5461042.428
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK003",
+        "nodeId": "FK003",
+        "nodeId2": "FK009",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA19",
+        "points": [
+          {
+            "x": 370678.278,
+            "y": 5461016.896
+          },
+          {
+            "x": 370683.508,
+            "y": 5461019.3
+          },
+          {
+            "x": 370673.405,
+            "y": 5461042.428
+          },
+          {
+            "x": 370668.176,
+            "y": 5461040.025
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK003",
+        "nodeId": "FK003",
+        "nodeId2": "FK009",
+        "splitRatio": 60
+      },
+      {
+        "id": "DA20",
+        "points": [
+          {
+            "x": 370673.049,
+            "y": 5461014.492
+          },
+          {
+            "x": 370678.278,
+            "y": 5461016.896
+          },
+          {
+            "x": 370668.176,
+            "y": 5461040.025
+          },
+          {
+            "x": 370662.946,
+            "y": 5461037.621
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK003",
+        "nodeId": "FK003",
+        "nodeId2": "FK009",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA30",
+        "points": [
+          {
+            "x": 370667.819,
+            "y": 5461012.091
+          },
+          {
+            "x": 370673.049,
+            "y": 5461014.492
+          },
+          {
+            "x": 370662.946,
+            "y": 5461037.621
+          },
+          {
+            "x": 370657.717,
+            "y": 5461035.217
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK003",
+        "nodeId": "FK003",
+        "nodeId2": "FK009",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA12",
+        "points": [
+          {
+            "x": 370662.59,
+            "y": 5461009.685
+          },
+          {
+            "x": 370667.819,
+            "y": 5461012.091
+          },
+          {
+            "x": 370657.717,
+            "y": 5461035.217
+          },
+          {
+            "x": 370652.488,
+            "y": 5461032.814
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK004",
+        "nodeId": "FK004",
+        "nodeId2": "FK008",
+        "splitRatio": 50
+      },
+      {
+        "id": "Da13",
+        "points": [
+          {
+            "x": 370657.363,
+            "y": 5461007.276
+          },
+          {
+            "x": 370662.59,
+            "y": 5461009.685
+          },
+          {
+            "x": 370652.488,
+            "y": 5461032.814
+          },
+          {
+            "x": 370647.258,
+            "y": 5461030.41
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK004",
+        "nodeId": "FK004",
+        "nodeId2": "FK008",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA14",
+        "points": [
+          {
+            "x": 370652.136,
+            "y": 5461004.868
+          },
+          {
+            "x": 370657.363,
+            "y": 5461007.276
+          },
+          {
+            "x": 370647.258,
+            "y": 5461030.41
+          },
+          {
+            "x": 370642.029,
+            "y": 5461028.006
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK004",
+        "nodeId": "FK004",
+        "nodeId2": "FK008",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA15",
+        "points": [
+          {
+            "x": 370646.902,
+            "y": 5461002.474
+          },
+          {
+            "x": 370652.136,
+            "y": 5461004.868
+          },
+          {
+            "x": 370642.029,
+            "y": 5461028.006
+          },
+          {
+            "x": 370636.799,
+            "y": 5461025.603
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0145,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK004",
+        "nodeId": "FK004",
+        "nodeId2": "FK008",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA16",
+        "points": [
+          {
+            "x": 370642.125,
+            "y": 5461000.26
+          },
+          {
+            "x": 370646.902,
+            "y": 5461002.474
+          },
+          {
+            "x": 370636.799,
+            "y": 5461025.603
+          },
+          {
+            "x": 370631.57,
+            "y": 5461023.199
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0139,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK004",
+        "nodeId": "FK004",
+        "nodeId2": "FK008",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA05",
+        "points": [
+          {
+            "x": 370594.404,
+            "y": 5460989.523
+          },
+          {
+            "x": 370605.618,
+            "y": 5460994.463
+          },
+          {
+            "x": 370601.525,
+            "y": 5461003.265
+          },
+          {
+            "x": 370590.409,
+            "y": 5460998.338
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0118,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK008",
+        "nodeId": "FK007",
+        "nodeId2": "S04",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA06",
+        "points": [
+          {
+            "x": 370590.409,
+            "y": 5460998.338
+          },
+          {
+            "x": 370601.525,
+            "y": 5461003.265
+          },
+          {
+            "x": 370597.818,
+            "y": 5461011.233
+          },
+          {
+            "x": 370586.823,
+            "y": 5461006.248
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0106,
+        "runoffCoeff": 0.9,
+        "edgeId": "FK008",
+        "nodeId": "FK007",
+        "nodeId2": "S04",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA30",
+        "points": [
+          {
+            "x": 370644.791,
+            "y": 5460965.827
+          },
+          {
+            "x": 370651.753,
+            "y": 5460969.095
+          },
+          {
+            "x": 370646.278,
+            "y": 5460978.873
+          },
+          {
+            "x": 370639.72,
+            "y": 5460975.946
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0084,
+        "runoffCoeff": 0.9,
+        "edgeId": "S01",
+        "nodeId": "S01",
+        "nodeId2": "S00",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA31",
+        "points": [
+          {
+            "x": 370636.542,
+            "y": 5460974.528
+          },
+          {
+            "x": 370646.278,
+            "y": 5460978.873
+          },
+          {
+            "x": 370642.51,
+            "y": 5460987.233
+          },
+          {
+            "x": 370632.525,
+            "y": 5460982.717
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0099,
+        "runoffCoeff": 0.9,
+        "edgeId": "S01",
+        "nodeId": "S01",
+        "nodeId2": "S00",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA32",
+        "points": [
+          {
+            "x": 370629.038,
+            "y": 5460989.824
+          },
+          {
+            "x": 370639.31,
+            "y": 5460994.334
+          },
+          {
+            "x": 370635.387,
+            "y": 5461003.037
+          },
+          {
+            "x": 370624.849,
+            "y": 5460998.362
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0108,
+        "runoffCoeff": 0.9,
+        "edgeId": "S01",
+        "nodeId": "S01",
+        "nodeId2": "S00",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA33",
+        "points": [
+          {
+            "x": 370632.525,
+            "y": 5460982.717
+          },
+          {
+            "x": 370642.51,
+            "y": 5460987.233
+          },
+          {
+            "x": 370639.31,
+            "y": 5460994.334
+          },
+          {
+            "x": 370629.038,
+            "y": 5460989.824
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0087,
+        "runoffCoeff": 0.9,
+        "edgeId": "S01",
+        "nodeId": "S01",
+        "nodeId2": "S00",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA34",
+        "points": [
+          {
+            "x": 370631.136,
+            "y": 5461012.399
+          },
+          {
+            "x": 370628.418,
+            "y": 5461018.415
+          },
+          {
+            "x": 370617.45,
+            "y": 5461013.444
+          },
+          {
+            "x": 370620.349,
+            "y": 5461007.535
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0079,
+        "runoffCoeff": 0.9,
+        "edgeId": "S01",
+        "nodeId": "S01",
+        "nodeId2": "S00",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA35",
+        "points": [
+          {
+            "x": 370635.387,
+            "y": 5461003.037
+          },
+          {
+            "x": 370631.136,
+            "y": 5461012.399
+          },
+          {
+            "x": 370620.349,
+            "y": 5461007.535
+          },
+          {
+            "x": 370622.838,
+            "y": 5461002.462
+          },
+          {
+            "x": 370624.849,
+            "y": 5460998.362
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.012,
+        "runoffCoeff": 0.9,
+        "edgeId": "S01",
+        "nodeId": "S01",
+        "nodeId2": "S00",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA07",
+        "points": [
+          {
+            "x": 370627.772,
+            "y": 5460957.837
+          },
+          {
+            "x": 370644.791,
+            "y": 5460965.827
+          },
+          {
+            "x": 370639.72,
+            "y": 5460975.946
+          },
+          {
+            "x": 370636.542,
+            "y": 5460974.528
+          },
+          {
+            "x": 370622.731,
+            "y": 5460968.362
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0215,
+        "runoffCoeff": 0.9,
+        "edgeId": "S02",
+        "nodeId": "S02",
+        "nodeId2": "S01",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA08",
+        "points": [
+          {
+            "x": 370610.896,
+            "y": 5460983.116
+          },
+          {
+            "x": 370628.508,
+            "y": 5460990.905
+          },
+          {
+            "x": 370622.838,
+            "y": 5461002.462
+          },
+          {
+            "x": 370605.618,
+            "y": 5460994.463
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0243,
+        "runoffCoeff": 0.9,
+        "edgeId": "S02",
+        "nodeId": "S02",
+        "nodeId2": "S01",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA09",
+        "points": [
+          {
+            "x": 370610.896,
+            "y": 5460983.116
+          },
+          {
+            "x": 370628.508,
+            "y": 5460990.905
+          },
+          {
+            "x": 370636.542,
+            "y": 5460974.528
+          },
+          {
+            "x": 370622.731,
+            "y": 5460968.362
+          },
+          {
+            "x": 370618.614,
+            "y": 5460966.523
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0355,
+        "runoffCoeff": 0.9,
+        "edgeId": "S02",
+        "nodeId": "S02",
+        "nodeId2": "S01",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA10",
+        "points": [
+          {
+            "x": 370600.406,
+            "y": 5461005.669
+          },
+          {
+            "x": 370617.45,
+            "y": 5461013.444
+          },
+          {
+            "x": 370614.934,
+            "y": 5461018.993
+          },
+          {
+            "x": 370597.818,
+            "y": 5461011.233
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0115,
+        "runoffCoeff": 0.9,
+        "edgeId": "S02",
+        "nodeId": "S02",
+        "nodeId2": "S01",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA11",
+        "points": [
+          {
+            "x": 370605.618,
+            "y": 5460994.463
+          },
+          {
+            "x": 370622.838,
+            "y": 5461002.462
+          },
+          {
+            "x": 370617.45,
+            "y": 5461013.444
+          },
+          {
+            "x": 370600.406,
+            "y": 5461005.669
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0232,
+        "runoffCoeff": 0.9,
+        "edgeId": "S02",
+        "nodeId": "S02",
+        "nodeId2": "S01",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA01",
+        "points": [
+          {
+            "x": 370612.412,
+            "y": 5460963.802
+          },
+          {
+            "x": 370622.731,
+            "y": 5460968.362
+          },
+          {
+            "x": 370627.772,
+            "y": 5460957.837
+          },
+          {
+            "x": 370617.357,
+            "y": 5460952.947
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0134,
+        "runoffCoeff": 0.9,
+        "edgeId": "S03",
+        "nodeId": "S03",
+        "nodeId2": "S02",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA02",
+        "points": [
+          {
+            "x": 370618.614,
+            "y": 5460966.523
+          },
+          {
+            "x": 370615.56,
+            "y": 5460973.089
+          },
+          {
+            "x": 370604.087,
+            "y": 5460967.829
+          },
+          {
+            "x": 370606.912,
+            "y": 5460961.389
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0091,
+        "runoffCoeff": 0.9,
+        "edgeId": "S04",
+        "nodeId": "S04",
+        "nodeId2": "S03",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA03",
+        "points": [
+          {
+            "x": 370615.56,
+            "y": 5460973.089
+          },
+          {
+            "x": 370610.896,
+            "y": 5460983.116
+          },
+          {
+            "x": 370599.576,
+            "y": 5460978.11
+          },
+          {
+            "x": 370604.087,
+            "y": 5460967.829
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0139,
+        "runoffCoeff": 0.9,
+        "edgeId": "S04",
+        "nodeId": "S04",
+        "nodeId2": "S03",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA04",
+        "points": [
+          {
+            "x": 370594.147,
+            "y": 5460975.649
+          },
+          {
+            "x": 370599.576,
+            "y": 5460978.11
+          },
+          {
+            "x": 370610.896,
+            "y": 5460983.116
+          },
+          {
+            "x": 370605.618,
+            "y": 5460994.463
+          },
+          {
+            "x": 370594.404,
+            "y": 5460989.523
+          },
+          {
+            "x": 370588.925,
+            "y": 5460987.142
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0229,
+        "runoffCoeff": 0.9,
+        "edgeId": "S04",
+        "nodeId": "S04",
+        "nodeId2": "S03",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA19",
+        "points": [
+          {
+            "x": 370748.592,
+            "y": 5461044.235
+          },
+          {
+            "x": 370756.826,
+            "y": 5461025.94
+          },
+          {
+            "x": 370778.476,
+            "y": 5461035.889
+          },
+          {
+            "x": 370755.714,
+            "y": 5461085.425
+          },
+          {
+            "x": 370744.726,
+            "y": 5461080.376
+          },
+          {
+            "x": 370760.276,
+            "y": 5461049.081
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0872,
+        "runoffCoeff": 0.9,
+        "edgeId": "S05",
+        "nodeId": "S05",
+        "nodeId2": "S05-1",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA17",
+        "points": [
+          {
+            "x": 370722.148,
+            "y": 5460983.772
+          },
+          {
+            "x": 370738.718,
+            "y": 5460991.255
+          },
+          {
+            "x": 370749.131,
+            "y": 5460995.957
+          },
+          {
+            "x": 370766.772,
+            "y": 5461003.923
+          },
+          {
+            "x": 370748.592,
+            "y": 5461044.235
+          },
+          {
+            "x": 370760.276,
+            "y": 5461049.081
+          },
+          {
+            "x": 370744.726,
+            "y": 5461080.376
+          },
+          {
+            "x": 370742.229,
+            "y": 5461085.911
+          },
+          {
+            "x": 370697.601,
+            "y": 5461065.788
+          },
+          {
+            "x": 370710,
+            "y": 5461038.299
+          },
+          {
+            "x": 370709.472,
+            "y": 5461039.467
+          },
+          {
+            "x": 370714.725,
+            "y": 5461028.054
+          },
+          {
+            "x": 370704.999,
+            "y": 5461023.824
+          },
+          {
+            "x": 370704.92,
+            "y": 5461021.592
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.4172,
+        "runoffCoeff": 0.9,
+        "edgeId": "S06",
+        "nodeId": "S06",
+        "nodeId2": "S07",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA18",
+        "points": [
+          {
+            "x": 370710,
+            "y": 5461038.299
+          },
+          {
+            "x": 370705.357,
+            "y": 5461036.268
+          },
+          {
+            "x": 370700.421,
+            "y": 5461046.748
+          },
+          {
+            "x": 370689.061,
+            "y": 5461042.106
+          },
+          {
+            "x": 370700.431,
+            "y": 5461019.541
+          },
+          {
+            "x": 370704.92,
+            "y": 5461021.591
+          },
+          {
+            "x": 370704.999,
+            "y": 5461023.824
+          },
+          {
+            "x": 370714.725,
+            "y": 5461028.054
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0343,
+        "runoffCoeff": 0.9,
+        "edgeId": "S11",
+        "nodeId": "S11",
+        "nodeId2": "S10",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA20",
+        "points": [
+          {
+            "x": 370680.431,
+            "y": 5461017.89
+          },
+          {
+            "x": 370683.502,
+            "y": 5461019.313
+          },
+          {
+            "x": 370688.737,
+            "y": 5461021.703
+          },
+          {
+            "x": 370692.234,
+            "y": 5461023.3
+          },
+          {
+            "x": 370695.087,
+            "y": 5461017.101
+          },
+          {
+            "x": 370704.306,
+            "y": 5460997.043
+          },
+          {
+            "x": 370691.899,
+            "y": 5460991.338
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0385,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA21",
+        "points": [
+          {
+            "x": 370687.716,
+            "y": 5460989.415
+          },
+          {
+            "x": 370691.899,
+            "y": 5460991.338
+          },
+          {
+            "x": 370680.431,
+            "y": 5461017.89
+          },
+          {
+            "x": 370676.246,
+            "y": 5461015.95
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA22",
+        "points": [
+          {
+            "x": 370683.525,
+            "y": 5460987.489
+          },
+          {
+            "x": 370687.707,
+            "y": 5460989.412
+          },
+          {
+            "x": 370676.24,
+            "y": 5461015.963
+          },
+          {
+            "x": 370672.049,
+            "y": 5461014.036
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA23",
+        "points": [
+          {
+            "x": 370679.334,
+            "y": 5460985.562
+          },
+          {
+            "x": 370683.516,
+            "y": 5460987.485
+          },
+          {
+            "x": 370672.049,
+            "y": 5461014.036
+          },
+          {
+            "x": 370667.858,
+            "y": 5461012.109
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA24",
+        "points": [
+          {
+            "x": 370675.142,
+            "y": 5460983.635
+          },
+          {
+            "x": 370679.325,
+            "y": 5460985.558
+          },
+          {
+            "x": 370667.858,
+            "y": 5461012.109
+          },
+          {
+            "x": 370663.667,
+            "y": 5461010.182
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA25",
+        "points": [
+          {
+            "x": 370670.951,
+            "y": 5460981.708
+          },
+          {
+            "x": 370675.134,
+            "y": 5460983.631
+          },
+          {
+            "x": 370663.667,
+            "y": 5461010.182
+          },
+          {
+            "x": 370659.481,
+            "y": 5461008.242
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA26",
+        "points": [
+          {
+            "x": 370666.76,
+            "y": 5460979.781
+          },
+          {
+            "x": 370670.943,
+            "y": 5460981.704
+          },
+          {
+            "x": 370659.476,
+            "y": 5461008.255
+          },
+          {
+            "x": 370655.286,
+            "y": 5461006.324
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA27",
+        "points": [
+          {
+            "x": 370662.569,
+            "y": 5460977.854
+          },
+          {
+            "x": 370666.752,
+            "y": 5460979.777
+          },
+          {
+            "x": 370655.286,
+            "y": 5461006.324
+          },
+          {
+            "x": 370651.097,
+            "y": 5461004.392
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA28",
+        "points": [
+          {
+            "x": 370658.378,
+            "y": 5460975.927
+          },
+          {
+            "x": 370662.56,
+            "y": 5460977.85
+          },
+          {
+            "x": 370651.097,
+            "y": 5461004.392
+          },
+          {
+            "x": 370646.902,
+            "y": 5461002.474
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0133,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      },
+      {
+        "id": "DA29",
+        "points": [
+          {
+            "x": 370654.178,
+            "y": 5460973.996
+          },
+          {
+            "x": 370658.369,
+            "y": 5460975.923
+          },
+          {
+            "x": 370646.902,
+            "y": 5461002.474
+          },
+          {
+            "x": 370642.116,
+            "y": 5461000.256
+          }
+        ],
+        "type": 1,
+        "property": 1,
+        "function": 1,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 0,
+        "size": 0.0143,
+        "runoffCoeff": 0.9,
+        "edgeId": "06002",
+        "nodeId": "06002",
+        "nodeId2": "06001",
+        "splitRatio": 50
+      }
+    ],
+    "params": {},
+    "results": {},
+    "timeSeries": [],
+    "nodeResults": {},
+    "subcatchmentResults": {},
+    "massBalance": {
+      "inflowVol": 0.013,
+      "outflowVol": 0.008,
+      "floodingVol": 0.002,
+      "storedVol": 0.003,
+      "error": 1.706
+    },
+    "systemStats": {
+      "runoff": {
+        "precip": 0.001,
+        "evap": 0,
+        "infil": 0,
+        "runoff": 0.001,
+        "error": -0.382,
+        "precipVol": 0.001,
+        "runoffVol": 0.001
+      },
+      "flow": {
+        "inflowVol": 0.013,
+        "outflowVol": 0.008,
+        "floodingVol": 0.002,
+        "storedVol": 0.003,
+        "error": 1.706
+      }
+    },
+    "report": "\n  EPA STORM WATER MANAGEMENT MODEL - VERSION 5.2 (Build 5.2.4)\n  ------------------------------------------------------------\n\n  Web Simulation Output \n  \n  ****************\n  Analysis Options\n  ****************\n  Flow Units ............... CMS\n  Process Models:\n    Rainfall/Runoff ........ YES\n    RDII ................... NO\n    Snowmelt ............... NO\n    Groundwater ............ NO\n    Flow Routing ........... YES\n    Ponding Allowed ........ YES\n    Water Quality .......... NO\n  Infiltration Method ...... HORTON\n  Flow Routing Method ...... DYNWAVE\n  Surcharge Method ......... EXTRAN\n  Starting Date ............ 01/01/2024 00:00:00\n  Ending Date .............. 01/01/2024 06:00:00\n  Antecedent Dry Days ...... 0.0\n  Report Time Step ......... 00:01:00\n  Wet Time Step ............ 00:01:00\n  Dry Time Step ............ 00:01:00\n  Routing Time Step ........ 5.00 sec\n  Variable Time Step ....... YES\n  Maximum Trials ........... 8\n  Number of Threads ........ 1\n  Head Tolerance ........... 0.001524 m\n  \n  \n  **************************        Volume         Depth\n  Runoff Quantity Continuity     hectare-m            mm\n  **************************     ---------       -------\n  Total Precipitation ......         0.001         1.283\n  Evaporation Loss .........         0.000         0.000\n  Infiltration Loss ........         0.000         0.075\n  Surface Runoff ...........         0.001         1.176\n  Final Storage ............         0.000         0.037\n  Continuity Error (%) .....        -0.382\n  \n  \n  **************************        Volume        Volume\n  Flow Routing Continuity        hectare-m      10^6 ltr\n  **************************     ---------     ---------\n  Dry Weather Inflow .......         0.000         0.000\n  Wet Weather Inflow .......         0.001         0.013\n  Groundwater Inflow .......         0.000         0.000\n  RDII Inflow ..............         0.000         0.000\n  External Inflow ..........         0.000         0.000\n  External Outflow .........         0.001         0.008\n  Flooding Loss ............         0.000         0.002\n  Evaporation Loss .........         0.000         0.000\n  Exfiltration Loss ........         0.000         0.000\n  Initial Stored Volume ....         0.000         0.000\n  Final Stored Volume ......         0.000         0.003\n  Continuity Error (%) .....         1.706\n  \n  \n  *************************\n  Highest Continuity Errors\n  *************************\n  Node FK003 (34.15%)\n  Node S00 (23.18%)\n  Node S00-1 (22.78%)\n  Node S01 (16.86%)\n  Node FK004 (7.79%)\n  \n  \n  ***************************\n  Time-Step Critical Elements\n  ***************************\n  Link 06001 (34.16%)\n  \n  \n  ********************************\n  Highest Flow Instability Indexes\n  ********************************\n  Link S00-1 (2)\n  Link 06001 (1)\n  \n  \n  *********************************\n  Most Frequent Nonconverging Nodes\n  *********************************\n  Node FK012 (0.66%)\n  Node FK013 (0.66%)\n  Node 06002AP01 (0.57%)\n  Node S00-1 (0.55%)\n  Node S01 (0.34%)\n  \n  \n  *************************\n  Routing Time Step Summary\n  *************************\n  Minimum Time Step           :     1.14 sec\n  Average Time Step           :     4.08 sec\n  Maximum Time Step           :     5.00 sec\n  % of Time in Steady State   :     0.00\n  Average Iterations per Step :     2.05\n  % of Steps Not Converging   :     0.66\n  Time Step Frequencies       :\n      5.000 -  3.155 sec      :    65.82 %\n      3.155 -  1.991 sec      :    21.81 %\n      1.991 -  1.256 sec      :     9.37 %\n      1.256 -  0.792 sec      :     3.00 %\n      0.792 -  0.500 sec      :     0.00 %\n  \n  \n  ***************************\n  Subcatchment Runoff Summary\n  ***************************\n  \n  ------------------------------------------------------------------------------------------------------------------------------\n                            Total      Total      Total      Total     Imperv       Perv      Total       Total     Peak  Runoff\n                           Precip      Runon       Evap      Infil     Runoff     Runoff     Runoff      Runoff   Runoff   Coeff\n  Subcatchment                 mm         mm         mm         mm         mm         mm         mm    10^6 ltr      CMS\n  ------------------------------------------------------------------------------------------------------------------------------\n  DA17                       1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA17_2                     1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA18                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA18_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA19                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.926\n  DA19_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA20                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA20_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA30                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA30_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA12                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA12_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  Da13                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  Da13_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA14                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA14_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA15                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA15_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA16                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA16_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA05                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA05_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA06                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA06_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA30_1                     1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA30_1_2                   1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA31                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA31_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA32                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA32_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA33                       1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA33_2                     1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA34                       1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA34_2                     1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA35                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA35_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA07                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.925\n  DA07_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.925\n  DA08                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.924\n  DA08_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.924\n  DA09                       1.28       0.00       0.00       0.07       1.13       0.06       1.18        0.00     0.00   0.922\n  DA09_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.18        0.00     0.00   0.922\n  DA10                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA10_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.929\n  DA11                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.925\n  DA11_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.925\n  DA01                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA01_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA02                       1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA02_2                     1.28       0.00       0.00       0.06       1.13       0.06       1.19        0.00     0.00   0.930\n  DA03                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA03_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA04                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.925\n  DA04_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.925\n  DA19_1                     1.28       0.00       0.00       0.08       1.12       0.05       1.18        0.00     0.00   0.916\n  DA19_1_2                   1.28       0.00       0.00       0.08       1.12       0.05       1.18        0.00     0.00   0.916\n  DA17_1                     1.28       0.00       0.00       0.09       1.12       0.04       1.16        0.00     0.00   0.902\n  DA17_1_2                   1.28       0.00       0.00       0.09       1.12       0.04       1.16        0.00     0.00   0.902\n  DA18_1                     1.28       0.00       0.00       0.07       1.13       0.06       1.18        0.00     0.00   0.922\n  DA18_1_2                   1.28       0.00       0.00       0.07       1.13       0.06       1.18        0.00     0.00   0.922\n  DA20_1                     1.28       0.00       0.00       0.07       1.12       0.06       1.18        0.00     0.00   0.922\n  DA20_1_2                   1.28       0.00       0.00       0.07       1.12       0.06       1.18        0.00     0.00   0.922\n  DA21                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA21_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA22                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA22_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA23                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA23_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA24                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA24_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA25                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA25_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA26                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA26_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA27                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA27_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA28                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA28_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.928\n  DA29                       1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  DA29_2                     1.28       0.00       0.00       0.07       1.13       0.06       1.19        0.00     0.00   0.927\n  \n  \n  ******************\n  Node Depth Summary\n  ******************\n  \n  ---------------------------------------------------------------------------------\n                                 Average  Maximum  Maximum  Time of Max    Reported\n                                   Depth    Depth      HGL   Occurrence   Max Depth\n  Node                 Type       Meters   Meters   Meters  days hr:min      Meters\n  ---------------------------------------------------------------------------------\n  FK003                JUNCTION     0.10     0.11   268.65     0  05:43        0.11\n  FK004                JUNCTION     0.03     0.06   268.61     0  00:09        0.06\n  FK005                JUNCTION     0.00     0.02   268.60     0  00:09        0.02\n  FK007                JUNCTION     0.01     0.03   268.32     0  00:11        0.03\n  FK008                JUNCTION     0.09     0.12   268.61     0  00:08        0.12\n  FK009                JUNCTION     0.15     0.16   268.65     0  01:10        0.16\n  FK010                JUNCTION     0.00     0.00   262.80     0  00:00        0.00\n  FK011                JUNCTION     0.00     0.00   262.80     0  00:00        0.00\n  F001                 JUNCTION     0.00     0.00   267.85     0  00:00        0.00\n  S00                  JUNCTION     1.35     1.54   266.79     0  00:11        1.47\n  S00-1                JUNCTION     1.79     1.96   266.75     0  00:11        1.93\n  S01                  JUNCTION     1.33     1.53   266.80     0  00:11        1.46\n  S02                  JUNCTION     0.00     0.02   267.55     0  00:05        0.02\n  S03                  JUNCTION     0.01     0.04   267.64     0  00:05        0.04\n  S04                  JUNCTION     0.00     0.02   268.22     0  00:10        0.02\n  S05                  JUNCTION     0.00     0.01   267.59     0  00:05        0.01\n  S05-1                JUNCTION     0.00     0.02   266.29     0  00:06        0.02\n  S06                  JUNCTION     0.00     0.02   265.47     0  00:06        0.02\n  S07                  JUNCTION     0.01     0.03   262.74     0  00:07        0.03\n  S08                  JUNCTION     0.00     0.01   263.60     0  00:06        0.01\n  S09                  JUNCTION     0.00     0.01   264.08     0  00:05        0.01\n  S10                  JUNCTION     0.00     0.01   267.15     0  00:05        0.01\n  S11                  JUNCTION     0.00     0.01   267.45     0  00:05        0.01\n  Zisterne-1           JUNCTION     0.00     0.00   266.70     0  00:00        0.00\n  Zisterne-3           JUNCTION     0.00     0.00   266.49     0  00:00        0.00\n  Zisterne_3           JUNCTION     0.00     0.00   265.27     0  00:00        0.00\n  06001                JUNCTION     0.00     0.01   263.60     0  00:05        0.01\n  06002                JUNCTION     0.00     0.02   267.30     0  00:05        0.02\n  06003                JUNCTION     0.00     0.00   267.41     0  00:00        0.00\n  06004                JUNCTION     0.00     0.00   267.95     0  00:00        0.00\n  06005                JUNCTION     0.00     0.00   268.86     0  00:00        0.00\n  06005.2              JUNCTION     0.00     0.00   269.03     0  00:00        0.00\n  06006                JUNCTION     0.00     0.00   270.06     0  00:00        0.00\n  FK019                JUNCTION     0.00     0.00   268.35     0  00:00        0.00\n  GA001                JUNCTION     0.00     0.00   268.11     0  00:00        0.00\n  GA002                JUNCTION     0.00     0.00   268.00     0  00:00        0.00\n  GA003                JUNCTION     0.00     0.00   267.91     0  00:00        0.00\n  BE001                JUNCTION     0.00     0.00   268.90     0  00:00        0.00\n  BE002                JUNCTION     0.00     0.00   268.87     0  00:00        0.00\n  BE003                JUNCTION     0.00     0.00   268.83     0  00:00        0.00\n  BE004                JUNCTION     0.00     0.00   268.80     0  00:00        0.00\n  BE005                JUNCTION     0.00     0.00   268.76     0  00:00        0.00\n  BE006                JUNCTION     0.00     0.00   268.72     0  00:00        0.00\n  BE007                JUNCTION     0.00     0.00   268.69     0  00:00        0.00\n  BE008                JUNCTION     0.00     0.00   268.64     0  00:00        0.00\n  BE010                JUNCTION     0.00     0.00   268.96     0  00:00        0.00\n  BE011                JUNCTION     0.00     0.00   268.99     0  00:00        0.00\n  BE012                JUNCTION     0.00     0.00   268.98     0  00:00        0.00\n  BE013                JUNCTION     0.00     0.00   268.48     0  00:00        0.00\n  BE014                JUNCTION     0.00     0.00   267.31     0  00:00        0.00\n  BE015                JUNCTION     0.00     0.00   268.58     0  00:00        0.00\n  SE016                JUNCTION     0.00     0.00   268.54     0  00:00        0.00\n  SE017                JUNCTION     0.00     0.00   268.48     0  00:00        0.00\n  SE018                JUNCTION     0.00     0.00   268.21     0  00:00        0.00\n  S01AP01              JUNCTION     0.00     0.00   265.26     0  00:00        0.00\n  FK006AP01            JUNCTION     0.00     0.00   268.33     0  00:00        0.00\n  S04AP01              JUNCTION     0.00     0.00   268.06     0  00:00        0.00\n  S04AP02              JUNCTION     0.00     0.00   267.95     0  00:00        0.00\n  S04AP03              JUNCTION     0.00     0.00   267.86     0  00:00        0.00\n  S00AP01              JUNCTION     0.00     0.00   265.24     0  00:00        0.00\n  S10AP01              JUNCTION     0.00     0.00   264.38     0  00:00        0.00\n  06002AP01            JUNCTION     1.86     2.00   266.73     0  00:11        2.00\n  FK012                OUTFALL      0.00     0.03   260.03     0  00:07        0.03\n  FK013                OUTFALL      0.00     0.01   262.23     0  00:05        0.01\n  \n  \n  *******************\n  Node Inflow Summary\n  *******************\n  \n  -------------------------------------------------------------------------------------------------\n                                  Maximum  Maximum                  Lateral       Total        Flow\n                                  Lateral    Total  Time of Max      Inflow      Inflow     Balance\n                                   Inflow   Inflow   Occurrence      Volume      Volume       Error\n  Node                 Type           CMS      CMS  days hr:min    10^6 ltr    10^6 ltr     Percent\n  -------------------------------------------------------------------------------------------------\n  FK003                JUNCTION     0.001    0.002     0  00:05    0.000419     0.00128      51.850\n  FK004                JUNCTION     0.001    0.002     0  00:05    0.000429    0.000774       8.453\n  FK005                JUNCTION     0.000    0.001     0  00:07           0    0.000642       0.426\n  FK007                JUNCTION     0.000    0.001     0  00:09    0.000133    0.000772       0.152\n  FK008                JUNCTION     0.001    0.001     0  00:04    0.000429    0.000501       0.000\n  FK009                JUNCTION     0.001    0.001     0  00:04    0.000384     0.00123       0.000\n  FK010                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  FK011                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  F001                 JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S00                  JUNCTION     0.001    0.007     0  00:06    0.000344     0.00314      30.174\n  S00-1                JUNCTION     0.000    0.008     0  00:05           0     0.00248      29.506\n  S01                  JUNCTION     0.002    0.005     0  00:05     0.00103     0.00334      20.273\n  S02                  JUNCTION     0.001    0.003     0  00:05    0.000765     0.00229      -0.224\n  S03                  JUNCTION     0.001    0.002     0  00:05    0.000353     0.00153       0.190\n  S04                  JUNCTION     0.001    0.001     0  00:10    0.000407     0.00118      -0.153\n  S05                  JUNCTION     0.001    0.001     0  00:05    0.000513    0.000513      -0.126\n  S05-1                JUNCTION     0.001    0.001     0  00:05    0.000513     0.00103       0.144\n  S06                  JUNCTION     0.002    0.003     0  00:06     0.00242     0.00344      -0.003\n  S07                  JUNCTION     0.002    0.006     0  00:06     0.00242     0.00626      -0.020\n  S08                  JUNCTION     0.000    0.001     0  00:05           0    0.000404       0.317\n  S09                  JUNCTION     0.000    0.001     0  00:05           0    0.000405       0.069\n  S10                  JUNCTION     0.000    0.001     0  00:05    0.000202    0.000404      -0.111\n  S11                  JUNCTION     0.000    0.000     0  00:05    0.000202    0.000202       0.306\n  Zisterne-1           JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  Zisterne-3           JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  Zisterne_3           JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  06001                JUNCTION     0.002    0.004     0  00:05    0.000941     0.00188      -0.330\n  06002                JUNCTION     0.002    0.002     0  00:05    0.000941    0.000941       0.052\n  06003                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  06004                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  06005                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  06005.2              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  06006                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  FK019                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  GA001                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  GA002                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  GA003                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE001                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE002                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE003                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE004                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE005                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE006                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE007                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE008                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE010                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE011                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE012                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE013                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE014                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  BE015                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  SE016                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  SE017                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  SE018                JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S01AP01              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  FK006AP01            JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S04AP01              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S04AP02              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S04AP03              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S00AP01              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  S10AP01              JUNCTION     0.000    0.000     0  00:00           0           0       0.000 ltr\n  06002AP01            JUNCTION     0.000    0.006     0  00:05           0      0.0019       0.000\n  FK012                OUTFALL      0.000    0.006     0  00:07           0     0.00626       0.000\n  FK013                OUTFALL      0.000    0.004     0  00:05           0     0.00189       0.000\n  \n  \n  **********************\n  Node Surcharge Summary\n  **********************\n  \n  Surcharging occurs when water rises above the top of the highest conduit.\n  ---------------------------------------------------------------------\n                                               Max. Height   Min. Depth\n                                   Hours       Above Crown    Below Rim\n  Node                 Type      Surcharged         Meters       Meters\n  ---------------------------------------------------------------------\n  S00                  JUNCTION        5.82          1.336        0.464\n  S00-1                JUNCTION        5.90          1.759        0.041\n  S01                  JUNCTION        5.82          1.331        0.469\n  Zisterne-1           JUNCTION        6.00          0.000        2.000\n  Zisterne-3           JUNCTION        6.00          0.000        2.000\n  06002AP01            JUNCTION        5.91          1.800        0.000\n  \n  \n  *********************\n  Node Flooding Summary\n  *********************\n  \n  Flooding refers to all water that overflows a node, whether it ponds or not.\n  --------------------------------------------------------------------------\n                                                             Total   Maximum\n                                 Maximum   Time of Max       Flood    Ponded\n                        Hours       Rate    Occurrence      Volume     Depth\n  Node                 Flooded       CMS   days hr:min    10^6 ltr    Meters\n  --------------------------------------------------------------------------\n  06002AP01               2.61     0.003      0  00:11       0.002     0.000\n  \n  \n  ***********************\n  Outfall Loading Summary\n  ***********************\n  \n  -----------------------------------------------------------\n                         Flow       Avg       Max       Total\n                         Freq      Flow      Flow      Volume\n  Outfall Node           Pcnt       CMS       CMS    10^6 ltr\n  -----------------------------------------------------------\n  FK012                 47.32     0.001     0.006       0.006\n  FK013                 24.11     0.001     0.004       0.002\n  -----------------------------------------------------------\n  System                35.72     0.002     0.008       0.008\n  \n  \n  ********************\n  Link Flow Summary\n  ********************\n  \n  -----------------------------------------------------------------------------\n                                 Maximum  Time of Max   Maximum    Max/    Max/\n                                  |Flow|   Occurrence   |Veloc|    Full    Full\n  Link                 Type          CMS  days hr:min     m/sec    Flow   Depth\n  -----------------------------------------------------------------------------\n  BE008                CONDUIT     0.000     0  00:00      0.00    0.00    0.28\n  BE009                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  FK003                CONDUIT     0.001     0  00:05      0.10    0.05    0.68\n  FK004                CONDUIT     0.001     0  00:05      0.11    0.05    0.45\n  FK006                CONDUIT     0.001     0  00:09      0.41    0.08    0.21\n  FK005                CONDUIT     0.001     0  00:07      0.17    0.05    0.21\n  FK008                CONDUIT     0.001     0  00:11      0.41    0.07    0.16\n  FK010                CONDUIT     0.000     0  00:00      0.00    0.00    0.07\n  FK011                CONDUIT     0.000     0  00:00      0.00    0.00    0.07\n  S07                  CONDUIT     0.000     0  00:00      0.00    0.00    0.03\n  S00                  CONDUIT     0.005     0  00:05      0.89    0.10    1.00\n  S01                  CONDUIT     0.005     0  00:05      0.61    0.41    1.00\n  S02                  CONDUIT     0.003     0  00:05      0.49    0.02    0.54\n  S03                  CONDUIT     0.002     0  00:05      0.57    0.07    0.14\n  S04                  CONDUIT     0.001     0  00:10      0.47    0.04    0.19\n  S05                  CONDUIT     0.001     0  00:05      0.48    0.01    0.07\n  S05-1                CONDUIT     0.001     0  00:06      0.66    0.01    0.08\n  S06                  CONDUIT     0.003     0  00:06      1.16    0.01    0.08\n  S12                  CONDUIT     0.006     0  00:07      1.13    0.00    0.05\n  S08                  CONDUIT     0.001     0  00:06      0.28    0.00    0.07\n  S09                  CONDUIT     0.001     0  00:05      0.71    0.01    0.07\n  S10                  CONDUIT     0.001     0  00:05      0.83    0.01    0.06\n  S11                  CONDUIT     0.000     0  00:05      0.43    0.01    0.06\n  06001                CONDUIT     0.004     0  00:05      2.01    0.00    0.02\n  06002                CONDUIT     0.002     0  00:05      1.09    0.00    0.04\n  06003                CONDUIT     0.000     0  00:00      0.00    0.00    0.02\n  06004                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  06005                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  06005.2              CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  06006                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE001                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE002                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE003                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE004                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE005                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE006                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE007                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE010                CONDUIT     0.000     0  00:00      0.00    0.00    0.05\n  BE011                CONDUIT     0.000     0  00:00      0.00    0.00    0.05\n  BE012                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  BE013                CONDUIT     0.000     0  00:00      0.00    0.00    0.06\n  BE014                CONDUIT     0.000     0  00:00      0.00    0.00    0.07\n  BE015                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  FK019                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  GA001                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  GA002                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  GA003                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  SE016                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  SE017                CONDUIT     0.000     0  00:00      0.00    0.00    0.00\n  SE018                CONDUIT     0.000     0  00:00      0.00    0.00    0.05\n  S00-1                CONDUIT     0.006     0  00:05      0.60    0.16    1.00\n  \n  \n  ***************************\n  Flow Classification Summary\n  ***************************\n  \n  -------------------------------------------------------------------------------------\n                      Adjusted    ---------- Fraction of Time in Flow Class ---------- \n                       /Actual         Up    Down  Sub   Sup   Up    Down  Norm  Inlet \n  Conduit               Length    Dry  Dry   Dry   Crit  Crit  Crit  Crit  Ltd   Ctrl  \n  -------------------------------------------------------------------------------------\n  BE008                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE009                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  FK003                   1.00   0.00  0.00  0.00  1.00  0.00  0.00  0.00  0.01  0.00\n  FK004                   1.00   0.00  0.00  0.00  1.00  0.00  0.00  0.00  0.01  0.00\n  FK006                   1.00   0.00  0.01  0.00  0.98  0.00  0.00  0.00  0.98  0.00\n  FK005                   1.00   0.00  0.01  0.00  0.99  0.00  0.00  0.00  0.03  0.00\n  FK008                   1.00   0.00  0.00  0.00  0.97  0.03  0.00  0.00  0.02  0.00\n  FK010                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  FK011                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  S07                     1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  S00                     1.00   0.00  0.00  0.00  0.99  0.01  0.00  0.00  0.01  0.00\n  S01                     1.00   0.00  0.00  0.00  1.00  0.00  0.00  0.00  0.00  0.00\n  S02                     1.00   0.00  0.05  0.00  0.95  0.00  0.00  0.00  1.00  0.00\n  S03                     1.00   0.00  0.00  0.00  0.82  0.18  0.00  0.00  0.00  0.00\n  S04                     1.00   0.00  0.00  0.00  0.96  0.04  0.00  0.00  1.00  0.00\n  S05                     1.00   0.00  0.00  0.00  0.84  0.16  0.00  0.00  0.74  0.00\n  S05-1                   1.00   0.00  0.00  0.00  0.88  0.12  0.00  0.00  0.82  0.00\n  S06                     1.00   0.00  0.00  0.00  0.08  0.92  0.00  0.00  0.89  0.00\n  S12                     1.00   0.00  0.00  0.00  0.13  0.87  0.00  0.00  0.05  0.00\n  S08                     1.00   0.00  0.04  0.00  0.95  0.00  0.00  0.00  0.99  0.00\n  S09                     1.00   0.00  0.00  0.00  0.68  0.32  0.00  0.00  0.12  0.00\n  S10                     1.00   0.00  0.00  0.00  0.73  0.27  0.00  0.00  0.99  0.00\n  S11                     1.00   0.00  0.00  0.00  0.88  0.11  0.00  0.00  0.01  0.00\n  06001                   1.00   0.18  0.01  0.00  0.61  0.19  0.00  0.00  0.01  0.00\n  06002                   1.00   0.00  0.00  0.00  0.69  0.31  0.00  0.00  0.58  0.00\n  06003                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  06004                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  06005                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  06005.2                 1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  06006                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE001                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE002                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE003                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE004                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE005                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE006                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE007                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE010                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE011                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE012                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE013                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE014                   1.00   0.00  1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  BE015                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  FK019                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  GA001                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  GA002                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  GA003                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  SE016                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  SE017                   1.00   1.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  SE018                   1.00   0.05  0.95  0.00  0.00  0.00  0.00  0.00  0.00  0.00\n  S00-1                   1.00   0.00  0.00  0.00  0.99  0.01  0.00  0.00  0.00  0.00\n  \n  \n  *************************\n  Conduit Surcharge Summary\n  *************************\n  \n  ----------------------------------------------------------------------------\n                                                           Hours        Hours \n                         --------- Hours Full --------   Above Full   Capacity\n  Conduit                Both Ends  Upstream  Dnstream   Normal Flow   Limited\n  ----------------------------------------------------------------------------\n  S00                         5.82      5.82      5.90      0.01         0.01\n  S01                         5.82      5.82      5.82      0.01         0.01\n  S02                         0.01      0.01      5.82      0.01         0.01\n  S00-1                       5.90      5.90      5.91      0.01         0.01\n  \n\n  Analysis begun on:  Fri Dec 12 09:21:08 2025\n  Analysis ended on:  Fri Dec 12 09:21:09 2025\n  Total elapsed time: 00:00:01",
+    "inputInp": "[TITLE]\nWeb Simulation Output\n[OPTIONS]\nFLOW_UNITS CMS\nINFILTRATION HORTON\nFLOW_ROUTING DYNWAVE\nSTART_DATE 01/01/2024\nSTART_TIME 00:00:00\nEND_DATE   01/01/2024\nEND_TIME   06:00:00\nREPORT_STEP 00:01:00\nWET_STEP    00:01:00\nDRY_STEP    00:01:00\nROUTING_STEP 00:00:05\nALLOW_PONDING YES\nSKIP_STEADY_STATE NO\n\n[RAINGAGES]\n;;Name           Format    Interval SCF      Source    \n;;-------------- --------- ------ ------ ----------\nRG1              INTENSITY 0:05     1.0      TIMESERIES default_rain\n\n[SUBCATCHMENTS]\n;;Name           RainGage         Outlet           Area     %Imperv  Width    Slope    CurbLen\n;;-------------- ---------------- ---------------- -------- -------- -------- -------- --------\nDA17             RG1              FK003            0.0046   90.00    6.75     0.50     0\nDA17_2           RG1              FK009            0.0046   90.00    6.75     0.50     0\nDA18             RG1              FK003            0.0073   90.00    8.51     0.50     0\nDA18_2           RG1              FK009            0.0073   90.00    8.51     0.50     0\nDA19             RG1              FK003            0.0087   90.00    9.33     0.50     0\nDA19_2           RG1              FK009            0.0058   90.00    7.62     0.50     0\nDA20             RG1              FK003            0.0073   90.00    8.51     0.50     0\nDA20_2           RG1              FK009            0.0073   90.00    8.51     0.50     0\nDA30             RG1              FK003            0.0073   90.00    8.51     0.50     0\nDA30_2           RG1              FK009            0.0073   90.00    8.51     0.50     0\nDA12             RG1              FK004            0.0073   90.00    8.51     0.50     0\nDA12_2           RG1              FK008            0.0073   90.00    8.51     0.50     0\nDa13             RG1              FK004            0.0073   90.00    8.51     0.50     0\nDa13_2           RG1              FK008            0.0073   90.00    8.51     0.50     0\nDA14             RG1              FK004            0.0073   90.00    8.51     0.50     0\nDA14_2           RG1              FK008            0.0073   90.00    8.51     0.50     0\nDA15             RG1              FK004            0.0073   90.00    8.51     0.50     0\nDA15_2           RG1              FK008            0.0073   90.00    8.51     0.50     0\nDA16             RG1              FK004            0.0069   90.00    8.34     0.50     0\nDA16_2           RG1              FK008            0.0069   90.00    8.34     0.50     0\nDA05             RG1              FK007            0.0059   90.00    7.68     0.50     0\nDA05_2           RG1              S04              0.0059   90.00    7.68     0.50     0\nDA06             RG1              FK007            0.0053   90.00    7.28     0.50     0\nDA06_2           RG1              S04              0.0053   90.00    7.28     0.50     0\nDA30_1           RG1              S01              0.0042   90.00    6.48     0.50     0\nDA30_1_2         RG1              S00              0.0042   90.00    6.48     0.50     0\nDA31             RG1              S01              0.0050   90.00    7.04     0.50     0\nDA31_2           RG1              S00              0.0050   90.00    7.04     0.50     0\nDA32             RG1              S01              0.0054   90.00    7.35     0.50     0\nDA32_2           RG1              S00              0.0054   90.00    7.35     0.50     0\nDA33             RG1              S01              0.0043   90.00    6.60     0.50     0\nDA33_2           RG1              S00              0.0043   90.00    6.60     0.50     0\nDA34             RG1              S01              0.0040   90.00    6.28     0.50     0\nDA34_2           RG1              S00              0.0040   90.00    6.28     0.50     0\nDA35             RG1              S01              0.0060   90.00    7.75     0.50     0\nDA35_2           RG1              S00              0.0060   90.00    7.75     0.50     0\nDA07             RG1              S02              0.0107   90.00    10.37    0.50     0\nDA07_2           RG1              S01              0.0107   90.00    10.37    0.50     0\nDA08             RG1              S02              0.0121   90.00    11.02    0.50     0\nDA08_2           RG1              S01              0.0121   90.00    11.02    0.50     0\nDA09             RG1              S02              0.0177   90.00    13.32    0.50     0\nDA09_2           RG1              S01              0.0177   90.00    13.32    0.50     0\nDA10             RG1              S02              0.0057   90.00    7.58     0.50     0\nDA10_2           RG1              S01              0.0057   90.00    7.58     0.50     0\nDA11             RG1              S02              0.0116   90.00    10.77    0.50     0\nDA11_2           RG1              S01              0.0116   90.00    10.77    0.50     0\nDA01             RG1              S03              0.0067   90.00    8.19     0.50     0\nDA01_2           RG1              S02              0.0067   90.00    8.19     0.50     0\nDA02             RG1              S04              0.0046   90.00    6.75     0.50     0\nDA02_2           RG1              S03              0.0046   90.00    6.75     0.50     0\nDA03             RG1              S04              0.0069   90.00    8.34     0.50     0\nDA03_2           RG1              S03              0.0069   90.00    8.34     0.50     0\nDA04             RG1              S04              0.0115   90.00    10.70    0.50     0\nDA04_2           RG1              S03              0.0115   90.00    10.70    0.50     0\nDA19_1           RG1              S05              0.0436   90.00    20.88    0.50     0\nDA19_1_2         RG1              S05-1            0.0436   90.00    20.88    0.50     0\nDA17_1           RG1              S06              0.2086   90.00    45.67    0.50     0\nDA17_1_2         RG1              S07              0.2086   90.00    45.67    0.50     0\nDA18_1           RG1              S11              0.0171   90.00    13.10    0.50     0\nDA18_1_2         RG1              S10              0.0171   90.00    13.10    0.50     0\nDA20_1           RG1              06002            0.0192   90.00    13.87    0.50     0\nDA20_1_2         RG1              06001            0.0192   90.00    13.87    0.50     0\nDA21             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA21_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA22             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA22_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA23             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA23_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA24             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA24_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA25             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA25_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA26             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA26_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA27             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA27_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA28             RG1              06002            0.0066   90.00    8.15     0.50     0\nDA28_2           RG1              06001            0.0066   90.00    8.15     0.50     0\nDA29             RG1              06002            0.0072   90.00    8.46     0.50     0\nDA29_2           RG1              06001            0.0072   90.00    8.46     0.50     0\n\n[SUBAREAS]\n;;Subcatchment   N-Imperv   N-Perv     S-Imperv   S-Perv     PctZero    RouteTo    PctRouted\n;;-------------- ---------- ---------- ---------- ---------- ---------- ---------- ----------\nDA17             0.01       0.1        0.05       0.05       25         OUTLET    \nDA17_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA18             0.01       0.1        0.05       0.05       25         OUTLET    \nDA18_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA19             0.01       0.1        0.05       0.05       25         OUTLET    \nDA19_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA20             0.01       0.1        0.05       0.05       25         OUTLET    \nDA20_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA30             0.01       0.1        0.05       0.05       25         OUTLET    \nDA30_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA12             0.01       0.1        0.05       0.05       25         OUTLET    \nDA12_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDa13             0.01       0.1        0.05       0.05       25         OUTLET    \nDa13_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA14             0.01       0.1        0.05       0.05       25         OUTLET    \nDA14_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA15             0.01       0.1        0.05       0.05       25         OUTLET    \nDA15_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA16             0.01       0.1        0.05       0.05       25         OUTLET    \nDA16_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA05             0.01       0.1        0.05       0.05       25         OUTLET    \nDA05_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA06             0.01       0.1        0.05       0.05       25         OUTLET    \nDA06_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA30_1           0.01       0.1        0.05       0.05       25         OUTLET    \nDA30_1_2         0.01       0.1        0.05       0.05       25         OUTLET    \nDA31             0.01       0.1        0.05       0.05       25         OUTLET    \nDA31_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA32             0.01       0.1        0.05       0.05       25         OUTLET    \nDA32_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA33             0.01       0.1        0.05       0.05       25         OUTLET    \nDA33_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA34             0.01       0.1        0.05       0.05       25         OUTLET    \nDA34_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA35             0.01       0.1        0.05       0.05       25         OUTLET    \nDA35_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA07             0.01       0.1        0.05       0.05       25         OUTLET    \nDA07_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA08             0.01       0.1        0.05       0.05       25         OUTLET    \nDA08_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA09             0.01       0.1        0.05       0.05       25         OUTLET    \nDA09_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA10             0.01       0.1        0.05       0.05       25         OUTLET    \nDA10_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA11             0.01       0.1        0.05       0.05       25         OUTLET    \nDA11_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA01             0.01       0.1        0.05       0.05       25         OUTLET    \nDA01_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA02             0.01       0.1        0.05       0.05       25         OUTLET    \nDA02_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA03             0.01       0.1        0.05       0.05       25         OUTLET    \nDA03_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA04             0.01       0.1        0.05       0.05       25         OUTLET    \nDA04_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA19_1           0.01       0.1        0.05       0.05       25         OUTLET    \nDA19_1_2         0.01       0.1        0.05       0.05       25         OUTLET    \nDA17_1           0.01       0.1        0.05       0.05       25         OUTLET    \nDA17_1_2         0.01       0.1        0.05       0.05       25         OUTLET    \nDA18_1           0.01       0.1        0.05       0.05       25         OUTLET    \nDA18_1_2         0.01       0.1        0.05       0.05       25         OUTLET    \nDA20_1           0.01       0.1        0.05       0.05       25         OUTLET    \nDA20_1_2         0.01       0.1        0.05       0.05       25         OUTLET    \nDA21             0.01       0.1        0.05       0.05       25         OUTLET    \nDA21_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA22             0.01       0.1        0.05       0.05       25         OUTLET    \nDA22_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA23             0.01       0.1        0.05       0.05       25         OUTLET    \nDA23_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA24             0.01       0.1        0.05       0.05       25         OUTLET    \nDA24_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA25             0.01       0.1        0.05       0.05       25         OUTLET    \nDA25_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA26             0.01       0.1        0.05       0.05       25         OUTLET    \nDA26_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA27             0.01       0.1        0.05       0.05       25         OUTLET    \nDA27_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA28             0.01       0.1        0.05       0.05       25         OUTLET    \nDA28_2           0.01       0.1        0.05       0.05       25         OUTLET    \nDA29             0.01       0.1        0.05       0.05       25         OUTLET    \nDA29_2           0.01       0.1        0.05       0.05       25         OUTLET    \n\n[INFILTRATION]\n;;Subcatchment   MaxRate    MinRate    Decay      DryTime    MaxInfil\n;;-------------- ---------- ---------- ---------- ---------- ----------\nDA17             3.0        0.5        4.0        7.0        0\nDA17_2           3.0        0.5        4.0        7.0        0\nDA18             3.0        0.5        4.0        7.0        0\nDA18_2           3.0        0.5        4.0        7.0        0\nDA19             3.0        0.5        4.0        7.0        0\nDA19_2           3.0        0.5        4.0        7.0        0\nDA20             3.0        0.5        4.0        7.0        0\nDA20_2           3.0        0.5        4.0        7.0        0\nDA30             3.0        0.5        4.0        7.0        0\nDA30_2           3.0        0.5        4.0        7.0        0\nDA12             3.0        0.5        4.0        7.0        0\nDA12_2           3.0        0.5        4.0        7.0        0\nDa13             3.0        0.5        4.0        7.0        0\nDa13_2           3.0        0.5        4.0        7.0        0\nDA14             3.0        0.5        4.0        7.0        0\nDA14_2           3.0        0.5        4.0        7.0        0\nDA15             3.0        0.5        4.0        7.0        0\nDA15_2           3.0        0.5        4.0        7.0        0\nDA16             3.0        0.5        4.0        7.0        0\nDA16_2           3.0        0.5        4.0        7.0        0\nDA05             3.0        0.5        4.0        7.0        0\nDA05_2           3.0        0.5        4.0        7.0        0\nDA06             3.0        0.5        4.0        7.0        0\nDA06_2           3.0        0.5        4.0        7.0        0\nDA30_1           3.0        0.5        4.0        7.0        0\nDA30_1_2         3.0        0.5        4.0        7.0        0\nDA31             3.0        0.5        4.0        7.0        0\nDA31_2           3.0        0.5        4.0        7.0        0\nDA32             3.0        0.5        4.0        7.0        0\nDA32_2           3.0        0.5        4.0        7.0        0\nDA33             3.0        0.5        4.0        7.0        0\nDA33_2           3.0        0.5        4.0        7.0        0\nDA34             3.0        0.5        4.0        7.0        0\nDA34_2           3.0        0.5        4.0        7.0        0\nDA35             3.0        0.5        4.0        7.0        0\nDA35_2           3.0        0.5        4.0        7.0        0\nDA07             3.0        0.5        4.0        7.0        0\nDA07_2           3.0        0.5        4.0        7.0        0\nDA08             3.0        0.5        4.0        7.0        0\nDA08_2           3.0        0.5        4.0        7.0        0\nDA09             3.0        0.5        4.0        7.0        0\nDA09_2           3.0        0.5        4.0        7.0        0\nDA10             3.0        0.5        4.0        7.0        0\nDA10_2           3.0        0.5        4.0        7.0        0\nDA11             3.0        0.5        4.0        7.0        0\nDA11_2           3.0        0.5        4.0        7.0        0\nDA01             3.0        0.5        4.0        7.0        0\nDA01_2           3.0        0.5        4.0        7.0        0\nDA02             3.0        0.5        4.0        7.0        0\nDA02_2           3.0        0.5        4.0        7.0        0\nDA03             3.0        0.5        4.0        7.0        0\nDA03_2           3.0        0.5        4.0        7.0        0\nDA04             3.0        0.5        4.0        7.0        0\nDA04_2           3.0        0.5        4.0        7.0        0\nDA19_1           3.0        0.5        4.0        7.0        0\nDA19_1_2         3.0        0.5        4.0        7.0        0\nDA17_1           3.0        0.5        4.0        7.0        0\nDA17_1_2         3.0        0.5        4.0        7.0        0\nDA18_1           3.0        0.5        4.0        7.0        0\nDA18_1_2         3.0        0.5        4.0        7.0        0\nDA20_1           3.0        0.5        4.0        7.0        0\nDA20_1_2         3.0        0.5        4.0        7.0        0\nDA21             3.0        0.5        4.0        7.0        0\nDA21_2           3.0        0.5        4.0        7.0        0\nDA22             3.0        0.5        4.0        7.0        0\nDA22_2           3.0        0.5        4.0        7.0        0\nDA23             3.0        0.5        4.0        7.0        0\nDA23_2           3.0        0.5        4.0        7.0        0\nDA24             3.0        0.5        4.0        7.0        0\nDA24_2           3.0        0.5        4.0        7.0        0\nDA25             3.0        0.5        4.0        7.0        0\nDA25_2           3.0        0.5        4.0        7.0        0\nDA26             3.0        0.5        4.0        7.0        0\nDA26_2           3.0        0.5        4.0        7.0        0\nDA27             3.0        0.5        4.0        7.0        0\nDA27_2           3.0        0.5        4.0        7.0        0\nDA28             3.0        0.5        4.0        7.0        0\nDA28_2           3.0        0.5        4.0        7.0        0\nDA29             3.0        0.5        4.0        7.0        0\nDA29_2           3.0        0.5        4.0        7.0        0\n\n[JUNCTIONS]\n;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded\n;;-------------- ---------- ---------- ---------- ---------- ----------\nFK003            268.543    2.000      0          0.000      0\nFK004            268.547    2.000      0          0.000      0\nFK005            268.576    2.000      0          0.000      0\nFK007            268.295    2.000      0          0.000      0\nFK008            268.491    2.000      0          0.000      0\nFK009            268.491    2.000      0          0.000      0\nFK010            262.800    2.000      0          0.000      0\nFK011            262.800    2.000      0          0.000      0\nF001             267.852    2.000      0          0.000      0\nS00              265.254    2.000      0          0.000      0\nS00-1            264.792    2.000      0          0.000      0\nS01              265.273    2.000      0          0.000      0\nS02              267.528    2.000      0          0.000      0\nS03              267.601    2.000      0          0.000      0\nS04              268.203    2.000      0          0.000      0\nS05              267.580    2.000      0          0.000      0\nS05-1            266.270    2.000      0          0.000      0\nS06              265.451    2.000      0          0.000      0\nS07              262.710    2.000      0          0.000      0\nS08              263.583    2.000      0          0.000      0\nS09              264.066    2.000      0          0.000      0\nS10              267.144    2.000      0          0.000      0\nS11              267.440    2.000      0          0.000      0\nZisterne-1       266.703    2.000      0          0.000      0\nZisterne-3       266.490    2.000      0          0.000      0\nZisterne_3       265.268    2.000      0          0.000      0\n06001            263.590    2.000      0          100.000    0\n06002            267.280    2.000      0          0.000      0\n06003            267.410    2.000      0          0.000      0\n06004            267.950    2.000      0          0.000      0\n06005            268.860    2.000      0          0.000      0\n06005.2          269.030    2.000      0          0.000      0\n06006            270.060    2.000      0          0.000      0\nFK019            268.345    2.000      0          0.000      0\nGA001            268.113    2.000      0          0.000      0\nGA002            268.000    2.000      0          0.000      0\nGA003            267.913    2.000      0          0.000      0\nBE001            268.900    2.000      0          0.000      0\nBE002            268.872    2.000      0          0.000      0\nBE003            268.829    2.000      0          0.000      0\nBE004            268.796    2.000      0          0.000      0\nBE005            268.764    2.000      0          0.000      0\nBE006            268.720    2.000      0          0.000      0\nBE007            268.690    2.000      0          0.000      0\nBE008            268.640    2.000      0          0.000      0\nBE010            268.965    2.000      0          0.000      0\nBE011            268.993    2.000      0          0.000      0\nBE012            268.981    2.000      0          0.000      0\nBE013            268.480    2.000      0          0.000      0\nBE014            267.309    2.000      0          0.000      0\nBE015            268.578    2.000      0          0.000      0\nSE016            268.544    2.000      0          0.000      0\nSE017            268.476    2.000      0          0.000      0\nSE018            268.208    2.000      0          0.000      0\nS01AP01          265.260    2.000      0          0.000      0\nFK006AP01        268.329    2.000      0          0.000      0\nS04AP01          268.060    2.000      0          0.000      0\nS04AP02          267.949    2.000      0          0.000      0\nS04AP03          267.864    2.000      0          0.000      0\nS00AP01          265.240    2.000      0          0.000      0\nS10AP01          264.380    2.000      0          0.000      0\n06002AP01        264.726    2.000      0          0.000      0\n\n[OUTFALLS]\n;;Name           Elevation  Type       Stage Data       Gated    RouteTo\n;;-------------- ---------- ---------- ---------------- -------- ----------------\nFK012            260.000    FREE\nFK013            262.213    FREE\n\n[STORAGE]\n;;Name           Elev       MaxDepth   InitDepth  Shape      Curve Name/Params            SurDepth  Fevap\n;;-------------- ---------- ---------- ---------- ---------- ---------------------------- ----------------\n\n[COORDINATES]\n;;Node           X-Coord    Y-Coord\n;;-------------- ---------- ----------\nFK003            370680.254 5461047.098\nFK004            370631.467 5461024.557\nFK005            370615.882 5461021.876\nFK007            370578.702 5461004.286\nFK008            370654.478 5461034.833\nFK009            370655.863 5461035.505\nFK010            370735.750 5460996.328\nFK011            370756.098 5461005.691\nF001             370756.238 5461090.827\nS00              370656.806 5460967.121\nS00-1            370680.846 5460975.868\nS01              370637.903 5460959.633\nS02              370624.469 5460953.616\nS03              370601.677 5460954.471\nS04              370589.758 5460980.313\nS05              370762.211 5461088.410\nS05-1            370782.377 5461038.171\nS06              370770.120 5461003.522\nS07              370752.303 5460989.595\nS08              370722.334 5460978.378\nS09              370707.930 5460986.943\nS10              370694.513 5461014.044\nS11              370682.121 5461040.275\nZisterne-1       370618.898 5461019.266\nZisterne-3       370692.358 5461050.843\nZisterne_3       370762.545 5461076.405\n06001            370693.024 5460962.342\n06002            370674.453 5461003.389\n06003            370668.843 5461004.982\n06004            370655.158 5461035.179\n06005            370646.392 5461053.335\n06005.2          370650.643 5461057.712\n06006            370615.967 5461114.826\nFK019            370580.073 5461006.052\nGA001            370596.043 5460975.503\nGA002            370598.064 5460970.783\nGA003            370599.670 5460966.950\nBE001            370694.492 5461066.139\nBE002            370700.390 5461068.798\nBE003            370706.224 5461071.430\nBE004            370712.214 5461074.130\nBE005            370716.516 5461076.071\nBE006            370725.568 5461080.153\nBE007            370732.624 5461083.335\nBE008            370740.391 5461086.838\nBE010            370755.836 5461089.137\nBE011            370747.170 5461087.859\nBE012            370759.658 5461076.742\nBE013            370785.489 5461040.437\nBE014            370789.939 5461002.693\nBE015            370652.293 5460968.150\nSE016            370656.791 5460970.461\nSE017            370707.095 5460990.026\nSE018            370714.236 5460973.525\nS01AP01          370654.003 5460966.010\nFK006AP01        370579.889 5461004.847\nS04AP01          370592.580 5460974.192\nS04AP02          370594.792 5460969.397\nS04AP03          370596.472 5460965.755\nS00AP01          370657.761 5460967.468\nS10AP01          370706.561 5460989.707\n06002AP01        370687.304 5460974.984\nFK012            370772.508 5460941.762\nFK013            370694.242 5460959.276\n\n[CONDUITS]\n;;Name           Node1          Node2          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow\n;;-------------- -------------- -------------- ---------- ---------- ---------- ---------- ---------- ----------\nBE008            BE001          FK003          23.780     0.0111     0.000      0.000      0          0\nBE009            BE008          F001           16.360     0.0111     0.000      0.000      0          0\nFK003            FK003          FK009          27.010     0.0111     0.000      0.000      0          0\nFK004            FK004          FK008          25.200     0.0111     0.000      0.000      0          0\nFK006            FK005          FK007          41.130     0.0111     0.000      0.000      0          0\nFK005            FK005          FK004          15.810     0.0111     0.000      0.000      0          0\nFK008            FK007          S04            26.400     0.0111     0.000      0.000      0          0\nFK010            FK010          S07            17.870     0.0111     0.000      0.000      0          0\nFK011            FK011          S07            16.540     0.0111     0.000      0.000      0          0\nS07              F001           S05            6.450      0.0111     0.000      0.000      0          0\nS00              S00            S00-1          25.590     0.0111     0.000      0.000      0          0\nS01              S01            S00            20.330     0.0111     0.000      0.000      0          0\nS02              S02            S01            14.880     0.0111     0.000      0.000      0          0\nS03              S03            S02            22.810     0.0111     0.000      0.000      0          0\nS04              S04            S03            28.460     0.0111     0.000      0.000      0          0\nS05              S05            S05-1          54.150     0.0111     0.000      0.000      0          0\nS05-1            S05-1          S06            36.760     0.0111     0.000      0.000      0          0\nS06              S06            S07            22.770     0.0143     0.000      0.000      0          0\nS12              S07            FK012          52.000     0.0143     0.000      0.000      0          0\nS08              S08            S07            32.010     0.0143     0.000      0.000      0          0\nS09              S09            S08            16.760     0.0111     0.000      0.000      0          0\nS10              S10            S09            30.390     0.0111     0.000      0.000      0          0\nS11              S11            S10            29.010     0.0111     0.000      0.000      0          0\n06001            06001          FK013          3.530      0.0143     0.000      0.000      0          0\n06002            06002          06001          45.200     0.0143     0.000      0.000      0          0\n06003            06003          06002          5.830      0.0143     0.000      0.000      0          0\n06004            06004          06003          33.160     0.0143     0.000      0.000      0          0\n06005            06005          06004          20.180     0.0143     0.000      0.000      0          0\n06005.2          06005.2        06005          6.100      0.0111     0.000      0.000      0          0\n06006            06006          06005          68.620     0.0143     0.000      0.000      0          0\nBE001            BE001          BE002          6.470      0.0111     0.000      0.000      0          0\nBE002            BE002          BE003          6.400      0.0111     0.000      0.000      0          0\nBE003            BE003          BE004          6.570      0.0111     0.000      0.000      0          0\nBE004            BE004          BE005          4.720      0.0111     0.000      0.000      0          0\nBE005            BE005          BE006          9.930      0.0111     0.000      0.000      0          0\nBE006            BE006          BE007          7.740      0.0111     0.000      0.000      0          0\nBE007            BE007          BE008          8.520      0.0111     0.000      0.000      0          0\nBE010            BE010          S05            6.550      0.0111     0.000      0.000      0          0\nBE011            BE011          S05            15.120     0.0111     0.000      0.000      0          0\nBE012            BE012          Zisterne_3     4.430      0.0111     0.000      0.000      0          0\nBE013            BE013          S05-1          3.970      0.0111     0.000      0.000      0          0\nBE014            BE014          S06            19.920     0.0111     0.000      0.000      0          0\nBE015            BE015          S01AP01        4.350      0.0111     0.000      0.000      0          0\nFK019            FK019          FK006AP01      1.220      0.0111     0.000      0.000      0          0\nGA001            GA001          S04AP01        3.700      0.0143     0.000      0.000      0          0\nGA002            GA002          S04AP02        3.550      0.0143     0.000      0.000      0          0\nGA003            GA003          S04AP03        3.410      0.0111     0.000      0.000      0          0\nSE016            SE016          S00AP01        4.600      0.0111     0.000      0.000      0          0\nSE017            SE017          S10AP01        4.250      0.0111     0.000      0.000      0          0\nSE018            SE018          S08            10.470     0.0111     0.000      0.000      0          0\nS00-1            S00-1          06002AP01      6.520      0.0111     0.000      0.000      0          0\n\n[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n;;-------------- ---------- ---------- ---------- ---------- ---------- ----------\nBE008            CIRCULAR   0.200      0.000      0.000      0.000      1\nBE009            CIRCULAR   0.200      0.000      0.000      0.000      1\nFK003            CIRCULAR   0.200      0.000      0.000      0.000      1\nFK004            CIRCULAR   0.200      0.000      0.000      0.000      1\nFK006            CIRCULAR   0.125      0.000      0.000      0.000      1\nFK005            CIRCULAR   0.200      0.000      0.000      0.000      1\nFK008            CIRCULAR   0.150      0.000      0.000      0.000      1\nFK010            CIRCULAR   0.200      0.000      0.000      0.000      1\nFK011            CIRCULAR   0.200      0.000      0.000      0.000      1\nS07              CIRCULAR   0.200      0.000      0.000      0.000      1\nS00              CIRCULAR   0.200      0.000      0.000      0.000      1\nS01              CIRCULAR   0.200      0.000      0.000      0.000      1\nS02              CIRCULAR   0.200      0.000      0.000      0.000      1\nS03              CIRCULAR   0.200      0.000      0.000      0.000      1\nS04              CIRCULAR   0.150      0.000      0.000      0.000      1\nS05              CIRCULAR   0.250      0.000      0.000      0.000      1\nS05-1            CIRCULAR   0.250      0.000      0.000      0.000      1\nS06              CIRCULAR   0.300      0.000      0.000      0.000      1\nS12              CIRCULAR   0.600      0.000      0.000      0.000      1\nS08              CIRCULAR   0.300      0.000      0.000      0.000      1\nS09              CIRCULAR   0.200      0.000      0.000      0.000      1\nS10              CIRCULAR   0.200      0.000      0.000      0.000      1\nS11              CIRCULAR   0.200      0.000      0.000      0.000      1\n06001            CIRCULAR   0.600      0.000      0.000      0.000      1\n06002            CIRCULAR   0.377      0.000      0.000      0.000      1\n06003            CIRCULAR   0.470      0.000      0.000      0.000      1\n06004            CIRCULAR   0.560      0.000      0.000      0.000      1\n06005            CIRCULAR   0.560      0.000      0.000      0.000      1\n06005.2          CIRCULAR   0.400      0.000      0.000      0.000      1\n06006            CIRCULAR   0.600      0.000      0.000      0.000      1\nBE001            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE002            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE003            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE004            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE005            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE006            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE007            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE010            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE011            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE012            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE013            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE014            CIRCULAR   0.150      0.000      0.000      0.000      1\nBE015            CIRCULAR   0.150      0.000      0.000      0.000      1\nFK019            CIRCULAR   0.150      0.000      0.000      0.000      1\nGA001            CIRCULAR   0.150      0.000      0.000      0.000      1\nGA002            CIRCULAR   0.150      0.000      0.000      0.000      1\nGA003            CIRCULAR   0.150      0.000      0.000      0.000      1\nSE016            CIRCULAR   0.150      0.000      0.000      0.000      1\nSE017            CIRCULAR   0.150      0.000      0.000      0.000      1\nSE018            CIRCULAR   0.150      0.000      0.000      0.000      1\nS00-1            CIRCULAR   0.200      0.000      0.000      0.000      1\n\n[TIMESERIES]\n;;Name           Date       Time       Value     \n;;-------------- ---------- ---------- ----------\ndefault_rain     01/01/2024 00:00      10.7010\ndefault_rain     01/01/2024 00:05      2.9010\ndefault_rain     01/01/2024 00:10      1.7970\n"
+  },
+  "params": {
+    "rainfallIntensity": 110,
+    "duration": 15,
+    "nodeInflows": [],
+    "rainSeries": [
+      {
+        "time": 0,
+        "intensity": 356.70000000000005,
+        "height_mm": 10.701
+      },
+      {
+        "time": 5,
+        "intensity": 96.7,
+        "height_mm": 2.901
+      },
+      {
+        "time": 10,
+        "intensity": 59.90000000000002,
+        "height_mm": 1.7970000000000006
+      }
+    ],
+    "rainType": "euler2"
+  }
+}

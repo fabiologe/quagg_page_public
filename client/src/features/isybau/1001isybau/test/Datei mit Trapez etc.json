@@ -1,0 +1,1696 @@
+{
+  "nodes": [
+    [
+      "FK001",
+      {
+        "id": "FK001",
+        "type": "Standard",
+        "x": 2588326.317,
+        "y": 5448950.276,
+        "z": 238.145,
+        "coverZ": 238.145,
+        "depth": 0.99,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK003",
+      {
+        "id": "FK003",
+        "type": "Standard",
+        "x": 2588373.741,
+        "y": 5448901.435,
+        "z": 237.11,
+        "coverZ": 237.11,
+        "depth": 1,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "FK004",
+      {
+        "id": "FK004",
+        "type": 5,
+        "x": 2588423.517,
+        "y": 5448864.972,
+        "z": 234.815,
+        "coverZ": 234.815,
+        "depth": 1.18,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW001",
+      {
+        "id": "RW001",
+        "type": "Standard",
+        "x": 2588334.062,
+        "y": 5448942.632,
+        "z": 238.11,
+        "coverZ": 238.11,
+        "depth": 1.13,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW002",
+      {
+        "id": "RW002",
+        "type": "Standard",
+        "x": 2588322.558,
+        "y": 5448937.064,
+        "z": 238.17,
+        "coverZ": 238.17,
+        "depth": 0.73,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW003",
+      {
+        "id": "RW003",
+        "type": "Standard",
+        "x": 2588322.322,
+        "y": 5448925.589,
+        "z": 241.828,
+        "coverZ": 241.828,
+        "depth": 0.5,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW004",
+      {
+        "id": "RW004",
+        "type": "Standard",
+        "x": 2588276.991,
+        "y": 5449001.842,
+        "z": 238.418,
+        "coverZ": 238.418,
+        "depth": 0.5,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW005",
+      {
+        "id": "RW005",
+        "type": "Standard",
+        "x": 2588285.886,
+        "y": 5448992.262,
+        "z": 238.332,
+        "coverZ": 238.332,
+        "depth": 0.78,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW006",
+      {
+        "id": "RW006",
+        "type": "Standard",
+        "x": 2588373.383,
+        "y": 5448902.523,
+        "z": 237.109,
+        "coverZ": 237.109,
+        "depth": 1.07,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW007",
+      {
+        "id": "RW007",
+        "type": "Standard",
+        "x": 2588374.805,
+        "y": 5448901.203,
+        "z": 237.283,
+        "coverZ": 237.283,
+        "depth": 0.77,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW008",
+      {
+        "id": "RW008",
+        "type": "Standard",
+        "x": 2588386.608,
+        "y": 5448891.57,
+        "z": 237.022,
+        "coverZ": 237.022,
+        "depth": 0.7,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW010",
+      {
+        "id": "RW010",
+        "type": "Standard",
+        "x": 2588271.294,
+        "y": 5448990.953,
+        "z": 237.861,
+        "coverZ": 237.861,
+        "depth": 1,
+        "status": 0,
+        "diameter": 1,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "RW011",
+      {
+        "id": "RW011",
+        "type": "Standard",
+        "x": 2588267.907,
+        "y": 5448984.595,
+        "z": 242,
+        "coverZ": 242,
+        "depth": 0.5,
+        "status": 0,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "STR001",
+      {
+        "id": "STR001",
+        "type": "Standard",
+        "x": 2588253.209,
+        "y": 5449010.136,
+        "z": 238.83,
+        "coverZ": 238.83,
+        "depth": 61.17,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "STR002",
+      {
+        "id": "STR002",
+        "type": "Standard",
+        "x": 2588304.807,
+        "y": 5448955.413,
+        "z": 238.93,
+        "coverZ": 238.93,
+        "depth": 61.07,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ],
+    [
+      "STR003",
+      {
+        "id": "STR003",
+        "type": "Standard",
+        "x": 2588348.851,
+        "y": 5448909.219,
+        "z": 239.07,
+        "coverZ": 239.07,
+        "depth": 60.93,
+        "status": 2,
+        "diameter": 0,
+        "constantInflow": 0,
+        "volume": 0,
+        "weirHeight": 0,
+        "constantOutflow": 0,
+        "outflowType": "free"
+      }
+    ]
+  ],
+  "edges": [
+    [
+      "FK001",
+      {
+        "id": "FK001",
+        "type": "Haltung",
+        "from": "FK001",
+        "to": "RW001",
+        "coords": [
+          {
+            "x": 2588326.317,
+            "y": 5448950.276,
+            "z": 238.145
+          },
+          {
+            "x": 2588333.706,
+            "y": 5448942.983,
+            "z": 238.112
+          }
+        ],
+        "length": 10.88,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 238.145,
+        "z2": 238.11
+      }
+    ],
+    [
+      "RW012",
+      {
+        "id": "RW012",
+        "type": "Haltung",
+        "from": "RW007",
+        "to": "FK003",
+        "coords": [
+          {
+            "x": 2588374.805,
+            "y": 5448901.203,
+            "z": 237.283
+          },
+          {
+            "x": 2588373.741,
+            "y": 5448901.435,
+            "z": 237.11
+          }
+        ],
+        "length": 1.1,
+        "status": "2",
+        "profile": {
+          "type": 13,
+          "id": "",
+          "height": 0,
+          "width": 0
+        },
+        "roughness": 95,
+        "z1": 237.283,
+        "z2": 237.11
+      }
+    ],
+    [
+      "RW009",
+      {
+        "id": "RW009",
+        "type": "Haltung",
+        "from": "RW001",
+        "to": "FK003",
+        "coords": [
+          {
+            "x": 2588334.416,
+            "y": 5448942.278,
+            "z": 238.101
+          },
+          {
+            "x": 2588345.959,
+            "y": 5448929.154,
+            "z": 237.796
+          },
+          {
+            "x": 2588363.973,
+            "y": 5448910.465,
+            "z": 237.342
+          },
+          {
+            "x": 2588373.741,
+            "y": 5448901.435,
+            "z": 237.11
+          }
+        ],
+        "length": 57.25,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.5,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 238.11,
+        "z2": 237.11
+      }
+    ],
+    [
+      "RW002",
+      {
+        "id": "RW002",
+        "type": "Haltung",
+        "from": "RW001",
+        "to": "RW006",
+        "coords": [
+          {
+            "x": 2588334.412,
+            "y": 5448942.275,
+            "z": 238.101
+          },
+          {
+            "x": 2588373.383,
+            "y": 5448902.523,
+            "z": 237.109
+          }
+        ],
+        "length": 56.18,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 238.11,
+        "z2": 237.109
+      }
+    ],
+    [
+      "RW001",
+      {
+        "id": "RW001",
+        "type": "Haltung",
+        "from": "RW002",
+        "to": "RW001",
+        "coords": [
+          {
+            "x": 2588323.034,
+            "y": 5448937.295,
+            "z": 238.17
+          },
+          {
+            "x": 2588333.586,
+            "y": 5448942.401,
+            "z": 238.113
+          }
+        ],
+        "length": 12.78,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.3,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 238.17,
+        "z2": 238.11
+      }
+    ],
+    [
+      "RW003",
+      {
+        "id": "RW003",
+        "type": "Haltung",
+        "from": "RW003",
+        "to": "RW002",
+        "coords": [
+          {
+            "x": 2588322.336,
+            "y": 5448926.282,
+            "z": 241.608
+          },
+          {
+            "x": 2588322.544,
+            "y": 5448936.371,
+            "z": 238.4
+          }
+        ],
+        "length": 11.97,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 241.828,
+        "z2": 238.17
+      }
+    ],
+    [
+      "RW005",
+      {
+        "id": "RW005",
+        "type": "Haltung",
+        "from": "RW004",
+        "to": "RW005",
+        "coords": [
+          {
+            "x": 2588277.331,
+            "y": 5449001.475,
+            "z": 238.415
+          },
+          {
+            "x": 2588285.886,
+            "y": 5448992.262,
+            "z": 238.332
+          }
+        ],
+        "length": 13.07,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 238.418,
+        "z2": 238.332
+      }
+    ],
+    [
+      "RW008",
+      {
+        "id": "RW008",
+        "type": "Haltung",
+        "from": "RW005",
+        "to": "FK001",
+        "coords": [
+          {
+            "x": 2588285.886,
+            "y": 5448992.262,
+            "z": 238.332
+          },
+          {
+            "x": 2588288.188,
+            "y": 5448988.691,
+            "z": 238.319
+          },
+          {
+            "x": 2588310.541,
+            "y": 5448965.304,
+            "z": 238.216
+          },
+          {
+            "x": 2588323.758,
+            "y": 5448951.476,
+            "z": 238.155
+          },
+          {
+            "x": 2588324.993,
+            "y": 5448950.188,
+            "z": 238.149
+          },
+          {
+            "x": 2588326.317,
+            "y": 5448950.387,
+            "z": 238.145
+          }
+        ],
+        "length": 58.96,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.3,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 238.332,
+        "z2": 238.145
+      }
+    ],
+    [
+      "FK003",
+      {
+        "id": "FK003",
+        "type": "Haltung",
+        "from": "FK003",
+        "to": "RW006",
+        "coords": [
+          {
+            "x": 2588373.741,
+            "y": 5448901.435,
+            "z": 237.11
+          },
+          {
+            "x": 2588373.383,
+            "y": 5448902.523,
+            "z": 237.109
+          }
+        ],
+        "length": 1.15,
+        "status": "2",
+        "profile": {
+          "type": 13,
+          "id": "",
+          "height": 0,
+          "width": 0
+        },
+        "roughness": 95,
+        "z1": 237.11,
+        "z2": 237.109
+      }
+    ],
+    [
+      "RW007",
+      {
+        "id": "RW007",
+        "type": "Haltung",
+        "from": "RW007",
+        "to": "RW008",
+        "coords": [
+          {
+            "x": 2588374.805,
+            "y": 5448901.203,
+            "z": 237.283
+          },
+          {
+            "x": 2588386.608,
+            "y": 5448891.57,
+            "z": 237.022
+          }
+        ],
+        "length": 15.24,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 237.283,
+        "z2": 237.022
+      }
+    ],
+    [
+      "RW010",
+      {
+        "id": "RW010",
+        "type": "Haltung",
+        "from": "RW008",
+        "to": "FK004",
+        "coords": [
+          {
+            "x": 2588386.608,
+            "y": 5448891.57,
+            "z": 237.022
+          },
+          {
+            "x": 2588415.2,
+            "y": 5448869.283,
+            "z": 235.294
+          },
+          {
+            "x": 2588421.005,
+            "y": 5448864.522,
+            "z": 234.937
+          },
+          {
+            "x": 2588423.517,
+            "y": 5448864.972,
+            "z": 234.815
+          }
+        ],
+        "length": 46.36,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.5,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 237.022,
+        "z2": 234.815
+      }
+    ],
+    [
+      "RW006",
+      {
+        "id": "RW006",
+        "type": "Haltung",
+        "from": "STR002",
+        "to": "RW010",
+        "coords": [
+          {
+            "x": 2588304.807,
+            "y": 5448955.413,
+            "z": 238.93
+          },
+          {
+            "x": 2588271.637,
+            "y": 5448990.589,
+            "z": 237.872
+          }
+        ],
+        "length": 48.86,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.1,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 238.93,
+        "z2": 237.861
+      }
+    ],
+    [
+      "RW004",
+      {
+        "id": "RW004",
+        "type": "Haltung",
+        "from": "RW010",
+        "to": "RW004",
+        "coords": [
+          {
+            "x": 2588271.526,
+            "y": 5448991.396,
+            "z": 238.511
+          },
+          {
+            "x": 2588276.748,
+            "y": 5449001.378,
+            "z": 238.422
+          }
+        ],
+        "length": 12.29,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.3,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 237.861,
+        "z2": 238.418
+      }
+    ],
+    [
+      "RW011",
+      {
+        "id": "RW011",
+        "type": "Haltung",
+        "from": "RW011",
+        "to": "RW010",
+        "coords": [
+          {
+            "x": 2588267.907,
+            "y": 5448984.595,
+            "z": 242
+          },
+          {
+            "x": 2588271.059,
+            "y": 5448990.512,
+            "z": 238.148
+          }
+        ],
+        "length": 8.23,
+        "material": "B",
+        "status": "0",
+        "profile": {
+          "type": 0,
+          "id": "",
+          "height": 0.2,
+          "width": 0.3
+        },
+        "roughness": 70,
+        "z1": 242,
+        "z2": 237.861
+      }
+    ],
+    [
+      "STR001",
+      {
+        "id": "STR001",
+        "type": "Haltung",
+        "from": "STR001",
+        "to": "RW010",
+        "coords": [
+          {
+            "x": 2588253.209,
+            "y": 5449010.136,
+            "z": 238.83
+          },
+          {
+            "x": 2588270.951,
+            "y": 5448991.317,
+            "z": 238.761
+          }
+        ],
+        "length": 26.36,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.1,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 238.83,
+        "z2": 237.861
+      }
+    ],
+    [
+      "STR002",
+      {
+        "id": "STR002",
+        "type": "Haltung",
+        "from": "STR002",
+        "to": "RW002",
+        "coords": [
+          {
+            "x": 2588304.807,
+            "y": 5448955.413,
+            "z": 238.93
+          },
+          {
+            "x": 2588322.213,
+            "y": 5448937.426,
+            "z": 238.8
+          }
+        ],
+        "length": 25.53,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.1,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 238.93,
+        "z2": 238.17
+      }
+    ],
+    [
+      "STR003",
+      {
+        "id": "STR003",
+        "type": "Haltung",
+        "from": "STR003",
+        "to": "RW002",
+        "coords": [
+          {
+            "x": 2588348.851,
+            "y": 5448909.219,
+            "z": 239.07
+          },
+          {
+            "x": 2588322.901,
+            "y": 5448936.7,
+            "z": 238.17
+          }
+        ],
+        "length": 38.31,
+        "material": "Erde",
+        "status": "0",
+        "profile": {
+          "type": 8,
+          "id": "",
+          "height": 0.1,
+          "width": 0.5
+        },
+        "roughness": 25,
+        "z1": 239.07,
+        "z2": 238.17
+      }
+    ]
+  ],
+  "hydraulics": {
+    "catchments": [
+      {
+        "id": "RW009.1_1",
+        "nodeId": "RW001",
+        "area": 0.0131,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW009.1_2",
+        "nodeId": "FK003",
+        "area": 0.0131,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW009.2_1",
+        "nodeId": "RW001",
+        "area": 0.0177,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW009.2_2",
+        "nodeId": "FK003",
+        "area": 0.0177,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW003.1_1",
+        "nodeId": "RW003",
+        "area": 0.37725,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW003.1_2",
+        "nodeId": "RW002",
+        "area": 0.37725,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW003.2_1",
+        "nodeId": "RW003",
+        "area": 0,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW003.2_2",
+        "nodeId": "RW002",
+        "area": 0,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW005.1_1",
+        "nodeId": "RW004",
+        "area": 0.01435,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW005.1_2",
+        "nodeId": "RW005",
+        "area": 0.01435,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW008.1_1",
+        "nodeId": "RW005",
+        "area": 0.0312,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW008.1_2",
+        "nodeId": "FK001",
+        "area": 0.0312,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW010.1_1",
+        "nodeId": "RW008",
+        "area": 0.0284,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW010.1_2",
+        "nodeId": "FK004",
+        "area": 0.0284,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW006.1_1",
+        "nodeId": "STR002",
+        "area": 0.0811,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW006.1_2",
+        "nodeId": "RW010",
+        "area": 0.0811,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "RW011.1_1",
+        "nodeId": "RW011",
+        "area": 0.01865,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "RW011.1_2",
+        "nodeId": "RW010",
+        "area": 0.01865,
+        "runoffCoeff": 0.3
+      },
+      {
+        "id": "STR001.1_1",
+        "nodeId": "STR001",
+        "area": 0.02915,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "STR001.1_2",
+        "nodeId": "RW010",
+        "area": 0.02915,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "STR002.1_1",
+        "nodeId": "STR002",
+        "area": 0.03875,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "STR002.1_2",
+        "nodeId": "RW002",
+        "area": 0.03875,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "STR003.1_1",
+        "nodeId": "STR003",
+        "area": 0.0457,
+        "runoffCoeff": 0.5
+      },
+      {
+        "id": "STR003.1_2",
+        "nodeId": "RW002",
+        "area": 0.0457,
+        "runoffCoeff": 0.5
+      }
+    ],
+    "areas": [
+      {
+        "id": "RW009.1",
+        "points": [
+          {
+            "x": 2588332.099,
+            "y": 5448948.626
+          },
+          {
+            "x": 2588351.432,
+            "y": 5448929.387
+          },
+          {
+            "x": 2588346.144,
+            "y": 5448921.719
+          },
+          {
+            "x": 2588325.62,
+            "y": 5448941.717
+          },
+          {
+            "x": 2588326.178,
+            "y": 5448942.793
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.0262,
+        "runoffCoeff": 0.5,
+        "edgeId": "RW009",
+        "nodeId": "RW001",
+        "nodeId2": "FK003",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW009.2",
+        "points": [
+          {
+            "x": 2588351.432,
+            "y": 5448929.387
+          },
+          {
+            "x": 2588365.516,
+            "y": 5448917.085
+          },
+          {
+            "x": 2588374.331,
+            "y": 5448910.287
+          },
+          {
+            "x": 2588373.45,
+            "y": 5448902.831
+          },
+          {
+            "x": 2588371.783,
+            "y": 5448901.34
+          },
+          {
+            "x": 2588366.082,
+            "y": 5448899.98
+          },
+          {
+            "x": 2588346.144,
+            "y": 5448921.719
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.0354,
+        "runoffCoeff": 0.5,
+        "edgeId": "RW009",
+        "nodeId": "RW001",
+        "nodeId2": "FK003",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW003.1",
+        "points": [
+          {
+            "x": 2588322.879,
+            "y": 5448926.456
+          },
+          {
+            "x": 2588306.314,
+            "y": 5448939.196
+          },
+          {
+            "x": 2588280.279,
+            "y": 5448928.179
+          },
+          {
+            "x": 2588265.807,
+            "y": 5448911.26
+          },
+          {
+            "x": 2588200.071,
+            "y": 5448886.698
+          },
+          {
+            "x": 2588266.215,
+            "y": 5448808.12
+          },
+          {
+            "x": 2588268.967,
+            "y": 5448833.599
+          },
+          {
+            "x": 2588291.286,
+            "y": 5448844.606
+          },
+          {
+            "x": 2588307.389,
+            "y": 5448871.615
+          },
+          {
+            "x": 2588312.893,
+            "y": 5448881.908
+          },
+          {
+            "x": 2588314.218,
+            "y": 5448895.565
+          },
+          {
+            "x": 2588329.544,
+            "y": 5448920.691
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 2,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 3,
+        "size": 0.7545,
+        "runoffCoeff": 0.3,
+        "edgeId": "RW003",
+        "nodeId": "RW003",
+        "nodeId2": "RW002",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW003.2",
+        "points": [
+          {
+            "x": 2588322.336,
+            "y": 5448926.282
+          },
+          {
+            "x": 2588322.544,
+            "y": 5448936.371
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 2,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 3,
+        "size": 0,
+        "runoffCoeff": 0.3,
+        "edgeId": "RW003",
+        "nodeId": "RW003",
+        "nodeId2": "RW002",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW005.1",
+        "points": [
+          {
+            "x": 2588285.741,
+            "y": 5449003.472
+          },
+          {
+            "x": 2588285.741,
+            "y": 5449008.144
+          },
+          {
+            "x": 2588279.297,
+            "y": 5449009.594
+          },
+          {
+            "x": 2588272.45,
+            "y": 5449008.909
+          },
+          {
+            "x": 2588267.214,
+            "y": 5449009.594
+          },
+          {
+            "x": 2588263.871,
+            "y": 5449006.613
+          },
+          {
+            "x": 2588280.988,
+            "y": 5448988.852
+          },
+          {
+            "x": 2588288.157,
+            "y": 5448996.464
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 2,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 3,
+        "size": 0.0287,
+        "runoffCoeff": 0.3,
+        "edgeId": "RW005",
+        "nodeId": "RW004",
+        "nodeId2": "RW005",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW008.1",
+        "points": [
+          {
+            "x": 2588280.988,
+            "y": 5448988.852
+          },
+          {
+            "x": 2588313.561,
+            "y": 5448954.9
+          },
+          {
+            "x": 2588326.178,
+            "y": 5448942.793
+          },
+          {
+            "x": 2588332.099,
+            "y": 5448948.626
+          },
+          {
+            "x": 2588288.157,
+            "y": 5448996.464
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.0624,
+        "runoffCoeff": 0.5,
+        "edgeId": "RW008",
+        "nodeId": "RW005",
+        "nodeId2": "FK001",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW010.1",
+        "points": [
+          {
+            "x": 2588373.45,
+            "y": 5448902.831
+          },
+          {
+            "x": 2588424.4,
+            "y": 5448865.853
+          },
+          {
+            "x": 2588418.081,
+            "y": 5448857.13
+          },
+          {
+            "x": 2588366.082,
+            "y": 5448899.98
+          },
+          {
+            "x": 2588371.783,
+            "y": 5448901.34
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 4,
+        "size": 0.0568,
+        "runoffCoeff": 0.5,
+        "edgeId": "RW010",
+        "nodeId": "RW008",
+        "nodeId2": "FK004",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW006.1",
+        "points": [
+          {
+            "x": 2588275.925,
+            "y": 5448994.105
+          },
+          {
+            "x": 2588308.849,
+            "y": 5448959.812
+          },
+          {
+            "x": 2588294.441,
+            "y": 5448944.649
+          },
+          {
+            "x": 2588288.164,
+            "y": 5448938.759
+          },
+          {
+            "x": 2588280.632,
+            "y": 5448931.709
+          },
+          {
+            "x": 2588280.279,
+            "y": 5448928.179
+          },
+          {
+            "x": 2588265.807,
+            "y": 5448911.26
+          },
+          {
+            "x": 2588262.745,
+            "y": 5448917.18
+          },
+          {
+            "x": 2588267.09,
+            "y": 5448938.77
+          },
+          {
+            "x": 2588278.609,
+            "y": 5448960.636
+          },
+          {
+            "x": 2588265.352,
+            "y": 5448974.141
+          },
+          {
+            "x": 2588267.833,
+            "y": 5448978.821
+          },
+          {
+            "x": 2588270.934,
+            "y": 5448982.43
+          },
+          {
+            "x": 2588267.664,
+            "y": 5448985.475
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.1622,
+        "runoffCoeff": 0.5,
+        "edgeId": "RW006",
+        "nodeId": "STR002",
+        "nodeId2": "RW010",
+        "splitRatio": 50
+      },
+      {
+        "id": "RW011.1",
+        "points": [
+          {
+            "x": 2588267.664,
+            "y": 5448985.475
+          },
+          {
+            "x": 2588257.966,
+            "y": 5448982.712
+          },
+          {
+            "x": 2588244.264,
+            "y": 5448978.821
+          },
+          {
+            "x": 2588239.528,
+            "y": 5448978.426
+          },
+          {
+            "x": 2588233.212,
+            "y": 5448963.428
+          },
+          {
+            "x": 2588243.362,
+            "y": 5448966.98
+          },
+          {
+            "x": 2588254.132,
+            "y": 5448969.63
+          },
+          {
+            "x": 2588265.352,
+            "y": 5448974.141
+          },
+          {
+            "x": 2588267.833,
+            "y": 5448978.821
+          },
+          {
+            "x": 2588270.934,
+            "y": 5448982.43
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 2,
+        "usage": 9,
+        "pollution": 1,
+        "slope": 4,
+        "size": 0.0373,
+        "runoffCoeff": 0.3,
+        "edgeId": "RW011",
+        "nodeId": "RW011",
+        "nodeId2": "RW010",
+        "splitRatio": 50
+      },
+      {
+        "id": "STR001.1",
+        "points": [
+          {
+            "x": 2588254.073,
+            "y": 5449010.836
+          },
+          {
+            "x": 2588263.871,
+            "y": 5449006.613
+          },
+          {
+            "x": 2588275.925,
+            "y": 5448994.105
+          },
+          {
+            "x": 2588267.664,
+            "y": 5448985.475
+          },
+          {
+            "x": 2588253.711,
+            "y": 5448981.5
+          },
+          {
+            "x": 2588238.409,
+            "y": 5449002.261
+          },
+          {
+            "x": 2588245.652,
+            "y": 5449001.433
+          },
+          {
+            "x": 2588252.481,
+            "y": 5449006.4
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.0583,
+        "runoffCoeff": 0.5,
+        "edgeId": "STR001",
+        "nodeId": "STR001",
+        "nodeId2": "RW010",
+        "splitRatio": 50
+      },
+      {
+        "id": "STR002.1",
+        "points": [
+          {
+            "x": 2588329.544,
+            "y": 5448920.691
+          },
+          {
+            "x": 2588330.175,
+            "y": 5448925.308
+          },
+          {
+            "x": 2588335.882,
+            "y": 5448931.718
+          },
+          {
+            "x": 2588325.62,
+            "y": 5448941.717
+          },
+          {
+            "x": 2588326.178,
+            "y": 5448942.793
+          },
+          {
+            "x": 2588313.561,
+            "y": 5448954.9
+          },
+          {
+            "x": 2588308.849,
+            "y": 5448959.812
+          },
+          {
+            "x": 2588294.441,
+            "y": 5448944.649
+          },
+          {
+            "x": 2588280.632,
+            "y": 5448931.709
+          },
+          {
+            "x": 2588280.279,
+            "y": 5448928.179
+          },
+          {
+            "x": 2588306.314,
+            "y": 5448939.196
+          },
+          {
+            "x": 2588322.879,
+            "y": 5448926.456
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.0775,
+        "runoffCoeff": 0.5,
+        "edgeId": "STR002",
+        "nodeId": "STR002",
+        "nodeId2": "RW002",
+        "splitRatio": 50
+      },
+      {
+        "id": "STR003.1",
+        "points": [
+          {
+            "x": 2588312.893,
+            "y": 5448881.908
+          },
+          {
+            "x": 2588323.472,
+            "y": 5448887.893
+          },
+          {
+            "x": 2588330.342,
+            "y": 5448895.008
+          },
+          {
+            "x": 2588346.781,
+            "y": 5448902.042
+          },
+          {
+            "x": 2588357.009,
+            "y": 5448909.873
+          },
+          {
+            "x": 2588346.144,
+            "y": 5448921.719
+          },
+          {
+            "x": 2588335.882,
+            "y": 5448931.718
+          },
+          {
+            "x": 2588330.175,
+            "y": 5448925.308
+          },
+          {
+            "x": 2588329.544,
+            "y": 5448920.691
+          },
+          {
+            "x": 2588314.218,
+            "y": 5448895.565
+          }
+        ],
+        "type": 1,
+        "property": 2,
+        "function": 4,
+        "usage": 9,
+        "pollution": 4,
+        "slope": 5,
+        "size": 0.0914,
+        "runoffCoeff": 0.5,
+        "edgeId": "STR003",
+        "nodeId": "STR003",
+        "nodeId2": "RW002",
+        "splitRatio": 50
+      }
+    ],
+    "params": {},
+    "results": {},
+    "timeSeries": [],
+    "nodeResults": {},
+    "subcatchmentResults": {},
+    "massBalance": {},
+    "systemStats": {
+      "runoff": {
+        "precip": 0,
+        "evap": 0,
+        "infil": 0,
+        "runoff": 0,
+        "error": 0
+      },
+      "flow": {}
+    },
+    "report": "\n  EPA STORM WATER MANAGEMENT MODEL - VERSION 5.2 (Build 5.2.4)\n  ------------------------------------------------------------\n\n  \n  ERROR 211: invalid number  at line 180 of [XSECT] section:\n  RW012            CIRCULAR   0.000      0.000      0.000      0.000      1\n\n  \n  ERROR 211: invalid number  at line 187 of [XSECT] section:\n  FK003            CIRCULAR   0.000      0.000      0.000      0.000      1\n\n\n  Analysis begun on:  Fri Dec 12 09:49:49 2025\n  Analysis ended on:  Fri Dec 12 09:49:49 2025\n  Total elapsed time: < 1 sec",
+    "inputInp": "[TITLE]\nWeb Simulation Output\n[OPTIONS]\nFLOW_UNITS CMS\nINFILTRATION HORTON\nFLOW_ROUTING DYNWAVE\nSTART_DATE 01/01/2024\nSTART_TIME 00:00:00\nEND_DATE   01/01/2024\nEND_TIME   06:00:00\nREPORT_STEP 00:01:00\nWET_STEP    00:01:00\nDRY_STEP    00:01:00\nROUTING_STEP 00:00:05\nALLOW_PONDING YES\nSKIP_STEADY_STATE NO\n\n[RAINGAGES]\n;;Name           Format    Interval SCF      Source    \n;;-------------- --------- ------ ------ ----------\nRG1              INTENSITY 0:05     1.0      TIMESERIES default_rain\n\n[SUBCATCHMENTS]\n;;Name           RainGage         Outlet           Area     %Imperv  Width    Slope    CurbLen\n;;-------------- ---------------- ---------------- -------- -------- -------- -------- --------\nRW009.1          RG1              RW001            0.0131   50.00    11.45    20.00    0\nRW009.1_2        RG1              FK003            0.0131   50.00    11.45    20.00    0\nRW009.2          RG1              RW001            0.0177   50.00    13.30    20.00    0\nRW009.2_2        RG1              FK003            0.0177   50.00    13.30    20.00    0\nRW003.1          RG1              RW003            0.3772   30.00    61.42    7.00     0\nRW003.1_2        RG1              RW002            0.3772   30.00    61.42    7.00     0\nRW003.2          RG1              RW003            0.0000   30.00    0.00     7.00     0\nRW003.2_2        RG1              RW002            0.0000   30.00    0.00     7.00     0\nRW005.1          RG1              RW004            0.0143   30.00    11.98    7.00     0\nRW005.1_2        RG1              RW005            0.0143   30.00    11.98    7.00     0\nRW008.1          RG1              RW005            0.0312   50.00    17.66    20.00    0\nRW008.1_2        RG1              FK001            0.0312   50.00    17.66    20.00    0\nRW010.1          RG1              RW008            0.0284   50.00    16.85    12.00    0\nRW010.1_2        RG1              FK004            0.0284   50.00    16.85    12.00    0\nRW006.1          RG1              STR002           0.0811   50.00    28.48    20.00    0\nRW006.1_2        RG1              RW010            0.0811   50.00    28.48    20.00    0\nRW011.1          RG1              RW011            0.0186   30.00    13.66    12.00    0\nRW011.1_2        RG1              RW010            0.0186   30.00    13.66    12.00    0\nSTR001.1         RG1              STR001           0.0291   50.00    17.07    20.00    0\nSTR001.1_2       RG1              RW010            0.0291   50.00    17.07    20.00    0\nSTR002.1         RG1              STR002           0.0387   50.00    19.69    20.00    0\nSTR002.1_2       RG1              RW002            0.0387   50.00    19.69    20.00    0\nSTR003.1         RG1              STR003           0.0457   50.00    21.38    20.00    0\nSTR003.1_2       RG1              RW002            0.0457   50.00    21.38    20.00    0\n\n[SUBAREAS]\n;;Subcatchment   N-Imperv   N-Perv     S-Imperv   S-Perv     PctZero    RouteTo    PctRouted\n;;-------------- ---------- ---------- ---------- ---------- ---------- ---------- ----------\nRW009.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW009.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW009.2          0.01       0.1        0.05       0.05       25         OUTLET    \nRW009.2_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW003.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW003.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW003.2          0.01       0.1        0.05       0.05       25         OUTLET    \nRW003.2_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW005.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW005.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW008.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW008.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW010.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW010.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW006.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW006.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nRW011.1          0.01       0.1        0.05       0.05       25         OUTLET    \nRW011.1_2        0.01       0.1        0.05       0.05       25         OUTLET    \nSTR001.1         0.01       0.1        0.05       0.05       25         OUTLET    \nSTR001.1_2       0.01       0.1        0.05       0.05       25         OUTLET    \nSTR002.1         0.01       0.1        0.05       0.05       25         OUTLET    \nSTR002.1_2       0.01       0.1        0.05       0.05       25         OUTLET    \nSTR003.1         0.01       0.1        0.05       0.05       25         OUTLET    \nSTR003.1_2       0.01       0.1        0.05       0.05       25         OUTLET    \n\n[INFILTRATION]\n;;Subcatchment   MaxRate    MinRate    Decay      DryTime    MaxInfil\n;;-------------- ---------- ---------- ---------- ---------- ----------\nRW009.1          3.0        0.5        4.0        7.0        0\nRW009.1_2        3.0        0.5        4.0        7.0        0\nRW009.2          3.0        0.5        4.0        7.0        0\nRW009.2_2        3.0        0.5        4.0        7.0        0\nRW003.1          3.0        0.5        4.0        7.0        0\nRW003.1_2        3.0        0.5        4.0        7.0        0\nRW003.2          3.0        0.5        4.0        7.0        0\nRW003.2_2        3.0        0.5        4.0        7.0        0\nRW005.1          3.0        0.5        4.0        7.0        0\nRW005.1_2        3.0        0.5        4.0        7.0        0\nRW008.1          3.0        0.5        4.0        7.0        0\nRW008.1_2        3.0        0.5        4.0        7.0        0\nRW010.1          3.0        0.5        4.0        7.0        0\nRW010.1_2        3.0        0.5        4.0        7.0        0\nRW006.1          3.0        0.5        4.0        7.0        0\nRW006.1_2        3.0        0.5        4.0        7.0        0\nRW011.1          3.0        0.5        4.0        7.0        0\nRW011.1_2        3.0        0.5        4.0        7.0        0\nSTR001.1         3.0        0.5        4.0        7.0        0\nSTR001.1_2       3.0        0.5        4.0        7.0        0\nSTR002.1         3.0        0.5        4.0        7.0        0\nSTR002.1_2       3.0        0.5        4.0        7.0        0\nSTR003.1         3.0        0.5        4.0        7.0        0\nSTR003.1_2       3.0        0.5        4.0        7.0        0\n\n[JUNCTIONS]\n;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded\n;;-------------- ---------- ---------- ---------- ---------- ----------\nFK001            238.145    0.990      0          0.000      0\nFK003            237.110    1.000      0          0.000      0\nRW001            238.110    1.130      0          0.000      0\nRW002            238.170    0.730      0          0.000      0\nRW003            241.828    0.500      0          0.000      0\nRW004            238.418    0.500      0          0.000      0\nRW005            238.332    0.780      0          0.000      0\nRW006            237.109    1.070      0          0.000      0\nRW007            237.283    0.770      0          0.000      0\nRW008            237.022    0.700      0          0.000      0\nRW010            237.861    1.000      0          0.000      0\nRW011            242.000    0.500      0          0.000      0\nSTR001           238.830    61.170     0          0.000      0\nSTR002           238.930    61.070     0          0.000      0\nSTR003           239.070    60.930     0          0.000      0\n\n[OUTFALLS]\n;;Name           Elevation  Type       Stage Data       Gated    RouteTo\n;;-------------- ---------- ---------- ---------------- -------- ----------------\nFK004            234.815    FREE\n\n[STORAGE]\n;;Name           Elev       MaxDepth   InitDepth  Shape      Curve Name/Params            SurDepth  Fevap\n;;-------------- ---------- ---------- ---------- ---------- ---------------------------- ----------------\n\n[COORDINATES]\n;;Node           X-Coord    Y-Coord\n;;-------------- ---------- ----------\nFK001            2588326.317 5448950.276\nFK003            2588373.741 5448901.435\nRW001            2588334.062 5448942.632\nRW002            2588322.558 5448937.064\nRW003            2588322.322 5448925.589\nRW004            2588276.991 5449001.842\nRW005            2588285.886 5448992.262\nRW006            2588373.383 5448902.523\nRW007            2588374.805 5448901.203\nRW008            2588386.608 5448891.570\nRW010            2588271.294 5448990.953\nRW011            2588267.907 5448984.595\nSTR001           2588253.209 5449010.136\nSTR002           2588304.807 5448955.413\nSTR003           2588348.851 5448909.219\nFK004            2588423.517 5448864.972\n\n[CONDUITS]\n;;Name           Node1          Node2          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow\n;;-------------- -------------- -------------- ---------- ---------- ---------- ---------- ---------- ----------\nFK001            FK001          RW001          10.880     0.0143     0.000      0.000      0          0\nRW012            RW007          FK003          1.100      0.0105     0.000      0.000      0          0\nRW009            RW001          FK003          57.250     0.0400     0.000      0.000      0          0\nRW002            RW001          RW006          56.180     0.0143     0.000      0.000      0          0\nRW001            RW002          RW001          12.780     0.0143     0.000      0.000      0          0\nRW003            RW003          RW002          11.970     0.0143     0.000      0.000      0          0\nRW005            RW004          RW005          13.070     0.0143     0.000      0.000      0          0\nRW008            RW005          FK001          58.960     0.0400     0.000      0.000      0          0\nFK003            FK003          RW006          1.150      0.0105     0.000      0.000      0          0\nRW007            RW007          RW008          15.240     0.0143     0.000      0.000      0          0\nRW010            RW008          FK004          46.360     0.0400     0.000      0.000      0          0\nRW006            STR002         RW010          48.860     0.0400     0.000      0.000      0          0\nRW004            RW010          RW004          12.290     0.0143     0.000      0.000      0          0\nRW011            RW011          RW010          8.230      0.0143     0.000      0.000      0          0\nSTR001           STR001         RW010          26.360     0.0400     0.000      0.000      0          0\nSTR002           STR002         RW002          25.530     0.0400     0.000      0.000      0          0\nSTR003           STR003         RW002          38.310     0.0400     0.000      0.000      0          0\n\n[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n;;-------------- ---------- ---------- ---------- ---------- ---------- ----------\nFK001            RECT_CLOSED 0.200      0.300      0.000      0.000      1\nRW012            CIRCULAR   0.000      0.000      0.000      0.000      1\nRW009            TRAPEZOIDAL 0.500      0.500      1.500      1.500      1\nRW002            RECT_CLOSED 0.200      0.300      0.000      0.000      1\nRW001            CIRCULAR   0.300      0.000      0.000      0.000      1\nRW003            RECT_CLOSED 0.200      0.300      0.000      0.000      1\nRW005            RECT_CLOSED 0.200      0.300      0.000      0.000      1\nRW008            TRAPEZOIDAL 0.300      0.500      1.500      1.500      1\nFK003            CIRCULAR   0.000      0.000      0.000      0.000      1\nRW007            RECT_CLOSED 0.200      0.300      0.000      0.000      1\nRW010            TRAPEZOIDAL 0.500      0.500      1.500      1.500      1\nRW006            TRAPEZOIDAL 0.100      0.500      1.500      1.500      1\nRW004            CIRCULAR   0.300      0.000      0.000      0.000      1\nRW011            RECT_CLOSED 0.200      0.300      0.000      0.000      1\nSTR001           TRAPEZOIDAL 0.100      0.500      1.500      1.500      1\nSTR002           TRAPEZOIDAL 0.100      0.500      1.500      1.500      1\nSTR003           TRAPEZOIDAL 0.100      0.500      1.500      1.500      1\n\n[TIMESERIES]\n;;Name           Date       Time       Value     \n;;-------------- ---------- ---------- ----------\ndefault_rain     01/01/2024 00:00      10.4010\ndefault_rain     01/01/2024 00:05      3.0990\ndefault_rain     01/01/2024 00:10      1.8990\n"
+  },
+  "params": {
+    "rainfallIntensity": 110,
+    "duration": 15,
+    "nodeInflows": [],
+    "rainSeries": [
+      {
+        "time": 0,
+        "intensity": 346.7,
+        "height_mm": 10.401
+      },
+      {
+        "time": 5,
+        "intensity": 103.30000000000001,
+        "height_mm": 3.099
+      },
+      {
+        "time": 10,
+        "intensity": 63.30000000000003,
+        "height_mm": 1.899000000000001
+      }
+    ],
+    "rainType": "euler2"
+  }
+}

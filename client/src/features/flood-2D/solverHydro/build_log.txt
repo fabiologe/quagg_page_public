@@ -1,0 +1,71 @@
+src/lisflood-fp-bmi-v5.9/output.cpp:286:47: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  286 |         write_binrasterfile(Fnameptr->resrootname,-1,".inittmb",Arrptr->initHtm,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                      ^
+src/lisflood-fp-bmi-v5.9/output.cpp:288:47: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  288 |         write_binrasterfile(Fnameptr->resrootname,-1,".totaltmb",Arrptr->totalHtm,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                      ^
+src/lisflood-fp-bmi-v5.9/output.cpp:290:47: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  290 |         write_binrasterfile(Fnameptr->resrootname,-1,".maxb",Arrptr->maxH,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                      ^
+src/lisflood-fp-bmi-v5.9/output.cpp:292:47: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  292 |         write_binrasterfile(Fnameptr->resrootname,-1,".maxtmb",Arrptr->maxHtm,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                      ^
+src/lisflood-fp-bmi-v5.9/output.cpp:295:48: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  295 |                 write_binrasterfile(Fnameptr->resrootname,-1,".maxVxb",Arrptr->maxVx,Arrptr->DEM,1,Statesptr,Parptr);
+      |                                                              ^
+src/lisflood-fp-bmi-v5.9/output.cpp:296:48: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  296 |                 write_binrasterfile(Fnameptr->resrootname,-1,".maxVyb",Arrptr->maxVy,Arrptr->DEM,2,Statesptr,Parptr);
+      |                                                              ^
+src/lisflood-fp-bmi-v5.9/output.cpp:301:48: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  301 |                 write_binrasterfile(Fnameptr->resrootname,-1,".maxVcb",Arrptr->maxVc,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                              ^
+src/lisflood-fp-bmi-v5.9/output.cpp:302:48: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  302 |                 write_binrasterfile(Fnameptr->resrootname,-1,".maxVcdb",Arrptr->maxVcH,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                              ^
+src/lisflood-fp-bmi-v5.9/output.cpp:303:48: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  303 |                 write_binrasterfile(Fnameptr->resrootname,-1,".maxHazb",Arrptr->maxHaz,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                              ^
+src/lisflood-fp-bmi-v5.9/output.cpp:678:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  678 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Qxb",Arrptr->Qx,Arrptr->DEM,1,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:679:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  679 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Qyb",Arrptr->Qy,Arrptr->DEM,2,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:702:62: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  702 |                                 write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Fwidthb",Arrptr->SGCFlowWidth,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                                                          ^
+src/lisflood-fp-bmi-v5.9/output.cpp:704:62: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  704 |                                 write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Qcxb",Arrptr->QxSGold,Arrptr->DEM,1,Statesptr,Parptr);
+      |                                                                                          ^
+src/lisflood-fp-bmi-v5.9/output.cpp:705:62: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  705 |                                 write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Qcyb",Arrptr->QySGold,Arrptr->DEM,2,Statesptr,Parptr);
+      |                                                                                          ^
+src/lisflood-fp-bmi-v5.9/output.cpp:722:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  722 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Vxb",Arrptr->Vx,Arrptr->DEM,1,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:723:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  723 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".Vyb",Arrptr->Vy,Arrptr->DEM,2,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:848:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  848 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".SGCVxb",SGCVx,Arrptr->DEM,1,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:849:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  849 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".SGCVyb",SGCVy,Arrptr->DEM,2,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:850:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  850 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".SGCVcb",SGCvoutput,Arrptr->DEM,0,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:865:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  865 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".QLxb",Arrptr->LimQx,Arrptr->DEM,1,Statesptr,Parptr);
+      |                                                                                  ^
+src/lisflood-fp-bmi-v5.9/output.cpp:866:61: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  866 |                         write_binrasterfile(Fnameptr->resrootname,Parptr->SaveNo,".QLyb",Arrptr->LimQy,Arrptr->DEM,2,Statesptr,Parptr);
+      |                                                                                  ^
+21 warnings generated.
+src/lisflood-fp-bmi-v5.9/update.cpp:234:60: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  234 |         write_profile(Fnameptr->resrootname,Parptr->SaveNo,".profile",Statesptr,ChannelSegments,Arrptr,Parptr, RiversIndexVecPtr, RiversIndexPtr); // CCS
+      |                                                            ^
+src/lisflood-fp-bmi-v5.9/update.cpp:250:77: warning: ISO C++11 does not allow conversion from string literal to 'char *' [-Wwritable-strings]
+  250 |           if (Statesptr->profileoutput==ON) write_profile(Fnameptr->resrootname,-1,".profile",Statesptr,ChannelSegments,Arrptr,Parptr, RiversIndexVecPtr, RiversIndexPtr);
+      |                                                                                    ^
+2 warnings generated.

@@ -1,0 +1,879 @@
+{
+  "results": {
+    "edges": [
+      [
+        "BE008",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 28.000000000000004
+        }
+      ],
+      [
+        "BE009",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "FK003",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.1,
+          "utilization": 68
+        }
+      ],
+      [
+        "FK004",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.11,
+          "utilization": 45
+        }
+      ],
+      [
+        "FK006",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.41,
+          "utilization": 21
+        }
+      ],
+      [
+        "FK005",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.17,
+          "utilization": 21
+        }
+      ],
+      [
+        "FK008",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.41,
+          "utilization": 16
+        }
+      ],
+      [
+        "FK010",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 7.000000000000001
+        }
+      ],
+      [
+        "FK011",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 7.000000000000001
+        }
+      ],
+      [
+        "S07",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 3
+        }
+      ],
+      [
+        "S00",
+        {
+          "maxFlow": 5,
+          "maxVelocity": 0.9,
+          "utilization": 100
+        }
+      ],
+      [
+        "S01",
+        {
+          "maxFlow": 5,
+          "maxVelocity": 0.61,
+          "utilization": 100
+        }
+      ],
+      [
+        "S02",
+        {
+          "maxFlow": 3,
+          "maxVelocity": 0.49,
+          "utilization": 54
+        }
+      ],
+      [
+        "S03",
+        {
+          "maxFlow": 2,
+          "maxVelocity": 0.57,
+          "utilization": 14.000000000000002
+        }
+      ],
+      [
+        "S04",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.47,
+          "utilization": 19
+        }
+      ],
+      [
+        "S05",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.48,
+          "utilization": 7.000000000000001
+        }
+      ],
+      [
+        "S05-1",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.66,
+          "utilization": 8
+        }
+      ],
+      [
+        "S06",
+        {
+          "maxFlow": 3,
+          "maxVelocity": 1.16,
+          "utilization": 8
+        }
+      ],
+      [
+        "S12",
+        {
+          "maxFlow": 6,
+          "maxVelocity": 1.13,
+          "utilization": 5
+        }
+      ],
+      [
+        "S08",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.28,
+          "utilization": 7.000000000000001
+        }
+      ],
+      [
+        "S09",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.71,
+          "utilization": 7.000000000000001
+        }
+      ],
+      [
+        "S10",
+        {
+          "maxFlow": 1,
+          "maxVelocity": 0.83,
+          "utilization": 6
+        }
+      ],
+      [
+        "S11",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0.43,
+          "utilization": 6
+        }
+      ],
+      [
+        "06001",
+        {
+          "maxFlow": 213,
+          "maxVelocity": 6.93,
+          "utilization": 17
+        }
+      ],
+      [
+        "06002",
+        {
+          "maxFlow": 2,
+          "maxVelocity": 0.17,
+          "utilization": 15
+        }
+      ],
+      [
+        "06003",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 2
+        }
+      ],
+      [
+        "06004",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "06005",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "06005.2",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "06006",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE001",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE002",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE003",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE004",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE005",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE006",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE007",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE010",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 5
+        }
+      ],
+      [
+        "BE011",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 5
+        }
+      ],
+      [
+        "BE012",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "BE013",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 6
+        }
+      ],
+      [
+        "BE014",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 7.000000000000001
+        }
+      ],
+      [
+        "BE015",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "FK019",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "GA001",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "GA002",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "GA003",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "SE016",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "SE017",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 0
+        }
+      ],
+      [
+        "SE018",
+        {
+          "maxFlow": 0,
+          "maxVelocity": 0,
+          "utilization": 5
+        }
+      ],
+      [
+        "S00-1",
+        {
+          "maxFlow": 6,
+          "maxVelocity": 0.6,
+          "utilization": 100
+        }
+      ]
+    ],
+    "nodes": [
+      [
+        "FK003",
+        {
+          "maxDepth": 0.11,
+          "maxInflow": 2
+        }
+      ],
+      [
+        "FK004",
+        {
+          "maxDepth": 0.06,
+          "maxInflow": 2
+        }
+      ],
+      [
+        "FK005",
+        {
+          "maxDepth": 0.02,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "FK007",
+        {
+          "maxDepth": 0.03,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "FK008",
+        {
+          "maxDepth": 0.12,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "FK009",
+        {
+          "maxDepth": 0.16,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "FK010",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "FK011",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "F001",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S00",
+        {
+          "maxDepth": 1.64,
+          "maxInflow": 7
+        }
+      ],
+      [
+        "S00-1",
+        {
+          "maxDepth": 2,
+          "maxInflow": 9
+        }
+      ],
+      [
+        "S01",
+        {
+          "maxDepth": 1.67,
+          "maxInflow": 5
+        }
+      ],
+      [
+        "S02",
+        {
+          "maxDepth": 0.02,
+          "maxInflow": 3
+        }
+      ],
+      [
+        "S03",
+        {
+          "maxDepth": 0.04,
+          "maxInflow": 2
+        }
+      ],
+      [
+        "S04",
+        {
+          "maxDepth": 0.02,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "S05",
+        {
+          "maxDepth": 0.01,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "S05-1",
+        {
+          "maxDepth": 0.02,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "S06",
+        {
+          "maxDepth": 0.02,
+          "maxInflow": 3
+        }
+      ],
+      [
+        "S07",
+        {
+          "maxDepth": 0.03,
+          "maxInflow": 6
+        }
+      ],
+      [
+        "S08",
+        {
+          "maxDepth": 0.01,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "S09",
+        {
+          "maxDepth": 0.01,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "S10",
+        {
+          "maxDepth": 0.01,
+          "maxInflow": 1
+        }
+      ],
+      [
+        "S11",
+        {
+          "maxDepth": 0.01,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "Zisterne-1",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "Zisterne-3",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "Zisterne_3",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "06001",
+        {
+          "maxDepth": 0.1,
+          "maxInflow": 204
+        }
+      ],
+      [
+        "06002",
+        {
+          "maxDepth": 0.02,
+          "maxInflow": 2
+        }
+      ],
+      [
+        "06003",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "06004",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "06005",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "06005.2",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "06006",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "FK019",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "GA001",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "GA002",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "GA003",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE001",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE002",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE003",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE004",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE005",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE006",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE007",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE008",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE010",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE011",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE012",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE013",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE014",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "BE015",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "SE016",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "SE017",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "SE018",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S01AP01",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "FK006AP01",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S04AP01",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S04AP02",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S04AP03",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S00AP01",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "S10AP01",
+        {
+          "maxDepth": 0,
+          "maxInflow": 0
+        }
+      ],
+      [
+        "06002AP01",
+        {
+          "maxDepth": 2,
+          "maxInflow": 6,
+          "pondedVolume": 0.002,
+          "maxPondedDepth": 0,
+          "overflow": true
+        }
+      ],
+      [
+        "FK012",
+        {
+          "maxDepth": 0.03,
+          "maxInflow": 6
+        }
+      ],
+      [
+        "FK013",
+        {
+          "maxDepth": 0.1,
+          "maxInflow": 213
+        }
+      ]
+    ],
+    "massBalance": {
+      "inflowVol": 0.013,
+      "outflowVol": 4.327,
+      "floodingVol": 0.002,
+      "storedVol": 0.004,
+      "error": 0.003
+    },
+    "timeSeries": []
+  },
+  "params": {
+    "rainfallIntensity": 110,
+    "duration": 15
+  }
+}

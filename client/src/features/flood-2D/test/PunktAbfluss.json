@@ -1,0 +1,75 @@
+{
+    "kanal_knoten": [
+        {
+            "id": "S001",
+            "typ": "Schacht",
+            "koordinaten": {
+                "x": 408940.000,
+                "y": 5482490.000
+            },
+            "deckel_hoehe": 240.863,
+            "sohl_hoehe": 238.863
+        },
+        {
+            "id": "S002",
+            "typ": "Schacht",
+            "koordinaten": {
+                "x": 408923.487,
+                "y": 5482467.798
+            },
+            "deckel_hoehe": 241.204,
+            "sohl_hoehe": 239.304
+        },
+        {
+            "id": "S003",
+            "typ": "Schacht",
+            "koordinaten": {
+                "x": 408913.575,
+                "y": 5482427.229
+            },
+            "deckel_hoehe": 234.886,
+            "sohl_hoehe": 233.386
+        },
+        {
+            "id": "S004",
+            "typ": "Schacht",
+            "koordinaten": {
+                "x": 408764.925,
+                "y": 5482561.055
+            },
+            "deckel_hoehe": 247.199,
+            "sohl_hoehe": 244.199
+        },
+        {
+            "id": "S005",
+            "typ": "Schacht",
+            "koordinaten": {
+                "x": 408743.106,
+                "y": 5482508.560
+            },
+            "deckel_hoehe": 249.300,
+            "sohl_hoehe": 248.300
+        },
+        {
+            "id": "BW001",
+            "typ": "Bauwerk",
+            "koordinaten": {
+                "x": 408843.680,
+                "y": 5482517.112
+            },
+            "deckel_hoehe": 238.402,
+            "sohl_hoehe": 237.402
+        },
+        {
+            "id": "BW002",
+            "typ": "Bauwerk",
+            "beschreibung": "Auslaufbauwerk",
+            "koordinaten": {
+                "x": 408862.612,
+                "y": 5482447.197
+            },
+            "deckel_hoehe": 232.674,
+            "sohl_hoehe": 231.674
+        }
+    ]
+}

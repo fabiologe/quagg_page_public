@@ -1,0 +1,97 @@
+{
+    "meta": {
+        "name": "SWMM Import - default_rain",
+        "source_format": "SWMM TIMESERIES",
+        "location": "User Import",
+        "return_period_years": "Unknown",
+        "duration_minutes": 60,
+        "total_depth_mm": 23.688,
+        "description": "Importierte Zeitreihe. Werte interpretiert als Intensität (mm/h). Spitzenwert bei Minute 15."
+    },
+    "data": [
+        {
+            "step": 1,
+            "time_start_min": 0,
+            "time_end_min": 5,
+            "depth_mm": 1.301,
+            "intensity_mm_h": 15.612
+        },
+        {
+            "step": 2,
+            "time_start_min": 5,
+            "time_end_min": 10,
+            "depth_mm": 1.6035,
+            "intensity_mm_h": 19.242
+        },
+        {
+            "step": 3,
+            "time_start_min": 10,
+            "time_end_min": 15,
+            "depth_mm": 2.703,
+            "intensity_mm_h": 32.436
+        },
+        {
+            "step": 4,
+            "time_start_min": 15,
+            "time_end_min": 20,
+            "depth_mm": 11.799,
+            "intensity_mm_h": 141.588
+        },
+        {
+            "step": 5,
+            "time_start_min": 20,
+            "time_end_min": 25,
+            "depth_mm": 1.797,
+            "intensity_mm_h": 21.564
+        },
+        {
+            "step": 6,
+            "time_start_min": 25,
+            "time_end_min": 30,
+            "depth_mm": 1.305,
+            "intensity_mm_h": 15.660
+        },
+        {
+            "step": 7,
+            "time_start_min": 30,
+            "time_end_min": 35,
+            "depth_mm": 0.903,
+            "intensity_mm_h": 10.836
+        },
+        {
+            "step": 8,
+            "time_start_min": 35,
+            "time_end_min": 40,
+            "depth_mm": 0.735,
+            "intensity_mm_h": 8.820
+        },
+        {
+            "step": 9,
+            "time_start_min": 40,
+            "time_end_min": 45,
+            "depth_mm": 0.597,
+            "intensity_mm_h": 7.164
+        },
+        {
+            "step": 10,
+            "time_start_min": 45,
+            "time_end_min": 50,
+            "depth_mm": 0.4845,
+            "intensity_mm_h": 5.814
+        },
+        {
+            "step": 11,
+            "time_start_min": 50,
+            "time_end_min": 55,
+            "depth_mm": 0.291,
+            "intensity_mm_h": 3.492
+        },
+        {
+            "step": 12,
+            "time_start_min": 55,
+            "time_end_min": 60,
+            "depth_mm": 0.169,
+            "intensity_mm_h": 2.028
+        }
+    ]
+}

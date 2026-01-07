@@ -1,0 +1,14 @@
+ToDO'S:
+-------------------------
+
+
+
+- Profil Pics dont load currently
+- Documents need some work
+- Auto componente where we track cars etcs
+- All LPH sub components
+- Virtual Windows Desktop (with Licence Managment)
+- Find a way to implement my eng. python scripts into the LPH's 
+- connect Picture to an Project and Map
+- Overall company accounting tracking 
+- IFC Viewer and Editor
