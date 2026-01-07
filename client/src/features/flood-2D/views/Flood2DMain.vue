@@ -24,11 +24,28 @@
 
        <!-- UNIFIED EDITOR (2D & 3D) -->
        <!-- Logic: MapEditor3D now handles both modes via props or internal state -->
+       <!-- UNIFIED EDITOR (2D & 3D) -->
+       <!-- Logic: MapEditor3D now handles both modes via props or internal state -->
        <MapEditor3D 
          ref="editorRef"
          :activeTool="activeTool"
          @confirm="onTerrainLoaded"
        />
+
+       <!-- RIGHT PANEL CONTAINER -->
+       <div class="right-panel-container" v-if="store.editorMode === 'SETUP' || store.editorMode === 'SIMULATION' || store.editorMode === 'IMPORT_TERRAIN'">
+         
+         <!-- TOGGLE BUTTON -->
+         <button class="panel-toggle" @click="panelOpen = !panelOpen" :title="panelOpen ? 'Close Panel' : 'Open Panel'">
+            {{ panelOpen ? '→' : '←' }}
+         </button>
+
+         <!-- PANEL -->
+         <aside class="right-panel" :class="{ closed: !panelOpen }">
+            <ScenarioManager />
+         </aside>
+
+       </div>
 
        <!-- MODAL -->
        <DataImportModal 
@@ -47,12 +64,14 @@ import { useScenarioStore } from '@/stores/scenarioStore';
 import EditorToolbar from '../components/editor/EditorToolbar.vue';
 import MapEditor3D from '../components/editor/MapEditor3D.vue';
 import DataImportModal from '../components/importer/DataImportModal.vue';
+import ScenarioManager from '../components/panel/ScenarioManager.vue';
 
 const store = useScenarioStore();
 const activeTool = ref('SELECT'); // Shared tool state
 const errorMsg = ref(null);
 const editorRef = ref(null);
 const showImportModal = ref(false);
+const panelOpen = ref(true);
 
 // -- ACTIONS --
 
@@ -98,23 +117,72 @@ const onTerrainLoaded = () => {
 
 <style scoped>
 .flood-main-container {
-    display: flex;
-    width: 100vw;
-    height: 100vh;
+    display: flex; /* Sidebar | Content */
+    width: 100vw; height: 100vh;
     overflow: hidden;
-    background-color: #f0f2f5;
+    background: #1e272e;
 }
 
 .left-sidebar {
-    flex: 0 0 auto;
+    flex: 0 0 60px; /* Toolbar width */
     z-index: 20;
+    border-right: 1px solid #2d3436;
 }
 
 .main-content {
     flex: 1;
     position: relative;
+    display: flex; /* To contain Editor + Right Panel */
+}
+
+/* Make Editor fill remaining space */
+.main-content > :first-child { 
+    /* This targets MapEditor3D if it's the first child (except for error banner) 
+       Alternatively, style MapEditor3D to be flex:1 width:100% height:100% 
+    */
+}
+/* Ideally MapEditor3D component root should scale */
+
+.right-panel-container {
+    position: relative;
     display: flex;
-    flex-direction: column;
+    z-index: 15;
+}
+
+.right-panel {
+    width: 300px;
+    border-left: 1px solid #2d3436;
+    background: #233140;
+    transition: width 0.3s ease, opacity 0.3s ease;
+    overflow: hidden;
+}
+
+.right-panel.closed {
+    width: 0;
+    opacity: 0;
+    border-left: none;
+}
+
+.panel-toggle {
+    position: absolute;
+    left: -24px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 48px;
+    background: #233140;
+    border: 1px solid #2d3436;
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+    color: #bdc3c7;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+    z-index: 20;
+}
+.panel-toggle:hover {
+    background: #34495e;
+    color: #fff;
 }
 
 .error-banner {

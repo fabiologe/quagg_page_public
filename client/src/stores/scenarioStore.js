@@ -45,6 +45,7 @@ export const useScenarioStore = defineStore('scenario', {
         },
         sources: (state) => state.geoJson.features.filter(f => f.properties.type === 'SOURCE'),
         buildings: (state) => state.geoJson.features.filter(f => f.properties.type === 'BUILDING'),
+        boundaries: (state) => state.geoJson.features.filter(f => f.properties.type === 'BOUNDARY'),
     },
 
     actions: {
@@ -135,6 +136,29 @@ export const useScenarioStore = defineStore('scenario', {
 
         setSelection(id) {
             this.selectedFeatureId = id;
+        },
+
+        // --- HYDRAULIC CONFIG ACTIONS ---
+        updateHydraulics(id, hydraulicData) {
+            // Find in nodes
+            let target = this.nodes.find(n => n.id === id);
+
+            // Or find in Features (Buildings/Boundaries)
+            if (!target) {
+                target = this.geoJson.features.find(f => f.id === id);
+            }
+
+            if (target) {
+                // Ensure properties exist (Nodes might not have properties object yet if raw XML)
+                if (!target.properties) target.properties = {};
+
+                // Assign logic
+                target.properties.hydraulic = { ...hydraulicData };
+
+                console.log(`[Store] Updated Hydraulics for ${id}:`, hydraulicData);
+            } else {
+                console.warn(`[Store] ID ${id} not found for hydraulic update.`);
+            }
         },
 
         // --- SIMULATION PREPARATION (Stub for now) ---

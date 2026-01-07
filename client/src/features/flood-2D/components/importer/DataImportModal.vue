@@ -19,6 +19,12 @@
         >
           Gebäude (.json)
         </button>
+        <button 
+          :class="{ active: activeTab === 'BOUNDARIES' }" 
+          @click="activeTab = 'BOUNDARIES'"
+        >
+          Grenzen (.json)
+        </button>
       </div>
 
       <div class="tab-content">
@@ -36,16 +42,29 @@
           </label>
         </div>
 
-        <!-- BUILDING IMPORT -->
         <div v-if="activeTab === 'BUILDINGS'" class="import-panel">
           <p class="description">
             Importiere Gebäudeumringe als GeoJSON Features.
-            <br><small>Polygone werden automatisch als Gebäude (Typ: building, Höhe: 10m) normalisiert.</small>
+            <br><small>Polygone werden als Gebäude (Typ: building, Höhe: 10m) normalisiert.</small>
           </p>
 
           <label class="file-drop-zone">
             <input type="file" accept=".json,.geojson" @change="handleFileSelect" :disabled="importing">
-            <span v-if="!importing">📁 Wähle .GeoJSON Datei</span>
+            <span v-if="!importing">📁 Wähle Gebäudedaten (.json)</span>
+            <span v-else>Importiere...</span>
+          </label>
+        </div>
+
+        <!-- BOUNDARY IMPORT -->
+        <div v-if="activeTab === 'BOUNDARIES'" class="import-panel">
+          <p class="description">
+            Importiere hydraulische Randbedingungen (Linien) als GeoJSON.
+            <br><small>Linien (LineStrings) werden als hydraulische Grenzen importiert.</small>
+          </p>
+
+          <label class="file-drop-zone">
+            <input type="file" accept=".json,.geojson" @change="handleFileSelect" :disabled="importing">
+            <span v-if="!importing">📁 Wähle Grenzen (.json)</span>
             <span v-else>Importiere...</span>
           </label>
         </div>
@@ -70,7 +89,7 @@ import { useScenarioStore } from '@/stores/scenarioStore';
 const emit = defineEmits(['close']);
 const store = useScenarioStore();
 
-const activeTab = ref('NODES'); // NODES | BUILDINGS
+const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES
 const importing = ref(false);
 const feedback = ref(null);
 
@@ -87,8 +106,8 @@ const handleFileSelect = async (event) => {
         if (activeTab.value === 'NODES' && !name.endsWith('.xml')) {
             throw new Error("Bitte eine .xml Datei für Kanalnetz wählen.");
         }
-        if (activeTab.value === 'BUILDINGS' && !(name.endsWith('.json') || name.endsWith('.geojson'))) {
-            throw new Error("Bitte eine .json/.geojson Datei für Gebäude wählen.");
+        if ((activeTab.value === 'BUILDINGS' || activeTab.value === 'BOUNDARIES') && !(name.endsWith('.json') || name.endsWith('.geojson'))) {
+            throw new Error("Bitte eine .json/.geojson Datei wählen.");
         }
 
         const result = await store.importFile(file);

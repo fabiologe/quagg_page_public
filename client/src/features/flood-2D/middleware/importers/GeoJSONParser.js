@@ -39,25 +39,43 @@ export const GeoJSONParser = {
 
             const type = feature.geometry.type;
 
-            // Filter Logic: Only Polygons / MultiPolygons for now (Buildings/Walls)
-            if (type === 'Polygon' || type === 'MultiPolygon') {
+            // Filter Logic: Accept Polygons (Buildings) AND LineStrings (Boundaries)
+            const isPolygon = type === 'Polygon' || type === 'MultiPolygon';
+            const isLine = type === 'LineString' || type === 'MultiLineString';
+
+            if (isPolygon || isLine) {
 
                 // Property Defaults
                 if (!feature.properties) feature.properties = {};
 
-                // Height Default
-                if (feature.properties.height === undefined || feature.properties.height === null) {
-                    feature.properties.height = 10.0; // Default 10m
+                if (isPolygon) {
+                    // Height Default
+                    if (feature.properties.height === undefined || feature.properties.height === null) {
+                        feature.properties.height = 10.0; // Default 10m
+                    }
+                    // Ensure numeric
+                    feature.properties.height = parseFloat(feature.properties.height);
+
+                    // Data Unification: Enforce type 'BUILDING'
+                    if (!feature.properties.type) {
+                        feature.properties.type = 'BUILDING';
+                    } else {
+                        feature.properties.type = feature.properties.type.toUpperCase();
+                    }
                 }
 
-                // Ensure numeric
-                feature.properties.height = parseFloat(feature.properties.height);
+                if (isLine) {
+                    // Data Unification: Enforce type 'BOUNDARY'
+                    if (!feature.properties.type) {
+                        feature.properties.type = 'BOUNDARY';
+                    } else {
+                        feature.properties.type = feature.properties.type.toUpperCase();
+                    }
 
-                // Data Unification: Enforce type 'BUILDING' (uppercase for Store consistency)
-                if (!feature.properties.type) {
-                    feature.properties.type = 'BUILDING';
-                } else {
-                    feature.properties.type = feature.properties.type.toUpperCase();
+                    // Optional Name
+                    if (!feature.properties.name) {
+                        feature.properties.name = 'Imported Boundary';
+                    }
                 }
 
                 // Assign ID if missing
