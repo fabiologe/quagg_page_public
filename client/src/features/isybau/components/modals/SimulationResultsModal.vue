@@ -1,7 +1,7 @@
 <template>
   <DraggableModal :is-open="isOpen" initial-width="1200px" initial-height="600px" initial-left="center" initial-top="50">
       <div class="modal-header">
-        <h2>Simulationsergebnisse</h2>
+        <h3>Simulationsergebnisse</h3>
         <div class="header-actions">
            <!-- Draggable makes bottom panel toggle redundant/confusing. User can resize/move manually -->
              <!-- <button class="icon-btn" @click="toggleBottomPanel" title="Bottom Panel / Modal">
@@ -697,8 +697,15 @@ const chartOptions = {
   background: none;
   border: none;
   font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
-  color: #666;
+  color: #94a3b8; /* Slate 400 */
+  transition: color 0.2s;
+  padding: 0 0.5rem;
+}
+
+.close-btn:hover {
+  color: #ef4444; /* Red 500 */
 }
 
 .modal-body {

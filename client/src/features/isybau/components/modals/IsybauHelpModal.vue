@@ -277,11 +277,16 @@ const activeTab = ref('general');
   background: none;
   border: none;
   font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
-  color: #94a3b8;
+  color: #94a3b8; /* Slate 400 */
   transition: color 0.2s;
+  padding: 0 0.5rem;
 }
-.close-btn:hover { color: #ef4444; }
+
+.close-btn:hover {
+  color: #ef4444; /* Red 500 */
+}
 
 .modal-body {
   display: flex;

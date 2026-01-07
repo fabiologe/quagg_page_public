@@ -730,6 +730,13 @@ const apply = () => {
 
 .modal-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 1rem; position: relative; }
 
+.tab-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
 .table-wrapper { 
     flex: 1; /* Grow to fill */
     overflow-y: auto; 
@@ -798,6 +805,19 @@ const apply = () => {
 .tab-btn.active { background: #e8f4f8; color: #3498db; }
 
 .header-actions { display: flex; gap: 0.5rem; }
-.close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #7f8c8d; }
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #94a3b8; /* Slate 400 */
+  transition: color 0.2s;
+  padding: 0 0.5rem;
+}
+
+.close-btn:hover {
+  color: #ef4444; /* Red 500 */
+}
 .icon-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
 </style>

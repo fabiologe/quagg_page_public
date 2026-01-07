@@ -118,8 +118,15 @@ const copyToClipboard = async (text) => {
   background: none;
   border: none;
   font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
-  color: #7f8c8d;
+  color: #94a3b8; /* Slate 400 */
+  transition: color 0.2s;
+  padding: 0 0.5rem;
+}
+
+.close-btn:hover {
+  color: #ef4444; /* Red 500 */
 }
 
 .modal-body {
