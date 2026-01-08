@@ -134,33 +134,54 @@ export const RainGenerator = {
      * @param {number} [params.intervalSteps] - Time step in minutes (Default 5)
      * @returns {Promise<Array>} - Array of objects [{ time_sec: number, value_mm: number }]
      */
-    async generateSyntheticRain({ lat, lng, durationMinutes, returnPeriod, eulerType = 2, intervalSteps = 5 }) {
-        // 1. Fetch KOSTRA data
-        const kostraData = await KostraApiService.fetchRainData(lat, lng);
-        const rawGrid = kostraData.raw;
+    /**
+     * Generates a synthetic rain series (Euler Type II) based on KOSTRA data.
+     * @param {Object} params
+     * @param {number} params.lat - Latitude
+     * @param {number} params.lng - Longitude
+     * @param {number} params.durationMinutes - Total duration in minutes
+     * @param {number} params.returnPeriod - Return period in years (e.g. 100)
+     * @param {number} [params.eulerType] - 1 or 2 (Default 2)
+     * @param {number} [params.intervalSteps] - Time step in minutes (Default 5)
+     * @param {Object} [params.rawGrid] - Optional: Pre-fetched KOSTRA grid to avoid API call
+     * @returns {Promise<Array>} - Array of objects [{ time_sec: number, value_mm: number }]
+     */
+    async generateSyntheticRain({ lat, lng, durationMinutes, returnPeriod, eulerType = 2, intervalSteps = 5, rawGrid = null }) {
+        let kostraRow = {};
 
-        if (!rawGrid) {
-            throw new Error('No KOSTRA data found for coordinates.');
-        }
+        // 1. Get Data (API or Raw)
+        if (rawGrid) {
+            // Use provided grid
+            const returnPeriodKey = getReturnPeriodKey(returnPeriod);
+            Object.keys(rawGrid).forEach(durationKey => {
+                const entry = rawGrid[durationKey];
+                if (entry && entry[returnPeriodKey] !== undefined) {
+                    kostraRow[durationKey] = entry[returnPeriodKey];
+                }
+            });
+        } else {
+            // Fetch KOSTRA data
+            const kostraData = await KostraApiService.fetchRainData(lat, lng);
+            const grid = kostraData.raw;
 
-        // 2. Extract Data Row for the specific Return Period
-        // The rawGrid structure is expected to be: { "5": { "RN_002A": ..., ... }, "10": { ... } }
-        // We need to create a row: { "5": intensity, "10": intensity ... }
-        const returnPeriodKey = getReturnPeriodKey(returnPeriod);
-        const kostraRow = {};
-
-        Object.keys(rawGrid).forEach(durationKey => {
-            const entry = rawGrid[durationKey];
-            if (entry && entry[returnPeriodKey] !== undefined) {
-                kostraRow[durationKey] = entry[returnPeriodKey];
+            if (!grid) {
+                throw new Error('No KOSTRA data found for coordinates.');
             }
-        });
+
+            const returnPeriodKey = getReturnPeriodKey(returnPeriod);
+            Object.keys(grid).forEach(durationKey => {
+                const entry = grid[durationKey];
+                if (entry && entry[returnPeriodKey] !== undefined) {
+                    kostraRow[durationKey] = entry[returnPeriodKey];
+                }
+            });
+        }
 
         if (Object.keys(kostraRow).length === 0) {
             throw new Error(`No data found for return period ${returnPeriod} years.`);
         }
 
-        // 3. Calculate Euler Distribution
+        // 2. Calculate Euler Distribution
         // Note: Currently only supporting Euler Type II as per the copied logic.
         // If Type I is needed, logic would differ slightly in peak placement.
         const rainBlocks = calculateEulerType2(kostraRow, durationMinutes, intervalSteps);

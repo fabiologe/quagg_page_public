@@ -186,6 +186,12 @@ const handleFileUpload = async (event) => {
                parsedData.value = result; 
                stats.value = result.stats;
                loadingText.value = 'Generating 3D Mesh...';
+               
+               // USER REQUEST: Update Store Immediately (Directly at Import)
+               store.demRaw = content;
+               store.setTerrain(result);
+               console.log("Terrain Updated Immediately. Center:", result.center);
+
                await new Promise(r => setTimeout(r, 10)); 
                
                buildTerrainMesh(result);
@@ -313,7 +319,13 @@ const acceptTerrain = () => {
     
     // If it was a fresh upload:
     if (rawContent.value && parsedData.value) {
-         store.setTerrain(rawContent.value, parsedData.value.stats, parsedData.value.gridData);
+         // Direct assignment for raw, relying on Pinia reactivity
+         store.demRaw = rawContent.value;
+         
+         // Correct call: Pass the single object containing gridData, center, stats, etc.
+         store.setTerrain(parsedData.value);
+         
+         console.log("Terrain Accepted. Center:", parsedData.value.center);
     }
 
     // 2. Emit confirm

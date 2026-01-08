@@ -462,6 +462,12 @@ const handleFileUpload = async (event) => {
                parsedData.value = result;
                stats.value = result.stats;
                store.editorMode = 'IMPORT_TERRAIN';
+               
+               // USER REQUEST: Update Store Immediately
+               store.demRaw = rawContent.value;
+               store.setTerrain(result);
+               console.log("Terrain Updated Immediately (Map3D). Center:", result.center);
+
                buildTerrainMesh(result);
            }
         } catch(e) {

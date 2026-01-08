@@ -32,6 +32,13 @@
       >
         Bounds ({{ store.boundaries.length }})
       </button>
+      <button 
+        :class="{ active: activeTab === 'RAIN' }" 
+        @click="activeTab = 'RAIN'"
+        title="Niederschlag"
+      >
+        🌧️ Regen
+      </button>
     </div>
 
     <!-- CONTENT -->
@@ -58,6 +65,8 @@
         @zoom-to="handleZoom"
       />
 
+      <RainConfig v-if="activeTab === 'RAIN'" />
+
     </div>
 
     <!-- CONFIGURATION PANEL (Bottom) -->
@@ -73,6 +82,7 @@ import { ref, computed } from 'vue';
 import { useScenarioStore } from '@/stores/scenarioStore';
 import ObjectTable from './ObjectTable.vue';
 import BoundaryConfig from './BoundaryConfig.vue';
+import RainConfig from './RainConfig.vue';
 
 const store = useScenarioStore();
 const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES

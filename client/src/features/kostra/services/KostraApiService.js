@@ -20,6 +20,11 @@ export const KostraApiService = {
 
             const data = response.data
 
+            if (!data) {
+                console.warn('KOSTRA API returned null data (Coordinates likely outside Germany or invalid transformation).');
+                return { raw: null, r5_2: 0, r5_30: 0, r5_100: 0 };
+            }
+
             // Extract relevant values for 5 minutes duration (Key "5")
             // RN_002A = 2 years, RN_030A = 30 years, RN_100A = 100 years
             const r5_2 = data['5']?.RN_002A || 0

@@ -33,7 +33,17 @@ export const useScenarioStore = defineStore('scenario', {
 
         // Validation State
         validationErrors: [],    // Array of error objects
-        isValidating: false
+        isValidating: false,
+
+        // Rain Data
+        rainData: null, // [{ time_sec, value_mm }, ...]
+        kostraGrid: null, // Full Raw Data from DWD
+        rainLocation: null, // { lat, lng } input used
+        rainConfig: { // Store last used config
+            duration: 60,
+            returnPeriod: 100,
+            modelType: 2
+        }
     }),
 
     getters: {
@@ -138,6 +148,22 @@ export const useScenarioStore = defineStore('scenario', {
             this.selectedFeatureId = id;
         },
 
+        // --- RAIN ACTIONS ---
+        setRainData(data) {
+            this.rainData = data;
+            console.log(`[Store] Rain Data updated with ${data.length} steps.`);
+        },
+
+        setKostraGrid(grid, location) {
+            this.kostraGrid = grid;
+            this.rainLocation = location;
+            console.log(`[Store] KOSTRA Grid updated for ${location.lat}, ${location.lon}`);
+        },
+
+        setRainConfig(config) {
+            this.rainConfig = { ...this.rainConfig, ...config };
+        },
+
         // --- HYDRAULIC CONFIG ACTIONS ---
         updateHydraulics(id, hydraulicData) {
             // Find in nodes
@@ -185,7 +211,10 @@ export const useScenarioStore = defineStore('scenario', {
 
                 rain: {
                     intensity: this.simulationConfig.globalRain_mm,
-                    duration: this.simulationConfig.rainDuration_s
+                    duration: this.simulationConfig.rainDuration_s,
+                    // TODO: Export logic for variable rain
+                    // If this.rainData is present, export as .rain or .bdy file
+                    // data: this.rainData
                 },
 
                 boundaries: sources.map(s => ({
