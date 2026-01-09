@@ -24,18 +24,35 @@
          ref="editorRef"
        />
 
-       <!-- RIGHT PANEL CONTAINER -->
-       <!-- Logic: Show Panel if not Simulating (or always? configurable) -->
+       <!-- RIGHT PANEL CONTAINER (Flex Row) -->
        <div class="right-panel-container">
          
-         <!-- TOGGLE BUTTON -->
-         <button class="panel-toggle" @click="panelOpen = !panelOpen" :title="panelOpen ? 'Close Panel' : 'Open Panel'">
-            {{ panelOpen ? '→' : '←' }}
-         </button>
+         <!-- RESIZE & TOGGLE AREA -->
+         <div class="resize-controls" :class="{ 'panel-closed': !panelOpen }">
+             
+             <!-- Toggle Button attached to handle -->
+             <button 
+                class="panel-toggle" 
+                @click="panelOpen = !panelOpen" 
+                :title="panelOpen ? 'Close Panel' : 'Open Panel'"
+             >
+                {{ panelOpen ? '→' : '←' }}
+             </button>
 
-         <!-- PANEL -->
-         <aside class="right-panel" :class="{ closed: !panelOpen }">
-            <!-- ScenarioManager uses geoStore, hydraulicStore, simStore -->
+             <!-- Drag Handle -->
+             <div 
+                class="resize-bar" 
+                @mousedown.prevent="startResize"
+                v-if="panelOpen"
+             ></div>
+         </div>
+
+         <!-- PANEL CONTENT -->
+         <aside 
+            class="right-panel" 
+            :class="{ closed: !panelOpen }" 
+            :style="{ width: panelOpen ? panelWidth + 'px' : '0px' }"
+         >
              <ScenarioManager />
          </aside>
 
@@ -74,69 +91,105 @@ const editorRef = ref(null);
 const showImportModal = ref(false);
 const panelOpen = ref(true);
 
+// RESIZE LOGIC
+const panelWidth = ref(400); // Default width
+const isResizing = ref(false);
+
+const startResize = () => {
+    isResizing.value = true;
+    window.addEventListener('mousemove', doResize);
+    window.addEventListener('mouseup', stopResize);
+    document.body.style.cursor = 'ew-resize';
+};
+
+const doResize = (e) => {
+    if (!isResizing.value) return;
+    const newWidth = window.innerWidth - e.clientX;
+    // Limits
+    if (newWidth > 200 && newWidth < 1200) {
+        panelWidth.value = newWidth;
+    }
+};
+
+const stopResize = () => {
+    isResizing.value = false;
+    window.removeEventListener('mousemove', doResize);
+    window.removeEventListener('mouseup', stopResize);
+    document.body.style.cursor = '';
+};
+
 onMounted(() => {
     console.log('Flood2DMain mounted successfully');
-    // Ensure stores are ready or reset if needed
     simStore.setStatus('IDLE');
 });
 
-// Error Boundary for Children
 onErrorCaptured((err, instance, info) => {
-    console.error("Flood2DMain Error Captured:", err);
+    console.error("Flood2DMain Error: ", err);
     errorMsg.value = `Error: ${err.message}`;
-    return false; // Prevent propogation to global handler if we want to handle it here
+    return false;
 });
 
 </script>
 
 <style scoped>
 .flood-main-container {
-    display: flex; /* Sidebar | Content */
+    display: flex;
     width: 100vw; height: 100vh;
     overflow: hidden;
     background: #1e272e;
 }
 
 .left-sidebar {
-    flex: 0 0 60px; /* Toolbar width */
+    flex: 0 0 60px;
     z-index: 20;
     border-right: 1px solid #2d3436;
-    background: white; /* Ensure visible background */
+    background: white;
 }
 
 .main-content {
     flex: 1;
     position: relative;
-    display: flex; /* To contain Editor + Right Panel */
+    display: flex;
+    overflow: hidden; /* Ensure map doesn't overflow */
+}
+
+/* Map takes available space */
+.main-content > :first-child { 
+    /* Assuming MapEditor3D is first child */
+    flex: 1; 
+    min-width: 0; /* Crucial for flex item shrinking */
 }
 
 .right-panel-container {
-    position: relative;
     display: flex;
+    flex-direction: row;
+    height: 100%;
     z-index: 15;
-    height: 100%;
+    background: transparent; /* Let map show through if needed */
 }
 
-.right-panel {
-    width: 300px;
-    border-left: 1px solid #2d3436;
-    background: #233140;
-    transition: width 0.3s ease, opacity 0.3s ease;
-    overflow: hidden;
-    height: 100%;
+/* CONTROLS (Handle + Button) */
+.resize-controls {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    position: relative;
+    z-index: 20;
 }
 
-.right-panel.closed {
-    width: 0;
-    opacity: 0;
-    border-left: none;
+.resize-bar {
+    width: 8px;
+    height: 100%;
+    cursor: ew-resize;
+    background: #2d3436;
+    transition: background 0.2s;
+    border-left: 1px solid #1a1a1a;
+}
+.resize-bar:hover, .resize-bar:active {
+    background: #3498db;
 }
 
 .panel-toggle {
-    position: absolute;
-    left: -24px;
-    top: 50%;
-    transform: translateY(-50%);
     width: 24px;
     height: 48px;
     background: #233140;
@@ -147,11 +200,26 @@ onErrorCaptured((err, instance, info) => {
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     font-size: 1.2rem;
-    z-index: 20;
+    margin-right: -1px; /* Align tight to bar */
+    box-shadow: -2px 0 5px rgba(0,0,0,0.2);
 }
 .panel-toggle:hover {
     background: #34495e;
     color: #fff;
+}
+
+/* PANEL */
+.right-panel {
+    background: #233140;
+    box-shadow: -5px 0 15px rgba(0,0,0,0.3);
+    height: 100%;
+    overflow: hidden;
+    transition: width 0.05s linear; /* Very fast for responsiveness */
+    display: flex; flex-direction: column;
+}
+
+.right-panel.closed {
+    border-left: none;
 }
 
 .error-banner {
@@ -162,9 +230,5 @@ onErrorCaptured((err, instance, info) => {
     color: #b91c1c;
     padding: 0.5rem;
     text-align: center;
-    border-bottom: 1px solid #fecaca;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
 }
 </style>

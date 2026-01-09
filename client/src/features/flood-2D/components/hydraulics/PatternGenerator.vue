@@ -9,21 +9,21 @@
     <!-- Parameter Popover/Modal -->
     <div v-if="isOpen" class="popover-overlay" @click.self="close">
       <div class="popover">
-        <h4 class="pop-title">Generate {{ activeType }}</h4>
+        <h4 class="pop-title">{{ activeType }} generieren</h4>
         
         <div class="form-row">
-            <label>Duration (h)</label>
+            <label>Dauer (h)</label>
             <input type="number" v-model.number="duration_h" min="0.1" step="0.5">
         </div>
 
         <div class="form-row">
-            <label>Peak / Value (m³/s)</label>
+            <label>Spitzenwert / Menge (m³/s)</label>
             <input type="number" v-model.number="peakValue" min="0" step="1">
         </div>
 
         <div class="actions">
-            <button @click="close" class="btn-cancel">Cancel</button>
-            <button @click="generate" class="btn-primary">Generate</button>
+            <button @click="close" class="btn-cancel">Abbrechen</button>
+            <button @click="generate" class="btn-primary">Generieren</button>
         </div>
       </div>
     </div>

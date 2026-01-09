@@ -35,9 +35,9 @@
       <button 
         :class="{ active: activeTab === 'PROFILES' }" 
         @click="activeTab = 'PROFILES'"
-        title="Hydraulische Profile"
+        title="Hydraulische Ganglinien"
       >
-        Profiles ({{ profilesList.length }})
+        Ganglinien ({{ ganglinienList.length }})
       </button>
       <button 
         :class="{ active: activeTab === 'RAIN' }" 
@@ -77,44 +77,57 @@
           
           <!-- LEFT: List -->
           <div class="profiles-list-col">
-              <div v-for="profile in profilesList" 
-                   :key="profile.id" 
+              <div v-for="gl in ganglinienList" 
+                   :key="gl.id" 
                    class="profile-item" 
-                   :class="{ active: activeProfile && activeProfile.id === profile.id }"
-                   @click="hydStore.setActiveProfile(profile.id)"
+                   :class="{ active: activeGanglinie && activeGanglinie.id === gl.id }"
+                   @click="hydStore.setActiveGanglinie(gl.id)"
               >
-                  <div class="p-name">{{ profile.name }}</div>
-                  <div class="p-meta">{{ profile.type }} | {{ profile.data.length }} pts</div>
-                  <button class="btn-del" @click.stop="hydStore.deleteProfile(profile.id)">×</button>
+                  <div class="p-name">{{ gl.name }}</div>
+                  <div class="p-meta">
+                      {{ gl.type }} | {{ gl.data.length }} pts
+                      <span class="p-usage" title="Genutzt von X Objekten">
+                          Used: {{ hydStore.getAssignmentsByGanglinie(gl.id) }}
+                      </span>
+                  </div>
+                  <button class="btn-del" @click.stop="hydStore.deleteGanglinie(gl.id)">×</button>
               </div>
               
-              <div v-if="profilesList.length === 0" class="empty-msg">No profiles.</div>
-              <button class="btn-add" @click="hydStore.createProfile('New Profile', 'inflow')">+ Add Profile</button>
+              <div v-if="ganglinienList.length === 0" class="empty-msg">Keine Ganglinien.</div>
+              <button class="btn-add" @click="hydStore.createGanglinie('Neue Ganglinie', 'Zufluss')">+ Ganglinie</button>
           </div>
 
           <!-- RIGHT: Editor -->
-          <div class="profile-editor-col" v-if="activeProfile">
+          <div class="profile-editor-col" v-if="activeGanglinie">
               <div class="editor-header">
-                  <input v-model="activeProfile.name" class="name-input" />
-                  <select v-model="activeProfile.type" class="type-select">
-                      <option value="inflow">Inflow (Q)</option>
-                      <option value="outflow">Outflow (H/Q)</option>
-                      <option value="waterlevel">Water Level (H)</option>
+                  <input v-model="activeGanglinie.name" class="name-input" />
+                  <select v-model="activeGanglinie.type" class="type-select">
+                      <option value="Zufluss">Zufluss (Q)</option>
+                      <option value="Wasserstand">Wasserstand (H)</option>
                   </select>
+                  <!-- NEW: Assign Button -->
+                  <button 
+                    v-if="currentSelectionIds.length > 0" 
+                    @click="assignToSelection"
+                    class="btn-assign"
+                    :title="`Allen ${currentSelectionIds.length} ausgewählten Objekten zuweisen`"
+                  >
+                    🔗 Zuweisen ({{ currentSelectionIds.length }})
+                  </button>
               </div>
 
               <!-- Pattern Generator -->
               <PatternGenerator @generate="applyPattern" />
 
               <!-- Visual Editor -->
-              <TimeSeriesEditor 
-                v-model="activeProfile.data" 
+              <GanglinienEditor 
+                v-model="activeGanglinie.data" 
                 :duration="7200"
-                @update:modelValue="(val) => hydStore.updateProfileData(activeProfile.id, val)"
+                @update:modelValue="(val) => hydStore.updateGanglinieData(activeGanglinie.id, val)"
               />
           </div>
           <div v-else class="empty-editor">
-              Select a profile to edit.
+              Wähle eine Ganglinie zur Bearbeitung.
           </div>
 
       </div>
@@ -141,7 +154,7 @@ import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore'
 import ObjectTable from './ObjectTable.vue';
 import BoundaryConfig from './BoundaryConfig.vue';
 import RainConfig from './RainConfig.vue';
-import TimeSeriesEditor from './TimeSeriesEditor.vue';
+import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 import PatternGenerator from '../hydraulics/PatternGenerator.vue';
 
 const geoStore = useGeoStore();
@@ -162,18 +175,30 @@ const selectedItem = computed(() => {
     return geoStore.getFeatureById(simStore.selection);
 });
 
-const profilesList = computed(() => {
-    return hydStore.profiles ? Object.values(hydStore.profiles) : [];
+const ganglinienList = computed(() => {
+    return hydStore.ganglinien ? Object.values(hydStore.ganglinien) : [];
 });
 
-const activeProfile = computed(() => {
-    if (!hydStore.activeProfileId) return null;
-    return hydStore.profiles[hydStore.activeProfileId];
+const activeGanglinie = computed(() => {
+    if (!hydStore.activeGanglinieId) return null;
+    return hydStore.ganglinien[hydStore.activeGanglinieId];
+});
+
+// Selection Helper: Always return array
+const currentSelectionIds = computed(() => {
+    if (!simStore.selection) return [];
+    return Array.isArray(simStore.selection) ? simStore.selection : [simStore.selection];
 });
 
 const applyPattern = (points) => {
-    if(activeProfile.value) {
-        hydStore.updateProfileData(activeProfile.value.id, points);
+    if(activeGanglinie.value) {
+        hydStore.updateGanglinieData(activeGanglinie.value.id, points);
+    }
+};
+
+const assignToSelection = () => {
+    if (activeGanglinie.value && currentSelectionIds.value.length > 0) {
+        hydStore.assignToObjects(currentSelectionIds.value, activeGanglinie.value.id);
     }
 };
 

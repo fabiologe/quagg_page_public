@@ -4,12 +4,12 @@ import { ref } from 'vue';
 export const useHydraulicStore = defineStore('hydraulic', () => {
     // State
     /**
-     * @type {import('vue').Ref<Object.<string, {id: string, name: string, type: string, data: Array<{t: number, v: number}>}>>}
+     * @type {import('vue').Ref<Object.<string, {id: string, name: string, type: 'Zufluss'|'Wasserstand'|string, data: Array<{t: number, v: number}>}>>}
      */
-    const profiles = ref({});
+    const ganglinien = ref({});
 
     /** @type {import('vue').Ref<Object.<string, string>>} */
-    const assignments = ref({}); // { nodeId: profileId }
+    const assignments = ref({}); // { geoObjectId: ganglinieId }
 
     /** @type {import('vue').Ref<Array<any>>} */
     const rainData = ref([]);
@@ -28,52 +28,67 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
     });
 
     /** @type {import('vue').Ref<string|null>} */
-    const activeProfileId = ref(null);
+    const activeGanglinieId = ref(null);
 
     // Actions
-    function createProfile(name, type) {
+    function createGanglinie(name, type) {
         const id = crypto.randomUUID();
-        profiles.value[id] = {
+        ganglinien.value[id] = {
             id,
             name,
-            type: type || 'inflow',
+            type: type || 'Zufluss',
             data: [{ t: 0, v: 0 }, { t: 3600, v: 0 }] // Default 1h flat
         };
         return id;
     }
 
-    function deleteProfile(id) {
-        if (profiles.value[id]) {
-            delete profiles.value[id];
+    function deleteGanglinie(id) {
+        if (ganglinien.value[id]) {
+            delete ganglinien.value[id];
         }
         // Remove assignments
-        for (const nodeId in assignments.value) {
-            if (assignments.value[nodeId] === id) {
-                delete assignments.value[nodeId];
+        for (const geoId in assignments.value) {
+            if (assignments.value[geoId] === id) {
+                delete assignments.value[geoId];
             }
         }
         // Reset active if needed
-        if (activeProfileId.value === id) {
-            activeProfileId.value = null;
+        if (activeGanglinieId.value === id) {
+            activeGanglinieId.value = null;
         }
     }
 
-    function updateProfileData(id, points) {
-        if (profiles.value[id]) {
-            profiles.value[id].data = points;
+    function updateGanglinieData(id, points) {
+        if (ganglinien.value[id]) {
+            ganglinien.value[id].data = points;
         }
     }
 
-    function setActiveProfile(id) {
-        if (profiles.value[id] || id === null) {
-            activeProfileId.value = id;
+    function setActiveGanglinie(id) {
+        if (ganglinien.value[id] || id === null) {
+            activeGanglinieId.value = id;
         }
     }
 
-    function assignProfileToNode(nodeId, profileId) {
-        if (profiles.value[profileId]) {
-            assignments.value[nodeId] = profileId;
+    /**
+     * Assigns a Ganglinie to multiple GeoObjects (Nodes/Boundaries)
+     * @param {Array<string>} geoIdsArray 
+     * @param {string} ganglinieId 
+     */
+    function assignToObjects(geoIdsArray, ganglinieId) {
+        if (ganglinien.value[ganglinieId]) {
+            geoIdsArray.forEach(geoId => {
+                assignments.value[geoId] = ganglinieId;
+            });
         }
+    }
+
+    function getAssignmentsByGanglinie(id) {
+        let count = 0;
+        for (const key in assignments.value) {
+            if (assignments.value[key] === id) count++;
+        }
+        return count;
     }
 
     function setKostraGrid(raw, location) {
@@ -89,18 +104,19 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
     }
 
     return {
-        profiles,
-        activeProfileId,
+        ganglinien,
+        activeGanglinieId,
         assignments,
         rainData,
         kostraGrid,
         rainLocation,
         rainConfig,
-        createProfile,
-        deleteProfile, // New
-        updateProfileData,
-        setActiveProfile, // New
-        assignProfileToNode,
+        createGanglinie,
+        deleteGanglinie,
+        updateGanglinieData,
+        setActiveGanglinie,
+        assignToObjects,
+        getAssignmentsByGanglinie,
         setKostraGrid,
         setRainData
     };
