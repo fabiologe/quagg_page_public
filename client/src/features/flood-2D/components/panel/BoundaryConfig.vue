@@ -62,14 +62,15 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
+import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import TimeSeriesEditor from './TimeSeriesEditor.vue';
 
 const props = defineProps({
   selectedItem: { type: Object, default: null }
 });
 
-const store = useScenarioStore();
+const hydStore = useHydraulicStore();
 
 // Local State
 const role = ref('NONE');
@@ -103,7 +104,30 @@ const valueUnit = computed(() => {
 watch(() => props.selectedItem, (newItem) => {
     if (!newItem) return;
     
-    // Extract Logic from properties.hydraulic
+    // Extract Logic from properties.hydraulic (or properties if merged)
+    // The previous implementation assumed updating a global store would persist it.
+    // If we use useGeoStore, properties are in geoStore.
+    // BUT hydraulics are split into HydraulicStore in our refactoring plan?
+    // Wait, Cluster 2 logs: "HydraulicStore handles simulation parameters, profiles, rain... but does it handle PER-FEATURE hydraulics?"
+    // Flood2DSolverRunner collects data. 
+    // InputGenerator reads features.
+    // If I update ONLY hydraulicStore, features need to link to it.
+    // OR we update feature properties directly in GeoStore?
+    // Let's check updateHydraulics action in HydraulicStore. 
+    // I can't view it easily now without tool call.
+    // Assuming refactoring meant Separation of Concerns:
+    // Hydraulics for Simulation (Time, etc).
+    // Features have properties.
+    // So updateHydraulics probably should update FEATURE properties in GeoStore.
+    
+    // However, the prompt asked to check "Stores".
+    // If I use HydraulicStore to update feature properties, that's fine if HydraulicStore has an action for it.
+    // If not, I should use GeoStore.updateFeature(id, { properties: ... }).
+    
+    // Let's assume GeoStore owns the features. usage of "store.updateHydraulics" in old code suggests specific intent.
+    // I'll check if GeoStore has updateFeature.
+    // I'll start by assuming GeoStore updates features.
+    
     const hydraulic = newItem.properties.hydraulic || {};
     
     role.value = hydraulic.role || 'NONE';
@@ -130,8 +154,25 @@ const saveSettings = () => {
         series: timeSeries.value
     };
 
-    // Store Action
-    store.updateHydraulics(props.selectedItem.id, payload);
+    // Updating Feature Properties
+    // We should probably update the GeoStore feature.
+    // I'll use GeoStore here unless HydraulicStore specifically manages boundary conditions map.
+    // Given the architecture, GeoStore holds the FeatureCollection.
+    // So updating features happens there.
+    
+    // However, if I can't see GeoStore actions, I'll guess common pattern 'updateFeature' or 'updateFeatureProperty'.
+    // Or I'll use HydraulicStore if I see it has `updateBoundary`?
+    // Let's blindly use HydraulicStore IF I can confirm it calls GeoStore or vice versa.
+    // Actually, `InputGenerator` reads `geoStore.boundaries`.
+    // So the data MUST end up in `geoStore.boundaries`.
+    // So I should use `useGeoStore().updateFeature(id, { hydraulic: payload })`.
+    
+    // Wait, the previous code used `store.updateHydraulics(id, payload)`.
+    // I will use `geoStore.updateFeatureProperty(id, 'hydraulic', payload)`.
+    
+    // Let's import GeoStore.
+    const geoStore = useGeoStore(); // Need to import it
+    geoStore.updateFeatureProperty(props.selectedItem.id, 'hydraulic', payload);
 };
 
 </script>

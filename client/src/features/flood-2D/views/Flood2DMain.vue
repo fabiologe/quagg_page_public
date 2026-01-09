@@ -3,12 +3,8 @@
     
     <!-- LEFT TOOLBAR -->
     <aside class="left-sidebar">
+       <!-- EditorToolbar uses simStore internally for activeTool -->
        <EditorToolbar 
-         :activeTool="activeTool"
-         :currentAppMode="editorMode"
-         @set-tool="setActiveTool"
-         @set-mode="setAppMode"
-         @set-view="handleViewChange"
          @open-import="showImportModal = true"
        />
     </aside>
@@ -23,17 +19,14 @@
        </div>
 
        <!-- UNIFIED EDITOR (2D & 3D) -->
-       <!-- Logic: MapEditor3D now handles both modes via props or internal state -->
-       <!-- UNIFIED EDITOR (2D & 3D) -->
-       <!-- Logic: MapEditor3D now handles both modes via props or internal state -->
+       <!-- MapEditor3D uses geoStore and simStore internally -->
        <MapEditor3D 
          ref="editorRef"
-         :activeTool="activeTool"
-         @confirm="onTerrainLoaded"
        />
 
        <!-- RIGHT PANEL CONTAINER -->
-       <div class="right-panel-container" v-if="editorMode === 'SETUP' || editorMode === 'SIMULATION' || editorMode === 'IMPORT_TERRAIN'">
+       <!-- Logic: Show Panel if not Simulating (or always? configurable) -->
+       <div class="right-panel-container">
          
          <!-- TOGGLE BUTTON -->
          <button class="panel-toggle" @click="panelOpen = !panelOpen" :title="panelOpen ? 'Close Panel' : 'Open Panel'">
@@ -42,7 +35,8 @@
 
          <!-- PANEL -->
          <aside class="right-panel" :class="{ closed: !panelOpen }">
-            <ScenarioManager />
+            <!-- ScenarioManager uses geoStore, hydraulicStore, simStore -->
+             <ScenarioManager />
          </aside>
 
        </div>
@@ -59,63 +53,39 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, onMounted, onErrorCaptured } from 'vue';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
+import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
+
+// Components
 import EditorToolbar from '../components/editor/EditorToolbar.vue';
 import MapEditor3D from '../components/editor/MapEditor3D.vue';
 import DataImportModal from '../components/importer/DataImportModal.vue';
 import ScenarioManager from '../components/panel/ScenarioManager.vue';
 
+// Initialize Stores (Pinia best practice: call them in setup)
+const geoStore = useGeoStore();
+const hydStore = useHydraulicStore();
 const simStore = useSimulationStore();
-// Shared tool state from Store
-const activeTool = computed(() => simStore.activeTool);
 
-const editorMode = ref('SETUP'); // Local UI Mode: SETUP | IMPORT_TERRAIN | SIMULATION
 const errorMsg = ref(null);
 const editorRef = ref(null);
 const showImportModal = ref(false);
 const panelOpen = ref(true);
 
-// -- ACTIONS --
+onMounted(() => {
+    console.log('Flood2DMain mounted successfully');
+    // Ensure stores are ready or reset if needed
+    simStore.setStatus('IDLE');
+});
 
-// EditorToolbar emits 'set-tool' (maybe? check EditorToolbar). 
-// Actually EditorToolbar updates Store directly. 
-// If it emits, we can ignore or log.
-// But to be safe if it emits set-tool:
-const setActiveTool = (toolName) => {
-    simStore.setActiveTool(toolName);
-};
-
-const setAppMode = (mode) => {
-    editorMode.value = mode;
-    
-    // Auto-Set Tool based on Mode
-    if (mode === 'IMPORT_TERRAIN') {
-        simStore.setActiveTool('PAN'); // Default to Pan in 3D
-    } else if (mode === 'SELECT') {
-        simStore.setActiveTool('SELECT');
-    } else if (mode.startsWith('DRAW')) {
-        simStore.setActiveTool('DRAW'); // Or specific
-    } else {
-        simStore.setActiveTool('SELECT');
-    }
-    
-    // Update Camera via ref
-    if(mode === 'SETUP') handleViewChange('XY'); // Force Top-Down
-    if(mode === 'IMPORT_TERRAIN') handleViewChange('XZ'); // Force 3D
-};
-
-const handleViewChange = (axis) => {
-    // Pass to MapEditor3D via ref
-    if (editorRef.value && editorRef.value.setCameraView) {
-        editorRef.value.setCameraView(axis);
-    }
-};
-
-const onTerrainLoaded = () => {
-    // Called when user accepts terrain in Import Mode
-    editorMode.value = 'SETUP';
-};
+// Error Boundary for Children
+onErrorCaptured((err, instance, info) => {
+    console.error("Flood2DMain Error Captured:", err);
+    errorMsg.value = `Error: ${err.message}`;
+    return false; // Prevent propogation to global handler if we want to handle it here
+});
 
 </script>
 
@@ -131,6 +101,7 @@ const onTerrainLoaded = () => {
     flex: 0 0 60px; /* Toolbar width */
     z-index: 20;
     border-right: 1px solid #2d3436;
+    background: white; /* Ensure visible background */
 }
 
 .main-content {
@@ -139,18 +110,11 @@ const onTerrainLoaded = () => {
     display: flex; /* To contain Editor + Right Panel */
 }
 
-/* Make Editor fill remaining space */
-.main-content > :first-child { 
-    /* This targets MapEditor3D if it's the first child (except for error banner) 
-       Alternatively, style MapEditor3D to be flex:1 width:100% height:100% 
-    */
-}
-/* Ideally MapEditor3D component root should scale */
-
 .right-panel-container {
     position: relative;
     display: flex;
     z-index: 15;
+    height: 100%;
 }
 
 .right-panel {
@@ -159,6 +123,7 @@ const onTerrainLoaded = () => {
     background: #233140;
     transition: width 0.3s ease, opacity 0.3s ease;
     overflow: hidden;
+    height: 100%;
 }
 
 .right-panel.closed {
@@ -190,6 +155,9 @@ const onTerrainLoaded = () => {
 }
 
 .error-banner {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 1000;
     background: #fee2e2;
     color: #b91c1c;
     padding: 0.5rem;

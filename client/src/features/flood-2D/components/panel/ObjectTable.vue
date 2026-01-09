@@ -66,7 +66,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { computed } from 'vue';
 
 const props = defineProps({
     items: { type: Array, required: true },
@@ -74,16 +74,15 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['zoom-to']);
-const store = useScenarioStore();
+import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
+const simStore = useSimulationStore();
 
 // --- HELPERS ---
 
-const isSelected = (id) => store.selectedFeatureId === id;
+const isSelected = (id) => simStore.selection === id;
 
 const selectItem = (id) => {
-    store.selectedFeatureId = id;
-    // Potentially trigger highlight in 3D scene via watcher in MapEditor3D?
-    // Or Store handles it.
+    simStore.setSelection(id);
 };
 
 const formatId = (id) => {

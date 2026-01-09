@@ -50,7 +50,7 @@
 
 
           <!-- Flood 2D Tool Card -->
-          <div class="tool-card" @click="$router.push('/tools/flood-2d')">
+          <div class="tool-card" @click="$router.push({ name: 'Flood2D' })">
             <div class="icon">🌊</div>
             <div class="content">
               <h3>Flood 2D Simulation</h3>

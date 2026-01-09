@@ -462,7 +462,7 @@ const handleFileUpload = async (event) => {
            if (result) {
                parsedData.value = result;
                stats.value = result.stats;
-               store.editorMode = 'IMPORT_TERRAIN';
+               // store.editorMode = 'IMPORT_TERRAIN'; // Removed dependency on old store
                
                // USER REQUEST: Update Store Immediately
                // store.demRaw = rawContent.value;

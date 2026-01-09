@@ -93,3 +93,21 @@ export const GeoJSONParser = {
         };
     }
 };
+
+/**
+ * Parsers specifically for Buildings (Polygons)
+ * @returns {Array} List of Features
+ */
+export const parseGeoJSONBuildings = (input) => {
+    const res = GeoJSONParser.parse(input);
+    return res.features.filter(f => f.properties.type === 'BUILDING');
+};
+
+/**
+ * Parsers specifically for Boundaries (LineStrings)
+ * @returns {Array} List of Features
+ */
+export const parseGeoJSONBoundaries = (input) => {
+    const res = GeoJSONParser.parse(input);
+    return res.features.filter(f => f.properties.type === 'BOUNDARY');
+};

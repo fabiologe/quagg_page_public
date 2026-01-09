@@ -101,6 +101,7 @@ import { ref, computed } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
+// Components
 import ObjectTable from './ObjectTable.vue';
 import BoundaryConfig from './BoundaryConfig.vue';
 import RainConfig from './RainConfig.vue';
@@ -112,29 +113,24 @@ const hydStore = useHydraulicStore();
 const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES | PROFILES | RAIN
 
 const totalItems = computed(() => {
-    return geoStore.nodes.length + geoStore.buildings.features.length + geoStore.boundaries.features.length;
+    return (geoStore.nodes ? geoStore.nodes.length : 0) + 
+           (geoStore.buildings.features ? geoStore.buildings.features.length : 0) + 
+           (geoStore.boundaries.features ? geoStore.boundaries.features.length : 0);
 });
 
-// Helper for selected item
+// Helper for selected item (Sim Store Selection -> Geo Feature)
 const selectedItem = computed(() => {
     if (!simStore.selection) return null;
     return geoStore.getFeatureById(simStore.selection);
 });
 
 const profilesList = computed(() => {
-    return Object.values(hydStore.profiles);
+    return hydStore.profiles ? Object.values(hydStore.profiles) : [];
 });
 
 const handleZoom = (item) => {
-    // Standard Zoom Logic placeholder
     console.log("Zoom to:", item);
 };
-
-// Handle Selection from Lists
-// If ObjectTable emits select? It currently seems to just display.
-// Assuming selection handling is done via global store or click?
-// If ObjectTable has selection logic, we should use simStore.setSelection
-
 
 </script>
 

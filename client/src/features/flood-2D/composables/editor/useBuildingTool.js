@@ -1,20 +1,11 @@
 import * as THREE from 'three';
 import { useDrawTool } from './useDrawTool.js';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 
-/**
- * useBuildingTool.js
- * Wrapper around useDrawTool that handles Building-specific logic:
- * - Intercepts 'FINISHED' from DrawTool
- * - clear/reset
- * - Executes Scanline Algorithm to find terrain intersection
- * - Creates 3D Extruded Mesh
- * - Updates Scenario Store
- */
 export function useBuildingTool() {
 
     const drawTool = useDrawTool();
-    const store = useScenarioStore();
+    const geoStore = useGeoStore();
 
     // --- LOGIC: SCANLINE & EXTRUSION ---
     const createBuilding = (points, context) => {
@@ -135,7 +126,7 @@ export function useBuildingTool() {
             properties: { type: "BUILDING", height: totalDepth, bottom_elevation: realBaseEle },
             geometry: { type: "Polygon", coordinates: [coords] }
         };
-        store.addFeature(feature);
+        geoStore.addBuilding(feature);
     };
 
     // --- PROXY HANDLERS ---

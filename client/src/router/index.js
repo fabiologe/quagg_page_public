@@ -60,7 +60,7 @@ const router = createRouter({
     },
     {
       path: '/tools/flood-2d',
-      name: 'flood-2d',
+      name: 'Flood2D',
       component: () => import('@/features/flood-2D/views/Flood2DMain.vue'),
       meta: { layout: 'public' }
     },

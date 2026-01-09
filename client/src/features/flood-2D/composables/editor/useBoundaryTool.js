@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { useDrawTool } from './useDrawTool.js';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 
 export function useBoundaryTool() {
 
     // Initialize DrawTool in "Polyline" mode (no auto-close)
     const drawTool = useDrawTool({ isPolygon: false });
-    const store = useScenarioStore();
+    const geoStore = useGeoStore();
 
     // Visuals
     let ghostMarker = null;
@@ -215,7 +215,7 @@ export function useBoundaryTool() {
             geometry: { type: "LineString", coordinates: coords }
         };
 
-        store.addFeature(feature);
+        geoStore.addBoundary(feature);
         drawTool.reset(scene);
     };
 

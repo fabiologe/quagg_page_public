@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { useDrawTool } from './useDrawTool.js';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { createCulvertMesh } from '../../utils/CulvertGeometry.js';
 
 export function useCulvertTool() {
 
     const drawTool = useDrawTool();
-    const store = useScenarioStore();
+    const geoStore = useGeoStore();
 
     // --- LOGIC: CREATE CULVERT ---
     const createCulvert = (points, context) => {
@@ -111,7 +111,7 @@ export function useCulvertTool() {
             properties: { type: "CULVERT", height: totalDepth, bottom_elevation: realBaseEle },
             geometry: { type: "Polygon", coordinates: [coords] }
         };
-        store.addFeature(feature);
+        geoStore.addBuilding(feature); // Adding as building for simplicity in current geoStore handling
     };
 
     // --- PROXY HANDLERS ---

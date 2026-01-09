@@ -91,3 +91,10 @@ export const XMLNodeParser = {
         return nodes;
     }
 };
+
+/**
+ * Helper Alias for named import
+ */
+export const parseXMLNodes = (xmlString) => {
+    return XMLNodeParser.parse(xmlString);
+};
