@@ -55,6 +55,26 @@ export const useGeoStore = defineStore('geo', () => {
         return null;
     }
 
+    function updateFeatureProperty(id, prop, value) {
+        const feature = getFeatureById(id);
+        if (!feature) return;
+
+        // Handle GeoJSON Feature (with properties)
+        if (feature.type === 'Feature' || feature.properties) {
+            if (!feature.properties) feature.properties = {};
+            feature.properties[prop] = value;
+        } else {
+            // Handle Flat Object (Node)
+            // Check if we should use 'properties' namespace or direct
+            // If consumer expects .properties.hydraulic, we should probably add .properties
+            if (!feature.properties) feature.properties = {};
+            feature.properties[prop] = value;
+
+            // Also set directly if legacy code expects it? 
+            // feature[prop] = value; 
+        }
+    }
+
     return {
         terrain,
         nodes,
@@ -66,6 +86,7 @@ export const useGeoStore = defineStore('geo', () => {
         removeNode,
         addBuilding,
         addBoundary,
-        getFeatureById
+        getFeatureById,
+        updateFeatureProperty
     };
 });

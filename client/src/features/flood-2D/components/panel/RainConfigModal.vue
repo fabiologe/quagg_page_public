@@ -209,26 +209,26 @@ const hasKostraData = computed(() => !!hydStore.kostraGrid);
 const kostraLocation = computed(() => hydStore.rainLocation ? `${hydStore.rainLocation.lat.toFixed(3)}, ${hydStore.rainLocation.lon.toFixed(3)}` : '');
 
 const handleKostraImport = (data) => {
-    store.setKostraGrid(data.raw, data.location);
+    hydStore.setKostraGrid(data.raw, data.location);
     // Auto-switch to Euler if sensible?
     rainType.value = 'euler2';
 };
 
 const getKostraValue = (d, key) => {
-  if (!store.kostraGrid) return '-';
-  const row = store.kostraGrid[String(d)];
+  if (!hydStore.kostraGrid) return '-';
+  const row = hydStore.kostraGrid[String(d)];
   return row ? row[key] : '-';
 };
 
 const generatedSeries = computed(() => {
   if (rainType.value === 'block') {
     return calculateBlockRain(intensity.value, duration.value, interval.value);
-  } else if (rainType.value === 'euler2' && store.kostraGrid) {
+  } else if (rainType.value === 'euler2' && hydStore.kostraGrid) {
     // Extract row for selected return period - map durations to intensity for this column
     const row = {};
-    for (const d in store.kostraGrid) {
-        if (store.kostraGrid[d][selectedReturnPeriod.value]) {
-            row[d] = store.kostraGrid[d][selectedReturnPeriod.value];
+    for (const d in hydStore.kostraGrid) {
+        if (hydStore.kostraGrid[d][selectedReturnPeriod.value]) {
+            row[d] = hydStore.kostraGrid[d][selectedReturnPeriod.value];
         }
     }
     return calculateEulerType2(row, duration.value, interval.value);
@@ -282,13 +282,21 @@ const apply = () => {
         intensity: intensity.value,
         type: rainType.value
     };
-    store.setRainConfig(config);
+    // Note: setRainData accepts (data, config) in hydStore logic usually?
+    // Checking hydration logic: hydStore.setRainData(data, config)
+    // The previous code called store.setRainConfig(config) then store.setRainData(data).
+    // But hydStore (Step 379) has function setRainData(data, config).
+    // So I should merge them into one call or check if setRainConfig exists.
+    // In Step 379, I see ONLY setRainData(data, config). I DO NOT see setRainConfig.
+    // So I must use hydStore.setRainData(data, config).
     
-    // Save Data Series
-    store.setRainData(generatedSeries.value.map(s => ({
+    const data = generatedSeries.value.map(s => ({
         time_sec: s.time * 60,
         value_mm: s.height_mm !== undefined ? s.height_mm : (s.intensity * interval.value * 0.006)
-    })));
+    }));
+    
+    // Pass both to setRainData
+    hydStore.setRainData(data, config);
 
     emit('apply');
     close();
@@ -296,16 +304,16 @@ const apply = () => {
 
 // Init from store
 watch(() => props.isOpen, (val) => {
-    if (val && store.rainConfig) {
-        duration.value = store.rainConfig.duration || 60;
-        interval.value = store.rainConfig.interval || 5;
-        if(store.rainConfig.type) rainType.value = store.rainConfig.type;
+    if (val && hydStore.rainConfig) {
+        duration.value = hydStore.rainConfig.duration || 60;
+        interval.value = hydStore.rainConfig.interval || 5;
+        if(hydStore.rainConfig.type) rainType.value = hydStore.rainConfig.type;
         
-        if(store.rainConfig.returnPeriod) {
-            selectedReturnPeriod.value = store.rainConfig.returnPeriod;
+        if(hydStore.rainConfig.returnPeriod) {
+            selectedReturnPeriod.value = hydStore.rainConfig.returnPeriod;
         }
-        if(store.rainConfig.intensity) {
-            intensity.value = store.rainConfig.intensity;
+        if(hydStore.rainConfig.intensity) {
+            intensity.value = hydStore.rainConfig.intensity;
         }
     }
 });

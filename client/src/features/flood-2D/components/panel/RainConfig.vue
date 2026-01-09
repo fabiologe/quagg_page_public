@@ -2,7 +2,7 @@
   <div class="rain-config-sidebar">
     
     <!-- RESULTS PREVIEW -->
-    <div class="result-card" v-if="store.rainData">
+    <div class="result-card" v-if="store.rainData && store.rainData.length > 0">
         <h4>Aktuelles Regenmodell</h4>
         <div class="summary-grid">
             <div class="item">

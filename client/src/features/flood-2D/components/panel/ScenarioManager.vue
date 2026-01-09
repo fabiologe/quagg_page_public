@@ -72,16 +72,51 @@
         @zoom-to="handleZoom"
       />
 
-      <!-- REUSE ObjectTable FOR PROFILES if compatible or Custom List -->
-      <!-- ObjectTable likely assumes spatial items with zoom. Profiles are data. -->
-      <!-- Simple List for Profiles -->
-      <div v-if="activeTab === 'PROFILES'" class="profiles-list">
-          <div v-for="profile in profilesList" :key="profile.id" class="profile-item" @click="console.log('Select Profile', profile.id)">
-              <div class="p-name">{{ profile.name }}</div>
-              <div class="p-meta">{{ profile.type }} | {{ profile.data.length }} pts</div>
+      <!-- PROFILE MANAGER -->
+      <div v-if="activeTab === 'PROFILES'" class="profiles-manager">
+          
+          <!-- LEFT: List -->
+          <div class="profiles-list-col">
+              <div v-for="profile in profilesList" 
+                   :key="profile.id" 
+                   class="profile-item" 
+                   :class="{ active: activeProfile && activeProfile.id === profile.id }"
+                   @click="hydStore.setActiveProfile(profile.id)"
+              >
+                  <div class="p-name">{{ profile.name }}</div>
+                  <div class="p-meta">{{ profile.type }} | {{ profile.data.length }} pts</div>
+                  <button class="btn-del" @click.stop="hydStore.deleteProfile(profile.id)">×</button>
+              </div>
+              
+              <div v-if="profilesList.length === 0" class="empty-msg">No profiles.</div>
+              <button class="btn-add" @click="hydStore.createProfile('New Profile', 'inflow')">+ Add Profile</button>
           </div>
-          <div v-if="profilesList.length === 0" class="empty-msg">Keine Profile definiert.</div>
-          <button class="btn-small action-btn" @click="hydStore.createProfile('New Profile', 'inflow')">+ Profil Erstellen</button>
+
+          <!-- RIGHT: Editor -->
+          <div class="profile-editor-col" v-if="activeProfile">
+              <div class="editor-header">
+                  <input v-model="activeProfile.name" class="name-input" />
+                  <select v-model="activeProfile.type" class="type-select">
+                      <option value="inflow">Inflow (Q)</option>
+                      <option value="outflow">Outflow (H/Q)</option>
+                      <option value="waterlevel">Water Level (H)</option>
+                  </select>
+              </div>
+
+              <!-- Pattern Generator -->
+              <PatternGenerator @generate="applyPattern" />
+
+              <!-- Visual Editor -->
+              <TimeSeriesEditor 
+                v-model="activeProfile.data" 
+                :duration="7200"
+                @update:modelValue="(val) => hydStore.updateProfileData(activeProfile.id, val)"
+              />
+          </div>
+          <div v-else class="empty-editor">
+              Select a profile to edit.
+          </div>
+
       </div>
 
       <RainConfig v-if="activeTab === 'RAIN'" />
@@ -89,7 +124,8 @@
     </div>
 
     <!-- CONFIGURATION PANEL (Bottom) -->
-    <div class="panel-config">
+    <!-- Only show property config if NOT in Profiles/Rain tab, OR if selection matches -->
+    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN'">
         <BoundaryConfig :selectedItem="selectedItem" />
     </div>
 
@@ -105,6 +141,8 @@ import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore'
 import ObjectTable from './ObjectTable.vue';
 import BoundaryConfig from './BoundaryConfig.vue';
 import RainConfig from './RainConfig.vue';
+import TimeSeriesEditor from './TimeSeriesEditor.vue';
+import PatternGenerator from '../hydraulics/PatternGenerator.vue';
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
@@ -127,6 +165,17 @@ const selectedItem = computed(() => {
 const profilesList = computed(() => {
     return hydStore.profiles ? Object.values(hydStore.profiles) : [];
 });
+
+const activeProfile = computed(() => {
+    if (!hydStore.activeProfileId) return null;
+    return hydStore.profiles[hydStore.activeProfileId];
+});
+
+const applyPattern = (points) => {
+    if(activeProfile.value) {
+        hydStore.updateProfileData(activeProfile.value.id, points);
+    }
+};
 
 const handleZoom = (item) => {
     console.log("Zoom to:", item);
@@ -182,8 +231,69 @@ const handleZoom = (item) => {
     flex: 1;
     overflow: hidden; /* Scroll handled by ObjectTable */
     background: #233140;
+    display: flex; flex-direction: column;
 }
 
+/* PROFILES MANAGER LAYOUT */
+.profiles-manager {
+    display: flex;
+    height: 100%;
+}
+
+.profiles-list-col {
+    width: 200px;
+    background: #1a252f;
+    border-right: 1px solid #34495e;
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+}
+
+.profile-item {
+    padding: 10px;
+    border-bottom: 1px solid #2c3e50;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+}
+.profile-item:hover { background: #2c3e50; }
+.profile-item.active { background: #34495e; border-left: 3px solid #3498db; }
+
+.p-name { color: #ecf0f1; font-weight: bold; font-size: 0.9rem; }
+.p-meta { color: #7f8c8d; font-size: 0.75rem; }
+
+.btn-del {
+    position: absolute; right: 5px; top: 5px;
+    background: none; border: none; color: #e74c3c;
+    font-size: 1.2rem; cursor: pointer; opacity: 0;
+}
+.profile-item:hover .btn-del { opacity: 1; }
+
+.btn-add {
+    margin: 10px;
+    padding: 8px;
+    background: #27ae60;
+    color: white; border: none; border-radius: 4px;
+    cursor: pointer;
+}
+
+.profile-editor-col {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+    gap: 10px;
+}
+
+.editor-header {
+    display: flex; gap: 10px;
+    margin-bottom: 5px;
+}
+.name-input { flex: 1; background: #2c3e50; border: 1px solid #34495e; color: white; padding: 6px; border-radius: 4px; }
+.type-select { background: #2c3e50; border: 1px solid #34495e; color: white; padding: 6px; border-radius: 4px; }
+
+.empty-msg, .empty-editor {
+    padding: 2rem; text-align: center; color: #7f8c8d; font-style: italic;
+}
 
 .panel-config {
     flex: 0 0 40%; /* 40% height for config */
@@ -192,24 +302,4 @@ const handleZoom = (item) => {
     background: #1a252f;
 }
 
-/* Profiles List Styles */
-.profiles-list {
-    padding: 1rem;
-    overflow-y: auto;
-    height: 100%;
-}
-.profile-item {
-    background: #34495e;
-    margin-bottom: 0.5rem;
-    padding: 0.5rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-.profile-item:hover { background: #46627f; }
-.p-name { font-weight: bold; color: #ecf0f1; font-size: 0.9rem; }
-.p-meta { font-size: 0.75rem; color: #95a5a6; }
-.empty-msg { color: #7f8c8d; text-align: center; margin-top: 1rem; font-style: italic; }
-.action-btn { width: 100%; margin-top: 1rem; padding: 0.5rem; background: #3498db; border: none; color: white; border-radius: 4px; cursor: pointer; }
-.action-btn:hover { background: #2980b9; }
 </style>

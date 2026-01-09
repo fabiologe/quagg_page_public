@@ -27,16 +27,35 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         modelType: ''
     });
 
+    /** @type {import('vue').Ref<string|null>} */
+    const activeProfileId = ref(null);
+
     // Actions
     function createProfile(name, type) {
         const id = crypto.randomUUID();
         profiles.value[id] = {
             id,
             name,
-            type,
-            data: []
+            type: type || 'inflow',
+            data: [{ t: 0, v: 0 }, { t: 3600, v: 0 }] // Default 1h flat
         };
         return id;
+    }
+
+    function deleteProfile(id) {
+        if (profiles.value[id]) {
+            delete profiles.value[id];
+        }
+        // Remove assignments
+        for (const nodeId in assignments.value) {
+            if (assignments.value[nodeId] === id) {
+                delete assignments.value[nodeId];
+            }
+        }
+        // Reset active if needed
+        if (activeProfileId.value === id) {
+            activeProfileId.value = null;
+        }
     }
 
     function updateProfileData(id, points) {
@@ -45,8 +64,16 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         }
     }
 
+    function setActiveProfile(id) {
+        if (profiles.value[id] || id === null) {
+            activeProfileId.value = id;
+        }
+    }
+
     function assignProfileToNode(nodeId, profileId) {
-        assignments.value[nodeId] = profileId;
+        if (profiles.value[profileId]) {
+            assignments.value[nodeId] = profileId;
+        }
     }
 
     function setKostraGrid(raw, location) {
@@ -63,13 +90,16 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
 
     return {
         profiles,
+        activeProfileId,
         assignments,
         rainData,
         kostraGrid,
         rainLocation,
         rainConfig,
         createProfile,
+        deleteProfile, // New
         updateProfileData,
+        setActiveProfile, // New
         assignProfileToNode,
         setKostraGrid,
         setRainData
