@@ -168,6 +168,11 @@ export function useShovelTool() {
         }
     });
 
+    // Cursor Activation Hook
+    const ensureCursor = () => {
+        if (brushShape.value !== 'POLYGON') updateCursorGeometry();
+    };
+
 
     const getAffectedCells = (centerPoint, context) => {
         const { parsedData } = context;
@@ -268,6 +273,11 @@ export function useShovelTool() {
             if (isRaise) newZ += delta;
             else newZ -= delta;
 
+            // DEBUG TRACE (Throttle) 
+            if (Math.random() < 0.005) {
+                console.log(`[Shovel] Cell ${idx}: ${oldZ.toFixed(2)} -> ${newZ.toFixed(2)} (Delta: ${delta.toFixed(3)}, Mode: ${mode.value})`);
+            }
+
             gridData[idx] = newZ;
 
             // 3. Direct Vertex Update
@@ -356,6 +366,7 @@ export function useShovelTool() {
     const activate = (scene) => {
         if (!cursorMesh && brushShape.value !== 'POLYGON') cursorMesh = createCursor();
         if (cursorMesh) scene.add(cursorMesh);
+        ensureCursor(); // FORCE update on activate
         window.addEventListener('keyup', handleGlobalKey);
     };
 
