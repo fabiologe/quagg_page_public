@@ -84,10 +84,13 @@
 
 <script setup>
 import { ref } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
+// Import parsers
+import { parseXMLNodes } from '@/features/flood-2D/middleware/importers/XMLNodeParser.js';
+import { parseGeoJSONBuildings, parseGeoJSONBoundaries } from '@/features/flood-2D/middleware/importers/GeoJSONParser.js';
 
 const emit = defineEmits(['close']);
-const store = useScenarioStore();
+const geoStore = useGeoStore();
 
 const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES
 const importing = ref(false);
@@ -101,27 +104,55 @@ const handleFileSelect = async (event) => {
     feedback.value = null;
 
     try {
-        // Validate Extension based on Tab
         const name = file.name.toLowerCase();
-        if (activeTab.value === 'NODES' && !name.endsWith('.xml')) {
-            throw new Error("Bitte eine .xml Datei für Kanalnetz wählen.");
-        }
-        if ((activeTab.value === 'BUILDINGS' || activeTab.value === 'BOUNDARIES') && !(name.endsWith('.json') || name.endsWith('.geojson'))) {
-            throw new Error("Bitte eine .json/.geojson Datei wählen.");
+        let result = null;
+
+        if (activeTab.value === 'NODES') {
+            if (!name.endsWith('.xml')) throw new Error("Bitte eine .xml Datei für Kanalnetz wählen.");
+            
+            const text = await file.text();
+            const nodes = await parseXMLNodes(text); // Assume parser returns array
+            
+            let count = 0;
+            if (nodes && nodes.length) {
+                nodes.forEach(n => geoStore.addNode(n));
+                count = nodes.length;
+            }
+            result = { type: 'XML', count };
+            
+        } else if (activeTab.value === 'BUILDINGS') {
+            if (!(name.endsWith('.json') || name.endsWith('.geojson'))) throw new Error("Bitte eine .json/.geojson Datei wählen.");
+            
+            const text = await file.text();
+            const json = JSON.parse(text);
+            const features = parseGeoJSONBuildings(json); // Assume returns array of features
+            
+            let count = 0;
+            if (features && features.length) {
+                features.forEach(f => geoStore.addBuilding(f));
+                count = features.length;
+            }
+            result = { type: 'GEOJSON', count };
+
+        } else if (activeTab.value === 'BOUNDARIES') {
+            if (!(name.endsWith('.json') || name.endsWith('.geojson'))) throw new Error("Bitte eine .json/.geojson Datei wählen.");
+            
+            const text = await file.text();
+            const json = JSON.parse(text);
+            const features = parseGeoJSONBoundaries(json); // Assume returns array or similar
+            
+             let count = 0;
+            if (features && features.length) {
+                features.forEach(f => geoStore.addBoundary(f));
+                count = features.length;
+            }
+            result = { type: 'GEOJSON', count };
         }
 
-        const result = await store.importFile(file);
-        
-        if (result) {
-            if (result.type === 'XML') {
-                feedback.value = { type: 'success', message: `${result.count} Schächte erfolgreich importiert.` };
-            } else if (result.type === 'GEOJSON') {
-                feedback.value = { type: 'success', message: `${result.count} Gebäude/Features importiert.` };
-            } else {
-                 feedback.value = { type: 'info', message: `Importiert: ${result.type}` };
-            }
+        if (result && result.count > 0) {
+            feedback.value = { type: 'success', message: `${result.count} Objekte importiert.` };
         } else {
-            feedback.value = { type: 'warning', message: "Keine Daten gefunden oder unbekanntes Format." };
+            feedback.value = { type: 'warning', message: "Keine validen Daten gefunden." };
         }
 
     } catch (e) {
@@ -129,7 +160,6 @@ const handleFileSelect = async (event) => {
         feedback.value = { type: 'error', message: e.message };
     } finally {
         importing.value = false;
-        // Reset Input
         event.target.value = ''; 
     }
 };

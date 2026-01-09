@@ -53,7 +53,7 @@
        <!-- Tool UIs (Context Sensitive) -->
        
        <!-- SHOVEL UI -->
-       <div v-if="activeTool === 'SHOVEL'" class="tool-ui-panel shovel-panel">
+       <div v-if="simStore.activeTool === 'SHOVEL'" class="tool-ui-panel shovel-panel">
           <div class="panel-header">Shovel Tool</div>
           <div class="panel-content">
              <div class="hint">Click terrain to lower by 0.5m</div>
@@ -63,19 +63,19 @@
        <!-- BUILDING / DRAW UI -->
        <!-- Assuming activeTool 'DRAW' maps to Building Logic internally now -->
        <BuildingTool 
-          v-if="activeTool === 'DRAW' || activeTool.startsWith('DRAW')"
+          v-if="simStore.activeTool === 'DRAW' || simStore.activeTool.startsWith('DRAW')"
           :toolInstance="buildingTool"
        />
 
        <!-- CULVERT UI -->
        <CulvertTool 
-          v-if="activeTool === 'CULVERT'"
+          v-if="simStore.activeTool === 'CULVERT'"
           :toolInstance="culvertTool"
        />
 
        <!-- BOUNDARY UI -->
        <BoundaryTool
-          v-if="activeTool === 'BOUNDARY'"
+          v-if="simStore.activeTool === 'BOUNDARY'"
           :toolInstance="boundaryTool"
        />
 
@@ -95,12 +95,13 @@
 import { ref, onMounted, onUnmounted, reactive, toRef, watch, computed } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '../../stores/useGeoStore.js';
+import { useSimulationStore } from '../../stores/useSimulationStore.js';
 import TerrainInfoCard from './TerrainInfoCard.vue';
 
 // --- COMPOSABLES ---
 import { useInteractionManager } from '../../composables/editor/useInteractionManager.js';
-import { useDrawTool } from '../../composables/editor/useDrawTool.js'; // Still needed if referenced elsewhere or for types? Alternatively, BuildingTool wraps it.
+import { useDrawTool } from '../../composables/editor/useDrawTool.js';
 import { useShovelTool } from '../../composables/editor/useShovelTool.js';
 import { useBoundaryTool } from '../../composables/editor/useBoundaryTool.js';
 import { useBuildingTool } from '../../composables/editor/useBuildingTool.js';
@@ -112,12 +113,12 @@ import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 
-const props = defineProps({
-  activeTool: { type: String, default: 'SELECT' }
-});
+// No props needed for activeTool anymore, using store
+const props = defineProps({}); 
 
 const emit = defineEmits(['cancel', 'confirm']);
-const store = useScenarioStore();
+const geoStore = useGeoStore();
+const simStore = useSimulationStore();
 
 // --- STATE ---
 const canvasContainer = ref(null);
@@ -136,8 +137,7 @@ let selectionMesh;
 const raycaster = new THREE.Raycaster();
 
 // --- TOOLS SETUP ---
-// We keep drawTool for generic drawing if needed, but BuildingTool wraps it for Buildings.
-const drawTool = useDrawTool(); // Legacy/Generic
+const drawTool = useDrawTool(); 
 const shovelTool = useShovelTool();
 const boundaryTool = useBoundaryTool();
 const buildingTool = useBuildingTool();
@@ -145,7 +145,7 @@ const culvertTool = useCulvertTool();
 
 // Tool Mapping
 const tools = {
-    'DRAW': buildingTool, // Default DRAW maps to Building Construction for now
+    'DRAW': buildingTool, 
     'SHOVEL': shovelTool,
     'BOUNDARY': boundaryTool,
     'CULVERT': culvertTool,
@@ -157,7 +157,7 @@ const tools = {
     'PAN': { onClick: ()=>{}, onMove: ()=>{} } 
 };
 
-// Proxy handles DRAW_POLY etc if still used upstream
+// Proxy handles DRAW_POLY etc
 const toolMap = new Proxy(tools, {
     get: (target, prop) => {
         if (typeof prop === 'string' && prop.startsWith('DRAW')) return buildingTool;
@@ -165,8 +165,10 @@ const toolMap = new Proxy(tools, {
     }
 });
 
+const activeTool = computed(() => simStore.activeTool); // Use SimStore
+
 const interactionManager = useInteractionManager(
-    toRef(props, 'activeTool'),
+    activeTool,
     toolMap
 );
 
@@ -176,22 +178,21 @@ onMounted(() => {
     initThreeJS();
     
     // Unified Grid Source (Preview OR Store)
-    const activeGrid = computed(() => parsedData.value || store.demGrid);
+    const activeGrid = computed(() => parsedData.value || geoStore.terrain);
 
     // Initialize Layer Renderer (Visualizes Imported Data)
-    useLayerRenderer(scene, store, activeGrid);
+    useLayerRenderer(scene, geoStore, activeGrid);
 
     // Restore if data exists
-    if (store.demData && store.demGrid) {
+    if (geoStore.terrain && geoStore.terrain.gridData) {
          loadingText.value = "Restoring Terrain...";
          loading.value = true;
          setTimeout(() => {
              parsedData.value = {
-                 gridData: store.demData,
-                 ...store.demGrid,
-                 bounds: store.demGrid.bounds
+                 ...geoStore.terrain,
+                 stats: geoStore.terrain.stats || geoStore.terrain // Fallback if stats nested or root
              };
-             stats.value = store.demGrid;
+             stats.value = parsedData.value.stats || parsedData.value;
              buildTerrainMesh(parsedData.value);
              loading.value = false;
          }, 100);
@@ -296,7 +297,7 @@ const handleInfoClick = (ctx) => {
 // --- LOGIC: BOUNDARY FINISH ---
 const finishBoundary = (type) => {
     // Call composable logic
-    boundaryTool.finishLine(type, scene, store, { parsedData: parsedData.value });
+    boundaryTool.finishLine(type, scene, geoStore, { parsedData: parsedData.value });
 };
 
 
@@ -464,8 +465,8 @@ const handleFileUpload = async (event) => {
                store.editorMode = 'IMPORT_TERRAIN';
                
                // USER REQUEST: Update Store Immediately
-               store.demRaw = rawContent.value;
-               store.setTerrain(result);
+               // store.demRaw = rawContent.value;
+               geoStore.importTerrain(result);
                console.log("Terrain Updated Immediately (Map3D). Center:", result.center);
 
                buildTerrainMesh(result);
@@ -482,11 +483,11 @@ const handleFileUpload = async (event) => {
 
 const acceptTerrain = () => {
     if (parsedData.value && rawContent.value) {
-        store.setTerrain(parsedData.value); // Assume Store has this action, or set individual props
+        geoStore.importTerrain(parsedData.value); 
         // Previous store check: setDemData, setDemGrid...
         // Safest to call setTerrain if available as per Step 19.
         // Step 19 Store: setTerrain(parsedData) IS AVAILABLE.
-        store.setTerrain(parsedData.value);
+        geoStore.importTerrain(parsedData.value);
         emit('confirm');
     }
 };

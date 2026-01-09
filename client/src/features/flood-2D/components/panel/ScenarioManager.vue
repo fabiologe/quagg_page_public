@@ -16,21 +16,21 @@
         @click="activeTab = 'NODES'"
         title="Schächte & Knoten"
       >
-        Nodes ({{ store.nodes.length }})
+        Nodes ({{ geoStore.nodes.length }})
       </button>
       <button 
         :class="{ active: activeTab === 'BUILDINGS' }" 
         @click="activeTab = 'BUILDINGS'"
         title="Gebäude"
       >
-        Buildings ({{ store.buildings.length }})
+        Buildings ({{ geoStore.buildings.features.length }})
       </button>
       <button 
         :class="{ active: activeTab === 'BOUNDARIES' }" 
         @click="activeTab = 'BOUNDARIES'"
         title="Grenzen"
       >
-        Bounds ({{ store.boundaries.length }})
+        Bounds ({{ geoStore.boundaries.features.length }})
       </button>
       <button 
         :class="{ active: activeTab === 'RAIN' }" 
@@ -46,21 +46,21 @@
       
       <ObjectTable 
         v-if="activeTab === 'NODES'"
-        :items="store.nodes"
+        :items="geoStore.nodes"
         type="NODE"
         @zoom-to="handleZoom"
       />
 
       <ObjectTable 
         v-if="activeTab === 'BUILDINGS'"
-        :items="store.buildings"
+        :items="geoStore.buildings.features"
         type="BUILDING"
         @zoom-to="handleZoom"
       />
 
       <ObjectTable 
         v-if="activeTab === 'BOUNDARIES'"
-        :items="store.boundaries"
+        :items="geoStore.boundaries.features"
         type="BOUNDARY"
         @zoom-to="handleZoom"
       />
@@ -71,7 +71,7 @@
 
     <!-- CONFIGURATION PANEL (Bottom) -->
     <div class="panel-config">
-        <BoundaryConfig :selectedItem="store.selectedFeature" />
+        <BoundaryConfig :selectedItem="selectedItem" />
     </div>
 
   </div>
@@ -79,16 +79,24 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
+import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
 import ObjectTable from './ObjectTable.vue';
 import BoundaryConfig from './BoundaryConfig.vue';
 import RainConfig from './RainConfig.vue';
 
-const store = useScenarioStore();
+const geoStore = useGeoStore();
+const simStore = useSimulationStore();
 const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES
 
 const totalItems = computed(() => {
-    return store.nodes.length + store.buildings.length + store.boundaries.length;
+    return geoStore.nodes.length + geoStore.buildings.features.length + geoStore.boundaries.features.length;
+});
+
+// Helper for selected item
+const selectedItem = computed(() => {
+    if (!simStore.selection) return null;
+    return geoStore.getFeatureById(simStore.selection);
 });
 
 const handleZoom = (item) => {

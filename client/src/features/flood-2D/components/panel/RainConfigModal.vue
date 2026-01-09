@@ -131,7 +131,9 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { ref, computed, watch } from 'vue';
+import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { calculateBlockRain, calculateEulerType2 } from '../../utils/RainModelService.js';
 import KostraImportModal from '../importer/KostraImportModal.vue';
 import { Bar } from 'vue-chartjs';
@@ -144,7 +146,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'apply']);
-const store = useScenarioStore();
+const hydStore = useHydraulicStore();
+const geoStore = useGeoStore();
 
 const showKostraImport = ref(false);
 
@@ -169,17 +172,16 @@ const returnPeriods = [
 ];
 
 // Reference point for Import Modal
-// Ensure we pass raw coordinates (WGS84 usually) because KostraImportModal now defaults to WGS84
 const referencePoint = computed(() => {
-    if (store.rainLocation) return { x: store.rainLocation.lon, y: store.rainLocation.lat };
+    if (hydStore.rainLocation) return { x: hydStore.rainLocation.lon, y: hydStore.rainLocation.lat };
     
-    // Priority 1: DEM Grid Center
-    if (store.demGrid && store.demGrid.center) return { x: store.demGrid.center.x, y: store.demGrid.center.y };
+    // Priority 1: DEM Grid Center (from GeoStore)
+    if (geoStore.terrain && geoStore.terrain.center) return { x: geoStore.terrain.center.x, y: geoStore.terrain.center.y };
 
-    // Priority 2: Nodes Center (Isybau Parity for cases with only Nodes)
-    if (store.nodes && store.nodes.length > 0) {
+    // Priority 2: Nodes Center
+    if (geoStore.nodes && geoStore.nodes.length > 0) {
         let sumX = 0, sumY = 0, count = 0;
-        for (const n of store.nodes) {
+        for (const n of geoStore.nodes) {
             if (n.x && n.y) {
                 sumX += n.x;
                 sumY += n.y;
@@ -193,21 +195,19 @@ const referencePoint = computed(() => {
 });
 
 const rawCenter = computed(() => {
-    if (store.demGrid && store.demGrid.center) {
-        return store.demGrid.center;
+    if (geoStore.terrain && geoStore.terrain.center) {
+        return geoStore.terrain.center;
     }
     // Fallback display
-    if (store.nodes && store.nodes.length > 0) {
-       // Recalculate or reuse referencePoint logic?
-       // Reusing logic for consistency
+    if (geoStore.nodes && geoStore.nodes.length > 0) {
        const pt = referencePoint.value;
-       if (pt && !store.rainLocation) return pt; 
+       if (pt && !hydStore.rainLocation) return pt; 
     }
     return null;
 });
 
-const hasKostraData = computed(() => !!store.kostraGrid);
-const kostraLocation = computed(() => store.rainLocation ? `${store.rainLocation.lat.toFixed(3)}, ${store.rainLocation.lon.toFixed(3)}` : '');
+const hasKostraData = computed(() => !!hydStore.kostraGrid);
+const kostraLocation = computed(() => hydStore.rainLocation ? `${hydStore.rainLocation.lat.toFixed(3)}, ${hydStore.rainLocation.lon.toFixed(3)}` : '');
 
 const handleKostraImport = (data) => {
     store.setKostraGrid(data.raw, data.location);
