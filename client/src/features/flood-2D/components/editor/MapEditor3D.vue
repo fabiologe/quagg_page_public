@@ -76,13 +76,13 @@
              <!-- RADIUS SLIDER (Only for Circle/Square) -->
              <div v-if="shovelTool.brushShape !== 'POLYGON'" class="control-row">
                  <label>Size: {{ shovelTool.radius }}m</label>
-                 <input type="range" v-model.number="shovelTool.radius" min="1" max="50" step="1">
+                 <input type="range" v-model.number="shovelTool.radius" min="1" max="250" step="1">
              </div>
 
              <!-- INTENSITY SLIDER -->
              <div class="control-row">
                  <label>Intensity: {{ shovelTool.intensity }}m</label>
-                 <input type="range" v-model.number="shovelTool.intensity" min="0.1" max="5.0" step="0.1">
+                 <input type="range" v-model.number="shovelTool.intensity" min="0.1" max="25.0" step="0.1">
              </div>
              
              <!-- POLYGON ACTIONS -->
@@ -246,6 +246,28 @@ watch(activeTool, (newVal, oldVal) => {
         // But tools object has keys directly.
         if (tool && typeof tool.activate === 'function') {
             tool.activate(scene);
+        }
+        
+        // --- POLISH: LOCK CAMERA ON SHOVEL ---
+        if (controls) {
+            if (newVal === 'SHOVEL') {
+                // Disable Left Click Rotate/Pan, keep Middle/Right
+                controls.mouseButtons.LEFT = null; 
+            } else {
+                // Restore Default (MapControls defaults: LEFT=Rotate/Pan depending on mode)
+                // We assume standard MapControls behavior here or restore specifically 
+                controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Or ROTATE? MapControls def is complicated
+                // Actually safer to reset entire object or check mode.
+                // MapControls standard: Left=Pan (screenSpacePanning=false -> Rotate?)
+                // Let's set it to valid generic usage:
+                controls.mouseButtons.LEFT = THREE.MOUSE.LEFT; // wait, THREE.MOUSE.LEFT is 0 constant.
+                // MapControls: Left Mouse = Pan (if screenSpacePanning) or Rotate.
+                // Re-instantiating implies setCameraView logic handles defaults.
+                // Simpler: Just set it to THREE.MOUSE.ROTATE if in 3D, PAN if in 2D?
+                // Let's stick to restoring to THREE.MOUSE.ROTATE as common 3D default.
+                 controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+                 controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+            }
         }
     }
 }, { immediate: true });
@@ -489,7 +511,7 @@ const setCameraView = (axis) => {
         if (activeCamera !== cameraOrtho) {
             activeCamera = cameraOrtho;
             controls.dispose();
-            controls = new OrbitControls(activeCamera, renderer.domElement);
+            controls = new MapControls(activeCamera, renderer.domElement);
             controls.enableDamping = true;
         }
         controls.enableRotate = false;
@@ -517,7 +539,11 @@ const setCameraView = (axis) => {
         if (activeCamera !== cameraPerspective) {
             activeCamera = cameraPerspective;
             controls.dispose();
-            controls = new OrbitControls(activeCamera, renderer.domElement);
+            controls = new MapControls(activeCamera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 10;
+            controls.maxPolarAngle = Math.PI / 2.2;
             controls.enableDamping = true;
         }
         controls.enableRotate = true;
@@ -642,6 +668,9 @@ const buildTerrainMesh = (result) => {
     
     // Shader Mesh Construction
     // Re-using the logic from Step 20
+    // Shader Mesh Construction
+    // Re-using the logic from Step 20
+    // (Removed duplicate MeshPhongMaterial declaration)
     
     for (let i = 0; i < count; i++) {
         const col = i % ncols;
@@ -734,6 +763,7 @@ const buildTerrainMesh = (result) => {
          terrainMesh.material.dispose();
     }
     terrainMesh = new THREE.Mesh(geometry, material);
+    terrainMesh.userData.isTerrain = true; // IMPORTANT: Tagging for Shovel Tool
     terrainMesh.rotation.x = -Math.PI / 2;
     scene.add(terrainMesh);
     
