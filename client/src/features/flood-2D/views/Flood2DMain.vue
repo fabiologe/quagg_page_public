@@ -5,7 +5,7 @@
     <aside class="left-sidebar">
        <EditorToolbar 
          :activeTool="activeTool"
-         :currentAppMode="store.editorMode"
+         :currentAppMode="editorMode"
          @set-tool="setActiveTool"
          @set-mode="setAppMode"
          @set-view="handleViewChange"
@@ -33,7 +33,7 @@
        />
 
        <!-- RIGHT PANEL CONTAINER -->
-       <div class="right-panel-container" v-if="store.editorMode === 'SETUP' || store.editorMode === 'SIMULATION' || store.editorMode === 'IMPORT_TERRAIN'">
+       <div class="right-panel-container" v-if="editorMode === 'SETUP' || editorMode === 'SIMULATION' || editorMode === 'IMPORT_TERRAIN'">
          
          <!-- TOGGLE BUTTON -->
          <button class="panel-toggle" @click="panelOpen = !panelOpen" :title="panelOpen ? 'Close Panel' : 'Open Panel'">
@@ -60,14 +60,17 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
 import EditorToolbar from '../components/editor/EditorToolbar.vue';
 import MapEditor3D from '../components/editor/MapEditor3D.vue';
 import DataImportModal from '../components/importer/DataImportModal.vue';
 import ScenarioManager from '../components/panel/ScenarioManager.vue';
 
-const store = useScenarioStore();
-const activeTool = ref('SELECT'); // Shared tool state
+const simStore = useSimulationStore();
+// Shared tool state from Store
+const activeTool = computed(() => simStore.activeTool);
+
+const editorMode = ref('SETUP'); // Local UI Mode: SETUP | IMPORT_TERRAIN | SIMULATION
 const errorMsg = ref(null);
 const editorRef = ref(null);
 const showImportModal = ref(false);
@@ -75,27 +78,29 @@ const panelOpen = ref(true);
 
 // -- ACTIONS --
 
+// EditorToolbar emits 'set-tool' (maybe? check EditorToolbar). 
+// Actually EditorToolbar updates Store directly. 
+// If it emits, we can ignore or log.
+// But to be safe if it emits set-tool:
 const setActiveTool = (toolName) => {
-    activeTool.value = toolName;
+    simStore.setActiveTool(toolName);
 };
 
 const setAppMode = (mode) => {
-    store.editorMode = mode;
-    // MapEditor3D watches store.editorMode usually, or we trigger it?
-    // MapEditor3D is reactive to store. So just updating store is enough.
-    // But we might want to reset tool.
+    editorMode.value = mode;
+    
+    // Auto-Set Tool based on Mode
     if (mode === 'IMPORT_TERRAIN') {
-        activeTool.value = 'PAN'; // Default to Pan in 3D
+        simStore.setActiveTool('PAN'); // Default to Pan in 3D
     } else if (mode === 'SELECT') {
-        activeTool.value = 'SELECT';
+        simStore.setActiveTool('SELECT');
     } else if (mode.startsWith('DRAW')) {
-        activeTool.value = 'DRAW';
+        simStore.setActiveTool('DRAW'); // Or specific
     } else {
-        activeTool.value = 'SELECT';
+        simStore.setActiveTool('SELECT');
     }
     
-    // Trigger Camera Update in Child if needed (or Child watches store)
-    // Actually EditorToolbar emits 'set-view' separately.
+    // Update Camera via ref
     if(mode === 'SETUP') handleViewChange('XY'); // Force Top-Down
     if(mode === 'IMPORT_TERRAIN') handleViewChange('XZ'); // Force 3D
 };
@@ -109,8 +114,7 @@ const handleViewChange = (axis) => {
 
 const onTerrainLoaded = () => {
     // Called when user accepts terrain in Import Mode
-    store.editorMode = 'SETUP';
-    // Maybe save something?
+    editorMode.value = 'SETUP';
 };
 
 </script>

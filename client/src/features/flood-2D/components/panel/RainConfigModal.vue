@@ -131,7 +131,6 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { ref, computed, watch } from 'vue';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { calculateBlockRain, calculateEulerType2 } from '../../utils/RainModelService.js';

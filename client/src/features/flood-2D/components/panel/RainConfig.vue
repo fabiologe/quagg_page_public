@@ -48,10 +48,10 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import RainConfigModal from './RainConfigModal.vue';
 
-const store = useScenarioStore();
+const store = useHydraulicStore();
 const showModal = ref(false);
 
 const handleApply = () => {
