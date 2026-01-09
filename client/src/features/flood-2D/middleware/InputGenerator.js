@@ -19,7 +19,7 @@ export class InputGenerator {
     /**
      * Main entry point to process a full scenario input.
      * @param {object} scenario input data
-     *    - xyz: string
+     *    - grid: { header, data } (Pre-parsed Grid) OR xyz: string (Raw)
      *    - buildings: GeoJSON
      *    - roughness: GeoJSON
      *    - rain: { intensity: number, duration: number }
@@ -30,38 +30,62 @@ export class InputGenerator {
         this.reset();
 
         // 1. Terrain & Rasterization
-        const { header, data } = Rasterizer.createDemFromXYZ(scenario.xyz);
+        let header, data;
+
+        if (scenario.grid) {
+            // Use pre-parsed grid from GeoStore
+            header = scenario.grid.header || scenario.grid; // Handle if flat or nested
+            data = scenario.grid.data || scenario.grid.gridData;
+        } else if (scenario.xyz) {
+            // Parse raw
+            const res = Rasterizer.createDemFromXYZ(scenario.xyz);
+            header = res.header;
+            data = res.data;
+        } else {
+            throw new Error("InputGenerator: No Terrain Grid or XYZ provided.");
+        }
+
         this.terrainHeader = header;
 
-        Rasterizer.burnBuildings(data, header, scenario.buildings, 10.0); // +10m Height
+        // Burn Buildings
+        if (scenario.buildings) {
+            Rasterizer.burnBuildings(data, header, scenario.buildings, 10.0);
+        }
 
         const ascContent = Rasterizer.gridToASC(data, header);
         this.files['terrain.asc'] = ascContent;
 
         // 2. Friction / Roughness
-        // Determine global or distributed
-        const frictionMap = Rasterizer.generateRoughnessMap(header, scenario.roughness);
         let useFrictionFile = false;
-        if (frictionMap) {
-            this.files['friction.asc'] = frictionMap;
-            useFrictionFile = true;
+        if (scenario.roughness) {
+            const frictionMap = Rasterizer.generateRoughnessMap(header, scenario.roughness);
+            if (frictionMap) {
+                this.files['friction.asc'] = frictionMap;
+                useFrictionFile = true;
+            }
         }
 
         // 3. Hydraulics
 
         // Rain
-        if (scenario.rain && scenario.rain.intensity > 0) {
-            const rainContent = Hydraulics.prepareRain(scenario.rain.intensity, scenario.rain.duration || 3600);
-            this.files['rain.txt'] = rainContent;
+        if (scenario.rain) {
+            // Check if it's simple intensity OR time series
+            // scenario.rain might be array of {t, v} or simple config
+            if (typeof scenario.rain === 'object' && scenario.rain.intensity) {
+                const rainContent = Hydraulics.prepareRain(scenario.rain.intensity, scenario.rain.duration || 3600);
+                this.files['rain.txt'] = rainContent;
+            } else if (Array.isArray(scenario.rain)) {
+                // Handle Series (TODO: Implement Hydraulics.prepareRainSeries)
+                // For now assuming simple block rain if intensity provided
+            }
         }
 
         // Boundaries
-        // Pass 'data' (DEM) for validation (Point on NoData check)
+        // Pass 'data' (DEM) for validation
         const { bdyContent, bcFiles } = Hydraulics.prepareBoundaries(scenario.boundaries || [], header, data);
 
         if (bdyContent.length > 0) {
             this.files['flow.bdy'] = bdyContent;
-            // Merge time series files
             Object.assign(this.files, bcFiles);
         }
 

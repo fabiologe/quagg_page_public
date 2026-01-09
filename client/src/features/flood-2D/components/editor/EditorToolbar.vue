@@ -3,8 +3,8 @@
     
     <!-- Select Tool -->
     <ToolButton 
-      @click="setMode('SELECT')"
-      :active="mode === 'SELECT' && activeTool === 'DRAW'"
+      @click="setTool('SELECT')"
+      :active="activeTool === 'SELECT'"
       title="Select & Edit"
     >
       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
@@ -25,8 +25,8 @@
 
     <!-- Draw Poly -->
     <ToolButton 
-      @click="setMode('DRAW_POLY')"
-      :active="mode === 'DRAW_POLY' && activeTool === 'DRAW'"
+      @click="setTool('DRAW_POLY')"
+      :active="activeTool === 'DRAW_POLY' || activeTool === 'DRAW'" 
       title="Draw Building"
     >
       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
@@ -34,8 +34,8 @@
 
     <!-- Draw Line -->
     <ToolButton 
-      @click="setMode('DRAW_LINE')"
-      :active="mode === 'DRAW_LINE' && activeTool === 'DRAW'"
+      @click="setTool('DRAW_LINE')"
+      :active="activeTool === 'DRAW_LINE'"
       title="Draw Wall/Dam"
     >
       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -43,8 +43,8 @@
 
     <!-- Draw Point -->
     <ToolButton 
-      @click="setMode('DRAW_POINT')"
-      :active="mode === 'DRAW_POINT' && activeTool === 'DRAW'"
+      @click="setTool('DRAW_POINT')"
+      :active="activeTool === 'DRAW_POINT'"
       title="Add Source Point"
     >
       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
@@ -54,7 +54,7 @@
 
     <!-- SHOVEL Tool -->
     <ToolButton 
-      @click="$emit('set-tool', 'SHOVEL')"
+      @click="setTool('SHOVEL')"
       :active="activeTool === 'SHOVEL'"
       title="Shovel (Modify Terrain)"
     >
@@ -74,7 +74,7 @@
 
     <!-- BOUNDARY Tool -->
     <ToolButton 
-      @click="$emit('set-tool', 'BOUNDARY')"
+      @click="setTool('BOUNDARY')"
       :active="activeTool === 'BOUNDARY'"
       title="Define Boundaries"
     >
@@ -83,7 +83,7 @@
 
     <!-- CULVERT Tool (Durchlässe) -->
     <ToolButton 
-      @click="$emit('set-tool', 'CULVERT')"
+      @click="setTool('CULVERT')"
       :active="activeTool === 'CULVERT'"
       title="Create Culvert"
     >
@@ -97,7 +97,7 @@
 
     <!-- PAN Tool -->
     <ToolButton 
-      @click="$emit('set-tool', 'PAN')"
+      @click="setTool('PAN')"
       :active="activeTool === 'PAN'"
       title="Pan View"
     >
@@ -106,7 +106,7 @@
 
     <!-- INFO Tool -->
     <ToolButton 
-      @click="$emit('set-tool', 'INFO')"
+      @click="setTool('INFO')"
       :active="activeTool === 'INFO'"
       title="Inspect Terrain"
     >
@@ -144,24 +144,67 @@
 
 <script setup>
 import { computed } from 'vue';
-import { useScenarioStore } from '@/stores/scenarioStore';
+import { useSimulationStore } from '../../stores/useSimulationStore.js';
 import ToolButton from '../tools/ToolButton.vue'; // Import Component
 
 const props = defineProps({
   currentAppMode: { type: String, default: 'SETUP' },
-  activeTool: { type: String, default: 'DRAW' } // 'DRAW', 'PAN', 'INFO'
 });
 
-const store = useScenarioStore();
-const mode = computed(() => store.editorMode);
+// We don't use props for activeTool anymore, we sync with Store
+const store = useSimulationStore();
+const activeTool = computed(() => store.activeTool);
 
-// We forward these upwards to Flood2DMain
 const emit = defineEmits(['set-mode', 'set-view', 'set-tool', 'open-import']);
 
 const setMode = (m) => {
-  store.editorMode = m;
-  emit('set-tool', 'DRAW'); // Reset to Draw when tool changes
+  // Mode logic... 'SETUP' vs 'IMPORT_TERRAIN' is app level/Simulation level?
+  // User Prompt 2 said: "UI State: activeTool".
+  // EditorToolbar props: currentAppMode.
+  // We keep emitting set-mode for parent to handle if it switched views (Flood2DMain likely handles Mode).
+  // But activeTool is definitely SimStore.
+  
+  if (m === 'DRAW_POLY') {
+      store.setActiveTool('DRAW_POLY');
+  } else if (m === 'DRAW_LINE') {
+      store.setActiveTool('DRAW_LINE');
+  } else if (m === 'DRAW_POINT') {
+      store.setActiveTool('DRAW_POINT');
+  } else if (m === 'SELECT') {
+      store.setActiveTool('SELECT');
+  }
+  
+  // Also emit for legacy compatibility if parent relies on it? 
+  // But we want to kill legacy.
+  // EditorToolbar seems to emit 'set-tool' for everything.
+  // Let's intercept emits and call store.
 };
+
+// We need to replace $emit('set-tool', ...) in template with store calls? 
+// Or just let parent handle it? The parent is MapEditor3D?
+// No, MapEditor3D is inside Flood2DMain probably.
+// Let's assume Flood2DMain orchestrates.
+// For now, replacing the store instance is key.
+
+// Wait, the template uses 'mode' and 'activeTool'.
+// activeTool is computed from store.
+// mode... is 'SETUP' / 'IMPORT_TERRAIN'. Is this in simulation store?
+// Simulation Store has 'status'.
+// Maybe 'mode' is local UI state in Flood2DMain.
+// Let's keep props.currentAppMode for Mode if it's top-level view switching.
+// But activeTool should be store.
+
+// Update emit handlers in template?
+// The template does @click="$emit('set-tool', 'SHOVEL')".
+// We can leave emits if the parent (Flood2DMain) updates the store.
+// BUT Prompt 3 said: "Das ist der gefährliche Teil... MapEditor3D... Toolbar..."
+// Prompt 1 Cluster 1: "EditorToolbar.vue ... Der Toolbar steuert nur activeTool und mode. Nutze hierfür ausschließlich den useSimulationStore."
+
+// So I should replace emits with store actions.
+const setTool = (tool) => {
+    store.setActiveTool(tool);
+};
+
 </script>
 
 <style scoped>

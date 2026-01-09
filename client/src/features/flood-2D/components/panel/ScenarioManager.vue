@@ -33,6 +33,13 @@
         Bounds ({{ geoStore.boundaries.features.length }})
       </button>
       <button 
+        :class="{ active: activeTab === 'PROFILES' }" 
+        @click="activeTab = 'PROFILES'"
+        title="Hydraulische Profile"
+      >
+        Profiles ({{ profilesList.length }})
+      </button>
+      <button 
         :class="{ active: activeTab === 'RAIN' }" 
         @click="activeTab = 'RAIN'"
         title="Niederschlag"
@@ -65,6 +72,18 @@
         @zoom-to="handleZoom"
       />
 
+      <!-- REUSE ObjectTable FOR PROFILES if compatible or Custom List -->
+      <!-- ObjectTable likely assumes spatial items with zoom. Profiles are data. -->
+      <!-- Simple List for Profiles -->
+      <div v-if="activeTab === 'PROFILES'" class="profiles-list">
+          <div v-for="profile in profilesList" :key="profile.id" class="profile-item" @click="console.log('Select Profile', profile.id)">
+              <div class="p-name">{{ profile.name }}</div>
+              <div class="p-meta">{{ profile.type }} | {{ profile.data.length }} pts</div>
+          </div>
+          <div v-if="profilesList.length === 0" class="empty-msg">Keine Profile definiert.</div>
+          <button class="btn-small action-btn" @click="hydStore.createProfile('New Profile', 'inflow')">+ Profil Erstellen</button>
+      </div>
+
       <RainConfig v-if="activeTab === 'RAIN'" />
 
     </div>
@@ -81,13 +100,16 @@
 import { ref, computed } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
+import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import ObjectTable from './ObjectTable.vue';
 import BoundaryConfig from './BoundaryConfig.vue';
 import RainConfig from './RainConfig.vue';
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
-const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES
+const hydStore = useHydraulicStore();
+
+const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES | PROFILES | RAIN
 
 const totalItems = computed(() => {
     return geoStore.nodes.length + geoStore.buildings.features.length + geoStore.boundaries.features.length;
@@ -99,14 +121,20 @@ const selectedItem = computed(() => {
     return geoStore.getFeatureById(simStore.selection);
 });
 
+const profilesList = computed(() => {
+    return Object.values(hydStore.profiles);
+});
+
 const handleZoom = (item) => {
-    // Emit Global Event or Call Store Action
-    // ideally, we update camera. 
-    // We can use a Bus or Store property 'cameraTarget' that MapEditor watches.
-    // For now, let's log. Implementation of Zoom logic is a separate task or needs Store support.
+    // Standard Zoom Logic placeholder
     console.log("Zoom to:", item);
-    // TODO: Implement camera zoom trigger
 };
+
+// Handle Selection from Lists
+// If ObjectTable emits select? It currently seems to just display.
+// Assuming selection handling is done via global store or click?
+// If ObjectTable has selection logic, we should use simStore.setSelection
+
 
 </script>
 
@@ -167,4 +195,25 @@ const handleZoom = (item) => {
     overflow-y: auto;
     background: #1a252f;
 }
+
+/* Profiles List Styles */
+.profiles-list {
+    padding: 1rem;
+    overflow-y: auto;
+    height: 100%;
+}
+.profile-item {
+    background: #34495e;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.profile-item:hover { background: #46627f; }
+.p-name { font-weight: bold; color: #ecf0f1; font-size: 0.9rem; }
+.p-meta { font-size: 0.75rem; color: #95a5a6; }
+.empty-msg { color: #7f8c8d; text-align: center; margin-top: 1rem; font-style: italic; }
+.action-btn { width: 100%; margin-top: 1rem; padding: 0.5rem; background: #3498db; border: none; color: white; border-radius: 4px; cursor: pointer; }
+.action-btn:hover { background: #2980b9; }
 </style>

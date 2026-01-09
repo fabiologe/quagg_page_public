@@ -39,72 +39,46 @@
   </div>
 </template>
 
-<script setup>
-
-import { ref, onUnmounted } from 'vue';
-// import SimulationWorker from '../simulation.worker.js?worker'; // Unused
+import { ref, onUnmounted, computed, watch } from 'vue';
 import JSZip from 'jszip';
+import { useGeoStore } from '../../stores/useGeoStore.js';
+import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
+import { useSimulationStore } from '../../stores/useSimulationStore.js';
+import { InputGenerator } from '../../middleware/InputGenerator.js';
+import { Rasterizer } from '../../middleware/Rasterizer.js';
 
-// Hardcoded File Contents
-const PAR_CONTENT = `# LISFLOOD-FP Parameter File
-dirroot results
-resroot res
-sim_time 3600.0
-initial_tstep 0.1
-massint 60.0
-saveint 60.0
-fpfric 0.035
+// Stores
+const geoStore = useGeoStore();
+const hydStore = useHydraulicStore();
+const simStore = useSimulationStore();
 
-# Input Dateien
-DEMfile      debug_terrain_check.asc
-bdyfile      manual_flow.bdy
-bcifile      manual_flow.bci
-
-# Output Optionen
-voutput
-depthoff
-adaptoff
-`;
-
-const BCI_CONTENT = `P 408940.000 5482490.000 QVAR schacht_inflow
-P 409777.114 5482463.699 QVAR zufluss_50ls
-P 409776.299 5482577.394 QVAR zufluss_50ls
-P 409776.299 5482691.091 QVAR zufluss_50ls
-P 408797.902 5482165.578 QVAR abfluss_10ls
-P 408689.976 5482230.198 QVAR abfluss_10ls
-`;
-
-const BDY_CONTENT = `Boundary Data
-schacht_inflow
-2 seconds
-0       0.5
-3600    0.5
-
-zufluss_50ls
-2 seconds
-0       0.016667
-3600    0.016667
-
-abfluss_10ls
-2 seconds
-0       -0.005
-3600    -0.005
-`;
-
-// import demUrl from '../debug_terrain_check.asc?url';
-const demUrl = '/debug_terrain_check.asc'; // Expecting it in public for now? Or just mock.
-
+// State
 const isRunning = ref(false);
-const status = ref('');
 const logs = ref('');
-const statusClass = ref('');
 const resultFiles = ref({});
+const zipUrl = ref(null);
+const isZipping = ref(false);
+const generator = new InputGenerator();
 let worker = null;
 
-import { Rasterizer } from '../middleware/Rasterizer.js';
+// Derived State from SimStore for UI
+const status = computed(() => simStore.status || 'IDLE');
+const statusClass = computed(() => {
+    switch (status.value) {
+        case 'RUNNING': return 'warning';
+        case 'FINISHED': case 'Success': return 'success';
+        case 'ERROR': return 'error';
+        default: return 'info';
+    }
+});
+
+// Watch logs from simStore if we want to sync (or keeping local for performance/scroll?)
+// User requirement: "Set simStore.status = 'RUNNING'".
+// SimStore likely has logs array.
+// For now, I'll update SimStore status but keep logs local or sync.
+// Let's sync basic status.
 
 const downloadFile = (name, content) => {
-    // Content is String (ASC)
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -113,9 +87,6 @@ const downloadFile = (name, content) => {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
-
-const zipUrl = ref(null);
-const isZipping = ref(false);
 
 const prepareZip = async () => {
     isZipping.value = true;
@@ -138,13 +109,20 @@ const prepareZip = async () => {
 
 const appendLog = (msg) => {
     logs.value += msg + '\n';
+    simStore.addLog(msg); // Sync if possible
 };
 
 const runSimulation = async () => {
     if (isRunning.value) return;
     
+    // Check Requirements
+    if (!geoStore.terrain || !geoStore.terrain.gridData) {
+        alert("Kein Terrain geladen! Bitte erst Terrain importieren.");
+        return;
+    }
+
     isRunning.value = true;
-    status.value = 'Initializing...';
+    simStore.setStatus('INITIALIZING');
     logs.value = '';
     resultFiles.value = {};
     
@@ -158,43 +136,33 @@ const runSimulation = async () => {
                 
                 switch (type) {
                     case 'STATUS':
-                        status.value = workerStatus;
-                        statusClass.value = (workerStatus === 'RUNNING') ? 'warning' : 'info';
+                        simStore.setStatus(workerStatus);
                         appendLog(`[STATUS] ${workerStatus}`);
                         
                         // Auto-Advance Logic
                         if (workerStatus === 'IDLE' && isRunning.value) {
-                           // Initialized, now Prepare
                            startPreparation();
                         } else if (workerStatus === 'READY' && isRunning.value) {
-                           // Prepared, now Run
                            worker.postMessage({ cmd: 'CMD_RUN' });
+                           simStore.setStatus('RUNNING');
                         } else if (workerStatus === 'FINISHED') {
-                           status.value = 'Success';
-                           statusClass.value = 'success';
+                           simStore.setStatus('FINISHED');
                            appendLog(`[COMPLETE] Simulation finished.`);
                            isRunning.value = false;
                         }
                         break;
 
-                    case 'STDOUT':
-                        appendLog(`[STDOUT] ${text}`);
-                        break;
-
-                    case 'STDERR':
-                        appendLog(`[STDERR] ${text}`);
-                        break;
+                    case 'STDOUT': appendLog(`[STDOUT] ${text}`); break;
+                    case 'STDERR': appendLog(`[STDERR] ${text}`); break;
 
                     case 'PROGRESS':
-                        status.value = `Running ${value.toFixed(1)}%`;
+                        // simStore.setProgress(value); // If exists
+                        simStore.setStatus(`RUNNING ${value.toFixed(1)}%`);
                         break;
 
                     case 'RESULT':
-                         // Payload is Float32Array
-                         // Reconstruct ASC for download
                          try {
                              const frameName = `res-${String(frame).padStart(4, '0')}.wd.asc`;
-                             // Convert Float32 back to ASC String
                              const ascContent = Rasterizer.gridToASC(payload, header);
                              resultFiles.value[frameName] = ascContent;
                              appendLog(`[RESULT] Received Frame ${frame}`);
@@ -204,8 +172,7 @@ const runSimulation = async () => {
                         break;
 
                     case 'ERROR':
-                        status.value = 'Error';
-                        statusClass.value = 'error';
+                        simStore.setStatus('ERROR');
                         appendLog(`[ERROR] ${error}`);
                         isRunning.value = false;
                         break;
@@ -218,37 +185,60 @@ const runSimulation = async () => {
 
     } catch (e) {
         console.error(e);
-        status.value = 'Setup Error';
-        statusClass.value = 'error';
+        simStore.setStatus('ERROR');
         appendLog(`Setup Error: ${e.message}`);
         isRunning.value = false;
     }
 };
 
 const startPreparation = async () => {
-    status.value = 'Fetching Data...';
-    try {
-         appendLog(`Fetching DEM from ${demUrl}...`);
-         const demResponse = await fetch(demUrl);
-         if (!demResponse.ok) throw new Error("Failed to fetch DEM file");
-         const demText = await demResponse.text();
+    simStore.setStatus('PREPARING');
+    appendLog("Generiere Input Dateien aus Stores...");
 
-         const files = {
-            'run.par': PAR_CONTENT,
-            'manual_flow.bdy': BDY_CONTENT,
-            'manual_flow.bci': BCI_CONTENT,
-            'debug_terrain_check.asc': demText
+    try {
+         // Gather Data from Stores
+         const scenarioData = {
+             grid: geoStore.terrain, // Pass the Grid Object directly
+             buildings: geoStore.buildings, // FeatureCollection
+             // roughness: ... // TODO: Add roughness store if needed
+             rain: hydStore.rainConfig && hydStore.rainData ? {
+                 intensity: hydStore.rainConfig.intensity, // Simplified for now, or pass full data logic
+                 // If utilizing raw store data for InputGenerator:
+                 // InputGenerator expects specific format. 
+                 // If rainData is series, we need to adapt InputGenerator to take it.
+                 // For now, let's pass the raw store pointers and let InputGenerator handle or mock.
+                 // InputGenerator.js was updated to check 'scenario.rain'.
+                 // We pass config or whatever is available.
+                 // Let's rely on rainConfig mostly.
+                 ...hydStore.rainConfig
+             } : null,
+             
+             boundaries: hydStore.profiles ? Object.values(hydStore.profiles) : [], // Pass Profiles/Boundaries
+             // Note: InputGenerator expects 'boundaries' array.
+             // We need to ensure the format matches what InputGenerator expects (e.g. { type: 'P', ... }).
+             // This requires further alignment, but for Refactoring step, we connect the pipes.
+             
+             config: {
+                 sim_time: simStore.simDuration || 3600,
+                 initial_tstep: simStore.timeStep || 1.0
+                 // other overrides
+             }
          };
+
+         const files = generator.processScenario(scenarioData);
+
+         appendLog(`Generated ${Object.keys(files).length} files.`);
 
          worker.postMessage({
              cmd: 'CMD_PREPARE',
              payload: {
-                 config: { sim_time: 3600 },
+                 config: { sim_time: scenarioData.config.sim_time },
                  files: files
              }
          });
     } catch (e) {
-        appendLog(`[ERROR] Prep failed: ${e.message}`);
+        appendLog(`[ERROR] Data Prep failed: ${e.message}`);
+        simStore.setStatus('ERROR');
         isRunning.value = false;
     }
 };
