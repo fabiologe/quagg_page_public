@@ -94,7 +94,10 @@
               </div>
               
               <div v-if="ganglinienList.length === 0" class="empty-msg">Keine Ganglinien.</div>
-              <button class="btn-add" @click="hydStore.createGanglinie('Neue Ganglinie', 'Zufluss')">+ Ganglinie</button>
+              <div class="list-actions">
+                  <button class="btn-add" @click="hydStore.createGanglinie('Neue Ganglinie', 'Zufluss')">+ Ganglinie</button>
+                  <button class="btn-config" @click="showAssignmentModal = true">🛠️ Konfigurator</button>
+              </div>
           </div>
 
           <!-- RIGHT: Editor -->
@@ -142,6 +145,8 @@
         <BoundaryConfig :selectedItem="selectedItem" />
     </div>
 
+    <!-- MODALS -->
+    <AssignmentModal v-if="showAssignmentModal" @close="showAssignmentModal = false" />
   </div>
 </template>
 
@@ -156,12 +161,14 @@ import BoundaryConfig from './BoundaryConfig.vue';
 import RainConfig from './RainConfig.vue';
 import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 import PatternGenerator from '../hydraulics/PatternGenerator.vue';
+import AssignmentModal from '../hydraulics/AssignmentModal.vue';
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
 const hydStore = useHydraulicStore();
 
 const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES | PROFILES | RAIN
+const showAssignmentModal = ref(false);
 
 const totalItems = computed(() => {
     return (geoStore.nodes ? geoStore.nodes.length : 0) + 
@@ -293,13 +300,35 @@ const handleZoom = (item) => {
 }
 .profile-item:hover .btn-del { opacity: 1; }
 
+.list-actions {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 15px; border-top: 1px solid #34495e; padding-top: 15px;
+}
+.btn-config {
+    width: 100%;
+    padding: 12px;
+    background: #e67e22; /* Prominent Orange */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background 0.2s;
+}
+.btn-config:hover {
+    background: #d35400;
+}
 .btn-add {
-    margin: 10px;
+    width: 100%;
     padding: 8px;
     background: #27ae60;
-    color: white; border: none; border-radius: 4px;
+    color: white;
+    border: none;
+    border-radius: 4px;
     cursor: pointer;
 }
+.btn-add:hover { background: #2ecc71; }
 
 .profile-editor-col {
     flex: 1;

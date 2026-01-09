@@ -10,6 +10,8 @@
          @mousemove="handleWrapperMove"
          @contextmenu="handleWrapperRightClick"
          @dblclick="handleWrapperDoubleClick"
+         @mousedown="handleWrapperMouseDown"
+         @mouseup="handleWrapperMouseUp"
        ></div>
        
        <!-- Header Overlay -->
@@ -54,9 +56,56 @@
        
        <!-- SHOVEL UI -->
        <div v-if="simStore.activeTool === 'SHOVEL'" class="tool-ui-panel shovel-panel">
-          <div class="panel-header">Shovel Tool</div>
+          <div class="panel-header">Terrain Sculpting</div>
           <div class="panel-content">
-             <div class="hint">Click terrain to lower by 0.5m</div>
+             
+             <!-- MODE TOGGLE -->
+             <div class="toggle-group">
+                 <button :class="{ active: shovelTool.mode === 'RAISE' }" @click="shovelTool.mode = 'RAISE'">Raise</button>
+                 <button :class="{ active: shovelTool.mode === 'LOWER' }" @click="shovelTool.mode = 'LOWER'">Lower</button>
+             </div>
+
+             <!-- SHAPE TOGGLE (Icons) -->
+             <label class="control-label">Brush Shape</label>
+             <div class="toggle-group start">
+                 <button :class="{ active: shovelTool.brushShape === 'CIRCLE' }" @click="shovelTool.brushShape = 'CIRCLE'" title="Circle">⭕</button>
+                 <button :class="{ active: shovelTool.brushShape === 'SQUARE' }" @click="shovelTool.brushShape = 'SQUARE'" title="Square">⬜</button>
+                 <button :class="{ active: shovelTool.brushShape === 'POLYGON' }" @click="shovelTool.brushShape = 'POLYGON'" title="Polygon">📐</button>
+             </div>
+
+             <!-- RADIUS SLIDER (Only for Circle/Square) -->
+             <div v-if="shovelTool.brushShape !== 'POLYGON'" class="control-row">
+                 <label>Size: {{ shovelTool.radius }}m</label>
+                 <input type="range" v-model.number="shovelTool.radius" min="1" max="50" step="1">
+             </div>
+
+             <!-- INTENSITY SLIDER -->
+             <div class="control-row">
+                 <label>Intensity: {{ shovelTool.intensity }}m</label>
+                 <input type="range" v-model.number="shovelTool.intensity" min="0.1" max="5.0" step="0.1">
+             </div>
+             
+             <!-- POLYGON ACTIONS -->
+             <div v-if="shovelTool.brushShape === 'POLYGON'" class="polygon-actions">
+                 <div class="hint-text" style="font-weight:bold; margin-bottom:5px;">
+                     Points: {{ shovelTool.polygonPoints.length }}
+                 </div>
+                 
+                 <div v-if="shovelTool.polygonPoints.length >= 3" class="btn-stack">
+                     <!-- Explicit Mode Buttons (Prompt 3 request for Single Apply matched via implicit Mode + Enter) -->
+                     <!-- But User Prompt 3 explicit text: "Button 'Auswahl abschließen & Anwenden'" -->
+                     <!-- I will provide that single button behavior as primary, plus the explicit ones as option? -->
+                     <!-- Let's stick to the prompt text -->
+                     <button @click="shovelTool.finishPolygon()" class="btn-action primary" :class="{ warning: shovelTool.mode === 'LOWER', success: shovelTool.mode === 'RAISE' }">
+                        ✅ Apply {{ shovelTool.mode }}
+                     </button>
+                     <div class="hint-small" style="font-size: 0.8em; opacity: 0.7; text-align: center;">or press Enter</div>
+                 </div>
+                 
+                 <button v-if="shovelTool.polygonPoints.length > 0" @click="shovelTool.reset()" class="btn-action danger outline" style="margin-top:5px;">❌ Cancel (Esc)</button>
+                 <div v-else class="hint-text">Click map to add points</div>
+             </div>
+
           </div>
        </div>
 
@@ -91,10 +140,19 @@
   </div>
 </template>
 
+<style scoped>
+/* Ensure canvas wrapper handles relative positioning for overlays */
+.canvas-wrapper {
+    position: relative;
+    /* ... existing styles ... */
+}
+/* ... rest of existing styles ... */
+</style>
+
 <script setup>
 import { ref, onMounted, onUnmounted, reactive, toRef, watch, computed } from 'vue';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useSimulationStore } from '../../stores/useSimulationStore.js';
 import TerrainInfoCard from './TerrainInfoCard.vue';
@@ -172,6 +230,26 @@ const interactionManager = useInteractionManager(
     toolMap
 );
 
+// --- TOOL LIFECYCLE MANAGEMENT ---
+watch(activeTool, (newVal, oldVal) => {
+    // 1. Deactivate Old
+    if (oldVal) {
+        const tool = tools[oldVal]; // Direct lookup or via proxy logic if needed
+        if (tool && typeof tool.deactivate === 'function') {
+            tool.deactivate(scene);
+        }
+    }
+    // 2. Activate New
+    if (newVal) {
+        const tool = tools[newVal];
+        // Handle proxy alias if needed (e.g. DRAW -> buildingTool)
+        // But tools object has keys directly.
+        if (tool && typeof tool.activate === 'function') {
+            tool.activate(scene);
+        }
+    }
+}, { immediate: true });
+
 
 // --- INIT ---
 onMounted(() => {
@@ -226,7 +304,8 @@ const handleWrapperClick = (event) => {
         raycaster,
         terrainMesh,
         interactionPlane,
-        parsedData: parsedData.value 
+        parsedData: parsedData.value,
+        geoStore
     };
     
     const res = interactionManager.handleClick(event, context);
@@ -250,9 +329,25 @@ const handleWrapperRightClick = (event) => {
 const handleWrapperDoubleClick = (event) => {
     if (!renderer || !activeCamera) return;
     const context = {
-        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value 
+        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
     };
     interactionManager.handleDoubleClick(event, context);
+};
+
+const handleWrapperMouseDown = (event) => {
+    if (!renderer || !activeCamera) return;
+    const context = {
+        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
+    };
+    interactionManager.handleMouseDown(event, context);
+};
+
+const handleWrapperMouseUp = (event) => {
+    if (!renderer || !activeCamera) return;
+    const context = {
+        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
+    };
+    interactionManager.handleMouseUp(event, context);
 };
 
 const handleInfoClick = (ctx) => {
@@ -310,7 +405,7 @@ const initThreeJS = () => {
     const height = canvasContainer.value.clientHeight;
     
     cameraPerspective = new THREE.PerspectiveCamera(60, width / height, 0.1, 10000);
-    cameraPerspective.position.set(0, 100, 100);
+    cameraPerspective.position.set(0, 500, 500); // RTS-Angle (Start Position)
     
     const aspect = width / height;
     const frustumSize = 100;
@@ -330,9 +425,12 @@ const initThreeJS = () => {
     renderer.setPixelRatio(window.devicePixelRatio);
     canvasContainer.value.appendChild(renderer.domElement);
     
-    controls = new OrbitControls(activeCamera, renderer.domElement);
+    controls = new MapControls(activeCamera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 10;
+    controls.maxPolarAngle = Math.PI / 2.2;
     
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
@@ -648,7 +746,10 @@ const buildTerrainMesh = (result) => {
     controls.update();
 };
 
-defineExpose({ setCameraView });
+defineExpose({ 
+    setCameraView,
+    resize: onWindowResize // EXPOSE RESIZE
+});
 </script>
 
 <style scoped>

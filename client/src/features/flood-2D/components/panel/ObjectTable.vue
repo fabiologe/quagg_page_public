@@ -66,43 +66,54 @@
 
 <script setup>
 import { computed } from 'vue';
-
+import { useSimulationStore } from '../../stores/useSimulationStore';
+import { useGeoStore } from '../../stores/useGeoStore';
+import { useHydraulicStore } from '../../stores/useHydraulicStore'; // IMPORT
 
 const props = defineProps({
-    items: { type: Array, required: true },
-    type: { type: String, required: true } // 'NODE' | 'BUILDING' | 'BOUNDARY'
+  type: { type: String, required: true }, // NODE, BUILDING, BOUNDARY
+  items: { type: Array, required: true }
 });
 
 const emit = defineEmits(['zoom-to']);
-import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
 const simStore = useSimulationStore();
+const geoStore = useGeoStore();
+const hydStore = useHydraulicStore(); // USE
 
 // --- HELPERS ---
 
-const isSelected = (id) => simStore.selection === id;
+const isSelected = (id) => {
+    // Handle potential array selection in simStore
+    if (Array.isArray(simStore.selection)) {
+        return simStore.selection.includes(id);
+    }
+    return simStore.selection === id;
+};
 
 const selectItem = (id) => {
+    // Toggle logic for multi-select could be here, but keeping simple for now
     simStore.setSelection(id);
 };
 
 const formatId = (id) => {
-    if (!id) return '???';
-    if (typeof id === 'number') return id;
-    return id.substring(0, 8) + '...';
+    if (!id) return '-';
+    return id.length > 8 ? id.substring(0, 8) + '...' : id;
 };
 
 const formatNumber = (val) => {
-    return val ? val.toFixed(1) : '–';
+    return typeof val === 'number' ? val.toFixed(2) : '-';
 };
 
 // --- ROLES (Nodes) ---
 const getNodeRole = (item) => {
-    // Determine if Inflow/Outflow/Junction based on properties
-    // This depends on how data is structured.
-    // XML Parser adds raw attributes. 
-    // Usually type is hard to guess without explicit props.
-    // For now, return generic or specific property if exists.
-    return 'Node'; 
+    const assign = hydStore.getAssignment(item.id);
+    if (assign) {
+        if (assign.type === 'INFLOW_DYNAMIC') return '🌊 Inflow';
+        if (assign.type === 'INFLOW_CONSTANT') return '🚰 Inflow (K)';
+        if (assign.type === 'OUTFLOW_FREE') return '↘️ Outflow';
+        if (assign.type === 'WATERLEVEL_FIX') return '🛑 Level';
+    }
+    return '-'; // or item.role if exists
 };
 
 const getRoleClass = (item) => {

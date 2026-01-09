@@ -8,8 +8,8 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
      */
     const ganglinien = ref({});
 
-    /** @type {import('vue').Ref<Object.<string, string>>} */
-    const assignments = ref({}); // { geoObjectId: ganglinieId }
+    /** @type {import('vue').Ref<Object.<string, {type: 'INFLOW_DYNAMIC'|'OUTFLOW_FREE'|'WATERLEVEL_FIX'|'SINK'|string, value: number|null, profileId: string|null}>>} */
+    const assignments = ref({}); // { geoObjectId: { type, value, profileId } }
 
     /** @type {import('vue').Ref<Array<any>>} */
     const rainData = ref([]);
@@ -46,9 +46,15 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         if (ganglinien.value[id]) {
             delete ganglinien.value[id];
         }
-        // Remove assignments
+        // Remove assignments referring to this profile
         for (const geoId in assignments.value) {
-            if (assignments.value[geoId] === id) {
+            const assignment = assignments.value[geoId];
+            if (assignment && assignment.profileId === id) {
+                // We keep the assignment object but remove the dead reference? 
+                // Or delete the whole assignment if it's purely profile-based?
+                // For safety, let's just clear the profileId, effectively breaking the link.
+                // Or better: If type is INFLOW_DYNAMIC, the assignment becomes invalid.
+                // We delete the entry to force the user to re-configure.
                 delete assignments.value[geoId];
             }
         }
@@ -71,22 +77,36 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
     }
 
     /**
-     * Assigns a Ganglinie to multiple GeoObjects (Nodes/Boundaries)
-     * @param {Array<string>} geoIdsArray 
-     * @param {string} ganglinieId 
+     * Updated: Assign complex boundary condition
+     * @param {Array<string>} objectIds 
+     * @param {{type: string, value: number|null, profileId: string|null}} config 
      */
+    function assignBoundaryCondition(objectIds, config) {
+        objectIds.forEach(id => {
+            // Clone config to avoid reference sharing issues
+            assignments.value[id] = { ...config };
+        });
+    }
+
+    // Compat wrapper for old calls (if any exist during migration)
+    // Deprecated: Remove after UI update
     function assignToObjects(geoIdsArray, ganglinieId) {
-        if (ganglinien.value[ganglinieId]) {
-            geoIdsArray.forEach(geoId => {
-                assignments.value[geoId] = ganglinieId;
-            });
-        }
+        assignBoundaryCondition(geoIdsArray, {
+            type: 'INFLOW_DYNAMIC',
+            value: null,
+            profileId: ganglinieId
+        });
+    }
+
+    function getAssignment(id) {
+        return assignments.value[id] || null;
     }
 
     function getAssignmentsByGanglinie(id) {
         let count = 0;
         for (const key in assignments.value) {
-            if (assignments.value[key] === id) count++;
+            const a = assignments.value[key];
+            if (a && a.profileId === id) count++;
         }
         return count;
     }
@@ -116,6 +136,8 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         updateGanglinieData,
         setActiveGanglinie,
         assignToObjects,
+        assignBoundaryCondition, // EXPORTED
+        getAssignment,           // EXPORTED
         getAssignmentsByGanglinie,
         setKostraGrid,
         setRainData

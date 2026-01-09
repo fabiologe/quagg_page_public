@@ -5,7 +5,10 @@
     <aside class="left-sidebar">
        <!-- EditorToolbar uses simStore internally for activeTool -->
        <EditorToolbar 
+         :currentAppMode="appMode"
          @open-import="showImportModal = true"
+         @set-mode="handleSetMode"
+         @set-view="handleSetView"
        />
     </aside>
 
@@ -70,7 +73,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onErrorCaptured } from 'vue';
+import { ref, onMounted, onErrorCaptured, watch, nextTick } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
@@ -90,10 +93,47 @@ const errorMsg = ref(null);
 const editorRef = ref(null);
 const showImportModal = ref(false);
 const panelOpen = ref(true);
+const appMode = ref('SETUP'); // SETUP (2D) | IMPORT_TERRAIN (3D)
+
+const handleSetMode = (mode) => {
+    appMode.value = mode;
+    // Switch default view based on mode
+    if (mode === 'SETUP') {
+        handleSetView('XY'); // 2D Top
+    } else if (mode === 'IMPORT_TERRAIN') {
+        handleSetView('XZ'); // 3D Front (or whatever default)
+    }
+};
+
+const handleSetView = (axis) => {
+    if (editorRef.value && editorRef.value.setCameraView) {
+        editorRef.value.setCameraView(axis);
+    }
+    // Update Mode based on view if needed?
+    if (axis === 'XY') appMode.value = 'SETUP'; // Force 2D mode state if strictly 2D
+    else appMode.value = 'IMPORT_TERRAIN';
+};
 
 // RESIZE LOGIC
 const panelWidth = ref(400); // Default width
 const isResizing = ref(false);
+
+const triggerResize = () => {
+    // Wait for DOM update/Transition
+    setTimeout(() => {
+        if (editorRef.value && editorRef.value.resize) {
+            editorRef.value.resize();
+        }
+    }, 100); 
+    nextTick(() => {
+         if (editorRef.value && editorRef.value.resize) editorRef.value.resize();
+    });
+};
+
+watch(panelOpen, triggerResize);
+watch(panelWidth, () => {
+    if (!isResizing.value) triggerResize();
+});
 
 const startResize = () => {
     isResizing.value = true;
@@ -108,6 +148,7 @@ const doResize = (e) => {
     // Limits
     if (newWidth > 200 && newWidth < 1200) {
         panelWidth.value = newWidth;
+        if (editorRef.value && editorRef.value.resize) editorRef.value.resize();
     }
 };
 
@@ -115,6 +156,7 @@ const stopResize = () => {
     isResizing.value = false;
     window.removeEventListener('mousemove', doResize);
     window.removeEventListener('mouseup', stopResize);
+    if (editorRef.value && editorRef.value.resize) editorRef.value.resize(); // Final snap
     document.body.style.cursor = '';
 };
 

@@ -126,10 +126,49 @@ export function useInteractionManager(activeToolRef, tools) {
         return null;
     };
 
+    /**
+     * Mouse Down Handler (Start Drag/Paint)
+     */
+    const handleMouseDown = (event, context) => {
+        updateMouseCoordinates(event, context.container);
+        if (context.camera && context.raycaster) {
+            context.raycaster.setFromCamera(pointer, context.camera);
+        }
+
+        const currentToolName = activeToolRef.value;
+        const tool = tools[currentToolName];
+
+        if (tool && typeof tool.onMouseDown === 'function') {
+            return tool.onMouseDown({
+                event,
+                ...context,
+                pointer
+            });
+        }
+    };
+
+    /**
+     * Mouse Up Handler (End Drag/Paint)
+     */
+    const handleMouseUp = (event, context) => {
+        const currentToolName = activeToolRef.value;
+        const tool = tools[currentToolName];
+
+        if (tool && typeof tool.onMouseUp === 'function') {
+            return tool.onMouseUp({
+                event,
+                ...context,
+                pointer // Last known pointer
+            });
+        }
+    };
+
     return {
         handleClick,
         handleMouseMove,
         handleRightClick,
-        handleDoubleClick
+        handleDoubleClick,
+        handleMouseDown,
+        handleMouseUp
     };
 }
