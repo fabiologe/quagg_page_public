@@ -55,59 +55,10 @@
        <!-- Tool UIs (Context Sensitive) -->
        
        <!-- SHOVEL UI -->
-       <div v-if="simStore.activeTool === 'SHOVEL'" class="tool-ui-panel shovel-panel">
-          <div class="panel-header">Terrain Sculpting</div>
-          <div class="panel-content">
-             
-             <!-- MODE TOGGLE -->
-             <div class="toggle-group">
-                 <button :class="{ active: shovelTool.mode === 'RAISE' }" @click="shovelTool.mode = 'RAISE'">Raise</button>
-                 <button :class="{ active: shovelTool.mode === 'LOWER' }" @click="shovelTool.mode = 'LOWER'">Lower</button>
-             </div>
-
-             <!-- SHAPE TOGGLE (Icons) -->
-             <label class="control-label">Brush Shape</label>
-             <div class="toggle-group start">
-                 <button :class="{ active: shovelTool.brushShape === 'CIRCLE' }" @click="shovelTool.brushShape = 'CIRCLE'" title="Circle">⭕</button>
-                 <button :class="{ active: shovelTool.brushShape === 'SQUARE' }" @click="shovelTool.brushShape = 'SQUARE'" title="Square">⬜</button>
-                 <button :class="{ active: shovelTool.brushShape === 'POLYGON' }" @click="shovelTool.brushShape = 'POLYGON'" title="Polygon">📐</button>
-             </div>
-
-             <!-- RADIUS SLIDER (Only for Circle/Square) -->
-             <div v-if="shovelTool.brushShape !== 'POLYGON'" class="control-row">
-                 <label>Size: {{ shovelTool.radius }}m</label>
-                 <input type="range" v-model.number="shovelTool.radius" min="1" max="250" step="1">
-             </div>
-
-             <!-- INTENSITY SLIDER -->
-             <div class="control-row">
-                 <label>Intensity: {{ shovelTool.intensity }}m</label>
-                 <input type="range" v-model.number="shovelTool.intensity" min="0.1" max="25.0" step="0.1">
-             </div>
-             
-             <!-- POLYGON ACTIONS -->
-             <div v-if="shovelTool.brushShape === 'POLYGON'" class="polygon-actions">
-                 <div class="hint-text" style="font-weight:bold; margin-bottom:5px;">
-                     Points: {{ shovelTool.polygonPoints.length }}
-                 </div>
-                 
-                 <div v-if="shovelTool.polygonPoints.length >= 3" class="btn-stack">
-                     <!-- Explicit Mode Buttons (Prompt 3 request for Single Apply matched via implicit Mode + Enter) -->
-                     <!-- But User Prompt 3 explicit text: "Button 'Auswahl abschließen & Anwenden'" -->
-                     <!-- I will provide that single button behavior as primary, plus the explicit ones as option? -->
-                     <!-- Let's stick to the prompt text -->
-                     <button @click="shovelTool.finishPolygon()" class="btn-action primary" :class="{ warning: shovelTool.mode === 'LOWER', success: shovelTool.mode === 'RAISE' }">
-                        ✅ Apply {{ shovelTool.mode }}
-                     </button>
-                     <div class="hint-small" style="font-size: 0.8em; opacity: 0.7; text-align: center;">or press Enter</div>
-                 </div>
-                 
-                 <button v-if="shovelTool.polygonPoints.length > 0" @click="shovelTool.reset()" class="btn-action danger outline" style="margin-top:5px;">❌ Cancel (Esc)</button>
-                 <div v-else class="hint-text">Click map to add points</div>
-             </div>
-
-          </div>
-       </div>
+       <ShovelTool 
+          v-if="simStore.activeTool === 'SHOVEL'" 
+          :tool="shovelTool" 
+       />
 
        <!-- BUILDING / DRAW UI -->
        <!-- Assuming activeTool 'DRAW' maps to Building Logic internally now -->
@@ -170,6 +121,7 @@ import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
 import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
+import ShovelTool from '../tools/ShovelTool.vue';
 
 // No props needed for activeTool anymore, using store
 const props = defineProps({}); 

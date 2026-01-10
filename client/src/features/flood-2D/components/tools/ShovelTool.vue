@@ -1,80 +1,60 @@
 <template>
   <div class="shovel-tool-ui">
-    <!-- Optional UI: Settings for Brush Size / Strength -->
     <div class="tool-panel">
-        <div class="panel-header">Shovel Settings</div>
-        <div class="control-row">
-            <label>Depth:</label>
-            <span>-0.5m</span>
+        <div class="panel-header">Terrain Sculpting</div>
+        
+        <!-- REVIEW MODE -->
+        <div v-if="tool.state === 'REVIEW'" class="review-panel">
+            <div class="status-msg">
+                Änderung anwenden? ({{ tool.pendingChanges ? tool.pendingChanges.length : 0 }} Zellen)
+            </div>
+            <div class="btn-group">
+                <button class="btn-confirm" @click="tool.commit()">
+                    ✔ Anwenden
+                </button>
+                <button class="btn-cancel" @click="tool.cancel()">
+                    ✖ Abbrechen
+                </button>
+            </div>
         </div>
-        <div class="hint">Click to Dig</div>
+
+        <!-- AIMING MODE -->
+        <div v-else class="aiming-panel">
+             <!-- MODE TOGGLE -->
+             <div class="toggle-group">
+                 <button :class="{ active: tool.mode === 'RAISE' }" @click="tool.mode = 'RAISE'">Anheben</button>
+                 <button :class="{ active: tool.mode === 'LOWER' }" @click="tool.mode = 'LOWER'">Absenken</button>
+             </div>
+
+             <!-- SHAPE TOGGLE -->
+             <label class="control-label">Pinselform</label>
+             <div class="toggle-group start">
+                 <button :class="{ active: tool.brushShape === 'CIRCLE' }" @click="tool.brushShape = 'CIRCLE'" title="Kreis">⭕</button>
+                 <button :class="{ active: tool.brushShape === 'SQUARE' }" @click="tool.brushShape = 'SQUARE'" title="Quadrat">⬜</button>
+                 <button :class="{ active: tool.brushShape === 'POLYGON' }" @click="tool.brushShape = 'POLYGON'" title="Polygon">📐</button>
+             </div>
+
+             <!-- RADIUS SLIDER -->
+             <div v-if="tool.brushShape !== 'POLYGON'" class="control-row">
+                 <label>Radius: {{ tool.radius }}m</label>
+                 <input type="range" v-model.number="tool.radius" min="1" max="50" step="1">
+             </div>
+
+             <!-- INTENSITY SLIDER -->
+             <div class="control-row">
+                 <label>Intensität: {{ tool.intensity }}m</label>
+                 <input type="range" v-model.number="tool.intensity" min="0.1" max="5.0" step="0.1">
+             </div>
+
+             <div class="hint">Klicke auf die Karte für Vorschau</div>
+        </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, watch } from 'vue';
-import * as THREE from 'three';
-
 const props = defineProps({
-  context: { type: Object, required: true }, // { scene, terrainMesh, parsedData, camera, canvas }
-  active: Boolean
-});
-
-// Internal State
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Intersection Plane
-
-const onClick = (event) => {
-    if (!props.active || !props.context.parsedData) return;
-    
-    const { canvas, camera, terrainMesh, parsedData } = props.context;
-    const rect = canvas.getBoundingClientRect();
-    
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    
-    raycaster.setFromCamera(pointer, camera);
-    const target = new THREE.Vector3();
-    raycaster.ray.intersectPlane(plane, target);
-    
-    if (target) {
-        const { minZ, cellsize, ncols, nrows, gridData, bounds } = parsedData;
-        const localX = target.x + bounds.width / 2;
-        const localY = -target.z + bounds.height / 2;
-        
-        const col = Math.round(localX / cellsize);
-        const geomRow = Math.round(localY / cellsize);
-        const gridRow = (nrows - 1) - geomRow;
-        
-        if (col >= 0 && col < ncols && gridRow >= 0 && gridRow < nrows) {
-            const idx = gridRow * ncols + col;
-            
-            // Perform Dig
-            let currentZ = minZ;
-            if (gridData[idx] > -9000) currentZ = gridData[idx];
-            
-            const newZ = currentZ - 0.5;
-            gridData[idx] = newZ;
-            
-            // Update Mesh
-            // Map idx to geometry vertex
-            if (terrainMesh && terrainMesh.geometry) {
-                 const attr = terrainMesh.geometry.attributes.position;
-                 attr.setZ(idx, (newZ - minZ));
-                 attr.needsUpdate = true;
-            }
-        }
-    }
-};
-
-onMounted(() => {
-    window.addEventListener('click', onClick);
-});
-
-onUnmounted(() => {
-    window.removeEventListener('click', onClick);
+  tool: { type: Object, required: true }
 });
 </script>
 
@@ -84,19 +64,43 @@ onUnmounted(() => {
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    pointer-events: none; /* Let clicks pass through to canvas? No, canvas is behind. */
-    /* Actually we need to click the canvas. So UI should not block canvas clicks unless on the UI itself. */
+    pointer-events: none;
+    z-index: 100;
 }
 
 .tool-panel {
-    background: rgba(44, 62, 80, 0.8);
+    background: rgba(44, 62, 80, 0.9);
     color: white;
-    padding: 10px 15px;
-    border-radius: 6px;
+    padding: 15px;
+    border-radius: 8px;
     pointer-events: auto;
     font-size: 0.9rem;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(8px);
+    width: 280px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
-.panel-header { font-weight: bold; margin-bottom: 5px; color: #dcdcdc; }
-.hint { font-size: 0.8rem; opacity: 0.7; margin-top: 5px; }
+
+.panel-header { font-weight: bold; margin-bottom: 15px; color: #ecf0f1; border-bottom: 1px solid #7f8c8d; padding-bottom: 5px;}
+
+.control-row { margin-bottom: 10px; }
+.control-row label { display: block; font-size: 0.8rem; margin-bottom: 2px; color: #bdc3c7; }
+.control-row input { width: 100%; cursor: pointer; }
+
+.toggle-group { display: flex; gap: 5px; margin-bottom: 10px; }
+.toggle-group button { 
+    flex: 1; border: none; background: #34495e; color: white; padding: 5px; 
+    border-radius: 4px; cursor: pointer; font-size: 0.85rem; transition: background 0.2s;
+}
+.toggle-group button.active { background: #3498db; font-weight: bold; }
+.toggle-group.start button { flex: unset; width: 40px; }
+
+.btn-group { display: flex; gap: 10px; margin-top: 10px; }
+.btn-confirm { background: #2ecc71; color: white; border: none; padding: 8px; border-radius: 4px; flex: 1; cursor: pointer; font-weight: bold; }
+.btn-confirm:hover { background: #27ae60; }
+.btn-cancel { background: #e74c3c; color: white; border: none; padding: 8px; border-radius: 4px; flex: 1; cursor: pointer; font-weight: bold; }
+.btn-cancel:hover { background: #c0392b; }
+
+.status-msg { margin-bottom: 10px; text-align: center; font-size: 0.9rem; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px; }
+.hint { text-align: center; font-size: 0.8rem; opacity: 0.6; margin-top: 10px; font-style: italic; }
+.control-label { font-size: 0.8rem; margin-bottom: 2px; color: #bdc3c7; display: block; }
 </style>

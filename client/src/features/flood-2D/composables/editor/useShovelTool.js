@@ -3,48 +3,110 @@ import * as THREE from 'three';
 
 // --- MODULE LEVEL HELPERS (Pure Functions) ---
 
-// Precise Coordinate Mapping (Rescue Plan)
+/**
+ * Calculates which grid cells are affected by the tool.
+ * @param {THREE.Vector3} localPoint - The point in MESH LOCAL space (X, Y=North, Z=Elevation).
+ * @param {number} radius - The tool radius in world units.
+ * @param {Object} gridMetadata - Contains { cellsize, nrows, ncols, xllcorner, yllcorner }.
+ * @returns {Array<{col: number, row: number, factor: number}>} List of affected cells with influence factor.
+ */
+export const calculateImpact = (localPoint, radius, gridMetadata) => {
+    const { cellsize, nrows, ncols } = gridMetadata;
+    const width = gridMetadata.bounds ? gridMetadata.bounds.width : (ncols - 1) * cellsize;
+    const height = gridMetadata.bounds ? gridMetadata.bounds.height : (nrows - 1) * cellsize;
+
+    // Local Coordinates (PlaneGeometry centered at 0,0)
+    // minX (Left) = -width / 2
+    // maxY (Top)  = height / 2
+    const minX = -width / 2;
+    const maxY = height / 2;
+
+    // Grid Index via Rounding (Nearest Vertex)
+    const centerCol = Math.round((localPoint.x - minX) / cellsize);
+    const centerRow = Math.round((localPoint.y - maxY) / -cellsize);
+
+    const affected = [];
+    const radiusCells = Math.ceil(radius / cellsize);
+
+    // Bounding Box
+    const cMin = Math.max(0, centerCol - radiusCells);
+    const cMax = Math.min(ncols - 1, centerCol + radiusCells);
+    const rMin = Math.max(0, centerRow - radiusCells);
+    const rMax = Math.min(nrows - 1, centerRow + radiusCells);
+
+    for (let r = rMin; r <= rMax; r++) {
+        for (let c = cMin; c <= cMax; c++) {
+            // Metric Distance Check
+            // Cell Position in Local Space
+            const cellX = minX + c * cellsize;
+            const cellY = maxY - r * cellsize;
+
+            const dx = cellX - localPoint.x;
+            const dy = cellY - localPoint.y;
+            const distSq = dx * dx + dy * dy;
+
+            if (distSq <= radius * radius) {
+                const dist = Math.sqrt(distSq);
+                // Cosine Falloff
+                const factor = (Math.cos((dist / radius) * Math.PI) + 1) / 2;
+                affected.push({ col: c, row: r, factor });
+            }
+        }
+    }
+
+    return affected;
+};
+
+/**
+ * Computes the new Z values without mutating original data.
+ * @param {Float32Array} originalData - The current elevation grid.
+ * @param {Array} affectedCells - List of cells from calculateImpact.
+ * @param {string} mode - 'RAISE' or 'LOWER'.
+ * @param {number} intensity - Strength of the modification.
+ * @param {number} minZ - Nodata value or minimum clamp.
+ * @returns {Array<{idx: number, oldZ: number, newZ: number}>} List of changes.
+ */
+export const computeDisplacement = (originalData, affectedCells, mode, intensity, minZ, ncols) => {
+    const changes = [];
+    const isRaise = mode === 'RAISE';
+
+    for (const cell of affectedCells) {
+        const idx = cell.row * ncols + cell.col;
+
+        // Safety check
+        if (idx < 0 || idx >= originalData.length) continue;
+
+        let oldZ = originalData[idx];
+        // Handle NoData / Floor
+        if (oldZ < -9000) oldZ = minZ;
+
+        const delta = intensity * cell.factor;
+        let newZ = oldZ;
+
+        if (isRaise) {
+            newZ += delta;
+        } else {
+            newZ -= delta;
+        }
+
+        changes.push({ idx, oldZ, newZ });
+    }
+
+    return changes;
+};
+
+// Precise Coordinate Mapping (Legacy / Reference - Unused by Tools internal logic now)
 const sceneToGrid = (point, context) => {
-    const { geoStore, parsedData } = context;
-    if (!geoStore || !parsedData) return null;
-
-    // Use Header Data for Precision
-    const terrainHeader = geoStore.terrain ? geoStore.terrain.header : null;
-    const xllcorner = (terrainHeader ? terrainHeader.xllcorner : parsedData.xllcorner) || 0;
-    const yllcorner = (terrainHeader ? terrainHeader.yllcorner : parsedData.yllcorner) || 0;
-    const cellsize = (terrainHeader ? terrainHeader.cellsize : parsedData.cellsize) || 1;
-    const nrows = (terrainHeader ? terrainHeader.nrows : parsedData.nrows) || 0;
-    const ncols = (terrainHeader ? terrainHeader.ncols : parsedData.ncols) || 0;
-
-    // Calculate Real Coordinates based on Scene Center Logic
-    // Scene (0,0,0) = Center of Terrain
-    // CenterX = xllcorner + (ncols * cellsize) / 2
-    // CenterY = yllcorner + (nrows * cellsize) / 2
-
-    const centerX = xllcorner + (ncols * cellsize) / 2;
-    const centerY = yllcorner + (nrows * cellsize) / 2;
-
-    const realX = point.x + centerX;
-    const realY = -point.z + centerY; // ThreeJS Z is GIS -Y
-
-    // 2. Berechne Grid Index
-    const col = Math.floor((realX - xllcorner) / cellsize);
-    // Rescue Plan: GIS Y runs Bottom->Top, Array runs Top->Bottom
-    const row = nrows - 1 - Math.floor((realY - yllcorner) / cellsize);
-
-    // DEBUG LOG
-    console.log(`[Shovel] Grid Mapping: Local(${point.x.toFixed(1)},${point.z.toFixed(1)}) -> Real(${realX.toFixed(1)},${realY.toFixed(1)}) -> Grid(${col},${row}) [Header: XL=${xllcorner}, YL=${yllcorner}, CS=${cellsize}]`);
-
-    return { col, row };
+    // Kept for compatibility if other components import it, otherwise could be removed.
+    return null;
 };
 
 const getIntersect = (pointer, raycaster, camera, context) => {
     raycaster.setFromCamera(pointer, camera);
     const intersects = [];
 
-    // Rescue Plan: Check specifically against Terrain Mesh
+    // Check specifically against Terrain Mesh
     if (context.scene) {
-        // Find terrain mesh by userData tag
         const terrain = context.scene.children.find(c => c.userData && c.userData.isTerrain);
         if (terrain) {
             raycaster.intersectObject(terrain, false, intersects);
@@ -52,11 +114,6 @@ const getIntersect = (pointer, raycaster, camera, context) => {
     }
 
     if (intersects.length > 0) return intersects[0].point;
-
-    // Fallback: Interaction Plane
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const target = new THREE.Vector3();
-    if (raycaster.ray.intersectPlane(plane, target)) return target;
     return null;
 };
 
@@ -78,7 +135,10 @@ export function useShovelTool() {
     // --- STATE ---
     const radius = ref(5.0);
     const intensity = ref(0.2);
-    const mode = ref('LOWER');
+    const mode = ref('LOWER'); // 'RAISE' or 'LOWER'
+
+    const state = ref('AIMING'); // 'AIMING' | 'REVIEW'
+    const pendingChanges = ref(null); // Stores result of computeDisplacement
 
     const brushShape = ref('CIRCLE');
     const polygonPoints = ref([]);
@@ -86,10 +146,10 @@ export function useShovelTool() {
 
     // --- INTERNAL VISUALS & LOGIC ---
     let cursorMesh = null;
+    let previewMesh = null; // New Preview Mesh
     let polygonLine = null;
-    let isDigging = false;
     let currentPointer = null;
-    let animationFrameId = null;
+
     let contextRef = null;
 
     // --- GEOMETRY HELPERS ---
@@ -135,6 +195,59 @@ export function useShovelTool() {
         }
     };
 
+    const createPreviewMesh = (changes, context) => {
+        if (!context.scene || !context.terrainMesh) return;
+
+        // Remove old preview
+        if (previewMesh) {
+            if (previewMesh.parent) previewMesh.parent.remove(previewMesh);
+            else context.scene.remove(previewMesh);
+            previewMesh.geometry.dispose();
+            previewMesh.material.dispose();
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+        const { parsedData } = context;
+        const { ncols, nrows, cellsize, minZ } = parsedData;
+
+        // Use Bounds from Metadata or derive
+        const width = parsedData.bounds ? parsedData.bounds.width : (ncols - 1) * cellsize;
+        const height = parsedData.bounds ? parsedData.bounds.height : (nrows - 1) * cellsize;
+
+        const minX = -width / 2;
+        const maxY = height / 2;
+
+        changes.forEach(change => {
+            const idx = change.idx;
+            const r = Math.floor(idx / ncols);
+            const c = idx % ncols;
+
+            // Matches calculateImpact logic
+            const localX = minX + c * cellsize;
+            const localY = maxY - r * cellsize;
+
+            // Z: Elevation (delta from minZ + small offset)
+            const localZ = change.newZ - minZ + 0.05;
+
+            vertices.push(localX, localY, localZ);
+        });
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+        const color = mode.value === 'RAISE' ? 0x00ff00 : 0xff0000;
+
+        const material = new THREE.PointsMaterial({
+            color: color,
+            size: cellsize * 0.8,
+            sizeAttenuation: true
+        });
+
+        previewMesh = new THREE.Points(geometry, material);
+        // Add to TerrainMesh as Child (Step 5 Requirement)
+        context.terrainMesh.add(previewMesh);
+    };
+
     const updatePolygonVisuals = (scene) => {
         if (polygonLine) {
             scene.remove(polygonLine);
@@ -156,6 +269,8 @@ export function useShovelTool() {
     };
 
     watch([radius, brushShape], () => {
+        if (state.value === 'REVIEW') return;
+
         if (brushShape.value !== 'POLYGON') {
             updateCursorGeometry();
             if (cursorMesh) cursorMesh.visible = true;
@@ -168,198 +283,73 @@ export function useShovelTool() {
         }
     });
 
-    // Cursor Activation Hook
     const ensureCursor = () => {
         if (brushShape.value !== 'POLYGON') updateCursorGeometry();
     };
 
+    // --- ACTIONS ---
 
-    const getAffectedCells = (centerPoint, context) => {
-        const { parsedData } = context;
-        if (!parsedData) return [];
+    const commit = () => {
+        if (state.value !== 'REVIEW' || !pendingChanges.value || !contextRef) return;
 
-        const gridPoint = sceneToGrid(centerPoint, context);
-        if (!gridPoint) return [];
-
-        const { col: centerCol, row: centerRow } = gridPoint;
-        const { ncols, nrows, cellsize } = parsedData;
-        const R = radius.value;
-        const radiusCells = Math.ceil(R / cellsize);
-        const cells = [];
-
-        // Bounding Box
-        const cMin = Math.max(0, centerCol - radiusCells);
-        const cMax = Math.min(ncols - 1, centerCol + radiusCells);
-        const rMin = Math.max(0, centerRow - radiusCells);
-        const rMax = Math.min(nrows - 1, centerRow + radiusCells);
-
-        for (let r = rMin; r <= rMax; r++) {
-            for (let c = cMin; c <= cMax; c++) {
-                // Metric Distance check
-                const dx = (c - centerCol) * cellsize;
-                const dy = (r - centerRow) * cellsize;
-
-                let isInside = false;
-                let factor = 1.0;
-
-                if (brushShape.value === 'SQUARE') {
-                    if (Math.abs(dx) <= R && Math.abs(dy) <= R) {
-                        isInside = true;
-                        factor = 1.0;
-                    }
-                } else {
-                    const distSq = dx * dx + dy * dy;
-                    if (distSq < R * R) {
-                        isInside = true;
-                        const dist = Math.sqrt(distSq);
-                        factor = (Math.cos((dist / R) * Math.PI) + 1) / 2;
-                    }
-                }
-
-                if (isInside) {
-                    cells.push({ col: c, row: r, factor });
-                }
-            }
-        }
-        return cells;
-    };
-
-
-    // --- CORE LOGIC: APPLY (OPTIMIZED) ---
-
-    const applyDig = () => {
-        if (!isDigging || !currentPointer || !contextRef || !contextRef.parsedData) return;
-        if (brushShape.value === 'POLYGON') return;
-
-        // 1. Locate Mesh correctly
-        const terrainMesh = contextRef.scene ? contextRef.scene.children.find(c => c.userData && c.userData.isTerrain) : null;
-        if (!terrainMesh) return;
-
-        const { minZ, ncols, gridData, nrows } = contextRef.parsedData;
-        const STR = intensity.value;
-        const isRaise = mode.value === 'RAISE';
-
-        const affected = getAffectedCells(currentPointer, contextRef);
-        console.log(`[Shovel] ApplyDig: ${mode.value} at ${currentPointer.x.toFixed(1)},${currentPointer.z.toFixed(1)} - Affected Cells: ${affected.length}`);
-
+        const { terrainMesh, parsedData } = contextRef;
+        const { gridData, minZ } = parsedData;
         const positions = terrainMesh.geometry.attributes.position;
         let modified = false;
 
-        for (const cell of affected) {
-            // 2. Map Row/Col to Buffer Index
-            // sceneToGrid returns logical Row (0..nrows), but inverted Y.
-            // If array is standard row-major (Top-Down), and sceneToGrid returns Bottom-Up index:
-            // Then dataRow = (nrows - 1) - cell.row. (To flip back to Top-Down)
-            // But WAIT: User prompt says: "row = nrows - 1 - floor(...)". 
-            // This maps World Y to Array Row (0 = Top). 
-            // IF sceneToGrid returns 0 as TOP row (due to inversion), then cell.row IS the array index.
-
-            // Let's re-read sceneToGrid logic:
-            // row = nrows - 1 - floor((realY - yllcorner));
-            // yllcorner is Bottom. realY > yllcorner.
-            // floor(...) increases as we go North (Up).
-            // nrows - 1 - (Increasing) -> Decreases.
-            // So North (Top) -> Small Row Index (0).
-            // So cell.row IS the Data Row (Top-Down).
-
-            const idx = cell.row * ncols + cell.col;
-            if (idx < 0 || idx >= gridData.length) continue;
-
-            const delta = STR * cell.factor;
-            let oldZ = gridData[idx];
-            if (oldZ < -9000) oldZ = minZ;
-
-            let newZ = oldZ;
-            if (isRaise) newZ += delta;
-            else newZ -= delta;
-
-            // DEBUG TRACE (Throttle) 
-            if (Math.random() < 0.005) {
-                console.log(`[Shovel] Cell ${idx}: ${oldZ.toFixed(2)} -> ${newZ.toFixed(2)} (Delta: ${delta.toFixed(3)}, Mode: ${mode.value})`);
-            }
-
+        // Apply changes
+        pendingChanges.value.forEach(change => {
+            const { idx, newZ } = change;
             gridData[idx] = newZ;
-
-            // 3. Direct Vertex Update
-            // Assuming PlaneGeometry Topology matches Grid Layout (Top-Down).
             positions.setZ(idx, newZ - minZ);
             modified = true;
-        }
-
-        if (modified) {
-            positions.needsUpdate = true;
-            terrainMesh.geometry.computeVertexNormals();
-        }
-
-        if (isDigging) {
-            animationFrameId = requestAnimationFrame(applyDig);
-        }
-    };
-
-    const applyPolygonAction = () => {
-        if (brushShape.value !== 'POLYGON' || !contextRef || polygonPoints.value.length < 3) return;
-
-        const terrainMesh = contextRef.scene ? contextRef.scene.children.find(c => c.userData && c.userData.isTerrain) : null;
-        if (!terrainMesh) return;
-
-        const { minZ, ncols, nrows, gridData } = contextRef.parsedData;
-        const STR = intensity.value;
-        const isRaise = mode.value === 'RAISE';
-
-        const localPoly = polygonPoints.value.map(p => {
-            return sceneToGrid(p, contextRef);
-        }).filter(p => p !== null);
-
-        if (localPoly.length < 3) return;
-
-        let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
-        localPoly.forEach(p => {
-            if (p.col < minC) minC = p.col; if (p.col > maxC) maxC = p.col;
-            if (p.row < minR) minR = p.row; if (p.row > maxR) maxR = p.row;
         });
 
-        minC = Math.max(0, minC); maxC = Math.min(ncols - 1, maxC);
-        minR = Math.max(0, minR); maxR = Math.min(nrows - 1, maxR);
-
-        const positions = terrainMesh.geometry.attributes.position;
-        let modified = false;
-
-        for (let r = minR; r <= maxR; r++) {
-            for (let c = minC; c <= maxC; c++) {
-                if (isPointInPolygon({ x: c, y: r }, localPoly)) {
-                    const idx = r * ncols + c;
-                    if (idx < 0 || idx >= gridData.length) continue;
-
-                    let oldZ = gridData[idx];
-                    if (oldZ < -9000) oldZ = minZ;
-
-                    let newZ = oldZ;
-                    if (isRaise) newZ += STR;
-                    else newZ -= STR;
-
-                    gridData[idx] = newZ;
-                    positions.setZ(idx, newZ - minZ);
-                    modified = true;
-                }
-            }
-        }
-
         if (modified) {
             positions.needsUpdate = true;
             terrainMesh.geometry.computeVertexNormals();
         }
 
+        reset(); // Back to AIMING
+    };
+
+    const cancel = () => {
         reset();
     };
 
+    const reset = () => {
+        // 1. Dispose Preview
+        if (previewMesh) {
+            if (previewMesh.parent) previewMesh.parent.remove(previewMesh);
+            else if (contextRef && contextRef.scene) contextRef.scene.remove(previewMesh);
+            previewMesh.geometry.dispose();
+            previewMesh.material.dispose();
+            previewMesh = null;
+        }
+
+        // 2. Clear State
+        pendingChanges.value = null;
+        state.value = 'AIMING';
+
+        // 3. Reset Visuals
+        if (brushShape.value !== 'POLYGON') {
+            if (cursorMesh) cursorMesh.visible = true;
+        }
+    };
 
     // --- LIFECYCLE ---
     const handleGlobalKey = (e) => {
-        if (e.key === 'Enter' && isDrawingPolygon.value && polygonPoints.value.length >= 3) {
-            finishPolygon();
-        }
-        if (e.key === 'Escape' && isDrawingPolygon.value) {
-            reset();
+        if (e.key === 'Escape') {
+            if (state.value === 'REVIEW') {
+                cancel();
+            } else if (isDrawingPolygon.value) {
+                polygonPoints.value = [];
+                isDrawingPolygon.value = false;
+                if (polygonLine && contextRef) {
+                    contextRef.scene.remove(polygonLine);
+                    polygonLine = null;
+                }
+            }
         }
     };
 
@@ -371,7 +361,9 @@ export function useShovelTool() {
     };
 
     const deactivate = (scene) => {
-        stopDigging();
+        // Safety Cleanup: Ensure we don't leave ghosts
+        reset();
+
         if (cursorMesh) scene.remove(cursorMesh);
         if (polygonLine) scene.remove(polygonLine);
         polygonPoints.value = [];
@@ -380,38 +372,65 @@ export function useShovelTool() {
     };
 
     // --- EVENTS ---
-    const startDigging = (point, context) => {
-        isDigging = true;
-        currentPointer = point;
-        contextRef = context;
-        applyDig();
-    };
-
-    const stopDigging = () => {
-        isDigging = false;
-        if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    };
 
     const onMouseDown = ({ event, raycaster, camera, pointer, ...context }) => {
         if (event.button !== 0) return;
+
+        // Block interaction if in REVIEW mode (must use UI)
+        if (state.value === 'REVIEW') {
+            return;
+        }
+
         const point = getIntersect(pointer, raycaster, camera, context);
         if (point) {
             contextRef = context;
+
             if (brushShape.value === 'POLYGON') {
                 isDrawingPolygon.value = true;
                 polygonPoints.value.push(point);
                 updatePolygonVisuals(context.scene);
             } else {
-                startDigging(point, context);
+                // START REVIEW WORKFLOW
+
+                // 1. Guard Clauses
+                if (!context.parsedData) return;
+
+                // 2. Calculate Impact (Local Coordinates Fix)
+                let localPoint = point;
+                if (context.terrainMesh) {
+                    localPoint = context.terrainMesh.worldToLocal(point.clone());
+                }
+
+                const affected = calculateImpact(localPoint, radius.value, context.parsedData);
+                if (affected.length === 0) return; // Empty click guard
+
+                // 3. Compute Displacement
+                const { gridData, minZ, ncols } = context.parsedData;
+                const changes = computeDisplacement(gridData, affected, mode.value, intensity.value, minZ, ncols);
+
+                if (changes.length === 0) return;
+
+                pendingChanges.value = changes;
+
+                // 4. Create Preview
+                createPreviewMesh(changes, context);
+
+                // 5. Transition State
+                state.value = 'REVIEW';
+
+                // Hide cursor during review
+                if (cursorMesh) cursorMesh.visible = false;
             }
         }
     };
 
     const onMouseUp = () => {
-        if (brushShape.value !== 'POLYGON') stopDigging();
     };
 
     const onMove = ({ event, raycaster, camera, pointer, ...context }) => {
+        // If reviewing, cursor is hidden/locked.
+        if (state.value === 'REVIEW') return;
+
         const point = getIntersect(pointer, raycaster, camera, context);
         if (point) {
             currentPointer = point;
@@ -428,27 +447,13 @@ export function useShovelTool() {
         }
     };
 
-    // Explicit Finish Action
-    const finishPolygon = (overrideMode = null) => {
-        if (overrideMode) mode.value = overrideMode;
-        applyPolygonAction();
-    };
-
-    const reset = () => {
-        deactivate(contextRef ? contextRef.scene : window.scene);
-        if (polygonLine && contextRef) {
-            contextRef.scene.remove(polygonLine);
-            polygonLine = null;
-        }
-        polygonPoints.value = [];
-        isDrawingPolygon.value = false;
-        isDigging = false;
-    };
-
     return {
         radius,
         intensity,
         mode,
+        state, // Export state
+        pendingChanges, // Export for UI to check count
+
         brushShape,
         polygonPoints,
         isDrawingPolygon,
@@ -459,7 +464,8 @@ export function useShovelTool() {
         onMouseDown,
         onMouseUp,
 
-        finishPolygon,
+        commit, // Export Actions
+        cancel,
         reset
     };
 }
