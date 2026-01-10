@@ -22,28 +22,28 @@
         <div v-else class="aiming-panel">
              <!-- MODE TOGGLE -->
              <div class="toggle-group">
-                 <button :class="{ active: tool.mode === 'RAISE' }" @click="tool.mode = 'RAISE'">Anheben</button>
-                 <button :class="{ active: tool.mode === 'LOWER' }" @click="tool.mode = 'LOWER'">Absenken</button>
+                 <button :class="{ active: tool.settings.mode === 'RAISE' }" @click="tool.settings.mode = 'RAISE'">Anheben</button>
+                 <button :class="{ active: tool.settings.mode === 'LOWER' }" @click="tool.settings.mode = 'LOWER'">Absenken</button>
              </div>
 
              <!-- SHAPE TOGGLE -->
              <label class="control-label">Pinselform</label>
              <div class="toggle-group start">
-                 <button :class="{ active: tool.brushShape === 'CIRCLE' }" @click="tool.brushShape = 'CIRCLE'" title="Kreis">⭕</button>
-                 <button :class="{ active: tool.brushShape === 'SQUARE' }" @click="tool.brushShape = 'SQUARE'" title="Quadrat">⬜</button>
-                 <button :class="{ active: tool.brushShape === 'POLYGON' }" @click="tool.brushShape = 'POLYGON'" title="Polygon">📐</button>
+                 <button :class="{ active: tool.settings.brushShape === 'CIRCLE' }" @click="tool.settings.brushShape = 'CIRCLE'" title="Kreis">⭕</button>
+                 <button :class="{ active: tool.settings.brushShape === 'SQUARE' }" @click="tool.settings.brushShape = 'SQUARE'" title="Quadrat">⬜</button>
+                 <button :class="{ active: tool.settings.brushShape === 'POLYGON' }" @click="tool.settings.brushShape = 'POLYGON'" title="Polygon">📐</button>
              </div>
 
              <!-- RADIUS SLIDER -->
-             <div v-if="tool.brushShape !== 'POLYGON'" class="control-row">
-                 <label>Radius: {{ tool.radius }}m</label>
-                 <input type="range" v-model.number="tool.radius" min="1" max="50" step="1">
+             <div v-if="tool.settings.brushShape !== 'POLYGON'" class="control-row">
+                 <label>Radius: {{ tool.settings.radius }}m</label>
+                 <input type="range" v-model.number="tool.settings.radius" min="1" max="20" step="1">
              </div>
 
              <!-- INTENSITY SLIDER -->
              <div class="control-row">
-                 <label>Intensität: {{ tool.intensity }}m</label>
-                 <input type="range" v-model.number="tool.intensity" min="0.1" max="5.0" step="0.1">
+                 <label>Intensität: {{ tool.settings.intensity }}m</label>
+                 <input type="range" v-model.number="tool.settings.intensity" min="0.1" max="5.0" step="0.1">
              </div>
 
              <div class="hint">Klicke auf die Karte für Vorschau</div>

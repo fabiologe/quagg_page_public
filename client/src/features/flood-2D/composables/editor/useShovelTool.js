@@ -1,4 +1,4 @@
-import { ref, watch, reactive } from 'vue';
+import { ref, reactive, watch, toRefs } from 'vue';
 import * as THREE from 'three';
 
 // --- MODULE LEVEL HELPERS (Pure Functions) ---
@@ -95,12 +95,6 @@ export const computeDisplacement = (originalData, affectedCells, mode, intensity
     return changes;
 };
 
-// Precise Coordinate Mapping (Legacy / Reference - Unused by Tools internal logic now)
-const sceneToGrid = (point, context) => {
-    // Kept for compatibility if other components import it, otherwise could be removed.
-    return null;
-};
-
 const getIntersect = (pointer, raycaster, camera, context) => {
     raycaster.setFromCamera(pointer, camera);
     const intersects = [];
@@ -117,46 +111,33 @@ const getIntersect = (pointer, raycaster, camera, context) => {
     return null;
 };
 
-const isPointInPolygon = (testPoint, points) => {
-    let inside = false;
-    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-        const xi = points[i].x, yi = points[i].y;
-        const xj = points[j].x, yj = points[j].y;
+// --- SINGLETON STATE (Fix Split-Brain) ---
+const settings = reactive({
+    radius: 5.0,
+    intensity: 0.2,
+    mode: 'LOWER', // 'RAISE' | 'LOWER'
+    brushShape: 'CIRCLE' // 'CIRCLE' | 'SQUARE' | 'POLYGON'
+});
 
-        const intersect = ((yi > testPoint.y) !== (yj > testPoint.y))
-            && (testPoint.x < (xj - xi) * (testPoint.y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-    }
-    return inside;
-};
+const state = ref('AIMING'); // 'AIMING' | 'REVIEW'
+const pendingChanges = ref(null);
+const polygonPoints = ref([]);
+const isDrawingPolygon = ref(false);
+
+// --- INTERNAL GLOBALS (Visuals) ---
+let cursorMesh = null;
+let previewMesh = null;
+let polygonLine = null;
+let currentPointer = null;
+let contextRef = null;
 
 export function useShovelTool() {
-
-    // --- STATE ---
-    const radius = ref(5.0);
-    const intensity = ref(0.2);
-    const mode = ref('LOWER'); // 'RAISE' or 'LOWER'
-
-    const state = ref('AIMING'); // 'AIMING' | 'REVIEW'
-    const pendingChanges = ref(null); // Stores result of computeDisplacement
-
-    const brushShape = ref('CIRCLE');
-    const polygonPoints = ref([]);
-    const isDrawingPolygon = ref(false);
-
-    // --- INTERNAL VISUALS & LOGIC ---
-    let cursorMesh = null;
-    let previewMesh = null; // New Preview Mesh
-    let polygonLine = null;
-    let currentPointer = null;
-
-    let contextRef = null;
 
     // --- GEOMETRY HELPERS ---
     const createCursor = () => {
         let geometry;
-        const R = radius.value;
-        const isSquare = brushShape.value === 'SQUARE';
+        const R = settings.radius;
+        const isSquare = settings.brushShape === 'SQUARE';
 
         if (isSquare) {
             geometry = new THREE.PlaneGeometry(R * 2, R * 2);
@@ -181,8 +162,8 @@ export function useShovelTool() {
         if (!cursorMesh || isDrawingPolygon.value) return;
 
         cursorMesh.geometry.dispose();
-        const R = radius.value;
-        const isSquare = brushShape.value === 'SQUARE';
+        const R = settings.radius;
+        const isSquare = settings.brushShape === 'SQUARE';
 
         if (isSquare) {
             cursorMesh.geometry = new THREE.PlaneGeometry(R * 2, R * 2);
@@ -198,7 +179,7 @@ export function useShovelTool() {
     const createPreviewMesh = (changes, context) => {
         if (!context.scene || !context.terrainMesh) return;
 
-        // Remove old preview
+        // Remove old preview if exists
         if (previewMesh) {
             if (previewMesh.parent) previewMesh.parent.remove(previewMesh);
             else context.scene.remove(previewMesh);
@@ -235,7 +216,7 @@ export function useShovelTool() {
 
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 
-        const color = mode.value === 'RAISE' ? 0x00ff00 : 0xff0000;
+        const color = settings.mode === 'RAISE' ? 0x00ff00 : 0xff0000;
 
         const material = new THREE.PointsMaterial({
             color: color,
@@ -244,7 +225,6 @@ export function useShovelTool() {
         });
 
         previewMesh = new THREE.Points(geometry, material);
-        // Add to TerrainMesh as Child (Step 5 Requirement)
         context.terrainMesh.add(previewMesh);
     };
 
@@ -268,10 +248,10 @@ export function useShovelTool() {
         }
     };
 
-    watch([radius, brushShape], () => {
+    watch(() => [settings.radius, settings.brushShape], () => {
         if (state.value === 'REVIEW') return;
 
-        if (brushShape.value !== 'POLYGON') {
+        if (settings.brushShape !== 'POLYGON') {
             updateCursorGeometry();
             if (cursorMesh) cursorMesh.visible = true;
             if (polygonLine && contextRef) {
@@ -284,7 +264,7 @@ export function useShovelTool() {
     });
 
     const ensureCursor = () => {
-        if (brushShape.value !== 'POLYGON') updateCursorGeometry();
+        if (settings.brushShape !== 'POLYGON') updateCursorGeometry();
     };
 
     // --- ACTIONS ---
@@ -317,13 +297,20 @@ export function useShovelTool() {
         reset();
     };
 
+    // --- CLEANUP LOGIC ---
     const reset = () => {
-        // 1. Dispose Preview
+        console.log('[ShovelTool] Resetting State (Cleanup)');
+
+        // 1. Dispose Preview Mesh (The Green Shadow)
         if (previewMesh) {
-            if (previewMesh.parent) previewMesh.parent.remove(previewMesh);
-            else if (contextRef && contextRef.scene) contextRef.scene.remove(previewMesh);
-            previewMesh.geometry.dispose();
-            previewMesh.material.dispose();
+            // Remove from parent (TerrainMesh) or Scene
+            if (previewMesh.parent) {
+                previewMesh.parent.remove(previewMesh);
+            } else if (contextRef && contextRef.scene) {
+                contextRef.scene.remove(previewMesh);
+            }
+            if (previewMesh.geometry) previewMesh.geometry.dispose();
+            if (previewMesh.material) previewMesh.material.dispose();
             previewMesh = null;
         }
 
@@ -332,7 +319,7 @@ export function useShovelTool() {
         state.value = 'AIMING';
 
         // 3. Reset Visuals
-        if (brushShape.value !== 'POLYGON') {
+        if (settings.brushShape !== 'POLYGON') {
             if (cursorMesh) cursorMesh.visible = true;
         }
     };
@@ -354,14 +341,14 @@ export function useShovelTool() {
     };
 
     const activate = (scene) => {
-        if (!cursorMesh && brushShape.value !== 'POLYGON') cursorMesh = createCursor();
+        if (!cursorMesh && settings.brushShape !== 'POLYGON') cursorMesh = createCursor();
         if (cursorMesh) scene.add(cursorMesh);
-        ensureCursor(); // FORCE update on activate
+        ensureCursor();
         window.addEventListener('keyup', handleGlobalKey);
     };
 
     const deactivate = (scene) => {
-        // Safety Cleanup: Ensure we don't leave ghosts
+        // IMPORTANT: Calling reset ensures Preview Mesh handles are cleaned up
         reset();
 
         if (cursorMesh) scene.remove(cursorMesh);
@@ -376,68 +363,66 @@ export function useShovelTool() {
     const onMouseDown = ({ event, raycaster, camera, pointer, ...context }) => {
         if (event.button !== 0) return;
 
-        // Block interaction if in REVIEW mode (must use UI)
-        if (state.value === 'REVIEW') {
-            return;
-        }
+        if (state.value === 'REVIEW') return;
 
         const point = getIntersect(pointer, raycaster, camera, context);
         if (point) {
             contextRef = context;
 
-            if (brushShape.value === 'POLYGON') {
+            if (settings.brushShape === 'POLYGON') {
                 isDrawingPolygon.value = true;
                 polygonPoints.value.push(point);
                 updatePolygonVisuals(context.scene);
             } else {
                 // START REVIEW WORKFLOW
-
-                // 1. Guard Clauses
                 if (!context.parsedData) return;
 
-                // 2. Calculate Impact (Local Coordinates Fix)
                 let localPoint = point;
                 if (context.terrainMesh) {
                     localPoint = context.terrainMesh.worldToLocal(point.clone());
                 }
 
-                const affected = calculateImpact(localPoint, radius.value, context.parsedData);
-                if (affected.length === 0) return; // Empty click guard
+                const affected = calculateImpact(localPoint, settings.radius, context.parsedData);
+                if (affected.length === 0) return;
 
-                // 3. Compute Displacement
+                console.log('ShovelTool Inputs:', {
+                    mode: settings.mode,
+                    intensity: settings.intensity,
+                    radius: settings.radius
+                });
+
                 const { gridData, minZ, ncols } = context.parsedData;
-                const changes = computeDisplacement(gridData, affected, mode.value, intensity.value, minZ, ncols);
+                // Force absolute intensity to ensure lower logic works (negative delta handled by mode)
+                const SafeIntensity = Math.abs(settings.intensity);
 
+                const changes = computeDisplacement(gridData, affected, settings.mode, SafeIntensity, minZ, ncols);
+
+                if (changes.length > 0) {
+                    console.log('ShovelTool Result (First):', changes[0]);
+                }
                 if (changes.length === 0) return;
 
                 pendingChanges.value = changes;
-
-                // 4. Create Preview
                 createPreviewMesh(changes, context);
-
-                // 5. Transition State
                 state.value = 'REVIEW';
 
-                // Hide cursor during review
                 if (cursorMesh) cursorMesh.visible = false;
             }
         }
     };
 
-    const onMouseUp = () => {
-    };
+    const onMouseUp = () => { };
 
     const onMove = ({ event, raycaster, camera, pointer, ...context }) => {
-        // If reviewing, cursor is hidden/locked.
         if (state.value === 'REVIEW') return;
 
         const point = getIntersect(pointer, raycaster, camera, context);
         if (point) {
             currentPointer = point;
-            if (isDrawingPolygon.value && brushShape.value === 'POLYGON') {
+            if (isDrawingPolygon.value && settings.brushShape === 'POLYGON') {
                 updatePolygonVisuals(context.scene);
             }
-            if (cursorMesh && brushShape.value !== 'POLYGON') {
+            if (cursorMesh && settings.brushShape !== 'POLYGON') {
                 cursorMesh.visible = true;
                 cursorMesh.position.copy(point);
                 cursorMesh.position.y += 0.2;
@@ -447,25 +432,22 @@ export function useShovelTool() {
         }
     };
 
-    return {
-        radius,
-        intensity,
-        mode,
-        state, // Export state
-        pendingChanges, // Export for UI to check count
-
-        brushShape,
+    return reactive({
+        // Shared State
+        settings,
+        state,
+        pendingChanges,
         polygonPoints,
         isDrawingPolygon,
 
+        // Lifecycle & Actions
         activate,
         deactivate,
         onMove,
         onMouseDown,
         onMouseUp,
-
-        commit, // Export Actions
+        commit,
         cancel,
         reset
-    };
+    });
 }
