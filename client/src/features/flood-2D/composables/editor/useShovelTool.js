@@ -3,57 +3,96 @@ import * as THREE from 'three';
 
 // --- MODULE LEVEL HELPERS (Pure Functions) ---
 
+const getEffectiveRadius = (radius, cellsize) => {
+    const safeCellSize = cellsize || 1.0;
+    const minRadius = safeCellSize * 1.2;
+    return Math.max(radius, minRadius);
+};
+
 /**
  * Calculates which grid cells are affected by the tool.
  * @param {THREE.Vector3} localPoint - The point in MESH LOCAL space (X, Y=North, Z=Elevation).
- * @param {number} radius - The tool radius in world units.
+ * @param {Object} brushSettings - Contains { brushShape, radius, width, height }.
  * @param {Object} gridMetadata - Contains { cellsize, nrows, ncols, xllcorner, yllcorner }.
  * @returns {Array<{col: number, row: number, factor: number}>} List of affected cells with influence factor.
  */
-export const calculateImpact = (localPoint, radius, gridMetadata) => {
+export const calculateImpact = (localPoint, brushSettings, gridMetadata) => {
     const { cellsize, nrows, ncols } = gridMetadata;
-    const width = gridMetadata.bounds ? gridMetadata.bounds.width : (ncols - 1) * cellsize;
-    const height = gridMetadata.bounds ? gridMetadata.bounds.height : (nrows - 1) * cellsize;
+    const { brushShape, radius, width: rectW, height: rectH } = brushSettings;
 
-    // Local Coordinates (PlaneGeometry centered at 0,0)
-    // minX (Left) = -width / 2
-    // maxY (Top)  = height / 2
-    const minX = -width / 2;
-    const maxY = height / 2;
+    // Dimensions based on Grid extent
+    const gridWidth = (ncols - 1) * cellsize;
+    const gridHeight = (nrows - 1) * cellsize;
 
-    // Grid Index via Rounding (Nearest Vertex)
-    const centerCol = Math.round((localPoint.x - minX) / cellsize);
-    const centerRow = Math.round((localPoint.y - maxY) / -cellsize);
+    // Determine bounds for optimization
+    let boundW, boundH;
+    let effectiveR = 0;
 
-    const affected = [];
-    const radiusCells = Math.ceil(radius / cellsize);
+    if (brushShape === 'SQUARE') {
+        boundW = rectW / 2;
+        boundH = rectH / 2;
+    } else {
+        // CIRCLE
+        effectiveR = getEffectiveRadius(radius, cellsize);
+        boundW = effectiveR;
+        boundH = effectiveR;
+    }
+
+    // Offset Logic (Center -> Corner)
+    // Plane is at 0,0. Grid Origin (0,0) is Bottom-Left (-w/2, -h/2)
+    const offsetX = gridWidth / 2;
+    const offsetY = gridHeight / 2;
+
+    const centerCol = Math.floor((localPoint.x + offsetX + (cellsize * 0.5)) / cellsize);
+    const centerRow = Math.floor((localPoint.y + offsetY + (cellsize * 0.5)) / cellsize);
 
     // Bounding Box
-    const cMin = Math.max(0, centerCol - radiusCells);
-    const cMax = Math.min(ncols - 1, centerCol + radiusCells);
-    const rMin = Math.max(0, centerRow - radiusCells);
-    const rMax = Math.min(nrows - 1, centerRow + radiusCells);
+    const cellsW = Math.ceil(boundW / cellsize);
+    const cellsH = Math.ceil(boundH / cellsize);
+
+    const cMin = Math.max(0, centerCol - cellsW);
+    const cMax = Math.min(ncols - 1, centerCol + cellsW);
+    const rMin = Math.max(0, centerRow - cellsH);
+    const rMax = Math.min(nrows - 1, centerRow + cellsH);
+
+    // Pre-calc Square properties
+    const rSq = effectiveR * effectiveR;
+
+    const affected = [];
 
     for (let r = rMin; r <= rMax; r++) {
         for (let c = cMin; c <= cMax; c++) {
-            // Metric Distance Check
-            // Cell Position in Local Space
-            const cellX = minX + c * cellsize;
-            const cellY = maxY - r * cellsize;
+            // Cell Position in Local Space (center of the cell)
+            // Index 0 = -offsetX + 0.5 * cellsize
+            const cellX = (c * cellsize) - offsetX + (cellsize * 0.5);
+            const cellY = (r * cellsize) - offsetY + (cellsize * 0.5);
 
-            const dx = cellX - localPoint.x;
-            const dy = cellY - localPoint.y;
-            const distSq = dx * dx + dy * dy;
+            const dx = Math.abs(cellX - localPoint.x);
+            const dy = Math.abs(cellY - localPoint.y);
 
-            if (distSq <= radius * radius) {
-                const dist = Math.sqrt(distSq);
-                // Cosine Falloff
-                const factor = (Math.cos((dist / radius) * Math.PI) + 1) / 2;
-                affected.push({ col: c, row: r, factor });
+            let isInside = false;
+
+            if (brushShape === 'SQUARE') {
+                // Rectangle Logic (width/height)
+                // Check Max Distance (half-width)
+                if (dx <= boundW && dy <= boundH) {
+                    isInside = true;
+                }
+            } else {
+                // Circle Logic
+                if ((dx * dx + dy * dy) <= rSq) {
+                    isInside = true;
+                }
+            }
+
+            if (isInside) {
+                // Engineering Standard: Factor 1.0 (Hard Edge)
+                affected.push({ col: c, row: r, factor: 1.0 });
             }
         }
     }
 
+    console.log(`[Shovel] Affected Cells: ${affected.length}`);
     return affected;
 };
 
@@ -70,7 +109,15 @@ export const computeDisplacement = (originalData, affectedCells, mode, intensity
     const changes = [];
     const isRaise = mode === 'RAISE';
 
-    for (const cell of affectedCells) {
+    if (affectedCells.length > 0) {
+        console.log('[computeDisplacement] Debug:', { mode, isRaise, intensity });
+    }
+
+    // Safety: Ensure intensity is positive
+    const absIntensity = Math.abs(intensity);
+
+    for (let i = 0; i < affectedCells.length; i++) {
+        const cell = affectedCells[i];
         const idx = cell.row * ncols + cell.col;
 
         // Safety check
@@ -80,7 +127,7 @@ export const computeDisplacement = (originalData, affectedCells, mode, intensity
         // Handle NoData / Floor
         if (oldZ < -9000) oldZ = minZ;
 
-        const delta = intensity * cell.factor;
+        const delta = absIntensity * cell.factor;
         let newZ = oldZ;
 
         if (isRaise) {
@@ -90,6 +137,10 @@ export const computeDisplacement = (originalData, affectedCells, mode, intensity
         }
 
         changes.push({ idx, oldZ, newZ });
+
+        if (i === 0) {
+            console.log('[computeDisplacement] First Cell:', { idx, oldZ, delta, newZ });
+        }
     }
 
     return changes;
@@ -114,6 +165,8 @@ const getIntersect = (pointer, raycaster, camera, context) => {
 // --- SINGLETON STATE (Fix Split-Brain) ---
 const settings = reactive({
     radius: 5.0,
+    width: 10.0,
+    height: 10.0,
     intensity: 0.2,
     mode: 'LOWER', // 'RAISE' | 'LOWER'
     brushShape: 'CIRCLE' // 'CIRCLE' | 'SQUARE' | 'POLYGON'
@@ -136,13 +189,12 @@ export function useShovelTool() {
     // --- GEOMETRY HELPERS ---
     const createCursor = () => {
         let geometry;
-        const R = settings.radius;
         const isSquare = settings.brushShape === 'SQUARE';
 
         if (isSquare) {
-            geometry = new THREE.PlaneGeometry(R * 2, R * 2);
+            geometry = new THREE.PlaneGeometry(settings.width, settings.height);
         } else {
-            geometry = new THREE.RingGeometry(0, R, 32);
+            geometry = new THREE.RingGeometry(0, settings.radius, 32);
         }
 
         const material = new THREE.MeshBasicMaterial({
@@ -150,10 +202,12 @@ export function useShovelTool() {
             transparent: true,
             opacity: isSquare ? 0.6 : 0.4,
             side: THREE.DoubleSide,
-            wireframe: isSquare
+            wireframe: isSquare,
+            depthTest: false // Overlay Style
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
+        mesh.renderOrder = 999; // Ensure visibility on top
         mesh.visible = false;
         return mesh;
     };
@@ -162,21 +216,20 @@ export function useShovelTool() {
         if (!cursorMesh || isDrawingPolygon.value) return;
 
         cursorMesh.geometry.dispose();
-        const R = settings.radius;
         const isSquare = settings.brushShape === 'SQUARE';
 
         if (isSquare) {
-            cursorMesh.geometry = new THREE.PlaneGeometry(R * 2, R * 2);
+            cursorMesh.geometry = new THREE.PlaneGeometry(settings.width, settings.height);
             cursorMesh.material.wireframe = true;
             cursorMesh.material.opacity = 0.6;
         } else {
-            cursorMesh.geometry = new THREE.RingGeometry(0, R, 32);
+            cursorMesh.geometry = new THREE.RingGeometry(0, settings.radius, 32);
             cursorMesh.material.wireframe = false;
             cursorMesh.material.opacity = 0.4;
         }
     };
 
-    const createPreviewMesh = (changes, context) => {
+    const createPreviewMesh = (changes, context, overrideColor = null) => {
         if (!context.scene || !context.terrainMesh) return;
 
         // Remove old preview if exists
@@ -192,39 +245,59 @@ export function useShovelTool() {
         const { parsedData } = context;
         const { ncols, nrows, cellsize, minZ } = parsedData;
 
-        // Use Bounds from Metadata or derive
-        const width = parsedData.bounds ? parsedData.bounds.width : (ncols - 1) * cellsize;
-        const height = parsedData.bounds ? parsedData.bounds.height : (nrows - 1) * cellsize;
+        // Dimensions
+        const width = (ncols - 1) * cellsize;
+        const height = (nrows - 1) * cellsize;
 
-        const minX = -width / 2;
-        const maxY = height / 2;
+        // Offset Logic (Center -> Corner)
+        const offsetX = width / 2;
+        const offsetY = height / 2;
 
         changes.forEach(change => {
             const idx = change.idx;
             const r = Math.floor(idx / ncols);
             const c = idx % ncols;
 
-            // Matches calculateImpact logic
-            const localX = minX + c * cellsize;
-            const localY = maxY - r * cellsize;
+            // Matches calculateImpact (Bottom-Up)
+            // Center of cell
+            const localX = (c * cellsize) - offsetX + (cellsize * 0.5);
+            const localY = (r * cellsize) - offsetY + (cellsize * 0.5);
+
+            // VISUALIZATION FIX:
+            const isRaise = settings.mode === 'RAISE';
+            // If overrideColor is set (Hover Mode), we want to show SURFACE (oldZ)
+            // If overrideColor is NOT set (Review Mode), we show RESULT (newZ/oldZ based on mode)
+            let visualZ = change.oldZ; // Default to surface
+
+            if (!overrideColor) { // Review Mode
+                visualZ = isRaise ? change.newZ : change.oldZ;
+            }
 
             // Z: Elevation (delta from minZ + small offset)
-            const localZ = change.newZ - minZ + 0.05;
+            const localZ = visualZ - minZ + 0.05;
 
             vertices.push(localX, localY, localZ);
         });
 
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 
-        const color = settings.mode === 'RAISE' ? 0x00ff00 : 0xff0000;
+        // Color Logic
+        let colorCode;
+        if (overrideColor) {
+            colorCode = overrideColor;
+        } else {
+            colorCode = settings.mode === 'RAISE' ? 0x00ff00 : 0xff0000;
+        }
 
         const material = new THREE.PointsMaterial({
-            color: color,
+            color: colorCode,
             size: cellsize * 0.8,
-            sizeAttenuation: true
+            sizeAttenuation: true,
+            depthTest: false // Ensure visibility
         });
 
         previewMesh = new THREE.Points(geometry, material);
+        previewMesh.renderOrder = 998;
         context.terrainMesh.add(previewMesh);
     };
 
@@ -267,21 +340,47 @@ export function useShovelTool() {
         if (settings.brushShape !== 'POLYGON') updateCursorGeometry();
     };
 
+    const updateCursorScale = () => {
+        if (!cursorMesh || !contextRef || settings.brushShape === 'POLYGON') return;
+        const { cellsize } = contextRef.parsedData;
+        const effectiveRadius = getEffectiveRadius(settings.radius, cellsize);
+
+        // Geom is built with settings.radius.
+        // Scale up if effectiveRadius is larger (Auto-Snap).
+        if (settings.radius > 0) {
+            const s = effectiveRadius / settings.radius;
+            cursorMesh.scale.set(s, s, 1);
+        }
+    };
+
     // --- ACTIONS ---
 
     const commit = () => {
         if (state.value !== 'REVIEW' || !pendingChanges.value || !contextRef) return;
 
         const { terrainMesh, parsedData } = contextRef;
-        const { gridData, minZ } = parsedData;
+        const { gridData, minZ, nrows, ncols } = parsedData;
         const positions = terrainMesh.geometry.attributes.position;
         let modified = false;
 
         // Apply changes
         pendingChanges.value.forEach(change => {
             const { idx, newZ } = change;
+
+            // 1. Update Grid Data (Bottom-Up)
             gridData[idx] = newZ;
-            positions.setZ(idx, newZ - minZ);
+
+            // 2. Update Mesh Vertex (Top-Down) - MAPPING REQUIRED
+            // idx = gridRow * ncols + col
+            const gridRow = Math.floor(idx / ncols);
+            const col = idx % ncols;
+
+            // Map Grid Row (0=Bottom) to Vertex Row (0=Top)
+            const vertexRow = (nrows - 1) - gridRow;
+            const vertexIdx = vertexRow * ncols + col;
+
+            positions.setZ(vertexIdx, newZ - minZ);
+
             modified = true;
         });
 
@@ -377,12 +476,13 @@ export function useShovelTool() {
                 // START REVIEW WORKFLOW
                 if (!context.parsedData) return;
 
+                // 2. Calculate Impact (Local Coordinates Fix)
                 let localPoint = point;
                 if (context.terrainMesh) {
                     localPoint = context.terrainMesh.worldToLocal(point.clone());
                 }
 
-                const affected = calculateImpact(localPoint, settings.radius, context.parsedData);
+                const affected = calculateImpact(localPoint, settings, context.parsedData);
                 if (affected.length === 0) return;
 
                 console.log('ShovelTool Inputs:', {
@@ -418,17 +518,59 @@ export function useShovelTool() {
 
         const point = getIntersect(pointer, raycaster, camera, context);
         if (point) {
+            contextRef = context;
             currentPointer = point;
+
             if (isDrawingPolygon.value && settings.brushShape === 'POLYGON') {
                 updatePolygonVisuals(context.scene);
             }
             if (cursorMesh && settings.brushShape !== 'POLYGON') {
+                // Ensure scene persistence (Singleton Fix)
+                if (context.scene && !context.scene.children.includes(cursorMesh)) {
+                    context.scene.add(cursorMesh);
+                }
+
+                // Auto-Snap Visuals (Update ring scale)
+                updateCursorScale();
+
                 cursorMesh.visible = true;
                 cursorMesh.position.copy(point);
                 cursorMesh.position.y += 0.2;
+
+                // --- MAGIC BRUSH: Live Point Highlight ---
+                if (context.terrainMesh && context.parsedData) {
+                    const localPoint = context.terrainMesh.worldToLocal(point.clone());
+                    // Use existing logic for calculation
+                    const affected = calculateImpact(localPoint, settings, context.parsedData);
+
+                    if (affected.length > 0) {
+                        // Transform to "Change" format expected by createPreviewMesh
+                        // We only need idx and oldZ for Highlight mode
+                        const changes = affected.map(cell => {
+                            const idx = cell.row * context.parsedData.ncols + cell.col;
+                            // Safety Check
+                            if (idx >= 0 && idx < context.parsedData.gridData.length) {
+                                const oldZ = context.parsedData.gridData[idx];
+                                return { idx, oldZ, newZ: oldZ };
+                            }
+                            return null;
+                        }).filter(Boolean);
+
+                        // Render Cyan Glow (0x00ffff)
+                        createPreviewMesh(changes, context, 0x00ffff);
+                    }
+                }
             }
         } else {
             if (cursorMesh) cursorMesh.visible = false;
+            // Clear Live Preview if off-terrain
+            if (previewMesh) {
+                if (previewMesh.parent) previewMesh.parent.remove(previewMesh);
+                else if (context.scene) context.scene.remove(previewMesh);
+                previewMesh.geometry.dispose();
+                previewMesh.material.dispose();
+                previewMesh = null;
+            }
         }
     };
 

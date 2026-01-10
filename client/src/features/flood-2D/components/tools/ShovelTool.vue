@@ -30,14 +30,31 @@
              <label class="control-label">Pinselform</label>
              <div class="toggle-group start">
                  <button :class="{ active: tool.settings.brushShape === 'CIRCLE' }" @click="tool.settings.brushShape = 'CIRCLE'" title="Kreis">⭕</button>
-                 <button :class="{ active: tool.settings.brushShape === 'SQUARE' }" @click="tool.settings.brushShape = 'SQUARE'" title="Quadrat">⬜</button>
+                 <button :class="{ active: tool.settings.brushShape === 'SQUARE' }" @click="tool.settings.brushShape = 'SQUARE'" title="Rechteck">⬜</button>
                  <button :class="{ active: tool.settings.brushShape === 'POLYGON' }" @click="tool.settings.brushShape = 'POLYGON'" title="Polygon">📐</button>
              </div>
 
-             <!-- RADIUS SLIDER -->
-             <div v-if="tool.settings.brushShape !== 'POLYGON'" class="control-row">
+             <!-- DIMENSIONS: CIRCLE -->
+             <div v-if="tool.settings.brushShape === 'CIRCLE'" class="control-row">
                  <label>Radius: {{ tool.settings.radius }}m</label>
-                 <input type="range" v-model.number="tool.settings.radius" min="1" max="20" step="1">
+                 <input type="range" v-model.number="tool.settings.radius" min="1" max="100" step="1">
+             </div>
+
+             <!-- DIMENSIONS: RECTANGLE -->
+             <div v-if="tool.settings.brushShape === 'SQUARE'">
+                 <div class="control-row">
+                     <label>Breite: {{ tool.settings.width }}m</label>
+                     <input type="range" v-model.number="tool.settings.width" min="1" max="50" step="1">
+                 </div>
+                 <div class="control-row">
+                     <label>Länge: {{ tool.settings.height }}m</label>
+                     <input type="range" v-model.number="tool.settings.height" min="1" max="50" step="1">
+                 </div>
+             </div>
+
+             <!-- AREA CALCULATOR -->
+             <div v-if="tool.settings.brushShape !== 'POLYGON'" class="control-row area-calc" style="background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px; text-align: center; margin-bottom: 10px;">
+                 <span style="font-size: 0.85rem; color: #ecf0f1;">Fläche: <strong>{{ formattedArea }} m²</strong></span>
              </div>
 
              <!-- INTENSITY SLIDER -->
@@ -53,8 +70,20 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
+
 const props = defineProps({
   tool: { type: Object, required: true }
+});
+
+const formattedArea = computed(() => {
+    const s = props.tool.settings;
+    if (s.brushShape === 'CIRCLE') {
+        return (Math.PI * s.radius * s.radius).toFixed(2);
+    } else if (s.brushShape === 'SQUARE') {
+        return (s.width * s.height).toFixed(2);
+    }
+    return '0.00';
 });
 </script>
 
