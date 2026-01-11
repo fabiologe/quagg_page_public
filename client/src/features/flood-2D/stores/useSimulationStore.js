@@ -63,14 +63,6 @@ export const useSimulationStore = defineStore('simulation', () => {
         if (step !== undefined) timeStep.value = step;
     }
 
-    // Baking State
-    /** @type {import('vue').Ref<Float32Array|null>} */
-    const raster = ref(null); // Baked result
-
-    function setRaster(newRaster) {
-        raster.value = newRaster;
-    }
-
     return {
         // State
         activeTool,
@@ -90,11 +82,6 @@ export const useSimulationStore = defineStore('simulation', () => {
         addLog,
         clearLogs,
         setResults,
-        setResults,
-        setConfig,
-
-        // Baking
-        raster,
-        setRaster
+        setConfig
     };
 });
