@@ -3,73 +3,96 @@ import { Rasterizer } from './Rasterizer.js';
 
 /**
  * dataprep.worker.js
- * Heavy-lifting WebWorker for Flood Simulation Data Preparation.
- * Now acts as a thin wrapper around the Orchestrator (InputGenerator).
+ * FIXED: Implements the "Baking" pipeline strictly.
+ * 1. Load Base Raster
+ * 2. Bake Modifications (Rasterizer)
+ * 3. Generate Inputs (InputGenerator)
  */
 
 self.onmessage = async function (e) {
+    // Zerlege e.data. Wir erwarten { type, payload } vom Flood2DSolverRunner
     const { type, payload } = e.data;
 
     if (type === 'PREPARE_SIMULATION') {
         try {
-            // payload expects: { grid, modifications, config, ... }
+            // 1. EXTRAHIEREN: baseRaster, gridInfo, modifications, hydraulicData
 
-            // 1. Prepare Base Raster
-            // Depending on what is passed (XYZ string or Grid Object), ensure we have a Grid
-            let header, gridData;
+            // Grid-Initialisierung (Base Raster)
+            let baseRaster, gridInfo;
 
             if (payload.xyz) {
                 const res = Rasterizer.createDemFromXYZ(payload.xyz);
-                header = res.header;
-                gridData = res.data;
+                gridInfo = res.header;
+                baseRaster = res.data;
             } else if (payload.grid) {
-                // Assuming payload.grid is { header, data } or similar
-                header = payload.grid.header || payload.grid;
-                gridData = payload.grid.data || payload.grid.gridData;
+                gridInfo = payload.grid.header || payload.grid;
+                baseRaster = payload.grid.data || payload.grid.gridData;
             } else {
-                throw new Error("Worker: No Grid/XYZ data provided in payload.");
+                throw new Error("Worker: Missing Base Raster (grid or xyz)");
             }
 
-            // 2. THE BAKING STEP (Rasterizer Logik integration)
-            // Explicitly call burnBuildings here as requested
-            let validGridData = gridData;
+            const modifications = payload.modifications || [];
 
-            if (payload.modifications && payload.modifications.length > 0) {
-                // "Bake" the buildings into a NEW array (immutable copy logic is in Rasterizer)
-                // Note: burnBuildings returns a new Float32Array
-                validGridData = Rasterizer.burnBuildings(gridData, header, payload.modifications);
-                console.log(`[Worker] Baked ${payload.modifications.length} modifications.`);
-            }
+            // Debugging
+            console.log('Worker: Received task', modifications.length, 'mods');
 
-            // 3. Orchestration (InputGenerator)
-            // We pass the ALREADY BAKED grid to the generator.
-            // We strip 'buildings' from the scenario passed to InputGenerator so it doesn't double-apply
-            // (although our InputGenerator uses 'scenario.buildings', so we just don't pass that key, 
-            // or pass empty list if needed).
+            // 2. SCHRITT A: Das Backen (The Baking)
+            console.time('Baking');
+
+            // [FIX] Application of modifications
+            // Wir nutzen Rasterizer.burnBuildings als "bakeTerrain" Funktion
+            // baseRaster wird kopiert, nicht mutiert (Rasterizer implementation handles copy)
+            const finalRaster = Rasterizer.burnBuildings(baseRaster, gridInfo, modifications);
+
+            console.timeEnd('Baking');
+
+            // 3. SCHRITT B: LISFLOOD Input Generierung
+            // WICHTIG: Wir nutzen jetzt 'finalRaster', NICHT mehr 'baseRaster'!
+
+            // Vorbereitung für InputGenerator
+            // Wir müssen die "hydraulicData" aus dem Payload extrahieren
+            // InputGenerator erwartet ein Scenario-Objekt
+            const scenario = {
+                // Config & Hydraulik
+                rain: payload.rain,
+                boundaries: payload.boundaries,
+                config: payload.config,
+
+                // DAS NEUE RASTER
+                grid: {
+                    header: gridInfo,
+                    data: finalRaster // <--- DAS IST DER FIX
+                },
+
+                // Explizit nullen, damit Generator nicht nochmal versucht zu backen (falls er Logik hätte)
+                buildings: null,
+                xyz: null
+            };
 
             const generator = new InputGenerator();
 
-            const scenarioForGenerator = {
-                ...payload,
-                grid: { header, data: validGridData }, // Use the baked data
-                buildings: null // Ensure generator doesn't try to burn again
-            };
+            // "generateInputFiles" Mapping -> processScenario
+            const inputFiles = generator.processScenario(scenario);
 
-            const files = generator.processScenario(scenarioForGenerator);
-
-            // Return gridInfo for UI (Camera, etc)
-            const gridInfo = header;
-
+            // 4. RESPONSE
             self.postMessage({
                 type: 'PREPARATION_COMPLETE',
                 payload: {
-                    files,
-                    gridInfo
+                    files: inputFiles,
+                    gridInfo: gridInfo,
+
+                    // Optional: Wir könnten das finalRaster zurücksenden für 3D Update
+                    // Sende als Transferable wenn möglich, aber copy für InputGenerator war nötig.
+                    // Für jetzt senden wir es nicht zurück, außer explizit angefordert, 
+                    // um Overhead zu sparen (InputGenerator hat Files generiert).
+                    // Prompt verlangte: "Sende das finalRaster zurück ... (für die 3D-Visualisierung)"
+                    // Okay, wir senden es mit.
+                    finalRaster: finalRaster
                 }
             });
 
         } catch (err) {
-            console.error("Data Prep Error:", err);
+            console.error("Worker Error:", err);
             self.postMessage({ type: 'ERROR', error: err.message });
         }
     }

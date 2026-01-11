@@ -31,6 +31,9 @@
                 <span>Select .XYZ File</span>
              </label>
              
+             <button v-if="parsedData" @click="triggerBaking" class="btn-primary" style="margin-right: 0.5rem; background-color: #e67e22;">
+               Bake (Update)
+             </button>
              <button v-if="parsedData" @click="acceptTerrain" class="btn-primary">
                Accept Terrain
              </button>
@@ -614,16 +617,18 @@ const parseXYZ = (text) => {
 };
 
 const buildTerrainMesh = (result) => {
+    console.log("buildTerrainMesh Called", result ? "Data OK" : "No Data");
+    if (!result || !result.gridData) {
+        console.warn("buildTerrainMesh: Missing gridData");
+        return;
+    }
     const { ncols, nrows, gridData, minZ, maxZ, bounds } = result;
+    console.log(`buildTerrainMesh: Stats ${ncols}x${nrows}, Z: ${minZ}-${maxZ}`);
+    
     const geometry = new THREE.PlaneGeometry(bounds.width, bounds.height, ncols - 1, nrows - 1);
     const count = geometry.attributes.position.count;
     
-    // Shader Mesh Construction
-    // Re-using the logic from Step 20
-    // Shader Mesh Construction
-    // Re-using the logic from Step 20
-    // (Removed duplicate MeshPhongMaterial declaration)
-    
+    // Geometry Update
     for (let i = 0; i < count; i++) {
         const col = i % ncols;
         const geomRow = Math.floor(i / ncols); 
@@ -638,74 +643,11 @@ const buildTerrainMesh = (result) => {
     }
     geometry.computeVertexNormals();
 
-    const vertexShader = `
-      varying float vZ;
-      varying vec2 vPlanePos;
-      void main() {
-        vZ = position.z; 
-        vPlanePos = position.xy; 
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `;
-
-    const fragmentShader = `
-      varying float vZ;
-      varying vec2 vPlanePos;
-      uniform float uMinZ;
-      uniform float uMaxZ;
-      uniform vec3 uColorLow;
-      uniform vec3 uColorMid;
-      uniform vec3 uColorHigh;
-      uniform float uIs2D; 
-      uniform vec2 uBounds;
-      uniform float uCellSize;
-
-      void main() {
-        float range = uMaxZ - uMinZ;
-        if(range < 0.1) range = 1.0;
-        float h = vZ / range; 
-        vec3 col;
-        if (h < 0.2) col = mix(uColorLow, uColorMid, h / 0.2);
-        else col = mix(uColorMid, uColorHigh, (h - 0.2) / 0.8);
-
-        if (uIs2D > 0.5) {
-            float gray = dot(col, vec3(0.299, 0.587, 0.114));
-            col = mix(col, vec3(gray), 0.7) + 0.1;
-            
-            float localX = vPlanePos.x + (uBounds.x * 0.5);
-            float localY = vPlanePos.y + (uBounds.y * 0.5);
-            vec2 normPos = vec2(localX, localY) / uCellSize;
-            vec2 grid = abs(fract(normPos) - 0.5);
-            float px = fwidth(localX) * 1.5;
-            if(px < 0.02) px = 0.02; 
-            float lineX = 1.0 - smoothstep(0.0, px/uCellSize, grid.x);
-            float lineY = 1.0 - smoothstep(0.0, px/uCellSize, grid.y);
-            float isGrid = max(lineX, lineY);
-            col = mix(col, vec3(0.35), isGrid * 0.6);
-        }
-
-        float contourInterval = 1.0;
-        float dist = abs(fract(vZ) - 0.5);
-        float lineIntensity = 1.0 - smoothstep(0.45, 0.48, dist); 
-        col = mix(col, vec3(0.0), lineIntensity * 0.3);
-
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `;
-
-    const material = new THREE.ShaderMaterial({
-        uniforms: {
-            uMinZ: { value: 0 }, 
-            uMaxZ: { value: maxZ - minZ },
-            uColorLow: { value: new THREE.Color(0x3b82f6) },
-            uColorMid: { value: new THREE.Color(0x10b981) },
-            uColorHigh: { value: new THREE.Color(0xffffff) },
-            uIs2D: { value: 0.0 },
-            uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) },
-            uCellSize: { value: result.cellsize || 1.0 }
-        },
-        vertexShader: vertexShader,
-        fragmentShader: fragmentShader,
+    // DEBUG MODE: FORCE VISIBILITY
+    // Using BasicMaterial wireframe for "Technical" look
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xff0000, // RED
+        wireframe: false, // SOLID
         side: THREE.DoubleSide
     });
 
@@ -715,18 +657,151 @@ const buildTerrainMesh = (result) => {
          terrainMesh.material.dispose();
     }
     terrainMesh = new THREE.Mesh(geometry, material);
-    terrainMesh.userData.isTerrain = true; // IMPORTANT: Tagging for Shovel Tool
+    terrainMesh.userData.isTerrain = true; 
     terrainMesh.rotation.x = -Math.PI / 2;
     scene.add(terrainMesh);
     
-    // Position camera
-    const maxDim = Math.max(bounds.width, bounds.height);
-    if(activeCamera === cameraPerspective) {
-         activeCamera.position.set(0, maxDim * 0.8, maxDim * 0.8);
+    // DEBUG CUBE
+    const debugCube = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100), new THREE.MeshBasicMaterial({color: 0x00ff00}));
+    debugCube.position.set(0, 50, 0);
+    scene.add(debugCube);
+    console.log("Debug Cube Added at 0,50,0");
+
+    // Camera Focus (Only if not already set or explicit reset needed)
+    // We can check if controls.target is 0,0,0 or use a flag. 
+    // Always centering on bake might be annoying if zoomed in. 
+    // But for initial load (which this function handles often), it's good.
+    // Let's rely on caller to set camera if needed, OR do it here if it's the first build.
+    if (!activeCamera.userData.initialized) {
+        const maxDim = Math.max(bounds.width, bounds.height);
+        if(activeCamera === cameraPerspective) {
+             activeCamera.position.set(0, maxDim * 0.8, maxDim * 0.8);
+        }
+        activeCamera.userData.initialized = true; 
+        controls.target.set(0, 0, 0);
+        controls.update();
     }
-    controls.target.set(0, 0, 0);
-    controls.update();
+    // FORCE RENDER
+    renderer.render(scene, activeCamera);
 };
+
+// --- REACTIVITY FIX ---
+watch(() => simStore.raster, (newRaster) => {
+    if (newRaster && parsedData.value) {
+        // Update local parsedData to keep sync
+        parsedData.value.gridData = newRaster;
+        // Rebuild Mesh
+        buildTerrainMesh(parsedData.value);
+    }
+}, { immediate: true });
+
+// Also watch parsedData for initial load (if simStore.raster is null)
+watch(() => parsedData.value, (newData) => {
+    if (newData && !simStore.raster) {
+        buildTerrainMesh(newData);
+    }
+}, { immediate: true });
+
+// --- WORKER & BAKING LOGIC ---
+let bakingWorker = null;
+
+const initBakingWorker = () => {
+    if (bakingWorker) return;
+    bakingWorker = new Worker(new URL('../../middleware/dataprep.worker.js', import.meta.url), { type: 'module' });
+    
+    bakingWorker.onmessage = (e) => {
+        const { type, payload } = e.data;
+        if (type === 'PREPARATION_COMPLETE') {
+            console.log("Baking Complete!");
+            loading.value = false;
+            
+            // Check if finding finalRaster (Step 179 added it to payload)
+            if (payload.finalRaster) {
+                 simStore.setRaster(payload.finalRaster);
+                 
+                 // Update Mesh Immediate
+                 if (parsedData.value) {
+                     // Create new parsedData object to trigger reactive stuff safely if needed, 
+                     // or just call rebuild directly.
+                     // We need to keep 'minZ', 'maxZ' etc valid.
+                     // Assuming raster size didn't change (it shouldn't).
+                     parsedData.value.gridData = payload.finalRaster; 
+                     buildTerrainMesh(parsedData.value);
+                 }
+            }
+        } else if (type === 'ERROR') {
+             console.error("Baking Error", e.data.error);
+             loading.value = false;
+             alert("Baking Failed: " + e.data.error);
+        }
+    };
+};
+
+// Exposed Trigger
+const triggerBaking = () => {
+    if (!bakingWorker || !parsedData.value) return;
+    
+    loadingText.value = "Baking Terrain...";
+    loading.value = true;
+
+    // Payload construction (Matching dataprep.worker requirements)
+    const payload = {
+        grid: {
+            header: {
+                ncols: parsedData.value.stats.cols,
+                nrows: parsedData.value.stats.rows,
+                cellsize: parsedData.value.stats.cellsize,
+                xll: 0, // Simplified or derived from bounds/center? 
+                        // Existing parser sets center but not xll/yll explicitly in stats sometimes.
+                        // However, Rasterizer uses stats (header).
+                        // Let's ensure header has xll/yll.
+                xllcorner: parsedData.value.stats.minX || 0, // Fallback
+                yllcorner: parsedData.value.stats.minY || 0  // Fallback
+            },
+            data: parsedData.value.gridData
+        },
+        modifications: geoStore.modifications,
+        // Dummys for other fields if strict worker needs them, but our worker 
+        // handles missing parts gracefully usually? 
+        // Strict worker checks: if (payload.xyz) ... else if (payload.grid) ...
+        // So just passing grid is fine.
+    };
+    
+    // Add geometry info just in case worker needs more from header
+    // The worker's 'InputGenerator' logic might need 'modifications' etc.
+    // Our strict bakeTerrain only needs grid + modifications.
+    
+    bakingWorker.postMessage({
+        type: 'PREPARE_SIMULATION',
+        payload: payload
+    });
+};
+
+onMounted(() => {
+    initThreeJS();
+    initBakingWorker(); // START WORKER
+    
+    // Unified Grid Source (Preview OR Store)
+    const activeGrid = computed(() => parsedData.value || geoStore.terrain);
+
+    // Initialize Layer Renderer (Visualizes Imported Data)
+    useLayerRenderer(scene, geoStore, activeGrid);
+
+    // Restore if data exists
+    if (geoStore.terrain && geoStore.terrain.gridData) {
+         loadingText.value = "Restoring Terrain...";
+         loading.value = true;
+         setTimeout(() => {
+             parsedData.value = {
+                 ...geoStore.terrain,
+                 stats: geoStore.terrain.stats || geoStore.terrain // Fallback if stats nested or root
+             };
+             stats.value = parsedData.value.stats || parsedData.value;
+             buildTerrainMesh(parsedData.value);
+             loading.value = false;
+         }, 100);
+    }
+});
 
 defineExpose({ 
     setCameraView,
