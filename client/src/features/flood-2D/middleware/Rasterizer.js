@@ -54,55 +54,97 @@ export const Rasterizer = {
     },
 
     /**
-     * "Burns" buildings into the DEM by adding height to cells within polygons or along lines.
-     * @param {object} gridData - Float32Array
-     * @param {object} header - Grid Header
-     * @param {object} buildingsGeoJSON 
-     * @param {number} defaultHeight 
+     * "Burns" buildings into the DEM.
+     * Implements "Baking" pattern: Copies buffer, Raycasting, BBox optimization.
+     * 
+     * @param {Float32Array} baseRaster - Source DEM
+     * @param {object} gridInfo - { ncols, nrows, cellsize, xll, yll }
+     * @param {Array} buildingsList - Array of modifications/buildings
+     * @returns {Float32Array} New DEM
      */
-    burnBuildings(gridData, header, buildingsGeoJSON, defaultHeight = 10.0) {
-        if (!buildingsGeoJSON || !buildingsGeoJSON.features) return;
+    burnBuildings(baseRaster, gridInfo, buildingsList) {
+        // 1. Erstelle eine Kopie des baseRaster (Requirement 2)
+        const newRaster = new Float32Array(baseRaster);
+        const { ncols, nrows, cellsize, xll, yll } = gridInfo;
 
-        const { cellsize, xll, yll, ncols, nrows } = header;
+        if (!buildingsList || buildingsList.length === 0) return newRaster;
 
-        for (const feature of buildingsGeoJSON.features) {
-            const geom = feature.geometry;
-            const props = feature.properties || {};
+        // Helper: Grid to World
+        const getCellX = (c) => xll + c * cellsize;
+        const getCellY = (r) => yll + ((nrows - 1) - r) * cellsize;
 
-            // Determine Height: explicit property > default argument
-            let heightToAdd = defaultHeight;
-            if (props.height_m !== undefined && props.height_m !== null) {
-                heightToAdd = parseFloat(props.height_m);
+        // Helper: Point-in-Polygon (Raycasting) (Requirement 4)
+        const isPointInPoly = (x, y, poly) => {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                const xi = poly[i][0], yi = poly[i][1];
+                const xj = poly[j][0], yj = poly[j][1];
+
+                const intersect = ((yi > y) !== (yj > y)) &&
+                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        };
+
+        // 3. Iteriere über alle Gebäude (Requirement 3)
+        for (const building of buildingsList) {
+            // Defensive Check
+            if (!building.geometry || building.geometry.type !== 'Polygon') continue;
+
+            const coords = building.geometry.coordinates[0]; // Outer ring
+            if (!coords) continue;
+
+            const height = building.properties.height || 10.0;
+            const mode = building.properties.elevation_mode || 'relative';
+
+            // Bounding Box Optimization (Requirement 3)
+            let minC = ncols, maxC = 0, minR = nrows, maxR = 0;
+
+            for (const p of coords) {
+                const c = Math.round((p[0] - xll) / cellsize);
+                const r = (nrows - 1) - Math.round((p[1] - yll) / cellsize); // Invert Y
+
+                if (c < minC) minC = c;
+                if (c > maxC) maxC = c;
+                if (r < minR) minR = r;
+                if (r > maxR) maxR = r;
             }
 
-            let cells = [];
+            // Clamp
+            minC = Math.max(0, minC);
+            maxC = Math.min(ncols - 1, maxC);
+            minR = Math.max(0, minR);
+            maxR = Math.min(nrows - 1, maxR);
 
-            if (geom.type === 'Polygon') {
-                // Fill the building
-                cells = BoundaryTools.getCellsInPolygon(geom.coordinates[0], cellsize, xll, yll);
+            // Rasterize (Check cells in BBox)
+            for (let r = minR; r <= maxR; r++) {
+                const cy = getCellY(r);
+                for (let c = minC; c <= maxC; c++) {
+                    const cx = getCellX(c);
 
-                // Also discretize the perimeter (walls) to strict ensure closure
-                const wallCells = BoundaryTools.discretizePolyline(geom.coordinates[0], cellsize, xll, yll);
-                cells.push(...wallCells);
+                    if (isPointInPoly(cx, cy, coords)) {
+                        const idx = r * ncols + c;
+                        const currentVal = newRaster[idx];
 
-            } else if (geom.type === 'LineString') {
-                // Handle Wall/Dam
-                cells = BoundaryTools.discretizePolyline(geom.coordinates, cellsize, xll, yll);
-            }
+                        if (currentVal > -9000) { // Valid data only
+                            let newVal = currentVal;
 
-            // Apply Height
-            for (const cell of cells) {
-                const row = (nrows - 1) - cell.y; // Invert Y
-                const col = cell.x;
-
-                if (row >= 0 && row < nrows && col >= 0 && col < ncols) {
-                    const idx = row * ncols + col;
-                    if (gridData[idx] > -9000) { // Valid data only
-                        gridData[idx] += heightToAdd;
+                            // 5. Setze die Höhe
+                            if (mode === 'absolute') {
+                                newVal = height;
+                            } else {
+                                // Default / Relative: terrainHeight + buildingHeight
+                                newVal = currentVal + height;
+                            }
+                            newRaster[idx] = newVal;
+                        }
                     }
                 }
             }
         }
+
+        return newRaster;
     },
 
     /**
@@ -155,11 +197,6 @@ export const Rasterizer = {
             const start = i * header.ncols;
             const end = start + header.ncols;
             const rowData = data.subarray(start, end);
-
-            // For friction, we need higher precision, for DEM maybe less?
-            // Using generic join is fast but prints full float precision (often lots of decimals)
-            // .map(v => v.toFixed(...)) is slow.
-            // Let's rely on default toString for now for speed.
             content += rowData.join(' ') + '\n';
         }
         return content;

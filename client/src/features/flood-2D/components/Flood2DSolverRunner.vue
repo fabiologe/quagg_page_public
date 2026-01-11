@@ -193,49 +193,44 @@ const runSimulation = async () => {
 
 const startPreparation = async () => {
     simStore.setStatus('PREPARING');
-    appendLog("Generiere Input Dateien aus Stores...");
+    appendLog("Generiere Input Dateien aus Stores (im Worker)...");
 
     try {
          // Gather Data from Stores
          const scenarioData = {
              grid: geoStore.terrain, // Pass the Grid Object directly
-             buildings: geoStore.buildings, // FeatureCollection
-             // roughness: ... // TODO: Add roughness store if needed
+             
+             // NEW: Pass explicit modifications list for Baking
+             modifications: geoStore.modifications, 
+             
+             // Legacy Compatibility (worker strips this to avoid double-baking, but we pass it just in case logic changes)
+             buildings: geoStore.buildings, 
+
              rain: hydStore.rainConfig && hydStore.rainData ? {
-                 intensity: hydStore.rainConfig.intensity, // Simplified for now, or pass full data logic
-                 // If utilizing raw store data for InputGenerator:
-                 // InputGenerator expects specific format. 
-                 // If rainData is series, we need to adapt InputGenerator to take it.
-                 // For now, let's pass the raw store pointers and let InputGenerator handle or mock.
-                 // InputGenerator.js was updated to check 'scenario.rain'.
-                 // We pass config or whatever is available.
-                 // Let's rely on rainConfig mostly.
+                 intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
              } : null,
              
-             boundaries: hydStore.profiles ? Object.values(hydStore.profiles) : [], // Pass Profiles/Boundaries
-             // Note: InputGenerator expects 'boundaries' array.
-             // We need to ensure the format matches what InputGenerator expects (e.g. { type: 'P', ... }).
-             // This requires further alignment, but for Refactoring step, we connect the pipes.
+             boundaries: hydStore.profiles ? Object.values(hydStore.profiles) : [],
              
              config: {
                  sim_time: simStore.simDuration || 3600,
                  initial_tstep: simStore.timeStep || 1.0
-                 // other overrides
              }
          };
 
-         const files = generator.processScenario(scenarioData);
+         // DELEGATE TO WORKER (Task 4 Requirement)
+         // Instead of running generator locally, we ask the worker to bake & prepare.
+         if (worker) {
+             worker.postMessage({
+                 type: 'PREPARE_SIMULATION',
+                 payload: scenarioData
+             });
+             // Response will be handled in onmessage ('PREPARATION_COMPLETE' or 'ERROR')
+         } else {
+             throw new Error("Worker not initialized!");
+         }
 
-         appendLog(`Generated ${Object.keys(files).length} files.`);
-
-         worker.postMessage({
-             cmd: 'CMD_PREPARE',
-             payload: {
-                 config: { sim_time: scenarioData.config.sim_time },
-                 files: files
-             }
-         });
     } catch (e) {
         appendLog(`[ERROR] Data Prep failed: ${e.message}`);
         simStore.setStatus('ERROR');
