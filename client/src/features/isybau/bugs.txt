@@ -1,0 +1,4 @@
+Das PostProzessing ist sehr verbuggt 
+z.B Auslass hat kein Abfluss in SWMM stimmts aber in der UI nicht 
+die Volumen ansicht ist auch sehr Verbuggt es fehlen dort zb Vmax also was nöglich ist an Volumen 
+ich glaube die Überstau markierungen funktionieren auch noch nicht wirklich gut und falsch
