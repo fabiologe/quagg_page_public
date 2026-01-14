@@ -1,7 +1,7 @@
 Das PostProzessing ist sehr verbuggt 
 z.B Auslass hat kein Abfluss in SWMM stimmts aber in der UI nicht 
 die Volumen ansicht ist auch sehr Verbuggt es fehlen dort zb Vmax also was nöglich ist an Volumen 
-ich glaube die Überstau markierungen funktionieren auch noch nicht wirklich gut und falsch
+ich glaube die Überstau markierungen funktionieren auch noch nicht wirklich gut und falsch -> wird nicht in Berechnung richtig eingenommen (zwei UserInput stellen unterschiedliches Statment im Store)
 
 
 Es fehlt eine Meldung für solche fälle : Knoten RW010 hat einen massiven Kontinuitätsfehler (Report schwankt zwischen 45.11% und 82.171%).
