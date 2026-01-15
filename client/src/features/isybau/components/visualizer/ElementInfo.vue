@@ -13,6 +13,37 @@
           <span class="value">{{ localData.id }}</span>
         </div>
 
+        <!-- ================= SIMULATION RESULTS ================= -->
+        <div v-if="currentResult" class="info-group result-box">
+             <div class="result-header">Simulation (Aktuell)</div>
+             
+             <!-- Warning Badge -->
+             <div v-if="currentResult.floodWarning" class="flood-badge">
+                 ⚠️ ÜBERFLUTUNG: {{ currentResult.floodVolume?.toFixed(3) }} m³ 
+                 <div class="sub-text">(auf Gelände)</div>
+             </div>
+
+             <div class="info-row compact">
+                 <span class="label">Tiefe:</span>
+                 <span class="value" :class="{'text-red': currentResult.isFlooded}">
+                     {{ currentResult.depth?.toFixed(3) }} m
+                 </span>
+             </div>
+             <div class="info-row compact">
+                 <span class="label">Volumen:</span>
+                 <span class="value">{{ currentResult.volume?.toFixed(3) }} m³</span>
+             </div>
+             
+             <!-- Link Specific Result: Utilization -->
+             <div v-if="elementType === 'edge' && currentResult.utilizationText" class="info-row compact">
+                 <span class="label">Auslastung:</span>
+                 <span class="value" :style="currentResult.utilizationStyle">
+                     {{ currentResult.utilizationText }}
+                 </span>
+             </div>
+        </div>
+
+
         <!-- ================= EDGE EDITOR ================= -->
         <template v-if="elementType === 'edge'">
              <div class="info-group">
@@ -208,6 +239,81 @@ function initLocalData(el) {
     
     localData.value = data;
 }
+
+// Result Computation
+const currentResult = computed(() => {
+    // NODE LOGIC
+    if (elementType.value === 'node') {
+        if (!props.nodeResults || !props.selectedElement) return null;
+        
+        const res = props.nodeResults.get(props.selectedElement.id);
+        if (!res) return null;
+
+        const node = props.selectedElement;
+        const maxDepth = node.depth || 0;
+        const currentDepth = res.depth || 0;
+        
+        // Check for flooding
+        const floodVolume = res.floodVolume || 0; // 10^6 ltr usually, Parser now extracts value
+        
+        // Volume Logic
+        let currentVol = res.vol || 0; // SWMM Base Volume
+        
+        const isManhole = node.isManhole !== false; 
+        
+        if (currentDepth > maxDepth && isManhole) {
+            const surcharge = currentDepth - maxDepth;
+            const aPonded = node.apondedArea || 20.0;
+            currentVol = res.vol + (surcharge * aPonded);
+        }
+        
+        return {
+            depth: currentDepth,
+            volume: currentVol,
+            isFlooded: currentDepth > maxDepth,
+            floodWarning: floodVolume > 0,
+            floodVolume: floodVolume * 1000 // Convert 10^6 L to m^3
+        };
+    }
+    
+    // EDGE LOGIC
+    if (elementType.value === 'edge') {
+        if (!props.hydraulics || !props.selectedElement) return null;
+        const res = props.hydraulics.get(props.selectedElement.id);
+        if(!res) return null;
+        
+        // Utilization Logic (Strict: Max/Full Depth, Capped at 100%)
+        // User Requirement: "ES KANN NICHT ÜBER 100% SEIN"
+        const depthRatio = res.depthRatio || 0;
+        
+        // Calculate raw percent
+        let rawPercent = depthRatio * 100;
+        
+        // Hard Cap at 100%
+        if (rawPercent > 100) rawPercent = 100;
+        
+        const displayVal = rawPercent;
+        const displayText = `${displayVal.toFixed(0)}%`;
+        let displayStyle = {};
+        
+        // Visuals
+        if (displayVal >= 90) {
+             displayStyle = { color: '#c0392b', fontWeight: 'bold' }; // Red (Full/High)
+        } else if (displayVal >= 50) {
+             displayStyle = { color: '#f39c12', fontWeight: 'bold' }; // Yellow
+        } else {
+             displayStyle = { color: '#27ae60', fontWeight: 'bold' }; // Green
+        }
+
+        return {
+            depth: res.depth, 
+            utilizationText: displayText,
+            utilizationStyle: displayStyle,
+        };
+    }
+
+    return null;
+});
 
 // Actions
 const updateRoughness = () => {
@@ -459,5 +565,57 @@ const stopDrag = () => {
 
 .full-width {
     width: 100%;
+}
+
+/* Result Styles */
+.result-box {
+    background: #f0f7ff;
+    border: 1px solid #cce5ff;
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+}
+
+.result-header {
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: #004085;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.flood-badge {
+    background: #ffebee;
+    border: 1px solid #ef5350;
+    color: #c62828;
+    padding: 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    animation: pulse 2s infinite;
+}
+
+.sub-text {
+    font-size: 0.75rem;
+    font-weight: normal;
+    color: #d32f2f;
+}
+
+.compact {
+    margin-bottom: 2px;
+}
+
+.text-red {
+    color: #d32f2f;
+    font-weight: bold;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
 }
 </style>

@@ -329,4 +329,253 @@ export class SwmmOutParser {
 
         return timeSeries;
     }
+
+    /**
+     * Parsing of the text report (.rpt)
+     * Extracted from worker for centralized logic.
+     * @param {string} report - The raw text content of the .rpt file
+     * @param {Map} inputNodesMap - Map of input nodes (for geometry/elevation)
+     * @param {Map} inputEdgesMap - Map of input edges (for geometry/roughness)
+     */
+    static parseReport(report, inputNodesMap = new Map(), inputEdgesMap = new Map()) {
+        const nodes = {};
+        const edges = {};
+        const subcatchments = {};
+        const systemStats = {
+            runoff: {},
+            flow: {}
+        };
+
+        // Helper: Calculate Full Flow Capacity (Manning)
+        const calculateCapacity = (id) => {
+            const edge = inputEdgesMap.get(id);
+            if (!edge) return 0;
+
+            const fromId = edge.fromNodeId || edge.from;
+            const toId = edge.toNodeId || edge.to;
+            const from = inputNodesMap.get(fromId);
+            const to = inputNodesMap.get(toId);
+            if (!from || !to) return 0;
+
+            // Slope Calculation
+            let z1 = (edge.z1 !== undefined && edge.z1 !== null) ? edge.z1 : from.z;
+            let z2 = (edge.z2 !== undefined && edge.z2 !== null) ? edge.z2 : to.z;
+
+            if (z1 === undefined) z1 = 0;
+            if (z2 === undefined) z2 = 0;
+
+            const len = edge.length > 0 ? edge.length : 10;
+            let slope = Math.abs(z1 - z2) / len;
+            if (slope < 0.001) slope = 0.001; // Minimum slope
+
+            // Roughness: Handle Strickler (Kst) vs Manning (n)
+            let val = edge.roughness > 0 ? edge.roughness : 0;
+            let n = 0.013; // Default (Concrete n)
+
+            if (val > 1.0) {
+                // Assume Strickler (kst) -> Convert to Manning
+                n = 1.0 / val;
+            } else if (val > 0) {
+                n = val;
+            }
+
+            // Geometry
+            const p = edge.profile || { type: 0, height: 0, width: 0 };
+            let h = p.height || 0;
+            let w = p.width || 0;
+            let type = p.type;
+
+            // Fallback: If geometry is missing/invalid (or tiny < 1cm), assume DN1000 Circle (1.0m)
+            if (h < 0.01) {
+                h = 1.0;
+                w = 1.0;
+                type = 0;
+            }
+            if ((type === 3 || type === 'Rechteckprofil' || type === 8 || type === 4 || type === 'Trapezprofil') && w <= 0) {
+                h = 1.0;
+                type = 0;
+            }
+
+            let A = 0;
+            let R = 0;
+
+            if (type == 0 || type === 'Circular' || type === 'Kreisprofil') {
+                const D = h;
+                A = Math.PI * Math.pow(D / 2, 2);
+                const P = Math.PI * D;
+                R = D / 4;
+            } else if (type == 3 || type === 'Rechteckprofil') {
+                A = w * h;
+                const P = 2 * w + 2 * h;
+                R = A / P;
+            } else if (type == 1 || type === 'Egg' || type === 'Eiprofil') {
+                // ATV A110 Standard Egg Approximation
+                A = 0.5105 * Math.pow(h, 2);
+                R = 0.1931 * h;
+            } else if (type == 8 || type == 4 || type === 'Trapezprofil') {
+                // Trapez Open
+                const s = 1.5; // Slope 1:1.5
+                const topW = w + 2 * (s * h);
+                A = ((w + topW) / 2) * h;
+                const side = Math.sqrt(Math.pow(h, 2) + Math.pow(s * h, 2));
+                const P = w + 2 * side;
+                R = A / P;
+            } else {
+                const D = 1.0;
+                A = Math.PI * Math.pow(D / 2, 2);
+                R = D / 4;
+            }
+            // Manning Equation: Q = (1/n) * A * R^(2/3) * S^(1/2) (m3/s)
+            const Q = (1 / n) * A * Math.pow(R, 2 / 3) * Math.pow(slope, 0.5);
+            return Q * 1000; // Convert to L/s
+        };
+
+        // Helper to parse table
+        const parseTable = (headerRegex, rowCallback) => {
+            const lines = report.split('\n');
+            let inTable = false;
+            let separatorCount = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+
+                if (!inTable) {
+                    if (headerRegex.test(line)) {
+                        inTable = true;
+                        separatorCount = 0;
+                    }
+                } else {
+                    if (line.startsWith('---')) {
+                        separatorCount++;
+                        continue;
+                    }
+                    if (separatorCount < 2) continue;
+                    if (line === '') {
+                        inTable = false;
+                        continue;
+                    }
+                    if (line.startsWith('***') || line.startsWith('Analysis begun')) {
+                        inTable = false;
+                        continue;
+                    }
+                    const parts = line.split(/\s+/);
+                    if (parts.length > 2) {
+                        rowCallback(parts);
+                    }
+                }
+            }
+        };
+
+        // --- 1. Subcatchment Runoff Summary ---
+        parseTable(/Subcatchment Runoff Summary/, (parts) => {
+            const id = parts[0];
+            if (!subcatchments[id]) subcatchments[id] = {};
+            subcatchments[id].precip = parseFloat(parts[1]);
+            subcatchments[id].totalRunoffMm = parseFloat(parts[7]);
+            subcatchments[id].totalRunoffVol = parseFloat(parts[8]);
+            subcatchments[id].peakRunoff = parseFloat(parts[9]) * 1000;
+        });
+
+        // --- 2. Node Depth Summary ---
+        parseTable(/Node Depth Summary/, (parts) => {
+            const id = parts[0];
+            const maxDepth = parseFloat(parts[3]);
+            const avgDepth = parseFloat(parts[2]);
+            if (!isNaN(maxDepth)) {
+                if (!nodes[id]) nodes[id] = {};
+                nodes[id].maxDepth = maxDepth;
+                nodes[id].avgDepth = isNaN(avgDepth) ? 0 : avgDepth;
+            }
+        });
+
+        // --- 3. Node Inflow Summary ---
+        parseTable(/Node Inflow Summary/, (parts) => {
+            const id = parts[0];
+            const val = parseFloat(parts[3]);
+            if (!isNaN(val)) {
+                if (!nodes[id]) nodes[id] = {};
+                nodes[id].maxInflow = val * 1000;
+            }
+        });
+
+        // --- 4. Node Flooding Summary ---
+        parseTable(/Node Flooding Summary/, (parts) => {
+            const id = parts[0];
+            const vol = parseFloat(parts[parts.length - 2]); // Total Vol
+            const depth = parseFloat(parts[parts.length - 1]); // Max Depth
+
+            if (!isNaN(vol)) {
+                if (!nodes[id]) nodes[id] = {};
+                nodes[id].floodVolume = vol; // 10^6 ltr
+                nodes[id].pondedDepth = depth;
+                nodes[id].overflow = true;
+            }
+        });
+
+        // --- 5. Link Flow Summary ---
+        parseTable(/(Link|Conduit) Flow Summary/, (parts) => {
+            const id = parts[0];
+            let offset = 0;
+            // Handle optional Date column in older SWMM versions? 
+            // Or just Day/Time columns.
+            // Standard: Name, Type, MaxQ, Day, Time, MaxV, Max/Full Flow, Max/Full Depth
+            // 0:Name, 1:Type, 2:MaxQ, 3:Day, 4:Time, 5:MaxV, 6:Max/Full Flow, 7:Max/Full Depth
+            // If Day is missing (sometimes happens in simple reports? No usually standard).
+            const isPart3Day = /^\d+$/.test(parts[3]) && !parts[3].includes(':');
+            const isPart4Time = parts[4] && parts[4].includes(':');
+            if (isPart3Day && isPart4Time) offset = 1;
+
+            const maxFlow = parseFloat(parts[2]);
+            const maxVel = parseFloat(parts[4 + offset]);
+            const maxFullRatio = parseFloat(parts[5 + offset]); // Max/Full Flow (Utilization)
+            const maxDepthRatio = parseFloat(parts[6 + offset]); // Max/Full Depth (Filling Degree)
+
+            if (!isNaN(maxFlow)) {
+                if (!edges[id]) edges[id] = {};
+                edges[id].maxFlow = maxFlow * 1000;
+                edges[id].maxVelocity = isNaN(maxVel) ? 0 : maxVel;
+
+                // Store precise SWMM reported utilization
+                edges[id].flowCapacityRatio = isNaN(maxFullRatio) ? 0 : maxFullRatio;
+                edges[id].depthRatio = isNaN(maxDepthRatio) ? 0 : maxDepthRatio;
+
+                // Keeps backwards compatibility aliases if needed, but pure logic preferred.
+                // We'll use these new keys in ElementInfo.
+
+                // Calculated Capacity handling (Keep as fallback)
+
+                // Calculated Capacity handling (Keep as fallback for capacity value itself in L/s)
+                const calculatedCap = calculateCapacity(id);
+                edges[id].capacity = calculatedCap;
+
+                // Prefer SWMM's Hydraulic Ratio for utilization display logic if valid
+                if (!isNaN(maxFullRatio)) {
+                    // For internal consistency with previous logic, we can keep 'utilization' as %?
+                    // Or separate it. The UI request uses 'maxCapacityUtilization'.
+                    // Let's set 'utilization' to this * 100 for backward compat if used elsewhere?
+                    edges[id].utilization = maxFullRatio * 100;
+                } else {
+                    // Fallback to geometric calc
+                    if (calculatedCap > 0.01) {
+                        edges[id].utilization = ((maxFlow * 1000) / calculatedCap) * 100;
+                    } else {
+                        edges[id].utilization = 0;
+                    }
+                }
+            }
+        });
+
+        // --- 6. Stats Extraction ---
+        const extractStat = (label, regex) => {
+            const match = report.match(regex);
+            return match ? parseFloat(match[1]) : 0;
+        };
+        systemStats.runoff.precip = extractStat("Total Precipitation", /Total Precipitation \.+ \s+([-\d\.]+)/);
+        systemStats.runoff.evap = extractStat("Evaporation Loss", /Evaporation Loss \.+ \s+([-\d\.]+)/);
+        systemStats.runoff.infil = extractStat("Infiltration Loss", /Infiltration Loss \.+ \s+([-\d\.]+)/);
+        systemStats.runoff.runoff = extractStat("Surface Runoff", /Surface Runoff \.+ \s+([-\d\.]+)/);
+        systemStats.runoff.error = extractStat("Continuity Error", /Continuity Error \(%\) \.+ \s+([-\d\.]+)/);
+
+        return { nodes, edges, subcatchments, systemStats };
+    }
 }

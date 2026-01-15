@@ -242,44 +242,91 @@ SURCHARGE_METHOD     SLOT
     addJunctions(nodes) {
         let text = '[JUNCTIONS]\n;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded\n';
 
-        // Pre-calculate connected areas for ponding sizing
-        const nodeAreaMap = new Map();
-        if (this.store.areas) {
+        // 1. Calculate Connected Areas (Dynamic Ponding)
+        const nodePondingMap = new Map();
+
+        // Helper to add area to a node in the map
+        const addToMap = (nodeId, areaSqMeters) => {
+            if (!nodeId) return;
+            const current = nodePondingMap.get(nodeId) || 0;
+            nodePondingMap.set(nodeId, current + areaSqMeters);
+        };
+
+        if (this.store.areas && this.store.areas.length > 0) {
+            // Create Edge Map for fast lookup
+            // Fix: Store usually holds edges in 'edges' array or 'getAllEdges' getter. 
+            // If it is a getter, it works. If function, needs call. 
+            // Check 'edges' property first (standard Pinia state).
+            let edges = [];
+            if (Array.isArray(this.store.edges)) {
+                edges = this.store.edges;
+            } else if (typeof this.store.getAllEdges === 'function') {
+                edges = this.store.getAllEdges();
+            } else if (Array.isArray(this.store.getAllEdges)) {
+                edges = this.store.getAllEdges;
+            }
+
+            const edgeMap = new Map();
+            for (const e of edges) {
+                edgeMap.set(e.id, e);
+            }
+
             for (const area of this.store.areas) {
                 const sizeHa = this.safeFloat(area.size, 0);
+                const sizeM2 = sizeHa * 10000;
 
-                // Handle Split
-                const ratio = (area.nodeId2) ? this.safeFloat(area.splitRatio, 50) / 100.0 : 1.0;
+                // Case A: Area connected to an Edge (Haltung)
+                // User instruction: Check 'outlet' field for Edge ID
+                let edgeId = area.outlet;
+                // Fallback: check 'edgeId' property if 'outlet' is missing or not found
+                // Also check if 'outlet' actually points to a node? SWMM areas usually output to Node or Subcatchment. 
+                // But in Isybau, user might link Area -> Edge.
+                if (!edgeId && area.edgeId) edgeId = area.edgeId;
 
-                // Node 1
-                if (area.nodeId) {
-                    const val = nodeAreaMap.get(area.nodeId) || 0;
-                    nodeAreaMap.set(area.nodeId, val + (sizeHa * ratio));
-                }
+                const connectedEdge = edgeMap.get(edgeId);
 
-                // Node 2
-                if (area.nodeId2) {
-                    const val = nodeAreaMap.get(area.nodeId2) || 0;
-                    nodeAreaMap.set(area.nodeId2, val + (sizeHa * (1 - ratio)));
+                if (connectedEdge) {
+                    // Split area between Start and End Node
+                    const halfArea = sizeM2 / 2.0;
+                    addToMap(connectedEdge.fromNodeId, halfArea);
+                    addToMap(connectedEdge.toNodeId, halfArea);
+                } else {
+                    // Case B: Area connected directly to Node (Fallback)
+                    // Use existing logic for nodeId/nodeId2
+                    const splitRatio = (area.nodeId2) ? this.safeFloat(area.splitRatio, 50) / 100.0 : 1.0;
+
+                    if (area.nodeId) {
+                        addToMap(area.nodeId, sizeM2 * splitRatio);
+                    }
+                    if (area.nodeId2) {
+                        addToMap(area.nodeId2, sizeM2 * (1 - splitRatio));
+                    }
                 }
             }
         }
 
         for (const n of nodes) {
             // Realism Update: Enable Ponding for Manholes
+            // isManhole = True -> Exists on surface -> SurDepth 0, Aponded = Calculated Area
+            // isManhole = False -> Virtual/Buried -> SurDepth 100, Aponded 0 (Sealed)
             let surDepth = 0;
             let aPonded = 0;
 
             if (n.isManhole) {
-                surDepth = 0;    // Overflows immediately at cover elevation (MaxDepth)
+                surDepth = 0;   // Overflows immediately
 
-                // Base ponding (20m^2) + 50% of connected catchment area
-                // 1 ha = 10,000 m^2
-                const connectedHa = nodeAreaMap.get(n.id) || 0;
-                aPonded = 20 + (connectedHa * 10000 * 0.5);
+                // Get calculated area
+                const calculatedArea = nodePondingMap.get(n.id);
+
+                if (calculatedArea && calculatedArea > 1.0) {
+                    aPonded = calculatedArea;
+                } else {
+                    // Fallback constant if no area connected (prevent singularities)
+                    aPonded = 20.0;
+                }
 
             } else {
-                surDepth = 100.0; // Virtual/Sealed: Infinite surcharge allowed (pressurized)
+                surDepth = 100.0; // Virtual/Sealed
                 aPonded = 0;      // No surface area
             }
 
