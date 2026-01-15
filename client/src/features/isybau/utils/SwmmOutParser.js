@@ -520,47 +520,54 @@ export class SwmmOutParser {
             // Or just Day/Time columns.
             // Standard: Name, Type, MaxQ, Day, Time, MaxV, Max/Full Flow, Max/Full Depth
             // 0:Name, 1:Type, 2:MaxQ, 3:Day, 4:Time, 5:MaxV, 6:Max/Full Flow, 7:Max/Full Depth
-            // If Day is missing (sometimes happens in simple reports? No usually standard).
-            const isPart3Day = /^\d+$/.test(parts[3]) && !parts[3].includes(':');
-            const isPart4Time = parts[4] && parts[4].includes(':');
-            if (isPart3Day && isPart4Time) offset = 1;
+            // Detection Strategy: Reverse Indexing
+            // User Strict Mapping Request (Step 1239): "es ist bescheuert ich weiß"
+            // 1. Qmax = Maximum [Flow] (Col 2)
+            // 2. Qvoll = Max/Full Flow (2nd to Last Col) -> Raw Value (e.g. 0.33)
+            // 3. Auslastung = Max/Full Depth (Last Col) * 100 -> Raw Value (e.g. 1.00 -> 100%)
 
+            const len = parts.length;
+            const maxDepthRatio = parseFloat(parts[len - 1]); // Last col (Max/Full Depth)
+            const maxFullRatio = parseFloat(parts[len - 2]); // 2nd to Last col (Max/Full Flow)
+            const maxVel = parseFloat(parts[len - 3]);
             const maxFlow = parseFloat(parts[2]);
-            const maxVel = parseFloat(parts[4 + offset]);
-            const maxFullRatio = parseFloat(parts[5 + offset]); // Max/Full Flow (Utilization)
-            const maxDepthRatio = parseFloat(parts[6 + offset]); // Max/Full Depth (Filling Degree)
 
             if (!isNaN(maxFlow)) {
                 if (!edges[id]) edges[id] = {};
-                edges[id].maxFlow = maxFlow * 1000;
+                edges[id].maxFlow = maxFlow * 1000; // Qmax in L/s (System standard)
                 edges[id].maxVelocity = isNaN(maxVel) ? 0 : maxVel;
 
-                // Store precise SWMM reported utilization
+                // Store Raw Ratios for reference
                 edges[id].flowCapacityRatio = isNaN(maxFullRatio) ? 0 : maxFullRatio;
                 edges[id].depthRatio = isNaN(maxDepthRatio) ? 0 : maxDepthRatio;
 
-                // Keeps backwards compatibility aliases if needed, but pure logic preferred.
-                // We'll use these new keys in ElementInfo.
-
-                // Calculated Capacity handling (Keep as fallback)
-
-                // Calculated Capacity handling (Keep as fallback for capacity value itself in L/s)
-                const calculatedCap = calculateCapacity(id);
-                edges[id].capacity = calculatedCap;
-
-                // Prefer SWMM's Hydraulic Ratio for utilization display logic if valid
-                if (!isNaN(maxFullRatio)) {
-                    // For internal consistency with previous logic, we can keep 'utilization' as %?
-                    // Or separate it. The UI request uses 'maxCapacityUtilization'.
-                    // Let's set 'utilization' to this * 100 for backward compat if used elsewhere?
-                    edges[id].utilization = maxFullRatio * 100;
+                // Qvoll Mapping: DERIVED CONCEPT
+                // "Max/Full Flow" (Col N-2) is a RATIO (Qmax/Qvoll), NOT Capacity.
+                // We derive Capacity (Qvoll) = Qmax / Ratio.
+                // Qmax is already in L/s (maxFlow * 1000).
+                if (!isNaN(maxFullRatio) && Math.abs(maxFullRatio) > 0.0001) {
+                    // Ratio = Qmax / Qvoll  =>  Qvoll = Qmax / Ratio
+                    edges[id].capacity = (maxFlow * 1000) / maxFullRatio;
                 } else {
-                    // Fallback to geometric calc
-                    if (calculatedCap > 0.01) {
-                        edges[id].utilization = ((maxFlow * 1000) / calculatedCap) * 100;
-                    } else {
-                        edges[id].utilization = 0;
+                    edges[id].capacity = 0;
+                }
+
+                // Utilization Logic: Strictly Filling Degree (Max/Full Depth) * 100
+                if (!isNaN(maxDepthRatio)) {
+                    let util = maxDepthRatio * 100;
+                    if (util > 100) util = 100; // Cap at 100%
+                    edges[id].utilization = util;
+
+                    if (id === 'BE008') {
+                        console.log(`[SwmmOutParser] BE008 Strict: Qmax=${edges[id].maxFlow}, Qvoll=${edges[id].capacity}, Util=${util}%`);
                     }
+                } else if (!isNaN(maxFullRatio)) {
+                    // Fallback
+                    let util = maxFullRatio * 100;
+                    if (util > 100) util = 100;
+                    edges[id].utilization = util;
+                } else {
+                    edges[id].utilization = 0;
                 }
             }
         });

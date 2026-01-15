@@ -486,7 +486,9 @@ SURCHARGE_METHOD     SLOT
                 geom1 = pHeight;
 
                 // Type Mapping
-                if (pType === 1 || pType === 'Egg') { // Eiprofil
+                if (pType === 0 || pType === 'Circular' || pType === 'Kreisprofil') {
+                    shape = 'CIRCULAR';
+                } else if (pType === 1 || pType === 'Egg') { // Eiprofil
                     shape = 'EGG';
                 } else if (pType === 3 || pType === 'Rechteckprofil') { // Rechteck geschlossen
                     shape = 'RECT_CLOSED';
@@ -505,12 +507,10 @@ SURCHARGE_METHOD     SLOT
                     shape = 'ARCH';
                     geom2 = pWidth > 0 ? pWidth : pHeight;
                 } else {
-                    // Default Circular or Heuristic
-                    if (pWidth > pHeight) {
-                        shape = 'RECT_CLOSED'; // Flat pipe heuristic from reference
-                        geom2 = pWidth;
-                    }
-                    // Else Circular
+                    // Default to Circular if type is unknown or explicit default
+                    // User Request (Step 1374): Remove "Flat Pipe Heuristic" (Width > Height).
+                    // Strict pType adherence.
+                    shape = 'CIRCULAR';
                 }
             }
 

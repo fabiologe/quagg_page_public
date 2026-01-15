@@ -282,18 +282,12 @@ const currentResult = computed(() => {
         const res = props.hydraulics.get(props.selectedElement.id);
         if(!res) return null;
         
-        // Utilization Logic (Strict: Max/Full Depth, Capped at 100%)
-        // User Requirement: "ES KANN NICHT ÜBER 100% SEIN"
-        const depthRatio = res.depthRatio || 0;
+        // Utilization Logic (Simplified - logic moved to Parser)
+        // Parser already calculates 'utilization' as capped Filling Degree (Max/Full Depth * 100)
+        let utilPercent = res.utilization || 0;
         
-        // Calculate raw percent
-        let rawPercent = depthRatio * 100;
-        
-        // Hard Cap at 100%
-        if (rawPercent > 100) rawPercent = 100;
-        
-        const displayVal = rawPercent;
-        const displayText = `${displayVal.toFixed(0)}%`;
+        let displayVal = utilPercent;
+        let displayText = `${displayVal.toFixed(0)}%`;
         let displayStyle = {};
         
         // Visuals

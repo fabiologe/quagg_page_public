@@ -79,9 +79,10 @@
                   <th>Profil</th>
                   <th>Länge (m)</th>
                   <th>Gefälle (%)</th>
-                  <th>Q voll (l/s)</th>
+                  <th>Q voll (Kapazität) (l/s)</th>
                   <th>Q max (l/s)</th>
-                  <th>Auslastung</th>
+                  <th>Ratio (Qmax/Qvoll)</th>
+                  <th>Auslastung (h/H)</th>
                   <th>v max (m/s)</th>
                   <th>v avg (m/s)</th>
                   <th>Aktion</th>
@@ -100,6 +101,7 @@
                   <td>{{ calculateSlope(edge)?.toFixed(2) }}</td>
                   <td>{{ edgeResults.get(edge.id)?.capacity?.toFixed(1) }}</td>
                   <td>{{ edgeResults.get(edge.id)?.maxFlow?.toFixed(1) }}</td>
+                  <td>{{ edgeResults.get(edge.id)?.flowCapacityRatio?.toFixed(2) }}</td>
                   <td :class="{ 'text-red': (edgeResults.get(edge.id)?.utilization || 0) > 100 }">
                     {{ (edgeResults.get(edge.id)?.utilization || 0).toFixed(0) }} %
                   </td>

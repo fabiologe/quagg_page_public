@@ -105,16 +105,27 @@ async function runSimulation(data) {
 
         // Parse detailed results, passing input data for geometry calculations
         // Convert arrays/maps to Map for lookup if needed
-        let nodesMap = new Map();
-        let edgesMap = new Map();
+        // Parse detailed results, passing input data for geometry calculations
+        // Convert arrays/maps to Plain Objects for lookup (Parser expects Objects, not Maps)
+        let nodesMap = {};
+        let edgesMap = {};
 
-        if (nodes instanceof Map) nodesMap = nodes;
-        else if (Array.isArray(nodes)) nodes.forEach(n => nodesMap.set(n.id, n));
-        else Object.values(nodes).forEach(n => nodesMap.set(n.id, n));
+        if (nodes instanceof Map) {
+            nodes.forEach((n, id) => nodesMap[id] = n);
+        } else if (Array.isArray(nodes)) {
+            nodes.forEach(n => nodesMap[n.id] = n);
+        } else {
+            // Already object
+            nodesMap = { ...nodes };
+        }
 
-        if (edges instanceof Map) edgesMap = edges;
-        else if (Array.isArray(edges)) edges.forEach(e => edgesMap.set(e.id, e));
-        else Object.values(edges).forEach(e => edgesMap.set(e.id, e));
+        if (edges instanceof Map) {
+            edges.forEach((e, id) => edgesMap[id] = e);
+        } else if (Array.isArray(edges)) {
+            edges.forEach(e => edgesMap[e.id] = e);
+        } else {
+            edgesMap = { ...edges };
+        }
 
         const detailedResults = SwmmOutParser.parseReport(reportData, nodesMap, edgesMap);
 
