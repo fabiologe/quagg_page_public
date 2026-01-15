@@ -220,6 +220,7 @@
                     <th>Parameter</th>
                     <th>Deckel (m)</th>
                     <th>Sohle (m)</th>
+                    <th>Druckdicht</th>
                     <th>-</th>
                   </tr>
                 </thead>
@@ -250,18 +251,128 @@
                       </select>
                     </td>
                     <td>
-                      <!-- Config inputs -->
-                       <div v-if="[1, 6, 14].includes(node.type)" class="input-group">
+                      <!-- Config inputs per Type -->
+                      
+                      <!-- 1, 6: Pumps (Pumpwerk / Pumpe) -->
+                       <div v-if="[1, 6].includes(node.type)" class="input-group-col">
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.pumpRate" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Förderleistung</span>
+                        </div>
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.onDepth" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Einschalt (m)</span>
+                        </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.offDepth" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Ausschalt (m)</span>
+                        </div>
+                      </div>
+
+                       <!-- 2, 3, 4, 12, 13: Storage/Basins (Becken, Klaeranlage, etc) -->
+                       <div v-if="[2, 3, 4, 12, 13].includes(node.type)" class="input-group-col">
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
+                             <span class="hint-text">Volumen (m³)</span>
+                        </div>
+                        <div class="input-group">
+                              <input type="number" v-model.number="node.maxDepth" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Max. Tiefe</span>
+                        </div>
+                      </div>
+
+                       <!-- 7: Weir (Überlauf) -->
+                       <div v-if="node.type === 7" class="input-group-col">
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.weirHeight" step="0.01" class="small-input" @click.stop>
+                             <span class="hint-text">Wehrhöhe</span>
+                        </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.weirWidth" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Breite</span>
+                        </div>
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.dischargeCoeff" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Beiwert</span>
+                        </div>
+                      </div>
+
+                       <!-- 8: Orifice/Throttle (Drossel) -->
+                       <div v-if="node.type === 8" class="input-group-col">
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.maxOutflow" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Max. Abfluss</span>
+                        </div>
+                       </div>
+                       
+                        <!-- 9: Gate (Schieber) -->
+                       <div v-if="node.type === 9" class="input-group-col">
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.initialOpening" step="0.1" max="1" class="small-input" @click.stop>
+                             <span class="hint-text">Öffnung (0-1)</span>
+                        </div>
+                      </div>
+
+                       <!-- 14: Inlet (Einlaufbauwerk) + 10, 11 Misc -->
+                       <div v-if="[10, 11, 14].includes(node.type)" class="input-group">
                         <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                         <span class="hint-text">Zufluss</span>
                       </div>
-                       <div v-if="node.type === 7" class="input-group">
-                        <input type="number" v-model.number="node.weirHeight" step="0.01" class="small-input" @click.stop>
-                        <span class="hint-text">Wehrhöhe</span>
+
+                      <!-- Type 5 (Auslaufbauwerk) Loose Check -->
+                      <div v-if="node.type == 5" class="input-group-col">
+                        <div class="input-group">
+                             <select v-model="node.outflowType" class="small-select" @click.stop>
+                                <option value="free">Freier Auslauf</option>
+                                <option value="throttled">Gedrosselt</option>
+                             </select>
+                        </div>
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
+                             <span class="hint-text">Volumen</span>
+                         </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Zufluss</span>
+                         </div>
+                         <div class="input-group" v-if="node.outflowType === 'throttled'">
+                             <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Max. Abfluss</span>
+                         </div>
+                      </div>
+
+                      <!-- Generic Bauwerk -->
+                      <div v-if="node.type === 'Bauwerk'" class="input-group-col">
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
+                             <span class="hint-text">Volumen</span>
+                         </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Zufluss</span>
+                         </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Abfluss</span>
+                         </div>
+                         <div class="input-group">
+                            <label class="checkbox-label">
+                                <input 
+                                    type="checkbox" 
+                                    :checked="node.is_sink" 
+                                    @change="node.is_sink = $event.target.checked"
+                                    @click.stop
+                                >
+                                Als Auslauf (Senke) nutzen
+                            </label>
+                         </div>
                       </div>
                     </td>
                     <td><input type="number" v-model.number="node.coverZ" class="small-input" @click.stop></td>
                     <td><input type="number" v-model.number="node.z" class="small-input" @click.stop></td>
+                    <td class="text-center">
+                      <input type="checkbox" :checked="node.canOverflow === false" @change="updateNodeOverflow(node, !$event.target.checked)" @click.stop>
+                    </td>
                     <td></td>
                   </tr>
                 </tbody>
@@ -669,8 +780,16 @@ watch(() => props.isOpen, (newVal) => {
     edges.value = Array.from(props.network.edges.values()).map(e => {
       let material = e.material;
       let roughness = e.roughness;
+
+      // Ensure we display Strickler (Kst) in UI
+      // If roughness is provided but looks like Manning (<= 1.0), convert to Strickler
+      if (roughness && roughness <= 1.0 && roughness > 0) {
+          roughness = parseFloat((1.0 / roughness).toFixed(1)); 
+      }
+      
+      // Fallback defaults
       if (e.profile.type === 8 && !material) { material = 'Erde'; roughness = 25; }
-      if (!roughness) roughness = getRoughness(material);
+      if (!roughness || roughness <= 0) roughness = getRoughness(material);
       
       return {
         ...e,

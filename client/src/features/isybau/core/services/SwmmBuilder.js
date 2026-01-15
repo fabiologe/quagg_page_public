@@ -41,6 +41,9 @@ export class SwmmBuilder {
         this.classifyAndAddNodes(nodes);
         this.addLinks(edges, nodes);
 
+        // Dry Weather Flows (Constant Inflow)
+        this.addInflows(nodes);
+
         // Timeseries
         this.addTimeseries();
 
@@ -55,27 +58,42 @@ export class SwmmBuilder {
         this.sections.push(`[TITLE]
 Isybau Generated Simulation
 [OPTIONS]
-FLOW_UNITS CMS
-INFILTRATION HORTON
-FLOW_ROUTING DYNWAVE
-START_DATE ${this.fmtDate(this.options.startDate)}
-START_TIME ${this.fmtTime(this.options.startDate)}
-END_DATE   ${this.fmtDate(this.endDate)}
-END_TIME   ${this.fmtTime(this.endDate)}
-REPORT_STEP 00:01:00
-WET_STEP    00:01:00
-DRY_STEP    00:01:00
-ROUTING_STEP 00:00:05
-ALLOW_PONDING YES
-SKIP_STEADY_STATE NO
+FLOW_UNITS           CMS
+INFILTRATION         HORTON
+FLOW_ROUTING         DYNWAVE
+LINK_OFFSETS         DEPTH
+MIN_SLOPE            0
+ALLOW_PONDING        YES
+SKIP_STEADY_STATE    NO
+START_DATE           ${this.formatDate(this.options.startDate)}
+START_TIME           00:00:00
+REPORT_START_DATE    ${this.formatDate(this.options.startDate)}
+REPORT_START_TIME    00:00:00
+END_DATE             ${this.formatDate(this.endDate)}
+END_TIME             ${this.formatTime(this.endDate, true)}
+SWEEP_START          01/01
+SWEEP_END            12/31
+DRY_DAYS             0
+REPORT_STEP          00:01:00
+WET_STEP             00:00:30
+DRY_STEP             00:01:00
+ROUTING_STEP         00:00:01
+INERTIAL_DAMPING     PARTIAL
+NORMAL_FLOW_LIMITED  BOTH
+FORCE_MAIN_EQUATION  H-W
+VARIABLE_STEP        0.75
+LENGTHENING_STEP     0
 
-[REPORT]
-INPUT NO
-SUBCATCHMENTS ALL
-NODES ALL
-LINKS ALL
+MAX_TRIALS           8
+HEAD_TOLERANCE       0.0015
+SYS_FLOW_TOL         5
+LAT_FLOW_TOL         5
+MINIMUM_STEP         0.5
+THREADS              1
+SURCHARGE_METHOD     SLOT
 `);
     }
+
 
     addOptions() {
         // merged into Title usually or separate
@@ -87,9 +105,9 @@ LINKS ALL
         if (this.options.rainInterval) interval = this.options.rainInterval;
 
         this.sections.push(`[RAINGAGES]
-;;Name           Format    Interval SCF      Source    
-;;-------------- --------- ------ ------ ----------
-RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
+    ;;Name           Format    Interval SCF      Source
+    ;; -------------- --------- ------ ------ ----------
+        RG1              INTENSITY ${interval} 1.0      TIMESERIES default_rain
 `);
     }
 
@@ -124,7 +142,7 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
             else if (area.slope === 4) slope = 12.0;
             else if (area.slope === 5) slope = 20.0;
             else {
-                this.warnings.push(`Fläche ${name}: Gefälleklasse fehlte, gesetzt auf 0.5% (Standard).`);
+                this.warnings.push(`Fläche ${name}: Gefälleklasse fehlte, gesetzt auf 0.5 % (Standard).`);
             }
 
             const splitRatio = this.safeFloat(area.splitRatio, 50);
@@ -184,16 +202,24 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
 
         for (const n of nodes) {
             // Logic to classify
-            // Type 5 or 'Bauwerk' subtype 5 -> Outfall
-            // Type 2,3,4 -> Storage if volume > 0?
+            // 1. Storage: If Node has defined Volume > 0, it's a Storage Unit (Becken), 
+            //    regardless of Type (unless explicitly forced otherwise, but Volume implies storage capacity).
+            //    Exception: Standard nodes might have volume 0, so check > 0.
+            if (this.safeFloat(n.volume) > 0) {
+                storage.push(n);
+                continue;
+            }
+
+            // 2. Outfall
             const typeStr = String(n.type);
-            const isOutfall = typeStr === '5' || typeStr === 'Auslaufbauwerk' || n.subtype === 5;
+            // Type 5: Auslaufbauwerk
+            // Or 'is_sink' property from generic Bauwerk/Building
+            const isOutfall = typeStr === '5' || typeStr === 'Auslaufbauwerk' || n.subtype === 5 || n.is_sink === true;
 
             if (isOutfall) {
                 outfalls.push(n);
-            } else if ([2, 3, 4, 12, 13].includes(n.type) && (n.volume > 0)) { // volume prop on Node? Need to ensure Node model has it
-                storage.push(n);
             } else {
+                // 3. Junction (Standard)
                 junctions.push(n);
             }
         }
@@ -204,7 +230,7 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
             junctions.sort((a, b) => a.z - b.z);
             const lowest = junctions.shift();
             outfalls.push(lowest);
-            this.warnings.push(`Warnung: Kein Auslauf definiert. ${lowest.id} wurde automatisch als Auslauf gesetzt.`);
+            this.warnings.push(`Warnung: Kein Auslauf definiert.${lowest.id} wurde automatisch als Auslauf gesetzt.`);
         }
 
         this.addJunctions(junctions);
@@ -215,9 +241,55 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
 
     addJunctions(nodes) {
         let text = '[JUNCTIONS]\n;;Name           Elevation  MaxDepth   InitDepth  SurDepth   Aponded\n';
+
+        // Pre-calculate connected areas for ponding sizing
+        const nodeAreaMap = new Map();
+        if (this.store.areas) {
+            for (const area of this.store.areas) {
+                const sizeHa = this.safeFloat(area.size, 0);
+
+                // Handle Split
+                const ratio = (area.nodeId2) ? this.safeFloat(area.splitRatio, 50) / 100.0 : 1.0;
+
+                // Node 1
+                if (area.nodeId) {
+                    const val = nodeAreaMap.get(area.nodeId) || 0;
+                    nodeAreaMap.set(area.nodeId, val + (sizeHa * ratio));
+                }
+
+                // Node 2
+                if (area.nodeId2) {
+                    const val = nodeAreaMap.get(area.nodeId2) || 0;
+                    nodeAreaMap.set(area.nodeId2, val + (sizeHa * (1 - ratio)));
+                }
+            }
+        }
+
         for (const n of nodes) {
-            const surDepth = (n.canOverflow === false) ? 100.0 : 0;
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          ${this.pad(surDepth)} 0\n`;
+            // Realism Update: Enable Ponding for Manholes
+            let surDepth = 0;
+            let aPonded = 0;
+
+            if (n.isManhole) {
+                surDepth = 0;    // Overflows immediately at cover elevation (MaxDepth)
+
+                // Base ponding (20m^2) + 50% of connected catchment area
+                // 1 ha = 10,000 m^2
+                const connectedHa = nodeAreaMap.get(n.id) || 0;
+                aPonded = 20 + (connectedHa * 10000 * 0.5);
+
+            } else {
+                surDepth = 100.0; // Virtual/Sealed: Infinite surcharge allowed (pressurized)
+                aPonded = 0;      // No surface area
+            }
+
+            // Legacy/Override check: if explicitly set to canOverflow = false (Sealed Manhole)
+            if (n.canOverflow === false) {
+                surDepth = 100.0;
+                aPonded = 0;
+            }
+
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          ${this.pad(surDepth)} ${this.pad(aPonded)}\n`;
         }
         this.sections.push(text);
     }
@@ -225,7 +297,16 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
     addOutfalls(nodes) {
         let text = '[OUTFALLS]\n;;Name           Elevation  Type       Stage Data       Gated    RouteTo\n';
         for (const n of nodes) {
-            text += `${this.pad(n.id)} ${this.pad(n.z)} FREE\n`;
+            // Map UI outflowType to SWMM Type
+            // 'throttled' isn't a direct SWMM type, assuming FREE or NORMAL.
+            // If user wants specific stage (Gedrosselt usually implies control), ideal is Regulator.
+            // For node-only Outfall: FREE is standard.
+            // We'll annotate the type in comment if specific.
+            let type = 'FREE';
+            if (n.outflowType === 'normal') type = 'NORMAL';
+            if (n.outflowType === 'fixed') type = 'FIXED';
+
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(type)}${n.outflowType === 'throttled' ? ' ;Throttled' : ''} \n`;
         }
         this.sections.push(text);
     }
@@ -234,17 +315,42 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
         if (nodes.length === 0) return;
         let text = '[STORAGE]\n;;Name           Elev       MaxDepth   InitDepth  Shape      Curve Name/Params            SurDepth  Fevap\n';
         for (const n of nodes) {
-            // Simply functional box for now
-            const area = (n.volume || 10) / (n.depth || 1);
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          FUNCTIONAL ${area.toFixed(2)}      0          0\n`;
+            // Use maxDepth if provided, else default to 3m
+            const depth = this.safeFloat(n.maxDepth) > 0 ? this.safeFloat(n.maxDepth) : (this.safeFloat(n.depth) > 0 ? n.depth : 3.0);
+
+            // Calculate Area for functional storage
+            // If maxDepth is used, ensure Area matches Volume: Volume = Area * Depth -> Area = Vol / Depth
+            const volume = this.safeFloat(n.volume, 10);
+            const area = volume / depth;
+
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} 0          FUNCTIONAL ${area.toFixed(2)} 0          0\n`;
         }
         this.sections.push(text);
+    }
+
+    addInflows(nodes) {
+        let text = '[DWF]\n;;Node           Parameter  Average    TimePatterns\n';
+        let count = 0;
+        for (const n of nodes) {
+            const flow = this.safeFloat(n.constantInflow, 0);
+            if (flow > 0) {
+                // Formatting: Node FLOW Value
+                // SWMM DWF usually in same units as Flow Units? default CMS (m3/s) or LPS?
+                // Header says FLOW_UNITS CMS.
+                // Input is "l/s" in UI.
+                // Convert l/s to CMS: / 1000
+                const flowCMS = flow / 1000.0;
+                text += `${this.pad(n.id)} FLOW       ${flowCMS.toFixed(6)} \n`;
+                count++;
+            }
+        }
+        if (count > 0) this.sections.push(text);
     }
 
     addCoordinates(nodes) {
         let text = '[COORDINATES]\n;;Node           X-Coord    Y-Coord\n';
         for (const n of nodes) {
-            text += `${this.pad(n.id)} ${this.pad(n.x)} ${this.pad(n.y)}\n`;
+            text += `${this.pad(n.id)} ${this.pad(n.x)} ${this.pad(n.y)} \n`;
         }
         this.sections.push(text);
     }
@@ -280,9 +386,9 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
 
                 if (length <= 0.01) {
                     length = 10.0; // Fallback default as in legacy
-                    this.warnings.push(`Haltung ${e.id}: Länge fehlte/0, gesetzt auf 10.0m.`);
+                    this.warnings.push(`Haltung ${e.id}: Länge fehlte / 0, gesetzt auf 10.0m.`);
                 } else {
-                    this.warnings.push(`Haltung ${e.id}: Länge fehlte, berechnet aus Koordinaten: ${length.toFixed(2)}m.`);
+                    this.warnings.push(`Haltung ${e.id}: Länge fehlte, berechnet aus Koordinaten: ${length.toFixed(2)} m.`);
                 }
             }
 
@@ -293,12 +399,13 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
 
             if (kst <= 0) {
                 roughness = 0.011; // Default
-                this.warnings.push(`Haltung ${e.id}: Rauheit fehlte, gesetzt auf 0.011 (PVC).`);
+                this.warnings.push(`Haltung ${e.id}: Rauheit fehlte, gesetzt auf 0.011(PVC).`);
             } else if (kst > 1.0) {
                 roughness = 1.0 / kst; // Assume Kst (Strickler) -> Manning
             } else {
                 roughness = kst; // Assume Manning (already < 1.0), avoid double inversion
             }
+            console.log(`[SwmmBuilder] Link ${e.id}: Input kst=${kst}, Output Manning=${roughness.toFixed(4)}`);
 
             // Calc Offsets
             // InOffset = Z1 - NodeFrom.Z, OutOffset = Z2 - NodeTo.Z
@@ -363,12 +470,12 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
             // VALIDATION & DEFAULTS matching Reference
             if (geom1 <= 0.001) {
                 geom1 = 1.0;
-                this.warnings.push(`Haltung ${e.id}: Profilhöhe fehlte/0, gesetzt auf 1.000m.`);
+                this.warnings.push(`Haltung ${e.id}: Profilhöhe fehlte / 0, gesetzt auf 1.000m.`);
             }
 
             if ((shape.startsWith('RECT') || shape === 'TRAPEZOIDAL' || shape === 'ARCH') && geom2 <= 0.001) {
                 geom2 = 1.0;
-                this.warnings.push(`Haltung ${e.id}: Profilbreite fehlte/0, gesetzt auf 1.000m.`);
+                this.warnings.push(`Haltung ${e.id}: Profilbreite fehlte / 0, gesetzt auf 1.000m.`);
             }
             if (shape === 'TRAPEZOIDAL' && geom2 <= 0.001) geom2 = 1.0;
 
@@ -389,7 +496,7 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
                 if (typeof step.time === 'number') {
                     const h = Math.floor(step.time / 60);
                     const m = step.time % 60;
-                    timeStr = `${h}:${m.toString().padStart(2, '0')}`;
+                    timeStr = `${h}:${m.toString().padStart(2, '0')} `;
                 }
 
                 // Fix property access: RainModelService uses 'intensity', legacy might use 'value'
@@ -400,13 +507,13 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
                 // Assuming SWMM expects mm/hr for INTENSITY rain gages
                 val = val * 0.36;
 
-                text += `default_rain     ${this.fmtDate(this.options.startDate)} ${timeStr}      ${val.toFixed(4)}\n`;
+                text += `default_rain     ${this.formatDate(this.options.startDate)} ${timeStr}      ${val.toFixed(4)}\n`;
             }
         } else {
             // Default fake rain
-            text += `default_rain     ${this.fmtDate(this.options.startDate)} 00:00      0.0\n`;
-            text += `default_rain     ${this.fmtDate(this.options.startDate)} 01:00      10.0\n`;
-            text += `default_rain     ${this.fmtDate(this.options.startDate)} 02:00      0.0\n`;
+            text += `default_rain     ${this.formatDate(this.options.startDate)} 00:00      0.0\n`;
+            text += `default_rain     ${this.formatDate(this.options.startDate)} 01:00      10.0\n`;
+            text += `default_rain     ${this.formatDate(this.options.startDate)} 02:00      0.0\n`;
         }
         this.sections.push(text);
     }
@@ -422,12 +529,17 @@ RG1              INTENSITY ${interval}     1.0      TIMESERIES default_rain
         return String(val).padEnd(16);
     }
 
-    fmtDate(d) {
+    formatDate(d) {
         const pad = (n) => n.toString().padStart(2, '0');
+        // SWMM Date Format: MM/DD/YYYY
         return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`;
     }
 
-    fmtTime(d) {
+    formatTime(d, end = false) {
+        if (end && d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) {
+            // End time 00:00:00 usually means next day context, but SWMM handles date/time.
+            // Keep standard.
+        }
         const pad = (n) => n.toString().padStart(2, '0');
         return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }

@@ -117,16 +117,21 @@ const initThree = () => {
   // Scene
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf0f2f5);
-  scene.fog = new THREE.Fog(0xf0f2f5, 10, 500);
+  // Fog: Increase far plane significantly for large models
+  scene.fog = new THREE.Fog(0xf0f2f5, 100, 20000);
 
   // Camera
   const width = canvasContainer.value.clientWidth;
   const height = canvasContainer.value.clientHeight;
-  camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-  camera.position.set(0, 50, 50);
+  // Increase Far clipping plane for large networks
+  camera = new THREE.PerspectiveCamera(60, width / height, 0.5, 100000);
+  camera.position.set(0, 100, 100);
 
   // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      logarithmicDepthBuffer: true // Vital for z-precision at large scales
+  });
   renderer.setSize(width, height);
   renderer.shadowMap.enabled = true;
   canvasContainer.value.appendChild(renderer.domElement);
@@ -135,6 +140,7 @@ const initThree = () => {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
+  controls.maxDistance = 50000; // Allow zooming out far
 
   // Lights
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -152,6 +158,7 @@ const initThree = () => {
   // Event Listeners
   window.addEventListener('resize', onResize);
   canvasContainer.value.addEventListener('click', onClick);
+  canvasContainer.value.addEventListener('dblclick', onDoubleClick);
 
   buildScene();
   animate();
@@ -172,7 +179,7 @@ const buildScene = () => {
   scene.add(dirLight);
 
   // Ground Plane
-  const planeGeometry = new THREE.PlaneGeometry(1000, 1000);
+  const planeGeometry = new THREE.PlaneGeometry(100000, 100000);
   const planeMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.8 });
   const plane = new THREE.Mesh(planeGeometry, planeMaterial);
   plane.rotation.x = -Math.PI / 2;
@@ -451,6 +458,10 @@ const onResize = () => {
 };
 
 const onClick = (event) => {
+  // Prevent click if dragging
+  // Simple check: if movement < threshold?
+  // For now let's just use standard click.
+  
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -462,7 +473,7 @@ const onClick = (event) => {
     const obj = intersects.find(i => objectsMap.has(i.object));
     if (obj) {
       selectedElement.value = objectsMap.get(obj.object);
-      // Highlight?
+      // Highlight logic could go here
     } else {
       selectedElement.value = null;
     }
@@ -470,6 +481,53 @@ const onClick = (event) => {
     selectedElement.value = null;
   }
 };
+
+const onDoubleClick = (event) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(scene.children);
+
+  if (intersects.length > 0) {
+     const obj = intersects.find(i => objectsMap.has(i.object));
+     if (obj) {
+         centerOnElement(obj.object);
+     }
+  }
+};
+
+const centerOnElement = (mesh) => {
+    if (!mesh || !controls) return;
+    
+    // Get center of mesh
+    const center = new THREE.Vector3();
+    if (mesh.geometry.boundingBox) {
+        center.copy(mesh.geometry.boundingBox.getCenter(new THREE.Vector3()));
+        center.applyMatrix4(mesh.matrixWorld);
+    } else {
+        center.copy(mesh.position);
+    }
+
+    // Move Controls Target to new Center
+    // Optional: Smooth animation could be added here with TWEEN.js
+    controls.target.copy(center);
+    
+    // Zoom in a bit if too far?
+    // Keep current direction vector
+    const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const dist = offset.length();
+    
+    // If very far, bring closer
+    if (dist > 100) {
+        offset.setLength(50); // Zoom to 50m
+        camera.position.copy(center).add(offset);
+    }
+    
+    controls.update();
+};
+
 
 const resetView = () => {
   if (controls) controls.reset();

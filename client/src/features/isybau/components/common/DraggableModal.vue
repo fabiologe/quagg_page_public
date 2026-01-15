@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="draggable-modal-overlay" :class="{ 'pointer-events-none': !modalObj }">
+    <div v-if="isOpen" class="draggable-modal-overlay">
       <div 
         ref="modalRef"
         class="draggable-modal"

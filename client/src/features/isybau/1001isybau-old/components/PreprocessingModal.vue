@@ -113,7 +113,7 @@
                       </div>
 
                       <!-- 5: Outflow Type + Value -->
-                      <div v-if="node.type === 5" class="input-group-col">
+                      <div v-if="node.type == 5" class="input-group-col">
                         <select v-model="node.outflowType" class="small-select">
                             <option value="free">Freier Auslauf</option>
                             <option value="constant">Konstant</option>
@@ -121,6 +121,14 @@
                         <div v-if="node.outflowType === 'constant'" class="input-group">
                             <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input">
                             <span class="hint-text">Abfluss (l/s)</span>
+                        </div>
+                        <div class="input-group">
+                            <input type="number" v-model.number="node.volume" step="1" class="small-input">
+                            <span class="hint-text">Volumen (m³)</span>
+                        </div>
+                        <div class="input-group">
+                            <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input">
+                            <span class="hint-text">Zufluss (l/s)</span>
                         </div>
                       </div>
 
@@ -137,9 +145,33 @@
                       </div>
                       
                       <!-- Standard/Schacht fallback -->
-                      <div v-if="node.type === 'Standard' || node.type === 'Bauwerk'" class="input-group">
+                      <div v-if="node.type === 'Standard'" class="input-group">
                          <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input">
                          <span class="hint-text">Zufluss (l/s)</span>
+                      </div>
+
+                      <!-- Bauwerk (Generic) -->
+                      <div v-if="node.type === 'Bauwerk'" class="input-group-col">
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input">
+                             <span class="hint-text">Zufluss (l/s)</span>
+                         </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.volume" step="1" class="small-input">
+                             <span class="hint-text">Volumen (m³)</span>
+                         </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input">
+                             <span class="hint-text">Abfluss (l/s)</span>
+                         </div>
+                         <div class="input-group">
+                            <input 
+                                type="checkbox" 
+                                :checked="node.is_sink" 
+                                @change="node.is_sink = $event.target.checked"
+                            >
+                            <span class="hint-text">Ist Auslauf?</span>
+                         </div>
                       </div>
                     </td>
                     <td>

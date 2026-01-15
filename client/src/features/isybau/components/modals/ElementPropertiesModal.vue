@@ -33,9 +33,17 @@
               </select>
             </div>
             
+            <div class="form-group checkbox-group" style="margin-bottom: 1rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" v-model="formData.isManhole">
+                    Ist ein Schachtbauwerk
+                </label>
+                <small v-if="!formData.isManhole" class="hint">Virtueller Netzknoten (Druckdicht, kein Einstieg)</small>
+            </div>
+
             <div class="form-group">
                <label>Deckelhöhe (mNHN)</label>
-               <input v-model.number="formData.cover" type="number" step="0.01" class="form-input" required placeholder="z.B. 102.50" />
+               <input v-model.number="formData.cover" type="number" step="0.01" class="form-input" required placeholder="z.B. 102.50" :disabled="!formData.isManhole" />
             </div>
 
             <div class="form-group">
@@ -45,7 +53,7 @@
             
             <div class="form-group">
                <label>Durchmesser (m)</label>
-               <input v-model.number="formData.diameter" type="number" step="0.1" class="form-input" />
+               <input v-model.number="formData.diameter" type="number" step="0.1" class="form-input" :disabled="!formData.isManhole" />
              </div>
 
             <div class="form-group">
@@ -53,6 +61,13 @@
               <input :value="calculatedDepth" type="number" step="0.01" class="form-input" disabled />
               <small class="hint">Deckelhöhe - Sohlhöhe</small>
             </div>
+            
+             <div class="form-group checkbox-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" v-model="formData.canOverflow">
+                    Deckel offen (Checked) / Druckdicht (Unchecked)
+                </label>
+             </div>
           </template>
 
           <!-- Mode: EDGE -->
@@ -277,7 +292,7 @@ const initForm = () => {
     const defaults = { id: generateId(props.mode) };
     if (props.mode === 'node') {
         // Default Cover 2.0m, Z 0m -> Depth 2.0m
-        Object.assign(defaults, { type: "Schacht", z: 0, cover: 2.0, diameter: 1.0, depth: 2.0 });
+        Object.assign(defaults, { type: "Schacht", z: 0, cover: 2.0, diameter: 1.0, depth: 2.0, canOverflow: true, isManhole: true });
     } else if (props.mode === 'edge') {
         const defaultMat = 'Beton';
         Object.assign(defaults, { 

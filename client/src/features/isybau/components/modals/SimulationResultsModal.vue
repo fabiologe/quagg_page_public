@@ -312,6 +312,7 @@
       </div>
 
       <div class="modal-footer">
+        <button class="secondary-btn" @click="handlePrintReport" title="Als PDF speichern">🖨️ PDF Report</button>
         <button class="secondary-btn" @click="$emit('show-debug')">📝 Log-Daten</button>
         <button class="secondary-btn" @click="close">Schließen</button>
       </div>
@@ -322,6 +323,7 @@
 import { ref, computed, watch } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import { getMapping } from '../../utils/mappings.js';
+import { generateSimulationReport } from '../../utils/pdfGenerator.js';
 import { Line } from 'vue-chartjs';
 import { 
   Chart as ChartJS, 
@@ -399,6 +401,24 @@ const selectNode = (id) => {
 const clearSelection = () => {
   selectedEdgeId.value = null;
   selectedNodeId.value = null;
+};
+
+const handlePrintReport = () => {
+    // Gather Metadata via Store? We don't have direct access to store here but via props mostly.
+    // Assuming props contain most. For filename, we might need to assume or pass it.
+    // Or just use 'Isybau_Report'.
+    generateSimulationReport(
+        'Simulationsbericht',
+        { fileName: 'Projekt', version: '1.0' }, // Mock metadata for now or pass as prop
+        props.systemStats,
+        props.nodes,
+        props.edges,
+        props.areas,
+        props.nodeResults,
+        props.edgeResults,
+        props.subcatchmentResults,
+        props.timeSeries
+    );
 };
 
 defineExpose({

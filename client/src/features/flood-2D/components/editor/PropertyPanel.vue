@@ -54,6 +54,46 @@
             </div>
             <p class="help-text">Elevation offset relative to DGM</p>
           </div>
+
+          <div class="form-item">
+             <label>Volume (m³)</label>
+             <input 
+              type="number" min="0" step="1"
+              :value="selection.properties.volume" 
+              @input="updateProp('volume', $event.target.value)"
+              class="input-std"
+             />
+          </div>
+
+          <div class="form-item">
+             <label>Inflow (l/s)</label>
+             <input 
+              type="number" min="0" step="0.1"
+              :value="selection.properties.constantInflow" 
+              @input="updateProp('constantInflow', $event.target.value)"
+              class="input-std"
+             />
+          </div>
+
+          <div class="form-item">
+             <label>Outflow (l/s)</label>
+             <input 
+              type="number" min="0" step="0.1"
+              :value="selection.properties.constantOutflow" 
+              @input="updateProp('constantOutflow', $event.target.value)"
+              class="input-std"
+             />
+          </div>
+
+          <div class="checkbox-wrapper">
+             <input 
+              type="checkbox" 
+              :checked="selection.properties.is_sink"
+              @change="updateProp('is_sink', $event.target.checked)"
+              id="build_sink_chk"
+             />
+             <label for="build_sink_chk">Is Sink (Outfall)?</label>
+          </div>
         </div>
 
         <!-- OBSTACLE (Wall) -->
@@ -146,7 +186,7 @@ const emit = defineEmits(['start-simulation']);
 
 const updateProp = (key, value) => {
   let val = value;
-  if (['height_m', 'value', 'duration_s'].includes(key)) {
+  if (['height_m', 'value', 'duration_s', 'volume', 'constantInflow', 'constantOutflow'].includes(key)) {
      val = parseFloat(value);
   }
   store.updateFeatureProperties(store.selectedFeatureId, { [key]: val });

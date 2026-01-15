@@ -1,3 +1,5 @@
+import { getRoughness } from './mappings.js';
+
 /**
  * Parses ISYBAUXML content.
  * @param {string} xmlString - The raw XML string.
@@ -238,8 +240,11 @@ const parseNode = (obj, id) => {
         z,
         coverZ,
         depth,
+        coverZ,
+        depth,
         status,
-        diameter
+        diameter,
+        isManhole: status !== 2 // Status 2 = Virtual Node / Planning / Abandoned (Pure Network Point)
     };
 };
 
@@ -300,6 +305,13 @@ const parseEdge = (obj, id) => {
     const haltung = kante.getElementsByTagName("Haltung")[0];
     const length = parseFloat(obj.getElementsByTagName("Laenge")[0]?.textContent) || 0;
     const material = obj.getElementsByTagName("Material")[0]?.textContent;
+    // Debug Roughness
+    const rauheitRaw = obj.getElementsByTagName("Rauheit")[0]?.textContent;
+    console.log(`[XMLParser] Link ${id}: Material='${material}', Rauheit='${rauheitRaw}'`);
+
+    // Map Material to Roughness (kSt)
+    const roughness = getRoughness(material);
+
     const status = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
 
     // Profil info
@@ -319,6 +331,7 @@ const parseEdge = (obj, id) => {
         coords,
         length,
         material,
+        roughness, // Persist mapped roughness
         status,
         profile
     };

@@ -36,18 +36,25 @@ export class SwmmInputGenerator {
 
         // Helper to check for storage types (Becken, Klaeranlage, etc.)
         // 2: Becken, 3: Behandlungsanlage, 4: Klaeranlage, 12: Versickerung, 13: Regenwassernutzung
-        const isStorage = (n) => [2, 3, 4, 12, 13].includes(n.type) && this.safeFloat(n.volume) > 0;
+        // NEW: 'BUILDING' or ANY type if it has volume
+        const isStorage = (n) => {
+            const hasVol = this.safeFloat(n.volume) > 0;
+            // Allow specific storage types OR any node with explicit volume (except purely Standard?)
+            // We prioritize Volume presence.
+            const validTypes = [2, 3, 4, 12, 13, 5]; // Expanded to include 5 if hasVol
+            if (validTypes.includes(n.type) || typeof n.type === 'number') return hasVol;
+            if (n.type === 'BUILDING' || n.type === 'Bauwerk') return hasVol;
+            return false;
+        };
 
         // Helper to check for outfall
-        // Type 5: Auslaufbauwerk (from mappings.Bauwerkstyp)
-        // Or specific outflowType detected from UI logic
-        const isOutfall = (n) => n.type === 5 || n.type === '5' || (n.type === 'Bauwerk' && n.subtype === 5);
+        const isOutfall = (n) => n.type === 5 || n.type === '5' || (n.type === 'Bauwerk' && n.subtype === 5) || n.is_sink === true || ((n.type === 'BUILDING' || n.type === 'Bauwerk') && n.is_sink === true);
 
         for (const node of nodesMap.values()) {
-            if (isOutfall(node)) {
-                outfalls.push(node);
-            } else if (isStorage(node)) {
+            if (isStorage(node)) {
                 storageUnits.push(node);
+            } else if (isOutfall(node)) {
+                outfalls.push(node);
             } else {
                 junctions.push(node);
             }

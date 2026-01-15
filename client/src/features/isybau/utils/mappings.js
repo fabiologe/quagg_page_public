@@ -69,18 +69,33 @@ export const Profilart = {
 };
 
 // Standard Manning-Strickler Roughness (kst)
+// Standard Manning-Strickler Roughness (kst) - UI Options
 export const MaterialRoughness = {
-    "PVC": 90,
-    "Beton": 70,
+    "Kunststoff": 95,
+    "Beton": 80,
+    "Steinzeug": 90,
     "Metall": 90,
+    "Mauerwerk": 60,
     "Kies": 40,
     "Sand": 50,
     "Wiese": 30,
     "Verkrautet": 10,
     "Erde": 25,
-    "Steinzeug": 85, // Common fallback
-    "Mauerwerk": 60, // Common fallback
     "Unbekannt": 70
+};
+
+// Internal Mapping for ISYBAU Codes (Material -> kSt)
+const IsybauRoughnessMap = {
+    // Beton-Gruppe
+    "B": 80, "SB": 80, "BS": 80, "OB": 80, "P": 80, "PC": 85, "PCC": 80, "SPB": 80, "SFB": 80, "SZB": 75, "AZ": 85, "FZ": 85, "PHB": 85,
+    // Steinzeug / Mauerwerk
+    "STZ": 90, "MA": 60, "ZG": 65,
+    // Kunststoff
+    "PVC": 95, "PVCU": 95, "PE": 95, "PEHD": 95, "PP": 95, "GFK": 95, "GFKC": 95, "GFUP": 95, "GFVE": 95, "KST": 95, "PH": 90, "SFEP": 95, "SFUP": 95, "SFVE": 95, "TGEP": 95,
+    // Metall
+    "ST": 90, "CNS": 90, "GG": 85, "GGG": 90, "GJS": 90, "EIS": 80,
+    // Natur / Sonst
+    "BOD": 30, "RAS": 25, "PFL": 60, "W": 70, "MIX": 70
 };
 
 // Standard Runoff Coefficients (Psi)
@@ -141,15 +156,21 @@ export const getMapping = (category, code) => {
 };
 
 export const getRoughness = (material) => {
-    // Simple lookup, could be improved with fuzzy matching
     if (!material) return MaterialRoughness["Unbekannt"];
 
-    // Sort keys by length descending to match most specific first (e.g. "Stahlbeton" before "Beton")
-    const keys = Object.keys(MaterialRoughness).sort((a, b) => b.length - a.length);
+    // 1. Direct Lookup in UI Options (e.g. "Beton")
+    if (MaterialRoughness[material]) return MaterialRoughness[material];
 
+    // 2. Lookup in ISYBAU Codes (e.g. "STZ", "B")
+    if (IsybauRoughnessMap[material]) return IsybauRoughnessMap[material];
+
+    // 3. Fuzzy Search (Fallback)
+    // Sort keys by length descending to match most specific first
+    const keys = Object.keys(MaterialRoughness).sort((a, b) => b.length - a.length);
     for (const key of keys) {
         if (material.includes(key)) return MaterialRoughness[key];
     }
+
     return MaterialRoughness["Unbekannt"];
 };
 

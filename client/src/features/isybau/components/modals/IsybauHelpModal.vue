@@ -211,6 +211,7 @@ Pipe1    Node1      Node2    50.0     0.013       0          0
                     <li>❌ <strong>Keine 2D-Oberflächenabfluss-Simulation:</strong> Überflutetes Wasser wird als "Ponded Volume" protokolliert, fließt aber nicht oberirdisch weiter.</li>
                     <li>❌ <strong>Pumpen & Wehre:</strong> Aktuell werden keine Sonderbauwerke unterstützt.</li>
                     <li>❌ <strong>Schmutzfracht:</strong> Reine Hydraulik. Keine Stofftransportberechnung.</li>
+                    <li>❌ <strong>Dummes Stauvolumen:</strong> Volumen etc besitzen keine Simulationskurve</li>
                 </ul>
             </div>
         </div>
