@@ -48,6 +48,16 @@
             </div>
           </div>
 
+          <!-- ISYIFC Tool Card (Viewer Only) -->
+          <div class="tool-card" @click="$router.push('/tools/isyifc')">
+            <div class="icon">👀</div>
+            <div class="content">
+              <h3>ISYIFC Viewer</h3>
+              <p>3D-Viewer und IFC-Konverter ohne Simulationsfunktionen.</p>
+              <span class="link-text">Zum Tool &rarr;</span>
+            </div>
+          </div>
+
 
           <!-- Flood 2D Tool Card -->
           <div class="tool-card" @click="$router.push({ name: 'Flood2D' })">

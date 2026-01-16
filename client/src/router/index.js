@@ -59,6 +59,12 @@ const router = createRouter({
       meta: { layout: 'public' }
     },
     {
+      path: '/tools/isyifc',
+      name: 'isyifc',
+      component: () => import('@/features/isyifc/views/IsyIfcMain.vue'),
+      meta: { layout: 'public' }
+    },
+    {
       path: '/tools/flood-2d',
       name: 'Flood2D',
       component: () => import('@/features/flood-2D/views/Flood2DMain.vue'),
