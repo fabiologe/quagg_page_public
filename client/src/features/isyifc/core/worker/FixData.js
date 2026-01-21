@@ -26,7 +26,9 @@ export const normalizeGraph = (workerData) => {
     console.log(`[FixData] Normalizing ${flatNodes.length} nodes, ${flatEdges.length} edges...`);
 
     // --- NODES ---
+    const categoriesFound = new Set();
     for (const n of flatNodes) {
+        categoriesFound.add(n.category);
         if (!n.coords || n.coords.x === null || n.coords.y === null) {
             stats.badGeometryCount++;
             continue;
@@ -92,6 +94,7 @@ export const normalizeGraph = (workerData) => {
         });
         stats.nodesTotal++;
     }
+    console.log("[FixData] Node Categories:", Array.from(categoriesFound));
 
     // --- EDGES ---
     for (const e of flatEdges) {

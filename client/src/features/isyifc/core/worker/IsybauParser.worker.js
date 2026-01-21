@@ -230,7 +230,7 @@ self.onmessage = async (e) => {
                         },
                         shape: { type: 'Box', dim1: 0.2, dim2: 0.2 },
                         meta: {
-                            kennung: ap.Punktkennung, // RR, SE, GA...
+                            kennung: ap.Punktkennung, // RR, SE, GA, NN (Unknown)...
                             subType: ap.Punktkennung
                         }
                     });
@@ -273,6 +273,14 @@ self.onmessage = async (e) => {
                     // Coords
                     const c = getCoord(points[0]);
 
+                    // Map Bauwerk Type Code to String
+                    const bwTypeMap = {
+                        1: 'Pumpwerk', 2: 'Becken', 3: 'Behandlungsanlage', 4: 'Ueberlauf',
+                        5: 'Auslauf', 6: 'Einlauf', 7: 'Wehr', 8: 'Schieber',
+                        9: 'Rechen', 10: 'Sieb', 11: 'Filter', 12: 'Versickerung',
+                        13: 'Pumpensumpf', 14: 'Drossel', 15: 'Sonstiges'
+                    };
+
                     nodes.push({
                         id: id,
                         category: 'Bauwerk',
@@ -288,7 +296,7 @@ self.onmessage = async (e) => {
                             dim2: b
                         },
                         meta: {
-                            subType: bwType, // 1..15
+                            subType: bwTypeMap[bwType] || 'Bauwerk', // Mapped String
                             funktion: bw.Bauwerksfunktion
                         }
                     });
@@ -304,6 +312,7 @@ self.onmessage = async (e) => {
 
         const end = performance.now();
         console.log(`[Worker] Done. Stats:`, stats);
+        console.log(`[Worker] FINAL COUNTS: Schächte: ${stats.Schacht} | Anschlüsse: ${stats.AP} | Bauwerke: ${stats.Bauwerk} | Haltungen: ${stats.Haltung}`);
         console.log(`[Worker] Processing Time: ${(end - start).toFixed(2)}ms`);
 
         self.postMessage({

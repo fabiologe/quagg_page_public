@@ -97,7 +97,7 @@ Da Bauwerke polymorph sind, führt der Parser einen **Deep-Scan** auf dem `Knote
 
 *   **Geometrie:** Nimmt Koordinate des ersten Punktes.
 *   **Visualisierung:** Feste Größe `0.2m x 0.2m x 0.2m` Box.
-*   **Metadaten:** `Punktkennung` (z.B. `RR`, `SE`, `GA`) wird extrahiert, um im Frontend spezifische Icons (Regenrohr vs. Straßeneinlauf) zu laden.
+*   **Metadaten:** `Punktkennung` (z.B. `RR`, `SE`, `GA`, `NN` für Unbekannt) wird extrahiert, um im Frontend spezifische Icons (Regenrohr vs. Straßeneinlauf) zu laden.
 
 ---
 

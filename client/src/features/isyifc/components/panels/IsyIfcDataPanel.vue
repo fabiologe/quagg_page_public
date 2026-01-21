@@ -4,7 +4,7 @@
       <button 
         :class="{ active: activeTab === 'nodes' }" 
         @click="activeTab = 'nodes'">
-        Nodes ({{ nodeCount }})
+        Nodes ({{ nodeCount }}) <span style="font-size:0.7em; opacity:0.7">S:{{typeCounts.Manhole}} A:{{typeCounts.Connector}} B:{{typeCounts.Structure}}</span>
       </button>
       <button 
         :class="{ active: activeTab === 'edges' }" 
@@ -15,6 +15,14 @@
 
     <div class="search-bar">
       <input v-model="searchQuery" placeholder="Filter ID/Type..." />
+      
+      <!-- Type Filter (Only for Nodes) -->
+      <div v-if="activeTab === 'nodes'" class="filter-actions" style="margin-top:5px; display:flex; gap:5px;">
+        <button @click="typeFilter='All'" :class="{active: typeFilter==='All'}">All</button>
+        <button @click="typeFilter='Manhole'" :class="{active: typeFilter==='Manhole'}">Schacht</button>
+        <button @click="typeFilter='Connector'" :class="{active: typeFilter==='Connector'}">Anschluss</button>
+        <button @click="typeFilter='Structure'" :class="{active: typeFilter==='Structure'}">Bauwerk</button>
+      </div>
     </div>
 
     <div class="list-container">
@@ -28,7 +36,7 @@
         >
           <div class="item-header">
             <span class="id">{{ node.id }}</span>
-            <span class="type-badge" :class="node.type.toLowerCase()">{{ node.type }}</span>
+            <span class="type-badge" :class="node.type.toLowerCase()">{{ getDisplayType(node.type) }}</span>
           </div>
           <div class="item-meta">
             RW: {{ node.data?.rw?.toFixed(2) }} | HW: {{ node.data?.hw?.toFixed(2) }}
@@ -37,6 +45,7 @@
              DH: {{ node.data?.coverZ?.toFixed(2) }} | SH: {{ node.data?.bottomZ?.toFixed(2) }} | ΔH: {{ node.geometry.height?.toFixed(2) }}
           </div>
           <div class="item-meta second-line" style="margin-top:2px; font-size:0.75rem">
+             <span v-if="node.attributes?.subType" class="meta-tag sub-type">{{ node.attributes.subType }}</span>
              <span v-if="node.attributes?.systemType" class="meta-tag">{{ node.attributes.systemType }}</span>
              <span v-if="node.attributes?.year" class="meta-tag">Bj: {{ node.attributes.year }}</span>
              <span v-if="node.attributes?.status" class="meta-tag">Stat: {{ node.attributes.status }}</span>
@@ -84,6 +93,7 @@ const { graph } = storeToRefs(store); // Reactive ref to graph state
 
 const activeTab = ref('nodes');
 const searchQuery = ref('');
+const typeFilter = ref('All'); // 'All' | 'Manhole' | 'Connector' | 'Structure'
 
 // Computed based on reactive graph
 const allNodes = computed(() => {
@@ -102,24 +112,36 @@ const edgeCount = computed(() => graph.value.edges ? graph.value.edges.length : 
 const filteredNodes = computed(() => {
     const q = searchQuery.value.toLowerCase();
     const list = allNodes.value;
-    if (!q) return list.slice(0, 100);
     
-    return list.filter(n => 
-        String(n.id).toLowerCase().includes(q) || 
-        String(n.type).toLowerCase().includes(q)
-    ).slice(0, 100); 
+    let result = list;
+
+    // 1. Type Filter
+    if (typeFilter.value !== 'All') {
+        result = result.filter(n => n.type === typeFilter.value);
+    }
+
+    // 2. Search Query
+    if (q) {
+        result = result.filter(n => 
+            String(n.id).toLowerCase().includes(q) || 
+            String(n.type).toLowerCase().includes(q)
+        );
+    }
+
+    // 3. Limit (RENOVED)
+    return result; 
 });
 
 const filteredEdges = computed(() => {
     const q = searchQuery.value.toLowerCase();
     const list = allEdges.value;
-    if (!q) return list.slice(0, 100);
+    if (!q) return list; // REMOVED SLICE
 
     return list.filter(e => 
         String(e.id).toLowerCase().includes(q) ||
         String(e.sourceId).toLowerCase().includes(q) ||
         String(e.targetId).toLowerCase().includes(q)
-    ).slice(0, 100);
+    ); // REMOVED SLICE
 });
 
 const select = (id) => {
@@ -129,6 +151,25 @@ const select = (id) => {
 const getProfileType = (edge) => {
     return edge.profile?.type || 'Unknown';
 };
+
+const getDisplayType = (type) => {
+    const map = {
+        'Manhole': 'Schacht',
+        'Connector': 'Anschluss',
+        'Structure': 'Bauwerk'
+    };
+    return map[type] || type;
+};
+
+// Debug Counts
+const typeCounts = computed(() => {
+    const c = { Manhole: 0, Connector: 0, Structure: 0 };
+    if (!graph.value.nodes) return c;
+    for (const n of graph.value.nodes.values()) {
+        c[n.type] = (c[n.type] || 0) + 1;
+    }
+    return c;
+});
 </script>
 
 <style scoped>
@@ -169,6 +210,20 @@ const getProfileType = (edge) => {
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
+}
+
+.filter-actions button {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border: 1px solid #ddd;
+    background: #fff;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.filter-actions button.active {
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
 }
 
 .list-container {
@@ -217,10 +272,19 @@ li.selected {
     border-radius: 10px;
     background: #eee;
     color: #555;
+    text-transform: capitalize;
 }
+.type-badge.manhole { background: #fadbd8; color: #c0392b; }
+.type-badge.connector { background: #d5f5e3; color: #27ae60; }
+.type-badge.structure { background: #d7bde2; color: #8e44ad; }
 .type-badge.manhole { background: #ffebee; color: #c0392b; }
 .type-badge.connector { background: #e8f8f5; color: #16a085; }
 .type-badge.structure { background: #f4ecf7; color: #8e44ad; }
 .type-badge.edge { background: #eaf2f8; color: #2980b9; }
 
+.meta-tag.sub-type {
+    background: #e0f2fe; /* light blue */
+    color: #0369a1;
+    font-weight: 600;
+}
 </style>
