@@ -143,6 +143,8 @@ const convertDomToFixDataJson = (doc) => {
                 KantenTyp: txt(foundKante.el, "KantenTyp"),
                 Laenge: txt(foundKante.el, "Laenge"),
                 Material: txt(foundKante.el, "Material"),
+                Baujahr: txt(foundKante.el, "Baujahr"),
+                Entwaesserungsart: txt(foundKante.el, "Entwaesserungsart"),
                 Profil: {
                     Profilart: txt(foundKante.el.getElementsByTagName("Profil")[0], "Profilart"),
                     Profilbreite: txt(foundKante.el.getElementsByTagName("Profil")[0], "Profilbreite"),
@@ -151,10 +153,27 @@ const convertDomToFixDataJson = (doc) => {
             };
         }
 
+        // Create "Knoten" wrapper object if present
+        const knotenEl = el.getElementsByTagName("Knoten")[0];
+        const knoten = knotenEl ? {
+            KnotenTyp: txt(knotenEl, "KnotenTyp")
+        } : null;
+
         json.Stammdatenkollektiv.AbwassertechnischeAnlage.push({
             Objektbezeichnung: txt(el, "Objektbezeichnung"),
-            Objektart: txt(el, "Objektart"), // G100
-            Geometrie: { Geometriedaten: { Knoten: { Punkt: points } } },
+            Objektart: txt(el, "Objektart"), // 1=Edge, 2=Node
+            Status: txt(el, "Status"),
+            Baujahr: txt(el, "Baujahr"),
+            Entwaesserungsart: txt(el, "Entwaesserungsart"),
+            Material: txt(el, "Material"),
+            Geometrie: {
+                Geometriedaten: {
+                    Knoten: {
+                        Punkt: points
+                    }
+                }
+            },
+            Knoten: knoten, // Pass explicit Knoten data
             Schacht: schacht,
             Bauwerk: bauwerk,
             Anschlusspunkt: anschluss,
@@ -174,7 +193,34 @@ const convertDomToFixDataJson = (doc) => {
 
         let kanteObj = null;
         if (found) {
-            // Extract core topology & geometry
+            let coords = [];
+            // Parse Geometrie for Intermediate Points (IsyBau Logic)
+            const geom = found.el.getElementsByTagName("Geometrie")[0] || el.getElementsByTagName("Geometrie")[0];
+            if (geom) {
+                const points = geom.getElementsByTagName("Punkt");
+                if (points.length > 0) {
+                    for (let k = 0; k < points.length; k++) {
+                        const p = points[k];
+                        coords.push({
+                            x: txt(p, "Rechtswert") || txt(p, "Y"),
+                            y: txt(p, "Hochwert") || txt(p, "X"),
+                            z: txt(p, "Punkthoehe") || txt(p, "Z")
+                        });
+                    }
+                } else {
+                    const polyKantes = geom.getElementsByTagName("Kante");
+                    if (polyKantes.length > 0) {
+                        for (let k = 0; k < polyKantes.length; k++) {
+                            const pk = polyKantes[k];
+                            const startRaw = pk.getElementsByTagName("Start")[0];
+                            const endRaw = pk.getElementsByTagName("Ende")[0];
+                            if (startRaw) coords.push({ x: txt(startRaw, "Rechtswert"), y: txt(startRaw, "Hochwert"), z: txt(startRaw, "Punkthoehe") });
+                            if (endRaw && k === polyKantes.length - 1) coords.push({ x: txt(endRaw, "Rechtswert"), y: txt(endRaw, "Hochwert"), z: txt(endRaw, "Punkthoehe") });
+                        }
+                    }
+                }
+            }
+
             kanteObj = {
                 TagName: found.tag,
                 KnotenZulauf: txt(found.el, "KnotenZulauf"),
@@ -183,12 +229,13 @@ const convertDomToFixDataJson = (doc) => {
                 SohlhoeheAblauf: txt(found.el, "SohlhoeheAblauf"),
                 KantenTyp: txt(found.el, "KantenTyp"),
                 Laenge: txt(found.el, "Laenge"),
-                Material: txt(found.el, "Material")
+                Material: txt(found.el, "Material"),
+                Baujahr: txt(found.el, "Baujahr"),
+                Entwaesserungsart: txt(found.el, "Entwaesserungsart"),
+                Rauheit: txt(found.el, "Rauheit"),
+                Coords: coords
             };
 
-            // Extract Profile
-            // Profil can be direct child of Haltung OR sibling in Kante wrapper?
-            // Usually internal to Haltung/Kante
             const pEl = found.el.getElementsByTagName("Profil")[0] || el.getElementsByTagName("Profil")[0];
             if (pEl) {
                 kanteObj.Profil = {
@@ -202,9 +249,11 @@ const convertDomToFixDataJson = (doc) => {
         json.Hydraulikdatenkollektiv.HydraulikObjekt.push({
             Objektbezeichnung: txt(el, "Objektbezeichnung"),
             Laenge: txt(el, "Laenge"),
-            Material: txt(el, "Material"), // Fallback top level
-            Kante: kanteObj, // Pass generic Kante object
-            Profil: null // Handled inside KanteObj
+            Material: txt(el, "Material"),
+            Entwaesserungsart: txt(el, "Entwaesserungsart"),
+            Baujahr: txt(el, "Baujahr"),
+            Kante: kanteObj,
+            Profil: null
         });
     }
 

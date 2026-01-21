@@ -22,73 +22,51 @@ export const GeometryFactory = {
      */
     createNodeMesh(nodeData) {
         let mesh;
-        const { x, y, z } = nodeData.pos; // Note: FixData coords (Absolute)
-        const deckel = nodeData.deckel || (z + 2.5);
-        const { width, length } = nodeData.dim;
+        // FixData V2 provides Three.js coordinates in pos: { x, y: Elevation, z: -North }
+        const { x, y, z } = nodeData.pos;
+
+        // Use explicit geometry data if available
+        const coverZ = nodeData.geometry?.coverZ ?? (y + 2.5); // Fallback
+        const bottomZ = nodeData.geometry?.bottomZ ?? y;
+        const height = nodeData.geometry?.height ?? Math.abs(coverZ - bottomZ);
+
+        const { width, length } = nodeData.geometry?.dimensions || nodeData.dim || { width: 1, length: 1 };
+        const shapeType = nodeData.geometry?.shape || 'Cylinder';
 
         // Type Switching
-        if (nodeData.type === 'Schacht' || nodeData.isManhole) {
-            // Manhole: Cylinder from Sohle (z) to Deckel.
-            // Height = deckel - z
-            const h = Math.max(0.1, deckel - z);
-            const radius = width ? width / 2 : 0.5; // Default 1m diam
+        if (nodeData.type === 'Manhole' || nodeData.type === 'Schacht') {
+            // Manhole: Cylinder
+            // Height = calculated height
+            const h = Math.max(0.1, height);
+            const radius = width ? width / 2 : 0.5;
 
             const geom = new THREE.CylinderGeometry(radius, radius, h, 16);
             mesh = new THREE.Mesh(geom, MAT_MANHOLE);
 
-            // Position: Cylinder origin is center.
-            // We want bottom at 'z'. Center Y = z + h/2.
-            // Remapping Coord System:
-            // World X = Node X
-            // World Y = Elevation (Z + h/2)
-            // World Z = - Node Y (North)
+            // Pivot Adjustment: Cylinder origin is center.
+            // pos.y is Bottom Elevation (Sohle).
+            // We need center at Sohle + h/2.
+            mesh.position.set(x, y + h / 2, z);
 
-            // We assume the Caller has NOT transformed coordinates yet? 
-            // Or we return a mesh that needs to be positioned?
-            // "Apply the calculated Transform" suggests we do it.
-            // But usually we build logic in local space and set position.
-
-            // Wait, Master Prompt says: 
-            // "Three.js X = Data X ... Three.js Y = Data Z ... Three.js Z = - Data Y"
-            // We will set position here assuming "Global Group" context (or relative to offset).
-            // Let's assume input params (nodeData.pos) are already "Global Data Coordinates".
-            // The Viewer will likely subtract the OFFSET. 
-            // Actually, we should return the raw mesh and let the viewer position it?
-            // "Apply the calculated Transform (Pos/Rot)." -> Factory handles it.
-
-            // HOWEVER: We don't know the CenterOffset here.
-            // Strategy: We create the mesh at (0,0,0) and set .position to the *relative* coords if we knew them.
-            // OR: We return Mesh and Helper function `getPosition(data, offset)`?
-
-            // Let's assume the Viewer passes 'pos' that is ALREADY adjusted (Data-Center)? 
-            // Or we assume the Viewer manages the `position.set`.
-
-            // Re-reading Step 1: "Input: edgeData, startPos, endPos" for Edges.
-            // For Nodes: "Input: nodeData". imply nodeData has position.
-
-            // To keep Factory pure:
-            // It should probably take `position` as separate arg? or assume nodeData.pos is absolute.
-            // Let's assume we return a Mesh with `position` set to the Values. The Viewer handles parent group offset.
-
-            mesh.position.set(x, z + h / 2, -y); // Y-Up conversion
-
-        } else if (nodeData.type === 'Anschlusspunkt' || nodeData.status === 2) { // 2 = Planned/Virtual? Or Connection?
+        } else if (nodeData.type === 'Connector' || nodeData.type === 'Anschlusspunkt') {
             // Sphere
             const geom = new THREE.SphereGeometry(0.25, 8, 8);
             mesh = new THREE.Mesh(geom, MAT_CONNECT);
-            mesh.position.set(x, z, -y);
+            mesh.position.set(x, y, z); // Center at point
 
         } else {
-            // Bauwerk / Structure / Default
+            // Structure / Default
             // Box
             const w = width || 5;
             const l = length || 5;
-            const h = 3; // Default height
+            const h = height > 0.5 ? height : 3.0; // Minimal height for structures
 
             const geom = new THREE.BoxGeometry(w, h, l);
-            // Anchor at bottom? Box is centered.
+            // Pivot Adjustment: Box origin is center.
+            // For structures, pos.y is usually bottom ? Or unknown. 
+            // Let's assume bottom alignment.
             mesh = new THREE.Mesh(geom, MAT_STRUCT);
-            mesh.position.set(x, z + h / 2, -y);
+            mesh.position.set(x, y + h / 2, z);
         }
 
         // Check userData
@@ -105,7 +83,19 @@ export const GeometryFactory = {
      * @returns {THREE.Mesh}
      */
     createPipeMesh(edgeData, startPos, endPos) {
-        const { length, center, quaternion } = this.calculatePipeTransform(startPos, endPos);
+        // Hydraulic Invert (Sohlhöhen) Correction
+        // If exact Z is known, override the node-based position
+        const sZ = edgeData.sohleZulauf;
+        const eZ = edgeData.sohleAblauf;
+
+        const effectiveStart = startPos.clone();
+        const effectiveEnd = endPos.clone();
+
+        // Three.js Y is UP (Elevation)
+        if (sZ !== null && sZ !== undefined) effectiveStart.y = sZ;
+        if (eZ !== null && eZ !== undefined) effectiveEnd.y = eZ;
+
+        const { length, center, quaternion } = this.calculatePipeTransform(effectiveStart, effectiveEnd);
         const profil = edgeData.profile || {};
 
         // Dimensions

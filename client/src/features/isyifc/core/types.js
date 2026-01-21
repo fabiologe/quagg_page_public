@@ -45,6 +45,14 @@ export const ConnectorType = {
     Unbekannt: 'AP'
 };
 
+// SystemType (Entwässerungsart)
+export const SystemType = {
+    RW: 'Regenwasser',
+    SW: 'Schmutzwasser',
+    MW: 'Mischwasser',
+    Sonstige: 'Sonstige'
+};
+
 // ==========================================
 // JSDoc Definitions for Logic reference
 // ==========================================
@@ -83,5 +91,40 @@ export const ConnectorType = {
  * @property {number} profile.height - Meters
  * @property {number} [profile.diameter]
  * @property {string} [material]
+ * @property {string} [systemType] - SystemType Enum
+ * @property {number} [year] - Baujahr
+ * @property {number} [sohleZulauf] - Hydraulic Invert Start (Z)
+ * @property {number} [sohleAblauf] - Hydraulic Invert End (Z)
+ * @property {Array<{x:number, y:number, z?:number}>} [intermediatePoints] - Polyline path
  * @property {string[]} warnings
+ */
+
+/**
+ * @typedef {Object} IsyRawNode
+ * @property {string} id
+ * @property {number} kType - 0=Schacht, 1=Anschluss, 2=Bauwerk
+ * @property {Object} geometry - Normalized Geometric Properties
+ * @property {'Cylinder'|'Box'} geometry.shape
+ * @property {number} geometry.width
+ * @property {number} geometry.length
+ * @property {number} geometry.depth
+ * @property {number|null} geometry.coverZ
+ * @property {Object} attributes - Core Attributes
+ * @property {string} [attributes.material]
+ * @property {string} [attributes.subType]
+ * @property {Array<{attr:string, x:number, y:number, z:number}>} points - Raw Points
+ * @property {Object} raw - Full Metadata Dump
+ */
+
+/**
+ * @typedef {Object} IsyRawEdge
+ * @property {string} id
+ * @property {string} source
+ * @property {string} target
+ * @property {Object} profile - Normalized Profile
+ * @property {number} profile.typeCode
+ * @property {number} profile.width
+ * @property {number} profile.height
+ * @property {string} [material]
+ * @property {Object} raw - Full Metadata Dump
  */

@@ -31,7 +31,15 @@
             <span class="type-badge" :class="node.type.toLowerCase()">{{ node.type }}</span>
           </div>
           <div class="item-meta">
-            Z: {{ node.pos.y?.toFixed(2) }} | H: {{ node.geometry.height?.toFixed(2) }}
+            RW: {{ node.data?.rw?.toFixed(2) }} | HW: {{ node.data?.hw?.toFixed(2) }}
+          </div>
+          <div class="item-meta second-line">
+             DH: {{ node.data?.coverZ?.toFixed(2) }} | SH: {{ node.data?.bottomZ?.toFixed(2) }} | ΔH: {{ node.geometry.height?.toFixed(2) }}
+          </div>
+          <div class="item-meta second-line" style="margin-top:2px; font-size:0.75rem">
+             <span v-if="node.attributes?.systemType" class="meta-tag">{{ node.attributes.systemType }}</span>
+             <span v-if="node.attributes?.year" class="meta-tag">Bj: {{ node.attributes.year }}</span>
+             <span v-if="node.attributes?.status" class="meta-tag">Stat: {{ node.attributes.status }}</span>
           </div>
         </li>
       </ul>
@@ -46,10 +54,19 @@
         >
           <div class="item-header">
             <span class="id">{{ edge.id }}</span>
-            <span class="type-badge edge">{{ getProfileType(edge) }}</span>
+            <div class="right-badges">
+               <span class="type-badge edge">{{ getProfileType(edge) }}</span>
+               <span v-if="edge.systemType" class="type-badge sys-type" :class="edge.systemType">{{ edge.systemType }}</span>
+            </div>
           </div>
           <div class="item-meta">
             {{ edge.sourceId }} -> {{ edge.targetId }}
+          </div>
+          <div class="item-meta second-line">
+            L: {{ (edge.length || 0).toFixed(2) }}m | Mat: {{ edge.material || '-' }}
+          </div>
+           <div class="item-meta second-line" style="margin-top:2px; font-size:0.75rem">
+             <span v-if="edge.year" class="meta-tag">Bj: {{ edge.year }}</span>
           </div>
         </li>
       </ul>

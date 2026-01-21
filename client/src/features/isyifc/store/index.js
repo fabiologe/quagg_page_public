@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { parseIsyIfcXML } from '../utils/xmlParser.js';
+import { normalizeGraph } from '../core/worker/FixData.js';
 
 export const useIsyIfcStore = defineStore('isyifc-module', {
     state: () => ({
@@ -50,34 +50,54 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
          * Parses XML, sanitizes via FixData (via xmlParser), and updates state.
          * @param {string} rawXmlString 
          */
-        async processImport(rawXmlString) {
+        /**
+         * Main Import Action.
+         * Uses IsybauParser.worker (fast-xml-parser) and FixData.js
+         * @param {string} rawXmlString 
+         * @param {string} fileName
+         */
+        async processImport(rawXmlString, fileName = 'import.xml') {
             this.isProcessing = true;
             this.importErrors = [];
             this.graph.nodes = new Map();
             this.graph.edges = [];
 
             try {
-                // Short timeout to allow UI to show loading state
-                await new Promise(resolve => setTimeout(resolve, 50));
+                // 1. Parse using Worker
+                const worker = new Worker(new URL('../core/worker/IsybauParser.worker.js', import.meta.url), { type: 'module' });
 
-                const parsed = parseIsyIfcXML(rawXmlString);
+                const rawData = await new Promise((resolve, reject) => {
+                    worker.postMessage({ xmlContent: rawXmlString, fileName });
+                    worker.onmessage = (e) => {
+                        const { success, data, error } = e.data;
+                        worker.terminate();
+                        if (success) resolve(data);
+                        else reject(new Error(error));
+                    };
+                    worker.onerror = (err) => {
+                        worker.terminate();
+                        reject(err);
+                    };
+                });
 
-                // Update State
-                this.graph.nodes = parsed.network.nodes; // Now a Map
-                this.graph.edges = parsed.network.edges;
-                this.metadata = parsed.metadata || {};
+                console.log(`[Store] Raw Parsed: ${rawData.stats.count} objects in ${rawData.stats.processingTime.toFixed(2)}ms`);
 
-                // Inspections/Areas (Legacy support)
-                this.inspections = parsed.inspections || [];
-                // Areas might need adaptation if FixData doesn't handle them
-                this.areas = parsed.hydraulics.areas || [];
+                // 2. Normalize / Clean / Calculate Geometry (Main Thread for now)
+                // FixData takes { rawNodes, rawEdges }
+                const result = normalizeGraph(rawData);
 
-                // Capture Validation Errors from FixData (attached to metadata by xmlParser)
-                if (this.metadata.validation && this.metadata.validation.errors) {
-                    this.importErrors = this.metadata.validation.errors;
-                }
+                // 3. Update State
+                this.graph.nodes = result.nodes;
+                this.graph.edges = result.edges;
+                this.importErrors = result.errors;
 
-                console.log(`Store: Imported ${this.graph.nodes.size} nodes, ${this.graph.edges.length} edges.`);
+                // Metadata/Stats
+                this.metadata = {
+                    stats: result.stats,
+                    rawStats: rawData.stats
+                };
+
+                console.log(`[Store] Final: ${this.graph.nodes.size} nodes, ${this.graph.edges.length} edges.`);
 
             } catch (err) {
                 console.error("Import Failed:", err);
