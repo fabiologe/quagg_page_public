@@ -80,10 +80,12 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
                     };
                 });
 
-                console.log(`[Store] Raw Parsed: ${rawData.stats.count} objects in ${rawData.stats.processingTime.toFixed(2)}ms`);
+                const count = (rawData.nodes?.length || 0) + (rawData.edges?.length || 0);
+                const time = rawData.stats?.time || 0;
+                console.log(`[Store] Raw Parsed: ${count} objects in ${time.toFixed(2)}ms`);
 
                 // 2. Normalize / Clean / Calculate Geometry (Main Thread for now)
-                // FixData takes { rawNodes, rawEdges }
+                // FixData takes Flat Worker Data { nodes, edges }
                 const result = normalizeGraph(rawData);
 
                 // 3. Update State

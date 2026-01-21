@@ -1,229 +1,322 @@
 import { XMLParser } from 'fast-xml-parser';
-import { parseIsyValue } from '../logic/UnitMatrix.js';
 
 /**
  * IsybauParser.worker.js
  * 
- * Hybrid Parser:
- * 1. Core Data: Normalized Geometry & Type info (fast 3D).
- * 2. Meta Data: Raw Object dump (rich UI info).
+ * MASTER AUDIT IMPLEMENTATION
+ * Porting robust logic from Python xml_parser to JS.
+ * STRICTLY categorizes into: Schacht, Anschlusspunkt, Bauwerk, Haltung.
  */
+
+// --- HELPERS ---
+
+const parseGermanFloat = (val) => {
+    if (val === undefined || val === null) return null;
+    if (typeof val === 'number') return val;
+    // Replace German decimal comma with dot
+    const str = String(val).replace(',', '.').trim();
+    if (str === '') return null;
+    const num = parseFloat(str);
+    return isNaN(num) ? null : num;
+};
+
+// Heuristic Unit Normalization (mm -> m)
+const normalizeUnit = (val) => {
+    const n = parseGermanFloat(val);
+    if (n === null) return 0;
+    // Heuristic: If > 50, assume mm or cm. 
+    // Pipes are usually < 4.0m diameter.
+    if (Math.abs(n) > 50) return n / 1000.0;
+    return n;
+};
+
+// Helper: Get array of points regardless of XML structure (single obj vs array)
+const extractPoints = (geoBlock) => {
+    if (!geoBlock) return [];
+    // Path: Geometrie -> Geometriedaten -> Knoten -> Punkt
+    // Or just check recursively? The standard path is consistent usually.
+    const pts = geoBlock.Geometrie?.Geometriedaten?.Knoten?.Punkt;
+    if (!pts) return [];
+    return Array.isArray(pts) ? pts : [pts];
+};
 
 self.onmessage = async (e) => {
     const { xmlContent, fileName } = e.data;
 
     try {
         const start = performance.now();
-        console.log(`[Worker] Parsing ${fileName} (${xmlContent.length} bytes)...`);
+        console.log(`[Worker] Parsing ${fileName} with MASTER AUDIT logic...`);
 
-        // 1. Configure Parser
+        // 1. Configure Parser (Remove Namespaces is CRITICAL)
         const parser = new XMLParser({
             ignoreAttributes: false,
             attributeNamePrefix: "@_",
             processEntities: false,
             parseTagValue: false,
-            removeNsp: true, // <--- CRITICAL FIX: Ignore "isy:" prefixes
+            removeNsp: true,
             isArray: (name) => {
-                return name === 'AbwassertechnischeAnlage' || name === 'Punkt';
+                // Ensure list-like elements are always arrays
+                return [
+                    'AbwassertechnischeAnlage',
+                    'Punkt',
+                    'Auftrag',
+                    'Segment'
+                ].includes(name);
             }
         });
 
         const jsonObj = parser.parse(xmlContent);
 
-        console.log("[Worker Debug] Top Keys:", Object.keys(jsonObj));
-        if (jsonObj.Datenkollektive) console.log("[Worker Debug] Datenkollektive Keys:", Object.keys(jsonObj.Datenkollektive));
-        // Deep search helper
-        const findKey = (obj, key) => {
-            if (!obj || typeof obj !== 'object') return null;
-            if (key in obj) return obj[key];
-            for (const k of Object.keys(obj)) {
-                const res = findKey(obj[k], key);
-                if (res) return res;
-            }
-            return null;
-        };
+        // 2. LOCATE DATA ROOT
+        // Robust search for Stammdatenkollektiv
+        let objects = jsonObj.Datenkollektive?.Kollektiv?.find?.(k => k.Stammdatenkollektiv)?.Stammdatenkollektiv?.AbwassertechnischeAnlage;
 
-        // Aggressive Search for Stammdatenkollektiv
-        let stammdaten = jsonObj.Datenkollektive?.Kollektiv?.find?.(k => k.Stammdatenkollektiv)?.Stammdatenkollektiv;
-        if (!stammdaten) stammdaten = jsonObj.Stammdatenkollektiv || jsonObj.Datenkollektive?.Stammdatenkollektiv;
-        if (!stammdaten) {
-            // Try ignoring explicit structure and just find the object
-            const found = findKey(jsonObj, 'Stammdatenkollektiv');
-            if (found) {
-                console.log("[Worker Debug] Found Stammdatenkollektiv via deep search");
-                stammdaten = found;
-            }
+        // Fallback search
+        if (!objects) {
+            const findKey = (obj, key) => {
+                if (!obj || typeof obj !== 'object') return null;
+                if (key in obj) return obj[key];
+                for (const k of Object.keys(obj)) {
+                    const res = findKey(obj[k], key);
+                    if (res) return res;
+                }
+                return null;
+            };
+            const col = findKey(jsonObj, 'Stammdatenkollektiv');
+            if (col) objects = col.AbwassertechnischeAnlage;
         }
 
-        if (!stammdaten?.AbwassertechnischeAnlage) {
-            // Maybe AbwassertechnischeAnlage is direct?
-            const direct = findKey(jsonObj, 'AbwassertechnischeAnlage');
-            if (direct) {
-                console.log("[Worker Debug] Found AbwassertechnischeAnlage via deep search");
-                // Mock wrapper
-                stammdaten = { AbwassertechnischeAnlage: direct };
-            }
-        }
+        if (!objects) throw new Error("No 'AbwassertechnischeAnlage' found.");
+        if (!Array.isArray(objects)) objects = [objects];
 
-        if (!stammdaten?.AbwassertechnischeAnlage) {
-            console.error("[Worker Error] Structure Dump (Head):", JSON.stringify(jsonObj).slice(0, 500));
-            throw new Error("No 'AbwassertechnischeAnlage' found in XML. Check Console.");
-        }
+        // 3. STORAGE
+        const nodes = [];
+        const edges = [];
+        const stats = { Schacht: 0, AP: 0, Bauwerk: 0, Haltung: 0, Ignored: 0 };
 
-        const rawNodes = [];
-        const rawEdges = [];
-        const objects = stammdaten.AbwassertechnischeAnlage;
+        console.log(`[Worker] Iterating ${objects.length} objects...`);
 
-        // Helper to safely clone and remove heavy arrays for 'raw' metadata
-        const getMeta = (obj) => {
-            const clone = { ...obj };
-            if (clone.Geometrie) delete clone.Geometrie; // Remove heavy point arrays
-            return clone;
-        };
-
+        // 4. MAIN LOOP
         for (const obj of objects) {
             const id = obj.Objektbezeichnung;
             const objArt = parseInt(obj.Objektart);
 
-            // --- NODES (Objektart 2) ---
-            if (objArt === 2) {
-                const kType = parseInt(obj.Knoten?.KnotenTyp);
+            // --- EDGE (Objektart 1) ---
+            if (objArt === 1) {
+                stats.Haltung++;
+                const kante = obj.Kante || {};
+                const profil = kante.Profil || {};
+                const pCode = parseGermanFloat(profil.Profilart) || 0;
 
-                // CORE GEOMETRY EXTRACTION
-                const geo = {
-                    shape: 'Cylinder', // Default
-                    width: 1.0,
-                    length: 1.0,
-                    depth: 0,
-                    coverZ: null
+                // Shape Code Mapping
+                const shapeMap = {
+                    0: 'Circle', 1: 'Circle', 2: 'Circle', 4: 'Circle',
+                    3: 'Rect', 5: 'Rect',
+                    8: 'Trapez', 9: 'Trapez'
                 };
 
-                // 1. Schacht (Type 0)
-                if (kType === 0) {
-                    const schacht = obj.Knoten?.Schacht;
-                    const aufbau = schacht?.Aufbau;
-                    const deckel = schacht?.Deckel;
+                // CRITICAL UNIT CHECK
+                const w = normalizeUnit(profil.Profilbreite);
+                const h = normalizeUnit(profil.Profilhoehe) || w;
 
-                    // Helper map
-                    const formMap = (f) => (f && (f.includes('E') || f.includes('Q'))) ? 'Box' : 'Cylinder';
-
-                    geo.shape = formMap(aufbau?.Aufbauform || deckel?.Deckelform);
-                    geo.width = parseIsyValue('LaengeAufbau', aufbau?.LaengeAufbau) || 1.0;
-                    // Square fallback if width missing
-                    geo.length = parseIsyValue('BreiteAufbau', aufbau?.BreiteAufbau) || geo.width;
-
-                    geo.depth = parseIsyValue('Schachttiefe', schacht?.Schachttiefe);
-
-                    if (deckel?.Punkthoehe) {
-                        geo.coverZ = parseIsyValue('Punkthoehe', deckel.Punkthoehe);
-                    }
-                }
-                // 2. Connector (Type 1)
-                else if (kType === 1) {
-                    geo.shape = 'Box';
-                    geo.width = 0.2;
-                    geo.length = 0.2;
-                }
-                // 3. Structure (Type 2) - Bounding Box Search
-                else if (kType === 2) {
-                    geo.shape = 'Box';
-                    const bau = obj.Knoten?.Bauwerk;
-                    let l = 0, b = 0;
-
-                    const check = (sub) => {
-                        if (!sub) return;
-                        const sl = parseIsyValue('MaxLaenge', sub.MaxLaenge || sub.Laenge);
-                        const sb = parseIsyValue('MaxBreite', sub.MaxBreite || sub.Breite);
-                        if (sl > l) l = sl;
-                        if (sb > b) b = sb;
-                    };
-
-                    if (bau) {
-                        check(bau.Pumpwerk);
-                        check(bau.Becken);
-                        check(bau.Auslaufbauwerk);
-                        check(bau.Versickerungsanlage?.MuldeTeich);
-                        check(bau.Regenueberlauf); // Etc.
-                    }
-
-                    geo.width = b || 5.0;
-                    geo.length = l || 5.0;
-                }
-
-                // Points Extraction (UnitMatrix Normalization happens in logic/GeometryUtils? 
-                // Wait, User said "Do not normalize coordinates yet" in PREVIOUS prompt, 
-                // but NEW prompt says "Extract and normalize core fields".
-                // Points are complex. Let's pass RAW points, but Normalized OBJECT DIMENSIONS.
-                // Or normalize points here? 
-                // FixData V3 uses `parseNodeGeometry` which calls `parseIsyValue`.
-                // So passing RAW points is fine. The GeometryUtils will handle it.
-                // We just need to ensure `IsyRawNode` has the normalized dimensions in `geometry`.
-
-                const geoPoints = obj.Geometrie?.Geometriedaten?.Knoten?.Punkt || [];
-                const mappedPoints = geoPoints.map(p => ({
-                    attr: p.PunktattributAbwasser,
-                    x: p.Rechtswert || p.Y,
-                    y: p.Hochwert || p.X,
-                    z: p.Punkthoehe || p.Z
-                }));
-
-                rawNodes.push({
+                edges.push({
                     id: id,
-                    kType: kType,
-                    // Core Geometry (Normalized)
-                    geometry: geo,
-                    // Core Attributes
-                    attributes: {
-                        material: obj.Knoten?.Schacht?.Aufbau?.MaterialAufbau,
-                        subType: obj.Knoten?.Anschlusspunkt?.Punktkennung || obj.Knoten?.Bauwerk?.Bauwerkstyp
+                    category: 'Haltung',
+                    // Correct Mapping based on 6178_A64 XML:
+                    // Kante.KnotenZulauf -> Source
+                    // Kante.KnotenAblauf -> Target
+                    source: kante.KnotenZulauf || obj.Verlauf?.Anfangsknoten || obj.Verlauf?.StartKnoten,
+                    target: kante.KnotenAblauf || obj.Verlauf?.Endknoten || obj.Verlauf?.ZielKnoten,
+                    shape: {
+                        type: shapeMap[pCode] || 'Circle',
+                        dim1: w,
+                        dim2: h,
+                        profileCode: pCode
                     },
-                    // Points (Raw for GeometryUtils)
-                    points: mappedPoints,
-                    // Full Metadata
-                    raw: getMeta(obj)
+                    meta: {
+                        material: kante.Material || obj.Material || 'Beton',
+                        baujahr: parseGermanFloat(obj.Baujahr)
+                    }
                 });
             }
 
-            // --- EDGES (Objektart 1) ---
-            else if (objArt === 1) {
-                const kante = obj.Kante; // Or HydraulikObjekt logic? Usually Kante is in Stammdaten.
-                const profil = kante?.Profil;
+            // --- NODE (Objektart 2) ---
+            else if (objArt === 2) {
+                const kType = parseInt(obj.Knoten?.KnotenTyp); // G300
+                const points = extractPoints(obj);
 
-                rawEdges.push({
-                    id: id,
-                    source: obj.Verlauf?.Anfangsknoten || obj.Verlauf?.StartKnoten,
-                    target: obj.Verlauf?.Endknoten || obj.Verlauf?.ZielKnoten,
-
-                    // Core Profile (Normalized)
-                    profile: {
-                        typeCode: profil?.Profilart, // Keep code, map later? User said "Extract Profilart". FixData maps it.
-                        width: parseIsyValue('ProfilBreite', profil?.Profilbreite),
-                        height: parseIsyValue('ProfilHoehe', profil?.Profilhoehe),
-                    },
-                    material: kante?.Material || obj.Material,
-                    // Raw Metadata
-                    raw: getMeta(obj)
+                // Helper to find coords
+                const getCoord = (pt) => ({
+                    x: parseGermanFloat(pt?.Rechtswert || pt?.Y),
+                    y: parseGermanFloat(pt?.Hochwert || pt?.X),
+                    z: parseGermanFloat(pt?.Punkthoehe || pt?.Z)
                 });
+
+                // A. SCHACHT (Manhole)
+                if (kType === 0) {
+                    stats.Schacht++;
+                    const schacht = obj.Knoten?.Schacht || {};
+                    const aufbau = schacht.Aufbau || {};
+                    const deckel = schacht.Deckel || {};
+
+                    // Geometrie Logic: Scan for DMP / SMP
+                    let dmp = points.find(p => p.PunktattributAbwasser === 'DMP');
+                    let smp = points.find(p => p.PunktattributAbwasser === 'SMP');
+
+                    // Fallback to first point if DMP missing
+                    if (!dmp && points.length > 0) dmp = points[0];
+
+                    const cDMP = getCoord(dmp);
+                    let zDeckel = cDMP.z;
+                    let zSohle = getCoord(smp).z;
+
+                    // Fallback Logic: Calc Z using Depth
+                    const depth = parseGermanFloat(schacht.Schachttiefe);
+
+                    // If DMP missing but Deckel attribute present
+                    if (zDeckel === null && deckel.Punkthoehe) {
+                        zDeckel = parseGermanFloat(deckel.Punkthoehe);
+                    }
+
+                    if (zDeckel !== null && zSohle === null && depth) {
+                        zSohle = zDeckel - depth;
+                    }
+                    if (zSohle !== null && zDeckel === null && depth) {
+                        zDeckel = zSohle + depth;
+                    }
+
+                    // Shape Logic
+                    const form = aufbau.Aufbauform || 'R';
+                    const isBox = (form.includes('E') || form.includes('Q'));
+                    const dim1 = normalizeUnit(aufbau.LaengeAufbau) || 1.0;
+                    const dim2 = normalizeUnit(aufbau.BreiteAufbau) || dim1;
+
+                    nodes.push({
+                        id: id,
+                        category: 'Schacht',
+                        coords: {
+                            x: cDMP.x,
+                            y: cDMP.y,
+                            z_deckel: zDeckel,
+                            z_sohle: zSohle
+                        },
+                        shape: {
+                            type: isBox ? 'Box' : 'Cylinder',
+                            dim1: dim1,
+                            dim2: dim2
+                        },
+                        meta: {
+                            material: aufbau.MaterialAufbau,
+                            baujahr: parseGermanFloat(obj.Baujahr)
+                        }
+                    });
+                }
+
+                // B. ANSCHLUSSPUNKT (Connector)
+                else if (kType === 1) {
+                    stats.AP++;
+                    const ap = obj.Knoten?.Anschlusspunkt || {};
+                    const pt = points[0]; // Take first available
+                    const c = getCoord(pt);
+
+                    nodes.push({
+                        id: id,
+                        category: 'Anschlusspunkt',
+                        coords: {
+                            x: c.x,
+                            y: c.y,
+                            z_deckel: c.z,
+                            z_sohle: c.z ? c.z - 0.5 : null
+                        },
+                        shape: { type: 'Box', dim1: 0.2, dim2: 0.2 },
+                        meta: {
+                            kennung: ap.Punktkennung, // RR, SE, GA...
+                            subType: ap.Punktkennung
+                        }
+                    });
+                }
+
+                // C. BAUWERK (Structure)
+                else if (kType === 2) {
+                    stats.Bauwerk++;
+                    const bw = obj.Knoten?.Bauwerk || {};
+                    const bwType = parseInt(bw.Bauwerkstyp); // G400
+
+                    let l = 0, b = 0, h = 0;
+
+                    // Polymorphic Dimension Scan
+                    const check = (tag, lenField, widField) => {
+                        if (!tag) return;
+                        const tObj = Array.isArray(tag) ? tag[0] : tag; // Handle array quirk
+                        const valL = normalizeUnit(tObj[lenField]);
+                        const valB = normalizeUnit(tObj[widField]);
+                        if (valL) l = Math.max(l, valL);
+                        if (valB) b = Math.max(b, valB);
+                    };
+
+                    // Specific Rules per Audit
+                    // 1=Pumpwerk: MaxLaenge, MaxBreite
+                    if (bwType === 1) check(bw.Pumpwerk, 'MaxLaenge', 'MaxBreite');
+                    // 2=Becken: MaxLaenge, MaxBreite
+                    if (bwType === 2) check(bw.Becken, 'MaxLaenge', 'MaxBreite');
+                    // 5=Auslauf: Laenge, Breite (Note name difference)
+                    if (bwType === 5) check(bw.Auslaufbauwerk, 'Laenge', 'Breite');
+                    // 7=Wehr: Oeffnungsweite as Width?
+                    if (bwType === 7) check(bw.Wehr_Ueberlauf, 'Oeffnungsweite', 'Oeffnungsweite');
+                    // 12=Versickerung -> MuldeTeich
+                    if (bwType === 12) check(bw.Versickerungsanlage?.MuldeTeich, 'Laenge', 'Breite');
+
+                    // Defaults
+                    if (!l) l = 5.0;
+                    if (!b) b = 5.0;
+
+                    // Coords
+                    const c = getCoord(points[0]);
+
+                    nodes.push({
+                        id: id,
+                        category: 'Bauwerk',
+                        coords: {
+                            x: c.x,
+                            y: c.y,
+                            z_deckel: c.z,
+                            z_sohle: c.z ? c.z - 3.0 : null // Default depth
+                        },
+                        shape: {
+                            type: 'Box',
+                            dim1: l,
+                            dim2: b
+                        },
+                        meta: {
+                            subType: bwType, // 1..15
+                            funktion: bw.Bauwerksfunktion
+                        }
+                    });
+                }
+                else {
+                    stats.Ignored++;
+                }
+
+            } else {
+                stats.Ignored++;
             }
         }
 
         const end = performance.now();
-        console.log(`[Worker] Hybrid Parse Done. Nodes: ${rawNodes.length}, Edges: ${rawEdges.length}`);
+        console.log(`[Worker] Done. Stats:`, stats);
+        console.log(`[Worker] Processing Time: ${(end - start).toFixed(2)}ms`);
 
         self.postMessage({
             success: true,
             data: {
-                rawNodes,
-                rawEdges,
-                stats: {
-                    count: rawNodes.length + rawEdges.length,
-                    processingTime: end - start
-                }
+                nodes,
+                edges,
+                stats: { counts: stats, time: end - start }
             }
         });
 
     } catch (err) {
-        console.error("[Worker] Parse Error:", err);
+        console.error("[Worker] CRASH:", err);
         self.postMessage({ success: false, error: err.message });
     }
 };
