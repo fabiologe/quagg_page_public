@@ -175,8 +175,75 @@ DATA;`);
         }
 
         // PIPES
-        // TODO: Implement Pipes using similar mapping if needed
-        // Skipped for brevity in this task, focusing on Nodes integrity first.
+        for (const edge of this.edges) {
+            if (!edge.geometry || !edge.geometry.startPoint || !edge.geometry.endPoint) continue;
+
+            // Mapping Local Store -> IFC
+            const s = edge.geometry.startPoint;
+            const e = edge.geometry.endPoint;
+
+            const startX = s.x;
+            const startY = -s.z; // North
+            const startZ = s.y;  // Elevation
+
+            const endX = e.x;
+            const endY = -e.z;
+            const endZ = e.y;
+
+            // Vector
+            const dx = endX - startX;
+            const dy = endY - startY;
+            const dz = endZ - startZ;
+            const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (length < 0.001) continue;
+
+            // Axis Placement (Start Point, Z-Axis=Direction, Ref=X-Axis default)
+            // We need to orient the Z-Axis of the placement to match the pipe direction.
+            // IfcExtrudedAreaSolid extrudes along Z (0,0,1) normally. 
+            // If we rotate the placement, the extrusion follows.
+
+            const pt = this.point3D(startX, startY, startZ);
+            const zAxis = this.dir3D(dx / length, dy / length, dz / length);
+
+            // Ref axis (X) must be perpendicular to Z.
+            // If Z is vertical (0,0,1), X can be (1,0,0).
+            // General case: Z = (u,v,w). arbitrary up = (0,0,1). X = up x Z.
+            // If Z is parallel to global Z, use Y as up.
+            let rx, ry, rz;
+            if (Math.abs(dz / length) > 0.99) {
+                // Vertical pipe, use Y as ref
+                rx = 0; ry = 1; rz = 0; // Cross product logic needed?
+                // Actually simpler: Let IFC viewer handle default ref axis if null? 
+                // Some viewers complain. Better to provide one.
+                // Let's rely on default behavior for now (pass null for RefAxis)
+            }
+
+            // Placement
+            // We pass independent Direction IDs? No, addLine returns {ref}.
+            const placement = this.axisPlacement(pt, zAxis);
+            const localPlace = this.localPlacement(buildingPlacement, placement);
+
+            // Shape
+            const width = edge.profile?.width || 0.3;
+            const radius = width / 2;
+            const profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, null, radius]);
+
+            const pos = this.axisPlacement(this.point3D(0, 0, 0));
+            const solid = this.addLine('IfcExtrudedAreaSolid', [
+                profile, pos, this.dir3D(0, 0, 1), length
+            ]);
+
+            const shapeRep = this.addLine('IfcShapeRepresentation', [
+                repContext, "'Body'", "'SweptSolid'", [solid]
+            ]);
+            const productShape = this.addLine('IfcProductDefinitionShape', [null, null, [shapeRep]]);
+
+            const product = this.addLine('IfcFlowSegment', [
+                toIfcGuid(), ownerHistory, `'${edge.id}'`, "'Pipe'", "'Pipe'", localPlace, productShape, toIfcGuid()
+            ]);
+            elements.push(product);
+        }
 
         // Containment
         if (elements.length > 0) {
