@@ -1,201 +1,284 @@
+/**
+ * GeometryFactory.js - Phase 2 Core Engine
+ * 
+ * High-Performance Geometry Generation using THREE.InstancedMesh.
+ * Solves "World Origin" jittering by normalizing coordinates.
+ */
+
 import * as THREE from 'three';
 import { IsybauCodes } from '../domain/IsybauCodes.js';
 
-/**
- * GeometryFactory.js
- * Converts logical ISYIFC Graph objects (Nodes, Edges) into Three.js Meshes.
- * Handles Profile logic, positioning, and material assignment.
- */
+// --- CONSTANTS ---
+const ORIGIN = new THREE.Vector3(); // Will be set per build
+const TMP_MATRIX = new THREE.Matrix4();
+const TMP_POS = new THREE.Vector3();
+const TMP_QUAT = new THREE.Quaternion();
+const TMP_SCALE = new THREE.Vector3();
 
-// Materials (Shared/Reused)
-const MAT_PIPE = new THREE.MeshLambertMaterial({ color: 0x888888 }); // Gray
-const MAT_MANHOLE = new THREE.MeshLambertMaterial({ color: 0xaaaaaa }); // Light Gray
-const MAT_CONNECT = new THREE.MeshLambertMaterial({ color: 0xff0000 }); // Red
-const MAT_STRUCT = new THREE.MeshLambertMaterial({ color: 0x0000ff, transparent: true, opacity: 0.4 }); // Blue Transparent
+// Colors
+const COL_MANHOLE = new THREE.Color(0xaaaaaa);
+const COL_CONNECTOR = new THREE.Color(0xff0000); // Red for AP
+const COL_STRUCTURE = new THREE.Color(0x0000ff); // Blue Base
+const COL_PIPE_DEFAULT = new THREE.Color(0x888888);
+
+// System Type Colors
+const COL_SYS_RW = new THREE.Color(0x3498db); // Rain (Blue)
+const COL_SYS_SW = new THREE.Color(0xd35400); // Waste (Brown/Orange)
+const COL_SYS_MW = new THREE.Color(0x8e44ad); // Mixed (Purple)
+
+const getSystemColor = (type) => {
+    if (!type) return COL_PIPE_DEFAULT;
+    const t = type.toLowerCase();
+    if (t.includes('regen') || t === 'rw') return COL_SYS_RW;
+    if (t.includes('schmutz') || t === 'sw') return COL_SYS_SW;
+    if (t.includes('misch') || t === 'mw') return COL_SYS_MW;
+    return COL_PIPE_DEFAULT;
+};
 
 export const GeometryFactory = {
 
     /**
-     * Creates a Mesh for a Node.
-     * @param {Object} nodeData - The node object from FixData ({id, pos, deckel, dim, type...})
-     * @returns {THREE.Mesh} The created mesh.
+     * Builds the entire scene using InstancedMesh.
+     * @param {Object} graph - { nodes: Map, edges: Array }
+     * @returns {Object} { root: THREE.Group, instanceMap: Map<uuid+id, String>, origin: {x,y} }
      */
-    createNodeMesh(nodeData) {
-        let mesh;
-        // FixData V2 provides Three.js coordinates in pos: { x, y: Elevation, z: -North }
-        const { x, y, z } = nodeData.pos;
+    buildScene(graph) {
+        const root = new THREE.Group();
+        const instanceMap = new Map(); // Key: `${meshUuid}:${instanceId}` -> Value: objectId
 
-        // Use explicit geometry data if available
-        const coverZ = nodeData.geometry?.coverZ ?? (y + 2.5); // Fallback
-        const bottomZ = nodeData.geometry?.bottomZ ?? y;
-        const height = nodeData.geometry?.height ?? Math.abs(coverZ - bottomZ);
+        if (!graph.nodes || graph.nodes.size === 0) return { root, instanceMap, origin: { x: 0, y: 0 } };
 
-        const { width, length } = nodeData.geometry?.dimensions || nodeData.dim || { width: 1, length: 1 };
-        const shapeType = nodeData.geometry?.shape || 'Cylinder';
+        // 1. CALCULATE ORIGIN (Anti-Jitter)
+        // Find rough center or min point
+        const first = graph.nodes.values().next().value;
+        const originX = first.pos.x;
+        const originY = -first.pos.z; // -North
 
-        // Type Switching
-        if (nodeData.type === 'Manhole' || nodeData.type === 'Schacht') {
-            // Manhole: Cylinder
-            // Height = calculated height
-            const h = Math.max(0.1, height);
-            const radius = width ? width / 2 : 0.5;
+        // We set our module-level ORIGIN to subtract from all coords
+        // Store uses: x=RW, y=Elevation, z=-HW
+        // We want localX = RW - originX.
+        // localZ = -HW - (-originY) = -HW + originY.
 
-            const geom = new THREE.CylinderGeometry(radius, radius, h, 16);
-            mesh = new THREE.Mesh(geom, MAT_MANHOLE);
+        ORIGIN.set(originX, 0, -originY); // We shift X and Z. Y (Elevation) stays absolute (usually small enough, < 1000m)
 
-            // Pivot Adjustment: Cylinder origin is center.
-            // pos.y is Bottom Elevation (Sohle).
-            // We need center at Sohle + h/2.
-            mesh.position.set(x, y + h / 2, z);
+        // 2. PREPARE BUCKETS
+        // We need to count instances for each geometry type
+        const buckets = {
+            manhole: [],
+            connector: [],
+            structure: [], // Fallback for simple boxes
+            pipeCircle: [],
+            pipeRect: [], // TODO: Separate instancing or fallback
+        };
 
-        } else if (nodeData.type === 'Connector' || nodeData.type === 'Anschlusspunkt') {
-            // Sphere
+        // --- NODES ---
+        for (const node of graph.nodes.values()) {
+            if (node.type === 'Manhole' || node.type === 'Schacht') {
+                buckets.manhole.push(node);
+            } else if (node.type === 'Connector' || node.type === 'Anschlusspunkt') {
+                buckets.connector.push(node);
+            } else {
+                buckets.structure.push(node);
+            }
+        }
+
+        // --- EDGES ---
+        // TODO: Edges logic
+        // For now, put all edges in pipeCircle bucket or specialized
+        for (const edge of graph.edges) {
+            // Check if profile is weird? For now, standard pipes
+            buckets.pipeCircle.push(edge);
+        }
+
+        // 3. BUILD INSTANCED MESHES
+
+        // A. MANHOLES (Unit Cylinder)
+        if (buckets.manhole.length > 0) {
+            const geom = new THREE.CylinderGeometry(0.5, 0.5, 1.0, 16);
+            geom.translate(0, 0.5, 0); // Pivot at bottom
+            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff }); // White, tinted by instance color
+            const mesh = new THREE.InstancedMesh(geom, mat, buckets.manhole.length);
+            mesh.userData = { type: 'manhole' };
+
+            buckets.manhole.forEach((node, i) => {
+                this._setNodeTransform(mesh, i, node);
+                mesh.setColorAt(i, COL_MANHOLE);
+                instanceMap.set(`${mesh.uuid}:${i}`, node.id);
+            });
+            root.add(mesh);
+        }
+
+        // B. CONNECTORS (Unit Sphere)
+        if (buckets.connector.length > 0) {
             const geom = new THREE.SphereGeometry(0.25, 8, 8);
-            mesh = new THREE.Mesh(geom, MAT_CONNECT);
-            mesh.position.set(x, y, z); // Center at point
+            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const mesh = new THREE.InstancedMesh(geom, mat, buckets.connector.length);
 
-        } else {
-            // Structure / Default
-            // Box
-            const w = width || 5;
-            const l = length || 5;
-            const h = height > 0.5 ? height : 3.0; // Minimal height for structures
+            buckets.connector.forEach((node, i) => {
+                const x = node.pos.x - ORIGIN.x;
+                const y = node.pos.y;
+                const z = node.pos.z - ORIGIN.z; // node.pos.z is already -HW. ORIGIN.z is -originY.
 
-            const geom = new THREE.BoxGeometry(w, h, l);
-            // Pivot Adjustment: Box origin is center.
-            // For structures, pos.y is usually bottom ? Or unknown. 
-            // Let's assume bottom alignment.
-            mesh = new THREE.Mesh(geom, MAT_STRUCT);
-            mesh.position.set(x, y + h / 2, z);
+                TMP_POS.set(x, y, z);
+                TMP_QUAT.identity();
+                TMP_SCALE.set(1, 1, 1);
+                TMP_MATRIX.compose(TMP_POS, TMP_QUAT, TMP_SCALE);
+
+                mesh.setMatrixAt(i, TMP_MATRIX);
+                mesh.setColorAt(i, COL_CONNECTOR);
+                instanceMap.set(`${mesh.uuid}:${i}`, node.id);
+            });
+            root.add(mesh);
         }
 
-        // Check userData
-        mesh.userData = { id: nodeData.id, type: nodeData.type };
+        // C. PIPES
+        if (buckets.pipeCircle.length > 0) {
+            const geom = new THREE.CylinderGeometry(1, 1, 1, 8); // Radius 1, Height 1
+            geom.translate(0, 0.5, 0); // Pivot Bottom (Start) to Top (End)?
+            // Default Cylinder is Y-Up. Center at 0. Height 1 -> -0.5 to 0.5.
+            // If we pivot at 0 (Bottom), then scaling Y extends it towards +Y.
 
-        return mesh;
-    },
+            // Re-create geometry with pivot at bottom (0,0,0) -> growing up Y
+            // CylinderGeometry(rTop, rBottom, height)
+            // Default creates center at (0,0,0).
+            // We want base at (0,0,0).
 
-    /**
-     * Creates a Mesh for an Edge (Pipe).
-     * @param {Object} edgeData - Edge data from Store.
-     * @param {THREE.Vector3} startPos - Start Position (Three.js Space).
-     * @param {THREE.Vector3} endPos - End Position (Three.js Space).
-     * @returns {THREE.Mesh}
-     */
-    createPipeMesh(edgeData, startPos, endPos) {
-        // Hydraulic Invert (Sohlhöhen) Correction
-        // If exact Z is known, override the node-based position
-        const sZ = edgeData.sohleZulauf;
-        const eZ = edgeData.sohleAblauf;
+            const pipeGeom = new THREE.CylinderGeometry(0.5, 0.5, 1.0, 8); // Base radius 0.5 (Diameter 1)
+            pipeGeom.translate(0, 0.5, 0); // Shift so bottom is at 0,0,0
 
-        const effectiveStart = startPos.clone();
-        const effectiveEnd = endPos.clone();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const mesh = new THREE.InstancedMesh(pipeGeom, mat, buckets.pipeCircle.length);
 
-        // Three.js Y is UP (Elevation)
-        if (sZ !== null && sZ !== undefined) effectiveStart.y = sZ;
-        if (eZ !== null && eZ !== undefined) effectiveEnd.y = eZ;
+            buckets.pipeCircle.forEach((edge, i) => {
+                this._setPipeTransform(mesh, i, edge, graph.nodes);
 
-        const { length, center, quaternion } = this.calculatePipeTransform(effectiveStart, effectiveEnd);
-        const profil = edgeData.profile || {};
+                // Color by SystemType
+                // We need to check Source/Target node system type OR Edge attribute?
+                // Edge has systemType in V2
+                const col = getSystemColor(edge.systemType);
+                mesh.setColorAt(i, col);
 
-        // Dimensions
-        // Note: Length is calculated from geometry distances, but data.length exists too.
-        // We use geometric distance for visualization to close gaps.
-
-        let geometry;
-        const pType = profil.type; // integer code? "Rechteck"?
-        // ISYBAU Codes: 0=Kreis, 1=Ei, 2=Rechteck, ... (Need to check mapping, assuming string or mapped int)
-        // Prompt says: "IF ProfilArt == 'Rechteck'..."
-
-        // Map integer to String if needed, or check values.
-        // Let's assume normalized 'type' string or check both.
-        // 0: Kreis, 1: Ei, 2: Rechteck, 5: Trapez ...
-
-        const isRect = pType === 2 || String(pType).toLowerCase() === 'rechteck';
-        const isTrap = pType === 5 || String(pType).toLowerCase() === 'trapez';
-
-        const h = profil.height || 0.3;
-        const w = profil.width || 0.3;
-
-        if (isRect) {
-            // BoxGeometry(width, height, depth)
-            // We align along Y axis (Pipe Transform Standard).
-            // So Width=w, Height=length, Depth=h? No.
-            // Cylinder is radius-based. Box definition:
-            // If we rotate a Box(w, length, h) with the same quaternion as Cylinder?
-            // Cylinder defaults to Y-UP.
-            geometry = new THREE.BoxGeometry(w, length, h);
-
-        } else if (isTrap) {
-            // Using Shape + Extrude
-            const shape = new THREE.Shape();
-            // Draw Trapezoid profile (centered)
-            const topW = w;
-            const botW = w * 0.7; // arbitrary trapezoid factor? or standard?
-            // Let's make a simple one.
-            shape.moveTo(-topW / 2, h / 2);
-            shape.lineTo(topW / 2, h / 2);
-            shape.lineTo(botW / 2, -h / 2);
-            shape.lineTo(-botW / 2, -h / 2);
-            shape.closePath();
-
-            const extrudeSettings = {
-                steps: 1,
-                depth: length,
-                bevelEnabled: false
-            };
-            geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-            // Fix Origin: Extrude starts at 0 and goes to 'depth' along Z.
-            // We need to center it along Z (length/2) and then rotate to align Y?
-            // Default Extrude is along Z axis.
-            // Our transform expects Y axis alignment.
-            geometry.center(); // Centers geometry bounding box at (0,0,0)
-
-            // Now orient: Extrude is along Z. We need it along Y.
-            geometry.rotateX(Math.PI / 2);
-
-        } else {
-            // Circle / Default
-            const radius = h / 2; // Diameter = height
-            geometry = new THREE.CylinderGeometry(radius, radius, length, 12);
+                instanceMap.set(`${mesh.uuid}:${i}`, edge.id);
+            });
+            root.add(mesh);
         }
 
-        const mesh = new THREE.Mesh(geometry, MAT_PIPE);
+        // STRUCTURES (Simple Box fallback)
+        if (buckets.structure.length > 0) {
+            const geom = new THREE.BoxGeometry(1, 1, 1);
+            geom.translate(0, 0.5, 0);
+            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+            const mesh = new THREE.InstancedMesh(geom, mat, buckets.structure.length);
 
-        // Apply Transform
-        mesh.position.copy(center);
-        mesh.quaternion.copy(quaternion);
+            buckets.structure.forEach((node, i) => {
+                // Similar to Node
+                const x = node.pos.x - ORIGIN.x;
+                const bottomZ = node.geometry?.bottomZ ?? node.pos.y;
+                const z = node.pos.z - ORIGIN.z;
 
-        // Metadata
-        mesh.userData = { id: edgeData.id, type: 'edge' }; // 'Haltung' or 'Leitung'
+                const w = node.geometry?.dimensions?.width || 5;
+                const l = node.geometry?.dimensions?.length || 5;
+                const h = node.geometry?.height || 3;
 
-        return mesh;
+                TMP_POS.set(x, bottomZ, z);
+                TMP_QUAT.identity();
+                TMP_SCALE.set(w, h, l); // Box(1,1,1) -> Scaled
+                TMP_MATRIX.compose(TMP_POS, TMP_QUAT, TMP_SCALE);
+
+                mesh.setMatrixAt(i, TMP_MATRIX);
+                mesh.setColorAt(i, COL_STRUCTURE);
+                instanceMap.set(`${mesh.uuid}:${i}`, node.id);
+            });
+            root.add(mesh);
+        }
+
+
+        return { root, instanceMap, origin: { x: originX, y: originY } };
     },
 
-    /**
-     * Calculates Position and Rotation to align a default Y-Axis object
-     * between two points.
-     * @param {THREE.Vector3} v1 
-     * @param {THREE.Vector3} v2 
-     */
-    calculatePipeTransform(v1, v2) {
-        // Distance
-        const length = v1.distanceTo(v2);
+    // --- HELPERS ---
 
-        // Center
-        const center = v1.clone().add(v2).multiplyScalar(0.5);
+    _setNodeTransform(mesh, index, node) {
+        // Coords
+        const x = node.pos.x - ORIGIN.x;
+        const z = node.pos.z - ORIGIN.z;
 
-        // Rotation (Quaternion)
-        // Cylinder default is Y-Up (0, 1, 0)
-        // We want to rotate (0, 1, 0) to match (v2 - v1).normalized()
+        // Vertical Logic
+        const coverZ = node.geometry?.coverZ ?? (node.pos.y + 2);
+        const bottomZ = node.geometry?.bottomZ ?? node.pos.y;
+        let height = Math.abs(coverZ - bottomZ);
 
-        const dir = v2.clone().sub(v1).normalize();
+        // Exception: Height 0
+        if (height < 0.05) height = 0.1;
 
-        const quaternion = new THREE.Quaternion();
-        const axis = new THREE.Vector3(0, 1, 0); // Default Cylinder Axis
+        // Position: Bottom
+        const y = bottomZ;
 
-        quaternion.setFromUnitVectors(axis, dir);
+        // Scale
+        // Unit Cylinder has Radius 0.5 (Dia 1.0) and Height 1.0
+        // We want Width (Diameter) and Height.
+        const width = node.geometry?.dimensions?.width || 1.0;
 
-        return { length, center, quaternion };
+        // Scale X/Z by width (Diameter). Since Unit Dia is 1, Scale is width.
+        // Scale Y by height.
+
+        TMP_POS.set(x, y, z);
+        TMP_QUAT.identity();
+        TMP_SCALE.set(width, height, width);
+
+        TMP_MATRIX.compose(TMP_POS, TMP_QUAT, TMP_SCALE);
+        mesh.setMatrixAt(index, TMP_MATRIX);
+    },
+
+    _setPipeTransform(mesh, index, edge, nodesMap) {
+        const src = nodesMap.get(edge.sourceId);
+        const tgt = nodesMap.get(edge.targetId);
+
+        if (!src || !tgt) {
+            // Collapse to 0
+            mesh.setMatrixAt(index, new THREE.Matrix4().scale(new THREE.Vector3(0, 0, 0)));
+            return;
+        }
+
+        // Logic: Start at Source (Hydraulic Z), Look at Target
+        // Origin Shift
+        const sx = src.pos.x - ORIGIN.x;
+        const sy = (edge.sohleZulauf ?? src.geometry?.bottomZ ?? src.pos.y);
+        const sz = src.pos.z - ORIGIN.z;
+
+        const tx = tgt.pos.x - ORIGIN.x;
+        const ty = (edge.sohleAblauf ?? tgt.geometry?.bottomZ ?? tgt.pos.y);
+        const tz = tgt.pos.z - ORIGIN.z;
+
+        const start = new THREE.Vector3(sx, sy, sz);
+        const end = new THREE.Vector3(tx, ty, tz);
+
+        const length = start.distanceTo(end);
+
+        if (length < 0.01) {
+            mesh.setMatrixAt(index, new THREE.Matrix4().scale(new THREE.Vector3(0, 0, 0)));
+            return;
+        }
+
+        // Rotation
+        // Cylinder default (with our pivot fix) is Y-Up.
+        // We construct a matrix that looks at target.
+        // LookAt makes Z point to target. We need Y to point to target.
+        // Standard trick: lookAt(end, start, up). Then rotate X -90?
+
+        // Alternative: Quaternion from (0,1,0) to Direction.
+        const dir = end.clone().sub(start).normalize();
+        TMP_QUAT.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+
+        // Scale
+        // Unit Pipe has Dia 1.
+        // We want width.
+        const width = edge.profile?.width || 0.3;
+        TMP_SCALE.set(width, length, width); // Scale Y is length
+
+        TMP_POS.copy(start);
+
+        TMP_MATRIX.compose(TMP_POS, TMP_QUAT, TMP_SCALE);
+        mesh.setMatrixAt(index, TMP_MATRIX);
     }
 };

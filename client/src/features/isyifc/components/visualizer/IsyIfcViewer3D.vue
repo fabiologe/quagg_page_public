@@ -197,61 +197,24 @@ const buildScene = () => {
     
     // Defer to next frame to show loading UI
     setTimeout(() => {
-        networkGroup = new THREE.Group();
+        // Phase 2: Instanced Build
+        const { root, instanceMap, origin } = GeometryFactory.buildScene(graph.value);
         
-        // 2. Nodes
-        graph.value.nodes.forEach(node => {
-            try {
-                // GeometryFactory MUST be updated to accept INode structure
-                const mesh = GeometryFactory.createNodeMesh(node);
-                networkGroup.add(mesh);
-                objectsMap.set(mesh.id, node.id); // Map ThreeID -> DataID
-            } catch (e) {
-                console.error("Failed to build node:", node.id, e);
-            }
-        });
-
-        // 3. Edges
-        const nodeMap = store.nodeMap;
-        graph.value.edges.forEach(edge => {
-           try {
-               const nStart = nodeMap.get(edge.sourceId);
-               const nEnd = nodeMap.get(edge.targetId);
-               
-               if (nStart && nEnd) {
-                   // Coordinates are already in Three.js space (Y Up) in FixData
-                   const vStart = new THREE.Vector3(nStart.pos.x, nStart.pos.y, nStart.pos.z);
-                   const vEnd = new THREE.Vector3(nEnd.pos.x, nEnd.pos.y, nEnd.pos.z);
-                   
-                   // Overwrite hydraulic heights if available in edge raw data (for slope vis)
-                   // But for now, node center-to-center is safe.
-                   // Or use edge._sohleZulauf if we want hydraulic lines.
-                   // Let's use Node BottomZ for bottoms of pipes?
-                   // No, pipe axis logic is complex. 
-                   // Let's rely on node placement for now.
-
-                   const mesh = GeometryFactory.createPipeMesh(edge, vStart, vEnd);
-                   networkGroup.add(mesh);
-                   objectsMap.set(mesh.id, edge.id);
-               }
-           } catch (e) {
-               console.error("Failed to build edge:", edge.id, e);
-           }
-        });
-
-        // 4. Center the Group
-        const center = store.center; // {x, y} -> this y is actually Z in Three.js space? 
-        // Checks store center logic: sumY += n.pos.z (Correct).
-        // So Center returns {x, y(which is z)}.
-        
-        networkGroup.position.set(-center.x, 0, -center.y);
-        
+        networkGroup = root;
         scene.add(networkGroup);
         
-        // Reset View to new center
-        resetView();
+        // Store Instance Map for Raycasting
+        // We use a global or module-level map? Better attached to the component instance but non-reactive
+        // Let's store it in objectsMap references
+        objectsMap.clear(); 
+        for (const [key, val] of instanceMap.entries()) {
+            objectsMap.set(key, val);
+        }
+
+        console.log(`[Viewer] Built Scene. Origin: ${origin.x}, ${origin.y}`);
         
         loading.value = false;
+        render(); // Force render
     }, 10);
 };
 
@@ -269,11 +232,20 @@ const onClick = (e) => {
 
     if (intersects.length > 0) {
         // Find first with mapped ID
-        const hit = intersects.find(i => objectsMap.has(i.object.id));
+        const hit = intersects.find(i => {
+             // For InstancedMesh, we use UUID:InstanceID
+             // For normal Mesh, we use UUID or ID.
+             const key = i.object.uuid + ':' + (i.instanceId ?? '');
+             if (objectsMap.has(key)) return true;
+             // Legacy/Fallback (if we mix types)
+             return objectsMap.has(i.object.id);
+        });
+
         if (hit) {
-            const id = objectsMap.get(hit.object.id);
+            let id = objectsMap.get(hit.object.uuid + ':' + (hit.instanceId ?? ''));
+            if (!id) id = objectsMap.get(hit.object.id);
+            
             store.setSelected(id);
-            // Highlight logic (Flash/Color)?
             return;
         }
     }

@@ -120,6 +120,12 @@ export const normalizeGraph = (workerData) => {
             material: e.meta.material,
             systemType: SystemType.Mischwasser,
             year: e.meta.baujahr || 0,
+
+            // New Hydraulic & Geometry Props
+            sohleZulauf: e.meta.sohleZulauf,
+            sohleAblauf: e.meta.sohleAblauf,
+            intermediatePoints: e.geometry ? e.geometry.waypoints : [],
+
             warnings: []
         });
         stats.edgesTotal++;

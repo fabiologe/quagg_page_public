@@ -102,40 +102,111 @@ self.onmessage = async (e) => {
             const objArt = parseInt(obj.Objektart);
 
             // --- EDGE (Objektart 1) ---
+            // --- EDGE (Objektart 1) ---
             if (objArt === 1) {
-                stats.Haltung++;
-                const kante = obj.Kante || {};
-                const profil = kante.Profil || {};
+                // 1. SUB-TYPE DETECTION
+                let edgeData = null;
+                let edgeType = 'Haltung';
+
+                if (obj.Haltung) { edgeData = obj.Haltung; edgeType = 'Haltung'; }
+                else if (obj.Leitung) { edgeData = obj.Leitung; edgeType = 'Leitung'; }
+                else if (obj.Rinne) { edgeData = obj.Rinne; edgeType = 'Rinne'; }
+                else if (obj.Gerinne) { edgeData = obj.Gerinne; edgeType = 'Gerinne'; }
+                else {
+                    // Fallback for older formats
+                    edgeData = obj.Kante || {};
+                    edgeType = 'Unbekannt';
+                }
+
+                stats.Haltung++; // We count all edges as "Haltungen" in stats for now
+
+                // 2. DATA POINTERS
+                // Data is nested inside the subtype tag!
+                const verlauf = edgeData.Verlauf || {};
+                const profil = edgeData.Profil || {};
+                const material = edgeData.Material || obj.Material; // Fallback to main
+
+                // 3. TOPOLOGY (Connectivity)
+                // "von" -> Verlauf.Anfangsknoten (Priority) OR Verlauf.StartKnoten
+                // "bis" -> Verlauf.Endknoten (Priority) OR Verlauf.ZielKnoten
+                const src = verlauf.Anfangsknoten || verlauf.StartKnoten;
+                const tgt = verlauf.Endknoten || verlauf.ZielKnoten;
+
+                if (!src || !tgt) {
+                    // console.warn(`[Worker] Edge ${id} missing source or target. Skipping.`);
+                    // stats.Ignored++; 
+                    // continue; // Or keep it and let FixData filter it? Best to keep raw data.
+                }
+
+                // 4. PROFILE LOGIC
                 const pCode = parseGermanFloat(profil.Profilart) || 0;
 
-                // Shape Code Mapping
+                // Strict Unit Check (> 9 means mm -> m)
+                const strictNormalize = (val) => {
+                    const n = parseGermanFloat(val);
+                    if (n === null) return null;
+                    if (Math.abs(n) > 9) return n / 1000.0;
+                    return n;
+                };
+
+                const w = strictNormalize(profil.Profilbreite) || 0;
+                const h = strictNormalize(profil.Profilhoehe) || w; // Fallback Circle
+
+                // Profile Mapping G205
                 const shapeMap = {
-                    0: 'Circle', 1: 'Circle', 2: 'Circle', 4: 'Circle',
+                    0: 'Circle', 1: 'Circle', 2: 'Circle', 4: 'Circle', 23: 'Circle',
                     3: 'Rect', 5: 'Rect',
                     8: 'Trapez', 9: 'Trapez'
                 };
 
-                // CRITICAL UNIT CHECK
-                const w = normalizeUnit(profil.Profilbreite);
-                const h = normalizeUnit(profil.Profilhoehe) || w;
+                // Ei/Maul Fallback (Code 1, 2)
+                // If only width is given, estimate height
+                let finalH = h;
+                if ((pCode === 1 || pCode === 2) && w > 0 && (!profil.Profilhoehe)) {
+                    finalH = w * 1.5; // 3:2 Ratio assumption
+                }
+
+
+                // 5. GEOMETRY (Knickpunkte)
+                // Path: Geometrie.Geometriedaten.Kante.Knickpunkt
+                const geoKante = edgeData.Geometrie?.Geometriedaten?.Kante;
+                const rawPoints = geoKante?.Knickpunkt;
+                let waypoints = [];
+
+                if (rawPoints) {
+                    const kpList = Array.isArray(rawPoints) ? rawPoints : [rawPoints];
+                    waypoints = kpList.map(pk => ({
+                        x: parseGermanFloat(pk.Rechtswert || pk.Y),
+                        y: parseGermanFloat(pk.Hochwert || pk.X),
+                        z: parseGermanFloat(pk.Punkthoehe || pk.Z)
+                    })).filter(p => p.x !== null && p.y !== null);
+                }
+
+                // 6. HYDRAULIC ATTRIBUTES
+                // Sohlhöhen oben/unten
+                const zZulauf = strictNormalize(verlauf.SohleKnotenZulauf); // Or from nodes?
+                const zAblauf = strictNormalize(verlauf.SohleKnotenAblauf);
+
 
                 edges.push({
                     id: id,
-                    category: 'Haltung',
-                    // Correct Mapping based on 6178_A64 XML:
-                    // Kante.KnotenZulauf -> Source
-                    // Kante.KnotenAblauf -> Target
-                    source: kante.KnotenZulauf || obj.Verlauf?.Anfangsknoten || obj.Verlauf?.StartKnoten,
-                    target: kante.KnotenAblauf || obj.Verlauf?.Endknoten || obj.Verlauf?.ZielKnoten,
+                    category: edgeType, // Stores specific type now
+                    source: src,
+                    target: tgt,
                     shape: {
                         type: shapeMap[pCode] || 'Circle',
                         dim1: w,
-                        dim2: h,
+                        dim2: finalH,
                         profileCode: pCode
                     },
+                    geometry: {
+                        waypoints: waypoints
+                    },
                     meta: {
-                        material: kante.Material || obj.Material || 'Beton',
-                        baujahr: parseGermanFloat(obj.Baujahr)
+                        material: material || 'Beton',
+                        baujahr: parseGermanFloat(obj.Baujahr),
+                        sohleZulauf: zZulauf,
+                        sohleAblauf: zAblauf
                     }
                 });
             }

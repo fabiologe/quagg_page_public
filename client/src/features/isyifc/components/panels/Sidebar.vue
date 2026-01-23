@@ -20,7 +20,8 @@
       <IsyIfcDataPanel />
     </div>
 
-    <div v-if="hasData" class="actions">
+    <div v-if="hasData" class="actions" style="border-top: 1px solid #ddd; padding-top: 10px;">
+      <button @click="exportIfc" class="export-btn">💾 IFC Export (Beta)</button>
       <!-- Slot for Simulation Controls or other panels -->
       <slot></slot>
     </div>
@@ -61,6 +62,28 @@ const handleFileUpload = async (event) => {
       console.error("Import Error", e);
       alert("Fehler beim Import: " + e.message);
   }
+};
+
+const exportIfc = async () => {
+    if (!hasData.value) return;
+    
+    try {
+        const { IsybauToIfc } = await import('../../core/export/IfcWriter.js');
+        const writer = new IsybauToIfc(store.graph.nodes, store.graph.edges);
+        const ifcData = writer.generate();
+        
+        const blob = new Blob([ifcData], { type: 'application/x-step' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const fname = (store.metadata.fileName || 'isotest').replace('.xml', '') + '_' + new Date().toISOString().split('T')[0] + '.ifc';
+        a.download = fname;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error("Export Error", e);
+        alert("Fehler beim IFC Export: " + e.message);
+    }
 };
 </script>
 
@@ -134,5 +157,19 @@ const handleFileUpload = async (event) => {
     overflow: hidden;
     border: 1px solid #eee;
     border-radius: 4px;
+}
+.export-btn {
+    width: 100%;
+    padding: 10px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+.export-btn:hover {
+    background-color: #2980b9;
 }
 </style>
