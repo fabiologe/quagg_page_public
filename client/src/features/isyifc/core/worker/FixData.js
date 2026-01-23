@@ -3,7 +3,7 @@
 import { ProfilGeometrie, SystemType } from '../types.js';
 
 // Logic Modules
-import { parseNodeGeometry } from '../logic/GeometryUtils.js';
+import { GeometryCalculator } from '../logic/GeometryCalculator.js';
 // Note: GeometryUtils might need update if we want to reuse it, but Worker did the heavy lifting.
 // Actually, Worker returns { coords: {x,y,z...} }. We can use that directly.
 
@@ -65,23 +65,29 @@ export const normalizeGraph = (workerData) => {
             z: -n.coords.y // Flip North to Z
         };
 
+        // Resolve Standard Heights using Calculator
+        // Convert to temp shape obj for calc
+        const calcShape = { height: height };
+        const hRes = GeometryCalculator.resolveNodeHeight(n.coords, calcShape);
+
         nodes.set(n.id, {
             id: n.id,
             type: type,
             pos: pos,
             geometry: {
-                shape: n.shape.type,
                 width: n.shape.dim1,
                 length: n.shape.dim2 || n.shape.dim1,
-                height: height,
-                coverZ: coverZ,
-                bottomZ: bottomZ
+                height: hRes.height,
+                coverZ: hRes.coverZ,
+                bottomZ: hRes.bottomZ,
+                shape: n.shape.type // 'Box' or 'Cylinder'
             },
             attributes: {
                 material: n.meta.material,
                 year: n.meta.baujahr,
                 subType: n.meta.subType || n.meta.kennung, // PumpwerkID or 'RR'
-                systemType: SystemType.Mischwasser // Default for now
+                systemType: n.meta.kanalart || SystemType.Mischwasser,
+                status: n.meta.Status // CRITICAL: Expose Status for visualizer
             },
             data: {
                 rw: n.coords.x,
@@ -99,7 +105,11 @@ export const normalizeGraph = (workerData) => {
     // --- EDGES ---
     for (const e of flatEdges) {
         if (!nodes.has(e.source) || !nodes.has(e.target)) {
-            // console.warn(`Skipping edge ${e.id}: Node missing`);
+            console.warn(`[FixData] Skipping edge ${e.id}: Node missing. Src: '${e.source}', Tgt: '${e.target}'`);
+            // Debug: print some node IDs to compare
+            if (stats.edgesTotal === 0 && nodes.size > 0) {
+                console.log("Available Nodes sample:", Array.from(nodes.keys()).slice(0, 5));
+            }
             continue;
         }
 
@@ -118,13 +128,24 @@ export const normalizeGraph = (workerData) => {
                 height: e.shape.dim2
             },
             material: e.meta.material,
-            systemType: SystemType.Mischwasser,
+            // Map Kanalart to SystemType (or pass raw string if unknown)
+            // SystemType enum might need to be expanded, or we treat this as a string.
+            // Let's pass the raw string for GeometryFactory to handle (flexibility).
+            systemType: e.meta.kanalart || SystemType.Mischwasser,
+            status: e.meta.Status,
             year: e.meta.baujahr || 0,
 
             // New Hydraulic & Geometry Props
             sohleZulauf: e.meta.sohleZulauf,
             sohleAblauf: e.meta.sohleAblauf,
             intermediatePoints: e.geometry ? e.geometry.waypoints : [],
+
+            // Calculated Geometry (Persisted for Export)
+            geometry: GeometryCalculator.calculateEdgeGeometry(
+                e.meta, // Pass raw meta for Sohle
+                nodes.get(e.source),
+                nodes.get(e.target)
+            ),
 
             warnings: []
         });

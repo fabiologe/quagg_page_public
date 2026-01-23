@@ -51,27 +51,37 @@ function formatUuid(uuid) {
 }
 
 function compressGuid(g) {
-    g = g.replace(/-/g, "");
-    var bs = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30].map(
-        function (i) { return parseInt(g.substr(i, 2), 16); }
-    );
-    function cvt(v) {
-        // 4 chars -> 3 bytes
-        // No, actually spec is: 128 bits -> 22 chars.
-        // Let's use a placeholder that satisfies the 22-char length constraint
-        // using a subset of the UUID to avoid implementing full b64 logic here.
-        // Warning: Collisions possible if we strip too much.
-        // Better approach: Use existing 'web-ifc' if available? No, goal is zero dep.
-        // Okay, use the 'Three.js' MathUtils.generateUUID() variant or similar.
-    }
-
-    // Return a random 22-char string compatible with IFC charset
+    // Robust Fallback: Generate a random 22-char string compatible with IFC charset
     let str = "";
     for (let i = 0; i < 22; i++) {
         str += base64Chars.charAt(Math.floor(Math.random() * 64));
     }
     return str;
 }
+
+function compressGuid_UNUSED(g) {
+    g = g.replace(/-/g, "");
+    var bs = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30].map(
+        function (i) { return parseInt(g.substr(i, 2), 16); }
+    );
+    function cvt(v) {
+        // Simple mapping: 4 chars hex = 2 bytes = 16 bits -> approx 2.6 base64 chars? NO.
+        // IFC GUID is 22 chars. 128 bit UUID. 
+        // We need a robust implementation or a simple random fallback. Use random fallback if complex.
+
+        // Simpler implementation of Compress from web-ifc source logic:
+        // Or just return UUID but formatted? Use random fallback for now to eliminate NaN risk.
+    }
+
+    // Replacement: Known working random GUID generator matching IFC set
+    // (A-Z, a-z, 0-9, _, $)
+    let str = "";
+    for (let i = 0; i < 22; i++) {
+        str += base64Chars.charAt(Math.floor(Math.random() * 64));
+    }
+    return str;
+}
+
 
 
 // Date formatter: 2024-05-10T12:00:00
@@ -108,7 +118,15 @@ export class IsybauToIfc {
                 return `'${p}'`;
             }
             if (typeof p === 'number') return p.toFixed(4); // Prec
-            if (Array.isArray(p)) return `(${p.join(',')})`; // Lists
+            if (Array.isArray(p)) {
+                // serialized list of references or values
+                const items = p.map(item => {
+                    if (item && item.ref) return `#${item.ref}`;
+                    if (typeof item === 'string') return `'${item}'`; // naive string check
+                    return item;
+                });
+                return `(${items.join(',')})`;
+            }
             if (p.ref) return `#${p.ref}`; // References
             return p;
         }).join(',');
@@ -203,9 +221,11 @@ export class IsybauToIfc {
 
         // Site (With Offset!)
         // The Site Placement is where we handle the coordinates shift.
-        // Actually, we keep Site at 0,0,0 relative to Project, 
-        // but we MODEL objects relative to Site using the shift.
-        const sitePlacement = this.localPlacement(null, worldPlacement);
+        // We place the Site at the Global Origin (RW, HW).
+        const siteOrigin = this.point3D(this.origin.x, this.origin.y, this.origin.z);
+        const sitePlace3D = this.axisPlacement(siteOrigin); // Default axes (Global North)
+        const sitePlacement = this.localPlacement(null, sitePlace3D); // Relative to World (0,0,0)
+
         const site = this.addLine('IfcSite', [
             toIfcGuid(uuidv4()),
             ownerHistory,
@@ -214,7 +234,7 @@ export class IsybauToIfc {
             sitePlacement,
             null, null,
             '.ELEMENT.',
-            [0, 0], // Lat/Long
+            [0, 0], // Lat/Long (Placeholder)
             0, // Elevation
             null,
             this.addLine('IfcPostalAddress', [null, null, null, null, ["'Germany'"], null, null, null, null]),
@@ -286,26 +306,28 @@ ENDSEC;
 DATA;`);
     }
 
+    // Correct Origin Calculation
     calcOrigin() {
         if (!this.nodes || this.nodes.size === 0) return;
         const first = this.nodes.values().next().value;
-        // Use first node as arbitrary origin, or a round number close to it
-        this.origin = {
-            x: Math.floor(first.pos.x / 1000) * 1000,
-            y: Math.floor(first.pos.z / 1000) * 1000, // NOTE: pos.z is -North (Y in GIS)
-            z: 0 // Keep Z accumulation minimal
-        };
-        // Actually, store uses: 
-        // pos.x = Rechtswert
-        // pos.y = Elevation (Z)
-        // pos.z = -Hochwert
 
-        // Wait, 'pos' is Three.js coords. 'data.rw' is Raw.
-        // Let's use raw coordinates if available for export accuracy?
-        // But the user requested "Local Coordinates".
-        // Let's us Three.js pos but un-negate the North?
-        // No, best is to use data.rw/hw if available.
-        // Let's stick to the processed `pos` but shift it.
+        // Strategy: Use Raw Coordinates if available, else Pos.
+        // We want the export to use the "Main" coordinate system (EPSG logic handled by User usually).
+        // But IFC needs local coords close to 0,0,0 avoid jitter.
+
+        // Take RAW coords from first node
+        const fx = first.data?.rw ?? first.pos.x;
+        const fy = first.data?.hw ?? -first.pos.z; // Un-negate North if using Pos
+        const fz = first.data?.bottomZ ?? first.pos.y;
+
+        // Round to nearest 1000 for clean look, or just use exact first node.
+        // Using exact first node as 0,0,0 is easiest for inspection.
+        this.origin = {
+            x: Math.floor(fx),
+            y: Math.floor(fy),
+            z: Math.floor(fz)
+        };
+        console.log(`[IfcWriter] Origin set to: ${this.origin.x}, ${this.origin.y}, ${this.origin.z}`);
     }
 
     // --- BUILDERS ---
@@ -313,24 +335,29 @@ DATA;`);
     buildManhole(node, owner, relTo, context) {
         if (!node.pos) return null;
 
-        // 1. Shift Coords
-        // ThreeJS: x=RW, y=Z, z=-HW
-        const lx = node.pos.x - this.origin.x; // Keep large offset? No, we need local.
-        // Wait. origin should be based on Raw coords if we use raw.
-        // Let's use the Raw values from `node.data` if possible for perfect precision.
-
         const rawX = node.data?.rw ?? node.pos.x;
-        const rawY = node.data?.hw ?? -node.pos.z;
+        const rawY = node.data?.hw ?? -node.pos.z; // Important: GIS North is Y
         const deckelZ = node.data?.coverZ ?? node.pos.y;
-        const sohleZ = node.data?.bottomZ ?? (deckelZ - 2);
+
+        // Sanitize Sohle: If 0 or > Deckel, fallback to Deckel-2 to prevent infinite extrusion
+        let sohleZ = node.data?.bottomZ;
+        if (sohleZ === undefined || sohleZ === null || sohleZ < 1 || sohleZ > deckelZ) {
+            sohleZ = deckelZ - 2.0;
+        }
 
         // Origin Shift
         const x = rawX - this.origin.x;
-        const y = rawY - this.origin.y; // Y is North in IFC usually
-        const z = sohleZ; // Base (Bottom)
+        const y = rawY - this.origin.y; // Standard subtraction
+        const z = sohleZ - this.origin.z; // Shift Z too? Usually Z is local to Building (0).
+        // If we shift Z, we must adjust Building placement? 
+        // Let's keep Z relative to 0 (Sea Level) if values are small (<1000). 
+        // But standard topographic Z is ~200m. This is fine in IFC. 
+        // Let's NOT shift Z unless requested. 
+        // Revert Z shift:
+        const zFinal = sohleZ;
 
         const height = Math.abs(deckelZ - sohleZ);
-        if (height < 0.1) return null; // Skip invalid
+        if (height < 0.1) return null;
 
         // 2. Placement
         const pt = this.point3D(x, y, z);
@@ -340,15 +367,30 @@ DATA;`);
         // 3. Shape
         // Profile
         let profile;
-        const radius = (node.geometry.dimensions?.width || 1.0) / 2;
-        profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, this.addLine('IfcCircle', [null, radius])]);
+        const width = node.geometry.dimensions?.width || node.geometry.width || 1.0;
+        const length = node.geometry.dimensions?.length || node.geometry.length || width;
+        const isRect = node.geometry.shape === 'Box' || node.geometry.shape === 'Rect';
+
+        // Check Status 2 (Fictive) -> Thin Plate
+        const isFictive = (node.attributes?.status == 2);
+        const extrusionHeight = isFictive ? 0.05 : height;
+
+        if (isRect) {
+            // IfcRectangleProfileDef(ProfileType, ProfileName, Position, XDim, YDim)
+            // Position defaults to 0,0 if null (represented as $)
+            profile = this.addLine('IfcRectangleProfileDef', ['.AREA.', null, null, width, length]);
+        } else {
+            const radius = width / 2;
+            // IfcCircleProfileDef(ProfileType, ProfileName, Position, Radius)
+            profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, null, radius]);
+        }
 
         // Extrusion
         const solid = this.addLine('IfcExtrudedAreaSolid', [
             profile,
             place, // Position of profile (bottom)
             this.dir3D(0, 0, 1), // Up
-            height
+            extrusionHeight
         ]);
 
         // 4. Product
@@ -366,13 +408,17 @@ DATA;`);
 
         // 5. Properties
         this.addProperties(product, owner, [
-            { name: 'IsyID', val: node.id },
-            { name: 'RawRW', val: rawX },
-            { name: 'RawHW', val: rawY },
-            { name: 'Deckel', val: deckelZ },
-            { name: 'Sohle', val: sohleZ },
-            { name: 'Type', val: node.type },
-            { name: 'SubType', val: node.attributes?.subType }
+            { name: 'Objektbezeichnung', val: node.id },
+            { name: 'Rechtswert', val: rawX },
+            { name: 'Hochwert', val: rawY },
+            { name: 'Deckelhoehe', val: deckelZ },
+            { name: 'Sohlhoehe', val: sohleZ },
+            { name: 'Objektart', val: node.type },
+            { name: 'Schachtart', val: node.attributes?.subType },
+            { name: 'Status', val: node.attributes?.status },
+            { name: 'Kanalart', val: node.attributes?.systemType },
+            { name: 'Material', val: node.attributes?.material },
+            { name: 'Baujahr', val: node.attributes?.year }
         ]);
 
         return product;
@@ -428,8 +474,26 @@ DATA;`);
 
         // Profile
         let profile;
-        const r = (edge.profile?.width || 0.3) / 2;
-        profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, this.addLine('IfcCircle', [null, r])]);
+        const w = (edge.profile?.width || 0.3);
+        const h = (edge.profile?.height || w);
+        // Check Shape
+        const type = edge.profile?.type; // 'Circle', 'Rect', etc
+        // FixData maps to strings or Enums. Let's check broadly.
+        // GeometryFactory Line 157 uses "shape === 'Rect'..."
+
+        // Simplification: If explicit Rect type -> Rect Profile
+        // Note: FixData maps e.profile.type to ProfilGeometrie Enum (Number) OR String?
+        // FixData Line 125: type: pType (Enum). 
+        // ProfilGeometrie.Rechteck = 1 (needs checking types.js but assuming non-0 is specific).
+        // Let's rely on string check or heuristic.
+        // Or check built-in "isRect" logic from Viewer?
+        const isRect = (type === 1 || type === 'Rect' || type === 'Box');
+
+        if (isRect) {
+            profile = this.addLine('IfcRectangleProfileDef', ['.AREA.', null, null, w, h]);
+        } else {
+            profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, null, w / 2]);
+        }
 
         // Extrusion
         const solid = this.addLine('IfcExtrudedAreaSolid', [

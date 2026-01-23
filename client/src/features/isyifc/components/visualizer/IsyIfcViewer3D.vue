@@ -143,10 +143,22 @@ const initThree = () => {
     controls.maxDistance = 50000;
 
     // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(50, 200, 50);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    hemi.position.set(0, 200, 0);
+    scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(100, 200, 100);
+    dir.castShadow = true;
+    dir.shadow.mapSize.width = 2048;
+    dir.shadow.mapSize.height = 2048;
+    dir.shadow.camera.near = 0.5;
+    dir.shadow.camera.far = 5000;
+    // Tweak shadow frustum to cover typical sewer networks
+    dir.shadow.camera.left = -500;
+    dir.shadow.camera.right = 500;
+    dir.shadow.camera.top = 500;
+    dir.shadow.camera.bottom = -500;
     scene.add(dir);
 
     // Ground
@@ -211,10 +223,27 @@ const buildScene = () => {
             objectsMap.set(key, val);
         }
 
-        console.log(`[Viewer] Built Scene. Origin: ${origin.x}, ${origin.y}`);
+        // Compute Bounding Box of the new Group
+        const box = new THREE.Box3().setFromObject(root);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
         
+        // Auto-Fit Camera
+        const maxDim = Math.max(size.x, size.y, size.z) || 100;
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraDist = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+        cameraDist *= 1.5; // Zoom out a bit
+
+        // Position camera: Look at center, offset by distance
+        // We want Top-Down or Isometric? Isometric is better for 3D.
+        camera.position.set(center.x + cameraDist, center.y + cameraDist, center.z + cameraDist);
+        controls.target.copy(center);
+        
+        console.log(`[Viewer] Built Scene. Origin: ${origin.x}, ${origin.y}`);
+        console.log(`[Viewer] Auto-Fit: Center(${center.x.toFixed(1)}, ${center.y.toFixed(1)}, ${center.z.toFixed(1)}) Size(${maxDim.toFixed(1)})`);
+
         loading.value = false;
-        render(); // Force render
+        controls.update();
     }, 10);
 };
 
@@ -278,12 +307,12 @@ const animate = () => {
 // --- Lifecycle ---
 
 watch(graph, () => {
-    if (graph.value.nodes.length) buildScene();
+    if (graph.value.nodes.size > 0) buildScene();
 }, { deep: true });
 
 onMounted(() => {
     initThree();
-    if (graph.value.nodes.length) buildScene();
+    if (graph.value.nodes.size > 0) buildScene();
 });
 
 onBeforeUnmount(() => {

@@ -20,15 +20,24 @@ const parseGermanFloat = (val) => {
     return isNaN(num) ? null : num;
 };
 
-// Heuristic Unit Normalization (mm -> m)
-const normalizeUnit = (val) => {
+// Context-Aware Normalization
+const normalizePipeDim = (val) => {
     const n = parseGermanFloat(val);
     if (n === null) return 0;
-    // Heuristic: If > 50, assume mm or cm. 
-    // Pipes are usually < 4.0m diameter.
-    if (Math.abs(n) > 50) return n / 1000.0;
+    // Pipes/Manhole Comps are rarely > 10m. If > 10, assume mm.
+    if (Math.abs(n) > 10) return n / 1000.0;
     return n;
 };
+
+const normalizeDepth = (val) => {
+    const n = parseGermanFloat(val);
+    if (n === null) return null; // Keep null if missing
+    // Depths can be 20m. But 20000mm = 20m.
+    // Cutoff: 100m. If > 100, must be mm.
+    if (Math.abs(n) > 100) return n / 1000.0;
+    return n;
+};
+
 
 // Helper: Get array of points regardless of XML structure (single obj vs array)
 const extractPoints = (geoBlock) => {
@@ -98,8 +107,17 @@ self.onmessage = async (e) => {
 
         // 4. MAIN LOOP
         for (const obj of objects) {
-            const id = obj.Objektbezeichnung;
+            const id = String(obj.Objektbezeichnung).trim();
             const objArt = parseInt(obj.Objektart);
+
+            // STATUS PARSING (Objektstatus vs Status)
+            let status = parseInt(obj.Objektstatus || obj.Status);
+            if (isNaN(status)) status = 0;
+
+            // Heuristic: IDs starting with "FK" (Fiktiver Knoten) -> Status 2
+            if (status === 0 && (id.startsWith('FK') || id.startsWith('VIRT'))) {
+                status = 2;
+            }
 
             // --- EDGE (Objektart 1) ---
             // --- EDGE (Objektart 1) ---
@@ -129,13 +147,20 @@ self.onmessage = async (e) => {
                 // 3. TOPOLOGY (Connectivity)
                 // "von" -> Verlauf.Anfangsknoten (Priority) OR Verlauf.StartKnoten
                 // "bis" -> Verlauf.Endknoten (Priority) OR Verlauf.ZielKnoten
-                const src = verlauf.Anfangsknoten || verlauf.StartKnoten;
-                const tgt = verlauf.Endknoten || verlauf.ZielKnoten;
+                // Safely extract and trim
+                // Safely extract and trim
+                const getVal = (v) => v ? String(v).trim() : null;
+
+                let src = getVal(verlauf.Anfangsknoten || verlauf.StartKnoten);
+                let tgt = getVal(verlauf.Endknoten || verlauf.ZielKnoten);
+
+                // Fallback: Check Direct Properties
+                if (!src) src = getVal(edgeData.KnotenZulauf);
+                if (!tgt) tgt = getVal(edgeData.KnotenAblauf);
 
                 if (!src || !tgt) {
-                    // console.warn(`[Worker] Edge ${id} missing source or target. Skipping.`);
-                    // stats.Ignored++; 
-                    // continue; // Or keep it and let FixData filter it? Best to keep raw data.
+                    // DEBUG: Inspect structure of failing edge
+                    console.warn(`[Worker] Edge ${id} missing topology. Keys in edgeData:`, Object.keys(edgeData));
                 }
 
                 // 4. PROFILE LOGIC
@@ -184,9 +209,23 @@ self.onmessage = async (e) => {
 
                 // 6. HYDRAULIC ATTRIBUTES
                 // Sohlhöhen oben/unten
-                const zZulauf = strictNormalize(verlauf.SohleKnotenZulauf); // Or from nodes?
-                const zAblauf = strictNormalize(verlauf.SohleKnotenAblauf);
+                // CRITICAL: Elevations (Z) can be > 9m. Do not use strictNormalize (Pipe logic).
+                // Use normalizeElevation (Threshold ~8000m)
+                const normalizeElevation = (val) => {
+                    const n = parseGermanFloat(val);
+                    if (n === null) return null;
+                    // If > 8000 (Everest), assume mm.
+                    if (Math.abs(n) > 8000) return n / 1000.0;
+                    return n;
+                };
 
+                const zZulauf = normalizeElevation(verlauf.SohleKnotenZulauf || edgeData.SohlhoeheZulauf);
+                const zAblauf = normalizeElevation(verlauf.SohleKnotenAblauf || edgeData.SohlhoeheAblauf);
+
+                // SYSTEM TYPE (G101/Kanalart)
+                // Try multiple sources: Direct 'Kanalart', 'Entwaesserungsart'
+                // Values might be 'KR', 'KS', 'KM' or Codes
+                const sysType = String(obj.Kanalart || obj.Entwaesserungsart || edgeData.Kanalart || '').trim();
 
                 edges.push({
                     id: id,
@@ -203,10 +242,12 @@ self.onmessage = async (e) => {
                         waypoints: waypoints
                     },
                     meta: {
+                        Status: status,
                         material: material || 'Beton',
                         baujahr: parseGermanFloat(obj.Baujahr),
                         sohleZulauf: zZulauf,
-                        sohleAblauf: zAblauf
+                        sohleAblauf: zAblauf,
+                        kanalart: sysType // New Field
                     }
                 });
             }
@@ -241,8 +282,8 @@ self.onmessage = async (e) => {
                     let zDeckel = cDMP.z;
                     let zSohle = getCoord(smp).z;
 
-                    // Fallback Logic: Calc Z using Depth
-                    const depth = parseGermanFloat(schacht.Schachttiefe);
+                    // CRITICAL: Use normalizeDepth (covers 100m cutoff)
+                    const depth = normalizeDepth(schacht.Schachttiefe);
 
                     // If DMP missing but Deckel attribute present
                     if (zDeckel === null && deckel.Punkthoehe) {
@@ -256,11 +297,12 @@ self.onmessage = async (e) => {
                         zDeckel = zSohle + depth;
                     }
 
-                    // Shape Logic
+                    // Shape Logic (G305)
                     const form = aufbau.Aufbauform || 'R';
-                    const isBox = (form.includes('E') || form.includes('Q'));
-                    const dim1 = normalizeUnit(aufbau.LaengeAufbau) || 1.0;
-                    const dim2 = normalizeUnit(aufbau.BreiteAufbau) || dim1;
+                    // G305: R=Run, E=Eckig, Z=Andere
+                    const isBox = (form === 'E' || form === 'Q' || form.includes('Eck') || form.includes('Quad'));
+                    const dim1 = normalizePipeDim(aufbau.LaengeAufbau) || 1.0;
+                    const dim2 = normalizePipeDim(aufbau.BreiteAufbau) || dim1;
 
                     nodes.push({
                         id: id,
@@ -277,8 +319,10 @@ self.onmessage = async (e) => {
                             dim2: dim2
                         },
                         meta: {
+                            Status: status,
                             material: aufbau.MaterialAufbau,
-                            baujahr: parseGermanFloat(obj.Baujahr)
+                            baujahr: parseGermanFloat(obj.Baujahr),
+                            kanalart: String(obj.Kanalart || obj.Entwaesserungsart || '').trim() // System Type for Nodes
                         }
                     });
                 }
@@ -301,6 +345,7 @@ self.onmessage = async (e) => {
                         },
                         shape: { type: 'Box', dim1: 0.2, dim2: 0.2 },
                         meta: {
+                            Status: status,
                             kennung: ap.Punktkennung, // RR, SE, GA, NN (Unknown)...
                             subType: ap.Punktkennung
                         }
@@ -319,8 +364,18 @@ self.onmessage = async (e) => {
                     const check = (tag, lenField, widField) => {
                         if (!tag) return;
                         const tObj = Array.isArray(tag) ? tag[0] : tag; // Handle array quirk
-                        const valL = normalizeUnit(tObj[lenField]);
-                        const valB = normalizeUnit(tObj[widField]);
+                        // Use normalizePipeDim logic (threshold 10 is risky for structures > 10m)
+                        // Bauwerke are large. Let's assume Meters unless > 1000? 
+                        // If 20m -> 20. If 20000mm -> 20.
+                        // Let's use a custom check here.
+                        const rawL = parseGermanFloat(tObj[lenField]);
+                        const rawB = parseGermanFloat(tObj[widField]);
+
+                        const norm = (v) => (v && Math.abs(v) > 200) ? v / 1000.0 : v;
+
+                        const valL = norm(rawL);
+                        const valB = norm(rawB);
+
                         if (valL) l = Math.max(l, valL);
                         if (valB) b = Math.max(b, valB);
                     };
@@ -367,6 +422,7 @@ self.onmessage = async (e) => {
                             dim2: b
                         },
                         meta: {
+                            Status: status,
                             subType: bwTypeMap[bwType] || 'Bauwerk', // Mapped String
                             funktion: bw.Bauwerksfunktion
                         }
