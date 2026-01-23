@@ -1,37 +1,33 @@
 import * as THREE from 'three';
-// Assuming types might be needed, or we adapt to dynamic js
-// import { ProfilGeometrie, KnotenTyp } from '../types';
 
 export class GeometryFactory {
     constructor() {
-        // 1. Shared Geometries (Reuse!)
-        // Unit Cylinder: Height 1, Radius 1, Pivot at BOTTOM (y=0)
-        // We scale it later to real dimensions.
+        // 1. Manholes (Pivot at Bottom)
         const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 32);
-        cylinderGeo.translate(0, 0.5, 0); // Shift Pivot to bottom
+        cylinderGeo.translate(0, 0.5, 0);
         this.geoCylinder = cylinderGeo;
 
+        // 2. Pipes (Pivot at Center - Standard)
+        // Better for rotation/placement logic (Midpoint)
+        this.geoPipe = new THREE.CylinderGeometry(1, 1, 1, 16);
+        // No translation -> Center pivot
+
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-        boxGeo.translate(0, 0.5, 0); // Shift Pivot to bottom
+        boxGeo.translate(0, 0.5, 0);
         this.geoBox = boxGeo;
 
         // Materials
-        this.matManhole = new THREE.MeshLambertMaterial({ color: 0x808080 }); // Grey
-        this.matPipe = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Brown
-        this.matWater = new THREE.MeshLambertMaterial({ color: 0x0000FF }); // Blue
+        this.matManhole = new THREE.MeshLambertMaterial({ color: 0x808080 });
+        this.matPipe = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
 
-        // Helper object for matrix calculations
+        // Helper
         this.dummy = new THREE.Object3D();
     }
 
     /**
      * Builds the complete 3D scene from the graph.
-     * Uses InstancedMesh for Performance (1 DrawCall instad of 5000).
-     * @param {Map} nodes - The node store
-     * @param {Array} edges - The edge store
-     * @param {Object} originOffset - {x,y,z} Global Origin
      */
-    buildScene(nodes, edges, originOffset) {
+    buildScene(nodes, edges) {
         const group = new THREE.Group();
 
         // --- A. MANHOLES ---
@@ -40,34 +36,18 @@ export class GeometryFactory {
             const mesh = new THREE.InstancedMesh(this.geoCylinder, this.matManhole, manholes.length);
 
             manholes.forEach((node, i) => {
-                if (!node.pos || !node.geometry) return;
+                if (!node.pos) return;
 
-                // 1. Position (Relative to Origin, Y is Up!)
-                const x = node.pos.x - originOffset.x;
-                // Logic check: Is node.pos already shifted? 
-                // User prompt implies Viewer logic assumes raw node.pos and does shift here.
-                // If LogicCalculator runs BEFORE this, node.pos might be transform.pos?
-                // Let's assume input is standard node structure with Global Coords in node.pos/data
-
-                // Use logic from prompt:
-                const y = node.geometry.bottomZ ?? node.data?.bottomZ ?? 0; // Sohle
-                const z = -(node.pos.y - originOffset.y); // North = -Z (User prompt logic: -(pos.y - off.y))
-                // Wait, normally GIS: x=East, y=North. Three: x=East, z=-North.
-                // User Prompt: "z = -(node.pos.y - originOffset.y)" implies node.pos.y is North. 
-                // Let's stick strictly to User Code provided.
-
-                this.dummy.position.set(x, y, z);
+                // Position (Already Local)
+                this.dummy.position.set(node.pos.x, node.pos.y, node.pos.z);
                 this.dummy.rotation.set(0, 0, 0);
 
-                // 2. Scale
-                // XML Width -> Radius? User Code: radius = width / 2.
-                // geoCylinder has radius 1. Scale X/Z by intended Radius.
-                const width = node.geometry.dimensions?.width || node.geometry.width || 1.0;
+                // Scale (Radius, Height)
+                const width = node.geometry.width || 1.0;
                 const radius = width / 2;
-                const height = node.geometry.height || 2.0; // Extrusion Height
+                const height = node.geometry.height || 2.0;
 
                 this.dummy.scale.set(radius, height, radius);
-
                 this.dummy.updateMatrix();
                 mesh.setMatrixAt(i, this.dummy.matrix);
             });
@@ -78,44 +58,47 @@ export class GeometryFactory {
 
         // --- B. PIPES ---
         if (edges.length > 0) {
-            const mesh = new THREE.InstancedMesh(this.geoCylinder, this.matPipe, edges.length);
+            // Use geoPipe (Center Pivot)
+            const mesh = new THREE.InstancedMesh(this.geoPipe, this.matPipe, edges.length);
 
             edges.forEach((edge, i) => {
-                const src = nodes.get(edge.sourceId);
-                const tgt = nodes.get(edge.targetId);
+                // Determine Start/End
+                let start, end;
+                if (edge.geometry && edge.geometry.startPoint) {
+                    const sp = edge.geometry.startPoint;
+                    const ep = edge.geometry.endPoint;
+                    start = new THREE.Vector3(sp.x, sp.y, sp.z);
+                    end = new THREE.Vector3(ep.x, ep.y, ep.z);
+                } else {
+                    const src = nodes.get(edge.sourceId);
+                    const tgt = nodes.get(edge.targetId);
+                    if (!src || !tgt) return;
+                    start = new THREE.Vector3(src.pos.x, src.pos.y, src.pos.z);
+                    end = new THREE.Vector3(tgt.pos.x, tgt.pos.y, tgt.pos.z);
+                }
 
-                if (!src || !tgt) return;
-
-                // Start & End (Local Coords relative to Origin)
-                // User Code logic:
-                const startX = src.pos.x - originOffset.x;
-                const startY = edge.sohleZulauf ?? src.geometry?.bottomZ ?? 0;
-                const startZ = -(src.pos.y - originOffset.y);
-
-                const endX = tgt.pos.x - originOffset.x;
-                const endY = edge.sohleAblauf ?? tgt.geometry?.bottomZ ?? 0;
-                const endZ = -(tgt.pos.y - originOffset.y);
-
-                const start = new THREE.Vector3(startX, startY, startZ);
-                const end = new THREE.Vector3(endX, endY, endZ);
-
-                // Math: Position & Rotation
+                // Math: Midpoint & Rotation
                 const distance = start.distanceTo(end);
+                const mid = start.clone().add(end).multiplyScalar(0.5);
 
-                // Position at Start (Pivot is at bottom of cylinder)
-                this.dummy.position.copy(start);
+                this.dummy.position.copy(mid);
 
-                // Rotation: Align Y-Up to direction vector
-                const up = new THREE.Vector3(0, 1, 0); // Cylinder Default Axis
+                const up = new THREE.Vector3(0, 1, 0);
                 const dir = end.clone().sub(start).normalize();
-                const quaternion = new THREE.Quaternion().setFromUnitVectors(up, dir);
-                this.dummy.setRotationFromQuaternion(quaternion);
 
-                // Scale
-                // Radius = Width / 2
+                // Handle vertical pipe singularity
+                if (Math.abs(dir.y) > 0.999) {
+                    // Parallel to Y axis
+                    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, dir);
+                    this.dummy.setRotationFromQuaternion(quaternion);
+                } else {
+                    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, dir);
+                    this.dummy.setRotationFromQuaternion(quaternion);
+                }
+
                 const width = edge.profile?.width || 0.3;
                 const radius = width / 2;
-                this.dummy.scale.set(radius, distance, radius); // Y-Scale is Length
+                this.dummy.scale.set(radius, distance, radius);
 
                 this.dummy.updateMatrix();
                 mesh.setMatrixAt(i, this.dummy.matrix);

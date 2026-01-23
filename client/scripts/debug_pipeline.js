@@ -69,12 +69,13 @@ function parseXmlHeadless(xmlContent) {
     const tempMap = new Map(rawNodes.map(n => [n.id, n]));
 
     // 2. Calculate Origin
-    const origin = GeometryCalculator.calculateOrigin(tempMap);
+    // 2. Calculate Origin
+    const origin = GeometryCalculator.calculateWorldOrigin(tempMap);
     console.log('[Headless] Calculated Origin:', origin);
 
     // 3. Compute Transforms
     for (const rawNode of rawNodes) {
-        const transform = GeometryCalculator.computeNodeTransform(rawNode, origin);
+        const transform = GeometryCalculator.calculateNodeTransform(rawNode, origin);
 
         // Store Structure matching User Requirement
         nodes.set(rawNode.id, {
@@ -101,11 +102,8 @@ async function run() {
     const { nodes, edges, origin } = parseXmlHeadless(xml);
 
     // 3. EXPORT
-    // Pass Origin to Writer explicitly or let Writer inspect nodes?
-    // New Writer should accept Origin in constructor or params.
-    const writer = new IsybauToIfc(nodes, edges);
-    // Force set origin (Writer might recalculate it, but usually redundant now)
-    writer.origin = origin;
+    // Pass Origin to Writer explicitly (New Signature)
+    const writer = new IsybauToIfc(nodes, edges, origin);
 
     const ifcString = writer.generate();
 

@@ -2,16 +2,11 @@
 // Core Enums
 import { ProfilGeometrie, SystemType } from '../types.js';
 
-// Logic Modules
-import { GeometryCalculator } from '../logic/GeometryCalculator.js';
-// Note: GeometryUtils might need update if we want to reuse it, but Worker did the heavy lifting.
-// Actually, Worker returns { coords: {x,y,z...} }. We can use that directly.
-
 /**
- * FIXDATA.JS (V3 - Helper for Flat Parser)
+ * FIXDATA.JS (Zero-Centering Logic)
  * 
- * Consumes the "Flat 4-Type" output from IsybauParser.worker.js
- * and converts it to the final App Store format (INode/IEdge).
+ * Normalizes all coordinates to a local 0,0 origin to prevent floating point jitter in Three.js.
+ * Returns the valid Global Origin for Georeferencing (IFC Export).
  */
 
 export const normalizeGraph = (workerData) => {
@@ -21,102 +16,104 @@ export const normalizeGraph = (workerData) => {
     const nodes = new Map();
     /** @type {import('../types.js').IEdge[]} */
     const edges = [];
-    const stats = { nodesTotal: 0, edgesTotal: 0, badGeometryCount: 0 };
 
-    console.log(`[FixData] Normalizing ${flatNodes.length} nodes, ${flatEdges.length} edges...`);
+    // 1. CALCULATE WORLD ORIGIN (MinX, MinY)
+    let minX = Infinity;
+    let minY = Infinity;
+    let validNodes = 0;
 
-    // --- NODES ---
-    const categoriesFound = new Set();
     for (const n of flatNodes) {
-        categoriesFound.add(n.category);
-        if (!n.coords || n.coords.x === null || n.coords.y === null) {
-            stats.badGeometryCount++;
-            continue;
+        if (n.coords && n.coords.x !== null && n.coords.y !== null) {
+            if (n.coords.x < minX) minX = n.coords.x;
+            if (n.coords.y < minY) minY = n.coords.y;
+            validNodes++;
         }
+    }
 
-        // Map Category to Internal Type
+    // Fallback if empty
+    if (minX === Infinity) { minX = 0; minY = 0; }
+
+    // Round to integers for clean IFC Header
+    const WORLD_ORIGIN = { x: Math.floor(minX), y: Math.floor(minY), z: 0 };
+    console.log(`[FixData] World Origin calculated:`, WORLD_ORIGIN);
+
+    // 2. NORMALIZE NODES
+    for (const n of flatNodes) {
+        if (!n.coords || n.coords.x === null) continue;
+
+        // Type Determination
         let type = 'Structure';
         if (n.category === 'Schacht') type = 'Manhole';
         else if (n.category === 'Anschlusspunkt') type = 'Connector';
         else if (n.category === 'Bauwerk') type = 'Structure';
 
-        // Calculate Height
-        const coverZ = n.coords.z_deckel;
-        const bottomZ = n.coords.z_sohle;
-        // Default height if missing
-        const height = (coverZ !== null && bottomZ !== null)
-            ? Math.abs(coverZ - bottomZ)
-            : 2.5;
+        // COORDINATE TRANSFORMATION (ISYBAU -> LOCAL STORE)
+        // Store System: X = Easting(Local), Y = Elevation(Height), Z = -Northing(Local)
 
-        // Position (Three.js: Y is Up)
-        // Adjust for Three.js coordinates if needed (usually handled in GeometryFactory, but let's standardize here)
-        // Store expects: x, y (Elevation), z (-North) usually. 
-        // But let's check GeometryFactory usage.
-        // Previously: pos.x, pos.y, pos.z.
-        // IsyIfc usually stores: x=Easting, y=Elevation, z=Northing (inverted?).
-        // Actually, standard Three: X=Right, Y=Up, Z=Forward.
-        // GIS: X=East, Y=North, Z=Up.
-        // Let's store GIS coordinates in `data` and translated in `pos`?
-        // Current App Standard seems to be: pos = { x, y: Elevation, z: -North }
+        const localX = n.coords.x - WORLD_ORIGIN.x;
+        const localNorth = n.coords.y - WORLD_ORIGIN.y;
 
+        const zDeckel = n.coords.z_deckel !== null ? n.coords.z_deckel : 0;
+        const zSohle = n.coords.z_sohle !== null ? n.coords.z_sohle : (zDeckel - 2);
+
+        // Store Position (LOCAL)
         const pos = {
-            x: n.coords.x,
-            y: bottomZ !== null ? bottomZ : (coverZ || 0), // Base pos at bottom
-            z: -n.coords.y // Flip North to Z
+            x: localX,
+            y: zSohle,      // Y is UP
+            z: -localNorth  // Z is -North
         };
 
-        // Resolve Standard Heights using Calculator
-        // Convert to temp shape obj for calc
-        const calcShape = { height: height };
-        const hRes = GeometryCalculator.resolveNodeHeight(n.coords, calcShape);
+        const dim1 = n.shape.dim1 || 1.0;
+        const dim2 = n.shape.dim2 || dim1;
+        const height = Math.abs(zDeckel - zSohle) || 2.0;
 
         nodes.set(n.id, {
             id: n.id,
             type: type,
-            pos: pos,
+            pos: pos, // LOCAL COORDINATES for Viewer
             geometry: {
-                width: n.shape.dim1,
-                length: n.shape.dim2 || n.shape.dim1,
-                height: hRes.height,
-                coverZ: hRes.coverZ,
-                bottomZ: hRes.bottomZ,
-                shape: n.shape.type // 'Box' or 'Cylinder'
+                width: dim1,
+                length: dim2,
+                height: height,
+                coverZ: zDeckel,
+                bottomZ: zSohle,
+                shape: n.shape.type
             },
             attributes: {
                 material: n.meta.material,
                 year: n.meta.baujahr,
-                subType: n.meta.subType || n.meta.kennung, // PumpwerkID or 'RR'
-                systemType: n.meta.kanalart || SystemType.Mischwasser,
-                status: n.meta.Status // CRITICAL: Expose Status for visualizer
+                subType: n.meta.subType || n.meta.kennung,
+                status: n.meta.Status,
+                systemType: n.meta.kanalart || SystemType.Mischwasser
             },
+            // RAW DATA for IFC Export (Geo-Reference restoration)
             data: {
-                rw: n.coords.x,
-                hw: n.coords.y, // GIS North
-                coverZ: coverZ,
-                bottomZ: bottomZ,
-                raw: n.meta // Light metadata
+                rw: n.coords.x, // Real World X
+                hw: n.coords.y, // Real World Y
+                coverZ: zDeckel,
+                bottomZ: zSohle
             },
             warnings: []
         });
-        stats.nodesTotal++;
     }
-    console.log("[FixData] Node Categories:", Array.from(categoriesFound));
 
-    // --- EDGES ---
+    // 3. PROCESS EDGES
     for (const e of flatEdges) {
-        if (!nodes.has(e.source) || !nodes.has(e.target)) {
-            console.warn(`[FixData] Skipping edge ${e.id}: Node missing. Src: '${e.source}', Tgt: '${e.target}'`);
-            // Debug: print some node IDs to compare
-            if (stats.edgesTotal === 0 && nodes.size > 0) {
-                console.log("Available Nodes sample:", Array.from(nodes.keys()).slice(0, 5));
-            }
-            continue;
-        }
+        const src = nodes.get(e.source);
+        const tgt = nodes.get(e.target);
+        if (!src || !tgt) continue;
 
-        // Map Profil Code to Enum
+        // Code Mapping
         let pType = ProfilGeometrie.Kreis;
         if (e.shape.type === 'Rect') pType = ProfilGeometrie.Rechteck;
         else if (e.shape.type === 'Trapez') pType = ProfilGeometrie.Trapez;
+
+        // Height Logic
+        const zStart = (e.meta.sohleZulauf !== null) ? e.meta.sohleZulauf : src.geometry.bottomZ;
+        const zEnd = (e.meta.sohleAblauf !== null) ? e.meta.sohleAblauf : tgt.geometry.bottomZ;
+
+        // Calculate Pipe Geometry
+        // We calculate explicit Start/End points in Local Space for the Viewer/Factory
 
         edges.push({
             id: e.id,
@@ -124,38 +121,40 @@ export const normalizeGraph = (workerData) => {
             targetId: e.target,
             profile: {
                 type: pType,
-                width: e.shape.dim1,
-                height: e.shape.dim2
+                width: e.shape.dim1 || 0.3,
+                height: e.shape.dim2 || 0.3
             },
-            material: e.meta.material,
-            // Map Kanalart to SystemType (or pass raw string if unknown)
-            // SystemType enum might need to be expanded, or we treat this as a string.
-            // Let's pass the raw string for GeometryFactory to handle (flexibility).
-            systemType: e.meta.kanalart || SystemType.Mischwasser,
-            status: e.meta.Status,
-            year: e.meta.baujahr || 0,
-
-            // New Hydraulic & Geometry Props
+            geometry: {
+                // Explicit Local Start/End Points
+                startPoint: { x: src.pos.x, y: zStart, z: src.pos.z },
+                endPoint: { x: tgt.pos.x, y: zEnd, z: tgt.pos.z },
+                // Calc length
+                length: Math.sqrt(
+                    Math.pow(tgt.pos.x - src.pos.x, 2) +
+                    Math.pow(zEnd - zStart, 2) +
+                    Math.pow(tgt.pos.z - src.pos.z, 2)
+                )
+            },
+            attributes: {
+                material: e.meta.material,
+                status: e.meta.Status,
+                systemType: e.meta.kanalart || SystemType.Mischwasser,
+                year: e.meta.baujahr
+            },
             sohleZulauf: e.meta.sohleZulauf,
             sohleAblauf: e.meta.sohleAblauf,
-            intermediatePoints: e.geometry ? e.geometry.waypoints : [],
-
-            // Calculated Geometry (Persisted for Export)
-            geometry: GeometryCalculator.calculateEdgeGeometry(
-                e.meta, // Pass raw meta for Sohle
-                nodes.get(e.source),
-                nodes.get(e.target)
-            ),
-
             warnings: []
         });
-        stats.edgesTotal++;
     }
 
-    // --- ORIGIN CALCULATION ---
-    // Calculate global origin for rendering/export offset
-    const origin = GeometryCalculator.calculateOrigin(nodes);
-    console.log(`[FixData] Origin calculated: ${origin.x}, ${origin.y}`);
-
-    return { nodes, edges, stats, origin };
+    // Return Data structure compatible with Store action 'setGraphData'
+    return {
+        nodes,
+        edges,
+        origin: WORLD_ORIGIN, // IMPLICITLY RETURNED ORIGIN
+        stats: {
+            nodesTotal: nodes.size,
+            edgesTotal: edges.length
+        }
+    };
 };

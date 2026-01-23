@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia';
-import { GeometryCalculator } from '../core/logic/GeometryCalculator.js';
 import { normalizeGraph } from '../core/worker/FixData.js';
 
 export const useIsyIfcStore = defineStore('isyifc-module', {
@@ -44,32 +43,18 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
     actions: {
         /**
          * Main Data Ingestion Point.
-         * Expects output from IsybauParser (or FixData).
-         * @param {Object} payload { rawNodes, rawEdges, stats } or { nodes, edges } from FixData
+         * Expects output from FixData (already normalized and transformed).
          */
         setGraphData(payload) {
             this.isProcessing = true;
             try {
                 console.log("[Store] setGraphData triggered.");
 
-                let nodes = payload.nodes; // Map
-                let edges = payload.edges; // Array
+                // FixData V4 already calculated Transformations & Origin
+                const { nodes, edges, origin, stats } = payload;
 
-                // 1. Calculate Origin (if not provided)
-                const origin = GeometryCalculator.calculateOrigin(nodes);
-                this.origin = origin;
-                console.log(`[Store] Origin set to: ${origin.x}, ${origin.y}`);
-
-                // 2. NORMALIZATION (Zero-Center for Viewer)
-                // We iterate and update 'transform' for every node.
-                for (const node of nodes.values()) {
-                    // Compute Transform (Includes pos relative to origin)
-                    const transform = GeometryCalculator.computeNodeTransform(node, origin);
-
-                    // Update Node with Transform Data
-                    node.transform = transform;
-                }
-
+                // Update State Directly
+                this.origin = origin || { x: 0, y: 0, z: 0 };
                 this.graph.nodes = nodes;
                 this.graph.edges = edges;
 
@@ -77,8 +62,10 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
                 this.stats = {
                     nodes: nodes.size,
                     edges: edges.length,
-                    time: payload.stats?.time || 0
+                    time: stats?.time || 0
                 };
+
+                console.log(`[Store] Updated with Origin: ${this.origin.x}, ${this.origin.y}`);
 
             } catch (err) {
                 console.error("[Store] Error setting graph data:", err);
@@ -115,11 +102,10 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
                     };
                 });
 
-                // 2. Fix/Normalize Data (Types) & Calculate Origin logic is handled in setGraphData now
-                // But FixData is useful for 'types' and 'light' cleanup
+                // 2. Fix/Normalize Data (Calculates Transforms & Origin)
                 const result = normalizeGraph(rawData);
 
-                // 3. Set to Store (Calculates Transforms & Origin)
+                // 3. Set to Store
                 this.setGraphData(result);
 
             } catch (err) {

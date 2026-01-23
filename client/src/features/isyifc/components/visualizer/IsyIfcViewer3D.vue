@@ -29,23 +29,23 @@
           </div>
           
           <!-- Node Specifics -->
-          <template v-if="isNode(selectedElement)">
+          <template v-if="selectedElement.type === 'Manhole'">
              <div class="info-row">
                <span class="label">Type:</span>
                <span class="value">{{ selectedElement.type }}</span>
              </div>
              <div class="info-row">
                 <span class="label">Deckel:</span>
-                <span class="value">{{ selectedElement.deckel?.toFixed(2) }} m</span>
+                <span class="value">{{ selectedElement.data?.coverZ?.toFixed(2) }} m</span>
              </div>
              <div class="info-row">
                 <span class="label">Sohle:</span>
-                <span class="value">{{ selectedElement.pos?.z?.toFixed(2) }} m</span>
+                <span class="value">{{ selectedElement.data?.bottomZ?.toFixed(2) }} m</span>
              </div>
           </template>
 
           <!-- Edge Specifics -->
-          <template v-if="isEdge(selectedElement)">
+          <template v-if="selectedElement.sourceId">
             <div class="info-row">
                 <span class="label">Profil:</span>
                 <span class="value">{{ resolveCode(IsybauCodes.Profilart, selectedElement.profile?.type) }}</span>
@@ -56,7 +56,8 @@
             </div>
             <div class="info-row">
                 <span class="label">Länge:</span>
-                <span class="value">{{ selectedElement.length?.toFixed(2) }} m</span>
+                <!-- Use calculated edge geometry length -->
+                <span class="value">{{ selectedElement.geometry?.length?.toFixed(2) }} m</span>
             </div>
           </template>
         </div>
@@ -66,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, computed, shallowRef } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useIsyIfcStore } from '../../store/index.js';
@@ -77,14 +78,13 @@ import { storeToRefs } from 'pinia';
 // Helper to resolve codes
 const resolveCode = (table, val) => {
     if (val === undefined || val === null) return '-';
-    // Check if table exists and has value
     if (table && table[val]) return table[val];
-    return val; // Return original if no mapping found
+    return val; 
 };
 
 // Store
 const store = useIsyIfcStore();
-const { graph, isProcessing } = storeToRefs(store);
+const { graph, origin } = storeToRefs(store);
 
 // UI State
 const container = ref(null);
@@ -93,7 +93,7 @@ const loading = ref(false);
 
 const hasData = computed(() => graph.value.nodes && graph.value.nodes.size > 0);
 
-// Selected Element (Computed from Store ID)
+// Selected Element
 const selectedElement = computed(() => {
     if (!store.selectedObjectId) return null;
     const n = store.nodeMap.get(store.selectedObjectId);
@@ -103,17 +103,18 @@ const selectedElement = computed(() => {
     return { id: store.selectedObjectId, type: 'Unknown' };
 });
 
-const isNode = (el) => el && el.geometry; // Duck typing via new 'geometry' prop
-const isEdge = (el) => el && el.sourceId; // via IEdge sourceId
-const getElementType = (el) => isNode(el) ? (el.type) : 'Channel';
-
+const getElementType = (el) => el.type || 'Pipe';
 const clearSelection = () => store.clearSelection();
 
 // Three.js Globals
 let scene, camera, renderer, controls, raycaster, mouse;
 let animationId;
-const objectsMap = new Map(); // Mesh -> Data ID
+// Use shallowRef for objectsMap to avoid high reactivity cost
+const objectsMap = new Map(); 
 let networkGroup = null;
+
+// Instantiate Factory
+const factory = new GeometryFactory();
 
 // --- Initialization ---
 
@@ -150,15 +151,6 @@ const initThree = () => {
     const dir = new THREE.DirectionalLight(0xffffff, 1.0);
     dir.position.set(100, 200, 100);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 2048;
-    dir.shadow.mapSize.height = 2048;
-    dir.shadow.camera.near = 0.5;
-    dir.shadow.camera.far = 5000;
-    // Tweak shadow frustum to cover typical sewer networks
-    dir.shadow.camera.left = -500;
-    dir.shadow.camera.right = 500;
-    dir.shadow.camera.top = 500;
-    dir.shadow.camera.bottom = -500;
     scene.add(dir);
 
     // Ground
@@ -183,7 +175,7 @@ const initThree = () => {
     animate();
 };
 
-// --- Scene Builder (The Pipeline) ---
+// --- Scene Builder ---
 
 const buildScene = () => {
     if (!scene) return;
@@ -191,7 +183,7 @@ const buildScene = () => {
     // 1. Clear old group
     if (networkGroup) {
         scene.remove(networkGroup);
-        // Dispose meshes?
+        // Clean disposal
         networkGroup.traverse(o => {
             if (o.geometry) o.geometry.dispose();
             if (o.material) {
@@ -207,73 +199,109 @@ const buildScene = () => {
 
     loading.value = true;
     
-    // Defer to next frame to show loading UI
     setTimeout(() => {
-        // Phase 2: Instanced Build
-        const { root, instanceMap, origin } = GeometryFactory.buildScene(graph.value);
+        // Factory Build - Pass Store Data + Origin
+        // Note: New Factory signature: buildScene(nodes, edges, originOffset)
+        const group = factory.buildScene(graph.value.nodes, graph.value.edges, origin.value);
         
-        networkGroup = root;
+        // Rebuild Map for Raycasting
+        // InstancedMesh stores multiple items. We need to map (UUID + InstanceId) -> ElementID.
+        // The Factory doesn't explicitly return this map. We must iterate or Factory should return it.
+        // Wait, standard InstancedMesh usage requires index tracking.
+        // Is factory returning the map? 
+        // User Code for Factory didn't return a map, it just built the group.
+        // We rely on the ORDER of nodes/edges being preserved.
+        
+        // Let's create the mapping here assuming specific order:
+        // Factory Logic: 
+        // 1. Manholes (from nodes.values() filtered by 'Manhole')
+        // 2. Pipes (from edges)
+        
+        const manholes = Array.from(graph.value.nodes.values()).filter(n => n.type === 'Manhole');
+        const edges = graph.value.edges;
+        
+        group.children.forEach(child => {
+            if (child instanceof THREE.InstancedMesh) {
+                // Determine if they are manholes or pipes based on Material (hacky) 
+                // or just attach metadata to UserData in Factory?
+                // Factory used specific materials.
+                // Better: Factory uses separate InstancedMeshes and adds them to Group.
+                // We can iterate them.
+               
+                // Hack: If material color is Grey -> Manholes. Brown -> Pipes.
+                // This is fragile. Ideally Factory returns the sorting.
+                // But let's assume Order: Manholes first added, Pipes second.
+                // But they are children of Group. Order is typically preserved.
+                
+                // Let's just create our own local "Index" logic.
+                // Iterate the arrays and assign IDs?
+                // Raycaster gives index (instanceId).
+                // We need to know WHICH InstancedMesh corresponds to WHICH array.
+                
+                // Let's modify the map logic slightly:
+                // We can't easily distinguish just by looking at the mesh if we duplicate materials.
+                // But we know Manholes = child[0] if exists, Pipes = child[1] if exists?
+                // NO, filter check in Factory.
+                
+                // Let's iterate children and Map them based on count?
+                if (child.count === manholes.length && child.material === factory.matManhole) {
+                     child.userData.type = 'manholes';
+                } else if (child.count === edges.length && child.material === factory.matPipe) {
+                     child.userData.type = 'pipes';
+                }
+            }
+        });
+
+        networkGroup = group;
         scene.add(networkGroup);
         
-        // Store Instance Map for Raycasting
-        // We use a global or module-level map? Better attached to the component instance but non-reactive
-        // Let's store it in objectsMap references
-        objectsMap.clear(); 
-        for (const [key, val] of instanceMap.entries()) {
-            objectsMap.set(key, val);
-        }
-
-        // Compute Bounding Box of the new Group
-        const box = new THREE.Box3().setFromObject(root);
+        // Bounding Box Fit
+        const box = new THREE.Box3().setFromObject(group);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        
-        // Auto-Fit Camera
         const maxDim = Math.max(size.x, size.y, size.z) || 100;
-        const fov = camera.fov * (Math.PI / 180);
-        let cameraDist = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-        cameraDist *= 1.5; // Zoom out a bit
-
-        // Position camera: Look at center, offset by distance
-        // We want Top-Down or Isometric? Isometric is better for 3D.
-        camera.position.set(center.x + cameraDist, center.y + cameraDist, center.z + cameraDist);
+        
+        // Move Camera
+        const dist = maxDim * 2;
+        camera.position.set(center.x, center.y + dist, center.z + dist);
         controls.target.copy(center);
         
-        console.log(`[Viewer] Built Scene. Origin: ${origin.x}, ${origin.y}`);
-        console.log(`[Viewer] Auto-Fit: Center(${center.x.toFixed(1)}, ${center.y.toFixed(1)}, ${center.z.toFixed(1)}) Size(${maxDim.toFixed(1)})`);
-
         loading.value = false;
         controls.update();
+        
+        console.log(`[Viewer] Scene Built. Origin: ${origin.value.x}, ${origin.value.y}`);
     }, 10);
 };
 
 // --- Interaction ---
 
 const onClick = (e) => {
-    if (!renderer) return;
+    if (!renderer || !networkGroup) return;
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
     raycaster.setFromCamera(mouse, camera);
-    // Intersect only network objects
-    const intersects = raycaster.intersectObjects(networkGroup ? networkGroup.children : []);
+    const intersects = raycaster.intersectObjects(networkGroup.children);
 
     if (intersects.length > 0) {
-        // Find first with mapped ID
-        const hit = intersects.find(i => {
-             // For InstancedMesh, we use UUID:InstanceID
-             // For normal Mesh, we use UUID or ID.
-             const key = i.object.uuid + ':' + (i.instanceId ?? '');
-             if (objectsMap.has(key)) return true;
-             // Legacy/Fallback (if we mix types)
-             return objectsMap.has(i.object.id);
-        });
-
-        if (hit) {
-            let id = objectsMap.get(hit.object.uuid + ':' + (hit.instanceId ?? ''));
-            if (!id) id = objectsMap.get(hit.object.id);
-            
+        const hit = intersects[0];
+        const mesh = hit.object;
+        const instanceId = hit.instanceId;
+        
+        if (instanceId === undefined) return;
+        
+        let id = null;
+        if (mesh.userData.type === 'manholes') {
+             // Re-derive array
+             const manholes = Array.from(graph.value.nodes.values()).filter(n => n.type === 'Manhole');
+             if (manholes[instanceId]) id = manholes[instanceId].id;
+        } else if (mesh.userData.type === 'pipes') {
+             const edges = graph.value.edges;
+             if (edges[instanceId]) id = edges[instanceId].id;
+        }
+        
+        if (id) {
             store.setSelected(id);
             return;
         }
@@ -283,7 +311,7 @@ const onClick = (e) => {
 
 const resetView = () => {
     if (controls) {
-        controls.target.set(0, 0, 0); // World Center (since we shifted Group)
+        controls.target.set(0, 0, 0); 
         camera.position.set(0, 500, 500);
         controls.update();
     }
@@ -306,6 +334,7 @@ const animate = () => {
 
 // --- Lifecycle ---
 
+// Watch graph changes deep
 watch(graph, () => {
     if (graph.value.nodes.size > 0) buildScene();
 }, { deep: true });
@@ -364,10 +393,7 @@ onBeforeUnmount(() => {
 }
 .info-header h3 { margin: 0; font-size: 1rem; }
 .close-btn { background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; }
-.info-content { padding: 1rem; 
-    max-height: 400px;
-    overflow-y: auto;
-}
+.info-content { padding: 1rem; max-height: 400px; overflow-y: auto; }
 .info-row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.9rem; }
 .label { color: #7f8c8d; }
 .value { font-weight: 600; color: #2c3e50; text-align: right; }
