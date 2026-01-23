@@ -39,17 +39,37 @@ export class IfcValidator {
             this.checkSchema(line, index + 1);
         });
 
+        // 3. Final Pass: Check Geometry Existence
+        const geometryCount = this.checkGeometryPresence();
+        if (geometryCount === 0 && this.idMap.size > 0) {
+            this.errors.push({ line: 0, msg: 'CRITICAL: No Geometry found (No IFCEXTRUDEDAREASOLID or BREP)' });
+        }
+
         return {
             valid: this.errors.length === 0,
             errors: this.errors,
             totalLines: this.lines.length,
-            entityCount: this.idMap.size
+            entityCount: this.idMap.size,
+            geometryCount: geometryCount
         };
+    }
+
+    checkGeometryPresence() {
+        let count = 0;
+        this.lines.forEach(line => {
+            if (line.includes('IFCEXTRUDEDAREASOLID') ||
+                line.includes('IFCFACEBASEDSURFACEMODEL') ||
+                line.includes('IFCSHELLBASEDSURFACEMODEL') ||
+                line.includes('IFCTRIANGULATEDFACESET')) {
+                count++;
+            }
+        });
+        return count;
     }
 
     report(res) {
         if (res.valid) {
-            console.log(`✅ IFC Validation Passed! (${res.entityCount} entities)`);
+            console.log(`✅ IFC Validation Passed! (${res.entityCount} entities, ${res.geometryCount} geometries)`);
         } else {
             console.error(`❌ IFC Validation Failed with ${res.errors.length} errors:`);
             res.errors.slice(0, 10).forEach(e => console.error(`   Line ${e.line}: ${e.msg}`));

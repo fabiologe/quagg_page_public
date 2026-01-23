@@ -35,6 +35,7 @@ function parseXmlHeadless(xmlContent) {
     const rawNodes = [];
 
     while ((match = nodeRegex.exec(xmlContent)) !== null) {
+        const block = match[1];
         // Check for Edge Topology (Haltung)
         // Try multiple standard tags for connections
         const srcMatch = block.match(/<KnotenZulauf>(.*?)<\/KnotenZulauf>/) ||
@@ -57,8 +58,11 @@ function parseXmlHeadless(xmlContent) {
             const zZulaufMatch = block.match(/<SohleKnotenZulauf>(.*?)<\/SohleKnotenZulauf>/) || block.match(/<SohlhoeheZulauf>(.*?)<\/SohlhoeheZulauf>/);
             const zAblaufMatch = block.match(/<SohleKnotenAblauf>(.*?)<\/SohleKnotenAblauf>/) || block.match(/<SohlhoeheAblauf>(.*?)<\/SohlhoeheAblauf>/);
 
+            const edgeIdMatch = block.match(/<Objektbezeichnung>(.*?)<\/Objektbezeichnung>/);
+            const edgeId = edgeIdMatch ? edgeIdMatch[1].trim() : `Edge_${count++}`;
+
             edges.push({
-                id: id,
+                id: edgeId,
                 sourceId: srcMatch[1].trim(),
                 targetId: tgtMatch[1].trim(),
                 // Meta info for FixData emulation
@@ -83,6 +87,7 @@ function parseXmlHeadless(xmlContent) {
 
         // ... (Existing Node Logic) ...
         const rwMatch = block.match(/<Rechtswert>(.*?)<\/Rechtswert>/);
+        const idMatch = block.match(/<Objektbezeichnung>(.*?)<\/Objektbezeichnung>/);
         const id = idMatch ? idMatch[1].trim() : `Node_${count++}`;
 
         // Coords
@@ -124,8 +129,11 @@ function parseXmlHeadless(xmlContent) {
         // Store Structure matching User Requirement
         nodes.set(rawNode.id, {
             ...rawNode,
-            origin: origin, // Pass reference if needed, or Writer uses it globally
-            transform: transform // { pos, rot, scale, shape }
+            origin: origin,
+            transform: transform,
+            pos: transform.pos, // Explicitly expose for IfcWriter
+            rot: transform.rot,
+            scale: transform.scale
         });
     }
 
