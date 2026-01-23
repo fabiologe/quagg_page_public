@@ -1,13 +1,16 @@
 import { defineStore } from 'pinia';
+import { GeometryCalculator } from '../core/logic/GeometryCalculator.js';
 import { normalizeGraph } from '../core/worker/FixData.js';
 
 export const useIsyIfcStore = defineStore('isyifc-module', {
     state: () => ({
-        // Graph State (IGraph Interface)
+        // Graph State
         graph: {
             nodes: new Map(), // Map<string, INode>
             edges: []         // IEdge[]
         },
+        origin: { x: 0, y: 0, z: 0 }, // Global Offset (MinX, MinY)
+
         // Processing State
         isProcessing: false,
         importErrors: [],
@@ -16,54 +19,86 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
         selectedObjectId: null,
         metadata: {},
 
-        // Legacy/Helper support
-        areas: [],
-        inspections: []
+        // Stats
+        stats: {
+            nodes: 0,
+            edges: 0,
+            time: 0
+        }
     }),
 
     getters: {
-        // Maps for O(1) lookups in Viewer
-        // Nodes is already a Map
         nodeMap: (state) => state.graph.nodes,
         edgeMap: (state) => new Map(state.graph.edges.map(e => [e.id, e])),
 
-        // Helper for Map Center
-        center: (state) => {
-            if (state.graph.nodes.size === 0) return { x: 0, y: 0 };
-            let sumX = 0, sumY = 0; // In Three Space (x, z)
+        hasData: (state) => state.graph.nodes.size > 0,
 
-            // Iterate Map values
-            state.graph.nodes.forEach(n => {
-                sumX += n.pos.x;
-                sumY += n.pos.z; // Center is usually X/Z Plane in Three
-            });
+        entityCount(state) {
             return {
-                x: sumX / state.graph.nodes.size,
-                y: sumY / state.graph.nodes.size
+                manholes: Array.from(state.graph.nodes.values()).filter(n => n.type === 'Manhole').length,
+                pipes: state.graph.edges.length
             };
         }
     },
 
     actions: {
         /**
-         * Main Import Action.
-         * Parses XML, sanitizes via FixData (via xmlParser), and updates state.
-         * @param {string} rawXmlString 
+         * Main Data Ingestion Point.
+         * Expects output from IsybauParser (or FixData).
+         * @param {Object} payload { rawNodes, rawEdges, stats } or { nodes, edges } from FixData
          */
-        /**
-         * Main Import Action.
-         * Uses IsybauParser.worker (fast-xml-parser) and FixData.js
-         * @param {string} rawXmlString 
-         * @param {string} fileName
-         */
+        setGraphData(payload) {
+            this.isProcessing = true;
+            try {
+                console.log("[Store] setGraphData triggered.");
+
+                let nodes = payload.nodes; // Map
+                let edges = payload.edges; // Array
+
+                // 1. Calculate Origin (if not provided)
+                const origin = GeometryCalculator.calculateOrigin(nodes);
+                this.origin = origin;
+                console.log(`[Store] Origin set to: ${origin.x}, ${origin.y}`);
+
+                // 2. NORMALIZATION (Zero-Center for Viewer)
+                // We iterate and update 'transform' for every node.
+                for (const node of nodes.values()) {
+                    // Compute Transform (Includes pos relative to origin)
+                    const transform = GeometryCalculator.computeNodeTransform(node, origin);
+
+                    // Update Node with Transform Data
+                    node.transform = transform;
+                }
+
+                this.graph.nodes = nodes;
+                this.graph.edges = edges;
+
+                // Update Metadata
+                this.stats = {
+                    nodes: nodes.size,
+                    edges: edges.length,
+                    time: payload.stats?.time || 0
+                };
+
+            } catch (err) {
+                console.error("[Store] Error setting graph data:", err);
+                this.importErrors.push(err.message);
+            } finally {
+                this.isProcessing = false;
+            }
+        },
+
+        // Wrapper for Worker Flow
         async processImport(rawXmlString, fileName = 'import.xml') {
             this.isProcessing = true;
             this.importErrors = [];
+
+            // Clear old data
             this.graph.nodes = new Map();
             this.graph.edges = [];
 
             try {
-                // 1. Parse using Worker
+                // 1. Worker Parse
                 const worker = new Worker(new URL('../core/worker/IsybauParser.worker.js', import.meta.url), { type: 'module' });
 
                 const rawData = await new Promise((resolve, reject) => {
@@ -80,45 +115,27 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
                     };
                 });
 
-                const count = (rawData.nodes?.length || 0) + (rawData.edges?.length || 0);
-                const time = rawData.stats?.time || 0;
-                console.log(`[Store] Raw Parsed: ${count} objects in ${time.toFixed(2)}ms`);
-
-                // 2. Normalize / Clean / Calculate Geometry (Main Thread for now)
-                // FixData takes Flat Worker Data { nodes, edges }
+                // 2. Fix/Normalize Data (Types) & Calculate Origin logic is handled in setGraphData now
+                // But FixData is useful for 'types' and 'light' cleanup
                 const result = normalizeGraph(rawData);
 
-                // 3. Update State
-                this.graph.nodes = result.nodes;
-                this.graph.edges = result.edges;
-                this.importErrors = result.errors;
-
-                // Metadata/Stats
-                this.metadata = {
-                    stats: result.stats,
-                    rawStats: rawData.stats
-                };
-
-                console.log(`[Store] Final: ${this.graph.nodes.size} nodes, ${this.graph.edges.length} edges.`);
+                // 3. Set to Store (Calculates Transforms & Origin)
+                this.setGraphData(result);
 
             } catch (err) {
                 console.error("Import Failed:", err);
                 this.importErrors.push(err.message);
-            } finally {
                 this.isProcessing = false;
             }
         },
 
         clear() {
-            this.graph.nodes = new Map();
+            this.graph.nodes.clear();
             this.graph.edges = [];
-            this.areas = [];
-            this.inspections = [];
-            this.importErrors = [];
             this.selectedObjectId = null;
+            this.importErrors = [];
         },
 
-        // Selection
         setSelected(id) {
             this.selectedObjectId = id;
         },

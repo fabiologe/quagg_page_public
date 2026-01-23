@@ -1,84 +1,182 @@
 /**
  * GeometryCalculator.js
  * 
- * Central Logic for resolving 3D coordinates and hydraulic geometry.
- * Used by FixData (Worker) to persist accurate geometry to the Store.
+ * Pure Math Layer for ISYBAU.
+ * Calculates Position, Rotation (Quaternion), and Scale for all network elements.
+ * Dependencies: NONE (No Three.js, No Ifc.js).
+ * Output: Plain JS Objects for Store/Export.
  */
 
-// Simple 3D Vector Math helper (to avoid importing heavy Three.js in Worker if possible, 
-// though Three.js is often available. simpler to keep it pure JS here for generic usage)
-const distance3D = (p1, p2) => Math.hypot(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+export class GeometryCalculator {
 
-export const GeometryCalculator = {
+    static calculateOrigin(nodes) {
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let count = 0;
 
-    /**
-     * Resolves the "Physical" Z-Levels of a Node.
-     * @param {Object} coords - Raw Coords from Parser {x, y, z_deckel, z_sohle}
-     * @param {Object} shape - Shape info {height...}
-     * @returns {Object} { coverZ, bottomZ, height } normalized
-     */
-    resolveNodeHeight(coords, shape) {
-        let coverZ = coords.z_deckel;
-        let bottomZ = coords.z_sohle;
-        let height = shape.height;
+        for (const node of nodes.values()) {
+            // Raw Coordinates (Rechtswert, Hochwert)
+            // Use data if available, else pos (mock)
+            const x = node.data?.rw ?? node.pos?.x;
+            const y = node.data?.hw ?? (node.pos?.z ? -node.pos.z : 0);
 
-        // Fallbacks are already largely handled in Parser, but clean up here
-        if (coverZ === null && bottomZ !== null) coverZ = bottomZ + (height || 2.0);
-        if (bottomZ === null && coverZ !== null) bottomZ = coverZ - (height || 2.0);
+            // For Origin, we only care about RW/HW (X/Y map coords)
+            if (x && x < minX) minX = x;
+            if (y && y < minY) minY = y;
+            count++;
+        }
 
-        // Final Safety
-        if (coverZ === null) coverZ = 0;
-        if (bottomZ === null) bottomZ = 0;
+        if (count === 0) return { x: 0, y: 0, z: 0 };
 
-        return { coverZ, bottomZ, height: Math.abs(coverZ - bottomZ) };
-    },
-
-    /**
-     * Calculates precise 3D Start/End points for an Edge.
-     * Logic: Uses explicit SohleZulauf/Ablauf if available, otherwise Node Bottom.
-     * @param {Object} edge - The raw edge object
-     * @param {Object} srcNode - The source node object
-     * @param {Object} tgtNode - The target node object
-     */
-    calculateEdgeGeometry(edge, srcNode, tgtNode) {
-        if (!srcNode || !tgtNode) return null;
-
-        // 1. Coordinates (GIS uses X/Y, we map to 3D here?)
-        // FixData usually maps: X -> x, Y -> z(North), Z -> y(Elevation)
-        // Let's stick to the "Store Coordinate System": 
-        // pos: { x: Easting, y: Elevation, z: -Northing } (Three.js standard in app)
-
-        // Source
-        const sx = srcNode.pos.x;
-        const sz = srcNode.pos.z;
-        // Hydraulic Z (Sohle) -> Priority: Edge Attribute -> Node Bottom
-        const sy = (edge.sohleZulauf !== null && edge.sohleZulauf !== undefined)
-            ? edge.sohleZulauf
-            : srcNode.geometry.bottomZ;
-
-        // Target
-        const tx = tgtNode.pos.x;
-        const tz = tgtNode.pos.z;
-        const ty = (edge.sohleAblauf !== null && edge.sohleAblauf !== undefined)
-            ? edge.sohleAblauf
-            : tgtNode.geometry.bottomZ;
-
-        const start = { x: sx, y: sy, z: sz };
-        const end = { x: tx, y: ty, z: tz };
-
-        const length = distance3D(start, end);
-
-        // Slope (dh / dl) - Rise over Run (Approx length 2d?)
-        // Usually hydraulic slope uses horizontal length
-        const len2d = Math.hypot(tx - sx, tz - sz);
-        const slope = len2d > 0.001 ? (ty - sy) / len2d : 0;
-
+        // Round to nice numbers (e.g. nearest 100 or 1000) for clean offsets
         return {
-            startPoint: start,
-            endPoint: end,
-            length: length,
-            length2d: len2d,
-            slope: slope
+            x: Math.floor(minX / 100) * 100,
+            y: Math.floor(minY / 100) * 100,
+            z: 0 // Sea level usually kept as 0 base
         };
     }
-};
+
+    // --- NODE CALCULATION ---
+
+    /**
+     * @param {Object} node - Input Node
+     * @param {Object} origin - Global Origin {x,y,z}
+     */
+    static computeNodeTransform(node, origin) {
+        if (!origin) origin = { x: 0, y: 0, z: 0 };
+
+        const rw = node.data?.rw ?? 0;
+        const hw = node.data?.hw ?? 0;
+        const coverZ = node.data?.coverZ ?? 0;
+        const bottomZ = node.data?.bottomZ ?? (coverZ - 2);
+
+        // 1. Position (Local to Origin)
+        // System: X=East, Y=Up, Z=-North (Three.js conventions usually)
+        // BUT for Data Storage we might want pure Cartesian (X,Y,Z).
+        // Let's stick to the visualizer convention for valid transforms: Y is UP.
+        const x = rw - origin.x;
+        const y = bottomZ; // Base of manhole
+        const z = -(hw - origin.y); // Negative North for 3D
+
+        // 2. Scale (Dimensions)
+        const height = Math.abs(coverZ - bottomZ);
+        const width = node.geometry?.width || 1.0;
+
+        // Shape decision
+        const isRect = (node.geometry?.shape === 'Box' || node.geometry?.shape === 'Rect');
+        const shapeType = isRect ? 'Box' : 'Cylinder';
+
+        return {
+            pos: { x, y, z },
+            // Quaternions: Identity for vertical cylinders (Three.js Cylinders are Y-up by default)
+            rot: { x: 0, y: 0, z: 0, w: 1 },
+            scale: { x: width, y: height, z: width },
+            shape: shapeType,
+            // Meta for IFC
+            meta: {
+                height: height,
+                width: width,
+                radius: width / 2
+            }
+        };
+    }
+
+    // --- EDGE CALCULATION ---
+
+    static computeEdgeTransform(edge, nodeA, nodeB, origin) {
+        if (!nodeA || !nodeB) return null;
+
+        // Start/End Data (Real World)
+        const startRW = nodeA.data?.rw ?? 0;
+        const startHW = nodeA.data?.hw ?? 0;
+        const startZ = nodeA.data?.bottomZ ?? 0;
+
+        const endRW = nodeB.data?.rw ?? 0;
+        const endHW = nodeB.data?.hw ?? 0;
+        const endZ = nodeB.data?.bottomZ ?? 0;
+
+        // Local Coords
+        const ax = startRW - origin.x;
+        const ay = startZ;
+        const az = -(startHW - origin.y);
+
+        const bx = endRW - origin.x;
+        const by = endZ;
+        const bz = -(endHW - origin.y);
+
+        // Midpoint
+        const midX = (ax + bx) / 2;
+        const midY = (ay + by) / 2;
+        const midZ = (az + bz) / 2;
+
+        // Vector
+        const dx = bx - ax;
+        const dy = by - ay;
+        const dz = bz - az;
+        const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        // Rotation (Quaternion)
+        // Orient Y-axis (Cylinder default) to vector (dx, dy, dz)
+        const rot = this.orientToVector(dx, dy, dz);
+
+        const width = edge.data?.width || 0.3;
+
+        return {
+            pos: { x: midX, y: midY, z: midZ },
+            rot: rot,
+            scale: { x: width, y: length, z: width },
+            shape: 'Cylinder', // Pipes are usually cylinders
+            meta: {
+                length,
+                width,
+                delta: { x: dx, y: dy, z: dz } // Useful for IFC Direction
+            }
+        };
+    }
+
+    // Helper: Orient Y-Up to Vector (Quaternion Calculation)
+    // Based on "FromToRotation" logic, simplified.
+    static orientToVector(dx, dy, dz) {
+        // Normalize direction
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 0.0001) return { x: 0, y: 0, z: 0, w: 1 };
+
+        const vx = dx / len;
+        const vy = dy / len;
+        const vz = dz / len;
+
+        // Default Up (Y)
+        const ux = 0, uy = 1, uz = 0;
+
+        // Dot product
+        const dot = uy * vy; // u . v
+
+        // Cross product axis = u x v
+        let cx = uy * vz - uz * vy; // 1*vz - 0 = vz
+        let cy = uz * vx - ux * vz; // 0 - 0 = 0
+        let cz = ux * vy - uy * vx; // 0 - 1*vx = -vx 
+        // Simplified: axis = (vz, 0, -vx) ?? Wait vector math check:
+        // u = (0,1,0). v = (vx, vy, vz).
+        // x = uy*vz - uz*vy = vz
+        // y = uz*vx - ux*vz = 0
+        // z = ux*vy - uy*vx = -vx
+        // Correct.
+
+        // Quaternion construction (Axis-Angle)
+        // If parallel (dot close to 1 or -1), handle singularities
+        if (dot > 0.9999) return { x: 0, y: 0, z: 0, w: 1 };
+        if (dot < -0.9999) {
+            // 180 flip around X
+            return { x: 1, y: 0, z: 0, w: 0 };
+        }
+
+        const s = Math.sqrt((1 + dot) * 2);
+        const invS = 1 / s;
+
+        return {
+            x: cx * invS,
+            y: cy * invS,
+            z: cz * invS,
+            w: 0.5 * s
+        };
+    }
+}

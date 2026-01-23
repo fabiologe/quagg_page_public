@@ -152,5 +152,10 @@ export const normalizeGraph = (workerData) => {
         stats.edgesTotal++;
     }
 
-    return { nodes, edges, stats };
+    // --- ORIGIN CALCULATION ---
+    // Calculate global origin for rendering/export offset
+    const origin = GeometryCalculator.calculateOrigin(nodes);
+    console.log(`[FixData] Origin calculated: ${origin.x}, ${origin.y}`);
+
+    return { nodes, edges, stats, origin };
 };
