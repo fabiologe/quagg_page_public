@@ -34,14 +34,38 @@ self.onmessage = async (e) => {
             Module = await Lisflood({
                 // Hook stdout/stderr
                 print: (text) => {
-                    if (text.trim()) sendLog(`[SOLVER] ${text}`);
+                    // Filter noisy lines
+                    if (!text) return;
+
+                    // 1. Log to UI
+                    // Only log if not a pure progress update to avoid spam
+                    if (!text.startsWith('t=')) {
+                        sendLog(`[SOLVER] ${text}`);
+                    }
+
+                    // 2. Parse Progress: "t= 120.00  dt= 1.00"
+                    if (text.includes('t=')) {
+                        const match = text.match(/t=\s*([\d\.]+)/);
+                        if (match && match[1]) {
+                            const t = parseFloat(match[1]);
+                            postMessage({ type: 'PROGRESS_UPDATE', time: t });
+                        }
+                    }
                 },
                 printErr: (text) => {
                     if (text.trim()) {
-                        console.warn(`[SOLVER ERR] ${text}`);
-                        // Detect Critical Errors
+                        sendLog(`[SOLVER ERR] ${text}`);
+
+                        // Detect Critical Errors & Instability
                         if (text.includes("CFL") || text.includes("Mass Balance")) {
                             sendError(text);
+                        }
+                        if (text.includes('h <') || text.includes('Depth negative')) {
+                            postMessage({
+                                type: 'WARNING',
+                                code: 'INSTABILITY',
+                                message: 'Numerical Instability detected (Negative Depth). Check Time Step.'
+                            });
                         }
                     }
                 },
@@ -62,6 +86,8 @@ self.onmessage = async (e) => {
 
             FS = Module.FS;
             sendLog("Lisflood WASM Initialized.");
+            // DEBUG: Check available methods
+            sendLog(`Module Keys: ${Object.keys(Module).join(', ')}`);
             postMessage({ type: 'STATUS', status: 'READY' });
 
         } else if (cmd === 'CMD_RUN') {
@@ -105,20 +131,27 @@ self.onmessage = async (e) => {
 
             // 3. Run Solver (Async or Sync depending on build)
             // LISFLOOD usually runs via main(). passing run.par as arg?
-            // "lisflood -par run.par" or similar.
-            // If it's a standard main(), we call callMain
-            sendLog("Starting LISFLOOD Solver...");
+            sendLog("Starting Lisflood Solver...");
 
             // Using setTimeout to allow UI to update before blocking (if sync)
             setTimeout(() => {
                 try {
-                    Module.callMain(['run.par']); // Access point
+                    // Hook into run.par
+                    Module.callMain(['run.par']);
                     sendLog("Solver Finished.");
-                    postMessage({ type: 'FINISHED' });
+                    postMessage({ type: 'STATUS', status: 'FINISHED' }); // Use consistent status
                     currentState = 'FINISHED';
                 } catch (e) {
+                    if (e && e.name === 'ExitStatus') {
+                        // Normal exit?
+                        if (e.status === 0) {
+                            sendLog("Solver Finished (Exit 0).");
+                            postMessage({ type: 'STATUS', status: 'FINISHED' });
+                            currentState = 'FINISHED';
+                            return;
+                        }
+                    }
                     if (e.message && e.message.includes('SimulateInfiniteLoop')) {
-                        // Emscripten specific exit
                         return;
                     }
                     handleError(e, "Execution");
@@ -130,6 +163,9 @@ self.onmessage = async (e) => {
         handleError(err, "WorkerMessageHandler");
     }
 };
+
+// --- HELPER FUNCTIONS ---
+
 function checkFSForResults() {
     if (!FS) return;
 
@@ -141,26 +177,22 @@ function checkFSForResults() {
             if (file === '.' || file === '..') continue;
 
             if (resultPattern.test(file) && !processedFiles.has(file)) {
-                // processedFiles.add(file); // Don't track history, we delete immediately!
 
                 const path = '/results/' + file;
-                // KEY CHANGE: Read as Binary (Uint8Array)
                 const content = FS.readFile(path, { encoding: 'binary' });
 
-                // 2. Parse & Validate (Byte-Crawler Logic)
+                // 2. Parse & Validate
                 const result = OutputProcessor.parseAsync(content);
 
-                // 3. Cleanup IMMEDIATELY to free MEMFS memory
+                // 3. Cleanup
                 FS.unlink(path);
 
                 if (result.isValid) {
-                    // Validation Check
                     if (result.hasNegativeDepth) {
                         console.warn(`[Solver Check] Detected instability (negative depth < -0.1m) in frame ${file}`);
                         postMessage({ type: 'WARNING', message: 'Solver Instability Detected' });
                     }
 
-                    // 4. Zero-Copy Transfer
                     const frameMatch = file.match(/(\d+)/);
                     const frameId = frameMatch ? parseInt(frameMatch[1], 10) : 0;
 
@@ -171,7 +203,7 @@ function checkFSForResults() {
                         header: result.header,
                         min: result.min,
                         max: result.max
-                    }, [result.data.buffer]); // Transfer ownership
+                    }, [result.data.buffer]);
 
                 } else {
                     console.error(`Parsed invalid output file: ${file}: ${result.error}`);

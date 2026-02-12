@@ -381,211 +381,175 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         console.log(`[LayerRenderer] Rendered ${buildingGroup.children.length} buildings, ${boundaryGroup.children.length} boundaries.`);
     };
 
-    // --- HYDRAULIC VISUALIZATION HELPERS ---
+    // --- HYDRAULIC VISUALIZATION (INSTANCED) ---
 
-    const createArrow = (pos, color, direction = 1) => {
-        // direction: 1 = UP (Inflow), -1 = DOWN (Outflow)
-        const group = new THREE.Group();
-        group.position.copy(pos);
+    // Cache Geometries & Materials
+    const userArrowShaftGeo = new THREE.CylinderGeometry(1, 1, 15, 8); // Height 15
+    const userArrowHeadGeo = new THREE.ConeGeometry(2.5, 5, 16);     // Height 5
+    // Rotate geometry to base state: Pointing UP (Y+)
+    userArrowShaftGeo.translate(0, 7.5, 0); // Center at base (0,0,0) -> (0,15,0)
+    userArrowHeadGeo.translate(0, 17.5, 0); // Base at 15 -> Tip at 20. Center at 17.5
 
-        // Visual Params
-        const shaftHeight = 15;
-        const coneHeight = 5;
-        // Total Arrow Height = 20
+    // Materials (Shared)
+    const arrowMatBlue = new THREE.MeshBasicMaterial({ color: 0x0000FF });
+    const arrowMatRed = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
 
-        const mat = new THREE.MeshBasicMaterial({ color: color });
-
-        // Shaft
-        const cylinderGeo = new THREE.CylinderGeometry(1, 1, shaftHeight, 8);
-        const cylinder = new THREE.Mesh(cylinderGeo, mat);
-
-        // Cone
-        const coneGeo = new THREE.ConeGeometry(2.5, coneHeight, 16);
-        const cone = new THREE.Mesh(coneGeo, mat);
-
-        if (direction === 1) {
-            // UP: Shaft on ground, Cone on top
-            // Cylinder center at y = shaftHeight / 2
-            cylinder.position.y = shaftHeight / 2;
-            // Cone center at y = shaftHeight + coneHeight / 2
-            cone.position.y = shaftHeight + coneHeight / 2;
-            // Default cone points UP (Y+)
-        } else {
-            // DOWN: Arrow pointing to ground
-            // Cone Tip at 0.
-            // Cone center at Y = coneHeight / 2.
-            cone.rotation.x = Math.PI; // Point Down
-            cone.position.y = coneHeight / 2;
-
-            // Shaft on top of cone
-            // Cylinder center at Y = coneHeight + shaftHeight / 2
-            cylinder.position.y = coneHeight + shaftHeight / 2;
-        }
-
-        group.add(cylinder);
-        group.add(cone);
-
-        return group;
-    };
-
-    const createWall = (points, color) => {
-        // points: Array of Vector3 (bottom points)
-        // We want to extrude them UP by 10m.
-        if (points.length < 2) return null;
-
-        const vertices = [];
-        const indices = [];
-
-        // Build vertices. For each point P, we have Bottom(P) and Top(P)
-        for (let i = 0; i < points.length; i++) {
-            const p = points[i];
-            // Bottom
-            vertices.push(p.x, p.y, p.z);
-            // Top (+10m Y in local space is Up)
-            vertices.push(p.x, p.y + 10, p.z);
-        }
-
-        // Build triangles (Quads)
-        // 0--2
-        // | /|
-        // |/ |
-        // 1--3 (Wait, 0 is bottom, 1 is top? No.)
-        // i*2 = Bottom, i*2+1 = Top
-
-        for (let i = 0; i < points.length - 1; i++) {
-            const b1 = i * 2;
-            const t1 = i * 2 + 1;
-            const b2 = (i + 1) * 2;
-            const t2 = (i + 1) * 2 + 1;
-
-            // Tri 1: b1, t1, b2
-            indices.push(b1, t1, b2);
-            // Tri 2: t1, t2, b2
-            indices.push(t1, t2, b2);
-        }
-
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geometry.setIndex(indices);
-        geometry.computeVertexNormals();
-
-        const material = new THREE.MeshPhysicalMaterial({
-            color: color,
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.6,
-            roughness: 0.1,
-            metalness: 0.1,
-            transmission: 0.2 // Watery look
-        });
-
-        const mesh = new THREE.Mesh(geometry, material);
-        return mesh;
-    };
+    let instancedShaftMesh = null;
+    let instancedHeadMesh = null;
 
     const renderHydraulics = () => {
+        // Clear previous instances
+        if (instancedShaftMesh) {
+            hydraulicGroup.remove(instancedShaftMesh);
+            instancedShaftMesh.dispose();
+            instancedShaftMesh = null;
+        }
+        if (instancedHeadMesh) {
+            hydraulicGroup.remove(instancedHeadMesh);
+            instancedHeadMesh.dispose();
+            instancedHeadMesh = null;
+        }
+
+        // Also clear legacy children just in case
         clearGroup(hydraulicGroup);
-        // Ensure Hydraulic Store logic is ready
+
         if (!hydraulicStore.assignments) return;
 
-        // Configuration Map
+        // 1. Collect all transforms & colors
+        const instances = []; // { position: Vector3, color: Color, dir: 1/-1 }
+
         const getVisualConfig = (type) => {
             if (!type) return null;
-            if (type.includes('INFLOW') || type.includes('BOUNDARY_INFLOW')) {
-                return { color: 0x0000FF, dir: 1 }; // Blue Up
-            }
-            if (type.includes('OUTFLOW') || type.includes('HFIX') || type.includes('SINK')) {
-                return { color: 0xFF0000, dir: -1 }; // Red Down
-            }
+            if (type.includes('INFLOW') || type.includes('BOUNDARY_INFLOW')) return { color: new THREE.Color(0x0000FF), dir: 1 };
+            if (type.includes('OUTFLOW') || type.includes('HFIX') || type.includes('SINK')) return { color: new THREE.Color(0xFF0000), dir: -1 };
             return null;
         };
 
-        // 1. Nodes
+        // Helper to push instance
+        const addInstance = (pos, viz) => {
+            instances.push({ pos, color: viz.color, dir: viz.dir });
+        };
+
+        // A. NODES
         if (geoStore.nodes) {
             geoStore.nodes.forEach(node => {
                 const config = hydraulicStore.assignments[node.id];
                 if (config) {
                     const viz = getVisualConfig(config.type);
-                    if (viz) {
-                        const pos = getLocalPos(node.x, node.y, node.cover_level);
-                        hydraulicGroup.add(createArrow(pos, viz.color, viz.dir));
-                    }
+                    if (viz) addInstance(getLocalPos(node.x, node.y, node.cover_level), viz);
                 }
             });
         }
 
-        // 2. Boundaries
+        // B. BOUNDARIES
         if (geoStore.boundaries && geoStore.boundaries.features) {
             const grid = getActiveGrid();
             const gridData = getActiveData();
 
             geoStore.boundaries.features.forEach(feature => {
                 const config = hydraulicStore.assignments[feature.id];
-                if (config) {
-                    const viz = getVisualConfig(config.type);
-                    if (!viz) return;
+                const viz = config ? getVisualConfig(config.type) : null;
+                if (!viz) return;
 
-                    const type = feature.geometry.type;
-                    if (type === 'LineString' || type === 'MultiLineString') {
-                        const lines = (type === 'LineString') ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+                const type = feature.geometry.type;
+                if (type === 'LineString' || type === 'MultiLineString') {
+                    const lines = (type === 'LineString') ? [feature.geometry.coordinates] : feature.geometry.coordinates;
 
-                        lines.forEach(lineCoords => {
-                            // User Request: Arrow on EVERY raster cell along the line.
-                            // Interpolate lines.
-                            if (!grid) {
-                                // Fallback
-                                lineCoords.forEach(pt => {
-                                    const p = getLocalPos(pt[0], pt[1], 0);
-                                    hydraulicGroup.add(createArrow(p, viz.color, viz.dir));
-                                });
-                                return;
-                            }
+                    lines.forEach(lineCoords => {
+                        if (!grid) {
+                            // Fallback
+                            lineCoords.forEach(pt => addInstance(getLocalPos(pt[0], pt[1], 0), viz));
+                            return;
+                        }
+                        const { cellsize, ncols, nrows, bounds } = grid;
+                        const spacing = cellsize || 1.0;
 
-                            const { cellsize, ncols, nrows, bounds } = grid;
-                            const spacing = cellsize || 1.0;
+                        for (let i = 0; i < lineCoords.length - 1; i++) {
+                            const start = lineCoords[i];
+                            const end = lineCoords[i + 1];
+                            const dx = end[0] - start[0];
+                            const dy = end[1] - start[1];
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const steps = Math.max(1, Math.floor(dist / spacing));
 
-                            for (let i = 0; i < lineCoords.length - 1; i++) {
-                                const start = lineCoords[i];
-                                const end = lineCoords[i + 1];
+                            for (let step = 0; step <= steps; step++) {
+                                if (step === steps && i < lineCoords.length - 2) continue; // Avoid duplicate at joints
 
-                                const dx = end[0] - start[0];
-                                const dy = end[1] - start[1];
-                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                const t = (steps > 0) ? step / steps : 0;
+                                const tx = start[0] + dx * t;
+                                const ty = start[1] + dy * t;
 
-                                // Divide segment into steps based on cellsize
-                                const steps = Math.max(1, Math.floor(dist / spacing));
-
-                                for (let step = 0; step <= steps; step++) {
-                                    // Skip last point if it's not the end of the line (to avoid duplicates)
-                                    if (step === steps && i < lineCoords.length - 2) continue;
-
-                                    const t = (steps > 0) ? step / steps : 0;
-                                    const tx = start[0] + dx * t;
-                                    const ty = start[1] + dy * t;
-
-                                    // Sample Z
-                                    let z = 0;
-                                    if (gridData) {
-                                        const localX = tx - grid.center.x;
-                                        const inputZ = -(ty - grid.center.y);
-                                        const c = Math.round((localX + bounds.width / 2) / cellsize);
-                                        const r = Math.round((bounds.height / 2 - inputZ) / cellsize);
-                                        if (c >= 0 && c < ncols && r >= 0 && r < nrows) {
-                                            const idx = r * ncols + c;
-                                            const val = gridData[idx];
-                                            if (val > -9000) z = val;
-                                        }
-                                    }
-
-                                    const pos = getLocalPos(tx, ty, z);
-                                    hydraulicGroup.add(createArrow(pos, viz.color, viz.dir));
+                                // Sample Z
+                                let z = 0;
+                                if (gridData) {
+                                    const localX = tx - grid.center.x;
+                                    const inputZ = -(ty - grid.center.y);
+                                    const c = Math.round((localX + bounds.width / 2) / cellsize);
+                                    const r = Math.round((bounds.height / 2 - inputZ) / cellsize);
+                                    if (c >= 0 && c < ncols && r >= 0 && r < nrows) z = gridData[r * ncols + c] > -9000 ? gridData[r * ncols + c] : 0;
                                 }
+                                addInstance(getLocalPos(tx, ty, z), viz);
                             }
-                        });
-                    }
+                        }
+                    });
                 }
             });
         }
+
+        if (instances.length === 0) return;
+
+        // 2. Create Instanced Meshes
+        // We use one material (white) and instanceColor to tint it? 
+        // Or MeshBasicMaterial with vertexColors? 
+        // InstancedMesh supports .setColorAt(i, color). Material usually needs vertexColors: true?
+        // Actually MeshBasicMaterial doesn't support vertex colors in the same way for Instancing without custom shader usually?
+        // Wait, standard Three.js InstancedMesh + MeshBasicMaterial works if we set color.
+
+        instancedShaftMesh = new THREE.InstancedMesh(userArrowShaftGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), instances.length);
+        instancedHeadMesh = new THREE.InstancedMesh(userArrowHeadGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), instances.length);
+
+        const dummy = new THREE.Object3D();
+
+        instances.forEach((inst, i) => {
+            dummy.position.copy(inst.pos);
+            dummy.scale.set(1, 1, 1);
+
+            // Rotation
+            if (inst.dir === -1) {
+                // DOWN: Rotate 180 deg (PI) around X or Z
+                // Base (Shaft) is 0..15. Tip is 15..20. 
+                // If we rotate PI around X, it points down.
+                // Local origin of geometry is (0,0,0).
+                // We pre-translated geometry so 0 is base. 
+                // If we rotate, we pivot around base. 
+                // Perfect.
+                dummy.rotation.set(Math.PI, 0, 0);
+                // BUT: Since geometry was Y+, rotating PI makes it Y-.
+                // Base is still at (0,0,0) relative to dummy.
+                // So the arrow hangs DOWN from the pos.
+                // Correct logic relative to user request (Inflow UP from ground, Outflow DOWN into ground? Or just visual indicator?)
+                // Previous logic: DOWN cone was at y=height/2... essentially just flipped manually.
+                // Here: Rotating 180 at base means it draws into the ground. Correct.
+            } else {
+                dummy.rotation.set(0, 0, 0);
+            }
+
+            dummy.updateMatrix();
+
+            instancedShaftMesh.setMatrixAt(i, dummy.matrix);
+            instancedHeadMesh.setMatrixAt(i, dummy.matrix);
+
+            instancedShaftMesh.setColorAt(i, inst.color);
+            instancedHeadMesh.setColorAt(i, inst.color);
+        });
+
+        instancedShaftMesh.instanceMatrix.needsUpdate = true;
+        instancedShaftMesh.instanceColor.needsUpdate = true;
+        instancedHeadMesh.instanceMatrix.needsUpdate = true;
+        instancedHeadMesh.instanceColor.needsUpdate = true;
+
+        hydraulicGroup.add(instancedShaftMesh);
+        hydraulicGroup.add(instancedHeadMesh);
     };
 
     // --- SELECTION HIGHLIGHT ---

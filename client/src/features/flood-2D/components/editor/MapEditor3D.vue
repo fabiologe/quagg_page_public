@@ -770,8 +770,10 @@ const updateWaterLayer = (depthData, gridInfo) => {
                 uDepthMap: { value: texture },
                 uMinZ: { value: minZ },
                 uMaxZ: { value: maxZ }, // Relative height
-                uColorWater: { value: new THREE.Vector3(0.0, 0.4, 0.8) },
-                uOpacity: { value: 0.7 }
+                // Colors: Cyan (Shallow) -> Deep Blue (Deep)
+                uColorShallow: { value: new THREE.Color(0x00FFFF) },
+                uColorDeep: { value: new THREE.Color(0x00008B) }, 
+                uOpacity: { value: 0.85 }
             },
             vertexShader: `
                 varying float vDepth;
@@ -784,21 +786,17 @@ const updateWaterLayer = (depthData, gridInfo) => {
                    float d = texture2D(uDepthMap, uv).r;
                    vDepth = d;
 
-                   // Vertex Position (needs to sit ON TOP of terrain)
-                   // We assume 'position' is terrain height (Z).
-                   // Actually, terrainMesh.geometry.position.z is (z - minZ).
-                   
                    vec3 pos = position;
                    
-                   // Move Water UP by depth
-                   // BUT: The geometry is static terrain. We want to elevate water surface = Terrain + Depth.
-                   // If depth > 0.01, set z = terrainZ + depth.
-                   // If depth == 0, we can hide it in fragment or set z = -9999.
+                   // Dynamic Offset for Z-Fighting
+                   // If depth > 0.01: Lift by d + offset
+                   // Visual polish: For very shallow water, we still need enough lift 
+                   // to avoid z-fighting with terrain noise.
                    
                    if (d > 0.01) {
                        pos.z += d; 
-                       // Check for z-fighting, maybe add small offset
-                       pos.z += 0.05; 
+                       // Lift slightly above terrain to prevent stitching artifacts
+                       pos.z += 0.15; 
                    } else {
                        pos.z = -1000.0; // Hide
                    }
@@ -808,18 +806,23 @@ const updateWaterLayer = (depthData, gridInfo) => {
             `,
             fragmentShader: `
                 varying float vDepth;
-                uniform vec3 uColorWater;
+                uniform vec3 uColorShallow;
+                uniform vec3 uColorDeep;
                 uniform float uOpacity;
 
                 void main() {
                     if (vDepth < 0.01) discard;
                     
-                    // Simple lighting fake
-                    vec3 col = uColorWater;
+                    // Depth Coloring
+                    // 0.0m -> Shallow Color
+                    // 2.0m -> Deep Color
+                    float t = clamp(vDepth / 2.0, 0.0, 1.0);
+                    vec3 col = mix(uColorShallow, uColorDeep, t);
                     
-                    // Depth based darkness?
-                    float alpha = uOpacity;
-                    if (vDepth < 0.2) alpha = 0.5;
+                    // Alpha Logic
+                    // Shallow = more transparent (0.6)
+                    // Deep = more opaque (0.9)
+                    float alpha = mix(0.5, 0.9, t);
                     
                     gl_FragColor = vec4(col, alpha);
                 }
@@ -829,6 +832,7 @@ const updateWaterLayer = (depthData, gridInfo) => {
         });
 
         waterMesh = new THREE.Mesh(geometry, material);
+        waterMesh.userData.isWater = true; // Tag
         waterMesh.rotation.x = -Math.PI / 2;
         scene.add(waterMesh);
     } else {

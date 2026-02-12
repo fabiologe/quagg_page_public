@@ -120,18 +120,9 @@ export const useSimulationStore = defineStore('simulation', () => {
         setProgress,
         addLog,
         clearLogs,
-        setResults,
-        setConfig,
-
-        // Actions
-        setActiveTool,
-        setSelection,
-        setStatus,
-        setProgress,
-        addLog,
-        clearLogs,
-        addResultFrame,  // New Export
-        clearResults,    // New Export
+        // addResultFrame, // Disabled per user request
+        // clearResults,   // Disabled per user request
+        setResults: (val) => { results.value = val; }, // Fixed: Inline definition or restore
         setConfig,
 
         // NEW: Exports
@@ -141,8 +132,8 @@ export const useSimulationStore = defineStore('simulation', () => {
         clearSelection,
 
         // Result Data
-        resultFrames,
-        currentFrameIndex,
-        resultHeader
+        // resultFrames,     // Disabled
+        // currentFrameIndex,// Disabled
+        // resultHeader      // Disabled
     };
 });

@@ -3,8 +3,11 @@
     <h2>🌊 2D Flood Simulation (WASM)</h2>
     
     <div class="controls">
-      <button @click="runSimulation" :disabled="isRunning" class="run-btn">
-        {{ isRunning ? 'Simulating...' : 'Start Simulation' }}
+      <button v-if="!isRunning" @click="runSimulation" class="run-btn">
+        Start Simulation
+      </button>
+      <button v-else @click="abortSimulation" class="stop-btn">
+        🛑 Stop Simulation
       </button>
 
       <button @click="runDryCheck" class="dry-run-btn" title="Check Inputs without running solver">
@@ -44,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted, computed, watch } from 'vue';
+import { ref, onUnmounted, computed, watch, toRaw } from 'vue';
 
 import JSZip from 'jszip';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
@@ -160,7 +163,7 @@ const runSimulation = async () => {
                 // Clear timeout on first message
                 if (initTimeout) clearTimeout(initTimeout);
                 
-                const { type, status: workerStatus, text, value, frame, header, payload, error } = e.data;
+                const { type, status: workerStatus, text, value, frame, header, payload, error, time, message } = e.data;
                 
                 switch (type) {
                     case 'STATUS':
@@ -175,9 +178,21 @@ const runSimulation = async () => {
                            startPreparation();
                         } else if (workerStatus === 'FINISHED') {
                            simStore.setStatus('FINISHED');
+                           simStore.setProgress(100);
                            appendLog(`[COMPLETE] Simulation finished.`);
                            isRunning.value = false;
                         }
+                        break; // Added break
+
+                    case 'PROGRESS_UPDATE':
+                        // time is current sim time in seconds
+                        if (time !== undefined) {
+                            const duration = simStore.simDuration || 3600;
+                            const percent = Math.min(100, Math.max(0, (time / duration) * 100));
+                            simStore.setProgress(Math.round(percent));
+                        }
+                        break;
+
                     case 'STDOUT': appendLog(`[STDOUT] ${text}`); break;
                     case 'STDERR': appendLog(`[STDERR] ${text}`); break;
 
@@ -186,22 +201,22 @@ const runSimulation = async () => {
                         break;
                         
                     case 'WARNING':
-                        appendLog(`[WARNING] ${text}`);
-                        // Optional: specific UI indicator for warning
+                        appendLog(`[WARNING] ${message || text}`);
+                        if (message && message.includes('Instability')) {
+                            // Non-blocking notification or toast would be better, but log is fine for now
+                            // Maybe pause?
+                            simStore.addLog(`⚠️ INSTABILITY DETECTED: ${message}`);
+                        }
                         break;
 
                     case 'RESULT':
                          try {
                              const frameName = `res-${String(frame).padStart(4, '0')}.wd.asc`;
-                             // Assuming Rasterizer is available in scope or passed
-                             // If Rasterizer is not imported, we need raw data or handle it.
-                             // Actually, the previous code had Rasterizer imported.
                              const ascContent = Rasterizer.gridToASC(payload, header);
                              resultFiles.value[frameName] = ascContent;
                              
-                             // 5. Store for Visualization (NEW)
-                             // Payload is Float32Array of depths
-                             simStore.addResultFrame(frame, payload, header);
+                             // 5. Store for Visualization (DISABLED per User Request)
+                             // simStore.addResultFrame(frame, payload, header);
 
                              appendLog(`[RESULT] Received Frame ${frame}`);
                          } catch (err) {
@@ -234,6 +249,17 @@ const runSimulation = async () => {
         appendLog(`Setup Error: ${e.message}`);
         isRunning.value = false;
     }
+};
+
+const abortSimulation = () => {
+    if (worker) {
+        worker.terminate();
+        worker = null;
+    }
+    isRunning.value = false;
+    simStore.setStatus('ABORTED');
+    simStore.rows = []; // Clear current run data? Optional.
+    appendLog("⛔ Simulation Aborted by User.");
 };
 
 
@@ -310,22 +336,22 @@ const startPreparation = async () => {
     try {
          // Gather Data from Stores
          const scenarioData = {
-             grid: geoStore.terrain, 
-             modifications: geoStore.modifications, 
-             buildings: geoStore.buildings, 
-             rain: hydStore.rainConfig && hydStore.rainData ? {
+             grid: toRaw(geoStore.terrain), 
+             modifications: toRaw(geoStore.modifications), 
+             buildings: toRaw(geoStore.buildings), 
+             rain: hydStore.rainConfig && hydStore.rainData ? toRaw({
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
-             } : null,
-             boundaries: geoStore.boundaries ? geoStore.boundaries.features : [],
-             manholes: geoStore.nodes ? geoStore.nodes.map(n => ({
+             }) : null,
+             boundaries: geoStore.boundaries ? toRaw(geoStore.boundaries.features) : [],
+             manholes: geoStore.nodes ? toRaw(geoStore.nodes).map(n => ({
                  type: 'Feature',
                  id: n.id,
                  geometry: { type: 'Point', coordinates: [n.x, n.y] },
                  properties: { name: n.displayName || `Node_${n.id}` }
              })) : [],
-             assignments: hydStore.assignments,
-             ganglinien: hydStore.ganglinien,
+             assignments: toRaw(hydStore.assignments),
+             ganglinien: toRaw(hydStore.ganglinien),
              globalRoughness: hydStore.globalRoughness,
              config: {
                  sim_time: simStore.simDuration || 3600,
@@ -336,11 +362,15 @@ const startPreparation = async () => {
          // 2. Send to Worker (DELEGATED GENERATION)
          // We send the raw scenario data, and the worker runs InputGenerator internally.
          if (worker) {
+             // Clone specifically to be safe
+             // const payload = JSON.parse(JSON.stringify(scenarioData)); 
+             // ^ CANT DO THIS because gridData is Float32Array (Transferable) ideally, or at least binary.
+             // toRaw should be enough.
+             
              worker.postMessage({
                  cmd: 'CMD_RUN',
                  payload: { 
                     scenarioData: scenarioData,
-                    // validFiles: null // implicitly null, triggering worker generation
                  }
              });
              simStore.setStatus('RUNNING');
@@ -398,6 +428,21 @@ onUnmounted(() => {
 
 .run-btn:hover:not(:disabled) {
     background: #1976D2;
+}
+
+.stop-btn {
+    padding: 0.75rem 1.5rem;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.stop-btn:hover {
+    background: #c0392b;
 }
 
 .dry-run-btn {
