@@ -71,6 +71,12 @@ const router = createRouter({
       meta: { layout: 'public' }
     },
     {
+      path: '/isyscan',
+      name: 'isyscan-poc',
+      component: () => import('@/features/isyscan/views/IsyScanView.vue'),
+      meta: { layout: 'public' }
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/features/auth/LoginView.vue'),

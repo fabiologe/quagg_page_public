@@ -30,6 +30,7 @@
 import { onMounted, onUnmounted, watch, ref } from 'vue'
 import L from 'leaflet'
 import area from '@turf/area'
+// import centerOfMass from '@turf/center-of-mass' // Configured out
 import axios from 'axios'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-draw/dist/leaflet.draw.css'
@@ -48,8 +49,9 @@ const isSearching = ref(false)
 const historyStack = ref([]) // Reactive history
 let map = null
 let editableLayers = null
-let drawControl = null // Define at top level
-let undoLastAction = () => {} // Placeholder
+let labelLayerGroup = null // Group for labels and leader lines
+let drawControl = null
+let undoLastAction = () => {} 
 
 async function searchAddress() {
   if (!searchQuery.value || !map) return
@@ -91,7 +93,6 @@ L.Icon.Default.mergeOptions({
 const props = defineProps({
   center: { type: Array, default: () => [49.44, 7.75] },
   zoom: { type: Number, default: 18 },
-  // Erwartet: [{id: 'uuid', color: '#hex'}, ...]
   polygonStyles: { type: Array, default: () => [] },
   drawOptions: { 
     type: Object, 
@@ -109,12 +110,10 @@ const props = defineProps({
 const emit = defineEmits(['update', 'delete', 'select'])
 
 
-// Funktion: Färbt alle Polygone basierend auf den Props
 function updateLayerStyles() {
   if (!editableLayers) return
 
   editableLayers.eachLayer(layer => {
-    // Wir suchen den Style für diese Layer-ID
     const layerId = layer.feature?.id
     if (!layerId) return
 
@@ -131,16 +130,28 @@ function updateLayerStyles() {
   })
 }
 
-// Beobachte Änderungen an den Styles (live Update)
 watch(() => props.polygonStyles, () => {
   updateLayerStyles()
 }, { deep: true })
 
-function updateAreaTooltip(layer) {
+// --- LABEL SYSTEM ---
+
+/**
+ * Updates or creates the label system (Marker + Leader Line) for a specific layer.
+ */
+function updateLabelSystem(layer) {
+  if (!labelLayerGroup || !map) return
+  
+  // Cleanup old tooltips if they exist (legacy support)
+  layer.unbindTooltip()
+
   const geoJson = layer.toGeoJSON()
   let content = ''
-  
+  let centerLatLng = null
+
+  // 1. Calculate Content and Center
   if (geoJson.geometry.type === 'LineString') {
+    // For polylines, we use simple length and center of bounds
     let len = 0
     if (layer instanceof L.Polyline) {
        const latlngs = layer.getLatLngs()
@@ -149,21 +160,110 @@ function updateAreaTooltip(layer) {
        }
     }
     content = `${(len / 1000).toFixed(3)} km`
+    centerLatLng = layer.getBounds().getCenter()
     
   } else {
+    // For polygons, calculate Area and Center
     const areaVal = Math.round(area(geoJson))
     content = `${areaVal} m²`
+    
+    // Fallback to Leaflet centroid
+    if (typeof layer.getCenter === 'function') {
+      centerLatLng = layer.getCenter()
+    } else {
+      centerLatLng = layer.getBounds().getCenter()
+    }
   }
-  
-  // Tooltip binden oder aktualisieren
-  if (layer.getTooltip()) {
-    layer.setTooltipContent(content)
-  } else {
-    layer.bindTooltip(content, {
-      permanent: true,
-      direction: 'center',
-      className: 'area-tooltip'
+
+  // 2. Initialize Label Context if missing
+  // We attach the label elements to the layer object for lifecycle management
+  if (!layer._labelContext) {
+    layer._labelContext = {
+      marker: null,
+      line: null
+    }
+  }
+
+  const ctx = layer._labelContext
+
+  // 3. Determine Label Position (User defined or Default)
+  let labelPos = centerLatLng
+  if (layer.feature?.properties?.labelPos) {
+    // If user previously dragged it, use that position
+    labelPos = L.latLng(layer.feature.properties.labelPos)
+  }
+
+  // 4. Create or Update Marker
+  const icon = L.divIcon({
+    className: 'custom-area-label',
+    html: `<span>${content}</span>`,
+    iconSize: null, // Auto size via CSS
+    iconAnchor: [20, 10] // Offset to center the 'tag' feeling roughly
+  })
+
+  if (!ctx.marker) {
+    ctx.marker = L.marker(labelPos, {
+      draggable: true,
+      icon: icon,
+      zIndexOffset: 1000 // Ensure labels are on top
     })
+
+    // Drag Logic
+    ctx.marker.on('drag', (e) => {
+      const newPos = e.target.getLatLng()
+      // Update line immediately while dragging
+      if (ctx.line) {
+        ctx.line.setLatLngs([centerLatLng, newPos])
+      }
+    })
+
+    ctx.marker.on('dragend', (e) => {
+       const newPos = e.target.getLatLng()
+       // Save new position to properties
+       layer.feature = layer.feature || { type: 'Feature', properties: {} }
+       layer.feature.properties = layer.feature.properties || {}
+       layer.feature.properties.labelPos = { lat: newPos.lat, lng: newPos.lng }
+       
+       // Emit update to save persistence
+       const updatedGeoJSON = layer.toGeoJSON()
+       updatedGeoJSON.id = layer.feature.id
+       updatedGeoJSON.properties = layer.feature.properties
+       emit('update', updatedGeoJSON)
+    })
+    
+    labelLayerGroup.addLayer(ctx.marker)
+  } else {
+    ctx.marker.setIcon(icon)
+    
+    // Only move marker if it doesn't have a saved custom position OR if this is a fresh init
+    if (!layer.feature?.properties?.labelPos) {
+        ctx.marker.setLatLng(centerLatLng)
+    }
+  }
+
+  // 5. Create or Update Leader Line
+  if (!ctx.line) {
+    ctx.line = L.polyline([centerLatLng, ctx.marker.getLatLng()], {
+      color: '#666',
+      weight: 1,
+      dashArray: '4, 4',
+      interactive: false // Line should not block clicks
+    })
+    labelLayerGroup.addLayer(ctx.line)
+  } else {
+    ctx.line.setLatLngs([centerLatLng, ctx.marker.getLatLng()])
+  }
+}
+
+function removeLabelSystem(layer) {
+  if (layer._labelContext) {
+    if (layer._labelContext.marker) {
+      labelLayerGroup.removeLayer(layer._labelContext.marker)
+    }
+    if (layer._labelContext.line) {
+      labelLayerGroup.removeLayer(layer._labelContext.line)
+    }
+    layer._labelContext = null
   }
 }
 
@@ -184,10 +284,8 @@ onMounted(() => {
     maxZoom: 19
   })
 
-  // Default Layer hinzufügen
   satellite.addTo(map)
 
-  // Layer Control hinzufügen
   const baseMaps = {
     "Satellit": satellite,
     "Straßenkarte": osm
@@ -198,17 +296,18 @@ onMounted(() => {
   // 3. Zeichen-Layer
   editableLayers = new L.FeatureGroup()
   map.addLayer(editableLayers)
+  
+  // Layer für Labels und Linien
+  labelLayerGroup = new L.LayerGroup()
+  map.addLayer(labelLayerGroup)
 
-  // Click Event für Selektion
   editableLayers.on('click', (e) => {
     const layer = e.layer
     if (layer.feature?.id) {
       emit('select', layer.feature.id)
-      L.DomEvent.stopPropagation(e) // Verhindert Map-Click
+      L.DomEvent.stopPropagation(e)
     }
   })
-
-
 
   // 4. Controls
   drawControl = new L.Control.Draw({
@@ -216,10 +315,10 @@ onMounted(() => {
     draw: {
       polygon: props.drawOptions.polygon ? {
         allowIntersection: true,
-        showArea: true,
+        showArea: false, // Turn off default area tooltip
         shapeOptions: { color: '#3498db' },
-        snapDistance: 20, // Snapping distance in pixels
-        guideLayers: [editableLayers] // Snap to these layers
+        snapDistance: 20,
+        guideLayers: [editableLayers]
       } : false,
       polyline: props.drawOptions.polyline ? {
         shapeOptions: { color: '#f1c40f', weight: 4 },
@@ -242,9 +341,6 @@ onMounted(() => {
   })
   map.addControl(drawControl)
 
-  // 5. Event Listener
-  
-  // Assign to outer variable
   undoLastAction = () => {
     if (historyStack.value.length === 0) return
     
@@ -258,63 +354,60 @@ onMounted(() => {
     })
     
     if (layerToRemove) {
+      removeLabelSystem(layerToRemove) // Cleanup label
       editableLayers.removeLayer(layerToRemove)
       emit('delete', lastLayerId)
     }
   }
 
-
-
-  // ERSTELLT
+  // EVENT: CREATED
   map.on(L.Draw.Event.CREATED, function (e) {
     const layer = e.layer
-    // Wichtig: ID generieren und direkt am Layer speichern
     const id = crypto.randomUUID()
     
-    // Feature-Objekt vorbereiten für Leaflet
     layer.feature = layer.feature || { type: 'Feature' }
     layer.feature.id = id
     layer.feature.properties = layer.feature.properties || {}
 
-    // Tooltip hinzufügen
-    updateAreaTooltip(layer)
-
     editableLayers.addLayer(layer)
+    updateLabelSystem(layer) // Create Label
     
-    // Sicherstellen, dass die ID im GeoJSON landet
     const geoJSON = layer.toGeoJSON()
     geoJSON.id = id
     
-    historyStack.value.push(id) // Add to history
-    
+    historyStack.value.push(id)
     emit('update', geoJSON)
   })
 
-  // BEARBEITET
+  // EVENT: EDITED
   map.on(L.Draw.Event.EDITED, function (e) {
     e.layers.eachLayer(layer => {
-      // Tooltip aktualisieren
-      updateAreaTooltip(layer)
-
+      updateLabelSystem(layer) // Update Area/Positions
+      
       const geoJSON = layer.toGeoJSON()
-      // ID beibehalten
       if (layer.feature?.id) {
         geoJSON.id = layer.feature.id
       }
+      
+      if (layer.feature?.properties) {
+          geoJSON.properties = layer.feature.properties
+      }
+      
       emit('update', geoJSON)
     })
   })
 
-  // GELÖSCHT
+  // EVENT: DELETED
   map.on(L.Draw.Event.DELETED, function (e) {
     e.layers.eachLayer(layer => {
+      removeLabelSystem(layer) // Remove Label
       if (layer.feature?.id) {
         emit('delete', layer.feature.id)
       }
     })
   })
 
-  // --- DRAG & DROP IMPORT ---
+  // DRAG & DROP
   const mapDiv = document.getElementById('map')
   
   mapDiv.addEventListener('dragover', (e) => {
@@ -350,32 +443,27 @@ onMounted(() => {
         
         L.geoJSON(geoJSON, {
           onEachFeature: (feature, layer) => {
-            // Neue ID generieren, falls nicht vorhanden oder Konflikt vermeiden
             const id = crypto.randomUUID()
-            
             layer.feature = layer.feature || { type: 'Feature' }
             layer.feature.id = id
             
-            // Properties übernehmen (Name, Typ etc.)
-            // Wir müssen sicherstellen, dass die Properties im Store landen
-            // Das passiert über das 'update' Event, das das ganze GeoJSON sendet
+            // Restore properties (including stored labelPos)
+            if (feature.properties) {
+                layer.feature.properties = feature.properties
+            }
             
-            updateAreaTooltip(layer)
             editableLayers.addLayer(layer)
+            updateLabelSystem(layer) // Create with potential restored position
             
-            // Emit update für Store
             const newGeoJSON = layer.toGeoJSON()
             newGeoJSON.id = id
-            // Wichtig: Properties mitgeben, damit der Store sie übernehmen kann
             if (feature.properties) {
               newGeoJSON.properties = feature.properties
             }
-            
             emit('update', newGeoJSON)
           }
         })
         
-        // Zoom auf neue Layer
         const bounds = editableLayers.getBounds()
         if (bounds.isValid()) {
           map.fitBounds(bounds)
@@ -394,21 +482,13 @@ onUnmounted(() => {
   if (map) map.remove()
 })
 
-// Expose map instance to parent component
 defineExpose({
   getMap: () => map,
   getEditableLayers: () => editableLayers,
   startDraw: (type) => {
     if (!map) return
-    
-    let drawer = null
-    // drawControl.options structure is { draw: { ... }, edit: { ... } }
-    // But Leaflet Draw constructor options might be slightly different depending on version.
-    // Usually L.Control.Draw options are passed as { draw: { polyline: { ... } } }
-    // So drawControl.options.draw should exist.
-    
     const options = drawControl.options.draw || {}
-    
+    let drawer = null
     switch (type) {
       case 'polygon':
         if (options.polygon) drawer = new L.Draw.Polygon(map, options.polygon)
@@ -429,41 +509,35 @@ defineExpose({
         if (options.circlemarker) drawer = new L.Draw.CircleMarker(map, options.circlemarker)
         break
     }
-    
-    if (drawer) {
-      drawer.enable()
-    } else {
-      console.warn(`Draw type ${type} not enabled or supported`)
-    }
+    if (drawer) drawer.enable()
   },
   addGeoJSON: (geoJSON) => {
     if (!map || !editableLayers) return
-    
     L.geoJSON(geoJSON, {
       onEachFeature: (feature, layer) => {
-        // Use existing ID from feature if available (e.g. from store), otherwise generate new one
         const id = feature.id || crypto.randomUUID()
         layer.feature = layer.feature || { type: 'Feature' }
         layer.feature.id = id
         
-        updateAreaTooltip(layer)
-        editableLayers.addLayer(layer)
+        // Restore properties
+        if (feature.properties) {
+            layer.feature.properties = feature.properties
+        }
         
-        // Emit update damit Parent (und Store) Bescheid wissen
+        editableLayers.addLayer(layer)
+        updateLabelSystem(layer) // Init Label
+        
         const newGeoJSON = layer.toGeoJSON()
         newGeoJSON.id = id
         emit('update', newGeoJSON)
       }
     })
-    
-    // Zoom auf neue Layer
     const bounds = editableLayers.getBounds()
     if (bounds.isValid()) {
       map.fitBounds(bounds)
     }
   }
 })
-
 </script>
 
 <style scoped>
@@ -512,19 +586,9 @@ defineExpose({
   background: #e9ecef;
 }
 
-:deep(.area-tooltip) {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 2px 5px;
-  font-weight: bold;
-  font-size: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
 .undo-control {
   position: absolute;
-  top: 70px; /* Below search bar */
+  top: 70px;
   right: 20px;
   z-index: 1000;
 }
@@ -545,5 +609,31 @@ defineExpose({
 
 .undo-btn:hover {
   background: #f8f9fa;
+}
+
+/* Custom Label Styling */
+:deep(.custom-area-label) {
+  background: transparent;
+  border: none;
+}
+
+:deep(.custom-area-label span) {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-weight: 600;
+  font-size: 12px;
+  color: #2c3e50;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  white-space: nowrap;
+  pointer-events: auto; /* Enable clicks/drags */
+  cursor: grab;
+}
+
+:deep(.custom-area-label span:active) {
+  cursor: grabbing;
+  background: #3498db;
+  color: white;
 }
 </style>

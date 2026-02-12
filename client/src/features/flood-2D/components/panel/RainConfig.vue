@@ -36,12 +36,29 @@
         🌧️ Regen konfigurieren
     </button>
 
-    <!-- MODAL -->
     <RainConfigModal 
         :isOpen="showModal"
         @close="showModal = false"
         @apply="handleApply"
     />
+
+    <!-- ROUGHNESS SLIDER (Physics) -->
+    <div class="roughness-card">
+        <h4>Bodenrauhigkeit (Manning n)</h4>
+        <div class="slider-row">
+            <input 
+                type="range" 
+                v-model.number="store.globalRoughness" 
+                min="0.01" max="0.1" step="0.001"
+                class="slider"
+            />
+            <span class="slider-val">{{ store.globalRoughness }}</span>
+        </div>
+        <div class="slider-labels">
+            <span>0.01 (Beton)</span>
+            <span>0.1 (Wald)</span>
+        </div>
+    </div>
 
   </div>
 </template>
@@ -164,5 +181,22 @@ h4 {
 .config-btn:hover {
     background: #2c3e50;
     border-color: #bdc3c7;
+}
+
+.roughness-card {
+    margin-top: 20px;
+    padding: 1rem;
+    background: #2c3e50;
+    border: 1px solid #34495e;
+    border-radius: 6px;
+}
+.slider-row {
+    display: flex; gap: 10px; align-items: center;
+}
+.slider { flex: 1; cursor: pointer; }
+.slider-val { font-weight: bold; width: 50px; text-align: right; }
+.slider-labels {
+    display: flex; justify-content: space-between;
+    font-size: 0.7rem; color: #7f8c8d; margin-top: 5px;
 }
 </style>

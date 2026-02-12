@@ -10,7 +10,18 @@ export const FloodReportService = {
         try {
             const doc = new jsPDF()
             const pageWidth = doc.internal.pageSize.getWidth()
+            const pageHeight = doc.internal.pageSize.getHeight()
             let y = 20 // Vertical cursor
+
+            // Helper to check if a new page is needed
+            const checkPageBreak = (heightNeeded) => {
+                if (y + heightNeeded > pageHeight - 20) {
+                    doc.addPage()
+                    y = 20
+                    return true
+                }
+                return false
+            }
 
             // --- HEADER ---
             doc.setFontSize(20)
@@ -27,6 +38,7 @@ export const FloodReportService = {
             y += 20
 
             // --- EINGABEDATEN (REGEN) ---
+            checkPageBreak(40)
             doc.setFont(undefined, 'bold')
             doc.setFontSize(14)
             doc.setTextColor(0)
@@ -42,6 +54,7 @@ export const FloodReportService = {
             y += 15
 
             // --- FLÄCHEN ---
+            checkPageBreak(30)
             doc.setFont(undefined, 'bold')
             doc.setFontSize(14)
             doc.text("2. Erfasste Flächen", 20, y)
@@ -50,18 +63,28 @@ export const FloodReportService = {
             // Table Header
             doc.setFontSize(10)
             doc.setFont(undefined, 'bold')
-            doc.text("Name", 25, y)
-            doc.text("Typ", 80, y)
-            doc.text("Cs", 130, y)
-            doc.text("Fläche (m²)", 170, y)
-            doc.setFont(undefined, 'normal')
-            y += 2
-            doc.line(25, y, pageWidth - 20, y)
-            y += 6
+
+            // Draw header function to reuse if page breaks inside table
+            const drawTableHeader = (currentY) => {
+                doc.setFont(undefined, 'bold')
+                doc.text("Name", 25, currentY)
+                doc.text("Typ", 80, currentY)
+                doc.text("Cs", 130, currentY)
+                doc.text("Fläche (m²)", 170, currentY)
+                doc.setFont(undefined, 'normal')
+                doc.line(25, currentY + 2, pageWidth - 20, currentY + 2)
+                return currentY + 8
+            }
+
+            y = drawTableHeader(y)
 
             // Table Rows
             store.surfaces.forEach(surface => {
                 const type = store.surfaceTypes.find(t => t.id === surface.typeId)
+
+                if (checkPageBreak(10)) {
+                    y = drawTableHeader(y)
+                }
 
                 doc.text(surface.name || 'Unbenannt', 25, y)
                 doc.text(type ? type.name.substring(0, 25) : 'Unbekannt', 80, y)
@@ -71,10 +94,12 @@ export const FloodReportService = {
             })
 
             y += 5
+            checkPageBreak(10)
             doc.line(25, y, pageWidth - 20, y)
             y += 10
 
             // Summen
+            checkPageBreak(25)
             doc.setFont(undefined, 'bold')
             doc.text(`Gesamtfläche: ${store.totalArea.toFixed(2)} m²`, 130, y)
             y += 6
@@ -82,12 +107,14 @@ export const FloodReportService = {
             y += 15
 
             // --- BERECHNUNG ---
+            checkPageBreak(20)
             doc.setFontSize(14)
             doc.text("3. Berechnungsergebnisse", 20, y)
             doc.setFont(undefined, 'normal')
             y += 10
 
             // 3.1 Standard
+            checkPageBreak(45)
             doc.setFontSize(12)
             doc.setFont(undefined, 'bold')
             doc.text("3.1 Standard-Nachweis", 20, y)
@@ -102,13 +129,40 @@ export const FloodReportService = {
             y += 6
             doc.text(`Kanalabfluss (2a): - ${store.volumeOut2.toFixed(2)} m³`, 25, y)
             y += 8
+
+            // Detailed Table for Standard Check
+            if (store.standardCheckDetails && store.standardCheckDetails.length > 0) {
+                doc.setFontSize(9)
+                doc.setFont(undefined, 'bold')
+                doc.text("Dauer", 30, y)
+                doc.text("Zufluss", 60, y)
+                doc.text("Abfluss", 90, y)
+                doc.text("Volumen", 120, y)
+                doc.setFont(undefined, 'normal')
+                y += 5
+
+                store.standardCheckDetails.forEach(detail => {
+                    const isMax = detail.volume === store.retentionVolumeStandard
+                    if (isMax) doc.setFont(undefined, 'bold')
+                    doc.text(`${detail.duration} min`, 30, y)
+                    doc.text(detail.inflow.toFixed(2), 60, y)
+                    doc.text(detail.outflow.toFixed(2), 90, y)
+                    doc.text(detail.volume.toFixed(2), 120, y)
+                    if (isMax) doc.setFont(undefined, 'normal')
+                    y += 4
+                })
+                y += 5
+            }
+
             doc.setFont(undefined, 'bold')
+            doc.setFontSize(11)
             doc.text(`Erforderliches Volumen: ${store.retentionVolumeStandard.toFixed(2)} m³`, 25, y)
             doc.setFont(undefined, 'normal')
             y += 15
 
             // 3.2 Hydraulisch (Optional)
             if (store.additionalCalculations.hydraulic.active) {
+                checkPageBreak(45)
                 doc.setFontSize(12)
                 doc.setFont(undefined, 'bold')
                 doc.text("3.2 Hydraulischer Nachweis", 20, y)
@@ -123,6 +177,45 @@ export const FloodReportService = {
                 const qVoll = store.additionalCalculations.hydraulic.qVoll
                 doc.text(`Verwendete Rohrleistung (Q_voll): ${qVoll} l/s`, 25, y)
                 y += 8
+
+                // Detailed Table for Hydraulic
+                if (store.hydraulicCheckDetails && store.hydraulicCheckDetails.length > 0) {
+                    const spaceNeeded = 10 + (store.hydraulicCheckDetails.length * 4)
+                    checkPageBreak(spaceNeeded > 100 ? 50 : spaceNeeded)
+
+                    doc.setFontSize(9)
+                    doc.setFont(undefined, 'bold')
+                    doc.text("Dauer", 30, y)
+                    doc.text("Zufluss", 60, y)
+                    doc.text("Abfluss", 90, y)
+                    doc.text("Volumen", 120, y)
+                    doc.setFont(undefined, 'normal')
+                    y += 5
+
+                    store.hydraulicCheckDetails.forEach(detail => {
+                        if (checkPageBreak(5)) {
+                            doc.setFontSize(9)
+                            doc.setFont(undefined, 'bold')
+                            doc.text("Dauer", 30, y)
+                            doc.text("Zufluss", 60, y)
+                            doc.text("Abfluss", 90, y)
+                            doc.text("Volumen", 120, y)
+                            doc.setFont(undefined, 'normal')
+                            y += 5
+                        }
+                        const isMax = detail.volume === store.retentionVolumeHydraulic
+                        if (isMax) doc.setFont(undefined, 'bold')
+                        doc.text(`${detail.duration} min`, 30, y)
+                        doc.text(detail.inflow.toFixed(2), 60, y)
+                        doc.text(detail.outflow.toFixed(2), 90, y)
+                        doc.text(detail.volume.toFixed(2), 120, y)
+                        if (isMax) doc.setFont(undefined, 'normal')
+                        y += 4
+                    })
+                    y += 5
+                    doc.setFontSize(11)
+                }
+
                 doc.setFont(undefined, 'bold')
                 doc.text(`Erforderliches Volumen: ${store.retentionVolumeHydraulic.toFixed(2)} m³`, 25, y)
                 doc.setFont(undefined, 'normal')
@@ -131,23 +224,67 @@ export const FloodReportService = {
 
             // 3.3 Drossel (Optional)
             if (store.additionalCalculations.throttle.active) {
+                checkPageBreak(60) // Needed space increased
                 doc.setFontSize(12)
                 doc.setFont(undefined, 'bold')
                 doc.text("3.3 Drossel-Nachweis", 20, y)
                 doc.setFont(undefined, 'normal')
                 doc.setFontSize(10)
                 doc.setTextColor(100)
-                doc.text("(siehe DIN 1986-100 Formel 22)", 20, y + 5)
+                doc.text("(siehe DIN 1986-100 Formel 22 / DWA-A 117)", 20, y + 5)
                 doc.setTextColor(0)
                 doc.setFontSize(11)
                 y += 12
 
                 const qDr = store.additionalCalculations.throttle.qDr
                 const fZ = store.additionalCalculations.throttle.safetyFactor
+                const T = store.additionalCalculations.throttle.returnPeriod || 30
+
+                doc.text(`Jährlichkeit (T): ${T} Jahre`, 25, y)
+                y += 6
                 doc.text(`Drosselabfluss (Q_Dr): ${qDr} l/s`, 25, y)
                 y += 6
                 doc.text(`Sicherheitsfaktor (f_Z): ${fZ}`, 25, y)
                 y += 8
+
+                // Detailed Table for Throttle
+                if (store.throttleCheckDetails && store.throttleCheckDetails.length > 0) {
+                    const spaceNeeded = 10 + (store.throttleCheckDetails.length * 4)
+                    checkPageBreak(spaceNeeded > 100 ? 50 : spaceNeeded)
+
+                    doc.setFontSize(9)
+                    doc.setFont(undefined, 'bold')
+                    doc.text("Dauer", 30, y)
+                    doc.text("Zufluss", 60, y)
+                    doc.text("Abfluss", 90, y)
+                    doc.text("Volumen", 120, y)
+                    doc.setFont(undefined, 'normal')
+                    y += 5
+
+                    store.throttleCheckDetails.forEach(detail => {
+                        if (checkPageBreak(5)) {
+                            doc.setFontSize(9)
+                            doc.setFont(undefined, 'bold')
+                            doc.text("Dauer", 30, y)
+                            doc.text("Zufluss", 60, y)
+                            doc.text("Abfluss", 90, y)
+                            doc.text("Volumen", 120, y)
+                            doc.setFont(undefined, 'normal')
+                            y += 5
+                        }
+                        const isMax = detail.volume === store.retentionVolumeThrottle
+                        if (isMax) doc.setFont(undefined, 'bold')
+                        doc.text(`${detail.duration} min`, 30, y)
+                        doc.text(detail.inflow.toFixed(2), 60, y)
+                        doc.text(detail.outflow.toFixed(2), 90, y)
+                        doc.text(detail.volume.toFixed(2), 120, y)
+                        if (isMax) doc.setFont(undefined, 'normal')
+                        y += 4
+                    })
+                    y += 5
+                    doc.setFontSize(11)
+                }
+
                 doc.setFont(undefined, 'bold')
                 doc.text(`Erforderliches Volumen: ${store.retentionVolumeThrottle.toFixed(2)} m³`, 25, y)
                 doc.setFont(undefined, 'normal')
@@ -156,6 +293,7 @@ export const FloodReportService = {
 
             // 4. Hinweise
             if (store.roofAreaPercentage > 70) {
+                checkPageBreak(30)
                 doc.setFontSize(12)
                 doc.setTextColor(192, 57, 43) // Red color for warning
                 doc.setFont(undefined, 'bold')

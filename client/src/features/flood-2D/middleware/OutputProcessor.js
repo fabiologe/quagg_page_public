@@ -113,11 +113,22 @@ export const OutputProcessor = {
         for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
+
+            // Handle both space and tab separation
             const parts = trimmed.split(/\s+/);
+
             if (parts.length >= 2) {
-                header[parts[0].toLowerCase()] = parseFloat(parts[1]);
+                const key = parts[0].toLowerCase();
+                const val = parseFloat(parts[1]);
+                if (!isNaN(val)) {
+                    header[key] = val;
+                }
             }
         }
-        return (header.ncols && header.nrows) ? header : null;
+        // Validate required fields
+        if (header.ncols !== undefined && header.nrows !== undefined) {
+            return header;
+        }
+        return null;
     }
 };

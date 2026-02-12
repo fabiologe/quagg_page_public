@@ -54,13 +54,52 @@ export const useSimulationStore = defineStore('simulation', () => {
         logs.value = [];
     }
 
-    function setResults(data) {
-        results.value = data;
+    /** @type {import('vue').Ref<Map<number, Float32Array>>} */
+    const resultFrames = ref(new Map());
+
+    /** @type {import('vue').Ref<number>} */
+    const currentFrameIndex = ref(-1);
+
+    /** @type {import('vue').Ref<any>} */
+    const resultHeader = ref(null);
+
+    function addResultFrame(frameId, data, header) {
+        resultFrames.value.set(frameId, data);
+        if (!resultHeader.value) resultHeader.value = header;
+        // Auto-advance to latest
+        currentFrameIndex.value = frameId;
+    }
+
+    function clearResults() {
+        resultFrames.value.clear();
+        currentFrameIndex.value = -1;
+        resultHeader.value = null;
     }
 
     function setConfig(duration, step) {
         if (duration !== undefined) simDuration.value = duration;
         if (step !== undefined) timeStep.value = step;
+    }
+
+    // NEW: Multi-select support
+    /** @type {import('vue').Ref<Set<string>>} */
+    const multiSelection = ref(new Set());
+
+    function addToSelection(id) {
+        multiSelection.value.add(id);
+    }
+
+    function toggleSelection(id) {
+        if (multiSelection.value.has(id)) {
+            multiSelection.value.delete(id);
+        } else {
+            multiSelection.value.add(id);
+        }
+    }
+
+    function clearSelection() {
+        selection.value = null; // Clear single
+        multiSelection.value.clear(); // Clear multi
     }
 
     return {
@@ -82,6 +121,28 @@ export const useSimulationStore = defineStore('simulation', () => {
         addLog,
         clearLogs,
         setResults,
-        setConfig
+        setConfig,
+
+        // Actions
+        setActiveTool,
+        setSelection,
+        setStatus,
+        setProgress,
+        addLog,
+        clearLogs,
+        addResultFrame,  // New Export
+        clearResults,    // New Export
+        setConfig,
+
+        // NEW: Exports
+        multiSelection,
+        addToSelection,
+        toggleSelection,
+        clearSelection,
+
+        // Result Data
+        resultFrames,
+        currentFrameIndex,
+        resultHeader
     };
 });

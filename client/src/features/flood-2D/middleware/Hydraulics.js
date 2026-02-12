@@ -44,146 +44,204 @@ ${duration_s.toFixed(1)}\t${val_ms.toFixed(8)}
      * @param {Float32Array} gridData - DEM Data for validation
      * @returns {object} { bdyFile: string, bcFiles: object }
      */
-    prepareBoundaries(boundaries, gridHeader, gridData) {
-        let bdyContent = '';
+    /**
+     * Processing all boundaries to generate flow.bdy (.bci) and referenced bc files.
+     * @param {Array} boundaries - List of boundary objects from GeoStore
+     * @param {Object} assignments - Map of { geoId: { type, value, profileId } }
+     * @param {Object} ganglinien - Map of { id: { data: [{t,v},...] } }
+     * @param {object} gridHeader 
+     * @param {Float32Array} gridData - DEM Data for validation
+     * @returns {object} { bdyContent: string, bcFiles: object }
+     */
+    prepareBoundaries(boundaries, assignments, ganglinien, gridHeader, gridData) {
+        let bdyContent = ''; // This is actually the .bci content (P col row ...)
         const bcFiles = {};
 
         let bcCounter = 0;
 
-        for (const b of boundaries) {
-            if (!b.active) continue;
+        const xll = gridHeader.xll !== undefined ? gridHeader.xll : gridHeader.xllcorner;
+        const yll = gridHeader.yll !== undefined ? gridHeader.yll : gridHeader.yllcorner;
 
-            const value = parseFloat(b.value); // m3/s
-            const isOutflow = b.type && b.type.includes('OUT');
-            const signedValue = isOutflow ? -Math.abs(value) : Math.abs(value);
+        for (const b of boundaries) {
+            // Logic: Only process if it has an assignment
+            const assignment = assignments[b.id];
+            if (!assignment) continue; // Skip unassigned boundaries
 
             // Find Cells
             let cells = [];
-            if (b.geometryType === 'Polygon') {
-                cells = BoundaryTools.getCellsInPolygon(b.geometry.coordinates[0], gridHeader.cellsize, gridHeader.xll, gridHeader.yll);
-
-                // --- FIX 1: Flux-Splitting Silent Fail (N=0) ---
-                if (cells.length === 0) {
-                    // Polygon is smaller than a cell. 
-                    // Calculate Centroid (approx)
-                    const ring = b.geometry.coordinates[0];
-                    let cx = 0, cy = 0;
-                    for (const p of ring) { cx += p[0]; cy += p[1]; }
-                    cx /= ring.length;
-                    cy /= ring.length;
-
-                    // Treat as Point
-                    const col = Math.round((cx - gridHeader.xll) / gridHeader.cellsize);
-                    const row = Math.round((cy - gridHeader.yll) / gridHeader.cellsize);
+            if (b.type === 'Feature') { // GeoJSON
+                if (b.geometry.type === 'Polygon') {
+                    cells = BoundaryTools.getCellsInPolygon(b.geometry.coordinates[0], gridHeader.cellsize, xll, yll);
+                } else if (b.geometry.type === 'LineString') {
+                    cells = BoundaryTools.discretizePolyline(b.geometry.coordinates, gridHeader.cellsize, xll, yll);
+                } else if (b.geometry.type === 'Point') {
+                    const p = b.geometry.coordinates;
+                    const col = Math.round((p[0] - xll) / gridHeader.cellsize);
+                    const row = Math.round((p[1] - yll) / gridHeader.cellsize);
                     cells.push({ x: col, y: row });
                 }
+            }
+            // Add fallback logic for Flux Splitting N=0 (Centroid)
+            if (cells.length === 0 && b.geometry && (b.geometry.type === 'Polygon' || b.geometry.type === 'LineString')) {
+                // GeoJSON LineString is [[x,y], [x,y]]. Polygon is [[[x,y],...]].
+                const points = b.geometry.type === 'Polygon' ? b.geometry.coordinates[0] : b.geometry.coordinates;
 
-            } else if (b.geometryType === 'LineString') {
-                cells = BoundaryTools.discretizePolyline(b.geometry.coordinates, gridHeader.cellsize, gridHeader.xll, gridHeader.yll);
-            } else if (b.geometryType === 'Point') {
-                const p = b.geometry.coordinates;
-                const col = Math.round((p[0] - gridHeader.xll) / gridHeader.cellsize);
-                const row = Math.round((p[1] - gridHeader.yll) / gridHeader.cellsize);
+                let cx = 0, cy = 0;
+                for (const p of points) { cx += p[0]; cy += p[1]; }
+                cx /= points.length;
+                cy /= points.length;
+
+                const col = Math.round((cx - xll) / gridHeader.cellsize);
+                const row = Math.round((cy - yll) / gridHeader.cellsize);
                 cells.push({ x: col, y: row });
             }
 
-            if (cells.length === 0) continue; // Should be impossible now with N=0 fix, but safety first.
-
-            // --- FIX 2: Vector-to-Raster Precision & NoData Validation ---
+            // Identify Valid Cells
             const validCells = [];
             for (const cell of cells) {
-                // Check if this cell is valid in the DEM
-                // Note: Row indices. 
-                // BoundaryTools produces 'y' relative to yll (Standard Cartesian row=0 at bottom). 
-                // Our DEM 'gridData' is flattened. 
-                // Rasterizer.js fills it: row=(nrows-1)-y ... so idx = ((nrows-1)-y)*ncols + x
-
-                const ascRow = (gridHeader.nrows - 1) - cell.y; // Top-Down Row Index
-
-                // Helper to check validity
                 const isValid = (c, r) => {
                     if (c < 0 || c >= gridHeader.ncols || r < 0 || r >= gridHeader.nrows) return false;
                     const idx = r * gridHeader.ncols + c;
                     return gridData[idx] > -9990;
                 };
+                // Grid Row (Top-Down) for validation
+                const ascRow = (gridHeader.nrows - 1) - cell.y;
 
                 if (isValid(cell.x, ascRow)) {
                     validCells.push(cell);
                 } else {
-                    // It's invalid (NoData or Out of Bounds).
-                    // If it was a Point (single cell), try to rescue it.
-                    if (cells.length === 1) {
-                        // Spiral Search
-                        const found = BoundaryTools.findNearestValidCell(cell.x, ascRow, gridData, gridHeader);
-                        if (found) {
-                            // "found" is returned as {x: col, y: row (Top-Down)}
-                            // We need to convert back to "BoundaryTools" y (Bottom-Up) or just use logic below directly?
-                            // Let's standardise validCells to store {x: col, y: bottomUpY} to match loop below.
-                            validCells.push({ x: found.x, y: (gridHeader.nrows - 1) - found.y });
-                            console.warn(`Boundary Warning: Point moved from NoData to nearest fluid cell.`);
-                        } else {
-                            console.error(`Boundary Error: Point dropped. No valid cell found near ${cell.x}, ${cell.y}`);
-                        }
-                    }
-                    // If it was a Polygon, we just ignore this Nodata cell (water flows into valid parts only).
+                    // Try local rescue for single points?
+                    // For now, skip invalid.
                 }
             }
 
             if (validCells.length === 0) {
-                // If it was a Polygon that had initial cells but ALL were invalid (e.g. over building/void),
-                // we must NOT fail silently. We must attempt rescue.
-                if (b.geometryType === 'Polygon' && cells.length > 0) {
-                    console.warn(`Boundary Warning: Polygon ${b.name} covers only NoData cells. Attempting Centroid Rescue.`);
+                // Rescue: If it was a Polygon/Line that had initial cells but ALL were invalid
+                // (e.g. over building/void), attempt to snap to nearest valid cell.
+                if (cells.length > 0 && b.geometry && (b.geometry.type === 'Polygon' || b.geometry.type === 'LineString')) {
+                    console.warn(`Boundary ${b.properties?.name || b.id} has no valid cells. Attempting Rescue.`);
 
                     // Calculate Centroid
-                    const ring = b.geometry.coordinates[0];
+                    // Handle Polygon (ring) vs LineString (points)
+                    const points = b.geometry.type === 'Polygon' ? b.geometry.coordinates[0] : b.geometry.coordinates;
                     let cx = 0, cy = 0;
-                    for (const p of ring) { cx += p[0]; cy += p[1]; }
-                    cx /= ring.length;
-                    cy /= ring.length;
+                    for (const p of points) { cx += p[0]; cy += p[1]; }
+                    cx /= points.length;
+                    cy /= points.length;
 
-                    const col = Math.round((cx - gridHeader.xll) / gridHeader.cellsize);
-                    const row = Math.round((cy - gridHeader.yll) / gridHeader.cellsize);
+                    const col = Math.round((cx - xll) / gridHeader.cellsize);
+                    const row = Math.round((cy - yll) / gridHeader.cellsize);
                     const ascRow = (gridHeader.nrows - 1) - row;
 
                     // Spiral Rescue
                     const found = BoundaryTools.findNearestValidCell(col, ascRow, gridData, gridHeader);
                     if (found) {
+                        // found is {x, y (Top-Down)}
+                        // Convert back to Bottom-Up Y for consistency if needed, but we essentially need {x, y: bottomUp} for the loop below
+                        // validCells stores {x, y: bottomUp}
                         validCells.push({ x: found.x, y: (gridHeader.nrows - 1) - found.y });
-                        console.log(`Boundary Rescued: Polygon snapped to nearest valid cell at ${found.x}, ${found.y}`);
+                        console.log(`Boundary Rescued: ${b.properties?.name} snapped to valid cell at ${found.x}, ${found.y}`);
                     } else {
-                        console.error(`Boundary Validation Failed: Polygon ${b.name} is completely outside valid domain.`);
-                        continue; // Skip effectively means Infinity avoidance, but user alerted.
+                        console.warn(`Boundary Rescue Failed: ${b.properties?.name} is too far from valid domain.`);
+                        continue;
                     }
                 } else {
-                    continue; // Point failed rescue already, or LineString failed.
+                    console.warn(`Boundary ${b.properties?.name || b.id} has no valid cells and cannot be rescued. Skipping.`);
+                    continue;
                 }
             }
 
-            // FLUX SPLITTING (Corrected)
-            const flowPerCell = signedValue / validCells.length;
+            // --- GENERATE BC DATA ---
+            const type = assignment.type;
+            let valOrFile = '';
+            let lisfloodType = 'QVAR'; // Default
 
-            const bcFileName = `bc_${bcCounter}.txt`;
-            bcFiles[bcFileName] = this.generateTimeSeries(flowPerCell, b.duration || 3600);
-            bcCounter++;
+            if (type === 'OUTFLOW_FREE') {
+                lisfloodType = 'FREE';
+                valOrFile = ''; // No value needed
+            } else {
+                // INFLOW or WATERLEVEL
+                let profileData = [];
+                let isStatic = false;
+                let staticValue = 0;
 
-            bdyContent += `${b.name || 'Boundary'}\n`;
+                // Determine Data Source
+                if (type === 'INFLOW_FIX' || type === 'WATERLEVEL_FIX') {
+                    isStatic = true;
+                    staticValue = parseFloat(assignment.value || 0);
+                    // Conversion? If inflow is m³/s, it's fine.
+                } else if (type === 'INFLOW_DYNAMIC' || type === 'WATERLEVEL_DYNAMIC' || type === 'Zufluss') { // 'Zufluss' legacy
+                    const profile = ganglinien[assignment.profileId];
+                    if (profile && profile.data) {
+                        profileData = profile.data;
+                    } else {
+                        console.warn(`Missing profile for boundary ${b.id}. Defaulting to 0.`);
+                        isStatic = true;
+                        staticValue = 0;
+                    }
+                }
 
+                // Flux Splitting for Inflow
+                const isFlow = type.includes('INFLOW') || type === 'Zufluss';
+                const count = validCells.length;
+
+                if (isStatic) {
+                    let val = staticValue;
+                    if (isFlow) val = val / count; // Split flow
+
+                    // Create a static .bdy file? Or use scalar in .bci? 
+                    // LISFLOOD often prefers files. Let's make a simple constant time series for robustness.
+                    // Or just use the value directly if supported? "QFIX" supports value?
+                    // "QVAR" needs file. 
+                    // Let's use QVAR with a file containing the constant value for 100 hours.
+                    const filename = `bc_${bcCounter}.bdy`;
+                    bcFiles[filename] = this.generateTimeSeriesObj(b.properties?.name || `BC_${bcCounter}`, val, isFlow);
+                    valOrFile = filename;
+                    lisfloodType = isFlow ? 'QVAR' : 'HVAR';
+                    bcCounter++;
+
+                } else {
+                    // Dynamic Profile
+                    // We need to divide every V in the profile by count (if flow)
+                    const scaledData = profileData.map(pt => ({
+                        t: pt.t,
+                        v: isFlow ? (pt.v / count) : pt.v
+                    }));
+
+                    const filename = `bc_${bcCounter}.bdy`;
+                    bcFiles[filename] = this.generateTimeSeriesFromData(b.properties?.name || `BC_${bcCounter}`, scaledData);
+                    valOrFile = filename;
+                    lisfloodType = isFlow ? 'QVAR' : 'HVAR';
+                    bcCounter++;
+                }
+            }
+
+            // Append to .bci Content
             for (const cell of validCells) {
                 const ascRow = (gridHeader.nrows - 1) - cell.y;
                 const ascCol = cell.x;
-                bdyContent += `P ${ascCol} ${ascRow} ${bcFileName}\n`;
+                // Format: P <col> <row> <type> <value/file>
+                bdyContent += `P ${ascCol} ${ascRow} ${lisfloodType} ${valOrFile}\n`.trim() + '\n';
             }
         }
 
         return { bdyContent, bcFiles };
     },
 
-    generateTimeSeries(steadyValue, duration) {
-        // Simple steady state profile
-        // rows
-        // time val
-        // time val
-        return `2\n0.0 ${steadyValue.toFixed(8)}\n${duration.toFixed(1)} ${steadyValue.toFixed(8)}\n`;
+    generateTimeSeriesObj(name, constantValue, isFlow) {
+        // Generate a simple BDY file content for constant value
+        // Format: 
+        // name
+        // n_rows seconds/hours? (Units: seconds usually for LISFLOOD)
+        // t v
+        return `${name}\n2 seconds\n0 ${constantValue.toFixed(6)}\n360000 ${constantValue.toFixed(6)}\n`;
+    },
+
+    generateTimeSeriesFromData(name, dataPoints) {
+        let content = `${name}\n${dataPoints.length} seconds\n`;
+        for (const p of dataPoints) {
+            content += `${p.t} ${p.v.toFixed(6)}\n`;
+        }
+        return content;
     }
 };

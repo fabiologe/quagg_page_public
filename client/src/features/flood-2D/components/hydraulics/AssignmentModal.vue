@@ -104,6 +104,11 @@ import { ref, computed, watch } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 
+// NEW: Multi-select support
+const props = defineProps({
+  targetIds: { type: Array, default: () => [] }
+});
+
 const emit = defineEmits(['close']);
 
 const geoStore = useGeoStore();
@@ -129,6 +134,16 @@ const allItems = computed(() => {
 });
 
 const filteredItems = computed(() => {
+    // If we have specific targets passed via Props, show ONLY those?
+    // User Guide says: "Zeige im Titel: Bearbeite {{ targetIds.length }} Objekte".
+    // Usually an AssignmentModal might be "Manage Selection".
+    // If targetIds are passed, we likely want to scope the list to those IDs or pre-select them.
+    // Given the prompt "Wenn der Parent nur eine ID übergibt...", let's assume we pre-select or limit.
+    // Let's LIMIT the list to the targets if they are provided, OR pre-select them.
+    // "Objekt-Auswahl" (Object Selection) implies you can change selection.
+    // But "Bearbeite X Objekte" implies context.
+    // Let's PRE-SELECT them.
+    
     if (filter.value === 'ALL') return allItems.value;
     return allItems.value.filter(i => i.type === filter.value);
 });
@@ -150,9 +165,18 @@ const getStatus = (id) => {
 };
 
 // --- SELECTION LOGIC ---
-// We use a Set for performance, but v-model wants array, so check v-model binding carefully
-// v-model on checkboxes with array works if all checkboxes share same array.
 const selectionArray = ref([]); 
+
+// NEW: Initialize selection from props
+watch(() => props.targetIds, (newIds) => {
+    if (newIds && newIds.length > 0) {
+        // Ensure we only select items that exist
+        const allIds = new Set(allItems.value.map(i => i.id));
+        selectionArray.value = newIds.filter(id => allIds.has(id));
+    } else {
+        selectionArray.value = [];
+    }
+}, { immediate: true });
 
 const selectedIds = computed(() => new Set(selectionArray.value));
 

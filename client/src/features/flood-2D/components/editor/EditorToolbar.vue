@@ -202,7 +202,12 @@ const setMode = (m) => {
 
 // So I should replace emits with store actions.
 const setTool = (tool) => {
-    store.setActiveTool(tool);
+    if (store.activeTool === tool) {
+        // Toggle off if already active
+        store.setActiveTool(null);
+    } else {
+        store.setActiveTool(tool);
+    }
 };
 
 </script>

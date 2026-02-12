@@ -46,6 +46,13 @@
       >
         🌧️ Regen
       </button>
+      <button 
+        :class="{ active: activeTab === 'SIMULATION' }" 
+        @click="activeTab = 'SIMULATION'"
+        title="Simulation & Debug"
+      >
+        ⚡ Run
+      </button>
     </div>
 
     <!-- CONTENT -->
@@ -137,21 +144,37 @@
 
       <RainConfig v-if="activeTab === 'RAIN'" />
 
+      <!-- SIMULATION RUNNER -->
+      <Flood2DSolverRunner v-if="activeTab === 'SIMULATION'" />
+
     </div>
 
     <!-- CONFIGURATION PANEL (Bottom) -->
-    <!-- Only show property config if NOT in Profiles/Rain tab, OR if selection matches -->
-    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN'">
-        <BoundaryConfig :selectedItem="selectedItem" />
+    <!-- Only show property config if NOT in Profiles/Rain/Sim tab, OR if selection matches -->
+    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION'">
+        <!-- NEW: Multi-select support -->
+        <div v-if="currentSelectionIds.length > 1" class="bulk-hint">
+            <div class="bulk-icon">🔵</div>
+            <div>
+                <strong>{{ currentSelectionIds.length }} Objekte ausgewählt</strong><br>
+                <small>Nutze den Konfigurator oder das Kontextmenü für Massenbearbeitung.</small>
+            </div>
+            <button class="btn-bulk-config" @click="showAssignmentModal = true">🛠️ Konfigurieren</button>
+        </div>
+        <BoundaryConfig v-else :selectedItem="selectedItem" />
     </div>
 
     <!-- MODALS -->
-    <AssignmentModal v-if="showAssignmentModal" @close="showAssignmentModal = false" />
+    <AssignmentModal 
+        v-if="showAssignmentModal" 
+        :targetIds="currentSelectionIds" 
+        @close="showAssignmentModal = false" 
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
@@ -162,6 +185,11 @@ import RainConfig from './RainConfig.vue';
 import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 import PatternGenerator from '../hydraulics/PatternGenerator.vue';
 import AssignmentModal from '../hydraulics/AssignmentModal.vue';
+import Flood2DSolverRunner from '../Flood2DSolverRunner.vue'; // Adjust path based on file structure
+// Correct Path: ../Flood2DSolverRunner.vue? 
+// ScenarioManager is in features/flood-2D/components/panel/
+// SolverRunner is in features/flood-2D/components/
+// So path is ../Flood2DSolverRunner.vue. Correct.
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
@@ -191,10 +219,16 @@ const activeGanglinie = computed(() => {
     return hydStore.ganglinien[hydStore.activeGanglinieId];
 });
 
-// Selection Helper: Always return array
+// Selection Helper: Always return array (Single or Multi)
 const currentSelectionIds = computed(() => {
-    if (!simStore.selection) return [];
-    return Array.isArray(simStore.selection) ? simStore.selection : [simStore.selection];
+    // NEW: Multi-select support
+    if (simStore.multiSelection && simStore.multiSelection.size > 0) {
+        return Array.from(simStore.multiSelection);
+    }
+    if (simStore.selection) {
+        return [simStore.selection];
+    }
+    return [];
 });
 
 const applyPattern = (points) => {
@@ -205,7 +239,12 @@ const applyPattern = (points) => {
 
 const assignToSelection = () => {
     if (activeGanglinie.value && currentSelectionIds.value.length > 0) {
-        hydStore.assignToObjects(currentSelectionIds.value, activeGanglinie.value.id);
+        // assignBoundaryCondition handles array now
+        hydStore.assignBoundaryCondition(currentSelectionIds.value, {
+            type: 'INFLOW_DYNAMIC', 
+            value: null, 
+            profileId: activeGanglinie.value.id 
+        });
     }
 };
 
@@ -213,6 +252,26 @@ const handleZoom = (item) => {
     console.log("Zoom to:", item);
 };
 
+// NEW: Auto-Switch Tab on Selection
+watch(() => simStore.selection, (newId) => {
+    if (!newId) return;
+    
+    // Check Nodes
+    if (geoStore.nodes.some(n => n.id === newId)) {
+        activeTab.value = 'NODES';
+        return;
+    }
+    // Check Buildings
+    if (geoStore.buildings.features.some(f => f.id === newId)) {
+        activeTab.value = 'BUILDINGS';
+        return;
+    }
+    // Check Boundaries
+    if (geoStore.boundaries.features.some(f => f.id === newId)) {
+        activeTab.value = 'BOUNDARIES';
+        return;
+    }
+});
 </script>
 
 <style scoped>
@@ -356,4 +415,29 @@ const handleZoom = (item) => {
     background: #1a252f;
 }
 
+</style>
+
+<style scoped>
+/* BULK HINT */
+.bulk-hint {
+    padding: 20px; 
+    text-align: center; 
+    color: #bdc3c7; 
+    background: #2c3e50; 
+    border-radius: 4px;
+    display: flex; flex-direction: column; gap: 10px; align-items: center;
+    border: 1px dashed #34495e;
+}
+.bulk-icon { font-size: 2rem; }
+.btn-bulk-config {
+    margin-top: 5px; 
+    padding: 8px 16px; 
+    background: #3498db; 
+    color: white; 
+    border: none; 
+    border-radius: 4px; 
+    cursor: pointer;
+    font-weight: bold;
+}
+.btn-bulk-config:hover { background: #2980b9; }
 </style>

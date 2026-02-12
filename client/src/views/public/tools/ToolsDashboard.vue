@@ -69,6 +69,16 @@
             </div>
           </div>
 
+          <!-- IsyScan Tool Card -->
+          <div class="tool-card" @click="$router.push('/isyscan')">
+            <div class="icon">🔍</div>
+            <div class="content">
+              <h3>IsyScan (Beta)</h3>
+              <p>Automatisierte Konvertierung von JSON zu ISYBAU XML mit Live-Log.</p>
+              <span class="link-text">Zum Tool &rarr;</span>
+            </div>
+          </div>
+
           <!-- Pipe Hydraulics Tool Card -->
           <div class="tool-card" @click="$router.push('/tools/pipe-hydraulics')">
             <div class="icon">💧</div>

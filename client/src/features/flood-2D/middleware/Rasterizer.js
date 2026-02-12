@@ -60,8 +60,10 @@ export function gridToASC(data, header) {
     let content = '';
     content += `ncols         ${header.ncols}\n`;
     content += `nrows         ${header.nrows}\n`;
-    content += `xllcorner     ${header.xllcorner.toFixed(4)}\n`;
-    content += `yllcorner     ${header.yllcorner.toFixed(4)}\n`;
+    const x = header.xllcorner !== undefined ? header.xllcorner : header.xll;
+    const y = header.yllcorner !== undefined ? header.yllcorner : header.yll;
+    content += `xllcorner     ${x.toFixed(4)}\n`;
+    content += `yllcorner     ${y.toFixed(4)}\n`;
     content += `cellsize      ${header.cellsize.toFixed(4)}\n`;
     content += `NODATA_value  -9999\n`;
 

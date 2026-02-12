@@ -1,0 +1,2368 @@
+{
+  "metadata": {
+    "version": "ISYBAU 2017-07",
+    "generated_at": "2026-02-03T16:23:41.472Z"
+  },
+  "hierarchy_rules": {
+    "root": "IsybauKollektiv",
+    "structure": {
+      "IsybauKollektiv": {
+        "children": [
+          "Metadaten",
+          "Stammdaten"
+        ]
+      },
+      "Stammdaten": {
+        "children": [
+          "Knoten",
+          "Leitungen"
+        ]
+      },
+      "Knoten": {
+        "xml_tag": "Knoten",
+        "item_wrapper": "AbwassertechnischeAnlage",
+        "type": "collection"
+      },
+      "Leitungen": {
+        "xml_tag": "Leitungen",
+        "item_wrapper": "AbwassertechnischeAnlage",
+        "type": "collection"
+      }
+    }
+  },
+  "object_definitions": {
+    "AbwassertechnischeAnlage": {
+      "fields": {
+        "Objektart": {
+          "required": true,
+          "type": "Integer",
+          "ref_list": "G100"
+        },
+        "Status": {
+          "required": false,
+          "type": "Integer",
+          "ref_list": "G105"
+        },
+        "Baujahr": {
+          "required": false,
+          "type": "gYear"
+        },
+        "Entwaesserungsart": {
+          "required": false,
+          "type": "Integer",
+          "ref_list": "G101"
+        },
+        "Kommentar": {
+          "required": false,
+          "type": "String"
+        },
+        "Kante": {
+          "required": false,
+          "type": "StammKanteType"
+        },
+        "Knoten": {
+          "required": false,
+          "type": "StammKnotenType"
+        },
+        "Lage": {
+          "required": false,
+          "type": "StammLageType"
+        },
+        "Umweltparameter": {
+          "required": false,
+          "type": "UmweltparameterType"
+        },
+        "Geometrie": {
+          "required": false,
+          "type": "GeometrieType"
+        },
+        "Massnahme": {
+          "required": false,
+          "type": "SanierungType"
+        }
+      }
+    },
+    "Knoten": {
+      "fields": {
+        "KnotenTyp": {
+          "required": true,
+          "type": "Integer",
+          "ref_list": "G300"
+        },
+        "Schacht": {
+          "required": true,
+          "type": "SchachtType"
+        },
+        "Anschlusspunkt": {
+          "required": true,
+          "type": "AnschlusspunktType"
+        },
+        "Bauwerk": {
+          "required": true,
+          "type": "BauwerkType"
+        }
+      }
+    },
+    "Kante": {
+      "fields": {
+        "KantenTyp": {
+          "required": true,
+          "type": "Integer",
+          "ref_list": "G200"
+        },
+        "KnotenZulaufTyp": {
+          "required": true,
+          "type": "Integer",
+          "ref_list": "G300"
+        },
+        "KnotenAblaufTyp": {
+          "required": true,
+          "type": "Integer",
+          "ref_list": "G300"
+        },
+        "Material": {
+          "required": false,
+          "type": "Integer",
+          "ref_list": "G102"
+        },
+        "Profil": {
+          "required": false,
+          "type": "ProfilType"
+        },
+        "Haltung": {
+          "required": true,
+          "type": "HaltungType"
+        },
+        "Leitung": {
+          "required": true,
+          "type": "LeitungType"
+        },
+        "Rinne": {
+          "required": true,
+          "type": "RinneType"
+        },
+        "Gerinne": {
+          "required": true,
+          "type": "GerinneType"
+        }
+      }
+    }
+  },
+  "reference_dictionaries": {
+    "DatenstatusType": {
+      "name": "DatenstatusType",
+      "description": "M100 Datenstatus",
+      "mappings": {
+        "Bestandsdaten": "1",
+        "Erfassungsdaten": "2",
+        "Planungsdaten - Generelle Planung": "3",
+        "Planungsdaten - Entwurfsplanung": "4",
+        "Planungsdaten - Genehmigungsplanung": "5",
+        "Planungsdaten - Ausf�hrungsplanung": "6",
+        "Planungsdaten - Objektplanung": "7",
+        "sonstiger Datenbestand": "8"
+      }
+    },
+    "KollektivartType": {
+      "name": "KollektivartType",
+      "description": "M101 Kollektivart",
+      "mappings": {
+        "Stammdaten": "1",
+        "Zustandsdaten": "2",
+        "Hydraulikdaten": "3",
+        "Betriebsdaten": "4",
+        "Kostendaten": "5",
+        "Praesentationsdaten": "6"
+      }
+    },
+    "StammdatentypType": {
+      "name": "StammdatentypType",
+      "description": "M102 Stammdatentyp",
+      "mappings": {
+        "Bautechnischer Bestand": "1",
+        "Hydraulisches oder hydrologisches Ersatzsystem": "2"
+      }
+    },
+    "ZustaendigkeitType": {
+      "name": "ZustaendigkeitType",
+      "description": "M103 Zust�ndigkeit",
+      "mappings": {
+        "Bund, milit�risch (BMVg)": "1",
+        "Bund, zivil (BMVBW)": "2",
+        "Bund, sonstige": "3",
+        "Land": "4",
+        "Fremdstreitkr�fte": "5"
+      }
+    },
+    "RegelwerkType": {
+      "name": "RegelwerkType",
+      "description": "M104 Regelwerk/Datenumfang",
+      "mappings": {
+        "Arbeitshilfen Abwasser (ISYBAU 1996/2001)": "1",
+        "Arbeitshilfen Abwasser (ISYBAU 2006)": "2",
+        "sonstige Festlegungen": "3",
+        "keine Angaben": "4",
+        "Arbeitshilfen Abwasser (ISYBAU 2013)": "5",
+        "Arbeitshilfen Abwasser (ISYBAU 2017)": "6"
+      }
+    },
+    "AbwasserbeseitigungspflichtType": {
+      "name": "AbwasserbeseitigungspflichtType",
+      "description": "M105 Abwasserbeseitigungspflicht",
+      "mappings": {
+        "Betreiber": "1",
+        "Kommune": "2"
+      }
+    },
+    "TypOrdnungseinheitType": {
+      "name": "TypOrdnungseinheitType",
+      "description": "M108 Typ Ordnungseinheit",
+      "mappings": {
+        "Liegenschaft": "1",
+        "Wirtschaftseinheit": "2",
+        "Entw�sserungsnetz": "3",
+        "sonstige Ordnungseinheit": "4"
+      }
+    },
+    "WENummerDetailType": {
+      "name": "WENummerDetailType",
+      "description": "M109 WENummerDetail",
+      "mappings": {
+        "BMVg": "1",
+        "BImA": "2",
+        "Sonstige": "3"
+      }
+    },
+    "PraesentationsdatentypType": {
+      "name": "PraesentationsdatentypType",
+      "description": "M110 Praesentationsdatentyp",
+      "mappings": {
+        "Lageplan Bestand Abwasser": "1",
+        "Lageplan Bestand Sanierung": "2",
+        "Lageplan Einzugsgebiet Regenwasserabfluss": "3",
+        "Lageplan Einzugsgebiet Trockenwetterabfluss": "4",
+        "Lageplan Bautechnische Zustandsbewertung": "5",
+        "Lageplan Hydraulische Zustandsklassifizierung": "6",
+        "Lageplan Hydraulische Auslastung": "7",
+        "Lageplan Sanierungskonzept": "8",
+        "Lageplan Kanalsch�den": "9",
+        "Lageplan Schachtsch�den": "10",
+        "Lageplan Ablagerungsgef�hrdete Kan�le": "11",
+        "Netzplan Kanalsch�den": "12",
+        "Netzplan Schachtsch�den": "13",
+        "Anderer Plan": "14"
+      }
+    },
+    "G100": {
+      "name": "ObjektartType",
+      "description": "G100 Objektdifferenzierung",
+      "mappings": {
+        "Kante": "1",
+        "Knoten": "2"
+      }
+    },
+    "G101": {
+      "name": "EntwaesserungsartType",
+      "description": "G101 Entw�sserungssystem / Kanalart",
+      "mappings": {
+        "Freispiegelabfluss im geschlossenen Profil, Regenwassersystem": "KR",
+        "Freispiegelabfluss im geschlossenen Profil, Schmutzwassersystem": "KS",
+        "Freispiegelabfluss im geschlossenen Profil, Mischwassersystem": "KM",
+        "Freispiegelabfluss im geschlossenen Profil, Flie�gew�sser": "KW",
+        "Druckabfluss, Regenwassersystem": "DR",
+        "Druckabfluss, Schmutzwassersystem": "DS",
+        "Druckabfluss, Mischwassersystem": "DM",
+        "Abfluss im offenen Profil, Regenwassersystem": "GR",
+        "Abfluss im offenen Profil, Schmutzwassersystem": "GS",
+        "Abfluss im offenen Profil, Mischwassersystem": "GM",
+        "Abfluss im offenen Profil, Flie�gew�sser": "GW"
+      }
+    },
+    "G102": {
+      "name": "MaterialType",
+      "description": "G102 Material",
+      "mappings": {
+        "Asbestzememt": "AZ",
+        "Beton": "B",
+        "Betonsegmente": "BS",
+        "Edelstahl": "CNS",
+        "Nichtidentifizietes Eisen und Stahl": "EIS",
+        "Faserzement": "FZ",
+        "Glasfaserverst�rkter Kunststoff": "GFK",
+        "Grauguss": "GG",
+        "Duktiles Gusseisen": "GGG",
+        "Nichtidenfizierter Kunststoff": "KST",
+        "Mauerwerk": "MA",
+        "Ortbeton": "OB",
+        "Porosit": "P",
+        "Polymerbeton": "PC",
+        "Polymermodifizierter Zementbeton": "PCC",
+        "Polyethylen": "PE",
+        "Polyethylen hoher Dichte": "PEHD",
+        "Polyesterharz": "PH",
+        "Polyesterharzbeton": "PHB",
+        "Polypropylen": "PP",
+        "Polyvinylchlorid": "PVC",
+        "Polyvinylchlorid hart": "PVCU",
+        "Stahlfaserbeton": "SFB",
+        "Spannbeton": "SPB",
+        "Stahlbeton": "SB",
+        "Stahl": "ST",
+        "Steinzeug": "STZ",
+        "Spritzbeton": "SZB",
+        "Nichtidentifizierter Werkstoff": "W",
+        "Ziegelwerk": "ZG",
+        "unterschiedliche Werkstoffe": "MIX",
+        "unbefestigt, anstehender Boden": "BOD",
+        "Rasen": "RAS",
+        "Pflaster": "PFL"
+      }
+    },
+    "G103": {
+      "name": "InnenschutzType",
+      "description": "G103 Innenschutz",
+      "mappings": {
+        "Anstrich oder Beschichtung im gesamten Innenraum": "AIR",
+        "Anstrich oder Beschichtung im Bereich der Sohle": "AIS",
+        "Anstrich oder Beschichtung im Bereich der Wandung": "AIW",
+        "Bitumenanstrich im gesamten Innenraum": "AIBITR",
+        "Bitumenanstrich im Bereich der Sohle": "AIBITS",
+        "Bitumenanstrich im Bereich der Wandung": "AIBITW",
+        "Kunstharzbeschichtung im gesamten Innenraum": "AIKHR",
+        "Kunstharzbeschichtung im Bereich der Sohle": "AIKHS",
+        "Kunstharzbeschichtung im Bereich der Wandung": "AIKHW",
+        "Auskleidung mit Kanalklinkern im gesamten Innenraum": "KKIR",
+        "Auskleidung mit Kanalklinkern im Bereich der Sohle": "KKIS",
+        "Nicht vorhanden": "NV",
+        "Auskleidung mit Kanalklinkern im Bereich der Wandung": "KKIW",
+        "Zementm�rtelauskleidung im gesamten Innenraum": "ZMR",
+        "Zementm�rtelauskleidung im Bereich der Sohle": "ZMS",
+        "Zementm�rtelauskleidung im Bereich der Wandung": "ZMW"
+      }
+    },
+    "G104": {
+      "name": "AuskleidungType",
+      "description": "G104 Auskleidung",
+      "mappings": {
+        "Auskleidung werkseitig eingebracht": "1",
+        "Spritzwasserauskleidung": "2",
+        "Vor-Ort-Auskleidung": "3",
+        "Abschnittsweise Auskleidung": "4",
+        "Auskleidung mittels einzelner Rohre": "5",
+        "Schlauchrelining": "6",
+        "Auskleidung mittels Endlosrohren": "7",
+        "Close-Fit Auskleidung": "8",
+        "Wickelrohrrelining": "9"
+      }
+    },
+    "G105": {
+      "name": "StatusType",
+      "description": "G105 Status",
+      "mappings": {
+        "vorhanden (in Betrieb)": "0",
+        "geplant": "1",
+        "fiktiv (modelltechnische Gr�nde)": "2",
+        "au�er Betrieb": "3",
+        "verd�mmt / verf�llt, Stilllegung": "4",
+        "Sonstige": "5",
+        "r�ckgebaut": "6"
+      }
+    },
+    "G106": {
+      "name": "LageType",
+      "description": "G106 Lage",
+      "mappings": {
+        "unbekannt": "0",
+        "schwere Zug�nglichkeit (Autobahn, Gleisanlage, etc.)": "1",
+        "Fahrbahn/Hoffl�che flie�ender Verkehr": "2",
+        "Parkstreifen/Hoffl�che ruhender Verkehr/Abstellbereich": "3",
+        "Geh-/Rad-/Wirtschaftsweg befestigt": "4",
+        "Geh-/Rad-/Wirtschaftsweg unbefestigt": "5",
+        "Stra�enseitenraum, unbefestigt": "6",
+        "unter einem Geb�ude": "7",
+        "Wald/Forstbereich": "8",
+        "Garten-/Gr�nfl�che": "9",
+        "Brachfl�che/Wiese": "10",
+        "unter Gew�sser/Wasserstra�e": "11"
+      }
+    },
+    "G107": {
+      "name": "AbwasserartType",
+      "description": "G107 Abwasserart/Transportiertes Medium",
+      "mappings": {
+        "h�uslich": "0",
+        "gewerblich": "1",
+        "industriell (hier Sonderabw�sser)": "2",
+        "Abwasser mit wassergef�hrdenden Stoffen": "3",
+        "Dr�nagewasser": "4",
+        "Regenwasser": "5",
+        "thermisch belastet": "6",
+        "Sonstige": "8",
+        "keine Angaben": "9"
+      }
+    },
+    "G108": {
+      "name": "AbwasserartWgSType",
+      "description": "G108 Abwasserart/Wassergef�hrdende Stoffe",
+      "mappings": {
+        "POL (�l, Benzin,...)": "1",
+        "Biologisch (Fette, St�rke, biologische Abf�lle...)": "2",
+        "Chemisch (au�er POL, z.B. Quecksilber)": "3",
+        "Strahlen belastet": "4"
+      }
+    },
+    "G109": {
+      "name": "GWabstandType",
+      "description": "G109 Grundwasserabstand",
+      "mappings": {
+        "Gerinne oberhalb des Grundwasserleiters": "0",
+        "Gerinne in der Wechselzone": "1",
+        "Gerinne im Grundwasserleiter": "2",
+        "Sonstige": "3"
+      }
+    },
+    "G110": {
+      "name": "WasserschutzzoneType",
+      "description": "G110 Wasserschutzzone",
+      "mappings": {
+        "au�erhalb einer Wasserschutzzone": "0",
+        "Schutzzone IIIb": "1",
+        "Schutzzone IIIa": "2",
+        "Schutzzone II": "3",
+        "Trinkwasserschutzgebiet": "4",
+        "Thermal-/Heilquellenschutzgebiet": "5",
+        "Schutzzone I": "6",
+        "sonstige": "7"
+      }
+    },
+    "G111": {
+      "name": "BodenartType",
+      "description": "G111 anstehende Bodenart",
+      "mappings": {
+        "Sand, Kies": "0",
+        "Feinsand, lehmiger Sand": "1",
+        "sandiger Lehm, L�ss": "2",
+        "Lehm, Ton": "3",
+        "Sonstige": "4"
+      }
+    },
+    "G112": {
+      "name": "UntersuchungBodenType",
+      "description": "G112 Untersuchung Boden",
+      "mappings": {
+        "Geologische Karte": "1",
+        "Bodenkarte": "2",
+        "Baugrundkarte": "3",
+        "Baugrunduntersuchung": "4",
+        "Bauma�nahme (Baugrube, Schachtung)": "5",
+        "Bohrung": "6",
+        "Sondierung": "7",
+        "Altlastenerkundung": "8",
+        "Wenn keine der genannten M�glichkeiten zutrifft": "99"
+      }
+    },
+    "G113": {
+      "name": "BestimmungkfType",
+      "description": "G113 Bestimmungkf",
+      "mappings": {
+        "Bodenansprache": "1",
+        "Korngr��enanalyse (Sieblinie)": "2",
+        "Permeameteruntersuchung im Labor": "3",
+        "Feldmethode (Open-End-Test oder dgl.)": "4",
+        "sonstige (ggf. spezifizieren in nachfolgendem Bemerkungsfeld)": "9"
+      }
+    },
+    "G114": {
+      "name": "BeobachtungszyklusGWType",
+      "description": "G114 BeobachtungszyklusGW",
+      "mappings": {
+        "kein regelm��iger Zyklus": "0",
+        "w�chentlich": "1",
+        "monatlich": "4",
+        "viertelj�hrlich": "13",
+        "j�hrlich": "52",
+        "kontinuierliche Registrierung (Schreibpegel, Datenlogger)": "99"
+      }
+    },
+    "G115": {
+      "name": "GebietsnutzungType",
+      "description": "G115 Gebietsnutzung",
+      "mappings": {
+        "Unterk�nfte": "1",
+        "Verkehrsfl�chen (Stra�en, Wege, Pl�tze)": "2",
+        "Betriebs- und Werkst�tten": "3",
+        "Sport- und Gr�nfl�chen": "4",
+        "sonstige": "5"
+      }
+    },
+    "G116": {
+      "name": "EigentumType",
+      "description": "G116 Eigentum",
+      "mappings": {
+        "�ffentlich": "1",
+        "Privat": "2",
+        "Bund": "3",
+        "Land": "4",
+        "Sonstige": "5"
+      }
+    },
+    "G200": {
+      "name": "KantentypType",
+      "description": "G200 Haltung, Leitung, Rinne, Wasserlauf",
+      "mappings": {
+        "Haltung": "0",
+        "Leitung": "1",
+        "Rinne": "2",
+        "Gerinne": "3"
+      }
+    },
+    "G201": {
+      "name": "HaltungsFunktionType",
+      "description": "G201 Haltungsfunktion",
+      "mappings": {
+        "Haltung, Transportkanal": "1",
+        "Stauraumkanal mit oben liegender Entlastung SKO": "2",
+        "Stauraumkanal mit mittig liegender Entlastung SKM": "3",
+        "Stauraumkanal mit unten liegender Entlastung SKU": "4",
+        "Stauraumkanal als Kaskade SKK": "5",
+        "Entlastungskanal EK": "6",
+        "D�ker": "7"
+      }
+    },
+    "G202": {
+      "name": "LeitungsFunktionType",
+      "description": "G202 Leitungsfunktion",
+      "mappings": {
+        "Anschlussleitung": "1",
+        "Dr�nageleitung": "2"
+      }
+    },
+    "G203": {
+      "name": "RinnenFunktionType",
+      "description": "G203 Rinnenfunktion",
+      "mappings": {
+        "offen": "1",
+        "abgedeckt": "2"
+      }
+    },
+    "G204": {
+      "name": "GerinneFunktionType",
+      "description": "G204 Gerinnefunktion",
+      "mappings": {
+        "Gew�ssergerinne": "1",
+        "Messgerinne": "2",
+        "Entw�sserungsgraben, offen": "3",
+        "Entw�sserungsgraben, verrohrt": "4"
+      }
+    },
+    "G205": {
+      "name": "ProfilartType",
+      "description": "G205 Profilart",
+      "mappings": {
+        "Kreisprofil": "0",
+        "Eiprofil (H/B=3/2)": "1",
+        "Maulprofil (H/B = 1,66/2)": "2",
+        "Rechteckprofil (geschlossen)": "3",
+        "Kreisprofil (doppelwandig)": "4",
+        "Rechteckprofil (offen)": "5",
+        "Eiprofil (H/B ungleich 3/2)": "6",
+        "Maulprofil (H/B ungleich 1,66/2)": "7",
+        "Trapezprofil": "8",
+        "Doppeltrapezprofil": "9",
+        "U-f�rmig (kreisf�rmige Sohle und flache Decke mit parallelen W�nden)": "10",
+        "Bogenf�rmig (kreisf�rmiger Scheitel und flache Sohle mit parallelen W�nden)": "11",
+        "oval (Sohle und Scheitel kreisf�rmg mit gleichem Durchmesser und parallele W�nde)": "12",
+        "andere Profilart": "13"
+      }
+    },
+    "G206": {
+      "name": "AnschlussartType",
+      "description": "G206 Anschlussart",
+      "mappings": {
+        "Abzweig": "A",
+        "Stutzen": "S",
+        "Abzweig geschlossen": "AG",
+        "Stutzen geschlossen": "SG"
+      }
+    },
+    "G207": {
+      "name": "DruckverfahrenType",
+      "description": "G207 Druckverfahren",
+      "mappings": {
+        "�berdruckentw�sserung": "1",
+        "Vakuumentw�sserung": "2"
+      }
+    },
+    "G208": {
+      "name": "SDRType",
+      "description": "G208 SDR (Standard Dimension Ratio)",
+      "mappings": {
+        "SDR 5": "1",
+        "SDR 7,4": "2",
+        "SDR 11": "3",
+        "SDR 13,6": "4",
+        "SDR 17": "5",
+        "SDR 17,6": "6",
+        "SDR 26": "7",
+        "SDR 33": "8"
+      }
+    },
+    "G300": {
+      "name": "KnotentypType",
+      "description": "G300 Knotentyp",
+      "mappings": {
+        "Schacht": "0",
+        "Anschlusspunkt": "1",
+        "Bauwerk": "2"
+      }
+    },
+    "G301": {
+      "name": "SchachtFunktionType",
+      "description": "G301 Schachtfunktion",
+      "mappings": {
+        "Schacht": "1",
+        "Sonderschacht": "2",
+        "Kontrollschacht": "3",
+        "Drosselschacht": "4",
+        "Lampenschacht": "5",
+        "Probenahmeschacht": "6",
+        "Hausrevisionsschacht": "7",
+        "Verbindungsschacht": "8",
+        "Schacht mit Not�berlauf": "9",
+        "Inspektions�ffnung": "10",
+        "Reinigungs�ffnung": "11",
+        "Probenahme�ffnung": "12"
+      }
+    },
+    "G302": {
+      "name": "DeckelformType",
+      "description": "G302 Deckelform",
+      "mappings": {
+        "rund": "R",
+        "rund, verschraubt": "RV",
+        "rechteckig": "E",
+        "rechteckig, verschraubt": "EV",
+        "andere Form": "Z"
+      }
+    },
+    "G303": {
+      "name": "DeckeltypType",
+      "description": "G303 Deckeltyp",
+      "mappings": {
+        "mit Bel�ftungs�ffnung": "1",
+        "ohne Bel�ftungs�ffnung (geschlossen)": "2"
+      }
+    },
+    "G304": {
+      "name": "AbdeckungsklasseType",
+      "description": "G304 Abdeckungsklasse",
+      "mappings": {
+        "klasse A": "A",
+        "Klasse B": "B",
+        "Klasse C": "C",
+        "Klasse D": "D",
+        "Klasse E": "E",
+        "Klasse F": "F",
+        "sonstige/unbekannt": "Z"
+      }
+    },
+    "G305": {
+      "name": "AufbauformType",
+      "description": "G305 Aufbauform",
+      "mappings": {
+        "rund": "R",
+        "eckig": "E",
+        "andere Form": "Z"
+      }
+    },
+    "G306": {
+      "name": "ArtSteighilfenType",
+      "description": "G306 ArtSteighilfen",
+      "mappings": {
+        "einl�ufiger Steigeisengang": "1",
+        "zweil�ufiger Steigeisengang": "2",
+        "Leiter": "3",
+        "Steigk�sten": "4",
+        "nicht vorhanden": "5"
+      }
+    },
+    "G307": {
+      "name": "MaterialSteighilfenType",
+      "description": "G307 MaterialSteighilfen",
+      "mappings": {
+        "Eisen": "1",
+        "Galvanisiertes Eisen": "2",
+        "Nichtrostender Stahl": "3",
+        "Aluminium": "4",
+        "Kunststoffummanteltes Metall": "5",
+        "Kunststoff": "6"
+      }
+    },
+    "G308": {
+      "name": "UnterteilformType",
+      "description": "G308 Unterteilform",
+      "mappings": {
+        "rund": "R",
+        "eckig": "E",
+        "ohne Schachtunterteil": "O",
+        "andere Form": "Z"
+      }
+    },
+    "G309": {
+      "name": "GerinneformType",
+      "description": "G309 Gerinneform",
+      "mappings": {
+        "Kreis bis K�mpfer": "0",
+        "Kreis bis Scheitel": "1",
+        "Rechteck bis K�mpfer": "2",
+        "Rechteck bis Scheitel": "3",
+        "geschlossenes Gerinne": "4",
+        "schussrinne": "5",
+        "Kaskade": "6",
+        "wenn keine der aufgef�hrten Quellen zutrifft": "9"
+      }
+    },
+    "G310": {
+      "name": "PunktkennungType",
+      "description": "G310 Punktkennung",
+      "mappings": {
+        "Anschlusspunkt allgemein": "AP",
+        "Entw�sserungsrinne, Zu-/Ablauf": "ER",
+        "Geb�udeanschluss": "GA",
+        "Regenfallrohr": "RR",
+        "Stra�enablauf": "SE",
+        "nicht bekannt, weiterer Verlauf unbekannt": "NN",
+        "Zu-/Ablauf Versickerungs-/Regenwassernutzungsanlage": "AV",
+        "Rohrende verschlossen": "RV",
+        "Entw�sserungspunkt im Geb�ude": "EG",
+        "Bodenablauf": "BA",
+        "Zulauf Gerinne": "ZG",
+        "Dr�nage, Anfang": "DR",
+        "Gerinnepunkt, allgemein": "GP"
+      }
+    },
+    "G400": {
+      "name": "BauwerkstypType",
+      "description": "G400 Bauwerkstyp",
+      "mappings": {
+        "Pumpwerk": "1",
+        "Becken": "2",
+        "Behandlungsanlage": "3",
+        "Kl�ranlage": "4",
+        "Auslaufbauwerk": "5",
+        "Pumpe": "6",
+        "Wehr_�berlauf": "7",
+        "Drossel": "8",
+        "Schieber": "9",
+        "Rechen": "10",
+        "Sieb": "11",
+        "Versickerungsanlage": "12",
+        "Zisterne": "13",
+        "Einlaufbauwerk": "14"
+      }
+    },
+    "G401": {
+      "name": "BeckenFunktionType",
+      "description": "G401 Beckenfunktion",
+      "mappings": {
+        "Regen�berlaufbecken": "RUEB",
+        "Regenkl�rbecken ohne Dauerstau": "RKBOD",
+        "Regenkl�rbecken mit Dauerstau": "RKBMD",
+        "Regenr�ckhaltebecken": "RRB",
+        "Regenr�ckstaubecken": "RRSB",
+        "Regenr�ckhaltegraben": "RRG",
+        "Mechanischer Retentionsfilter mit vorgeschalteter Retention": "MFVR",
+        "Mechanischer Retentionsfilter": "MRF",
+        "Bodenfilter mit vorgeschalteter Retention": "BFVR",
+        "Retentionsbodenfilter": "RBF"
+      }
+    },
+    "G402": {
+      "name": "BeckenartType",
+      "description": "G402 Beckenart",
+      "mappings": {
+        "Fangbecken": "1",
+        "Durchlaufbecken": "2",
+        "Verbundbecken": "3"
+      }
+    },
+    "G403": {
+      "name": "AnordnungType",
+      "description": "G403 Anordnung",
+      "mappings": {
+        "Hauptschluss": "1",
+        "Nebenschluss": "2"
+      }
+    },
+    "G404a": {
+      "name": "BeckenBauartType",
+      "description": "G404a Beckenbauart",
+      "mappings": {
+        "offen": "1",
+        "geschlossen": "2"
+      }
+    },
+    "G404b": {
+      "name": "BeckenFormType",
+      "description": "G404b Beckenform",
+      "mappings": {
+        "rund": "1",
+        "rechteckig": "2",
+        "unregelm��ig": "3"
+      }
+    },
+    "G404c": {
+      "name": "BeckenAusfuehrungType",
+      "description": "G404c Beckenausf�hrung",
+      "mappings": {
+        "Betonbecken": "1",
+        "Erdbecken": "2"
+      }
+    },
+    "G405": {
+      "name": "AblaufartType",
+      "description": "G405 Ablaufart",
+      "mappings": {
+        "freier Ablauf": "1",
+        "Rohrdrossel": "2",
+        "Druckleitung": "3",
+        "Hydroslide": "4",
+        "Wirbeldrossel": "5",
+        "automatische Klappe": "6",
+        "Drosselwaage": "7",
+        "gesteuerter Schieber": "8",
+        "Ablauf �ber Pumpen": "9",
+        "Lochblende": "10",
+        "Heber": "11",
+        "sonstige": "12"
+      }
+    },
+    "G406": {
+      "name": "BehandlungsartType",
+      "description": "G406 Behandlungsart",
+      "mappings": {
+        "Benzinabscheider/�labscheider": "1",
+        "Koaleszenzabscheider": "2",
+        "Fettabscheider": "3",
+        "St�rkeabscheider": "4",
+        "Emulsionsspaltanlage": "5",
+        "Schlammfang": "6",
+        "Stapelbecken": "7",
+        "sonstige Bauwerksteile": "9",
+        "Neutralisationsanlage": "10",
+        "Bauwerk einer Kombinationsanlage": "11"
+      }
+    },
+    "G407": {
+      "name": "KombinationsartType",
+      "description": "G407 Kombinationsart",
+      "mappings": {
+        "Schlammfang mit Benzin-/�labscheider (Klasse II)": "SB",
+        "Schlammfang mit Adsorptions-Koaleszenzabscheider (Klasse I)": "SAK",
+        "Schlammfang mit Koaleszenzabscheider (Klasse I)": "SK",
+        "Vorabscheider mit Schlammfang": "VS",
+        "Vorabscheider mit Adsorbtions-Koaleszenzabscheider": "VAK",
+        "Vorabscheider mit Koaleszenzabscheider": "VK",
+        "Schlammfang mit Fettabscheider": "SF",
+        "Schlammfang mit Stapelbecken": "SSB",
+        "Schlammfang mit Emulsionsspaltanlage": "SSE",
+        "sonstige hier nicht aufgef�hrte Kombination": "SON"
+      }
+    },
+    "G408": {
+      "name": "AufstellungsartType",
+      "description": "G408 Aufstellungsart",
+      "mappings": {
+        "Innenaufstellung": "1",
+        "Au�enaufstellung, Erdeinbau": "2",
+        "Nachnutzung eines vorhandenen Speicherraumes": "3"
+      }
+    },
+    "G409": {
+      "name": "AbscheiderklasseType",
+      "description": "G409 Abscheiderklasse",
+      "mappings": {
+        "Klasse I, h�chstzul�ssiger Gehalt an Rest�l 5,0 mg/l": "1",
+        "Klasse II, h�chstzul�ssiger Gehalt an Rest�l 100 mg/l": "2"
+      }
+    },
+    "G410": {
+      "name": "WarnanlageType",
+      "description": "G410 Warnanlage",
+      "mappings": {
+        "F�llstandsanzeige": "1",
+        "optische Warnanlage": "2",
+        "optisch-akustische Warnanlage": "3"
+      }
+    },
+    "G411": {
+      "name": "FrischwasserversorgungType",
+      "description": "G411 Frischwasserversorgung",
+      "mappings": {
+        "Frischwasseranschluss": "1",
+        "Sp�lpumpe": "2"
+      }
+    },
+    "G412": {
+      "name": "NeutralisationsartType",
+      "description": "G412 Neutralisationsart",
+      "mappings": {
+        "diskontinuierlich/Chargenbehandlung": "1",
+        "kontinuierlich/Durchlaufbehandlung": "2"
+      }
+    },
+    "G413": {
+      "name": "NeutralisationsmittelType",
+      "description": "G413 Neutralisationsmittel",
+      "mappings": {
+        "Kalkstein": "1",
+        "Kalksteinaufschl�mmung": "2",
+        "Kalkmilch": "3",
+        "Natronlauge": "4",
+        "Soda": "5",
+        "Ionenaustauscher (kationisch)": "6",
+        "Rauchgas": "7",
+        "Gas aus Fermentation": "8",
+        "Schwefels�ure": "9",
+        "Salzs�ure": "10",
+        "Ionenaustauscher (anionisch)": "11",
+        "sonstige": "12"
+      }
+    },
+    "G414": {
+      "name": "KlaeranlageFunktionType",
+      "description": "G414 Kl�ranlagefunktion",
+      "mappings": {
+        "Kl�ranlage mit mech. Stufe": "1",
+        "Kl�ranlage mit bio. Stufe": "2",
+        "Kl�ranlage mit chem. Stufe": "3",
+        "Teichkl�rung": "4",
+        "Kleinkl�ranlagen": "5",
+        "abflusslose Sammelgrube": "6",
+        "Zulauf Kl�ranlage": "7"
+      }
+    },
+    "G415": {
+      "name": "ArtAuslaufbauwerkType",
+      "description": "G415 ArtAuslaufbauwerk",
+      "mappings": {
+        "Auslass Rohrleitung mit B�schungssicherung": "1",
+        "Auslass Rohrleitung mit B�schungssicherung und R�ckstauklappe": "2",
+        "B�schungsst�ck (Fertigteil)": "3",
+        "Auslass ohne B�schungssicherung": "4"
+      }
+    },
+    "G416": {
+      "name": "EinleitungsartType",
+      "description": "G416 Einleitungsart",
+      "mappings": {
+        "�ffentl. Kanalisation": "1",
+        "Oberfl�chengew�sser": "2",
+        "Boden (Versickerung)": "3"
+      }
+    },
+    "G417": {
+      "name": "SchutzgitterType",
+      "description": "G417 Schutzgitter",
+      "mappings": {
+        "kein Schutzgitter": "0",
+        "Schutzgitter nicht klappbar": "1",
+        "Schutzgitter klappbar": "2"
+      }
+    },
+    "G418": {
+      "name": "SicherungType",
+      "description": "G418 Sicherung",
+      "mappings": {
+        "keine": "0",
+        "Steinsch�ttung": "1",
+        "Steinsatz": "2",
+        "Pflaster": "3",
+        "Beton": "4",
+        "Holzpf�hle": "5",
+        "sonstige": "6"
+      }
+    },
+    "G419": {
+      "name": "PumpenartType",
+      "description": "G419 Pumpenart",
+      "mappings": {
+        "Kreiselpumpe": "1",
+        "Schneckenpumpe": "2",
+        "sonstige": "3"
+      }
+    },
+    "G420": {
+      "name": "WehrFunktionType",
+      "description": "G420 Wehrfunktion",
+      "mappings": {
+        "Regen�berlauf": "1",
+        "Becken�berlauf": "2",
+        "Kl�r�berlauf": "3",
+        "Not�berlauf": "4",
+        "Mulden�berlauf": "5",
+        "Rigolen�berlauf": "6",
+        "Dreiecksmesswehr": "7",
+        "Rechtecksmesswehr": "8"
+      }
+    },
+    "G421": {
+      "name": "WehrtypType",
+      "description": "G421 Wehrtyp",
+      "mappings": {
+        "Querwehr": "1",
+        "Seitenwehr": "2",
+        "Querwehr mit R�ckstauklappe": "3",
+        "Seitenwehr mit R�ckstauklappe": "4",
+        "Querwehr mit beweglicher Schwelle": "5",
+        "Seitenwehr mit beweglicher Schwelle": "6",
+        "Wehr in Flie�richtung": "7",
+        "Wehr in Flie�richtung mit beweglicher Schwelle": "8"
+      }
+    },
+    "G422": {
+      "name": "WehrkroneType",
+      "description": "G422 Wehrkrone",
+      "mappings": {
+        "abgerundet": "1",
+        "scharfkantig": "2",
+        "sonstige": "3"
+      }
+    },
+    "G423": {
+      "name": "SchieberFunktionType",
+      "description": "G423 Schieberfunktion",
+      "mappings": {
+        "Absperrung": "1",
+        "Durchflussregulierung": "2",
+        "Abschlagsregulierung": "3"
+      }
+    },
+    "G424": {
+      "name": "SchieberartType",
+      "description": "G424 Schieberart",
+      "mappings": {
+        "hydraulisch getrieben": "1",
+        "elektrisch getrieben": "2",
+        "handbetrieben": "3",
+        "abflussreguliert": "4",
+        "wasserstandsreguliert": "5"
+      }
+    },
+    "G425": {
+      "name": "RechentypType",
+      "description": "G425 Rechentyp",
+      "mappings": {
+        "Schutzrechen, Spaltweite = 200-60mm": "1",
+        "Grobrechen, Spaltweite = 100-20mm": "2",
+        "Feinrechen, Spaltweite kleiner 20-8mm": "3",
+        "Feinstrechen, Spaltweite kleiner 8mm": "4"
+      }
+    },
+    "G426": {
+      "name": "RechenrostType",
+      "description": "G426 Rechenrost",
+      "mappings": {
+        "Stabrechen": "1",
+        "Bogenrechen": "2",
+        "Radialrechen": "3",
+        "Trommelrechen": "4",
+        "Rechen mit beweglichen Rechenrostteilen": "5"
+      }
+    },
+    "G427": {
+      "name": "ReinigereingriffType",
+      "description": "G427 Reinigereingriff",
+      "mappings": {
+        "Mitstromrechen/vorw�rtsger�umter Rechen": "1",
+        "Gegenstromrechen/r�ckw�rtsger�umter Rechen, mechanischer Antrieb": "2",
+        "Gegenstromrechen/r�ckw�rtsger�umter Rechen, hydraulischer Antrieb": "3",
+        "ohne separate R�umvorrichtung": "4"
+      }
+    },
+    "G428": {
+      "name": "SiebtypType",
+      "description": "G428 Siebtyp",
+      "mappings": {
+        "Grobsieb (Sieb�ffnung kleiner gleich 1mm)": "1",
+        "Feinsieb (Sieb�ffnung kleiner 1mm)": "2",
+        "Mikrosieb (Sieb�fnung kleiner gleich 0,05mm)": "3"
+      }
+    },
+    "G429": {
+      "name": "SiebkoerperType",
+      "description": "G429 Siebk�rper",
+      "mappings": {
+        "Bogensieb": "1",
+        "Siebtrommel": "2",
+        "Siebb�nder": "3",
+        "Siebscheiben": "4"
+      }
+    },
+    "G430": {
+      "name": "EinbauartType",
+      "description": "G430 Einbauart",
+      "mappings": {
+        "im Gerinne": "1",
+        "unabh�ngig von einem Gerinne": "2"
+      }
+    },
+    "G431": {
+      "name": "SiebflaecheType",
+      "description": "G431 Siebfl�che",
+      "mappings": {
+        "Spaltsieb": "1",
+        "Lochsieb": "2",
+        "Siebgewebe": "3"
+      }
+    },
+    "G432": {
+      "name": "VersickerungsanlagetypType",
+      "description": "G432 Versickerungsanlagetyp",
+      "mappings": {
+        "Fl�chenversickerung": "1",
+        "Muldenversickerung": "2",
+        "Rohrversickerung": "3",
+        "Rigolenversickerung": "4",
+        "Rohr-Rigolen-Versickerung": "5",
+        "Schachtversickerung": "7",
+        "Beckenversickerung": "8",
+        "Teich": "10"
+      }
+    },
+    "G433": {
+      "name": "ArtFlaechenanschlussType",
+      "description": "G433 ArtFl�chenanschluss",
+      "mappings": {
+        "oberirdisch (z.B. Rinne)": "1",
+        "unterirdisch (z.B. Rohrleitung)": "2"
+      }
+    },
+    "G434": {
+      "name": "FuellmaterialType",
+      "description": "G434 F�llmaterial",
+      "mappings": {
+        "gewaschener Sand (z.B. 0,2 - 2 mm)": "1",
+        "Feinkies (z.B. 2 - 8 mm)": "2",
+        "Mittelkies (z.B. 8 - 16 mm)": "3",
+        "Grobkies (z.B. 16 - 32 mm)": "4",
+        "Kunststoff-Wabenbl�cke": "5",
+        "sonstiges": "6"
+      }
+    },
+    "G435": {
+      "name": "ExistenzDrosselschachtType",
+      "description": "G435 ExistenzDrosselschacht",
+      "mappings": {
+        "nicht vorhanden": "0",
+        "vorhanden (ohne n�here Spezifikation)": "1",
+        "als Kunststoffschacht": "2",
+        "als Betonschacht": "3"
+      }
+    },
+    "G436": {
+      "name": "VSchachtTypType",
+      "description": "G436 VSchachtTyp",
+      "mappings": {
+        "Versickerungsschacht Typ A, Versickerung �ber die Seitenfl�che": "A",
+        "Versickerungsschacht Typ B, Versickerung �ber die Sohlfl�che": "B"
+      }
+    },
+    "G437": {
+      "name": "RegenwassernutzungFunktionType",
+      "description": "G437 Regenwassernutzungsfunktion",
+      "mappings": {
+        "Fahrzeugw�sche": "1",
+        "Bew�sserung (z.B. Gr�n- und Sportfl�chen)": "2",
+        "Toilettensp�lung": "3"
+      }
+    },
+    "G438": {
+      "name": "MaterialRnType",
+      "description": "G438 MaterialRn",
+      "mappings": {
+        "Beton": "1",
+        "gemauert": "2",
+        "Kunststoff (z.B. Polyethylen)": "3"
+      }
+    },
+    "G439": {
+      "name": "FilterartType",
+      "description": "G439 Filterart",
+      "mappings": {
+        "Kiesfilter oder Filtertopf": "1",
+        "Filtersammler": "2",
+        "Rohrfilter": "3",
+        "Wirbelfeinfilter": "4",
+        "Vorfilter mit Siebkorb": "5",
+        "Feinfilter mit Kartusche": "6",
+        "Filterplatte": "7",
+        "Tassenfilter oder R�cksp�lfilter": "8"
+      }
+    },
+    "G440": {
+      "name": "FiltermaterialType",
+      "description": "G440 Filtermaterial",
+      "mappings": {
+        "Kies": "1",
+        "Kiessand": "2",
+        "Sand": "3",
+        "Lehmboden": "4",
+        "kein Filtermaterial": "5"
+      }
+    },
+    "G441": {
+      "name": "BepflanzungType",
+      "description": "G441 Bepflanzung",
+      "mappings": {
+        "Rollrasen": "1",
+        "Gras": "2",
+        "Schwertlilien": "3",
+        "Rohrkolben": "4",
+        "Wasserschwaden": "5",
+        "Binsen": "6",
+        "Schilf": "7",
+        "keine": "8"
+      }
+    },
+    "G442": {
+      "name": "ArtEinlaufbauwerkType",
+      "description": "G442 ArtEinlaufbauwerk",
+      "mappings": {
+        "Einlaufbauwerk mit Ger�ll- und Sandfang in naturnahem Ausbau": "1",
+        "Einlaufbauwerk mit rechteckigem Ger�ll- und Sandfang": "2",
+        "Einlaufbauwerk mit rundem Ger�ll- und Sandfang": "3",
+        "Einlaufbauwerk ohne Ger�ll- und Sandfang": "4",
+        "Sonstige": "5"
+      }
+    },
+    "GeoObjektartType": {
+      "name": "GeoObjektartType",
+      "description": "V101 Objektart gem. BFR Vermessung",
+      "mappings": {
+        "Schacht rund": "1",
+        "Schacht eckig": "2",
+        "Sonderschacht": "3",
+        "Haltung": "4",
+        "Leitung": "5",
+        "Dr�nageleitung": "6",
+        "Druckleitung": "7",
+        "Anschlusspunkt (Abzweig/Stutzen)": "8",
+        "Anschlusspunkt allgemein (NN)": "9",
+        "Geb�udeanschluss (GA)": "10",
+        "Regenfallrohr (RR)": "11",
+        "Anschlusspunkt Stra�enablauf (SE)": "12",
+        "Zu-/Ablauf Entw�sserungsrinne (ER)": "13",
+        "Sonderbauwerk Speichereinrichtung": "14",
+        "Sonderbauwerk Trenn- und Aufbereitungsanlage": "15",
+        "Sonderbauwerk Kl�ranlage": "16",
+        "Sonderbauwerk Auslaufbauwerk": "17",
+        "Sonderbauwerk Pumpe": "18",
+        "Sonderbauwerk Wehr und �berlauf": "19",
+        "Sonderbauwerk Drossel": "20",
+        "Sonderbauwerk Schieber": "21",
+        "Absperschieber Druckleitung": "22",
+        "Versickerungsfl�che": "23",
+        "Versickerungsanlage mit oberirdischer Speicherung": "24",
+        "Versickerungsteich": "25",
+        "Versickerungsanlage mit unterirdischer Speicherung": "26",
+        "Versickerungsrohr": "27",
+        "Versickerungsschacht": "28",
+        "Zisterne": "29",
+        "Entw�sserungsrinne": "30",
+        "Breitfl�chiger Zu- oder �berlauf Regenwasser": "31",
+        "Gerinne": "32",
+        "Zu-/Ablauf Versickerungsanlage": "33",
+        "Rohrende verschlossen (RV)": "34",
+        "Entw�sserungspunkt im Geb�ude (EG)": "35",
+        "Bodenablauf (BA)": "36",
+        "Zulauf Gerinne (ZG)": "37",
+        "Drainage, Anfang (DR)": "38",
+        "Gerinnepunkt (GP)": "39",
+        "Sonderbauwerk Pumpwerk": "40",
+        "Sonderbauwerk Rechen": "41",
+        "Sonderbauwerk Sieb": "42"
+      }
+    },
+    "GeoObjektTypType": {
+      "name": "GeoObjektTypType",
+      "description": "V102 Punkt-, Linien-, Fl�chenobjekt",
+      "mappings": {
+        "Punktobjekt": "P",
+        "Linienobjekt": "L",
+        "Fl�chenobjekt": "F"
+      }
+    },
+    "LagegenauigkeitsklasseType": {
+      "name": "LagegenauigkeitsklasseType",
+      "description": "V103 Lagegenauigkeitsklasse von Punktkoordinaten",
+      "mappings": {
+        "Standardabweichung der Lage 0.050m kleiner sL kleiner gleich 0.150m": "OGL1",
+        "Standardabweichung der Lage 0.015m kleiner sL kleiner gleich 0.050m": "OGL2",
+        "Standardabweichung der Lage sL kleiner gleich 0.015m": "OGL3"
+      }
+    },
+    "HoehengenauigkeitsklasseType": {
+      "name": "HoehengenauigkeitsklasseType",
+      "description": "V104 Hoehengenauigkeitsklasse der H�henangabe",
+      "mappings": {
+        "Standardabweichung der H�he 0.020m kleiner sH kleiner gleich 0.050m": "OGH1",
+        "Standardabweichung der H�he 0.005m kleiner sH kleiner gleich 0.020m": "OGH2",
+        "Standardabweichung der H�he H kleiner gleich 0.005m": "OGH3"
+      }
+    },
+    "PolygonartType": {
+      "name": "PolygonartType",
+      "description": "V105 Polygonart",
+      "mappings": {
+        "innerer Polygonring eines Objektes (geschlossen)": "1",
+        "�usserer Polygonring eines Objektes (geschlossen)": "2",
+        "Polylinie eines Objektes (offen)": "3"
+      }
+    },
+    "PunktattributAbwasserType": {
+      "name": "PunktattributAbwasserType",
+      "description": "V106 PunktattributAbwasser",
+      "mappings": {
+        "Schachtdeckelmittelpunkt": "DMP",
+        "Schachtmittelpunkt": "SMP",
+        "Rohranschlusspunkt": "RAP",
+        "Leitungs-/Haltungspunkt": "LHP",
+        "Anschlusspunkt": "AP",
+        "Anschlusspunkt allgemein": "NN",
+        "Zu-/Ablauf Entw�sserungsrinne": "ER",
+        "Geb�udeanschluss": "GA",
+        "Regenfallrohr": "RR",
+        "Stra�enablauf": "SE",
+        "Deckel/Einstieg Sonderbauwerk": "SBD",
+        "Bauwerksrandpunkt": "SBW",
+        "Koordinatenbezugspunkt/Referenzpunkt": "KOP",
+        "Fl�chenschwerpunkt": "FLP",
+        "Zulauf Kl�ranlage": "ZLK",
+        "Knotenpunkt allgemein": "KP",
+        "H�henpunkt allgemein": "HP",
+        "H�henpunkt Gel�ndeoberkante": "GOK",
+        "Kreismitelpunkt": "KMP",
+        "Punktattribut unbekannt": "PAU",
+        "Zu-/Ablauf Versickerungsanlage": "AV",
+        "Rohrende verschlossen": "RV",
+        "Entw�sserungspunkt im Geb�ude": "EG",
+        "Bodenablauf": "BA",
+        "Zulauf Gerinne": "ZG",
+        "Dr�nage, Anfang": "DR",
+        "Gerinnepunkt": "GP"
+      }
+    },
+    "LagestufeType": {
+      "name": "LagestufeType",
+      "description": "V107 Lagegenauigkeitsstufe von Punktkoordinaten",
+      "mappings": {
+        "terrestrische Vermessung nach \"Baufachliche Richtlinien Vermessung\"": "0",
+        "Lage grafisch durch Digitalisierung aus P�nenn im Ma�stab gr��er 1:2000 bestimmt": "1",
+        "Lage grafisch durch Digitalisierung aus Pl�nen im Ma�stab kleiner 1:2000 bis 1:5000 bestimmt": "2",
+        "topografischer Bildflug": "3",
+        "Kataster-Bildflug": "4",
+        "terrestrische Vermessung ohne \"Baufachliche Richtlinien Vermessung\"": "5",
+        "Digitalisierung nach \"Baufachliche Richtlinien Vermessung\"": "6",
+        "Lage mit Ortungstechnik bestimmt (z.B. georefezenzierte 3D-Ortung)": "7",
+        "Lage rechnerisch bestimmt": "8",
+        "Wenn keine der aufgef�hrten Quellen zutrifft": "9"
+      }
+    },
+    "HoehenstufeType": {
+      "name": "HoehenstufeType",
+      "description": "V108 H�hengenauigkeitsstufe der H�henangabe",
+      "mappings": {
+        "H�he durch Nivellement bestimmt nach \"Baufachliche Richtlinien Vermessung\"": "0",
+        "H�he trigonometrisch bestimmt": "1",
+        "H�he aus Bestandsunterlagen entnommen": "2",
+        "H�he mit Messlatte von nivellitisch bestimmter Deckelh�he abgeleitet (nur bei Sohlh�he)": "3",
+        "H�he mit Messlatte von trigonometrisch bestimmter Deckelh�he abgeleitet (nur bei Sohlh�he)": "4",
+        "H�he grafisch aus H�henplan bestimmt (nur bei Deckelh�he)": "5",
+        "H�he durch Nivellement bestimmt ohne \"Baufachliche Richtlinien Vermessung\"": "6",
+        "H�he mit Ortungstechnik bestimmt (z.B. georefezenzierte 3D-Ortung)": "7",
+        "Wenn keine der aufgef�hrten Quellen zutrifft": "9"
+      }
+    },
+    "ArtMassnahmeType": {
+      "name": "ArtMassnahmeType",
+      "description": "S200 ArtMassnahme",
+      "mappings": {
+        "Neubau": "1",
+        "Erneuerung": "2",
+        "Renovierung": "3",
+        "Reparatur": "4",
+        "R�ckbau": "5",
+        "Stilllegung": "6",
+        "keine Ma�nahme": "7",
+        "Zustand unbekannt": "8"
+      }
+    },
+    "AuftragsartSanierungType": {
+      "name": "AuftragsartSanierungType",
+      "description": "S100 Auftragsart",
+      "mappings": {
+        "Planungsauftrag Sanierung": "1",
+        "Bauauftrag": "2",
+        "Instandsetzungsauftrag": "3"
+      }
+    },
+    "VerfahrensbezeichnungType": {
+      "name": "VerfahrensbezeichnungType",
+      "description": "S101 Verfahrensbezeichnung",
+      "mappings": {
+        "Anschleuderverfahren": "ANS",
+        "Aufspritzverfahren": "AUF",
+        "Auskleidung mit vorgefertigten Rohren/Bauteilen": "AVR",
+        "Auspressverfahren": "APR",
+        "Austausch von Bauteilen": "ATB",
+        "Au�enmanschetten": "AUM",
+        "Berstverfahren/Berstlining": "BER",
+        "Einbau von Abdichtungsstoffen": "EVA",
+        "Flutungsverfahren": "FLU",
+        "Injektion von Undichtigkeiten": "INU",
+        "Injektionen der Leitungszone (Hohlraum, Bodenstruktur)": "INL",
+        "Innenmanschetten": "INM",
+        "Kurzrohrverfahren": "KUR",
+        "Lageregulierung Schachtabdeckung": "LRS",
+        "Langrohrverfahren": "LAR",
+        "Montageverfahren": "MON",
+        "Noppenbahnverfahren": "NOP",
+        "Oberfl�chenbehandlung": "OBB",
+        "Ortlaminate (Kurzschl�uche, Hutprofile)": "OLA",
+        "Reduktionsverfahren": "RED",
+        "Roboterverfahren": "ROB",
+        "Rohraustausch": "RAU",
+        "Rohrstrangverfahren": "RST",
+        "Rohrziehverfahren": "RZV",
+        "R�ckverformung": "RUV",
+        "Schlauchverfahren": "SCH",
+        "Schrumpfschl�uche": "SSL",
+        "Teilerneuerung": "TEI",
+        "Verdr�ngungsverfahren": "VDR",
+        "Verfugung": "VFU",
+        "Verm�rtelung": "VMO",
+        "Vollst�ndige Erneuerung": "NEU",
+        "Wickelrohrverfahren": "WIK",
+        "�berfahren (unbemannter Vortrieb)": "UEB",
+        "neue, z.Zt. nicht bekannte Verfahren": "ZNN",
+        "Hutprofil": "HUT",
+        "Kurzschlauch": "KUS"
+      }
+    },
+    "SanierungsumfangType": {
+      "name": "SanierungsumfangType",
+      "description": "S102 Sanierungsumfang",
+      "mappings": {
+        "gesamte(r) Haltung/Leitung/Schacht": "1",
+        "partiell": "2",
+        "punktuell": "3",
+        "punktuell, Muffe": "4",
+        "punktuell, Abzweig/Stutzen": "5"
+      }
+    },
+    "BauwerksteilType": {
+      "name": "BauwerksteilType",
+      "description": "S103 Bauwerksteil",
+      "mappings": {
+        "Ablaufseite (Rohranschluss Haltungen)": "A",
+        "Bankett (Auftritt)": "B",
+        "Auflagerring": "C",
+        "Schachtdeckel, Schachtabdeckung": "D",
+        "Zulaufseite (Rohranschluss Haltungen)": "E",
+        "Schmutzf�nger": "F",
+        "Gerinne, Sohle": "G",
+        "Schachthals, Konus": "H",
+        "Schachtring": "I",
+        "Decke (Abdeckplatte)": "K",
+        "Leiter": "L",
+        "Hochbauteil": "M",
+        "Gel�nder": "N",
+        "Sohlplatte": "P",
+        "Formst�ck (Armaturen, Schieber, etc.)": "Q",
+        "Steigeisen": "S",
+        "Treppe": "T",
+        "Einstiegshilfe (Haltegriff)": "V",
+        "Wand": "W",
+        "Zulauf (Rohranschluss Leitungen)": "Z",
+        "wenn keines der aufgef�hrten K�rzel zutrifft": "-"
+      }
+    },
+    "ProfiltypType": {
+      "name": "ProfiltypType",
+      "description": "S104 Profiltyp",
+      "mappings": {
+        "Kreisprofil": "0",
+        "Eiprofil (H/B=3/2)": "1",
+        "Maulprofil (H/B = 1,66/2)": "2",
+        "Rechteckprofil (geschlossen)": "3",
+        "Kreisprofil (doppelwandig)": "4",
+        "Rechteckprofil (offen)": "5",
+        "Eiprofil (H/B ungleich 3/2)": "6",
+        "Maulprofil (H/B ungleich 1,66/2)": "7",
+        "Trapezprofil": "8",
+        "Doppeltrapezprofil": "9",
+        "U-f�rmig (kreisf�rmige Sohle und Decke mit parallelen W�nden)": "10",
+        "Bogenf�rmig (kreisf�rmiger Scheitel und flache Sohle mit parallelen W�nden)": "11",
+        "oval (Sohle und Scheitel kreisf�rmg mit gleichem Durchmesser und parallele W�nde)": "12",
+        "andere Profilart": "13",
+        "rund": "R",
+        "eckig": "E",
+        "andere Form": "Z"
+      }
+    },
+    "DokumentationsrichtungType": {
+      "name": "DokumentationsrichtungType",
+      "description": "S105 Dokumentationsrichtung",
+      "mappings": {
+        "von oben, in Flie�richtung": "O",
+        "von unten, gegen Flie�richtung": "U"
+      }
+    },
+    "MaterialVerbundType": {
+      "name": "MaterialVerbundType",
+      "description": "S106 Materialverbund (1 und 2)",
+      "mappings": {
+        "Aluminiumhydroxid": "AH",
+        "Aluminiumsilikat": "AS",
+        "Bitumen": "BIT",
+        "Epoxidharz": "EP",
+        "Glasfaser": "GF",
+        "Glasfaser, E-Glas": "GFE",
+        "Glasfaser, CR-Glas": "GFCR",
+        "Kunstharz": "KH",
+        "Kanalklinker": "KKL",
+        "Methylacrylat": "MAC",
+        "Mineralischer D�mmer": "MD",
+        "Polyamid": "PA",
+        "Polybuten": "PB",
+        "Bisphenolharz": "PHA",
+        "Polyurethan-Reaktionsharz": "PUR",
+        "Quarzsand": "QS",
+        "Synthesefaser": "SF",
+        "Silikatgel": "SG",
+        "Tonsuspension": "TS",
+        "Tonzement/Silikatgel Susp.": "TSG",
+        "Ton-, Zementsuspension": "TZS",
+        "Unges�ttigtes Polyesterharz": "UP",
+        "Vinylester": "VE",
+        "Zementm�rtel": "ZM",
+        "Zementsuspension": "ZS",
+        "Ultrafeinzement": "ZU"
+      }
+    },
+    "BelastungType": {
+      "name": "BelastungType",
+      "description": "S107 Belastung",
+      "mappings": {
+        "Regelfahrzeuge 60": "SLW60",
+        "Regelfahrzeuge 30": "SLW30",
+        "Regelfahrzeuge 12": "LKW12",
+        "Eisenbahnverkehrslasten mehrgleisig": "UIC71m",
+        "Eisenbahnverkehrslasten eingleisig": "UIC71e",
+        "Bemessungsflugzeug 90": "BFZ90",
+        "Bemessungsflugzeug 180": "BFZ180",
+        "Bemessungsflugzeug 350": "BFZ350",
+        "Bemessungsflugzeug 550": "BFZ550",
+        "Bemessungsflugzeug 750": "BFZ750",
+        "keine Verkehrslast": "NN",
+        "sonstige Verkehrslasten": "SONST",
+        "Pr�fkraft 15 kN": "A15",
+        "Pr�fkraft 125 kN": "B125",
+        "Pr�fkraft 250 kN": "C250",
+        "Pr�fkraft 400 kN": "D400",
+        "Pr�fkraft 600 kN": "E600",
+        "Pr�fkraft 900 kN": "F900"
+      }
+    },
+    "WasserdurchlaessigkeitType": {
+      "name": "WasserdurchlaessigkeitType",
+      "description": "S108 Wasserdurchl�ssigkeit",
+      "mappings": {
+        "nicht durchgef�hrt": "1",
+        "durchgef�hrt und bestanden": "2",
+        "durchgef�hrt und nicht bestanden": "3"
+      }
+    },
+    "TextausrichtungHorizontalType": {
+      "name": "TextausrichtungHorizontalType",
+      "description": "P101 Textausrichtung horizontal",
+      "mappings": {
+        "Horizontale Ausrichtung des Textbeginns an Textposition": "linksb�ndig",
+        "Horizontale Ausrichtung des Textendes an Texposition": "rechtsb�ndig",
+        "Horizontale Ausrichtung der Textmitte an Textposition": "zentrisch"
+      }
+    },
+    "TextausrichtungVertikalType": {
+      "name": "TextausrichtungVertikalType",
+      "description": "P102 Textausrichtung vertikal",
+      "mappings": {
+        "Vertikale Ausrichtung der Textbasislinie an Textposition": "Basis",
+        "Vertikale Ausrichtung der Textmitte an Texposition": "Mitte",
+        "Vertikale Ausrichtung der Textoberlinie an Textposition": "oben"
+      }
+    },
+    "RohrleitungstypType": {
+      "name": "RohrleitungstypType",
+      "description": "U100 Rohrleitungstyp",
+      "mappings": {
+        "Haltung": "0",
+        "Leitung": "1"
+      }
+    },
+    "InspektionszweckType": {
+      "name": "InspektionszweckType",
+      "description": "U101 Inspektionszweck",
+      "mappings": {
+        "Ersterfassung": "1",
+        "Turnusm��ige Inspektion": "2",
+        "Abnahme": "3",
+        "Ende der Gew�hrleistung": "4",
+        "Nachuntersuchung": "5",
+        "Vor Sanierung": "6",
+        "Nach Sanierung": "7",
+        "TV-�berwachung bei Dichtheitsp�fung": "8"
+      }
+    },
+    "KodiersystemType": {
+      "name": "KodiersystemType",
+      "description": "U102 Kodiersystem",
+      "mappings": {
+        "DIN EN 13508-2:2003: ohne nationale Festlegungen": "1",
+        "DIN EN 13508-2:2003: Nationale Festlegung DWA M 149-2": "2",
+        "DIN EN 13508-2:2003: andere nationale Festlegungen (Bemerkung erforderlich)": "3",
+        "ISYBAU 2001": "4",
+        "ISYBAU 1996": "5",
+        "anderes Kodiersystem (Bemerkung erforderlich)": "6",
+        "DIN EN 13508-2:2003: Nationale Festlegung Arbeitshilfen Abwasser": "7",
+        "DIN EN 13508-2:2011: ohne nationale Festlegungen": "8",
+        "DIN EN 13508-2:2011: Nationale Festlegung DWA M 149-2": "9",
+        "DIN EN 13508-2:2011: Nationale Festlegung Arbeitshilfen Abwasser": "10"
+      }
+    },
+    "AnlagentypType": {
+      "name": "AnlagentypType",
+      "description": "U103 Anlagentyp",
+      "mappings": {
+        "Haltung": "1",
+        "Anschlussleitung": "2",
+        "Schacht": "3",
+        "Bauwerk": "4"
+      }
+    },
+    "InspektionsrichtungType": {
+      "name": "InspektionsrichtungType",
+      "description": "U104 Inspektionsrichtung",
+      "mappings": {
+        "von oben, in Fliessrichtung": "O",
+        "von unten, gegen Fliessrichtung": "U"
+      }
+    },
+    "BezugspunktLageType": {
+      "name": "BezugspunktLageType",
+      "description": "U105 BezugspunktLage",
+      "mappings": {
+        "Mittelpunkt des Startschachtes oder der Inspektions�ffnung": "1",
+        "Innenseite der Wand am Anfangsknoten (Schacht, Bauwerk, Inspektions-�ffnung, Auslass, etc.)": "2",
+        "Scheitel des Haltungsendes innerhalb des Anfangsknotens": "3",
+        "Mittelpunkt zwischen der ankommenden und abgehenden Leitung, gemessen entlang des Gerinnes": "4"
+      }
+    },
+    "WetterType": {
+      "name": "WetterType",
+      "description": "U106 Wetter",
+      "mappings": {
+        "kein Niederschlag": "1",
+        "Regen": "2",
+        "Schnee- oder Eisschmelzwasser": "3"
+      }
+    },
+    "WasserhaltungType": {
+      "name": "WasserhaltungType",
+      "description": "U107 Wasserhaltung",
+      "mappings": {
+        "keine Ma�nahme getroffen": "1",
+        "Zufluss von oberhalb abgesperrt": "2",
+        "Zufluss von oberhalb teilweise abgesperrt": "3",
+        "Seitenzul�ufe abgesperrt": "4",
+        "Zufluss von unterhalb (R�ckstau) abgesperrt": "5",
+        "andere Ma�nahme getroffen": "6"
+      }
+    },
+    "InspektionsverfahrenType": {
+      "name": "InspektionsverfahrenType",
+      "description": "U108 Inspektionsverfahren",
+      "mappings": {
+        "TV-Untersuchung": "0",
+        "Begehung": "1",
+        "Auschlie�lich vom Schacht / von der Inspektions�ffnung aus": "2",
+        "anderes Verfahren": "3"
+      }
+    },
+    "InspektionsartType": {
+      "name": "InspektionsartType",
+      "description": "U109 Inspektionsart",
+      "mappings": {
+        "Satellitenkamera": "0",
+        "Schiebekamera": "1",
+        "selbstfahrende Kamera": "2",
+        "andere Kameratechnik": "3"
+      }
+    },
+    "VideoSpeichermediumType": {
+      "name": "VideoSpeichermediumType",
+      "description": "U110 VideoSpeichermedium",
+      "mappings": {
+        "VHS-Videoband": "1",
+        "SVHS-Videoband": "2",
+        "CD-ROM": "3",
+        "Digital Versatile Disk": "4",
+        "Magneto Optical Disk": "5",
+        "sonst. Wechseldatentr�ger": "6"
+      }
+    },
+    "FotoSpeichermediumType": {
+      "name": "FotoSpeichermediumType",
+      "description": "U111 FotoSpeichermedium",
+      "mappings": {
+        "Diskette": "DIS",
+        "Digital Audio Tape": "DAT",
+        "Magneto Optical Disk": "MOD",
+        "CD-ROM": "CDR",
+        "Digital Versatile Disk": "DVD",
+        "sonst. Wechseldatentr�ger": "WDT"
+      }
+    },
+    "BewertungsverfahrenType": {
+      "name": "BewertungsverfahrenType",
+      "description": "U112 Bewertungsverfahren",
+      "mappings": {
+        "ISYBAU 2006": "1",
+        "ISYBAU 2001": "2",
+        "ISYBAU 1996": "3",
+        "anderes Verfahren": "4"
+      }
+    },
+    "ArtAuskleidungType": {
+      "name": "ArtAuskleidungType",
+      "description": "U114 ArtAuskleidung",
+      "mappings": {
+        "Nicht vorhanden": "0",
+        "Auskleidung werksm��ig eingebracht": "1",
+        "Spritzauskleidung": "2",
+        "Vor-Ort-Auskleidung": "3",
+        "abschnittsweise Auskleidung": "4",
+        "Auskleidung mittels einzelner Rohre": "5",
+        "Schlauchrelining": "6",
+        "Auskleidung mittels Endlosrohren": "7",
+        "Close-Fit Auskleidung": "8",
+        "Wickelrohrrelining": "9"
+      }
+    },
+    "VertikalerBezugspunktType": {
+      "name": "VertikalerBezugspunktType",
+      "description": "U115 Vertikaler Bezugspunkt",
+      "mappings": {
+        "Sohllage der tiefsten angeschlossenen Rohrleitung": "1",
+        "Oberkante der Abdeckung": "2",
+        "Nationaler Bezugspunkt": "3",
+        "Lokaler Bezugspunkt": "4"
+      }
+    },
+    "HorizontalerBezugspunktType": {
+      "name": "HorizontalerBezugspunktType",
+      "description": "U116 HorizontalerBezugspunkt",
+      "mappings": {
+        "niedrigstes abgehendes Rohr bei 12 Uhr": "1",
+        "niedrigstes abgehendes Rohr bei 6 Uhr": "2"
+      }
+    },
+    "SchachtbereichType": {
+      "name": "SchachtbereichType",
+      "description": "U117 Schachtbereich",
+      "mappings": {
+        "Abdeckung und Rahmen": "A",
+        "Auflageringe": "B",
+        "Schachtaufbau": "C",
+        "Konus": "D",
+        "�bergangsplatte": "E",
+        "untere Schachtzone": "F",
+        "Podest": "G",
+        "Auftritt": "H",
+        "Gerinne": "I",
+        "Sohle": "J"
+      }
+    },
+    "AuftragsartType": {
+      "name": "AuftragsartType",
+      "description": "U119 Auftragsart",
+      "mappings": {
+        "Inspektionsauftrag": "1",
+        "Dichtheitspr�fung": "2",
+        "Dichtheitspr�fung mit TV-�berwachung": "3"
+      }
+    },
+    "PruefgrundType": {
+      "name": "PruefgrundType",
+      "description": "U120 Pr�fgrund",
+      "mappings": {
+        "Pr�fung bestehender Anlagen": "1",
+        "Abnahme nach Neubau oder Sanierung": "2"
+      }
+    },
+    "PruefvorschriftType": {
+      "name": "PruefvorschriftType",
+      "description": "U121 Pr�fvorschrift",
+      "mappings": {
+        "ATV-M 143 Teil 6": "1",
+        "DIN EN 1610": "2",
+        "DWA-A 139": "3",
+        "Merkblatt 4.3/6 Teil 2 (LfW Bayern)": "4",
+        "DIN EN 12889": "5",
+        "ATV-DVWK-A 142": "6"
+      }
+    },
+    "PruefverfahrenType": {
+      "name": "PruefverfahrenType",
+      "description": "U122 Pr�fverfahren",
+      "mappings": {
+        "Pr�fung mit Luft / �berdruck": "1",
+        "Pr�fung mit Luft / Unterdruck": "2",
+        "Pr�fung mit Wasser": "3"
+      }
+    },
+    "PruefumfangType": {
+      "name": "PruefumfangType",
+      "description": "U123 Pr�fumfang",
+      "mappings": {
+        "Objekt (Rohrleitung oder Schacht)": "1",
+        "abschnittsweise (z.B. zwischen zwei Anschl�ssen)": "2",
+        "punktuell (z.B. an einer Rohrver- oder Rohreinbindung)": "3",
+        "mehrere Objekte (z.B. Haltung und Anschlussleitungen)": "4"
+      }
+    },
+    "HerkunftProfilType": {
+      "name": "HerkunftProfilType",
+      "description": "U124 HerkunftProfil",
+      "mappings": {
+        "aus Pl�nen": "1",
+        "aus Stammdaten": "2",
+        "Gemessen am Knoten (z.B. mit Bandma�)": "3",
+        "Querschnittsvermessung": "4"
+      }
+    },
+    "HerkunftType": {
+      "name": "HerkunftType",
+      "description": "U125 Herkunft",
+      "mappings": {
+        "aus Pl�nen": "1",
+        "aus Stammdaten": "2",
+        "Feststellung vor Ort": "3"
+      }
+    },
+    "StreckenschadenType": {
+      "name": "StreckenschadenType",
+      "description": "U126 Streckenschaden",
+      "mappings": {
+        "Anfang Streckenschaden (f�r alle Kodiersysteme)": "A",
+        "Ende Streckenschaden (nur DIN EN 13508-2)": "B",
+        "�nderung Quantifizierung und/oder Lage am Umfang eines Streckenschadens (nur DIN EN 13508-2:2011)": "C",
+        "Ende Streckenschaden (nicht f�r DIN EN 13508-2)": "E",
+        "Schaden �ber die gesamte L�nge eines Objektes (nicht f�r DIN EN 13508-2)": "G",
+        "Schaden �ber die Baul�nge eines Rohres (nicht f�r DIN EN 13508-2)": "R"
+      }
+    },
+    "ArtVideoreferenzType": {
+      "name": "ArtVideoreferenzType",
+      "description": "U127 Art Videoreferenz",
+      "mappings": {
+        "Timecode": "1",
+        "Framenummern": "2",
+        "Videoz�hlerstand": "3",
+        "Keine Videorerenz vorhanden": "4",
+        "Bildparameter": "5"
+      }
+    },
+    "BAKZustandSanierungType": {
+      "name": "BAKZustandSanierungType",
+      "description": "U128 Zustand in sanierten Bereichen von Rohrleitungen f�r Kode BAKZ gem. DWA-M 149-2",
+      "mappings": {
+        "Abl�sung der Auskleidung": "A",
+        "Randabl�sung der Auskleidung": "B",
+        "Abl�sung der Innenfolie": "C",
+        "Abl�sung der Nahtabdeckung": "D",
+        "Auskleidung verf�rbt (kein Schmutz)": "E",
+        "Mechanisch herbeigef�hrtE Kerbe/Abplatzung in der Auskleidung/Beschichtung": "F",
+        "Beule nach au�en": "G",
+        "Beule nach innen": "H",
+        "Falte in Auskleidung, l�ngs": "I",
+        "Falte in Auskleidung, radial": "J",
+        "Falte in Auskleidung, komplex": "K",
+        "Schadhafte Schwei�naht": "L",
+        "Verbindung defekt (Auskleidung)": "M",
+        "�berbogen Auskleidung": "N",
+        "Auskleidung endet im Kanal/Leitung (vor Schacht)": "O",
+        "Aufl�sung Auskleidungswerkstoff": "P",
+        "Loch in Auskleidung": "Q",
+        "Riss in der Auskleidung": "R",
+        "Renovierung nicht fachgerecht": "Z"
+      }
+    },
+    "BALZustandSanierungType": {
+      "name": "BALZustandSanierungType",
+      "description": "U129 Zustand in sanierten Bereichen von Rohrleitungen f�r Kode BALZ gem. DWA-M 149-2",
+      "mappings": {
+        "Abl�sung Sanierungswerkstoff vom Altrohr": "A",
+        "Fehlender Sanierungswerkstoff an der Kontaktfl�che": "B",
+        "Folien-/Beschichtungsabl�sung": "C",
+        "Auskleidung verf�rbt (kein Schmutz)": "D",
+        "Beule in Auskleidung nach au�en": "E",
+        "Beule in Auskleidung nach innen": "F",
+        "Falte in Auskleidung, l�ngs": "G",
+        "Falte in Auskleidung, radial": "H",
+        "Falte in Auskleidung, komplex": "I",
+        "Hindernis Werkstoff�berschuss/-�bergang": "J",
+        "Fehlendes Harz im Laminat": "K",
+        "Anbindung Auskleidung an Schacht/Inspektions�ffnung fehlt oder nicht fachgerecht": "L",
+        "Aul�sung Sanierungswerkstofft": "M",
+        "Loch im Sanierungswerkstoff": "N",
+        "Riss im Sanierungswerkstoff": "O",
+        "Zulauf�ffnung (Auskleidung) fehlt": "P",
+        "Zulauf�ffnung Auskleidung (ohne Anschlusseinbindung) nicht fachgerecht": "Q",
+        "Reparatur nicht fachgerecht": "Z"
+      }
+    },
+    "RVerfahrenSanierungType": {
+      "name": "RVerfahrenSanierungType",
+      "description": "U130 Sanierungsverfahren bei punkteller Reparatur einer Rohrleitung gem. DWA-M 149-2",
+      "mappings": {
+        "Reparatur mit Injektionstechnik": "A",
+        "Reparatur mit Robotere": "B",
+        "Reparatur mit partiellerAuskleidungs-/Manschettentechnik": "C",
+        "Zulaufeinbindung": "D",
+        "Reparatur Rohrwand manuell": "E",
+        "Reparatur Rohrverbindung manuell": "F",
+        "Ringspalt-/-raumabdichtung (der Auskleidung) zum Anschluss an Schacht/Inspektions�ffnung": "G",
+        "Zulauf�ffnung ohne Einbindung": "H",
+        "Rohr ausgetauscht": "I",
+        "Reparatur, sonstige Technik": "Z"
+      }
+    },
+    "DAKZustandSanierungType": {
+      "name": "DAKZustandSanierungType",
+      "description": "U131 Zustand in sanierten Bereichen von Sch�chten f�r Kode DAKZ gem. DWA-M 149-2",
+      "mappings": {
+        "Abl�sung der Auskleidung": "A",
+        "Randabl�sung der Auskleidung": "B",
+        "Auskleidung verf�rbt (kein Schmutz)": "C",
+        "Mechanisch herbeigef�hrte Kerbe/Abplatzung/besch�digung der Auskleidung": "D",
+        "Beule nach au�en": "E",
+        "Beule nach innen": "F",
+        "Falte in Auskleidung, l�ngs": "G",
+        "Falte in Auskleidung, radial": "H",
+        "Falte in Auskleidung, komplex": "I",
+        "Schadhafter Befestigungspunkt": "J",
+        "Schadhafte Schwei�naht": "K",
+        "Verbindung defekt (Auskleidung)": "L",
+        "Auskleidung endet im Schacht (z.B. unterhalb Konus)": "M",
+        "Aufl�sung Auskleidungswerkstoff": "N",
+        "Loch in Auskleidung": "O",
+        "Riss in der Auskleidung": "P",
+        "Renovierung nicht fachgerecht": "Z"
+      }
+    },
+    "DALZustandSanierungType": {
+      "name": "DALZustandSanierungType",
+      "description": "U132 Zustand in sanierten Bereichen von Sch�chten f�r Kode DALZ gem. DWA-M 149-2",
+      "mappings": {
+        "Abl�sung Sanierungswerkstoff vom Schacht/Inspektions�ffnung": "A",
+        "Anbindung Auskleidung an Schacht/Inspektions�ffnung fehlt oder nicht fachgerecht": "B",
+        "Hindernis Sanierungswerkstoffl�berschuss/-�bergang": "C",
+        "Aufl�sung Sanierungswerkstoff": "D",
+        "Loch im Sanierungswerkstoffl": "E",
+        "Riss im Sanierungswerkstoff": "F",
+        "Anschluss�ffnung/-einbindung (Auskleidung) fehlt": "G",
+        "Anschluss�ffnung Auskleidung (ohne Anschlusseinbindung) nicht fachgerecht": "H",
+        "Reparatur nicht fachgerecht": "Z"
+      }
+    },
+    "KVerfahrenSanierungType": {
+      "name": "KVerfahrenSanierungType",
+      "description": "U133 Sanierungsverfahren bei punktueller Reparatur eines Schachtes gem. DWA-M 149-2",
+      "mappings": {
+        "Reparatur mit Injektionstechnik": "A",
+        "Reparatur an Bauteilwandung": "B",
+        "Reparatur Bauteilverbindung": "C",
+        "Ringspalt-/-raumabdichtung (Auskleidung in Kan�len/Leitungen) zum Anschluss an Schacht/Inspektions�ffnung": "D",
+        "Anschlusseinbindung manuell": "E",
+        "Anschluss�ffnug ohne Einbindung": "F",
+        "Schachtbauteil ausgetauscht": "G",
+        "Reparatur, sonstige Technik": "Z"
+      }
+    },
+    "GrundAbbruchType": {
+      "name": "GrundAbbruchType",
+      "description": "U134 Grund f�r einen Inspektionsabbruch bei Kan�len und Leitungen",
+      "mappings": {
+        "Gegenseite erreicht": "GE",
+        "Gegenseite nicht erreicht": "GN",
+        "Inspektion von der Gegenseite nicht m�glich": "IN",
+        "Auftraggeber verzichtet auf weitere Untersuchung": "AV",
+        "Inspektionsziel erreicht": "ZE"
+      }
+    },
+    "BDBZustandLeitungType": {
+      "name": "BDBZustandLeitungType",
+      "description": "U135 Beschreibung von besonderen Schadensbildern von Rohrleitungen in Verbindung mit Kode BDB",
+      "mappings": {
+        "Verbindung zweier Rohre ohne Form-st�ck, eingesteckt, gerade": "AA",
+        "Verbindung zweier Rohre ohne Form-st�ck, �bergest�lpt, gerade": "AB",
+        "Verbindung zweier Rohre ohne Form-st�ck, eingesteckt, abgewinkelt": "AC",
+        "Verbindung zweier Rohre ohne Form-st�ck, �bergest�lpt, abgewinkelt": "AD",
+        "Verbindung zweier Rohre ohne Formst�ck, stumpf aneinandergesto�en": "AE",
+        "Verschluss eines Rohrs durch Abmauerung": "BA",
+        "Verschluss eines Rohrs durch M�rtel": "BB",
+        "Verschluss eines Rohrs durch Deckel (Muffenstopfen)": "BC"
+      }
+    },
+    "FlaechenartType": {
+      "name": "FlaechenartType",
+      "description": "H100 Fl�chenart",
+      "mappings": {
+        "Einzel-/ Elementarfl�che": "1",
+        "Sammelfl�che": "2",
+        "Gesamtfl�che": "3"
+      }
+    },
+    "FlaecheneigenschaftType": {
+      "name": "FlaecheneigenschaftType",
+      "description": "H101 Fl�cheneigenschaft",
+      "mappings": {
+        "befestigt": "1",
+        "teilbefestigt": "2",
+        "unbefestigt": "3",
+        "nat�rlich": "4",
+        "keine information": "5"
+      }
+    },
+    "FlaechenfunktionType": {
+      "name": "FlaechenfunktionType",
+      "description": "H102 Fl�chenfunktion",
+      "mappings": {
+        "Dachfl�che": "1",
+        "Gr�nfl�che": "2",
+        "Verkehrsfl�che": "3",
+        "sonstige Funktion": "4",
+        "Funktion nicht bekannt": "5"
+      }
+    },
+    "FlaechennutzungType": {
+      "name": "FlaechennutzungType",
+      "description": "H103 Fl�chennutzung",
+      "mappings": {
+        "intensive landwirtschaftliche Nutzung": "1",
+        "extensive landwirtschaftliche Nutzung": "2",
+        "flie�ender motorisierter Verkehr": "3",
+        "flie�ender nicht motorisierter Verkehr": "4",
+        "ruhender Verkehr, PKW": "5",
+        "ruhender Verkehr, LKW": "6",
+        "technischer Bereich, PKW": "7",
+        "technischer Bereich, LKW": "8",
+        "keine Nutzung": "9",
+        "sonstige Nutzung": "10"
+      }
+    },
+    "MaterialzusatzType": {
+      "name": "MaterialzusatzType",
+      "description": "H104 Materialzusatz",
+      "mappings": {
+        "metallisch": "1",
+        "nichtmetallisch": "2"
+      }
+    },
+    "VerschmutzungsklasseType": {
+      "name": "VerschmutzungsklasseType",
+      "description": "H105 Verschmutzungsklasse",
+      "mappings": {
+        "F1, geringe Verschmutzung": "1",
+        "F2, geringe Verschmutzung": "2",
+        "F3, geringe Verschmutzung": "3",
+        "F4, mittlere Verschmutzung": "4",
+        "F5, mittlere Verschmutzung": "5",
+        "F6, starke Verschmutzung": "6",
+        "F7, starke Verschmutzung": "7"
+      }
+    },
+    "NeigungsklasseType": {
+      "name": "NeigungsklasseType",
+      "description": "H106 Neigungsklasse",
+      "mappings": {
+        "kleiner gleich 1%": "1",
+        "gr��er 1% bis 4%": "2",
+        "gr��er 4% bis 10%": "3",
+        "gr��er 10% bis 14%": "4",
+        "gr��er 14%": "5"
+      }
+    },
+    "HydraulikObjektTypType": {
+      "name": "HydraulikObjektTypType",
+      "description": "H200 HydraulikObjektTyp",
+      "mappings": {
+        "Haltung": "1",
+        "Leitung": "2",
+        "Gerinne": "3",
+        "Pumpe": "4",
+        "Wehr": "5",
+        "Schieber": "6",
+        "Schacht": "7",
+        "Speicherbauwerk": "8",
+        "Grund-/Seitenauslass": "9",
+        "Freier Auslass": "10",
+        "Drossel": "11",
+        "Regler": "12"
+      }
+    },
+    "RauigkeitsansatzType": {
+      "name": "RauigkeitsansatzType",
+      "description": "H201 Rauigkeitsansatz",
+      "mappings": {
+        "Prandtl-Colebrook": "1",
+        "Manning-Strickler": "2"
+      }
+    },
+    "VerlustmethodeA110Type": {
+      "name": "VerlustmethodeA110Type",
+      "description": "H202 Verlustmethode",
+      "mappings": {
+        "Pauschalkonzept": "1",
+        "Individualkonzept": "2"
+      }
+    },
+    "PumpentypType": {
+      "name": "PumpentypType",
+      "description": "H203 Pumpentyp",
+      "mappings": {
+        "OFF-LINE mit Pumpensumpf und Schaltstufen": "1",
+        "ON-LINE mit Schaltstufen": "2",
+        "ON-LINE mit Kennlinie": "3",
+        "ON-LINE mit Wasserstandsdifferenz": "4",
+        "Ideal": "5"
+      }
+    },
+    "HydWehrtypType": {
+      "name": "HydWehrtypType",
+      "description": "H204 HydWehrtyp",
+      "mappings": {
+        "Querwehr": "1",
+        "Querwehr mit R�ckstauklappe": "2",
+        "Seitenwehr": "3",
+        "Seitenwehr mit R�ckstauklappe": "4",
+        "Verfahrbares Querwehr": "5",
+        "Verfahrbares Seitenwehr": "6"
+      }
+    },
+    "RandbedingungType": {
+      "name": "RandbedingungType",
+      "description": "H205 Randbedingung",
+      "mappings": {
+        "kein Wasserstand": "0",
+        "konstanter Wasserstand": "1",
+        "Tidennummer": "2"
+      }
+    },
+    "SchiebertypType": {
+      "name": "SchiebertypType",
+      "description": "H206 Schiebertyp",
+      "mappings": {
+        "Schieber am Ende": "1",
+        "Schieber am Anfang": "2",
+        "Schieber in der Mitte der Haltung": "3",
+        "Schieber ohne druckdichten Deckel": "4",
+        "Schieber (von unten) am Ende": "5",
+        "Schieber (von unten) am Anfang": "6"
+      }
+    },
+    "GSAuslasstypType": {
+      "name": "GSAuslasstypType",
+      "description": "H207 GSAuslasstyp",
+      "mappings": {
+        "Seitenauslass": "1",
+        "Grundauslass": "2"
+      }
+    },
+    "FreiAuslasstypType": {
+      "name": "FreiAuslasstypType",
+      "description": "H208 FreiAuslasstyp",
+      "mappings": {
+        "freier Auslass": "1",
+        "Auslass mit R�ckstauklappe": "2"
+      }
+    },
+    "SpeicherbauwerkTypType": {
+      "name": "SpeicherbauwerkTypType",
+      "description": "H209 Speicherbauwerktyp",
+      "mappings": {
+        "Regenr�ckhaltebecken (RRB)": "1",
+        "Regen�berlaufbauwerk (R�B)": "2",
+        "Regenkl�rbecken (RKB)": "3",
+        "Versickerungsanlage": "4",
+        "Bodenfilter": "5"
+      }
+    },
+    "ArtModellierungType": {
+      "name": "ArtModellierungType",
+      "description": "H210 Art der Modellierung",
+      "mappings": {
+        "Modellierung als Knoten": "1",
+        "Modellierung als Kante": "2"
+      }
+    },
+    "DrosseltypType": {
+      "name": "DrosseltypType",
+      "description": "H211 Drosseltyp",
+      "mappings": {
+        "Funktional": "1",
+        "Tabellarisch": "2"
+      }
+    },
+    "ArtEinstauhoeheType": {
+      "name": "ArtEinstauhoeheType",
+      "description": "H212 Art Einstauh�he",
+      "mappings": {
+        "Einstauh�he Schacht oben": "1",
+        "Wasserstandsdifferenz Schacht oben/unten": "2"
+      }
+    },
+    "ReglertypType": {
+      "name": "ReglertypType",
+      "description": "H213 Reglertyp",
+      "mappings": {
+        "H-Regler": "1",
+        "Q-Regler": "2"
+      }
+    },
+    "ArtBelastungType": {
+      "name": "ArtBelastungType",
+      "description": "H400 ArtBelastung",
+      "mappings": {
+        "Modellregen": "1",
+        "Blockregen": "2",
+        "Naturregen": "3",
+        "Niederschlagskontinuum": "4",
+        "Naturregen ohne Niederschlagsserie": "5"
+      }
+    },
+    "ModellregentypType": {
+      "name": "ModellregentypType",
+      "description": "H401 Modellregentyp",
+      "mappings": {
+        "EULER Typ 1": "1",
+        "EULER Typ 2": "2",
+        "EULER Typ 3": "3",
+        "DVWK": "4",
+        "sonstige": "5"
+      }
+    },
+    "ArtKontinuumType": {
+      "name": "ArtKontinuumType",
+      "description": "H402 ArtKontinuum",
+      "mappings": {
+        "gemessenes Niederschlagskontinuum": "1",
+        "synthetisches Niederschlagskontinuum": "2",
+        "�rtliche Niederschlagsstatistik": "3",
+        "KOSTRA-Atlas DWD": "4"
+      }
+    },
+    "BerechnungsverfahrenallgemeinType": {
+      "name": "BerechnungsverfahrenallgemeinType",
+      "description": "H500 Berechnungsverfahren allgemein",
+      "mappings": {
+        "vereinfachte Kanalnetzberechnung": "1",
+        "hydrodynamische Kanalnetzberechnung": "2"
+      }
+    },
+    "BerechnungsverfahrenType": {
+      "name": "BerechnungsverfahrenType",
+      "description": "H501 Berechnungsverfahren",
+      "mappings": {
+        "vereinfachte Kanalnetzberechnung (Einzelstrang)": "1",
+        "vereinfachte Kanalnetzberechnung mit Zeitbeiwertverfahren": "2",
+        "hydrodynamische Kanalnetzberechnung mit Einzelregen": "3",
+        "hydrodynamische Kanalnetzberechnung mit Regenserie": "4",
+        "hydrologische Speicherberechnung mit Kontinuumssimulation": "5",
+        "hydrologische Speicherberechnung mit vereinfachtem Verfahren": "6",
+        "sonstige Verfahren": "7"
+      }
+    },
+    "RegenUeberstauhaeufigkeitType": {
+      "name": "RegenUeberstauhaeufigkeitType",
+      "description": "H502 Regen-/�berstauh�ufigkeit",
+      "mappings": {
+        "Mindestregen-/�berstauh�ufigkeit": "1",
+        "ma�gebende Regen-/�berstauh�ufigkeit": "2"
+      }
+    },
+    "AuslastungskennzifferType": {
+      "name": "AuslastungskennzifferType",
+      "description": "H503 Auslastungskennziffer",
+      "mappings": {
+        "Freispiegel": "1",
+        "Einstau": "2",
+        "�berstau": "3",
+        "�berflutung": "4"
+      }
+    },
+    "ArtErgebnisseType": {
+      "name": "ArtErgebnisseType",
+      "description": "H504 Art der Berechnungsergebnisse",
+      "mappings": {
+        "Kenngr��en einer hydraul. Berechnung": "1",
+        "Hydraul. Kenngr��en des Systems": "2"
+      }
+    },
+    "BezugUeberstauniveauType": {
+      "name": "BezugUeberstauniveauType",
+      "description": "H505 Bezug �berstauniveau",
+      "mappings": {
+        "H�he GOK": "1",
+        "H�he Schachtdeckel": "2"
+      }
+    },
+    "VerfahrensartType": {
+      "name": "VerfahrensartType",
+      "description": "H600 Verfahrensart",
+      "mappings": {
+        "Dimensionierung von Regenr�ckhalter�umen - Nachweisverfahren": "1",
+        "Dimensionierung von Regenr�ckhalter�umen - Bemessungsverfahren": "2",
+        "Bemessung von Kanalnetzen - Zeitbeiwertverfahren": "3",
+        "Dimensionierung von Kanalnetzen - �berstaunachweis mit Einzelregen": "4",
+        "Dimensionierung von Kanalnetzen - �berflutungsnachweis mit Einzelregen": "5",
+        "Dimensionierung von Kanalnetzen - �berstaunachweis mit Seriensimulation": "6",
+        "Dimensionierung von Kanalnetzen - �berflutungsnachweis mit Seriensimulation": "7"
+      }
+    },
+    "ArtZielgroesseType": {
+      "name": "ArtZielgroesseType",
+      "description": "H601 ArtZielgr��e",
+      "mappings": {
+        "Mindestdurchmesser": "1",
+        "Auslastungsgrad": "2",
+        "Regenh�ufigkeit": "3",
+        "zul�ssige �berstauh�ufigkeit": "4",
+        "zul�ssige �berflutungsh�ufigkeit": "5",
+        "zul�ssige �berstaumenge": "6"
+      }
+    },
+    "EinheitZielgroesseType": {
+      "name": "EinheitZielgroesseType",
+      "description": "H602 EinheitZielgr��e",
+      "mappings": {
+        "mm": "1",
+        "l/s": "2",
+        "m3": "3",
+        "1/a": "4",
+        "%": "5"
+      }
+    }
+  }
+}

@@ -63,7 +63,7 @@
        <!-- BUILDING / DRAW UI -->
        <!-- Assuming activeTool 'DRAW' maps to Building Logic internally now -->
        <BuildingTool 
-          v-if="simStore.activeTool === 'DRAW' || simStore.activeTool.startsWith('DRAW')"
+          v-if="simStore.activeTool && (simStore.activeTool === 'DRAW' || simStore.activeTool.startsWith('DRAW'))"
           :toolInstance="buildingTool"
        />
 
@@ -159,7 +159,7 @@ const tools = {
     'SHOVEL': shovelTool,
     'BOUNDARY': boundaryTool,
     'CULVERT': culvertTool,
-    'SELECT': { onClick: () => console.log('Selection not implemented yet'), onMove: () => {} }, 
+    'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),
         onMove: (ctx) => {} 
@@ -279,7 +279,8 @@ const handleWrapperClick = (event) => {
         terrainMesh,
         interactionPlane,
         parsedData: parsedData.value,
-        geoStore
+        geoStore,
+        simStore // NEW: Pass SimStore for Selection Logic
     };
     
     const res = interactionManager.handleClick(event, context);
@@ -607,6 +608,7 @@ const parseXYZ = (text) => {
 
     return {
         gridData, ncols, nrows, cellsize, minZ, maxZ,
+        xllcorner: minX, yllcorner: minY, // Keep origin for Export
         center: { x: (minX + maxX)/2, y: (minY + maxY)/2 },
         bounds: { width: (maxX-minX)||100, height: (maxY-minY)||100 },
         stats: { cols: ncols, rows: nrows, cellsize, minZ, maxZ }
@@ -726,6 +728,116 @@ const buildTerrainMesh = (result) => {
     }
     controls.target.set(0, 0, 0);
     controls.update();
+};
+
+// --- LOGIC: WATER VISUALIZATION ---
+let waterMesh;
+
+watch(() => simStore.currentFrameIndex, (newIndex) => {
+    if (newIndex >= 0 && simStore.resultFrames.has(newIndex)) {
+        const data = simStore.resultFrames.get(newIndex);
+        if (data && parsedData.value) {
+            updateWaterLayer(data, parsedData.value);
+        }
+    } else {
+        // Clear water if reset
+        if (waterMesh) waterMesh.visible = false;
+    }
+});
+
+const updateWaterLayer = (depthData, gridInfo) => {
+    if (!depthData) return;
+    const { ncols, nrows, minZ, maxZ, bounds } = gridInfo;
+
+    // 1. Create Texture from Depth Data
+    // Float32Array -> DataTexture
+    const texture = new THREE.DataTexture(depthData, ncols, nrows, THREE.RedFormat, THREE.FloatType);
+    texture.flipY = true; // Important because Loop order matches texture UV but we might need flip depending on shader
+    // Actually LISFLOOD ASC usually starts topl-left? 
+    // DataTexture expects bottom-left? We might need to handle orientation.
+    // Our parser `OutputProcessor` reads sequentially. 
+    // If standard ASC is Row-Major (Top-Down), and Texture is Bottom-Up, we need flipY = true? 
+    // Let's try default first, usually we need to align.
+    texture.needsUpdate = true;
+
+    // 2. Create/Update Mesh
+    if (!waterMesh) {
+        // Same geometry as terrain for vertex matching
+        const geometry = terrainMesh.geometry.clone();
+        
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uDepthMap: { value: texture },
+                uMinZ: { value: minZ },
+                uMaxZ: { value: maxZ }, // Relative height
+                uColorWater: { value: new THREE.Vector3(0.0, 0.4, 0.8) },
+                uOpacity: { value: 0.7 }
+            },
+            vertexShader: `
+                varying float vDepth;
+                uniform sampler2D uDepthMap;
+                
+                void main() {
+                   // UV Mapping
+                   vec2 uv = uv; 
+                   // Read depth
+                   float d = texture2D(uDepthMap, uv).r;
+                   vDepth = d;
+
+                   // Vertex Position (needs to sit ON TOP of terrain)
+                   // We assume 'position' is terrain height (Z).
+                   // Actually, terrainMesh.geometry.position.z is (z - minZ).
+                   
+                   vec3 pos = position;
+                   
+                   // Move Water UP by depth
+                   // BUT: The geometry is static terrain. We want to elevate water surface = Terrain + Depth.
+                   // If depth > 0.01, set z = terrainZ + depth.
+                   // If depth == 0, we can hide it in fragment or set z = -9999.
+                   
+                   if (d > 0.01) {
+                       pos.z += d; 
+                       // Check for z-fighting, maybe add small offset
+                       pos.z += 0.05; 
+                   } else {
+                       pos.z = -1000.0; // Hide
+                   }
+
+                   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying float vDepth;
+                uniform vec3 uColorWater;
+                uniform float uOpacity;
+
+                void main() {
+                    if (vDepth < 0.01) discard;
+                    
+                    // Simple lighting fake
+                    vec3 col = uColorWater;
+                    
+                    // Depth based darkness?
+                    float alpha = uOpacity;
+                    if (vDepth < 0.2) alpha = 0.5;
+                    
+                    gl_FragColor = vec4(col, alpha);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+
+        waterMesh = new THREE.Mesh(geometry, material);
+        waterMesh.rotation.x = -Math.PI / 2;
+        scene.add(waterMesh);
+    } else {
+        // Update Texture
+        const mat = waterMesh.material;
+        if (mat.uniforms.uDepthMap.value) mat.uniforms.uDepthMap.value.dispose();
+        mat.uniforms.uDepthMap.value = texture;
+        waterMesh.visible = true;
+    }
 };
 
 defineExpose({ 

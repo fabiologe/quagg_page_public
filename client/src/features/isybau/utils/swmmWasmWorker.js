@@ -1,6 +1,7 @@
 
 import { SwmmBuilder } from '../core/services/SwmmBuilder.js';
 import { SwmmOutParser } from './SwmmOutParser.js';
+import { RptParser } from './swmm/RptParser.js';
 import createSwmmModule from './swmm_solver.js';
 
 let Module = null;
@@ -127,7 +128,7 @@ async function runSimulation(data) {
             edgesMap = { ...edges };
         }
 
-        const detailedResults = SwmmOutParser.parseReport(reportData, nodesMap, edgesMap);
+        const detailedResults = RptParser.parse(reportData, nodesMap, edgesMap);
 
         // 2. Binary Output (Time Series)
         let timeSeries = [];
@@ -138,17 +139,27 @@ async function runSimulation(data) {
                 timeSeries = parser.parse();
                 console.log(`Parsed ${timeSeries.length} time steps from binary output.`);
 
-                // Post-process: Calculate Node Outflow (not provided by SWMM binary)
+                // Post-process: Calculate Node Outflow and Max Volume
                 // Iterate through all steps and sum outgoing flow from connected edges
                 if (timeSeries.length > 0) {
                     timeSeries.forEach(step => {
                         // Initialize outflow
                         for (const nodeId in step.nodes) {
                             step.nodes[nodeId].outflow = 0;
+
+                            // Calculate Max Volume for Summary (as Rpt doesn't have it for all nodes)
+                            // Initialize if needed
+                            if (!detailedResults.nodes[nodeId]) detailedResults.nodes[nodeId] = {};
+                            const nodeSummary = detailedResults.nodes[nodeId];
+
+                            const currentVol = step.nodes[nodeId].vol || 0;
+                            if (currentVol > (nodeSummary.maxVolumeStored || 0)) {
+                                nodeSummary.maxVolumeStored = currentVol;
+                            }
                         }
 
                         // Add Edge Flows
-                        edgesMap.forEach(edge => {
+                        Object.values(edgesMap).forEach(edge => {
                             const resEdge = step.edges[edge.id];
                             if (resEdge && resEdge.signedQ !== undefined) {
                                 const flow = resEdge.signedQ;

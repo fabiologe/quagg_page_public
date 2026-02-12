@@ -1,226 +1,240 @@
-<template>
-  <div class="boundary-config" v-if="selectedItem">
-    
-    <div class="header">
-      <h4>Hydraulic Configuration</h4>
-      <small>ID: {{ shortId }}</small>
-    </div>
 
-    <!-- ROLE SELECTION -->
-    <div class="form-group">
-      <label>Hydraulic Role</label>
-      <select v-model="role" @change="saveSettings">
-        <option value="NONE">None (Passive)</option>
-        <option value="INFLOW">Inflow (Source)</option>
-        <option value="OUTFLOW">Outflow (Sink)</option>
-        <option value="HFIX">Fixed Level (H-Fix)</option>
-      </select>
-    </div>
-
-    <!-- CONFIGURATION AREA (If Role Active) -->
-    <div v-if="role !== 'NONE'" class="active-config">
-      
-      <!-- MODE SWITCH -->
-      <div class="toggle-group">
-        <label>
-            <input type="radio" value="CONSTANT" v-model="mode" @change="saveSettings"> Constant
-        </label>
-        <label>
-            <input type="radio" value="SERIES" v-model="mode" @change="saveSettings"> Time Series
-        </label>
-      </div>
-
-      <!-- CONSTANT INPUT -->
-      <div v-if="mode === 'CONSTANT'" class="form-group">
-        <label>
-            {{ valueLabel }}
-        </label>
-        <div class="input-wrapper">
-            <input 
-              type="number" 
-              v-model.number="constantValue" 
-              @change="saveSettings"
-              step="0.01"
-            >
-            <span class="unit">{{ valueUnit }}</span>
-        </div>
-      </div>
-
-      <!-- SERIES EDITOR -->
-      <div v-if="mode === 'SERIES'" class="form-group">
-        <label>{{ valueLabel }} (over Time)</label>
-        <TimeSeriesEditor v-model="timeSeries" @update:modelValue="saveSettings" />
-      </div>
-
-    </div>
-
-  </div>
-  <div v-else class="empty">
-    Select an object to configure.
-  </div>
-</template>
 
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
-import TimeSeriesEditor from './TimeSeriesEditor.vue';
+import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 
 const props = defineProps({
   selectedItem: { type: Object, default: null }
 });
 
 const hydStore = useHydraulicStore();
+const geoStore = useGeoStore();
 
-// Local State
-const role = ref('NONE');
-const mode = ref('CONSTANT'); // CONSTANT | SERIES
+// --- STATE ---
+// Role/Mode simplified to German UI concepts
+const activeType = ref('NONE'); // NONE, INFLOW_CONSTANT, INFLOW_DYNAMIC, OUTFLOW_FREE, WATERLEVEL_FIX
 const constantValue = ref(0);
-const timeSeries = ref([{ t: 0, v: 0 }]);
+const selectedProfileId = ref(null);
 
-// Computed Checkers
+// UI Options
+const typeOptions = [
+    { value: 'NONE', label: 'Keine Auswahl' },
+    { value: 'INFLOW_CONSTANT', label: '🚰 Konstanter Zufluss' },
+    { value: 'INFLOW_DYNAMIC', label: '🌊 Zufluss (Ganglinie)' },
+    { value: 'OUTFLOW_FREE', label: '↘️ Freier Auslauf' },
+    { value: 'WATERLEVEL_FIX', label: '🛑 Wasserstand (Ganglinie)' }
+];
+
+// Computed
 const shortId = computed(() => {
     if (!props.selectedItem || !props.selectedItem.id) return '';
     const id = props.selectedItem.id;
     return (typeof id === 'string') ? id.substring(0, 8) + '...' : id;
 });
 
-const valueLabel = computed(() => {
-    if (role.value === 'INFLOW') return 'Discharge (Q)';
-    if (role.value === 'OUTFLOW') return 'Level / Discharge';
-    if (role.value === 'HFIX') return 'Water Level (H)';
-    return 'Value';
+const isNode = computed(() => {
+    if (!props.selectedItem) return false;
+    return !props.selectedItem.geometry; // Heuristic for Node
 });
 
-const valueUnit = computed(() => {
-    if (role.value === 'INFLOW') return 'm³/s';
-    if (role.value === 'HFIX') return 'm';
-    return '-';
+const ganglinienOptions = computed(() => {
+    return hydStore.ganglinien ? Object.values(hydStore.ganglinien) : [];
+});
+
+const currentProfileData = computed({
+    get: () => {
+        if (selectedProfileId.value && hydStore.ganglinien[selectedProfileId.value]) {
+            return hydStore.ganglinien[selectedProfileId.value].data || [];
+        }
+        return [];
+    },
+    set: (newPoints) => {
+        if (selectedProfileId.value) {
+            hydStore.updateGanglinieData(selectedProfileId.value, newPoints);
+        }
+    }
+});
+
+const showGanglinienEditor = computed(() => {
+    return (activeType.value === 'INFLOW_DYNAMIC' || activeType.value === 'WATERLEVEL_FIX') && !!selectedProfileId.value;
 });
 
 // --- SYNC ENGINE ---
 
-// 1. Load Data on Selection Change
 watch(() => props.selectedItem, (newItem) => {
-    if (!newItem) return;
-    
-    // Extract Logic from properties.hydraulic (or properties if merged)
-    // The previous implementation assumed updating a global store would persist it.
-    // If we use useGeoStore, properties are in geoStore.
-    // BUT hydraulics are split into HydraulicStore in our refactoring plan?
-    // Wait, Cluster 2 logs: "HydraulicStore handles simulation parameters, profiles, rain... but does it handle PER-FEATURE hydraulics?"
-    // Flood2DSolverRunner collects data. 
-    // InputGenerator reads features.
-    // If I update ONLY hydraulicStore, features need to link to it.
-    // OR we update feature properties directly in GeoStore?
-    // Let's check updateHydraulics action in HydraulicStore. 
-    // I can't view it easily now without tool call.
-    // Assuming refactoring meant Separation of Concerns:
-    // Hydraulics for Simulation (Time, etc).
-    // Features have properties.
-    // So updateHydraulics probably should update FEATURE properties in GeoStore.
-    
-    // However, the prompt asked to check "Stores".
-    // If I use HydraulicStore to update feature properties, that's fine if HydraulicStore has an action for it.
-    // If not, I should use GeoStore.updateFeature(id, { properties: ... }).
-    
-    // Let's assume GeoStore owns the features. usage of "store.updateHydraulics" in old code suggests specific intent.
-    // I'll check if GeoStore has updateFeature.
-    // I'll start by assuming GeoStore updates features.
-    
-    const hydraulic = newItem.properties.hydraulic || {};
-    
-    role.value = hydraulic.role || 'NONE';
-    mode.value = hydraulic.mode || 'CONSTANT';
-    constantValue.value = (hydraulic.value !== undefined) ? hydraulic.value : 0;
-    
-    if (hydraulic.series && Array.isArray(hydraulic.series) && hydraulic.series.length > 0) {
-        timeSeries.value = [...hydraulic.series]; // Copy
+    if (!newItem || !newItem.id) {
+        activeType.value = 'NONE';
+        return;
+    }
+
+    const assignment = hydStore.assignments[newItem.id];
+    if (assignment) {
+        activeType.value = assignment.type;
+        constantValue.value = (assignment.value !== undefined && assignment.value !== null) ? assignment.value : 0;
+        selectedProfileId.value = assignment.profileId || null;
     } else {
-        timeSeries.value = [{ t: 0, v: 0 }]; // Reset
+        activeType.value = 'NONE';
+        constantValue.value = 0;
+        selectedProfileId.value = null;
     }
 
 }, { immediate: true });
 
-// 2. Save back to Store
-const saveSettings = () => {
-    if (!props.selectedItem) return;
+// --- ACTIONS ---
 
-    // Construct Payload
+const saveSettings = () => {
+    if (!props.selectedItem || !props.selectedItem.id) return;
+    const id = props.selectedItem.id;
+
+    if (activeType.value === 'NONE') {
+        if (hydStore.assignments[id]) delete hydStore.assignments[id];
+        return;
+    }
+
+    // Integrity Check
+    let finalProfileId = null;
+    let finalValue = null;
+
+    if (activeType.value === 'INFLOW_DYNAMIC' || activeType.value === 'WATERLEVEL_FIX') {
+        if (!selectedProfileId.value) {
+            // Error or wait? User needs to select profile.
+            // For now, we save what we have, but it won't simulate correctly without profile.
+            // Ideally we could auto-create one?
+        }
+        finalProfileId = selectedProfileId.value;
+    } else if (activeType.value === 'INFLOW_CONSTANT') {
+        finalValue = constantValue.value;
+    }
+
     const payload = {
-        role: role.value,
-        mode: mode.value,
-        value: constantValue.value,
-        series: timeSeries.value
+        type: activeType.value,
+        value: finalValue,
+        profileId: finalProfileId
     };
 
-    // Updating Feature Properties
-    // We should probably update the GeoStore feature.
-    // I'll use GeoStore here unless HydraulicStore specifically manages boundary conditions map.
-    // Given the architecture, GeoStore holds the FeatureCollection.
-    // So updating features happens there.
-    
-    // However, if I can't see GeoStore actions, I'll guess common pattern 'updateFeature' or 'updateFeatureProperty'.
-    // Or I'll use HydraulicStore if I see it has `updateBoundary`?
-    // Let's blindly use HydraulicStore IF I can confirm it calls GeoStore or vice versa.
-    // Actually, `InputGenerator` reads `geoStore.boundaries`.
-    // So the data MUST end up in `geoStore.boundaries`.
-    // So I should use `useGeoStore().updateFeature(id, { hydraulic: payload })`.
-    
-    // Wait, the previous code used `store.updateHydraulics(id, payload)`.
-    // I will use `geoStore.updateFeatureProperty(id, 'hydraulic', payload)`.
-    
-    // Let's import GeoStore.
-    const geoStore = useGeoStore(); // Need to import it
-    geoStore.updateFeatureProperty(props.selectedItem.id, 'hydraulic', payload);
+    hydStore.assignBoundaryCondition([id], payload);
+};
+
+// Create a new Global Profile and link it immediately
+const createNewProfile = () => {
+    const newId = hydStore.createGanglinie('Neues Profil ' + new Date().toLocaleTimeString().slice(0,5), 'Zufluss');
+    selectedProfileId.value = newId;
+    saveSettings(); // Auto-save assignment
+};
+
+const goToProfileManager = () => {
+    // Optional: emit event to open full manager if needed
+    // For now inline editor is enough
 };
 
 </script>
 
+<template>
+  <div class="boundary-config-panel">
+    <div class="panel-header">
+      <h4>Hydraulik ({{ shortId }})</h4>
+    </div>
+
+    <div v-if="selectedItem" class="panel-body">
+      
+      <!-- TYPE SELECTION -->
+      <div class="form-group">
+          <label>Verhaltenstyp</label>
+          <select v-model="activeType" @change="saveSettings" class="main-select">
+              <template v-for="opt in typeOptions" :key="opt.value">
+                   <!-- Filter Outflow for Nodes if strictly required, but engine often supports sinks -->
+                  <option :value="opt.value">{{ opt.label }}</option>
+              </template>
+          </select>
+      </div>
+
+      <!-- DYNAMIC CONFIG -->
+      <div v-if="activeType === 'INFLOW_DYNAMIC' || activeType === 'WATERLEVEL_FIX'" class="dynamic-config">
+          <div class="form-group">
+            <label>Ganglinie wählen</label>
+            <div class="select-row">
+                <select v-model="selectedProfileId" @change="saveSettings" class="sub-select">
+                    <option :value="null" disabled>-- Bitte wählen --</option>
+                    <option v-for="gl in ganglinienOptions" :key="gl.id" :value="gl.id">
+                        {{ gl.name }}
+                    </option>
+                </select>
+                <button class="btn-new" @click="createNewProfile" title="Neue Ganglinie erstellen">+</button>
+            </div>
+          </div>
+
+          <!-- EMBEDDED EDITOR -->
+          <div v-if="showGanglinienEditor" class="embedded-editor">
+              <GanglinienEditor 
+                v-model="currentProfileData"
+                :duration="10800"
+              />
+          </div>
+          <div v-else-if="!selectedProfileId" class="hint-warn">
+              ⚠️ Bitte eine Ganglinie auswählen oder erstellen.
+          </div>
+      </div>
+
+      <!-- CONSTANT CONFIG -->
+      <div v-if="activeType === 'INFLOW_CONSTANT'" class="constant-config">
+          <div class="form-group">
+              <label>Wert (m³/s)</label>
+              <input type="number" v-model.number="constantValue" @change="saveSettings" step="0.1" class="value-input">
+          </div>
+      </div>
+
+       <!-- OUTFLOW CONFIG -->
+       <div v-if="activeType === 'OUTFLOW_FREE'" class="info-box">
+          <p>Das Wasser fließt hier frei aus dem System (Critical Depth).</p>
+      </div>
+
+    </div>
+    <div v-else class="empty-state">
+        Kein Objekt ausgewählt.
+    </div>
+  </div>
+</template>
+
 <style scoped>
-.boundary-config {
-    padding: 1rem;
-    background: #233140;
-    border-top: 1px solid #34495e;
+.boundary-config-panel {
+    background: #2c3e50;
     color: #ecf0f1;
+    padding: 10px;
+    height: 100%;
+    display: flex; flex-direction: column;
 }
+.panel-header { border-bottom: 1px solid #34495e; margin-bottom: 10px; padding-bottom: 5px; }
+.panel-header h4 { margin: 0; font-size: 1rem; color: #bdc3c7; }
 
-.header {
-    border-bottom: 1px solid #34495e;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+.form-group { margin-bottom: 15px; }
+.form-group label { display: block; font-size: 0.85rem; color: #bdc3c7; margin-bottom: 5px; }
+
+.main-select, .sub-select, .value-input {
+    width: 100%; padding: 8px; background: #1e272e; border: 1px solid #34495e; color: white; border-radius: 4px;
 }
-.header h4 { margin: 0; font-size: 0.95rem; text-transform: uppercase; color: #3498db; }
-.header small { color: #7f8c8d; font-family: monospace; }
+.main-select { font-weight: bold; }
 
-.form-group { margin-bottom: 1rem; }
-.form-group label { display: block; font-size: 0.8rem; color: #bdc3c7; margin-bottom: 0.3rem; }
+.select-row { display: flex; gap: 5px; }
+.btn-new {
+    background: #27ae60; border: none; color: white; width: 30px; border-radius: 4px; cursor: pointer; font-size: 1.2rem;
+}
+.btn-new:hover { background: #2ecc71; }
 
-select, input[type="number"] {
-    width: 100%;
-    padding: 6px;
-    background: #2c3e50;
+.embedded-editor {
+    height: 250px;
     border: 1px solid #34495e;
-    color: #fff;
     border-radius: 4px;
+    overflow: hidden;
+    margin-top: 10px;
 }
-select:focus, input:focus { border-color: #3498db; outline: none; }
 
-.toggle-group {
-    display: flex; gap: 1rem; margin-bottom: 1rem;
-    font-size: 0.85rem;
+.info-box {
+    background: rgba(52, 152, 219, 0.1); border-left: 3px solid #3498db; padding: 10px; font-size: 0.9rem;
 }
-.toggle-group label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
-
-.input-wrapper { display: flex; align-items: center; gap: 0.5rem; }
-.unit { font-size: 0.8rem; color: #7f8c8d; }
-
-.empty { padding: 2rem; text-align: center; color: #7f8c8d; font-style: italic; }
-
-.active-config {
-    background: #2c3e50;
-    padding: 0.8rem;
-    border-radius: 4px;
-    border-left: 3px solid #3498db;
-}
+.hint-warn { color: #f39c12; font-size: 0.9rem; margin-top: 5px; }
 </style>
+
+

@@ -1,11 +1,135 @@
 import { OutputProcessor } from './OutputProcessor.js';
+import { InputGenerator } from './InputGenerator.js';
+import Lisflood from './lisflood.js';
 
-// ... (Existing Imports)
+// Debugging: Global Error Handler
+self.onerror = function (msg, url, line, col, error) {
+    console.error(`[Worker Global Error] ${msg} at ${line}:${col}`, error);
+    postMessage({ type: 'ERROR', error: `Global Worker Error: ${msg} (${line}:${col})` });
+};
 
-// ...
+self.onunhandledrejection = function (e) {
+    console.error("[Worker Unhandled Rejection]", e.reason);
+    postMessage({ type: 'ERROR', error: `Unhandled Rejection: ${e.reason}` });
+};
 
-// ...
+let Module = null;
+let FS = null;
+let processedFiles = new Set();
+let checkInterval = null;
+let currentState = 'IDLE';
 
+console.log("[Simulation] Worker script loaded."); // Critical Startup Log
+
+self.onmessage = async (e) => {
+    const { cmd, payload } = e.data;
+
+    try {
+        if (cmd === 'CMD_INIT') {
+            if (Module) return; // Already initialized
+
+            sendLog("Initializing Lisflood WASM...");
+
+            // Initialize WASM Module
+            Module = await Lisflood({
+                // Hook stdout/stderr
+                print: (text) => {
+                    if (text.trim()) sendLog(`[SOLVER] ${text}`);
+                },
+                printErr: (text) => {
+                    if (text.trim()) {
+                        console.warn(`[SOLVER ERR] ${text}`);
+                        // Detect Critical Errors
+                        if (text.includes("CFL") || text.includes("Mass Balance")) {
+                            sendError(text);
+                        }
+                    }
+                },
+                locateFile: (path) => {
+                    // Check if path is absolute or relative
+                    if (path.endsWith('.wasm')) {
+                        return new URL('./lisflood.wasm', import.meta.url).href;
+                    }
+                    return path;
+                },
+                setStatus: (text) => {
+                    if (text) sendLog(`[WASM STATUS] ${text}`);
+                },
+                monitorRunDependencies: (left) => {
+                    if (left > 0) sendLog(`[WASM] Preparing... (${left} dependencies left)`);
+                }
+            });
+
+            FS = Module.FS;
+            sendLog("Lisflood WASM Initialized.");
+            postMessage({ type: 'STATUS', status: 'READY' });
+
+        } else if (cmd === 'CMD_RUN') {
+            if (!Module) throw new Error("Module not initialized");
+
+            sendLog("Preparing Simulation Files...");
+            currentState = 'RUNNING';
+
+            // 1. Prepare Files (either from payload or generate locally)
+            let files = payload.files;
+
+            if (!files && payload.scenarioData) {
+                sendLog("Generating Input Files in Worker...");
+                try {
+                    const generator = new InputGenerator();
+                    files = generator.processScenario(payload.scenarioData);
+                    sendLog(`Generated ${Object.keys(files).length} files.`);
+                } catch (err) {
+                    throw new Error(`Input Generation Failed: ${err.message}`);
+                }
+            }
+
+            if (!files) throw new Error("No Input Files provided or generated!");
+
+            // 1b. Write Input Files to MEMFS
+            // Payload contains all file contents as strings or byte arrays
+
+            // Unpack files
+            for (const [filename, content] of Object.entries(files)) {
+                FS.writeFile('/' + filename, content);
+                sendLog(`Written ${filename} to MEMFS.`);
+            }
+
+            // Ensure results directory exists
+            try { FS.mkdir('/results'); } catch (e) { }
+            try { FS.mkdir('/res'); } catch (e) { }
+
+            // 2. Start Polling for Results
+            if (checkInterval) clearInterval(checkInterval);
+            checkInterval = setInterval(checkFSForResults, 1000); // Check every second
+
+            // 3. Run Solver (Async or Sync depending on build)
+            // LISFLOOD usually runs via main(). passing run.par as arg?
+            // "lisflood -par run.par" or similar.
+            // If it's a standard main(), we call callMain
+            sendLog("Starting LISFLOOD Solver...");
+
+            // Using setTimeout to allow UI to update before blocking (if sync)
+            setTimeout(() => {
+                try {
+                    Module.callMain(['run.par']); // Access point
+                    sendLog("Solver Finished.");
+                    postMessage({ type: 'FINISHED' });
+                    currentState = 'FINISHED';
+                } catch (e) {
+                    if (e.message && e.message.includes('SimulateInfiniteLoop')) {
+                        // Emscripten specific exit
+                        return;
+                    }
+                    handleError(e, "Execution");
+                }
+            }, 100);
+
+        }
+    } catch (err) {
+        handleError(err, "WorkerMessageHandler");
+    }
+};
 function checkFSForResults() {
     if (!FS) return;
 
@@ -61,6 +185,10 @@ function checkFSForResults() {
 
 function sendError(msg) {
     postMessage({ type: 'ERROR', error: msg });
+}
+
+function sendLog(msg) {
+    postMessage({ type: 'LOG', text: msg });
 }
 
 function handleError(err, context) {

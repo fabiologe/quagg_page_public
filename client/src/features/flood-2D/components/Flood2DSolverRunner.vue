@@ -4,7 +4,11 @@
     
     <div class="controls">
       <button @click="runSimulation" :disabled="isRunning" class="run-btn">
-        {{ isRunning ? 'Simulating...' : 'Start Smoke Test' }}
+        {{ isRunning ? 'Simulating...' : 'Start Simulation' }}
+      </button>
+
+      <button @click="runDryCheck" class="dry-run-btn" title="Check Inputs without running solver">
+          🔍 Dry Run (Check Inputs)
       </button>
       
       <div v-if="status" class="status-indicator">
@@ -39,13 +43,15 @@
   </div>
 </template>
 
+<script setup>
 import { ref, onUnmounted, computed, watch } from 'vue';
+
 import JSZip from 'jszip';
-import { useGeoStore } from '../../stores/useGeoStore.js';
-import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
-import { useSimulationStore } from '../../stores/useSimulationStore.js';
-import { InputGenerator } from '../../middleware/InputGenerator.js';
-import { Rasterizer } from '../../middleware/Rasterizer.js';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
+import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore.js';
+import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore.js';
+import { InputGenerator } from '@/features/flood-2D/middleware/InputGenerator.js';
+import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
 
 // Stores
 const geoStore = useGeoStore();
@@ -131,7 +137,29 @@ const runSimulation = async () => {
             appendLog("Initializing Middleware Worker...");
             worker = new Worker(new URL('../middleware/simulation.main.js', import.meta.url), { type: 'module' });
             
+            // IMMEDIATE Error Handler for Startup
+            worker.onerror = (e) => {
+                const msg = e.message || "Unknown Worker Error";
+                appendLog(`[WORKER ERROR] ${msg} (Line: ${e.lineno})`);
+                simStore.setStatus('ERROR');
+                alert(`Solver Startup Failure:\n${msg}`);
+                isRunning.value = false;
+            };
+
+            // Safety Timeout
+            const initTimeout = setTimeout(() => {
+                if (status.value === 'INITIALIZING') {
+                    appendLog("[TIMEOUT] Worker took too long to start. Check console/network.");
+                    simStore.setStatus('ERROR');
+                    isRunning.value = false;
+                    alert("Simulation Timed Out during Initialization.\nPlease check if 'lisflood.wasm' is loading correctly.");
+                }
+            }, 10000); // 10 seconds
+
             worker.onmessage = (e) => {
+                // Clear timeout on first message
+                if (initTimeout) clearTimeout(initTimeout);
+                
                 const { type, status: workerStatus, text, value, frame, header, payload, error } = e.data;
                 
                 switch (type) {
@@ -143,28 +171,38 @@ const runSimulation = async () => {
                         if (workerStatus === 'IDLE' && isRunning.value) {
                            startPreparation();
                         } else if (workerStatus === 'READY' && isRunning.value) {
-                           worker.postMessage({ cmd: 'CMD_RUN' });
-                           simStore.setStatus('RUNNING');
+                           // Worker is initialized, now generate data and run!
+                           startPreparation();
                         } else if (workerStatus === 'FINISHED') {
                            simStore.setStatus('FINISHED');
                            appendLog(`[COMPLETE] Simulation finished.`);
                            isRunning.value = false;
                         }
-                        break;
-
                     case 'STDOUT': appendLog(`[STDOUT] ${text}`); break;
                     case 'STDERR': appendLog(`[STDERR] ${text}`); break;
 
-                    case 'PROGRESS':
-                        // simStore.setProgress(value); // If exists
-                        simStore.setStatus(`RUNNING ${value.toFixed(1)}%`);
+                    case 'LOG': 
+                        appendLog(`[SOLVER] ${text}`); 
+                        break;
+                        
+                    case 'WARNING':
+                        appendLog(`[WARNING] ${text}`);
+                        // Optional: specific UI indicator for warning
                         break;
 
                     case 'RESULT':
                          try {
                              const frameName = `res-${String(frame).padStart(4, '0')}.wd.asc`;
+                             // Assuming Rasterizer is available in scope or passed
+                             // If Rasterizer is not imported, we need raw data or handle it.
+                             // Actually, the previous code had Rasterizer imported.
                              const ascContent = Rasterizer.gridToASC(payload, header);
                              resultFiles.value[frameName] = ascContent;
+                             
+                             // 5. Store for Visualization (NEW)
+                             // Payload is Float32Array of depths
+                             simStore.addResultFrame(frame, payload, header);
+
                              appendLog(`[RESULT] Received Frame ${frame}`);
                          } catch (err) {
                              appendLog(`[ERROR] processing result: ${err.message}`);
@@ -175,6 +213,13 @@ const runSimulation = async () => {
                         simStore.setStatus('ERROR');
                         appendLog(`[ERROR] ${error}`);
                         isRunning.value = false;
+                        
+                        // Parse specific known errors for better UX
+                        if (error && (error.includes("CFL") || error.includes("Mass Balance") || error.includes("Instability"))) {
+                            alert(`Simulation Error: Detected Instability!\n\n${error}\n\nTry reducing the Time Step or checking Boundary Conditions.`);
+                        } else {
+                            alert(`Simulation Failed: ${error}`);
+                        }
                         break;
                 }
             };
@@ -191,47 +236,120 @@ const runSimulation = async () => {
     }
 };
 
-const startPreparation = async () => {
-    simStore.setStatus('PREPARING');
-    appendLog("Generiere Input Dateien aus Stores (im Worker)...");
 
+const runDryCheck = async () => {
+    console.group('🌊 FLOOD-2D DRY RUN');
     try {
-         // Gather Data from Stores
-         const scenarioData = {
-             grid: geoStore.terrain, // Pass the Grid Object directly
-             
-             // NEW: Pass explicit modifications list for Baking
+        console.log("Gathering Data from Stores...");
+        
+        // 1. Collect Data (Mirroring startPreparation)
+        const scenarioData = {
+             grid: geoStore.terrain, 
              modifications: geoStore.modifications, 
-             
-             // Legacy Compatibility (worker strips this to avoid double-baking, but we pass it just in case logic changes)
              buildings: geoStore.buildings, 
-
              rain: hydStore.rainConfig && hydStore.rainData ? {
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
              } : null,
-             
-             boundaries: hydStore.profiles ? Object.values(hydStore.profiles) : [],
-             
+             // Corrected: Boundaries come from GeoStore (Features), Assignments from HydStore
+             boundaries: geoStore.boundaries ? geoStore.boundaries.features : [],
+             // Manholes (Nodes) -> Map to GeoJSON Point Features
+             manholes: geoStore.nodes ? geoStore.nodes.map(n => ({
+                 type: 'Feature',
+                 id: n.id,
+                 geometry: { type: 'Point', coordinates: [n.x, n.y] },
+                 properties: { name: n.displayName || `Node_${n.id}` }
+             })) : [],
+             assignments: hydStore.assignments,
+             ganglinien: hydStore.ganglinien,
+             globalRoughness: hydStore.globalRoughness,
+             config: {
+                 sim_time: simStore.simDuration || 3600,
+                 initial_tstep: simStore.timeStep || 1.0
+             }
+        };
+
+        console.log("📦 INPUT DATA:", scenarioData);
+        
+        if (!scenarioData.grid || !scenarioData.grid.gridData) {
+            throw new Error("Missing Terrain Data");
+        }
+
+        // 2. Run Generators
+        // Using processScenario to orchestrate the generation sequence
+        console.log("🚀 Running InputGenerator.processScenario()...");
+        const files = generator.processScenario(scenarioData);
+        
+        console.log("✅ GENERATION SUCCESS!");
+        console.log("📂 OUTPUT FILES:", Object.keys(files));
+        
+        // Log details for key files
+        if (files['run.par']) console.log("📄 run.par Content:\n", files['run.par']);
+        if (files['rain.txt']) console.log("📄 rain.txt Content:\n", files['rain.txt']);
+        
+        // Boundaries
+        if (files['flow.bci']) console.log("📄 flow.bci Content:\n", files['flow.bci']);
+        if (files['flow.bdy']) console.log("📄 flow.bdy Content:\n", files['flow.bdy']); // Fallback
+        
+        if (files['profiles.bdy']) console.log("📄 profiles.bdy Content:\n", files['profiles.bdy']);
+        // Summary for huge files
+        if (files['terrain.asc']) console.log(`📄 terrain.asc Size: ${files['terrain.asc'].length} chars`);
+
+    } catch (e) {
+        console.error("❌ DRY RUN FAILED:", e);
+        alert(`Dry Run Failed: ${e.message}`);
+    } finally {
+        console.groupEnd();
+    }
+};
+
+const startPreparation = async () => {
+    simStore.setStatus('PREPARING');
+    appendLog("Generiere Input Dateien aus Stores (Main Thread)...");
+
+    try {
+         // Gather Data from Stores
+         const scenarioData = {
+             grid: geoStore.terrain, 
+             modifications: geoStore.modifications, 
+             buildings: geoStore.buildings, 
+             rain: hydStore.rainConfig && hydStore.rainData ? {
+                 intensity: hydStore.rainConfig.intensity,
+                 ...hydStore.rainConfig
+             } : null,
+             boundaries: geoStore.boundaries ? geoStore.boundaries.features : [],
+             manholes: geoStore.nodes ? geoStore.nodes.map(n => ({
+                 type: 'Feature',
+                 id: n.id,
+                 geometry: { type: 'Point', coordinates: [n.x, n.y] },
+                 properties: { name: n.displayName || `Node_${n.id}` }
+             })) : [],
+             assignments: hydStore.assignments,
+             ganglinien: hydStore.ganglinien,
+             globalRoughness: hydStore.globalRoughness,
              config: {
                  sim_time: simStore.simDuration || 3600,
                  initial_tstep: simStore.timeStep || 1.0
              }
          };
 
-         // DELEGATE TO WORKER (Task 4 Requirement)
-         // Instead of running generator locally, we ask the worker to bake & prepare.
+         // 2. Send to Worker (DELEGATED GENERATION)
+         // We send the raw scenario data, and the worker runs InputGenerator internally.
          if (worker) {
              worker.postMessage({
-                 type: 'PREPARE_SIMULATION',
-                 payload: scenarioData
+                 cmd: 'CMD_RUN',
+                 payload: { 
+                    scenarioData: scenarioData,
+                    // validFiles: null // implicitly null, triggering worker generation
+                 }
              });
-             // Response will be handled in onmessage ('PREPARATION_COMPLETE' or 'ERROR')
+             simStore.setStatus('RUNNING');
          } else {
              throw new Error("Worker not initialized!");
          }
 
     } catch (e) {
+        console.error(e);
         appendLog(`[ERROR] Data Prep failed: ${e.message}`);
         simStore.setStatus('ERROR');
         isRunning.value = false;
@@ -280,6 +398,22 @@ onUnmounted(() => {
 
 .run-btn:hover:not(:disabled) {
     background: #1976D2;
+}
+
+.dry-run-btn {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    color: #666;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.dry-run-btn:hover {
+    background: #e0e0e0;
+    color: #333;
+    border-color: #999;
 }
 
 .status-indicator {

@@ -51,6 +51,35 @@ export function useInteractionManager(activeToolRef, tools) {
                 pointer // Pass normalized pointer
             });
         }
+
+        // NEW: Default 'SELECT' Behavior
+        if (currentToolName === 'SELECT') {
+            if (!context.scene) return;
+
+            // Cast against everything
+            const intersects = context.raycaster.intersectObjects(context.scene.children, true);
+
+            // Find first hit that is selectable
+            const hit = intersects.find(i => {
+                return i.object.userData && i.object.userData.selectable;
+            });
+
+            if (context.simStore) {
+                if (hit) {
+                    const id = hit.object.userData.id;
+                    if (event.shiftKey) {
+                        context.simStore.toggleSelection(id);
+                    } else {
+                        context.simStore.setSelection(id);
+                    }
+                } else {
+                    if (!event.shiftKey) {
+                        context.simStore.clearSelection();
+                    }
+                }
+            }
+        }
+
         return null;
     };
 

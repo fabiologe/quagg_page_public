@@ -81,7 +81,10 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
      * @param {Array<string>} objectIds 
      * @param {{type: string, value: number|null, profileId: string|null}} config 
      */
-    function assignBoundaryCondition(objectIds, config) {
+    function assignBoundaryCondition(target, config) {
+        // NEW: Multi-select support (Polymorphic: Array or Single ID)
+        const objectIds = Array.isArray(target) ? target : [target];
+
         objectIds.forEach(id => {
             // Clone config to avoid reference sharing issues
             assignments.value[id] = { ...config };
@@ -123,6 +126,13 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         }
     }
 
+    /** @type {import('vue').Ref<number>} */
+    const globalRoughness = ref(0.035);
+
+    function setRoughness(val) {
+        globalRoughness.value = val;
+    }
+
     return {
         ganglinien,
         activeGanglinieId,
@@ -131,13 +141,15 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         kostraGrid,
         rainLocation,
         rainConfig,
+        globalRoughness, // EXPORTED
+        setRoughness,    // EXPORTED
         createGanglinie,
         deleteGanglinie,
         updateGanglinieData,
         setActiveGanglinie,
         assignToObjects,
-        assignBoundaryCondition, // EXPORTED
-        getAssignment,           // EXPORTED
+        assignBoundaryCondition,
+        getAssignment,
         getAssignmentsByGanglinie,
         setKostraGrid,
         setRainData

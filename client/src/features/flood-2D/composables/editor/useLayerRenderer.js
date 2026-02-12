@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { watch, onUnmounted, ref } from 'vue';
 import { useGeoStore } from '../../stores/useGeoStore.js';
+import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
 
 /**
  * useLayerRenderer
@@ -10,10 +11,22 @@ import { useGeoStore } from '../../stores/useGeoStore.js';
  * @param {THREE.Scene} scene - The main Three.js scene
  * @param {Object} [geoStoreArg] - Optional: The Geo Store. If null, it will be retrieved internally.
  * @param {Ref} gridRef - Optional Ref to current terrain grid (parsing preview or store)
+ * @param {Object} [simStoreArg] - Optional: Simulation Store reference for selection highlight
  */
-export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
+export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simStoreArg = null) {
 
     const geoStore = geoStoreArg || useGeoStore();
+    const hydraulicStore = useHydraulicStore();
+    // NEW: Access Sim Store for Selection
+    // Ideally passed as arg, but fallback to import if needed.
+    // However, store access inside composable usually works if inside setup context.
+    // We'll rely on simStoreArg or import if not provided.
+    // Since we didn't import useSimulationStore, and prompt implies "Extend useLayerRenderer",
+    // we should import it if we want to watch it properly.
+    // Let's DYNAMICALLY import or rely on ARG. 
+    // Wait, the Prompt 2 says "Context: ... We use useSimulationStore".
+    // Let's add the import.
+
 
     // --- GROUPS ---
     const nodeGroup = new THREE.Group();
@@ -27,6 +40,15 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
     const boundaryGroup = new THREE.Group();
     boundaryGroup.name = 'Layer_Boundaries';
     scene.add(boundaryGroup);
+
+    const hydraulicGroup = new THREE.Group();
+    hydraulicGroup.name = 'Layer_Hydraulics';
+    scene.add(hydraulicGroup);
+
+    // NEW: Selection Layer
+    const selectionGroup = new THREE.Group();
+    selectionGroup.name = 'Layer_Selection';
+    scene.add(selectionGroup);
 
     // Reuse Geometries/Materials for performance
     // Increased size for visibility (0.4 -> 3.0 for debugging)
@@ -146,7 +168,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
             mesh.userData = {
                 id: node.id,
                 type: 'node',
-                data: node
+                data: node,
+                selectable: true // NEW: Enable Raycasting
             };
 
             nodeGroup.add(mesh);
@@ -299,7 +322,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
                     mesh.userData = {
                         id: feature.id || 'building',
                         type: 'building',
-                        feature: feature
+                        feature: feature,
+                        selectable: true // NEW: Enable Raycasting
                     };
                     buildingGroup.add(mesh);
                 }); // End rings.forEach
@@ -345,7 +369,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
                     line.userData = {
                         id: feature.id || 'boundary',
                         type: 'boundary',
-                        feature: feature
+                        feature: feature,
+                        selectable: true // NEW: Enable Raycasting
                     };
 
                     boundaryGroup.add(line);
@@ -355,6 +380,263 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
 
         console.log(`[LayerRenderer] Rendered ${buildingGroup.children.length} buildings, ${boundaryGroup.children.length} boundaries.`);
     };
+
+    // --- HYDRAULIC VISUALIZATION HELPERS ---
+
+    const createArrow = (pos, color, direction = 1) => {
+        // direction: 1 = UP (Inflow), -1 = DOWN (Outflow)
+        const group = new THREE.Group();
+        group.position.copy(pos);
+
+        // Visual Params
+        const shaftHeight = 15;
+        const coneHeight = 5;
+        // Total Arrow Height = 20
+
+        const mat = new THREE.MeshBasicMaterial({ color: color });
+
+        // Shaft
+        const cylinderGeo = new THREE.CylinderGeometry(1, 1, shaftHeight, 8);
+        const cylinder = new THREE.Mesh(cylinderGeo, mat);
+
+        // Cone
+        const coneGeo = new THREE.ConeGeometry(2.5, coneHeight, 16);
+        const cone = new THREE.Mesh(coneGeo, mat);
+
+        if (direction === 1) {
+            // UP: Shaft on ground, Cone on top
+            // Cylinder center at y = shaftHeight / 2
+            cylinder.position.y = shaftHeight / 2;
+            // Cone center at y = shaftHeight + coneHeight / 2
+            cone.position.y = shaftHeight + coneHeight / 2;
+            // Default cone points UP (Y+)
+        } else {
+            // DOWN: Arrow pointing to ground
+            // Cone Tip at 0.
+            // Cone center at Y = coneHeight / 2.
+            cone.rotation.x = Math.PI; // Point Down
+            cone.position.y = coneHeight / 2;
+
+            // Shaft on top of cone
+            // Cylinder center at Y = coneHeight + shaftHeight / 2
+            cylinder.position.y = coneHeight + shaftHeight / 2;
+        }
+
+        group.add(cylinder);
+        group.add(cone);
+
+        return group;
+    };
+
+    const createWall = (points, color) => {
+        // points: Array of Vector3 (bottom points)
+        // We want to extrude them UP by 10m.
+        if (points.length < 2) return null;
+
+        const vertices = [];
+        const indices = [];
+
+        // Build vertices. For each point P, we have Bottom(P) and Top(P)
+        for (let i = 0; i < points.length; i++) {
+            const p = points[i];
+            // Bottom
+            vertices.push(p.x, p.y, p.z);
+            // Top (+10m Y in local space is Up)
+            vertices.push(p.x, p.y + 10, p.z);
+        }
+
+        // Build triangles (Quads)
+        // 0--2
+        // | /|
+        // |/ |
+        // 1--3 (Wait, 0 is bottom, 1 is top? No.)
+        // i*2 = Bottom, i*2+1 = Top
+
+        for (let i = 0; i < points.length - 1; i++) {
+            const b1 = i * 2;
+            const t1 = i * 2 + 1;
+            const b2 = (i + 1) * 2;
+            const t2 = (i + 1) * 2 + 1;
+
+            // Tri 1: b1, t1, b2
+            indices.push(b1, t1, b2);
+            // Tri 2: t1, t2, b2
+            indices.push(t1, t2, b2);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshPhysicalMaterial({
+            color: color,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.6,
+            roughness: 0.1,
+            metalness: 0.1,
+            transmission: 0.2 // Watery look
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        return mesh;
+    };
+
+    const renderHydraulics = () => {
+        clearGroup(hydraulicGroup);
+        // Ensure Hydraulic Store logic is ready
+        if (!hydraulicStore.assignments) return;
+
+        // Configuration Map
+        const getVisualConfig = (type) => {
+            if (!type) return null;
+            if (type.includes('INFLOW') || type.includes('BOUNDARY_INFLOW')) {
+                return { color: 0x0000FF, dir: 1 }; // Blue Up
+            }
+            if (type.includes('OUTFLOW') || type.includes('HFIX') || type.includes('SINK')) {
+                return { color: 0xFF0000, dir: -1 }; // Red Down
+            }
+            return null;
+        };
+
+        // 1. Nodes
+        if (geoStore.nodes) {
+            geoStore.nodes.forEach(node => {
+                const config = hydraulicStore.assignments[node.id];
+                if (config) {
+                    const viz = getVisualConfig(config.type);
+                    if (viz) {
+                        const pos = getLocalPos(node.x, node.y, node.cover_level);
+                        hydraulicGroup.add(createArrow(pos, viz.color, viz.dir));
+                    }
+                }
+            });
+        }
+
+        // 2. Boundaries
+        if (geoStore.boundaries && geoStore.boundaries.features) {
+            const grid = getActiveGrid();
+            const gridData = getActiveData();
+
+            geoStore.boundaries.features.forEach(feature => {
+                const config = hydraulicStore.assignments[feature.id];
+                if (config) {
+                    const viz = getVisualConfig(config.type);
+                    if (!viz) return;
+
+                    const type = feature.geometry.type;
+                    if (type === 'LineString' || type === 'MultiLineString') {
+                        const lines = (type === 'LineString') ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+
+                        lines.forEach(lineCoords => {
+                            // User Request: Arrow on EVERY raster cell along the line.
+                            // Interpolate lines.
+                            if (!grid) {
+                                // Fallback
+                                lineCoords.forEach(pt => {
+                                    const p = getLocalPos(pt[0], pt[1], 0);
+                                    hydraulicGroup.add(createArrow(p, viz.color, viz.dir));
+                                });
+                                return;
+                            }
+
+                            const { cellsize, ncols, nrows, bounds } = grid;
+                            const spacing = cellsize || 1.0;
+
+                            for (let i = 0; i < lineCoords.length - 1; i++) {
+                                const start = lineCoords[i];
+                                const end = lineCoords[i + 1];
+
+                                const dx = end[0] - start[0];
+                                const dy = end[1] - start[1];
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                                // Divide segment into steps based on cellsize
+                                const steps = Math.max(1, Math.floor(dist / spacing));
+
+                                for (let step = 0; step <= steps; step++) {
+                                    // Skip last point if it's not the end of the line (to avoid duplicates)
+                                    if (step === steps && i < lineCoords.length - 2) continue;
+
+                                    const t = (steps > 0) ? step / steps : 0;
+                                    const tx = start[0] + dx * t;
+                                    const ty = start[1] + dy * t;
+
+                                    // Sample Z
+                                    let z = 0;
+                                    if (gridData) {
+                                        const localX = tx - grid.center.x;
+                                        const inputZ = -(ty - grid.center.y);
+                                        const c = Math.round((localX + bounds.width / 2) / cellsize);
+                                        const r = Math.round((bounds.height / 2 - inputZ) / cellsize);
+                                        if (c >= 0 && c < ncols && r >= 0 && r < nrows) {
+                                            const idx = r * ncols + c;
+                                            const val = gridData[idx];
+                                            if (val > -9000) z = val;
+                                        }
+                                    }
+
+                                    const pos = getLocalPos(tx, ty, z);
+                                    hydraulicGroup.add(createArrow(pos, viz.color, viz.dir));
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    };
+
+    // --- SELECTION HIGHLIGHT ---
+    const renderSelectionHighlight = (simStore) => {
+        if (!simStore) return;
+        clearGroup(selectionGroup);
+
+        const idsToHighlight = new Set();
+        if (simStore.selection) idsToHighlight.add(simStore.selection);
+        if (simStore.multiSelection && simStore.multiSelection.size > 0) {
+            simStore.multiSelection.forEach(id => idsToHighlight.add(id));
+        }
+
+        if (idsToHighlight.size === 0) return;
+
+        // Find objects in other groups
+        // We need lookup maps for efficient access, but looping scene groups is ok for small N.
+        const searchGroups = [nodeGroup, buildingGroup, boundaryGroup];
+
+        searchGroups.forEach(group => {
+            group.children.forEach(child => {
+                if (child.userData && idsToHighlight.has(child.userData.id)) {
+                    // Create Ring
+                    // Geometry: Ring or Torus. Ring is 2D, Torus is 3D.
+                    // Let's use Torus for better visibility from low angles.
+                    const bounds = new THREE.Box3().setFromObject(child);
+                    const size = bounds.getSize(new THREE.Vector3());
+                    const center = bounds.getCenter(new THREE.Vector3());
+
+                    // Radius depends on object size
+                    const radius = Math.max(size.x, size.z) / 2 + 1.0;
+
+                    const ringGeo = new THREE.TorusGeometry(radius, 0.3, 8, 32);
+                    const ringMat = new THREE.MeshBasicMaterial({
+                        color: 0xffff00, // Yellow
+                        transparent: true,
+                        opacity: 0.8
+                    });
+                    const ring = new THREE.Mesh(ringGeo, ringMat);
+
+                    // Position: Center x/z, but slightly above ground/object base
+                    // If object is building, bottom is at min Y.
+                    ring.position.set(center.x, bounds.min.y + 0.5, center.z);
+                    ring.rotation.x = Math.PI / 2; // Flat on ground
+
+                    selectionGroup.add(ring);
+                }
+            });
+        });
+    };
+
 
     // --- WATCHERS ---
 
@@ -369,6 +651,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
             updateWorldOffset();
             renderNodes();
             renderBuildings();
+            renderHydraulics();
         }, { deep: true });
     }
 
@@ -376,16 +659,35 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
         updateWorldOffset();
         renderNodes();
         renderBuildings();
+        renderHydraulics();
     }, { deep: true });
+
+    // Watch Hydraulic Assignments
+    watch(() => hydraulicStore.assignments, () => {
+        renderHydraulics();
+    }, { deep: true, immediate: true });
+
+    // NEW: Watch Selection
+    if (simStoreArg) {
+        watch(
+            [() => simStoreArg.selection, () => simStoreArg.multiSelection], // Watch both
+            () => {
+                renderSelectionHighlight(simStoreArg);
+            },
+            { deep: true, immediate: true }
+        );
+    }
 
     // --- CLEANUP ---
     onUnmounted(() => {
         scene.remove(nodeGroup);
         scene.remove(buildingGroup);
         scene.remove(boundaryGroup);
+        scene.remove(hydraulicGroup);
         clearGroup(nodeGroup);
         clearGroup(buildingGroup);
         clearGroup(boundaryGroup);
+        clearGroup(hydraulicGroup);
         nodeGeometry.dispose();
         nodeMaterial.dispose();
         buildingMaterial.dispose();
@@ -396,6 +698,10 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null) {
         buildingGroup,
         boundaryGroup,
         renderNodes,
-        renderBuildings
+        renderBuildings,
+        renderHydraulics,
+        renderHydraulics,
+        hydraulicGroup,
+        selectionGroup // Export group
     };
 }
