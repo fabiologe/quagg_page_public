@@ -21,11 +21,17 @@ export class InputGenerator {
      * Main entry point to process a full scenario input.
      * @param {object} scenario input data
      */
-    processScenario(scenario) {
+    /**
+     * Main entry point to process a full scenario input.
+     * @param {object} scenario input data
+     * @param {object} fs - Optional Emscripten FS object for direct writing (Streaming)
+     */
+    processScenario(scenario, fs = null) {
         this.reset();
 
         // 1. Terrain & Rasterization
         let header, data;
+        // ... (existing logic)
 
         if (scenario.grid) {
             header = scenario.grid.header || scenario.grid;
@@ -55,24 +61,40 @@ export class InputGenerator {
             Rasterizer.burnBuildings(data, header, modifications);
         }
 
-        const ascContent = Rasterizer.gridToASC(data, header);
-        this.files['terrain.asc'] = ascContent;
+        // STREAMING WRITE or BUFFERED
+        if (fs) {
+            console.log("[InputGenerator] Streaming Terrain to MEMFS...");
+            Rasterizer.writeGridToFS(fs, '/terrain.asc', data, header);
+        } else {
+            const ascContent = Rasterizer.gridToASC(data, header);
+            this.files['terrain.asc'] = ascContent;
+        }
+
 
         // 2. Friction
         let useFrictionFile = false;
         if (scenario.roughness) {
-            const frictionMap = Rasterizer.generateRoughnessMap(header, scenario.roughness);
-            if (frictionMap) {
-                this.files['friction.asc'] = frictionMap;
+            const frictionRes = Rasterizer.generateRoughnessMap(header, scenario.roughness);
+            if (frictionRes) {
+                // frictionRes is now { header, data }
+                if (fs) {
+                    console.log("[InputGenerator] Streaming Friction to MEMFS...");
+                    Rasterizer.writeGridToFS(fs, '/friction.asc', frictionRes.data, frictionRes.header);
+                } else {
+                    this.files['friction.asc'] = Rasterizer.gridToASC(frictionRes.data, frictionRes.header);
+                }
                 useFrictionFile = true;
             }
         }
 
         // 3. Hydraulics - Rain
+        let hasRain = false;
         if (scenario.rain) {
             if (typeof scenario.rain === 'object' && scenario.rain.intensity) {
                 const rainContent = Hydraulics.prepareRain(scenario.rain.intensity, scenario.rain.duration || 3600);
-                this.files['rain.txt'] = rainContent;
+                if (fs) fs.writeFile('/rain.txt', rainContent);
+                else this.files['rain.txt'] = rainContent;
+                hasRain = true;
             }
         }
 
@@ -87,12 +109,9 @@ export class InputGenerator {
             if (assign.type === 'INFLOW_CONSTANT' || assign.type === 'INFLOW_FIX' || assign.type === 'WATERLEVEL_FIX') {
                 if (assign.value !== undefined && assign.value !== null) {
                     const val = parseFloat(assign.value);
-                    // User Request: "Generiere einen künstlichen Profilnamen: const_<id>"
-                    // Use a clean ID
                     const shortId = id.split('-')[0] || id.substring(0, 8);
                     const synthName = `const_${shortId}`;
 
-                    // Create Synthetic Profile
                     if (!effectiveGanglinien[synthName]) {
                         effectiveGanglinien[synthName] = {
                             name: synthName,
@@ -102,8 +121,6 @@ export class InputGenerator {
                             ]
                         };
                     }
-
-                    // Link Assignment
                     effectiveAssignments[id] = { ...assign, profileId: synthName };
                 }
             }
@@ -111,12 +128,14 @@ export class InputGenerator {
 
         // 4b. Generate Profiles.bdy
         const bdyFileContent = this.generateBdyFile(effectiveGanglinien);
+        let hasBdy = false;
         if (bdyFileContent) {
-            this.files['profiles.bdy'] = bdyFileContent;
+            if (fs) fs.writeFile('/profiles.bdy', bdyFileContent);
+            else this.files['profiles.bdy'] = bdyFileContent;
+            hasBdy = true;
         }
 
         // 4c. Generate Flow.bci
-        // Combine Boundaries and Manholes (Schächte)
         const combinedBoundaries = [
             ...(scenario.boundaries || []),
             ...(scenario.manholes || [])
@@ -132,22 +151,25 @@ export class InputGenerator {
             data
         );
 
+        let hasBci = false;
         if (bciContent) {
-            // User requested: "Stelle sicher, dass die Koordinaten in die .bci Datei geschrieben werden"
-            this.files['flow.bci'] = bciContent;
-            // Also keep standard LISFLOOD par reference if needed, usually .bci
+            if (fs) fs.writeFile('/flow.bci', bciContent);
+            else this.files['flow.bci'] = bciContent;
+            hasBci = true;
         }
 
         // 5. Parameter File
         const parContent = this.generateParFile(
             scenario.config,
             useFrictionFile,
-            !!this.files['rain.txt'],
+            hasRain,
             scenario.globalRoughness,
-            !!this.files['flow.bci'],
-            !!this.files['profiles.bdy']
+            hasBci,
+            hasBdy
         );
-        this.files['run.par'] = parContent;
+
+        if (fs) fs.writeFile('/run.par', parContent);
+        else this.files['run.par'] = parContent;
 
         return this.files;
     }
@@ -332,24 +354,25 @@ export class InputGenerator {
     }
 
     generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy) {
+        // CRITICAL: Keywords MUST match pars.cpp exactly (strcmp is case-sensitive!)
+        // Source: solverHydro/src/lisflood-fp-bmi-v5.9/pars.cpp
         const config = {
-            demfile: 'terrain.asc',
-            resroot: 'res',
-            dirroot: 'results',
-            sim_time: 3600,
-            initial_tstep: 1.0,
-            massint: 60.0,
-            saveint: 60.0,
-            manning: globalRoughness,
-            acceleration: 'ON',
-            adaptoff: 'ON',
+            DEMfile: 'terrain.asc',             // Line 37: strcmp(buffer,"DEMfile")
+            resroot: 'res',                     // Line 56: strcmp(buffer,"resroot")
+            dirroot: 'results',                 // Line 57: strcmp(buffer,"dirroot")
+            sim_time: '3600.0',                 // Line 70: strcmp(buffer,"sim_time")
+            initial_tstep: '1.0',               // Line 72: strcmp(buffer,"initial_tstep")
+            massint: '60.0',                    // Line 73: strcmp(buffer,"massint")
+            saveint: '60.0',                    // Line 74: strcmp(buffer,"saveint")
+            fpfric: typeof globalRoughness === 'number' ? globalRoughness.toFixed(4) : '0.0350', // Line 62: strcmp(buffer,"fpfric")
+            acceleration: '',                   // Line 128: flag only, no value
             ...configOverride
         };
 
-        if (hasFrictionMap) config.frictionfile = 'friction.asc';
-        if (hasRain) config.rainfile = 'rain.txt';
-        if (hasBci) config.bcifile = 'flow.bci'; // Correct usage
-        if (hasBdy) config.bdyfile = 'profiles.bdy';
+        if (hasFrictionMap) config.manningfile = 'friction.asc'; // Line 99: strcmp(buffer,"manningfile")
+        if (hasRain) config.rainfall = 'rain.txt';               // Line 228: strcmp(buffer,"rainfall")
+        if (hasBci) config.bcifile = 'flow.bci';                 // Line 106: strcmp(buffer,"bcifile")
+        if (hasBdy) config.bdyfile = 'profiles.bdy';             // Line 107: strcmp(buffer,"bdyfile")
 
         let content = '';
         for (const [key, val] of Object.entries(config)) {

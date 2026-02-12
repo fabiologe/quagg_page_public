@@ -203,7 +203,7 @@ export const Rasterizer = {
      * @param {object} header 
      * @param {object} roughnessPolygons - GeoJSON
      * @param {number} defaultRoughness 
-     * @returns {string} Content of friction.asc or null
+     * @returns {object|null} { header, data: Float32Array } or null
      */
     generateRoughnessMap(header, roughnessPolygons, defaultRoughness = 0.035) {
         if (!roughnessPolygons || !roughnessPolygons.features || roughnessPolygons.features.length === 0) {
@@ -229,6 +229,51 @@ export const Rasterizer = {
             }
         }
 
-        return gridToASC(frictionGrid, header);
+        return { header, data: frictionGrid };
+    },
+
+    /**
+     * Efficiently writes a Grid to MEMFS/FS without creating huge strings.
+     * @param {object} fs - Emscripten FS object
+     * @param {string} path - absolute path in MEMFS (e.g. '/terrain.asc')
+     * @param {Float32Array} data 
+     * @param {object} header 
+     */
+    writeGridToFS(fs, path, data, header) {
+        if (!fs) throw new Error("FS object required for streaming write");
+
+        const encoder = new TextEncoder();
+        const stream = fs.open(path, 'w+');
+
+        try {
+            const writeLine = (str) => {
+                const updatedStr = str + '\n';
+                const buffer = encoder.encode(updatedStr);
+                fs.write(stream, buffer, 0, buffer.length, undefined);
+            };
+
+            // Header
+            writeLine(`ncols         ${header.ncols}`);
+            writeLine(`nrows         ${header.nrows}`);
+            const x = header.xllcorner !== undefined ? header.xllcorner : header.xll;
+            const y = header.yllcorner !== undefined ? header.yllcorner : header.yll;
+            writeLine(`xllcorner     ${x.toFixed(4)}`);
+            writeLine(`yllcorner     ${y.toFixed(4)}`);
+            writeLine(`cellsize      ${header.cellsize.toFixed(4)}`);
+            writeLine(`NODATA_value  -9999`);
+
+            // Body
+            for (let i = 0; i < header.nrows; i++) {
+                const start = i * header.ncols;
+                const end = start + header.ncols;
+                const rowData = data.subarray(start, end);
+                writeLine(rowData.join(' '));
+            }
+        } finally {
+            fs.close(stream);
+        }
     }
 };
+
+// Also export standalone for consistency
+export const writeGridToFS = Rasterizer.writeGridToFS;

@@ -100,59 +100,91 @@ self.onmessage = async (e) => {
             let files = payload.files;
 
             if (!files && payload.scenarioData) {
-                sendLog("Generating Input Files in Worker...");
+                sendLog("Generating Input Files in Worker (Streaming Mode)...");
                 try {
                     const generator = new InputGenerator();
-                    files = generator.processScenario(payload.scenarioData);
-                    sendLog(`Generated ${Object.keys(files).length} files.`);
+                    // PASS FS for Direct Writing!
+                    files = generator.processScenario(payload.scenarioData, FS);
+                    sendLog(`Input Generation Configured.`);
+                    // files will be empty object because everything was written to FS directly
                 } catch (err) {
                     throw new Error(`Input Generation Failed: ${err.message}`);
                 }
             }
 
-            if (!files) throw new Error("No Input Files provided or generated!");
-
-            // 1b. Write Input Files to MEMFS
-            // Payload contains all file contents as strings or byte arrays
-
-            // Unpack files
-            for (const [filename, content] of Object.entries(files)) {
-                FS.writeFile('/' + filename, content);
-                sendLog(`Written ${filename} to MEMFS.`);
+            // If files were passed via payload (legacy), write them
+            if (files && Object.keys(files).length > 0) {
+                for (const [filename, content] of Object.entries(files)) {
+                    FS.writeFile('/' + filename, content);
+                    sendLog(`Written ${filename} to MEMFS.`);
+                }
             }
+
+            // Set CWD to root — LISFLOOD resolves paths relative to CWD!
+            FS.chdir('/');
 
             // Ensure results directory exists
             try { FS.mkdir('/results'); } catch (e) { }
             try { FS.mkdir('/res'); } catch (e) { }
 
-            // 2. Start Polling for Results
-            if (checkInterval) clearInterval(checkInterval);
-            checkInterval = setInterval(checkFSForResults, 1000); // Check every second
-
-            // 3. Run Solver (Async or Sync depending on build)
-            // LISFLOOD usually runs via main(). passing run.par as arg?
+            // 2. Run Solver (Blocking/Sync)
+            // No setInterval polling because JS thread is blocked!
             sendLog("Starting Lisflood Solver...");
 
-            // Using setTimeout to allow UI to update before blocking (if sync)
+            // DEBUG: Inspect MEMFS Correctness
+            try {
+                const rootFiles = FS.readdir('/');
+                sendLog(`MEMFS Root: ${rootFiles.join(', ')}`);
+
+                if (rootFiles.includes('run.par')) {
+                    const parContent = FS.readFile('/run.par', { encoding: 'utf8' });
+                    sendLog(`📄 run.par Content:\n${parContent}`);
+                } else {
+                    sendLog("❌ CRITICAL: run.par MISSING in MEMFS!");
+                }
+
+                if (rootFiles.includes('terrain.asc')) {
+                    // Check first 100 bytes
+                    const gridHead = FS.readFile('/terrain.asc', { encoding: 'utf8' }).substring(0, 100);
+                    sendLog(`📄 terrain.asc Head:\n${gridHead}...`);
+                }
+            } catch (e) {
+                sendLog(`❌ Error inspecting MEMFS: ${e.message}`);
+            }
+
             setTimeout(() => {
                 try {
-                    // Hook into run.par
-                    Module.callMain(['run.par']);
-                    sendLog("Solver Finished.");
-                    postMessage({ type: 'STATUS', status: 'FINISHED' }); // Use consistent status
+                    // Method: Use ccall to invoke the exported '_run_lisflood'
+                    // The logs showed '_run_lisflood' exists.
+                    // ccall handles string allocation/deallocation automatically.
+
+                    sendLog("Invoking run_lisflood via ccall...");
+
+                    // Assumption: int run_lisflood(char* parameter_file);
+                    const exitCode = Module.ccall(
+                        'run_lisflood', // name of C function
+                        'number',       // return type
+                        ['string'],     // argument types
+                        ['run.par']     // arguments
+                    );
+
+                    sendLog(`Solver Finished (Exit ${exitCode}).`);
+
+                    // 3. Process Results AFTER run
+                    checkFSForResults();
+
+                    postMessage({ type: 'STATUS', status: 'FINISHED' });
                     currentState = 'FINISHED';
+
                 } catch (e) {
                     if (e && e.name === 'ExitStatus') {
-                        // Normal exit?
                         if (e.status === 0) {
                             sendLog("Solver Finished (Exit 0).");
+                            checkFSForResults();
                             postMessage({ type: 'STATUS', status: 'FINISHED' });
                             currentState = 'FINISHED';
                             return;
                         }
-                    }
-                    if (e.message && e.message.includes('SimulateInfiniteLoop')) {
-                        return;
                     }
                     handleError(e, "Execution");
                 }
@@ -171,7 +203,9 @@ function checkFSForResults() {
 
     try {
         const files = FS.readdir('/results');
-        const resultPattern = /res-.*\.wd\.asc$/; // Focus on Water Depth for now
+        sendLog(`[Result Check] Files in /results: ${files.join(', ')}`);
+
+        const resultPattern = /^res-\d+\.wd$/; // LISFLOOD writes res-0000.wd, res-0001.wd, etc.
 
         for (const file of files) {
             if (file === '.' || file === '..') continue;
