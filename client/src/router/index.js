@@ -71,6 +71,12 @@ const router = createRouter({
       meta: { layout: 'public' }
     },
     {
+      path: '/tools/flood-2d/viewer',
+      name: 'Flood2DViewer',
+      component: () => import('@/features/flood-2D/views/ResultViewerMain.vue'),
+      meta: { layout: 'empty' }
+    },
+    {
       path: '/isyscan',
       name: 'isyscan-poc',
       component: () => import('@/features/isyscan/views/IsyScanView.vue'),

@@ -124,7 +124,7 @@
                     <!-- Areas Bulk Edit -->
                      <template v-if="activeTab === 'areas'">
                         <div class="bulk-field">
-                            <label>Abflussbeiwert (0.0 - 1.0):</label>
+                            <label>Versiegelungsgrad (0.0 - 1.0):</label>
                             <input type="number" v-model.number="bulkForm.runoffCoeff" step="0.1" placeholder="Unverändert" class="bulk-input">
                         </div>
                     </template>
@@ -469,7 +469,7 @@
                       <th class="col-checkbox sticky-left-1"><input type="checkbox" @change="toggleSelectAll($event, filteredAreas)"></th>
                       <th class="col-id sticky-left-2">ID</th>
                       <th>Fläche (ha)</th>
-                      <th>Abflussbeiwert</th>
+                      <th>Versiegelungsgrad (0-1)</th>
                       <th>Funktion (Horton)</th>
                       <th>Anschluss 1</th>
                       <th>Anschluss 2 / Split (%)</th>

@@ -131,25 +131,31 @@ self.onmessage = async (e) => {
             // No setInterval polling because JS thread is blocked!
             sendLog("Starting Lisflood Solver...");
 
-            // DEBUG: Inspect MEMFS Correctness
+            // Read all input files from MEMFS and send to main thread for inspection
             try {
                 const rootFiles = FS.readdir('/');
                 sendLog(`MEMFS Root: ${rootFiles.join(', ')}`);
 
-                if (rootFiles.includes('run.par')) {
-                    const parContent = FS.readFile('/run.par', { encoding: 'utf8' });
-                    sendLog(`📄 run.par Content:\n${parContent}`);
-                } else {
-                    sendLog("❌ CRITICAL: run.par MISSING in MEMFS!");
+                const inputFileNames = ['run.par', 'terrain.asc', 'friction.asc', 'flow.bci', 'profiles.bdy', 'rain.txt'];
+                const inputFiles = {};
+
+                for (const fname of inputFileNames) {
+                    if (rootFiles.includes(fname)) {
+                        try {
+                            const content = FS.readFile('/' + fname, { encoding: 'utf8' });
+                            inputFiles[fname] = content;
+                            sendLog(`📄 ${fname} (${content.length} bytes)`);
+                        } catch (readErr) {
+                            sendLog(`⚠️ Could not read ${fname}: ${readErr.message}`);
+                        }
+                    }
                 }
 
-                if (rootFiles.includes('terrain.asc')) {
-                    // Check first 100 bytes
-                    const gridHead = FS.readFile('/terrain.asc', { encoding: 'utf8' }).substring(0, 100);
-                    sendLog(`📄 terrain.asc Head:\n${gridHead}...`);
-                }
+                // Send input files to main thread
+                postMessage({ type: 'INPUT_FILES', files: inputFiles });
+
             } catch (e) {
-                sendLog(`❌ Error inspecting MEMFS: ${e.message}`);
+                sendLog(`❌ Error reading input files: ${e.message}`);
             }
 
             setTimeout(() => {

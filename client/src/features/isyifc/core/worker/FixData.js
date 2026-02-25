@@ -81,10 +81,24 @@ export const normalizeGraph = (workerData) => {
             },
             attributes: {
                 material: n.meta.material,
+                materialBoden: n.meta.materialBoden,
                 year: n.meta.baujahr,
                 subType: n.meta.subType || n.meta.kennung,
                 status: n.meta.Status,
-                systemType: n.meta.kanalart || SystemType.Mischwasser
+                systemType: n.meta.kanalart || SystemType.Mischwasser,
+                // G301 SchachtFunktion
+                schachtFunktion: n.meta.schachtFunktion,
+                // Deckel (G302-G304)
+                deckelForm: n.meta.deckelForm,
+                deckelMaterial: n.meta.deckelMaterial,
+                deckelLaenge: n.meta.deckelLaenge,
+                deckelBreite: n.meta.deckelBreite,
+                abdeckungsklasse: n.meta.abdeckungsklasse,
+                // Boolean
+                steighilfen: n.meta.steighilfen,
+                // G106/G107
+                lage: n.meta.lage,
+                abwasserart: n.meta.abwasserart
             },
             // RAW DATA for IFC Export (Geo-Reference restoration)
             data: {
@@ -139,7 +153,15 @@ export const normalizeGraph = (workerData) => {
                 material: e.meta.material,
                 status: e.meta.Status,
                 systemType: e.meta.kanalart || SystemType.Mischwasser,
-                year: e.meta.baujahr
+                year: e.meta.baujahr,
+                // Extended
+                aussenDurchmesser: e.meta.aussenDurchmesser,
+                sdrKlasse: e.meta.sdrKlasse,
+                auflagerart: e.meta.auflagerart,
+                innenschutz: e.meta.innenschutz,
+                auskleidung: e.meta.auskleidung,
+                lage: e.meta.lage,
+                abwasserart: e.meta.abwasserart
             },
             sohleZulauf: e.meta.sohleZulauf,
             sohleAblauf: e.meta.sohleAblauf,

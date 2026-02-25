@@ -21,6 +21,49 @@
     </div>
 
     <div v-if="hasData" class="actions" style="border-top: 1px solid #ddd; padding-top: 10px;">
+      
+      <!-- ISYBAU Metadata Panel -->
+      <IfcMetadataPanel />
+
+      <!-- IFC Export Options -->
+      <div class="export-options">
+        <label class="option-label">
+          Export-Modus
+          <select v-model="selectedExportMode" class="option-select">
+            <option value="standard">Standard IFC4</option>
+            <option value="card1">CARD/1 Kompatibel</option>
+          </select>
+        </label>
+        <template v-if="selectedExportMode === 'standard'">
+          <label class="option-label">
+            MVD (ViewDefinition)
+            <select v-model="selectedMvd" class="option-select">
+              <option value="ReferenceView">ReferenceView</option>
+              <option value="CoordinationView">CoordinationView</option>
+              <option value="DesignTransferView">DesignTransferView</option>
+            </select>
+          </label>
+          <label class="option-label">
+            Geometrie
+            <select v-model="selectedGeometry" class="option-select">
+              <option value="SweptSolid">SweptSolid (Parametrisch)</option>
+              <option value="Tessellation">TriangulatedFaceSet (Mesh)</option>
+            </select>
+          </label>
+        </template>
+        <div v-else class="card1-hint">
+          ⚠️ CARD/1: IfcBuildingElementProxy + Tessellation
+        </div>
+        <label class="option-label">
+          Koordinaten
+          <select v-model="selectedCoordMode" class="option-select">
+            <option value="relative">Relativ (Lokal, empfohlen)</option>
+            <option value="absolute">Echte Koordinaten (CAD)</option>
+            <option value="georef">Geo-Referenziert (IfcMapConversion)</option>
+          </select>
+        </label>
+      </div>
+
       <button @click="exportIfc" class="export-btn">💾 IFC Export (Beta)</button>
       <!-- Slot for Simulation Controls or other panels -->
       <slot></slot>
@@ -29,9 +72,10 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useIsyIfcStore } from '../../store/index.js';
 import IsyIfcDataPanel from './IsyIfcDataPanel.vue';
+import IfcMetadataPanel from './IfcMetadataPanel.vue';
 
 const props = defineProps({
   width: {
@@ -44,6 +88,12 @@ const store = useIsyIfcStore();
 // Adapt to new Store structure (graph.nodes is Map)
 const hasData = computed(() => store.graph && store.graph.nodes && store.graph.nodes.size > 0);
 const inspectionsCount = computed(() => store.inspections ? store.inspections.length : 0);
+
+// Export Options
+const selectedExportMode = ref('standard');
+const selectedMvd = ref('ReferenceView');
+const selectedGeometry = ref('SweptSolid');
+const selectedCoordMode = ref('relative');
 
 const handleFileUpload = async (event) => {
   const file = event.target.files[0];
@@ -68,15 +118,39 @@ const exportIfc = async () => {
     if (!hasData.value) return;
     
     try {
-        const { IsybauToIfc } = await import('../../core/export/IfcWriter.js');
-        const writer = new IsybauToIfc(store.graph.nodes, store.graph.edges);
-        const ifcData = writer.generate();
+        let ifcData;
+
+        const coordOpts = {
+            coordMode: selectedCoordMode.value,
+            worldOrigin: store.origin || { x: 0, y: 0, z: 0 }
+        };
+
+        if (selectedExportMode.value === 'card1') {
+            // CARD/1 compatible export
+            const { IsybauToIfcCard1 } = await import('../../core/export/IfcWriterCard1.js');
+            const writer = new IsybauToIfcCard1(
+                store.graph.nodes, store.graph.edges, store.origin,
+                { ifcMetadata: { ...store.ifcMetadata }, ...coordOpts }
+            );
+            ifcData = writer.generate();
+        } else {
+            // Standard IFC4 export
+            const { IsybauToIfc } = await import('../../core/export/IfcWriter.js');
+            const writer = new IsybauToIfc(store.graph.nodes, store.graph.edges, store.origin, {
+                mvd: selectedMvd.value,
+                geometryType: selectedGeometry.value,
+                ifcMetadata: { ...store.ifcMetadata },
+                ...coordOpts
+            });
+            ifcData = writer.generate();
+        }
         
         const blob = new Blob([ifcData], { type: 'application/x-step' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const fname = (store.metadata.fileName || 'isotest').replace('.xml', '') + '_' + new Date().toISOString().split('T')[0] + '.ifc';
+        const suffix = selectedExportMode.value === 'card1' ? '_CARD1' : '';
+        const fname = (store.metadata.fileName || 'isotest').replace('.xml', '') + suffix + '_' + new Date().toISOString().split('T')[0] + '.ifc';
         a.download = fname;
         a.click();
         URL.revokeObjectURL(url);
@@ -158,6 +232,41 @@ const exportIfc = async () => {
     border: 1px solid #eee;
     border-radius: 4px;
 }
+
+/* Export Options */
+.export-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding: 8px;
+    background: #f5f7fa;
+    border: 1px solid #e1e5ea;
+    border-radius: 6px;
+}
+.option-label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #555;
+    gap: 3px;
+}
+.option-select {
+    padding: 5px 8px;
+    border: 1px solid #ccd0d5;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+}
+.option-select:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+}
+
 .export-btn {
     width: 100%;
     padding: 10px;
@@ -171,5 +280,15 @@ const exportIfc = async () => {
 }
 .export-btn:hover {
     background-color: #2980b9;
+}
+
+.card1-hint {
+    font-size: 0.75rem;
+    color: #856404;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 6px 8px;
+    line-height: 1.4;
 }
 </style>

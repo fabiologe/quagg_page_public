@@ -619,12 +619,9 @@ const buildTerrainMesh = (result) => {
     const { ncols, nrows, gridData, minZ, maxZ, bounds } = result;
     const geometry = new THREE.PlaneGeometry(bounds.width, bounds.height, ncols - 1, nrows - 1);
     const count = geometry.attributes.position.count;
-    
-    // Shader Mesh Construction
-    // Re-using the logic from Step 20
-    // Shader Mesh Construction
-    // Re-using the logic from Step 20
-    // (Removed duplicate MeshPhongMaterial declaration)
+
+    // Per-vertex validity flag: 1.0 = real data, 0.0 = NODATA
+    const validArray = new Float32Array(count);
     
     for (let i = 0; i < count; i++) {
         const col = i % ncols;
@@ -632,19 +629,28 @@ const buildTerrainMesh = (result) => {
         const gridRow = (nrows - 1) - geomRow; 
         const idx = gridRow * ncols + col;
         let zVal = minZ;
+        let valid = 0.0;
         if (idx >= 0 && idx < gridData.length) {
              const val = gridData[idx];
-             if (val > -9000) zVal = val;
+             if (val > -9000) {
+                 zVal = val;
+                 valid = 1.0;
+             }
         }
-        geometry.attributes.position.setZ(i, (zVal - minZ)); 
+        geometry.attributes.position.setZ(i, (zVal - minZ));
+        validArray[i] = valid;
     }
+    geometry.setAttribute('aValid', new THREE.BufferAttribute(validArray, 1));
     geometry.computeVertexNormals();
 
     const vertexShader = `
+      attribute float aValid;
       varying float vZ;
+      varying float vValid;
       varying vec2 vPlanePos;
       void main() {
         vZ = position.z; 
+        vValid = aValid;
         vPlanePos = position.xy; 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
@@ -652,6 +658,7 @@ const buildTerrainMesh = (result) => {
 
     const fragmentShader = `
       varying float vZ;
+      varying float vValid;
       varying vec2 vPlanePos;
       uniform float uMinZ;
       uniform float uMaxZ;
@@ -663,6 +670,9 @@ const buildTerrainMesh = (result) => {
       uniform float uCellSize;
 
       void main() {
+        // Discard NODATA cells
+        if (vValid < 0.5) discard;
+
         float range = uMaxZ - uMinZ;
         if(range < 0.1) range = 1.0;
         float h = vZ / range; 
@@ -730,7 +740,11 @@ const buildTerrainMesh = (result) => {
     controls.update();
 };
 
-// --- LOGIC: WATER VISUALIZATION ---
+// --- WATER VISUALIZATION DISABLED ---
+// Result frames are displayed in the dedicated popup Result Viewer (ResultMap3D.vue).
+// Keeping editor free of simulation result rendering to avoid confusion.
+// To re-enable: uncomment the watcher + updateWaterLayer below.
+/*
 let waterMesh;
 
 watch(() => simStore.currentFrameIndex, (newIndex) => {
@@ -740,109 +754,10 @@ watch(() => simStore.currentFrameIndex, (newIndex) => {
             updateWaterLayer(data, parsedData.value);
         }
     } else {
-        // Clear water if reset
         if (waterMesh) waterMesh.visible = false;
     }
 });
-
-const updateWaterLayer = (depthData, gridInfo) => {
-    if (!depthData) return;
-    const { ncols, nrows, minZ, maxZ, bounds } = gridInfo;
-
-    // 1. Create Texture from Depth Data
-    // Float32Array -> DataTexture
-    const texture = new THREE.DataTexture(depthData, ncols, nrows, THREE.RedFormat, THREE.FloatType);
-    texture.flipY = true; // Important because Loop order matches texture UV but we might need flip depending on shader
-    // Actually LISFLOOD ASC usually starts topl-left? 
-    // DataTexture expects bottom-left? We might need to handle orientation.
-    // Our parser `OutputProcessor` reads sequentially. 
-    // If standard ASC is Row-Major (Top-Down), and Texture is Bottom-Up, we need flipY = true? 
-    // Let's try default first, usually we need to align.
-    texture.needsUpdate = true;
-
-    // 2. Create/Update Mesh
-    if (!waterMesh) {
-        // Same geometry as terrain for vertex matching
-        const geometry = terrainMesh.geometry.clone();
-        
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                uDepthMap: { value: texture },
-                uMinZ: { value: minZ },
-                uMaxZ: { value: maxZ }, // Relative height
-                // Colors: Cyan (Shallow) -> Deep Blue (Deep)
-                uColorShallow: { value: new THREE.Color(0x00FFFF) },
-                uColorDeep: { value: new THREE.Color(0x00008B) }, 
-                uOpacity: { value: 0.85 }
-            },
-            vertexShader: `
-                varying float vDepth;
-                uniform sampler2D uDepthMap;
-                
-                void main() {
-                   // UV Mapping
-                   vec2 uv = uv; 
-                   // Read depth
-                   float d = texture2D(uDepthMap, uv).r;
-                   vDepth = d;
-
-                   vec3 pos = position;
-                   
-                   // Dynamic Offset for Z-Fighting
-                   // If depth > 0.01: Lift by d + offset
-                   // Visual polish: For very shallow water, we still need enough lift 
-                   // to avoid z-fighting with terrain noise.
-                   
-                   if (d > 0.01) {
-                       pos.z += d; 
-                       // Lift slightly above terrain to prevent stitching artifacts
-                       pos.z += 0.15; 
-                   } else {
-                       pos.z = -1000.0; // Hide
-                   }
-
-                   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-                }
-            `,
-            fragmentShader: `
-                varying float vDepth;
-                uniform vec3 uColorShallow;
-                uniform vec3 uColorDeep;
-                uniform float uOpacity;
-
-                void main() {
-                    if (vDepth < 0.01) discard;
-                    
-                    // Depth Coloring
-                    // 0.0m -> Shallow Color
-                    // 2.0m -> Deep Color
-                    float t = clamp(vDepth / 2.0, 0.0, 1.0);
-                    vec3 col = mix(uColorShallow, uColorDeep, t);
-                    
-                    // Alpha Logic
-                    // Shallow = more transparent (0.6)
-                    // Deep = more opaque (0.9)
-                    float alpha = mix(0.5, 0.9, t);
-                    
-                    gl_FragColor = vec4(col, alpha);
-                }
-            `,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-
-        waterMesh = new THREE.Mesh(geometry, material);
-        waterMesh.userData.isWater = true; // Tag
-        waterMesh.rotation.x = -Math.PI / 2;
-        scene.add(waterMesh);
-    } else {
-        // Update Texture
-        const mat = waterMesh.material;
-        if (mat.uniforms.uDepthMap.value) mat.uniforms.uDepthMap.value.dispose();
-        mat.uniforms.uDepthMap.value = texture;
-        waterMesh.visible = true;
-    }
-};
+*/
 
 defineExpose({ 
     setCameraView,

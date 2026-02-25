@@ -181,8 +181,9 @@ const goToProfileManager = () => {
       <!-- CONSTANT CONFIG -->
       <div v-if="activeType === 'INFLOW_CONSTANT'" class="constant-config">
           <div class="form-group">
-              <label>Wert (m³/s)</label>
+              <label>Gesamtzufluss Q (m³/s)</label>
               <input type="number" v-model.number="constantValue" @change="saveSettings" step="0.1" class="value-input">
+              <small class="hint-info">Wird automatisch auf alle Randzellen aufgeteilt.</small>
           </div>
       </div>
 
@@ -235,6 +236,7 @@ const goToProfileManager = () => {
     background: rgba(52, 152, 219, 0.1); border-left: 3px solid #3498db; padding: 10px; font-size: 0.9rem;
 }
 .hint-warn { color: #f39c12; font-size: 0.9rem; margin-top: 5px; }
+.hint-info { color: #7f8c8d; font-size: 0.8rem; margin-top: 3px; display: block; }
 </style>
 
 

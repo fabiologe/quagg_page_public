@@ -18,6 +18,19 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
         selectedObjectId: null,
         metadata: {},
 
+        // IFC Export Metadaten (ISYBAU M100-M108)
+        ifcMetadata: {
+            datenstatus: '1',         // M100: 1=Bestandsdaten, 2=Erfassung, 3-7=Planung, 8=Sonstiger
+            kollektivart: '1',        // M101: 1=Stamm, 2=Zustand, 3=Hydraulik
+            stammdatentyp: '1',       // M102: 1=Bautechnischer Bestand, 2=Hydraulisches Ersatzsystem
+            zustaendigkeit: '2',      // M103: 1=Bund milit., 2=Bund zivil, 4=Land, 5=Fremdstreitkräfte
+            regelwerk: '7',           // M104: 6=ISYBAU 2017, 7=BFR Abwasser 2024
+            abwasserbeseitigungspflicht: '1', // M105: 1=Betreiber, 2=Kommune
+            ordnungseinheitentyp: '3', // M106: 1=Liegenschaft, 2=Wirtschaftseinheit, 3=Entwässerungsnetz
+            praesentationsdatentyp: 'Lageplan Bestand', // M108
+            ersteller: 'quagg-engineering.org' // Quelle
+        },
+
         // Stats
         stats: {
             nodes: 0,
@@ -128,6 +141,12 @@ export const useIsyIfcStore = defineStore('isyifc-module', {
 
         clearSelection() {
             this.selectedObjectId = null;
+        },
+
+        updateIfcMetadata(key, value) {
+            if (key in this.ifcMetadata) {
+                this.ifcMetadata[key] = value;
+            }
         }
     }
 });

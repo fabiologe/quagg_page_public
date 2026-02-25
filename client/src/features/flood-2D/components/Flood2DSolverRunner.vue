@@ -1,6 +1,38 @@
 <template>
   <div class="flood-solver-container">
     <h2>🌊 2D Flood Simulation (WASM)</h2>
+
+    <!-- SIMULATION PARAMETERS -->
+    <div class="sim-params">
+      <h3>⚙️ Parameter</h3>
+      <div class="param-grid">
+
+        <label>Simulationsdauer (s)</label>
+        <input type="number" v-model.number="simStore.simDuration" min="60" step="60" />
+
+        <label>Zeitschritt Δt (s)</label>
+        <input type="number" v-model.number="simStore.timeStep" min="0.01" max="10" step="0.1" />
+
+        <label>Ausgabeintervall (s)</label>
+        <input type="number" v-model.number="simStore.saveInterval" min="1" step="10" />
+
+        <label>Massenbalanz-Int. (s)</label>
+        <input type="number" v-model.number="simStore.massInterval" min="1" step="10" />
+
+        <label>Acceleration Solver</label>
+        <div class="toggle-row">
+          <input type="checkbox" id="accel-toggle" v-model="simStore.useAcceleration" />
+          <label for="accel-toggle" class="toggle-label">
+            {{ simStore.useAcceleration ? 'Aktiv (Instabil?)' : 'Aus (Stabil)' }}
+          </label>
+        </div>
+
+      </div>
+      <p class="param-hint">
+        📊 {{ estimatedFrames }} Frames · 
+        {{ (simStore.simDuration / 60).toFixed(0) }} min Laufzeit
+      </p>
+    </div>
     
     <div class="controls">
       <button v-if="!isRunning" @click="runSimulation" class="run-btn">
@@ -10,8 +42,18 @@
         🛑 Stop Simulation
       </button>
 
-      <button @click="runDryCheck" class="dry-run-btn" title="Check Inputs without running solver">
-          🔍 Dry Run (Check Inputs)
+      <button @click="showInspector = !showInspector" class="dry-run-btn" type="button">
+          {{ showInspector ? '✕ Raw Viewer schließen' : '📋 Raw Viewer' }}
+      </button>
+
+      <button 
+        v-if="geoStore.terrain || simStore.totalFrameCount > 0" 
+        @click.prevent="openViewer" 
+        type="button"
+        class="viewer-btn"
+        title="3D Ergebnis-Viewer öffnen"
+      >
+        🗺️ 3D Viewer
       </button>
       
       <div v-if="status" class="status-indicator">
@@ -24,25 +66,12 @@
       <pre ref="logContainer">{{ logs }}</pre>
     </div>
 
-    <div v-if="Object.keys(resultFiles).length > 0" class="results-container">
-      <div class="results-header">
-        <h3>Output Files:</h3>
-        <div class="zip-controls">
-            <button v-if="!zipUrl" @click="prepareZip" class="prepare-btn" :disabled="isZipping">
-                {{ isZipping ? '⏳ Zipping...' : '📦 Prepare ZIP' }}
-            </button>
-            <a v-else :href="zipUrl" download="simulation_results.zip" class="save-zip-btn">
-                💾 Save ZIP
-            </a>
-        </div>
-      </div>
-      <div class="file-list">
-        <div v-for="(content, name) in resultFiles" :key="name" class="file-item">
-            <span>📄 {{ name }}</span>
-            <button @click="downloadFile(name, content)" class="download-btn">⬇️ Download</button>
-        </div>
-      </div>
-    </div>
+    <ResultInspector
+      v-if="showInspector"
+      :inputFiles="inputFiles"
+      :outputFiles="resultFiles"
+      @prepareZip="prepareZip"
+    />
   </div>
 </template>
 
@@ -55,19 +84,31 @@ import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore.
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore.js';
 import { InputGenerator } from '@/features/flood-2D/middleware/InputGenerator.js';
 import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
+import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
+import ResultInspector from '@/features/flood-2D/components/viewer/ResultInspector.vue';
 
 // Stores
 const geoStore = useGeoStore();
 const hydStore = useHydraulicStore();
 const simStore = useSimulationStore();
 
+
+
 // State
 const isRunning = ref(false);
 const logs = ref('');
 const resultFiles = ref({});
+const inputFiles = ref({});
+const showInspector = ref(false);
 const zipUrl = ref(null);
 const isZipping = ref(false);
 const generator = new InputGenerator();
+
+const estimatedFrames = computed(() => {
+    const dur = simStore.simDuration || 3600;
+    const save = simStore.saveInterval || 60;
+    return Math.floor(dur / save);
+});
 let worker = null;
 
 // Derived State from SimStore for UI
@@ -203,10 +244,13 @@ const runSimulation = async () => {
                     case 'WARNING':
                         appendLog(`[WARNING] ${message || text}`);
                         if (message && message.includes('Instability')) {
-                            // Non-blocking notification or toast would be better, but log is fine for now
-                            // Maybe pause?
                             simStore.addLog(`⚠️ INSTABILITY DETECTED: ${message}`);
                         }
+                        break;
+
+                    case 'INPUT_FILES':
+                        inputFiles.value = e.data.files || {};
+                        appendLog(`[INPUT] ${Object.keys(inputFiles.value).length} Input-Dateien empfangen`);
                         break;
 
                     case 'RESULT':
@@ -215,8 +259,8 @@ const runSimulation = async () => {
                              const ascContent = Rasterizer.gridToASC(payload, header);
                              resultFiles.value[frameName] = ascContent;
                              
-                             // 5. Store for Visualization (DISABLED per User Request)
-                             // simStore.addResultFrame(frame, payload, header);
+                             // Store for Visualization (re-enabled for Result Viewer)
+                             simStore.addResultFrame(frame, payload, header, e.data.min, e.data.max);
 
                              appendLog(`[RESULT] Received Frame ${frame}`);
                          } catch (err) {
@@ -260,6 +304,17 @@ const abortSimulation = () => {
     simStore.setStatus('ABORTED');
     simStore.rows = []; // Clear current run data? Optional.
     appendLog("⛔ Simulation Aborted by User.");
+};
+
+const openViewer = async () => {
+    // Store data in IndexedDB BEFORE opening popup
+    const bciContent = inputFiles.value && inputFiles.value['flow.bci'] ? inputFiles.value['flow.bci'] : null;
+    const ready = await prepareResultData(simStore, geoStore, bciContent);
+    if (!ready) {
+        alert('Keine Terrain-Daten vorhanden!');
+        return;
+    }
+    window.open('/tools/flood-2d/viewer', 'FloodViewer', 'width=1400,height=900');
 };
 
 
@@ -353,11 +408,14 @@ const startPreparation = async () => {
              assignments: toRaw(hydStore.assignments),
              ganglinien: toRaw(hydStore.ganglinien),
              globalRoughness: hydStore.globalRoughness,
-             config: {
-                 sim_time: simStore.simDuration || 3600,
-                 initial_tstep: simStore.timeStep || 1.0
-             }
-         };
+              config: {
+                  sim_time: String(simStore.simDuration || 3600) + '.0',
+                  initial_tstep: String(simStore.timeStep || 1.0),
+                  saveint: String(simStore.saveInterval || 60) + '.0',
+                  massint: String(simStore.massInterval || 60) + '.0',
+                  ...(simStore.useAcceleration ? { acceleration: '' } : {})
+              }
+          };
 
          // 2. Send to Worker (DELEGATED GENERATION)
          // We send the raw scenario data, and the worker runs InputGenerator internally.
@@ -459,6 +517,74 @@ onUnmounted(() => {
     background: #e0e0e0;
     color: #333;
     border-color: #999;
+}
+
+.viewer-btn {
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #0078d7, #00bcd4);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 600;
+}
+.viewer-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 120, 215, 0.35);
+}
+
+/* Simulation Parameters */
+.sim-params {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+.sim-params h3 {
+    margin: 0 0 0.75rem;
+    font-size: 0.95rem;
+    color: #2c3e50;
+}
+.param-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 1rem;
+    align-items: center;
+}
+.param-grid label {
+    font-size: 0.82rem;
+    color: #555;
+    white-space: nowrap;
+}
+.param-grid input[type='number'] {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+.param-grid input[type='number']:focus {
+    border-color: #3498db;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+}
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.toggle-label {
+    font-size: 0.8rem;
+    color: #666;
+}
+.param-hint {
+    margin: 0.75rem 0 0;
+    font-size: 0.78rem;
+    color: #7f8c8d;
 }
 
 .status-indicator {

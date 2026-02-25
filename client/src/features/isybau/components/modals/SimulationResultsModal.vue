@@ -2,12 +2,17 @@
   <DraggableModal
     :isOpen="isOpen"
     @close="close"
-    title="Simulationsergebnisse (Hydraulik)"
-    :initialWidth="1000"
-    :initialHeight="800"
+    initialWidth="1000"
+    initialHeight="800"
   >
     <div class="simulation-results-content">
       
+      <!-- New Header with Close Button -->
+      <div class="modal-header">
+          <h2>Simulationsergebnisse (Hydraulik)</h2>
+          <button class="close-btn" @click="close" title="Schließen">✕</button>
+      </div>
+
       <!-- Top Navigation Tabs (Modern Pill Design) -->
       <div class="tabs-nav">
         <button 
@@ -17,7 +22,7 @@
           :class="{ active: activeTab === tab.id }"
           @click="activeTab = tab.id"
         >
-          {{ tab.label }}
+          {{ tab.id === 'areas' ? 'Teilflächen' : tab.label }}
         </button>
       </div>
 
@@ -75,12 +80,12 @@
                 <div class="panel">
                     <h3>⚙️ Simulations-Parameter</h3>
                     <table class="simple-table">
-                        <tr><td>Flow Units:</td><td>{{ systemStats.analysisOptions?.flowUnits }}</td></tr>
+                        <tr><td>Einheiten:</td><td>{{ systemStats.analysisOptions?.flowUnits }}</td></tr>
                         <tr><td>Infiltration:</td><td>{{ systemStats.analysisOptions?.infiltrationMethod }}</td></tr>
-                        <tr><td>Routing Method:</td><td>{{ systemStats.analysisOptions?.flowRoutingMethod }}</td></tr>
-                        <tr><td>Start Date:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
-                        <tr><td>End Date:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
-                        <tr><td>Routing Step:</td><td>{{ systemStats.analysisOptions?.routingTimeStep }}</td></tr>
+                        <tr><td>Berechnungsverfahren:</td><td>{{ systemStats.analysisOptions?.flowRoutingMethod }}</td></tr>
+                        <tr><td>Startdatum:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
+                        <tr><td>Enddatum:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
+                        <tr><td>Zeitschritt:</td><td>{{ systemStats.analysisOptions?.routingTimeStep }}</td></tr>
                     </table>
                 </div>
 
@@ -88,12 +93,12 @@
                 <div class="panel">
                     <h3>⚖️ Massenbilanz (Flow Routing)</h3>
                     <table class="simple-table">
-                        <tr><td>Dry Weather Inflow:</td><td>{{ formatVolume((systemStats.flow?.dryWeatherInflow||0)*1000) }} m³</td></tr>
-                        <tr><td>Wet Weather Inflow:</td><td>{{ formatVolume((systemStats.flow?.wetWeatherInflow||0)*1000) }} m³</td></tr>
-                        <tr><td>Groundwater Inflow:</td><td>{{ formatVolume((systemStats.flow?.groundwaterInflow||0)*1000) }} m³</td></tr>
-                        <tr><td>Flooding Loss:</td><td>{{ formatVolume((systemStats.flow?.floodingLoss||0)*1000) }} m³</td></tr>
-                        <tr><td>Internal Outflow:</td><td>{{ formatVolume((systemStats.flow?.externalOutflow||0)*1000) }} m³</td></tr>
-                        <tr class="highlight-row"><td><strong>Continuity Error:</strong></td><td><strong :class="{'text-red': Math.abs(systemStats.flow?.error) > 2}">{{ systemStats.flow?.error?.toFixed(2) }} %</strong></td></tr>
+                        <tr><td>Trockenwetterzufluss:</td><td>{{ formatVolume((systemStats.flow?.dryWeatherInflow||0)*1000) }} m³</td></tr>
+                        <tr><td>Regenwetterzufluss:</td><td>{{ formatVolume((systemStats.flow?.wetWeatherInflow||0)*1000) }} m³</td></tr>
+                        <tr><td>Grundwasserzufluss:</td><td>{{ formatVolume((systemStats.flow?.groundwaterInflow||0)*1000) }} m³</td></tr>
+                        <tr><td>Überflutungsverlust:</td><td>{{ formatVolume((systemStats.flow?.floodingLoss||0)*1000) }} m³</td></tr>
+                        <tr><td>Interner Abfluss:</td><td>{{ formatVolume((systemStats.flow?.externalOutflow||0)*1000) }} m³</td></tr>
+                        <tr class="highlight-row"><td><strong>Kontinuitätsfehler:</strong></td><td><strong :class="{'text-red': Math.abs(systemStats.flow?.error) > 2}">{{ systemStats.flow?.error?.toFixed(2) }} %</strong></td></tr>
                     </table>
                 </div>
                 
@@ -101,14 +106,14 @@
                 <div class="panel warning-panel" v-if="hasStabilityIssues">
                     <h3>⚠️ Stabilitätsbericht</h3>
                     <div class="detail-row">
-                        <span>Min Time Step:</span> <strong>{{ systemStats.routingTimeStep?.min?.toFixed(4) }} s</strong>
+                        <span>Min. Zeitschritt:</span> <strong>{{ systemStats.routingTimeStep?.min?.toFixed(4) }} s</strong>
                     </div>
                     <div class="detail-row">
-                        <span>Not Converging:</span> <strong :class="{'text-red': (systemStats.routingTimeStep?.notConverging || 0) > 0}">{{ systemStats.routingTimeStep?.notConverging?.toFixed(2) }} %</strong>
+                        <span>Nicht konvergierend:</span> <strong :class="{'text-red': (systemStats.routingTimeStep?.notConverging || 0) > 0}">{{ systemStats.routingTimeStep?.notConverging?.toFixed(2) }} %</strong>
                     </div>
                     
                     <div v-if="systemStats?.nonConvergingNodes?.length" class="mt-2">
-                        <strong>Kritische Knoten (Non-Converging):</strong>
+                        <strong>Kritische Knoten (Nicht konvergierend):</strong>
                         <ul class="mini-list">
                             <li v-for="node in systemStats.nonConvergingNodes.slice(0, 3)" :key="node.id">
                                 {{ node.id }} ({{ node.value }}%)
@@ -124,8 +129,8 @@
                         <thead>
                             <tr>
                                 <th>ID</th>
-                                <th>Freq (%)</th>
-                                <th>Avg (L/s)</th>
+                                <th>Häufigkeit (%)</th>
+                                <th>Mittel (L/s)</th>
                                 <th>Max (L/s)</th>
                                 <th>Vol (m³)</th>
                             </tr>
@@ -159,7 +164,7 @@
                                 <th>ID</th>
                                 <th>Nutzung (%)</th>
                                 <th>Starts</th>
-                                <th>Max Flow (L/s)</th>
+                                <th>Max. Fluss (L/s)</th>
                                 <th>Energie (kWh)</th>
                             </tr>
                         </thead>
@@ -188,29 +193,33 @@
                         <tr @click="sortEdges">
                             <th @click="sortBy='id'">ID</th>
                             <th>Typ</th>
-                            <th @click="sortBy='maxFlow'">Qmax (L/s)</th>
-                            <th @click="sortBy='capacity'">Kapazität (L/s)</th>
-                            <th @click="sortBy='ratio'">Auslastung (Flow)</th>
-                            <th @click="sortBy='depth'">Füllgrad (h/H)</th>
+                            <th @click="sortBy='maxFlow'" title="Max. Durchfluss (Betrag)">Max. Durchfluss (l/s)</th>
+                            <th @click="sortBy='capacity'">Kapazität (l/s)</th>
+                            <th @click="sortBy='ratio'" title="Max. Auslastungsgrad (Q/Qvoll)">Max. Auslastung</th>
+                            <th @click="sortBy='depth'" title="Max. Füllungsgrad (h/hvoll)">Max. Füllung</th>
+                            <th @click="sortBy='maxVelocity'" title="Max. Fließgeschwindigkeit (Betrag)">Max. v (m/s)</th>
+                            <th>t_max</th>
                             <th>Status</th>
                             <th>Aktion</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="edge in filteredEdges" :key="edge.id" :class="{'row-warning': (edge.flowCapacityRatio || 0) > 1.0}">
+                        <tr v-for="edge in filteredEdges" :key="edge.id" :class="{'row-danger': (edge.depthRatio || 0) > 0.9, 'row-warning': (edge.depthRatio || 0) > 0.7 && (edge.depthRatio || 0) <= 0.9}">
                             <td>{{ edge.id }}</td>
-                            <td>{{ edge.type || 'Conduit' }}</td>
-                            <td>{{ edge.maxFlow?.toFixed(1) }}</td>
-                            <td>{{ edge.capacity?.toFixed(1) }}</td>
+                            <td>{{ edge.type === 'Conduit' ? 'Kanal' : edge.type }}</td>
+                            <td>{{ edge.maxFlow?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</td>
+                            <td>{{ edge.capacity?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</td>
                             <td>
                                 <span :class="getRatioClass(edge.flowCapacityRatio)">
-                                    {{ edge.flowCapacityRatio?.toFixed(2) }}
+                                    {{ edge.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}
                                 </span>
                             </td>
                             <td>{{ edge.utilization?.toFixed(0) }} %</td>
+                            <td>{{ edge.maxVelocity?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}</td>
+                            <td>{{ edge.timeOfMaxFlow }}</td>
                             <td>
-                                <span v-if="(edge.surcharge?.hoursAboveFull || 0) > 0" class="badge badge-red">Surcharged</span>
-                                <span v-else-if="(edge.flowCapacityRatio || 0) > 1.0" class="badge badge-orange">Pressure</span>
+                                <span v-if="(edge.depthRatio || 0) > 0.9" class="badge badge-red">Überlastet</span>
+                                <span v-else-if="(edge.depthRatio || 0) > 0.7" class="badge badge-orange">Belastet</span>
                                 <span v-else class="badge badge-green">OK</span>
                             </td>
                             <td>
@@ -220,7 +229,7 @@
                     </tbody>
                 </table>
             </div>
-             <!-- Detail Panel Overlay for Edges -->
+            <!-- Detail Panel Overlay for Edges -->
              <div v-if="selectedEdgeId" class="detail-overlay">
                 <div class="detail-card">
                     <div class="detail-header">
@@ -230,24 +239,34 @@
                     <div class="detail-body">
                          <div class="engineer-inspector">
                             <div class="col">
-                                <strong>Raw SWMM Metrics</strong>
-                                <div>Max Flow: {{ edgeResults.get(selectedEdgeId)?.maxFlow?.toFixed(2) }} L/s</div>
-                                <div>Max Vel: {{ edgeResults.get(selectedEdgeId)?.maxVelocity?.toFixed(2) }} m/s</div>
-                                <div>Time of Max: <strong>{{ edgeResults.get(selectedEdgeId)?.timeOfMaxFlow || '-' }}</strong></div>
-                                <div>Flow Class: {{ getFlowClass(selectedEdgeId) }}</div>
+                                <strong>Hydraulik</strong>
+                                <div>Max. Durchfluss: {{ edgeResults.get(selectedEdgeId)?.maxFlow?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }} l/s</div>
+                                <div>Max. Fließgeschwindigkeit: {{ edgeResults.get(selectedEdgeId)?.maxVelocity?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }} m/s</div>
+                                <div>Zeitpunkt Max.: <strong>{{ edgeResults.get(selectedEdgeId)?.timeOfMaxFlow || '-' }}</strong></div>
+                                <div>Strömungsart: {{ getFlowClass(selectedEdgeId) }}</div>
                             </div>
                             <div class="col">
-                                <strong>Hydraulic Analysis</strong>
-                                <div>Capacity: {{ edgeResults.get(selectedEdgeId)?.capacity?.toFixed(2) }} L/s</div>
+                                <strong>Kapazität & Auslastung</strong>
+                                <div>Kapazität: {{ edgeResults.get(selectedEdgeId)?.capacity?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }} l/s</div>
+                                <div>Max. Auslastungsgrad (Q/Qvoll): {{ edgeResults.get(selectedEdgeId)?.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
+                                <div>Max. Füllungsgrad (h/hvoll): {{ (edgeResults.get(selectedEdgeId)?.depthRatio)?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
                                 <div v-if="(edgeResults.get(selectedEdgeId)?.flowCapacityRatio || 0) > 1.0" class="text-red">
-                                    ⚠️ System under pressure ({{ edgeResults.get(selectedEdgeId)?.flowCapacityRatio?.toFixed(2) }}x Cap)
+                                    ⚠️ System unter Druck
                                 </div>
                             </div>
                          </div>
+                         <div class="surcharge-info" v-if="edgeResults.get(selectedEdgeId)?.surcharge">
+                             <strong>Einstau-Diagnose</strong>
+                             <ul>
+                                 <li>Dauer Vollfüllung (beidseitig): {{ edgeResults.get(selectedEdgeId)?.surcharge?.hoursFullBoth?.toFixed(2) }} h</li>
+                                 <li>Dauer Vollfüllung (oben): {{ edgeResults.get(selectedEdgeId)?.surcharge?.hoursFullUp?.toFixed(2) }} h</li>
+                                 <li>Dauer Vollfüllung (unten): {{ edgeResults.get(selectedEdgeId)?.surcharge?.hoursFullDown?.toFixed(2) }} h</li>
+                                 <li>Dauer über Vollfüllung: {{ edgeResults.get(selectedEdgeId)?.surcharge?.hoursAboveFull?.toFixed(2) }} h</li>
+                             </ul>
+                         </div>
                          <div class="chart-box">
-                             <!-- Placeholder for Chart -->
                              <Line v-if="chartData" :data="chartData" :options="chartOptions" />
-                             <div v-else class="loading-chart">Lade Zeitreihe...</div>
+                             <div v-else class="loading-chart">Lade Diagramm...</div>
                          </div>
                     </div>
                 </div>
@@ -257,38 +276,6 @@
         <!-- === TAB: SCHÄCHTE (Nodes) === -->
         <div v-if="activeTab === 'nodes'" class="tab-pane">
             
-            <!-- SPECIAL: Storage Summary -->
-            <div v-if="systemStats?.storageSummary?.length > 0" class="panel mb-4">
-                 <h3>💧 Speicher & Rückhaltebecken</h3>
-                  <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Typ</th>
-                                <th>Avg Vol (m³)</th>
-                                <th>Max Vol (m³)</th>
-                                <th>Füllgrad Max (%)</th>
-                                <th>Max Outflow (L/s)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                             <tr v-for="st in systemStats.storageSummary" :key="st.id">
-                                <td>{{ st.id }}</td>
-                                <td>{{ st.type }}</td>
-                                <td>{{ (st.avgVol * 1000).toFixed(1) }}</td>
-                                <td>{{ (st.maxVol * 1000).toFixed(1) }}</td>
-                                <td>
-                                    <div class="progress-bar-bg">
-                                        <div class="progress-bar-fill" :style="{width: st.maxPcntFull + '%', background: st.maxPcntFull > 90 ? '#ef4444' : '#3b82f6'}"></div>
-                                    </div>
-                                    {{ st.maxPcntFull?.toFixed(1) }} %
-                                </td>
-                                <td>{{ (st.maxOutflow * 1000).toFixed(1) }}</td>
-                             </tr>
-                        </tbody>
-                  </table>
-            </div>
-
             <div class="toolbar">
                 <input v-model="searchQuery" placeholder="Suche Schacht..." class="search-input" />
                 <div class="filters">
@@ -302,26 +289,26 @@
                             <th>ID</th>
                             <th>Typ</th>
                             <th>Sohlhöhe (m)</th>
-                            <th>Max HGL (m)</th>
-                            <th>Max Tiefe (m)</th>
-                            <th>Überstau Vol (m³)</th>
-                            <th>Zeit (Max)</th>
+                            <th title="Max. Wassertiefe">Max. Wassertiefe (m)</th>
+                            <th title="Max. Einstautiefe (gemeldet)">Max. Einstau (m)</th>
+                            <th title="Gesamtvolumen der Überflutung">Überflutungsvolumen (m³)</th>
+                            <th title="Zeitpunkt des Maximums">t_max</th>
                             <th>Status</th>
                             <th>Aktion</th>
                         </tr>
                     </thead>
                     <tbody>
-                         <tr v-for="node in filteredNodes" :key="node.id" :class="{'row-danger': node.overflow}">
+                         <tr v-for="node in filteredNodes" :key="node.id" :class="{'row-danger': (node.floodingVolume || 0) > 0.001}">
                             <td>{{ node.id }}</td>
-                            <td>{{ node.type || 'Junction' }}</td>
+                            <td>{{ node.type === 'Junction' ? 'Schacht' : node.type }}</td>
                              <td>{{ nodes.get(node.id)?.z?.toFixed(2) }}</td>
-                            <td>{{ node.maxHGL?.toFixed(2) || '-' }}</td>
                             <td>{{ node.maxDepth?.toFixed(2) }}</td>
-                            <td>{{ (node.floodingVolume || 0).toFixed(3) }}</td>
+                            <td>{{ node.reportedMaxDepth?.toFixed(2) || '-' }}</td> 
+                            <td>{{ (node.floodingVolume || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
                              <td>{{ node.timeOfMaxDepth || '-' }}</td>
                             <td>
-                                <span v-if="node.overflow" class="badge badge-red">FLOODED</span>
-                                <span v-else-if="node.surcharged" class="badge badge-yellow">Surcharged</span>
+                                <span v-if="(node.floodingVolume || 0) > 0.001" class="badge badge-red">ÜBERFLUTET</span>
+                                <span v-else-if="node.surcharged" class="badge badge-yellow">Eingestaut</span>
                                 <span v-else class="badge badge-green">OK</span>
                             </td>
                              <td>
@@ -331,19 +318,40 @@
                     </tbody>
                 </table>
             </div>
-             <!-- Detail Panel Overlay for Nodes -->
-             <div v-if="selectedNodeId" class="detail-overlay">
+            
+            <!-- Node Details Overlay -->
+            <div v-if="selectedNodeId" class="detail-overlay">
                 <div class="detail-card">
                     <div class="detail-header">
                         <h3>Schacht {{ selectedNodeId }}</h3>
                         <button @click="selectedNodeId = null">✕</button>
                     </div>
                     <div class="detail-body">
-                         <Line v-if="nodeChartData" :data="nodeChartData" :options="nodeChartOptions" />
+                        <div class="engineer-inspector">
+                            <div class="col">
+                                <strong>Wassertiefen-Auswertung</strong>
+                                <div>Mittlere Wassertiefe: {{ nodeResults.get(selectedNodeId)?.avgDepth?.toFixed(2) }} m</div>
+                                <div>Max. Wassertiefe: {{ nodeResults.get(selectedNodeId)?.maxDepth?.toFixed(2) }} m</div>
+                                <div>Max. Wasserspiegel (HGL): {{ nodeResults.get(selectedNodeId)?.maxHGL?.toFixed(2) }} m</div>
+                                <div>Max. Einstautiefe (gemeldet): <strong>{{ nodeResults.get(selectedNodeId)?.reportedMaxDepth?.toFixed(2) }} m</strong></div>
+                            </div>
+                            <div class="col">
+                                <strong>Zufluss & Überflutung</strong>
+                                <div>Max. seitl. Zufluss: {{ nodeResults.get(selectedNodeId)?.maxLatInflow?.toFixed(2) }} l/s</div>
+                                <div>Max. Gesamtzufluss: {{ nodeResults.get(selectedNodeId)?.maxTotalInflow?.toFixed(2) }} l/s</div>
+                                <div>Gesamtvol. Überflutung: {{ (nodeResults.get(selectedNodeId)?.floodingVolume || 0).toFixed(3) }} m³</div>
+                                <div v-if="(nodeResults.get(selectedNodeId)?.floodingVolume || 0) > 0.001" class="text-red">⚠️ Überflutung gemeldet</div>
+                            </div>
+                        </div>
+                         <div class="chart-box">
+                             <Line v-if="chartData" :data="chartData" :options="chartOptions" />
+                             <div v-else class="loading-chart">Lade Diagramm...</div>
+                         </div>
                     </div>
                 </div>
-             </div>
+            </div>
         </div>
+
 
         <!-- === TAB: FLÄCHEN (Catchments) === -->
         <div v-if="activeTab === 'areas'" class="tab-pane">
@@ -351,30 +359,57 @@
                 <table class="data-table sticky-header">
                     <thead>
                         <tr>
-                            <th>ID</th>
-                            <th>Größe (ha)</th>
-                            <th>Abflussbeiwert</th>
-                            <th>Niederschlag (mm)</th>
-                            <th>Verdunstung (mm)</th>
-                            <th>Infiltration (mm)</th>
-                            <th>Abfluss (mm)</th>
-                            <th>Abfluss (mm)</th>
-                            <th>Peak (L/s)</th>
+                            <th>Teilfläche ID</th>
+                            <th>Fläche (ha)</th>
+                            <th title="Breite (m) - Rechnerisch aus Fläche">Breite (m)</th>
+                            <th title="Gefälle (%) - Aus Eingabe">Gefälle (%)</th>
+                            <th title="Versiegelungsgrad (%) - Input">Versiegelungsgrad (%)</th>
+                            <th title="Abflussbeiwert (Ergebnis)">Abflussbeiwert</th>
+                            <th title="Niederschlagshöhe (mm)">Niederschlag (mm)</th>
+                            <th title="Zufluss von extern (mm)">Zufluss extern (mm)</th>
+                            <th title="Verdunstung (mm)">Verdunstung (mm)</th>
+                            <th title="Infiltration (mm)">Infiltration (mm)</th>
+                            <th title="Abfluss Versiegelt (mm)">Abfluss Vers. (mm)</th>
+                            <th title="Abfluss Unversiegelt (mm)">Abfluss Unvers. (mm)</th>
+                            <th title="Gesamtabflusshöhe (mm)">Gesamtabflusshöhe (mm)</th>
+                            <th title="Gesamtabflussvolumen (Mio. Liter)">Volumen (Mio. L)</th>
+                            <th title="Spitzenabfluss (CMS)">Spitzenabfluss (m³/s)</th>
                             <th>Aktion</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="area in sortedAreas" :key="area.id">
-                            <td>{{ area.id }}</td>
-                            <td>{{ area.size?.toFixed(4) }}</td>
-                             <td>{{ getSubcatchmentStat(area.id, 'runoffCoeff')?.toFixed(3) || area.runoffCoeff }}</td>
-                             <td>{{ getSubcatchmentStat(area.id, 'precip')?.toFixed(2) }}</td>
-                             <td>{{ getSubcatchmentStat(area.id, 'totalEvap')?.toFixed(2) }}</td>
-                             <td>{{ getSubcatchmentStat(area.id, 'totalInfil')?.toFixed(2) }}</td>
-                             <td>{{ getSubcatchmentStat(area.id, 'totalRunoffMm')?.toFixed(2) }}</td>
-                            <td><strong>{{ getSubcatchmentStat(area.id, 'peakRunoff')?.toFixed(1) }}</strong></td>
+                        <tr v-for="sub in sortedSubcatchments" :key="sub.id">
+                            <td>{{ sub.id }}</td>
+                            <td>{{ sub.size?.toLocaleString('de-DE', {minimumFractionDigits: 4}) }}</td>
+                            <td>{{ (sub.inputWidth || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.inputSlope || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.inputImperv || 0).toLocaleString('de-DE', {minimumFractionDigits: 1}) }}</td>
+                            
+                            <!-- Raw Value for Coeff -->
+                            <td>{{ (sub.runoffCoeff || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
+                            <td>{{ (sub.precip || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.totalRunon || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.totalEvap || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.totalInfil || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.impervRunoffMm || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.pervRunoffMm || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            <td>{{ (sub.totalRunoffMm || 0).toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</td>
+                            
+                             <!-- Volume (Mio. Liter) - Raw -->
+                            <td>{{ (sub.totalRunoffVol || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
+                            
+                            <!-- Peak: CMS (Raw) -> divide by 1000 because parser stored it as L/s * 1000?? No parser line 174: subcatchments[id].peakRunoff = parseFloat(parts[9]) * 1000; (CMS -> L/s). 
+                                 Wait, if parser converted to L/s, then for CMS display we divide by 1000. 
+                                 Let's check parser again.
+                                 Line 174: subcatchments[id].peakRunoff = parseFloat(parts[9]) * 1000;
+                                 So parser stores L/s. 
+                                 User wants CMS (m3/s).
+                                 So we divide by 1000. Correct.
+                            -->
+                            <td><strong>{{ ((sub.peakRunoff || 0) / 1000).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</strong></td>
+                            
                             <td>
-                                <button class="btn-icon" @click="selectArea(area.id)">Details</button>
+                                <button class="btn-icon" @click="selectArea(sub.id)">Details</button>
                             </td>
                         </tr>
                     </tbody>
@@ -423,7 +458,7 @@ const props = defineProps({
   resultsText: String, // The Raw Report Text
   nodes: Map, // Input Nodes (Geometry)
   edges: Map, // Input Edges (Geometry)
-  areas: Map,
+  areas: [Map, Array],
   edgeResults: Map, // Parsed Results
   nodeResults: Map,
   areaResults: Map,
@@ -448,7 +483,7 @@ const tabs = [
     { id: 'general', label: 'Allgemein & Diagnose' },
     { id: 'edges', label: 'Haltungen (Kanal)' },
     { id: 'nodes', label: 'Schächte & Bauwerke' },
-    { id: 'areas', label: 'Flächen (Einzugsgebiete)' }
+    { id: 'areas', label: 'Teilflächen' }
 ];
 
 // --- Helpers ---
@@ -510,11 +545,18 @@ const getHealthDescription = (score) => {
 };
 
 // --- Computed Data ---
+
+// Helper for Map/Object Agnostic Access
+const safeGet = (source, key) => {
+    if (!source) return undefined;
+    return (source instanceof Map) ? source.get(key) : source[key];
+};
+
 // 1. Edges
 const filteredEdges = computed(() => {
      if (!props.edges || !props.edgeResults) return [];
      let list = Array.from(props.edges.values()).map(e => {
-         const res = props.edgeResults.get(e.id) || {};
+         const res = safeGet(props.edgeResults, e.id) || {};
          return { ...e, ...res }; // Merge Geometry + Results
      });
 
@@ -523,12 +565,11 @@ const filteredEdges = computed(() => {
          list = list.filter(e => e.id.toLowerCase().includes(q));
      }
      if (filterSurcharged.value) {
-         list = list.filter(e => (e.flowCapacityRatio > 0.9) || (e.surcharge?.hoursAboveFull > 0));
+         list = list.filter(e => (e.depthRatio || 0) > 0.9);
      }
      
      // Sorting
      list.sort((a, b) => {
-         // Simple sort logic
          if (sortBy.value === 'maxFlow') return (b.maxFlow || 0) - (a.maxFlow || 0);
          if (sortBy.value === 'capacity') return (b.capacity || 0) - (a.capacity || 0);
          if (sortBy.value === 'ratio') return (b.flowCapacityRatio || 0) - (a.flowCapacityRatio || 0);
@@ -542,7 +583,7 @@ const filteredEdges = computed(() => {
 const filteredNodes = computed(() => {
     if (!props.nodes || !props.nodeResults) return [];
     let list = Array.from(props.nodes.values()).map(n => {
-         const res = props.nodeResults.get(n.id) || {};
+         const res = safeGet(props.nodeResults, n.id) || {};
          return { ...n, ...res };
     });
 
@@ -551,29 +592,104 @@ const filteredNodes = computed(() => {
          list = list.filter(n => n.id.toLowerCase().includes(q));
      }
      if (filterFlooded.value) {
-         list = list.filter(n => n.overflow);
+         list = list.filter(n => (n.floodingVolume || 0) > 0.001);
      }
      return list;
 });
 
-// 3. Areas
-const sortedAreas = computed(() => {
-     if (!props.areas) return [];
-     return Array.from(props.areas.values());
-});
+// 3. Areas (Subcatchments)
+const sortedSubcatchments = computed(() => {
+     // Drive from Results (detailed), enrich with Geometry (parent)
+     const results = props.areaResults;
+     
+     // Handle empty case
+     if (!results) return [];
+     if (results instanceof Map && results.size === 0) return [];
+     if (!(results instanceof Map) && Object.keys(results).length === 0) return [];
+     
+     let entries = [];
+     if (results instanceof Map) {
+         entries = Array.from(results.entries());
+     } else {
+         entries = Object.entries(results);
+     }
+     
+     // Helper for Lookup
+     const findParent = (baseId) => {
+         if (props.areas instanceof Map) return props.areas.get(baseId);
+         if (Array.isArray(props.areas)) return props.areas.find(a => a.id === baseId);
+         return null;
+     };
 
-const getSubcatchmentStat = (id, key) => {
-    // Assuming props.areaResults is the subcatchments object from parser
-    return props.areaResults && props.areaResults[id] ? props.areaResults[id][key] : null;
-};
+     // Map to objects with ID included and Geometry merged
+     let list = entries.map(([id, data]) => {
+         // 1. Resolve Parent ID
+         let baseId = id;
+         const isPart2 = id.endsWith('_2');
+         
+         if (isPart2) {
+             baseId = baseId.replace(/_2$/, '');
+         }
+         
+         // 2. Try Find Parent (prop.areas) - Exact Match first (e.g. if Area ID is "RW34.1")
+         let parentArea = findParent(baseId);
+         
+         // 3. Fallback: Strip .1 suffix (e.g. if Result is "RW34.1" but Input Area is "RW34")
+         if (!parentArea && baseId.endsWith('.1')) {
+             const stripped = baseId.substring(0, baseId.length - 2);
+             parentArea = findParent(stripped);
+         }
+         
+         // 4. Calculate Derived Properties
+         let sizeVal = 0;
+         let inputSlope = 0;
+         let inputImperv = 0;
+         let inputWidth = 0;
+
+         if (parentArea) {
+             const totalSize = parentArea.size || 0;
+             inputSlope = parentArea.slope || 0; 
+             inputImperv = (parentArea.runoffCoeff || 0) * 100;
+             
+             let ratio = 1.0;
+             if (parentArea.nodeId2) {
+                 const userRatio = (parentArea.splitRatio !== undefined) ? parseFloat(parentArea.splitRatio) : 50;
+                 ratio = userRatio / 100.0;
+             }
+             
+             if (isPart2) {
+                 sizeVal = totalSize * (1 - ratio);
+             } else {
+                 sizeVal = totalSize * ratio;
+             }
+             
+             // Dynamic Width Calculation (consistent with builder)
+             const sizeM2 = sizeVal * 10000;
+             inputWidth = Math.sqrt(sizeM2); 
+         }
+         
+         return { 
+             id, 
+             size: sizeVal,
+             inputSlope,
+             inputImperv,
+             inputWidth,
+             ...data 
+         };
+     });
+     
+     // Sort by ID
+     list.sort((a, b) => a.id.localeCompare(b.id));
+     return list;
+});
 
 const getFlowClass = (id) => {
     // try find flow class
     const cls = props.systemStats?.flowClassification?.find(c => c.id === id);
-    if (!cls) return 'N/A';
-    if (cls.fractions.supCrit > 0.1) return 'SuperCritical';
-    if (cls.fractions.normLtd > 0.1) return 'Normal Limited';
-    return 'SubCritical';
+    if (!cls) return 'N.V.';
+    if (cls.fractions.supCrit > 0.1) return 'Überkritisch';
+    if (cls.fractions.normLtd > 0.1) return 'Normal-Limitiert';
+    return 'Unterkritisch';
 };
 
 
@@ -648,7 +764,7 @@ const updateCharts = (type, id) => {
          // Add Reference Line for Rim Elevation (Max Depth)
          if (maxPhysicalDepth > 0) {
              datasets.push({
-                 label: 'Schachthöhe (Deckel)',
+                 label: 'Deckelhöhe',
                  borderColor: '#ef4444',
                  borderDash: [5, 5],
                  borderWidth: 1,
@@ -700,6 +816,43 @@ watch(selectedNodeId, (newId) => { if(newId) updateCharts('node', newId); });
     height: 100%;
     background: #fdfdfd;
     font-family: 'Inter', sans-serif;
+}
+
+/* Modal Header */
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #111827;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #6b7280;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: #f3f4f6;
+    color: #ef4444;
 }
 
 /* Tabs */

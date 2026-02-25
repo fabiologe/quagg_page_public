@@ -239,13 +239,29 @@ export const BoundaryTools = {
      * @param {number} maxRadius 
      * @returns {{x: number, y: number}|null}
      */
-    findNearestValidCell(startCol, startRow, gridData, header, maxRadius = 3) {
+    findNearestValidCell(startCol, startRow, gridData, header, maxRadius = 3, minNeighbors = 0) {
         const { ncols, nrows } = header;
         const noDataValue = -9990; // Default safety threshold
 
+        const isValid = (c, r) => {
+            if (c < 0 || c >= ncols || r < 0 || r >= nrows) return false;
+            return gridData[r * ncols + c] > noDataValue;
+        };
+
+        const hasNeighbors = (c, r) => {
+            if (minNeighbors <= 0) return true;
+            let count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    if (isValid(c + dx, r + dy)) count++;
+                }
+            }
+            return count >= minNeighbors;
+        };
+
         // Check center first
-        const centerIdx = startRow * ncols + startCol;
-        if (gridData[centerIdx] > noDataValue) {
+        if (isValid(startCol, startRow) && hasNeighbors(startCol, startRow)) {
             return { x: startCol, y: startRow };
         }
 
@@ -259,11 +275,8 @@ export const BoundaryTools = {
                     const c = startCol + i;
                     const ro = startRow + j;
 
-                    if (c >= 0 && c < ncols && ro >= 0 && ro < nrows) {
-                        const idx = ro * ncols + c;
-                        if (gridData[idx] > noDataValue) {
-                            return { x: c, y: ro };
-                        }
+                    if (isValid(c, ro) && hasNeighbors(c, ro)) {
+                        return { x: c, y: ro };
                     }
                 }
             }

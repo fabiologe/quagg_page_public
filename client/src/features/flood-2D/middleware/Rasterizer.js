@@ -67,7 +67,9 @@ export function gridToASC(data, header) {
     content += `cellsize      ${header.cellsize.toFixed(4)}\n`;
     content += `NODATA_value  -9999\n`;
 
-    for (let i = 0; i < header.nrows; i++) {
+    // gridData is stored bottom-up (row 0 = south). ASC format requires north first.
+    // Write rows in reverse: row nrows-1 (north) first, row 0 (south) last.
+    for (let i = header.nrows - 1; i >= 0; i--) {
         const start = i * header.ncols;
         const end = start + header.ncols;
         const rowData = data.subarray(start, end);
@@ -263,7 +265,9 @@ export const Rasterizer = {
             writeLine(`NODATA_value  -9999`);
 
             // Body
-            for (let i = 0; i < header.nrows; i++) {
+            // gridData is stored bottom-up (row 0 = south). ASC format requires north first.
+            // Write rows in reverse: row nrows-1 (north) first, row 0 (south) last.
+            for (let i = header.nrows - 1; i >= 0; i--) {
                 const start = i * header.ncols;
                 const end = start + header.ncols;
                 const rowData = data.subarray(start, end);

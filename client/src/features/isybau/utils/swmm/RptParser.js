@@ -115,10 +115,16 @@ export class RptParser {
                     }
                     if (separatorCount < 2) continue;
                     if (line === '') {
+                        // Allow blank lines before first separator (header spacing)
+                        if (separatorCount === 0) continue;
+
                         inTable = false;
                         continue;
                     }
                     if (line.startsWith('***') || line.startsWith('Analysis begun')) {
+                        // Fix: Ignore title underline (if no separators seen yet)
+                        if (separatorCount === 0) continue;
+
                         inTable = false;
                         continue;
                     }
@@ -176,41 +182,51 @@ export class RptParser {
         });
 
         // --- 2. Node Depth Summary ---
-        // Columns: Node, Type, AvgDepth, MaxDepth, MaxHGL, Time, Reported Max Depth
+        // Columns: Node, Type, AvgDepth, MaxDepth, MaxHGL, Day, Time, Reported Max Depth
+        // Example:  RW34  JUNCTION  0.33  1.20  340.43  0  00:25  1.20
+        // Indices:  [0]   [1]       [2]   [3]   [4]     [5][6]    [7]
         parseTable(/Node Depth Summary/, (parts) => {
             const id = parts[0];
-            const avgDepth = parseFloat(parts[2]);
-            const maxDepth = parseFloat(parts[3]);
-            const maxHGL = parseFloat(parts[4]);
+            // Safe parsing helper
+            const getVal = (idx) => {
+                const v = parseFloat(parts[idx]);
+                return isNaN(v) ? 0 : v;
+            };
 
-            if (!isNaN(maxDepth)) {
+            if (parts.length >= 7) {
                 if (!nodes[id]) nodes[id] = {};
-                nodes[id].type = parts[1]; // Capture Type (Junction, Outfall, Storage)
-                nodes[id].avgDepth = avgDepth;
-                nodes[id].maxDepth = maxDepth;
-                nodes[id].maxHGL = maxHGL;
-                nodes[id].timeOfMaxDepth = parts[5]; // Capture Time of Max
+                nodes[id].type = parts[1];
+                nodes[id].avgDepth = getVal(2);
+                nodes[id].maxDepth = getVal(3); // Max Water Depth (Wasserstand)
+                nodes[id].maxHGL = getVal(4);
+                nodes[id].timeOfMaxDepth = parts[6] || parts[5]; // Try index 6 (Time), fallback 5 if short
+                // Reported Max Depth (Einstautiefe) is usually absolute depth or Depth above invert? 
+                // SWMM Docs: "Reported Max Depth" is the maximum depth recorded.
+                nodes[id].reportedMaxDepth = getVal(7);
             }
         });
 
         // --- 3. Node Inflow Summary ---
-        // Columns: Node, Type, MaxLatInflow, MaxTotalInflow, Day, Time, LatInflowVol, TotalInflowVol
+        // Columns: Node, Type, MaxLatInflow, MaxTotalInflow, Day, Time, LatInflowVol, TotalInflowVol, Error
+        // Example:  RW34  JUNCTION  0.137  0.185  0  00:20  0.0918  0.141  -2.764
         parseTable(/Node Inflow Summary/, (parts) => {
             const id = parts[0];
-            // Identify columns by length or position. usually standard.
-            // [0]Name [1]Type [2]MaxLat [3]MaxTotal [4]Day [5]Time [6]LatVol [7]TotalVol
-            const maxInflow = parseFloat(parts[3]);
-            const totalInflowVol = parseFloat(parts[7]); // 10^6 Ltr ? 
+            const getVal = (idx) => parseFloat(parts[idx]);
 
-            if (!isNaN(maxInflow)) {
+            if (parts.length >= 7) {
                 if (!nodes[id]) nodes[id] = {};
-                nodes[id].maxInflow = maxInflow * 1000; // CMS -> L/s
-                nodes[id].totalInflowVolume = totalInflowVol; // 10^6 Ltr
+                // [0]Name [1]Type [2]MaxLat [3]MaxTotal [4]Day [5]Time [6]LatVol [7]TotalVol
+                nodes[id].maxLatInflow = getVal(2) * 1000; // CMS -> L/s
+                nodes[id].maxTotalInflow = getVal(3) * 1000; // CMS -> L/s
+                nodes[id].timeOfMaxInflow = parts[5];
+                nodes[id].totalLatInflowVol = getVal(6); // 10^6 Ltr ? (Vol units depend on header, usually 10^6 ltr or m3)
+                // Header says 10^6 ltr. 10^6 ltr = 1000 m3.
+                // We want m3 for UI? 10^6 ltr * 1000 = liters. / 1000 = m3.
+                // So value * 1000 = m3.
+                nodes[id].totalInflowVolume = getVal(7) * 1000; // Convert 10^6 ltr -> m3
 
-                // Extract Flow Balance Error if present (parts[8])
                 if (parts.length >= 9) {
-                    const error = parseFloat(parts[8]);
-                    if (!isNaN(error)) nodes[id].flowBalanceError = error;
+                    nodes[id].flowBalanceError = getVal(8);
                 }
             }
         });
@@ -219,19 +235,19 @@ export class RptParser {
         // Columns: Node, Hours Flooded, MaxRate, Day, Time, TotalFloodVol, MaxPondDepth
         parseTable(/Node Flooding Summary/, (parts) => {
             const id = parts[0];
-            const vol = parseFloat(parts[5]); // Total Flood Vol (10^6 ltr)
-            const depth = parseFloat(parts[6]); // Max Pond Depth
+            // [0]Name [1]Hours [2]MaxRate [3]Day [4]Time [5]Vol [6]Depth
+            const vol = parseFloat(parts[5]);
+            const depth = parseFloat(parts[6]);
 
             if (!isNaN(vol)) {
                 if (!nodes[id]) nodes[id] = {};
-                nodes[id].floodingVolume = vol;
+                nodes[id].floodingVolume = vol * 1000; // 10^6 Ltr -> m3
                 nodes[id].pondedDepth = depth;
-                nodes[id].overflow = true; // Confirmed overflow by SWMM
+                nodes[id].overflow = true;
             }
         });
 
         // --- 5. Node Surcharge Summary (NEW) ---
-        // Columns: Node, Type, Hours Surcharged, Max Height Above Crown, Min Depth Below Rim
         parseTable(/Node Surcharge Summary/, (parts) => {
             const id = parts[0];
             const maxAboveCrown = parseFloat(parts[3]);
@@ -244,34 +260,35 @@ export class RptParser {
         });
 
         // --- 6. Link Flow Summary ---
+        // Columns: Link, Type, MaxFlow, Day, Time, MaxVel, Max/Full Flow, Max/Full Depth
+        // Example: RW34  CONDUIT  0.112  0  00:20  1.58  1.30  1.00
+        // Indices: [0]   [1]      [2]    [3][4]    [5]   [6]   [7]
         parseTable(/(Link|Conduit) Flow Summary/, (parts) => {
             const id = parts[0];
-            // [0]Name [1]Type [2]MaxQ [3]Day [4]Time [5]MaxV [6]Max/Full(Flow) [7]Max/Full(Depth)
-
+            const getVal = (idx) => parseFloat(parts[idx]);
             const len = parts.length;
-            const maxDepthRatio = parseFloat(parts[len - 1]);
-            const maxFullRatio = parseFloat(parts[len - 2]);
-            const maxVel = parseFloat(parts[len - 3]);
-            const maxFlow = parseFloat(parts[2]);
 
-            if (!isNaN(maxFlow)) {
+            // Robust check: sometimes Type has space? rare.
+            // Check if last element is number
+            if (len >= 8) {
                 if (!edges[id]) edges[id] = {};
-                edges[id].type = parts[1]; // Capture Type (Conduit, Pump, Weirs)
-                edges[id].maxFlow = maxFlow * 1000; // L/s
-                edges[id].timeOfMaxFlow = parts[4]; // Capture Time of Max Flow
-                edges[id].maxVelocity = isNaN(maxVel) ? 0 : maxVel;
-                edges[id].flowCapacityRatio = isNaN(maxFullRatio) ? 0 : maxFullRatio;
-                edges[id].depthRatio = isNaN(maxDepthRatio) ? 0 : maxDepthRatio;
+                edges[id].type = parts[1];
+                edges[id].maxFlow = getVal(2) * 1000; // CMS -> L/s
+                edges[id].timeOfMaxFlow = parts[4];
+                edges[id].maxVelocity = getVal(5); // m/s
+                edges[id].flowCapacityRatio = getVal(6); // Max/Full Flow
+                edges[id].depthRatio = getVal(7); // Max/Full Depth
 
-                // Capacity Calculation
-                if (!isNaN(maxFullRatio) && Math.abs(maxFullRatio) > 0.0001) {
-                    edges[id].capacity = (maxFlow * 1000) / maxFullRatio;
+                // Calculate Capacity (Qvoll)
+                // Qvoll = Qmax / Ratio
+                // If Ratio > 0.01
+                if (Math.abs(edges[id].flowCapacityRatio) > 0.01) {
+                    edges[id].capacity = edges[id].maxFlow / edges[id].flowCapacityRatio;
                 } else {
-                    // Try manual calculation if missing
                     edges[id].capacity = calculateCapacity(id);
                 }
 
-                edges[id].utilization = (!isNaN(maxDepthRatio)) ? Math.min(maxDepthRatio * 100, 100) : 0;
+                edges[id].utilization = edges[id].depthRatio * 100;
             }
         });
 

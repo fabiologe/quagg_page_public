@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
 export const useSimulationStore = defineStore('simulation', () => {
     // UI State
@@ -28,6 +28,15 @@ export const useSimulationStore = defineStore('simulation', () => {
 
     /** @type {import('vue').Ref<number>} */
     const timeStep = ref(1.0); // Delta T
+
+    /** @type {import('vue').Ref<number>} */
+    const saveInterval = ref(60.0); // Output interval (seconds)
+
+    /** @type {import('vue').Ref<number>} */
+    const massInterval = ref(60.0); // Mass balance check interval (seconds)
+
+    /** @type {import('vue').Ref<boolean>} */
+    const useAcceleration = ref(true); // Acceleration solver flag
 
     // Actions
     function setActiveTool(tool) {
@@ -63,9 +72,13 @@ export const useSimulationStore = defineStore('simulation', () => {
     /** @type {import('vue').Ref<any>} */
     const resultHeader = ref(null);
 
-    function addResultFrame(frameId, data, header) {
+    function addResultFrame(frameId, data, header, min, max) {
         resultFrames.value.set(frameId, data);
         if (!resultHeader.value) resultHeader.value = header;
+        // Track global max depth across all frames
+        if (max !== undefined && max > maxWaterDepth.value) {
+            maxWaterDepth.value = max;
+        }
         // Auto-advance to latest
         currentFrameIndex.value = frameId;
     }
@@ -74,11 +87,25 @@ export const useSimulationStore = defineStore('simulation', () => {
         resultFrames.value.clear();
         currentFrameIndex.value = -1;
         resultHeader.value = null;
+        maxWaterDepth.value = 0;
     }
+
+    /** @type {import('vue').Ref<number>} */
+    const maxWaterDepth = ref(0);
+
+    const totalFrameCount = computed(() => resultFrames.value.size);
 
     function setConfig(duration, step) {
         if (duration !== undefined) simDuration.value = duration;
         if (step !== undefined) timeStep.value = step;
+    }
+
+    function setFullConfig(cfg) {
+        if (cfg.simDuration !== undefined) simDuration.value = cfg.simDuration;
+        if (cfg.timeStep !== undefined) timeStep.value = cfg.timeStep;
+        if (cfg.saveInterval !== undefined) saveInterval.value = cfg.saveInterval;
+        if (cfg.massInterval !== undefined) massInterval.value = cfg.massInterval;
+        if (cfg.useAcceleration !== undefined) useAcceleration.value = cfg.useAcceleration;
     }
 
     // NEW: Multi-select support
@@ -112,6 +139,9 @@ export const useSimulationStore = defineStore('simulation', () => {
         results,
         simDuration,
         timeStep,
+        saveInterval,
+        massInterval,
+        useAcceleration,
 
         // Actions
         setActiveTool,
@@ -132,8 +162,12 @@ export const useSimulationStore = defineStore('simulation', () => {
         clearSelection,
 
         // Result Data
-        // resultFrames,     // Disabled
-        // currentFrameIndex,// Disabled
-        // resultHeader      // Disabled
+        resultFrames,
+        currentFrameIndex,
+        resultHeader,
+        addResultFrame,
+        clearResults,
+        maxWaterDepth,
+        totalFrameCount
     };
 });

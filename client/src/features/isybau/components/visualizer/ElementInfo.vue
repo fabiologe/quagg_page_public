@@ -154,7 +154,7 @@
             </div>
             
              <div class="info-group">
-                 <label>Abflussbeiwert (0.0 - 1.0)</label>
+                 <label>Versiegelungsgrad (0.0 - 1.0)</label>
                  <input type="number" v-model.number="localData.runoffCoeff" step="0.05" min="0" max="1" class="full-input">
              </div>
 

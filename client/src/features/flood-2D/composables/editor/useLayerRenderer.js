@@ -512,28 +512,19 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
         instances.forEach((inst, i) => {
             dummy.position.copy(inst.pos);
-            dummy.scale.set(1, 1, 1);
 
-            // Rotation
+            // Lift arrows above terrain surface
             if (inst.dir === -1) {
-                // DOWN: Rotate 180 deg (PI) around X or Z
-                // Base (Shaft) is 0..15. Tip is 15..20. 
-                // If we rotate PI around X, it points down.
-                // Local origin of geometry is (0,0,0).
-                // We pre-translated geometry so 0 is base. 
-                // If we rotate, we pivot around base. 
-                // Perfect.
+                // OUTFLOW: arrow points down — raise base so tip touches terrain
+                dummy.position.y += 22;
                 dummy.rotation.set(Math.PI, 0, 0);
-                // BUT: Since geometry was Y+, rotating PI makes it Y-.
-                // Base is still at (0,0,0) relative to dummy.
-                // So the arrow hangs DOWN from the pos.
-                // Correct logic relative to user request (Inflow UP from ground, Outflow DOWN into ground? Or just visual indicator?)
-                // Previous logic: DOWN cone was at y=height/2... essentially just flipped manually.
-                // Here: Rotating 180 at base means it draws into the ground. Correct.
             } else {
+                // INFLOW: arrow points up — small lift to clear surface
+                dummy.position.y += 2;
                 dummy.rotation.set(0, 0, 0);
             }
 
+            dummy.scale.set(1, 1, 1);
             dummy.updateMatrix();
 
             instancedShaftMesh.setMatrixAt(i, dummy.matrix);

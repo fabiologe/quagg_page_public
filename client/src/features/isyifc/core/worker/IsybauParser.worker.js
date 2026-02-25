@@ -229,7 +229,7 @@ self.onmessage = async (e) => {
 
                 edges.push({
                     id: id,
-                    category: edgeType, // Stores specific type now
+                    category: edgeType,
                     source: src,
                     target: tgt,
                     shape: {
@@ -247,7 +247,21 @@ self.onmessage = async (e) => {
                         baujahr: parseGermanFloat(obj.Baujahr),
                         sohleZulauf: zZulauf,
                         sohleAblauf: zAblauf,
-                        kanalart: sysType // New Field
+                        kanalart: sysType,
+                        // Rohraußendurchmesser
+                        aussenDurchmesser: strictNormalize(profil.Aussendurchmesser) || null,
+                        // SDR / Wanddicke (G208)
+                        sdrKlasse: edgeData.SDR || edgeData.SDR_Klasse || null,
+                        // Auflagerart (G209)
+                        auflagerart: edgeData.Auflagerart || null,
+                        // Innenschutz (G103)
+                        innenschutz: edgeData.Innenschutz || null,
+                        // Auskleidung (G104)
+                        auskleidung: edgeData.Auskleidung || null,
+                        // Lage (G106)
+                        lage: obj.Lage || null,
+                        // Abwasserart (G107)
+                        abwasserart: obj.Abwasserart || null
                     }
                 });
             }
@@ -321,8 +335,23 @@ self.onmessage = async (e) => {
                         meta: {
                             Status: status,
                             material: aufbau.MaterialAufbau,
+                            materialBoden: aufbau.MaterialBoden || null,
                             baujahr: parseGermanFloat(obj.Baujahr),
-                            kanalart: String(obj.Kanalart || obj.Entwaesserungsart || '').trim() // System Type for Nodes
+                            kanalart: String(obj.Kanalart || obj.Entwaesserungsart || '').trim(),
+                            // G301 SchachtFunktion
+                            schachtFunktion: parseInt(schacht.SchachtFunktion) || null,
+                            // Deckel (G302-G304)
+                            deckelForm: deckel.Deckelform || deckel.Form || null,
+                            deckelMaterial: deckel.Material || deckel.MaterialDeckel || null,
+                            deckelLaenge: normalizePipeDim(deckel.Laenge || deckel.Durchmesser),
+                            deckelBreite: normalizePipeDim(deckel.Breite),
+                            abdeckungsklasse: deckel.Abdeckungsklasse || deckel.Belastungsklasse || null,
+                            // Steighilfen
+                            steighilfen: (schacht.Steighilfen === 'true' || schacht.Steighilfen === '1' || schacht.Steighilfen === true) ? true : false,
+                            // G106 Lage
+                            lage: obj.Lage || null,
+                            // G107 Abwasserart 
+                            abwasserart: obj.Abwasserart || null
                         }
                     });
                 }

@@ -7,7 +7,7 @@
   >
     <div class="help-container">
       <div class="modal-header">
-        <h3>ℹ️ Isybau Bedienungsanleitung & System-Audit</h3>
+        <h3>ℹ️ Isybau Bedienungsanleitung & System-Audit V.1.02</h3>
         <button class="close-btn" @click="$emit('close')">×</button>
       </div>
       
