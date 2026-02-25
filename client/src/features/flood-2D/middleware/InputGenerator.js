@@ -216,14 +216,21 @@ export class InputGenerator {
      * Generate .bdy output (Time Series)
      */
     generateBdyFile(ganglinien) {
-        let content = '';
+        // LISFLOOD BDY format (input.cpp:1599-1685):
+        //   Comment line (SKIPPED by parser)
+        //   profileName
+        //   ndata units
+        //   t1 v1
+        //   t2 v2
+        //   ...
+        //   (repeat for each profile)
+        let content = 'LISFLOOD boundary conditions\n'; // Required comment line (skipped)
         const visited = new Set();
 
         for (const [key, profile] of Object.entries(ganglinien)) {
             if (!profile.data || profile.data.length === 0) continue;
 
             // Name must correspond to what we write in BCI
-            // If explicit name exists, use it, else key
             const name = profile.name ? profile.name.replace(/\s+/g, '_') : key;
 
             if (visited.has(name)) continue;
@@ -235,7 +242,6 @@ export class InputGenerator {
             for (const pt of profile.data) {
                 content += `${pt.t} ${pt.v.toFixed(6)}\n`;
             }
-            content += '\n'; // Block separator
         }
         return content;
     }
@@ -284,11 +290,15 @@ export class InputGenerator {
 
             // 2. Discretize Geometry
             let rawCells = [];
+            let isPointSource = false; // Point sources use real-world coords in BCI!
+            let pointWorldCoords = null;
             if (b.type === 'Feature') {
                 if (b.geometry.type === 'Point') {
+                    isPointSource = true;
+                    pointWorldCoords = b.geometry.coordinates; // [x, y] in world coords
                     const p = b.geometry.coordinates;
                     const c = this.getGridIndex(p[0], p[1], header);
-                    rawCells.push({ x: c.col, y: c.row_world }); // standardized to bottom-up for tool
+                    rawCells.push({ x: c.col, y: c.row_world }); // For validation only
                 } else if (b.geometry.type === 'LineString') {
                     rawCells = BoundaryTools.discretizePolyline(b.geometry.coordinates, header.cellsize, xll, yll);
                 } else if (b.geometry.type === 'Polygon') {
@@ -335,16 +345,35 @@ export class InputGenerator {
 
             // Write to content (deduplicate)
             if (finalCells.length > 0) {
-                for (const cell of finalCells) {
-                    const key = `${cell.x},${cell.y}`;
-                    if (processedCells.has(key)) continue; // avoid duplicates
-                    processedCells.add(key);
-
-                    let line = `P ${cell.x} ${cell.y} ${lisfloodType}`;
-                    if (lisfloodType !== 'FREE') {
-                        line += ` ${profileName}`;
+                if (isPointSource && pointWorldCoords) {
+                    // Point sources: P x_world y_world TYPE [name]
+                    // input.cpp:1396-1398 converts internally: xpi = (px - blx) / dx
+                    const key = `${pointWorldCoords[0]},${pointWorldCoords[1]}`;
+                    if (!processedCells.has(key)) {
+                        processedCells.add(key);
+                        let line = `P ${pointWorldCoords[0].toFixed(4)} ${pointWorldCoords[1].toFixed(4)} ${lisfloodType}`;
+                        if (lisfloodType !== 'FREE') {
+                            line += ` ${profileName}`;
+                        }
+                        content += line + '\n';
                     }
-                    content += line + '\n';
+                } else {
+                    // Edge boundaries: N/S/E/W start end TYPE [name]
+                    // For now we still use P with world coords for each cell
+                    for (const cell of finalCells) {
+                        // Convert grid indices back to world coordinates
+                        const wx = xll + (cell.x + 0.5) * header.cellsize;
+                        const wy = yll + ((header.nrows - 1 - cell.y) + 0.5) * header.cellsize;
+                        const key = `${cell.x},${cell.y}`;
+                        if (processedCells.has(key)) continue;
+                        processedCells.add(key);
+
+                        let line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} ${lisfloodType}`;
+                        if (lisfloodType !== 'FREE') {
+                            line += ` ${profileName}`;
+                        }
+                        content += line + '\n';
+                    }
                 }
             } else {
                 console.warn(`[InputGenerator] Boundary ${b.id} yielded 0 valid cells after snapping (Radius 15).`);
