@@ -398,6 +398,135 @@ export const useIsybauStore = defineStore('isybau-module', {
             return edge;
         },
 
+        splitEdgeWithNode(edgeId, clickCoords = null) {
+            this.saveHistory();
+
+            const edge = this.edges.get(edgeId);
+            if (!edge) {
+                console.error("splitEdgeWithNode: Edge not found", edgeId);
+                return null;
+            }
+
+            const startNode = this.nodes.get(edge.fromNodeId);
+            const endNode = this.nodes.get(edge.toNodeId);
+
+            if (!startNode || !endNode) {
+                console.error("splitEdgeWithNode: Missing start or end node");
+                return null;
+            }
+
+            // Calculate default t = 0.5 (middle)
+            let t = 0.5;
+
+            // If we have exact click coordinates, project the point onto the edge vector
+            if (clickCoords && typeof clickCoords.x === 'number' && typeof clickCoords.y === 'number') {
+                const vectorEdgeX = endNode.x - startNode.x;
+                const vectorEdgeY = endNode.y - startNode.y;
+
+                const vectorClickX = clickCoords.x - startNode.x;
+                const vectorClickY = clickCoords.y - startNode.y;
+
+                // Dot product and projection length squared
+                const edgeLenSq = (vectorEdgeX * vectorEdgeX) + (vectorEdgeY * vectorEdgeY);
+                if (edgeLenSq > 0) {
+                    const dot = (vectorClickX * vectorEdgeX) + (vectorClickY * vectorEdgeY);
+                    t = dot / edgeLenSq;
+                }
+
+                // Clamp t between 0.05 and 0.95 to prevent placing the node exactly on top of the ends
+                t = Math.max(0.05, Math.min(0.95, t));
+            }
+
+            // Geometrie interpolieren
+            const newX = startNode.x + t * (endNode.x - startNode.x);
+            const newY = startNode.y + t * (endNode.y - startNode.y);
+
+            // Höhen für KNOTEN (Schacht) interpolieren:
+            // DH (Deckel) basiert auf z der Knoten
+            const zStart = startNode.z || 0;
+            const zEnd = endNode.z || 0;
+            const dhNew = zStart + t * (zEnd - zStart);
+
+            // SH (Sohle des Schachts) basiert auf z - depth der Knoten
+            const nodeShStart = zStart - (startNode.depth || 0);
+            const nodeShEnd = zEnd - (endNode.depth || 0);
+            const nodeShNew = nodeShStart + t * (nodeShEnd - nodeShStart);
+
+            const depthNew = dhNew - nodeShNew;
+
+            // Höhen für HALTUNG (Leitung) interpolieren:
+            // Z Einlauf/Auslauf basieren auf z1/z2 der existierenden Haltung
+            // Fallback: Wenn Edge keine z1/z2 hat, nehme die Node-Sohlhöhen
+            const edgeZ1 = edge.z1 !== undefined && edge.z1 !== null ? edge.z1 : nodeShStart;
+            const edgeZ2 = edge.z2 !== undefined && edge.z2 !== null ? edge.z2 : nodeShEnd;
+            const edgeZNew = edgeZ1 + t * (edgeZ2 - edgeZ1);
+
+            // 1. Neuen Knoten anlegen
+            const newNodeId = `N_${Date.now()}`;
+            const newNode = new Node({
+                id: newNodeId,
+                x: newX,
+                y: newY,
+                z: dhNew,
+                depth: depthNew,
+                type: 'Schacht'
+            });
+            this.nodes.set(newNodeId, newNode);
+
+            // Profil und andere Eigenschaften der alten Haltung klonen
+            const clonedProps = JSON.parse(JSON.stringify(edge.toJSON ? edge.toJSON() : edge));
+            delete clonedProps.id;
+            delete clonedProps.fromNodeId;
+            delete clonedProps.toNodeId;
+            delete clonedProps.length;
+            delete clonedProps.coords; // Delete shape polyline so renderer falls back to straight segments
+
+            // Explizite Sohlhöhen der Ersatzhaltungen setzen, damit das alte Gefälle nicht 1:1 kopiert wird 
+            // (und damit z.B. Invert Offsets überschrieben werden)
+            delete clonedProps.inOffset;
+            delete clonedProps.outOffset;
+
+            // 2. Erste neue Haltung (von startNode zu newNode)
+            const newEdgeId1 = `E_${Date.now()}_split_1`;
+            const newEdgeDist1 = Math.sqrt((startNode.x - newX) ** 2 + (startNode.y - newY) ** 2);
+
+            const newEdge1 = new Edge({
+                ...clonedProps,
+                id: newEdgeId1,
+                fromNodeId: startNode.id,
+                toNodeId: newNodeId,
+                length: newEdgeDist1,
+                z1: edgeZ1,
+                z2: edgeZNew
+            });
+            this.edges.set(newEdgeId1, newEdge1);
+
+            // 3. Zweite neue Haltung (von newNode zu altem endNode)
+            const newEdgeId2 = `E_${Date.now()}_split_2`;
+            const newEdgeDist2 = Math.sqrt((newX - endNode.x) ** 2 + (newY - endNode.y) ** 2);
+
+            const newEdge2 = new Edge({
+                ...clonedProps,
+                id: newEdgeId2,
+                fromNodeId: newNodeId,
+                toNodeId: endNode.id,
+                length: newEdgeDist2,
+                z1: edgeZNew,
+                z2: edgeZ2
+            });
+            this.edges.set(newEdgeId2, newEdge2);
+
+            // 4. Alte Haltung löschen
+            this.edges.delete(edgeId);
+
+            // Force Reactivity for Maps
+            this.nodes = new Map(this.nodes);
+            this.edges = new Map(this.edges);
+
+            console.log(`Store: Edge ${edgeId} deleted & split into ${newEdgeId1} and ${newEdgeId2}`);
+            return newNodeId;
+        },
+
         updateEdge(id, props) {
             this.saveHistory();
             const edge = this.edges.get(id);

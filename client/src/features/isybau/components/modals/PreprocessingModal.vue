@@ -279,6 +279,20 @@
                               <input type="number" v-model.number="node.maxDepth" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Max. Tiefe</span>
                         </div>
+                        <div class="input-group">
+                              <input type="number" v-model.number="node.initDepth" step="0.1" class="small-input" @click.stop>
+                             <span class="hint-text">Start-Tiefe</span>
+                        </div>
+                        <div class="input-group">
+                              <select v-model="node.storageShape" class="small-select" @click.stop>
+                                  <option value="FUNCTIONAL">Funktional</option>
+                                  <option value="CYLINDRICAL">Zylindrisch</option>
+                                  <option value="CONICAL">Konisch</option>
+                                  <option value="PARABOLOID">Parabolisch</option>
+                                  <option value="PYRAMIDAL">Pyramidal</option>
+                              </select>
+                             <span class="hint-text">Form</span>
+                        </div>
                       </div>
 
                        <!-- 7: Weir (Überlauf) -->

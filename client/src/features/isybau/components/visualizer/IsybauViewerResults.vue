@@ -13,6 +13,14 @@
       No network data to display.
     </div>
     <svg v-else :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <!-- Background Grid Line (1m or 10m based on gridSize) -->
+        <pattern id="gridPattern" :x="gridOffsetX" :y="gridOffsetY" :width="scale * gridSize" :height="scale * gridSize" patternUnits="userSpaceOnUse">
+          <path :d="`M ${scale * gridSize} 0 L 0 0 0 ${scale * gridSize}`" fill="none" stroke="rgba(46, 204, 113, 0.4)" stroke-width="1" />
+        </pattern>
+      </defs>
+      <rect v-if="gridSize > 0" x="-50000" y="-50000" width="100000" height="100000" fill="url(#gridPattern)" style="pointer-events: none;" />
+      
       <g :transform="transformString">
         <!-- Areas (Catchments) -->
         <g class="areas">
@@ -83,65 +91,91 @@
         <!-- Nodes -->
         <g class="nodes">
           <template v-for="[id, node] in nodes" :key="id">
+            <!-- Node representation -->
             <circle
+              v-if="node.diameter > 0"
               :cx="node.x - bounds.minX"
               :cy="bounds.maxY - node.y"
-              :r="node.diameter > 0 ? node.diameter / 2 : (0.6 * sizeMultiplier) / scale"
+              :r="node.diameter / 2"
               class="node-circle"
               :class="{ 'selected': selectedElement?.id === id }"
               :style="{ fill: getNodeColor(id) }"
               @click.stop="selectElement(node, 'node')"
             />
-            <!-- Node Label -->
-            <text
-              :x="node.x - bounds.minX"
-              :y="bounds.maxY - node.y"
-              class="node-label"
-              :dy="`${-5 * sizeMultiplier}`"
-              text-anchor="middle"
 
-              :transform="`scale(${1/scale})`"
-              style="transform-box: fill-box; transform-origin: center;"
-              :style="{ fontSize: `${4 * sizeMultiplier}px` }"
-            >
-              {{ id }}
-            </text>
+            <!-- Dimensionless nodes as X mark -->
+            <g v-else @click.stop="selectElement(node, 'node')" style="cursor: pointer;">
+              <!-- Invisible circle for hit area -->
+              <circle
+                :cx="node.x - bounds.minX"
+                :cy="bounds.maxY - node.y"
+                :r="(2.0 * baseUnit) / scale"
+                fill="transparent"
+              />
+              <!-- X lines -->
+              <line
+                :x1="(node.x - bounds.minX) - ((1.0 * baseUnit) / scale)"
+                :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit) / scale)"
+                :x2="(node.x - bounds.minX) + ((1.0 * baseUnit) / scale)"
+                :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit) / scale)"
+                class="node-x"
+                :class="{ 'selected': selectedElement?.id === id }"
+                :style="{ stroke: getNodeColor(id) || '#2c3e50' }"
+                vector-effect="non-scaling-stroke"
+              />
+              <line
+                :x1="(node.x - bounds.minX) + ((1.0 * baseUnit) / scale)"
+                :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit) / scale)"
+                :x2="(node.x - bounds.minX) - ((1.0 * baseUnit) / scale)"
+                :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit) / scale)"
+                class="node-x"
+                :class="{ 'selected': selectedElement?.id === id }"
+                :style="{ stroke: getNodeColor(id) || '#2c3e50' }"
+                vector-effect="non-scaling-stroke"
+              />
+            </g>
+
+            <!-- Guide Line for Dragged Label -->
+            <line
+              v-if="labelOffsets.has(id) && (labelOffsets.get(id).x !== 0 || labelOffsets.get(id).y !== 0)"
+              :x1="node.x - bounds.minX"
+              :y1="bounds.maxY - node.y"
+              :x2="(node.x - bounds.minX) + getLabelLineEndpoint(id).x"
+              :y2="(bounds.maxY - node.y) - getLabelLineEndpoint(id).y"
+              class="label-guide-line"
+              vector-effect="non-scaling-stroke"
+            />
+
+            <!-- Node Label -->
+            <g v-if="scale > 0.001" :transform="`translate(${(node.x - bounds.minX) + (labelOffsets.get(id)?.x || 0)}, ${(bounds.maxY - node.y) - (labelOffsets.get(id)?.y || 0)}) scale(${1/scale})`">
+              <text
+                x="0"
+                y="0"
+                class="node-label"
+                :class="{ 'dragging': draggingLabelId === id }"
+                :dy="`${-5 * textSizeMultiplier * baseUnit}`"
+                text-anchor="middle"
+                :style="{ fontSize: `${4 * textSizeMultiplier * baseUnit}px` }"
+                @mousedown.stop.prevent="startLabelDrag(id, node, $event)"
+              >
+                {{ id }}
+              </text>
+            </g>
           </template>
         </g>
       </g>
     </svg>
     
     <!-- Controls -->
-    <div class="controls">
-      <div class="mode-toggle">
-        <button 
-          @click="mode = 'pan'" 
-          :class="{ active: mode === 'pan' }" 
-          title="Verschieben (Pan)"
-        >✋</button>
-        <button 
-          @click="mode = 'select'" 
-          :class="{ active: mode === 'select' }" 
-          title="Auswählen (Select)"
-        >↖️</button>
-      </div>
-      <div class="separator-v"></div>
-      <div class="separator-v"></div>
-      <div class="size-control">
-        <span style="font-size: 0.8rem; color: #666;">A</span>
-        <input 
-          type="range" 
-          v-model.number="sizeMultiplier" 
-          min="0.1" 
-          max="2.0" 
-          step="0.1"
-          title="Größe anpassen"
-        >
-        <span style="font-size: 1.2rem; color: #666;">A</span>
-      </div>
-      <div class="separator-v"></div>
-      <button @click="resetView" title="Ansicht zurücksetzen">↺</button>
-    </div>
+    <ViewerControls 
+        :mode="mode"
+        :textSizeMultiplier="textSizeMultiplier"
+        :arrowSizeMultiplier="arrowSizeMultiplier"
+        @set-mode="mode = $event"
+        @update:textSizeMultiplier="textSizeMultiplier = $event"
+        @update:arrowSizeMultiplier="arrowSizeMultiplier = $event"
+        @reset-view="resetView"
+    />
 
     <!-- Modern Info Window -->
     <Transition name="slide-up">
@@ -307,8 +341,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount, reactive } from 'vue';
 import { getMapping } from '../../utils/mappings.js';
+import ViewerControls from './ViewerControls.vue';
 
 const props = defineProps({
   nodes: {
@@ -349,7 +384,9 @@ const getNode = (id) => props.nodes.get(id);
 const mode = ref('select'); // Default to select for better interactivity
 
 // Size State
-const sizeMultiplier = ref(0.25);
+const textSizeMultiplier = ref(0.25);
+const arrowSizeMultiplier = ref(0.5);
+const gridSize = ref(1); // 1 = 1x1m, 10 = 10x10m, 0 = Off
 
 // Selection State
 const selectedElement = ref(null);
@@ -399,9 +436,35 @@ const bounds = computed(() => {
   };
 });
 
+// Base Unit for Universal Visual Scaling
+const baseUnit = computed(() => {
+  const w = bounds.value.width || 0;
+  const h = bounds.value.height || 0;
+  if (w === 0 && h === 0) return 1;
+  const maxDim = Math.max(w, h);
+  // Using 1000 as a standard assumed canvas width.
+  // This means across 1000 "standard" pixels, elements look properly sized.
+  return maxDim / 1000;
+});
+
 const viewBox = computed(() => {
   const b = bounds.value;
   return `0 0 ${b.width} ${b.height}`;
+});
+const gridOffsetX = computed(() => {
+  if (gridSize.value === 0) return 0;
+  const cx = Number.isFinite(bounds.value.centerX) ? bounds.value.centerX : 50;
+  const screenOriginX = (cx + translateX.value) - (cx * scale.value);
+  const moduloOffset = -(bounds.value.minX % gridSize.value) * scale.value;
+  return screenOriginX + moduloOffset;
+});
+
+const gridOffsetY = computed(() => {
+  if (gridSize.value === 0) return 0;
+  const cy = Number.isFinite(bounds.value.centerY) ? bounds.value.centerY : 50;
+  const screenOriginY = (cy + translateY.value) - (cy * scale.value);
+  const moduloOffset = (bounds.value.maxY % gridSize.value) * scale.value;
+  return screenOriginY + moduloOffset;
 });
 
 const transformString = computed(() => {
@@ -479,10 +542,8 @@ const getEdgeArrowTransform = (edge) => {
   
   const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
   
-
-  
   // Scale correction: scale(1/scale) to keep size constant
-  return `translate(${mx}, ${my}) rotate(${angle}) scale(${(1.0 * sizeMultiplier.value)/scale.value})`;
+  return `translate(${mx}, ${my}) rotate(${angle}) scale(${(2.0 * arrowSizeMultiplier.value * baseUnit.value)/scale.value})`;
 };
 
 const getEdgeColor = (id) => {
@@ -512,6 +573,82 @@ const isDragging = ref(false);
 const dragThreshold = 3; // px
 const accumulatedMove = ref(0);
 
+// Label Dragging State
+const labelOffsets = reactive(new Map());
+const draggingLabelId = ref(null);
+const startLabelX = ref(0);
+const startLabelY = ref(0);
+
+// Helper to get world coords from event (simplistic implementation missing getScreenCTM offset)
+const getEventCoords = (clientX, clientY) => {
+    const svg = container.value?.querySelector('svg');
+    if(!svg) return null;
+    
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+    
+    const cx = bounds.value.centerX;
+    const cy = bounds.value.centerY;
+    const tx = translateX.value;
+    const ty = translateY.value;
+    const s = scale.value;
+    
+    const rawX = (svgP.x - (cx + tx)) / s + cx;
+    const rawY = (svgP.y - (cy + ty)) / s + cy;
+    
+    return { 
+      x: rawX + bounds.value.minX, 
+      y: bounds.value.maxY - rawY 
+    };
+};
+
+const startLabelDrag = (id, node, e) => {
+    if (e.button !== 0) return; // Only left click
+    draggingLabelId.value = id;
+    
+    const coords = getEventCoords(e.clientX, e.clientY);
+    if (coords) {
+        startLabelX.value = coords.x;
+        startLabelY.value = coords.y;
+    }
+    selectElement(node, 'node');
+};
+
+const getLabelLineEndpoint = (nodeId) => {
+  const currentOffset = labelOffsets.get(nodeId);
+  if (!currentOffset) return { x: 0, y: 0 };
+  
+  const dx = currentOffset.x;
+  const dy = currentOffset.y;
+
+  // The text is placed at: x = NodeX + dx, y = NodeY - dy
+  // Then an SVG dy shifts it permanently: dy="-5 * textSizeMultiplier"
+  // The bounding box center is at approx y - 6 * textSizeMultiplier
+  // It scales around its center by 1/scale.
+  // We want the line to end exactly at the text's bottom edge, plus a 2px visual gap.
+  
+  const tsm = textSizeMultiplier.value;
+  const bu = baseUnit.value;
+  const s = scale.value;
+  
+  // Inside the text's <g>, scale is 1/scale.
+  // The bottom edge of the text is roughly 1 * baseUnit down from the baseline.
+  // The baseline is at -5 * tsm * baseUnit.
+  // Therefore the visual bottom is at -4 * tsm * baseUnit.
+  // To leave a 1 * baseUnit visual gap, target Y inside <g> is:
+  const localTargetY = -4 * tsm * bu + 1 * bu;
+  
+  // Convert into world space so the map-space drawing line hits it correctly
+  const worldTargetYOffset = localTargetY / s;
+  
+  return {
+      x: dx,
+      y: dy - worldTargetYOffset
+  };
+};
+
 // Pan Logic
 const startPan = (e) => {
   // Allow pan if mode is 'pan' (left click) OR Middle Click (button 1)
@@ -530,6 +667,24 @@ const startPan = (e) => {
 };
 
 const pan = (e) => {
+  if (draggingLabelId.value) {
+      const coords = getEventCoords(e.clientX, e.clientY);
+      if (coords) {
+          const dx = coords.x - startLabelX.value;
+          const dy = coords.y - startLabelY.value;
+          
+          const current = labelOffsets.get(draggingLabelId.value) || { x: 0, y: 0 };
+          labelOffsets.set(draggingLabelId.value, {
+              x: current.x + dx,
+              y: current.y + dy
+          });
+          
+          startLabelX.value = coords.x;
+          startLabelY.value = coords.y;
+      }
+      return;
+  }
+
   if (!isPanning.value) return;
   
   const dx = e.clientX - startX.value;
@@ -550,6 +705,10 @@ const pan = (e) => {
 };
 
 const endPan = () => {
+  if (draggingLabelId.value) {
+      draggingLabelId.value = null;
+  }
+
   isPanning.value = false;
   setTimeout(() => {
     isDragging.value = false;
@@ -559,8 +718,35 @@ const endPan = () => {
 // Zoom Logic
 const zoom = (e) => {
   const zoomFactor = 0.1;
-  const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-  const newScale = Math.max(0.1, Math.min(50, scale.value + delta));
+  let delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
+
+  // Make zooming proportional
+  const newScale = Math.max(0.1, Math.min(50, scale.value * (1 + delta)));
+  if (newScale === scale.value) return;
+
+  const svg = container.value?.querySelector('svg');
+  if(!svg) {
+    scale.value = newScale;
+    return;
+  }
+  
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  
+  // Transform screen coordinate to SVG viewport coordinate (svgP.x, svgP.y)
+  const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+  
+  const cx = Number.isFinite(bounds.value.centerX) ? bounds.value.centerX : 50;
+  const cy = Number.isFinite(bounds.value.centerY) ? bounds.value.centerY : 50;
+  
+  // Find the exact coordinate on the original map that lies under the cursor
+  const rawX = (svgP.x - (cx + translateX.value)) / scale.value + cx;
+  const rawY = (svgP.y - (cy + translateY.value)) / scale.value + cy;
+  
+  // Adjust transform so that the same map coordinate stays under the cursor at the new scale
+  translateX.value += (rawX - cx) * (scale.value - newScale);
+  translateY.value += (rawY - cy) * (scale.value - newScale);
   
   scale.value = newScale;
 };
@@ -688,12 +874,38 @@ svg {
   stroke-width: 0.1;
 }
 
+.node-x {
+  stroke-width: 2px;
+  transition: stroke 0.2s;
+  pointer-events: none;
+}
+
+.node-x.selected {
+  stroke: #e74c3c !important;
+  stroke-width: 3px;
+}
+
 .node-label {
   fill: #2c3e50;
-  pointer-events: none;
+  pointer-events: all;
+  cursor: grab;
   text-shadow: 0px 0px 0.2px white;
   opacity: 0.8;
   transition: font-size 0.2s;
+}
+
+.node-label.dragging {
+  cursor: grabbing;
+  font-weight: bold;
+  opacity: 1;
+}
+
+.label-guide-line {
+  stroke: #f39c12; /* Orange */
+  stroke-width: 1px;
+  stroke-dasharray: 4, 4;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .empty-state {

@@ -43,6 +43,7 @@
                 @create-area="handleCreateAreaRequest" 
                 @create-edge="handleCreateEdgeRequest"
                 @create-node="handleCreateNodeRequest"
+                @split-edge="handleSplitEdge"
                 :focusTarget="focusedElementId"
             />
         </div>
@@ -206,6 +207,20 @@ const handleCreateNodeRequest = ({ x, y }) => {
         y: y
     };
     showElementModal.value = true;
+};
+
+const handleSplitEdge = (payload) => {
+    // payload can be exactly edgeId (fallback) or an object
+    const edgeId = payload.edgeId || payload;
+    const coords = payload.coords || null;
+    
+    console.log("IsybauMain: Splitting Edge", edgeId, "at coords", coords);
+    store.splitEdgeWithNode(edgeId, coords);
+    // Switch back to view mode to prevent accidental subsequent clics
+    store.editor.mode = 'select';
+    
+    // Optional: We can automatically select the new node if returned,
+    // but the store action should handle the primary logic.
 };
 
 const focusedElementId = ref(null);

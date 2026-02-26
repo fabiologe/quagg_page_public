@@ -47,9 +47,12 @@ export class SwmmBuilder {
         // Timeseries
         this.addTimeseries();
 
-        // Join
+        // Join and clean special characters that SWMM C engine cannot parse properly
+        let inpString = this.sections.join('\n');
+        inpString = inpString.replace(/³/g, '3').replace(/²/g, '2');
+
         return {
-            inpContent: this.sections.join('\n'),
+            inpContent: inpString,
             warnings: this.warnings
         };
     }
@@ -370,7 +373,19 @@ SURCHARGE_METHOD     SLOT
             const volume = this.safeFloat(n.volume, 10);
             const area = volume / depth;
 
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} 0          FUNCTIONAL ${area.toFixed(2)} 0          0\n`;
+            const initDepth = this.safeFloat(n.initDepth, 0);
+            const shape = n.storageShape || 'FUNCTIONAL';
+
+            let shapeParamsStr = '';
+            if (shape === 'FUNCTIONAL') {
+                shapeParamsStr = `FUNCTIONAL ${area.toFixed(2)} 0          0`;
+            } else if (['CYLINDRICAL', 'CONICAL', 'PARABOLOID', 'PYRAMIDAL'].includes(shape)) {
+                shapeParamsStr = `${shape} ${area.toFixed(2)}`;
+            } else {
+                shapeParamsStr = `FUNCTIONAL ${area.toFixed(2)} 0          0`;
+            }
+
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} ${this.pad(initDepth)} ${shapeParamsStr}\n`;
         }
         this.sections.push(text);
     }

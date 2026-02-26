@@ -6,7 +6,8 @@
         :class="{ 
             'cursor-crosshair': isDrawMode,
             'cursor-edge': store.editor.mode === 'addEdge',
-            'cursor-delete': store.editor.mode === 'delete'
+            'cursor-delete': store.editor.mode === 'delete',
+            'cursor-split': store.editor.mode === 'splitEdge'
         }"
         :nodes="store.nodes" 
         :edges="store.edges"
@@ -16,6 +17,7 @@
         :drawingPoints="store.editor.drawingPoints"
         :show-grid="true"
         :interactionMode="store.editor.mode"
+        :enablePopover="['view', 'select', 'editProperties'].includes(store.editor.mode)"
         :focusTarget="focusTarget"
         @select-node="handleNodeSelect"
         @select-edge="handleEdgeSelect"
@@ -53,9 +55,9 @@ const props = defineProps({
     focusTarget: String
 });
 
-const isDrawMode = computed(() => ['addNode', 'addEdge', 'addArea'].includes(store.editor.mode));
+const isDrawMode = computed(() => ['addNode', 'addEdge', 'addArea', 'splitEdge'].includes(store.editor.mode));
 
-const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'map-click', 'map-dblclick', 'show-details', 'create-area', 'create-edge', 'create-node']);
+const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'map-click', 'map-dblclick', 'show-details', 'create-area', 'create-edge', 'create-node', 'split-edge']);
 
 // ...
 
@@ -92,9 +94,19 @@ const handleNodeSelect = (element) => {
     console.log("Selected Node", element.id);
 };
 
-const handleEdgeSelect = (element) => {
+const handleEdgeSelect = (payload) => {
+    // IsybauViewer now emits { element, mapCoords } for edges to support geometric tools
+    const element = payload.element || payload;
+    const mapCoords = payload.mapCoords || null;
+    
     if (store.editor.mode === 'delete') {
         store.removeEdge(element.id);
+        return;
+    }
+    
+    if (store.editor.mode === 'splitEdge') {
+        console.log("IsybauEditor: Splitting Edge", element.id, "at", mapCoords);
+        emit('split-edge', { edgeId: element.id, coords: mapCoords });
         return;
     }
     
@@ -220,6 +232,10 @@ const handleMapDblClick = () => {
 
 .cursor-delete {
     cursor: url('data:image/svg+xml;utf8,<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 6L6 18" stroke="%23e74c3c" stroke-width="4" stroke-linecap="round"/><path d="M6 6L18 18" stroke="%23e74c3c" stroke-width="4" stroke-linecap="round"/></svg>') 12 12, auto !important;
+}
+
+.cursor-split {
+    cursor: url('data:image/svg+xml;utf8,<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 12L18 12" stroke="%23e67e22" stroke-width="3" stroke-dasharray="2 2" stroke-linecap="round"/><circle cx="12" cy="12" r="4" fill="%23d35400" stroke="white" stroke-width="2"/></svg>') 12 12, crosshair !important;
 }
 
 .drawing-controls {

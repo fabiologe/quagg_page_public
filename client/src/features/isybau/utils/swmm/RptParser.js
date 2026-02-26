@@ -490,19 +490,16 @@ export class RptParser {
         });
 
         // --- 12. Node Storage Summary ---
-        parseTable(/Node Storage Summary/, (parts) => {
-            // [0]Name [1]Type [2]AvgVol [3]AvgPcntFull [4]EvapPcnt [5]ExfilPcnt [6]MaxVol [7]MaxPcntFull [8]TimeOfMax [9]MaxOutflow
-            // Columns can vary slightly by version, assuming standard SWMM 5.1/5.2
-            // check parts length or header roughly?
-            // Standard: Name, Type, Average Volume, Avg % Full, Evap %, Exfil %, Max Volume, Max % Full, Time of Max, Max Outflow
+        // --- 12. Storage Volume Summary ---
+        parseTable(/(?:Node Storage|Storage Volume) Summary/, (parts) => {
+            // [0]Name [1]AvgVol [2]AvgPcntFull [3]EvapPcnt [4]ExfilPcnt [5]MaxVol [6]MaxPcntFull [7]Days [8]Hr:Min [9]MaxOutflow
 
             systemStats.storageSummary.push({
                 id: parts[0],
-                type: parts[1],
-                avgVol: parseFloat(parts[2]),
-                avgPcntFull: parseFloat(parts[3]),
-                maxVol: parseFloat(parts[6]),
-                maxPcntFull: parseFloat(parts[7]),
+                avgVol: parseFloat(parts[1]) * 1000,
+                avgPcntFull: parseFloat(parts[2]),
+                maxVol: parseFloat(parts[5]) * 1000,
+                maxPcntFull: parseFloat(parts[6]),
                 maxOutflow: parseFloat(parts[9])
             });
         });

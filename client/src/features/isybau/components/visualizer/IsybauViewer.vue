@@ -14,15 +14,14 @@
     <!-- Always render SVG to capture clicks, even if empty -->
     <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
       <defs>
-        <pattern id="grid1m" :x="gridOffsetX" :y="gridOffsetY" width="1" height="1" patternUnits="userSpaceOnUse">
-          <!-- 1x1m Grid Line -->
-          <path d="M 1 0 L 0 0 0 1" fill="none" stroke="rgba(46, 204, 113, 0.4)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+        <!-- Background Grid Line (1m or 10m based on gridSize) -->
+        <pattern id="gridPattern" :x="gridOffsetX" :y="gridOffsetY" :width="scale * gridSize" :height="scale * gridSize" patternUnits="userSpaceOnUse">
+          <path :d="`M ${scale * gridSize} 0 L 0 0 0 ${scale * gridSize}`" fill="none" stroke="rgba(46, 204, 113, 0.4)" stroke-width="1" />
         </pattern>
       </defs>
+      <rect v-if="gridSize > 0" x="-50000" y="-50000" width="100000" height="100000" fill="url(#gridPattern)" style="pointer-events: none;" />
       
       <g :transform="transformString">
-        <!-- Infinite Grid Background -->
-        <rect v-if="showGrid" x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid1m)" style="pointer-events: none;" />
 
         <!-- Areas (Catchments) -->
         <g class="areas">
@@ -116,29 +115,76 @@
         <g class="nodes">
           <template v-for="node in nodeArray" :key="node.id">
             <g v-if="Number.isFinite(node.x) && Number.isFinite(node.y)">
+                <!-- Node representation -->
                 <circle
+                v-if="node.diameter > 0"
                 :cx="node.x - bounds.minX"
                 :cy="bounds.maxY - node.y"
-                :r="node.diameter > 0 ? node.diameter / 2 : (2.0 * sizeMultiplier) / scale"
+                :r="node.diameter / 2"
                 class="node-circle"
                 :class="{ 'selected': selectedElement?.id === node.id }"
                 :style="{ fill: getNodeColor(node.id) }"
                 @click.stop="selectElement(node, 'node', $event)"
                 />
+                
+                <!-- Dimensionless nodes as X mark -->
+                <g v-else @click.stop="selectElement(node, 'node', $event)" style="cursor: pointer;">
+                  <!-- Invisible circle for hit area -->
+                  <circle
+                    :cx="node.x - bounds.minX"
+                    :cy="bounds.maxY - node.y"
+                    :r="(2.0 * baseUnit) / scale"
+                    fill="transparent"
+                  />
+                  <!-- X lines -->
+                  <line
+                    :x1="(node.x - bounds.minX) - ((1.0 * baseUnit) / scale)"
+                    :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit) / scale)"
+                    :x2="(node.x - bounds.minX) + ((1.0 * baseUnit) / scale)"
+                    :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit) / scale)"
+                    class="node-x"
+                    :class="{ 'selected': selectedElement?.id === node.id }"
+                    :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
+                    vector-effect="non-scaling-stroke"
+                  />
+                  <line
+                    :x1="(node.x - bounds.minX) + ((1.0 * baseUnit) / scale)"
+                    :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit) / scale)"
+                    :x2="(node.x - bounds.minX) - ((1.0 * baseUnit) / scale)"
+                    :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit) / scale)"
+                    class="node-x"
+                    :class="{ 'selected': selectedElement?.id === node.id }"
+                    :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
+                    vector-effect="non-scaling-stroke"
+                  />
+                </g>
+
+                <!-- Guide Line for Dragged Label -->
+                <line
+                  v-if="labelOffsets.has(node.id) && (labelOffsets.get(node.id).x !== 0 || labelOffsets.get(node.id).y !== 0)"
+                  :x1="node.x - bounds.minX"
+                  :y1="bounds.maxY - node.y"
+                  :x2="(node.x - bounds.minX) + getLabelLineEndpoint(node.id).x"
+                  :y2="(bounds.maxY - node.y) - getLabelLineEndpoint(node.id).y"
+                  class="label-guide-line"
+                  vector-effect="non-scaling-stroke"
+                />
+
                 <!-- Node Label -->
-                <text
-                v-if="scale > 0.001"
-                :x="node.x - bounds.minX"
-                :y="bounds.maxY - node.y"
-                class="node-label"
-                :dy="`${-5 * sizeMultiplier}`"
-                text-anchor="middle"
-                :transform="`scale(${1/scale})`"
-                style="transform-box: fill-box; transform-origin: center;"
-                :style="{ fontSize: `${4 * sizeMultiplier}px` }"
-                >
-                {{ node.id }}
-                </text>
+                <g v-if="scale > 0.001" :transform="`translate(${(node.x - bounds.minX) + (labelOffsets.get(node.id)?.x || 0)}, ${(bounds.maxY - node.y) - (labelOffsets.get(node.id)?.y || 0)}) scale(${1/scale})`">
+                  <text
+                    x="0"
+                    y="0"
+                    class="node-label"
+                    :class="{ 'dragging': draggingLabelId === node.id }"
+                    :dy="`${-5 * textSizeMultiplier * baseUnit}`"
+                    text-anchor="middle"
+                    :style="{ fontSize: `${4 * textSizeMultiplier * baseUnit}px` }"
+                    @mousedown.stop.prevent="startLabelDrag(node, $event)"
+                    >
+                    {{ node.id }}
+                  </text>
+                </g>
             </g>
           </template>
         </g>
@@ -148,9 +194,13 @@
     <!-- Extracted Controls -->
     <ViewerControls 
         :mode="mode"
-        :sizeMultiplier="sizeMultiplier"
+        :textSizeMultiplier="textSizeMultiplier"
+        :arrowSizeMultiplier="arrowSizeMultiplier"
+        :gridSize="gridSize"
         @set-mode="mode = $event"
-        @update:sizeMultiplier="sizeMultiplier = $event"
+        @update:gridSize="gridSize = $event"
+        @update:textSizeMultiplier="textSizeMultiplier = $event"
+        @update:arrowSizeMultiplier="arrowSizeMultiplier = $event"
         @reset-view="resetView"
     />
 
@@ -173,7 +223,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, reactive } from 'vue';
 import { getMapping } from '../../utils/mappings.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
@@ -239,6 +289,9 @@ const props = defineProps({
 const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details']);
 
 const container = ref(null); // Reference to root div
+
+const arrowSizeMultiplier = ref(1.0);
+const gridSize = ref(1); // 1 = 1x1m, 10 = 10x10m, 0 = Off
 
 const getNode = (id) => props.nodes.get(id);
 
@@ -367,7 +420,7 @@ const handleMouseDown = (e) => {
 const mode = ref('pan'); // 'pan' | 'select'
 
 // Size State
-const sizeMultiplier = ref(0.5);
+const textSizeMultiplier = ref(0.5);
 
 // Selection State
 const selectedElement = ref(null);
@@ -397,8 +450,15 @@ const selectElement = (element, type, event = null) => {
   }
   
   selectedElement.value = element;
+  
+  // Fetch real map coordinates if event is provided
+  let mapCoords = null;
+  if (event) {
+      mapCoords = getEventCoords(event.clientX, event.clientY);
+  }
+  
   if (type === 'node') emit('select-node', element);
-  else if (type === 'edge') emit('select-edge', element);
+  else if (type === 'edge') emit('select-edge', { element, mapCoords });
   else if (type === 'area') emit('select-area', element);
 };
 
@@ -469,13 +529,37 @@ const bounds = computed(() => {
   };
 });
 
+// Base Unit for Universal Visual Scaling
+const baseUnit = computed(() => {
+  const w = bounds.value.width || 0;
+  const h = bounds.value.height || 0;
+  if (w === 0 && h === 0) return 1;
+  const maxDim = Math.max(w, h);
+  // Using 1000 as a standard assumed canvas width.
+  // This means across 1000 "standard" pixels, elements look properly sized.
+  return maxDim / 1000;
+});
+
 const viewBox = computed(() => {
   const b = bounds.value;
   return `0 0 ${b.width} ${b.height}`;
 });
 
-const gridOffsetX = computed(() => -(bounds.value.minX % 1));
-const gridOffsetY = computed(() => (bounds.value.maxY % 1));
+const gridOffsetX = computed(() => {
+  if (gridSize.value === 0) return 0;
+  const cx = Number.isFinite(bounds.value.centerX) ? bounds.value.centerX : 50;
+  const screenOriginX = (cx + translateX.value) - (cx * scale.value);
+  const moduloOffset = -(bounds.value.minX % gridSize.value) * scale.value;
+  return screenOriginX + moduloOffset;
+});
+
+const gridOffsetY = computed(() => {
+  if (gridSize.value === 0) return 0;
+  const cy = Number.isFinite(bounds.value.centerY) ? bounds.value.centerY : 50;
+  const screenOriginY = (cy + translateY.value) - (cy * scale.value);
+  const moduloOffset = (bounds.value.maxY % gridSize.value) * scale.value;
+  return screenOriginY + moduloOffset;
+});
 
 const transformString = computed(() => {
   const cx = Number.isFinite(bounds.value.centerX) ? bounds.value.centerX : 50;
@@ -571,7 +655,7 @@ const getEdgeArrowTransform = (edge) => {
   
   const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
   
-  return `translate(${mx}, ${my}) rotate(${angle}) scale(${(1.0 * sizeMultiplier.value)/scale.value})`;
+  return `translate(${mx}, ${my}) rotate(${angle}) scale(${(2.0 * arrowSizeMultiplier.value * baseUnit.value)/scale.value})`;
 };
 
 const getEdgeColor = (id) => {
@@ -600,6 +684,62 @@ const isDragging = ref(false);
 const dragThreshold = 3; // px
 const accumulatedMove = ref(0);
 
+// Label Dragging State
+const labelOffsets = reactive(new Map());
+const draggingLabelId = ref(null);
+const startLabelX = ref(0);
+const startLabelY = ref(0);
+
+const startLabelDrag = (node, e) => {
+    if (e.button !== 0) return; // Only left click
+    draggingLabelId.value = node.id;
+    
+    // Convert click to world coords
+    const coords = getEventCoords(e.clientX, e.clientY);
+    if (coords) {
+        startLabelX.value = coords.x;
+        startLabelY.value = coords.y;
+    }
+    
+    // Select the node so details pane opens potentially
+    selectElement(node, 'node', e);
+};
+
+// Calculate visually pleasing endpoint for the guide line, 
+// stopping at the bounding box of the text instead of the center
+const getLabelLineEndpoint = (nodeId) => {
+  const currentOffset = labelOffsets.get(nodeId);
+  if (!currentOffset) return { x: 0, y: 0 };
+  
+  const dx = currentOffset.x;
+  const dy = currentOffset.y;
+
+  // The text is placed at: x = NodeX + dx, y = NodeY - dy
+  // Then an SVG dy shifts it permanently: dy="-5 * textSizeMultiplier"
+  // The bounding box center is at approx y - 6 * textSizeMultiplier
+  // It scales around its center by 1/scale.
+  // We want the line to end exactly at the text's bottom edge, plus a 2px visual gap.
+  
+  const tsm = textSizeMultiplier.value;
+  const bu = baseUnit.value;
+  const s = scale.value;
+  
+  // Inside the text's <g>, scale is 1/scale.
+  // The bottom edge of the text is roughly 1 * baseUnit down from the baseline.
+  // The baseline is at -5 * tsm * baseUnit.
+  // Therefore the visual bottom is at -4 * tsm * baseUnit.
+  // To leave a 1 * baseUnit visual gap, target Y inside <g> is:
+  const localTargetY = -4 * tsm * bu + 1 * bu;
+  
+  // Convert into world space so the map-space drawing line hits it correctly
+  const worldTargetYOffset = localTargetY / s;
+  
+  return {
+      x: dx,
+      y: dy - worldTargetYOffset
+  };
+};
+
 // Pan Logic
 const startPan = (e) => {
   // Allow pan if mode is 'pan' (left click) OR Middle Click (button 1)
@@ -618,6 +758,24 @@ const startPan = (e) => {
 };
 
 const pan = (e) => {
+  if (draggingLabelId.value) {
+      const coords = getEventCoords(e.clientX, e.clientY);
+      if (coords) {
+          const dx = coords.x - startLabelX.value;
+          const dy = coords.y - startLabelY.value;
+          
+          const current = labelOffsets.get(draggingLabelId.value) || { x: 0, y: 0 };
+          labelOffsets.set(draggingLabelId.value, {
+              x: current.x + dx,
+              y: current.y + dy
+          });
+          
+          startLabelX.value = coords.x;
+          startLabelY.value = coords.y;
+      }
+      return;
+  }
+
   if (!isPanning.value) return;
   
   const dx = e.clientX - startX.value;
@@ -638,6 +796,10 @@ const pan = (e) => {
 };
 
 const endPan = () => {
+  if (draggingLabelId.value) {
+      draggingLabelId.value = null;
+  }
+
   isPanning.value = false;
   setTimeout(() => {
     isDragging.value = false;
@@ -647,8 +809,36 @@ const endPan = () => {
 // Zoom Logic
 const zoom = (e) => {
   const zoomFactor = 0.1;
-  const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-  const newScale = Math.max(0.1, Math.min(50, scale.value + delta));
+  let delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
+
+  // Make zooming proportional
+  const newScale = Math.max(0.1, Math.min(50, scale.value * (1 + delta)));
+  if (newScale === scale.value) return;
+
+  const svg = container.value?.querySelector('svg');
+  if(!svg) {
+    scale.value = newScale;
+    return;
+  }
+  
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  
+  // Transform screen coordinate to SVG viewport coordinate (svgP.x, svgP.y)
+  // This is the position on the screen, measured in SVG units.
+  const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+  
+  const cx = Number.isFinite(bounds.value.centerX) ? bounds.value.centerX : 50;
+  const cy = Number.isFinite(bounds.value.centerY) ? bounds.value.centerY : 50;
+  
+  // Find the exact coordinate on the original map that lies under the cursor
+  const rawX = (svgP.x - (cx + translateX.value)) / scale.value + cx;
+  const rawY = (svgP.y - (cy + translateY.value)) / scale.value + cy;
+  
+  // Adjust transform so that the same map coordinate stays under the cursor at the new scale
+  translateX.value += (rawX - cx) * (scale.value - newScale);
+  translateY.value += (rawY - cy) * (scale.value - newScale);
   
   scale.value = newScale;
 };
@@ -788,12 +978,38 @@ svg {
   stroke-width: 0.1;
 }
 
+.node-x {
+  stroke-width: 2px;
+  transition: stroke 0.2s;
+  pointer-events: none;
+}
+
+.node-x.selected {
+  stroke: #e74c3c !important;
+  stroke-width: 3px;
+}
+
 .node-label {
   fill: #2c3e50;
-  pointer-events: none;
+  pointer-events: all;
+  cursor: grab;
   text-shadow: 0px 0px 0.2px white;
   opacity: 0.8;
   transition: font-size 0.2s;
+}
+
+.node-label.dragging {
+  cursor: grabbing;
+  font-weight: bold;
+  opacity: 1;
+}
+
+.label-guide-line {
+  stroke: #f39c12; /* Orange */
+  stroke-width: 1px;
+  stroke-dasharray: 4, 4;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .empty-state {

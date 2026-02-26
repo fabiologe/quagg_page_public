@@ -291,6 +291,8 @@
                             <th>Sohlhöhe (m)</th>
                             <th title="Max. Wassertiefe">Max. Wassertiefe (m)</th>
                             <th title="Max. Einstautiefe (gemeldet)">Max. Einstau (m)</th>
+                            <th title="Max. Gespeichertes Volumen">Max. Speichervol. (m³)</th>
+                            <th title="Max. Füllgrad des Speichers">Füllgrad (%)</th>
                             <th title="Gesamtvolumen der Überflutung">Überflutungsvolumen (m³)</th>
                             <th title="Zeitpunkt des Maximums">t_max</th>
                             <th>Status</th>
@@ -304,6 +306,8 @@
                              <td>{{ nodes.get(node.id)?.z?.toFixed(2) }}</td>
                             <td>{{ node.maxDepth?.toFixed(2) }}</td>
                             <td>{{ node.reportedMaxDepth?.toFixed(2) || '-' }}</td> 
+                            <td>{{ systemStats?.storageSummary && systemStats.storageSummary.find(s => s.id === node.id) ? systemStats.storageSummary.find(s => s.id === node.id).maxVol?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-' }}</td>
+                            <td>{{ systemStats?.storageSummary && systemStats.storageSummary.find(s => s.id === node.id) ? systemStats.storageSummary.find(s => s.id === node.id).maxPcntFull?.toFixed(1) : '-' }}</td>
                             <td>{{ (node.floodingVolume || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
                              <td>{{ node.timeOfMaxDepth || '-' }}</td>
                             <td>
@@ -342,9 +346,16 @@
                                 <div>Gesamtvol. Überflutung: {{ (nodeResults.get(selectedNodeId)?.floodingVolume || 0).toFixed(3) }} m³</div>
                                 <div v-if="(nodeResults.get(selectedNodeId)?.floodingVolume || 0) > 0.001" class="text-red">⚠️ Überflutung gemeldet</div>
                             </div>
+                            <div class="col" v-if="systemStats?.storageSummary && systemStats.storageSummary.find(s => s.id === selectedNodeId)">
+                                <strong>Speicher-Ergebnisse</strong>
+                                <div>Max. Volumen: {{ systemStats.storageSummary.find(s => s.id === selectedNodeId)?.maxVol?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }} m³</div>
+                                <div>Durchschnittl. Füllgrad: {{ systemStats.storageSummary.find(s => s.id === selectedNodeId)?.avgPcntFull?.toFixed(1) }} %</div>
+                                <div>Maximaler Füllgrad: <strong>{{ systemStats.storageSummary.find(s => s.id === selectedNodeId)?.maxPcntFull?.toFixed(1) }} %</strong></div>
+                                <div>Max. Abfluss: {{ (systemStats.storageSummary.find(s => s.id === selectedNodeId)?.maxOutflow * 1000)?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }} l/s</div>
+                            </div>
                         </div>
                          <div class="chart-box">
-                             <Line v-if="chartData" :data="chartData" :options="chartOptions" />
+                             <Line v-if="nodeChartData" :data="nodeChartData" :options="nodeChartData.options || chartOptions" />
                              <div v-else class="loading-chart">Lade Diagramm...</div>
                          </div>
                     </div>
@@ -761,6 +772,24 @@ const updateCharts = (type, id) => {
                 }
             ];
 
+         // If Storage Node, add Volume to a new axis
+         // Typical storage types: 2 (Becken), 3, 4, 12, 13 or explicit volume
+         const isStorage = nodeGeom && (
+             [2, 3, 4, 12, 13].includes(parseInt(nodeGeom.type)) || 
+             parseFloat(nodeGeom.volume) > 0
+         );
+
+         if (isStorage) {
+             datasets.push({
+                 label: 'Volumen (m³)',
+                 borderColor: '#f59e0b', // amber
+                 backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                 data: props.timeSeries.map(step => step.nodes[id]?.vol || 0),
+                 fill: true,
+                 yAxisID: 'y2'
+             });
+         }
+
          // Add Reference Line for Rim Elevation (Max Depth)
          if (maxPhysicalDepth > 0) {
              datasets.push({
@@ -774,9 +803,39 @@ const updateCharts = (type, id) => {
              });
          }
 
+         // Dynamic chart options for nodes to support multiple axes
+         const nodeOptions = JSON.parse(JSON.stringify(chartOptions));
+         nodeOptions.scales = {
+             x: { display: true },
+             y: { 
+                 type: 'linear', 
+                 display: true, 
+                 position: 'left',
+                 title: { display: true, text: 'Tiefe (m)' }
+             },
+             y1: { 
+                 type: 'linear', 
+                 display: true, 
+                 position: 'right',
+                 title: { display: true, text: 'Zufluss (L/s)' },
+                 grid: { drawOnChartArea: false } 
+             }
+         };
+
+         if (isStorage) {
+             nodeOptions.scales.y2 = {
+                 type: 'linear',
+                 display: true,
+                 position: 'right',
+                 title: { display: true, text: 'Volumen (m³)' },
+                 grid: { drawOnChartArea: false }
+             };
+         }
+
          nodeChartData.value = {
             labels,
-            datasets: datasets
+            datasets: datasets,
+            options: nodeOptions
         };
         // Add dual axis options if needed, for now sharing scale or just depth
     } else if (type === 'area') {

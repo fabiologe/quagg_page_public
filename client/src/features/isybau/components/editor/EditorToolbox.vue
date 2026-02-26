@@ -46,6 +46,17 @@
       >
         <span style="font-weight: 900; font-family: sans-serif; font-size: 1.1rem; color: #333;">m²</span>
       </button>
+
+      <div class="separator-v" style="margin: 0 4px; border-left: 1px solid #ccc;"></div>
+
+      <button 
+        class="tool-btn" 
+        :class="{ active: store.editor.mode === 'splitEdge' }"
+        @click="setMode('splitEdge')"
+        title="Knoten in Haltung einbauen (Haltung teilen)"
+      >
+        ✂️
+      </button>
     </div>
 
     <div class="separator-h"></div>
@@ -109,6 +120,7 @@ const hint = computed(() => {
         case 'addNode': return "Klicken zum Platzieren";
         case 'addEdge': return "Start- & Endknoten wählen";
         case 'addArea': return "Punkte klicken (Doppelklick fertig)";
+        case 'splitEdge': return "Klicken Sie auf eine Haltung, um sie zu teilen";
         default: return "";
     }
 });
