@@ -53,6 +53,13 @@
       >
         ⚡ Run
       </button>
+      <button 
+        :class="{ active: activeTab === 'SURFACE' }" 
+        @click="activeTab = 'SURFACE'"
+        title="Oberflächen-Materialien"
+      >
+        🎨 Surface
+      </button>
     </div>
 
     <!-- CONTENT -->
@@ -147,11 +154,14 @@
       <!-- SIMULATION RUNNER -->
       <Flood2DSolverRunner v-if="activeTab === 'SIMULATION'" />
 
+      <!-- SURFACE MATERIALS -->
+      <SurfaceConfig v-if="activeTab === 'SURFACE'" />
+
     </div>
 
     <!-- CONFIGURATION PANEL (Bottom) -->
     <!-- Only show property config if NOT in Profiles/Rain/Sim tab, OR if selection matches -->
-    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION'">
+    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION' && activeTab !== 'SURFACE'">
         <!-- NEW: Multi-select support -->
         <div v-if="currentSelectionIds.length > 1" class="bulk-hint">
             <div class="bulk-icon">🔵</div>
@@ -185,7 +195,8 @@ import RainConfig from './RainConfig.vue';
 import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 import PatternGenerator from '../hydraulics/PatternGenerator.vue';
 import AssignmentModal from '../hydraulics/AssignmentModal.vue';
-import Flood2DSolverRunner from '../Flood2DSolverRunner.vue'; // Adjust path based on file structure
+import Flood2DSolverRunner from '../Flood2DSolverRunner.vue';
+import SurfaceConfig from './SurfaceConfig.vue';
 // Correct Path: ../Flood2DSolverRunner.vue? 
 // ScenarioManager is in features/flood-2D/components/panel/
 // SolverRunner is in features/flood-2D/components/

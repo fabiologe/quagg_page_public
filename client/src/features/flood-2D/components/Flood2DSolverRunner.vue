@@ -82,6 +82,7 @@ import JSZip from 'jszip';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore.js';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore.js';
+import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore.js';
 import { InputGenerator } from '@/features/flood-2D/middleware/InputGenerator.js';
 import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
 import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
@@ -91,6 +92,7 @@ import ResultInspector from '@/features/flood-2D/components/viewer/ResultInspect
 const geoStore = useGeoStore();
 const hydStore = useHydraulicStore();
 const simStore = useSimulationStore();
+const surfaceStore = useSurfaceStore();
 
 
 
@@ -328,6 +330,8 @@ const runDryCheck = async () => {
              grid: geoStore.terrain, 
              modifications: geoStore.modifications, 
              buildings: geoStore.buildings, 
+             surfaceGrid: surfaceStore.surfaceGrid ? toRaw(surfaceStore.surfaceGrid) : null,
+             surfaceMaterials: surfaceStore.surfaceGrid ? toRaw(surfaceStore.materials) : null,
              rain: hydStore.rainConfig && hydStore.rainData ? {
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
@@ -394,6 +398,8 @@ const startPreparation = async () => {
              grid: toRaw(geoStore.terrain), 
              modifications: toRaw(geoStore.modifications), 
              buildings: toRaw(geoStore.buildings), 
+             surfaceGrid: surfaceStore.surfaceGrid ? toRaw(surfaceStore.surfaceGrid) : null,
+             surfaceMaterials: surfaceStore.surfaceGrid ? toRaw(surfaceStore.materials) : null,
              rain: hydStore.rainConfig && hydStore.rainData ? toRaw({
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig

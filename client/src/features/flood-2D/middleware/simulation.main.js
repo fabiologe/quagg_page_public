@@ -136,7 +136,7 @@ self.onmessage = async (e) => {
                 const rootFiles = FS.readdir('/');
                 sendLog(`MEMFS Root: ${rootFiles.join(', ')}`);
 
-                const inputFileNames = ['run.par', 'terrain.asc', 'friction.asc', 'flow.bci', 'profiles.bdy', 'rain.txt'];
+                const inputFileNames = ['run.par', 'terrain.asc', 'friction.asc', 'terrain.n', 'flow.bci', 'profiles.bdy', 'rain.txt'];
                 const inputFiles = {};
 
                 for (const fname of inputFileNames) {

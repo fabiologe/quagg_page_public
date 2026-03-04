@@ -79,6 +79,11 @@
           :toolInstance="boundaryTool"
        />
 
+       <!-- TEXTURE UI -->
+       <TextureTool
+          v-if="simStore.activeTool === 'TEXTURE'"
+       />
+
        <!-- INFO CARD -->
        <TerrainInfoCard
          v-if="selectedInfo"
@@ -115,6 +120,7 @@ import { useShovelTool } from '../../composables/editor/useShovelTool.js';
 import { useBoundaryTool } from '../../composables/editor/useBoundaryTool.js';
 import { useBuildingTool } from '../../composables/editor/useBuildingTool.js';
 import { useCulvertTool } from '../../composables/editor/useCulvertTool.js';
+import { useTextureTool } from '../../composables/editor/useTextureTool.js';
 import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
 
 // --- UI COMPONENTS ---
@@ -122,6 +128,7 @@ import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
+import TextureTool from '../tools/TextureTool.vue';
 
 // No props needed for activeTool anymore, using store
 const props = defineProps({}); 
@@ -152,6 +159,7 @@ const shovelTool = useShovelTool();
 const boundaryTool = useBoundaryTool();
 const buildingTool = useBuildingTool();
 const culvertTool = useCulvertTool();
+const textureTool = useTextureTool();
 
 // Tool Mapping
 const tools = {
@@ -159,6 +167,7 @@ const tools = {
     'SHOVEL': shovelTool,
     'BOUNDARY': boundaryTool,
     'CULVERT': culvertTool,
+    'TEXTURE': textureTool,
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),
@@ -182,11 +191,29 @@ const interactionManager = useInteractionManager(
     toolMap
 );
 
+const applyCameraLock = () => {
+    if (!controls) return;
+    const tool = activeTool.value;
+    if (tool === 'SHOVEL' || tool === 'TEXTURE') {
+        controls.mouseButtons.LEFT = null; 
+    } else {
+        if (activeCamera === cameraOrtho) {
+            controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+            controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+            controls.mouseButtons.RIGHT = null;
+        } else {
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+            controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+            controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+        }
+    }
+};
+
 // --- TOOL LIFECYCLE MANAGEMENT ---
 watch(activeTool, (newVal, oldVal) => {
     // 1. Deactivate Old
     if (oldVal) {
-        const tool = tools[oldVal]; // Direct lookup or via proxy logic if needed
+        const tool = tools[oldVal];
         if (tool && typeof tool.deactivate === 'function') {
             tool.deactivate(scene);
         }
@@ -194,32 +221,15 @@ watch(activeTool, (newVal, oldVal) => {
     // 2. Activate New
     if (newVal) {
         const tool = tools[newVal];
-        // Handle proxy alias if needed (e.g. DRAW -> buildingTool)
-        // But tools object has keys directly.
         if (tool && typeof tool.activate === 'function') {
             tool.activate(scene);
         }
         
-        // --- POLISH: LOCK CAMERA ON SHOVEL ---
-        if (controls) {
-            if (newVal === 'SHOVEL') {
-                // Disable Left Click Rotate/Pan, keep Middle/Right
-                controls.mouseButtons.LEFT = null; 
-            } else {
-                // Restore Default (MapControls defaults: LEFT=Rotate/Pan depending on mode)
-                // We assume standard MapControls behavior here or restore specifically 
-                controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Or ROTATE? MapControls def is complicated
-                // Actually safer to reset entire object or check mode.
-                // MapControls standard: Left=Pan (screenSpacePanning=false -> Rotate?)
-                // Let's set it to valid generic usage:
-                controls.mouseButtons.LEFT = THREE.MOUSE.LEFT; // wait, THREE.MOUSE.LEFT is 0 constant.
-                // MapControls: Left Mouse = Pan (if screenSpacePanning) or Rotate.
-                // Re-instantiating implies setCameraView logic handles defaults.
-                // Simpler: Just set it to THREE.MOUSE.ROTATE if in 3D, PAN if in 2D?
-                // Let's stick to restoring to THREE.MOUSE.ROTATE as common 3D default.
-                 controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-                 controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
-            }
+        applyCameraLock();
+
+        // --- TEXTURE VIEW TOGGLE ---
+        if (terrainMesh && terrainMesh.material.uniforms && terrainMesh.material.uniforms.uShowSurface) {
+            terrainMesh.material.uniforms.uShowSurface.value = (newVal === 'TEXTURE') ? 1.0 : 0.0;
         }
     }
 }, { immediate: true });
@@ -471,6 +481,9 @@ const setCameraView = (axis) => {
         controls.screenSpacePanning = true;
         controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
         
+        applyCameraLock();
+
+        // Fit Bounds
         activeCamera.position.set(0, 1000, 0); 
         activeCamera.up.set(0, 0, -1); 
         activeCamera.lookAt(0, 0, 0);
@@ -501,7 +514,8 @@ const setCameraView = (axis) => {
         }
         controls.enableRotate = true;
         controls.screenSpacePanning = false;
-        controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+
+        applyCameraLock();
 
         const dist = maxDim * 1.2;
         if (axis === 'XZ') { // Front
@@ -641,17 +655,32 @@ const buildTerrainMesh = (result) => {
         validArray[i] = valid;
     }
     geometry.setAttribute('aValid', new THREE.BufferAttribute(validArray, 1));
+
+    // Surface color attribute (for Texture Pipeline painting)
+    // Default to Asphalt (Light Gray #95a5a6) — will be updated by useTextureTool
+    const surfaceColorArray = new Float32Array(count * 3);
+    const defaultColor = new THREE.Color('#95a5a6');
+    for (let i = 0; i < count * 3; i += 3) {
+        surfaceColorArray[i]     = defaultColor.r; // R
+        surfaceColorArray[i + 1] = defaultColor.g; // G
+        surfaceColorArray[i + 2] = defaultColor.b; // B
+    }
+    geometry.setAttribute('aSurfaceColor', new THREE.BufferAttribute(surfaceColorArray, 3));
+
     geometry.computeVertexNormals();
 
     const vertexShader = `
       attribute float aValid;
+      attribute vec3 aSurfaceColor;
       varying float vZ;
       varying float vValid;
       varying vec2 vPlanePos;
+      varying vec3 vSurfaceColor;
       void main() {
         vZ = position.z; 
         vValid = aValid;
-        vPlanePos = position.xy; 
+        vPlanePos = position.xy;
+        vSurfaceColor = aSurfaceColor;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `;
@@ -660,12 +689,14 @@ const buildTerrainMesh = (result) => {
       varying float vZ;
       varying float vValid;
       varying vec2 vPlanePos;
+      varying vec3 vSurfaceColor;
       uniform float uMinZ;
       uniform float uMaxZ;
       uniform vec3 uColorLow;
       uniform vec3 uColorMid;
       uniform vec3 uColorHigh;
       uniform float uIs2D; 
+      uniform float uShowSurface;
       uniform vec2 uBounds;
       uniform float uCellSize;
 
@@ -679,6 +710,14 @@ const buildTerrainMesh = (result) => {
         vec3 col;
         if (h < 0.2) col = mix(uColorLow, uColorMid, h / 0.2);
         else col = mix(uColorMid, uColorHigh, (h - 0.2) / 0.8);
+
+        // Surface Material Overlay (Texture Pipeline)
+        if (uShowSurface > 0.5) {
+            // Blend surface color with subtle height shading for depth cues
+            vec3 surfCol = vSurfaceColor;
+            float heightShade = 0.7 + 0.3 * h; // subtle brightness variation by height
+            col = surfCol * heightShade;
+        }
 
         if (uIs2D > 0.5) {
             float gray = dot(col, vec3(0.299, 0.587, 0.114));
@@ -713,6 +752,7 @@ const buildTerrainMesh = (result) => {
             uColorMid: { value: new THREE.Color(0x10b981) },
             uColorHigh: { value: new THREE.Color(0xffffff) },
             uIs2D: { value: 0.0 },
+            uShowSurface: { value: 0.0 },
             uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) },
             uCellSize: { value: result.cellsize || 1.0 }
         },

@@ -48,6 +48,16 @@
             </div>
           </div>
 
+          <!-- That Open Engine IFC Viewer Card -->
+          <div class="tool-card" @click="showIfcViewer = true">
+            <div class="icon">🏗️</div>
+            <div class="content">
+              <h3>That Open Engine (IFC)</h3>
+              <p>High-End IFC-Viewer basierend auf TOE im dedizierten Fenster.</p>
+              <span class="link-text">Zum Viewer &rarr;</span>
+            </div>
+          </div>
+          
           <!-- ISYIFC Tool Card (Viewer Only) -->
           <div class="tool-card" @click="$router.push('/tools/isyifc')">
             <div class="icon">👀</div>
@@ -100,12 +110,20 @@
           </div>
         </div>
       </div>
+    
+      <!-- IfcViewer Window Container -->
+      <IfcViewer v-if="showIfcViewer" @close="showIfcViewer = false" />
+      
     </div>
   </PublicLayout>
 </template>
 
 <script setup>
+import { ref } from 'vue';
 import PublicLayout from '@/components/layout/PublicLayout.vue'
+import IfcViewer from '@/features/ifc-viewer/components/IfcViewer.vue'
+
+const showIfcViewer = ref(false);
 </script>
 
 <style scoped>
@@ -113,6 +131,7 @@ import PublicLayout from '@/components/layout/PublicLayout.vue'
   padding: 4rem 0;
   background-color: #f8f9fa;
   min-height: calc(100vh - 64px - 200px); /* Adjust based on header/footer */
+  position: relative; /* For absolute internal windows */
 }
 
 .container {

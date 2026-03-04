@@ -44,6 +44,43 @@ const y = ref(0);
 const width = ref(parseInt(props.initialWidth));
 const height = ref(parseInt(props.initialHeight));
 
+const isMinimized = ref(false);
+const isMaximized = ref(false);
+
+let preMaxX = 0;
+let preMaxY = 0;
+let preMaxWidth = 0;
+let preMaxHeight = 0;
+
+const toggleMaximize = () => {
+    if (!isMaximized.value) {
+        preMaxX = x.value;
+        preMaxY = y.value;
+        preMaxWidth = width.value;
+        preMaxHeight = height.value;
+        isMaximized.value = true;
+        isMinimized.value = false;
+    } else {
+        isMaximized.value = false;
+        x.value = preMaxX;
+        y.value = preMaxY;
+        width.value = preMaxWidth;
+        height.value = preMaxHeight;
+    }
+};
+
+const toggleMinimize = () => {
+    isMinimized.value = !isMinimized.value;
+    if (isMinimized.value) isMaximized.value = false;
+};
+
+defineExpose({
+    toggleMaximize,
+    toggleMinimize,
+    isMinimized,
+    isMaximized
+});
+
 // Initialize position
 watch(() => props.isOpen, (val) => {
     if (val) {
@@ -57,13 +94,33 @@ watch(() => props.isOpen, (val) => {
     }
 }, { immediate: true });
 
-const modalStyle = computed(() => ({
-    top: `${y.value}px`,
-    left: `${x.value}px`,
-    width: `${width.value}px`,
-    height: `${height.value}px`,
-    position: 'fixed'
-}));
+const modalStyle = computed(() => {
+    if (isMinimized.value) {
+        return {
+            bottom: '0px',
+            left: `${x.value}px`,
+            width: '350px',
+            height: '50px',
+            position: 'fixed'
+        };
+    }
+    if (isMaximized.value) {
+        return {
+            top: '0px',
+            left: '0px',
+            width: '100vw',
+            height: '100vh',
+            position: 'fixed'
+        };
+    }
+    return {
+        top: `${y.value}px`,
+        left: `${x.value}px`,
+        width: `${width.value}px`,
+        height: `${height.value}px`,
+        position: 'fixed'
+    };
+});
 
 
 // Dragging

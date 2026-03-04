@@ -1,0 +1,140 @@
+flood-2D/
+├── composables/
+│   ├── useResultDataBridge.js
+│   ├── editor/
+│   │   ├── useCulvertTool.js
+│   │   ├── useDrawTool.js
+│   │   ├── useLayerRenderer.js
+│   │   ├── useBoundaryTool.js
+│   │   ├── useBuildingTool.js
+│   │   ├── useShovelTool.js
+│   │   ├── useInteractionManager.js
+├── components/
+│   ├── Flood2DSolverRunner.vue
+│   ├── tools/
+│   │   ├── ToolButton.vue
+│   │   ├── ShovelTool.vue
+│   │   ├── CulvertTool.vue
+│   │   ├── BuildingTool.vue
+│   │   ├── DrawTool.vue
+│   │   ├── BoundaryTool.vue
+│   ├── hydraulics/
+│   │   ├── PatternGenerator.vue
+│   │   ├── GanglinienEditor.vue
+│   │   ├── AssignmentModal.vue
+│   ├── importer/
+│   │   ├── DataImportModal.vue
+│   │   ├── TerrainImport3D.vue
+│   │   ├── KostraImportModal.vue
+│   ├── editor/
+│   │   ├── MapEditor3D.vue
+│   │   ├── TerrainInfoCard.vue
+│   │   ├── PropertyPanel.vue
+│   │   ├── EditorToolbar.vue
+│   ├── runner/
+│   │   ├── SimulationLoadingScreen.vue
+│   ├── viewer/
+│   │   ├── ResultLegend.vue
+│   │   ├── ResultInspector.vue
+│   │   ├── ResultMap3D.vue
+│   │   ├── ResultPlayer.vue
+│   │   ├── ResultTimeline.vue
+│   ├── panel/
+│   │   ├── RainConfigModal.vue
+│   │   ├── TimeSeriesEditor.vue
+│   │   ├── ScenarioManager.vue
+│   │   ├── BoundaryConfig.vue
+│   │   ├── RainConfig.vue
+│   │   ├── ObjectTable.vue
+├── views/
+│   ├── ResultViewerMain.vue
+│   ├── Flood2DMain.vue
+│   ├── ResultViewerMain.vue.bak
+├── result/
+│   ├── boundaries (1).txt
+│   ├── res-0001.wd (1).asc
+│   ├── flow (1).bci
+│   ├── profiles (1).bdy
+├── utils/
+│   ├── test_transformation.js
+│   ├── KostraHelper.js
+│   ├── CulvertGeometry.js
+│   ├── RainModelService.js
+│   ├── RainGenerator.js
+├── test/
+│   ├── dgm10_small.xyz
+│   ├── PunktAbfluss.json
+│   ├── raindata.json
+│   ├── test_inputgenerator.mjs
+│   ├── dgm1_large.xyz
+│   ├── AuslassEinlaufPolyline.geojson
+│   ├── test_rastertools.mjs
+│   ├── test_rastertools_real.mjs
+│   ├── Kanalnetz.xml
+│   ├── Gebäude.geojson
+├── middleware/
+│   ├── Rasterizer.js
+│   ├── ASCParser.js
+│   ├── dataprep.worker.js
+│   ├── InputGenerator.js
+│   ├── Hydraulics.js
+│   ├── simulation.main.js
+│   ├── OutputProcessor.js
+│   ├── lisflood.js
+│   ├── BoundaryTools.js
+│   ├── lisflood.wasm
+│   ├── importers/
+│   │   ├── XMLNodeParser.js
+│   │   ├── GeoJSONParser.js
+├── stores/
+│   ├── useHydraulicStore.js
+│   ├── useSimulationStore.js
+│   ├── useGeoStore.js
+├── solverHydro/
+│   ├── build_log.txt
+│   ├── build_wasm.sh
+│   ├── src/
+│   │   ├── README.rst
+│   │   ├── lisflood-fp-bmi-v5.9/
+│   │   │   ├── .editorconfig
+│   │   │   ├── por_flow.cpp
+│   │   │   ├── boundary.cpp
+│   │   │   ├── fp_acc.cpp
+│   │   │   ├── README.md
+│   │   │   ├── fp_trent.cpp
+│   │   │   ├── sgc.cpp
+│   │   │   ├── output.cpp
+│   │   │   ├── input.cpp
+│   │   │   ├── ch_flow.cpp
+│   │   │   ├── format_file.txt
+│   │   │   ├── util.cpp
+│   │   │   ├── update.cpp
+│   │   │   ├── initialize.cpp
+│   │   │   ├── global.h
+│   │   │   ├── finalize.cpp
+│   │   │   ├── lisflood_lin_gus
+│   │   │   ├── iterateq.cpp
+│   │   │   ├── README.txt
+│   │   │   ├── makefile_win
+│   │   │   ├── makefile
+│   │   │   ├── .gitignore
+│   │   │   ├── pars.cpp
+│   │   │   ├── finalize.h
+│   │   │   ├── lisflood.cpp
+│   │   │   ├── update.h
+│   │   │   ├── fp_flow.cpp
+│   │   │   ├── weir_flow.cpp
+│   │   │   ├── bmi.h
+│   │   │   ├── lib_bmi.cpp
+│   │   │   ├── infevap.cpp
+│   │   │   ├── chkpnt.cpp
+│   │   │   ├── lisflood.h
+│   │   │   ├── makefileGus
+│   │   │   ├── initialize.h
+│   │   │   ├── LISFLOOD-FP user manual.doc
+│   │   │   ├── VersionHistory.h
+│   ├── build/
+│   │   ├── run_debug_headless.mjs
+│   │   ├── lisflood.js
+│   │   ├── lisflood.wasm
+│   │   ├── 

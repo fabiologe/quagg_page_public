@@ -75,10 +75,26 @@ export class InputGenerator {
 
         // 2. Friction
         let useFrictionFile = false;
-        if (scenario.roughness) {
+        let frictionFilename = 'friction.asc';
+
+        // 2a. Surface Grid (Texture Pipeline) — takes priority over polygon roughness
+        if (scenario.surfaceGrid && scenario.surfaceMaterials) {
+            console.log("[InputGenerator] Surface Grid detected — generating terrain.n (Texture Pipeline)");
+            const manningData = this.generateManningFile(scenario.surfaceGrid, scenario.surfaceMaterials, header);
+            if (manningData) {
+                if (fs) {
+                    console.log("[InputGenerator] Streaming terrain.n to MEMFS...");
+                    Rasterizer.writeGridToFS(fs, '/terrain.n', manningData.data, manningData.header);
+                } else {
+                    this.files['terrain.n'] = Rasterizer.gridToASC(manningData.data, manningData.header);
+                }
+                useFrictionFile = true;
+                frictionFilename = 'terrain.n';
+            }
+        } else if (scenario.roughness) {
+            // Legacy: polygon-based roughness map
             const frictionRes = Rasterizer.generateRoughnessMap(header, scenario.roughness);
             if (frictionRes) {
-                // frictionRes is now { header, data }
                 if (fs) {
                     console.log("[InputGenerator] Streaming Friction to MEMFS...");
                     Rasterizer.writeGridToFS(fs, '/friction.asc', frictionRes.data, frictionRes.header);
@@ -166,7 +182,8 @@ export class InputGenerator {
             hasRain,
             scenario.globalRoughness,
             hasBci,
-            hasBdy
+            hasBdy,
+            frictionFilename
         );
 
         if (fs) fs.writeFile('/run.par', parContent);
@@ -648,7 +665,48 @@ export class InputGenerator {
         return { bciContent: content, bdyContent };
     }
 
-    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy) {
+    /**
+     * Generate a Manning roughness grid from a surface material grid.
+     * Maps each cell's integer material ID to its Manning coefficient.
+     * @param {Int8Array} surfaceGrid - Flat grid of material IDs
+     * @param {Array<{id: number, manning: number}>} materials - Material library
+     * @param {object} header - Terrain header { ncols, nrows, cellsize, xll, yll }
+     * @returns {{ header: object, data: Float32Array }|null}
+     */
+    generateManningFile(surfaceGrid, materials, header) {
+        if (!surfaceGrid || !materials || !header) return null;
+
+        const ncols = header.ncols;
+        const nrows = header.nrows;
+        const size = ncols * nrows;
+
+        // Build fast lookup: materialId → manning value
+        const manningLookup = {};
+        for (const m of materials) {
+            manningLookup[m.id] = m.manning;
+        }
+        const defaultManning = 0.035;
+
+        const data = new Float32Array(size);
+        for (let i = 0; i < size; i++) {
+            const matId = surfaceGrid[i] || 1;
+            data[i] = manningLookup[matId] !== undefined ? manningLookup[matId] : defaultManning;
+        }
+
+        const outHeader = {
+            ncols,
+            nrows,
+            cellsize: header.cellsize,
+            xll: header.xll !== undefined ? header.xll : header.xllcorner,
+            yll: header.yll !== undefined ? header.yll : header.yllcorner,
+            NODATA_value: -9999
+        };
+
+        console.log(`[InputGenerator] Generated Manning file: ${ncols}x${nrows}, materials: ${materials.length}`);
+        return { header: outHeader, data };
+    }
+
+    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc') {
         // CRITICAL: Keywords MUST match pars.cpp exactly (strcmp is case-sensitive!)
         // Source: solverHydro/src/lisflood-fp-bmi-v5.9/pars.cpp
         const config = {
@@ -663,7 +721,7 @@ export class InputGenerator {
             ...configOverride
         };
 
-        if (hasFrictionMap) config.manningfile = 'friction.asc'; // Line 99: strcmp(buffer,"manningfile")
+        if (hasFrictionMap) config.manningfile = frictionFilename; // Line 99: strcmp(buffer,"manningfile")
         if (hasRain) config.rainfall = 'rain.txt';               // Line 228: strcmp(buffer,"rainfall")
         if (hasBci) config.bcifile = 'flow.bci';                 // Line 106: strcmp(buffer,"bcifile")
         if (hasBdy) config.bdyfile = 'profiles.bdy';             // Line 107: strcmp(buffer,"bdyfile")

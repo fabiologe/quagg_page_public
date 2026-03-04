@@ -92,6 +92,19 @@
          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21h18M5 21v-7a7 7 0 0114 0v7"></path>
        </svg>
     </ToolButton>
+
+    <!-- TEXTURE Tool (Surface Roughness Painting) -->
+    <ToolButton 
+      @click="setTool('TEXTURE')"
+      :active="activeTool === 'TEXTURE'"
+      title="Texture Brush (Oberfläche bemalen)"
+    >
+       <!-- Paint Brush Icon -->
+       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 4l-4 4M14 8l-6 6c-1 1-1.5 2.5-1.5 4V20h2c1.5 0 3-.5 4-1.5l6-6M14 8l2-2"></path>
+         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21c0-2 1.5-4 4-4"></path>
+       </svg>
+    </ToolButton>
     
     <div class="separator"></div>
 
