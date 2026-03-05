@@ -111,3 +111,13 @@ export const parseGeoJSONBoundaries = (input) => {
     const res = GeoJSONParser.parse(input);
     return res.features.filter(f => f.properties.type === 'BOUNDARY');
 };
+
+/**
+ * Parsers for Surfaces (Both Polygons and LineStrings are accepted)
+ * We don't filter strictly by 'type' here because users might drop arbitrary shapes.
+ * We just return everything GeoJSONParser.parse leaves in (it already filters to Poly/Line).
+ */
+export const parseGeoJSONSurfaces = (input) => {
+    const res = GeoJSONParser.parse(input);
+    return res.features;
+};

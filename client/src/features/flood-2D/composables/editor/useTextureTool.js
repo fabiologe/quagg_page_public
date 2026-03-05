@@ -208,6 +208,9 @@ export function useTextureTool() {
     };
 
     const deactivate = (scene) => {
+        if (isPainting.value) {
+            surfaceStore.calculateCoverage();
+        }
         isPainting.value = false;
 
         if (cursorMesh) {
@@ -245,6 +248,9 @@ export function useTextureTool() {
     };
 
     const onMouseUp = () => {
+        if (isPainting.value) {
+            surfaceStore.calculateCoverage();
+        }
         isPainting.value = false;
     };
 
@@ -296,5 +302,6 @@ export function useTextureTool() {
         onMouseDown,
         onMouseUp,
         reset,
+        syncColors: (ctx) => { syncAllVertexColors(ctx || contextRef); }
     });
 }

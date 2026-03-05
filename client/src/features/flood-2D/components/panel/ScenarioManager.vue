@@ -12,6 +12,13 @@
     <!-- TABS -->
     <div class="tabs">
       <button 
+        :class="{ active: activeTab === 'SURFACE' }" 
+        @click="activeTab = 'SURFACE'"
+        title="Oberflächen-Materialien"
+      >
+        🎨 Oberfläche
+      </button>
+      <button 
         :class="{ active: activeTab === 'NODES' }" 
         @click="activeTab = 'NODES'"
         title="Schächte & Knoten"
@@ -52,13 +59,6 @@
         title="Simulation & Debug"
       >
         ⚡ Run
-      </button>
-      <button 
-        :class="{ active: activeTab === 'SURFACE' }" 
-        @click="activeTab = 'SURFACE'"
-        title="Oberflächen-Materialien"
-      >
-        🎨 Surface
       </button>
     </div>
 
@@ -206,7 +206,7 @@ const geoStore = useGeoStore();
 const simStore = useSimulationStore();
 const hydStore = useHydraulicStore();
 
-const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES | PROFILES | RAIN
+const activeTab = ref('SURFACE'); // SURFACE | NODES | BUILDINGS | BOUNDARIES | PROFILES | RAIN | SIMULATION
 const showAssignmentModal = ref(false);
 
 const totalItems = computed(() => {

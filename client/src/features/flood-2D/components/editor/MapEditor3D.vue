@@ -45,7 +45,9 @@
 
        <!-- Stats Overlay -->
        <div v-if="stats" class="overlay-stats">
-         <div class="stats-title">Terrain Statistics</div>
+         <div class="stats-title-row">
+             <div class="stats-title">Terrain Statistics</div>
+         </div>
          <div class="stat-row"><span>Grid:</span> <span>{{ stats.cols }} x {{ stats.rows }}</span></div>
          <div class="stat-row"><span>Resolution:</span> <span>~{{ stats.cellsize.toFixed(2) }}m</span></div>
          <div class="stat-row"><span>Min Z:</span> <span class="val-min">{{ stats.minZ.toFixed(2) }}m</span></div>
@@ -84,6 +86,19 @@
           v-if="simStore.activeTool === 'TEXTURE'"
        />
 
+       <!-- MAP LAYER CONTROL -->
+       <div class="layer-control" v-if="parsedData">
+          <div class="layer-btn" :class="{ active: activeLayerMode === 'CLASSIC' }" @click="setLayerMode('CLASSIC')" title="Klassische Höhen-Ansicht">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></svg>
+          </div>
+          <div class="layer-btn" :class="{ active: activeLayerMode === 'SURFACE' }" @click="setLayerMode('SURFACE')" title="Oberflächen-Materialien (Textur)">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+          </div>
+          <div class="layer-btn disabled" title="Tiff-Hintergrund (Demnächst)">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+          </div>
+       </div>
+
        <!-- INFO CARD -->
        <TerrainInfoCard
          v-if="selectedInfo"
@@ -111,6 +126,7 @@ import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useSimulationStore } from '../../stores/useSimulationStore.js';
+import { useSurfaceStore } from '../../stores/useSurfaceStore.js';
 import TerrainInfoCard from './TerrainInfoCard.vue';
 
 // --- COMPOSABLES ---
@@ -136,6 +152,7 @@ const props = defineProps({});
 const emit = defineEmits(['cancel', 'confirm']);
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
+const surfaceStore = useSurfaceStore();
 
 // --- STATE ---
 const canvasContainer = ref(null);
@@ -145,6 +162,7 @@ const parsedData = ref(null);
 const rawContent = ref(null);
 const stats = ref(null);
 const selectedInfo = ref(null); // { x, y, z, col, row }
+const activeLayerMode = ref('CLASSIC'); // 'CLASSIC' | 'SURFACE' | 'TIFF'
 
 // --- THREE.JS OBJECTS ---
 let scene, renderer, controls, animationId;
@@ -227,12 +245,32 @@ watch(activeTool, (newVal, oldVal) => {
         
         applyCameraLock();
 
-        // --- TEXTURE VIEW TOGGLE ---
-        if (terrainMesh && terrainMesh.material.uniforms && terrainMesh.material.uniforms.uShowSurface) {
-            terrainMesh.material.uniforms.uShowSurface.value = (newVal === 'TEXTURE') ? 1.0 : 0.0;
+        // --- TEXTURE VIEW TOGGLE (Auto-switch on tool) ---
+        if (newVal === 'TEXTURE') {
+            setLayerMode('SURFACE');
         }
     }
 }, { immediate: true });
+
+// --- SHADER TOGGLE ---
+const setLayerMode = (mode) => {
+    activeLayerMode.value = mode;
+};
+
+watch(activeLayerMode, (val) => {
+    if (terrainMesh && terrainMesh.material.uniforms && terrainMesh.material.uniforms.uShowSurface) {
+        terrainMesh.material.uniforms.uShowSurface.value = (val === 'SURFACE') ? 1.0 : 0.0;
+        // Logic for TIFF can be added here later
+    }
+});
+
+// --- UPDATE ON EXTERNAL SURFACE DATA ---
+watch(() => surfaceStore.gridVersion, () => {
+    if (surfaceStore.isInitialized && terrainMesh) {
+        // Force visual update on the terrain mesh using the texture tool's logic
+        textureTool.syncColors({ terrainMesh, parsedData: parsedData.value });
+    }
+});
 
 
 // --- INIT ---
@@ -868,14 +906,69 @@ defineExpose({
 
 /* Stats */
 .overlay-stats {
-    position: absolute; bottom: 1.5rem; left: 1.5rem;
-    background: rgba(255, 255, 255, 0.95); padding: 1rem;
-    border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    font-size: 0.85rem; color: #34495e; min-width: 200px;
+    position: absolute;
+    bottom: 1.5rem;
+    left: 1.5rem;
+    background: rgba(44, 62, 80, 0.9);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    pointer-events: auto;
+    backdrop-filter: blur(8px);
+    width: 250px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 100;
 }
-.stat-row { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid #eee; }
+.stats-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #7f8c8d;
+    padding-bottom: 5px;
+}
+.stats-title { font-weight: bold; color: #ecf0f1; }
+
+.stat-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
 .val-min { color: #2980b9; font-weight: bold; }
 .val-max { color: #8e44ad; font-weight: bold; }
+
+/* Layer Control */
+.layer-control {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(44, 62, 80, 0.85);
+    backdrop-filter: blur(8px);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 100;
+}
+.layer-btn {
+    padding: 10px;
+    color: #bdc3c7;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.layer-btn:last-child { border-bottom: none; }
+.layer-btn:hover:not(.disabled) { background: rgba(52, 152, 219, 0.2); color: #ecf0f1; }
+.layer-btn.active {
+    background: #3498db;
+    color: white;
+}
+.layer-btn.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
 
 /* Tool Panels (Shovel/Boundary) */
 .tool-ui-panel {

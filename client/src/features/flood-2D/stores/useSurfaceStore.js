@@ -34,6 +34,13 @@ export const useSurfaceStore = defineStore('surface', () => {
     /** @type {import('vue').Ref<number>} */
     const gridNRows = ref(0);
 
+    /** @type {import('vue').Ref<number>} Version counter for bulk updates */
+    const gridVersion = ref(0);
+
+    // --- COVERAGE STATS ---
+    /** @type {import('vue').Ref<Record<number, { count: number, percent: number }>>} */
+    const coverageStats = ref({});
+
     // --- COMPUTED ---
     const isInitialized = computed(() => surfaceGrid.value !== null);
 
@@ -58,6 +65,72 @@ export const useSurfaceStore = defineStore('surface', () => {
         gridNCols.value = ncols;
         gridNRows.value = nrows;
         console.log(`[SurfaceStore] Grid initialized: ${ncols}x${nrows} (${size} cells), default material=${defaultId}`);
+        calculateCoverage();
+    }
+
+    /**
+     * Calculates the percentage of each material on the grid.
+     * Should be called after painting operations (e.g., onMouseUp).
+     */
+    function calculateCoverage() {
+        if (!surfaceGrid.value) return;
+        const size = surfaceGrid.value.length;
+        if (size === 0) return;
+
+        const counts = {};
+        for (let i = 0; i < size; i++) {
+            // Disregard NODATA if necessary, but surfaceGrid is fully covered by materials.
+            const matId = surfaceGrid.value[i];
+            counts[matId] = (counts[matId] || 0) + 1;
+        }
+
+        const stats = {};
+        for (const matId in counts) {
+            stats[matId] = {
+                count: counts[matId],
+                percent: (counts[matId] / size) * 100
+            };
+        }
+        coverageStats.value = stats;
+        gridVersion.value++; // Trigger reactivity for bulk changes
+    }
+
+    /**
+     * Add a new custom material.
+     */
+    function addMaterial(name, color, manning) {
+        const newId = Math.max(...materials.value.map(m => m.id)) + 1;
+        materials.value.push({ id: newId, name, color, manning });
+        return newId;
+    }
+
+    /**
+     * Delete a material.
+     * Replaces the deleted material in the grid with the default material (id=1).
+     */
+    function deleteMaterial(id) {
+        // Prevent deleting the default material (id=1)
+        if (id === 1) return;
+
+        const idx = materials.value.findIndex(m => m.id === id);
+        if (idx !== -1) {
+            materials.value.splice(idx, 1);
+            if (activeMaterialId.value === id) {
+                activeMaterialId.value = 1;
+            }
+
+            // Replace in grid
+            if (surfaceGrid.value) {
+                let changed = false;
+                for (let i = 0; i < surfaceGrid.value.length; i++) {
+                    if (surfaceGrid.value[i] === id) {
+                        surfaceGrid.value[i] = 1;
+                        changed = true;
+                    }
+                }
+                if (changed) calculateCoverage();
+            }
+        }
     }
 
     /**
@@ -156,6 +229,7 @@ export const useSurfaceStore = defineStore('surface', () => {
         gridNCols.value = 0;
         gridNRows.value = 0;
         activeMaterialId.value = 1;
+        coverageStats.value = {};
     }
 
     return {
@@ -164,8 +238,10 @@ export const useSurfaceStore = defineStore('surface', () => {
         activeMaterialId,
         brushRadius,
         surfaceGrid,
+        gridVersion,
         gridNCols,
         gridNRows,
+        coverageStats,
 
         // Computed
         isInitialized,
@@ -173,6 +249,9 @@ export const useSurfaceStore = defineStore('surface', () => {
 
         // Actions
         initGrid,
+        calculateCoverage,
+        addMaterial,
+        deleteMaterial,
         setCellMaterial,
         paintBrush,
         getMaterialById,

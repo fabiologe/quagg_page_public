@@ -50,9 +50,8 @@ const surfaceStore = useSurfaceStore();
 <style scoped>
 .texture-tool-ui {
     position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 80px; /* Below the toolbar/header */
+    left: 20px;
     pointer-events: none;
     z-index: 100;
 }
