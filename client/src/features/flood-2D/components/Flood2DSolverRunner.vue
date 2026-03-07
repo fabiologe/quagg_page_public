@@ -336,6 +336,7 @@ const runDryCheck = async () => {
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
              } : null,
+             rainSeries: hydStore.rainSeries,
              // Corrected: Boundaries come from GeoStore (Features), Assignments from HydStore
              boundaries: geoStore.boundaries ? geoStore.boundaries.features : [],
              // Manholes (Nodes) -> Map to GeoJSON Point Features
@@ -404,6 +405,7 @@ const startPreparation = async () => {
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
              }) : null,
+             rainSeries: hydStore.rainSeries ? toRaw(hydStore.rainSeries) : null,
              boundaries: geoStore.boundaries ? toRaw(geoStore.boundaries.features) : [],
              manholes: geoStore.nodes ? toRaw(geoStore.nodes).map(n => ({
                  type: 'Feature',

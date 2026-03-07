@@ -14,6 +14,9 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
     /** @type {import('vue').Ref<Array<any>>} */
     const rainData = ref([]);
 
+    /** @type {import('vue').Ref<Array<{time_sec: number, value_mm: number}>|null>} */
+    const rainSeries = ref(null);
+
     /** @type {import('vue').Ref<Object|null>} */
     const kostraGrid = ref(null);
 
@@ -126,6 +129,11 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         }
     }
 
+    function setRainSeries(data) {
+        rainSeries.value = data;
+        console.log("[useHydraulicStore] 🌧️ KOSTRA Euler-Regenreihe empfangen (rainSeries hinzugefügt):", data);
+    }
+
     /** @type {import('vue').Ref<number>} */
     const globalRoughness = ref(0.035);
 
@@ -152,6 +160,8 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         getAssignment,
         getAssignmentsByGanglinie,
         setKostraGrid,
-        setRainData
+        setRainData,
+        rainSeries,
+        setRainSeries
     };
 });

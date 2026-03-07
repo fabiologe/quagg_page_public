@@ -298,6 +298,10 @@ const apply = () => {
     // Pass both to setRainData
     hydStore.setRainData(data, config);
 
+    // Push explicitly to new rainSeries state and log
+    hydStore.setRainSeries(data);
+    console.log("🌧️ [RainConfigModal] Euler-Regenreihe berechnet und an Store (rainSeries) übergeben:", data);
+
     emit('apply');
     close();
 };

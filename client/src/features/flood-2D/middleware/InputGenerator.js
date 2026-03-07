@@ -107,7 +107,16 @@ export class InputGenerator {
 
         // 3. Hydraulics - Rain
         let hasRain = false;
-        if (scenario.rain) {
+        if (scenario.rainSeries && Array.isArray(scenario.rainSeries) && scenario.rainSeries.length > 0) {
+            console.log("[InputGenerator] 🌧️ Euler-Regenreihe (rainSeries) in Szenario gefunden, erstelle LISFLOOD .rain");
+            const rainContent = this.generateRainFile(scenario.rainSeries);
+            if (fs) {
+                fs.writeFile('/rain.txt', rainContent);
+            } else {
+                this.files['rain.txt'] = rainContent;
+            }
+            hasRain = true;
+        } else if (scenario.rain) {
             if (typeof scenario.rain === 'object' && scenario.rain.intensity) {
                 const rainContent = Hydraulics.prepareRain(scenario.rain.intensity, scenario.rain.duration || 3600);
                 if (fs) fs.writeFile('/rain.txt', rainContent);
@@ -704,6 +713,37 @@ export class InputGenerator {
 
         console.log(`[InputGenerator] Generated Manning file: ${ncols}x${nrows}, materials: ${materials.length}`);
         return { header: outHeader, data };
+    }
+
+    /**
+     * Erstellt die .rain Input-Datei für LISFLOOD aus der KOSTRA Zeitreihe
+     * Erwartetes Format: KOSTRA_Euler \n seconds \n [Zeit_in_s] \t [Intensität_in_mm_h]
+     */
+    generateRainFile(rainSeries) {
+        console.log("[InputGenerator] 🌧️ Erstelle LISFLOOD .rain Datei aus:", rainSeries);
+        let content = 'KOSTRA_Euler\nseconds\n';
+
+        for (let i = 0; i < rainSeries.length; i++) {
+            const block = rainSeries[i];
+            const t_sec = block.time_sec;
+
+            // Bestimme das Zeitintervall dt in Sekunden für die mm/h Umrechnung (Standard: 5min = 300s)
+            let dt_sec = 300;
+            if (i < rainSeries.length - 1) {
+                dt_sec = rainSeries[i + 1].time_sec - t_sec;
+            } else if (i > 0) {
+                dt_sec = t_sec - rainSeries[i - 1].time_sec;
+            }
+            if (dt_sec === 0) dt_sec = 300; // Fallback Sicherheit
+
+            // Umrechnung: Block-Höhe (mm) im Intervall (dt) -> Intensität in mm/h
+            const intensity_mmh = block.value_mm / (dt_sec / 3600);
+
+            // Plaintext Format: Zeit (s) \t Intensität (mm/h)
+            content += `${t_sec.toFixed(0)}\t${intensity_mmh.toFixed(6)}\n`;
+        }
+
+        return content;
     }
 
     generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc') {
