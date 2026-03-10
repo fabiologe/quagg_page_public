@@ -396,33 +396,36 @@ const startPreparation = async () => {
     try {
          // Gather Data from Stores
          const scenarioData = {
+             // BINARY DATA: Must remain toRaw() to avoid memory bloat
              grid: toRaw(geoStore.terrain), 
-             modifications: toRaw(geoStore.modifications), 
-             buildings: toRaw(geoStore.buildings), 
              surfaceGrid: surfaceStore.surfaceGrid ? toRaw(surfaceStore.surfaceGrid) : null,
-             surfaceMaterials: surfaceStore.surfaceGrid ? toRaw(surfaceStore.materials) : null,
-             rain: hydStore.rainConfig && hydStore.rainData ? toRaw({
+             
+             // JSON METADATA: Must be deep-cloned to kill nested Vue Proxies
+             modifications: JSON.parse(JSON.stringify(geoStore.modifications)), 
+             buildings: JSON.parse(JSON.stringify(geoStore.buildings)), 
+             surfaceMaterials: surfaceStore.surfaceGrid ? JSON.parse(JSON.stringify(surfaceStore.materials)) : null,
+             rain: hydStore.rainConfig && hydStore.rainData ? JSON.parse(JSON.stringify({
                  intensity: hydStore.rainConfig.intensity,
                  ...hydStore.rainConfig
-             }) : null,
-             rainSeries: hydStore.rainSeries ? toRaw(hydStore.rainSeries) : null,
-             boundaries: geoStore.boundaries ? toRaw(geoStore.boundaries.features) : [],
-             manholes: geoStore.nodes ? toRaw(geoStore.nodes).map(n => ({
+             })) : null,
+             rainSeries: hydStore.rainSeries ? JSON.parse(JSON.stringify(hydStore.rainSeries)) : null,
+             boundaries: geoStore.boundaries ? JSON.parse(JSON.stringify(geoStore.boundaries.features)) : [],
+             manholes: geoStore.nodes ? JSON.parse(JSON.stringify(geoStore.nodes)).map(n => ({
                  type: 'Feature',
                  id: n.id,
                  geometry: { type: 'Point', coordinates: [n.x, n.y] },
                  properties: { name: n.displayName || `Node_${n.id}` }
              })) : [],
-             assignments: toRaw(hydStore.assignments),
-             ganglinien: toRaw(hydStore.ganglinien),
+             assignments: JSON.parse(JSON.stringify(hydStore.assignments)),
+             ganglinien: JSON.parse(JSON.stringify(hydStore.ganglinien)),
              globalRoughness: hydStore.globalRoughness,
-              config: {
+             config: {
                   sim_time: String(simStore.simDuration || 3600) + '.0',
                   initial_tstep: String(simStore.timeStep || 1.0),
                   saveint: String(simStore.saveInterval || 60) + '.0',
                   massint: String(simStore.massInterval || 60) + '.0',
                   ...(simStore.useAcceleration ? { acceleration: '' } : {})
-              }
+             }
           };
 
          // 2. Send to Worker (DELEGATED GENERATION)

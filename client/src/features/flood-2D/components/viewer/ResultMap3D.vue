@@ -6,24 +6,36 @@
 import { ref, onMounted, onUnmounted, watch, toRaw } from 'vue';
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
+import { useVolumeTool } from '@/features/flood-2D/composables/useVolumeTool';
+import { useSectionTool } from '@/features/flood-2D/composables/useSectionTool';
+import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 
 const props = defineProps({
   terrain: { type: Object, default: null },
   depthData: { type: Object, default: null }, // Float32Array or null
   maxWaterDepth: { type: Number, default: 1.0 },
   bciContent: { type: String, default: null },
-  probeActive: { type: Boolean, default: false }
+  activeTool: { type: String, default: null }
 });
 
-const emit = defineEmits(['cellProbed']);
+const emit = defineEmits(['cellProbed', 'sectionDrawn']);
 
 const container = ref(null);
 
 let renderer, scene, camera, controls;
-let terrainMesh, waterMesh, boundaryMesh, probeMarker;
+let terrainMesh = null;
+let waterMesh = null;
+let boundaryMesh = null;
+const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
+const probeMarkers = new Map(); // Track multiple probe markers by ID
 let animationId;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+
+// Store/Composable
+const analysisStore = useAnalysisStore();
+let volumeToolState = null;
+let sectionToolState = null;
 
 // --- SHADERS ---
 
@@ -88,7 +100,7 @@ const waterVertexShader = `
      vec3 pos = position;
      if (d > 0.005) {
          // Lift water surface above terrain by depth + small offset
-         pos.z += d + 0.2;
+         pos.z += d + 0.35;
      }
      // Dry cells: keep pos.z at terrain elevation (unchanged).
      // The fragment shader discards them via vDepth < 0.005.
@@ -162,10 +174,10 @@ function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0a1a);
 
-  camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 10000);
+  camera = new THREE.PerspectiveCamera(55, w / h, 5.0, 20000);
   camera.position.set(0, 500, 500);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, logarithmicDepthBuffer: true });
   renderer.setSize(w, h);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.value.appendChild(renderer.domElement);
@@ -187,89 +199,276 @@ function initScene() {
   fillLight.position.set(-200, 100, -200);
   scene.add(fillLight);
 
+  // Setup Volume Tool Composable
+  volumeToolState = useVolumeTool({
+    scene,
+    camera,
+    renderer: { value: { domElement: renderer.domElement } }, // Ensure structure matches expected ref structure
+    getTerrainMesh: () => terrainMesh,
+    onPolygonDrawn: (points) => {
+      // Points are in World Coordinates.
+      // We must translate them to real-world grid space (EPSG coordinates).
+      if (props.terrain && terrainMesh) {
+        const { ncols, nrows, cellsize, xllcorner, yllcorner } = props.terrain;
+        const bounds = props.terrain.bounds || {
+          width: (ncols - 1) * cellsize,
+          height: (nrows - 1) * cellsize
+        };
+
+        const geoPoints = points.map(pt => {
+           const local = terrainMesh.worldToLocal(pt.clone());
+           return {
+             x: xllcorner + (local.x + bounds.width / 2),
+             y: yllcorner + (local.y + bounds.height / 2)
+           };
+        });
+
+        const id = Math.random().toString(36).substring(2, 9);
+        const polyColors = ['#00e5ff', '#ffeb3b', '#ff4081', '#76ff03', '#e040fb', '#ff9800', '#18ffff'];
+        const color = polyColors[Math.floor(Math.random() * polyColors.length)];
+
+        analysisStore.addPolygon(geoPoints, props.terrain, id, color);
+
+        return { id, color };
+      }
+      return null;
+    },
+    onDrawStart: () => {
+      if (controls) controls.enabled = false;
+    },
+    onDrawEnd: () => {
+      if (controls) controls.enabled = true;
+    }
+  });
+
+  // Setup Section Tool Composable
+  sectionToolState = useSectionTool({
+    scene,
+    camera,
+    renderer: { value: { domElement: renderer.domElement } },
+    getTerrainMesh: () => terrainMesh,
+    onSectionDrawn: (startPt, endPt) => {
+      if (props.terrain && terrainMesh) {
+        const id = Math.random().toString(36).substring(2, 9);
+        const polyColors = ['#ffeb3b', '#ff4081', '#76ff03', '#00e5ff', '#e040fb', '#ff9800', '#18ffff'];
+        const color = polyColors[Math.floor(Math.random() * polyColors.length)];
+
+        const samples = computeSectionData(startPt, endPt);
+        if (samples && samples.length > 0) {
+          emit('sectionDrawn', { id, color, samples });
+          return { id, color };
+        }
+      }
+      return null;
+    },
+    onDrawStart: () => {
+      if (controls) controls.enabled = false;
+    },
+    onDrawEnd: () => {
+      if (controls) controls.enabled = true;
+    }
+  });
+
   window.addEventListener('resize', onResize);
-  renderer.domElement.addEventListener('click', onCanvasClick);
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
   animate();
   console.log('[ResultMap3D] Scene initialized ✅');
 }
 
-// --- PROBE / CELL INSPECTOR ---
+const clearVolume = () => {
+  if (volumeToolState) volumeToolState.clearPolygon();
+};
 
-function onCanvasClick(event) {
-  if (!props.probeActive || !terrainMesh || !props.terrain) return;
+const removeVolumePolygon = (id) => {
+  if (volumeToolState) volumeToolState.removePolygonMesh(id);
+};
 
+// --- TOOLS / INTERACTION ---
+
+function getIntersection(event) {
+  if (!terrainMesh || !props.terrain) return null;
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObject(terrainMesh);
-  if (hits.length === 0) return;
+  if (hits.length === 0) return null;
 
-  const hit = hits[0];
-  // hit.point is in world space. Terrain mesh is rotated -PI/2 around X,
-  // so local XY plane maps to world XZ. We need to get local-space coords.
+  return hits[0]; // { point (world), object, etc }
+}
+
+function onPointerMove(event) {
+  // Volume and Section tools handle pointer move via composable event listeners
+}
+
+function onPointerDown(event) {
+  // Volume and Section tools handle pointer down via composable event listeners
+  if (props.activeTool === 'volume' || props.activeTool === 'section') return;
+
+  const hit = getIntersection(event);
+  if (!hit) return;
+
   const localPt = terrainMesh.worldToLocal(hit.point.clone());
-
   const { ncols, nrows, cellsize, gridData, minZ, xllcorner, yllcorner } = props.terrain;
   const bounds = props.terrain.bounds || {
     width: (ncols - 1) * (cellsize || 1),
     height: (nrows - 1) * (cellsize || 1)
   };
 
-  // PlaneGeometry goes from -width/2 to +width/2 in X, -height/2 to +height/2 in Y
-  // localPt.x maps to column, localPt.y maps to geometry row
   const fracX = (localPt.x + bounds.width / 2) / bounds.width;
   const fracY = (localPt.y + bounds.height / 2) / bounds.height;
-
-  // fracX 0=left col, fracY 0=bottom of plane (geomRow=nrows-1)
-  // geomRow 0 = top of plane = fracY=1
   const col = Math.floor(fracX * ncols);
-  const geomRow = Math.floor((1 - fracY) * nrows); // invert Y: top=0
-  const gridRow = (nrows - 1) - geomRow; // grid row (ASC: 0=north)
+  const geomRow = Math.floor((1 - fracY) * nrows);
+  const gridRow = (nrows - 1) - geomRow;
 
   if (col < 0 || col >= ncols || gridRow < 0 || gridRow >= nrows) return;
 
   const gridIdx = gridRow * ncols + col;
   const terrainZ = gridData[gridIdx];
-  if (terrainZ <= -9000) return; // NODATA
+  if (terrainZ <= -9000) return;
 
-  // World coordinates
   const worldX = xllcorner + (col + 0.5) * cellsize;
   const worldY = yllcorner + (gridRow + 0.5) * cellsize;
 
-  // Emit only static position info — water data is computed reactively per frame in parent
-  const cellInfo = {
-    col, row: gridRow,
-    terrainZ,
-    worldX, worldY,
-    cellsize
-  };
+  // --- PROBE TOOL ---
+  if (props.activeTool === 'probe') {
+    const id = Math.random().toString(36).substring(2, 9);
+    const cellInfo = { id, col, row: gridRow, terrainZ, worldX, worldY, cellsize };
+    emit('cellProbed', cellInfo);
+    // Fix probe marker Z positioning manually to avoid intersection glitches
+    placeProbeMarker(localPt, terrainZ - minZ, cellsize, id);
+    return;
+  }
 
-  emit('cellProbed', cellInfo);
-  placeProbeMarker(localPt, terrainZ - minZ, cellsize);
+  // --- PROBE TOOL ---
+  if (props.activeTool === 'probe') {
+    const id = Math.random().toString(36).substring(2, 9);
+    const cellInfo = { id, col, row: gridRow, terrainZ, worldX, worldY, cellsize };
+    emit('cellProbed', cellInfo);
+    // Fix probe marker Z positioning manually to avoid intersection glitches
+    placeProbeMarker(localPt, terrainZ - minZ, cellsize, id);
+    return;
+  }
 }
 
-function placeProbeMarker(localPt, normalizedZ, cellsize) {
-  if (!probeMarker) {
-    const ringGeo = new THREE.RingGeometry(cellsize * 0.3, cellsize * 0.5, 24);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xff4444,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.9,
-      depthTest: false
-    });
-    probeMarker = new THREE.Mesh(ringGeo, ringMat);
-    probeMarker.rotation.x = -Math.PI / 2; // this is INSIDE the already-rotated parent space
-    scene.add(probeMarker);
+function computeSectionData(startPtWorld, endPtWorld) {
+  if (!props.terrain) return;
+  const { ncols, nrows, cellsize, gridData, xllcorner, yllcorner, minZ } = props.terrain;
+  
+  // Transform world points to local terrain space (where Z is up, X/Y are flat)
+  const localStart = terrainMesh.worldToLocal(startPtWorld.clone());
+  const localEnd = terrainMesh.worldToLocal(endPtWorld.clone());
+
+  // We actually need the world real-world XY coordinates to map back to grid
+  // The local plane is centered at 0,0. width spans (-w/2 to w/2).
+  const bounds = props.terrain.bounds || {
+    width: (ncols - 1) * cellsize,
+    height: (nrows - 1) * cellsize
+  };
+
+  // Convert local Plane coordinates back to real-world Geo coordinates
+  const realStartX = xllcorner + (localStart.x + bounds.width / 2);
+  const realStartY = yllcorner + (localStart.y + bounds.height / 2); // local Y maps directly to Northing in Plane
+  
+  const realEndX = xllcorner + (localEnd.x + bounds.width / 2);
+  const realEndY = yllcorner + (localEnd.y + bounds.height / 2);
+
+  const dx = realEndX - realStartX;
+  const dy = realEndY - realStartY;
+  const totalDist = Math.sqrt(dx*dx + dy*dy);
+  
+  if (totalDist < cellsize * 0.1) return; // Too short
+  
+  // Sample a point every half cellsize
+  const sampleCount = Math.max(10, Math.ceil(totalDist / (cellsize * 0.5)));
+  const samples = [];
+
+  for (let i = 0; i <= sampleCount; i++) {
+    const t = i / sampleCount;
+    const x = realStartX + t * dx;
+    const y = realStartY + t * dy;
+    const distance = t * totalDist;
+
+    // Interpolate Grid Z
+    // Grid indices:
+    // col = (x - xll) / cellsize
+    // row (bottom-up) = (y - yll) / cellsize
+    const fx = (x - xllcorner) / cellsize;
+    const fy = (y - yllcorner) / cellsize;
+
+    // Bilinear Interpolation
+    const col0 = Math.floor(fx);
+    const col1 = col0 + 1;
+    const row0 = Math.floor(fy);
+    const row1 = row0 + 1;
+
+    const wx = fx - col0;
+    const wy = fy - row0;
+
+    let z = null;
+    let validPts = 0;
+    let zSum = 0;
+    let wSum = 0;
+
+    // Helper to get grid val
+    const getZ = (c, r, weight) => {
+      if (c >= 0 && c < ncols && r >= 0 && r < nrows) {
+        const val = gridData[r * ncols + c];
+        if (val > -9000) {
+          zSum += val * weight;
+          wSum += weight;
+        }
+      }
+    };
+
+    getZ(col0, row0, (1-wx)*(1-wy));
+    getZ(col1, row0, wx*(1-wy));
+    getZ(col0, row1, (1-wx)*wy);
+    getZ(col1, row1, wx*wy);
+
+    if (wSum > 0.001) {
+       z = zSum / wSum;
+    }
+
+    if (z !== null) {
+      samples.push({
+        distance,
+        terrainZ: z,
+        fx, // save fractional grid position for fast water lookup later
+        fy
+      });
+    }
   }
+
+  if (samples.length > 0) {
+    console.log(`[ResultMap3D] Sampled ${samples.length} points for Cross-Section`);
+    return samples;
+  }
+  return null;
+}
+
+function placeProbeMarker(localPt, normalizedZ, cellsize, id) {
+  const ringGeo = new THREE.RingGeometry(cellsize * 0.3, cellsize * 0.5, 24);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xff4444,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false
+  });
+  const marker = new THREE.Mesh(ringGeo, ringMat);
+  marker.rotation.x = -Math.PI / 2; // this is INSIDE the already-rotated parent space
+  scene.add(marker);
 
   // Position in world space: terrain mesh is rotated -PI/2 around X
   // local (x, y, z) → world (x, z, -y)
   // But we set position directly in world space:
-  probeMarker.position.set(localPt.x, normalizedZ + 0.3, -localPt.y);
-  probeMarker.visible = true;
+  marker.position.set(localPt.x, normalizedZ + 0.3, -localPt.y);
+  marker.visible = true;
+  
+  probeMarkers.set(id, marker);
 }
 
 function animate() {
@@ -279,6 +478,24 @@ function animate() {
     renderer.render(scene, camera);
   }
 }
+
+watch(() => props.activeTool, (newTool) => {
+  if (volumeToolState) {
+    if (newTool === 'volume') volumeToolState.enable();
+    else volumeToolState.disable();
+  }
+  
+  if (sectionToolState) {
+    if (newTool === 'section') {
+        sectionToolState.enable();
+    } else {
+        sectionToolState.disable();
+    }
+  }
+  
+  // Make sure controls are re-enabled if tool is cancelled mid-draw
+  if (controls) controls.enabled = true;
+});
 
 function onResize() {
   if (!container.value || !renderer) return;
@@ -373,6 +590,105 @@ function buildTerrain(t) {
   console.log('[ResultMap3D] Terrain mesh added ✅ bounds:', bounds.width, 'x', bounds.height);
 }
 
+// --- POLYGON HIGHLIGHT LAYER ---
+
+watch(() => analysisStore.polygons, (newPolygons) => {
+  if (!scene || !props.terrain) return;
+
+  const currentIds = newPolygons.map(p => p.id);
+  
+  // Remove deleted ones
+  for (const [id, mesh] of highlightMeshes.entries()) {
+    if (!currentIds.includes(id)) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      highlightMeshes.delete(id);
+    }
+  }
+
+  // Add new ones
+  for (const poly of newPolygons) {
+    if (!highlightMeshes.has(poly.id)) {
+      const mesh = createHighlightMesh(poly, props.terrain);
+      if (mesh) {
+        mesh.rotation.x = -Math.PI / 2; // Match terrain Mesh rotation
+        scene.add(mesh);
+        highlightMeshes.set(poly.id, mesh);
+      }
+    }
+  }
+}, { deep: true });
+
+function createHighlightMesh(polygon, terrain) {
+  const { ncols, nrows, cellsize, gridData, minZ } = terrain;
+  const activeSet = polygon.indices?.activeIndices;
+  
+  if (!activeSet || activeSet.length === 0) return null;
+  
+  const vertices = [];
+  
+  const bounds = terrain.bounds || {
+    width: (ncols - 1) * cellsize,
+    height: (nrows - 1) * cellsize
+  };
+  
+  const halfW = bounds.width / 2;
+  const halfH = bounds.height / 2;
+  
+  for (const idx of activeSet) {
+    const col = idx % ncols;
+    const row = Math.floor(idx / ncols); // top-down index from VolumeAnalyzer
+    
+    // Convert to bottom-up index to read terrain Z safely from Map3D gridData
+    const gridRow = (nrows - 1) - row;
+    const terrainIdx = gridRow * ncols + col;
+    
+    const zVal = gridData[terrainIdx];
+    if (zVal <= -9000) continue; 
+    
+    const cx = col * cellsize - halfW;
+    const cy = halfH - row * cellsize; // row 0 is top (+halfH)
+    
+    const zOffset = 0.5; // Hover well above terrain to prevent z-fighting
+    const hcs = cellsize / 2;
+    
+    const x1 = cx - hcs, y1 = cy + hcs;
+    const x2 = cx + hcs, y2 = cy + hcs;
+    const x3 = cx - hcs, y3 = cy - hcs;
+    const x4 = cx + hcs, y4 = cy - hcs;
+    
+    const finalZ = (zVal - minZ) + zOffset; 
+    
+    vertices.push(
+      x1, y1, finalZ,
+      x3, y3, finalZ,
+      x2, y2, finalZ,
+      
+      x3, y3, finalZ,
+      x4, y4, finalZ,
+      x2, y2, finalZ
+    );
+  }
+  
+  if (vertices.length === 0) return null;
+  
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  
+  const material = new THREE.MeshBasicMaterial({
+    color: polygon.color || '#76ff03',
+    transparent: true,
+    opacity: 0.4,
+    depthTest: true,
+    depthWrite: false, // Prevent overlapping semi-transparent meshes from clashing
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+  
+  return new THREE.Mesh(geometry, material);
+}
+
 // --- WATER LAYER ---
 
 watch(() => props.depthData, (data) => {
@@ -415,7 +731,10 @@ function updateWater(depthData) {
       fragmentShader: waterFragmentShader,
       transparent: true,
       side: THREE.DoubleSide,
-      depthWrite: false
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2
     });
 
     waterMesh = new THREE.Mesh(geometry, material);
@@ -612,7 +931,35 @@ function buildBoundaries(bciContent, t) {
   console.log(`[ResultMap3D] 🔵 Rendered ${points.length} boundary arrows (BCI debug).`);
 }
 
-defineExpose({ onResize, clearProbe() { if (probeMarker) probeMarker.visible = false; } });
+defineExpose({ 
+  onResize, 
+  clearProbe(id) {
+    if (id) {
+      const marker = probeMarkers.get(id);
+      if (marker) {
+        scene.remove(marker);
+        marker.geometry.dispose();
+        marker.material.dispose();
+        probeMarkers.delete(id);
+      }
+    } else {
+      for (const marker of probeMarkers.values()) {
+        scene.remove(marker);
+        marker.geometry.dispose();
+        marker.material.dispose();
+      }
+      probeMarkers.clear();
+    }
+  }, 
+  clearSection() { 
+      if (sectionToolState) sectionToolState.clearAllSections(); 
+  },
+  removeSection(id) {
+      if (sectionToolState) sectionToolState.removeSectionMesh(id);
+  },
+  clearVolume() { if (volumeToolState) volumeToolState.clearPolygon(); },
+  removeVolumePolygon
+});
 </script>
 
 <style scoped>

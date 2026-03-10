@@ -32,7 +32,9 @@
           :maxWaterDepth="bridge.maxWaterDepth.value"
           :bciContent="bridge.bciContent.value"
           :probeActive="activeTool === 'probe'"
+          :activeTool="activeTool"
           @cellProbed="onCellProbed"
+          @sectionDrawn="onSectionDrawn"
         />
 
         <!-- Legend Overlay -->
@@ -40,6 +42,31 @@
           :maxDepth="bridge.maxWaterDepth.value"
           class="legend-overlay"
         />
+        
+        <!-- Section Profile Charts -->
+        <template v-if="activeTool === 'section'">
+          <TransitionGroup name="fade-slide">
+             <ResultSectionChart
+               v-for="section in computedSectionsList"
+               :key="section.id"
+               :section="section"
+               :currentFrame="currentFrame"
+               @closeRequested="removeSection"
+             />
+          </TransitionGroup>
+        </template>
+
+        <!-- Volume Panels -->
+        <template v-if="activeTool === 'volume'">
+          <TransitionGroup name="fade-slide">
+            <ResultVolumePanel 
+              v-for="poly in analysisStore.polygonVolumes" 
+              :key="poly.id"
+              :polygon="poly"
+              @clearRequested="removeVolumeAnalysis"
+            />
+          </TransitionGroup>
+        </template>
 
         <!-- Tool Buttons -->
         <div class="tool-buttons">
@@ -54,65 +81,17 @@
           </button>
         </div>
 
-        <!-- Cell Info Panel -->
-        <Transition name="slide-info">
-          <div v-if="probedCell" class="cell-info-panel">
-            <div class="cell-info-header">
-              <span>📍 Zellenabfrage</span>
-              <button class="close-btn" @click="clearProbe">&times;</button>
-            </div>
-            <div class="cell-info-body">
-              <div class="info-row">
-                <span class="info-label">Gelände</span>
-                <span class="info-value">{{ probedCell.terrainZ.toFixed(2) }} m</span>
-              </div>
-              <div class="info-row" v-if="probedCell.wsp !== null">
-                <span class="info-label">Wasserspiegel</span>
-                <span class="info-value wsp">{{ probedCell.wsp.toFixed(2) }} m</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Wassertiefe</span>
-                <span class="info-value" :class="{ wet: probedCell.waterDepth > 0.001 }">
-                  {{ probedCell.waterDepth > 0.001 ? probedCell.waterDepth.toFixed(3) + ' m' : '— trocken —' }}
-                </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Zellvolumen</span>
-                <span class="info-value">{{ probedCell.cellVolume.toFixed(3) }} m³</span>
-              </div>
-              <div class="info-divider"></div>
-              <div class="info-row small">
-                <span class="info-label">Koordinaten</span>
-                <span class="info-value">{{ probedCell.worldX.toFixed(2) }}, {{ probedCell.worldY.toFixed(2) }}</span>
-              </div>
-              <div class="info-row small">
-                <span class="info-label">Rasterzelle</span>
-                <span class="info-value">Spalte {{ probedCell.col }}, Zeile {{ probedCell.row }}</span>
-              </div>
-              <div class="info-row small">
-                <span class="info-label">Zellgröße</span>
-                <span class="info-value">{{ probedCell.cellsize }} m</span>
-              </div>
-              <div class="info-divider"></div>
-              <div class="info-row small">
-                <span class="info-label">Frame</span>
-                <span class="info-value">{{ currentFrame }} / {{ bridge.totalFrames.value }}</span>
-              </div>
-              <div class="info-row small">
-                <span class="info-label">Depth Data</span>
-                <span class="info-value">{{ currentDepthData ? '✅ ' + currentDepthData.length + ' cells' : '❌ null' }}</span>
-              </div>
-              <div class="info-row small">
-                <span class="info-label">GridIdx</span>
-                <span class="info-value">T:{{ probedCell.row * (bridge.terrain.value?.ncols || 0) + probedCell.col }} D:{{ ((bridge.terrain.value?.nrows || 1) - 1 - probedCell.row) * (bridge.terrain.value?.ncols || 0) + probedCell.col }}</span>
-              </div>
-              <div class="info-row small">
-                <span class="info-label">Frame Keys</span>
-                <span class="info-value" style="font-size:0.65rem">{{ [...bridge.resultFrames.value.keys()].slice(0,6).join(',') }}{{ bridge.resultFrames.value.size > 6 ? '...' : '' }}</span>
-              </div>
-            </div>
-          </div>
-        </Transition>
+        <!-- Cell Info Panels -->
+        <template v-if="activeTool === 'probe'">
+          <TransitionGroup name="slide-info">
+            <ResultProbePanel
+              v-for="cell in probedCellList"
+              :key="cell.id"
+              :cell="cell"
+              @closeRequested="removeProbe"
+            />
+          </TransitionGroup>
+        </template>
       </div>
     </template>
 
@@ -132,9 +111,17 @@ import { useResultDataFromOpener } from '@/features/flood-2D/composables/useResu
 import ResultMap3D from '@/features/flood-2D/components/viewer/ResultMap3D.vue';
 import ResultTimeline from '@/features/flood-2D/components/viewer/ResultTimeline.vue';
 import ResultLegend from '@/features/flood-2D/components/viewer/ResultLegend.vue';
+import ResultSectionChart from '@/features/flood-2D/components/viewer/ResultSectionChart.vue';
+import ResultVolumePanel from '@/features/flood-2D/components/viewer/ResultVolumePanel.vue';
+import ResultProbePanel from '@/features/flood-2D/components/viewer/ResultProbePanel.vue';
+
+import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 
 // --- Data Bridge (reads from window.opener) ---
 const bridge = useResultDataFromOpener();
+
+// --- VOLUME ---
+const analysisStore = useAnalysisStore();
 
 onMounted(() => {
   bridge.loadData();
@@ -147,9 +134,20 @@ const playing = ref(false);
 let playTimer = null;
 const playbackSpeed = ref(1);
 
-const currentDepthData = computed(() => {
-  return bridge.resultFrames.value.get(currentFrame.value) || null;
-});
+const currentDepthData = ref(null);
+
+watch(currentFrame, (val) => {
+  const frames = bridge.resultFrames.value;
+  if (frames && frames.has(val)) {
+    currentDepthData.value = frames.get(val);
+  } else {
+    currentDepthData.value = null;
+  }
+  
+  if (analysisStore) {
+    analysisStore.setActiveDepthData(currentDepthData.value);
+  }
+}, { immediate: true });
 
 // Playback loop
 watch(playing, (isPlaying) => {
@@ -180,53 +178,162 @@ const tools = [
 ];
 
 // --- Probe ---
-// Store only the static cell position info; water data is computed per frame.
-const probedCellPos = ref(null);
+// Store the static cell position info for all active probes
+const probedCells = ref([]);
 
 function onCellProbed(info) {
-  probedCellPos.value = info;
+  probedCells.value.push(info);
 }
 
-function clearProbe() {
-  probedCellPos.value = null;
-  if (map3d.value) map3d.value.clearProbe();
+function removeProbe(id) {
+  probedCells.value = probedCells.value.filter(c => c.id !== id);
+  if (map3d.value) map3d.value.clearProbe(id);
 }
 
-// Reactive: re-computes water values whenever the frame changes
-const probedCell = computed(() => {
-  const pos = probedCellPos.value;
-  if (!pos) return null;
-
+// Reactive: re-computes water values whenever the frame changes for all probes
+const probedCellList = computed(() => {
   const t = bridge.terrain.value;
-  if (!t) return null;
+  if (!t || probedCells.value.length === 0) return [];
 
-  // IMPORTANT: terrain gridData is BOTTOM-UP (row 0 = south).
-  // pos.row follows terrain convention (bottom-up).
-  // Depth data from OutputProcessor is TOP-DOWN (row 0 = north, ASC format).
-  // So we must FLIP the row for depth data lookup.
-  const terrainIdx = pos.row * t.ncols + pos.col;        // bottom-up (terrain)
-  const depthIdx = (t.nrows - 1 - pos.row) * t.ncols + pos.col; // top-down (depth)
-
-  // Read water depth from CURRENT frame
-  let waterDepth = 0;
   const depthArr = currentDepthData.value;
-
+  let arr = null;
   if (depthArr) {
-    const arr = depthArr instanceof Float32Array ? depthArr : new Float32Array(depthArr);
-    if (depthIdx >= 0 && depthIdx < arr.length) {
-      waterDepth = Math.max(0, arr[depthIdx]);
-    }
+    arr = depthArr instanceof Float32Array ? depthArr : new Float32Array(depthArr);
   }
 
-  const wsp = waterDepth > 0.001 ? pos.terrainZ + waterDepth : null;
-  const cellVolume = waterDepth > 0.001 ? waterDepth * pos.cellsize * pos.cellsize : 0;
+  return probedCells.value.map(pos => {
+    // IMPORTANT: terrain gridData is BOTTOM-UP (row 0 = south).
+    // pos.row follows terrain convention (bottom-up).
+    // Depth data from OutputProcessor is TOP-DOWN (row 0 = north, ASC format).
+    // So we must FLIP the row for depth data lookup.
+    const depthIdx = (t.nrows - 1 - pos.row) * t.ncols + pos.col; // top-down (depth)
 
-  return {
-    ...pos,
-    waterDepth,
-    wsp,
-    cellVolume
-  };
+    // Read water depth from CURRENT frame
+    let waterDepth = 0;
+    if (arr && depthIdx >= 0 && depthIdx < arr.length) {
+      waterDepth = Math.max(0, arr[depthIdx]);
+    }
+
+    const wsp = waterDepth > 0.001 ? pos.terrainZ + waterDepth : null;
+    const cellVolume = waterDepth > 0.001 ? waterDepth * pos.cellsize * pos.cellsize : 0;
+
+    return {
+      ...pos,
+      waterDepth,
+      wsp,
+      cellVolume
+    };
+  });
+});
+
+// --- SECTION ---
+const sections = ref([]); 
+
+function onSectionDrawn({ id, color, samples }) {
+  sections.value.push({
+    id,
+    color,
+    baseData: samples
+  });
+}
+
+function removeSection(id) {
+  sections.value = sections.value.filter(s => s.id !== id);
+  if (map3d.value) map3d.value.removeSection(id);
+}
+
+function clearAllSections() {
+  sections.value = [];
+  if (map3d.value) map3d.value.clearSection();
+}
+
+// Reactively compute water depth for ALL sections based on currentFrame
+const computedSectionsList = computed(() => {
+  const t = bridge.terrain.value;
+  if (!t || sections.value.length === 0) return [];
+  
+  const depthArr = currentDepthData.value;
+  let arr = null;
+  if (depthArr) {
+    arr = depthArr instanceof Float32Array ? depthArr : new Float32Array(depthArr);
+  }
+
+  return sections.value.map(section => {
+    const computedData = section.baseData.map(pt => {
+      let waterDepth = 0;
+      
+      // We saved fx, fy in Map3D. We must bilinear interpolate the water depth just like terrain.
+      // Remember depthData is TOP-DOWN. So we use (nrows - 1 - fy).
+      if (arr) {
+        const col0 = Math.floor(pt.fx);
+        const col1 = col0 + 1;
+        
+        // Convert fy (bottom-up) to depth row (top-down) BEFORE floor
+        const depthFy = (t.nrows - 1) - pt.fy;
+        
+        const row0 = Math.floor(depthFy);
+        const row1 = row0 + 1;
+
+        const wx = pt.fx - col0;
+        const wy = depthFy - row0;
+
+        let wSum = 0;
+        let dSum = 0;
+
+        const getD = (c, r, weight) => {
+          if (c >= 0 && c < t.ncols && r >= 0 && r < t.nrows) {
+            const val = arr[r * t.ncols + c];
+            if (val > -9000) { 
+              dSum += Math.max(0, val) * weight;
+              wSum += weight;
+            }
+          }
+        };
+
+        getD(col0, row0, (1 - wx) * (1 - wy));
+        getD(col1, row0, wx * (1 - wy));
+        getD(col0, row1, (1 - wx) * wy);
+        getD(col1, row1, wx * wy);
+
+        if (wSum > 0.001) {
+          waterDepth = dSum / wSum;
+        }
+      }
+      
+      return {
+        ...pt,
+        waterDepth,
+        wsp: waterDepth > 0.001 ? pt.terrainZ + waterDepth : null
+      };
+    });
+    
+    return {
+      id: section.id,
+      color: section.color,
+      data: computedData
+    };
+  });
+});
+
+// --- VOLUME ---
+function clearVolumeAnalysis() {
+  analysisStore.clearAnalysis();
+  if (map3d.value) {
+    map3d.value.clearVolume();
+  }
+}
+
+function removeVolumeAnalysis(id) {
+  analysisStore.removePolygon(id);
+  if (map3d.value) {
+    map3d.value.removeVolumePolygon(id);
+  }
+}
+
+// Ensure the Analysis Store knows if we close the viewer
+onUnmounted(() => {
+  clearInterval(playTimer);
+  analysisStore.clearAnalysis();
 });
 
 // Expose for child components

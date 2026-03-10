@@ -76,11 +76,11 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
     if (framesMap instanceof Map) {
         for (const [frameId, data] of framesMap.entries()) {
             const rawData = toRaw(data);
-            const arr = rawData instanceof Float32Array ? rawData : new Float32Array(rawData);
+            const arr = rawData instanceof Float32Array ? rawData.slice() : new Float32Array(rawData);
             for (let i = 0; i < arr.length; i++) {
                 if (arr[i] > computedMaxDepth) computedMaxDepth = arr[i];
             }
-            serializedFrames[frameId] = Array.from(arr);
+            serializedFrames[frameId] = arr;
         }
     }
 
@@ -89,7 +89,7 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
 
     const resultData = {
         terrain: {
-            gridData: Array.from(rawGridData instanceof Float32Array ? rawGridData : new Float32Array(rawGridData)),
+            gridData: rawGridData instanceof Float32Array ? rawGridData.slice() : new Float32Array(rawGridData),
             ncols: rawTerrain.ncols,
             nrows: rawTerrain.nrows,
             cellsize: rawTerrain.cellsize,
@@ -165,7 +165,7 @@ export function useResultDataFromOpener() {
             // Hydrate terrain
             if (data.terrain && data.terrain.gridData) {
                 const t = { ...data.terrain };
-                t.gridData = new Float32Array(t.gridData);
+                t.gridData = t.gridData instanceof Float32Array ? t.gridData : new Float32Array(t.gridData);
                 terrain.value = t;
                 console.log('[ResultBridge] Terrain:', t.ncols, 'x', t.nrows, 'minZ:', t.minZ, 'maxZ:', t.maxZ);
             }
@@ -182,7 +182,7 @@ export function useResultDataFromOpener() {
             console.log('[ResultBridge] Loading', frameEntries.length, 'frames...');
 
             frameEntries.forEach(([frameId, frameArray], index) => {
-                resultFrames.value.set(Number(frameId), new Float32Array(frameArray));
+                resultFrames.value.set(Number(frameId), frameArray instanceof Float32Array ? frameArray : new Float32Array(frameArray));
                 loadProgress.value = 40 + Math.round(((index + 1) / frameEntries.length) * 55);
             });
 

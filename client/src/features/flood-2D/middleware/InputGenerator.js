@@ -60,7 +60,7 @@ export class InputGenerator {
             modifications.push(...scenario.modifications);
         }
         if (modifications.length > 0) {
-            Rasterizer.burnBuildings(data, header, modifications);
+            data = Rasterizer.burnBuildings(data, header, modifications);
         }
 
         // STREAMING WRITE or BUFFERED
@@ -717,30 +717,34 @@ export class InputGenerator {
 
     /**
      * Erstellt die .rain Input-Datei für LISFLOOD aus der KOSTRA Zeitreihe
-     * Erwartetes Format: KOSTRA_Euler \n seconds \n [Zeit_in_s] \t [Intensität_in_mm_h]
+     * Erwartetes C++ Format: 
+     * [Kommentar]
+     * [Anzahl_Datenpunkte] [Zeiteinheit]
+     * [Intensität_mm_h] [Zeit_in_s]
      */
     generateRainFile(rainSeries) {
-        console.log("[InputGenerator] 🌧️ Erstelle LISFLOOD .rain Datei aus:", rainSeries);
-        let content = 'KOSTRA_Euler\nseconds\n';
+        let content = 'KOSTRA_Euler_Rain_Profile\n';
+        // ZWINGEND: Anzahl der Datenpunkte als Integer vor der Einheit!
+        content += `${rainSeries.length} seconds\n`;
 
         for (let i = 0; i < rainSeries.length; i++) {
             const block = rainSeries[i];
             const t_sec = block.time_sec;
 
-            // Bestimme das Zeitintervall dt in Sekunden für die mm/h Umrechnung (Standard: 5min = 300s)
+            // Zeitintervall für mm/h Umrechnung
             let dt_sec = 300;
             if (i < rainSeries.length - 1) {
                 dt_sec = rainSeries[i + 1].time_sec - t_sec;
             } else if (i > 0) {
                 dt_sec = t_sec - rainSeries[i - 1].time_sec;
             }
-            if (dt_sec === 0) dt_sec = 300; // Fallback Sicherheit
+            if (dt_sec === 0) dt_sec = 300;
 
-            // Umrechnung: Block-Höhe (mm) im Intervall (dt) -> Intensität in mm/h
+            // Umrechnung in mm/h
             const intensity_mmh = block.value_mm / (dt_sec / 3600);
 
-            // Plaintext Format: Zeit (s) \t Intensität (mm/h)
-            content += `${t_sec.toFixed(0)}\t${intensity_mmh.toFixed(6)}\n`;
+            // ZWINGEND: Spalte 1 = Rate (mm/h), Spalte 2 = Zeit (s)
+            content += `${intensity_mmh.toFixed(6)}\t${t_sec.toFixed(0)}\n`;
         }
 
         return content;
