@@ -75,8 +75,13 @@
             </div>
 
              <!-- Description / Hint -->
-             <div class="info-box" v-if="config.type === 'OUTFLOW_FREE'">
+             <div class="info-box outflow-config" v-if="config.type === 'OUTFLOW_FREE'">
                 <p>Das Wasser fließt an dieser Grenze ungehindert ab (Critical Depth Condition).</p>
+                <label style="display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer;">
+                    <input type="checkbox" v-model="config.useNativeFree">
+                    <span style="font-size:0.9rem; color:#bdc3c7;">Als Modell-Rand (N/E/S/W) behandeln</span>
+                </label>
+                <small class="hint" style="color:#bdc3c7; display:block; margin-top:8px;">Nur wirksam, wenn die Grenze exakt auf dem Rasterrand liegt. Andernfalls wird intern ein Abfluss-Wehr (HFIX) simuliert.</small>
             </div>
             
         </div>
@@ -208,7 +213,8 @@ const ganglinienList = computed(() => {
 const config = ref({
     type: 'INFLOW_DYNAMIC',
     value: null,
-    profileId: null
+    profileId: null,
+    useNativeFree: true
 });
 
 // Reset config params when type changes
@@ -216,6 +222,7 @@ watch(() => config.value.type, (newType) => {
     if (newType === 'OUTFLOW_FREE') {
         config.value.profileId = null;
         config.value.value = null;
+        if (config.value.useNativeFree === undefined) config.value.useNativeFree = true;
     }
     if (newType === 'INFLOW_CONSTANT') {
         config.value.profileId = null;

@@ -26,8 +26,7 @@
                 <span>🏢 Beispiele laden ▾</span>
               </button>
               <div class="dropdown-content" :class="{ 'show-dropdown': isDropdownOpen }">
-                <button @click="loadExample('Kanalbestand')">0_Kanalbestand.ifc</button>
-                <button @click="loadExample('WRA')">WRA.ifc</button>
+                <button @click="loadExample('Validated')">Validiertes IFC laden</button>
               </div>
             </div>
           </div>
@@ -35,6 +34,37 @@
           <div class="status-indicator" v-if="isLoading">
             <span class="spinner"></span> Modell wird geladen...
           </div>
+        </div>
+
+        <!-- Toolbox -->
+        <div class="viewer-toolbox">
+          <button class="tool-btn" @click="zoomToFit" title="Auf Modell zoomen">
+            <span>🔍</span>
+            <small>Zoom Fit</small>
+          </button>
+          <button class="tool-btn" @click="viewTop" title="Draufsicht">
+            <span>⬇️</span>
+            <small>Oben</small>
+          </button>
+          <button class="tool-btn" @click="viewFront" title="Vorderansicht">
+            <span>🔲</span>
+            <small>Vorne</small>
+          </button>
+          <button class="tool-btn" @click="viewSide" title="Seitenansicht">
+            <span>◻️</span>
+            <small>Seite</small>
+          </button>
+          <button class="tool-btn" @click="resetCamera" title="Kamera zurücksetzen">
+            <span>🏠</span>
+            <small>Reset</small>
+          </button>
+        </div>
+
+        <!-- Mouse coordinate display -->
+        <div class="coord-display" v-if="mouseCoords">
+          <span><b>X:</b> {{ mouseCoords.x }}</span>
+          <span><b>Y:</b> {{ mouseCoords.y }}</span>
+          <span><b>Z:</b> {{ mouseCoords.z }}</span>
         </div>
       </div>
     </div>
@@ -47,8 +77,7 @@ import DraggableModal from '@/features/isyifc/components/common/DraggableModal.v
 import { IfcEngine } from '../services/IfcEngine.js';
 
 // Import raw URLs to fetch them at runtime
-import kanalbestandUrl from '../testdata/0_Kanalbestand.ifc?url';
-import wraUrl from '../testdata/WRA.ifc?url';
+import validatedIfcUrl from '../testdata/6178_A64-2BA_0_2026-03-18 (12).ifc?url';
 
 const emit = defineEmits(['close']);
 
@@ -58,6 +87,9 @@ const isLoading = ref(false);
 
 const isDropdownOpen = ref(false);
 const dropdownRef = ref(null);
+const mouseCoords = ref(null);
+
+let _mouseMoveRAF = null;
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value;
@@ -85,11 +117,18 @@ onMounted(async () => {
   if (viewerContainer.value) {
     engine.value = new IfcEngine();
     await engine.value.init(viewerContainer.value);
+    // Track mouse for coordinate display
+    viewerContainer.value.addEventListener('mousemove', handleMouseMove);
+    viewerContainer.value.addEventListener('mouseleave', handleMouseLeave);
   }
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside);
+  if (viewerContainer.value) {
+    viewerContainer.value.removeEventListener('mousemove', handleMouseMove);
+    viewerContainer.value.removeEventListener('mouseleave', handleMouseLeave);
+  }
   if (engine.value) {
     engine.value.dispose();
     engine.value = null;
@@ -97,6 +136,7 @@ onBeforeUnmount(() => {
 });
 
 const handleFileUpload = async (event) => {
+  if (isLoading.value) return;
   const file = event.target.files[0];
   if (!file || !engine.value) return;
 
@@ -105,7 +145,7 @@ const handleFileUpload = async (event) => {
   reader.onload = async (e) => {
     const data = new Uint8Array(e.target.result);
     try {
-      await engine.value.loadIfc(data);
+      await engine.value.loadIfc(data, file.name);
     } catch (err) {
       console.error("Failed to load IFC:", err);
       alert("Fehler beim Laden der IFC-Datei.");
@@ -118,15 +158,14 @@ const handleFileUpload = async (event) => {
 };
 
 const loadExample = async (name) => {
+  if (isLoading.value) return;
   isDropdownOpen.value = false;
   if (!engine.value) return;
   isLoading.value = true;
   
   let url = '';
-  if (name === 'Kanalbestand') {
-    url = kanalbestandUrl;
-  } else if (name === 'WRA') {
-    url = wraUrl;
+  if (name === 'Validated') {
+    url = validatedIfcUrl;
   }
 
   try {
@@ -134,13 +173,43 @@ const loadExample = async (name) => {
     if (!response.ok) throw new Error("Netzwerkfehler beim Laden des Beispiels.");
     const arrayBuffer = await response.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
-    await engine.value.loadIfc(data);
+    await engine.value.loadIfc(data, 'validated-example');
   } catch (err) {
     console.error("Failed to load example IFC:", err);
     alert("Fehler beim Laden der Beispiel-Datei.");
   } finally {
     isLoading.value = false;
   }
+};
+
+// Toolbox camera controls
+const zoomToFit = () => engine.value?.zoomToFit();
+const viewTop = () => engine.value?.viewTop();
+const viewFront = () => engine.value?.viewFront();
+const viewSide = () => engine.value?.viewSide();
+const resetCamera = () => engine.value?.resetView();
+
+const handleMouseMove = (event) => {
+  if (_mouseMoveRAF) return; // throttle to animation frame
+  _mouseMoveRAF = requestAnimationFrame(() => {
+    _mouseMoveRAF = null;
+    if (!engine.value || !viewerContainer.value) return;
+    const rect = viewerContainer.value.getBoundingClientRect();
+    const pos = engine.value.getMouseWorldPosition(event.clientX, event.clientY, rect);
+    if (pos) {
+      mouseCoords.value = {
+        x: pos.x.toFixed(2),
+        y: pos.y.toFixed(2),
+        z: pos.z.toFixed(2)
+      };
+    } else {
+      mouseCoords.value = null;
+    }
+  });
+};
+
+const handleMouseLeave = () => {
+  mouseCoords.value = null;
 };
 
 const closeViewer = () => {
@@ -359,5 +428,84 @@ const closeViewer = () => {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Toolbox */
+.viewer-toolbox {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: rgba(30, 30, 40, 0.85);
+  padding: 0.5rem;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 48px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.2s;
+  gap: 1px;
+}
+
+.tool-btn span {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.tool-btn small {
+  font-size: 0.6rem;
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+.tool-btn:hover {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  transform: scale(1.05);
+}
+
+.tool-btn:active {
+  transform: scale(0.95);
+  background: rgba(52, 152, 219, 0.4);
+}
+
+/* Coordinate display */
+.coord-display {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  z-index: 20;
+  display: flex;
+  gap: 1rem;
+  background: rgba(30, 30, 40, 0.85);
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #b0bec5;
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.08);
+  pointer-events: none;
+}
+
+.coord-display b {
+  color: #4fc3f7;
+  margin-right: 2px;
 }
 </style>

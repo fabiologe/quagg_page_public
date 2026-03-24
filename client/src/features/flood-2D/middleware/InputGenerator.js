@@ -61,6 +61,15 @@ export class InputGenerator {
         }
         if (modifications.length > 0) {
             data = Rasterizer.burnBuildings(data, header, modifications);
+
+            // CRITICAL FIX: Update the scenario object so the Worker gets the new Float32Array 
+            // instead of the original unmodified one when using toRaw()
+            if (scenario.grid) {
+                if (scenario.grid.gridData) scenario.grid.gridData = data;
+                else if (scenario.grid.data) scenario.grid.data = data;
+            } else if (scenario.xyz) {
+                // If generated from xyz, we already have the local data variable
+            }
         }
 
         // STREAMING WRITE or BUFFERED
@@ -410,32 +419,38 @@ export class InputGenerator {
 
                         let line = '';
                         if (lisfloodType === 'FREE') {
-                            // FREE is only supported natively on the domain edges via N/S/E/W in LISFLOOD 2D
+                            // LISFLOOD-2D natively supports FREE only via N/S/E/W boundary specifiers
+                            // on the outer perimeter of the computational domain.
+                            // For cells on the absolute domain edge, use the native directional form.
+                            // For ALL other cells (internal outlets), fall back to HFIX at terrain
+                            // elevation minus a tiny epsilon: this forces the water surface at the
+                            // outlet to the terrain level, giving a critical-depth weir condition
+                            // that reliably allows water to drain without accumulation.
+
                             const wx_end = wx + header.cellsize;
                             const wy_end = wy + header.cellsize;
-                            let onEdge = false;
+                            let edgeLine = '';
 
-                            if (cell.x === 0) {
-                                line += `W ${wy.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
-                                onEdge = true;
-                            }
-                            if (cell.x === header.ncols - 1) {
-                                line += `E ${wy.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
-                                onEdge = true;
-                            }
-                            // cell.y=0 is bottom-up row 0 = SOUTH edge
-                            if (cell.y === 0) {
-                                line += `S ${wx.toFixed(4)} ${wx_end.toFixed(4)} FREE\n`;
-                                onEdge = true;
-                            }
-                            // cell.y=nrows-1 is bottom-up last row = NORTH edge
-                            if (cell.y === header.nrows - 1) {
-                                line += `N ${wx.toFixed(4)} ${wx_end.toFixed(4)} FREE\n`;
-                                onEdge = true;
-                            }
+                            if (cell.x === 0) edgeLine += `W ${wy.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
+                            if (cell.x === header.ncols - 1) edgeLine += `E ${wy.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
+                            if (cell.y === 0) edgeLine += `S ${wx.toFixed(4)} ${wx_end.toFixed(4)} FREE\n`;
+                            if (cell.y === header.nrows - 1) edgeLine += `N ${wx.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
 
-                            if (!onEdge) {
-                                console.warn(`[InputGenerator] Internal FREE boundary ignored at ${cell.x}, ${cell.y}`);
+                            const useNativeFree = assign.useNativeFree !== false; // defaults to true if undefined
+
+                            if (useNativeFree && edgeLine) {
+                                // Pure domain-edge outlet — native LISFLOOD FREE is ideal here
+                                line = edgeLine.trimEnd();
+                            } else {
+                                // Internal outlet OR user unchecked useNativeFree — HFIX at terrain level
+                                // acts as critical-depth weir. Use terrain_z - 0.01 m so water starts draining
+                                // before it completely inundates the outlet cell.
+                                const grid_idx = cell.y * header.ncols + cell.x;
+                                let z = (grid_idx >= 0 && grid_idx < gridData.length) ? gridData[grid_idx] : -9999;
+                                if (z <= -9990) z = 0; // NoData fallback
+                                const hfix = (z - 0.01).toFixed(4);
+                                line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix}`;
+                                console.log(`[InputGenerator] FREE→HFIX fallback at (${cell.x},${cell.y}): terrain=${z.toFixed(3)}, HFIX=${hfix}`);
                             }
                         } else {
                             line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} ${lisfloodType}`;
@@ -567,10 +582,9 @@ export class InputGenerator {
             const finalCells = [];
 
             for (const rc of rawCells) {
-                // rc is {x: col, y: row_world}
+                // rc is {x: col, y: row_world} (Bottom-up)
                 const col = rc.x;
-                const row_world = rc.y;
-                const row = (header.nrows - 1) - row_world; // Top-Down Index for LISFLOOD/GridData check
+                const row = rc.y;
 
                 // Check 1: Bounds
                 if (col < 0 || col >= header.ncols || row < 0 || row >= header.nrows) {
@@ -592,7 +606,7 @@ export class InputGenerator {
                     }
                 } else {
                     // Valid
-                    finalCells.push({ x: col, y: row }); // Stores top-down
+                    finalCells.push({ x: col, y: row }); // Stores bottom-up
                 }
             }
 
@@ -605,7 +619,7 @@ export class InputGenerator {
 
                     const cell = finalCells[0];
                     const wx_snap = xll + (cell.x + 0.5) * header.cellsize;
-                    const wy_snap = yll + ((header.nrows - 1 - cell.y) + 0.5) * header.cellsize;
+                    const wy_snap = yll + (cell.y + 0.5) * header.cellsize;
 
                     console.log(`[InputGenerator] Point Source Snapped: Raw[${pointWorldCoords[0].toFixed(2)},${pointWorldCoords[1].toFixed(2)}] -> Cell[${cell.x},${cell.y}] -> Snapped[${wx_snap.toFixed(2)},${wy_snap.toFixed(2)}]`);
 
@@ -616,7 +630,7 @@ export class InputGenerator {
                         let line = '';
                         // FIXED: LISFLOOD ignores 'P ... FREE'. Use 'HFIX <elevation>'
                         if (lisfloodType === 'FREE') {
-                            const idx = cell.y * header.ncols + cell.x; // cell.y is top-down
+                            const idx = cell.y * header.ncols + cell.x; // cell.y is bottom-up
                             let z = (gridData && idx < gridData.length) ? gridData[idx] : -9999;
                             if (z <= -9990) z = 0;
                             line = `P ${wx_snap.toFixed(4)} ${wy_snap.toFixed(4)} HFIX ${z.toFixed(4)}`;
@@ -631,7 +645,7 @@ export class InputGenerator {
                     for (const cell of finalCells) {
                         // Convert grid indices back to world coordinates (CENTERED)
                         const wx = xll + (cell.x + 0.5) * header.cellsize;
-                        const wy = yll + ((header.nrows - 1 - cell.y) + 0.5) * header.cellsize;
+                        const wy = yll + (cell.y + 0.5) * header.cellsize;
                         const key = `${cell.x},${cell.y}`;
                         if (processedCells.has(key)) continue;
                         processedCells.add(key);
@@ -639,16 +653,7 @@ export class InputGenerator {
                         let line = '';
                         // FIXED: LISFLOOD ignores 'P ... FREE'. We must use 'HFIX <elevation>' to simulate outflow (weir).
                         if (lisfloodType === 'FREE') {
-                            const idx = cell.y * header.ncols + cell.x;
-                            // Ensure we use the correct grid index (cell.y is bottom-up? No, getGridIndex returns top-down row? 
-                            // Wait, discretizePolyline returns y as bottom-up index? 
-                            // Let's verify: In this loop, cell.y comes from rawCells.
-                            // rawCells = discretizePolyline -> returns {x, y} relative to xll, yll (bottom-left).
-                            // So cell.y is bottom-up.
-                            // gridData is top-down (row 0 is top).
-                            // grid_row = (nrows - 1) - cell.y
-                            const grid_row = (header.nrows - 1) - cell.y;
-                            const grid_idx = grid_row * header.ncols + cell.x;
+                            const grid_idx = cell.y * header.ncols + cell.x;
                             let z = -9999;
                             if (grid_idx >= 0 && grid_idx < gridData.length) {
                                 z = gridData[grid_idx];

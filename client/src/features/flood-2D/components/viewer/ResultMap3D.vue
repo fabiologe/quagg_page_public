@@ -3,12 +3,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, toRaw } from 'vue';
+import { ref, onMounted, onUnmounted, watch, toRaw, computed } from 'vue';
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { useVolumeTool } from '@/features/flood-2D/composables/useVolumeTool';
 import { useSectionTool } from '@/features/flood-2D/composables/useSectionTool';
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
+import { useLayerRenderer } from '@/features/flood-2D/composables/editor/useLayerRenderer';
 
 const props = defineProps({
   terrain: { type: Object, default: null },
@@ -34,8 +36,11 @@ const mouse = new THREE.Vector2();
 
 // Store/Composable
 const analysisStore = useAnalysisStore();
+const geoStore = useGeoStore(); // Needed for layer renderer
+
 let volumeToolState = null;
 let sectionToolState = null;
+let layerRenderer = null;
 
 // --- SHADERS ---
 
@@ -90,11 +95,30 @@ const terrainFragmentShader = `
 
 const waterVertexShader = `
   varying float vDepth;
+  varying vec3 vPos;
   uniform sampler2D uDepthMap;
+  uniform vec2 uTexelSize;
 
   void main() {
      vec2 texUV = uv;
-     float d = texture2D(uDepthMap, texUV).r;
+     
+     // 9-Tap Spatial Smoothing for maximum cohesiveness in fast-changing water depths
+     float d0 = texture2D(uDepthMap, texUV).r;
+     float d1 = texture2D(uDepthMap, texUV + vec2(uTexelSize.x, 0.0)).r;
+     float d2 = texture2D(uDepthMap, texUV + vec2(-uTexelSize.x, 0.0)).r;
+     float d3 = texture2D(uDepthMap, texUV + vec2(0.0, uTexelSize.y)).r;
+     float d4 = texture2D(uDepthMap, texUV + vec2(0.0, -uTexelSize.y)).r;
+     float d5 = texture2D(uDepthMap, texUV + vec2(uTexelSize.x, uTexelSize.y)).r;
+     float d6 = texture2D(uDepthMap, texUV + vec2(-uTexelSize.x, uTexelSize.y)).r;
+     float d7 = texture2D(uDepthMap, texUV + vec2(uTexelSize.x, -uTexelSize.y)).r;
+     float d8 = texture2D(uDepthMap, texUV + vec2(-uTexelSize.x, -uTexelSize.y)).r;
+
+     // Average all 9 samples equally for a strong box blur
+     float dAvg = (d0 + d1 + d2 + d3 + d4 + d5 + d6 + d7 + d8) / 9.0;
+     
+     // Mix the smoothed depth heavily (85% smoothed) to connect disjointed peaks
+     float d = mix(d0, dAvg, 0.85);
+
      vDepth = d;
 
      vec3 pos = position;
@@ -102,16 +126,15 @@ const waterVertexShader = `
          // Lift water surface above terrain by depth + small offset
          pos.z += d + 0.35;
      }
-     // Dry cells: keep pos.z at terrain elevation (unchanged).
-     // The fragment shader discards them via vDepth < 0.005.
-     // This prevents giant triangles from stretching below terrain.
 
+     vPos = pos;
      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
 
 const waterFragmentShader = `
   varying float vDepth;
+  varying vec3 vPos;
   uniform vec3 uColorShallow;
   uniform vec3 uColorMid;
   uniform vec3 uColorDeep;
@@ -120,7 +143,20 @@ const waterFragmentShader = `
   void main() {
       if (vDepth < 0.005) discard;
 
-      // Dynamic normalization — key improvement!
+      // Calculate steepness of the water surface. 
+      // Water should be mostly flat. If a triangle stretches up a building wall,
+      // it will have a steep slope. We discard steep water triangles.
+      vec3 dx = dFdx(vPos);
+      vec3 dy = dFdy(vPos);
+      vec3 normal = normalize(cross(dx, dy));
+      
+      // If normal.z is less than 0.3, it's angled more than ~72.5 degrees.
+      // This allows very steep waterfalls while still hiding near-vertical building walls.
+      if (normal.z < 0.3) {
+          discard;
+      }
+
+      // Dynamic normalization
       float maxD = max(uMaxDepth, 0.01);
       float t = clamp(vDepth / maxD, 0.0, 1.0);
 
@@ -268,6 +304,33 @@ function initScene() {
       if (controls) controls.enabled = true;
     }
   });
+
+  // Setup Layer Renderer (Buildings, Nodes, Boundaries)
+  // We pass `scene`, `geoStore`, and a computed ref of the current terrain.
+  // This is CRITICAL because the renderer needs the terrain's center point
+  // to calculate the local coordinate offset for drawing features.
+  layerRenderer = useLayerRenderer(scene, geoStore, computed(() => props.terrain));
+  
+  if (geoStore.buildings?.features?.length > 0) {
+      layerRenderer.renderBuildings();
+  }
+  
+  // Watch for GeoStore hydration: The ResultViewer might load the terrain mesh
+  // BEFORE the GeoStore has finished loading buildings/nodes from IndexedDB.
+  // We must trigger the renderer when the data actually arrives.
+  watch(() => geoStore.buildings?.features, (newFeatures) => {
+    if (newFeatures && newFeatures.length > 0 && layerRenderer && terrainMesh) {
+      console.log('[ResultMap3D] GeoStore buildings loaded, triggering render.');
+      layerRenderer.renderBuildings();
+    }
+  }, { deep: true });
+
+  watch(() => geoStore.nodes, (newNodes) => {
+    if (newNodes && newNodes.length > 0 && layerRenderer && terrainMesh) {
+      console.log('[ResultMap3D] GeoStore nodes loaded, triggering render.');
+      layerRenderer.renderNodes();
+    }
+  }, { deep: true });
 
   window.addEventListener('resize', onResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -587,6 +650,12 @@ function buildTerrain(t) {
   camera.position.set(0, maxDim * 0.7, maxDim * 0.7);
   controls.target.set(0, 0, 0);
   controls.update();
+
+  if (layerRenderer) {
+      // Force buildings to re-render using the now solidly-loaded terrain data
+      layerRenderer.renderBuildings();
+  }
+
   console.log('[ResultMap3D] Terrain mesh added ✅ bounds:', bounds.width, 'x', bounds.height);
 }
 
@@ -722,6 +791,7 @@ function updateWater(depthData) {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uDepthMap: { value: texture },
+        uTexelSize: { value: new THREE.Vector2(1.0 / ncols, 1.0 / nrows) },
         uMaxDepth: { value: props.maxWaterDepth || 1.0 },
         uColorShallow: { value: new THREE.Color(0x00e5ff) },
         uColorMid: { value: new THREE.Color(0x0078d7) },
@@ -744,6 +814,8 @@ function updateWater(depthData) {
     const mat = waterMesh.material;
     if (mat.uniforms.uDepthMap.value) mat.uniforms.uDepthMap.value.dispose();
     mat.uniforms.uDepthMap.value = texture;
+    if (!mat.uniforms.uTexelSize) mat.uniforms.uTexelSize = { value: new THREE.Vector2() };
+    mat.uniforms.uTexelSize.value.set(1.0 / ncols, 1.0 / nrows);
     mat.uniforms.uMaxDepth.value = props.maxWaterDepth || 1.0;
     waterMesh.visible = true;
   }
@@ -898,11 +970,18 @@ function buildBoundaries(bciContent, t) {
       if (val > -9000) terrainZ = val - minZ;
     }
 
-    dummy.position.set(localX, localY, terrainZ);
-
     // Outflow arrows point DOWN, inflow arrows point UP
     const isOutflow = (pt.type === 'HFIX' || pt.type === 'FREE');
-    dummy.rotation.set(isOutflow ? Math.PI : 0, 0, 0);
+    
+    if (isOutflow) {
+      // Outflow: start high and point down so the tip touches the terrain
+      dummy.position.set(localX, localY, terrainZ + arrowHeight);
+      dummy.rotation.set(Math.PI, 0, 0);
+    } else {
+      // Inflow: start slightly above terrain and point up
+      dummy.position.set(localX, localY, terrainZ + cellsize * 0.2);
+      dummy.rotation.set(0, 0, 0);
+    }
 
     dummy.updateMatrix();
     boundaryMesh.setMatrixAt(i, dummy.matrix);

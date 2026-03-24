@@ -2,10 +2,10 @@
   <PublicLayout>
     <div class="home-view">
       <HomeHero @scrollToServices="scrollToServices" />
+      <MethodologyComponent id="methodology" />
       <HomeServices id="services" />
+      <InteractiveCaseStudy />
       <HomeProjects />
-      <HomePartners />
-      <HomePhilosophy />
     </div>
   </PublicLayout>
 </template>
@@ -13,13 +13,13 @@
 <script setup>
 import PublicLayout from '@/components/layout/PublicLayout.vue'
 import HomeHero from '@/views/public/components/HomeHero.vue'
+import MethodologyComponent from '@/views/public/components/MethodologyComponent.vue'
 import HomeServices from '@/views/public/components/HomeServices.vue'
+import InteractiveCaseStudy from '@/views/public/components/InteractiveCaseStudy.vue'
 import HomeProjects from '@/views/public/components/HomeProjects.vue'
-import HomePartners from '@/views/public/components/HomePartners.vue'
-import HomePhilosophy from '@/views/public/components/HomePhilosophy.vue'
 
 function scrollToServices() {
-  document.getElementById('services').scrollIntoView({ behavior: 'smooth' })
+  document.getElementById('methodology').scrollIntoView({ behavior: 'smooth' })
 }
 </script>
 

@@ -37,8 +37,8 @@ export function createDemFromXYZ(xyzString) {
 
     for (const p of points) {
         const col = Math.round((p.x - xll) / cellsize);
-        // Invert Y for Top-Down raster storage (standard ASC row 0 is top)
-        const row = (nrows - 1) - Math.round((p.y - yll) / cellsize);
+        // Ensure standard Bottom-Up raster storage (row 0 is south)
+        const row = Math.round((p.y - yll) / cellsize);
 
         if (col >= 0 && col < ncols && row >= 0 && row < nrows) {
             const idx = row * ncols + col;
@@ -93,14 +93,16 @@ export function bakeTerrain(baseRaster, gridInfo, modifications) {
         return newRaster;
     }
 
-    const { ncols, nrows, cellsize, xll, yll } = gridInfo;
+    const { ncols, nrows, cellsize } = gridInfo;
+    const xll = gridInfo.xll !== undefined ? gridInfo.xll : gridInfo.xllcorner;
+    const yll = gridInfo.yll !== undefined ? gridInfo.yll : gridInfo.yllcorner;
 
     // Helper: Grid to World (Cell Center)
     // xll is assumed to be corner. Center = corner + col * size + size/2
     // BUT legacy code mostly used xll + col * size. adhering to "Standard" center logic often safer.
     // If col = round((x-xll)/cs), implies x ~ xll + col*cs.
     const getCellX = (c) => xll + c * cellsize;
-    const getCellY = (r) => yll + ((nrows - 1) - r) * cellsize;
+    const getCellY = (r) => yll + r * cellsize;
 
     for (const mod of modifications) {
         if (mod.type === 'BUILDING') {
@@ -121,7 +123,9 @@ export const burnBuildings = bakeTerrain;
  * Sub-function to apply a single building modification
  */
 function applyBuilding(raster, gridInfo, mod, getCellX, getCellY) {
-    const { ncols, nrows, cellsize, xll, yll } = gridInfo;
+    const { ncols, nrows, cellsize } = gridInfo;
+    const xll = gridInfo.xll !== undefined ? gridInfo.xll : gridInfo.xllcorner;
+    const yll = gridInfo.yll !== undefined ? gridInfo.yll : gridInfo.yllcorner;
     const geom = mod.geometry;
     const props = mod.properties || {};
 
@@ -139,9 +143,9 @@ function applyBuilding(raster, gridInfo, mod, getCellX, getCellY) {
         const px = p[0];
         const py = p[1];
 
-        // World -> Grid
+        // World -> Grid (Bottom-up)
         const c = Math.round((px - xll) / cellsize);
-        const r = (nrows - 1) - Math.round((py - yll) / cellsize); // Invert Y
+        const r = Math.round((py - yll) / cellsize);
 
         if (c < minC) minC = c;
         if (c > maxC) maxC = c;
@@ -156,6 +160,7 @@ function applyBuilding(raster, gridInfo, mod, getCellX, getCellY) {
     maxR = Math.min(nrows - 1, maxR);
 
     // 2. Loop over BBox
+    let cellsModified = 0;
     for (let r = minR; r <= maxR; r++) {
         const cy = getCellY(r); // World Y of cell center
 
@@ -173,10 +178,12 @@ function applyBuilding(raster, gridInfo, mod, getCellX, getCellY) {
                     // Implementation Plan generally favored Relative. 
                     // Fix-Prompt: "Setze newRaster[index] += properties.height"
                     raster[idx] += height;
+                    cellsModified++;
                 }
             }
         }
     }
+    console.log(`[Rasterizer] applyBuilding: BBox[c:${minC}-${maxC}, r:${minR}-${maxR}], Cells modified: ${cellsModified}, Height applied: +${height}m`);
 }
 
 /**
@@ -221,7 +228,7 @@ export const Rasterizer = {
                 const cells = BoundaryTools.getCellsInPolygon(feature.geometry.coordinates[0], cellsize, xll, yll);
 
                 for (const cell of cells) {
-                    const row = (nrows - 1) - cell.y;
+                    const row = cell.y;
                     const col = cell.x;
                     if (row >= 0 && row < nrows && col >= 0 && col < ncols) {
                         const idx = row * ncols + col;

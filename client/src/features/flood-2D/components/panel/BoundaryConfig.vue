@@ -18,6 +18,7 @@ const geoStore = useGeoStore();
 const activeType = ref('NONE'); // NONE, INFLOW_CONSTANT, INFLOW_DYNAMIC, OUTFLOW_FREE, WATERLEVEL_FIX
 const constantValue = ref(0);
 const selectedProfileId = ref(null);
+const useNativeFree = ref(true);
 
 // UI Options
 const typeOptions = [
@@ -75,10 +76,12 @@ watch(() => props.selectedItem, (newItem) => {
         activeType.value = assignment.type;
         constantValue.value = (assignment.value !== undefined && assignment.value !== null) ? assignment.value : 0;
         selectedProfileId.value = assignment.profileId || null;
+        useNativeFree.value = assignment.useNativeFree !== undefined ? assignment.useNativeFree : true;
     } else {
         activeType.value = 'NONE';
         constantValue.value = 0;
         selectedProfileId.value = null;
+        useNativeFree.value = true;
     }
 
 }, { immediate: true });
@@ -112,7 +115,8 @@ const saveSettings = () => {
     const payload = {
         type: activeType.value,
         value: finalValue,
-        profileId: finalProfileId
+        profileId: finalProfileId,
+        useNativeFree: useNativeFree.value
     };
 
     hydStore.assignBoundaryCondition([id], payload);
@@ -188,8 +192,13 @@ const goToProfileManager = () => {
       </div>
 
        <!-- OUTFLOW CONFIG -->
-       <div v-if="activeType === 'OUTFLOW_FREE'" class="info-box">
+       <div v-if="activeType === 'OUTFLOW_FREE'" class="info-box outflow-config">
           <p>Das Wasser fließt hier frei aus dem System (Critical Depth).</p>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer;">
+              <input type="checkbox" v-model="useNativeFree" @change="saveSettings">
+              <span style="font-size:0.9rem; color:#bdc3c7;">Als Modell-Rand (N/E/S/W) behandeln</span>
+          </label>
+          <small class="hint-info" style="margin-top:8px;">Nur wirksam, wenn die Grenze exakt auf dem Rasterrand liegt. Andernfalls wird intern ein Abfluss-Wehr (HFIX) simuliert.</small>
       </div>
 
     </div>

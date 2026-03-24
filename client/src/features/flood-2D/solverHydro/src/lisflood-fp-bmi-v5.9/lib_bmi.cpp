@@ -71,4 +71,63 @@ extern "C" {
 
         return 0;
     }
+
+    // =========================================================================
+    // BMI (Basic Model Interface) – frame-by-frame control from JavaScript
+    // =========================================================================
+
+    int bmi_init(char* par_filename) {
+        printf("BMI: Initializing with parameter file: %s\n", par_filename);
+
+        // Safe ARGV construction (mutable copies)
+        std::string progName = "lisflood";
+        std::string paramFile = par_filename;
+
+        std::vector<char*> argv;
+        argv.push_back(&progName[0]);
+        argv.push_back(&paramFile[0]);
+        int argc = 2;
+
+        int result = init(argc, (const char**)argv.data());
+
+        if (result != 0) {
+            printf("BMI: Initialization failed with code %d\n", result);
+            final();
+            return result;
+        }
+
+        // Prepare solver loop state without entering it
+        init_iterateq();
+
+        printf("BMI: Ready. t=%.2f  Sim_Time=%.2f  dt=%.4f\n",
+               Solverptr->t, Solverptr->Sim_Time, Solverptr->Tstep);
+        return 0;
+    }
+
+    int bmi_update() {
+        iterateq_step();
+        return 0;
+    }
+
+    double bmi_get_time() {
+        return Solverptr->t;
+    }
+
+    double bmi_get_dt() {
+        return Solverptr->Tstep;
+    }
+
+    double bmi_get_water_depth(int index) {
+        return Arrptr->H[index];
+    }
+
+    void bmi_add_water(int index, double volume) {
+        double dh = volume / (Parptr->dx * Parptr->dy);
+        Arrptr->H[index] += dh;
+    }
+
+    void bmi_finalize() {
+        printf("BMI: Finalizing and cleaning up.\n");
+        final();
+    }
 }

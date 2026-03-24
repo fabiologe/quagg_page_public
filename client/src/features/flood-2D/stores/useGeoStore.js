@@ -1,10 +1,18 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { cropGrid, maskGridByPolygon } from '../utils/GridCropper.js';
 
 export const useGeoStore = defineStore('geo', () => {
     // State
     /** @type {import('vue').Ref<any>} */
     const terrain = ref(null); // Mesh/Elevation Data
+
+    /**
+     * Incremented every time the terrain geometry is invalidated (crop, replace).
+     * Three.js components watch this to know when to dispose and rebuild the mesh.
+     * @type {import('vue').Ref<number>}
+     */
+    const terrainVersion = ref(0);
 
     /** @type {import('vue').Ref<Array<{id: string, x: number, y: number, z: number, type: string}>>} */
     const nodes = ref([]);
@@ -92,6 +100,138 @@ export const useGeoStore = defineStore('geo', () => {
         modifications.value = [];
     }
 
+    /**
+     * Hard-crops the terrain DEM to the given axis-aligned bounding box.
+     * Replaces gridData and header in-place so the old (large) Float32Array
+     * can be garbage-collected, freeing RAM.
+     *
+     * After this call `terrainVersion` is incremented – any Three.js component
+     * that watches this value must dispose its current PlaneGeometry and
+     * rebuild the mesh from the new (smaller) grid.
+     *
+     * @param {{ minX: number, maxX: number, minY: number, maxY: number }} boundingBox
+     *   Crop rectangle in world coordinates (same CRS as the DEM header).
+     */
+    function cropTerrain(boundingBox) {
+        if (!terrain.value || !terrain.value.gridData) {
+            console.warn('[GeoStore] cropTerrain: no terrain loaded – skipping.');
+            return;
+        }
+
+        // BUGFIX: parseXYZ() stores fields flat on the terrain object (no .header sub-object).
+        // Fall back to using terrain.value itself as the header so both storage layouts work.
+        const oldHeader = terrain.value.header ?? terrain.value;
+
+        try {
+            const { newGridData, newHeader } = cropGrid(
+                terrain.value.gridData,
+                oldHeader,
+                boundingBox
+            );
+
+            // Overwrite the large array with the new, smaller one.
+            // The old Float32Array now has no references and becomes GC-eligible.
+            terrain.value.gridData = newGridData;
+
+            // Write back to both the .header sub-object AND the flat root aliases
+            // so any consumer (editor composables, InputGenerator, etc.) finds the data.
+            terrain.value.header = newHeader;
+            terrain.value.ncols = newHeader.ncols;
+            terrain.value.nrows = newHeader.nrows;
+            terrain.value.xllcorner = newHeader.xllcorner;
+            terrain.value.yllcorner = newHeader.yllcorner;
+            terrain.value.xll = newHeader.xll;
+            terrain.value.yll = newHeader.yll;
+            terrain.value.cellsize = newHeader.cellsize;
+
+            // Recompute derived display fields so Phase 4 (buildTerrainMesh) works.
+            const newWidth = (newHeader.ncols - 1) * newHeader.cellsize;
+            const newHeight = (newHeader.nrows - 1) * newHeader.cellsize;
+            terrain.value.bounds = { width: newWidth || 100, height: newHeight || 100 };
+            terrain.value.center = {
+                x: newHeader.xllcorner + newWidth / 2,
+                y: newHeader.yllcorner + newHeight / 2,
+            };
+
+            // Recompute minZ / maxZ from the cropped data
+            let minZ = Infinity, maxZ = -Infinity;
+            for (let i = 0; i < newGridData.length; i++) {
+                const v = newGridData[i];
+                if (v > -9000) {
+                    if (v < minZ) minZ = v;
+                    if (v > maxZ) maxZ = v;
+                }
+            }
+            terrain.value.minZ = minZ === Infinity ? 0 : minZ;
+            terrain.value.maxZ = maxZ === -Infinity ? 1 : maxZ;
+            terrain.value.stats = {
+                cols: newHeader.ncols,
+                rows: newHeader.nrows,
+                cellsize: newHeader.cellsize,
+                minZ: terrain.value.minZ,
+                maxZ: terrain.value.maxZ,
+            };
+
+            // Signal all Three.js viewers to dispose the old mesh and rebuild.
+            terrainVersion.value++;
+
+            console.log(
+                `[GeoStore] cropTerrain complete. ` +
+                `New size: ${newHeader.ncols}×${newHeader.nrows}, ` +
+                `terrainVersion: ${terrainVersion.value}`
+            );
+        } catch (err) {
+            console.error('[GeoStore] cropTerrain failed:', err.message);
+        }
+    }
+
+    /**
+     * Masks the terrain DEM by an irregular polygon.
+     * Cells whose centre lies OUTSIDE the polygon are set to NODATA (-9999).
+     * Grid dimensions remain unchanged; terrainVersion is incremented.
+     *
+     * @param {Array<{x: number, y: number}>} polygon - World-coord vertices
+     */
+    function maskTerrainByPolygon(polygon) {
+        if (!terrain.value || !terrain.value.gridData) {
+            console.warn('[GeoStore] maskTerrainByPolygon: no terrain loaded.');
+            return;
+        }
+
+        const header = terrain.value.header ?? terrain.value;
+
+        try {
+            const maskedData = maskGridByPolygon(
+                terrain.value.gridData,
+                header,
+                polygon
+            );
+
+            terrain.value.gridData = maskedData;
+
+            // Recompute minZ / maxZ (some cells became NODATA)
+            let minZ = Infinity, maxZ = -Infinity;
+            for (let i = 0; i < maskedData.length; i++) {
+                const v = maskedData[i];
+                if (v > -9000) {
+                    if (v < minZ) minZ = v;
+                    if (v > maxZ) maxZ = v;
+                }
+            }
+            terrain.value.minZ = minZ === Infinity ? 0 : minZ;
+            terrain.value.maxZ = maxZ === -Infinity ? 1 : maxZ;
+            if (terrain.value.stats) {
+                terrain.value.stats.minZ = terrain.value.minZ;
+                terrain.value.stats.maxZ = terrain.value.maxZ;
+            }
+
+            terrainVersion.value++;
+            console.log(`[GeoStore] maskTerrainByPolygon complete. terrainVersion: ${terrainVersion.value}`);
+        } catch (err) {
+            console.error('[GeoStore] maskTerrainByPolygon failed:', err.message);
+        }
+    }
+
     function getFeatureById(id) {
         // Search in nodes
         const node = nodes.value.find(n => n.id === id);
@@ -127,6 +267,7 @@ export const useGeoStore = defineStore('geo', () => {
 
     return {
         terrain,
+        terrainVersion,     // Mesh-invalidation counter (watch this in Three.js views)
         nodes,
         buildings, // Now a computed ref
         excavations,
@@ -138,8 +279,10 @@ export const useGeoStore = defineStore('geo', () => {
         removeNode,
         addBuilding, // Wrapper
         addBoundary,
-        addModification, // New action
+        addModification,    // New action
         clearModifications, // New action
+        cropTerrain,        // Phase 2: bounding-box crop + RAM release
+        maskTerrainByPolygon, // Phase 3b: polygon mask
         getFeatureById,
         updateFeatureProperty
     };

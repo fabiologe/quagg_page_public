@@ -311,7 +311,45 @@ const abortSimulation = () => {
 const openViewer = async () => {
     // Store data in IndexedDB BEFORE opening popup
     const bciContent = inputFiles.value && inputFiles.value['flow.bci'] ? inputFiles.value['flow.bci'] : null;
-    const ready = await prepareResultData(simStore, geoStore, bciContent);
+    
+    // We must pass the BAKED terrain to the Viewer, not the raw one from GeoStore, 
+    // because buildings are not burned into geoStore natively.
+    const rawTerrain = toRaw(geoStore.terrain);
+    const bakedTerrainData = { ...rawTerrain };
+    if (bakedTerrainData.gridData) {
+        bakedTerrainData.gridData = bakedTerrainData.gridData.slice(); // Copy
+        const header = {
+            ncols: bakedTerrainData.ncols,
+            nrows: bakedTerrainData.nrows,
+            cellsize: bakedTerrainData.cellsize,
+            xllcorner: bakedTerrainData.xllcorner,
+            yllcorner: bakedTerrainData.yllcorner,
+            NODATA_value: bakedTerrainData.minZ
+        };
+        const modifications = [];
+        if (geoStore.buildings && geoStore.buildings.features) {
+            modifications.push(...geoStore.buildings.features.map(f => ({
+                type: 'BUILDING',
+                geometry: f.geometry,
+                properties: f.properties || { height: 10.0 }
+            })));
+        }
+        if (geoStore.modifications) {
+            modifications.push(...geoStore.modifications);
+        }
+        if (modifications.length > 0) {
+            bakedTerrainData.gridData = Rasterizer.burnBuildings(bakedTerrainData.gridData, header, modifications);
+        }
+    }
+
+    const exportGeoStore = {
+        terrain: bakedTerrainData,
+        modifications: geoStore.modifications,
+        boundaries: geoStore.boundaries,
+        nodes: geoStore.nodes
+    };
+
+    const ready = await prepareResultData(simStore, exportGeoStore, bciContent);
     if (!ready) {
         alert('Keine Terrain-Daten vorhanden!');
         return;

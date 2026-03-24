@@ -2,10 +2,13 @@
 import { v4 as uuidv4 } from 'uuid';
 
 // Helper: Echte IFC GUID Kompression (Valid characters)
-const b64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
 function toIfcGuid(uuid) {
-    let res = "";
-    for (let i = 0; i < 22; i++) res += b64.charAt(Math.floor(Math.random() * 64));
+    const b64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
+    // First character MUST be 0, 1, 2, or 3
+    let res = b64.charAt(Math.floor(Math.random() * 4)); 
+    for(let i = 1; i < 22; i++) {
+        res += b64.charAt(Math.floor(Math.random() * 64));
+    }
     return `'${res}'`;
 }
 
@@ -14,11 +17,20 @@ function getIsoDate() {
     return new Date().toISOString().split('.')[0];
 }
 
+// Ensure proper float serialization for IFC
+function formatReal(val) {
+    let v = Number(val);
+    if (isNaN(v)) return { text: '0.' };
+    let s = v.toString();
+    if (!s.includes('.') && !s.includes('e') && !s.includes('E')) s += '.';
+    return { text: s };
+}
+
 // --- MVD Options ---
 export const MVD_OPTIONS = {
-    CoordinationView: 'CoordinationView',
-    ReferenceView: 'ReferenceView',
-    DesignTransferView: 'DesignTransferView'
+    CoordinationView: 'CoordinationView_V2.0',
+    ReferenceView: 'ReferenceView_V1.2',
+    DesignTransferView: 'IFC4Precast'
 };
 
 export const GEOMETRY_OPTIONS = {
@@ -100,6 +112,8 @@ export class IsybauToIfc {
         this.worldOrigin = options.worldOrigin || this.origin;
         // Material cache: name -> IfcMaterial ref
         this._materialCache = {};
+        // System cache: systemType -> IfcSystem config
+        this._systemCache = {};
     }
 
     // --- LINE WRITERS ---
@@ -110,13 +124,24 @@ export class IsybauToIfc {
         const id = this.nextId();
         const pStr = params.map(p => {
             if (p === null || p === undefined) return '$';
+            if (p.text !== undefined) return p.text;
             if (typeof p === 'string') {
                 if (p.startsWith('.') && p.endsWith('.')) return p;
                 return p.startsWith('\'') ? p : `'${p}'`;
             }
-            if (typeof p === 'number') return p.toFixed(4);
+            if (typeof p === 'number') return p.toString();
             if (Array.isArray(p)) {
-                const items = p.map(i => (i && i.ref) ? `#${i.ref}` : (typeof i === 'string' ? `'${i}'` : i));
+                const items = p.map(i => {
+                    if (i === null || i === undefined) return '$';
+                    if (i.ref) return `#${i.ref}`;
+                    if (i.text !== undefined) return i.text;
+                    if (typeof i === 'string') {
+                        if (i.startsWith('.') && i.endsWith('.')) return i;
+                        return i.startsWith('\'') ? i : `'${i}'`;
+                    }
+                    if (typeof i === 'number') return i.toString();
+                    return i;
+                });
                 return `(${items.join(',')})`;
             }
             if (p.ref) return `#${p.ref}`;
@@ -129,8 +154,8 @@ export class IsybauToIfc {
 
     // --- GEOMETRY HELPERS ---
 
-    point3D(x, y, z) { return this.addLine('IfcCartesianPoint', [[x, y, z]]); }
-    dir3D(x, y, z) { return this.addLine('IfcDirection', [[x, y, z]]); }
+    point3D(x, y, z) { return this.addLine('IfcCartesianPoint', [[formatReal(x), formatReal(y), formatReal(z)]]); }
+    dir3D(x, y, z) { return this.addLine('IfcDirection', [[formatReal(x), formatReal(y), formatReal(z)]]); }
     axisPlacement(originPt, zAxis = null, refAxis = null) {
         return this.addLine('IfcAxis2Placement3D', [originPt, zAxis, refAxis]);
     }
@@ -143,14 +168,14 @@ export class IsybauToIfc {
     createTessellatedCylinder(repContext, radius, height, segments = 16) {
         const { vertices, indices } = generateCylinderMesh(radius, height, segments);
 
-        const coordStrings = vertices.map(v => `(${v[0].toFixed(4)},${v[1].toFixed(4)},${v[2].toFixed(4)})`);
+        const coordStrings = vertices.map(v => `(${formatReal(v[0]).text},${formatReal(v[1]).text},${formatReal(v[2]).text})`);
         const pointListId = this.nextId();
         this.lines.push(`#${pointListId}= IFCCARTESIANPOINTLIST3D((${coordStrings.join(',')}));`);
         const pointList = { ref: pointListId };
 
         const indexStrings = indices.map(tri => `(${tri[0]},${tri[1]},${tri[2]})`);
         const faceSetId = this.nextId();
-        this.lines.push(`#${faceSetId}= IFCTRIANGULATEDFACESET(#${pointList.ref},$,.T.,(${indexStrings.join(',')}));`);
+        this.lines.push(`#${faceSetId}= IFCTRIANGULATEDFACESET(#${pointList.ref},$,.T.,(${indexStrings.join(',')}),$);`);
         const faceSet = { ref: faceSetId };
 
         return this.addLine('IfcShapeRepresentation', [
@@ -165,61 +190,59 @@ export class IsybauToIfc {
     // --- SWEPT SOLID ---
 
     createSweptSolidCylinder(repContext, radius, height) {
-        const profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, null, radius]);
+        const validRadius = Math.max(0.001, radius);
+        const validHeight = Math.max(0.001, height);
+        const profile = this.addLine('IfcCircleProfileDef', ['.AREA.', null, null, formatReal(validRadius)]);
         const position = this.axisPlacement(this.point3D(0, 0, 0));
         const solid = this.addLine('IfcExtrudedAreaSolid', [
-            profile, position, this.dir3D(0, 0, 1), height
+            profile, position, this.dir3D(0, 0, 1), formatReal(validHeight)
         ]);
         return this.addLine('IfcShapeRepresentation', [
             repContext, "'Body'", "'SweptSolid'", [solid]
         ]);
     }
 
-    // --- PROPERTY SET HELPERS ---
+    // --- PROPERTY SET HELPERS (STRICT AIA) ---
 
-    /**
-     * Create a single IfcPropertySingleValue
-     * @param {string} name - Property name
-     * @param {*} value - Value (string, number, boolean)
-     * @param {string} ifcType - e.g. 'IfcLabel', 'IfcLengthMeasure', 'IfcBoolean', 'IfcIdentifier'
-     */
-    createPropertyValue(name, value, ifcType = 'IfcLabel') {
-        if (value === null || value === undefined || value === '') return null;
-
-        let valStr;
-        if (ifcType === 'IfcBoolean') {
-            valStr = `IFCBOOLEAN(${value ? '.T.' : '.F.'})`;
-        } else if (ifcType === 'IfcLengthMeasure' || ifcType === 'IfcPositiveLengthMeasure') {
-            valStr = `${ifcType.toUpperCase()}(${Number(value).toFixed(4)})`;
-        } else if (ifcType === 'IfcReal' || ifcType === 'IfcInteger') {
-            valStr = `${ifcType.toUpperCase()}(${value})`;
-        } else {
-            // String types: IfcLabel, IfcIdentifier, IfcText
-            valStr = `${ifcType.toUpperCase()}('${String(value).replace(/'/g, "''")}')`;
+    encodeStepString(text) {
+        if (text === null || text === undefined) return '-';
+        // 1. Remove newlines and escape single quotes
+        let str = String(text).replace(/[\r\n]+/g, ' ').replace(/'/g, "''").trim();
+        // 2. Encode non-ASCII characters to STEP Unicode
+        let encoded = '';
+        for (let i = 0; i < str.length; i++) {
+            let code = str.charCodeAt(i);
+            if (code >= 32 && code <= 126) {
+                encoded += str[i];
+            } else {
+                let hex = code.toString(16).toUpperCase().padStart(4, '0');
+                encoded += `\\X2\\${hex}\\X0\\`;
+            }
         }
-
-        const propId = this.nextId();
-        this.lines.push(`#${propId}= IFCPROPERTYSINGLEVALUE('${name}',$,${valStr},$);`);
-        return { ref: propId };
+        return encoded;
     }
 
-    /**
-     * Create an IfcPropertySet and attach it to an element via IfcRelDefinesByProperties
-     */
-    createPropertySet(ownerHistory, element, psetName, properties) {
-        // Filter out nulls
-        const validProps = properties.filter(p => p !== null);
-        if (validProps.length === 0) return null;
+    // Ensure quotes around Name. 
+    // For Text: IFCTEXT('Value')
+    // For Real: IFCLENGTHMEASURE(Value) -> already formatted with formatReal!
+    // For Integer: IFCINTEGER(Value)
+    writePropertySingleValue(name, type, value) {
+        let ifcValue = '';
+        
+        if (type === 'TEXT') {
+            ifcValue = `IFCTEXT('${this.encodeStepString(value)}')`;
+        } 
+        else if (type === 'REAL') {
+            let cleanReal = formatReal(value).text;
+            ifcValue = `IFCLENGTHMEASURE(${cleanReal})`;
+        } 
+        else if (type === 'INTEGER') {
+            let cleanInt = value != null ? Math.floor(Number(value)) : 0;
+            ifcValue = `IFCINTEGER(${cleanInt})`;
+        }
 
-        const pset = this.addLine('IfcPropertySet', [
-            toIfcGuid(), ownerHistory, `'${psetName}'`, null, validProps
-        ]);
-
-        this.addLine('IfcRelDefinesByProperties', [
-            toIfcGuid(), ownerHistory, null, null, [element], pset
-        ]);
-
-        return pset;
+        // Strict 4 parameters: Name, Description($), NominalValue, Unit($)
+        return `IFCPROPERTYSINGLEVALUE('${this.encodeStepString(name)}',$,${ifcValue},$)`;
     }
 
     /**
@@ -227,15 +250,16 @@ export class IsybauToIfc {
      */
     createMaterial(ownerHistory, element, materialCode) {
         const name = resolveMaterialName(materialCode);
+        const encodedName = this.encodeStepString(name);
 
         // Cache materials to avoid duplicates
-        if (!this._materialCache[name]) {
+        if (!this._materialCache[encodedName]) {
             const matId = this.nextId();
-            this.lines.push(`#${matId}= IFCMATERIAL('${name}',$,$);`);
-            this._materialCache[name] = { ref: matId };
+            this.lines.push(`#${matId}= IFCMATERIAL('${encodedName}',$,$);`);
+            this._materialCache[encodedName] = { ref: matId };
         }
 
-        const mat = this._materialCache[name];
+        const mat = this._materialCache[encodedName];
 
         // Create association
         this.addLine('IfcRelAssociatesMaterial', [
@@ -245,70 +269,168 @@ export class IsybauToIfc {
         return mat;
     }
 
+    /**
+     * Architectural Cleanup: Centralized property builder for AIA BIM standards
+     */
+    buildProperties(elementIfcId, data, isManhole) {
+        const attributes = data.attributes || {};
+        const propIds = [];
+        const eRef = elementIfcId.ref ? elementIfcId.ref : elementIfcId;
+        
+        const addProp = (name, type, val) => {
+            let pId = this.idCounter++;
+            this.lines.push(`#${pId}= ${this.writePropertySingleValue(name, type, val)};`);
+            propIds.push(`#${pId}`);
+        };
+
+        // QG_ISYBAU_Data mapping
+        addProp('Objektbezeichnung', 'TEXT', data.id || 'Unknown');
+        addProp('Kanalart', 'TEXT', attributes.systemType || 'Unknown');
+        addProp('Material', 'TEXT', resolveMaterialName(attributes.material));
+        addProp('Baujahr', 'INTEGER', attributes.year || 0);
+
+        if (isManhole) {
+            addProp('Sohlenhoehe', 'REAL', data.geometry?.bottomZ || 0);
+            addProp('Deckelhoehe', 'REAL', data.geometry?.coverZ || 0);
+            addProp('Profilbreite', 'REAL', data.geometry?.width || 0);
+            addProp('Profilhoehe', 'REAL', data.geometry?.height || 0);
+        } else {
+            const width = data.profile?.width || 0.3;
+            const height = data.profile?.height || width;
+            addProp('Profilbreite', 'REAL', width);
+            addProp('Profilhoehe', 'REAL', height);
+            addProp('Sohlenhoehe', 'REAL', data.sohleZulauf || 0); // mapped bottomZ for edges via sohleZulauf
+            addProp('Deckelhoehe', 'REAL', data.sohleAblauf || 0); // mapped coverZ equivalent via sohleAblauf
+        }
+
+        // Create the IFCPROPERTYSET
+        // Strict 5 parameters: Guid, OwnerHistory($), Name, Description($), (Properties)
+        if (propIds.length === 0) return;
+        
+        let psetId = this.idCounter++;
+        let psetGuid = toIfcGuid(); // returns quoted string
+        this.lines.push(`#${psetId}= IFCPROPERTYSET(${psetGuid},$,'QG_ISYBAU_Data',$,(${propIds.join(',')}));`);
+
+        // Create the Relation IFCRELDEFINESBYPROPERTIES
+        // Strict 6 parameters: Guid, OwnerHistory($), Name($), Description($), RelatedObjects(SET), RelatingPropertyDefinition
+        // CRITICAL: RelatedObjects MUST be wrapped in parentheses: (#${elementId})
+        let relId = this.idCounter++;
+        let relGuid = toIfcGuid();
+        this.lines.push(`#${relId}= IFCRELDEFINESBYPROPERTIES(${relGuid},$,$,$,(#${eRef}),#${psetId});`);
+    }
+
+    buildSystemAssignment(systemId, elementIdsArray) {
+        if (!elementIdsArray || elementIdsArray.length === 0) return;
+        
+        // Convert array of IDs [100, 105, 110] to string "#100,#105,#110"
+        const formattedRefs = elementIdsArray.map(id => {
+            let ref = id.ref ? id.ref : id;
+            return `#${ref}`;
+        }).join(',');
+        
+        let sRef = systemId.ref ? systemId.ref : systemId;
+
+        // Strict 7 Parameters for IFCRELASSIGNSTOGROUP:
+        // Guid, Owner($), Name($), Desc($), RelatedObjects(SET), RelatedObjectsType($), RelatingGroup
+        let relId = this.idCounter++;
+        let relGuid = toIfcGuid();
+        
+        // CRITICAL: formattedRefs MUST be wrapped in parentheses!
+        this.lines.push(`#${relId}= IFCRELASSIGNSTOGROUP(${relGuid},$,$,$,(${formattedRefs}),$,#${sRef});`);
+    }
+
+
     // --- MAIN GENERATOR ---
 
     generate() {
         this.lines = [];
         this.idCounter = 1;
         this._materialCache = {};
+        this._systemCache = {};
 
         const useTessellation = this.geometryType === GEOMETRY_OPTIONS.Tessellation;
         const meta = this.ifcMetadata;
 
         // 1. Header
+        const dateStr = getIsoDate();
+        const author = meta.ersteller || 'quagg User';
+        const org = 'quagg engineering';
+        const preprocessor = 'quagg-IfcWriter 1.0';
+        const originatingSystem = 'quagg engineering - ISYBAU to IFC Converter - 1.0.0.0';
+        const auth = 'none';
+
         this.lines.push(`ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('ViewDefinition [${this.mvd}]'),'2;1');
-FILE_NAME('${getIsoDate()}.ifc','${getIsoDate()}',('${meta.ersteller || 'User'}'),('ISYBAU'),'ISYBAU Parser (quagg-engineering.org)','ISYBAU Parser','');
+FILE_NAME('ISYBAU_${dateStr}.ifc', '${dateStr}', ('${author}'), ('${org}'), '${preprocessor}', '${originatingSystem}', '${auth}');
 FILE_SCHEMA(('IFC4'));
 ENDSEC;
 DATA;`);
 
-        // 2. Project Structure
-        const organization = this.addLine('IfcOrganization', [null, `'${meta.ersteller || 'quagg-engineering.org'}'`, null, null, null]);
-        const app = this.addLine('IfcApplication', [organization, "'1.0'", "'ISYBAU Import'", "'ISYBAU'"]);
-        const person = this.addLine('IfcPerson', [null, "'User'", null, null, null, null, null, null]);
-        const personOrg = this.addLine('IfcPersonAndOrganization', [person, organization]);
+        // 2. Project Structure (Boilerplate DATA Setup)
+        this.lines.push(`#1= IFCORGANIZATION($,'quagg-engineering.org',$,$,$);`);
+        this.lines.push(`#2= IFCAPPLICATION(#1,'1.0','ISYBAU Import','ISYBAU');`);
+        this.lines.push(`#3= IFCPERSON($,'User',$,$,$,$,$,$);`);
+        this.lines.push(`#4= IFCPERSONANDORGANIZATION(#3,#1,$);`);
+        
+        const timestamp = Math.floor(Date.now() / 1000);
+        this.lines.push(`#5= IFCOWNERHISTORY(#4,#2,$,.ADDED.,${timestamp},$,$,${timestamp});`);
+        
+        this.lines.push(`#6= IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);`);
+        this.lines.push(`#7= IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.);`);
+        this.lines.push(`#8= IFCUNITASSIGNMENT((#6,#7));`);
+        
+        this.lines.push(`#9= IFCCARTESIANPOINT((${formatReal(0).text},${formatReal(0).text},${formatReal(0).text}));`);
+        this.lines.push(`#10= IFCDIRECTION((${formatReal(0).text},${formatReal(0).text},${formatReal(1).text}));`);
+        this.lines.push(`#11= IFCDIRECTION((${formatReal(1).text},${formatReal(0).text},${formatReal(0).text}));`);
+        this.lines.push(`#12= IFCAXIS2PLACEMENT3D(#9,#10,#11);`);
+        
+        // Main Context
+        this.lines.push(`#13= IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.0E-5,#12,$);`);
+        
+        // Sub Context (GEM052)
+        this.lines.push(`#14= IFCGEOMETRICREPRESENTATIONSUBCONTEXT('Body','Model',*,*,*,*,#13,$,.MODEL_VIEW.,$);`);
+        
+        // Projected CRS & Map Conversion (GRF003)
+        this.lines.push(`#15= IFCPROJECTEDCRS('EPSG:25832','UTM Zone 32N','ETRS89',$,'UTM','32N',#6);`);
+        this.lines.push(`#16= IFCMAPCONVERSION(#13,#15,${formatReal(this.worldOrigin.x).text},${formatReal(this.worldOrigin.y).text},${formatReal(0).text},1.0,0.0,1.0);`);
+        
+        // Project
+        const projectGuid = toIfcGuid();
+        this.lines.push(`#17= IFCPROJECT(${projectGuid},#5,'ISYBAU Project',$,$,$,$,(#13),#8);`);
+        
+        this.idCounter = 18;
+        
+        const ownerHistory = { ref: 5 };
+        const repContext = { ref: 14 }; // CRITICAL: All shapes use the SubContext
+        const project = { ref: 17 };
 
-        const ownerHistory = this.addLine('IfcOwnerHistory', [
-            personOrg, app, null, '.ADDED.', Math.floor(Date.now() / 1000), null, null, Math.floor(Date.now() / 1000)
-        ]);
+        // === PROJECT-LEVEL METADATA ===
+        // (Skipped creating custom 'ISYBAU_Metadaten' if we strictly use new buildProperties format and only what's required)
+        // If needed, we can adapt Project Level PSETs here manually.
+        const projectProps = [];
+        const addProjProp = (name, type, val) => {
+            let pId = this.idCounter++;
+            this.lines.push(`#${pId}= ${this.writePropertySingleValue(name, type, val || '-')};`);
+            projectProps.push(`#${pId}`);
+        };
+        addProjProp('Datenstatus', 'TEXT', meta.datenstatus);
+        addProjProp('Kollektivart', 'TEXT', meta.kollektivart);
+        addProjProp('Stammdatentyp', 'TEXT', meta.stammdatentyp);
+        addProjProp('Zustaendigkeit', 'TEXT', meta.zustaendigkeit);
+        addProjProp('Regelwerk', 'TEXT', meta.regelwerk);
 
-        // Units
-        const siLength = this.addLine('IfcSIUnit', [null, '.LENGTHUNIT.', null, '.METRE.']);
-        const siAngle = this.addLine('IfcSIUnit', [null, '.PLANEANGLEUNIT.', null, '.RADIAN.']);
-        const unitAssign = this.addLine('IfcUnitAssignment', [[siLength, siAngle]]);
-
-        // Context
-        const worldOrigin = this.point3D(0, 0, 0);
-        const zAxis = this.dir3D(0, 0, 1);
-        const xAxis = this.dir3D(1, 0, 0);
-        const worldPlacement = this.axisPlacement(worldOrigin, zAxis, xAxis);
-
-        const repContext = this.addLine('IfcGeometricRepresentationContext', [
-            null, "'Model'", 3, 1.0E-05, worldPlacement, this.dir3D(0, 1, 0)
-        ]);
-
-        const project = this.addLine('IfcProject', [
-            toIfcGuid(), ownerHistory, "'ISYBAU Project'", null, null, null, null, [repContext], unitAssign
-        ]);
-
-        // === PROJECT-LEVEL PSET: ISYBAU_Metadaten (M100-M108) ===
-        this.createPropertySet(ownerHistory, project, 'ISYBAU_Metadaten', [
-            this.createPropertyValue('Datenstatus', meta.datenstatus, 'IfcIdentifier'),
-            this.createPropertyValue('Kollektivart', meta.kollektivart, 'IfcLabel'),
-            this.createPropertyValue('Stammdatentyp', meta.stammdatentyp, 'IfcLabel'),
-            this.createPropertyValue('Zustaendigkeit', meta.zustaendigkeit, 'IfcLabel'),
-            this.createPropertyValue('Regelwerk', meta.regelwerk, 'IfcLabel'),
-            this.createPropertyValue('Abwasserbeseitigungspflicht', meta.abwasserbeseitigungspflicht, 'IfcLabel'),
-            this.createPropertyValue('Ordnungseinheitentyp', meta.ordnungseinheitentyp, 'IfcLabel'),
-            this.createPropertyValue('Praesentationsdatentyp', meta.praesentationsdatentyp, 'IfcLabel'),
-            this.createPropertyValue('Ersteller', meta.ersteller, 'IfcLabel'),
-        ]);
+        let projPsetId, projRelId;
+        if (projectProps.length > 0) {
+            projPsetId = this.idCounter++;
+            this.lines.push(`#${projPsetId}= IFCPROPERTYSET(${toIfcGuid()},$,'ISYBAU_Metadaten',$,(${projectProps.join(',')}));`);
+            projRelId = this.idCounter++;
+            this.lines.push(`#${projRelId}= IFCRELDEFINESBYPROPERTIES(${toIfcGuid()},$,$,$,(#${project.ref}),#${projPsetId});`);
+        }
 
         // SITE — Coordinate mode logic
         const useAbsolute = this.coordMode === 'absolute';
-        const useGeoref = this.coordMode === 'georef';
+        const useGeoref = false; // Forced to false locally since global map conv is now handled statically
 
         // For 'absolute': site at 0,0 (coords are real-world)
         // For 'relative'/'georef': site at origin offset
@@ -320,31 +442,32 @@ DATA;`);
 
         const site = this.addLine('IfcSite', [
             toIfcGuid(), ownerHistory, "'Site'", null, null, sitePlacement, null, null, '.ELEMENT.',
-            [0, 0], 0, null, null
+            null, null, null, null, null
         ]);
-
-        // IfcMapConversion for geo-referenced mode
-        if (useGeoref && (this.worldOrigin.x !== 0 || this.worldOrigin.y !== 0)) {
-            const targetCRS = this.addLine('IfcProjectedCRS', [
-                "'EPSG:25832'", null, null, null, null, null, null
-            ]);
-            this.addLine('IfcMapConversion', [
-                repContext, targetCRS,
-                this.worldOrigin.x, this.worldOrigin.y, 0,
-                1.0, 0.0, 1.0
-            ]);
-        }
 
         // Building
         const buildingPlace3D = this.axisPlacement(this.point3D(0, 0, 0));
         const buildingPlacement = this.localPlacement(sitePlacement, buildingPlace3D);
         const building = this.addLine('IfcBuilding', [
-            toIfcGuid(), ownerHistory, "'Building'", null, null, buildingPlacement, null, null, '.ELEMENT.', 0, 0, null
+            toIfcGuid(), ownerHistory, "'Building'", null, null, buildingPlacement, null, null, '.ELEMENT.', formatReal(0), formatReal(0), null
         ]);
 
         // Hierarchy
-        this.addLine('IfcRelAggregates', [toIfcGuid(), ownerHistory, null, null, project, [site]]);
-        this.addLine('IfcRelAggregates', [toIfcGuid(), ownerHistory, null, null, site, [building]]);
+        this.addLine('IfcRelAggregates', [toIfcGuid(), ownerHistory, "'Project aggregates Site'", null, project, [site]]);
+        this.addLine('IfcRelAggregates', [toIfcGuid(), ownerHistory, "'Site aggregates Building'", null, site, [building]]);
+
+        // Systems
+        const assignSystem = (sysType, product) => {
+            const safeType = sysType || 'Unbekannt';
+            const encodedType = this.encodeStepString(safeType);
+            if (!this._systemCache[encodedType]) {
+                const sysId = this.addLine('IfcSystem', [
+                    toIfcGuid(), ownerHistory, `'${encodedType}'`, null, null
+                ]);
+                this._systemCache[encodedType] = { ref: sysId, elements: [] };
+            }
+            this._systemCache[encodedType].elements.push(product);
+        };
 
         // --- ENTITIES ---
         const elements = [];
@@ -369,63 +492,39 @@ DATA;`);
             const height = node.geometry.height || 2.0;
             const width = node.geometry.width || 1.0;
 
-            // Placement
+            // Placement (Use exact static vectors for Manholes)
             const pt = this.point3D(localX, localY, localZ);
-            const placement = this.axisPlacement(pt);
+            const zAxisStatic = this.dir3D(0, 0, 1);
+            const xAxisStatic = this.dir3D(1, 0, 0);
+            const placement = this.axisPlacement(pt, zAxisStatic, xAxisStatic);
             const localPlace = this.localPlacement(buildingPlacement, placement);
 
             // Shape
-            const radius = width / 2;
+            const validRadius = Math.max(0.001, width / 2);
+            const validHeight = Math.max(0.001, height);
             let shapeRep;
             if (useTessellation) {
-                shapeRep = this.createTessellatedCylinder(repContext, radius, height);
+                shapeRep = this.createTessellatedCylinder(repContext, validRadius, validHeight);
             } else {
-                shapeRep = this.createSweptSolidCylinder(repContext, radius, height);
+                shapeRep = this.createSweptSolidCylinder(repContext, validRadius, validHeight);
             }
 
             const productShape = this.addLine('IfcProductDefinitionShape', [null, null, [shapeRep]]);
 
-            // Element
+            const encodedNodeId = this.encodeStepString(node.id);
+            // Element (9th param is PredefinedType: .MANHOLE.)
             const product = this.addLine('IfcDistributionChamberElement', [
-                toIfcGuid(), ownerHistory, `'${node.id}'`, "'Manhole'", "'Manhole'", localPlace, productShape, toIfcGuid()
+                toIfcGuid(), ownerHistory, `'${encodedNodeId}'`, "'Manhole'", "'Manhole'", localPlace, productShape, toIfcGuid(), '.MANHOLE.'
             ]);
             elements.push(product);
 
-            // === MANHOLE PSET: Pset_DistributionChamberElementTypeManhole ===
             const nodeAttrs = node.attributes || {};
-            this.createPropertySet(ownerHistory, product, 'Pset_DistributionChamberElementTypeManhole', [
-                this.createPropertyValue('InvertLevel', node.geometry.bottomZ, 'IfcLengthMeasure'),
-                this.createPropertyValue('SoffitLevel', node.geometry.coverZ, 'IfcLengthMeasure'),
-                // G301 SchachtFunktion
-                this.createPropertyValue('TypeOfShaft', nodeAttrs.schachtFunktion || nodeAttrs.subType, 'IfcLabel'),
-                // G302-G303 Deckel
-                this.createPropertyValue('AccessCoverMaterial', nodeAttrs.deckelMaterial, 'IfcLabel'),
-                this.createPropertyValue('AccessLengthOrRadius', nodeAttrs.deckelLaenge, 'IfcPositiveLengthMeasure'),
-                this.createPropertyValue('AccessWidth', nodeAttrs.deckelBreite, 'IfcPositiveLengthMeasure'),
-                // G304 Abdeckungsklasse
-                this.createPropertyValue('AccessCoverLoadRating', nodeAttrs.abdeckungsklasse, 'IfcLabel'),
-                // G102 WallMaterial -> pointer text (upgrade in future)
-                this.createPropertyValue('WallMaterial', nodeAttrs.material, 'IfcLabel'),
-                this.createPropertyValue('BaseMaterial', nodeAttrs.materialBoden, 'IfcLabel'),
-                // Steighilfen
-                this.createPropertyValue('HasSteps', nodeAttrs.steighilfen || false, 'IfcBoolean'),
-            ]);
+            
+            // Centralized Property Building
+            this.buildProperties(product, node, true);
 
-            // === CUSTOM PSET: ISYBAU_Schachtdaten ===
-            this.createPropertySet(ownerHistory, product, 'ISYBAU_Schachtdaten', [
-                this.createPropertyValue('Schachtbreite', width, 'IfcLengthMeasure'),
-                this.createPropertyValue('Schachttiefe', height, 'IfcLengthMeasure'),
-                this.createPropertyValue('Baujahr', nodeAttrs.year, 'IfcLabel'),
-                this.createPropertyValue('Status', nodeAttrs.status, 'IfcLabel'),
-                this.createPropertyValue('DeckelForm', nodeAttrs.deckelForm, 'IfcLabel'),
-            ]);
-
-            // === CUSTOM PSET: ISYBAU_Stammdaten (G106, G107, G101) ===
-            this.createPropertySet(ownerHistory, product, 'ISYBAU_Stammdaten', [
-                this.createPropertyValue('Kanalart', nodeAttrs.systemType, 'IfcLabel'),
-                this.createPropertyValue('Lage', nodeAttrs.lage, 'IfcLabel'),
-                this.createPropertyValue('Abwasserart', nodeAttrs.abwasserart, 'IfcLabel'),
-            ]);
+            // Group into IfcSystem
+            assignSystem(nodeAttrs.systemType, product);
 
             // Material via IfcRelAssociatesMaterial
             if (nodeAttrs.material) {
@@ -472,69 +571,65 @@ DATA;`);
             const dx = endX - startX;
             const dy = endY - startY;
             const dz = endZ - startZ;
-            const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            let length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-            if (length < 0.001) continue;
+            length = Math.max(0.001, length);
 
             const pt = this.point3D(startX, startY, startZ);
-            const zAxis2 = this.dir3D(dx / length, dy / length, dz / length);
+            
+            let dir = { x: dx/length, y: dy/length, z: dz/length };
+            let refDir = { x: 0, y: 1, z: 0 }; 
+            // If pipe is perfectly vertical, cross product will fail, so pick Global X
+            if (Math.abs(dir.x) < 0.001 && Math.abs(dir.z) < 0.001) {
+                refDir = { x: 1, y: 0, z: 0 };
+            }
+            // Calculate Cross Product to get a perfectly orthogonal vector
+            let orthoX = (refDir.y * dir.z) - (refDir.z * dir.y);
+            let orthoY = (refDir.z * dir.x) - (refDir.x * dir.z);
+            let orthoZ = (refDir.x * dir.y) - (refDir.y * dir.x);
 
-            const placement = this.axisPlacement(pt, zAxis2);
+            // Normalize the orthogonal vector
+            let lenOrtho = Math.sqrt(orthoX*orthoX + orthoY*orthoY + orthoZ*orthoZ);
+            orthoX /= lenOrtho; orthoY /= lenOrtho; orthoZ /= lenOrtho;
+
+            const zAxis2 = this.dir3D(dir.x, dir.y, dir.z);
+            const xAxis2 = this.dir3D(orthoX, orthoY, orthoZ);
+
+            // Placement WITH perfectly orthogonal RefDirection (XAxis)
+            const placement = this.axisPlacement(pt, zAxis2, xAxis2);
             const localPlace = this.localPlacement(buildingPlacement, placement);
 
             // Shape
             const pWidth = edge.profile?.width || 0.3;
             const pHeight = edge.profile?.height || pWidth;
-            const radius = pWidth / 2;
+            const validRadius = Math.max(0.001, pWidth / 2);
             let shapeRep;
             if (useTessellation) {
-                shapeRep = this.createTessellatedPipe(repContext, radius, length);
+                shapeRep = this.createTessellatedPipe(repContext, validRadius, length);
             } else {
-                shapeRep = this.createSweptSolidCylinder(repContext, radius, length);
+                shapeRep = this.createSweptSolidCylinder(repContext, validRadius, length);
             }
 
             const productShape = this.addLine('IfcProductDefinitionShape', [null, null, [shapeRep]]);
 
-            const product = this.addLine('IfcFlowSegment', [
-                toIfcGuid(), ownerHistory, `'${edge.id}'`, "'Pipe'", "'Pipe'", localPlace, productShape, toIfcGuid()
+            // Element (9th param is PredefinedType)
+            // Profile Type logic
+            const profileType = edge.profile?.type || 'Circle';
+            const predefinedType = '.RIGIDSEGMENT.';
+
+            const encodedEdgeId = this.encodeStepString(edge.id);
+            const product = this.addLine('IfcPipeSegment', [
+                toIfcGuid(), ownerHistory, `'${encodedEdgeId}'`, `'${profileType}'`, "'Pipe'", localPlace, productShape, toIfcGuid(), predefinedType
             ]);
             elements.push(product);
 
-            // === PIPE PSET: Pset_PipeSegmentTypeCommon ===
             const edgeAttrs = edge.attributes || {};
-            const nominalDiameter = pWidth * 1000; // Convert m -> mm (DN)
-            this.createPropertySet(ownerHistory, product, 'Pset_PipeSegmentTypeCommon', [
-                this.createPropertyValue('NominalDiameter', nominalDiameter, 'IfcPositiveLengthMeasure'),
-                this.createPropertyValue('InnerDiameter', pWidth, 'IfcPositiveLengthMeasure'),
-                this.createPropertyValue('OuterDiameter', edgeAttrs.aussenDurchmesser, 'IfcPositiveLengthMeasure'),
-                this.createPropertyValue('Length', length, 'IfcPositiveLengthMeasure'),
-            ]);
 
-            // === CUSTOM PSET: ISYBAU_Haltungsdaten ===
-            const profileType = edge.profile?.type || 'Circle';
-            this.createPropertySet(ownerHistory, product, 'ISYBAU_Haltungsdaten', [
-                this.createPropertyValue('Profilart', profileType, 'IfcLabel'),
-                this.createPropertyValue('Profilbreite', pWidth, 'IfcLengthMeasure'),
-                this.createPropertyValue('Profilhoehe', pHeight, 'IfcLengthMeasure'),
-                this.createPropertyValue('SohlhoeheZulauf', edge.sohleZulauf, 'IfcLengthMeasure'),
-                this.createPropertyValue('SohlhoeheAblauf', edge.sohleAblauf, 'IfcLengthMeasure'),
-                this.createPropertyValue('Baujahr', edgeAttrs.year, 'IfcLabel'),
-                this.createPropertyValue('Status', edgeAttrs.status, 'IfcLabel'),
-                // G208 SDR
-                this.createPropertyValue('SDR_Klasse', edgeAttrs.sdrKlasse, 'IfcLabel'),
-                // G209 Auflagerart
-                this.createPropertyValue('Auflagerart_G209', edgeAttrs.auflagerart, 'IfcLabel'),
-                // G103/G104 Innenschutz / Auskleidung
-                this.createPropertyValue('Innenschutz', edgeAttrs.innenschutz, 'IfcLabel'),
-                this.createPropertyValue('Auskleidung', edgeAttrs.auskleidung, 'IfcLabel'),
-            ]);
+            // Centralized Property Building
+            this.buildProperties(product, edge, false);
 
-            // === CUSTOM PSET: ISYBAU_Stammdaten (G101, G106, G107) ===
-            this.createPropertySet(ownerHistory, product, 'ISYBAU_Stammdaten', [
-                this.createPropertyValue('Kanalart', edgeAttrs.systemType, 'IfcLabel'),
-                this.createPropertyValue('Lage', edgeAttrs.lage, 'IfcLabel'),
-                this.createPropertyValue('Abwasserart', edgeAttrs.abwasserart, 'IfcLabel'),
-            ]);
+            // Group into IfcSystem
+            assignSystem(edgeAttrs.systemType, product);
 
             // Material via IfcRelAssociatesMaterial
             if (edgeAttrs.material) {
@@ -547,6 +642,14 @@ DATA;`);
             this.addLine('IfcRelContainedInSpatialStructure', [
                 toIfcGuid(), ownerHistory, null, null, elements, building
             ]);
+        }
+
+        // Link IfcSystems
+        for (const sysName in this._systemCache) {
+            const sys = this._systemCache[sysName];
+            if (sys.elements.length > 0) {
+                this.buildSystemAssignment(sys.ref, sys.elements);
+            }
         }
 
         this.lines.push('ENDSEC;\nEND-ISO-10303-21;');

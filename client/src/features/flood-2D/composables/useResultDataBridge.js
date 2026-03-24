@@ -62,6 +62,9 @@ async function readData(key) {
  */
 export async function prepareResultData(simStore, geoStore, bciContent = null) {
     const rawTerrain = toRaw(geoStore.terrain);
+    const rawModifications = toRaw(geoStore.modifications);
+    const rawBoundaries = toRaw(geoStore.boundaries);
+    const rawNodes = toRaw(geoStore.nodes);
 
     if (!rawTerrain || !rawTerrain.gridData) {
         console.warn('[ResultBridge] No terrain data available');
@@ -100,6 +103,9 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
             center: rawTerrain.center ? JSON.parse(JSON.stringify(toRaw(rawTerrain.center))) : null,
             bounds: rawTerrain.bounds ? JSON.parse(JSON.stringify(toRaw(rawTerrain.bounds))) : null
         },
+        modifications: rawModifications ? JSON.parse(JSON.stringify(rawModifications)) : null,
+        boundaries: rawBoundaries ? JSON.parse(JSON.stringify(rawBoundaries)) : null,
+        nodes: rawNodes ? JSON.parse(JSON.stringify(rawNodes)) : null,
         header: simStore.resultHeader
             ? JSON.parse(JSON.stringify(toRaw(simStore.resultHeader)))
             : null,
@@ -126,6 +132,7 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
 }
 
 // ─── Consumer (Popup Window) ───
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 
 /**
  * Reads data from IndexedDB and hydrates reactive refs.
@@ -176,6 +183,12 @@ export function useResultDataFromOpener() {
             simDuration.value = data.simDuration || 3600;
             bciContent.value = data.bciContent || '';
             loadProgress.value = 40;
+
+            // Hydrate GeoStore with modifications (buildings), boundaries, nodes
+            const geoStore = useGeoStore();
+            if (data.modifications) geoStore.modifications = data.modifications;
+            if (data.boundaries) geoStore.boundaries = data.boundaries;
+            if (data.nodes) geoStore.nodes = data.nodes;
 
             // Hydrate frames
             const frameEntries = Object.entries(data.frames || {});

@@ -1,23 +1,25 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { templateCompilerOptions } from '@tresjs/core'
 import { fileURLToPath, URL } from 'node:url'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
   plugins: [
-    vue(),
+    vue(templateCompilerOptions),
     viteStaticCopy({
       targets: [
         {
-          src: 'node_modules/web-ifc/web-ifc.wasm',
+          src: 'node_modules/web-ifc/*.wasm',
+          dest: ''
+        },
+        {
+          src: 'node_modules/@thatopen/fragments/dist/Worker/worker.mjs',
           dest: ''
         }
       ]
     })
   ],
-  optimizeDeps: {
-    exclude: ['web-ifc']
-  },
   assetsInclude: ['**/*.ifc'],
   resolve: {
     alias: {

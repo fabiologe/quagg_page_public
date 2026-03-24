@@ -30,3 +30,24 @@ docker run --rm -v $(pwd):/src -w /src emscripten/emsdk /bin/bash -c "emcc \\
     > build_log.txt 2>&1; ls -la build/"
 
 echo "Build complete. Check build/lisflood.js"
+
+echo ""
+echo "Building BMI Sandbox WASM (Frame-by-Frame Mode)..."
+
+docker run --rm -v $(pwd):/src -w /src emscripten/emsdk /bin/bash -c "emcc \\
+    src/lisflood-fp-bmi-v5.9/*.cpp \\
+    -I src/lisflood-fp-bmi-v5.9 \\
+    -o build/lisflood_bmi.js \\
+    -s EXPORTED_FUNCTIONS='[\"_bmi_init\", \"_bmi_update\", \"_bmi_get_time\", \"_bmi_get_dt\", \"_bmi_get_water_depth\", \"_bmi_add_water\", \"_bmi_finalize\", \"_malloc\", \"_free\"]' \\
+    -s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"UTF8ToString\", \"FS\", \"HEAP8\", \"HEAPU8\"]' \\
+    -s ALLOW_MEMORY_GROWTH=1 \\
+    -s INITIAL_MEMORY=536870912 \\
+    -s MAXIMUM_MEMORY=4294967296 \\
+    -s MODULARIZE=1 \\
+    -s EXPORT_ES6=1 \\
+    -s FORCE_FILESYSTEM=1 \\
+    -s ENVIRONMENT='web,worker' \\
+    -O2 \\
+    > build_bmi_log.txt 2>&1; ls -la build/"
+
+echo "BMI build complete. Check build/lisflood_bmi.js"

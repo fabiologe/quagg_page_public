@@ -1,0 +1,88 @@
+QUAGG ENGINEERING - WEBSITE CLIENT AUDIT & LOGIC STRUCTURE
+==========================================================
+
+Dieses Dokument beschreibt die Architektur der Frontend-Anwendung, die einzelnen Dateien, ihre Aufgaben und wie sie miteinander verknüpft sind.
+
+1. LOGIK-STRUKTUR (FLOW)
+------------------------
+Die App folgt dem Standard Vue 3 (Vite) Pattern:
+  index.html -> main.js -> App.vue -> Router -> Views -> Components
+
+- EINSTIEGSPUNKT: `index.html` lädt `src/main.js`.
+- INITIALISIERUNG: `main.js` erstellt die Vue-Instanz, bindet Pinia (State Management) und den Router ein.
+- LAYOUT-MANAGEMENT: `App.vue` nutzt `<router-view>`, um die passende Seite (View) anzuzeigen. Die meisten öffentlichen Seiten werden in `PublicLayout.vue` gewrappt, um Header und Footer konsistent zu halten.
+- DATENFLUSS: Aktuell sind die Daten (Projekte, Leistungen) noch direkt in den Templates der Komponenten hartcodiert. Der Plan ist, diese in `src/data/` zu zentralisieren.
+
+2. DATEI-AUDIT (ÖFFENTLICHER BEREICH)
+--------------------------------------
+
+PFAD: client/src/
+-----------------
+- `main.js`
+  * Zweck: Haupt-Einstiegspunkt der JS-Logik.
+  * Importiert in: `index.html`.
+  * Importiert selbst: `App.vue`, `router/index.js`, `stores/`.
+
+- `App.vue`
+  * Zweck: Root-Komponente. Enthält den `<router-view>`.
+  * Importiert in: `main.js`.
+
+PFAD: client/src/views/
+-----------------------
+- `HomeView.vue`
+  * Zweck: Die Haupt-Startseite. Orchestriert die einzelnen Hero-, Projekt- und Leistungs-Sektionen.
+  * Importiert in: `src/router/index.js`.
+  * Nutzt: `PublicLayout.vue` und diverse Komponenten aus `views/public/components/`.
+
+PFAD: client/src/components/layout/
+-----------------------------------
+- `PublicLayout.vue`
+  * Zweck: Das Rahmen-Layout für die Website (Header mit Navigation, Hauptbereich, Footer).
+  * Importiert in: `HomeView.vue`.
+  * Nutzt: `PublicFooter.vue`, `<slot />` für Inhalte.
+
+- `PublicFooter.vue`
+  * Zweck: Der Website-Footer mit Links und Kontakt-Anrissen.
+  * Importiert in: `PublicLayout.vue`.
+
+PFAD: client/src/views/public/components/
+-----------------------------------------
+- `HomeHero.vue`
+  * Zweck: Die oberste Sektion ("Hero"). Begrüßungstext, Call-to-Action Buttons und animierte Hintergrund-Shapes.
+  * Importiert in: `HomeView.vue`.
+
+- `HomeServices.vue`
+  * Zweck: Anzeige der Leistungen (Entwässerung, Tiefbau, LPH 1-4).
+  * Importiert in: `HomeView.vue`.
+  * Logik: Aktuell hartcodiertes Grid.
+
+- `HomeProjects.vue`
+  * Zweck: Anzeige der ausgewählten Referenz-Projekte.
+  * Importiert in: `HomeView.vue`.
+  * Logik: Enthält die Projekt-Karten mit Titeln, Beschreibungen und farbigen Platzhalter-Gradients.
+
+- `HomePartners.vue`
+  * Zweck: Testimonials / Zitate von Partnern.
+  * Importiert in: `HomeView.vue`.
+
+- `HomePhilosophy.vue`
+  * Zweck: Textabschnitt über die Werte des Büros (Vertrauen, Leidenschaft, Innovation).
+  * Importiert in: `HomeView.vue`.
+
+PFAD: client/src/components/base/
+---------------------------------
+- `BaseButton.vue`
+  * Zweck: Globale Button-Komponente für einheitliches Design.
+  * Importiert in: Fast allen Komponenten (z.B. `HomeHero.vue`).
+
+3. ZUKÜNFTIGE STRUKTUR (GEPLANT)
+--------------------------------
+Um die Wartbarkeit zu erhöhen, werden folgende Dateien eingeführt:
+
+- `src/data/projects.js`: Zentrale Liste aller Projekte. Wird von `HomeProjects.vue` importiert.
+- `src/data/services.js`: Zentrale Liste aller Leistungen. Wird von `HomeServices.vue` importiert.
+- `src/components/shared/ProjectCard.vue`: Einzelne Karte für ein Projekt, um Code-Duplikate zu vermeiden.
+
+==========================================================
+Dokument erstellt am: 12.03.2026
+Status: Audit abgeschlossen / Planung läuft.

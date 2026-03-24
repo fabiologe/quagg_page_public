@@ -86,6 +86,75 @@
           v-if="simStore.activeTool === 'TEXTURE'"
        />
 
+       <!-- CROP / POLYGON-CROP unified panel -->
+       <div v-if="simStore.activeTool === 'CROP'" class="crop-tool-ui" :class="{ 'polygon-crop-ui': cropMode === 'POLYGON' }">
+         <div class="tool-panel">
+
+           <!-- Header -->
+           <div class="panel-header">
+             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+               stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+               style="vertical-align:middle;margin-right:6px">
+               <circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/>
+               <line x1="8.12" y1="7.62" x2="21" y2="21"/>
+               <line x1="8.12" y1="16.38" x2="21" y2="3"/>
+             </svg>
+             Terrain zuschneiden
+           </div>
+
+           <!-- Mode toggle (only when not actively drawing) -->
+           <div v-if="!cropTool.isDrawing.value && !polygonCropTool.isDrawing.value"
+                class="crop-mode-toggle">
+             <button :class="{ active: cropMode === 'BBOX' }" @click="setCropMode('BBOX')">
+               <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                 stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5">
+                 <rect x="3" y="3" width="18" height="18" rx="1"/>
+               </svg>
+               Rechteck
+             </button>
+             <button :class="{ active: cropMode === 'POLYGON' }" @click="setCropMode('POLYGON')">
+               <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                 stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5">
+                 <path d="M4 8 L8 4 L16 4 L20 8 L20 16 L16 20 L8 20 L4 16 Z"/>
+               </svg>
+               Polygon
+             </button>
+           </div>
+
+           <!-- BBOX mode hints -->
+           <template v-if="cropMode === 'BBOX'">
+             <div class="hint" v-if="!cropTool.isDrawing.value">
+               1/2 &nbsp;·&nbsp; Ecke <strong>klicken</strong>
+             </div>
+             <div class="hint" v-else style="color:#ff7043;font-weight:600">
+               2/2 &nbsp;·&nbsp; Gegenüberliegende Ecke <strong>klicken</strong>
+             </div>
+             <div class="actions" v-if="cropTool.isDrawing.value">
+               <button class="btn-clear" @click="cropTool.cancel()">✖ Abbrechen</button>
+             </div>
+           </template>
+
+           <!-- Polygon mode hints -->
+           <template v-if="cropMode === 'POLYGON'">
+             <div class="hint" v-if="!polygonCropTool.isDrawing.value">
+               Ersten Punkt <strong>klicken</strong>
+             </div>
+             <div class="hint" v-else style="color:#7c3aed;font-weight:600">
+               {{ polygonCropTool.drawingPoints.value.length }} Punkte
+               &nbsp;·&nbsp; Startpunkt oder <strong>Doppelklick</strong> zum Schließen
+             </div>
+             <div class="actions" v-if="polygonCropTool.isDrawing.value">
+               <button class="btn-clear" @click="polygonCropTool.cancel()">✖ Abbrechen</button>
+             </div>
+           </template>
+
+           <div class="hint" style="margin-top:8px;font-size:0.75rem;opacity:0.5">
+             Rechtsklick = Abbrechen
+           </div>
+
+         </div>
+       </div>
+
        <!-- MAP LAYER CONTROL -->
        <div class="layer-control" v-if="parsedData">
           <div class="layer-btn" :class="{ active: activeLayerMode === 'CLASSIC' }" @click="setLayerMode('CLASSIC')" title="Klassische Höhen-Ansicht">
@@ -138,6 +207,8 @@ import { useBuildingTool } from '../../composables/editor/useBuildingTool.js';
 import { useCulvertTool } from '../../composables/editor/useCulvertTool.js';
 import { useTextureTool } from '../../composables/editor/useTextureTool.js';
 import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
+import { useCropTool } from '../../composables/editor/useCropTool.js';
+import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 
 // --- UI COMPONENTS ---
 import BuildingTool from '../tools/BuildingTool.vue';
@@ -178,6 +249,42 @@ const boundaryTool = useBoundaryTool();
 const buildingTool = useBuildingTool();
 const culvertTool = useCulvertTool();
 const textureTool = useTextureTool();
+const cropTool = useCropTool();
+const polygonCropTool = usePolygonCropTool();
+
+// Which sub-mode is active inside the CROP tool: 'BBOX' | 'POLYGON'
+const cropMode = ref('BBOX');
+
+function setCropMode(mode) {
+    if (cropMode.value === mode) return;
+    // Reset the currently active sub-tool
+    if (cropMode.value === 'BBOX') {
+        cropTool.cancel();
+        // Activate polygon tool NOW so its internal `scene` ref is populated
+        polygonCropTool.activate(scene);
+    } else {
+        polygonCropTool.onRightClick({ scene });
+        cropTool.activate(scene);
+    }
+    cropMode.value = mode;
+}
+
+// Proxy tool: delegates all events to the active sub-tool based on cropMode
+const cropProxy = {
+    activate(s) {
+        scene = s;
+        if (cropMode.value === 'POLYGON') polygonCropTool.activate(s);
+        else cropTool.activate(s);
+    },
+    deactivate(s) {
+        cropTool.deactivate(s);
+        polygonCropTool.deactivate(s);
+    },
+    onClick(ctx)       { return cropMode.value === 'POLYGON' ? polygonCropTool.onClick(ctx)       : cropTool.onClick(ctx); },
+    onMove(ctx)        { return cropMode.value === 'POLYGON' ? polygonCropTool.onMove(ctx)        : cropTool.onMove(ctx); },
+    onDoubleClick(ctx) { return cropMode.value === 'POLYGON' ? polygonCropTool.onDoubleClick(ctx) : undefined; },
+    onRightClick(ctx)  { return cropMode.value === 'POLYGON' ? polygonCropTool.onRightClick(ctx)  : cropTool.onRightClick?.(ctx); },
+};
 
 // Tool Mapping
 const tools = {
@@ -186,6 +293,7 @@ const tools = {
     'BOUNDARY': boundaryTool,
     'CULVERT': culvertTool,
     'TEXTURE': textureTool,
+    'CROP': cropProxy,          // single entry; delegates via cropMode
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),
@@ -249,6 +357,10 @@ watch(activeTool, (newVal, oldVal) => {
         if (newVal === 'TEXTURE') {
             setLayerMode('SURFACE');
         }
+        // --- CROP: disable camera rotation so click-dragging doesn't orbit ---
+        if (newVal === 'CROP' && controls) {
+            controls.mouseButtons.LEFT = null;
+        }
     }
 }, { immediate: true });
 
@@ -270,6 +382,32 @@ watch(() => surfaceStore.gridVersion, () => {
         // Force visual update on the terrain mesh using the texture tool's logic
         textureTool.syncColors({ terrainMesh, parsedData: parsedData.value });
     }
+});
+
+// --- PHASE 4: Terrain Crop → Mesh Rebuild ---
+// When cropTerrain() fires in useGeoStore it increments terrainVersion.
+// We dispose the stale Three.js geometry (memory leak prevention!) and rebuild
+// a fresh PlaneGeometry from the now-smaller gridData.
+watch(() => geoStore.terrainVersion, (version) => {
+    if (version === 0) return; // initial value – nothing to do
+    const newTerrain = geoStore.terrain;
+    if (!newTerrain || !newTerrain.gridData) return;
+
+    // Sync local parsedData so stats overlay + all tool composables are up to date
+    parsedData.value = { ...newTerrain };
+    stats.value = newTerrain.stats || {
+        cols: newTerrain.ncols,
+        rows: newTerrain.nrows,
+        cellsize: newTerrain.cellsize,
+        minZ: newTerrain.minZ,
+        maxZ: newTerrain.maxZ,
+    };
+
+    // Rebuild Three.js mesh with the new (smaller) geometry
+    buildTerrainMesh(parsedData.value);
+
+    console.log(`[MapEditor3D] Phase 4: rebuilt terrain mesh after crop (v${version}). ` +
+        `New dims: ${newTerrain.ncols}×${newTerrain.nrows}`);
 });
 
 
@@ -338,7 +476,7 @@ const handleWrapperClick = (event) => {
 const handleWrapperMove = (event) => {
     if (!renderer || !activeCamera) return;
     const context = {
-        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value
+        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore
     };
     interactionManager.handleMouseMove(event, context);
 };
@@ -988,4 +1126,104 @@ defineExpose({
     border-radius: 3px; font-size: 0.8rem;
 }
 .actions .btn-clear { background: #e74c3c; }
+
+/* Crop Tool Panel */
+.crop-tool-ui {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 100;
+}
+.crop-tool-ui .tool-panel {
+    background: rgba(44, 62, 80, 0.92);
+    color: white;
+    padding: 15px 18px;
+    border-radius: 10px;
+    pointer-events: auto;
+    font-size: 0.9rem;
+    backdrop-filter: blur(10px);
+    width: 270px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,69,0,0.4);
+}
+.crop-tool-ui .panel-header {
+    font-weight: bold;
+    margin-bottom: 12px;
+    color: #ecf0f1;
+    border-bottom: 1px solid rgba(255,69,0,0.4);
+    padding-bottom: 6px;
+    display: flex;
+    align-items: center;
+}
+.crop-tool-ui .hint {
+    text-align: center;
+    padding: 8px 0;
+    font-size: 0.85rem;
+    color: #bdc3c7;
+}
+.crop-tool-ui .actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+}
+.crop-tool-ui .actions button {
+    padding: 5px 14px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+.crop-tool-ui .btn-clear {
+    background: #e74c3c;
+    color: white;
+}
+.crop-tool-ui .btn-clear:hover { background: #c0392b; }
+
+/* Crop mode toggle */
+.crop-mode-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+.crop-mode-toggle button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06);
+    color: #bdc3c7;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    transition: all 0.15s;
+}
+.crop-mode-toggle button:hover {
+    background: rgba(255,255,255,0.12);
+    color: #ecf0f1;
+}
+.crop-mode-toggle button.active {
+    background: rgba(255,69,0,0.25);
+    border-color: rgba(255,69,0,0.6);
+    color: #ff7043;
+    font-weight: 700;
+}
+.polygon-crop-ui .crop-mode-toggle button.active {
+    background: rgba(124,58,237,0.25);
+    border-color: rgba(124,58,237,0.6);
+    color: #a78bfa;
+}
+
+/* Polygon Crop panel accent colour override */
+.polygon-crop-ui .tool-panel {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,58,237,0.5);
+}
+.polygon-crop-ui .panel-header {
+    border-bottom-color: rgba(124,58,237,0.5);
+}
 </style>

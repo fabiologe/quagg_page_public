@@ -105,6 +105,20 @@
          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21c0-2 1.5-4 4-4"></path>
        </svg>
     </ToolButton>
+
+    <ToolButton
+      @click="setTool('CROP')"
+      :active="activeTool === 'CROP'"
+      title="Terrain zuschneiden (Rechteck / Polygon)"
+    >
+      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+        <circle cx="6" cy="6" r="2.5"/>
+        <circle cx="6" cy="18" r="2.5"/>
+        <line x1="8.12" y1="7.62" x2="21" y2="21"/>
+        <line x1="8.12" y1="16.38" x2="21" y2="3"/>
+        <line x1="14" y1="12" x2="21" y2="12" stroke-dasharray="2 2"/>
+      </svg>
+    </ToolButton>
     
     <div class="separator"></div>
 
