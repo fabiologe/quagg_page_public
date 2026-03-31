@@ -105,8 +105,10 @@ export function bakeTerrain(baseRaster, gridInfo, modifications) {
     const getCellY = (r) => yll + r * cellsize;
 
     for (const mod of modifications) {
+        // [AUDIT FIX]: applyBuilding() (+10m spike) has been deprecated and disabled.
+        // Buildings should strictly use maskBuildingsAsNoData() to become NoData grids for the solver.
         if (mod.type === 'BUILDING') {
-            applyBuilding(newRaster, gridInfo, mod, getCellX, getCellY);
+            console.warn(`[Rasterizer] Legacy applyBuilding requested for ${mod.properties?.name || 'Building'}. Ignored to prevent +10m UI contamination.`);
         }
     }
 
@@ -117,73 +119,97 @@ export function bakeTerrain(baseRaster, gridInfo, modifications) {
 // OR user requested strict "export function bakeTerrain" which is above.
 // Also exporting burnBuildings as alias if needed by InputGenerator before refill? 
 // No, Worker now calls bakeTerrain (or burnBuildings). I will export both names pointing to logic.
-export const burnBuildings = bakeTerrain;
+export const burnBuildings    = bakeTerrain;  // Legacy-Alias
+export const burnModifications = bakeTerrain;  // Alias für non-BUILDING Mods
 
 /**
- * Sub-function to apply a single building modification
+ * NoData-Masking für Gebäude.
+ *
+ * Setzt alle Rasterzellen, die von einem Gebäude-Polygon überdeckt werden,
+ * auf -9999 (LISFLOOD NoData = Zero-Flux-Boundary → Glaswand für den Solver).
+ *
+ * Vorteile gegenüber +Height-Strategie:
+ *   - Keine 90°-Wände im DGM → keine numerischen Schockwellen (Sloshing)
+ *   - Kein Wasseransammeln auf Gebäudedach
+ *   - LISFLOOD behandelt NoData nativ als harte impermeble Grenze
+ *
+ * @param {Float32Array} baseRaster  - Quell-Raster (wird NICHT verändert)
+ * @param {object}       header      - Grid-Header { ncols, nrows, cellsize, xll/xllcorner, yll/yllcorner }
+ * @param {Array}        buildings   - Array von Modifikations-Objekten mit type='BUILDING'
+ * @returns {Float32Array}           - Neues Raster mit maskierten Gebäudezellen
  */
-function applyBuilding(raster, gridInfo, mod, getCellX, getCellY) {
-    const { ncols, nrows, cellsize } = gridInfo;
-    const xll = gridInfo.xll !== undefined ? gridInfo.xll : gridInfo.xllcorner;
-    const yll = gridInfo.yll !== undefined ? gridInfo.yll : gridInfo.yllcorner;
-    const geom = mod.geometry;
-    const props = mod.properties || {};
+export function maskBuildingsAsNoData(baseRaster, header, buildings) {
+    const newRaster = new Float32Array(baseRaster); // Non-destructive copy
 
-    // Explicit Geometry Check
-    if (!geom || geom.type !== 'Polygon' || !geom.coordinates || geom.coordinates.length === 0) return;
+    if (!buildings || buildings.length === 0) return newRaster;
 
-    const polygon = geom.coordinates[0]; // Outer RING
-    const height = props.height || 10.0;
+    const { ncols, nrows, cellsize } = header;
+    const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+    const yll = header.yll !== undefined ? header.yll : header.yllcorner;
 
-    // 1. Calculate Bounding Box (Optimization)
-    let minC = ncols, maxC = 0, minR = nrows, maxR = 0;
+    // Zell-Mittelpunkt in Weltkoordinaten (identisch zu applyBuilding)
+    const getCellX = (c) => xll + c * cellsize;
+    const getCellY = (r) => yll + r * cellsize;
 
-    for (const p of polygon) {
-        // [x, y]
-        const px = p[0];
-        const py = p[1];
+    let totalMasked = 0;
 
-        // World -> Grid (Bottom-up)
-        const c = Math.round((px - xll) / cellsize);
-        const r = Math.round((py - yll) / cellsize);
+    for (const mod of buildings) {
+        const geom  = mod.geometry;
+        const props = mod.properties || {};
 
-        if (c < minC) minC = c;
-        if (c > maxC) maxC = c;
-        if (r < minR) minR = r;
-        if (r > maxR) maxR = r;
-    }
+        if (!geom || geom.type !== 'Polygon' || !geom.coordinates?.length) continue;
+        const polygon = geom.coordinates[0];
 
-    // Clamp to valid grid area
-    minC = Math.max(0, minC);
-    maxC = Math.min(ncols - 1, maxC);
-    minR = Math.max(0, minR);
-    maxR = Math.min(nrows - 1, maxR);
+        // ─ 1. Bounding-Box-Check (Performance: reduziert PiP-Tests drastisch) ─
+        let minC = ncols, maxC = -1, minR = nrows, maxR = -1;
+        for (const p of polygon) {
+            const c = Math.round((p[0] - xll) / cellsize);
+            const r = Math.round((p[1] - yll) / cellsize);
+            if (c < minC) minC = c;
+            if (c > maxC) maxC = c;
+            if (r < minR) minR = r;
+            if (r > maxR) maxR = r;
+        }
+        // Auf gültigen Grid-Bereich klemmen
+        minC = Math.max(0, minC - 1);
+        maxC = Math.min(ncols - 1, maxC + 1);
+        minR = Math.max(0, minR - 1);
+        maxR = Math.min(nrows - 1, maxR + 1);
 
-    // 2. Loop over BBox
-    let cellsModified = 0;
-    for (let r = minR; r <= maxR; r++) {
-        const cy = getCellY(r); // World Y of cell center
+        if (maxC < 0 || maxR < 0 || minC >= ncols || minR >= nrows) continue; // Gebäude außerhalb Grid
 
-        for (let c = minC; c <= maxC; c++) {
-            const cx = getCellX(c); // World X of cell center
-
-            // 3. Point-in-Polygon Test
-            if (isPointInPolygon(cx, cy, polygon)) {
-                const idx = r * ncols + c;
-
-                // Safety check for NODATA
-                if (raster[idx] > -9000) {
-                    // Apply Height
-                    // Requirement: "newRaster[index] += properties.height" (or absolute)
-                    // Implementation Plan generally favored Relative. 
-                    // Fix-Prompt: "Setze newRaster[index] += properties.height"
-                    raster[idx] += height;
-                    cellsModified++;
+        // ─ 2. BBox-Scan + Point-in-Polygon ──────────────────────────────
+        let cellsMasked = 0;
+        for (let r = minR; r <= maxR; r++) {
+            const cy = getCellY(r);
+            for (let c = minC; c <= maxC; c++) {
+                if (isPointInPolygon(getCellX(c), cy, polygon)) {
+                    // ─ 3. NoData injizieren (überschreibt auch bestehende Höhen) ─
+                    newRaster[r * ncols + c] = -9999;
+                    cellsMasked++;
                 }
             }
         }
+        totalMasked += cellsMasked;
+        console.log(`[Rasterizer] maskBuildingsAsNoData: "${props.name ?? 'Gebäude'}" → ${cellsMasked} Zellen auf -9999 gesetzt (BBox [c:${minC}-${maxC}, r:${minR}-${maxR}])`);
     }
-    console.log(`[Rasterizer] applyBuilding: BBox[c:${minC}-${maxC}, r:${minR}-${maxR}], Cells modified: ${cellsModified}, Height applied: +${height}m`);
+
+    console.log(`[Rasterizer] NoData-Masking abgeschlossen: ${totalMasked} Zellen gesamt maskiert.`);
+    return newRaster;
+}
+
+/**
+ * [DEPRECATED] Sub-function to apply a single building modification
+ * Fixed: Function logic commented out to guarantee +10m Ghost Mutations cannot occur!
+ */
+function applyBuilding(raster, gridInfo, mod, getCellX, getCellY) {
+    /*
+    const { ncols, nrows, cellsize } = gridInfo;
+    const xll = gridInfo.xll !== undefined ? gridInfo.xll : gridInfo.xllcorner;
+    // ...
+    // Legacy +10.0 injection logic ...
+    */
+    console.error("[Rasterizer] applyBuilding is deprecated!");
 }
 
 /**
@@ -207,6 +233,8 @@ export const Rasterizer = {
     gridToASC,
     bakeTerrain,
     burnBuildings: bakeTerrain,
+    maskBuildingsAsNoData,   // Phase 9: NoData-Strategie für Gebäude
+    burnModifications: bakeTerrain,
     /**
      * Generates a Roughness Map (friction.asc).
      * @param {object} header 

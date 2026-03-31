@@ -38,6 +38,14 @@ export const useSimulationStore = defineStore('simulation', () => {
     /** @type {import('vue').Ref<boolean>} */
     const useAcceleration = ref(true); // Acceleration solver flag
 
+    /**
+     * Dev-Switch: Nutze den experimentellen BMI-WebWorker (simulation.bmi.js)
+     * statt des produktiven Blackbox-Workers (simulation.main.js).
+     * Standard: false (produktiver Modus).
+     * @type {import('vue').Ref<boolean>}
+     */
+    const useBmiSolver = ref(false);
+
     // Actions
     function setActiveTool(tool) {
         activeTool.value = tool;
@@ -106,6 +114,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         if (cfg.saveInterval !== undefined) saveInterval.value = cfg.saveInterval;
         if (cfg.massInterval !== undefined) massInterval.value = cfg.massInterval;
         if (cfg.useAcceleration !== undefined) useAcceleration.value = cfg.useAcceleration;
+        if (cfg.useBmiSolver !== undefined) useBmiSolver.value = cfg.useBmiSolver;
     }
 
     // NEW: Multi-select support
@@ -142,6 +151,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         saveInterval,
         massInterval,
         useAcceleration,
+        useBmiSolver,
 
         // Actions
         setActiveTool,

@@ -38,6 +38,22 @@ export function useInteractionManager(activeToolRef, tools) {
         // 2. Prepare Raycaster
         if (context.camera && context.raycaster) {
             context.raycaster.setFromCamera(pointer, context.camera);
+            
+            // --- GLOBAL MAP-CLICK EVENT DISPATCHER ---
+            // Abfeuern eines globalen Events für isolierte UI Werkzeuge (wie CulvertTool.vue)
+            if (context.terrainMesh) {
+                const intersects = context.raycaster.intersectObject(context.terrainMesh);
+                if (intersects.length > 0) {
+                    const hitPoint = intersects[0].point;
+                    window.dispatchEvent(new CustomEvent('map-click', { 
+                        detail: { 
+                            x: hitPoint.x, 
+                            y: hitPoint.y, 
+                            z: hitPoint.z 
+                        } 
+                    }));
+                }
+            }
         }
 
         // 3. Delegate to Active Tool

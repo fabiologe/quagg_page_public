@@ -47,6 +47,13 @@
         Ganglinien ({{ ganglinienList.length }})
       </button>
       <button 
+        :class="{ active: activeTab === 'CULVERTS' }" 
+        @click="activeTab = 'CULVERTS'"
+        title="1D/2D Rohrkopplung (BMI)"
+      >
+        🔌 Culverts ({{ geoStore.culvertLinks.length }})
+      </button>
+      <button 
         :class="{ active: activeTab === 'RAIN' }" 
         @click="activeTab = 'RAIN'"
         title="Niederschlag"
@@ -151,6 +158,9 @@
 
       <RainConfig v-if="activeTab === 'RAIN'" />
 
+      <!-- CULVERT LINK MANAGER -->
+      <CulvertLinkManager v-if="activeTab === 'CULVERTS'" />
+
       <!-- SIMULATION RUNNER -->
       <Flood2DSolverRunner v-if="activeTab === 'SIMULATION'" />
 
@@ -161,7 +171,7 @@
 
     <!-- CONFIGURATION PANEL (Bottom) -->
     <!-- Only show property config if NOT in Profiles/Rain/Sim tab, OR if selection matches -->
-    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION' && activeTab !== 'SURFACE'">
+    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION' && activeTab !== 'SURFACE' && activeTab !== 'CULVERTS'">
         <!-- NEW: Multi-select support -->
         <div v-if="currentSelectionIds.length > 1" class="bulk-hint">
             <div class="bulk-icon">🔵</div>
@@ -197,10 +207,7 @@ import PatternGenerator from '../hydraulics/PatternGenerator.vue';
 import AssignmentModal from '../hydraulics/AssignmentModal.vue';
 import Flood2DSolverRunner from '../Flood2DSolverRunner.vue';
 import SurfaceConfig from './SurfaceConfig.vue';
-// Correct Path: ../Flood2DSolverRunner.vue? 
-// ScenarioManager is in features/flood-2D/components/panel/
-// SolverRunner is in features/flood-2D/components/
-// So path is ../Flood2DSolverRunner.vue. Correct.
+import CulvertLinkManager from './CulvertLinkManager.vue';
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();

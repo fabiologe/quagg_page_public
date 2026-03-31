@@ -72,7 +72,11 @@
        <!-- CULVERT UI -->
        <CulvertTool 
           v-if="simStore.activeTool === 'CULVERT'"
-          :toolInstance="culvertTool"
+       />
+
+       <!-- NODE/SOURCE UI -->
+       <NodeTool 
+          v-if="simStore.activeTool === 'NODE'"
        />
 
        <!-- BOUNDARY UI -->
@@ -213,6 +217,7 @@ import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.
 // --- UI COMPONENTS ---
 import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
+import NodeTool from '../tools/NodeTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
 import TextureTool from '../tools/TextureTool.vue';

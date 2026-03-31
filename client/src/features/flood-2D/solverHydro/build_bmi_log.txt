@@ -69,3 +69,4 @@ src/lisflood-fp-bmi-v5.9/update.cpp:250:77: warning: ISO C++11 does not allow co
   250 |           if (Statesptr->profileoutput==ON) write_profile(Fnameptr->resrootname,-1,".profile",Statesptr,ChannelSegments,Arrptr,Parptr, RiversIndexVecPtr, RiversIndexPtr);
       |                                                                                    ^
 2 warnings generated.
+emcc: error: specified output file (../middleware/lisflood_bmi.js) is in a directory that does not exist

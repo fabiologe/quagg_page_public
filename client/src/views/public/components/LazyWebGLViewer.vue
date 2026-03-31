@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { OrbitControls, GLTFModel } from '@tresjs/cientos'
 
 const props = defineProps({
@@ -56,31 +56,8 @@ const props = defineProps({
   }
 })
 
-const containerRef = ref(null)
-const isVisible = ref(false)
-let observer = null
-
-onMounted(() => {
-  // LAZY LOADING IMPLEMENTATION
-  // Only mount the WebGL context when the component enters the viewport
-  observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting) {
-      isVisible.value = true
-      // We can stop observing once it's loaded to save performance
-      observer.disconnect()
-    }
-  }, {
-    threshold: 0.1 // Trigger when 10% visible
-  })
-  
-  if (containerRef.value) {
-    observer.observe(containerRef.value)
-  }
-})
-
-onUnmounted(() => {
-  if (observer) observer.disconnect()
-})
+// Always visible to enable pre-loading instead of lazy loading
+const isVisible = ref(true)
 </script>
 
 <style scoped>

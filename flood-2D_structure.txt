@@ -79,10 +79,13 @@ flood-2D/
 │   ├── InputGenerator.js
 │   ├── Hydraulics.js
 │   ├── simulation.main.js
+│   ├── simulation.bmi.js
 │   ├── OutputProcessor.js
 │   ├── lisflood.js
+│   ├── lisflood_bmi.js
 │   ├── BoundaryTools.js
 │   ├── lisflood.wasm
+│   ├── lisflood_bmi.wasm
 │   ├── importers/
 │   │   ├── XMLNodeParser.js
 │   │   ├── GeoJSONParser.js
@@ -92,6 +95,7 @@ flood-2D/
 │   ├── useGeoStore.js
 ├── solverHydro/
 │   ├── build_log.txt
+│   ├── build_bmi_log.txt
 │   ├── build_wasm.sh
 │   ├── src/
 │   │   ├── README.rst
@@ -137,4 +141,4 @@ flood-2D/
 │   │   ├── run_debug_headless.mjs
 │   │   ├── lisflood.js
 │   │   ├── lisflood.wasm
-│   │   ├── 
+│   │   ├── headless_output/

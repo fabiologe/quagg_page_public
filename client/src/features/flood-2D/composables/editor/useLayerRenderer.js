@@ -153,10 +153,15 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
         let first = true;
         geoStore.nodes.forEach(node => {
-            const mesh = new THREE.Mesh(nodeGeometry, nodeMaterial);
+            // BUGFIX: Wir erstellen die Geometrie für jeden Knoten neu,
+            // da clearGroup() andernfalls unsere global geteilte Geometrie sofort zerstört (.dispose),
+            // was dazu führt, dass THREE.js sie beim nächsten Re-Render ignoriert!
+            const dynNodeGeom = new THREE.SphereGeometry(3.0, 16, 16);
+            const mesh = new THREE.Mesh(dynNodeGeom, nodeMaterial);
 
-            // Pos
-            const pos = getLocalPos(node.x, node.y, node.cover_level);
+            // Pos: Beachte, dass alte Nodes "cover_level" hatten, neue Tools (Culvert/NodeTool) setzen "z".
+            const nodeZ = node.z !== undefined && node.z !== null ? node.z : node.cover_level;
+            const pos = getLocalPos(node.x, node.y, nodeZ);
             mesh.position.copy(pos);
 
             if (first) {
@@ -169,7 +174,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
                 id: node.id,
                 type: 'node',
                 data: node,
-                selectable: true // NEW: Enable Raycasting
+                selectable: true
             };
 
             nodeGroup.add(mesh);
@@ -595,7 +600,17 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
     // --- WATCHERS ---
 
-    watch(() => geoStore.nodes, () => renderNodes(), { deep: true, immediate: true });
+    // EXAKTER WATCHER FÜR REAKTIVITÄT
+    // Nutzt deep: true, um push() auf das Array abzufangen.
+    watch(
+        () => geoStore.nodes, 
+        () => {
+            renderNodes();
+            // Optional: Wenn kein rAF-Loop existiert, müsste man hier renderer.render() callen.
+            // Der Editor3D nutzt aber controls.update() im animate-Loop!
+        }, 
+        { deep: true, immediate: true }
+    );
 
     // Watch both buildings and boundaries
     watch([() => geoStore.buildings.features, () => geoStore.boundaries.features], () => renderBuildings(), { deep: true, immediate: true });

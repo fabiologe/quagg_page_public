@@ -1,4 +1,4 @@
-import { Rasterizer } from './Rasterizer.js';
+import { Rasterizer, maskBuildingsAsNoData, burnModifications } from './Rasterizer.js';
 import { Hydraulics } from './Hydraulics.js';
 import { BoundaryTools } from './BoundaryTools.js';
 
@@ -47,30 +47,46 @@ export class InputGenerator {
         this.terrainHeader = header;
         console.log(`[InputGenerator] Terrain Header: ncols=${header.ncols}, nrows=${header.nrows}, cellsize=${header.cellsize}, xll=${header.xll}, yll=${header.yll}`);
 
-        // Burn Buildings & Modifications
-        const modifications = [];
+        // ── Building NoData-Masking & Terrain-Modifikationen ───────────────────
+        //
+        // Strategie:
+        //   BUILDING   → NoData-Maske (-9999 = Zero-Flux-Boundary für LISFLOOD-FP)
+        //               Verhindert numerische Schockwellen durch 90°-Wände.
+        //   Sonstige    → Höhen-Delta (Abgrabungen, Teiche, etc.)
+        //
+        const buildingMods    = [];
+        const nonBuildingMods = [];
+
         if (scenario.buildings && scenario.buildings.features) {
-            modifications.push(...scenario.buildings.features.map(f => ({
+            scenario.buildings.features.forEach(f => buildingMods.push({
                 type: 'BUILDING',
                 geometry: f.geometry,
                 properties: f.properties || { height: 10.0 }
-            })));
+            }));
         }
         if (scenario.modifications) {
-            modifications.push(...scenario.modifications);
+            scenario.modifications.forEach(m => {
+                (m.type === 'BUILDING' ? buildingMods : nonBuildingMods).push(m);
+            });
         }
-        if (modifications.length > 0) {
-            data = Rasterizer.burnBuildings(data, header, modifications);
 
-            // CRITICAL FIX: Update the scenario object so the Worker gets the new Float32Array 
-            // instead of the original unmodified one when using toRaw()
-            if (scenario.grid) {
-                if (scenario.grid.gridData) scenario.grid.gridData = data;
-                else if (scenario.grid.data) scenario.grid.data = data;
-            } else if (scenario.xyz) {
-                // If generated from xyz, we already have the local data variable
-            }
+        // Pass 1: Gebäude als -9999 (NoData = impermeabler Rand) maskieren.
+        // LISFLOOD-FP behandelt -9999-Zellen nativ als Zero-Flux-Boundary →
+        // Wasser prallt physikalisch ab ohne +10m-Sloshing-Artefakte.
+        if (buildingMods.length > 0) {
+            data = maskBuildingsAsNoData(data, header, buildingMods);
+            console.log(`[InputGenerator] NoData-Masking: ${buildingMods.length} Gebäude gestempelt.`);
         }
+
+        // Pass 2: Sonstige Höhen-Änderungen (Abgrabungen, Teiche, etc.)
+        if (nonBuildingMods.length > 0) {
+            data = Rasterizer.burnBuildings(data, header, nonBuildingMods);
+        }
+
+        // CRITICAL FIX: The UI expects terrain data to be untouched. 
+        // We do NOT mutate the global `scenario.grid` pointer here. 
+        // `data` is a local modified Float32Array which is correctly passed to `terrain.asc` below via the Rasterizer.
+        // Therefore, the Solver receives the masked array, but the Vue global state remains pure.
 
         // STREAMING WRITE or BUFFERED
         if (fs) {

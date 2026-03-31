@@ -15,7 +15,7 @@ mkdir -p build
 docker run --rm -v $(pwd):/src -w /src emscripten/emsdk /bin/bash -c "emcc \\
     src/lisflood-fp-bmi-v5.9/*.cpp \\
     -I src/lisflood-fp-bmi-v5.9 \\
-    -o build/lisflood.js \\
+    -o ../middleware/lisflood.js \\
     -s EXPORTED_FUNCTIONS='[\"_run_lisflood\", \"_malloc\", \"_free\"]' \\
     -s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"UTF8ToString\", \"FS\", \"HEAP8\", \"HEAPU8\"]' \\
     -s ALLOW_MEMORY_GROWTH=1 \\
@@ -29,7 +29,7 @@ docker run --rm -v $(pwd):/src -w /src emscripten/emsdk /bin/bash -c "emcc \\
     -O2 \\
     > build_log.txt 2>&1; ls -la build/"
 
-echo "Build complete. Check build/lisflood.js"
+echo "Build complete. Check src/features/flood-2D/middleware/lisflood.js"
 
 echo ""
 echo "Building BMI Sandbox WASM (Frame-by-Frame Mode)..."
@@ -50,4 +50,7 @@ docker run --rm -v $(pwd):/src -w /src emscripten/emsdk /bin/bash -c "emcc \\
     -O2 \\
     > build_bmi_log.txt 2>&1; ls -la build/"
 
-echo "BMI build complete. Check build/lisflood_bmi.js"
+echo "BMI build complete. Deploying artifacts to middleware/..."
+cp build/lisflood_bmi.js   ../middleware/lisflood_bmi.js
+cp build/lisflood_bmi.wasm ../middleware/lisflood_bmi.wasm
+echo "✅ lisflood_bmi.js + lisflood_bmi.wasm → middleware/"

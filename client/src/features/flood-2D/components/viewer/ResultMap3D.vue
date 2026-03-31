@@ -28,6 +28,8 @@ let renderer, scene, camera, controls;
 let terrainMesh = null;
 let waterMesh = null;
 let boundaryMesh = null;
+let maskTexture = null;
+let globalBuildingMaskArray = null; // NEW: Stellt den Gebäude-Footprint für die Mesh-Entkoppelung global zur Verfügung
 const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
 const probeMarkers = new Map(); // Track multiple probe markers by ID
 let animationId;
@@ -49,7 +51,9 @@ const terrainVertexShader = `
   varying float vZ;
   varying float vValid;
   varying vec2 vPlanePos;
+  varying vec2 vUv;
   void main() {
+    vUv = uv;
     vZ = position.z;
     vValid = aValid;
     vPlanePos = position.xy;
@@ -61,6 +65,7 @@ const terrainFragmentShader = `
   varying float vZ;
   varying float vValid;
   varying vec2 vPlanePos;
+  varying vec2 vUv;
   uniform float uMinZ;
   uniform float uMaxZ;
   uniform vec3 uColorLow;
@@ -68,10 +73,15 @@ const terrainFragmentShader = `
   uniform vec3 uColorHigh;
   uniform vec2 uBounds;
   uniform float uCellSize;
+  uniform sampler2D uBuildingMask;
 
   void main() {
     // Discard NODATA cells
     if (vValid < 0.5) discard;
+
+    // Discard building cells
+    float mask = texture2D(uBuildingMask, vUv).r;
+    if (mask < 0.5) discard;
 
     float range = uMaxZ - uMinZ;
     if (range < 0.1) range = 1.0;
@@ -96,11 +106,13 @@ const terrainFragmentShader = `
 const waterVertexShader = `
   varying float vDepth;
   varying vec3 vPos;
+  varying vec2 vUv;
   uniform sampler2D uDepthMap;
   uniform vec2 uTexelSize;
 
   void main() {
      vec2 texUV = uv;
+     vUv = uv;
      
      // 9-Tap Spatial Smoothing for maximum cohesiveness in fast-changing water depths
      float d0 = texture2D(uDepthMap, texUV).r;
@@ -135,12 +147,18 @@ const waterVertexShader = `
 const waterFragmentShader = `
   varying float vDepth;
   varying vec3 vPos;
+  varying vec2 vUv;
   uniform vec3 uColorShallow;
   uniform vec3 uColorMid;
   uniform vec3 uColorDeep;
   uniform float uMaxDepth;
+  uniform sampler2D uBuildingMask;
 
   void main() {
+      // Discard building cells
+      float mask = texture2D(uBuildingMask, vUv).r;
+      if (mask < 0.5) discard;
+
       if (vDepth < 0.005) discard;
 
       // Calculate steepness of the water surface. 
@@ -321,6 +339,7 @@ function initScene() {
   watch(() => geoStore.buildings?.features, (newFeatures) => {
     if (newFeatures && newFeatures.length > 0 && layerRenderer && terrainMesh) {
       console.log('[ResultMap3D] GeoStore buildings loaded, triggering render.');
+      generateBuildingMask(); // NEW: Update mask when buildings arrive
       layerRenderer.renderBuildings();
     }
   }, { deep: true });
@@ -571,6 +590,72 @@ function onResize() {
 
 // --- TERRAIN BUILDING ---
 
+function generateBuildingMask() {
+  if (!props.terrain) return;
+  const { ncols, nrows, cellsize, xllcorner, yllcorner } = props.terrain;
+  
+  // Use pure JavaScript Canvas API for ultra-fast 2D polygon rasterization
+  const canvas = typeof OffscreenCanvas !== 'undefined' 
+    ? new OffscreenCanvas(ncols, nrows) 
+    : document.createElement('canvas');
+  if (canvas.style) { canvas.width = ncols; canvas.height = nrows; }
+  
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  
+  // 1. Fill mask with white (255 = visible)
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, ncols, nrows);
+  
+  // 2. Draw buildings in black (0 = transparent)
+  const features = geoStore.buildings?.features || [];
+  if (features.length > 0) {
+    ctx.fillStyle = '#000000';
+    features.forEach(feature => {
+      if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
+        const polys = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+        polys.forEach(rings => {
+          const outer = rings[0]; // outer ring
+          ctx.beginPath();
+          outer.forEach((coord, i) => {
+            const px = (coord[0] - xllcorner) / cellsize;
+            const py = (coord[1] - yllcorner) / cellsize;
+            const cy = nrows - py; // Canvas Y goes top-down
+            
+            if (i === 0) ctx.moveTo(px, cy);
+            else ctx.lineTo(px, cy);
+          });
+          ctx.closePath();
+          ctx.fill();
+        });
+      }
+    });
+  }
+  
+  // 3. Extract pixel data mapped exactly to grid cells
+  const imgData = ctx.getImageData(0, 0, ncols, nrows);
+  globalBuildingMaskArray = new Uint8Array(ncols * nrows);
+  for (let i = 0; i < ncols * nrows; i++) {
+    globalBuildingMaskArray[i] = imgData.data[i * 4]; // Only need red channel
+  }
+  
+  // 4. Update the ThreeJS Mask Texture
+  if (maskTexture) maskTexture.dispose();
+  
+  maskTexture = new THREE.DataTexture(globalBuildingMaskArray, ncols, nrows, THREE.RedFormat, THREE.UnsignedByteType);
+  maskTexture.flipY = true; // Flips canvas Y back to bottom-up mapping for WebGL PlaneGeometry
+  maskTexture.needsUpdate = true;
+  
+  // 5. Instantly push to active materials
+  if (terrainMesh && terrainMesh.material && terrainMesh.material.uniforms) {
+    terrainMesh.material.uniforms.uBuildingMask = { value: maskTexture };
+    terrainMesh.material.needsUpdate = true;
+  }
+  if (waterMesh && waterMesh.material && waterMesh.material.uniforms) {
+    waterMesh.material.uniforms.uBuildingMask = { value: maskTexture };
+    waterMesh.material.needsUpdate = true;
+  }
+}
+
 // Watch for terrain changes AFTER scene is ready
 watch(() => props.terrain, (t) => {
   if (t && scene) {
@@ -588,6 +673,9 @@ function buildTerrain(t) {
   const { ncols, nrows, gridData, minZ, maxZ, cellsize } = t;
   console.log('[ResultMap3D] buildTerrain:', ncols, 'x', nrows, 'minZ:', minZ, 'maxZ:', maxZ);
 
+  // Re-generate mask when terrain builds
+  generateBuildingMask();
+
   // Compute bounds if missing (fallback)
   const bounds = t.bounds || {
     width: (ncols - 1) * (cellsize || 1),
@@ -597,31 +685,71 @@ function buildTerrain(t) {
   const geometry = new THREE.PlaneGeometry(bounds.width, bounds.height, ncols - 1, nrows - 1);
   const count = geometry.attributes.position.count;
 
-  // Per-vertex validity flag: 1.0 = real data, 0.0 = NODATA
+  // Per-vertex flags
   const validArray = new Float32Array(count);
+  const vertexIsValid = new Uint8Array(count); // Für Index-Filtering
 
   for (let i = 0; i < count; i++) {
     const col = i % ncols;
     const geomRow = Math.floor(i / ncols);
     const gridRow = (nrows - 1) - geomRow;
     const idx = gridRow * ncols + col;
-    let zVal = minZ;
+    
+    // Canvas Y maps top-down, just like geomRow. This exact index gets the pixel mask!
+    const maskIdx = geomRow * ncols + col;
+    const isBuilding = globalBuildingMaskArray && globalBuildingMaskArray[maskIdx] < 128;
+    
+    // Z-Wert Isolierung: Terrain darf NIEMALS Gebäudehöhen erben!
+    let zVal = 0; 
     let valid = 0.0;
+    let isValidPoint = false;
+
     if (idx >= 0 && idx < gridData.length) {
       const val = gridData[idx];
-      if (val > -9000) {
-        zVal = val;
+      // Entkoppelung: Nur pure DGM-Werte verwenden. Wenn die Canvas-Maske ein Gebäude (Schwarz) meldet,
+      // wird der Wert als NoData forciert, um kontaminierte +10m Spikes in gridData zu ignorieren.
+      if (val > -9000 && !isBuilding) {
+        zVal = val - minZ; // Reales DGM
         valid = 1.0;
+        isValidPoint = true;
+      } else {
+        // NoData (-9999) oder Gebäude-Footprint -> auf 0 klammern und für Index-Filtering markieren
+        zVal = 0;
       }
     }
-    geometry.attributes.position.setZ(i, zVal - minZ);
+    
+    geometry.attributes.position.setZ(i, zVal);
     validArray[i] = valid;
+    vertexIsValid[i] = isValidPoint ? 1 : 0;
   }
+  
   geometry.setAttribute('aValid', new THREE.BufferAttribute(validArray, 1));
+
+  // --- HARD-CLIPPING (Index Buffer Drilling) ---
+  // Durchtrennt die illegale Kopplung und stanzt NoData-Zellen (Gebäude/Ränder) physisch aus dem Mesh.
+  const oldIndex = geometry.getIndex();
+  const newIndices = [];
+  
+  if (oldIndex) {
+      for (let i = 0; i < oldIndex.count; i += 3) {
+          const a = oldIndex.getX(i);
+          const b = oldIndex.getX(i + 1);
+          const c = oldIndex.getX(i + 2);
+          
+          // Dreieck ausstanzen, wenn auch nur ein Vertex ≤ -9000 ist
+          if (vertexIsValid[a] === 1 && vertexIsValid[b] === 1 && vertexIsValid[c] === 1) {
+              newIndices.push(a, b, c);
+          }
+      }
+      geometry.setIndex(newIndices); // Überschreibe Geometry Faces
+  }
+
+  // Normals NACH dem Ausstanzen berechnen, damit Rand-Schatten korrekt sind
   geometry.computeVertexNormals();
 
   const material = new THREE.ShaderMaterial({
     uniforms: {
+      uBuildingMask: { value: maskTexture },
       uMinZ: { value: 0 },
       uMaxZ: { value: maxZ - minZ },
       uColorLow: { value: new THREE.Color(0x2d5f3f) },   // Dark green
@@ -790,6 +918,7 @@ function updateWater(depthData) {
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
+        uBuildingMask: { value: maskTexture },
         uDepthMap: { value: texture },
         uTexelSize: { value: new THREE.Vector2(1.0 / ncols, 1.0 / nrows) },
         uMaxDepth: { value: props.maxWaterDepth || 1.0 },
@@ -812,6 +941,7 @@ function updateWater(depthData) {
     scene.add(waterMesh);
   } else {
     const mat = waterMesh.material;
+    if (mat.uniforms.uBuildingMask) mat.uniforms.uBuildingMask.value = maskTexture;
     if (mat.uniforms.uDepthMap.value) mat.uniforms.uDepthMap.value.dispose();
     mat.uniforms.uDepthMap.value = texture;
     if (!mat.uniforms.uTexelSize) mat.uniforms.uTexelSize = { value: new THREE.Vector2() };

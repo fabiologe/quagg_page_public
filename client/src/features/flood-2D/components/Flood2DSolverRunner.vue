@@ -27,6 +27,19 @@
           </label>
         </div>
 
+        <label>Engine</label>
+        <div class="toggle-row bmi-toggle-row" :class="{ 'bmi-active': simStore.useBmiSolver }">
+          <input
+            type="checkbox"
+            id="bmi-toggle"
+            v-model="simStore.useBmiSolver"
+            :disabled="isRunning"
+          />
+          <label for="bmi-toggle" class="toggle-label bmi-label">
+            🧪 Experimenteller 1D/2D BMI-Solver <strong>(God Mode)</strong>
+          </label>
+        </div>
+
       </div>
       <p class="param-hint">
         📊 {{ estimatedFrames }} Frames · 
@@ -181,7 +194,16 @@ const runSimulation = async () => {
     try {
         if (!worker) {
             appendLog("Initializing Middleware Worker...");
-            worker = new Worker(new URL('../middleware/simulation.main.js', import.meta.url), { type: 'module' });
+
+            // ── Vite-safe statische Worker-URL-Weiche ────────────────────────
+            // WICHTIG: Kein dynamisches Template-Literal! Vite benötigt
+            // statisch analysierbare new URL(..., import.meta.url) Ausdrücke.
+            const workerUrl = simStore.useBmiSolver
+                ? new URL('../middleware/simulation.bmi.js', import.meta.url)
+                : new URL('../middleware/simulation.main.js', import.meta.url);
+
+            appendLog(`Engine: ${simStore.useBmiSolver ? '🧪 BMI (Frame-by-Frame)' : '⚙️ Classic (Blackbox)'}`);
+            worker = new Worker(workerUrl, { type: 'module' });
             
             // IMMEDIATE Error Handler for Startup
             worker.onerror = (e) => {
@@ -299,8 +321,15 @@ const runSimulation = async () => {
 
 const abortSimulation = () => {
     if (worker) {
-        worker.terminate();
-        worker = null;
+        // BMI-Worker: Erst abort-Signal senden, damit _bmi_finalize() sauber läuft,
+        // dann mit kleinem Verzug terminieren als Fallback.
+        worker.postMessage({ type: 'abort' });
+        setTimeout(() => {
+            if (worker) {
+                worker.terminate();
+                worker = null;
+            }
+        }, 500);
     }
     isRunning.value = false;
     simStore.setStatus('ABORTED');
@@ -312,10 +341,9 @@ const openViewer = async () => {
     // Store data in IndexedDB BEFORE opening popup
     const bciContent = inputFiles.value && inputFiles.value['flow.bci'] ? inputFiles.value['flow.bci'] : null;
     
-    // We must pass the BAKED terrain to the Viewer, not the raw one from GeoStore, 
-    // because buildings are not burned into geoStore natively.
     const rawTerrain = toRaw(geoStore.terrain);
     const bakedTerrainData = { ...rawTerrain };
+    
     if (bakedTerrainData.gridData) {
         bakedTerrainData.gridData = bakedTerrainData.gridData.slice(); // Copy
         const header = {
@@ -326,19 +354,34 @@ const openViewer = async () => {
             yllcorner: bakedTerrainData.yllcorner,
             NODATA_value: bakedTerrainData.minZ
         };
-        const modifications = [];
+        
+        // 1. Gebäude als NoData maskieren (niemals Höhe auf DGM addieren!)
+        const buildingMods = [];
         if (geoStore.buildings && geoStore.buildings.features) {
-            modifications.push(...geoStore.buildings.features.map(f => ({
+            buildingMods.push(...geoStore.buildings.features.map(f => ({
                 type: 'BUILDING',
                 geometry: f.geometry,
-                properties: f.properties || { height: 10.0 }
+                properties: f.properties || {}
             })));
         }
+        
+        // 2. Echte Geländemanipulationen (Teiche/Abgrabungen) sammeln
+        const nonBuildingMods = [];
         if (geoStore.modifications) {
-            modifications.push(...geoStore.modifications);
+            geoStore.modifications.forEach(m => {
+                if (m.type === 'BUILDING') buildingMods.push(m);
+                else nonBuildingMods.push(m);
+            });
         }
-        if (modifications.length > 0) {
-            bakedTerrainData.gridData = Rasterizer.burnBuildings(bakedTerrainData.gridData, header, modifications);
+        
+        // --- CHIRURGISCHER SCHNITT: Terrain bleibt unter Gebäuden flach (NoData) ---
+        if (buildingMods.length > 0) {
+            bakedTerrainData.gridData = Rasterizer.maskBuildingsAsNoData(bakedTerrainData.gridData, header, buildingMods);
+        }
+        
+        // Erdbau/Bodensenkungen normal ins Mesh brennen
+        if (nonBuildingMods.length > 0) {
+            bakedTerrainData.gridData = Rasterizer.burnBuildings(bakedTerrainData.gridData, header, nonBuildingMods);
         }
     }
 
@@ -466,18 +509,67 @@ const startPreparation = async () => {
              }
           };
 
-         // 2. Send to Worker (DELEGATED GENERATION)
+         // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
+         //    Nur relevant für den BMI-Worker (simulation.bmi.js).
+         //    Liest culvertLinks aus dem HydraulicStore, löst die Node-IDs gegen
+         //    die echten Welt-Koordinaten aus dem GeoStore auf und baut das
+         //    activeCulverts-Array, das der Worker erwartet.
+         let activeCulverts = [];
+         let dmgHeader = null;
+
+         if (simStore.useBmiSolver) {
+             const rawNodes = toRaw(geoStore.nodes) || [];
+             const nodeMap = new Map(rawNodes.map(n => [n.id, n]));
+
+             const rawLinks = toRaw(geoStore.culvertLinks) || [];
+
+             for (const link of rawLinks) {
+                 const inNode  = nodeMap.get(link.sourceId);
+                 const outNode = nodeMap.get(link.targetId);
+
+                 if (!inNode || !outNode) {
+                     appendLog(`⚠️ Culvert [${link.id}]: Node nicht gefunden (source=${link.sourceId}, target=${link.targetId}) — übersprungen.`);
+                     continue;
+                 }
+
+                 activeCulverts.push({
+                     inX:  inNode.x,
+                     inY:  inNode.y,
+                     outX: outNode.x,
+                     outY: outNode.y,
+                     maxQ: link.maxQ ?? 1.0
+                 });
+             }
+
+             // DGM-Header für get1DIndex im Worker.
+             // Priorität: xll (parseXYZ native) → xllcorner (nach cropTerrain)
+             // Entspricht genau der Logik in InputGenerator.js Z.221/268.
+             const t = geoStore.terrain;
+             if (t) {
+                 const h = t.header ?? t;
+                 dmgHeader = {
+                     xllcorner: h.xll      !== undefined ? h.xll      : (h.xllcorner ?? 0),
+                     yllcorner: h.yll      !== undefined ? h.yll      : (h.yllcorner ?? 0),
+                     cellsize:  h.cellsize ?? 1,
+                     nrows:     h.nrows    ?? 0,
+                     ncols:     h.ncols    ?? 0
+                 };
+             }
+
+             appendLog(`🔌 BMI: ${activeCulverts.length} Culvert-Paar(e) gemapped. Header: xll=${dmgHeader?.xllcorner}, yll=${dmgHeader?.yllcorner}, cs=${dmgHeader?.cellsize}`);
+         }
+
+         // 3. Send to Worker (DELEGATED GENERATION)
          // We send the raw scenario data, and the worker runs InputGenerator internally.
          if (worker) {
-             // Clone specifically to be safe
-             // const payload = JSON.parse(JSON.stringify(scenarioData)); 
-             // ^ CANT DO THIS because gridData is Float32Array (Transferable) ideally, or at least binary.
-             // toRaw should be enough.
-             
              worker.postMessage({
                  cmd: 'CMD_RUN',
-                 payload: { 
+                 payload: {
                     scenarioData: scenarioData,
+                    // BMI-spezifisch: nur gesetzt wenn useBmiSolver aktiv
+                    culverts: activeCulverts,
+                    header:   dmgHeader,
+                    maxTime:  simStore.simDuration || 3600
                  }
              });
              simStore.setStatus('RUNNING');
@@ -629,6 +721,29 @@ onUnmounted(() => {
 .toggle-label {
     font-size: 0.8rem;
     color: #666;
+}
+
+/* BMI Dev-Switch */
+.bmi-toggle-row {
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    transition: background 0.2s;
+}
+.bmi-toggle-row.bmi-active {
+    background: rgba(243, 156, 18, 0.08);
+    outline: 1px solid rgba(243, 156, 18, 0.35);
+}
+.bmi-toggle-row input[type='checkbox']:disabled + .bmi-label {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.bmi-label {
+    font-size: 0.8rem;
+    color: #7f5200;
+}
+.bmi-toggle-row.bmi-active .bmi-label {
+    color: #b7771d;
+    font-weight: 500;
 }
 .param-hint {
     margin: 0.75rem 0 0;

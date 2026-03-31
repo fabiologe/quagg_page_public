@@ -37,14 +37,27 @@ self.onmessage = async function (e) {
             console.log('Worker: Received task', modifications.length, 'mods');
 
             // 2. SCHRITT A: Das Backen (The Baking)
+            // ── Phase 9: Zwei-Phasen-Strategie ─────────────────────────────────
+            // BUILDING    → -9999 (Zero-Flux-Boundary, kein Sloshing)
+            // Sonstige    → Höhen-Delta (Abgrabungen, Teiche etc.)
             console.time('Baking');
 
-            // [FIX] Application of modifications
-            // Wir nutzen Rasterizer.burnBuildings als "bakeTerrain" Funktion
-            // baseRaster wird kopiert, nicht mutiert (Rasterizer implementation handles copy)
-            const finalRaster = Rasterizer.burnBuildings(baseRaster, gridInfo, modifications);
+            const buildingMods    = modifications.filter(m => m.type === 'BUILDING');
+            const nonBuildingMods = modifications.filter(m => m.type !== 'BUILDING');
+
+            // Pass 1: Gebäude als NoData maskieren (-9999 = impermeabler Rand)
+            let finalRaster = buildingMods.length > 0
+                ? Rasterizer.maskBuildingsAsNoData(baseRaster, gridInfo, buildingMods)
+                : new Float32Array(baseRaster); // non-destructive copy
+
+            // Pass 2: Sonstige Höhen-Modifikationen (Abgrabungen, Teiche etc.)
+            if (nonBuildingMods.length > 0) {
+                finalRaster = Rasterizer.burnBuildings(finalRaster, gridInfo, nonBuildingMods);
+            }
 
             console.timeEnd('Baking');
+            console.log(`[dataprep.worker] Baking: ${buildingMods.length} Gebäude→NoData, ${nonBuildingMods.length} Mods→Höhe.`);
+
 
             // 3. SCHRITT B: LISFLOOD Input Generierung
             // WICHTIG: Wir nutzen jetzt 'finalRaster', NICHT mehr 'baseRaster'!

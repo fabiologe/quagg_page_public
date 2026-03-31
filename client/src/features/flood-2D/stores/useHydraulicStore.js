@@ -141,6 +141,42 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         globalRoughness.value = val;
     }
 
+    /**
+     * Gekoppelte Durchlass-Paare für die BMI 1D/2D-Simulation.
+     * Jeder Link repräsentiert ein Rohr von einem Einlauf-Knoten zu einem Auslauf-Knoten.
+     *
+     * @type {import('vue').Ref<Array<{
+     *   id: string,
+     *   inNodeId: string,
+     *   outNodeId: string,
+     *   maxQ: number
+     * }>>}
+     */
+    const culvertLinks = ref([]);
+
+    /**
+     * Fügt ein neues Rohrsystem-Paar hinzu.
+     * @param {string} inNodeId  - ID des Einlauf-Knotens (Schacht Einlauf)
+     * @param {string} outNodeId - ID des Auslauf-Knotens (Schacht Auslauf)
+     * @param {number} maxQ      - Maximale Durchflussrate [m³/s]
+     */
+    function addCulvertLink(inNodeId, outNodeId, maxQ = 1.0) {
+        culvertLinks.value.push({
+            id: crypto.randomUUID(),
+            inNodeId,
+            outNodeId,
+            maxQ: parseFloat(maxQ) || 1.0
+        });
+    }
+
+    /**
+     * Entfernt ein Paar anhand der Link-ID.
+     * @param {string} linkId
+     */
+    function removeCulvertLink(linkId) {
+        culvertLinks.value = culvertLinks.value.filter(l => l.id !== linkId);
+    }
+
     return {
         ganglinien,
         activeGanglinieId,
@@ -149,8 +185,8 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         kostraGrid,
         rainLocation,
         rainConfig,
-        globalRoughness, // EXPORTED
-        setRoughness,    // EXPORTED
+        globalRoughness,
+        setRoughness,
         createGanglinie,
         deleteGanglinie,
         updateGanglinieData,

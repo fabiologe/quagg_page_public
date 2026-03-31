@@ -41,8 +41,23 @@
         </div>
         
         <div class="visual-content">
-          <!-- Real 3D WebGL Viewer (Lazy Loaded) -->
-          <LazyWebGLViewer :key="currentStudy.modelUrl" :model-url="currentStudy.modelUrl" />
+          <div class="sketchfab-embed-wrapper">
+            <div class="ui-blocker top"></div>
+            <iframe 
+              :title="currentStudy.title"
+              frameborder="0" 
+              allowfullscreen 
+              mozallowfullscreen="true" 
+              webkitallowfullscreen="true" 
+              allow="autoplay; fullscreen; xr-spatial-tracking" 
+              xr-spatial-tracking 
+              execution-while-out-of-viewport 
+              execution-while-not-rendered 
+              web-share 
+              :src="currentStudy.embedUrl">
+            </iframe>
+            <div class="ui-blocker bottom"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -66,7 +81,8 @@ const tabs = [
       'Fläche': '450 m²',
       'Reinigungsleistung': 'Hoch'
     },
-    modelUrl: '/models/cases/Teich/scene.gltf'
+    embedUrl: 'https://sketchfab.com/models/0a83c66910ca485ea565eb8db37dd2d7/embed?autospin=1&autostart=1&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
+    sketchfabLink: 'https://sketchfab.com/3d-models/urban-road-section-0a83c66910ca485ea565eb8db37dd2d7?utm_medium=embed&utm_campaign=share-popup&utm_content=0a83c66910ca485ea565eb8db37dd2d7'
   },
   {
     id: 'lfa',
@@ -78,8 +94,8 @@ const tabs = [
       'Klasse': 'Klasse I',
       'Ölspeichermenge': '580 l'
     },
-    // use one of the files from the LFA folder
-    modelUrl: '/models/cases/Leichtflüssigabscheider/99610_15B.glb'
+    embedUrl: 'https://sketchfab.com/models/0a83c66910ca485ea565eb8db37dd2d7/embed?autospin=1&autostart=1&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
+    sketchfabLink: 'https://sketchfab.com/3d-models/urban-road-section-0a83c66910ca485ea565eb8db37dd2d7?utm_medium=embed&utm_campaign=share-popup&utm_content=0a83c66910ca485ea565eb8db37dd2d7'
   },
   {
     id: 'afs63',
@@ -87,11 +103,12 @@ const tabs = [
     shortName: 'AFS63 Beurteilung',
     description: 'Grundlage für eine verlässliche Einleiterlaubnis ist der analytische Nachweis des Stoffrückhalts mittels exakter Schmutzfrachtbilanzierung (AFS63). Das Resultat dieser Nachweisführung ist die rechtssichere und wirtschaftlich optimierte Dimensionierung der erforderlichen Regenwasserbehandlungsanlagen (z. B. Sedimentationsbecken oder Filteranlagen)',
     stats: {
-  'Leitparameter': 'Ø 63 µm',
-  'Zulässige Zielfracht': '≤ 280 kg/(ha·a)',
-  'Nachweis': 'DWA vs. REwS',
+      'Leitparameter': 'Ø 63 µm',
+      'Zulässige Zielfracht': '≤ 280 kg/(ha·a)',
+      'Nachweis': 'DWA vs. REwS',
     },
-    modelUrl: '/models/cases/AFS63/scene.gltf'
+    embedUrl: 'https://sketchfab.com/models/6a92c9c3db254defa8bc31d240ebe1f2/embed?autospin=1&autostart=1&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
+    sketchfabLink: 'https://sketchfab.com/3d-models/forest-mud-puddle-6a92c9c3db254defa8bc31d240ebe1f2?utm_medium=embed&utm_campaign=share-popup&utm_content=6a92c9c3db254defa8bc31d240ebe1f2'
   }
 ]
 
@@ -248,8 +265,63 @@ const currentStudy = computed(() => tabs[activeTab.value])
   position: relative;
   padding: 2rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+.sketchfab-embed-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.ui-blocker {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 50px;
+  background: #111b2b;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ui-blocker.top {
+  top: 0;
+}
+
+.ui-blocker.bottom {
+  bottom: 0;
+}
+
+.sketchfab-embed-wrapper iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  border: none;
+  background: #111b2b;
+}
+
+.sketchfab-credits {
+  font-size: 13px;
+  font-weight: normal;
+  margin-top: 10px;
+  color: #aaa;
+  text-align: right;
+}
+
+.sketchfab-credits a {
+  font-weight: bold;
+  color: #3498db;
+  text-decoration: none;
+}
+
+.sketchfab-credits a:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 1024px) {
@@ -263,7 +335,7 @@ const currentStudy = computed(() => tabs[activeTab.value])
   }
   
   .visual-pane {
-    min-height: 500px;
+    display: none;
   }
   
   .tabs-header {

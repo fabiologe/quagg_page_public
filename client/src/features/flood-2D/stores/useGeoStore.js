@@ -53,6 +53,51 @@ export const useGeoStore = defineStore('geo', () => {
         nodes.value = nodes.value.filter(n => n.id !== id);
     }
 
+    // ── Culvert-Links (1D/2D BMI-Kopplung) ─────────────────────────────────
+    /**
+     * Verknüpfte Durchlass-Paare für den BMI-WebWorker.
+     * { id: 'link_S004_S005', sourceId, targetId, maxQ }
+     * @type {import('vue').Ref<Array<{id:string, sourceId:string, targetId:string, maxQ:number}>>}
+     */
+    const culvertLinks = ref([]);
+
+    /**
+     * Verbindet zwei Knoten als Durchlass (Einlauf → Auslauf).
+     * @param {string} sourceId  - ID des Einlauf-Knotens
+     * @param {string} targetId  - ID des Auslauf-Knotens
+     * @param {number} maxQ      - Maximale Durchflussrate [m³/s]
+     */
+    function addCulvertLink(sourceId, targetId, maxQ = 1.0) {
+        if (!sourceId || !targetId) return;
+        // Ring-Bezug verhindern
+        if (sourceId === targetId) {
+            console.warn('[GeoStore] addCulvertLink: sourceId === targetId — Ringbezug verhindert.');
+            return;
+        }
+        // Duplikat-Check
+        const exists = culvertLinks.value.some(
+            l => l.sourceId === sourceId && l.targetId === targetId
+        );
+        if (exists) {
+            console.warn(`[GeoStore] addCulvertLink: Paar [${sourceId}→${targetId}] bereits vorhanden.`);
+            return;
+        }
+        culvertLinks.value.push({
+            id: `link_${sourceId}_${targetId}`,
+            sourceId,
+            targetId,
+            maxQ: parseFloat(maxQ) || 1.0
+        });
+    }
+
+    /**
+     * Entfernt einen Culvert-Link anhand seiner ID.
+     * @param {string} linkId
+     */
+    function removeCulvertLink(linkId) {
+        culvertLinks.value = culvertLinks.value.filter(l => l.id !== linkId);
+    }
+
     function addBoundary(feature) {
         boundaries.value.features.push(feature);
     }
@@ -267,23 +312,27 @@ export const useGeoStore = defineStore('geo', () => {
 
     return {
         terrain,
-        terrainVersion,     // Mesh-invalidation counter (watch this in Three.js views)
+        terrainVersion,
         nodes,
-        buildings, // Now a computed ref
+        buildings,
         excavations,
         boundaries,
-        modifications, // New state
+        modifications,
         mapCenter,
         importTerrain,
         addNode,
         removeNode,
-        addBuilding, // Wrapper
+        addBuilding,
         addBoundary,
-        addModification,    // New action
-        clearModifications, // New action
-        cropTerrain,        // Phase 2: bounding-box crop + RAM release
-        maskTerrainByPolygon, // Phase 3b: polygon mask
+        addModification,
+        clearModifications,
+        cropTerrain,
+        maskTerrainByPolygon,
         getFeatureById,
-        updateFeatureProperty
+        updateFeatureProperty,
+        // 1D/2D Rohrkopplung
+        culvertLinks,
+        addCulvertLink,
+        removeCulvertLink
     };
 });
