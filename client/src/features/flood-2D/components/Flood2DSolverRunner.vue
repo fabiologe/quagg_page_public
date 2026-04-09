@@ -195,12 +195,9 @@ const runSimulation = async () => {
         if (!worker) {
             appendLog("Initializing Middleware Worker...");
 
-            // ── Vite-safe statische Worker-URL-Weiche ────────────────────────
-            // WICHTIG: Kein dynamisches Template-Literal! Vite benötigt
-            // statisch analysierbare new URL(..., import.meta.url) Ausdrücke.
             const workerUrl = simStore.useBmiSolver
-                ? new URL('../middleware/simulation.bmi.js', import.meta.url)
-                : new URL('../middleware/simulation.main.js', import.meta.url);
+                ? '/flood-engine/simulation.bmi.js'
+                : '/flood-engine/simulation.main.js';
 
             appendLog(`Engine: ${simStore.useBmiSolver ? '🧪 BMI (Frame-by-Frame)' : '⚙️ Classic (Blackbox)'}`);
             worker = new Worker(workerUrl, { type: 'module' });
@@ -523,6 +520,18 @@ const startPreparation = async () => {
 
              const rawLinks = toRaw(geoStore.culvertLinks) || [];
 
+             const t = geoStore.terrain;
+             if (t) {
+                 const h = t.header ?? t;
+                 dmgHeader = {
+                     xllcorner: h.xll      !== undefined ? h.xll      : (h.xllcorner ?? 0),
+                     yllcorner: h.yll      !== undefined ? h.yll      : (h.yllcorner ?? 0),
+                     cellsize:  h.cellsize ?? 1,
+                     nrows:     h.nrows    ?? 0,
+                     ncols:     h.ncols    ?? 0
+                 };
+             }
+
              for (const link of rawLinks) {
                  const inNode  = nodeMap.get(link.sourceId);
                  const outNode = nodeMap.get(link.targetId);
@@ -541,20 +550,7 @@ const startPreparation = async () => {
                  });
              }
 
-             // DGM-Header für get1DIndex im Worker.
-             // Priorität: xll (parseXYZ native) → xllcorner (nach cropTerrain)
-             // Entspricht genau der Logik in InputGenerator.js Z.221/268.
-             const t = geoStore.terrain;
-             if (t) {
-                 const h = t.header ?? t;
-                 dmgHeader = {
-                     xllcorner: h.xll      !== undefined ? h.xll      : (h.xllcorner ?? 0),
-                     yllcorner: h.yll      !== undefined ? h.yll      : (h.yllcorner ?? 0),
-                     cellsize:  h.cellsize ?? 1,
-                     nrows:     h.nrows    ?? 0,
-                     ncols:     h.ncols    ?? 0
-                 };
-             }
+
 
              appendLog(`🔌 BMI: ${activeCulverts.length} Culvert-Paar(e) gemapped. Header: xll=${dmgHeader?.xllcorner}, yll=${dmgHeader?.yllcorner}, cs=${dmgHeader?.cellsize}`);
          }

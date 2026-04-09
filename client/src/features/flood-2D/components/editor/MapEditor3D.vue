@@ -296,7 +296,6 @@ const tools = {
     'DRAW': buildingTool, 
     'SHOVEL': shovelTool,
     'BOUNDARY': boundaryTool,
-    'CULVERT': culvertTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
     'SELECT': { /* Default handled by InteractionManager */ }, 

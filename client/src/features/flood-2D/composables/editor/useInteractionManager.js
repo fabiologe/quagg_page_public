@@ -4,6 +4,7 @@
  * Prevents "God Object" anti-pattern by preventing MapEditor3D from handling raw logic.
  */
 import * as THREE from 'three';
+import { useGeoStore } from '../../stores/useGeoStore.js';
 
 /**
  * @param {import('vue').Ref<string>} activeToolRef - Reactive reference to the currently active tool name
@@ -11,6 +12,7 @@ import * as THREE from 'three';
  */
 export function useInteractionManager(activeToolRef, tools) {
 
+    const geoStore = useGeoStore();
     const pointer = new THREE.Vector2();
 
     /**
@@ -40,18 +42,27 @@ export function useInteractionManager(activeToolRef, tools) {
             context.raycaster.setFromCamera(pointer, context.camera);
             
             // --- GLOBAL MAP-CLICK EVENT DISPATCHER ---
-            // Abfeuern eines globalen Events für isolierte UI Werkzeuge (wie CulvertTool.vue)
             if (context.terrainMesh) {
                 const intersects = context.raycaster.intersectObject(context.terrainMesh);
                 if (intersects.length > 0) {
                     const hitPoint = intersects[0].point;
-                    window.dispatchEvent(new CustomEvent('map-click', { 
-                        detail: { 
-                            x: hitPoint.x, 
-                            y: hitPoint.y, 
-                            z: hitPoint.z 
-                        } 
-                    }));
+                    
+                    // NEW: Translation Local -> World
+                    const grid = geoStore.terrain;
+                    if (grid && grid.center) {
+                        // X = Easting, Z = -Northing, Y = Elevation
+                        const realX = hitPoint.x + grid.center.x;
+                        const realY = -hitPoint.z + grid.center.y; 
+                        const realZ = hitPoint.y + grid.minZ;
+
+                        window.dispatchEvent(new CustomEvent('map-click', { 
+                            detail: { 
+                                x: realX, 
+                                y: realY, 
+                                z: realZ 
+                            } 
+                        }));
+                    }
                 }
             }
         }
@@ -159,6 +170,9 @@ export function useInteractionManager(activeToolRef, tools) {
         }
 
         const currentToolName = activeToolRef.value;
+        // ZOMBIE-KILLER: Das 3D-Canvas ignoriert Klicks für UI-basierte Rohr-Tools komplett
+        if (currentToolName === 'CULVERT' || currentToolName === 'NODE') return null;
+
         const tool = tools[currentToolName];
 
         if (tool && typeof tool.onDoubleClick === 'function') {

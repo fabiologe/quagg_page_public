@@ -464,20 +464,27 @@ function collectAndSendResults() {
  * Konvertiert Welt-Koordinaten (X/Y in Metern) in einen linearen 1D-Index
  * für das LISFLOOD-Raster (row-major, top-down).
  *
+ * Spezifischer Fix: Verwendet Math.round(), da xll/yll aus
+ * der XYZ-Pipeline Zell-ZENTREN repräsentieren!
+ *
  * @param {number} x  Welt-X (Rechtswert / Easting)
  * @param {number} y  Welt-Y (Hochwert  / Northing)
- * @param {{ xllcorner: number, yllcorner: number, cellsize: number, nrows: number, ncols: number }} header
+ * @param {object} header - DGM Header
  * @returns {number} Linearer Index: row * ncols + col
  */
 function get1DIndex(x, y, header) {
-    const { xllcorner, yllcorner, cellsize, nrows, ncols } = header;
+    const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+    const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+    const { cellsize, nrows, ncols } = header;
 
-    // Spalte: von links nach rechts
-    const rawCol = Math.floor((x - xllcorner) / cellsize);
-    // Zeile: LISFLOOD speichert top-down → row 0 = Norden (maximales Y)
-    const rawRow = nrows - 1 - Math.floor((y - yllcorner) / cellsize);
+    // Spalte (col): Zentrums-Distanz
+    const rawCol = Math.round((x - xll) / cellsize);
+    
+    // Zeile (row): Zentrums-Distanz bottom-up, invertiert auf top-down
+    const row_world = Math.round((y - yll) / cellsize);
+    const rawRow = (nrows - 1) - row_world;
 
-    // Clampen — schützt vor Out-of-Bounds bei Koordinaten am Rasterrand
+    // Clampen für Arraysicherheit
     const col = Math.max(0, Math.min(ncols - 1, rawCol));
     const row = Math.max(0, Math.min(nrows - 1, rawRow));
 
