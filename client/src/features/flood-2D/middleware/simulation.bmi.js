@@ -23,9 +23,28 @@
  *   _bmi_finalize()              → void    (ruft final() auf)
  */
 
-import { OutputProcessor } from '/flood-engine/OutputProcessor.js';
-import { InputGenerator } from '/flood-engine/InputGenerator.js';
-import LisfloodBMI from '/flood-engine/lisflood_bmi.js';
+// Berechne die Basis-URL des Workers aus import.meta.url.
+const _workerBaseUrl = new URL('.', import.meta.url).href;
+
+let OutputProcessor = null;
+// InputGenerator wird NICHT mehr im Worker geladen —
+// die Input-Dateien werden im Haupt-Thread (SolverRunner) generiert und fertig übergeben.
+let LisfloodBMI = null;
+
+/**
+ * Lädt ein JS-Modul aus einer URL über fetch → Blob → import().
+ * Umgeht Vite's Import-Analyse und Browser-CORS für Cross-Origin Worker.
+ */
+async function loadModuleFromUrl(url) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Failed to fetch module: ${url} (${resp.status})`);
+    const src  = await resp.text();
+    const blob = new Blob([src], { type: 'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    const mod  = await import(blobUrl);
+    URL.revokeObjectURL(blobUrl);
+    return mod;
+}
 
 // ─── Global Error Handler ────────────────────────────────────────────────────
 
@@ -96,6 +115,26 @@ self.onmessage = async (e) => {
 
                 currentState = 'INITIALIZING';
                 sendLog('Initializing LISFLOOD BMI WASM...');
+
+                // OutputProcessor dynamisch laden (einzige Abhängigkeit des Workers).
+                // Wird gebraucht um LISFLOOD ASC Output-Dateien zu parsen.
+                if (!OutputProcessor) {
+                    sendLog('Loading OutputProcessor...');
+                    const opMod = await loadModuleFromUrl(_workerBaseUrl + 'OutputProcessor.js');
+                    OutputProcessor = opMod.OutputProcessor;
+                }
+
+                // Emscripten-Modul aus public/ laden
+                if (!LisfloodBMI) {
+                    sendLog('Loading Emscripten module via fetch...');
+                    const resp = await fetch('/flood-engine/lisflood_bmi.js');
+                    const src  = await resp.text();
+                    const blob = new Blob([src], { type: 'application/javascript' });
+                    const url  = URL.createObjectURL(blob);
+                    const mod  = await import(url);
+                    URL.revokeObjectURL(url);
+                    LisfloodBMI = mod.default;
+                }
 
                 Module = await LisfloodBMI({
                     // stdout → Progress-Parsing + UI-Log
@@ -221,16 +260,37 @@ self.onmessage = async (e) => {
                     // (row 0 = Norden) → direkter Index-Zugriff ohne Umrechnung.
                     const dem = payload.scenarioData?.grid?.gridData ?? null;
 
-                    activeCulverts = rawCulverts.map((c, i) => {
-                        const inIndex  = get1DIndex(c.inX,  c.inY,  dmgHeader);
-                        const outIndex = get1DIndex(c.outX, c.outY, dmgHeader);
+                    const yTop = dmgHeader.yllcorner + (dmgHeader.nrows * dmgHeader.cellsize);
+
+                    const getBottomUpIndex = (x, y, header) => {
+                        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+                        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+                        const { cellsize, nrows, ncols } = header;
+                        const col = Math.max(0, Math.min(ncols - 1, Math.floor((x - xll) / cellsize)));
+                        const row = Math.max(0, Math.min(nrows - 1, Math.floor((y - yll) / cellsize)));
+                        return row * ncols + col;
+                    };
+
+                    activeCulverts = rawCulverts.map((culvert, i) => {
+                        // Top-Down LISFLOOD Arrays (Arrptr->H)
+                        const inCol = Math.max(0, Math.min(dmgHeader.ncols - 1, Math.floor((culvert.inX - dmgHeader.xllcorner) / dmgHeader.cellsize)));
+                        const inRow = Math.max(0, Math.min(dmgHeader.nrows - 1, Math.floor((yTop - culvert.inY) / dmgHeader.cellsize)));
+                        const inIndex = inRow * dmgHeader.ncols + inCol;
+
+                        const outCol = Math.max(0, Math.min(dmgHeader.ncols - 1, Math.floor((culvert.outX - dmgHeader.xllcorner) / dmgHeader.cellsize)));
+                        const outRow = Math.max(0, Math.min(dmgHeader.nrows - 1, Math.floor((yTop - culvert.outY) / dmgHeader.cellsize)));
+                        const outIndex = outRow * dmgHeader.ncols + outCol;
+
+                        // Bottom-Up Array (Vue gridData)
+                        const demInIdx = getBottomUpIndex(culvert.inX,  culvert.inY,  dmgHeader);
+                        const demOutIdx = getBottomUpIndex(culvert.outX, culvert.outY, dmgHeader);
 
                         // Geländehöhe [mNN] — NODATA (-9999) → 0 als Fallback
-                        const zIn  = (dem && dem[inIndex]  > -9000) ? dem[inIndex]  : 0;
-                        const zOut = (dem && dem[outIndex] > -9000) ? dem[outIndex] : 0;
+                        const zIn  = (dem && dem[demInIdx]  > -9000) ? dem[demInIdx]  : 0;
+                        const zOut = (dem && dem[demOutIdx] > -9000) ? dem[demOutIdx] : 0;
 
-                        sendLog(`🔌 Culvert ${i}: in[${c.inX.toFixed(1)}, ${c.inY.toFixed(1)}]→idx=${inIndex} z=${zIn.toFixed(2)}m  out[${c.outX.toFixed(1)}, ${c.outY.toFixed(1)}]→idx=${outIndex} z=${zOut.toFixed(2)}m  maxQ=${c.maxQ} m³/s`);
-                        return { inIndex, outIndex, maxQ: c.maxQ, zIn, zOut };
+                        sendLog(`🔌 Culvert ${i}: in[${culvert.inX.toFixed(1)}, ${culvert.inY.toFixed(1)}]→idx=${inIndex} z=${zIn.toFixed(2)}m  out[${culvert.outX.toFixed(1)}, ${culvert.outY.toFixed(1)}]→idx=${outIndex} z=${zOut.toFixed(2)}m  maxQ=${culvert.maxQ} m³/s`);
+                        return { inIndex, outIndex, maxQ: culvert.maxQ, zIn, zOut };
                     });
                     sendLog(`🔌 ${activeCulverts.length} Culvert(s) mapped. cellArea = ${cellArea.toFixed(2)} m²`);
                 } else {
@@ -464,20 +524,28 @@ function collectAndSendResults() {
  * Konvertiert Welt-Koordinaten (X/Y in Metern) in einen linearen 1D-Index
  * für das LISFLOOD-Raster (row-major, top-down).
  *
+ * Spezifischer Fix: Muss zwingend Math.floor nutzen, um exakt mit
+ * dem C++ LISFLOOD ESRI Reader und InputGenerator.js (der wx/wy mit 0.5 Offset nutzt)
+ * synchron zu bleiben! Math.round verursacht bei Zell-Mitten (x.5) einen +1 Offset.
+ *
  * @param {number} x  Welt-X (Rechtswert / Easting)
  * @param {number} y  Welt-Y (Hochwert  / Northing)
- * @param {{ xllcorner: number, yllcorner: number, cellsize: number, nrows: number, ncols: number }} header
+ * @param {object} header - DGM Header
  * @returns {number} Linearer Index: row * ncols + col
  */
 function get1DIndex(x, y, header) {
-    const { xllcorner, yllcorner, cellsize, nrows, ncols } = header;
+    const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+    const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+    const { cellsize, nrows, ncols } = header;
 
-    // Spalte: von links nach rechts
-    const rawCol = Math.floor((x - xllcorner) / cellsize);
-    // Zeile: LISFLOOD speichert top-down → row 0 = Norden (maximales Y)
-    const rawRow = nrows - 1 - Math.floor((y - yllcorner) / cellsize);
+    // Spalte (col): Muss floor sein!
+    const rawCol = Math.floor((x - xll) / cellsize);
+    
+    // Zeile (row): Zentrums-Distanz bottom-up, invertiert auf top-down
+    const row_world = Math.floor((y - yll) / cellsize);
+    const rawRow = (nrows - 1) - row_world;
 
-    // Clampen — schützt vor Out-of-Bounds bei Koordinaten am Rasterrand
+    // Clampen für Arraysicherheit
     const col = Math.max(0, Math.min(ncols - 1, rawCol));
     const row = Math.max(0, Math.min(nrows - 1, rawRow));
 

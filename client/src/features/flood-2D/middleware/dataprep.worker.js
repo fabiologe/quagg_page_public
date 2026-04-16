@@ -1,5 +1,5 @@
-import { InputGenerator } from '/flood-engine/InputGenerator.js';
-import { Rasterizer } from '/flood-engine/Rasterizer.js';
+import { InputGenerator } from './InputGenerator.js';
+import { Rasterizer } from './Rasterizer.js';
 
 /**
  * dataprep.worker.js

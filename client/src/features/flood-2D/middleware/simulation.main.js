@@ -1,6 +1,7 @@
-import { OutputProcessor } from '/flood-engine/OutputProcessor.js';
-import { InputGenerator } from '/flood-engine/InputGenerator.js';
-import Lisflood from '/flood-engine/lisflood.js';
+import { OutputProcessor } from './OutputProcessor.js';
+import { InputGenerator } from './InputGenerator.js';
+// Emscripten-Modul wird dynamisch geladen (Vite blockiert statische Imports aus public/)
+let Lisflood = null;
 
 // Debugging: Global Error Handler
 self.onerror = function (msg, url, line, col, error) {
@@ -29,6 +30,19 @@ self.onmessage = async (e) => {
             if (Module) return; // Already initialized
 
             sendLog("Initializing Lisflood WASM...");
+
+            // Emscripten-Modul aus public/ laden — Vite blockiert imports aus public/.
+            // Workaround: fetch() + Blob-URL umgeht Vite's import-analysis komplett.
+            if (!Lisflood) {
+                sendLog('Loading Emscripten module via fetch...');
+                const resp = await fetch('/flood-engine/lisflood.js');
+                const src  = await resp.text();
+                const blob = new Blob([src], { type: 'application/javascript' });
+                const url  = URL.createObjectURL(blob);
+                const mod  = await import(url);
+                URL.revokeObjectURL(url);
+                Lisflood = mod.default;
+            }
 
             // Initialize WASM Module
             Module = await Lisflood({

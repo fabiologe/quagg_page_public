@@ -196,19 +196,30 @@ const runSimulation = async () => {
             appendLog("Initializing Middleware Worker...");
 
             const workerUrl = simStore.useBmiSolver
-                ? '/flood-engine/simulation.bmi.js'
-                : '/flood-engine/simulation.main.js';
+                ? new URL('../middleware/simulation.bmi.js', import.meta.url)
+                : new URL('../middleware/simulation.main.js', import.meta.url);
 
             appendLog(`Engine: ${simStore.useBmiSolver ? '🧪 BMI (Frame-by-Frame)' : '⚙️ Classic (Blackbox)'}`);
             worker = new Worker(workerUrl, { type: 'module' });
             
             // IMMEDIATE Error Handler for Startup
             worker.onerror = (e) => {
-                const msg = e.message || "Unknown Worker Error";
-                appendLog(`[WORKER ERROR] ${msg} (Line: ${e.lineno})`);
+                // e.message kann leer sein wenn ein Import fehlschlug
+                const msg = e.message || e.filename || 'Worker failed to start (possible import/parse error)';
+                const line = e.lineno ?? 'unknown';
+                const file = e.filename ? e.filename.split('/').pop() : 'unknown file';
+                console.error('[SolverRunner] Worker onerror:', e);
+                appendLog(`[WORKER ERROR] ${msg}`);
+                appendLog(`  → File: ${file}, Line: ${line}`);
+                appendLog('  → Check browser DevTools > Network tab for failed requests (404s).');
+                appendLog('  → Check browser DevTools > Console for detailed error messages.');
                 simStore.setStatus('ERROR');
-                alert(`Solver Startup Failure:\n${msg}`);
                 isRunning.value = false;
+                e.preventDefault(); // Verhindert unkontrollierten Absturz
+            };
+            worker.onmessageerror = (e) => {
+                console.error('[SolverRunner] Worker messageerror:', e);
+                appendLog('[WORKER ERROR] Message serialization error in worker.');
             };
 
             // Safety Timeout
@@ -555,13 +566,29 @@ const startPreparation = async () => {
              appendLog(`🔌 BMI: ${activeCulverts.length} Culvert-Paar(e) gemapped. Header: xll=${dmgHeader?.xllcorner}, yll=${dmgHeader?.yllcorner}, cs=${dmgHeader?.cellsize}`);
          }
 
-         // 3. Send to Worker (DELEGATED GENERATION)
-         // We send the raw scenario data, and the worker runs InputGenerator internally.
+         // 3. Input-Dateien im Haupt-Thread generieren (nicht im Worker!)
+         // Grund: InputGenerator hat transitive Imports (Rasterizer, Hydraulics etc.) die
+         // in einem gebündelten ES-Modul-Worker Production-Build nicht auflösbar sind.
+         // Der Worker erhält fertige Dateien und muss keine eigene Generierung mehr leisten.
+         appendLog('Generiere LISFLOOD Input-Dateien im Haupt-Thread...');
+         let generatedFiles;
+         try {
+             const gen = new InputGenerator();
+             generatedFiles = gen.processScenario(scenarioData);
+             appendLog(`✅ ${Object.keys(generatedFiles).length} Input-Dateien generiert: ${Object.keys(generatedFiles).join(', ')}`);
+         } catch (genErr) {
+             throw new Error(`InputGenerator fehlgeschlagen: ${genErr.message}`);
+         }
+
+         // 4. Send to Worker (ONLY pre-generated files + culvert metadata)
          if (worker) {
              worker.postMessage({
                  cmd: 'CMD_RUN',
                  payload: {
-                    scenarioData: scenarioData,
+                    files: generatedFiles,        // fertige LISFLOOD-Dateien (terrain.asc, run.par, etc.)
+                    scenarioData: {               // nur noch für BMI-Heartbeat-Daten (grid, header)
+                        grid: { gridData: toRaw(geoStore.terrain?.gridData) }
+                    },
                     // BMI-spezifisch: nur gesetzt wenn useBmiSolver aktiv
                     culverts: activeCulverts,
                     header:   dmgHeader,

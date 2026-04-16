@@ -16,7 +16,34 @@ export default defineConfig({
         {
           src: 'node_modules/@thatopen/fragments/dist/Worker/worker.mjs',
           dest: ''
-        }
+        },
+        // Middleware-Dateien die vom BMI-Worker zur Laufzeit per fetch() geladen werden.
+        // Sie liegen im gleichen assets/-Verzeichnis wie der Worker-Bundle.
+        // KEIN Vite-Bundle: werden 1:1 kopiert damit der Worker sie per URL finden kann.
+        {
+          src: 'src/features/flood-2D/middleware/OutputProcessor.js',
+          dest: 'assets'
+        },
+        {
+          src: 'src/features/flood-2D/middleware/InputGenerator.js',
+          dest: 'assets'
+        },
+        {
+          src: 'src/features/flood-2D/middleware/Rasterizer.js',
+          dest: 'assets'
+        },
+        {
+          src: 'src/features/flood-2D/middleware/BoundaryTools.js',
+          dest: 'assets'
+        },
+        {
+          src: 'src/features/flood-2D/middleware/Hydraulics.js',
+          dest: 'assets'
+        },
+        {
+          src: 'src/features/flood-2D/middleware/ASCParser.js',
+          dest: 'assets'
+        },
       ]
     })
   ],
@@ -27,7 +54,7 @@ export default defineConfig({
     }
   },
   server: {
-    host: '0.0.0.0', // <--- Hinzufügen: Erlaubt Zugriff von außen/durch Tunnel
+    host: '0.0.0.0',
     port: 3000,
     proxy: {
       '/api': {
@@ -45,6 +72,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/kostra-api/, '')
       }
     }
+  },
+  worker: {
+    format: 'es',
   }
 }
 )
