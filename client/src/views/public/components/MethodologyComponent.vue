@@ -225,9 +225,44 @@ const currentTab = computed(() => {
 }
 
 @media (max-width: 900px) {
+  .section-title {
+    font-size: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .tabs {
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .tab-btn {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1rem;
+    white-space: normal; /* Erlaubt Zeilenumbrüche bei langen Wörtern wie Kanalnetzberechnung */
+  }
+
+  .tab-content-wrapper {
+    padding: 1.5rem;
+  }
+
   .tab-content {
     grid-template-columns: 1fr;
     gap: 2rem;
+  }
+
+  .content-text h3 {
+    font-size: 1.5rem;
+  }
+
+  .content-text p, .feature-list li {
+    font-size: 1rem;
+  }
+
+  .visual-placeholder {
+    height: 200px;
+    font-size: 1.2rem;
   }
 }
 </style>

@@ -208,6 +208,10 @@ onMounted(() => {
     if (props.depthData) updateWater(props.depthData);
     if (props.bciContent) buildBoundaries(props.bciContent, props.terrain);
   }
+
+  // Memory Guard: purgeSimulationResults() dispatches this event to
+  // trigger a full WebGL resource release without unmounting the component.
+  window.addEventListener('flood-viewer-dispose', _handleViewerDispose);
 });
 
 onUnmounted(() => {
@@ -218,7 +222,42 @@ onUnmounted(() => {
   }
   if (controls) controls.dispose();
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('flood-viewer-dispose', _handleViewerDispose);
 });
+
+/**
+ * Handles the 'flood-viewer-dispose' CustomEvent dispatched by purgeSimulationResults().
+ * Disposes all Three.js geometries, materials and textures currently in the scene
+ * to release GPU memory without unmounting the Vue component.
+ */
+function _handleViewerDispose() {
+  console.warn('[ResultMap3D] flood-viewer-dispose received — releasing WebGL resources.');
+
+  if (!scene) return;
+
+  // Walk every object in the scene and dispose GPU resources
+  scene.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => {
+        // Dispose all texture uniforms
+        Object.values(m.uniforms || {}).forEach(u => {
+          if (u?.value?.isTexture) u.value.dispose();
+        });
+        m.dispose();
+      });
+    }
+  });
+
+  // Clear scene children (removes mesh references)
+  while (scene.children.length > 0) scene.remove(scene.children[0]);
+
+  // Reset local mesh references so buildTerrain() can create fresh ones
+  terrainMesh = null;
+
+  console.info('[ResultMap3D] ✅ WebGL resources disposed. Scene cleared.');
+}
 
 function initScene() {
   const w = container.value.clientWidth;
@@ -348,6 +387,18 @@ function initScene() {
     if (newNodes && newNodes.length > 0 && layerRenderer && terrainMesh) {
       console.log('[ResultMap3D] GeoStore nodes loaded, triggering render.');
       layerRenderer.renderNodes();
+    }
+  }, { deep: true });
+
+  // Wehre im Result-Viewer darstellen
+  if (geoStore.weirs?.length > 0) {
+      layerRenderer.renderWeirs();
+  }
+
+  watch(() => geoStore.weirs, (newWeirs) => {
+    if (newWeirs && newWeirs.length > 0 && layerRenderer && terrainMesh) {
+      console.log('[ResultMap3D] GeoStore weirs loaded, triggering render.');
+      layerRenderer.renderWeirs();
     }
   }, { deep: true });
 
@@ -780,8 +831,12 @@ function buildTerrain(t) {
   controls.update();
 
   if (layerRenderer) {
-      // Force buildings to re-render using the now solidly-loaded terrain data
+      // Force buildings and other features to re-render using the now solidly-loaded terrain data
       layerRenderer.renderBuildings();
+      layerRenderer.renderNodes();
+      if (geoStore.weirs?.length > 0) {
+          layerRenderer.renderWeirs();
+      }
   }
 
   console.log('[ResultMap3D] Terrain mesh added ✅ bounds:', bounds.width, 'x', bounds.height);

@@ -45,6 +45,10 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     hydraulicGroup.name = 'Layer_Hydraulics';
     scene.add(hydraulicGroup);
 
+    const weirGroup = new THREE.Group();
+    weirGroup.name = 'Layer_Weirs';
+    scene.add(weirGroup);
+
     // NEW: Selection Layer
     const selectionGroup = new THREE.Group();
     selectionGroup.name = 'Layer_Selection';
@@ -67,6 +71,19 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     const boundaryMaterial = new THREE.LineBasicMaterial({
         color: 0xf1c40f, // Yellow
         linewidth: 2
+    });
+
+    const weirMatBidi = new THREE.MeshPhysicalMaterial({
+        color: 0x3498db, // Light blue
+        transparent: true,
+        opacity: 0.7,
+        roughness: 0.2,
+        transmission: 0.5
+    });
+
+    const weirMatUni = new THREE.MeshStandardMaterial({
+        color: 0xe67e22, // Orange for warning / one-way
+        roughness: 0.5
     });
 
     // --- COORDINATE SYSTEM ---
@@ -548,6 +565,95 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         hydraulicGroup.add(instancedHeadMesh);
     };
 
+    // --- WEIR LOGIC ---
+    const getEdgeOffset = (dir, cellSize) => {
+        let ox = 0; let oz = 0;
+        if (dir.startsWith('N')) oz = -cellSize / 2; // Three.js -z is North
+        if (dir.startsWith('S')) oz = cellSize / 2;
+        if (dir.startsWith('E')) ox = cellSize / 2;
+        if (dir.startsWith('W')) ox = -cellSize / 2;
+        return { ox, oz };
+    };
+
+    const renderWeirs = () => {
+        clearGroup(weirGroup);
+        updateWorldOffset();
+
+        if (!geoStore.weirs || geoStore.weirs.length === 0) return;
+
+        const grid = getActiveGrid();
+        const cellSize = grid ? grid.cellsize : 1.0; 
+        const terrainMinZ = grid ? grid.minZ : 0;
+
+        geoStore.weirs.forEach(weir => {
+            const isOneWay = weir.direction.includes('F');
+            const mat = isOneWay ? weirMatUni : weirMatBidi;
+            
+            // Die visuelle Höhe = hc - minZ. Wir zeichnen eine Mauer, die bis zu dieser Höhe reicht.
+            const visualHc = weir.hc - terrainMinZ;
+            const displayHeight = visualHc > 0 ? visualHc : 1.0;
+            const thickness = 0.5;
+
+            // BoxGeometry(width along x, height along y, depth along z)
+            const geom = new THREE.BoxGeometry(weir.w, displayHeight, thickness);
+            const mesh = new THREE.Mesh(geom, mat);
+
+            // Basis-Position & Rotation ermitteln
+            const basePos = getLocalPos(weir.x, weir.y, 0); 
+            const { ox, oz } = getEdgeOffset(weir.direction, cellSize);
+            const isHorizontal = weir.direction.startsWith('E') || weir.direction.startsWith('W');
+
+            if (isHorizontal) {
+                mesh.rotation.y = Math.PI / 2;
+            }
+
+            mesh.position.set(basePos.x + ox, displayHeight / 2, basePos.z + oz);
+
+            // --- NEU: Boden-Anker (Base footprint) gegen Parallaxen-Irritation in 3D ---
+            // Dieser "Teppich" liegt strikt flach auf dem Terrain und verschiebt sich visuell nie.
+            const footMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            const footGeom = new THREE.PlaneGeometry(weir.w, thickness + 1.0); // Etwas dicker als die Wand, damit es auffällt
+            const footMesh = new THREE.Mesh(footGeom, footMat);
+            footMesh.rotation.x = -Math.PI / 2; // Flach auf den Boden legen
+            if (isHorizontal) footMesh.rotation.z = Math.PI / 2;
+            footMesh.position.set(basePos.x + ox, 0.1, basePos.z + oz); // 10cm über Terrain, gegen Z-Fighting
+            weirGroup.add(footMesh);
+
+            // Pfeile zur Visualisierung der Fließrichtung anheften
+            const arrowDir = new THREE.Vector3();
+            if (weir.direction.startsWith('N')) arrowDir.set(0, 0, -1);
+            if (weir.direction.startsWith('S')) arrowDir.set(0, 0, 1);
+            if (weir.direction.startsWith('E')) arrowDir.set(1, 0, 0);
+            if (weir.direction.startsWith('W')) arrowDir.set(-1, 0, 0);
+            
+            const arrowColor = isOneWay ? 0xffffff : 0xecf0f1;
+            const yHover = displayHeight / 2 + 0.5;
+            
+            // Lokale Rotation der Parent-Mesh kompensieren, da ArrowHelper lokal hinzugefügt wird, 
+            // aber wir Vector in der Welt verwenden, ist es besser Arrow global oder invertiert lokal zu machen.
+            // Einfacher: Arrow nicht im Mesh anhängen, sondern einfach ins weirGroup mit Positions-Offset
+            const arrowPos = mesh.position.clone().add(new THREE.Vector3(0, displayHeight/2 + 0.5, 0));
+            const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowPos, 2.0, arrowColor, 0.8, 0.5);
+            weirGroup.add(arrowHelper);
+            
+            if (!isOneWay) {
+                const arrowHelper2 = new THREE.ArrowHelper(arrowDir.clone().negate(), arrowPos, 2.0, arrowColor, 0.8, 0.5);
+                weirGroup.add(arrowHelper2);
+            }
+
+            mesh.userData = {
+                id: weir.id,
+                type: 'weir',
+                data: weir,
+                selectable: true
+            };
+
+            weirGroup.add(mesh);
+        });
+        
+        console.log(`[LayerRenderer] Rendered ${geoStore.weirs.length} weirs.`);
+    };
+
     // --- SELECTION HIGHLIGHT ---
     const renderSelectionHighlight = (simStore) => {
         if (!simStore) return;
@@ -615,6 +721,9 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     // Watch both buildings and boundaries
     watch([() => geoStore.buildings.features, () => geoStore.boundaries.features], () => renderBuildings(), { deep: true, immediate: true });
 
+    // Watch Weirs
+    watch(() => geoStore.weirs, () => renderWeirs(), { deep: true, immediate: true });
+
     // Watch Grid for offset updates (Store OR Preview)
     if (gridRef) {
         watch(gridRef, () => {
@@ -622,6 +731,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             renderNodes();
             renderBuildings();
             renderHydraulics();
+            renderWeirs();
         }, { deep: true });
     }
 
@@ -630,6 +740,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         renderNodes();
         renderBuildings();
         renderHydraulics();
+        renderWeirs();
     }, { deep: true });
 
     // Watch Hydraulic Assignments
@@ -654,10 +765,12 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         scene.remove(buildingGroup);
         scene.remove(boundaryGroup);
         scene.remove(hydraulicGroup);
+        scene.remove(weirGroup);
         clearGroup(nodeGroup);
         clearGroup(buildingGroup);
         clearGroup(boundaryGroup);
         clearGroup(hydraulicGroup);
+        clearGroup(weirGroup);
         nodeGeometry.dispose();
         nodeMaterial.dispose();
         buildingMaterial.dispose();
@@ -667,10 +780,11 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         nodeGroup,
         buildingGroup,
         boundaryGroup,
+        weirGroup,
         renderNodes,
         renderBuildings,
         renderHydraulics,
-        renderHydraulics,
+        renderWeirs,
         hydraulicGroup,
         selectionGroup // Export group
     };

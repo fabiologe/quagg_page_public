@@ -113,6 +113,12 @@ const router = createRouter({
       meta: { layout: 'empty', requiresAuth: true, role: 'INTERNAL' }
     },
     {
+      path: '/intern/inbox',
+      name: 'intern-inbox',
+      component: () => import('@/views/intern/EmailTriageInbox.vue'),
+      meta: { layout: 'intern', requiresAuth: true, role: 'INTERNAL' }
+    },
+    {
       path: '/intern/projects',
       name: 'intern-projects',
       component: () => import('@/views/intern/ProjectsView.vue'),

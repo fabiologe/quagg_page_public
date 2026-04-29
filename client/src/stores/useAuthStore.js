@@ -9,6 +9,14 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const userRole = computed(() => user.value?.role || null)
 
+  // -- RBAC Getters --
+  // Dürfen globale, nicht zugewiesene E-Mails sehen (info@quagg-engineering.org) und zuweisen
+  const canManageGlobalInbox = computed(() => ['ADMIN', 'INTERNAL_LEAD', 'INTERNAL'].includes(userRole.value))
+  
+  // Dürfen E-Mails innerhalb spezifischer Projekte sehen
+  const canViewAssignedEmails = computed(() => ['ADMIN', 'INTERNAL_LEAD', 'INTERNAL', 'STUDENT', 'CLIENT'].includes(userRole.value))
+
+
   function setAuth(newToken, newUser) {
     token.value = newToken
     user.value = newUser
@@ -28,6 +36,8 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     userRole,
+    canManageGlobalInbox,
+    canViewAssignedEmails,
     setAuth,
     clearAuth
   }

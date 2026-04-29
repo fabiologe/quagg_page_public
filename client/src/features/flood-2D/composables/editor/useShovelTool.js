@@ -1,5 +1,6 @@
 import { ref, reactive, watch, toRefs } from 'vue';
 import * as THREE from 'three';
+import { saveTerrainPatch } from '../historyBridge.js';
 
 // --- MODULE LEVEL HELPERS (Pure Functions) ---
 
@@ -362,6 +363,10 @@ export function useShovelTool() {
         const { gridData, minZ, nrows, ncols } = parsedData;
         const positions = terrainMesh.geometry.attributes.position;
         let modified = false;
+
+        // Sparse-Patch-Snapshot VOR dem Schreiben sichern
+        // Nur die geänderten Zellen werden gespeichert — kein vollständiges Array-Copy.
+        saveTerrainPatch(pendingChanges.value.map(c => ({ idx: c.idx, oldZ: c.oldZ })));
 
         // Apply changes
         pendingChanges.value.forEach(change => {

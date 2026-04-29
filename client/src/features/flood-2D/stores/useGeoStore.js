@@ -2,6 +2,13 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { cropGrid, maskGridByPolygon } from '../utils/GridCropper.js';
 
+import { notifyPreMutate, registerTerrainAccessors, saveTerrainSnapshot } from '../composables/historyBridge.js';
+
+// Synchroner Aufruf über Bridge — kein async, kein Null-Race beim ersten Aufruf.
+function saveSnapshot(label) {
+    notifyPreMutate(label);
+}
+
 export const useGeoStore = defineStore('geo', () => {
     // State
     /** @type {import('vue').Ref<any>} */
@@ -45,11 +52,40 @@ export const useGeoStore = defineStore('geo', () => {
         terrain.value = data;
     }
 
+    // Register terrain accessors with the bridge so Shovel/Crop undo works.
+    // getFn returns the raw terrain object; setFn writes it back and bumps terrainVersion.
+    registerTerrainAccessors(
+        () => terrain.value,
+        (snap) => {
+            // Restore header fields onto terrain.value (works for both FULL and PATCH)
+            if (snap.gridData) {
+                terrain.value.gridData  = snap.gridData;
+                terrain.value.ncols     = snap.ncols;
+                terrain.value.nrows     = snap.nrows;
+                terrain.value.cellsize  = snap.cellsize;
+                terrain.value.xllcorner = snap.xllcorner;
+                terrain.value.yllcorner = snap.yllcorner;
+                terrain.value.xll       = snap.xll;
+                terrain.value.yll       = snap.yll;
+                terrain.value.minZ      = snap.minZ;
+                terrain.value.maxZ      = snap.maxZ;
+                if (snap.bounds)  terrain.value.bounds  = snap.bounds;
+                if (snap.center)  terrain.value.center  = snap.center;
+                if (snap.stats)   terrain.value.stats   = snap.stats;
+                if (snap.header)  terrain.value.header  = snap.header;
+            }
+            // Always bump terrainVersion to trigger Three.js mesh rebuild
+            terrainVersion.value++;
+        }
+    );
+
     function addNode(node) {
+        saveSnapshot('Node hinzugefügt');
         nodes.value.push(node);
     }
 
     function removeNode(id) {
+        saveSnapshot('Node gelöscht');
         nodes.value = nodes.value.filter(n => n.id !== id);
     }
 
@@ -82,6 +118,7 @@ export const useGeoStore = defineStore('geo', () => {
             console.warn(`[GeoStore] addCulvertLink: Paar [${sourceId}→${targetId}] bereits vorhanden.`);
             return;
         }
+        saveSnapshot('Culvert-Link hinzugefügt');
         culvertLinks.value.push({
             id: `link_${sourceId}_${targetId}`,
             sourceId,
@@ -95,14 +132,85 @@ export const useGeoStore = defineStore('geo', () => {
      * @param {string} linkId
      */
     function removeCulvertLink(linkId) {
+        saveSnapshot('Culvert-Link gelöscht');
         culvertLinks.value = culvertLinks.value.filter(l => l.id !== linkId);
     }
 
+    // ── Wehre (LISFLOOD weir_flow.cpp, Poleni-Formel) ──────────────────────
+    /**
+     * Wehr-Objekte für die LISFLOOD `weirfile`-Eingabe.
+     * @type {import('vue').Ref<Array<{
+     *   id: string, x: number, y: number,
+     *   direction: string, Cd: number, hc: number, m: number, w: number,
+     *   label: string
+     * }>>}
+     */
+    const weirs = ref([]);
+
+    /**
+     * Fügt ein neues Wehr hinzu.
+     * @param {object} weir - { x, y, direction, Cd, hc, m, w, label }
+     */
+    function addWeir(weir) {
+        saveSnapshot('Wehr hinzugefügt');
+        const id = weir.id || `weir_${Date.now()}`;
+        weirs.value.push({
+            id,
+            x:         weir.x,
+            y:         weir.y,
+            direction: weir.direction || 'N',
+            Cd:        parseFloat(weir.Cd)  || 1.704,
+            hc:        parseFloat(weir.hc)  || 0.0,
+            m:         parseFloat(weir.m)   || 0.667,
+            w:         parseFloat(weir.w)   || 5.0,
+            label:     weir.label           || `Wehr ${weirs.value.length + 1}`
+        });
+        console.log(`[GeoStore] Wehr hinzugefügt: ${id} @ (${weir.x.toFixed(1)}, ${weir.y.toFixed(1)})`);
+    }
+
+    /**
+     * Entfernt ein Wehr anhand seiner ID.
+     * @param {string} weirId
+     */
+    function removeWeir(weirId) {
+        saveSnapshot('Wehr gelöscht');
+        weirs.value = weirs.value.filter(w => w.id !== weirId);
+    }
+
+    /**
+     * Fügt eine ganze Linie von Wehren (Batch) mit EINEM einzigen History-Snapshot hinzu.
+     * Verwende diese Methode im WeirTool statt einer forEach-Schleife von addWeir(),
+     * damit Ctrl+Z die gesamte Linie auf einmal rückgängig macht.
+     *
+     * @param {Array<object>} weirSegments - Array von Wehr-Objekten { id, x, y, direction, Cd, hc, m, w, label, lineId }
+     */
+    function addWeirBatch(weirSegments) {
+        if (!weirSegments || weirSegments.length === 0) return;
+        saveSnapshot(`Wehr-Linie hinzugefügt (${weirSegments.length} Segmente)`);
+        weirSegments.forEach(weir => {
+            weirs.value.push({
+                id:        weir.id        || `weir_${Date.now()}_${Math.random()}`,
+                lineId:    weir.lineId   || null,
+                x:         weir.x,
+                y:         weir.y,
+                direction: weir.direction || 'S',
+                Cd:        parseFloat(weir.Cd)  || 1.704,
+                hc:        parseFloat(weir.hc)  || 0.0,
+                m:         parseFloat(weir.m)   || 0.667,
+                w:         parseFloat(weir.w)   || 1.0,
+                label:     weir.label    || `Wehr-Linie Seg.${weirs.value.length + 1}`,
+            });
+        });
+        console.log(`[GeoStore] Wehr-Batch: ${weirSegments.length} Segmente hinzugefügt.`);
+    }
+
     function addBoundary(feature) {
+        saveSnapshot('Grenze hinzugefügt');
         boundaries.value.features.push(feature);
     }
 
     function addModification(type, geometry, properties = {}) {
+        saveSnapshot(`${type} hinzugefügt`);
         const payload = {
             id: crypto.randomUUID(),
             type: type.toUpperCase(), // e.g. 'BUILDING'
@@ -162,6 +270,9 @@ export const useGeoStore = defineStore('geo', () => {
             console.warn('[GeoStore] cropTerrain: no terrain loaded – skipping.');
             return;
         }
+
+        // Vollständigen Terrain-Snapshot VOR dem Crop sichern
+        saveTerrainSnapshot();
 
         // BUGFIX: parseXYZ() stores fields flat on the terrain object (no .header sub-object).
         // Fall back to using terrain.value itself as the header so both storage layouts work.
@@ -242,6 +353,9 @@ export const useGeoStore = defineStore('geo', () => {
             console.warn('[GeoStore] maskTerrainByPolygon: no terrain loaded.');
             return;
         }
+
+        // Vollständigen Terrain-Snapshot VOR dem Masken sichern
+        saveTerrainSnapshot();
 
         const header = terrain.value.header ?? terrain.value;
 
@@ -333,6 +447,12 @@ export const useGeoStore = defineStore('geo', () => {
         // 1D/2D Rohrkopplung
         culvertLinks,
         addCulvertLink,
-        removeCulvertLink
+        removeCulvertLink,
+        // Wehre (LISFLOOD weirfile)
+        weirs,
+        addWeir,
+        addWeirBatch,
+
+        removeWeir
     };
 });

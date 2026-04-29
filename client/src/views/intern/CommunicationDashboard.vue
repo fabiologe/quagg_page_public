@@ -24,6 +24,9 @@
           <EmailComposer />
         </div>
       </div>
+
+      <!-- Triage Modal (Admin) -->
+      <EmailTriageModal v-if="triageOpen" @close="handleCloseTriage" />
     </div>
   </InternLayout>
 </template>
@@ -35,13 +38,18 @@ import EmailSidebar from '@/features/email/EmailSidebar.vue'
 import EmailList from '@/features/email/EmailList.vue'
 import EmailThreadView from '@/features/email/EmailThreadView.vue'
 import EmailComposer from '@/features/email/EmailComposer.vue'
+import EmailTriageModal from '@/components/emails/EmailTriageModal.vue'
 import { useEmailStore } from '@/features/email/stores/useEmailStore'
 
 const emailStore = useEmailStore()
-const { composerOpen, replyToEmail } = storeToRefs(emailStore)
+const { composerOpen, replyToEmail, triageOpen } = storeToRefs(emailStore)
 
 function handleCloseComposer() {
   emailStore.closeComposer()
+}
+
+function handleCloseTriage() {
+  emailStore.closeTriage()
 }
 </script>
 

@@ -209,6 +209,16 @@ export class InputGenerator {
             hasBci = true;
         }
 
+        // 5a. Wehr-Datei (optional) — nur wenn scenario.weirs gesetzt und nicht leer
+        let hasWeir = false;
+        if (scenario.weirs && scenario.weirs.length > 0) {
+            const weirContent = this.generateWeirFile(scenario.weirs);
+            if (fs) fs.writeFile('/flow.weir', weirContent);
+            else this.files['flow.weir'] = weirContent;
+            hasWeir = true;
+            console.log(`[InputGenerator] ✅ ${scenario.weirs.length} Wehr(e) in flow.weir geschrieben.`);
+        }
+
         // 5. Parameter File
         const parContent = this.generateParFile(
             scenario.config,
@@ -217,7 +227,8 @@ export class InputGenerator {
             scenario.globalRoughness,
             hasBci,
             hasBdy,
-            frictionFilename
+            frictionFilename,
+            hasWeir
         );
 
         if (fs) fs.writeFile('/run.par', parContent);
@@ -771,7 +782,7 @@ export class InputGenerator {
         return content;
     }
 
-    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc') {
+    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc', hasWeir = false) {
         // CRITICAL: Keywords MUST match pars.cpp exactly (strcmp is case-sensitive!)
         // Source: solverHydro/src/lisflood-fp-bmi-v5.9/pars.cpp
         const config = {
@@ -787,12 +798,14 @@ export class InputGenerator {
         };
 
         if (hasFrictionMap) config.manningfile = frictionFilename; // Line 99: strcmp(buffer,"manningfile")
-        if (hasRain) config.rainfall = 'rain.txt';               // Line 228: strcmp(buffer,"rainfall")
-        if (hasBci) config.bcifile = 'flow.bci';                 // Line 106: strcmp(buffer,"bcifile")
-        if (hasBdy) config.bdyfile = 'profiles.bdy';             // Line 107: strcmp(buffer,"bdyfile")
+        if (hasRain)        config.rainfall    = 'rain.txt';       // Line 228: strcmp(buffer,"rainfall")
+        if (hasBci)         config.bcifile     = 'flow.bci';       // Line 106: strcmp(buffer,"bcifile")
+        if (hasBdy)         config.bdyfile     = 'profiles.bdy';   // Line 107: strcmp(buffer,"bdyfile")
+        if (hasWeir)        config.weirfile    = 'flow.weir';      // Line 108: strcmp(buffer,"weirfile")
 
-        // Acceleration solver is now safe to use since boundary conditions are correct
-        // (HFIX instead of FREE, proper flux scaling, coordinate snapping).
+        // Acceleration solver: Kompatibel mit Wehren!
+        // In fp_flow.cpp prüft FloodplainQ(): weirs ZUERST (Zeile 47/89),
+        // Acceleration nur für Nicht-Wehr-Zellen (Zeile 49/91).
         if (config.acceleration !== undefined) {
             console.log("[InputGenerator] ✅ Acceleration solver ENABLED for faster computation.");
         }
@@ -804,5 +817,30 @@ export class InputGenerator {
             content += `${key.padEnd(20)} ${val}\n`;
         }
         return content;
+    }
+
+    /**
+     * Generiert den Inhalt der LISFLOOD `.weir`-Datei aus dem GeoStore-Wehr-Array.
+     *
+     * Format:
+     *   <n>
+     *   <x> <y> <Richtung> <Cd> <hc> <m> <w>
+     *   ...
+     *
+     * Richtungs-Tags (Typ 0, Poleni-Wehr):
+     *   N/S/E/W            → bidirektional
+     *   NF/SF/EF/WF        → unidirektional (Rückstauklappe)
+     *
+     * @param {Array<{x,y,direction,Cd,hc,m,w}>} weirs
+     * @returns {string}
+     */
+    generateWeirFile(weirs) {
+        if (!weirs || weirs.length === 0) return '';
+        let out = `${weirs.length}\n`;
+        for (const w of weirs) {
+            out += `${w.x.toFixed(2)} ${w.y.toFixed(2)}  ${w.direction}  ${w.Cd.toFixed(4)}  ${w.hc.toFixed(4)}  ${w.m.toFixed(4)}  ${w.w.toFixed(4)}\n`;
+        }
+        console.log(`[InputGenerator] Generated flow.weir:\n${out}`);
+        return out;
     }
 }

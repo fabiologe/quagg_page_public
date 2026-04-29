@@ -26,10 +26,9 @@
 // Berechne die Basis-URL des Workers aus import.meta.url.
 const _workerBaseUrl = new URL('.', import.meta.url).href;
 
-let OutputProcessor = null;
-// InputGenerator wird NICHT mehr im Worker geladen —
-// die Input-Dateien werden im Haupt-Thread (SolverRunner) generiert und fertig übergeben.
 let LisfloodBMI = null;
+import { OutputProcessor as OP } from './OutputProcessor.js';
+let OutputProcessor = OP;
 
 /**
  * Lädt ein JS-Modul aus einer URL über fetch → Blob → import().
@@ -91,7 +90,14 @@ console.log('[BMI Worker] Script loaded.');
 // ─── Message Handler ─────────────────────────────────────────────────────────
 
 self.onmessage = async (e) => {
-    const { cmd, payload, type } = e.data;
+    const { cmd, payload, type } = e.data || {};
+
+    // ── Vite HMR Guard ────────────────────────────────────────────────────────
+    // In Dev-Mode injiziert Vite HMR-Events (z.B. { type: 'connected' }) in
+    // Module-Worker. Diese haben kein 'cmd' Feld und dürfen nicht verarbeitet werden.
+    if (!cmd && type !== 'abort') {
+        return;
+    }
 
     // ── Abort-Signal (kann jederzeit ankommen) ────────────────────────────────
     if (type === 'abort' || cmd === 'CMD_ABORT') {
@@ -116,12 +122,9 @@ self.onmessage = async (e) => {
                 currentState = 'INITIALIZING';
                 sendLog('Initializing LISFLOOD BMI WASM...');
 
-                // OutputProcessor dynamisch laden (einzige Abhängigkeit des Workers).
-                // Wird gebraucht um LISFLOOD ASC Output-Dateien zu parsen.
+                // OutputProcessor wird nun statisch importiert
                 if (!OutputProcessor) {
-                    sendLog('Loading OutputProcessor...');
-                    const opMod = await loadModuleFromUrl(_workerBaseUrl + 'OutputProcessor.js');
-                    OutputProcessor = opMod.OutputProcessor;
+                    sendLog('OutputProcessor loaded.');
                 }
 
                 // Emscripten-Modul aus public/ laden

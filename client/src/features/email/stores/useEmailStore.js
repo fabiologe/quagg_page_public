@@ -168,6 +168,7 @@ export const useEmailStore = defineStore('email', () => {
     const selectedEmail = ref(null)
     const composerOpen = ref(false)
     const replyToEmail = ref(null)
+    const triageOpen = ref(false)
 
     // Getters
     const currentFolderEmails = computed(() => {
@@ -248,6 +249,14 @@ export const useEmailStore = defineStore('email', () => {
         replyToEmail.value = null
     }
 
+    function openTriage() {
+        triageOpen.value = true
+    }
+
+    function closeTriage() {
+        triageOpen.value = false
+    }
+
     return {
         // State
         folders,
@@ -256,6 +265,7 @@ export const useEmailStore = defineStore('email', () => {
         selectedEmail,
         composerOpen,
         replyToEmail,
+        triageOpen,
 
         // Getters
         currentFolderEmails,
@@ -269,6 +279,8 @@ export const useEmailStore = defineStore('email', () => {
         sendReply,
         deleteEmail,
         openComposer,
-        closeComposer
+        closeComposer,
+        openTriage,
+        closeTriage
     }
 })

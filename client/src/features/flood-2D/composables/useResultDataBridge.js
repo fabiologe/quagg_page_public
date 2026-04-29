@@ -65,6 +65,8 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
     const rawModifications = toRaw(geoStore.modifications);
     const rawBoundaries = toRaw(geoStore.boundaries);
     const rawNodes = toRaw(geoStore.nodes);
+    const rawWeirs = toRaw(geoStore.weirs);
+    const rawCulvertLinks = toRaw(geoStore.culvertLinks);
 
     if (!rawTerrain || !rawTerrain.gridData) {
         console.warn('[ResultBridge] No terrain data available');
@@ -106,6 +108,8 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
         modifications: rawModifications ? JSON.parse(JSON.stringify(rawModifications)) : null,
         boundaries: rawBoundaries ? JSON.parse(JSON.stringify(rawBoundaries)) : null,
         nodes: rawNodes ? JSON.parse(JSON.stringify(rawNodes)) : null,
+        weirs: rawWeirs ? JSON.parse(JSON.stringify(rawWeirs)) : null,
+        culvertLinks: rawCulvertLinks ? JSON.parse(JSON.stringify(rawCulvertLinks)) : null,
         header: simStore.resultHeader
             ? JSON.parse(JSON.stringify(toRaw(simStore.resultHeader)))
             : null,
@@ -189,6 +193,8 @@ export function useResultDataFromOpener() {
             if (data.modifications) geoStore.modifications = data.modifications;
             if (data.boundaries) geoStore.boundaries = data.boundaries;
             if (data.nodes) geoStore.nodes = data.nodes;
+            if (data.weirs) geoStore.weirs = data.weirs;
+            if (data.culvertLinks) geoStore.culvertLinks = data.culvertLinks;
 
             // Hydrate frames
             const frameEntries = Object.entries(data.frames || {});

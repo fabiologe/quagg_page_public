@@ -81,7 +81,7 @@ const tabs = [
       'Fläche': '450 m²',
       'Reinigungsleistung': 'Hoch'
     },
-    embedUrl: 'https://sketchfab.com/models/0a83c66910ca485ea565eb8db37dd2d7/embed?autospin=1&autostart=1&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
+    embedUrl: 'https://sketchfab.com/models/0a83c66910ca485ea565eb8db37dd2d7/embed?autospin=1&autostart=0&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
     sketchfabLink: 'https://sketchfab.com/3d-models/urban-road-section-0a83c66910ca485ea565eb8db37dd2d7?utm_medium=embed&utm_campaign=share-popup&utm_content=0a83c66910ca485ea565eb8db37dd2d7'
   },
   {
@@ -94,7 +94,7 @@ const tabs = [
       'Klasse': 'Klasse I',
       'Ölspeichermenge': '580 l'
     },
-    embedUrl: 'https://sketchfab.com/models/0a83c66910ca485ea565eb8db37dd2d7/embed?autospin=1&autostart=1&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
+    embedUrl: 'https://sketchfab.com/models/0a83c66910ca485ea565eb8db37dd2d7/embed?autospin=1&autostart=0&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
     sketchfabLink: 'https://sketchfab.com/3d-models/urban-road-section-0a83c66910ca485ea565eb8db37dd2d7?utm_medium=embed&utm_campaign=share-popup&utm_content=0a83c66910ca485ea565eb8db37dd2d7'
   },
   {
@@ -107,7 +107,7 @@ const tabs = [
       'Zulässige Zielfracht': '≤ 280 kg/(ha·a)',
       'Nachweis': 'DWA vs. REwS',
     },
-    embedUrl: 'https://sketchfab.com/models/6a92c9c3db254defa8bc31d240ebe1f2/embed?autospin=1&autostart=1&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
+    embedUrl: 'https://sketchfab.com/models/6a92c9c3db254defa8bc31d240ebe1f2/embed?autospin=1&autostart=0&preload=1&transparent=1&ui_hint=0&ui_theme=dark&ui_infos=0&ui_watermark_link=0&ui_watermark=0&ui_controls=0&ui_help=0&ui_settings=0&ui_vr=0&ui_fullscreen=0&ui_animations=0',
     sketchfabLink: 'https://sketchfab.com/3d-models/forest-mud-puddle-6a92c9c3db254defa8bc31d240ebe1f2?utm_medium=embed&utm_campaign=share-popup&utm_content=6a92c9c3db254defa8bc31d240ebe1f2'
   }
 ]
@@ -325,6 +325,24 @@ const currentStudy = computed(() => tabs[activeTab.value])
 }
 
 @media (max-width: 1024px) {
+  .case-study {
+    margin: 2rem 1rem;
+    border-radius: 12px;
+  }
+
+  .tabs-header {
+    flex-direction: row;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab-btn {
+    padding: 1rem;
+    font-size: 1rem;
+    flex: 0 0 auto;
+  }
+
   .split-layout {
     flex-direction: column;
   }
@@ -332,14 +350,29 @@ const currentStudy = computed(() => tabs[activeTab.value])
   .analytical-pane {
     border-right: none;
     border-bottom: 1px solid #eee;
+    padding: 2rem 1.5rem;
   }
   
+  .title {
+    font-size: 2rem;
+    margin-bottom: 2rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
   .visual-pane {
-    display: none;
+    display: flex;
+    min-height: 400px;
   }
-  
-  .tabs-header {
-    flex-direction: column;
+
+  .visual-content {
+    padding: 1rem;
+  }
+
+  .sketchfab-embed-wrapper iframe {
+    min-height: 300px;
   }
 }
 </style>

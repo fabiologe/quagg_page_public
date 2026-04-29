@@ -26,14 +26,30 @@
                Start Over
              </button>
 
+             <!-- Undo / Redo -->
+             <div class="undo-redo-group">
+               <button
+                 class="btn-icon"
+                 :class="{ disabled: !anyCanUndo }"
+                 :disabled="!anyCanUndo"
+                 @click="_performUndo"
+                 title="Rückgängig (Ctrl+Z)"
+               >↶</button>
+               <button
+                 class="btn-icon"
+                 :class="{ disabled: !anyCanRedo }"
+                 :disabled="!anyCanRedo"
+                 @click="_performRedo"
+                 title="Wiederholen (Ctrl+Y)"
+               >↷</button>
+             </div>
+
              <label class="btn-file">
                 <input type="file" accept=".xyz,.txt,.asc" @change="handleFileUpload" />
                 <span>Select .XYZ File</span>
              </label>
              
-             <button v-if="parsedData" @click="acceptTerrain" class="btn-primary">
-               Accept Terrain
-             </button>
+             <CompassRose :angle="compassAngle" />
           </div>
        </div>
 
@@ -72,6 +88,11 @@
        <!-- CULVERT UI -->
        <CulvertTool 
           v-if="simStore.activeTool === 'CULVERT'"
+       />
+
+       <!-- WEIR UI -->
+       <WeirTool
+          v-if="simStore.activeTool === 'WEIR'"
        />
 
        <!-- NODE/SOURCE UI -->
@@ -160,17 +181,11 @@
        </div>
 
        <!-- MAP LAYER CONTROL -->
-       <div class="layer-control" v-if="parsedData">
-          <div class="layer-btn" :class="{ active: activeLayerMode === 'CLASSIC' }" @click="setLayerMode('CLASSIC')" title="Klassische Höhen-Ansicht">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></svg>
-          </div>
-          <div class="layer-btn" :class="{ active: activeLayerMode === 'SURFACE' }" @click="setLayerMode('SURFACE')" title="Oberflächen-Materialien (Textur)">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
-          </div>
-          <div class="layer-btn disabled" title="Tiff-Hintergrund (Demnächst)">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-          </div>
-       </div>
+       <LayerControl 
+          v-if="parsedData" 
+          :activeMode="activeLayerMode" 
+          @set-mode="setLayerMode" 
+       />
 
        <!-- INFO CARD -->
        <TerrainInfoCard
@@ -213,10 +228,20 @@ import { useTextureTool } from '../../composables/editor/useTextureTool.js';
 import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
 import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
+import { useWeirTool } from '../../composables/editor/useWeirTool.js';
+import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
+import { useHistoryManager } from '../../composables/useHistoryManager.js';
+import {
+    undoTerrain, redoTerrain, canUndoTerrain, canRedoTerrain,
+    terrainUndoCount, terrainRedoCount
+} from '../../composables/historyBridge.js';
 
 // --- UI COMPONENTS ---
+import LayerControl from './LayerControl.vue';
+import CompassRose from './CompassRose.vue';
 import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
+import WeirTool from '../tools/WeirTool.vue';
 import NodeTool from '../tools/NodeTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
@@ -238,7 +263,8 @@ const parsedData = ref(null);
 const rawContent = ref(null);
 const stats = ref(null);
 const selectedInfo = ref(null); // { x, y, z, col, row }
-const activeLayerMode = ref('CLASSIC'); // 'CLASSIC' | 'SURFACE' | 'TIFF'
+const activeLayerMode = ref('CLASSIC'); // 'CLASSIC' | 'SURFACE' | 'SOLID' | 'WIREFRAME' | 'CONTOUR' | 'TIFF'
+const compassAngle = ref(0);
 
 // --- THREE.JS OBJECTS ---
 let scene, renderer, controls, animationId;
@@ -256,6 +282,13 @@ const culvertTool = useCulvertTool();
 const textureTool = useTextureTool();
 const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
+const weirTool = useWeirTool();
+const { saveState, undo, redo, canUndo, canRedo } = useHistoryManager();
+
+// Kombinierte Undo/Redo-Flags für die Toolbar-Buttons:
+// true wenn Terrain-History ODER Vektor-History einen Eintrag hat.
+const anyCanUndo = computed(() => canUndo.value || terrainUndoCount.value > 0);
+const anyCanRedo = computed(() => canRedo.value || terrainRedoCount.value > 0);
 
 // Which sub-mode is active inside the CROP tool: 'BBOX' | 'POLYGON'
 const cropMode = ref('BBOX');
@@ -298,6 +331,7 @@ const tools = {
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
+    'WEIR': weirTool,           // handles hover/ghost cell
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),
@@ -374,9 +408,13 @@ const setLayerMode = (mode) => {
 };
 
 watch(activeLayerMode, (val) => {
-    if (terrainMesh && terrainMesh.material.uniforms && terrainMesh.material.uniforms.uShowSurface) {
+    if (terrainMesh && terrainMesh.material.uniforms) {
         terrainMesh.material.uniforms.uShowSurface.value = (val === 'SURFACE') ? 1.0 : 0.0;
-        // Logic for TIFF can be added here later
+        terrainMesh.material.uniforms.uIsSolid.value = (val === 'SOLID') ? 1.0 : 0.0;
+        terrainMesh.material.uniforms.uIsWireframe.value = (val === 'WIREFRAME') ? 1.0 : 0.0;
+        terrainMesh.material.uniforms.uIsContour.value = (val === 'CONTOUR') ? 1.0 : 0.0;
+        // terrainMesh.material.wireframe = (val === 'WIREFRAME'); // Disabled: Native wireframe draws diagonals. We use custom Shader Grid instead.
+        terrainMesh.material.needsUpdate = true;
     }
 });
 
@@ -439,6 +477,9 @@ onMounted(() => {
              loading.value = false;
          }, 100);
     }
+
+    // ── Keyboard Shortcuts: Ctrl+Z (Undo) / Ctrl+Y or Ctrl+Shift+Z (Redo) ──
+    window.addEventListener('keydown', _handleKeydown);
 });
 
 onUnmounted(() => {
@@ -453,7 +494,70 @@ onUnmounted(() => {
     buildingTool.reset(scene); // Resets wrapped draw tool
     culvertTool.reset(scene);
     boundaryTool.reset(scene);
+    window.removeEventListener('keydown', _handleKeydown);
 });
+
+
+/** Einheitlicher Undo: Terrain zuerst, dann Vektor. */
+function _performUndo() {
+    if (canUndoTerrain()) {
+        if (undoTerrain()) { _rebuildTerrainMesh(); return; }
+    }
+    if (canUndo.value) undo();
+}
+
+/** Einheitlicher Redo: Terrain zuerst, dann Vektor. */
+function _performRedo() {
+    if (canRedoTerrain()) {
+        if (redoTerrain()) { _rebuildTerrainMesh(); return; }
+    }
+    if (canRedo.value) redo();
+}
+
+/**
+ * Keyboard handler für Undo/Redo.
+ * Ctrl+Z = Undo | Ctrl+Y = Redo | Ctrl+Shift+Z = Redo
+ */
+function _handleKeydown(e) {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (!ctrl) return;
+
+    // Nicht feuern wenn ein echtes Texteingabefeld aktiv ist
+    const el = document.activeElement;
+    const tag = el?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+
+    // e.key ist beim Mac manchmal 'Z' (Großbuchstabe) → toLowerCase()
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        console.debug('[MapEditor3D] Ctrl+Z → _performUndo()');
+        _performUndo();
+    } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        console.debug('[MapEditor3D] Ctrl+Y → _performRedo()');
+        _performRedo();
+    }
+}
+
+/**
+ * Baut das Three.js Terrain-Mesh nach einem Terrain-Undo/Redo neu.
+ * Synchronisiert parsedData und Stats mit dem aktuellen geoStore.terrain.
+ */
+function _rebuildTerrainMesh() {
+    const t = geoStore.terrain;
+    if (!t || !t.gridData) return;
+
+    parsedData.value = { ...t };
+    stats.value = t.stats || {
+        cols: t.ncols, rows: t.nrows,
+        cellsize: t.cellsize, minZ: t.minZ, maxZ: t.maxZ,
+    };
+
+    buildTerrainMesh(parsedData.value);
+    console.debug('[MapEditor3D] ✅ Terrain mesh rebuilt after undo/redo.');
+}
+
 
 // --- EVENT HANDLERS ---
 
@@ -622,6 +726,22 @@ const initThreeJS = () => {
 const animate = () => {
     animationId = requestAnimationFrame(animate);
     controls.update();
+
+    if (activeCamera && controls) {
+        if (activeCamera === cameraOrtho) {
+            // In 2D Top-Down mode, rotation is locked. Fix compass to 0 to prevent jitter.
+            compassAngle.value = 0;
+        } else {
+            // In 3D Perspective mode, calculate azimuthal angle.
+            const dx = activeCamera.position.x - controls.target.x;
+            const dz = activeCamera.position.z - controls.target.z;
+            // Add a small threshold to avoid precision jitter when looking perfectly down
+            if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
+                compassAngle.value = Math.atan2(dx, dz) * (180 / Math.PI);
+            }
+        }
+    }
+
     renderer.render(scene, activeCamera);
 };
 
@@ -752,16 +872,6 @@ const handleFileUpload = async (event) => {
     event.target.value = '';
 };
 
-const acceptTerrain = () => {
-    if (parsedData.value && rawContent.value) {
-        geoStore.importTerrain(parsedData.value); 
-        // Previous store check: setDemData, setDemGrid...
-        // Safest to call setTerrain if available as per Step 19.
-        // Step 19 Store: setTerrain(parsedData) IS AVAILABLE.
-        geoStore.importTerrain(parsedData.value);
-        emit('confirm');
-    }
-};
 
 const parseXYZ = (text) => {
     const lines = text.trim().split('\n');
@@ -849,97 +959,9 @@ const buildTerrainMesh = (result) => {
 
     geometry.computeVertexNormals();
 
-    const vertexShader = `
-      attribute float aValid;
-      attribute vec3 aSurfaceColor;
-      varying float vZ;
-      varying float vValid;
-      varying vec2 vPlanePos;
-      varying vec3 vSurfaceColor;
-      void main() {
-        vZ = position.z; 
-        vValid = aValid;
-        vPlanePos = position.xy;
-        vSurfaceColor = aSurfaceColor;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `;
+    geometry.computeVertexNormals();
 
-    const fragmentShader = `
-      varying float vZ;
-      varying float vValid;
-      varying vec2 vPlanePos;
-      varying vec3 vSurfaceColor;
-      uniform float uMinZ;
-      uniform float uMaxZ;
-      uniform vec3 uColorLow;
-      uniform vec3 uColorMid;
-      uniform vec3 uColorHigh;
-      uniform float uIs2D; 
-      uniform float uShowSurface;
-      uniform vec2 uBounds;
-      uniform float uCellSize;
-
-      void main() {
-        // Discard NODATA cells
-        if (vValid < 0.5) discard;
-
-        float range = uMaxZ - uMinZ;
-        if(range < 0.1) range = 1.0;
-        float h = vZ / range; 
-        vec3 col;
-        if (h < 0.2) col = mix(uColorLow, uColorMid, h / 0.2);
-        else col = mix(uColorMid, uColorHigh, (h - 0.2) / 0.8);
-
-        // Surface Material Overlay (Texture Pipeline)
-        if (uShowSurface > 0.5) {
-            // Blend surface color with subtle height shading for depth cues
-            vec3 surfCol = vSurfaceColor;
-            float heightShade = 0.7 + 0.3 * h; // subtle brightness variation by height
-            col = surfCol * heightShade;
-        }
-
-        if (uIs2D > 0.5) {
-            float gray = dot(col, vec3(0.299, 0.587, 0.114));
-            col = mix(col, vec3(gray), 0.7) + 0.1;
-            
-            float localX = vPlanePos.x + (uBounds.x * 0.5);
-            float localY = vPlanePos.y + (uBounds.y * 0.5);
-            vec2 normPos = vec2(localX, localY) / uCellSize;
-            vec2 grid = abs(fract(normPos) - 0.5);
-            float px = fwidth(localX) * 1.5;
-            if(px < 0.02) px = 0.02; 
-            float lineX = 1.0 - smoothstep(0.0, px/uCellSize, grid.x);
-            float lineY = 1.0 - smoothstep(0.0, px/uCellSize, grid.y);
-            float isGrid = max(lineX, lineY);
-            col = mix(col, vec3(0.35), isGrid * 0.6);
-        }
-
-        float contourInterval = 1.0;
-        float dist = abs(fract(vZ) - 0.5);
-        float lineIntensity = 1.0 - smoothstep(0.45, 0.48, dist); 
-        col = mix(col, vec3(0.0), lineIntensity * 0.3);
-
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `;
-
-    const material = new THREE.ShaderMaterial({
-        uniforms: {
-            uMinZ: { value: 0 }, 
-            uMaxZ: { value: maxZ - minZ },
-            uColorLow: { value: new THREE.Color(0x3b82f6) },
-            uColorMid: { value: new THREE.Color(0x10b981) },
-            uColorHigh: { value: new THREE.Color(0xffffff) },
-            uIs2D: { value: 0.0 },
-            uShowSurface: { value: 0.0 },
-            uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) },
-            uCellSize: { value: result.cellsize || 1.0 }
-        },
-        vertexShader: vertexShader,
-        fragmentShader: fragmentShader,
-        side: THREE.DoubleSide
-    });
+    const material = createTerrainMaterial(minZ, maxZ, bounds, result.cellsize);
 
     if (terrainMesh) {
          scene.remove(terrainMesh);
@@ -1013,6 +1035,32 @@ defineExpose({
 }
 .btn-secondary:hover { background-color: #ecf0f1; color: #2c3e50; }
 
+/* Undo / Redo */
+.undo-redo-group {
+    display: flex;
+    gap: 2px;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.btn-icon {
+    width: 32px; height: 32px;
+    border: none;
+    background: transparent;
+    color: #2c3e50;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+    border-radius: 0;
+}
+.btn-icon:hover:not(:disabled) { background: #e8f4fd; color: #2980b9; }
+.btn-icon:disabled, .btn-icon.disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
 .btn-file {
     position: relative; display: inline-block; cursor: pointer;
 }
@@ -1076,41 +1124,7 @@ defineExpose({
 .val-min { color: #2980b9; font-weight: bold; }
 .val-max { color: #8e44ad; font-weight: bold; }
 
-/* Layer Control */
-.layer-control {
-    position: absolute;
-    bottom: 16px;
-    right: 16px;
-    background: rgba(44, 62, 80, 0.85);
-    backdrop-filter: blur(8px);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    z-index: 100;
-}
-.layer-btn {
-    padding: 10px;
-    color: #bdc3c7;
-    cursor: pointer;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    transition: all 0.2s;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.layer-btn:last-child { border-bottom: none; }
-.layer-btn:hover:not(.disabled) { background: rgba(52, 152, 219, 0.2); color: #ecf0f1; }
-.layer-btn.active {
-    background: #3498db;
-    color: white;
-}
-.layer-btn.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
+
 
 /* Tool Panels (Shovel/Boundary) */
 .tool-ui-panel {

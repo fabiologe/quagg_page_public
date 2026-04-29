@@ -32,13 +32,21 @@
       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
     </ToolButton>
 
-    <!-- Draw Line -->
+    <!-- WEIR Tool (Wehr / Überlauf) -->
     <ToolButton 
-      @click="setTool('DRAW_LINE')"
-      :active="activeTool === 'DRAW_LINE'"
-      title="Draw Wall/Dam"
+      @click="setTool('WEIR')"
+      :active="activeTool === 'WEIR'"
+      title="Wehr / Überlauf setzen"
     >
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+      <!-- Dam/Weir icon: horizontal wall with water arrows -->
+      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <!-- Dam wall -->
+        <rect x="9" y="4" width="3" height="16" rx="1" stroke-width="2" fill="none"/>
+        <!-- Water left -->
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9h6M3 13h6"/>
+        <!-- Overflow arrow right -->
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8h4l2 2-2 2h-4"/>
+      </svg>
     </ToolButton>
 
     <!-- Add Node / Source Point -->

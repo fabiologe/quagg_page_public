@@ -23,7 +23,10 @@ let currentState = 'IDLE';
 console.log("[Simulation] Worker script loaded."); // Critical Startup Log
 
 self.onmessage = async (e) => {
-    const { cmd, payload } = e.data;
+    const { cmd, payload } = e.data || {};
+
+    // Vite HMR Guard: Ignore non-command messages (e.g. { type: 'connected' })
+    if (!cmd) return;
 
     try {
         if (cmd === 'CMD_INIT') {
@@ -150,7 +153,7 @@ self.onmessage = async (e) => {
                 const rootFiles = FS.readdir('/');
                 sendLog(`MEMFS Root: ${rootFiles.join(', ')}`);
 
-                const inputFileNames = ['run.par', 'terrain.asc', 'friction.asc', 'terrain.n', 'flow.bci', 'profiles.bdy', 'rain.txt'];
+                const inputFileNames = ['run.par', 'terrain.asc', 'friction.asc', 'terrain.n', 'flow.bci', 'profiles.bdy', 'rain.txt', 'flow.weir'];
                 const inputFiles = {};
 
                 for (const fname of inputFileNames) {

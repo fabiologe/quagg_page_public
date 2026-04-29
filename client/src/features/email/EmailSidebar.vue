@@ -5,6 +5,9 @@
       <button class="btn-compose" @click="handleCompose">
         ✍️ Verfassen
       </button>
+      <button v-if="authStore.canManageGlobalInbox" class="btn-triage" @click="handleTriage">
+        🚨 Triage Inbox
+      </button>
     </div>
     
     <div class="folder-list">
@@ -28,8 +31,10 @@
 <script setup>
 import { storeToRefs } from 'pinia'
 import { useEmailStore } from './stores/useEmailStore'
+import { useAuthStore } from '@/stores/useAuthStore'
 
 const emailStore = useEmailStore()
+const authStore = useAuthStore()
 const { folders, selectedFolder } = storeToRefs(emailStore)
 
 function handleSelectFolder(folderId) {
@@ -38,6 +43,10 @@ function handleSelectFolder(folderId) {
 
 function handleCompose() {
   emailStore.openComposer()
+}
+
+function handleTriage() {
+  emailStore.openTriage()
 }
 </script>
 
@@ -86,6 +95,29 @@ function handleCompose() {
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4);
   transform: translateY(-1px);
+}
+
+.btn-triage {
+  width: 100%;
+  margin-top: 0.75rem;
+  background: white;
+  color: #ef4444;
+  border: 1px solid #fca5a5;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.btn-triage:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
 }
 
 .folder-list {

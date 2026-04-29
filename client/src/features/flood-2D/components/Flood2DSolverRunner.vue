@@ -1,81 +1,121 @@
 <template>
   <div class="flood-solver-container">
-    <h2>🌊 2D Flood Simulation (WASM)</h2>
+
+    <!-- HEADER -->
+    <div class="runner-header">
+      <div class="runner-title">
+        <span class="runner-icon">🌊</span>
+        <div>
+          <div class="runner-name">Flood Simulation</div>
+          <div class="runner-sub">LISFLOOD-FP · WASM Engine</div>
+        </div>
+      </div>
+      <div class="status-pill" :class="statusClass">
+        {{ status }}
+      </div>
+    </div>
 
     <!-- SIMULATION PARAMETERS -->
-    <div class="sim-params">
-      <h3>⚙️ Parameter</h3>
+    <div class="section-card">
+      <div class="section-title">⚙️ Parameter</div>
+
       <div class="param-grid">
-
-        <label>Simulationsdauer (s)</label>
-        <input type="number" v-model.number="simStore.simDuration" min="60" step="60" />
-
-        <label>Zeitschritt Δt (s)</label>
-        <input type="number" v-model.number="simStore.timeStep" min="0.01" max="10" step="0.1" />
-
-        <label>Ausgabeintervall (s)</label>
-        <input type="number" v-model.number="simStore.saveInterval" min="1" step="10" />
-
-        <label>Massenbalanz-Int. (s)</label>
-        <input type="number" v-model.number="simStore.massInterval" min="1" step="10" />
-
-        <label>Acceleration Solver</label>
-        <div class="toggle-row">
-          <input type="checkbox" id="accel-toggle" v-model="simStore.useAcceleration" />
-          <label for="accel-toggle" class="toggle-label">
-            {{ simStore.useAcceleration ? 'Aktiv (Instabil?)' : 'Aus (Stabil)' }}
-          </label>
+        <div class="param-row">
+          <label>Simulationsdauer</label>
+          <div class="input-unit-wrap">
+            <input type="number" v-model.number="simStore.simDuration" min="60" step="60" />
+            <span class="unit">s</span>
+          </div>
         </div>
 
-        <label>Engine</label>
-        <div class="toggle-row bmi-toggle-row" :class="{ 'bmi-active': simStore.useBmiSolver }">
-          <input
-            type="checkbox"
-            id="bmi-toggle"
-            v-model="simStore.useBmiSolver"
-            :disabled="isRunning"
-          />
-          <label for="bmi-toggle" class="toggle-label bmi-label">
-            🧪 Experimenteller 1D/2D BMI-Solver <strong>(God Mode)</strong>
-          </label>
+        <div class="param-row">
+          <label>Zeitschritt Δt</label>
+          <div class="input-unit-wrap">
+            <input type="number" v-model.number="simStore.timeStep" min="0.01" max="10" step="0.1" />
+            <span class="unit">s</span>
+          </div>
         </div>
 
+        <div class="param-row">
+          <label>Ausgabeintervall</label>
+          <div class="input-unit-wrap">
+            <input type="number" v-model.number="simStore.saveInterval" min="1" step="10" />
+            <span class="unit">s</span>
+          </div>
+        </div>
+
+        <div class="param-row">
+          <label>Massenbalanz-Int.</label>
+          <div class="input-unit-wrap">
+            <input type="number" v-model.number="simStore.massInterval" min="1" step="10" />
+            <span class="unit">s</span>
+          </div>
+        </div>
       </div>
-      <p class="param-hint">
-        📊 {{ estimatedFrames }} Frames · 
-        {{ (simStore.simDuration / 60).toFixed(0) }} min Laufzeit
-      </p>
+
+      <!-- Stats bar -->
+      <div class="param-stats">
+        <span>📊 <strong>{{ estimatedFrames }}</strong> Frames</span>
+        <span>⏱ <strong>{{ (simStore.simDuration / 60).toFixed(0) }}</strong> min Laufzeit</span>
+      </div>
     </div>
-    
+
+    <!-- TOGGLES -->
+    <div class="section-card toggles-card">
+      <label class="toggle-row">
+        <input type="checkbox" v-model="simStore.useAcceleration" />
+        <div class="toggle-track" :class="{ on: simStore.useAcceleration }">
+          <div class="toggle-thumb"></div>
+        </div>
+        <span>Acceleration Solver
+          <em>{{ simStore.useAcceleration ? '(Instabil?)' : '(Stabil)' }}</em>
+        </span>
+      </label>
+
+      <label class="toggle-row bmi-row" :class="{ 'bmi-active': simStore.useBmiSolver }">
+        <input type="checkbox" v-model="simStore.useBmiSolver" :disabled="isRunning" />
+        <div class="toggle-track" :class="{ on: simStore.useBmiSolver }">
+          <div class="toggle-thumb"></div>
+        </div>
+        <span>🧪 BMI 1D/2D Solver <strong>God Mode</strong></span>
+      </label>
+    </div>
+
+    <!-- PROGRESS BAR -->
+    <div class="progress-bar-wrap" v-if="isRunning">
+      <div class="progress-bar-fill" :style="{ width: simStore.progress + '%' }"></div>
+      <span class="progress-label">{{ simStore.progress }}%</span>
+    </div>
+
+    <!-- CONTROLS -->
     <div class="controls">
       <button v-if="!isRunning" @click="runSimulation" class="run-btn">
-        Start Simulation
+        ▶️ Start Simulation
       </button>
       <button v-else @click="abortSimulation" class="stop-btn">
-        🛑 Stop Simulation
+        🛑 Stopp
       </button>
 
-      <button @click="showInspector = !showInspector" class="dry-run-btn" type="button">
-          {{ showInspector ? '✕ Raw Viewer schließen' : '📋 Raw Viewer' }}
+      <button @click="showInspector = !showInspector" class="ghost-btn" type="button">
+        {{ showInspector ? '✕ Inspector' : '📋 Raw Inspector' }}
       </button>
 
-      <button 
-        v-if="geoStore.terrain || simStore.totalFrameCount > 0" 
-        @click.prevent="openViewer" 
+      <button
+        v-if="geoStore.terrain || simStore.totalFrameCount > 0"
+        @click.prevent="openViewer"
         type="button"
         class="viewer-btn"
-        title="3D Ergebnis-Viewer öffnen"
       >
         🗺️ 3D Viewer
       </button>
-      
-      <div v-if="status" class="status-indicator">
-        Status: <span :class="statusClass">{{ status }}</span>
-      </div>
     </div>
 
-    <div class="logs-container">
-      <h3>Simulation Logs:</h3>
+    <!-- LOG CONSOLE -->
+    <div class="logs-console">
+      <div class="logs-title">
+        <span>🖥️ Simulation Log</span>
+        <button class="clear-btn" @click="logs = ''">Clear</button>
+      </div>
       <pre ref="logContainer">{{ logs }}</pre>
     </div>
 
@@ -397,7 +437,9 @@ const openViewer = async () => {
         terrain: bakedTerrainData,
         modifications: geoStore.modifications,
         boundaries: geoStore.boundaries,
-        nodes: geoStore.nodes
+        nodes: geoStore.nodes,
+        weirs: geoStore.weirs,
+        culvertLinks: geoStore.culvertLinks
     };
 
     const ready = await prepareResultData(simStore, exportGeoStore, bciContent);
@@ -514,7 +556,9 @@ const startPreparation = async () => {
                   saveint: String(simStore.saveInterval || 60) + '.0',
                   massint: String(simStore.massInterval || 60) + '.0',
                   ...(simStore.useAcceleration ? { acceleration: '' } : {})
-             }
+             },
+             // Wehre (LISFLOOD weirfile) — Poleni-Formel, nur Typ 0 (keine Brücken)
+             weirs: geoStore.weirs ? JSON.parse(JSON.stringify(geoStore.weirs)) : []
           };
 
          // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
@@ -579,6 +623,9 @@ const startPreparation = async () => {
          } catch (genErr) {
              throw new Error(`InputGenerator fehlgeschlagen: ${genErr.message}`);
          }
+         
+         // Set input files for the UI Inspector
+         inputFiles.value = generatedFiles;
 
          // 4. Send to Worker (ONLY pre-generated files + culvert metadata)
          if (worker) {
@@ -618,12 +665,310 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ── Layout ───────────────────────────────────────────────────────────────────*/
 .flood-solver-container {
-    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
     height: 100%;
     overflow-y: auto;
-    background: #f8f9fa;
+    background: #1a252f;
+    color: #ecf0f1;
+    scrollbar-width: thin;
+    scrollbar-color: #34495e transparent;
 }
+
+/* ── Header ──────────────────────────────────────────────────────────────────*/
+.runner-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #2c3e50;
+    border-radius: 8px;
+    border: 1px solid #34495e;
+}
+.runner-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.runner-icon { font-size: 1.4rem; }
+.runner-name { font-weight: 700; font-size: 0.95rem; color: #ecf0f1; }
+.runner-sub  { font-size: 0.72rem; color: #7f8c8d; margin-top: 1px; }
+
+.status-pill {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+}
+.status-pill.info    { color: #95a5a6; }
+.status-pill.success { color: #2ecc71; background: rgba(46,204,113,0.1); }
+.status-pill.warning { color: #f39c12; background: rgba(243,156,18,0.1); }
+.status-pill.error   { color: #e74c3c; background: rgba(231,76,60,0.1); }
+
+/* ── Section Card ────────────────────────────────────────────────────────────*/
+.section-card {
+    background: #243342;
+    border: 1px solid #2c3e50;
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.section-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+}
+
+/* ── Param Grid ──────────────────────────────────────────────────────────────*/
+.param-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.param-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+}
+.param-row label {
+    font-size: 0.8rem;
+    color: #bdc3c7;
+    white-space: nowrap;
+}
+.input-unit-wrap {
+    display: flex;
+    align-items: center;
+    background: #1a252f;
+    border: 1px solid #34495e;
+    border-radius: 5px;
+    overflow: hidden;
+    width: 100px;
+}
+.input-unit-wrap input[type='number'] {
+    width: 70px;
+    padding: 5px 7px;
+    background: transparent;
+    border: none;
+    color: #ecf0f1;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+}
+.input-unit-wrap input[type='number']:focus {
+    background: rgba(52,152,219,0.08);
+}
+.unit {
+    padding: 0 7px 0 2px;
+    font-size: 0.72rem;
+    color: #7f8c8d;
+}
+
+.param-stats {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #2c3e50;
+    font-size: 0.78rem;
+    color: #7f8c8d;
+}
+.param-stats strong { color: #3498db; }
+
+/* ── Toggles ─────────────────────────────────────────────────────────────────*/
+.toggles-card { display: flex; flex-direction: column; gap: 10px; }
+
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.toggle-row input[type='checkbox'] { display: none; }
+.toggle-track {
+    width: 34px; height: 18px;
+    background: #34495e;
+    border-radius: 9px;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.2s;
+}
+.toggle-track.on { background: #3498db; }
+.toggle-thumb {
+    width: 14px; height: 14px;
+    background: #ecf0f1;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px; left: 2px;
+    transition: left 0.2s;
+}
+.toggle-track.on .toggle-thumb { left: 18px; }
+
+.toggle-row span {
+    font-size: 0.8rem;
+    color: #bdc3c7;
+    line-height: 1.3;
+}
+.toggle-row em { color: #7f8c8d; font-style: normal; margin-left: 4px; }
+.toggle-row strong { color: #f39c12; }
+
+.bmi-row {
+    padding: 6px 8px;
+    border-radius: 5px;
+    transition: background 0.2s;
+}
+.bmi-row.bmi-active {
+    background: rgba(243,156,18,0.07);
+    border: 1px solid rgba(243,156,18,0.25);
+}
+.bmi-row.bmi-active span { color: #d4a017; }
+
+/* ── Progress Bar ────────────────────────────────────────────────────────────*/
+.progress-bar-wrap {
+    height: 6px;
+    background: #2c3e50;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+}
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2ecc71);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+.progress-label {
+    position: absolute;
+    right: 0; top: -16px;
+    font-size: 0.7rem;
+    color: #7f8c8d;
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────────*/
+.controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.run-btn {
+    flex: 1;
+    min-width: 130px;
+    padding: 9px 14px;
+    background: linear-gradient(135deg, #2980b9, #3498db);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(52,152,219,0.25);
+}
+.run-btn:hover { background: linear-gradient(135deg, #3498db, #5dade2); transform: translateY(-1px); }
+.run-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.stop-btn {
+    flex: 1;
+    min-width: 100px;
+    padding: 9px 14px;
+    background: linear-gradient(135deg, #c0392b, #e74c3c);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.stop-btn:hover { opacity: 0.9; }
+
+.ghost-btn {
+    padding: 8px 12px;
+    background: transparent;
+    color: #7f8c8d;
+    border: 1px solid #34495e;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.ghost-btn:hover { background: #2c3e50; color: #ecf0f1; border-color: #3d5266; }
+
+.viewer-btn {
+    padding: 8px 14px;
+    background: linear-gradient(135deg, #0078d7, #00bcd4);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.viewer-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,120,215,0.35); }
+
+/* ── Log Console ─────────────────────────────────────────────────────────────*/
+.logs-console {
+    flex: 1;
+    min-height: 180px;
+    background: #0d1b24;
+    border: 1px solid #1e3040;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.logs-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: #162433;
+    border-bottom: 1px solid #1e3040;
+    font-size: 0.72rem;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.clear-btn {
+    background: none;
+    border: none;
+    color: #7f8c8d;
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 1px 5px;
+}
+.clear-btn:hover { color: #e74c3c; }
+.logs-console pre {
+    flex: 1;
+    margin: 0;
+    padding: 8px 10px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: #a8c7d8;
+    white-space: pre-wrap;
+    overflow-y: auto;
+}
+
+/* success / error classes for status-pill (reused elsewhere) */
+.success { color: #2ecc71; }
+.error   { color: #e74c3c; }
+.warning { color: #f39c12; }
+.info    { color: #95a5a6; }
+</style>
 
 .controls {
     margin: 1rem 0;
