@@ -1,7 +1,7 @@
 <template>
   <Transition name="slide-up">
-    <div v-if="selectedElement" class="info-window" :style="styleObject" @click.stop>
-      <div class="info-header" @mousedown="startDrag">
+    <div v-if="selectedElement" class="info-window" @click.stop>
+      <div class="info-header">
         <h3>{{ typeLabel }} Bearbeiten</h3>
         <button @click="$emit('close')" class="close-btn" @mousedown.stop>·×</button>
       </div>
@@ -182,10 +182,6 @@ const props = defineProps({
   selectedElement: Object,
   hydraulics: Map,
   nodeResults: Map,
-  position: {
-      type: Object, 
-      default: null
-  }
 });
 
 const emit = defineEmits(['close', 'save', 'show-details']);
@@ -343,100 +339,25 @@ const save = () => {
 };
 
 
-// Dragging Logic
-const draggerPos = ref(null); // { x, y } overrides props.position if set
-const isDragging = ref(false);
-const dragStart = ref({ x: 0, y: 0 });
-const initialDragPos = ref({ x: 0, y: 0 });
-
-const styleObject = computed(() => {
-    // If we have a manually dragged position, use it
-    if (draggerPos.value) {
-        return {
-            left: `${draggerPos.value.x}px`,
-            top: `${draggerPos.value.y}px`,
-            position: 'absolute',
-             // Keep the transform to remain consistent with initial placement feeling, 
-             // or remove it. Removing it might cause a jump on first drag.
-             // Let's keep it and ensuring dragging accounts for it visually? 
-             // Actually, if we use delta, it doesn't matter.
-            transform: 'translate(-50%, -100%) translateY(-10px)',
-            zIndex: 1000
-        };
-    }
-
-    // Fallback to props
-    if (!props.position) {
-        return { top: '1rem', right: '1rem' };
-    }
-    return {
-        left: `${props.position.x}px`,
-        top: `${props.position.y}px`,
-        transform: 'translate(-50%, -100%) translateY(-10px)',
-        position: 'absolute',
-        zIndex: 1000
-    };
-});
-
 // Watch for selection changes to re-init
 watch(() => props.selectedElement, (val) => {
-    if (val) {
-        initLocalData(val);
-        // Reset drag position on new selection so it pops up at the clicked location
-        draggerPos.value = null; 
-    }
+    if (val) initLocalData(val);
 }, { immediate: true });
-
-// Drag Handlers
-const startDrag = (e) => {
-    isDragging.value = true;
-    dragStart.value = { x: e.clientX, y: e.clientY };
-    
-    // Initialize draggerPos if not set
-    if (!draggerPos.value && props.position) {
-        draggerPos.value = { ...props.position };
-    } else if (!draggerPos.value) {
-         // Fallback if no props.position (e.g. fixed top/right)
-         // This case is tricky because we switched from 'top/right' to 'left/top'.
-         // Let's assume typical usage has position.
-         draggerPos.value = { x: 0, y: 0 }; // Should find actual element rect if needed
-    }
-    
-    initialDragPos.value = { ...draggerPos.value };
-    
-    document.addEventListener('mousemove', onDrag);
-    document.addEventListener('mouseup', stopDrag);
-};
-
-const onDrag = (e) => {
-    if (!isDragging.value) return;
-    const dx = e.clientX - dragStart.value.x;
-    const dy = e.clientY - dragStart.value.y;
-    
-    draggerPos.value = {
-        x: initialDragPos.value.x + dx,
-        y: initialDragPos.value.y + dy
-    };
-};
-
-const stopDrag = () => {
-    isDragging.value = false;
-    document.removeEventListener('mousemove', onDrag);
-    document.removeEventListener('mouseup', stopDrag);
-};
 </script>
 
 <style scoped>
 .info-window {
   position: absolute;
+  bottom: 1rem;
+  right: 1rem;
   width: 320px;
+  max-height: 70vh;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.2);
   display: flex;
   flex-direction: column;
   z-index: 500;
-  max-height: 80vh; /* scrollable if too tall */
   overflow: hidden;
   border: 1px solid #ddd;
 }
@@ -448,7 +369,6 @@ const stopDrag = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  cursor: move;
 }
 
 .info-header h3 {
@@ -611,5 +531,16 @@ const stopDrag = () => {
     0% { transform: scale(1); }
     50% { transform: scale(1.02); }
     100% { transform: scale(1); }
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1), opacity 0.2s ease;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateY(calc(100% + 2rem));
+  opacity: 0;
 }
 </style>

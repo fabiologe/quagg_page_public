@@ -62,6 +62,11 @@ export function useHighEndSolverExport() {
         assertDefined(header.cellsize, 'terrain.cellsize');
 
         // ── 1. Terrain Metadata (kein gridData — zu groß für REST) ───────────
+        const crs = terrain.crs ?? header.crs ?? null;
+        if (!crs) {
+            console.warn('[SolverExport] Kein CRS in Terrain-Metadaten gefunden. Export ohne CRS-Angabe.');
+        }
+
         const terrainMeta = {
             ncols:     header.ncols,
             nrows:     header.nrows,
@@ -70,7 +75,7 @@ export function useHighEndSolverExport() {
             yllcorner: header.yllcorner ?? header.yll ?? 0,
             minZ:      terrain.minZ,
             maxZ:      terrain.maxZ,
-            crs:       'EPSG:25832', // TODO: aus Projekt-Metadaten lesen
+            ...(crs && { crs }),
         };
 
         // ── 2. Geo Entities ───────────────────────────────────────────────────

@@ -213,7 +213,6 @@
         :getMapping="getMapping"
         :getAreaRunoff="getAreaRunoff"
         :nodeResults="nodeResults"
-        :position="popoverPosition"
         @close="selectedElement = null"
         @update="updateElement"
         @save="$emit('save-element', $event)"
@@ -425,29 +424,10 @@ const textSizeMultiplier = ref(0.5);
 // Selection State
 const selectedElement = ref(null);
 
-const popoverPosition = ref(null);
-
 const selectElement = (element, type, event = null) => {
-  if (mode.value !== 'select' && isDragging.value) return; // Prevent selection  // Allow selection in these modes:
-  // 'view' (Hand): User expects to select on click, pan on drag
-  // 'select' (Arrow): Standard selection
-  // 'addEdge': Needs to select nodes to connect them
-  // 'pan': Default internal fall back
-  // 'delete': Needs to click elements to delete them
-  // Trigger 'select' events even in delete mode, so parent can handle the deletion
+  if (mode.value !== 'select' && isDragging.value) return;
   const allowableModes = ['view', 'select', 'addEdge', 'pan', 'delete'];
   if (!allowableModes.includes(mode.value)) return;
-  
-  if (event && container.value) {
-      const rect = container.value.getBoundingClientRect();
-      popoverPosition.value = {
-          x: event.clientX - rect.left,
-          y: event.clientY - rect.top
-      };
-      
-      // Ensure we don't go offscreen-ish (basic guard)
-      // ElementInfo handles centering above properties
-  }
   
   selectedElement.value = element;
   

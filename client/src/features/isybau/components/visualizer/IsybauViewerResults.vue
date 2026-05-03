@@ -88,6 +88,18 @@
           </template>
         </g>
 
+        <!-- Selection ring for selected node (rendered below nodes layer) -->
+        <circle
+          v-if="selectedElement && nodes.has(selectedElement?.id)"
+          :cx="selectedElement.x - bounds.minX"
+          :cy="bounds.maxY - selectedElement.y"
+          :r="selectedElement.diameter > 0
+            ? selectedElement.diameter / 2 + (2.5 * baseUnit / scale)
+            : (3.5 * baseUnit / scale)"
+          class="selection-ring"
+          vector-effect="non-scaling-stroke"
+        />
+
         <!-- Nodes -->
         <g class="nodes">
           <template v-for="[id, node] in nodes" :key="id">
@@ -177,173 +189,30 @@
         @reset-view="resetView"
     />
 
-    <!-- Modern Info Window -->
-    <Transition name="slide-up">
-      <div v-if="selectedElement" class="info-window">
-        <div class="info-header">
-          <h3>{{ selectedElement.type === 'Haltung' || selectedElement.type === 'Leitung' ? 'Kante' : 'Knoten' }}</h3>
-          <button @click="selectedElement = null" class="close-btn">×</button>
-        </div>
-        <div class="info-content">
-          <div class="info-row">
-            <span class="label">ID:</span>
-            <span class="value">{{ selectedElement.id }}</span>
-          </div>
-          <div class="info-row">
-            <span class="label">Typ:</span>
-            <span class="value">{{ selectedElement.type }}</span>
-          </div>
-          
-          <!-- Edge Specifics -->
-          <template v-if="selectedElement.from">
-            <div class="info-row">
-              <span class="label">Status:</span>
-              <span class="value">{{ getMapping('Status', selectedElement.status) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Profil:</span>
-              <span class="value">{{ getMapping('Profilart', selectedElement.profile?.type) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Maße:</span>
-              <span class="value">{{ (selectedElement.profile?.height * 1000).toFixed(0) }} / {{ (selectedElement.profile?.width * 1000).toFixed(0) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Material:</span>
-              <span class="value">{{ selectedElement.material || '-' }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Länge:</span>
-              <span class="value">{{ selectedElement.length?.toFixed(2) }} m</span>
-            </div>
-            
-            <!-- Hydraulic Results -->
-            <template v-if="hydraulics && hydraulics.get(selectedElement.id)">
-               <div class="separator"></div>
-               <div class="info-row">
-                <span class="label">Gefälle:</span>
-                <span class="value">{{ hydraulics.get(selectedElement.id).slope?.toFixed(2) }} %</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Kapazität ($Q_{voll}$):</span>
-                <span class="value">{{ hydraulics.get(selectedElement.id).capacity?.toFixed(1) }} l/s</span>
-              </div>
-               <div class="info-row">
-                <span class="label">Geschw. ($v_{voll}$):</span>
-                <span class="value">{{ hydraulics.get(selectedElement.id).velocity?.toFixed(2) }} m/s</span>
-              </div>
-              <div class="info-row" v-if="hydraulics.get(selectedElement.id).maxFlow !== undefined">
-                <span class="label">Max. Abfluss:</span>
-                <span class="value">{{ hydraulics.get(selectedElement.id).maxFlow?.toFixed(1) }} l/s</span>
-              </div>
-              <div class="info-row" v-if="hydraulics.get(selectedElement.id).utilization !== undefined">
-                <span class="label">Auslastung:</span>
-                <span class="value" :style="{ color: hydraulics.get(selectedElement.id).utilization > 1 ? 'red' : 'inherit' }">
-                  {{ (hydraulics.get(selectedElement.id).utilization).toFixed(0) }} %
-                </span>
-              </div>
-              <div class="separator"></div>
-              <button @click="$emit('show-details', selectedElement)" class="primary-btn btn-sm full-width">
-                📊 Details anzeigen
-              </button>
-            </template>
-          </template>
+    <!-- Color Legend -->
+    <div class="color-legend">
+      <div class="legend-row"><span class="dot dot-red"></span> Überflutet / h/hvoll &gt; 90%</div>
+      <div class="legend-row"><span class="dot dot-orange"></span> Eingestaut / h/hvoll 75–90%</div>
+      <div class="legend-row"><span class="dot dot-gray"></span> OK</div>
+    </div>
 
-          <!-- Node Specifics -->
-          <template v-else-if="nodes.has(selectedElement.id)">
-            <div class="info-row">
-              <span class="label">Höhe (Z):</span>
-              <span class="value">{{ selectedElement.z?.toFixed(2) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Tiefe:</span>
-              <span class="value">{{ selectedElement.depth?.toFixed(2) }}</span>
-            </div>
-            
-             <!-- Node Hydraulic Results -->
-            <template v-if="nodeResults && nodeResults.get(selectedElement.id)">
-               <div class="separator"></div>
-               <div class="info-row">
-                <span class="label">Max. Tiefe:</span>
-                <span class="value">{{ nodeResults.get(selectedElement.id).maxDepth?.toFixed(2) }} m</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Max. Zufluss:</span>
-                <span class="value">{{ nodeResults.get(selectedElement.id).maxInflow?.toFixed(1) }} l/s</span>
-              </div>
-               <div class="info-row" v-if="nodeResults.get(selectedElement.id).pondedVolume > 0">
-                <span class="label" style="color: red;">Überstauvolumen:</span>
-                <span class="value" style="color: red; font-weight: bold;">
-                  {{ (nodeResults.get(selectedElement.id).pondedVolume * 1000).toFixed(1) }} l
-                </span>
-              </div>
-              <div class="info-row" v-if="nodeResults.get(selectedElement.id).overflow">
-                 <span class="label" style="color: red;">⚠ Status:</span>
-                 <span class="value" style="color: red; font-weight: bold;">Überstau</span>
-              </div>
-            </template>
-            <div class="separator"></div>
-            <button @click="$emit('show-details', selectedElement)" class="primary-btn btn-sm full-width">
-               📊 Details anzeigen
-            </button>
-          </template>
-          
-           <!-- Area Specifics -->
-          <template v-else-if="selectedElement.points">
-             <div class="info-row">
-              <span class="label">Flächenart:</span>
-              <span class="value">{{ getMapping('Flaechenart', selectedElement.type) }}</span>
-            </div>
-             <div class="info-row" v-if="selectedElement.function">
-              <span class="label">Funktion:</span>
-              <span class="value">{{ getMapping('Flaechenfunktion', selectedElement.function) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Größe:</span>
-              <span class="value">{{ selectedElement.size?.toFixed(4) }} ha</span>
-            </div>
-            <div class="info-row" v-if="selectedElement.runoffCoeff !== undefined">
-              <span class="label">Abflussbeiwert:</span>
-              <span class="value">{{ selectedElement.runoffCoeff }}</span>
-            </div>
-            
-            <!-- Runoff Results -->
-            <template v-if="getAreaRunoff(selectedElement.id)">
-              <div class="separator"></div>
-              <div class="info-row">
-                <span class="label">Max. Volumenstrom:</span>
-                <span class="value">{{ getAreaRunoff(selectedElement.id).maxFlow.toFixed(2) }} l/s</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Volumen:</span>
-                <span class="value">{{ getAreaRunoff(selectedElement.id).totalVolume.toFixed(2) }} m³</span>
-              </div>
-              <div class="info-row">
-                <span class="label">Fließzeit ($t_c$):</span>
-                <span class="value">{{ getAreaRunoff(selectedElement.id).tc.toFixed(2) }} min</span>
-              </div>
-              <div class="separator"></div>
-              <button @click="$emit('show-details', selectedElement)" class="primary-btn btn-sm full-width">
-                📊 Details anzeigen
-              </button>
-            </template>
-          </template>
-          
-          <!-- Raw Data Toggle -->
-          <details class="raw-details">
-            <summary>Rohdaten</summary>
-            <pre>{{ JSON.stringify(selectedElement, null, 2) }}</pre>
-          </details>
-        </div>
-      </div>
-    </Transition>
+    <!-- Info Panel -->
+    <ElementInfoResult
+      :selectedElement="selectedElement"
+      :nodeResults="nodeResults"
+      :hydraulics="hydraulics"
+      :runoffDetails="runoffDetails"
+      :nodes="nodes"
+      @close="selectedElement = null"
+      @show-details="$emit('show-details', $event)"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount, reactive } from 'vue';
-import { getMapping } from '../../utils/mappings.js';
 import ViewerControls from './ViewerControls.vue';
+import ElementInfoResult from './ElementInfoResult.vue';
 
 const props = defineProps({
   nodes: {
@@ -562,9 +431,10 @@ const getEdgeColor = (id) => {
 const getNodeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
   if (!props.nodeResults || !props.nodeResults.has(id)) return null;
-  
+
   const res = props.nodeResults.get(id);
-  if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return '#e74c3c'; // Red
+  if (res.overflow || (res.floodingVolume && res.floodingVolume > 0)) return '#e74c3c'; // Rot: Überflutung
+  if (res.surcharged) return '#f39c12'; // Orange: Eingestaut
   return null;
 };
 
@@ -978,151 +848,66 @@ svg {
   transform: scale(1.05);
 }
 
-/* Info Window */
-.info-window {
+
+/* ── Selection ring pulse (SVG node highlight) ── */
+@keyframes ring-pulse {
+  0%   { stroke-opacity: 0.9; stroke-width: 2px; }
+  50%  { stroke-opacity: 0.25; stroke-width: 5px; }
+  100% { stroke-opacity: 0.9; stroke-width: 2px; }
+}
+
+.selection-ring {
+  fill: none;
+  stroke: #e74c3c;
+  pointer-events: none;
+  animation: ring-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── Selected edge pulse ── */
+@keyframes edge-pulse {
+  0%, 100% { stroke-width: 4px; }
+  50%       { stroke-width: 7px; }
+}
+
+.edge-line.selected {
+  stroke: #e74c3c;
+  animation: edge-pulse 1.4s ease-in-out infinite;
+}
+
+
+/* Color Legend */
+.color-legend {
   position: absolute;
-  top: 1rem;
+  bottom: 1rem;
   right: 1rem;
-  width: 300px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  overflow: hidden;
-  z-index: 20;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.78rem;
+  color: #444;
+  z-index: 10;
+  pointer-events: none;
 }
 
-.info-header {
-  background: linear-gradient(135deg, #2c3e50, #34495e);
-  color: white;
-  padding: 1rem;
+.legend-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
 }
 
-.info-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
+.legend-row:last-child { margin-bottom: 0; }
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  opacity: 0.8;
-}
-
-.close-btn:hover {
-  opacity: 1;
-}
-
-.info-content {
-  padding: 1rem;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-  font-size: 0.95rem;
-}
-
-.label {
-  color: #7f8c8d;
-  font-weight: 500;
-}
-
-.value {
-  text-align: right;
-}
-
-.edit-input {
-  width: 80px;
-  text-align: right;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 2px 4px;
-  font-size: 0.9rem;
-}
-
-.edit-input:focus {
-  border-color: #3498db;
-  outline: none;
-}
-
-.separator {
-  height: 1px;
-  background: #eee;
-  margin: 0.5rem 0;
-}
-
-.raw-details {
-  margin-top: 1rem;
-  border-top: 1px solid #eee;
-  padding-top: 0.5rem;
-}
-
-.raw-details summary {
-  cursor: pointer;
-  color: #3498db;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
-}
-
-.raw-details pre {
-  background: #f8f9fa;
-  padding: 0.5rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  overflow-x: auto;
-  max-height: 200px;
-}
-
-/* Transitions */
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: all 0.3s ease;
-}
-
-.slide-up-enter-from,
-.slide-up-leave-to {
-  transform: translateY(20px);
-  opacity: 0;
-}
-
-.primary-btn {
-  background: #3498db;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.primary-btn:hover {
-  background: #2980b9;
-}
-
-.secondary-btn {
-  background: #f8f9fa;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-sm {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.85rem;
-}
-
-.full-width {
-  width: 100%;
-}
+.dot-red    { background: #e74c3c; }
+.dot-orange { background: #f39c12; }
+.dot-gray   { background: #666; }
 </style>

@@ -57,7 +57,7 @@
             <div class="kpi-grid">
                 <div class="kpi-card">
                     <div class="label">Niederschlag (Total)</div>
-                    <div class="value">{{ formatVolume((systemStats?.runoff?.precip || 0) * 10000) }} m³</div>
+                    <div class="value">{{ formatVolume((systemStats?.runoff?.precip || 0) * 1000) }} m³</div>
                 </div>
                  <div class="kpi-card">
                     <div class="label">Zufluss (Trocken/Regen)</div>
@@ -97,7 +97,7 @@
                         <tr><td>Regenwetterzufluss:</td><td>{{ formatVolume((systemStats.flow?.wetWeatherInflow||0)*1000) }} m³</td></tr>
                         <tr><td>Grundwasserzufluss:</td><td>{{ formatVolume((systemStats.flow?.groundwaterInflow||0)*1000) }} m³</td></tr>
                         <tr><td>Überflutungsverlust:</td><td>{{ formatVolume((systemStats.flow?.floodingLoss||0)*1000) }} m³</td></tr>
-                        <tr><td>Interner Abfluss:</td><td>{{ formatVolume((systemStats.flow?.externalOutflow||0)*1000) }} m³</td></tr>
+                        <tr><td>Auslaufabfluss:</td><td>{{ formatVolume((systemStats.flow?.externalOutflow||0)*1000) }} m³</td></tr>
                         <tr class="highlight-row"><td><strong>Kontinuitätsfehler:</strong></td><td><strong :class="{'text-red': Math.abs(systemStats.flow?.error) > 2}">{{ systemStats.flow?.error?.toFixed(2) }} %</strong></td></tr>
                     </table>
                 </div>
@@ -190,13 +190,13 @@
             <div class="table-scroll">
                 <table class="data-table sticky-header">
                     <thead>
-                        <tr @click="sortEdges">
+                        <tr>
                             <th @click="sortBy='id'">ID</th>
                             <th>Typ</th>
                             <th @click="sortBy='maxFlow'" title="Max. Durchfluss (Betrag)">Max. Durchfluss (l/s)</th>
                             <th @click="sortBy='capacity'">Kapazität (l/s)</th>
-                            <th @click="sortBy='ratio'" title="Max. Auslastungsgrad (Q/Qvoll)">Max. Auslastung</th>
-                            <th @click="sortBy='depth'" title="Max. Füllungsgrad (h/hvoll)">Max. Füllung</th>
+                            <th @click="sortBy='ratio'" title="Max. Auslastungsgrad">Max. Q/Qvoll</th>
+                            <th @click="sortBy='depth'" title="Max. Füllungsgrad">Max. h/hvoll</th>
                             <th @click="sortBy='maxVelocity'" title="Max. Fließgeschwindigkeit (Betrag)">Max. v (m/s)</th>
                             <th>t_max</th>
                             <th>Status</th>
@@ -206,7 +206,7 @@
                     <tbody>
                         <tr v-for="edge in filteredEdges" :key="edge.id" :class="{'row-danger': (edge.depthRatio || 0) > 0.9, 'row-warning': (edge.depthRatio || 0) > 0.7 && (edge.depthRatio || 0) <= 0.9}">
                             <td>{{ edge.id }}</td>
-                            <td>{{ edge.type === 'Conduit' ? 'Kanal' : edge.type }}</td>
+                            <td>{{ edgeTypeLabel(edge.type) }}</td>
                             <td>{{ edge.maxFlow?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</td>
                             <td>{{ edge.capacity?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</td>
                             <td>
@@ -248,8 +248,8 @@
                             <div class="col">
                                 <strong>Kapazität & Auslastung</strong>
                                 <div>Kapazität: {{ edgeResults.get(selectedEdgeId)?.capacity?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }} l/s</div>
-                                <div>Max. Auslastungsgrad (Q/Qvoll): {{ edgeResults.get(selectedEdgeId)?.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
-                                <div>Max. Füllungsgrad (h/hvoll): {{ (edgeResults.get(selectedEdgeId)?.depthRatio)?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
+                                <div>Max. Q/Qvoll: {{ edgeResults.get(selectedEdgeId)?.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
+                                <div>Max. h/hvoll: {{ (edgeResults.get(selectedEdgeId)?.depthRatio)?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
                                 <div v-if="(edgeResults.get(selectedEdgeId)?.flowCapacityRatio || 0) > 1.0" class="text-red">
                                     ⚠️ System unter Druck
                                 </div>
@@ -290,7 +290,7 @@
                             <th>Typ</th>
                             <th>Sohlhöhe (m)</th>
                             <th title="Max. Wassertiefe">Max. Wassertiefe (m)</th>
-                            <th title="Max. Einstautiefe (gemeldet)">Max. Einstau (m)</th>
+                            <th title="Max. Wasserspiegelhöhe (absolut, m ü. NHN)">Max. HGL (m ü. NHN)</th>
                             <th title="Max. Gespeichertes Volumen">Max. Speichervol. (m³)</th>
                             <th title="Max. Füllgrad des Speichers">Füllgrad (%)</th>
                             <th title="Gesamtvolumen der Überflutung">Überflutungsvolumen (m³)</th>
@@ -300,12 +300,16 @@
                         </tr>
                     </thead>
                     <tbody>
-                         <tr v-for="node in filteredNodes" :key="node.id" :class="{'row-danger': (node.floodingVolume || 0) > 0.001}">
+                         <tr v-for="node in filteredNodes" :key="node.id"
+                             :class="{
+                               'row-danger': (node.floodingVolume || 0) > 0.001,
+                               'row-warning': node.surcharged && !((node.floodingVolume || 0) > 0.001)
+                             }">
                             <td>{{ node.id }}</td>
-                            <td>{{ node.type === 'Junction' ? 'Schacht' : node.type }}</td>
-                             <td>{{ nodes.get(node.id)?.z?.toFixed(2) }}</td>
-                            <td>{{ node.maxDepth?.toFixed(2) }}</td>
-                            <td>{{ node.reportedMaxDepth?.toFixed(2) || '-' }}</td> 
+                            <td>{{ nodeTypeLabel(node.type) }}</td>
+                            <td>{{ node.z?.toFixed(2) ?? '-' }}</td>
+                            <td>{{ node.maxDepth?.toFixed(2) ?? '-' }}</td>
+                            <td>{{ node.maxHGL?.toFixed(2) ?? '-' }}</td>
                             <td>{{ systemStats?.storageSummary && systemStats.storageSummary.find(s => s.id === node.id) ? systemStats.storageSummary.find(s => s.id === node.id).maxVol?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-' }}</td>
                             <td>{{ systemStats?.storageSummary && systemStats.storageSummary.find(s => s.id === node.id) ? systemStats.storageSummary.find(s => s.id === node.id).maxPcntFull?.toFixed(1) : '-' }}</td>
                             <td>{{ (node.floodingVolume || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
@@ -327,7 +331,7 @@
             <div v-if="selectedNodeId" class="detail-overlay">
                 <div class="detail-card">
                     <div class="detail-header">
-                        <h3>Schacht {{ selectedNodeId }}</h3>
+                        <h3>{{ nodeTypeLabel(safeGet(props.nodeResults, selectedNodeId)?.type) }} {{ selectedNodeId }}</h3>
                         <button @click="selectedNodeId = null">✕</button>
                     </div>
                     <div class="detail-body">
@@ -563,6 +567,21 @@ const safeGet = (source, key) => {
     return (source instanceof Map) ? source.get(key) : source[key];
 };
 
+const NODE_TYPE_LABELS = {
+    'JUNCTION': 'Schacht', 'Junction': 'Schacht',
+    'OUTFALL': 'Auslauf', 'Outfall': 'Auslauf',
+    'STORAGE': 'Speicher', 'Storage': 'Speicher',
+    'DIVIDER': 'Teiler', 'Divider': 'Teiler'
+};
+const EDGE_TYPE_LABELS = {
+    'CONDUIT': 'Kanal', 'Conduit': 'Kanal',
+    'PUMP': 'Pumpe', 'Pump': 'Pumpe',
+    'WEIR': 'Wehr', 'Weir': 'Wehr',
+    'ORIFICE': 'Blende', 'Orifice': 'Blende'
+};
+const nodeTypeLabel = (type) => NODE_TYPE_LABELS[type] || type || '-';
+const edgeTypeLabel = (type) => EDGE_TYPE_LABELS[type] || type || '-';
+
 // 1. Edges
 const filteredEdges = computed(() => {
      if (!props.edges || !props.edgeResults) return [];
@@ -584,6 +603,8 @@ const filteredEdges = computed(() => {
          if (sortBy.value === 'maxFlow') return (b.maxFlow || 0) - (a.maxFlow || 0);
          if (sortBy.value === 'capacity') return (b.capacity || 0) - (a.capacity || 0);
          if (sortBy.value === 'ratio') return (b.flowCapacityRatio || 0) - (a.flowCapacityRatio || 0);
+         if (sortBy.value === 'depth') return (b.depthRatio || 0) - (a.depthRatio || 0);
+         if (sortBy.value === 'maxVelocity') return (b.maxVelocity || 0) - (a.maxVelocity || 0);
          return a.id.localeCompare(b.id);
      });
      

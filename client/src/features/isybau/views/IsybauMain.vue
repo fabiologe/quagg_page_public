@@ -59,8 +59,8 @@
 
         <!-- Results View -->
         <div v-if="viewMode === 'result'" class="view-container">
-            <IsybauViewer 
-                :nodes="store.nodes" 
+            <IsybauViewer
+                :nodes="store.nodes"
                 :edges="store.edges"
                 :areas="store.areaArray"
                 :node-array="store.nodeArray"
@@ -71,9 +71,10 @@
                 :focusTarget="focusedElementId"
                 @show-details="handleShowDetails"
             />
-                @show-details="handleShowDetails"
-            />
         </div>
+
+        <!-- Message Ticker -->
+        <MessageTicker />
     </div>
 
     <!-- Global Modals -->
@@ -183,6 +184,7 @@ import SimulationResultsModal from '../components/modals/SimulationResultsModal.
 import SimulationDebugModal from '../components/modals/SimulationDebugModal.vue';
 import ElementPropertiesModal from '../components/modals/ElementPropertiesModal.vue';
 import IsybauHelpModal from '../components/modals/IsybauHelpModal.vue';
+import MessageTicker from '../components/ui/MessageTicker.vue';
 
 const store = useIsybauStore();
 const viewMode = ref('2d');

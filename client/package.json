@@ -41,7 +41,8 @@
         "vue-chartjs": "^5.3.3",
         "vue-pdf-embed": "^2.1.3",
         "vue-router": "^4.2.5",
-        "web-ifc": "^0.0.76"
+        "web-ifc": "^0.0.76",
+        "xlsx": "^0.18.5"
     },
     "devDependencies": {
         "@vitejs/plugin-vue": "^5.0.0",

@@ -7,13 +7,6 @@
           </div>
           
           <div class="header-actions">
-              <!-- Side View logic might conflict with draggable. Disable split for now or adapt? 
-                   User wanted "draggable". Split screen usually implies docked.
-                   Let's keep the button but make it effective only if Draggable allows? 
-                   actually draggable is superior. -->
-              <!-- <button class="icon-btn" @click="toggleSideView" title="Split Screen / Side Panel">
-                  {{ isSideView ? '⤢' : '◫' }}
-              </button> -->
               <button class="close-btn" @click="close">×</button>
           </div>
         </div>
@@ -172,8 +165,7 @@
                     :key="node.id" 
                     class="clickable-row"
                     :class="{ 'selected': selectedIds.includes(node.id) }"
-                    @click="handleRowClick(node, $event)"
-                  >
+                                  >
                     <td class="col-checkbox sticky-left-1" @click.stop>
                         <input type="checkbox" :value="node.id" v-model="selectedIds">
                     </td>
@@ -199,7 +191,7 @@
                       <input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.z >= node.coverZ }">
                     </td>
                     <td class="text-center">
-                      <input type="checkbox" :checked="node.canOverflow === false" @change="updateNodeOverflow(node, !$event.target.checked)" @click.stop>
+                      <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
                     <td>
                          <span v-if="node.z >= node.coverZ" class="error-badge" title="Sohle muss tiefer als Deckel liegen">Sohle >= Deckel</span>
@@ -230,8 +222,7 @@
                     :key="node.id"
                     class="clickable-row"
                     :class="{ 'selected': selectedIds.includes(node.id) }"
-                    @click="handleRowClick(node, $event)"
-                  >
+                                  >
                     <td class="col-checkbox sticky-left-1" @click.stop>
                         <input type="checkbox" :value="node.id" v-model="selectedIds">
                     </td>
@@ -385,7 +376,7 @@
                     <td><input type="number" v-model.number="node.coverZ" class="small-input" @click.stop></td>
                     <td><input type="number" v-model.number="node.z" class="small-input" @click.stop></td>
                     <td class="text-center">
-                      <input type="checkbox" :checked="node.canOverflow === false" @change="updateNodeOverflow(node, !$event.target.checked)" @click.stop>
+                      <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
                     <td></td>
                   </tr>
@@ -432,8 +423,7 @@
                     :key="edge.id"
                     class="clickable-row"
                     :class="{ 'selected': selectedIds.includes(edge.id) }"
-                    @click="handleRowClick(edge, $event)"
-                  >
+                                  >
                    <td class="col-checkbox sticky-left-1" @click.stop>
                         <input type="checkbox" :value="edge.id" v-model="selectedIds">
                     </td>
@@ -490,7 +480,7 @@
                     </tr>
                   </thead>
                    <tbody>
-                    <tr v-for="area in filteredAreas" :key="area.id" class="clickable-row" :class="{ 'selected': selectedIds.includes(area.id) }" @click="handleRowClick(area, $event)">
+                    <tr v-for="area in filteredAreas" :key="area.id" class="clickable-row" :class="{ 'selected': selectedIds.includes(area.id) }" >
                         <td class="col-checkbox sticky-left-1" @click.stop>
                             <input type="checkbox" :value="area.id" v-model="selectedIds">
                         </td>
@@ -527,6 +517,9 @@
 
         <div class="modal-footer">
           <button class="secondary-btn" @click="close">Abbrechen</button>
+          <button class="export-btn" @click="exportXlsx" title="Alle Tabs als Excel-Datei exportieren">
+            ⬇ XLSX Export
+          </button>
           <button class="primary-btn" @click="apply">Übernehmen</button>
         </div>
   </DraggableModal>
@@ -537,6 +530,7 @@ import { useIsybauStore } from '../../store/index.js';
 import { ref, watch, computed } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion } from '../../utils/mappings.js';
+import * as XLSX from 'xlsx';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -547,9 +541,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'apply', 'select-element']);
 
 // === UI State ===
-const isSideView = ref(false);
 const showBulkEdit = ref(false);
-const toggleSideView = () => isSideView.value = !isSideView.value;
 
 const activeTab = ref('nodes');
 const tabs = [
@@ -658,13 +650,6 @@ const locate = (id) => {
     emit('select-element', { id: id, type: 'any' }); // 'any' for viewer to figure out, or specific
 };
 
-const handleRowClick = (item, e) => {
-    // If multiselect modifier (Shift/Ctrl), handle logic? 
-    // Simplify: Click selects/deselects if not clicking input
-    // But we have a specific checkbox.
-    // Let's just highlight row or maybe select input?
-    // Emitting locate on click might be annoying if trying to edit.
-};
 
 const handleTypeChange = (node, previousCategory) => {
     // Logic: If I change a Standard Node to Bauwerk, it moves to the other tab!
@@ -784,10 +769,11 @@ watch(() => props.isOpen, (newVal) => {
     // Init Nodes
     nodes.value = Array.from(props.network.nodes.values()).map(n => ({
       ...n,
-      type: n.type === 'Schacht' ? 'Standard' : (n.type === 'Bauwerk' ? 'Bauwerk' : (typeof n.type === 'number' ? n.type : 'Standard')), 
+      type: n.type === 'Schacht' ? 'Standard' : (n.type === 'Bauwerk' ? 'Bauwerk' : (typeof n.type === 'number' ? n.type : 'Standard')),
       constantInflow: n.constantInflow || 0,
       coverZ: n.coverZ !== undefined ? n.coverZ : (n.z + (n.depth || 0)),
-      z: n.z !== undefined ? n.z : 0
+      z: n.z !== undefined ? n.z : 0,
+      canOverflow: n.canOverflow !== undefined ? n.canOverflow : true
     }));
 
     // Init Edges
@@ -828,7 +814,6 @@ watch(() => props.isOpen, (newVal) => {
 }, { immediate: true });
 
 
-const updateNodeOverflow = (node, checked) => { node.canOverflow = checked; };
 const updateRoughness = (edge) => { edge.roughness = getRoughness(edge.material); };
 const onProfileChange = (edge) => {
     if (edge.profile.type === 8) { edge.material = 'Erde'; edge.roughness = 25; }
@@ -837,6 +822,97 @@ const onProfileChange = (edge) => {
 const calculateSlope = (edge) => {
      if (!edge.length) return 0;
      return (((edge.z1 - edge.z2) / edge.length) * 100).toFixed(2);
+};
+
+const exportXlsx = () => {
+    const wb = XLSX.utils.book_new();
+
+    // --- Schächte ---
+    const nodeHeaders = ['ID', 'Typ', 'Zufluss (l/s)', 'Deckel (m)', 'Sohle (m)', 'Tiefe (m)', 'Druckdicht', 'Status'];
+    const nodeRows = nodes.value
+        .filter(n => n.type === 'Standard')
+        .map(n => [
+            n.id,
+            n.type,
+            n.constantInflow ?? 0,
+            n.coverZ ?? '',
+            n.z ?? '',
+            n.depth ?? '',
+            n.canOverflow === false ? 'Ja' : 'Nein',
+            n.status ?? 0
+        ]);
+    const wsNodes = XLSX.utils.aoa_to_sheet([nodeHeaders, ...nodeRows]);
+    XLSX.utils.book_append_sheet(wb, wsNodes, 'Schächte');
+
+    // --- Bauwerke ---
+    const structHeaders = ['ID', 'Typ', 'Deckel (m)', 'Sohle (m)', 'Druckdicht', 'Volumen (m³)', 'Max. Tiefe (m)', 'Zufluss (l/s)', 'Wehrhöhe (m)', 'Max. Abfluss (l/s)'];
+    const structRows = nodes.value
+        .filter(n => n.type !== 'Standard')
+        .map(n => [
+            n.id,
+            typeof n.type === 'number' ? (Bauwerkstyp[n.type] ?? n.type) : n.type,
+            n.coverZ ?? '',
+            n.z ?? '',
+            n.canOverflow === false ? 'Ja' : 'Nein',
+            n.volume ?? '',
+            n.maxDepth ?? '',
+            n.constantInflow ?? '',
+            n.weirHeight ?? '',
+            n.maxOutflow ?? ''
+        ]);
+    const wsStructures = XLSX.utils.aoa_to_sheet([structHeaders, ...structRows]);
+    XLSX.utils.book_append_sheet(wb, wsStructures, 'Bauwerke');
+
+    // --- Haltungen ---
+    const edgeHeaders = ['ID', 'Von', 'Nach', 'Material', 'Rauheit (kSt)', 'Profil', 'Länge (m)', 'Neigung (%)', 'Höhe (mm)', 'Breite (mm)', 'Z1 (m)', 'Z2 (m)'];
+    const edgeRows = edges.value.map(e => [
+        e.id,
+        e.from ?? e.fromNodeId ?? '',
+        e.to ?? e.toNodeId ?? '',
+        e.material ?? '',
+        e.roughness ?? '',
+        e.profile ? (Profilart[e.profile.type] ?? e.profile.type) : '',
+        e.length != null ? parseFloat(e.length.toFixed(2)) : '',
+        e.length > 0 ? parseFloat(((e.z1 - e.z2) / e.length * 100).toFixed(2)) : '',
+        e.profile?.height ?? '',
+        e.profile?.width ?? '',
+        e.z1 ?? '',
+        e.z2 ?? ''
+    ]);
+    const wsEdges = XLSX.utils.aoa_to_sheet([edgeHeaders, ...edgeRows]);
+    XLSX.utils.book_append_sheet(wb, wsEdges, 'Haltungen');
+
+    // --- Flächen ---
+    const areaHeaders = ['ID', 'Fläche (ha)', 'Versiegelungsgrad', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)'];
+    const areaRows = areas.value.map(a => [
+        a.id,
+        a.size != null ? parseFloat(a.size.toFixed(4)) : '',
+        a.runoffCoeff ?? '',
+        a.function != null ? (Flaechenfunktion[a.function] ?? a.function) : '',
+        a.nodeId ?? '',
+        a.nodeId2 ?? '',
+        a.nodeId2 ? (a.splitRatio ?? 50) : ''
+    ]);
+    const wsAreas = XLSX.utils.aoa_to_sheet([areaHeaders, ...areaRows]);
+    XLSX.utils.book_append_sheet(wb, wsAreas, 'Flächen');
+
+    // Auto column widths
+    [wsNodes, wsStructures, wsEdges, wsAreas].forEach(ws => {
+        const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1');
+        const colWidths = [];
+        for (let C = range.s.c; C <= range.e.c; C++) {
+            let maxLen = 10;
+            for (let R = range.s.r; R <= range.e.r; R++) {
+                const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+                if (cell && cell.v != null) maxLen = Math.max(maxLen, String(cell.v).length + 2);
+            }
+            colWidths.push({ wch: Math.min(maxLen, 40) });
+        }
+        ws['!cols'] = colWidths;
+    });
+
+    const filename = `isybau_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
 };
 
 const close = () => { emit('close'); };
@@ -927,7 +1003,9 @@ const apply = () => {
 .bulk-select, .bulk-input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; }
 .bulk-buttons { display: flex; gap: 1rem; justify-content: flex-end; }
 
-.modal-footer { padding: 1rem; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 1rem; }
+.modal-footer { padding: 1rem; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 1rem; align-items: center; }
+.export-btn { background: white; border: 1px solid #27ae60; color: #27ae60; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.15s, color 0.15s; }
+.export-btn:hover { background: #27ae60; color: white; }
 .primary-btn { background: #3498db; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
 .secondary-btn { background: white; border: 1px solid #ddd; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
 .danger-btn { background: #e74c3c; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }

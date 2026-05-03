@@ -257,36 +257,19 @@ self.onmessage = async (e) => {
                 if (rawCulverts.length > 0 && dmgHeader) {
                     cellArea = dmgHeader.cellsize * dmgHeader.cellsize;
 
-                    // Geländehöhe aus dem DGM-Grid (Float32Array) lesen.
-                    // Das gridData-Array liegt bereits im scenarioData-Payload.
-                    // LISFLOOD und get1DIndex nutzen dasselbe top-down-Layout
-                    // (row 0 = Norden) → direkter Index-Zugriff ohne Umrechnung.
+                    // Zwei getrennte Koordinatensysteme:
+                    //   get1DIndex()  → TOP-DOWN  (row 0 = Norden) für LISFLOOD Arrptr->H
+                    //   getDemIndex() → BOTTOM-UP (row 0 = Süden)  für Vue gridData
                     const dem = payload.scenarioData?.grid?.gridData ?? null;
 
-                    const yTop = dmgHeader.yllcorner + (dmgHeader.nrows * dmgHeader.cellsize);
-
-                    const getBottomUpIndex = (x, y, header) => {
-                        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
-                        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
-                        const { cellsize, nrows, ncols } = header;
-                        const col = Math.max(0, Math.min(ncols - 1, Math.floor((x - xll) / cellsize)));
-                        const row = Math.max(0, Math.min(nrows - 1, Math.floor((y - yll) / cellsize)));
-                        return row * ncols + col;
-                    };
-
                     activeCulverts = rawCulverts.map((culvert, i) => {
-                        // Top-Down LISFLOOD Arrays (Arrptr->H)
-                        const inCol = Math.max(0, Math.min(dmgHeader.ncols - 1, Math.floor((culvert.inX - dmgHeader.xllcorner) / dmgHeader.cellsize)));
-                        const inRow = Math.max(0, Math.min(dmgHeader.nrows - 1, Math.floor((yTop - culvert.inY) / dmgHeader.cellsize)));
-                        const inIndex = inRow * dmgHeader.ncols + inCol;
+                        // LISFLOOD-Index (top-down) für _bmi_get_water_depth / _bmi_add_water
+                        const inIndex  = get1DIndex(culvert.inX,  culvert.inY,  dmgHeader);
+                        const outIndex = get1DIndex(culvert.outX, culvert.outY, dmgHeader);
 
-                        const outCol = Math.max(0, Math.min(dmgHeader.ncols - 1, Math.floor((culvert.outX - dmgHeader.xllcorner) / dmgHeader.cellsize)));
-                        const outRow = Math.max(0, Math.min(dmgHeader.nrows - 1, Math.floor((yTop - culvert.outY) / dmgHeader.cellsize)));
-                        const outIndex = outRow * dmgHeader.ncols + outCol;
-
-                        // Bottom-Up Array (Vue gridData)
-                        const demInIdx = getBottomUpIndex(culvert.inX,  culvert.inY,  dmgHeader);
-                        const demOutIdx = getBottomUpIndex(culvert.outX, culvert.outY, dmgHeader);
+                        // gridData-Index (bottom-up) für Geländehöhe aus Vue-Store
+                        const demInIdx  = getDemIndex(culvert.inX,  culvert.inY,  dmgHeader);
+                        const demOutIdx = getDemIndex(culvert.outX, culvert.outY, dmgHeader);
 
                         // Geländehöhe [mNN] — NODATA (-9999) → 0 als Fallback
                         const zIn  = (dem && dem[demInIdx]  > -9000) ? dem[demInIdx]  : 0;
@@ -524,34 +507,31 @@ function collectAndSendResults() {
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 /**
- * Konvertiert Welt-Koordinaten (X/Y in Metern) in einen linearen 1D-Index
- * für das LISFLOOD-Raster (row-major, top-down).
- *
- * Spezifischer Fix: Muss zwingend Math.floor nutzen, um exakt mit
- * dem C++ LISFLOOD ESRI Reader und InputGenerator.js (der wx/wy mit 0.5 Offset nutzt)
- * synchron zu bleiben! Math.round verursacht bei Zell-Mitten (x.5) einen +1 Offset.
- *
- * @param {number} x  Welt-X (Rechtswert / Easting)
- * @param {number} y  Welt-Y (Hochwert  / Northing)
- * @param {object} header - DGM Header
- * @returns {number} Linearer Index: row * ncols + col
+ * Welt-Koordinaten → linearer Index für LISFLOOD Arrptr->H (TOP-DOWN, row 0 = Norden).
+ * Math.floor ist zwingend damit der Index mit dem C++ ESRI Reader übereinstimmt.
  */
 function get1DIndex(x, y, header) {
     const xll = header.xll !== undefined ? header.xll : header.xllcorner;
     const yll = header.yll !== undefined ? header.yll : header.yllcorner;
     const { cellsize, nrows, ncols } = header;
-
-    // Spalte (col): Muss floor sein!
-    const rawCol = Math.floor((x - xll) / cellsize);
-    
-    // Zeile (row): Zentrums-Distanz bottom-up, invertiert auf top-down
+    const rawCol    = Math.floor((x - xll) / cellsize);
     const row_world = Math.floor((y - yll) / cellsize);
-    const rawRow = (nrows - 1) - row_world;
-
-    // Clampen für Arraysicherheit
+    const rawRow    = (nrows - 1) - row_world; // bottom-up → top-down
     const col = Math.max(0, Math.min(ncols - 1, rawCol));
     const row = Math.max(0, Math.min(nrows - 1, rawRow));
+    return row * ncols + col;
+}
 
+/**
+ * Welt-Koordinaten → linearer Index für Vue gridData (BOTTOM-UP, row 0 = Süden).
+ * Gegenstück zu get1DIndex() — kein Invertieren nötig da gridData bottom-up gespeichert ist.
+ */
+function getDemIndex(x, y, header) {
+    const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+    const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+    const { cellsize, nrows, ncols } = header;
+    const col = Math.max(0, Math.min(ncols - 1, Math.floor((x - xll) / cellsize)));
+    const row = Math.max(0, Math.min(nrows - 1, Math.floor((y - yll) / cellsize)));
     return row * ncols + col;
 }
 

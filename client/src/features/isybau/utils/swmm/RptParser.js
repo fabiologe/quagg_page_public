@@ -392,9 +392,9 @@ export class RptParser {
             if (!isNaN(hoursFull)) {
                 if (!edges[id]) edges[id] = {};
                 edges[id].surcharge = {
-                    hoursFull,
-                    hoursUp,
-                    hoursDown,
+                    hoursFullBoth: hoursFull,
+                    hoursFullUp: hoursUp,
+                    hoursFullDown: hoursDown,
                     hoursAboveFull,
                     hoursCapLimited
                 };
@@ -561,7 +561,13 @@ export class RptParser {
         systemStats.flow.exfilLoss = extractStat("Exfiltration Loss", /Exfiltration Loss \.+ \s+([-\d\.]+)/);
         systemStats.flow.initialStoredVol = extractStat("Initial Stored Volume", /Initial Stored Volume \.+ \s+([-\d\.]+)/);
         systemStats.flow.finalStoredVol = extractStat("Final Stored Volume", /Final Stored Volume \.+ \s+([-\d\.]+)/);
-        systemStats.flow.error = extractStat("Continuity Error", /Continuity Error \(%\) \.+ \s+([-\d\.]+)/);
+        // Extract flow routing error from its own section to avoid matching the runoff error
+        const flowRoutingIdx = report.indexOf('Flow Routing Continuity');
+        const flowRoutingSection = flowRoutingIdx !== -1
+            ? report.slice(flowRoutingIdx, report.indexOf('\n  *', flowRoutingIdx + 1) >>> 0 || report.length)
+            : '';
+        const flowErrMatch = flowRoutingSection.match(/Continuity Error \(%\) \.+ \s+([-\d\.]+)/);
+        systemStats.flow.error = flowErrMatch ? parseFloat(flowErrMatch[1]) : 0;
 
         // Flow stats
         systemStats.flow.inflowVol = extractStat("External Inflow", /External Inflow \.+ \s+([-\d\.]+)/); // usually mass balance

@@ -2,6 +2,14 @@ import { Rasterizer, maskBuildingsAsNoData, burnModifications } from './Rasteriz
 import { Hydraulics } from './Hydraulics.js';
 import { BoundaryTools } from './BoundaryTools.js';
 
+// Suchradius (Zellen) beim NoData-Rescue: nächste gültige Zelle innerhalb dieser Distanz suchen.
+// 15 Zellen entspricht bei typischer 1m-Auflösung einem 15m-Suchbereich.
+const NODATA_SNAP_RADIUS = 15;
+
+// FREE-Outlet-Fallback: HFIX wird um diesen Betrag [m] unter Geländehöhe gesetzt,
+// damit Wasser bereits abfließt bevor die Zelle vollständig überstaut ist.
+const FREE_OUTLET_HFIX_OFFSET = 0.01;
+
 /**
  * InputGenerator.js
  * The Orchestrator Module.
@@ -370,7 +378,7 @@ export class InputGenerator {
                 if (gridData[idx] <= -9990) {
                     noDataCount++;
                     // findNearestValidCell uses gridData[r * ncols + c], so pass bottom-up row
-                    const valid = BoundaryTools.findNearestValidCell(col, row_world, gridData, header, 15, 1);
+                    const valid = BoundaryTools.findNearestValidCell(col, row_world, gridData, header, NODATA_SNAP_RADIUS, 1);
                     if (valid) {
                         if (noDataCount <= 3) console.warn(`[InputGenerator] NoData rescue: (${col},${row_world}) → (${valid.x},${valid.y})`);
                         finalCells.push(valid); // valid is {x: col, y: row} in bottom-up
@@ -470,12 +478,12 @@ export class InputGenerator {
                                 line = edgeLine.trimEnd();
                             } else {
                                 // Internal outlet OR user unchecked useNativeFree — HFIX at terrain level
-                                // acts as critical-depth weir. Use terrain_z - 0.01 m so water starts draining
+                                // acts as critical-depth weir. Use terrain_z - FREE_OUTLET_HFIX_OFFSET so water starts draining
                                 // before it completely inundates the outlet cell.
                                 const grid_idx = cell.y * header.ncols + cell.x;
                                 let z = (grid_idx >= 0 && grid_idx < gridData.length) ? gridData[grid_idx] : -9999;
                                 if (z <= -9990) z = 0; // NoData fallback
-                                const hfix = (z - 0.01).toFixed(4);
+                                const hfix = (z - FREE_OUTLET_HFIX_OFFSET).toFixed(4);
                                 line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix}`;
                                 console.log(`[InputGenerator] FREE→HFIX fallback at (${cell.x},${cell.y}): terrain=${z.toFixed(3)}, HFIX=${hfix}`);
                             }
@@ -624,12 +632,12 @@ export class InputGenerator {
                 const idx = row * header.ncols + col;
                 if (gridData[idx] <= -9990) { // NoData Found
                     // Attempt Rescue with Connectivity Check (min 1 neighbor)
-                    const valid = BoundaryTools.findNearestValidCell(col, row, gridData, header, 15, 1);
+                    const valid = BoundaryTools.findNearestValidCell(col, row, gridData, header, NODATA_SNAP_RADIUS, 1);
                     if (valid) {
                         finalCells.push(valid);
                     } else {
                         // Really invalid
-                        console.warn(`[InputGenerator] Cell ${col}, ${row} is NoData (Val: ${gridData[idx]}) and Rescue failed (Radius 15).`);
+                        console.warn(`[InputGenerator] Cell ${col}, ${row} is NoData (Val: ${gridData[idx]}) and Rescue failed (Radius ${NODATA_SNAP_RADIUS}).`);
                     }
                 } else {
                     // Valid
@@ -698,7 +706,7 @@ export class InputGenerator {
                     }
                 }
             } else {
-                console.warn(`[InputGenerator] Boundary ${b.id} yielded 0 valid cells after snapping (Radius 15).`);
+                console.warn(`[InputGenerator] Boundary ${b.id} yielded 0 valid cells after snapping (Radius ${NODATA_SNAP_RADIUS}).`);
             }
         }
 
