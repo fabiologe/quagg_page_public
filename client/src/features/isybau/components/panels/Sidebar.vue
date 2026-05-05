@@ -1,25 +1,54 @@
 <template>
   <div class="sidebar" :style="{ width: width + 'px' }">
-    <h2>ISYBAU Import</h2>
-    
-    <div class="upload-section">
-      <label for="file-upload" class="file-upload-label">
-        <span class="file-upload-btn">Datei auswählen</span>
-        <span class="file-upload-text">{{ store.metadata.fileName || 'Keine ausgewählt' }}</span>
-      </label>
-      <input 
-        id="file-upload"
-        type="file" 
-        accept=".xml" 
-        @change="handleFileUpload" 
-        class="file-upload-input"
-      />
+
+    <!-- Header -->
+    <div class="sidebar-header">
+      <span class="sidebar-logo-text">SaintV – 1D</span>
     </div>
 
+    <!-- Import + Projekte -->
+    <div class="upload-section">
+
+      <!-- XML Import -->
+      <label for="file-upload" class="file-btn">
+        <img class="px-icon" src="/saintv1d/icons/Content-Files-Notepad--Streamline-Pixel.svg" />
+        <div class="btn-text">
+          <span class="btn-label">XML importieren</span>
+          <span class="file-name">{{ store.metadata.fileName || 'Keine ausgewählt' }}</span>
+        </div>
+      </label>
+      <input
+        id="file-upload"
+        type="file"
+        accept=".xml"
+        @change="handleFileUpload"
+        class="file-upload-input"
+      />
+
+      <!-- Projekte -->
+      <button class="folder-btn" @click="$emit('open-project-manager')">
+        <img class="px-icon" src="/saintv1d/icons/Content-Files-Folder-Open--Streamline-Pixel.svg" />
+        <span>Projekte</span>
+      </button>
+
+    </div>
+
+    <!-- Slot (shown when data loaded) -->
     <div v-if="hasData" class="actions">
-      <!-- Slot for Simulation Controls or other panels -->
       <slot></slot>
     </div>
+
+    <!-- Deko-Video (nur leer) -->
+    <video
+      v-if="!hasData"
+      class="deko-anim"
+      src="/saintv1d/Saintv1d-anim.mp4"
+      autoplay
+      loop
+      muted
+      playsinline
+    />
+
   </div>
 </template>
 
@@ -29,97 +58,149 @@ import { useIsybauStore } from '../../store/index.js';
 import { parseIsybauXML } from '../../utils/xmlParser.js';
 
 const props = defineProps({
-  width: {
-    type: Number,
-    default: 300
-  }
+  width: { type: Number, default: 300 }
 });
+
+const emit = defineEmits(['open-project-manager']);
 
 const store = useIsybauStore();
 const hasData = computed(() => store.nodes.size > 0);
-const inspectionsCount = computed(() => store.inspections ? store.inspections.length : 0);
 
 const handleFileUpload = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-
   const text = await file.text();
   try {
-      const parsed = parseIsybauXML(text);
-      // Inject Metadata from file info
-      parsed.metadata.fileName = file.name;
-      
-      store.loadParsedData(parsed);
+    const parsed = parseIsybauXML(text);
+    parsed.metadata.fileName = file.name;
+    store.loadParsedData(parsed);
   } catch (e) {
-      console.error("Parse Error", e);
-      alert("Fehler beim Lesen der XML: " + e.message);
+    console.error('Parse Error', e);
+    alert('Fehler beim Lesen der XML: ' + e.message);
   }
 };
 </script>
 
 <style scoped>
 .sidebar {
-  padding: 1rem;
   background: #fff;
-  border-right: 1px solid #ddd;
-  overflow-y: auto;
+  border-right: 1px solid #aeadd2;
+  overflow: hidden;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0;
+  height: 100%;
+  box-sizing: border-box;
 }
 
+/* ── Header ─────────────────────────────── */
+.sidebar-header {
+  background: #040647;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid #594491;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-logo-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.72rem;
+  color: #2ecc71;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* ── Upload section ──────────────────────── */
 .upload-section {
   display: flex;
   flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 0.75rem 0.6rem;
+  border-bottom: 1px solid #aeadd2;
+  flex-shrink: 0;
 }
 
-.file-upload-label {
-    display: inline-block;
-    padding: 10px 20px;
-    background-color: #f0f0f0;
-    border: 1px solid #ccc;
-    cursor: pointer;
-    border-radius: 4px;
-    text-align: center;
+.file-upload-input { display: none; }
+
+/* XML importieren (label acts as button) */
+.file-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  background: #040647;
+  color: #fff;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
 }
-.file-upload-input {
-    display: none;
+.file-btn:hover { background: #594491; }
+
+/* Projekte button */
+.folder-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  background: #594491;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  box-sizing: border-box;
 }
-.file-upload-text {
-    display: block;
-    margin-top: 5px;
-    font-size: 0.8em;
-    color: #666;
+.folder-btn:hover { background: #8f8be1; color: #040647; }
+
+/* Pixel art icons — Rasterfarbe #2ecc71 */
+.px-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+  filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
 }
 
-.meta-card {
-    background: #f9f9f9;
-    border: 1px solid #eee;
-    border-radius: 5px;
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
+.btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+.btn-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.file-name {
+  font-size: 0.7rem;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.stats-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
+/* ── Slot content ────────────────────────── */
+.actions {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
 }
-.stat-item {
-    text-align: center;
-    padding: 0.5rem;
-    background: white;
-    border-radius: 4px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-.stat-val {
-    display: block;
-    font-weight: bold;
-    font-size: 1.1rem;
-}
-.stat-label {
-    font-size: 0.8rem;
-    color: #777;
+
+/* ── Deko animation ──────────────────────── */
+.deko-anim {
+  flex: 1;
+  min-height: 0;
+  width: calc(100% + 0px);
+  display: block;
+  object-fit: cover;
+  object-position: top center;
+  pointer-events: none;
 }
 </style>

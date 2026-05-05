@@ -26,25 +26,25 @@ export class SwmmBuilder {
     build() {
         this.sections = [];
         this.warnings = [];
+        this.specialLinks = { weirs: [], orifices: [], pumps: [] };
         this.endDate = new Date(this.options.startDate.getTime() + this.options.durationHours * 3600 * 1000);
 
         this.addTitle();
         this.addOptions();
         this.addRaingages();
-        // Areas (Catchments)
         this.addSubcatchments();
 
-        // Nodes & Links - Access via Store Getters (Properties in Pinia)
         const nodes = this.store.getAllNodes;
         const edges = this.store.getAllEdges;
 
         this.classifyAndAddNodes(nodes);
-        this.addLinks(edges, nodes);
+        this.addLinks(edges, nodes);   // populates this.specialLinks
 
-        // Dry Weather Flows (Constant Inflow)
+        this.addWeirs();
+        this.addOrifices();
+        this.addPumps();
+        this.addCurves();
         this.addInflows(nodes);
-
-        // Timeseries
         this.addTimeseries();
 
         // Join and clean special characters that SWMM C engine cannot parse properly
@@ -153,15 +153,10 @@ SURCHARGE_METHOD     SLOT
 
             const createEntry = (subName, outletNode, subAreaSize) => {
                 let outlet = outletNode;
-                // Fallback outlet logic
-                if (!outlet && area.edgeId) {
-                    // Try to find edge to get fromNode?? For now simple fallback
-                    // This requires edge lookup, which is expensive here if not mapped.
-                    // Valid SWMM requires an outlet node or subcatchment.
-                    // If missing, default to first node or a specific outfall?
-                    // Let's assume user provided valid nodeId.
+                if (!outlet) {
+                    this.warnings.push(`Fläche ${subName}: Kein Anschlussknoten definiert — Teileinzugsgebiet wird übersprungen.`);
+                    return;
                 }
-                if (!outlet) outlet = 'FK003'; // Hardcoded fallback from legacy? Better to find an Outfall.
 
                 const subWidth = Math.sqrt(subAreaSize * 10000);
 
@@ -198,42 +193,59 @@ SURCHARGE_METHOD     SLOT
         return isNaN(f) ? def : f;
     }
 
+    // Gibt den effektiven Bauwerkstyp zurück: XML-geparster Wert ODER manuell gesetzter node.type (Integer)
+    getBtyp(n) {
+        if (n.bauwerkstyp != null) return n.bauwerkstyp;
+        const t = parseInt(n.type);
+        return isNaN(t) ? null : t;
+    }
+
     classifyAndAddNodes(nodes) {
         const junctions = [];
-        const outfalls = [];
-        const storage = [];
+        const outfalls  = [];
+        const storage   = [];
+
+        // Bauwerkstypen die als STORAGE enden
+        const STORAGE_BTYPES  = new Set([1, 2, 12, 13]);
+        // Bauwerkstypen die als OUTFALL enden
+        const OUTFALL_BTYPES  = new Set([3, 4, 5]);
+        // Bauwerkstypen deren ausgehende Kante zum Sonder-Link wird (bleiben als Junction)
+        // 6=Pumpe, 7=Wehr, 8=Drossel, 9=Schieber
 
         for (const n of nodes) {
-            // Logic to classify
-            // 1. Storage: If Node has defined Volume > 0, it's a Storage Unit (Becken), 
-            //    regardless of Type (unless explicitly forced otherwise, but Volume implies storage capacity).
-            //    Exception: Standard nodes might have volume 0, so check > 0.
-            if (this.safeFloat(n.volume) > 0) {
+            const btyp    = this.getBtyp(n);
+            const typeStr = String(n.type);
+
+            // 1. Storage: explizites Volumen > 0 ODER Bauwerkstyp ist Speicherbauwerk
+            const hasVolume = this.safeFloat(n.volume) > 0 ||
+                              (n.bauwerkData?.volume != null && n.bauwerkData.volume > 0);
+            if (hasVolume || STORAGE_BTYPES.has(btyp)) {
                 storage.push(n);
                 continue;
             }
 
-            // 2. Outfall
-            const typeStr = String(n.type);
-            // Type 5: Auslaufbauwerk
-            // Or 'is_sink' property from generic Bauwerk/Building
-            const isOutfall = typeStr === '5' || typeStr === 'Auslaufbauwerk' || n.subtype === 5 || n.is_sink === true;
+            // 2. Outfall: Auslaufbauwerk, Kläre, Behandlung, Anschlusspunkt NN
+            const isOutfall =
+                OUTFALL_BTYPES.has(btyp) ||
+                typeStr === 'Auslaufbauwerk' ||
+                n.is_sink === true ||
+                (typeStr === 'Anschlusspunkt' && n.punktkennung === 'NN');
 
             if (isOutfall) {
                 outfalls.push(n);
             } else {
-                // 3. Junction (Standard)
+                // 3. Junction — inkl. Pumpe/Wehr/Drossel/Schieber (deren Kante wird zum Link)
                 junctions.push(n);
             }
         }
 
-        // Fallback Outfall
+        // Fallback-Auslauf wenn keiner gefunden
         if (outfalls.length === 0 && junctions.length > 0) {
-            // Find lowest
-            junctions.sort((a, b) => a.z - b.z);
-            const lowest = junctions.shift();
+            const sorted = [...junctions].sort((a, b) => a.z - b.z);
+            const lowest = sorted[0];
+            junctions.splice(junctions.indexOf(lowest), 1);
             outfalls.push(lowest);
-            this.warnings.push(`Warnung: Kein Auslauf definiert.${lowest.id} wurde automatisch als Auslauf gesetzt.`);
+            this.warnings.push(`Kein Auslauf definiert — ${lowest.id} (tiefster Knoten) automatisch als Auslauf gesetzt.`);
         }
 
         this.addJunctions(junctions);
@@ -364,28 +376,150 @@ SURCHARGE_METHOD     SLOT
     addStorage(nodes) {
         if (nodes.length === 0) return;
         let text = '[STORAGE]\n;;Name           Elev       MaxDepth   InitDepth  Shape      Curve Name/Params            SurDepth  Fevap\n';
+
         for (const n of nodes) {
-            // Use maxDepth if provided, else default to 3m
-            const depth = this.safeFloat(n.maxDepth) > 0 ? this.safeFloat(n.maxDepth) : (this.safeFloat(n.depth) > 0 ? n.depth : 3.0);
+            const bd = n.bauwerkData;
 
-            // Calculate Area for functional storage
-            // If maxDepth is used, ensure Area matches Volume: Volume = Area * Depth -> Area = Vol / Depth
-            const volume = this.safeFloat(n.volume, 10);
-            const area = volume / depth;
-
-            const initDepth = this.safeFloat(n.initDepth, 0);
-            const shape = n.storageShape || 'FUNCTIONAL';
-
-            let shapeParamsStr = '';
-            if (shape === 'FUNCTIONAL') {
-                shapeParamsStr = `FUNCTIONAL ${area.toFixed(2)} 0          0`;
-            } else if (['CYLINDRICAL', 'CONICAL', 'PARABOLOID', 'PYRAMIDAL'].includes(shape)) {
-                shapeParamsStr = `${shape} ${area.toFixed(2)}`;
-            } else {
-                shapeParamsStr = `FUNCTIONAL ${area.toFixed(2)} 0          0`;
+            // Volume: explizit > bauwerkData > Fallback 10 m³
+            let volume = this.safeFloat(n.volume, 0);
+            if (volume <= 0 && bd?.volume > 0) volume = bd.volume;
+            if (volume <= 0) {
+                volume = 10;
+                this.warnings.push(`Speicher ${n.id}: Kein Volumen definiert, Fallback 10 m³.`);
             }
 
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} ${this.pad(initDepth)} ${shapeParamsStr}\n`;
+            // Tiefe: bauwerkData.maxDepth > node.depth > 3m
+            let depth = this.safeFloat(bd?.maxDepth, 0);
+            if (depth <= 0) depth = this.safeFloat(n.depth, 0);
+            if (depth <= 0) depth = 3.0;
+
+            const area = volume / depth;
+            const initDepth = this.safeFloat(n.initDepth, 0);
+
+            // Versickerungsanlage: SWMM Seepage Parameter (in [STORAGE] via Fevap-Zeile ist nicht Standard;
+            // für echte Versickerung müsste LID verwendet werden — hier vereinfacht als normaler Storage)
+            const seepageNote = (n.bauwerkstyp === 12 && bd?.seepageRate)
+                ? ` ;Versickerung ${bd.seepageRate} m³/h` : '';
+
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} ${this.pad(initDepth)} FUNCTIONAL ${area.toFixed(2)} 0          0${seepageNote}\n`;
+        }
+        this.sections.push(text);
+    }
+
+    addWeirs() {
+        if (!this.specialLinks.weirs.length) return;
+        let text = '[WEIRS]\n;;Name           Node1          Node2          Type         CrestHt    Cd         Gated    EndCon   EndCoeff   Surcharge\n';
+        let xs   = '[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n';
+
+        for (const { id, from, to } of this.specialLinks.weirs) {
+            if (!to) { this.warnings.push(`Wehr ${id}: Kein Zielknoten — übersprungen.`); continue; }
+            const bd = from.bauwerkData;
+
+            // Priorität: UI wehrHeight (relativ ab Sohle) > XML SchwellenhoeheMin (absolut) > 70% Schachttiefe
+            let crestHt;
+            if (this.safeFloat(from.wehrHeight, 0) > 0) {
+                crestHt = this.safeFloat(from.wehrHeight);
+            } else if (bd?.wehrSchwelle != null) {
+                crestHt = Math.max(0, bd.wehrSchwelle - from.z);
+            } else {
+                crestHt = this.safeFloat(from.depth, 2.0) * 0.7;
+                this.warnings.push(`Wehr ${id}: Schwellenhöhe fehlt, gesetzt auf 70% Schachttiefe (${crestHt.toFixed(2)} m).`);
+            }
+
+            // Wehrbreite: UI wehrWidth > XML LaengeWehrschwelle > 1.0m
+            const laenge = this.safeFloat(from.wehrWidth, 0) > 0
+                ? this.safeFloat(from.wehrWidth)
+                : this.safeFloat(bd?.wehrLaenge, 1.0);
+
+            // Beiwert: UI dischargeCoeff > 3.33 (scharfkantig SI)
+            const cd = this.safeFloat(from.dischargeCoeff, 0) > 0
+                ? this.safeFloat(from.dischargeCoeff)
+                : 3.33;
+
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} TRANSVERSE ${this.pad(crestHt)} ${cd.toFixed(2)}      NO       0        0          YES\n`;
+            xs   += `${this.pad(id)} RECT_OPEN  ${this.pad(crestHt > 0 ? crestHt : 0.5)} ${this.pad(laenge)} 0          0          1\n`;
+        }
+        this.sections.push(text);
+        this.sections.push(xs);
+    }
+
+    addOrifices() {
+        if (!this.specialLinks.orifices.length) return;
+        let text = '[ORIFICES]\n;;Name           Node1          Node2          Type         Offset     Cd         Gated    CloseTime\n';
+        let xs   = '[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n';
+
+        for (const { id, from, to, subtype } of this.specialLinks.orifices) {
+            if (!to) { this.warnings.push(`Orifice ${id}: Kein Zielknoten — übersprungen.`); continue; }
+            const bd = from.bauwerkData;
+            let diameter = 0.3;
+
+            if (subtype === 'drossel') {
+                // Priorität: UI maxOutflow > XML nennleistung
+                const Q_ls = this.safeFloat(from.maxOutflow, 0) > 0
+                    ? this.safeFloat(from.maxOutflow)
+                    : this.safeFloat(bd?.nennleistung, 0);
+                if (Q_ls > 0) {
+                    // Rückrechnung bei 1 m Druckhöhe: Q = Cd × A × sqrt(2g)
+                    const A = (Q_ls / 1000) / (0.65 * Math.sqrt(2 * 9.81));
+                    diameter = Math.max(0.05, Math.min(Math.sqrt(4 * A / Math.PI), 2.0));
+                }
+            } else if (subtype === 'schieber') {
+                // Breite: UI initialOpening skaliert schieberBreite
+                const b = this.safeFloat(from.bauwerkData?.schieberBreite, 0.3);
+                const opening = this.safeFloat(from.initialOpening, 1.0);
+                diameter = b * Math.sqrt(Math.max(0.01, opening)); // reduzierter Querschnitt
+            }
+
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} BOTTOM     0          0.65       NO       0\n`;
+            xs   += `${this.pad(id)} CIRCULAR   ${this.pad(diameter)} 0          0          0          1\n`;
+        }
+        this.sections.push(text);
+        this.sections.push(xs);
+    }
+
+    addPumps() {
+        if (!this.specialLinks.pumps.length) return;
+        let text = '[PUMPS]\n;;Name           Node1          Node2          PumpCurve    InitStatus OffCutoff  OnCutoff\n';
+
+        for (const { id, from, to } of this.specialLinks.pumps) {
+            if (!to) { this.warnings.push(`Pumpe ${id}: Kein Zielknoten — übersprungen.`); continue; }
+
+            // Priorität: UI onDepth/offDepth > Berechnung aus Schachttiefe
+            const onDepth  = this.safeFloat(from.onDepth,  0) > 0 ? this.safeFloat(from.onDepth)  : this.safeFloat(from.depth, 2.0) * 0.4;
+            const offDepth = this.safeFloat(from.offDepth, 0) > 0 ? this.safeFloat(from.offDepth) : onDepth * 0.4;
+
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad('CRV_' + id)} ON         ${this.pad(offDepth)} ${this.pad(onDepth)}\n`;
+        }
+        this.sections.push(text);
+    }
+
+    addCurves() {
+        if (!this.specialLinks.pumps.length) return;
+        let text = '[CURVES]\n;;Name           Type       X-Value    Y-Value\n';
+
+        for (const { id, from } of this.specialLinks.pumps) {
+            const bd   = from.bauwerkData;
+            const name = `CRV_${id}`;
+
+            // Priorität: UI pumpRate (l/s) > Berechnung aus XML Leistung+Förderhöhe
+            const Q_ui = this.safeFloat(from.pumpRate, 0);
+            let Q_d, H_d;
+
+            if (Q_ui > 0) {
+                // User hat Förderleistung direkt eingegeben
+                Q_d = Q_ui / 1000; // l/s → m³/s
+                H_d = this.safeFloat(bd?.pumpHead, 10.0);
+            } else {
+                H_d = this.safeFloat(bd?.pumpHead,  10.0);
+                const P   = this.safeFloat(bd?.pumpPower,  5.0);
+                Q_d = (P * 1000 * 0.7) / (1000 * 9.81 * H_d);
+                this.warnings.push(`Pumpe ${id}: Keine Förderleistung angegeben, Schätzung aus Leistung: ${(Q_d * 1000).toFixed(1)} l/s.`);
+            }
+
+            // TYPE3 Q-H Kennlinie: 3 Punkte (Abriegelung, Auslegung, Freilauf)
+            text += `${this.pad(name)} Pump       0.0000     ${(H_d * 1.3).toFixed(3)}\n`;
+            text += `${this.pad(name)}            ${Q_d.toFixed(4)}  ${H_d.toFixed(3)}\n`;
+            text += `${this.pad(name)}            ${(Q_d * 1.4).toFixed(4)} 0.000\n`;
         }
         this.sections.push(text);
     }
@@ -418,14 +552,27 @@ SURCHARGE_METHOD     SLOT
     }
 
     addLinks(edges, nodes) {
-        let conduits = '[CONDUITS]\n;;Name           Node1          Node2          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow\n';
+        let conduits  = '[CONDUITS]\n;;Name           Node1          Node2          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow\n';
         let xsections = '[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n';
+
+        // Bauwerkstypen deren ausgehende Kante zum SWMM-Sonderlink wird
+        const LINK_BTYPES = new Set([6, 7, 8, 9]);
 
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
         for (const e of edges) {
             const n1 = nodeMap.get(e.fromNodeId);
             const n2 = nodeMap.get(e.toNodeId);
+
+            // Kante verlässt einen Link-Bauwerk-Knoten → Sonderlink statt Conduit
+            if (n1 && LINK_BTYPES.has(this.getBtyp(n1))) {
+                const btyp = this.getBtyp(n1);
+                if (btyp === 7)      this.specialLinks.weirs.push({ id: e.id, from: n1, to: n2, edge: e });
+                else if (btyp === 8) this.specialLinks.orifices.push({ id: e.id, from: n1, to: n2, edge: e, subtype: 'drossel' });
+                else if (btyp === 9) this.specialLinks.orifices.push({ id: e.id, from: n1, to: n2, edge: e, subtype: 'schieber' });
+                else if (btyp === 6) this.specialLinks.pumps.push({ id: e.id, from: n1, to: n2, edge: e });
+                continue;
+            }
 
             if (!n1 || !n2) {
                 this.warnings.push(`Kante ${e.id} ignoriert: Fehlende Knoten.`);

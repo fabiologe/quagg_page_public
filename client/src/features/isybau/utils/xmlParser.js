@@ -169,6 +169,78 @@ const interpolateZ = (nodes, edges) => {
 };
 
 
+const fl = (el, tag) => {
+    if (!el) return null;
+    const v = parseFloat(el.getElementsByTagName(tag)[0]?.textContent);
+    return isNaN(v) ? null : v;
+};
+
+const parseBauwerkData = (bauwerkEl) => {
+    const bauwerkstyp = parseInt(bauwerkEl.getElementsByTagName("Bauwerkstyp")[0]?.textContent || 0);
+    const data = { bauwerkstyp };
+
+    switch (bauwerkstyp) {
+        case 1: { // Pumpwerk — wet well: volume from Grundflaeche × MaxHoehe
+            const pw = bauwerkEl.getElementsByTagName("Pumpwerk")[0];
+            const grundfl = fl(pw, "Grundflaeche");
+            const hoehe   = fl(pw, "MaxHoehe");
+            data.volume   = (grundfl && hoehe) ? grundfl * hoehe : null;
+            data.maxDepth = hoehe;
+            break;
+        }
+        case 2: { // Becken — NutzVolumen direct
+            const b = bauwerkEl.getElementsByTagName("Becken")[0];
+            data.volume   = fl(b, "NutzVolumen");
+            data.maxDepth = fl(b, "MaxHoehe");
+            break;
+        }
+        case 6: { // Pumpe — pump characteristics
+            const p = bauwerkEl.getElementsByTagName("Pumpe")[0];
+            data.pumpHead  = fl(p, "FoerderhoeheGesamt"); // m
+            data.pumpPower = fl(p, "Leistung");           // kW
+            break;
+        }
+        case 7: { // Wehr_Ueberlauf — weir geometry
+            const w = bauwerkEl.getElementsByTagName("Wehr_Ueberlauf")[0];
+            data.wehrSchwelle = fl(w, "SchwellenhoeheMin"); // m ü.NHN (absolute)
+            data.wehrLaenge   = fl(w, "LaengeWehrschwelle"); // m
+            break;
+        }
+        case 8: { // Drossel — rated flow
+            const d = bauwerkEl.getElementsByTagName("Drossel")[0];
+            data.nennleistung = fl(d, "Nennleistung"); // l/s
+            break;
+        }
+        case 9: { // Schieber — gate dimensions
+            const s = bauwerkEl.getElementsByTagName("Schieber")[0];
+            data.schieberBreite = fl(s, "Schieberbreite"); // m
+            data.hubhoeheMax    = fl(s, "HubhoeheMax");    // m (max opening)
+            break;
+        }
+        case 12: { // Versickerungsanlage — seepage rate
+            const v = bauwerkEl.getElementsByTagName("Versickerungsanlage")[0];
+            data.seepageRate = fl(v, "MaxVersickerungsleistung"); // m³/h
+            break;
+        }
+        case 13: { // Zisterne — volume from dimensions
+            const z      = bauwerkEl.getElementsByTagName("Zisterne")[0];
+            const laenge = fl(z, "Laenge");
+            const breite = fl(z, "Breite");
+            const tiefe  = fl(z, "Tiefe") ?? fl(z, "Hoehe");
+            const dm     = fl(z, "Durchmesser");
+            const grundfl = fl(z, "GrundflaecheRn");
+            if (grundfl && tiefe)           data.volume = grundfl * tiefe;
+            else if (laenge && breite && tiefe) data.volume = laenge * breite * tiefe;
+            else if (dm && tiefe)           data.volume = Math.PI * (dm / 2) ** 2 * tiefe;
+            data.maxDepth = tiefe;
+            break;
+        }
+        // types 3,4,5,10,11,14 need no hydraulic parameters
+    }
+
+    return data;
+};
+
 const parseNode = (obj, id) => {
     const geom = obj.getElementsByTagName("Geometrie")[0];
     if (!geom) return null;
@@ -187,38 +259,47 @@ const parseNode = (obj, id) => {
         const py = parseFloat(p.getElementsByTagName("Hochwert")[0]?.textContent);
         const pz = parseFloat(p.getElementsByTagName("Punkthoehe")[0]?.textContent);
 
-        // Ensure valid numbers
         const validX = !isNaN(px) ? px : 0;
         const validY = !isNaN(py) ? py : 0;
         const validZ = !isNaN(pz) ? pz : 0;
 
-        if (attr === "SMP") { // Schachtmittelpunkt (Sohlhöhe)
+        if (attr === "SMP") {
             x = validX;
             y = validY;
             z = validZ;
             foundSMP = true;
-        } else if (attr === "DMP") { // Deckelmittelpunkt (Deckelhöhe)
+        } else if (attr === "DMP") {
             coverZ = validZ;
         } else if (!foundSMP && i === 0) {
-            // Fallback to first point if no SMP found yet
             x = validX;
             y = validY;
             z = validZ;
         }
     }
 
-    const schacht = obj.getElementsByTagName("Schacht")[0];
-    const bauwerk = obj.getElementsByTagName("Bauwerk")[0];
+    const schacht      = obj.getElementsByTagName("Schacht")[0];
+    const bauwerkEl    = obj.getElementsByTagName("Bauwerk")[0];
+    const anschlusspunkt = obj.getElementsByTagName("Anschlusspunkt")[0];
 
-    let type = "Unknown";
-    if (schacht) type = "Schacht";
-    else if (bauwerk) type = "Bauwerk";
+    let type        = "Unknown";
+    let punktkennung = null;
+    let bauwerkData  = null;
 
-    const depth = schacht ? parseFloat(schacht.getElementsByTagName("Schachttiefe")[0]?.textContent) : 0;
-    const status = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
+    if (schacht) {
+        type = "Schacht";
+    } else if (anschlusspunkt) {
+        type = "Anschlusspunkt";
+        punktkennung = anschlusspunkt.getElementsByTagName("Punktkennung")[0]?.textContent?.trim() || null;
+    } else if (bauwerkEl) {
+        type = "Bauwerk";
+        bauwerkData = parseBauwerkData(bauwerkEl);
+    }
 
-    // Extract Diameter (LaengeAufbau)
-    let diameter = 0; // Default 0 (implies missing)
+    const depthRaw = schacht ? parseFloat(schacht.getElementsByTagName("Schachttiefe")[0]?.textContent) : 0;
+    const depth    = !isNaN(depthRaw) ? depthRaw : (bauwerkData?.maxDepth ?? 0);
+    const status   = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
+
+    let diameter = 0;
     if (schacht) {
         const aufbau = schacht.getElementsByTagName("Aufbau")[0];
         if (aufbau) {
@@ -227,7 +308,6 @@ const parseNode = (obj, id) => {
         }
     }
 
-    // If coverZ is missing but we have depth, calculate it
     if (coverZ === null && depth > 0) {
         coverZ = z + depth;
     }
@@ -240,11 +320,13 @@ const parseNode = (obj, id) => {
         z,
         coverZ,
         depth,
-        coverZ,
-        depth,
         status,
         diameter,
-        isManhole: status !== 2 // Status 2 = Virtual Node / Planning / Abandoned (Pure Network Point)
+        punktkennung,
+        bauwerkstyp: bauwerkData?.bauwerkstyp ?? null,
+        bauwerkData,
+        volume: bauwerkData?.volume ?? 0,
+        isManhole: status !== 2
     };
 };
 
@@ -302,19 +384,20 @@ const parseEdge = (obj, id) => {
         }
     }
 
-    const haltung = kante.getElementsByTagName("Haltung")[0];
+    const kantenTypRaw = parseInt(kante.getElementsByTagName("KantenTyp")[0]?.textContent ?? '0');
+    const kantenTypMap = { 0: 'Haltung', 1: 'Leitung', 2: 'Rinne', 3: 'Gerinne' };
+    const edgeType = kantenTypMap[kantenTypRaw] ?? 'Haltung';
+
+    const z1Raw = parseFloat(kante.getElementsByTagName("SohlhoeheZulauf")[0]?.textContent);
+    const z2Raw = parseFloat(kante.getElementsByTagName("SohlhoeheAblauf")[0]?.textContent);
+    const z1 = !isNaN(z1Raw) ? z1Raw : null;
+    const z2 = !isNaN(z2Raw) ? z2Raw : null;
+
     const length = parseFloat(obj.getElementsByTagName("Laenge")[0]?.textContent) || 0;
     const material = obj.getElementsByTagName("Material")[0]?.textContent;
-    // Debug Roughness
-    const rauheitRaw = obj.getElementsByTagName("Rauheit")[0]?.textContent;
-    console.log(`[XMLParser] Link ${id}: Material='${material}', Rauheit='${rauheitRaw}'`);
-
-    // Map Material to Roughness (kSt)
     const roughness = getRoughness(material);
-
     const status = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
 
-    // Profil info
     const profil = obj.getElementsByTagName("Profil")[0];
     const profile = {
         type: parseInt(profil?.getElementsByTagName("Profilart")[0]?.textContent || 0),
@@ -325,15 +408,18 @@ const parseEdge = (obj, id) => {
 
     return {
         id,
-        type: haltung ? "Haltung" : "Leitung",
+        type: edgeType,
+        kantenTyp: kantenTypRaw,
         from: fromNode,
         to: toNode,
         coords,
         length,
         material,
-        roughness, // Persist mapped roughness
+        roughness,
         status,
-        profile
+        profile,
+        z1,
+        z2
     };
 };
 

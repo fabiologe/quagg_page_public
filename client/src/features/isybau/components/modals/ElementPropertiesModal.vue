@@ -366,8 +366,9 @@ const save = () => {
 <style scoped>
 /* Cleaned up styles */
 .modal-header {
+  background: #040647;
   padding: 1rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -379,13 +380,13 @@ const save = () => {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #94a3b8; /* Slate 400 */
+  color: #8f8be1; /* Slate 400 */
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Red 500 */
+  color: #2ecc71; /* Red 500 */
 }
 .modal-body { padding: 1rem; }
 .form-group { margin-bottom: 1rem; display: flex; flex-direction: column; }
@@ -400,4 +401,52 @@ const save = () => {
 .outlet-radio-group { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
 .radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; }
 .hint { font-size: 0.8rem; color: #666; margin-top: 0.2rem; }
+
+/* ── Design Schema ────────────────────────────── */
+.tab-btn {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.5rem !important;
+  letter-spacing: 0.06em;
+  background: transparent !important;
+  border: 1px solid #594491 !important;
+  color: #aeadd2 !important;
+  border-radius: 5px !important;
+  padding: 0.45rem 0.75rem !important;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn:hover { background: #594491 !important; color: #fff !important; }
+.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
+
+.primary-btn {
+  background: #040647 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  transition: background 0.15s;
+}
+.primary-btn:hover:not(:disabled) { background: #594491 !important; }
+.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
+
+.secondary-btn {
+  background: #fff !important;
+  border: 1px solid #aeadd2 !important;
+  color: #040647 !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  transition: background 0.12s;
+}
+.secondary-btn:hover { background: #f3f2fb !important; }
+
+.modal-body h3, .panel h3 {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.55rem !important;
+  color: #594491 !important;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #aeadd2 !important;
+  padding-bottom: 0.4rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
 </style>

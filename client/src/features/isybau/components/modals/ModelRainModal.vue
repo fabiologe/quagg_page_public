@@ -243,7 +243,7 @@ const apply = () => {
 /* Cleaned up styles */
 .modal-header {
   padding: 1rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -256,13 +256,13 @@ const apply = () => {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #94a3b8; /* Slate 400 */
+  color: #8f8be1; /* Slate 400 */
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Red 500 */
+  color: #2ecc71; /* Red 500 */
 }
 
 .modal-body {
@@ -302,13 +302,15 @@ const apply = () => {
 
 .table-wrapper h4 {
   margin: 0 0 0.5rem 0;
-  font-size: 0.9rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #8f8be1;
   color: #555;
 }
 
 .table-scroll {
   overflow: auto;
-  border: 1px solid #ddd;
+  border: 1px solid #aeadd2;
   border-radius: 4px;
 }
 
@@ -320,13 +322,13 @@ const apply = () => {
 
 .kostra-table th, .kostra-table td {
   padding: 0.3rem 0.5rem;
-  border: 1px solid #eee;
+  border: 1px solid #aeadd2;
   text-align: right;
   white-space: nowrap;
 }
 
 .kostra-table th {
-  background: #f8f9fa;
+  background: #f3f2fb;
   font-weight: 600;
   text-align: center;
   position: sticky;
@@ -339,22 +341,22 @@ const apply = () => {
 }
 
 .clickable-col:hover, .clickable-cell:hover {
-  background-color: #e8f4f8;
+  background-color: #f3f2fb;
 }
 
 .active-col {
-  background-color: #e3f2fd !important;
-  border-left: 2px solid #3498db;
-  border-right: 2px solid #3498db;
+  background-color: #f3f2fb !important;
+  border-left: 3px solid #594491;
+  border-right: 3px solid #594491;
 }
 
 .kostra-table th.active-col {
-  border-top: 2px solid #3498db;
-  color: #1976d2;
+  border-top: 2px solid #594491;
+  color: #594491;
 }
 
 .kostra-table tr:last-child td.active-col {
-  border-bottom: 2px solid #3498db;
+  border-bottom: 2px solid #594491;
 }
 
 .form-group {
@@ -365,13 +367,13 @@ const apply = () => {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: #2c3e50;
+  color: #040647;
 }
 
 .form-group input, .form-group select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #ddd;
+  border: 1px solid #aeadd2;
   border-radius: 4px;
 }
 
@@ -393,14 +395,14 @@ const apply = () => {
 
 .modal-footer {
   padding: 1rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #aeadd2;
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
 }
 
 .primary-btn {
-  background: #3498db;
+  background: #040647;
   color: white;
   border: none;
   padding: 0.5rem 1rem;
@@ -410,9 +412,57 @@ const apply = () => {
 
 .secondary-btn {
   background: white;
-  border: 1px solid #ddd;
+  border: 1px solid #aeadd2;
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
 }
+
+/* ── Design Schema ────────────────────────────── */
+.tab-btn {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.5rem !important;
+  letter-spacing: 0.06em;
+  background: transparent !important;
+  border: 1px solid #594491 !important;
+  color: #aeadd2 !important;
+  border-radius: 5px !important;
+  padding: 0.45rem 0.75rem !important;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn:hover { background: #594491 !important; color: #fff !important; }
+.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
+
+.primary-btn {
+  background: #040647 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  transition: background 0.15s;
+}
+.primary-btn:hover:not(:disabled) { background: #594491 !important; }
+.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
+
+.secondary-btn {
+  background: #fff !important;
+  border: 1px solid #aeadd2 !important;
+  color: #040647 !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  transition: background 0.12s;
+}
+.secondary-btn:hover { background: #f3f2fb !important; }
+
+.modal-body h3, .panel h3 {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.55rem !important;
+  color: #594491 !important;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #aeadd2 !important;
+  padding-bottom: 0.4rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
 </style>

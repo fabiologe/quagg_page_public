@@ -167,8 +167,12 @@
       </div>
       
       <div class="info-footer">
-          <button @click="save" class="primary-btn full-width">💾 Speichern</button>
-          <button @click="$emit('show-details', selectedElement)" class="secondary-btn full-width" style="margin-top:0.5rem">📊 Ergebnisse</button>
+          <button @click="save" class="primary-btn full-width">
+            <img class="ic" src="/saintv1d/icons/Interface-Essential-Floppy-Disk--Streamline-Pixel.svg" /> Speichern
+          </button>
+          <button @click="$emit('show-details', selectedElement)" class="secondary-btn full-width" style="margin-top:0.5rem">
+            <img class="ic" src="/saintv1d/icons/Interface-Essential-Expand-3--Streamline-Pixel.svg" /> Ergebnisse
+          </button>
       </div>
     </div>
   </Transition>
@@ -451,17 +455,27 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .primary-btn {
-    background: #3498db;
+    background: #040647;
     color: white;
     border: none;
     padding: 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    transition: background 0.15s;
 }
+.primary-btn:hover { background: #594491; }
 
-.primary-btn:hover {
-    background: #2980b9;
+.ic {
+    width: 14px;
+    height: 14px;
+    image-rendering: pixelated;
+    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
+    flex-shrink: 0;
 }
 
 .secondary-btn {

@@ -1,6 +1,6 @@
 <template>
   <div class="isybau-main">
-    <Sidebar :width="300">
+    <Sidebar :width="300" @open-project-manager="showProjectManager = true">
         <!-- Pass Props to SimulationControls if needed, or rely on Store -->
         <SimulationControls />
         
@@ -10,20 +10,20 @@
             @click="viewMode = '2d'" 
             :class="['nav-btn', { active: viewMode === '2d' }]"
           >
-            ✏️ Editor (2D)
+            <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" /> Editor (2D)
           </button>
           <button 
             @click="viewMode = '3d'" 
             :class="['nav-btn', { active: viewMode === '3d' }]"
           >
-            🧊 3D Ansicht
+            <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Global-Public--Streamline-Pixel.svg" /> 3D Ansicht
           </button>
           <button 
             v-if="hasResults"
             @click="viewMode = 'result'" 
             :class="['nav-btn', { active: viewMode === 'result' }]"
           >
-            📊 Ergebnisse
+            <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Expand-3--Streamline-Pixel.svg" /> Ergebnisse
           </button>
         </div>
     </Sidebar>
@@ -34,7 +34,9 @@
             <button @click="viewMode = '2d'" :class="{ active: viewMode === '2d' }">2D Karte</button>
             <button @click="viewMode = '3d'" :class="{ active: viewMode === '3d' }">3D Ansicht</button>
             <button @click="viewMode = 'result'" :class="{ active: viewMode === 'result' }" v-if="hasResults">Ergebnisse</button>
-            <button class="help-btn" @click="showHelpModal = true" title="Hilfe & Anleitung">ℹ️</button>
+            <button class="help-btn" @click="showHelpModal = true" title="Hilfe & Anleitung">
+                <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Question-Help-Circle-2--Streamline-Pixel.svg" />
+            </button>
         </div>
 
         <!-- 2D View (Editor / Map) -->
@@ -126,6 +128,13 @@
         :is-open="showHelpModal"
         @close="showHelpModal = false"
     />
+
+    <ProjectManagerModal
+        :is-open="showProjectManager"
+        :snapshot="projectSnapshot"
+        @close="showProjectManager = false"
+        @load="handleLoadProject"
+    />
     
     <ElementPropertiesModal 
         :is-open="showElementModal"
@@ -162,7 +171,8 @@
             <img :src="rainGif" alt="Raining..." />
         </div>
     </Transition>
-    
+
+
   </div>
 </template>
 
@@ -184,6 +194,7 @@ import SimulationResultsModal from '../components/modals/SimulationResultsModal.
 import SimulationDebugModal from '../components/modals/SimulationDebugModal.vue';
 import ElementPropertiesModal from '../components/modals/ElementPropertiesModal.vue';
 import IsybauHelpModal from '../components/modals/IsybauHelpModal.vue';
+import ProjectManagerModal from '../components/modals/ProjectManagerModal.vue';
 import MessageTicker from '../components/ui/MessageTicker.vue';
 
 const store = useIsybauStore();
@@ -198,7 +209,27 @@ const elementModalMode = ref('area');
 const elementModalData = ref({});
 const elementModalIsEdit = ref(false);
 
-const showHelpModal = ref(false);
+const showHelpModal       = ref(false);
+const showProjectManager  = ref(false);
+
+// Snapshot des aktuellen Projektstands für das Speichern
+const projectSnapshot = computed(() => ({
+    nodes:    Array.from(store.nodes.values()).map(n => n.toJSON ? n.toJSON() : n),
+    edges:    Array.from(store.edges.values()).map(e => e.toJSON ? e.toJSON() : e),
+    areas:    store.areas.map(a => a.toJSON ? a.toJSON() : a),
+    metadata: store.metadata,
+    rain:     store.rain,
+}));
+
+const handleLoadProject = (data) => {
+    store.loadParsedData({
+        metadata: data.metadata || {},
+        network:  { nodes: data.nodes, edges: data.edges },
+        hydraulics: { areas: data.areas || [] },
+    });
+    if (data.rain) Object.assign(store.rain, data.rain);
+    viewMode.value = '2d';
+};
 
 const handleCreateNodeRequest = ({ x, y }) => {
     console.log("Opening Generic Modal for Node", x, y);
@@ -371,37 +402,57 @@ watch(() => store.simulation.results, (newVal) => {
     left: 50%;
     transform: translateX(-50%);
     z-index: 100;
-    background: white;
+    background: #040647;
     padding: 0.25rem;
     border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 16px rgba(4,6,71,0.35);
     display: flex;
     gap: 0.25rem;
 }
 
 .view-switcher button {
-    padding: 0.5rem 1rem;
+    padding: 0.45rem 1rem;
     border: none;
     background: transparent;
     cursor: pointer;
-    border-radius: 4px;
-    font-weight: 500;
+    border-radius: 5px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #aeadd2;
+    transition: background 0.15s, color 0.15s;
+}
+
+.view-switcher button:hover {
+    background: #594491;
+    color: #fff;
 }
 
 .view-switcher button.active {
-    background: #e3f2fd;
-    color: #1976D2;
+    background: #594491;
+    color: #fff;
 }
 
 .help-btn {
-    margin-left: 0.5rem;
-    background: #e1f5fe !important;
-    border: 1px solid #b3e5fc !important;
-    color: #0277bd;
+    margin-left: 0.25rem;
+    background: #0d0e5a !important;
+    border: 1px solid #594491 !important;
+    color: #8f8be1 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem 0.5rem !important;
 }
 
 .help-btn:hover {
-    background: #b3e5fc !important;
+    background: #594491 !important;
+    color: #fff !important;
+}
+
+.tb-icon {
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
+    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
 }
 
 .view-container {
@@ -507,6 +558,7 @@ watch(() => store.simulation.results, (newVal) => {
     opacity: 0;
     transform: translateY(20px);
 }
+
 
 /* Rain Overlay */
 .rain-overlay {

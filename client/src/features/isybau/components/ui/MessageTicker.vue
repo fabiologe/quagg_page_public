@@ -1,6 +1,6 @@
 <template>
   <div class="ticker-bar">
-    <div class="ticker-label">QUAGG</div>
+    <div class="ticker-label">SaintV – 1D</div>
     <div class="ticker-track" ref="trackEl">
       <Transition name="ticker-slide" mode="out-in">
         <span :key="currentIndex" class="ticker-text">
@@ -66,18 +66,19 @@ onBeforeUnmount(() => {
 <style scoped>
 .ticker-bar {
   height: 28px;
-  background: #1a1a2e;
+  background: #040647;
   display: flex;
   align-items: center;
   gap: 0;
   flex-shrink: 0;
   overflow: hidden;
   user-select: none;
+  border-bottom: 1px solid #594491;
 }
 
 .ticker-label {
   flex-shrink: 0;
-  background: #3367d6;
+  background: #594491;
   color: white;
   font-size: 0.65rem;
   font-weight: 800;
@@ -105,15 +106,15 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 0.75rem;
-  color: #c8d6e5;
+  color: #aeadd2;
   line-height: 1;
 }
 
 .ticker-link {
-  color: #74b9ff;
+  color: #8f8be1;
   text-decoration: none;
   margin-left: 0.3rem;
-  border-bottom: 1px dotted #74b9ff;
+  border-bottom: 1px dotted #8f8be1;
 }
 .ticker-link:hover {
   color: #fff;
@@ -132,13 +133,13 @@ onBeforeUnmount(() => {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #444;
+  background: #0d0e5a;
   cursor: pointer;
   transition: background 0.25s;
   flex-shrink: 0;
 }
-.dot.active { background: #3367d6; }
-.dot:hover  { background: #74b9ff; }
+.dot.active { background: #594491; }
+.dot:hover  { background: #8f8be1; }
 
 /* Slide transition: neues kommt von rechts, altes geht nach links */
 .ticker-slide-enter-active {

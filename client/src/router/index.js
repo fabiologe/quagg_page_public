@@ -53,8 +53,8 @@ const router = createRouter({
       meta: { layout: 'public' }
     },
     {
-      path: '/tools/isybau',
-      name: 'isybau',
+      path: '/tools/saintv-1d',
+      name: 'saintv-1d',
       component: () => import('@/features/isybau/views/IsybauMain.vue'),
       meta: { layout: 'public' }
     },

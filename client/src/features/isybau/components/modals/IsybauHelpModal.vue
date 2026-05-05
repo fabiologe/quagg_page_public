@@ -7,7 +7,7 @@
   >
     <div class="help-container">
       <div class="modal-header">
-        <h3>ℹ️ Isybau Bedienungsanleitung & System-Audit V.1.02</h3>
+        <h3>ℹ️ SaintV – 1D · Bedienungsanleitung & System-Audit V.1.02</h3>
         <button class="close-btn" @click="$emit('close')">×</button>
       </div>
       
@@ -46,7 +46,7 @@
           <div v-if="activeTab === 'general'" class="content-section">
             <h4>Allgemein</h4>
             <p>
-              Das <strong>Isybau-Modul</strong> ist eine webbasierte Oberfläche für die hydraulische Simulation von Entwässerungsnetzen.
+              <strong>SaintV – 1D</strong> ist eine webbasierte Oberfläche für die hydraulische Simulation von Entwässerungsnetzen.
               Es nutzt den Industriestandard <a href="https://www.epa.gov/water-research/storm-water-management-model-swmm" target="_blank" rel="noopener noreferrer"><strong>SWMM 5 (Storm Water Management Model)</strong></a> als Rechenkern, kompiliert zu WebAssembly (Wasm) für die lokale Ausführung im Browser.
             </p>
             <ul>
@@ -206,7 +206,7 @@ Pipe1    Node1      Node2    50.0     0.013       0          0
           <div v-if="activeTab === 'limits'" class="content-section">
             <h4>Grenzen des Systems</h4>
             <div class="warning-block">
-                <p>Was Isybau <strong>NICHT</strong> kann (Out of Scope):</p>
+                <p>Was SaintV – 1D <strong>NICHT</strong> kann (Out of Scope):</p>
                 <ul>
                     <li>❌ <strong>Keine 2D-Oberflächenabfluss-Simulation:</strong> Überflutetes Wasser wird als "Ponded Volume" protokolliert, fließt aber nicht oberirdisch weiter.</li>
                     <li>❌ <strong>Pumpen & Wehre:</strong> Aktuell werden keine Sonderbauwerke unterstützt.</li>
@@ -255,23 +255,27 @@ const activeTab = ref('general');
   flex-direction: column;
   height: 100%;
   font-family: 'Inter', sans-serif;
-  color: #2c3e50;
+  color: #040647;
   background: #fff;
 }
 
 .modal-header {
   padding: 1rem;
-  border-bottom: 1px solid #dce4e8;
+  border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #f1f5f9;
+  background: #040647;
 }
 
 .modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin: 0;
   font-size: 1.1rem;
-  color: #334155;
+  color: #aeadd2;
 }
 
 .close-btn {
@@ -280,13 +284,13 @@ const activeTab = ref('general');
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #94a3b8; /* Slate 400 */
+  color: #8f8be1; /* Slate 400 */
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Red 500 */
+  color: #2ecc71; /* Red 500 */
 }
 
 .modal-body {
@@ -316,7 +320,7 @@ const activeTab = ref('general');
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #94a3b8;
+    color: #8f8be1;
     font-weight: 700;
     margin-bottom: 0.25rem;
     padding-left: 0.5rem;
@@ -363,7 +367,9 @@ const activeTab = ref('general');
 .content-section h4 {
   margin-top: 0;
   margin-bottom: 1.5rem;
-  font-size: 1.5rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #8f8be1;
   letter-spacing: -0.02em;
   color: #1e293b;
   border-bottom: 2px solid #f1f5f9;
@@ -449,4 +455,52 @@ const activeTab = ref('general');
 .help-content::-webkit-scrollbar-track { background: #f1f1f1; }
 .help-content::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 .help-content::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Design Schema ────────────────────────────── */
+.tab-btn {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.5rem !important;
+  letter-spacing: 0.06em;
+  background: transparent !important;
+  border: 1px solid #594491 !important;
+  color: #aeadd2 !important;
+  border-radius: 5px !important;
+  padding: 0.45rem 0.75rem !important;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn:hover { background: #594491 !important; color: #fff !important; }
+.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
+
+.primary-btn {
+  background: #040647 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  transition: background 0.15s;
+}
+.primary-btn:hover:not(:disabled) { background: #594491 !important; }
+.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
+
+.secondary-btn {
+  background: #fff !important;
+  border: 1px solid #aeadd2 !important;
+  color: #040647 !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  transition: background 0.12s;
+}
+.secondary-btn:hover { background: #f3f2fb !important; }
+
+.modal-body h3, .panel h3 {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.55rem !important;
+  color: #594491 !important;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #aeadd2 !important;
+  padding-bottom: 0.4rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
 </style>

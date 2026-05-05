@@ -38,7 +38,7 @@
                   <span class="bulk-count">{{ selectedIds.length }} ausgewählt</span>
                   <div class="bulk-btns">
                       <button class="bulk-btn-link" @click="openBulkEdit">✎ Bearbeiten</button>
-                      <button class="bulk-btn-link text-red" @click="deleteSelected">🗑️ Löschen</button>
+                      <button class="bulk-btn-link text-red" @click="deleteSelected"><img class="ic-del" src="/saintv1d/icons/Interface-Essential-Scisor--Streamline-Pixel.svg" /> Löschen</button>
                       <button class="bulk-btn-link" @click="selectedIds = []">Deselektieren</button>
                   </div>
               </div>
@@ -654,7 +654,6 @@ const locate = (id) => {
 const handleTypeChange = (node, previousCategory) => {
     // Logic: If I change a Standard Node to Bauwerk, it moves to the other tab!
     // Undo required.
-    const oldType = previousCategory === 'Standard' ? 'Standard' : 'Bauwerk'; 
     const newType = node.type; // already updated model
     
     // We can't really "undo" model change easily without snapshot, 
@@ -767,14 +766,48 @@ watch(() => props.isOpen, (newVal) => {
     selectedIds.value = [];
     
     // Init Nodes
-    nodes.value = Array.from(props.network.nodes.values()).map(n => ({
-      ...n,
-      type: n.type === 'Schacht' ? 'Standard' : (n.type === 'Bauwerk' ? 'Bauwerk' : (typeof n.type === 'number' ? n.type : 'Standard')),
-      constantInflow: n.constantInflow || 0,
-      coverZ: n.coverZ !== undefined ? n.coverZ : (n.z + (n.depth || 0)),
-      z: n.z !== undefined ? n.z : 0,
-      canOverflow: n.canOverflow !== undefined ? n.canOverflow : true
-    }));
+    nodes.value = Array.from(props.network.nodes.values()).map(n => {
+      // Effektiven Typ auflösen: 'Schacht'→'Standard', Bauwerk mit bauwerkstyp→Integer, sonst 'Standard'
+      let type;
+      if (n.type === 'Schacht' || n.type === 'Standard') {
+        type = 'Standard';
+      } else if (n.bauwerkstyp != null) {
+        type = n.bauwerkstyp; // Integer aus XML → Dropdown-Wert
+      } else if (typeof n.type === 'number') {
+        type = n.type;
+      } else if (n.type === 'Bauwerk' || n.type === 'Anschlusspunkt') {
+        type = 'Bauwerk';
+      } else {
+        type = 'Standard';
+      }
+
+      const bd = n.bauwerkData ?? {};
+      return {
+        ...n,
+        type,
+        constantInflow: n.constantInflow || 0,
+        coverZ: n.coverZ !== undefined ? n.coverZ : (n.z + (n.depth || 0)),
+        z: n.z !== undefined ? n.z : 0,
+        canOverflow: n.canOverflow !== undefined ? n.canOverflow : true,
+        // Bauwerk-Felder mit XML-Werten vorbelegen (User kann überschreiben)
+        volume:    n.volume    || bd.volume    || 0,
+        maxDepth:  n.maxDepth  || bd.maxDepth  || 0,
+        // Pumpe
+        pumpRate:  n.pumpRate  || (bd.pumpPower && bd.pumpHead
+                    ? parseFloat(((bd.pumpPower * 1000 * 0.7) / (1000 * 9.81 * bd.pumpHead) * 1000).toFixed(1))
+                    : 0),
+        onDepth:   n.onDepth   || 0,
+        offDepth:  n.offDepth  || 0,
+        // Wehr
+        wehrHeight:     n.wehrHeight     || (bd.wehrSchwelle != null ? Math.max(0, bd.wehrSchwelle - n.z) : 0),
+        wehrWidth:      n.wehrWidth      || bd.wehrLaenge || 0,
+        dischargeCoeff: n.dischargeCoeff || 0,
+        // Drossel
+        maxOutflow: n.maxOutflow || bd.nennleistung || 0,
+        // Schieber
+        initialOpening: n.initialOpening ?? 1.0,
+      };
+    });
 
     // Init Edges
     edges.value = Array.from(props.network.edges.values()).map(e => {
@@ -911,7 +944,7 @@ const exportXlsx = () => {
         ws['!cols'] = colWidths;
     });
 
-    const filename = `isybau_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = `saintv1d_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, filename);
 };
 
@@ -931,11 +964,12 @@ const apply = () => {
 
 <style scoped>
 /* Cleaned up styles for DraggableModal */
-.modal-header { padding: 1rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: move; }
+.modal-header { padding: 0.65rem 1rem; border-bottom: 2px solid #594491; background: #040647; display: flex; justify-content: space-between; align-items: center; cursor: move; }
 .header-left { display: flex; gap: 1rem; align-items: center; }
 .bulk-btns { display: flex; gap: 0.5rem; }
-.bulk-btn-link { background: none; border: none; font-size: 0.9rem; color: #3498db; cursor: pointer; text-decoration: underline; padding: 0 5px; }
+.bulk-btn-link { background: none; border: none; font-size: 0.9rem; color: #594491; cursor: pointer; text-decoration: underline; padding: 0 5px; }
 .bulk-btn-link.text-red { color: #e74c3c; }
+.ic-del { width: 13px; height: 13px; image-rendering: pixelated; filter: invert(35%) sepia(90%) saturate(700%) hue-rotate(330deg) brightness(90%); vertical-align: middle; }
 
 .modal-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 1rem; position: relative; }
 
@@ -959,8 +993,8 @@ const apply = () => {
 .table-wrapper::-webkit-scrollbar-thumb:hover { background: #999; }
 
 .data-table { width: 100%; border-collapse: separate; font-size: 0.9rem; border-spacing: 0; }
-.data-table th { background: #f8f9fa; position: sticky; top: 0; z-index: 10; padding: 0.5rem; border-bottom: 2px solid #ddd; text-align: left; }
-.data-table td { padding: 0.5rem; border-bottom: 1px solid #eee; background: white; }
+.data-table th { background: #f3f2fb; position: sticky; top: 0; z-index: 10; padding: 0.5rem; border-bottom: 2px solid #ddd; text-align: left; }
+.data-table td { padding: 0.5rem; border-bottom: 1px solid #aeadd2; background: white; }
 
 /* Sticky Columns */
 .sticky-left-1 { position: sticky; left: 0; z-index: 21; background: #fff; width: 30px; border-right: 1px solid #eee; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
@@ -976,11 +1010,11 @@ const apply = () => {
 .clickable-row.selected td { background-color: #e3f2fd !important; }
 
 /* Inputs */
-.small-input { width: 70px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
-.medium-input { width: 100px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
-.medium-select { width: 150px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
+.small-input { width: 70px; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; }
+.medium-input { width: 100px; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; }
+.medium-select { width: 150px; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; }
 .split-cell { display: flex; gap: 5px; align-items: center; }
-.filter-input { width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8rem; }
+.filter-input { width: 100%; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; font-size: 0.8rem; }
 .invalid { border-color: #e74c3c !important; background: #fff5f5; }
 .text-red { color: #e74c3c; font-weight: bold; }
 .error-badge { font-size: 0.7rem; color: #fff; background: #e74c3c; padding: 2px 4px; border-radius: 4px; }
@@ -1000,20 +1034,20 @@ const apply = () => {
 .bulk-controls { display: flex; flex-direction: column; gap: 1rem; margin: 1.5rem 0; }
 .bulk-field { display: flex; flex-direction: column; gap: 5px; }
 .bulk-field-row { display: flex; gap: 1rem; }
-.bulk-select, .bulk-input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; }
+.bulk-select, .bulk-input { padding: 8px; border: 1px solid #aeadd2; border-radius: 4px; width: 100%; box-sizing: border-box; }
 .bulk-buttons { display: flex; gap: 1rem; justify-content: flex-end; }
 
 .modal-footer { padding: 1rem; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 1rem; align-items: center; }
 .export-btn { background: white; border: 1px solid #27ae60; color: #27ae60; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.15s, color 0.15s; }
 .export-btn:hover { background: #27ae60; color: white; }
-.primary-btn { background: #3498db; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
-.secondary-btn { background: white; border: 1px solid #ddd; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+.primary-btn { background: #040647; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+.secondary-btn { background: white; border: 1px solid #aeadd2; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
 .danger-btn { background: #e74c3c; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
 
 /* Tabs */
-.tabs { display: flex; gap: 5px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-.tab-btn { background: none; border: none; padding: 0.5rem 1rem; cursor: pointer; font-weight: 500; color: #7f8c8d; border-radius: 4px; }
-.tab-btn.active { background: #e8f4f8; color: #3498db; }
+.tabs { display: flex; gap: 5px; border-bottom: 2px solid #594491; padding-bottom: 5px; background: #040647; padding: 0.4rem 0.75rem; }
+.tab-btn { background: transparent; border: 1px solid #594491; padding: 0.35rem 0.75rem; cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 0.48rem; color: #aeadd2; border-radius: 5px; letter-spacing: 0.05em; }
+.tab-btn.active { background: #594491; color: #fff; border-color: #8f8be1; }
 
 .header-actions { display: flex; gap: 0.5rem; }
 .close-btn {
@@ -1022,13 +1056,41 @@ const apply = () => {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #94a3b8; /* Slate 400 */
+  color: #8f8be1; /* Slate 400 */
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Red 500 */
+  color: #2ecc71; /* Red 500 */
 }
 .icon-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
+
+.modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #2ecc71;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.primary-btn {
+  background: #040647 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  transition: background 0.15s;
+}
+.primary-btn:hover { background: #594491 !important; }
+
+.secondary-btn {
+  background: #fff !important;
+  border: 1px solid #aeadd2 !important;
+  color: #040647 !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+}
+.secondary-btn:hover { background: #f3f2fb !important; }
 </style>

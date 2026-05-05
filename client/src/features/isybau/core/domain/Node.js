@@ -48,9 +48,10 @@ export class Node {
         this.constantOutflow = Number(options.constantOutflow) || 0;
         this.outflowType = options.outflowType || 'free';
 
-        // Surcharge / Bolted Cover
-        // Default is true (can overflow). If false -> bolted cover (Surcharge Depth 100)
-        // If it's a virtual node (!isManhole), it MUST be sealed/pressurized, so force false.
+        this.punktkennung = options.punktkennung || null;
+        this.bauwerkstyp  = options.bauwerkstyp  ?? null;
+        this.bauwerkData  = options.bauwerkData  ?? null;
+
         this.canOverflow = (isManhole === false) ? false : (options.canOverflow !== false);
 
         // Simulation / Runtime State (not persisted in raw basics)
@@ -79,13 +80,15 @@ export class Node {
             // Prioritize imported isManhole flag (e.g. from Status 2), otherwise fallback to type check
             isManhole: (data.isManhole !== undefined) ? data.isManhole : (data.type === "Schacht" || data.type === "Bauwerk"),
 
-            // Pass through special props if they exist in raw data
             constantInflow: data.constantInflow,
             volume: data.volume,
             weirHeight: data.weirHeight,
             constantOutflow: data.constantOutflow,
             outflowType: data.outflowType,
-            canOverflow: data.canOverflow
+            canOverflow: data.canOverflow,
+            punktkennung: data.punktkennung,
+            bauwerkstyp:  data.bauwerkstyp,
+            bauwerkData:  data.bauwerkData
         });
     }
 
@@ -122,7 +125,10 @@ export class Node {
             constantOutflow: this.constantOutflow,
             outflowType: this.outflowType,
             canOverflow: this.canOverflow,
-            isManhole: this.isManhole
+            isManhole: this.isManhole,
+            punktkennung: this.punktkennung,
+            bauwerkstyp:  this.bauwerkstyp,
+            bauwerkData:  this.bauwerkData
         };
     }
 }

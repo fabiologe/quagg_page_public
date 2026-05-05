@@ -120,7 +120,7 @@
                 v-if="node.diameter > 0"
                 :cx="node.x - bounds.minX"
                 :cy="bounds.maxY - node.y"
-                :r="node.diameter / 2"
+                :r="(node.diameter / 2) * arrowSizeMultiplier"
                 class="node-circle"
                 :class="{ 'selected': selectedElement?.id === node.id }"
                 :style="{ fill: getNodeColor(node.id) }"
@@ -133,25 +133,25 @@
                   <circle
                     :cx="node.x - bounds.minX"
                     :cy="bounds.maxY - node.y"
-                    :r="(2.0 * baseUnit) / scale"
+                    :r="(2.0 * baseUnit * arrowSizeMultiplier) / scale"
                     fill="transparent"
                   />
                   <!-- X lines -->
                   <line
-                    :x1="(node.x - bounds.minX) - ((1.0 * baseUnit) / scale)"
-                    :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit) / scale)"
-                    :x2="(node.x - bounds.minX) + ((1.0 * baseUnit) / scale)"
-                    :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit) / scale)"
+                    :x1="(node.x - bounds.minX) - ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
+                    :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
+                    :x2="(node.x - bounds.minX) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
+                    :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     class="node-x"
                     :class="{ 'selected': selectedElement?.id === node.id }"
                     :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
                     vector-effect="non-scaling-stroke"
                   />
                   <line
-                    :x1="(node.x - bounds.minX) + ((1.0 * baseUnit) / scale)"
-                    :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit) / scale)"
-                    :x2="(node.x - bounds.minX) - ((1.0 * baseUnit) / scale)"
-                    :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit) / scale)"
+                    :x1="(node.x - bounds.minX) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
+                    :y1="(bounds.maxY - node.y) - ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
+                    :x2="(node.x - bounds.minX) - ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
+                    :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     class="node-x"
                     :class="{ 'selected': selectedElement?.id === node.id }"
                     :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"

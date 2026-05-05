@@ -102,16 +102,21 @@ const copyToClipboard = async (text) => {
 }
 
 .modal-header {
+  background: #040647;
   padding: 1rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin: 0;
-  color: #2c3e50;
+  color: #aeadd2;
 }
 
 .close-btn {
@@ -120,13 +125,13 @@ const copyToClipboard = async (text) => {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #94a3b8; /* Slate 400 */
+  color: #8f8be1; /* Slate 400 */
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Red 500 */
+  color: #2ecc71; /* Red 500 */
 }
 
 .modal-body {
@@ -141,7 +146,7 @@ const copyToClipboard = async (text) => {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #aeadd2;
 }
 
 .tab-btn {
@@ -150,13 +155,13 @@ const copyToClipboard = async (text) => {
   background: none;
   cursor: pointer;
   font-weight: 500;
-  color: #7f8c8d;
+  color: #594491;
   border-bottom: 2px solid transparent;
 }
 
 .tab-btn.active {
   color: #3498db;
-  border-bottom: 2px solid #3498db;
+  border-bottom: 2px solid #594491;
 }
 
 .tab-content {
@@ -177,21 +182,69 @@ const copyToClipboard = async (text) => {
     padding: 0.25rem 0.5rem;
     font-size: 0.8rem;
     cursor: pointer;
-    background: #f8f9fa;
-    border: 1px solid #ddd;
+    background: #f3f2fb;
+    border: 1px solid #aeadd2;
     border-radius: 3px;
 }
 
 .code-view {
   flex: 1;
-  background: #f8f9fa;
+  background: #f3f2fb;
   padding: 1rem;
   border-radius: 4px;
   overflow: auto;
   font-family: monospace;
   font-size: 0.85rem;
   white-space: pre-wrap;
-  border: 1px solid #eee;
+  border: 1px solid #aeadd2;
   margin: 0;
 }
+
+/* ── Design Schema ────────────────────────────── */
+.tab-btn {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.5rem !important;
+  letter-spacing: 0.06em;
+  background: transparent !important;
+  border: 1px solid #594491 !important;
+  color: #aeadd2 !important;
+  border-radius: 5px !important;
+  padding: 0.45rem 0.75rem !important;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn:hover { background: #594491 !important; color: #fff !important; }
+.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
+
+.primary-btn {
+  background: #040647 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  transition: background 0.15s;
+}
+.primary-btn:hover:not(:disabled) { background: #594491 !important; }
+.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
+
+.secondary-btn {
+  background: #fff !important;
+  border: 1px solid #aeadd2 !important;
+  color: #040647 !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  transition: background 0.12s;
+}
+.secondary-btn:hover { background: #f3f2fb !important; }
+
+.modal-body h3, .panel h3 {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.55rem !important;
+  color: #594491 !important;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #aeadd2 !important;
+  padding-bottom: 0.4rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
 </style>

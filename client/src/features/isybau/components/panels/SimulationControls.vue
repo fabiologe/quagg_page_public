@@ -3,7 +3,7 @@
     
     <!-- Project Card -->
     <div class="control-box project-card" v-if="store.network">
-        <h3>📁 Projekt Details</h3>
+        <h3><img class="ic" src="/saintv1d/icons/Content-Files-Folder-Open--Streamline-Pixel.svg" /> Projekt Details</h3>
         <div class="meta-item">
             <span class="label">Datei:</span>
             <span class="value" :title="store.metadata.fileName || 'Unbenannt'">
@@ -41,34 +41,53 @@
         <div class="control-group">
             <label>Regendaten</label>
             <div class="button-row">
-                <button class="secondary-btn" @click="store.ui.showRainModal = true">Modellregen</button>
-                <button class="secondary-btn" @click="store.ui.showKostraModal = true">KOSTRA</button>
+                <button class="secondary-btn" @click="store.ui.showRainModal = true">
+                    <img class="ic" src="/saintv1d/icons/Weather-Umbrella--Streamline-Pixel.svg" />
+                    Modellregen
+                </button>
+                <button class="secondary-btn" @click="store.ui.showKostraModal = true">
+                    <img class="ic" src="/saintv1d/icons/Map-Navigation-Compass-Direction--Streamline-Pixel.svg" />
+                    KOSTRA
+                </button>
             </div>
-            
+
             <!-- Rain Status & Chart -->
             <div class="rain-status">
                 <div v-if="store.rain.activeModelRain" class="rain-info">
-                    <strong>Modellregen:</strong> {{ store.rain.activeModelRain.type }} 
+                    <strong>Modellregen:</strong> {{ store.rain.activeModelRain.type }}
                     ({{ store.rain.activeModelRain.series.length }} Stützstellen)
                 </div>
                 <div v-else class="rain-info">
-                   <strong>KOSTRA:</strong> {{ store.rain.intensity }} l/(s·ha)
+                    <strong>KOSTRA:</strong> {{ store.rain.intensity }} l/(s·ha)
                 </div>
             </div>
 
             <!-- Mini Chart -->
             <div v-if="store.rain.activeModelRain" class="mini-chart-container">
-               <Bar :data="miniChartData" :options="miniChartOptions" />
+                <Bar :data="miniChartData" :options="miniChartOptions" />
             </div>
 
-            <button class="secondary-btn" @click="store.ui.showPreprocessingModal = true" style="margin-top: 0.5rem; width: 100%;">
+            <button class="secondary-btn full" @click="store.ui.showPreprocessingModal = true">
+                <img class="ic" src="/saintv1d/icons/Interface-Essential-Setting-Slide--Streamline-Pixel.svg" />
                 Daten bearbeiten
             </button>
-            
-            <!-- Runoff Validation Button (Restored) -->
-            <button class="secondary-btn" @click="store.ui.showValidationModal = true" style="margin-top: 0.5rem; width: 100%;">
-               ✅ Abfluss validieren
+
+            <button class="secondary-btn full" @click="openPedantPopup">
+                <img class="ic" src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" />
+                Abfluss validieren
             </button>
+
+            <!-- Pedant Popup -->
+            <Transition name="pedant-pop">
+              <div v-if="showPedant" class="pedant-popup">
+                <div class="pedant-header">
+                  <img class="pedant-ic" src="/saintv1d/icons/Interface-Essential-Information-Circle-2--Streamline-Pixel.svg" />
+                  <span>Validierung</span>
+                  <button class="pedant-close" @click="closePedantPopup">×</button>
+                </div>
+                <p class="pedant-msg">Schau dir die .inp und .rpt Dateien an du Pedant 😄</p>
+              </div>
+            </Transition>
         </div>
 
         <div class="control-group">
@@ -77,32 +96,37 @@
                 <input type="number" v-model.number="store.rain.duration" min="1" max="48" step="1">
             </div>
         </div>
-        
+
         <button @click="startSimulation" class="primary-btn" :disabled="loading">
-            <span v-if="loading" class="spinner">⏳</span>
+            <img v-if="!loading" class="ic" src="/saintv1d/icons/Computers-Devices-Electronics-Chipset--Streamline-Pixel.svg" />
+            <img v-if="loading" class="ic spin" src="/saintv1d/icons/Interface-Essential-Synchronize-Arrows-Square-2--Streamline-Pixel.svg" />
             {{ loading ? 'Simulation läuft...' : 'Berechnung starten' }}
         </button>
         <div v-if="loading" class="progress-bar-container">
             <div class="progress-bar-fill"></div>
         </div>
-        
+
         <div v-if="error" class="error-msg">{{ error }}</div>
-        <div v-if="success" class="success-msg">✓ Netz berechnet</div>
+        <div v-if="success" class="success-msg">Netz berechnet</div>
 
         <!-- Actions for results -->
         <div v-if="success" class="results-actions">
             <button class="action-btn" @click="store.ui.showResultsModal = true">
-                📊 Ergebnisse anzeigen
+                <img class="ic" src="/saintv1d/icons/Interface-Essential-Expand-3--Streamline-Pixel.svg" />
+                Ergebnisse anzeigen
             </button>
             <button class="action-btn" @click="store.ui.showDebugModal = true">
-                🔍 Debug (.inp / .rpt)
+                <img class="ic" src="/saintv1d/icons/Computers-Devices-Electronics-Board--Streamline-Pixel.svg" />
+                Debug (.inp / .rpt)
             </button>
             <div class="button-row">
                 <button class="secondary-btn" @click="downloadInput">
-                    💾 Input (.inp)
+                    <img class="ic" src="/saintv1d/icons/Interface-Essential-Floppy-Disk--Streamline-Pixel.svg" />
+                    Input (.inp)
                 </button>
                 <button class="secondary-btn" @click="downloadResults">
-                    💾 Result (.json)
+                    <img class="ic" src="/saintv1d/icons/Interface-Essential-Share-1--Streamline-Pixel.svg" />
+                    Result (.json)
                 </button>
             </div>
         </div>
@@ -121,6 +145,25 @@ ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 const store = useIsybauStore();
 const startSimulation = async () => {
     await store.runSimulation();
+};
+
+// Pedant popup
+const showPedant = ref(false);
+let pedantAudio = null;
+
+const openPedantPopup = () => {
+    showPedant.value = true;
+    pedantAudio = new Audio('/saintv1d/yoshiyuki_tatsuya-pixel-melody-430745.mp3');
+    pedantAudio.volume = 0.6;
+    pedantAudio.play().catch(() => {});
+};
+
+const closePedantPopup = () => {
+    showPedant.value = false;
+    if (pedantAudio) {
+        pedantAudio.pause();
+        pedantAudio.currentTime = 0;
+    }
 };
 
 const loading = computed(() => store.simulation.status === 'running');
@@ -203,75 +246,97 @@ const downloadResults = () => {
 .control-box {
   background: white;
   padding: 1rem;
-  border-radius: 6px;
-  border: 1px solid #ddd;
+  border-radius: 8px;
+  border: 1px solid #aeadd2;
 }
 .control-box h3 {
     margin-top: 0;
     margin-bottom: 0.75rem;
-    font-size: 1rem;
-    color: #2c3e50;
-    border-bottom: 1px solid #eee;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #040647;
+    border-bottom: 2px solid #aeadd2;
     padding-bottom: 0.5rem;
 }
 
 /* Compact Stats */
 .stats-compact {
-    padding: 0.75rem 1rem;
+    padding: 0.6rem 1rem;
     text-align: center;
-    background: #f8f9fa; /* Slightly different bg to distinguish */
+    background: #040647;
 }
 .stats-row {
     display: flex;
     justify-content: center;
     gap: 0.5rem;
-    font-size: 0.9rem;
-    color: #555;
+    font-size: 0.82rem;
+    color: #aeadd2;
     align-items: center;
 }
 .stats-row strong {
-    color: #2c3e50;
-    font-weight: 600;
+    color: #fff;
+    font-weight: 700;
 }
 .divider {
-    color: #ccc;
+    color: #594491;
 }
 
 
 /* Meta Info */
 .meta-item { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
 .meta-row { display: flex; justify-content: space-between; gap: 0.5rem; }
-.label { font-size: 0.75rem; color: #7f8c8d; font-weight: bold; }
-.value { font-size: 0.9rem; color: #34495e; overflow: hidden; text-overflow: ellipsis; }
+.label { font-size: 0.75rem; color: #594491; font-weight: 700; }
+.value { font-size: 0.88rem; color: #040647; overflow: hidden; text-overflow: ellipsis; }
 
 /* Buttons & Inputs */
 .primary-btn {
   width: 100%;
-  padding: 0.75rem;
-  background: #3498db;
+  padding: 0.7rem;
+  background: #040647;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   margin-top: 0.5rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  transition: background 0.15s;
 }
-.primary-btn:disabled { background: #95a5a6; }
+.primary-btn:hover:not(:disabled) { background: #594491; }
+.primary-btn:disabled { background: #aeadd2; cursor: default; }
 .secondary-btn {
     flex: 1;
-    padding: 0.5rem;
-    background: #ecf0f1;
-    border: 1px solid #bdc3c7;
-    border-radius: 4px;
+    padding: 0.45rem;
+    background: #fff;
+    border: 1px solid #aeadd2;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     text-align: center;
+    color: #040647;
+    font-weight: 600;
+    transition: background 0.12s, border-color 0.12s;
 }
-.secondary-btn:hover { background: #bdc3c7; }
+.secondary-btn:hover { background: #aeadd2; border-color: #8f8be1; }
 
-.error-msg { color: red; margin-top: 0.5rem; }
-.success-msg { color: green; margin-top: 0.5rem; font-weight: bold; }
-.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid #bdc3c7; border-radius: 4px; }
+.error-msg { color: #b91c1c; margin-top: 0.5rem; font-size: 0.82rem; }
+.success-msg { color: #594491; margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
+.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid #aeadd2; border-radius: 6px; box-sizing: border-box; color: #040647; }
+.input-with-action input:focus { outline: none; border-color: #594491; }
 .button-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+.secondary-btn.full { margin-top: 0.4rem; width: 100%; }
+
+/* Pixel art icons — gefärbt wie das Raster (#2ecc71) */
+.ic {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    image-rendering: pixelated;
+    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
+    vertical-align: middle;
+}
 
 /* Rain Chart */
 .mini-chart-container {
@@ -283,12 +348,13 @@ const downloadResults = () => {
     padding: 2px;
 }
 .rain-status {
-    font-size: 0.8rem;
-    color: #555;
-    margin-bottom: 0.5rem; 
-    padding: 0.25rem;
-    background: #f8f9fa;
-    border-radius: 4px;
+    font-size: 0.78rem;
+    color: #594491;
+    margin-bottom: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    background: #f3f2fb;
+    border-radius: 6px;
+    border-left: 3px solid #8f8be1;
 }
 
 .results-actions {
@@ -296,29 +362,31 @@ const downloadResults = () => {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border-top: 1px solid #eee;
+    border-top: 2px solid #aeadd2;
     padding-top: 1rem;
 }
 .action-btn {
     width: 100%;
-    padding: 0.6rem;
-    background: #f39c12;
+    padding: 0.6rem 0.75rem;
+    background: #594491;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 700;
+    font-size: 0.82rem;
     text-align: left;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    transition: background 0.15s;
 }
-.action-btn:hover { background: #e67e22; }
+.action-btn:hover { background: #040647; }
 
 .progress-bar-container {
     width: 100%;
-    height: 6px;
-    background: #f0f0f0;
+    height: 5px;
+    background: #aeadd2;
     margin-top: 4px;
     border-radius: 3px;
     overflow: hidden;
@@ -327,10 +395,10 @@ const downloadResults = () => {
     height: 100%;
     background: repeating-linear-gradient(
         45deg,
-        #3498db,
-        #3498db 10px,
-        #2980b9 10px,
-        #2980b9 20px
+        #594491,
+        #594491 10px,
+        #8f8be1 10px,
+        #8f8be1 20px
     );
     width: 100%;
     animation: progress-slide 1s linear infinite;
@@ -345,4 +413,64 @@ const downloadResults = () => {
     margin-right: 5px;
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+.ic.spin { animation: spin 1s linear infinite; }
+
+/* Pedant Popup */
+.pedant-popup {
+    position: relative;
+    margin-top: 0.5rem;
+    background: #040647;
+    border: 2px solid #2ecc71;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 0 12px rgba(46,204,113,0.3);
+}
+
+.pedant-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    background: #0d1a0d;
+    border-bottom: 1px solid #2ecc71;
+}
+
+.pedant-header span {
+    flex: 1;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    color: #2ecc71;
+}
+
+.pedant-ic {
+    width: 14px;
+    height: 14px;
+    image-rendering: pixelated;
+    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
+}
+
+.pedant-close {
+    background: none;
+    border: none;
+    color: #2ecc71;
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+}
+.pedant-close:hover { color: #fff; }
+
+.pedant-msg {
+    margin: 0;
+    padding: 0.7rem 0.75rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    color: #2ecc71;
+    line-height: 1.8;
+}
+
+.pedant-pop-enter-active { transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); }
+.pedant-pop-leave-active { transition: all 0.15s ease-in; }
+.pedant-pop-enter-from  { opacity: 0; transform: scale(0.85); }
+.pedant-pop-leave-to    { opacity: 0; transform: scale(0.9); }
 </style>

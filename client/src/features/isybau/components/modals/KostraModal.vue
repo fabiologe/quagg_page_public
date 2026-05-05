@@ -268,15 +268,19 @@ const applyResult = () => {
 
 .modal-header {
   padding: 1rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin: 0;
-  color: #2c3e50;
+  color: #aeadd2;
 }
 
 .close-btn {
@@ -285,13 +289,13 @@ const applyResult = () => {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #94a3b8; /* Slate 400 */
+  color: #8f8be1; /* Slate 400 */
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #ef4444; /* Red 500 */
+  color: #2ecc71; /* Red 500 */
 }
 
 .modal-body {
@@ -299,7 +303,7 @@ const applyResult = () => {
 }
 
 .description {
-  color: #7f8c8d;
+  color: #594491;
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
@@ -312,26 +316,26 @@ const applyResult = () => {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: #2c3e50;
+  color: #040647;
 }
 
 .form-group select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #ddd;
+  border: 1px solid #aeadd2;
   border-radius: 4px;
   font-size: 1rem;
 }
 
 .reference-info {
   font-size: 0.85rem;
-  color: #95a5a6;
+  color: #aeadd2;
   margin-bottom: 1rem;
 }
 
 .result-box {
-  background: #f0f9ff;
-  border: 1px solid #bde0fe;
+  background: #f3f2fb;
+  border: 1px solid #aeadd2;
   padding: 1rem;
   border-radius: 4px;
   margin-top: 1rem;
@@ -345,13 +349,13 @@ const applyResult = () => {
 .result-value {
   font-size: 1.2rem;
   font-weight: bold;
-  color: #2c3e50;
+  color: #040647;
   margin-bottom: 0.5rem;
 }
 
 .source {
   font-size: 0.8rem;
-  color: #7f8c8d;
+  color: #594491;
   margin: 0;
 }
 
@@ -365,14 +369,14 @@ const applyResult = () => {
 
 .modal-footer {
   padding: 1rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #aeadd2;
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
 }
 
 .primary-btn, .apply-btn {
-  background: #3498db;
+  background: #040647;
   color: white;
   border: none;
   padding: 0.5rem 1rem;
@@ -388,8 +392,8 @@ const applyResult = () => {
 
 .secondary-btn {
   background: white;
-  border: 1px solid #ddd;
-  color: #7f8c8d;
+  border: 1px solid #aeadd2;
+  color: #594491;
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
@@ -404,7 +408,7 @@ const applyResult = () => {
 
 .data-details {
   margin: 1rem 0;
-  border: 1px solid #ddd;
+  border: 1px solid #aeadd2;
   border-radius: 4px;
   background: white;
 }
@@ -412,7 +416,7 @@ const applyResult = () => {
 .data-details summary {
   padding: 0.5rem;
   cursor: pointer;
-  background: #f8f9fa;
+  background: #f3f2fb;
   font-weight: 500;
 }
 
@@ -429,7 +433,7 @@ const applyResult = () => {
 
 .kostra-table th, .kostra-table td {
   padding: 0.4rem;
-  border: 1px solid #eee;
+  border: 1px solid #aeadd2;
   text-align: right;
 }
 
@@ -455,7 +459,7 @@ const applyResult = () => {
 }
 
 .clickable-cell:hover {
-  background-color: #e8f4f8;
+  background-color: #f3f2fb;
 }
 
 .reference-input-group {
@@ -472,13 +476,13 @@ const applyResult = () => {
 
 .input-wrapper label {
     font-size: 0.8rem;
-    color: #7f8c8d;
+    color: #594491;
     margin-bottom: 0.2rem;
 }
 
 .input-wrapper input {
     padding: 0.5rem;
-    border: 1px solid #ddd;
+    border: 1px solid #aeadd2;
     border-radius: 4px;
     width: 120px;
 }
@@ -511,4 +515,52 @@ const applyResult = () => {
   font-weight: bold;
   border-color: #2980b9;
 }
+
+/* ── Design Schema ────────────────────────────── */
+.tab-btn {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.5rem !important;
+  letter-spacing: 0.06em;
+  background: transparent !important;
+  border: 1px solid #594491 !important;
+  color: #aeadd2 !important;
+  border-radius: 5px !important;
+  padding: 0.45rem 0.75rem !important;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn:hover { background: #594491 !important; color: #fff !important; }
+.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
+
+.primary-btn {
+  background: #040647 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  transition: background 0.15s;
+}
+.primary-btn:hover:not(:disabled) { background: #594491 !important; }
+.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
+
+.secondary-btn {
+  background: #fff !important;
+  border: 1px solid #aeadd2 !important;
+  color: #040647 !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  transition: background 0.12s;
+}
+.secondary-btn:hover { background: #f3f2fb !important; }
+
+.modal-body h3, .panel h3 {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.55rem !important;
+  color: #594491 !important;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #aeadd2 !important;
+  padding-bottom: 0.4rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
 </style>

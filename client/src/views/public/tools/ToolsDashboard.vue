@@ -38,12 +38,12 @@
             </div>
           </div>
 
-          <!-- ISYBAU Tool Card -->
-          <div class="tool-card" @click="$router.push('/tools/isybau')">
-            <div class="icon">🚇</div>
+          <!-- SaintV 1D Tool Card -->
+          <div class="tool-card" @click="$router.push('/tools/saintv-1d')">
+            <div class="icon"><img src="/saintv1d/Saintv1d-icon.png" alt="SaintV 1D" class="tool-icon-img" /></div>
             <div class="content">
-              <h3>ISYBAU Import & Analyse</h3>
-              <p>Import, Visualisierung und hydraulische Berechnung von ISYBAU-XML Dateien.</p>
+              <h3>SaintV – 1D</h3>
+              <p>Import, Visualisierung und hydraulische Simulation von Kanalnetzen (ISYBAU-XML, SWMM).</p>
               <span class="link-text">Zum Tool &rarr;</span>
             </div>
           </div>
@@ -189,6 +189,13 @@ const showIfcViewer = ref(false);
 .icon {
   font-size: 3rem;
   margin-bottom: 1.5rem;
+}
+
+.tool-icon-img {
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
+  display: block;
 }
 
 .content h3 {
