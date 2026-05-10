@@ -431,10 +431,10 @@ SURCHARGE_METHOD     SLOT
                 ? this.safeFloat(from.wehrWidth)
                 : this.safeFloat(bd?.wehrLaenge, 1.0);
 
-            // Beiwert: UI dischargeCoeff > 3.33 (scharfkantig SI)
+            // Beiwert Cw: UI dischargeCoeff > 1.89 (scharfkantig belüftet μ=0.64, FLOW_UNITS=CMS, Q = Cw·L·H^1.5)
             const cd = this.safeFloat(from.dischargeCoeff, 0) > 0
                 ? this.safeFloat(from.dischargeCoeff)
-                : 3.33;
+                : 1.89;
 
             text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} TRANSVERSE ${this.pad(crestHt)} ${cd.toFixed(2)}      NO       0        0          YES\n`;
             xs   += `${this.pad(id)} RECT_OPEN  ${this.pad(crestHt > 0 ? crestHt : 0.5)} ${this.pad(laenge)} 0          0          1\n`;

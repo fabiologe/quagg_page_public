@@ -12,18 +12,25 @@
           >
             <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" /> Editor (2D)
           </button>
-          <button 
-            @click="viewMode = '3d'" 
-            :class="['nav-btn', { active: viewMode === '3d' }]"
+          <button
+            @click="goto3d(false)"
+            :class="['nav-btn', { active: viewMode === '3d' && !autoResultsFor3d }]"
           >
             <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Global-Public--Streamline-Pixel.svg" /> 3D Ansicht
           </button>
-          <button 
+          <button
             v-if="hasResults"
-            @click="viewMode = 'result'" 
+            @click="viewMode = 'result'"
             :class="['nav-btn', { active: viewMode === 'result' }]"
           >
             <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Expand-3--Streamline-Pixel.svg" /> Ergebnisse
+          </button>
+          <button
+            v-if="hasResults"
+            @click="goto3d(true)"
+            :class="['nav-btn', 'nav-btn-result3d', { active: viewMode === '3d' && autoResultsFor3d }]"
+          >
+            <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Global-Public--Streamline-Pixel.svg" /> Ergebnis 3D
           </button>
         </div>
     </Sidebar>
@@ -32,8 +39,9 @@
         <!-- Toolbar / View Switcher -->
         <div class="view-switcher">
             <button @click="viewMode = '2d'" :class="{ active: viewMode === '2d' }">2D Karte</button>
-            <button @click="viewMode = '3d'" :class="{ active: viewMode === '3d' }">3D Ansicht</button>
-            <button @click="viewMode = 'result'" :class="{ active: viewMode === 'result' }" v-if="hasResults">Ergebnisse</button>
+            <button @click="goto3d(false)" :class="{ active: viewMode === '3d' && !autoResultsFor3d }">3D Ansicht</button>
+            <button v-if="hasResults" @click="viewMode = 'result'" :class="{ active: viewMode === 'result' }">Ergebnisse</button>
+            <button v-if="hasResults" @click="goto3d(true)" :class="{ active: viewMode === '3d' && autoResultsFor3d }" class="result3d-tab">Ergebnis 3D</button>
             <button class="help-btn" @click="showHelpModal = true" title="Hilfe & Anleitung">
                 <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Question-Help-Circle-2--Streamline-Pixel.svg" />
             </button>
@@ -52,10 +60,13 @@
 
         <!-- 3D View -->
         <div v-if="viewMode === '3d'" class="view-container">
-            <IsybauViewer3D 
-                :nodes="store.nodes" 
-                :edges="store.edges" 
+            <IsybauViewer3D
+                :nodes="store.nodes"
+                :edges="store.edges"
                 :areas="store.areaArray"
+                :nodeResults="new Map(Object.entries(store.simulation.results?.nodes || {}))"
+                :edgeResults="new Map(Object.entries(store.simulation.results?.edges || {}))"
+                :autoShowResults="autoResultsFor3d"
             />
         </div>
 
@@ -199,8 +210,14 @@ import MessageTicker from '../components/ui/MessageTicker.vue';
 
 const store = useIsybauStore();
 const viewMode = ref('2d');
+const autoResultsFor3d = ref(false);
 
 const hasResults = computed(() => !!store.simulation.results);
+
+function goto3d(withResults = false) {
+  autoResultsFor3d.value = withResults;
+  viewMode.value = '3d';
+}
 
 
 // Element Modal State
@@ -432,6 +449,16 @@ watch(() => store.simulation.results, (newVal) => {
     color: #fff;
 }
 
+.view-switcher button.result3d-tab {
+    border-color: #f39c12;
+    color: #7d4e00;
+}
+.view-switcher button.result3d-tab.active {
+    background: #f39c12;
+    color: #fff;
+    border-color: #f39c12;
+}
+
 .help-btn {
     margin-left: 0.25rem;
     background: #0d0e5a !important;
@@ -501,6 +528,20 @@ watch(() => store.simulation.results, (newVal) => {
   border-color: #2196F3;
   color: #1565C0;
   font-weight: 500;
+}
+
+.nav-btn-result3d {
+  border-color: #f39c12;
+  color: #7d4e00;
+}
+.nav-btn-result3d:hover {
+  background: #fff8eb;
+  border-color: #e67e22;
+}
+.nav-btn-result3d.active {
+  background: #fff3cd;
+  border-color: #f39c12;
+  color: #7d4e00;
 }
 
 /* Warning Toast */

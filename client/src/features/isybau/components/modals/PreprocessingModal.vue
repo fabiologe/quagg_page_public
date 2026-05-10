@@ -102,7 +102,7 @@
                                 </option>
                             </select>
                         </div>
-                        
+
                         <!-- Dynamic Node Fields -->
                         <div class="bulk-field" v-if="parseInt(bulkForm.nodeType) === 7">
                             <label>Wehrhöhe (m):</label>
@@ -111,6 +111,20 @@
                          <div class="bulk-field" v-if="parseInt(bulkForm.nodeType) === 1">
                             <label>Förderleistung (l/s)? (Zukunft):</label>
                             <input disabled placeholder="Feature kommt..." class="bulk-input">
+                        </div>
+
+                        <div class="bulk-divider"></div>
+
+                        <div class="bulk-field">
+                            <label>Deckel druckdicht:</label>
+                            <select v-model="bulkForm.canOverflow" class="bulk-select">
+                                <option :value="null">- Unverändert -</option>
+                                <option :value="false">Ja – druckdicht (kein Überlauf)</option>
+                                <option :value="true">Nein – überlauffähig</option>
+                            </select>
+                            <span class="bulk-hint" v-if="bulkForm.canOverflow !== null">
+                                {{ bulkForm.canOverflow === false ? '🔒 Deckel wird auf druckdicht gesetzt' : '🔓 Deckel wird auf überlauffähig gesetzt' }}
+                            </span>
                         </div>
                     </template>
 
@@ -172,7 +186,9 @@
                     <td class="col-id sticky-left-2">
                         <div class="id-cell">
                             {{ node.id }}
-                            <button class="locate-btn" @click.stop="locate(node.id)" title="Auf Karte zeigen">🎯</button>
+                            <button class="locate-btn" @click.stop="locate(node.id)" title="Auf Karte zeigen">
+                                <img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" />
+                            </button>
                         </div>
                     </td>
                     <td>
@@ -229,7 +245,7 @@
                     <td class="col-id sticky-left-2">
                         <div class="id-cell">
                             {{ node.id }}
-                            <button class="locate-btn" @click.stop="locate(node.id)">🎯</button>
+                            <button class="locate-btn" @click.stop="locate(node.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                         </div>
                     </td>
                     <td>
@@ -248,7 +264,7 @@
                        <div v-if="[1, 6].includes(node.type)" class="input-group-col">
                         <div class="input-group">
                              <input type="number" v-model.number="node.pumpRate" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Förderleistung</span>
+                             <span class="hint-text">Förderleistung (l/s)</span>
                         </div>
                         <div class="input-group">
                              <input type="number" v-model.number="node.onDepth" step="0.1" class="small-input" @click.stop>
@@ -268,11 +284,11 @@
                         </div>
                         <div class="input-group">
                               <input type="number" v-model.number="node.maxDepth" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Max. Tiefe</span>
+                             <span class="hint-text">Max. Tiefe (m)</span>
                         </div>
                         <div class="input-group">
                               <input type="number" v-model.number="node.initDepth" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Start-Tiefe</span>
+                             <span class="hint-text">Start-Tiefe (m)</span>
                         </div>
                         <div class="input-group">
                               <select v-model="node.storageShape" class="small-select" @click.stop>
@@ -290,15 +306,27 @@
                        <div v-if="node.type === 7" class="input-group-col">
                         <div class="input-group">
                              <input type="number" v-model.number="node.weirHeight" step="0.01" class="small-input" @click.stop>
-                             <span class="hint-text">Wehrhöhe</span>
+                             <span class="hint-text">Wehrhöhe (m)</span>
                         </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.weirWidth" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Breite</span>
+                             <input type="number" v-model.number="node.weirWidth" step="0.01" class="small-input" @click.stop>
+                             <span class="hint-text">Breite (m)</span>
+                        </div>
+                        <div class="input-group" style="grid-column: span 2;">
+                             <select class="weir-preset-select" @change="node.dischargeCoeff = parseFloat($event.target.value)" @click.stop title="Überfallbeiwert μ → Cw = (2/3)·μ·√(2g)">
+                                 <option value="">— Kronenform wählen —</option>
+                                 <option value="1.48">① Breit, scharfkantig, waagerecht (μ≈0.50 → Cw=1.48)</option>
+                                 <option value="1.55">② Breit, gut abger. Kanten (μ≈0.53 → Cw=1.55)</option>
+                                 <option value="2.04">③ Breit, vollst. abgerundet (μ≈0.69 → Cw=2.04)</option>
+                                 <option value="1.89">④ Scharfkantig, Strahl belüftet (μ≈0.64 → Cw=1.89)</option>
+                                 <option value="2.19">⑤ Rundkronig, lotrechte OW-Seite (μ≈0.74 → Cw=2.19)</option>
+                                 <option value="2.27">⑥ Dachförmig, abgerundete Krone (μ≈0.77 → Cw=2.27)</option>
+                             </select>
+                             <span class="hint-text">Kronenform</span>
                         </div>
                         <div class="input-group">
-                             <input type="number" v-model.number="node.dischargeCoeff" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Beiwert</span>
+                             <input type="number" v-model.number="node.dischargeCoeff" step="0.01" class="small-input" @click.stop>
+                             <span class="hint-text">Beiwert Cw</span>
                         </div>
                       </div>
 
@@ -306,7 +334,7 @@
                        <div v-if="node.type === 8" class="input-group-col">
                         <div class="input-group">
                              <input type="number" v-model.number="node.maxOutflow" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Max. Abfluss</span>
+                             <span class="hint-text">Max. Abfluss (l/s)</span>
                         </div>
                        </div>
                        
@@ -321,7 +349,7 @@
                        <!-- 14: Inlet (Einlaufbauwerk) + 10, 11 Misc -->
                        <div v-if="[10, 11, 14].includes(node.type)" class="input-group">
                         <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
-                        <span class="hint-text">Zufluss</span>
+                        <span class="hint-text">Zufluss (l/s)</span>
                       </div>
 
                       <!-- Type 5 (Auslaufbauwerk) Loose Check -->
@@ -334,15 +362,15 @@
                         </div>
                         <div class="input-group">
                              <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
-                             <span class="hint-text">Volumen</span>
+                             <span class="hint-text">Volumen (m³)</span>
                          </div>
                          <div class="input-group">
                              <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Zufluss</span>
+                             <span class="hint-text">Zufluss (l/s)</span>
                          </div>
                          <div class="input-group" v-if="node.outflowType === 'throttled'">
                              <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Max. Abfluss</span>
+                             <span class="hint-text">Max. Abfluss (l/s)</span>
                          </div>
                       </div>
 
@@ -350,15 +378,15 @@
                       <div v-if="node.type === 'Bauwerk'" class="input-group-col">
                          <div class="input-group">
                              <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
-                             <span class="hint-text">Volumen</span>
+                             <span class="hint-text">Volumen (m³)</span>
                          </div>
                          <div class="input-group">
                              <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Zufluss</span>
+                             <span class="hint-text">Zufluss (l/s)</span>
                          </div>
                          <div class="input-group">
                              <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
-                             <span class="hint-text">Abfluss</span>
+                             <span class="hint-text">Abfluss (l/s)</span>
                          </div>
                          <div class="input-group">
                             <label class="checkbox-label">
@@ -430,7 +458,7 @@
                     <td class="col-id sticky-left-2">
                         <div class="id-cell">
                             {{ edge.id }}
-                            <button class="locate-btn" @click.stop="locate(edge.id)">🎯</button>
+                            <button class="locate-btn" @click.stop="locate(edge.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                         </div>
                     </td>
                     <td class="small-text">{{ edge.from }} -> {{ edge.to }}</td>
@@ -487,7 +515,7 @@
                         <td class="col-id sticky-left-2">
                             <div class="id-cell">
                                 {{ area.id }}
-                                <button class="locate-btn" @click.stop="locate(area.id)">🎯</button>
+                                <button class="locate-btn" @click.stop="locate(area.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                             </div>
                         </td>
                         <td>{{ area.size.toFixed(4) }}</td>
@@ -676,12 +704,12 @@ const handleTypeChange = (node, previousCategory) => {
 
 
 // === Bulk Edit ===
-const bulkForm = ref({ material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, runoffCoeff: null });
+const bulkForm = ref({ material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, runoffCoeff: null, canOverflow: null });
 
-const openBulkEdit = () => { 
+const openBulkEdit = () => {
     // Reset form
-    bulkForm.value = { material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, runoffCoeff: null };
-    showBulkEdit.value = true; 
+    bulkForm.value = { material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, runoffCoeff: null, canOverflow: null };
+    showBulkEdit.value = true;
 };
 
 const applyBulkEdit = () => {
@@ -705,25 +733,26 @@ const applyBulkEdit = () => {
             }
         });
     } else if (activeTab.value === 'nodes' || activeTab.value === 'structures') {
-        if (bulkForm.value.nodeType !== '') {
-            nodes.value.forEach(n => {
-                if (selectedIds.value.includes(n.id)) {
-                    n.type = bulkForm.value.nodeType;
-                    // Apply special props
-                    if (n.type === 7 && bulkForm.value.weirHeight) n.weirHeight = bulkForm.value.weirHeight;
-                    updateCount++;
-                }
-            });
-             // Trigger undo is too complex for bulk move, just let it happen (user saw explicit option)
-        } else if (bulkForm.value.weirHeight) {
-             // Just update weir height if types match?
-             nodes.value.forEach(n => {
-                if (selectedIds.value.includes(n.id) && n.type === 7) {
-                    n.weirHeight = bulkForm.value.weirHeight;
-                    updateCount++;
-                }
-             });
-        }
+        nodes.value.forEach(n => {
+            if (!selectedIds.value.includes(n.id)) return;
+            let changed = false;
+
+            if (bulkForm.value.nodeType !== '') {
+                n.type = bulkForm.value.nodeType;
+                if (n.type === 7 && bulkForm.value.weirHeight) n.weirHeight = bulkForm.value.weirHeight;
+                changed = true;
+            } else if (bulkForm.value.weirHeight && n.type === 7) {
+                n.weirHeight = bulkForm.value.weirHeight;
+                changed = true;
+            }
+
+            if (bulkForm.value.canOverflow !== null) {
+                n.canOverflow = bulkForm.value.canOverflow;
+                changed = true;
+            }
+
+            if (changed) updateCount++;
+        });
     } else if (activeTab.value === 'areas') {
         if (bulkForm.value.runoffCoeff !== null && bulkForm.value.runoffCoeff !== '') {
             areas.value.forEach(a => {
@@ -1021,8 +1050,9 @@ const apply = () => {
 
 /* Locate Button */
 .id-cell { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
-.locate-btn { border: none; background: none; cursor: pointer; opacity: 0.5; font-size: 1rem; }
+.locate-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; }
 .locate-btn:hover { opacity: 1; transform: scale(1.1); }
+.locate-icon { width: 16px; height: 16px; display: block; }
 
 /* Undo & Bulk */
 .undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: white; padding: 10px 20px; border-radius: 20px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 1000; }
@@ -1036,6 +1066,9 @@ const apply = () => {
 .bulk-field-row { display: flex; gap: 1rem; }
 .bulk-select, .bulk-input { padding: 8px; border: 1px solid #aeadd2; border-radius: 4px; width: 100%; box-sizing: border-box; }
 .bulk-buttons { display: flex; gap: 1rem; justify-content: flex-end; }
+.bulk-divider { border: none; border-top: 1px solid #aeadd2; margin: 0.25rem 0; }
+.bulk-hint { font-size: 0.75rem; color: #594491; font-style: italic; }
+.weir-preset-select { width: 100%; padding: 3px 4px; border: 1px solid #aeadd2; border-radius: 4px; font-size: 0.78rem; box-sizing: border-box; }
 
 .modal-footer { padding: 1rem; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 1rem; align-items: center; }
 .export-btn { background: white; border: 1px solid #27ae60; color: #27ae60; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.15s, color 0.15s; }

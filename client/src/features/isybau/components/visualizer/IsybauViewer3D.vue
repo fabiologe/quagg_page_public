@@ -1,648 +1,252 @@
 <template>
-  <div class="isybau-viewer-3d" ref="container">
+  <div class="viewer-3d-root" ref="rootEl">
     <div v-if="!nodes.size" class="empty-state">
-      No network data to display.
+      Kein Netz geladen – bitte ISYBAU-XML importieren.
     </div>
-    <div v-else class="canvas-container" ref="canvasContainer"></div>
-    
-    <div class="controls">
-      <button @click="resetView" title="Reset View">↺</button>
-    </div>
+    <div v-else ref="canvasEl" class="canvas-host" />
 
-    <!-- Info Window (Reused style) -->
-    <Transition name="slide-up">
-      <div v-if="selectedElement" class="info-window">
-        <div class="info-header">
-          <h3>{{ selectedElement.type === 'Haltung' || selectedElement.type === 'Leitung' ? 'Kante' : 'Knoten' }} (3D)</h3>
-          <button @click="selectedElement = null" class="close-btn">×</button>
-        </div>
-        <div class="info-content">
-          <div class="info-row">
-            <span class="label">ID:</span>
-            <span class="value">{{ selectedElement.id }}</span>
-          </div>
-          <template v-if="selectedElement.profile">
-            <div class="info-row">
-              <span class="label">Profil:</span>
-              <span class="value">{{ getProfileName(selectedElement.profile.type) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Dimension:</span>
-              <span class="value">{{ (selectedElement.profile.height * 1000).toFixed(0) }} mm</span>
-            </div>
-          </template>
-          <template v-else>
-            <div class="info-row">
-              <span class="label">Sohlhöhe (SH):</span>
-              <span class="value">{{ selectedElement.z?.toFixed(2) }} m</span>
-            </div>
-            <div class="info-row" v-if="selectedElement.coverZ">
-              <span class="label">Deckelhöhe (DH):</span>
-              <span class="value">{{ selectedElement.coverZ?.toFixed(2) }} m</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Tiefe:</span>
-              <span class="value">{{ selectedElement.depth?.toFixed(2) }} m</span>
-            </div>
-          </template>
-        </div>
-      </div>
-    </Transition>
+    <Viewer3DControls
+      v-model:showNodes="showNodes"
+      v-model:showEdges="showEdges"
+      v-model:showAreas="showAreas"
+      v-model:showResults="showResults"
+      v-model:showWaterLevel="showWaterLevel"
+      v-model:zScale="zScale"
+      :hasResults="hasResults"
+      @reset-view="core.resetView()"
+    />
+
+    <Viewer3DInfoPanel
+      :element="selectedElement"
+      :result="selectedResult"
+      @close="selectedElement = null"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { useThreeCore }    from './viewer3d/useThreeCore.js';
+import { useSceneBuilder } from './viewer3d/useSceneBuilder.js';
+import Viewer3DControls    from './viewer3d/Viewer3DControls.vue';
+import Viewer3DInfoPanel   from './viewer3d/Viewer3DInfoPanel.vue';
 
 const props = defineProps({
-  nodes: { type: Map, required: true },
-  edges: { type: Map, required: true },
-  areas: { type: Array, default: () => [] }
+  nodes:            { type: Map,     required: true },
+  edges:            { type: Map,     required: true },
+  areas:            { type: Array,   default: () => [] },
+  nodeResults:      { type: Map,     default: () => new Map() },
+  edgeResults:      { type: Map,     default: () => new Map() },
+  autoShowResults:  { type: Boolean, default: false },
 });
 
-const container = ref(null);
-const canvasContainer = ref(null);
+const rootEl   = ref(null);
+const canvasEl = ref(null);
+
+// UI state — showResults initialised from prop so the "Ergebnis 3D" button can pre-enable it
+const showNodes       = ref(true);
+const showEdges       = ref(true);
+const showAreas       = ref(true);
+const showResults     = ref(props.autoShowResults);
+const showWaterLevel  = ref(true);
+const zScale          = ref(1);
 const selectedElement = ref(null);
 
-let scene, camera, renderer, controls, raycaster, mouse;
-let animationId;
-const objectsMap = new Map(); // Mesh -> Data
+// Computed as a proper reactive value (plain Map.size is not tracked by Vue)
+const hasResults = computed(() => props.nodeResults.size > 0 || props.edgeResults.size > 0);
 
-// Profile Types
-const PROFILE_CIRCLE = 0;
-const PROFILE_TRAPEZOID = 1; // Assuming 1 for now, adjust if needed
+// When parent navigates via "Ergebnis 3D" while already in 3D view, enable results
+watch(() => props.autoShowResults, (v) => { if (v) showResults.value = true; });
 
-const getProfileName = (type) => {
-  if (type === PROFILE_CIRCLE) return 'Kreis';
-  if (type === PROFILE_TRAPEZOID) return 'Trapez';
-  return 'Unbekannt';
-};
+// Result for the currently selected element (fed to info panel)
+const selectedResult = computed(() => {
+  if (!selectedElement.value) return null;
+  const id = selectedElement.value.id;
+  const isEdge = !!(selectedElement.value.fromNodeId || selectedElement.value.from);
+  return isEdge ? (props.edgeResults.get(id) ?? null) : (props.nodeResults.get(id) ?? null);
+});
 
-// Calculate Bounds and Center
+// Three.js sub-systems
+const core    = useThreeCore();
+const builder = useSceneBuilder();
+
+// Mouse-to-raycaster helper
+const mouse = new THREE.Vector2();
+
+// ─── Bounds ────────────────────────────────────────────────────────────────
 const bounds = computed(() => {
-  if (!props.nodes.size) return { minX: 0, minY: 0, minZ: 0, centerX: 0, centerY: 0, centerZ: 0 };
-  
+  if (!props.nodes.size) return { minX: 0, minY: 0, minZ: 0, centerX: 0, centerY: 0, spanX: 10, spanY: 10, spanZ: 5 };
+
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
-  for (const node of props.nodes.values()) {
-    if (Number.isFinite(node.x) && Number.isFinite(node.y) && Number.isFinite(node.z)) {
-        if (node.x < minX) minX = node.x;
-        if (node.y < minY) minY = node.y;
-        if (node.z < minZ) minZ = node.z;
-        if (node.x > maxX) maxX = node.x;
-        if (node.y > maxY) maxY = node.y;
-        if (node.z > maxZ) maxZ = node.z;
-    }
+  for (const n of props.nodes.values()) {
+    if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
+    if (n.x < minX) minX = n.x;  if (n.x > maxX) maxX = n.x;
+    if (n.y < minY) minY = n.y;  if (n.y > maxY) maxY = n.y;
+    const z = Number.isFinite(n.z) ? n.z : 0;
+    if (z < minZ) minZ = z;      if (z > maxZ) maxZ = z;
   }
 
-  // Fallback if no valid nodes
-  if (minX === Infinity) {
-      return { minX: 0, minY: 0, minZ: 0, centerX: 0, centerY: 0, centerZ: 0 };
-  }
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, minZ: 0, centerX: 0, centerY: 0, spanX: 10, spanY: 10, spanZ: 5 };
 
   return {
     minX, minY, minZ,
     centerX: (minX + maxX) / 2,
     centerY: (minY + maxY) / 2,
-    centerZ: (minZ + maxZ) / 2
+    spanX: maxX - minX,
+    spanY: maxY - minY,
+    spanZ: Math.max(maxZ - minZ, 0.1),
   };
 });
 
-const initThree = () => {
-  if (!canvasContainer.value) return;
+// ─── Scene rebuild (debounced) ─────────────────────────────────────────────
+let rebuildTimer  = null;
+let pendingFitCam = false; // latched: set true by any watch, consumed on rebuild
 
-  // Scene
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf0f2f5);
-  // Fog: Increase far plane significantly for large models
-  scene.fog = new THREE.Fog(0xf0f2f5, 100, 20000);
-
-  // Camera
-  const width = canvasContainer.value.clientWidth;
-  const height = canvasContainer.value.clientHeight;
-  // Increase Far clipping plane for large networks
-  camera = new THREE.PerspectiveCamera(60, width / height, 0.5, 100000);
-  camera.position.set(0, 100, 100);
-
-  // Renderer
-  renderer = new THREE.WebGLRenderer({ 
-      antialias: true,
-      logarithmicDepthBuffer: true // Vital for z-precision at large scales
-  });
-  renderer.setSize(width, height);
-  renderer.shadowMap.enabled = true;
-  canvasContainer.value.appendChild(renderer.domElement);
-
-  // Controls
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
-  controls.maxDistance = 50000; // Allow zooming out far
-
-  // Lights
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(50, 100, 50);
-  dirLight.castShadow = true;
-  scene.add(dirLight);
-
-  // Raycaster
-  raycaster = new THREE.Raycaster();
-  mouse = new THREE.Vector2();
-
-  // Event Listeners
-  window.addEventListener('resize', onResize);
-  canvasContainer.value.addEventListener('click', onClick);
-  canvasContainer.value.addEventListener('dblclick', onDoubleClick);
-
-  buildScene();
-  animate();
-};
-
-const buildScene = () => {
-  // Clear existing
-  while(scene.children.length > 0){ 
-    scene.remove(scene.children[0]); 
-  }
-  objectsMap.clear();
-
-  // Re-add lights (lazy way, better to keep them in separate group)
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(50, 100, 50);
-  scene.add(dirLight);
-
-  // Ground Plane
-  const planeGeometry = new THREE.PlaneGeometry(100000, 100000);
-  const planeMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, roughness: 0.8 });
-  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-  plane.rotation.x = -Math.PI / 2;
-  plane.position.y = -5; // Slightly below lowest point
-  scene.add(plane);
-
-  const b = bounds.value;
-
-  // Nodes (Manholes)
-  const nodeMat = new THREE.MeshStandardMaterial({ color: 0x2c3e50 });
-  const fictiveMat = new THREE.MeshStandardMaterial({ color: 0xe74c3c }); // Red for Fictive
-  const outfallMat = new THREE.MeshStandardMaterial({ color: 0x27ae60 }); // Green for Outfall
-  const boxMat = new THREE.MeshStandardMaterial({ color: 0x7f8c8d, side: THREE.DoubleSide }); // Grey for missing diameter
-
-  for (const node of props.nodes.values()) {
-    const x = node.x - b.centerX;
-    const z = -(node.y - b.centerY); 
-    const bottomY = (node.z - b.minZ);
-    
-    // Determine Top Y
-    let topY = bottomY;
-    if (node.coverZ !== null && node.coverZ !== undefined) {
-        topY = (node.coverZ - b.minZ);
-    } else if (node.depth) {
-        topY = bottomY + node.depth;
-    } else {
-        topY = bottomY + 2; 
-    }
-    const height = Math.max(0.1, topY - bottomY);
-    const yCenter = bottomY + height / 2;
-
-    const isFictive = node.status === 2; // Explicit Fictive
-    const isOutfall = node.type == 5;    // Outfall
-    const hasDiameter = !!node.diameter && node.diameter > 0;
-
-    let mesh;
-
-    if (isFictive) {
-        // Fictive: Red Sphere Marker (no physical height usually, just a point)
-        const radius = 0.3;
-        const geometry = new THREE.SphereGeometry(radius, 16, 16);
-        mesh = new THREE.Mesh(geometry, fictiveMat);
-        mesh.position.set(x, bottomY + radius, z); // Sit on invert
-
-    } else if (isOutfall) {
-        // Outfall: Green Cone (Marker)
-        const geometry = new THREE.ConeGeometry(0.5, 1.5, 16);
-        mesh = new THREE.Mesh(geometry, outfallMat);
-        mesh.position.set(x, bottomY + 0.75, z); // Sit on invert
-
-    } else if (!hasDiameter) {
-        // Real Node but undefined diameter: Flat Circle at Invert (Sohlhöhe)
-        // Replaces the "Grey Box" which was misleading
-        const radius = 0.4; // 80cm standard logic
-        const geometry = new THREE.CircleGeometry(radius, 32);
-        mesh = new THREE.Mesh(geometry, boxMat);
-        mesh.rotation.x = -Math.PI / 2; // Lie flat
-        mesh.position.set(x, bottomY + 0.05, z); // Slightly above bottom to avoid z-fighting
-
-    } else {
-        // Standard Round Manhole
-        const radius = node.diameter / 2;
-        const geometry = new THREE.CylinderGeometry(radius, radius, height, 16);
-        mesh = new THREE.Mesh(geometry, nodeMat);
-        mesh.position.set(x, yCenter, z);
-    }
-
-    if (mesh) {
-        scene.add(mesh);
-        objectsMap.set(mesh, node);
-    }
-  }
-
-  // Edges (Pipes)
-  for (const edge of props.edges.values()) {
-    // Use Domain Model properties (fromNodeId/toNodeId) with fallback for legacy objects
-    const fromId = edge.fromNodeId || edge.from;
-    const toId = edge.toNodeId || edge.to;
-    
-    const from = props.nodes.get(fromId);
-    const to = props.nodes.get(toId);
-
-    if (!from || !to) continue;
-
-    // Determine Geometry Params FIRST to calculate Offset (put pipe ON Sohlhöhe, not centered)
-    const profile = edge.profile || { type: 0, height: 0.3, width: 0.3 };
-    const pType = profile.type;
-    const h = Math.max(0.1, profile.height || 0.3);
-    const w = Math.max(0.1, profile.width || h);
-    const offsetY = h / 2; // Move center up so bottom matches SH
-
-    // Determine Path Points
-    let curvePath;
-    if (edge.coords && edge.coords.length > 1) {
-        // Reference Logic: Use p.z from parser if available, otherwise interpolate
-        const startZ = (edge.z1 !== undefined && edge.z1 !== null && edge.z1 > -9000) ? edge.z1 : from.z;
-        const endZ = (edge.z2 !== undefined && edge.z2 !== null && edge.z2 > -9000) ? edge.z2 : to.z;
-        const count = edge.coords.length;
-
-        const points = edge.coords.map((p, i) => {
-             // ThreeJS Y = Elevation (Z)
-             let elevation = p.z;
-             if (elevation === undefined || elevation === null || isNaN(elevation)) {
-                 // Fallback interpolation
-                 const progress = i / (count - 1);
-                 elevation = startZ + (endZ - startZ) * progress; // Using real Z space
-             }
-             
-             // Apply OffsetY to lift pipe bottom to SH
-             return new THREE.Vector3(p.x - b.centerX, (elevation - b.minZ) + offsetY, -(p.y - b.centerY));
-        });
-
-        if (count > 2) {
-             curvePath = new THREE.CatmullRomCurve3(points);
-        } else {
-             curvePath = new THREE.LineCurve3(points[0], points[points.length - 1]);
-        }
-    } else {
-         // Fallback calculation (straight line from Nodes)
-         const startZ = (edge.z1 !== undefined && edge.z1 > -9000) ? edge.z1 : from.z;
-         const endZ = (edge.z2 !== undefined && edge.z2 > -9000) ? edge.z2 : to.z;
-         
-         const p1 = new THREE.Vector3(from.x - b.centerX, (startZ - b.minZ) + offsetY, -(from.y - b.centerY));
-         const p2 = new THREE.Vector3(to.x - b.centerX, (endZ - b.minZ) + offsetY, -(to.y - b.centerY));
-         curvePath = new THREE.LineCurve3(p1, p2);
-    }
-
-    // Determine Geometry based on Profile
-    let geometry;
-    // (Params h, w defined above)
-
-    // Extrusion Settings
-    const extrudeSettings = {
-        steps: 10,
-        extrudePath: curvePath,
-        bevelEnabled: false
-    };
-
-    const createShape = () => new THREE.Shape();
-
-    // Helper to rotate shape 90 degrees (fix orientation for ExtrudeGeometry)
-    // Often Extrude aligns Shape Y to Side. We need Up to be Up.
-    // Rotate +90 degrees: x' = -y, y' = x
-    const rot = (x, y) => [-y, x];
-
-    if (pType === 8 || pType === 4) { // Trapez
-        const shape = createShape();
-        const slope = 1.5; 
-        const t = 0.05; 
-        
-        // Define Upright first
-        const topH = h / 2;
-        const botH = -h / 2;
-        const botW = w / 2;
-        const topW = w / 2 + slope * h;
-
-        // Apply Rotation
-        shape.moveTo(...rot(-topW, topH));
-        shape.lineTo(...rot(-botW, botH));
-        shape.lineTo(...rot(botW, botH));
-        shape.lineTo(...rot(topW, topH));
-        shape.closePath();
-
-        geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-    } else if (pType === 3 || pType === 'Rechteckprofil') { // Rect Closed
-        // Closed box usually doesn't matter if rotated 90 deg IF width=height, but for w!=h it matters.
-        // Let's assume Box is fine or also needs rotation? 
-        // If Trapez is sideways, Box is likely sideways too (Width is vertical).
-        // Let's safe-guard by using the same rotation if w != h.
-        // Actually Box is easier to see orientation. Let's rotate it too to be consistent.
-        const shape = createShape();
-        const hw = w / 2;
-        const hh = h / 2;
-        
-        shape.moveTo(...rot(-hw, hh));
-        shape.lineTo(...rot(-hw, -hh));
-        shape.lineTo(...rot(hw, -hh));
-        shape.lineTo(...rot(hw, hh));
-        shape.closePath();
-        geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-    } else if (pType === 5) { // Rect Open
-        const shape = createShape();
-        const hw = w / 2;
-        const hh = h / 2;
-        
-        // Outer U
-        shape.moveTo(...rot(-hw, hh));
-        shape.lineTo(...rot(-hw, -hh));
-        shape.lineTo(...rot(hw, -hh));
-        shape.lineTo(...rot(hw, hh));
-        // Simple line U for open channel
-        // shape.lineTo(...rot(hw, hh)); // End point
-        // Extrude requires Loop for solid? 
-        // Drawing a U-curve in Shape usually results in a thin wall if bevel? No.
-        // Let's close it as a solid block for now, consistent with Closed Rect but logic implies U.
-        // Since we are fixing orientation, let's keep it Closed Box visual for simplicity but rotated.
-        shape.closePath();
-        geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-    } else if (pType === 1 || pType === 'Egg') { // Egg Profile
-        const shape = createShape();
-        // Eiprofil Rotate
-        // Points generation
-        const curve = new THREE.EllipseCurve(0, 0, w/2, h/2, 0, 2 * Math.PI, false, 0);
-        const points = curve.getPoints(12);
-        // Rotate points
-        const rotatedPoints = points.map(p => new THREE.Vector2(...rot(p.x, p.y)));
-        shape.setFromPoints(rotatedPoints);
-        geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        
-    } else {
-        // Circle (Tube)
-        const radius = Math.max(0.1, h / 2);
-        geometry = new THREE.TubeGeometry(curvePath, 12, radius, 8, false);
-    }
-
-    const material = new THREE.MeshStandardMaterial({ 
-        color: (pType === 8 || pType === 4) ? 0x95a5a6 : (pType === 5 || pType === 3) ? 0x8e44ad : 0x3498db, 
-        side: THREE.DoubleSide
+function scheduleRebuild(fitCam = false) {
+  if (fitCam) pendingFitCam = true; // never cleared until the rebuild actually runs
+  if (rebuildTimer) clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(() => {
+    rebuildTimer = null;
+    if (!core.scene) return;
+    const b = bounds.value;
+    builder.buildScene(core.scene, props.nodes, props.edges, props.areas, b, {
+      showNodes:   showNodes.value,
+      showEdges:   showEdges.value,
+      showAreas:   showAreas.value,
+      zScale:      zScale.value,
+      showResults:    showResults.value,
+      showWaterLevel: showWaterLevel.value,
+      nodeResults:    props.nodeResults,
+      edgeResults:    props.edgeResults,
     });
-    const mesh = new THREE.Mesh(geometry, material);
-    
-    scene.add(mesh);
-    objectsMap.set(mesh, edge);
+    if (pendingFitCam) { core.fitToNetwork(b.spanX, b.spanY, b.spanZ); pendingFitCam = false; }
+  }, 150);
+}
+
+// ─── Render key: fingerprint of every property that affects the 3D view ────
+// More reliable than deep-watching a large reactive Map, and only reacts to
+// properties that actually change what's rendered (type, bauwerkstyp, profile…).
+const renderKey = computed(() => {
+  // Include result sizes so a new simulation triggers rebuild when results overlay is active
+  let s = `n:${props.nodes.size}|e:${props.edges.size}|a:${props.areas.length}|nr:${props.nodeResults.size}|er:${props.edgeResults.size}`;
+  for (const n of props.nodes.values()) {
+    s += `|${n.type}·${n.bauwerkstyp}·${n.status}·${n.diameter ?? ''}·${n.z ?? ''}·${n.coverZ ?? ''}·${n.depth ?? ''}·${n.bauwerkData?.wehrLaenge ?? ''}`;
   }
-
-  // Areas (Polygons)
-  for (const area of props.areas) {
-    if (!area.points || area.points.length < 3) continue;
-
-    const shape = new THREE.Shape();
-    const first = area.points[0];
-    shape.moveTo(first.x - b.centerX, -(first.y - b.centerY));
-
-    for (let i = 1; i < area.points.length; i++) {
-      const p = area.points[i];
-      shape.lineTo(p.x - b.centerX, -(p.y - b.centerY));
-    }
-    // Close shape automatically
-
-    const geometry = new THREE.ShapeGeometry(shape);
-    // Rotate to lie flat on XZ plane
-    geometry.rotateX(Math.PI / 2);
-    
-    // Position slightly above ground but below pipes
-    const material = new THREE.MeshBasicMaterial({ 
-      color: 0x3498db, 
-      side: THREE.DoubleSide, 
-      transparent: true, 
-      opacity: 0.3 
-    });
-    
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.y = -2; // Below manholes
-
-    scene.add(mesh);
-    objectsMap.set(mesh, area);
+  for (const e of props.edges.values()) {
+    s += `|${e.profile?.type}·${e.profile?.height}·${e.profile?.width}·${e.z1 ?? ''}·${e.z2 ?? ''}·${e.coords?.length ?? 0}`;
   }
-};
+  for (const a of props.areas) {
+    s += `|${a.points?.length ?? 0}`;
+  }
+  return s;
+});
 
-const animate = () => {
-  animationId = requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-};
+// Track previous node count to detect first-load (→ fitCam)
+const _prevNodeCount = ref(0);
 
-const onResize = () => {
-  if (!canvasContainer.value || !camera || !renderer) return;
-  const width = canvasContainer.value.clientWidth;
-  const height = canvasContainer.value.clientHeight;
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
-};
+watch(renderKey, () => {
+  const prevCount = _prevNodeCount.value;
+  const currCount = props.nodes.size;
+  _prevNodeCount.value = currCount;
+  scheduleRebuild(prevCount === 0 && currCount > 0);
+});
 
-const onClick = (event) => {
-  // Prevent click if dragging
-  // Simple check: if movement < threshold?
-  // For now let's just use standard click.
-  
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+// Layer toggles / z-scale / result mode trigger a rebuild without camera reset
+watch([showNodes, showEdges, showAreas, zScale, showResults, showWaterLevel], () => scheduleRebuild(false));
 
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(scene.children);
+// ─── Raycasting ───────────────────────────────────────────────────────────
+let pointerMoved = false;
 
-  if (intersects.length > 0) {
-    const obj = intersects.find(i => objectsMap.has(i.object));
-    if (obj) {
-      selectedElement.value = objectsMap.get(obj.object);
-      // Highlight logic could go here
-    } else {
-      selectedElement.value = null;
-    }
+function onPointerDown() { pointerMoved = false; }
+function onPointerMove() { pointerMoved = true;  }
+
+function onPointerUp(e) {
+  if (pointerMoved || !core.renderer) return; // ignore drag-end
+  const rect = core.renderer.domElement.getBoundingClientRect();
+  mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, core.camera);
+  const hits = raycaster.intersectObjects(builder.clickableObjects);
+  if (hits.length > 0) {
+    const mesh = hits[0].object;
+    builder.setSelected(mesh);
+    selectedElement.value = builder.objectDataMap.get(mesh) ?? null;
   } else {
+    builder.setSelected(null);
     selectedElement.value = null;
   }
-};
+}
 
-const onDoubleClick = (event) => {
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+function onDblClick(e) {
+  if (!core.renderer) return;
+  const rect = core.renderer.domElement.getBoundingClientRect();
+  mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, core.camera);
+  const hits = raycaster.intersectObjects(builder.clickableObjects);
+  if (hits.length > 0) core.focusMesh(hits[0].object);
+}
 
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(scene.children);
+// ─── Resize ───────────────────────────────────────────────────────────────
+function onResize() { core.handleResize(canvasEl.value); }
 
-  if (intersects.length > 0) {
-     const obj = intersects.find(i => objectsMap.has(i.object));
-     if (obj) {
-         centerOnElement(obj.object);
-     }
-  }
-};
-
-const centerOnElement = (mesh) => {
-    if (!mesh || !controls) return;
-    
-    // Get center of mesh
-    const center = new THREE.Vector3();
-    if (mesh.geometry.boundingBox) {
-        center.copy(mesh.geometry.boundingBox.getCenter(new THREE.Vector3()));
-        center.applyMatrix4(mesh.matrixWorld);
-    } else {
-        center.copy(mesh.position);
-    }
-
-    // Move Controls Target to new Center
-    // Optional: Smooth animation could be added here with TWEEN.js
-    controls.target.copy(center);
-    
-    // Zoom in a bit if too far?
-    // Keep current direction vector
-    const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
-    const dist = offset.length();
-    
-    // If very far, bring closer
-    if (dist > 100) {
-        offset.setLength(50); // Zoom to 50m
-        camera.position.copy(center).add(offset);
-    }
-    
-    controls.update();
-};
-
-
-const resetView = () => {
-  if (controls) controls.reset();
-};
-
+// ─── Lifecycle ────────────────────────────────────────────────────────────
 onMounted(() => {
-  initThree();
+  if (!canvasEl.value) return;
+  core.init(canvasEl.value);
+  core.startLoop();
+
+  canvasEl.value.addEventListener('pointerdown', onPointerDown);
+  canvasEl.value.addEventListener('pointermove', onPointerMove);
+  canvasEl.value.addEventListener('pointerup',   onPointerUp);
+  canvasEl.value.addEventListener('dblclick',    onDblClick);
+  window.addEventListener('resize', onResize);
+
+  // Initial build if data already present
+  if (props.nodes.size) scheduleRebuild(true);
 });
 
 onBeforeUnmount(() => {
-  cancelAnimationFrame(animationId);
+  if (rebuildTimer) clearTimeout(rebuildTimer);
+  canvasEl.value?.removeEventListener('pointerdown', onPointerDown);
+  canvasEl.value?.removeEventListener('pointermove', onPointerMove);
+  canvasEl.value?.removeEventListener('pointerup',   onPointerUp);
+  canvasEl.value?.removeEventListener('dblclick',    onDblClick);
   window.removeEventListener('resize', onResize);
-  if (renderer) renderer.dispose();
+  builder.disposeFully(core.scene);
+  core.dispose();
 });
-
-watch(() => props.nodes, buildScene, { deep: true });
-
 </script>
 
 <style scoped>
-.isybau-viewer-3d {
+.viewer-3d-root {
   width: 100%;
   height: 100%;
   position: relative;
-  background: #f0f2f5;
+  background: #0d1117;
+  overflow: hidden;
 }
 
-.canvas-container {
+.canvas-host {
   width: 100%;
   height: 100%;
 }
 
 .empty-state {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  color: #999;
+  color: #4a5568;
+  font-size: 0.9rem;
+  font-family: 'Press Start 2P', monospace;
+  text-align: center;
+  padding: 2rem;
 }
-
-.controls {
-  position: absolute;
-  bottom: 1rem;
-  left: 1rem;
-}
-
-.controls button {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  width: 36px;
-  height: 36px;
-  cursor: pointer;
-  font-size: 1.2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-
-/* Info Window (Copied from 2D viewer) */
-.info-window {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 300px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  overflow: hidden;
-  z-index: 20;
-}
-
-.info-header {
-  background: linear-gradient(135deg, #8e44ad, #9b59b6); /* Different color for 3D */
-  color: white;
-  padding: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.info-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  opacity: 0.8;
-}
-
-.info-content {
-  padding: 1rem;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-  font-size: 0.95rem;
-}
-
-.label { color: #7f8c8d; font-weight: 500; }
-.value { color: #2c3e50; font-weight: 600; text-align: right; }
-
-.slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s ease; }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateY(20px); opacity: 0; }
 </style>

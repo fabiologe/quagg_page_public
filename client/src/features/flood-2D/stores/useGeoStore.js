@@ -453,6 +453,7 @@ export const useGeoStore = defineStore('geo', () => {
         addWeir,
         addWeirBatch,
 
-        removeWeir
+        removeWeir,
+        notifyTerrainModified: () => { terrainVersion.value++; },
     };
 });

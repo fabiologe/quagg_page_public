@@ -231,6 +231,8 @@ import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
 import { useHistoryManager } from '../../composables/useHistoryManager.js';
+import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPointsRenderer.js';
+import { useBathyBrushTool } from '../../composables/editor/useBathyBrushTool.js';
 import {
     undoTerrain, redoTerrain, canUndoTerrain, canRedoTerrain,
     terrainUndoCount, terrainRedoCount
@@ -274,8 +276,9 @@ let selectionMesh;
 const raycaster = new THREE.Raycaster();
 
 // --- TOOLS SETUP ---
-const drawTool = useDrawTool(); 
+const drawTool = useDrawTool();
 const shovelTool = useShovelTool();
+const bathyBrushTool = useBathyBrushTool();
 const boundaryTool = useBoundaryTool();
 const buildingTool = useBuildingTool();
 const culvertTool = useCulvertTool();
@@ -326,8 +329,9 @@ const cropProxy = {
 
 // Tool Mapping
 const tools = {
-    'DRAW': buildingTool, 
+    'DRAW': buildingTool,
     'SHOVEL': shovelTool,
+    'BATHY_BRUSH': bathyBrushTool,
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
@@ -462,6 +466,9 @@ onMounted(() => {
 
     // Initialize Layer Renderer (Visualizes Imported Data)
     useLayerRenderer(scene, geoStore, activeGrid);
+
+    // Render terrestrial survey points as colored point cloud
+    useSurveyPointsRenderer(scene);
 
     // Restore if data exists
     if (geoStore.terrain && geoStore.terrain.gridData) {

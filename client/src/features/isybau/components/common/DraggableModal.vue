@@ -41,29 +41,45 @@ const modalRef = ref(null);
 // State
 const x = ref(0);
 const y = ref(0);
-const width = ref(parseInt(props.initialWidth));
-const height = ref(parseInt(props.initialHeight));
+const width = ref(800);
+const height = ref(600);
 
-// Initialize position
+const resolveSize = (val, axis = 'w') => {
+    const s = String(val);
+    if (s === 'auto') return 0; // 0 = content-driven height
+    if (s.endsWith('vh')) return window.innerHeight * parseFloat(s) / 100;
+    if (s.endsWith('vw')) return window.innerWidth  * parseFloat(s) / 100;
+    return parseInt(s) || (axis === 'w' ? 800 : 600);
+};
+
+// Initialize position + size on every open so vh resolves correctly
 watch(() => props.isOpen, (val) => {
     if (val) {
-        // Simple centering logic if 'center'
+        width.value  = resolveSize(props.initialWidth,  'w');
+        height.value = resolveSize(props.initialHeight, 'h');
         if (props.initialLeft === 'center') {
-            x.value = window.innerWidth / 2 - width.value / 2;
+            x.value = Math.max(0, window.innerWidth / 2 - width.value / 2);
         } else {
-            x.value = parseInt(props.initialLeft);
+            x.value = parseInt(props.initialLeft) || 0;
         }
-        y.value = parseInt(props.initialTop);
+        y.value = parseInt(props.initialTop) || 50;
     }
 }, { immediate: true });
 
-const modalStyle = computed(() => ({
-    top: `${y.value}px`,
-    left: `${x.value}px`,
-    width: `${width.value}px`,
-    height: `${height.value}px`,
-    position: 'fixed'
-}));
+const modalStyle = computed(() => {
+    const style = {
+        top: `${y.value}px`,
+        left: `${x.value}px`,
+        width: `${width.value}px`,
+        position: 'fixed',
+    };
+    if (height.value > 0) {
+        style.height = `${height.value}px`;
+    } else {
+        style.maxHeight = '90vh'; // auto mode: content-driven but capped
+    }
+    return style;
+});
 
 
 // Dragging

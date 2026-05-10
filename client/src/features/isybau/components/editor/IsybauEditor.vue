@@ -190,19 +190,13 @@ const handleMapClick = ({ x, y }) => {
 
 const handleMapDblClick = () => {
     if (store.editor.mode === 'addArea') {
-        if (store.editor.drawingPoints.length < 3) return; 
-        
-        // Calculate Size (ha)
-        const areaM2 = calculatePolygonArea(store.editor.drawingPoints);
+        if (store.editor.drawingPoints.length < 3) return;
+
+        const points = [...store.editor.drawingPoints];
+        const areaM2 = calculatePolygonArea(points);
         const sizeHa = areaM2 / 10000;
-        
-        // Emit Request to Parent (IsybauMain)
-        console.log("IsybauEditor: Finishing Area, emitting create-area", sizeHa);
-        emit('create-area', {
-            points: [...store.editor.drawingPoints],
-            size: sizeHa
-        });
-        
+
+        emit('create-area', { points, size: sizeHa });
         store.resetDrawing();
     }
 };

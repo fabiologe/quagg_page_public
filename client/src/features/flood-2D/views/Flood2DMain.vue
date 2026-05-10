@@ -4,9 +4,10 @@
     <!-- LEFT TOOLBAR -->
     <aside class="left-sidebar">
        <!-- EditorToolbar uses simStore internally for activeTool -->
-       <EditorToolbar 
+       <EditorToolbar
          :currentAppMode="appMode"
          @open-import="showImportModal = true"
+         @open-bathymetry="showBathymetryModal = true"
          @set-mode="handleSetMode"
          @set-view="handleSetView"
        />
@@ -61,10 +62,14 @@
 
        </div>
 
-       <!-- MODAL -->
-       <DataImportModal 
+       <!-- MODALS -->
+       <DataImportModal
          v-if="showImportModal"
          @close="showImportModal = false"
+       />
+       <BathymetryModal
+         v-if="showBathymetryModal"
+         @close="showBathymetryModal = false"
        />
 
     </main>
@@ -82,6 +87,7 @@ import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStor
 import EditorToolbar from '../components/editor/EditorToolbar.vue';
 import MapEditor3D from '../components/editor/MapEditor3D.vue';
 import DataImportModal from '../components/importer/DataImportModal.vue';
+import BathymetryModal from '../components/importer/BathymetryModal.vue';
 import ScenarioManager from '../components/panel/ScenarioManager.vue';
 
 // Initialize Stores (Pinia best practice: call them in setup)
@@ -92,6 +98,7 @@ const simStore = useSimulationStore();
 const errorMsg = ref(null);
 const editorRef = ref(null);
 const showImportModal = ref(false);
+const showBathymetryModal = ref(false);
 const panelOpen = ref(true);
 const appMode = ref('SETUP'); // SETUP (2D) | IMPORT_TERRAIN (3D)
 

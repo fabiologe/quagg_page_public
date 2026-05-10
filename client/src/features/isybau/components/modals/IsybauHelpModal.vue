@@ -7,7 +7,7 @@
   >
     <div class="help-container">
       <div class="modal-header">
-        <h3>ℹ️ SaintV – 1D · Bedienungsanleitung & System-Audit V.1.02</h3>
+        <h3>ℹ️ SaintV – 1D · Bedienungsanleitung & System-Audit V.1.03</h3>
         <button class="close-btn" @click="$emit('close')">×</button>
       </div>
       
@@ -16,8 +16,8 @@
         <div class="help-sidebar">
           <div class="sidebar-group">
             <span class="group-title">Benutzer</span>
-            <button 
-                v-for="tab in userTabs" 
+            <button
+                v-for="tab in userTabs"
                 :key="tab.id"
                 :class="['tab-btn', { active: activeTab === tab.id }]"
                 @click="activeTab = tab.id"
@@ -25,11 +25,11 @@
                 {{ tab.label }}
             </button>
           </div>
-          
+
           <div class="sidebar-group">
-            <span class="group-title">Technical Audit</span>
-            <button 
-                v-for="tab in techTabs" 
+            <span class="group-title">Technical</span>
+            <button
+                v-for="tab in techTabs"
                 :key="tab.id"
                 :class="['tab-btn', 'tech-btn', { active: activeTab === tab.id }]"
                 @click="activeTab = tab.id"
@@ -41,180 +41,273 @@
 
         <!-- Content Area -->
         <div class="help-content">
-          
+
           <!-- ALLGEMEIN -->
           <div v-if="activeTab === 'general'" class="content-section">
             <h4>Allgemein</h4>
             <p>
-              <strong>SaintV – 1D</strong> ist eine webbasierte Oberfläche für die hydraulische Simulation von Entwässerungsnetzen.
-              Es nutzt den Industriestandard <a href="https://www.epa.gov/water-research/storm-water-management-model-swmm" target="_blank" rel="noopener noreferrer"><strong>SWMM 5 (Storm Water Management Model)</strong></a> als Rechenkern, kompiliert zu WebAssembly (Wasm) für die lokale Ausführung im Browser.
+              <strong>SaintV – 1D</strong> ist eine browserbasierte Oberfläche für die hydraulische Simulation von Entwässerungsnetzen.
+              Als Rechenkern dient der Industriestandard <strong>SWMM 5 (Storm Water Management Model)</strong>, kompiliert zu WebAssembly für die vollständig lokale Ausführung im Browser — ohne Cloud-Upload.
             </p>
-            <ul>
-              <li><strong>Eingabedaten:</strong> Import von ISYBAU XML-Dateien (Stammdaten) oder manuelle Netzwerkerstellung.</li>
-              <li><strong>Simulation:</strong> Hydrodynamische Wellensimulation (Dynamic Wave) zur Berechnung von instationären Abflüssen.</li>
-              <li><strong>Datenschutz:</strong> Alle Berechnungen finden lokal auf Ihrem Gerät statt. Keine Cloud-Verarbeitung der Netzdaten.</li>
-            </ul>
+            <div class="info-grid">
+              <div class="info-card">
+                <div class="info-card-title">Dateneingabe</div>
+                Import von ISYBAU XML (Stammdaten) oder manuelle Netzwerkerstellung im 2D-Editor.
+              </div>
+              <div class="info-card">
+                <div class="info-card-title">Simulation</div>
+                Dynamic Wave (vollständige St.-Venant-Gleichungen): Rückstau, Druckabfluss, Speichereffekte.
+              </div>
+              <div class="info-card">
+                <div class="info-card-title">Datenschutz</div>
+                Alle Netzdaten bleiben auf Ihrem Gerät. Keine Server-Übertragung von Eingabe- oder Ergebnisdaten.
+              </div>
+              <div class="info-card">
+                <div class="info-card-title">Visualisierung</div>
+                2D-Kartenansicht, interaktive 3D-Szene mit Ergebnisüberlagerung und Wasserstandsmarker.
+              </div>
+            </div>
           </div>
 
           <!-- WORKFLOW -->
           <div v-if="activeTab === 'workflow'" class="content-section">
-            <h4>Workflow</h4>
-            <ol>
+            <h4>Typischer Workflow</h4>
+            <ol class="workflow-list">
               <li>
-                <strong>Daten laden & Prüfen:</strong> 
-                Importieren Sie Ihre ISYBAU-XML. Nutzen Sie <em>"Daten bearbeiten"</em>, um fehlende Höhen oder Oberflächen zu ergänzen.
+                <strong>Netz laden</strong>
+                ISYBAU XML importieren oder manuell im Editor aufbauen. Der Importstatus wird im oberen Banner angezeigt.
               </li>
               <li>
-                <strong>Regenereignis definieren:</strong> 
-                Wählen Sie zwischen synthetischen Modellregen (Euler Typ II) oder KOSTRA-DWD Starkregendaten.
+                <strong>Daten prüfen & ergänzen</strong>
+                <em>"Daten bearbeiten"</em> öffnet den Preprocessing-Dialog. Dort können fehlende Sohlhöhen, Schachtdurchmesser, Profiltypen und Sonderbauwerke (Pumpwerke, Wehre, Becken) gesetzt werden. Direkte Bearbeitung in der Tabelle, Massenänderungen via Bulk-Edit.
               </li>
               <li>
-                <strong>Abfluss validieren:</strong> 
-                Die Funktion <em>"✅ Abfluss validieren"</em> prüft vor der Simulation auf kritische Fehler (z.B. fehlende Schachtsohlen, negative Gefälle).
+                <strong>Regenereignis wählen</strong>
+                Synthetischer Modellregen (Euler Typ II) oder KOSTRA-DWD-Daten über die entsprechenden Buttons in der Seitenleiste. Intensität und Dauer sind frei wählbar.
               </li>
               <li>
-                <strong>Simulation starten:</strong> 
-                Der SWMM-Solver berechnet das Netz. Dies kann je nach Netzgröße und Regendauer einige Sekunden dauern.
+                <strong>Abfluss validieren</strong>
+                <em>"Abfluss validieren"</em> prüft vor der Simulation auf typische Fehlerquellen: fehlende Sohlhöhen, negative Gefälle, unverknüpfte Flächen. Warnungen erscheinen als Liste — keine blockierenden Fehler, nur Hinweise.
               </li>
               <li>
-                <strong>Analyse:</strong> 
-                Prüfen Sie Überstau und Überflutungen in der Ergebnistabelle oder der Kartenansicht.
+                <strong>Simulation starten</strong>
+                SWMM-Solver läuft lokal (WebAssembly). Typische Rechenzeit: 1–10 s für kleine bis mittlere Netze (&lt; 500 Elemente).
+              </li>
+              <li>
+                <strong>Ergebnisse analysieren</strong>
+                Tabellen (Überstau, Auslastung, Ganglinien) in der 2D-Ansicht. Für räumliche Interpretation: <em>"Ergebnis 3D"</em> öffnet die 3D-Szene mit Ergebnis-Overlay direkt aktiviert.
               </li>
             </ol>
           </div>
 
           <!-- EDITOR -->
           <div v-if="activeTab === 'editor'" class="content-section">
-            <h4>Editor & Tools (Audit)</h4>
+            <h4>2D-Editor</h4>
             <div class="audit-block">
-                <p>Der Editor ermöglicht die topologische Bearbeitung des Netzes. Nachfolgend eine Auflistung der exakten Funktionalitäten und Grenzen.</p>
-                
-                <h5>🗺️ Karten-Interaktion</h5>
+                <h5>🗺️ Navigation</h5>
                 <ul>
-                    <li><strong>Navigation:</strong> Pan (Ziehen) und Zoom (Mausrad).</li>
-                    <li><strong>Selektion:</strong> Einzelklick selektiert (Blau). Klick ins Leere deselektiert.</li>
-                    <li><strong>Details:</strong> Doppelklick öffnet das Eigenschaften-Fenster. Alternativ "📝"-Button in der Toolbox.</li>
-                    <li><strong>Snapping (Fangmodus):</strong> Beim Zeichnen von Haltungen werden Knoten automatisch gefangen, wenn der Mauszeiger in der Nähe ist (< 10px Radius).</li>
+                    <li><strong>Pan:</strong> Klicken + Ziehen auf leere Fläche.</li>
+                    <li><strong>Zoom:</strong> Mausrad oder Trackpad-Pinch.</li>
+                    <li><strong>Selektion:</strong> Einzelklick auf Element (wird blau). Klick ins Leere deselektiert.</li>
+                    <li><strong>Details:</strong> Doppelklick öffnet das Eigenschaften-Fenster.</li>
+                    <li><strong>Snapping:</strong> Beim Zeichnen von Haltungen werden Knoten automatisch gefangen (&lt; 10 px Radius).</li>
                 </ul>
 
-                <h5>🛠️ Toolbox Funktionen</h5>
+                <h5>🛠️ Werkzeuge</h5>
                 <ul>
-                    <li><strong>Schacht (Node):</strong> Erstellt standardmäßig einen Kontrollschacht (Typ 0). Sohlehöhe (Z) wird initial auf 0 gesetzt und muss angepasst werden.</li>
-                    <li><strong>Haltung (Edge):</strong> Verbindet zwei existierende Schächte. 
-                        <strong>Achtung:</strong> Die Flussrichtung wird durch die Klick-Reihenfolge bestimmt (Start -> Ende). 
-                        Ein negatives Gefälle ist möglich, führt aber zu Warnungen.
-                    </li>
-                    <li><strong>Fläche (Area):</strong> Polygon-Zeichentool. 
-                        <ul>
-                            <li>Klicken für Eckpunkte.</li>
-                            <li>Doppelklick oder Enter zum Abschließen.</li>
-                            <li><strong>Automatismus:</strong> Die Fläche (ha) wird automatisch aus der Geometrie berechnet.</li>
-                            <li><strong>Limitierung:</strong> Flächen müssen manuell einem Knoten zugewiesen werden (Feld "Knoten" in Eigenschaften), sonst fließt der Regen nicht ins Netz.</li>
-                        </ul>
-                    </li>
-                    <li><strong>Löschen (🗑️):</strong> Entfernt Elemente. 
-                        <strong>Kaskade:</strong> Löschen eines Knotens löscht automatisch alle angeschlossenen Haltungen.
-                    </li>
+                    <li><strong>Schacht:</strong> Erstellt einen Standard-Kontrollschacht. Sohlhöhe (Z) initial 0 — bitte anpassen.</li>
+                    <li><strong>Haltung:</strong> Verbindet zwei Knoten. Klick-Reihenfolge = Fließrichtung (Anfang → Ende). Negatives Gefälle möglich, erzeugt Warnung.</li>
+                    <li><strong>Fläche:</strong> Polygon-Tool. Eckpunkte per Klick, Abschluss per Doppelklick oder Enter. Fläche (ha) wird automatisch berechnet. <strong>Wichtig:</strong> Fläche muss einem Knoten zugewiesen werden, sonst fließt kein Regen ins Netz.</li>
+                    <li><strong>Löschen:</strong> Kaskadenlöschung — ein Knoten löscht alle angeschlossenen Haltungen mit.</li>
+                </ul>
+
+                <h5>📋 Daten bearbeiten (Preprocessing)</h5>
+                <ul>
+                    <li>Tabellarische Bearbeitung aller Knoten, Haltungen und Flächen.</li>
+                    <li><strong>Bulk-Edit:</strong> Mehrere Elemente markieren → Massenänderung in einem Schritt.</li>
+                    <li><strong>Sonderbauwerke:</strong> Pumpwerk, Wehr, Becken, Drossel etc. über den "Bauwerke"-Tab konfigurieren.</li>
+                    <li>Änderungen werden erst mit <em>"Übernehmen"</em> in das Netz geschrieben.</li>
                 </ul>
             </div>
+          </div>
+
+          <!-- 3D VIEWER -->
+          <div v-if="activeTab === '3d'" class="content-section">
+            <h4>3D-Ansicht</h4>
+            <p>Die 3D-Szene rendert das Entwässerungsnetz maßstabsgetreu mit echten Sohlhöhen und Profilen — und zeigt nach einer Simulation die hydraulischen Ergebnisse direkt im Raum.</p>
+
+            <h5>🖱️ Navigation</h5>
+            <ul>
+                <li><strong>Drehen:</strong> Linke Maustaste + Ziehen.</li>
+                <li><strong>Zoomen:</strong> Mausrad.</li>
+                <li><strong>Verschieben:</strong> Rechte Maustaste + Ziehen (oder Mitteltaste).</li>
+                <li><strong>Fokus:</strong> Doppelklick auf ein Element — Kamera zentriert sich darauf.</li>
+                <li><strong>Ansicht zurücksetzen:</strong> ↺ Schaltfläche links unten.</li>
+            </ul>
+
+            <h5>🎛️ Layer-Steuerung (links unten)</h5>
+            <table class="tech-table">
+                <tr><th>Schalter</th><th>Funktion</th></tr>
+                <tr><td><strong>Schächte</strong></td><td>Schacht- und Bauwerk-Zylinder ein-/ausblenden.</td></tr>
+                <tr><td><strong>Haltungen</strong></td><td>Rohre und Gerinne ein-/ausblenden.</td></tr>
+                <tr><td><strong>Flächen</strong></td><td>Einzugsflächen als halbtransparente Polygone.</td></tr>
+                <tr><td><strong>Z ×n</strong></td><td>Vertikale Überhöhung (1–20×) — für flache Netze empfohlen.</td></tr>
+                <tr><td><strong>Ergebnisse</strong></td><td>Ergebnis-Overlay aktivieren (erscheint nach Simulation).</td></tr>
+                <tr><td><strong>↳ Wasserstand</strong></td><td>Blaue Wasserstandsmarker in Schächten und Rohren.</td></tr>
+            </table>
+
+            <h5>📐 Dargestellte Geometrien</h5>
+            <table class="tech-table">
+                <tr><th>Element</th><th>3D-Form</th><th>Farbe</th></tr>
+                <tr><td>Schacht (Standard)</td><td>Zylinder, Deckel-Scheibe oben</td><td>Grau</td></tr>
+                <tr><td>Pumpwerk / Pumpe</td><td>Zylinder + Torus-Ring</td><td>Orange</td></tr>
+                <tr><td>Wehr / Überlauf</td><td>Vertikale Platte (Wehrlänge × Tiefe)</td><td>Gelb-Bernstein</td></tr>
+                <tr><td>Becken / Speicher</td><td>Quaderförmiger Block</td><td>Türkis</td></tr>
+                <tr><td>Drossel / Schieber</td><td>Sechseckiger Zylinder</td><td>Lila</td></tr>
+                <tr><td>Auslass</td><td>Kegelform</td><td>Grün</td></tr>
+                <tr><td>Fiktiver Knoten</td><td>Kleine Kugel</td><td>Rot</td></tr>
+                <tr><td>Kreisprofil</td><td>Tube-Geometrie</td><td>Blau</td></tr>
+                <tr><td>Trapez / offenes Gerinne</td><td>Offenes Trapezprofil (ohne Deckel)</td><td>Hellgrau</td></tr>
+                <tr><td>Rechteck (geschl.)</td><td>Geschlossenes Rechteckrohr</td><td>Lila</td></tr>
+                <tr><td>Maulprofil</td><td>Hufeisen-Querschnitt</td><td>Stahlblau</td></tr>
+            </table>
+
+            <h5>🎨 Ergebnis-Overlay (nach Simulation)</h5>
+            <div class="audit-block">
+                <p>Aktivierbar über <em>"Ergebnis 3D"</em> in der Navigation oder den <em>"Ergebnisse"</em>-Toggle im Kontrollpanel.</p>
+                <table class="tech-table">
+                    <tr><th>Farbe</th><th>Bedeutung (Knoten)</th></tr>
+                    <tr><td><span class="color-dot" style="background:#c0392b"></span> Rot</td><td>Überstau / Einstau — Wasser tritt an Oberfläche aus</td></tr>
+                    <tr><td><span class="color-dot" style="background:#e67e22"></span> Orange</td><td>Druckabfluss — Rohr / Schacht unter vollem Druck</td></tr>
+                    <tr><th>Farbe</th><th>Bedeutung (Haltungen — Auslastung)</th></tr>
+                    <tr><td><span class="color-dot" style="background:#c0392b"></span> Rot</td><td>&gt; 90 % Kapazität</td></tr>
+                    <tr><td><span class="color-dot" style="background:#e67e22"></span> Orange</td><td>&gt; 75 % Kapazität</td></tr>
+                    <tr><td><span class="color-dot" style="background:#f1c40f"></span> Gelb</td><td>&gt; 50 % Kapazität</td></tr>
+                    <tr><td><span class="color-dot" style="background:#2980b9"></span> Blau</td><td>≤ 50 % — unkritisch</td></tr>
+                    <tr><th>Symbol</th><th>Bedeutung (Wasserstand)</th></tr>
+                    <tr><td><span class="color-dot" style="background:#3498db;opacity:0.75"></span> Blau (transparent)</td><td>Scheibe im Schacht = maximaler Wasserstand. Ribbon in Haltung = max. Füllstand.</td></tr>
+                </table>
+            </div>
+
+            <h5>ℹ️ Info-Panel (Klick auf Element)</h5>
+            <p>Ein Klick auf jeden Schacht oder jede Haltung öffnet das Info-Panel (oben rechts). Es zeigt Geometrie-Daten und — wenn Ergebnisse vorhanden — die hydraulischen Kenngrößen: Überstau-Status, max. Wasserstand, max. Zufluss, Auslastung und Geschwindigkeit.</p>
           </div>
 
           <!-- RESULTS / ANALYSIS -->
           <div v-if="activeTab === 'results'" class="content-section">
             <h4>Ergebnisse & Analyse</h4>
-            <p>Die Simulation bietet verschiedene Werkzeuge zur Auswertung der Hydraulik.</p>
-            
+
             <h5>📊 Ergebnistabellen</h5>
-            <p>Die Detailansicht bietet Filter für Haltungen, Schächte und Flächen.</p>
             <table class="tech-table">
-                <tr><th>Metrik</th><th>Bedeutung</th><th>Grenzwert / Farbe</th></tr>
-                <tr><td><strong>Auslastung</strong></td><td>Verhältnis von maximalem Abfluss (Qmax) zu Vollfüllleistung (Qvoll).</td><td><span class="tag q-warn">> 100%</span> (Kritisch)</td></tr>
-                <tr><td><strong>Überstauvolumen</strong></td><td>Volumen an Wasser, das nicht mehr im Schacht/Rohr Platz hat und an der Oberfläche "steht".</td><td>> 0 m³ (Rot blinkend in Karte)</td></tr>
-                <tr><td><strong>v_max</strong></td><td>Maximale Fließgeschwindigkeit.</td><td>> 5-6 m/s (Erosionsgefahr, nicht farblich markiert)</td></tr>
+                <tr><th>Metrik</th><th>Bedeutung</th><th>Grenzwert</th></tr>
+                <tr><td><strong>Auslastung (d/D)</strong></td><td>Max. Wasserspiegelhöhe im Verhältnis zum Profilhöhe. Wert &gt; 1.0 = Druckabfluss.</td><td><span class="tag q-warn">&gt; 100 %</span></td></tr>
+                <tr><td><strong>Überstauvolumen</strong></td><td>Wasser, das den Schacht verlässt und "oberirdisch steht". Wird als Ponded Volume modelliert.</td><td>&gt; 0 m³</td></tr>
+                <tr><td><strong>v_max</strong></td><td>Maximale Fließgeschwindigkeit in der Haltung.</td><td>&gt; 5 m/s (Erosion)</td></tr>
+                <tr><td><strong>Massenbilanz-Fehler</strong></td><td>Kontinuitätsfehler des gesamten Systems. Gütekriterium für die Modellstabilität.</td><td>&lt; 2 % = gut</td></tr>
             </table>
 
             <h5>📈 Ganglinien (Zeitreihen)</h5>
-            <p>Durch Klick auf "Details" oder Selektion in der Karte können Sie den zeitlichen Verlauf an jedem Element betrachten. Verfügbar sind Hydrographen für Zufluss, Abfluss und Wasserstand.</p>
+            <p>Im Ergebnisfenster → Reiter "Zeitreihen": zeitlicher Verlauf von Zufluss, Abfluss und Wasserstand an jedem Element. Auswahl über Dropdown oder Klick in die Tabelle.</p>
 
-            <h5>⚠️ Validierung</h5>
-            <p>Im Reiter "Allgemeine Daten" finden Sie die Massenbilanz (Kontinuitätsfehler). Ein Fehler < 2% gilt als sehr gut, bis 5% ist akzeptabel. Hohe Fehler deuten auf instabile Modelle (kurze Rohre, extrem steile Gefälle) hin.</p>
+            <h5>🗺️ Räumliche Analyse in 3D</h5>
+            <p>Der Button <strong>"Ergebnis 3D"</strong> (erscheint nach Simulation) öffnet direkt die 3D-Szene mit aktiviertem Ergebnis-Overlay. Kritische Bereiche (rot/orange) sind sofort räumlich erkennbar. Klick auf einen Knoten oder eine Haltung zeigt die Detailwerte im Info-Panel.</p>
           </div>
 
           <!-- SIMULATION DEEP DIVE -->
           <div v-if="activeTab === 'simulation'" class="content-section">
-            <h4>Simulation Internals (Deep Dive)</h4>
+            <h4>Simulation Internals</h4>
             <div class="audit-block">
-                <p>Hier wird exakt beschrieben, wie die Simulation parametrisiert und ausgeführt wird.</p>
-                
-                <h5>🌊 Hydraulisches Modell (SWMM 5)</h5>
+                <h5>🌊 Hydraulisches Modell</h5>
                 <ul>
-                    <li><strong>Solver:</strong> Dynamic Wave (Vollständige St. Venant Gleichungen). Berücksichtigt Rückstau, Druckabfluss und Speichereffekte.</li>
-                    <li><strong>Schrittweite:</strong> Variabel, gesteuert durch Courant-Kriterium (typisch 0.5 - 30s).</li>
+                    <li><strong>Solver:</strong> SWMM 5 Dynamic Wave — vollständige St.-Venant-Gleichungen (Kontinuität + Impuls). Berücksichtigt Rückstau, Druckabfluss und Speichereffekte.</li>
+                    <li><strong>Zeitschrittsteuerung:</strong> Adaptiv via Courant-Kriterium (typisch 0.5–30 s).</li>
+                    <li><strong>Ausführungsumgebung:</strong> WebAssembly (Wasm) im Browser-Hauptthread via Worker — kein Server, vollständig lokal.</li>
                 </ul>
 
-                <h5>🌧️ Profil-Geometrien</h5>
-                <p>Der Solver unterstützt folgende Profile (Mapping aus ISYBAU-Kürzeln):</p>
+                <h5>🔩 Sonderbauwerke (Mapping)</h5>
                 <table class="tech-table">
-                    <tr><th>Typ</th><th>Verarbeitung</th><th>Fallback (bei Fehler)</th></tr>
-                    <tr><td>Kreis (0)</td><td>Standard DN (Durchmesser)</td><td>DN 1000</td></tr>
-                    <tr><td>Ei (1)</td><td>Standard Ei-Profil (H:B ~ 3:2)</td><td>DN 1000 (äquiv.)</td></tr>
-                    <tr><td>Rechteck (3)</td><td>Breite x Höhe</td><td>DN 1000</td></tr>
-                    <tr><td>Trapez (8)</td><td>Offenes Gerinne, Böschung 1:1.5</td><td>DN 1000</td></tr>
+                    <tr><th>Bauwerkstyp</th><th>SWMM-Äquivalent</th><th>Parameter</th></tr>
+                    <tr><td>Pumpwerk (1/6)</td><td>PUMP mit On/Off-Kurve</td><td>Förderleistung, Ein-/Austiefe</td></tr>
+                    <tr><td>Wehr / Überlauf (7)</td><td>WEIR (Transverse)</td><td>Höhe, Länge, Cw-Beiwert</td></tr>
+                    <tr><td>Becken / Speicher (2–4, 12–13)</td><td>STORAGE</td><td>Volumen, max. Tiefe, Funktionskurve</td></tr>
+                    <tr><td>Drossel (8)</td><td>ORIFICE</td><td>Max. Abfluss</td></tr>
+                    <tr><td>Schieber (9)</td><td>ORIFICE mit Öffnungsgrad</td><td>Anfangsöffnung</td></tr>
+                    <tr><td>Auslass (5)</td><td>OUTFALL (free)</td><td>—</td></tr>
+                </table>
+
+                <h5>🌧️ Profil-Geometrien (3D + Solver)</h5>
+                <table class="tech-table">
+                    <tr><th>Typ</th><th>3D-Form</th><th>SWMM-Profil</th></tr>
+                    <tr><td>Kreis (0)</td><td>TubeGeometry</td><td>CIRCULAR</td></tr>
+                    <tr><td>Ei (1)</td><td>Ellipsen-Extrusion</td><td>EGG (H:B ≈ 3:2)</td></tr>
+                    <tr><td>Maulprofil (2)</td><td>Hufeisen-Extrusion</td><td>BASKETHANDLE</td></tr>
+                    <tr><td>Rechteck geschl. (3)</td><td>Rechteck-Extrusion</td><td>RECT_CLOSED</td></tr>
+                    <tr><td>Trapez / Gerinne (4/8)</td><td>Offene Trapez-Extrusion</td><td>TRAPEZOIDAL</td></tr>
+                    <tr><td>Rechteck offen (5)</td><td>Offene Rechteck-Extrusion</td><td>RECT_OPEN</td></tr>
                 </table>
             </div>
           </div>
 
           <!-- FILE FORMATS -->
           <div v-if="activeTab === 'files'" class="content-section">
-            <h4>Dateiformate (.inp / .rpt)</h4>
-            <p>Für Experten und Prüfzwecke können die internen Simulationsdateien über "🔍 Debug" eingesehen und exportiert werden.</p>
+            <h4>Datenformate</h4>
+            <p>Über <em>"Debug"</em> in der Seitenleiste können die internen Simulationsdateien eingesehen und exportiert werden.</p>
+
+            <h5>📥 ISYBAU XML (Eingabe)</h5>
+            <p>ISYBAU XML ist das deutsche Standardformat für Kanalnetzdaten (DIN EN 13508-2). SaintV liest: Haltungsgeometrie, Schachtkoten, Profildaten, Bauwerkstypen, Flächenzuordnungen.</p>
 
             <h5>📝 .inp (SWMM Input)</h5>
             <div class="code-block">
-[TITLE]
-Project Title/Notes
-
-[OPTIONS]
-FLOW_ROUTING   DYNWAVE
-INFILTRATION   CURVE_NUMBER
-...
-
 [JUNCTIONS]
-;;Name   Elev   MaxDepth   InitDepth   SurDepth   Aponded
-Node1    45.5   3.0        0           0          0
+;;Name   Elev   MaxDepth   InitDepth
+Node1    45.50  3.00       0
 
 [CONDUITS]
-;;Name   FromNode   ToNode   Length   Roughness   InOffset   OutOffset
-Pipe1    Node1      Node2    50.0     0.013       0          0
-            </div>
-            <p>Diese Datei enthält die vollständige Topologie und Parametrierung. Sie kann in jeder SWMM-kompatiblen Software (EPA SWMM, PCSWMM) geöffnet werden.</p>
+;;Name   From    To      Length   Manning   InOffset
+Pipe1    Node1   Node2   50.00    0.013     0
+
+[WEIRS]
+;;Name   From   To    Type        CrestHt   Cd
+Wehr1    S1     S2    TRANSVERSE  1.20      1.84</div>
+            <p>Enthält die vollständige Topologie und Parametrierung. Kompatibel mit EPA SWMM, PCSWMM und SWMM-Live.</p>
 
             <h5>📄 .rpt (SWMM Report)</h5>
             <div class="code-block">
-  **************************
   Link Flow Summary
-  **************************
-  Link      Type      Max   Time    Max    Max    
-  Name                Q     of Max  |V|    d/D    
-  -----------------------------------------------
-  Pipe1     CONDUIT   45.2  02:15   0.85   0.45
-            </div>
-            <p>Dieser Textbericht wird vom Solver generiert und dient als Basis für die Tabellen im UI. Er enthält Zusammenfassungen für alle Elemente sowie detaillierte Massenbilanzen.</p>
+  -----------------
+  Link      Max Q    Time     Max |V|   Max d/D
+  Pipe1     45.2     02:15    0.85      0.45
+  Pipe2    132.8     02:30    1.20      0.91  *</div>
+            <p>Dieser Textbericht ist die Basis für alle Tabellen und Ganglinien im UI. * = Druckabfluss.</p>
           </div>
 
           <!-- SYSTEM LIMITS -->
           <div v-if="activeTab === 'limits'" class="content-section">
-            <h4>Grenzen des Systems</h4>
+            <h4>Grenzen & bekannte Einschränkungen</h4>
             <div class="warning-block">
-                <p>Was SaintV – 1D <strong>NICHT</strong> kann (Out of Scope):</p>
+                <p>Was SaintV – 1D aktuell <strong>nicht</strong> kann:</p>
                 <ul>
-                    <li>❌ <strong>Keine 2D-Oberflächenabfluss-Simulation:</strong> Überflutetes Wasser wird als "Ponded Volume" protokolliert, fließt aber nicht oberirdisch weiter.</li>
-                    <li>❌ <strong>Pumpen & Wehre:</strong> Aktuell werden keine Sonderbauwerke unterstützt.</li>
-                    <li>❌ <strong>Schmutzfracht:</strong> Reine Hydraulik. Keine Stofftransportberechnung.</li>
-                    <li>❌ <strong>Dummes Stauvolumen:</strong> Volumen etc besitzen keine Simulationskurve</li>
+                    <li>❌ <strong>2D-Oberflächenabfluss:</strong> Überflutetes Wasser wird als Ponded Volume protokolliert, fließt aber nicht oberirdisch ab.</li>
+                    <li>❌ <strong>Stofftransport:</strong> Reine Hydraulik — keine Schmutzfracht oder Qualitätssimulation.</li>
+                    <li>❌ <strong>Zeitabhängige Steuerung:</strong> Pumpen und Schieber werden mit konstantem Betrieb parametriert — keine Rule-Based-Controls.</li>
+                    <li>❌ <strong>Volumen-Kurven für Becken:</strong> Speicherknoten erhalten eine vereinfachte Flächenfunktion (konstant) statt echter Kurve.</li>
+                    <li>❌ <strong>Große Netze (&gt; 2000 Elemente):</strong> 3D-Darstellung ohne LOD/Culling — Performance-Einbußen möglich.</li>
                 </ul>
             </div>
-        </div>
+            <div class="audit-block" style="margin-top:1.5rem">
+                <p style="font-weight:600;margin-bottom:0.75rem">Produktionsreife (Stand V.1.03)</p>
+                <table class="tech-table">
+                    <tr><th>Modul</th><th>Status</th><th>Hinweis</th></tr>
+                    <tr><td>ISYBAU-Import</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>Alle gängigen ISYBAU-Strukturen</td></tr>
+                    <tr><td>SWMM-Solver</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>SWMM 5.1, WebAssembly</td></tr>
+                    <tr><td>2D-Editor</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>—</td></tr>
+                    <tr><td>Ergebnistabellen</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>—</td></tr>
+                    <tr><td>3D-Ansicht (Geometrie)</td><td><span class="tag" style="background:#fef9c3;color:#713f12">⚠ Beta</span></td><td>Profil-Extrusion, Sonderbauwerke</td></tr>
+                    <tr><td>3D Ergebnis-Overlay</td><td><span class="tag" style="background:#fef9c3;color:#713f12">⚠ Beta</span></td><td>Farben, Wasserstand-Marker</td></tr>
+                    <tr><td>Sonderbauwerke (Modell)</td><td><span class="tag" style="background:#fef9c3;color:#713f12">⚠ Beta</span></td><td>Pumpen, Wehre — grundlegend funktionsfähig</td></tr>
+                </table>
+            </div>
+          </div>
 
         </div>
       </div>
@@ -236,7 +329,8 @@ const userTabs = [
   { id: 'general', label: 'Allgemein' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'editor', label: 'Editor & Tools' },
-  { id: 'results', label: 'Ergebnisse & Analyse' } 
+  { id: '3d', label: '3D Ansicht' },
+  { id: 'results', label: 'Ergebnisse & Analyse' },
 ];
 
 const techTabs = [
@@ -501,6 +595,49 @@ const activeTab = ref('general');
   border-bottom: 1px solid #aeadd2 !important;
   padding-bottom: 0.4rem !important;
   margin-bottom: 0.75rem !important;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.info-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.info-card-title {
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.4rem;
+}
+
+.color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.workflow-list {
+  padding-left: 1.5rem;
+}
+
+.workflow-list li {
+  margin-bottom: 1rem;
+  line-height: 1.6;
+  color: #475569;
 }
 
 </style>

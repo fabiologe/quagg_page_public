@@ -130,6 +130,25 @@
     
     <div class="separator"></div>
 
+    <!-- BATHYMETRIE Preprocessing -->
+    <ToolButton
+      @click="$emit('open-bathymetry')"
+      :active="false"
+      title="Bathymetrie Preprocessing (DGM + Vermessung)"
+    >
+      <!-- Topo/Cross-section icon -->
+      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M3 17l4-8 4 5 3-3 4 6"/>
+        <line x1="3" y1="20" x2="21" y2="20" stroke-width="1.5"/>
+        <circle cx="7" cy="9" r="1.5" fill="currentColor" stroke="none"/>
+        <circle cx="11" cy="14" r="1.5" fill="currentColor" stroke="none"/>
+        <circle cx="14" cy="11" r="1.5" fill="currentColor" stroke="none"/>
+      </svg>
+    </ToolButton>
+
+    <div class="separator"></div>
+
     <!-- PAN Tool -->
     <ToolButton 
       @click="setTool('PAN')"
@@ -190,7 +209,7 @@ const props = defineProps({
 const store = useSimulationStore();
 const activeTool = computed(() => store.activeTool);
 
-const emit = defineEmits(['set-mode', 'set-view', 'set-tool', 'open-import']);
+const emit = defineEmits(['set-mode', 'set-view', 'set-tool', 'open-import', 'open-bathymetry']);
 
 const setMode = (m) => {
   // Mode logic... 'SETUP' vs 'IMPORT_TERRAIN' is app level/Simulation level?

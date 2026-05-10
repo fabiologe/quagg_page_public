@@ -7,26 +7,33 @@
       </div>
 
       <div class="tabs">
-        <button 
-          :class="{ active: activeTab === 'NODES' }" 
+        <button
+          :class="{ active: activeTab === 'BATHYMETRY' }"
+          @click="activeTab = 'BATHYMETRY'"
+          class="tab-highlight"
+        >
+          Vermessungspunkte
+        </button>
+        <button
+          :class="{ active: activeTab === 'NODES' }"
           @click="activeTab = 'NODES'"
         >
           Kanalnetz (.xml)
         </button>
-        <button 
-          :class="{ active: activeTab === 'BUILDINGS' }" 
+        <button
+          :class="{ active: activeTab === 'BUILDINGS' }"
           @click="activeTab = 'BUILDINGS'"
         >
           Gebäude (.json)
         </button>
-        <button 
-          :class="{ active: activeTab === 'BOUNDARIES' }" 
+        <button
+          :class="{ active: activeTab === 'BOUNDARIES' }"
           @click="activeTab = 'BOUNDARIES'"
         >
           Grenzen (.json)
         </button>
-        <button 
-          :class="{ active: activeTab === 'SURFACE' }" 
+        <button
+          :class="{ active: activeTab === 'SURFACE' }"
           @click="activeTab = 'SURFACE'"
         >
           Oberflächen (.json)
@@ -34,6 +41,12 @@
       </div>
 
       <div class="tab-content">
+
+        <!-- BATHYMETRY PREPROCESSING -->
+        <div v-if="activeTab === 'BATHYMETRY'" class="import-panel bathy-panel">
+          <BathymetryImportTab @stage1-done="$emit('close')" />
+        </div>
+
         <!-- NODE IMPORT -->
         <div v-if="activeTab === 'NODES'" class="import-panel">
           <p class="description">
@@ -119,6 +132,7 @@ import { ref } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore';
 import { BoundaryTools } from '@/features/flood-2D/middleware/BoundaryTools.js';
+import BathymetryImportTab from './BathymetryImportTab.vue';
 
 // Import parsers
 import { parseXMLNodes } from '@/features/flood-2D/middleware/importers/XMLNodeParser.js';
@@ -128,7 +142,7 @@ const emit = defineEmits(['close']);
 const geoStore = useGeoStore();
 const surfaceStore = useSurfaceStore();
 
-const activeTab = ref('NODES'); // NODES | BUILDINGS | BOUNDARIES | SURFACE
+const activeTab = ref('NODES'); // BATHYMETRY | NODES | BUILDINGS | BOUNDARIES | SURFACE
 const importing = ref(false);
 const feedback = ref(null);
 const selectedSurfaceMaterial = ref(1); // Default is Asphalt
@@ -269,7 +283,7 @@ const handleFileSelect = async (event) => {
 .modal-content {
     background: #2c3e50;
     color: #ecf0f1;
-    width: 500px;
+    width: 660px;
     border-radius: 8px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5);
     overflow: hidden;
@@ -311,7 +325,17 @@ const handleFileSelect = async (event) => {
     background: #2c3e50;
 }
 
-.tab-content { padding: 2rem; text-align: center; }
+.tabs button.tab-highlight {
+    color: #2ecc71;
+    border-bottom-color: transparent;
+}
+.tabs button.tab-highlight.active {
+    color: #2ecc71;
+    border-bottom-color: #2ecc71;
+}
+
+.tab-content { padding: 1.5rem; text-align: center; }
+.bathy-panel { text-align: left; }
 
 .description { margin-bottom: 1.5rem; color: #bdc3c7; line-height: 1.5; font-size: 0.95rem; }
 .description small { color: #7f8c8d; }

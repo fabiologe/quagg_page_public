@@ -492,20 +492,33 @@ const bounds = computed(() => {
   if (minX === Infinity || !Number.isFinite(minX)) {
       console.warn('Bounds invalid or infinite, using default');
       console.groupEnd();
-      return { minX: 0, minY: 0, width: 100, height: 100, centerX: 50, centerY: 50, maxY: 10 };
+      return { minX: 0, minY: 0, width: 100, height: 100, centerX: 50, centerY: 50, maxY: 100 };
   }
   
   console.groupEnd();
 
   const padding = 5;
+  // Ensure minimum 50m span so a single node doesn't collapse the coordinate space
+  const MIN_EXTENT = 50;
+  const rawW = maxX - minX;
+  const rawH = maxY - minY;
+  const extentX = Math.max(rawW, MIN_EXTENT);
+  const extentY = Math.max(rawH, MIN_EXTENT);
+  // Center within the expanded extent
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const adjMinX = cx - extentX / 2;
+  const adjMinY = cy - extentY / 2;
+  const adjMaxY = cy + extentY / 2;
+
   return {
-    minX: minX - padding,
-    minY: minY - padding,
-    maxY: maxY + padding,
-    width: maxX - minX + padding * 2,
-    height: maxY - minY + padding * 2,
-    centerX: (maxX - minX + padding * 2) / 2,
-    centerY: (maxY - minY + padding * 2) / 2
+    minX: adjMinX - padding,
+    minY: adjMinY - padding,
+    maxY: adjMaxY + padding,
+    width: extentX + padding * 2,
+    height: extentY + padding * 2,
+    centerX: (extentX + padding * 2) / 2,
+    centerY: (extentY + padding * 2) / 2
   };
 });
 

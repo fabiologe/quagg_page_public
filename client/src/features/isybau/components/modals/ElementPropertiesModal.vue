@@ -171,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import { MaterialRoughness, getRoughness, Bauwerkstyp } from '../../utils/mappings.js';
 
@@ -240,11 +240,29 @@ watch(outletEdgeId, (newId) => {
     }
 });
 
+// Shoelace formula — recompute size from points to be independent of parent timing
+const computeAreaFromPoints = (points) => {
+    if (!points || points.length < 3) return 0;
+    // Deduplicate consecutive identical points (double-click artifacts)
+    const unique = points.filter((p, i) =>
+        i === 0 || p.x !== points[i - 1].x || p.y !== points[i - 1].y
+    );
+    if (unique.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < unique.length; i++) {
+        const p1 = unique[i];
+        const p2 = unique[(i + 1) % unique.length];
+        area += p1.x * p2.y - p2.x * p1.y;
+    }
+    return Math.abs(area / 2);
+};
+
 // Initialize form data on open/change
-watch(() => props.isOpen, (val) => {
+watch(() => props.isOpen, async (val) => {
   if (val) {
-    outletType.value = 'node'; // Reset to default
+    outletType.value = 'node';
     outletEdgeId.value = null;
+    await nextTick(); // Ensure all sibling props (mode, elementData) are propagated
     initForm();
   }
 }, { immediate: true });
@@ -305,8 +323,12 @@ const initForm = () => {
         });
     } else if (props.mode === 'area') {
         Object.assign(defaults, { size: 0.1, runoffCoeff: 0.5, slope: 0.5, nodeId: null });
-        // Can inherit size from props.elementData if passed (e.g. calculated area)
         if (props.elementData) Object.assign(defaults, props.elementData);
+        // Always recompute from points — immune to timing and NaN from parent
+        if (defaults.points && defaults.points.length >= 3) {
+            const m2 = computeAreaFromPoints(defaults.points);
+            if (m2 > 0) defaults.size = parseFloat((m2 / 10000).toFixed(4));
+        }
     }
     
     // Generic merge for non-area modes too (like edge metadata)
@@ -367,12 +389,22 @@ const save = () => {
 /* Cleaned up styles */
 .modal-header {
   background: #040647;
-  padding: 1rem;
+  padding: 0.65rem 1rem;
   border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
   cursor: move;
+  flex-shrink: 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  color: #2ecc71;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .close-btn {
   background: none;
@@ -388,7 +420,18 @@ const save = () => {
 .close-btn:hover {
   color: #2ecc71; /* Red 500 */
 }
-.modal-body { padding: 1rem; }
+.modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+  max-height: calc(90vh - 56px);
+  background: #06093a;
+  scrollbar-width: thin;
+  scrollbar-color: #594491 #040647;
+}
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-track { background: #040647; }
+.modal-body::-webkit-scrollbar-thumb { background: #594491; border-radius: 3px; }
+.modal-body::-webkit-scrollbar-thumb:hover { background: #8f8be1; }
 .form-group { margin-bottom: 1rem; display: flex; flex-direction: column; }
 .form-input, .form-select {
   padding: 0.5rem;
@@ -396,11 +439,51 @@ const save = () => {
   border-radius: 4px;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
-.btn-primary { background: #2196F3; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
-.btn-secondary { background: #ccc; color: black; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+.btn-primary {
+  background: #040647;
+  color: #2ecc71;
+  border: 1px solid #594491;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-primary:hover { background: #594491; border-color: #8f8be1; color: #fff; }
+
+.btn-secondary {
+  background: transparent;
+  color: #aeadd2;
+  border: 1px solid #594491;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.12s;
+}
+.btn-secondary:hover { background: #594491; color: #fff; }
 .outlet-radio-group { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
-.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; }
-.hint { font-size: 0.8rem; color: #666; margin-top: 0.2rem; }
+.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; color: #aeadd2; }
+.hint { font-size: 0.78rem; color: #8f8be1; margin-top: 0.2rem; }
+.form-group label { font-size: 0.75rem; color: #aeadd2; margin-bottom: 3px; }
+.form-input, .form-select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #594491;
+  border-radius: 5px;
+  background: #0a0d5c;
+  color: #fff;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus, .form-select:focus { border-color: #2ecc71; }
+.form-input:disabled, .form-select:disabled { opacity: 0.4; cursor: not-allowed; }
+.checkbox-group .checkbox-label { color: #aeadd2; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+.value-display { color: #2ecc71; font-weight: 600; padding: 0.35rem 0; }
+.modal-actions { border-top: 1px solid #594491; padding-top: 0.75rem; margin-top: 0.5rem; }
 
 /* ── Design Schema ────────────────────────────── */
 .tab-btn {
