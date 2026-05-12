@@ -10,7 +10,20 @@
       <!-- New Header with Close Button -->
       <div class="modal-header">
           <h2>Simulationsergebnisse (Hydraulik)</h2>
-          <button class="close-btn" @click="close" title="Schließen">✕</button>
+          <div class="header-actions">
+            <SimulationReportExport
+              :nodes="nodes"
+              :edges="edges"
+              :areas="areas"
+              :edge-results="edgeResults"
+              :node-results="nodeResults"
+              :area-results="areaResults"
+              :system-stats="systemStats"
+              :rain="rain"
+              :total-catchment-area-ha="totalCatchmentAreaHa"
+            />
+            <button class="close-btn" @click="close" title="Schließen">✕</button>
+          </div>
       </div>
 
       <!-- Top Navigation Tabs (Modern Pill Design) -->
@@ -56,16 +69,19 @@
             <!-- System Stats Grid -->
             <div class="kpi-grid">
                 <div class="kpi-card">
-                    <div class="label">Niederschlag (Total)</div>
-                    <div class="value">{{ formatVolume((systemStats?.runoff?.precip || 0) * 1000) }} m³</div>
+                    <div class="label">Niederschlag (Gesamthöhe)</div>
+                    <div class="value">{{ runoffBilanz.precipMm.toFixed(1) }} mm</div>
+                    <div class="kpi-sub">≙ {{ formatVolume((systemStats?.runoff?.precip || 0) * 10000) }} m³ · {{ totalCatchmentAreaHa.toFixed(2) }} ha</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="label">Oberflächenabfluss</div>
+                    <div class="value">{{ runoffBilanz.runoffMm.toFixed(1) }} mm</div>
+                    <div class="kpi-sub">Ψ = {{ runoffBilanz.psi.toFixed(3) }}</div>
                 </div>
                  <div class="kpi-card">
-                    <div class="label">Zufluss (Trocken/Regen)</div>
-                    <div class="value">{{ formatVolume(((systemStats?.flow?.dryWeatherInflow || 0) + (systemStats?.flow?.wetWeatherInflow || 0)) * 1000) }} m³</div>
-                </div>
-                 <div class="kpi-card">
-                    <div class="label">Volumen-Änderung</div>
-                    <div class="value">{{ formatVolume(((systemStats?.flow?.finalStoredVol || 0) - (systemStats?.flow?.initialStoredVol || 0)) * 1000) }} m³</div>
+                    <div class="label">Zufluss Netz (Regen+Trocken)</div>
+                    <div class="value">{{ formatVolume(((systemStats?.flow?.dryWeatherInflow || 0) + (systemStats?.flow?.wetWeatherInflow || 0)) * 10000) }} m³</div>
+                    <div class="kpi-sub">Auslauf: {{ formatVolume((systemStats?.flow?.externalOutflow || 0) * 10000) }} m³</div>
                 </div>
                 <!-- Continuity Errors -->
                 <div class="kpi-card" :class="getContinuityClass(systemStats?.flow?.error)">
@@ -89,17 +105,75 @@
                     </table>
                 </div>
 
-                <!-- 2. Massenbilanz Details -->
+                <!-- 2. Niederschlagsbilanz (Runoff Continuity) -->
                 <div class="panel">
-                    <h3>⚖️ Massenbilanz (Flow Routing)</h3>
-                    <table class="simple-table">
-                        <tr><td>Trockenwetterzufluss:</td><td>{{ formatVolume((systemStats.flow?.dryWeatherInflow||0)*1000) }} m³</td></tr>
-                        <tr><td>Regenwetterzufluss:</td><td>{{ formatVolume((systemStats.flow?.wetWeatherInflow||0)*1000) }} m³</td></tr>
-                        <tr><td>Grundwasserzufluss:</td><td>{{ formatVolume((systemStats.flow?.groundwaterInflow||0)*1000) }} m³</td></tr>
-                        <tr><td>Überflutungsverlust:</td><td>{{ formatVolume((systemStats.flow?.floodingLoss||0)*1000) }} m³</td></tr>
-                        <tr><td>Auslaufabfluss:</td><td>{{ formatVolume((systemStats.flow?.externalOutflow||0)*1000) }} m³</td></tr>
-                        <tr class="highlight-row"><td><strong>Kontinuitätsfehler:</strong></td><td><strong :class="{'text-red': Math.abs(systemStats.flow?.error) > 2}">{{ systemStats.flow?.error?.toFixed(2) }} %</strong></td></tr>
+                    <h3>🌧️ Niederschlagsbilanz (Runoff)</h3>
+
+                    <!-- Flächenbasis — prominent, weil alle mm-Werte darauf beruhen -->
+                    <div class="area-badge" :class="totalCatchmentAreaHa > 0 ? 'area-ok' : 'area-warn'">
+                        <span class="area-badge-label">Bezugsfläche</span>
+                        <span class="area-badge-val">
+                            {{ totalCatchmentAreaHa > 0 ? totalCatchmentAreaHa.toFixed(4) + ' ha' : '— (keine Flächen vorhanden)' }}
+                        </span>
+                        <span class="area-badge-sub" v-if="totalCatchmentAreaHa > 0">
+                            = {{ (totalCatchmentAreaHa * 10000).toLocaleString('de-DE') }} m²
+                        </span>
+                    </div>
+
+                    <table class="simple-table bilanz-table">
+                        <thead>
+                            <tr class="bilanz-header">
+                                <th>Posten</th>
+                                <th title="Regenhöhe bezogen auf Gesamtfläche">mm</th>
+                                <th title="Absolutes Volumen (1 ha·m = 10 000 m³)">m³</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Niederschlag</td>
+                                <td class="val-right">{{ runoffBilanz.precipMm.toFixed(2) }}</td>
+                                <td class="val-right">{{ formatVolume((systemStats?.runoff?.precip||0)*10000) }}</td>
+                            </tr>
+                            <tr>
+                                <td>Verdunstung</td>
+                                <td class="val-right">{{ runoffBilanz.evapMm.toFixed(2) }}</td>
+                                <td class="val-right">{{ formatVolume((systemStats?.runoff?.evap||0)*10000) }}</td>
+                            </tr>
+                            <tr>
+                                <td>Infiltration</td>
+                                <td class="val-right">{{ runoffBilanz.infilMm.toFixed(2) }}</td>
+                                <td class="val-right">{{ formatVolume((systemStats?.runoff?.infil||0)*10000) }}</td>
+                            </tr>
+                            <tr class="highlight-row">
+                                <td><strong>Oberflächenabfluss</strong></td>
+                                <td class="val-right"><strong>{{ runoffBilanz.runoffMm.toFixed(2) }}</strong></td>
+                                <td class="val-right"><strong>{{ formatVolume((systemStats?.runoff?.runoff||0)*10000) }}</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Endspeicherung</td>
+                                <td class="val-right">{{ runoffBilanz.finalStorageMm.toFixed(3) }}</td>
+                                <td class="val-right">{{ formatVolume((systemStats?.runoff?.finalStorage||0)*10000) }}</td>
+                            </tr>
+                            <tr class="highlight-row">
+                                <td><strong>Abflussbeiwert Ψ</strong></td>
+                                <td class="val-right" colspan="2">
+                                    <strong>{{ runoffBilanz.psi.toFixed(3) }}</strong>
+                                    <span class="bilanz-note">({{ runoffBilanz.runoffMm.toFixed(1) }} mm / {{ runoffBilanz.precipMm.toFixed(1) }} mm)</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Kontinuitätsfehler (Runoff)</td>
+                                <td class="val-right" colspan="2">
+                                    <span :class="{'text-red': Math.abs(systemStats?.runoff?.error||0) > 2}">
+                                        {{ (systemStats?.runoff?.error||0).toFixed(3) }} %
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
                     </table>
+                    <p class="bilanz-footnote">
+                        mm = ha·m × 1000 ÷ {{ totalCatchmentAreaHa > 0 ? totalCatchmentAreaHa.toFixed(4) + ' ha' : '? ha (Flächen fehlen)' }} Gesamtfläche
+                    </p>
                 </div>
                 
                 <!-- Stability Report -->
@@ -113,43 +187,88 @@
                     </div>
                     
                     <div v-if="systemStats?.nonConvergingNodes?.length" class="mt-2">
-                        <strong>Kritische Knoten (Nicht konvergierend):</strong>
-                        <ul class="mini-list">
-                            <li v-for="node in systemStats.nonConvergingNodes.slice(0, 3)" :key="node.id">
+                        <strong>Kritische Knoten ({{ systemStats.nonConvergingNodes.length }} gesamt):</strong>
+                        <ul class="mini-list stability-scroll">
+                            <li v-for="node in systemStats.nonConvergingNodes.slice(0, 10)" :key="node.id">
                                 {{ node.id }} ({{ node.value }}%)
                             </li>
                         </ul>
+                        <p v-if="systemStats.nonConvergingNodes.length > 10" class="stability-more">
+                            + {{ systemStats.nonConvergingNodes.length - 10 }} weitere Knoten nicht gezeigt
+                        </p>
                     </div>
                 </div>
 
                 <!-- Outfall Summary -->
                 <div class="panel">
-                    <h3>Ausleitungen (Outfalls)</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Häufigkeit (%)</th>
-                                <th>Mittel (L/s)</th>
-                                <th>Max (L/s)</th>
-                                <th>Vol (m³)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="out in systemStats.outfallLoading || []" :key="out.id">
-                                <td>{{ out.id }}</td>
-                                <td>{{ out.freq?.toFixed(1) }}</td>
-                                <td>{{ (out.avgFlow * 1000).toFixed(1) }}</td>
-                                <td>{{ (out.maxFlow * 1000).toFixed(1) }}</td>
-                                <td>{{ (out.totalVol * 1000).toFixed(1) }}</td>
-                            </tr>
-                            <tr v-if="!systemStats.outfallLoading?.length">
-                                <td colspan="5" class="text-center text-muted">Keine Ausleitungen gefunden.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <h3>
+                        Ausleitungen (Outfalls)
+                        <span class="panel-count" v-if="systemStats.outfallLoading?.length">
+                            {{ systemStats.outfallLoading.length }}
+                        </span>
+                    </h3>
+                    <div class="outfall-scroll">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Häufigkeit (%)</th>
+                                    <th>Mittel (L/s)</th>
+                                    <th>Max (L/s)</th>
+                                    <th>Vol (m³)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="out in systemStats.outfallLoading || []" :key="out.id">
+                                    <td>{{ out.id }}</td>
+                                    <td>{{ out.freq?.toFixed(1) }}</td>
+                                    <td>{{ (out.avgFlow * 1000).toFixed(1) }}</td>
+                                    <td>{{ (out.maxFlow * 1000).toFixed(1) }}</td>
+                                    <td>{{ (out.totalVol * 1000).toFixed(1) }}</td>
+                                </tr>
+                                <tr v-if="!systemStats.outfallLoading?.length">
+                                    <td colspan="5" class="text-center text-muted">Keine Ausleitungen gefunden.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
+
+            <!-- Modellregen — ganz unten -->
+            <div v-if="rainChartData" class="panel rain-panel">
+                <div class="rain-panel-header">
+                    <div class="rain-title">
+                        <span class="rain-icon">🌧</span>
+                        <div>
+                            <strong>Simulierter Niederschlag</strong>
+                            <span class="rain-method-badge">{{ rainChartData.meta.method === 'euler2' ? 'Euler Typ II' : 'Blockregen' }}</span>
+                        </div>
+                    </div>
+                    <div class="rain-meta">
+                        <div class="rain-kpi">
+                            <span>Gesamthöhe</span>
+                            <strong>{{ rainChartData.meta.totalMm.toFixed(1) }} mm</strong>
+                        </div>
+                        <div class="rain-kpi">
+                            <span>Spitzenintensität</span>
+                            <strong>{{ rainChartData.meta.peakIntensity.toFixed(1) }} l/s·ha</strong>
+                        </div>
+                        <div class="rain-kpi">
+                            <span>Zeitschritt</span>
+                            <strong>{{ rainChartData.meta.interval }} min</strong>
+                        </div>
+                        <div class="rain-kpi">
+                            <span>Dauer</span>
+                            <strong>{{ rainChartData.meta.steps * rainChartData.meta.interval }} min</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="rain-chart-box">
+                    <Bar :data="rainChartData.chart" :options="rainChartData.options" />
+                </div>
+            </div>
+
         </div>
 
         <!-- === TAB: HALTUNGEN (Links) === -->
@@ -454,31 +573,34 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
+import SimulationReportExport from './SimulationReportExport.vue';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend
 } from 'chart.js';
-import { Line } from 'vue-chartjs';
+import { Line, Bar } from 'vue-chartjs';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
 const props = defineProps({
   isOpen: Boolean,
-  resultsText: String, // The Raw Report Text
-  nodes: Map, // Input Nodes (Geometry)
-  edges: Map, // Input Edges (Geometry)
+  resultsText: String,
+  nodes: Map,
+  edges: Map,
   areas: [Map, Array],
-  edgeResults: Map, // Parsed Results
+  edgeResults: Map,
   nodeResults: Map,
   areaResults: Map,
-  timeSeries: Array, // Binary Output Time Series
-  systemStats: Object
+  timeSeries: Array,
+  systemStats: Object,
+  rain: Object, // store.rain — enthält activeModelRain.series, method, intensity, duration
 });
 
 const emit = defineEmits(['close', 'zoomTo']);
@@ -560,6 +682,120 @@ const getHealthDescription = (score) => {
 };
 
 // --- Computed Data ---
+
+// Gesamtfläche des Einzugsgebiets aus den Input-Areas (in ha)
+const totalCatchmentAreaHa = computed(() => {
+    if (!props.areas) return 0;
+    let total = 0;
+    if (props.areas instanceof Map) {
+        for (const a of props.areas.values()) total += parseFloat(a.size || 0);
+    } else if (Array.isArray(props.areas)) {
+        for (const a of props.areas) total += parseFloat(a.size || 0);
+    } else {
+        for (const a of Object.values(props.areas)) total += parseFloat(a.size || 0);
+    }
+    return total;
+});
+
+// mm-Werte aus ha·m rückrechnen, bezogen auf UNSERE Gesamtfläche (nicht SWMMs interne)
+// So stellen wir sicher dass die Flächenbasis stimmt, auch wenn SWMM intern abweicht.
+const runoffBilanz = computed(() => {
+    const areaHa = totalCatchmentAreaHa.value;
+    const r = props.systemStats?.runoff || {};
+
+    const toMm = (volHaM) => areaHa > 0 ? (volHaM / areaHa) * 1000 : (r.precipMm > 0 ? volHaM / r.precip * r.precipMm : 0);
+
+    return {
+        precipMm:      areaHa > 0 ? toMm(r.precip)       : (r.precipMm       || 0),
+        evapMm:        areaHa > 0 ? toMm(r.evap)         : (r.evapMm         || 0),
+        infilMm:       areaHa > 0 ? toMm(r.infil)        : (r.infilMm        || 0),
+        runoffMm:      areaHa > 0 ? toMm(r.runoff)       : (r.runoffMm       || 0),
+        finalStorageMm:areaHa > 0 ? toMm(r.finalStorage) : (r.finalStorageMm || 0),
+        // Abflussbeiwert Ψ = Abflusshöhe / Niederschlagshöhe
+        psi: (r.precip > 0) ? (r.runoff / r.precip) : 0,
+    };
+});
+
+// Rain chart — rekonstruiert aus store.rain.activeModelRain.series
+const rainChartData = computed(() => {
+    const series = props.rain?.activeModelRain?.series;
+    if (!series || series.length === 0) return null;
+
+    const interval = series.length > 1 ? (series[1].time - series[0].time) : 5;
+
+    // Kumulierte Regenhöhe aufbauen
+    let cumMm = 0;
+    const cumulative = series.map(s => {
+        const h = s.height_mm !== undefined ? s.height_mm : (s.intensity * interval * 0.006);
+        cumMm += h;
+        return parseFloat(cumMm.toFixed(3));
+    });
+
+    const totalMm = cumulative[cumulative.length - 1] || 0;
+    const peakIntensity = Math.max(...series.map(s => s.intensity || 0));
+    const method = props.rain?.activeModelRain?.type || props.rain?.method || '';
+
+    return {
+        meta: { totalMm, peakIntensity, interval, method, steps: series.length },
+        chart: {
+            labels: series.map(s => s.time + ' min'),
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Intensität (l/s·ha)',
+                    data: series.map(s => parseFloat((s.intensity || 0).toFixed(2))),
+                    backgroundColor: 'rgba(52, 152, 219, 0.7)',
+                    borderColor: 'rgba(52, 152, 219, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'yIntensity',
+                    order: 2,
+                },
+                {
+                    type: 'line',
+                    label: 'Kumuliert (mm)',
+                    data: cumulative,
+                    borderColor: '#e74c3c',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    fill: false,
+                    yAxisID: 'yCumulative',
+                    order: 1,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            if (ctx.dataset.yAxisID === 'yIntensity')
+                                return `Intensität: ${ctx.raw} l/s·ha`;
+                            return `Kumuliert: ${ctx.raw} mm`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Zeit (min)', font: { size: 10 } } },
+                yIntensity: {
+                    type: 'linear', position: 'left',
+                    title: { display: true, text: 'Intensität (l/s·ha)', font: { size: 10 } },
+                    beginAtZero: true,
+                },
+                yCumulative: {
+                    type: 'linear', position: 'right',
+                    title: { display: true, text: 'Regenhöhe (mm)', font: { size: 10 } },
+                    beginAtZero: true,
+                    grid: { drawOnChartArea: false },
+                }
+            }
+        }
+    };
+});
 
 // Helper for Map/Object Agnostic Access
 const safeGet = (source, key) => {
@@ -903,9 +1139,14 @@ watch(selectedNodeId, (newId) => { if(newId) updateCharts('node', newId); });
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 1.5rem;
     background: #040647;
     border-bottom: 2px solid #594491;
+}
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 
 .modal-header h2 {
@@ -999,6 +1240,7 @@ watch(selectedNodeId, (newId) => { if(newId) updateCharts('node', newId); });
 }
 .kpi-card .label { color: #888; font-size: 0.9rem; margin-bottom: 0.5rem; }
 .kpi-card .value { font-size: 1.5rem; font-weight: 700; color: #333; }
+.kpi-card .kpi-sub { font-size: 0.75rem; color: #aaa; margin-top: 0.25rem; }
 .kpi-danger .value { color: #2ecc71; }
 .kpi-warning .value { color: #f59e0b; }
 .kpi-success .value { color: #10b981; }
@@ -1023,6 +1265,117 @@ watch(selectedNodeId, (newId) => { if(newId) updateCharts('node', newId); });
 .simple-table td { padding: 0.25rem 0; border-bottom: 1px solid #f5f5f5; }
 .simple-table tr:last-child td { border-bottom: none; }
 .simple-table .highlight-row td { background: #fdfdfd; font-weight: bold; border-top: 2px solid #eee; padding-top: 0.5rem; }
+
+/* Bilanz-Tabelle */
+.bilanz-table th { text-align: left; color: #888; font-size: 0.75rem; padding: 0.2rem 0; border-bottom: 2px solid #eee; }
+.bilanz-table .bilanz-header th:not(:first-child) { text-align: right; }
+.bilanz-table .val-right { text-align: right; font-variant-numeric: tabular-nums; }
+.bilanz-note { font-size: 0.72rem; color: #aaa; margin-left: 0.5rem; }
+.bilanz-footnote { font-size: 0.75rem; color: #aaa; margin: 0.75rem 0 0; font-style: italic; }
+
+/* Outfall-Scroll — begrenzt Höhe bei vielen Auslässen, scrollt intern */
+.outfall-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+/* Stabilitätsbericht — Knotenliste scrollbar bei vielen */
+.stability-scroll {
+    max-height: 160px;
+    overflow-y: auto;
+    margin: 0.4rem 0 0.25rem;
+    padding-left: 1.2rem;
+}
+.stability-more {
+    font-size: 0.75rem;
+    color: #f59e0b;
+    margin: 0;
+    font-style: italic;
+}
+
+/* Zähler-Badge neben Panel-Titel */
+.panel-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    background: #ede9fe;
+    color: #594491;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0 0.35rem;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+    font-family: sans-serif;
+}
+
+/* Regen-Panel */
+.rain-panel {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid #3498db;
+    padding: 1rem 1.25rem;
+}
+.rain-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+.rain-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.rain-icon { font-size: 1.4rem; }
+.rain-title strong { display: block; font-size: 0.9rem; color: #1e3a5f; }
+.rain-method-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-weight: 600;
+    margin-top: 0.15rem;
+}
+.rain-meta {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+.rain-kpi {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+.rain-kpi span { font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.03em; }
+.rain-kpi strong { font-size: 1rem; color: #1e3a5f; }
+.rain-chart-box {
+    height: 180px;
+    position: relative;
+}
+
+/* Bezugsflächen-Badge */
+.area-badge {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    font-size: 0.82rem;
+}
+.area-ok   { background: #f0fdf4; border: 1px solid #bbf7d0; }
+.area-warn { background: #fff7ed; border: 1px solid #fed7aa; }
+.area-badge-label { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.area-badge-val   { font-weight: 700; color: #15803d; }
+.area-warn .area-badge-val { color: #c2410c; }
+.area-badge-sub   { color: #9ca3af; font-size: 0.72rem; margin-left: auto; }
 
 /* Tables */
 .table-scroll { flex: 1; overflow-y: auto; background: white; border: 1px solid #aeadd2; border-radius: 6px; }

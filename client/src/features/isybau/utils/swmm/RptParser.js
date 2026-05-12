@@ -534,43 +534,72 @@ export class RptParser {
         };
 
         // --- Starts Extraction ---
-        // --- Starts Extraction ---
         const extractStat = (label, regex) => {
             const match = report.match(regex);
             return match ? parseFloat(match[1]) : 0;
         };
-        // Runoff Continuity
-        systemStats.runoff.precip = extractStat("Total Precipitation", /Total Precipitation \.+ \s+([-\d\.]+)/);
-        systemStats.runoff.evap = extractStat("Evaporation Loss", /Evaporation Loss \.+ \s+([-\d\.]+)/);
-        systemStats.runoff.infil = extractStat("Infiltration Loss", /Infiltration Loss \.+ \s+([-\d\.]+)/);
-        systemStats.runoff.runoff = extractStat("Surface Runoff", /Surface Runoff \.+ \s+([-\d\.]+)/);
-        systemStats.runoff.runon = extractStat("Surface Runon", /Surface Runon \.+ \s+([-\d\.]+)/); // New
-        systemStats.runoff.finalStorage = extractStat("Final Surface Storage", /Final Surface Storage \.+ \s+([-\d\.]+)/); // New
-        systemStats.runoff.error = extractStat("Continuity Error", /Continuity Error \(%\) \.+ \s+([-\d\.]+)/);
+
+        // Extracts both columns from "Runoff Quantity Continuity" rows:
+        // Format: "Label ......    [Volume hectare-m]    [Depth mm]"
+        // The depth (mm) is the volume referenced to total catchment area — the primary engineering value.
+        const extractRunoffRow = (label) => {
+            const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`${escaped}\\s*\\.+\\s+([-\\d\\.]+)(?:\\s+([-\\d\\.]+))?`);
+            const match = report.match(regex);
+            if (!match) return { vol: 0, depthMm: 0 };
+            return {
+                vol: parseFloat(match[1]) || 0,      // hectare-m  (1 ha·m = 10 000 m³)
+                depthMm: parseFloat(match[2]) || 0   // mm over total catchment area
+            };
+        };
+
+        // Runoff Continuity — extract volume (ha·m) AND area-referenced depth (mm)
+        const precipRow   = extractRunoffRow('Total Precipitation');
+        const evapRow     = extractRunoffRow('Evaporation Loss');
+        const infilRow    = extractRunoffRow('Infiltration Loss');
+        const runoffRow   = extractRunoffRow('Surface Runoff');
+        const runonRow    = extractRunoffRow('Surface Runon');
+        const storageRow  = extractRunoffRow('Final Storage'); // SWMM outputs "Final Storage", NOT "Final Surface Storage"
+
+        systemStats.runoff.precip         = precipRow.vol;
+        systemStats.runoff.precipMm       = precipRow.depthMm;
+        systemStats.runoff.evap           = evapRow.vol;
+        systemStats.runoff.evapMm         = evapRow.depthMm;
+        systemStats.runoff.infil          = infilRow.vol;
+        systemStats.runoff.infilMm        = infilRow.depthMm;
+        systemStats.runoff.runoff         = runoffRow.vol;
+        systemStats.runoff.runoffMm       = runoffRow.depthMm;
+        systemStats.runoff.runon          = runonRow.vol;
+        systemStats.runoff.finalStorage   = storageRow.vol;
+        systemStats.runoff.finalStorageMm = storageRow.depthMm;
+        systemStats.runoff.error          = extractStat("Continuity Error", /Continuity Error \(%\)\s*\.+\s+([-\d\.]+)/);
 
         // Flow Routing Continuity
-        // Try regex for specific lines first
-        systemStats.flow.dryWeatherInflow = extractStat("Dry Weather Inflow", /Dry Weather Inflow \.+ \s+([-\d\.]+)/);
-        systemStats.flow.wetWeatherInflow = extractStat("Wet Weather Inflow", /Wet Weather Inflow \.+ \s+([-\d\.]+)/);
-        systemStats.flow.groundwaterInflow = extractStat("Groundwater Inflow", /Groundwater Inflow \.+ \s+([-\d\.]+)/);
-        systemStats.flow.rdiiInflow = extractStat("RDII Inflow", /RDII Inflow \.+ \s+([-\d\.]+)/);
-        systemStats.flow.externalInflow = extractStat("External Inflow", /External Inflow \.+ \s+([-\d\.]+)/);
-        systemStats.flow.externalOutflow = extractStat("External Outflow", /External Outflow \.+ \s+([-\d\.]+)/);
-        systemStats.flow.floodingLoss = extractStat("Flooding Loss", /Flooding Loss \.+ \s+([-\d\.]+)/);
-        systemStats.flow.evapLoss = extractStat("Evaporation Loss", /Evaporation Loss \.+ \s+([-\d\.]+)/); // Context sensitive? usually Routing uses same label
-        systemStats.flow.exfilLoss = extractStat("Exfiltration Loss", /Exfiltration Loss \.+ \s+([-\d\.]+)/);
-        systemStats.flow.initialStoredVol = extractStat("Initial Stored Volume", /Initial Stored Volume \.+ \s+([-\d\.]+)/);
-        systemStats.flow.finalStoredVol = extractStat("Final Stored Volume", /Final Stored Volume \.+ \s+([-\d\.]+)/);
-        // Extract flow routing error from its own section to avoid matching the runoff error
+        // All values are in hectare-m (first column). 1 ha·m = 10 000 m³.
+        // The second column (10^6 ltr) is redundant: 1×10^6 ltr = 1 000 m³ → same volume, different unit.
+        // Consumer code must multiply by 10 000 to get m³.
         const flowRoutingIdx = report.indexOf('Flow Routing Continuity');
         const flowRoutingSection = flowRoutingIdx !== -1
             ? report.slice(flowRoutingIdx, report.indexOf('\n  *', flowRoutingIdx + 1) >>> 0 || report.length)
-            : '';
-        const flowErrMatch = flowRoutingSection.match(/Continuity Error \(%\) \.+ \s+([-\d\.]+)/);
+            : report;
+        const extractFlowStat = (regex) => {
+            const match = flowRoutingSection.match(regex);
+            return match ? parseFloat(match[1]) : 0;
+        };
+        systemStats.flow.dryWeatherInflow  = extractFlowStat(/Dry Weather Inflow\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.wetWeatherInflow  = extractFlowStat(/Wet Weather Inflow\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.groundwaterInflow = extractFlowStat(/Groundwater Inflow\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.rdiiInflow        = extractFlowStat(/RDII Inflow\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.externalInflow    = extractFlowStat(/External Inflow\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.externalOutflow   = extractFlowStat(/External Outflow\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.floodingLoss      = extractFlowStat(/Flooding Loss\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.evapLoss          = extractFlowStat(/Evaporation Loss\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.exfilLoss         = extractFlowStat(/Exfiltration Loss\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.initialStoredVol  = extractFlowStat(/Initial Stored Volume\s*\.+\s+([-\d\.]+)/);
+        systemStats.flow.finalStoredVol    = extractFlowStat(/Final Stored Volume\s*\.+\s+([-\d\.]+)/);
+        const flowErrMatch = flowRoutingSection.match(/Continuity Error \(%\)\s*\.+\s+([-\d\.]+)/);
         systemStats.flow.error = flowErrMatch ? parseFloat(flowErrMatch[1]) : 0;
-
-        // Flow stats
-        systemStats.flow.inflowVol = extractStat("External Inflow", /External Inflow \.+ \s+([-\d\.]+)/); // usually mass balance
+        systemStats.flow.inflowVol = systemStats.flow.externalInflow;
         // We'll trust the mass balance section if parsed, or regex these specific lines
 
 

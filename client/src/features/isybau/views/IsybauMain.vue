@@ -113,8 +113,8 @@
       @apply="(data) => { store.updateNetworkData(data); store.ui.showPreprocessingModal = false; }"
       @select-element="handleHighlightElement"
     />
-    <SimulationResultsModal 
-      v-if="store.ui.showResultsModal" 
+    <SimulationResultsModal
+      v-if="store.ui.showResultsModal"
       :is-open="store.ui.showResultsModal"
       :nodes="store.nodes"
       :edges="store.edges"
@@ -124,7 +124,8 @@
       :timeSeries="store.simulation.results?.timeSeries || []"
       :areaResults="new Map(Object.entries(store.simulation.results?.subcatchments || {}))"
       :systemStats="store.simulation.results?.systemStats || {}"
-      @close="store.ui.showResultsModal = false" 
+      :rain="store.rain"
+      @close="store.ui.showResultsModal = false"
       @show-debug="store.ui.showDebugModal = true"
     />
     <SimulationDebugModal

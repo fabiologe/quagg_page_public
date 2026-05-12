@@ -180,6 +180,83 @@
          </div>
        </div>
 
+       <!-- CHANNEL LINE drawing panel -->
+       <div v-if="simStore.activeTool === 'CHANNEL_LINE'" class="crop-tool-ui">
+         <div class="tool-panel">
+           <div class="panel-header">
+             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+               stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+               style="vertical-align:middle;margin-right:6px">
+               <path d="M3 17 Q8 7 12 12 Q16 17 21 7"/>
+               <circle cx="3" cy="17" r="1.5" fill="currentColor"/>
+               <circle cx="21" cy="7" r="1.5" fill="currentColor"/>
+             </svg>
+             Flusslinie zeichnen
+           </div>
+           <div class="hint" style="color:#00e5ff;font-weight:600">
+             {{ channelLineState.draftPoints.length }} Punkte
+             &nbsp;·&nbsp; <strong>Klick</strong> = Punkt setzen
+           </div>
+           <div class="hint" style="margin-top:2px;font-size:0.76rem;opacity:0.7">
+             Erster Punkt = Oberstrom · Letzter Punkt = Unterstrom
+           </div>
+           <div class="actions" style="margin-top:8px">
+             <button class="btn-clear"
+               :disabled="!channelLineState.draftPoints.length"
+               @click="getChannelLineToolInstance().undoLastPoint()">← Undo</button>
+             <button class="btn-confirm"
+               :disabled="channelLineState.draftPoints.length < 2"
+               @click="commitChannelLine"
+               style="background:#00e5ff;color:#1a2a3a;font-weight:700;border:none;border-radius:4px;padding:4px 10px;cursor:pointer">
+               ✓ Bestätigen
+             </button>
+             <button class="btn-clear" @click="cancelChannelLine">✖ Abbrechen</button>
+           </div>
+         </div>
+       </div>
+
+       <!-- OFFSET REF PICK panel -->
+       <div v-if="simStore.activeTool === 'OFFSET_REF_PICK'" class="crop-tool-ui">
+         <div class="tool-panel">
+           <div class="panel-header">
+             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+               stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+               style="vertical-align:middle;margin-right:6px">
+               <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/>
+             </svg>
+             Referenzpunkt wählen
+           </div>
+
+           <template v-if="refPickState.hoverInfo">
+             <div class="hint" style="color:#ffaa00;font-weight:600">
+               {{ refPickState.hoverInfo.label }}
+             </div>
+             <div class="hint" style="font-size:0.75rem;margin-top:2px">
+               Survey Z: {{ refPickState.hoverInfo.surveyZ.toFixed(3) }} m
+               <span v-if="refPickState.hoverInfo.demZ != null">
+                 &ensp;·&ensp; DEM Z: {{ refPickState.hoverInfo.demZ.toFixed(3) }} m
+                 &ensp;·&ensp;
+                 <span :style="{ color: Math.abs(refPickState.hoverInfo.delta) < 0.05 ? '#2ecc71' : Math.abs(refPickState.hoverInfo.delta) < 0.3 ? '#f39c12' : '#e74c3c' }">
+                   Δ {{ refPickState.hoverInfo.delta >= 0 ? '+' : '' }}{{ refPickState.hoverInfo.delta.toFixed(3) }} m
+                 </span>
+               </span>
+             </div>
+             <div class="hint" style="margin-top:4px;color:#7f8c8d;font-size:0.74rem">
+               Klicken zum Auswählen
+             </div>
+           </template>
+           <template v-else>
+             <div class="hint" style="color:#7f8c8d">
+               Maus über einen Vermessungspunkt bewegen
+             </div>
+           </template>
+
+           <div class="actions" style="margin-top:8px">
+             <button class="btn-clear" @click="simStore.setActiveTool(null)">✖ Abbrechen</button>
+           </div>
+         </div>
+       </div>
+
        <!-- MAP LAYER CONTROL -->
        <LayerControl 
           v-if="parsedData" 
@@ -232,7 +309,10 @@ import { useWeirTool } from '../../composables/editor/useWeirTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
 import { useHistoryManager } from '../../composables/useHistoryManager.js';
 import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPointsRenderer.js';
+import { useVirtualRasterRenderer } from '../../composables/editor/useVirtualRasterRenderer.js';
 import { useBathyBrushTool } from '../../composables/editor/useBathyBrushTool.js';
+import { channelLineState, getChannelLineToolInstance } from '../../composables/editor/useChannelLineTool.js';
+import { refPickState, getRefPickToolInstance } from '../../composables/editor/useOffsetRefPickTool.js';
 import {
     undoTerrain, redoTerrain, canUndoTerrain, canRedoTerrain,
     terrainUndoCount, terrainRedoCount
@@ -286,6 +366,8 @@ const textureTool = useTextureTool();
 const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
 const weirTool = useWeirTool();
+const channelLineTool = getChannelLineToolInstance();
+const refPickTool     = getRefPickToolInstance();
 const { saveState, undo, redo, canUndo, canRedo } = useHistoryManager();
 
 // Kombinierte Undo/Redo-Flags für die Toolbar-Buttons:
@@ -327,11 +409,22 @@ const cropProxy = {
     onRightClick(ctx)  { return cropMode.value === 'POLYGON' ? polygonCropTool.onRightClick(ctx)  : cropTool.onRightClick?.(ctx); },
 };
 
+// Channel-line helper actions (called from inline UI)
+function commitChannelLine() {
+    getChannelLineToolInstance().commitLine();
+    simStore.setActiveTool(null);
+}
+function cancelChannelLine() {
+    simStore.setActiveTool(null); // deactivate() keeps committed line, discards draft
+}
+
 // Tool Mapping
 const tools = {
     'DRAW': buildingTool,
     'SHOVEL': shovelTool,
     'BATHY_BRUSH': bathyBrushTool,
+    'CHANNEL_LINE':    channelLineTool,
+    'OFFSET_REF_PICK': refPickTool,
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
@@ -362,8 +455,8 @@ const interactionManager = useInteractionManager(
 const applyCameraLock = () => {
     if (!controls) return;
     const tool = activeTool.value;
-    if (tool === 'SHOVEL' || tool === 'TEXTURE') {
-        controls.mouseButtons.LEFT = null; 
+    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK') {
+        controls.mouseButtons.LEFT = null;
     } else {
         if (activeCamera === cameraOrtho) {
             controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
@@ -469,6 +562,9 @@ onMounted(() => {
 
     // Render terrestrial survey points as colored point cloud
     useSurveyPointsRenderer(scene);
+
+    // Render virtual raster (IDW corridor preview) as colored point cloud
+    useVirtualRasterRenderer(scene);
 
     // Restore if data exists
     if (geoStore.terrain && geoStore.terrain.gridData) {
