@@ -92,25 +92,26 @@ export const useGeoStore = defineStore('geo', () => {
     // ── Culvert-Links (1D/2D BMI-Kopplung) ─────────────────────────────────
     /**
      * Verknüpfte Durchlass-Paare für den BMI-WebWorker.
-     * { id: 'link_S004_S005', sourceId, targetId, maxQ }
-     * @type {import('vue').Ref<Array<{id:string, sourceId:string, targetId:string, maxQ:number}>>}
+     * @type {import('vue').Ref<Array<{
+     *   id: string, sourceId: string, targetId: string,
+     *   z_in: number, z_out: number, diameter: number,
+     *   length: number, manning_n: number, Cd: number
+     * }>>}
      */
     const culvertLinks = ref([]);
 
     /**
      * Verbindet zwei Knoten als Durchlass (Einlauf → Auslauf).
-     * @param {string} sourceId  - ID des Einlauf-Knotens
-     * @param {string} targetId  - ID des Auslauf-Knotens
-     * @param {number} maxQ      - Maximale Durchflussrate [m³/s]
+     * @param {string} sourceId
+     * @param {string} targetId
+     * @param {object} params - { z_in, z_out, diameter, length, manning_n, Cd }
      */
-    function addCulvertLink(sourceId, targetId, maxQ = 1.0) {
+    function addCulvertLink(sourceId, targetId, params = {}) {
         if (!sourceId || !targetId) return;
-        // Ring-Bezug verhindern
         if (sourceId === targetId) {
             console.warn('[GeoStore] addCulvertLink: sourceId === targetId — Ringbezug verhindert.');
             return;
         }
-        // Duplikat-Check
         const exists = culvertLinks.value.some(
             l => l.sourceId === sourceId && l.targetId === targetId
         );
@@ -120,10 +121,15 @@ export const useGeoStore = defineStore('geo', () => {
         }
         saveSnapshot('Culvert-Link hinzugefügt');
         culvertLinks.value.push({
-            id: `link_${sourceId}_${targetId}`,
+            id:        `link_${sourceId}_${targetId}`,
             sourceId,
             targetId,
-            maxQ: parseFloat(maxQ) || 1.0
+            z_in:      params.z_in      ?? 0.0,
+            z_out:     params.z_out     ?? 0.0,
+            diameter:  params.diameter  ?? 1.0,
+            length:    params.length    ?? 10.0,
+            manning_n: params.manning_n ?? 0.013,
+            Cd:        params.Cd        ?? 0.6,
         });
     }
 
@@ -134,6 +140,49 @@ export const useGeoStore = defineStore('geo', () => {
     function removeCulvertLink(linkId) {
         saveSnapshot('Culvert-Link gelöscht');
         culvertLinks.value = culvertLinks.value.filter(l => l.id !== linkId);
+    }
+
+    // ── Brücken (als Wehr-Erweiterung: Soffitte + Deck-Linie) ──────────────
+    /**
+     * @type {import('vue').Ref<Array<{
+     *   id: string, lineId: string,
+     *   axis: Array<{x:number,y:number}>,
+     *   z_sohle: number, soffit: number, deck: number,
+     *   width: number, Cd: number,
+     *   cells: Array<{col:number,row:number,x:number,y:number,z:number,direction:string}>
+     * }>>}
+     */
+    const bridges = ref([]);
+
+    /**
+     * Fügt eine gesamte Brücken-Achse (Batch) mit einem History-Snapshot hinzu.
+     * @param {Array<object>} bridgeCells  — wie weirSegments, plus { soffit, deck, width, Cd, z_sohle, lineId }
+     */
+    function addBridgeBatch(bridgeCells) {
+        if (!bridgeCells || bridgeCells.length === 0) return;
+        saveSnapshot(`Brücke hinzugefügt (${bridgeCells.length} Zellen)`);
+        const lineId = bridgeCells[0].lineId || `bridge_${Date.now()}`;
+        bridges.value.push({
+            id:      lineId,
+            lineId,
+            axis:    bridgeCells.map(c => ({ x: c.x, y: c.y })),
+            z_sohle: bridgeCells[0].z_sohle ?? 0.0,
+            soffit:  bridgeCells[0].soffit  ?? 2.0,
+            deck:    bridgeCells[0].deck    ?? 3.0,
+            width:   bridgeCells[0].width   ?? 5.0,
+            Cd:      bridgeCells[0].Cd      ?? 1.704,
+            cells:   bridgeCells,
+        });
+        console.log(`[GeoStore] Brücke hinzugefügt: ${lineId} (${bridgeCells.length} Zellen)`);
+    }
+
+    /**
+     * Entfernt eine Brücke anhand ihrer ID.
+     * @param {string} bridgeId
+     */
+    function removeBridge(bridgeId) {
+        saveSnapshot('Brücke gelöscht');
+        bridges.value = bridges.value.filter(b => b.id !== bridgeId);
     }
 
     // ── Wehre (LISFLOOD weir_flow.cpp, Poleni-Formel) ──────────────────────
@@ -452,8 +501,11 @@ export const useGeoStore = defineStore('geo', () => {
         weirs,
         addWeir,
         addWeirBatch,
-
         removeWeir,
+        // Brücken (Wehr-Erweiterung mit Soffitte/Deck)
+        bridges,
+        addBridgeBatch,
+        removeBridge,
         notifyTerrainModified: () => { terrainVersion.value++; },
     };
 });

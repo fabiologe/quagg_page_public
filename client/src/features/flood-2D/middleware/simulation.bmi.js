@@ -29,6 +29,7 @@ const _workerBaseUrl = new URL('.', import.meta.url).href;
 let LisfloodBMI = null;
 import { OutputProcessor as OP } from './OutputProcessor.js';
 let OutputProcessor = OP;
+import { culvertFlow } from './culvertHydraulics.js';
 
 /**
  * Lädt ein JS-Modul aus einer URL über fetch → Blob → import().
@@ -275,8 +276,20 @@ self.onmessage = async (e) => {
                         const zIn  = (dem && dem[demInIdx]  > -9000) ? dem[demInIdx]  : 0;
                         const zOut = (dem && dem[demOutIdx] > -9000) ? dem[demOutIdx] : 0;
 
-                        sendLog(`🔌 Culvert ${i}: in[${culvert.inX.toFixed(1)}, ${culvert.inY.toFixed(1)}]→idx=${inIndex} z=${zIn.toFixed(2)}m  out[${culvert.outX.toFixed(1)}, ${culvert.outY.toFixed(1)}]→idx=${outIndex} z=${zOut.toFixed(2)}m  maxQ=${culvert.maxQ} m³/s`);
-                        return { inIndex, outIndex, maxQ: culvert.maxQ, zIn, zOut };
+                        sendLog(`🔌 Culvert ${i}: in[${culvert.inX.toFixed(1)}, ${culvert.inY.toFixed(1)}]→idx=${inIndex} z=${zIn.toFixed(2)}m  out[${culvert.outX.toFixed(1)}, ${culvert.outY.toFixed(1)}]→idx=${outIndex} z=${zOut.toFixed(2)}m  D=${culvert.diameter ?? '?'}m`);
+                        return {
+                            inIndex, outIndex,
+                            // hydraulic parameters (fall back to legacy maxQ if not provided)
+                            z_in:      culvert.z_in      ?? zIn,
+                            z_out:     culvert.z_out     ?? zOut,
+                            diameter:  culvert.diameter  ?? 1.0,
+                            length:    culvert.length    ?? 10.0,
+                            manning_n: culvert.manning_n ?? 0.013,
+                            Cd:        culvert.Cd        ?? 0.6,
+                            // legacy fallback
+                            maxQ: culvert.maxQ ?? null,
+                            zIn, zOut,
+                        };
                     });
                     sendLog(`🔌 ${activeCulverts.length} Culvert(s) mapped. cellArea = ${cellArea.toFixed(2)} m²`);
                 } else {
@@ -348,41 +361,34 @@ function kickoffChunkLoop(maxTime) {
                     for (const culvert of activeCulverts) {
 
                         // ─ 1. Wasserspiegellage (WSE) beider Zellen ───────────
-                        // WSE = H (Wassertiefe) + z (Geländehöhe aus DEM-Grid)
                         const hIn  = Module._bmi_get_water_depth(culvert.inIndex);
                         const hOut = Module._bmi_get_water_depth(culvert.outIndex);
                         const wseIn  = hIn  + culvert.zIn;
                         const wseOut = hOut + culvert.zOut;
 
-                        // ─ 2. Druckdifferenz & Richtung ──────────────────
-                        const dh = wseIn - wseOut;
+                        // ─ 2. Hydraulischer Durchfluss (4-Zustands-Modell) ───
+                        // culvertFlow: DRY / FREE_FLOW / PRESSURE / BACKWATER
+                        // Positiv = In→Out, Negativ = Rückstau Out→In
+                        const currentQ = culvert.maxQ != null
+                            // Legacy-Pfad: kein Rohrdurchmesser → altes Torricelli
+                            ? culvert.maxQ * Math.min(1.0, Math.sqrt(Math.abs(wseIn - wseOut)))
+                            : culvertFlow(wseIn, wseOut, culvert);
 
-                        // Numerische Schwelle: < 1 cm Differenz → kein Fluss
-                        if (Math.abs(dh) < 0.01) continue;
+                        if (Math.abs(currentQ) < 1e-9) continue;
 
-                        // Positiv: Fluss von In→Out; Negativ: Rückstau Out→In
-                        const direction = Math.sign(dh);
+                        const desiredV  = Math.abs(currentQ) * dt;
+                        const direction = Math.sign(currentQ); // +1 = vorwärts, -1 = rückwärts
 
-                        // ─ 3. Torricelli-Durchfluss ──────────────────────
-                        // Q = maxQ × sqrt(|dh|)  [m³/s]
-                        // → Bei dh=1 m entspricht Q = maxQ (Nennkapazität)
-                        // → Bei dh=0.25 m entspricht Q = 0.5 × maxQ
-                        // → Begrenzt automatisch bei geringem Druckgefälle
-                        const currentQ = culvert.maxQ * Math.min(1.0, Math.sqrt(Math.abs(dh)));
-                        const desiredV = currentQ * dt;
+                        // ─ 3. Massensicherer Transfer ────────────────────────
+                        const srcIndex = direction > 0 ? culvert.inIndex  : culvert.outIndex;
+                        const dstIndex = direction > 0 ? culvert.outIndex : culvert.inIndex;
+                        const srcDepth = direction > 0 ? hIn : hOut;
 
-                        // ─ 4. Massensicherer Transfer ────────────────────
-                        // Gebende Zelle bestimmen (direction: +1 → In gibt, -1 → Out gibt)
-                        const srcIndex  = direction > 0 ? culvert.inIndex  : culvert.outIndex;
-                        const dstIndex  = direction > 0 ? culvert.outIndex : culvert.inIndex;
-                        const srcDepth  = direction > 0 ? hIn : hOut;
-
-                        // 1 mm Restwasser-Puffer verhindert negative Tiefe im C++-Heap
                         const availableV = Math.max(0, (srcDepth - 0.001)) * cellArea;
                         const transferV  = Math.min(desiredV, availableV);
 
-                        // ─ 5. Injektion in den C++-Speicher ──────────────
-                        if (transferV > 1e-9) { // Float-Epsilon-Guard
+                        // ─ 4. Injektion in den C++-Speicher ──────────────────
+                        if (transferV > 1e-9) {
                             Module._bmi_add_water(srcIndex, -transferV);
                             Module._bmi_add_water(dstIndex,  transferV);
                         }

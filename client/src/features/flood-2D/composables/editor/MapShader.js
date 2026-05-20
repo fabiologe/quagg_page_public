@@ -50,7 +50,7 @@ export const createTerrainMaterial = (minZ, maxZ, bounds, cellsize) => {
         float localX = vPlanePos.x + (uBounds.x * 0.5);
         float localY = vPlanePos.y + (uBounds.y * 0.5);
         vec2 normPos = vec2(localX, localY) / uCellSize;
-        vec2 grid = abs(fract(normPos) - 0.5);
+        vec2 grid = min(fract(normPos), 1.0 - fract(normPos));
         float px = fwidth(localX) * 1.5;
         if(px < 0.02) px = 0.02; 
         float lineX = 1.0 - smoothstep(0.0, px/uCellSize, grid.x);

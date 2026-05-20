@@ -1,0 +1,102 @@
+[
+  {
+    "id": "boot",
+    "lines": [
+      "SAINTV-1D v1.0",
+      "================",
+      "> system boot...",
+      "WASM ENGINE: [OK]",
+      "KOSTRA-DWD:  [OK]",
+      "DYNWAVE:     [OK]",
+      "> bereit.",
+      "> simulieren."
+    ]
+  },
+  {
+    "id": "gruss",
+    "lines": [
+      "> Guten Morgen,",
+      "  Ingenieur.",
+      "",
+      "Zeit, das Netz",
+      "unter Druck zu",
+      "stellen.",
+      "",
+      "> los gehts."
+    ]
+  },
+  {
+    "id": "regen",
+    "lines": [
+      "> lade regen...",
+      "KOSTRA-DWD 2020",
+      "Jährl.:  5a",
+      "Dauer:   60 min",
+      "Typ:     Euler II",
+      "h =  37.4 mm",
+      "> berechnet."
+    ]
+  },
+  {
+    "id": "netz",
+    "lines": [
+      "> netz-check:",
+      "================",
+      "Schächte:    72",
+      "Haltungen:  144",
+      "Flächen:     38",
+      "A_ges: 12.4 ha",
+      "",
+      "> alles OK."
+    ]
+  },
+  {
+    "id": "simulation",
+    "lines": [
+      "> starte SIM...",
+      "dt  =  30 s",
+      "T   =  6 h",
+      ". . . . . . .",
+      "Kont.:  0.12 %",
+      "Überstau:  2",
+      "> fertig."
+    ]
+  },
+  {
+    "id": "ergebnis",
+    "lines": [
+      "> Ergebnisse:",
+      "================",
+      "max h/d:",
+      "  DN400:  0.87",
+      "  DN600:  0.52",
+      "PDF:   [EXPORT]",
+      "",
+      "> naechste SIM."
+    ]
+  },
+  {
+    "id": "abend",
+    "lines": [
+      "> Guten Abend.",
+      "",
+      "Noch eine",
+      "Simulation vor",
+      "Feierabend?",
+      "",
+      "> natuerlich."
+    ]
+  },
+  {
+    "id": "import",
+    "lines": [
+      "> XML import",
+      "ISYBAU v2023",
+      "parsing...",
+      "Knoten: 91",
+      "Kanten: 147",
+      "CRS: ETRS89",
+      "> geladen."
+    ]
+  }
+]

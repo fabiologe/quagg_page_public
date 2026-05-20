@@ -4,13 +4,20 @@
  * Builds a virtual raster from survey points WITHOUT modifying the terrain.
  * The caller stores the result for preview, then fuses on demand.
  *
- * Strategy:
- *   1. Point-influence mask  – mark every cell within searchRadius of a survey
- *      point. This ensures ALL points are represented, regardless of polyline.
- *   2. Pre-seed exact values – cells that contain a survey point get its exact
- *      Z immediately (hard constraint, bypasses IDW approximation).
- *   3. IDW for remaining     – all other masked cells get IDW-interpolated Z.
- *   4. Thalweg enforcement   – optional monotone downstream sweep along polyline.
+ * Two masking modes (selected by presence of polygon_xy):
+ *
+ *   A) Polygon mode  (polygon_xy provided)
+ *      1. Point-in-polygon — ALL cells inside the Flussschlauch-Polygon are candidates.
+ *         Guarantees lückenlose Kanalabdeckung regardless of survey point distribution.
+ *      2. Pre-seed exact values — cells containing a survey point get exact Z.
+ *      3a. IDW for cells with ≥minPoints nearby survey points (within searchRadius).
+ *      3b. Fallback global IDW — cells inside polygon with 0 nearby points → IDW
+ *          from ALL survey points (fills gaps between measured cross-sections).
+ *      4. Thalweg enforcement (optional).
+ *
+ *   B) Point-influence mode  (polygon_xy absent, legacy behaviour)
+ *      1. Circle mask — cells within searchRadius of any survey point.
+ *      2–4. Same as polygon mode (no fallback needed — mask already matches points).
  *
  * Input (postMessage):
  *   pts_xyz        Float64Array  – [x0,y0,z0, x1,y1,z1, …]
@@ -24,6 +31,7 @@
  *   nugget         number        smoothing offset [m]
  *   zClamp         boolean       cap result to surrounding DEM values
  *   gridData       Float32Array  DEM values (needed for zClamp)
+ *   polygon_xy     Float64Array? [x0,y0, x1,y1, …]  Flussschlauch polygon
  *   polyline_xy    Float64Array? [x0,y0, x1,y1, …]  (for thalweg only)
  *   thalwegEnforce boolean
  *   thalwegRadius  number        thalweg corridor half-width [m]
@@ -37,7 +45,7 @@ self.onmessage = function ({ data }) {
         pts_xyz,
         ncols, nrows, cellsize, xllcorner, yllcorner,
         searchRadius, power, minPoints, maxPoints, nugget, zClamp, gridData,
-        polyline_xy, thalwegEnforce, thalwegRadius,
+        polygon_xy, polyline_xy, thalwegEnforce, thalwegRadius,
     } = data;
 
     const sr      = searchRadius;
@@ -55,7 +63,7 @@ self.onmessage = function ({ data }) {
         ptsZ[i] = pts_xyz[i * 3 + 2];
     }
 
-    // ── Spatial bin index for IDW ───────────────────────────────────────────
+    // ── Spatial bin index for local IDW ────────────────────────────────────
     const binMap = new Map();
     for (let i = 0; i < nPts; i++) {
         const br  = Math.floor(ptsY[i] / sr);
@@ -78,27 +86,76 @@ self.onmessage = function ({ data }) {
         }
     }
 
-    // ── Phase 1: Point-influence mask ──────────────────────────────────────
-    // Every cell within searchRadius of any survey point becomes a candidate.
-    // This guarantees all survey points are represented in the output.
-    const rCells = Math.ceil(sr / cellsize);
-    const mask   = new Uint8Array(nrows * ncols);
+    // ── Point-in-polygon (ray casting) ─────────────────────────────────────
+    // Returns true if (px, py) is inside the polygon defined by poly_x/poly_y.
+    function pointInPolygon(px, py, polyX, polyY, n) {
+        let inside = false;
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+            const xi = polyX[i], yi = polyY[i];
+            const xj = polyX[j], yj = polyY[j];
+            if ((yi > py) !== (yj > py)) {
+                const xCross = (xj - xi) * (py - yi) / (yj - yi) + xi;
+                if (px < xCross) inside = !inside;
+            }
+        }
+        return inside;
+    }
 
-    for (let pi = 0; pi < nPts; pi++) {
-        const px = ptsX[pi], py = ptsY[pi];
-        const cC = Math.round((px - xllcorner) / cellsize);
-        const cR = Math.round((py - yllcorner) / cellsize);
-        for (let dr = -rCells; dr <= rCells; dr++) {
-            const r = cR + dr;
-            if (r < 0 || r >= nrows) continue;
-            const ry  = yllcorner + r * cellsize + cellsize / 2;
-            const dy2 = (ry - py) ** 2;
-            if (dy2 > r2max) continue;
-            for (let dc = -rCells; dc <= rCells; dc++) {
-                const c = cC + dc;
-                if (c < 0 || c >= ncols) continue;
-                const rx = xllcorner + c * cellsize + cellsize / 2;
-                if (dy2 + (rx - px) ** 2 <= r2max) mask[r * ncols + c] = 1;
+    const usePolygon = polygon_xy && polygon_xy.length >= 6;
+
+    // ── Phase 1: Build mask ─────────────────────────────────────────────────
+    const mask = new Uint8Array(nrows * ncols);
+
+    if (usePolygon) {
+        // Unpack polygon and compute bbox for fast rejection
+        const nPoly = (polygon_xy.length / 2) | 0;
+        const polyX = new Float64Array(nPoly);
+        const polyY = new Float64Array(nPoly);
+        let bboxXMin = Infinity, bboxXMax = -Infinity;
+        let bboxYMin = Infinity, bboxYMax = -Infinity;
+        for (let i = 0; i < nPoly; i++) {
+            polyX[i] = polygon_xy[i * 2];
+            polyY[i] = polygon_xy[i * 2 + 1];
+            if (polyX[i] < bboxXMin) bboxXMin = polyX[i];
+            if (polyX[i] > bboxXMax) bboxXMax = polyX[i];
+            if (polyY[i] < bboxYMin) bboxYMin = polyY[i];
+            if (polyY[i] > bboxYMax) bboxYMax = polyY[i];
+        }
+
+        // Column and row bounds for the bbox
+        const cMin = Math.max(0, Math.floor((bboxXMin - xllcorner) / cellsize) - 1);
+        const cMax = Math.min(ncols - 1, Math.ceil((bboxXMax - xllcorner) / cellsize) + 1);
+        const rMin = Math.max(0, Math.floor((bboxYMin - yllcorner) / cellsize) - 1);
+        const rMax = Math.min(nrows - 1, Math.ceil((bboxYMax - yllcorner) / cellsize) + 1);
+
+        for (let r = rMin; r <= rMax; r++) {
+            const cy = yllcorner + r * cellsize + cellsize / 2;
+            for (let c = cMin; c <= cMax; c++) {
+                const cx = xllcorner + c * cellsize + cellsize / 2;
+                if (pointInPolygon(cx, cy, polyX, polyY, nPoly)) {
+                    mask[r * ncols + c] = 1;
+                }
+            }
+        }
+    } else {
+        // Legacy: circle mask around every survey point
+        const rCells = Math.ceil(sr / cellsize);
+        for (let pi = 0; pi < nPts; pi++) {
+            const px = ptsX[pi], py = ptsY[pi];
+            const cC = Math.round((px - xllcorner) / cellsize);
+            const cR = Math.round((py - yllcorner) / cellsize);
+            for (let dr = -rCells; dr <= rCells; dr++) {
+                const r = cR + dr;
+                if (r < 0 || r >= nrows) continue;
+                const ry  = yllcorner + r * cellsize + cellsize / 2;
+                const dy2 = (ry - py) ** 2;
+                if (dy2 > r2max) continue;
+                for (let dc = -rCells; dc <= rCells; dc++) {
+                    const c = cC + dc;
+                    if (c < 0 || c >= ncols) continue;
+                    const rx = xllcorner + c * cellsize + cellsize / 2;
+                    if (dy2 + (rx - px) ** 2 <= r2max) mask[r * ncols + c] = 1;
+                }
             }
         }
     }
@@ -117,20 +174,17 @@ self.onmessage = function ({ data }) {
     }
 
     // ── Phase 2: Pre-seed exact values at survey point cells ───────────────
-    // Hard constraints: the cell containing a survey point gets its exact Z.
-    // Using the nearest-cell rule (Math.round) for sub-cellsize accuracy.
     const resultIdx   = [];
     const resultZ     = [];
-    const seededCells = new Set(); // cells already set by a survey point
+    const seededCells = new Set();
 
     for (let pi = 0; pi < nPts; pi++) {
         const c = Math.round((ptsX[pi] - xllcorner) / cellsize);
         const r = Math.round((ptsY[pi] - yllcorner) / cellsize);
         if (c < 0 || c >= ncols || r < 0 || r >= nrows) continue;
         const idx = r * ncols + c;
-        if (!mask[idx]) continue; // outside influence area (shouldn't happen)
+        if (!mask[idx]) continue;
         if (seededCells.has(idx)) {
-            // Two points in same cell — average their Z values
             const existing = resultIdx.indexOf(idx);
             if (existing >= 0) resultZ[existing] = (resultZ[existing] + ptsZ[pi]) / 2;
             continue;
@@ -143,9 +197,6 @@ self.onmessage = function ({ data }) {
     self.postMessage({ type: 'progress', value: 10 });
 
     // ── Phase 3: IDW for remaining masked cells ─────────────────────────────
-    // Snap zone: cells within 2 × cellsize of a survey point bypass minPoints.
-    // This guarantees the immediate neighbourhood of every measurement is filled
-    // smoothly — no gaps from sparse-point minPoints gating.
     const snapR2       = (cellsize * 2) ** 2;
     const modifiedSet  = new Set(seededCells);
     const REPORT_EVERY = Math.max(1, (candidates.length / 40) | 0);
@@ -153,9 +204,24 @@ self.onmessage = function ({ data }) {
     const tmpD2        = [];
     const tmpZ         = [];
 
+    // Pre-compute all-points squared distances only when fallback IDW is needed
+    // (polygon mode). We re-run it per cell lazily — acceptable since fallback
+    // cells are typically sparse.
+    function globalIDW(realX, realY) {
+        let wSum = 0, zSum = 0, count = 0;
+        for (let pi = 0; pi < nPts; pi++) {
+            const d2 = (ptsX[pi] - realX) ** 2 + (ptsY[pi] - realY) ** 2;
+            const w  = d2 < 1e-10 ? 1e9 : 1 / (d2 + nugget2) ** (power / 2);
+            zSum += w * ptsZ[pi];
+            wSum += w;
+            count++;
+        }
+        return count > 0 && wSum > 0 ? zSum / wSum : null;
+    }
+
     for (let ci = 0; ci < candidates.length; ci++) {
         const idx = candidates[ci];
-        if (seededCells.has(idx)) continue; // already exact from survey point
+        if (seededCells.has(idx)) continue;
 
         const r     = (idx / ncols) | 0;
         const c     = idx % ncols;
@@ -166,48 +232,52 @@ self.onmessage = function ({ data }) {
         tmpD2.length = 0;
         tmpZ.length  = 0;
 
-        let inSnapZone = false; // true if any survey point is within 2×cellsize
+        let inSnapZone = false;
 
         for (const pi of nearby) {
             const d2 = (ptsX[pi] - realX) ** 2 + (ptsY[pi] - realY) ** 2;
             if (d2 > r2max) continue;
             if (d2 < 1e-10) {
-                tmpD2.length = 0; tmpD2.push(0); tmpZ.push(ptsZ[pi]); break;
+                tmpD2.length = 0; tmpD2.push(0); tmpZ.length = 0; tmpZ.push(ptsZ[pi]); break;
             }
             if (d2 <= snapR2) inSnapZone = true;
             tmpD2.push(d2);
             tmpZ.push(ptsZ[pi]);
         }
 
-        if (tmpD2.length === 1 && tmpD2[0] === 0) {
-            // exact hit via IDW path — already handled above, but keep as fallback
-        } else {
-            // Cells in the snap zone only need 1 point; others need full minPoints
+        let newZ = null;
+
+        if (tmpD2.length > 0) {
             const effectiveMin = inSnapZone ? 1 : minPoints;
-            if (tmpD2.length < effectiveMin) continue;
-            if (maxPoints > 0 && tmpD2.length > maxPoints) {
-                const order = Array.from({ length: tmpD2.length }, (_, i) => i)
-                    .sort((a, b) => tmpD2[a] - tmpD2[b])
-                    .slice(0, maxPoints);
-                const kD2 = order.map(i => tmpD2[i]);
-                const kZ  = order.map(i => tmpZ[i]);
-                tmpD2.length = 0; tmpZ.length = 0;
-                for (let k = 0; k < kD2.length; k++) { tmpD2.push(kD2[k]); tmpZ.push(kZ[k]); }
+            if (tmpD2.length >= effectiveMin) {
+                let kD2 = tmpD2, kZ = tmpZ;
+                if (maxPoints > 0 && tmpD2.length > maxPoints) {
+                    const order = Array.from({ length: tmpD2.length }, (_, i) => i)
+                        .sort((a, b) => tmpD2[a] - tmpD2[b])
+                        .slice(0, maxPoints);
+                    kD2 = order.map(i => tmpD2[i]);
+                    kZ  = order.map(i => tmpZ[i]);
+                }
+                let wSum = 0, zSum = 0;
+                for (let k = 0; k < kD2.length; k++) {
+                    const w = kD2[k] === 0 ? 1e9 : 1 / (kD2[k] + nugget2) ** (power / 2);
+                    zSum += w * kZ[k];
+                    wSum += w;
+                }
+                if (wSum > 0) newZ = zSum / wSum;
             }
         }
 
-        let wSum = 0, zSum = 0;
-        for (let k = 0; k < tmpD2.length; k++) {
-            const w = tmpD2[k] === 0 ? 1e9 : 1 / (tmpD2[k] + nugget2) ** (power / 2);
-            zSum += w * tmpZ[k];
-            wSum += w;
+        // Fallback: no nearby points — use global IDW from ALL survey points.
+        // Only applies in polygon mode to guarantee lückenlose Kanalabdeckung.
+        if (newZ === null && usePolygon && nPts > 0) {
+            newZ = globalIDW(realX, realY);
         }
-        const newZ = wSum > 0 ? zSum / wSum : null;
+
         if (newZ === null) continue;
 
         let finalZ = newZ;
 
-        // Z-Clamp: cap to surrounding original DEM values
         if (zClamp && gridData) {
             let maxN = -Infinity;
             const W = 2;
@@ -275,7 +345,6 @@ self.onmessage = function ({ data }) {
         }
         corridorIdx.sort((a, b) => stationOf[a] - stationOf[b]);
 
-        // Forward min-sweep: Z non-increasing downstream
         let runMin = Infinity;
         for (const ci of corridorIdx) {
             if (resultZ[ci] < runMin) runMin = resultZ[ci];

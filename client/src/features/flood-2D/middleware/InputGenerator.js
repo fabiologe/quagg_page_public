@@ -217,14 +217,18 @@ export class InputGenerator {
             hasBci = true;
         }
 
-        // 5a. Wehr-Datei (optional) — nur wenn scenario.weirs gesetzt und nicht leer
+        // 5a. Wehr-Datei (optional) — Wehre + Brücken-Zellen
         let hasWeir = false;
-        if (scenario.weirs && scenario.weirs.length > 0) {
-            const weirContent = this.generateWeirFile(scenario.weirs);
+        const hasWeirData    = scenario.weirs   && scenario.weirs.length   > 0;
+        const hasBridgeData  = scenario.bridges && scenario.bridges.length > 0;
+        if (hasWeirData || hasBridgeData) {
+            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || []);
             if (fs) fs.writeFile('/flow.weir', weirContent);
             else this.files['flow.weir'] = weirContent;
             hasWeir = true;
-            console.log(`[InputGenerator] ✅ ${scenario.weirs.length} Wehr(e) in flow.weir geschrieben.`);
+            const wCount = (scenario.weirs || []).length;
+            const bCount = (scenario.bridges || []).reduce((s, b) => s + (b.cells?.length ?? 1), 0) * 2;
+            console.log(`[InputGenerator] ✅ flow.weir: ${wCount} Wehre + ${bCount} Brücken-Linien geschrieben.`);
         }
 
         // 5. Parameter File
@@ -842,13 +846,38 @@ export class InputGenerator {
      * @param {Array<{x,y,direction,Cd,hc,m,w}>} weirs
      * @returns {string}
      */
-    generateWeirFile(weirs) {
-        if (!weirs || weirs.length === 0) return '';
-        let out = `${weirs.length}\n`;
-        for (const w of weirs) {
+    generateWeirFile(weirs, bridges = []) {
+        // Flatten bridge cells → 2 weir entries per cell (soffit-line + deck-line)
+        // LISFLOOD weir format: x y dir Cd hc m w
+        //   soffit-line: hc = z_sohle,  w = bridge.width   (submerged opening)
+        //   deck-line:   hc = soffit,   w = bridge.width   (overtopping)
+        const bridgeEntries = [];
+        for (const bridge of (bridges || [])) {
+            const cells = bridge.cells || [];
+            for (const cell of cells) {
+                const z  = cell.z_sohle ?? cell.z ?? bridge.z_sohle ?? 0;
+                const sf = cell.soffit  ?? bridge.soffit ?? (z + 2.0);
+                const dk = cell.deck    ?? bridge.deck   ?? (z + 3.0);
+                const w  = cell.width   ?? bridge.width  ?? 5.0;
+                const Cd = cell.Cd      ?? bridge.Cd     ?? 1.704;
+                const dir = cell.direction || 'S';
+                const x   = cell.x;
+                const y   = cell.y;
+                // soffit-line (opening beneath bridge)
+                bridgeEntries.push({ x, y, direction: dir, Cd, hc: z,  m: 0.667, w });
+                // deck-line (overtopping above soffit)
+                bridgeEntries.push({ x, y, direction: dir, Cd, hc: sf, m: 0.667, w });
+            }
+        }
+
+        const allEntries = [...(weirs || []), ...bridgeEntries];
+        if (allEntries.length === 0) return '';
+
+        let out = `${allEntries.length}\n`;
+        for (const w of allEntries) {
             out += `${w.x.toFixed(2)} ${w.y.toFixed(2)}  ${w.direction}  ${w.Cd.toFixed(4)}  ${w.hc.toFixed(4)}  ${w.m.toFixed(4)}  ${w.w.toFixed(4)}\n`;
         }
-        console.log(`[InputGenerator] Generated flow.weir:\n${out}`);
+        console.log(`[InputGenerator] Generated flow.weir (${(weirs||[]).length} weirs + ${bridgeEntries.length} bridge lines):\n${out}`);
         return out;
     }
 }

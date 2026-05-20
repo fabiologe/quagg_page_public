@@ -215,6 +215,39 @@
          </div>
        </div>
 
+       <!-- CHANNEL POLYGON drawing panel -->
+       <div v-if="simStore.activeTool === 'CHANNEL_POLYGON'" class="crop-tool-ui">
+         <div class="tool-panel">
+           <div class="panel-header">
+             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+               stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+               style="vertical-align:middle;margin-right:6px">
+               <polygon points="3,18 8,6 16,3 21,14 12,21"/>
+             </svg>
+             Flussschlauch zeichnen
+           </div>
+           <div class="hint" style="color:#f97316;font-weight:600">
+             {{ channelPolygonState.draftPoints.length }} Punkte
+             &nbsp;·&nbsp; <strong>Klick</strong> = Punkt setzen
+           </div>
+           <div class="hint" style="margin-top:2px;font-size:0.76rem;opacity:0.7">
+             Polygon schließen = alle Zellen innen werden mit IDW befüllt
+           </div>
+           <div class="actions" style="margin-top:8px">
+             <button class="btn-clear"
+               :disabled="!channelPolygonState.draftPoints.length"
+               @click="getChannelPolygonToolInstance().undoLastPoint()">← Undo</button>
+             <button class="btn-confirm"
+               :disabled="channelPolygonState.draftPoints.length < 3"
+               @click="commitChannelPolygon"
+               style="background:#f97316;color:#fff;font-weight:700;border:none;border-radius:4px;padding:4px 10px;cursor:pointer">
+               ✓ Bestätigen
+             </button>
+             <button class="btn-clear" @click="cancelChannelPolygon">✖ Abbrechen</button>
+           </div>
+         </div>
+       </div>
+
        <!-- OFFSET REF PICK panel -->
        <div v-if="simStore.activeTool === 'OFFSET_REF_PICK'" class="crop-tool-ui">
          <div class="tool-panel">
@@ -312,6 +345,7 @@ import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPoint
 import { useVirtualRasterRenderer } from '../../composables/editor/useVirtualRasterRenderer.js';
 import { useBathyBrushTool } from '../../composables/editor/useBathyBrushTool.js';
 import { channelLineState, getChannelLineToolInstance } from '../../composables/editor/useChannelLineTool.js';
+import { channelPolygonState, getChannelPolygonToolInstance } from '../../composables/editor/useChannelPolygonTool.js';
 import { refPickState, getRefPickToolInstance } from '../../composables/editor/useOffsetRefPickTool.js';
 import {
     undoTerrain, redoTerrain, canUndoTerrain, canRedoTerrain,
@@ -366,8 +400,9 @@ const textureTool = useTextureTool();
 const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
 const weirTool = useWeirTool();
-const channelLineTool = getChannelLineToolInstance();
-const refPickTool     = getRefPickToolInstance();
+const channelLineTool    = getChannelLineToolInstance();
+const channelPolygonTool = getChannelPolygonToolInstance();
+const refPickTool        = getRefPickToolInstance();
 const { saveState, undo, redo, canUndo, canRedo } = useHistoryManager();
 
 // Kombinierte Undo/Redo-Flags für die Toolbar-Buttons:
@@ -418,12 +453,22 @@ function cancelChannelLine() {
     simStore.setActiveTool(null); // deactivate() keeps committed line, discards draft
 }
 
+// Channel-polygon helper actions
+function commitChannelPolygon() {
+    getChannelPolygonToolInstance().commitPolygon();
+    simStore.setActiveTool(null);
+}
+function cancelChannelPolygon() {
+    simStore.setActiveTool(null);
+}
+
 // Tool Mapping
 const tools = {
     'DRAW': buildingTool,
     'SHOVEL': shovelTool,
     'BATHY_BRUSH': bathyBrushTool,
     'CHANNEL_LINE':    channelLineTool,
+    'CHANNEL_POLYGON': channelPolygonTool,
     'OFFSET_REF_PICK': refPickTool,
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
@@ -455,7 +500,7 @@ const interactionManager = useInteractionManager(
 const applyCameraLock = () => {
     if (!controls) return;
     const tool = activeTool.value;
-    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK') {
+    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK') {
         controls.mouseButtons.LEFT = null;
     } else {
         if (activeCamera === cameraOrtho) {
@@ -1023,18 +1068,23 @@ const parseXYZ = (text) => {
 };
 
 const buildTerrainMesh = (result) => {
-    const { ncols, nrows, gridData, minZ, maxZ, bounds } = result;
-    const geometry = new THREE.PlaneGeometry(bounds.width, bounds.height, ncols - 1, nrows - 1);
-    const count = geometry.attributes.position.count;
+    const { ncols, nrows, gridData, minZ, maxZ, bounds, cellsize } = result;
+    // Extend by one cellsize so we get ncols×nrows faces (one per computation cell)
+    const displayWidth  = bounds.width  + cellsize;
+    const displayHeight = bounds.height + cellsize;
+    const geometry = new THREE.PlaneGeometry(displayWidth, displayHeight, ncols, nrows);
+    const count = geometry.attributes.position.count; // (ncols+1)*(nrows+1)
 
     // Per-vertex validity flag: 1.0 = real data, 0.0 = NODATA
     const validArray = new Float32Array(count);
-    
+
     for (let i = 0; i < count; i++) {
-        const col = i % ncols;
-        const geomRow = Math.floor(i / ncols); 
-        const gridRow = (nrows - 1) - geomRow; 
-        const idx = gridRow * ncols + col;
+        const col     = i % (ncols + 1);
+        const geomRow = Math.floor(i / (ncols + 1));
+        // Phantom right/top border: clamp to last real data cell
+        const dataCol = Math.min(col, ncols - 1);
+        const gridRow = (nrows - 1) - Math.min(geomRow, nrows - 1);
+        const idx = gridRow * ncols + dataCol;
         let zVal = minZ;
         let valid = 0.0;
         if (idx >= 0 && idx < gridData.length) {
@@ -1064,7 +1114,7 @@ const buildTerrainMesh = (result) => {
 
     geometry.computeVertexNormals();
 
-    const material = createTerrainMaterial(minZ, maxZ, bounds, result.cellsize);
+    const material = createTerrainMaterial(minZ, maxZ, { width: displayWidth, height: displayHeight }, cellsize);
 
     if (terrainMesh) {
          scene.remove(terrainMesh);

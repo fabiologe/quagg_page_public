@@ -1,7 +1,7 @@
 [
   { "text": "👋 Hi — hoffe dir gefällt das Projekt hier! Feedback gerne direkt über GitHub Issues." },
   { "text": "🚀 QUAGG · Kanalnetz-Simulation direkt im Browser — powered by SWMM & WebAssembly." },
-  { "text": "📡 Schreib mir auf Twitter / X → @fabiologe", "link": "https://x.com/fabiologe", "linkText": "@fabiologe" },
+  { "text": "📡 Schreib mir auf Twitter / X → @fabiologe1", "link": "https://x.com/fabiologe1", "linkText": "@fabiologe" },
   { "text": "🗺️ Tipp: Halte die mittlere Maustaste gedrückt um den Kartenausschnitt zu verschieben." },
   { "text": "⚙️ Im Preprocessing-Modal lassen sich Schacht-Deckel als druckdicht markieren (verhindert Überflutung auf Gelände)." },
   { "text": "📊 Nach der Simulation kannst du unter 'Ergebnisse' die Auslastung jeder Haltung farblich ablesen." },

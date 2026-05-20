@@ -49,21 +49,14 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
     const thalwegResult = ref(/** @type {{nodes:any[],axis:string,len:number,gradient:number,minZ:number,maxZ:number}|null} */ (null));
 
     /** Vom Benutzer gezeichnete Kanal-Mittellinie (bestätigt). Array von {x,y,terrainZ}. */
-    const channelPolyline = ref(/** @type {Array<{x:number,y:number,terrainZ:number}>} */ ([]));
+    const channelPolyline = ref(/** @type {Array<{x:number,y:number,terrainZ:number}>} */ ([]))
 
-    // ── Virtuelles Raster ─────────────────────────────────────────────────────
+    /** Flussschlauch-Polygon (bestätigt). Array von {x,y} in Landes-KBS. */
+    const channelPolygon = ref(/** @type {Array<{x:number,y:number}>} */ ([]));
 
-    /**
-     * IDW-Ergebnis im Korridor, noch nicht ins DGM geschrieben.
-     * @type {import('vue').Ref<{indices: Uint32Array, zValues: Float32Array} | null>}
-     */
-    const virtualRaster = ref(null);
-
-    /** Bumped on every setVirtualRaster so renderer rebuilds. */
-    const virtualRasterVersion = ref(0);
-
-    /** Whether the virtual raster preview layer is visible in the 3D viewer. */
-    const virtualRasterVisible = ref(true);
+    // Virtual raster preview is now managed by useRasterProcessingStore.
+    // useBathymetryStore only tracks the zone-ID it owns there.
+    const BATHY_ZONE_ID = 'bathymetry-main';
 
     /** @type {import('vue').Ref<'IDLE'|'STAGE1_DONE'|'RUNNING'|'DONE'|'ERROR'>} */
     const pipelineStatus = ref('IDLE');
@@ -109,15 +102,7 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
     function setCrossVal(result)   { crossValResult.value = result; }
     function setThalweg(result)    { thalwegResult.value = result; }
     function setChannelPolyline(pts) { channelPolyline.value = pts; }
-
-    function setVirtualRaster(indices, zValues) {
-        virtualRaster.value = { indices, zValues };
-        virtualRasterVersion.value++;
-    }
-    function clearVirtualRaster() {
-        virtualRaster.value = null;
-        virtualRasterVersion.value++;
-    }
+    function setChannelPolygon(pts)  { channelPolygon.value  = pts; }
 
     function setOffsetDiagnosis(diag) {
         offsetDiagnosis.value = diag;
@@ -134,9 +119,7 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
         crossValResult.value = null;
         thalwegResult.value = null;
         channelPolyline.value = [];
-        virtualRaster.value = null;
-        virtualRasterVersion.value++;
-        virtualRasterVisible.value = true;
+        channelPolygon.value  = [];
         pipelineStatus.value = 'IDLE';
         currentStage.value = 0;
         stageProgress.value = 0;
@@ -147,13 +130,12 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
         validationReport, offsetDiagnosis,
         modifiedCells, modifiedCount,
         crossValResult, thalwegResult,
-        channelPolyline,
-        virtualRaster, virtualRasterVersion, virtualRasterVisible,
+        channelPolyline, channelPolygon,
+        BATHY_ZONE_ID,
         pipelineStatus, currentStage, stageProgress,
         hasDem, isStage1Ready,
         setSurveyPoints, setValidation, setOffsetDiagnosis,
-        markCell, addModifiedCount, setCrossVal, setThalweg, setChannelPolyline,
-        setVirtualRaster, clearVirtualRaster,
+        markCell, addModifiedCount, setCrossVal, setThalweg, setChannelPolyline, setChannelPolygon,
         reset,
     };
 });

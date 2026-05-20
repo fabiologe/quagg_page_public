@@ -517,8 +517,8 @@ const startPreparation = async () => {
                   massint: String(simStore.massInterval || 60) + '.0',
                   ...(simStore.useAcceleration ? { acceleration: '' } : {})
              },
-             // Wehre (LISFLOOD weirfile) — Poleni-Formel, nur Typ 0 (keine Brücken)
-             weirs: geoStore.weirs ? JSON.parse(JSON.stringify(geoStore.weirs)) : []
+             weirs:   geoStore.weirs   ? JSON.parse(JSON.stringify(geoStore.weirs))   : [],
+             bridges: geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : []
           };
 
          // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
@@ -557,11 +557,17 @@ const startPreparation = async () => {
                  }
 
                  activeCulverts.push({
-                     inX:  inNode.x,
-                     inY:  inNode.y,
-                     outX: outNode.x,
-                     outY: outNode.y,
-                     maxQ: link.maxQ ?? 1.0
+                     inX:      inNode.x,
+                     inY:      inNode.y,
+                     outX:     outNode.x,
+                     outY:     outNode.y,
+                     // hydraulic parameters — new schema
+                     z_in:      link.z_in      ?? null,  // null → BMI worker derives from DEM
+                     z_out:     link.z_out     ?? null,
+                     diameter:  link.diameter  ?? 1.0,
+                     length:    link.length    ?? 10.0,
+                     manning_n: link.manning_n ?? 0.013,
+                     Cd:        link.Cd        ?? 0.6,
                  });
              }
 

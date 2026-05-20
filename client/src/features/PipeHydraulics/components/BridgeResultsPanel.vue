@@ -1,0 +1,346 @@
+<template>
+  <div class="bridge-results-panel">
+
+    <!-- Aktueller Zustand -->
+    <div class="current-section">
+      <div class="current-header">
+        <h3 class="sec-title">WSP = {{ store.wsp.toFixed(2) }} m</h3>
+        <div class="q-total-chip">
+          Q<sub>ges</sub> = <strong>{{ r.Q_total.toFixed(3) }}</strong> m³/s
+        </div>
+      </div>
+
+      <div class="zones-grid">
+        <!-- Zone 1 -->
+        <div class="zone-card z1" :class="{ submerged: r.isSubmerged, 'no-bridge': !r.hasBridge }">
+          <div class="zone-header">
+            <span class="zlabel">Zone 1 – Durchströmung</span>
+            <span class="zmode">
+              {{ !r.hasBridge ? 'Offenes Gerinne' : r.isSubmerged ? 'Druckabfluss' : 'Freispiegel' }}
+            </span>
+          </div>
+          <div class="metrics">
+            <div class="m"><span>Q₁</span><strong>{{ r.Q1_total.toFixed(3) }}</strong><em>m³/s</em></div>
+            <div class="m"><span>v̄₁</span><strong>{{ r.v1_mean.toFixed(2) }}</strong><em>m/s</em></div>
+            <div class="m"><span>A₁</span><strong>{{ r.A1_total.toFixed(2) }}</strong><em>m²</em></div>
+            <div class="m"><span>R̄₁</span><strong>{{ r.R1_mean.toFixed(3) }}</strong><em>m</em></div>
+          </div>
+        </div>
+
+        <!-- Zone 2 -->
+        <div class="zone-card z2" :class="{ inactive: !r.hasOverflow }">
+          <div class="zone-header">
+            <span class="zlabel">Zone 2 – Überströmung</span>
+            <span class="zmode">{{ r.hasOverflow ? 'Aktiv' : 'Kein Überfluss' }}</span>
+          </div>
+          <template v-if="r.hasOverflow">
+            <div class="metrics">
+              <div class="m"><span>Q₂</span><strong>{{ r.Q2_total.toFixed(3) }}</strong><em>m³/s</em></div>
+              <div class="m"><span>v̄₂</span><strong>{{ r.v2_mean.toFixed(2) }}</strong><em>m/s</em></div>
+              <div class="m"><span>A₂</span><strong>{{ r.A2_total.toFixed(2) }}</strong><em>m²</em></div>
+              <div class="m"><span>R̄₂</span><strong>{{ r.R2_mean.toFixed(3) }}</strong><em>m</em></div>
+            </div>
+          </template>
+          <div v-else class="inactive-note">WSP ≤ BOK</div>
+        </div>
+      </div>
+
+      <!-- kSt-Zonen Aufschlüsselung -->
+      <div v-if="r.zoneResults.length > 1" class="kst-breakdown">
+        <div class="kst-breakdown-title">Composite Manning – kSt-Zonen</div>
+        <table class="kst-table">
+          <thead>
+            <tr>
+              <th>kSt</th>
+              <th>A₁ (m²)</th>
+              <th>Q₁ (m³/s)</th>
+              <th>A₂ (m²)</th>
+              <th>Q₂ (m³/s)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="z in r.zoneResults" :key="z.kst">
+              <td class="kst-val">{{ z.kst }}</td>
+              <td>{{ z.A1.toFixed(2) }}</td>
+              <td>{{ z.Q1.toFixed(3) }}</td>
+              <td>{{ z.A2.toFixed(2) }}</td>
+              <td>{{ z.Q2.toFixed(3) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Gesamtabfluss -->
+      <div class="total-bar">
+        <span class="total-formula">
+          Q<sub>ges</sub> = Q₁ + Q₂ = {{ r.Q1_total.toFixed(3) }} + {{ r.Q2_total.toFixed(3) }}
+        </span>
+        <span class="total-val">{{ r.Q_total.toFixed(3) }} m³/s</span>
+        <span class="total-ls">= {{ (r.Q_total * 1000).toFixed(0) }} l/s</span>
+      </div>
+    </div>
+
+    <!-- Ratingkurve -->
+    <div class="rating-section">
+      <div class="rating-header">
+        <h3 class="sec-title">Rating Curve</h3>
+        <span class="rating-range">{{ store.wspMin.toFixed(1) }} – {{ store.wspMax.toFixed(1) }} m</span>
+      </div>
+
+      <div class="table-wrap">
+        <table class="rating-table">
+          <thead>
+            <tr>
+              <th>WSP (m)</th>
+              <th>A₁ (m²)</th>
+              <th>Q₁ (m³/s)</th>
+              <th>A₂ (m²)</th>
+              <th>Q₂ (m³/s)</th>
+              <th class="col-total">Q<sub>ges</sub></th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in store.ratingCurve" :key="row.wsp"
+              :class="{
+                'row-active': isCurrentRow(row.wsp),
+                'row-submerged': row.isSubmerged && !row.hasOverflow,
+                'row-overflow': row.hasOverflow
+              }">
+              <td class="col-wsp">{{ row.wsp.toFixed(2) }}</td>
+              <td>{{ row.A1_total.toFixed(2) }}</td>
+              <td>{{ row.Q1_total.toFixed(3) }}</td>
+              <td>{{ row.A2_total > 0 ? row.A2_total.toFixed(2) : '–' }}</td>
+              <td>{{ row.Q2_total > 0 ? row.Q2_total.toFixed(3) : '–' }}</td>
+              <td class="col-total">{{ row.Q_total.toFixed(3) }}</td>
+              <td class="col-status">
+                <span v-if="row.hasOverflow"  class="sbadge overflow">Z1+2</span>
+                <span v-else-if="row.isSubmerged" class="sbadge pressure">Druck</span>
+                <span v-else class="sbadge free">Frei</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { useBridgeStore } from '../stores/useBridgeStore.js'
+
+const store = useBridgeStore()
+const r = computed(() => store.currentResult)
+
+const rowStep = computed(() => (store.wspMax - store.wspMin) / store.ratingSteps)
+function isCurrentRow(wsp) {
+  return Math.abs(wsp - store.wsp) < rowStep.value * 0.55
+}
+</script>
+
+<style scoped>
+.bridge-results-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sec-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+/* Current state */
+.current-section {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+
+.current-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.q-total-chip {
+  font-size: 0.88rem;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 20px;
+  padding: 0.15rem 0.7rem;
+}
+.q-total-chip strong { font-size: 1rem; }
+
+.zones-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.zone-card {
+  border-radius: 9px;
+  padding: 0.6rem 0.75rem;
+  border: 1.5px solid;
+}
+
+.z1 { border-color: #93c5fd; background: #eff6ff; }
+.z1.submerged { border-color: #fbbf24; background: #fffbeb; }
+.z2 { border-color: #99f6e4; background: #f0fdfa; }
+.z2.inactive { border-color: #e2e8f0; background: #f8fafc; opacity: 0.6; }
+
+.zone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+
+.zlabel { font-size: 0.78rem; font-weight: 700; color: #1e293b; }
+.zmode {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+  background: white;
+  border-radius: 8px;
+  padding: 0.08rem 0.38rem;
+  border: 1px solid #e2e8f0;
+}
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem 0.4rem; }
+.m { display: flex; align-items: baseline; gap: 0.2rem; }
+.m span { font-size: 0.7rem; color: #64748b; min-width: 18px; }
+.m strong { font-size: 0.84rem; font-weight: 700; color: #1e293b; }
+.m em { font-size: 0.63rem; color: #94a3b8; font-style: normal; }
+
+.inactive-note { font-size: 0.78rem; color: #94a3b8; padding-top: 0.2rem; }
+
+/* kSt breakdown */
+.kst-breakdown {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.kst-breakdown-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.kst-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.kst-table th { padding: 0.2rem 0.35rem; text-align: right; font-size: 0.72rem; color: #94a3b8; border-bottom: 1px solid #e2e8f0; }
+.kst-table th:first-child { text-align: left; }
+.kst-table td { padding: 0.18rem 0.35rem; text-align: right; color: #374151; }
+.kst-table td:first-child { text-align: left; }
+.kst-val { font-weight: 700; color: #1e293b; }
+
+/* Total bar */
+.total-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  flex-wrap: wrap;
+}
+
+.total-formula { font-size: 0.8rem; color: #475569; flex: 1; min-width: 130px; }
+.total-val { font-size: 1.25rem; font-weight: 800; color: #1d4ed8; }
+.total-ls { font-size: 0.8rem; color: #64748b; }
+
+/* Rating */
+.rating-section {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+
+.rating-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.rating-range { font-size: 0.76rem; color: #94a3b8; }
+
+.table-wrap {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  scrollbar-width: thin;
+}
+
+.rating-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.rating-table thead {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  z-index: 1;
+}
+
+.rating-table th {
+  padding: 0.38rem 0.45rem;
+  text-align: right;
+  font-weight: 600;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.rating-table th:first-child,
+.rating-table td:first-child { text-align: left; padding-left: 0.6rem; }
+
+.rating-table td {
+  padding: 0.3rem 0.45rem;
+  text-align: right;
+  color: #374151;
+  border-bottom: 1px solid #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+
+.rating-table tr:last-child td { border-bottom: none; }
+
+.col-wsp { font-weight: 600; }
+.col-total { font-weight: 700; color: #1d4ed8 !important; }
+.col-status { text-align: center !important; }
+
+.row-active td { background: #dbeafe; }
+.row-submerged:not(.row-active) td { background: #fefce8; }
+.row-overflow:not(.row-active) td { background: #f0fdfa; }
+
+.sbadge {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.08rem 0.35rem;
+  border-radius: 10px;
+  display: inline-block;
+}
+.sbadge.free { background: #dcfce7; color: #15803d; }
+.sbadge.pressure { background: #fef3c7; color: #b45309; }
+.sbadge.overflow { background: #dbeafe; color: #1e40af; }
+</style>

@@ -101,12 +101,55 @@ export function useHighEndSolverExport() {
             lineId:    w.lineId || null,
         }));
 
-        const culverts = toRaw(geoStore.culvertLinks).map(l => ({
-            id:       l.id,
-            sourceId: l.sourceId,
-            targetId: l.targetId,
-            maxQ:     l.maxQ,
+        const bridges = toRaw(geoStore.bridges ?? []).map(b => ({
+            id:      b.id,
+            lineId:  b.lineId,
+            z_sohle: b.z_sohle,
+            soffit:  b.soffit,
+            deck:    b.deck,
+            width:   b.width,
+            Cd:      b.Cd,
+            cells:   b.cells.map(c => ({
+                col:       c.col,
+                row:       c.row,
+                x:         c.x,
+                y:         c.y,
+                direction: c.direction,
+            })),
         }));
+
+        // Culvert serialization — full hydraulic params + row/col for culvert_middleware.py
+        const xll      = header.xllcorner ?? header.xll ?? 0;
+        const yll      = header.yllcorner ?? header.yll ?? 0;
+        const cellsize = header.cellsize ?? 1;
+        const nrows    = header.nrows ?? 0;
+        const rawNodes = toRaw(geoStore.nodes);
+        const nodeMap  = new Map(rawNodes.map(n => [n.id, n]));
+
+        const culverts = toRaw(geoStore.culvertLinks).map(l => {
+            const inNode  = nodeMap.get(l.sourceId);
+            const outNode = nodeMap.get(l.targetId);
+            // Grid row/col (0-based, top-down for culvert_middleware.py interface)
+            const toRowCol = (node) => {
+                if (!node) return { row: null, col: null };
+                const col = Math.floor((node.x - xll) / cellsize);
+                const row = (nrows - 1) - Math.floor((node.y - yll) / cellsize);
+                return { row, col };
+            };
+            return {
+                id:        l.id,
+                sourceId:  l.sourceId,
+                targetId:  l.targetId,
+                inlet:     toRowCol(inNode),
+                outlet:    toRowCol(outNode),
+                z_in:      l.z_in      ?? 0.0,
+                z_out:     l.z_out     ?? 0.0,
+                diameter:  l.diameter  ?? 1.0,
+                length:    l.length    ?? 10.0,
+                manning_n: l.manning_n ?? 0.013,
+                Cd:        l.Cd        ?? 0.6,
+            };
+        });
 
         const modifications = toRaw(geoStore.modifications).map(m => ({
             id:         m.id,
@@ -180,6 +223,7 @@ export function useHighEndSolverExport() {
             geo: {
                 nodes,
                 weirs,
+                bridges,
                 culverts,
                 modifications,
                 boundaries,
@@ -199,6 +243,7 @@ export function useHighEndSolverExport() {
         console.info('[SolverExport] Payload generated:', {
             nodes:       nodes.length,
             weirs:       weirs.length,
+            bridges:     bridges.length,
             culverts:    culverts.length,
             assignments: Object.keys(assignments).length,
             profiles:    Object.keys(profiles).length,

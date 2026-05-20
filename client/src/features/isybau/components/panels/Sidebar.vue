@@ -38,16 +38,8 @@
       <slot></slot>
     </div>
 
-    <!-- Deko-Video (nur leer) -->
-    <video
-      v-if="!hasData"
-      class="deko-anim"
-      src="/saintv1d/Saintv1d-anim.mp4"
-      autoplay
-      loop
-      muted
-      playsinline
-    />
+    <!-- Retro Terminal (nur wenn kein Projekt geladen) -->
+    <TerminalHero v-if="!hasData" />
 
   </div>
 </template>
@@ -56,6 +48,7 @@
 import { computed } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { parseIsybauXML } from '../../utils/xmlParser.js';
+import TerminalHero from './TerminalHero.vue';
 
 const props = defineProps({
   width: { type: Number, default: 300 }
@@ -193,14 +186,4 @@ const handleFileUpload = async (event) => {
   padding: 0.75rem;
 }
 
-/* ── Deko animation ──────────────────────── */
-.deko-anim {
-  flex: 1;
-  min-height: 0;
-  width: calc(100% + 0px);
-  display: block;
-  object-fit: cover;
-  object-position: top center;
-  pointer-events: none;
-}
 </style>
