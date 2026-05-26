@@ -166,6 +166,51 @@
             </div>
           </section>
 
+          <!-- Brückenkoeffizienten -->
+          <section class="info-section">
+            <h4>Brückenkoeffizienten</h4>
+            <div class="usage-grid">
+              <div class="usage-card">
+                <div class="usage-card-head">&mu; — Orifice-Beiwert (Druckabfluss)</div>
+                <div class="usage-card-body">
+                  Wird aktiv sobald WSP &ge; BUK (Zustand 2 und 3).<br>
+                  Formel: <code>Q = &mu; &middot; A_öffn. &middot; &radic;(2g &middot; &Delta;h) / &radic;(1+&mu;²&zeta;)</code>
+                  <div class="usage-row" style="margin-top:0.4rem">Scharfkantiger Einlauf: <strong>0.60–0.70</strong></div>
+                  <div class="usage-row">Abgerundeter Einlauf: <strong>0.80–0.90</strong></div>
+                  <p class="usage-note">Eingabe im Bereich <strong>Brückenkoeffizienten</strong> im linken Panel (erscheint nur wenn ein BUK-Profil definiert ist).</p>
+                </div>
+              </div>
+              <div class="usage-card">
+                <div class="usage-card-head">&mu;<sub>D</sub> — Poleni-Beiwert (Überströmung)</div>
+                <div class="usage-card-body">
+                  Wird aktiv sobald WSP &gt; BOK (Zustand 3).<br>
+                  Formel: <code>Q₂ = &frac23; &middot; &mu;D &middot; &radic;(2g) &middot; &int; h_ü(x)^1.5 dx</code>
+                  <div class="usage-row" style="margin-top:0.4rem">Scharfkantig (BOK-Kante): <strong>0.35–0.40</strong></div>
+                  <div class="usage-row">Abgerundet / Fahrbahn: <strong>0.45–0.50</strong></div>
+                  <p class="usage-note">Die Streifenintegration über den BOK-Fußabdruck erfasst auch eine geneigte Brückendecke automatisch korrekt.</p>
+                </div>
+              </div>
+              <div class="usage-card">
+                <div class="usage-card-head">&zeta; — Formwiderstand &amp; Pfeiler-Geometrie</div>
+                <div class="usage-card-body">
+                  <strong>&zeta; — Formwiderstandsbeiwert</strong><br>
+                  Beschreibt den hydrodynamischen Einlaufverlust (Pfeilerform).<br>
+                  <code>&mu;<sub>eff</sub> = &mu; / &radic;(1 + &mu;² &middot; &zeta;)</code>
+                  <div class="usage-row" style="margin-top:0.3rem">Kein Pfeiler: <strong>0.0</strong></div>
+                  <div class="usage-row">Tropfenförmig: <strong>0.1–0.3</strong></div>
+                  <div class="usage-row">Rechteckig: <strong>0.7–1.2</strong></div>
+                  <hr style="border:none;border-top:1px solid #e2e8f0;margin:0.5rem 0">
+                  <strong>&phi; — Pfeiler-Geometrie (Versperrungsgrad)</strong><br>
+                  Anzahl <em>n</em> und Breite <em>b<sub>P</sub></em> der Pfeiler eingeben → Nettofläche wird automatisch berechnet:<br>
+                  <code>&phi; = n &middot; b<sub>P</sub> / L<sub>BUK</sub></code><br>
+                  <code>A<sub>netto</sub> = A<sub>öffn.</sub> &middot; (1 &minus; &phi;)</code><br>
+                  <code>Q = &mu; &middot; A<sub>netto</sub> &middot; &radic;(2g &middot; &Delta;h) / &radic;(1 + &mu;² &middot; &zeta;)</code>
+                  <p class="usage-note">Bei n = 0 gilt A<sub>netto</sub> = A<sub>öffn.</sub> (volle Bruttofläche). Beide Effekte überlagern sich multiplikativ.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <!-- Ausdruck -->
           <section class="info-section">
             <h4>Ausdruck &amp; Export</h4>
@@ -188,47 +233,103 @@
         <div v-if="activeTab === 'method'" class="tab-content">
 
           <section class="info-section">
-            <h4>Zwei-Zonen-Modell nach Composite Manning-Strickler</h4>
+            <h4>Hydraulische Zustände — Vier-Zustands-Modell</h4>
             <p>
-              Der Gesamtabfluss <em>Q</em> wird in zwei physikalisch getrennte Bereiche aufgeteilt,
-              die unabhängig berechnet und anschließend summiert werden:
+              Je nach Verhältnis WSP zu BUK und BOK wechselt das Modell die Berechnungsformel.
+              Der aktuelle Zustand wird im Ergebnisbereich als farbiges Banner angezeigt.
             </p>
-            <div class="zone-cards">
-              <div class="zone-card z1">
-                <div class="zone-card-head">Zone 1 — Gerinneabfluss</div>
-                <div class="zone-card-body">
-                  Gesamter Querschnitt <strong>unterhalb der BOK-Referenzlinie</strong>.
-                  Bei freiem Abfluss: Deckel = WSP.<br>
-                  Bei Druckabfluss (WSP ≥ BUK): Deckel = BUK, die BUK-Linie wird zum
-                  <em>benetzten Umfang</em> addiert → höherer Reibungsverlust.
-                </div>
+            <div class="state-table">
+              <div class="state-row state-free">
+                <div class="state-num">Z 1</div>
+                <div class="state-name">Freispiegel</div>
+                <div class="state-cond">WSP &lt; BUK</div>
+                <div class="state-formula-cell">Q = Σ kSt &middot; A &middot; R<sup>2/3</sup> &middot; I<sup>1/2</sup></div>
               </div>
-              <div class="zone-card z2">
-                <div class="zone-card-head">Zone 2 — Überflutungsabfluss</div>
-                <div class="zone-card-body">
-                  Querschnitt <strong>oberhalb der BOK-Referenzlinie</strong>, erstreckt sich lateral
-                  über den gesamten Querschnitt (Vorland + Brückendeck). Nur aktiv wenn WSP > BOK.
-                </div>
+              <div class="state-row state-pressure">
+                <div class="state-num">Z 2</div>
+                <div class="state-name">Druckabfluss</div>
+                <div class="state-cond">WSP &ge; BUK</div>
+                <div class="state-formula-cell">Q₁ = &mu; &middot; A<sub>netto</sub> &middot; &radic;(2g &middot; &Delta;h) / &radic;(1+&mu;²&zeta;)</div>
+              </div>
+              <div class="state-row state-overflow">
+                <div class="state-num">Z 3</div>
+                <div class="state-name">Druck + Überströmung</div>
+                <div class="state-cond">WSP &gt; BOK</div>
+                <div class="state-formula-cell">Z 2-Formel + Q₂ = &frac23;&mu;<sub>D</sub>&radic;(2g)&int;h_ü<sup>3/2</sup>dx</div>
               </div>
             </div>
           </section>
 
           <section class="info-section">
-            <h4>Berechnungsformel (Einstein-Verfahren)</h4>
-            <p>Für jede kSt-Zone <em>i</em> werden Fläche <em>A</em> und Umfang <em>P</em>
-               separat integriert:</p>
+            <h4>Zone 1 — Freispiegel: Composite Manning-Strickler (Einstein)</h4>
+            <p>Für jede kSt-Zone <em>i</em> werden Fläche und Umfang separat integriert:</p>
             <div class="formula-box">
-              <div class="formula">Q = Σ kSt<sub>i</sub> · A<sub>i</sub> · R<sub>i</sub><sup>2/3</sup> · I<sup>1/2</sup></div>
+              <div class="formula">Q₁ = Σ kSt<sub>i</sub> · A<sub>i</sub> · R<sub>i</sub><sup>2/3</sup> · I<sup>1/2</sup></div>
               <div class="formula-sub">mit  R<sub>i</sub> = A<sub>i</sub> / P<sub>i</sub>  (hydraulischer Radius)</div>
             </div>
             <p class="hint-text">
               Der Einstein-Ansatz verhindert, dass unterschiedlich raue Teilbereiche
-              sich gegenseitig „herausmitteln". Jede Zone bekommt ihren eigenen R und v.
+              sich gegenseitig herausmitteln. Vorlandstreifen außerhalb des BOK-Fußabdrucks
+              nutzen Manning auch in Zustand 2 und 3.
             </p>
           </section>
 
           <section class="info-section">
-            <h4>Streifenintegration</h4>
+            <h4>Zone 1 — Druckabfluss: Orifice-Formel</h4>
+            <p>
+              Sobald WSP &ge; BUK (Soffit), ist die Brückenöffnung vollständig gefüllt.
+              Die Durchströmung wird mit der Orifice-Formel berechnet:
+            </p>
+            <div class="formula-box">
+              <div class="formula">Q₁ = &mu; · A<sub>netto</sub> · &radic;(2g · &Delta;h) / &radic;(1 + &mu;² · &zeta;)</div>
+              <div class="formula-sub">&Delta;h = WSP &minus; z̄<sub>BUK</sub>  (Aufstau über flächengewichteter BUK-Mittelhöhe)</div>
+              <div class="formula-sub">A<sub>netto</sub> = A<sub>öffn.</sub> · (1 &minus; &phi;)  mit  &phi; = n · b<sub>P</sub> / L<sub>BUK</sub>  (Versperrungsgrad)</div>
+              <div class="formula-sub">A<sub>öffn.</sub> = Bruttofläche zwischen Gelände und BUK  (bei n = 0: A<sub>netto</sub> = A<sub>öffn.</sub>)</div>
+              <div class="formula-sub">&zeta; = Formwiderstandsbeiwert (Einlaufverlust, 0 = kein Pfeiler)</div>
+            </div>
+            <p class="hint-text">
+              Äquivalent: Q₁ = &mu;<sub>eff</sub> · A<sub>netto</sub> · &radic;(2g · &Delta;h)  mit  &mu;<sub>eff</sub> = &mu; / &radic;(1 + &mu;² · &zeta;).
+              Pfeileranzahl und -breite im Panel <strong>Brückenkoeffizienten → Pfeiler-Geometrie</strong> eingeben.
+            </p>
+          </section>
+
+          <section class="info-section">
+            <h4>Zone 2 — Überströmung: Poleni-Formel (Streifenintegration)</h4>
+            <p>
+              Sobald WSP &gt; BOK fließt Wasser über das Brückendeck. Der Abfluss folgt der
+              verallgemeinerten Poleni-Wehrformel, streifenweise über den BOK-Fußabdruck integriert:
+            </p>
+            <div class="formula-box">
+              <div class="formula">Q₂ = &frac23; · &mu;<sub>D</sub> · &radic;(2g) · &int; max(0, WSP &minus; z<sub>BOK</sub>(x))<sup>3/2</sup> dx</div>
+              <div class="formula-sub">h_ü(x) = WSP &minus; BOK-Höhe an Stelle x  (Überströmungshöhe)</div>
+            </div>
+            <p class="hint-text">
+              Die Streifenintegration gilt auch für geneigte oder gewölbte Brückendecken korrekt.
+              Vorlandabfluss außerhalb des BOK-Fußabdrucks (überströmtes Vorland) benutzt weiterhin Manning.
+            </p>
+          </section>
+
+          <section class="info-section">
+            <h4>Hinweis: Zustandsübergang rein geometrisch</h4>
+            <div class="notice-box">
+              <p>
+                Der Wechsel zwischen Freispiegel und Druckabfluss erfolgt aktuell rein geometrisch:
+                Sobald WSP &ge; niedrigstes z<sub>BUK</sub> irgendwo im Querschnitt, schaltet das Modell
+                vollständig auf Orifice um. Bei asymmetrischen Öffnungen (z.B. Gewölbe, einseitig
+                tiefer Scheitel) kann das zu früh passieren — physikalisch korrekt wäre eine
+                <em>partielle Druckströmung</em>, bei der einzelne Streifen bereits im Druckabfluss
+                sind während andere noch Freispiegel führen.
+              </p>
+              <p>
+                <strong>Workaround:</strong> Den Toggle <em>Hydraulischer Zustand</em> im Eingabefeld nutzen,
+                um manuell Freispiegel oder Druckabfluss zu erzwingen und beide Ergebnisse zu vergleichen.
+                Eine streifen-weise partielle Druckströmung ist als zukünftige Erweiterung vorgesehen.
+              </p>
+            </div>
+          </section>
+
+          <section class="info-section">
+            <h4>Streifenintegration (alle Zustände)</h4>
             <p>
               Das Profil wird intern in schmale vertikale Streifen zerlegt. Die Grenzen liegen
               an allen Stützpunkten von Gelände, BUK, BOK und kSt-Zonengrenzen.
@@ -241,16 +342,6 @@
             <p class="hint-text">
               Durch die Verwendung aller Profilpunkte als Streifengrenzen ist die Integration
               für stückweise lineare Profile exakt — ohne numerischen Diskretisierungsfehler.
-            </p>
-          </section>
-
-          <section class="info-section">
-            <h4>Druckabfluss</h4>
-            <p>
-              Sobald der Wasserspiegel die BUK erreicht oder überschreitet, wechselt Zone 1 in den
-              <strong>Druckabfluss</strong>. Die BUK-Linie wird dann zum benetzten Umfang <em>P</em>
-              addiert, was den hydraulischen Radius <em>R</em> verkleinert und die Fließgeschwindigkeit
-              reduziert. Das Modell folgt damit der klassischen Fülllinie-Methodik.
             </p>
           </section>
 
@@ -331,96 +422,145 @@
               Kein benetzter Querschnitt in Zone 1 bei aktuellem WSP.
             </div>
 
-            <div v-for="z in res.zoneResults.filter(z => z.A1 > 1e-6)" :key="'z1-'+z.kst" class="zone-block">
-              <div class="zone-block-title">
-                kSt-Zone: <strong>{{ z.kst }} m<sup>⅓</sup>/s</strong>
+            <!-- Freispiegel: Manning-Strickler je kSt-Zone -->
+            <template v-if="!res.isSubmerged">
+              <div v-for="z in res.zoneResults.filter(z => z.A1 > 1e-6)" :key="'z1-'+z.kst" class="zone-block">
+                <div class="zone-block-title">
+                  kSt-Zone: <strong>{{ z.kst }} m<sup>⅓</sup>/s</strong>
+                </div>
+                <div class="calc-steps">
+                  <div class="calc-row">
+                    <span class="calc-sym">A₁</span>
+                    <span class="calc-eq">= {{ n(z.A1, 4) }} m²</span>
+                    <span class="calc-note">Benetzter Querschnitt</span>
+                  </div>
+                  <div class="calc-row">
+                    <span class="calc-sym">P₁</span>
+                    <span class="calc-eq">= {{ n(z.P1, 4) }} m</span>
+                    <span class="calc-note">Benetzter Umfang</span>
+                  </div>
+                  <div class="calc-row highlight">
+                    <span class="calc-sym">R₁</span>
+                    <span class="calc-eq">= {{ n(z.A1,4) }} / {{ n(z.P1,4) }} = <strong>{{ n(z.R1, 4) }} m</strong></span>
+                    <span class="calc-note">Hydraulischer Radius</span>
+                  </div>
+                  <div class="calc-row">
+                    <span class="calc-sym">R₁<sup>2/3</sup></span>
+                    <span class="calc-eq">= {{ n(z.R1,4) }}<sup>2/3</sup> = {{ n(Math.pow(z.R1,2/3),5) }}</span>
+                    <span class="calc-note"></span>
+                  </div>
+                  <div class="calc-row highlight">
+                    <span class="calc-sym">v₁</span>
+                    <span class="calc-eq">= {{ z.kst }} · {{ n(Math.pow(z.R1,2/3),5) }} · {{ n(sqrtI,6) }} = <strong>{{ n(z.v1,4) }} m/s</strong></span>
+                    <span class="calc-note">Manning-Strickler</span>
+                  </div>
+                  <div class="calc-row result">
+                    <span class="calc-sym">Q₁</span>
+                    <span class="calc-eq">= {{ n(z.v1,4) }} · {{ n(z.A1,4) }} = <strong>{{ n(z.Q1,4) }} m³/s</strong></span>
+                    <span class="calc-note"></span>
+                  </div>
+                </div>
               </div>
-              <div class="calc-steps">
-                <div class="calc-row">
-                  <span class="calc-sym">A₁</span>
-                  <span class="calc-eq">= {{ n(z.A1, 4) }} m²</span>
-                  <span class="calc-note">Benetzter Querschnitt</span>
-                </div>
-                <div class="calc-row">
-                  <span class="calc-sym">P₁</span>
-                  <span class="calc-eq">= {{ n(z.P1, 4) }} m</span>
-                  <span class="calc-note">Benetzter Umfang{{ res.isSubmerged ? ' (inkl. BUK-Anteil)' : '' }}</span>
-                </div>
-                <div class="calc-row highlight">
-                  <span class="calc-sym">R₁</span>
-                  <span class="calc-eq">= A₁ / P₁ = {{ n(z.A1,4) }} / {{ n(z.P1,4) }} = <strong>{{ n(z.R1, 4) }} m</strong></span>
-                  <span class="calc-note">Hydraulischer Radius</span>
-                </div>
-                <div class="calc-row">
-                  <span class="calc-sym">R₁<sup>2/3</sup></span>
-                  <span class="calc-eq">= {{ n(z.R1, 4) }}<sup>2/3</sup> = {{ n(Math.pow(z.R1, 2/3), 5) }}</span>
-                  <span class="calc-note"></span>
-                </div>
-                <div class="calc-row highlight">
-                  <span class="calc-sym">v₁</span>
-                  <span class="calc-eq">= {{ z.kst }} · {{ n(Math.pow(z.R1, 2/3), 5) }} · {{ n(sqrtI, 6) }} = <strong>{{ n(z.v1, 4) }} m/s</strong></span>
-                  <span class="calc-note">Manning-Strickler</span>
-                </div>
-                <div class="calc-row result">
-                  <span class="calc-sym">Q₁</span>
-                  <span class="calc-eq">= v₁ · A₁ = {{ n(z.v1,4) }} · {{ n(z.A1,4) }} = <strong>{{ n(z.Q1, 4) }} m³/s</strong></span>
-                  <span class="calc-note"></span>
-                </div>
+              <div v-if="res.zoneResults.filter(z=>z.A1>1e-6).length > 1" class="proto-total z1-total">
+                Σ Zone 1:
+                Q₁ = {{ n(res.Q1_total,4) }} m³/s ·
+                A₁ = {{ n(res.A1_total,4) }} m² ·
+                v̄₁ = {{ n(res.v1_mean,4) }} m/s ·
+                R̄₁ = {{ n(res.R1_mean,4) }} m
               </div>
-            </div>
+            </template>
 
-            <div v-if="res.zoneResults.filter(z=>z.A1>1e-6).length > 1" class="proto-total z1-total">
-              Σ Zone 1:
-              Q₁ = {{ n(res.Q1_total, 4) }} m³/s ·
-              A₁ = {{ n(res.A1_total, 4) }} m² ·
-              v̄₁ = {{ n(res.v1_mean, 4) }} m/s ·
-              R̄₁ = {{ n(res.R1_mean, 4) }} m
-            </div>
+            <!-- Druckabfluss: Orifice-Formel -->
+            <template v-if="res.isSubmerged">
+              <div class="zone-block">
+                <div class="zone-block-title">Zustand 2 — Druckabfluss (Orifice)</div>
+                <div class="calc-steps">
+                  <div class="calc-row">
+                    <span class="calc-sym">A<sub>öffn.</sub></span>
+                    <span class="calc-eq">= {{ n(res.A_bridge, 4) }} m²</span>
+                    <span class="calc-note">Öffnungsfläche (Gelände bis BUK)</span>
+                  </div>
+                  <div class="calc-row">
+                    <span class="calc-sym">z̄<sub>BUK</sub></span>
+                    <span class="calc-eq">= {{ n(store.wsp - res.h_drive, 3) }} m  (flächengewichtet)</span>
+                    <span class="calc-note">Mittelhöhe BUK-Öffnung</span>
+                  </div>
+                  <div class="calc-row highlight">
+                    <span class="calc-sym">&Delta;h</span>
+                    <span class="calc-eq">= {{ n(store.wsp, 3) }} &minus; {{ n(store.wsp - res.h_drive, 3) }} = <strong>{{ n(res.h_drive, 4) }} m</strong></span>
+                    <span class="calc-note">Antriebshöhe</span>
+                  </div>
+                  <div class="calc-row" v-if="store.zeta > 0">
+                    <span class="calc-sym">&zeta;</span>
+                    <span class="calc-eq">= {{ n(store.zeta, 2) }}</span>
+                    <span class="calc-note">Pfeiler-Verlustbeiwert</span>
+                  </div>
+                  <div class="calc-row highlight" v-if="store.zeta > 0">
+                    <span class="calc-sym">&mu;<sub>eff</sub></span>
+                    <span class="calc-eq">= {{ n(store.mu, 2) }} / &radic;(1 + {{ n(store.mu, 2) }}² &middot; {{ n(store.zeta, 2) }}) = <strong>{{ n(res.mu_eff, 4) }}</strong></span>
+                    <span class="calc-note">Eff. Beiwert mit Pfeiler</span>
+                  </div>
+                  <div class="calc-row highlight">
+                    <span class="calc-sym">v<sub>orifice</sub></span>
+                    <span class="calc-eq">= &radic;(2g · &Delta;h) = <strong>{{ n(res.v1_mean, 4) }} m/s</strong></span>
+                    <span class="calc-note">Mittlere Geschwindigkeit</span>
+                  </div>
+                  <div class="calc-row result">
+                    <span class="calc-sym">Q₁</span>
+                    <span class="calc-eq">= {{ n(res.mu_eff, store.zeta > 0 ? 4 : 2) }} · {{ n(res.A_bridge, 4) }} · {{ n(res.v1_mean, 4) }} = <strong>{{ n(res.Q_orifice, 4) }} m³/s</strong></span>
+                    <span class="calc-note">{{ store.zeta > 0 ? 'μ_eff' : 'μ' }} = {{ n(res.mu_eff, store.zeta > 0 ? 4 : 2) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="proto-total z1-total">
+                Zone 1 gesamt:
+                Q₁ = {{ n(res.Q1_total,4) }} m³/s ·
+                A<sub>öffn.</sub> = {{ n(res.A_bridge,4) }} m² ·
+                v̄₁ = {{ n(res.v1_mean,4) }} m/s
+              </div>
+            </template>
           </section>
 
           <!-- Zone 2 -->
           <section class="proto-section">
             <div class="proto-head">
               <span class="zone-dot z2dot"></span>
-              Zone 2 — Überflutungsabfluss  (oberhalb BOK-Referenz)
+              Zone 2 — Überströmung  (oberhalb BOK-Referenz)
             </div>
 
             <div v-if="!res.hasOverflow" class="proto-empty">
-              WSP = {{ store.wsp.toFixed(3) }} m liegt unterhalb der BOK — kein Überflutungsabfluss.
+              WSP = {{ store.wsp.toFixed(3) }} m liegt unterhalb der BOK — keine Überströmung.
             </div>
 
-            <div v-for="z in res.zoneResults.filter(z => z.A2 > 1e-6)" :key="'z2-'+z.kst" class="zone-block">
-              <div class="zone-block-title">
-                kSt-Zone: <strong>{{ z.kst }} m<sup>⅓</sup>/s</strong>
-              </div>
-              <div class="calc-steps">
-                <div class="calc-row">
-                  <span class="calc-sym">A₂</span>
-                  <span class="calc-eq">= {{ n(z.A2, 4) }} m²</span>
-                  <span class="calc-note">Benetzter Querschnitt Zone 2</span>
-                </div>
-                <div class="calc-row">
-                  <span class="calc-sym">P₂</span>
-                  <span class="calc-eq">= {{ n(z.P2, 4) }} m</span>
-                  <span class="calc-note">Benetzter Umfang Zone 2</span>
-                </div>
-                <div class="calc-row highlight">
-                  <span class="calc-sym">R₂</span>
-                  <span class="calc-eq">= {{ n(z.A2,4) }} / {{ n(z.P2,4) }} = <strong>{{ n(z.R2, 4) }} m</strong></span>
-                  <span class="calc-note">Hydraulischer Radius</span>
-                </div>
-                <div class="calc-row highlight">
-                  <span class="calc-sym">v₂</span>
-                  <span class="calc-eq">= {{ z.kst }} · {{ n(Math.pow(z.R2, 2/3), 5) }} · {{ n(sqrtI, 6) }} = <strong>{{ n(z.v2, 4) }} m/s</strong></span>
-                  <span class="calc-note">Manning-Strickler</span>
-                </div>
-                <div class="calc-row result">
-                  <span class="calc-sym">Q₂</span>
-                  <span class="calc-eq">= {{ n(z.v2,4) }} · {{ n(z.A2,4) }} = <strong>{{ n(z.Q2, 4) }} m³/s</strong></span>
-                  <span class="calc-note"></span>
+            <!-- Überströmung: Poleni -->
+            <template v-if="res.hasOverflow">
+              <div class="zone-block">
+                <div class="zone-block-title">Zustand 3 — Überströmung (Poleni, Streifenintegration)</div>
+                <div class="calc-steps">
+                  <div class="calc-row">
+                    <span class="calc-sym">A₂</span>
+                    <span class="calc-eq">= {{ n(res.A2_total, 4) }} m²</span>
+                    <span class="calc-note">Überströmungsfläche über BOK</span>
+                  </div>
+                  <div class="calc-row highlight">
+                    <span class="calc-sym">Q<sub>Poleni</sub></span>
+                    <span class="calc-eq">= ²⁄₃ · {{ n(store.muDeck,2) }} · √(2g) · ∫ h_ü<sup>3/2</sup> dx = <strong>{{ n(res.Q_poleni, 4) }} m³/s</strong></span>
+                    <span class="calc-note">μ<sub>D</sub> = {{ store.muDeck.toFixed(2) }}</span>
+                  </div>
+                  <div class="calc-row result">
+                    <span class="calc-sym">Q₂</span>
+                    <span class="calc-eq">= Q<sub>Poleni</sub> + Q<sub>Vorland</sub> = <strong>{{ n(res.Q2_total, 4) }} m³/s</strong></span>
+                    <span class="calc-note">inkl. Manning-Vorland außerhalb BOK</span>
+                  </div>
                 </div>
               </div>
-            </div>
+              <div class="proto-total z2-total">
+                Zone 2 gesamt:
+                Q₂ = {{ n(res.Q2_total,4) }} m³/s ·
+                A₂ = {{ n(res.A2_total,4) }} m² ·
+                v̄₂ = {{ n(res.v2_mean,4) }} m/s
+              </div>
+            </template>
           </section>
 
           <!-- Gesamtergebnis -->
@@ -496,7 +636,7 @@ const GLOSSAR = [
     term: 'BUK — Brückenunterkante',
     unit: 'm ü. NHN',
     def:  'Untere Kante des Brückenbauwerks (Konstruktionsunterkante / Soffit). Definiert die Höhe der Durchströmöffnung.',
-    detail: 'Im Modell: Deckel für Zone 1 bei Freispiegelabfluss. Bei WSP ≥ BUK wechselt Zone 1 in Druckabfluss, und die BUK-Linie wird zum benetzten Umfang addiert.',
+    detail: 'Im Modell: Deckel für Zone 1 bei Freispiegelabfluss. Bei WSP ≥ BUK wechselt Zone 1 in Druckabfluss (Orifice-Formel). Die Öffnungsfläche A_öffn. = Fläche zwischen Gelände und BUK.',
   },
   {
     term: 'BOK — Brückenoberkante',
@@ -537,9 +677,31 @@ const GLOSSAR = [
     detail: 'Zone 1: Deckel = WSP. Benetzter Umfang enthält nur die Gerinnesohle und -böschungen.',
   },
   {
-    term: 'Druckabfluss',
-    def:  'Abfluss unter Druck — Wasserspiegel ≥ BUK, der Querschnitt ist vollständig gefüllt.',
-    detail: 'Zone 1: Deckel = BUK. Die BUK-Linie wird zum benetzten Umfang P addiert, was R verkleinert und v reduziert. Entspricht dem Übergang in die Druckleitung.',
+    term: 'Druckabfluss (Zustand 2)',
+    def:  'Abfluss unter Druck — WSP ≥ BUK, die Brückenöffnung ist vollständig gefüllt.',
+    detail: 'Berechnung mit Orifice-Formel: Q = μ · A_öffn. · √(2g · Δh), Δh = WSP − z̄_BUK. Vorlandstreifen außerhalb des BOK-Fußabdrucks benutzen weiterhin Manning.',
+    formula: 'Q₁ = μ · A_öffn. · √(2g · Δh)',
+  },
+  {
+    term: 'μ — Orifice-Beiwert',
+    unit: '–  (0.60–0.90)',
+    def:  'Verlustbeiwert für den Durchströmungsquerschnitt im Druckabfluss (Zustand 2 und 3).',
+    detail: 'Berücksichtigt Einlaufverluste und Strahlkontraktion. Scharfkantig: 0.60–0.70. Abgerundet: 0.80–0.90. Einstellbar im Panel Brückenkoeffizienten.',
+    formula: 'Q = μ · A · √(2g · Δh)',
+  },
+  {
+    term: 'μD — Poleni-Beiwert',
+    unit: '–  (0.35–0.55)',
+    def:  'Überfallbeiwert für die Überströmung des Brückendecks (Zustand 3, Poleni-Formel).',
+    detail: 'Typisch 0.35–0.50. Scharfkantige BOK-Kante eher 0.35–0.40. Abgerundete Fahrbahn 0.45–0.50. Einstellbar im Panel Brückenkoeffizienten.',
+    formula: 'Q₂ = ⅔ · μD · √(2g) · ∫ h_ü^1.5 dx',
+  },
+  {
+    term: 'ζ — Pfeiler-Verlustbeiwert',
+    unit: '–  (0.0–2.0)',
+    def:  'Formwiderstandsbeiwert des Brückenpfeilers im Druckabfluss (Zustand 2 und 3).',
+    detail: 'Berücksichtigt den Stauverlust durch Anströmung des Pfeilers (ζ · v²/2g). Analytisch in die Orifice-Formel eingebunden: μ_eff = μ / √(1+μ²·ζ). Kein Pfeiler: ζ = 0. Geometrischer Querschnittsverlust durch Pfeiler im Geländeprofil ist davon unabhängig.',
+    formula: 'μ_eff = μ / √(1 + μ² · ζ)',
   },
   {
     term: 'Composite Manning-Strickler (Einstein-Verfahren)',
@@ -649,6 +811,38 @@ const GLOSSAR = [
 }
 .info-section p { font-size: 0.83rem; color: #374151; line-height: 1.55; margin: 0; }
 .hint-text { font-size: 0.78rem; color: #64748b; font-style: italic; line-height: 1.5; }
+.notice-box {
+  background: #fefce8;
+  border: 1px solid #fde047;
+  border-left: 4px solid #eab308;
+  border-radius: 7px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.8rem;
+  color: #713f12;
+  line-height: 1.55;
+}
+.notice-box p { margin: 0 0 0.4rem; }
+.notice-box p:last-child { margin: 0; }
+
+/* State table in Methode tab */
+.state-table { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.5rem 0; }
+.state-row {
+  display: grid;
+  grid-template-columns: 2.5rem 7rem 6rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid;
+  font-size: 0.8rem;
+}
+.state-num { font-weight: 800; font-size: 0.75rem; }
+.state-name { font-weight: 700; }
+.state-cond { font-size: 0.73rem; opacity: 0.85; }
+.state-formula-cell { font-family: 'Courier New', monospace; font-size: 0.72rem; }
+.state-free     { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+.state-pressure { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+.state-overflow { background: #eff6ff; border-color: #93c5fd; color: #1e40af; }
 
 .zone-cards { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .zone-card {

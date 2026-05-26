@@ -150,25 +150,32 @@
             stroke="#e2e8f0" stroke-width="0.3" />
           <text :x="HR.x + 3" :y="HR.y + 6.5"
             font-family="Arial" font-size="3.2" font-weight="bold" fill="#1e293b">
-            Hydraulische Ergebnisse  (WSP = {{ store.wsp.toFixed(2) }} m | I = {{ (store.slope*1000).toFixed(3) }} ‰)
+            Hydraulische Ergebnisse  (WSP = {{ store.wsp.toFixed(2) }} m | I = {{ (store.slope*1000).toFixed(3) }} ‰ | {{ printStateLabel }})
           </text>
-          <!-- Zone 1 -->
-          <text :x="HR.x + 3" :y="HR.y + 15"
+          <!-- Zone 1: Freispiegel -->
+          <text v-if="!result.isSubmerged" :x="HR.x + 3" :y="HR.y + 15"
             font-family="Arial" font-size="2.9" fill="#1e40af">
-            Zone 1 (Gerinne):
+            Zone 1 (Manning):
             Q₁ = {{ result.Q1_total.toFixed(3) }} m³/s ·
             A₁ = {{ result.A1_total.toFixed(3) }} m² ·
             v₁ = {{ result.v1_mean.toFixed(3) }} m/s ·
             R₁ = {{ result.R1_mean.toFixed(3) }} m
-            <tspan v-if="result.isSubmerged" fill="#b45309"> (Druckabfluss)</tspan>
+          </text>
+          <!-- Zone 1: Druckabfluss (Orifice) -->
+          <text v-if="result.isSubmerged" :x="HR.x + 3" :y="HR.y + 15"
+            font-family="Arial" font-size="2.9" fill="#92400e">
+            Zone 1 (Orifice, μ={{ store.mu.toFixed(2) }}<template v-if="store.zeta > 0">, ζ={{ store.zeta.toFixed(2) }}, μ_eff={{ result.mu_eff.toFixed(3) }}</template>):
+            Q₁ = {{ result.Q1_total.toFixed(3) }} m³/s ·
+            A_öffn. = {{ result.A_bridge.toFixed(3) }} m² ·
+            Δh = {{ result.h_drive.toFixed(3) }} m
           </text>
           <!-- Zone 2 -->
           <text v-if="result.hasOverflow" :x="HR.x + 3" :y="HR.y + 21"
             font-family="Arial" font-size="2.9" fill="#0d9488">
-            Zone 2 (Überflut.):
-            Q₂ = {{ result.Q2_total.toFixed(3) }} m³/s ·
-            A₂ = {{ result.A2_total.toFixed(3) }} m² ·
-            v₂ = {{ result.v2_mean.toFixed(3) }} m/s
+            Zone 2 (Poleni, μD={{ store.muDeck.toFixed(2) }}):
+            Q₂ = {{ result.Q2_total.toFixed(3) }} m³/s
+            (Poleni: {{ result.Q_poleni.toFixed(3) }} m³/s) ·
+            A₂ = {{ result.A2_total.toFixed(3) }} m²
           </text>
           <!-- Total -->
           <text :x="HR.x + 3" :y="result.hasOverflow ? HR.y + 27 : HR.y + 21"
@@ -531,6 +538,9 @@ const printWaterZ2 = computed(() => {
 
 // ── Result ───────────────────────────────────────────────────────────────────
 const result = computed(() => store.currentResult)
+
+const PRINT_STATE_LABELS = ['Zustand 0', 'Zustand 1 – Freispiegel', 'Zustand 2 – Druckabfluss', 'Zustand 3 – Überströmung']
+const printStateLabel = computed(() => PRINT_STATE_LABELS[result.value.state] ?? 'Zustand unbekannt')
 
 // ── Preview sizing ────────────────────────────────────────────────────────────
 const previewW = computed(() => Math.round(paper.value.mmW * 3.0))

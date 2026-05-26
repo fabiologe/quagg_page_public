@@ -131,34 +131,13 @@ let initialX = 0;
 let initialY = 0;
 
 const startDrag = (e) => {
-    // Only drag via header? 
-    // Or drag anywhere that isn't an input/button?
-    // Let's rely on the consumer providing a "header" that doesn't stop propagation, 
-    // OR we restrict dragging to a specific handle area. 
-    // For general utility, dragging via the whole background is dangerous for inputs.
-    // Better: Only drag if target is strictly the modal container or a dedicated header class?
-    // User requested "draggable windows", usually implies title bar.
-    // However, as a wrapper, we might capture clicks on non-interactive parts.
-    
-    // Quick heuristic: If target is input/button/label/a/select, ignore.
+    // Drag ONLY from designated header/handle elements.
+    // This prevents orbit controls inside 3D canvases from moving the window.
+    const dragHandle = e.target.closest('.modal-header, .viewer-header, .drag-handle');
+    if (!dragHandle) return;
+
+    // Don't drag when clicking interactive elements inside the header
     if (['INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'LABEL', 'A'].includes(e.target.tagName)) return;
-    // Also check for specific class 'no-drag'
-    if (e.target.closest('.no-drag')) return;
-    
-    // Check if clicking inside content wrapper (which fills most of it)
-    // If we want ONLY header dragging, the content needs to be carefully structured.
-    // Let's assume hitting the `draggable-modal` div itself or immediate children is drag.
-    
-    // Better UX: Look for `.modal-header` provided by slot content?
-    const header = e.target.closest('.modal-header');
-    if (!header && !e.target.classList.contains('draggable-modal')) {
-        // If not header and not the background container, probably content.
-        // But some content backgrounds might be clicked.
-        // Let's enable drag on `.modal-header` explicitly if present, else fallback to container?
-        // Actually, user wants convenience. 
-        // Let's try: if closest has 'modal-body', don't drag.
-        if (e.target.closest('.modal-body') || e.target.closest('.table-wrapper')) return;
-    }
 
     isDragging = true;
     dragStartX = e.clientX;

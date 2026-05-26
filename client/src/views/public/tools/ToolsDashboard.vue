@@ -111,9 +111,23 @@
         </div>
       </div>
     
-      <!-- IfcViewer Window Container -->
-      <IfcViewer v-if="showIfcViewer" @close="showIfcViewer = false" />
-      
+      <!-- IFC Windows -->
+      <IfcViewer
+        v-if="showIfcViewer"
+        :propertiesOpen="showIfcProps"
+        @close="closeIfcViewer"
+        @open-properties="showIfcProps = true"
+        @model-loaded="showSpatialTree = true"
+      />
+      <IfcSemanticWindow
+        v-if="showIfcViewer && showIfcProps"
+        @close="showIfcProps = false"
+      />
+      <IfcSpatialWindow
+        v-if="showIfcViewer && showSpatialTree"
+        @close="showSpatialTree = false"
+      />
+
     </div>
   </PublicLayout>
 </template>
@@ -122,8 +136,18 @@
 import { ref } from 'vue';
 import PublicLayout from '@/components/layout/PublicLayout.vue'
 import IfcViewer from '@/features/ifc-viewer/components/IfcViewer.vue'
+import IfcSemanticWindow from '@/features/ifc-viewer/components/IfcSemanticWindow.vue'
+import IfcSpatialWindow from '@/features/ifc-viewer/components/IfcSpatialWindow.vue'
 
-const showIfcViewer = ref(false);
+const showIfcViewer   = ref(false);
+const showIfcProps    = ref(false);
+const showSpatialTree = ref(false);
+
+function closeIfcViewer() {
+  showIfcViewer.value   = false;
+  showIfcProps.value    = false;
+  showSpatialTree.value = false;
+}
 </script>
 
 <style scoped>

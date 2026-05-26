@@ -1,5 +1,25 @@
 <template>
-  <div class="bridge-profile-editor">
+  <div
+    :class="['bridge-profile-editor', { 'bpe-windowed': isExpanded }]"
+    :style="windowStyle"
+  >
+    <!-- Titelzeile im Fenstermodus -->
+    <div v-if="isExpanded" class="bpe-titlebar" @mousedown="startWinDrag">
+      <span class="bpe-title">⊞ Profilzeichner</span>
+      <button class="bpe-close" @click.stop="collapseWindow" title="Fenster schließen (Esc)">✕</button>
+    </div>
+
+    <!-- Resize-Handles (8 Richtungen) -->
+    <template v-if="isExpanded">
+      <div class="bpe-resize n"  @mousedown.prevent="startWinResize($event,'n')"></div>
+      <div class="bpe-resize ne" @mousedown.prevent="startWinResize($event,'ne')"></div>
+      <div class="bpe-resize e"  @mousedown.prevent="startWinResize($event,'e')"></div>
+      <div class="bpe-resize se" @mousedown.prevent="startWinResize($event,'se')"></div>
+      <div class="bpe-resize s"  @mousedown.prevent="startWinResize($event,'s')"></div>
+      <div class="bpe-resize sw" @mousedown.prevent="startWinResize($event,'sw')"></div>
+      <div class="bpe-resize w"  @mousedown.prevent="startWinResize($event,'w')"></div>
+      <div class="bpe-resize nw" @mousedown.prevent="startWinResize($event,'nw')"></div>
+    </template>
 
     <!-- Layer-Auswahl + Toolbar -->
     <div class="editor-toolbar">
@@ -26,7 +46,7 @@
           Leeren
         </button>
         <button v-if="activeLayer !== 'terrain'" class="tool-btn danger"
-          @click="clearBridgeLayer" :title="`${activeLayerMeta.label} komplett entfernen`">
+          @click="clearActiveLayer" :title="`${activeLayerMeta.label} komplett entfernen`">
           Entfernen
         </button>
         <div class="toolbar-sep"></div>
@@ -34,6 +54,11 @@
           <button class="tool-btn" @click="resetView" title="Ansicht zurücksetzen (Fit All)">Fit</button>
           <span class="zoom-indicator">{{ zoomLevel.toFixed(1) }}×</span>
         </div>
+        <div class="toolbar-sep"></div>
+        <button class="tool-btn expand-btn" @click="toggleExpand"
+          :title="isExpanded ? 'Fenster schließen (Esc)' : 'Als Fenster öffnen'">
+          {{ isExpanded ? '⊟' : '⊞' }}
+        </button>
         <button class="tool-btn print-btn" @click="showPrintModal = true" title="Ausdruck / Export">Drucken</button>
         <button class="tool-btn info-btn" @click="showInfoModal = true" title="Hydraulische Erklärung & Berechnungsprotokoll">Info</button>
       </div>
@@ -45,9 +70,10 @@
     <BridgeValidationPanel />
 
     <!-- SVG Zeichenbereich -->
+    <div ref="svgContainerEl" class="bpe-svg-wrap">
     <svg
       ref="svgEl"
-      :viewBox="`0 0 ${SVG_W} ${SVG_H}`"
+      :viewBox="`0 0 ${svgW} ${svgH}`"
       class="profile-svg"
       :class="[`mode-${activeLayer}`, { 'mode-pan': dragState?.type === 'pan', 'mode-kst': dragState?.type === 'kst-bound' }]"
       @click="onSvgClick"
@@ -129,10 +155,16 @@
         fill="none" stroke="#374151" stroke-width="2.5" stroke-linejoin="round"
         clip-path="url(#plot-area-clip)" />
 
-      <!-- Wasser Zone 1 (Durchströmung) -->
-      <path v-if="waterZ1Path" :d="waterZ1Path"
-        fill="#3b82f6" fill-opacity="0.32" stroke="#2563eb" stroke-width="0.6"
-        clip-path="url(#plot-area-clip)" />
+      <!-- Wasser Zone 1 (Durchströmung) — per-Segment gefärbt -->
+      <g clip-path="url(#plot-area-clip)">
+        <path v-for="seg in z1SegmentPaths" :key="'z1s-'+seg.segIdx"
+          :d="seg.path"
+          :fill="seg.fill"
+          :fill-opacity="hoverSegIdx === seg.segIdx ? Math.min(0.85, seg.fillOpacity * 1.7) : seg.fillOpacity"
+          :stroke="seg.stroke" stroke-width="0.8"
+          style="cursor: pointer; transition: fill-opacity 0.1s"
+        />
+      </g>
 
       <!-- Wasser Zone 2 (Überströmung) -->
       <path v-if="waterZ2Path" :d="waterZ2Path"
@@ -191,13 +223,13 @@
 
       <!-- X-Achsen Labels -->
       <text v-for="gl in gridV" :key="'xl'+gl.x"
-        :x="gl.sx" :y="SVG_H - PAD.bottom + 16"
+        :x="gl.sx" :y="svgH - PAD.bottom + 16"
         text-anchor="middle" font-size="10.5" fill="#64748b">{{ gl.label }}</text>
 
       <!-- Achsentitel -->
       <text :x="13" :y="PAD.top + plotH / 2" text-anchor="middle" font-size="11" fill="#94a3b8"
         :transform="`rotate(-90, 13, ${PAD.top + plotH / 2})`">Höhe (m)</text>
-      <text :x="PAD.left + plotW / 2" :y="SVG_H - 4" text-anchor="middle" font-size="11" fill="#94a3b8">
+      <text :x="PAD.left + plotW / 2" :y="svgH - 4" text-anchor="middle" font-size="11" fill="#94a3b8">
         Abstand (m)
       </text>
 
@@ -219,13 +251,15 @@
 
       <!-- Zonen-Labels im Profil -->
       <g v-if="z1LabelPos" text-anchor="middle" font-weight="600" clip-path="url(#plot-area-clip)">
-        <text :x="z1LabelPos.x" :y="z1LabelPos.y" font-size="12" fill="#1e3a5f">Zone 1</text>
+        <text :x="z1LabelPos.x" :y="z1LabelPos.y" font-size="12" fill="#1e3a5f">
+          Zone 1 · {{ store.currentResult.isSubmerged ? 'Orifice' : 'Manning' }}
+        </text>
         <text :x="z1LabelPos.x" :y="z1LabelPos.y + 16" font-size="11" fill="#1e3a5f">
           {{ store.currentResult.Q1_total.toFixed(2) }} m³/s
         </text>
       </g>
       <g v-if="z2LabelPos" text-anchor="middle" font-weight="600" clip-path="url(#plot-area-clip)">
-        <text :x="z2LabelPos.x" :y="z2LabelPos.y" font-size="12" fill="#064e3b">Zone 2</text>
+        <text :x="z2LabelPos.x" :y="z2LabelPos.y" font-size="12" fill="#064e3b">Zone 2 · Poleni</text>
         <text :x="z2LabelPos.x" :y="z2LabelPos.y + 16" font-size="11" fill="#064e3b">
           {{ store.currentResult.Q2_total.toFixed(2) }} m³/s
         </text>
@@ -271,157 +305,129 @@
             @mousedown.stop="startDragPoint($event, layer.id, i)" />
         </g>
       </g>
+
+      <!-- Segment Hover-Tooltip -->
+      <g v-if="hoverSegmentInfo && !dragState" pointer-events="none"
+         :transform="`translate(${tooltipPos.x}, ${tooltipPos.y})`">
+        <rect x="0" y="0" :width="TOOLTIP_W" height="72" rx="5"
+          fill="white" stroke="#e2e8f0" stroke-width="1"
+          style="filter: drop-shadow(0 1px 4px rgba(0,0,0,0.13))" />
+        <rect x="0" y="0" :width="TOOLTIP_W" height="20" rx="5"
+          :fill="hoverSegmentInfo.headerColor" />
+        <rect x="0" y="15" :width="TOOLTIP_W" height="5"
+          :fill="hoverSegmentInfo.headerColor" />
+        <text x="7" y="13.5" font-size="9.5" font-weight="700" fill="white">
+          {{ hoverSegmentInfo.typeLabel }}
+        </text>
+        <text x="7" y="30" font-size="9" fill="#374151">
+          A = {{ hoverSegmentInfo.A }} m²
+        </text>
+        <text x="7" y="42" font-size="9" fill="#374151">
+          P = {{ hoverSegmentInfo.P }} m (benetzt)
+        </text>
+        <text x="7" y="54" font-size="9" fill="#374151">
+          h_max = {{ hoverSegmentInfo.maxH }} m
+        </text>
+        <text x="7" y="66" font-size="9"
+          :fill="hoverSegmentInfo.isClosed ? '#059669' : '#64748b'">
+          {{ hoverSegmentInfo.isClosed ? '⊠ geschlossen · BUK' : '〜 offen · Freispiegel' }}
+        </text>
+      </g>
     </svg>
+    </div><!-- /bpe-svg-wrap -->
+
+    <!-- Klick-Info: Flächen-Details -->
+    <div v-if="clickedSeg" class="seg-info-card" :class="`seg-type-${clickedSeg.type}`">
+      <div class="seg-info-header">
+        <span class="seg-info-badge" :style="{ background: SEG_HEADER_COLORS[clickedSeg.type] }"></span>
+        <span class="seg-info-type">{{ SEG_TYPE_LABELS[clickedSeg.type] }}</span>
+        <button class="seg-info-close" @click="clickedSeg = null">✕</button>
+      </div>
+      <div class="seg-info-body">
+        <div class="seg-info-row"><span>x-Bereich</span><strong>{{ clickedSeg.xLeft.toFixed(2) }} … {{ clickedSeg.xRight.toFixed(2) }} m</strong></div>
+        <div class="seg-info-row"><span>Fläche A</span><strong>{{ clickedSeg.A.toFixed(3) }} m²</strong></div>
+        <div class="seg-info-row"><span>Ben. Umfang P</span><strong>{{ clickedSeg.P.toFixed(3) }} m</strong></div>
+        <div class="seg-info-row"><span>max. Tiefe</span><strong>{{ clickedSeg.maxH.toFixed(3) }} m</strong></div>
+        <div class="seg-info-row"><span>Geometrie</span><strong>{{ clickedSeg.isClosed ? 'geschlossen (BUK-Deckel)' : 'offen (Freispiegel)' }}</strong></div>
+        <div class="seg-info-row"><span>Hydraulik</span><strong>{{ clickedSeg.type === 'floodplain' ? 'Manning-Strickler' : 'Orifice-Öffnungsanteil' }}</strong></div>
+      </div>
+      <div v-if="clickedSeg.type === 'island'" class="seg-info-warning">
+        ⚠ Inselpolygon: Diese Fläche grenzt nicht an die Einlauf- oder Auslaufkante der Brücke und kann hydraulisch nicht durchströmt werden — wird dennoch zur Orifice-Öffnungsfläche A gerechnet. Geländeprofil im Brückenbereich prüfen.
+      </div>
+    </div>
 
     <!-- Interaktionshinweis + Legende -->
     <div class="profile-footer">
       <div class="profile-legend">
-        <span class="leg-item"><span class="leg-sw" style="background:#3b82f6;opacity:0.55"></span>Zone 1</span>
+        <span class="leg-item"><span class="leg-sw" style="background:#3b82f6;opacity:0.55"></span>Hauptöffnung</span>
+        <span class="leg-item"><span class="leg-sw" style="background:#60a5fa;opacity:0.55"></span>Seitenöffnung</span>
+        <span class="leg-item"><span class="leg-sw" style="background:#f59e0b;opacity:0.65"></span>Inselpolygon</span>
+        <span class="leg-item"><span class="leg-sw" style="background:#93c5fd;opacity:0.55"></span>Vorland</span>
         <span class="leg-item"><span class="leg-sw" style="background:#14b8a6;opacity:0.55"></span>Zone 2</span>
         <span class="leg-item"><span class="leg-sw" style="background:#64748b"></span>Brücke</span>
         <span class="leg-item" v-for="l in LAYERS" :key="l.id">
           <span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}
         </span>
       </div>
-      <span class="interact-hint">Scroll: Zoom · Mitte / Ctrl+Klick: Pan · Klick: Punkt setzen · Rechtsklick: löschen</span>
+      <span class="interact-hint">Scroll: Zoom · Mitte/Ctrl+Klick: Pan · Klick auf Wasser: Flächen-Info · Rechtsklick: Punkt löschen</span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useBridgeStore } from '../stores/useBridgeStore.js'
 import { useBridgeHydraulics } from '../composables/useBridgeHydraulics.js'
+import { useBridgeRenderer } from '../composables/useBridgeRenderer.js'
 import { useBridgeValidation } from '../composables/useBridgeValidation.js'
+import { useProfileInteraction } from '../composables/useProfileInteraction.js'
 import BridgePrintModal from './BridgePrintModal.vue'
 import BridgeValidationPanel from './BridgeValidationPanel.vue'
 import BridgeHydraulicsInfoModal from './BridgeHydraulicsInfoModal.vue'
 
 const store = useBridgeStore()
-const { interpZ, interpBridgeZ, bokRefZ, buildZ1Vertices, buildZ2Vertices } = useBridgeHydraulics()
+const { interpZ, interpBridgeZ } = useBridgeHydraulics()
+const { buildZ2Vertices } = useBridgeRenderer()
 const { allErrorMarkers, allWarningMarkers } = useBridgeValidation()
+
+const {
+  svgEl, svgContainerEl, svgW, svgH, PAD, plotW, plotH,
+  vX0, vW, vZ0, vH, zoomLevel, worldHalfW, resetView,
+  wx, wy,
+  gridH, gridV,
+  LAYERS, activeLayer, activeLayerMeta, getLayerPoints,
+  bukDrawPts, bokDrawPts, z1Segments,
+  dragState, hoverSegIdx, mouseSvgPos, clickedSeg,
+  onWheel, onSvgMouseDown, onSvgMouseMove, endDrag, onSvgClick, onSvgRightClick,
+  startDragWSP, startDragPoint, startDragKstBound,
+  isExpanded, windowStyle, toggleExpand, collapseWindow, startWinDrag, startWinResize,
+} = useProfileInteraction()
+
 const showPrintModal = ref(false)
 const showInfoModal  = ref(false)
 
-const svgEl = ref(null)
-const activeLayer = ref('terrain')
-
-// ─── Layer-Metadaten ─────────────────────────────────────────────────────────
-const LAYERS = [
-  { id: 'terrain', label: 'Gelände', color: '#374151', hint: 'Gerinnesohlprofil zeichnen' },
-  { id: 'buk',     label: 'BUK',     color: '#d97706', hint: 'Brückenunterkante zeichnen' },
-  { id: 'bok',     label: 'BOK',     color: '#7c3aed', hint: 'Brückenoberkante zeichnen' }
-]
-
-const activeLayerMeta = computed(() => LAYERS.find(l => l.id === activeLayer.value))
-
-function getLayerPoints(layerId) {
-  if (layerId === 'terrain') return store.terrainPoints
-  if (layerId === 'buk') return store.bukProfile
-  return store.bokProfile
+// ─── Segment styles ────────────────────────────────────────────────────────────
+const SEG_STYLES = {
+  main:       { fill: '#3b82f6', fillOpacity: 0.38, stroke: '#2563eb' },
+  side:       { fill: '#60a5fa', fillOpacity: 0.32, stroke: '#3b82f6' },
+  island:     { fill: '#f59e0b', fillOpacity: 0.52, stroke: '#d97706' },
+  floodplain: { fill: '#93c5fd', fillOpacity: 0.24, stroke: '#60a5fa' },
 }
-
-// ─── SVG-Dimensionen ─────────────────────────────────────────────────────────
-const SVG_W = 620
-const SVG_H = 400
-const PAD = { left: 52, right: 78, top: 22, bottom: 46 }
-const plotW = SVG_W - PAD.left - PAD.right
-const plotH = SVG_H - PAD.top - PAD.bottom
-
-// ─── Automatischer Weltbereich (Datenbasis) ───────────────────────────────────
-const worldMaxH = computed(() => {
-  const allZ = [
-    ...store.terrainPoints.map(p => p.z),
-    ...store.bukProfile.map(p => p.z),
-    ...store.bokProfile.map(p => p.z),
-    store.wsp
-  ]
-  return Math.max(...allZ) * 1.25 + 1
-})
-const worldHalfW = computed(() => {
-  const allX = [
-    ...store.terrainPoints.map(p => Math.abs(p.x)),
-    ...store.bukProfile.map(p => Math.abs(p.x)),
-    ...store.bokProfile.map(p => Math.abs(p.x))
-  ]
-  return (allX.length ? Math.max(...allX) : 20) + 3
-})
-
-// ─── Ansichtszustand (Pan / Zoom) ─────────────────────────────────────────────
-// null = Auto-Fit an Datenbereich; gesetzt = manueller Wert
-const vMinX   = ref(null)
-const vWidth  = ref(null)
-const vMinZ   = ref(null)
-const vHeight = ref(null)
-
-// Effektive Ansichtsparameter
-const vX0 = computed(() => vMinX.value  ?? -worldHalfW.value)
-const vW  = computed(() => vWidth.value ?? 2 * worldHalfW.value)
-const vZ0 = computed(() => vMinZ.value  ?? 0)
-const vH  = computed(() => vHeight.value ?? worldMaxH.value)
-
-const zoomLevel = computed(() => {
-  if (vWidth.value == null) return 1
-  return (2 * worldHalfW.value) / vWidth.value
-})
-
-function resetView() {
-  vMinX.value = vWidth.value = vMinZ.value = vHeight.value = null
+const SEG_TYPE_LABELS = {
+  main:       'Hauptöffnung',
+  side:       'Seitenöffnung',
+  island:     'Inselpolygon ⚠',
+  floodplain: 'Vorland',
 }
+const SEG_HEADER_COLORS = {
+  main:       '#2563eb',
+  side:       '#3b82f6',
+  island:     '#d97706',
+  floodplain: '#475569',
+}
+const TOOLTIP_W = 152
 
-// ─── Koordinatentransformation ────────────────────────────────────────────────
-function wx(worldX)   { return PAD.left + (worldX - vX0.value) / vW.value * plotW }
-function wy(worldZ)   { return PAD.top  + plotH - (worldZ - vZ0.value) / vH.value * plotH }
-function toWorldX(sx) { return vX0.value + (sx - PAD.left)         / plotW * vW.value }
-function toWorldZ(sy) { return vZ0.value + (PAD.top + plotH - sy)  / plotH * vH.value }
-
-// ─── Gitterlinien ─────────────────────────────────────────────────────────────
-const gridH = computed(() => {
-  const h = vH.value, z0 = vZ0.value
-  const step = h > 20 ? 5 : h > 10 ? 2 : h > 4 ? 1 : h > 1.5 ? 0.5 : 0.1
-  const lines = []
-  for (let z = Math.floor(z0 / step) * step; z <= z0 + h + 0.001; z = +(z + step).toFixed(6)) {
-    const sy = wy(z)
-    if (sy >= PAD.top - 1 && sy <= PAD.top + plotH + 1)
-      lines.push({ z, sy, label: Number.isInteger(z) ? z.toFixed(0) : z.toFixed(1) })
-  }
-  return lines
-})
-
-const gridV = computed(() => {
-  const w = vW.value, x0 = vX0.value
-  const step = w > 100 ? 20 : w > 40 ? 10 : w > 20 ? 5 : w > 8 ? 2 : 1
-  const lines = []
-  for (let x = Math.floor(x0 / step) * step; x <= x0 + w + 0.001; x = +(x + step).toFixed(6)) {
-    const sx = wx(x)
-    if (sx >= PAD.left - 1 && sx <= PAD.left + plotW + 1)
-      lines.push({ x, sx, label: x.toFixed(0) })
-  }
-  return lines
-})
-
-// ─── Visuell geklemmte Profile (BUK ≥ Gelände, BOK ≥ BUK) ───────────────────
-/** Für die SVG-Darstellung geklemmte BUK-Punkte: verhindert Linienkrümmungen unter dem Gelände */
-const bukDrawPts = computed(() => {
-  const terrain = store.terrainPoints
-  if (terrain.length < 2) return store.bukProfile
-  return store.bukProfile.map(p => ({
-    x: p.x,
-    z: Math.max(p.z, interpZ(terrain, p.x))
-  }))
-})
-
-/** Für die SVG-Darstellung geklemmte BOK-Punkte: verhindert Kreuzung unter BUK */
-const bokDrawPts = computed(() => {
-  const buk = bukDrawPts.value
-  if (buk.length < 2) return store.bokProfile
-  return store.bokProfile.map(p => ({
-    x: p.x,
-    z: Math.max(p.z, interpZ(buk, p.x))
-  }))
-})
-
-// ─── SVG-Pfade ────────────────────────────────────────────────────────────────
+// ─── SVG-Pfade ─────────────────────────────────────────────────────────────────
 const terrainPathSvg = computed(() => {
   const pts = store.terrainPoints
   if (pts.length < 2) return ''
@@ -440,7 +446,6 @@ const bokPathSvg = computed(() => {
   return 'M ' + pts.map(p => `${wx(p.x).toFixed(1)},${wy(p.z).toFixed(1)}`).join(' L ')
 })
 
-/** Brückenfüllkörper: geklemmte BOK (oben) + geklemmte BUK umgekehrt (unten) */
 const bridgeFillPath = computed(() => {
   const buk = bukDrawPts.value, bok = bokDrawPts.value
   if (buk.length < 2 || bok.length < 2) return ''
@@ -449,26 +454,11 @@ const bridgeFillPath = computed(() => {
   return `M ${bokStr} L ${bukRev} Z`
 })
 
-/** Zone-1-Wasserpolygon: exakte Randkreuzpunkte via buildZ1Vertices */
-const waterZ1Path = computed(() => {
-  const segs = buildZ1Vertices(
-    store.terrainPoints,
-    store.bukProfile.length >= 2 ? store.bukProfile : null,
-    store.bokProfile.length >= 2 ? store.bokProfile : null,
-    store.wsp
-  )
-  if (segs.length < 2) return ''
-  const bot = segs.map((s, i) => `${i === 0 ? 'M' : 'L'} ${wx(s.x).toFixed(1)},${wy(s.zBot).toFixed(1)}`).join(' ')
-  const top = [...segs].reverse().map(s => `L ${wx(s.x).toFixed(1)},${wy(s.zTop).toFixed(1)}`).join(' ')
-  return `${bot} ${top} Z`
-})
-
-/** Zone-2-Wasserpolygon: exakte Randkreuzpunkte via buildZ2Vertices */
 const waterZ2Path = computed(() => {
   const segs = buildZ2Vertices(
     store.terrainPoints,
     store.bokProfile.length >= 2 ? store.bokProfile : null,
-    store.wsp
+    store.wsp,
   )
   if (segs.length < 2) return ''
   const bot = segs.map((s, i) => `${i === 0 ? 'M' : 'L'} ${wx(s.x).toFixed(1)},${wy(s.zBot).toFixed(1)}`).join(' ')
@@ -476,23 +466,65 @@ const waterZ2Path = computed(() => {
   return `${bot} ${top} Z`
 })
 
-// ─── kSt-Zonen als farbige Bereiche ──────────────────────────────────────────
+// ─── Zone-1 per-segment paths + hover ─────────────────────────────────────────
+function buildSegPath(seg) {
+  const verts = seg.vertices
+  if (verts.length < 2) return ''
+  const bot = verts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${wx(v.x).toFixed(1)},${wy(v.zBot).toFixed(1)}`).join(' ')
+  const top = [...verts].reverse().map(v => `L ${wx(v.x).toFixed(1)},${wy(v.zTop).toFixed(1)}`).join(' ')
+  return `${bot} ${top} Z`
+}
+
+const z1SegmentPaths = computed(() =>
+  z1Segments.value.map((seg, i) => ({
+    path: buildSegPath(seg),
+    segIdx: i,
+    ...(SEG_STYLES[seg.type] || SEG_STYLES.floodplain),
+    type: seg.type,
+  })).filter(s => s.path)
+)
+
+const hoverSegmentInfo = computed(() => {
+  if (hoverSegIdx.value === null) return null
+  const seg = z1Segments.value[hoverSegIdx.value]
+  if (!seg) return null
+  return {
+    typeLabel:   SEG_TYPE_LABELS[seg.type] || seg.type,
+    headerColor: SEG_HEADER_COLORS[seg.type] || '#64748b',
+    A:    seg.A.toFixed(3),
+    P:    seg.P.toFixed(3),
+    maxH: seg.maxH.toFixed(3),
+    isClosed: seg.isClosed,
+  }
+})
+
+const tooltipPos = computed(() => {
+  if (!mouseSvgPos.value) return { x: 0, y: 0 }
+  let tx = mouseSvgPos.value.x + 12
+  let ty = mouseSvgPos.value.y - 34
+  if (tx + TOOLTIP_W > svgW.value - 4) tx = mouseSvgPos.value.x - TOOLTIP_W - 8
+  if (ty < PAD.top + 2) ty = PAD.top + 2
+  if (ty + 72 > svgH.value - PAD.bottom) ty = svgH.value - PAD.bottom - 74
+  return { x: tx, y: ty }
+})
+
+// ─── kSt-Zonen als farbige Bereiche ───────────────────────────────────────────
 const kstBands = computed(() => {
   const hw = worldHalfW.value
   return store.kstZones.map(z => {
-    const xL = z.xLeft == null ? -hw : z.xLeft
-    const xR = z.xRight == null ? hw : z.xRight
+    const xL = z.xLeft  == null ? -hw : z.xLeft
+    const xR = z.xRight == null ?  hw : z.xRight
     return {
       id: z.id, kst: z.kst, color: z.color, label: z.label,
       svgX1: Math.max(PAD.left, wx(xL)),
-      svgX2: Math.min(PAD.left + plotW, wx(xR)),
+      svgX2: Math.min(PAD.left + plotW.value, wx(xR)),
       hasLeft:  z.xLeft  != null,
       hasRight: z.xRight != null,
     }
   }).filter(z => z.svgX2 > z.svgX1)
 })
 
-// ─── Hilfswerte für Labels ─────────────────────────────────────────────────────
+// ─── Labels ────────────────────────────────────────────────────────────────────
 const bukMinZ = computed(() => store.bukProfile.length ? Math.min(...store.bukProfile.map(p => p.z)) : 0)
 const bokMaxZ = computed(() => store.bokProfile.length ? Math.max(...store.bokProfile.map(p => p.z)) : 0)
 
@@ -501,8 +533,8 @@ const z1LabelPos = computed(() => {
   if (!terrain.length) return null
   const h = Math.min(store.wsp, bukMinZ.value)
   if (h < 0.3) return null
-  const xm = (terrain[0].x + terrain[terrain.length - 1].x) / 2
-  const gz = interpZ(terrain, xm)
+  const xm  = (terrain[0].x + terrain[terrain.length - 1].x) / 2
+  const gz  = interpZ(terrain, xm)
   const midZ = gz + (h - gz) * 0.45
   if (midZ >= h - 0.2) return null
   return { x: wx(xm), y: wy(midZ) }
@@ -511,184 +543,16 @@ const z1LabelPos = computed(() => {
 const z2LabelPos = computed(() => {
   if (!store.currentResult.hasOverflow || store.bokProfile.length < 2) return null
   const boks = store.bokProfile
-  const xm = (boks[0].x + boks[boks.length - 1].x) / 2
+  const xm     = (boks[0].x + boks[boks.length - 1].x) / 2
   const bokMid = interpBridgeZ(boks, xm)
   if (bokMid >= store.wsp - 0.3) return null
   return { x: wx(xm), y: wy(bokMid + (store.wsp - bokMid) * 0.45) }
 })
 
-// ─── Drag-Handling ─────────────────────────────────────────────────────────────
-// type: 'wsp' | 'point' | 'pan'
-const dragState = ref(null)
-let clickWasDrag = false
-
-function getSvgPos(e) {
-  const svg = svgEl.value
-  if (!svg) return null
-  const rect = svg.getBoundingClientRect()
-  return {
-    x: (e.clientX - rect.left) / rect.width * SVG_W,
-    y: (e.clientY - rect.top)  / rect.height * SVG_H
-  }
-}
-
-// ─── Zoom per Scrollrad ───────────────────────────────────────────────────────
-function onWheel(e) {
-  e.preventDefault()
-  const pos = getSvgPos(e)
-  if (!pos || pos.x < PAD.left || pos.x > PAD.left + plotW ||
-      pos.y < PAD.top  || pos.y > PAD.top  + plotH) return
-
-  const factor = e.deltaY > 0 ? 1.18 : 1 / 1.18
-  const curX0 = vX0.value, curW = vW.value
-  const curZ0 = vZ0.value, curH = vH.value
-
-  // Weltpunkt unter dem Mauszeiger bleibt fest
-  const fixX = curX0 + (pos.x - PAD.left)         / plotW * curW
-  const fixZ = curZ0 + (PAD.top + plotH - pos.y)  / plotH * curH
-
-  const newW = curW * factor
-  const newH = curH * factor
-  vWidth.value  = newW
-  vHeight.value = newH
-  vMinX.value   = fixX - (pos.x - PAD.left)         / plotW * newW
-  vMinZ.value   = fixZ - (PAD.top + plotH - pos.y)  / plotH * newH
-}
-
-// ─── Pan ──────────────────────────────────────────────────────────────────────
-function startDragWSP(e) {
-  e.preventDefault()
-  dragState.value = { type: 'wsp' }
-  clickWasDrag = false
-}
-
-function startDragPoint(e, layerId, index) {
-  e.preventDefault()
-  dragState.value = { type: 'point', layer: layerId, index }
-  clickWasDrag = false
-}
-
-function startDragKstBound(e, zoneId, side) {
-  e.preventDefault()
-  dragState.value = { type: 'kst-bound', zoneId, side }
-  clickWasDrag = true
-}
-
-function onSvgMouseDown(e) {
-  // Mittlere Maustaste oder Ctrl+Links → Pan
-  if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
-    e.preventDefault()
-    dragState.value = {
-      type: 'pan',
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      startX0: vX0.value,
-      startZ0: vZ0.value
-    }
-    clickWasDrag = true
-    return
-  }
-  clickWasDrag = false
-}
-
-function onSvgMouseMove(e) {
-  if (!dragState.value) return
-  clickWasDrag = true
-  const pos = getSvgPos(e)
-  if (!pos) return
-
-  if (dragState.value.type === 'pan') {
-    const svg = svgEl.value
-    if (!svg) return
-    const rect = svg.getBoundingClientRect()
-    const dSvgX = (e.clientX - dragState.value.startClientX) / rect.width  * SVG_W
-    const dSvgY = (e.clientY - dragState.value.startClientY) / rect.height * SVG_H
-    vMinX.value = dragState.value.startX0 - dSvgX / plotW * vW.value
-    vMinZ.value = dragState.value.startZ0 + dSvgY / plotH * vH.value
-  } else if (dragState.value.type === 'wsp') {
-    const z = toWorldZ(pos.y)
-    store.wsp = Math.round(Math.max(0.05, Math.min(vZ0.value + vH.value * 0.97, z)) / 0.05) * 0.05
-    store.save()
-  } else if (dragState.value.type === 'point') {
-    const { layer, index } = dragState.value
-    const wx_ = Math.round(toWorldX(pos.x) * 100) / 100
-    let wz = Math.round(Math.max(0, toWorldZ(pos.y)) * 100) / 100
-    if (layer === 'buk' && store.terrainPoints.length >= 2)
-      wz = Math.max(wz, Math.round(interpZ(store.terrainPoints, wx_) * 100) / 100)
-    else if (layer === 'bok' && bukDrawPts.value.length >= 2)
-      wz = Math.max(wz, Math.round(interpZ(bukDrawPts.value, wx_) * 100) / 100)
-    store.movePoint(layer, index, { x: wx_, z: wz })
-    const pts = getLayerPoints(layer)
-    const newIdx = pts.findIndex(p => p.x === wx_ && p.z === wz)
-    if (newIdx >= 0) dragState.value.index = newIdx
-  } else if (dragState.value.type === 'kst-bound') {
-    const { zoneId, side } = dragState.value
-    const xWorld = Math.round(toWorldX(pos.x) * 100) / 100
-    const zone = store.kstZones.find(z => z.id === zoneId)
-    if (!zone) return
-    if (side === 'left') {
-      const max = zone.xRight != null ? zone.xRight - 0.1 : Infinity
-      store.updateKstZone(zoneId, { xLeft: Math.min(xWorld, max) })
-    } else {
-      const min = zone.xLeft != null ? zone.xLeft + 0.1 : -Infinity
-      store.updateKstZone(zoneId, { xRight: Math.max(xWorld, min) })
-    }
-    store.save()
-  }
-}
-
-function endDrag() {
-  dragState.value = null
-}
-
-function onSvgClick(e) {
-  if (clickWasDrag) { clickWasDrag = false; return }
-  if (e.target.tagName === 'circle') return
-
-  const pos = getSvgPos(e)
-  if (!pos) return
-  if (pos.x < PAD.left || pos.x > PAD.left + plotW || pos.y < PAD.top || pos.y > PAD.top + plotH) return
-
-  const wx_ = Math.round(toWorldX(pos.x) * 100) / 100
-  let wz = Math.round(Math.max(0, toWorldZ(pos.y)) * 100) / 100
-  if (activeLayer.value === 'buk' && store.terrainPoints.length >= 2)
-    wz = Math.max(wz, Math.round(interpZ(store.terrainPoints, wx_) * 100) / 100)
-  else if (activeLayer.value === 'bok' && bukDrawPts.value.length >= 2)
-    wz = Math.max(wz, Math.round(interpZ(bukDrawPts.value, wx_) * 100) / 100)
-  store.addPoint(activeLayer.value, { x: wx_, z: wz })
-}
-
-function onSvgRightClick(e) {
-  const pos = getSvgPos(e)
-  if (!pos) return
-
-  const layerPts = getLayerPoints(activeLayer.value)
-  let nearestIdx = -1, minDist = 20
-  layerPts.forEach((pt, i) => {
-    const dx = wx(pt.x) - pos.x
-    const dz = wy(pt.z) - pos.y
-    const d = Math.sqrt(dx * dx + dz * dz)
-    if (d < minDist) { minDist = d; nearestIdx = i }
-  })
-  if (nearestIdx >= 0) store.deletePoint(activeLayer.value, nearestIdx)
-}
-
-// ─── Toolbar-Aktionen ──────────────────────────────────────────────────────────
+// ─── Toolbar ───────────────────────────────────────────────────────────────────
 function clearActiveLayer() {
   store.clearLayer(activeLayer.value)
 }
-
-function clearBridgeLayer() {
-  store.clearLayer(activeLayer.value)
-}
-
-// ─── Tastaturkürzel ────────────────────────────────────────────────────────────
-function onKeyDown(e) {
-  if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); store.undo() }
-  if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); store.redo() }
-}
-onMounted(() => window.addEventListener('keydown', onKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
 </script>
 
 <style scoped>
@@ -846,5 +710,144 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+/* ─── Fenstermodus ─────────────────────────────────────────────────────────── */
+.bridge-profile-editor.bpe-windowed {
+  position: fixed;
+  z-index: 1000;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Verhindert Flackern durch neue Stacking-Contexts */
+  will-change: transform;
+}
+
+.bpe-titlebar {
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0.6rem 0.4rem 0.9rem;
+  background: #1e293b;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+.bpe-titlebar:active { cursor: grabbing; }
+.bpe-title {
+  flex: 1;
+  font-size: 0.81rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  letter-spacing: 0.01em;
+}
+.bpe-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.88rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.1s, color 0.1s;
+}
+.bpe-close:hover { background: #ef4444; color: white; }
+
+.bpe-svg-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+/* Im Fenstermodus füllt das SVG den gesamten verfügbaren Platz */
+.bpe-windowed .profile-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Resize-Handles */
+.bpe-resize {
+  position: absolute;
+  z-index: 10;
+}
+.bpe-resize.n  { top: 0;    left: 10px; right: 10px; height: 5px;  cursor: n-resize; }
+.bpe-resize.s  { bottom: 0; left: 10px; right: 10px; height: 5px;  cursor: s-resize; }
+.bpe-resize.e  { right: 0;  top: 10px; bottom: 10px; width: 5px;   cursor: e-resize; }
+.bpe-resize.w  { left: 0;   top: 10px; bottom: 10px; width: 5px;   cursor: w-resize; }
+.bpe-resize.ne { top: 0;    right: 0;  width: 14px; height: 14px;  cursor: ne-resize; }
+.bpe-resize.nw { top: 0;    left: 0;   width: 14px; height: 14px;  cursor: nw-resize; }
+.bpe-resize.se { bottom: 0; right: 0;  width: 14px; height: 14px;  cursor: se-resize; }
+.bpe-resize.sw { bottom: 0; left: 0;   width: 14px; height: 14px;  cursor: sw-resize; }
+
+.tool-btn.expand-btn {
+  font-size: 1rem;
+  padding: 0.15rem 0.5rem;
+}
+
+/* ─── Segment Klick-Info-Karte ─────────────────────────────────────────────── */
+.seg-info-card {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  font-size: 0.81rem;
+}
+.seg-info-card.seg-type-island {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+.seg-info-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+.seg-info-badge {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.seg-info-type {
+  font-weight: 700;
+  font-size: 0.84rem;
+  color: #1e293b;
+  flex: 1;
+}
+.seg-info-card.seg-type-island .seg-info-type { color: #b45309; }
+.seg-info-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0;
+  line-height: 1;
+}
+.seg-info-close:hover { color: #374151; }
+.seg-info-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.18rem 0.9rem;
+}
+.seg-info-row {
+  display: contents;
+}
+.seg-info-row span { color: #64748b; white-space: nowrap; }
+.seg-info-row strong { color: #1e293b; text-align: right; font-weight: 600; }
+.seg-info-warning {
+  margin-top: 0.45rem;
+  padding: 0.4rem 0.6rem;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 5px;
+  color: #92400e;
+  font-size: 0.77rem;
+  line-height: 1.45;
 }
 </style>

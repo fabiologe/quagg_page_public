@@ -11,10 +11,12 @@
 import { computed } from 'vue'
 import { useBridgeStore } from '../stores/useBridgeStore.js'
 import { useBridgeHydraulics } from './useBridgeHydraulics.js'
+import { useBridgeRenderer } from './useBridgeRenderer.js'
 
 export function useBridgeValidation() {
   const store = useBridgeStore()
   const { interpZ } = useBridgeHydraulics()
+  const { buildZ1SegmentData } = useBridgeRenderer()
 
   // ─── Hilfsfunktionen ──────────────────────────────────────────────────────
 
@@ -142,34 +144,6 @@ export function useBridgeValidation() {
       }
     }
 
-    // 7. BUK unter Gelände: Kreuzpunkte (Brücke im Boden)
-    if (hasBuk) {
-      const bukBelowTerr = crossingsBelow(buk, terrain)
-      if (bukBelowTerr.length > 0) {
-        e.push({
-          code: 'BUK_BELOW_TERRAIN',
-          layer: 'buk',
-          title: 'BUK unter Gelände (Kreuzpunkt)',
-          detail: `Brückenunterkante liegt bei ${fmtX(bukBelowTerr)} unter dem Gelände. Max. Δz = ${Math.max(...bukBelowTerr.map(p=>p.delta)).toFixed(3)} m. Die visuelle Klammerung überdeckt das Problem, die Hydraulik rechnet aber mit falschen Geometrien.`,
-          xMarkers: bukBelowTerr.map(p => ({ x: p.x, zBuk: p.zViolator, zTerrain: p.zLimit })),
-        })
-      }
-    }
-
-    // 8. BOK unter Gelände: Kreuzpunkte (Widerlager versunken)
-    if (hasBok) {
-      const bokBelowTerr = crossingsBelow(bok, terrain)
-      if (bokBelowTerr.length > 0) {
-        e.push({
-          code: 'BOK_BELOW_TERRAIN',
-          layer: 'bok',
-          title: 'BOK unter Gelände (Kreuzpunkt)',
-          detail: `Brückenoberkante liegt bei ${fmtX(bokBelowTerr)} unter dem Gelände. Max. Δz = ${Math.max(...bokBelowTerr.map(p=>p.delta)).toFixed(3)} m.`,
-          xMarkers: bokBelowTerr.map(p => ({ x: p.x, zBok: p.zViolator, zTerrain: p.zLimit })),
-        })
-      }
-    }
-
     return e
   })
 
@@ -240,6 +214,35 @@ export function useBridgeValidation() {
       }
     }
 
+    // BUK unter Gelände: kein hydraulischer Fehler, Streifen tragen einfach 0 Fläche bei
+    // (typisch an Widerlagern / Böschungen — Berechnung mit Math.max(0,...) korrekt)
+    if (hasBuk) {
+      const bukBelowTerr = crossingsBelow(buk, terrain)
+      if (bukBelowTerr.length > 0) {
+        w.push({
+          code: 'BUK_BELOW_TERRAIN',
+          layer: 'buk',
+          title: 'BUK unter Gelände (Hinweis)',
+          detail: `BUK liegt bei ${fmtX(bukBelowTerr)} unterhalb des Geländes (max. ${Math.max(...bukBelowTerr.map(p=>p.delta)).toFixed(3)} m). Betroffene Streifen tragen 0 zur Öffnungsfläche bei — kein hydraulischer Fehler. Typisch an Widerlagern/Böschungen.`,
+          xMarkers: bukBelowTerr.map(p => ({ x: p.x, zBuk: p.zViolator, zTerrain: p.zLimit })),
+        })
+      }
+    }
+
+    // BOK unter Gelände: kein hydraulischer Fehler (Zone 2 hat dort keine Fläche)
+    if (hasBok) {
+      const bokBelowTerr = crossingsBelow(bok, terrain)
+      if (bokBelowTerr.length > 0) {
+        w.push({
+          code: 'BOK_BELOW_TERRAIN',
+          layer: 'bok',
+          title: 'BOK unter Gelände (Hinweis)',
+          detail: `BOK liegt bei ${fmtX(bokBelowTerr)} unterhalb des Geländes (max. ${Math.max(...bokBelowTerr.map(p=>p.delta)).toFixed(3)} m). Zone 2 hat dort keine wirksame Fläche — kein hydraulischer Fehler.`,
+          xMarkers: bokBelowTerr.map(p => ({ x: p.x, zBok: p.zViolator, zTerrain: p.zLimit })),
+        })
+      }
+    }
+
     // WSP knapp unter BUK: Druckabfluss droht
     if (hasBuk) {
       const freibordBuk = buk.map(p => ({
@@ -252,6 +255,22 @@ export function useBridgeValidation() {
           layer: null,
           title: 'WSP nahe BUK: Druckabfluss droht',
           detail: `Freibord < 20 cm bei ${freibordBuk.map(p=>`x = ${p.x.toFixed(2)} m (${(p.freibord*100).toFixed(0)} cm)`).join(', ')}.`,
+          xMarkers: [],
+        })
+      }
+    }
+
+    // Inselpolygone: Flächen im BUK-Fußabdruck ohne Verbindung zur Einlauf-/Auslaufkante
+    if (hasBuk) {
+      const maxBukZ = Math.max(...buk.map(p => p.z))
+      const segs = buildZ1SegmentData(terrain, buk, null, maxBukZ + 1)
+      const islands = segs.filter(s => s.type === 'island')
+      if (islands.length > 0) {
+        w.push({
+          code: 'ISLAND_POLYGON',
+          layer: 'buk',
+          title: `${islands.length} Inselpolygon(e) im Brückenquerschnitt`,
+          detail: 'Flächen ohne Verbindung zur Einlauf-/Auslaufkante werden fälschlicherweise zur Orifice-Öffnungsfläche A gerechnet. Geländeprofil im Brückenbereich prüfen.',
           xMarkers: [],
         })
       }

@@ -1,10 +1,41 @@
+/**
+ * Pinia Setup-Store — orchestriert den gesamten Brücken-Hydraulik-Zustand.
+ *
+ * ── Verantwortlichkeiten ──────────────────────────────────────────────────────────
+ *   1. State-Haltung      terrainPoints, bukProfile, bokProfile, kstZones,
+ *                         slope, wsp, mu, muDeck, zeta, nPiers, bPier, flowMode, wspUW
+ *   2. Berechnungs-Computed
+ *        calcParams        — gebündeltes Objekt aller Hydraulik-Eingaben (computed)
+ *        currentResult     — calculateAtWSP(calcParams, wsp), reaktiv bei jedem Tick
+ *        ratingCurve       — generateRatingCurve(...), 10 s debounced (CPU-Schutz)
+ *   3. History / Undo-Redo historyStack (JSON-Snapshots, max 60), historyIdx
+ *   4. Persistenz         localStorage, 100 ms debounced via save()
+ *   5. Projekt-Export     exportProject() / importProject() als JSON-Datei
+ *   6. Profil-Methoden    addPoint, movePoint, deletePoint, clearLayer, setLayer
+ *   7. kSt-Zonen          addKstZone, removeKstZone, updateKstZone
+ *
+ * ── Datenfluss ───────────────────────────────────────────────────────────────────
+ *   User-Eingabe → store.wsp / store.slope / ...
+ *     → calcParams (computed)
+ *       → currentResult = calculateAtWSP(calcParams)   sofort, kein Debounce
+ *       → ratingCurve   = generateRatingCurve(...)     10 s Debounce
+ *     → save()
+ *       → localStorage.setItem(...)                    100 ms Debounce
+ *       → _pushHistory(snapshot)                       450 ms Debounce
+ *
+ * ── Serialisierungs-Schema (DRY) ─────────────────────────────────────────────────
+ *   SCALAR_SCHEMA / ARRAY_SCHEMA registrieren jedes State-Feld genau einmal.
+ *   _serialize / _deserialize leiten daraus alle Persistenz-Operationen ab:
+ *   save(), load(), undo(), redo(), resetToDefault(), exportProject(), importProject()
+ *   — kein Copy-Paste zwischen den einzelnen Funktionen.
+ */
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useBridgeHydraulics } from '../composables/useBridgeHydraulics.js'
 
-const STORAGE_KEY = 'bridgeHydraulics_v2'
+const STORAGE_KEY = 'bridgeHydraulics_v3'
 const PROJECT_FORMAT = 'BrueckenHydraulik'
-const PROJECT_VERSION = 1
+const PROJECT_VERSION = 2
 const MAX_HISTORY = 60
 
 // ─── Vorgabewerte (realistisches Standardbeispiel) ─────────────────────────
@@ -30,16 +61,63 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
   const terrainPoints = ref(DEFAULT_TERRAIN.map(p => ({ ...p })))
   const bukProfile    = ref(DEFAULT_BUK.map(p => ({ ...p })))
   const bokProfile    = ref(DEFAULT_BOK.map(p => ({ ...p })))
+  const kstZones      = ref(DEFAULT_KST_ZONES.map(z => ({ ...z })))
 
-  // ─── kSt-Zonen ───────────────────────────────────────────────────────────
-  const kstZones = ref(DEFAULT_KST_ZONES.map(z => ({ ...z })))
-
-  // ─── Hydraulische Parameter ───────────────────────────────────────────────
+  // ─── Skalare State-Felder ─────────────────────────────────────────────────
   const slope       = ref(0.001)
   const wsp         = ref(5.0)
   const wspMin      = ref(0.5)
   const wspMax      = ref(8.0)
   const ratingSteps = ref(30)
+  const mu          = ref(0.80)
+  const muDeck      = ref(0.45)
+  const zeta        = ref(0.00)
+  const nPiers      = ref(0)
+  const bPier       = ref(0.50)
+  const flowMode    = ref('auto')
+  const wspUW       = ref(null)
+
+  // ─── Serialisierungs-Schema ───────────────────────────────────────────────
+  // Jedes Feld einmalig hier — _serialize/_deserialize generiert daraus
+  // _stateJson, _applyJson, load, resetToDefault, exportProject, importProject.
+  // nullable: true → null ist gültiger Wert ('key in s' statt '!= null'-Check).
+  const SCALAR_SCHEMA = [
+    { key: 'slope',       ref: slope,       default: 0.001  },
+    { key: 'wsp',         ref: wsp,         default: 5.0    },
+    { key: 'wspMin',      ref: wspMin,       default: 0.5    },
+    { key: 'wspMax',      ref: wspMax,       default: 8.0    },
+    { key: 'ratingSteps', ref: ratingSteps, default: 30     },
+    { key: 'mu',          ref: mu,          default: 0.80   },
+    { key: 'muDeck',      ref: muDeck,      default: 0.45   },
+    { key: 'zeta',        ref: zeta,        default: 0.00   },
+    { key: 'nPiers',      ref: nPiers,      default: 0      },
+    { key: 'bPier',       ref: bPier,       default: 0.50   },
+    { key: 'flowMode',    ref: flowMode,    default: 'auto' },
+    { key: 'wspUW',       ref: wspUW,       default: null, nullable: true },
+  ]
+  const ARRAY_SCHEMA = [
+    { key: 'terrainPoints', ref: terrainPoints, minLen: 2 },
+    { key: 'bukProfile',    ref: bukProfile,    minLen: 2 },
+    { key: 'bokProfile',    ref: bokProfile,    minLen: 2 },
+    { key: 'kstZones',      ref: kstZones,      minLen: 1 },
+  ]
+
+  function _serialize() {
+    const out = {}
+    for (const f of ARRAY_SCHEMA)  out[f.key] = f.ref.value
+    for (const f of SCALAR_SCHEMA) out[f.key] = f.ref.value
+    return out
+  }
+
+  function _deserialize(s) {
+    for (const f of ARRAY_SCHEMA)
+      if (s[f.key]?.length >= f.minLen) f.ref.value = s[f.key]
+    for (const f of SCALAR_SCHEMA)
+      if (f.nullable ? f.key in s : s[f.key] != null) f.ref.value = s[f.key]
+  }
+
+  function _stateJson() { return JSON.stringify(_serialize()) }
+  function _applyJson(json) { _deserialize(JSON.parse(json)) }
 
   // ─── Berechnungsparameter ─────────────────────────────────────────────────
   const calcParams = computed(() => ({
@@ -47,61 +125,66 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
     bukProfile: bukProfile.value.length >= 2 ? bukProfile.value : null,
     bokProfile: bokProfile.value.length >= 2 ? bokProfile.value : null,
     kstZones: kstZones.value,
-    slope: slope.value
+    slope: slope.value,
+    mu: mu.value,
+    muDeck: muDeck.value,
+    zeta: zeta.value,
+    nPiers: nPiers.value,
+    bPier: bPier.value,
+    flowMode: flowMode.value,
+    wspUW: wspUW.value ?? undefined,
   }))
 
   const currentResult = computed(() =>
     calculateAtWSP({ ...calcParams.value, wsp: wsp.value })
   )
 
-  const ratingCurve = computed(() =>
-    generateRatingCurve(calcParams.value, wspMin.value, wspMax.value, ratingSteps.value)
-  )
-
   // ─── History (Undo / Redo) ────────────────────────────────────────────────
-  const historyStack = ref([])   // JSON-Strings
+  const historyStack = ref([])
   const historyIdx   = ref(-1)
-  let   historyTimer = null
 
   const canUndo = computed(() => historyIdx.value > 0)
   const canRedo = computed(() => historyIdx.value < historyStack.value.length - 1)
 
-  function _stateJson() {
-    return JSON.stringify({
-      terrainPoints: terrainPoints.value,
-      bukProfile:    bukProfile.value,
-      bokProfile:    bokProfile.value,
-      kstZones:      kstZones.value,
-      slope: slope.value, wsp: wsp.value,
-      wspMin: wspMin.value, wspMax: wspMax.value,
-      ratingSteps: ratingSteps.value
-    })
-  }
-
-  function _applyJson(json) {
-    const s = JSON.parse(json)
-    terrainPoints.value = s.terrainPoints ?? terrainPoints.value
-    bukProfile.value    = s.bukProfile    ?? bukProfile.value
-    bokProfile.value    = s.bokProfile    ?? bokProfile.value
-    kstZones.value      = s.kstZones      ?? kstZones.value
-    if (s.slope       != null) slope.value       = s.slope
-    if (s.wsp         != null) wsp.value         = s.wsp
-    if (s.wspMin      != null) wspMin.value      = s.wspMin
-    if (s.wspMax      != null) wspMax.value      = s.wspMax
-    if (s.ratingSteps != null) ratingSteps.value = s.ratingSteps
-  }
-
   function _pushHistory(snap) {
-    // Drop any redo branch
     historyStack.value = historyStack.value.slice(0, historyIdx.value + 1)
-    if (historyStack.value[historyIdx.value] === snap) return  // no change
+    if (historyStack.value[historyIdx.value] === snap) return
     historyStack.value.push(snap)
     if (historyStack.value.length > MAX_HISTORY) historyStack.value.shift()
     historyIdx.value = historyStack.value.length - 1
   }
 
+  // ─── Persistenz ───────────────────────────────────────────────────────────
+  // save() startet zwei UNABHÄNGIGE Debounce-Timer:
+  //
+  //   _persistTimer  (100 ms) → localStorage.setItem(STORAGE_KEY, JSON)
+  //     Warum 100 ms: Schnell genug, dass kein Datenverlust bei Browser-Absturz
+  //     während Mousemove-Drag entsteht. Ohne Debounce würde jeder Drag-Tick einen
+  //     localStorage-Write auslösen (mehrere hundert pro Sekunde).
+  //
+  //   _snapshotTimer (450 ms) → _pushHistory(JSON-Snapshot)
+  //     Warum 450 ms: Ein Undo-Schritt soll einer "Eingabe-Pause" entsprechen,
+  //     nicht jedem einzelnen Buchstaben beim Tippen. 450 ms ist die typische
+  //     Pause zwischen Tastatureingaben, ab der ein neuer Intent beginnt.
+  //
+  // Beide Timer werden in undo() / redo() abgebrochen (clearTimeout), damit ein
+  // Undo mitten in einer debounced Sequenz nicht überschrieben wird.
+  let _persistTimer  = null
+  let _snapshotTimer = null
+
+  function save() {
+    clearTimeout(_persistTimer)
+    _persistTimer = setTimeout(() => {
+      try { localStorage.setItem(STORAGE_KEY, _stateJson()) } catch { /* ignore */ }
+    }, 100)
+
+    clearTimeout(_snapshotTimer)
+    _snapshotTimer = setTimeout(() => _pushHistory(_stateJson()), 450)
+  }
+
   function undo() {
-    clearTimeout(historyTimer)
+    clearTimeout(_persistTimer)
+    clearTimeout(_snapshotTimer)
     if (!canUndo.value) return
     historyIdx.value--
     const snap = historyStack.value[historyIdx.value]
@@ -110,7 +193,8 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
   }
 
   function redo() {
-    clearTimeout(historyTimer)
+    clearTimeout(_persistTimer)
+    clearTimeout(_snapshotTimer)
     if (!canRedo.value) return
     historyIdx.value++
     const snap = historyStack.value[historyIdx.value]
@@ -118,29 +202,8 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
     try { localStorage.setItem(STORAGE_KEY, snap) } catch { /* ignore */ }
   }
 
-  // ─── Persistenz ───────────────────────────────────────────────────────────
-  function save() {
-    const snap = _stateJson()
-    try { localStorage.setItem(STORAGE_KEY, snap) } catch { /* ignore */ }
-    // Debounce history push so rapid drag calls produce one entry
-    clearTimeout(historyTimer)
-    historyTimer = setTimeout(() => _pushHistory(snap), 450)
-  }
-
   function load() {
-    try {
-      const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-      if (s.terrainPoints?.length >= 2) terrainPoints.value = s.terrainPoints
-      if (s.bukProfile?.length >= 2)    bukProfile.value    = s.bukProfile
-      if (s.bokProfile?.length >= 2)    bokProfile.value    = s.bokProfile
-      if (s.kstZones?.length >= 1)      kstZones.value      = s.kstZones
-      if (s.slope       != null) slope.value       = s.slope
-      if (s.wsp         != null) wsp.value         = s.wsp
-      if (s.wspMin      != null) wspMin.value      = s.wspMin
-      if (s.wspMax      != null) wspMax.value      = s.wspMax
-      if (s.ratingSteps != null) ratingSteps.value = s.ratingSteps
-    } catch { /* ignore */ }
-    // Seed history with current (loaded) state
+    try { _deserialize(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')) } catch { /* ignore */ }
     _pushHistory(_stateJson())
   }
 
@@ -149,40 +212,44 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
     bukProfile.value    = DEFAULT_BUK.map(p => ({ ...p }))
     bokProfile.value    = DEFAULT_BOK.map(p => ({ ...p }))
     kstZones.value      = DEFAULT_KST_ZONES.map(z => ({ ...z }))
-    slope.value = 0.001; wsp.value = 5.0; wspMin.value = 0.5; wspMax.value = 8.0
+    for (const f of SCALAR_SCHEMA) f.ref.value = f.default
     save()
   }
 
   // ─── Projekt Export / Import ─────────────────────────────────────────────
   function exportProject() {
-    return JSON.stringify({
-      format:  PROJECT_FORMAT,
-      version: PROJECT_VERSION,
-      terrainPoints: terrainPoints.value,
-      bukProfile:    bukProfile.value,
-      bokProfile:    bokProfile.value,
-      kstZones:      kstZones.value,
-      slope: slope.value, wsp: wsp.value,
-      wspMin: wspMin.value, wspMax: wspMax.value,
-      ratingSteps: ratingSteps.value
-    }, null, 2)
+    return JSON.stringify({ format: PROJECT_FORMAT, version: PROJECT_VERSION, ..._serialize() }, null, 2)
   }
 
   function importProject(jsonString) {
     const s = JSON.parse(jsonString)
     if (s.format !== PROJECT_FORMAT)
       throw new Error(`Unbekanntes Format: "${s.format}" — erwartet "${PROJECT_FORMAT}"`)
-    if (s.terrainPoints?.length >= 2) terrainPoints.value = s.terrainPoints
-    if (s.bukProfile?.length >= 2)    bukProfile.value    = s.bukProfile
-    if (s.bokProfile?.length >= 2)    bokProfile.value    = s.bokProfile
-    if (s.kstZones?.length >= 1)      kstZones.value      = s.kstZones
-    if (s.slope       != null) slope.value       = s.slope
-    if (s.wsp         != null) wsp.value         = s.wsp
-    if (s.wspMin      != null) wspMin.value      = s.wspMin
-    if (s.wspMax      != null) wspMax.value      = s.wspMax
-    if (s.ratingSteps != null) ratingSteps.value = s.ratingSteps
+    _deserialize(s)
     save()
   }
+
+  // ─── Rating-Curve: debounced watch statt computed ─────────────────────────
+  // generateRatingCurve ruft calculateAtWSP (steps+1)-mal auf — bei steps=30 also
+  // 31 vollständige Hydraulikberechnungen pro Aufruf. Als computed würde das bei
+  // jedem WSP-Drag-Tick feuern (50–100×/s → CPU-Spike, UI-Freeze).
+  // Lösung: watch mit 10 000 ms Debounce — die Kurve aktualisiert sich erst,
+  // wenn der Nutzer 10 s lang keine Parameter geändert hat.
+  // load() wird vor diesem Block aufgerufen → erste Berechnung spiegelt geladenen State.
+  load()
+
+  const ratingCurve = ref(
+    generateRatingCurve(calcParams.value, wspMin.value, wspMax.value, ratingSteps.value)
+  )
+  let _ratingTimer = null
+  watch([calcParams, wspMin, wspMax, ratingSteps], () => {
+    clearTimeout(_ratingTimer)
+    _ratingTimer = setTimeout(() => {
+      ratingCurve.value = generateRatingCurve(
+        calcParams.value, wspMin.value, wspMax.value, ratingSteps.value
+      )
+    }, 10000)
+  })
 
   // ─── kSt-Zonen Hilfsmethoden ──────────────────────────────────────────────
   function addKstZone() {
@@ -250,13 +317,12 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
     save()
   }
 
-  load()
-
   return {
     // State
     terrainPoints, bukProfile, bokProfile, kstZones,
     slope, wsp, wspMin, wspMax, ratingSteps,
-    // Computed
+    mu, muDeck, zeta, nPiers, bPier, flowMode, wspUW,
+    // Computed / Reactive
     calcParams, currentResult, ratingCurve,
     // Undo / Redo
     canUndo, canRedo, undo, redo,
