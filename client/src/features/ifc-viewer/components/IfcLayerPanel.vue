@@ -27,7 +27,11 @@
 
         <span class="cat-icon">{{ categoryIcon(cat.name) }}</span>
 
-        <span class="cat-name" :title="cat.name">
+        <span
+          class="cat-name"
+          :title="`${cat.name} — Klick zum Zoomen`"
+          @click="emit('zoom', { name: cat.name })"
+        >
           {{ formatName(cat.name) }}
         </span>
 
@@ -47,7 +51,7 @@ import { computed } from 'vue';
 const props = defineProps({
   categories: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['toggle', 'close']);
+const emit = defineEmits(['toggle', 'close', 'zoom']);
 
 const sortedCategories = computed(() =>
   [...props.categories].sort((a, b) => b.count - a.count)
@@ -106,17 +110,16 @@ function categoryIcon(name) {
 .layer-panel {
   position: absolute;
   left: 70px;
-  bottom: 1rem;
+  top: 5rem;
   z-index: 25;
   width: 240px;
   max-height: 420px;
   display: flex;
   flex-direction: column;
-  background: rgba(18, 20, 30, 0.96);
+  background: rgb(18, 20, 30);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   overflow: hidden;
 }
 
@@ -188,7 +191,9 @@ function categoryIcon(name) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
+.cat-name:hover { color: #90caf9; text-decoration: underline; }
 
 .cat-count {
   font-size: 0.65rem;

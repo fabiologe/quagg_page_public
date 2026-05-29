@@ -11,6 +11,7 @@
         :node="tree"
         :depth="0"
         @toggle-storey="(e) => emit('toggle-storey', e)"
+        @zoom-to="(e) => emit('zoom-to', e)"
       />
       <div v-else class="tree-empty">Kein Modell geladen</div>
     </div>
@@ -18,33 +19,58 @@
 </template>
 
 <script setup>
-import { defineComponent, h, ref } from 'vue';
+import { defineComponent, h, ref, computed, provide, inject } from 'vue';
 
-defineProps({
-  tree: { type: Object, default: null },
-  bare: { type: Boolean, default: false },
+const props = defineProps({
+  tree:   { type: Object,  default: null  },
+  bare:   { type: Boolean, default: false },
+  filter: { type: String,  default: ''    },
 });
-const emit = defineEmits(['toggle-storey', 'close']);
+const emit = defineEmits(['toggle-storey', 'close', 'zoom-to']);
 
-// Recursive tree node as an inline renderless component
+// Provide filter string to all TreeNode descendants via inject
+const treeFilter = computed(() => (props.filter ?? '').toLowerCase().trim());
+provide('treeFilter', treeFilter);
+
+// ── Helper: does node or any descendant match the filter? ──────────────────
+function nodeMatches(node, filter) {
+  if (!filter) return true;
+  const lbl = ((node.name ?? '') + ' ' + (node.category ?? '')).toLowerCase();
+  if (lbl.includes(filter)) return true;
+  return (node.children ?? []).some(c => nodeMatches(c, filter));
+}
+
+// ── Recursive tree node (inline renderless component) ──────────────────────
 const TreeNode = defineComponent({
   name: 'TreeNode',
   props: {
     node:  { type: Object, required: true },
     depth: { type: Number, default: 0 },
   },
-  emits: ['toggle-storey'],
+  emits: ['toggle-storey', 'zoom-to'],
   setup(props, { emit }) {
-    const open    = ref(props.depth < 2); // expand first 2 levels automatically
+    const open    = ref(props.depth < 2);
     const visible = ref(true);
 
-    function toggleExpand() { open.value = !open.value; }
+    const filter = inject('treeFilter', computed(() => ''));
+
+    function toggleExpand(e) {
+      e.stopPropagation();
+      open.value = !open.value;
+    }
 
     function toggleVisibility(e) {
       e.stopPropagation();
       visible.value = !visible.value;
       if (props.node.localId != null) {
         emit('toggle-storey', { localId: props.node.localId, visible: visible.value });
+      }
+    }
+
+    function zoomToNode(e) {
+      e.stopPropagation();
+      if (props.node.localId != null) {
+        emit('zoom-to', { localId: props.node.localId });
       }
     }
 
@@ -59,28 +85,42 @@ const TreeNode = defineComponent({
       return '📦';
     }
 
+    // A5: show element name if available, fall back to category
     function label(node) {
-      const cat = (node.category ?? 'Element').replace(/^IFC/, '');
-      return cat || '—';
+      const name = (node.name ?? '').trim();
+      const cat  = (node.category ?? 'Element').replace(/^IFC/, '');
+      return name || cat || '—';
     }
 
     return () => {
       const { node, depth } = props;
+      const f           = filter.value ?? '';
       const hasChildren = node.children?.length > 0;
-      const isStorey    = STOREY_TYPES.has((node.category ?? '').toUpperCase());
+
+      // A1: filter — hide nodes (and subtrees) that don't match
+      if (f && !nodeMatches(node, f)) return null;
+
+      const isStorey  = STOREY_TYPES.has((node.category ?? '').toUpperCase());
+      const forceOpen = f && hasChildren; // keep expanded when filter is active
+      const isOpen    = forceOpen || open.value;
 
       return h('div', { class: 'tree-node' }, [
         h('div', {
-          class: ['node-row', { open: open.value, 'is-storey': isStorey }],
+          class: ['node-row', { open: isOpen, 'is-storey': isStorey }],
           style: { paddingLeft: `${0.4 + depth * 0.9}rem` },
-          onClick: toggleExpand,
+          onClick: hasChildren ? toggleExpand : undefined,
         }, [
           hasChildren
-            ? h('span', { class: 'caret' }, open.value ? '▾' : '▸')
+            // A2: data-open attribute so expandAll/collapseAll can query it
+            ? h('span', { class: 'caret', 'data-open': String(isOpen), onClick: toggleExpand }, isOpen ? '▾' : '▸')
             : h('span', { class: 'leaf-dot' }, '·'),
 
           h('span', { class: 'node-icon' }, icon(node.category)),
-          h('span', { class: 'node-label' }, label(node)),
+          h('span', {
+            class: 'node-label',
+            title: node.localId != null ? `${label(node)} — Klick zum Zoomen` : label(node),
+            onClick: node.localId != null ? zoomToNode : undefined,
+          }, label(node)),
 
           node.localId != null
             ? h('button', {
@@ -91,7 +131,7 @@ const TreeNode = defineComponent({
             : null,
         ]),
 
-        hasChildren && open.value
+        hasChildren && isOpen
           ? h('div', { class: 'children' },
               node.children.map((child, i) =>
                 h(TreeNode, {
@@ -99,6 +139,7 @@ const TreeNode = defineComponent({
                   node: child,
                   depth: depth + 1,
                   onToggleStorey: (e) => emit('toggle-storey', e),
+                  onZoomTo:       (e) => emit('zoom-to', e),
                 })
               )
             )
@@ -119,15 +160,13 @@ const TreeNode = defineComponent({
   max-height: 480px;
   display: flex;
   flex-direction: column;
-  background: rgba(18, 20, 30, 0.96);
+  background: rgb(18, 20, 30);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   overflow: hidden;
 }
 
-/* when embedded inside a parent window – strip standalone chrome */
 .tree-panel--bare {
   position: static;
   width: 100%;
@@ -137,7 +176,6 @@ const TreeNode = defineComponent({
   background: transparent;
   border: none;
   box-shadow: none;
-  backdrop-filter: none;
 }
 
 .tree-empty {
@@ -177,12 +215,10 @@ const TreeNode = defineComponent({
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
-
-/* Tree node styles (not scoped — rendered via renderless component) */
 </style>
 
 <style>
-/* Global styles for TreeNode (renderless component can't use scoped) */
+/* Global — TreeNode renderless components don't get scoped attribute */
 .tree-node { }
 
 .node-row {
@@ -227,6 +263,7 @@ const TreeNode = defineComponent({
   text-overflow: ellipsis;
 }
 .node-row.is-storey .node-label { color: #90caf9; font-weight: 500; }
+.node-label:hover { color: #e3f2fd; text-decoration: underline; }
 
 .vis-btn {
   background: none; border: none; cursor: pointer;

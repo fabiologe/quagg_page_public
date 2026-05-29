@@ -34,6 +34,7 @@
         "leaflet-snap": "^0.0.4",
         "maplibre-gl": "^5.15.0",
         "pinia": "^2.3.1",
+        "polygon-clipping": "^0.15.7",
         "proj4": "^2.20.2",
         "three": "^0.181.2",
         "uuid": "^13.0.0",

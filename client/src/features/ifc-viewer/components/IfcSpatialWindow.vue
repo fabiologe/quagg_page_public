@@ -47,6 +47,7 @@
           :bare="true"
           :filter="filterText"
           @toggle-storey="onToggleStorey"
+          @zoom-to="onZoomTo"
         />
       </div>
 
@@ -73,6 +74,10 @@ const bodyRef    = ref(null);
 
 async function onToggleStorey({ localId, visible }) {
   await ifc.setStoreyVisible(localId, visible);
+}
+
+async function onZoomTo({ localId }) {
+  await ifc.zoomToElement(localId);
 }
 
 function expandAll()   { bodyRef.value?.querySelectorAll('.caret[data-open="false"]').forEach(el => el.click()); }
