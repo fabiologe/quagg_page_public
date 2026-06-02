@@ -107,6 +107,14 @@
             title="Als PDF exportieren"
           >📄<small>Export</small></button>
 
+          <!-- Planning Cockpit -->
+          <button
+            class="tool-btn"
+            :class="{ active: showPlanningCockpit }"
+            @click="showPlanningCockpit = !showPlanningCockpit"
+            title="Planungs-Cockpit (Flächen, Kostengruppen, BIM-Qualität)"
+          >📊<small>Planung</small></button>
+
           <div class="tool-divider"></div>
 
           <!-- T1.3: Measurement -->
@@ -254,8 +262,10 @@
           <IfcLayerPanel
             v-if="showLayerPanel && categoryList.length"
             :categories="categoryList"
+            :hasIfcGrids="!!engine?.getIfcGridAxes()?.length"
             @toggle="onToggleCategory"
             @zoom="({ name }) => engine?.zoomToCategory(name)"
+            @toggle-ifc-grids="(v) => engine?.setIfcGridsVisible(v)"
             @close="showLayerPanel = false"
           />
         </Transition>
@@ -313,9 +323,6 @@
           :applyLayerStyle="(style) => applyLayerStyle(style, engine)"
           :getScaleSnapshot="(s, dw, dh, dir, px, pz) => engine?.getScaleSnapshot(s, dw, dh, dir, 10, px ?? 0, pz ?? 0)"
           :truckCamera="(dx, dy) => engine?.truckCamera(dx, dy)"
-          :getOrthoExtent="() => engine?.getOrthoExtent()"
-          :setOrthoExtentForScale="(s, dw, dh) => engine?.setOrthoExtentForScale(s, dw, dh)"
-          :setOrthoExtent="(e) => engine?.setOrthoExtent(e)"
           :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
           :getScene="() => engine?._getWorld()?.scene?.three ?? null"
           :getPlotFrustum="() => engine?.getLastPlotFrustum()"
@@ -325,7 +332,31 @@
           :getMeasurements="() => measurements"
           :getWebIfcAPI="() => engine?.getWebIfcAPI()"
           :getSectionCutPlane="() => engine?.getSectionCutPlane()"
+          :getModelBoundsXZ="() => engine?.getModelBoundsXZ()"
+          :getOverviewSnapshot="(w, h) => engine?.getOverviewSnapshot(w, h)"
+          :getMainScene="() => engine?.getMainScene()"
+          :getModelCenterY="() => engine?.getModelCenterY() ?? 0"
+          :getClippingPlanes="() => engine?.getClippingPlanes() ?? []"
+          :withSectionVisualsHidden="(fn) => engine?.withSectionVisualsHidden(fn)"
+          :renderToCanvas="(cv, cam) => engine?.renderToCanvas(cv, cam) ?? false"
+          :getCameraTarget="() => engine?.getCameraTarget() ?? { x:0, y:0, z:0 }"
+          :getIfcGridAxes="() => engine?.getIfcGridAxes() ?? []"
           @close="showPdfExport = false"
+        />
+      </Teleport>
+
+      <Teleport to="body">
+        <IfcPlanningCockpit
+          v-if="showPlanningCockpit"
+          :getCategoryGroups="() => engine?.getCategoryGroups() ?? []"
+          :getFragmentsList="() => engine?.getFragmentsList() ?? new Map()"
+          :getFragmentsManager="() => engine?.getFragmentsManager() ?? null"
+          :getSpatialTree="() => engine?.getSpatialTree() ?? null"
+          :getStoreyList="() => engine?.getStoreyList() ?? []"
+          :zoomToElement="(modelId, localId) => engine?.zoomToElement(modelId, localId)"
+          :setElementColors="(colorMap) => engine?.setPerElementColors(colorMap)"
+          :resetElementColors="() => engine?.resetCategoryColors()"
+          @close="showPlanningCockpit = false"
         />
       </Teleport>
 
@@ -344,6 +375,7 @@ import { IfcEngine } from '../services/IfcEngine.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import IfcLayerPanel      from './IfcLayerPanel.vue';
 import IfcPdfExportModal  from './IfcPdfExportModal.vue';
+import IfcPlanningCockpit from './IfcPlanningCockpit.vue';
 import IfcSearchOverlay   from './IfcSearchOverlay.vue';
 import IfcLoadOverlay     from './IfcLoadOverlay.vue';
 import IfcShortcutsOverlay from './IfcShortcutsOverlay.vue';
@@ -391,6 +423,8 @@ const sectionPosition = ref(null); // { x, y, z } from engine
 const showPdfExport = ref(false);
 const showSearch    = ref(false);
 const showShortcuts = ref(false);
+// Planning cockpit (DIN 277 areas, DIN 276 KG, BIM quality)
+const showPlanningCockpit = ref(false);
 
 // T1.3: Measurement
 const measureActive    = ref(false);

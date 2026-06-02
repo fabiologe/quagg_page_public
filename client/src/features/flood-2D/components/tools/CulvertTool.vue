@@ -18,19 +18,39 @@
         </div>
       </div>
 
-      <!-- State: Popup / Eingabe der Kapazität -->
+      <!-- State: Popup / Hydraulikparameter -->
       <div v-else class="state-popup">
-        <div class="hint">Durchlasskapazität</div>
-        
-        <div class="input-group">
-          <label for="maxQ">Max. Durchfluss Q (m³/s)</label>
-          <input 
-            id="maxQ" 
-            type="number" 
-            v-model.number="maxQ" 
-            step="0.1" 
-            min="0.1" 
-          />
+        <div class="hint">Hydraulikparameter</div>
+
+        <div class="param-grid">
+          <div class="input-group">
+            <label>Durchmesser [m]</label>
+            <input type="number" v-model.number="form.diameter" step="0.1" min="0.1" />
+            <span class="field-hint">Kreisquerschnitt</span>
+          </div>
+          <div class="input-group">
+            <label>Länge [m]</label>
+            <input type="number" v-model.number="form.length" step="0.5" min="0.1" />
+          </div>
+          <div class="input-group">
+            <label>Sohlhöhe Einlauf [m NHN]</label>
+            <input type="number" v-model.number="form.z_in" step="0.05" />
+            <span class="field-hint">Auto aus Klickpunkt Z</span>
+          </div>
+          <div class="input-group">
+            <label>Sohlhöhe Auslauf [m NHN]</label>
+            <input type="number" v-model.number="form.z_out" step="0.05" />
+          </div>
+          <div class="input-group">
+            <label>Manning-n</label>
+            <input type="number" v-model.number="form.manning_n" step="0.001" min="0.005" max="0.1" />
+            <span class="field-hint">Beton ≈ 0.013</span>
+          </div>
+          <div class="input-group">
+            <label>Einlaufbeiwert Cd</label>
+            <input type="number" v-model.number="form.Cd" step="0.01" min="0.3" max="1.0" />
+            <span class="field-hint">Standard 0.6</span>
+          </div>
         </div>
 
         <div class="actions">
@@ -54,16 +74,24 @@ const geoStore = useGeoStore();
 const isActive = computed(() => simStore.activeTool === 'CULVERT');
 
 // --- 2. State-Machine ---
-const sourceNode = ref(null);
-const targetNode = ref(null);
+const sourceNode     = ref(null);
+const targetNode     = ref(null);
 const pendingCulvert = ref(false);
-const maxQ = ref(1.0);
+
+const form = ref({
+    diameter:  1.0,
+    z_in:      0.0,
+    z_out:     0.0,
+    length:    10.0,
+    manning_n: 0.013,
+    Cd:        0.6,
+});
 
 const resetState = () => {
-    sourceNode.value = null;
-    targetNode.value = null;
+    sourceNode.value     = null;
+    targetNode.value     = null;
     pendingCulvert.value = false;
-    maxQ.value = 1.0;
+    form.value = { diameter: 1.0, z_in: 0.0, z_out: 0.0, length: 10.0, manning_n: 0.013, Cd: 0.6 };
 };
 
 // State aufräumen, falls das Tool im Store gewechselt wird
@@ -84,11 +112,15 @@ const processClick = (coords) => {
     if (!coords || typeof coords.x !== 'number') return;
 
     if (!sourceNode.value) {
-        // Klick 1
         sourceNode.value = { x: coords.x, y: coords.y, z: coords.z };
+        form.value.z_in = parseFloat((coords.z ?? 0).toFixed(2));
     } else if (!targetNode.value) {
-        // Klick 2
         targetNode.value = { x: coords.x, y: coords.y, z: coords.z };
+        form.value.z_out   = parseFloat((coords.z ?? 0).toFixed(2));
+        form.value.length  = parseFloat(Math.hypot(
+            targetNode.value.x - sourceNode.value.x,
+            targetNode.value.y - sourceNode.value.y
+        ).toFixed(1));
         pendingCulvert.value = true;
     }
 };
@@ -140,8 +172,8 @@ const saveCulvert = () => {
         type: 'CULVERT_NODE'
     });
 
-    // C) Rohr-Link in geoStore anlegen
-    geoStore.addCulvertLink(sourceId, targetId, maxQ.value);
+    // C) Rohr-Link mit vollständigen Hydraulikparametern
+    geoStore.addCulvertLink(sourceId, targetId, { ...form.value });
 
     // D) Reset für nächstes Rohr
     resetState();
@@ -215,8 +247,20 @@ const cancelCulvert = () => {
 .state-popup {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     margin-top: 4px;
+}
+
+.param-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.field-hint {
+    font-size: 0.7rem;
+    color: #95a5a6;
+    line-height: 1.2;
 }
 
 .input-group {

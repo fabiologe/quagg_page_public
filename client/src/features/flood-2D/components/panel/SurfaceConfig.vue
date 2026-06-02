@@ -33,9 +33,13 @@
               title="Manning-Koeffizient"
               @click.stop
             />
-            <button 
-                v-if="mat.id !== 1" 
-                class="btn-delete" 
+            <span
+              class="infil-chip"
+              :title="`Infiltration: ${toMmh(mat.infiltration ?? 0).toFixed(1)} mm/h`"
+            >💧{{ toMmh(mat.infiltration ?? 0).toFixed(1) }}</span>
+            <button
+                v-if="mat.id !== 1"
+                class="btn-delete"
                 @click.stop="deleteMaterial(mat.id)"
                 title="Material löschen"
             >✕</button>
@@ -87,6 +91,9 @@ const updateManning = (matId, event) => {
   const mat = surfaceStore.materials.find(m => m.id === matId);
   if (mat) mat.manning = val;
 };
+
+// Convert m/s → mm/h for display
+const toMmh = (ms) => ms * 3.6e6;
 
 const getCoverage = (matId) => {
     if (!surfaceStore.coverageStats[matId]) return 0;
@@ -218,6 +225,16 @@ const addMaterial = () => {
 }
 .btn-delete:hover {
     opacity: 1;
+}
+
+.infil-chip {
+    font-size: 0.68rem;
+    color: #3498db;
+    background: rgba(52,152,219,0.12);
+    border-radius: 8px;
+    padding: 2px 5px;
+    white-space: nowrap;
+    cursor: default;
 }
 
 /* Coverage Bar */

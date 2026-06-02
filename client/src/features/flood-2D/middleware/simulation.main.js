@@ -224,6 +224,16 @@ self.onmessage = async (e) => {
 function checkFSForResults() {
     if (!FS) return;
 
+    // Read .mass file first (written by LISFLOOD on each massint interval + at end)
+    try {
+        const massBytes = FS.readFile('/results/res.mass');
+        if (massBytes && massBytes.length > 0) {
+            const massReport = OutputProcessor.parseMassFile(massBytes);
+            postMessage({ type: 'MASS_REPORT', data: massReport });
+            sendLog(`[Mass Balance] Verror=${massReport.summary['Verror']?.toExponential(2) ?? '?'}`);
+        }
+    } catch (_) { /* .mass file may not exist for very short runs */ }
+
     try {
         const files = FS.readdir('/results');
         sendLog(`[Result Check] Files in /results: ${files.join(', ')}`);

@@ -350,19 +350,6 @@ export class IfcEngine {
         await _yield();
     }
 
-    async _forceAllGeometryLod() {
-        const fragments = this.components.get(OBC.FragmentsManager);
-        for (const model of fragments.list.values()) {
-            try {
-                // ALL_VISIBLE = 1: "Displays all items as full geometry"
-                // Stronger than ALL_GEOMETRY (=2). Pipes/manholes always full-tessellated.
-                await model.setLodMode(FRAGS.LodMode.ALL_VISIBLE);
-            } catch (e) {
-                console.warn('[IfcEngine] setLodMode failed for model', model.modelId, e);
-            }
-        }
-    }
-
     async _applyDefaultCategoryColors(model) {
         if (!this._categoryGroups) return;
         for (const { name, groupData } of this._categoryGroups) {
@@ -697,18 +684,44 @@ export class IfcEngine {
     }
 
     /**
+     * Per-element colour override — used by the Planning Cockpit's KG-Modus.
+     *
+     * @param {Map<string, string>} colorMap  keys "modelId|localId", values "#rrggbb"
+     */
+    async setPerElementColors(colorMap) {
+        if (!colorMap?.size) return;
+        const fragments = this.components.get(OBC.FragmentsManager);
+        // Bucket localIds per model + colour to keep setColor() calls batched.
+        const buckets = new Map(); // `${modelId}|${hex}` → { modelId, hex, localIds }
+        for (const [key, hex] of colorMap.entries()) {
+            const sep = key.indexOf('|');
+            if (sep < 0) continue;
+            const modelId = key.slice(0, sep);
+            const localId = Number(key.slice(sep + 1));
+            if (!Number.isFinite(localId)) continue;
+            const bk = `${modelId}|${hex}`;
+            if (!buckets.has(bk)) buckets.set(bk, { modelId, hex, localIds: [] });
+            buckets.get(bk).localIds.push(localId);
+        }
+        for (const { modelId, hex, localIds } of buckets.values()) {
+            const model = fragments.list.get(modelId);
+            if (!model || !localIds.length) continue;
+            try { await model.setColor(localIds, new THREE.Color(hex)); }
+            catch (e) { console.warn('[Engine] per-element setColor failed', modelId, e?.message ?? e); }
+        }
+    }
+
+    /**
      * Snapshot current render state so it can be restored after a style preview.
      * Returns a plain object — pass it back to restoreRenderState().
      */
     saveRenderState() {
         const world = this._getWorld();
-        const cam   = world?.camera?.three;
         const bg    = world?.scene?.three?.background;
         return {
             bg:          bg ? bg.clone() : null,
             projection:  world?.camera?.projection?.current ?? 'Perspective',
             gridVisible: this._sceneGrid ? this._sceneGrid.three.visible : true,
-                orthoExtent: null, // scale export uses getScaleSnapshot — no frustum manipulation
         };
     }
 
@@ -720,7 +733,6 @@ export class IfcEngine {
         if (world?.camera?.projection)         await world.camera.projection.set(saved.projection);
         this.setGridVisible(saved.gridVisible);
         await this.resetCategoryColors();
-        if (saved.orthoExtent) this.setOrthoExtent(saved.orthoExtent);
     }
 
     // ── Spatial structure ────────────────────────────────────────────────────
@@ -892,8 +904,50 @@ export class IfcEngine {
     async _loadGrids(model, world) {
         try {
             const g = await model.getGrids();
-            if (g?.children?.length) world.scene.three.add(g);
+            if (g?.children?.length) {
+                g.userData.isIfcGridContainer = true;
+                world.scene.three.add(g);
+                if (!this._ifcGridGroups) this._ifcGridGroups = [];
+                this._ifcGridGroups.push(g);
+            }
         } catch (_) { /* model has no grids */ }
+    }
+
+    /** Toggle the visibility of all IFC structural grids (the IfcGrid axes). */
+    setIfcGridsVisible(visible) {
+        for (const g of (this._ifcGridGroups ?? [])) g.visible = !!visible;
+    }
+
+    /**
+     * Extract IfcGrid axis lines in world space for the vector PDF plot.
+     * Returns [{ name, start: {x, z}, end: {x, z} }] — top-view (XZ projection).
+     */
+    getIfcGridAxes() {
+        const out = [];
+        const v1 = new THREE.Vector3();
+        const v2 = new THREE.Vector3();
+        for (const g of (this._ifcGridGroups ?? [])) {
+            g.updateWorldMatrix(true, true);
+            g.traverse(obj => {
+                const pos = obj.geometry?.attributes?.position;
+                if (!pos) return;
+                const name = obj.name || obj.userData?.name || '';
+                const isSeg = obj.isLineSegments === true;
+                const isLine = obj.isLine === true || obj.type === 'Line';
+                if (!isSeg && !isLine) return;
+                const step = isSeg ? 2 : 1;
+                for (let i = 0; i + 1 < pos.count; i += step) {
+                    v1.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld);
+                    v2.fromBufferAttribute(pos, i + 1).applyMatrix4(obj.matrixWorld);
+                    out.push({
+                        name,
+                        start: { x: v1.x, z: v1.z },
+                        end:   { x: v2.x, z: v2.z },
+                    });
+                }
+            });
+        }
+        return out;
     }
 
     // ── Camera ───────────────────────────────────────────────────────────────
@@ -1557,7 +1611,135 @@ export class IfcEngine {
         const size   = new THREE.Vector3();
         box.getCenter(center);
         box.getSize(size);
-        return { center, size, maxDim: Math.max(size.x, size.y, size.z) };
+        return { center, size, maxDim: Math.max(size.x, size.y, size.z), box };
+    }
+
+    /**
+     * Live access to the main Three.js scene — used by an auxiliary renderer
+     * (e.g. the PDF modal's overview viewport) to render the same world from
+     * a different camera. Returns null if the engine has not been set up yet.
+     */
+    getMainScene() {
+        return this._getWorld()?.scene?.three ?? null;
+    }
+
+    /** Y of the model bounding-box centre — anchor for top-down ortho cameras. */
+    getModelCenterY() {
+        return this._getModelBounds()?.center?.y ?? 0;
+    }
+
+    /**
+     * Current camera-controls target in world coordinates. The PDF modal's
+     * overview needs this so it can express its `panOffset` relative to the
+     * real controls target — `getScaleSnapshot` then renders centred on
+     * `controls.target + panOffset`, which only lines up with the overview
+     * rectangle when we share the same reference point.
+     */
+    getCameraTarget() {
+        const t = new THREE.Vector3();
+        const ctrl = this._getWorld()?.camera?.controls;
+        if (ctrl?.getTarget) ctrl.getTarget(t);
+        return { x: t.x, y: t.y, z: t.z };
+    }
+
+    /**
+     * Current section-cut clipping planes (so auxiliary renderers can apply the
+     * same clipping). Empty array when no section cut is active.
+     */
+    getClippingPlanes() {
+        const world = this._getWorld();
+        return world?.renderer?.three?.clippingPlanes ?? [];
+    }
+
+    /**
+     * Synchronously execute `renderFn` with the section-cut helpers (gizmo +
+     * plane mesh) temporarily hidden. Used by the overview viewport so its
+     * Top-Down render isn't cluttered by 3D widgets that only make sense from
+     * the main camera.
+     */
+    withSectionVisualsHidden(renderFn) {
+        const hidden = this._hideSectionVisuals();
+        try { renderFn(); }
+        finally { this._restoreSectionVisuals(hidden); }
+    }
+
+    /**
+     * Render the live scene through `camera` into the pixel buffer of the
+     * given 2D canvas. Used by the PDF modal's overview viewport.
+     *
+     * Why not a second WebGLRenderer? Each renderer creates its own GL context,
+     * and OBC's Fragment instance buffers are uploaded only to whichever
+     * context first rendered them — so a second context shows no IFC geometry.
+     * Reusing the main renderer guarantees identical output to what the user
+     * sees in the main viewport.
+     *
+     * @param {HTMLCanvasElement} canvas2d  destination canvas (any 2D context)
+     * @param {THREE.Camera}      camera     ortho/perspective camera
+     * @returns {boolean} success
+     */
+    renderToCanvas(canvas2d, camera) {
+        const world = this._getWorld();
+        if (!world || !canvas2d || !camera) return false;
+        const renderer = world.renderer.three;
+        const scene    = world.scene.three;
+        const w = canvas2d.width;
+        const h = canvas2d.height;
+        if (!w || !h) return false;
+
+        // Reuse a single render target across calls to avoid GPU memory churn
+        // (30 fps × 280×190 RGBA = a lot of allocs otherwise).
+        if (!this._auxRT || this._auxRT.width !== w || this._auxRT.height !== h) {
+            if (this._auxRT) this._auxRT.dispose();
+            this._auxRT = new THREE.WebGLRenderTarget(w, h, {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                format:    THREE.RGBAFormat,
+            });
+        }
+        const rt = this._auxRT;
+
+        const hidden = this._hideSectionVisuals();
+        renderer.setRenderTarget(rt);
+        renderer.render(scene, camera);
+        renderer.setRenderTarget(null);
+        this._restoreSectionVisuals(hidden);
+
+        const pixels = new Uint8ClampedArray(w * h * 4);
+        renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
+
+        // NB: we deliberately do NOT call renderer.render(scene, mainCam) here.
+        // OBC owns the main canvas through its own rAF tick; restoring it on
+        // every overview render at 30 fps would compete with getScaleSnapshot
+        // and applyLayerStyle for the renderer state (white-screen flash on
+        // scale switch, snapshot failing to update).
+
+        // WebGL pixels: origin bottom-left → flip into the canvas's top-left ImageData.
+        const ctx = canvas2d.getContext('2d');
+        const imageData = ctx.createImageData(w, h);
+        const stride = w * 4;
+        for (let y = 0; y < h; y++) {
+            const src = (h - 1 - y) * stride;
+            imageData.data.set(pixels.subarray(src, src + stride), y * stride);
+        }
+        ctx.putImageData(imageData, 0, 0);
+        return true;
+    }
+
+    /**
+     * Public XZ bounds for the overview thumbnail and re-centering logic.
+     * Returns null when no model is loaded. Coordinates are world-space meters.
+     */
+    getModelBoundsXZ() {
+        const b = this._getModelBounds();
+        if (!b) return null;
+        const { box, center } = b;
+        return {
+            minX: box.min.x, maxX: box.max.x,
+            minZ: box.min.z, maxZ: box.max.z,
+            centerX: center.x, centerZ: center.z,
+            width:  box.max.x - box.min.x,
+            depth:  box.max.z - box.min.z,
+        };
     }
 
     async _fitCameraToModel(model, world) {
@@ -1799,33 +1981,30 @@ export class IfcEngine {
      * @param {'top'|'front'|'side'} viewDir
      * @param {number} pxPerMm       - render resolution (default 10 → 10 px/mm ≈ 254 dpi)
      */
-    getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir = 'top', pxPerMm = 10, panX = 0, panZ = 0) {
-        const world = this._getWorld();
-        if (!world) return null;
-
+    /**
+     * Off-screen ortho render into a paper-aspect canvas. Shared by
+     * `getScaleSnapshot` (paper-scale plot) and `getOverviewSnapshot`
+     * (fit-all mini-map). Returns { dataUrl, ortho } so callers can persist
+     * the frustum if they need it.
+     *
+     * @param {THREE.Vector3} target  ortho camera look-at point (world metres)
+     * @param {number} halfW          half-extent in world metres (X for top/side, X for front)
+     * @param {number} halfH          half-extent in world metres (Z for top, Y for front/side)
+     * @param {string} viewDir        'top' | 'front' | 'side'
+     * @param {number} rtW            render-target width  in pixels
+     * @param {number} rtH            render-target height in pixels
+     */
+    _renderOrthoOffscreen(target, halfW, halfH, viewDir, rtW, rtH) {
+        const world    = this._getWorld();
         const renderer = world.renderer.three;
         const scene    = world.scene.three;
         const mainCam  = world.camera.three;
 
-        // ── Welt-Ausdehnung ────────────────────────────────────────────────
-        const halfW = (drawWidthMm  / 1000 * scaleRatio) / 2;
-        const halfH = (drawHeightMm / 1000 * scaleRatio) / 2;
-
-        // ── RenderTarget mit exaktem Papier-Seitenverhältnis ───────────────
-        const rtW = Math.round(drawWidthMm  * pxPerMm);
-        const rtH = Math.round(drawHeightMm * pxPerMm);
-        const rt  = new THREE.WebGLRenderTarget(rtW, rtH, {
+        const rt = new THREE.WebGLRenderTarget(rtW, rtH, {
             minFilter: THREE.LinearFilter,
             magFilter: THREE.LinearFilter,
             format:    THREE.RGBAFormat,
         });
-
-        // ── Orthogonale Kamera ─────────────────────────────────────────────
-        // Centre = camera look-at target + pan offset (in world metres)
-        const target = new THREE.Vector3();
-        world.camera.controls.getTarget(target);
-        target.x += panX;
-        target.z += panZ;
 
         const ortho = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, -100000, 100000);
         if (viewDir === 'front') {
@@ -1835,15 +2014,55 @@ export class IfcEngine {
             ortho.position.set(target.x + 10000, target.y, target.z);
             ortho.up.set(0, 1, 0);
         } else {
-            // top: Draufsicht, Z ist "Nord" auf dem Plan
+            // top view: Z points "north" on paper
             ortho.position.set(target.x, target.y + 10000, target.z);
             ortho.up.set(0, 0, -1);
         }
         ortho.lookAt(target.x, target.y, target.z);
         ortho.updateProjectionMatrix();
 
-        // Sprint A: persist the EXACT camera state used for this snapshot so the
-        // vector plotter can use the same coordinate frame for world→paper transforms.
+        const hidden = this._hideSectionVisuals();
+        renderer.setRenderTarget(rt);
+        renderer.render(scene, ortho);
+        renderer.setRenderTarget(null);
+        this._restoreSectionVisuals(hidden);
+
+        // Y-flip WebGL pixels (origin bottom-left) → canvas (origin top-left)
+        const pixels = new Uint8ClampedArray(rtW * rtH * 4);
+        renderer.readRenderTargetPixels(rt, 0, 0, rtW, rtH, pixels);
+        rt.dispose();
+
+        const out = document.createElement('canvas');
+        out.width = rtW; out.height = rtH;
+        const ctx = out.getContext('2d');
+        for (let y = 0; y < rtH; y++) {
+            const row = new Uint8ClampedArray(pixels.buffer, (rtH - 1 - y) * rtW * 4, rtW * 4);
+            ctx.putImageData(new ImageData(row, rtW, 1), 0, y);
+        }
+
+        renderer.render(scene, mainCam);
+        return { dataUrl: out.toDataURL('image/png', 0.92), ortho };
+    }
+
+    getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir = 'top', pxPerMm = 10, panX = 0, panZ = 0) {
+        const world = this._getWorld();
+        if (!world) return null;
+
+        const halfW = (drawWidthMm  / 1000 * scaleRatio) / 2;
+        const halfH = (drawHeightMm / 1000 * scaleRatio) / 2;
+        const rtW   = Math.round(drawWidthMm  * pxPerMm);
+        const rtH   = Math.round(drawHeightMm * pxPerMm);
+
+        // Camera look-at target + user pan offset (in world metres)
+        const target = new THREE.Vector3();
+        world.camera.controls.getTarget(target);
+        target.x += panX;
+        target.z += panZ;
+
+        const { dataUrl, ortho } = this._renderOrthoOffscreen(target, halfW, halfH, viewDir, rtW, rtH);
+
+        // Persist the exact camera state so the vector plotter can use the same
+        // coordinate frame for world→paper transforms.
         this._lastPlotFrustum = {
             left:     ortho.left,
             right:    ortho.right,
@@ -1858,30 +2077,79 @@ export class IfcEngine {
             drawHeightMm,
         };
 
-        // ── Off-Screen rendern (Section-Visuals temporär versteckt) ────────
-        const hidden = this._hideSectionVisuals();
-        renderer.setRenderTarget(rt);
-        renderer.render(scene, ortho);
-        renderer.setRenderTarget(null);
-        this._restoreSectionVisuals(hidden);
+        return dataUrl;
+    }
 
-        // ── Pixel auslesen + Y-Flip (WebGL: Ursprung unten-links) ──────────
-        const pixels = new Uint8ClampedArray(rtW * rtH * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, rtW, rtH, pixels);
-        rt.dispose();
+    /**
+     * Top-down snapshot used by the modal's overview thumbnail.
+     *
+     *   getOverviewSnapshot(w, h)          — fit-all (model bbox + 10% padding)
+     *   getOverviewSnapshot(w, h, bounds)  — explicit XZ extent (for wheel-zoom)
+     *
+     * The returned image's pixel dimensions match (widthPx, heightPx); the
+     * world bounds it covers are returned in `bounds` so the caller can map
+     * world coordinates onto canvas pixels for the viewport rectangle.
+     *
+     * Renders the live scene each call, so layer toggles / section cuts /
+     * style changes are reflected at the next refresh.
+     *
+     * @param {number} widthPx
+     * @param {number} heightPx
+     * @param {object|null} viewBounds  optional { minX, maxX, minZ, maxZ }
+     * @returns {{ dataUrl: string, bounds: {minX, maxX, minZ, maxZ} } | null}
+     */
+    getOverviewSnapshot(widthPx = 240, heightPx = 160, viewBounds = null) {
+        const world = this._getWorld();
+        if (!world) return null;
+        const modelBounds = this._getModelBounds();
+        if (!modelBounds) return null;
 
-        const out = document.createElement('canvas');
-        out.width = rtW; out.height = rtH;
-        const ctx = out.getContext('2d');
-        for (let y = 0; y < rtH; y++) {
-            const row = new Uint8ClampedArray(pixels.buffer, (rtH - 1 - y) * rtW * 4, rtW * 4);
-            ctx.putImageData(new ImageData(row, rtW, 1), 0, y);
+        const canvasAspect = widthPx / heightPx;
+        let halfW, halfH, target;
+
+        if (viewBounds) {
+            // Wheel-zoom / pan request — render the exact requested rectangle,
+            // but expand to match the canvas aspect (the smaller dimension grows)
+            // so we never stretch the snapshot.
+            const reqW = viewBounds.maxX - viewBounds.minX;
+            const reqD = viewBounds.maxZ - viewBounds.minZ;
+            const reqAspect = reqW / reqD;
+            if (reqAspect > canvasAspect) {
+                halfW = reqW / 2;
+                halfH = halfW / canvasAspect;
+            } else {
+                halfH = reqD / 2;
+                halfW = halfH * canvasAspect;
+            }
+            target = new THREE.Vector3(
+                (viewBounds.minX + viewBounds.maxX) / 2,
+                modelBounds.center.y,
+                (viewBounds.minZ + viewBounds.maxZ) / 2,
+            );
+        } else {
+            // Default fit-all: model bbox + 10% padding.
+            const pad = 1.10;
+            const worldW = modelBounds.size.x * pad;
+            const worldD = modelBounds.size.z * pad;
+            const worldAspect = worldW / worldD;
+            if (worldAspect > canvasAspect) {
+                halfW = worldW / 2;
+                halfH = halfW / canvasAspect;
+            } else {
+                halfH = worldD / 2;
+                halfW = halfH * canvasAspect;
+            }
+            target = modelBounds.center.clone();
         }
 
-        // ── Haupt-Canvas mit Original-Kamera + sichtbaren Visuals wiederherstellen
-        renderer.render(scene, mainCam);
-
-        return out.toDataURL('image/png', 0.92);
+        const { dataUrl } = this._renderOrthoOffscreen(target, halfW, halfH, 'top', widthPx, heightPx);
+        return {
+            dataUrl,
+            bounds: {
+                minX: target.x - halfW, maxX: target.x + halfW,
+                minZ: target.z - halfH, maxZ: target.z + halfH,
+            },
+        };
     }
 
     /**
@@ -1891,13 +2159,8 @@ export class IfcEngine {
      */
     getLastPlotFrustum() { return this._lastPlotFrustum ?? null; }
 
-    // Kept for saveRenderState/restoreRenderState — no longer needed for scale export
-    // but preserves backward compatibility if called.
-    getOrthoExtent() { return null; }
-    setOrthoExtent(_e) { /* no-op: scale export uses getScaleSnapshot */ }
-    setOrthoExtentForScale(_s, _w, _h) { /* no-op: scale export uses getScaleSnapshot */ }
-
     dispose() {
+        if (this._auxRT) { this._auxRT.dispose(); this._auxRT = null; }
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

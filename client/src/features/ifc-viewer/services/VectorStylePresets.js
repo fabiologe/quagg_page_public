@@ -15,25 +15,58 @@ function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none') {
 }
 
 /**
- * DIN-orientiert: schwarze Linien in nach Wandstärke abgestuften Strichdicken,
- * Beton-Schraffur in Schnittflächen, gestrichelt für Treppen/Dächer (DIN 1356-2).
+ * DIN 1356-1:1995-02 — Tabelle 2 "Linienbreiten", Liniengruppe II für Maßstab 1:100.
+ *
+ *   Zeile 1 — Begrenzung von Schnittflächen        0.50 mm  (Vollinie)
+ *   Zeile 2 — Sichtbare Kanten / Umrisse           0.35 mm  (Vollinie, auch für schmale
+ *                                                  Bauteile in der Schnittfläche)
+ *   Zeile 3 — Maßlinien / Hilfslinien              0.25 mm  (Vollinie)
+ *   Zeile 4 — Verdeckte Kanten                     0.35 mm  (Strichlinie)
+ *   Zeile 6 — Achsen                               0.25 mm  (Strichpunktlinie)
+ *   Zeile 7 — Bauteile vor/über Schnittebene       0.35 mm  (Punktlinie) — wird im
+ *                                                  Plotter automatisch über aboveCut
+ *                                                  als dotted gesetzt.
+ *
+ * Schraffuren: Beton-45° für tragende massive Bauteile, Stahl-Kreuzschraffur für Profile.
+ * IFCSPACE: hellgrau/dotted, ausschließlich zur Raumkennzeichnung.
  */
 const DIN_STYLES = {
-    IFCWALL:              mk('#000000', 0.50, 'solid',   'concrete'),
-    IFCWALLSTANDARDCASE:  mk('#000000', 0.50, 'solid',   'concrete'),
-    IFCCOLUMN:            mk('#000000', 0.70, 'solid',   'concrete'),
-    IFCBEAM:              mk('#000000', 0.50, 'solid',   'steel'),
-    IFCSLAB:              mk('#000000', 0.35, 'solid',   'concrete'),
-    IFCROOF:              mk('#000000', 0.35, 'dashed'),
-    IFCSTAIR:             mk('#000000', 0.35, 'dashed'),
-    IFCSTAIRFLIGHT:       mk('#000000', 0.35, 'dashed'),
+    // ── Begrenzung von Schnittflächen — 0.50 mm Vollinie ───────────────────
+    IFCWALL:              mk('#000000', 0.50, 'solid',  'concrete'),
+    IFCWALLSTANDARDCASE:  mk('#000000', 0.50, 'solid',  'concrete'),
+    IFCWALLTYPE:          mk('#000000', 0.50, 'solid',  'concrete'),
+    IFCCOLUMN:            mk('#000000', 0.50, 'solid',  'concrete'),
+    IFCCOLUMNTYPE:        mk('#000000', 0.50, 'solid',  'concrete'),
+    IFCBEAM:              mk('#000000', 0.50, 'solid',  'steel'),
+    IFCBEAMTYPE:          mk('#000000', 0.50, 'solid',  'steel'),
+    IFCFOOTING:           mk('#000000', 0.50, 'solid',  'concrete'),
+    IFCFOOTINGTYPE:       mk('#000000', 0.50, 'solid',  'concrete'),
+
+    // ── Sichtbare Kanten — 0.35 mm Vollinie ────────────────────────────────
+    IFCSLAB:              mk('#000000', 0.35, 'solid',  'concrete'),
+    IFCSLABTYPE:          mk('#000000', 0.35, 'solid',  'concrete'),
+    IFCROOF:              mk('#000000', 0.35, 'solid'),
+    IFCSTAIR:             mk('#000000', 0.35, 'solid'),
+    IFCSTAIRFLIGHT:       mk('#000000', 0.35, 'solid'),
+
+    // ── Sichtbare Kanten kleiner Bauteile / Sekundärbauteile — 0.25 mm ────
     IFCDOOR:              mk('#000000', 0.25, 'solid'),
+    IFCDOORTYPE:          mk('#000000', 0.25, 'solid'),
     IFCWINDOW:            mk('#000000', 0.25, 'solid'),
-    IFCFOOTING:           mk('#000000', 0.50, 'solid',   'concrete'),
-    IFCRAILING:           mk('#000000', 0.18, 'solid'),
-    IFCMEMBER:            mk('#000000', 0.35, 'solid'),
-    IFCSPACE:             mk('#969696', 0.12, 'dotted'),
-    IFCFURNITURE:         mk('#646464', 0.15, 'solid'),
+    IFCWINDOWTYPE:        mk('#000000', 0.25, 'solid'),
+    IFCRAILING:           mk('#000000', 0.25, 'solid'),
+    IFCMEMBER:            mk('#000000', 0.25, 'solid'),
+    IFCPLATE:             mk('#000000', 0.25, 'solid'),
+    IFCBUILDINGELEMENTPROXY: mk('#000000', 0.25, 'solid'),
+
+    // ── Mobiliar, Zubehör — 0.18 mm ───────────────────────────────────────
+    IFCFURNITURE:         mk('#646464', 0.18, 'solid'),
+    IFCFURNITURETYPE:     mk('#646464', 0.18, 'solid'),
+
+    // ── Räume zur Beschriftung — 0.13 mm dotted ───────────────────────────
+    IFCSPACE:             mk('#969696', 0.13, 'dotted'),
+
+    default:              mk('#646464', 0.25, 'solid'),
 };
 
 /**

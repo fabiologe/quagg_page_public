@@ -73,6 +73,7 @@
                 <th class="col-width">Stärke (mm)</th>
                 <th class="col-dash">Linientyp</th>
                 <th class="col-hatch">Schraffur</th>
+                <th class="col-label">Beschriftung</th>
                 <th class="col-on">An</th>
                 <th class="col-reset"></th>
               </tr>
@@ -109,6 +110,27 @@
                           @change="onPatch(row.category, { hatchPattern: $event.target.value })">
                     <option v-for="h in HATCH_OPTIONS" :key="h" :value="h">{{ h }}</option>
                   </select>
+                </td>
+                <td class="col-label">
+                  <div class="vse-label-cell">
+                    <input type="text" :value="row.labelTemplate"
+                           placeholder="z.B. {Name}"
+                           @input="onPatch(row.category, { labelTemplate: $event.target.value })" />
+                    <input type="number" step="0.1" min="0.5" max="20" class="vse-font-input"
+                           title="Schrifthöhe (mm)"
+                           :value="row.labelFontSize"
+                           @input="onPatch(row.category, { labelFontSize: +$event.target.value })" />
+                    <select class="vse-anchor-input" title="Ausrichtung"
+                            :value="row.labelAnchor"
+                            @change="onPatch(row.category, { labelAnchor: $event.target.value })">
+                      <option value="center">⊙</option>
+                      <option value="top">▲</option>
+                      <option value="bottom">▼</option>
+                      <option value="left">◀</option>
+                      <option value="right">▶</option>
+                    </select>
+                    <button class="vse-iconbtn" title="Verfügbare Attribute…" @click="openAttrBrowser(row.category)">🔍</button>
+                  </div>
                 </td>
                 <td class="col-on">
                   <input type="checkbox" :checked="row.enabled"
@@ -210,11 +232,58 @@
                         @change="onStylePatch(rule, { hatchPattern: $event.target.value })">
                   <option v-for="h in HATCH_OPTIONS" :key="h" :value="h">{{ h }}</option>
                 </select>
+                <input :value="rule.style.labelTemplate ?? ''"
+                       placeholder="Label-Template (optional)"
+                       style="flex: 1; min-width: 160px;"
+                       @change="onStylePatch(rule, { labelTemplate: $event.target.value })" />
               </div>
             </div>
           </div>
         </div>
         </template>
+
+        <!-- ── Attribute Browser overlay (shown on top of either tab) ── -->
+        <Transition name="fade">
+          <div v-if="attrBrowser.open" class="vse-attr-overlay" @mousedown.self="attrBrowser.open = false">
+            <div class="vse-attr-modal">
+              <div class="vse-attr-header">
+                <span class="vse-attr-title">🔍 Attribute · {{ attrBrowser.category }}</span>
+                <button class="vse-close" @click="attrBrowser.open = false">✕</button>
+              </div>
+              <div class="vse-attr-info">
+                <span v-if="attrBrowser.loading">Lese {{ attrBrowser.sampleSize }} Beispiele…</span>
+                <span v-else>
+                  {{ attrBrowser.result?.samplesUsed ?? 0 }} von {{ attrBrowser.result?.totalElements ?? 0 }} Elementen analysiert.
+                  Klick auf eine Zeile fügt das Token in das Label-Template ein.
+                </span>
+              </div>
+              <div class="vse-attr-body" v-if="!attrBrowser.loading && attrBrowser.result">
+                <div v-if="attrBrowser.result.attributes.length" class="vse-attr-section">
+                  <div class="vse-attr-section-title">Attribute</div>
+                  <div v-for="a in attrBrowser.result.attributes" :key="'a-' + a.key"
+                       class="vse-attr-row" @click="insertToken(a.key)">
+                    <span class="vse-attr-token">{{ '{' + a.key + '}' }}</span>
+                    <span class="vse-attr-samples" :title="a.samples.join(', ')">
+                      {{ a.samples.slice(0, 3).join(' · ') }}
+                    </span>
+                  </div>
+                </div>
+                <div v-for="ps in attrBrowser.result.psets" :key="'p-' + ps.name" class="vse-attr-section">
+                  <div class="vse-attr-section-title">{{ ps.name }}</div>
+                  <div v-for="p in ps.properties" :key="'p-' + ps.name + '-' + p.key"
+                       class="vse-attr-row" @click="insertToken(ps.name + '.' + p.key)">
+                    <span class="vse-attr-token">{{ '{' + ps.name + '.' + p.key + '}' }}</span>
+                    <span class="vse-attr-samples" :title="p.samples.join(', ')">
+                      {{ p.samples.slice(0, 3).join(' · ') }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="!attrBrowser.result.attributes.length && !attrBrowser.result.psets.length"
+                     class="vse-empty">Keine Attribute/Psets in dieser Kategorie gefunden.</div>
+              </div>
+            </div>
+          </div>
+        </Transition>
 
       </div>
     </div>
@@ -225,11 +294,15 @@
 import { ref, computed, reactive } from 'vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { DASH_PATTERNS, HATCH_PATTERNS_OPTIONS } from '../services/DefaultLineStyles.js';
+import { probeCategory } from '../services/CategoryAttributeProbe.js';
 
 const props = defineProps({
-  open:           { type: Boolean, default: false },
-  categoryNames:  { type: Array,   default: () => [] }, // from engine.getCategoryList() → just names
-  modelList:      { type: Array,   default: () => [] }, // [{ modelId, name }]
+  open:                { type: Boolean,  default: false },
+  categoryNames:       { type: Array,    default: () => [] },
+  modelList:           { type: Array,    default: () => [] },
+  getCategoryGroups:   { type: Function, default: null },   // () => engine.getCategoryGroups()
+  getFragmentsList:    { type: Function, default: null },
+  getFragmentsManager: { type: Function, default: null },
 });
 const emit = defineEmits(['close']);
 
@@ -307,6 +380,49 @@ function onStylePatch(rule, patch) {
   ifc.updateVectorRule(rule.id, { style: { ...rule.style, ...patch } });
 }
 
+// ── Attribute Browser ───────────────────────────────────────────────────────
+const attrBrowser = reactive({
+  open: false,
+  category: '',
+  loading: false,
+  result: null,
+  sampleSize: 30,
+});
+
+async function openAttrBrowser(category) {
+  attrBrowser.category = category;
+  attrBrowser.open     = true;
+  attrBrowser.loading  = true;
+  attrBrowser.result   = null;
+
+  const groups   = props.getCategoryGroups?.() ?? [];
+  const fragList = props.getFragmentsList?.() ?? null;
+  const fragMgr  = props.getFragmentsManager?.() ?? null;
+  if (!groups.length || !fragMgr) {
+    attrBrowser.loading = false;
+    attrBrowser.result  = { attributes: [], psets: [], samplesUsed: 0, totalElements: 0 };
+    return;
+  }
+  try {
+    attrBrowser.result = await probeCategory(category, groups, fragList, fragMgr, attrBrowser.sampleSize);
+  } catch {
+    attrBrowser.result = { attributes: [], psets: [], samplesUsed: 0, totalElements: 0 };
+  }
+  attrBrowser.loading = false;
+}
+
+function insertToken(token) {
+  // Append the token to the category's existing label template
+  const cat = attrBrowser.category;
+  if (!cat) return;
+  const styles = ifc.vectorStyles ?? {};
+  const current = styles[cat]?.labelTemplate ?? '';
+  const sep = current && !current.endsWith(' ') ? ' ' : '';
+  const next = current + sep + '{' + token + '}';
+  if (scopeModelId.value) ifc.setVectorStyleForModel(scopeModelId.value, cat, { labelTemplate: next });
+  else                    ifc.setVectorStyle(cat, { labelTemplate: next });
+}
+
 // Active style source — global vectorStyles, optionally merged with model override
 const activeStyles = computed(() => {
   if (!scopeModelId.value) return ifc.vectorStyles ?? {};
@@ -330,7 +446,10 @@ const rows = computed(() => {
       lineWidth:    s.lineWidth    ?? 0.18,
       lineDash:     s.lineDash     ?? 'solid',
       hatchPattern: s.hatchPattern ?? 'none',
-      enabled:      s.enabled !== false,
+      labelTemplate:  s.labelTemplate  ?? '',
+      labelFontSize:  s.labelFontSize  ?? 2.2,
+      labelAnchor:    s.labelAnchor    ?? 'center',
+      enabled:        s.enabled !== false,
       isOverridden,
     };
   }).sort((a, b) => a.label.localeCompare(b.label));
@@ -472,8 +591,19 @@ function applyBulk() {
 .col-width { width: 90px; }
 .col-dash  { width: 110px; }
 .col-hatch { width: 110px; }
+.col-label { width: 260px; }
+.vse-font-input { width: 52px; }
+.vse-anchor-input { width: 44px; }
 .col-on    { width: 50px; text-align: center; }
 .col-reset { width: 40px; text-align: center; }
+.vse-label-cell { display: flex; gap: 0.2rem; align-items: center; }
+.vse-label-cell input[type="text"] {
+  flex: 1; padding: 0.2rem 0.4rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px; color: #cfd8dc; font-size: 0.74rem;
+  min-width: 100px;
+}
 
 .vse-table input[type="color"] { width: 32px; height: 22px; border: none; padding: 0; background: none; cursor: pointer; }
 .vse-table input[type="number"], .vse-table select {
@@ -614,6 +744,65 @@ function applyBulk() {
 .vse-rule-style input[type="number"] { width: 70px; }
 .vse-iconbtn--danger { color: #ef9a9a; }
 .vse-iconbtn--danger:hover { background: rgba(239,83,80,0.15); color: #ef5350; border-radius: 3px; }
+
+/* Attribute browser overlay */
+.vse-attr-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 5;
+}
+.vse-attr-modal {
+  width: 600px; max-width: 92%; max-height: 80%;
+  background: #1a1e2e;
+  border: 1px solid rgba(102,187,106,0.4);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.vse-attr-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.55rem 0.9rem;
+  background: rgba(102,187,106,0.10);
+  border-bottom: 1px solid rgba(102,187,106,0.3);
+  flex-shrink: 0;
+}
+.vse-attr-title { font-size: 0.85rem; font-weight: 700; color: #a5d6a7; }
+.vse-attr-info {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.7rem; color: #78909c;
+  background: rgba(20,24,36,0.5);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  flex-shrink: 0;
+}
+.vse-attr-body {
+  flex: 1; overflow-y: auto; padding: 0.5rem 0.9rem;
+}
+.vse-attr-section { margin-bottom: 1rem; }
+.vse-attr-section-title {
+  font-size: 0.72rem; font-weight: 700; color: #ffd54f;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,213,79,0.2);
+  margin-bottom: 0.3rem;
+}
+.vse-attr-row {
+  display: flex; justify-content: space-between; gap: 0.5rem; align-items: center;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer; transition: background 0.12s;
+}
+.vse-attr-row:hover { background: rgba(102,187,106,0.12); }
+.vse-attr-token {
+  font-family: monospace; font-size: 0.74rem; color: #a5d6a7;
+  background: rgba(102,187,106,0.08);
+  padding: 0.1rem 0.4rem; border-radius: 3px;
+}
+.vse-attr-samples {
+  font-size: 0.7rem; color: #78909c;
+  flex: 1; text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.18s; }
 .fade-enter-from, .fade-leave-to       { opacity: 0; }

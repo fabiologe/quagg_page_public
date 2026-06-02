@@ -95,6 +95,11 @@
           v-if="simStore.activeTool === 'WEIR'"
        />
 
+       <!-- BRIDGE UI -->
+       <BridgeTool
+          v-if="simStore.activeTool === 'BRIDGE'"
+       />
+
        <!-- NODE/SOURCE UI -->
        <NodeTool 
           v-if="simStore.activeTool === 'NODE'"
@@ -339,6 +344,7 @@ import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
 import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
+import { useBridgeTool } from '../../composables/editor/useBridgeTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
 import { useHistoryManager } from '../../composables/useHistoryManager.js';
 import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPointsRenderer.js';
@@ -358,6 +364,7 @@ import CompassRose from './CompassRose.vue';
 import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
 import WeirTool from '../tools/WeirTool.vue';
+import BridgeTool from '../tools/BridgeTool.vue';
 import NodeTool from '../tools/NodeTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
@@ -399,7 +406,8 @@ const culvertTool = useCulvertTool();
 const textureTool = useTextureTool();
 const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
-const weirTool = useWeirTool();
+const weirTool   = useWeirTool();
+const bridgeTool = useBridgeTool();
 const channelLineTool    = getChannelLineToolInstance();
 const channelPolygonTool = getChannelPolygonToolInstance();
 const refPickTool        = getRefPickToolInstance();
@@ -473,7 +481,8 @@ const tools = {
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
-    'WEIR': weirTool,           // handles hover/ghost cell
+    'WEIR':   weirTool,
+    'BRIDGE': bridgeTool,
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),

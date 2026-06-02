@@ -114,9 +114,9 @@ export function useTextureTool() {
                 const gridRow = centerGridRow + dr;
                 if (col < 0 || col >= ncols || gridRow < 0 || gridRow >= nrows) continue;
 
-                // gridRow here is in grid convention (0=bottom), convert to geometry convention (0=top row in PlaneGeometry)
+                // gridRow (0=bottom) → geomRow (0=top). Stride = ncols+1 (PlaneGeometry with ncols segments has ncols+1 vertices/row)
                 const geomRow = (nrows - 1) - gridRow;
-                const vertexIdx = geomRow * ncols + col;
+                const vertexIdx = geomRow * (ncols + 1) + col;
                 colorAttr.setXYZ(vertexIdx, color.r, color.g, color.b);
                 updated = true;
             }
@@ -151,7 +151,8 @@ export function useTextureTool() {
                 const gridIdx = gridRow * ncols + col;
                 const matId = surfaceStore.surfaceGrid[gridIdx] || 1;
                 const color = colorLookup[matId] || defaultColor;
-                const vertexIdx = geomRow * ncols + col;
+                // Stride = ncols+1 (PlaneGeometry with ncols segments has ncols+1 vertices/row)
+                const vertexIdx = geomRow * (ncols + 1) + col;
                 colorAttr.setXYZ(vertexIdx, color.r, color.g, color.b);
             }
         }

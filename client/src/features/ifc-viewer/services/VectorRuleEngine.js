@@ -1,9 +1,10 @@
 /**
- * Vector Rule Engine
+ * Vector Rule Engine — generic condition matcher with multiple output slots.
  *
- * Evaluates user-defined style-rules against a single element's properties.
- * A rule consists of a condition (what makes it match) and a style override.
- * Multiple rules may match a single element — the one with highest priority wins.
+ * Originally built for vector-style overrides (rule.style); now also drives
+ * DIN 276 KG-classification (rule.kgCode) and could be extended to LV-bindings
+ * (rule.lvBinding) or material/LCA mappings (rule.lcaMaterial). Same matching
+ * machinery, different output fields — one rule may carry several.
  *
  * Rule shape:
  *   {
@@ -18,7 +19,11 @@
  *       operator:     'equals' | 'notEquals' | 'contains' | 'gt' | 'lt' | 'exists',
  *       value:        'true',             // compared as string (case-insensitive)
  *     },
- *     style:     { color, lineWidth, lineDash, hatchPattern }
+ *     // Output slots — any combination, all are optional
+ *     style?:      { color, lineWidth, lineDash, hatchPattern, labelTemplate, … },
+ *     kgCode?:     '330',
+ *     lvBinding?:  { position, factor, unit },   // future
+ *     lcaMaterial?: 'concrete-c30',              // future
  *   }
  *
  * The engine has zero IFC dependency — pure logic. The caller supplies the
@@ -26,16 +31,11 @@
  */
 
 /**
- * Evaluate all rules against a single element context. Returns the merged
- * style override from the highest-priority matching rule, or null if none match.
- *
- * @param {Array<Rule>} rules
- * @param {{ category: string, attributes?: Record<string,any>, psets?: Record<string, Record<string,any>> }} ctx
- * @returns {object|null}  style patch, or null
+ * Return the highest-priority rule that matches the context, or null. The
+ * caller picks which output slot (style, kgCode, …) is relevant.
  */
-export function resolveRuleStyle(rules, ctx) {
+export function findMatchingRule(rules, ctx) {
     if (!Array.isArray(rules) || !rules.length || !ctx) return null;
-
     let bestRule = null;
     let bestPriority = -Infinity;
     for (const rule of rules) {
@@ -47,7 +47,25 @@ export function resolveRuleStyle(rules, ctx) {
             bestRule = rule;
         }
     }
-    return bestRule?.style ?? null;
+    return bestRule;
+}
+
+/**
+ * Generic accessor: highest-priority match's value at `field`, or undefined.
+ * Wraps findMatchingRule for callers that want a single output type.
+ */
+export function resolveRuleField(rules, ctx, field) {
+    return findMatchingRule(rules, ctx)?.[field];
+}
+
+/**
+ * Evaluate all rules against a single element context. Returns the style
+ * override from the highest-priority matching rule, or null if none match.
+ *
+ * Kept as a back-compat helper for the vector plot pipeline.
+ */
+export function resolveRuleStyle(rules, ctx) {
+    return findMatchingRule(rules, ctx)?.style ?? null;
 }
 
 /**

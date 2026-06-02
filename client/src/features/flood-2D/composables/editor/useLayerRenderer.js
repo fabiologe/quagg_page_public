@@ -49,6 +49,10 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     weirGroup.name = 'Layer_Weirs';
     scene.add(weirGroup);
 
+    const bridgeGroup = new THREE.Group();
+    bridgeGroup.name = 'Layer_Bridges';
+    scene.add(bridgeGroup);
+
     // NEW: Selection Layer
     const selectionGroup = new THREE.Group();
     selectionGroup.name = 'Layer_Selection';
@@ -71,6 +75,18 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     const boundaryMaterial = new THREE.LineBasicMaterial({
         color: 0xf1c40f, // Yellow
         linewidth: 2
+    });
+
+    const bridgeOpenMat = new THREE.MeshPhysicalMaterial({
+        color: 0x1abc9c,
+        transparent: true,
+        opacity: 0.45,
+        roughness: 0.3,
+        side: THREE.DoubleSide,
+    });
+    const bridgeDeckMat = new THREE.MeshStandardMaterial({
+        color: 0x7f8c8d,
+        roughness: 0.8,
     });
 
     const weirMatBidi = new THREE.MeshPhysicalMaterial({
@@ -654,6 +670,55 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         console.log(`[LayerRenderer] Rendered ${geoStore.weirs.length} weirs.`);
     };
 
+    const renderBridges = () => {
+        clearGroup(bridgeGroup);
+        updateWorldOffset();
+
+        if (!geoStore.bridges || geoStore.bridges.length === 0) return;
+
+        const grid      = getActiveGrid();
+        const cellSize  = grid ? grid.cellsize : 1.0;
+        const terrMinZ  = grid ? grid.minZ : 0;
+
+        geoStore.bridges.forEach(bridge => {
+            const cells = bridge.cells || [];
+            cells.forEach(cell => {
+                const z_sohle = cell.z_sohle ?? bridge.z_sohle ?? (cell.z ?? 0);
+                const soffit  = cell.soffit  ?? bridge.soffit  ?? (z_sohle + 2.0);
+                const deck    = cell.deck    ?? bridge.deck    ?? (soffit  + 1.0);
+                const width   = bridge.width ?? 5.0;
+                const dir     = cell.direction || 'S';
+
+                const openH = Math.max(soffit - z_sohle, 0.1);
+                const deckH = Math.max(deck   - soffit,  0.1);
+
+                const basePos  = getLocalPos(cell.x, cell.y, 0);
+                const { ox, oz } = getEdgeOffset(dir, cellSize);
+                const isHoriz  = dir.startsWith('E') || dir.startsWith('W');
+
+                // Öffnungs-Box (cyan, semi-transparent)
+                const openGeom = new THREE.BoxGeometry(width, openH, 0.4);
+                const openMesh = new THREE.Mesh(openGeom, bridgeOpenMat);
+                if (isHoriz) openMesh.rotation.y = Math.PI / 2;
+                const openY = (z_sohle - terrMinZ) + openH / 2;
+                openMesh.position.set(basePos.x + ox, openY, basePos.z + oz);
+                openMesh.userData = { id: bridge.id, type: 'bridge', selectable: true };
+                bridgeGroup.add(openMesh);
+
+                // Deck-Box (grau, solid)
+                const deckGeom = new THREE.BoxGeometry(width, deckH, cellSize * 0.8);
+                const deckMesh = new THREE.Mesh(deckGeom, bridgeDeckMat);
+                if (isHoriz) deckMesh.rotation.y = Math.PI / 2;
+                const deckY = (soffit - terrMinZ) + deckH / 2;
+                deckMesh.position.set(basePos.x + ox, deckY, basePos.z + oz);
+                deckMesh.userData = { id: bridge.id, type: 'bridge' };
+                bridgeGroup.add(deckMesh);
+            });
+        });
+
+        console.log(`[LayerRenderer] Rendered ${geoStore.bridges.length} bridge(s).`);
+    };
+
     // --- SELECTION HIGHLIGHT ---
     const renderSelectionHighlight = (simStore) => {
         if (!simStore) return;
@@ -722,7 +787,9 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     watch([() => geoStore.buildings.features, () => geoStore.boundaries.features], () => renderBuildings(), { deep: true, immediate: true });
 
     // Watch Weirs
-    watch(() => geoStore.weirs, () => renderWeirs(), { deep: true, immediate: true });
+    watch(() => geoStore.weirs,   () => renderWeirs(),   { deep: true, immediate: true });
+    // Watch Bridges
+    watch(() => geoStore.bridges, () => renderBridges(), { deep: true, immediate: true });
 
     // Watch Grid for offset updates (Store OR Preview)
     if (gridRef) {
@@ -732,6 +799,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             renderBuildings();
             renderHydraulics();
             renderWeirs();
+            renderBridges();
         }, { deep: true });
     }
 
@@ -741,6 +809,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         renderBuildings();
         renderHydraulics();
         renderWeirs();
+        renderBridges();
     }, { deep: true });
 
     // Watch Hydraulic Assignments
@@ -766,11 +835,13 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         scene.remove(boundaryGroup);
         scene.remove(hydraulicGroup);
         scene.remove(weirGroup);
+        scene.remove(bridgeGroup);
         clearGroup(nodeGroup);
         clearGroup(buildingGroup);
         clearGroup(boundaryGroup);
         clearGroup(hydraulicGroup);
         clearGroup(weirGroup);
+        clearGroup(bridgeGroup);
         nodeGeometry.dispose();
         nodeMaterial.dispose();
         buildingMaterial.dispose();
@@ -781,11 +852,13 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         buildingGroup,
         boundaryGroup,
         weirGroup,
+        bridgeGroup,
         renderNodes,
         renderBuildings,
         renderHydraulics,
         renderWeirs,
+        renderBridges,
         hydraulicGroup,
-        selectionGroup // Export group
+        selectionGroup,
     };
 }

@@ -41,17 +41,38 @@
       <div v-if="!categories.length" class="empty">
         Kein Modell geladen
       </div>
+
+      <!-- Auxiliary toggle: IFC structural grid -->
+      <div v-if="hasIfcGrids" class="layer-row aux-row">
+        <button
+          class="eye-btn"
+          :title="ifcGridsVisible ? 'Achsenraster ausblenden' : 'Achsenraster einblenden'"
+          @click="onToggleIfcGrids"
+        >
+          <span v-if="ifcGridsVisible">👁</span>
+          <span v-else class="eye-off">🚫</span>
+        </button>
+        <span class="cat-icon">📐</span>
+        <span class="cat-name">IFC-Achsenraster</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
+  hasIfcGrids: { type: Boolean, default: false },
 });
-const emit = defineEmits(['toggle', 'close', 'zoom']);
+const emit = defineEmits(['toggle', 'close', 'zoom', 'toggle-ifc-grids']);
+
+const ifcGridsVisible = ref(true);
+function onToggleIfcGrids() {
+  ifcGridsVisible.value = !ifcGridsVisible.value;
+  emit('toggle-ifc-grids', ifcGridsVisible.value);
+}
 
 const sortedCategories = computed(() =>
   [...props.categories].sort((a, b) => b.count - a.count)

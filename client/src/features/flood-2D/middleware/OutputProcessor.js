@@ -130,5 +130,33 @@ export const OutputProcessor = {
             return header;
         }
         return null;
-    }
+    },
+
+    /**
+     * Parse a LISFLOOD .mass file (space-separated, first line = header).
+     *
+     * v5.9 columns: Time Tstep MinTstep NumTsteps Area Vol Qin Hds Qout Qerror Verror Rain-Inf+Evap
+     *
+     * @param {Uint8Array|ArrayBuffer} rawBytes
+     * @returns {{ rows: object[], summary: object, maxError: number }}
+     */
+    parseMassFile(rawBytes) {
+        const text = new TextDecoder().decode(rawBytes instanceof ArrayBuffer ? new Uint8Array(rawBytes) : rawBytes);
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length < 2) return { rows: [], summary: {}, maxError: 0 };
+
+        const headers = lines[0].split(/\s+/);
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+            const vals = lines[i].split(/\s+/).map(Number);
+            if (vals.length < 2 || isNaN(vals[0])) continue;
+            const row = {};
+            headers.forEach((h, idx) => { row[h] = vals[idx] ?? 0; });
+            rows.push(row);
+        }
+        const summary = rows[rows.length - 1] || {};
+        const verrKey = headers.find(h => /verror/i.test(h)) || 'Verror';
+        const maxError = Math.max(...rows.map(r => Math.abs(r[verrKey] ?? 0)));
+        return { rows, summary, maxError, headers };
+    },
 };

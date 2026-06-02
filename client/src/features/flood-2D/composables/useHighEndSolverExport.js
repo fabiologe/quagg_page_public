@@ -101,6 +101,9 @@ export function useHighEndSolverExport() {
             lineId:    w.lineId || null,
         }));
 
+        // v8 bridge format: direction tag gets 'B' suffix (SB/EB/NB/WB = EWeir_Bridge)
+        // 1 entry per cell; hc = soffit; m = Tz (transition zone, ~1.5)
+        const bridgeDir = (d) => (d || 'S').toUpperCase().replace(/B$/, '') + 'B';
         const bridges = toRaw(geoStore.bridges ?? []).map(b => ({
             id:      b.id,
             lineId:  b.lineId,
@@ -109,12 +112,18 @@ export function useHighEndSolverExport() {
             deck:    b.deck,
             width:   b.width,
             Cd:      b.Cd,
+            Tz:      b.Tz ?? 1.5,
             cells:   b.cells.map(c => ({
                 col:       c.col,
                 row:       c.row,
                 x:         c.x,
                 y:         c.y,
-                direction: c.direction,
+                // v8 uses NB/SB/EB/WB direction tags for EWeir_Bridge type
+                direction: bridgeDir(c.direction),
+                // v8 weir file fields
+                hc:        c.soffit  ?? b.soffit,
+                m:         b.Tz ?? 1.5,
+                w:         b.width   ?? 5.0,
             })),
         }));
 

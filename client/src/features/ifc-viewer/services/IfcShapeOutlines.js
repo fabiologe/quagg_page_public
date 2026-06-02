@@ -16,14 +16,10 @@
 
 import * as THREE from 'three';
 import polygonClipping from 'polygon-clipping';
-import { resolveRuleStyle, rulesNeedElementData, rulesForCategory } from './VectorRuleEngine.js';
-
-// Data-fetch config — narrow but enough for typical Pset + attribute rules
-const DATA_CONFIG = {
-    attributesDefault: true,
-    relationsDefault: { attributes: false, relations: false },
-    relations: { IsDefinedBy: { attributes: true, relations: true } },
-};
+import { resolveRuleStyle, rulesForCategory } from './VectorRuleEngine.js';
+import { renderLabelTemplate } from './LabelTemplate.js';
+import { FRAGMENTS_DATA_CONFIG as DATA_CONFIG } from './IfcDataConfig.js';
+import { trianglePlaneIntersect, chainSegmentsToPolygons } from './SectionContour.js';
 
 const PROJECTORS = {
     top:   (v) => [v.x, v.z],
@@ -45,8 +41,12 @@ export async function extractConcaveOutlines(categoryGroups, fragmentsList, opts
     const rules   = opts.rules ?? [];
     const out = [];
 
-    const needsData = rulesNeedElementData(rules);
+    // labelTemplateFor(category, modelId) → 'Wand {Name}' or null/empty
+    const labelTemplateFor = opts.labelTemplateFor ?? (() => '');
     const fragmentsManager = opts.fragmentsManager ?? null;
+    // When the user has an active section cut, switch to per-element cross-section
+    // mode — the resulting outlines have natural cutouts for doors, windows, voids.
+    const cutPlane         = opts.cutPlane ?? null;
 
     for (const group of categoryGroups ?? []) {
         let map;
@@ -62,21 +62,26 @@ export async function extractConcaveOutlines(categoryGroups, fragmentsList, opts
 
             // Pre-fetch Pset/Attribute data per element IF any rule for this
             // category needs it. We batch the fetch for the whole category at once.
-            const catRules = rulesForCategory(rules, group.name);
-            const catNeedsData = needsData && catRules.length && catRules.some(r =>
-                r.condition?.psetName || (r.condition?.propertyName));
+            const catRules    = rulesForCategory(rules, group.name);
+            const catTemplate = String(labelTemplateFor(group.name, modelId) ?? '').trim();
+            const templateNeedsData = catTemplate.length > 0 && _templateUsesElementData(catTemplate);
+            const ruleNeedsData = catRules.some(r => r.condition?.psetName || r.condition?.propertyName);
+            const catNeedsData  = (ruleNeedsData || templateNeedsData) && fragmentsManager;
+
             let dataByLocalId = null;
-            if (catNeedsData && fragmentsManager) {
+            if (catNeedsData) {
                 try {
                     const raw = await fragmentsManager.getData({ [modelId]: localIds }, DATA_CONFIG);
                     dataByLocalId = _parseBatchData(raw);
-                } catch { /* fall through — rules will see undefined values */ }
+                } catch (e) {
+                    console.warn(`[ShapeOutlines] data fetch failed for ${group.name}`, e?.message ?? e);
+                }
             }
 
             for (const localId of localIds) {
                 let entry = null;
                 try {
-                    entry = await _shapeForItem(model, localId, group.name, modelId, project);
+                    entry = await _shapeForItem(model, localId, group.name, modelId, project, cutPlane);
                 } catch { /* try bbox fallback below */ }
 
                 if (!entry) {
@@ -85,6 +90,14 @@ export async function extractConcaveOutlines(categoryGroups, fragmentsList, opts
                         const boxes = await model.getBoxes([localId]);
                         const b = boxes?.[0];
                         if (b && !b.isEmpty()) {
+                            // With a cut plane, decide whether the bbox is fully above the cut.
+                            // If yes, flag aboveCut so the plotter can dash this element.
+                            let aboveCutBox = false;
+                            if (cutPlane) {
+                                const proj = new THREE.Vector3();
+                                cutPlane.projectPoint(b.getCenter(new THREE.Vector3()), proj);
+                                if (b.min.y > proj.y + 0.005) aboveCutBox = true;
+                            }
                             const ring = _projectBox(b, project);
                             entry = {
                                 category: group.name,
@@ -92,6 +105,7 @@ export async function extractConcaveOutlines(categoryGroups, fragmentsList, opts
                                 bbox:    _ringsBBox([ring]),
                                 localId, modelId,
                                 fallback: 'bbox',
+                                ...(aboveCutBox ? { aboveCut: true } : {}),
                             };
                         }
                     } catch { /* skip */ }
@@ -99,15 +113,29 @@ export async function extractConcaveOutlines(categoryGroups, fragmentsList, opts
 
                 if (!entry) continue;
 
-                // Evaluate user rules against this element's category + properties
+                // Build element context once — shared by rules + label
+                const ctx = {
+                    category:   group.name,
+                    localId,
+                    attributes: dataByLocalId?.[localId]?.attributes ?? null,
+                    psets:      dataByLocalId?.[localId]?.psets      ?? null,
+                };
+
                 if (catRules.length) {
-                    const ctx = {
-                        category:   group.name,
-                        attributes: dataByLocalId?.[localId]?.attributes ?? null,
-                        psets:      dataByLocalId?.[localId]?.psets      ?? null,
-                    };
                     const ruleStyle = resolveRuleStyle(catRules, ctx);
-                    if (ruleStyle) entry.ruleStyle = ruleStyle;
+                    if (ruleStyle) {
+                        entry.ruleStyle = ruleStyle;
+                        // A rule may override the label template too — apply it
+                        if (ruleStyle.labelTemplate !== undefined && ruleStyle.labelTemplate !== null) {
+                            const tpl = String(ruleStyle.labelTemplate).trim();
+                            if (tpl) entry.label = renderLabelTemplate(tpl, ctx) || null;
+                            else     entry.label = null;
+                        }
+                    }
+                }
+                // If no rule supplied a label, fall back to the category template
+                if (entry.label === undefined && catTemplate) {
+                    entry.label = renderLabelTemplate(catTemplate, ctx) || null;
                 }
 
                 out.push(entry);
@@ -120,7 +148,7 @@ export async function extractConcaveOutlines(categoryGroups, fragmentsList, opts
 
 // ── Per-item shape extraction ───────────────────────────────────────────────
 
-async function _shapeForItem(model, localId, category, modelId, project) {
+async function _shapeForItem(model, localId, category, modelId, project, cutPlane) {
     const item = model.getItem?.(localId);
     if (!item) return null;
     const geo = await item.getGeometry();
@@ -129,7 +157,60 @@ async function _shapeForItem(model, localId, category, modelId, project) {
     const triangleSets = await geo.getTriangles();
     if (!triangleSets?.length) return null;
 
-    // Convert each triangle to a polygon-clipping polygon = [closedRing]
+    // ── Decide which mode applies ──────────────────────────────────────────
+    // With a cut plane: intersect bbox classifies the element as
+    //   crossing   → per-element cross-section (T1.B, natural cutouts)
+    //   above      → silhouette + aboveCut flag (T1.A, dashed at draw time)
+    //   below      → silhouette (visible from above, no special flag)
+    // Without cut plane: silhouette as before.
+    let aboveCut = false;
+    let useCrossSection = false;
+    if (cutPlane) {
+        try {
+            const boxes = await model.getBoxes([localId]);
+            const box = boxes?.[0];
+            if (box && !box.isEmpty()) {
+                const cutOrigin = new THREE.Vector3();
+                cutPlane.projectPoint(box.getCenter(new THREE.Vector3()), cutOrigin);
+                const cutY = cutOrigin.y;
+                const EPS = 0.005;
+                if (box.min.y > cutY + EPS)      aboveCut = true;
+                else if (box.max.y > cutY - EPS) useCrossSection = true;
+                // else: fully below cut → standard silhouette, no flag
+            } else {
+                useCrossSection = true; // bbox unknown, try cross-section
+            }
+        } catch {
+            useCrossSection = true;
+        }
+    }
+
+    // ── Cross-section mode: cutouts (doors, windows, voids) become real holes ─
+    if (useCrossSection) {
+        const segs = [];
+        for (const set of triangleSets) {
+            if (!set?.length) continue;
+            for (const tri of set) {
+                const seg = trianglePlaneIntersect(cutPlane, tri.a, tri.b, tri.c);
+                if (seg) segs.push(seg);
+            }
+        }
+        if (!segs.length) return null;
+        const polys = chainSegmentsToPolygons(segs);
+        if (!polys.length) return null;
+        const rings = polys
+            .map(ring => ring.map(p => project({ x: p.x, y: 0, z: p.z })))
+            .filter(r => r.length >= 4);
+        if (!rings.length) return null;
+        return {
+            category,
+            rings,
+            bbox:    _ringsBBox(rings),
+            localId, modelId,
+        };
+    }
+
+    // ── Silhouette mode: triangle-union projection (no cut, full footprint) ─
     const polys = [];
     for (const set of triangleSets) {
         if (!set?.length) continue;
@@ -171,6 +252,7 @@ async function _shapeForItem(model, localId, category, modelId, project) {
         rings,
         bbox:    _ringsBBox(rings),
         localId, modelId,
+        ...(aboveCut ? { aboveCut: true } : {}),
     };
 }
 
@@ -219,7 +301,8 @@ function _parseBatchData(raw) {
     for (const items of Object.values(raw)) {
         if (!Array.isArray(items)) continue;
         for (const item of items) {
-            const localId = item?._localId ?? item?.localId ?? item?.expressID;
+            // OBC sometimes wraps the id as { value: number } — unwrap via scalar()
+            const localId = scalar(item?._localId ?? item?.localId ?? item?.expressID);
             if (localId == null) continue;
 
             // Top-level attributes
@@ -249,6 +332,12 @@ function _parseBatchData(raw) {
     }
     return out;
 }
+
+/** Does the template reference anything beyond {category}/{localId}? */
+function _templateUsesElementData(template) {
+    return /\{([^}]+)\}/.test(template) && /\{(?!category[}\s:]|localId[}\s:])/i.test(template);
+}
+
 
 function _normalizeIds(raw) {
     if (Array.isArray(raw))      return raw;

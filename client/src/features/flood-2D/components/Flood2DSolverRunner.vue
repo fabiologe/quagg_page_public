@@ -5,19 +5,35 @@
     <!-- SIMULATION PARAMETERS -->
     <div class="sim-params">
       <h3>⚙️ Parameter</h3>
+
+      <!-- Run Presets -->
+      <div class="presets-row">
+        <button
+          v-for="p in RUN_PRESETS"
+          :key="p.id"
+          class="preset-btn"
+          :class="{ active: activePresetId === p.id }"
+          :title="p.hint"
+          @click="applyPreset(p)"
+        >{{ p.label }}</button>
+      </div>
+
       <div class="param-grid">
 
         <label>Simulationsdauer (s)</label>
-        <input type="number" v-model.number="simStore.simDuration" min="60" step="60" />
+        <input type="number" v-model.number="simStore.simDuration" min="60" step="60" @input="clearPreset" />
 
         <label>Zeitschritt Δt (s)</label>
-        <input type="number" v-model.number="simStore.timeStep" min="0.01" max="10" step="0.1" />
+        <div class="dt-field">
+          <input type="number" v-model.number="simStore.timeStep" min="0.01" max="10" step="0.1" @input="clearPreset" />
+          <span class="cfl-chip" :class="cflStatus.level">{{ cflStatus.label }}</span>
+        </div>
 
         <label>Ausgabeintervall (s)</label>
-        <input type="number" v-model.number="simStore.saveInterval" min="1" step="10" />
+        <input type="number" v-model.number="simStore.saveInterval" min="1" step="10" @input="clearPreset" />
 
         <label>Massenbalanz-Int. (s)</label>
-        <input type="number" v-model.number="simStore.massInterval" min="1" step="10" />
+        <input type="number" v-model.number="simStore.massInterval" min="1" step="10" @input="clearPreset" />
 
         <label>Acceleration Solver</label>
         <div class="toggle-row">
@@ -42,9 +58,21 @@
 
       </div>
       <p class="param-hint">
-        📊 {{ estimatedFrames }} Frames · 
+        📊 {{ estimatedFrames }} Frames ·
         {{ (simStore.simDuration / 60).toFixed(0) }} min Laufzeit
+        <span v-if="cflStatus.dtMax"> · CFL-Limit: {{ cflStatus.dtMax.toFixed(2) }} s</span>
       </p>
+
+      <!-- Mass Balance Report -->
+      <div v-if="massReport" class="mass-badge" :class="massReportLevel">
+        💧 Massenbilanz:
+        <strong>Verror={{ massReport.summary['Verror']?.toExponential(2) ?? '?' }}</strong>
+        · Qin={{ massReport.summary['Qin']?.toFixed(1) ?? '?' }} m³/s
+        · Qout={{ massReport.summary['Qout']?.toFixed(1) ?? '?' }} m³/s
+        <span v-if="massReport.summary['Rain-Inf+Evap'] !== undefined">
+          · Netto-Regen/Infil: {{ massReport.summary['Rain-Inf+Evap']?.toFixed(1) }} m³
+        </span>
+      </div>
     </div>
     
     <div class="controls">
@@ -118,12 +146,45 @@ const showInspector = ref(false);
 const zipUrl = ref(null);
 const isZipping = ref(false);
 const generator = new InputGenerator();
+const massReport = ref(null);
+
+// ── Run Presets ───────────────────────────────────────────────────────────────
+const RUN_PRESETS = [
+    { id: 'quick',    label: '⚡ Schnell',   hint: '5 min Sim · dt=2s · grobe Tests',        config: { simDuration: 300,  timeStep: 2.0, saveInterval: 30,  massInterval: 30  } },
+    { id: 'standard', label: '⚖️ Standard',  hint: '1h Sim · dt=0.5s · Balance',             config: { simDuration: 3600, timeStep: 0.5, saveInterval: 60,  massInterval: 60  } },
+    { id: 'precise',  label: '🔬 Präzise',   hint: '1h Sim · dt=0.1s · hohe Ausgabefrequenz', config: { simDuration: 3600, timeStep: 0.1, saveInterval: 30,  massInterval: 30  } },
+];
+const activePresetId = ref(null);
+const applyPreset = (preset) => { simStore.setFullConfig(preset.config); activePresetId.value = preset.id; };
+const clearPreset  = () => { activePresetId.value = null; };
+
+// ── CFL-Stabilitäts-Checker ───────────────────────────────────────────────────
+const cflStatus = computed(() => {
+    const terrain = geoStore.terrain;
+    if (!terrain) return { level: 'unknown', label: '—', dtMax: null };
+    const cellsize   = terrain.cellsize ?? 1;
+    const maxDepth   = Math.max((terrain.maxZ ?? 1) - (terrain.minZ ?? 0), 0.5);
+    const dtMax      = cellsize / Math.sqrt(9.81 * maxDepth);
+    const ratio      = (simStore.timeStep || 1) / dtMax;
+    if (ratio < 0.8)  return { level: 'stable',   label: '✅ Stabil',      dtMax };
+    if (ratio <= 1.0) return { level: 'marginal',  label: '⚠️ Grenzwertig', dtMax };
+    return             { level: 'unstable', label: '🔴 INSTABIL',     dtMax };
+});
 
 const estimatedFrames = computed(() => {
     const dur = simStore.simDuration || 3600;
     const save = simStore.saveInterval || 60;
     return Math.floor(dur / save);
 });
+
+const massReportLevel = computed(() => {
+    if (!massReport.value) return '';
+    const err = Math.abs(massReport.value.summary['Verror'] ?? 0);
+    if (err < 0.01) return 'good';
+    if (err < 0.05) return 'warn';
+    return 'bad';
+});
+
 let worker = null;
 
 // Derived State from SimStore for UI
@@ -190,6 +251,7 @@ const runSimulation = async () => {
     simStore.setStatus('INITIALIZING');
     logs.value = '';
     resultFiles.value = {};
+    massReport.value = null;
     
     try {
         if (!worker) {
@@ -236,7 +298,7 @@ const runSimulation = async () => {
                 // Clear timeout on first message
                 if (initTimeout) clearTimeout(initTimeout);
                 
-                const { type, status: workerStatus, text, value, frame, header, payload, error, time, message } = e.data;
+                const { type, status: workerStatus, text, frame, header, payload, error, time, message } = e.data;
                 
                 switch (type) {
                     case 'STATUS':
@@ -298,6 +360,10 @@ const runSimulation = async () => {
                          } catch (err) {
                              appendLog(`[ERROR] processing result: ${err.message}`);
                          }
+                        break;
+
+                    case 'MASS_REPORT':
+                        massReport.value = e.data.data;
                         break;
 
                     case 'ERROR':
@@ -517,8 +583,9 @@ const startPreparation = async () => {
                   massint: String(simStore.massInterval || 60) + '.0',
                   ...(simStore.useAcceleration ? { acceleration: '' } : {})
              },
-             weirs:   geoStore.weirs   ? JSON.parse(JSON.stringify(geoStore.weirs))   : [],
-             bridges: geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : []
+             weirs:        geoStore.weirs   ? JSON.parse(JSON.stringify(geoStore.weirs))   : [],
+             bridges:      geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : [],
+             infiltration: surfaceStore.computeWeightedInfiltration?.() ?? 0
           };
 
          // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
@@ -786,6 +853,58 @@ onUnmounted(() => {
     font-size: 0.78rem;
     color: #7f8c8d;
 }
+
+/* ── Run Presets ─────────────────────────────────────────────────────────── */
+.presets-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.preset-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid #4a6278;
+    border-radius: 6px;
+    background: #1e3348;
+    color: #bdc3c7;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.preset-btn:hover  { background: #2471a3; border-color: #2980b9; color: #fff; }
+.preset-btn.active { background: #2980b9; border-color: #5dade2; color: #fff; }
+
+/* ── CFL Chip ────────────────────────────────────────────────────────────── */
+.dt-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.dt-field input { flex: 1; }
+.cfl-chip {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+.cfl-chip.stable   { background: rgba(39,174,96,.25);  color: #2ecc71; }
+.cfl-chip.marginal { background: rgba(241,196,15,.25); color: #f1c40f; }
+.cfl-chip.unstable { background: rgba(231,76,60,.25);  color: #e74c3c; }
+.cfl-chip.unknown  { background: rgba(127,140,141,.2); color: #95a5a6; }
+
+/* ── Mass Balance Badge ──────────────────────────────────────────────────── */
+.mass-badge {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+.mass-badge.good { background: rgba(39,174,96,.18);  border: 1px solid rgba(39,174,96,.4);  color: #2ecc71; }
+.mass-badge.warn { background: rgba(241,196,15,.18); border: 1px solid rgba(241,196,15,.4); color: #f1c40f; }
+.mass-badge.bad  { background: rgba(231,76,60,.18);  border: 1px solid rgba(231,76,60,.4);  color: #e74c3c; }
 
 .status-indicator {
     font-weight: bold;

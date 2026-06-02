@@ -138,6 +138,12 @@ export class InputGenerator {
             }
         }
 
+        // 2b. Infiltration (scalar, area-weighted average from surface materials)
+        // scenario.infiltration [m/s] — set by Flood2DSolverRunner from surfaceStore.computeWeightedInfiltration()
+        if (scenario.infiltration && scenario.infiltration > 0) {
+            console.log(`[InputGenerator] Infiltration: ${(scenario.infiltration * 3.6e6).toFixed(2)} mm/h`);
+        }
+
         // 3. Hydraulics - Rain
         let hasRain = false;
         if (scenario.rainSeries && Array.isArray(scenario.rainSeries) && scenario.rainSeries.length > 0) {
@@ -240,7 +246,8 @@ export class InputGenerator {
             hasBci,
             hasBdy,
             frictionFilename,
-            hasWeir
+            hasWeir,
+            scenario.infiltration ?? 0
         );
 
         if (fs) fs.writeFile('/run.par', parContent);
@@ -794,7 +801,7 @@ export class InputGenerator {
         return content;
     }
 
-    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc', hasWeir = false) {
+    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc', hasWeir = false, infiltration = 0) {
         // CRITICAL: Keywords MUST match pars.cpp exactly (strcmp is case-sensitive!)
         // Source: solverHydro/src/lisflood-fp-bmi-v5.9/pars.cpp
         const config = {
@@ -814,6 +821,7 @@ export class InputGenerator {
         if (hasBci)         config.bcifile     = 'flow.bci';       // Line 106: strcmp(buffer,"bcifile")
         if (hasBdy)         config.bdyfile     = 'profiles.bdy';   // Line 107: strcmp(buffer,"bdyfile")
         if (hasWeir)        config.weirfile    = 'flow.weir';      // Line 108: strcmp(buffer,"weirfile")
+        if (infiltration > 0) config.infiltration = infiltration.toFixed(8); // Line 216: strcmp(buffer,"infiltration")
 
         // Acceleration solver: Kompatibel mit Wehren!
         // In fp_flow.cpp prüft FloodplainQ(): weirs ZUERST (Zeile 47/89),

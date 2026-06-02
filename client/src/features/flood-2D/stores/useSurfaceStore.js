@@ -10,12 +10,13 @@ import { ref, computed } from 'vue';
 export const useSurfaceStore = defineStore('surface', () => {
 
     // --- MATERIAL LIBRARY ---
+    // infiltration: Horton end-infiltration rate [m/s]; 0 = impervious
     const materials = ref([
-        { id: 1, name: 'Asphalt', manning: 0.015, color: '#95a5a6' },
-        { id: 2, name: 'Wald', manning: 0.100, color: '#228B22' },
-        { id: 3, name: 'Wiese', manning: 0.035, color: '#7CFC00' },
-        { id: 4, name: 'Wasser', manning: 0.025, color: '#4169E1' },
-        { id: 5, name: 'Kies', manning: 0.025, color: '#D2B48C' },
+        { id: 1, name: 'Asphalt', manning: 0.015, color: '#95a5a6', infiltration: 1e-7   },  // 0.36 mm/h
+        { id: 2, name: 'Wald',    manning: 0.100, color: '#228B22', infiltration: 3e-6   },  // 10.8 mm/h
+        { id: 3, name: 'Wiese',   manning: 0.035, color: '#7CFC00', infiltration: 1e-6   },  // 3.6  mm/h
+        { id: 4, name: 'Wasser',  manning: 0.025, color: '#4169E1', infiltration: 0      },  // no infiltration
+        { id: 5, name: 'Kies',    manning: 0.025, color: '#D2B48C', infiltration: 5e-6   },  // 18   mm/h
     ]);
 
     /** @type {import('vue').Ref<number>} */
@@ -98,9 +99,9 @@ export const useSurfaceStore = defineStore('surface', () => {
     /**
      * Add a new custom material.
      */
-    function addMaterial(name, color, manning) {
+    function addMaterial(name, color, manning, infiltration = 0) {
         const newId = Math.max(...materials.value.map(m => m.id)) + 1;
-        materials.value.push({ id: newId, name, color, manning });
+        materials.value.push({ id: newId, name, color, manning, infiltration });
         return newId;
     }
 
@@ -222,6 +223,51 @@ export const useSurfaceStore = defineStore('surface', () => {
     }
 
     /**
+     * Compute area-weighted average infiltration rate [m/s] from the surface grid.
+     * Used as scalar `infiltration` value in LISFLOOD v5.9 .par file.
+     * Returns 0 if no grid or all materials have 0 infiltration.
+     */
+    function computeWeightedInfiltration() {
+        if (!surfaceGrid.value) return 0;
+        const lookup = {};
+        for (const m of materials.value) lookup[m.id] = m.infiltration ?? 0;
+        const total = surfaceGrid.value.length;
+        if (!total) return 0;
+        let sum = 0;
+        for (let i = 0; i < total; i++) {
+            sum += lookup[surfaceGrid.value[i] || 1] ?? 0;
+        }
+        return sum / total;
+    }
+
+    /**
+     * Generate per-cell infiltration grid [m/s] analogous to generateManningGrid().
+     * @param {object} header - terrain header { ncols, nrows, cellsize, xll/xllcorner, yll/yllcorner }
+     * @returns {{ header: object, data: Float32Array }|null}
+     */
+    function generateInfiltrationGrid(header) {
+        if (!surfaceGrid.value) return null;
+        const ncols = header.ncols;
+        const nrows = header.nrows;
+        const lookup = {};
+        for (const m of materials.value) lookup[m.id] = m.infiltration ?? 0;
+        const data = new Float32Array(ncols * nrows);
+        for (let i = 0; i < data.length; i++) {
+            data[i] = lookup[surfaceGrid.value[i] || 1] ?? 0;
+        }
+        return {
+            header: {
+                ncols, nrows,
+                cellsize: header.cellsize,
+                xll: header.xll !== undefined ? header.xll : header.xllcorner,
+                yll: header.yll !== undefined ? header.yll : header.yllcorner,
+                NODATA_value: -9999,
+            },
+            data,
+        };
+    }
+
+    /**
      * Reset the store (e.g. when loading a new project).
      */
     function reset() {
@@ -256,6 +302,8 @@ export const useSurfaceStore = defineStore('surface', () => {
         paintBrush,
         getMaterialById,
         generateManningGrid,
+        computeWeightedInfiltration,
+        generateInfiltrationGrid,
         reset,
     };
 });

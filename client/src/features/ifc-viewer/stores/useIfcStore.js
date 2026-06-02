@@ -1,7 +1,23 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { cloneDefaults } from '../services/DefaultLineStyles.js';
 import { BUILT_IN_PRESETS } from '../services/VectorStylePresets.js';
+import { styleToLegacy } from '../services/VectorStyleEngine.js';
+
+/**
+ * Trailing-edge debounce with a sync flush hook. Used to batch localStorage
+ * writes triggered by rapid edits (style editor sliders, label-template typing).
+ * The wrapped function fires once after `ms` of quiet; .flush() runs it now.
+ */
+function _debounce(fn, ms) {
+  let t = null;
+  const wrapped = (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => { t = null; fn(...args); }, ms);
+  };
+  wrapped.flush = () => { if (t) { clearTimeout(t); t = null; fn(); } };
+  return wrapped;
+}
 
 export const useIfcStore = defineStore('ifc-viewer', () => {
   const selectedElement = ref(null);
@@ -28,10 +44,10 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     try { return JSON.parse(localStorage.getItem(SAVED_VIEWS_KEY) || '[]'); }
     catch { return []; }
   }
-  function _persistSavedViews() {
+  const _persistSavedViews = _debounce(() => {
     try { localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews.value)); }
     catch { /* quota */ }
-  }
+  }, 250);
   function saveView(name, viewState) {
     if (!name || !viewState) return;
     const id = Date.now().toString(36);
@@ -56,11 +72,11 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     try { return JSON.parse(localStorage.getItem(key) || '[]'); }
     catch { return []; }
   }
-  function _persistAnnotations() {
+  const _persistAnnotations = _debounce(() => {
     if (!_currentAnnKey) return;
     try { localStorage.setItem(_currentAnnKey, JSON.stringify(annotations.value)); }
     catch { /* */ }
-  }
+  }, 250);
   function loadAnnotationsForModel(modelName) {
     _currentAnnKey = ANN_KEY_PREFIX + (modelName || 'default');
     annotations.value = _loadAnnotations(_currentAnnKey);
@@ -132,10 +148,10 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     return cloneDefaults();
   }
   const vectorStyles = ref(_loadVectorStyles());
-  function _persistVectorStyles() {
+  const _persistVectorStyles = _debounce(() => {
     try { localStorage.setItem(VECTOR_STYLES_KEY, JSON.stringify(vectorStyles.value)); }
     catch { /* quota */ }
-  }
+  }, 250);
   function setVectorStyle(category, patch) {
     const current = vectorStyles.value[category] ?? vectorStyles.value.default ?? {};
     vectorStyles.value = { ...vectorStyles.value, [category]: { ...current, ...patch } };
@@ -172,10 +188,10 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     } catch { return []; }
   }
   const vectorRules = ref(_loadVectorRules());
-  function _persistVectorRules() {
+  const _persistVectorRules = _debounce(() => {
     try { localStorage.setItem(VECTOR_RULES_KEY, JSON.stringify(vectorRules.value)); }
     catch { /* */ }
-  }
+  }, 250);
   function addVectorRule(rule) {
     const id = 'rule-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     vectorRules.value = [...vectorRules.value, {
@@ -211,10 +227,10 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     catch { return {}; }
   }
   const vectorStylesByModel = ref(_loadModelStyles());
-  function _persistModelStyles() {
+  const _persistModelStyles = _debounce(() => {
     try { localStorage.setItem(VECTOR_STYLES_MODEL_KEY, JSON.stringify(vectorStylesByModel.value)); }
     catch { /* */ }
-  }
+  }, 250);
   function setVectorStyleForModel(modelId, category, patch) {
     if (!modelId) return;
     const next = { ...vectorStylesByModel.value };
@@ -245,6 +261,26 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     _persistModelStyles();
   }
 
+  // Shared style-resolver getters — consumed by PDF export + style editor.
+  // Single source of truth for the legacy-shape map the renderer expects.
+  const resolvedVectorStyleMap = computed(() => {
+    const out = {};
+    for (const cat of Object.keys(vectorStyles.value)) {
+      out[cat] = styleToLegacy(vectorStyles.value[cat]);
+    }
+    return out;
+  });
+  const resolvedVectorStyleMapByModel = computed(() => {
+    const out = {};
+    for (const [modelId, override] of Object.entries(vectorStylesByModel.value)) {
+      const merged = { ...vectorStyles.value, ...override };
+      const legacy = {};
+      for (const cat of Object.keys(merged)) legacy[cat] = styleToLegacy(merged[cat]);
+      out[modelId] = legacy;
+    }
+    return out;
+  });
+
   // ── Named presets ──────────────────────────────────────────────────────────
   // Built-ins are merged with user-saved presets. User can save the current
   // global style map under a name, load any preset (replacing or merging), and
@@ -257,10 +293,10 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     } catch { return []; }
   }
   const userPresets = ref(_loadUserPresets());
-  function _persistUserPresets() {
+  const _persistUserPresets = _debounce(() => {
     try { localStorage.setItem(VECTOR_PRESETS_KEY, JSON.stringify(userPresets.value)); }
     catch { /* */ }
-  }
+  }, 250);
   function allPresets() {
     return [...BUILT_IN_PRESETS, ...userPresets.value];
   }
@@ -342,6 +378,18 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     await _storeyHandler?.(localId, visible);
   }
 
+  // Flush pending debounced writes if the user closes the tab quickly after editing.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+      _persistSavedViews.flush();
+      _persistAnnotations.flush();
+      _persistVectorStyles.flush();
+      _persistVectorRules.flush();
+      _persistModelStyles.flush();
+      _persistUserPresets.flush();
+    });
+  }
+
   return {
     selectedElement, psetError, modelLoaded, spatialTree, modelList,
     setElement, clearElement, setPsetError,
@@ -364,5 +412,7 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     // Sprint 2.3: Per-model + presets
     vectorStylesByModel, setVectorStyleForModel, clearModelOverrides, clearModelOverride,
     userPresets, allPresets, saveCurrentAsPreset, deleteUserPreset, loadPreset,
+    // Computed resolvers consumed by PDF export + style editor
+    resolvedVectorStyleMap, resolvedVectorStyleMapByModel,
   };
 });

@@ -42,6 +42,9 @@ export function styleToLegacy(style) {
         dashPattern: DASH_PATTERNS[style.lineDash] ?? [],
         hatch: style.hatchPattern ?? 'none',
         enabled: style.enabled !== false,
+        labelTemplate:  style.labelTemplate  ?? '',
+        labelFontSize:  style.labelFontSize  ?? 2.2,
+        labelAnchor:    style.labelAnchor    ?? 'center',
     };
 }
 

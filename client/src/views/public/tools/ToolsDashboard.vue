@@ -18,6 +18,16 @@
             </div>
           </div>
 
+          <!-- AFS63 Behandlungsbedarf Tool Card -->
+          <div class="tool-card" @click="$router.push('/tools/afs63')">
+            <div class="icon">💧</div>
+            <div class="content">
+              <h3>Behandlungsbedarf AFS63</h3>
+              <p>Flächenklassifizierung und Stoffbilanz nach DWA-A 102-2.</p>
+              <span class="link-text">Zum Tool &rarr;</span>
+            </div>
+          </div>
+
           <!-- Flood Wave Tool Card -->
           <div class="tool-card" @click="$router.push('/tools/flood-wave')">
             <div class="icon">📈</div>

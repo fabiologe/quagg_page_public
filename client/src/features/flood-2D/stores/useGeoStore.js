@@ -170,7 +170,8 @@ export const useGeoStore = defineStore('geo', () => {
             soffit:  bridgeCells[0].soffit  ?? 2.0,
             deck:    bridgeCells[0].deck    ?? 3.0,
             width:   bridgeCells[0].width   ?? 5.0,
-            Cd:      bridgeCells[0].Cd      ?? 1.704,
+            Cd:      bridgeCells[0].Cd      ?? 0.80,
+            Tz:      bridgeCells[0].Tz      ?? 1.5,
             cells:   bridgeCells,
         });
         console.log(`[GeoStore] Brücke hinzugefügt: ${lineId} (${bridgeCells.length} Zellen)`);

@@ -35,6 +35,12 @@ const router = createRouter({
       meta: { layout: 'public' }
     },
     {
+      path: '/tools/afs63',
+      name: 'afs63',
+      component: () => import('@/features/afs63/views/Afs63View.vue'),
+      meta: { layout: 'public' }
+    },
+    {
       path: '/tools/flood-wave',
       name: 'flood-wave',
       component: () => import('@/features/flood-wave/views/FloodWaveView.vue'),

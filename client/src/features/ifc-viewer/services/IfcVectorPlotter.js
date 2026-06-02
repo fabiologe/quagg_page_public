@@ -18,51 +18,21 @@
  */
 
 import * as THREE from 'three';
+import { drawHatch } from './HatchPatterns.js';
+import { DEFAULT_LINE_STYLES } from './DefaultLineStyles.js';
+import { styleToLegacy } from './VectorStyleEngine.js';
+import { trianglePlaneIntersect, chainSegmentsToPolygons } from './SectionContour.js';
 
-// ── Line styles (colour + width in mm) ──────────────────────────────────────
+// Pre-computed legacy-shape ({r,g,b,w,dash,…}) form of the built-in defaults.
+// Single source of truth: DEFAULT_LINE_STYLES is authoritative — the plotter
+// just caches a converted view for its draw-time render loops.
+const BUILTIN_LEGACY_STYLES = Object.freeze(Object.fromEntries(
+    Object.entries(DEFAULT_LINE_STYLES).map(([k, v]) => [k, styleToLegacy(v)])
+));
 
-export const VECTOR_LINE_STYLES = {
-    // Architectural
-    IFCWALL:              { r: 0,   g: 0,   b: 0,   w: 0.35, dash: false },
-    IFCWALLSTANDARDCASE:  { r: 0,   g: 0,   b: 0,   w: 0.35, dash: false },
-    IFCWALLTYPE:          { r: 0,   g: 0,   b: 0,   w: 0.35, dash: false },
-    IFCCOLUMN:            { r: 0,   g: 0,   b: 0,   w: 0.5,  dash: false },
-    IFCCOLUMNTYPE:        { r: 0,   g: 0,   b: 0,   w: 0.5,  dash: false },
-    IFCSLAB:              { r: 60,  g: 60,  b: 60,  w: 0.18, dash: false },
-    IFCSLABTYPE:          { r: 60,  g: 60,  b: 60,  w: 0.18, dash: false },
-    IFCDOOR:              { r: 0,   g: 0,   b: 0,   w: 0.18, dash: false },
-    IFCDOORTYPE:          { r: 0,   g: 0,   b: 0,   w: 0.18, dash: false },
-    IFCWINDOW:            { r: 0,   g: 100, b: 200, w: 0.18, dash: false },
-    IFCWINDOWTYPE:        { r: 0,   g: 100, b: 200, w: 0.18, dash: false },
-    IFCBEAM:              { r: 0,   g: 0,   b: 0,   w: 0.35, dash: false },
-    IFCBEAMTYPE:          { r: 0,   g: 0,   b: 0,   w: 0.35, dash: false },
-    IFCSTAIR:             { r: 80,  g: 80,  b: 80,  w: 0.18, dash: true  },
-    IFCSTAIRFLIGHT:       { r: 80,  g: 80,  b: 80,  w: 0.18, dash: true  },
-    IFCROOF:              { r: 80,  g: 80,  b: 80,  w: 0.18, dash: true  },
-    IFCFOOTING:           { r: 80,  g: 80,  b: 80,  w: 0.25, dash: false },
-    IFCFOOTINGTYPE:       { r: 80,  g: 80,  b: 80,  w: 0.25, dash: false },
-    IFCPLATE:             { r: 80,  g: 80,  b: 80,  w: 0.18, dash: false },
-    IFCMEMBER:            { r: 40,  g: 40,  b: 40,  w: 0.25, dash: false },
-
-    // MEP / Infrastructure
-    IFCPIPESEGMENT:       { r: 200, g: 80,  b: 0,   w: 0.18, dash: false },
-    IFCPIPEFITTING:       { r: 200, g: 80,  b: 0,   w: 0.18, dash: false },
-    IFCPIPESEGMENTTYPE:   { r: 200, g: 80,  b: 0,   w: 0.18, dash: false },
-    IFCDUCT:              { r: 0,   g: 120, b: 120, w: 0.18, dash: false },
-    IFCDUCTFITTING:       { r: 0,   g: 120, b: 120, w: 0.18, dash: false },
-    IFCDUCTTYPE:          { r: 0,   g: 120, b: 120, w: 0.18, dash: false },
-    IFCFLOWSEGMENT:       { r: 180, g: 60,  b: 0,   w: 0.15, dash: false },
-    IFCFLOWFITTING:       { r: 180, g: 60,  b: 0,   w: 0.15, dash: false },
-    IFCFLOWTERMINAL:      { r: 180, g: 60,  b: 0,   w: 0.15, dash: false },
-    IFCAIRTERMINAL:       { r: 0,   g: 120, b: 130, w: 0.15, dash: false },
-    IFCPUMP:              { r: 100, g: 0,   b: 200, w: 0.18, dash: false },
-    IFCVALVE:             { r: 100, g: 0,   b: 200, w: 0.18, dash: false },
-    IFCFURNITURE:         { r: 120, g: 90,  b: 50,  w: 0.12, dash: false },
-    IFCFURNITURETYPE:     { r: 120, g: 90,  b: 50,  w: 0.12, dash: false },
-
-    // Unknown / irregular → light grey dashed BBox
-    default: { r: 160, g: 160, b: 160, w: 0.1, dash: true, bboxOnly: true },
-};
+function _builtinLegacyFor(category) {
+    return BUILTIN_LEGACY_STYLES[category] ?? BUILTIN_LEGACY_STYLES.default;
+}
 
 // Section contour style (Type 1 — cut line through geometry)
 const SECTION_CONTOUR_STYLE = { r: 0, g: 0, b: 0, w: 0.5 };
@@ -138,37 +108,11 @@ export function computeSectionContour(scene, cutPlane) {
             _vA.fromBufferAttribute(pos, ai).applyMatrix4(_mat);
             _vB.fromBufferAttribute(pos, bi).applyMatrix4(_mat);
             _vC.fromBufferAttribute(pos, ci).applyMatrix4(_mat);
-            const seg = _trianglePlaneIntersect(cutPlane, _vA, _vB, _vC);
+            const seg = trianglePlaneIntersect(cutPlane, _vA, _vB, _vC);
             if (seg) segs.push(seg);
         }
     });
     return segs;
-}
-
-/** Compute intersection of a single triangle with a plane.
- *  Returns { x1, z1, x2, z2 } or null. */
-function _trianglePlaneIntersect(plane, a, b, c) {
-    const dA = plane.distanceToPoint(a);
-    const dB = plane.distanceToPoint(b);
-    const dC = plane.distanceToPoint(c);
-
-    const pts = [];
-    if (_edgeCross(dA, dB)) pts.push(_lerp3(a, b, dA, dB));
-    if (_edgeCross(dB, dC)) pts.push(_lerp3(b, c, dB, dC));
-    if (_edgeCross(dC, dA)) pts.push(_lerp3(c, a, dC, dA));
-
-    if (pts.length < 2) return null;
-    return { x1: pts[0].x, z1: pts[0].z, x2: pts[1].x, z2: pts[1].z };
-}
-
-function _edgeCross(d1, d2) { return (d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0); }
-function _lerp3(a, b, da, db) {
-    const t = da / (da - db);
-    return new THREE.Vector3(
-        a.x + t * (b.x - a.x),
-        a.y + t * (b.y - a.y),
-        a.z + t * (b.z - a.z),
-    );
 }
 
 // ── Type 2: IFC 2D FootPrint extraction ─────────────────────────────────────
@@ -417,7 +361,7 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
         const contourSegs = computeSectionContour(scene, cutPlane);
 
         if (opts.hatch && contourSegs.length) {
-            const polys = _chainSegmentsToPolygons(contourSegs);
+            const polys = chainSegmentsToPolygons(contourSegs);
             _drawHatchPolygons(doc, polys, toX, toY, M, dw, dh);
         }
 
@@ -438,7 +382,7 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
             ifcData.webIfc, ifcData.modelID, ifcData.model ?? null
         );
         for (const { segments, category, hasBbox } of products) {
-            const style = VECTOR_LINE_STYLES[category] ?? VECTOR_LINE_STYLES.default;
+            const style = _builtinLegacyFor(category);
             doc.setDrawColor(style.r, style.g, style.b);
             // BBox-derived rects render thinner + dashed to differentiate from real footprints
             doc.setLineWidth(hasBbox ? Math.min(style.w, 0.1) : style.w);
@@ -456,6 +400,17 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
         doc.setLineDashPattern([], 0); // reset
     }
 
+    // ── IFC grid axes (DIN-style structural grid overlay) ───────────────────
+    if (opts.ifcGridAxes?.length) {
+        _drawIfcGridAxes(doc, opts.ifcGridAxes, toX, toY, M, dw, dh);
+    }
+
+    // ── Element labels (text inside element outlines) ───────────────────────
+    if (opts.outlines?.length && opts.showLabels !== false) {
+        _drawElementLabels(doc, opts.outlines, toX, toY, M, dw, dh,
+                           opts.styleMap, opts.styleToLegacy, opts.styleMapPerModel, opts.labelOpts);
+    }
+
     // ── Annotations + Measurements (drawn on top of geometry) ───────────────
     if (opts.annotations?.length) _drawAnnotations(doc, opts.annotations, toX, toY, M, dw, dh);
     if (opts.measurements?.length) _drawMeasurements(doc, opts.measurements, toX, toY, M, dw, dh);
@@ -465,6 +420,32 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
         _drawScaleBar(doc, M, dw, dh, opts.scaleRatio);
         _drawNorthArrow(doc, M, dw, dh);
     }
+}
+
+// ── IFC structural grid axes ──────────────────────────────────────────────
+// DIN 1356-1 Tabelle 1 Zeile 6: Achsen = Strichpunktlinie, Liniengruppe II 1:100 = 0.25 mm
+function _drawIfcGridAxes(doc, axes, toX, toY, M, dw, dh) {
+    if (!axes?.length) return;
+    doc.setDrawColor(110, 110, 110);
+    doc.setLineWidth(0.25);
+    doc.setLineDashPattern([4, 1, 0.5, 1], 0); // dash-dot
+    const labelled = new Set(); // de-duplicate axis labels (one per axis-name)
+    doc.setFontSize(7);
+    for (const a of axes) {
+        const x1 = toX(a.start.x), y1 = toY(a.start.z);
+        const x2 = toX(a.end.x),   y2 = toY(a.end.z);
+        if (!_inBounds(x1, y1, M, dw, dh) && !_inBounds(x2, y2, M, dw, dh)) continue;
+        const clipped = _clipLine(x1, y1, x2, y2, M, dw, dh);
+        if (!clipped) continue;
+        doc.line(clipped.x1, clipped.y1, clipped.x2, clipped.y2);
+        if (a.name && !labelled.has(a.name)) {
+            labelled.add(a.name);
+            doc.setTextColor(120, 120, 120);
+            doc.text(a.name, clipped.x1, clipped.y1 - 0.5);
+        }
+    }
+    doc.setLineDashPattern([], 0);
+    doc.setTextColor(0, 0, 0);
 }
 
 // ── Annotations (3D pins → 2D paper) ────────────────────────────────────────
@@ -552,90 +533,35 @@ function _hexToRgb(hex) {
     return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
 }
 
-// ── Polygon chaining: connect contour segments into closed loops ────────────
 /**
- * Build closed polygons from a soup of segments by joining ones that share endpoints.
- * Tolerant matching (1 mm world snap) — IFC tessellation often produces tiny gaps.
- * Returns Array<Array<{x, z}>>  — each inner array is a closed ring.
+ * Section-contour hatching helper. Converts world-space polygons to paper-mm
+ * then defers to the named pattern in HatchPatterns library.
  */
-function _chainSegmentsToPolygons(segs) {
-    if (!segs.length) return [];
-    const EPS = 0.005; // 5 mm snap
-    const key = (p) => `${Math.round(p.x / EPS)},${Math.round(p.z / EPS)}`;
-
-    // Build adjacency map: endpoint → list of segment indices that touch it
-    const pool = segs.map((s, i) => ({ i, used: false, a: { x: s.x1, z: s.z1 }, b: { x: s.x2, z: s.z2 } }));
-    const byKey = new Map();
-    for (const seg of pool) {
-        const ka = key(seg.a), kb = key(seg.b);
-        (byKey.get(ka) ?? byKey.set(ka, []).get(ka)).push({ seg, end: 'a' });
-        (byKey.get(kb) ?? byKey.set(kb, []).get(kb)).push({ seg, end: 'b' });
+function _drawHatchPolygons(doc, polys, toX, toY, M, dw, dh, patternName = 'concrete') {
+    if (!polys.length) return;
+    for (const poly of polys) {
+        // Convert poly (world u,z) → paper rings
+        const ring = poly.map(p => [toX(p.x), toY(p.z)]);
+        const bbox = _paperBBox(ring);
+        if (!bbox) continue;
+        drawHatch(doc, [ring], bbox, patternName);
     }
-
-    const polys = [];
-    for (const start of pool) {
-        if (start.used) continue;
-        const ring = [start.a, start.b];
-        start.used = true;
-        let head = start.b;
-        let safety = 0;
-        while (safety++ < 2000) {
-            const next = (byKey.get(key(head)) ?? []).find(c => !c.seg.used && c.seg !== start);
-            if (!next) break;
-            next.seg.used = true;
-            const other = next.end === 'a' ? next.seg.b : next.seg.a;
-            ring.push(other);
-            head = other;
-            if (key(head) === key(ring[0])) break; // closed
-        }
-        // Only keep rings that closed and are big enough to bother with
-        if (ring.length >= 4 && key(head) === key(ring[0])) polys.push(ring);
-    }
-    return polys;
 }
 
 /**
- * Draw a 45° crosshatch fill inside each polygon — concrete-style pattern.
- * Uses a single line-clipping pass per polygon (Sutherland-Hodgman not needed —
- * we just test each scan line's intersections with the polygon edges).
+ * Compute the AABB of one or more 2D rings. Accepts a single ring (Array<[x,y]>)
+ * or an array of rings. Returns {minX,maxX,minY,maxY} or null if empty.
  */
-function _drawHatchPolygons(doc, polys, toX, toY, M, dw, dh) {
-    if (!polys.length) return;
-    doc.setDrawColor(80, 80, 80);
-    doc.setLineWidth(0.08);
-    const SPACING = 2; // mm spacing in paper space — tight for concrete look
-
-    for (const poly of polys) {
-        // Polygon in paper-mm space
-        const ppts = poly.map(p => ({ x: toX(p.x), y: toY(p.z) }));
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const p of ppts) {
-            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-        }
-        // Diagonal hatch: line direction (1,1). Iterate offset c = x + y from minX+minY to maxX+maxY
-        for (let c = Math.floor(minX + minY); c <= maxX + maxY; c += SPACING) {
-            // Line: x + y = c  → from (c - maxY, maxY) to (maxX, c - maxX) clipped to bbox
-            // Compute intersections with all polygon edges
-            const hits = [];
-            for (let i = 0; i < ppts.length - 1; i++) {
-                const a = ppts[i], b = ppts[i + 1];
-                // Solve t for a + t*(b-a) such that (a.x + t*dx) + (a.y + t*dy) = c
-                const dx = b.x - a.x, dy = b.y - a.y;
-                const denom = dx + dy;
-                if (Math.abs(denom) < 1e-6) continue;
-                const t = (c - a.x - a.y) / denom;
-                if (t < 0 || t > 1) continue;
-                hits.push({ x: a.x + t * dx, y: a.y + t * dy });
-            }
-            if (hits.length < 2) continue;
-            // Sort by x and connect pairs (in/out intervals)
-            hits.sort((a, b) => a.x - b.x);
-            for (let i = 0; i + 1 < hits.length; i += 2) {
-                doc.line(hits[i].x, hits[i].y, hits[i + 1].x, hits[i + 1].y);
-            }
-        }
+function _paperBBox(ringOrRings) {
+    if (!ringOrRings?.length) return null;
+    const rings = Array.isArray(ringOrRings[0]?.[0]) ? ringOrRings : [ringOrRings];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const r of rings) for (const [x, y] of r) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
     }
+    if (!isFinite(minX)) return null;
+    return { minX, maxX, minY, maxY };
 }
 
 // ── Scale bar (DIN-style) ───────────────────────────────────────────────────
@@ -730,18 +656,57 @@ function _clipLine(x1, y1, x2, y2, M, dw, dh) {
  *
  * @param {object} styleMap - optional user style overrides (Category → style def)
  */
-function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, styleToLegacy, styleMapPerModel) {
-    for (const { category, rings, fallback, ruleStyle, modelId } of outlines) {
-        // Pick the most specific style map: per-model override (if any) → global → default
+function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, styleToLegacyFn, styleMapPerModel) {
+    // Resolution chain: per-model override → global → built-in → fallback,
+    // then merge in any rule-style overlay. `aboveCut` elements get a thin
+    // dashed override at the end (DIN convention for hidden lines).
+    const resolve = (category, modelId, ruleStyle, aboveCut) => {
         const perModel = (modelId && styleMapPerModel?.[modelId]) ? styleMapPerModel[modelId] : null;
         const baseStyle = perModel?.[category]
                        ?? styleMap?.[category]
-                       ?? VECTOR_LINE_STYLES[category]
-                       ?? VECTOR_LINE_STYLES.default;
-        // Per-element rule overrides the base when a rule matched (ruleStyle is in
-        // the high-level shape — convert via the legacy helper if provided)
-        const overlay = ruleStyle && styleToLegacy ? styleToLegacy(ruleStyle) : null;
-        const style = overlay ? { ...baseStyle, ...overlay } : baseStyle;
+                       ?? _builtinLegacyFor(category);
+        const overlay = ruleStyle && styleToLegacyFn ? styleToLegacyFn(ruleStyle) : null;
+        const merged = overlay ? { ...baseStyle, ...overlay } : baseStyle;
+        if (aboveCut) {
+            // DIN 1356-1 Tabelle 2, Zeile 7: "Bauteile vor bzw. über der
+            // Schnittebene" = Punktlinie (dotted), eine Stufe dünner als die
+            // Schnittflächen-Begrenzung. Schraffuren entfallen.
+            return {
+                ...merged,
+                w: Math.max(0.13, (merged.w ?? 0.35) * 0.7),
+                dash: true,
+                dashPattern: [0.5, 0.8],
+                hatch: 'none',
+            };
+        }
+        return merged;
+    };
+
+    // First pass: hatch fills (behind the outlines)
+    for (const { category, rings, ruleStyle, modelId, aboveCut } of outlines) {
+        if (aboveCut) continue; // hidden lines never get hatch fills
+        const style = resolve(category, modelId, ruleStyle, false);
+        if (style.enabled === false) continue;
+
+        const hatchName = style.hatch;
+        if (!hatchName || hatchName === 'none' || !rings.length) continue;
+
+        // Convert rings (world u,v) to paper-mm space + collect bbox
+        const paperRings = rings.map(r =>
+            r.map(([u, v]) => [toX(u), toY(v)])).filter(r => r.length >= 4);
+        if (!paperRings.length) continue;
+
+        const bbox = _paperBBox(paperRings);
+        if (!bbox) continue;
+        // Skip hatching elements completely outside the drawing area
+        if (bbox.maxX < M || bbox.minX > M + dw || bbox.maxY < M || bbox.minY > M + dh) continue;
+
+        drawHatch(doc, paperRings, bbox, hatchName);
+    }
+
+    // Second pass: outlines on top of any hatches
+    for (const { category, rings, fallback, ruleStyle, modelId, aboveCut } of outlines) {
+        const style = resolve(category, modelId, ruleStyle, aboveCut);
         if (style.enabled === false) continue;
 
         const r = style.r ?? 80, g = style.g ?? 80, b = style.b ?? 80;
@@ -749,7 +714,6 @@ function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, sty
         const w = Math.max(0.1, fallback === 'bbox' ? Math.min(baseW, 0.12) : baseW);
         doc.setDrawColor(r, g, b);
         doc.setLineWidth(w);
-        // Dash: explicit pattern from style, or fall back to the legacy boolean flag
         const dashArr = style.dashPattern
             ?? (style.dash || fallback === 'bbox' ? [0.5, 0.5] : []);
         doc.setLineDashPattern(dashArr, 0);
@@ -766,3 +730,138 @@ function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, sty
     }
     doc.setLineDashPattern([], 0);
 }
+
+// ── Element labels with collision avoidance ─────────────────────────────────
+//
+// Strategy: greedy placement with AABB collision rejection.
+// 1. Compute each candidate label's bbox at multiple anchor positions
+//    (centre, top, bottom, left, right of the element).
+// 2. Sort candidates by element-size (largest first → priority).
+// 3. For each label, pick the first anchor whose paper-bbox doesn't overlap
+//    any already-placed label's bbox.
+// 4. If all anchors collide, skip the label (no overlap on the plan).
+function _drawElementLabels(doc, outlines, toX, toY, M, dw, dh,
+                            styleMap, styleToLegacyFn, styleMapPerModel, opts) {
+    const o = opts ?? {};
+    const defaultFontMm  = o.defaultFontMm ?? 2.2;
+    const minPxSize      = o.minElementSize ?? 1.5;
+    const padding        = o.padding ?? 0.4;
+    const collisionCheck = o.collisionCheck !== false;
+
+    const charW = (fontMm) => fontMm * 0.55;
+
+    // Same resolution chain as _drawCategoryOutlines
+    function styleFor(outline) {
+        const perModel = (outline.modelId && styleMapPerModel?.[outline.modelId])
+            ? styleMapPerModel[outline.modelId] : null;
+        const baseStyle = perModel?.[outline.category]
+                       ?? styleMap?.[outline.category]
+                       ?? _builtinLegacyFor(outline.category);
+        const overlay = outline.ruleStyle && styleToLegacyFn ? styleToLegacyFn(outline.ruleStyle) : null;
+        return overlay ? { ...baseStyle, ...overlay } : baseStyle;
+    }
+
+    // Build candidate list with paper bboxes
+    const candidates = [];
+    for (const out of outlines) {
+        if (!out?.rings?.length) continue;
+        // Normalise to string[] so the rest of the pipeline doesn't branch.
+        const lines = Array.isArray(out.label) ? out.label : (out.label ? [out.label] : null);
+        if (!lines?.length) continue;
+        const style = styleFor(out);
+        if (style.enabled === false) continue;
+
+        const ring = out.rings[0];
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const [u, v] of ring) {
+            const px = toX(u), py = toY(v);
+            if (px < minX) minX = px; if (px > maxX) maxX = px;
+            if (py < minY) minY = py; if (py > maxY) maxY = py;
+        }
+        if (!isFinite(minX)) continue;
+        const elW = maxX - minX, elH = maxY - minY;
+        if (elW < minPxSize || elH < minPxSize) continue;
+
+        const fontMm = Number(style.labelFontSize) > 0 ? Number(style.labelFontSize) : defaultFontMm;
+        const anchor = style.labelAnchor ?? 'center';
+        const lineH  = fontMm * 1.1;
+        const tw = Math.max(...lines.map(l => charW(fontMm) * l.length));
+        const th = lines.length * lineH;
+
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        const positions = _anchorPositions(anchor, cx, cy, minX, maxX, minY, maxY, tw, th);
+
+        candidates.push({ lines, fontMm, lineH, tw, th, positions, elArea: elW * elH });
+    }
+
+    // Largest elements claim positions first
+    candidates.sort((a, b) => b.elArea - a.elArea);
+
+    const placed = [];
+    for (const c of candidates) {
+        let chosen = null;
+        for (const pos of c.positions) {
+            const bb = {
+                minX: pos.x - c.tw / 2 - padding,
+                maxX: pos.x + c.tw / 2 + padding,
+                minY: pos.y - c.th / 2 - padding,
+                maxY: pos.y + c.th / 2 + padding,
+            };
+            // Only the anchor point must stay on paper — labels may extend past the edge.
+            if (pos.x < M || pos.x > M + dw || pos.y < M || pos.y > M + dh) continue;
+            if (collisionCheck && _anyOverlap(bb, placed)) continue;
+            chosen = { pos, bb };
+            break;
+        }
+        if (!chosen) continue;
+
+        const { pos } = chosen;
+        doc.setFontSize(c.fontMm / 0.3528); // 1 pt = 0.3528 mm
+        // Multi-line block centred on pos.y. Manual loop because jsPDF's
+        // baseline:'middle' only honours the first row when text is an array.
+        const startY = pos.y - (c.lines.length - 1) * c.lineH / 2;
+        for (let i = 0; i < c.lines.length; i++) {
+            const line = c.lines[i];
+            const ly = startY + i * c.lineH;
+            doc.setTextColor(255, 255, 255);
+            for (const [ox, oy] of [[-0.18, 0], [0.18, 0], [0, -0.18], [0, 0.18]]) {
+                doc.text(line, pos.x + ox, ly + oy, { align: 'center', baseline: 'middle' });
+            }
+            doc.setTextColor(0, 0, 0);
+            doc.text(line, pos.x, ly, { align: 'center', baseline: 'middle' });
+        }
+        placed.push(chosen.bb);
+    }
+    doc.setTextColor(0, 0, 0);
+}
+
+/** Compute candidate placement positions for a given anchor preference. */
+function _anchorPositions(anchor, cx, cy, minX, maxX, minY, maxY, tw, th) {
+    const offset = th * 0.7; // small gap from element edge
+    const positions = {
+        center: { x: cx,                y: cy                          },
+        top:    { x: cx,                y: minY - th * 0.5 - offset    },
+        bottom: { x: cx,                y: maxY + th * 0.5 + offset    },
+        left:   { x: minX - tw * 0.5 - offset, y: cy                   },
+        right:  { x: maxX + tw * 0.5 + offset, y: cy                   },
+    };
+    // Order = preference; first tries the requested anchor, then alternatives
+    const order = {
+        center: ['center', 'top', 'bottom', 'right', 'left'],
+        top:    ['top', 'bottom', 'right', 'left', 'center'],
+        bottom: ['bottom', 'top', 'right', 'left', 'center'],
+        left:   ['left', 'right', 'top', 'bottom', 'center'],
+        right:  ['right', 'left', 'top', 'bottom', 'center'],
+    }[anchor] ?? ['center', 'top', 'bottom', 'right', 'left'];
+    return order.map(k => positions[k]);
+}
+
+function _anyOverlap(bb, list) {
+    for (const p of list) {
+        if (bb.maxX < p.minX || bb.minX > p.maxX) continue;
+        if (bb.maxY < p.minY || bb.minY > p.maxY) continue;
+        return true; // both axes overlap → boxes intersect
+    }
+    return false;
+}
+

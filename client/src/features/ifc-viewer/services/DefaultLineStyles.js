@@ -23,8 +23,12 @@ export const DASH_PATTERNS = {
 
 export const HATCH_PATTERNS_OPTIONS = ['none','concrete','steel','masonry','wood','earth','glass'];
 
-function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none') {
-    return { color, lineWidth, lineDash, hatchPattern, enabled: true };
+// labelTemplate defaults to '' (off). Users opt in per-category in the editor.
+// IFCSPACE is the one exception below — rooms almost always have a Name worth showing.
+function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none', labelTemplate = '', labelFontSize = 2.2, labelAnchor = 'center') {
+    return { color, lineWidth, lineDash, hatchPattern,
+             labelTemplate, labelFontSize, labelAnchor,
+             enabled: true };
 }
 
 export const DEFAULT_LINE_STYLES = {
@@ -67,10 +71,10 @@ export const DEFAULT_LINE_STYLES = {
     IFCPUMP:              mk('#6400c8', 0.25, 'solid'),
     IFCVALVE:             mk('#6400c8', 0.25, 'solid'),
 
-    // Furnishings + spaces
+    // Furnishings + spaces — IFCSPACE is the only auto-labeled category
     IFCFURNITURE:         mk('#785a32', 0.15, 'solid'),
     IFCFURNITURETYPE:     mk('#785a32', 0.15, 'solid'),
-    IFCSPACE:             mk('#a0a0a0', 0.12, 'dotted'),
+    IFCSPACE:             mk('#a0a0a0', 0.12, 'dotted', 'none', '{Name|LongName}', 2.6),
     IFCBUILDINGELEMENTPROXY: mk('#969696', 0.20, 'solid'),
 
     // Fallback for unknown categories

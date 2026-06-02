@@ -45,6 +45,7 @@
         <!-- LEFT: Live preview -->
         <div class="preview-pane">
           <div class="preview-label">Vorschau</div>
+
           <div class="preview-scroll">
             <div class="paper-sheet" :style="{ aspectRatio: paperAspect }">
               <!-- Drawing area — draggable when a scale is active -->
@@ -196,6 +197,34 @@
               >1:{{ s }}</button>
             </div>
             <div class="scale-hint">Erfordert Orthogonalmodus (Planungslayer)</div>
+
+            <!-- Overview mini-map: tightly coupled to scale selection -->
+            <div v-if="overviewData" class="overview-pane">
+              <div class="overview-label">
+                <span>🗺 Übersicht</span>
+                <span class="overview-hint">{{ overviewHint }}</span>
+              </div>
+              <div class="overview-canvas-stack" :style="{ width: OVERVIEW_W + 'px', height: OVERVIEW_H + 'px' }">
+                <!-- 3D layer: a real second renderer pointing at the main scene -->
+                <canvas
+                  ref="overview3dCanvas"
+                  :width="OVERVIEW_W"
+                  :height="OVERVIEW_H"
+                  class="overview-3d"
+                />
+                <!-- 2D layer: rectangle, crosshair, zoom badge, input handlers -->
+                <canvas
+                  ref="overviewCanvas"
+                  :width="OVERVIEW_W"
+                  :height="OVERVIEW_H"
+                  class="overview-canvas overview-overlay"
+                  :title="overviewHint"
+                  @mousedown="onOverviewMouseDown"
+                  @wheel.prevent="onOverviewWheel"
+                  @dblclick="onOverviewDblClick"
+                />
+              </div>
+            </div>
           </div>
 
           <!-- Schriftfeld -->
@@ -265,6 +294,14 @@
                 <input type="checkbox" v-model="vectorMeasurements" />
                 <span>Messungen einfügen</span>
               </label>
+              <label class="vector-subtoggle">
+                <input type="checkbox" v-model="vectorLabels" />
+                <span>Element-Beschriftungen</span>
+              </label>
+              <label class="vector-subtoggle">
+                <input type="checkbox" v-model="vectorIfcGrids" />
+                <span>IFC-Achsenraster</span>
+              </label>
             </div>
 
             <div v-if="vectorMode" class="vector-style-btn-row">
@@ -284,6 +321,9 @@
             :open="showStyleEditor"
             :categoryNames="_currentCategoryNames"
             :modelList="ifc.modelList ?? []"
+            :getCategoryGroups="props.getCategoryGroups"
+            :getFragmentsList="props.getFragmentsList"
+            :getFragmentsManager="props.getFragmentsManager"
             @close="showStyleEditor = false"
           />
 
@@ -299,7 +339,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import * as THREE from 'three';
 import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import { exportPlanPDF, exportVectorPlanPDF } from '../services/IfcPdfExporter.js';
 import { LAYER_STYLES } from '../services/LayerStyleManager.js';
@@ -308,30 +349,6 @@ import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import IfcVectorStyleEditor from './IfcVectorStyleEditor.vue';
 
 const ifc = useIfcStore();
-
-/**
- * Build the resolved {category → legacyStyle} map.
- * Resolution: per-model override > global > default.
- * When multiple IFCs are loaded, each model has its own resolved map — the
- * outline pipeline reads them at draw-time via styleMapPerModel.
- */
-function _resolvedStyleMap() {
-  const out = {};
-  const src = ifc.vectorStyles ?? {};
-  for (const cat of Object.keys(src)) out[cat] = styleToLegacy(src[cat]);
-  return out;
-}
-/** Per-model resolved map { modelId: { category: legacyStyle } } for outline overrides. */
-function _resolvedStyleMapByModel() {
-  const out = {};
-  for (const [modelId, override] of Object.entries(ifc.vectorStylesByModel ?? {})) {
-    const merged = { ...ifc.vectorStyles, ...override };
-    const legacy = {};
-    for (const cat of Object.keys(merged)) legacy[cat] = styleToLegacy(merged[cat]);
-    out[modelId] = legacy;
-  }
-  return out;
-}
 
 const props = defineProps({
   getSnapshot:           { type: Function, default: null },
@@ -344,10 +361,6 @@ const props = defineProps({
   // Scale-accurate snapshot: renders with a custom ortho camera, bypasses viewport camera
   getScaleSnapshot:      { type: Function, default: null }, // (scale, dw, dh, viewDir) => dataUrl|null
   truckCamera:           { type: Function, default: null }, // (dx, dy) => void — pan main camera in Passend mode
-  // Kept as no-ops for backward compat — no longer needed
-  getOrthoExtent:        { type: Function, default: null },
-  setOrthoExtentForScale:{ type: Function, default: null },
-  setOrthoExtent:        { type: Function, default: null },
   // Vector export
   getCamera:             { type: Function, default: null }, // () => THREE.Camera|null  (viewport cam)
   getScene:              { type: Function, default: null }, // () => THREE.Scene
@@ -358,6 +371,17 @@ const props = defineProps({
   getMeasurements:       { type: Function, default: null }, // () => [{ p1, p2, dist }] from IfcViewer
   getWebIfcAPI:          { type: Function, default: null }, // () => { webIfc, modelID, model? }|null
   getSectionCutPlane:    { type: Function, default: null }, // () => THREE.Plane|null
+  // Overview-Mini-Karte
+  getModelBoundsXZ:      { type: Function, default: null }, // () => {minX,maxX,minZ,maxZ,centerX,centerZ,width,depth}|null
+  getOverviewSnapshot:   { type: Function, default: null }, // (w,h,bounds?) => {dataUrl,bounds}|null (legacy/fallback)
+  getMainScene:          { type: Function, default: null }, // () => THREE.Scene — live view for overview
+  getModelCenterY:       { type: Function, default: null }, // () => number — anchor for top-down cam
+  getClippingPlanes:     { type: Function, default: null }, // () => THREE.Plane[] — sync section cut clipping
+  withSectionVisualsHidden: { type: Function, default: null }, // (renderFn) => void — runs fn with gizmo hidden
+  renderToCanvas:        { type: Function, default: null }, // (canvas2d, cam) => bool — main-renderer blit
+  getCameraTarget:       { type: Function, default: null }, // () => {x,y,z} — engine controls.target in world
+  // IFC-Achsenraster
+  getIfcGridAxes:        { type: Function, default: null }, // () => [{name, start:{x,z}, end:{x,z}}]
 });
 const emit = defineEmits(['close']);
 
@@ -370,6 +394,334 @@ const snapshot    = ref(null);
 const logoDataUrl = ref(null);
 const activeView  = ref('current');
 const drawingAreaRef = ref(null);
+
+// ── Overview mini-map ────────────────────────────────────────────────────────
+// Top-down fit-all snapshot of the model plus a red rectangle showing where
+// the current scale viewport sits. Lets the user navigate when zoomed in.
+// At very small scales (1:50 on a huge site) the rectangle would shrink to a
+// pixel; we then keep it visible via a minimum size and a centre crosshair.
+const OVERVIEW_W = 280, OVERVIEW_H = 190;
+const OVERVIEW_MIN_RECT_PX = 14; // minimum on-canvas size for the viewport rect
+const OVERVIEW_MAX_ZOOM    = 12; // how deep we let the user wheel-zoom in
+const overviewHint = computed(() => activeScale.value === null
+  ? 'Klick = 1:100 zentrieren · Rechteck = Region wählen · Mausrad = zoomen'
+  : 'Klick / Rechteck = verschieben · Mausrad = Übersicht zoomen · Doppelklick = Reset');
+const overview3dCanvas = ref(null);   // 2D canvas: receives a blit of the main renderer
+const overviewCanvas   = ref(null);   // 2D overlay: markers + input
+const overviewData     = ref(null);   // sentinel: truthy once the overview is initialised
+let   _overview3dCam   = null;        // ortho camera derived from overviewView
+let   _overviewRafId   = null;
+
+// Independent zoom/pan state for the overview viewport. Initialised to fit-all
+// when the modal opens, then mutated by wheel/click handlers.
+const overviewView = reactive({ centerX: 0, centerZ: 0, halfW: 1, halfH: 1 });
+
+function resetOverviewView() {
+  const b = props.getModelBoundsXZ?.();
+  if (!b) return;
+  overviewView.centerX = b.centerX;
+  overviewView.centerZ = b.centerZ;
+  // Add 10% padding so the model doesn't kiss the canvas edge in fit-all.
+  const pad = 1.10;
+  const halfW = b.width  / 2 * pad;
+  const halfH = b.depth  / 2 * pad;
+  // Match the canvas aspect so the live render fills the whole pane.
+  const canvasAspect = OVERVIEW_W / OVERVIEW_H;
+  const worldAspect  = halfW / halfH;
+  if (worldAspect > canvasAspect) {
+    overviewView.halfW = halfW;
+    overviewView.halfH = halfW / canvasAspect;
+  } else {
+    overviewView.halfH = halfH;
+    overviewView.halfW = halfH * canvasAspect;
+  }
+}
+
+// rAF loop that reuses the MAIN renderer (so it sees the same Fragment buffers
+// as the user's viewport) to blit a top-down ortho view of the live scene into
+// the overview canvas. Throttled to ~30 fps; pauses when the tab is hidden.
+async function initOverviewViewer() {
+  if (_overview3dCam) return;
+  const scene = props.getMainScene?.();
+  if (!scene || !props.renderToCanvas) return;
+
+  // Reveal the canvas stack FIRST so refs become real DOM nodes.
+  overviewData.value = { bounds: null };
+  await nextTick();
+
+  const cv = overview3dCanvas.value;
+  if (!cv) { overviewData.value = null; return; }
+
+  _overview3dCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000);
+  resetOverviewView();
+
+  const TARGET_INTERVAL_MS = 33; // ~30 fps cap
+  let last = 0;
+  const tick = (ts) => {
+    if (!_overview3dCam) return;
+    if (document.visibilityState === 'hidden') {
+      _overviewRafId = requestAnimationFrame(tick);
+      return;
+    }
+    if (ts - last >= TARGET_INTERVAL_MS) {
+      last = ts;
+      _updateOverviewCam();
+      try { props.renderToCanvas(cv, _overview3dCam); }
+      catch (e) { console.warn('[Overview] renderToCanvas failed', e?.message ?? e); }
+      redrawOverview(); // 2D marker layer on top
+    }
+    _overviewRafId = requestAnimationFrame(tick);
+  };
+  _overviewRafId = requestAnimationFrame(tick);
+}
+
+function _updateOverviewCam() {
+  const cy = props.getModelCenterY?.() ?? 0;
+  _overview3dCam.left   = -overviewView.halfW;
+  _overview3dCam.right  =  overviewView.halfW;
+  _overview3dCam.top    =  overviewView.halfH;
+  _overview3dCam.bottom = -overviewView.halfH;
+  // Looking straight down (top view). up=(0,0,-1) so world +Z points to the
+  // top of the canvas (the standard "Z = north" plan convention).
+  _overview3dCam.position.set(overviewView.centerX, cy + 10000, overviewView.centerZ);
+  _overview3dCam.up.set(0, 0, -1);
+  _overview3dCam.lookAt(overviewView.centerX, cy, overviewView.centerZ);
+  _overview3dCam.updateProjectionMatrix();
+}
+
+function disposeOverviewViewer() {
+  if (_overviewRafId) { cancelAnimationFrame(_overviewRafId); _overviewRafId = null; }
+  _overview3dCam = null;
+}
+
+function redrawOverview() {
+  // The 3D content is rendered by the WebGL canvas underneath; this layer
+  // only draws the 2D markers (frame, zoom badge, viewport rectangle,
+  // crosshair, centre dot).
+  const cv = overviewCanvas.value;
+  if (!cv || !overviewData.value) return;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  // Zoom indicator (top-right) when the user has zoomed in past fit-all.
+  const bxz = props.getModelBoundsXZ?.();
+  if (bxz) {
+    const fitHalfW = bxz.width * 0.55; // matches the pad=1.10 in resetOverviewView
+    const zoomLevel = fitHalfW > 0 ? fitHalfW / overviewView.halfW : 1;
+    if (zoomLevel > 1.05) {
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(`${zoomLevel.toFixed(1)}×`, cv.width - 5, 4);
+    }
+  }
+
+  // Viewport rectangle: only meaningful for the top-down plan view because
+  // the overview is itself a top-down render.
+  if (activeScale.value === null || _viewDir() !== 'top' || !bxz) return;
+
+  const { dw, dh } = drawingDims.value;
+  const halfW = (dw / 1000 * activeScale.value) / 2;
+  const halfH = (dh / 1000 * activeScale.value) / 2;
+  // Match getScaleSnapshot's target = controls.target + panOffset.
+  const ct = props.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
+  const tx = ct.x + panOffset.x;
+  const tz = ct.z + panOffset.z;
+
+  const sx = cv.width  / (overviewView.halfW * 2);
+  const sz = cv.height / (overviewView.halfH * 2);
+  const cx = (tx - (overviewView.centerX - overviewView.halfW)) * sx;
+  const cz = (tz - (overviewView.centerZ - overviewView.halfH)) * sz;
+  const rawW = (halfW * 2) * sx;
+  const rawH = (halfH * 2) * sz;
+
+  // Clamp to a minimum visible size so the rect never disappears on huge sites.
+  const drawW = Math.max(rawW, OVERVIEW_MIN_RECT_PX);
+  const drawH = Math.max(rawH, OVERVIEW_MIN_RECT_PX);
+  const rx = cx - drawW / 2;
+  const ry = cz - drawH / 2;
+  const tooSmall = rawW < OVERVIEW_MIN_RECT_PX || rawH < OVERVIEW_MIN_RECT_PX;
+
+  // Always-visible crosshair lines that span the whole canvas — make the
+  // current centre easy to locate even when the viewport rectangle is tiny.
+  ctx.strokeStyle = 'rgba(229, 57, 53, 0.35)';
+  ctx.lineWidth = 0.8;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, cv.height);
+  ctx.moveTo(0, cz); ctx.lineTo(cv.width, cz);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Viewport rectangle: solid red outline + faint fill
+  ctx.strokeStyle = '#e53935';
+  ctx.lineWidth = tooSmall ? 2 : 1.6;
+  ctx.fillStyle = 'rgba(229, 57, 53, 0.18)';
+  ctx.fillRect(rx, ry, drawW, drawH);
+  ctx.strokeRect(rx, ry, drawW, drawH);
+
+  // Centre marker — always sharp + visible, even when rect is much larger.
+  ctx.fillStyle = '#e53935';
+  ctx.beginPath();
+  ctx.arc(cx, cz, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ── Overview interaction: click to centre, drag to fit a rectangle ─────────
+const CLICK_DRAG_PX = 5; // px threshold below which a press is treated as a click
+let   _ovDrag = null;    // { startPx:{x,y}, currentPx:{x,y} } during an active drag
+
+function _ovCanvasToWorld(px, py) {
+  // Convert canvas pixel coords → world XZ via the current overview view
+  // (which may be zoomed-in compared to the full fit-all data.bounds).
+  const cv = overviewCanvas.value;
+  if (!overviewData.value || !cv) return null;
+  return {
+    x: overviewView.centerX - overviewView.halfW + (px / cv.width)  * overviewView.halfW * 2,
+    z: overviewView.centerZ - overviewView.halfH + (py / cv.height) * overviewView.halfH * 2,
+  };
+}
+
+function _ovEventToCanvasPx(e) {
+  const cv = overviewCanvas.value;
+  if (!cv) return { x: 0, y: 0 };
+  const rect = cv.getBoundingClientRect();
+  const scaleX = cv.width  / rect.width;
+  const scaleY = cv.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top)  * scaleY,
+  };
+}
+
+function onOverviewMouseDown(e) {
+  if (!overviewData.value) return;
+  if (e.button !== 0) return;
+  e.preventDefault();
+  _ovDrag = { startPx: _ovEventToCanvasPx(e), currentPx: _ovEventToCanvasPx(e) };
+  document.addEventListener('mousemove', _onOverviewMove);
+  document.addEventListener('mouseup',   _onOverviewUp);
+}
+
+function onOverviewWheel(e) {
+  if (!overviewData.value) return;
+  e.preventDefault();
+  const px = _ovEventToCanvasPx(e);
+  const before = _ovCanvasToWorld(px.x, px.y);
+  if (!before) return;
+
+  // Smooth multiplicative zoom — deltaY < 0 = scroll up = zoom in.
+  const factor = e.deltaY < 0 ? 1 / 1.18 : 1.18;
+  const bxz = props.getModelBoundsXZ?.();
+  const maxHalfW = bxz ? (bxz.maxX - bxz.minX) / 2 : overviewView.halfW * 16;
+  const maxHalfH = bxz ? (bxz.maxZ - bxz.minZ) / 2 : overviewView.halfH * 16;
+  const minHalfW = maxHalfW / OVERVIEW_MAX_ZOOM;
+  const minHalfH = maxHalfH / OVERVIEW_MAX_ZOOM;
+  overviewView.halfW = Math.max(minHalfW, Math.min(maxHalfW, overviewView.halfW * factor));
+  overviewView.halfH = Math.max(minHalfH, Math.min(maxHalfH, overviewView.halfH * factor));
+
+  // Keep the same world point under the cursor (Google-Maps zoom).
+  const after = _ovCanvasToWorld(px.x, px.y);
+  overviewView.centerX += before.x - after.x;
+  overviewView.centerZ += before.z - after.z;
+
+  // Clamp pan so the view never leaves the model bbox.
+  if (bxz) {
+    overviewView.centerX = Math.max(bxz.minX + overviewView.halfW, Math.min(bxz.maxX - overviewView.halfW, overviewView.centerX));
+    overviewView.centerZ = Math.max(bxz.minZ + overviewView.halfH, Math.min(bxz.maxZ - overviewView.halfH, overviewView.centerZ));
+  }
+  // No explicit refresh: the rAF loop picks up the new view on the next tick.
+}
+
+function onOverviewDblClick() {
+  if (!overviewData.value) return;
+  resetOverviewView();
+  // rAF loop picks up the new view on the next tick.
+}
+
+function _onOverviewMove(e) {
+  if (!_ovDrag) return;
+  _ovDrag.currentPx = _ovEventToCanvasPx(e);
+  redrawOverview();
+  const cv = overviewCanvas.value;
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const x0 = Math.min(_ovDrag.startPx.x, _ovDrag.currentPx.x);
+  const y0 = Math.min(_ovDrag.startPx.y, _ovDrag.currentPx.y);
+  const w  = Math.abs(_ovDrag.currentPx.x - _ovDrag.startPx.x);
+  const h  = Math.abs(_ovDrag.currentPx.y - _ovDrag.startPx.y);
+  // Cyan-tinted rectangle so it stands out against the red viewport rect.
+  ctx.fillStyle = 'rgba(79, 195, 247, 0.18)';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.strokeStyle = '#4fc3f7';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 2]);
+  ctx.strokeRect(x0, y0, w, h);
+  ctx.setLineDash([]);
+}
+
+async function _onOverviewUp(e) {
+  document.removeEventListener('mousemove', _onOverviewMove);
+  document.removeEventListener('mouseup',   _onOverviewUp);
+  if (!_ovDrag) return;
+  const drag = _ovDrag;
+  _ovDrag = null;
+
+  const dx = Math.abs(drag.currentPx.x - drag.startPx.x);
+  const dy = Math.abs(drag.currentPx.y - drag.startPx.y);
+  const isClick = dx < CLICK_DRAG_PX && dy < CLICK_DRAG_PX;
+
+  const bxz = props.getModelBoundsXZ?.();
+  if (!bxz) { redrawOverview(); return; }
+
+  // Convert click / drag-rect-centre to world coordinates.
+  const worldStart = _ovCanvasToWorld(drag.startPx.x, drag.startPx.y);
+  if (!worldStart) return;
+  let targetX, targetZ;
+  if (isClick) {
+    targetX = worldStart.x;
+    targetZ = worldStart.z;
+  } else {
+    const worldEnd = _ovCanvasToWorld(drag.currentPx.x, drag.currentPx.y);
+    if (!worldEnd) return;
+    targetX = (worldStart.x + worldEnd.x) / 2;
+    targetZ = (worldStart.z + worldEnd.z) / 2;
+  }
+  // getScaleSnapshot renders at `controls.target + panOffset`, so panOffset
+  // must be expressed relative to the live controls target — not the model
+  // bbox centre (those only match when the user hasn't panned the main view).
+  const ct = props.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
+  panOffset.x = targetX - ct.x;
+  panOffset.z = targetZ - ct.z;
+
+  // Scale policy: the user's scale choice is sacred.
+  //  - Scale active           → pan only, never change the scale.
+  //  - Passend (kein Maßstab) + Drag → auto-fit smallest scale that contains the rect.
+  //  - Passend + Click        → default to 1:100 (otherwise the click would do nothing visible).
+  if (activeScale.value !== null) {
+    const { dw, dh } = drawingDims.value;
+    snapshot.value = props.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
+    return;
+  }
+
+  if (isClick) {
+    await selectScale(100);
+    return;
+  }
+
+  // Passend + Drag-to-rect → fit-to-rect
+  const worldEnd = _ovCanvasToWorld(drag.currentPx.x, drag.currentPx.y);
+  const rectW = Math.abs(worldEnd.x - worldStart.x);
+  const rectD = Math.abs(worldEnd.z - worldStart.z);
+  const { dw, dh } = drawingDims.value;
+  const scales = SCALE_OPTIONS.filter(s => s !== null).sort((a, b) => a - b);
+  let chosen = scales[scales.length - 1];
+  for (const s of scales) {
+    if ((dw / 1000) * s >= rectW && (dh / 1000) * s >= rectD) { chosen = s; break; }
+  }
+  await selectScale(chosen);
+}
 
 // ── Pan state ─────────────────────────────────────────────────────────────────
 // panOffset: accumulated world-unit offset (metres) from user drag operations
@@ -552,10 +904,30 @@ async function selectScale(scale) {
 
   if (activeStyleId.value !== 'plan') await selectStyle('plan');
 
+  // Smart re-center: if the resulting viewport would lie completely outside
+  // the model bbox (e.g. switching 1:1000 → 1:50 left us on a blank wall),
+  // snap to model centre so the user lands on something recognisable.
+  const bxz = props.getModelBoundsXZ?.();
+  if (bxz) {
+    const halfW = (dw / 1000 * scale) / 2;
+    const halfH = (dh / 1000 * scale) / 2;
+    const ct = props.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
+    const tx = ct.x + panOffset.x;
+    const tz = ct.z + panOffset.z;
+    const outsideX = (tx + halfW) < bxz.minX || (tx - halfW) > bxz.maxX;
+    const outsideZ = (tz + halfH) < bxz.minZ || (tz - halfH) > bxz.maxZ;
+    if (outsideX || outsideZ) {
+      // Centre on model bbox: panOffset = bbox.center - controls.target
+      panOffset.x = bxz.centerX - ct.x;
+      panOffset.z = bxz.centerZ - ct.z;
+    }
+  }
+
   activeScale.value = scale;
   form.massstab     = `1:${scale}`;
 
   snapshot.value = props.getScaleSnapshot?.(scale, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
+  redrawOverview();
 }
 
 // ── Layer styles ─────────────────────────────────────────────────────────────
@@ -616,11 +988,19 @@ onMounted(() => {
   if (savedLogo) logoDataUrl.value = savedLogo;
   refreshSnapshot();
   startLiveRefresh();
+  initOverviewViewer(); // attaches the second renderer + starts rAF loop
 });
+
+// Redraw the viewport rectangle whenever the plot window changes
+watch(
+  () => [activeScale.value, panOffset.x, panOffset.z, form.format, form.orientation, activeView.value],
+  () => redrawOverview(),
+);
 
 onUnmounted(async () => {
   stopLiveRefresh();
   onPanCancel();
+  disposeOverviewViewer();
   document.removeEventListener('keydown', _onDocKeydown);
   // Restore original render state when the modal is closed
   // This also restores the camera frustum if orthoExtent was saved
@@ -677,6 +1057,8 @@ const vectorHatch         = ref(true);
 const vectorScaleBar      = ref(true);
 const vectorAnnotations   = ref(true);   // include pinned notes in the plot
 const vectorMeasurements  = ref(true);   // include distance measurements
+const vectorLabels        = ref(true);   // render element labels per category-template
+const vectorIfcGrids      = ref(false);  // include IFC axes overlay in the PDF plot
 
 const showStyleEditor = ref(false);
 // Category names available in the editor — read from getCategoryGroups()
@@ -767,15 +1149,26 @@ async function doExport() {
       categoryGroups:   props.getCategoryGroups?.() ?? null,
       fragmentsList:    props.getFragmentsList?.() ?? null,
       fragmentsManager: props.getFragmentsManager?.() ?? null,
-      styleMap:         _resolvedStyleMap(),
-      styleMapPerModel: _resolvedStyleMapByModel(),
+      styleMap:         ifc.resolvedVectorStyleMap,
+      styleMapPerModel: ifc.resolvedVectorStyleMapByModel,
       rules:            ifc.vectorRules ?? [],
       annotations:      vectorAnnotations.value  ? (ifc.annotations ?? []) : [],
       measurements:     vectorMeasurements.value ? (props.getMeasurements?.() ?? []) : [],
+      showLabels:       vectorLabels.value,
+      labelTemplateFor: (cat, modelId) => {
+        // Per-model override wins over global. Both fall back to '' (off) when
+        // the user hasn't set anything explicitly — no built-in defaults forced.
+        const override = modelId
+          ? ifc.vectorStylesByModel?.[modelId]?.[cat]?.labelTemplate
+          : undefined;
+        if (typeof override === 'string') return override;
+        return ifc.vectorStyles?.[cat]?.labelTemplate ?? '';
+      },
       dimensions:     dims,
       scaleRatio:     activeScale.value ?? null,
       hatch:          vectorHatch.value,
       scaleBar:       vectorScaleBar.value,
+      ifcGridAxes:    vectorIfcGrids.value ? (props.getIfcGridAxes?.() ?? null) : null,
     });
   } else {
     exportPlanPDF({
@@ -852,6 +1245,42 @@ async function doExport() {
 }
 .preview-label { font-size: 0.65rem; color: #37474f; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
 .preview-scroll { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; }
+.overview-pane {
+  margin-top: 0.55rem;
+  padding: 0.35rem 0.45rem 0.45rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+}
+.overview-label {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem;
+  font-size: 0.62rem; color: #b0bec5; margin-bottom: 0.3rem;
+}
+.overview-hint { font-size: 0.56rem; color: #607d8b; font-weight: normal; }
+.overview-canvas-stack {
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1c2a35;
+}
+.overview-3d, .overview-overlay {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+.overview-3d { pointer-events: none; }
+.overview-overlay {
+  cursor: crosshair;
+  background: transparent;
+}
+.overview-canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
 
 .paper-sheet {
   background: #fff;
