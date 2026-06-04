@@ -141,6 +141,16 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         globalRoughness.value = val;
     }
 
+    // ── Globale Randbedingung (Fallback wenn keine manuellen Boundaries) ──
+    /** @type {import('vue').Ref<'CLOSED'|'FREE'|'HFIX'>} */
+    const globalBoundaryType = ref('FREE');
+    /** @type {import('vue').Ref<number>} Wasserspiegel [m NHN] bei HFIX */
+    const globalBoundaryHfix = ref(0.0);
+
+    // ── Bodenvorfeuchte (skaliert Infiltrationsrate) ──────────────────────
+    /** @type {import('vue').Ref<number>} 0 = trocken (volle Infiltration), 100 = gesättigt */
+    const antecedentMoisture = ref(0);
+
     return {
         ganglinien,
         activeGanglinieId,
@@ -162,6 +172,9 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         setKostraGrid,
         setRainData,
         rainSeries,
-        setRainSeries
+        setRainSeries,
+        globalBoundaryType,
+        globalBoundaryHfix,
+        antecedentMoisture,
     };
 });

@@ -101,6 +101,20 @@
        </svg>
     </ToolButton>
 
+    <!-- BRIDGE Tool (Brückenbauwerk) -->
+    <ToolButton
+      @click="setTool('BRIDGE')"
+      :active="activeTool === 'BRIDGE'"
+      title="Brücke / Bridge setzen"
+    >
+      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8h18"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8v8M18 8v8"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 16h18"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 16 Q12 11 18 16"/>
+      </svg>
+    </ToolButton>
+
     <!-- TEXTURE Tool (Surface Roughness Painting) -->
     <ToolButton 
       @click="setTool('TEXTURE')"

@@ -12,6 +12,7 @@ import { reactive } from 'vue';
 import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
+import { useToolStateMachine } from './useToolStateMachine.js';
 
 // ── Singleton state ───────────────────────────────────────────────────────────
 export const channelPolygonState = reactive({
@@ -129,6 +130,17 @@ function rebuildDraft(scene, terrain) {
 export function useChannelPolygonTool() {
     const geoStore   = useGeoStore();
     const bathyStore = useBathymetryStore();
+    const sm         = useToolStateMachine();
+
+    // Nur den aktuellen Draft verwerfen (committed Polygon bleibt) — Escape
+    const abortDraft = () => {
+        channelPolygonState.draftPoints = [];
+        if (scene_ref) {
+            removeMesh(scene_ref, previewLine); previewLine = null;
+            removeMesh(scene_ref, closingLine); closingLine = null;
+            rebuildDraft(scene_ref, geoStore.terrain);
+        }
+    };
 
     const activate = (scene) => {
         scene_ref = scene;
@@ -136,9 +148,16 @@ export function useChannelPolygonTool() {
         channelPolygonState.draftPoints = [];
         rebuildDraft(scene, geoStore.terrain);
         rebuildCommitted(scene, geoStore.terrain, bathyStore.channelPolygon);
+        // Einheitliche Tastatur: Esc = Draft verwerfen, Backspace = letzter Punkt, Enter = übernehmen
+        sm.attachShortcuts({
+            onCancel:  () => abortDraft(),
+            onUndo:    () => undoLastPoint(),
+            onConfirm: () => commitPolygon(),
+        });
     };
 
     const deactivate = (scene) => {
+        sm.detachShortcuts();
         channelPolygonState.drawing = false;
         removeMesh(scene, draftMesh);   draftMesh   = null;
         removeMesh(scene, draftDots);   draftDots   = null;

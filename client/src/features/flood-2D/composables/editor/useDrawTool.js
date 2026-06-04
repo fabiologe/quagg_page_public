@@ -189,6 +189,15 @@ export function useDrawTool(config = { isPolygon: true }) {
         updateVisuals(scene);
     };
 
+    // Remove the most recently added point and its marker (Backspace / Undo)
+    const removeLastPoint = (scene) => {
+        if (drawingPoints.value.length === 0) return;
+        drawingPoints.value.pop();
+        const marker = markerMeshes.pop();
+        if (marker && scene) scene.remove(marker);
+        updateVisuals(scene);
+    };
+
     return {
         drawingPoints,
         onClick,
@@ -199,6 +208,7 @@ export function useDrawTool(config = { isPolygon: true }) {
         getPoints,
         // Exposed for wrappers that implement custom snapping
         addPoint,
+        removeLastPoint,
         updateVisuals
     };
 }

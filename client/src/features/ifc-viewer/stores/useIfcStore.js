@@ -35,6 +35,7 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
   let _storeyHandler  = null;
   let _zoomHandler    = null;
   let _zoomCategoryHandler = null;
+  let _boxHandler     = null; // (localId, modelId) → { box: THREE.Box3, offset: THREE.Vector3 }
   let _searchIndex    = ref([]); // populated on model load — [{name, globalId, category, localId, modelId}]
 
   // T2.2: Saved views (camera + visible cats + section)
@@ -359,6 +360,16 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
 
   function registerZoomHandler(fn) { _zoomHandler = fn; }
   function registerZoomCategoryHandler(fn) { _zoomCategoryHandler = fn; }
+  function registerBoxHandler(fn) { _boxHandler = fn; }
+
+  /**
+   * Get bridge-ready data for a selected IFC element.
+   * Returns { box: THREE.Box3, offset: THREE.Vector3, modelId } or null.
+   */
+  async function getElementBridgeData(localId, modelId) {
+    if (!_boxHandler) return null;
+    return await _boxHandler(localId, modelId);
+  }
   function setSearchIndex(entries) { _searchIndex.value = entries; }
   function getSearchIndex() { return _searchIndex.value; }
 
@@ -396,9 +407,11 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     setSpatialTree, setModelList,
     registerPsetHandler, registerSpatialHandler,
     registerZoomHandler, registerZoomCategoryHandler,
+    registerBoxHandler,
     setSearchIndex, getSearchIndex,
     addPset, setStoreyVisible,
     zoomToElement, zoomToCategory,
+    getElementBridgeData,
     // T2.2: Saved Views
     savedViews, saveView, deleteSavedView, renameSavedView,
     // T2.4: Annotations

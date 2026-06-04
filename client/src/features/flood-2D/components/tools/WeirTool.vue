@@ -8,7 +8,11 @@
 
       <!-- Schritt 1: Warten auf Klick im Terrain -->
       <div v-if="!pendingWeir" class="state-idle">
-        <div class="hint">
+        <div v-if="isDrawingAxis" class="hint drawing-hint">
+          <span class="step-badge">2</span>
+          Endpunkt klicken — oder <strong>Esc</strong> zum Abbrechen
+        </div>
+        <div v-else class="hint">
           <span class="step-badge">1</span>
           Klicke auf das Terrain, um den Wehr-Standort zu setzen.
         </div>
@@ -91,11 +95,16 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
 
+const props = defineProps({
+  toolInstance: { type: Object, default: null }
+});
+
 const simStore = useSimulationStore();
 const geoStore = useGeoStore();
 
 const isActive = computed(() => simStore.activeTool === 'WEIR');
 const weirs    = computed(() => geoStore.weirs);
+const isDrawingAxis = computed(() => props.toolInstance?.state?.value === 'DRAWING');
 
 // ── Wehr-Richtungen (Typ 0 = nur Poleni-Wehr, keine Brücken) ──────────────
 const directions = [
@@ -222,6 +231,7 @@ const cancel = () => reset();
 
 /* Hint */
 .hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.drawing-hint { color: #ffce54; }
 .step-badge { background: #2980b9; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
 .sub-hint { font-size: 0.8rem; color: #95a5a6; line-height: 1.4; margin-bottom: 12px; }
 

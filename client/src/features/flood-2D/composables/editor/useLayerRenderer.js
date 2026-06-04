@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { watch, onUnmounted, ref } from 'vue';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
+import { RENDER_ORDER } from './renderLayers.js';
 
 /**
  * useLayerRenderer
@@ -28,34 +29,41 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     // Let's add the import.
 
 
-    // --- GROUPS ---
+    // --- GROUPS --- (renderOrder zentral aus renderLayers.js)
     const nodeGroup = new THREE.Group();
     nodeGroup.name = 'Layer_Nodes';
+    nodeGroup.renderOrder = RENDER_ORDER.NODES;
     scene.add(nodeGroup);
 
     const buildingGroup = new THREE.Group();
     buildingGroup.name = 'Layer_Buildings';
+    buildingGroup.renderOrder = RENDER_ORDER.BUILDINGS;
     scene.add(buildingGroup);
 
     const boundaryGroup = new THREE.Group();
     boundaryGroup.name = 'Layer_Boundaries';
+    boundaryGroup.renderOrder = RENDER_ORDER.BOUNDARY_LINES;
     scene.add(boundaryGroup);
 
     const hydraulicGroup = new THREE.Group();
     hydraulicGroup.name = 'Layer_Hydraulics';
+    hydraulicGroup.renderOrder = RENDER_ORDER.BOUNDARY_ARROWS;
     scene.add(hydraulicGroup);
 
     const weirGroup = new THREE.Group();
     weirGroup.name = 'Layer_Weirs';
+    weirGroup.renderOrder = RENDER_ORDER.WEIRS;
     scene.add(weirGroup);
 
     const bridgeGroup = new THREE.Group();
     bridgeGroup.name = 'Layer_Bridges';
+    bridgeGroup.renderOrder = RENDER_ORDER.BRIDGES; // feste Geometrie unter dem Wasser
     scene.add(bridgeGroup);
 
     // NEW: Selection Layer
     const selectionGroup = new THREE.Group();
     selectionGroup.name = 'Layer_Selection';
+    selectionGroup.renderOrder = RENDER_ORDER.SELECTION;
     scene.add(selectionGroup);
 
     // Reuse Geometries/Materials for performance
@@ -77,29 +85,28 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         linewidth: 2
     });
 
-    const bridgeOpenMat = new THREE.MeshPhysicalMaterial({
+    // Unlit (MeshBasic): unabhängig von der Beleuchtung — so können die Brücken im
+    // Result-Viewer nicht durch Lichtverhältnisse "verschluckt" werden.
+    const bridgeOpenMat = new THREE.MeshBasicMaterial({
         color: 0x1abc9c,
         transparent: true,
-        opacity: 0.45,
-        roughness: 0.3,
+        opacity: 0.5,
         side: THREE.DoubleSide,
     });
-    const bridgeDeckMat = new THREE.MeshStandardMaterial({
+    const bridgeDeckMat = new THREE.MeshBasicMaterial({
         color: 0x7f8c8d,
-        roughness: 0.8,
+        side: THREE.DoubleSide,
     });
 
-    const weirMatBidi = new THREE.MeshPhysicalMaterial({
-        color: 0x3498db, // Light blue
-        transparent: true,
-        opacity: 0.7,
-        roughness: 0.2,
-        transmission: 0.5
+    // Grau wie das Brückendeck, unlit (MeshBasic) → konsistente Darstellung, beleuchtungsunabhängig.
+    const weirMatBidi = new THREE.MeshBasicMaterial({
+        color: 0x7f8c8d,
+        side: THREE.DoubleSide,
     });
 
-    const weirMatUni = new THREE.MeshStandardMaterial({
-        color: 0xe67e22, // Orange for warning / one-way
-        roughness: 0.5
+    const weirMatUni = new THREE.MeshBasicMaterial({
+        color: 0x7f8c8d,
+        side: THREE.DoubleSide,
     });
 
     // --- COORDINATE SYSTEM ---
@@ -161,6 +168,21 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         return new THREE.Vector3(wx, wy, wz);
     };
 
+    // Terrain-Höhe (absolut, NHN) an einer Weltkoordinate aus gridData samplen.
+    // gridData ist bottom-up (row 0 = Süden). Liefert null außerhalb/NoData.
+    const sampleTerrainZ = (wx, wy) => {
+        const g = getActiveGrid();
+        const data = getActiveData();
+        if (!g || !data || !g.center || !g.cellsize) return null;
+        const width  = (g.ncols - 1) * g.cellsize;
+        const height = (g.nrows - 1) * g.cellsize;
+        const col  = Math.round((wx - (g.center.x - width / 2)) / g.cellsize);
+        const rowS = Math.round((wy - (g.center.y - height / 2)) / g.cellsize);
+        if (col < 0 || col >= g.ncols || rowS < 0 || rowS >= g.nrows) return null;
+        const z = data[rowS * g.ncols + col];
+        return (z > -9000) ? z : null;
+    };
+
     // --- CLEANUP HELPER ---
     const clearGroup = (group) => {
         // Loop backwards
@@ -174,6 +196,14 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             // current buildingMaterial is shared.
             group.remove(child);
         }
+    };
+
+    // WICHTIG: In three.js wird renderOrder NICHT von der Group an die Kinder vererbt — der
+    // Renderer sortiert die einzelnen Meshes nach ihrem EIGENEN renderOrder (Default 0).
+    // Daher muss die Layer-Reihenfolge auf jedes Mesh gesetzt werden, sonst rendern alle
+    // Bauwerke auf renderOrder 0 (vor dem Wasser-Tiefen-Prepass) und scheinen durchs Wasser.
+    const applyChildOrder = (group, order) => {
+        for (const c of group.children) c.renderOrder = order;
     };
 
     // --- RENDERERS ---
@@ -213,6 +243,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             nodeGroup.add(mesh);
         });
 
+        applyChildOrder(nodeGroup, RENDER_ORDER.NODES);
         console.log(`[LayerRenderer] Rendered ${geoStore.nodes.length} nodes.`);
     };
 
@@ -416,6 +447,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             }
         });
 
+        applyChildOrder(buildingGroup, RENDER_ORDER.BUILDINGS);
+        applyChildOrder(boundaryGroup, RENDER_ORDER.BOUNDARY_LINES);
         console.log(`[LayerRenderer] Rendered ${buildingGroup.children.length} buildings, ${boundaryGroup.children.length} boundaries.`);
     };
 
@@ -579,6 +612,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
         hydraulicGroup.add(instancedShaftMesh);
         hydraulicGroup.add(instancedHeadMesh);
+        applyChildOrder(hydraulicGroup, RENDER_ORDER.BOUNDARY_ARROWS);
     };
 
     // --- WEIR LOGIC ---
@@ -605,9 +639,11 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             const isOneWay = weir.direction.includes('F');
             const mat = isOneWay ? weirMatUni : weirMatBidi;
             
-            // Die visuelle Höhe = hc - minZ. Wir zeichnen eine Mauer, die bis zu dieser Höhe reicht.
-            const visualHc = weir.hc - terrainMinZ;
-            const displayHeight = visualHc > 0 ? visualHc : 1.0;
+            // Mauer am LOKALEN Geländeboden verankern (nicht am globalen Minimum!).
+            // Boden = Terrainhöhe am Wehr-Standort; Höhe = Krone (hc) ÜBER diesem Boden.
+            const bedZ = sampleTerrainZ(weir.x, weir.y) ?? terrainMinZ;
+            const baseLocal = bedZ - terrainMinZ;                  // lokale Bodenhöhe (Y)
+            const displayHeight = Math.max(weir.hc - bedZ, 0.3);   // Mauerhöhe über dem Boden
             const thickness = 0.5;
 
             // BoxGeometry(width along x, height along y, depth along z)
@@ -615,7 +651,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             const mesh = new THREE.Mesh(geom, mat);
 
             // Basis-Position & Rotation ermitteln
-            const basePos = getLocalPos(weir.x, weir.y, 0); 
+            const basePos = getLocalPos(weir.x, weir.y, 0);
             const { ox, oz } = getEdgeOffset(weir.direction, cellSize);
             const isHorizontal = weir.direction.startsWith('E') || weir.direction.startsWith('W');
 
@@ -623,7 +659,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
                 mesh.rotation.y = Math.PI / 2;
             }
 
-            mesh.position.set(basePos.x + ox, displayHeight / 2, basePos.z + oz);
+            mesh.position.set(basePos.x + ox, baseLocal + displayHeight / 2, basePos.z + oz);
 
             // --- NEU: Boden-Anker (Base footprint) gegen Parallaxen-Irritation in 3D ---
             // Dieser "Teppich" liegt strikt flach auf dem Terrain und verschiebt sich visuell nie.
@@ -632,7 +668,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             const footMesh = new THREE.Mesh(footGeom, footMat);
             footMesh.rotation.x = -Math.PI / 2; // Flach auf den Boden legen
             if (isHorizontal) footMesh.rotation.z = Math.PI / 2;
-            footMesh.position.set(basePos.x + ox, 0.1, basePos.z + oz); // 10cm über Terrain, gegen Z-Fighting
+            footMesh.position.set(basePos.x + ox, baseLocal + 0.1, basePos.z + oz); // 10cm über lokalem Boden
             weirGroup.add(footMesh);
 
             // Pfeile zur Visualisierung der Fließrichtung anheften
@@ -667,6 +703,15 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             weirGroup.add(mesh);
         });
         
+        applyChildOrder(weirGroup, RENDER_ORDER.WEIRS);
+        // DIAGNOSE: Bauwerks-Höhe vs. Terrain — verrät, ob das Wehr über dem Wasser herausragt
+        // oder "schwebt" (Y deutlich über terrMaxZ-terrMinZ). Auch Test, ob neuer Code läuft.
+        if (geoStore.weirs.length && weirGroup.children[0]) {
+            const m = weirGroup.children[0];
+            const h = m.geometry?.parameters?.height;
+            const terrMaxZ = grid ? grid.maxZ : 0;
+            console.log(`[LayerRenderer][DIAG] Weir[0] Y=${m.position.y.toFixed(2)} boxH=${typeof h === 'number' ? h.toFixed(2) : '?'} | Terrain lokal 0..${(terrMaxZ - terrainMinZ).toFixed(2)} (minZ=${terrainMinZ}, maxZ=${terrMaxZ})`);
+        }
         console.log(`[LayerRenderer] Rendered ${geoStore.weirs.length} weirs.`);
     };
 
@@ -683,9 +728,15 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         geoStore.bridges.forEach(bridge => {
             const cells = bridge.cells || [];
             cells.forEach(cell => {
-                const z_sohle = cell.z_sohle ?? bridge.z_sohle ?? (cell.z ?? 0);
-                const soffit  = cell.soffit  ?? bridge.soffit  ?? (z_sohle + 2.0);
-                const deck    = cell.deck    ?? bridge.deck    ?? (soffit  + 1.0);
+                // Z-Anker robust aufs Terrain legen: lokale Geländehöhe der Zelle als Basis.
+                // Verhindert "vergrabene" Brücken, wenn z_sohle fehlt oder fälschlich 0/unter Terrain ist.
+                const terr = cell.z ?? bridge.z_sohle ?? 0;
+                let z_sohle = cell.z_sohle ?? bridge.z_sohle;
+                if (z_sohle == null || z_sohle < terr - 0.01) z_sohle = terr;
+                let soffit = cell.soffit ?? bridge.soffit ?? (z_sohle + 2.0);
+                if (soffit < z_sohle + 0.1) soffit = z_sohle + 2.0;
+                let deck = cell.deck ?? bridge.deck ?? (soffit + 1.0);
+                if (deck < soffit + 0.1) deck = soffit + 1.0;
                 const width   = bridge.width ?? 5.0;
                 const dir     = cell.direction || 'S';
 
@@ -716,7 +767,10 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             });
         });
 
-        console.log(`[LayerRenderer] Rendered ${geoStore.bridges.length} bridge(s).`);
+        const firstMesh = bridgeGroup.children[0];
+        const firstPos = firstMesh ? `(${firstMesh.position.x.toFixed(1)}, ${firstMesh.position.y.toFixed(1)}, ${firstMesh.position.z.toFixed(1)})` : 'none';
+        applyChildOrder(bridgeGroup, RENDER_ORDER.BRIDGES);
+        console.log(`[LayerRenderer] Rendered ${geoStore.bridges.length} bridge(s) → ${bridgeGroup.children.length} meshes, firstPos=${firstPos}, gridCenter=${getActiveGrid()?.center ? 'ok' : 'MISSING'}`);
     };
 
     // --- SELECTION HIGHLIGHT ---
@@ -766,6 +820,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
                 }
             });
         });
+        applyChildOrder(selectionGroup, RENDER_ORDER.SELECTION);
     };
 
 

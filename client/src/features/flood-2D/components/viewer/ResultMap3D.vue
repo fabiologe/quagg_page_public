@@ -3,195 +3,73 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, toRaw, computed } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import * as THREE from 'three';
-import { MapControls } from 'three/addons/controls/MapControls.js';
 import { useVolumeTool } from '@/features/flood-2D/composables/useVolumeTool';
 import { useSectionTool } from '@/features/flood-2D/composables/useSectionTool';
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useLayerRenderer } from '@/features/flood-2D/composables/editor/useLayerRenderer';
+import { makeResultCoords } from '@/features/flood-2D/composables/viewer/useResultCoords';
+import { useResultScene } from '@/features/flood-2D/composables/viewer/useResultScene';
+import { useFlowArrows } from '@/features/flood-2D/composables/viewer/useFlowArrows';
+import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResultProbes';
+import { useBoundaryArrows } from '@/features/flood-2D/composables/viewer/useBoundaryArrows';
+import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
+import { useWaterSurface } from '@/features/flood-2D/composables/viewer/useWaterSurface';
 
 const props = defineProps({
   terrain: { type: Object, default: null },
   depthData: { type: Object, default: null }, // Float32Array or null
   maxWaterDepth: { type: Number, default: 1.0 },
+  layerMode: { type: Number, default: 0 }, // 0=depth, 1=velocity, 2=max/hazard
   bciContent: { type: String, default: null },
-  activeTool: { type: String, default: null }
+  activeTool: { type: String, default: null },
+  flowData: { type: Object, default: null },     // { vx: Float32Array, vy: Float32Array } | null (zell-zentriert)
+  showFlow: { type: Boolean, default: false },   // Fließpfeil-Layer aktiv?
+  depthField: { type: Object, default: null },   // aktuelles Tiefen-Frame (Float32Array) für Nass-Gating/Höhe
+  velocityData: { type: Object, default: null }, // Geschwindigkeits-Betrag-Frame (Float32Array) für die Heatmap
+  velocityMax: { type: Number, default: 1.0 },   // Skala für die Velocity-Heatmap
+  waterOpacity: { type: Number, default: 0.85 }  // globale Wasser-Deckkraft 0..1
 });
 
 const emit = defineEmits(['cellProbed', 'sectionDrawn']);
 
 const container = ref(null);
 
-let renderer, scene, camera, controls;
-let terrainMesh = null;
-let waterMesh = null;
-let boundaryMesh = null;
-let maskTexture = null;
-let globalBuildingMaskArray = null; // NEW: Stellt den Gebäude-Footprint für die Mesh-Entkoppelung global zur Verfügung
-const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
-const probeMarkers = new Map(); // Track multiple probe markers by ID
-let animationId;
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-
 // Store/Composable
 const analysisStore = useAnalysisStore();
-const geoStore = useGeoStore(); // Needed for layer renderer
+const geoStore = useGeoStore(); // Needed for layer renderer + Gebäudemaske
+
+// Three.js-Infrastruktur (Szene/Kamera/Renderer/Controls/Loop/Dispose) lebt in useResultScene.
+const sceneApi = useResultScene();
+let renderer, scene, camera, controls; // Referenzen aus sceneApi.init() — von vielen Funktionen genutzt
+let terrainMesh = null; // Read-only-Spiegel von terrainApi.getMesh() für Raycast/Tools
+
+// Gelände-Mesh + Gebäudemaske (Besitzer der Maske). Die Boundary-Pfeile konsumieren die Maske per Accessor.
+const terrainApi = useTerrainLayer({
+  getScene: () => scene,
+  geoStore,
+});
+// Wasser als 2D-Haut: klont die (gelochte) Terrain-Geometrie und displaced pro Frame nur das Z-Attribut.
+const waterApi = useWaterSurface({
+  getScene: () => scene,
+  getTerrainMesh: () => terrainApi.getMesh(),
+  props,
+});
+const probeApi = useResultProbes(() => scene); // Probe-Ring-Marker
+const boundaryApi = useBoundaryArrows(() => scene, () => terrainApi.getMask()); // BCI-Pfeile
+// Fließpfeil-Overlay (gerichtete Velocity-Pfeile) — eigenes Composable
+const flowApi = useFlowArrows(() => scene);
+
+const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
 let volumeToolState = null;
 let sectionToolState = null;
 let layerRenderer = null;
 
-// --- SHADERS ---
-
-const terrainVertexShader = `
-  attribute float aValid;
-  varying float vZ;
-  varying float vValid;
-  varying vec2 vPlanePos;
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    vZ = position.z;
-    vValid = aValid;
-    vPlanePos = position.xy;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const terrainFragmentShader = `
-  varying float vZ;
-  varying float vValid;
-  varying vec2 vPlanePos;
-  varying vec2 vUv;
-  uniform float uMinZ;
-  uniform float uMaxZ;
-  uniform vec3 uColorLow;
-  uniform vec3 uColorMid;
-  uniform vec3 uColorHigh;
-  uniform vec2 uBounds;
-  uniform float uCellSize;
-  uniform sampler2D uBuildingMask;
-
-  void main() {
-    // Discard NODATA cells
-    if (vValid < 0.5) discard;
-
-    // Discard building cells
-    float mask = texture2D(uBuildingMask, vUv).r;
-    if (mask < 0.5) discard;
-
-    float range = uMaxZ - uMinZ;
-    if (range < 0.1) range = 1.0;
-    float h = vZ / range;
-    vec3 col;
-    if (h < 0.2) col = mix(uColorLow, uColorMid, h / 0.2);
-    else col = mix(uColorMid, uColorHigh, (h - 0.2) / 0.8);
-
-    // Contour lines
-    float contourInterval = 1.0;
-    float dist = abs(fract(vZ) - 0.5);
-    float lineIntensity = 1.0 - smoothstep(0.45, 0.48, dist);
-    col = mix(col, vec3(0.0), lineIntensity * 0.25);
-
-    // Darken slightly for viewer aesthetic
-    col *= 0.85;
-
-    gl_FragColor = vec4(col, 1.0);
-  }
-`;
-
-const waterVertexShader = `
-  varying float vDepth;
-  varying vec3 vPos;
-  varying vec2 vUv;
-  uniform sampler2D uDepthMap;
-  uniform vec2 uTexelSize;
-
-  void main() {
-     vec2 texUV = uv;
-     vUv = uv;
-     
-     // 9-Tap Spatial Smoothing for maximum cohesiveness in fast-changing water depths
-     float d0 = texture2D(uDepthMap, texUV).r;
-     float d1 = texture2D(uDepthMap, texUV + vec2(uTexelSize.x, 0.0)).r;
-     float d2 = texture2D(uDepthMap, texUV + vec2(-uTexelSize.x, 0.0)).r;
-     float d3 = texture2D(uDepthMap, texUV + vec2(0.0, uTexelSize.y)).r;
-     float d4 = texture2D(uDepthMap, texUV + vec2(0.0, -uTexelSize.y)).r;
-     float d5 = texture2D(uDepthMap, texUV + vec2(uTexelSize.x, uTexelSize.y)).r;
-     float d6 = texture2D(uDepthMap, texUV + vec2(-uTexelSize.x, uTexelSize.y)).r;
-     float d7 = texture2D(uDepthMap, texUV + vec2(uTexelSize.x, -uTexelSize.y)).r;
-     float d8 = texture2D(uDepthMap, texUV + vec2(-uTexelSize.x, -uTexelSize.y)).r;
-
-     // Average all 9 samples equally for a strong box blur
-     float dAvg = (d0 + d1 + d2 + d3 + d4 + d5 + d6 + d7 + d8) / 9.0;
-     
-     // Mix the smoothed depth heavily (85% smoothed) to connect disjointed peaks
-     float d = mix(d0, dAvg, 0.85);
-
-     vDepth = d;
-
-     vec3 pos = position;
-     if (d > 0.005) {
-         // Lift water surface above terrain by depth + small offset
-         pos.z += d + 0.35;
-     }
-
-     vPos = pos;
-     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-const waterFragmentShader = `
-  varying float vDepth;
-  varying vec3 vPos;
-  varying vec2 vUv;
-  uniform vec3 uColorShallow;
-  uniform vec3 uColorMid;
-  uniform vec3 uColorDeep;
-  uniform float uMaxDepth;
-  uniform sampler2D uBuildingMask;
-
-  void main() {
-      // Discard building cells
-      float mask = texture2D(uBuildingMask, vUv).r;
-      if (mask < 0.5) discard;
-
-      if (vDepth < 0.005) discard;
-
-      // Calculate steepness of the water surface. 
-      // Water should be mostly flat. If a triangle stretches up a building wall,
-      // it will have a steep slope. We discard steep water triangles.
-      vec3 dx = dFdx(vPos);
-      vec3 dy = dFdy(vPos);
-      vec3 normal = normalize(cross(dx, dy));
-      
-      // If normal.z is less than 0.3, it's angled more than ~72.5 degrees.
-      // This allows very steep waterfalls while still hiding near-vertical building walls.
-      if (normal.z < 0.3) {
-          discard;
-      }
-
-      // Dynamic normalization
-      float maxD = max(uMaxDepth, 0.01);
-      float t = clamp(vDepth / maxD, 0.0, 1.0);
-
-      // Three-stop gradient: Shallow → Mid → Deep
-      vec3 col;
-      if (t < 0.5) {
-          col = mix(uColorShallow, uColorMid, t * 2.0);
-      } else {
-          col = mix(uColorMid, uColorDeep, (t - 0.5) * 2.0);
-      }
-
-      // Depth-dependent opacity
-      float alpha = mix(0.45, 0.92, t);
-
-      gl_FragColor = vec4(col, alpha);
-  }
-`;
 
 // --- INIT ---
 
@@ -205,8 +83,8 @@ onMounted(() => {
   if (props.terrain && !terrainMesh) {
     console.log('[ResultMap3D] Terrain was waiting — building now after scene init');
     buildTerrain(props.terrain);
-    if (props.depthData) updateWater(props.depthData);
-    if (props.bciContent) buildBoundaries(props.bciContent, props.terrain);
+    if (props.depthData) waterApi.update(props.depthData);
+    if (props.bciContent) boundaryApi.build(props.bciContent, props.terrain);
   }
 
   // Memory Guard: purgeSimulationResults() dispatches this event to
@@ -215,12 +93,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  cancelAnimationFrame(animationId);
-  if (renderer) {
-    renderer.dispose();
-    renderer.domElement.remove();
-  }
-  if (controls) controls.dispose();
+  sceneApi.dispose();
   window.removeEventListener('resize', onResize);
   window.removeEventListener('flood-viewer-dispose', _handleViewerDispose);
 });
@@ -232,65 +105,18 @@ onUnmounted(() => {
  */
 function _handleViewerDispose() {
   console.warn('[ResultMap3D] flood-viewer-dispose received — releasing WebGL resources.');
-
-  if (!scene) return;
-
-  // Walk every object in the scene and dispose GPU resources
-  scene.traverse((obj) => {
-    if (obj.geometry) obj.geometry.dispose();
-    if (obj.material) {
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(m => {
-        // Dispose all texture uniforms
-        Object.values(m.uniforms || {}).forEach(u => {
-          if (u?.value?.isTexture) u.value.dispose();
-        });
-        m.dispose();
-      });
-    }
-  });
-
-  // Clear scene children (removes mesh references)
-  while (scene.children.length > 0) scene.remove(scene.children[0]);
-
-  // Reset local mesh references so buildTerrain() can create fresh ones
-  terrainMesh = null;
-
+  sceneApi.releaseResources();
+  // Mesh-Referenzen lösen, damit buildTerrain()/waterApi.update() frische Objekte erzeugen.
+  terrainApi.reset();
+  waterApi.reset();
+  terrainMesh = null; // Spiegel ebenfalls leeren
   console.info('[ResultMap3D] ✅ WebGL resources disposed. Scene cleared.');
 }
 
 function initScene() {
-  const w = container.value.clientWidth;
-  const h = container.value.clientHeight;
-  console.log('[ResultMap3D] initScene', w, 'x', h);
-
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a1a);
-
-  camera = new THREE.PerspectiveCamera(55, w / h, 5.0, 20000);
-  camera.position.set(0, 500, 500);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, logarithmicDepthBuffer: true });
-  renderer.setSize(w, h);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  container.value.appendChild(renderer.domElement);
-
-  controls = new MapControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.screenSpacePanning = false;
-  controls.minDistance = 5;
-  controls.maxPolarAngle = Math.PI / 2.15;
-
-  // Lighting
-  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-  scene.add(ambient);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
-  dirLight.position.set(200, 600, 200);
-  scene.add(dirLight);
-  const fillLight = new THREE.DirectionalLight(0x4fc3f7, 0.15);
-  fillLight.position.set(-200, 100, -200);
-  scene.add(fillLight);
+  // Szene/Kamera/Renderer/Controls/Lichter aus dem Scene-Composable beziehen
+  const s = sceneApi.init(container.value);
+  scene = s.scene; camera = s.camera; renderer = s.renderer; controls = s.controls;
 
   // Setup Volume Tool Composable
   volumeToolState = useVolumeTool({
@@ -378,7 +204,7 @@ function initScene() {
   watch(() => geoStore.buildings?.features, (newFeatures) => {
     if (newFeatures && newFeatures.length > 0 && layerRenderer && terrainMesh) {
       console.log('[ResultMap3D] GeoStore buildings loaded, triggering render.');
-      generateBuildingMask(); // NEW: Update mask when buildings arrive
+      terrainApi.regenerateMask(props.terrain); // Maske aktualisieren, wenn Gebäude eintreffen
       layerRenderer.renderBuildings();
     }
   }, { deep: true });
@@ -402,10 +228,22 @@ function initScene() {
     }
   }, { deep: true });
 
+  // Brücken im Result-Viewer darstellen
+  if (geoStore.bridges?.length > 0) {
+      layerRenderer.renderBridges();
+  }
+
+  watch(() => geoStore.bridges, (newBridges) => {
+    if (newBridges && newBridges.length > 0 && layerRenderer && terrainMesh) {
+      console.log('[ResultMap3D] GeoStore bridges loaded, triggering render.');
+      layerRenderer.renderBridges();
+    }
+  }, { deep: true });
+
   window.addEventListener('resize', onResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
-  animate();
+  sceneApi.start();
   console.log('[ResultMap3D] Scene initialized ✅');
 }
 
@@ -444,69 +282,34 @@ function onPointerDown(event) {
   if (!hit) return;
 
   const localPt = terrainMesh.worldToLocal(hit.point.clone());
-  const { ncols, nrows, cellsize, gridData, minZ, xllcorner, yllcorner } = props.terrain;
-  const bounds = props.terrain.bounds || {
-    width: (ncols - 1) * (cellsize || 1),
-    height: (nrows - 1) * (cellsize || 1)
-  };
-
-  const fracX = (localPt.x + bounds.width / 2) / bounds.width;
-  const fracY = (localPt.y + bounds.height / 2) / bounds.height;
-  const col = Math.floor(fracX * ncols);
-  const geomRow = Math.floor((1 - fracY) * nrows);
-  const gridRow = (nrows - 1) - geomRow;
-
-  if (col < 0 || col >= ncols || gridRow < 0 || gridRow >= nrows) return;
-
-  const gridIdx = gridRow * ncols + col;
-  const terrainZ = gridData[gridIdx];
-  if (terrainZ <= -9000) return;
-
-  const worldX = xllcorner + (col + 0.5) * cellsize;
-  const worldY = yllcorner + (gridRow + 0.5) * cellsize;
+  const coords = makeResultCoords(props.terrain);
+  const cell = coords.localHitToCell(localPt);
+  if (!cell) return;
 
   // --- PROBE TOOL ---
   if (props.activeTool === 'probe') {
     const id = Math.random().toString(36).substring(2, 9);
-    const cellInfo = { id, col, row: gridRow, terrainZ, worldX, worldY, cellsize };
-    emit('cellProbed', cellInfo);
-    // Fix probe marker Z positioning manually to avoid intersection glitches
-    placeProbeMarker(localPt, terrainZ - minZ, cellsize, id);
-    return;
-  }
-
-  // --- PROBE TOOL ---
-  if (props.activeTool === 'probe') {
-    const id = Math.random().toString(36).substring(2, 9);
-    const cellInfo = { id, col, row: gridRow, terrainZ, worldX, worldY, cellsize };
-    emit('cellProbed', cellInfo);
-    // Fix probe marker Z positioning manually to avoid intersection glitches
-    placeProbeMarker(localPt, terrainZ - minZ, cellsize, id);
-    return;
+    emit('cellProbed', {
+      id, col: cell.col, row: cell.gridRow,
+      terrainZ: cell.terrainZ, worldX: cell.worldX, worldY: cell.worldY,
+      cellsize: coords.cellsize,
+    });
+    probeApi.place(localPt, cell.terrainZ - coords.minZ, coords.cellsize, id);
   }
 }
 
 function computeSectionData(startPtWorld, endPtWorld) {
   if (!props.terrain) return;
-  const { ncols, nrows, cellsize, gridData, xllcorner, yllcorner, minZ } = props.terrain;
-  
+  const { ncols, nrows, cellsize, gridData, xllcorner, yllcorner } = props.terrain;
+
   // Transform world points to local terrain space (where Z is up, X/Y are flat)
   const localStart = terrainMesh.worldToLocal(startPtWorld.clone());
   const localEnd = terrainMesh.worldToLocal(endPtWorld.clone());
 
-  // We actually need the world real-world XY coordinates to map back to grid
-  // The local plane is centered at 0,0. width spans (-w/2 to w/2).
-  const bounds = props.terrain.bounds || {
-    width: (ncols - 1) * cellsize,
-    height: (nrows - 1) * cellsize
-  };
-
-  // Convert local Plane coordinates back to real-world Geo coordinates
-  const realStartX = xllcorner + (localStart.x + bounds.width / 2);
-  const realStartY = yllcorner + (localStart.y + bounds.height / 2); // local Y maps directly to Northing in Plane
-  
-  const realEndX = xllcorner + (localEnd.x + bounds.width / 2);
-  const realEndY = yllcorner + (localEnd.y + bounds.height / 2);
+  // Convert local Plane coordinates back to real-world Geo coordinates (zentrale Konvertierung)
+  const coords = makeResultCoords(props.terrain);
+  const { x: realStartX, y: realStartY } = coords.localToReal(localStart.x, localStart.y);
+  const { x: realEndX,   y: realEndY }   = coords.localToReal(localEnd.x,   localEnd.y);
 
   const dx = realEndX - realStartX;
   const dy = realEndY - realStartY;
@@ -582,35 +385,19 @@ function computeSectionData(startPtWorld, endPtWorld) {
   return null;
 }
 
-function placeProbeMarker(localPt, normalizedZ, cellsize, id) {
-  const ringGeo = new THREE.RingGeometry(cellsize * 0.3, cellsize * 0.5, 24);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xff4444,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.9,
-    depthTest: false
-  });
-  const marker = new THREE.Mesh(ringGeo, ringMat);
-  marker.rotation.x = -Math.PI / 2; // this is INSIDE the already-rotated parent space
-  scene.add(marker);
 
-  // Position in world space: terrain mesh is rotated -PI/2 around X
-  // local (x, y, z) → world (x, z, -y)
-  // But we set position directly in world space:
-  marker.position.set(localPt.x, normalizedZ + 0.3, -localPt.y);
-  marker.visible = true;
-  
-  probeMarkers.set(id, marker);
-}
 
-function animate() {
-  animationId = requestAnimationFrame(animate);
-  if (controls) controls.update();
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera);
+// Reaktion auf Layer-Wechsel / Frame-Wechsel / Skalenänderung
+watch([() => props.showFlow, () => props.flowData, () => props.velocityMax], ([show, field]) => {
+  if (show && field && field.vx && field.vy) {
+    flowApi.rebuild(field, props.terrain, props.depthField, props.velocityMax);
+    flowApi.setVisible(true);
+  } else {
+    flowApi.setVisible(false);
+    flowApi.clear();
   }
-}
+});
+
 
 watch(() => props.activeTool, (newTool) => {
   if (volumeToolState) {
@@ -631,215 +418,49 @@ watch(() => props.activeTool, (newTool) => {
 });
 
 function onResize() {
-  if (!container.value || !renderer) return;
-  const w = container.value.clientWidth;
-  const h = container.value.clientHeight;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
+  sceneApi.resize(container.value);
 }
 
 // --- TERRAIN BUILDING ---
 
-function generateBuildingMask() {
-  if (!props.terrain) return;
-  const { ncols, nrows, cellsize, xllcorner, yllcorner } = props.terrain;
-  
-  // Use pure JavaScript Canvas API for ultra-fast 2D polygon rasterization
-  const canvas = typeof OffscreenCanvas !== 'undefined' 
-    ? new OffscreenCanvas(ncols, nrows) 
-    : document.createElement('canvas');
-  if (canvas.style) { canvas.width = ncols; canvas.height = nrows; }
-  
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  
-  // 1. Fill mask with white (255 = visible)
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, ncols, nrows);
-  
-  // 2. Draw buildings in black (0 = transparent)
-  const features = geoStore.buildings?.features || [];
-  if (features.length > 0) {
-    ctx.fillStyle = '#000000';
-    features.forEach(feature => {
-      if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
-        const polys = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
-        polys.forEach(rings => {
-          const outer = rings[0]; // outer ring
-          ctx.beginPath();
-          outer.forEach((coord, i) => {
-            const px = (coord[0] - xllcorner) / cellsize;
-            const py = (coord[1] - yllcorner) / cellsize;
-            const cy = nrows - py; // Canvas Y goes top-down
-            
-            if (i === 0) ctx.moveTo(px, cy);
-            else ctx.lineTo(px, cy);
-          });
-          ctx.closePath();
-          ctx.fill();
-        });
-      }
-    });
-  }
-  
-  // 3. Extract pixel data mapped exactly to grid cells
-  const imgData = ctx.getImageData(0, 0, ncols, nrows);
-  globalBuildingMaskArray = new Uint8Array(ncols * nrows);
-  for (let i = 0; i < ncols * nrows; i++) {
-    globalBuildingMaskArray[i] = imgData.data[i * 4]; // Only need red channel
-  }
-  
-  // 4. Update the ThreeJS Mask Texture
-  if (maskTexture) maskTexture.dispose();
-  
-  maskTexture = new THREE.DataTexture(globalBuildingMaskArray, ncols, nrows, THREE.RedFormat, THREE.UnsignedByteType);
-  maskTexture.flipY = true; // Flips canvas Y back to bottom-up mapping for WebGL PlaneGeometry
-  maskTexture.needsUpdate = true;
-  
-  // 5. Instantly push to active materials
-  if (terrainMesh && terrainMesh.material && terrainMesh.material.uniforms) {
-    terrainMesh.material.uniforms.uBuildingMask = { value: maskTexture };
-    terrainMesh.material.needsUpdate = true;
-  }
-  if (waterMesh && waterMesh.material && waterMesh.material.uniforms) {
-    waterMesh.material.uniforms.uBuildingMask = { value: maskTexture };
-    waterMesh.material.needsUpdate = true;
-  }
-}
 
 // Watch for terrain changes AFTER scene is ready
 watch(() => props.terrain, (t) => {
   if (t && scene) {
     console.log('[ResultMap3D] Terrain prop changed — building');
     buildTerrain(t);
-    if (props.bciContent) buildBoundaries(props.bciContent, t);
+    if (props.bciContent) boundaryApi.build(props.bciContent, t);
   }
 });
 
+// Terrain-Mesh + Gebäudemaske baut die Terrain-Schicht (useTerrainLayer); hier bleibt nur die
+// Orchestrierung: Mesh-Spiegel aktualisieren, Kamera einpassen, Feature-Layer nachziehen.
 function buildTerrain(t) {
-  if (!scene) {
-    console.warn('[ResultMap3D] buildTerrain called but scene not ready');
-    return;
-  }
-  const { ncols, nrows, gridData, minZ, maxZ, cellsize } = t;
-  console.log('[ResultMap3D] buildTerrain:', ncols, 'x', nrows, 'minZ:', minZ, 'maxZ:', maxZ);
+  const res = terrainApi.build(t);
+  terrainMesh = terrainApi.getMesh(); // Read-only-Spiegel für Raycast/Tools aktualisieren
+  if (!res) return;
+  const { bounds } = res;
 
-  // Re-generate mask when terrain builds
-  generateBuildingMask();
-
-  // Compute bounds if missing (fallback)
-  const bounds = t.bounds || {
-    width: (ncols - 1) * (cellsize || 1),
-    height: (nrows - 1) * (cellsize || 1)
-  };
-
-  const geometry = new THREE.PlaneGeometry(bounds.width, bounds.height, ncols - 1, nrows - 1);
-  const count = geometry.attributes.position.count;
-
-  // Per-vertex flags
-  const validArray = new Float32Array(count);
-  const vertexIsValid = new Uint8Array(count); // Für Index-Filtering
-
-  for (let i = 0; i < count; i++) {
-    const col = i % ncols;
-    const geomRow = Math.floor(i / ncols);
-    const gridRow = (nrows - 1) - geomRow;
-    const idx = gridRow * ncols + col;
-    
-    // Canvas Y maps top-down, just like geomRow. This exact index gets the pixel mask!
-    const maskIdx = geomRow * ncols + col;
-    const isBuilding = globalBuildingMaskArray && globalBuildingMaskArray[maskIdx] < 128;
-    
-    // Z-Wert Isolierung: Terrain darf NIEMALS Gebäudehöhen erben!
-    let zVal = 0; 
-    let valid = 0.0;
-    let isValidPoint = false;
-
-    if (idx >= 0 && idx < gridData.length) {
-      const val = gridData[idx];
-      // Entkoppelung: Nur pure DGM-Werte verwenden. Wenn die Canvas-Maske ein Gebäude (Schwarz) meldet,
-      // wird der Wert als NoData forciert, um kontaminierte +10m Spikes in gridData zu ignorieren.
-      if (val > -9000 && !isBuilding) {
-        zVal = val - minZ; // Reales DGM
-        valid = 1.0;
-        isValidPoint = true;
-      } else {
-        // NoData (-9999) oder Gebäude-Footprint -> auf 0 klammern und für Index-Filtering markieren
-        zVal = 0;
-      }
-    }
-    
-    geometry.attributes.position.setZ(i, zVal);
-    validArray[i] = valid;
-    vertexIsValid[i] = isValidPoint ? 1 : 0;
-  }
-  
-  geometry.setAttribute('aValid', new THREE.BufferAttribute(validArray, 1));
-
-  // --- HARD-CLIPPING (Index Buffer Drilling) ---
-  // Durchtrennt die illegale Kopplung und stanzt NoData-Zellen (Gebäude/Ränder) physisch aus dem Mesh.
-  const oldIndex = geometry.getIndex();
-  const newIndices = [];
-  
-  if (oldIndex) {
-      for (let i = 0; i < oldIndex.count; i += 3) {
-          const a = oldIndex.getX(i);
-          const b = oldIndex.getX(i + 1);
-          const c = oldIndex.getX(i + 2);
-          
-          // Dreieck ausstanzen, wenn auch nur ein Vertex ≤ -9000 ist
-          if (vertexIsValid[a] === 1 && vertexIsValid[b] === 1 && vertexIsValid[c] === 1) {
-              newIndices.push(a, b, c);
-          }
-      }
-      geometry.setIndex(newIndices); // Überschreibe Geometry Faces
-  }
-
-  // Normals NACH dem Ausstanzen berechnen, damit Rand-Schatten korrekt sind
-  geometry.computeVertexNormals();
-
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uBuildingMask: { value: maskTexture },
-      uMinZ: { value: 0 },
-      uMaxZ: { value: maxZ - minZ },
-      uColorLow: { value: new THREE.Color(0x2d5f3f) },   // Dark green
-      uColorMid: { value: new THREE.Color(0x8b7355) },    // Earth
-      uColorHigh: { value: new THREE.Color(0xd4c5a9) },   // Light stone
-      uBounds: { value: new THREE.Vector2(bounds.width, bounds.height) },
-      uCellSize: { value: cellsize || 1.0 }
-    },
-    vertexShader: terrainVertexShader,
-    fragmentShader: terrainFragmentShader,
-    side: THREE.DoubleSide
-  });
-
-  if (terrainMesh) {
-    scene.remove(terrainMesh);
-    terrainMesh.geometry.dispose();
-    terrainMesh.material.dispose();
-  }
-
-  terrainMesh = new THREE.Mesh(geometry, material);
-  terrainMesh.rotation.x = -Math.PI / 2;
-  scene.add(terrainMesh);
-
-  // Fit camera
+  // Kamera auf das Gelände einpassen
   const maxDim = Math.max(bounds.width, bounds.height);
   camera.position.set(0, maxDim * 0.7, maxDim * 0.7);
   controls.target.set(0, 0, 0);
   controls.update();
 
   if (layerRenderer) {
-      // Force buildings and other features to re-render using the now solidly-loaded terrain data
+      // Features auf Basis des nun solide geladenen Terrains (neu) rendern
       layerRenderer.renderBuildings();
       layerRenderer.renderNodes();
       if (geoStore.weirs?.length > 0) {
           layerRenderer.renderWeirs();
       }
+      // Brücken analog zu den Wehren nach dem Terrain-Build rendern (sonst fehlt der
+      // garantierte Post-Terrain-Render und die Brücken bleiben unsichtbar).
+      if (geoStore.bridges?.length > 0) {
+          layerRenderer.renderBridges();
+          console.log(`[ResultMap3D] Rendered ${geoStore.bridges.length} bridge(s) after terrain build.`);
+      }
   }
-
-  console.log('[ResultMap3D] Terrain mesh added ✅ bounds:', bounds.width, 'x', bounds.height);
 }
 
 // --- POLYGON HIGHLIGHT LAYER ---
@@ -941,280 +562,17 @@ function createHighlightMesh(polygon, terrain) {
   return new THREE.Mesh(geometry, material);
 }
 
-// --- WATER LAYER ---
-
-watch(() => props.depthData, (data) => {
-  if (data && props.terrain) {
-    updateWater(data);
-  } else if (waterMesh) {
-    waterMesh.visible = false;
-  }
-});
-
-watch(() => props.maxWaterDepth, (newMax) => {
-  if (waterMesh && waterMesh.material.uniforms) {
-    waterMesh.material.uniforms.uMaxDepth.value = newMax;
-  }
-});
-
-function updateWater(depthData) {
-  if (!terrainMesh || !props.terrain) return;
-  const { ncols, nrows } = props.terrain;
-
-  const rawData = depthData instanceof Float32Array ? depthData : new Float32Array(depthData);
-
-  // Create DataTexture
-  const texture = new THREE.DataTexture(rawData, ncols, nrows, THREE.RedFormat, THREE.FloatType);
-  texture.flipY = true;
-  texture.needsUpdate = true;
-
-  if (!waterMesh) {
-    const geometry = terrainMesh.geometry.clone();
-
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uBuildingMask: { value: maskTexture },
-        uDepthMap: { value: texture },
-        uTexelSize: { value: new THREE.Vector2(1.0 / ncols, 1.0 / nrows) },
-        uMaxDepth: { value: props.maxWaterDepth || 1.0 },
-        uColorShallow: { value: new THREE.Color(0x00e5ff) },
-        uColorMid: { value: new THREE.Color(0x0078d7) },
-        uColorDeep: { value: new THREE.Color(0x00008b) },
-      },
-      vertexShader: waterVertexShader,
-      fragmentShader: waterFragmentShader,
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2
-    });
-
-    waterMesh = new THREE.Mesh(geometry, material);
-    waterMesh.rotation.x = -Math.PI / 2;
-    scene.add(waterMesh);
-  } else {
-    const mat = waterMesh.material;
-    if (mat.uniforms.uBuildingMask) mat.uniforms.uBuildingMask.value = maskTexture;
-    if (mat.uniforms.uDepthMap.value) mat.uniforms.uDepthMap.value.dispose();
-    mat.uniforms.uDepthMap.value = texture;
-    if (!mat.uniforms.uTexelSize) mat.uniforms.uTexelSize = { value: new THREE.Vector2() };
-    mat.uniforms.uTexelSize.value.set(1.0 / ncols, 1.0 / nrows);
-    mat.uniforms.uMaxDepth.value = props.maxWaterDepth || 1.0;
-    waterMesh.visible = true;
-  }
-}
 
 // --- BOUNDARY LAYER ---
 
 watch(() => props.bciContent, (content) => {
-  if (content && props.terrain && scene) {
-    buildBoundaries(content, props.terrain);
-  } else if (boundaryMesh) {
-    boundaryMesh.visible = false;
-  }
+  if (content && props.terrain && scene) boundaryApi.build(content, props.terrain);
+  else boundaryApi.setVisible(false);
 });
-
-function buildBoundaries(bciContent, t) {
-  if (!scene || !t || !bciContent) return;
-
-  // Clean up previous boundary objects
-  if (boundaryMesh) {
-    scene.remove(boundaryMesh);
-    boundaryMesh.traverse(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
-    boundaryMesh = null;
-  }
-
-  // Parse BCI lines — content has real newlines (\n), not escaped
-  const lines = bciContent.split('\n');
-  const points = [];
-  
-  for (const line of lines) {
-    const p = line.trim().split(/\s+/);
-    if (p.length < 4) continue;
-    
-    const type = p[0];
-    if (type === 'P') {
-      const x = parseFloat(p[1]);
-      const y = parseFloat(p[2]);
-      const bType = p[3];
-      if (!isNaN(x) && !isNaN(y)) {
-        points.push({ x, y, type: bType });
-      }
-    } else if (['N', 'S', 'E', 'W'].includes(type)) {
-      const start = parseFloat(p[1]);
-      const end = parseFloat(p[2]);
-      const bType = p[3];
-      if (isNaN(start) || isNaN(end)) continue;
-
-      const { cellsize, xllcorner, yllcorner, ncols, nrows } = t;
-      const numCells = Math.max(1, Math.round(Math.abs(end - start) / cellsize));
-      const step = (end - start) / numCells;
-
-      for (let i = 0; i < numCells; i++) {
-        const val = start + i * step + step / 2;
-        let x, y;
-        if (type === 'N') { x = val; y = yllcorner + nrows * cellsize - cellsize / 2; }
-        else if (type === 'S') { x = val; y = yllcorner + cellsize / 2; }
-        else if (type === 'E') { x = xllcorner + ncols * cellsize - cellsize / 2; y = val; }
-        else if (type === 'W') { x = xllcorner + cellsize / 2; y = val; }
-        points.push({ x, y, type: bType });
-      }
-    }
-  }
-
-  if (points.length === 0) {
-    console.warn('[ResultMap3D] No boundary points parsed from BCI content');
-    return;
-  }
-
-  const { ncols, nrows, cellsize, gridData, xllcorner, yllcorner, minZ } = t;
-
-  // Arrow geometry: cone (arrowhead) + cylinder (shaft)
-  const arrowHeight = cellsize * 3;
-  const shaftHeight = arrowHeight * 0.65;
-  const coneHeight = arrowHeight * 0.35;
-  const shaftRadius = cellsize * 0.12;
-  const coneRadius = cellsize * 0.35;
-
-  const coneGeom = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
-  coneGeom.translate(0, shaftHeight + coneHeight / 2, 0); // position on top of shaft
-
-  const shaftGeom = new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftHeight, 6);
-  shaftGeom.translate(0, shaftHeight / 2, 0); // position from base upward
-
-  // Rotate both from Y-up to Z-up in local space.
-  // After boundaryMesh.rotation.x = -PI/2, local Z maps to world Y (up).
-  coneGeom.rotateX(Math.PI / 2);
-  shaftGeom.rotateX(Math.PI / 2);
-
-  // Merge into single geometry
-  const mergedGeom = new THREE.BufferGeometry();
-  const conePos = coneGeom.attributes.position;
-  const shaftPos = shaftGeom.attributes.position;
-  const totalVerts = conePos.count + shaftPos.count;
-  const positions = new Float32Array(totalVerts * 3);
-  for (let i = 0; i < conePos.count; i++) {
-    positions[i * 3] = conePos.getX(i);
-    positions[i * 3 + 1] = conePos.getY(i);
-    positions[i * 3 + 2] = conePos.getZ(i);
-  }
-  for (let i = 0; i < shaftPos.count; i++) {
-    const off = (conePos.count + i) * 3;
-    positions[off] = shaftPos.getX(i);
-    positions[off + 1] = shaftPos.getY(i);
-    positions[off + 2] = shaftPos.getZ(i);
-  }
-  mergedGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  // Merge indices
-  const coneIdx = coneGeom.index;
-  const shaftIdx = shaftGeom.index;
-  const totalIdx = coneIdx.count + shaftIdx.count;
-  const indices = new Uint32Array(totalIdx);
-  for (let i = 0; i < coneIdx.count; i++) indices[i] = coneIdx.getX(i);
-  for (let i = 0; i < shaftIdx.count; i++) indices[coneIdx.count + i] = shaftIdx.getX(i) + conePos.count;
-  mergedGeom.setIndex(new THREE.BufferAttribute(indices, 1));
-  mergedGeom.computeVertexNormals();
-
-  const material = new THREE.MeshPhongMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.9,
-    shininess: 60
-  });
-
-  boundaryMesh = new THREE.InstancedMesh(mergedGeom, material, points.length);
-  const dummy = new THREE.Object3D();
-  const color = new THREE.Color();
-
-  const cInflow = new THREE.Color(0x2196f3);  // Blue for QVAR
-  const cOutflow = new THREE.Color(0xff5722); // Orange-Red for HFIX/FREE
-  const cStage = new THREE.Color(0x9c27b0);   // Purple for HVAR
-  const cUnknown = new THREE.Color(0x888888);
-
-  const cx = xllcorner + (ncols * cellsize) / 2;
-  const cy = yllcorner + (nrows * cellsize) / 2;
-
-  points.forEach((pt, i) => {
-    const localX = pt.x - cx;
-    const localY = pt.y - cy;
-
-    // Look up terrain Z at this boundary location
-    // gridData is bottom-up (row 0 = south/minY)
-    const col = Math.round((pt.x - xllcorner) / cellsize);
-    const row = Math.round((pt.y - yllcorner) / cellsize); // bottom-up
-    let terrainZ = 0;
-    if (col >= 0 && col < ncols && row >= 0 && row < nrows) {
-      const idx = row * ncols + col;
-      const val = gridData[idx];
-      if (val > -9000) terrainZ = val - minZ;
-    }
-
-    // Outflow arrows point DOWN, inflow arrows point UP
-    const isOutflow = (pt.type === 'HFIX' || pt.type === 'FREE');
-    
-    if (isOutflow) {
-      // Outflow: start high and point down so the tip touches the terrain
-      dummy.position.set(localX, localY, terrainZ + arrowHeight);
-      dummy.rotation.set(Math.PI, 0, 0);
-    } else {
-      // Inflow: start slightly above terrain and point up
-      dummy.position.set(localX, localY, terrainZ + cellsize * 0.2);
-      dummy.rotation.set(0, 0, 0);
-    }
-
-    dummy.updateMatrix();
-    boundaryMesh.setMatrixAt(i, dummy.matrix);
-
-    if (pt.type === 'QVAR') color.copy(cInflow);
-    else if (isOutflow) color.copy(cOutflow);
-    else if (pt.type === 'HVAR') color.copy(cStage);
-    else color.copy(cUnknown);
-
-    boundaryMesh.setColorAt(i, color);
-  });
-
-  boundaryMesh.instanceMatrix.needsUpdate = true;
-  if (boundaryMesh.instanceColor) boundaryMesh.instanceColor.needsUpdate = true;
-
-  // Terrain is rotated -PI/2 around X (PlaneGeometry XY → world XZ)
-  // Apply same rotation so our arrow Y-up becomes world Y-up after rotation
-  boundaryMesh.rotation.x = -Math.PI / 2;
-  
-  scene.add(boundaryMesh);
-
-  // Cleanup temp geometries
-  coneGeom.dispose();
-  shaftGeom.dispose();
-
-  console.log(`[ResultMap3D] 🔵 Rendered ${points.length} boundary arrows (BCI debug).`);
-}
 
 defineExpose({ 
   onResize, 
-  clearProbe(id) {
-    if (id) {
-      const marker = probeMarkers.get(id);
-      if (marker) {
-        scene.remove(marker);
-        marker.geometry.dispose();
-        marker.material.dispose();
-        probeMarkers.delete(id);
-      }
-    } else {
-      for (const marker of probeMarkers.values()) {
-        scene.remove(marker);
-        marker.geometry.dispose();
-        marker.material.dispose();
-      }
-      probeMarkers.clear();
-    }
-  }, 
+  clearProbe(id) { probeApi.clear(id); },
   clearSection() { 
       if (sectionToolState) sectionToolState.clearAllSections(); 
   },

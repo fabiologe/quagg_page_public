@@ -1,11 +1,16 @@
 import { ref } from 'vue';
 import * as THREE from 'three';
+import { useToolStateMachine } from './useToolStateMachine.js';
 
 export function useWeirTool() {
     let cursorMesh = null;
     let previewGroup = null;
     let startPoint = null;
+    let sceneRef = null;
     const previewPool = [];
+
+    // Lifecycle state machine: IDLE → DRAWING (Startpunkt gesetzt) → IDLE (2. Klick)
+    const sm = useToolStateMachine();
 
     const createCursor = (size = 1.0, color = 0x3498db) => {
         const geometry = new THREE.PlaneGeometry(1.0, 1.0);
@@ -24,7 +29,26 @@ export function useWeirTool() {
         return mesh;
     };
 
+    // Vorschau-Zellen ins Pool zurücklegen (wiederverwendet)
+    const recyclePreview = () => {
+        if (!previewGroup) return;
+        while (previewGroup.children.length > 0) {
+            const c = previewGroup.children[0];
+            previewGroup.remove(c);
+            previewPool.push(c);
+        }
+    };
+
+    // Laufende Linie abbrechen → zurück nach IDLE (Escape / Backspace / reset)
+    const clearAxis = () => {
+        startPoint = null;
+        recyclePreview();
+        if (cursorMesh) cursorMesh.visible = false;
+        sm.setIdle();
+    };
+
     const activate = (scene) => {
+        sceneRef = scene;
         if (!cursorMesh) {
             cursorMesh = createCursor(1.0);
         }
@@ -34,23 +58,26 @@ export function useWeirTool() {
         }
         scene.add(cursorMesh);
         scene.add(previewGroup);
+        sm.setIdle();
+        // Escape/Backspace brechen die halb gezeichnete Linie ab
+        sm.attachShortcuts({ onCancel: clearAxis, onUndo: clearAxis });
     };
 
     const deactivate = (scene) => {
+        sm.detachShortcuts();
         if (cursorMesh) {
             scene.remove(cursorMesh);
             cursorMesh.visible = false;
         }
         if (previewGroup) {
             scene.remove(previewGroup);
-            while(previewGroup.children.length > 0){ 
-                const c = previewGroup.children[0];
-                previewGroup.remove(c); 
-                previewPool.push(c);
-            }
+            recyclePreview();
         }
         startPoint = null;
+        sm.setIdle();
     };
+
+    const reset = (scene) => { sceneRef = scene || sceneRef; clearAxis(); };
 
     // Bresenham-based 4-connected line
     function getLineCells(c0, r0, c1, r1) {
@@ -87,7 +114,8 @@ export function useWeirTool() {
 
     const onMove = ({ event, raycaster, camera, pointer, scene, terrainMesh, parsedData }) => {
         if (!terrainMesh || !parsedData) return;
-        
+        sceneRef = scene || sceneRef;
+
         if (!cursorMesh && scene) {
             activate(scene);
         }
@@ -113,13 +141,7 @@ export function useWeirTool() {
                 if (startPoint) {
                     // Draw preview line
                     cursorMesh.visible = false;
-                    
-                    while(previewGroup.children.length > 0) {
-                        const child = previewGroup.children[0];
-                        previewGroup.remove(child);
-                        previewPool.push(child);
-                    }
-
+                    recyclePreview();
                     const cells = getLineCells(startPoint.col, startPoint.row, centerCol, centerRow);
                     
                     cells.forEach(cell => {
@@ -166,8 +188,9 @@ export function useWeirTool() {
         }
     };
 
-    const onClick = ({ raycaster, camera, pointer, terrainMesh, parsedData }) => {
+    const onClick = ({ raycaster, camera, pointer, scene, terrainMesh, parsedData }) => {
         if (!terrainMesh || !parsedData) return;
+        sceneRef = scene || sceneRef;
 
         raycaster.setFromCamera(pointer, camera);
         const intersects = raycaster.intersectObject(terrainMesh, false);
@@ -189,6 +212,7 @@ export function useWeirTool() {
                 
                 if (!startPoint) {
                     startPoint = { col: centerCol, row: centerRow };
+                    sm.setDrawing();
                 } else {
                     const cells = getLineCells(startPoint.col, startPoint.row, centerCol, centerRow);
                     const segments = [];
@@ -228,22 +252,19 @@ export function useWeirTool() {
                         });
                     }
 
-                    window.dispatchEvent(new CustomEvent('weir-line-click', { 
-                        detail: { segments } 
+                    window.dispatchEvent(new CustomEvent('weir-line-click', {
+                        detail: { segments }
                     }));
 
                     // Reset tool
                     startPoint = null;
-                    while(previewGroup.children.length > 0) {
-                        const c = previewGroup.children[0];
-                        previewGroup.remove(c);
-                        previewPool.push(c);
-                    }
+                    recyclePreview();
                     cursorMesh.visible = false;
+                    sm.setIdle();
                 }
             }
         }
     };
 
-    return { activate, deactivate, onMove, onClick };
+    return { state: sm.state, activate, deactivate, onMove, onClick, reset };
 }

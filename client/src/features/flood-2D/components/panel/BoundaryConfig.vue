@@ -4,6 +4,8 @@
 import { ref, computed, watch } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
+
+// ── Global Boundary State ─────────────────────────────────────────────────
 import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 
 const props = defineProps({
@@ -129,10 +131,27 @@ const createNewProfile = () => {
     saveSettings(); // Auto-save assignment
 };
 
-const goToProfileManager = () => {
-    // Optional: emit event to open full manager if needed
-    // For now inline editor is enough
-};
+const goToProfileManager = () => {};
+
+// ── Globale Randbedingung ──────────────────────────────────────────────────
+const globalTypeOptions = [
+    { value: 'CLOSED', label: '🔒 Geschlossen' },
+    { value: 'FREE',   label: '↗️ Frei (FREE)' },
+    { value: 'HFIX',   label: '📏 Fester Pegel' },
+];
+
+const globalStatusText = computed(() => {
+    switch (hydStore.globalBoundaryType) {
+        case 'CLOSED': return '⚠️ Alle Kanten geschlossen — Wasser kann nicht abfließen';
+        case 'FREE':   return '✅ Freier Auslauf an allen 4 Domänenkanten (empfohlen)';
+        case 'HFIX':   return `✅ Wasserstand ${hydStore.globalBoundaryHfix.toFixed(1)} m NHN an allen Kanten`;
+        default:       return '';
+    }
+});
+
+const globalStatusClass = computed(() =>
+    hydStore.globalBoundaryType === 'CLOSED' ? 'status-warn' : 'status-ok'
+);
 
 </script>
 
@@ -148,10 +167,7 @@ const goToProfileManager = () => {
       <div class="form-group">
           <label>Verhaltenstyp</label>
           <select v-model="activeType" @change="saveSettings" class="main-select">
-              <template v-for="opt in typeOptions" :key="opt.value">
-                   <!-- Filter Outflow for Nodes if strictly required, but engine often supports sinks -->
-                  <option :value="opt.value">{{ opt.label }}</option>
-              </template>
+              <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
       </div>
 
@@ -202,8 +218,29 @@ const goToProfileManager = () => {
       </div>
 
     </div>
-    <div v-else class="empty-state">
-        Kein Objekt ausgewählt.
+    <!-- Globale Randbedingung — immer sichtbar, unterhalb der Objekt-Config -->
+    <div class="global-boundary-panel">
+      <div class="global-header">🌐 Globale Randbedingung</div>
+      <p class="global-desc">
+        Gilt für alle 4 Domänenkanten wenn keine manuellen Boundaries gesetzt sind.
+      </p>
+
+      <div class="global-type-row">
+        <button
+          v-for="opt in globalTypeOptions"
+          :key="opt.value"
+          class="gtype-btn"
+          :class="{ active: hydStore.globalBoundaryType === opt.value }"
+          @click="hydStore.globalBoundaryType = opt.value"
+        >{{ opt.label }}</button>
+      </div>
+
+      <div v-if="hydStore.globalBoundaryType === 'HFIX'" class="global-hfix-input">
+        <label>Außen-Wasserspiegel [m NHN]</label>
+        <input type="number" v-model.number="hydStore.globalBoundaryHfix" step="0.1" />
+      </div>
+
+      <div class="global-status" :class="globalStatusClass">{{ globalStatusText }}</div>
     </div>
   </div>
 </template>
@@ -246,6 +283,31 @@ const goToProfileManager = () => {
 }
 .hint-warn { color: #f39c12; font-size: 0.9rem; margin-top: 5px; }
 .hint-info { color: #7f8c8d; font-size: 0.8rem; margin-top: 3px; display: block; }
+
+/* ── Global Boundary Panel ── */
+.global-boundary-panel { padding: 4px 0; display: flex; flex-direction: column; gap: 10px; }
+.global-header { font-size: 0.88rem; font-weight: 700; color: #5dade2; border-bottom: 1px solid #34495e; padding-bottom: 6px; }
+.global-desc { font-size: 0.78rem; color: #7f8c8d; line-height: 1.4; margin: 0; }
+.global-type-row { display: flex; gap: 6px; }
+.gtype-btn {
+    flex: 1; padding: 7px 4px; border: 1px solid #4a6278; border-radius: 5px;
+    background: #1e3348; color: #bdc3c7; font-size: 0.75rem; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; text-align: center;
+}
+.gtype-btn:hover  { background: #2471a3; border-color: #2980b9; color: #fff; }
+.gtype-btn.active { background: #2980b9; border-color: #5dade2; color: #fff; }
+
+.global-hfix-input { display: flex; flex-direction: column; gap: 4px; }
+.global-hfix-input label { font-size: 0.78rem; color: #bdc3c7; }
+.global-hfix-input input {
+    padding: 6px 8px; border-radius: 4px; border: 1px solid #4a6278;
+    background: #1e3348; color: white; font-size: 0.88rem; outline: none;
+}
+.global-hfix-input input:focus { border-color: #2980b9; }
+
+.global-status { font-size: 0.78rem; padding: 6px 8px; border-radius: 4px; }
+.status-warn { background: rgba(241,196,15,0.12); color: #f1c40f; border: 1px solid rgba(241,196,15,0.3); }
+.status-ok   { background: rgba(39,174,96,0.12);  color: #2ecc71; border: 1px solid rgba(39,174,96,0.3); }
 </style>
 
 

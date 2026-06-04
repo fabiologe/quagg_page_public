@@ -1,11 +1,16 @@
 import { ref } from 'vue';
 import * as THREE from 'three';
+import { useToolStateMachine } from './useToolStateMachine.js';
 
 export function useBridgeTool() {
     let cursorMesh    = null;
     let previewGroup  = null;
     let startPoint    = null;
+    let sceneRef      = null;
     const previewPool = [];
+
+    // Lifecycle state machine: IDLE → DRAWING (Startpunkt gesetzt) → IDLE (2. Klick)
+    const sm = useToolStateMachine();
 
     const createCursor = (color = 0xe74c3c) => {
         const geometry = new THREE.PlaneGeometry(1.0, 1.0);
@@ -24,7 +29,26 @@ export function useBridgeTool() {
         return mesh;
     };
 
+    // Vorschau-Zellen ins Pool zurücklegen (wiederverwendet)
+    const recyclePreview = () => {
+        if (!previewGroup) return;
+        while (previewGroup.children.length > 0) {
+            const c = previewGroup.children[0];
+            previewGroup.remove(c);
+            previewPool.push(c);
+        }
+    };
+
+    // Laufende Achse abbrechen → zurück nach IDLE (Escape / Backspace / reset)
+    const clearAxis = () => {
+        startPoint = null;
+        recyclePreview();
+        if (cursorMesh) cursorMesh.visible = false;
+        sm.setIdle();
+    };
+
     const activate = (scene) => {
+        sceneRef = scene;
         if (!cursorMesh)    cursorMesh   = createCursor();
         if (!previewGroup) {
             previewGroup = new THREE.Group();
@@ -32,20 +56,23 @@ export function useBridgeTool() {
         }
         scene.add(cursorMesh);
         scene.add(previewGroup);
+        sm.setIdle();
+        // Escape/Backspace brechen die halb gezeichnete Achse ab
+        sm.attachShortcuts({ onCancel: clearAxis, onUndo: clearAxis });
     };
 
     const deactivate = (scene) => {
+        sm.detachShortcuts();
         if (cursorMesh) { scene.remove(cursorMesh); cursorMesh.visible = false; }
         if (previewGroup) {
             scene.remove(previewGroup);
-            while (previewGroup.children.length > 0) {
-                const c = previewGroup.children[0];
-                previewGroup.remove(c);
-                previewPool.push(c);
-            }
+            recyclePreview();
         }
         startPoint = null;
+        sm.setIdle();
     };
+
+    const reset = (scene) => { sceneRef = scene || sceneRef; clearAxis(); };
 
     // Bresenham 4-connected line (identical to useWeirTool)
     function getLineCells(c0, r0, c1, r1) {
@@ -75,6 +102,7 @@ export function useBridgeTool() {
 
     const onMove = ({ raycaster, camera, pointer, scene, terrainMesh, parsedData }) => {
         if (!terrainMesh || !parsedData) return;
+        sceneRef = scene || sceneRef;
         if (!cursorMesh && scene) activate(scene);
 
         raycaster.setFromCamera(pointer, camera);
@@ -97,11 +125,7 @@ export function useBridgeTool() {
 
         if (startPoint) {
             cursorMesh.visible = false;
-            while (previewGroup.children.length > 0) {
-                const c = previewGroup.children[0];
-                previewGroup.remove(c);
-                previewPool.push(c);
-            }
+            recyclePreview();
             const cells = getLineCells(startPoint.col, startPoint.row, col, row);
             cells.forEach(cell => {
                 let mesh = previewPool.length > 0 ? previewPool.pop() : createCursor(0xe74c3c);
@@ -137,8 +161,9 @@ export function useBridgeTool() {
      * @param {object} ctx
      * @param {object} bridgeParams - { soffit, deck, width, Cd, z_sohle }
      */
-    const onClick = ({ raycaster, camera, pointer, terrainMesh, parsedData }, bridgeParams = {}) => {
+    const onClick = ({ raycaster, camera, pointer, scene, terrainMesh, parsedData }, bridgeParams = {}) => {
         if (!terrainMesh || !parsedData) return;
+        sceneRef = scene || sceneRef;
 
         raycaster.setFromCamera(pointer, camera);
         const intersects = raycaster.intersectObject(terrainMesh, false);
@@ -157,6 +182,7 @@ export function useBridgeTool() {
 
         if (!startPoint) {
             startPoint = { col, row };
+            sm.setDrawing();
             return;
         }
 
@@ -202,13 +228,50 @@ export function useBridgeTool() {
         window.dispatchEvent(new CustomEvent('bridge-axis-click', { detail: { segments } }));
 
         startPoint = null;
-        while (previewGroup.children.length > 0) {
-            const c = previewGroup.children[0];
-            previewGroup.remove(c);
-            previewPool.push(c);
-        }
+        recyclePreview();
         cursorMesh.visible = false;
+        sm.setIdle();
     };
 
-    return { activate, deactivate, onMove, onClick };
+    return { state: sm.state, activate, deactivate, onMove, onClick, reset };
+}
+
+/**
+ * Convert two world-coordinate points (UTM) to a Bresenham cell array on the flood grid.
+ * Used by BridgeTool when importing axis from IFC clipboard data.
+ *
+ * @param {{ x: number, y: number }} p1 - Start point (world coords)
+ * @param {{ x: number, y: number }} p2 - End point (world coords)
+ * @param {object} parsedData - terrain header { xll/xllcorner, yll/yllcorner, cellsize, ncols, nrows }
+ * @returns {Array<{col:number, row:number}>}
+ */
+export function computeAxisFromWorldPoints(p1, p2, parsedData) {
+    const xll      = parsedData.xll      ?? parsedData.xllcorner ?? 0;
+    const yll      = parsedData.yll      ?? parsedData.yllcorner ?? 0;
+    const cellsize = parsedData.cellsize ?? 1;
+    const ncols    = parsedData.ncols    ?? 0;
+    const nrows    = parsedData.nrows    ?? 0;
+
+    const toCell = (pt) => ({
+        col: Math.max(0, Math.min(ncols - 1, Math.floor((pt.x - xll) / cellsize))),
+        row: Math.max(0, Math.min(nrows - 1, (nrows - 1) - Math.floor((pt.y - yll) / cellsize))),
+    });
+
+    // Re-use the local Bresenham function inline (can't call it from outside useBridgeTool scope)
+    const c0 = toCell(p1), c1 = toCell(p2);
+    const dx = Math.abs(c1.col - c0.col);
+    const dy = -Math.abs(c1.row - c0.row);
+    const sx = c0.col < c1.col ? 1 : -1;
+    const sy = c0.row < c1.row ? 1 : -1;
+    let err = dx + dy, c = c0.col, r = c0.row;
+    const cells = [];
+    while (true) {
+        cells.push({ col: c, row: r });
+        if (c === c1.col && r === c1.row) break;
+        const e2 = 2 * err;
+        if (e2 > dy && e2 < dx) { err += dy; c += sx; cells.push({ col: c, row: r }); err += dx; r += sy; }
+        else if (e2 > dy) { err += dy; c += sx; }
+        else if (e2 < dx) { err += dx; r += sy; }
+    }
+    return cells;
 }

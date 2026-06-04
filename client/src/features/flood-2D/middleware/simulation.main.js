@@ -238,20 +238,16 @@ function checkFSForResults() {
         const files = FS.readdir('/results');
         sendLog(`[Result Check] Files in /results: ${files.join(', ')}`);
 
-        const resultPattern = /^res-\d+\.wd$/; // LISFLOOD writes res-0000.wd, res-0001.wd, etc.
+        const resultPattern = /^res-\d+\.wd$/;
+        const vxFiles = new Set(files.filter(f => /^res-\d+\.Vx$/.test(f)));
 
         for (const file of files) {
             if (file === '.' || file === '..') continue;
 
             if (resultPattern.test(file) && !processedFiles.has(file)) {
-
-                const path = '/results/' + file;
+                const path    = '/results/' + file;
                 const content = FS.readFile(path, { encoding: 'binary' });
-
-                // 2. Parse & Validate
-                const result = OutputProcessor.parseAsync(content);
-
-                // 3. Cleanup
+                const result  = OutputProcessor.parseAsync(content);
                 FS.unlink(path);
 
                 if (result.isValid) {
@@ -260,23 +256,103 @@ function checkFSForResults() {
                         postMessage({ type: 'WARNING', message: 'Solver Instability Detected' });
                     }
 
-                    const frameMatch = file.match(/(\d+)/);
-                    const frameId = frameMatch ? parseInt(frameMatch[1], 10) : 0;
+                    const frameId = parseInt(file.match(/(\d+)/)[1], 10);
+
+                    // Read matching velocity files if voutput was enabled
+                    const vxFile = file.replace('.wd', '.Vx');
+                    const vyFile = file.replace('.wd', '.Vy');
+                    let velMagnitude = null;
+                    let velVx = null;
+                    let velVy = null;
+
+                    if (vxFiles.has(vxFile)) {
+                        try {
+                            const vxContent = FS.readFile('/results/' + vxFile, { encoding: 'binary' });
+                            const vyContent = FS.readFile('/results/' + vyFile, { encoding: 'binary' });
+                            const vxResult  = OutputProcessor.parseAsync(vxContent);
+                            const vyResult  = OutputProcessor.parseAsync(vyContent);
+                            FS.unlink('/results/' + vxFile);
+                            FS.unlink('/results/' + vyFile);
+
+                            if (vxResult.isValid && vyResult.isValid) {
+                                // LISFLOOD schreibt Vx/Vy STAGGERED an Zellkanten:
+                                //   .Vx: (ncols+1) x nrows  (Ost-Kanten, +Vx = Ost)
+                                //   .Vy: ncols x (nrows+1)   (Süd-Kanten, +Vy = Süd)
+                                // → auf Zellmittelpunkte des Tiefen-Grids (ncols x nrows, top-down)
+                                //   entstaggern, damit Betrag/Richtung mit der Tiefe deckungsgleich sind.
+                                const ncols = result.header.ncols;
+                                const nrows = result.header.nrows;
+                                const VX = vxResult.data;     // Länge (ncols+1)*nrows
+                                const VY = vyResult.data;     // Länge ncols*(nrows+1)
+                                const strideX = ncols + 1;    // Spalten in der Vx-Datei
+                                const valid = (v) => v > -9000;
+                                const face = (v) => (valid(v) ? v : 0);
+
+                                const vxC = new Float32Array(ncols * nrows);
+                                const vyC = new Float32Array(ncols * nrows);
+                                const mag = new Float32Array(ncols * nrows);
+
+                                for (let j = 0; j < nrows; j++) {
+                                    for (let i = 0; i < ncols; i++) {
+                                        const idx = j * ncols + i;
+                                        // Ost-/West-Kante der Zelle aus der Vx-Datei mitteln
+                                        const wFace = VX[j * strideX + i];
+                                        const eFace = VX[j * strideX + (i + 1)];
+                                        // Nord-/Süd-Kante der Zelle aus der Vy-Datei mitteln
+                                        const nFace = VY[j * ncols + i];
+                                        const sFace = VY[(j + 1) * ncols + i];
+                                        const vx = 0.5 * (face(wFace) + face(eFace));
+                                        const vy = 0.5 * (face(nFace) + face(sFace));
+                                        vxC[idx] = vx;
+                                        vyC[idx] = vy;
+                                        mag[idx] = Math.sqrt(vx * vx + vy * vy);
+                                    }
+                                }
+                                velMagnitude = mag;
+                                velVx = vxC; // zell-zentriert, +Ost
+                                velVy = vyC; // zell-zentriert, +Süd
+                            }
+                        } catch (_) { /* velocity optional */ }
+                    }
+
+                    const transfers = [result.data.buffer];
+                    if (velMagnitude) transfers.push(velMagnitude.buffer);
+                    if (velVx) transfers.push(velVx.buffer);
+                    if (velVy) transfers.push(velVy.buffer);
 
                     postMessage({
                         type: 'RESULT',
                         frame: frameId,
                         payload: result.data,
+                        velocity: velMagnitude ?? null,
+                        vx: velVx ?? null,
+                        vy: velVy ?? null,
                         header: result.header,
                         min: result.min,
                         max: result.max
-                    }, [result.data.buffer]);
+                    }, transfers);
 
                 } else {
                     console.error(`Parsed invalid output file: ${file}: ${result.error}`);
                 }
             }
         }
+
+        // End-of-simulation summary grids (appear once, not per-frame)
+        for (const [suffix, msgType] of [
+            ['res.max',    'MAX_DEPTH_GRID'],
+            ['res.maxHaz', 'MAX_HAZARD_GRID'],
+        ]) {
+            try {
+                const content = FS.readFile('/results/' + suffix, { encoding: 'binary' });
+                const result  = OutputProcessor.parseAsync(content);
+                if (result.isValid) {
+                    postMessage({ type: msgType, payload: result.data, header: result.header }, [result.data.buffer]);
+                    sendLog(`[Result] ${suffix} captured.`);
+                }
+            } catch (_) { /* summary grids appear only at end */ }
+        }
+
     } catch (e) {
         // console.warn("FS Check Error", e);
     }

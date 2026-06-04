@@ -8,18 +8,32 @@
 
       <!-- Idle: Warten auf Achsenklicks -->
       <div v-if="!pendingBridge" class="state-idle">
-        <div class="hint">
-          <span class="step-badge">1</span>
-          Startpunkt auf das Terrain klicken
-        </div>
-        <div class="hint" style="margin-top:6px">
-          <span class="step-badge">2</span>
-          Endpunkt setzen → Brückenachse wird gezogen
-        </div>
+        <!-- DRAWING: Startpunkt gesetzt, Endpunkt erwartet -->
+        <template v-if="isDrawingAxis">
+          <div class="hint drawing-hint">
+            <span class="step-badge">2</span>
+            Endpunkt klicken — oder <strong>Esc</strong> zum Abbrechen
+          </div>
+        </template>
+        <template v-else>
+          <div class="hint">
+            <span class="step-badge">1</span>
+            Startpunkt auf das Terrain klicken
+          </div>
+          <div class="hint" style="margin-top:6px">
+            <span class="step-badge">2</span>
+            Endpunkt setzen → Brückenachse wird gezogen
+          </div>
+        </template>
         <div class="sub-hint">
           Die Achse wird Bresenham-4-connected über das Raster gelegt.
           Jede Zelle erhält zwei Wehr-Einträge (Soffitte + Deck).
         </div>
+
+        <!-- IFC-Import -->
+        <button class="btn-ifc-import" @click="importFromClipboard" title="quagg-bridge-v1 JSON aus Zwischenablage (IFC-Viewer)">
+          📋 Aus IFC einfügen
+        </button>
 
         <div v-if="bridges.length > 0" class="existing-list">
           <div class="list-title">Vorhandene Brücken</div>
@@ -105,12 +119,18 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
+import { computeAxisFromWorldPoints } from '../../composables/editor/useBridgeTool.js';
+
+const props = defineProps({
+  toolInstance: { type: Object, default: null }
+});
 
 const simStore = useSimulationStore();
 const geoStore = useGeoStore();
 
 const isActive  = computed(() => simStore.activeTool === 'BRIDGE');
 const bridges   = computed(() => geoStore.bridges);
+const isDrawingAxis = computed(() => props.toolInstance?.state?.value === 'DRAWING');
 
 // ── State ──────────────────────────────────────────────────────────────────
 const pendingBridge   = ref(false);
@@ -132,11 +152,17 @@ const isValid = computed(() =>
   form.value.width  > 0
 );
 
+// IFC-Import state
+const ifcAxisPoints  = ref(null);  // { p1: {x,y}, p2: {x,y} }
+const pendingFromIfc = ref(false);
+
 // ── Reset ──────────────────────────────────────────────────────────────────
 const reset = () => {
   pendingBridge.value   = false;
   pendingSegments.value = [];
   demZ.value            = 0;
+  ifcAxisPoints.value   = null;
+  pendingFromIfc.value  = false;
   form.value = { z_sohle: 0.0, soffit: 2.0, deck: 3.0, width: 5.0, Cd: 0.80, Tz: 1.5 };
 };
 
@@ -166,6 +192,30 @@ const handleAxisClick = (event) => {
 onMounted(()   => window.addEventListener('bridge-axis-click', handleAxisClick));
 onUnmounted(() => window.removeEventListener('bridge-axis-click', handleAxisClick));
 
+// ── IFC-Clipboard-Import ───────────────────────────────────────────────────
+async function importFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    const data = JSON.parse(text);
+    if (data.type !== 'quagg-bridge-v1') {
+      alert('Kein Brücken-JSON in Zwischenablage.\nBitte zuerst im IFC-Viewer "Als Brücke kopieren" verwenden.');
+      return;
+    }
+    ifcAxisPoints.value  = { p1: data.axis.p1, p2: data.axis.p2 };
+    form.value.z_sohle   = data.z.sohle;
+    form.value.soffit    = data.z.soffit;
+    form.value.deck      = data.z.deck;
+    form.value.width     = data.width;
+    form.value.Cd        = 0.80;
+    form.value.Tz        = 1.5;
+    demZ.value           = data.z.sohle;
+    pendingFromIfc.value = true;
+    pendingBridge.value  = true;
+  } catch {
+    alert('Fehler beim Lesen der Zwischenablage.');
+  }
+}
+
 // ── Speichern ──────────────────────────────────────────────────────────────
 const saveBridge = () => {
   if (!isValid.value) return;
@@ -173,7 +223,32 @@ const saveBridge = () => {
   const lineId   = `bridge_${Date.now()}`;
   const { soffit, deck, width, Cd, Tz, z_sohle } = form.value;
 
-  const batch = pendingSegments.value.map(seg => ({
+  let segments = pendingSegments.value;
+
+  // IFC-Import-Pfad: Achse aus Weltkoordinaten berechnen
+  if (pendingFromIfc.value && ifcAxisPoints.value) {
+    const terrain = geoStore.terrain;
+    if (!terrain) { alert('Kein Terrain geladen — kann Brückenachse nicht rasterisieren.'); return; }
+    const pd = terrain.header ?? terrain;
+    const rawCells = computeAxisFromWorldPoints(ifcAxisPoints.value.p1, ifcAxisPoints.value.p2, pd);
+    if (!rawCells.length) { alert('Brückenachse liegt außerhalb des Terrain-Grids.'); return; }
+
+    const xll = pd.xll ?? pd.xllcorner ?? 0;
+    const yll = pd.yll ?? pd.yllcorner ?? 0;
+    const cs  = pd.cellsize ?? 1;
+
+    segments = rawCells.map((cell, i) => ({
+      col: cell.col, row: cell.row,
+      x: xll + (cell.col + 0.5) * cs,
+      y: yll + ((pd.nrows - 1 - cell.row) + 0.5) * cs,
+      z: z_sohle,
+      direction: rawCells.length > 1 && i > 0
+        ? (rawCells[i].row !== rawCells[i - 1].row ? 'E' : 'S')
+        : 'S',
+    }));
+  }
+
+  const batch = segments.map(seg => ({
     lineId,
     col:       seg.col,
     row:       seg.row,
@@ -231,6 +306,7 @@ const cancel = () => reset();
 .header-icon { font-size: 1.1rem; }
 
 .hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.drawing-hint { color: #ffce54; }
 .step-badge { background: #e74c3c; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
 .sub-hint { font-size: 0.8rem; color: #95a5a6; line-height: 1.4; margin: 10px 0; }
 
@@ -262,4 +338,19 @@ const cancel = () => reset();
 .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-cancel { background: #4a6278; color: white; }
 .btn-cancel:hover { background: #5d7a91; }
+
+.btn-ifc-import {
+  width: 100%;
+  padding: 7px;
+  margin-bottom: 6px;
+  border: 1px dashed rgba(231,76,60,0.5);
+  border-radius: 5px;
+  background: rgba(231,76,60,0.08);
+  color: #e57373;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-ifc-import:hover { background: rgba(231,76,60,0.2); border-style: solid; }
 </style>

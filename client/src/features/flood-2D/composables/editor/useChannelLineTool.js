@@ -14,6 +14,7 @@ import { reactive } from 'vue';
 import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
+import { useToolStateMachine } from './useToolStateMachine.js';
 
 // ── Singleton state (importierbar von BathymetryModal) ────────────────────────
 export const channelLineState = reactive({
@@ -139,6 +140,16 @@ function rebuildDraft(scene, terrain) {
 export function useChannelLineTool() {
     const geoStore   = useGeoStore();
     const bathyStore = useBathymetryStore();
+    const sm         = useToolStateMachine();
+
+    // Nur den aktuellen Draft verwerfen (committed Linie bleibt) — Escape
+    const abortDraft = () => {
+        channelLineState.draftPoints = [];
+        if (scene_ref) {
+            removeMesh(scene_ref, previewLine); previewLine = null;
+            rebuildDraft(scene_ref, geoStore.terrain);
+        }
+    };
 
     const activate = (scene) => {
         scene_ref = scene;
@@ -147,9 +158,16 @@ export function useChannelLineTool() {
         rebuildDraft(scene, geoStore.terrain);
         // Zeige committed Linie als Referenz
         rebuildCommitted(scene, geoStore.terrain, bathyStore.channelPolyline);
+        // Einheitliche Tastatur: Esc = Draft verwerfen, Backspace = letzter Punkt, Enter = übernehmen
+        sm.attachShortcuts({
+            onCancel:  () => abortDraft(),
+            onUndo:    () => undoLastPoint(),
+            onConfirm: () => commitLine(),
+        });
     };
 
     const deactivate = (scene) => {
+        sm.detachShortcuts();
         channelLineState.drawing = false;
         removeMesh(scene, draftMesh);  draftMesh  = null;
         removeMesh(scene, draftDots);  draftDots  = null;

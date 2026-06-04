@@ -93,11 +93,13 @@
        <!-- WEIR UI -->
        <WeirTool
           v-if="simStore.activeTool === 'WEIR'"
+          :toolInstance="weirTool"
        />
 
        <!-- BRIDGE UI -->
        <BridgeTool
           v-if="simStore.activeTool === 'BRIDGE'"
+          :toolInstance="bridgeTool"
        />
 
        <!-- NODE/SOURCE UI -->
@@ -814,13 +816,6 @@ const handleInfoClick = (ctx) => {
          }
      }
 };
-
-// --- LOGIC: BOUNDARY FINISH ---
-const finishBoundary = (type) => {
-    // Call composable logic
-    boundaryTool.finishLine(type, scene, geoStore, { parsedData: parsedData.value });
-};
-
 
 // --- THREE.JS SETUP ---
 const initThreeJS = () => {

@@ -478,6 +478,16 @@ onMounted(async () => {
   ifc.registerZoomCategoryHandler(async (name) => {
     await engine.value?.zoomToCategory(name);
   });
+
+  ifc.registerBoxHandler(async (localId, modelId) => {
+    if (!engine.value) return null;
+    const mid = modelId ?? engine.value.getModelList()?.[0]?.modelId;
+    if (mid == null) return null;
+    const boxes = await engine.value.getBoxes([localId]);
+    if (!boxes?.length) return null;
+    const offset = engine.value.getCoordOffsetForModel(mid);
+    return { box: boxes[0], offset, modelId: mid };
+  });
 });
 
 onBeforeUnmount(() => {

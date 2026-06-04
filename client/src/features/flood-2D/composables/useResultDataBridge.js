@@ -60,20 +60,35 @@ async function readData(key) {
  * @param {String} bciContent
  * @returns {Promise<boolean>} true if data was stored successfully
  */
-export async function prepareResultData(simStore, geoStore, bciContent = null) {
-    const rawTerrain = toRaw(geoStore.terrain);
-    const rawModifications = toRaw(geoStore.modifications);
-    const rawBoundaries = toRaw(geoStore.boundaries);
-    const rawNodes = toRaw(geoStore.nodes);
-    const rawWeirs = toRaw(geoStore.weirs);
-    const rawCulvertLinks = toRaw(geoStore.culvertLinks);
+// Kanonische Liste der Vektor-Geometrie-Felder des GeoStore — EINE Quelle der Wahrheit für
+// Producer (Serialisierung) UND Consumer (Hydration). Verhindert vergessene Felder (z.B. bridges).
+export const GEO_FIELDS = ['modifications', 'boundaries', 'nodes', 'weirs', 'bridges', 'culvertLinks'];
+
+function serializeGeoFields(geoStore) {
+    const out = {};
+    for (const f of GEO_FIELDS) {
+        const raw = toRaw(geoStore[f]);
+        out[f] = raw ? JSON.parse(JSON.stringify(raw)) : null;
+    }
+    return out;
+}
+
+/**
+ * @param {Object} simStore
+ * @param {Object} geoStore  Der echte GeoStore (Vektor-Geometrien werden via GEO_FIELDS gelesen).
+ * @param {Object} [opts]    { bciContent, terrainOverride } — terrainOverride z.B. das "gebackene" Terrain.
+ */
+export async function prepareResultData(simStore, geoStore, { bciContent = null, terrainOverride = null } = {}) {
+    const rawTerrain = toRaw(terrainOverride ?? geoStore.terrain);
+    const geoSerialized = serializeGeoFields(geoStore);
+    console.log('[ResultBridge] serialize geo:', GEO_FIELDS.map(f => `${f}=${geoStore[f]?.length ?? (geoStore[f]?.features?.length ?? '–')}`).join(' '));
 
     if (!rawTerrain || !rawTerrain.gridData) {
         console.warn('[ResultBridge] No terrain data available');
         return false;
     }
 
-    // Serialize frames
+    // Serialize depth frames
     const framesMap = simStore.resultFrames;
     const serializedFrames = {};
     let computedMaxDepth = 0;
@@ -88,6 +103,33 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
             serializedFrames[frameId] = arr;
         }
     }
+
+    // Serialize velocity frames (optional)
+    const serializedVelocity = {};
+    if (simStore.velocityFrames instanceof Map) {
+        for (const [frameId, data] of simStore.velocityFrames.entries()) {
+            const raw = toRaw(data);
+            serializedVelocity[frameId] = raw instanceof Float32Array ? raw.slice() : new Float32Array(raw);
+        }
+    }
+
+    // Serialize velocity VECTOR frames (Vx/Vy, optional — für Fließpfeile/-partikel)
+    const serializedVectors = {};
+    if (simStore.velocityVectorFrames instanceof Map) {
+        for (const [frameId, comp] of simStore.velocityVectorFrames.entries()) {
+            const rawVx = toRaw(comp?.vx);
+            const rawVy = toRaw(comp?.vy);
+            if (!rawVx || !rawVy) continue;
+            serializedVectors[frameId] = {
+                vx: rawVx instanceof Float32Array ? rawVx.slice() : new Float32Array(rawVx),
+                vy: rawVy instanceof Float32Array ? rawVy.slice() : new Float32Array(rawVy),
+            };
+        }
+    }
+
+    // Serialize max depth + hazard grids (optional)
+    const maxDepthRaw  = toRaw(simStore.maxDepthGrid);
+    const maxHazardRaw = toRaw(simStore.maxHazardGrid);
 
     const rawGridData = toRaw(rawTerrain.gridData);
     const maxDepth = Math.max(simStore.maxWaterDepth || 0, computedMaxDepth);
@@ -105,11 +147,7 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
             center: rawTerrain.center ? JSON.parse(JSON.stringify(toRaw(rawTerrain.center))) : null,
             bounds: rawTerrain.bounds ? JSON.parse(JSON.stringify(toRaw(rawTerrain.bounds))) : null
         },
-        modifications: rawModifications ? JSON.parse(JSON.stringify(rawModifications)) : null,
-        boundaries: rawBoundaries ? JSON.parse(JSON.stringify(rawBoundaries)) : null,
-        nodes: rawNodes ? JSON.parse(JSON.stringify(rawNodes)) : null,
-        weirs: rawWeirs ? JSON.parse(JSON.stringify(rawWeirs)) : null,
-        culvertLinks: rawCulvertLinks ? JSON.parse(JSON.stringify(rawCulvertLinks)) : null,
+        ...geoSerialized,
         header: simStore.resultHeader
             ? JSON.parse(JSON.stringify(toRaw(simStore.resultHeader)))
             : null,
@@ -117,6 +155,10 @@ export async function prepareResultData(simStore, geoStore, bciContent = null) {
         totalFrames: Object.keys(serializedFrames).length,
         simDuration: simStore.simDuration || 3600,
         frames: serializedFrames,
+        velocityFrames: serializedVelocity,
+        velocityVectorFrames: serializedVectors,
+        maxDepthGrid:  maxDepthRaw  instanceof Float32Array ? maxDepthRaw.slice()  : (maxDepthRaw  ? new Float32Array(maxDepthRaw)  : null),
+        maxHazardGrid: maxHazardRaw instanceof Float32Array ? maxHazardRaw.slice() : (maxHazardRaw ? new Float32Array(maxHazardRaw) : null),
         timestamp: Date.now(),
         bciContent: bciContent
     };
@@ -146,6 +188,10 @@ export function useResultDataFromOpener() {
     const terrain = ref(null);
     const resultHeader = ref(null);
     const resultFrames = ref(new Map());
+    const velocityFrames = ref(new Map());
+    const velocityVectorFrames = ref(new Map());
+    const maxDepthGrid = ref(null);
+    const maxHazardGrid = ref(null);
     const maxWaterDepth = ref(0);
     const totalFrames = ref(0);
     const simDuration = ref(3600);
@@ -188,22 +234,41 @@ export function useResultDataFromOpener() {
             bciContent.value = data.bciContent || '';
             loadProgress.value = 40;
 
-            // Hydrate GeoStore with modifications (buildings), boundaries, nodes
+            // Hydrate GeoStore über dieselbe kanonische Feldliste wie der Producer.
             const geoStore = useGeoStore();
-            if (data.modifications) geoStore.modifications = data.modifications;
-            if (data.boundaries) geoStore.boundaries = data.boundaries;
-            if (data.nodes) geoStore.nodes = data.nodes;
-            if (data.weirs) geoStore.weirs = data.weirs;
-            if (data.culvertLinks) geoStore.culvertLinks = data.culvertLinks;
+            // Terrain auch in den GeoStore spiegeln, damit terrain-abhängige Layer-Watcher
+            // (Wehre/Brücken/Nodes in useLayerRenderer) im Result-Viewer zuverlässig feuern.
+            if (terrain.value) geoStore.terrain = terrain.value;
+            for (const f of GEO_FIELDS) {
+                if (data[f]) geoStore[f] = data[f];
+            }
+            console.log('[ResultBridge] hydrate geo:', GEO_FIELDS.map(f => `${f}=${data[f]?.length ?? (data[f]?.features?.length ?? '–')}`).join(' '));
 
-            // Hydrate frames
+            // Hydrate depth frames
             const frameEntries = Object.entries(data.frames || {});
-            console.log('[ResultBridge] Loading', frameEntries.length, 'frames...');
-
+            console.log('[ResultBridge] Loading', frameEntries.length, 'depth frames...');
             frameEntries.forEach(([frameId, frameArray], index) => {
                 resultFrames.value.set(Number(frameId), frameArray instanceof Float32Array ? frameArray : new Float32Array(frameArray));
-                loadProgress.value = 40 + Math.round(((index + 1) / frameEntries.length) * 55);
+                loadProgress.value = 40 + Math.round(((index + 1) / frameEntries.length) * 40);
             });
+
+            // Hydrate velocity frames (optional)
+            Object.entries(data.velocityFrames || {}).forEach(([frameId, arr]) => {
+                velocityFrames.value.set(Number(frameId), arr instanceof Float32Array ? arr : new Float32Array(arr));
+            });
+
+            // Hydrate velocity VECTOR frames (Vx/Vy, optional)
+            Object.entries(data.velocityVectorFrames || {}).forEach(([frameId, comp]) => {
+                if (!comp || !comp.vx || !comp.vy) return;
+                velocityVectorFrames.value.set(Number(frameId), {
+                    vx: comp.vx instanceof Float32Array ? comp.vx : new Float32Array(comp.vx),
+                    vy: comp.vy instanceof Float32Array ? comp.vy : new Float32Array(comp.vy),
+                });
+            });
+
+            // Hydrate summary grids
+            if (data.maxDepthGrid)  maxDepthGrid.value  = data.maxDepthGrid  instanceof Float32Array ? data.maxDepthGrid  : new Float32Array(data.maxDepthGrid);
+            if (data.maxHazardGrid) maxHazardGrid.value = data.maxHazardGrid instanceof Float32Array ? data.maxHazardGrid : new Float32Array(data.maxHazardGrid);
 
             loadProgress.value = 100;
             isLoading.value = false;
@@ -220,6 +285,10 @@ export function useResultDataFromOpener() {
         terrain,
         resultHeader,
         resultFrames,
+        velocityFrames,
+        velocityVectorFrames,
+        maxDepthGrid,
+        maxHazardGrid,
         maxWaterDepth,
         totalFrames,
         simDuration,

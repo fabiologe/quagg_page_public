@@ -1,4 +1,5 @@
 import { BoundaryTools } from './BoundaryTools.js';
+import { idwFillNoData } from './RasterIDW.js';
 
 /**
  * Rasterizer.js
@@ -47,7 +48,27 @@ export function createDemFromXYZ(xyzString) {
     }
 
     // 4. Fill Gap Artifacts
-    BoundaryTools.interpolateGaps(data, ncols, nrows, -9999);
+    // For regular grids (all cells hit by at least one point), simple neighbor averaging suffices.
+    // For scattered/irregular XYZ clouds, IDW fills remaining NoData cells properly.
+    const noDataCount = data.filter(v => v <= -9000).length;
+
+    if (noDataCount === 0) {
+        // Perfect grid — nothing to fill
+    } else if (noDataCount < data.length * 0.9) {
+        // Some gaps: IDW interpolation from all source points
+        const filled = idwFillNoData(data, header, points, {
+            searchRadius: cellsize * 8,
+            power:        2.0,
+            maxPoints:    16,
+            zClamp:       true,
+        });
+        // Fallback: simple neighbor averaging for any remaining NoData after IDW
+        BoundaryTools.interpolateGaps(filled, ncols, nrows, -9999);
+        return { header, data: filled };
+    } else {
+        // Too many gaps for IDW to be meaningful — simple fallback
+        BoundaryTools.interpolateGaps(data, ncols, nrows, -9999);
+    }
 
     return { header, data };
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { useDrawTool } from './useDrawTool.js';
+import { useToolStateMachine, TOOL_STATE } from './useToolStateMachine.js';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 
 export function useBoundaryTool() {
@@ -8,8 +9,16 @@ export function useBoundaryTool() {
     const drawTool = useDrawTool({ isPolygon: false });
     const geoStore = useGeoStore();
 
+    // Lifecycle state machine (IDLE → DRAWING → REVIEW)
+    const sm = useToolStateMachine();
+
     // Visuals
     let ghostMarker = null;
+    let previewMesh = null;        // Vorschau-Rasterzellen während REVIEW
+
+    // Cached context for keyboard callbacks (which carry no event context)
+    let sceneRef = null;
+    let pendingParsedData = null;  // für commit() benötigte Geo-Metadaten
 
     // --- HELPER: Grid Snapping ---
     const getGridSnap = (point, parsedData) => {
@@ -57,8 +66,13 @@ export function useBoundaryTool() {
     // --- HANDLERS ---
 
     const onClick = (context) => {
+        // Während REVIEW keine neuen Punkte annehmen
+        if (sm.state.value === TOOL_STATE.REVIEW) return { action: 'NONE' };
+
         // Custom Raycast & Snap
         const { raycaster, camera, pointer, scene, parsedData, terrainMesh, interactionPlane } = context;
+        sceneRef = scene;
+        if (parsedData) pendingParsedData = parsedData; // für Enter-Taste / commit cachen
         raycaster.setFromCamera(pointer, camera);
 
         let hitPoint = null;
@@ -78,6 +92,7 @@ export function useBoundaryTool() {
 
             // Delegate to DrawTool state
             drawTool.addPoint(snapped, scene);
+            sm.setDrawing();
 
             return { action: 'ADDED_POINT', point: snapped };
         }
@@ -85,8 +100,12 @@ export function useBoundaryTool() {
     };
 
     const onMove = (context) => {
+        // Während REVIEW keine Hover-Vorschau zeichnen
+        if (sm.state.value === TOOL_STATE.REVIEW) return;
+
         // Preview Snap
         const { raycaster, camera, pointer, scene, parsedData, terrainMesh, interactionPlane } = context;
+        sceneRef = scene;
         raycaster.setFromCamera(pointer, camera);
 
         let hitPoint = null;
@@ -116,7 +135,11 @@ export function useBoundaryTool() {
         }
     };
 
-    const onRightClick = (context) => drawTool.onRightClick(context);
+    const onRightClick = (context) => {
+        sceneRef = context?.scene || sceneRef;
+        cancelOrAbort();
+        return { action: 'RESET' };
+    };
 
     // --- RASTERIZATION & VISUALS ---
 
@@ -185,22 +208,44 @@ export function useBoundaryTool() {
 
         mesh.instanceMatrix.needsUpdate = true;
         scene.add(mesh);
+        return mesh;
     };
 
-    // Context Menu / Finish
-    const finishLine = (type = 'INFLOW', scene, context) => { // Called explicitly by UI (buttons?) or DoubleClick
+    // --- LIFECYCLE TRANSITIONS (IDLE → DRAWING → REVIEW → IDLE) ---
+
+    // Schließt das Zeichnen ab und wechselt in die Vorschau (REVIEW).
+    // Schreibt NICHT in den Store — das passiert erst bei commit().
+    const enterReview = (context) => {
+        if (sm.state.value !== TOOL_STATE.DRAWING) return { action: 'NONE' };
         const points = drawTool.getPoints();
-        if (points.length < 2) return;
+        if (points.length < 2) return { action: 'NONE' };
 
-        const { parsedData } = context;
+        const scene = context?.scene || sceneRef;
+        const parsedData = context?.parsedData || pendingParsedData;
+        if (!scene || !parsedData) return { action: 'NONE' };
 
-        // 1. Create Persistent Visuals (Pink Raster Cells)
-        createBoundaryVisuals(points, scene, parsedData);
+        sceneRef = scene;
+        pendingParsedData = parsedData;
 
-        // 2. Data Persistence
+        // Vorschau-Rasterzellen aufbauen (gemerkt, damit cancel sie entfernen kann)
+        if (previewMesh) { scene.remove(previewMesh); previewMesh = null; }
+        previewMesh = createBoundaryVisuals(points, scene, parsedData);
+        if (ghostMarker) ghostMarker.visible = false;
+
+        sm.setReview();
+        return { action: 'REVIEW' };
+    };
+
+    // Übernimmt die Vorschau: Feature in den Store schreiben, Vorschau bleibt als
+    // persistente Visualisierung stehen, Tool zurück auf IDLE.
+    const commit = () => {
+        if (sm.state.value !== TOOL_STATE.REVIEW || !pendingParsedData) return;
+        const points = drawTool.getPoints();
+        if (points.length < 2) { cancel(); return; }
+
         const coords = points.map(p => {
-            const realX = p.x + parsedData.center.x;
-            const realY = -p.z + parsedData.center.y;
+            const realX = p.x + pendingParsedData.center.x;
+            const realY = -p.z + pendingParsedData.center.y;
             return [realX, realY];
         });
 
@@ -209,35 +254,102 @@ export function useBoundaryTool() {
             id: crypto.randomUUID(),
             properties: {
                 type: "BOUNDARY",
-                boundary_type: type,
-                name: `Boundary ${type}`
+                boundary_type: 'INFLOW',
+                name: `Boundary INFLOW`
             },
             geometry: { type: "LineString", coordinates: coords }
         };
 
         geoStore.addBoundary(feature);
-        drawTool.reset(scene);
+
+        // Vorschau-Mesh bleibt in der Szene (wird zur persistenten Anzeige)
+        previewMesh = null;
+        if (sceneRef) drawTool.reset(sceneRef);
+        cleanupGhost();
+        pendingParsedData = null;
+        sm.setIdle();
+    };
+
+    // Verwirft die Vorschau ohne zu speichern, Tool zurück auf IDLE.
+    const cancel = () => {
+        const scene = sceneRef;
+        if (previewMesh && scene) {
+            scene.remove(previewMesh);
+            previewMesh.geometry?.dispose?.();
+            previewMesh.material?.dispose?.();
+        }
+        previewMesh = null;
+        if (scene) drawTool.reset(scene);
+        cleanupGhost();
+        pendingParsedData = null;
+        sm.setIdle();
+    };
+
+    // Bricht eine laufende Zeichnung (DRAWING) ab, ohne in REVIEW zu gehen.
+    const abortDrawing = () => {
+        if (sceneRef) drawTool.reset(sceneRef);
+        cleanupGhost();
+        sm.setIdle();
+    };
+
+    // Escape: im REVIEW verwerfen, im DRAWING abbrechen
+    const cancelOrAbort = () => {
+        if (sm.state.value === TOOL_STATE.REVIEW) cancel();
+        else if (sm.state.value === TOOL_STATE.DRAWING) abortDrawing();
+    };
+
+    const cleanupGhost = () => {
+        if (ghostMarker && sceneRef) sceneRef.remove(ghostMarker);
+        ghostMarker = null;
     };
 
     const onDoubleClick = (context) => {
-        // Double Click closes/finishes the line
-        // Default to INFLOW for now, or open modal?
-        // Let's just finish generic for now, user can edit properties.
-        finishLine('INFLOW', context.scene, context);
-        return { action: 'FINISHED' };
+        sceneRef = context.scene;
+        return enterReview(context);
     };
 
     const reset = (scene) => {
-        drawTool.reset(scene);
-        if (ghostMarker) { scene.remove(ghostMarker); ghostMarker = null; }
+        const s = scene || sceneRef;
+        if (s) drawTool.reset(s);
+        if (previewMesh && s) {
+            s.remove(previewMesh);
+            previewMesh.geometry?.dispose?.();
+            previewMesh.material?.dispose?.();
+        }
+        previewMesh = null;
+        if (ghostMarker && s) { s.remove(ghostMarker); }
+        ghostMarker = null;
+        pendingParsedData = null;
+        sm.setIdle();
+    };
+
+    // --- LIFECYCLE: activate / deactivate (vom MapEditor3D-Watcher aufgerufen) ---
+
+    const activate = (scene) => {
+        sceneRef = scene;
+        sm.setIdle();
+        sm.attachShortcuts({
+            onCancel: cancelOrAbort,
+            onConfirm: () => enterReview(),
+            onUndo: () => drawTool.removeLastPoint(sceneRef),
+        });
+    };
+
+    const deactivate = (scene) => {
+        sm.detachShortcuts();
+        reset(scene);
     };
 
     return {
+        state: sm.state,
         onClick,
         onMove,
         onRightClick,
         onDoubleClick,
-        finishLine, // Expose for UI buttons if needed
+        activate,
+        deactivate,
+        commit,
+        cancel,
         reset,
         getPoints: drawTool.getPoints
     };

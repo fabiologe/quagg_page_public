@@ -36,29 +36,35 @@
         🌧️ Regen konfigurieren
     </button>
 
-    <RainConfigModal 
+    <RainConfigModal
         :isOpen="showModal"
         @close="showModal = false"
         @apply="handleApply"
     />
 
-    <!-- ROUGHNESS SLIDER (Physics) -->
-    <div class="roughness-card">
-        <h4>Bodenrauhigkeit (Manning n)</h4>
-        <div class="slider-row">
-            <input 
-                type="range" 
-                v-model.number="store.globalRoughness" 
-                min="0.01" max="0.1" step="0.001"
-                class="slider"
-            />
-            <span class="slider-val">{{ store.globalRoughness }}</span>
-        </div>
-        <div class="slider-labels">
-            <span>0.01 (Beton)</span>
-            <span>0.1 (Wald)</span>
-        </div>
+    <!-- BODENVORFEUCHTE -->
+    <div class="moisture-card">
+      <h4>Bodenvorfeuchte (Antezedenz)</h4>
+      <div class="moisture-row">
+        <span class="moisture-label">🏜️</span>
+        <input
+          type="range"
+          v-model.number="store.antecedentMoisture"
+          min="0" max="100" step="5"
+          class="slider"
+        />
+        <span class="moisture-label">💧</span>
+      </div>
+      <div class="moisture-value-row">
+        <span class="moisture-pct">{{ store.antecedentMoisture }}%</span>
+        <span class="moisture-hint">{{
+          store.antecedentMoisture === 0   ? 'Trocken — volle Infiltration' :
+          store.antecedentMoisture === 100 ? 'Gesättigt — kein Infiltration' :
+          `Infiltration auf ${100 - store.antecedentMoisture}% reduziert`
+        }}</span>
+      </div>
     </div>
+
 
   </div>
 </template>
@@ -183,20 +189,19 @@ h4 {
     border-color: #bdc3c7;
 }
 
-.roughness-card {
-    margin-top: 20px;
-    padding: 1rem;
-    background: #2c3e50;
+.moisture-card {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #1e2d3d;
     border: 1px solid #34495e;
     border-radius: 6px;
 }
-.slider-row {
-    display: flex; gap: 10px; align-items: center;
-}
-.slider { flex: 1; cursor: pointer; }
-.slider-val { font-weight: bold; width: 50px; text-align: right; }
-.slider-labels {
-    display: flex; justify-content: space-between;
-    font-size: 0.7rem; color: #7f8c8d; margin-top: 5px;
-}
+.moisture-card h4 { margin: 0 0 8px; font-size: 0.82rem; color: #bdc3c7; }
+.moisture-row { display: flex; align-items: center; gap: 8px; }
+.moisture-label { font-size: 1rem; }
+.slider { flex: 1; cursor: pointer; accent-color: #3498db; }
+.moisture-value-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.moisture-pct { font-weight: 700; font-size: 0.9rem; color: #5dade2; min-width: 32px; }
+.moisture-hint { font-size: 0.74rem; color: #7f8c8d; line-height: 1.3; }
+
 </style>

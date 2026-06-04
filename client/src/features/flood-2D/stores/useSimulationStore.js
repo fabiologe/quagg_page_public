@@ -74,6 +74,18 @@ export const useSimulationStore = defineStore('simulation', () => {
     /** @type {import('vue').Ref<Map<number, Float32Array>>} */
     const resultFrames = ref(new Map());
 
+    /** Velocity magnitude per frame: frameId → Float32Array sqrt(Vx²+Vy²) */
+    const velocityFrames = ref(new Map());
+
+    /** Velocity vector components per frame: frameId → { vx: Float32Array, vy: Float32Array } */
+    const velocityVectorFrames = ref(new Map());
+
+    /** Max water depth grid from res.max (written at end of simulation) */
+    const maxDepthGrid = ref(null);
+
+    /** Max hazard grid from res.maxHaz (depth × velocity, written at end) */
+    const maxHazardGrid = ref(null);
+
     /** @type {import('vue').Ref<number>} */
     const currentFrameIndex = ref(-1);
 
@@ -83,19 +95,32 @@ export const useSimulationStore = defineStore('simulation', () => {
     function addResultFrame(frameId, data, header, min, max) {
         resultFrames.value.set(frameId, data);
         if (!resultHeader.value) resultHeader.value = header;
-        // Track global max depth across all frames
         if (max !== undefined && max > maxWaterDepth.value) {
             maxWaterDepth.value = max;
         }
-        // Auto-advance to latest
         currentFrameIndex.value = frameId;
     }
 
+    function addVelocityFrame(frameId, magnitudeData) {
+        velocityFrames.value.set(frameId, magnitudeData);
+    }
+
+    function addVelocityVectorFrame(frameId, vx, vy) {
+        velocityVectorFrames.value.set(frameId, { vx, vy });
+    }
+
+    function setMaxDepthGrid(data) { maxDepthGrid.value = data; }
+    function setMaxHazardGrid(data) { maxHazardGrid.value = data; }
+
     function clearResults() {
         resultFrames.value.clear();
+        velocityFrames.value.clear();
+        velocityVectorFrames.value.clear();
         currentFrameIndex.value = -1;
         resultHeader.value = null;
         maxWaterDepth.value = 0;
+        maxDepthGrid.value = null;
+        maxHazardGrid.value = null;
     }
 
     /** @type {import('vue').Ref<number>} */
@@ -164,6 +189,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         // clearResults,   // Disabled per user request
         setResults: (val) => { results.value = val; }, // Fixed: Inline definition or restore
         setConfig,
+        setFullConfig,
 
         // NEW: Exports
         multiSelection,
@@ -173,9 +199,17 @@ export const useSimulationStore = defineStore('simulation', () => {
 
         // Result Data
         resultFrames,
+        velocityFrames,
+        velocityVectorFrames,
+        maxDepthGrid,
+        maxHazardGrid,
         currentFrameIndex,
         resultHeader,
         addResultFrame,
+        addVelocityFrame,
+        addVelocityVectorFrame,
+        setMaxDepthGrid,
+        setMaxHazardGrid,
         clearResults,
         maxWaterDepth,
         totalFrameCount

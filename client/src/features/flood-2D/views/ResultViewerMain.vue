@@ -28,8 +28,15 @@
         <ResultMap3D
           ref="map3d"
           :terrain="bridge.terrain.value"
-          :depthData="currentDepthData"
-          :maxWaterDepth="bridge.maxWaterDepth.value"
+          :depthData="currentLayerData"
+          :maxWaterDepth="currentLayerMax"
+          :layerMode="activeLayerMode"
+          :flowData="currentFlowData"
+          :showFlow="activeLayer === 'flow'"
+          :depthField="currentDepthData"
+          :velocityData="currentVelocityData"
+          :velocityMax="currentVelocityMax"
+          :waterOpacity="waterOpacity"
           :bciContent="bridge.bciContent.value"
           :probeActive="activeTool === 'probe'"
           :activeTool="activeTool"
@@ -67,6 +74,23 @@
             />
           </TransitionGroup>
         </template>
+
+        <!-- Layer Switcher -->
+        <div class="layer-switcher">
+          <button
+            v-for="layer in availableLayers"
+            :key="layer.id"
+            :class="['layer-btn', { active: activeLayer === layer.id }]"
+            @click="activeLayer = layer.id"
+            :title="layer.label"
+          >{{ layer.icon }} {{ layer.label }}</button>
+
+          <!-- Wasser-Deckkraft -->
+          <div class="water-opacity" title="Wasser-Deckkraft">
+            <span class="wo-icon">💧</span>
+            <input type="range" min="0" max="1" step="0.01" v-model.number="waterOpacity" />
+          </div>
+        </div>
 
         <!-- Tool Buttons -->
         <div class="tool-buttons">
@@ -136,6 +160,83 @@ const playbackSpeed = ref(1);
 
 const currentDepthData = ref(null);
 
+// ── Layer Switcher ──────────────────────────────────────────────────────────
+const activeLayer = ref('depth'); // 'depth' | 'velocity' | 'max_depth' | 'hazard'
+
+const availableLayers = computed(() => {
+  const layers = [{ id: 'depth', icon: '💧', label: 'Tiefe' }];
+  if (bridge.velocityFrames?.value?.size > 0)
+    layers.push({ id: 'velocity', icon: '💨', label: 'Velocity' });
+  if (bridge.velocityVectorFrames?.value?.size > 0)
+    layers.push({ id: 'flow', icon: '🧭', label: 'Strömung' });
+  if (bridge.maxDepthGrid?.value)
+    layers.push({ id: 'max_depth', icon: '📈', label: 'Max-Tiefe' });
+  if (bridge.maxHazardGrid?.value)
+    layers.push({ id: 'hazard', icon: '⚠️', label: 'Hazard' });
+  return layers;
+});
+
+// 0=depth, 1=velocity, 2=max_depth/hazard (heat map)
+const activeLayerMode = computed(() => {
+  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow') return 1;
+  if (activeLayer.value === 'max_depth' || activeLayer.value === 'hazard') return 2;
+  return 0;
+});
+
+// depthData speist IMMER die Wasser-Geometrie (Anhebung/Nass-Maske). Für velocity/flow daher
+// die ECHTE Tiefe übergeben; die Geschwindigkeit kommt separat über velocityData (Farbe).
+const currentLayerData = computed(() => {
+  switch (activeLayer.value) {
+    case 'velocity':
+    case 'flow':      return currentDepthData.value;     // echte Tiefe = Geometrie
+    case 'max_depth': return bridge.maxDepthGrid?.value ?? null;
+    case 'hazard':    return bridge.maxHazardGrid?.value ?? null;
+    default:          return currentDepthData.value;
+  }
+});
+
+// Geschwindigkeits-Betrag des aktuellen Frames (für die Heatmap-Farbe)
+const currentVelocityData = computed(() => {
+  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow')
+    return bridge.velocityFrames?.value?.get(currentFrame.value) ?? null;
+  return null;
+});
+
+// Geschwindigkeits-Maximum des aktuellen Frames (Skala für Heatmap + Pfeile)
+const currentVelocityMax = computed(() => {
+  const vf = bridge.velocityFrames?.value?.get(currentFrame.value);
+  if (!vf) return 3.0;
+  let m = 0;
+  for (let i = 0; i < vf.length; i++) { const v = vf[i]; if (v > m && v < 9000) m = v; }
+  return m || 3.0;
+});
+
+// Vektorfeld (Vx/Vy, zell-zentriert) des aktuellen Frames für die Fließpfeile
+const currentFlowData = computed(() =>
+  bridge.velocityVectorFrames?.value?.get(currentFrame.value) ?? null
+);
+
+// Wasser-Deckkraft (Slider): 0 = fast durchsichtig … 1 = komplett deckend.
+// Default hoch, damit das Geländebett gut verdeckt ist (Bauwerke sind via Tiefen-Prepass
+// ohnehin immer verdeckt). Tiefer ziehen = mehr Durchsicht.
+const waterOpacity = ref(0.9);
+
+const currentLayerMax = computed(() => {
+  if (activeLayer.value === 'depth') return bridge.maxWaterDepth.value;
+  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow') {
+    // Rough max velocity for legend scaling
+    const vf = bridge.velocityFrames?.value?.get(currentFrame.value);
+    if (!vf) return 3.0;
+    let max = 0;
+    for (let i = 0; i < vf.length; i++) { if (vf[i] > max) max = vf[i]; }
+    return max || 3.0;
+  }
+  if (activeLayer.value === 'max_depth') return bridge.maxWaterDepth.value;
+  if (activeLayer.value === 'hazard') return 5.0; // typical hazard scale
+  return bridge.maxWaterDepth.value;
+});
+// ───────────────────────────────────────────────────────────────────────────
+
 watch(currentFrame, (val) => {
   const frames = bridge.resultFrames.value;
   if (frames && frames.has(val)) {
@@ -143,7 +244,7 @@ watch(currentFrame, (val) => {
   } else {
     currentDepthData.value = null;
   }
-  
+
   if (analysisStore) {
     analysisStore.setActiveDepthData(currentDepthData.value);
   }
@@ -419,6 +520,46 @@ const map3d = ref(null);
 }
 
 /* Tool Buttons */
+/* ── Layer Switcher ── */
+.layer-switcher {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  background: rgba(20, 24, 40, 0.82);
+  padding: 5px 8px;
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+}
+.water-opacity {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 8px;
+  margin-left: 2px;
+  border-left: 1px solid rgba(255,255,255,0.15);
+}
+.water-opacity .wo-icon { font-size: 0.85rem; opacity: 0.8; }
+.water-opacity input[type="range"] { width: 90px; accent-color: #3498db; cursor: pointer; }
+.layer-btn {
+  padding: 5px 12px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  background: transparent;
+  color: #bdc3c7;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.layer-btn:hover  { background: rgba(255,255,255,0.1); color: #fff; }
+.layer-btn.active { background: rgba(52,152,219,0.35); border-color: #3498db; color: #5dade2; }
+
 .tool-buttons {
   position: absolute;
   right: 16px;

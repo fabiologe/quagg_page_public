@@ -352,14 +352,23 @@ const runSimulation = async () => {
                              const frameName = `res-${String(frame).padStart(4, '0')}.wd.asc`;
                              const ascContent = Rasterizer.gridToASC(payload, header);
                              resultFiles.value[frameName] = ascContent;
-                             
-                             // Store for Visualization (re-enabled for Result Viewer)
                              simStore.addResultFrame(frame, payload, header, e.data.min, e.data.max);
-
-                             appendLog(`[RESULT] Received Frame ${frame}`);
+                             if (e.data.velocity) simStore.addVelocityFrame(frame, e.data.velocity);
+                             if (e.data.vx && e.data.vy) simStore.addVelocityVectorFrame(frame, e.data.vx, e.data.vy);
+                             appendLog(`[RESULT] Frame ${frame}${e.data.velocity ? ' + velocity' : ''}`);
                          } catch (err) {
                              appendLog(`[ERROR] processing result: ${err.message}`);
                          }
+                        break;
+
+                    case 'MAX_DEPTH_GRID':
+                        simStore.setMaxDepthGrid(e.data.payload);
+                        appendLog('[RESULT] Max-Tiefen-Raster empfangen.');
+                        break;
+
+                    case 'MAX_HAZARD_GRID':
+                        simStore.setMaxHazardGrid(e.data.payload);
+                        appendLog('[RESULT] Max-Hazard-Raster empfangen.');
                         break;
 
                     case 'MASS_REPORT':
@@ -459,16 +468,10 @@ const openViewer = async () => {
         }
     }
 
-    const exportGeoStore = {
-        terrain: bakedTerrainData,
-        modifications: geoStore.modifications,
-        boundaries: geoStore.boundaries,
-        nodes: geoStore.nodes,
-        weirs: geoStore.weirs,
-        culvertLinks: geoStore.culvertLinks
-    };
-
-    const ready = await prepareResultData(simStore, exportGeoStore, bciContent);
+    // Vektor-Geometrien liest prepareResultData direkt aus dem echten geoStore (kanonische
+    // GEO_FIELDS); nur das "gebackene" Terrain wird als Override übergeben → keine handgepflegte
+    // Feldliste mehr (so ging zuvor bridges verloren).
+    const ready = await prepareResultData(simStore, geoStore, { bciContent, terrainOverride: bakedTerrainData });
     if (!ready) {
         alert('Keine Terrain-Daten vorhanden!');
         return;
@@ -583,9 +586,12 @@ const startPreparation = async () => {
                   massint: String(simStore.massInterval || 60) + '.0',
                   ...(simStore.useAcceleration ? { acceleration: '' } : {})
              },
-             weirs:        geoStore.weirs   ? JSON.parse(JSON.stringify(geoStore.weirs))   : [],
-             bridges:      geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : [],
-             infiltration: surfaceStore.computeWeightedInfiltration?.() ?? 0
+             weirs:               geoStore.weirs   ? JSON.parse(JSON.stringify(geoStore.weirs))   : [],
+             bridges:             geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : [],
+             infiltration:        surfaceStore.computeWeightedInfiltration?.() ?? 0,
+             antecedentMoisture:  hydStore.antecedentMoisture ?? 0,
+             globalBoundaryType:  hydStore.globalBoundaryType,
+             globalBoundaryHfix:  hydStore.globalBoundaryHfix
           };
 
          // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
