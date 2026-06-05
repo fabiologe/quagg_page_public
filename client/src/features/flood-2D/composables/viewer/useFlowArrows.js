@@ -13,7 +13,7 @@ const C1 = new THREE.Color(0xf1c40f); // mittel: gelb
 const C2 = new THREE.Color(0xe74c3c); // schnell: rot
 
 const ARROW_CAP    = 24000; // max. Instanzen
-const ARROW_TARGET = 12000; // Zielanzahl nach Ausdünnung (mehr & kleiner)
+const ARROW_MIN    = 1500;  // Zielanzahl bei minimaler Dichte
 const WET_MIN      = 0.02;  // m — nur nasse Zellen
 
 function speedColor(s, sref, out) {
@@ -67,18 +67,37 @@ export function useFlowArrows(getScene) {
    * @param {{vx:Float32Array, vy:Float32Array}} field  zell-zentriertes Vektorfeld (top-down)
    * @param {object} terrain   ncols/nrows/cellsize/minZ/gridData/bounds
    * @param {Float32Array|null} depthField  aktuelles Tiefen-Frame (Nass-Gating + Höhe)
-   * @param {number} velocityMax  Skala für Farbe/Länge
+   * @param {number} density   0..1 — Pfeil-Dichte (mehr Pfeile bei höherem Wert). Farbskala bleibt
+   *                           automatisch (sref intern aus dem Feld bestimmt).
    */
-  function rebuild(field, terrain, depthField, velocityMax) {
+  function rebuild(field, terrain, depthField, density = 0.5) {
     ensure();
     if (!terrain || !field || !field.vx || !field.vy || !mesh) { if (mesh) mesh.count = 0; return; }
     const { ncols, nrows, cellsize, minZ, gridData } = terrain;
     const cs = cellsize || 1;
     const width  = terrain.bounds?.width  ?? (ncols - 1) * cs;
     const height = terrain.bounds?.height ?? (nrows - 1) * cs;
-    const sref = velocityMax > 0 ? velocityMax : 1.0;
-    const step = Math.max(1, Math.round(Math.sqrt((ncols * nrows) / ARROW_TARGET)));
+
+    // Dichte → Zielanzahl → Sampling-Schrittweite
+    const dens = Math.min(1, Math.max(0, density));
+    const target = Math.round(ARROW_MIN + (ARROW_CAP - ARROW_MIN) * dens);
+    const step = Math.max(1, Math.round(Math.sqrt((ncols * nrows) / target)));
     const arrowLen = cs * step * 0.5;
+
+    // Auto-Farbskala: max. Geschwindigkeit über die gesampelten, nassen Zellen
+    let sref = 0;
+    for (let gr = 0; gr < nrows; gr += step) {
+      for (let c = 0; c < ncols; c += step) {
+        const idxR = gr * ncols + c;
+        const d = depthField ? depthField[idxR] : 1;
+        if (!(d > WET_MIN)) continue;
+        const vx = field.vx[idxR], vy = field.vy[idxR];
+        if (!(vx > -9000) || !(vy > -9000)) continue;
+        const sp = Math.hypot(vx, vy);
+        if (sp > sref) sref = sp;
+      }
+    }
+    if (!(sref > 0)) sref = 1.0;
     const dummy = new THREE.Object3D();
     const col = new THREE.Color();
     let n = 0;

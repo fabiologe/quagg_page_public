@@ -35,7 +35,9 @@
           :showFlow="activeLayer === 'flow'"
           :depthField="currentDepthData"
           :velocityData="currentVelocityData"
-          :velocityMax="currentVelocityMax"
+          :velocityMin="velColorMin"
+          :velocityMax="effVelMax"
+          :flowDensity="flowDensity"
           :waterOpacity="waterOpacity"
           :bciContent="bridge.bciContent.value"
           :probeActive="activeTool === 'probe'"
@@ -44,10 +46,23 @@
           @sectionDrawn="onSectionDrawn"
         />
 
-        <!-- Legend Overlay -->
+        <!-- Legend Overlay (Tiefe/Max/Hazard) -->
         <ResultLegend
+          v-if="activeLayer !== 'velocity' && activeLayer !== 'flow'"
           :maxDepth="bridge.maxWaterDepth.value"
           class="legend-overlay"
+        />
+
+        <!-- Velocity-Farbbereich + Histogramm -->
+        <VelocityColorControl
+          v-if="activeLayer === 'velocity'"
+          class="velocity-control-overlay"
+          :histogram="velocityHistogram"
+          :globalMax="velocityGlobalMax"
+          :min="velColorMin"
+          :max="effVelMax"
+          @update:min="velColorMin = $event"
+          @update:max="velColorMax = $event"
         />
         
         <!-- Section Profile Charts -->
@@ -89,6 +104,12 @@
           <div class="water-opacity" title="Wasser-Deckkraft">
             <span class="wo-icon">💧</span>
             <input type="range" min="0" max="1" step="0.01" v-model.number="waterOpacity" />
+          </div>
+
+          <!-- Fließpfeil-Dichte (nur im Strömungs-Layer) -->
+          <div v-if="activeLayer === 'flow'" class="water-opacity" title="Pfeil-Dichte">
+            <span class="wo-icon">🧭</span>
+            <input type="range" min="0" max="1" step="0.01" v-model.number="flowDensity" />
           </div>
         </div>
 
@@ -138,6 +159,7 @@ import ResultLegend from '@/features/flood-2D/components/viewer/ResultLegend.vue
 import ResultSectionChart from '@/features/flood-2D/components/viewer/ResultSectionChart.vue';
 import ResultVolumePanel from '@/features/flood-2D/components/viewer/ResultVolumePanel.vue';
 import ResultProbePanel from '@/features/flood-2D/components/viewer/ResultProbePanel.vue';
+import VelocityColorControl from '@/features/flood-2D/components/viewer/VelocityColorControl.vue';
 
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 
@@ -202,19 +224,57 @@ const currentVelocityData = computed(() => {
   return null;
 });
 
-// Geschwindigkeits-Maximum des aktuellen Frames (Skala für Heatmap + Pfeile)
-const currentVelocityMax = computed(() => {
-  const vf = bridge.velocityFrames?.value?.get(currentFrame.value);
-  if (!vf) return 3.0;
-  let m = 0;
-  for (let i = 0; i < vf.length; i++) { const v = vf[i]; if (v > m && v < 9000) m = v; }
-  return m || 3.0;
-});
-
 // Vektorfeld (Vx/Vy, zell-zentriert) des aktuellen Frames für die Fließpfeile
 const currentFlowData = computed(() =>
   bridge.velocityVectorFrames?.value?.get(currentFrame.value) ?? null
 );
+
+// ── Velocity-Farbbereich + Histogramm ───────────────────────────────────────
+// Globales Geschwindigkeits-Max über ALLE Frames → stabile Reglergrenzen beim Abspielen.
+const velocityGlobalMax = computed(() => {
+  const frames = bridge.velocityFrames?.value;
+  if (!frames || frames.size === 0) return 0;
+  let m = 0;
+  for (const arr of frames.values()) {
+    for (let i = 0; i < arr.length; i++) { const v = arr[i]; if (v > m && v < 9000) m = v; }
+  }
+  return m;
+});
+
+// Benutzerwählbarer Farbbereich (persistiert über Frames). max wird beim ersten Datenfund initialisiert.
+const velColorMin = ref(0);
+const velColorMax = ref(null);
+watch(velocityGlobalMax, (gm) => {
+  if (gm > 0 && velColorMax.value == null) velColorMax.value = gm;
+}, { immediate: true });
+const effVelMax = computed(() => (velColorMax.value != null ? velColorMax.value : (velocityGlobalMax.value || 3)));
+
+// Dichte der Fließpfeile (0..1)
+const flowDensity = ref(0.5);
+
+// Histogramm der Geschwindigkeiten des AKTUELLEN Frames (nur nasse, gültige Zellen), Bins über [0, globalMax].
+const HIST_BINS = 48;
+const velocityHistogram = computed(() => {
+  const counts = new Array(HIST_BINS).fill(0);
+  const gm = velocityGlobalMax.value;
+  const vf = bridge.velocityFrames?.value?.get(currentFrame.value);
+  if (!vf || gm <= 0) return { counts, maxCount: 0 };
+
+  const depthArr = currentDepthData.value;
+  const arr = depthArr ? (depthArr instanceof Float32Array ? depthArr : new Float32Array(depthArr)) : null;
+  const inv = HIST_BINS / gm;
+  let maxCount = 0;
+  for (let i = 0; i < vf.length; i++) {
+    const v = vf[i];
+    if (!(v >= 0) || v >= 9000) continue;
+    if (arr && !(arr[i] > 0.005)) continue; // nur nasse Zellen (wie die Heatmap)
+    let b = Math.floor(v * inv);
+    if (b < 0) b = 0; else if (b >= HIST_BINS) b = HIST_BINS - 1;
+    counts[b]++;
+    if (counts[b] > maxCount) maxCount = counts[b];
+  }
+  return { counts, maxCount };
+});
 
 // Wasser-Deckkraft (Slider): 0 = fast durchsichtig … 1 = komplett deckend.
 // Default hoch, damit das Geländebett gut verdeckt ist (Bauwerke sind via Tiefen-Prepass
@@ -517,6 +577,14 @@ const map3d = ref(null);
   left: 16px;
   bottom: 24px;
   z-index: 10;
+}
+
+/* Velocity-Farbbereich-Regler */
+.velocity-control-overlay {
+  position: absolute;
+  left: 16px;
+  bottom: 24px;
+  z-index: 11;
 }
 
 /* Tool Buttons */

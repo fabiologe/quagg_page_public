@@ -73,7 +73,8 @@ const waterFragmentShader = `
   uniform vec3 uColorMid;
   uniform vec3 uColorDeep;
   uniform float uMaxDepth;      // Skala für Tiefe/Hazard-Farbe
-  uniform float uVelocityMax;   // Skala für Geschwindigkeits-Farbe
+  uniform float uVelocityMin;   // unteres Ende der Geschwindigkeits-Farbskala
+  uniform float uVelocityMax;   // oberes Ende der Geschwindigkeits-Farbskala
   uniform float uLayerMode;     // 0=depth, 1=velocity, 2=max/hazard
   uniform float uOpacity;       // globale Wasser-Deckkraft 0..1
   uniform sampler2D uVelocityMap;
@@ -92,7 +93,7 @@ const waterFragmentShader = `
       } else if (uLayerMode < 1.5) {
           // Mode 1: Geschwindigkeitsbetrag — lineare Heatmap blau → cyan → gelb → rot
           float vmag = texture2D(uVelocityMap, vUv).r;
-          float t = clamp(vmag / max(uVelocityMax, 0.01), 0.0, 1.0);
+          float t = clamp((vmag - uVelocityMin) / max(uVelocityMax - uVelocityMin, 1e-4), 0.0, 1.0);
           vec3 c0 = vec3(0.04, 0.20, 0.70); // langsam: blau
           vec3 c1 = vec3(0.00, 0.75, 1.00); // cyan
           vec3 c2 = vec3(1.00, 0.90, 0.00); // gelb
@@ -191,6 +192,7 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uVelocityMap:  { value: buildVelocityTexture() },
+        uVelocityMin:  { value: props.velocityMin || 0.0 },
         uVelocityMax:  { value: props.velocityMax || 1.0 },
         uMaxDepth:     { value: props.maxWaterDepth || 1.0 },
         uLayerMode:    { value: props.layerMode ?? 0 },
@@ -244,6 +246,7 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
     const u = waterMesh.material.uniforms;
     if (u.uVelocityMap.value && u.uVelocityMap.value !== velFallbackTex) u.uVelocityMap.value.dispose();
     u.uVelocityMap.value = buildVelocityTexture();
+    u.uVelocityMin.value = props.velocityMin || 0.0;
     u.uVelocityMax.value = props.velocityMax || 1.0;
     u.uMaxDepth.value = props.maxWaterDepth || 1.0;
     applyOpacity();
@@ -277,11 +280,12 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
     if (waterMesh?.material?.uniforms?.uLayerMode) waterMesh.material.uniforms.uLayerMode.value = mode ?? 0;
   });
 
-  watch([() => props.velocityData, () => props.velocityMax], () => {
+  watch([() => props.velocityData, () => props.velocityMin, () => props.velocityMax], () => {
     const u = waterMesh?.material?.uniforms;
     if (!u) return;
     if (u.uVelocityMap.value && u.uVelocityMap.value !== velFallbackTex) u.uVelocityMap.value.dispose();
     u.uVelocityMap.value = buildVelocityTexture();
+    u.uVelocityMin.value = props.velocityMin || 0.0;
     u.uVelocityMax.value = props.velocityMax || 1.0;
   });
 

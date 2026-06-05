@@ -29,7 +29,9 @@ const props = defineProps({
   showFlow: { type: Boolean, default: false },   // Fließpfeil-Layer aktiv?
   depthField: { type: Object, default: null },   // aktuelles Tiefen-Frame (Float32Array) für Nass-Gating/Höhe
   velocityData: { type: Object, default: null }, // Geschwindigkeits-Betrag-Frame (Float32Array) für die Heatmap
-  velocityMax: { type: Number, default: 1.0 },   // Skala für die Velocity-Heatmap
+  velocityMin: { type: Number, default: 0.0 },   // unteres Ende der Velocity-Farbskala (Bereichsregler)
+  velocityMax: { type: Number, default: 1.0 },   // oberes Ende der Velocity-Farbskala (Bereichsregler)
+  flowDensity: { type: Number, default: 0.5 },   // 0..1 Dichte der Fließpfeile
   waterOpacity: { type: Number, default: 0.85 }  // globale Wasser-Deckkraft 0..1
 });
 
@@ -387,10 +389,10 @@ function computeSectionData(startPtWorld, endPtWorld) {
 
 
 
-// Reaktion auf Layer-Wechsel / Frame-Wechsel / Skalenänderung
-watch([() => props.showFlow, () => props.flowData, () => props.velocityMax], ([show, field]) => {
+// Reaktion auf Layer-Wechsel / Frame-Wechsel / Dichteänderung
+watch([() => props.showFlow, () => props.flowData, () => props.flowDensity], ([show, field]) => {
   if (show && field && field.vx && field.vy) {
-    flowApi.rebuild(field, props.terrain, props.depthField, props.velocityMax);
+    flowApi.rebuild(field, props.terrain, props.depthField, props.flowDensity);
     flowApi.setVisible(true);
   } else {
     flowApi.setVisible(false);
