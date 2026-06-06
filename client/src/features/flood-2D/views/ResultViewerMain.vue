@@ -46,25 +46,13 @@
           @sectionDrawn="onSectionDrawn"
         />
 
-        <!-- Legend Overlay (Tiefe/Max/Hazard) -->
+        <!-- Legend Overlay (Tiefe/Max/Hazard; auch im Flow-Layer, da normales Wasser) -->
         <ResultLegend
-          v-if="activeLayer !== 'velocity' && activeLayer !== 'flow'"
+          v-if="activeLayer !== 'velocity'"
           :maxDepth="bridge.maxWaterDepth.value"
           class="legend-overlay"
         />
 
-        <!-- Velocity-Farbbereich + Histogramm -->
-        <VelocityColorControl
-          v-if="activeLayer === 'velocity'"
-          class="velocity-control-overlay"
-          :histogram="velocityHistogram"
-          :globalMax="velocityGlobalMax"
-          :min="velColorMin"
-          :max="effVelMax"
-          @update:min="velColorMin = $event"
-          @update:max="velColorMax = $event"
-        />
-        
         <!-- Section Profile Charts -->
         <template v-if="activeTool === 'section'">
           <TransitionGroup name="fade-slide">
@@ -81,50 +69,35 @@
         <!-- Volume Panels -->
         <template v-if="activeTool === 'volume'">
           <TransitionGroup name="fade-slide">
-            <ResultVolumePanel 
-              v-for="poly in analysisStore.polygonVolumes" 
+            <ResultVolumePanel
+              v-for="poly in volumePanelData"
               :key="poly.id"
               :polygon="poly"
+              :currentFrame="currentFrame"
               @clearRequested="removeVolumeAnalysis"
             />
           </TransitionGroup>
         </template>
 
-        <!-- Layer Switcher -->
-        <div class="layer-switcher">
-          <button
-            v-for="layer in availableLayers"
-            :key="layer.id"
-            :class="['layer-btn', { active: activeLayer === layer.id }]"
-            @click="activeLayer = layer.id"
-            :title="layer.label"
-          >{{ layer.icon }} {{ layer.label }}</button>
-
-          <!-- Wasser-Deckkraft -->
-          <div class="water-opacity" title="Wasser-Deckkraft">
-            <span class="wo-icon">💧</span>
-            <input type="range" min="0" max="1" step="0.01" v-model.number="waterOpacity" />
-          </div>
-
-          <!-- Fließpfeil-Dichte (nur im Strömungs-Layer) -->
-          <div v-if="activeLayer === 'flow'" class="water-opacity" title="Pfeil-Dichte">
-            <span class="wo-icon">🧭</span>
-            <input type="range" min="0" max="1" step="0.01" v-model.number="flowDensity" />
-          </div>
-        </div>
-
-        <!-- Tool Buttons -->
-        <div class="tool-buttons">
-          <button
-            v-for="tool in tools"
-            :key="tool.id"
-            :class="['tool-btn', { active: activeTool === tool.id }]"
-            @click="activeTool = activeTool === tool.id ? null : tool.id"
-            :title="tool.label"
-          >
-            {{ tool.icon }}
-          </button>
-        </div>
+        <!-- Zusammenklappbare Steuerungs-Box (Ebenen, Werkzeuge, Regler, Velocity-Bereich) -->
+        <ViewerControlPanel
+          :layers="availableLayers"
+          :activeLayer="activeLayer"
+          :tools="tools"
+          :activeTool="activeTool"
+          :waterOpacity="waterOpacity"
+          :flowDensity="flowDensity"
+          :velocityHistogram="velocityHistogram"
+          :velocityGlobalMax="velocityGlobalMax"
+          :velMin="velColorMin"
+          :velMax="effVelMax"
+          @update:activeLayer="activeLayer = $event"
+          @update:activeTool="activeTool = $event"
+          @update:waterOpacity="waterOpacity = $event"
+          @update:flowDensity="flowDensity = $event"
+          @update:velMin="velColorMin = $event"
+          @update:velMax="velColorMax = $event"
+        />
 
         <!-- Cell Info Panels -->
         <template v-if="activeTool === 'probe'">
@@ -159,9 +132,10 @@ import ResultLegend from '@/features/flood-2D/components/viewer/ResultLegend.vue
 import ResultSectionChart from '@/features/flood-2D/components/viewer/ResultSectionChart.vue';
 import ResultVolumePanel from '@/features/flood-2D/components/viewer/ResultVolumePanel.vue';
 import ResultProbePanel from '@/features/flood-2D/components/viewer/ResultProbePanel.vue';
-import VelocityColorControl from '@/features/flood-2D/components/viewer/VelocityColorControl.vue';
+import ViewerControlPanel from '@/features/flood-2D/components/viewer/ViewerControlPanel.vue';
 
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
+import { calculateVolumeWithConfidence } from '@/features/flood-2D/utils/VolumeCalculator';
 
 // --- Data Bridge (reads from window.opener) ---
 const bridge = useResultDataFromOpener();
@@ -199,8 +173,9 @@ const availableLayers = computed(() => {
 });
 
 // 0=depth, 1=velocity, 2=max_depth/hazard (heat map)
+// Flow rendert die Pfeile ÜBER dem normalen (Tiefen-)Wassershader → Modus 0.
 const activeLayerMode = computed(() => {
-  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow') return 1;
+  if (activeLayer.value === 'velocity') return 1;
   if (activeLayer.value === 'max_depth' || activeLayer.value === 'hazard') return 2;
   return 0;
 });
@@ -249,8 +224,8 @@ watch(velocityGlobalMax, (gm) => {
 }, { immediate: true });
 const effVelMax = computed(() => (velColorMax.value != null ? velColorMax.value : (velocityGlobalMax.value || 3)));
 
-// Dichte der Fließpfeile (0..1)
-const flowDensity = ref(0.5);
+// Dichte der Fließpfeile (0..1) — etwas höher als Mitte für standardmäßig mehr Pfeile
+const flowDensity = ref(0.65);
 
 // Histogramm der Geschwindigkeiten des AKTUELLEN Frames (nur nasse, gültige Zellen), Bins über [0, globalMax].
 const HIST_BINS = 48;
@@ -477,6 +452,38 @@ const computedSectionsList = computed(() => {
 });
 
 // --- VOLUME ---
+// Volumen-Ganglinie je Polygon über ALLE Frames (Volumen ist unabhängig von Toleranz & aktuellem Frame
+// → einmalig, stabil; rechnet nur neu, wenn Polygone oder Frames wechseln).
+const volumeSeriesById = computed(() => {
+  const out = {};
+  const frames = bridge.resultFrames?.value;
+  const header = analysisStore.currentGridHeader;
+  if (!frames || frames.size === 0 || !header) return out;
+  const cs = header.cellsize;
+  const sortedKeys = [...frames.keys()].sort((a, b) => a - b);
+  for (const poly of analysisStore.polygons) {
+    let maxVolume = 0;
+    const series = sortedKeys.map(fk => {
+      const depth = frames.get(fk);
+      const v = calculateVolumeWithConfidence(
+        poly.indices.activeIndices, poly.indices.boundaryIndices, depth, cs, 0
+      ).volume;
+      if (v > maxVolume) maxVolume = v;
+      return { frame: fk, volume: v };
+    });
+    out[poly.id] = { series, maxVolume };
+  }
+  return out;
+});
+
+// Aktuelle Frame-Statistik (Volumen/Fehler/Konfidenz) mit Ganglinie + Max zusammenführen.
+const volumePanelData = computed(() =>
+  analysisStore.polygonVolumes.map(pv => ({
+    ...pv,
+    ...(volumeSeriesById.value[pv.id] || { series: [], maxVolume: pv.volume })
+  }))
+);
+
 function clearVolumeAnalysis() {
   analysisStore.clearAnalysis();
   if (map3d.value) {
@@ -577,93 +584,6 @@ const map3d = ref(null);
   left: 16px;
   bottom: 24px;
   z-index: 10;
-}
-
-/* Velocity-Farbbereich-Regler */
-.velocity-control-overlay {
-  position: absolute;
-  left: 16px;
-  bottom: 24px;
-  z-index: 11;
-}
-
-/* Tool Buttons */
-/* ── Layer Switcher ── */
-.layer-switcher {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  z-index: 10;
-  background: rgba(20, 24, 40, 0.82);
-  padding: 5px 8px;
-  border-radius: 10px;
-  backdrop-filter: blur(8px);
-}
-.water-opacity {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding-left: 8px;
-  margin-left: 2px;
-  border-left: 1px solid rgba(255,255,255,0.15);
-}
-.water-opacity .wo-icon { font-size: 0.85rem; opacity: 0.8; }
-.water-opacity input[type="range"] { width: 90px; accent-color: #3498db; cursor: pointer; }
-.layer-btn {
-  padding: 5px 12px;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 6px;
-  background: transparent;
-  color: #bdc3c7;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-.layer-btn:hover  { background: rgba(255,255,255,0.1); color: #fff; }
-.layer-btn.active { background: rgba(52,152,219,0.35); border-color: #3498db; color: #5dade2; }
-
-.tool-buttons {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 10;
-}
-
-.tool-btn {
-  width: 44px;
-  height: 44px;
-  border: none;
-  border-radius: 10px;
-  background: rgba(30, 30, 50, 0.85);
-  backdrop-filter: blur(8px);
-  color: #e0e0e0;
-  font-size: 1.2rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tool-btn:hover {
-  background: rgba(50, 50, 80, 0.9);
-  transform: scale(1.1);
-}
-
-.tool-btn.active {
-  background: rgba(79, 195, 247, 0.3);
-  box-shadow: 0 0 12px rgba(79, 195, 247, 0.4);
-  border: 1px solid rgba(79, 195, 247, 0.5);
 }
 
 /* Cell Info Panel */

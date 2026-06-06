@@ -26,8 +26,12 @@ import { RENDER_ORDER } from '../editor/renderLayers';
 // geglättet (gleiche Charakteristik wie zuvor: 85 % geglättet).
 const SMOOTH_MIX = 0.85;
 
+const WET = 0.005; // m — Schwelle „nass" (deckt sich mit dem Fragment-discard)
+
 /**
- * 9-Tap-Box-Blur über das Tiefenfeld (Rand per Clamp-to-Edge, wie die alte DataTexture).
+ * 9-Tap-Box-Blur über das Tiefenfeld, aber NASS-GATED: trockene Zellen bleiben exakt trocken und
+ * nasse Zellen mitteln NUR über nasse Nachbarn. So blutet kein Wasser über eine Wehrkante (oder eine
+ * beliebige Nass/Trocken-Front) — der Stauspiegel bleibt scharf, keine Phantom-Tiefe hinter der Wand.
  * @param {Float32Array} raw   top-down, idx = row*ncols+col (deckt sich mit der Vertex-Reihenfolge)
  */
 function smoothDepth(raw, ncols, nrows) {
@@ -36,15 +40,20 @@ function smoothDepth(raw, ncols, nrows) {
     const rm = r > 0 ? r - 1 : 0;
     const rp = r < nrows - 1 ? r + 1 : nrows - 1;
     for (let c = 0; c < ncols; c++) {
+      const i = r * ncols + c;
+      const d0 = raw[i];
+      if (!(d0 > WET)) { out[i] = d0; continue; } // trocken bleibt trocken
+
       const cm = c > 0 ? c - 1 : 0;
       const cp = c < ncols - 1 ? c + 1 : ncols - 1;
-      const i = r * ncols + c;
-      const sum =
-        raw[rm * ncols + cm] + raw[rm * ncols + c] + raw[rm * ncols + cp] +
-        raw[r  * ncols + cm] + raw[i]               + raw[r  * ncols + cp] +
-        raw[rp * ncols + cm] + raw[rp * ncols + c] + raw[rp * ncols + cp];
-      const dAvg = sum / 9.0;
-      out[i] = raw[i] + (dAvg - raw[i]) * SMOOTH_MIX; // mix(d0, dAvg, SMOOTH_MIX)
+      let sum = 0, cnt = 0;
+      const acc = (v) => { if (v > WET) { sum += v; cnt++; } };
+      acc(raw[rm * ncols + cm]); acc(raw[rm * ncols + c]); acc(raw[rm * ncols + cp]);
+      acc(raw[r  * ncols + cm]); acc(d0);                  acc(raw[r  * ncols + cp]);
+      acc(raw[rp * ncols + cm]); acc(raw[rp * ncols + c]); acc(raw[rp * ncols + cp]);
+
+      const dAvg = cnt > 0 ? sum / cnt : d0; // nur über nasse Nachbarn mitteln
+      out[i] = d0 + (dAvg - d0) * SMOOTH_MIX;
     }
   }
   return out;
@@ -118,18 +127,96 @@ const waterFragmentShader = `
   }
 `;
 
+// Signalfarbe der Überström-Lamelle (Exception-Highlight). Leicht änderbar.
+const OVERTOP_COLOR = 0xff5e3a;
+
+// Fragment-Shader der Überström-Lamelle: fixe Signalfarbe (statt Tiefen-/Velocity-Skala).
+const overtopFragmentShader = `
+  #include <common>
+  #include <logdepthbuf_pars_fragment>
+  varying float vDepth;
+  uniform vec3 uOvertopColor;
+  uniform float uOpacity;
+  void main() {
+    if (vDepth < 0.005) discard;
+    #include <logdepthbuf_fragment>
+    float a = mix(0.45, 1.0, clamp(uOpacity, 0.0, 1.0));
+    gl_FragColor = vec4(uOvertopColor, a);
+  }
+`;
+
+/**
+ * Bestimmt die Wehr-Kanten (Vertex-Paare) und teilt den Index in:
+ *  - baseIndex: alle Dreiecke OHNE Wehr-Kante (dauerhaft sichtbar; Wasser an Wehren getrennt)
+ *  - weirTris:  entfernte Dreiecke je `{ a,b,c, keys:[barrierKey] }` (Brücken-Kandidaten beim Überströmen)
+ *  - faceMeta:  Map `barrierKey → { va, vb, crestLocal }` (crestLocal = hc - minZ) für den Überström-Test
+ * Nur WEHRE (Brücken sind Durchfluss-Öffnungen und bleiben durchgehend).
+ */
+function buildWeirCut(geometry, weirs, terrain) {
+  const index = geometry.getIndex();
+  const fallback = { baseIndex: index ? Array.from(index.array) : null, weirTris: [], faceMeta: new Map() };
+  if (!index || !weirs || weirs.length === 0 || !terrain) return fallback;
+  const { ncols, nrows, cellsize, xllcorner, yllcorner } = terrain;
+  const minZ = terrain.minZ ?? 0;
+
+  const faceMeta = new Map();
+  const vIdx = (col, geomRow) => geomRow * ncols + col;
+  const key = (a, b) => (a < b ? a * (ncols * nrows) + b : b * (ncols * nrows) + a);
+
+  for (const w of weirs) {
+    const col = Math.floor((w.x - xllcorner) / cellsize);
+    const gridRow = Math.floor((w.y - yllcorner) / cellsize); // bottom-up
+    const geomRow = (nrows - 1) - gridRow;                     // top-down (Vertex-Zeile)
+    if (col < 0 || col >= ncols || geomRow < 0 || geomRow >= nrows) continue;
+    const dir = (w.direction || 'S')[0]; // N/S/E/W, 'F'-Suffix ignorieren
+    let nc = col, nr = geomRow;
+    if (dir === 'N') nr = geomRow - 1;
+    else if (dir === 'S') nr = geomRow + 1;
+    else if (dir === 'E') nc = col + 1;
+    else if (dir === 'W') nc = col - 1;
+    if (nc < 0 || nc >= ncols || nr < 0 || nr >= nrows) continue;
+    const va = vIdx(col, geomRow), vb = vIdx(nc, nr);
+    const k = key(va, vb);
+    if (!faceMeta.has(k)) {
+      const crestLocal = (typeof w.hc === 'number' ? w.hc : minZ) - minZ;
+      faceMeta.set(k, { va, vb, crestLocal });
+    }
+  }
+  if (faceMeta.size === 0) return fallback;
+
+  const src = index.array;
+  const baseIndex = [];
+  const weirTris = [];
+  for (let t = 0; t < src.length; t += 3) {
+    const a = src[t], b = src[t + 1], c = src[t + 2];
+    const hit = [];
+    const ka = key(a, b), kb = key(b, c), kc = key(c, a);
+    if (faceMeta.has(ka)) hit.push(ka);
+    if (faceMeta.has(kb)) hit.push(kb);
+    if (faceMeta.has(kc)) hit.push(kc);
+    if (hit.length === 0) baseIndex.push(a, b, c);
+    else weirTris.push({ a, b, c, keys: hit });
+  }
+  return { baseIndex, weirTris, faceMeta };
+}
+
 /**
  * @param {object} opts
  * @param {() => THREE.Scene} opts.getScene
  * @param {() => THREE.Mesh}  opts.getTerrainMesh  liefert das Terrain-Mesh (Geometrie wird einmalig geklont)
+ * @param {() => Array}       [opts.getWeirFaces]  liefert die Wehre ({x,y,direction}) für den Mesh-Schnitt
  * @param {object} opts.props  reaktive ResultMap3D-Props (depthData/velocityData/velocityMax/…)
  */
-export function useWaterSurface({ getScene, getTerrainMesh, props }) {
+export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props }) {
   let waterMesh = null;
   let sourceGeo = null;       // Terrain-Geometrie, aus der geklont wurde (Rebuild-Erkennung)
   let baseZ = null;           // Float32Array: Terrainhöhe je Vertex (z-Basis fürs Displacement)
   let depthAttr = null;       // BufferAttribute aDepth (pro Frame aktualisiert)
   let velFallbackTex = null;  // 1x1 Dummy, falls kein Velocity-Frame anliegt
+  // Überström-Lamelle (separates Mesh in Signalfarbe, überbrückt pro Frame überströmte Wehr-Kanten)
+  let overtopMesh = null;
+  let weirTris = null;        // entfernte Wehr-Dreiecke (Brücken-Kandidaten)
+  let faceMeta = null;        // Map barrierKey → { va, vb, crestLocal }
 
   function getVelFallbackTex() {
     if (!velFallbackTex) {
@@ -152,9 +239,9 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
   }
 
   function applyOpacity() {
-    if (waterMesh?.material?.uniforms) {
-      waterMesh.material.uniforms.uOpacity.value = props.waterOpacity ?? 0.85;
-    }
+    const op = props.waterOpacity ?? 0.85;
+    if (waterMesh?.material?.uniforms) waterMesh.material.uniforms.uOpacity.value = op;
+    if (overtopMesh?.material?.uniforms) overtopMesh.material.uniforms.uOpacity.value = op;
   }
 
   /**
@@ -168,15 +255,26 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
     if (!scene || !terrainMesh) return false;
     if (waterMesh && sourceGeo === terrainMesh.geometry) return true;
 
-    // Stale Mesh (Terrain wurde neu gebaut) entfernen
+    // Stale Meshes (Terrain wurde neu gebaut) entfernen
     if (waterMesh) {
       scene.remove(waterMesh);
       waterMesh.geometry.dispose();
       waterMesh.material.dispose();
       waterMesh = null;
     }
+    if (overtopMesh) {
+      scene.remove(overtopMesh);
+      overtopMesh.geometry.dispose();
+      overtopMesh.material.dispose();
+      overtopMesh = null;
+    }
 
     const geometry = terrainMesh.geometry.clone(); // identische Unterteilung + ausgestanzte Löcher
+    // Wehr-Schnitt vorbereiten: Hauptindex getrennt (baseIndex), Brücken-Dreiecke + Krone separat halten.
+    const cut = buildWeirCut(geometry, getWeirFaces?.() || [], props.terrain);
+    if (cut.baseIndex) geometry.setIndex(cut.baseIndex);
+    weirTris = cut.weirTris;
+    faceMeta = cut.faceMeta;
     const pos = geometry.attributes.position;
     const N = pos.count;
 
@@ -214,7 +312,68 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
     waterMesh.renderOrder = RENDER_ORDER.WATER; // wird nach allen festen Bauwerken gezeichnet
     scene.add(waterMesh);
     sourceGeo = terrainMesh.geometry;
+
+    // Überström-Lamelle: separates Mesh in Signalfarbe, überbrückt pro Frame die überströmten Wehr-Kanten.
+    if (weirTris && weirTris.length > 0) {
+      const cap = weirTris.length * 3; // max. Vertices (alle Brücken-Dreiecke gleichzeitig)
+      const og = new THREE.BufferGeometry();
+      og.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cap * 3), 3));
+      og.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(cap), 1));
+      const omat = new THREE.ShaderMaterial({
+        uniforms: {
+          uOvertopColor: { value: new THREE.Color(OVERTOP_COLOR) },
+          uOpacity:      { value: props.waterOpacity ?? 0.85 },
+        },
+        vertexShader: waterVertexShader,
+        fragmentShader: overtopFragmentShader,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthTest: true,
+        depthWrite: false,
+      });
+      overtopMesh = new THREE.Mesh(og, omat);
+      overtopMesh.rotation.x = -Math.PI / 2;
+      overtopMesh.renderOrder = RENDER_ORDER.WATER + 1; // knapp über dem Wasser
+      overtopMesh.frustumCulled = false;
+      og.setDrawRange(0, 0);
+      scene.add(overtopMesh);
+    }
     return true;
+  }
+
+  /** Füllt die Überström-Lamelle: Brücken-Dreiecke, deren ALLE Wehr-Kanten gerade überströmt sind. */
+  function fillOvertop(depth) {
+    if (!overtopMesh || !weirTris || weirTris.length === 0 || !faceMeta) return;
+    const EPS = 0.02;
+    // Überströmte Kanten ermitteln (beide Seiten ≥ Kronenhöhe → durchgehende Lamelle).
+    const over = new Set();
+    for (const [k, m] of faceMeta) {
+      const sa = baseZ[m.va] + (depth[m.va] > 0 ? depth[m.va] : 0);
+      const sb = baseZ[m.vb] + (depth[m.vb] > 0 ? depth[m.vb] : 0);
+      if (Math.min(sa, sb) >= m.crestLocal - EPS) over.add(k);
+    }
+
+    const srcPos = waterMesh.geometry.attributes.position.array;
+    const srcDep = depthAttr.array;
+    const opos = overtopMesh.geometry.attributes.position.array;
+    const odep = overtopMesh.geometry.attributes.aDepth.array;
+    let v = 0;
+    for (const tri of weirTris) {
+      let all = true;
+      for (const k of tri.keys) { if (!over.has(k)) { all = false; break; } }
+      if (!all) continue;
+      for (const vi of [tri.a, tri.b, tri.c]) {
+        opos[v * 3]     = srcPos[vi * 3];
+        opos[v * 3 + 1] = srcPos[vi * 3 + 1];
+        opos[v * 3 + 2] = srcPos[vi * 3 + 2];
+        odep[v]         = srcDep[vi];
+        v++;
+      }
+    }
+    overtopMesh.geometry.attributes.position.needsUpdate = true;
+    overtopMesh.geometry.attributes.aDepth.needsUpdate = true;
+    overtopMesh.geometry.setDrawRange(0, v);
+    overtopMesh.visible = v > 0;
   }
 
   /** Neues Tiefen-Frame: nur Z-Attribut + aDepth der bestehenden Plane aktualisieren. */
@@ -252,18 +411,30 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
     applyOpacity();
 
     waterMesh.visible = true;
+    fillOvertop(depth); // Überström-Lamelle (Signalfarbe) aktualisieren
   }
 
   function hide() {
     if (waterMesh) waterMesh.visible = false;
+    if (overtopMesh) overtopMesh.visible = false;
   }
 
   /** Mesh-Referenzen lösen (nach GPU-Purge) → nächster update() klont frisch. */
   function reset() {
     waterMesh = null;
+    overtopMesh = null;
+    weirTris = null;
+    faceMeta = null;
     sourceGeo = null;
     baseZ = null;
     depthAttr = null;
+  }
+
+  /** Erzwingt beim nächsten update() einen Neuaufbau (Re-Clone + Wehr-Schnitt) — z. B. wenn Wehre
+   *  erst nach dem ersten Wasser-Frame hydratisiert werden. */
+  function invalidate() {
+    sourceGeo = null;
+    if (props.depthData && props.terrain) update(props.depthData);
   }
 
   // --- Watcher ---
@@ -291,5 +462,5 @@ export function useWaterSurface({ getScene, getTerrainMesh, props }) {
 
   watch(() => props.waterOpacity, () => applyOpacity());
 
-  return { update, applyOpacity, hide, reset };
+  return { update, applyOpacity, hide, reset, invalidate };
 }

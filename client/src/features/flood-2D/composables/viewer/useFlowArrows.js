@@ -8,12 +8,13 @@
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
 
-const C0 = new THREE.Color(0x2c7fb8); // langsam: blau
-const C1 = new THREE.Color(0xf1c40f); // mittel: gelb
-const C2 = new THREE.Color(0xe74c3c); // schnell: rot
+// Hoher Kontrast auf blauem Wasser (warm, hell): langsam = weiß → gold → rot-orange = schnell.
+const C0 = new THREE.Color(0xffffff); // langsam: weiß
+const C1 = new THREE.Color(0xffc400); // mittel: gold
+const C2 = new THREE.Color(0xff2a00); // schnell: rot-orange
 
-const ARROW_CAP    = 24000; // max. Instanzen
-const ARROW_MIN    = 1500;  // Zielanzahl bei minimaler Dichte
+const ARROW_CAP    = 60000; // max. Instanzen (mehr Pfeile möglich)
+const ARROW_MIN    = 2000;  // Zielanzahl bei minimaler Dichte
 const WET_MIN      = 0.02;  // m — nur nasse Zellen
 
 function speedColor(s, sref, out) {

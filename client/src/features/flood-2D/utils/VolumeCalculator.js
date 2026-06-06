@@ -103,14 +103,17 @@ export function getPolygonIndices(polygon, header) {
  */
 export function calculateVolumeWithConfidence(activeIndices, boundaryIndices, depths, cellsize, zTolerance = 0.05) {
     if (!activeIndices || activeIndices.length === 0 || !depths) {
-        return { volume: 0, error: 0, formattedVolume: "0", formattedError: "0" };
+        return { volume: 0, error: 0, relativeError: 0, confidenceScore: 1, formattedVolume: "0", formattedError: "0" };
     }
 
     const cellArea = cellsize * cellsize;
 
-    let totalVolume = 0;
-    let floodedCellCount = 0;
-    let geometricError = 0;
+    // Innen- und Randzellen getrennt erfassen. Der Polygonrand halbiert eine Randzelle im Mittel,
+    // daher gehen Randzellen nur zu 50 % in die zentrale Schätzung ein (statt zu 100 %).
+    let internalVol = 0;
+    let internalCount = 0;
+    let boundaryVol = 0;
+    let boundaryCount = 0;
 
     // Iterative Hochleistungsschleife (eine Iteration für alles)
     for (let i = 0; i < activeIndices.length; i++) {
@@ -119,21 +122,38 @@ export function calculateVolumeWithConfidence(activeIndices, boundaryIndices, de
 
         // Wir betrachten nur "nasse" Zellen (Tiefe > 0.005 m)
         if (depth > 0.005) {
-            totalVolume += depth * cellArea;
-            floodedCellCount++;
-
-            // Ist die Zelle eine nasse Randzelle? -> Geometrischen Fehler aufaddieren (Tiefe * Fläche * 50%)
             if (boundaryIndices.has(idx)) {
-                geometricError += depth * cellArea * 0.5;
+                boundaryVol += depth * cellArea;
+                boundaryCount++;
+            } else {
+                internalVol += depth * cellArea;
+                internalCount++;
             }
         }
     }
 
-    // Physischer Fehler: Toleranz des DGMs für alle nassen Zellen
-    const physicalError = floodedCellCount * cellArea * zTolerance;
+    // Zentrale Schätzung: 100 % Innen + 50 % Rand (erwartungstreu für am Rand geschnittene Zellen).
+    const totalVolume = internalVol + boundaryVol * 0.5;
 
-    // Gesamter Fehler (Konfidenzintervall)
-    const totalError = geometricError + physicalError;
+    // --- Fehlermodell (unabhängige Quellen, quadratisch kombiniert) ---
+    // 1) Geometrischer Randfehler: der Rand könnte real 0 % … 100 % der Randzellen enthalten → ±50 %.
+    const geometricError = boundaryVol * 0.5;
+
+    // 2) DGM-Höhenfehler: per-Zelle UNABHÄNGIG (Std = zTolerance) → die Einzelfehler mitteln sich über
+    //    N nasse Zellen teilweise heraus, der Volumenfehler wächst daher mit √N (nicht linear mit N,
+    //    was einen voll korrelierten/systematischen Fehler annähme und stark überschätzt).
+    const nEff = internalCount + 0.5 * boundaryCount;
+    const demError = cellArea * zTolerance * Math.sqrt(Math.max(0, nEff));
+
+    // Unabhängige Fehlerquellen quadratisch addieren.
+    const totalError = Math.sqrt(geometricError * geometricError + demError * demError);
+
+    let relativeError = 0;
+    let confidenceScore = 1;
+    if (totalVolume > 0) {
+        relativeError = totalError / totalVolume;
+        confidenceScore = Math.max(0, 1 - relativeError);
+    }
 
     // Integer Formatierung ohne Nachkommastellen für die UI
     const formatter = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
@@ -141,6 +161,8 @@ export function calculateVolumeWithConfidence(activeIndices, boundaryIndices, de
     return {
         volume: totalVolume,
         error: totalError,
+        relativeError,      // 0..1+ (Anteil)
+        confidenceScore,    // 0..1 (geklemmt)
         formattedVolume: formatter.format(totalVolume),
         formattedError: formatter.format(totalError)
     };

@@ -54,9 +54,11 @@ const terrainApi = useTerrainLayer({
   geoStore,
 });
 // Wasser als 2D-Haut: klont die (gelochte) Terrain-Geometrie und displaced pro Frame nur das Z-Attribut.
+// getWeirFaces liefert die Wehre, an deren Kanten die Wasserhaut aufgetrennt wird (kein Durchscheinen).
 const waterApi = useWaterSurface({
   getScene: () => scene,
   getTerrainMesh: () => terrainApi.getMesh(),
+  getWeirFaces: () => geoStore.weirs,
   props,
 });
 const probeApi = useResultProbes(() => scene); // Probe-Ring-Marker
@@ -227,6 +229,7 @@ function initScene() {
     if (newWeirs && newWeirs.length > 0 && layerRenderer && terrainMesh) {
       console.log('[ResultMap3D] GeoStore weirs loaded, triggering render.');
       layerRenderer.renderWeirs();
+      waterApi.invalidate(); // Wasserhaut an den (neu geladenen) Wehr-Kanten auftrennen
     }
   }, { deep: true });
 
@@ -513,7 +516,7 @@ function createHighlightMesh(polygon, terrain) {
   
   for (const idx of activeSet) {
     const col = idx % ncols;
-    const row = Math.floor(idx / ncols); // top-down index from VolumeAnalyzer
+    const row = Math.floor(idx / ncols); // top-down index (VolumeCalculator-Konvention)
     
     // Convert to bottom-up index to read terrain Z safely from Map3D gridData
     const gridRow = (nrows - 1) - row;

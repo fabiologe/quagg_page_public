@@ -23,6 +23,9 @@ export const useAnalysisStore = defineStore('flood2D-analysis', () => {
     // Explicitly injected active depth data from the viewer
     const activeDepthData = ref(null);
 
+    // Angenommene DGM-Höhenungenauigkeit (m), UI-einstellbar — fließt ins Fehlermodell ein.
+    const zTolerance = ref(0.05);
+
     // --- ACTIONS ---
 
     /**
@@ -69,6 +72,11 @@ export const useAnalysisStore = defineStore('flood2D-analysis', () => {
         activeDepthData.value = depthArray;
     }
 
+    function setZTolerance(meters) {
+        const v = Number(meters);
+        if (Number.isFinite(v) && v >= 0) zTolerance.value = v;
+    }
+
     // --- GETTERS ---
 
     /**
@@ -85,7 +93,7 @@ export const useAnalysisStore = defineStore('flood2D-analysis', () => {
                 poly.indices.boundaryIndices,
                 activeDepthData.value,
                 currentGridHeader.value.cellsize,
-                0.05 // 5cm default tolerance 
+                zTolerance.value
             );
 
             return {
@@ -93,6 +101,8 @@ export const useAnalysisStore = defineStore('flood2D-analysis', () => {
                 color: poly.color,
                 volume: stats.volume,
                 error: stats.error,
+                relativeError: stats.relativeError,
+                confidenceScore: stats.confidenceScore,
                 formattedVolume: stats.formattedVolume,
                 formattedError: stats.formattedError
             };
@@ -105,12 +115,14 @@ export const useAnalysisStore = defineStore('flood2D-analysis', () => {
         polygons,
         currentGridHeader,
         activeDepthData,
+        zTolerance,
 
         // Actions
         addPolygon,
         removePolygon,
         clearAnalysis,
         setActiveDepthData,
+        setZTolerance,
 
         // Getters
         polygonVolumes

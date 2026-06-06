@@ -1,10 +1,10 @@
 <template>
-  <div 
-    class="volume-panel" 
+  <div
+    class="volume-panel"
     :style="panelStyle"
   >
-    <div 
-      class="panel-header" 
+    <div
+      class="panel-header"
       :style="headerStyle"
       @mousedown="startDrag"
     >
@@ -18,17 +18,40 @@
       </div>
       <div v-else class="stats-container">
         <div class="stat-row main-volume">
-          <span class="label">Eingestautes Volumen</span>
-          <span class="value">{{ formattedVolume }} <span class="unit">m³</span></span>
+          <span class="label">Aktuelles Volumen (Frame {{ currentFrame }})</span>
+          <span class="value">{{ polygon.formattedVolume }} <span class="unit">m³</span></span>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-mini">
+            <span class="label">Max-Volumen</span>
+            <span class="value-sm">{{ formattedMax }} <span class="unit">m³</span></span>
+          </div>
+          <div class="stat-mini">
+            <span class="label">Konfidenz</span>
+            <span class="value-sm" :style="{ color: confidenceColor }">{{ confidencePct }} %</span>
+          </div>
         </div>
 
         <div class="stat-row error-margin">
-          <span class="label">Fehlermarge (Konfidenz)</span>
-          <span class="value">± {{ polygon.formattedError }} <span class="unit">m³</span></span>
+          <span class="label">Fehlermarge</span>
+          <span class="value-sm">± {{ polygon.formattedError }} <span class="unit">m³</span></span>
         </div>
-        
+
+        <!-- Volumen-Ganglinie -->
+        <div v-if="hasSeries" class="spark-wrap">
+          <span class="label">Verlauf über die Zeit</span>
+          <canvas ref="sparkCanvas" class="spark"></canvas>
+        </div>
+
+        <!-- DGM-Toleranz (global, fließt ins Fehlermodell) -->
+        <label class="tol-row" title="Angenommene Höhenungenauigkeit des Geländemodells">
+          <span>DGM-Toleranz (m)</span>
+          <input type="number" min="0" step="0.01" v-model.number="zTol" />
+        </label>
+
         <div class="info-text">
-          Toleranz: DGM-Ungenauigkeit + Polygon-Randzellen
+          Fehler = Randzellen (±50 %) ⊕ DGM-Höhenfehler (√N, unabhängig)
         </div>
       </div>
     </div>
@@ -36,23 +59,90 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 
 const props = defineProps({
-  polygon: Object
+  polygon: Object,
+  currentFrame: { type: Number, default: 0 },
 });
 
 const emit = defineEmits(['clearRequested']);
 
-const formattedVolume = computed(() => {
-  return props.polygon?.formattedVolume || '0';
+const analysisStore = useAnalysisStore();
+
+const fmt = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
+const formattedMax = computed(() => fmt.format(props.polygon?.maxVolume || 0));
+const confidencePct = computed(() => Math.round((props.polygon?.confidenceScore ?? 1) * 100));
+const confidenceColor = computed(() => {
+  const c = props.polygon?.confidenceScore ?? 1;
+  return c > 0.85 ? '#66bb6a' : c > 0.6 ? '#ffb74d' : '#ff5252';
+});
+const hasSeries = computed(() => (props.polygon?.series?.length || 0) > 1);
+
+// DGM-Toleranz ist global im Analysis-Store (alle Panels + Live-Berechnung teilen sie).
+const zTol = computed({
+  get: () => analysisStore.zTolerance,
+  set: (v) => analysisStore.setZTolerance(v),
 });
 
 function handleClear() {
-  if (props.polygon) {
-    emit('clearRequested', props.polygon.id);
-  }
+  if (props.polygon) emit('clearRequested', props.polygon.id);
 }
+
+// --- Sparkline (Volumen-Ganglinie) ---
+const sparkCanvas = ref(null);
+function drawSpark() {
+  const cv = sparkCanvas.value;
+  if (!cv) return;
+  const series = props.polygon?.series || [];
+  const maxV = props.polygon?.maxVolume || 0;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (series.length < 2 || maxV <= 0) return;
+
+  const n = series.length;
+  const pad = 3;
+  const xAt = (i) => pad + (i / (n - 1)) * (W - 2 * pad);
+  const yAt = (v) => H - pad - (v / maxV) * (H - 2 * pad);
+  const color = props.polygon?.color || '#00e5ff';
+
+  // Fläche
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), H - pad);
+  for (let i = 0; i < n; i++) ctx.lineTo(xAt(i), yAt(series[i].volume));
+  ctx.lineTo(xAt(n - 1), H - pad);
+  ctx.closePath();
+  ctx.fillStyle = hexToRgba(color, 0.18);
+  ctx.fill();
+
+  // Linie
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const px = xAt(i), py = yAt(series[i].volume);
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Marker am aktuellen Frame
+  let idx = series.findIndex(s => s.frame === props.currentFrame);
+  if (idx < 0) idx = 0;
+  const mx = xAt(idx), my = yAt(series[idx].volume);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(mx, pad); ctx.lineTo(mx, H - pad); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(mx, my, 2.5, 0, Math.PI * 2); ctx.fill();
+}
+watch(() => [props.polygon?.series, props.currentFrame, props.polygon?.maxVolume],
+  () => nextTick(drawSpark), { deep: true });
 
 // --- Dragging Logic ---
 const position = ref({ x: 0, y: 0 });
@@ -65,16 +155,16 @@ onMounted(() => {
   const offset = Math.floor(Math.random() * 40);
   position.value.x = 24 + offset;
   position.value.y = 80 + offset;
+  nextTick(drawSpark);
 });
 
 function startDrag(e) {
-  // Ignore clicks on buttons
-  if (e.target.tagName.toLowerCase() === 'button') return;
-  
+  if (e.target.tagName.toLowerCase() === 'button' || e.target.tagName.toLowerCase() === 'input') return;
+
   isDragging.value = true;
   startMousePos = { x: e.clientX, y: e.clientY };
   startPanelPos = { ...position.value };
-  
+
   window.addEventListener('mousemove', onDrag);
   window.addEventListener('mouseup', stopDrag);
 }
@@ -82,12 +172,12 @@ function startDrag(e) {
 function onDrag(e) {
   if (!isDragging.value) return;
   e.preventDefault();
-  
+
   const dx = e.clientX - startMousePos.x;
   const dy = e.clientY - startMousePos.y;
-  
+
   position.value.x = startPanelPos.x + dx;
-  position.value.y = Math.max(0, startPanelPos.y + dy); // Prevent dragging completely above viewport
+  position.value.y = Math.max(0, startPanelPos.y + dy);
 }
 
 function stopDrag() {
@@ -95,6 +185,11 @@ function stopDrag() {
   window.removeEventListener('mousemove', onDrag);
   window.removeEventListener('mouseup', stopDrag);
 }
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onDrag);
+  window.removeEventListener('mouseup', stopDrag);
+});
 
 const panelStyle = computed(() => ({
   left: `${position.value.x}px`,
@@ -184,8 +279,19 @@ function hexToRgba(hex, alpha) {
   gap: 4px;
 }
 
+.stat-grid {
+  display: flex;
+  gap: 12px;
+}
+.stat-mini {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .label {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: #90a4ae;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -198,20 +304,57 @@ function hexToRgba(hex, alpha) {
   font-variant-numeric: tabular-nums;
 }
 
-.error-margin .value {
-  font-size: 1.2rem;
-  color: #ffb74d; /* warning orange */
+.value-sm {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.error-margin .value-sm {
+  color: #ffb74d;
 }
 
 .unit {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 400;
   color: #90a4ae;
 }
 
+.spark-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.spark {
+  width: 100%;
+  height: 48px;
+  display: block;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+
+.tol-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.74rem;
+  color: #b0bec5;
+}
+.tol-row input {
+  width: 80px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #e0e0e0;
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .info-text {
-  margin-top: 8px;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: #78909c;
   border-top: 1px solid rgba(255,255,255,0.1);
   padding-top: 8px;

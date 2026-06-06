@@ -112,6 +112,10 @@ export function useWeirTool() {
         return cells;
     }
 
+    // Blockierende Wandfläche für einen Schritt zwischen zwei benachbarten Zellen:
+    // Reihenwechsel (vertikaler Schritt) → 'E' (blockt E-W), sonst 'S' (blockt N-S).
+    const stepFace = (a, b) => (a.row !== b.row ? 'E' : 'S');
+
     const onMove = ({ event, raycaster, camera, pointer, scene, terrainMesh, parsedData }) => {
         if (!terrainMesh || !parsedData) return;
         sceneRef = scene || sceneRef;
@@ -231,25 +235,24 @@ export function useWeirTool() {
                         const realX = snappedHit.x + center.x + cellsize / 2;
                         const realY = -snappedHit.z + center.y + cellsize / 2;
 
-                        let direction = 'S';
-                        if (i > 0) {
-                            const prev = cells[i-1];
-                            if (cell.row !== prev.row) direction = 'E'; // vertical wall blocks E-W
-                            else direction = 'S'; // horizontal wall blocks N-S
-                        } else if (cells.length > 1) {
-                            const next = cells[1];
-                            if (next.row !== cell.row) direction = 'E';
-                            else direction = 'S';
-                        }
+                        // Dichtflächen aus BEIDEN angrenzenden Schritten (vorher + nachher):
+                        // Eckzellen erhalten so die L-Form (zwei Flächen), gerade Läufe genau eine.
+                        // Damit bleibt an keiner Treppenstufe eine Innenecke offen → geschlossene Barriere.
+                        const faces = new Set();
+                        if (i > 0)                 faces.add(stepFace(cells[i - 1], cell));
+                        if (i < cells.length - 1)  faces.add(stepFace(cell, cells[i + 1]));
+                        if (faces.size === 0)      faces.add('S'); // Einzelzelle (Start == Ende)
 
-                        segments.push({
-                            col: cell.col,
-                            row: cell.row,
-                            x: realX,
-                            y: realY,
-                            z: elemZ,
-                            direction: direction
-                        });
+                        for (const direction of faces) {
+                            segments.push({
+                                col: cell.col,
+                                row: cell.row,
+                                x: realX,
+                                y: realY,
+                                z: elemZ,
+                                direction,
+                            });
+                        }
                     }
 
                     window.dispatchEvent(new CustomEvent('weir-line-click', {
