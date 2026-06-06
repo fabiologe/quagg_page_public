@@ -272,9 +272,9 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props 
     const geometry = terrainMesh.geometry.clone(); // identische Unterteilung + ausgestanzte Löcher
     // Wehr-Schnitt vorbereiten: Hauptindex getrennt (baseIndex), Brücken-Dreiecke + Krone separat halten.
     const cut = buildWeirCut(geometry, getWeirFaces?.() || [], props.terrain);
-    if (cut.baseIndex) geometry.setIndex(cut.baseIndex);
     weirTris = cut.weirTris;
     faceMeta = cut.faceMeta;
+    if (cut.baseIndex) geometry.setIndex(cut.baseIndex); // an Wehren getrennt (statisch)
     const pos = geometry.attributes.position;
     const N = pos.count;
 
@@ -345,12 +345,14 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props 
   function fillOvertop(depth) {
     if (!overtopMesh || !weirTris || weirTris.length === 0 || !faceMeta) return;
     const EPS = 0.02;
-    // Überströmte Kanten ermitteln (beide Seiten ≥ Kronenhöhe → durchgehende Lamelle).
+    // Überströmte Kanten ermitteln: sobald MINDESTENS eine Seite (das Oberwasser) die Krone übersteigt
+    // → Überfall. (Trockene Seiten liegen unter der Krone → kein Fehlauslösen; ihr Vertex hat aDepth≈0
+    // und wird im Fragment ausgespart, sodass die Lamelle Richtung Unterwasser ausläuft.)
     const over = new Set();
     for (const [k, m] of faceMeta) {
       const sa = baseZ[m.va] + (depth[m.va] > 0 ? depth[m.va] : 0);
       const sb = baseZ[m.vb] + (depth[m.vb] > 0 ? depth[m.vb] : 0);
-      if (Math.min(sa, sb) >= m.crestLocal - EPS) over.add(k);
+      if (Math.max(sa, sb) >= m.crestLocal - EPS) over.add(k);
     }
 
     const srcPos = waterMesh.geometry.attributes.position.array;
@@ -393,10 +395,26 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props 
 
     const arr = pos.array;     // [x,y,z, x,y,z, …]
     const dArr = depthAttr.array;
+    const haveDims = ncols && nrows && ncols * nrows === N;
     for (let i = 0; i < N; i++) {
       const d = depth[i];
       dArr[i] = d;
-      arr[i * 3 + 2] = baseZ[i] + (d > 0 ? d : 0); // Wasseroberfläche = Terrain + Tiefe
+      if (d > WET) {
+        arr[i * 3 + 2] = baseZ[i] + d; // nasse Zelle: Wasseroberfläche = Terrain + Tiefe
+      } else if (haveDims) {
+        // Trockene Zelle: auf den HÖCHSTEN nassen Nachbar-Wasserspiegel anheben (kein „Vorhang");
+        // der trockene Teil wird im Fragment via vDepth-discard ohnehin ausgespart.
+        const col = i % ncols;
+        const row = (i - col) / ncols;
+        let s = -Infinity;
+        if (col > 0          && depth[i - 1]     > WET) s = Math.max(s, baseZ[i - 1]     + depth[i - 1]);
+        if (col < ncols - 1  && depth[i + 1]     > WET) s = Math.max(s, baseZ[i + 1]     + depth[i + 1]);
+        if (row > 0          && depth[i - ncols] > WET) s = Math.max(s, baseZ[i - ncols] + depth[i - ncols]);
+        if (row < nrows - 1  && depth[i + ncols] > WET) s = Math.max(s, baseZ[i + ncols] + depth[i + ncols]);
+        arr[i * 3 + 2] = (s > -Infinity) ? s : baseZ[i];
+      } else {
+        arr[i * 3 + 2] = baseZ[i];
+      }
     }
     pos.needsUpdate = true;
     depthAttr.needsUpdate = true;

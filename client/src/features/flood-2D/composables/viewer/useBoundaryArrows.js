@@ -17,17 +17,18 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
 
   function build(bciContent, t) {
     const scene = getScene();
-    if (!scene || !t || !bciContent) return;
 
-    // Vorherige Pfeile aufräumen
+    // Vorherige Pfeile IMMER zuerst aufräumen (auch bei leerem Input → Pfeile verschwinden).
     if (mesh) {
-      scene.remove(mesh);
+      if (scene) scene.remove(mesh);
       mesh.traverse(child => {
         if (child.geometry) child.geometry.dispose();
         if (child.material) child.material.dispose();
       });
       mesh = null;
     }
+
+    if (!scene || !t || !bciContent) return;
 
     // BCI-Zeilen parsen
     const lines = bciContent.split('\n');

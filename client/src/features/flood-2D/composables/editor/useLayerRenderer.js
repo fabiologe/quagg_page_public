@@ -3,6 +3,8 @@ import { watch, onUnmounted, ref } from 'vue';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
 import { RENDER_ORDER } from './renderLayers.js';
+import { InputGenerator } from '../../middleware/InputGenerator.js';
+import { useBoundaryArrows } from '../viewer/useBoundaryArrows.js';
 
 /**
  * useLayerRenderer
@@ -452,167 +454,43 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         console.log(`[LayerRenderer] Rendered ${buildingGroup.children.length} buildings, ${boundaryGroup.children.length} boundaries.`);
     };
 
-    // --- HYDRAULIC VISUALIZATION (INSTANCED) ---
-
-    // Cache Geometries & Materials
-    const userArrowShaftGeo = new THREE.CylinderGeometry(1, 1, 15, 8); // Height 15
-    const userArrowHeadGeo = new THREE.ConeGeometry(2.5, 5, 16);     // Height 5
-    // Rotate geometry to base state: Pointing UP (Y+)
-    userArrowShaftGeo.translate(0, 7.5, 0); // Center at base (0,0,0) -> (0,15,0)
-    userArrowHeadGeo.translate(0, 17.5, 0); // Base at 15 -> Tip at 20. Center at 17.5
-
-    // Materials (Shared)
-    const arrowMatBlue = new THREE.MeshBasicMaterial({ color: 0x0000FF });
-    const arrowMatRed = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
-
-    let instancedShaftMesh = null;
-    let instancedHeadMesh = null;
+    // --- HYDRAULIC / BOUNDARY VISUALIZATION ---
+    // Einheitliche Boundary-Pfeile über den GETEILTEN Renderer (gleicher Stil + NoData-Filter wie der
+    // Viewer). Quelle ist derselbe BCI wie für den Solver (InputGenerator.buildBci) → Pre = Post.
+    // Mesh wird in hydraulicGroup gehängt (Layer-Toggle bleibt funktionsfähig).
+    const boundaryArrows = useBoundaryArrows(() => hydraulicGroup, () => null);
 
     const renderHydraulics = () => {
-        // Clear previous instances
-        if (instancedShaftMesh) {
-            hydraulicGroup.remove(instancedShaftMesh);
-            instancedShaftMesh.dispose();
-            instancedShaftMesh = null;
-        }
-        if (instancedHeadMesh) {
-            hydraulicGroup.remove(instancedHeadMesh);
-            instancedHeadMesh.dispose();
-            instancedHeadMesh = null;
-        }
+        const grid = getActiveGrid();
+        const data = getActiveData();
+        if (!grid || !data) { boundaryArrows.build('', grid); return; }
 
-        // Also clear legacy children just in case
-        clearGroup(hydraulicGroup);
-
-        if (!hydraulicStore.assignments) return;
-
-        // 1. Collect all transforms & colors
-        const instances = []; // { position: Vector3, color: Color, dir: 1/-1 }
-
-        const getVisualConfig = (type) => {
-            if (!type) return null;
-            if (type.includes('INFLOW') || type.includes('BOUNDARY_INFLOW')) return { color: new THREE.Color(0x0000FF), dir: 1 };
-            if (type.includes('OUTFLOW') || type.includes('HFIX') || type.includes('SINK')) return { color: new THREE.Color(0xFF0000), dir: -1 };
-            return null;
+        // Szenario aus den Stores (gleiche Form wie im Flood2DSolverRunner) → BCI bauen.
+        const scenario = {
+            boundaries: geoStore.boundaries?.features || [],
+            manholes: (geoStore.nodes || []).map(n => ({
+                type: 'Feature',
+                id: n.id,
+                geometry: { type: 'Point', coordinates: [n.x, n.y] },
+                properties: { name: n.displayName || `Node_${n.id}` }
+            })),
+            assignments: hydraulicStore.assignments || {},
+            ganglinien: hydraulicStore.ganglinien || {},
+            globalBoundaryType: hydraulicStore.globalBoundaryType,
+            globalBoundaryHfix: hydraulicStore.globalBoundaryHfix,
         };
 
-        // Helper to push instance
-        const addInstance = (pos, viz) => {
-            instances.push({ pos, color: viz.color, dir: viz.dir });
-        };
-
-        // A. NODES
-        if (geoStore.nodes) {
-            geoStore.nodes.forEach(node => {
-                const config = hydraulicStore.assignments[node.id];
-                if (config) {
-                    const viz = getVisualConfig(config.type);
-                    if (viz) addInstance(getLocalPos(node.x, node.y, node.cover_level), viz);
-                }
-            });
+        let bci = '';
+        try {
+            const { bciContent } = new InputGenerator().buildBci(scenario, grid, data);
+            bci = bciContent || '';
+        } catch (e) {
+            console.warn('[LayerRenderer] buildBci preview failed:', e);
         }
 
-        // B. BOUNDARIES
-        if (geoStore.boundaries && geoStore.boundaries.features) {
-            const grid = getActiveGrid();
-            const gridData = getActiveData();
-
-            geoStore.boundaries.features.forEach(feature => {
-                const config = hydraulicStore.assignments[feature.id];
-                const viz = config ? getVisualConfig(config.type) : null;
-                if (!viz) return;
-
-                const type = feature.geometry.type;
-                if (type === 'LineString' || type === 'MultiLineString') {
-                    const lines = (type === 'LineString') ? [feature.geometry.coordinates] : feature.geometry.coordinates;
-
-                    lines.forEach(lineCoords => {
-                        if (!grid) {
-                            // Fallback
-                            lineCoords.forEach(pt => addInstance(getLocalPos(pt[0], pt[1], 0), viz));
-                            return;
-                        }
-                        const { cellsize, ncols, nrows, bounds } = grid;
-                        const spacing = cellsize || 1.0;
-
-                        for (let i = 0; i < lineCoords.length - 1; i++) {
-                            const start = lineCoords[i];
-                            const end = lineCoords[i + 1];
-                            const dx = end[0] - start[0];
-                            const dy = end[1] - start[1];
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            const steps = Math.max(1, Math.floor(dist / spacing));
-
-                            for (let step = 0; step <= steps; step++) {
-                                if (step === steps && i < lineCoords.length - 2) continue; // Avoid duplicate at joints
-
-                                const t = (steps > 0) ? step / steps : 0;
-                                const tx = start[0] + dx * t;
-                                const ty = start[1] + dy * t;
-
-                                // Sample Z
-                                let z = 0;
-                                if (gridData) {
-                                    const localX = tx - grid.center.x;
-                                    const inputZ = -(ty - grid.center.y);
-                                    const c = Math.round((localX + bounds.width / 2) / cellsize);
-                                    const r = Math.round((bounds.height / 2 - inputZ) / cellsize);
-                                    if (c >= 0 && c < ncols && r >= 0 && r < nrows) z = gridData[r * ncols + c] > -9000 ? gridData[r * ncols + c] : 0;
-                                }
-                                addInstance(getLocalPos(tx, ty, z), viz);
-                            }
-                        }
-                    });
-                }
-            });
-        }
-
-        if (instances.length === 0) return;
-
-        // 2. Create Instanced Meshes
-        // We use one material (white) and instanceColor to tint it? 
-        // Or MeshBasicMaterial with vertexColors? 
-        // InstancedMesh supports .setColorAt(i, color). Material usually needs vertexColors: true?
-        // Actually MeshBasicMaterial doesn't support vertex colors in the same way for Instancing without custom shader usually?
-        // Wait, standard Three.js InstancedMesh + MeshBasicMaterial works if we set color.
-
-        instancedShaftMesh = new THREE.InstancedMesh(userArrowShaftGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), instances.length);
-        instancedHeadMesh = new THREE.InstancedMesh(userArrowHeadGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), instances.length);
-
-        const dummy = new THREE.Object3D();
-
-        instances.forEach((inst, i) => {
-            dummy.position.copy(inst.pos);
-
-            // Lift arrows above terrain surface
-            if (inst.dir === -1) {
-                // OUTFLOW: arrow points down — raise base so tip touches terrain
-                dummy.position.y += 22;
-                dummy.rotation.set(Math.PI, 0, 0);
-            } else {
-                // INFLOW: arrow points up — small lift to clear surface
-                dummy.position.y += 2;
-                dummy.rotation.set(0, 0, 0);
-            }
-
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-
-            instancedShaftMesh.setMatrixAt(i, dummy.matrix);
-            instancedHeadMesh.setMatrixAt(i, dummy.matrix);
-
-            instancedShaftMesh.setColorAt(i, inst.color);
-            instancedHeadMesh.setColorAt(i, inst.color);
-        });
-
-        instancedShaftMesh.instanceMatrix.needsUpdate = true;
-        instancedShaftMesh.instanceColor.needsUpdate = true;
-        instancedHeadMesh.instanceMatrix.needsUpdate = true;
-        instancedHeadMesh.instanceColor.needsUpdate = true;
-
-        hydraulicGroup.add(instancedShaftMesh);
-        hydraulicGroup.add(instancedHeadMesh);
-        applyChildOrder(hydraulicGroup, RENDER_ORDER.BOUNDARY_ARROWS);
+        // Leerer BCI → vorhandene Pfeile entfernen.
+        if (!bci) { boundaryArrows.build('', grid); return; }
+        boundaryArrows.build(bci, grid);
     };
 
     // --- WEIR LOGIC ---
@@ -871,6 +749,13 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     watch(() => hydraulicStore.assignments, () => {
         renderHydraulics();
     }, { deep: true, immediate: true });
+
+    // Globale Boundary-Einstellung + gezeichnete Boundaries/Nodes → Pfeil-Vorschau aktualisieren
+    watch(() => [hydraulicStore.globalBoundaryType, hydraulicStore.globalBoundaryHfix], () => {
+        renderHydraulics();
+    });
+    watch(() => geoStore.boundaries, () => renderHydraulics(), { deep: true });
+    watch(() => geoStore.nodes, () => renderHydraulics(), { deep: true });
 
     // NEW: Watch Selection
     if (simStoreArg) {

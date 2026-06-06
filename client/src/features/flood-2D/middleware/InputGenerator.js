@@ -164,146 +164,10 @@ export class InputGenerator {
             }
         }
 
-        // 4. Boundaries (with Flux Splitting)
-        console.log("[InputGenerator] Pre-processing Assignments...");
-
-        // 4a. Pre-process Assignments (Handle Static Values → Synthetic Ganglinien)
-        const effectiveGanglinien = { ...scenario.ganglinien };
-        const effectiveAssignments = { ...scenario.assignments };
-
-        for (const [id, assign] of Object.entries(effectiveAssignments)) {
-            if (assign.type === 'INFLOW_CONSTANT' || assign.type === 'INFLOW_FIX' || assign.type === 'WATERLEVEL_FIX') {
-                if (assign.value !== undefined && assign.value !== null) {
-                    const val = parseFloat(assign.value);
-                    const shortId = id.split('-')[0] || id.substring(0, 8);
-                    const synthName = `const_${shortId}`;
-
-                    if (!effectiveGanglinien[synthName]) {
-                        effectiveGanglinien[synthName] = {
-                            name: synthName,
-                            data: [
-                                { t: 0, v: val },
-                                { t: (scenario.config?.sim_time || 3600) * 2, v: val }
-                            ]
-                        };
-                    }
-                    effectiveAssignments[id] = { ...assign, profileId: synthName };
-                }
-            }
-        }
-
-        // 4b. Combined BCI + BDY Generation (with Flux Splitting)
-        // This couples both files so BDY profiles can be scaled by cell count.
-        const combinedBoundaries = [
-            ...(scenario.boundaries || []),
-            ...(scenario.manholes || [])
-        ];
-
-        console.log(`[InputGenerator] Total BCI Entities: ${combinedBoundaries.length} (Boundaries: ${scenario.boundaries?.length || 0}, Manholes: ${scenario.manholes?.length || 0})`);
-
-        let { bciContent, bdyContent } = this.generateBoundaryFiles(
-            effectiveAssignments,
-            combinedBoundaries,
-            effectiveGanglinien,
-            header,
-            data
-        );
-
-        // Globale Domänenkanten-Randbedingung: gilt IMMER für den Domänenrand
-        // (zusätzlich zu manuellen Punkt-Boundaries), außer bei CLOSED.
-        // BUGFIX: früher nur als Fallback `if (!bciContent ...)` — dadurch blieben bei einer
-        // einzigen manuellen Zulauf-Boundary alle 4 Ränder geschlossen → Wasser konnte nicht
-        // abfließen und überflutete das Gebiet. Jetzt werden die freien Kanten immer ergänzt.
-        if (scenario?.globalBoundaryType && scenario.globalBoundaryType !== 'CLOSED') {
-            const xll  = header.xll  ?? header.xllcorner ?? 0;
-            const yll  = header.yll  ?? header.yllcorner ?? 0;
-            const xMax = xll + header.ncols * header.cellsize;
-            const yMax = yll + header.nrows * header.cellsize;
-            const type = scenario.globalBoundaryType;
-            const val  = type === 'HFIX' ? ` ${(scenario.globalBoundaryHfix ?? 0).toFixed(4)}` : '';
-
-            // Kanten-Richtungen, die bereits manuell belegt sind (z.B. ein FREE-Auslauf am Rand),
-            // nicht erneut definieren — sonst überlappen sich Segmente auf derselben Kante.
-            const existingLines = bciContent ? bciContent.split('\n') : [];
-            const dirTaken = (d) => existingLines.some(l => l.trimStart().startsWith(d + ' '));
-
-            // Eine rechteckige Domänenkante nur schreiben, wenn diese Perimeter-Reihe/-Spalte
-            // tatsächlich Daten enthält. Liegt die Kante komplett im NoData (DEM füllt das Raster
-            // nicht aus), ist die N/S/E/W-Zeile nutzlos und erzeugt nur einen verwirrenden
-            // Boundary-"Ring" im NoData — die NoData-Front-Auslässe (s.u.) decken die echte Grenze ab.
-            // data ist bottom-up (row 0 = Süden).
-            const ND0 = -9990;
-            const edgeHasData = (d) => {
-                if (d === 'S') { for (let c = 0; c < header.ncols; c++) if (data[c] > ND0) return true; return false; }
-                if (d === 'N') { const base = (header.nrows - 1) * header.ncols; for (let c = 0; c < header.ncols; c++) if (data[base + c] > ND0) return true; return false; }
-                if (d === 'W') { for (let r = 0; r < header.nrows; r++) if (data[r * header.ncols] > ND0) return true; return false; }
-                if (d === 'E') { for (let r = 0; r < header.nrows; r++) if (data[r * header.ncols + (header.ncols - 1)] > ND0) return true; return false; }
-                return false;
-            };
-
-            let edges = '';
-            if (!dirTaken('N') && edgeHasData('N')) edges += `N ${xll.toFixed(2)} ${xMax.toFixed(2)} ${type}${val}\n`;
-            if (!dirTaken('S') && edgeHasData('S')) edges += `S ${xll.toFixed(2)} ${xMax.toFixed(2)} ${type}${val}\n`;
-            if (!dirTaken('E') && edgeHasData('E')) edges += `E ${yll.toFixed(2)} ${yMax.toFixed(2)} ${type}${val}\n`;
-            if (!dirTaken('W') && edgeHasData('W')) edges += `W ${yll.toFixed(2)} ${yMax.toFixed(2)} ${type}${val}\n`;
-
-            if (edges) {
-                bciContent = (bciContent || '') + edges;
-                console.log(`[InputGenerator] Globale Randbedingung (${type}): freie Domänenkanten ergänzt (zusätzlich zu ${existingLines.filter(Boolean).length} manuellen BCI-Zeilen).`);
-            }
-
-            // Zusätzlicher Auslauf an der NoData-Front:
-            // Reale DEMs füllen das Raster oft nicht komplett — dann liegen die N/S/E/W-Ränder
-            // in NoData und das Wasser staut sich an der INNEREN Terrain-Kante (genau der Befund:
-            // "Boundary außerhalb gesetzt, staut im Raster"). Wir setzen daher an jeder gültigen
-            // Zelle, die an "äußeres" (mit dem Domänenrand verbundenes) NoData grenzt, einen
-            // Punkt-Auslauf. Innenliegende NoData-Löcher (z.B. Gebäude) werden NICHT als Auslauf
-            // behandelt.
-            const ncols = header.ncols, nrows = header.nrows, cs = header.cellsize;
-            const ND = -9990;
-            const total = ncols * nrows;
-
-            // 1) Außen-NoData per Flood-Fill vom Rasterrand markieren
-            const exterior = new Uint8Array(total);
-            const stack = [];
-            const seedExt = (c, r) => {
-                if (c < 0 || c >= ncols || r < 0 || r >= nrows) return;
-                const k = r * ncols + c;
-                if (exterior[k] || data[k] > ND) return; // belegt oder gültige Zelle → kein Außen-NoData
-                exterior[k] = 1; stack.push(k);
-            };
-            for (let c = 0; c < ncols; c++) { seedExt(c, 0); seedExt(c, nrows - 1); }
-            for (let r = 0; r < nrows; r++) { seedExt(0, r); seedExt(ncols - 1, r); }
-            while (stack.length) {
-                const k = stack.pop();
-                const c = k % ncols, r = (k - c) / ncols;
-                seedExt(c - 1, r); seedExt(c + 1, r); seedExt(c, r - 1); seedExt(c, r + 1);
-            }
-
-            // 2) Auslauf an gültigen Innenzellen, die an Außen-NoData grenzen
-            const isExt = (c, r) => (c >= 0 && c < ncols && r >= 0 && r < nrows && exterior[r * ncols + c] === 1);
-            let frontier = '';
-            let frontierCount = 0;
-            const FRONTIER_CAP = 50000;
-            for (let r = 1; r < nrows - 1 && frontierCount < FRONTIER_CAP; r++) {
-                for (let c = 1; c < ncols - 1; c++) {
-                    const z = data[r * ncols + c]; // data ist bottom-up
-                    if (!(z > ND)) continue;
-                    if (!(isExt(c - 1, r) || isExt(c + 1, r) || isExt(c, r - 1) || isExt(c, r + 1))) continue;
-                    const wx = xll + (c + 0.5) * cs;
-                    const wy = yll + (r + 0.5) * cs;
-                    const hfix = type === 'HFIX'
-                        ? (scenario.globalBoundaryHfix ?? 0)
-                        : (z - FREE_OUTLET_HFIX_OFFSET); // FREE → kritische Tiefe via HFIX am Terrain
-                    frontier += `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix.toFixed(4)}\n`;
-                    frontierCount++;
-                }
-            }
-            if (frontier) {
-                bciContent = (bciContent || '') + frontier;
-                console.log(`[InputGenerator] Globale Randbedingung (${type}): ${frontierCount} Auslauf-Zellen an der NoData-Front ergänzt.`);
-            }
-        }
+        // 4. Boundaries (with Flux Splitting) — BCI + BDY (manuelle Boundaries/Manholes + globale
+        // Domänen-Randbedingung). Gemeinsame Quelle für Solver UND Editor-Pfeilvorschau (buildBci)
+        // → Pre/Post-Processing-Pfeile divergieren nicht.
+        const { bciContent, bdyContent } = this.buildBci(scenario, header, data);
 
         let hasBdy = false;
         if (bdyContent) {
@@ -392,8 +256,147 @@ export class InputGenerator {
     }
 
     /**
+     * Baut den vollständigen BCI-Inhalt (manuelle Boundaries/Manholes + globale Domänen-Randbedingung
+     * inkl. NoData-Frontier-Auslässen) sowie den BDY-Inhalt. EINZIGE Quelle der BCI-Wahrheit:
+     * wird vom Solver-Pfad (processScenario) UND von der Editor-Pfeil-Vorschau verwendet, damit
+     * Pre-/Post-Processing-Pfeile identisch sind.
+     *
+     * @param {object} scenario
+     * @param {object} header  Raster-Header (ncols/nrows/cellsize/xll[corner]/yll[corner])
+     * @param {Float32Array} data  Höhen, bottom-up (row 0 = Süden), Gebäude ggf. als NoData maskiert
+     * @param {object} assignments  (vor-prozessierte) Zuordnungen
+     * @param {object} ganglinien   (vor-prozessierte) Ganglinien
+     * @returns {{ bciContent: string, bdyContent: string }}
+     */
+    buildBci(scenario, header, data) {
+        // Pre-process Assignments: statische Werte → synthetische Ganglinien (sonst kein BDY-Profil).
+        const ganglinien = { ...scenario.ganglinien };
+        const assignments = { ...scenario.assignments };
+        for (const [id, assign] of Object.entries(assignments)) {
+            if (assign.type === 'INFLOW_CONSTANT' || assign.type === 'INFLOW_FIX' || assign.type === 'WATERLEVEL_FIX') {
+                if (assign.value !== undefined && assign.value !== null) {
+                    const val = parseFloat(assign.value);
+                    const shortId = id.split('-')[0] || id.substring(0, 8);
+                    const synthName = `const_${shortId}`;
+                    if (!ganglinien[synthName]) {
+                        ganglinien[synthName] = {
+                            name: synthName,
+                            data: [
+                                { t: 0, v: val },
+                                { t: (scenario.config?.sim_time || 3600) * 2, v: val }
+                            ]
+                        };
+                    }
+                    assignments[id] = { ...assign, profileId: synthName };
+                }
+            }
+        }
+
+        const combinedBoundaries = [
+            ...(scenario.boundaries || []),
+            ...(scenario.manholes || [])
+        ];
+
+        console.log(`[InputGenerator] Total BCI Entities: ${combinedBoundaries.length} (Boundaries: ${scenario.boundaries?.length || 0}, Manholes: ${scenario.manholes?.length || 0})`);
+
+        let { bciContent, bdyContent } = this.generateBoundaryFiles(
+            assignments,
+            combinedBoundaries,
+            ganglinien,
+            header,
+            data
+        );
+
+        // Globale Domänenkanten-Randbedingung: gilt IMMER für den Domänenrand
+        // (zusätzlich zu manuellen Punkt-Boundaries), außer bei CLOSED.
+        if (scenario?.globalBoundaryType && scenario.globalBoundaryType !== 'CLOSED') {
+            const xll  = header.xll  ?? header.xllcorner ?? 0;
+            const yll  = header.yll  ?? header.yllcorner ?? 0;
+            const xMax = xll + header.ncols * header.cellsize;
+            const yMax = yll + header.nrows * header.cellsize;
+            const type = scenario.globalBoundaryType;
+            const val  = type === 'HFIX' ? ` ${(scenario.globalBoundaryHfix ?? 0).toFixed(4)}` : '';
+
+            // Kanten-Richtungen, die bereits manuell belegt sind, nicht erneut definieren.
+            const existingLines = bciContent ? bciContent.split('\n') : [];
+            const dirTaken = (d) => existingLines.some(l => l.trimStart().startsWith(d + ' '));
+
+            // Eine rechteckige Domänenkante nur schreiben, wenn diese Perimeter-Reihe/-Spalte
+            // tatsächlich Daten enthält (data ist bottom-up, row 0 = Süden).
+            const ND0 = -9990;
+            const edgeHasData = (d) => {
+                if (d === 'S') { for (let c = 0; c < header.ncols; c++) if (data[c] > ND0) return true; return false; }
+                if (d === 'N') { const base = (header.nrows - 1) * header.ncols; for (let c = 0; c < header.ncols; c++) if (data[base + c] > ND0) return true; return false; }
+                if (d === 'W') { for (let r = 0; r < header.nrows; r++) if (data[r * header.ncols] > ND0) return true; return false; }
+                if (d === 'E') { for (let r = 0; r < header.nrows; r++) if (data[r * header.ncols + (header.ncols - 1)] > ND0) return true; return false; }
+                return false;
+            };
+
+            let edges = '';
+            if (!dirTaken('N') && edgeHasData('N')) edges += `N ${xll.toFixed(2)} ${xMax.toFixed(2)} ${type}${val}\n`;
+            if (!dirTaken('S') && edgeHasData('S')) edges += `S ${xll.toFixed(2)} ${xMax.toFixed(2)} ${type}${val}\n`;
+            if (!dirTaken('E') && edgeHasData('E')) edges += `E ${yll.toFixed(2)} ${yMax.toFixed(2)} ${type}${val}\n`;
+            if (!dirTaken('W') && edgeHasData('W')) edges += `W ${yll.toFixed(2)} ${yMax.toFixed(2)} ${type}${val}\n`;
+
+            if (edges) {
+                bciContent = (bciContent || '') + edges;
+                console.log(`[InputGenerator] Globale Randbedingung (${type}): freie Domänenkanten ergänzt (zusätzlich zu ${existingLines.filter(Boolean).length} manuellen BCI-Zeilen).`);
+            }
+
+            // Zusätzlicher Auslauf an der NoData-Front (DEM füllt das Raster oft nicht komplett):
+            // an jeder gültigen Zelle, die an "äußeres" (mit dem Domänenrand verbundenes) NoData grenzt.
+            const ncols = header.ncols, nrows = header.nrows, cs = header.cellsize;
+            const ND = -9990;
+            const total = ncols * nrows;
+
+            // 1) Außen-NoData per Flood-Fill vom Rasterrand markieren
+            const exterior = new Uint8Array(total);
+            const stack = [];
+            const seedExt = (c, r) => {
+                if (c < 0 || c >= ncols || r < 0 || r >= nrows) return;
+                const k = r * ncols + c;
+                if (exterior[k] || data[k] > ND) return; // belegt oder gültige Zelle → kein Außen-NoData
+                exterior[k] = 1; stack.push(k);
+            };
+            for (let c = 0; c < ncols; c++) { seedExt(c, 0); seedExt(c, nrows - 1); }
+            for (let r = 0; r < nrows; r++) { seedExt(0, r); seedExt(ncols - 1, r); }
+            while (stack.length) {
+                const k = stack.pop();
+                const c = k % ncols, r = (k - c) / ncols;
+                seedExt(c - 1, r); seedExt(c + 1, r); seedExt(c, r - 1); seedExt(c, r + 1);
+            }
+
+            // 2) Auslauf an gültigen Innenzellen, die an Außen-NoData grenzen
+            const isExt = (c, r) => (c >= 0 && c < ncols && r >= 0 && r < nrows && exterior[r * ncols + c] === 1);
+            let frontier = '';
+            let frontierCount = 0;
+            const FRONTIER_CAP = 50000;
+            for (let r = 1; r < nrows - 1 && frontierCount < FRONTIER_CAP; r++) {
+                for (let c = 1; c < ncols - 1; c++) {
+                    const z = data[r * ncols + c]; // data ist bottom-up
+                    if (!(z > ND)) continue;
+                    if (!(isExt(c - 1, r) || isExt(c + 1, r) || isExt(c, r - 1) || isExt(c, r + 1))) continue;
+                    const wx = xll + (c + 0.5) * cs;
+                    const wy = yll + (r + 0.5) * cs;
+                    const hfix = type === 'HFIX'
+                        ? (scenario.globalBoundaryHfix ?? 0)
+                        : (z - FREE_OUTLET_HFIX_OFFSET); // FREE → kritische Tiefe via HFIX am Terrain
+                    frontier += `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix.toFixed(4)}\n`;
+                    frontierCount++;
+                }
+            }
+            if (frontier) {
+                bciContent = (bciContent || '') + frontier;
+                console.log(`[InputGenerator] Globale Randbedingung (${type}): ${frontierCount} Auslauf-Zellen an der NoData-Front ergänzt.`);
+            }
+        }
+
+        return { bciContent, bdyContent };
+    }
+
+    /**
      * Combined BCI + BDY Generation with Flux Splitting.
-     * 
+     *
      * LISFLOOD QVAR expects flow per unit width (m²/s).
      * When a boundary has N cells, each cell independently receives the profile value.
      * So we must divide the user's total Q (m³/s) by (N × cellsize) to get per-unit-width.
