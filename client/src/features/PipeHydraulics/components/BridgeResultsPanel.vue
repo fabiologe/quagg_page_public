@@ -30,8 +30,14 @@
         <span v-if="r.isUWActive" class="state-tag uw-tag">
           Eingestaut · &Delta;h = {{ r.h_drive.toFixed(2) }} m
         </span>
-        <span v-if="r.frWarn" class="state-tag fr-warn-tag">
-          Fr = {{ r.Fr1.toFixed(2) }} ≥ 0.8
+        <span v-if="r.frWarn && !r.chokeWarn" class="state-tag fr-warn-tag">
+          Fr = {{ Math.max(r.Fr1, r.Fr_open).toFixed(2) }} ≥ 0.8
+        </span>
+        <span v-if="r.chokeWarn" class="state-tag choke-tag">
+          Fr<sub>öffn.</sub> = {{ r.Fr_open.toFixed(2) }} ≥ 1 — kritischer Abfluss in der Öffnung
+        </span>
+        <span v-if="r.weirSubmerged" class="state-tag uw-tag">
+          Überfall eingestaut · σ = {{ r.weirSigma.toFixed(2) }}
         </span>
         <span class="state-formula">{{ stateFormula }}</span>
       </div>
@@ -53,7 +59,7 @@
               <strong>{{ (r.isSubmerged ? r.A_bridge : r.A1_total).toFixed(2) }}</strong>
               <em>m²</em>
             </div>
-            <div class="m" v-if="r.isSubmerged && store.nPiers > 0">
+            <div class="m" v-if="store.nPiers > 0 && r.hasBridge">
               <span>φ</span><strong>{{ (r.phi * 100).toFixed(1) }}%</strong><em>&nbsp;</em>
             </div>
             <div class="m" v-if="r.isSubmerged && store.nPiers > 0">
@@ -64,8 +70,18 @@
             </div>
             <div class="m">
               <span>Fr</span>
-              <strong :class="{ 'fr-warn-val': r.frWarn }">{{ r.Fr1.toFixed(3) }}</strong>
+              <strong :class="{ 'fr-warn-val': r.Fr1 >= 0.8 }">{{ r.Fr1.toFixed(3) }}</strong>
               <em>–</em>
+            </div>
+            <div class="m" v-if="!r.isSubmerged && r.hasBridge && r.Fr_open > 0">
+              <span>Fr_öffn.</span>
+              <strong :class="{ 'fr-warn-val': r.Fr_open >= 0.8 }">{{ r.Fr_open.toFixed(3) }}</strong>
+              <em>–</em>
+            </div>
+            <div class="m" v-if="!r.isSubmerged && r.dh_pier > 0.0005">
+              <span>Δh_P</span>
+              <strong>{{ (r.dh_pier * 100).toFixed(1) }}</strong>
+              <em>cm Pfeilerstau</em>
             </div>
             <div class="m" v-if="r.isSubmerged">
               <span>Q_Orifice</span><strong>{{ r.Q_orifice.toFixed(3) }}</strong><em>m³/s</em>
@@ -88,6 +104,9 @@
               <div class="m"><span>Q_Poleni</span><strong>{{ r.Q_poleni.toFixed(3) }}</strong><em>m³/s</em></div>
               <div class="m"><span>A₂</span><strong>{{ r.A2_total.toFixed(2) }}</strong><em>m²</em></div>
               <div class="m"><span>v̄₂</span><strong>{{ r.v2_mean.toFixed(2) }}</strong><em>m/s</em></div>
+              <div class="m" v-if="r.weirSubmerged">
+                <span>σ</span><strong>{{ r.weirSigma.toFixed(3) }}</strong><em>Rückstau</em>
+              </div>
             </div>
           </template>
           <div v-else class="inactive-note">WSP ≤ BOK</div>
@@ -166,7 +185,8 @@
                 <span v-if="row.hasOverflow"      class="sbadge overflow">Z3</span>
                 <span v-else-if="row.isSubmerged" class="sbadge pressure">Z2</span>
                 <span v-else                      class="sbadge free">Z1</span>
-                <span v-if="row.frWarn"           class="sbadge fr-warn">Fr⚠</span>
+                <span v-if="row.chokeWarn"        class="sbadge choke">krit</span>
+                <span v-else-if="row.frWarn"      class="sbadge fr-warn">Fr⚠</span>
               </td>
             </tr>
           </tbody>
@@ -462,4 +482,6 @@ const stateBannerClass = computed(() => STATE_INFO[r.value.state]?.cls   ?? '')
 
 .fr-warn-tag { background: #fde68a; color: #92400e; border: 1px solid #f59e0b; }
 .fr-warn-val { color: #b45309 !important; font-weight: 800 !important; }
+.choke-tag   { background: #fecaca; color: #991b1b; border: 1px solid #f87171; }
+.sbadge.choke { background: #fecaca; color: #991b1b; margin-left: 2px; }
 </style>

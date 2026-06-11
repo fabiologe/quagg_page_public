@@ -78,14 +78,19 @@ function serializeGeoFields(geoStore) {
  * @param {Object} geoStore  Der echte GeoStore (Vektor-Geometrien werden via GEO_FIELDS gelesen).
  * @param {Object} [opts]    { bciContent, terrainOverride } — terrainOverride z.B. das "gebackene" Terrain.
  */
-export async function prepareResultData(simStore, geoStore, { bciContent = null, terrainOverride = null } = {}) {
+/**
+ * Baut das Result-Datenobjekt (Terrain + Geo + Frames als Typed-Arrays). EINE Quelle, geteilt von der
+ * IndexedDB-Bridge (prepareResultData) UND dem Projekt-Datei-Export (useProjectFile.saveProject).
+ * @returns {object|null} resultData oder null, wenn kein Terrain vorhanden ist.
+ */
+export function buildResultData(simStore, geoStore, { bciContent = null, terrainOverride = null } = {}) {
     const rawTerrain = toRaw(terrainOverride ?? geoStore.terrain);
     const geoSerialized = serializeGeoFields(geoStore);
     console.log('[ResultBridge] serialize geo:', GEO_FIELDS.map(f => `${f}=${geoStore[f]?.length ?? (geoStore[f]?.features?.length ?? '–')}`).join(' '));
 
     if (!rawTerrain || !rawTerrain.gridData) {
         console.warn('[ResultBridge] No terrain data available');
-        return false;
+        return null;
     }
 
     // Serialize depth frames
@@ -163,12 +168,19 @@ export async function prepareResultData(simStore, geoStore, { bciContent = null,
         bciContent: bciContent
     };
 
+    return resultData;
+}
+
+/** Serialisiert simStore + geoStore in die IndexedDB (Producer für den Result-Viewer). */
+export async function prepareResultData(simStore, geoStore, opts = {}) {
+    const resultData = buildResultData(simStore, geoStore, opts);
+    if (!resultData) return false;
     try {
         await writeData(DATA_KEY, resultData);
         console.log('[ResultBridge] Data stored in IndexedDB:', {
-            terrainSize: rawTerrain.ncols + 'x' + rawTerrain.nrows,
-            frameCount: Object.keys(serializedFrames).length,
-            maxDepth
+            terrainSize: resultData.terrain.ncols + 'x' + resultData.terrain.nrows,
+            frameCount: Object.keys(resultData.frames).length,
+            maxDepth: resultData.maxWaterDepth
         });
         return true;
     } catch (err) {

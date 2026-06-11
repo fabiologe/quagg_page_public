@@ -13,13 +13,35 @@
     <div class="separator"></div>
 
     <!-- Import / Export -->
-    <ToolButton 
+    <ToolButton
       @click="$emit('open-import')"
       :active="false"
       title="Import Data"
     >
         <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
     </ToolButton>
+
+    <!-- Projekt speichern (.flood2d) -->
+    <ToolButton
+      @click="onSaveProject"
+      :active="false"
+      :title="hasResults ? 'Projekt speichern (Pre + optional Ergebnisse)' : 'Projekt speichern (.flood2d)'"
+    >
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3h11l3 3v15a0 0 0 01 0 0H5a0 0 0 01 0 0V3z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 3v5h7M8 21v-7h8v7"></path></svg>
+    </ToolButton>
+
+    <!-- Projekt laden (.flood2d) -->
+    <ToolButton
+      @click="onLoadProjectClick"
+      :active="false"
+      title="Projekt laden (.flood2d)"
+    >
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v5m0 0l-2-2m2 2l2-2"></path></svg>
+    </ToolButton>
+    <input ref="fileInput" type="file" accept=".flood2d,.zip" style="display:none" @change="onProjectFileChange" />
+
+    <!-- Lade-Overlay für Speichern/Laden -->
+    <LoadingOverlay :visible="projectBusy" :label="progressLabel" :percent="progressPercent" />
 
     <div class="separator"></div>
 
@@ -211,9 +233,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, nextTick } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore.js';
+import { saveProject, loadProject, downloadBlob } from '../../composables/useProjectFile.js';
 import ToolButton from '../tools/ToolButton.vue'; // Import Component
+import LoadingOverlay from '../common/LoadingOverlay.vue';
 
 const props = defineProps({
   currentAppMode: { type: String, default: 'SETUP' },
@@ -222,6 +246,68 @@ const props = defineProps({
 // We don't use props for activeTool anymore, we sync with Store
 const store = useSimulationStore();
 const activeTool = computed(() => store.activeTool);
+
+// ── Projekt speichern / laden (.flood2d) ────────────────────────────────────
+const projectBusy = ref(false);
+const progressLabel = ref('');
+const progressPercent = ref(null);
+const fileInput = ref(null);
+const hasResults = computed(() => (store.totalFrameCount || 0) > 0);
+
+const onProgress = (p) => { progressLabel.value = p.label; progressPercent.value = p.percent; };
+// Garantiert, dass das Overlay gerendert ist, bevor ein synchroner Schritt blockiert.
+const nextPaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+const onSaveProject = async () => {
+  if (projectBusy.value) return;
+  let includeResults = false;
+  if (hasResults.value) {
+    includeResults = window.confirm(
+      'Simulationsergebnisse mit in die Datei packen?\n\n' +
+      'OK = mit Ergebnissen (größer)\nAbbrechen = nur Projekt (Pre-Processing)'
+    );
+  }
+  projectBusy.value = true;
+  progressLabel.value = 'Projekt wird gespeichert…';
+  progressPercent.value = null;
+  await nextTick();
+  await nextPaint();
+  try {
+    const blob = await saveProject({ includeResults, onProgress });
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+    downloadBlob(blob, `flood2d_${stamp}.flood2d`);
+  } catch (e) {
+    console.error('[Projekt] Speichern fehlgeschlagen:', e);
+    alert('Speichern fehlgeschlagen: ' + (e?.message || e));
+  } finally {
+    projectBusy.value = false;
+  }
+};
+
+const onLoadProjectClick = () => { if (!projectBusy.value) fileInput.value?.click(); };
+
+const onProjectFileChange = async (ev) => {
+  const file = ev.target.files?.[0];
+  ev.target.value = ''; // erlaubt erneutes Laden derselben Datei
+  if (!file) return;
+  projectBusy.value = true;
+  progressLabel.value = 'Projekt wird geladen…';
+  progressPercent.value = null;
+  await nextTick();
+  await nextPaint();
+  try {
+    const info = await loadProject(file, onProgress);
+    console.log('[Projekt] geladen:', info);
+    if (info.hasResults) {
+      alert(`Projekt geladen — inkl. ${info.frameCount} Ergebnis-Frames. Öffne den 3D-Viewer, um sie anzusehen.`);
+    }
+  } catch (e) {
+    console.error('[Projekt] Laden fehlgeschlagen:', e);
+    alert('Laden fehlgeschlagen: ' + (e?.message || e));
+  } finally {
+    projectBusy.value = false;
+  }
+};
 
 const emit = defineEmits(['set-mode', 'set-view', 'set-tool', 'open-import', 'open-bathymetry']);
 

@@ -94,6 +94,9 @@
         <pattern id="ground-dots" patternUnits="userSpaceOnUse" width="6" height="6">
           <circle cx="3" cy="3" r="1" fill="#9ca3af" opacity="0.4" />
         </pattern>
+        <pattern id="inactive-hatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(-45)">
+          <line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" stroke-width="1.5" opacity="0.5" />
+        </pattern>
       </defs>
 
       <!-- Plot-Hintergrund -->
@@ -102,9 +105,10 @@
       <!-- kSt-Zonen Visualisierung (gefärbte Streifenboden) -->
       <g clip-path="url(#plot-area-clip)">
         <g v-for="zone in kstBands" :key="zone.id">
-          <!-- Flächenfüllung -->
+          <!-- Flächenfüllung (Totwasser: graue Schraffur statt Zonenfarbe) -->
           <rect :x="zone.svgX1" :y="PAD.top" :width="zone.svgX2 - zone.svgX1" :height="plotH"
-            :fill="zone.color" opacity="0.07" />
+            :fill="zone.inactive ? 'url(#inactive-hatch)' : zone.color"
+            :opacity="zone.inactive ? 0.5 : 0.07" />
           <!-- Linke Grenzlinie (immer angezeigt, aber nur für explizite Grenzen draggable) -->
           <line :x1="zone.svgX1" :y1="PAD.top" :x2="zone.svgX1" :y2="PAD.top + plotH"
             :stroke="zone.color" stroke-width="1" stroke-dasharray="5,4" opacity="0.5" />
@@ -244,8 +248,8 @@
       <!-- kSt-Zonen Labels -->
       <g v-for="zone in kstBands" :key="'kl'+zone.id">
         <text :x="(zone.svgX1 + zone.svgX2) / 2" :y="PAD.top + plotH - 5"
-          text-anchor="middle" font-size="10" :fill="zone.color" font-weight="600">
-          {{ zone.label }} kSt={{ zone.kst }}
+          text-anchor="middle" font-size="10" :fill="zone.inactive ? '#94a3b8' : zone.color" font-weight="600">
+          {{ zone.label }} {{ zone.inactive ? '· Totwasser' : 'kSt=' + zone.kst }}
         </text>
       </g>
 
@@ -516,6 +520,7 @@ const kstBands = computed(() => {
     const xR = z.xRight == null ?  hw : z.xRight
     return {
       id: z.id, kst: z.kst, color: z.color, label: z.label,
+      inactive: !!z.inactive,
       svgX1: Math.max(PAD.left, wx(xL)),
       svgX2: Math.min(PAD.left + plotW.value, wx(xR)),
       hasLeft:  z.xLeft  != null,

@@ -54,6 +54,23 @@
           @toggle-color-mode="onToggleKgColorMode"
           @select-kg="onSelectKg"
         />
+        <IfcVolumeTab
+          v-else-if="activeTab === 'volume'"
+          :result="quantityResult"
+          :loading="quantityLoading"
+          @refresh="recomputeQuantities"
+          @select-category="onSelectCategory"
+        />
+        <IfcCountTab
+          v-else-if="activeTab === 'count'"
+          :result="quantityResult"
+          :loading="quantityLoading"
+          @refresh="recomputeQuantities"
+          @select-category="onSelectCategory"
+        />
+        <IfcPauschalTab
+          v-else-if="activeTab === 'pauschal'"
+        />
         <div v-else-if="activeTab === 'quality'" class="placeholder">
           <p>✅ Karte 3 — BIM-Qualität via IDS</p>
           <p class="hint">Kommt im Sprint danach (1.3).</p>
@@ -68,8 +85,12 @@ import { ref, computed, onMounted, watch } from 'vue';
 import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import IfcAreaSchedule from './IfcAreaSchedule.vue';
 import IfcKgEditor     from './IfcKgEditor.vue';
+import IfcVolumeTab    from './IfcVolumeTab.vue';
+import IfcCountTab     from './IfcCountTab.vue';
+import IfcPauschalTab  from './IfcPauschalTab.vue';
 import { classifyDin277 } from '../services/Din277Classifier.js';
 import { classifyKg }     from '../services/KgClassifier.js';
+import { summarizeQuantities } from '../services/QuantitySummary.js';
 import { KG_DEFAULT_RULES, kgColor } from '../services/Din276Defaults.js';
 import { repo } from '../services/RepoFacade.js';
 
@@ -88,9 +109,12 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const tabs = [
-  { id: 'areas',   icon: '📐', label: 'Flächen',        disabled: false },
-  { id: 'kg',      icon: '📦', label: 'Kostengruppen',  disabled: false },
-  { id: 'quality', icon: '✅', label: 'BIM-Qualität',    disabled: true },
+  { id: 'areas',    icon: '📐', label: 'Flächen',       disabled: false },
+  { id: 'kg',       icon: '🏷️', label: 'Kostengruppen', disabled: false },
+  { id: 'volume',   icon: '📦', label: 'Volumen',       disabled: false },
+  { id: 'count',    icon: '🔢', label: 'Stück',         disabled: false },
+  { id: 'pauschal', icon: '💰', label: 'Pauschal',      disabled: false },
+  { id: 'quality',  icon: '✅', label: 'BIM-Qualität',  disabled: true },
 ];
 const activeTab = ref('areas');
 
@@ -179,6 +203,44 @@ function onSelectKg(kgCode) {
   if (first) props.zoomToElement?.(first.modelId, first.localId);
 }
 
+// ── Volumen + Stück (shared QuantitySummary) ────────────────────────────
+const quantityResult  = ref(null);
+const quantityLoading = ref(false);
+
+async function recomputeQuantities() {
+  if (!props.getCategoryGroups || !props.getFragmentsList) return;
+  quantityLoading.value = true;
+  try {
+    quantityResult.value = await summarizeQuantities({
+      categoryGroups: props.getCategoryGroups(),
+      fragmentsList:  props.getFragmentsList(),
+      perElementKg:   kgResult.value?.perElement ?? null,
+    });
+  } catch (e) {
+    console.error('[Cockpit] quantity summary failed', e);
+    quantityResult.value = null;
+  } finally {
+    quantityLoading.value = false;
+  }
+}
+
+function onSelectCategory(category) {
+  // Zoom to first element of the selected category — same pattern as KG selection.
+  const groups = props.getCategoryGroups?.() ?? [];
+  const group  = groups.find(g => g.name === category);
+  if (!group) return;
+  group.groupData.get().then(map => {
+    const entries = map instanceof Map ? [...map.entries()] : Object.entries(map);
+    for (const [modelId, rawIds] of entries) {
+      const localIds = Array.isArray(rawIds) ? rawIds : (rawIds instanceof Set ? [...rawIds] : null);
+      if (localIds?.length) {
+        props.zoomToElement?.(modelId, localIds[0]);
+        return;
+      }
+    }
+  }).catch(() => { /* swallow */ });
+}
+
 // ── Card 1: DIN 277 areas ────────────────────────────────────────────────
 async function recomputeAreas() {
   if (!props.getCategoryGroups || !props.getFragmentsList || !props.getFragmentsManager) return;
@@ -219,12 +281,18 @@ async function onOverrideClass({ globalId, classCode }) {
 onMounted(async () => {
   await Promise.all([loadOverrides(), loadKgPersisted()]);
   recomputeAreas();
-  recomputeKg();
+  // KG zuerst — perElement-Map wird vom Volumen/Stück-Service als Filter genutzt
+  await recomputeKg();
+  recomputeQuantities();
 });
 
 // Re-apply KG colours when the user switches into the KG tab
 watch(activeTab, (t) => {
   if (t === 'kg' && kgColorMode.value) applyKgColors();
+  // Quantity-Tabs: nachladen falls noch leer (z.B. wenn Initial-Compute fehlschlug)
+  if ((t === 'volume' || t === 'count') && !quantityResult.value && !quantityLoading.value) {
+    recomputeQuantities();
+  }
 });
 </script>
 

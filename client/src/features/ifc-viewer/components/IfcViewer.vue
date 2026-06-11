@@ -371,7 +371,8 @@
 <script setup>
 import { ref, computed, shallowRef, onMounted, onBeforeUnmount } from 'vue';
 import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
-import { IfcEngine } from '../services/IfcEngine.js';
+import { IfcEngine }            from '../services/IfcEngine.js';
+import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import IfcLayerPanel      from './IfcLayerPanel.vue';
 import IfcPdfExportModal  from './IfcPdfExportModal.vue';
@@ -442,6 +443,7 @@ let _rafId       = null;
 let _mouseDownAt = null;
 let _hoverTimer  = null;
 let _lastMouse   = null;
+let _selection   = null;  // IfcSelectionHandler — übernimmt Click/Hover/Marquee
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -451,10 +453,33 @@ onMounted(async () => {
   engine.value = new IfcEngine();
   await engine.value.init(canvasRef.value);
 
-  canvasRef.value.addEventListener('mousemove',  onMouseMove);
-  canvasRef.value.addEventListener('mouseleave', onMouseLeave);
+  // SelectionHandler übernimmt Click/Hover/Marquee. Coord-Bar-Update bleibt in Vue
+  // (an mousemove gehängt) — der Handler triggert nur den Hover-Raycast.
+  _selection = new IfcSelectionHandler({ engine: engine.value, canvas: canvasRef.value });
+  _selection.attach();
+  _selection.onPick(result => {
+    ifc.setElement(result);
+    emit('open-properties');
+  });
+  _selection.onClickEmpty(() => ifc.clearElement());
+  _selection.onHover(pos => {
+    coords.value = pos
+      ? {
+          x: pos.x.toFixed(3), y: pos.y.toFixed(3), z: pos.z.toFixed(3),
+          ox: pos.ox.toFixed(3), oy: pos.oy.toFixed(3), oz: pos.oz.toFixed(3),
+        }
+      : null;
+  });
+  _selection.onMarqueeSelect(({ count }) => {
+    if (count) console.info(`[Selection] Marquee: ${count} Elemente ausgewählt`);
+  });
+
+  // Measure-/Annotation-Modi nutzen weiterhin den Vue-Click-Handler — wenn sie
+  // aktiv sind, schalten wir den SelectionHandler in den 'disabled'-Modus, damit
+  // ein Click nicht gleichzeitig selektiert UND einen Messpunkt setzt.
   canvasRef.value.addEventListener('mousedown',  onMouseDown);
   canvasRef.value.addEventListener('mouseup',    onMouseUp);
+  canvasRef.value.addEventListener('mousemove',  onMouseMoveForTools);
 
   ifc.registerPsetHandler(async (psetName, props) => {
     try {
@@ -494,11 +519,12 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick);
   document.removeEventListener('keydown', onKeyDown);
   if (canvasRef.value) {
-    canvasRef.value.removeEventListener('mousemove',  onMouseMove);
-    canvasRef.value.removeEventListener('mouseleave', onMouseLeave);
     canvasRef.value.removeEventListener('mousedown',  onMouseDown);
     canvasRef.value.removeEventListener('mouseup',    onMouseUp);
+    canvasRef.value.removeEventListener('mousemove',  onMouseMoveForTools);
   }
+  _selection?.detach();
+  _selection = null;
   engine.value?.dispose();
   engine.value = null;
 });
@@ -743,10 +769,12 @@ function toggleMeasure() {
     engine.value?.disableMeasureMode();
     measureActive.value = false;
     measureToast.value  = null;
+    _selection?.setMode('single');
   } else {
     engine.value?.enableMeasureMode();
     measureActive.value = true;
     _setMeasureToast('Klick auf 1. Punkt');
+    _selection?.setMode('disabled');
   }
 }
 
@@ -775,10 +803,12 @@ function onToggleNotes() { showAnnotations.value = !showAnnotations.value; }
 function toggleAnnotationMode() {
   if (annotationActive.value) {
     annotationActive.value = false;
+    _selection?.setMode('single');
   } else {
     if (measureActive.value) toggleMeasure();
     engine.value?.enableAnnotationMode();
     annotationActive.value = true;
+    _selection?.setMode('disabled');
   }
 }
 
@@ -802,64 +832,45 @@ function zoomToAnnotation(position) {
 }
 
 // ── mouse interaction ─────────────────────────────────────────────────────────
-function onMouseMove(e) {
-  if (!_rafId) {
-    _rafId = requestAnimationFrame(() => {
-      _rafId = null;
-      const pos = engine.value?.getHitPoint();
-      coords.value = pos
-        ? {
-            x: pos.x.toFixed(3), y: pos.y.toFixed(3), z: pos.z.toFixed(3),
-            ox: pos.ox.toFixed(3), oy: pos.oy.toFixed(3), oz: pos.oz.toFixed(3),
-          }
-        : null;
-    });
-  }
+// Selection + Hover + Marquee laufen über _selection (IfcSelectionHandler).
+// Hier nur noch die Tool-Modi (Measure / Annotation), die statt zu selektieren
+// Punkte/Pins setzen.
 
+function onMouseMoveForTools(e) {
+  // Nur aktiv im Measure-Modus — Live-Hover-Marker für den nächsten Messpunkt.
+  if (!measureActive.value) return;
+  if (_hoverTimer) clearTimeout(_hoverTimer);
   _lastMouse = { x: e.clientX, y: e.clientY };
-  clearTimeout(_hoverTimer);
-  // 30 ms debounce: prevents raycast on every pixel during fast mouse movement
   _hoverTimer = setTimeout(() => {
     const m = _lastMouse;
-    if (!m) return;
-    if (measureActive.value) {
-      // Live measure-hover marker (probe-only — does not change selection)
-      engine.value?.updateMeasureHover(m.x, m.y);
-    } else {
-      engine.value?.hoverElement(m.x, m.y);
-    }
+    if (m) engine.value?.updateMeasureHover(m.x, m.y);
   }, 30);
 }
 
-function onMouseLeave() {
-  coords.value = null;
-  clearTimeout(_hoverTimer);
-  _lastMouse = null;
-  engine.value?.clearHover();
-}
-
 function onMouseDown(e) {
+  if (e.button !== 0) return;
+  if (!(measureActive.value || annotationActive.value)) return;
   _mouseDownAt = { x: e.clientX, y: e.clientY };
-  clearTimeout(_hoverTimer);
 }
 
 async function onMouseUp(e) {
+  if (e.button !== 0) return;
   if (!_mouseDownAt) return;
   const dx = e.clientX - _mouseDownAt.x;
   const dy = e.clientY - _mouseDownAt.y;
+  const downX = _mouseDownAt.x;
+  const downY = _mouseDownAt.y;
   _mouseDownAt = null;
 
-  if (Math.hypot(dx, dy) > 5) return; // >5 px movement = orbit drag, not a click
+  if (Math.hypot(dx, dy) > 8) return; // >8 px = Drag, nicht Click
 
-  // T1.3: in measure mode, clicks add measurement points instead of selecting
   if (measureActive.value) {
-    const res = await engine.value?.addMeasurePoint(e.clientX, e.clientY);
+    const res = await engine.value?.addMeasurePoint(downX, downY);
     if (!res || res.phase === 'no-hit') {
       _setMeasureToast('Kein Treffer — bitte auf Bauteil klicken');
     } else if (res.phase === 'awaiting-second') {
       _setMeasureToast('Klick auf 2. Punkt');
     } else if (res.phase === 'complete') {
-      // Store the world-space endpoints too — the PDF exporter needs them to render the measurement
       measurements.value.push({
         dist: res.dist,
         p1: { x: res.p1.x, y: res.p1.y, z: res.p1.z },
@@ -870,19 +881,8 @@ async function onMouseUp(e) {
     return;
   }
 
-  // T2.4: in annotation mode, clicks place pins instead of selecting
   if (annotationActive.value) {
-    await _onAnnotationClick(e);
-    return;
-  }
-
-  const result = await engine.value?.pickElement(e.clientX, e.clientY);
-  if (result) {
-    ifc.setElement(result);
-    emit('open-properties');
-  } else {
-    ifc.clearElement();
-    await engine.value?.clearSelection();
+    await _onAnnotationClick({ clientX: downX, clientY: downY });
   }
 }
 

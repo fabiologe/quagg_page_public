@@ -300,12 +300,15 @@
               verallgemeinerten Poleni-Wehrformel, streifenweise über den BOK-Fußabdruck integriert:
             </p>
             <div class="formula-box">
-              <div class="formula">Q₂ = &frac23; · &mu;<sub>D</sub> · &radic;(2g) · &int; max(0, WSP &minus; z<sub>BOK</sub>(x))<sup>3/2</sup> dx</div>
+              <div class="formula">Q₂ = &frac23; · &mu;<sub>D</sub> · &radic;(2g) · &int; &sigma;(x) · max(0, WSP &minus; z<sub>BOK</sub>(x))<sup>3/2</sup> dx</div>
               <div class="formula-sub">h_ü(x) = WSP &minus; BOK-Höhe an Stelle x  (Überströmungshöhe)</div>
+              <div class="formula-sub">&sigma;(x) = (1 &minus; (h_uw/h_ü)<sup>1.5</sup>)<sup>0.385</sup>  bei UW-WSP &gt; BOK (Villemonte), sonst 1</div>
             </div>
             <p class="hint-text">
               Die Streifenintegration gilt auch für geneigte oder gewölbte Brückendecken korrekt.
               Vorlandabfluss außerhalb des BOK-Fußabdrucks (überströmtes Vorland) benutzt weiterhin Manning.
+              Liegt der eingegebene UW-WSP über der BOK, wird der Überfall streifenweise als
+              <em>unvollkommen</em> (rückgestaut) abgemindert.
             </p>
           </section>
 
@@ -325,6 +328,33 @@
                 um manuell Freispiegel oder Druckabfluss zu erzwingen und beide Ergebnisse zu vergleichen.
                 Eine streifen-weise partielle Druckströmung ist als zukünftige Erweiterung vorgesehen.
               </p>
+            </div>
+          </section>
+
+          <section class="info-section">
+            <h4>Modellgrenzen (1D-Einzelquerschnitt)</h4>
+            <div class="notice-box">
+              <p>
+                Das Modell ist eine <strong>stationäre Einzelquerschnitts-Berechnung</strong>
+                (Rating Curve am Bauwerk), <em>keine Spiegellinienberechnung</em>: Es gibt keine
+                Energiegleichung zwischen Oberwasser- und Unterwasserquerschnitt. Der Aufstau
+                oberstrom wird nur implizit über die Q-WSP-Beziehung am Bauwerksquerschnitt
+                erfasst — im Freispiegel zusätzlich als Pfeilerstau-Abschätzung
+                &Delta;h<sub>P</sub> = &zeta; · v<sub>öffn.</sub>²/2g.
+              </p>
+              <p>
+                Weitere bewusste Vereinfachungen:
+              </p>
+              <ul>
+                <li>Die Anström-Geschwindigkeitshöhe v²/2g wird in der Orifice-Triebhöhe
+                  vernachlässigt (konservativ: Q wird eher unter-, der WSP eher überschätzt).</li>
+                <li>Kontraktions-/Expansionsverluste zwischen Querschnitten existieren nicht —
+                  μ deckt die Strahlkontraktion am Bauwerk ab.</li>
+                <li>Schräganströmung der Pfeiler wird nicht abgebildet (1D-üblich).</li>
+                <li>Treibgut/Verklausung nur näherungsweise über erhöhte Pfeilerbreite b<sub>P</sub>.</li>
+                <li>Bei Fr<sub>öffn.</sub> ≥ 1 (Choking-Warnung) ist die Manning-Annahme
+                  verletzt — Ergebnis als untere Grenze des Aufstaus interpretieren.</li>
+              </ul>
             </div>
           </section>
 
@@ -699,9 +729,35 @@ const GLOSSAR = [
   {
     term: 'ζ — Pfeiler-Verlustbeiwert',
     unit: '–  (0.0–2.0)',
-    def:  'Formwiderstandsbeiwert des Brückenpfeilers im Druckabfluss (Zustand 2 und 3).',
-    detail: 'Berücksichtigt den Stauverlust durch Anströmung des Pfeilers (ζ · v²/2g). Analytisch in die Orifice-Formel eingebunden: μ_eff = μ / √(1+μ²·ζ). Kein Pfeiler: ζ = 0. Geometrischer Querschnittsverlust durch Pfeiler im Geländeprofil ist davon unabhängig.',
-    formula: 'μ_eff = μ / √(1 + μ² · ζ)',
+    def:  'Formwiderstandsbeiwert des Brückenpfeilers — wirkt in allen Zuständen.',
+    detail: 'Druckabfluss: analytisch in die Orifice-Formel eingebunden (μ_eff = μ / √(1+μ²·ζ)). Freispiegel: Pfeilerstau-Abschätzung Δh_P = ζ · v_öffn.²/2g (vereinfachter Widerstandsbeiwert-Ansatz, wie in 1D-Modellen üblich). Kein Pfeiler: ζ = 0. Geometrischer Querschnittsverlust durch Pfeiler im Geländeprofil ist davon unabhängig.',
+    formula: 'μ_eff = μ / √(1 + μ² · ζ)   ·   Δh_P = ζ · v_öffn.² / 2g',
+  },
+  {
+    term: 'φ — Pfeiler-Versperrungsgrad',
+    unit: '–  (0–0.95)',
+    def:  'Anteil der Brückenöffnung, der durch Pfeiler versperrt ist: φ = n · b_P / L_BUK.',
+    detail: 'Reduziert die wirksame Öffnungsfläche in allen Zuständen: A_netto = A_öffn. · (1−φ). Im Freispiegel werden die Streifen im BUK-Fußabdruck mit (1−φ) multipliziert. Verklausung durch Treibgut kann näherungsweise über eine erhöhte Pfeilerbreite b_P abgebildet werden.',
+    formula: 'A_netto = A_öffn. · (1 − φ)',
+  },
+  {
+    term: 'σ — Rückstaubeiwert (Überfall)',
+    unit: '–  (0–1)',
+    def:  'Abminderung des Poleni-Überfalls bei eingestautem Brückendeck (unvollkommener Überfall).',
+    detail: 'Wenn der UW-WSP über der BOK liegt, wird jeder Poleni-Streifen nach Villemonte abgemindert. σ = 1: vollkommener Überfall (UW unterhalb BOK). σ → 0: vollständig eingestaut, kein Überfallabfluss.',
+    formula: 'σ = (1 − (h_uw/h_ü)^1.5)^0.385',
+  },
+  {
+    term: 'Totwasserzone (Ineffective Flow Area)',
+    def:  'kSt-Zone mit Markierung „Totwasser": Bereich mit stehendem Wasser, der nicht am Abfluss teilnimmt (z.B. hinter Widerlagern).',
+    detail: 'Streifen in Totwasserzonen tragen weder Fläche noch Abfluss bei — sie wirken nur als Retentionsraum. Falsch angenommene mitwirkende Vorlandbreiten sind eine Hauptfehlerquelle in 1D-Modellen; Totwasserzonen müssen vom Ingenieur manuell definiert werden.',
+  },
+  {
+    term: 'Fr_öffn. — Froude-Zahl der Brückenöffnung',
+    unit: '–',
+    def:  'Froude-Zahl im verengten Querschnitt unter der Brücke (Freispiegelzustand).',
+    detail: 'Der Regimewechsel (strömend → schießend) findet zuerst in der Verengung statt. Fr_öffn. ≥ 1 bedeutet, dass die Öffnung als kritischer Kontrollquerschnitt wirkt (Choking) — die Manning-Annahme gleichförmigen Abflusses ist dann nicht mehr gültig, der tatsächliche Aufstau wird unterschätzt.',
+    formula: 'Fr = v_öffn. / √(g · A_öffn./T_öffn.)',
   },
   {
     term: 'Composite Manning-Strickler (Einstein-Verfahren)',

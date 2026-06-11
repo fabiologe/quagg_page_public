@@ -94,6 +94,17 @@ export function useBridgeValidation() {
       })
     }
 
+    // 3a. Alle kSt-Zonen als Totwasser markiert → kein durchströmter Querschnitt
+    if (store.kstZones.length > 0 && store.kstZones.every(z => z.inactive)) {
+      e.push({
+        code: 'ALL_ZONES_INACTIVE',
+        layer: 'kst',
+        title: 'Alle kSt-Zonen sind Totwasser',
+        detail: 'Jede Zone ist als Ineffective Flow Area markiert → Q = 0. Mindestens eine Zone muss aktiv sein.',
+        xMarkers: [],
+      })
+    }
+
     // 3. kSt-Bereich
     for (const z of store.kstZones) {
       if (z.kst < 1 || z.kst > 120) {

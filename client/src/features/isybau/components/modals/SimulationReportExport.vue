@@ -135,20 +135,12 @@ function pageFooter(doc, pageNum) {
   doc.text(`Seite ${pageNum}`, A4W - MR, y + 4, { align: 'right' });
 }
 
-// autoTable hook: add header+footer on every new page autoTable generates
-function makeDidDrawPage(doc, counterRef) {
-  return (data) => {
-    pageHeader(doc);
-    pageFooter(doc, counterRef.value++);
-  };
-}
-
 // ─── Section title ────────────────────────────────────────────────────────────
 function sectionTitle(doc, y, text, x = ML) {
   doc.setFillColor(...C.purple);
   doc.rect(x, y, 2.5, 5.5, 'F');
   drawPixelHeading(doc, text, x + 5, y + 0.5, 4.5, C.navy);
-  return y + 9;
+  return y + 11;
 }
 
 // ─── KPI box ─────────────────────────────────────────────────────────────────
@@ -158,28 +150,32 @@ function kpiBox(doc, x, y, w, h, lines, value, unit, color) {
   doc.setLineWidth(0.3);
   doc.roundedRect(x, y, w, h, 1.5, 1.5, 'FD');
 
+  // Accent strip at top
+  doc.setFillColor(...(color || C.navy));
+  doc.roundedRect(x, y, w, 2, 1.5, 0, 'F');
+
   // Label: support 1 or 2 lines (pass array or string)
   const labelLines = Array.isArray(lines) ? lines : [lines];
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5);
   doc.setTextColor(...C.muted);
   if (labelLines.length === 1) {
-    doc.text(labelLines[0], x + w / 2, y + 5.5, { align: 'center' });
+    doc.text(labelLines[0], x + w / 2, y + 7.5, { align: 'center' });
   } else {
-    doc.text(labelLines[0], x + w / 2, y + 4,   { align: 'center' });
-    doc.text(labelLines[1], x + w / 2, y + 7,   { align: 'center' });
+    doc.text(labelLines[0], x + w / 2, y + 6,   { align: 'center' });
+    doc.text(labelLines[1], x + w / 2, y + 9,   { align: 'center' });
   }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...(color || C.navy));
-  doc.text(String(value), x + w / 2, y + 15, { align: 'center' });
+  doc.text(String(value), x + w / 2, y + 17, { align: 'center' });
 
   if (unit) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
     doc.setTextColor(...C.muted);
-    doc.text(unit, x + w / 2, y + 19.5, { align: 'center' });
+    doc.text(unit, x + w / 2, y + 21.5, { align: 'center' });
   }
 }
 
@@ -243,20 +239,20 @@ function drawRainChart(doc, x, y, w, h, series, interval) {
   doc.setTextColor(...C.muted);
   const n = series.length;
   [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor(n * 3 / 4), n - 1].forEach(i => {
-    if (series[i]) doc.text(`${series[i].time}'`, x + i * barW + barW / 2, y + chartH + 5, { align: 'center' });
+    if (series[i]) doc.text(`${series[i].time}'`, x + i * barW + barW / 2, y + chartH + 4, { align: 'center' });
   });
 
-  // Legend
+  // Legend (shifted down to avoid X-label overlap)
   doc.setFillColor(...C.blue);
-  doc.rect(x, y + chartH + 7, 5, 2, 'F');
+  doc.rect(x, y + chartH + 9, 5, 2, 'F');
   doc.setTextColor(...C.muted);
-  doc.text('Intensität (l/s·ha)', x + 6, y + chartH + 8.5);
+  doc.text('Intensität (l/s·ha)', x + 6, y + chartH + 10.5);
   doc.setDrawColor(...C.red);
   doc.setLineWidth(0.7);
-  doc.line(x + 40, y + chartH + 8, x + 45, y + chartH + 8);
-  doc.text('kumuliert (mm)', x + 46, y + chartH + 8.5);
+  doc.line(x + 40, y + chartH + 10, x + 45, y + chartH + 10);
+  doc.text('kumuliert (mm)', x + 46, y + chartH + 10.5);
 
-  return y + h + 4;
+  return y + h + 6;
 }
 
 // ─── Network Diagram ──────────────────────────────────────────────────────────
@@ -448,22 +444,18 @@ async function exportPDF() {
     const contErr = Math.abs(stats.flow?.error || 0);
     const errColor = contErr < 1 ? C.green : contErr < 5 ? C.orange : C.red;
 
-    // Page counter for footer (autoTable creates new pages internally)
-    const pageCounter = { value: 1 };
-
+    // tableDefaults — no didDrawPage; headers/footers are applied in a final pass
     const tableDefaults = (extra = {}) => ({
       styles:          { fontSize: 6.5, cellPadding: 1.5 },
       headStyles:      { fillColor: C.navy, textColor: C.white, fontSize: 7, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 249, 255] },
       margin:          { left: ML, right: MR, top: 20, bottom: 12 },
-      didDrawPage:     makeDidDrawPage(doc, pageCounter),
       ...extra,
     });
 
     // ════════════════════════════════════════════════════════════════════════
     // PAGE 1 — Zusammenfassung
     // ════════════════════════════════════════════════════════════════════════
-    pageHeader(doc);
     let cy = 20;
 
     // Report title
@@ -479,11 +471,11 @@ async function exportPDF() {
 
     // KPI boxes
     const kW = (CW - 9) / 4;
-    kpiBox(doc, ML,                cy, kW, 22, ['Niederschlag', '(Gesamthöhe)'],    `${rb.precipMm.toFixed(1)}`,              'mm', C.blue);
-    kpiBox(doc, ML + kW + 3,      cy, kW, 22, ['Oberfl.', 'Abfluss'],              `${rb.runoffMm.toFixed(1)}`,              'mm', C.purple);
-    kpiBox(doc, ML + (kW + 3) * 2,cy, kW, 22, ['Abfluss-', 'beiwert Ψ'],          `${rb.psi.toFixed(3)}`,                   '',   C.navy);
-    kpiBox(doc, ML + (kW + 3) * 3,cy, kW, 22, ['Kontinuitäts-', 'fehler Flow'],   `${(stats.flow?.error || 0).toFixed(2)}`, '%',  errColor);
-    cy += 26;
+    kpiBox(doc, ML,                cy, kW, 24, ['Niederschlag', '(Gesamthöhe)'],    `${rb.precipMm.toFixed(1)}`,              'mm', C.blue);
+    kpiBox(doc, ML + kW + 3,      cy, kW, 24, ['Oberfl.', 'Abfluss'],              `${rb.runoffMm.toFixed(1)}`,              'mm', C.purple);
+    kpiBox(doc, ML + (kW + 3) * 2,cy, kW, 24, ['Abfluss-', 'beiwert Ψ'],          `${rb.psi.toFixed(3)}`,                   '',   C.navy);
+    kpiBox(doc, ML + (kW + 3) * 3,cy, kW, 24, ['Kontinuitäts-', 'fehler Flow'],   `${(stats.flow?.error || 0).toFixed(2)}`, '%',  errColor);
+    cy += 28;
 
     // Two-column layout: Niederschlagsbilanz | Simulations-Parameter
     const colW = (CW - 6) / 2;
@@ -573,16 +565,12 @@ async function exportPDF() {
           fmt((o.totalVol || 0) * 1000, 1),
         ]),
       });
-      cy = doc.lastAutoTable.finalY + 4;
     }
-
-    pageFooter(doc, pageCounter.value++);
 
     // ════════════════════════════════════════════════════════════════════════
     // PAGE 2 — Netzwerk + Haltungen
     // ════════════════════════════════════════════════════════════════════════
     doc.addPage();
-    pageHeader(doc);
     cy = 20;
 
     cy = sectionTitle(doc, cy, 'Netzwerk-Übersicht');
@@ -620,16 +608,12 @@ async function exportPDF() {
           else data.cell.styles.textColor = [5, 150, 105];
         }
       },
-      didDrawPage: (data) => { pageHeader(doc); pageFooter(doc, pageCounter.value++); },
     });
-
-    pageFooter(doc, pageCounter.value++);
 
     // ════════════════════════════════════════════════════════════════════════
     // PAGE 3 — Schächte & Bauwerke
     // ════════════════════════════════════════════════════════════════════════
     doc.addPage();
-    pageHeader(doc);
     cy = 20;
     cy = sectionTitle(doc, cy, `Schächte & Bauwerke (${props.nodes?.size || 0})`);
 
@@ -662,16 +646,12 @@ async function exportPDF() {
           else data.cell.styles.textColor = [5, 150, 105];
         }
       },
-      didDrawPage: (data) => { pageHeader(doc); pageFooter(doc, pageCounter.value++); },
     });
-
-    pageFooter(doc, pageCounter.value++);
 
     // ════════════════════════════════════════════════════════════════════════
     // PAGE 4 — Teilflächen
     // ════════════════════════════════════════════════════════════════════════
     doc.addPage();
-    pageHeader(doc);
     cy = 20;
     cy = sectionTitle(doc, cy, 'Teilflächen (Subcatchments)');
 
@@ -692,10 +672,15 @@ async function exportPDF() {
         fmt(d.runoffCoeff ?? 0, 3),
         fmt((d.peakRunoff ?? 0) / 1000, 4),
       ]),
-      didDrawPage: (data) => { pageHeader(doc); pageFooter(doc, pageCounter.value++); },
     });
 
-    pageFooter(doc, pageCounter.value++);
+    // ─── Decorate all pages exactly once with correct sequential page numbers ──
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let pg = 1; pg <= totalPages; pg++) {
+      doc.setPage(pg);
+      pageHeader(doc);
+      pageFooter(doc, pg);
+    }
 
     // ─── Save ─────────────────────────────────────────────────────────────────
     const date = new Date().toISOString().slice(0, 10);

@@ -49,7 +49,7 @@ const DEFAULT_BOK = [
   { x: -15, z: 6.2 }, { x: 15, z: 6.2 }
 ]
 const DEFAULT_KST_ZONES = [
-  { id: 'z0', xLeft: null, xRight: null, kst: 40, color: '#3b82f6', label: 'Hauptgerinne' }
+  { id: 'z0', xLeft: null, xRight: null, kst: 40, color: '#3b82f6', label: 'Hauptgerinne', inactive: false }
 ]
 
 const ZONE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16']
@@ -255,7 +255,7 @@ export const useBridgeStore = defineStore('bridgeHydraulics', () => {
   function addKstZone() {
     const id = `z${Date.now()}`
     const color = ZONE_COLORS[kstZones.value.length % ZONE_COLORS.length]
-    kstZones.value.push({ id, xLeft: null, xRight: null, kst: 30, color, label: 'Neue Zone' })
+    kstZones.value.push({ id, xLeft: null, xRight: null, kst: 30, color, label: 'Neue Zone', inactive: false })
     save()
   }
 

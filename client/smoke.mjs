@@ -25,6 +25,7 @@ import { DIN277_CLASSES, classifyDin277 } from './src/features/ifc-viewer/servic
 import { KG_TREE, KG_LOOKUP, KG_DEFAULT_RULES, kgColor, kgTitle } from './src/features/ifc-viewer/services/Din276Defaults.js';
 import { classifyKg } from './src/features/ifc-viewer/services/KgClassifier.js';
 import { findMatchingRule, resolveRuleField } from './src/features/ifc-viewer/services/VectorRuleEngine.js';
+import { summarizeQuantities, PIECE_BILLED_CATEGORIES, VOLUME_BILLED_CATEGORIES } from './src/features/ifc-viewer/services/QuantitySummary.js';
 
 let passed = 0, failed = 0;
 function eq(name, got, want) {
@@ -296,6 +297,40 @@ const kgResult2 = await classifyKg({
   overrides: new Map([['WALL-EXT', '370']]), // force outer wall → KG 370 Einbauten
 });
 ok('override moves element across KG buckets', kgResult2.byKg.get('370')?.count === 1 && (kgResult2.byKg.get('330')?.count ?? 0) === 0);
+
+// ── QuantitySummary: per-category aggregation ────────────────────────────
+ok('PIECE_BILLED_CATEGORIES has IFCDOOR',  PIECE_BILLED_CATEGORIES.has('IFCDOOR'));
+ok('PIECE_BILLED_CATEGORIES has Schächte', PIECE_BILLED_CATEGORIES.has('IFCDISTRIBUTIONCHAMBERELEMENT'));
+ok('VOLUME_BILLED_CATEGORIES has IFCWALL', VOLUME_BILLED_CATEGORIES.has('IFCWALL'));
+ok('VOLUME_BILLED_CATEGORIES has IFCSLAB', VOLUME_BILLED_CATEGORIES.has('IFCSLAB'));
+
+// Empty input safety
+const qEmpty = await summarizeQuantities();
+ok('summarizeQuantities() with no args → empty Map', qEmpty.byCategory.size === 0 && qEmpty.totals.count === 0);
+
+// Use the same mock data as KG test
+const qSummary = await summarizeQuantities({
+  categoryGroups: kgCategoryGroups,
+  fragmentsList: kgFragmentsList,
+});
+ok('summarizeQuantities returns category map',     qSummary.byCategory.size === 3);
+ok('summarizeQuantities IFCWALL count = 2',        qSummary.byCategory.get('IFCWALL')?.count === 2);
+ok('summarizeQuantities IFCPIPESEGMENT count = 3', qSummary.byCategory.get('IFCPIPESEGMENT')?.count === 3);
+ok('summarizeQuantities totals count = 6',         qSummary.totals.count === 6);
+ok('summarizeQuantities BBox volume = 2×2×0.3 per element',
+   Math.abs(qSummary.byCategory.get('IFCWALL')?.volume_m3 - 2 * 1.2) < 0.001); // 2 walls × 1.2 m³
+ok('summarizeQuantities avgVolume_m3 = 1.2 for IFCWALL',
+   Math.abs(qSummary.byCategory.get('IFCWALL')?.avgVolume_m3 - 1.2) < 0.001);
+
+// With KG annotation: byKg should be populated per category
+const qWithKg = await summarizeQuantities({
+  categoryGroups: kgCategoryGroups,
+  fragmentsList: kgFragmentsList,
+  perElementKg: kgResult.perElement,
+});
+const wallByKg = qWithKg.byCategory.get('IFCWALL')?.byKg;
+ok('byKg map populated when perElementKg provided', wallByKg instanceof Map && wallByKg.size === 2);
+ok('wall split between KG 330 and 340',             wallByKg.get('330')?.count === 1 && wallByKg.get('340')?.count === 1);
 
 console.log(`\n--- ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

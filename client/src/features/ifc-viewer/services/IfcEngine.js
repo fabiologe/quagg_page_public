@@ -2,6 +2,7 @@ import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { IfcCamera } from './IfcCamera.js';
 
 const DATA_CONFIG = {
     attributesDefault: true,
@@ -91,7 +92,6 @@ export class IfcEngine {
         this._firstMarker    = null;
         this._annotationGroup = null;
         this._annotations     = [];
-        this._lastPlotFrustum = null; // captured by getScaleSnapshot, read by vector plotter
         this._hoverInFlight  = false;
         this._canvas         = null;
 
@@ -140,15 +140,16 @@ export class IfcEngine {
         world.renderer = new OBC.SimpleRenderer(this.components, container);
         world.camera   = new OBC.SimpleCamera(this.components);
 
-        // near=0.5m prevents z-fighting at close range; far=100km covers sewer networks
-        world.camera.three.near = 0.5;
-        world.camera.three.far  = 100000;
-        world.camera.three.updateProjectionMatrix();
-
         this.components.init();
         world.scene.setup();
-        world.camera.controls.setLookAt(10, 10, 10, 0, 0, 0);
-        world.camera.controls.dollySpeed = 0.7; // default is 1.0 — moderately slowed for finer zoom control
+
+        // Alle Kamera-/Orbit-/Snapshot-Logik lebt in IfcCamera.
+        this.camera = new IfcCamera({
+            getWorld:   () => this._getWorld(),
+            getBounds:  () => this._getModelBounds(),
+            components: this.components,
+        });
+        this.camera.configure();
 
         const grids = this.components.get(OBC.Grids);
         this._sceneGrid = grids.create(world);
@@ -399,6 +400,11 @@ export class IfcEngine {
         this._selectedItems = modelIdMap;
         this._selectedKey   = `${fmodel.modelId}:${localId}`;
 
+        // Orbit-Pivot auf Element-Center setzen — folgende Maus-Rotationen
+        // kreisen um das angeklickte Objekt statt um eine alte Position.
+        // Box-Center > Hit-Point: vorhersagbarer (User klickt nicht immer zentral).
+        this.camera.orbitAroundSelection(fmodel.modelId, localId).catch(() => { /* */ });
+
         const rawData = await fragments.getData(modelIdMap, DATA_CONFIG);
         return this._parseItemData(rawData);
     }
@@ -644,10 +650,7 @@ export class IfcEngine {
 
     /** Switch camera between 'Perspective' and 'Orthographic'. */
     async setCameraProjection(type) {
-        const world = this._getWorld();
-        if (world?.camera?.projection) {
-            await world.camera.projection.set(type);
-        }
+        return this.camera.setProjection(type);
     }
 
     /** Re-apply default category colors to all loaded models (used when restoring a style). */
@@ -834,9 +837,7 @@ export class IfcEngine {
         const s = storeys.find(x => x.modelId === modelId && x.localId === localId);
         if (!s || !s.box) return false;
 
-        await this._getWorld().camera.controls.fitToBox(s.box, true, {
-            paddingLeft: 0.5, paddingRight: 0.5, paddingTop: 0.5, paddingBottom: 0.5,
-        });
+        await this.camera.fitToBox(s.box, { padding: 0.5 });
 
         if (withSection) {
             // Tear down any existing section, then create a horizontal cut at floor + offset
@@ -952,72 +953,17 @@ export class IfcEngine {
 
     // ── Camera ───────────────────────────────────────────────────────────────
 
-    async zoomToFit() {
-        const b = this._getModelBounds();
-        if (!b) return;
-        const d = b.maxDim * 1.5;
-        await this._getWorld().camera.controls.setLookAt(
-            b.center.x + d * 0.6, b.center.y + d * 0.6, b.center.z + d * 0.6,
-            b.center.x, b.center.y, b.center.z, true
-        );
-    }
-
-    async viewTop() {
-        const b = this._getModelBounds();
-        if (!b) return;
-        const cam = this._getWorld().camera;
-        // Looking straight down: default up=(0,1,0) is parallel to view direction → gimbal lock.
-        // Set up=(0,0,-1) so the Z-axis points "north" on screen for a standard plan orientation.
-        cam.three.up.set(0, 0, -1);
-        await cam.controls.setLookAt(
-            b.center.x, b.center.y + b.maxDim * 2, b.center.z,
-            b.center.x, b.center.y,                b.center.z,
-            false  // immediate — no transition; PDF export needs final position right away
-        );
-    }
-
-    async viewFront() {
-        const b = this._getModelBounds();
-        if (!b) return;
-        const cam = this._getWorld().camera;
-        cam.three.up.set(0, 1, 0);
-        await cam.controls.setLookAt(
-            b.center.x, b.center.y, b.center.z + b.maxDim * 2,
-            b.center.x, b.center.y, b.center.z,
-            false
-        );
-    }
-
-    async viewSide() {
-        const b = this._getModelBounds();
-        if (!b) return;
-        const cam = this._getWorld().camera;
-        cam.three.up.set(0, 1, 0);
-        await cam.controls.setLookAt(
-            b.center.x + b.maxDim * 2, b.center.y, b.center.z,
-            b.center.x,                b.center.y, b.center.z,
-            false
-        );
-    }
-
-    async resetView() {
-        await this._getWorld().camera.controls.setLookAt(10, 10, 10, 0, 0, 0, true);
-    }
-
-    /**
-     * Pan the camera by (dx, dy) pixels. camera-controls.truck() converts
-     * pixel deltas to world-space movement internally based on truckSpeed.
-     */
-    truckCamera(dx, dy) {
-        this._getWorld()?.camera?.controls?.truck(dx, dy, false);
-    }
-
-    /** Move the camera to look at a single world-space point. */
-    async lookAtPoint(x, y, z, distance = 5) {
-        const ctrls = this._getWorld()?.camera?.controls;
-        if (!ctrls) return;
-        await ctrls.setLookAt(x + distance, y + distance, z + distance, x, y, z, true);
-    }
+    // ── Camera delegations (Implementierung in IfcCamera.js) ────────────────
+    zoomToFit()                       { return this.camera.zoomToFit(); }
+    viewTop()                         { return this.camera.viewTop(); }
+    viewFront()                       { return this.camera.viewFront(); }
+    viewSide()                        { return this.camera.viewSide(); }
+    resetView()                       { return this.camera.resetView(); }
+    truckCamera(dx, dy)               { return this.camera.truck(dx, dy); }
+    lookAtPoint(x, y, z, distance=5)  { return this.camera.lookAtPoint(x, y, z, distance); }
+    orbitAroundPoint(p)               { return this.camera.orbitAroundPoint(p); }
+    orbitAroundMeasurePoint(p)        { return this.camera.orbitAroundMeasurePoint(p); }
+    orbitAroundSelection(mid, lid)    { return this.camera.orbitAroundSelection(mid, lid); }
 
     // ── Annotations (markers + text pinned in 3D space) ─────────────────────
 
@@ -1183,12 +1129,8 @@ export class IfcEngine {
      * Returns a plain object ready for JSON.stringify / localStorage.
      */
     captureView() {
-        const world  = this._getWorld();
-        if (!world) return null;
-        const cam    = world.camera.three;
-        const ctrls  = world.camera.controls;
-        const target = new THREE.Vector3();
-        ctrls.getTarget(target);
+        const cameraState = this.camera.captureState();
+        if (!cameraState) return null;
 
         const visibleCategories = (this._categoryGroups ?? [])
             .filter(g => g.visible).map(g => g.name);
@@ -1203,11 +1145,7 @@ export class IfcEngine {
         }
 
         return {
-            camera: {
-                position: cam.position.toArray(),
-                target:   target.toArray(),
-                up:       cam.up.toArray(),
-            },
+            camera: cameraState,
             visibleCategories,
             section,
         };
@@ -1219,18 +1157,9 @@ export class IfcEngine {
      */
     async applyView(view) {
         if (!view) return;
-        const world = this._getWorld();
-        if (!world) return;
-        const cam   = world.camera.three;
-        const ctrls = world.camera.controls;
 
         // Camera
-        if (view.camera) {
-            if (view.camera.up) cam.up.fromArray(view.camera.up);
-            const p = view.camera.position;
-            const t = view.camera.target;
-            if (p && t) await ctrls.setLookAt(p[0], p[1], p[2], t[0], t[1], t[2], true);
-        }
+        if (view.camera) await this.camera.applyState(view.camera);
 
         // Visibility — set every known category to match the saved set
         if (Array.isArray(view.visibleCategories) && this._categoryGroups?.length) {
@@ -1486,26 +1415,13 @@ export class IfcEngine {
      * Optionally select the element so it's highlighted after the zoom.
      */
     async zoomToElement(modelId, localId, { select = true } = {}) {
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const model = fragments.list.get(modelId);
-        if (!model) return false;
-
-        let boxes;
-        try { boxes = await model.getBoxes([localId]); } catch { return false; }
-        if (!boxes?.length || boxes[0].isEmpty()) return false;
-
-        const box = boxes[0];
-        // Pad the box a bit so the element isn't flush against the viewport edge
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        const pad = Math.max(size.x, size.y, size.z) * 0.2;
-        box.expandByScalar(pad);
-
-        await this._getWorld().camera.controls.fitToBox(box, true, {
-            paddingLeft: 0.5, paddingRight: 0.5, paddingTop: 0.5, paddingBottom: 0.5,
-        });
-
-        if (select) await this._selectByLocalIds(model, [localId]);
+        const ok = await this.camera.fitToElement(modelId, localId);
+        if (!ok) return false;
+        if (select) {
+            const fragments = this.components.get(OBC.FragmentsManager);
+            const model     = fragments.list.get(modelId);
+            if (model) await this._selectByLocalIds(model, [localId]);
+        }
         return true;
     }
 
@@ -1516,25 +1432,7 @@ export class IfcEngine {
     async zoomToCategory(categoryName) {
         const group = this._categoryGroups?.find(g => g.name === categoryName);
         if (!group) return false;
-        const map = await group.groupData.get();
-        const fragments = this.components.get(OBC.FragmentsManager);
-
-        const union = new THREE.Box3();
-        union.makeEmpty();
-        for (const [modelId, ids] of Object.entries(map)) {
-            const model = fragments.list.get(modelId);
-            if (!model || !ids?.length) continue;
-            try {
-                const boxes = await model.getBoxes(ids);
-                for (const b of boxes) if (!b.isEmpty()) union.union(b);
-            } catch { /* skip */ }
-        }
-        if (union.isEmpty()) return false;
-
-        await this._getWorld().camera.controls.fitToBox(union, true, {
-            paddingLeft: 0.5, paddingRight: 0.5, paddingTop: 0.5, paddingBottom: 0.5,
-        });
-        return true;
+        return this.camera.fitToCategory(group);
     }
 
     /** Internal: select elements by localIds in a model (mirrors pickElement's selection logic). */
@@ -1636,10 +1534,7 @@ export class IfcEngine {
      * rectangle when we share the same reference point.
      */
     getCameraTarget() {
-        const t = new THREE.Vector3();
-        const ctrl = this._getWorld()?.camera?.controls;
-        if (ctrl?.getTarget) ctrl.getTarget(t);
-        return { x: t.x, y: t.y, z: t.z };
+        return this.camera.getTarget();
     }
 
     /**
@@ -1678,51 +1573,11 @@ export class IfcEngine {
      * @returns {boolean} success
      */
     renderToCanvas(canvas2d, camera) {
-        const world = this._getWorld();
-        if (!world || !canvas2d || !camera) return false;
-        const renderer = world.renderer.three;
-        const scene    = world.scene.three;
-        const w = canvas2d.width;
-        const h = canvas2d.height;
-        if (!w || !h) return false;
-
-        // Reuse a single render target across calls to avoid GPU memory churn
-        // (30 fps × 280×190 RGBA = a lot of allocs otherwise).
-        if (!this._auxRT || this._auxRT.width !== w || this._auxRT.height !== h) {
-            if (this._auxRT) this._auxRT.dispose();
-            this._auxRT = new THREE.WebGLRenderTarget(w, h, {
-                minFilter: THREE.LinearFilter,
-                magFilter: THREE.LinearFilter,
-                format:    THREE.RGBAFormat,
-            });
-        }
-        const rt = this._auxRT;
-
-        const hidden = this._hideSectionVisuals();
-        renderer.setRenderTarget(rt);
-        renderer.render(scene, camera);
-        renderer.setRenderTarget(null);
-        this._restoreSectionVisuals(hidden);
-
-        const pixels = new Uint8ClampedArray(w * h * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
-
-        // NB: we deliberately do NOT call renderer.render(scene, mainCam) here.
-        // OBC owns the main canvas through its own rAF tick; restoring it on
-        // every overview render at 30 fps would compete with getScaleSnapshot
-        // and applyLayerStyle for the renderer state (white-screen flash on
-        // scale switch, snapshot failing to update).
-
-        // WebGL pixels: origin bottom-left → flip into the canvas's top-left ImageData.
-        const ctx = canvas2d.getContext('2d');
-        const imageData = ctx.createImageData(w, h);
-        const stride = w * 4;
-        for (let y = 0; y < h; y++) {
-            const src = (h - 1 - y) * stride;
-            imageData.data.set(pixels.subarray(src, src + stride), y * stride);
-        }
-        ctx.putImageData(imageData, 0, 0);
-        return true;
+        let hidden;
+        return this.camera.renderToCanvas(canvas2d, camera, {
+            onBeforeRender: () => { hidden = this._hideSectionVisuals(); },
+            onAfterRender:  () => { this._restoreSectionVisuals(hidden); },
+        });
     }
 
     /**
@@ -1742,28 +1597,8 @@ export class IfcEngine {
         };
     }
 
-    async _fitCameraToModel(model, world) {
-        try {
-            // Box source: model.box first, Three.js scene-graph fallback
-            let box = model.box;
-            if (!box || box.isEmpty()) box = new THREE.Box3().setFromObject(model.object);
-            if (!box || box.isEmpty()) {
-                box = new THREE.Box3(new THREE.Vector3(-100, -100, -100), new THREE.Vector3(100, 100, 100));
-            }
-
-            const center = new THREE.Vector3();
-            const size   = new THREE.Vector3();
-            box.getCenter(center);
-            box.getSize(size);
-            const d = Math.max(size.x, size.y, size.z) * 1.5;
-
-            await world.camera.controls.setLookAt(
-                center.x + d * 0.6, center.y + d * 0.6, center.z + d * 0.6,
-                center.x, center.y, center.z, false
-            );
-        } catch (e) {
-            console.warn('[IfcEngine] Could not fit camera:', e);
-        }
+    async _fitCameraToModel(model /*, world */) {
+        return this.camera.fitToModel(model);
     }
 
     _parseItemData(rawData) {
@@ -1994,90 +1829,12 @@ export class IfcEngine {
      * @param {number} rtW            render-target width  in pixels
      * @param {number} rtH            render-target height in pixels
      */
-    _renderOrthoOffscreen(target, halfW, halfH, viewDir, rtW, rtH) {
-        const world    = this._getWorld();
-        const renderer = world.renderer.three;
-        const scene    = world.scene.three;
-        const mainCam  = world.camera.three;
-
-        const rt = new THREE.WebGLRenderTarget(rtW, rtH, {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
-            format:    THREE.RGBAFormat,
-        });
-
-        const ortho = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, -100000, 100000);
-        if (viewDir === 'front') {
-            ortho.position.set(target.x, target.y, target.z + 10000);
-            ortho.up.set(0, 1, 0);
-        } else if (viewDir === 'side') {
-            ortho.position.set(target.x + 10000, target.y, target.z);
-            ortho.up.set(0, 1, 0);
-        } else {
-            // top view: Z points "north" on paper
-            ortho.position.set(target.x, target.y + 10000, target.z);
-            ortho.up.set(0, 0, -1);
-        }
-        ortho.lookAt(target.x, target.y, target.z);
-        ortho.updateProjectionMatrix();
-
-        const hidden = this._hideSectionVisuals();
-        renderer.setRenderTarget(rt);
-        renderer.render(scene, ortho);
-        renderer.setRenderTarget(null);
-        this._restoreSectionVisuals(hidden);
-
-        // Y-flip WebGL pixels (origin bottom-left) → canvas (origin top-left)
-        const pixels = new Uint8ClampedArray(rtW * rtH * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, rtW, rtH, pixels);
-        rt.dispose();
-
-        const out = document.createElement('canvas');
-        out.width = rtW; out.height = rtH;
-        const ctx = out.getContext('2d');
-        for (let y = 0; y < rtH; y++) {
-            const row = new Uint8ClampedArray(pixels.buffer, (rtH - 1 - y) * rtW * 4, rtW * 4);
-            ctx.putImageData(new ImageData(row, rtW, 1), 0, y);
-        }
-
-        renderer.render(scene, mainCam);
-        return { dataUrl: out.toDataURL('image/png', 0.92), ortho };
-    }
-
     getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir = 'top', pxPerMm = 10, panX = 0, panZ = 0) {
-        const world = this._getWorld();
-        if (!world) return null;
-
-        const halfW = (drawWidthMm  / 1000 * scaleRatio) / 2;
-        const halfH = (drawHeightMm / 1000 * scaleRatio) / 2;
-        const rtW   = Math.round(drawWidthMm  * pxPerMm);
-        const rtH   = Math.round(drawHeightMm * pxPerMm);
-
-        // Camera look-at target + user pan offset (in world metres)
-        const target = new THREE.Vector3();
-        world.camera.controls.getTarget(target);
-        target.x += panX;
-        target.z += panZ;
-
-        const { dataUrl, ortho } = this._renderOrthoOffscreen(target, halfW, halfH, viewDir, rtW, rtH);
-
-        // Persist the exact camera state so the vector plotter can use the same
-        // coordinate frame for world→paper transforms.
-        this._lastPlotFrustum = {
-            left:     ortho.left,
-            right:    ortho.right,
-            top:      ortho.top,
-            bottom:   ortho.bottom,
-            position: ortho.position.toArray(),
-            target:   [target.x, target.y, target.z],
-            up:       ortho.up.toArray(),
-            viewDir,
-            scaleRatio,
-            drawWidthMm,
-            drawHeightMm,
-        };
-
-        return dataUrl;
+        let hidden;
+        return this.camera.getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir, pxPerMm, panX, panZ, {
+            onBeforeRender: () => { hidden = this._hideSectionVisuals(); },
+            onAfterRender:  () => { this._restoreSectionVisuals(hidden); },
+        });
     }
 
     /**
@@ -2099,57 +1856,11 @@ export class IfcEngine {
      * @returns {{ dataUrl: string, bounds: {minX, maxX, minZ, maxZ} } | null}
      */
     getOverviewSnapshot(widthPx = 240, heightPx = 160, viewBounds = null) {
-        const world = this._getWorld();
-        if (!world) return null;
-        const modelBounds = this._getModelBounds();
-        if (!modelBounds) return null;
-
-        const canvasAspect = widthPx / heightPx;
-        let halfW, halfH, target;
-
-        if (viewBounds) {
-            // Wheel-zoom / pan request — render the exact requested rectangle,
-            // but expand to match the canvas aspect (the smaller dimension grows)
-            // so we never stretch the snapshot.
-            const reqW = viewBounds.maxX - viewBounds.minX;
-            const reqD = viewBounds.maxZ - viewBounds.minZ;
-            const reqAspect = reqW / reqD;
-            if (reqAspect > canvasAspect) {
-                halfW = reqW / 2;
-                halfH = halfW / canvasAspect;
-            } else {
-                halfH = reqD / 2;
-                halfW = halfH * canvasAspect;
-            }
-            target = new THREE.Vector3(
-                (viewBounds.minX + viewBounds.maxX) / 2,
-                modelBounds.center.y,
-                (viewBounds.minZ + viewBounds.maxZ) / 2,
-            );
-        } else {
-            // Default fit-all: model bbox + 10% padding.
-            const pad = 1.10;
-            const worldW = modelBounds.size.x * pad;
-            const worldD = modelBounds.size.z * pad;
-            const worldAspect = worldW / worldD;
-            if (worldAspect > canvasAspect) {
-                halfW = worldW / 2;
-                halfH = halfW / canvasAspect;
-            } else {
-                halfH = worldD / 2;
-                halfW = halfH * canvasAspect;
-            }
-            target = modelBounds.center.clone();
-        }
-
-        const { dataUrl } = this._renderOrthoOffscreen(target, halfW, halfH, 'top', widthPx, heightPx);
-        return {
-            dataUrl,
-            bounds: {
-                minX: target.x - halfW, maxX: target.x + halfW,
-                minZ: target.z - halfH, maxZ: target.z + halfH,
-            },
-        };
+        let hidden;
+        return this.camera.getOverviewSnapshot(widthPx, heightPx, viewBounds, {
+            onBeforeRender: () => { hidden = this._hideSectionVisuals(); },
+            onAfterRender:  () => { this._restoreSectionVisuals(hidden); },
+        });
     }
 
     /**
@@ -2157,10 +1868,10 @@ export class IfcEngine {
      * The vector plotter rebuilds an OrthographicCamera from this so its world→paper
      * transforms match the exact rendered snapshot.
      */
-    getLastPlotFrustum() { return this._lastPlotFrustum ?? null; }
+    getLastPlotFrustum() { return this.camera.getLastPlotFrustum(); }
 
     dispose() {
-        if (this._auxRT) { this._auxRT.dispose(); this._auxRT = null; }
+        if (this.camera?._auxRT) { this.camera._auxRT.dispose(); this.camera._auxRT = null; }
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

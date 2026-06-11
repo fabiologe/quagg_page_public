@@ -11,6 +11,22 @@
  *                Q₁ wie Zustand 2
  *                Q₂ = (2/3) · μ_D · √(2g) · ∫ h_ü(x)^1.5 dx  (Poleni, streifenweise)
  *
+ * Bauwerkseinflüsse (alle Zustände):
+ *   Pfeiler-Versperrung φ = n·b_P / L_BUK reduziert die Öffnungsfläche auch im
+ *   Freispiegelzustand (Streifen im BUK-Fußabdruck × (1−φ)).
+ *   Pfeilerstau Freispiegel: Δh_P = ζ · v_öffn² / 2g (Diagnosewert, vereinfachter
+ *   Widerstandsbeiwert-Ansatz — kein Spiegellinienmodell).
+ *   Fr_öffn = Froude-Zahl in der Brückenöffnung; Fr_öffn ≥ 1 → Choking-Warnung.
+ *   Überfall-Rückstau (Zustand 3): Villemonte σ = (1 − (h_uw/h_ü)^1.5)^0.385
+ *   reduziert Poleni streifenweise wenn UW-WSP über BOK liegt.
+ *
+ * kSt-Zonen mit inactive=true sind Ineffective Flow Areas (Totwasser):
+ *   Streifen tragen weder Fläche noch Abfluss bei (reine Retention).
+ *
+ * Modellgrenzen: Einzelquerschnitts-Rating (stationär-gleichförmig + Bauwerks-
+ * formeln), keine Spiegellinienberechnung; Anström-Geschwindigkeitshöhe v²/2g
+ * wird in der Orifice-Triebhöhe vernachlässigt (konservativ).
+ *
  * Zone 1: Durchströmung (unterhalb BUK / BOK-Referenzniveau)
  * Zone 2: Überströmung (oberhalb BOK-Referenzniveau)
  *
@@ -48,15 +64,15 @@ export function useBridgeHydraulics() {
     return interpZ(bokProfile, x)
   }
 
-  function getKstAtX(kstZones, x) {
-    if (!kstZones || kstZones.length === 0) return 30
-    let kst = kstZones[0].kst
+  function getZoneAtX(kstZones, x) {
+    if (!kstZones || kstZones.length === 0) return { kst: 30, inactive: false }
+    let zone = kstZones[0]
     for (const z of kstZones) {
       const xL = z.xLeft  == null ? -Infinity : z.xLeft
       const xR = z.xRight == null ?  Infinity : z.xRight
-      if (x >= xL && x <= xR) kst = z.kst
+      if (x >= xL && x <= xR) zone = z
     }
-    return kst
+    return { kst: zone.kst, inactive: !!zone.inactive }
   }
 
   function allKeyX(crossSection, bukProfile, bokProfile, kstZones) {
@@ -104,6 +120,13 @@ export function useBridgeHydraulics() {
       : isSubmergedGeo
     const hasOverflow = hasBok && bokMin >= bukMin && wsp > bokMin   // Guard: BOK < BUK → kein Overflow
 
+    // Pfeiler-Versperrung wirkt in allen Zuständen: φ = n·b_P / L_BUK
+    const L_BUK = hasBridge ? bukProfile[bukProfile.length - 1].x - bukProfile[0].x : 0
+    const phi   = (L_BUK > 1e-9 && nPiers > 0) ? Math.min(nPiers * bPier / L_BUK, 0.95) : 0
+
+    // Eingestauter Überfall: UW-Spiegel über BOK reduziert Poleni (Villemonte-σ)
+    const uwLevel = (wspUW != null && isFinite(wspUW) && wspUW < wsp) ? wspUW : null
+
     const I05     = Math.sqrt(Math.max(slope, 0))
     const xValues = allKeyX(crossSectionPoints, bukProfile, bokProfile, kstZones)
 
@@ -121,8 +144,12 @@ export function useBridgeHydraulics() {
     // Zone-2-Vorland außerhalb BOK-Fußabdruck (Manning für überströmtes Vorland)
     const zone2PlainMap = {}
 
-    // Poleni: Streifenintegration über Brückendeck
+    // Poleni: Streifenintegration über Brückendeck (mit/ohne Rückstau-σ)
     let Q_poleni = 0
+    let Q_poleni_frei = 0   // vollkommener Überfall (σ = 1), für σ_eff-Ausweis
+
+    // Brückenöffnung Freispiegel-Hydraulik: Fr_öffn + Pfeilerstau
+    let A_open = 0, P_open = 0, T_open = 0, kstA_open = 0
 
     // Geometrische Gesamtwerte
     let totalA1 = 0, totalP1 = 0, totalT1 = 0   // T1 = Wasserspiegelbreite Zone 1
@@ -142,7 +169,8 @@ export function useBridgeHydraulics() {
       const bok2 = interpBridgeZ(bokProfile, x2)
       const bRef1 = bokRefZ(bokProfile, x1)
       const bRef2 = bokRefZ(bokProfile, x2)
-      const kst  = getKstAtX(kstZones, xm)
+      const { kst, inactive } = getZoneAtX(kstZones, xm)
+      if (inactive) continue   // Ineffective Flow Area: weder Fläche noch Abfluss
       const key  = String(kst)
 
       if (!zoneMap[key]) zoneMap[key] = { kst, A1: 0, P1: 0, A2: 0, P2: 0 }
@@ -169,14 +197,31 @@ export function useBridgeHydraulics() {
       const c1_2 = buk2 < Infinity ? Math.min(wsp, buk2)
                  : bok2 < Infinity ? g2
                  : Math.min(wsp, bRef2)
-      const h1_1 = Math.max(0, c1_1 - g1)
-      const h1_2 = Math.max(0, c1_2 - g2)
+      // Ungeklemmte Tiefen: negativ = trocken → teilbenetzte Streifen anteilig
+      // ansetzen (sonst springt P beim Erreichen eines Knickpunkts auf die volle
+      // Segmentlänge bei winziger Fläche → R-Einbruch, nicht-monotone Ratingkurve)
+      const d1_1 = c1_1 - g1
+      const d1_2 = c1_2 - g2
 
-      let stripA1 = 0, stripP1 = 0
-      if (h1_1 > 1e-9 || h1_2 > 1e-9) {
-        stripA1 = 0.5 * (h1_1 + h1_2) * dx
-        stripP1 = Math.sqrt(dx * dx + (g2 - g1) ** 2)
-        if (isSubmerged && buk1 < Infinity && buk2 < Infinity) {
+      const inBukFootprint = buk1 < Infinity && buk2 < Infinity
+
+      let stripA1 = 0, stripP1 = 0, stripT1 = 0
+      if (d1_1 > 1e-9 || d1_2 > 1e-9) {
+        const segLen = Math.sqrt(dx * dx + (g2 - g1) ** 2)
+        if (d1_1 > 0 && d1_2 > 0) {
+          stripA1 = 0.5 * (d1_1 + d1_2) * dx
+          stripP1 = segLen
+          stripT1 = dx
+        } else {
+          const dPos = Math.max(d1_1, d1_2)
+          const t = dPos / (dPos - Math.min(d1_1, d1_2))   // benetzter Anteil
+          stripA1 = 0.5 * dPos * t * dx
+          stripP1 = t * segLen
+          stripT1 = t * dx
+        }
+        // Pfeiler-Versperrung auch im Freispiegel: Öffnungsstreifen × (1−φ)
+        if (inBukFootprint) stripA1 *= (1 - phi)
+        if (isSubmerged && inBukFootprint) {
           stripP1 += Math.sqrt(dx * dx + (buk2 - buk1) ** 2)  // BUK zu benetztem Umfang
         }
       }
@@ -184,7 +229,15 @@ export function useBridgeHydraulics() {
       zoneMap[key].A1 += stripA1
       zoneMap[key].P1 += stripP1
       totalA1 += stripA1; totalP1 += stripP1
-      if (stripA1 > 1e-9) totalT1 += dx
+      if (stripA1 > 1e-9) totalT1 += stripT1
+
+      // Öffnungshydraulik (Freispiegel): Aggregat für Fr_öffn / Pfeilerstau
+      if (inBukFootprint && stripA1 > 1e-9) {
+        A_open    += stripA1
+        P_open    += stripP1
+        kstA_open += kst * stripA1
+        if (wsp < Math.min(buk1, buk2)) T_open += stripT1   // nur freie Oberfläche
+      }
 
       // Vorlandstreifen außerhalb BOK-Fußabdruck → Manning auch bei Druckabfluss
       if (isSubmerged && buk1 >= Infinity && bok1 >= Infinity && stripA1 > 1e-9) {
@@ -197,12 +250,22 @@ export function useBridgeHydraulics() {
       if (hasBok && (bRef1 < Infinity || bRef2 < Infinity)) {
         const floor2_1 = bRef1 < Infinity ? Math.max(g1, bRef1) : wsp + 1
         const floor2_2 = bRef2 < Infinity ? Math.max(g2, bRef2) : wsp + 1
-        const h2_1 = Math.max(0, wsp - floor2_1)
-        const h2_2 = Math.max(0, wsp - floor2_2)
+        // Ungeklemmt — teilbenetzte Streifen anteilig (wie Zone 1)
+        const h2_1 = wsp - floor2_1
+        const h2_2 = wsp - floor2_2
 
         if (h2_1 > 1e-9 || h2_2 > 1e-9) {
-          const stripA2 = 0.5 * (h2_1 + h2_2) * dx
-          const stripP2 = Math.sqrt(dx * dx + (floor2_2 - floor2_1) ** 2)
+          const segLen2 = Math.sqrt(dx * dx + (floor2_2 - floor2_1) ** 2)
+          let stripA2, stripP2
+          if (h2_1 > 0 && h2_2 > 0) {
+            stripA2 = 0.5 * (h2_1 + h2_2) * dx
+            stripP2 = segLen2
+          } else {
+            const hPos = Math.max(h2_1, h2_2)
+            const t2 = hPos / (hPos - Math.min(h2_1, h2_2))
+            stripA2 = 0.5 * hPos * t2 * dx
+            stripP2 = t2 * segLen2
+          }
 
           zoneMap[key].A2 += stripA2
           zoneMap[key].P2 += stripP2
@@ -213,7 +276,15 @@ export function useBridgeHydraulics() {
             const bokMid = 0.5 * (bok1 + bok2)
             const h_ue   = Math.max(0, wsp - bokMid)
             if (h_ue > 1e-9) {
-              Q_poleni += (2 / 3) * muDeck * Math.sqrt(2 * G) * Math.pow(h_ue, 1.5) * dx
+              const q_frei = (2 / 3) * muDeck * Math.sqrt(2 * G) * Math.pow(h_ue, 1.5) * dx
+              Q_poleni_frei += q_frei
+              // Rückstau: unvollkommener Überfall (Villemonte) wenn UW über BOK
+              let sigma = 1
+              if (uwLevel != null && uwLevel > bokMid) {
+                const ratio = Math.min((uwLevel - bokMid) / h_ue, 1)
+                sigma = Math.pow(Math.max(0, 1 - Math.pow(ratio, 1.5)), 0.385)
+              }
+              Q_poleni += sigma * q_frei
             }
           } else {
             // Außerhalb BOK-Fußabdruck → Manning für überströmtes Vorland
@@ -230,8 +301,11 @@ export function useBridgeHydraulics() {
     let Q1_total = 0, Q2_total = 0
     let Q_orifice_result = 0, Q_poleni_result = 0
     let h_drive_result = 0, mu_eff_result = mu
-    let phi_result = 0, A_netto_result = A_bridge
     let uwActive_result = false
+
+    // Versperrungsgrad gilt in allen Zuständen (A_netto = A_öffn. · (1−φ))
+    const phi_result     = phi
+    const A_netto_result = A_bridge * (1 - phi)
 
     // Manning-Q₁ immer berechnen — wird als Untergrenze beim Zustandsübergang verwendet
     let Q_manning_z1 = 0
@@ -269,12 +343,8 @@ export function useBridgeHydraulics() {
       const z_centroid  = bukDxSum > 0 ? bukZxDx / bukDxSum : wsp
       const h_drive_geo = Math.max(0, wsp - z_centroid)
       // Eingestauter Orifice: Δh = OW − UW statt OW − z̄_BUK
-      uwActive_result = wspUW != null && isFinite(wspUW) && wspUW < wsp
-      const h_drive  = uwActive_result ? Math.max(0, wsp - wspUW) : h_drive_geo
-      // Versperrungsgrad durch Pfeiler: φ = n·b_P / L_BUK → A_netto = A_bridge·(1−φ)
-      const L_BUK  = hasBridge ? bukProfile[bukProfile.length - 1].x - bukProfile[0].x : 0
-      phi_result   = (L_BUK > 1e-9 && nPiers > 0) ? Math.min(nPiers * bPier / L_BUK, 0.95) : 0
-      A_netto_result = A_bridge * (1 - phi_result)
+      uwActive_result = uwLevel != null
+      const h_drive  = uwActive_result ? Math.max(0, wsp - uwLevel) : h_drive_geo
       // ζ-Pfeilerterm: analytische Lösung Q = μ·A_netto·√(2g·Δh)/√(1+μ²·ζ)
       const mu_eff     = zeta > 1e-9 ? mu / Math.sqrt(1 + mu * mu * zeta) : mu
       const Q_orifice_raw = mu_eff * A_netto_result * Math.sqrt(2 * G * h_drive)
@@ -319,6 +389,24 @@ export function useBridgeHydraulics() {
     const D1_hydraulic = totalT1 > 1e-9 ? totalA1 / totalT1 : 0
     const Fr1 = D1_hydraulic > 1e-9 && v1_mean > 0 ? v1_mean / Math.sqrt(G * D1_hydraulic) : 0
 
+    // Öffnungshydraulik (Freispiegel): Fr_öffn entscheidet über Regimewechsel
+    // in der Verengung; Δh_P = ζ·v²/2g als Pfeilerstau-Abschätzung
+    let Fr_open = 0, v_open = 0, dh_pier = 0
+    if (!isSubmerged && hasBridge && A_open > 1e-9 && P_open > 1e-9) {
+      const R_open  = A_open / P_open
+      const kstOpen = kstA_open / A_open
+      v_open = kstOpen * Math.pow(R_open, 2 / 3) * I05
+      const D_open = T_open > 1e-9 ? A_open / T_open : 0
+      Fr_open = D_open > 1e-9 ? v_open / Math.sqrt(G * D_open) : 0
+      if (zeta > 1e-9) dh_pier = zeta * v_open * v_open / (2 * G)
+    }
+    const chokeWarn = Fr_open >= 1
+
+    // Effektiver Rückstaubeiwert des Überfalls (1 = vollkommen)
+    const weirSigma = (isSubmerged && hasOverflow && Q_poleni_frei > 1e-12)
+      ? Q_poleni / Q_poleni_frei : 1
+    const weirSubmerged = weirSigma < 0.999
+
     const state = !hasBridge ? 0 : hasOverflow ? 3 : isSubmerged ? 2 : 1
 
     return {
@@ -329,10 +417,12 @@ export function useBridgeHydraulics() {
       zoneResults,
       hasBridge, isSubmerged, hasOverflow,
       A_bridge, Q_orifice: Q_orifice_result, Q_poleni: Q_poleni_result,
-      h_drive: h_drive_result, mu_eff: mu_eff_result, zeta_used: isSubmerged ? zeta : 0,
+      h_drive: h_drive_result, mu_eff: mu_eff_result, zeta_used: zeta,
       phi: phi_result, A_netto: A_netto_result,
       isSubmergedGeo, flowModeUsed: flowMode, isUWActive: uwActive_result,
-      Fr1, frWarn: Fr1 >= 0.8,
+      Fr1, Fr_open, v_open, dh_pier, chokeWarn,
+      weirSigma, weirSubmerged,
+      frWarn: Fr1 >= 0.8 || Fr_open >= 0.8,
     }
   }
 
@@ -348,7 +438,9 @@ export function useBridgeHydraulics() {
       h_drive: 0, mu_eff: 0, zeta_used: 0,
       phi: 0, A_netto: 0,
       isSubmergedGeo: false, flowModeUsed: 'auto', isUWActive: false,
-      Fr1: 0, frWarn: false,
+      Fr1: 0, Fr_open: 0, v_open: 0, dh_pier: 0, chokeWarn: false,
+      weirSigma: 1, weirSubmerged: false,
+      frWarn: false,
     }
   }
 

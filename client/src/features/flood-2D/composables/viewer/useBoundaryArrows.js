@@ -146,8 +146,10 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
     points.forEach((pt, i) => {
       const localX = pt.x - cx;
       const localY = pt.y - cy;
-      const col = Math.round((pt.x - xllcorner) / cellsize);
-      const row = Math.round((pt.y - yllcorner) / cellsize); // bottom-up
+      // floor (NICHT round) — konsistent mit dem Validitäts-Filter. round würde bei Zellmitten
+      // (xll+(c+0.5)·cs) die Nachbarzelle c+1 abtasten → falsche/NoData-Höhe → Pfeil "schwebt".
+      const col = Math.floor((pt.x - xllcorner) / cellsize);
+      const row = Math.floor((pt.y - yllcorner) / cellsize); // bottom-up
       let terrainZ = 0;
       if (col >= 0 && col < ncols && row >= 0 && row < nrows) {
         const val = gridData[row * ncols + col];

@@ -171,6 +171,9 @@
             Nur verwenden wenn Pfeiler <em>nicht</em> im Geländeprofil eingezeichnet sind.<br>
             Pfeiler als Terrain-Erhöhung modelliert → n = 0 setzen (sonst Doppelabzug).<br>
             &phi; = n &middot; b<sub>P</sub> / L<sub>BUK</sub> &nbsp;&nbsp; A<sub>netto</sub> = A<sub>öffn.</sub> &middot; (1 &minus; &phi;)
+            &nbsp;—&nbsp; wirkt in allen Zuständen (auch Freispiegel).<br>
+            Im Freispiegel zusätzlich Pfeilerstau-Abschätzung &Delta;h<sub>P</sub> = &zeta; &middot; v<sub>öffn.</sub>²/2g.<br>
+            Verklausung (Treibgut) näherungsweise: b<sub>P</sub> um angenommene Verlegungsbreite erhöhen.
           </p>
         </div>
       </div>
@@ -244,7 +247,8 @@
       </div>
 
       <div class="kst-zones-list">
-        <div class="kst-zone-row" v-for="zone in store.kstZones" :key="zone.id">
+        <div class="kst-zone-row" :class="{ 'zone-inactive': zone.inactive }"
+          v-for="zone in store.kstZones" :key="zone.id">
           <span class="zone-color-dot" :style="{ background: zone.color }"></span>
 
           <input class="zone-label-inp" type="text" :value="zone.label"
@@ -266,8 +270,14 @@
             <span class="unit-sm">kSt</span>
             <input type="number" :value="zone.kst"
               @input="store.updateKstZone(zone.id, { kst: +$event.target.value })"
-              min="1" max="120" step="1" class="kst-inp" />
+              min="1" max="120" step="1" class="kst-inp" :disabled="zone.inactive" />
           </div>
+
+          <button :class="['inactive-btn', { on: zone.inactive }]"
+            @click="store.updateKstZone(zone.id, { inactive: !zone.inactive })"
+            title="Ineffective Flow Area: Zone führt keinen Abfluss (Totwasser hinter Widerlagern o.ä.) — Fläche zählt weder zu A noch zu Q">
+            {{ zone.inactive ? 'Totwasser' : 'aktiv' }}
+          </button>
 
           <button class="remove-btn" @click="store.removeKstZone(zone.id)"
             :disabled="store.kstZones.length <= 1" title="Zone entfernen">×</button>
@@ -276,7 +286,9 @@
 
       <p class="hint-small">
         Leer = ±∞ · Mehrere Zonen: Letzte Übereinstimmung gilt · Empfehlungen:
-        Betongerinne 70–85 · Naturgerinne 25–40 · Vorland/Brückendeck 20–30
+        Betongerinne 70–85 · Naturgerinne 25–40 · Vorland/Brückendeck 20–30<br>
+        <strong>Totwasser</strong> = Ineffective Flow Area (z.B. hinter Widerlagern):
+        Zone wird hydraulisch ignoriert, dient nur der Retention.
       </p>
     </div>
 
@@ -539,6 +551,24 @@ const GEOJSON_EXAMPLE = `// FeatureCollection mit Layern:
 
 .kst-inp-row { display: flex; align-items: center; gap: 0.25rem; }
 .kst-inp { width: 52px; padding: 0.22rem 0.3rem; border: 1.5px solid #e2e8f0; border-radius: 5px; font-size: 0.82rem; text-align: right; background: white; font-weight: 600; }
+
+.kst-zone-row.zone-inactive { opacity: 0.65; background: #f1f5f9; }
+.kst-zone-row.zone-inactive .zone-label-inp { text-decoration: line-through; color: #94a3b8; }
+
+.inactive-btn {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f0fdf4;
+  color: #15803d;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.inactive-btn:hover { border-color: #94a3b8; }
+.inactive-btn.on { background: #f1f5f9; color: #64748b; border-color: #cbd5e1; }
 
 .remove-btn {
   width: 22px; height: 22px;
