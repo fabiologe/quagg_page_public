@@ -39,12 +39,52 @@ export const useSimulationStore = defineStore('simulation', () => {
     const useAcceleration = ref(true); // Acceleration solver flag
 
     /**
-     * Dev-Switch: Nutze den experimentellen BMI-WebWorker (simulation.bmi.js)
-     * statt des produktiven Blackbox-Workers (simulation.main.js).
-     * Standard: false (produktiver Modus).
-     * @type {import('vue').Ref<boolean>}
+     * Solver-Ausführungspfad:
+     *   'wasm'   — produktiver Blackbox-Worker (simulation.main.js)
+     *   'bmi'    — experimenteller Frame-by-Frame-Worker (simulation.bmi.js)
+     *   'runpod' — Remote-Lauf auf RUNPOD (LISFLOOD 8.2); ohne API-Key → Mock
+     * @type {import('vue').Ref<'wasm'|'bmi'|'runpod'>}
      */
-    const useBmiSolver = ref(false);
+    const solverMode = ref('wasm');
+
+    /**
+     * Rückwärtskompatibler Alias (Projekt-Dateien, CulvertLinkManager):
+     * true ⇔ solverMode === 'bmi'.
+     */
+    const useBmiSolver = computed({
+        get: () => solverMode.value === 'bmi',
+        set: (v) => { solverMode.value = v ? 'bmi' : 'wasm'; }
+    });
+
+    // ── Genauigkeits-Settings (High-End-Pfad, nur solverMode 'runpod') ───────
+    /** Ziel-Zellweite [m] fürs Export-Resampling; null = native Auflösung. */
+    const exportCellsize = ref(null);
+    /** Numerisches Schema für LISFLOOD 8: 'acceleration' | 'fv1' | 'dg2'. SGC erzwingt acceleration. */
+    const numericalScheme = ref('acceleration');
+    /** Sub-Grid-Channel-Export der gezeichneten Kanal-Mittellinie. */
+    const sgcEnabled = ref(false);
+    /** GPU/CUDA nutzen (nur wirksam mit fv1/dg2; acceleration+SGC laufen CPU). Setzt `cuda` in run.par. */
+    const useGpu = ref(false);
+
+    // ── Remote-Job-State (nur für solverMode 'runpod' relevant) ──────────────
+    /** @type {import('vue').Ref<string|null>} */
+    const jobId = ref(null);
+    /** @type {import('vue').Ref<'idle'|'uploading'|'queued'|'running'|'downloading'|'done'|'error'>} */
+    const jobPhase = ref('idle');
+    /** @type {import('vue').Ref<string|null>} */
+    const jobError = ref(null);
+
+    function setJobState({ jobId: id, phase, error } = {}) {
+        if (id !== undefined) jobId.value = id;
+        if (phase !== undefined) jobPhase.value = phase;
+        if (error !== undefined) jobError.value = error;
+    }
+
+    function resetJob() {
+        jobId.value = null;
+        jobPhase.value = 'idle';
+        jobError.value = null;
+    }
 
     // Actions
     function setActiveTool(tool) {
@@ -86,6 +126,21 @@ export const useSimulationStore = defineStore('simulation', () => {
     /** Max hazard grid from res.maxHaz (depth × velocity, written at end) */
     const maxHazardGrid = ref(null);
 
+    /** Water surface elevation per frame (mNHN): frameId → Float32Array (.elev) */
+    const elevFrames = ref(new Map());
+
+    /** Max velocity grid |v| from res.maxVx/.maxVy (written at end) */
+    const maxVelocityGrid = ref(null);
+
+    /** Max water surface elevation grid from res.mxe (written at end) */
+    const maxElevGrid = ref(null);
+
+    /** Inundation arrival time grid from res.inittm (written at end) */
+    const arrivalTimeGrid = ref(null);
+
+    /** Inundation duration grid from res.totaltm (written at end) */
+    const durationGrid = ref(null);
+
     /** @type {import('vue').Ref<number>} */
     const currentFrameIndex = ref(-1);
 
@@ -109,18 +164,31 @@ export const useSimulationStore = defineStore('simulation', () => {
         velocityVectorFrames.value.set(frameId, { vx, vy });
     }
 
+    function addElevFrame(frameId, data) {
+        elevFrames.value.set(frameId, data);
+    }
+
     function setMaxDepthGrid(data) { maxDepthGrid.value = data; }
     function setMaxHazardGrid(data) { maxHazardGrid.value = data; }
+    function setMaxVelocityGrid(data) { maxVelocityGrid.value = data; }
+    function setMaxElevGrid(data) { maxElevGrid.value = data; }
+    function setArrivalTimeGrid(data) { arrivalTimeGrid.value = data; }
+    function setDurationGrid(data) { durationGrid.value = data; }
 
     function clearResults() {
         resultFrames.value.clear();
         velocityFrames.value.clear();
         velocityVectorFrames.value.clear();
+        elevFrames.value.clear();
         currentFrameIndex.value = -1;
         resultHeader.value = null;
         maxWaterDepth.value = 0;
         maxDepthGrid.value = null;
         maxHazardGrid.value = null;
+        maxVelocityGrid.value = null;
+        maxElevGrid.value = null;
+        arrivalTimeGrid.value = null;
+        durationGrid.value = null;
     }
 
     /** @type {import('vue').Ref<number>} */
@@ -139,7 +207,12 @@ export const useSimulationStore = defineStore('simulation', () => {
         if (cfg.saveInterval !== undefined) saveInterval.value = cfg.saveInterval;
         if (cfg.massInterval !== undefined) massInterval.value = cfg.massInterval;
         if (cfg.useAcceleration !== undefined) useAcceleration.value = cfg.useAcceleration;
-        if (cfg.useBmiSolver !== undefined) useBmiSolver.value = cfg.useBmiSolver;
+        if (cfg.solverMode !== undefined) solverMode.value = cfg.solverMode;
+        else if (cfg.useBmiSolver !== undefined) useBmiSolver.value = cfg.useBmiSolver; // Legacy-Projekte
+        if (cfg.exportCellsize !== undefined) exportCellsize.value = cfg.exportCellsize;
+        if (cfg.numericalScheme !== undefined) numericalScheme.value = cfg.numericalScheme;
+        if (cfg.sgcEnabled !== undefined) sgcEnabled.value = cfg.sgcEnabled;
+        if (cfg.useGpu !== undefined) useGpu.value = cfg.useGpu;
     }
 
     // NEW: Multi-select support
@@ -176,7 +249,17 @@ export const useSimulationStore = defineStore('simulation', () => {
         saveInterval,
         massInterval,
         useAcceleration,
+        solverMode,
         useBmiSolver,
+        exportCellsize,
+        numericalScheme,
+        sgcEnabled,
+        useGpu,
+        jobId,
+        jobPhase,
+        jobError,
+        setJobState,
+        resetJob,
 
         // Actions
         setActiveTool,
@@ -201,15 +284,25 @@ export const useSimulationStore = defineStore('simulation', () => {
         resultFrames,
         velocityFrames,
         velocityVectorFrames,
+        elevFrames,
         maxDepthGrid,
         maxHazardGrid,
+        maxVelocityGrid,
+        maxElevGrid,
+        arrivalTimeGrid,
+        durationGrid,
         currentFrameIndex,
         resultHeader,
         addResultFrame,
         addVelocityFrame,
         addVelocityVectorFrame,
+        addElevFrame,
         setMaxDepthGrid,
         setMaxHazardGrid,
+        setMaxVelocityGrid,
+        setMaxElevGrid,
+        setArrivalTimeGrid,
+        setDurationGrid,
         clearResults,
         maxWaterDepth,
         totalFrameCount

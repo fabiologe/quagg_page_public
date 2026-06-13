@@ -169,14 +169,23 @@ const availableLayers = computed(() => {
     layers.push({ id: 'max_depth', icon: '📈', label: 'Max-Tiefe' });
   if (bridge.maxHazardGrid?.value)
     layers.push({ id: 'hazard', icon: '⚠️', label: 'Hazard' });
+  if (bridge.maxVelocityGrid?.value)
+    layers.push({ id: 'max_velocity', icon: '🚀', label: 'Max-Geschw.' });
+  if (bridge.maxElevGrid?.value)
+    layers.push({ id: 'max_elev', icon: '🌊', label: 'Wasserspiegel' });
+  if (bridge.arrivalTimeGrid?.value)
+    layers.push({ id: 'arrival', icon: '⏱️', label: 'Ankunftszeit' });
+  if (bridge.durationGrid?.value)
+    layers.push({ id: 'duration', icon: '🕒', label: 'Dauer' });
   return layers;
 });
 
 // 0=depth, 1=velocity, 2=max_depth/hazard (heat map)
 // Flow rendert die Pfeile ÜBER dem normalen (Tiefen-)Wassershader → Modus 0.
+const STATIC_GRID_LAYERS = ['max_depth', 'hazard', 'max_velocity', 'max_elev', 'arrival', 'duration'];
 const activeLayerMode = computed(() => {
   if (activeLayer.value === 'velocity') return 1;
-  if (activeLayer.value === 'max_depth' || activeLayer.value === 'hazard') return 2;
+  if (STATIC_GRID_LAYERS.includes(activeLayer.value)) return 2;
   return 0;
 });
 
@@ -186,9 +195,13 @@ const currentLayerData = computed(() => {
   switch (activeLayer.value) {
     case 'velocity':
     case 'flow':      return currentDepthData.value;     // echte Tiefe = Geometrie
-    case 'max_depth': return bridge.maxDepthGrid?.value ?? null;
-    case 'hazard':    return bridge.maxHazardGrid?.value ?? null;
-    default:          return currentDepthData.value;
+    case 'max_depth':    return bridge.maxDepthGrid?.value ?? null;
+    case 'hazard':       return bridge.maxHazardGrid?.value ?? null;
+    case 'max_velocity': return bridge.maxVelocityGrid?.value ?? null;
+    case 'max_elev':     return bridge.maxElevGrid?.value ?? null;
+    case 'arrival':      return bridge.arrivalTimeGrid?.value ?? null;
+    case 'duration':     return bridge.durationGrid?.value ?? null;
+    default:             return currentDepthData.value;
   }
 });
 

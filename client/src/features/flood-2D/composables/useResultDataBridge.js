@@ -132,9 +132,11 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         }
     }
 
-    // Serialize max depth + hazard grids (optional)
-    const maxDepthRaw  = toRaw(simStore.maxDepthGrid);
-    const maxHazardRaw = toRaw(simStore.maxHazardGrid);
+    // Serialize Summen-/Max-Raster (optional). Einheitlich über _sliceGrid.
+    const _sliceGrid = (g) => {
+        const raw = toRaw(g);
+        return raw instanceof Float32Array ? raw.slice() : (raw ? new Float32Array(raw) : null);
+    };
 
     const rawGridData = toRaw(rawTerrain.gridData);
     const maxDepth = Math.max(simStore.maxWaterDepth || 0, computedMaxDepth);
@@ -162,8 +164,12 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         frames: serializedFrames,
         velocityFrames: serializedVelocity,
         velocityVectorFrames: serializedVectors,
-        maxDepthGrid:  maxDepthRaw  instanceof Float32Array ? maxDepthRaw.slice()  : (maxDepthRaw  ? new Float32Array(maxDepthRaw)  : null),
-        maxHazardGrid: maxHazardRaw instanceof Float32Array ? maxHazardRaw.slice() : (maxHazardRaw ? new Float32Array(maxHazardRaw) : null),
+        maxDepthGrid:    _sliceGrid(simStore.maxDepthGrid),
+        maxHazardGrid:   _sliceGrid(simStore.maxHazardGrid),
+        maxVelocityGrid: _sliceGrid(simStore.maxVelocityGrid),
+        maxElevGrid:     _sliceGrid(simStore.maxElevGrid),
+        arrivalTimeGrid: _sliceGrid(simStore.arrivalTimeGrid),
+        durationGrid:    _sliceGrid(simStore.durationGrid),
         timestamp: Date.now(),
         bciContent: bciContent
     };
@@ -204,6 +210,10 @@ export function useResultDataFromOpener() {
     const velocityVectorFrames = ref(new Map());
     const maxDepthGrid = ref(null);
     const maxHazardGrid = ref(null);
+    const maxVelocityGrid = ref(null);
+    const maxElevGrid = ref(null);
+    const arrivalTimeGrid = ref(null);
+    const durationGrid = ref(null);
     const maxWaterDepth = ref(0);
     const totalFrames = ref(0);
     const simDuration = ref(3600);
@@ -279,8 +289,13 @@ export function useResultDataFromOpener() {
             });
 
             // Hydrate summary grids
-            if (data.maxDepthGrid)  maxDepthGrid.value  = data.maxDepthGrid  instanceof Float32Array ? data.maxDepthGrid  : new Float32Array(data.maxDepthGrid);
-            if (data.maxHazardGrid) maxHazardGrid.value = data.maxHazardGrid instanceof Float32Array ? data.maxHazardGrid : new Float32Array(data.maxHazardGrid);
+            const _hydrate = (v) => v == null ? null : (v instanceof Float32Array ? v : new Float32Array(v));
+            if (data.maxDepthGrid)    maxDepthGrid.value    = _hydrate(data.maxDepthGrid);
+            if (data.maxHazardGrid)   maxHazardGrid.value   = _hydrate(data.maxHazardGrid);
+            if (data.maxVelocityGrid) maxVelocityGrid.value = _hydrate(data.maxVelocityGrid);
+            if (data.maxElevGrid)     maxElevGrid.value     = _hydrate(data.maxElevGrid);
+            if (data.arrivalTimeGrid) arrivalTimeGrid.value = _hydrate(data.arrivalTimeGrid);
+            if (data.durationGrid)    durationGrid.value    = _hydrate(data.durationGrid);
 
             loadProgress.value = 100;
             isLoading.value = false;
@@ -301,6 +316,10 @@ export function useResultDataFromOpener() {
         velocityVectorFrames,
         maxDepthGrid,
         maxHazardGrid,
+        maxVelocityGrid,
+        maxElevGrid,
+        arrivalTimeGrid,
+        durationGrid,
         maxWaterDepth,
         totalFrames,
         simDuration,

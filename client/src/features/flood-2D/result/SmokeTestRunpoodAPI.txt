@@ -1,0 +1,257 @@
+Simulation Logs:
+Engine: ☁️ RUNPOD Remote
+[STATUS] READY
+Generiere Input Dateien aus Stores (Main Thread)...
+Generiere LISFLOOD Input-Dateien im Haupt-Thread...
+✅ 7 Input-Dateien generiert: terrain.asc, profiles.bdy, flow.bci, sgc.width.asc, sgc.bed.asc, sgc.bank.asc, run.par
+[WARNUNG] SGC-Gerinne 5 m breit > 4 Zellen (4.0 m) — besser direkt im DGM auflösen statt Sub-Grid.
+[JOB] uploading
+[SOLVER] RUNPOD: 7 Input-Dateien werden komprimiert...
+[JOB] queued (mock-1781202224087-1)
+[SOLVER] RUNPOD: Job mock-1781202224087-1 angenommen (IN_QUEUE).
+[STATUS] RUNNING
+[JOB] running (mock-1781202224087-1)
+[SOLVER] Initializing Lisflood WASM...
+[SOLVER] Loading Emscripten module via fetch...
+[SOLVER] [WASM STATUS] Running...
+[SOLVER] Lisflood WASM Initialized.
+[SOLVER] Module Keys: print, printErr, locateFile, setStatus, monitorRunDependencies, addRunDependency, removeRunDependency, ccall, cwrap, UTF8ToString, FS_preloadFile, FS_unlink, FS_createPath, FS_createDevice, FS, FS_createDataFile, FS_createLazyFile, _run_lisflood, _free, _malloc, HEAP8, HEAPU8, calledRun
+[SOLVER] Preparing Simulation Files...
+[SOLVER] Written terrain.asc to MEMFS.
+[SOLVER] Written profiles.bdy to MEMFS.
+[SOLVER] Written flow.bci to MEMFS.
+[SOLVER] Written sgc.width.asc to MEMFS.
+[SOLVER] Written sgc.bed.asc to MEMFS.
+[SOLVER] Written sgc.bank.asc to MEMFS.
+[SOLVER] Written run.par to MEMFS.
+[SOLVER] Starting Lisflood Solver...
+[SOLVER] MEMFS Root: ., .., tmp, home, dev, proc, terrain.asc, profiles.bdy, flow.bci, sgc.width.asc, sgc.bed.asc, sgc.bank.asc, run.par, results, res
+[SOLVER] 📄 run.par (478 bytes)
+[SOLVER] 📄 terrain.asc (3152166 bytes)
+[SOLVER] 📄 flow.bci (56549 bytes)
+[SOLVER] 📄 profiles.bdy (81 bytes)
+[SOLVER] Invoking run_lisflood via ccall...
+[SOLVER] [SOLVER] Running in Single-Threaded Mode (WASM Standard)
+[SOLVER] [SOLVER] Parameter file: run.par
+[SOLVER] [SOLVER] ***************************
+[SOLVER] [SOLVER]  LISFLOOD-FP version 5.99.0
+[SOLVER] [SOLVER] ***************************
+[SOLVER] [SOLVER]  This is a modified version 5.9 including Basic Model Interface (BMI) compatibility
+[SOLVER] [SOLVER] ***************************
+[SOLVER] [SOLVER]  The model needs therefore be executed accordingly!
+[SOLVER] [SOLVER] ***************************
+[SOLVER] [SOLVER] DEBUG: Entering ReadParamFile with fname: run.par
+[SOLVER] [SOLVER] DEBUG: fopen returned 0x18dc8
+
+[BoundaryArrows] 🔵 Rendered 1385 boundary arrows.
+index.js:34 [SolverFactory] RUNPOD-Mock aktiv (kein API-Key/Endpoint konfiguriert)
+InputGenerator.js:52 [InputGenerator] v2.1 - Connectivity Check ENABLED ✅
+InputGenerator.js:95 [InputGenerator] Terrain Header: ncols=658, nrows=412, cellsize=1, xll=undefined, yll=undefined
+InputGenerator.js:366 [InputGenerator] Total BCI Entities: 1 (Boundaries: 1, Manholes: 0)
+InputGenerator.js:477 [InputGenerator] Generating BCI+BDY with Flux Splitting. Boundaries: 1, Assignments: 1
+InputGenerator.js:528 [InputGenerator] DIAG Boundary 88a3de14-b195-42b1-a4df-590716c8b639: Input coords = [[380397,5506998],[380412,5506985],[380412,5506985]]
+InputGenerator.js:529 [InputGenerator] DIAG Header: xll=380168, yll=5506851, cellsize=1, ncols=658, nrows=412
+InputGenerator.js:531 [InputGenerator] DIAG Boundary 88a3de14-b195-42b1-a4df-590716c8b639: rawCells (bottom-up) = [{"x":229,"y":147},{"x":230,"y":146},{"x":231,"y":145},{"x":232,"y":144},{"x":233,"y":144}] ... (16 total)
+InputGenerator.js:576 [InputGenerator] Boundary 88a3de14-b195-42b1-a4df-590716c8b639: 16 valid cells, first: [{"x":229,"y":147},{"x":230,"y":146},{"x":231,"y":145}]
+InputGenerator.js:596 [InputGenerator] Boundary 88a3de14-b195-42b1-a4df-590716c8b639: Type=QVAR, Cells=16, ScaleFactor=16 (isFlow=true, Point=false)
+InputGenerator.js:607 [InputGenerator] QVAR: Original=30, Scaled=1.875
+InputGenerator.js:615 [InputGenerator] Boundary 88a3de14-b195-42b1-a4df-590716c8b639: 16 cells, cellsize=1m, scaleFactor=16.00 (QVAR). Profile: const_88a3de14_b0
+InputGenerator.js:409 [InputGenerator] Globale Randbedingung (FREE): freie Domänenkanten ergänzt (zusätzlich zu 16 manuellen BCI-Zeilen).
+InputGenerator.js:456 [InputGenerator] Globale Randbedingung (FREE): 1357 Auslauf-Zellen an der NoData-Front ergänzt.
+InputGenerator.js:39 [InputGenerator] ⚠️ SGC-Gerinne 5 m breit > 4 Zellen (4.0 m) — besser direkt im DGM auflösen statt Sub-Grid.
+(anonymous) @ InputGenerator.js:39
+InputGenerator.js:259 [InputGenerator] ✅ SGC: 2031 Gerinne-Zellen gestempelt (Breite 5 m).
+InputGenerator.js:1101 [InputGenerator] ✅ Acceleration solver ENABLED for faster computation.
+InputGenerator.js:1104 [InputGenerator] Generating run.par with config: Object
+simulation.main.js?worker_file&type=module:25 [Simulation] Worker script loaded.
+
+[SolverFactory] RUNPOD-Mock aktiv (kein API-Key/Endpoint konfiguriert)
+InputGenerator.js:48 [InputGenerator] v2.1 - Connectivity Check ENABLED ✅
+InputGenerator.js:66 [InputGenerator] Terrain Header: ncols=658, nrows=412, cellsize=1, xll=undefined, yll=undefined
+InputGenerator.js:310 [InputGenerator] Total BCI Entities: 1 (Boundaries: 1, Manholes: 0)
+InputGenerator.js:421 [InputGenerator] Generating BCI+BDY with Flux Splitting. Boundaries: 1, Assignments: 1
+InputGenerator.js:472 [InputGenerator] DIAG Boundary 08d974bc-f134-4f60-bf36-7a4efd04db0c: Input coords = [[380411,5506984],[380398,5506998],[380398,5506998]]
+InputGenerator.js:473 [InputGenerator] DIAG Header: xll=380168, yll=5506851, cellsize=1, ncols=658, nrows=412
+InputGenerator.js:475 [InputGenerator] DIAG Boundary 08d974bc-f134-4f60-bf36-7a4efd04db0c: rawCells (bottom-up) = [{"x":243,"y":133},{"x":242,"y":134},{"x":241,"y":135},{"x":240,"y":136},{"x":239,"y":137}] ... (15 total)
+InputGenerator.js:520 [InputGenerator] Boundary 08d974bc-f134-4f60-bf36-7a4efd04db0c: 15 valid cells, first: [{"x":243,"y":133},{"x":242,"y":134},{"x":241,"y":135}]
+InputGenerator.js:540 [InputGenerator] Boundary 08d974bc-f134-4f60-bf36-7a4efd04db0c: Type=QVAR, Cells=15, ScaleFactor=15 (isFlow=true, Point=false)
+InputGenerator.js:551 [InputGenerator] QVAR: Original=100, Scaled=6.666666666666667
+InputGenerator.js:559 [InputGenerator] Boundary 08d974bc-f134-4f60-bf36-7a4efd04db0c: 15 cells, cellsize=1m, scaleFactor=15.00 (QVAR). Profile: const_08d974bc_b0
+InputGenerator.js:353 [InputGenerator] Globale Randbedingung (FREE): freie Domänenkanten ergänzt (zusätzlich zu 15 manuellen BCI-Zeilen).
+InputGenerator.js:400 [InputGenerator] Globale Randbedingung (FREE): 1357 Auslauf-Zellen an der NoData-Front ergänzt.
+InputGenerator.js:1026 [InputGenerator] Generated flow.weir (93 weirs + 76 bridge lines):
+169
+380489.50 5507052.50  S  1.7040  245.0000  0.6670  1.0000
+380488.50 5507052.50  S  1.7040  245.0000  0.6670  1.0000
+380488.50 5507052.50  E  1.7040  245.0000  0.6670  1.0000
+380488.50 5507053.50  E  1.7040  245.0000  0.6670  1.0000
+380488.50 5507054.50  E  1.7040  245.0000  0.6670  1.0000
+380488.50 5507054.50  S  1.7040  245.0000  0.6670  1.0000
+380487.50 5507054.50  S  1.7040  245.0000  0.6670  1.0000
+380487.50 5507054.50  E  1.7040  245.0000  0.6670  1.0000
+380487.50 5507055.50  E  1.7040  245.0000  0.6670  1.0000
+380487.50 5507056.50  E  1.7040  245.0000  0.6670  1.0000
+380487.50 5507056.50  S  1.7040  245.0000  0.6670  1.0000
+380486.50 5507056.50  S  1.7040  245.0000  0.6670  1.0000
+380486.50 5507056.50  E  1.7040  245.0000  0.6670  1.0000
+380486.50 5507057.50  E  1.7040  245.0000  0.6670  1.0000
+380486.50 5507057.50  S  1.7040  245.0000  0.6670  1.0000
+380485.50 5507057.50  S  1.7040  245.0000  0.6670  1.0000
+380485.50 5507057.50  E  1.7040  245.0000  0.6670  1.0000
+380485.50 5507058.50  E  1.7040  245.0000  0.6670  1.0000
+380485.50 5507059.50  E  1.7040  245.0000  0.6670  1.0000
+380485.50 5507059.50  S  1.7040  245.0000  0.6670  1.0000
+380484.50 5507059.50  S  1.7040  245.0000  0.6670  1.0000
+380484.50 5507059.50  E  1.7040  245.0000  0.6670  1.0000
+380484.50 5507060.50  E  1.7040  245.0000  0.6670  1.0000
+380484.50 5507061.50  E  1.7040  245.0000  0.6670  1.0000
+380484.50 5507061.50  S  1.7040  245.0000  0.6670  1.0000
+380483.50 5507061.50  S  1.7040  245.0000  0.6670  1.0000
+380483.50 5507061.50  E  1.7040  245.0000  0.6670  1.0000
+380483.50 5507062.50  E  1.7040  245.0000  0.6670  1.0000
+380483.50 5507062.50  S  1.7040  245.0000  0.6670  1.0000
+380482.50 5507062.50  S  1.7040  245.0000  0.6670  1.0000
+380482.50 5507062.50  E  1.7040  245.0000  0.6670  1.0000
+380482.50 5507063.50  E  1.7040  245.0000  0.6670  1.0000
+380482.50 5507064.50  E  1.7040  245.0000  0.6670  1.0000
+380482.50 5507064.50  S  1.7040  245.0000  0.6670  1.0000
+380481.50 5507064.50  S  1.7040  245.0000  0.6670  1.0000
+380481.50 5507064.50  E  1.7040  245.0000  0.6670  1.0000
+380481.50 5507065.50  E  1.7040  245.0000  0.6670  1.0000
+380481.50 5507066.50  E  1.7040  245.0000  0.6670  1.0000
+380481.50 5507066.50  S  1.7040  245.0000  0.6670  1.0000
+380480.50 5507066.50  S  1.7040  245.0000  0.6670  1.0000
+380480.50 5507066.50  E  1.7040  245.0000  0.6670  1.0000
+380480.50 5507067.50  E  1.7040  245.0000  0.6670  1.0000
+380480.50 5507067.50  S  1.7040  245.0000  0.6670  1.0000
+380479.50 5507067.50  S  1.7040  245.0000  0.6670  1.0000
+380479.50 5507067.50  E  1.7040  245.0000  0.6670  1.0000
+380479.50 5507068.50  E  1.7040  245.0000  0.6670  1.0000
+380479.50 5507069.50  E  1.7040  245.0000  0.6670  1.0000
+380479.50 5507069.50  S  1.7040  245.0000  0.6670  1.0000
+380478.50 5507069.50  S  1.7040  245.0000  0.6670  1.0000
+380478.50 5507069.50  E  1.7040  245.0000  0.6670  1.0000
+380478.50 5507070.50  E  1.7040  245.0000  0.6670  1.0000
+380478.50 5507070.50  S  1.7040  245.0000  0.6670  1.0000
+380477.50 5507070.50  S  1.7040  245.0000  0.6670  1.0000
+380477.50 5507070.50  E  1.7040  245.0000  0.6670  1.0000
+380477.50 5507071.50  E  1.7040  245.0000  0.6670  1.0000
+380477.50 5507072.50  E  1.7040  245.0000  0.6670  1.0000
+380477.50 5507072.50  S  1.7040  245.0000  0.6670  1.0000
+380476.50 5507072.50  S  1.7040  245.0000  0.6670  1.0000
+380476.50 5507072.50  E  1.7040  245.0000  0.6670  1.0000
+380476.50 5507073.50  E  1.7040  245.0000  0.6670  1.0000
+380476.50 5507074.50  E  1.7040  245.0000  0.6670  1.0000
+380476.50 5507074.50  S  1.7040  245.0000  0.6670  1.0000
+380475.50 5507074.50  S  1.7040  245.0000  0.6670  1.0000
+380475.50 5507074.50  E  1.7040  245.0000  0.6670  1.0000
+380475.50 5507075.50  E  1.7040  245.0000  0.6670  1.0000
+380475.50 5507075.50  S  1.7040  245.0000  0.6670  1.0000
+380474.50 5507075.50  S  1.7040  245.0000  0.6670  1.0000
+380474.50 5507075.50  E  1.7040  245.0000  0.6670  1.0000
+380474.50 5507076.50  E  1.7040  245.0000  0.6670  1.0000
+380474.50 5507077.50  E  1.7040  245.0000  0.6670  1.0000
+380474.50 5507077.50  S  1.7040  245.0000  0.6670  1.0000
+380473.50 5507077.50  S  1.7040  245.0000  0.6670  1.0000
+380473.50 5507077.50  E  1.7040  245.0000  0.6670  1.0000
+380473.50 5507078.50  E  1.7040  245.0000  0.6670  1.0000
+380473.50 5507079.50  E  1.7040  245.0000  0.6670  1.0000
+380473.50 5507079.50  S  1.7040  245.0000  0.6670  1.0000
+380472.50 5507079.50  S  1.7040  245.0000  0.6670  1.0000
+380472.50 5507079.50  E  1.7040  245.0000  0.6670  1.0000
+380472.50 5507080.50  E  1.7040  245.0000  0.6670  1.0000
+380472.50 5507080.50  S  1.7040  245.0000  0.6670  1.0000
+380471.50 5507080.50  S  1.7040  245.0000  0.6670  1.0000
+380471.50 5507080.50  E  1.7040  245.0000  0.6670  1.0000
+380471.50 5507081.50  E  1.7040  245.0000  0.6670  1.0000
+380471.50 5507082.50  E  1.7040  245.0000  0.6670  1.0000
+380471.50 5507082.50  S  1.7040  245.0000  0.6670  1.0000
+380470.50 5507082.50  S  1.7040  245.0000  0.6670  1.0000
+380470.50 5507082.50  E  1.7040  245.0000  0.6670  1.0000
+380470.50 5507083.50  E  1.7040  245.0000  0.6670  1.0000
+380470.50 5507084.50  E  1.7040  245.0000  0.6670  1.0000
+380470.50 5507084.50  S  1.7040  245.0000  0.6670  1.0000
+380469.50 5507084.50  S  1.7040  245.0000  0.6670  1.0000
+380469.50 5507084.50  E  1.7040  245.0000  0.6670  1.0000
+380469.50 5507085.50  E  1.7040  245.0000  0.6670  1.0000
+380426.50 5506997.50  S  0.8000  241.0700  0.6670  5.0000
+380426.50 5506997.50  S  0.8000  243.0700  0.6670  5.0000
+380425.50 5506997.50  S  0.8000  241.0700  0.6670  5.0000
+380425.50 5506997.50  S  0.8000  243.0700  0.6670  5.0000
+380425.50 5506998.50  E  0.8000  241.0700  0.6670  5.0000
+380425.50 5506998.50  E  0.8000  243.0700  0.6670  5.0000
+380424.50 5506998.50  S  0.8000  241.0700  0.6670  5.0000
+380424.50 5506998.50  S  0.8000  243.0700  0.6670  5.0000
+380424.50 5506999.50  E  0.8000  241.0700  0.6670  5.0000
+380424.50 5506999.50  E  0.8000  243.0700  0.6670  5.0000
+380423.50 5506999.50  S  0.8000  241.0700  0.6670  5.0000
+380423.50 5506999.50  S  0.8000  243.0700  0.6670  5.0000
+380423.50 5507000.50  E  0.8000  241.0700  0.6670  5.0000
+380423.50 5507000.50  E  0.8000  243.0700  0.6670  5.0000
+380422.50 5507000.50  S  0.8000  241.0700  0.6670  5.0000
+380422.50 5507000.50  S  0.8000  243.0700  0.6670  5.0000
+380422.50 5507001.50  E  0.8000  241.0700  0.6670  5.0000
+380422.50 5507001.50  E  0.8000  243.0700  0.6670  5.0000
+380421.50 5507001.50  S  0.8000  241.0700  0.6670  5.0000
+380421.50 5507001.50  S  0.8000  243.0700  0.6670  5.0000
+380421.50 5507002.50  E  0.8000  241.0700  0.6670  5.0000
+380421.50 5507002.50  E  0.8000  243.0700  0.6670  5.0000
+380420.50 5507002.50  S  0.8000  241.0700  0.6670  5.0000
+380420.50 5507002.50  S  0.8000  243.0700  0.6670  5.0000
+380420.50 5507003.50  E  0.8000  241.0700  0.6670  5.0000
+380420.50 5507003.50  E  0.8000  243.0700  0.6670  5.0000
+380419.50 5507003.50  S  0.8000  241.0700  0.6670  5.0000
+380419.50 5507003.50  S  0.8000  243.0700  0.6670  5.0000
+380419.50 5507004.50  E  0.8000  241.0700  0.6670  5.0000
+380419.50 5507004.50  E  0.8000  243.0700  0.6670  5.0000
+380418.50 5507004.50  S  0.8000  241.0700  0.6670  5.0000
+380418.50 5507004.50  S  0.8000  243.0700  0.6670  5.0000
+380418.50 5507005.50  E  0.8000  241.0700  0.6670  5.0000
+380418.50 5507005.50  E  0.8000  243.0700  0.6670  5.0000
+380417.50 5507005.50  S  0.8000  241.0700  0.6670  5.0000
+380417.50 5507005.50  S  0.8000  243.0700  0.6670  5.0000
+380417.50 5507006.50  E  0.8000  241.0700  0.6670  5.0000
+380417.50 5507006.50  E  0.8000  243.0700  0.6670  5.0000
+380416.50 5507006.50  S  0.8000  241.0700  0.6670  5.0000
+380416.50 5507006.50  S  0.8000  243.0700  0.6670  5.0000
+380415.50 5507006.50  S  0.8000  241.0700  0.6670  5.0000
+380415.50 5507006.50  S  0.8000  243.0700  0.6670  5.0000
+380415.50 5507007.50  E  0.8000  241.0700  0.6670  5.0000
+380415.50 5507007.50  E  0.8000  243.0700  0.6670  5.0000
+380414.50 5507007.50  S  0.8000  241.0700  0.6670  5.0000
+380414.50 5507007.50  S  0.8000  243.0700  0.6670  5.0000
+380414.50 5507008.50  E  0.8000  241.0700  0.6670  5.0000
+380414.50 5507008.50  E  0.8000  243.0700  0.6670  5.0000
+380413.50 5507008.50  S  0.8000  241.0700  0.6670  5.0000
+380413.50 5507008.50  S  0.8000  243.0700  0.6670  5.0000
+380413.50 5507009.50  E  0.8000  241.0700  0.6670  5.0000
+380413.50 5507009.50  E  0.8000  243.0700  0.6670  5.0000
+380412.50 5507009.50  S  0.8000  241.0700  0.6670  5.0000
+380412.50 5507009.50  S  0.8000  243.0700  0.6670  5.0000
+380412.50 5507010.50  E  0.8000  241.0700  0.6670  5.0000
+380412.50 5507010.50  E  0.8000  243.0700  0.6670  5.0000
+380411.50 5507010.50  S  0.8000  241.0700  0.6670  5.0000
+380411.50 5507010.50  S  0.8000  243.0700  0.6670  5.0000
+380411.50 5507011.50  E  0.8000  241.0700  0.6670  5.0000
+380411.50 5507011.50  E  0.8000  243.0700  0.6670  5.0000
+380410.50 5507011.50  S  0.8000  241.0700  0.6670  5.0000
+380410.50 5507011.50  S  0.8000  243.0700  0.6670  5.0000
+380410.50 5507012.50  E  0.8000  241.0700  0.6670  5.0000
+380410.50 5507012.50  E  0.8000  243.0700  0.6670  5.0000
+380409.50 5507012.50  S  0.8000  241.0700  0.6670  5.0000
+380409.50 5507012.50  S  0.8000  243.0700  0.6670  5.0000
+380409.50 5507013.50  E  0.8000  241.0700  0.6670  5.0000
+380409.50 5507013.50  E  0.8000  243.0700  0.6670  5.0000
+380408.50 5507013.50  S  0.8000  241.0700  0.6670  5.0000
+380408.50 5507013.50  S  0.8000  243.0700  0.6670  5.0000
+380408.50 5507014.50  E  0.8000  241.0700  0.6670  5.0000
+380408.50 5507014.50  E  0.8000  243.0700  0.6670  5.0000
+380407.50 5507014.50  S  0.8000  241.0700  0.6670  5.0000
+380407.50 5507014.50  S  0.8000  243.0700  0.6670  5.0000
+380407.50 5507015.50  E  0.8000  241.0700  0.6670  5.0000
+380407.50 5507015.50  E  0.8000  243.0700  0.6670  5.0000
+
+InputGenerator.js:207 [InputGenerator] ✅ flow.weir: 93 Wehre + 76 Brücken-Linien geschrieben.
+InputGenerator.js:968 [InputGenerator] ✅ Acceleration solver ENABLED for faster computation.
+InputGenerator.js:971 [InputGenerator] Generating run.par with config: {DEMfile: 'terrain.asc', resroot: 'res', dirroot: 'results', sim_time: '1000.0', initial_tstep: '2', …}DEMfile: "terrain.asc"acceleration: ""bcifile: "flow.bci"bdyfile: "profiles.bdy"dirroot: "results"fpfric: "0.0350"initial_tstep: "2"massint: "30.0"resroot: "res"saveint: "30.0"sim_time: "1000.0"voutput: ""weirfile: "flow.weir"[[Prototype]]: Object
+simulation.main.js:23 [Simulation] Worker script loaded.

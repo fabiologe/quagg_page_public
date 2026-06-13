@@ -1,10 +1,16 @@
 import { Rasterizer, maskBuildingsAsNoData, burnModifications } from './Rasterizer.js';
 import { Hydraulics } from './Hydraulics.js';
 import { BoundaryTools } from './BoundaryTools.js';
+import { SgcGenerator } from './SgcGenerator.js';
+import { latticeToCells } from '../utils/BridgeMeshLattice.js';
+import { IssueCollector } from './ScenarioValidator.js';
 
 // Suchradius (Zellen) beim NoData-Rescue: nächste gültige Zelle innerhalb dieser Distanz suchen.
 // 15 Zellen entspricht bei typischer 1m-Auflösung einem 15m-Suchbereich.
-const NODATA_SNAP_RADIUS = 15;
+// NoData-Snap-Radius: 15 m (ursprünglich 15 Zellen, kalibriert bei 1m-Auflösung).
+// Meter-basiert, damit der Radius bei Export-Resampling konstant bleibt.
+const NODATA_SNAP_METERS = 15;
+const snapRadiusCells = (header) => Math.max(2, Math.round(NODATA_SNAP_METERS / (header?.cellsize || 1)));
 
 // FREE-Outlet-Fallback: HFIX wird um diesen Betrag [m] unter Geländehöhe gesetzt,
 // damit Wasser bereits abfließt bevor die Zelle vollständig überstaut ist.
@@ -23,7 +29,21 @@ export class InputGenerator {
     reset() {
         this.terrainHeader = null;
         this.files = {};
+        // Zentraler Fehlercatcher (Schweregrad-getaggt). `this.warnings` bleibt als
+        // String[]-Getter für Alt-Konsumenten (Log-Ausgabe) erhalten.
+        this.issues = new IssueCollector();
     }
+
+    /** Rückwärtskompatibel: nur die Nachrichten (alle Schweregrade) als String[]. */
+    get warnings() { return this.issues.messages; }
+
+    /**
+     * Strukturierte Pipeline-Meldung → landet im IssueCollector (für Pre-Run-Gate
+     * & UI) und zusätzlich in der Konsole. Standard-Schweregrad: WARN.
+     */
+    warn(message)  { this.issues.warn(message);  console.warn(`[InputGenerator] ⚠️ ${message}`); }
+    info(message)  { this.issues.info(message);  console.info(`[InputGenerator] ℹ️ ${message}`); }
+    error(message) { this.issues.error(message); console.error(`[InputGenerator] ⛔ ${message}`); }
 
     /**
      * Main entry point to process a full scenario input.
@@ -52,6 +72,31 @@ export class InputGenerator {
         } else {
             throw new Error("InputGenerator: No Terrain Grid or XYZ provided.");
         }
+
+        // ── Export-Auflösung (High-End-Pfad) ────────────────────────────────
+        // Nur beim Remote-Export: DEM auf Ziel-Zellweite resampeln. Der Editor
+        // bleibt bei nativer Auflösung. Alles Nachfolgende (Building-Masking,
+        // Boundaries, Strukturen) arbeitet mit Welt-Koordinaten gegen `header`
+        // und passt sich damit automatisch an.
+        const editorHeader = header; // für surfaceGrid-Lookup (native Auflösung)
+        if (scenario.exportCellsize && Math.abs(scenario.exportCellsize - header.cellsize) > 1e-9) {
+            const native = header.cellsize;
+            if (scenario.exportCellsize < native / 8) {
+                this.warn(`Ziel-Zellweite ${scenario.exportCellsize} m ist feiner als 1/8 der Datengrundlage (${native} m) — Interpolation erzeugt keine echte Information.`);
+            }
+            if (scenario.exportCellsize > native) {
+                this.warn(`Ziel-Zellweite ${scenario.exportCellsize} m ist GRÖBER als die Datengrundlage (${native} m) — Detailverlust.`);
+            }
+            const res = Rasterizer.resampleGrid(data, header, scenario.exportCellsize, 'bilinear');
+            data = res.data;
+            header = res.header;
+            const cells = header.ncols * header.nrows;
+            if (cells > 25e6) {
+                this.warn(`Export-Raster hat ${(cells / 1e6).toFixed(0)} Mio Zellen (~${(cells * 4 / 1e6).toFixed(0)} MB je Raster) — Upload/Memory prüfen.`);
+            }
+            console.log(`[InputGenerator] Export-Resampling: ${native}m → ${scenario.exportCellsize}m (${header.ncols}×${header.nrows})`);
+        }
+
         this.terrainHeader = header;
         console.log(`[InputGenerator] Terrain Header: ncols=${header.ncols}, nrows=${header.nrows}, cellsize=${header.cellsize}, xll=${header.xll}, yll=${header.yll}`);
 
@@ -113,7 +158,7 @@ export class InputGenerator {
         // 2a. Surface Grid (Texture Pipeline) — takes priority over polygon roughness
         if (scenario.surfaceGrid && scenario.surfaceMaterials) {
             console.log("[InputGenerator] Surface Grid detected — generating terrain.n (Texture Pipeline)");
-            const manningData = this.generateManningFile(scenario.surfaceGrid, scenario.surfaceMaterials, header);
+            const manningData = this.generateManningFile(scenario.surfaceGrid, scenario.surfaceMaterials, editorHeader, header);
             if (manningData) {
                 if (fs) {
                     console.log("[InputGenerator] Streaming terrain.n to MEMFS...");
@@ -183,33 +228,75 @@ export class InputGenerator {
             hasBci = true;
         }
 
-        // 5a. Wehr-Datei (optional) — Wehre + Brücken-Zellen
+        // 5a. SGC Sub-Grid-Gerinne (optional, High-End-Pfad) — gezeichnete
+        // Kanal-Mittellinie wird als eingebettetes Gerinne (schmaler als eine
+        // Zelle möglich) in drei Raster gestempelt. MUSS vor der Wehr-Datei
+        // laufen: v8-Brücken (<dir>B) sind nur über SGC-Zellen gültig, daher
+        // wird das Breitenraster zum Clippen der Brückenzellen gebraucht.
+        let hasSgc = false;
+        let sgcWidthGrid = null;
+        if (scenario.sgc && scenario.sgc.polyline?.length >= 2) {
+            if ((scenario.sgc.width ?? 0) > 4 * header.cellsize) {
+                this.info(`SGC-Gerinne ${scenario.sgc.width} m breit > 4 Zellen (${(4 * header.cellsize).toFixed(1)} m) — besser direkt im DGM auflösen statt Sub-Grid.`);
+            }
+            if (scenario.sgc.bedMode !== 'absolute' && !((scenario.sgc.bedDepth ?? 0) > 0)) {
+                this.warn(`SGC-Sohltiefe ${scenario.sgc.bedDepth} m ungültig (muss > 0 sein) — Gerinne wird trotzdem gestempelt.`);
+            }
+            const sgcRasters = SgcGenerator.generateSgcRasters(scenario.sgc, data, header);
+            if (sgcRasters.cellCount === 0) {
+                this.warn('SGC-Gerinne ergibt 0 Zellen im Export-Raster (Polyline außerhalb?) — SGC deaktiviert.');
+            } else {
+                for (const [name, raster] of [['sgc.width.asc', sgcRasters.width], ['sgc.bed.asc', sgcRasters.bed], ['sgc.bank.asc', sgcRasters.bank]]) {
+                    if (fs) Rasterizer.writeGridToFS(fs, '/' + name, raster, header);
+                    else this.files[name] = Rasterizer.gridToASC(raster, header);
+                }
+                hasSgc = true;
+                sgcWidthGrid = sgcRasters.width;
+                console.log(`[InputGenerator] ✅ SGC: ${sgcRasters.cellCount} Gerinne-Zellen gestempelt (Breite ${scenario.sgc.width} m).`);
+            }
+        }
+
+        // 5b. Wehr-Datei (optional) — Wehre + Brücken-Zellen. Im v8-Pfad werden
+        // Brücken gegen das SGC-Breitenraster geclippt (Brückenzellen ohne
+        // Gerinne darunter sind in LISFLOOD-FP 8 ungültig → würden den Solver
+        // mit "Bridge must have sub grid flows on either side" abbrechen).
         let hasWeir = false;
         const hasWeirData    = scenario.weirs   && scenario.weirs.length   > 0;
         const hasBridgeData  = scenario.bridges && scenario.bridges.length > 0;
         if (hasWeirData || hasBridgeData) {
-            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || []);
-            if (fs) fs.writeFile('/flow.weir', weirContent);
-            else this.files['flow.weir'] = weirContent;
-            hasWeir = true;
-            const wCount = (scenario.weirs || []).length;
-            const bCount = (scenario.bridges || []).reduce((s, b) => s + (b.cells?.length ?? 1), 0) * 2;
-            console.log(`[InputGenerator] ✅ flow.weir: ${wCount} Wehre + ${bCount} Brücken-Linien geschrieben.`);
+            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid });
+            if (weirContent) {
+                if (fs) fs.writeFile('/flow.weir', weirContent);
+                else this.files['flow.weir'] = weirContent;
+                hasWeir = true;
+                // TATSÄCHLICH geschriebene Zeilen melden (v8 re-diskretisiert → Zellzahl ≠ Eingabe-
+                // Objektzahl). Die erste Zeile der Datei ist der Eintragszähler von generateWeirFile().
+                const writtenLines = parseInt(weirContent.split('\n', 1)[0], 10) || 0;
+                const wInput = (scenario.weirs || []).length;
+                const bInput = (scenario.bridges || []).length;
+                console.log(`[InputGenerator] ✅ flow.weir: ${writtenLines} Struktur-Zeilen geschrieben (aus ${wInput} Wehr- + ${bInput} Brücken-Objekten, engine=${scenario.engine || 'v5'}).`);
+            } else {
+                this.warn('flow.weir leer (keine gültigen Wehr-/Brückenzeilen, z. B. nach SGC-Clipping) — Strukturdatei wird nicht geschrieben.');
+            }
         }
 
         // 5. Parameter File
-        const parContent = this.generateParFile(
-            scenario.config,
-            useFrictionFile,
+        const parContent = this.generateParFile(scenario.config, {
+            hasFrictionMap: useFrictionFile,
             hasRain,
-            scenario.globalRoughness,
+            globalRoughness: scenario.globalRoughness,
             hasBci,
             hasBdy,
             frictionFilename,
             hasWeir,
-            scenario.infiltration ?? 0,
-            scenario.antecedentMoisture ?? 0
-        );
+            infiltration: scenario.infiltration ?? 0,
+            antecedentMoisture: scenario.antecedentMoisture ?? 0,
+            engine: scenario.engine || 'v5',
+            scheme: scenario.numericalScheme || 'acceleration',
+            hasSgc,
+            sgcManningN: scenario.sgc?.manningN ?? 0.03,
+            useGpu: scenario.useGpu ?? false
+        });
 
         if (fs) fs.writeFile('/run.par', parContent);
         else this.files['run.par'] = parContent;
@@ -442,7 +529,7 @@ export class InputGenerator {
                     }
                 }
                 if (!sourceProfileData || sourceProfileData.length === 0) {
-                    console.warn(`[InputGenerator] Boundary ${b.id} missing profile data. Skipping.`);
+                    this.warn(`Boundary ${String(b.id).substring(0, 8)} (${assign.type}): keine Ganglinie zugewiesen — wird NICHT simuliert.`);
                     continue;
                 }
             }
@@ -475,6 +562,7 @@ export class InputGenerator {
             //   finalCells stores {x: col, y: row_world} in bottom-up convention.
             const finalCells = [];
             let noDataCount = 0;
+            let rescueFailed = 0;
             for (const rc of rawCells) {
                 const col = rc.x;
                 const row_world = rc.y; // bottom-up (0 = south)
@@ -489,17 +577,23 @@ export class InputGenerator {
                 if (gridData[idx] <= -9990) {
                     noDataCount++;
                     // findNearestValidCell uses gridData[r * ncols + c], so pass bottom-up row
-                    const valid = BoundaryTools.findNearestValidCell(col, row_world, gridData, header, NODATA_SNAP_RADIUS, 1);
+                    const valid = BoundaryTools.findNearestValidCell(col, row_world, gridData, header, snapRadiusCells(header), 1);
                     if (valid) {
                         if (noDataCount <= 3) console.warn(`[InputGenerator] NoData rescue: (${col},${row_world}) → (${valid.x},${valid.y})`);
                         finalCells.push(valid); // valid is {x: col, y: row} in bottom-up
                     }
-                    else console.warn(`[InputGenerator] Cell col=${col}, row_world=${row_world} NoData, rescue failed.`);
+                    else {
+                        rescueFailed++;
+                        console.warn(`[InputGenerator] Cell col=${col}, row_world=${row_world} NoData, rescue failed.`);
+                    }
                 } else {
                     finalCells.push({ x: col, y: row_world }); // store bottom-up
                 }
             }
-            if (noDataCount > 0) console.warn(`[InputGenerator] Boundary ${b.id}: ${noDataCount}/${rawCells.length} cells were NoData`);
+            if (noDataCount > 0) {
+                this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${noDataCount}/${rawCells.length} Zellen lagen auf NoData — ` +
+                    `${noDataCount - rescueFailed} verschoben (Snap-Radius ${snapRadiusCells(header)} Zellen), ${rescueFailed} verworfen. Lage prüfen!`);
+            }
             console.log(`[InputGenerator] Boundary ${b.id}: ${finalCells.length} valid cells, first:`, JSON.stringify(finalCells.slice(0, 3)));
 
             if (finalCells.length === 0) {
@@ -743,12 +837,12 @@ export class InputGenerator {
                 const idx = row * header.ncols + col;
                 if (gridData[idx] <= -9990) { // NoData Found
                     // Attempt Rescue with Connectivity Check (min 1 neighbor)
-                    const valid = BoundaryTools.findNearestValidCell(col, row, gridData, header, NODATA_SNAP_RADIUS, 1);
+                    const valid = BoundaryTools.findNearestValidCell(col, row, gridData, header, snapRadiusCells(header), 1);
                     if (valid) {
                         finalCells.push(valid);
                     } else {
                         // Really invalid
-                        console.warn(`[InputGenerator] Cell ${col}, ${row} is NoData (Val: ${gridData[idx]}) and Rescue failed (Radius ${NODATA_SNAP_RADIUS}).`);
+                        console.warn(`[InputGenerator] Cell ${col}, ${row} is NoData (Val: ${gridData[idx]}) and Rescue failed (Radius ${snapRadiusCells(header)}).`);
                     }
                 } else {
                     // Valid
@@ -817,7 +911,7 @@ export class InputGenerator {
                     }
                 }
             } else {
-                console.warn(`[InputGenerator] Boundary ${b.id} yielded 0 valid cells after snapping (Radius ${NODATA_SNAP_RADIUS}).`);
+                console.warn(`[InputGenerator] Boundary ${b.id} yielded 0 valid cells after snapping (Radius ${snapRadiusCells(header)}).`);
             }
         }
 
@@ -828,16 +922,17 @@ export class InputGenerator {
     /**
      * Generate a Manning roughness grid from a surface material grid.
      * Maps each cell's integer material ID to its Manning coefficient.
-     * @param {Int8Array} surfaceGrid - Flat grid of material IDs
+     * @param {Int8Array} surfaceGrid - Flat grid of material IDs (in EDITOR-Auflösung, srcHeader-Form)
      * @param {Array<{id: number, manning: number}>} materials - Material library
-     * @param {object} header - Terrain header { ncols, nrows, cellsize, xll, yll }
+     * @param {object} srcHeader - Header des surfaceGrid (Editor-Auflösung)
+     * @param {object} [dstHeader] - Ziel-Header (Export-Auflösung); default = srcHeader
      * @returns {{ header: object, data: Float32Array }|null}
      */
-    generateManningFile(surfaceGrid, materials, header) {
-        if (!surfaceGrid || !materials || !header) return null;
+    generateManningFile(surfaceGrid, materials, srcHeader, dstHeader = srcHeader) {
+        if (!surfaceGrid || !materials || !srcHeader) return null;
 
-        const ncols = header.ncols;
-        const nrows = header.nrows;
+        const ncols = dstHeader.ncols;
+        const nrows = dstHeader.nrows;
         const size = ncols * nrows;
 
         // Build fast lookup: materialId → manning value
@@ -847,61 +942,160 @@ export class InputGenerator {
         }
         const defaultManning = 0.035;
 
+        // Quell-Lookup: bei abweichender Auflösung Nearest-Neighbor via Welt-Koordinaten
+        // (Material-IDs sind kategorial — bilinear wäre falsch).
+        const sameGrid = dstHeader === srcHeader
+            || (srcHeader.ncols === ncols && srcHeader.nrows === nrows
+                && Math.abs(srcHeader.cellsize - dstHeader.cellsize) < 1e-9);
+        const srcCx = srcHeader.xll !== undefined ? srcHeader.xll : srcHeader.xllcorner;
+        const srcCy = srcHeader.yll !== undefined ? srcHeader.yll : srcHeader.yllcorner;
+        const dstCx = dstHeader.xll !== undefined ? dstHeader.xll : dstHeader.xllcorner;
+        const dstCy = dstHeader.yll !== undefined ? dstHeader.yll : dstHeader.yllcorner;
+
         const data = new Float32Array(size);
-        for (let i = 0; i < size; i++) {
-            const matId = surfaceGrid[i] || 1;
-            data[i] = manningLookup[matId] !== undefined ? manningLookup[matId] : defaultManning;
+        let unknownMatCells = 0;
+        for (let r = 0; r < nrows; r++) {
+            for (let c = 0; c < ncols; c++) {
+                let srcIdx;
+                if (sameGrid) {
+                    srcIdx = r * ncols + c;
+                } else {
+                    const wx = dstCx + c * dstHeader.cellsize;
+                    const wy = dstCy + r * dstHeader.cellsize;
+                    const sc = Math.min(srcHeader.ncols - 1, Math.max(0, Math.round((wx - srcCx) / srcHeader.cellsize)));
+                    const sr = Math.min(srcHeader.nrows - 1, Math.max(0, Math.round((wy - srcCy) / srcHeader.cellsize)));
+                    srcIdx = sr * srcHeader.ncols + sc;
+                }
+                const matId = surfaceGrid[srcIdx] || 1;
+                const i = r * ncols + c;
+                if (manningLookup[matId] !== undefined) {
+                    data[i] = manningLookup[matId];
+                } else {
+                    data[i] = defaultManning;
+                    unknownMatCells++;
+                }
+            }
+        }
+        if (unknownMatCells > 0) {
+            this.warn(`Manning-Raster: ${unknownMatCells} Zellen mit unbekannter Material-ID — Default n=${defaultManning} verwendet.`);
         }
 
         const outHeader = {
             ncols,
             nrows,
-            cellsize: header.cellsize,
-            xll: header.xll !== undefined ? header.xll : header.xllcorner,
-            yll: header.yll !== undefined ? header.yll : header.yllcorner,
+            cellsize: dstHeader.cellsize,
+            xllcorner: dstHeader.xllcorner,
+            yllcorner: dstHeader.yllcorner,
+            xll: dstCx,
+            yll: dstCy,
             NODATA_value: -9999
         };
 
-        console.log(`[InputGenerator] Generated Manning file: ${ncols}x${nrows}, materials: ${materials.length}`);
+        console.log(`[InputGenerator] Generated Manning file: ${ncols}x${nrows}, materials: ${materials.length}${sameGrid ? '' : ' (resampled NN)'}`);
         return { header: outHeader, data };
     }
 
     /**
-     * Erstellt die .rain Input-Datei für LISFLOOD aus der KOSTRA Zeitreihe
-     * Erwartetes C++ Format: 
-     * [Kommentar]
-     * [Anzahl_Datenpunkte] [Zeiteinheit]
-     * [Intensität_mm_h] [Zeit_in_s]
+     * Erstellt die .rain Input-Datei für LISFLOOD aus der KOSTRA Zeitreihe.
+     *
+     * Erwartetes C++ Format (LoadTimeSeries, skipFirstLine=ON):
+     *   [Kommentar]                     ← wird übersprungen
+     *   [Anzahl_Datenpunkte] [Zeiteinheit]
+     *   [Intensität_mm_h] [Zeit_in_s]   ← Spalte 1 = Rate (mm/h), Spalte 2 = Zeit (s)
+     *
+     * PHYSIK (war die "Sintflut"-Falle):
+     *   LISFLOOD interpoliert linear zwischen den Stützstellen und HÄLT den
+     *   letzten Wert für alle t ≥ letzter Zeitpunkt KONSTANT (InterpolateTimeSeries
+     *   in boundary.cpp: "for values greater than the end of the array – use last
+     *   value"). Da sim_time unabhängig von der Regendauer gesetzt wird, regnete
+     *   die letzte (kleine, aber ≠ 0) Euler-Block-Intensität bis Simulationsende
+     *   weiter → unendlicher Regen.
+     *
+     *   `rainSeries[i].value_mm` ist die NIEDERSCHLAGSHÖHE (mm) im Intervall, das
+     *   BEI time_sec[i] BEGINNT. Um den rechteckigen Euler-Hyetographen massentreu
+     *   abzubilden (statt der linearen Rampen, die eine reine Start-Stützstelle
+     *   erzeugt), schreiben wir jeden Block als Treppenstufe: konstante Rate von
+     *   Blockbeginn bis kurz vor Blockende. Abschließend 0 mm/h → Regen stoppt.
      */
     generateRainFile(rainSeries) {
-        let content = 'KOSTRA_Euler_Rain_Profile\n';
-        // ZWINGEND: Anzahl der Datenpunkte als Integer vor der Einheit!
-        content += `${rainSeries.length} seconds\n`;
+        const pts = []; // [intensität_mm_h, zeit_s]
 
         for (let i = 0; i < rainSeries.length; i++) {
-            const block = rainSeries[i];
-            const t_sec = block.time_sec;
+            const t_start = Math.round(rainSeries[i].time_sec);
 
-            // Zeitintervall für mm/h Umrechnung
+            // Intervalllänge: Differenz zum nächsten Block (bzw. zum vorherigen
+            // für den letzten Block, da KOSTRA-Schritte äquidistant sind).
             let dt_sec = 300;
             if (i < rainSeries.length - 1) {
-                dt_sec = rainSeries[i + 1].time_sec - t_sec;
+                dt_sec = Math.round(rainSeries[i + 1].time_sec) - t_start;
             } else if (i > 0) {
-                dt_sec = t_sec - rainSeries[i - 1].time_sec;
+                dt_sec = t_start - Math.round(rainSeries[i - 1].time_sec);
             }
-            if (dt_sec === 0) dt_sec = 300;
+            if (!Number.isFinite(dt_sec) || dt_sec <= 0) dt_sec = 300;
 
-            // Umrechnung in mm/h
-            const intensity_mmh = block.value_mm / (dt_sec / 3600);
+            const value_mm = Number(rainSeries[i].value_mm) || 0;
+            // Höhe (mm) im Intervall → Rate (mm/h): mm / (dt in Stunden)
+            const intensity_mmh = value_mm / (dt_sec / 3600);
 
-            // ZWINGEND: Spalte 1 = Rate (mm/h), Spalte 2 = Zeit (s)
-            content += `${intensity_mmh.toFixed(6)}\t${t_sec.toFixed(0)}\n`;
+            // Treppenstufe: konstant über den ganzen Block (Rechteck, massentreu).
+            pts.push([intensity_mmh, t_start]);
+            if (dt_sec > 1) {
+                // 1 s vor Blockende halten; die nächste Stützstelle (Blockbeginn
+                // des Folgeblocks) liegt bei t_start+dt → Zeiten bleiben strikt
+                // steigend (LoadTimeSeries verlangt das, sonst exit(-1)).
+                pts.push([intensity_mmh, t_start + dt_sec - 1]);
+            }
+
+            // Regenende sauber auf 0 ziehen, sonst hält LISFLOOD die letzte Rate
+            // bis sim_time → Dauerregen ("Sintflut").
+            if (i === rainSeries.length - 1) {
+                pts.push([0, t_start + dt_sec]);
+            }
         }
 
+        // Fallback für leere/degenerierte Reihe: definierter "kein Regen".
+        if (pts.length === 0) {
+            pts.push([0, 0], [0, 1]);
+        }
+
+        let content = 'KOSTRA_Euler_Rain_Profile\n';
+        // ZWINGEND: Anzahl der Datenpunkte als Integer vor der Einheit!
+        content += `${pts.length} seconds\n`;
+        for (const [rate, t] of pts) {
+            content += `${rate.toFixed(6)}\t${t.toFixed(0)}\n`;
+        }
         return content;
     }
 
-    generateParFile(configOverride, hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy, frictionFilename = 'friction.asc', hasWeir = false, infiltration = 0, antecedentMoisture = 0) {
+    /**
+     * Generiert run.par. Engine-bewusst:
+     *   engine 'v5' (WASM/BMI): exakt das bisherige Keyword-Set (Regressions-Gate).
+     *   engine 'v8' (RUNPOD):   zusätzlich Schema-Keyword (acceleration|fv1) und
+     *                           SGC-Keywords; SGC erzwingt acceleration (sgc.cpp).
+     *   porfile (Porosität): bewusst noch nicht angebunden — Platzhalter.
+     *
+     * @param {object} configOverride  Direkte par-Keywords (sim_time, initial_tstep, ...)
+     * @param {object} opts { hasFrictionMap, hasRain, globalRoughness, hasBci, hasBdy,
+     *                        frictionFilename, hasWeir, infiltration, antecedentMoisture,
+     *                        engine:'v5'|'v8', scheme:'acceleration'|'fv1', hasSgc, sgcManningN }
+     */
+    generateParFile(configOverride, opts = {}) {
+        const {
+            hasFrictionMap = false,
+            hasRain = false,
+            globalRoughness,
+            hasBci = false,
+            hasBdy = false,
+            frictionFilename = 'friction.asc',
+            hasWeir = false,
+            infiltration = 0,
+            antecedentMoisture = 0,
+            engine = 'v5',
+            scheme = 'acceleration',
+            hasSgc = false,
+            sgcManningN = 0.03,
+            useGpu = false
+        } = opts;
         // CRITICAL: Keywords MUST match pars.cpp exactly (strcmp is case-sensitive!)
         // Source: solverHydro/src/lisflood-fp-bmi-v5.9/pars.cpp
         const config = {
@@ -923,10 +1117,52 @@ export class InputGenerator {
         if (hasWeir)        config.weirfile    = 'flow.weir';      // Line 108: strcmp(buffer,"weirfile")
         config.voutput = '';  // Line 144: enables res-NNNN.Vx/.Vy + res.maxVc/.maxHaz
         if (infiltration > 0) {
-            const moisture = antecedentMoisture ?? 0;
-            const scaled   = infiltration * (1 - moisture / 100);
+            // Vorfeuchte hart auf 0–100 % begrenzen: >100 % würde die Infiltration
+            // negativ machen (Wasser aus dem Nichts), <0 % sie überhöhen.
+            let moisture = antecedentMoisture ?? 0;
+            if (!Number.isFinite(moisture)) moisture = 0;
+            if (moisture < 0 || moisture > 100) {
+                this.warn(`Vorfeuchte ${moisture} % außerhalb 0–100 % — auf gültigen Bereich begrenzt.`);
+                moisture = Math.min(100, Math.max(0, moisture));
+            }
+            const scaled = infiltration * (1 - moisture / 100);
             if (scaled > 0) config.infiltration = scaled.toFixed(8);
         } // Line 216: strcmp(buffer,"infiltration")
+
+        // ── v8-Keywords (RUNPOD / LISFLOOD-FP 8) ────────────────────────────
+        if (engine === 'v8') {
+            // SGC erzwingt acceleration (LISFLOOD-FP: pars.cpp setzt bei SGC
+            // acceleration=ON; fv1/dg2 sind mit SGC inkompatibel).
+            const effectiveScheme = hasSgc ? 'acceleration' : scheme;
+            if (hasSgc && scheme !== 'acceleration') {
+                this.warn(`Schema '${scheme}' ist mit SGC inkompatibel — acceleration wird erzwungen.`);
+            }
+            if (effectiveScheme === 'fv1') {
+                delete config.acceleration;
+                config.fv1 = '';                 // pars.cpp: strcmp(buffer,"fv1")
+            } else if (effectiveScheme === 'dg2') {
+                delete config.acceleration;
+                config.dg2 = '';                 // pars.cpp: strcmp(buffer,"dg2") (CFL 0.33)
+            } else {
+                config.acceleration = '';
+            }
+            // GPU: LISFLOOD-FP nutzt CUDA NUR für fv1/dg2 (acceleration + SGC laufen CPU).
+            // Das `cuda`-Keyword setzt den GPU-Solver — das Binary muss mit nvcc gebaut sein
+            // (build-cuda.sh) und der Container mit --gpus all laufen.
+            if (useGpu && (effectiveScheme === 'fv1' || effectiveScheme === 'dg2')) {
+                config.cuda = '';                // pars.cpp:884 — GPU-Solver aktivieren
+            } else if (useGpu) {
+                this.warn(`GPU angefordert, aber Schema '${effectiveScheme}' läuft nur auf CPU (CUDA nur für fv1/dg2).`);
+            }
+            if (hasSgc) {
+                config.SGCwidth = 'sgc.width.asc';   // Kanal-Breitenraster (0 = kein Gerinne)
+                config.SGCbed   = 'sgc.bed.asc';     // Sohlhöhenraster
+                config.SGCbank  = 'sgc.bank.asc';    // Böschungsoberkante (= DEM)
+                config.SGCn     = Number(sgcManningN).toFixed(4); // Gerinne-Manning (skalar)
+                config.SGCchan  = '1';               // Rechteck-Querschnitt
+            }
+            // porfile (Porositätsraster, partielle Zellblockade): bewusst deferred.
+        }
 
         // Acceleration solver: Kompatibel mit Wehren!
         // In fp_flow.cpp prüft FloodplainQ(): weirs ZUERST (Zeile 47/89),
@@ -945,6 +1181,85 @@ export class InputGenerator {
     }
 
     /**
+     * Diskretisiert eine Struktur-Achse (Welt-Koordinaten) bei der Zellweite
+     * des übergebenen Headers — für den Export-Pfad, damit Wehre/Brücken bei
+     * feinerem Export-Raster lückenlos bleiben (precomputed Editor-cells[]
+     * gelten nur für die native Zellweite).
+     *
+     * @param {Array<[number,number]>} axisCoords  [[x,y], …] Welt-Koordinaten
+     * @param {object} header  Ziel-Raster-Header
+     * @returns {Array<{x:number, y:number, col:number, rowBottomUp:number, direction:'E'|'S'}>}
+     *          x/y = Zellzentren in Welt-Koordinaten
+     */
+    discretizeStructureAxis(axisCoords, header) {
+        if (!axisCoords || axisCoords.length < 2) return [];
+        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+        const cs = header.cellsize;
+
+        // 4-connected Bresenham (wie Editor-getLineCells): Barrieren müssen
+        // WASSERDICHT sein — das 8-connected discretizeLine der Boundaries
+        // lässt auf Diagonalen Eck-Lücken, durch die Wasser fließen würde,
+        // und jeder Schritt muss eindeutig Reihe ODER Spalte wechseln, damit
+        // die Richtungszuordnung (E/S) pro Zelle wohldefiniert ist.
+        const line4Connected = (c0, r0, c1, r1) => {
+            const dx = Math.abs(c1 - c0);
+            const dy = -Math.abs(r1 - r0);
+            const sx = c0 < c1 ? 1 : -1;
+            const sy = r0 < r1 ? 1 : -1;
+            let err = dx + dy;
+            let c = c0, r = r0;
+            const out = [{ x: c, y: r }];
+            while (!(c === c1 && r === r1)) {
+                const e2 = 2 * err;
+                if (e2 > dy && e2 < dx) {
+                    // Diagonalschritt → in zwei 4er-Schritte aufteilen
+                    err += dy; c += sx;
+                    out.push({ x: c, y: r });
+                    err += dx; r += sy;
+                } else if (e2 > dy) {
+                    err += dy; c += sx;
+                } else {
+                    err += dx; r += sy;
+                }
+                out.push({ x: c, y: r });
+            }
+            return out;
+        };
+
+        const cells = [];
+        const seen = new Set();
+        for (let i = 0; i < axisCoords.length - 1; i++) {
+            const c0 = Math.round((axisCoords[i][0] - xll) / cs);
+            const r0 = Math.round((axisCoords[i][1] - yll) / cs);
+            const c1 = Math.round((axisCoords[i + 1][0] - xll) / cs);
+            const r1 = Math.round((axisCoords[i + 1][1] - yll) / cs);
+            for (const cell of line4Connected(c0, r0, c1, r1)) {
+                const key = `${cell.x},${cell.y}`;
+                if (!seen.has(key)) { seen.add(key); cells.push(cell); }
+            }
+        }
+
+        // Richtung: Reihenwechsel (lokal N-S-verlaufende Linie) → 'E' (blockt E-W-Fluss),
+        // sonst 'S' (blockt N-S). Verifiziert gegen input.cpp Weir_Identx/Identy.
+        return cells.map((cell, i) => {
+            let direction;
+            if (i === 0) {
+                direction = (cells.length > 1 && cells[1].y !== cells[0].y) ? 'E' : 'S';
+            } else {
+                direction = (cell.y !== cells[i - 1].y) ? 'E' : 'S';
+            }
+            return {
+                x: xll + cell.x * cs,
+                y: yll + cell.y * cs,
+                col: cell.x,
+                rowBottomUp: cell.y,
+                direction
+            };
+        });
+    }
+
+    /**
      * Generiert den Inhalt der LISFLOOD `.weir`-Datei aus dem GeoStore-Wehr-Array.
      *
      * Format:
@@ -952,45 +1267,169 @@ export class InputGenerator {
      *   <x> <y> <Richtung> <Cd> <hc> <m> <w>
      *   ...
      *
-     * Richtungs-Tags (Typ 0, Poleni-Wehr):
-     *   N/S/E/W            → bidirektional
+     * Richtungs-Tags:
+     *   N/S/E/W            → bidirektionales Poleni-Wehr
      *   NF/SF/EF/WF        → unidirektional (Rückstauklappe)
+     *   NB/SB/EB/WB        → Brücke (Orifice-/Druckabfluss, v8-Pfad)
      *
-     * @param {Array<{x,y,direction,Cd,hc,m,w}>} weirs
+     * Engine-Pfade:
+     *   v5 (WASM):  exakt das Legacy-Verhalten — Wehre wie gespeichert, Brücken
+     *               als 2-Zeilen-Näherung (Soffit+Deck) aus precomputed cells[].
+     *               Byte-identisch zu vorher (Regressions-Gate).
+     *   v8 (RUNPOD): Strukturen werden aus ihren Welt-Achsen bei header.cellsize
+     *               NEU diskretisiert (lückenlos bei feinem Export-Raster);
+     *               Brücken als einzeilige <dir>B-Einträge mit Orifice-Physik.
+     *
+     * @param {Array<{x,y,direction,Cd,hc,m,w,lineId}>} weirs
+     * @param {Array} bridges
+     * @param {object} [header]  Export-Raster-Header (nur v8 nötig)
+     * @param {{engine?: 'v5'|'v8'}} [opts]
      * @returns {string}
      */
-    generateWeirFile(weirs, bridges = []) {
-        // Flatten bridge cells → 2 weir entries per cell (soffit-line + deck-line)
-        // LISFLOOD weir format: x y dir Cd hc m w
-        //   soffit-line: hc = z_sohle,  w = bridge.width   (submerged opening)
-        //   deck-line:   hc = soffit,   w = bridge.width   (overtopping)
+    generateWeirFile(weirs, bridges = [], header = null, { engine = 'v5', sgcWidthGrid = null } = {}) {
         const bridgeEntries = [];
-        for (const bridge of (bridges || [])) {
-            const cells = bridge.cells || [];
-            for (const cell of cells) {
-                const z  = cell.z_sohle ?? cell.z ?? bridge.z_sohle ?? 0;
-                const sf = cell.soffit  ?? bridge.soffit ?? (z + 2.0);
-                const dk = cell.deck    ?? bridge.deck   ?? (z + 3.0);
-                const w  = cell.width   ?? bridge.width  ?? 5.0;
-                const Cd = cell.Cd      ?? bridge.Cd     ?? 1.704;
-                const dir = cell.direction || 'S';
-                const x   = cell.x;
-                const y   = cell.y;
-                // soffit-line (opening beneath bridge)
-                bridgeEntries.push({ x, y, direction: dir, Cd, hc: z,  m: 0.667, w });
-                // deck-line (overtopping above soffit)
-                bridgeEntries.push({ x, y, direction: dir, Cd, hc: sf, m: 0.667, w });
+        let weirEntries = [...(weirs || [])];
+
+        if (engine === 'v8' && header) {
+            // ── v8: Re-Diskretisierung bei Export-Zellweite ──────────────────
+            const cs = header.cellsize;
+
+            // Brücken: eine <dir>B-Zeile pro Zelle (Orifice), hc = Soffit, m = Tz
+            for (const bridge of (bridges || [])) {
+                // 3D-Brückenkörper: Footprint bei Export-Zellweite neu rastern,
+                // Soffitte pro Zelle bilinear vom Lattice (Bogen/Voute → per-Zelle-hc).
+                if (bridge.kind === 'mesh3d') {
+                    const meshCells = latticeToCells(bridge, header, null);
+                    if (meshCells.length === 0) {
+                        this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: Footprint ergibt 0 Zellen im Export-Raster — übersprungen.`);
+                        continue;
+                    }
+                    for (const cell of meshCells) {
+                        bridgeEntries.push({
+                            x: cell.x, y: cell.y, direction: cell.direction + 'B',
+                            Cd: bridge.Cd ?? 0.8, hc: cell.soffit, m: bridge.Tz ?? 1.5, w: cs
+                        });
+                    }
+                    continue;
+                }
+                const axis = (bridge.axis || []).map(p => [p.x, p.y]);
+                let cells;
+                if (axis.length >= 2) {
+                    cells = this.discretizeStructureAxis(axis, header);
+                } else {
+                    // Fallback: Legacy-Zellen (alte Projekte ohne axis)
+                    cells = (bridge.cells || []).map(c => ({ x: c.x, y: c.y, direction: c.direction || 'S' }));
+                }
+                if (cells.length === 0) {
+                    this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: Achse ergibt 0 Zellen im Export-Raster — übersprungen.`);
+                    continue;
+                }
+                const soffit = bridge.soffit ?? ((bridge.z_sohle ?? 0) + 2.0);
+                const width  = bridge.width ?? 5.0;
+                const Cd     = bridge.Cd ?? 1.0;
+                const Tz     = bridge.Tz ?? 1.5;
+                // Öffnungsbreite auf Zellen aufteilen: bridge.width pro Zelle zu
+                // wiederholen würde die Öffnung N-fach überzählen.
+                const wPerCell = Math.min(cs, width / cells.length);
+                if (width > cells.length * cs) {
+                    this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: Öffnungsbreite ${width} m > Strukturlänge ${(cells.length * cs).toFixed(1)} m — Breite wird gekappt.`);
+                }
+                for (const cell of cells) {
+                    bridgeEntries.push({ x: cell.x, y: cell.y, direction: cell.direction + 'B', Cd, hc: soffit, m: Tz, w: wPerCell });
+                }
+            }
+
+            // Brücken gegen SGC clippen: LISFLOOD-FP 8 verlangt für jede <dir>B-
+            // Zelle Sub-Grid-Fluss auf BEIDEN Seiten der Fließachse (sgc.cpp:
+            // "Bridge must have sub grid flows on either side"). Zellen, die über
+            // die Ufer hinausragen oder das Gerinne nicht treffen, werden entfernt.
+            if (sgcWidthGrid && bridgeEntries.length) {
+                const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+                const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+                const { ncols, nrows } = header;
+                const sgcAt = (col, row) =>
+                    (col < 0 || col >= ncols || row < 0 || row >= nrows) ? 0 : (sgcWidthGrid[row * ncols + col] || 0);
+                const valid = (e) => {
+                    const col = Math.round((e.x - xll) / cs);
+                    const row = Math.round((e.y - yll) / cs);   // SGC-Raster ist bottom-up
+                    if (sgcAt(col, row) <= 0) return false;
+                    const d = e.direction[0];
+                    if (d === 'S' || d === 'N') return sgcAt(col, row - 1) > 0 && sgcAt(col, row + 1) > 0;
+                    return sgcAt(col - 1, row) > 0 && sgcAt(col + 1, row) > 0; // E/W
+                };
+                const before = bridgeEntries.length;
+                const kept = bridgeEntries.filter(valid);
+                const dropped = before - kept.length;
+                if (dropped > 0) {
+                    if (kept.length === 0) {
+                        this.error(`Alle ${before} Brückenzellen liegen nicht über dem SGC-Gerinne — Brücke(n) werden ignoriert. Die Kanal-Mittellinie muss unter der Brücke hindurch verlaufen.`);
+                    } else {
+                        this.warn(`${dropped} von ${before} Brückenzellen liegen außerhalb des SGC-Gerinnes (über den Ufern) und wurden entfernt — nur Zellen über dem Gerinne bleiben als Brücke wirksam.`);
+                    }
+                }
+                bridgeEntries.length = 0;
+                bridgeEntries.push(...kept);
+            }
+
+            // Wehre: nach lineId gruppieren, Achse aus erster/letzter Zelle
+            // rekonstruieren (Editor zeichnet gerade Segmente), neu diskretisieren.
+            const groups = new Map();
+            const singles = [];
+            for (const w of (weirs || [])) {
+                if (w.lineId) {
+                    if (!groups.has(w.lineId)) groups.set(w.lineId, []);
+                    groups.get(w.lineId).push(w);
+                } else {
+                    singles.push(w); // Alt-Zellen ohne Linie: unverändert übernehmen
+                }
+            }
+            weirEntries = [...singles];
+            for (const [lineId, group] of groups) {
+                if (group.length === 1) { weirEntries.push(group[0]); continue; }
+                const first = group[0], last = group[group.length - 1];
+                const hcs = group.map(g => g.hc);
+                if (Math.max(...hcs) - Math.min(...hcs) > 0.01) {
+                    this.warn(`Wehr-Linie ${String(lineId).substring(0, 8)}: Kronenhöhe variiert um ${(Math.max(...hcs) - Math.min(...hcs)).toFixed(2)} m — erste Höhe wird für alle Zellen verwendet.`);
+                }
+                const cells = this.discretizeStructureAxis([[first.x, first.y], [last.x, last.y]], header);
+                for (const cell of cells) {
+                    weirEntries.push({
+                        x: cell.x, y: cell.y, direction: cell.direction,
+                        Cd: first.Cd, hc: first.hc, m: first.m,
+                        w: cs // vollflächiges Wehr über die Zellbreite
+                    });
+                }
+            }
+        } else {
+            // ── v5 (Legacy, byte-identisch): Brücken als 2-Zeilen-Näherung ───
+            // soffit-line: hc = z_sohle,  w = bridge.width   (Öffnung unter Brücke)
+            // deck-line:   hc = soffit,   w = bridge.width   (Überströmen)
+            for (const bridge of (bridges || [])) {
+                const cells = bridge.cells || [];
+                for (const cell of cells) {
+                    const z  = cell.z_sohle ?? cell.z ?? bridge.z_sohle ?? 0;
+                    const sf = cell.soffit  ?? bridge.soffit ?? (z + 2.0);
+                    const w  = cell.width   ?? bridge.width  ?? 5.0;
+                    const Cd = cell.Cd      ?? bridge.Cd     ?? 1.704;
+                    const dir = cell.direction || 'S';
+                    const x   = cell.x;
+                    const y   = cell.y;
+                    // soffit-line (opening beneath bridge)
+                    bridgeEntries.push({ x, y, direction: dir, Cd, hc: z,  m: 0.667, w });
+                    // deck-line (overtopping above soffit)
+                    bridgeEntries.push({ x, y, direction: dir, Cd, hc: sf, m: 0.667, w });
+                }
             }
         }
 
-        const allEntries = [...(weirs || []), ...bridgeEntries];
+        const allEntries = [...weirEntries, ...bridgeEntries];
         if (allEntries.length === 0) return '';
 
         let out = `${allEntries.length}\n`;
         for (const w of allEntries) {
             out += `${w.x.toFixed(2)} ${w.y.toFixed(2)}  ${w.direction}  ${w.Cd.toFixed(4)}  ${w.hc.toFixed(4)}  ${w.m.toFixed(4)}  ${w.w.toFixed(4)}\n`;
         }
-        console.log(`[InputGenerator] Generated flow.weir (${(weirs||[]).length} weirs + ${bridgeEntries.length} bridge lines):\n${out}`);
+        console.log(`[InputGenerator] Generated flow.weir [${engine}] (${weirEntries.length} weir lines + ${bridgeEntries.length} bridge lines)`);
         return out;
     }
 }

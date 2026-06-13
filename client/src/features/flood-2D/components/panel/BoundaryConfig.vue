@@ -104,13 +104,14 @@ const saveSettings = () => {
     let finalValue = null;
 
     if (activeType.value === 'INFLOW_DYNAMIC' || activeType.value === 'WATERLEVEL_FIX') {
-        if (!selectedProfileId.value) {
-            // Error or wait? User needs to select profile.
-            // For now, we save what we have, but it won't simulate correctly without profile.
-            // Ideally we could auto-create one?
-        }
+        // Ohne Profil wird die Zuweisung gespeichert (Auswahl bleibt erhalten),
+        // aber der InputGenerator überspringt sie mit Warnung.
         finalProfileId = selectedProfileId.value;
     } else if (activeType.value === 'INFLOW_CONSTANT') {
+        // Negativer Zufluss wäre ein versteckter Abfluss → Massenbilanz kaputt.
+        if (!Number.isFinite(constantValue.value) || constantValue.value < 0) {
+            constantValue.value = 0;
+        }
         finalValue = constantValue.value;
     }
 
@@ -152,6 +153,14 @@ const globalStatusText = computed(() => {
 const globalStatusClass = computed(() =>
     hydStore.globalBoundaryType === 'CLOSED' ? 'status-warn' : 'status-ok'
 );
+
+// HFIX unterhalb des tiefsten Geländepunkts kann nie Wasser halten — warnen.
+const hfixBelowTerrain = computed(() => {
+    const minZ = geoStore.terrain?.minZ;
+    return hydStore.globalBoundaryType === 'HFIX'
+        && Number.isFinite(minZ)
+        && hydStore.globalBoundaryHfix < minZ;
+});
 
 </script>
 
@@ -202,7 +211,7 @@ const globalStatusClass = computed(() =>
       <div v-if="activeType === 'INFLOW_CONSTANT'" class="constant-config">
           <div class="form-group">
               <label>Gesamtzufluss Q (m³/s)</label>
-              <input type="number" v-model.number="constantValue" @change="saveSettings" step="0.1" class="value-input">
+              <input type="number" v-model.number="constantValue" @change="saveSettings" step="0.1" min="0" class="value-input">
               <small class="hint-info">Wird automatisch auf alle Randzellen aufgeteilt.</small>
           </div>
       </div>
@@ -238,6 +247,9 @@ const globalStatusClass = computed(() =>
       <div v-if="hydStore.globalBoundaryType === 'HFIX'" class="global-hfix-input">
         <label>Außen-Wasserspiegel [m NHN]</label>
         <input type="number" v-model.number="hydStore.globalBoundaryHfix" step="0.1" />
+        <small v-if="hfixBelowTerrain" class="hint-warn">
+          ⚠️ Pegel liegt unter dem tiefsten Geländepunkt ({{ geoStore.terrain.minZ.toFixed(1) }} m) — wirkt wie freier Auslauf.
+        </small>
       </div>
 
       <div class="global-status" :class="globalStatusClass">{{ globalStatusText }}</div>

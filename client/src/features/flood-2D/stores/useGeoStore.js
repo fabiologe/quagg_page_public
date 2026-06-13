@@ -186,6 +186,32 @@ export const useGeoStore = defineStore('geo', () => {
         bridges.value = bridges.value.filter(b => b.id !== bridgeId);
     }
 
+    // ── 3D-Brückenkörper (kind: 'mesh3d', Footprint + Lattice) ─────────────
+    /**
+     * Fügt einen 3D-Brückenkörper hinzu (nur Plain-JSON — Persistenz via GEO_FIELDS).
+     * @param {object} bridge — { id, kind:'mesh3d', footprint, lattice, directionMode, Cd, Tz, z_sohle, soffit, deck, width, cells }
+     */
+    function addBridge3D(bridge) {
+        if (!bridge || bridge.kind !== 'mesh3d') return;
+        saveSnapshot('3D-Brückenkörper hinzugefügt');
+        bridges.value.push(bridge);
+        console.log(`[GeoStore] 3D-Brückenkörper hinzugefügt: ${bridge.id} (${bridge.cells?.length ?? 0} Zellen)`);
+    }
+
+    /**
+     * Aktualisiert einen 3D-Brückenkörper (ein Undo-Schritt pro Aufruf —
+     * das Tool committet nur bei mouseup/Loop-Cut, nie per Frame).
+     * @param {string} id
+     * @param {object} patch — z.B. { lattice, cells, soffit, deck, z_sohle }
+     * @param {string} [label]
+     */
+    function updateBridge3D(id, patch, label = 'Brückenkörper bearbeitet') {
+        const b = bridges.value.find(b => b.id === id);
+        if (!b) return;
+        saveSnapshot(label);
+        Object.assign(b, patch);
+    }
+
     // ── Wehre (LISFLOOD weir_flow.cpp, Poleni-Formel) ──────────────────────
     /**
      * Wehr-Objekte für die LISFLOOD `weirfile`-Eingabe.
@@ -507,6 +533,8 @@ export const useGeoStore = defineStore('geo', () => {
         bridges,
         addBridgeBatch,
         removeBridge,
+        addBridge3D,
+        updateBridge3D,
         notifyTerrainModified: () => { terrainVersion.value++; },
     };
 });

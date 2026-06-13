@@ -85,5 +85,18 @@ __devsave/
 client/src/features/flood-2D/test/dgm1_large.xyz
 client_backup_20251116.tar.gz
 client/public/results.zip
-# Backend
-backend/
+# Backend — Inhalte ignorieren (nicht das Verzeichnis selbst), damit gezielte
+# Ausnahmen möglich sind. Versioniert wird NUR die Solver-Patch-SSOT + die
+# Docker-Build-Dateien — NICHT der 126-MB-Upstream-Baum, NICHT Python-Interna.
+backend/*
+!backend/app/
+backend/app/*
+!backend/app/api/
+backend/app/api/*
+!backend/app/api/flood2D/
+backend/app/api/flood2D/*
+!backend/app/api/flood2D/engines/
+backend/app/api/flood2D/engines/*
+!backend/app/api/flood2D/engines/patches/
+!backend/app/api/flood2D/engines/docker/
+!backend/app/api/flood2D/engines/vendor/

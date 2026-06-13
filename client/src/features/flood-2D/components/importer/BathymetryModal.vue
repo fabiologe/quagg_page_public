@@ -33,22 +33,33 @@
         </div>
       </div>
 
-      <!-- ── Kein Daten ──────────────────────────────────────────────── -->
-      <div v-if="!hasDem || !hasSurvey" class="missing-hint">
-        <template v-if="!hasDem">
-          <strong>Kein DGM geladen.</strong> Terrain über den 3D-Viewer importieren (.xyz / .asc).
-        </template>
-        <template v-else>
-          <strong>Keine Vermessungspunkte geladen.</strong>
-          Werkzeugkasten → Import Data → Tab „Vermessungspunkte".
-        </template>
+      <!-- ── Kein DGM (harte Voraussetzung) ──────────────────────────── -->
+      <div v-if="!hasDem" class="missing-hint">
+        <strong>Kein DGM geladen.</strong> Terrain über den 3D-Viewer importieren (.xyz / .asc).
       </div>
 
       <!-- ── Pipeline ────────────────────────────────────────────────── -->
       <div v-else class="pipeline">
 
+        <!-- Kanal-Modus: DGM vorhanden, aber keine Vermessungspunkte ──── -->
+        <div v-if="channelOnlyMode"
+          style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem 0.85rem;margin-bottom:0.75rem;
+                 background:#0e2438;border:1px solid #1d4e6b;border-radius:8px;font-size:0.8rem;line-height:1.45;color:#bcd4e6">
+          <span style="font-size:1.1rem;flex-shrink:0">🪏</span>
+          <div>
+            <strong style="color:#e6f2fb">Kanal-Modus — keine Vermessungspunkte geladen.</strong>
+            Zeichne den Flussschlauch als <em>Mittellinie</em> und setze Breite + Sohltiefe.
+            Daraus entsteht ein Sub-Grid-Gerinne (SGC), das direkt in den Solver geht —
+            Vermessungspunkte sind dafür nicht nötig. Validierung, Offset, IDW-Interpolation,
+            Blending und QS erscheinen erst mit geladenen Vermessungspunkten.
+            <div style="margin-top:0.35rem;color:#7fa8c4">
+              Danach im Solver-Panel den Schalter „SGC“ aktivieren, damit das Gerinne exportiert wird.
+            </div>
+          </div>
+        </div>
+
         <!-- ════ Step 1 · Validierung ════════════════════════════════ -->
-        <div class="step" :class="{ 'step-open': activeStep === 0 }">
+        <div v-if="hasSurvey" class="step" :class="{ 'step-open': activeStep === 0 }">
           <div class="step-header" @click="activeStep = activeStep === 0 ? -1 : 0">
             <div class="step-badge" :class="badgeClass(step1Status)">{{ badgeIcon(step1Status, '1') }}</div>
             <div class="step-meta">
@@ -146,7 +157,7 @@
         </div>
 
         <!-- ════ Step 2 · Offset-Korrektur ══════════════════════════ -->
-        <div class="step" :class="{ 'step-open': activeStep === 1 }">
+        <div v-if="hasSurvey" class="step" :class="{ 'step-open': activeStep === 1 }">
           <div class="step-header" @click="activeStep = activeStep === 1 ? -1 : 1">
             <div class="step-badge" :class="badgeClass(step2Status)">{{ badgeIcon(step2Status, '2') }}</div>
             <div class="step-meta">
@@ -318,6 +329,37 @@
             <template v-if="hasCommittedLine">
               <div class="section-label" style="margin-top:0.5rem">Längsschnitt</div>
               <BathymetryLaengsschnitt />
+
+              <!-- ── SGC-Gerinneparameter (Sub-Grid-Channel, High-End-Solver) ── -->
+              <div class="section-label" style="margin-top:0.9rem">
+                Gerinne-Hydraulik (SGC)
+                <span class="sl-sub">— für Sub-Grid-Export: Gerinne kann schmaler als eine Rasterzelle sein</span>
+              </div>
+              <div class="sgc-params">
+                <label>
+                  Breite [m]
+                  <input type="number" min="0.1" step="0.5"
+                    :value="bathyStore.channelParams.width"
+                    @change="e => bathyStore.setChannelParams({ width: Math.max(0.1, Number(e.target.value) || 0.1) })" />
+                </label>
+                <label>
+                  Sohltiefe unter Gelände [m]
+                  <input type="number" min="0.1" step="0.1"
+                    :value="bathyStore.channelParams.bedDepth"
+                    @change="e => bathyStore.setChannelParams({ bedDepth: Math.max(0.1, Number(e.target.value) || 0.1) })" />
+                </label>
+                <label>
+                  Manning n Gerinne
+                  <input type="number" min="0.01" max="0.2" step="0.005"
+                    :value="bathyStore.channelParams.manningN"
+                    @change="e => bathyStore.setChannelParams({ manningN: Math.min(0.2, Math.max(0.01, Number(e.target.value) || 0.03)) })" />
+                </label>
+              </div>
+
+              <!-- Live-Check: passt die Brücke quer ins Gerinne? -->
+              <div v-for="(it, i) in bridgeFitIssues" :key="i" class="tp-warn" style="margin-top:0.4rem">
+                ⚠ {{ it.message }}
+              </div>
             </template>
 
             <!-- ── Flussschlauch-Polygon ─────────────────────────────── -->
@@ -330,6 +372,10 @@
               Alle Rasterzellen innerhalb des Polygons werden durch IDW aus den Vermessungspunkten ersetzt —
               Zellen ohne Punkt in der Nähe erhalten einen globalen IDW-Fallback (keine Lücken).
             </p>
+            <div v-if="channelOnlyMode" class="tp-warn" style="margin-top:0.2rem">
+              ⚠ Ohne Vermessungspunkte dient das Polygon nur der Visualisierung — es erreicht den Solver
+              nicht. Für die Sohle nutze die <strong>Mittellinie + SGC</strong> oben.
+            </div>
             <div class="polyline-status" :class="hasCommittedPolygon ? 'pl-ok' : 'pl-empty'">
               <span v-if="hasCommittedPolygon">
                 ✓ {{ bathyStore.channelPolygon.length }} Punkte gespeichert
@@ -349,7 +395,7 @@
                 @click="bathyStore.setChannelPolygon([])">Löschen</button>
             </div>
 
-            <div class="step-footer">
+            <div v-if="hasSurvey" class="step-footer">
               <button class="btn-skip" @click="activeStep = 3">Überspringen</button>
               <button class="btn-next" @click="activeStep = 3">Weiter →</button>
             </div>
@@ -357,7 +403,7 @@
         </div>
 
         <!-- ════ Step 4 · Kanalinterpolation ═══════════════════════════ -->
-        <div class="step" :class="{ 'step-open': activeStep === 3 }">
+        <div v-if="hasSurvey" class="step" :class="{ 'step-open': activeStep === 3 }">
           <div class="step-header" @click="activeStep = activeStep === 3 ? -1 : 3">
             <div class="step-badge" :class="badgeClass(step4Status)">{{ badgeIcon(step4Status, '4') }}</div>
             <div class="step-meta">
@@ -561,7 +607,7 @@
         </div>
 
         <!-- ════ Step 5 · Blending ════════════════════════════════════ -->
-        <div class="step" :class="{ 'step-open': activeStep === 4 }">
+        <div v-if="hasSurvey" class="step" :class="{ 'step-open': activeStep === 4 }">
           <div class="step-header" @click="activeStep = activeStep === 4 ? -1 : 4">
             <div class="step-badge" :class="badgeClass(step5Status)">{{ badgeIcon(step5Status, '5') }}</div>
             <div class="step-meta">
@@ -596,7 +642,7 @@
         </div>
 
         <!-- ════ Step 6 · Qualitätssicherung ═════════════════════════ -->
-        <div class="step" :class="{ 'step-open': activeStep === 5 }">
+        <div v-if="hasSurvey" class="step" :class="{ 'step-open': activeStep === 5 }">
           <div class="step-header" @click="activeStep = activeStep === 5 ? -1 : 5">
             <div class="step-badge" :class="badgeClass(step6Status)">{{ badgeIcon(step6Status, '6') }}</div>
             <div class="step-meta">
@@ -652,6 +698,7 @@ import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStor
 import { bathyBrushSettings, computeIDW } from '@/features/flood-2D/composables/editor/useBathyBrushTool.js';
 import { channelLineState } from '@/features/flood-2D/composables/editor/useChannelLineTool.js';
 import { refPickState }    from '@/features/flood-2D/composables/editor/useOffsetRefPickTool.js';
+import { validateBridgeChannelFit } from '@/features/flood-2D/middleware/ScenarioValidator.js';
 import BathymetryLaengsschnitt from './BathymetryLaengsschnitt.vue';
 
 const emit         = defineEmits(['close']);
@@ -772,6 +819,12 @@ const step6Summary = computed(() => {
 // ── Status-Leiste ──────────────────────────────────────────────────────────
 const hasDem    = computed(() => geoStore.terrain?.gridData != null);
 const hasSurvey = computed(() => bathyStore.surveyPoints.length > 0);
+
+// Kanal-Modus: DGM vorhanden, aber keine Vermessungspunkte → nur Kanal zeichnen
+// (Mittellinie + SGC). Die übrigen Schritte sind vermessungsabhängig und werden
+// ausgeblendet. In diesem Modus direkt die Kanal-Geometrie (Schritt 3) öffnen.
+const channelOnlyMode = computed(() => hasDem.value && !hasSurvey.value);
+watch(channelOnlyMode, (on) => { if (on) activeStep.value = 2; }, { immediate: true });
 
 const demStatus = computed(() => {
     if (!hasDem.value) return { cls: 'missing', icon: '○', text: 'Nicht geladen' };
@@ -1169,6 +1222,12 @@ function applyOffset() {
 // ── Flusslinie / Flussschlauch ─────────────────────────────────────────────
 const hasCommittedLine    = computed(() => bathyStore.channelPolyline.length >= 2);
 const hasCommittedPolygon = computed(() => bathyStore.channelPolygon.length >= 3);
+
+// Live-Check (leichte Variante): Brückenbreite vs. Gerinnebreite. Nutzt dieselbe
+// Regel wie das Pre-Run-Gate (ScenarioValidator) — keine Logik-Duplikate.
+const bridgeFitIssues = computed(() =>
+    validateBridgeChannelFit(geoStore.bridges || [], bathyStore.channelParams).issues
+);
 
 // ── Virtual Raster ─────────────────────────────────────────────────────────
 const vrRunning        = ref(false);
@@ -1592,6 +1651,21 @@ function runCrossVal() {
     letter-spacing: 0.08em; color: #5d7a96;
     border-bottom: 1px solid #3d5166; padding-bottom: 0.25rem;
 }
+
+/* ── SGC-Gerinneparameter ────────────────────────────────────────────────── */
+.sgc-params {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem;
+    margin-top: 0.4rem;
+}
+.sgc-params label {
+    display: flex; flex-direction: column; gap: 0.2rem;
+    font-size: 0.72rem; color: #8aa3bd;
+}
+.sgc-params input {
+    padding: 0.35rem 0.45rem; border: 1px solid #3d5166; border-radius: 4px;
+    background: #1e2c3a; color: #e8eef4; font-size: 0.8rem;
+}
+.sgc-params input:focus { border-color: #2980b9; outline: none; }
 
 /* ── Step footer ──────────────────────────────────────────────────────────── */
 .step-footer {

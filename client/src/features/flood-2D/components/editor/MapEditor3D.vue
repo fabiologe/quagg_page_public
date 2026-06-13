@@ -347,6 +347,7 @@ import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
 import { useBridgeTool } from '../../composables/editor/useBridgeTool.js';
+import { getBridge3DToolInstance, bridge3DState } from '../../composables/editor/useBridge3DTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
 import { useHistoryManager } from '../../composables/useHistoryManager.js';
 import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPointsRenderer.js';
@@ -410,6 +411,7 @@ const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
 const weirTool   = useWeirTool();
 const bridgeTool = useBridgeTool();
+const bridge3DTool = getBridge3DToolInstance();
 const channelLineTool    = getChannelLineToolInstance();
 const channelPolygonTool = getChannelPolygonToolInstance();
 const refPickTool        = getRefPickToolInstance();
@@ -454,6 +456,22 @@ const cropProxy = {
     onRightClick(ctx)  { return cropMode.value === 'POLYGON' ? polygonCropTool.onRightClick(ctx)  : cropTool.onRightClick?.(ctx); },
 };
 
+// Proxy tool: delegates to line bridge or 3D body tool based on bridge3DState.mode
+const bridgeProxy = {
+    activate(s) {
+        if (bridge3DState.mode === 'MESH3D') bridge3DTool.activate(s);
+        else bridgeTool.activate(s);
+    },
+    deactivate(s) {
+        bridgeTool.deactivate(s);
+        bridge3DTool.deactivate(s);
+    },
+    onClick(ctx)     { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onClick(ctx)     : bridgeTool.onClick?.(ctx); },
+    onMove(ctx)      { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMove(ctx)      : bridgeTool.onMove?.(ctx); },
+    onMouseDown(ctx) { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMouseDown(ctx) : bridgeTool.onMouseDown?.(ctx); },
+    onMouseUp(ctx)   { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMouseUp(ctx)   : bridgeTool.onMouseUp?.(ctx); },
+};
+
 // Channel-line helper actions (called from inline UI)
 function commitChannelLine() {
     getChannelLineToolInstance().commitLine();
@@ -484,7 +502,7 @@ const tools = {
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
     'WEIR':   weirTool,
-    'BRIDGE': bridgeTool,
+    'BRIDGE': bridgeProxy,      // delegates Linie/3D-Körper via bridge3DState.mode
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),
@@ -511,7 +529,11 @@ const interactionManager = useInteractionManager(
 const applyCameraLock = () => {
     if (!controls) return;
     const tool = activeTool.value;
-    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK') {
+    // BRIDGE/MESH3D: Footprint-Zeichnen sperrt die linke Maustaste (wie CHANNEL_POLYGON)
+    const bridgeDrawing = tool === 'BRIDGE'
+        && bridge3DState.mode === 'MESH3D'
+        && bridge3DState.phase === 'DRAW_FOOTPRINT';
+    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK' || bridgeDrawing) {
         controls.mouseButtons.LEFT = null;
     } else {
         if (activeCamera === cameraOrtho) {
@@ -554,6 +576,26 @@ watch(activeTool, (newVal, oldVal) => {
         }
     }
 }, { immediate: true });
+
+// --- BRIDGE 3D-KÖRPER: Sub-Modus-Wechsel + Kamera-Verhalten ---
+// Modus-Umschalter im Panel: aktives Sub-Tool sauber tauschen.
+watch(() => bridge3DState.mode, (mode, oldMode) => {
+    if (activeTool.value !== 'BRIDGE' || !scene) return;
+    if (oldMode === 'MESH3D') bridge3DTool.deactivate(scene);
+    else bridgeTool.deactivate(scene);
+    if (mode === 'MESH3D') bridge3DTool.activate(scene);
+    else bridgeTool.activate(scene);
+    applyCameraLock();
+});
+
+// Vertex-Drag friert die Kamera komplett ein; Phasenwechsel aktualisieren die
+// LEFT-Maustasten-Sperre (applyCameraLock kennt DRAW_FOOTPRINT). flush:'sync',
+// damit controls.enabled noch im selben pointerdown-Durchlauf greift.
+watch(() => [bridge3DState.phase, bridge3DState.dragging], ([, dragging]) => {
+    if (!controls) return;
+    controls.enabled = !dragging;
+    if (activeTool.value === 'BRIDGE' && bridge3DState.mode === 'MESH3D') applyCameraLock();
+}, { flush: 'sync' });
 
 // --- SHADER TOGGLE ---
 const setLayerMode = (mode) => {

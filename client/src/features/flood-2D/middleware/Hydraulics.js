@@ -14,19 +14,21 @@ export const Hydraulics = {
      * @returns {string} Content for rain.txt
      */
     prepareRain(intensity_mm_h, duration_s = 3600) {
-        // unit conv: mm/h -> m/s
-        const val_ms = intensity_mm_h / 1000.0 / 3600.0;
-
-        // Format:
-        // Number of rows
-        // time value
-        // time value
-        // ...
-
-        // Simple rectangular pulse
-        const content = `2
-0.0\t${val_ms.toFixed(8)}
-${duration_s.toFixed(1)}\t${val_ms.toFixed(8)}
+        // LISFLOOD .rain-Format (LoadTimeSeries, erste Zeile = Kommentar/übersprungen):
+        //   [Kommentar]
+        //   [Anzahl] [Zeiteinheit]
+        //   [Rate_mm_h] [Zeit_s]     ← Spalte 1 = Rate in mm/h (Solver teilt intern
+        //                              durch 1000*3600 → m/s), Spalte 2 = Zeit in s.
+        // WICHTIG: Die Rate wird in mm/h angegeben – NICHT in m/s umrechnen.
+        // Rechteck-Puls, der nach duration_s sauber auf 0 zurückgeht (sonst hält
+        // LISFLOOD die letzte Rate bis sim_time → Dauerregen).
+        const rate = Number(intensity_mm_h) || 0;
+        const end = Math.max(1, Math.round(duration_s));
+        const content = `RECT_RAIN_PULSE
+3 seconds
+${rate.toFixed(6)}\t0
+${rate.toFixed(6)}\t${end - 1}
+0.000000\t${end}
 `;
         return content;
     },

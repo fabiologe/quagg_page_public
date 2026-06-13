@@ -383,10 +383,22 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props 
     if (!ensureMesh()) return;
     const pos = waterMesh.geometry.attributes.position;
     const N = pos.count;
-    const raw = depthData instanceof Float32Array ? depthData : new Float32Array(depthData);
+    let raw = depthData instanceof Float32Array ? depthData : new Float32Array(depthData);
     if (raw.length !== N) {
       console.warn(`[WaterSurface] depth frame length ${raw.length} ≠ vertex count ${N} — skipped.`);
       return;
+    }
+
+    // Solver-Ausreißer abfangen: NaN/Inf/negative Tiefen würden Vertices
+    // unkontrolliert verschieben → als trocken (0) behandeln.
+    // Kopie nur, wenn tatsächlich etwas Ungültiges gefunden wird.
+    let sanitized = false;
+    for (let i = 0; i < N; i++) {
+      const d = raw[i];
+      if (!Number.isFinite(d) || d < 0) {
+        if (!sanitized) { raw = raw.slice(); sanitized = true; }
+        raw[i] = 0;
+      }
     }
 
     // Tiefe räumlich glätten → keine zackige Oberfläche in turbulenten Bereichen

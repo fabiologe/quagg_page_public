@@ -21,21 +21,35 @@ export function useBoundaryTool() {
     let pendingParsedData = null;  // für commit() benötigte Geo-Metadaten
 
     // --- HELPER: Grid Snapping ---
-    const getGridSnap = (point, parsedData) => {
+    // Liefert null, wenn der Punkt außerhalb des Rasters liegt.
+    const getGridSnap = (point, parsedData, terrainMesh = null) => {
         if (!parsedData) return point;
 
-        const { cellsize, bounds, center, minZ } = parsedData;
+        const { cellsize, bounds, ncols, nrows } = parsedData;
 
         // 1. World to Grid Index
-        // World 0,0 is at center. 
-        // LocalX = x + width/2
-        // LocalY = -z + height/2
+        // Mesh-lokal rechnen, damit ein verschobenes/skaliertes Terrain-Mesh
+        // nicht zu falschen Indizes führt. Mesh ist um -PI/2 (X) rotiert:
+        // local.x = world.x, local.y = -world.z (solange Mesh im Ursprung).
+        let lx, ly;
+        if (terrainMesh) {
+            const lp = terrainMesh.worldToLocal(point.clone());
+            lx = lp.x;
+            ly = lp.y;
+        } else {
+            lx = point.x;
+            ly = -point.z;
+        }
 
-        const localX = point.x + bounds.width / 2;
-        const localY = -point.z + bounds.height / 2;
+        const localX = lx + bounds.width / 2;
+        const localY = ly + bounds.height / 2;
 
         const col = Math.round(localX / cellsize);
         const row = Math.round(localY / cellsize);
+
+        // Punkte außerhalb des Rasters ablehnen (z. B. Plane-Fallback-Treffer
+        // neben dem Gelände) — sonst landen ungültige Zellen im Store.
+        if (col < 0 || col >= ncols || row < 0 || row >= nrows) return null;
 
         // 2. Grid Index back to World Center
         // WorldX = (col * cellsize) - width/2
@@ -88,7 +102,8 @@ export function useBoundaryTool() {
         }
 
         if (hitPoint) {
-            const snapped = getGridSnap(hitPoint, parsedData);
+            const snapped = getGridSnap(hitPoint, parsedData, terrainMesh);
+            if (!snapped) return { action: 'NONE' }; // außerhalb des Rasters
 
             // Delegate to DrawTool state
             drawTool.addPoint(snapped, scene);
@@ -121,7 +136,11 @@ export function useBoundaryTool() {
         }
 
         if (hitPoint) {
-            const snapped = getGridSnap(hitPoint, parsedData);
+            const snapped = getGridSnap(hitPoint, parsedData, terrainMesh);
+            if (!snapped) {
+                if (ghostMarker) ghostMarker.visible = false;
+                return;
+            }
             updateGhost(snapped, scene);
 
             // Also update drawTool rubber band?
@@ -262,7 +281,9 @@ export function useBoundaryTool() {
 
         geoStore.addBoundary(feature);
 
-        // Vorschau-Mesh bleibt in der Szene (wird zur persistenten Anzeige)
+        // Vorschau-Mesh bleibt in der Szene (wird zur persistenten Anzeige);
+        // Feature-ID taggen, damit es beim Löschen der Boundary auffindbar ist.
+        if (previewMesh) previewMesh.userData.boundaryFeatureId = feature.id;
         previewMesh = null;
         if (sceneRef) drawTool.reset(sceneRef);
         cleanupGhost();

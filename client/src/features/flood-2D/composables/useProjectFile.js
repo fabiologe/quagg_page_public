@@ -110,6 +110,8 @@ export async function saveProject({ includeResults = false, onProgress = null } 
     simDuration: sim.simDuration, timeStep: sim.timeStep,
     saveInterval: sim.saveInterval, massInterval: sim.massInterval,
     useAcceleration: sim.useAcceleration, useBmiSolver: sim.useBmiSolver,
+    solverMode: sim.solverMode,
+    exportCellsize: sim.exportCellsize, numericalScheme: sim.numericalScheme, sgcEnabled: sim.sgcEnabled,
   }));
 
   // Oberflächen-Grid (Textur-Pipeline), optional — Int8 (Material-IDs)
@@ -154,13 +156,19 @@ export async function saveProject({ includeResults = false, onProgress = null } 
         zip.file('results/vec.vx.f32', vx.buffer);
         zip.file('results/vec.vy.f32', vy.buffer);
       }
-      if (rd.maxDepthGrid)  zip.file('results/maxDepth.f32', f32buf(rd.maxDepthGrid));
-      if (rd.maxHazardGrid) zip.file('results/maxHazard.f32', f32buf(rd.maxHazardGrid));
+      if (rd.maxDepthGrid)    zip.file('results/maxDepth.f32',  f32buf(rd.maxDepthGrid));
+      if (rd.maxHazardGrid)   zip.file('results/maxHazard.f32', f32buf(rd.maxHazardGrid));
+      if (rd.maxVelocityGrid) zip.file('results/maxVel.f32',    f32buf(rd.maxVelocityGrid));
+      if (rd.maxElevGrid)     zip.file('results/maxElev.f32',   f32buf(rd.maxElevGrid));
+      if (rd.arrivalTimeGrid) zip.file('results/arrival.f32',   f32buf(rd.arrivalTimeGrid));
+      if (rd.durationGrid)    zip.file('results/duration.f32',  f32buf(rd.durationGrid));
 
       manifest.hasResults = true;
       manifest.results = {
         frameIds, cellCount, hasVel, hasVec,
         hasMaxDepth: !!rd.maxDepthGrid, hasMaxHazard: !!rd.maxHazardGrid,
+        hasMaxVel: !!rd.maxVelocityGrid, hasMaxElev: !!rd.maxElevGrid,
+        hasArrival: !!rd.arrivalTimeGrid, hasDuration: !!rd.durationGrid,
         maxWaterDepth: rd.maxWaterDepth, simDuration: rd.simDuration,
         resultHeader: rd.header ? J(rd.header) : null,
       };
@@ -226,7 +234,10 @@ export async function loadProject(file, onProgress = null) {
   if (sf) {
     const s = JSON.parse(await sf.async('string'));
     const set = (k) => { if (s[k] !== undefined && s[k] !== null) sim[k] = s[k]; };
-    ['simDuration', 'timeStep', 'saveInterval', 'massInterval', 'useAcceleration', 'useBmiSolver'].forEach(set);
+    // useBmiSolver (Legacy) VOR solverMode setzen, damit neue Projekte mit
+    // solverMode='runpod' nicht vom Legacy-Boolean überschrieben werden.
+    ['simDuration', 'timeStep', 'saveInterval', 'massInterval', 'useAcceleration', 'useBmiSolver', 'solverMode',
+     'exportCellsize', 'numericalScheme', 'sgcEnabled'].forEach(set);
   }
 
   // Oberflächen-Grid
@@ -265,10 +276,16 @@ export async function loadProject(file, onProgress = null) {
       if (vx && vy) sim.addVelocityVectorFrame(fid, vx.slice(off, off + cellCount), vy.slice(off, off + cellCount));
     });
 
-    const mdF = zip.file('results/maxDepth.f32');
-    if (mdF) sim.setMaxDepthGrid(new Float32Array(await mdF.async('arraybuffer')));
-    const mhF = zip.file('results/maxHazard.f32');
-    if (mhF) sim.setMaxHazardGrid(new Float32Array(await mhF.async('arraybuffer')));
+    const loadGrid = async (name, setter) => {
+      const f = zip.file(name);
+      if (f) setter(new Float32Array(await f.async('arraybuffer')));
+    };
+    await loadGrid('results/maxDepth.f32',  sim.setMaxDepthGrid);
+    await loadGrid('results/maxHazard.f32', sim.setMaxHazardGrid);
+    await loadGrid('results/maxVel.f32',    sim.setMaxVelocityGrid);
+    await loadGrid('results/maxElev.f32',   sim.setMaxElevGrid);
+    await loadGrid('results/arrival.f32',   sim.setArrivalTimeGrid);
+    await loadGrid('results/duration.f32',  sim.setDurationGrid);
 
     if (manifest.results.maxWaterDepth) sim.maxWaterDepth = manifest.results.maxWaterDepth;
     if (manifest.results.simDuration) sim.simDuration = manifest.results.simDuration;

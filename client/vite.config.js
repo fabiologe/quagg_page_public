@@ -66,6 +66,11 @@ export default defineConfig({
         target: 'http://localhost:8001',
         changeOrigin: true
       },
+      // Flood2D-Solver-API (quagg-api): gleicher Weg wie in Prod über nginx
+      '/flood2dpod': {
+        target: 'http://localhost:8001',
+        changeOrigin: true
+      },
       '/kostra-api': {
         target: 'https://dva3.de/kostra-rest',
         changeOrigin: true,

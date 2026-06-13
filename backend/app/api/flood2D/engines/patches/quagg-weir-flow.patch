@@ -1,0 +1,132 @@
+--- a/weir_flow.cpp	2026-06-13 07:56:28.230933741 +0000
++++ b/weir_flow.cpp	2026-06-13 07:56:28.234933728 +0000
+@@ -123,7 +123,33 @@
+ 
+ 		// get some basic paramters for the open channel flow calc
+ 		dt=Solverptr->Tstep;
+-		cn = C(0.5)* (SGCptr->SGCn[Arrptr->SGCgroup[p0]] + SGCptr->SGCn[Arrptr->SGCgroup[p1]]); // mean mannings (note n2)
++		// QUAGG-FIX: SGC-Arrays (SGCn/SGCgroup/QxSGold/SGCwidth) sind ohne
++		// Subgrid-Kanäle NICHT allokiert — Originalcode segfaultet, sobald
++		// Wasser eine Brückenzelle erreicht. Fallback ohne SGC: Manning aus
++		// Manningsn/FPn (SGCn ist vorquadriert → hier selbst quadrieren),
++		// Trägheitsterm aus Qxold (m2/s → *dx = m3/s, vgl. UpdateQs),
++		// Brückenbreite als Bezugsbreite für die Anström-Geschwindigkeit.
++		NUMERIC_TYPE Qold, Qus, Qds, wus0, wus1;
++		if (Statesptr->SGC==ON)
++		{
++			cn = C(0.5)* (SGCptr->SGCn[Arrptr->SGCgroup[p0]] + SGCptr->SGCn[Arrptr->SGCgroup[p1]]); // mean mannings (note n2)
++			Qold = Arrptr->QxSGold[pq0];
++			Qus  = Arrptr->QxSGold[pQus];
++			Qds  = Arrptr->QxSGold[pQds];
++			wus0 = Arrptr->SGCwidth[p0];
++			wus1 = Arrptr->SGCwidth[p1];
++		}
++		else
++		{
++			NUMERIC_TYPE nm = (Arrptr->Manningsn != NULL)
++				? C(0.5)*(Arrptr->Manningsn[p0] + Arrptr->Manningsn[p1]) : Parptr->FPn;
++			cn = nm*nm;
++			Qold = Arrptr->Qxold[pq0]*Parptr->dx;
++			Qus  = Arrptr->Qxold[pQus]*Parptr->dx;
++			Qds  = Arrptr->Qxold[pQds]*Parptr->dx;
++			wus0 = Width;
++			wus1 = Width;
++		}
+ 		dh=z0+h0-z1-h1; // difference in water level
+ 		//Sf=-dh/Parptr->dx; //CCS_deletion
+ 		Sf=-dh/Arrptr->dx[p0]; // CCS added for subgrid lat long compatibility.
+@@ -133,18 +159,23 @@
+ 
+ 
+ 		// calculate open channel flow using SGC flow
+-		Qoc=(Arrptr->QxSGold[pq0]-g*A*dt*Sf) / (1+dt*g*cn*fabs(Arrptr->QxSGold[pq0]) / (pow(R,C(4.0)/C(3.0))*A)); // note mannings is squared by preprocessor
+-		
++		// QUAGG-FIX: hflow≈0 (Zelle wird gerade erst benetzt) → A=0, R=0 →
++		// 0/0 = NaN in der Formel unten, verseucht das gesamte H-Feld.
++		if (hflow > Solverptr->DepthThresh)
++			Qoc=(Qold-g*A*dt*Sf) / (1+dt*g*cn*fabs(Qold) / (pow(R,C(4.0)/C(3.0))*A)); // note mannings is squared by preprocessor
++		else
++			Qoc=C(0.0);
++
+ 		// orifice bridge flow
+ 		if (hu > hd) { // Positive flow
+ 			Zratio = h0/Z; // calc current flow depth to bridge opening ratio
+-			usVel = Arrptr->QxSGold[pQus] / (h0*Arrptr->SGCwidth[p0]); // MT calculate upstream velocity
++			usVel = (h0*wus0 > C(0.0)) ? Qus / (h0*wus0) : C(0.0); // MT calculate upstream velocity (QUAGG-FIX: div-by-zero guard)
+ 			heg = (usVel*usVel)/(2*g); // MT calculate upstream energy gradient height
+ 			Qp = Cd*Area*sqrt(2*g*(hu-hd+heg)); // calc bridge orifice flow
+ 		}
+ 		else { // Negative flow
+ 			Zratio = h1/Z; // calc current flow depth to bridge opening ratio
+-			usVel = Arrptr->QxSGold[pQds] / (h1*Arrptr->SGCwidth[p1]); // MT calculate upstream velocity
++			usVel = (h1*wus1 > C(0.0)) ? Qds / (h1*wus1) : C(0.0); // MT calculate upstream velocity (QUAGG-FIX: div-by-zero guard)
+ 			heg = (usVel*usVel)/(2*g); // MT calculate upstream energy gradient height
+ 			Qp = -(Cd*Area*sqrt(2*g*(hd-hu+heg))); // calc bridge orifice flow
+ 		}
+@@ -264,7 +295,7 @@
+       }
+     }
+   }
+-  else if (Arrptr->Weir_Typ[weir_id] == EWeir_Bridge && Statesptr->SGC == ON) // simulate a bridge
++  else if (Arrptr->Weir_Typ[weir_id] == EWeir_Bridge) // simulate a bridge (QUAGG-FIX: SGC-Guard entfernt — Fallback unten macht Brücken auch ohne Subgrid lauffähig statt sie zur Wand zu machen)
+   {
+ 
+ 	  hu=h0+z0;
+@@ -282,7 +313,29 @@
+ 
+ 		// get some basic paramters for the open channel flow calc
+ 	    dt=Solverptr->Tstep;
+-	    cn = C(0.5)* (SGCptr->SGCn[Arrptr->SGCgroup[p0]] + SGCptr->SGCn[Arrptr->SGCgroup[p1]]); // mean mannings (note n2)
++		// QUAGG-FIX: identischer Nicht-SGC-Fallback wie in CalcWeirQx —
++		// SGC-Arrays sind ohne Subgrid-Kanäle nicht allokiert.
++		NUMERIC_TYPE Qold, Qus, Qds, wus0, wus1;
++		if (Statesptr->SGC==ON)
++		{
++			cn = C(0.5)* (SGCptr->SGCn[Arrptr->SGCgroup[p0]] + SGCptr->SGCn[Arrptr->SGCgroup[p1]]); // mean mannings (note n2)
++			Qold = Arrptr->QySGold[pq0];
++			Qus  = Arrptr->QySGold[pQus];
++			Qds  = Arrptr->QySGold[pQds];
++			wus0 = Arrptr->SGCwidth[p0];
++			wus1 = Arrptr->SGCwidth[p1];
++		}
++		else
++		{
++			NUMERIC_TYPE nm = (Arrptr->Manningsn != NULL)
++				? C(0.5)*(Arrptr->Manningsn[p0] + Arrptr->Manningsn[p1]) : Parptr->FPn;
++			cn = nm*nm;
++			Qold = Arrptr->Qyold[pq0]*Parptr->dx;  // m2/s → m3/s (vgl. UpdateQs)
++			Qus  = Arrptr->Qyold[pQus]*Parptr->dx;
++			Qds  = Arrptr->Qyold[pQds]*Parptr->dx;
++			wus0 = Width;
++			wus1 = Width;
++		}
+ 		dh=z0+h0-z1-h1; // difference in water level
+ 		//Sf=-dh/Parptr->dx; //CCS_deletion
+ 		Sf=-dh/Arrptr->dy[p0]; // CCS added for sub grid lat-long compatibility.
+@@ -292,18 +345,22 @@
+ 
+ 
+ 		// calculate open channel flow using SGC flow
+-		Qoc=(Arrptr->QySGold[pq0]-g*A*dt*Sf) / (1+dt*g*cn*fabs(Arrptr->QySGold[pq0]) / (pow(R,C(4.0)/C(3.0))*A)); // note mannings is squared
+-		
++		// QUAGG-FIX: Trockenfall-Guard wie in CalcWeirQx (0/0 → NaN)
++		if (hflow > Solverptr->DepthThresh)
++			Qoc=(Qold-g*A*dt*Sf) / (1+dt*g*cn*fabs(Qold) / (pow(R,C(4.0)/C(3.0))*A)); // note mannings is squared
++		else
++			Qoc=C(0.0);
++
+ 		// orifice bridge flow
+ 		if (hu > hd) { // Positive flow
+ 			Zratio = h0/Z; // calc current flow depth to bridge opening ratio
+-			usVel = Arrptr->QySGold[pQus] / (h0*Arrptr->SGCwidth[p0]); // MT calculate upstream velocity
++			usVel = (h0*wus0 > C(0.0)) ? Qus / (h0*wus0) : C(0.0); // MT calculate upstream velocity (QUAGG-FIX: div-by-zero guard)
+ 			heg = (usVel*usVel)/(2*g); // MT calculate upstream energy gradient height
+ 			Qp = Cd*Area*sqrt(2*g*(hu-hd+heg)); // calc bridge orifice flow
+ 		}
+ 		else { // Negative flow
+ 			Zratio = h1/Z; // calc current flow depth to bridge opening ratio
+-			usVel = Arrptr->QySGold[pQds] / (h1*Arrptr->SGCwidth[p1]); // MT calculate upstream velocity
++			usVel = (h1*wus1 > C(0.0)) ? Qds / (h1*wus1) : C(0.0); // MT calculate upstream velocity (QUAGG-FIX: div-by-zero guard)
+ 			heg = (usVel*usVel)/(2*g); // MT calculate upstream energy gradient height
+ 			Qp = -(Cd*Area*sqrt(2*g*(hd-hu+heg))); // calc bridge orifice flow
+ 		}

@@ -44,18 +44,69 @@
         </div>
 
         <label>Engine</label>
-        <div class="toggle-row bmi-toggle-row" :class="{ 'bmi-active': simStore.useBmiSolver }">
-          <input
-            type="checkbox"
-            id="bmi-toggle"
-            v-model="simStore.useBmiSolver"
-            :disabled="isRunning"
-          />
-          <label for="bmi-toggle" class="toggle-label bmi-label">
-            🧪 Experimenteller 1D/2D BMI-Solver <strong>(God Mode)</strong>
-          </label>
+        <div class="toggle-row bmi-toggle-row" :class="{ 'bmi-active': simStore.solverMode !== 'wasm' }">
+          <select v-model="simStore.solverMode" :disabled="isRunning" class="engine-select">
+            <option value="wasm">⚙️ Classic WASM (Blackbox, lokal)</option>
+            <option value="bmi">🧪 BMI Frame-by-Frame (God Mode, lokal)</option>
+            <option value="runpod">☁️ RUNPOD Remote (LISFLOOD 8.2)</option>
+          </select>
         </div>
 
+      </div>
+
+      <p v-if="simStore.solverMode === 'runpod'" class="param-hint">
+        ☁️ Job: {{ simStore.jobId || '—' }} · Phase: <strong>{{ simStore.jobPhase }}</strong>
+        <span v-if="simStore.jobError"> · ⚠️ {{ simStore.jobError }}</span>
+      </p>
+
+      <!-- ── Genauigkeit (High-End-Pfad) ─────────────────────────────────── -->
+      <div v-if="simStore.solverMode === 'runpod'" class="accuracy-section">
+        <div class="accuracy-header">🎯 Genauigkeit (High-End)</div>
+
+        <div class="param-grid">
+          <label>Ziel-Zellgröße [m]</label>
+          <div>
+            <input type="number" step="0.5" min="0.1"
+              :placeholder="`nativ: ${nativeCellsize ?? '—'}`"
+              v-model.number="simStore.exportCellsize"
+              :disabled="isRunning" />
+            <small class="cell-estimate" :class="{ 'estimate-warn': exportEstimate.cells > 25e6 }">
+              {{ exportEstimate.label }}
+            </small>
+          </div>
+
+          <label>Numerik-Schema</label>
+          <select v-model="simStore.numericalScheme" :disabled="isRunning || simStore.sgcEnabled" class="engine-select">
+            <option value="acceleration">Acceleration (inertial, robust, CPU+SGC)</option>
+            <option value="fv1">FV1 (volle SWE, HLL-Flux, GPU-fähig)</option>
+            <option value="dg2">DG2 (2. Ordnung, genauer, GPU-fähig)</option>
+          </select>
+
+          <label>GPU (CUDA)</label>
+          <div class="toggle-row">
+            <input type="checkbox" id="gpu-toggle" v-model="simStore.useGpu"
+              :disabled="isRunning || simStore.sgcEnabled || simStore.numericalScheme === 'acceleration'" />
+            <label for="gpu-toggle" class="toggle-label">
+              <template v-if="simStore.numericalScheme === 'acceleration' || simStore.sgcEnabled">
+                Nur mit FV1/DG2 (Acceleration + SGC laufen auf CPU)
+              </template>
+              <template v-else>Auf RunPod-GPU rechnen (setzt <code>cuda</code> in run.par; ~max Tempo)</template>
+            </label>
+          </div>
+
+          <label>SGC Sub-Grid-Gerinne</label>
+          <div class="toggle-row">
+            <input type="checkbox" id="sgc-toggle" v-model="simStore.sgcEnabled"
+              :disabled="isRunning || bathyStore.channelPolyline.length < 2"
+              @change="simStore.sgcEnabled && (simStore.numericalScheme = 'acceleration')" />
+            <label for="sgc-toggle" class="toggle-label">
+              <template v-if="bathyStore.channelPolyline.length >= 2">
+                Kanal-Mittellinie als Sub-Grid-Gerinne exportieren (erzwingt Acceleration)
+              </template>
+              <template v-else>Keine Kanal-Mittellinie gezeichnet (Bathymetrie → Kanal-Geometrie)</template>
+            </label>
+          </div>
+        </div>
       </div>
       <p class="param-hint">
         📊 {{ estimatedFrames }} Frames ·
@@ -63,8 +114,8 @@
         <span v-if="cflStatus.dtMax"> · CFL-Limit: {{ cflStatus.dtMax.toFixed(2) }} s</span>
       </p>
 
-      <!-- Mass Balance Report -->
-      <div v-if="massReport" class="mass-badge" :class="massReportLevel">
+      <!-- Mass Balance Report (Remote-Engines liefern u.U. kein summary) -->
+      <div v-if="massReport?.summary" class="mass-badge" :class="massReportLevel">
         💧 Massenbilanz:
         <strong>Verror={{ massReport.summary['Verror']?.toExponential(2) ?? '?' }}</strong>
         · Qin={{ massReport.summary['Qin']?.toFixed(1) ?? '?' }} m³/s
@@ -113,6 +164,30 @@
       :outputFiles="resultFiles"
       @prepareZip="prepareZip"
     />
+
+    <!-- ── Pre-Run-Gate: kritische Pipeline-Probleme vor dem Upload ──────── -->
+    <div v-if="preRunGate.open" class="gate-overlay" @click.self="resolvePreRunGate(false)">
+      <div class="gate-modal">
+        <div class="gate-header">
+          <span class="gate-icon">⛔</span>
+          <h3>Kritische Probleme vor dem Start</h3>
+        </div>
+        <p class="gate-sub">
+          Der Lauf kann gestartet werden, aber folgende Punkte führen sonst zu fehlerhaften
+          oder unvollständigen Ergebnissen:
+        </p>
+        <ul class="gate-list">
+          <li v-for="(it, i) in preRunGate.issues" :key="i" :class="'gate-' + it.severity">
+            <span class="gate-li-icon">{{ issueIcon(it.severity) }}</span>
+            <span class="gate-li-text">{{ it.message }}</span>
+          </li>
+        </ul>
+        <div class="gate-actions">
+          <button class="gate-cancel" @click="resolvePreRunGate(false)">Abbrechen &amp; korrigieren</button>
+          <button class="gate-proceed" @click="resolvePreRunGate(true)">Trotzdem hochladen</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -124,8 +199,11 @@ import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore.js';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore.js';
 import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore.js';
+import { useBathymetryStore } from '@/features/flood-2D/stores/useBathymetryStore.js';
 import { InputGenerator } from '@/features/flood-2D/middleware/InputGenerator.js';
+import { Severity } from '@/features/flood-2D/middleware/ScenarioValidator.js';
 import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
+import { createSolverBackend } from '@/features/flood-2D/services/solver/index.js';
 import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
 import ResultInspector from '@/features/flood-2D/components/viewer/ResultInspector.vue';
 
@@ -134,6 +212,7 @@ const geoStore = useGeoStore();
 const hydStore = useHydraulicStore();
 const simStore = useSimulationStore();
 const surfaceStore = useSurfaceStore();
+const bathyStore = useBathymetryStore();
 
 
 
@@ -147,6 +226,23 @@ const zipUrl = ref(null);
 const isZipping = ref(false);
 const generator = new InputGenerator();
 const massReport = ref(null);
+
+// ── Pre-Run-Gate ───────────────────────────────────────────────────────────────
+// Zeigt bei kritischen Pipeline-Problemen (Severity ERROR) vor dem Upload einen
+// Bestätigungsdialog. Promise-basiert: startPreparation awaitet die Entscheidung.
+const preRunGate = ref({ open: false, issues: [], resolve: null });
+
+function openPreRunGate(issues) {
+    return new Promise((resolve) => {
+        preRunGate.value = { open: true, issues, resolve };
+    });
+}
+function resolvePreRunGate(proceed) {
+    const r = preRunGate.value.resolve;
+    preRunGate.value = { open: false, issues: [], resolve: null };
+    if (r) r(proceed);
+}
+const issueIcon = (sev) => sev === Severity.ERROR ? '⛔' : sev === Severity.WARN ? '⚠️' : 'ℹ️';
 
 // ── Run Presets ───────────────────────────────────────────────────────────────
 const RUN_PRESETS = [
@@ -171,6 +267,22 @@ const cflStatus = computed(() => {
     return             { level: 'unstable', label: '🔴 INSTABIL',     dtMax };
 });
 
+// ── Genauigkeits-Schätzung (Export-Resampling) ────────────────────────────────
+const nativeCellsize = computed(() => geoStore.terrain?.cellsize ?? null);
+
+const exportEstimate = computed(() => {
+    const t = geoStore.terrain;
+    if (!t) return { cells: 0, label: '' };
+    const native = t.cellsize ?? 1;
+    const target = simStore.exportCellsize || native;
+    const cells = Math.round(t.ncols * t.nrows * (native / target) ** 2);
+    const mb = (cells * 8 / 1e6); // ~8 B/Zelle ASC-Text
+    let label = `≈ ${(cells / 1e6).toFixed(cells > 1e6 ? 1 : 2)} Mio Zellen · ~${mb.toFixed(0)} MB ASC (gzip ~${(mb / 4).toFixed(0)} MB)`;
+    if (cells > 25e6) label += ' ⚠️ sehr groß';
+    if (target < native / 8) label += ' ⚠️ feiner als 1/8 der Datengrundlage';
+    return { cells, label };
+});
+
 const estimatedFrames = computed(() => {
     const dur = simStore.simDuration || 3600;
     const save = simStore.saveInterval || 60;
@@ -178,14 +290,15 @@ const estimatedFrames = computed(() => {
 });
 
 const massReportLevel = computed(() => {
-    if (!massReport.value) return '';
+    if (!massReport.value?.summary) return '';
     const err = Math.abs(massReport.value.summary['Verror'] ?? 0);
     if (err < 0.01) return 'good';
     if (err < 0.05) return 'warn';
     return 'bad';
 });
 
-let worker = null;
+let backend = null;        // SolverBackend-Instanz (wasm | bmi | runpod)
+let backendMode = null;    // Modus, mit dem backend erstellt wurde
 
 // Derived State from SimStore for UI
 const status = computed(() => simStore.status || 'IDLE');
@@ -238,69 +351,21 @@ const appendLog = (msg) => {
     simStore.addLog(msg); // Sync if possible
 };
 
-const runSimulation = async () => {
-    if (isRunning.value) return;
-    
-    // Check Requirements
-    if (!geoStore.terrain || !geoStore.terrain.gridData) {
-        alert("Kein Terrain geladen! Bitte erst Terrain importieren.");
-        return;
-    }
+// Verarbeitet alle SolverEvents (identisches Vokabular für WASM-Worker und RUNPOD).
+let initTimeout = null;
 
-    isRunning.value = true;
-    simStore.setStatus('INITIALIZING');
-    logs.value = '';
-    resultFiles.value = {};
-    massReport.value = null;
-    
-    try {
-        if (!worker) {
-            appendLog("Initializing Middleware Worker...");
+const handleSolverEvent = (data) => {
+    // Clear timeout on first event
+    if (initTimeout) { clearTimeout(initTimeout); initTimeout = null; }
 
-            const workerUrl = simStore.useBmiSolver
-                ? new URL('../middleware/simulation.bmi.js', import.meta.url)
-                : new URL('../middleware/simulation.main.js', import.meta.url);
+    const { type, status: workerStatus, text, frame, header, payload, error, time, message } = data;
 
-            appendLog(`Engine: ${simStore.useBmiSolver ? '🧪 BMI (Frame-by-Frame)' : '⚙️ Classic (Blackbox)'}`);
-            worker = new Worker(workerUrl, { type: 'module' });
-            
-            // IMMEDIATE Error Handler for Startup
-            worker.onerror = (e) => {
-                // e.message kann leer sein wenn ein Import fehlschlug
-                const msg = e.message || e.filename || 'Worker failed to start (possible import/parse error)';
-                const line = e.lineno ?? 'unknown';
-                const file = e.filename ? e.filename.split('/').pop() : 'unknown file';
-                console.error('[SolverRunner] Worker onerror:', e);
-                appendLog(`[WORKER ERROR] ${msg}`);
-                appendLog(`  → File: ${file}, Line: ${line}`);
-                appendLog('  → Check browser DevTools > Network tab for failed requests (404s).');
-                appendLog('  → Check browser DevTools > Console for detailed error messages.');
-                simStore.setStatus('ERROR');
-                isRunning.value = false;
-                e.preventDefault(); // Verhindert unkontrollierten Absturz
-            };
-            worker.onmessageerror = (e) => {
-                console.error('[SolverRunner] Worker messageerror:', e);
-                appendLog('[WORKER ERROR] Message serialization error in worker.');
-            };
+    switch (type) {
+        case 'JOB_STATE':
+            simStore.setJobState({ jobId: data.jobId, phase: data.phase });
+            appendLog(`[JOB] ${data.phase}${data.jobId ? ` (${data.jobId})` : ''}`);
+            break;
 
-            // Safety Timeout
-            const initTimeout = setTimeout(() => {
-                if (status.value === 'INITIALIZING') {
-                    appendLog("[TIMEOUT] Worker took too long to start. Check console/network.");
-                    simStore.setStatus('ERROR');
-                    isRunning.value = false;
-                    alert("Simulation Timed Out during Initialization.\nPlease check if 'lisflood.wasm' is loading correctly.");
-                }
-            }, 10000); // 10 seconds
-
-            worker.onmessage = (e) => {
-                // Clear timeout on first message
-                if (initTimeout) clearTimeout(initTimeout);
-                
-                const { type, status: workerStatus, text, frame, header, payload, error, time, message } = e.data;
-                
-                switch (type) {
                     case 'STATUS':
                         simStore.setStatus(workerStatus);
                         appendLog(`[STATUS] ${workerStatus}`);
@@ -343,7 +408,7 @@ const runSimulation = async () => {
                         break;
 
                     case 'INPUT_FILES':
-                        inputFiles.value = e.data.files || {};
+                        inputFiles.value = data.files || {};
                         appendLog(`[INPUT] ${Object.keys(inputFiles.value).length} Input-Dateien empfangen`);
                         break;
 
@@ -352,27 +417,48 @@ const runSimulation = async () => {
                              const frameName = `res-${String(frame).padStart(4, '0')}.wd.asc`;
                              const ascContent = Rasterizer.gridToASC(payload, header);
                              resultFiles.value[frameName] = ascContent;
-                             simStore.addResultFrame(frame, payload, header, e.data.min, e.data.max);
-                             if (e.data.velocity) simStore.addVelocityFrame(frame, e.data.velocity);
-                             if (e.data.vx && e.data.vy) simStore.addVelocityVectorFrame(frame, e.data.vx, e.data.vy);
-                             appendLog(`[RESULT] Frame ${frame}${e.data.velocity ? ' + velocity' : ''}`);
+                             simStore.addResultFrame(frame, payload, header, data.min, data.max);
+                             if (data.velocity) simStore.addVelocityFrame(frame, data.velocity);
+                             if (data.vx && data.vy) simStore.addVelocityVectorFrame(frame, data.vx, data.vy);
+                             if (data.elev) simStore.addElevFrame(frame, data.elev);
+                             appendLog(`[RESULT] Frame ${frame}${data.velocity ? ' + velocity' : ''}${data.elev ? ' + elev' : ''}`);
                          } catch (err) {
                              appendLog(`[ERROR] processing result: ${err.message}`);
                          }
                         break;
 
                     case 'MAX_DEPTH_GRID':
-                        simStore.setMaxDepthGrid(e.data.payload);
+                        simStore.setMaxDepthGrid(payload);
                         appendLog('[RESULT] Max-Tiefen-Raster empfangen.');
                         break;
 
                     case 'MAX_HAZARD_GRID':
-                        simStore.setMaxHazardGrid(e.data.payload);
+                        simStore.setMaxHazardGrid(payload);
                         appendLog('[RESULT] Max-Hazard-Raster empfangen.');
                         break;
 
+                    case 'MAX_VELOCITY_GRID':
+                        simStore.setMaxVelocityGrid(payload);
+                        appendLog('[RESULT] Max-Geschwindigkeits-Raster empfangen.');
+                        break;
+
+                    case 'MAX_ELEV_GRID':
+                        simStore.setMaxElevGrid(payload);
+                        appendLog('[RESULT] Max-Wasserspiegel-Raster empfangen.');
+                        break;
+
+                    case 'ARRIVAL_TIME_GRID':
+                        simStore.setArrivalTimeGrid(payload);
+                        appendLog('[RESULT] Ankunftszeit-Raster empfangen.');
+                        break;
+
+                    case 'DURATION_GRID':
+                        simStore.setDurationGrid(payload);
+                        appendLog('[RESULT] Überflutungsdauer-Raster empfangen.');
+                        break;
+
                     case 'MASS_REPORT':
-                        massReport.value = e.data.data;
+                        massReport.value = data.data;
                         break;
 
                     case 'ERROR':
@@ -387,12 +473,53 @@ const runSimulation = async () => {
                             alert(`Simulation Failed: ${error}`);
                         }
                         break;
-                }
-            };
+    }
+};
+
+const runSimulation = async () => {
+    if (isRunning.value) return;
+
+    // Check Requirements
+    if (!geoStore.terrain || !geoStore.terrain.gridData) {
+        alert("Kein Terrain geladen! Bitte erst Terrain importieren.");
+        return;
+    }
+
+    isRunning.value = true;
+    simStore.setStatus('INITIALIZING');
+    simStore.resetJob();
+    logs.value = '';
+    resultFiles.value = {};
+    massReport.value = null;
+
+    try {
+        // Backend neu erstellen, wenn keins existiert oder der Modus gewechselt wurde
+        if (!backend || backendMode !== simStore.solverMode) {
+            if (backend) backend.dispose();
+            backendMode = simStore.solverMode;
+            backend = createSolverBackend(backendMode);
+            backend.onEvent(handleSolverEvent);
+
+            const engineLabel = {
+                wasm: '⚙️ Classic WASM (Blackbox)',
+                bmi: '🧪 BMI (Frame-by-Frame)',
+                runpod: '☁️ RUNPOD Remote'
+            }[backendMode] || backendMode;
+            appendLog(`Engine: ${engineLabel}`);
         }
 
-        // Start Workflow
-        worker.postMessage({ cmd: 'CMD_INIT' });
+        // Safety Timeout — wird vom ersten SolverEvent gecleart
+        initTimeout = setTimeout(() => {
+            if (status.value === 'INITIALIZING') {
+                appendLog("[TIMEOUT] Backend took too long to start. Check console/network.");
+                simStore.setStatus('ERROR');
+                isRunning.value = false;
+                alert("Simulation Timed Out during Initialization.\nPlease check if 'lisflood.wasm' is loading correctly.");
+            }
+        }, 10000); // 10 seconds
+
+        // Start Workflow (Backend emittiert STATUS READY → startPreparation)
+        await backend.prepare();
 
     } catch (e) {
         console.error(e);
@@ -403,17 +530,7 @@ const runSimulation = async () => {
 };
 
 const abortSimulation = () => {
-    if (worker) {
-        // BMI-Worker: Erst abort-Signal senden, damit _bmi_finalize() sauber läuft,
-        // dann mit kleinem Verzug terminieren als Fallback.
-        worker.postMessage({ type: 'abort' });
-        setTimeout(() => {
-            if (worker) {
-                worker.terminate();
-                worker = null;
-            }
-        }, 500);
-    }
+    if (backend) backend.abort();
     isRunning.value = false;
     simStore.setStatus('ABORTED');
     simStore.rows = []; // Clear current run data? Optional.
@@ -512,7 +629,15 @@ const runDryCheck = async () => {
              config: {
                  sim_time: simStore.simDuration || 3600,
                  initial_tstep: simStore.timeStep || 1.0
-             }
+             },
+             // Genauigkeit (High-End-Pfad) — wie startPreparation
+             engine:          simStore.solverMode === 'runpod' ? 'v8' : 'v5',
+             exportCellsize:  simStore.solverMode === 'runpod' ? (simStore.exportCellsize || null) : null,
+             numericalScheme: simStore.solverMode === 'runpod' ? simStore.numericalScheme : 'acceleration',
+             useGpu:          simStore.solverMode === 'runpod' ? simStore.useGpu : false,
+             sgc: (simStore.solverMode === 'runpod' && simStore.sgcEnabled && bathyStore.channelPolyline.length >= 2)
+                 ? { polyline: toRaw(bathyStore.channelPolyline), ...toRaw(bathyStore.channelParams) }
+                 : null
         };
 
         console.log("📦 INPUT DATA:", scenarioData);
@@ -528,6 +653,10 @@ const runDryCheck = async () => {
         
         console.log("✅ GENERATION SUCCESS!");
         console.log("📂 OUTPUT FILES:", Object.keys(files));
+        if (generator.warnings?.length) {
+            console.warn(`⚠️ ${generator.warnings.length} Pipeline-Warnung(en):`);
+            generator.warnings.forEach(w => console.warn('  •', w));
+        }
         
         // Log details for key files
         if (files['run.par']) console.log("📄 run.par Content:\n", files['run.par']);
@@ -591,7 +720,17 @@ const startPreparation = async () => {
              infiltration:        surfaceStore.computeWeightedInfiltration?.() ?? 0,
              antecedentMoisture:  hydStore.antecedentMoisture ?? 0,
              globalBoundaryType:  hydStore.globalBoundaryType,
-             globalBoundaryHfix:  hydStore.globalBoundaryHfix
+             globalBoundaryHfix:  hydStore.globalBoundaryHfix,
+
+             // ── Genauigkeit (High-End-Pfad, nur runpod) ─────────────────
+             engine:          simStore.solverMode === 'runpod' ? 'v8' : 'v5',
+             exportCellsize:  simStore.solverMode === 'runpod' ? (simStore.exportCellsize || null) : null,
+             numericalScheme: simStore.solverMode === 'runpod' ? simStore.numericalScheme : 'acceleration',
+             useGpu:          simStore.solverMode === 'runpod' ? simStore.useGpu : false,
+             sgc: (simStore.solverMode === 'runpod' && simStore.sgcEnabled && bathyStore.channelPolyline.length >= 2)
+                 ? { polyline: JSON.parse(JSON.stringify(bathyStore.channelPolyline)),
+                     ...JSON.parse(JSON.stringify(bathyStore.channelParams)) }
+                 : null
           };
 
          // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
@@ -602,7 +741,7 @@ const startPreparation = async () => {
          let activeCulverts = [];
          let dmgHeader = null;
 
-         if (simStore.useBmiSolver) {
+         if (simStore.solverMode === 'bmi') {
              const rawNodes = toRaw(geoStore.nodes) || [];
              const nodeMap = new Map(rawNodes.map(n => [n.id, n]));
 
@@ -659,31 +798,47 @@ const startPreparation = async () => {
              const gen = new InputGenerator();
              generatedFiles = gen.processScenario(scenarioData);
              appendLog(`✅ ${Object.keys(generatedFiles).length} Input-Dateien generiert: ${Object.keys(generatedFiles).join(', ')}`);
+             // Pipeline-Befunde mit Schweregrad sichtbar machen (NoData-Rescue,
+             // Brücke↔SGC, fehlende Profile, ...).
+             for (const it of gen.issues.issues) appendLog(`[${it.severity.toUpperCase()}] ${issueIcon(it.severity)} ${it.message}`);
+
+             // Pre-Run-Gate: bei kritischen Problemen vor dem Upload bestätigen lassen.
+             if (gen.issues.has(Severity.ERROR)) {
+                 const blocking = [
+                     ...gen.issues.bySeverity(Severity.ERROR),
+                     ...gen.issues.bySeverity(Severity.WARN),
+                 ];
+                 const proceed = await openPreRunGate(blocking);
+                 if (!proceed) {
+                     appendLog('⏹️ Lauf abgebrochen (Pre-Run-Check) — bitte Eingaben korrigieren.');
+                     simStore.setStatus('IDLE');
+                     isRunning.value = false;
+                     return;
+                 }
+                 appendLog('▶️ Trotz Warnungen fortgesetzt (Nutzerentscheidung).');
+             }
          } catch (genErr) {
              throw new Error(`InputGenerator fehlgeschlagen: ${genErr.message}`);
          }
-         
+
          // Set input files for the UI Inspector
          inputFiles.value = generatedFiles;
 
-         // 4. Send to Worker (ONLY pre-generated files + culvert metadata)
-         if (worker) {
-             worker.postMessage({
-                 cmd: 'CMD_RUN',
-                 payload: {
-                    files: generatedFiles,        // fertige LISFLOOD-Dateien (terrain.asc, run.par, etc.)
-                    scenarioData: {               // nur noch für BMI-Heartbeat-Daten (grid, header)
-                        grid: { gridData: toRaw(geoStore.terrain?.gridData) }
-                    },
-                    // BMI-spezifisch: nur gesetzt wenn useBmiSolver aktiv
-                    culverts: activeCulverts,
-                    header:   dmgHeader,
-                    maxTime:  simStore.simDuration || 3600
-                 }
+         // 4. An Backend übergeben (WASM-Worker oder RUNPOD — identisches Payload)
+         if (backend) {
+             await backend.run({
+                files: generatedFiles,        // fertige LISFLOOD-Dateien (terrain.asc, run.par, etc.)
+                scenarioData: {               // nur noch für BMI-Heartbeat-Daten (grid, header)
+                    grid: { gridData: toRaw(geoStore.terrain?.gridData) }
+                },
+                // BMI-spezifisch: nur gesetzt wenn solverMode 'bmi'
+                culverts: activeCulverts,
+                header:   dmgHeader,
+                maxTime:  simStore.simDuration || 3600
              });
              simStore.setStatus('RUNNING');
          } else {
-             throw new Error("Worker not initialized!");
+             throw new Error("Backend not initialized!");
          }
 
     } catch (e) {
@@ -695,9 +850,10 @@ const startPreparation = async () => {
 };
 
 onUnmounted(() => {
-    if (worker) {
-        worker.terminate();
-        worker = null;
+    if (backend) {
+        backend.dispose();
+        backend = null;
+        backendMode = null;
     }
 });
 
@@ -854,6 +1010,40 @@ onUnmounted(() => {
     color: #b7771d;
     font-weight: 500;
 }
+.engine-select {
+    width: 100%;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background: #fff;
+}
+.engine-select:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ── Genauigkeit (High-End) ─────────────────────────────────────────────── */
+.accuracy-section {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid rgba(41, 128, 185, 0.35);
+    border-radius: 6px;
+    background: rgba(41, 128, 185, 0.05);
+}
+.accuracy-header {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #2980b9;
+    margin-bottom: 0.5rem;
+}
+.cell-estimate {
+    display: block;
+    font-size: 0.72rem;
+    color: #7f8c8d;
+    margin-top: 0.15rem;
+}
+.cell-estimate.estimate-warn { color: #e67e22; font-weight: 600; }
 .param-hint {
     margin: 0.75rem 0 0;
     font-size: 0.78rem;
@@ -1006,4 +1196,42 @@ pre {
 .download-btn:hover {
     background: #219150;
 }
+
+/* ── Pre-Run-Gate ──────────────────────────────────────────────────────── */
+.gate-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(8, 16, 24, 0.62);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.5rem;
+}
+.gate-modal {
+    width: min(560px, 100%);
+    background: #14202c; color: #e6f2fb;
+    border: 1px solid #2a4a63; border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+    padding: 1.25rem 1.4rem;
+}
+.gate-header { display: flex; align-items: center; gap: 0.55rem; }
+.gate-header h3 { margin: 0; font-size: 1.05rem; }
+.gate-icon { font-size: 1.3rem; }
+.gate-sub { color: #aac3d6; font-size: 0.85rem; line-height: 1.5; margin: 0.6rem 0 0.8rem; }
+.gate-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
+.gate-list li {
+    display: flex; gap: 0.5rem; align-items: flex-start;
+    padding: 0.55rem 0.65rem; margin-bottom: 0.4rem;
+    border-radius: 7px; font-size: 0.82rem; line-height: 1.45;
+    background: #0e2438; border: 1px solid #1d4e6b;
+}
+.gate-list li.gate-error  { border-color: #7a2230; background: #2a1418; }
+.gate-list li.gate-warn   { border-color: #7a5a1d; background: #2a2210; }
+.gate-li-icon { flex-shrink: 0; }
+.gate-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
+.gate-cancel, .gate-proceed {
+    padding: 0.55rem 1rem; border-radius: 7px; font-size: 0.85rem; cursor: pointer;
+    border: 1px solid transparent;
+}
+.gate-cancel  { background: #1f3343; color: #cfe2f0; border-color: #2a4a63; }
+.gate-cancel:hover  { background: #274056; }
+.gate-proceed { background: #b4661a; color: #fff; }
+.gate-proceed:hover { background: #cf7720; }
 </style>

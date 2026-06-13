@@ -74,6 +74,100 @@ export function createDemFromXYZ(xyzString) {
 }
 
 /**
+ * Resampelt ein Raster auf eine neue Zellweite (Export-Auflösung für den
+ * High-End-Solver). Quelle bleibt unverändert.
+ *
+ * Header-Konventionen in dieser Codebase (wichtig!):
+ *   - `xll`/`yll`           = Zentrum der Zelle (0,0)  → von getGridIndex etc. bevorzugt
+ *   - `xllcorner`/`yllcorner` = echte Raster-Ecke      → von gridToASC geschrieben
+ *   Editor-Header (parseXYZ) führen nur `xllcorner` mit ZENTREN-Semantik (kein xll),
+ *   daher wird der Zentren-Ursprung hier über dieselbe Fallback-Regel aufgelöst
+ *   wie bei allen Konsumenten: `xll ?? xllcorner`. Die ECKE bleibt beim Resampling
+ *   fix; der Output-Header trägt BEIDE Felder explizit und konsistent.
+ *
+ * NoData (-9999) blutet nie in Mittelwerte ein: Gewichte werden über gültige
+ * Nachbarn renormalisiert; sind alle 4 ungültig → -9999.
+ *
+ * @param {Float32Array} data    Quell-Raster, bottom-up (row 0 = Süden)
+ * @param {object} header        { ncols, nrows, cellsize, xll/xllcorner, yll/yllcorner }
+ * @param {number} targetCellsize
+ * @param {'bilinear'|'nearest'} method
+ * @returns {{ data: Float32Array, header: object }}
+ */
+export function resampleGrid(data, header, targetCellsize, method = 'bilinear') {
+    const { ncols, nrows, cellsize } = header;
+    if (!(targetCellsize > 0)) throw new Error(`resampleGrid: ungültige Ziel-Zellweite ${targetCellsize}`);
+
+    // Zentren-Ursprung der Quelle (Konvention wie getGridIndex/maskBuildings)
+    const srcCx = header.xll !== undefined ? header.xll : header.xllcorner;
+    const srcCy = header.yll !== undefined ? header.yll : header.yllcorner;
+    // Echte Ecke — bleibt beim Resampling fix
+    const cornerX = srcCx - cellsize / 2;
+    const cornerY = srcCy - cellsize / 2;
+
+    const tCols = Math.max(1, Math.round(ncols * cellsize / targetCellsize));
+    const tRows = Math.max(1, Math.round(nrows * cellsize / targetCellsize));
+    if (tCols * tRows > 1e8) {
+        throw new Error(`resampleGrid: Zielraster ${tCols}×${tRows} = ${(tCols * tRows / 1e6).toFixed(0)} Mio Zellen überschreitet das Limit (100 Mio).`);
+    }
+
+    const out = new Float32Array(tCols * tRows);
+    const ND = -9990;
+
+    for (let r = 0; r < tRows; r++) {
+        // Welt-Y des Ziel-Zellzentrums → fraktionaler Quell-Zeilenindex (bottom-up)
+        const wy = cornerY + (r + 0.5) * targetCellsize;
+        const fy = (wy - srcCy) / cellsize;
+        for (let c = 0; c < tCols; c++) {
+            const wx = cornerX + (c + 0.5) * targetCellsize;
+            const fx = (wx - srcCx) / cellsize;
+
+            let value;
+            if (method === 'nearest') {
+                const sc = Math.min(ncols - 1, Math.max(0, Math.round(fx)));
+                const sr = Math.min(nrows - 1, Math.max(0, Math.round(fy)));
+                value = data[sr * ncols + sc];
+            } else {
+                // Bilinear mit NoData-sicherer Gewichts-Renormalisierung
+                const c0 = Math.min(ncols - 1, Math.max(0, Math.floor(fx)));
+                const r0 = Math.min(nrows - 1, Math.max(0, Math.floor(fy)));
+                const c1 = Math.min(ncols - 1, c0 + 1);
+                const r1 = Math.min(nrows - 1, r0 + 1);
+                const tx = Math.min(1, Math.max(0, fx - c0));
+                const ty = Math.min(1, Math.max(0, fy - r0));
+
+                const z00 = data[r0 * ncols + c0], w00 = (1 - tx) * (1 - ty);
+                const z10 = data[r0 * ncols + c1], w10 = tx * (1 - ty);
+                const z01 = data[r1 * ncols + c0], w01 = (1 - tx) * ty;
+                const z11 = data[r1 * ncols + c1], w11 = tx * ty;
+
+                let wSum = 0, zSum = 0;
+                if (z00 > ND) { wSum += w00; zSum += z00 * w00; }
+                if (z10 > ND) { wSum += w10; zSum += z10 * w10; }
+                if (z01 > ND) { wSum += w01; zSum += z01 * w01; }
+                if (z11 > ND) { wSum += w11; zSum += z11 * w11; }
+                value = wSum > 1e-9 ? zSum / wSum : -9999;
+            }
+            out[r * tCols + c] = value;
+        }
+    }
+
+    return {
+        data: out,
+        header: {
+            ncols: tCols,
+            nrows: tRows,
+            cellsize: targetCellsize,
+            xllcorner: cornerX,
+            yllcorner: cornerY,
+            xll: cornerX + targetCellsize / 2,
+            yll: cornerY + targetCellsize / 2,
+            NODATA_value: -9999
+        }
+    };
+}
+
+/**
  * Helper to convert Grid to ASC string.
  * (Kept for InputGenerator usage)
  */
@@ -252,6 +346,7 @@ function isPointInPolygon(x, y, polygon) {
 export const Rasterizer = {
     createDemFromXYZ,
     gridToASC,
+    resampleGrid,
     bakeTerrain,
     burnBuildings: bakeTerrain,
     maskBuildingsAsNoData,   // Phase 9: NoData-Strategie für Gebäude

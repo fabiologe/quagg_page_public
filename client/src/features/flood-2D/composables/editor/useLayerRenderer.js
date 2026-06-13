@@ -5,6 +5,8 @@ import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
 import { RENDER_ORDER } from './renderLayers.js';
 import { InputGenerator } from '../../middleware/InputGenerator.js';
 import { useBoundaryArrows } from '../viewer/useBoundaryArrows.js';
+import { buildBridge3DGeometry } from '../../utils/Bridge3DGeometry.js';
+import { bridge3DState } from './useBridge3DTool.js';
 
 /**
  * useLayerRenderer
@@ -593,6 +595,18 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         console.log(`[LayerRenderer] Rendered ${geoStore.weirs.length} weirs.`);
     };
 
+    const renderBridge3D = (bridge, grid) => {
+        if (!grid?.center) return;
+        const geom = buildBridge3DGeometry(bridge, grid);
+        if (!geom) return;
+        const mesh = new THREE.Mesh(geom, bridgeDeckMat);
+        mesh.userData = { id: bridge.id, type: 'bridge', selectable: true };
+        // Während des Vertex-Editings rendert das Tool seinen eigenen Preview-Body —
+        // das Layer-Duplikat ausblenden, sonst flackern zwei Körper übereinander.
+        if (bridge3DState.editingId === bridge.id) mesh.visible = false;
+        bridgeGroup.add(mesh);
+    };
+
     const renderBridges = () => {
         clearGroup(bridgeGroup);
         updateWorldOffset();
@@ -604,6 +618,11 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         const terrMinZ  = grid ? grid.minZ : 0;
 
         geoStore.bridges.forEach(bridge => {
+            // 3D-Brückenkörper: Volumenmesh aus Footprint + Lattice statt Box-Paaren.
+            if (bridge.kind === 'mesh3d') {
+                renderBridge3D(bridge, grid);
+                return;
+            }
             const cells = bridge.cells || [];
             cells.forEach(cell => {
                 // Z-Anker robust aufs Terrain legen: lokale Geländehöhe der Zelle als Basis.

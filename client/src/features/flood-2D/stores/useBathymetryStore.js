@@ -54,6 +54,20 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
     /** Flussschlauch-Polygon (bestätigt). Array von {x,y} in Landes-KBS. */
     const channelPolygon = ref(/** @type {Array<{x:number,y:number}>} */ ([]));
 
+    /**
+     * Hydraulik-Parameter des Gerinnes für den SGC-Export (Sub-Grid-Channel,
+     * LISFLOOD: Gerinne schmaler als eine Rasterzelle).
+     * bedMode 'depth' → Sohle = Gelände − bedDepth; 'absolute' → bedZStart→bedZEnd.
+     */
+    const channelParams = ref({
+        width: 5.0,        // Gerinnebreite [m]
+        bedMode: 'depth',
+        bedDepth: 1.5,     // [m] unter Gelände
+        bedZStart: null,   // m NHN (nur bedMode 'absolute')
+        bedZEnd: null,
+        manningN: 0.030    // Gerinne-Rauheit (SGCn)
+    });
+
     // Virtual raster preview is now managed by useRasterProcessingStore.
     // useBathymetryStore only tracks the zone-ID it owns there.
     const BATHY_ZONE_ID = 'bathymetry-main';
@@ -103,6 +117,7 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
     function setThalweg(result)    { thalwegResult.value = result; }
     function setChannelPolyline(pts) { channelPolyline.value = pts; }
     function setChannelPolygon(pts)  { channelPolygon.value  = pts; }
+    function setChannelParams(patch) { channelParams.value = { ...channelParams.value, ...patch }; }
 
     function setOffsetDiagnosis(diag) {
         offsetDiagnosis.value = diag;
@@ -120,6 +135,7 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
         thalwegResult.value = null;
         channelPolyline.value = [];
         channelPolygon.value  = [];
+        channelParams.value = { width: 5.0, bedMode: 'depth', bedDepth: 1.5, bedZStart: null, bedZEnd: null, manningN: 0.030 };
         pipelineStatus.value = 'IDLE';
         currentStage.value = 0;
         stageProgress.value = 0;
@@ -130,12 +146,12 @@ export const useBathymetryStore = defineStore('bathymetry', () => {
         validationReport, offsetDiagnosis,
         modifiedCells, modifiedCount,
         crossValResult, thalwegResult,
-        channelPolyline, channelPolygon,
+        channelPolyline, channelPolygon, channelParams,
         BATHY_ZONE_ID,
         pipelineStatus, currentStage, stageProgress,
         hasDem, isStage1Ready,
         setSurveyPoints, setValidation, setOffsetDiagnosis,
-        markCell, addModifiedCount, setCrossVal, setThalweg, setChannelPolyline, setChannelPolygon,
+        markCell, addModifiedCount, setCrossVal, setThalweg, setChannelPolyline, setChannelPolygon, setChannelParams,
         reset,
     };
 });
