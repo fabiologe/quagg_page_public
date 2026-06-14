@@ -430,11 +430,12 @@ const probedCellList = computed(() => {
 // --- SECTION ---
 const sections = ref([]); 
 
-function onSectionDrawn({ id, color, samples }) {
+function onSectionDrawn({ id, color, samples, structures }) {
   sections.value.push({
     id,
     color,
-    baseData: samples
+    baseData: samples,
+    structures: structures || []   // gekreuzte Wehre/Brücken (statisch)
   });
 }
 
@@ -511,7 +512,8 @@ const computedSectionsList = computed(() => {
     return {
       id: section.id,
       color: section.color,
-      data: computedData
+      data: computedData,
+      structures: section.structures || []
     };
   });
 });

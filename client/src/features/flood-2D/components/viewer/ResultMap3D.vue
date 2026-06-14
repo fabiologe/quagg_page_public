@@ -15,6 +15,7 @@ import { useResultScene } from '@/features/flood-2D/composables/viewer/useResult
 import { useFlowArrows } from '@/features/flood-2D/composables/viewer/useFlowArrows';
 import { useFlowStreamlines } from '@/features/flood-2D/composables/viewer/useFlowStreamlines';
 import { useDangerMarkers } from '@/features/flood-2D/composables/viewer/useDangerMarkers';
+import { findSectionStructures } from '@/features/flood-2D/utils/sectionStructures';
 import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResultProbes';
 import { useBoundaryArrows } from '@/features/flood-2D/composables/viewer/useBoundaryArrows';
 import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
@@ -192,9 +193,9 @@ function initScene() {
         const polyColors = ['#ffeb3b', '#ff4081', '#76ff03', '#00e5ff', '#e040fb', '#ff9800', '#18ffff'];
         const color = polyColors[Math.floor(Math.random() * polyColors.length)];
 
-        const samples = computeSectionData(startPt, endPt);
-        if (samples && samples.length > 0) {
-          emit('sectionDrawn', { id, color, samples });
+        const res = computeSectionData(startPt, endPt);
+        if (res && res.samples && res.samples.length > 0) {
+          emit('sectionDrawn', { id, color, samples: res.samples, structures: res.structures });
           return { id, color };
         }
       }
@@ -400,8 +401,18 @@ function computeSectionData(startPtWorld, endPtWorld) {
   }
 
   if (samples.length > 0) {
-    console.log(`[ResultMap3D] Sampled ${samples.length} points for Cross-Section`);
-    return samples;
+    // Bauwerke (Wehre/Brücken), die der Schnitt kreuzt — in Schnitt-Distanz projiziert.
+    let structures = [];
+    try {
+      structures = findSectionStructures(
+        realStartX, realStartY, realEndX, realEndY, cellsize,
+        geoStore.weirs, geoStore.bridges
+      );
+    } catch (e) {
+      console.warn('[ResultMap3D] Bauwerks-Schnitt fehlgeschlagen:', e);
+    }
+    console.log(`[ResultMap3D] Sampled ${samples.length} points, ${structures.length} Bauwerk(e) for Cross-Section`);
+    return { samples, structures };
   }
   return null;
 }
