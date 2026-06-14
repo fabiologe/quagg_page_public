@@ -20,6 +20,7 @@
 import { watch } from 'vue';
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
+import { analyzeDepthSpikes } from '../../utils/depthSpikes';
 
 // Räumliche Glättung der Tiefe vor dem Z-Displacement (ersetzt das frühere 9-Tap-Box-Blur im
 // Vertex-Shader). Ohne sie wird die Wasserhaut in turbulenten Bereichen zackig. 0 = roh, 1 = voll
@@ -206,8 +207,10 @@ function buildWeirCut(geometry, weirs, terrain) {
  * @param {() => THREE.Mesh}  opts.getTerrainMesh  liefert das Terrain-Mesh (Geometrie wird einmalig geklont)
  * @param {() => Array}       [opts.getWeirFaces]  liefert die Wehre ({x,y,direction}) für den Mesh-Schnitt
  * @param {object} opts.props  reaktive ResultMap3D-Props (depthData/velocityData/velocityMax/…)
+ * @param {(stats:{robustMax:number, flagged:Array, ncols:number, nrows:number})=>void} [opts.onStats]
+ *        Callback je Frame: robuster Farb-Deckel + erkannte Instabilitäts-/Gefahrenzellen.
  */
-export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props }) {
+export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props, onStats }) {
   let waterMesh = null;
   let sourceGeo = null;       // Terrain-Geometrie, aus der geklont wurde (Rebuild-Erkennung)
   let baseZ = null;           // Float32Array: Terrainhöhe je Vertex (z-Basis fürs Displacement)
@@ -401,9 +404,18 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props 
       }
     }
 
-    // Tiefe räumlich glätten → keine zackige Oberfläche in turbulenten Bereichen
+    // Numerische Tiefen-Dorne (Solver-Instabilität: 10-m-Nadel in flacher Umgebung)
+    // für die ANZEIGE kappen + robusten Farb-Deckel bestimmen. Rohwerte (raw) bleiben
+    // erhalten — Probe/Tooltip zeigen weiter den echten Wert; die Stellen werden via
+    // onStats als Gefahrenmarker gemeldet, damit die Info nicht verloren geht.
     const { ncols, nrows } = props.terrain;
-    const depth = (ncols && nrows && ncols * nrows === N) ? smoothDepth(raw, ncols, nrows) : raw;
+    // Nur auf echten Tiefen-/Höhen-Layern kappen+markieren; sonst nur robuster Deckel.
+    const spikes = analyzeDepthSpikes(raw, ncols, nrows, { flag: props.detectSpikes !== false });
+    if (onStats) onStats({ robustMax: spikes.robustMax, flagged: spikes.flagged, ncols, nrows });
+    const clamped = spikes.display;
+
+    // Tiefe räumlich glätten → keine zackige Oberfläche in turbulenten Bereichen
+    const depth = (ncols && nrows && ncols * nrows === N) ? smoothDepth(clamped, ncols, nrows) : clamped;
 
     const arr = pos.array;     // [x,y,z, x,y,z, …]
     const dArr = depthAttr.array;
@@ -437,7 +449,9 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props 
     u.uVelocityMap.value = buildVelocityTexture();
     u.uVelocityMin.value = props.velocityMin || 0.0;
     u.uVelocityMax.value = props.velocityMax || 1.0;
-    u.uMaxDepth.value = props.maxWaterDepth || 1.0;
+    // Bei erkannten Dornen die Farbskala auf den robusten Deckel legen (sonst staucht
+    // ein 10-m-Ausreißer alles auf Blau). Ohne Funde: bisheriges Verhalten beibehalten.
+    u.uMaxDepth.value = spikes.flagged.length ? spikes.robustMax : (props.maxWaterDepth || 1.0);
     applyOpacity();
 
     waterMesh.visible = true;

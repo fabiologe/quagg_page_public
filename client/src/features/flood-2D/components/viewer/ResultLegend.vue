@@ -1,20 +1,71 @@
 <template>
   <div class="result-legend">
-    <div class="legend-title">Wassertiefe (m)</div>
-    <div class="legend-gradient"></div>
-    <div class="legend-ticks">
-      <span>0</span>
-      <span>{{ (maxDepth * 0.25).toFixed(2) }}</span>
-      <span>{{ (maxDepth * 0.5).toFixed(2) }}</span>
-      <span>{{ (maxDepth * 0.75).toFixed(2) }}</span>
-      <span>{{ maxDepth.toFixed(2) }}</span>
+    <div class="legend-title">{{ cfg.title }}<span v-if="cfg.unit"> ({{ cfg.unit }})</span></div>
+    <div class="legend-body">
+      <div class="legend-gradient" :style="{ background: cfg.gradient }"></div>
+      <div class="legend-ticks">
+        <span v-for="(t, i) in ticks" :key="i">{{ t }}</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
-  maxDepth: { type: Number, default: 1.0 }
+import { computed } from 'vue';
+
+const props = defineProps({
+  // Aktiver Ergebnis-Layer (id wie in availableLayers)
+  layerId: { type: String, default: 'depth' },
+  // Unteres/oberes Ende der Farbskala (bei 'depth'/Heatmaps i. d. R. 0 … robustMax)
+  min: { type: Number, default: 0 },
+  max: { type: Number, default: 1 },
+});
+
+// CSS-Verläufe — exakt zu den Shadern in useWaterSurface (to top = klein → groß).
+const RAMPS = {
+  depth:    'linear-gradient(to top, #00e5ff, #0078d7, #00008b)',                 // cyan → blau → navy
+  velocity: 'linear-gradient(to top, #0a33b3, #00bfff, #ffe600, #d90d0d)',        // blau → cyan → gelb → rot
+  heat:     'linear-gradient(to top, #f2d9ff, #9933e6, #400080)',                 // weiß → violett → dunkel (Mode 2)
+};
+
+// Pro Layer: Titel, Einheit, Verlauf. Heatmap-Layer (max/hazard/…) nutzen den Mode-2-Verlauf.
+const LAYERS = {
+  depth:        { title: 'Wassertiefe',        unit: 'm',    ramp: 'depth' },
+  flow:         { title: 'Wassertiefe',        unit: 'm',    ramp: 'depth' },
+  streamlines:  { title: 'Wassertiefe',        unit: 'm',    ramp: 'depth' },
+  velocity:     { title: 'Geschwindigkeit',    unit: 'm/s',  ramp: 'velocity' },
+  max_depth:    { title: 'Max. Wassertiefe',   unit: 'm',    ramp: 'heat' },
+  max_elev:     { title: 'Wasserspiegel',      unit: 'm',    ramp: 'heat' },
+  max_velocity: { title: 'Max. Geschwindigk.', unit: 'm/s',  ramp: 'heat' },
+  hazard:       { title: 'Gefährdung (H·v)',   unit: '',     ramp: 'heat' },
+  arrival:      { title: 'Ankunftszeit',       unit: 'time', ramp: 'heat' },
+  duration:     { title: 'Überflutungsdauer',  unit: 'time', ramp: 'heat' },
+};
+
+const cfg = computed(() => {
+  const l = LAYERS[props.layerId] || LAYERS.depth;
+  return { ...l, gradient: RAMPS[l.ramp] || RAMPS.depth };
+});
+
+// Zeitwerte (Ankunft/Dauer) liegen in Sekunden → groß lieber in Minuten/Stunden.
+function fmtTime(s) {
+  if (!isFinite(s)) return '–';
+  if (s >= 7200) return (s / 3600).toFixed(1) + ' h';
+  if (s >= 120)  return Math.round(s / 60) + ' min';
+  return Math.round(s) + ' s';
+}
+function fmtVal(v) {
+  if (cfg.value.unit === 'time') return fmtTime(v);
+  const span = Math.abs(props.max - props.min);
+  const dec = span >= 20 ? 0 : span >= 2 ? 1 : 2;
+  return v.toFixed(dec);
+}
+
+// 5 Ticks von min … max (von unten nach oben gerendert via column-reverse)
+const ticks = computed(() => {
+  const lo = props.min || 0;
+  const hi = props.max > lo ? props.max : lo + 1;
+  return [0, 0.25, 0.5, 0.75, 1].map((f) => fmtVal(lo + (hi - lo) * f));
 });
 </script>
 
@@ -36,21 +87,19 @@ defineProps({
   letter-spacing: 0.5px;
   margin-bottom: 8px;
   text-align: center;
+  white-space: nowrap;
+}
+
+.legend-body {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .legend-gradient {
   width: 20px;
   height: 160px;
-  margin: 0 auto;
   border-radius: 4px;
-  background: linear-gradient(
-    to top,
-    rgba(0, 255, 255, 0.3),    /* 0.0 — transparent cyan (shallow) */
-    rgba(0, 200, 255, 0.6),    /* 0.25 */
-    rgba(0, 120, 215, 0.75),   /* 0.50 — medium blue */
-    rgba(0, 60, 180, 0.85),    /* 0.75 */
-    rgba(0, 0, 139, 0.95)      /* 1.0 — deep navy (deep) */
-  );
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -59,8 +108,6 @@ defineProps({
   flex-direction: column-reverse;
   justify-content: space-between;
   height: 160px;
-  margin-top: -160px;
-  margin-left: 30px;
   pointer-events: none;
 }
 

@@ -41,8 +41,8 @@
           <input type="range" min="0" max="1" step="0.01" :value="waterOpacity"
                  @input="$emit('update:waterOpacity', Number($event.target.value))" />
         </label>
-        <label v-if="activeLayer === 'flow'" class="vcp-slider">
-          <span>🧭 Pfeildichte</span>
+        <label v-if="activeLayer === 'flow' || activeLayer === 'streamlines'" class="vcp-slider">
+          <span>{{ activeLayer === 'streamlines' ? '🌀 Liniendichte' : '🧭 Pfeildichte' }}</span>
           <input type="range" min="0" max="1" step="0.01" :value="flowDensity"
                  @input="$emit('update:flowDensity', Number($event.target.value))" />
         </label>

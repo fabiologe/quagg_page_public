@@ -13,6 +13,8 @@ import { useLayerRenderer } from '@/features/flood-2D/composables/editor/useLaye
 import { makeResultCoords } from '@/features/flood-2D/composables/viewer/useResultCoords';
 import { useResultScene } from '@/features/flood-2D/composables/viewer/useResultScene';
 import { useFlowArrows } from '@/features/flood-2D/composables/viewer/useFlowArrows';
+import { useFlowStreamlines } from '@/features/flood-2D/composables/viewer/useFlowStreamlines';
+import { useDangerMarkers } from '@/features/flood-2D/composables/viewer/useDangerMarkers';
 import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResultProbes';
 import { useBoundaryArrows } from '@/features/flood-2D/composables/viewer/useBoundaryArrows';
 import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
@@ -27,6 +29,8 @@ const props = defineProps({
   activeTool: { type: String, default: null },
   flowData: { type: Object, default: null },     // { vx: Float32Array, vy: Float32Array } | null (zell-zentriert)
   showFlow: { type: Boolean, default: false },   // Fließpfeil-Layer aktiv?
+  showStreamlines: { type: Boolean, default: false }, // animierte Strömungslinien-Layer aktiv?
+  detectSpikes: { type: Boolean, default: true },     // Tiefen-Dorne kappen + als Gefahr markieren (nur Tiefen-Layer)
   depthField: { type: Object, default: null },   // aktuelles Tiefen-Frame (Float32Array) für Nass-Gating/Höhe
   velocityData: { type: Object, default: null }, // Geschwindigkeits-Betrag-Frame (Float32Array) für die Heatmap
   velocityMin: { type: Number, default: 0.0 },   // unteres Ende der Velocity-Farbskala (Bereichsregler)
@@ -35,7 +39,7 @@ const props = defineProps({
   waterOpacity: { type: Number, default: 0.85 }  // globale Wasser-Deckkraft 0..1
 });
 
-const emit = defineEmits(['cellProbed', 'sectionDrawn']);
+const emit = defineEmits(['cellProbed', 'sectionDrawn', 'waterStats']);
 
 const container = ref(null);
 
@@ -53,6 +57,8 @@ const terrainApi = useTerrainLayer({
   getScene: () => scene,
   geoStore,
 });
+// Gefahren-/Instabilitätsmarker (gekappte Tiefen-Dorne sichtbar halten).
+const dangerApi = useDangerMarkers(() => scene);
 // Wasser als 2D-Haut: klont die (gelochte) Terrain-Geometrie und displaced pro Frame nur das Z-Attribut.
 // getWeirFaces liefert die Wehre, an deren Kanten die Wasserhaut aufgetrennt wird (kein Durchscheinen).
 const waterApi = useWaterSurface({
@@ -60,11 +66,19 @@ const waterApi = useWaterSurface({
   getTerrainMesh: () => terrainApi.getMesh(),
   getWeirFaces: () => geoStore.weirs,
   props,
+  // Pro Frame: erkannte Tiefen-Dorne als Marker setzen + Anzahl/Deckel an die UI melden.
+  onStats: ({ robustMax, flagged }) => {
+    dangerApi.rebuild(flagged, props.terrain, null, robustMax);
+    dangerApi.setVisible(flagged.length > 0);
+    emit('waterStats', { outlierCount: flagged.length, robustMax, outliers: flagged });
+  },
 });
 const probeApi = useResultProbes(() => scene); // Probe-Ring-Marker
 const boundaryApi = useBoundaryArrows(() => scene, () => terrainApi.getMask()); // BCI-Pfeile
 // Fließpfeil-Overlay (gerichtete Velocity-Pfeile) — eigenes Composable
 const flowApi = useFlowArrows(() => scene);
+// Strömungslinien-Overlay (integrierte, animierte CFD-Linien) — eigenes Composable
+const streamApi = useFlowStreamlines(() => scene);
 
 const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
 const raycaster = new THREE.Raycaster();
@@ -97,6 +111,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  streamApi.dispose();
+  dangerApi.dispose();
   sceneApi.dispose();
   window.removeEventListener('resize', onResize);
   window.removeEventListener('flood-viewer-dispose', _handleViewerDispose);
@@ -402,6 +418,18 @@ watch([() => props.showFlow, () => props.flowData, () => props.flowDensity], ([s
     flowApi.clear();
   }
 });
+
+// Strömungslinien (animiert) — gleiche Quelle wie Pfeile, eigener Layer.
+watch([() => props.showStreamlines, () => props.flowData, () => props.flowDensity, () => props.depthField],
+  ([show, field]) => {
+    if (show && field && field.vx && field.vy) {
+      streamApi.rebuild(field, props.terrain, props.depthField, props.flowDensity);
+      streamApi.setVisible(true);
+    } else {
+      streamApi.setVisible(false);
+      streamApi.clear();
+    }
+  });
 
 
 watch(() => props.activeTool, (newTool) => {

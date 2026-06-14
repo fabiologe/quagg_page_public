@@ -327,6 +327,42 @@ def main():
     emit("log", text=f"LISFLOOD-FP startet: {par_path.name}, sim_time={sim_time:.0f}s, "
                      f"saveint={par.get('saveint', '?')}s, massint={par.get('massint', '?')}s")
 
+    # ── Regen-Vorflug-Diagnose ──────────────────────────────────────────────
+    # Häufige Fehlerquelle: `rainfall <file>` steht in der .par, aber die Datei
+    # fehlt im Job-Input oder ist leer → der Solver liefert dann Netto-Regen 0.
+    # Diese Zeile macht sofort sichtbar, ob & wie viel Regen tatsächlich anliegt
+    # (vgl. später die res.mass-Spalte 'Rain-(Inf+Evap)'). Bleibt der Regen trotz
+    # gültiger Datei 0, ist meist das Solver-Image veraltet → neu bauen.
+    rain_ref = par.get("rainfall", "")
+    if rain_ref:
+        rain_path = inputs / rain_ref
+        if not rain_path.exists():
+            emit("log", text=f"⚠️ REGEN: .par referenziert '{rain_ref}', aber Datei fehlt im "
+                             f"Input — Solver bricht beim Laden ab.")
+        else:
+            try:
+                lines = [l for l in rain_path.read_text(errors="replace").splitlines()
+                         if l.strip() and not l.lstrip().startswith("#")]
+                # Format: [Kommentar] / [N Einheit] / N×[Rate_mm_h  Zeit]
+                npts = int(lines[1].split()[0]) if len(lines) > 1 else 0
+                rows = [ln.split() for ln in lines[2:2 + npts] if len(ln.split()) >= 2]
+                peak = max((float(r[0]) for r in rows), default=0.0)
+                t_end = max((float(r[1]) for r in rows), default=0.0)
+                # grobe Niederschlagshöhe (Trapez über mm/h × s → mm)
+                depth_mm = 0.0
+                for a, b in zip(rows, rows[1:]):
+                    depth_mm += (float(a[0]) + float(b[0])) / 2.0 * (float(b[1]) - float(a[1])) / 3600.0
+                tail = float(rows[-1][0]) if rows else 0.0
+                emit("log", text=f"🌧️ REGEN aktiv: {rain_ref}, {npts} Stützstellen, "
+                                 f"Peak {peak:.1f} mm/h, ~{depth_mm:.1f} mm bis t={t_end:.0f}s, "
+                                 f"Endwert {tail:.1f} mm/h"
+                                 + ("" if tail == 0 else " (≠0 → hält bis sim_time!)"))
+                if t_end + 1 < sim_time and tail != 0:
+                    emit("log", text=f"⚠️ REGEN: Reihe endet bei t={t_end:.0f}s mit {tail:.1f} mm/h, "
+                                     f"sim_time={sim_time:.0f}s → Dauerregen bis Ende ('Sintflut').")
+            except Exception as e:  # Diagnose darf den Lauf nie killen
+                emit("log", text=f"🌧️ REGEN: {rain_ref} vorhanden (Vorflug-Parse übersprungen: {e}).")
+
     proc = subprocess.Popen(
         [LISFLOOD_BIN, par_path.name],
         cwd=inputs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

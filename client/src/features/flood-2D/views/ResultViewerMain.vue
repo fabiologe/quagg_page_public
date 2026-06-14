@@ -33,6 +33,8 @@
           :layerMode="activeLayerMode"
           :flowData="currentFlowData"
           :showFlow="activeLayer === 'flow'"
+          :showStreamlines="activeLayer === 'streamlines'"
+          :detectSpikes="depthLikeLayer"
           :depthField="currentDepthData"
           :velocityData="currentVelocityData"
           :velocityMin="velColorMin"
@@ -44,14 +46,27 @@
           :activeTool="activeTool"
           @cellProbed="onCellProbed"
           @sectionDrawn="onSectionDrawn"
+          @waterStats="onWaterStats"
         />
 
-        <!-- Legend Overlay (Tiefe/Max/Hazard; auch im Flow-Layer, da normales Wasser) -->
+        <!-- Legende für JEDEN Layer (Tiefe/Velocity/Heatmaps), Skala spike-bereinigt. -->
         <ResultLegend
-          v-if="activeLayer !== 'velocity'"
-          :maxDepth="bridge.maxWaterDepth.value"
+          :layerId="activeLayer"
+          :min="legendMin"
+          :max="legendMax"
           class="legend-overlay"
         />
+
+        <!-- Instabilitäts-/Gefahrenstellen: numerische Tiefen-Dorne wurden für die
+             Anzeige gekappt; hier bleibt die Info sichtbar (echter Wert via Probe). -->
+        <div
+          v-if="outlierCount > 0"
+          class="instability-badge"
+          :title="outlierTitle"
+        >
+          ⚠ {{ outlierCount }} Instabilitätsstelle{{ outlierCount === 1 ? '' : 'n' }}
+          <small>gekappt&nbsp;· Probe zeigt Rohwert</small>
+        </div>
 
         <!-- Section Profile Charts -->
         <template v-if="activeTool === 'section'">
@@ -163,8 +178,10 @@ const availableLayers = computed(() => {
   const layers = [{ id: 'depth', icon: '💧', label: 'Tiefe' }];
   if (bridge.velocityFrames?.value?.size > 0)
     layers.push({ id: 'velocity', icon: '💨', label: 'Velocity' });
-  if (bridge.velocityVectorFrames?.value?.size > 0)
+  if (bridge.velocityVectorFrames?.value?.size > 0) {
     layers.push({ id: 'flow', icon: '🧭', label: 'Strömung' });
+    layers.push({ id: 'streamlines', icon: '🌀', label: 'Strömungslinien' });
+  }
   if (bridge.maxDepthGrid?.value)
     layers.push({ id: 'max_depth', icon: '📈', label: 'Max-Tiefe' });
   if (bridge.maxHazardGrid?.value)
@@ -194,7 +211,8 @@ const activeLayerMode = computed(() => {
 const currentLayerData = computed(() => {
   switch (activeLayer.value) {
     case 'velocity':
-    case 'flow':      return currentDepthData.value;     // echte Tiefe = Geometrie
+    case 'flow':
+    case 'streamlines': return currentDepthData.value;   // echte Tiefe = Geometrie
     case 'max_depth':    return bridge.maxDepthGrid?.value ?? null;
     case 'hazard':       return bridge.maxHazardGrid?.value ?? null;
     case 'max_velocity': return bridge.maxVelocityGrid?.value ?? null;
@@ -207,7 +225,7 @@ const currentLayerData = computed(() => {
 
 // Geschwindigkeits-Betrag des aktuellen Frames (für die Heatmap-Farbe)
 const currentVelocityData = computed(() => {
-  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow')
+  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow' || activeLayer.value === 'streamlines')
     return bridge.velocityFrames?.value?.get(currentFrame.value) ?? null;
   return null;
 });
@@ -240,6 +258,40 @@ const effVelMax = computed(() => (velColorMax.value != null ? velColorMax.value 
 // Dichte der Fließpfeile (0..1) — etwas höher als Mitte für standardmäßig mehr Pfeile
 const flowDensity = ref(0.65);
 
+// Instabilitäts-/Gefahrenstellen (numerische Tiefen-Dorne) des aktuellen Frames.
+// Werden von ResultMap3D (Wasserhaut) je Frame gemeldet; Rohwert bleibt via Probe abrufbar.
+const outlierCount = ref(0);
+const outlierInfo = ref([]);
+const outlierTitle = computed(() => {
+  if (!outlierInfo.value.length) return '';
+  const top = [...outlierInfo.value].sort((a, b) => b.value - a.value).slice(0, 8)
+    .map(o => `• Zelle (${o.col},${o.row}): ${o.value.toFixed(1)} m`);
+  const more = outlierInfo.value.length - top.length;
+  return 'Numerische Ausreißer (für die Anzeige gekappt):\n' + top.join('\n')
+    + (more > 0 ? `\n… und ${more} weitere` : '');
+});
+// Robuster Anzeige-Deckel (p99 ohne Spikes) des AKTUELL gerenderten Grids — von der
+// Wasserhaut je Frame gemeldet. Treibt sowohl Farbskala als auch die Legende.
+const legendRobustMax = ref(0);
+function onWaterStats({ outlierCount: n, outliers, robustMax }) {
+  outlierCount.value = n || 0;
+  outlierInfo.value = outliers || [];
+  if (robustMax > 0) legendRobustMax.value = robustMax;
+}
+
+// Layer, deren gerendertes Grid eine echte Wasserhöhe/-tiefe ist → Spike-Erkennung
+// (Kappung + Gefahrenmarker) sinnvoll. Für Hazard/Velocity/Zeit-Layer: nur robuste
+// Skala, keine "Instabilitäts"-Marker.
+const DEPTH_LIKE_LAYERS = ['depth', 'velocity', 'flow', 'streamlines', 'max_depth', 'max_elev'];
+const depthLikeLayer = computed(() => DEPTH_LIKE_LAYERS.includes(activeLayer.value));
+
+// Legenden-Skala: Velocity nutzt die Velocity-Range; sonst 0 … robuster Deckel.
+const legendMin = computed(() => (activeLayer.value === 'velocity' ? velColorMin.value : 0));
+const legendMax = computed(() => {
+  if (activeLayer.value === 'velocity') return effVelMax.value;
+  return legendRobustMax.value > 0 ? legendRobustMax.value : currentLayerMax.value;
+});
+
 // Histogramm der Geschwindigkeiten des AKTUELLEN Frames (nur nasse, gültige Zellen), Bins über [0, globalMax].
 const HIST_BINS = 48;
 const velocityHistogram = computed(() => {
@@ -271,7 +323,7 @@ const waterOpacity = ref(0.9);
 
 const currentLayerMax = computed(() => {
   if (activeLayer.value === 'depth') return bridge.maxWaterDepth.value;
-  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow') {
+  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow' || activeLayer.value === 'streamlines') {
     // Rough max velocity for legend scaling
     const vf = bridge.velocityFrames?.value?.get(currentFrame.value);
     if (!vf) return 3.0;
@@ -597,6 +649,37 @@ const map3d = ref(null);
   left: 16px;
   bottom: 24px;
   z-index: 10;
+}
+
+/* Instabilitäts-/Gefahrenstellen-Badge */
+.instability-badge {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(183, 28, 28, 0.92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: help;
+  pointer-events: auto;
+  animation: instab-pulse 1.6s ease-in-out infinite;
+}
+.instability-badge small {
+  font-weight: 400;
+  font-size: 10px;
+  opacity: 0.85;
+}
+@keyframes instab-pulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+  50%      { box-shadow: 0 2px 14px rgba(255, 23, 68, 0.7); }
 }
 
 /* Cell Info Panel */
