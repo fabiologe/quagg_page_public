@@ -420,8 +420,9 @@ const handleSolverEvent = (data) => {
                              simStore.addResultFrame(frame, payload, header, data.min, data.max);
                              if (data.velocity) simStore.addVelocityFrame(frame, data.velocity);
                              if (data.vx && data.vy) simStore.addVelocityVectorFrame(frame, data.vx, data.vy);
+                             if (data.qx && data.qy) simStore.addQFluxFrame(frame, data.qx, data.qy);
                              if (data.elev) simStore.addElevFrame(frame, data.elev);
-                             appendLog(`[RESULT] Frame ${frame}${data.velocity ? ' + velocity' : ''}${data.elev ? ' + elev' : ''}`);
+                             appendLog(`[RESULT] Frame ${frame}${data.velocity ? ' + velocity' : ''}${data.elev ? ' + elev' : ''}${data.qx ? ' + qflux' : ''}`);
                          } catch (err) {
                              appendLog(`[ERROR] processing result: ${err.message}`);
                          }
@@ -716,6 +717,7 @@ const startPreparation = async () => {
                   ...(simStore.useAcceleration ? { acceleration: '' } : {})
              },
              weirs:               geoStore.weirs   ? JSON.parse(JSON.stringify(geoStore.weirs))   : [],
+             weirLines:           geoStore.weirLines ? JSON.parse(JSON.stringify(geoStore.weirLines)) : [],
              bridges:             geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : [],
              infiltration:        surfaceStore.computeWeightedInfiltration?.() ?? 0,
              antecedentMoisture:  hydStore.antecedentMoisture ?? 0,

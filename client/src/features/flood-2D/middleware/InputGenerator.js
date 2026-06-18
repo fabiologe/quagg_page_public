@@ -2,7 +2,8 @@ import { Rasterizer, maskBuildingsAsNoData, burnModifications } from './Rasteriz
 import { Hydraulics } from './Hydraulics.js';
 import { BoundaryTools } from './BoundaryTools.js';
 import { SgcGenerator } from './SgcGenerator.js';
-import { latticeToCells } from '../utils/BridgeMeshLattice.js';
+import { latticeToCells, collectPierCells } from '../utils/BridgeMeshLattice.js';
+import { discretizeWeirPolyline } from '../utils/weirGeometry.js';
 import { IssueCollector } from './ScenarioValidator.js';
 
 // Suchradius (Zellen) beim NoData-Rescue: nächste gültige Zelle innerhalb dieser Distanz suchen.
@@ -131,6 +132,11 @@ export class InputGenerator {
             console.log(`[InputGenerator] NoData-Masking: ${buildingMods.length} Gebäude gestempelt.`);
         }
 
+        // Pfeiler werden NICHT mehr ins DGM gebrannt. Eine Brücke wirkt
+        // ausschließlich über die Orifice-Geometrie (Querschnittsverengung); ein
+        // Pfeiler ist eine lokale volle Sperrung, die weiter unten aus dem SGC-
+        // Gerinne (Breite 0) und der .weir-Datei entfernt wird — ohne Geländeeingriff.
+
         // Pass 2: Sonstige Höhen-Änderungen (Abgrabungen, Teiche, etc.)
         if (nonBuildingMods.length > 0) {
             data = Rasterizer.burnBuildings(data, header, nonBuildingMods);
@@ -233,8 +239,20 @@ export class InputGenerator {
         // Zelle möglich) in drei Raster gestempelt. MUSS vor der Wehr-Datei
         // laufen: v8-Brücken (<dir>B) sind nur über SGC-Zellen gültig, daher
         // wird das Breitenraster zum Clippen der Brückenzellen gebraucht.
+        //
+        // Pfeiler: nach dem Stempeln wird die SGC-Breite an allen Pfeilerzellen
+        // auf 0 gesetzt (collectBridgePierCells, rein geometrisch). So sperrt ein
+        // Pfeiler den Sub-Grid-Fluss auch UNTER der Soffitte — ohne DGM-Eingriff.
         let hasSgc = false;
         let sgcWidthGrid = null;
+        const hasBridges = (scenario.bridges || []).length > 0;
+        // SGC = Sub-Grid-CHANNEL, NUR aus einer gezeichneten Bathymetrie-Mittellinie
+        // (echtes schmales Flussgerinne). BRÜCKEN brauchen KEIN SGC: der quagg-Patch
+        // (weir_flow.cpp) lässt EWeir_Bridge ohne Sub-Grid auf der Floodplain laufen
+        // (test_bridge_no_sgc.py). Würden wir SGC für Brücken erzeugen, triggerte das die
+        // fragile SGC-Wehr-Validierung in lisflood_processing.cpp (fehlerhafte Face-
+        // Indexierung) → „Invalid bridge cell ... either side" → Absturz. Also: kein
+        // Auto-SGC unter Brücken.
         if (scenario.sgc && scenario.sgc.polyline?.length >= 2) {
             if ((scenario.sgc.width ?? 0) > 4 * header.cellsize) {
                 this.info(`SGC-Gerinne ${scenario.sgc.width} m breit > 4 Zellen (${(4 * header.cellsize).toFixed(1)} m) — besser direkt im DGM auflösen statt Sub-Grid.`);
@@ -246,13 +264,25 @@ export class InputGenerator {
             if (sgcRasters.cellCount === 0) {
                 this.warn('SGC-Gerinne ergibt 0 Zellen im Export-Raster (Polyline außerhalb?) — SGC deaktiviert.');
             } else {
+                // Pfeilerzellen aus dem Gerinne stanzen (Breite 0 = volle Sperrung).
+                const pierKeys = this.collectBridgePierCells(scenario.bridges || [], header);
+                if (pierKeys.size > 0) {
+                    const { ncols } = header;
+                    let punched = 0;
+                    for (const key of pierKeys) {
+                        const [col, row] = key.split(',').map(Number);
+                        const idx = row * ncols + col;
+                        if (sgcRasters.width[idx] > 0) { sgcRasters.width[idx] = 0; punched++; }
+                    }
+                    if (punched > 0) console.log(`[InputGenerator] Pfeiler: SGC-Breite an ${punched} Zelle(n) auf 0 gesetzt (volle Sperrung, kein DGM-Eingriff).`);
+                }
                 for (const [name, raster] of [['sgc.width.asc', sgcRasters.width], ['sgc.bed.asc', sgcRasters.bed], ['sgc.bank.asc', sgcRasters.bank]]) {
                     if (fs) Rasterizer.writeGridToFS(fs, '/' + name, raster, header);
                     else this.files[name] = Rasterizer.gridToASC(raster, header);
                 }
                 hasSgc = true;
                 sgcWidthGrid = sgcRasters.width;
-                console.log(`[InputGenerator] ✅ SGC: ${sgcRasters.cellCount} Gerinne-Zellen gestempelt (Breite ${scenario.sgc.width} m).`);
+                console.log(`[InputGenerator] ✅ SGC: ${sgcRasters.cellCount} Gerinne-Zellen gestempelt (Bathymetrie-Kanal, Breite ${scenario.sgc.width} m).`);
             }
         }
 
@@ -264,7 +294,7 @@ export class InputGenerator {
         const hasWeirData    = scenario.weirs   && scenario.weirs.length   > 0;
         const hasBridgeData  = scenario.bridges && scenario.bridges.length > 0;
         if (hasWeirData || hasBridgeData) {
-            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid });
+            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid, weirLines: scenario.weirLines || [] });
             if (weirContent) {
                 if (fs) fs.writeFile('/flow.weir', weirContent);
                 else this.files['flow.weir'] = weirContent;
@@ -1260,6 +1290,73 @@ export class InputGenerator {
     }
 
     /**
+     * Sammelt die Pfeilerzellen aller MESH3D-Brücken — Zellzentren, die in einem
+     * Pfeilerband (lattice.piers) liegen. Rein geometrisch, kein Terrain nötig.
+     * Diese Zellen liefern KEINE Orifice-Zeile und werden aus dem SGC-Gerinne
+     * gestanzt (Breite 0) — volle Sperrung ohne DGM-Eingriff.
+     *
+     * @param {Array} bridges  scenario.bridges
+     * @param {object} header   Export-Raster-Header
+     * @returns {Set<string>}  Schlüssel "col,row" der Pfeilerzellen
+     */
+    collectBridgePierCells(bridges, header) {
+        // Single Source: dieselbe Pfeiler-Rasterung nutzt der ErgebnisViewer fürs Overlay.
+        return collectPierCells(bridges, header);
+    }
+
+    /**
+     * Kollabiert die Zellen EINER mesh3d-Brücke in Fließrichtung auf eine
+     * einzige Zellreihe: pro Spannposition (quer zur Fließrichtung) bleibt genau
+     * EINE Orifice-Zelle übrig — die mit der niedrigsten (restriktivsten)
+     * Soffitte über dem SGC-Gerinne.
+     *
+     * Grund: LISFLOOD-FP 8 unterdrückt den Sub-Grid-Fluss auf JEDER Wehr-/
+     * Brückenkante (lisflood_processing.cpp: "don't add the sub-grid calculation
+     * where there is a weir"). Zwei in Fließrichtung benachbarte Brückenzellen
+     * entziehen sich damit gegenseitig den verlangten Sub-Grid-Fluss und der
+     * Solver bricht mit "Invalid bridge cell. Bridge must have sub grid flows on
+     * either side." ab. Eine Brücke darf also nur 1 Zelle tief sein; die
+     * Stromaufwärts-/-abwärts-Ausdehnung des Decks bildet die Orifice-Physik ab.
+     *
+     * @param {Array<{col,row,x,y,soffit,direction}>} cells  offene (Nicht-Pfeiler) Zellen
+     * @param {object} header
+     * @param {Float32Array|null} sgcWidthGrid  bottom-up (0 = kein Gerinne) ODER null
+     *        (Floodplain-Brücke ohne SGC) → dann rein geometrischer Collapse.
+     * @returns {Array} eine Zelle je Spannposition (1 Zelle tief in Fließrichtung)
+     */
+    collapseBridgeCellsToChannel(cells, header, sgcWidthGrid) {
+        const { ncols, nrows } = header;
+        const sgcAt = (col, row) =>
+            (col < 0 || col >= ncols || row < 0 || row >= nrows) ? 0 : (sgcWidthGrid[row * ncols + col] || 0);
+
+        // Quer zur Fließrichtung gruppieren: S/N → Fluss in Reihen → Schlüssel=col;
+        // E/W → Fluss in Spalten → Schlüssel=row.
+        const groups = new Map();
+        for (const c of cells) {
+            const flowIsRows = (c.direction === 'S' || c.direction === 'N');
+            const key = flowIsRows ? c.col : c.row;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push({ ...c, flowIsRows });
+        }
+
+        const out = [];
+        for (const group of groups.values()) {
+            // Mit SGC: nur Zellen mit Sub-Grid-Fluss auf BEIDEN Fließseiten sind gültig.
+            // Ohne SGC (Floodplain-Brücke): rein geometrisch — alle Zellen gültig.
+            const valid = sgcWidthGrid ? group.filter(c => {
+                if (sgcAt(c.col, c.row) <= 0) return false;
+                return c.flowIsRows
+                    ? (sgcAt(c.col, c.row - 1) > 0 && sgcAt(c.col, c.row + 1) > 0)
+                    : (sgcAt(c.col - 1, c.row) > 0 && sgcAt(c.col + 1, c.row) > 0);
+            }) : group;
+            if (valid.length === 0) continue; // Spannposition kreuzt das Gerinne nicht
+            valid.sort((a, b) => a.soffit - b.soffit); // restriktivste Öffnung zuerst
+            out.push(valid[0]);
+        }
+        return out;
+    }
+
+    /**
      * Generiert den Inhalt der LISFLOOD `.weir`-Datei aus dem GeoStore-Wehr-Array.
      *
      * Format:
@@ -1286,7 +1383,7 @@ export class InputGenerator {
      * @param {{engine?: 'v5'|'v8'}} [opts]
      * @returns {string}
      */
-    generateWeirFile(weirs, bridges = [], header = null, { engine = 'v5', sgcWidthGrid = null } = {}) {
+    generateWeirFile(weirs, bridges = [], header = null, { engine = 'v5', sgcWidthGrid = null, weirLines = null } = {}) {
         const bridgeEntries = [];
         let weirEntries = [...(weirs || [])];
 
@@ -1299,16 +1396,33 @@ export class InputGenerator {
                 // 3D-Brückenkörper: Footprint bei Export-Zellweite neu rastern,
                 // Soffitte pro Zelle bilinear vom Lattice (Bogen/Voute → per-Zelle-hc).
                 if (bridge.kind === 'mesh3d') {
+                    const id8 = String(bridge.id).substring(0, 8);
                     const meshCells = latticeToCells(bridge, header, null);
                     if (meshCells.length === 0) {
-                        this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: Footprint ergibt 0 Zellen im Export-Raster — übersprungen.`);
+                        this.warn(`Brücke ${id8}: Footprint ergibt 0 Zellen im Export-Raster — übersprungen.`);
                         continue;
                     }
-                    for (const cell of meshCells) {
+                    // Pfeilerzellen (Zellzentrum im Pfeilerband) liefern kein
+                    // Orifice — die volle Sperrung kommt aus der SGC-Breite 0 dort.
+                    const pierSkipped = meshCells.filter(c => c.pier).length;
+                    const openCells = meshCells.filter(c => !c.pier);
+                    // IMMER auf EINE Zellreihe je Spannposition kollabieren (1 Zelle tief
+                    // in Fließrichtung): saubere Brücken-Öffnung statt eines dicken
+                    // Orifice-Blocks. Mit SGC zusätzlich gegen das Gerinne gefiltert; ohne
+                    // SGC (Floodplain-Brücke, gepatchter Solver) rein geometrisch.
+                    const before = openCells.length;
+                    const emitCells = this.collapseBridgeCellsToChannel(openCells, header, sgcWidthGrid);
+                    if (emitCells.length !== before) {
+                        this.info(`Brücke ${id8}: ${before} Zellen → ${emitCells.length} Orifice-Zeile(n) (eine Reihe je Spannposition; Brücke ist in Fließrichtung 1 Zelle tief${sgcWidthGrid ? '' : ', Floodplain ohne SGC'}).`);
+                    }
+                    for (const cell of emitCells) {
                         bridgeEntries.push({
                             x: cell.x, y: cell.y, direction: cell.direction + 'B',
                             Cd: bridge.Cd ?? 0.8, hc: cell.soffit, m: bridge.Tz ?? 1.5, w: cs
                         });
+                    }
+                    if (pierSkipped > 0) {
+                        this.info(`Brücke ${id8}: ${pierSkipped} Pfeilerzelle(n) voll gesperrt (SGC-Breite 0, kein Orifice) — kein DGM-Eingriff.`);
                     }
                     continue;
                 }
@@ -1383,10 +1497,32 @@ export class InputGenerator {
                     singles.push(w); // Alt-Zellen ohne Linie: unverändert übernehmen
                 }
             }
+            const weirLineMap = new Map((weirLines || []).map(l => [l.id, l]));
             weirEntries = [...singles];
             for (const [lineId, group] of groups) {
+                const first = group[0];
+                // Editierbare Polylinie: ALLE Segmente bei Export-Zellweite neu rastern
+                // (Knicke bleiben erhalten — nicht nur erste→letzte Zelle).
+                const poly = weirLineMap.get(lineId);
+                if (poly?.points?.length >= 2) {
+                    const cells = discretizeWeirPolyline(poly.points, header, null, { openings: poly.openings || [] });
+                    let orificeCount = 0;
+                    for (const cell of cells) {
+                        if (cell.orifice) {
+                            // Rohr/Durchlass → Orifice (<dir>B). Auf dem gepatchten v8-Solver
+                            // ohne SGC lauffähig (Floodplain-Fallback). Landet in weirEntries,
+                            // umgeht damit das SGC-Bridge-Clipping.
+                            weirEntries.push({ x: cell.x, y: cell.y, direction: cell.direction + 'B', Cd: poly.Cd ?? first.Cd, hc: cell.orifice.soffit, m: poly.Tz ?? 1.5, w: cs });
+                            orificeCount++;
+                        } else {
+                            weirEntries.push({ x: cell.x, y: cell.y, direction: cell.direction, Cd: poly.Cd ?? first.Cd, hc: cell.hc ?? poly.hc ?? first.hc, m: poly.m ?? first.m, w: cs });
+                        }
+                    }
+                    if (orificeCount > 0) this.info(`Wehr-Polylinie ${String(lineId).substring(0, 8)}: ${orificeCount} Öffnung(en) als Orifice (<dir>B) exportiert (setzt gepatchten v8-Solver voraus).`);
+                    continue;
+                }
                 if (group.length === 1) { weirEntries.push(group[0]); continue; }
-                const first = group[0], last = group[group.length - 1];
+                const last = group[group.length - 1];
                 const hcs = group.map(g => g.hc);
                 if (Math.max(...hcs) - Math.min(...hcs) > 0.01) {
                     this.warn(`Wehr-Linie ${String(lineId).substring(0, 8)}: Kronenhöhe variiert um ${(Math.max(...hcs) - Math.min(...hcs)).toFixed(2)} m — erste Höhe wird für alle Zellen verwendet.`);

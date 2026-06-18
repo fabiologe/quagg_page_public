@@ -2,8 +2,9 @@
 // Ausführen: node src/features/flood-2D/test/test_bridge3d_lattice.mjs (aus client/)
 import {
     deriveFrame, createLattice, worldToUV, uvToWorld, sampleSheet,
-    insertLoopCut, deriveDirection, rasterizeFootprint, latticeToCells,
-    footprintArea, footprintTerrainStats, sampleGridZ,
+    insertLoopCut, insertLoopCutV, deriveDirection, rasterizeFootprint, latticeToCells,
+    footprintArea, footprintTerrainStats, sampleGridZ, frameCorners,
+    addPier, removePierAt, uInPier, cellInPier, updatePier, pierIndexAt, movePierCorner, subdividePier,
 } from '../utils/BridgeMeshLattice.js';
 import { InputGenerator } from '../middleware/InputGenerator.js';
 
@@ -35,6 +36,23 @@ console.log('── deriveFrame ──');
     assert(near(w.x, 20) && near(w.y, 4), 'uvToWorld Roundtrip');
     assert(near(Math.abs(footprintArea(rect)), 320), 'Shoelace-Fläche = 320');
     assert(near(footprintArea([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }]), 0), 'kollinearer Ring → Fläche 0');
+}
+
+console.log('── frameCorners (Single Source of Truth) ──');
+{
+    const lat = createLattice(rect, { soffit: 10, deck: 14 });
+    const fc = frameCorners(lat);
+    assert(fc.length === 4, 'frameCorners liefert 4 Ecken');
+    // Frame deckt sich mit dem (rechteckigen) Footprint
+    assert(near(fc[0].x, 0) && near(fc[0].y, 0), 'Ecke u0v0 = (0,0)');
+    assert(near(fc[1].x, 40) && near(fc[1].y, 0), 'Ecke u1v0 = (40,0)');
+    assert(near(fc[2].x, 40) && near(fc[2].y, 8), 'Ecke u1v1 = (40,8)');
+    assert(near(fc[3].x, 0) && near(fc[3].y, 8), 'Ecke u0v1 = (0,8)');
+    // latticeToCells nutzt den Frame, NICHT bridge.footprint (hier absichtlich Unsinn)
+    const h = mkHeader(2, 50, 50);
+    const viaFrame = latticeToCells({ lattice: lat, directionMode: 'AUTO' }, h, null);
+    const ignoredFootprint = latticeToCells({ lattice: lat, footprint: [{ x: 999, y: 999 }], directionMode: 'AUTO' }, h, null);
+    assert(viaFrame.length > 0 && viaFrame.length === ignoredFootprint.length, 'latticeToCells ignoriert bridge.footprint, nutzt Frame');
 }
 
 console.log('── sampleSheet (bilinear, Bogen) ──');
@@ -71,6 +89,22 @@ console.log('── insertLoopCut ──');
     const arch = { ...cut, bottomZ: [[10, 12, 10], [10, 12, 10]] };
     const cut2 = insertLoopCut(arch, 0.25);
     assert(near(cut2.bottomZ[0][1], 11), `Bogen-Cut bei 0.25 → z=11 (got ${cut2.bottomZ[0][1]})`);
+}
+
+console.log('── insertLoopCutV (Quer-Ststation) + nicht-uniformes v ──');
+{
+    const lat = createLattice(rect, { soffit: 10, deck: 14 });
+    assert(Array.isArray(lat.v) && lat.v.length === 2, 'createLattice: v=[0,1]');
+    const cut = insertLoopCutV(lat, 0.5);
+    assert(cut.nCross === 3 && cut.v.length === 3 && near(cut.v[1], 0.5), 'Quer-Cut: nCross 2→3, v bei 0.5');
+    assert(cut.bottomZ.length === 3 && cut.bottomZ[1].length === 2, 'neue Reihe eingefügt (flach)');
+    assert(near(cut.bottomZ[1][0], 10), 'interpolierte Reihe = 10 (flach)');
+    assert(insertLoopCutV(cut, 0.505) === null, 'Quer-Cut zu nah → null');
+    assert(lat.nCross === 2, 'Original unverändert');
+    // nicht-uniformes v: Reihen 10/20/40 bei v=[0,0.25,1]; bei v=0.25 exakt 20
+    const nu = { ...lat, nCross: 3, v: [0, 0.25, 1], bottomZ: [[10, 10], [20, 20], [40, 40]], topZ: [[14, 14], [14, 14], [14, 14]] };
+    assert(near(sampleSheet(nu, nu.bottomZ, 0.5, 0.25), 20), 'sampleSheet ehrt nicht-uniformes v (v=0.25 → 20)');
+    assert(near(sampleSheet(nu, nu.bottomZ, 0.5, 0.625), 30), 'sampleSheet interpoliert zwischen v=0.25 und 1 (→30)');
 }
 
 console.log('── deriveDirection ──');
@@ -179,6 +213,149 @@ console.log('── generateWeirFile v8: mesh3d-Branch ──');
     const outLegacy = gen.generateWeirFile([], [legacy], h1, { engine: 'v8' });
     const legacyLines = outLegacy.trim().split('\n');
     assert(legacyLines[0] === '21', `v8 Legacy-Brücke: weiterhin 21 Zellen (got ${legacyLines[0]})`);
+}
+
+console.log('── Pfeiler-Polygon: addPier/uInPier/removePierAt ──');
+{
+    const lat0 = createLattice(rect, { soffit: 10, deck: 14 });
+    assert(Array.isArray(lat0.piers) && lat0.piers.length === 0, 'createLattice: piers initial leer');
+    // Pfeiler bei u=0.5, halbe Breite 0.05 → Polygon-Rechteck [0.45..0.55] × [0..1]
+    const lat = addPier(lat0, 0.5, 0.05);
+    const p = lat.piers[0];
+    assert(lat.piers.length === 1 && p.poly?.length === 4 && p.zTop === null, 'addPier setzt 4-Eck-Polygon, zTop=null');
+    assert(near(p.poly[0].u, 0.45) && near(p.poly[1].u, 0.55), 'Polygon-Breite [0.45,0.55]');
+    assert(lat0.piers.length === 0, 'Original-Lattice unverändert (immutable)');
+    assert(uInPier(lat, 0.5) && uInPier(lat, 0.46) && !uInPier(lat, 0.2), 'uInPier trifft nur in der u-Spanne');
+    // Sheets unberührt: Soffit/Deck bleiben konstant (Decke fällt NICHT)
+    assert(near(sampleSheet(lat, lat.bottomZ, 0.5, 0.5), 10) && near(sampleSheet(lat, lat.topZ, 0.5, 0.5), 14), 'Pfeiler ändert Soffit/Deck nicht');
+    // Klemmung an den Rändern
+    const edge = addPier(lat0, 0.98, 0.05);
+    assert(edge.piers[0].poly.every(c => c.u <= 1 + 1e-9 && c.u >= 0), 'addPier klemmt Polygon auf [0,1]');
+    // Toggle: entfernen
+    assert(removePierAt(lat, 0.5).piers.length === 0, 'removePierAt löscht den Pfeiler');
+    assert(removePierAt(lat, 0.1).piers.length === 1, 'removePierAt außerhalb lässt Pfeiler stehen');
+}
+
+console.log('── Pfeiler-Polygon: cellInPier / movePierCorner / subdividePier / zTop ──');
+{
+    const lat0 = createLattice(rect, { soffit: 10, deck: 14 });
+    const lat = addPier(lat0, 0.5, 0.05); // [0.45..0.55] × [0..1]
+    assert(cellInPier(lat, 0.5, 0.2) && cellInPier(lat, 0.5, 0.9), 'Voll-Polygon deckt alle v');
+    assert(!cellInPier(lat, 0.2, 0.5), 'außerhalb der u-Spanne → nicht im Pfeiler');
+    assert(pierIndexAt(lat, 0.5, 0.5) === 0 && pierIndexAt(lat, 0.2, 0.5) === -1, 'pierIndexAt per Point-in-Polygon');
+    // Ecke ziehen: Ecke 2 (u1,v1) nach (0.55, 0.4) → oberer Teil wird abgeschrägt
+    const moved = movePierCorner(lat, 0, 2, 0.55, 0.4);
+    assert(near(moved.piers[0].poly[2].u, 0.55) && near(moved.piers[0].poly[2].v, 0.4), 'movePierCorner verschiebt nur die Ecke');
+    assert(!cellInPier(moved, 0.5, 0.9), 'abgeschrägte Ecke: oben jetzt frei');
+    // Klemmung beim Ziehen über [0,1]
+    const clamped = movePierCorner(lat, 0, 2, 1.5, -0.3);
+    assert(clamped.piers[0].poly[2].u === 1 && clamped.piers[0].poly[2].v === 0, 'movePierCorner klemmt auf [0,1]');
+    // Verfeinern: 4 → 8 Ecken (Mittelpunkte je Kante)
+    const sub = subdividePier(lat, 0);
+    assert(sub.piers[0].poly.length === 8, 'subdividePier: 4 → 8 Ecken');
+    // zTop ändert die Export-Klassifikation NICHT (hydraulisch = u,v-Überdeckung)
+    const latH = updatePier(lat, 0, { zTop: 11.5 });
+    assert(cellInPier(latH, 0.5, 0.5) && latH.piers[0].zTop === 11.5, 'zTop gesetzt, Sperrung bleibt (u,v)');
+}
+
+console.log('── Pfeiler: pier-Flag in latticeToCells + Orifice-Ausschluss ──');
+{
+    const gen = new InputGenerator();
+    const fp = [{ x: 2, y: 2 }, { x: 38, y: 2 }, { x: 38, y: 6 }, { x: 2, y: 6 }];
+    const lat0 = createLattice(fp, { soffit: 10, deck: 14 });
+    // Pfeiler in der Mitte der Spannweite (u≈0.5 → x≈20), Band ±0.04
+    const lat = addPier(lat0, 0.5, 0.04);
+    const h = mkHeader(1, 60, 60);
+    const bridge = { id: 'pier-2', kind: 'mesh3d', footprint: fp, lattice: lat, directionMode: 'AUTO', Cd: 0.8, Tz: 1.5 };
+
+    // pier-Flag rein geometrisch (kein Terrain nötig)
+    const cells = latticeToCells(bridge, h, null);
+    const piers = cells.filter(c => c.pier);
+    assert(piers.length > 0, `Pfeilerzellen über das Band erkannt (${piers.length})`);
+    assert(piers.every(c => Math.abs(c.x - 20) < 3), 'Pfeilerzellen liegen am Bandzentrum (x≈20)');
+    assert(cells.filter(c => c.x <= 4 || c.x >= 36).every(c => !c.pier), 'Randzellen sind offen');
+    // Ohne piers → nie pier
+    const noPier = { ...bridge, lattice: lat0 };
+    assert(latticeToCells(noPier, h, null).every(c => c.pier === false), 'ohne piers → pier=false');
+
+    // collectBridgePierCells (geometrisch, kein Terrain)
+    const pierKeys = gen.collectBridgePierCells([bridge], h);
+    assert(pierKeys.size === piers.length, `collectBridgePierCells = ${pierKeys.size} Pfeilerzellen`);
+    assert(gen.collectBridgePierCells([noPier], h).size === 0, 'ohne piers → leer');
+    assert(gen.collectBridgePierCells([{ id: 'l', axis: [{ x: 0, y: 0 }], cells: [] }], h).size === 0, 'Nicht-mesh3d ignoriert');
+
+    // Orifice-Export: Pfeilerzellen liefern keine <dir>B-Zeile
+    const out = gen.generateWeirFile([], [bridge], h, { engine: 'v8' });
+    const lines = out.trim().split('\n').slice(1);
+    const emittedXY = new Set(lines.map(l => { const p = l.trim().split(/\s+/); return `${Math.round(+p[0])},${Math.round(+p[1])}`; }));
+    assert([...pierKeys].every(k => !emittedXY.has(k)), 'keine Orifice-Zeile auf einer Pfeilerzelle');
+    // Ohne SGC kollabiert die Brücke geometrisch auf 1 Zelle/Spannposition (Floodplain).
+    const colsP = lines.map(l => Math.round(+l.trim().split(/\s+/)[0]));
+    assert(new Set(colsP).size === colsP.length, 'ohne SGC: geometrisch kollabiert (1 Zeile je Spalte)');
+    const pierColsP = new Set([...pierKeys].map(k => +k.split(',')[0]));
+    assert([...pierColsP].every(c => !new Set(colsP).has(c)), 'Pfeilerspalten ohne Orifice');
+}
+
+console.log('── Collapse: mesh3d über SGC auf 1 Zellreihe je Spannposition ──');
+{
+    const gen = new InputGenerator();
+    // O-W-Brücke (direction 'S'), 7 Reihen tief in Fließrichtung (rows 10..16)
+    const fp = [{ x: 1.5, y: 9.5 }, { x: 38.5, y: 9.5 }, { x: 38.5, y: 16.5 }, { x: 1.5, y: 16.5 }];
+    const lat0 = createLattice(fp, { soffit: 12, deck: 14 });
+    // Querneigung: v=0 → 12.0, v=1 → 12.6 (min-Soffit-Auswahl prüfbar)
+    const lat = { ...lat0, bottomZ: [[12.0, 12.0], [12.6, 12.6]] };
+    const h = mkHeader(1, 60, 60);
+    const bridge = { id: 'collapse-1', kind: 'mesh3d', footprint: fp, lattice: lat, directionMode: 'AUTO', Cd: 0.8, Tz: 1.5 };
+
+    // N-S-Gerinneband: SGC>0 nur in den Spalten 5..35 (über allen Reihen)
+    const sgc = new Float32Array(60 * 60);
+    for (let r = 0; r < 60; r++) for (let c = 5; c <= 35; c++) sgc[r * 60 + c] = 50;
+
+    const allCells = latticeToCells(bridge, h, null);
+    assert(allCells.length > 31, `ungeklappte Brücke ist mehrreihig (${allCells.length} Zellen)`);
+
+    // Ohne SGC: geometrischer Collapse auf 1 Zelle/Spannposition (Floodplain-Brücke).
+    const outNoSgc = gen.generateWeirFile([], [bridge], h, { engine: 'v8' });
+    const noSgcCols = outNoSgc.trim().split('\n').slice(1).map(l => Math.round(+l.trim().split(/\s+/)[0]));
+    assert(noSgcCols.length < allCells.length && new Set(noSgcCols).size === noSgcCols.length, 'ohne SGC: kollabiert auf 1 Zeile je Spalte');
+
+    // Mit SGC: genau eine Orifice-Zelle je Gerinnespalte (5..35 = 31 Spalten)
+    const out = gen.generateWeirFile([], [bridge], h, { engine: 'v8', sgcWidthGrid: sgc });
+    const lines = out.trim().split('\n').slice(1);
+    const cols = lines.map(l => Math.round(+l.trim().split(/\s+/)[0]));
+    const uniqCols = new Set(cols);
+    assert(lines.length === 31, `mit SGC: 31 Orifice-Zeilen (eine je Gerinnespalte), got ${lines.length}`);
+    assert(uniqCols.size === lines.length, 'genau eine Zeile je Spalte (keine Stapel in Fließrichtung)');
+    assert([...uniqCols].every(c => c >= 5 && c <= 35), 'nur Spalten über dem Gerinne (Ufer-Spalten verworfen)');
+    assert(lines.every(l => / SB /.test(l)), 'alle kollabierten Zeilen mit SB-Tag');
+    // restriktivste (niedrigste) Soffitte gewählt: untere Querreihe (~12.0),
+    // nicht die obere (~12.6). Footprint-Ränder liegen bei v≈0.07, daher ~12.04.
+    const hcs = lines.map(l => +l.trim().split(/\s+/)[4]);
+    assert(hcs.every(hc => hc < 12.3), 'min-Soffitte je Spannposition gewählt (untere Querreihe ~12.0, nicht obere ~12.6)');
+}
+
+console.log('── Collapse + Pfeiler: Pfeilerband liefert kein Orifice ──');
+{
+    const gen = new InputGenerator();
+    const fp = [{ x: 1.5, y: 9.5 }, { x: 38.5, y: 9.5 }, { x: 38.5, y: 16.5 }, { x: 1.5, y: 16.5 }];
+    const lat0 = createLattice(fp, { soffit: 12, deck: 14 });
+    // Spannweite O-W ≈ 37 m; Pfeiler-Band so legen, dass es die Spalten ~10..12 trifft.
+    // x≈11 → u≈(11−1.5)/37 ≈ 0.257; Band ±1.5 m / 37 ≈ ±0.04
+    const lat = addPier({ ...lat0, bottomZ: [[12, 12], [12, 12]] }, 0.257, 0.04);
+    const h = mkHeader(1, 60, 60);
+    const bridge = { id: 'collapse-2', kind: 'mesh3d', footprint: fp, lattice: lat, directionMode: 'AUTO', Cd: 0.8, Tz: 1.5 };
+    const sgc = new Float32Array(60 * 60);
+    for (let r = 0; r < 60; r++) for (let c = 5; c <= 35; c++) sgc[r * 60 + c] = 50;
+
+    // Pfeilerspalten geometrisch bestimmen
+    const pierCols = new Set(latticeToCells(bridge, h, null).filter(c => c.pier).map(c => c.col));
+    assert(pierCols.size >= 1, `Pfeiler überdeckt ${pierCols.size} Spalte(n)`);
+
+    const out = gen.generateWeirFile([], [bridge], h, { engine: 'v8', sgcWidthGrid: sgc });
+    const cols = new Set(out.trim().split('\n').slice(1).map(l => Math.round(+l.trim().split(/\s+/)[0])));
+    assert([...pierCols].every(c => !cols.has(c)), 'Pfeilerspalten liefern kein Orifice');
+    assert(cols.has(5) && cols.has(35), 'offene Gerinnespalten weiterhin als Orifice vorhanden');
+    assert(cols.size === 31 - pierCols.size, `31 Gerinnespalten − ${pierCols.size} Pfeilerspalten = ${31 - pierCols.size} (got ${cols.size})`);
 }
 
 console.log(failures === 0 ? '\n✅ Alle Bridge3D-Lattice-Tests bestanden.' : `\n❌ ${failures} Test(s) fehlgeschlagen.`);

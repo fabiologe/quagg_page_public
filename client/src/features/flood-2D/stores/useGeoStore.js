@@ -280,6 +280,56 @@ export const useGeoStore = defineStore('geo', () => {
         console.log(`[GeoStore] Wehr-Batch: ${weirSegments.length} Segmente hinzugefügt.`);
     }
 
+    // ── Wehr-Polylinien (editierbare Linie + abgeleitete Zellen) ───────────────
+    /**
+     * Editierbare Wehr-Polylinie. `points` ist die Quelle der Wahrheit; die
+     * zugehörigen Zellen (lineId === line.id) liegen in `weirs` für den Export.
+     * @type {import('vue').Ref<Array<{ id:string, points:Array<{x,y}>, hc:number, Cd:number, m:number, w:number, label?:string }>>}
+     */
+    const weirLines = ref([]);
+
+    /** Wehr-Zellen einer lineId in `weirs` durch `cells` ersetzen (ohne Snapshot).
+     *  `cells` tragen optional per-Zelle `hc` (z-Profil) und `orifice:{soffit}` (Öffnung). */
+    function _syncWeirCells(lineId, cells, attrs) {
+        weirs.value = weirs.value.filter(w => w.lineId !== lineId);
+        for (const c of cells) {
+            weirs.value.push({
+                id: `weir_${lineId}_${c.col}_${c.row}_${c.direction}`,
+                lineId,
+                x: c.x, y: c.y,
+                direction: c.direction || 'S',
+                Cd: attrs.Cd ?? 1.704,
+                hc: c.hc ?? attrs.hc ?? 0.0,
+                m: attrs.m ?? 0.667, w: attrs.w ?? 1.0,
+                orifice: c.orifice ?? null,
+                label: attrs.label || 'Wehr-Polylinie',
+            });
+        }
+    }
+
+    /** Neue Wehr-Polylinie + abgeleitete Zellen hinzufügen. */
+    function addWeirLine(line, cells) {
+        saveSnapshot('Wehr-Polylinie hinzugefügt');
+        weirLines.value.push(line);
+        _syncWeirCells(line.id, cells, line);
+    }
+
+    /** Wehr-Polylinie patchen ({points?, hc?, …}) + Zellen neu setzen. */
+    function updateWeirLine(id, patch, cells, label = 'Wehr-Polylinie bearbeitet') {
+        const l = weirLines.value.find(l => l.id === id);
+        if (!l) return;
+        saveSnapshot(label);
+        Object.assign(l, patch);
+        _syncWeirCells(id, cells, l);
+    }
+
+    /** Wehr-Polylinie + ihre Zellen entfernen. */
+    function removeWeirLine(id) {
+        saveSnapshot('Wehr-Polylinie entfernt');
+        weirLines.value = weirLines.value.filter(l => l.id !== id);
+        weirs.value = weirs.value.filter(w => w.lineId !== id);
+    }
+
     function addBoundary(feature) {
         saveSnapshot('Grenze hinzugefügt');
         boundaries.value.features.push(feature);
@@ -529,6 +579,11 @@ export const useGeoStore = defineStore('geo', () => {
         addWeir,
         addWeirBatch,
         removeWeir,
+        // Wehr-Polylinien (editierbar)
+        weirLines,
+        addWeirLine,
+        updateWeirLine,
+        removeWeirLine,
         // Brücken (Wehr-Erweiterung mit Soffitte/Deck)
         bridges,
         addBridgeBatch,

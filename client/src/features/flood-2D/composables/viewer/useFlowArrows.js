@@ -39,8 +39,12 @@ function buildArrowGeometry() {
   return new THREE.ShapeGeometry(shape);
 }
 
-/** @param {() => THREE.Scene} getScene */
-export function useFlowArrows(getScene) {
+/**
+ * @param {() => THREE.Scene} getScene
+ * @param {() => (Uint8Array|null)} [getMask]  Hindernis-Maske (top-down, <128 = Gebäude/Pfeiler);
+ *        solche Zellen bekommen keinen Pfeil (Pfeiler sind nur im SGC blockiert, nicht im 2D-Feld).
+ */
+export function useFlowArrows(getScene, getMask) {
   let group = null;
   let mesh = null;
 
@@ -78,6 +82,7 @@ export function useFlowArrows(getScene) {
     const cs = cellsize || 1;
     const width  = terrain.bounds?.width  ?? (ncols - 1) * cs;
     const height = terrain.bounds?.height ?? (nrows - 1) * cs;
+    const mask = (typeof getMask === 'function') ? getMask() : null; // top-down, <128 = Hindernis
 
     // Dichte → Zielanzahl → Sampling-Schrittweite
     const dens = Math.min(1, Math.max(0, density));
@@ -92,6 +97,7 @@ export function useFlowArrows(getScene) {
         const idxR = gr * ncols + c;
         const d = depthField ? depthField[idxR] : 1;
         if (!(d > WET_MIN)) continue;
+        if (mask && mask[idxR] < 128) continue; // Gebäude/Pfeiler → kein Pfeil
         const vx = field.vx[idxR], vy = field.vy[idxR];
         if (!(vx > -9000) || !(vy > -9000)) continue;
         const sp = Math.hypot(vx, vy);
@@ -108,6 +114,7 @@ export function useFlowArrows(getScene) {
         const idxR = gr * ncols + c;
         const d = depthField ? depthField[idxR] : 1;
         if (!(d > WET_MIN)) continue;
+        if (mask && mask[idxR] < 128) continue; // Gebäude/Pfeiler → kein Pfeil
         const vx = field.vx[idxR], vy = field.vy[idxR];
         if (!(vx > -9000) || !(vy > -9000)) continue;
         const sp = Math.hypot(vx, vy);

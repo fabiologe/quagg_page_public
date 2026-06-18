@@ -64,12 +64,21 @@ const waterVertexShader = `
   #include <common>
   #include <logdepthbuf_pars_vertex>
   attribute float aDepth;
+  attribute float aTurb;          // Turbulenz 0..1 (Steilheit Wasserspiegel / Geschwindigkeit)
   varying float vDepth;
+  varying float vTurb;
   varying vec2 vUv;
+  uniform float uTime;
   void main() {
     vUv = uv;
     vDepth = aDepth;               // Z-Displacement passiert auf der CPU (position.z ist bereits gesetzt)
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vTurb = aTurb;
+    vec3 p = position;
+    // Sanfte, animierte Wellen NUR in turbulenten/fließenden Zonen (cm-Bereich) — der
+    // gestaute Spiegel bleibt im Mittel erhalten, die harte Treppe wird aber bewegt/aufgebrochen.
+    float amp = 0.05 * vTurb;
+    p.z += amp * (sin(uv.x * 130.0 + uTime * 3.1) + sin(uv.y * 97.0 - uTime * 2.3)) * 0.5;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
     #include <logdepthbuf_vertex>
   }
 `;
@@ -78,6 +87,7 @@ const waterFragmentShader = `
   #include <common>
   #include <logdepthbuf_pars_fragment>
   varying float vDepth;
+  varying float vTurb;
   varying vec2 vUv;
   uniform vec3 uColorShallow;
   uniform vec3 uColorMid;
@@ -87,7 +97,19 @@ const waterFragmentShader = `
   uniform float uVelocityMax;   // oberes Ende der Geschwindigkeits-Farbskala
   uniform float uLayerMode;     // 0=depth, 1=velocity, 2=max/hazard
   uniform float uOpacity;       // globale Wasser-Deckkraft 0..1
+  uniform float uTime;          // Animationszeit (s) für Gischt
+  uniform float uFoam;          // Schaum-Intensität 0..1 (Regler)
   uniform sampler2D uVelocityMap;
+
+  // Wert-Rauschen für animierte Gischt (kein Texture-Bedarf)
+  float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float a = hash21(i), b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
 
   void main() {
       if (vDepth < 0.005) discard; // trockene Zellen aussparen
@@ -121,28 +143,23 @@ const waterFragmentShader = `
           else          col = mix(mMid,  mHigh, (t - 0.5) * 2.0);
       }
 
-      // Deckkraft: globaler Slider, weiche Kante bei sehr dünnem Wasserfilm.
+      // ── Gischt/Schaum in turbulenten Zonen (Wehr-Anprall, Überfall, Wechselsprung) ──
+      // vTurb markiert, WO das Wasser anklatscht/überfällt; zwei gegenläufige, mit uTime
+      // scrollende Rauschlagen geben flackernde weiße Gischt → bricht die zackige Kante auf.
+      float foam = 0.0;
+      float turb = clamp(vTurb, 0.0, 1.0);
+      if (turb > 0.02 && uFoam > 0.001) {
+          float n = vnoise(vUv * 230.0 + vec2(uTime * 0.7, uTime * 0.45))
+                  * vnoise(vUv * 150.0 - vec2(uTime * 0.33, uTime * 0.6));
+          foam = smoothstep(0.20, 0.65, turb) * smoothstep(0.32, 0.85, n) * clamp(uFoam, 0.0, 1.0);
+          col = mix(col, vec3(1.0), foam); // weiße Gischt
+      }
+
+      // Deckkraft: globaler Slider, weiche Kante bei dünnem Film; Schaum deckt stärker
+      // (aufgewühlte Oberfläche), daher alpha Richtung 1 ziehen.
       float aEdge = clamp(vDepth / 0.12, 0.0, 1.0);
-      float alpha = mix(0.10, 1.0, clamp(uOpacity, 0.0, 1.0)) * aEdge;
+      float alpha = mix(0.10, 1.0, clamp(uOpacity, 0.0, 1.0)) * mix(aEdge, 1.0, foam);
       gl_FragColor = vec4(col, alpha);
-  }
-`;
-
-// Signalfarbe der Überström-Lamelle (Exception-Highlight). Leicht änderbar.
-const OVERTOP_COLOR = 0xff5e3a;
-
-// Fragment-Shader der Überström-Lamelle: fixe Signalfarbe (statt Tiefen-/Velocity-Skala).
-const overtopFragmentShader = `
-  #include <common>
-  #include <logdepthbuf_pars_fragment>
-  varying float vDepth;
-  uniform vec3 uOvertopColor;
-  uniform float uOpacity;
-  void main() {
-    if (vDepth < 0.005) discard;
-    #include <logdepthbuf_fragment>
-    float a = mix(0.45, 1.0, clamp(uOpacity, 0.0, 1.0));
-    gl_FragColor = vec4(uOvertopColor, a);
   }
 `;
 
@@ -165,6 +182,10 @@ function buildWeirCut(geometry, weirs, terrain) {
   const key = (a, b) => (a < b ? a * (ncols * nrows) + b : b * (ncols * nrows) + a);
 
   for (const w of weirs) {
+    // Öffnungen/Durchlässe (Orifice, Export-Tag '<dir>B') sind DURCHFLUSS — wie Brücken
+    // bleiben sie ungeschnitten, damit das Wasser sichtbar hindurchläuft statt an der
+    // Wand abzureißen. Nur echte (sperrende) Wehrflächen werden getrennt.
+    if (w.orifice || /B$/.test(w.direction || '')) continue;
     const col = Math.floor((w.x - xllcorner) / cellsize);
     const gridRow = Math.floor((w.y - yllcorner) / cellsize); // bottom-up
     const geomRow = (nrows - 1) - gridRow;                     // top-down (Vertex-Zeile)
@@ -215,7 +236,10 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
   let sourceGeo = null;       // Terrain-Geometrie, aus der geklont wurde (Rebuild-Erkennung)
   let baseZ = null;           // Float32Array: Terrainhöhe je Vertex (z-Basis fürs Displacement)
   let depthAttr = null;       // BufferAttribute aDepth (pro Frame aktualisiert)
+  let turbAttr = null;        // BufferAttribute aTurb (Turbulenz 0..1 für Gischt/Wellen)
+  let turbScratch = null;     // wiederverwendeter Scratch fürs Aufweiten/Glätten der Turbulenz
   let velFallbackTex = null;  // 1x1 Dummy, falls kein Velocity-Frame anliegt
+  const clock = new THREE.Clock(); // treibt uTime (Gischt-Animation) im Render-Loop
   // Überström-Lamelle (separates Mesh in Signalfarbe, überbrückt pro Frame überströmte Wehr-Kanten)
   let overtopMesh = null;
   let weirTris = null;        // entfernte Wehr-Dreiecke (Brücken-Kandidaten)
@@ -268,7 +292,7 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     if (overtopMesh) {
       scene.remove(overtopMesh);
       overtopMesh.geometry.dispose();
-      overtopMesh.material.dispose();
+      // Material wird mit dem Wasser-Mesh geteilt → NICHT separat disposen (sonst doppelt).
       overtopMesh = null;
     }
 
@@ -290,6 +314,11 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     geometry.setAttribute('aDepth', new THREE.BufferAttribute(aDepth, 1));
     depthAttr = geometry.attributes.aDepth;
 
+    // Turbulenz-Attribut (anfangs ruhig) — pro Frame aus dem Wasserspiegel-Gradienten gefüllt
+    const aTurb = new Float32Array(N);
+    geometry.setAttribute('aTurb', new THREE.BufferAttribute(aTurb, 1));
+    turbAttr = geometry.attributes.aTurb;
+
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uVelocityMap:  { value: buildVelocityTexture() },
@@ -298,6 +327,8 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
         uMaxDepth:     { value: props.maxWaterDepth || 1.0 },
         uLayerMode:    { value: props.layerMode ?? 0 },
         uOpacity:      { value: props.waterOpacity ?? 0.85 },
+        uTime:         { value: 0.0 },
+        uFoam:         { value: props.foamIntensity ?? 1.0 },
         uColorShallow: { value: new THREE.Color(0x00e5ff) },
         uColorMid:     { value: new THREE.Color(0x0078d7) },
         uColorDeep:    { value: new THREE.Color(0x00008b) },
@@ -313,28 +344,26 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     waterMesh = new THREE.Mesh(geometry, material);
     waterMesh.rotation.x = -Math.PI / 2;       // gleiche Transform wie das Terrain
     waterMesh.renderOrder = RENDER_ORDER.WATER; // wird nach allen festen Bauwerken gezeichnet
+    // uTime je gerendertem Bild fortschreiben → animierte Gischt/Wellen laufen auch bei
+    // pausiertem Frame-Slider weiter (Animation ≠ Simulationszeit).
+    waterMesh.onBeforeRender = () => { material.uniforms.uTime.value = clock.getElapsedTime(); };
     scene.add(waterMesh);
     sourceGeo = terrainMesh.geometry;
 
-    // Überström-Lamelle: separates Mesh in Signalfarbe, überbrückt pro Frame die überströmten Wehr-Kanten.
+    // Überström-Brücke: separates Mesh, das pro Frame die an Wehren entfernten Dreiecke
+    // wieder einsetzt, SOBALD dort Wasser durchläuft (Überfall/eingestaut). Es nutzt
+    // DASSELBE Wasser-Material (Tiefe/Geschwindigkeits-Färbung, Deckkraft) → die
+    // Überström-Fläche fügt sich nahtlos in den umgebenden Wasserkörper ein und folgt
+    // der Strömungsfarbe, statt als harte Signal-Bande abzureißen. Braucht daher auch
+    // das uv-Attribut (Velocity-Textur).
     if (weirTris && weirTris.length > 0) {
       const cap = weirTris.length * 3; // max. Vertices (alle Brücken-Dreiecke gleichzeitig)
       const og = new THREE.BufferGeometry();
       og.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cap * 3), 3));
       og.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(cap), 1));
-      const omat = new THREE.ShaderMaterial({
-        uniforms: {
-          uOvertopColor: { value: new THREE.Color(OVERTOP_COLOR) },
-          uOpacity:      { value: props.waterOpacity ?? 0.85 },
-        },
-        vertexShader: waterVertexShader,
-        fragmentShader: overtopFragmentShader,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthTest: true,
-        depthWrite: false,
-      });
-      overtopMesh = new THREE.Mesh(og, omat);
+      og.setAttribute('aTurb', new THREE.BufferAttribute(new Float32Array(cap), 1));
+      og.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(cap * 2), 2));
+      overtopMesh = new THREE.Mesh(og, material); // geteiltes Wasser-Material → nahtlose Färbung
       overtopMesh.rotation.x = -Math.PI / 2;
       overtopMesh.renderOrder = RENDER_ORDER.WATER + 1; // knapp über dem Wasser
       overtopMesh.frustumCulled = false;
@@ -344,39 +373,57 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     return true;
   }
 
-  /** Füllt die Überström-Lamelle: Brücken-Dreiecke, deren ALLE Wehr-Kanten gerade überströmt sind. */
+  /** Füllt die Wehr-Brücke: setzt die geschnittenen Dreiecke wieder ein, sobald dort Wasser
+   *  durchläuft — Überfall (eine Seite über Krone) ODER eingestaut (beide Seiten nass). So
+   *  schließt sich die Lücke direkt am Wehr; nur ein echter Trocken-Stau bleibt getrennt. */
   function fillOvertop(depth) {
     if (!overtopMesh || !weirTris || weirTris.length === 0 || !faceMeta) return;
     const EPS = 0.02;
-    // Überströmte Kanten ermitteln: sobald MINDESTENS eine Seite (das Oberwasser) die Krone übersteigt
-    // → Überfall. (Trockene Seiten liegen unter der Krone → kein Fehlauslösen; ihr Vertex hat aDepth≈0
-    // und wird im Fragment ausgespart, sodass die Lamelle Richtung Unterwasser ausläuft.)
+    // Aktive Wehr-Kanten ermitteln:
+    //  • Überfall:   Oberwasser ≥ Krone  → Wasser stürzt über die Wand
+    //  • Eingestaut: BEIDE Seiten nass   → Wasser ist durchgehend, Wand ist überflutet
+    // Nur „trocken im Unterwasser + unter Krone" bleibt getrennt (Wand hält das Wasser).
     const over = new Set();
     for (const [k, m] of faceMeta) {
-      const sa = baseZ[m.va] + (depth[m.va] > 0 ? depth[m.va] : 0);
-      const sb = baseZ[m.vb] + (depth[m.vb] > 0 ? depth[m.vb] : 0);
-      if (Math.max(sa, sb) >= m.crestLocal - EPS) over.add(k);
+      const da = depth[m.va], db = depth[m.vb];
+      const sa = baseZ[m.va] + (da > 0 ? da : 0);
+      const sb = baseZ[m.vb] + (db > 0 ? db : 0);
+      const overfall = Math.max(sa, sb) >= m.crestLocal - EPS;
+      const submerged = da > WET && db > WET;
+      if (overfall || submerged) over.add(k);
     }
 
     const srcPos = waterMesh.geometry.attributes.position.array;
     const srcDep = depthAttr.array;
+    const srcUv  = waterMesh.geometry.attributes.uv?.array;
+    const srcTurb = turbAttr?.array;
     const opos = overtopMesh.geometry.attributes.position.array;
     const odep = overtopMesh.geometry.attributes.aDepth.array;
+    const ouv  = overtopMesh.geometry.attributes.uv.array;
+    const oturb = overtopMesh.geometry.attributes.aTurb.array;
     let v = 0;
     for (const tri of weirTris) {
-      let all = true;
-      for (const k of tri.keys) { if (!over.has(k)) { all = false; break; } }
-      if (!all) continue;
+      // Sobald MINDESTENS eine Kante des Dreiecks überströmt ist, wird es eingesetzt;
+      // trockene Ecken haben aDepth≈0 und werden im Fragment ausgespart → die Fläche
+      // läuft weich Richtung Unterwasser aus, statt hart zu poppen.
+      let any = false;
+      for (const k of tri.keys) { if (over.has(k)) { any = true; break; } }
+      if (!any) continue;
       for (const vi of [tri.a, tri.b, tri.c]) {
         opos[v * 3]     = srcPos[vi * 3];
         opos[v * 3 + 1] = srcPos[vi * 3 + 1];
         opos[v * 3 + 2] = srcPos[vi * 3 + 2];
         odep[v]         = srcDep[vi];
+        // Überfall ist per se aufgewühlt → Turbulenz mind. 0.6, damit dort Gischt schäumt.
+        oturb[v]        = Math.max(0.6, srcTurb ? srcTurb[vi] : 0.6);
+        if (srcUv) { ouv[v * 2] = srcUv[vi * 2]; ouv[v * 2 + 1] = srcUv[vi * 2 + 1]; }
         v++;
       }
     }
     overtopMesh.geometry.attributes.position.needsUpdate = true;
     overtopMesh.geometry.attributes.aDepth.needsUpdate = true;
+    overtopMesh.geometry.attributes.aTurb.needsUpdate = true;
+    overtopMesh.geometry.attributes.uv.needsUpdate = true;
     overtopMesh.geometry.setDrawRange(0, v);
     overtopMesh.visible = v > 0;
   }
@@ -443,6 +490,65 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     pos.needsUpdate = true;
     depthAttr.needsUpdate = true;
 
+    // ── Turbulenz je Vertex (treibt Gischt + Wellen im Shader) ──────────────────
+    // Maß: Steilheit des Wasserspiegels gegen NASSE Nachbarn (Stau an der Wand,
+    // Wechselsprung) — genau dort, wo das Wasser „anklatscht". Ruhige Teiche/Ufer haben
+    // ~gleiches Niveau → kein Gradient → kein Schaum. Schnelles Wasser (falls Velocity-
+    // Frame anliegt) schäumt zusätzlich. Trockene Zellen bleiben 0.
+    const tArr = turbAttr.array;
+    const vel = (props.velocityData instanceof Float32Array && props.velocityData.length === N)
+      ? props.velocityData : null;
+    const TURB_DZ = 0.25; // m Spiegel-Sprung zum Nachbarn → volle Gradient-Turbulenz
+    const TURB_V = 1.5;   // m/s → volle Velocity-Turbulenz
+    if (!turbScratch || turbScratch.length !== N) turbScratch = new Float32Array(N);
+    const rawTurb = turbScratch;
+    for (let i = 0; i < N; i++) {
+      const d = depth[i];
+      if (!(d > WET)) { rawTurb[i] = 0; continue; }
+      let turb = 0;
+      if (haveDims) {
+        const wsp = baseZ[i] + d;
+        const col = i % ncols, row = (i - col) / ncols;
+        let g = 0;
+        if (col > 0         && depth[i - 1]     > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i - 1]     + depth[i - 1])));
+        if (col < ncols - 1 && depth[i + 1]     > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i + 1]     + depth[i + 1])));
+        if (row > 0         && depth[i - ncols] > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i - ncols] + depth[i - ncols])));
+        if (row < nrows - 1 && depth[i + ncols] > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i + ncols] + depth[i + ncols])));
+        turb = Math.min(1, g / TURB_DZ);
+      }
+      if (vel) {
+        const vt = Math.min(1, vel[i] / TURB_V);
+        turb = Math.max(turb, vt * vt); // schnelles Wasser schäumt
+      }
+      rawTurb[i] = turb;
+    }
+    // Turbulenz räumlich aufweiten + glätten (nass-gated, 8-connected): Dilatation hält die
+    // Spitze direkt an der Wehrkante, die Mittelung verbreitert das Schaumband auf ~3 Zellen
+    // und nimmt der harten 1-Zellen-Linie das Zackige.
+    if (haveDims) {
+      for (let r = 0; r < nrows; r++) {
+        for (let c = 0; c < ncols; c++) {
+          const i = r * ncols + c;
+          if (!(depth[i] > WET)) { tArr[i] = 0; continue; }
+          let s = rawTurb[i], mx = rawTurb[i], cnt = 1;
+          for (let dr = -1; dr <= 1; dr++) {
+            const rr = r + dr; if (rr < 0 || rr >= nrows) continue;
+            for (let dc = -1; dc <= 1; dc++) {
+              if (dr === 0 && dc === 0) continue;
+              const cc = c + dc; if (cc < 0 || cc >= ncols) continue;
+              const j = rr * ncols + cc;
+              if (!(depth[j] > WET)) continue;
+              s += rawTurb[j]; if (rawTurb[j] > mx) mx = rawTurb[j]; cnt++;
+            }
+          }
+          tArr[i] = 0.5 * mx + 0.5 * (s / cnt); // Dilatation (Spitze) + Glättung (weiche Kante)
+        }
+      }
+    } else {
+      tArr.set(rawTurb);
+    }
+    turbAttr.needsUpdate = true;
+
     // Färbungs-/Skalen-Uniforms mitführen
     const u = waterMesh.material.uniforms;
     if (u.uVelocityMap.value && u.uVelocityMap.value !== velFallbackTex) u.uVelocityMap.value.dispose();
@@ -472,6 +578,7 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     sourceGeo = null;
     baseZ = null;
     depthAttr = null;
+    turbAttr = null;
   }
 
   /** Erzwingt beim nächsten update() einen Neuaufbau (Re-Clone + Wehr-Schnitt) — z. B. wenn Wehre

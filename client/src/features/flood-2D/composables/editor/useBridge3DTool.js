@@ -18,15 +18,19 @@ import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useToolStateMachine } from './useToolStateMachine.js';
 import {
-    createLattice, insertLoopCut, latticeToCells, worldToUV, uvToWorld,
-    footprintArea, footprintTerrainStats, sampleGridZ,
+    createLattice, insertLoopCut, insertLoopCutV, latticeToCells, worldToUV, uvToWorld,
+    footprintArea, footprintTerrainStats, sampleGridZ, sampleSheet, frameCorners,
+    addPier, removePierAt, uInPier, updatePier, pierIndexAt, movePierCorner, subdividePier,
 } from '../../utils/BridgeMeshLattice.js';
 import {
     buildBridge3DGeometry, buildLatticeWireframe,
-    latticeNodeWorldPositions, buildCutPreview,
+    latticeNodeWorldPositions, buildCutPreview, buildCutPreviewV, buildPierGeometry, buildPierWireframe,
+    pierHandlePositions, pierCenterInfo, buildPierCenterPlane,
 } from '../../utils/Bridge3DGeometry.js';
+import { useControlPointEditor } from './useControlPointEditor.js';
 
 const MIN_THICKNESS = 0.1; // Deck muss über Soffitte bleiben [m]
+const PIER_HALF_U_MIN = 0.01; // min. halbe Pfeilerbreite in u
 
 // ── Singleton-State (gelesen von BridgeTool.vue, MapEditor3D, useLayerRenderer) ─
 export const bridge3DState = reactive({
@@ -37,7 +41,11 @@ export const bridge3DState = reactive({
     selection: [],         // Handle-Keys 'b:i:j' / 't:i:j'
     hoverKey: null,
     dragging: false,       // MapEditor3D: controls.enabled = false während Drag
-    hoverCutU: null,       // LOOPCUT: aktuelle Schnittposition [0..1]
+    hoverCutU: null,       // LOOPCUT(u)/PIER: aktuelle Schnittposition [0..1]
+    hoverCutV: null,       // LOOPCUT(v): Quer-Schnittposition [0..1]
+    cutAxis: 'u',          // LOOPCUT: 'u' (längs) | 'v' (quer)
+    pierWidth: 1.5,        // PIER: Pfeilerbreite [m] entlang der Spannachse
+    selectedPier: null,    // EDIT: Index des angeklickten Pfeilers (für B/L/H-Panel)
     formDefaults: { z_sohle: 0, soffit: 2, deck: 3 },
     // Lot-Info der Auswahl fürs Panel: { count, dz (Höhe über Raster), z, terrZ }
     selectionInfo: null,
@@ -47,8 +55,15 @@ export const bridge3DState = reactive({
 let scene_ref = null;
 let draftLine = null, draftDots = null, previewLine = null, closingLine = null;
 let editGroup = null;      // Body-Preview + Wireframe + Handles + Cut-Preview
-let bodyPreview = null, cageLines = null, handleGroup = null, cutLine = null;
+let bodyPreview = null, cageLines = null, handleGroup = null, cutLine = null, pierMesh = null, pierLineSeg = null;
+
+// Generischer Greifpunkt-Editor für die Pfeiler-Box (Singleton — ein Editor zur Zeit)
+const cpe = useControlPointEditor();
+const PIER_HANDLE_COLOR = 0xf39c12;
+let pierDrag = null; // { snap:{...pier}, soffitC:number } während eines Ecken-Drags
 let guideGroup = null;     // Lot-Führungslinien + Abstands-Labels der Auswahl
+let pierGuideGroup = null; // Maß-Labels während eines Pfeiler-Ecken/Kopf-Drags
+let pierCenterPlane = null; // gelbe Mittel-Ebene des selektierten Pfeilers (dauerhaft)
 
 // Drag-Zustand (kein Vue-Tracking nötig)
 let dragLattice = null;    // Arbeitskopie während des Drags
@@ -144,15 +159,18 @@ function removeMesh(scene, obj) {
 // ── Edit-Visuals (Body-Preview, Käfig, Handles) ─────────────────────────────
 const HANDLE_COLORS = { b: 0x1abc9c, t: 0xbdc3c7 };
 const HANDLE_SELECTED = 0xf1c40f;
+const PIER_COLOR = 0x8b5a2b; // braun: Soffitte sitzt auf dem Gelände → Pfeiler
 
 function clearEditVisuals() {
     if (!scene_ref) return;
+    disposePierGuides(); // Sprite-Texturen freigeben, bevor editGroup entfernt wird
     if (editGroup) removeMesh(scene_ref, editGroup);
     // Defensiv: verwaiste Edit-Gruppen entfernen (z.B. nach Vite-HMR bleibt sonst
     // ein "Zombie"-Körper in der Szene stehen, der sich nie mehr mitbewegt).
     let stale;
     while ((stale = scene_ref.getObjectByName('Bridge3D_Edit'))) removeMesh(scene_ref, stale);
-    editGroup = bodyPreview = cageLines = handleGroup = cutLine = guideGroup = null;
+    cpe.dispose();
+    editGroup = bodyPreview = cageLines = handleGroup = cutLine = guideGroup = pierGuideGroup = pierMesh = pierLineSeg = pierCenterPlane = null;
 }
 
 /**
@@ -229,6 +247,50 @@ function rebuildEditVisuals(bridge, lattice, grid) {
         handleGroup.add(h);
     }
     editGroup.add(handleGroup);
+
+    // Pfeiler als solide Boxen (rechter Winkel, Decke bleibt oben).
+    const pierGeom = buildPierGeometry(b, grid);
+    if (pierGeom) {
+        // Gleicher Look wie der Brückenkörper: leicht transparente Füllung + Kantenlinien.
+        // depthTest:false → Pfeiler bleibt im Edit-Modus durch den transparenten
+        // Brückenkörper sichtbar (Röntgen). polygonOffset → kein Z-Fighting an der Soffit-Fläche.
+        pierMesh = new THREE.Mesh(pierGeom, new THREE.MeshBasicMaterial({
+            color: PIER_COLOR, transparent: true, opacity: 0.35, side: THREE.DoubleSide,
+            depthTest: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+        }));
+        pierMesh.renderOrder = 997; // unter Käfig (998) und Handles (999)
+        editGroup.add(pierMesh);
+
+        const pierWire = buildPierWireframe(b, grid);
+        if (pierWire) {
+            const wgeo = new THREE.BufferGeometry();
+            wgeo.setAttribute('position', new THREE.BufferAttribute(pierWire, 3));
+            pierLineSeg = new THREE.LineSegments(wgeo, new THREE.LineBasicMaterial({
+                color: PIER_COLOR, depthTest: false,
+            }));
+            pierLineSeg.renderOrder = 998;
+            editGroup.add(pierLineSeg);
+        }
+    }
+
+    // Ziehbare Ecken-Greifpunkte des selektierten Pfeilers (über das generische Modul)
+    // + dauerhafte gelbe Mittel-Ebene als Bemaßungs-Bezug.
+    const selIdx = bridge3DState.selectedPier;
+    if (selIdx != null && b.lattice.piers?.[selIdx]) {
+        const pts = pierHandlePositions(b, grid, selIdx).map(h => ({ ...h, color: PIER_HANDLE_COLOR }));
+        cpe.setHandles(editGroup, pts);
+        const planeGeom = buildPierCenterPlane(b, grid, selIdx);
+        if (planeGeom) {
+            pierCenterPlane = new THREE.Mesh(planeGeom, new THREE.MeshBasicMaterial({
+                color: 0xf1c40f, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthTest: false,
+            }));
+            pierCenterPlane.renderOrder = 996;
+            editGroup.add(pierCenterPlane);
+        }
+    } else {
+        cpe.dispose();
+    }
+
     scene_ref.add(editGroup);
     updateHandleAppearance();
     updateGuides(bridge, lattice, grid);
@@ -241,7 +303,8 @@ function updateHandleAppearance() {
         const key = h.userData.handleKey;
         const isSel = selected.has(key);
         const isHover = bridge3DState.hoverKey === key;
-        h.material.color.setHex(isSel ? HANDLE_SELECTED : HANDLE_COLORS[key[0]]);
+        const base = HANDLE_COLORS[key[0]];
+        h.material.color.setHex(isSel ? HANDLE_SELECTED : base);
         h.scale.setScalar(isHover ? 1.5 : 1.0);
     }
 }
@@ -278,6 +341,74 @@ function disposeGuides() {
         });
     }
     guideGroup = null;
+}
+
+function disposePierGuides() {
+    if (pierGuideGroup && editGroup) {
+        editGroup.remove(pierGuideGroup);
+        pierGuideGroup.traverse(c => {
+            c.geometry?.dispose();
+            c.material?.map?.dispose();
+            c.material?.dispose();
+        });
+    }
+    pierGuideGroup = null;
+}
+
+/**
+ * Maß-Labels während eines Pfeiler-Drags (Bemaßung in Bewegungsrichtung, analog
+ * zur Brücke): Ecken-Drag → die beiden anliegenden Kantenlängen [m]; Kopf-Drag →
+ * Höhe über Gelände [m].
+ */
+function showPierDragGuide(bridge, lattice, terrain, pierIdx, key) {
+    disposePierGuides();
+    const p = lattice.piers?.[pierIdx];
+    if (!editGroup || !terrain?.center || !p?.poly) return;
+    const pts = pierHandlePositions({ ...bridge, lattice }, terrain, pierIdx);
+    const corners = pts.filter(h => h.key.startsWith('pier:c'));
+    if (!corners.length) return;
+    pierGuideGroup = new THREE.Group();
+
+    const addSeg = (a, b, text) => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute([a.x, a.y, a.z, b.x, b.y, b.z], 3));
+        const line = new THREE.Line(geo, new THREE.LineDashedMaterial({
+            color: 0xf1c40f, dashSize: 0.6, gapSize: 0.4, depthTest: false,
+        }));
+        line.computeLineDistances();
+        line.renderOrder = 1001;
+        pierGuideGroup.add(line);
+        const label = makeTextSprite(text);
+        label.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+        pierGuideGroup.add(label);
+    };
+
+    const m = /^pier:c(\d+)$/.exec(key);
+    if (m) {
+        // Bemaßung von der Mittellinie (u = uc) aus: Lot vom Eckpunkt auf die
+        // Mittelachse bei der v-Lage der Ecke, Label = seitlicher Abstand [m].
+        const info = pierCenterInfo({ ...bridge, lattice }, terrain, pierIdx);
+        const k = Number(m[1]) % corners.length;
+        const cur = corners[k].pos;
+        if (info) {
+            const cV = p.poly[k].v;
+            const fw = uvToWorld(lattice, info.uc, cV);
+            const foot = toLocalExact(fw.x, fw.y, 0, terrain);
+            foot.y = cur.y; // horizontale Maßlinie auf Handle-Höhe
+            addSeg(cur, foot, `${cur.distanceTo(foot).toFixed(1)} m`);
+        }
+    } else if (key === 'pier:top') {
+        const top = pts.find(h => h.key === 'pier:top');
+        if (top) {
+            const cu = p.poly.reduce((s, c) => s + c.u, 0) / p.poly.length;
+            const cv = p.poly.reduce((s, c) => s + c.v, 0) / p.poly.length;
+            const w = uvToWorld(lattice, cu, cv);
+            const terrZ = sampleGridZ(headerFromTerrain(terrain), terrain.gridData, w.x, w.y) ?? terrain.minZ;
+            const base = new THREE.Vector3(top.pos.x, terrZ - terrain.minZ, top.pos.z);
+            addSeg(top.pos, base, `${(top.pos.y + terrain.minZ - terrZ).toFixed(2)} m`);
+        }
+    }
+    editGroup.add(pierGuideGroup);
 }
 
 /**
@@ -338,10 +469,10 @@ function updateGuides(bridge, lattice, terrain) {
         : { count: bridge3DState.selection.length, dz: single?.dz ?? null };
 }
 
-function showCutPreview(bridge, grid, u) {
+function showCutPreview(bridge, grid, pos1d, axis = 'u') {
     if (!scene_ref || !editGroup) return;
     if (cutLine) { editGroup.remove(cutLine); cutLine.geometry?.dispose(); cutLine.material?.dispose(); cutLine = null; }
-    const pos = buildCutPreview(bridge, grid, u);
+    const pos = axis === 'v' ? buildCutPreviewV(bridge, grid, pos1d) : buildCutPreview(bridge, grid, pos1d);
     if (!pos) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -435,14 +566,16 @@ export function useBridge3DTool() {
             console.warn('[Bridge3D] Deck muss über der Soffitte liegen.');
             return;
         }
-        const footprint = bridge3DState.draftPoints.map(p => ({ x: p.x, y: p.y }));
-        const lattice = createLattice(footprint, { soffit, deck });
+        const drawn = bridge3DState.draftPoints.map(p => ({ x: p.x, y: p.y }));
+        const lattice = createLattice(drawn, { soffit, deck });
         if (!lattice) return;
 
         const bridge = {
             id: `bridge3d_${Date.now()}`,
             kind: 'mesh3d',
-            footprint, lattice,
+            // Footprint = Frame-Rechteck (einzige Formquelle, deckt sich mit Body/Umriss)
+            footprint: frameCorners(lattice),
+            lattice,
             directionMode, Cd, Tz,
         };
         Object.assign(bridge, derivePatch(bridge, lattice));
@@ -458,6 +591,7 @@ export function useBridge3DTool() {
         if (!bridge) return;
         bridge3DState.editingId = id;
         bridge3DState.selection = [];
+        bridge3DState.selectedPier = null;
         bridge3DState.phase = 'EDIT';
         setLayerBridgeVisible(id, false);
         rebuildEditVisuals(bridge, bridge.lattice, geoStore.terrain);
@@ -472,33 +606,169 @@ export function useBridge3DTool() {
         if (bridge3DState.editingId) setLayerBridgeVisible(bridge3DState.editingId, true);
         bridge3DState.editingId = null;
         bridge3DState.selection = [];
+        bridge3DState.selectedPier = null;
         bridge3DState.selectionInfo = null;
         bridge3DState.hoverKey = null;
         bridge3DState.hoverCutU = null;
         bridge3DState.dragging = false;
         bridge3DState.phase = 'IDLE';
         dragLattice = null;
+        pierDrag = null;
         clearEditVisuals();
     };
 
     const startLoopCut = () => {
         if (bridge3DState.phase !== 'EDIT') return;
         bridge3DState.hoverCutU = null;
+        bridge3DState.hoverCutV = null;
+        bridge3DState.cutAxis = 'u';
+        bridge3DState.phase = 'LOOPCUT';
+    };
+
+    /** Quer-Loop-Cut (neuer Stützpunkt quer zur Spannachse) — für Querbögen. */
+    const startCrossCut = () => {
+        if (bridge3DState.phase !== 'EDIT') return;
+        bridge3DState.hoverCutU = null;
+        bridge3DState.hoverCutV = null;
+        bridge3DState.cutAxis = 'v';
         bridge3DState.phase = 'LOOPCUT';
     };
 
     const applyLoopCut = () => {
         const bridge = getBridge();
-        if (!bridge || bridge3DState.hoverCutU == null) return;
-        const cut = insertLoopCut(bridge.lattice, bridge3DState.hoverCutU);
+        const axis = bridge3DState.cutAxis;
+        const pos = axis === 'v' ? bridge3DState.hoverCutV : bridge3DState.hoverCutU;
+        if (!bridge || pos == null) return;
+        const cut = axis === 'v' ? insertLoopCutV(bridge.lattice, pos) : insertLoopCut(bridge.lattice, pos);
         if (!cut) return; // zu nah an bestehender Station
-        // Auswahl verwerfen: Stations-Indizes (j) verschieben sich durch den Cut
+        // Auswahl verwerfen: Stations-/Reihen-Indizes verschieben sich durch den Cut
         bridge3DState.selection = [];
-        geoStore.updateBridge3D(bridge.id, derivePatch(bridge, cut), 'Loop Cut');
+        bridge3DState.selectedPier = null;
+        geoStore.updateBridge3D(bridge.id, derivePatch(bridge, cut), axis === 'v' ? 'Quer-Stützpunkt' : 'Loop Cut');
         bridge3DState.hoverCutU = null;
+        bridge3DState.hoverCutV = null;
         bridge3DState.phase = 'EDIT';
         setLayerBridgeVisible(bridge.id, false); // Re-Render des Watchers blendet ggf. wieder ein
         rebuildEditVisuals(bridge, cut, geoStore.terrain);
+    };
+
+
+    const startPier = () => {
+        if (bridge3DState.phase !== 'EDIT') return;
+        bridge3DState.hoverCutU = null;
+        bridge3DState.phase = 'PIER';
+    };
+
+    /**
+     * Setzt/entfernt an der aktuellen Hover-Position einen Pfeiler. Ein Pfeiler ist
+     * ein Spann-Band {u0,u1} (lattice.piers) — eine LOKALE, volle Querschnitts-
+     * sperrung über die ganze Deckbreite. Die Soffit-/Deck-Sheets bleiben
+     * unverändert (Decke oben, rechter Winkel nach unten); kein Geländeeingriff.
+     * Hydraulik: Export entfernt die überdeckten Orifice-Zellen und setzt die
+     * SGC-Breite darunter auf 0. Klick in einen bestehenden Pfeiler entfernt ihn.
+     */
+    const applyPier = (pierWidth = bridge3DState.pierWidth) => {
+        const bridge = getBridge();
+        if (!bridge || bridge3DState.hoverCutU == null) return;
+        const lat = bridge.lattice;
+        const uc = bridge3DState.hoverCutU;
+
+        let next;
+        if (uInPier(lat, uc)) {
+            next = removePierAt(lat, uc);                 // Toggle: bestehenden Pfeiler löschen
+        } else {
+            const spanLen = lat.spanLen || 1;
+            const halfU = Math.max(PIER_HALF_U_MIN, (pierWidth / 2) / spanLen);
+            next = addPier(lat, uc, halfU);
+        }
+        bridge3DState.hoverCutU = null;
+        bridge3DState.phase = 'EDIT';
+        bridge3DState.selection = [];
+        geoStore.updateBridge3D(bridge.id, derivePatch(bridge, next),
+            uInPier(lat, uc) ? 'Pfeiler entfernt' : 'Pfeiler gesetzt');
+        setLayerBridgeVisible(bridge.id, false);
+        rebuildEditVisuals(bridge, next, geoStore.terrain);
+    };
+
+    const commitPier = (bridge, next, label) => {
+        geoStore.updateBridge3D(bridge.id, derivePatch(bridge, next), label);
+        setLayerBridgeVisible(bridge.id, false);
+        rebuildEditVisuals(bridge, next, geoStore.terrain);
+    };
+    const getSelPier = () => {
+        const bridge = getBridge();
+        const idx = bridge3DState.selectedPier;
+        if (!bridge || idx == null) return null;
+        const p = bridge.lattice.piers?.[idx];
+        return p ? { bridge, idx, p } : null;
+    };
+    /** Pfeilerkopf-Höhe [m NHN]; null = bündig bis zur Soffitte. */
+    const setPierTop = (zTop) => {
+        const s = getSelPier();
+        if (!s) return;
+        const val = (zTop == null || !Number.isFinite(zTop)) ? null : zTop;
+        commitPier(s.bridge, updatePier(s.bridge.lattice, s.idx, { zTop: val }), 'Pfeilerhöhe');
+    };
+    /** Pfeiler-Polygon verfeinern (Mittelpunkte einfügen) → mehr Ecken für Rundungen. */
+    const subdivideSelectedPier = () => {
+        const s = getSelPier();
+        if (!s) return;
+        commitPier(s.bridge, subdividePier(s.bridge.lattice, s.idx), 'Pfeiler-Ecken eingefügt');
+    };
+
+    // ── Ziehen der Pfeiler-Ecken / Kopfhöhe (Welt-Delta vom Greifpunkt-Modul) ───
+    const applyPierDrag = (bridge, dd) => {
+        const idx = bridge3DState.selectedPier;
+        if (idx == null || !pierDrag) return;
+        const lat = bridge.lattice;
+        const snap = pierDrag.snap;
+        let next;
+        if (dd.key === 'pier:top') {
+            next = updatePier(lat, idx, { zTop: (snap.zTop ?? pierDrag.soffitC) + dd.delta.y });
+        } else {
+            const m = /^pier:c(\d+)$/.exec(dd.key);
+            if (!m) return;
+            const cornerIdx = Number(m[1]);
+            const c0 = snap.poly?.[cornerIdx];
+            if (!c0) return;
+            const sd = lat.spanDir, cd = { x: -sd.y, y: sd.x };
+            // Welt-Delta → Real-Delta (world.x = realX−cx, world.z = −(realY−cy)) → u/v
+            const realDx = dd.delta.x, realDy = -dd.delta.z;
+            const du = (realDx * sd.x + realDy * sd.y) / (lat.spanLen || 1);
+            const dv = (realDx * cd.x + realDy * cd.y) / (lat.crossLen || 1);
+            next = movePierCorner(lat, idx, cornerIdx, c0.u + du, c0.v + dv);
+        }
+        pierDrag.next = next;
+        refreshPierVisuals(bridge, next);
+        showPierDragGuide(bridge, next, geoStore.terrain, idx, dd.key);
+    };
+
+    /** Pfeiler-Mesh, -Linien und Box-Handles live aus einem Arbeits-Lattice nachführen
+     *  (ohne den ganzen Edit-Aufbau neu zu bauen — der laufende cpe-Drag bleibt intakt). */
+    const refreshPierVisuals = (bridge, lat) => {
+        const grid = geoStore.terrain;
+        const b = { ...bridge, lattice: lat };
+        if (pierMesh) {
+            const g = buildPierGeometry(b, grid);
+            if (g) { pierMesh.geometry.dispose(); pierMesh.geometry = g; }
+        }
+        if (pierLineSeg) {
+            const pw = buildPierWireframe(b, grid);
+            if (pw) {
+                pierLineSeg.geometry.dispose();
+                const ng = new THREE.BufferGeometry();
+                ng.setAttribute('position', new THREE.BufferAttribute(pw, 3));
+                pierLineSeg.geometry = ng;
+            }
+        }
+        const idx = bridge3DState.selectedPier;
+        if (idx != null) {
+            cpe.syncPositions(pierHandlePositions(b, grid, idx).map(h => ({ key: h.key, pos: h.pos })));
+            if (pierCenterPlane) {
+                const pg = buildPierCenterPlane(b, grid, idx);
+                if (pg) { pierCenterPlane.geometry.dispose(); pierCenterPlane.geometry = pg; }
+            }
+        }
     };
 
     /**
@@ -546,7 +816,9 @@ export function useBridge3DTool() {
                 bridge3DState.phase = 'IDLE';
                 break;
             case 'LOOPCUT':
+            case 'PIER':
                 bridge3DState.hoverCutU = null;
+                bridge3DState.hoverCutV = null;
                 if (cutLine && editGroup) {
                     editGroup.remove(cutLine);
                     cutLine.geometry?.dispose();
@@ -581,11 +853,13 @@ export function useBridge3DTool() {
                 else if (bridge3DState.phase === 'EDIT') finishEdit();
             },
         });
-        // 'R' = Loop Cut (Blender-Anlehnung; Ctrl+R wäre Browser-Reload)
+        // 'R' = Loop Cut (längs), 'T' = Quer-Stützpunkt, 'P' = Pfeiler
         keyHandler = (e) => {
             const tag = e.target?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
             if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) startLoopCut();
+            if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) startCrossCut();
+            if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey) startPier();
         };
         window.addEventListener('keydown', keyHandler);
     };
@@ -613,6 +887,18 @@ export function useBridge3DTool() {
         ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
         const hits = ctx.raycaster.intersectObject(ctx.terrainMesh, false);
         return hits.length ? worldToReal(hits[0].point, terrain) : null;
+    };
+
+    /** Pointer auf eine Pfeiler-Box → Pfeiler-Index (oder -1). */
+    const raycastPier = (ctx) => {
+        const bridge = getBridge();
+        if (!pierMesh || !bridge) return -1;
+        ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
+        const hits = ctx.raycaster.intersectObject(pierMesh, false);
+        if (!hits.length) return -1;
+        const real = worldToReal(hits[0].point, geoStore.terrain);
+        const { u, v } = worldToUV(bridge.lattice, real.x, real.y);
+        return pierIndexAt(bridge.lattice, u, v);
     };
 
     /** Trifft der Pointer einen bestehenden mesh3d-Körper? → dessen ID. */
@@ -643,8 +929,31 @@ export function useBridge3DTool() {
         if (bridge3DState.phase === 'EDIT') {
             const bridge = getBridge();
             if (!bridge) return;
+
+            // 1) Pfeiler-Ecke / Kopfhöhe ziehen (Greifpunkt des selektierten Pfeilers)
+            if (bridge3DState.selectedPier != null) {
+                const k = cpe.beginDrag(ctx);
+                if (k) {
+                    const p = bridge.lattice.piers[bridge3DState.selectedPier];
+                    const cu = p.poly.reduce((s, c) => s + c.u, 0) / p.poly.length;
+                    const cv = p.poly.reduce((s, c) => s + c.v, 0) / p.poly.length;
+                    pierDrag = { snap: JSON.parse(JSON.stringify(p)), soffitC: sampleSheet(bridge.lattice, bridge.lattice.bottomZ, cu, cv), next: null };
+                    bridge3DState.dragging = true;
+                    return;
+                }
+            }
+
+            // 2) Knoten-Handle oder (leer) Pfeiler selektieren/deselektieren
             const handle = raycastHandles(ctx);
-            if (!handle) return;
+            if (!handle) {
+                const pi = raycastPier(ctx);
+                const newSel = pi >= 0 ? pi : null;
+                if (newSel !== bridge3DState.selectedPier) {
+                    bridge3DState.selectedPier = newSel;
+                    rebuildEditVisuals(bridge, bridge.lattice, geoStore.terrain);
+                }
+                return;
+            }
             const key = handle.userData.handleKey;
 
             if (ctx.event?.shiftKey) {
@@ -707,6 +1016,13 @@ export function useBridge3DTool() {
             const bridge = getBridge();
             if (!bridge) return;
 
+            // Pfeiler-Box ziehen (generisches Greifpunkt-Modul)
+            if (cpe.state.dragging && pierDrag) {
+                const dd = cpe.dragDelta(ctx);
+                if (dd) applyPierDrag(bridge, dd);
+                return;
+            }
+
             if (bridge3DState.dragging && dragLattice) {
                 const hit = new THREE.Vector3();
                 ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
@@ -738,30 +1054,54 @@ export function useBridge3DTool() {
                 return;
             }
 
-            // Hover-Highlight
+            // Hover-Highlight (Knoten- + Pfeiler-Box-Greifpunkte)
             const handle = raycastHandles(ctx);
             const key = handle?.userData.handleKey ?? null;
             if (key !== bridge3DState.hoverKey) {
                 bridge3DState.hoverKey = key;
                 updateHandleAppearance();
             }
+            if (bridge3DState.selectedPier != null) cpe.applyHover(cpe.raycast(ctx));
             return;
         }
 
-        if (bridge3DState.phase === 'LOOPCUT') {
+        if (bridge3DState.phase === 'LOOPCUT' || bridge3DState.phase === 'PIER') {
             const bridge = getBridge();
             if (!bridge || !bodyPreview) return;
+            const crossCut = bridge3DState.phase === 'LOOPCUT' && bridge3DState.cutAxis === 'v';
             ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
             const hits = ctx.raycaster.intersectObject(bodyPreview, false);
-            if (!hits.length) { bridge3DState.hoverCutU = null; showCutPreview(bridge, terrain, null); return; }
+            if (!hits.length) {
+                bridge3DState.hoverCutU = null; bridge3DState.hoverCutV = null;
+                showCutPreview(bridge, terrain, null, crossCut ? 'v' : 'u');
+                return;
+            }
             const real = worldToReal(hits[0].point, terrain);
-            const { u } = worldToUV(bridge.lattice, real.x, real.y);
-            bridge3DState.hoverCutU = u;
-            showCutPreview(bridge, terrain, u);
+            const { u, v } = worldToUV(bridge.lattice, real.x, real.y);
+            if (crossCut) {
+                bridge3DState.hoverCutV = v;
+                showCutPreview(bridge, terrain, v, 'v');
+            } else {
+                bridge3DState.hoverCutU = u;
+                showCutPreview(bridge, terrain, u, 'u');
+            }
         }
     };
 
     const onMouseUp = () => {
+        // Pfeiler-Box-Drag abschließen (generisches Modul)
+        if (cpe.state.dragging) {
+            cpe.endDrag();
+            bridge3DState.dragging = false;
+            const bridge = getBridge();
+            if (bridge && pierDrag?.next) {
+                geoStore.updateBridge3D(bridge.id, derivePatch(bridge, pierDrag.next), 'Pfeiler-Box bearbeitet');
+                setLayerBridgeVisible(bridge.id, false);
+                rebuildEditVisuals(bridge, pierDrag.next, geoStore.terrain);
+            }
+            pierDrag = null;
+            return;
+        }
         if (!bridge3DState.dragging) return;
         bridge3DState.dragging = false;
         const bridge = getBridge();
@@ -775,6 +1115,7 @@ export function useBridge3DTool() {
 
     const onClick = (ctx) => {
         if (bridge3DState.phase === 'LOOPCUT') { applyLoopCut(); return; }
+        if (bridge3DState.phase === 'PIER') { applyPier(); return; }
 
         // EDIT: Klick ins Leere (kein Handle) deselektiert — aber nur bei echtem
         // Klick, nicht nach Kamera-Drag (Browser feuert click auch nach Bewegung)
@@ -802,8 +1143,10 @@ export function useBridge3DTool() {
         onMouseDown, onMove, onMouseUp, onClick,
         // Panel-Aktionen
         startDrawing, commitFootprint, applyExtrude,
-        startEdit, finishEdit, startLoopCut, deleteCurrent, cancel, undoLastPoint,
+        startEdit, finishEdit, startLoopCut, startCrossCut, startPier, applyPier,
+        deleteCurrent, cancel, undoLastPoint,
         setHeightAboveTerrain,
+        setPierTop, subdivideSelectedPier,
     };
 }
 

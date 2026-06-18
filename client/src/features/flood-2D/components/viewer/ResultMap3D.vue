@@ -20,6 +20,7 @@ import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResul
 import { useBoundaryArrows } from '@/features/flood-2D/composables/viewer/useBoundaryArrows';
 import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
 import { useWaterSurface } from '@/features/flood-2D/composables/viewer/useWaterSurface';
+import { collectPierCells } from '@/features/flood-2D/utils/BridgeMeshLattice.js';
 
 const props = defineProps({
   terrain: { type: Object, default: null },
@@ -76,10 +77,39 @@ const waterApi = useWaterSurface({
 });
 const probeApi = useResultProbes(() => scene); // Probe-Ring-Marker
 const boundaryApi = useBoundaryArrows(() => scene, () => terrainApi.getMask()); // BCI-Pfeile
+
+// Hindernis-Maske fürs Velocity-Overlay: Gebäudemaske (top-down, <128) + Brücken-PFEILER.
+// Pfeiler sind nicht im 2D-Velocity-Raster (Physik blockt sie nur im SGC-Sub-Grid), daher
+// laufen Linien/Pfeile sonst hindurch. Hier werden ihre Zellen wie Gebäude maskiert (rein
+// optisch, passend zum 3D-Modell). Gemerkt, bis sich Brücken/Terrain ändern.
+let _obstacleCache = { key: null, mask: null };
+function obstacleMask() {
+  const t = props.terrain;
+  if (!t) return terrainApi.getMask();
+  const { ncols, nrows } = t;
+  const base = terrainApi.getMask(); // kann null sein (vor Terrain-Build)
+  const bridges = geoStore.bridges || [];
+  const key = `${ncols}x${nrows}|${base ? 'm' : '0'}|${bridges.map(b => b.id).join(',')}`;
+  if (_obstacleCache.key === key) return _obstacleCache.mask;
+
+  const piers = collectPierCells(bridges, t); // "col,row", row bottom-up (row 0 = Süd)
+  if (piers.size === 0) { _obstacleCache = { key, mask: base }; return base; }
+
+  const out = base ? base.slice() : new Uint8Array(ncols * nrows).fill(255);
+  for (const k of piers) {
+    const ci = k.indexOf(',');
+    const col = +k.slice(0, ci), rS = +k.slice(ci + 1);
+    const rTop = nrows - 1 - rS; // Maske ist top-down wie das Velocity-Raster
+    if (col >= 0 && col < ncols && rTop >= 0 && rTop < nrows) out[rTop * ncols + col] = 0;
+  }
+  _obstacleCache = { key, mask: out };
+  return out;
+}
+
 // Fließpfeil-Overlay (gerichtete Velocity-Pfeile) — eigenes Composable
-const flowApi = useFlowArrows(() => scene);
+const flowApi = useFlowArrows(() => scene, obstacleMask);
 // Strömungslinien-Overlay (integrierte, animierte CFD-Linien) — eigenes Composable
-const streamApi = useFlowStreamlines(() => scene);
+const streamApi = useFlowStreamlines(() => scene, obstacleMask); // Gebäude + Pfeiler ausblenden
 
 const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
 const raycaster = new THREE.Raycaster();

@@ -114,6 +114,14 @@
           @update:velMax="velColorMax = $event"
         />
 
+        <!-- Wehr-Durchfluss Q(t) — eigenes Panel, sichtbar sobald .Qx/.Qy-Daten da sind -->
+        <WeirResultsPanel
+          v-if="hasWeirData"
+          :series="weirSeries"
+          :currentFrame="currentFrame"
+          :saveInterval="saveIntervalSec"
+        />
+
         <!-- Cell Info Panels -->
         <template v-if="activeTool === 'probe'">
           <TransitionGroup name="slide-info">
@@ -148,12 +156,29 @@ import ResultSectionChart from '@/features/flood-2D/components/viewer/ResultSect
 import ResultVolumePanel from '@/features/flood-2D/components/viewer/ResultVolumePanel.vue';
 import ResultProbePanel from '@/features/flood-2D/components/viewer/ResultProbePanel.vue';
 import ViewerControlPanel from '@/features/flood-2D/components/viewer/ViewerControlPanel.vue';
+import WeirResultsPanel from '@/features/flood-2D/components/viewer/WeirResultsPanel.vue';
 
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
+import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { calculateVolumeWithConfidence } from '@/features/flood-2D/utils/VolumeCalculator';
+import { useWeirResults } from '@/features/flood-2D/composables/viewer/useWeirResults.js';
 
 // --- Data Bridge (reads from window.opener) ---
 const bridge = useResultDataFromOpener();
+
+// --- Wehr-Durchfluss (aus .Qx/.Qy → qFluxFrames; nur RunPod/LISFLOOD-8) ---
+// GeoStore wird von der Bridge hydriert → weirLines liegen hier vor.
+const geoStore = useGeoStore();
+const saveIntervalSec = computed(() =>
+  bridge.totalFrames.value > 0 ? (bridge.simDuration.value / bridge.totalFrames.value) : 0
+);
+const { weirSeries, hasWeirData } = useWeirResults({
+  weirLines: computed(() => geoStore.weirLines),
+  header: bridge.resultHeader,
+  qFluxFrames: bridge.qFluxFrames,
+  elevFrames: bridge.elevFrames,
+  saveInterval: saveIntervalSec,
+});
 
 // --- VOLUME ---
 const analysisStore = useAnalysisStore();

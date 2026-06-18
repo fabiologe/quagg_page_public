@@ -5,7 +5,9 @@ import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
 import { RENDER_ORDER } from './renderLayers.js';
 import { InputGenerator } from '../../middleware/InputGenerator.js';
 import { useBoundaryArrows } from '../viewer/useBoundaryArrows.js';
-import { buildBridge3DGeometry } from '../../utils/Bridge3DGeometry.js';
+import { buildBridge3DGeometry, buildPierGeometry } from '../../utils/Bridge3DGeometry.js';
+import { buildWeirWall, buildWeirWallWire, buildWeirOpenings } from '../../utils/weirWall.js';
+import { weir3DState } from './useWeir3DTool.js';
 import { bridge3DState } from './useBridge3DTool.js';
 
 /**
@@ -101,6 +103,12 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         color: 0x7f8c8d,
         side: THREE.DoubleSide,
     });
+    const bridgePierMat = new THREE.MeshBasicMaterial({
+        color: 0x8b5a2b, // braun: solider Pfeiler (wie die Brücke, wenn das Werkzeug nicht aktiv ist)
+        side: THREE.DoubleSide,
+        // Kopf liegt bündig an der Soffitte → polygonOffset gegen Z-Fighting (statt Spalt).
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    });
 
     // Grau wie das Brückendeck, unlit (MeshBasic) → konsistente Darstellung, beleuchtungsunabhängig.
     const weirMatBidi = new THREE.MeshBasicMaterial({
@@ -112,6 +120,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         color: 0x7f8c8d,
         side: THREE.DoubleSide,
     });
+    const weirWallLineMat = new THREE.LineBasicMaterial({ color: 0xbdc3c7 });
+    const weirOpeningMat = new THREE.MeshBasicMaterial({ color: 0x2c3e50, side: THREE.DoubleSide }); // dunkles Rohr
 
     // --- COORDINATE SYSTEM ---
     // We need a stable reference point (World Offset) to handle large UTM coordinates.
@@ -509,13 +519,16 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         clearGroup(weirGroup);
         updateWorldOffset();
 
-        if (!geoStore.weirs || geoStore.weirs.length === 0) return;
+        if ((!geoStore.weirs || geoStore.weirs.length === 0) && (!geoStore.weirLines || geoStore.weirLines.length === 0)) return;
 
         const grid = getActiveGrid();
         const cellSize = grid ? grid.cellsize : 1.0; 
         const terrainMinZ = grid ? grid.minZ : 0;
 
+        // Polylinien-Wehre rendern als glatte Wand (unten), nicht als Zellen-Boxen.
+        const polyIds = new Set((geoStore.weirLines || []).map(l => l.id));
         geoStore.weirs.forEach(weir => {
+            if (weir.lineId && polyIds.has(weir.lineId)) return; // glatte Wand statt Treppe
             const isOneWay = weir.direction.includes('F');
             const mat = isOneWay ? weirMatUni : weirMatBidi;
             
@@ -582,7 +595,25 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
             weirGroup.add(mesh);
         });
-        
+
+        // Polylinien-Wehre als glatte freie Wand + Öffnungs-Marker (Rohr)
+        if (grid?.center) {
+            (geoStore.weirLines || []).forEach(line => {
+                if (weir3DState.editingId === line.id) return; // Edit-Tool zeigt eigene Vorschau
+                const wallGeom = buildWeirWall(line, grid);
+                if (wallGeom) weirGroup.add(new THREE.Mesh(wallGeom, weirMatBidi));
+                const wire = buildWeirWallWire(line, grid);
+                if (wire) {
+                    const wgeo = new THREE.BufferGeometry();
+                    wgeo.setAttribute('position', new THREE.BufferAttribute(wire, 3));
+                    weirGroup.add(new THREE.LineSegments(wgeo, weirWallLineMat));
+                }
+                for (const geo of buildWeirOpenings(line, grid)) {
+                    weirGroup.add(new THREE.Mesh(geo, weirOpeningMat)); // rund/rechteckig/polygonal, quer durch die Wand
+                }
+            });
+        }
+
         applyChildOrder(weirGroup, RENDER_ORDER.WEIRS);
         // DIAGNOSE: Bauwerks-Höhe vs. Terrain — verrät, ob das Wehr über dem Wasser herausragt
         // oder "schwebt" (Y deutlich über terrMaxZ-terrMinZ). Auch Test, ob neuer Code läuft.
@@ -603,8 +634,19 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         mesh.userData = { id: bridge.id, type: 'bridge', selectable: true };
         // Während des Vertex-Editings rendert das Tool seinen eigenen Preview-Body —
         // das Layer-Duplikat ausblenden, sonst flackern zwei Körper übereinander.
-        if (bridge3DState.editingId === bridge.id) mesh.visible = false;
+        const editing = bridge3DState.editingId === bridge.id;
+        if (editing) mesh.visible = false;
         bridgeGroup.add(mesh);
+
+        // Pfeiler (lattice.piers): solide Box wie die Brücke (Werkzeug nicht aktiv).
+        // Der transparente Wireframe-Look gilt nur im Edit-Modus (useBridge3DTool).
+        const pierGeom = buildPierGeometry(bridge, grid);
+        if (pierGeom) {
+            const pierMesh = new THREE.Mesh(pierGeom, bridgePierMat);
+            pierMesh.userData = { id: bridge.id, type: 'bridge' };
+            if (editing) pierMesh.visible = false;
+            bridgeGroup.add(pierMesh);
+        }
     };
 
     const renderBridges = () => {
@@ -740,6 +782,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
     // Watch Weirs
     watch(() => geoStore.weirs,   () => renderWeirs(),   { deep: true, immediate: true });
+    watch(() => geoStore.weirLines, () => renderWeirs(), { deep: true });
+    watch(() => weir3DState.editingId, () => renderWeirs()); // Edit-Linie aus-/einblenden
     // Watch Bridges
     watch(() => geoStore.bridges, () => renderBridges(), { deep: true, immediate: true });
 

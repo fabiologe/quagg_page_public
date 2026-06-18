@@ -120,6 +120,10 @@ export const useSimulationStore = defineStore('simulation', () => {
     /** Velocity vector components per frame: frameId → { vx: Float32Array, vy: Float32Array } */
     const velocityVectorFrames = ref(new Map());
 
+    /** Edge-flux components per frame (.Qx/.Qy, Zellzentren): frameId → { qx, qy }.
+     * Basis für den Wehr-Durchfluss (useWeirResults). Nur RunPod/LISFLOOD-8 liefert sie. */
+    const qFluxFrames = ref(new Map());
+
     /** Max water depth grid from res.max (written at end of simulation) */
     const maxDepthGrid = ref(null);
 
@@ -164,6 +168,10 @@ export const useSimulationStore = defineStore('simulation', () => {
         velocityVectorFrames.value.set(frameId, { vx, vy });
     }
 
+    function addQFluxFrame(frameId, qx, qy) {
+        qFluxFrames.value.set(frameId, { qx, qy });
+    }
+
     function addElevFrame(frameId, data) {
         elevFrames.value.set(frameId, data);
     }
@@ -179,6 +187,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         resultFrames.value.clear();
         velocityFrames.value.clear();
         velocityVectorFrames.value.clear();
+        qFluxFrames.value.clear();
         elevFrames.value.clear();
         currentFrameIndex.value = -1;
         resultHeader.value = null;
@@ -284,6 +293,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         resultFrames,
         velocityFrames,
         velocityVectorFrames,
+        qFluxFrames,
         elevFrames,
         maxDepthGrid,
         maxHazardGrid,
@@ -296,6 +306,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         addResultFrame,
         addVelocityFrame,
         addVelocityVectorFrame,
+        addQFluxFrame,
         addElevFrame,
         setMaxDepthGrid,
         setMaxHazardGrid,

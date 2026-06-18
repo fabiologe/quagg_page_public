@@ -12,6 +12,8 @@
  */
 
 const LOOP_CUT_EPS = 0.02;
+const PIER_MIN_U = 1e-4; // schmalstes sinnvolles Pfeilerband in u
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
 /** Senkrechte zu spanDir (90° CCW) — definiert die v-Achse des Frames. */
 function crossDirOf(spanDir) {
@@ -74,9 +76,106 @@ export function createLattice(footprint, { soffit, deck }) {
         nSpan: 2,
         nCross: 2,
         u: [0, 1],
+        v: [0, 1],
         bottomZ: [[soffit, soffit], [soffit, soffit]],
         topZ: [[deck, deck], [deck, deck]],
+        piers: [], // Spann-Bänder {u0,u1}, die die Öffnung lokal voll sperren
     };
+}
+
+/**
+ * Pfeiler hinzufügen. Ein Pfeiler ist ein EDITIERBARES Polygon im Frame (u,v) —
+ * Eckpunkte ziehbar, Kanten unterteilbar (für abgerundete Formen), wie der
+ * Brückenkörper. Default = Rechteck (Breite [u0,u1] in der Spannachse, volle
+ * Quer-Breite). `zTop` = Kopfhöhe (null = bis Soffitte), rein geometrisch — die
+ * hydraulische Sperrung kommt aus der (u,v)-Überdeckung (SGC-Auflösung ist binär).
+ * @returns {object} neues Lattice (gleiche Sheets, ergänzte piers)
+ */
+export function addPier(lattice, uCenter, halfWidthU) {
+    const u0 = clamp01(uCenter - halfWidthU);
+    const u1 = clamp01(uCenter + halfWidthU);
+    if (u1 - u0 < PIER_MIN_U) return lattice;
+    const poly = [{ u: u0, v: 0 }, { u: u1, v: 0 }, { u: u1, v: 1 }, { u: u0, v: 1 }];
+    return { ...lattice, piers: [...(lattice.piers || []), { poly, zTop: null }] };
+}
+
+/** u-Spanne (min,max) eines Pfeiler-Polygons. */
+function pierURange(p) {
+    const us = p.poly.map(c => c.u);
+    return [Math.min(...us), Math.max(...us)];
+}
+
+/** Liegt u in der u-Spanne eines Pfeilers? (u-only Hit-Test fürs Toggle/Hover) */
+export function uInPier(lattice, u) {
+    for (const p of (lattice.piers || [])) {
+        if (!p.poly) continue;
+        const [lo, hi] = pierURange(p);
+        if (u >= lo - 1e-9 && u <= hi + 1e-9) return true;
+    }
+    return false;
+}
+
+/** Liegt die Zelle (u,v) in einem Pfeiler-Polygon? (Export-Klassifikation) */
+export function cellInPier(lattice, u, v) {
+    for (const p of (lattice.piers || [])) {
+        if (p.poly && isPointInPolygon(u, v, p.poly.map(c => ({ x: c.u, y: c.v })))) return true;
+    }
+    return false;
+}
+
+/** Index des Pfeilers, dessen Polygon (u,v) enthält — oder -1. */
+export function pierIndexAt(lattice, u, v) {
+    const piers = lattice.piers || [];
+    for (let i = 0; i < piers.length; i++) {
+        if (piers[i].poly && isPointInPolygon(u, v, piers[i].poly.map(c => ({ x: c.u, y: c.v })))) return i;
+    }
+    return -1;
+}
+
+/** Einen Pfeiler patchen ({poly, zTop}); Polygon-Punkte auf [0,1] geklemmt. */
+export function updatePier(lattice, index, patch) {
+    const piers = (lattice.piers || []).map((p, i) => {
+        if (i !== index) return p;
+        const n = { ...p, ...patch };
+        if (n.poly) n.poly = n.poly.map(c => ({ u: clamp01(c.u), v: clamp01(c.v) }));
+        return n;
+    });
+    return { ...lattice, piers };
+}
+
+/** Eine Pfeiler-Ecke (cornerIdx) auf (u,v) verschieben. */
+export function movePierCorner(lattice, pierIdx, cornerIdx, u, v) {
+    const piers = (lattice.piers || []).map((p, i) => {
+        if (i !== pierIdx || !p.poly) return p;
+        const poly = p.poly.map((c, k) => k === cornerIdx ? { u: clamp01(u), v: clamp01(v) } : c);
+        return { ...p, poly };
+    });
+    return { ...lattice, piers };
+}
+
+/** Pfeiler-Polygon verfeinern: auf jeder Kante einen Mittelpunkt einfügen
+ *  (mehr Ecken zum Ziehen → abgerundete Formen). Deckelt bei 32 Punkten. */
+export function subdividePier(lattice, pierIdx) {
+    const piers = (lattice.piers || []).map((p, i) => {
+        if (i !== pierIdx || !p.poly || p.poly.length >= 32) return p;
+        const poly = [];
+        for (let k = 0; k < p.poly.length; k++) {
+            const a = p.poly[k], b = p.poly[(k + 1) % p.poly.length];
+            poly.push(a, { u: (a.u + b.u) / 2, v: (a.v + b.v) / 2 });
+        }
+        return { ...p, poly };
+    });
+    return { ...lattice, piers };
+}
+
+/** Pfeiler entfernen, dessen u-Spanne u enthält (Toggle-Semantik im Editor). */
+export function removePierAt(lattice, u) {
+    const piers = (lattice.piers || []).filter(p => {
+        if (!p.poly) return true;
+        const [lo, hi] = pierURange(p);
+        return !(u >= lo - 1e-9 && u <= hi + 1e-9);
+    });
+    return { ...lattice, piers };
 }
 
 /**
@@ -104,6 +203,21 @@ export function uvToWorld(lattice, u, v) {
 }
 
 /**
+ * Die 4 Eckpunkte des Lattice-Frames (Rechteck) in Weltkoordinaten — die
+ * EINZIGE Formquelle der Brücke. Body, Umriss, Greifpunkte, Pfeiler und das
+ * Export-Raster leiten sich hieraus ab (keine konkurrierende Polygon-Quelle).
+ * @returns {Array<{x,y}>} [u0v0, u1v0, u1v1, u0v1]
+ */
+export function frameCorners(lattice) {
+    return [
+        uvToWorld(lattice, 0, 0),
+        uvToWorld(lattice, 1, 0),
+        uvToWorld(lattice, 1, 1),
+        uvToWorld(lattice, 0, 1),
+    ];
+}
+
+/**
  * Bilineare Höhenabtastung eines Sheets ([nCross][nSpan]) an (u, v).
  * @param {object} lattice
  * @param {Array<Array<number>>} sheet  lattice.bottomZ oder lattice.topZ
@@ -119,10 +233,19 @@ export function sampleSheet(lattice, sheet, u, v) {
     const span = us[k + 1] - us[k];
     const tu = span > 1e-12 ? (uu - us[k]) / span : 0;
 
-    // v-Position über die Querreihen (gleichverteilt)
-    const vPos = vv * (lattice.nCross - 1);
-    const i0 = Math.min(lattice.nCross - 2, Math.floor(vPos));
-    const tv = vPos - i0;
+    // v-Intervall über die Querreihen: nicht-uniform via lattice.v, sonst gleichverteilt
+    let i0, tv;
+    if (lattice.v) {
+        const vs = lattice.v;
+        i0 = 0;
+        while (i0 < vs.length - 2 && vv > vs[i0 + 1]) i0++;
+        const vspan = vs[i0 + 1] - vs[i0];
+        tv = vspan > 1e-12 ? (vv - vs[i0]) / vspan : 0;
+    } else {
+        const vPos = vv * (lattice.nCross - 1);
+        i0 = Math.min(lattice.nCross - 2, Math.floor(vPos));
+        tv = vPos - i0;
+    }
 
     const rowLerp = (row) => row[k] + tu * (row[k + 1] - row[k]);
     const z0 = rowLerp(sheet[i0]);
@@ -159,6 +282,39 @@ export function insertLoopCut(lattice, uCut) {
         topZ: lattice.topZ.map(cutRow),
     };
 }
+
+/**
+ * Quer-Loop-Cut: neue v-Station (Querreihe i) einfügen, Höhen beider Sheets
+ * interpoliert. Spiegelbild von insertLoopCut, aber über die Reihen statt Spalten.
+ * @returns {object|null} neues Lattice oder null (zu nah an bestehender v-Station).
+ */
+export function insertLoopCutV(lattice, vCut) {
+    const v = Math.min(1, Math.max(0, vCut));
+    const vs = lattice.v || lattice.bottomZ.map((_, i) => i / (lattice.nCross - 1));
+    if (vs.some(vk => Math.abs(vk - v) < LOOP_CUT_EPS)) return null;
+
+    let i = 0;
+    while (i < vs.length - 1 && vs[i + 1] < v) i++;
+    const t = (v - vs[i]) / (vs[i + 1] - vs[i]);
+
+    // neue Reihe zwischen Reihe i und i+1 interpolieren
+    const lerpRow = (sheet) => sheet[i].map((z0, j) => z0 + t * (sheet[i + 1][j] - z0));
+    const insertRow = (sheet) => {
+        const next = sheet.map(r => r.slice());
+        next.splice(i + 1, 0, lerpRow(sheet));
+        return next;
+    };
+    return {
+        ...lattice,
+        origin: { ...lattice.origin },
+        spanDir: { ...lattice.spanDir },
+        nCross: lattice.nCross + 1,
+        v: [...vs.slice(0, i + 1), v, ...vs.slice(i + 1)],
+        bottomZ: insertRow(lattice.bottomZ),
+        topZ: insertRow(lattice.topZ),
+    };
+}
+
 
 /**
  * Solver-Richtung der Zellen. Die Spannachse ist die Fahrbahnachse, sie
@@ -236,8 +392,10 @@ export function rasterizeFootprint(footprint, header) {
  * @returns {Array<{col,row,x,y,z,direction,z_sohle,soffit,deck,width,Cd,Tz}>}
  */
 export function latticeToCells(bridge, header, gridData = null) {
-    const { lattice, footprint } = bridge;
-    if (!lattice || !footprint || footprint.length < 3) return [];
+    const { lattice } = bridge;
+    if (!lattice) return [];
+    // Einzige Formquelle: das Frame-Rechteck (nicht das rohe Footprint-Polygon).
+    const footprint = frameCorners(lattice);
     const direction = deriveDirection(lattice, bridge.directionMode);
     const raster = rasterizeFootprint(footprint, header);
 
@@ -250,6 +408,10 @@ export function latticeToCells(bridge, header, gridData = null) {
             const zi = gridData[c.row * header.ncols + c.col];
             if (zi > -9000) z = zi;
         }
+        // Pfeilerzelle = Zellzentrum liegt in einer Pfeiler-Box (u UND v). Rein
+        // geometrisch (kein Terrain nötig): solche Zellen liefern KEIN Orifice und
+        // die SGC-Breite darunter wird beim Export 0 — volle Sperrung ohne DGM-Eingriff.
+        const pier = cellInPier(lattice, u, v);
         return {
             col: c.col, row: c.row, x: c.x, y: c.y,
             z, direction,
@@ -257,8 +419,29 @@ export function latticeToCells(bridge, header, gridData = null) {
             soffit, deck,
             width: header.cellsize,
             Cd: bridge.Cd, Tz: bridge.Tz,
+            pier,
         };
     });
+}
+
+/**
+ * Pfeilerzellen ALLER mesh3d-Brücken als Set "col,row" (row bottom-up, row 0 = Süd).
+ * Rein geometrisch (kein Terrain nötig) — dieselbe Quelle, die der Export nutzt, um die
+ * SGC-Breite an Pfeilern auf 0 zu setzen. Wird im ErgebnisViewer für die Overlay-Maske
+ * (Strömungslinien/Pfeile enden am Pfeiler) wiederverwendet — ohne Physik anzufassen.
+ * @param {Array} bridges  geoStore.bridges
+ * @param {object} header  {ncols, nrows, cellsize, xll|xllcorner, yll|yllcorner}
+ * @returns {Set<string>}  "col,row"
+ */
+export function collectPierCells(bridges, header) {
+    const keys = new Set();
+    for (const bridge of (bridges || [])) {
+        if (bridge.kind !== 'mesh3d' || !bridge.lattice?.piers?.length) continue;
+        for (const cell of latticeToCells(bridge, header, null)) {
+            if (cell.pier) keys.add(`${cell.col},${cell.row}`);
+        }
+    }
+    return keys;
 }
 
 /**

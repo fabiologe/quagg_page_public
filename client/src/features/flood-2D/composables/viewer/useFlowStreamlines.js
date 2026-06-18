@@ -34,8 +34,12 @@ function speedColor(t, out) {
   return out;
 }
 
-/** @param {() => THREE.Scene} getScene */
-export function useFlowStreamlines(getScene) {
+/**
+ * @param {() => THREE.Scene} getScene
+ * @param {() => (Uint8Array|null)} [getMask]  Gebäudemaske (top-down, <128 = Gebäude);
+ *        eingebrannte Gebäudezellen tragen v≈0 und würden Linien sonst „gegen 0" ziehen.
+ */
+export function useFlowStreamlines(getScene, getMask) {
   let group = null;
   let mesh = null;
   let material = null;
@@ -65,23 +69,33 @@ export function useFlowStreamlines(getScene) {
   }
 
   // bilineare Probe über NASSE Zellen; gibt {vx,vy,speed} oder null (außerhalb/trocken)
-  function buildSampler(field, terrain, depthField) {
+  function buildSampler(field, terrain, depthField, mask) {
     const { ncols, nrows } = terrain;
+    const gridData = terrain.gridData; // bottom-up (idx = (nrows-1-r)*ncols+c)
     const { vx, vy } = field;
     return (c, r) => {
       if (c < 0 || r < 0 || c > ncols - 1 || r > nrows - 1) return null;
       const c0 = Math.floor(c), r0 = Math.floor(r);
       const c1 = Math.min(ncols - 1, c0 + 1), r1 = Math.min(nrows - 1, r0 + 1);
       const fc = c - c0, fr = r - r0;
-      const idx = [
-        [r0 * ncols + c0, (1 - fc) * (1 - fr)],
-        [r0 * ncols + c1, fc * (1 - fr)],
-        [r1 * ncols + c0, (1 - fc) * fr],
-        [r1 * ncols + c1, fc * fr],
+      // [col, row, weight] — col/row gebraucht für die bottom-up gridData-Probe.
+      const corners = [
+        [c0, r0, (1 - fc) * (1 - fr)],
+        [c1, r0, fc * (1 - fr)],
+        [c0, r1, (1 - fc) * fr],
+        [c1, r1, fc * fr],
       ];
       let sx = 0, sy = 0, wsum = 0;
-      for (const [i, w] of idx) {
+      for (const [cc, rr, w] of corners) {
+        const i = rr * ncols + cc;                  // top-down (vx/vy/depth)
         if (depthField && !(depthField[i] > WET_MIN)) continue;
+        // Eingebrannte Gebäude/Ränder: im Viewer als NoData im gridData (bottom-up!) —
+        // das ist das EIGENTLICHE Brenn-Signal (die Gebäudemaske ist im Popup oft leer).
+        // Solche Zellen wie trocken behandeln → Linien enden sauber an der Brennkante,
+        // statt mit halbierter Wand-Geschwindigkeit „gegen 0" zu kriechen.
+        if (gridData && gridData[(nrows - 1 - rr) * ncols + cc] <= NODATA) continue;
+        // Zusätzlich die Gebäudemaske, falls vorhanden (top-down, <128 = Gebäude).
+        if (mask && mask[i] < 128) continue;
         const vxv = vx[i], vyv = vy[i];
         if (!(vxv > NODATA) || !(vyv > NODATA)) continue;
         sx += vxv * w; sy += vyv * w; wsum += w;
@@ -105,7 +119,9 @@ export function useFlowStreamlines(getScene) {
     const cs = cellsize || 1;
     const width  = terrain.bounds?.width  ?? (ncols - 1) * cs;
     const height = terrain.bounds?.height ?? (nrows - 1) * cs;
-    const sample = buildSampler(field, terrain, depthField);
+    // Gebäudemaske (top-down, <128 = Gebäude); null vor dem Terrain-Build → Guard greift.
+    const mask = (typeof getMask === 'function') ? getMask() : null;
+    const sample = buildSampler(field, terrain, depthField, mask);
 
     // Referenz-Geschwindigkeit (Farb-Normierung) = Max über nasse Zellen
     let sref = 0;

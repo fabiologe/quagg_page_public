@@ -96,13 +96,18 @@ def _load_grid(path, kind="depth"):
     """parse_asc + Bereinigung. kind:
          'depth'  Tiefe — NoData & Negativwerte → 0
          'signed' Geschwindigkeit (Vx/Vy) — Vorzeichen behalten, NoData → 0
+         'edge'   gestaggerte Kanten-Geschwindigkeit/-Fluss (Vx/Vy/Qx/Qy) — NoData
+                  (≤ thr) als SENTINEL BEHALTEN, damit der De-Stagger Wände erkennt
+                  und die wandtangentiale Geschwindigkeit nicht halbiert (→ kein
+                  „gegen 0"-Verblassen der Strömung an Gebäude-/Brennkanten).
          'level'  Höhe/Zeit/Hazard (elev/inittm/maxHaz…) — Werte behalten, NoData → 0
        → (header, array, max-Betrag)."""
     header, data = parse_asc(path)
     mx = 0.0
     for i, v in enumerate(data):
         if v <= NODATA_THRESHOLD:
-            data[i] = 0.0
+            if kind != "edge":
+                data[i] = 0.0   # 'edge' behält den NoData-Sentinel für den De-Stagger
             continue
         if kind == "depth" and v < 0.0:
             data[i] = 0.0
@@ -123,42 +128,66 @@ def _meta(header, **extra):
     }
 
 
+def _mid(a, b):
+    """Kantenmittel mit NoData-Bewusstsein: an einer Wand (eine Kante = NoData-Sentinel
+    ≤ thr) wird NICHT mit 0 gemittelt (das halbierte die wandtangentiale Geschwindigkeit
+    und ließ die Strömung an Gebäude-/Brennkanten optisch gegen 0 gehen), sondern die
+    gültige Kante allein genommen. Beide NoData → 0 (Zelle liegt in der Wand)."""
+    va = a > NODATA_THRESHOLD
+    vb = b > NODATA_THRESHOLD
+    if va and vb:
+        return 0.5 * (a + b)
+    if va:
+        return a
+    if vb:
+        return b
+    return 0.0
+
+
+def _zero_nodata_inplace(arr):
+    for i in range(len(arr)):
+        if arr[i] <= NODATA_THRESHOLD:
+            arr[i] = 0.0
+    return arr
+
+
 def _destagger_x(vx, h, ncols, nrows):
     """Vx liegt auf den x-Zellkanten ((ncols+1)×nrows) → Zellzentrum (ncols×nrows)
-    durch Mittelung der beiden x-Kanten je Zelle. Akzeptiert auch bereits
-    zentrierte Raster (ncols×nrows) unverändert; sonst None."""
+    durch (NoData-bewusste) Mittelung der beiden x-Kanten je Zelle. Akzeptiert auch
+    bereits zentrierte Raster (ncols×nrows); sonst None."""
     sc, sr = int(h["ncols"]), int(h["nrows"])
     if sc == ncols and sr == nrows:
-        return vx
+        return _zero_nodata_inplace(vx)
     if not (sc == ncols + 1 and sr == nrows):
         return None
     out = array("f", bytes(4 * ncols * nrows))
     for r in range(nrows):
         base = r * sc
         for c in range(ncols):
-            out[r * ncols + c] = 0.5 * (vx[base + c] + vx[base + c + 1])
+            out[r * ncols + c] = _mid(vx[base + c], vx[base + c + 1])
     return out
 
 
 def _destagger_y(vy, h, ncols, nrows):
-    """Vy liegt auf den y-Zellkanten (ncols×(nrows+1)) → Zellzentrum."""
+    """Vy liegt auf den y-Zellkanten (ncols×(nrows+1)) → Zellzentrum (NoData-bewusst)."""
     sc, sr = int(h["ncols"]), int(h["nrows"])
     if sc == ncols and sr == nrows:
-        return vy
+        return _zero_nodata_inplace(vy)
     if not (sc == ncols and sr == nrows + 1):
         return None
     out = array("f", bytes(4 * ncols * nrows))
     for r in range(nrows):
         for c in range(ncols):
-            out[r * ncols + c] = 0.5 * (vy[r * ncols + c] + vy[(r + 1) * ncols + c])
+            out[r * ncols + c] = _mid(vy[r * ncols + c], vy[(r + 1) * ncols + c])
     return out
 
 
 def encode_wd(path, frame_no, sim_time=None, results=None, resroot="res"):
     """res-XXXX.wd → (frame-bytes, min, max). NoData (-9999) → 0 (trocken).
     Hängt — falls vorhanden — die Geschwindigkeits- (.Vx/.Vy → vx/vy, auf
-    Zellzentren ent-staggert) und Wasserspiegel-Kanäle (.elev → elev) DESSELBEN
-    Frames an, damit Fließpfeile/Geschwindigkeit/Wasserspiegel direkt ankommen."""
+    Zellzentren ent-staggert), Wasserspiegel- (.elev → elev) und Kantenfluss-Kanäle
+    (.Qx/.Qy → qx/qy, ebenfalls ent-staggert) DESSELBEN Frames an, damit
+    Fließpfeile/Geschwindigkeit/Wasserspiegel/Wehr-Durchfluss direkt ankommen."""
     header, depth, dmax = _load_grid(path, "depth")
     ncols, nrows = int(header["ncols"]), int(header["nrows"])
     channels = {"depth": depth}
@@ -176,14 +205,60 @@ def encode_wd(path, frame_no, sim_time=None, results=None, resroot="res"):
         vx = vy = None
         if vxp.exists() and vyp.exists():
             try:
-                hx, ax, _ = _load_grid(vxp, "signed")
-                hy, ay, _ = _load_grid(vyp, "signed")
+                hx, ax, _ = _load_grid(vxp, "edge")
+                hy, ay, _ = _load_grid(vyp, "edge")
                 vx = _destagger_x(ax, hx, ncols, nrows)
                 vy = _destagger_y(ay, hy, ncols, nrows)
             except Exception:  # noqa: BLE001
                 vx = vy = None
         if vx is not None and vy is not None:
             channels["vx"], channels["vy"] = vx, vy
+            # SGC-KANALGESCHWINDIGKEIT (.SGCVx/.SGCVy gerichtet, .SGCVc Betrag): die ECHTE
+            # Durchström-Geschwindigkeit in Gerinne/Brücke. Das normale .Vx/.Vy ist nur die
+            # VORLAND-Geschwindigkeit (out-of-bank, = (Q−Qc)/(dx−we)/hflow, sgc.cpp) und
+            # springt an Bauwerken abrupt bzw. wird 0. Hier wird der Kanalwert dort
+            # eingesetzt, wo ein Gerinne aktiv ist (|v_sgc|>eps) → die visualisierte
+            # Strömung (Pfeile/Linien/Heatmap) läuft physikalisch korrekt DURCH die Brücke.
+            sxp = results / f"{resroot}-{frame_no:04d}.SGCVx"
+            syp = results / f"{resroot}-{frame_no:04d}.SGCVy"
+            scp = results / f"{resroot}-{frame_no:04d}.SGCVc"
+            if sxp.exists() and syp.exists():
+                try:
+                    hsx, asx, _ = _load_grid(sxp, "edge")
+                    hsy, asy, _ = _load_grid(syp, "edge")
+                    sgcvx = _destagger_x(asx, hsx, ncols, nrows)
+                    sgcvy = _destagger_y(asy, hsy, ncols, nrows)
+                    sgcvc = None
+                    if scp.exists():
+                        _, sgcvc, _ = _load_grid(scp, "level")
+                        if len(sgcvc) != ncols * nrows:
+                            sgcvc = None
+                    if sgcvx is not None and sgcvy is not None:
+                        EPS = 1e-4
+                        for k in range(ncols * nrows):
+                            mag = sgcvc[k] if sgcvc is not None else (sgcvx[k] * sgcvx[k] + sgcvy[k] * sgcvy[k]) ** 0.5
+                            if mag > EPS:           # Gerinne-/Brückenzelle → Kanalwert nehmen
+                                vx[k] = sgcvx[k]
+                                vy[k] = sgcvy[k]
+                        channels["vx"], channels["vy"] = vx, vy
+                except Exception:  # noqa: BLE001
+                    pass
+        # Kantenflüsse .Qx/.Qy (gleiche Staggerung wie .Vx/.Vy) → qx/qy auf
+        # Zellzentren. Damit kann der Client den Durchfluss über jedes Wehr durch
+        # Aufsummieren der Normalkomponente über die Wehrzellen rekonstruieren.
+        qxp = results / f"{resroot}-{frame_no:04d}.Qx"
+        qyp = results / f"{resroot}-{frame_no:04d}.Qy"
+        qx = qy = None
+        if qxp.exists() and qyp.exists():
+            try:
+                hqx, aqx, _ = _load_grid(qxp, "edge")
+                hqy, aqy, _ = _load_grid(qyp, "edge")
+                qx = _destagger_x(aqx, hqx, ncols, nrows)
+                qy = _destagger_y(aqy, hqy, ncols, nrows)
+            except Exception:  # noqa: BLE001
+                qx = qy = None
+        if qx is not None and qy is not None:
+            channels["qx"], channels["qy"] = qx, qy
     meta = _meta(header, frame=frame_no, min=0.0, max=dmax)
     if sim_time is not None:
         meta["time"] = sim_time
@@ -202,8 +277,8 @@ def encode_velocity_magnitude(vx_path, vy_path, ref_header):
     """maxVx/maxVy (kantenzentriert) → |v|-Raster auf dem Zell-Grid von
     ref_header (= Tiefen-Grid res.max), Einkanal 'depth'."""
     ncols, nrows = int(ref_header["ncols"]), int(ref_header["nrows"])
-    hx, ax, _ = _load_grid(vx_path, "signed")
-    hy, ay, _ = _load_grid(vy_path, "signed")
+    hx, ax, _ = _load_grid(vx_path, "edge")
+    hy, ay, _ = _load_grid(vy_path, "edge")
     vx = _destagger_x(ax, hx, ncols, nrows)
     vy = _destagger_y(ay, hy, ncols, nrows)
     if vx is None or vy is None:
@@ -309,8 +384,10 @@ def main():
     par = read_par(par_path)
 
     # Outputs in /job/results zwingen + Heartbeat-Dichte sichern + ALLE
-    # Ergebnis-Kanäle aktivieren: voutput (.Vx/.Vy/.maxVx/.maxVy) und hazard
-    # (.maxVc/.maxHaz) unabhängig davon, was der Client in die .par geschrieben hat.
+    # Ergebnis-Kanäle aktivieren: voutput (.Vx/.Vy/.maxVx/.maxVy), hazard
+    # (.maxVc/.maxHaz) und qoutput (.Qx/.Qy — Kantenflüsse, Basis für den
+    # Wehr-Durchfluss im ErgebnisViewer) — unabhängig davon, was der Client in die
+    # .par geschrieben hat.
     updates = {"dirroot": str(results)}
     massint = float(par.get("massint", 0) or 0)
     if massint <= 0 or massint > args.heartbeat:
@@ -319,11 +396,19 @@ def main():
         updates["voutput"] = ""
     if "hazard" not in par:
         updates["hazard"] = ""
+    if "qoutput" not in par:
+        updates["qoutput"] = ""
+    if "SGCvoutput" not in par:
+        updates["SGCvoutput"] = ""   # → .SGCVx/.SGCVy/.SGCVc (Kanal-/Brücken-Geschwindigkeit;
+                                     # nur wirksam wenn SGC an, sonst vom Solver ignoriert)
     patch_par(par_path, updates)
     par = read_par(par_path)
 
     resroot = par.get("resroot", "res")
     sim_time = float(par.get("sim_time", 0) or 0)
+    # SGC aktiv? → dann gibt es .SGCVx/.SGCVy (Kanalgeschwindigkeit) und der Frame-
+    # Race-Guard wartet auch darauf. Ohne SGC entstehen diese Dateien nie → NICHT warten.
+    sgc_on = bool(par.get("SGCwidth"))
     emit("log", text=f"LISFLOOD-FP startet: {par_path.name}, sim_time={sim_time:.0f}s, "
                      f"saveint={par.get('saveint', '?')}s, massint={par.get('massint', '?')}s")
 
@@ -395,8 +480,17 @@ def main():
             if not final:
                 vxp = results / f"{resroot}-{frame_no:04d}.Vx"
                 vyp = results / f"{resroot}-{frame_no:04d}.Vy"
-                if not (vxp.exists() and vyp.exists()):
+                qxp = results / f"{resroot}-{frame_no:04d}.Qx"
+                qyp = results / f"{resroot}-{frame_no:04d}.Qy"
+                if not (vxp.exists() and vyp.exists() and qxp.exists() and qyp.exists()):
                     continue
+                # Bei SGC zusätzlich auf die Kanalgeschwindigkeit warten, damit der
+                # Brücken-/Gerinnewert nicht erst im Folge-Frame ankommt.
+                if sgc_on:
+                    sxp = results / f"{resroot}-{frame_no:04d}.SGCVx"
+                    syp = results / f"{resroot}-{frame_no:04d}.SGCVy"
+                    if not (sxp.exists() and syp.exists()):
+                        continue
             frame_time = frame_no * saveint if saveint > 0 else last_time
             try:
                 buf, dmin, dmax = encode_wd(path, frame_no, frame_time, results, resroot)

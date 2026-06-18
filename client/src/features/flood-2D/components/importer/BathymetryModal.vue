@@ -329,34 +329,50 @@
             <template v-if="hasCommittedLine">
               <div class="section-label" style="margin-top:0.5rem">Längsschnitt</div>
               <BathymetryLaengsschnitt />
+            </template>
 
-              <!-- ── SGC-Gerinneparameter (Sub-Grid-Channel, High-End-Solver) ── -->
-              <div class="section-label" style="margin-top:0.9rem">
-                Gerinne-Hydraulik (SGC)
-                <span class="sl-sub">— für Sub-Grid-Export: Gerinne kann schmaler als eine Rasterzelle sein</span>
-              </div>
-              <div class="sgc-params">
-                <label>
-                  Breite [m]
-                  <input type="number" min="0.1" step="0.5"
-                    :value="bathyStore.channelParams.width"
-                    @change="e => bathyStore.setChannelParams({ width: Math.max(0.1, Number(e.target.value) || 0.1) })" />
-                </label>
-                <label>
-                  Sohltiefe unter Gelände [m]
-                  <input type="number" min="0.1" step="0.1"
-                    :value="bathyStore.channelParams.bedDepth"
-                    @change="e => bathyStore.setChannelParams({ bedDepth: Math.max(0.1, Number(e.target.value) || 0.1) })" />
-                </label>
-                <label>
-                  Manning n Gerinne
-                  <input type="number" min="0.01" max="0.2" step="0.005"
-                    :value="bathyStore.channelParams.manningN"
-                    @change="e => bathyStore.setChannelParams({ manningN: Math.min(0.2, Math.max(0.01, Number(e.target.value) || 0.03)) })" />
-                </label>
-              </div>
+            <!-- ── SGC-Gerinneparameter (Sub-Grid-Channel, High-End-Solver) ── -->
+            <!-- IMMER editierbar: Breite wirkt sofort auf die Live-Raster-Vorschau im 3D-Editor;
+                 die Werte gelten beim Stempeln des Gerinnes, unabhängig davon ob schon eine
+                 Linie bestätigt ist (vorher waren die Felder hinter hasCommittedLine versteckt). -->
+            <div class="section-label" style="margin-top:0.9rem">
+              Gerinne-Hydraulik (SGC)
+              <span class="sl-sub">— echtes Flussgerinne (Sub-Grid), schmaler als eine Rasterzelle möglich</span>
+            </div>
+            <p class="step-desc" style="margin-top:0.2rem;opacity:0.8">
+              ℹ️ <strong>Brücken brauchen hier KEINEN Kanal</strong> — sie laufen ohne Sub-Grid direkt auf der
+              Floodplain. Dieses Feld nur für ein tatsächliches (schmales) Flussgerinne nutzen.
+            </p>
+            <div class="sgc-params">
+              <label>
+                Gerinnebreite (Sub-Grid) [m]
+                <input type="number" min="0.1" step="0.5"
+                  :value="bathyStore.channelParams.width"
+                  @change="e => bathyStore.setChannelParams({ width: Math.max(0.1, Number(e.target.value) || 0.1) })" />
+                <span class="sgc-cells" :class="{ 'sgc-cells-warn': sgcWidthTooWide }">
+                  = {{ sgcWidthCells.toFixed(1) }} Zellen
+                  <template v-if="sgcWidthTooWide"> ⚠ kein Sub-Grid mehr — im DGM auflösen</template>
+                </span>
+              </label>
+              <label>
+                Sohltiefe unter Gelände [m]
+                <input type="number" min="0.1" step="0.1"
+                  :value="bathyStore.channelParams.bedDepth"
+                  @change="e => bathyStore.setChannelParams({ bedDepth: Math.max(0.1, Number(e.target.value) || 0.1) })" />
+              </label>
+              <label>
+                Manning n Gerinne
+                <input type="number" min="0.01" max="0.2" step="0.005"
+                  :value="bathyStore.channelParams.manningN"
+                  @change="e => bathyStore.setChannelParams({ manningN: Math.min(0.2, Math.max(0.01, Number(e.target.value) || 0.03)) })" />
+              </label>
+            </div>
+            <p v-if="!hasCommittedLine" class="step-desc" style="margin-top:0.3rem;opacity:0.75">
+              Werte gelten, sobald eine Kanal-Mittellinie gezeichnet ist — die Breite wird dann live als Raster im 3D-Editor sichtbar.
+            </p>
 
-              <!-- Live-Check: passt die Brücke quer ins Gerinne? -->
+            <!-- Live-Check: passt die Brücke quer ins Gerinne? -->
+            <template v-if="hasCommittedLine">
               <div v-for="(it, i) in bridgeFitIssues" :key="i" class="tp-warn" style="margin-top:0.4rem">
                 ⚠ {{ it.message }}
               </div>
@@ -709,6 +725,12 @@ const simStore     = useSimulationStore();
 
 // ── Stepper ────────────────────────────────────────────────────────────────
 const activeStep = ref(0);
+
+// SGC-Breite in Rasterzellen (für die Live-Anzeige + Sub-Grid-Warnung). SGC ist ein
+// SUB-GRID-Gerinne → sinnvoll nur ≲ wenige Zellen breit; alles darüber gehört ins DGM.
+const sgcCellsize  = computed(() => geoStore.terrain?.cellsize ?? geoStore.terrain?.header?.cellsize ?? 1);
+const sgcWidthCells = computed(() => (bathyStore.channelParams.width ?? 0) / (sgcCellsize.value || 1));
+const sgcWidthTooWide = computed(() => sgcWidthCells.value > 4);
 
 // ── Terrain helper ─────────────────────────────────────────────────────────
 function getTerrain() {
@@ -1661,6 +1683,8 @@ function runCrossVal() {
     display: flex; flex-direction: column; gap: 0.2rem;
     font-size: 0.72rem; color: #8aa3bd;
 }
+.sgc-cells { font-size: 0.68rem; color: #6c8299; }
+.sgc-cells-warn { color: #ffb300; font-weight: 600; }
 .sgc-params input {
     padding: 0.35rem 0.45rem; border: 1px solid #3d5166; border-radius: 4px;
     background: #1e2c3a; color: #e8eef4; font-size: 0.8rem;

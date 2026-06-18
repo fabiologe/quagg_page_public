@@ -346,6 +346,7 @@ import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
 import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
+import { getWeir3DToolInstance, weir3DState } from '../../composables/editor/useWeir3DTool.js';
 import { useBridgeTool } from '../../composables/editor/useBridgeTool.js';
 import { getBridge3DToolInstance, bridge3DState } from '../../composables/editor/useBridge3DTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
@@ -354,6 +355,7 @@ import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPoint
 import { useVirtualRasterRenderer } from '../../composables/editor/useVirtualRasterRenderer.js';
 import { useBathyBrushTool } from '../../composables/editor/useBathyBrushTool.js';
 import { channelLineState, getChannelLineToolInstance } from '../../composables/editor/useChannelLineTool.js';
+import { useSgcRasterPreview } from '../../composables/editor/useSgcRasterPreview.js';
 import { channelPolygonState, getChannelPolygonToolInstance } from '../../composables/editor/useChannelPolygonTool.js';
 import { refPickState, getRefPickToolInstance } from '../../composables/editor/useOffsetRefPickTool.js';
 import {
@@ -410,6 +412,7 @@ const textureTool = useTextureTool();
 const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
 const weirTool   = useWeirTool();
+const weir3DTool = getWeir3DToolInstance();
 const bridgeTool = useBridgeTool();
 const bridge3DTool = getBridge3DToolInstance();
 const channelLineTool    = getChannelLineToolInstance();
@@ -472,6 +475,22 @@ const bridgeProxy = {
     onMouseUp(ctx)   { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMouseUp(ctx)   : bridgeTool.onMouseUp?.(ctx); },
 };
 
+// Proxy tool: klassische 2-Klick-Linie vs. editierbare Polylinie via weir3DState.mode
+const weirProxy = {
+    activate(s) {
+        if (weir3DState.mode === 'POLYLINE') weir3DTool.activate(s);
+        else weirTool.activate(s);
+    },
+    deactivate(s) {
+        weirTool.deactivate(s);
+        weir3DTool.deactivate(s);
+    },
+    onClick(ctx)     { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onClick(ctx)     : weirTool.onClick?.(ctx); },
+    onMove(ctx)      { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onMove(ctx)      : weirTool.onMove?.(ctx); },
+    onMouseDown(ctx) { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onMouseDown(ctx) : weirTool.onMouseDown?.(ctx); },
+    onMouseUp(ctx)   { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onMouseUp(ctx)   : weirTool.onMouseUp?.(ctx); },
+};
+
 // Channel-line helper actions (called from inline UI)
 function commitChannelLine() {
     getChannelLineToolInstance().commitLine();
@@ -501,7 +520,7 @@ const tools = {
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
-    'WEIR':   weirTool,
+    'WEIR':   weirProxy,        // delegates klassisch/Polylinie via weir3DState.mode
     'BRIDGE': bridgeProxy,      // delegates Linie/3D-Körper via bridge3DState.mode
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
@@ -533,7 +552,11 @@ const applyCameraLock = () => {
     const bridgeDrawing = tool === 'BRIDGE'
         && bridge3DState.mode === 'MESH3D'
         && bridge3DState.phase === 'DRAW_FOOTPRINT';
-    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK' || bridgeDrawing) {
+    // WEIR-Polylinie: Punkte-Zeichnen sperrt LEFT (sonst orbitet die Kamera)
+    const weirDrawing = tool === 'WEIR'
+        && weir3DState.mode === 'POLYLINE'
+        && weir3DState.phase === 'DRAW';
+    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK' || bridgeDrawing || weirDrawing) {
         controls.mouseButtons.LEFT = null;
     } else {
         if (activeCamera === cameraOrtho) {
@@ -595,6 +618,21 @@ watch(() => [bridge3DState.phase, bridge3DState.dragging], ([, dragging]) => {
     if (!controls) return;
     controls.enabled = !dragging;
     if (activeTool.value === 'BRIDGE' && bridge3DState.mode === 'MESH3D') applyCameraLock();
+}, { flush: 'sync' });
+
+// --- WEIR-Polylinie: Sub-Modus-Wechsel + Kamera (analog Brücke) ---
+watch(() => weir3DState.mode, (mode, oldMode) => {
+    if (activeTool.value !== 'WEIR' || !scene) return;
+    if (oldMode === 'POLYLINE') weir3DTool.deactivate(scene);
+    else weirTool.deactivate(scene);
+    if (mode === 'POLYLINE') weir3DTool.activate(scene);
+    else weirTool.activate(scene);
+    applyCameraLock();
+});
+watch(() => [weir3DState.phase, weir3DState.dragging], ([, dragging]) => {
+    if (!controls) return;
+    controls.enabled = !dragging;
+    if (activeTool.value === 'WEIR' && weir3DState.mode === 'POLYLINE') applyCameraLock();
 }, { flush: 'sync' });
 
 // --- SHADER TOGGLE ---
@@ -663,6 +701,10 @@ onMounted(() => {
 
     // Render virtual raster (IDW corridor preview) as colored point cloud
     useVirtualRasterRenderer(scene);
+
+    // Live-Vorschau des echten SGC-Gerinnerasters (gestempelte Zellen + Pfeiler-Sperren),
+    // reagiert auf die eingestellte Breite — zeigt die KORRIDOR-Breite, nicht nur die Linie.
+    useSgcRasterPreview(scene);
 
     // Restore if data exists
     if (geoStore.terrain && geoStore.terrain.gridData) {

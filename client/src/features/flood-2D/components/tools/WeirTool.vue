@@ -1,10 +1,109 @@
 <template>
-  <div class="tool-ui-panel weir-panel" v-show="isActive">
-    <div class="panel-header">
+  <div class="tool-ui-panel weir-panel" :class="{ collapsed: isCollapsed }" v-show="isActive">
+    <div class="panel-header" @click="collapsed = !collapsed" title="Ein-/Ausklappen">
       <span class="header-icon">〰</span> Wehr / Überlauf
+      <span class="collapse-toggle">{{ isCollapsed ? '▸' : '▾' }}</span>
     </div>
 
-    <div class="panel-content">
+    <div class="panel-content" v-show="!isCollapsed">
+
+      <!-- Modus: klassische 2-Klick-Linie vs. editierbare Polylinie -->
+      <div class="mode-switch">
+        <button class="mode-btn" :class="{ active: weir3DState.mode === 'LINE' }" @click="setMode('LINE')">➖ Linie</button>
+        <button class="mode-btn" :class="{ active: weir3DState.mode === 'POLYLINE' }" @click="setMode('POLYLINE')">✏ Polylinie</button>
+      </div>
+
+      <!-- ════ Polylinien-Modus (zeichnen + Ecken ziehen) ════ -->
+      <template v-if="weir3DState.mode === 'POLYLINE'">
+        <div v-if="weir3DState.phase === 'DRAW'" class="state-idle">
+          <div class="hint drawing-hint" v-if="weir3DState.draftPoints.length">
+            <span class="step-badge">{{ weir3DState.draftPoints.length }}</span>
+            Punkte gesetzt — <strong>Enter</strong> schließt die Linie ab (≥ 2)
+          </div>
+          <div class="hint" v-else>
+            <span class="step-badge">1</span>
+            Wehr-Punkte aufs Terrain klicken (Polylinie)
+          </div>
+          <div class="sub-hint">Backspace: letzter Punkt · Esc: abbrechen</div>
+          <div class="actions">
+            <button class="btn btn-save" :disabled="weir3DState.draftPoints.length < 2" @click="weir3d.finishDrawing()">Linie abschließen</button>
+            <button class="btn btn-cancel" @click="weir3d.cancel()">Abbrechen</button>
+          </div>
+        </div>
+
+        <div v-else-if="weir3DState.phase === 'EDIT'" class="state-idle">
+          <div class="location-badge" v-if="editingWeir">✏ {{ editingWeir.points.length }} Ecken · {{ (editingWeir.openings || []).length }} Öffnung(en)</div>
+          <div class="sub-hint">
+            <strong style="color:#3498db">Basis</strong> ziehen = Lage · <strong style="color:#5dade2">Krone</strong> ziehen = Höhe (Profil) ·
+            andere Linie anklicken zum Wechseln · Enter: fertig
+          </div>
+          <div class="input-group">
+            <label>Krone alle Ecken [m NHN]</label>
+            <input type="number" step="0.05" v-model.number="crestHc" @change="weir3d.setCrest(crestHc)" />
+            <span class="field-hint">Setzt ein flaches Profil; danach einzelne Kronen ziehen.</span>
+          </div>
+          <div class="input-group">
+            <label>Wand-Breite [m]</label>
+            <input type="number" step="0.5" min="0.5" v-model.number="weirWidth" @change="weir3d.setWidth(weirWidth)" />
+            <span class="field-hint">3D-Dicke der Wand (wie Brücke). Die Wand folgt automatisch dem Gelände entlang des Rasters.</span>
+          </div>
+
+          <!-- Öffnungen (Durchlass): rund / rechteckig / polygonal -->
+          <div class="existing-list">
+            <div class="list-title">Öffnungen (Durchlass)</div>
+            <div v-for="(o, k) in (editingWeir?.openings || [])" :key="k" class="op-row">
+              <div class="op-head">
+                <span class="weir-label">{{ {round:'⚪',rect:'▭',poly:'⬠'}[o.type] || '🛢' }} #{{ k + 1 }} · {{ {round:'rund',rect:'rechteckig',poly:'polygonal'}[o.type] || 'rund' }}</span>
+                <button class="btn-remove" @click="weir3d.removeOpening(k)" title="Löschen">✕</button>
+              </div>
+              <div class="op-fields">
+                <label class="op-soffit">Soffit
+                  <input type="number" step="0.05" :value="o.soffit" @change="weir3d.setOpeningSoffit(k, parseFloat($event.target.value))" />
+                </label>
+                <label v-if="o.type !== 'poly'" class="op-soffit">Breite
+                  <input type="number" step="0.5" min="0.2" :value="o.width" @change="weir3d.setOpeningWidth(k, parseFloat($event.target.value))" />
+                </label>
+                <label v-if="o.type === 'rect'" class="op-soffit">Höhe
+                  <input type="number" step="0.2" min="0.2" :value="o.height" @change="weir3d.setOpeningHeight(k, parseFloat($event.target.value))" />
+                </label>
+                <span v-if="o.type === 'poly'" class="op-soffit">Ecken im Profil ziehen ({{ o.points?.length || 0 }})</span>
+              </div>
+            </div>
+            <div class="actions" style="margin-top:6px">
+              <button class="btn btn-cancel btn-slim" @click="weir3d.addOpening('round')">⚪ Rund</button>
+              <button class="btn btn-cancel btn-slim" @click="weir3d.addOpening('rect')">▭ Rechteck</button>
+              <button class="btn btn-cancel btn-slim" @click="weir3d.addOpening('poly')">⬠ Polygon</button>
+            </div>
+            <div class="sub-hint" style="margin-top:4px">
+              Durchlass = Orifice (<code>&lt;dir&gt;B</code>) — Wasser fließt unten durch bis zum Soffit.
+              Bleibt automatisch im Wehr (nicht über Krone/Gelände). Setzt den gepatchten v8-Solver voraus.
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-save" @click="weir3d.finishEdit()">Fertig</button>
+            <button class="btn btn-remove-wide" @click="weir3d.deleteCurrent()">Löschen</button>
+          </div>
+        </div>
+
+        <div v-else class="state-idle">
+          <div class="hint"><span class="step-badge">＋</span> Neue Wehr-Polylinie zeichnen — oder bestehende anklicken</div>
+          <div class="actions"><button class="btn btn-save" @click="weir3d.startDrawing()">Neue Polylinie</button></div>
+        </div>
+
+        <div v-if="weirLines.length > 0" class="existing-list">
+          <div class="list-title">Wehr-Polylinien</div>
+          <div v-for="l in weirLines" :key="l.id" class="weir-item">
+            <span class="weir-label">{{ l.label || l.id.substring(0,10) }}</span>
+            <span class="weir-meta">{{ l.points.length }} Pkt · hc={{ l.hc.toFixed(2) }}m</span>
+            <button class="btn-edit" @click="editWeirLine(l.id)" title="Bearbeiten">✏</button>
+            <button class="btn-remove" @click="geoStore.removeWeirLine(l.id)" title="Löschen">✕</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- ════ Klassischer 2-Klick-Linien-Modus ════ -->
+      <template v-else>
 
       <!-- Schritt 1: Warten auf Klick im Terrain -->
       <div v-if="!pendingWeir" class="state-idle">
@@ -20,11 +119,11 @@
           Das Wehr-Linien-Werkzeug: Klicke für den Startpunkt und bewege die Maus, um den Damm zu ziehen. Ein zweiter Klick setzt das Ende. Die Richtung wird automatisch aus dem Raster abgeleitet.
         </div>
 
-        <!-- Bestehende Wehre auflisten -->
-        <div v-if="weirs.length > 0" class="existing-list">
+        <!-- Bestehende (eigenständige) Wehre — Polylinien-Zellen sind hier ausgeblendet -->
+        <div v-if="classicWeirs.length > 0" class="existing-list">
           <div class="list-title">Vorhandene Wehre</div>
           <div
-            v-for="w in weirs"
+            v-for="w in classicWeirs"
             :key="w.id"
             class="weir-item"
           >
@@ -85,6 +184,7 @@
           ⚠ hc muss über der Geländehöhe liegen (> {{ terrainZ.toFixed(2) }} m)
         </div>
       </div>
+      </template>
 
     </div>
   </div>
@@ -104,7 +204,37 @@ const geoStore = useGeoStore();
 
 const isActive = computed(() => simStore.activeTool === 'WEIR');
 const weirs    = computed(() => geoStore.weirs);
+
+// Panel einklappbar (Klick auf den Header). REIN MANUELL — kein Auto-Zuklappen,
+// sonst bliebe es im Polylinien-Modus (startet in DRAW) dauerhaft zu.
+const collapsed = ref(false);
+const isCollapsed = computed(() => collapsed.value);
 const isDrawingAxis = computed(() => props.toolInstance?.state?.value === 'DRAWING');
+
+// ── Polylinien-Modus (editierbar) ───────────────────────────────────────────
+import { weir3DState, getWeir3DToolInstance } from '../../composables/editor/useWeir3DTool.js';
+const weir3d = getWeir3DToolInstance();
+const weirLines = computed(() => geoStore.weirLines);
+// Klassische 2-Klick-Wehre: Polylinien-Zellen (lineId ∈ weirLines) hier ausblenden,
+// sonst sprengt eine Polylinie mit hunderten Zellen die Liste.
+const classicWeirs = computed(() => {
+  const polyIds = new Set((geoStore.weirLines || []).map(l => l.id));
+  return geoStore.weirs.filter(w => !(w.lineId && polyIds.has(w.lineId)));
+});
+const editingWeir = computed(() => geoStore.weirLines.find(l => l.id === weir3DState.editingId));
+const crestHc = ref(0);
+const weirWidth = ref(1);
+watch(editingWeir, (l) => {
+  if (!l) return;
+  crestHc.value = Math.round((l.hc ?? 0) * 100) / 100;
+  weirWidth.value = Math.round((l.width ?? 1) * 100) / 100;
+}, { immediate: true });
+const setMode = (mode) => {
+  if (weir3DState.mode === mode) return;
+  reset();
+  weir3DState.mode = mode; // MapEditor3D-Watcher tauscht das Sub-Tool
+};
+const editWeirLine = (id) => weir3d.startEdit(id);
 
 // ── Wehr-Richtungen (Typ 0 = nur Poleni-Wehr, keine Brücken) ──────────────
 const directions = [
@@ -208,11 +338,14 @@ const cancel = () => reset();
   pointer-events: auto;
   min-width: 300px;
   max-width: 380px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   border: 2px solid #2980b9;
   z-index: 1000;
 }
 
+.tool-ui-panel.weir-panel.collapsed { min-width: 0; padding: 8px 14px; }
 .panel-header {
   font-weight: 700;
   font-size: 0.95rem;
@@ -225,7 +358,11 @@ const cancel = () => reset();
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
+  user-select: none;
 }
+.weir-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+.collapse-toggle { margin-left: auto; color: #5dade2; font-size: 0.85rem; }
 
 .header-icon { font-size: 1.1rem; }
 
@@ -236,7 +373,7 @@ const cancel = () => reset();
 .sub-hint { font-size: 0.8rem; color: #95a5a6; line-height: 1.4; margin-bottom: 12px; }
 
 /* Existing weirs list */
-.existing-list { margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; }
+.existing-list { margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; max-height: 180px; overflow-y: auto; }
 .list-title { font-size: 0.78rem; color: #7f8c8d; text-transform: uppercase; margin-bottom: 6px; }
 .weir-item { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .weir-label { font-size: 0.85rem; font-weight: 600; flex: 1; }
@@ -265,6 +402,19 @@ const cancel = () => reset();
 .dir-hint { font-size: 0.72rem; color: #7f8c8d; line-height: 1.3; min-height: 2.5em; }
 
 /* Buttons */
+.mode-switch { display: flex; gap: 6px; margin-bottom: 12px; }
+.mode-btn { flex: 1; padding: 6px; border: 1px solid #4a6278; border-radius: 5px; background: #1e3348; color: #bdc3c7; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.mode-btn.active { border-color: #2980b9; background: rgba(41,128,185,0.22); color: #ecf0f1; }
+.btn-edit { background: none; border: 1px solid #2980b9; color: #5dade2; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; }
+.btn-edit:hover { background: #2980b9; color: white; }
+.btn-remove-wide { flex: 0 0 auto; padding: 8px 10px; border: 1px solid #c0392b; border-radius: 5px; background: none; color: #c0392b; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
+.btn-remove-wide:hover { background: #c0392b; color: white; }
+.btn-slim { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; border: none; border-radius: 5px; font-weight: 600; cursor: pointer; }
+.op-soffit { font-size: 0.72rem; color: #95a5a6; display: flex; align-items: center; gap: 4px; }
+.op-soffit input { width: 58px; padding: 3px 6px; border-radius: 4px; border: 1px solid #4a6278; background: #1e3348; color: white; font-size: 0.8rem; outline: none; }
+.op-row { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.op-head { display: flex; align-items: center; justify-content: space-between; }
+.op-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px; }
 .actions { display: flex; gap: 8px; margin-top: 4px; }
 .btn { flex: 1; padding: 8px; border: none; border-radius: 5px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
 .btn:active { transform: scale(0.97); }

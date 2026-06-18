@@ -188,7 +188,9 @@ export class RunpodBackend extends SolverBackend {
                     velocity,
                     vx: channels.vx,
                     vy: channels.vy,
-                    elev: channels.elev
+                    elev: channels.elev,
+                    qx: channels.qx,
+                    qy: channels.qy
                 });
                 break;
             }

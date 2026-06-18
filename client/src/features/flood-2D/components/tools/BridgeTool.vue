@@ -183,22 +183,45 @@
         </div>
 
         <!-- Vertex-Editing -->
-        <div v-else-if="bridge3DState.phase === 'EDIT' || bridge3DState.phase === 'LOOPCUT'" class="state-idle">
+        <div v-else-if="bridge3DState.phase === 'EDIT' || bridge3DState.phase === 'LOOPCUT' || bridge3DState.phase === 'PIER'" class="state-idle">
           <div class="location-badge" v-if="editingBridge">
             ✏ {{ editingBridge.id.substring(0, 16) }} ·
             {{ editingBridge.lattice.nSpan }} Stationen · {{ editingBridge.cells.length }} Zellen
           </div>
           <template v-if="bridge3DState.phase === 'LOOPCUT'">
-            <div class="hint drawing-hint">
+            <div class="hint drawing-hint" v-if="bridge3DState.cutAxis === 'v'">
+              ✛ Quer-Stützpunkt: Klick auf den Körper setzt die Querreihe
+              <span v-if="bridge3DState.hoverCutV != null"> (v = {{ bridge3DState.hoverCutV.toFixed(2) }})</span>
+            </div>
+            <div class="hint drawing-hint" v-else>
               ✂ Loop Cut: Klick auf den Körper setzt die Station
               <span v-if="bridge3DState.hoverCutU != null"> (u = {{ bridge3DState.hoverCutU.toFixed(2) }})</span>
             </div>
-            <div class="sub-hint">Esc: zurück ohne Schnitt</div>
+            <div class="sub-hint">Neuen Stützpunkt setzen, dann die Griffe in der Höhe ziehen (Bogen). Esc: zurück ohne Schnitt</div>
+          </template>
+          <template v-else-if="bridge3DState.phase === 'PIER'">
+            <div class="hint drawing-hint">
+              🛑 Pfeiler: Klick setzt einen Pfeiler (volle Sperrung) — Klick in einen
+              bestehenden entfernt ihn
+            </div>
+            <div class="pier-width-row">
+              <label>Pfeilerbreite [m]</label>
+              <input type="number" v-model.number="bridge3DState.pierWidth" step="0.5" min="0.5" />
+            </div>
+            <div class="sel-info" v-if="pierDim">
+              📏 Pfeiler: <strong>{{ pierDim.left.toFixed(1) }}–{{ pierDim.right.toFixed(1) }} m</strong>
+              entlang der Spannweite (Breite {{ bridge3DState.pierWidth.toFixed(1) }} m)
+            </div>
+            <div class="sub-hint">
+              Die Decke bleibt oben, am Pfeiler geht der Querschnitt im rechten Winkel
+              zu. Kein DGM-Eingriff — der Pfeiler sperrt nur die Öffnung. Esc: zurück.
+            </div>
           </template>
           <template v-else>
             <div class="sub-hint">
               Griffe in der Höhe ziehen (cyan = Soffitte, grau = Deck) ·
-              Shift-Klick: Mehrfachauswahl · <strong>R</strong>: Loop Cut · <strong>Enter</strong>: fertig
+              <strong style="color:#c8915a">braune Boxen = Pfeiler</strong> (anklicken → Maße) ·
+              Shift-Klick: Mehrfachauswahl · <strong>R</strong>: Loop Cut · <strong>T</strong>: Quer-Punkt · <strong>P</strong>: Pfeiler · <strong>Enter</strong>: fertig
             </div>
             <!-- Lot-Info + exakte Höhe über Raster für die Auswahl -->
             <div v-if="bridge3DState.selectionInfo" class="sel-info">
@@ -214,9 +237,29 @@
                 <button class="btn btn-save btn-slim" @click="tool3d.setHeightAboveTerrain(heightAbove)">Δ Raster setzen</button>
               </div>
             </div>
+            <!-- Pfeiler bearbeiten: Ecken ziehen (orange) + Kanten unterteilen -->
+            <div v-if="selPier" class="sel-info pier-dim">
+              <div class="sel-info-line">🛑 Pfeiler #{{ selPier.index + 1 }} · {{ selPier.corners }} Ecken</div>
+              <div class="sub-hint" style="margin:4px 0">
+                Orange Ecken in der Fläche ziehen, oranges Kopf-Handle = Höhe.
+                „Ecken einfügen" verfeinert das Polygon (für Rundungen).
+              </div>
+              <div class="pier-dim-grid">
+                <label>Kopf [m NHN]</label>
+                <input type="number" step="0.05" placeholder="Soffitte" v-model.number="pierH" @change="tool3d.setPierTop(pierH)" />
+              </div>
+              <div class="actions" style="margin-top:6px">
+                <button class="btn btn-cancel btn-slim" @click="pierH = null; tool3d.setPierTop(null)" title="Kopf bündig an die Brückenunterkante">Kopf = Soffitte</button>
+                <button class="btn btn-pier btn-slim" @click="tool3d.subdivideSelectedPier()" title="Mittelpunkte auf jeder Kante einfügen">✚ Ecken</button>
+              </div>
+            </div>
           </template>
           <div class="actions">
-            <button class="btn btn-cancel" :disabled="bridge3DState.phase === 'LOOPCUT'" @click="tool3d.startLoopCut()">✂ Loop Cut</button>
+            <button class="btn btn-cancel" :disabled="bridge3DState.phase !== 'EDIT'" @click="tool3d.startLoopCut()">✂ Längs</button>
+            <button class="btn btn-cancel" :disabled="bridge3DState.phase !== 'EDIT'" @click="tool3d.startCrossCut()">✛ Quer</button>
+            <button class="btn btn-pier" :disabled="bridge3DState.phase !== 'EDIT'" @click="tool3d.startPier()">🛑 Pfeiler</button>
+          </div>
+          <div class="actions">
             <button class="btn btn-save" @click="tool3d.finishEdit()">Fertig</button>
             <button class="btn btn-remove-wide" @click="tool3d.deleteCurrent()">Löschen</button>
           </div>
@@ -281,6 +324,32 @@ const isValid3d = computed(() => form3d.value.deck >= form3d.value.soffit + 0.1)
 const editingBridge = computed(() =>
   geoStore.bridges.find(b => b.id === bridge3DState.editingId)
 );
+
+// Selektierter Pfeiler (Klick auf den Pfeiler im EDIT) → Eckenzahl + Kopfhöhe
+const selPier = computed(() => {
+  const b = editingBridge.value;
+  const i = bridge3DState.selectedPier;
+  if (!b?.lattice?.piers || i == null) return null;
+  const p = b.lattice.piers[i];
+  if (!p?.poly) return null;
+  return { index: i, corners: p.poly.length, zTop: p.zTop };
+});
+const pierH = ref(null);
+watch(selPier, (s) => {
+  if (!s) return;
+  pierH.value = s.zTop == null ? null : Math.round(s.zTop * 100) / 100;
+}, { immediate: true });
+
+// Live-Bemaßung des Pfeilers (links/rechts in m entlang der Spannweite)
+const pierDim = computed(() => {
+  if (bridge3DState.phase !== 'PIER' || bridge3DState.hoverCutU == null) return null;
+  const lat = editingBridge.value?.lattice;
+  if (!lat) return null;
+  const spanLen = lat.spanLen || 1;
+  const half = (bridge3DState.pierWidth || 0) / 2;
+  const center = bridge3DState.hoverCutU * spanLen;
+  return { left: Math.max(0, center - half), right: Math.min(spanLen, center + half) };
+});
 
 // Liste nur zeigen, wenn kein Formular/Editing den Platz braucht
 const showBridgeList = computed(() =>
@@ -526,6 +595,13 @@ const cancel = () => reset();
 .height-row input[type="number"]:focus { border-color: #f1c40f; }
 .btn-slim { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; }
 
+.pier-dim { border-color: rgba(139,90,43,0.6); background: rgba(139,90,43,0.12); }
+.pier-dim .sel-info-line { color: #c8915a; }
+.pier-dim-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
+.pier-dim-grid label { font-size: 0.78rem; color: #c8915a; }
+.pier-dim-grid input[type="number"] { width: 100%; min-width: 0; padding: 5px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #1e3348; color: white; font-size: 0.85rem; outline: none; }
+.pier-dim-grid input[type="number"]:focus { border-color: #c8915a; }
+
 .state-form { display: flex; flex-direction: column; gap: 10px; }
 .location-badge { font-size: 0.78rem; color: #e74c3c; background: rgba(231,76,60,0.15); border-radius: 4px; padding: 4px 8px; text-align: center; }
 
@@ -546,6 +622,13 @@ const cancel = () => reset();
 .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-cancel { background: #4a6278; color: white; }
 .btn-cancel:hover { background: #5d7a91; }
+.btn-pier { background: #8b5a2b; color: white; }
+.btn-pier:hover:not(:disabled) { background: #a06a35; }
+.btn-pier:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pier-width-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.pier-width-row label { font-size: 0.8rem; color: #c8915a; flex: 1; }
+.pier-width-row input[type="number"] { width: 80px; padding: 6px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #1e3348; color: white; font-size: 0.88rem; outline: none; }
 
 .btn-ifc-import {
   width: 100%;

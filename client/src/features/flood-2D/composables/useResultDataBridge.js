@@ -62,7 +62,11 @@ async function readData(key) {
  */
 // Kanonische Liste der Vektor-Geometrie-Felder des GeoStore — EINE Quelle der Wahrheit für
 // Producer (Serialisierung) UND Consumer (Hydration). Verhindert vergessene Felder (z.B. bridges).
-export const GEO_FIELDS = ['modifications', 'boundaries', 'nodes', 'weirs', 'bridges', 'culvertLinks'];
+// NB: 'buildings' bewusst NICHT hier — das Viewer-Terrain hat Gebäude bereits als NoData
+// eingebrannt (Flood2DSolverRunner.openViewer), und die separat hydrierte Gebäudemaske
+// clippte über der Gerinnefläche zusätzlich das WASSER weg (Wasser = Klon der geclippten
+// Terrain-Geometrie). Streamlines blenden Gebäude über das gridData-NoData-Gate aus.
+export const GEO_FIELDS = ['modifications', 'boundaries', 'nodes', 'weirs', 'weirLines', 'bridges', 'culvertLinks'];
 
 function serializeGeoFields(geoStore) {
     const out = {};
@@ -132,6 +136,30 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         }
     }
 
+    // Serialize Wasserspiegel-Frames (.elev, optional — Ober-/Unterwasser am Wehr)
+    const serializedElev = {};
+    if (simStore.elevFrames instanceof Map) {
+        for (const [frameId, data] of simStore.elevFrames.entries()) {
+            const raw = toRaw(data);
+            if (!raw) continue;
+            serializedElev[frameId] = raw instanceof Float32Array ? raw.slice() : new Float32Array(raw);
+        }
+    }
+
+    // Serialize Kantenfluss-Frames (Qx/Qy, optional — für Wehr-Durchfluss)
+    const serializedQFlux = {};
+    if (simStore.qFluxFrames instanceof Map) {
+        for (const [frameId, comp] of simStore.qFluxFrames.entries()) {
+            const rawQx = toRaw(comp?.qx);
+            const rawQy = toRaw(comp?.qy);
+            if (!rawQx || !rawQy) continue;
+            serializedQFlux[frameId] = {
+                qx: rawQx instanceof Float32Array ? rawQx.slice() : new Float32Array(rawQx),
+                qy: rawQy instanceof Float32Array ? rawQy.slice() : new Float32Array(rawQy),
+            };
+        }
+    }
+
     // Serialize Summen-/Max-Raster (optional). Einheitlich über _sliceGrid.
     const _sliceGrid = (g) => {
         const raw = toRaw(g);
@@ -164,6 +192,8 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         frames: serializedFrames,
         velocityFrames: serializedVelocity,
         velocityVectorFrames: serializedVectors,
+        elevFrames: serializedElev,
+        qFluxFrames: serializedQFlux,
         maxDepthGrid:    _sliceGrid(simStore.maxDepthGrid),
         maxHazardGrid:   _sliceGrid(simStore.maxHazardGrid),
         maxVelocityGrid: _sliceGrid(simStore.maxVelocityGrid),
@@ -208,6 +238,8 @@ export function useResultDataFromOpener() {
     const resultFrames = ref(new Map());
     const velocityFrames = ref(new Map());
     const velocityVectorFrames = ref(new Map());
+    const elevFrames = ref(new Map());
+    const qFluxFrames = ref(new Map());
     const maxDepthGrid = ref(null);
     const maxHazardGrid = ref(null);
     const maxVelocityGrid = ref(null);
@@ -288,6 +320,21 @@ export function useResultDataFromOpener() {
                 });
             });
 
+            // Hydrate Wasserspiegel-Frames (.elev, optional — Ober-/Unterwasser am Wehr)
+            Object.entries(data.elevFrames || {}).forEach(([frameId, arr]) => {
+                if (!arr) return;
+                elevFrames.value.set(Number(frameId), arr instanceof Float32Array ? arr : new Float32Array(arr));
+            });
+
+            // Hydrate Kantenfluss-Frames (Qx/Qy, optional — Wehr-Durchfluss)
+            Object.entries(data.qFluxFrames || {}).forEach(([frameId, comp]) => {
+                if (!comp || !comp.qx || !comp.qy) return;
+                qFluxFrames.value.set(Number(frameId), {
+                    qx: comp.qx instanceof Float32Array ? comp.qx : new Float32Array(comp.qx),
+                    qy: comp.qy instanceof Float32Array ? comp.qy : new Float32Array(comp.qy),
+                });
+            });
+
             // Hydrate summary grids
             const _hydrate = (v) => v == null ? null : (v instanceof Float32Array ? v : new Float32Array(v));
             if (data.maxDepthGrid)    maxDepthGrid.value    = _hydrate(data.maxDepthGrid);
@@ -314,6 +361,8 @@ export function useResultDataFromOpener() {
         resultFrames,
         velocityFrames,
         velocityVectorFrames,
+        elevFrames,
+        qFluxFrames,
         maxDepthGrid,
         maxHazardGrid,
         maxVelocityGrid,
