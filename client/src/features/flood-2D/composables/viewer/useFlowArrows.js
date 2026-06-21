@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
+import { flippedIndex } from '../../utils/gridIndex';
 
 // Hoher Kontrast auf blauem Wasser (warm, hell): langsam = weiß → gold → rot-orange = schnell.
 const C0 = new THREE.Color(0xffffff); // langsam: weiß
@@ -119,7 +120,7 @@ export function useFlowArrows(getScene, getMask) {
         if (!(vx > -9000) || !(vy > -9000)) continue;
         const sp = Math.hypot(vx, vy);
         if (sp < 1e-4) continue;
-        const idxT = (nrows - 1 - gr) * ncols + c;
+        const idxT = flippedIndex(gr, c, ncols, nrows);
         const localX = -width / 2 + c * cs;
         const localY = height / 2 - gr * cs;
         const zTop = (gridData[idxT] - minZ) + (d > 0 ? d : 0) + 0.5;

@@ -72,8 +72,14 @@ export function decodeFrame(buffer) {
     const channels = {};
     let offset = 4 + jsonLen;
     for (const name of names) {
-        // Kopie statt View, damit der Quellpuffer freigegeben werden kann
-        channels[name] = new Float32Array(buffer.slice(offset, offset + cellCount * 4));
+        // Zero-Copy-View in den Frame-Puffer: die Kanal-Offsets sind 4-Byte-aligned (der
+        // JSON-Header wird auf 4 gepaddet, jeder Kanal ist cellCount*4 lang), daher spart das
+        // die Voll-Kopie je Kanal/Frame (bei 6 Kanälen × ~1 Mio Zellen = ~24 MB Garbage/Frame).
+        // Alle Views teilen sich den Frame-Puffer; der mitgehaltene JSON-Header ist vernachlässigbar.
+        // Fallback auf Kopie, falls ein (alter) Frame nicht 4-aligned ist.
+        channels[name] = (offset % 4 === 0)
+            ? new Float32Array(buffer, offset, cellCount)
+            : new Float32Array(buffer.slice(offset, offset + cellCount * 4));
         offset += cellCount * 4;
     }
     return { meta, channels };

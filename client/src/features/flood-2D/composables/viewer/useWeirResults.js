@@ -16,15 +16,18 @@ import { computed, unref } from 'vue';
 // Relativ-Import (statt @/-Alias), damit der pure Kern node-testbar bleibt
 // (test_weir_results.mjs läuft ohne Vite-Alias-Auflösung).
 import { discretizeWeirPolyline } from '../../utils/weirGeometry.js';
+import { flipRow } from '../../utils/gridIndex.js';
 
 /**
- * EINHEITEN-ANNAHME: LISFLOOD-FP schreibt .Qx/.Qy als volumetrischen Fluss [m³/s]
- * über die jeweilige Zellkante. Die zell-zentrierte (gemittelte) Komponente ist für
- * eine dünne Wehrwand ≈ der Durchfluss durch die Wand → reine Summe über die
- * Wehrzellen = Gesamt-Q [m³/s], OHNE Multiplikation mit der Zellweite.
+ * EINHEIT VERIFIZIERT: LISFLOOD-FP schreibt .Qx/.Qy als volumetrischen Fluss [m³/s]
+ * über die jeweilige Zellkante (NICHT spezifisch [m²/s]). Die zell-zentrierte (gemittelte)
+ * Komponente ist für eine dünne Wehrwand ≈ der Durchfluss durch die Wand → reine Summe über
+ * die Wehrzellen = Gesamt-Q [m³/s], OHNE Multiplikation mit der Zellweite.
  *
- * ⚠️ MUSS gegen res.mass verifiziert werden (Plan-Schritt 2): Sollte sich Qx/Qy als
- * spezifischer Fluss [m²/s] herausstellen, hier auf `header.cellsize` setzen.
+ * Kalibriert an einem cs=2-Lauf (pod-c8416a7c6ab1, 2026-06-19): der Querschnitt-Durchfluss
+ * Σ(de-staggertes qx/qy) ≈ 3212 m³/s lag exakt zwischen res.mass Qin=3053 und Qout=3619
+ * (Verhältnis 1.04). Bei m²/s wäre er halb so groß gewesen (~1600, Verhältnis 2.0). cs=2 ist
+ * entscheidend — bei cs=1 sind beide Einheiten numerisch ununterscheidbar. → Faktor = 1.0.
  */
 export const Q_UNIT_FACTOR = 1.0;
 
@@ -89,7 +92,7 @@ export function computeWeirSeries({ weirLines, header, qFluxFrames, elevFrames =
             let acc = 0;
             let hw = -Infinity, tw = Infinity;
             for (const cell of cells) {
-                const rr = nrows - 1 - cell.row; // Result-Raster ist top-down (row 0 = Nord)
+                const rr = flipRow(cell.row, nrows); // Result-Raster ist top-down (row 0 = Nord)
                 if (cell.col < 0 || cell.col >= ncols || rr < 0 || rr >= nrows) continue;
                 const idx = rr * ncols + cell.col;
                 acc += cellNormalFlux(cell.dirs, qx, qy, idx);

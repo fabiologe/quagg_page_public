@@ -168,6 +168,13 @@ export class RunpodBackend extends SolverBackend {
                 break;
 
             case 'frame': {
+                // KANAL-SEMANTIK (ent-staggert in handler.py, Einheiten):
+                //   depth  [m]    Wassertiefe (NoData→0)
+                //   elev   [m]    Wasserspiegel (absolut, m NHN)
+                //   vx,vy  [m/s]  Geschwindigkeit auf Zellzentren; im Gerinne/Brücke vom
+                //                 SGC-Kanalwert überschrieben (handler.py: |v_sgc|>eps)
+                //   qx,qy  [m³/s] Kantenfluss-Normalkomponenten (für Wehr-Durchfluss)
+                // 'velocity' liefert der Solver nicht als eigenen Kanal — Betrag = |(vx,vy)|.
                 const buf = await this.transport.fetchBinary(output.url);
                 const { meta, channels } = decodeFrame(buf);
                 const header = this._headerFromMeta(meta);

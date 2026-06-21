@@ -149,6 +149,20 @@ watch(() => simStore.lastClick, (newCoords) => {
 const saveCulvert = () => {
     if (!sourceNode.value || !targetNode.value) return;
 
+    // 0) Validierung der Hydraulikparameter (verhindert physikalisch unmögliche Rohre)
+    const f = form.value;
+    const errs = [];
+    if (!(f.diameter > 0))           errs.push('Durchmesser muss > 0 m sein');
+    if (!(f.length > 0))             errs.push('Länge muss > 0 m sein');
+    if (!(f.manning_n > 0))          errs.push('Manning-n muss > 0 sein');
+    if (!(f.Cd > 0 && f.Cd <= 1))    errs.push('Einlaufbeiwert Cd muss in (0, 1] liegen');
+    if (errs.length) { alert('Culvert ungültig:\n• ' + errs.join('\n• ')); return; }
+    // Widriges Gefälle ist erlaubt (Druckrohr), aber ein häufiger Eingabefehler → nachfragen.
+    if (f.z_out > f.z_in &&
+        !confirm(`Auslauf-Sohle (${f.z_out} m) liegt HÖHER als Einlauf (${f.z_in} m) — widriges Gefälle. Trotzdem speichern?`)) {
+        return;
+    }
+
     // A) Eindeutige IDs generieren
     const timestamp = Date.now();
     const sourceId = `node_in_${timestamp}`;

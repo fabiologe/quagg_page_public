@@ -64,17 +64,6 @@
         <div class="accuracy-header">🎯 Genauigkeit (High-End)</div>
 
         <div class="param-grid">
-          <label>Ziel-Zellgröße [m]</label>
-          <div>
-            <input type="number" step="0.5" min="0.1"
-              :placeholder="`nativ: ${nativeCellsize ?? '—'}`"
-              v-model.number="simStore.exportCellsize"
-              :disabled="isRunning" />
-            <small class="cell-estimate" :class="{ 'estimate-warn': exportEstimate.cells > 25e6 }">
-              {{ exportEstimate.label }}
-            </small>
-          </div>
-
           <label>Numerik-Schema</label>
           <select v-model="simStore.numericalScheme" :disabled="isRunning || simStore.sgcEnabled" class="engine-select">
             <option value="acceleration">Acceleration (inertial, robust, CPU+SGC)</option>
@@ -265,22 +254,6 @@ const cflStatus = computed(() => {
     if (ratio < 0.8)  return { level: 'stable',   label: '✅ Stabil',      dtMax };
     if (ratio <= 1.0) return { level: 'marginal',  label: '⚠️ Grenzwertig', dtMax };
     return             { level: 'unstable', label: '🔴 INSTABIL',     dtMax };
-});
-
-// ── Genauigkeits-Schätzung (Export-Resampling) ────────────────────────────────
-const nativeCellsize = computed(() => geoStore.terrain?.cellsize ?? null);
-
-const exportEstimate = computed(() => {
-    const t = geoStore.terrain;
-    if (!t) return { cells: 0, label: '' };
-    const native = t.cellsize ?? 1;
-    const target = simStore.exportCellsize || native;
-    const cells = Math.round(t.ncols * t.nrows * (native / target) ** 2);
-    const mb = (cells * 8 / 1e6); // ~8 B/Zelle ASC-Text
-    let label = `≈ ${(cells / 1e6).toFixed(cells > 1e6 ? 1 : 2)} Mio Zellen · ~${mb.toFixed(0)} MB ASC (gzip ~${(mb / 4).toFixed(0)} MB)`;
-    if (cells > 25e6) label += ' ⚠️ sehr groß';
-    if (target < native / 8) label += ' ⚠️ feiner als 1/8 der Datengrundlage';
-    return { cells, label };
 });
 
 const estimatedFrames = computed(() => {
@@ -584,6 +557,8 @@ const openViewer = async () => {
         if (nonBuildingMods.length > 0) {
             bakedTerrainData.gridData = Rasterizer.burnBuildings(bakedTerrainData.gridData, header, nonBuildingMods);
         }
+        // (Kein Export-Resampling mehr — Solver UND Viewer arbeiten in nativer DEM-Auflösung,
+        //  daher passt die Wasserhaut-Geometrie automatisch zur Frame-Auflösung.)
     }
 
     // Vektor-Geometrien liest prepareResultData direkt aus dem echten geoStore (kanonische
@@ -633,7 +608,6 @@ const runDryCheck = async () => {
              },
              // Genauigkeit (High-End-Pfad) — wie startPreparation
              engine:          simStore.solverMode === 'runpod' ? 'v8' : 'v5',
-             exportCellsize:  simStore.solverMode === 'runpod' ? (simStore.exportCellsize || null) : null,
              numericalScheme: simStore.solverMode === 'runpod' ? simStore.numericalScheme : 'acceleration',
              useGpu:          simStore.solverMode === 'runpod' ? simStore.useGpu : false,
              sgc: (simStore.solverMode === 'runpod' && simStore.sgcEnabled && bathyStore.channelPolyline.length >= 2)
@@ -680,6 +654,26 @@ const runDryCheck = async () => {
 };
 
 const startPreparation = async () => {
+    // ── Harter CFL-Gate ───────────────────────────────────────────────────────
+    // Instabile Zeitschritte (dt > dt_max = cs/√(g·h)) erzeugen am Solver negative
+    // Tiefen / NaN. Statt nur zu warnen (cflStatus-Chip) wird der Versand hier
+    // blockiert; auf Wunsch dt auf 0.8·dt_max klemmen.
+    const cfl = cflStatus.value;
+    if (cfl.level === 'unstable' && cfl.dtMax) {
+        const clampDt = Math.max(0.01, Math.floor(0.8 * cfl.dtMax * 100) / 100);
+        const ok = confirm(
+            `🔴 Instabiler Zeitschritt\n\n`
+            + `dt = ${(simStore.timeStep || 1)} s überschreitet das CFL-Limit `
+            + `(dt_max ≈ ${cfl.dtMax.toFixed(2)} s). Der Lauf erzeugt mit hoher `
+            + `Wahrscheinlichkeit negative Tiefen / NaN.\n\n`
+            + `OK → dt auf ${clampDt} s (0.8·dt_max) klemmen und fortfahren\n`
+            + `Abbrechen → nichts senden`
+        );
+        if (!ok) { appendLog('🔴 CFL-Gate: Abbruch (dt über Limit).'); return; }
+        simStore.timeStep = clampDt;
+        appendLog(`✅ CFL-Gate: dt auf ${clampDt} s geklemmt (0.8·dt_max).`);
+    }
+
     simStore.setStatus('PREPARING');
     appendLog("Generiere Input Dateien aus Stores (Main Thread)...");
 
@@ -726,7 +720,6 @@ const startPreparation = async () => {
 
              // ── Genauigkeit (High-End-Pfad, nur runpod) ─────────────────
              engine:          simStore.solverMode === 'runpod' ? 'v8' : 'v5',
-             exportCellsize:  simStore.solverMode === 'runpod' ? (simStore.exportCellsize || null) : null,
              numericalScheme: simStore.solverMode === 'runpod' ? simStore.numericalScheme : 'acceleration',
              useGpu:          simStore.solverMode === 'runpod' ? simStore.useGpu : false,
              sgc: (simStore.solverMode === 'runpod' && simStore.sgcEnabled && bathyStore.channelPolyline.length >= 2)

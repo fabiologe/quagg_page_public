@@ -2,9 +2,39 @@ import { Rasterizer, maskBuildingsAsNoData, burnModifications } from './Rasteriz
 import { Hydraulics } from './Hydraulics.js';
 import { BoundaryTools } from './BoundaryTools.js';
 import { SgcGenerator } from './SgcGenerator.js';
-import { latticeToCells, collectPierCells } from '../utils/BridgeMeshLattice.js';
+import { latticeToCells, sampleGridZ } from '../utils/BridgeMeshLattice.js';
 import { discretizeWeirPolyline } from '../utils/weirGeometry.js';
+import {
+    discretizeStructureAxis as _discretizeStructureAxis,
+    collectBridgePierCells as _collectBridgePierCells,
+    collapseBridgeCellsToChannel as _collapseBridgeCellsToChannel,
+} from './structureFiles.js';
 import { IssueCollector } from './ScenarioValidator.js';
+
+// Mindest-Brückenöffnung [m]: Soffit muss um mind. so viel ÜBER dem lokalen Gelände liegen,
+// sonst ist Z=min(Soffit−z0,Soffit−z1) ≤ 0 → der Solver-Orifice (weir_flow.cpp) rechnet sich
+// in den „Unexpected Bridge flow calc fail"-Zweig und wird instabil. Zellen darunter (Deck unter
+// Grund = Widerlager/ansteigendes Terrain) werden am Export verworfen.
+const MIN_BRIDGE_OPENING = 0.05;
+
+/**
+ * Ist die Brückenöffnung an dieser Kante degeneriert (Soffit ≤ Gelände+MIN)? Der Solver bildet
+ * Z = min(Soffit−z0, Soffit−z1) aus Zelle UND Nachbar quer zur Fließachse → wir prüfen BEIDE.
+ * Orientierungs-agnostisch: beide Achsen-Nachbarn (±cs) werden geprüft (konservativ).
+ * @returns {boolean} true = Öffnung ≤ 0 → Zelle am Export verwerfen (verhindert „Bridge flow calc fail").
+ */
+function bridgeOpeningGrounded(soffit, x, y, direction, demGrid, header) {
+    if (!demGrid) return false;
+    const cs = header.cellsize;
+    const tooLow = (px, py) => {
+        const dz = sampleGridZ(header, demGrid, px, py);
+        return dz != null && soffit <= dz + MIN_BRIDGE_OPENING;
+    };
+    if (tooLow(x, y)) return true;                       // eigenes Bett (z0)
+    const axisY = (direction === 'S' || direction === 'N'); // blockt N-S → Nachbar in y, sonst x
+    return axisY ? (tooLow(x, y - cs) || tooLow(x, y + cs))
+                 : (tooLow(x - cs, y) || tooLow(x + cs, y)); // Nachbar-Bett (z1)
+}
 
 // Suchradius (Zellen) beim NoData-Rescue: nächste gültige Zelle innerhalb dieser Distanz suchen.
 // 15 Zellen entspricht bei typischer 1m-Auflösung einem 15m-Suchbereich.
@@ -74,31 +104,28 @@ export class InputGenerator {
             throw new Error("InputGenerator: No Terrain Grid or XYZ provided.");
         }
 
-        // ── Export-Auflösung (High-End-Pfad) ────────────────────────────────
-        // Nur beim Remote-Export: DEM auf Ziel-Zellweite resampeln. Der Editor
-        // bleibt bei nativer Auflösung. Alles Nachfolgende (Building-Masking,
-        // Boundaries, Strukturen) arbeitet mit Welt-Koordinaten gegen `header`
-        // und passt sich damit automatisch an.
-        const editorHeader = header; // für surfaceGrid-Lookup (native Auflösung)
-        if (scenario.exportCellsize && Math.abs(scenario.exportCellsize - header.cellsize) > 1e-9) {
-            const native = header.cellsize;
-            if (scenario.exportCellsize < native / 8) {
-                this.warn(`Ziel-Zellweite ${scenario.exportCellsize} m ist feiner als 1/8 der Datengrundlage (${native} m) — Interpolation erzeugt keine echte Information.`);
-            }
-            if (scenario.exportCellsize > native) {
-                this.warn(`Ziel-Zellweite ${scenario.exportCellsize} m ist GRÖBER als die Datengrundlage (${native} m) — Detailverlust.`);
-            }
-            const res = Rasterizer.resampleGrid(data, header, scenario.exportCellsize, 'bilinear');
-            data = res.data;
-            header = res.header;
-            const cells = header.ncols * header.nrows;
-            if (cells > 25e6) {
-                this.warn(`Export-Raster hat ${(cells / 1e6).toFixed(0)} Mio Zellen (~${(cells * 4 / 1e6).toFixed(0)} MB je Raster) — Upload/Memory prüfen.`);
-            }
-            console.log(`[InputGenerator] Export-Resampling: ${native}m → ${scenario.exportCellsize}m (${header.ncols}×${header.nrows})`);
-        }
+        // Solver rechnet IMMER in nativer DEM-Auflösung. Das frühere Export-Resampling auf eine
+        // einstellbare Ziel-Zellweite wurde entfernt (schmaler Nutzen, breite Bug-/Komplexitätsfläche:
+        // Halbzellen-Ursprung, Viewer-Mismatch, Editor-vs-Export-Konsistenz). Wer gröber/schneller
+        // rechnen will, importiert ein gröberes DEM.
+        const editorHeader = header; // surfaceGrid-Lookup nutzt denselben (nativen) Header
 
         this.terrainHeader = header;
+
+        // ── CFL-Warnung (programmatischer Spiegel zum UI-Gate) ─────────────────
+        // dt > dt_max = cs/√(g·h) → Trägheitsschema wird instabil (negative Tiefen/NaN).
+        // Der harte Block sitzt in Flood2DSolverRunner.vue; hier nur eine Warnung für
+        // programmatische/Test-Pfade, die das UI umgehen.
+        {
+            const dt = parseFloat(scenario.config?.initial_tstep);
+            const terr = scenario.grid || {};
+            const maxDepth = Math.max((terr.maxZ ?? 1) - (terr.minZ ?? 0), 0.5);
+            const dtMax = header.cellsize / Math.sqrt(9.81 * maxDepth);
+            if (Number.isFinite(dt) && dt > dtMax) {
+                this.warn(`Zeitschritt dt=${dt}s überschreitet das CFL-Limit dt_max≈${dtMax.toFixed(2)}s (cs=${header.cellsize}m, h≈${maxDepth.toFixed(1)}m) — Risiko negativer Tiefen/NaN. dt ≤ ${(0.8 * dtMax).toFixed(2)}s wählen.`);
+            }
+        }
+
         console.log(`[InputGenerator] Terrain Header: ncols=${header.ncols}, nrows=${header.nrows}, cellsize=${header.cellsize}, xll=${header.xll}, yll=${header.yll}`);
 
         // ── Building NoData-Masking & Terrain-Modifikationen ───────────────────
@@ -294,7 +321,7 @@ export class InputGenerator {
         const hasWeirData    = scenario.weirs   && scenario.weirs.length   > 0;
         const hasBridgeData  = scenario.bridges && scenario.bridges.length > 0;
         if (hasWeirData || hasBridgeData) {
-            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid, weirLines: scenario.weirLines || [] });
+            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid, weirLines: scenario.weirLines || [], demGrid: data });
             if (weirContent) {
                 if (fs) fs.writeFile('/flow.weir', weirContent);
                 else this.files['flow.weir'] = weirContent;
@@ -961,6 +988,17 @@ export class InputGenerator {
     generateManningFile(surfaceGrid, materials, srcHeader, dstHeader = srcHeader) {
         if (!surfaceGrid || !materials || !srcHeader) return null;
 
+        // Dimensions-Guard: surfaceGrid wird über srcHeader (ncols×nrows) indiziert. Stimmt die
+        // Länge nicht (typisch nach Crop/DEM-Wechsel ohne Neu-Malen), würde der NN-Lookup falsche
+        // Zellen treffen → räumlich versetzte Reibung. Dann lieber sicher auf globale fpfric fallen.
+        const srcSize = srcHeader.ncols * srcHeader.nrows;
+        if (surfaceGrid.length !== srcSize) {
+            this.warn(`Manning-Raster übersprungen: surfaceGrid (${surfaceGrid.length} Zellen) passt nicht zum `
+                + `Terrain (${srcHeader.ncols}×${srcHeader.nrows}=${srcSize}) — vermutlich nach Crop/DEM-Wechsel `
+                + `nicht neu bemalt. Fallback auf globale Reibung (fpfric).`);
+            return null;
+        }
+
         const ncols = dstHeader.ncols;
         const nrows = dstHeader.nrows;
         const size = ncols * nrows;
@@ -1221,72 +1259,10 @@ export class InputGenerator {
      * @returns {Array<{x:number, y:number, col:number, rowBottomUp:number, direction:'E'|'S'}>}
      *          x/y = Zellzentren in Welt-Koordinaten
      */
+    // Bauwerks-Diskretisierung → middleware/structureFiles.js (dünne Delegatoren, damit
+    // bestehende Aufrufer `this.X(...)` und die Tests unverändert weiterlaufen).
     discretizeStructureAxis(axisCoords, header) {
-        if (!axisCoords || axisCoords.length < 2) return [];
-        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
-        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
-        const cs = header.cellsize;
-
-        // 4-connected Bresenham (wie Editor-getLineCells): Barrieren müssen
-        // WASSERDICHT sein — das 8-connected discretizeLine der Boundaries
-        // lässt auf Diagonalen Eck-Lücken, durch die Wasser fließen würde,
-        // und jeder Schritt muss eindeutig Reihe ODER Spalte wechseln, damit
-        // die Richtungszuordnung (E/S) pro Zelle wohldefiniert ist.
-        const line4Connected = (c0, r0, c1, r1) => {
-            const dx = Math.abs(c1 - c0);
-            const dy = -Math.abs(r1 - r0);
-            const sx = c0 < c1 ? 1 : -1;
-            const sy = r0 < r1 ? 1 : -1;
-            let err = dx + dy;
-            let c = c0, r = r0;
-            const out = [{ x: c, y: r }];
-            while (!(c === c1 && r === r1)) {
-                const e2 = 2 * err;
-                if (e2 > dy && e2 < dx) {
-                    // Diagonalschritt → in zwei 4er-Schritte aufteilen
-                    err += dy; c += sx;
-                    out.push({ x: c, y: r });
-                    err += dx; r += sy;
-                } else if (e2 > dy) {
-                    err += dy; c += sx;
-                } else {
-                    err += dx; r += sy;
-                }
-                out.push({ x: c, y: r });
-            }
-            return out;
-        };
-
-        const cells = [];
-        const seen = new Set();
-        for (let i = 0; i < axisCoords.length - 1; i++) {
-            const c0 = Math.round((axisCoords[i][0] - xll) / cs);
-            const r0 = Math.round((axisCoords[i][1] - yll) / cs);
-            const c1 = Math.round((axisCoords[i + 1][0] - xll) / cs);
-            const r1 = Math.round((axisCoords[i + 1][1] - yll) / cs);
-            for (const cell of line4Connected(c0, r0, c1, r1)) {
-                const key = `${cell.x},${cell.y}`;
-                if (!seen.has(key)) { seen.add(key); cells.push(cell); }
-            }
-        }
-
-        // Richtung: Reihenwechsel (lokal N-S-verlaufende Linie) → 'E' (blockt E-W-Fluss),
-        // sonst 'S' (blockt N-S). Verifiziert gegen input.cpp Weir_Identx/Identy.
-        return cells.map((cell, i) => {
-            let direction;
-            if (i === 0) {
-                direction = (cells.length > 1 && cells[1].y !== cells[0].y) ? 'E' : 'S';
-            } else {
-                direction = (cell.y !== cells[i - 1].y) ? 'E' : 'S';
-            }
-            return {
-                x: xll + cell.x * cs,
-                y: yll + cell.y * cs,
-                col: cell.x,
-                rowBottomUp: cell.y,
-                direction
-            };
-        });
+        return _discretizeStructureAxis(axisCoords, header);
     }
 
     /**
@@ -1300,8 +1276,7 @@ export class InputGenerator {
      * @returns {Set<string>}  Schlüssel "col,row" der Pfeilerzellen
      */
     collectBridgePierCells(bridges, header) {
-        // Single Source: dieselbe Pfeiler-Rasterung nutzt der ErgebnisViewer fürs Overlay.
-        return collectPierCells(bridges, header);
+        return _collectBridgePierCells(bridges, header);
     }
 
     /**
@@ -1325,35 +1300,7 @@ export class InputGenerator {
      * @returns {Array} eine Zelle je Spannposition (1 Zelle tief in Fließrichtung)
      */
     collapseBridgeCellsToChannel(cells, header, sgcWidthGrid) {
-        const { ncols, nrows } = header;
-        const sgcAt = (col, row) =>
-            (col < 0 || col >= ncols || row < 0 || row >= nrows) ? 0 : (sgcWidthGrid[row * ncols + col] || 0);
-
-        // Quer zur Fließrichtung gruppieren: S/N → Fluss in Reihen → Schlüssel=col;
-        // E/W → Fluss in Spalten → Schlüssel=row.
-        const groups = new Map();
-        for (const c of cells) {
-            const flowIsRows = (c.direction === 'S' || c.direction === 'N');
-            const key = flowIsRows ? c.col : c.row;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key).push({ ...c, flowIsRows });
-        }
-
-        const out = [];
-        for (const group of groups.values()) {
-            // Mit SGC: nur Zellen mit Sub-Grid-Fluss auf BEIDEN Fließseiten sind gültig.
-            // Ohne SGC (Floodplain-Brücke): rein geometrisch — alle Zellen gültig.
-            const valid = sgcWidthGrid ? group.filter(c => {
-                if (sgcAt(c.col, c.row) <= 0) return false;
-                return c.flowIsRows
-                    ? (sgcAt(c.col, c.row - 1) > 0 && sgcAt(c.col, c.row + 1) > 0)
-                    : (sgcAt(c.col - 1, c.row) > 0 && sgcAt(c.col + 1, c.row) > 0);
-            }) : group;
-            if (valid.length === 0) continue; // Spannposition kreuzt das Gerinne nicht
-            valid.sort((a, b) => a.soffit - b.soffit); // restriktivste Öffnung zuerst
-            out.push(valid[0]);
-        }
-        return out;
+        return _collapseBridgeCellsToChannel(cells, header, sgcWidthGrid);
     }
 
     /**
@@ -1383,7 +1330,7 @@ export class InputGenerator {
      * @param {{engine?: 'v5'|'v8'}} [opts]
      * @returns {string}
      */
-    generateWeirFile(weirs, bridges = [], header = null, { engine = 'v5', sgcWidthGrid = null, weirLines = null } = {}) {
+    generateWeirFile(weirs, bridges = [], header = null, { engine = 'v5', sgcWidthGrid = null, weirLines = null, demGrid = null } = {}) {
         const bridgeEntries = [];
         let weirEntries = [...(weirs || [])];
 
@@ -1405,7 +1352,18 @@ export class InputGenerator {
                     // Pfeilerzellen (Zellzentrum im Pfeilerband) liefern kein
                     // Orifice — die volle Sperrung kommt aus der SGC-Breite 0 dort.
                     const pierSkipped = meshCells.filter(c => c.pier).length;
-                    const openCells = meshCells.filter(c => !c.pier);
+                    // Soffit-vs-Gelände (Zelle UND Nachbar quer zur Fließachse, wie der Solver):
+                    // Öffnung ≤ MIN_BRIDGE_OPENING (Deck unter Grund, z.B. Widerlager) → verwerfen,
+                    // sonst Z≤0 → Solver-Orifice-Fail.
+                    let buriedCount = 0;
+                    const openCells = meshCells.filter(c => {
+                        if (c.pier) return false;
+                        if (bridgeOpeningGrounded(c.soffit, c.x, c.y, c.direction, demGrid, header)) { buriedCount++; return false; }
+                        return true;
+                    });
+                    if (buriedCount > 0) {
+                        this.warn(`Brücke ${id8}: ${buriedCount} Zelle(n) mit Soffit ≤ Gelände+${MIN_BRIDGE_OPENING}m verworfen (Deck unter Grund — Widerlager/ansteigendes Terrain). Verhindert instabile Orifice-Berechnung ("Bridge flow calc fail").`);
+                    }
                     // IMMER auf EINE Zellreihe je Spannposition kollabieren (1 Zelle tief
                     // in Fließrichtung): saubere Brücken-Öffnung statt eines dicken
                     // Orifice-Blocks. Mit SGC zusätzlich gegen das Gerinne gefiltert; ohne
@@ -1442,13 +1400,21 @@ export class InputGenerator {
                 const width  = bridge.width ?? 5.0;
                 const Cd     = bridge.Cd ?? 1.0;
                 const Tz     = bridge.Tz ?? 1.5;
-                // Öffnungsbreite auf Zellen aufteilen: bridge.width pro Zelle zu
+                // Soffit-vs-Gelände-Validierung (wie mesh3d): degenerierte Öffnungen verwerfen.
+                let buriedLegacy = 0;
+                const okCells = !demGrid ? cells : cells.filter(cell => {
+                    if (bridgeOpeningGrounded(soffit, cell.x, cell.y, cell.direction, demGrid, header)) { buriedLegacy++; return false; }
+                    return true;
+                });
+                if (buriedLegacy > 0) this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: ${buriedLegacy} Zelle(n) mit Soffit ≤ Gelände verworfen (Deck unter Grund — Orifice-Instabilität vermieden).`);
+                if (okCells.length === 0) continue;
+                // Öffnungsbreite auf (gültige) Zellen aufteilen: bridge.width pro Zelle zu
                 // wiederholen würde die Öffnung N-fach überzählen.
-                const wPerCell = Math.min(cs, width / cells.length);
-                if (width > cells.length * cs) {
-                    this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: Öffnungsbreite ${width} m > Strukturlänge ${(cells.length * cs).toFixed(1)} m — Breite wird gekappt.`);
+                const wPerCell = Math.min(cs, width / okCells.length);
+                if (width > okCells.length * cs) {
+                    this.warn(`Brücke ${String(bridge.id).substring(0, 8)}: Öffnungsbreite ${width} m > Strukturlänge ${(okCells.length * cs).toFixed(1)} m — Breite wird gekappt.`);
                 }
-                for (const cell of cells) {
+                for (const cell of okCells) {
                     bridgeEntries.push({ x: cell.x, y: cell.y, direction: cell.direction + 'B', Cd, hc: soffit, m: Tz, w: wPerCell });
                 }
             }

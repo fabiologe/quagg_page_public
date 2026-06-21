@@ -10,6 +10,7 @@
  * localX = -W/2 + col·cs ; localY = H/2 - row·cs ; lokales +Z = Welt-Höhe.
  */
 import * as THREE from 'three';
+import { flippedIndex } from '../../utils/gridIndex';
 import { RENDER_ORDER } from '../editor/renderLayers';
 
 const CAP = 4000;            // max. Marker (breite Instabilität nicht endlos rendern)
@@ -77,7 +78,7 @@ export function useDangerMarkers(getScene) {
       const c = f.col, r = f.row;
       const localX = -width / 2 + c * cs;
       const localY = height / 2 - r * cs;
-      const idxT = (nrows - 1 - r) * ncols + c;            // gridData bottom-up
+      const idxT = flippedIndex(r, c, ncols, nrows);       // gridData bottom-up
       const surf = (gridData[idxT] - minZ) + Math.min(robustMax, depthField ? (depthField[r * ncols + c] || 0) : robustMax);
       dummy.position.set(localX, localY, surf + mesh._coneH * 0.5 + 0.2);
       dummy.rotation.set(0, 0, 0);

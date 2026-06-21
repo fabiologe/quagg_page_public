@@ -7,6 +7,13 @@ als Planungsgrundlage. Die `⚠️ Bekannte Risiken`-Sektion am Ende listet die 
 > Stand: 2026-06-13. Querverweis Physik-/GIGO-Audit:
 > `client/src/features/flood-2D/result/AUDIT_LISFLOOD82_Physik_und_Wehre.md`.
 
+> **Solver-Version (Entscheidung 2026-06-18):** Wir bleiben bewusst bei **LISFLOOD-FP 8.0.3 +
+> `quagg-weir-flow.patch`** und steigen NICHT auf 8.2 um. Begründung: 8.0.3 ist gegen den
+> Client-Input-Generator end-to-end verifiziert (Kanäle, Wehr-/Brücken-/SGC-Physik), ein 8.2-Upgrade
+> brächte Re-Validierungs- und Regressionsrisiko ohne aktuellen fachlichen Mehrwert. Der im Client-Baum
+> noch referenzierte „8.2"-Stand ist daher Dokumentations-Altlast, nicht Ziel.
+> Querverweis: `client/src/features/flood-2D/result/ROADMAP_FLOOD2D_9of10.md` (Phase 0, T0.4).
+
 ---
 
 ## 1. Architektur & Datenfluss

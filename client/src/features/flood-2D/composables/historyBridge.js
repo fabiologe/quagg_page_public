@@ -29,9 +29,25 @@ export function notifyPreMutate(label) {
 // Max 5 Einträge — Float32Arrays können groß sein!
 
 const MAX_TERRAIN_SNAPSHOTS = 5;
+// Byte-Budget für FULL-Snapshots (Crop/Mask kopieren das ganze gridData). Patches sind winzig
+// und zählen praktisch nicht. Bound BEIDE Stacks (past+future) gegen RAM-Wachstum bei Undo/Redo.
+const MAX_TERRAIN_BYTES = 96 * 1024 * 1024; // ~96 MB
 
 const _terrainPast   = [];
 const _terrainFuture = [];
+
+/** Summiert die Bytes der FULL-Snapshots einer History-Liste. */
+function _fullBytes(list) {
+    let b = 0;
+    for (const s of list) if (s.type === 'FULL' && s.gridData) b += s.gridData.byteLength;
+    return b;
+}
+
+/** Begrenzt eine History-Liste gegen Count- UND Byte-Budget (älteste Einträge zuerst raus). */
+function _evict(list) {
+    while (list.length > MAX_TERRAIN_SNAPSHOTS) list.shift();
+    while (list.length > 1 && _fullBytes(list) > MAX_TERRAIN_BYTES) list.shift();
+}
 
 // Reaktive Zähler — damit Vue computed-Props auf Änderungen reagieren können
 export const terrainUndoCount = ref(0);
@@ -62,8 +78,6 @@ export function saveTerrainSnapshot() {
     const t = _getTerrainFn();
     if (!t || !t.gridData) return;
 
-    if (_terrainPast.length >= MAX_TERRAIN_SNAPSHOTS) _terrainPast.shift();
-
     _terrainPast.push({
         type:     'FULL',
         gridData:  t.gridData.slice(),
@@ -80,6 +94,7 @@ export function saveTerrainSnapshot() {
         center:    t.center ? { ...t.center } : null,
         stats:     t.stats  ? { ...t.stats  } : null,
     });
+    _evict(_terrainPast);
 
     _terrainFuture.length = 0;
     _syncCounts();
@@ -94,12 +109,11 @@ export function saveTerrainSnapshot() {
 export function saveTerrainPatch(patch) {
     if (!patch || patch.length === 0) return;
 
-    if (_terrainPast.length >= MAX_TERRAIN_SNAPSHOTS) _terrainPast.shift();
-
     _terrainPast.push({
         type:  'PATCH',
         cells: patch.map(p => ({ idx: p.idx, z: p.oldZ })),
     });
+    _evict(_terrainPast);
 
     _terrainFuture.length = 0;
     _syncCounts();
@@ -142,11 +156,13 @@ export function undoTerrain() {
             center:    t.center ? { ...t.center } : null,
             stats:     t.stats  ? { ...t.stats  } : null,
         });
+        _evict(_terrainFuture);
         _setTerrainFn(snap);
     } else {
         // PATCH: Aktuelle Zellwerte für Redo sichern, dann alte einspielen
         const redoPatch = snap.cells.map(c => ({ idx: c.idx, z: t.gridData[c.idx] }));
         _terrainFuture.push({ type: 'PATCH', cells: redoPatch });
+        _evict(_terrainFuture);
 
         snap.cells.forEach(c => { t.gridData[c.idx] = c.z; });
         _setTerrainFn(t); // triggert terrainVersion++
@@ -181,10 +197,12 @@ export function redoTerrain() {
             center:    t.center ? { ...t.center } : null,
             stats:     t.stats  ? { ...t.stats  } : null,
         });
+        _evict(_terrainPast);
         _setTerrainFn(snap);
     } else {
         const undoPatch = snap.cells.map(c => ({ idx: c.idx, z: t.gridData[c.idx] }));
         _terrainPast.push({ type: 'PATCH', cells: undoPatch });
+        _evict(_terrainPast);
 
         snap.cells.forEach(c => { t.gridData[c.idx] = c.z; });
         _setTerrainFn(t);

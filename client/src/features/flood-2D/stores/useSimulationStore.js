@@ -57,8 +57,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     });
 
     // ── Genauigkeits-Settings (High-End-Pfad, nur solverMode 'runpod') ───────
-    /** Ziel-Zellweite [m] fürs Export-Resampling; null = native Auflösung. */
-    const exportCellsize = ref(null);
+    // (Export-Zellweite entfernt — Solver rechnet immer in nativer DEM-Auflösung.)
     /** Numerisches Schema für LISFLOOD 8: 'acceleration' | 'fv1' | 'dg2'. SGC erzwingt acceleration. */
     const numericalScheme = ref('acceleration');
     /** Sub-Grid-Channel-Export der gezeichneten Kanal-Mittellinie. */
@@ -218,7 +217,6 @@ export const useSimulationStore = defineStore('simulation', () => {
         if (cfg.useAcceleration !== undefined) useAcceleration.value = cfg.useAcceleration;
         if (cfg.solverMode !== undefined) solverMode.value = cfg.solverMode;
         else if (cfg.useBmiSolver !== undefined) useBmiSolver.value = cfg.useBmiSolver; // Legacy-Projekte
-        if (cfg.exportCellsize !== undefined) exportCellsize.value = cfg.exportCellsize;
         if (cfg.numericalScheme !== undefined) numericalScheme.value = cfg.numericalScheme;
         if (cfg.sgcEnabled !== undefined) sgcEnabled.value = cfg.sgcEnabled;
         if (cfg.useGpu !== undefined) useGpu.value = cfg.useGpu;
@@ -260,7 +258,6 @@ export const useSimulationStore = defineStore('simulation', () => {
         useAcceleration,
         solverMode,
         useBmiSolver,
-        exportCellsize,
         numericalScheme,
         sgcEnabled,
         useGpu,

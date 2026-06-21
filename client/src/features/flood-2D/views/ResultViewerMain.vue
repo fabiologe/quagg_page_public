@@ -29,6 +29,7 @@
           ref="map3d"
           :terrain="bridge.terrain.value"
           :depthData="currentLayerData"
+          :elevData="currentElevData"
           :maxWaterDepth="currentLayerMax"
           :layerMode="activeLayerMode"
           :flowData="currentFlowData"
@@ -246,6 +247,14 @@ const currentLayerData = computed(() => {
     case 'duration':     return bridge.durationGrid?.value ?? null;
     default:             return currentDepthData.value;
   }
+});
+
+// Wasserspiegel (.elev) des aktuellen Frames — exakte Solver-Oberfläche für die Wasser-Geometrie.
+// Nur für die dynamische Wasserhaut (echte Tiefe je Frame), nicht für statische Summenraster
+// (max_*/hazard/arrival/duration haben kein per-Frame-.elev → Fallback baseZ+Tiefe).
+const currentElevData = computed(() => {
+  if (STATIC_GRID_LAYERS.includes(activeLayer.value)) return null;
+  return bridge.elevFrames?.value?.get(currentFrame.value) ?? null;
 });
 
 // Geschwindigkeits-Betrag des aktuellen Frames (für die Heatmap-Farbe)

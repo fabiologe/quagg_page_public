@@ -12,6 +12,7 @@ const DB_NAME = 'flood-result-bridge';
 const DB_VERSION = 1;
 const STORE_NAME = 'result-data';
 const DATA_KEY = 'current';
+const FRAME_PREFIX = 'frame:'; // pro-Frame-Records (Schema 'per-frame-v1') gegen Mega-Clone-OOM
 
 // ─── IndexedDB Helpers ───
 
@@ -51,6 +52,110 @@ async function readData(key) {
     });
 }
 
+/**
+ * Schreibt resultData als META-Record (DATA_KEY) + EIN Record je Frame (`frame:<id>`).
+ * So klont IndexedDB.put pro Aufruf nur EINEN kleinen Frame (~MB) statt des ganzen
+ * Mehrhundert-MB-Blobs in einem Rutsch → behebt `DataCloneError: out of memory`.
+ */
+async function writeResultData(resultData) {
+    const db = await openDB();
+    const {
+        frames = {}, velocityFrames = {}, velocityVectorFrames = {},
+        elevFrames = {}, qFluxFrames = {}, ...meta
+    } = resultData;
+    const frameIds = Object.keys(frames).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    meta.frameIds = frameIds;
+    meta.schema = 'per-frame-v1';
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.clear(); // alte Records (Meta + Frames eines früheren Laufs) entfernen
+        store.put(meta, DATA_KEY);
+        for (const id of frameIds) {
+            const rec = { depth: frames[id] };
+            if (velocityFrames[id]) rec.velocity = velocityFrames[id];
+            const vv = velocityVectorFrames[id];
+            if (vv && vv.vx && vv.vy) { rec.vx = vv.vx; rec.vy = vv.vy; }
+            if (elevFrames[id]) rec.elev = elevFrames[id];
+            const qf = qFluxFrames[id];
+            if (qf && qf.qx && qf.qy) { rec.qx = qf.qx; rec.qy = qf.qy; }
+            store.put(rec, FRAME_PREFIX + id);
+        }
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+        tx.onabort = () => { db.close(); reject(tx.error || new Error('IDB-Transaktion abgebrochen (evtl. Quota/Speicher)')); };
+    });
+}
+
+/** Setzt die pro-Frame-Records (`frame:<id>`) wieder zur erwarteten data-Form zusammen. */
+function reassemblePerFrame(meta, recById) {
+    const frames = {}, velocityFrames = {}, velocityVectorFrames = {}, elevFrames = {}, qFluxFrames = {};
+    for (const id of (meta.frameIds || [])) {
+        const rec = recById.get(id);
+        if (!rec) continue;
+        if (rec.depth) frames[id] = rec.depth;
+        if (rec.velocity) velocityFrames[id] = rec.velocity;
+        if (rec.vx && rec.vy) velocityVectorFrames[id] = { vx: rec.vx, vy: rec.vy };
+        if (rec.elev) elevFrames[id] = rec.elev;
+        if (rec.qx && rec.qy) qFluxFrames[id] = { qx: rec.qx, qy: rec.qy };
+    }
+    const { frameIds, schema, ...rest } = meta; // eslint-disable-line no-unused-vars
+    return { ...rest, frames, velocityFrames, velocityVectorFrames, elevFrames, qFluxFrames };
+}
+
+/** Main-Thread-Fallback (wenn der Worker ausfällt): Meta + Frames lesen und zusammensetzen. */
+async function readResultDataMainThread() {
+    const meta = await readData(DATA_KEY);
+    if (!meta) return null;
+    if (meta.schema !== 'per-frame-v1') return meta; // Alt-Format (ganzes Objekt)
+    const db = await openDB();
+    const recById = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const out = new Map();
+        const ids = meta.frameIds || [];
+        let pending = ids.length;
+        if (pending === 0) { resolve(out); return; }
+        for (const id of ids) {
+            const r = store.get(FRAME_PREFIX + id);
+            r.onsuccess = () => { out.set(id, r.result); if (--pending === 0) resolve(out); };
+            r.onerror = () => { if (--pending === 0) resolve(out); };
+        }
+        tx.onerror = () => reject(tx.error);
+        tx.oncomplete = () => db.close();
+    });
+    return reassemblePerFrame(meta, recById);
+}
+
+/**
+ * Liest den Result-Blob über einen Worker: der teure Structured-Clone des ~600-MB-Objekts
+ * läuft off-main-thread, die ArrayBuffers kommen per Transfer zero-copy zurück → kein
+ * Main-Thread-Freeze beim Öffnen des Result-Viewers. Bei jedem Fehler (Bundling/Boot/Timeout)
+ * wird auf den synchronen Main-Thread-Pfad (readData) zurückgefallen — Worst Case = bisheriges
+ * Verhalten, kein kaputter Viewer.
+ */
+function readDataViaWorker(key, timeoutMs = 60000) {
+    return new Promise((resolve, reject) => {
+        let worker, timer;
+        const done = (fn, arg) => {
+            if (timer) clearTimeout(timer);
+            try { worker && worker.terminate(); } catch { /* noop */ }
+            fn(arg);
+        };
+        try {
+            worker = new Worker(new URL('../workers/resultHydrationWorker.js', import.meta.url), { type: 'module' });
+        } catch (e) { reject(e); return; }
+        timer = setTimeout(() => done(reject, new Error('Hydrierungs-Worker Timeout')), timeoutMs);
+        worker.onmessage = (e) => {
+            const m = e.data || {};
+            if (m.type === 'error') done(reject, new Error(m.message || 'Worker-Fehler'));
+            else done(resolve, m.data);
+        };
+        worker.onerror = (e) => done(reject, new Error(e.message || 'Worker-Fehler'));
+        worker.postMessage({ type: 'load', key });
+    });
+}
+
 // ─── Producer (Main Window) ───
 
 /**
@@ -87,9 +192,13 @@ function serializeGeoFields(geoStore) {
  * IndexedDB-Bridge (prepareResultData) UND dem Projekt-Datei-Export (useProjectFile.saveProject).
  * @returns {object|null} resultData oder null, wenn kein Terrain vorhanden ist.
  */
-export function buildResultData(simStore, geoStore, { bciContent = null, terrainOverride = null } = {}) {
+export function buildResultData(simStore, geoStore, { bciContent = null, terrainOverride = null, copyArrays = true } = {}) {
     const rawTerrain = toRaw(terrainOverride ?? geoStore.terrain);
     const geoSerialized = serializeGeoFields(geoStore);
+    // copyArrays=false (IDB-Pfad): keine redundante .slice()-Kopie — IndexedDB.put klont ohnehin.
+    // Spart bei großen Läufen die Speicher-VERDOPPLUNG vor dem Schreiben (Mit-Ursache des OOM).
+    // copyArrays=true (Projekt-Export): unabhängige Kopien wie bisher.
+    const keep = (raw) => raw instanceof Float32Array ? (copyArrays ? raw.slice() : raw) : new Float32Array(raw);
     console.log('[ResultBridge] serialize geo:', GEO_FIELDS.map(f => `${f}=${geoStore[f]?.length ?? (geoStore[f]?.features?.length ?? '–')}`).join(' '));
 
     if (!rawTerrain || !rawTerrain.gridData) {
@@ -105,7 +214,7 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
     if (framesMap instanceof Map) {
         for (const [frameId, data] of framesMap.entries()) {
             const rawData = toRaw(data);
-            const arr = rawData instanceof Float32Array ? rawData.slice() : new Float32Array(rawData);
+            const arr = keep(rawData);
             for (let i = 0; i < arr.length; i++) {
                 if (arr[i] > computedMaxDepth) computedMaxDepth = arr[i];
             }
@@ -118,7 +227,7 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
     if (simStore.velocityFrames instanceof Map) {
         for (const [frameId, data] of simStore.velocityFrames.entries()) {
             const raw = toRaw(data);
-            serializedVelocity[frameId] = raw instanceof Float32Array ? raw.slice() : new Float32Array(raw);
+            serializedVelocity[frameId] = keep(raw);
         }
     }
 
@@ -129,10 +238,7 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
             const rawVx = toRaw(comp?.vx);
             const rawVy = toRaw(comp?.vy);
             if (!rawVx || !rawVy) continue;
-            serializedVectors[frameId] = {
-                vx: rawVx instanceof Float32Array ? rawVx.slice() : new Float32Array(rawVx),
-                vy: rawVy instanceof Float32Array ? rawVy.slice() : new Float32Array(rawVy),
-            };
+            serializedVectors[frameId] = { vx: keep(rawVx), vy: keep(rawVy) };
         }
     }
 
@@ -142,7 +248,7 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         for (const [frameId, data] of simStore.elevFrames.entries()) {
             const raw = toRaw(data);
             if (!raw) continue;
-            serializedElev[frameId] = raw instanceof Float32Array ? raw.slice() : new Float32Array(raw);
+            serializedElev[frameId] = keep(raw);
         }
     }
 
@@ -153,17 +259,14 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
             const rawQx = toRaw(comp?.qx);
             const rawQy = toRaw(comp?.qy);
             if (!rawQx || !rawQy) continue;
-            serializedQFlux[frameId] = {
-                qx: rawQx instanceof Float32Array ? rawQx.slice() : new Float32Array(rawQx),
-                qy: rawQy instanceof Float32Array ? rawQy.slice() : new Float32Array(rawQy),
-            };
+            serializedQFlux[frameId] = { qx: keep(rawQx), qy: keep(rawQy) };
         }
     }
 
     // Serialize Summen-/Max-Raster (optional). Einheitlich über _sliceGrid.
     const _sliceGrid = (g) => {
         const raw = toRaw(g);
-        return raw instanceof Float32Array ? raw.slice() : (raw ? new Float32Array(raw) : null);
+        return raw ? keep(raw) : null;
     };
 
     const rawGridData = toRaw(rawTerrain.gridData);
@@ -171,7 +274,7 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
 
     const resultData = {
         terrain: {
-            gridData: rawGridData instanceof Float32Array ? rawGridData.slice() : new Float32Array(rawGridData),
+            gridData: keep(rawGridData),
             ncols: rawTerrain.ncols,
             nrows: rawTerrain.nrows,
             cellsize: rawTerrain.cellsize,
@@ -209,10 +312,10 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
 
 /** Serialisiert simStore + geoStore in die IndexedDB (Producer für den Result-Viewer). */
 export async function prepareResultData(simStore, geoStore, opts = {}) {
-    const resultData = buildResultData(simStore, geoStore, opts);
+    const resultData = buildResultData(simStore, geoStore, { ...opts, copyArrays: false });
     if (!resultData) return false;
     try {
-        await writeData(DATA_KEY, resultData);
+        await writeResultData(resultData);
         console.log('[ResultBridge] Data stored in IndexedDB:', {
             terrainSize: resultData.terrain.ncols + 'x' + resultData.terrain.nrows,
             frameCount: Object.keys(resultData.frames).length,
@@ -260,8 +363,15 @@ export function useResultDataFromOpener() {
         error.value = null;
 
         try {
-            console.log('[ResultBridge] Reading from IndexedDB...');
-            const data = await readData(DATA_KEY);
+            console.log('[ResultBridge] Reading from IndexedDB (Worker, Fallback Main-Thread)...');
+            let data;
+            try {
+                data = await readDataViaWorker(DATA_KEY);
+                console.log('[ResultBridge] Hydrierung via Worker (off-main-thread).');
+            } catch (werr) {
+                console.warn('[ResultBridge] Worker-Hydrierung fehlgeschlagen → Main-Thread-Fallback:', werr?.message || werr);
+                data = await readResultDataMainThread();
+            }
 
             if (!data) {
                 error.value = 'Keine Daten gefunden. Bitte zuerst Simulation starten.';

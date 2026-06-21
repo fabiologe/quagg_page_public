@@ -80,6 +80,22 @@ export const useGeoStore = defineStore('geo', () => {
     );
 
     function addNode(node) {
+        // Plausibilitäts-Check: liegt der Knoten im aktuellen Terrain-Extent? Nach einem DEM-Wechsel
+        // (anderes Gebiet) können geklickte/programmatische Koordinaten außerhalb liegen → der Solver
+        // verwirft sie still. Wir warnen, blockieren aber nicht (Culvert-Flow soll robust bleiben).
+        const t = terrain.value;
+        if (t && Number.isFinite(node?.x) && Number.isFinite(node?.y)) {
+            const xll = t.xllcorner ?? t.xll ?? 0;
+            const yll = t.yllcorner ?? t.yll ?? 0;
+            const cs  = t.cellsize ?? 1;
+            const xMax = xll + (t.ncols ?? 0) * cs;
+            const yMax = yll + (t.nrows ?? 0) * cs;
+            if (node.x < xll || node.x > xMax || node.y < yll || node.y > yMax) {
+                console.warn(`[GeoStore] Node ${node.id ?? ''} liegt außerhalb des Terrain-Extents `
+                    + `(x ${node.x.toFixed(1)} ∉ [${xll.toFixed(1)}, ${xMax.toFixed(1)}], `
+                    + `y ${node.y.toFixed(1)} ∉ [${yll.toFixed(1)}, ${yMax.toFixed(1)}]) — wird vom Solver ignoriert.`);
+            }
+        }
         saveSnapshot('Node hinzugefügt');
         nodes.value.push(node);
     }

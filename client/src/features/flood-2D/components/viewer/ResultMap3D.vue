@@ -25,6 +25,7 @@ import { collectPierCells } from '@/features/flood-2D/utils/BridgeMeshLattice.js
 const props = defineProps({
   terrain: { type: Object, default: null },
   depthData: { type: Object, default: null }, // Float32Array or null
+  elevData: { type: Object, default: null }, // Wasserspiegel .elev des Frames (Float32Array) — exakte Solver-Oberfläche
   maxWaterDepth: { type: Number, default: 1.0 },
   layerMode: { type: Number, default: 0 }, // 0=depth, 1=velocity, 2=max/hazard
   bciContent: { type: String, default: null },

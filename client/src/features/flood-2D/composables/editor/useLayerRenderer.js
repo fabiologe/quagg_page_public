@@ -765,74 +765,67 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
     // --- WATCHERS ---
 
-    // EXAKTER WATCHER FÜR REAKTIVITÄT
-    // Nutzt deep: true, um push() auf das Array abzufangen.
-    watch(
-        () => geoStore.nodes, 
-        () => {
-            renderNodes();
-            // Optional: Wenn kein rAF-Loop existiert, müsste man hier renderer.render() callen.
-            // Der Editor3D nutzt aber controls.update() im animate-Loop!
-        }, 
-        { deep: true, immediate: true }
-    );
-
-    // Watch both buildings and boundaries
-    watch([() => geoStore.buildings.features, () => geoStore.boundaries.features], () => renderBuildings(), { deep: true, immediate: true });
-
-    // Watch Weirs
-    watch(() => geoStore.weirs,   () => renderWeirs(),   { deep: true, immediate: true });
-    watch(() => geoStore.weirLines, () => renderWeirs(), { deep: true });
-    watch(() => weir3DState.editingId, () => renderWeirs()); // Edit-Linie aus-/einblenden
-    // Watch Bridges
-    watch(() => geoStore.bridges, () => renderBridges(), { deep: true, immediate: true });
-
-    // Watch Grid for offset updates (Store OR Preview)
-    if (gridRef) {
-        watch(gridRef, () => {
-            updateWorldOffset();
-            renderNodes();
-            renderBuildings();
-            renderHydraulics();
-            renderWeirs();
-            renderBridges();
-        }, { deep: true });
+    // EXAKTER WATCHER FÜR REAKTIVITÄT — deep:true fängt In-Place-push()/Property-Edits ab.
+    // Render-Koaleszenz: mehrere Watcher-Treffer in EINEM Tick (Terrain-Change → alle Layer,
+    // Node-Edit → Nodes+Hydraulik, schnelles Punkt-Ziehen) werden zu EINEM Rebuild je Layer
+    // zusammengefasst. Teuer war nicht das Tracking, sondern das mehrfache Clear+Rebuild der
+    // Three.js-Gruppen pro Edit.
+    let _disposed = false;
+    const _pendingRenders = new Set();
+    let _flushScheduled = false;
+    function schedule(...keys) {
+        for (const k of keys) _pendingRenders.add(k);
+        if (_flushScheduled) return;
+        _flushScheduled = true;
+        queueMicrotask(() => {
+            _flushScheduled = false;
+            if (_disposed) { _pendingRenders.clear(); return; }
+            const jobs = new Set(_pendingRenders);
+            _pendingRenders.clear();
+            if (jobs.has('offset'))     updateWorldOffset();   // zuerst: Layer-Positionen hängen daran
+            if (jobs.has('nodes'))      renderNodes();
+            if (jobs.has('buildings'))  renderBuildings();
+            if (jobs.has('hydraulics')) renderHydraulics();
+            if (jobs.has('weirs'))      renderWeirs();
+            if (jobs.has('bridges'))    renderBridges();
+            if (jobs.has('selection') && simStoreArg) renderSelectionHighlight(simStoreArg);
+        });
     }
 
-    watch(() => geoStore.terrain, () => {
-        updateWorldOffset();
-        renderNodes();
-        renderBuildings();
-        renderHydraulics();
-        renderWeirs();
-        renderBridges();
-    }, { deep: true });
+    watch(() => geoStore.nodes, () => schedule('nodes'), { deep: true, immediate: true });
 
-    // Watch Hydraulic Assignments
-    watch(() => hydraulicStore.assignments, () => {
-        renderHydraulics();
-    }, { deep: true, immediate: true });
+    // Buildings + Boundaries (Footprints)
+    watch([() => geoStore.buildings.features, () => geoStore.boundaries.features],
+          () => schedule('buildings'), { deep: true, immediate: true });
 
-    // Globale Boundary-Einstellung + gezeichnete Boundaries/Nodes → Pfeil-Vorschau aktualisieren
-    watch(() => [hydraulicStore.globalBoundaryType, hydraulicStore.globalBoundaryHfix], () => {
-        renderHydraulics();
-    });
-    watch(() => geoStore.boundaries, () => renderHydraulics(), { deep: true });
-    watch(() => geoStore.nodes, () => renderHydraulics(), { deep: true });
+    // Weirs
+    watch(() => geoStore.weirs,        () => schedule('weirs'), { deep: true, immediate: true });
+    watch(() => geoStore.weirLines,    () => schedule('weirs'), { deep: true });
+    watch(() => weir3DState.editingId, () => schedule('weirs')); // Edit-Linie aus-/einblenden
+    // Bridges
+    watch(() => geoStore.bridges,      () => schedule('bridges'), { deep: true, immediate: true });
 
-    // NEW: Watch Selection
+    // Grid-Offset (Store ODER Preview) → alle Layer neu positionieren
+    if (gridRef) {
+        watch(gridRef, () => schedule('offset', 'nodes', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
+    }
+    watch(() => geoStore.terrain, () => schedule('offset', 'nodes', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
+
+    // Hydraulik (Pfeil-Vorschau): Assignments, globale BC-Einstellung, Boundaries, Nodes
+    watch(() => hydraulicStore.assignments, () => schedule('hydraulics'), { deep: true, immediate: true });
+    watch(() => [hydraulicStore.globalBoundaryType, hydraulicStore.globalBoundaryHfix], () => schedule('hydraulics'));
+    watch(() => geoStore.boundaries, () => schedule('hydraulics'), { deep: true });
+    watch(() => geoStore.nodes,      () => schedule('hydraulics'), { deep: true });
+
+    // Selektion
     if (simStoreArg) {
-        watch(
-            [() => simStoreArg.selection, () => simStoreArg.multiSelection], // Watch both
-            () => {
-                renderSelectionHighlight(simStoreArg);
-            },
-            { deep: true, immediate: true }
-        );
+        watch([() => simStoreArg.selection, () => simStoreArg.multiSelection],
+              () => schedule('selection'), { deep: true, immediate: true });
     }
 
     // --- CLEANUP ---
     onUnmounted(() => {
+        _disposed = true;
         scene.remove(nodeGroup);
         scene.remove(buildingGroup);
         scene.remove(boundaryGroup);

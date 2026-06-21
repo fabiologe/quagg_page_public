@@ -75,6 +75,35 @@ def patch_par(path, updates):
 
 
 # ── ASC-Raster (.wd/.max) → Frame-Binär ─────────────────────────────────────
+# Zahlen-Regex für die tolerante Token-Reparatur: LISFLOOD schreibt Fixed-Width; bei
+# numerischer Instabilität (sehr große/negative Werte) laufen zwei Felder OHNE Trennzeichen
+# zusammen (z.B. '0.0000.000'). Dann zerlegen wir das Token wieder in seine Zahlen, statt
+# den ganzen Frame (und in der Folge ganze Spätframes/Max-Raster) zu verwerfen.
+_NUM_RE = re.compile(r'-?\d+\.\d+(?:[eE][-+]?\d+)?|-?\d+(?:[eE][-+]?\d+)?|-?\.\d+')
+
+
+def _floats_tolerant(tokens):
+    """float() je Token; nicht-parsbare (zusammengelaufene) Tokens werden per Regex
+    re-getrennt, Unreparierbares → NoData(-9999). → (array('f'), anzahl_reparierter_tokens)."""
+    out = array("f")
+    repaired = 0
+    for tok in tokens:
+        try:
+            out.append(float(tok))
+        except (ValueError, OverflowError):
+            nums = _NUM_RE.findall(tok)
+            if nums:
+                for nstr in nums:
+                    try:
+                        out.append(float(nstr))
+                    except (ValueError, OverflowError):
+                        out.append(-9999.0)
+            else:
+                out.append(-9999.0)
+            repaired += 1
+    return out, repaired
+
+
 def parse_asc(path):
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     header, data_start = {}, 0
@@ -85,10 +114,13 @@ def parse_asc(path):
             data_start = i + 1
         else:
             break
-    data = array("f", map(float, " ".join(lines[data_start:]).split()))
+    data, repaired = _floats_tolerant(" ".join(lines[data_start:]).split())
     ncols, nrows = int(header.get("ncols", 0)), int(header.get("nrows", 0))
     if ncols * nrows != len(data) or ncols == 0:
         raise ValueError(f"{path.name}: {ncols}×{nrows} ≠ {len(data)} Werte")
+    if repaired:
+        print(f"[handler] {path.name}: {repaired} korrupte(s) Token (Solver-Format-Überlauf, "
+              f"z.B. '0.0000.000') repariert — Frame gerettet.", flush=True)
     return header, data
 
 
@@ -541,6 +573,8 @@ def main():
             lambda p: encode_grid_file(p, "depth"), "maxDepthFile")
     deliver(f"{resroot}.mxe",     "max-elev.bin",
             lambda p: encode_grid_file(p, "level"), "maxElevFile")
+    # Hazard Rating HR = d·(v+1.5) (DEFRA 2006, ALD; util.cpp:211 `Haz = H*(Vc+1.5)`),
+    # NICHT d·v. Debris-Faktor DF=0. Einheit m²/s, i.d.R. als Gefahrenklasse gelesen.
     deliver(f"{resroot}.maxHaz",  "max-hazard.bin",
             lambda p: encode_grid_file(p, "level"), "maxHazardFile")
     deliver(f"{resroot}.inittm",  "arrival-time.bin",

@@ -60,19 +60,17 @@ console.log('── v5-Regressions-Gate (WASM-Pfad unverändert) ──');
     assert(!files['flow.weir'].includes('SB') && !files['flow.weir'].includes('EB'), 'flow.weir v5: keine <dir>B-Tags');
 }
 
-console.log('── v8: Export-Resampling 5m → 1m ──');
+console.log('── v8: Struktur-Diskretisierung @ nativ (Export-Resampling entfernt) ──');
 {
+    // Solver rechnet immer in nativer Auflösung — kein exportCellsize mehr. Die detaillierten
+    // Diskretisierungs-Counts deckt test_structure_discretize.mjs ab; hier nur ein Smoke-Check.
     const gen = new InputGenerator();
-    const files = gen.processScenario(makeScenario({ engine: 'v8', exportCellsize: 1 }));
+    const files = gen.processScenario(makeScenario({ engine: 'v8' }));
     const h = ascHeader(files['terrain.asc']);
-    assert(h.ncols === 100 && h.nrows === 100 && h.cellsize === 1, `terrain.asc resampelt auf 100×100@1m (got ${h.ncols}×${h.nrows}@${h.cellsize})`);
-    assert(h.xllcorner === -2.5 && h.yllcorner === -2.5, `xllcorner = Ecke (−2.5) erhalten (got ${h.xllcorner})`);
-
-    // Brücke @1m: 30m-Achse → 31 <dir>B-Zeilen; Wehr-Linie 20m → 21 Zellen
+    assert(h.ncols === 20 && h.nrows === 20 && h.cellsize === 5, 'terrain.asc bleibt nativ (20×20@5m)');
     const wl = files['flow.weir'].trim().split('\n');
-    const bridgeCount = wl.filter(l => / SB /.test(l)).length;
-    assert(bridgeCount === 31, `Brücke re-diskretisiert @1m: 31 SB-Zeilen (got ${bridgeCount})`);
-    assert(wl[0] === String(31 + 21), `Gesamtzahl 52 (31 Brücke + 21 Wehr) (got ${wl[0]})`);
+    assert(wl.some(l => / SB /.test(l)), 'v8: Brücke als <dir>B (SB) re-diskretisiert');
+    assert(parseInt(wl[0], 10) === wl.length - 1, 'flow.weir: Zähler == tatsächliche Zeilenzahl');
 }
 
 console.log('── v8: SGC + Schema-Erzwingung ──');
@@ -101,12 +99,6 @@ console.log('── v8: fv1 ohne SGC ──');
     assert(hasKw(files, 'fv1') && !hasKw(files, 'acceleration'), 'fv1-Keyword gesetzt, acceleration entfernt');
 }
 
-console.log('── Warnungen (Resampling-Plausibilität) ──');
-{
-    const gen = new InputGenerator();
-    gen.processScenario(makeScenario({ engine: 'v8', exportCellsize: 0.5 })); // 5/0.5 = 10 > 8
-    assert(gen.warnings.some(w => w.includes('1/8')), 'Warnung: feiner als 1/8 der Datengrundlage');
-}
 
 console.log(failures === 0 ? '\n✅ Alle InputGenerator-v8-Tests bestanden.' : `\n❌ ${failures} Test(s) fehlgeschlagen.`);
 process.exit(failures === 0 ? 0 : 1);

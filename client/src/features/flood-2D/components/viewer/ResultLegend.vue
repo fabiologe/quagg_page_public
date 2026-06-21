@@ -37,7 +37,9 @@ const LAYERS = {
   max_depth:    { title: 'Max. Wassertiefe',   unit: 'm',    ramp: 'heat' },
   max_elev:     { title: 'Wasserspiegel',      unit: 'm',    ramp: 'heat' },
   max_velocity: { title: 'Max. Geschwindigk.', unit: 'm/s',  ramp: 'heat' },
-  hazard:       { title: 'Gefährdung (H·v)',   unit: '',     ramp: 'heat' },
+  // Hazard Rating HR = d·(v+1.5) (DEFRA 2006, ALD) — vom Solver berechnet (util.cpp:211),
+  // NICHT H·v. Einheit m²/s, wird üblicherweise als dimensionslose Klasse interpretiert.
+  hazard:       { title: 'Gefährdung d·(v+1.5)', unit: 'm²/s', ramp: 'heat' },
   arrival:      { title: 'Ankunftszeit',       unit: 'time', ramp: 'heat' },
   duration:     { title: 'Überflutungsdauer',  unit: 'time', ramp: 'heat' },
 };

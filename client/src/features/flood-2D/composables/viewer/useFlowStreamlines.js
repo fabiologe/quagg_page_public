@@ -19,6 +19,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { RENDER_ORDER } from '../editor/renderLayers';
+import { flippedIndex } from '../../utils/gridIndex';
 
 const WET_MIN = 0.02;     // m — nur nasse Zellen
 const NODATA  = -9000;    // Velocity-NoData-Schwelle
@@ -93,7 +94,7 @@ export function useFlowStreamlines(getScene, getMask) {
         // das ist das EIGENTLICHE Brenn-Signal (die Gebäudemaske ist im Popup oft leer).
         // Solche Zellen wie trocken behandeln → Linien enden sauber an der Brennkante,
         // statt mit halbierter Wand-Geschwindigkeit „gegen 0" zu kriechen.
-        if (gridData && gridData[(nrows - 1 - rr) * ncols + cc] <= NODATA) continue;
+        if (gridData && gridData[flippedIndex(rr, cc, ncols, nrows)] <= NODATA) continue;
         // Zusätzlich die Gebäudemaske, falls vorhanden (top-down, <128 = Gebäude).
         if (mask && mask[i] < 128) continue;
         const vxv = vx[i], vyv = vy[i];

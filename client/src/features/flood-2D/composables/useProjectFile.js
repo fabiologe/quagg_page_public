@@ -111,7 +111,7 @@ export async function saveProject({ includeResults = false, onProgress = null } 
     saveInterval: sim.saveInterval, massInterval: sim.massInterval,
     useAcceleration: sim.useAcceleration, useBmiSolver: sim.useBmiSolver,
     solverMode: sim.solverMode,
-    exportCellsize: sim.exportCellsize, numericalScheme: sim.numericalScheme, sgcEnabled: sim.sgcEnabled,
+    numericalScheme: sim.numericalScheme, sgcEnabled: sim.sgcEnabled,
   }));
 
   // Oberflächen-Grid (Textur-Pipeline), optional — Int8 (Material-IDs)
@@ -237,7 +237,7 @@ export async function loadProject(file, onProgress = null) {
     // useBmiSolver (Legacy) VOR solverMode setzen, damit neue Projekte mit
     // solverMode='runpod' nicht vom Legacy-Boolean überschrieben werden.
     ['simDuration', 'timeStep', 'saveInterval', 'massInterval', 'useAcceleration', 'useBmiSolver', 'solverMode',
-     'exportCellsize', 'numericalScheme', 'sgcEnabled'].forEach(set);
+     'numericalScheme', 'sgcEnabled'].forEach(set);
   }
 
   // Oberflächen-Grid

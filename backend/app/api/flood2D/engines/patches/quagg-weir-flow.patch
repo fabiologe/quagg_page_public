@@ -1,5 +1,5 @@
---- a/weir_flow.cpp	2026-06-13 07:56:28.230933741 +0000
-+++ b/weir_flow.cpp	2026-06-13 07:56:28.234933728 +0000
+--- a/weir_flow.cpp
++++ b/weir_flow.cpp
 @@ -123,7 +123,33 @@
  
  		// get some basic paramters for the open channel flow calc
@@ -35,7 +35,7 @@
  		dh=z0+h0-z1-h1; // difference in water level
  		//Sf=-dh/Parptr->dx; //CCS_deletion
  		Sf=-dh/Arrptr->dx[p0]; // CCS added for subgrid lat long compatibility.
-@@ -133,18 +159,23 @@
+@@ -133,24 +159,37 @@
  
  
  		// calculate open channel flow using SGC flow
@@ -63,7 +63,22 @@
  			heg = (usVel*usVel)/(2*g); // MT calculate upstream energy gradient height
  			Qp = -(Cd*Area*sqrt(2*g*(hd-hu+heg))); // calc bridge orifice flow
  		}
-@@ -264,7 +295,7 @@
+ 
+ 
+-	  if (hu < Soffit && hd < Soffit)
++	  if (Z <= C(0.0))
++	  {
++		  // QUAGG-FIX: soffit at/below the higher adjacent bed (sill) -> no bridge
++		  // opening (deck underside grounded). No underflow here; overtopping is handled
++		  // by the weir path after the input.cpp bridge->weir conversion. Prevents the
++		  // 'Unexpected Bridge flow calc fail' and the garbage Qp (Area = Width*Z < 0).
++		  Q = C(0.0);
++	  }
++	  else if (hu < Soffit && hd < Soffit)
+ 	  {
+ 		  // flow is below the soffit so use SGC open channel flow 
+ 		  Q = Qoc;
+@@ -264,7 +303,7 @@
        }
      }
    }
@@ -72,7 +87,7 @@
    {
  
  	  hu=h0+z0;
-@@ -282,7 +313,29 @@
+@@ -282,7 +321,29 @@
  
  		// get some basic paramters for the open channel flow calc
  	    dt=Solverptr->Tstep;
@@ -103,7 +118,7 @@
  		dh=z0+h0-z1-h1; // difference in water level
  		//Sf=-dh/Parptr->dx; //CCS_deletion
  		Sf=-dh/Arrptr->dy[p0]; // CCS added for sub grid lat-long compatibility.
-@@ -292,18 +345,22 @@
+@@ -292,24 +353,36 @@
  
  
  		// calculate open channel flow using SGC flow
@@ -130,3 +145,58 @@
  			heg = (usVel*usVel)/(2*g); // MT calculate upstream energy gradient height
  			Qp = -(Cd*Area*sqrt(2*g*(hd-hu+heg))); // calc bridge orifice flow
  		}
+ 
+ 
+-	  if (hu < Soffit && hd < Soffit)
++	  if (Z <= C(0.0))
++	  {
++		  // QUAGG-FIX: soffit at/below the higher adjacent bed (sill) -> no bridge
++		  // opening (deck underside grounded). No underflow here; overtopping is handled
++		  // by the weir path after the input.cpp bridge->weir conversion. Prevents the
++		  // 'Unexpected Bridge flow calc fail' and the garbage Qp (Area = Width*Z < 0).
++		  Q = C(0.0);
++	  }
++	  else if (hu < Soffit && hd < Soffit)
+ 	  {
+ 		  // flow is below the soffit so use SGC open channel flow 
+ 		  Q = Qoc;
+--- a/input.cpp
++++ b/input.cpp
+@@ -278,24 +278,21 @@
+ 		// now work out if either of the elevations (z0,z1) are above the weir crest hight.
+ 		if (Arrptr->Weir_hc[i] < z0 || Arrptr->Weir_hc[i] < z1)
+ 		{
+-			if (verbose == ON)
++			// QUAGG-FIX: soffit/crest below bed -- ALWAYS correct it (the original block was
++			// hidden behind 'if (verbose == ON)' -> never active in production) and also for
++			// BRIDGES (was commented out). A grounded bridge edge (deck underside in the ground)
++			// becomes a WEIR with crest at the sill = higher bed: a barrier with overtopping
++			// instead of an orifice -> no 'Unexpected Bridge flow calc fail'.
++			if (Arrptr->Weir_Typ[i] == EWeir_Bridge)
+ 			{
+-				if (Arrptr->Weir_Typ[i] == EWeir_Weir)
+-				{
+-					printf("WARNING: Weir crest height is below DEM\n");
+-					// for sub-grid model increase the crest height
+-					//if(Statesptr->SGC==ON)
+-					//{
+-					Arrptr->Weir_hc[i] = getmax(z0, z1);
+-					if (verbose == ON) printf("Weir number %i crest height increased to %.3" NUM_FMT" m\n", i, Arrptr->Weir_hc[i]);
+-					//}
+-				}
+-				//else 
+-				//{
+-				//printf("WARNING: Bridge soffit height is below DEM converted to weir!!\n");
+-				//Arrptr->Weir_Typ[i] = 0;
+-				//}
++				Arrptr->Weir_Typ[i] = EWeir_Weir;
++				if (verbose == ON) printf("Bridge %i: soffit below bed -> weir @ %.3" NUM_FMT" m\n", i, getmax(z0, z1));
+ 			}
++			else if (verbose == ON)
++			{
++				printf("WARNING: Weir crest height is below DEM\n");
++			}
++			Arrptr->Weir_hc[i] = getmax(z0, z1);
+ 		}
+ 		// need check for bridge less than or equal to subgrid width ?.......
+ 	}

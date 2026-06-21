@@ -28,6 +28,7 @@ import { analyzeDepthSpikes } from '../../utils/depthSpikes';
 const SMOOTH_MIX = 0.85;
 
 const WET = 0.005; // m — Schwelle „nass" (deckt sich mit dem Fragment-discard)
+const NODATA_ELEV = -1000; // .elev-Werte darunter (z. B. -9999) gelten als ungültig/trocken
 
 /**
  * 9-Tap-Box-Blur über das Tiefenfeld, aber NASS-GATED: trockene Zellen bleiben exakt trocken und
@@ -238,6 +239,7 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
   let depthAttr = null;       // BufferAttribute aDepth (pro Frame aktualisiert)
   let turbAttr = null;        // BufferAttribute aTurb (Turbulenz 0..1 für Gischt/Wellen)
   let turbScratch = null;     // wiederverwendeter Scratch fürs Aufweiten/Glätten der Turbulenz
+  let surfScratch = null;     // wiederverwendeter Scratch für die lokale Wasseroberfläche je Vertex
   let velFallbackTex = null;  // 1x1 Dummy, falls kein Velocity-Frame anliegt
   const clock = new THREE.Clock(); // treibt uTime (Gischt-Animation) im Render-Loop
   // Überström-Lamelle (separates Mesh in Signalfarbe, überbrückt pro Frame überströmte Wehr-Kanten)
@@ -467,21 +469,47 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     const arr = pos.array;     // [x,y,z, x,y,z, …]
     const dArr = depthAttr.array;
     const haveDims = ncols && nrows && ncols * nrows === N;
+
+    // ── Wasseroberfläche je Vertex (lokal = Welt − minZ) ───────────────────────
+    // BEVORZUGT der exakte Solver-Wasserspiegel .elev (props.elevData = DEM_Solver+Tiefe):
+    // er ist unabhängig vom (evtl. abweichenden) Viewer-Terrain baseZ — die Haut sitzt
+    // genau dort, wo der Solver Wasser hat, statt auf baseZ+geglätteteTiefe. Fehlt elev
+    // (Summenraster/Altdaten), Fallback auf baseZ+Tiefe. Tiefen-Dorne werden über robustMax
+    // gezähmt, damit eine 10-m-Nadel die Geometrie nicht sprengt.
+    const minZ = props.terrain.minZ ?? 0;
+    const elev = (props.elevData instanceof Float32Array && props.elevData.length === N)
+      ? props.elevData : null;
+    if (!surfScratch || surfScratch.length !== N) surfScratch = new Float32Array(N);
+    const surf = surfScratch; // lokale Oberfläche nasser Zellen, sonst -Infinity
+    for (let i = 0; i < N; i++) {
+      if (!(depth[i] > WET)) { surf[i] = -Infinity; continue; }
+      let zl;
+      if (elev && Number.isFinite(elev[i]) && elev[i] > NODATA_ELEV) {
+        zl = elev[i] - minZ;
+        const rise = zl - baseZ[i];
+        if (rise > spikes.robustMax) zl = baseZ[i] + spikes.robustMax; // Tiefen-Dorn zähmen
+        else if (rise < 0)           zl = baseZ[i] + depth[i];         // elev unter Terrain → Fallback
+      } else {
+        zl = baseZ[i] + depth[i];
+      }
+      surf[i] = zl;
+    }
+
     for (let i = 0; i < N; i++) {
       const d = depth[i];
       dArr[i] = d;
       if (d > WET) {
-        arr[i * 3 + 2] = baseZ[i] + d; // nasse Zelle: Wasseroberfläche = Terrain + Tiefe
+        arr[i * 3 + 2] = surf[i]; // nasse Zelle: exakter Solver-Wasserspiegel (.elev)
       } else if (haveDims) {
         // Trockene Zelle: auf den HÖCHSTEN nassen Nachbar-Wasserspiegel anheben (kein „Vorhang");
         // der trockene Teil wird im Fragment via vDepth-discard ohnehin ausgespart.
         const col = i % ncols;
         const row = (i - col) / ncols;
         let s = -Infinity;
-        if (col > 0          && depth[i - 1]     > WET) s = Math.max(s, baseZ[i - 1]     + depth[i - 1]);
-        if (col < ncols - 1  && depth[i + 1]     > WET) s = Math.max(s, baseZ[i + 1]     + depth[i + 1]);
-        if (row > 0          && depth[i - ncols] > WET) s = Math.max(s, baseZ[i - ncols] + depth[i - ncols]);
-        if (row < nrows - 1  && depth[i + ncols] > WET) s = Math.max(s, baseZ[i + ncols] + depth[i + ncols]);
+        if (col > 0          && surf[i - 1]     > -Infinity) s = Math.max(s, surf[i - 1]);
+        if (col < ncols - 1  && surf[i + 1]     > -Infinity) s = Math.max(s, surf[i + 1]);
+        if (row > 0          && surf[i - ncols] > -Infinity) s = Math.max(s, surf[i - ncols]);
+        if (row < nrows - 1  && surf[i + ncols] > -Infinity) s = Math.max(s, surf[i + ncols]);
         arr[i * 3 + 2] = (s > -Infinity) ? s : baseZ[i];
       } else {
         arr[i * 3 + 2] = baseZ[i];
@@ -507,13 +535,13 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
       if (!(d > WET)) { rawTurb[i] = 0; continue; }
       let turb = 0;
       if (haveDims) {
-        const wsp = baseZ[i] + d;
+        const wsp = surf[i]; // echter Wasserspiegel (elev-basiert) statt baseZ+Tiefe
         const col = i % ncols, row = (i - col) / ncols;
         let g = 0;
-        if (col > 0         && depth[i - 1]     > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i - 1]     + depth[i - 1])));
-        if (col < ncols - 1 && depth[i + 1]     > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i + 1]     + depth[i + 1])));
-        if (row > 0         && depth[i - ncols] > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i - ncols] + depth[i - ncols])));
-        if (row < nrows - 1 && depth[i + ncols] > WET) g = Math.max(g, Math.abs(wsp - (baseZ[i + ncols] + depth[i + ncols])));
+        if (col > 0         && surf[i - 1]     > -Infinity) g = Math.max(g, Math.abs(wsp - surf[i - 1]));
+        if (col < ncols - 1 && surf[i + 1]     > -Infinity) g = Math.max(g, Math.abs(wsp - surf[i + 1]));
+        if (row > 0         && surf[i - ncols] > -Infinity) g = Math.max(g, Math.abs(wsp - surf[i - ncols]));
+        if (row < nrows - 1 && surf[i + ncols] > -Infinity) g = Math.max(g, Math.abs(wsp - surf[i + ncols]));
         turb = Math.min(1, g / TURB_DZ);
       }
       if (vel) {
