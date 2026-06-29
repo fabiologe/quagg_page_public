@@ -165,12 +165,7 @@
           Der Lauf kann gestartet werden, aber folgende Punkte führen sonst zu fehlerhaften
           oder unvollständigen Ergebnissen:
         </p>
-        <ul class="gate-list">
-          <li v-for="(it, i) in preRunGate.issues" :key="i" :class="'gate-' + it.severity">
-            <span class="gate-li-icon">{{ issueIcon(it.severity) }}</span>
-            <span class="gate-li-text">{{ it.message }}</span>
-          </li>
-        </ul>
+        <IssueList :issues="preRunGate.issues" :show-counts="true" max-height="46vh" />
         <div class="gate-actions">
           <button class="gate-cancel" @click="resolvePreRunGate(false)">Abbrechen &amp; korrigieren</button>
           <button class="gate-proceed" @click="resolvePreRunGate(true)">Trotzdem hochladen</button>
@@ -191,6 +186,7 @@ import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore.js';
 import { useBathymetryStore } from '@/features/flood-2D/stores/useBathymetryStore.js';
 import { InputGenerator } from '@/features/flood-2D/middleware/InputGenerator.js';
 import { Severity } from '@/features/flood-2D/middleware/ScenarioValidator.js';
+import IssueList from '@/features/flood-2D/components/common/IssueList.vue';
 import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
 import { createSolverBackend } from '@/features/flood-2D/services/solver/index.js';
 import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
@@ -1210,16 +1206,7 @@ pre {
 .gate-header h3 { margin: 0; font-size: 1.05rem; }
 .gate-icon { font-size: 1.3rem; }
 .gate-sub { color: #aac3d6; font-size: 0.85rem; line-height: 1.5; margin: 0.6rem 0 0.8rem; }
-.gate-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
-.gate-list li {
-    display: flex; gap: 0.5rem; align-items: flex-start;
-    padding: 0.55rem 0.65rem; margin-bottom: 0.4rem;
-    border-radius: 7px; font-size: 0.82rem; line-height: 1.45;
-    background: #0e2438; border: 1px solid #1d4e6b;
-}
-.gate-list li.gate-error  { border-color: #7a2230; background: #2a1418; }
-.gate-list li.gate-warn   { border-color: #7a5a1d; background: #2a2210; }
-.gate-li-icon { flex-shrink: 0; }
+/* Issue-Liste im Gate via wiederverwendbare <IssueList>-Komponente. */
 .gate-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
 .gate-cancel, .gate-proceed {
     padding: 0.55rem 1rem; border-radius: 7px; font-size: 0.85rem; cursor: pointer;

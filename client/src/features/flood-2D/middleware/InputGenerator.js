@@ -4,12 +4,13 @@ import { BoundaryTools } from './BoundaryTools.js';
 import { SgcGenerator } from './SgcGenerator.js';
 import { latticeToCells, sampleGridZ } from '../utils/BridgeMeshLattice.js';
 import { discretizeWeirPolyline } from '../utils/weirGeometry.js';
+import { cellEdge, mergeCellsToIntervals, edgeCells } from '../utils/boundarySegments.js';
 import {
     discretizeStructureAxis as _discretizeStructureAxis,
     collectBridgePierCells as _collectBridgePierCells,
     collapseBridgeCellsToChannel as _collapseBridgeCellsToChannel,
 } from './structureFiles.js';
-import { IssueCollector } from './ScenarioValidator.js';
+import { IssueCollector, validateBoundaryHydraulics, validateInflowNozzles, validateBoundaryProfiles, validateWeirOpenings } from './ScenarioValidator.js';
 
 // Mindest-Brückenöffnung [m]: Soffit muss um mind. so viel ÜBER dem lokalen Gelände liegen,
 // sonst ist Z=min(Soffit−z0,Soffit−z1) ≤ 0 → der Solver-Orifice (weir_flow.cpp) rechnet sich
@@ -169,7 +170,7 @@ export class InputGenerator {
             data = Rasterizer.burnBuildings(data, header, nonBuildingMods);
         }
 
-        // CRITICAL FIX: The UI expects terrain data to be untouched. 
+        // CRITICAL FIX: The UI expects terrain data to be untouched.
         // We do NOT mutate the global `scenario.grid` pointer here. 
         // `data` is a local modified Float32Array which is correctly passed to `terrain.asc` below via the Rasterizer.
         // Therefore, the Solver receives the masked array, but the Vue global state remains pure.
@@ -318,10 +319,13 @@ export class InputGenerator {
         // Gerinne darunter sind in LISFLOOD-FP 8 ungültig → würden den Solver
         // mit "Bridge must have sub grid flows on either side" abbrechen).
         let hasWeir = false;
-        const hasWeirData    = scenario.weirs   && scenario.weirs.length   > 0;
+        // Auto-Rück-Barrieren hinter gerichteten Zuläufen (Rückfluss-Sperre, einseitiges Flap-Wehr).
+        const inflowBarriers = this.buildInflowBackBarriers(scenario.boundaries || [], scenario.assignments || {}, header, data);
+        const allWeirs = [...(scenario.weirs || []), ...inflowBarriers];
+        const hasWeirData    = allWeirs.length > 0;
         const hasBridgeData  = scenario.bridges && scenario.bridges.length > 0;
         if (hasWeirData || hasBridgeData) {
-            const weirContent = this.generateWeirFile(scenario.weirs || [], scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid, weirLines: scenario.weirLines || [], demGrid: data });
+            const weirContent = this.generateWeirFile(allWeirs, scenario.bridges || [], header, { engine: scenario.engine || 'v5', sgcWidthGrid, weirLines: scenario.weirLines || [], demGrid: data });
             if (weirContent) {
                 if (fs) fs.writeFile('/flow.weir', weirContent);
                 else this.files['flow.weir'] = weirContent;
@@ -408,8 +412,6 @@ export class InputGenerator {
      * @param {object} scenario
      * @param {object} header  Raster-Header (ncols/nrows/cellsize/xll[corner]/yll[corner])
      * @param {Float32Array} data  Höhen, bottom-up (row 0 = Süden), Gebäude ggf. als NoData maskiert
-     * @param {object} assignments  (vor-prozessierte) Zuordnungen
-     * @param {object} ganglinien   (vor-prozessierte) Ganglinien
      * @returns {{ bciContent: string, bdyContent: string }}
      */
     buildBci(scenario, header, data) {
@@ -441,122 +443,63 @@ export class InputGenerator {
             ...(scenario.manholes || [])
         ];
 
+        // Hydraulik-Plausibilität (Kanten-Segmente / Innen-Auslauf / Sohlgefälle /
+        // Boundary außerhalb Raster) + Nozzle-Tauglichkeit gerichteter Zuläufe in den
+        // Pipeline-IssueCollector mergen → erscheint im Pre-Run-Gate.
+        this.issues.merge(validateBoundaryHydraulics(scenario.assignments || {}, scenario.boundaries || [], header));
+        this.issues.merge(validateInflowNozzles(scenario.assignments || {}, scenario.boundaries || [], header));
+        // Aktive Zu-/Wasserstand-Ränder ohne Datenquelle (würden still verworfen)
+        // → ERROR ins Pre-Run-Gate. `assignments`/`ganglinien` sind die bereits um
+        // synthetische Konstant-Ganglinien angereicherten Kopien (s. o.).
+        this.issues.merge(validateBoundaryProfiles(assignments, scenario.boundaries || [], ganglinien));
+        // Wehr-Öffnungen (Durchlässe) gegen Krone/Gelände prüfen.
+        this.issues.merge(validateWeirOpenings(scenario.weirLines || [], header, data));
+
         console.log(`[InputGenerator] Total BCI Entities: ${combinedBoundaries.length} (Boundaries: ${scenario.boundaries?.length || 0}, Manholes: ${scenario.manholes?.length || 0})`);
 
-        let { bciContent, bdyContent } = this.generateBoundaryFiles(
+        // EINE Ownership-Map-Pass erzeugt das gesamte BCI: explizite Boundaries
+        // claimen ihre Zellen zuerst (explizit gewinnt), danach füllt die globale
+        // Randbedingung nur die UNBELEGTEN Rand-/NoData-Front-Zellen. Dadurch kann
+        // keine Zelle gleichzeitig Zu- und Ablauf bekommen.
+        const { bciContent, bdyContent } = this.generateBoundaryFiles(
             assignments,
             combinedBoundaries,
             ganglinien,
             header,
-            data
+            data,
+            {
+                globalBoundaryType: scenario?.globalBoundaryType,
+                globalBoundaryHfix: scenario?.globalBoundaryHfix,
+            }
         );
-
-        // Globale Domänenkanten-Randbedingung: gilt IMMER für den Domänenrand
-        // (zusätzlich zu manuellen Punkt-Boundaries), außer bei CLOSED.
-        if (scenario?.globalBoundaryType && scenario.globalBoundaryType !== 'CLOSED') {
-            const xll  = header.xll  ?? header.xllcorner ?? 0;
-            const yll  = header.yll  ?? header.yllcorner ?? 0;
-            const xMax = xll + header.ncols * header.cellsize;
-            const yMax = yll + header.nrows * header.cellsize;
-            const type = scenario.globalBoundaryType;
-            const val  = type === 'HFIX' ? ` ${(scenario.globalBoundaryHfix ?? 0).toFixed(4)}` : '';
-
-            // Kanten-Richtungen, die bereits manuell belegt sind, nicht erneut definieren.
-            const existingLines = bciContent ? bciContent.split('\n') : [];
-            const dirTaken = (d) => existingLines.some(l => l.trimStart().startsWith(d + ' '));
-
-            // Eine rechteckige Domänenkante nur schreiben, wenn diese Perimeter-Reihe/-Spalte
-            // tatsächlich Daten enthält (data ist bottom-up, row 0 = Süden).
-            const ND0 = -9990;
-            const edgeHasData = (d) => {
-                if (d === 'S') { for (let c = 0; c < header.ncols; c++) if (data[c] > ND0) return true; return false; }
-                if (d === 'N') { const base = (header.nrows - 1) * header.ncols; for (let c = 0; c < header.ncols; c++) if (data[base + c] > ND0) return true; return false; }
-                if (d === 'W') { for (let r = 0; r < header.nrows; r++) if (data[r * header.ncols] > ND0) return true; return false; }
-                if (d === 'E') { for (let r = 0; r < header.nrows; r++) if (data[r * header.ncols + (header.ncols - 1)] > ND0) return true; return false; }
-                return false;
-            };
-
-            let edges = '';
-            if (!dirTaken('N') && edgeHasData('N')) edges += `N ${xll.toFixed(2)} ${xMax.toFixed(2)} ${type}${val}\n`;
-            if (!dirTaken('S') && edgeHasData('S')) edges += `S ${xll.toFixed(2)} ${xMax.toFixed(2)} ${type}${val}\n`;
-            if (!dirTaken('E') && edgeHasData('E')) edges += `E ${yll.toFixed(2)} ${yMax.toFixed(2)} ${type}${val}\n`;
-            if (!dirTaken('W') && edgeHasData('W')) edges += `W ${yll.toFixed(2)} ${yMax.toFixed(2)} ${type}${val}\n`;
-
-            if (edges) {
-                bciContent = (bciContent || '') + edges;
-                console.log(`[InputGenerator] Globale Randbedingung (${type}): freie Domänenkanten ergänzt (zusätzlich zu ${existingLines.filter(Boolean).length} manuellen BCI-Zeilen).`);
-            }
-
-            // Zusätzlicher Auslauf an der NoData-Front (DEM füllt das Raster oft nicht komplett):
-            // an jeder gültigen Zelle, die an "äußeres" (mit dem Domänenrand verbundenes) NoData grenzt.
-            const ncols = header.ncols, nrows = header.nrows, cs = header.cellsize;
-            const ND = -9990;
-            const total = ncols * nrows;
-
-            // 1) Außen-NoData per Flood-Fill vom Rasterrand markieren
-            const exterior = new Uint8Array(total);
-            const stack = [];
-            const seedExt = (c, r) => {
-                if (c < 0 || c >= ncols || r < 0 || r >= nrows) return;
-                const k = r * ncols + c;
-                if (exterior[k] || data[k] > ND) return; // belegt oder gültige Zelle → kein Außen-NoData
-                exterior[k] = 1; stack.push(k);
-            };
-            for (let c = 0; c < ncols; c++) { seedExt(c, 0); seedExt(c, nrows - 1); }
-            for (let r = 0; r < nrows; r++) { seedExt(0, r); seedExt(ncols - 1, r); }
-            while (stack.length) {
-                const k = stack.pop();
-                const c = k % ncols, r = (k - c) / ncols;
-                seedExt(c - 1, r); seedExt(c + 1, r); seedExt(c, r - 1); seedExt(c, r + 1);
-            }
-
-            // 2) Auslauf an gültigen Innenzellen, die an Außen-NoData grenzen
-            const isExt = (c, r) => (c >= 0 && c < ncols && r >= 0 && r < nrows && exterior[r * ncols + c] === 1);
-            let frontier = '';
-            let frontierCount = 0;
-            const FRONTIER_CAP = 50000;
-            for (let r = 1; r < nrows - 1 && frontierCount < FRONTIER_CAP; r++) {
-                for (let c = 1; c < ncols - 1; c++) {
-                    const z = data[r * ncols + c]; // data ist bottom-up
-                    if (!(z > ND)) continue;
-                    if (!(isExt(c - 1, r) || isExt(c + 1, r) || isExt(c, r - 1) || isExt(c, r + 1))) continue;
-                    const wx = xll + (c + 0.5) * cs;
-                    const wy = yll + (r + 0.5) * cs;
-                    const hfix = type === 'HFIX'
-                        ? (scenario.globalBoundaryHfix ?? 0)
-                        : (z - FREE_OUTLET_HFIX_OFFSET); // FREE → kritische Tiefe via HFIX am Terrain
-                    frontier += `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix.toFixed(4)}\n`;
-                    frontierCount++;
-                }
-            }
-            if (frontier) {
-                bciContent = (bciContent || '') + frontier;
-                console.log(`[InputGenerator] Globale Randbedingung (${type}): ${frontierCount} Auslauf-Zellen an der NoData-Front ergänzt.`);
-            }
-        }
 
         return { bciContent, bdyContent };
     }
 
     /**
-     * Combined BCI + BDY Generation with Flux Splitting.
+     * Combined BCI + BDY Generation (Ownership-Map). Diskretisierung + Flux-Splitting
+     * bleiben; die Zell→BCI-Abbildung läuft über die claimed-Map (explizit gewinnt,
+     * globale Füllung nur auf unbelegten Zellen).
      *
-     * LISFLOOD QVAR expects flow per unit width (m²/s).
-     * When a boundary has N cells, each cell independently receives the profile value.
-     * So we must divide the user's total Q (m³/s) by (N × cellsize) to get per-unit-width.
-     *
+     * LISFLOOD QVAR expects flow per unit width (m²/s): user's total Q (m³/s) / (N × cellsize).
      * @returns {{ bciContent: string, bdyContent: string }}
      */
-    generateBoundaryFiles(assignments, boundaries, ganglinien, header, gridData) {
-        let bciContent = '';
+    generateBoundaryFiles(assignments, boundaries, ganglinien, header, gridData, globalOpts = {}) {
         let bdyContent = 'LISFLOOD boundary conditions\n'; // Required comment line (skipped by parser)
         const bdyProfiles = new Map(); // name -> { data: [{t,v}], ndata } — tracks unique profiles
 
-        console.log(`[InputGenerator] Generating BCI+BDY with Flux Splitting. Boundaries: ${boundaries.length}, Assignments: ${Object.keys(assignments).length}`);
+        console.log(`[InputGenerator] Generating BCI+BDY (Ownership-Map). Boundaries: ${boundaries.length}, Assignments: ${Object.keys(assignments).length}`);
 
         const xll = header.xll !== undefined ? header.xll : header.xllcorner;
         const yll = header.yll !== undefined ? header.yll : header.yllcorner;
-        const processedCells = new Set(); // Avoid duplicates in BCI
+
+        // ── Ownership-Map ──────────────────────────────────────────────────────
+        // Jede Perimeter-/NoData-Front-Zelle gehört GENAU einer Bedingung.
+        // claimed: cellKey "col,row" → { role:'inflow'|'outflow'|'stage'|'global' }
+        // Explizite Boundaries claimen zuerst; die globale Füllung überspringt belegte Zellen.
+        const claimed = new Map();
+        const edgeLines = [];   // native N/S/E/W-Zeilen (explizit + global)
+        const pointLines = [];  // P-Zeilen (Innenquellen + NoData-Front)
         let boundaryIndex = 0;
 
         for (const b of boundaries) {
@@ -570,6 +513,7 @@ export class InputGenerator {
             } else {
                 lisfloodType = (assign.type.includes('WATERLEVEL')) ? 'HVAR' : 'QVAR';
             }
+            const role = lisfloodType === 'FREE' ? 'outflow' : (lisfloodType === 'HVAR' ? 'stage' : 'inflow');
 
             // 2. Resolve source profile data
             let sourceProfileData = null;
@@ -693,77 +637,69 @@ export class InputGenerator {
                 console.log(`[InputGenerator] Boundary ${b.id}: ${cellCount} cells, cellsize=${header.cellsize}m, scaleFactor=${scaleFactor.toFixed(2)} (${isFlow ? 'QVAR' : 'HVAR'}). Profile: ${profileNameForBci}`);
             }
 
-            // 6. Write BCI lines
-            if (finalCells.length > 0) {
-                if (isPointSource && pointWorldCoords) {
-                    const key = `${pointWorldCoords[0]},${pointWorldCoords[1]}`;
-                    if (!processedCells.has(key)) {
-                        processedCells.add(key);
-                        let line = `P ${pointWorldCoords[0].toFixed(4)} ${pointWorldCoords[1].toFixed(4)} ${lisfloodType}`;
-                        if (lisfloodType !== 'FREE') line += ` ${profileNameForBci}`;
-                        bciContent += line + '\n';
-                    }
-                } else {
-                    for (const cell of finalCells) {
-                        // cell.x = column index (left-to-right, 0 = west)
-                        // cell.y = BOTTOM-UP row index (0 = south/minY, nrows-1 = north/maxY)
-                        // Convert to world coordinates (bottom-up → world is direct):
-                        const wx = xll + (cell.x + 0.5) * header.cellsize;
-                        const wy = yll + (cell.y + 0.5) * header.cellsize;
-                        const key = `${cell.x},${cell.y}`;
-                        if (processedCells.has(key)) continue;
-                        processedCells.add(key);
+            // 6. Claim cells in the Ownership-Map.
+            //    Eine Zelle, die bereits explizit belegt ist, wird NICHT doppelt
+            //    belegt (erstes Explizit gewinnt) → nie Zu- UND Ablauf auf einer Zelle.
+            const claimCell = (col, row) => {
+                const key = `${col},${row}`;
+                if (claimed.has(key)) return false; // bereits belegt (Überlappung)
+                claimed.set(key, { role, boundaryId: b.id });
+                return true;
+            };
 
-                        let line = '';
-                        if (lisfloodType === 'FREE') {
-                            // LISFLOOD-2D natively supports FREE only via N/S/E/W boundary specifiers
-                            // on the outer perimeter of the computational domain.
-                            // For cells on the absolute domain edge, use the native directional form.
-                            // For ALL other cells (internal outlets), fall back to HFIX at terrain
-                            // elevation minus a tiny epsilon: this forces the water surface at the
-                            // outlet to the terrain level, giving a critical-depth weir condition
-                            // that reliably allows water to drain without accumulation.
+            const declaredEdge = b.properties?.edge; // 'N'|'S'|'E'|'W'|null/undefined
+            const sf = assign.outflowSlope;
+            const sfStr = (Number.isFinite(sf) && sf > 0 && sf <= 0.999) ? ` ${sf.toFixed(6)}` : '';
+            const useNativeFree = assign.useNativeFree !== false;
 
-                            const wx_end = wx + header.cellsize;
-                            const wy_end = wy + header.cellsize;
-                            let edgeLine = '';
+            // Gerichteter INNEN-Zufluss: optionaler Winkel-Token (Welt-Azimut in Grad,
+            // 0=Ost, 90=Nord) an der P-QVAR-Zeile → der gepatchte Solver rechnet die
+            // Innenzelle mit Impuls. NUR für Zuflüsse (role 'inflow'); nie Auslauf/Pegel.
+            // Legacy: fehlt flowAngleDeg, wird flowDir (N/S/E/W) gemappt.
+            const dirToken = (role === 'inflow') ? this._inflowAngleToken(assign) : null;
 
-                            if (cell.x === 0) edgeLine += `W ${wy.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
-                            if (cell.x === header.ncols - 1) edgeLine += `E ${wy.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
-                            if (cell.y === 0) edgeLine += `S ${wx.toFixed(4)} ${wx_end.toFixed(4)} FREE\n`;
-                            if (cell.y === header.nrows - 1) edgeLine += `N ${wx.toFixed(4)} ${wy_end.toFixed(4)} FREE\n`;
-
-                            const useNativeFree = assign.useNativeFree !== false; // defaults to true if undefined
-
-                            if (useNativeFree && edgeLine) {
-                                // Pure domain-edge outlet — native LISFLOOD FREE is ideal here
-                                line = edgeLine.trimEnd();
-                            } else {
-                                // Internal outlet OR user unchecked useNativeFree — HFIX at terrain level
-                                // acts as critical-depth weir. Use terrain_z - FREE_OUTLET_HFIX_OFFSET so water starts draining
-                                // before it completely inundates the outlet cell.
-                                const grid_idx = cell.y * header.ncols + cell.x;
-                                let z = (grid_idx >= 0 && grid_idx < gridData.length) ? gridData[grid_idx] : -9999;
-                                if (z <= -9990) z = 0; // NoData fallback
-                                const hfix = (z - FREE_OUTLET_HFIX_OFFSET).toFixed(4);
-                                line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix}`;
-                                console.log(`[InputGenerator] FREE→HFIX fallback at (${cell.x},${cell.y}): terrain=${z.toFixed(3)}, HFIX=${hfix}`);
-                            }
-                        } else {
-                            line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} ${lisfloodType}`;
-                            if (lisfloodType !== 'FREE') line += ` ${profileNameForBci}`;
-                            line += '\n';
-                        }
-
-                        if (line) {
-                            bciContent += line;
-                        }
+            if (isPointSource && pointWorldCoords) {
+                // Reine Punktquelle (Innen): mit optionaler Fließrichtung.
+                const cell = finalCells[0];
+                if (claimCell(cell.x, cell.y)) {
+                    if (lisfloodType === 'FREE') {
+                        pointLines.push(this._interiorFreeLine(pointWorldCoords[0], pointWorldCoords[1], cell, header, gridData));
+                    } else {
+                        const dirSuffix = dirToken ? ` ${dirToken}` : '';
+                        pointLines.push(`P ${pointWorldCoords[0].toFixed(4)} ${pointWorldCoords[1].toFixed(4)} ${lisfloodType} ${profileNameForBci}${dirSuffix}`);
                     }
                 }
+            } else if (declaredEdge && (lisfloodType !== 'FREE' || useNativeFree)) {
+                // KANTEN-SEGMENT: Zellen, die wirklich auf der deklarierten Kante liegen,
+                // → native N/S/E/W-Zeile mit Impuls. Off-Edge-Zellen (z. B. nach NoData-Rescue
+                // verschoben) fallen auf Innenquelle/HFIX zurück.
+                const onEdge = [], offEdge = [];
+                for (const c of finalCells) {
+                    (cellEdge(header, c.x, c.y) === declaredEdge ? onEdge : offEdge).push(c);
+                }
+                const claimedOnEdge = onEdge.filter(c => claimCell(c.x, c.y));
+                if (claimedOnEdge.length > 0) {
+                    const intervals = mergeCellsToIntervals(claimedOnEdge, declaredEdge, header);
+                    const lisType = lisfloodType === 'FREE' ? `FREE${sfStr}` : `${lisfloodType} ${profileNameForBci}`;
+                    for (const iv of intervals) edgeLines.push(`${declaredEdge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} ${lisType}`);
+                }
+                if (offEdge.length > 0) {
+                    this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${offEdge.length} Zelle(n) liegen nicht auf der Kante '${declaredEdge}' — als interne Quelle behandelt.`);
+                    for (const c of offEdge) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken);
+                }
+            } else {
+                // INNEN-Linie/-Polygon: Punktquellen je Zelle, mit optionaler Fließrichtung.
+                for (const c of finalCells) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken);
             }
 
             boundaryIndex++;
         }
+
+        // ── Globale Randbedingung: füllt NUR unbelegte Zellen ──────────────────
+        this._fillGlobalBoundary(header, gridData, claimed, edgeLines, pointLines, globalOpts);
+
+        // ── Finale Emission ────────────────────────────────────────────────────
+        const bciContent = [...edgeLines, ...pointLines].join('\n') + (edgeLines.length + pointLines.length ? '\n' : '');
 
         // 7. Write BDY profiles
         for (const [name, data] of bdyProfiles) {
@@ -775,6 +711,209 @@ export class InputGenerator {
         }
 
         return { bciContent, bdyContent };
+    }
+
+    /**
+     * Winkel-Token (Welt-Azimut in Grad) für einen gerichteten Zufluss bilden.
+     * Bevorzugt assign.flowAngleDeg; Legacy-Fallback assign.flowDir (N=90,E=0,S=270,W=180).
+     * Gibt einen String (z. B. "135.0") oder null (richtungslos) zurück.
+     */
+    _inflowAngleToken(assign) {
+        const a = assign.flowAngleDeg;
+        if (Number.isFinite(a)) {
+            const norm = ((a % 360) + 360) % 360; // auf [0,360) normalisieren
+            return norm.toFixed(1);
+        }
+        const LEGACY = { E: 0, N: 90, W: 180, S: 270 };
+        if (assign.flowDir in LEGACY) return LEGACY[assign.flowDir].toFixed(1);
+        return null;
+    }
+
+    /**
+     * Gerichteten Zufluss zur echten NOZZLE machen: jede Mündungszelle dreiseitig
+     * umschließen (Rückseite + beide Flanken als hohe Wand), nur die Vorderkante(n)
+     * in Fließrichtung offen lassen. So MUSS das Wasser gerichtet austreten statt
+     * radial zu streuen (LISFLOOD-Punktquelle = ungekappte Massenquelle → sonst
+     * Ausbreitung in alle Richtungen).
+     *
+     * Eine Kante wird gemauert, wenn ihre Außennormale NICHT in Fließrichtung zeigt
+     * (n·flow ≤ 0). Kardinal ⇒ 3 Wände/1 offen; Diagonal ⇒ 2 Wände/2 offen.
+     * Interne Kanten zwischen zwei benachbarten Zufluss-Zellen bleiben offen (sonst
+     * würde eine breite Mündung intern zugemauert).
+     *
+     * WICHTIG (empirisch im Solver verifiziert, Mikro-Test): das LISFLOOD-Wehr-Tag ist
+     * INVERS zur gesperrten Weltrichtung — Tag `N` sperrt den Süd-Nachbarn, `S`→Nord,
+     * `E`→West, `W`→Ost. Also Tag = Gegenrichtung der zu sperrenden Kante.
+     *
+     * Hoher Crest (`z + WALL_FREEBOARD`) ⇒ Fluss=0 in beide Richtungen (solide Wand),
+     * da das Wehr nur rechnet, wenn der Wasserspiegel den Crest übersteigt. Synthetische
+     * Einträge (ohne lineId) → laufen unverändert durch generateWeirFile (singles).
+     * @returns {Array<{x,y,direction,Cd,hc,m,w}>} Wehr-Einträge (Welt-Koordinaten)
+     */
+    buildInflowBackBarriers(boundaries, assignments, header, gridData) {
+        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+        const cs = header.cellsize;
+        const WALL_FREEBOARD = 50.0; // Crest weit über jeder realistischen Stauhöhe ⇒ echte Wand
+        const EPS = 1e-6;
+
+        // Kardinalkanten: Außennormale in (col,row)-Raster (Nord = +row, bottom-up).
+        // tag = INVERSES LISFLOOD-Wehr-Tag der physischen Sperrrichtung (s. Doc oben).
+        const EDGES = [
+            { d: 'E', nCol:  1, nRow:  0, tag: 'W' },
+            { d: 'W', nCol: -1, nRow:  0, tag: 'E' },
+            { d: 'N', nCol:  0, nRow:  1, tag: 'S' },
+            { d: 'S', nCol:  0, nRow: -1, tag: 'N' },
+        ];
+
+        // Mündungszellen einer Boundary diskretisieren (gleiche Logik wie Emission).
+        const mouthCells = (b) => {
+            if (b.geometry?.type === 'LineString') {
+                return BoundaryTools.discretizePolyline(b.geometry.coordinates, cs, xll, yll);
+            } else if (b.geometry?.type === 'Point') {
+                const c = this.getGridIndex(b.geometry.coordinates[0], b.geometry.coordinates[1], header);
+                return [{ x: c.col, y: c.row_world }];
+            }
+            return null;
+        };
+
+        // ── Pass 1: alle gerichteten Zufluss-Zellen sammeln (für interne-Kanten-Dedup) ──
+        const inflowSet = new Set();        // "col,row"
+        const directed = [];                // { cells, dCol, dRow }
+        for (const b of (boundaries || [])) {
+            const assign = assignments[b.id];
+            if (!assign) continue;
+            if (assign.type !== 'INFLOW_CONSTANT' && assign.type !== 'INFLOW_DYNAMIC') continue;
+            const tok = this._inflowAngleToken(assign);
+            if (tok === null) continue; // richtungslos ⇒ keine Wand
+            const theta = parseFloat(tok) * Math.PI / 180; // Welt-Azimut: 0=Ost, 90=Nord
+            const cells = mouthCells(b);
+            if (!cells) continue;
+            const valid = cells.filter(c => c.x >= 0 && c.x < header.ncols && c.y >= 0 && c.y < header.nrows);
+            for (const c of valid) inflowSet.add(`${c.x},${c.y}`);
+            directed.push({ cells: valid, dCol: Math.cos(theta), dRow: Math.sin(theta) });
+        }
+        if (directed.length === 0) return [];
+
+        // ── Pass 2: pro Zelle die Nicht-Vorwärts-Kanten mauern, interne Kanten offen ──
+        const out = [];
+        const seen = new Set();
+        for (const { cells, dCol, dRow } of directed) {
+            for (const cell of cells) {
+                const idx = cell.y * header.ncols + cell.x;
+                let z = (idx >= 0 && idx < gridData.length) ? gridData[idx] : 0;
+                if (z <= -9990) z = 0;
+                const wx = xll + (cell.x + 0.5) * cs;
+                const wy = yll + (cell.y + 0.5) * cs;
+                for (const e of EDGES) {
+                    const dot = e.nCol * dCol + e.nRow * dRow;
+                    if (dot > EPS) continue;                       // Vorderkante ⇒ offen
+                    if (inflowSet.has(`${cell.x + e.nCol},${cell.y + e.nRow}`)) continue; // interne Kante
+                    const key = `${cell.x},${cell.y},${e.tag}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    out.push({ x: wx, y: wy, direction: e.tag, Cd: 1.7, hc: z + WALL_FREEBOARD, m: 0.667, w: cs });
+                }
+            }
+        }
+        if (out.length > 0) {
+            this.info(`Nozzle-Wand: ${out.length} Kanten-Sperre(n) um gerichtete Zufluss-Zellen (Rückseite + Flanken, Vorderkante offen).`);
+        }
+        return out;
+    }
+
+    /** P-Zeile für eine Innenzelle; optionaler Richtungs-Token (Impuls); FREE → HFIX am Gelände. */
+    _claimInteriorCell(cell, lisfloodType, profileName, header, gridData, claimCell, pointLines, dirToken = null) {
+        if (!claimCell(cell.x, cell.y)) return;
+        const wx = (header.xll !== undefined ? header.xll : header.xllcorner) + (cell.x + 0.5) * header.cellsize;
+        const wy = (header.yll !== undefined ? header.yll : header.yllcorner) + (cell.y + 0.5) * header.cellsize;
+        if (lisfloodType === 'FREE') {
+            pointLines.push(this._interiorFreeLine(wx, wy, cell, header, gridData));
+        } else {
+            const dirSuffix = dirToken ? ` ${dirToken}` : '';
+            pointLines.push(`P ${wx.toFixed(4)} ${wy.toFixed(4)} ${lisfloodType} ${profileName}${dirSuffix}`);
+        }
+    }
+
+    /** Innenliegender freier Auslauf → HFIX knapp unter Gelände (kritische Tiefe). */
+    _interiorFreeLine(wx, wy, cell, header, gridData) {
+        const grid_idx = cell.y * header.ncols + cell.x;
+        let z = (grid_idx >= 0 && grid_idx < gridData.length) ? gridData[grid_idx] : -9999;
+        if (z <= -9990) z = 0;
+        const hfix = (z - FREE_OUTLET_HFIX_OFFSET).toFixed(4);
+        return `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix}`;
+    }
+
+    /**
+     * Globale Randbedingung füllt NUR unbelegte Zellen:
+     *  (a) echte Rasterkanten (N/S/E/W) als zusammenhängende native Intervalle,
+     *  (b) die NoData-Front (irreguläres Einzugsgebiet) als P-HFIX-Auslauf.
+     * CLOSED ⇒ es wird nichts ergänzt.
+     */
+    _fillGlobalBoundary(header, gridData, claimed, edgeLines, pointLines, { globalBoundaryType, globalBoundaryHfix } = {}) {
+        if (!globalBoundaryType || globalBoundaryType === 'CLOSED') return;
+        const { ncols, nrows, cellsize: cs } = header;
+        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
+        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+        const ND = -9990;
+        const type = globalBoundaryType; // 'FREE' | 'HFIX'
+        const val = type === 'HFIX' ? ` ${(globalBoundaryHfix ?? 0).toFixed(4)}` : '';
+
+        // (a) Rasterkanten: pro Kante unbelegte, gültige Zellen sammeln → Intervalle
+        for (const edge of ['N', 'S', 'E', 'W']) {
+            const free = [];
+            for (const c of edgeCells(header, edge)) {
+                const key = `${c.col},${c.row}`;
+                if (claimed.has(key)) continue;
+                if (gridData[c.row * ncols + c.col] <= ND) continue; // NoData-Kante überspringen
+                claimed.set(key, { role: 'global' });
+                free.push(c);
+            }
+            if (free.length === 0) continue;
+            for (const iv of mergeCellsToIntervals(free, edge, header)) {
+                edgeLines.push(`${edge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} ${type}${val}`);
+            }
+        }
+
+        // (b) NoData-Front: Außen-NoData per Flood-Fill vom Rasterrand markieren …
+        const total = ncols * nrows;
+        const exterior = new Uint8Array(total);
+        const stack = [];
+        const seedExt = (c, r) => {
+            if (c < 0 || c >= ncols || r < 0 || r >= nrows) return;
+            const k = r * ncols + c;
+            if (exterior[k] || gridData[k] > ND) return;
+            exterior[k] = 1; stack.push(k);
+        };
+        for (let c = 0; c < ncols; c++) { seedExt(c, 0); seedExt(c, nrows - 1); }
+        for (let r = 0; r < nrows; r++) { seedExt(0, r); seedExt(ncols - 1, r); }
+        while (stack.length) {
+            const k = stack.pop();
+            const c = k % ncols, r = (k - c) / ncols;
+            seedExt(c - 1, r); seedExt(c + 1, r); seedExt(c, r - 1); seedExt(c, r + 1);
+        }
+        // … gültige Innenzellen an Außen-NoData, die NICHT belegt sind → P-HFIX-Auslauf
+        const isExt = (c, r) => (c >= 0 && c < ncols && r >= 0 && r < nrows && exterior[r * ncols + c] === 1);
+        let frontierCount = 0, capped = false;
+        const FRONTIER_CAP = 50000;
+        for (let r = 1; r < nrows - 1; r++) {
+            for (let c = 1; c < ncols - 1; c++) {
+                if (frontierCount >= FRONTIER_CAP) { capped = true; break; }
+                const z = gridData[r * ncols + c];
+                if (!(z > ND)) continue;
+                if (claimed.has(`${c},${r}`)) continue; // explizit/global belegt → kein Front-Auslauf
+                if (!(isExt(c - 1, r) || isExt(c + 1, r) || isExt(c, r - 1) || isExt(c, r + 1))) continue;
+                const wx = xll + (c + 0.5) * cs;
+                const wy = yll + (r + 0.5) * cs;
+                const hfix = type === 'HFIX' ? (globalBoundaryHfix ?? 0) : (z - FREE_OUTLET_HFIX_OFFSET);
+                claimed.set(`${c},${r}`, { role: 'global' });
+                pointLines.push(`P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix.toFixed(4)}`);
+                frontierCount++;
+            }
+            if (capped) break;
+        }
+        if (capped) this.warn(`NoData-Front-Auslauf bei ${FRONTIER_CAP} Zellen gekappt — Teile der irregulären Küste bekommen keinen Auslauf (Wasser kann dort anstauen).`);
+        if (frontierCount > 0) console.log(`[InputGenerator] Globale Randbedingung (${type}): ${frontierCount} NoData-Front-Auslauf-Zellen (unbelegt) ergänzt.`);
     }
 
     /**
@@ -809,171 +948,6 @@ export class InputGenerator {
             }
         }
         return content;
-    }
-
-    /**
-     * Generate .bci output (Indices)
-     * AND Implements Smart Snapping
-     */
-    generateBciFile(assignments, boundaries, ganglinien, header, gridData) {
-        let content = '';
-        console.log(`[InputGenerator] Generating BCI. Poly-Boundaries: ${boundaries.length}, Assignments: ${Object.keys(assignments).length}`);
-
-        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
-        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
-        const processedCells = new Set(); // Avoid duplicates in BCI
-
-        for (const b of boundaries) {
-            const assign = assignments[b.id];
-            if (!assign) continue;
-
-            // 1. Determine LISFLOOD Type & Name
-            // Output: P col row <Type> <Name>
-            let lisfloodType = 'QVAR';
-            let profileName = '';
-
-            if (assign.type === 'OUTFLOW_FREE') {
-                lisfloodType = 'FREE';
-                // No name needed
-            } else {
-                // Inflow/Stage
-                lisfloodType = (assign.type.includes('WATERLEVEL')) ? 'HVAR' : 'QVAR';
-
-                // Resolve Name
-                if (assign.profileId) {
-                    const p = ganglinien[assign.profileId];
-                    if (p) {
-                        profileName = p.name ? p.name.replace(/\s+/g, '_') : assign.profileId;
-                    } else {
-                        profileName = assign.profileId; // Fallback to ID (synthetic)
-                    }
-                } else {
-                    console.warn(`[InputGenerator] Boundary ${b.id} missing profileId/value`);
-                    continue;
-                }
-            }
-
-            // 2. Discretize Geometry
-            let rawCells = [];
-            let isPointSource = false; // Point sources use real-world coords in BCI!
-            let pointWorldCoords = null;
-            if (b.type === 'Feature') {
-                if (b.geometry.type === 'Point') {
-                    isPointSource = true;
-                    pointWorldCoords = b.geometry.coordinates; // [x, y] in world coords
-                    const p = b.geometry.coordinates;
-                    const c = this.getGridIndex(p[0], p[1], header);
-                    rawCells.push({ x: c.col, y: c.row_world }); // For validation only
-                } else if (b.geometry.type === 'LineString') {
-                    rawCells = BoundaryTools.discretizePolyline(b.geometry.coordinates, header.cellsize, xll, yll);
-                } else if (b.geometry.type === 'Polygon') {
-                    rawCells = BoundaryTools.getCellsInPolygon(b.geometry.coordinates[0], header.cellsize, xll, yll);
-                }
-            }
-
-            console.log(`[InputGenerator] Processing ${b.id} (${assign.type}). Raw Cells: ${rawCells.length}`);
-
-            // 3. Smart Snapping & Validation
-            // Request: "Wenn Zelle NoData oder Out -> Suche spiralig"
-            // We check EACH cell.
-            const finalCells = [];
-
-            for (const rc of rawCells) {
-                // rc is {x: col, y: row_world} (Bottom-up)
-                const col = rc.x;
-                const row = rc.y;
-
-                // Check 1: Bounds
-                if (col < 0 || col >= header.ncols || row < 0 || row >= header.nrows) {
-                    // User Request: "Teile der Polylinie, die außerhalb sind, sollten ignoriert werden"
-                    // So we do NOT rescue them. We skip.
-                    continue;
-                }
-
-                // Check 2: NoData
-                const idx = row * header.ncols + col;
-                if (gridData[idx] <= -9990) { // NoData Found
-                    // Attempt Rescue with Connectivity Check (min 1 neighbor)
-                    const valid = BoundaryTools.findNearestValidCell(col, row, gridData, header, snapRadiusCells(header), 1);
-                    if (valid) {
-                        finalCells.push(valid);
-                    } else {
-                        // Really invalid
-                        console.warn(`[InputGenerator] Cell ${col}, ${row} is NoData (Val: ${gridData[idx]}) and Rescue failed (Radius ${snapRadiusCells(header)}).`);
-                    }
-                } else {
-                    // Valid
-                    finalCells.push({ x: col, y: row }); // Stores bottom-up
-                }
-            }
-
-            // Write to content (deduplicate)
-            if (finalCells.length > 0) {
-                if (isPointSource && pointWorldCoords) {
-                    // For Point Sources, we must SNAP to the cell center to avoid LISFLOOD truncation errors
-                    // e.g. 56.9 -> 56, 57.0 -> 57.
-                    // We already have the grid index in finalCells[0] (should be only 1 cell for Point)
-
-                    const cell = finalCells[0];
-                    const wx_snap = xll + (cell.x + 0.5) * header.cellsize;
-                    const wy_snap = yll + (cell.y + 0.5) * header.cellsize;
-
-                    console.log(`[InputGenerator] Point Source Snapped: Raw[${pointWorldCoords[0].toFixed(2)},${pointWorldCoords[1].toFixed(2)}] -> Cell[${cell.x},${cell.y}] -> Snapped[${wx_snap.toFixed(2)},${wy_snap.toFixed(2)}]`);
-
-                    const key = `${wx_snap.toFixed(4)},${wy_snap.toFixed(4)}`;
-                    if (!processedCells.has(key)) {
-                        processedCells.add(key);
-
-                        let line = '';
-                        // FIXED: LISFLOOD ignores 'P ... FREE'. Use 'HFIX <elevation>'
-                        if (lisfloodType === 'FREE') {
-                            const idx = cell.y * header.ncols + cell.x; // cell.y is bottom-up
-                            let z = (gridData && idx < gridData.length) ? gridData[idx] : -9999;
-                            if (z <= -9990) z = 0;
-                            line = `P ${wx_snap.toFixed(4)} ${wy_snap.toFixed(4)} HFIX ${z.toFixed(4)}`;
-                        } else {
-                            line = `P ${wx_snap.toFixed(4)} ${wy_snap.toFixed(4)} ${lisfloodType}`;
-                            if (lisfloodType !== 'FREE') line += ` ${profileName}`;
-                        }
-                        content += line + '\n';
-                    }
-                } else {
-                    // Edge/Line boundaries: Snap all cells to center
-                    for (const cell of finalCells) {
-                        // Convert grid indices back to world coordinates (CENTERED)
-                        const wx = xll + (cell.x + 0.5) * header.cellsize;
-                        const wy = yll + (cell.y + 0.5) * header.cellsize;
-                        const key = `${cell.x},${cell.y}`;
-                        if (processedCells.has(key)) continue;
-                        processedCells.add(key);
-
-                        let line = '';
-                        // FIXED: LISFLOOD ignores 'P ... FREE'. We must use 'HFIX <elevation>' to simulate outflow (weir).
-                        if (lisfloodType === 'FREE') {
-                            const grid_idx = cell.y * header.ncols + cell.x;
-                            let z = -9999;
-                            if (grid_idx >= 0 && grid_idx < gridData.length) {
-                                z = gridData[grid_idx];
-                            }
-                            if (z <= -9990) z = 0; // Fallback for NoData
-
-                            line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${z.toFixed(4)}`;
-                        } else {
-                            line = `P ${wx.toFixed(4)} ${wy.toFixed(4)} ${lisfloodType}`;
-                            if (lisfloodType !== 'FREE') { // Redundant check but safe
-                                line += ` ${profileName}`;
-                            }
-                        }
-                        content += line + '\n';
-                    }
-                }
-            } else {
-                console.warn(`[InputGenerator] Boundary ${b.id} yielded 0 valid cells after snapping (Radius ${snapRadiusCells(header)}).`);
-            }
-        }
-
-        // Return .bci and .bdy content
-        return { bciContent: content, bdyContent };
     }
 
     /**
@@ -1478,7 +1452,14 @@ export class InputGenerator {
                             // Rohr/Durchlass → Orifice (<dir>B). Auf dem gepatchten v8-Solver
                             // ohne SGC lauffähig (Floodplain-Fallback). Landet in weirEntries,
                             // umgeht damit das SGC-Bridge-Clipping.
-                            weirEntries.push({ x: cell.x, y: cell.y, direction: cell.direction + 'B', Cd: poly.Cd ?? first.Cd, hc: cell.orifice.soffit, m: poly.Tz ?? 1.5, w: cs });
+                            // Die durchflusswirksame Breite ist die ECHTE Öffnungsbreite (auf
+                            // die Zellweite gekappt) statt pauschal die volle Zelle — ein
+                            // schmales Rohr (width < cellsize) bekommt so seinen realen
+                            // Querschnitt. Lichte Höhe/Länge/Manning passen nicht in das
+                            // 7-Spalten-.weir-Format und erfordern einen Solver-Patch
+                            // (quagg-weir-flow.patch) → bewusst nicht hier kodiert.
+                            const oW = Math.min(cs, cell.orifice.width ?? cs);
+                            weirEntries.push({ x: cell.x, y: cell.y, direction: cell.direction + 'B', Cd: poly.Cd ?? first.Cd, hc: cell.orifice.soffit, m: poly.Tz ?? 1.5, w: oW });
                             orificeCount++;
                         } else {
                             weirEntries.push({ x: cell.x, y: cell.y, direction: cell.direction, Cd: poly.Cd ?? first.Cd, hc: cell.hc ?? poly.hc ?? first.hc, m: poly.m ?? first.m, w: cs });

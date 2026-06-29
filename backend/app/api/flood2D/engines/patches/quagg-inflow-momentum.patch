@@ -1,0 +1,226 @@
+QUAGG inflow-momentum patch — gerichteter Innenzufluss mit Impuls (freier Winkel).
+Siehe engines/patches/README.md. Betrifft: lisflood.h, input.cpp, iterateq.cpp.
+Welt-Azimut theta (0=Ost, 90=Nord, CCW); Zerlegung in Qx/Qy, Froude-gekappt.
+Impuls wird auf die VORDERKANTE injiziert (kollidiert nicht mit Rueck-/Flankenwand).
+
+--- a/lisflood.h
++++ b/lisflood.h
+@@ -438,6 +438,13 @@
+ 	NUMERIC_TYPE *PS_Q_FP_old;
+ 	NUMERIC_TYPE *PS_Q_SG_old;
+ 
++	// QUAGG inflow-momentum: optionale Fliessrichtung je Punktquelle.
++	// DirectionNA (0) => Legacy-Verhalten (reine Volumenquelle, kein Impuls).
++	EDirection *PS_Dir;
++	// QUAGG inflow-momentum (freier Winkel): Welt-Azimut in Grad (0=Ost, 90=Nord, CCW).
++	// NaN (Default) => kein gerichteter Impuls. N/E/S/W mappen auf 90/0/270/180.
++	NUMERIC_TYPE *PS_Angle;
++
+ 	ESourceType   *BC_Ident;
+ 	int numBCs;
+ 	char  *BC_Name;
+--- a/input.cpp
++++ b/input.cpp
+@@ -1489,6 +1489,29 @@
+ }
+ 
+ //-----------------------------------------------------------------------------------
++// QUAGG inflow-momentum: optionalen Richtungs-Token eines Punktquellen-Zuflusses parsen.
++// Token kann sein: Himmelsrichtung (N/E/S/W) ODER ein freier Welt-Azimut in Grad
++// (0=Ost, 90=Nord, CCW). Setzt *angle_out (Grad) und gibt das passende EDirection-Enum
++// zurueck (DirectionNA bei leer/unbekannt => Legacy, kein Impuls). Die Richtung ist die
++// FLIESSRICHTUNG, in die das Wasser die Quellzelle verlaesst.
++static EDirection ParseInflowDir(const char *tok, NUMERIC_TYPE *angle_out)
++{
++	*angle_out = (NUMERIC_TYPE)NAN;
++	if (tok == NULL || tok[0] == '\0') return DirectionNA;
++	if (!STRCMPi(tok, "N") || !STRCMPi(tok, "North")) { *angle_out = C(90.0);  return North; }
++	if (!STRCMPi(tok, "E") || !STRCMPi(tok, "East"))  { *angle_out = C(0.0);   return East; }
++	if (!STRCMPi(tok, "S") || !STRCMPi(tok, "South")) { *angle_out = C(270.0); return South; }
++	if (!STRCMPi(tok, "W") || !STRCMPi(tok, "West"))  { *angle_out = C(180.0); return West; }
++	// freier Winkel in Grad?
++	double deg;
++	if (sscanf(tok, "%lf", &deg) == 1)
++	{
++		*angle_out = (NUMERIC_TYPE)deg;
++		return North; // Nicht-NA-Marker; die echte Richtung steckt im Winkel (PS_Dir nur != NA)
++	}
++	return DirectionNA;
++}
++
+ // LOADS FILE GIVING IDENTIFIERS FOR EACH BOUNDARY CELL FROM .bci FILE
+ // (e.g. HFIX, QVAR etc)
+ void LoadBCs(Fnames *Fnameptr, States *Statesptr, Pars *Parptr, BoundCs *BCptr, const int verbose)
+@@ -1505,6 +1528,8 @@
+ 	ESourceType *new_PS_Ident;
+ 	NUMERIC_TYPE *new_PS_Val, *new_PS_Q_FP_old, *new_PS_Q_SG_old;
+ 	char *new_PS_Name;
++	EDirection *new_PS_Dir; // QUAGG inflow-momentum
++	NUMERIC_TYPE *new_PS_Angle; // QUAGG inflow-momentum (freier Winkel)
+ 
+ 	// POINT SOURCE STUFF
+ 	BCptr->xpi = new int[maxpi];
+@@ -1514,11 +1539,15 @@
+ 	BCptr->PS_Ident = new ESourceType[maxpi];
+ 	BCptr->PS_Val = memory_allocate_numeric_legacy(maxpi);
+ 	BCptr->PS_Name = new char[maxpi * 80];
++	BCptr->PS_Dir = new EDirection[maxpi]; // QUAGG inflow-momentum
++	BCptr->PS_Angle = memory_allocate_numeric_legacy(maxpi); // QUAGG inflow-momentum
+ 	for (i = 0; i < maxpi; i++)
+ 	{
+ 		BCptr->PS_Ident[i] = NONE0;
+ 		BCptr->PS_Val[i] = C(-1.0);
+ 		BCptr->PS_Name[i] = '\0';
++		BCptr->PS_Dir[i] = DirectionNA; // QUAGG: Default = Legacy (kein Impuls)
++		BCptr->PS_Angle[i] = (NUMERIC_TYPE)NAN; // QUAGG: kein Winkel
+ 	}
+ 	BCptr->numPS = -1;
+ 
+@@ -1724,15 +1753,21 @@
+ 			if (verbose == ON) printf("QFIX at point [%" NUM_FMT",%" NUM_FMT"] (%d,%d) %" NUM_FMT"\n", px, py, BCptr->xpi[pi], BCptr->ypi[pi], BC_tmp);
+ 			BCptr->PS_Val[pi] = BC_tmp;
+ 			BCptr->PS_Ident[pi] = QFIX4;
++			// QUAGG: optionaler 3. Token = Fliessrichtung (Himmelsrichtung ODER Winkel).
++			{ char dirtok[16] = ""; char kw[80]; NUMERIC_TYPE v;
++			  if (sscanf(buff2, "%s%" NUM_FMT"%15s", kw, &v, dirtok) == 3)
++			      BCptr->PS_Dir[pi] = ParseInflowDir(dirtok, &BCptr->PS_Angle[pi]); }
+ 		}
+ 		else if (!STRCMPi(buff, "QVAR") && BCptr->xpi[pi] > -1 && pi > -1)
+ 		{
+ 			//fscanf(fp,"%s",buff);
+-			sscanf(buff2, "%s%s", buff3, buff);
++			char dirtok[16] = "";
++			sscanf(buff2, "%s%s%15s", buff3, buff, dirtok); // QUAGG: 3. Token = Fliessrichtung
+ 			if (verbose == ON)
+-				printf("QVAR at point [%" NUM_FMT",%" NUM_FMT"] (%d,%d) %s\n", px, py, BCptr->xpi[pi], BCptr->ypi[pi], buff);
++				printf("QVAR at point [%" NUM_FMT",%" NUM_FMT"] (%d,%d) %s dir=%s\n", px, py, BCptr->xpi[pi], BCptr->ypi[pi], buff, dirtok);
+ 			strcpy(BCptr->PS_Name + pi * 80, buff);
+ 			BCptr->PS_Ident[pi] = QVAR5;
++			BCptr->PS_Dir[pi] = ParseInflowDir(dirtok, &BCptr->PS_Angle[pi]); // QUAGG inflow-momentum
+ 		}
+ 		else if (!STRCMPi(buff, "HVAR") && BCptr->xpi[pi] > -1 && pi > -1)
+ 		{
+@@ -1767,6 +1802,8 @@
+ 		new_PS_Q_FP_old = memory_allocate_zero_numeric_legacy(pi);
+ 		new_PS_Q_SG_old = memory_allocate_zero_numeric_legacy(pi);
+ 		new_PS_Name = new char[pi * 80];
++		new_PS_Dir = new EDirection[pi]; // QUAGG inflow-momentum
++		new_PS_Angle = memory_allocate_numeric_legacy(pi); // QUAGG inflow-momentum
+ 
+ 
+ 		for (i = 0; i < pi; i++)
+@@ -1775,6 +1812,8 @@
+ 			new_ypi[i] = BCptr->ypi[i];
+ 			new_PS_Ident[i] = BCptr->PS_Ident[i];
+ 			new_PS_Val[i] = BCptr->PS_Val[i];
++			new_PS_Dir[i] = BCptr->PS_Dir[i]; // QUAGG inflow-momentum
++			new_PS_Angle[i] = BCptr->PS_Angle[i]; // QUAGG inflow-momentum
+ 			for (j = 0; j < 80; j++)
+ 				new_PS_Name[i * 80 + j] = BCptr->PS_Name[i * 80 + j];
+ 		}
+@@ -1783,12 +1822,16 @@
+ 		delete[] BCptr->PS_Ident;
+ 		memory_free_legacy(&BCptr->PS_Val);
+ 		delete[] BCptr->PS_Name;
++		delete[] BCptr->PS_Dir; // QUAGG inflow-momentum
++		memory_free_legacy(&BCptr->PS_Angle); // QUAGG inflow-momentum
+ 
+ 		BCptr->xpi = new_xpi;
+ 		BCptr->ypi = new_ypi;
+ 		BCptr->PS_Ident = new_PS_Ident;
+ 		BCptr->PS_Val = new_PS_Val;
+ 		BCptr->PS_Name = new_PS_Name;
++		BCptr->PS_Dir = new_PS_Dir; // QUAGG inflow-momentum
++		BCptr->PS_Angle = new_PS_Angle; // QUAGG inflow-momentum
+ 
+ 		BCptr->PS_Q_FP_old = new_PS_Q_FP_old;
+ 		BCptr->PS_Q_SG_old = new_PS_Q_SG_old;
+--- a/iterateq.cpp
++++ b/iterateq.cpp
+@@ -510,6 +510,7 @@
+ 			if (Qpnt>0) BCptr->Qpoint_pos += Qpnt;
+ 			else BCptr->Qpoint_neg += Qpnt;
+ 		}
++
+ 	}
+ 
+ 	// Calculate dV (-ve => outflow) and update NewH
+@@ -549,6 +550,78 @@
+ 		}
+ 	}
+ 
++	// QUAGG inflow-momentum: gerichteter Zufluss MIT Impuls an einer (Innen-)Zelle.
++	// Setzt den Kantenfluss Qx/Qy in Fliessrichtung; UpdateQs kopiert ihn danach nach
++	// Qxold/Qyold, sodass der Traegheits-Solver (fp_acc) ihn im naechsten Schritt als q0
++	// weitertraegt. WICHTIG: NACH der Divergenz-Schleife oben (sonst Massenfehler) und
++	// in Qx/Qy-EINHEITEN (m3/s = m2/s*dx, denn UpdateQs teilt durch dx). Sicherheits-Design
++	// (siehe patches/README.md):
++	//  - nur wenn Fliessrichtung gesetzt (sonst Legacy/Volumen-only),
++	//  - nur acceleration-Solver & SGC AUS (sonst Flux-Arrays anders/unbenutzt),
++	//  - Wet-Gate h>DepthThresh (sonst erst Volumen aufbauen; verhindert 0/0),
++	//  - Froude-Kappung |v|<=sqrt(g*h) ⇒ injizierte Geschwindigkeit <= Wellengeschw.,
++	//    womit die tiefenbasierte CFL gueltig bleibt,
++	//  - ADD-then-clamp ⇒ gegenlaeufige/serielle Zulaeufe bleiben beschraenkt.
++	for (int ps_index = 0; ps_index<BCptr->numPS; ps_index++)
++	{
++		if (BCptr->PS_Dir[ps_index] == DirectionNA) continue;
++		if (!(BCptr->PS_Ident[ps_index] == QFIX4 || BCptr->PS_Ident[ps_index] == QVAR5)) continue;
++		if (!(Statesptr->acceleration == ON && Statesptr->SGC == OFF)) continue;
++
++		int xi = BCptr->xpi[ps_index];
++		int yi = BCptr->ypi[ps_index];
++		int p  = xi + yi * Parptr->xsz;
++		NUMERIC_TYPE h = Arrptr->H[p];
++		if (h <= Solverptr->DepthThresh) continue; // Wet-Gate
++
++		NUMERIC_TYPE q_user = (BCptr->PS_Ident[ps_index] == QVAR5)
++			? InterpolateTimeSeries(BCptr->PS_TimeSeries[ps_index], Solverptr->t)
++			: BCptr->PS_Val[ps_index];
++		q_user = FABS(q_user); // m2/s; Vorzeichen kommt aus der Richtung
++		NUMERIC_TYPE q_crit = sqrt(Solverptr->g * h) * h;      // kritischer Einheitsabfluss (m2/s)
++		NUMERIC_TYPE q_in = getmin(q_user, q_crit);
++		// in Qx/Qy-Einheiten (m3/s): mit dx multiplizieren (UpdateQs teilt wieder durch dx)
++		NUMERIC_TYPE Q_in  = q_in   * Parptr->dx;
++		NUMERIC_TYPE Q_cap = q_crit * Parptr->dx;
++
++		int xsz1 = Parptr->xsz + 1;
++		// FREIER WINKEL: Welt-Azimut theta (0=Ost, 90=Nord, CCW) in Qx/Qy zerlegen.
++		// Konvention (T1-verifiziert): +Qx=Ost, +Qy=Sued ⇒ Nord = -Qy.
++		//   x-Komponente qx = q*cos(theta)  (+ = ostwaerts)
++		//   y-Komponente qy = -q*sin(theta) (+ = suedwaerts, Nord = negativ)
++		// Jede Komponente wird auf ihre VORDERKANTE (in Komponenten-Richtung) injiziert:
++		// ostwaerts→Ostkante Qx[xi+1], westwaerts→Westkante Qx[xi];
++		// nordwaerts→Nordkante Qy[xi], suedwaerts→Suedkante Qy[xi+(yi+1)]. So liegt der
++		// Impuls immer auf der OFFENEN Vorderkante (nicht auf einer Rueck-/Flankenwand,
++		// die als hohes Wehr gebaut wird) und wirkt konsistent vorwaerts.
++		// Jede Komponente EINZELN Froude-gekappt (ADD-then-clamp) ⇒ Resultierende stabil.
++		NUMERIC_TYPE theta = BCptr->PS_Angle[ps_index] * (NUMERIC_TYPE)(3.14159265358979323846 / 180.0);
++		if (theta != theta) // NaN-Schutz: Winkel nicht gesetzt → kein Impuls
++			continue;
++		NUMERIC_TYPE qx_comp =  cos(theta) * Q_in; // + = ostwaerts
++		NUMERIC_TYPE qy_comp = -sin(theta) * Q_in; // + = suedwaerts (Nord = negativ)
++		const NUMERIC_TYPE QEPS = (NUMERIC_TYPE)1e-9;
++
++		if (FABS(qx_comp) > QEPS)
++		{
++			int xedge = (qx_comp >= C(0.0)) ? (xi + 1 + yi * xsz1)  // Ostkante (vorwaerts)
++			                                : (xi     + yi * xsz1); // Westkante (vorwaerts)
++			NUMERIC_TYPE qnet = Arrptr->Qx[xedge] + qx_comp;
++			if (qnet >  Q_cap) qnet =  Q_cap;
++			if (qnet < -Q_cap) qnet = -Q_cap;
++			Arrptr->Qx[xedge] = qnet;
++		}
++		if (FABS(qy_comp) > QEPS)
++		{
++			int yedge = (qy_comp <= C(0.0)) ? (xi + yi       * xsz1)  // Nordkante (vorwaerts)
++			                                : (xi + (yi + 1) * xsz1); // Suedkante (vorwaerts)
++			NUMERIC_TYPE qnet = Arrptr->Qy[yedge] + qy_comp;
++			if (qnet >  Q_cap) qnet =  Q_cap;
++			if (qnet < -Q_cap) qnet = -Q_cap;
++			Arrptr->Qy[yedge] = qnet;
++		}
++	}
++
+ 	// Point source HVAR and HFIX
+ 	for (int ps_index = 0; ps_index<BCptr->numPS; ps_index++)
+ 	{

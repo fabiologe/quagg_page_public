@@ -17,7 +17,6 @@ import { useFlowStreamlines } from '@/features/flood-2D/composables/viewer/useFl
 import { useDangerMarkers } from '@/features/flood-2D/composables/viewer/useDangerMarkers';
 import { findSectionStructures } from '@/features/flood-2D/utils/sectionStructures';
 import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResultProbes';
-import { useBoundaryArrows } from '@/features/flood-2D/composables/viewer/useBoundaryArrows';
 import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
 import { useWaterSurface } from '@/features/flood-2D/composables/viewer/useWaterSurface';
 import { collectPierCells } from '@/features/flood-2D/utils/BridgeMeshLattice.js';
@@ -77,7 +76,6 @@ const waterApi = useWaterSurface({
   },
 });
 const probeApi = useResultProbes(() => scene); // Probe-Ring-Marker
-const boundaryApi = useBoundaryArrows(() => scene, () => terrainApi.getMask()); // BCI-Pfeile
 
 // Hindernis-Maske fürs Velocity-Overlay: Gebäudemaske (top-down, <128) + Brücken-PFEILER.
 // Pfeiler sind nicht im 2D-Velocity-Raster (Physik blockt sie nur im SGC-Sub-Grid), daher
@@ -134,7 +132,7 @@ onMounted(() => {
     console.log('[ResultMap3D] Terrain was waiting — building now after scene init');
     buildTerrain(props.terrain);
     if (props.depthData) waterApi.update(props.depthData);
-    if (props.bciContent) boundaryApi.build(props.bciContent, props.terrain);
+    // Boundary-Pfeile NUR im Editor (ScenarioManager) — im Ergebnis-Viewer ausgeblendet.
   }
 
   // Memory Guard: purgeSimulationResults() dispatches this event to
@@ -437,7 +435,7 @@ function computeSectionData(startPtWorld, endPtWorld) {
     try {
       structures = findSectionStructures(
         realStartX, realStartY, realEndX, realEndY, cellsize,
-        geoStore.weirs, geoStore.bridges
+        geoStore.weirs, geoStore.bridges, props.terrain
       );
     } catch (e) {
       console.warn('[ResultMap3D] Bauwerks-Schnitt fehlgeschlagen:', e);
@@ -504,7 +502,7 @@ watch(() => props.terrain, (t) => {
   if (t && scene) {
     console.log('[ResultMap3D] Terrain prop changed — building');
     buildTerrain(t);
-    if (props.bciContent) boundaryApi.build(props.bciContent, t);
+    // Boundary-Pfeile im Ergebnis-Viewer ausgeblendet (nur Editor).
   }
 });
 
@@ -639,11 +637,8 @@ function createHighlightMesh(polygon, terrain) {
 
 
 // --- BOUNDARY LAYER ---
-
-watch(() => props.bciContent, (content) => {
-  if (content && props.terrain && scene) boundaryApi.build(content, props.terrain);
-  else boundaryApi.setVisible(false);
-});
+// Im Ergebnis-Viewer bewusst KEINE Randbedingungs-Pfeile (lenken von den
+// Strömungspfeilen ab und sind redundant). Sie werden nur im Editor gezeigt.
 
 defineExpose({ 
   onResize, 

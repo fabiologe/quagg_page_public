@@ -81,6 +81,15 @@ export function openingSoffit(o) {
     if (o.type === 'poly' && o.points?.length) return Math.max(...o.points.map(p => p.z));
     return o.soffit ?? 0;
 }
+/** Lichte Höhe der Öffnung [m] (vertikale Ausdehnung). */
+export function openingHeight(o) {
+    if (o.type === 'poly' && o.points?.length) {
+        const zs = o.points.map(p => p.z);
+        return Math.max(...zs) - Math.min(...zs);
+    }
+    if (o.type === 'rect') return o.height ?? 1;
+    return o.width ?? o.w ?? 1; // round: Durchmesser = lichte Höhe
+}
 /** Querschnitts-Polygon [{s,z}] je Typ (s entlang Linie, z absolut). */
 export function openingSection(o) {
     if (o.type === 'rect') {
@@ -126,11 +135,24 @@ export function crestZAt(points, x, y) {
     return bestZ;
 }
 
-/** Liegt (x,y) in einer Öffnung? → { soffit } (Oberkante) oder null. */
+/**
+ * Liegt (x,y) in einer Öffnung? → volle Öffnungs-Hydraulik
+ * { soffit, width, height, type } (Oberkante/Breite/lichte Höhe/Querschnittstyp)
+ * oder null. Die Geometrie wird vollständig durchgereicht, damit der Export
+ * (generateWeirFile) und die Validierung (validateWeirOpenings) sie nutzen können
+ * — nicht nur die Soffitte.
+ */
 function orificeAt(openings, x, y, cellsize) {
     for (const o of (openings || [])) {
         const r = Math.max(openingWidth(o) / 2, cellsize * 0.6);
-        if (Math.hypot(x - o.x, y - o.y) <= r) return { soffit: openingSoffit(o) };
+        if (Math.hypot(x - o.x, y - o.y) <= r) {
+            return {
+                soffit: openingSoffit(o),
+                width:  openingWidth(o),
+                height: openingHeight(o),
+                type:   o.type || 'round',
+            };
+        }
     }
     return null;
 }
@@ -141,7 +163,7 @@ function orificeAt(openings, x, y, cellsize) {
  * Barriere lückenlos bleibt (Muster aus useWeirTool.stepFace).
  *
  * Optional: Kronenhöhe `hc` pro Zelle aus dem z-Profil der Punkte interpoliert;
- * Zellen in einer Öffnung bekommen `orifice:{soffit}` (Rohr/Durchlass).
+ * Zellen in einer Öffnung bekommen `orifice:{soffit,width,height,type}` (Rohr/Durchlass).
  *
  * @param {Array<{x,y,z?}>} points  Welt-Polylinie (>= 2 Punkte)
  * @param {object} header        Raster-Header

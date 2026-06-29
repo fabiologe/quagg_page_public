@@ -24,6 +24,14 @@
           <div class="coord-row"><span>Z:</span> <strong>{{ pendingNode.z.toFixed(2) }}</strong></div>
         </div>
 
+        <label class="type-row">
+          <span>Typ</span>
+          <select v-model="nodeType" class="type-select">
+            <option value="SOURCE">Quelle / Einleiter (SOURCE)</option>
+            <option value="SINK">Senke / Entnahme (SINK)</option>
+          </select>
+        </label>
+
         <div class="actions">
           <button class="btn btn-save" @click="saveNode">Knoten setzen</button>
           <button class="btn btn-cancel" @click="cancelNode">Abbrechen</button>
@@ -47,6 +55,7 @@ const isActive = computed(() => simStore.activeTool === 'NODE');
 
 // --- 2. State-Machine ---
 const pendingNode = ref(null);
+const nodeType = ref('SOURCE');   // SOURCE = Einleiter, SINK = Entnahme
 
 const resetState = () => {
     pendingNode.value = null;
@@ -96,7 +105,7 @@ const saveNode = () => {
         x: pendingNode.value.x,
         y: pendingNode.value.y,
         z: pendingNode.value.z,
-        type: 'SOURCE' // Der Typ für Einleiter
+        type: nodeType.value // SOURCE (Einleiter) oder SINK (Entnahme)
     });
 
     // Reset für den nächsten Punkt
@@ -195,6 +204,25 @@ const cancelNode = () => {
 
 .coord-row span {
     color: #bdc3c7;
+}
+
+.type-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: #bdc3c7;
+}
+
+.type-select {
+    flex: 1;
+    background: #34495e;
+    color: #ecf0f1;
+    border: 1px solid #7f8c8d;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 0.85rem;
 }
 
 .actions {

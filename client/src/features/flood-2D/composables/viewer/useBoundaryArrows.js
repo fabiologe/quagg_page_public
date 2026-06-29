@@ -41,7 +41,11 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
         const x = parseFloat(p[1]);
         const y = parseFloat(p[2]);
         const bType = p[3];
-        if (!isNaN(x) && !isNaN(y)) points.push({ x, y, type: bType });
+        // Optionaler Winkel-Token (6. Feld, nach Profilname) bei gerichtetem QVAR-Zufluss:
+        // Welt-Azimut in Grad (0=Ost, 90=Nord). null = richtungslos.
+        const angRaw = (bType === 'QVAR') ? parseFloat(p[5]) : NaN;
+        const angle = Number.isFinite(angRaw) ? angRaw : null;
+        if (!isNaN(x) && !isNaN(y)) points.push({ x, y, type: bType, angle });
       } else if (['N', 'S', 'E', 'W'].includes(type)) {
         const start = parseFloat(p[1]);
         const end = parseFloat(p[2]);
@@ -133,7 +137,17 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
     const material = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, shininess: 60 });
 
     mesh = new THREE.InstancedMesh(mergedGeom, material, points.length);
+    // KEINE Mesh-Rotation: Positionen UND Richtungen werden direkt in WELT-Koordinaten
+    // gesetzt (wie die funktionierenden Wehr-Pfeile in useLayerRenderer). Die frühere
+    // mesh.rotation.x=-PI/2 hat die Richtungen verdreht (O/W „in die Luft"). Welt-Konvention:
+    // +X=Ost, -Z=Nord, +Y=hoch. Datenraum→Welt: (eastOffset, northOffset, elev) → (east, elev, -north).
+    mesh.renderOrder = RENDER_ORDER.BOUNDARY_ARROWS;
+    scene.add(mesh);
     const dummy = new THREE.Object3D();
+    // WICHTIG: Die Pfeil-Geometrie wird oben um rotateX(+PI/2) gedreht → sie zeigt lokal
+    // +Z (NICHT +Y). Daher die Orientierung IMMER von +Z aus aufbauen.
+    const FWD = new THREE.Vector3(0, 0, 1);
+    const _wd = new THREE.Vector3();
     const color = new THREE.Color();
     const cInflow = new THREE.Color(0x2196f3);  // QVAR
     const cOutflow = new THREE.Color(0xff5722);  // HFIX/FREE
@@ -156,12 +170,23 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
         if (val > -9000) terrainZ = val - minZ;
       }
       const isOutflow = (pt.type === 'HFIX' || pt.type === 'FREE');
+      const directed = !isOutflow && Number.isFinite(pt.angle);
+      // Welt-Position: east=+X, up=+Y, north=-Z. (Daten northOffset → Welt -Z.)
+      const wx = localX, wz = -localY;
       if (isOutflow) {
-        dummy.position.set(localX, localY, terrainZ + arrowHeight);
-        dummy.rotation.set(Math.PI, 0, 0);
+        // Auslauf: Pfeil zeigt nach unten (ins System hinein verschwindend).
+        dummy.position.set(wx, terrainZ + arrowHeight, wz);
+        dummy.quaternion.setFromUnitVectors(FWD, _wd.set(0, -1, 0));
+      } else if (directed) {
+        // Gerichteter Zufluss: flach in Fließrichtung. Welt-Richtung (Azimut 0=Ost, 90=Nord):
+        // (cosθ, 0, -sinθ). Pfeil-Vorderachse (+Z) per Quaternion darauf ausrichten.
+        const th = pt.angle * (Math.PI / 180);
+        dummy.position.set(wx, terrainZ + cellsize * 0.6, wz);
+        dummy.quaternion.setFromUnitVectors(FWD, _wd.set(Math.cos(th), 0, -Math.sin(th)));
       } else {
-        dummy.position.set(localX, localY, terrainZ + cellsize * 0.2);
-        dummy.rotation.set(0, 0, 0);
+        // Richtungsloser Zufluss: Pfeil nach oben.
+        dummy.position.set(wx, terrainZ + cellsize * 0.2, wz);
+        dummy.quaternion.setFromUnitVectors(FWD, _wd.set(0, 1, 0));
       }
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
@@ -174,9 +199,7 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.rotation.x = -Math.PI / 2; // gleiche Transform wie Terrain
-    mesh.renderOrder = RENDER_ORDER.BOUNDARY_ARROWS;
-    scene.add(mesh);
+    // (Mesh-Rotation/renderOrder/scene.add bereits oben gesetzt — vor dem Loop.)
 
     coneGeom.dispose();
     shaftGeom.dispose();

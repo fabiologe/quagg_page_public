@@ -1108,7 +1108,7 @@ export function useBridge3DTool() {
         if (bridge && dragLattice) {
             geoStore.updateBridge3D(bridge.id, derivePatch(bridge, dragLattice), 'Brückenkörper geformt');
             setLayerBridgeVisible(bridge.id, false);
-            rebuildEditVisuals(bridge, bridge.lattice, geoStore.terrain);
+            rebuildEditVisuals(bridge, dragLattice, geoStore.terrain);
         }
         dragLattice = null;
     };

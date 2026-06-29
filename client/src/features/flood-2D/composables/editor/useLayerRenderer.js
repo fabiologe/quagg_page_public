@@ -123,6 +123,15 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     const weirWallLineMat = new THREE.LineBasicMaterial({ color: 0xbdc3c7 });
     const weirOpeningMat = new THREE.MeshBasicMaterial({ color: 0x2c3e50, side: THREE.DoubleSide }); // dunkles Rohr
 
+    // Geteilte (langlebige) Materialien: dürfen beim Gruppen-Clear NICHT disposed
+    // werden (sonst sind sie nach dem ersten Render-Durchgang kaputt). clearGroup
+    // disposed nur Geometrien + Materialien, die NICHT hier drin sind (per-Render erzeugte).
+    const sharedMaterials = new Set([
+        nodeMaterial, buildingMaterial, boundaryMaterial,
+        bridgeOpenMat, bridgeDeckMat, bridgePierMat,
+        weirMatBidi, weirMatUni, weirWallLineMat, weirOpeningMat,
+    ]);
+
     // --- COORDINATE SYSTEM ---
     // We need a stable reference point (World Offset) to handle large UTM coordinates.
     // If 'geoStore.terrain' exists, we use its center.
@@ -198,16 +207,22 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     };
 
     // --- CLEANUP HELPER ---
+    // REKURSIV: traversiert JEDES Kind (auch verschachtelte wie THREE.ArrowHelper,
+    // der intern Line + Cone enthält) und disposed Geometrien + per-Render-Materialien.
+    // Geteilte Materialien (sharedMaterials) bleiben erhalten. Behebt schwebende
+    // Geister-Objekte (Wehr-Pfeile), deren innere Geometrien sonst nie freigegeben wurden.
+    const disposeMaterial = (mat) => {
+        if (!mat || sharedMaterials.has(mat)) return;
+        if (Array.isArray(mat)) { mat.forEach(disposeMaterial); return; }
+        mat.dispose?.();
+    };
     const clearGroup = (group) => {
-        // Loop backwards
         for (let i = group.children.length - 1; i >= 0; i--) {
             const child = group.children[i];
-            if (child.geometry) child.geometry.dispose();
-            // Don't dispose shared materials if we want to reuse them, 
-            // but if we created unique ones, dispose.
-            // Here nodeMaterial is shared constant so we don't dispose it.
-            // But if we cloned or made new ones for buildings?
-            // current buildingMaterial is shared.
+            child.traverse?.((o) => {
+                o.geometry?.dispose?.();
+                disposeMaterial(o.material);
+            });
             group.remove(child);
         }
     };
@@ -839,8 +854,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         clearGroup(weirGroup);
         clearGroup(bridgeGroup);
         nodeGeometry.dispose();
-        nodeMaterial.dispose();
-        buildingMaterial.dispose();
+        // Beim endgültigen Unmount auch die geteilten Materialien freigeben.
+        for (const m of sharedMaterials) m.dispose?.();
     });
 
     return {

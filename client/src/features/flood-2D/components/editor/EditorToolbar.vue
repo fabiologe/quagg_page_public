@@ -103,7 +103,7 @@
     </ToolButton>
 
     <!-- BOUNDARY Tool -->
-    <ToolButton 
+    <ToolButton
       @click="setTool('BOUNDARY')"
       :active="activeTool === 'BOUNDARY'"
       title="Define Boundaries"

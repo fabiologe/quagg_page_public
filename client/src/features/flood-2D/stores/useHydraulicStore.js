@@ -8,8 +8,32 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
      */
     const ganglinien = ref({});
 
-    /** @type {import('vue').Ref<Object.<string, {type: 'INFLOW_DYNAMIC'|'OUTFLOW_FREE'|'WATERLEVEL_FIX'|'SINK'|string, value: number|null, profileId: string|null}>>} */
-    const assignments = ref({}); // { geoObjectId: { type, value, profileId } }
+    /**
+     * Boundary-Verhalten (Rolle) je GeoObjekt-ID. Die LAGE (Kanten-Segment vs.
+     * Innenquelle) steckt in der Geometrie: feature.properties.edge ∈ 'N'|'S'|'E'|'W'|null,
+     * gesetzt beim Zeichnen (Auto-Snap) bzw. bei der Migration alter Projekte.
+     * @type {import('vue').Ref<Object.<string, {
+     *   type: 'INFLOW_CONSTANT'|'INFLOW_DYNAMIC'|'OUTFLOW_FREE'|'WATERLEVEL_FIX'|'SINK'|string,
+     *   value: number|null,
+     *   profileId: string|null,
+     *   useNativeFree?: boolean,
+     *   outflowSlope?: number|null,
+     *   flowAngleDeg?: number|null,
+     *   flowDir?: 'N'|'S'|'E'|'W'|null
+     * }>>}
+     *
+     *  - `type`         : die Rolle (Zufluss konstant/dynamisch, Wasserstand, freier Auslauf).
+     *  - `useNativeFree`: OUTFLOW_FREE als nativer Modell-Rand (true) vs. HFIX-Wehr (false).
+     *  - `outflowSlope` : Reibungs-/Sohlgefälle Sf (m/m) für OUTFLOW_FREE; null ⇒ kritische
+     *                     Tiefe (bare FREE). Setzt LISFLOOD BC_Val (boundary.cpp:98).
+     *  - `flowAngleDeg` : optionale Fließrichtung für INFLOW als Welt-Azimut in Grad
+     *                     (0=Ost, 90=Nord, gegen Uhrzeigersinn). Emittiert den Winkel-Token
+     *                     in der .bci (gepatchter Solver rechnet Innenzelle mit Impuls).
+     *                     null/fehlend ⇒ richtungslos.
+     *  - `flowDir`      : LEGACY (N/S/E/W). Wird beim Emittieren zu flowAngleDeg gemappt
+     *                     (N=90,E=0,S=270,W=180), falls flowAngleDeg fehlt.
+     */
+    const assignments = ref({}); // { geoObjectId: { type, value, profileId, ... } }
 
     /** @type {import('vue').Ref<Array<any>>} */
     const rainData = ref([]);
@@ -81,8 +105,8 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
 
     /**
      * Updated: Assign complex boundary condition
-     * @param {Array<string>} objectIds 
-     * @param {{type: string, value: number|null, profileId: string|null}} config 
+     * @param {Array<string>|string} target  geoObject-ID(s)
+     * @param {{type: string, value?: number|null, profileId?: string|null, useNativeFree?: boolean, outflowSlope?: number|null}} config
      */
     function assignBoundaryCondition(target, config) {
         // NEW: Multi-select support (Polymorphic: Array or Single ID)
@@ -141,9 +165,12 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         globalRoughness.value = val;
     }
 
-    // ── Globale Randbedingung (Fallback wenn keine manuellen Boundaries) ──
+    // ── Globale Randbedingung ──
+    // Default CLOSED: Ränder sind standardmäßig geschlossen; Zu- UND Abläufe werden
+    // NUR dort wirksam, wo der Nutzer sie explizit setzt. Verhindert, dass ein
+    // automatischer Rand-Auslauf gerichtete Zuläufe absaugt/überschreibt.
     /** @type {import('vue').Ref<'CLOSED'|'FREE'|'HFIX'>} */
-    const globalBoundaryType = ref('FREE');
+    const globalBoundaryType = ref('CLOSED');
     /** @type {import('vue').Ref<number>} Wasserspiegel [m NHN] bei HFIX */
     const globalBoundaryHfix = ref(0.0);
 

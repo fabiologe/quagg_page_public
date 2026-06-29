@@ -106,6 +106,24 @@ export const useSurfaceStore = defineStore('surface', () => {
     }
 
     /**
+     * Update an existing material's editable fields (name/color/manning/infiltration).
+     * Manning/Infiltration werden beim Export live aus `materials` gelesen
+     * (generateManningGrid/generateInfiltrationGrid) — die gridVersion-Erhöhung
+     * triggert nur abhängige UI-Watcher.
+     * @param {number} id
+     * @param {{name?:string,color?:string,manning?:number,infiltration?:number}} patch
+     */
+    function updateMaterial(id, patch = {}) {
+        const m = materials.value.find(x => x.id === id);
+        if (!m) return;
+        if (patch.name !== undefined) m.name = patch.name;
+        if (patch.color !== undefined) m.color = patch.color;
+        if (patch.manning !== undefined && Number.isFinite(patch.manning)) m.manning = patch.manning;
+        if (patch.infiltration !== undefined && Number.isFinite(patch.infiltration)) m.infiltration = patch.infiltration;
+        gridVersion.value++;
+    }
+
+    /**
      * Delete a material.
      * Replaces the deleted material in the grid with the default material (id=1).
      */
@@ -297,6 +315,7 @@ export const useSurfaceStore = defineStore('surface', () => {
         initGrid,
         calculateCoverage,
         addMaterial,
+        updateMaterial,
         deleteMaterial,
         setCellMaterial,
         paintBrush,

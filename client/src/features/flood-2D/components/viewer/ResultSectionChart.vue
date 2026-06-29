@@ -137,7 +137,23 @@ const structuresPlugin = {
       const xpx = xS.getPixelForValue(s.distance);
       if (xpx < area.left - 2 || xpx > area.right + 2) continue;
 
-      if (s.kind === 'weir') {
+      if (s.kind === 'pier') {
+        // Massiver Pfeiler: Gründung (floorZ, sonst Chart-Boden) bis Kopf (topZ),
+        // über die reale Footprint-Breite d0..d1.
+        let xL, xR;
+        if (s.d0 != null && s.d1 != null && s.d1 - s.d0 > 1e-3) {
+          xL = xS.getPixelForValue(s.d0); xR = xS.getPixelForValue(s.d1);
+          if (xR - xL < 4) { const m = (xL + xR) / 2; xL = m - 2; xR = m + 2; }
+        } else { xL = xpx - 4; xR = xpx + 4; }
+        let yTop = yS.getPixelForValue((s.topZ ?? 0) - yOffset);
+        let yBot = s.floorZ != null ? yS.getPixelForValue(s.floorZ - yOffset) : area.bottom;
+        yTop = Math.max(area.top, Math.min(yTop, area.bottom));
+        yBot = Math.max(area.top, Math.min(yBot, area.bottom));
+        ctx.fillStyle = 'rgba(96,100,116,0.95)';
+        ctx.fillRect(xL, yTop, xR - xL, Math.max(1, yBot - yTop));
+        ctx.strokeStyle = 'rgba(60,64,78,0.95)'; ctx.lineWidth = 1;
+        ctx.strokeRect(xL, yTop, xR - xL, Math.max(1, yBot - yTop));
+      } else if (s.kind === 'weir') {
         const yc = yS.getPixelForValue((s.crest ?? 0) - yOffset);
         ctx.strokeStyle = '#ff9800'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
         ctx.beginPath(); ctx.moveTo(xpx, area.bottom); ctx.lineTo(xpx, yc); ctx.stroke();
@@ -260,7 +276,9 @@ const updateChartData = () => {
   let yLo = Math.min(...terrainData.map(p => p.y));
   let yHi = Math.max(...waterData.map(p => p.y));
   for (const s of (props.section.structures || [])) {
-    const vals = s.kind === 'weir' ? [s.crest] : [s.z_sohle, s.soffit, s.deck];
+    const vals = s.kind === 'weir' ? [s.crest]
+      : s.kind === 'pier' ? [s.floorZ, s.topZ]
+      : [s.z_sohle, s.soffit, s.deck];
     for (const v of vals) {
       if (v == null || !isFinite(v)) continue;
       const rv = v - yOffset;

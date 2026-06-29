@@ -693,7 +693,8 @@ onMounted(() => {
     // Unified Grid Source (Preview OR Store)
     const activeGrid = computed(() => parsedData.value || geoStore.terrain);
 
-    // Initialize Layer Renderer (Visualizes Imported Data)
+    // Initialize Layer Renderer (Visualizes Imported Data).
+    // Verdrahtet sich intern selbst über reaktive Watcher — kein Rückgabewert nötig.
     useLayerRenderer(scene, geoStore, activeGrid);
 
     // Render terrestrial survey points as colored point cloud

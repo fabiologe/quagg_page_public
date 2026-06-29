@@ -114,6 +114,9 @@ console.log('── Öffnungstypen: width/soffit/section + clamp ──');
     const cells = discretizeWeirPolyline([{ x: 2, y: 20 }, { x: 18, y: 20 }], h, null, { openings: [{ x: 10, y: 20, type: 'rect', soffit: 11, width: 4, height: 3 }] });
     const orif = cells.filter(c2 => c2.orifice);
     assert(orif.length >= 3 && orif.every(c2 => c2.orifice.soffit === 11), `rect-Öffnung deckt ${orif.length} Zellen, soffit=11`);
+    // Orifice trägt jetzt die volle Hydraulik-Geometrie (nicht nur soffit)
+    assert(orif.every(c2 => c2.orifice.width === 4 && c2.orifice.height === 3 && c2.orifice.type === 'rect'),
+        'Orifice trägt width=4, height=3, type=rect');
 }
 
 console.log('── v8-Export: Polylinie behält Knicke (InputGenerator) ──');
@@ -157,6 +160,14 @@ console.log('── v8-Export: geneigte Krone + Öffnung als Orifice ──');
     const out2 = gen.generateWeirFile(cells, [], h, { engine: 'v8', weirLines: [line], sgcWidthGrid: sgc });
     const b2 = out2.trim().split('\n').slice(1).map(l => l.trim().split(/\s+/)).filter(p => p[2].endsWith('B'));
     assert(b2.length === bLines.length, 'Wehr-Öffnung umgeht das SGC-Bridge-Clipping (bleibt erhalten)');
+
+    // Export nutzt die ECHTE Öffnungsbreite (auf Zellweite gekappt) statt pauschal cs.
+    // Schmales Rohr (width 0.5 m < cellsize 1) → w-Spalte = 0.5; breite Öffnung → cs.
+    const narrow = { id: 'wl3', points: [{ x: 8, y: 20, z: 12 }, { x: 16, y: 20, z: 12 }], openings: [{ x: 12, y: 20, type: 'round', soffit: 11, width: 0.5 }], Cd: 1.704, m: 0.667, w: 1 };
+    const nCells = discretizeWeirPolyline(narrow.points, h, null, { openings: narrow.openings }).map(c => ({ lineId: 'wl3', x: c.x, y: c.y, direction: c.direction, Cd: 1.704, hc: c.hc, m: 0.667, w: 1 }));
+    const outN = gen.generateWeirFile(nCells, [], h, { engine: 'v8', weirLines: [narrow] });
+    const bN = outN.trim().split('\n').slice(1).map(l => l.trim().split(/\s+/)).filter(p => p[2].endsWith('B'));
+    assert(bN.length >= 1 && bN.every(p => Math.abs(+p[6] - 0.5) < 1e-6), `schmale Öffnung: w-Spalte = 0.5 (got ${bN.map(p => p[6]).join(',')})`);
 }
 
 console.log(failures === 0 ? '\n✅ Alle Weir-Polyline-Tests bestanden.' : `\n❌ ${failures} Test(s) fehlgeschlagen.`);

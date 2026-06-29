@@ -220,10 +220,12 @@ const duplicateWarning = computed(() => {
 
 function addLink() {
     if (!isFormValid.value || duplicateWarning.value) return;
+    // addCulvertLink erwartet ein Params-OBJEKT (z_in/diameter/…/maxQ), keine Zahl.
+    // Zuvor wurde maxQ als 3. Positionsargument verschluckt → Link ohne maxQ.
     geoStore.addCulvertLink(
         newLink.value.sourceId,
         newLink.value.targetId,
-        newLink.value.maxQ
+        { maxQ: newLink.value.maxQ }
     );
     // Reset — maxQ behalten für schnelles Mehrfach-Anlegen
     newLink.value.sourceId = '';

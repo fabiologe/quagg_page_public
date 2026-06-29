@@ -47,6 +47,11 @@ RUN rm -rf /src/cuda/cub
 COPY engines/patches/quagg-weir-flow.patch /tmp/quagg-weir-flow.patch
 RUN patch -p1 --forward -d /src < /tmp/quagg-weir-flow.patch
 
+# QUAGG inflow-momentum: gerichteter Innenzufluss mit Impuls (Froude-gekappt, sicher).
+# Siehe engines/patches/README.md. Ohne diesen Patch sind Punktquellen richtungslos.
+COPY engines/patches/quagg-inflow-momentum.patch /tmp/quagg-inflow-momentum.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-inflow-momentum.patch
+
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -D_CONFIG=/src/config.docker.cmake \

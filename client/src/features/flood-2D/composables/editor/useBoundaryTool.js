@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { useDrawTool } from './useDrawTool.js';
 import { useToolStateMachine, TOOL_STATE } from './useToolStateMachine.js';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
+import { snapToNearestEdge } from '@/features/flood-2D/utils/boundarySegments.js';
 
 export function useBoundaryTool() {
 
@@ -262,11 +263,24 @@ export function useBoundaryTool() {
         const points = drawTool.getPoints();
         if (points.length < 2) { cancel(); return; }
 
-        const coords = points.map(p => {
+        let coords = points.map(p => {
             const realX = p.x + pendingParsedData.center.x;
             const realY = -p.z + pendingParsedData.center.y;
             return [realX, realY];
         });
+
+        // Auto-Snap an die nächste Rasterkante: liegt die Linie nahe genug an einer
+        // Modellkante, wird sie zum Kanten-SEGMENT (properties.edge) → nativer
+        // N/S/E/W-Rand mit Impuls. Sonst edge=null = richtungslose Innenquelle.
+        // Header-Konvention konsistent zu getGridSnap: xll = center.x - width/2.
+        const { cellsize, bounds, ncols, nrows } = pendingParsedData;
+        const header = {
+            ncols, nrows, cellsize,
+            xllcorner: pendingParsedData.center.x - bounds.width / 2,
+            yllcorner: pendingParsedData.center.y - bounds.height / 2,
+        };
+        const { edge, snappedCoords } = snapToNearestEdge(coords, header, 1.5);
+        if (edge) coords = snappedCoords;
 
         const feature = {
             type: "Feature",
@@ -274,7 +288,8 @@ export function useBoundaryTool() {
             properties: {
                 type: "BOUNDARY",
                 boundary_type: 'INFLOW',
-                name: `Boundary INFLOW`
+                name: edge ? `Boundary (Kante ${edge})` : `Boundary (innen)`,
+                edge, // 'N'|'S'|'E'|'W' = Kanten-Segment; null = Innenquelle
             },
             geometry: { type: "LineString", coordinates: coords }
         };

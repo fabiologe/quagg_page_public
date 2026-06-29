@@ -21,6 +21,7 @@ import { useHydraulicStore } from '../stores/useHydraulicStore';
 import { useSurfaceStore } from '../stores/useSurfaceStore';
 import { useSimulationStore } from '../stores/useSimulationStore';
 import { GEO_FIELDS, buildResultData } from './useResultDataBridge';
+import { migrateBoundaries } from '../utils/boundarySegments';
 
 const MAGIC = 'flood-2D-project';
 const VERSION = 1;
@@ -227,6 +228,18 @@ export async function loadProject(file, onProgress = null) {
     const set = (k) => { if (h[k] !== undefined && h[k] !== null) hyd[k] = h[k]; };
     ['ganglinien', 'assignments', 'rainData', 'rainSeries', 'rainConfig', 'kostraGrid', 'rainLocation',
      'globalRoughness', 'globalBoundaryType', 'globalBoundaryHfix', 'antecedentMoisture'].forEach(set);
+  }
+
+  // Boundary-Migration auf das Kanten-Segment-Modell (idempotent): alte Boundaries
+  // an die nächste Rasterkante snappen (properties.edge setzen), veraltete
+  // assignment-Felder (inflowMode/direction) entfernen. Läuft NACH Geometrie + Hydraulik.
+  if (geoStore.boundaries?.features?.length) {
+    const mh = { ncols: terrainObj.ncols, nrows: terrainObj.nrows, cellsize: terrainObj.cellsize,
+                 xllcorner: terrainObj.xllcorner, yllcorner: terrainObj.yllcorner };
+    const stats = migrateBoundaries(geoStore.boundaries, hyd.assignments || {}, mh);
+    if (stats.snapped || stats.interior || stats.fieldsStripped) {
+      console.log(`[useProjectFile] Boundary-Migration: ${stats.snapped} an Kante gesnappt, ${stats.interior} als Innenquelle, ${stats.fieldsStripped} veraltete Felder entfernt.`);
+    }
   }
 
   // Simulationsparameter

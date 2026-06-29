@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "literatur": {
+      "command": "/home/fabio/quagg_page/backend/app/mcp/.venv-mcp/bin/python",
+      "args": ["-m", "app.mcp.literatur_server"],
+      "cwd": "/home/fabio/quagg_page/backend"
+    }
+  }
+}

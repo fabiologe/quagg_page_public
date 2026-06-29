@@ -146,6 +146,9 @@ export const useGeoStore = defineStore('geo', () => {
             length:    params.length    ?? 10.0,
             manning_n: params.manning_n ?? 0.013,
             Cd:        params.Cd        ?? 0.6,
+            // Optionale Kapazitäts-Obergrenze [m³/s] (CulvertLinkManager). null →
+            // voller 4-Zustands-Durchfluss im BMI-Worker (simulation.bmi.js).
+            maxQ:      params.maxQ ?? null,
         });
     }
 
