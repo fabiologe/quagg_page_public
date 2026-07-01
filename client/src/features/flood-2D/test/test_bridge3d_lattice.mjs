@@ -2,7 +2,8 @@
 // Ausführen: node src/features/flood-2D/test/test_bridge3d_lattice.mjs (aus client/)
 import {
     deriveFrame, createLattice, worldToUV, uvToWorld, sampleSheet,
-    insertLoopCut, insertLoopCutV, deriveDirection, rasterizeFootprint, latticeToCells,
+    insertLoopCut, insertLoopCutV, loopCutBlocked, migrateBridgeShape, deriveDirection, rasterizeFootprint, latticeToCells,
+    makeHeightSampler, insertPolyVertex, polyStationHits, insertPolyStation,
     footprintArea, footprintTerrainStats, sampleGridZ, frameCorners,
     addPier, removePierAt, uInPier, cellInPier, updatePier, pierIndexAt, movePierCorner, subdividePier,
 } from '../utils/BridgeMeshLattice.js';
@@ -191,7 +192,12 @@ console.log('── generateWeirFile v8: mesh3d-Branch ──');
     const lines = out.trim().split('\n').slice(1);
     assert(lines.length > 0, `v8 mesh3d: ${lines.length} Zeilen erzeugt`);
     assert(lines.every(l => / SB /.test(l)), 'v8 mesh3d: alle Zeilen mit SB-Tag (O-W-Spannweite)');
-    assert(lines.every(l => l.trim().endsWith('1.0000')), 'v8 mesh3d: w = Export-Zellweite');
+    // A.1: w = reale offene Breite pro Zelle (sub-grid). Volle Spalten = Zellweite,
+    // Randspalten (Footprint-Kante bei x=2/x=18 halbiert die Zelle) < Zellweite.
+    const ws = lines.map(l => +l.trim().split(/\s+/)[6]);
+    assert(ws.every(w => w > 0 && w <= 1 + 1e-6), 'v8 mesh3d: w ≤ Zellweite, > 0');
+    assert(ws.some(w => Math.abs(w - 1) < 1e-6), 'v8 mesh3d: volle Spalten = Zellweite');
+    assert(ws.some(w => w < 0.99), 'v8 mesh3d: Randspalten sub-grid (w < Zellweite)');
     // hc variiert über die Spannweite (Bogen): mehrere unterschiedliche hc-Werte
     const hcs = new Set(lines.map(l => l.trim().split(/\s+/)[4]));
     assert(hcs.size > 3, `v8 mesh3d: hc variiert per Zelle (${hcs.size} distinct)`);
@@ -356,6 +362,80 @@ console.log('── Collapse + Pfeiler: Pfeilerband liefert kein Orifice ──'
     assert([...pierCols].every(c => !cols.has(c)), 'Pfeilerspalten liefern kein Orifice');
     assert(cols.has(5) && cols.has(35), 'offene Gerinnespalten weiterhin als Orifice vorhanden');
     assert(cols.size === 31 - pierCols.size, `31 Gerinnespalten − ${pierCols.size} Pfeilerspalten = ${31 - pierCols.size} (got ${cols.size})`);
+}
+
+// ── Polygon-Pipeline: Bogen → Solver, Loop-Cut-Mindestabstand, Migration ─────
+{
+    const poly = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }]; // spanLen 20
+    let lat = createLattice(poly, { soffit: 2, deck: 5 });
+    lat = insertLoopCut(lat, 0.5, 0);                  // u = [0, 0.5, 1]
+    for (let i = 0; i < lat.nCross; i++) lat.bottomZ[i][1] = 4; // Bogen: Soffitte in Spannmitte angehoben
+    const bridge = { kind: 'mesh3d', poly, lattice: lat, directionMode: 'AUTO', Cd: 0.8, Tz: 1.5 };
+    const header = mkHeader(1, 21, 11);
+
+    // (1) Bogen kommt per-Zelle in den Solver: Soffitte variiert entlang der Spannweite
+    const soffits = latticeToCells(bridge, header, null).map(c => c.soffit);
+    assert(Math.max(...soffits) - Math.min(...soffits) > 1.0, 'Bogen → Solver: cell.soffit variiert (≠ flach)');
+
+    // (2) Loop-Cut-Mindestabstand = Zellweite: 0.6 m (< 1 m) wird abgelehnt, 10 m erlaubt
+    assert(insertLoopCut(lat, 0.03, 1.0) === null, 'Loop-Cut feiner als Zellweite → abgelehnt');
+    assert(loopCutBlocked(lat, 0.03, 'u', 1.0) === true, 'loopCutBlocked: Sub-Zellweite = true');
+    assert(insertLoopCut(lat, 0.25, 1.0) !== null, 'Loop-Cut ≥ Zellweite Abstand → erlaubt');
+
+    // (3) Migration: LINE-Brücke (axis+width) → Polygon-mesh3d mit Zellen
+    const mig = migrateBridgeShape({ id: 'm', kind: 'line', axis: [{ x: 0, y: 0 }, { x: 20, y: 0 }], width: 6, soffit: 3, deck: 4 });
+    assert(mig.kind === 'mesh3d' && mig.poly?.length === 4 && !!mig.lattice, 'Migration LINE → mesh3d-Polygon');
+    assert(latticeToCells(mig, mkHeader(1, 30, 20), null).length > 0, 'migrierte Brücke liefert Solver-Zellen');
+}
+
+// ── Per-Ecke-Höhenmodell: Sampler, Zellen folgen Eck-Höhen, Stützpunkt einfügen ──
+{
+    // Sampler: Dreieck, Höhen [0,0,9] → exakt an Ecken + lineare Kippung
+    const tri = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 10, y: 18 }];
+    const s = makeHeightSampler(tri, [0, 0, 9]);
+    assert(near(s.at(10, 18), 9) && near(s.at(0, 0), 0), 'Sampler exakt an den Ecken');
+    assert(near(s.at(10, 9), 4.5, 0.02), 'Sampler lineare Kippung (Mitte = halbe Höhe)');
+
+    // Mean-Value-Koordinaten: EINE Ecke beeinflusst die GANZE Fläche glatt (kein
+    // Triangulierungs-Knick). Quadrat, nur Ecke 0 angehoben → ein Punkt nahe der
+    // GEGENÜBERLIEGENDEN Ecke 2 muss messbar mitkommen (bei Ear-Clipping wäre er 0).
+    const sq = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    const sq0 = makeHeightSampler(sq, [0, 0, 0, 0]);
+    const sqR = makeHeightSampler(sq, [10, 0, 0, 0]); // nur Ecke 0 hoch
+    const farFlat = sq0.at(8, 8), farRaised = sqR.at(8, 8); // nahe Ecke 2 (gegenüber)
+    assert(farRaised - farFlat > 0.05, `Ecke beeinflusst ganze Fläche (fern: ${farFlat.toFixed(2)}→${farRaised.toFixed(2)})`);
+    // Monoton glatt: näher an Ecke 0 = höher als ferner Punkt (kein Diagonal-Sprung)
+    assert(sqR.at(2, 2) > sqR.at(8, 8) + 0.5, 'Sampler glatt monoton zur angehobenen Ecke');
+
+    // latticeToCells folgt einer angehobenen Ecke (Gradient), flach = konstant
+    const quad = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const lat = createLattice(quad, { soffit: 3, deck: 6 });
+    const h = mkHeader(1, 21, 11);
+    const tilted = { kind: 'mesh3d', poly: quad, lattice: lat, vsoffit: [3, 3, 3, 3], vdeck: [6, 6, 9, 6], directionMode: 'AUTO', Cd: 0.8, Tz: 1.5 };
+    const cells = latticeToCells(tilted, h, null);
+    const a = cells.find(c => c.x >= 18 && c.y >= 8), b = cells.find(c => c.x <= 2 && c.y <= 2);
+    assert(a.deck > b.deck + 2, `Zellen folgen angehobener Ecke (Deck@Ecke=${a.deck.toFixed(2)} > @Basis=${b.deck.toFixed(2)})`);
+
+    // Stützpunkt auf einer Kante → neue Ecke, Höhen interpoliert
+    const flat = { poly: quad, vsoffit: [2, 2, 2, 2], vdeck: [6, 6, 6, 6] };
+    const ins = insertPolyVertex(flat, 10, -0.3);
+    assert(ins.poly.length === 5 && near(ins.poly[1].x, 10) && near(ins.poly[1].y, 0), 'Stützpunkt auf Kante projiziert');
+    assert(ins.vsoffit.length === 5 && ins.vdeck.length === 5 && ins.vdeck[1] === 6, 'Stützpunkt-Höhen interpoliert');
+
+    // Längs-Station (axis 'u') quer durch → 2 Rand-Schnittpunkte einfügen (Bogen-Basis)
+    const stBridge = { poly: quad, lattice: lat, vsoffit: [3, 3, 3, 3], vdeck: [6, 6, 6, 6] };
+    const hits = polyStationHits(quad, lat, 'u', 0.5);
+    assert(hits && hits.length === 2, 'Station liefert 2 Rand-Schnittpunkte');
+    const ys = hits.map(p => p.y).sort((a2, b2) => a2 - b2);
+    assert(near(ys[0], 0) && near(ys[1], 10), 'Station-Punkte auf gegenüberliegenden Kanten (y=0 & y=10)');
+    const st = insertPolyStation(stBridge, 'u', 0.5);
+    assert(st && st.poly.length === 6 && st.newIndices.length === 2, 'insertPolyStation: 2 neue Ecken + Indizes');
+
+    // Irreguläres Polygon (Dreieck): Station trifft trotzdem den ECHTEN Rand → 2 Punkte
+    const triPoly = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 10, y: 16 }];
+    const triLat = createLattice(triPoly, { soffit: 3, deck: 6 });
+    const triSt = insertPolyStation({ poly: triPoly, lattice: triLat, vsoffit: [3, 3, 3], vdeck: [6, 6, 6] }, 'u', 0.35);
+    assert(triSt && triSt.newIndices.length === 2 && triSt.poly.length === 5, 'Station auf irregulärem Polygon (Dreieck) → 2 Punkte');
 }
 
 console.log(failures === 0 ? '\n✅ Alle Bridge3D-Lattice-Tests bestanden.' : `\n❌ ${failures} Test(s) fehlgeschlagen.`);

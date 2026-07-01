@@ -113,7 +113,42 @@ export function collapseBridgeCellsToChannel(cells, header, sgcWidthGrid) {
         }) : group;
         if (valid.length === 0) continue; // Spannposition kreuzt das Gerinne nicht
         valid.sort((a, b) => a.soffit - b.soffit); // restriktivste Öffnung zuerst
-        out.push(valid[0]);
+        // In Fließrichtung liegen die Zellen einer Querposition in Reihe → die ENGSTE
+        // Öffnung steuert (z. B. ein mittig stehender Pfeiler). Die übrig bleibende Zelle
+        // bekommt daher die minimale offene Breite der Gruppe, damit die Engstelle beim
+        // Kollabieren auf 1 Zelle Tiefe nicht verloren geht.
+        const widths = valid.map(c => c.width).filter(w => typeof w === 'number' && w > 0);
+        const keep = valid[0];
+        out.push(widths.length ? { ...keep, width: Math.min(keep.width ?? Infinity, ...widths) } : keep);
     }
     return out;
 }
+
+/**
+ * Standard-Abflussbeiwert (Cd) je nach PFEILER-NASENFORM für den Brücken-Orifice
+ * (Druckabfluss Q = Cd·Area·√(2gΔh)). Cd modelliert NUR den Eintritts-/Formverlust
+ * der bereits durch die Pfeiler verengten Öffnung — die Flächenverbauung selbst steckt
+ * schon in der Öffnungsbreite w (cellOpenWidth). Kein Doppelzählen.
+ *
+ * Werte = übliche Literatur-Defaults (eckige Nase staut mehr → kleineres Cd, runde/
+ * stromlinienförmige Nase weniger). Reiner Vorschlag: der Nutzer kann Cd frei überschreiben.
+ *
+ * @param {'eckig'|'abgerundet'|'stromlinienfoermig'|'stromlinienförmig'|string} shape
+ * @returns {number} vorgeschlagenes Cd (Default 0.8 bei unbekannter Form)
+ */
+export function pierShapeCd(shape) {
+    switch (shape) {
+        case 'eckig':              return 0.75; // rechteckige/stumpfe Nase
+        case 'abgerundet':         return 0.85; // halbkreisförmige Nase
+        case 'stromlinienfoermig':
+        case 'stromlinienförmig':  return 0.95; // spitz/linsenförmig
+        default:                   return 0.80;
+    }
+}
+
+/** Auswahl-Optionen für die UI (Wert + Label + vorgeschlagenes Cd). */
+export const PIER_NOSE_SHAPES = [
+    { value: 'eckig',             label: 'Eckig (rechteckig)',        cd: 0.75 },
+    { value: 'abgerundet',        label: 'Abgerundet (halbkreis)',    cd: 0.85 },
+    { value: 'stromlinienfoermig',label: 'Stromlinienförmig (spitz)', cd: 0.95 },
+];

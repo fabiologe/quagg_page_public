@@ -18,9 +18,11 @@ import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useToolStateMachine } from './useToolStateMachine.js';
 import {
-    createLattice, insertLoopCut, insertLoopCutV, latticeToCells, worldToUV, uvToWorld,
+    createLattice, insertLoopCut, insertLoopCutV, loopCutBlocked, latticeToCells, worldToUV, uvToWorld,
     footprintArea, footprintTerrainStats, sampleGridZ, sampleSheet, frameCorners,
     addPier, removePierAt, uInPier, updatePier, pierIndexAt, movePierCorner, subdividePier,
+    hasVertexHeights, insertPolyVertex, projectToNearestEdge,
+    polyStationHits, insertPolyStation, makeHeightSampler,
 } from '../../utils/BridgeMeshLattice.js';
 import {
     buildBridge3DGeometry, buildLatticeWireframe,
@@ -34,7 +36,7 @@ const PIER_HALF_U_MIN = 0.01; // min. halbe Pfeilerbreite in u
 
 // ── Singleton-State (gelesen von BridgeTool.vue, MapEditor3D, useLayerRenderer) ─
 export const bridge3DState = reactive({
-    mode: 'LINE',          // 'LINE' | 'MESH3D' — Umschalter im BridgeTool-Panel
+    mode: 'MESH3D',        // nur noch Polygon-3D-Körper (LINE-Modus entfernt)
     phase: 'IDLE',         // IDLE | DRAW_FOOTPRINT | EXTRUDE_FORM | EDIT | LOOPCUT
     draftPoints: [],       // [{x, y, terrainZ}] Echtkoordinaten während des Zeichnens
     editingId: null,
@@ -44,6 +46,8 @@ export const bridge3DState = reactive({
     hoverCutU: null,       // LOOPCUT(u)/PIER: aktuelle Schnittposition [0..1]
     hoverCutV: null,       // LOOPCUT(v): Quer-Schnittposition [0..1]
     cutAxis: 'u',          // LOOPCUT: 'u' (längs) | 'v' (quer)
+    subdivideMode: 'free', // SUBDIVIDE: 'free' (Einzelpunkt) | 'u' (Längs-Bogen) | 'v' (Quer)
+    cutInvalid: false,     // LOOPCUT: Hover-Position feiner als Zellweite → nicht setzbar (rote Vorschau)
     pierWidth: 1.5,        // PIER: Pfeilerbreite [m] entlang der Spannachse
     selectedPier: null,    // EDIT: Index des angeklickten Pfeilers (für B/L/H-Panel)
     formDefaults: { z_sohle: 0, soffit: 2, deck: 3 },
@@ -53,7 +57,10 @@ export const bridge3DState = reactive({
 
 // ── Modul-Level three.js Objekte ────────────────────────────────────────────
 let scene_ref = null;
-let draftLine = null, draftDots = null, previewLine = null, closingLine = null;
+let draftLine = null, draftDots = null, previewLine = null, closingLine = null, footprintGhost = null, framePreview = null;
+let subdivideMarkers = [];  // SUBDIVIDE: Vorschau-Kugel(n) (1 frei, 2 Station)
+let stationLine = null;     // SUBDIVIDE(Station): Verbindungslinie der 2 Rand-Punkte
+let pendingStation = null;  // SUBDIVIDE(Station): { axis, station } für den Klick
 let editGroup = null;      // Body-Preview + Wireframe + Handles + Cut-Preview
 let bodyPreview = null, cageLines = null, handleGroup = null, cutLine = null, pierMesh = null, pierLineSeg = null;
 
@@ -66,7 +73,8 @@ let pierGuideGroup = null; // Maß-Labels während eines Pfeiler-Ecken/Kopf-Drag
 let pierCenterPlane = null; // gelbe Mittel-Ebene des selektierten Pfeilers (dauerhaft)
 
 // Drag-Zustand (kein Vue-Tracking nötig)
-let dragLattice = null;    // Arbeitskopie während des Drags
+let dragLattice = null;    // Arbeitskopie während des Drags (Alt-Lattice-Pfad)
+let dragVz = null;         // Arbeitskopie {vsoffit,vdeck} während des Ecken-Höhen-Drags
 let dragSheetKey = null;   // 'b' | 't' — nur Nodes dieses Sheets bewegen
 let dragStartY = 0;
 let dragStartZ = new Map();// key → Ausgangshöhe
@@ -109,6 +117,18 @@ function nodeWorldXY(lattice, i, j) {
     return uvToWorld(lattice, lattice.u[j], i / (lattice.nCross - 1));
 }
 
+/** Grobe Zellzahl-Schätzung (Polygon-BBox / Zellfläche) — nur als Drag-Performance-Gate. */
+function estimateCellCount(bridge, grid) {
+    const poly = bridge.poly;
+    if (!poly?.length || !grid?.cellsize) return 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of poly) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    return ((maxX - minX) * (maxY - minY)) / (grid.cellsize * grid.cellsize);
+}
+
 /** Editor-Raster-Header in Zellzentren-Konvention (xll = Zentrum von Spalte 0). */
 function headerFromTerrain(terrain) {
     return {
@@ -119,6 +139,12 @@ function headerFromTerrain(terrain) {
 }
 
 // ── Draft-Visuals (Footprint-Zeichnen) ──────────────────────────────────────
+// Footprint sieht/funktioniert wie das Gebäude-Polygon (useDrawTool): Magenta-Linie,
+// rote Punkte, rotes Rubber-Band, grünes Einrasten am Startpunkt ("Einclipping").
+const FOOTPRINT_SNAP_DIST = 4.0; // m — identisch zur Snap-Schwelle in useDrawTool
+const FP_LINE = 0xff00ff, FP_DOT = 0xff0000, FP_BAND = 0xff0000, FP_SNAP = 0x00ff00;
+const FP_FRAME = 0x1abc9c; // cyan: das tatsächliche Rechteck (deriveFrame), das der Körper wird
+
 function buildPolyline(points, terrain, color, dashed = false) {
     if (points.length < 2) return null;
     const pos = [];
@@ -170,6 +196,10 @@ function clearEditVisuals() {
     let stale;
     while ((stale = scene_ref.getObjectByName('Bridge3D_Edit'))) removeMesh(scene_ref, stale);
     cpe.dispose();
+    for (const m of subdivideMarkers) removeMesh(scene_ref, m);
+    subdivideMarkers = [];
+    removeMesh(scene_ref, stationLine); stationLine = null;
+    pendingStation = null;
     editGroup = bodyPreview = cageLines = handleGroup = cutLine = guideGroup = pierGuideGroup = pierMesh = pierLineSeg = pierCenterPlane = null;
 }
 
@@ -184,10 +214,15 @@ function updateEditVisualsFromLattice(bridge, lattice, grid) {
     const b = { ...bridge, lattice };
 
     if (bodyPreview) {
-        const geom = buildBridge3DGeometry(b, grid);
-        if (geom) {
-            bodyPreview.geometry.dispose();
-            bodyPreview.geometry = geom;
+        // Der zellbasierte Body rastert das Polygon. Günstig für realistische Brücken; bei
+        // pathologisch großen Footprints während des aktiven Drags überspringen (Käfig/Handles
+        // zeigen die Höhenänderung weiter), Body folgt bei mouseup über rebuildEditVisuals.
+        if (!(bridge3DState.dragging && estimateCellCount(b, grid) > 8000)) {
+            const geom = buildBridge3DGeometry(b, grid);
+            if (geom) {
+                bodyPreview.geometry.dispose();
+                bodyPreview.geometry = geom;
+            }
         }
     }
     if (cageLines) {
@@ -425,18 +460,30 @@ function updateGuides(bridge, lattice, terrain) {
     guideGroup = new THREE.Group();
     let single = null;
 
+    const vz = hasVertexHeights(bridge);
     for (const key of bridge3DState.selection) {
-        const [sheetKey, i, j] = parseKey(key);
-        const sheet = sheetKey === 'b' ? lattice.bottomZ : lattice.topZ;
-        if (!sheet[i] || sheet[i][j] === undefined) continue;
-        const w = nodeWorldXY(lattice, i, j);
-        const terrZ = sampleGridZ(hdr, terrain.gridData, w.x, w.y);
+        const parts = key.split(':');
+        let wx, wy, z;
+        if (vz && parts.length === 2) {
+            // Per-Ecke-Key 'b:k' / 't:k'
+            const k = Number(parts[1]);
+            const p = bridge.poly[k];
+            if (!p) continue;
+            wx = p.x; wy = p.y;
+            z = parts[0] === 'b' ? bridge.vsoffit[k] : bridge.vdeck[k];
+        } else {
+            const [sheetKey, i, j] = parseKey(key);
+            const sheet = sheetKey === 'b' ? lattice.bottomZ : lattice.topZ;
+            if (!sheet[i] || sheet[i][j] === undefined) continue;
+            const w = nodeWorldXY(lattice, i, j);
+            wx = w.x; wy = w.y; z = sheet[i][j];
+        }
+        const terrZ = sampleGridZ(hdr, terrain.gridData, wx, wy);
         if (terrZ == null) continue;
-        const z = sheet[i][j];
         const dz = z - terrZ;
 
-        const top = toLocalExact(w.x, w.y, z, terrain);
-        const bot = toLocalExact(w.x, w.y, terrZ, terrain);
+        const top = toLocalExact(wx, wy, z, terrain);
+        const bot = toLocalExact(wx, wy, terrZ, terrain);
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(
@@ -469,14 +516,16 @@ function updateGuides(bridge, lattice, terrain) {
         : { count: bridge3DState.selection.length, dz: single?.dz ?? null };
 }
 
-function showCutPreview(bridge, grid, pos1d, axis = 'u') {
+function showCutPreview(bridge, grid, pos1d, axis = 'u', invalid = false) {
     if (!scene_ref || !editGroup) return;
     if (cutLine) { editGroup.remove(cutLine); cutLine.geometry?.dispose(); cutLine.material?.dispose(); cutLine = null; }
     const pos = axis === 'v' ? buildCutPreviewV(bridge, grid, pos1d) : buildCutPreview(bridge, grid, pos1d);
     if (!pos) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    cutLine = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xf1c40f, depthTest: false }));
+    // rot = zu nah (feiner als Zellweite → nicht setzbar), sonst gelb
+    const color = invalid ? 0xe74c3c : 0xf1c40f;
+    cutLine = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, depthTest: false }));
     cutLine.renderOrder = 999;
     editGroup.add(cutLine);
 }
@@ -510,6 +559,20 @@ export function useBridge3DTool() {
         };
     };
 
+    // Aggregate/Zellen aus dem Per-Ecke-Höhenmodell (vsoffit/vdeck je Polygon-Ecke).
+    const derivePatchVz = (bridge, vz) => {
+        const terrain = geoStore.terrain;
+        const b = { ...bridge, vsoffit: vz.vsoffit, vdeck: vz.vdeck };
+        const cells = latticeToCells(b, headerFromTerrain(terrain), terrain.gridData);
+        const zs = cells.map(c => c.z).filter(z => z != null);
+        return {
+            vsoffit: vz.vsoffit, vdeck: vz.vdeck, cells,
+            soffit:  Math.min(...vz.vsoffit),
+            deck:    Math.max(...vz.vdeck),
+            z_sohle: zs.length ? Math.min(...zs) : bridge.z_sohle,
+        };
+    };
+
     // ── Phasen-Übergänge ─────────────────────────────────────────────────────
     const startDrawing = () => {
         cancelEdit();
@@ -525,10 +588,22 @@ export function useBridge3DTool() {
         removeMesh(scene_ref, draftDots); draftDots = null;
         const pts = bridge3DState.draftPoints;
         if (!pts.length) return;
-        draftLine = buildPolyline(pts, terrain, 0x1abc9c);
-        draftDots = buildDots(pts, terrain, 0x1abc9c);
+        draftLine = buildPolyline(pts, terrain, FP_LINE);
+        draftDots = buildDots(pts, terrain, FP_DOT);
         if (draftLine) scene_ref.add(draftLine);
         scene_ref.add(draftDots);
+        updateFramePreview();
+    };
+
+    // WYSIWYG: zeigt live die geschlossene Körper-Grundfläche (der Body folgt jetzt
+    // dem Polygon, nicht mehr einem Bounding-Rechteck) — der Schließkanten-Hinweis.
+    const updateFramePreview = () => {
+        removeMesh(scene_ref, framePreview); framePreview = null;
+        const terrain = geoStore.terrain;
+        const pts = bridge3DState.draftPoints;
+        if (!scene_ref || !terrain?.center || pts.length < 3) return;
+        framePreview = buildPolyline([...pts, pts[0]], terrain, FP_FRAME);
+        if (framePreview) scene_ref.add(framePreview);
     };
 
     const clearDraftVisuals = () => {
@@ -536,6 +611,116 @@ export function useBridge3DTool() {
         removeMesh(scene_ref, draftDots);   draftDots = null;
         removeMesh(scene_ref, previewLine); previewLine = null;
         removeMesh(scene_ref, closingLine); closingLine = null;
+        removeMesh(scene_ref, footprintGhost); footprintGhost = null;
+        removeMesh(scene_ref, framePreview); framePreview = null;
+    };
+
+    // Einrasten am Startpunkt ("Einclipping" wie beim Gebäude): ab 3 Punkten schließt
+    // ein Klick in Startnähe das Footprint. Schwelle ist FOOTPRINT-RELATIV (12 % der
+    // bisherigen Diagonale, gedeckelt 0,5–4 m) — feste 4 m würden kleine Brücken
+    // (3–5 m breit) vorzeitig zu einem Dreieck schließen.
+    const footprintSnap = (cursor) => {
+        const pts = bridge3DState.draftPoints;
+        if (!cursor || pts.length < 3) return false;
+        const s = pts[0];
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of pts) {
+            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+        }
+        const diag = Math.hypot(maxX - minX, maxY - minY);
+        const thresh = Math.min(FOOTPRINT_SNAP_DIST, Math.max(0.5, diag * 0.12));
+        return Math.hypot(cursor.x - s.x, cursor.y - s.y) < thresh;
+    };
+
+    // Ghost-Cursor (rote Kugel, grün+größer beim Einrasten) — analog useDrawTool.
+    const updateFootprintGhost = (cursor, snapped = false) => {
+        const terrain = geoStore.terrain;
+        if (!scene_ref || !terrain?.center) return;
+        if (!cursor) { if (footprintGhost) footprintGhost.visible = false; return; }
+        if (!footprintGhost) {
+            footprintGhost = new THREE.Mesh(
+                new THREE.SphereGeometry(0.6, 16, 16),
+                new THREE.MeshBasicMaterial({ color: FP_DOT, depthTest: false, transparent: true, opacity: 0.85 }),
+            );
+            footprintGhost.renderOrder = 1000;
+            scene_ref.add(footprintGhost);
+        }
+        footprintGhost.position.copy(realToWorld(cursor, terrain));
+        footprintGhost.material.color.set(snapped ? FP_SNAP : FP_DOT);
+        footprintGhost.scale.setScalar(snapped ? 1.6 : 1.0);
+        footprintGhost.visible = true;
+    };
+
+    // Deckhöhe an einem (x,y) der Brücke (Per-Ecke-Modell → MVC-Sampler; sonst flach).
+    const deckAt = (bridge, x, y) => {
+        const vd = bridge.vdeck;
+        return (vd && vd.length === bridge.poly.length)
+            ? makeHeightSampler(bridge.poly, vd).at(x, y)
+            : (bridge.deck ?? 3);
+    };
+
+    // Vorschau-Kugel-Pool (1 = frei, 2 = Station). pts: [{x,y,z}].
+    const setSubdivideMarkers = (pts) => {
+        const terrain = geoStore.terrain;
+        if (!scene_ref || !terrain?.center) return;
+        while (subdivideMarkers.length < pts.length) {
+            const m = new THREE.Mesh(
+                new THREE.SphereGeometry(0.5, 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0xb0b0b0, depthTest: false, transparent: true, opacity: 0.95 }),
+            );
+            m.renderOrder = 1001;
+            scene_ref.add(m);
+            subdivideMarkers.push(m);
+        }
+        for (let i = 0; i < subdivideMarkers.length; i++) {
+            const m = subdivideMarkers[i];
+            if (i < pts.length) { m.position.copy(toLocalExact(pts[i].x, pts[i].y, pts[i].z, terrain)); m.visible = true; }
+            else m.visible = false;
+        }
+    };
+
+    const setStationLine = (pts) => {
+        removeMesh(scene_ref, stationLine); stationLine = null;
+        const terrain = geoStore.terrain;
+        if (!scene_ref || !terrain?.center || !pts || pts.length < 2) return;
+        const geo = new THREE.BufferGeometry().setFromPoints(pts.map(p => toLocalExact(p.x, p.y, p.z, terrain)));
+        stationLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xb0b0b0, depthTest: false, transparent: true, opacity: 0.95 }));
+        stationLine.renderOrder = 1000;
+        scene_ref.add(stationLine);
+    };
+
+    /** Frei: nächste Kante → 1 Vorschau-Kugel (Single Source: projectToNearestEdge). */
+    const updateSubdivideFree = (real) => {
+        const bridge = getBridge();
+        if (!bridge?.poly || !real) { setSubdivideMarkers([]); setStationLine(null); return; }
+        const proj = projectToNearestEdge(bridge.poly, real.x, real.y);
+        if (!proj) { setSubdivideMarkers([]); setStationLine(null); return; }
+        setSubdivideMarkers([{ x: proj.px, y: proj.py, z: deckAt(bridge, proj.px, proj.py) }]);
+        setStationLine(null);
+    };
+
+    /** Längs/Quer: u/v-Station → 2 Rand-Punkte + Verbindungslinie (Bogen-Vorschau). */
+    const updateStationGhost = (real) => {
+        pendingStation = null;
+        const bridge = getBridge();
+        const axis = bridge3DState.subdivideMode; // 'u' | 'v'
+        if (!bridge?.poly || !bridge.lattice || !real) { setSubdivideMarkers([]); setStationLine(null); return; }
+        const { u, v } = worldToUV(bridge.lattice, real.x, real.y);
+        const station = Math.max(0.03, Math.min(0.97, axis === 'v' ? v : u));
+        const hits = polyStationHits(bridge.poly, bridge.lattice, axis, station);
+        if (!hits) { setSubdivideMarkers([]); setStationLine(null); return; }
+        const pts = hits.map(p => ({ x: p.x, y: p.y, z: deckAt(bridge, p.x, p.y) }));
+        setSubdivideMarkers(pts);
+        setStationLine(pts);
+        pendingStation = { axis, station };
+    };
+
+    const clearSubdivideGhost = () => {
+        for (const m of subdivideMarkers) removeMesh(scene_ref, m);
+        subdivideMarkers = [];
+        removeMesh(scene_ref, stationLine); stationLine = null;
+        pendingStation = null;
     };
 
     /** Footprint schließen → Formular-Defaults aus Terrain, Phase EXTRUDE_FORM. */
@@ -556,11 +741,12 @@ export function useBridge3DTool() {
         };
         removeMesh(scene_ref, previewLine); previewLine = null;
         removeMesh(scene_ref, closingLine); closingLine = null;
+        removeMesh(scene_ref, footprintGhost); footprintGhost = null;
         bridge3DState.phase = 'EXTRUDE_FORM';
     };
 
     /** Extrudieren: Lattice + Zellen bauen, in den Store committen → EDIT. */
-    const applyExtrude = ({ soffit, deck, Cd = 0.80, Tz = 1.5, directionMode = 'AUTO' }) => {
+    const applyExtrude = ({ soffit, deck, Cd = 0.80, Tz = 1.5, directionMode = 'AUTO', pierNose = '' }) => {
         if (bridge3DState.phase !== 'EXTRUDE_FORM') return;
         if (!(deck >= soffit + MIN_THICKNESS)) {
             console.warn('[Bridge3D] Deck muss über der Soffitte liegen.');
@@ -573,10 +759,17 @@ export function useBridge3DTool() {
         const bridge = {
             id: `bridge3d_${Date.now()}`,
             kind: 'mesh3d',
-            // Footprint = Frame-Rechteck (einzige Formquelle, deckt sich mit Body/Umriss)
+            // Footprint = Frame-Rechteck (u/v-Parametrierung für Pfeiler/Fließrichtung).
             footprint: frameCorners(lattice),
+            // poly = das ROH gezeichnete Polygon (Body + Solver-Zellen folgen ihm).
+            poly: drawn,
+            // Per-Ecke-Höhen: jede Polygon-Ecke hat editierbare Soffitte/Deck (flach initial).
+            vsoffit: drawn.map(() => soffit),
+            vdeck: drawn.map(() => deck),
             lattice,
             directionMode, Cd, Tz,
+            // Pfeiler-Nasenform (informativ): Quelle des Cd-Vorschlags, frei überschreibbar.
+            pierNose,
         };
         Object.assign(bridge, derivePatch(bridge, lattice));
         geoStore.addBridge3D(bridge);
@@ -613,6 +806,7 @@ export function useBridge3DTool() {
         bridge3DState.dragging = false;
         bridge3DState.phase = 'IDLE';
         dragLattice = null;
+        dragVz = null;
         pierDrag = null;
         clearEditVisuals();
     };
@@ -639,14 +833,17 @@ export function useBridge3DTool() {
         const axis = bridge3DState.cutAxis;
         const pos = axis === 'v' ? bridge3DState.hoverCutV : bridge3DState.hoverCutU;
         if (!bridge || pos == null) return;
-        const cut = axis === 'v' ? insertLoopCutV(bridge.lattice, pos) : insertLoopCut(bridge.lattice, pos);
-        if (!cut) return; // zu nah an bestehender Station
+        // Mindestabstand = DEM-Zellweite: feiner als das Rechengitter ist nicht abbildbar.
+        const cs = geoStore.terrain?.cellsize || 0;
+        const cut = axis === 'v' ? insertLoopCutV(bridge.lattice, pos, cs) : insertLoopCut(bridge.lattice, pos, cs);
+        if (!cut) { bridge3DState.cutInvalid = true; return; } // zu nah / feiner als Zellweite
         // Auswahl verwerfen: Stations-/Reihen-Indizes verschieben sich durch den Cut
         bridge3DState.selection = [];
         bridge3DState.selectedPier = null;
         geoStore.updateBridge3D(bridge.id, derivePatch(bridge, cut), axis === 'v' ? 'Quer-Stützpunkt' : 'Loop Cut');
         bridge3DState.hoverCutU = null;
         bridge3DState.hoverCutV = null;
+        bridge3DState.cutInvalid = false;
         bridge3DState.phase = 'EDIT';
         setLayerBridgeVisible(bridge.id, false); // Re-Render des Watchers blendet ggf. wieder ein
         rebuildEditVisuals(bridge, cut, geoStore.terrain);
@@ -657,6 +854,52 @@ export function useBridge3DTool() {
         if (bridge3DState.phase !== 'EDIT') return;
         bridge3DState.hoverCutU = null;
         bridge3DState.phase = 'PIER';
+    };
+
+    /**
+     * Stützpunkt-Modus starten/umschalten. mode='free' → Einzelpunkt auf der nächsten Kante;
+     * 'u' → Längs-Station (Bogen entlang Spannweite); 'v' → Quer-Station. Aus EDIT oder
+     * während SUBDIVIDE (Modus wechseln) aufrufbar.
+     */
+    const startSubdivide = (mode = 'free') => {
+        if (bridge3DState.phase !== 'EDIT' && bridge3DState.phase !== 'SUBDIVIDE') return;
+        bridge3DState.subdivideMode = mode;
+        clearSubdivideGhost();
+        bridge3DState.phase = 'SUBDIVIDE';
+    };
+
+    const applySubdivide = (ctx) => {
+        const bridge = getBridge();
+        const pt = raycastTerrainReal(ctx);
+        clearSubdivideGhost();
+        if (!bridge || !pt) { bridge3DState.phase = 'EDIT'; return; }
+        const next = insertPolyVertex(bridge, pt.x, pt.y);
+        bridge3DState.phase = 'EDIT';
+        if (!next) return;
+        bridge3DState.selection = [];
+        geoStore.updateBridge3D(bridge.id, next, 'Stützpunkt eingefügt');
+        setLayerBridgeVisible(bridge.id, false);
+        rebuildEditVisuals(getBridge(), bridge.lattice, geoStore.terrain);
+    };
+
+    /**
+     * Längs/Quer-Station setzen: an der gehoverten u/v-Station beide Rand-Schnittpunkte als
+     * neue Ecken einfügen und gemeinsam selektieren (Soffitte+Deck beider Enden) → gemeinsames
+     * Hochziehen = symmetrischer Bogen über die volle Breite. Auch für irreguläre Polygone.
+     */
+    const applyStation = () => {
+        const bridge = getBridge();
+        const ps = pendingStation;
+        clearSubdivideGhost();
+        if (!bridge || !ps) { bridge3DState.phase = 'EDIT'; return; }
+        const res = insertPolyStation(bridge, ps.axis, ps.station);
+        bridge3DState.phase = 'EDIT';
+        if (!res || res.newIndices.length === 0) return;
+        geoStore.updateBridge3D(bridge.id, { poly: res.poly, vsoffit: res.vsoffit, vdeck: res.vdeck }, 'Bogen-Station eingefügt');
+        // Beide neuen Ecken (Soffitte + Deck) selektieren → gemeinsam ziehbar.
+        bridge3DState.selection = res.newIndices.flatMap(i => [`b:${i}`, `t:${i}`]);
+        setLayerBridgeVisible(bridge.id, false);
+        rebuildEditVisuals(getBridge(), bridge.lattice, geoStore.terrain);
     };
 
     /**
@@ -781,6 +1024,29 @@ export function useBridge3DTool() {
         if (!bridge || !terrain?.gridData || !bridge3DState.selection.length || !Number.isFinite(dz)) return;
 
         const hdr = headerFromTerrain(terrain);
+        if (hasVertexHeights(bridge)) {
+            // Per-Ecke: gewählte Ecken auf dz über dem Rasterlot setzen.
+            const vsoffit = bridge.vsoffit.slice(), vdeck = bridge.vdeck.slice();
+            for (const key of bridge3DState.selection) {
+                const parts = key.split(':');
+                if (parts.length !== 2) continue;
+                const k = Number(parts[1]);
+                const p = bridge.poly[k];
+                const terrZ = sampleGridZ(hdr, terrain.gridData, p.x, p.y);
+                if (terrZ == null) continue;
+                if (parts[0] === 'b') {
+                    const z = Math.max(terrZ, terrZ + dz);
+                    vsoffit[k] = z;
+                    if (vdeck[k] < z + MIN_THICKNESS) vdeck[k] = z + MIN_THICKNESS;
+                } else {
+                    vdeck[k] = Math.max(terrZ + dz, vsoffit[k] + MIN_THICKNESS, terrZ + MIN_THICKNESS);
+                }
+            }
+            geoStore.updateBridge3D(bridge.id, derivePatchVz(bridge, { vsoffit, vdeck }), 'Punkthöhe über Raster gesetzt');
+            setLayerBridgeVisible(bridge.id, false);
+            rebuildEditVisuals(bridge, bridge.lattice, terrain);
+            return;
+        }
         const lat = JSON.parse(JSON.stringify(bridge.lattice));
         for (const key of bridge3DState.selection) {
             const [sheetKey, i, j] = parseKey(key);
@@ -817,8 +1083,10 @@ export function useBridge3DTool() {
                 break;
             case 'LOOPCUT':
             case 'PIER':
+            case 'SUBDIVIDE':
                 bridge3DState.hoverCutU = null;
                 bridge3DState.hoverCutV = null;
+                clearSubdivideGhost();
                 if (cutLine && editGroup) {
                     editGroup.remove(cutLine);
                     cutLine.geometry?.dispose();
@@ -853,12 +1121,11 @@ export function useBridge3DTool() {
                 else if (bridge3DState.phase === 'EDIT') finishEdit();
             },
         });
-        // 'R' = Loop Cut (längs), 'T' = Quer-Stützpunkt, 'P' = Pfeiler
+        // 'S' = Stützpunkt (Kante unterteilen), 'P' = Pfeiler
         keyHandler = (e) => {
             const tag = e.target?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
-            if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) startLoopCut();
-            if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) startCrossCut();
+            if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) startSubdivide();
             if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey) startPier();
         };
         window.addEventListener('keydown', keyHandler);
@@ -922,7 +1189,11 @@ export function useBridge3DTool() {
                 if (id) { clearDraftVisuals(); startEdit(id); return; }
             }
             const pt = raycastTerrainReal(ctx);
-            if (pt) { bridge3DState.draftPoints.push(pt); rebuildDraft(); }
+            if (pt) {
+                // Einclipping: Klick in Startnähe schließt das Polygon (wie beim Gebäude).
+                if (footprintSnap(pt)) { commitFootprint(); return; }
+                bridge3DState.draftPoints.push(pt); rebuildDraft();
+            }
             return;
         }
 
@@ -981,14 +1252,26 @@ export function useBridge3DTool() {
             if (!ctx.raycaster.ray.intersectPlane(dragPlane, hit)) return;
 
             dragSheetKey = key[0];
-            dragLattice = JSON.parse(JSON.stringify(bridge.lattice));
             dragStartY = hit.y;
             dragStartZ = new Map();
-            for (const k of bridge3DState.selection) {
-                if (k[0] !== dragSheetKey) continue;
-                const [, i, j] = k.split(':').map((s, n) => n === 0 ? s : Number(s));
-                const sheet = dragSheetKey === 'b' ? dragLattice.bottomZ : dragLattice.topZ;
-                dragStartZ.set(k, sheet[i][j]);
+            if (hasVertexHeights(bridge)) {
+                // Per-Ecke-Höhen: Arbeitskopie der vsoffit/vdeck-Arrays.
+                dragVz = { vsoffit: bridge.vsoffit.slice(), vdeck: bridge.vdeck.slice() };
+                dragLattice = null;
+                for (const k of bridge3DState.selection) {
+                    if (k[0] !== dragSheetKey) continue;
+                    const idx = Number(k.split(':')[1]);
+                    dragStartZ.set(k, (dragSheetKey === 'b' ? dragVz.vsoffit : dragVz.vdeck)[idx]);
+                }
+            } else {
+                dragVz = null;
+                dragLattice = JSON.parse(JSON.stringify(bridge.lattice));
+                for (const k of bridge3DState.selection) {
+                    if (k[0] !== dragSheetKey) continue;
+                    const [, i, j] = k.split(':').map((s, n) => n === 0 ? s : Number(s));
+                    const sheet = dragSheetKey === 'b' ? dragLattice.bottomZ : dragLattice.topZ;
+                    dragStartZ.set(k, sheet[i][j]);
+                }
             }
             bridge3DState.dragging = true;
         }
@@ -1001,14 +1284,23 @@ export function useBridge3DTool() {
             removeMesh(scene_ref, previewLine); previewLine = null;
             removeMesh(scene_ref, closingLine); closingLine = null;
             const pts = bridge3DState.draftPoints;
-            const cursor = raycastTerrainReal(ctx);
-            if (!cursor || !pts.length) return;
-            previewLine = buildPolyline([pts[pts.length - 1], cursor], terrain, 0x1abc9c, true);
-            if (previewLine) scene_ref.add(previewLine);
-            if (pts.length >= 2) {
-                closingLine = buildPolyline([cursor, pts[0]], terrain, 0xf1c40f, true);
-                if (closingLine) scene_ref.add(closingLine);
+            let cursor = raycastTerrainReal(ctx);
+            if (!cursor) { updateFootprintGhost(null); return; }
+            // Einrasten am Startpunkt → Rubber-Band + Ghost werden grün (wie Gebäude).
+            const snapped = footprintSnap(cursor);
+            if (snapped) cursor = { ...pts[0] };
+            updateFootprintGhost(cursor, snapped);
+            if (pts.length) {
+                previewLine = buildPolyline([pts[pts.length - 1], cursor], terrain, snapped ? FP_SNAP : FP_BAND, true);
+                if (previewLine) scene_ref.add(previewLine);
             }
+            return;
+        }
+
+        if (bridge3DState.phase === 'SUBDIVIDE') {
+            const real = raycastTerrainReal(ctx);
+            if (bridge3DState.subdivideMode === 'free') updateSubdivideFree(real);
+            else updateStationGhost(real);
             return;
         }
 
@@ -1020,6 +1312,36 @@ export function useBridge3DTool() {
             if (cpe.state.dragging && pierDrag) {
                 const dd = cpe.dragDelta(ctx);
                 if (dd) applyPierDrag(bridge, dd);
+                return;
+            }
+
+            // Per-Ecke-Höhen ziehen (vsoffit/vdeck je Polygon-Ecke)
+            if (bridge3DState.dragging && dragVz) {
+                const hit = new THREE.Vector3();
+                ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
+                if (!ctx.raycaster.ray.intersectPlane(dragPlane, hit)) return;
+                const deltaZ = hit.y - dragStartY;
+                const hdr = headerFromTerrain(terrain);
+                for (const [k, z0] of dragStartZ) {
+                    const idx = Number(k.split(':')[1]);
+                    const p = bridge.poly[idx];
+                    const terrZ = sampleGridZ(hdr, terrain.gridData, p.x, p.y);
+                    if (dragSheetKey === 'b') {
+                        let z = Math.min(z0 + deltaZ, dragVz.vdeck[idx] - MIN_THICKNESS);
+                        if (terrZ != null && z < terrZ) {
+                            z = terrZ;
+                            if (dragVz.vdeck[idx] < z + MIN_THICKNESS) dragVz.vdeck[idx] = z + MIN_THICKNESS;
+                        }
+                        dragVz.vsoffit[idx] = z;
+                    } else {
+                        let z = Math.max(z0 + deltaZ, dragVz.vsoffit[idx] + MIN_THICKNESS);
+                        if (terrZ != null && z < terrZ + MIN_THICKNESS) z = terrZ + MIN_THICKNESS;
+                        dragVz.vdeck[idx] = z;
+                    }
+                }
+                const bVz = { ...bridge, vsoffit: dragVz.vsoffit, vdeck: dragVz.vdeck };
+                updateEditVisualsFromLattice(bVz, bridge.lattice, terrain);
+                updateGuides(bVz, bridge.lattice, terrain);
                 return;
             }
 
@@ -1073,17 +1395,21 @@ export function useBridge3DTool() {
             const hits = ctx.raycaster.intersectObject(bodyPreview, false);
             if (!hits.length) {
                 bridge3DState.hoverCutU = null; bridge3DState.hoverCutV = null;
+                bridge3DState.cutInvalid = false;
                 showCutPreview(bridge, terrain, null, crossCut ? 'v' : 'u');
                 return;
             }
             const real = worldToReal(hits[0].point, terrain);
             const { u, v } = worldToUV(bridge.lattice, real.x, real.y);
+            const cs = terrain?.cellsize || 0;
             if (crossCut) {
                 bridge3DState.hoverCutV = v;
-                showCutPreview(bridge, terrain, v, 'v');
+                bridge3DState.cutInvalid = loopCutBlocked(bridge.lattice, v, 'v', cs);
+                showCutPreview(bridge, terrain, v, 'v', bridge3DState.cutInvalid);
             } else {
                 bridge3DState.hoverCutU = u;
-                showCutPreview(bridge, terrain, u, 'u');
+                bridge3DState.cutInvalid = loopCutBlocked(bridge.lattice, u, 'u', cs);
+                showCutPreview(bridge, terrain, u, 'u', bridge3DState.cutInvalid);
             }
         }
     };
@@ -1105,17 +1431,27 @@ export function useBridge3DTool() {
         if (!bridge3DState.dragging) return;
         bridge3DState.dragging = false;
         const bridge = getBridge();
-        if (bridge && dragLattice) {
+        if (bridge && dragVz) {
+            geoStore.updateBridge3D(bridge.id, derivePatchVz(bridge, dragVz), 'Eckhöhe geändert');
+            setLayerBridgeVisible(bridge.id, false);
+            rebuildEditVisuals(bridge, bridge.lattice, geoStore.terrain);
+        } else if (bridge && dragLattice) {
             geoStore.updateBridge3D(bridge.id, derivePatch(bridge, dragLattice), 'Brückenkörper geformt');
             setLayerBridgeVisible(bridge.id, false);
             rebuildEditVisuals(bridge, dragLattice, geoStore.terrain);
         }
         dragLattice = null;
+        dragVz = null;
     };
 
     const onClick = (ctx) => {
         if (bridge3DState.phase === 'LOOPCUT') { applyLoopCut(); return; }
         if (bridge3DState.phase === 'PIER') { applyPier(); return; }
+        if (bridge3DState.phase === 'SUBDIVIDE') {
+            if (bridge3DState.subdivideMode === 'free') applySubdivide(ctx);
+            else applyStation();
+            return;
+        }
 
         // EDIT: Klick ins Leere (kein Handle) deselektiert — aber nur bei echtem
         // Klick, nicht nach Kamera-Drag (Browser feuert click auch nach Bewegung)
@@ -1143,7 +1479,7 @@ export function useBridge3DTool() {
         onMouseDown, onMove, onMouseUp, onClick,
         // Panel-Aktionen
         startDrawing, commitFootprint, applyExtrude,
-        startEdit, finishEdit, startLoopCut, startCrossCut, startPier, applyPier,
+        startEdit, finishEdit, startLoopCut, startCrossCut, startSubdivide, startPier, applyPier,
         deleteCurrent, cancel, undoLastPoint,
         setHeightAboveTerrain,
         setPierTop, subdivideSelectedPier,

@@ -107,8 +107,9 @@ export function resampleGrid(data, header, targetCellsize, method = 'bilinear') 
 
     const tCols = Math.max(1, Math.round(ncols * cellsize / targetCellsize));
     const tRows = Math.max(1, Math.round(nrows * cellsize / targetCellsize));
-    if (tCols * tRows > 1e8) {
-        throw new Error(`resampleGrid: Zielraster ${tCols}×${tRows} = ${(tCols * tRows / 1e6).toFixed(0)} Mio Zellen überschreitet das Limit (100 Mio).`);
+    // Kein hartes Limit mehr — große Zielraster sind erlaubt; nur ein Hinweis bei sehr großen Gittern.
+    if (tCols * tRows > 50_000_000) {
+        console.warn(`[resampleGrid] Großes Zielraster ${tCols}×${tRows} ≈ ${(tCols * tRows / 1e6).toFixed(0)} Mio Zellen — kann viel Speicher/Zeit brauchen.`);
     }
 
     const out = new Float32Array(tCols * tRows);

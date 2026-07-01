@@ -1,12 +1,24 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { cropGrid, maskGridByPolygon } from '../utils/GridCropper.js';
+import { migrateBridgeShape } from '../utils/BridgeMeshLattice.js';
 
 import { notifyPreMutate, registerTerrainAccessors, saveTerrainSnapshot } from '../composables/historyBridge.js';
 
 // Synchroner Aufruf über Bridge — kein async, kein Null-Race beim ersten Aufruf.
 function saveSnapshot(label) {
     notifyPreMutate(label);
+}
+
+// Signalisiert der UI, dass GENAU EIN Objekt fertig platziert wurde → Werkzeug-Auto-Reset
+// (verhindert versehentliches Setzen mehrerer Objekte). MapEditor3D lauscht und deaktiviert
+// das aktive Objekt-Werkzeug, wenn der platzierte Typ zum Werkzeug passt.
+// Mehrstufige Tools (Wehr/Brücke) committen früh und feuern hier NICHT — sie setzen das
+// Werkzeug erst über ihren expliziten „Fertig"-Button zurück.
+function notifyObjectPlaced(type) {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('flood2d-object-placed', { detail: { type } }));
+    }
 }
 
 export const useGeoStore = defineStore('geo', () => {
@@ -98,6 +110,7 @@ export const useGeoStore = defineStore('geo', () => {
         }
         saveSnapshot('Node hinzugefügt');
         nodes.value.push(node);
+        notifyObjectPlaced('NODE');
     }
 
     function removeNode(id) {
@@ -231,6 +244,22 @@ export const useGeoStore = defineStore('geo', () => {
         Object.assign(b, patch);
     }
 
+    /**
+     * Hebt geladene Alt-Brücken auf das Polygon-mesh3d-Modell (idempotent):
+     * LINE-Brücken → Streifen-Polygon, mesh3d ohne poly → Rechteck-Polygon.
+     * Beim Laden aufrufen (useProjectFile), damit Body/Solver/Viewer einheitlich rendern.
+     */
+    function migrateBridges() {
+        let changed = 0;
+        bridges.value = bridges.value.map(b => {
+            const m = migrateBridgeShape(b);
+            if (m !== b) changed++;
+            return m;
+        });
+        if (changed) console.log(`[GeoStore] ${changed} Alt-Brücke(n) auf Polygon-mesh3d migriert.`);
+        return changed;
+    }
+
     // ── Wehre (LISFLOOD weir_flow.cpp, Poleni-Formel) ──────────────────────
     /**
      * Wehr-Objekte für die LISFLOOD `weirfile`-Eingabe.
@@ -352,6 +381,7 @@ export const useGeoStore = defineStore('geo', () => {
     function addBoundary(feature) {
         saveSnapshot('Grenze hinzugefügt');
         boundaries.value.features.push(feature);
+        notifyObjectPlaced('BOUNDARY');
     }
 
     function addModification(type, geometry, properties = {}) {
@@ -366,6 +396,7 @@ export const useGeoStore = defineStore('geo', () => {
 
         modifications.value.push(payload);
         console.log(`[GeoStore] Added ${type}:`, payload);
+        notifyObjectPlaced(payload.type);
     }
 
     // Legacy Action Wrapper
@@ -609,6 +640,7 @@ export const useGeoStore = defineStore('geo', () => {
         removeBridge,
         addBridge3D,
         updateBridge3D,
+        migrateBridges,
         notifyTerrainModified: () => { terrainVersion.value++; },
     };
 });

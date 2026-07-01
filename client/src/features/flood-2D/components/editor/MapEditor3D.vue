@@ -97,10 +97,7 @@
        />
 
        <!-- BRIDGE UI -->
-       <BridgeTool
-          v-if="simStore.activeTool === 'BRIDGE'"
-          :toolInstance="bridgeTool"
-       />
+       <BridgeTool v-if="simStore.activeTool === 'BRIDGE'" />
 
        <!-- NODE/SOURCE UI -->
        <NodeTool 
@@ -347,7 +344,6 @@ import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
 import { getWeir3DToolInstance, weir3DState } from '../../composables/editor/useWeir3DTool.js';
-import { useBridgeTool } from '../../composables/editor/useBridgeTool.js';
 import { getBridge3DToolInstance, bridge3DState } from '../../composables/editor/useBridge3DTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
 import { useHistoryManager } from '../../composables/useHistoryManager.js';
@@ -356,6 +352,7 @@ import { useVirtualRasterRenderer } from '../../composables/editor/useVirtualRas
 import { useBathyBrushTool } from '../../composables/editor/useBathyBrushTool.js';
 import { channelLineState, getChannelLineToolInstance } from '../../composables/editor/useChannelLineTool.js';
 import { useSgcRasterPreview } from '../../composables/editor/useSgcRasterPreview.js';
+import { useBridgeRasterPreview } from '../../composables/editor/useBridgeRasterPreview.js';
 import { channelPolygonState, getChannelPolygonToolInstance } from '../../composables/editor/useChannelPolygonTool.js';
 import { refPickState, getRefPickToolInstance } from '../../composables/editor/useOffsetRefPickTool.js';
 import {
@@ -413,7 +410,6 @@ const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
 const weirTool   = useWeirTool();
 const weir3DTool = getWeir3DToolInstance();
-const bridgeTool = useBridgeTool();
 const bridge3DTool = getBridge3DToolInstance();
 const channelLineTool    = getChannelLineToolInstance();
 const channelPolygonTool = getChannelPolygonToolInstance();
@@ -459,20 +455,14 @@ const cropProxy = {
     onRightClick(ctx)  { return cropMode.value === 'POLYGON' ? polygonCropTool.onRightClick(ctx)  : cropTool.onRightClick?.(ctx); },
 };
 
-// Proxy tool: delegates to line bridge or 3D body tool based on bridge3DState.mode
+// Brücke = nur noch Polygon-3D-Körper (LINE-Modus entfernt) → direkt das 3D-Tool.
 const bridgeProxy = {
-    activate(s) {
-        if (bridge3DState.mode === 'MESH3D') bridge3DTool.activate(s);
-        else bridgeTool.activate(s);
-    },
-    deactivate(s) {
-        bridgeTool.deactivate(s);
-        bridge3DTool.deactivate(s);
-    },
-    onClick(ctx)     { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onClick(ctx)     : bridgeTool.onClick?.(ctx); },
-    onMove(ctx)      { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMove(ctx)      : bridgeTool.onMove?.(ctx); },
-    onMouseDown(ctx) { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMouseDown(ctx) : bridgeTool.onMouseDown?.(ctx); },
-    onMouseUp(ctx)   { return bridge3DState.mode === 'MESH3D' ? bridge3DTool.onMouseUp(ctx)   : bridgeTool.onMouseUp?.(ctx); },
+    activate(s)      { bridge3DTool.activate(s); },
+    deactivate(s)    { bridge3DTool.deactivate(s); },
+    onClick(ctx)     { return bridge3DTool.onClick(ctx); },
+    onMove(ctx)      { return bridge3DTool.onMove(ctx); },
+    onMouseDown(ctx) { return bridge3DTool.onMouseDown(ctx); },
+    onMouseUp(ctx)   { return bridge3DTool.onMouseUp(ctx); },
 };
 
 // Proxy tool: klassische 2-Klick-Linie vs. editierbare Polylinie via weir3DState.mode
@@ -521,7 +511,7 @@ const tools = {
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
     'WEIR':   weirProxy,        // delegates klassisch/Polylinie via weir3DState.mode
-    'BRIDGE': bridgeProxy,      // delegates Linie/3D-Körper via bridge3DState.mode
+    'BRIDGE': bridgeProxy,      // nur Polygon-3D-Körper (LINE-Modus entfernt)
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
         onClick: (ctx) => handleInfoClick(ctx),
@@ -571,6 +561,26 @@ const applyCameraLock = () => {
     }
 };
 
+// --- AUTO-RESET: nach genau EINEM platzierten Objekt das Objekt-Werkzeug deaktivieren ---
+// Verhindert, dass man versehentlich 2–3 Objekte hintereinander setzt. Mal-/Editier-Werkzeuge
+// (SHOVEL, TEXTURE, CROP, SELECT …) bleiben aktiv. Schlüssel = activeTool, Wert = erwarteter
+// Objekt-Typ aus dem geoStore-Event. Der Typ-Abgleich verhindert Fehl-Resets, falls ein Tool
+// intern ein Objekt anderen Typs anlegt. WEIR/BRIDGE setzen sich über ihren „Fertig"-Button
+// zurück (mehrstufiger Edit-Flow), nicht hierüber.
+const TOOL_RESET_ON = {
+    NODE:      'NODE',
+    BOUNDARY:  'BOUNDARY',
+    DRAW_POLY: 'BUILDING',
+    DRAW:      'BUILDING',
+    CULVERT:   'BUILDING',   // Culvert-Tool committet als BUILDING-Modifikation
+};
+function _handleObjectPlaced(e) {
+    const expected = TOOL_RESET_ON[simStore.activeTool];
+    if (expected && e.detail?.type === expected) {
+        simStore.setActiveTool(null);
+    }
+}
+
 // --- TOOL LIFECYCLE MANAGEMENT ---
 watch(activeTool, (newVal, oldVal) => {
     // 1. Deactivate Old
@@ -599,17 +609,6 @@ watch(activeTool, (newVal, oldVal) => {
         }
     }
 }, { immediate: true });
-
-// --- BRIDGE 3D-KÖRPER: Sub-Modus-Wechsel + Kamera-Verhalten ---
-// Modus-Umschalter im Panel: aktives Sub-Tool sauber tauschen.
-watch(() => bridge3DState.mode, (mode, oldMode) => {
-    if (activeTool.value !== 'BRIDGE' || !scene) return;
-    if (oldMode === 'MESH3D') bridge3DTool.deactivate(scene);
-    else bridgeTool.deactivate(scene);
-    if (mode === 'MESH3D') bridge3DTool.activate(scene);
-    else bridgeTool.activate(scene);
-    applyCameraLock();
-});
 
 // Vertex-Drag friert die Kamera komplett ein; Phasenwechsel aktualisieren die
 // LEFT-Maustasten-Sperre (applyCameraLock kennt DRAW_FOOTPRINT). flush:'sync',
@@ -707,6 +706,10 @@ onMounted(() => {
     // reagiert auf die eingestellte Breite — zeigt die KORRIDOR-Breite, nicht nur die Linie.
     useSgcRasterPreview(scene);
 
+    // Live-Vorschau der gerasterten Brückenzellen + effektiver Öffnungsbreite (Pfeiler
+    // sub-grid): zeigt im BRÜCKEN-Werkzeug, was der Solver wirklich rechnet.
+    useBridgeRasterPreview(scene);
+
     // Restore if data exists
     if (geoStore.terrain && geoStore.terrain.gridData) {
          loadingText.value = "Restoring Terrain...";
@@ -724,6 +727,9 @@ onMounted(() => {
 
     // ── Keyboard Shortcuts: Ctrl+Z (Undo) / Ctrl+Y or Ctrl+Shift+Z (Redo) ──
     window.addEventListener('keydown', _handleKeydown);
+
+    // Auto-Reset des Objekt-Werkzeugs nach einer Platzierung
+    window.addEventListener('flood2d-object-placed', _handleObjectPlaced);
 });
 
 onUnmounted(() => {
@@ -739,6 +745,7 @@ onUnmounted(() => {
     culvertTool.reset(scene);
     boundaryTool.reset(scene);
     window.removeEventListener('keydown', _handleKeydown);
+    window.removeEventListener('flood2d-object-placed', _handleObjectPlaced);
 });
 
 
@@ -1132,7 +1139,9 @@ const parseXYZ = (text) => {
     
     const ncols = Math.round((maxX - minX) / cellsize) + 1;
     const nrows = Math.round((maxY - minY) / cellsize) + 1;
-    if (ncols * nrows > 20000000) throw new Error(`Grid too large (${ncols}x${nrows})`);
+    // Kein hartes Limit mehr — große Raster sollen berechenbar bleiben; nur ein Hinweis.
+    if (ncols * nrows > 50_000_000)
+        console.warn(`[MapEditor3D] Großes Raster (${ncols}×${nrows} ≈ ${((ncols * nrows) / 1e6).toFixed(0)} Mio Zellen) — kann im Browser langsam werden.`);
 
     const gridData = new Float32Array(ncols * nrows).fill(-9999);
     let minZ = Infinity, maxZ = -Infinity;

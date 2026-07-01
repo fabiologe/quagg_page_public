@@ -97,12 +97,14 @@ for (const target of [2.5, 1]) {
     assert(res.data[0] === 5, `nearest wählt erwartete Quellzelle (got ${res.data[0]})`);
 }
 
-// 6. Hard-Limit
+// 6. Kein hartes Limit mehr — große Zielraster müssen berechenbar sein (Anforderung #3a).
 {
     let threw = false;
-    const header = { ncols: 1000, nrows: 1000, cellsize: 10, xllcorner: 0, yllcorner: 0, xll: 5, yll: 5 };
-    try { resampleGrid(new Float32Array(1e6), header, 0.5); } catch { threw = true; }
-    assert(threw, 'throw bei > 100 Mio Zielzellen');
+    let res = null;
+    const header = { ncols: 200, nrows: 200, cellsize: 10, xllcorner: 0, yllcorner: 0, xll: 5, yll: 5 };
+    try { res = resampleGrid(new Float32Array(200 * 200), header, 1); } catch { threw = true; }
+    assert(!threw, 'kein Throw mehr bei großem Zielraster (Hard-Limit entfernt)');
+    assert(res && res.header.ncols === 2000 && res.header.nrows === 2000, 'großes Zielraster wird erzeugt (2000×2000)');
 }
 
 console.log(failures === 0 ? '\n✅ Alle Resample-Tests bestanden.' : `\n❌ ${failures} Test(s) fehlgeschlagen.`);

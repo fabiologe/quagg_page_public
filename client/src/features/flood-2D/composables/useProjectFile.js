@@ -219,6 +219,8 @@ export async function loadProject(file, onProgress = null) {
   if (gf) {
     const geom = JSON.parse(await gf.async('string'));
     for (const f of GEO_FIELDS) if (geom[f] !== undefined && geom[f] !== null) geoStore[f] = geom[f];
+    // Alt-/Linien-Brücken aufs Polygon-mesh3d-Modell heben (einheitliches Rendering & Solver).
+    geoStore.migrateBridges?.();
   }
 
   // Hydraulik

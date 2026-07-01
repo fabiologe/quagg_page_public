@@ -19,7 +19,8 @@ async function fetchWithRetry(url, options = {}, { retries = MAX_RETRIES, timeou
     let lastError = null;
     for (let attempt = 0; attempt <= retries; attempt++) {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeout);
+        let timedOut = false;
+        const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeout);
         try {
             const res = await fetch(url, { ...options, signal: controller.signal });
             clearTimeout(timer);
@@ -34,6 +35,11 @@ async function fetchWithRetry(url, options = {}, { retries = MAX_RETRIES, timeou
             return res;
         } catch (e) {
             clearTimeout(timer);
+            // Timeout/Abbruch verständlich machen (statt kryptischem "signal is aborted without
+            // reason" der AbortController-Abbruchs) — meist: Backend gerade nicht erreichbar.
+            if (timedOut || e.name === 'AbortError') {
+                e = new Error(`Zeitüberschreitung nach ${Math.round(timeout / 1000)}s bei ${url} — Backend nicht erreichbar? (quagg-API/RunPod-Proxy prüfen, dann erneut starten)`);
+            }
             lastError = e;
             if (e.fatal || !retryable || attempt === retries) throw e;
             // Exponentielles Backoff: 1s, 2s, 4s

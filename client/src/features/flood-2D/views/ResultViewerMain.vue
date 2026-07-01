@@ -493,54 +493,62 @@ const computedSectionsList = computed(() => {
   if (depthArr) {
     arr = depthArr instanceof Float32Array ? depthArr : new Float32Array(depthArr);
   }
+  // B.1: exakte Solver-Wasseroberfläche (.elev) — wenn vorhanden, statt terrain+depth.
+  const elevRaw = currentElevData.value;
+  let elevArr = null;
+  if (elevRaw) elevArr = elevRaw instanceof Float32Array ? elevRaw : new Float32Array(elevRaw);
 
   return sections.value.map(section => {
     const computedData = section.baseData.map(pt => {
       let waterDepth = 0;
-      
+      let wsp = null;
+
       // We saved fx, fy in Map3D. We must bilinear interpolate the water depth just like terrain.
       // Remember depthData is TOP-DOWN. So we use (nrows - 1 - fy).
       if (arr) {
         const col0 = Math.floor(pt.fx);
         const col1 = col0 + 1;
-        
+
         // Convert fy (bottom-up) to depth row (top-down) BEFORE floor
         const depthFy = (t.nrows - 1) - pt.fy;
-        
+
         const row0 = Math.floor(depthFy);
         const row1 = row0 + 1;
 
         const wx = pt.fx - col0;
         const wy = depthFy - row0;
 
-        let wSum = 0;
-        let dSum = 0;
-
-        const getD = (c, r, weight) => {
-          if (c >= 0 && c < t.ncols && r >= 0 && r < t.nrows) {
-            const val = arr[r * t.ncols + c];
-            if (val > -9000) { 
-              dSum += Math.max(0, val) * weight;
-              wSum += weight;
+        // Generische bilineare Abtastung eines TOP-DOWN-Grids an (fx, fy).
+        const sampleGrid = (g, mapVal = (v) => v) => {
+          let s = 0, w = 0;
+          const tap = (c, r, weight) => {
+            if (c >= 0 && c < t.ncols && r >= 0 && r < t.nrows) {
+              const v = g[r * t.ncols + c];
+              if (v > -9000) { s += mapVal(v) * weight; w += weight; }
             }
-          }
+          };
+          tap(col0, row0, (1 - wx) * (1 - wy));
+          tap(col1, row0, wx * (1 - wy));
+          tap(col0, row1, (1 - wx) * wy);
+          tap(col1, row1, wx * wy);
+          return w > 0.001 ? s / w : null;
         };
 
-        getD(col0, row0, (1 - wx) * (1 - wy));
-        getD(col1, row0, wx * (1 - wy));
-        getD(col0, row1, (1 - wx) * wy);
-        getD(col1, row1, wx * wy);
+        const d = sampleGrid(arr, (v) => Math.max(0, v));
+        if (d != null) waterDepth = d;
+        wsp = waterDepth > 0.001 ? pt.terrainZ + waterDepth : null;
 
-        if (wSum > 0.001) {
-          waterDepth = dSum / wSum;
+        // Exakte Solver-Oberfläche bevorzugen (z.B. über SGC-Gerinne korrekter als terrain+depth).
+        if (elevArr) {
+          const elev = sampleGrid(elevArr);
+          if (elev != null && elev > pt.terrainZ + 0.001) {
+            wsp = elev;
+            waterDepth = elev - pt.terrainZ;
+          }
         }
       }
-      
-      return {
-        ...pt,
-        waterDepth,
-        wsp: waterDepth > 0.001 ? pt.terrainZ + waterDepth : null
-      };
+
+      return { ...pt, waterDepth, wsp };
     });
     
     return {

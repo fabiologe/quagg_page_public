@@ -81,7 +81,7 @@
           </div>
 
           <div class="actions">
-            <button class="btn btn-save" @click="weir3d.finishEdit()">Fertig</button>
+            <button class="btn btn-save" @click="onFinishWeir">Fertig</button>
             <button class="btn btn-remove-wide" @click="weir3d.deleteCurrent()">Löschen</button>
           </div>
         </div>
@@ -214,6 +214,13 @@ const isDrawingAxis = computed(() => props.toolInstance?.state?.value === 'DRAWI
 // ── Polylinien-Modus (editierbar) ───────────────────────────────────────────
 import { weir3DState, getWeir3DToolInstance } from '../../composables/editor/useWeir3DTool.js';
 const weir3d = getWeir3DToolInstance();
+
+// „Fertig": Bearbeitung abschließen UND das Werkzeug deaktivieren (Auto-Reset), damit nicht
+// versehentlich gleich die nächste Wehr-Polylinie gezeichnet wird.
+const onFinishWeir = () => {
+  weir3d.finishEdit();
+  simStore.setActiveTool(null);
+};
 const weirLines = computed(() => geoStore.weirLines);
 // Klassische 2-Klick-Wehre: Polylinien-Zellen (lineId ∈ weirLines) hier ausblenden,
 // sonst sprengt eine Polylinie mit hunderten Zellen die Liste.

@@ -1318,21 +1318,30 @@ export class InputGenerator {
                 // Soffitte pro Zelle bilinear vom Lattice (Bogen/Voute → per-Zelle-hc).
                 if (bridge.kind === 'mesh3d') {
                     const id8 = String(bridge.id).substring(0, 8);
-                    const meshCells = latticeToCells(bridge, header, null);
+                    // openWidth: reale offene Breite pro Zelle (sub-grid w) statt Zellweite.
+                    const meshCells = latticeToCells(bridge, header, null, { openWidth: true });
                     if (meshCells.length === 0) {
                         this.warn(`Brücke ${id8}: Footprint ergibt 0 Zellen im Export-Raster — übersprungen.`);
                         continue;
                     }
-                    // Pfeilerzellen (Zellzentrum im Pfeilerband) liefern kein
-                    // Orifice — die volle Sperrung kommt aus der SGC-Breite 0 dort.
-                    const pierSkipped = meshCells.filter(c => c.pier).length;
+                    // Pfeiler wirken SUB-GRID über die offene Breite pro Zelle: cellOpenWidth
+                    // (in latticeToCells) zieht den Pfeiler-Anteil quer zur Strömung bereits ab.
+                    // Eine Zelle wird daher nur dann ganz verworfen, wenn fast nichts offen bleibt
+                    // (W_MIN ≈ voll verbaut); sonst geht ihre REDUZIERTE Breite als w in den Orifice
+                    // (Area = w·Z). So sperrt ein Pfeiler kontinuierlich seinen echten Anteil, statt
+                    // positionsabhängig 0/100 % einer ganzen Zelle (kein Ganzzellen-Schnapp mehr).
+                    const W_MIN = Math.max(0.1, 0.05 * cs);
                     // Soffit-vs-Gelände (Zelle UND Nachbar quer zur Fließachse, wie der Solver):
                     // Öffnung ≤ MIN_BRIDGE_OPENING (Deck unter Grund, z.B. Widerlager) → verwerfen,
                     // sonst Z≤0 → Solver-Orifice-Fail.
                     let buriedCount = 0;
+                    let fullyBlocked = 0;
+                    let partiallyBlocked = 0;
                     const openCells = meshCells.filter(c => {
-                        if (c.pier) return false;
+                        const wc = c.width ?? cs;
+                        if (wc < W_MIN) { fullyBlocked++; return false; }   // voll verbaut (Pfeiler/Rand)
                         if (bridgeOpeningGrounded(c.soffit, c.x, c.y, c.direction, demGrid, header)) { buriedCount++; return false; }
+                        if (wc < cs - 1e-6) partiallyBlocked++;             // teilverbaut → reduziertes w
                         return true;
                     });
                     if (buriedCount > 0) {
@@ -1347,14 +1356,21 @@ export class InputGenerator {
                     if (emitCells.length !== before) {
                         this.info(`Brücke ${id8}: ${before} Zellen → ${emitCells.length} Orifice-Zeile(n) (eine Reihe je Spannposition; Brücke ist in Fließrichtung 1 Zelle tief${sgcWidthGrid ? '' : ', Floodplain ohne SGC'}).`);
                     }
+                    // A.3: ohne SGC-Gerinne sitzt die Öffnung auf Floodplain-Höhe → Z = Soffitte − Gelände
+                    // statt über der echten Gerinnesohle. Hinweis (kein Auto-Eingriff).
+                    if (!sgcWidthGrid && emitCells.length > 0) {
+                        this.warn(`Brücke ${id8}: kein SGC-Gerinne darunter — Öffnung rechnet auf Floodplain-Höhe; für genaueres Z ein Gerinne unter der Brücke zeichnen.`);
+                    }
                     for (const cell of emitCells) {
+                        // w = reale offene Breite der Zelle (sub-grid), Floor knapp > 0; Fallback Zellweite.
+                        const wOpen = Math.max(0.05, cell.width ?? cs);
                         bridgeEntries.push({
                             x: cell.x, y: cell.y, direction: cell.direction + 'B',
-                            Cd: bridge.Cd ?? 0.8, hc: cell.soffit, m: bridge.Tz ?? 1.5, w: cs
+                            Cd: bridge.Cd ?? 0.8, hc: cell.soffit, m: bridge.Tz ?? 1.5, w: wOpen
                         });
                     }
-                    if (pierSkipped > 0) {
-                        this.info(`Brücke ${id8}: ${pierSkipped} Pfeilerzelle(n) voll gesperrt (SGC-Breite 0, kein Orifice) — kein DGM-Eingriff.`);
+                    if (fullyBlocked > 0 || partiallyBlocked > 0) {
+                        this.info(`Brücke ${id8}: Pfeiler-Verbauung sub-grid — ${partiallyBlocked} Zelle(n) teilverbaut (reduzierte Öffnungsbreite), ${fullyBlocked} Zelle(n) voll gesperrt (< ${W_MIN.toFixed(2)} m offen). Kein DGM-Eingriff.`);
                     }
                     continue;
                 }

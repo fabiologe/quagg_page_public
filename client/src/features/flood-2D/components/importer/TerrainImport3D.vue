@@ -19,7 +19,7 @@
 
              <label class="btn-file">
                 <input type="file" accept=".xyz,.txt,.asc" @change="handleFileUpload" />
-                <span>Select .XYZ File</span>
+                <span>Datei wählen (.xyz · .txt · .asc)</span>
              </label>
              
              <button v-if="parsedData" @click="acceptTerrain" class="btn-primary">
@@ -42,6 +42,28 @@
          <div class="stat-row"><span>Min Z:</span> <span class="val-min">{{ stats.minZ.toFixed(2) }}m</span></div>
          <div class="stat-row"><span>Max Z:</span> <span class="val-max">{{ stats.maxZ.toFixed(2) }}m</span></div>
        </div>
+
+       <!-- Performance-Hinweis (nicht blockierend) -->
+       <div v-if="perfHint" class="overlay-perf">⚠ {{ perfHint }}</div>
+
+       <!-- Resampling unstrukturierter Daten auf ein reguläres Gitter -->
+       <div v-if="parsedData" class="overlay-resample">
+         <label class="resample-toggle">
+           <input type="checkbox" v-model="resampleEnabled" />
+           Auf reguläres Raster resampeln (IDW)
+         </label>
+         <div v-if="resampleEnabled" class="resample-body">
+           <div class="resample-row">
+             <label>Auflösung [m]</label>
+             <input type="number" v-model.number="targetCellsize" step="0.5" min="0.1" />
+             <button class="btn-resample" @click="applyResample">Anwenden</button>
+           </div>
+           <div class="resample-hint">
+             Füllt Lücken unstrukturierter Punktwolken und erzeugt ein gleichmäßiges
+             {{ targetCellsize }}×{{ targetCellsize }} m-Gitter.
+           </div>
+         </div>
+       </div>
     </div>
 
   </div>
@@ -52,6 +74,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useScenarioStore } from '@/stores/scenarioStore';
+import { createDemFromXYZ, resampleGrid } from '@/features/flood-2D/middleware/Rasterizer.js';
 
 const store = useScenarioStore();
 const emit = defineEmits(['confirm', 'cancel']);
@@ -63,6 +86,11 @@ const parsedData = ref(null);
 const rawContent = ref(null);
 const stats = ref(null);
 const canvasContainer = ref(null);
+const perfHint = ref('');               // nicht-blockierender Performance-Hinweis bei großen Rastern
+
+// Resampling unstrukturierter Daten auf ein reguläres Gitter (IDW-Füllung + bilinear)
+const resampleEnabled = ref(false);
+const targetCellsize = ref(1.0);
 
 // Three.js Objects
 let scene, camera, renderer, controls, terrainMesh, animationId;
@@ -229,7 +257,11 @@ const parseXYZ = (text) => {
     
     const ncols = Math.round((maxX - minX) / cellsize) + 1;
     const nrows = Math.round((maxY - minY) / cellsize) + 1;
-    if (ncols * nrows > 10000 * 10000) throw new Error(`Grid too large (${ncols}x${nrows}). Max is 100,000,000.`);
+    // Kein hartes Limit mehr — große Raster sollen berechenbar bleiben. Nur ein
+    // nicht-blockierender Performance-Hinweis bei sehr großen Gittern.
+    perfHint.value = (ncols * nrows > 50_000_000)
+        ? `Großes Raster: ${ncols}×${nrows} ≈ ${((ncols * nrows) / 1e6).toFixed(0)} Mio Zellen — Vorschau & Berechnung können im Browser langsam werden.`
+        : '';
 
     const gridData = new Float32Array(ncols * nrows).fill(-9999);
     let minZ = Infinity, maxZ = -Infinity;
@@ -251,6 +283,58 @@ const parseXYZ = (text) => {
         // Add stats object for convenience
         stats: { cols: ncols, rows: nrows, cellsize, minZ, maxZ }
     };
+};
+
+// Baut aus einem regulären Raster (Float32Array + Header) die parsedData-Struktur,
+// die buildTerrainMesh/Store erwarten (gridData, Maße, Zentrum, bounds, stats).
+const computeResult = (data, header) => {
+    const { ncols, nrows, cellsize } = header;
+    let minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < data.length; i++) {
+        const v = data[i];
+        if (v > -9000) { if (v < minZ) minZ = v; if (v > maxZ) maxZ = v; }
+    }
+    if (minZ === Infinity) { minZ = 0; maxZ = 1; }
+    const cx = header.xll ?? header.xllcorner;     // Zell-Zentrum von (0,0)
+    const cy = header.yll ?? header.yllcorner;
+    const width  = (ncols - 1) * cellsize;
+    const height = (nrows - 1) * cellsize;
+    return {
+        gridData: data, ncols, nrows, cellsize, minZ, maxZ,
+        center: { x: cx + width / 2, y: cy + height / 2 },
+        bounds: { width: width || 100, height: height || 100 },
+        stats: { cols: ncols, rows: nrows, cellsize, minZ, maxZ },
+    };
+};
+
+// Unstrukturierte/lückenhafte Punktwolke → gleichmäßiges Gitter: IDW-Füllung
+// (createDemFromXYZ) auf ein Zwischengitter, dann bilinear auf die Zielauflösung.
+const applyResample = async () => {
+    if (!rawContent.value) return;
+    loading.value = true;
+    loadingText.value = 'Resampling (IDW-Füllung)…';
+    await new Promise(r => setTimeout(r, 10));
+    try {
+        const cs = Number(targetCellsize.value) > 0 ? Number(targetCellsize.value) : 1.0;
+        // createDemFromXYZ trennt nur an Whitespace → Komma/Semikolon vorab normalisieren.
+        const normalized = rawContent.value.replace(/[,;]+/g, ' ');
+        const dem = createDemFromXYZ(normalized);
+        const rs  = resampleGrid(dem.data, dem.header, cs, 'bilinear');
+        const result = computeResult(rs.data, rs.header);
+        parsedData.value = result;
+        stats.value = result.stats;
+        perfHint.value = (result.ncols * result.nrows > 50_000_000)
+            ? `Großes Raster: ${result.ncols}×${result.nrows} ≈ ${((result.ncols * result.nrows) / 1e6).toFixed(0)} Mio Zellen — kann langsam werden.`
+            : '';
+        store.setTerrain(result);
+        buildTerrainMesh(result);
+        console.log(`[TerrainImport] Resampled auf ${cs} m → ${result.ncols}×${result.nrows}`);
+    } catch (err) {
+        console.error(err);
+        alert('Resampling fehlgeschlagen: ' + err.message);
+    } finally {
+        loading.value = false;
+    }
 };
 
 const buildTerrainMesh = (result) => {
@@ -519,4 +603,73 @@ defineExpose({ setCameraView });
 .stat-row:last-child { border: none; }
 .val-min { color: #2980b9; font-weight: bold; }
 .val-max { color: #8e44ad; font-weight: bold; }
+
+/* ── Performance-Hinweis ─────────────────────────────────────────────────── */
+.overlay-perf {
+    position: absolute;
+    top: 5.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(243, 156, 18, 0.95);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    max-width: 60%;
+    text-align: center;
+}
+
+/* ── Resampling-Panel ────────────────────────────────────────────────────── */
+.overlay-resample {
+    position: absolute;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    font-size: 0.85rem;
+    color: #34495e;
+    max-width: 280px;
+}
+.resample-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.resample-toggle input { cursor: pointer; }
+.resample-body { margin-top: 0.6rem; }
+.resample-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.resample-row label { flex-shrink: 0; }
+.resample-row input[type=number] {
+    width: 64px;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid #cdd5db;
+    border-radius: 4px;
+}
+.btn-resample {
+    margin-left: auto;
+    background: #2980b9;
+    color: #fff;
+    border: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.btn-resample:hover { background: #2471a3; }
+.resample-hint {
+    margin-top: 0.5rem;
+    font-size: 0.74rem;
+    color: #7f8c8d;
+    line-height: 1.35;
+}
 </style>

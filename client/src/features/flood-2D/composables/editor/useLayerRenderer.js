@@ -110,6 +110,11 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
     });
 
+    // Dunkle Kantenlinien für Brückenkörper + Pfeiler — macht die 3D-Form im Viewer
+    // erkennbar (sonst wirkt das unlit-Mesh wie eine flache Fläche). Default-Tiefenprüfung
+    // (wie weirWallLineMat), damit die Kanten nicht durch Terrain/Wasser röntgen.
+    const bridgeEdgeMat = new THREE.LineBasicMaterial({ color: 0x1c2833 });
+
     // Grau wie das Brückendeck, unlit (MeshBasic) → konsistente Darstellung, beleuchtungsunabhängig.
     const weirMatBidi = new THREE.MeshBasicMaterial({
         color: 0x7f8c8d,
@@ -128,7 +133,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     // disposed nur Geometrien + Materialien, die NICHT hier drin sind (per-Render erzeugte).
     const sharedMaterials = new Set([
         nodeMaterial, buildingMaterial, boundaryMaterial,
-        bridgeOpenMat, bridgeDeckMat, bridgePierMat,
+        bridgeOpenMat, bridgeDeckMat, bridgePierMat, bridgeEdgeMat,
         weirMatBidi, weirMatUni, weirWallLineMat, weirOpeningMat,
     ]);
 
@@ -653,6 +658,12 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         if (editing) mesh.visible = false;
         bridgeGroup.add(mesh);
 
+        // Silhouetten-Kanten des Körpers als Linien → 3D-Form bleibt erkennbar.
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom, 25), bridgeEdgeMat);
+        edges.userData = { id: bridge.id, type: 'bridge' };
+        if (editing) edges.visible = false;
+        bridgeGroup.add(edges);
+
         // Pfeiler (lattice.piers): solide Box wie die Brücke (Werkzeug nicht aktiv).
         // Der transparente Wireframe-Look gilt nur im Edit-Modus (useBridge3DTool).
         const pierGeom = buildPierGeometry(bridge, grid);
@@ -661,6 +672,12 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             pierMesh.userData = { id: bridge.id, type: 'bridge' };
             if (editing) pierMesh.visible = false;
             bridgeGroup.add(pierMesh);
+
+            // Kantenlinien der Pfeiler-Boxen (gleiche Silhouetten-Logik).
+            const pierEdges = new THREE.LineSegments(new THREE.EdgesGeometry(pierGeom, 25), bridgeEdgeMat);
+            pierEdges.userData = { id: bridge.id, type: 'bridge' };
+            if (editing) pierEdges.visible = false;
+            bridgeGroup.add(pierEdges);
         }
     };
 

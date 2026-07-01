@@ -1,5 +1,37 @@
 import * as THREE from 'three';
-import { uvToWorld, sampleSheet, sampleGridZ } from './BridgeMeshLattice.js';
+import { uvToWorld, worldToUV, sampleSheet, sampleGridZ, latticeToCells, isPointInPolygon, makeHeightSampler, hasVertexHeights } from './BridgeMeshLattice.js';
+
+/** Punkt-zu-Segment-Abstand (für die Rand-Toleranz von inPoly). */
+function distToSeg(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * Liegt die Welt-(x,y) im Footprint-Polygon? (Kein Polygon → immer true = kein Clipping.)
+ * WICHTIG: mit Rand-TOLERANZ — bei einer Rechteck-Brücke liegen die Lattice-Knoten EXAKT auf
+ * der Polygonkante, und isPointInPolygon ist für Randpunkte unzuverlässig (Strahl trifft Ecken).
+ * Ohne Toleranz verschwänden dann alle Handles/Käfig-Segmente → Brücke nicht editierbar.
+ */
+function inPoly(poly, x, y) {
+    if (!poly || poly.length < 3) return true;
+    if (isPointInPolygon(x, y, poly)) return true;
+    // Toleranz = kleiner Bruchteil der BBox-Diagonale: Knoten auf/nahe der Kante zählen als drin,
+    // echte Außen-Ecken (z.B. Bounding-Rechteck-Ecke eines L) liegen weit weg und bleiben draußen.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of poly) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    const eps = Math.hypot(maxX - minX, maxY - minY) * 0.02;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        if (distToSeg(x, y, poly[j].x, poly[j].y, poly[i].x, poly[i].y) <= eps) return true;
+    }
+    return false;
+}
 
 /**
  * Bridge3DGeometry — three.js-Geometrie für mesh3d-Brückenkörper.
@@ -33,6 +65,8 @@ function vAtRow(lattice, i) {
 export function buildBridge3DGeometry(bridge, grid) {
     const { lattice } = bridge;
     if (!lattice || !grid?.center) return null;
+    // Freiform: Body wird aus DENSELBEN Zellen gebaut, die der Solver nutzt → Anzeige = Gerechnetes.
+    if (bridge.poly && bridge.poly.length >= 3) return buildCellBody(bridge, grid);
     const { nCross, nSpan, u } = lattice;
     if (nCross < 2 || nSpan < 2) return null;
 
@@ -75,12 +109,118 @@ export function buildBridge3DGeometry(bridge, grid) {
     return geom;
 }
 
-/** Kopf-Höhe einer Pfeiler-Box an (u,v): zTop (editierbar) oder Soffitte; geklemmt [Boden, Deck]. */
-function pierTopZ(lattice, pier, u, v, floorZ) {
-    const soffit = sampleSheet(lattice, lattice.bottomZ, u, v);
-    const deck = sampleSheet(lattice, lattice.topZ, u, v);
+/** Editor-/Export-Raster-Header in Zellzentren-Konvention (xll = Zentrum von Spalte 0). */
+function headerFromGrid(grid) {
+    const cs = grid.cellsize;
+    return {
+        ncols: grid.ncols, nrows: grid.nrows, cellsize: cs,
+        xll: grid.center.x - (grid.ncols - 1) * cs / 2,
+        yll: grid.center.y - (grid.nrows - 1) * cs / 2,
+    };
+}
+
+/**
+ * Wasserdichtes Zell-Heightfield aus Solver-Zellen: geteilte Zell-Ecken (stetig, keine
+ * Stufen/Lücken), Boden-Cap (`bottomZAt`) + Deckel-Cap (`topZAt`) + Randwände nur, wo die
+ * Nachbarzelle fehlt (Polygon-/Pfeilerkante). Gemeinsame Basis für Brückenkörper
+ * (Soffitte→Deck) UND Pfeiler-Körper (Gelände→Soffitte) → Anzeige = Solver-Diskretisierung.
+ * @param {Function} bottomZAt (x,y)→z  untere Fläche
+ * @param {Function} topZAt    (x,y)→z  obere Fläche
+ */
+function cellSolid(grid, header, cells, bottomZAt, topZAt) {
+    if (!cells.length) return null;
+    const cs = header.cellsize;
+    const present = new Set(cells.map(c => `${c.col},${c.row}`));
+    const positions = [];
+    const vmap = new Map();
+    const corner = (ci, ri, layer) => {
+        const key = `${ci},${ri},${layer}`;
+        let idx = vmap.get(key);
+        if (idx !== undefined) return idx;
+        const x = header.xll + (ci - 0.5) * cs;   // Welt-Koord der Zell-Ecke
+        const y = header.yll + (ri - 0.5) * cs;
+        const z = layer === 't' ? topZAt(x, y) : bottomZAt(x, y);
+        const w = toLocal(grid, x, y, z);
+        idx = positions.length / 3;
+        positions.push(w.x, w.y, w.z);
+        vmap.set(key, idx);
+        return idx;
+    };
+
+    const indices = [];
+    for (const c of cells) {
+        const { col: co, row: ro } = c;
+        // Deckel-Cap (oben) + Boden-Cap (unten, umgekehrte Wicklung)
+        const t00 = corner(co, ro, 't'), t10 = corner(co + 1, ro, 't'), t11 = corner(co + 1, ro + 1, 't'), t01 = corner(co, ro + 1, 't');
+        indices.push(t00, t10, t11, t00, t11, t01);
+        const b00 = corner(co, ro, 'b'), b10 = corner(co + 1, ro, 'b'), b11 = corner(co + 1, ro + 1, 'b'), b01 = corner(co, ro + 1, 'b');
+        indices.push(b00, b11, b10, b00, b01, b11);
+        // Randwände nur dort, wo der Nachbar fehlt (Polygon-/Pfeilerkante)
+        const wall = (ciA, riA, ciB, riB) => {
+            const bA = corner(ciA, riA, 'b'), tA = corner(ciA, riA, 't');
+            const bB = corner(ciB, riB, 'b'), tB = corner(ciB, riB, 't');
+            indices.push(bA, tA, bB, bB, tA, tB);
+        };
+        if (!present.has(`${co},${ro - 1}`)) wall(co, ro, co + 1, ro);         // Süd
+        if (!present.has(`${co},${ro + 1}`)) wall(co, ro + 1, co + 1, ro + 1); // Nord
+        if (!present.has(`${co - 1},${ro}`)) wall(co, ro, co, ro + 1);         // West
+        if (!present.has(`${co + 1},${ro}`)) wall(co + 1, ro, co + 1, ro + 1); // Ost
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+}
+
+function buildCellBody(bridge, grid) {
+    const { lattice } = bridge;
+    if (!grid.cellsize || !grid.ncols) return null;
+    const header = headerFromGrid(grid);
+    // ALLE Zellen (auch Pfeilerzellen): der Deck-Slab (Soffitte→Deck) läuft DURCHGEHEND
+    // über den Pfeiler — nicht ausstanzen. Der Pfeiler-Körper füllt darunter Gelände→Soffitte
+    // (buildPierGeometry), trifft die Slab-Unterkante an der Soffitte. Solver-Export unberührt.
+    const cells = latticeToCells(bridge, header, null);
+    if (cells.length === 0) return null;
+
+    // Höhen an den geteilten Zell-Ecken: per-Ecke-Modell (baryzentrisch) oder Lattice-Fallback.
+    const vz = hasVertexHeights(bridge);
+    const sSoffit = vz ? makeHeightSampler(bridge.poly, bridge.vsoffit) : null;
+    const sDeck = vz ? makeHeightSampler(bridge.poly, bridge.vdeck) : null;
+    const soffitAt = vz
+        ? (x, y) => sSoffit.at(x, y)
+        : (x, y) => { const { u, v } = worldToUV(lattice, x, y); return sampleSheet(lattice, lattice.bottomZ, u, v); };
+    const deckAt = vz
+        ? (x, y) => sDeck.at(x, y)
+        : (x, y) => { const { u, v } = worldToUV(lattice, x, y); return sampleSheet(lattice, lattice.topZ, u, v); };
+    // Brückenkörper: unten Soffitte, oben Deck.
+    return cellSolid(grid, header, cells, soffitAt, deckAt);
+}
+
+/** Kopf-Höhe einer Pfeiler-Box: zTop (editierbar) oder Soffitte; geklemmt [Boden, Deck]. */
+function pierTopZ(pier, soffit, deck, floorZ) {
     const top = (pier.zTop == null) ? soffit : pier.zTop;
     return Math.max(floorZ + 0.1, Math.min(top, deck));
+}
+
+/**
+ * Pfeiler-Kopfhöhe an einer u/v-Stelle: Soffitte/Deck dort sampeln (Per-Ecke-MVC oder
+ * Lattice-Sheet-Fallback) und via pierTopZ klemmen. Single Source für Körper, Wireframe,
+ * Griffe und Mittel-Ebene (verhindert die frühere Signatur-Divergenz).
+ */
+function pierTopAtUV(bridge, p, u, v, floorZ) {
+    const { lattice } = bridge;
+    const w = uvToWorld(lattice, u, v);
+    let soffit, deck;
+    if (hasVertexHeights(bridge)) {
+        soffit = makeHeightSampler(bridge.poly, bridge.vsoffit).at(w.x, w.y);
+        deck = makeHeightSampler(bridge.poly, bridge.vdeck).at(w.x, w.y);
+    } else {
+        soffit = sampleSheet(lattice, lattice.bottomZ, u, v);
+        deck = sampleSheet(lattice, lattice.topZ, u, v);
+    }
+    return pierTopZ(p, soffit, deck, floorZ);
 }
 
 /** Editor-Raster-Header (Zellzentren) aus einem Terrain-Grid, falls gridData da ist. */
@@ -104,57 +244,55 @@ function pierFloorZ(world, grid, hdr) {
 }
 
 /**
- * Solide Pfeilerkörper (lattice.piers) als Prismen über dem editierbaren Polygon
- * (p.poly in u,v) von der Geländehöhe bis zum Kopf (zTop/Soffitte). Senkrechte
- * Wände — die Soffit-/Deck-Sheets bleiben unberührt (kein „Einbrechen").
+ * Solider Pfeiler-Körper = die ECHTEN Solver-Pfeilerzellen (Footprint ∩ Band) als
+ * Zell-Heightfield vom (flachen) Gelände-Boden bis zum Kopf (`pierTopZ` = Soffitte, respektiert
+ * user-`zTop`). Baut auf `cellSolid` → automatisch ans Polygon geclippt, deckungsgleich mit der
+ * Raster-Vorschau (rote Zellen) und füllt exakt das Loch, das `buildCellBody` an den
+ * Pfeilerzellen lässt. Der editierbare u/v-Käfig (Box-Polygon) kommt separat aus
+ * `buildPierWireframe`/`pierHandlePositions`.
  * @returns {THREE.BufferGeometry|null}
  */
 export function buildPierGeometry(bridge, grid) {
     const { lattice } = bridge;
     const piers = lattice?.piers || [];
-    if (!piers.length || !grid?.center) return null;
+    if (!piers.length || !grid?.center || !grid.cellsize || !grid.ncols) return null;
 
-    const hdr = headerOf(grid);
-    const positions = [];
-    const indices = [];
-    let base = 0;
+    const header = headerFromGrid(grid);
+    const pierCells = latticeToCells(bridge, header, null).filter(c => c.pier);
+    if (pierCells.length === 0) return null;
 
-    for (const p of piers) {
-        if (!p.poly || p.poly.length < 3) continue;
-        const n = p.poly.length;
-        const world = p.poly.map(c => uvToWorld(lattice, c.u, c.v));
-        const floorZ = pierFloorZ(world, grid, hdr);
-        // Boden-Ring (0..n-1) auf Geländehöhe
-        for (let k = 0; k < n; k++) {
-            const lb = toLocal(grid, world[k].x, world[k].y, floorZ);
-            positions.push(lb.x, lb.y, lb.z);
-        }
-        // Kopf-Ring (n..2n-1): zTop oder bündig an die Soffitte (gegen Z-Fighting polygonOffset)
-        for (let k = 0; k < n; k++) {
-            const c = p.poly[k];
-            const lt = toLocal(grid, world[k].x, world[k].y, pierTopZ(lattice, p, c.u, c.v, floorZ));
-            positions.push(lt.x, lt.y, lt.z);
-        }
-        // Caps via Triangulation in Frame-Metrik (konvex/konkav-tauglich)
-        const contour = p.poly.map(c => new THREE.Vector2(c.u * lattice.spanLen, c.v * lattice.crossLen));
-        const tris = THREE.ShapeUtils.triangulateShape(contour, []);
-        for (const [a, b, c] of tris) {
-            indices.push(base + a, base + c, base + b);           // Boden (nach unten)
-            indices.push(base + n + a, base + n + b, base + n + c); // Kopf (nach oben)
-        }
-        for (let k = 0; k < n; k++) {                              // Wände
-            const j = (k + 1) % n;
-            indices.push(base + k, base + j, base + n + j, base + k, base + n + j, base + n + k);
-        }
-        base += 2 * n;
+    // Soffitte/Deck am Punkt (Per-Ecke-MVC oder Lattice-Fallback).
+    const vz = hasVertexHeights(bridge);
+    const sSoffit = vz ? makeHeightSampler(bridge.poly, bridge.vsoffit) : null;
+    const sDeck = vz ? makeHeightSampler(bridge.poly, bridge.vdeck) : null;
+    const soffitAt = vz
+        ? (x, y) => sSoffit.at(x, y)
+        : (x, y) => { const { u, v } = worldToUV(lattice, x, y); return sampleSheet(lattice, lattice.bottomZ, u, v); };
+    const deckAt = vz
+        ? (x, y) => sDeck.at(x, y)
+        : (x, y) => { const { u, v } = worldToUV(lattice, x, y); return sampleSheet(lattice, lattice.topZ, u, v); };
+
+    // Flacher Boden = min Gelände unter den Pfeilerzellen (saubere Basis, wie zuvor).
+    let floorZ = Infinity;
+    for (const c of pierCells) {
+        const tz = sampleGridZ(header, grid.gridData, c.x, c.y);
+        if (tz != null && tz < floorZ) floorZ = tz;
     }
+    if (!Number.isFinite(floorZ)) floorZ = grid.minZ;
 
-    if (!positions.length) return null;
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.setIndex(indices);
-    geom.computeVertexNormals();
-    return geom;
+    // Kopf = pierTopZ des Pfeilers, in dem der Punkt liegt (respektiert zTop je Pfeiler);
+    // am Rand (kein Treffer) → Soffitte.
+    const pierAt = (x, y) => {
+        const { u, v } = worldToUV(lattice, x, y);
+        for (const p of piers) {
+            if (p.poly && isPointInPolygon(u, v, p.poly.map(c => ({ x: c.u, y: c.v })))) return p;
+        }
+        return {};
+    };
+    const bottomAt = () => floorZ;
+    const topZAt = (x, y) => pierTopZ(pierAt(x, y), soffitAt(x, y), deckAt(x, y), floorZ);
+
+    return cellSolid(grid, header, pierCells, bottomAt, topZAt);
 }
 
 /**
@@ -173,13 +311,13 @@ export function pierHandlePositions(bridge, grid, index) {
     const out = [];
     for (let k = 0; k < p.poly.length; k++) {
         const c = p.poly[k];
-        const topZ = pierTopZ(lattice, p, c.u, c.v, floorZ);
+        const topZ = pierTopAtUV(bridge, p, c.u, c.v, floorZ);
         out.push({ key: `pier:c${k}`, axes: 'XY', pos: toLocal(grid, world[k].x, world[k].y, (floorZ + topZ) / 2) });
     }
     const cu = p.poly.reduce((s, c) => s + c.u, 0) / p.poly.length;
     const cv = p.poly.reduce((s, c) => s + c.v, 0) / p.poly.length;
     const cw = uvToWorld(lattice, cu, cv);
-    out.push({ key: 'pier:top', axes: 'Z', pos: toLocal(grid, cw.x, cw.y, pierTopZ(lattice, p, cu, cv, floorZ)) });
+    out.push({ key: 'pier:top', axes: 'Z', pos: toLocal(grid, cw.x, cw.y, pierTopAtUV(bridge, p, cu, cv, floorZ)) });
     return out;
 }
 
@@ -198,7 +336,7 @@ export function pierCenterInfo(bridge, grid, index) {
     const vMin = Math.min(...vs), vMax = Math.max(...vs), vc = (vMin + vMax) / 2;
     const world = p.poly.map(c => uvToWorld(lattice, c.u, c.v));
     const floorZ = pierFloorZ(world, grid, headerOf(grid));
-    const topZ = pierTopZ(lattice, p, uc, vc, floorZ);
+    const topZ = pierTopAtUV(bridge, p, uc, vc, floorZ);
     const a0 = uvToWorld(lattice, uc, vMin), a1 = uvToWorld(lattice, uc, vMax);
     const planeCorners = [
         toLocal(grid, a0.x, a0.y, floorZ),
@@ -244,7 +382,7 @@ export function buildPierWireframe(bridge, grid) {
         const world = p.poly.map(c => uvToWorld(lattice, c.u, c.v));
         const floorZ = pierFloorZ(world, grid, hdr);
         const floor = world.map(w => toLocal(grid, w.x, w.y, floorZ));
-        const top = p.poly.map((c, k) => toLocal(grid, world[k].x, world[k].y, pierTopZ(lattice, p, c.u, c.v, floorZ)));
+        const top = p.poly.map((c, k) => toLocal(grid, world[k].x, world[k].y, pierTopAtUV(bridge, p, c.u, c.v, floorZ)));
         for (let k = 0; k < n; k++) {
             const j = (k + 1) % n;
             push(floor[k], floor[j]); // Boden-Ring
@@ -269,6 +407,24 @@ export function buildLatticeWireframe(bridge, grid) {
         const a = toLocal(grid, x1, y1, z1), b = toLocal(grid, x2, y2, z2);
         segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
     };
+
+    // Polygon-Brücke: Käfig folgt dem Umriss. Per-Ecke-Höhen direkt (Soffitte-Ring unten,
+    // Deck-Ring oben, Vertikale je Ecke). Jede Ecke ist ein ziehbarer Höhen-Greifpunkt.
+    const poly = bridge.poly;
+    if (poly && poly.length >= 3) {
+        const vz = hasVertexHeights(bridge);
+        const zb = (k, p) => vz ? bridge.vsoffit[k] : (() => { const { u, v } = worldToUV(lattice, p.x, p.y); return sampleSheet(lattice, lattice.bottomZ, u, v); })();
+        const zt = (k, p) => vz ? bridge.vdeck[k] : (() => { const { u, v } = worldToUV(lattice, p.x, p.y); return sampleSheet(lattice, lattice.topZ, u, v); })();
+        const n = poly.length;
+        for (let k = 0; k < n; k++) {
+            const a = poly[k], b = poly[(k + 1) % n], kb = (k + 1) % n;
+            push(a.x, a.y, zb(k, a), b.x, b.y, zb(kb, b)); // Soffitte-Ring
+            push(a.x, a.y, zt(k, a), b.x, b.y, zt(kb, b)); // Deck-Ring
+            push(a.x, a.y, zb(k, a), a.x, a.y, zt(k, a));  // Vertikale je Ecke
+        }
+        return new Float32Array(segs);
+    }
+
     const nodeWorld = (j, i, sheet) => {
         const v = vAtRow(lattice, i);
         const w = uvToWorld(lattice, lattice.u[j], v);
@@ -300,14 +456,26 @@ export function buildLatticeWireframe(bridge, grid) {
 }
 
 /**
- * Anker der Vertex-Handles: ein Knoten pro Lattice-Position und Sheet.
- * key-Format 'b:i:j' / 't:i:j' (i = Querreihe, j = Station).
- * @returns {Array<{key:string, sheet:'b'|'t', i:number, j:number, pos:THREE.Vector3}>}
+ * Anker der Höhen-Handles. Per-Ecke-Modell: ein Boden- (`b:k`) und ein Deck-Griff (`t:k`)
+ * je Polygon-Ecke, exakt auf der Ecke. Fallback (Alt-Brücke ohne vsoffit): Lattice-Knoten
+ * `b:i:j`/`t:i:j`.
+ * @returns {Array<{key:string, sheet:'b'|'t', pos:THREE.Vector3}>}
  */
 export function latticeNodeWorldPositions(bridge, grid) {
     const { lattice } = bridge;
     if (!lattice || !grid?.center) return [];
 
+    // Per-Ecke: eine ziehbare Höhen-Kugel an JEDER Polygon-Ecke (Boden + Deck).
+    if (hasVertexHeights(bridge)) {
+        const nodes = [];
+        bridge.poly.forEach((p, k) => {
+            nodes.push({ key: `b:${k}`, sheet: 'b', k, pos: toLocal(grid, p.x, p.y, bridge.vsoffit[k]) });
+            nodes.push({ key: `t:${k}`, sheet: 't', k, pos: toLocal(grid, p.x, p.y, bridge.vdeck[k]) });
+        });
+        return nodes;
+    }
+
+    // Fallback: alle Lattice-Knoten als Handles.
     const nodes = [];
     for (let i = 0; i < lattice.nCross; i++) {
         const v = vAtRow(lattice, i);
@@ -334,11 +502,26 @@ export function buildCutPreview(bridge, grid, u) {
     const { lattice } = bridge;
     if (!lattice || !grid?.center || u == null) return null;
 
+    const poly = bridge.poly;
     const segs = [];
     const at = (v, sheet) => {
         const w = uvToWorld(lattice, u, v);
         return toLocal(grid, w.x, w.y, sampleSheet(lattice, sheet, u, v));
     };
+    if (poly && poly.length >= 3) {
+        // Schnittlinie (konstantes u) auf das Polygon-Intervall beschränken (Sampling-Clipping).
+        const N = 48;
+        for (const sheet of [lattice.bottomZ, lattice.topZ]) {
+            for (let k = 0; k < N; k++) {
+                const v0 = k / N, v1 = (k + 1) / N;
+                const wm = uvToWorld(lattice, u, (v0 + v1) / 2);
+                if (!inPoly(poly, wm.x, wm.y)) continue;
+                const a = at(v0, sheet), b = at(v1, sheet);
+                segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
+            }
+        }
+        return new Float32Array(segs);
+    }
     for (const sheet of [lattice.bottomZ, lattice.topZ]) {
         const a = at(0, sheet), b = at(1, sheet);
         segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
@@ -358,11 +541,26 @@ export function buildCutPreview(bridge, grid, u) {
 export function buildCutPreviewV(bridge, grid, v) {
     const { lattice } = bridge;
     if (!lattice || !grid?.center || v == null) return null;
+    const poly = bridge.poly;
     const segs = [];
     const at = (u, sheet) => {
         const w = uvToWorld(lattice, u, v);
         return toLocal(grid, w.x, w.y, sampleSheet(lattice, sheet, u, v));
     };
+    if (poly && poly.length >= 3) {
+        // Schnittlinie (konstantes v) auf das Polygon-Intervall entlang u beschränken.
+        const N = 48;
+        for (const sheet of [lattice.bottomZ, lattice.topZ]) {
+            for (let k = 0; k < N; k++) {
+                const u0 = k / N, u1 = (k + 1) / N;
+                const wm = uvToWorld(lattice, (u0 + u1) / 2, v);
+                if (!inPoly(poly, wm.x, wm.y)) continue;
+                const a = at(u0, sheet), b = at(u1, sheet);
+                segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
+            }
+        }
+        return new Float32Array(segs);
+    }
     const us = lattice.u;
     for (const sheet of [lattice.bottomZ, lattice.topZ]) {
         for (let j = 0; j < us.length - 1; j++) {

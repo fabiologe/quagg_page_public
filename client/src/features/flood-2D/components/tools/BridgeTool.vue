@@ -1,127 +1,26 @@
 <template>
-  <div class="tool-ui-panel bridge-panel" v-show="isActive">
+  <div
+    class="tool-ui-panel bridge-panel"
+    :class="{ collapsed: !panelVisible }"
+    v-show="isActive"
+    @mouseenter="onPanelEnter"
+    @mouseleave="onPanelLeave"
+  >
     <div class="panel-header">
       <span class="header-icon">🌉</span> Brücke / Durchfahrt
+      <span v-if="!panelVisible" class="collapse-dots">···</span>
     </div>
 
-    <div class="panel-content">
+    <Transition name="panel-slide">
+    <div class="panel-content" v-if="panelVisible">
 
-      <!-- Modus-Umschalter: klassische Linie vs. 3D-Körper -->
-      <div class="mode-switch">
-        <button
-          class="mode-btn" :class="{ active: bridge3DState.mode === 'LINE' }"
-          @click="setMode('LINE')"
-        >➖ Linie</button>
-        <button
-          class="mode-btn" :class="{ active: bridge3DState.mode === 'MESH3D' }"
-          @click="setMode('MESH3D')"
-        >🧊 3D-Körper</button>
-      </div>
-
-      <template v-if="bridge3DState.mode === 'LINE'">
-
-      <!-- Idle: Warten auf Achsenklicks -->
-      <div v-if="!pendingBridge" class="state-idle">
-        <!-- DRAWING: Startpunkt gesetzt, Endpunkt erwartet -->
-        <template v-if="isDrawingAxis">
-          <div class="hint drawing-hint">
-            <span class="step-badge">2</span>
-            Endpunkt klicken — oder <strong>Esc</strong> zum Abbrechen
-          </div>
-        </template>
-        <template v-else>
-          <div class="hint">
-            <span class="step-badge">1</span>
-            Startpunkt auf das Terrain klicken
-          </div>
-          <div class="hint" style="margin-top:6px">
-            <span class="step-badge">2</span>
-            Endpunkt setzen → Brückenachse wird gezogen
-          </div>
-        </template>
-        <div class="sub-hint">
-          Die Achse wird Bresenham-4-connected über das Raster gelegt.
-          Jede Zelle erhält zwei Wehr-Einträge (Soffitte + Deck).
-        </div>
-
-        <!-- IFC-Import -->
-        <button class="btn-ifc-import" @click="importFromClipboard" title="quagg-bridge-v1 JSON aus Zwischenablage (IFC-Viewer)">
-          📋 Aus IFC einfügen
-        </button>
-      </div>
-
-      <!-- Form: Hydraulikparameter eingeben -->
-      <div v-else class="state-form">
-        <div class="location-badge">
-          📍 Achse: {{ pendingSegments.length }} Zellen
-        </div>
-
-        <div class="form-grid">
-          <!-- Sohlhöhe -->
-          <div class="input-group">
-            <label>Sohlhöhe z_sohle [m NHN]</label>
-            <input type="number" v-model.number="form.z_sohle" step="0.05" />
-            <span class="field-hint">Unterkante Öffnung (aus DEM: {{ demZ.toFixed(2) }} m)</span>
-          </div>
-
-          <!-- Durchfahrtshöhe (Soffitte) -->
-          <div class="input-group">
-            <label>Soffitte [m NHN]</label>
-            <input type="number" v-model.number="form.soffit" step="0.05" />
-            <span class="field-hint">
-              Lichte Höhe: {{ (form.soffit - form.z_sohle).toFixed(2) }} m
-            </span>
-          </div>
-
-          <!-- Fahrbahnoberkante (Deck) -->
-          <div class="input-group">
-            <label>Deck [m NHN]</label>
-            <input type="number" v-model.number="form.deck" step="0.05" />
-            <span class="field-hint">Fahrbahnoberkante (> Soffitte)</span>
-          </div>
-
-          <!-- Lichte Breite -->
-          <div class="input-group">
-            <label>Lichte Breite [m]</label>
-            <input type="number" v-model.number="form.width" step="0.5" min="0.5" />
-            <span class="field-hint">Öffnungsbreite inkl. Pfeilern</span>
-          </div>
-
-          <!-- Abflussbeiwert -->
-          <div class="input-group">
-            <label>Abflussbeiwert Cd</label>
-            <input type="number" v-model.number="form.Cd" step="0.01" min="0.3" max="1.2" />
-            <span class="field-hint">Standard 0.80 (LISFLOOD v8)</span>
-          </div>
-
-          <!-- Transition Zone (v8) -->
-          <div class="input-group">
-            <label>Tz (Transition Zone)</label>
-            <input type="number" v-model.number="form.Tz" step="0.1" min="1.0" max="3.0" />
-            <span class="field-hint">Nur v8 Docker-Solver: ~1.5</span>
-          </div>
-        </div>
-
-        <div class="validation-error" v-if="!isValid">
-          ⚠ Soffitte muss > Sohlhöhe und Deck muss ≥ Soffitte sein
-        </div>
-
-        <div class="actions">
-          <button class="btn btn-save" @click="saveBridge" :disabled="!isValid">Speichern</button>
-          <button class="btn btn-cancel" @click="cancel">Verwerfen</button>
-        </div>
-      </div>
-
-      </template>
-
-      <!-- ════ 3D-Körper-Modus (Polygon → Extrusion → Vertex-Editing) ════ -->
-      <template v-else>
+      <!-- Polygon-Körper: Footprint zeichnen → Extrusion → Vertex-Editing (einziger Brücken-Modus) -->
 
         <!-- Footprint zeichnen -->
         <div v-if="bridge3DState.phase === 'DRAW_FOOTPRINT'" class="state-idle">
           <div class="hint drawing-hint" v-if="bridge3DState.draftPoints.length">
             <span class="step-badge">{{ bridge3DState.draftPoints.length }}</span>
-            Punkte gesetzt — <strong>Enter</strong> schließt das Polygon
+            Punkte gesetzt — <strong>Startpunkt anklicken</strong> oder <strong>Enter</strong> schließt das Polygon
           </div>
           <div class="hint" v-else>
             <span class="step-badge">1</span>
@@ -154,9 +53,17 @@
               <span class="field-hint">Dicke: {{ (form3d.deck - form3d.soffit).toFixed(2) }} m</span>
             </div>
             <div class="input-group">
+              <label>Pfeiler-Nasenform</label>
+              <select v-model="form3d.pierNose" @change="onNoseChange">
+                <option value="">— manuell —</option>
+                <option v-for="s in PIER_NOSE_SHAPES" :key="s.value" :value="s.value">{{ s.label }} (Cd≈{{ s.cd }})</option>
+              </select>
+              <span class="field-hint">Form → Eintrittsverlust (Cd-Vorschlag); die Verbauung steckt schon in der Öffnungsbreite</span>
+            </div>
+            <div class="input-group">
               <label>Abflussbeiwert Cd</label>
               <input type="number" v-model.number="form3d.Cd" step="0.01" min="0.3" max="1.2" />
-              <span class="field-hint">Standard 0.80 (LISFLOOD v8)</span>
+              <span class="field-hint">Standard 0.80 · Vorschlag aus Nasenform (überschreibbar)</span>
             </div>
             <div class="input-group">
               <label>Tz (Transition Zone)</label>
@@ -183,12 +90,26 @@
         </div>
 
         <!-- Vertex-Editing -->
-        <div v-else-if="bridge3DState.phase === 'EDIT' || bridge3DState.phase === 'LOOPCUT' || bridge3DState.phase === 'PIER'" class="state-idle">
+        <div v-else-if="bridge3DState.phase === 'EDIT' || bridge3DState.phase === 'LOOPCUT' || bridge3DState.phase === 'PIER' || bridge3DState.phase === 'SUBDIVIDE'" class="state-idle">
           <div class="location-badge" v-if="editingBridge">
-            ✏ {{ editingBridge.id.substring(0, 16) }} ·
-            {{ editingBridge.lattice.nSpan }} Stationen · {{ editingBridge.cells.length }} Zellen
+            ✏ {{ editingBridge.id.substring(0, 16) }} · {{ editingBridge.poly.length }} Ecken · {{ editingBridge.cells.length }} Zellen
           </div>
-          <template v-if="bridge3DState.phase === 'LOOPCUT'">
+          <div class="opening-stats" v-if="openingStats">
+            💧 Effektive Öffnung: <strong>{{ openingStats.open.toFixed(1) }} m</strong>
+            · Verbauung durch Pfeiler: <strong>{{ (openingStats.blockage * 100).toFixed(0) }} %</strong>
+          </div>
+          <template v-if="bridge3DState.phase === 'SUBDIVIDE'">
+            <div class="subdiv-modes">
+              <button class="btn btn-slim" :class="{ active: bridge3DState.subdivideMode === 'free' }" @click="tool3d.startSubdivide('free')" title="Einzelpunkt auf der nächsten Kante">Frei</button>
+              <button class="btn btn-slim" :class="{ active: bridge3DState.subdivideMode === 'u' }" @click="tool3d.startSubdivide('u')" title="Station quer durch → Bogen entlang der Spannweite">Längs ⟂</button>
+              <button class="btn btn-slim" :class="{ active: bridge3DState.subdivideMode === 'v' }" @click="tool3d.startSubdivide('v')" title="Station längs → Profil über die Breite">Quer ∥</button>
+            </div>
+            <div class="hint drawing-hint" v-if="bridge3DState.subdivideMode === 'free'">✚ Frei: Maus an eine Kante → die <strong>graue Kugel</strong> zeigt, wo der Punkt landet; Klick fügt ihn ein</div>
+            <div class="hint drawing-hint" v-else>✚ {{ bridge3DState.subdivideMode === 'u' ? 'Längs-Bogen' : 'Quer-Profil' }}: Maus über den Körper → <strong>2 graue Kugeln + Linie</strong> auf den Außenkanten; Klick fügt beide ein</div>
+            <div class="sub-hint" v-if="bridge3DState.subdivideMode === 'free'">Rastet auf die nächste Außenkante. Danach die neue Ecke in der Höhe ziehen (Mitte hoch = Bogen). Esc: abbrechen.</div>
+            <div class="sub-hint" v-else>Beide Punkte werden vorausgewählt → einen Höhen-Griff ziehen hebt <strong>beide Enden gemeinsam</strong> = symmetrischer Bogen über die volle Breite. Funktioniert auch bei schiefen/eckigen Grundrissen. Esc: abbrechen.</div>
+          </template>
+          <template v-else-if="bridge3DState.phase === 'LOOPCUT'">
             <div class="hint drawing-hint" v-if="bridge3DState.cutAxis === 'v'">
               ✛ Quer-Stützpunkt: Klick auf den Körper setzt die Querreihe
               <span v-if="bridge3DState.hoverCutV != null"> (v = {{ bridge3DState.hoverCutV.toFixed(2) }})</span>
@@ -198,6 +119,7 @@
               <span v-if="bridge3DState.hoverCutU != null"> (u = {{ bridge3DState.hoverCutU.toFixed(2) }})</span>
             </div>
             <div class="sub-hint">Neuen Stützpunkt setzen, dann die Griffe in der Höhe ziehen (Bogen). Esc: zurück ohne Schnitt</div>
+            <div class="validation-error" v-if="bridge3DState.cutInvalid">⚠ Zu nah am Rechengitter — Mindestabstand = Zellweite (feiner ist nicht berechenbar)</div>
           </template>
           <template v-else-if="bridge3DState.phase === 'PIER'">
             <div class="hint drawing-hint">
@@ -219,9 +141,9 @@
           </template>
           <template v-else>
             <div class="sub-hint">
-              Griffe in der Höhe ziehen (cyan = Soffitte, grau = Deck) ·
+              Eck-Kugeln in der Höhe ziehen (cyan = Soffitte, grau = Deck) ·
               <strong style="color:#c8915a">braune Boxen = Pfeiler</strong> (anklicken → Maße) ·
-              Shift-Klick: Mehrfachauswahl · <strong>R</strong>: Loop Cut · <strong>T</strong>: Quer-Punkt · <strong>P</strong>: Pfeiler · <strong>Enter</strong>: fertig
+              Shift-Klick: Mehrfachauswahl · <strong>S</strong>: Stützpunkt · <strong>P</strong>: Pfeiler · <strong>Enter</strong>: fertig
             </div>
             <!-- Lot-Info + exakte Höhe über Raster für die Auswahl -->
             <div v-if="bridge3DState.selectionInfo" class="sel-info">
@@ -254,13 +176,14 @@
               </div>
             </div>
           </template>
-          <div class="actions">
-            <button class="btn btn-cancel" :disabled="bridge3DState.phase !== 'EDIT'" @click="tool3d.startLoopCut()">✂ Längs</button>
-            <button class="btn btn-cancel" :disabled="bridge3DState.phase !== 'EDIT'" @click="tool3d.startCrossCut()">✛ Quer</button>
-            <button class="btn btn-pier" :disabled="bridge3DState.phase !== 'EDIT'" @click="tool3d.startPier()">🛑 Pfeiler</button>
+          <!-- Knickpunkt-/Pfeiler-Werkzeuge erst im EDIT-Modus eines Brückenkörpers zeigen
+               (während LOOPCUT/PIER ausblenden statt nur ausgrauen → weniger Clutter). -->
+          <div class="actions" v-if="bridge3DState.phase === 'EDIT'">
+            <button class="btn btn-cancel" @click="tool3d.startSubdivide()" title="Auf eine Kante klicken → neue ziehbare Ecke (für Bögen)">✚ Stützpunkt</button>
+            <button class="btn btn-pier" @click="tool3d.startPier()">🛑 Pfeiler</button>
           </div>
           <div class="actions">
-            <button class="btn btn-save" @click="tool3d.finishEdit()">Fertig</button>
+            <button class="btn btn-save" @click="onFinishBridge">Fertig</button>
             <button class="btn btn-remove-wide" @click="tool3d.deleteCurrent()">Löschen</button>
           </div>
         </div>
@@ -275,8 +198,6 @@
             <button class="btn btn-save" @click="tool3d.startDrawing()">Neues Polygon</button>
           </div>
         </div>
-
-      </template>
 
       <!-- Gemeinsame Liste vorhandener Brücken -->
       <div v-if="showBridgeList && bridges.length > 0" class="existing-list">
@@ -294,36 +215,57 @@
       </div>
 
     </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
-import { computeAxisFromWorldPoints } from '../../composables/editor/useBridgeTool.js';
 import { bridge3DState, getBridge3DToolInstance } from '../../composables/editor/useBridge3DTool.js';
-
-const props = defineProps({
-  toolInstance: { type: Object, default: null }
-});
+import { PIER_NOSE_SHAPES, pierShapeCd } from '../../middleware/structureFiles.js';
+import { latticeToCells } from '../../utils/BridgeMeshLattice.js';
 
 const simStore = useSimulationStore();
 const geoStore = useGeoStore();
 
-const isActive  = computed(() => simStore.activeTool === 'BRIDGE');
-const bridges   = computed(() => geoStore.bridges);
-const isDrawingAxis = computed(() => props.toolInstance?.state?.value === 'DRAWING');
+const isActive = computed(() => simStore.activeTool === 'BRIDGE');
+const bridges  = computed(() => geoStore.bridges);
 
 // ── 3D-Körper-Modus ────────────────────────────────────────────────────────
 const tool3d = getBridge3DToolInstance();
 
-const form3d = ref({ soffit: 2.0, deck: 3.0, Cd: 0.80, Tz: 1.5, directionMode: 'AUTO' });
+const form3d = ref({ soffit: 2.0, deck: 3.0, Cd: 0.80, Tz: 1.5, directionMode: 'AUTO', pierNose: '' });
 const isValid3d = computed(() => form3d.value.deck >= form3d.value.soffit + 0.1);
+
+// Pfeiler-Nasenform → vorgeschlagenes Cd (nur Vorschlag; Cd bleibt frei editierbar).
+function onNoseChange() {
+  if (form3d.value.pierNose) form3d.value.Cd = pierShapeCd(form3d.value.pierNose);
+}
 
 const editingBridge = computed(() =>
   geoStore.bridges.find(b => b.id === bridge3DState.editingId)
 );
+
+// Effektive Öffnung der editierten Brücke, wie der Solver sie sieht: Σ offene Breite je
+// Zelle (cellOpenWidth zieht den Pfeiler-Anteil sub-grid ab) + Verbauungsgrad gegenüber
+// der vollen Zellsumme. Macht sichtbar, wie Pfeilerbreite/-position die Öffnung ändern.
+const openingStats = computed(() => {
+  const b = editingBridge.value;
+  const t = geoStore.terrain;
+  if (!b || b.kind !== 'mesh3d' || !b.lattice || !t?.gridData) return null;
+  const xll = t.xllcorner ?? t.xll ?? 0;
+  const yll = t.yllcorner ?? t.yll ?? 0;
+  const header = { ncols: t.ncols, nrows: t.nrows, cellsize: t.cellsize, xllcorner: xll, yllcorner: yll };
+  let cells;
+  try { cells = latticeToCells(b, header, null, { openWidth: true }); } catch { return null; }
+  if (!cells.length) return null;
+  const cs = t.cellsize;
+  const open = cells.reduce((s, c) => s + (c.width ?? cs), 0);
+  const gross = cells.length * cs;
+  return { open, blockage: gross > 0 ? Math.max(0, 1 - open / gross) : 0 };
+});
 
 // Selektierter Pfeiler (Klick auf den Pfeiler im EDIT) → Eckenzahl + Kopfhöhe
 const selPier = computed(() => {
@@ -353,9 +295,7 @@ const pierDim = computed(() => {
 
 // Liste nur zeigen, wenn kein Formular/Editing den Platz braucht
 const showBridgeList = computed(() =>
-  bridge3DState.mode === 'LINE'
-    ? !pendingBridge.value
-    : (bridge3DState.phase === 'IDLE' || bridge3DState.phase === 'DRAW_FOOTPRINT')
+  bridge3DState.phase === 'IDLE' || bridge3DState.phase === 'DRAW_FOOTPRINT'
 );
 
 // Formular-Defaults übernehmen, sobald der Footprint geschlossen wurde
@@ -375,158 +315,26 @@ watch(() => bridge3DState.selectionInfo, (info) => {
   }
 });
 
-const setMode = (mode) => {
-  if (bridge3DState.mode === mode) return;
-  reset(); // Pending-State des Linien-Modus verwerfen
-  bridge3DState.mode = mode; // MapEditor3D-Watcher tauscht das aktive Sub-Tool
+const editMesh3D = (id) => tool3d.startEdit(id);
+
+// ── Einklappbares Panel (Hover) – analog ShovelTool ─────────────────────────
+// Idle → nur der Header-Pill ist sichtbar; Hover oder ein aktiver Arbeitsschritt
+// (Zeichnen/Formular/3D-Editing) klappt den Inhalt aus. So bleibt es nie mitten
+// im Schritt zu und verdeckt im Leerlauf nicht den Viewport.
+const hovered = ref(false);
+let closeTimer = null;
+const onPanelEnter = () => { clearTimeout(closeTimer); hovered.value = true; };
+const onPanelLeave = () => { closeTimer = setTimeout(() => { hovered.value = false; }, 200); };
+
+const bridgeBusy = computed(() => !!bridge3DState.phase && bridge3DState.phase !== 'IDLE');
+const panelVisible = computed(() => hovered.value || bridgeBusy.value);
+
+// „Fertig": Editing abschließen UND das Werkzeug deaktivieren (Auto-Reset), damit
+// nicht versehentlich gleich der nächste Brückenkörper gezeichnet wird.
+const onFinishBridge = () => {
+  tool3d.finishEdit();
+  simStore.setActiveTool(null);
 };
-
-const editMesh3D = (id) => {
-  if (bridge3DState.mode !== 'MESH3D') {
-    setMode('MESH3D');
-    nextTick(() => tool3d.startEdit(id)); // erst nach activate() des Sub-Tools
-  } else {
-    tool3d.startEdit(id);
-  }
-};
-
-// ── State ──────────────────────────────────────────────────────────────────
-const pendingBridge   = ref(false);
-const pendingSegments = ref([]);
-const demZ            = ref(0);
-
-const form = ref({
-  z_sohle: 0.0,
-  soffit:  2.0,
-  deck:    3.0,
-  width:   5.0,
-  Cd:      0.80,
-  Tz:      1.5,
-});
-
-const isValid = computed(() =>
-  form.value.soffit > form.value.z_sohle &&
-  form.value.deck   >= form.value.soffit &&
-  form.value.width  > 0
-);
-
-// IFC-Import state
-const ifcAxisPoints  = ref(null);  // { p1: {x,y}, p2: {x,y} }
-const pendingFromIfc = ref(false);
-
-// ── Reset ──────────────────────────────────────────────────────────────────
-const reset = () => {
-  pendingBridge.value   = false;
-  pendingSegments.value = [];
-  demZ.value            = 0;
-  ifcAxisPoints.value   = null;
-  pendingFromIfc.value  = false;
-  form.value = { z_sohle: 0.0, soffit: 2.0, deck: 3.0, width: 5.0, Cd: 0.80, Tz: 1.5 };
-};
-
-watch(isActive, active => { if (!active) reset(); });
-
-// ── Event-Listener für bridge-axis-click ──────────────────────────────────
-const handleAxisClick = (event) => {
-  if (!isActive.value) return;
-  if (pendingBridge.value) return;
-
-  const { segments } = event.detail || {};
-  if (!segments || segments.length === 0) return;
-
-  pendingSegments.value = segments;
-
-  // Vorausfüllung aus DEM-Mittelwert entlang der Achse
-  const avgZ = segments.reduce((s, seg) => s + seg.z, 0) / segments.length;
-  demZ.value = avgZ;
-
-  form.value.z_sohle = parseFloat(avgZ.toFixed(2));
-  form.value.soffit  = parseFloat((avgZ + 2.0).toFixed(2));
-  form.value.deck    = parseFloat((avgZ + 3.0).toFixed(2));
-
-  pendingBridge.value = true;
-};
-
-onMounted(()   => window.addEventListener('bridge-axis-click', handleAxisClick));
-onUnmounted(() => window.removeEventListener('bridge-axis-click', handleAxisClick));
-
-// ── IFC-Clipboard-Import ───────────────────────────────────────────────────
-async function importFromClipboard() {
-  try {
-    const text = await navigator.clipboard.readText();
-    const data = JSON.parse(text);
-    if (data.type !== 'quagg-bridge-v1') {
-      alert('Kein Brücken-JSON in Zwischenablage.\nBitte zuerst im IFC-Viewer "Als Brücke kopieren" verwenden.');
-      return;
-    }
-    ifcAxisPoints.value  = { p1: data.axis.p1, p2: data.axis.p2 };
-    form.value.z_sohle   = data.z.sohle;
-    form.value.soffit    = data.z.soffit;
-    form.value.deck      = data.z.deck;
-    form.value.width     = data.width;
-    form.value.Cd        = 0.80;
-    form.value.Tz        = 1.5;
-    demZ.value           = data.z.sohle;
-    pendingFromIfc.value = true;
-    pendingBridge.value  = true;
-  } catch {
-    alert('Fehler beim Lesen der Zwischenablage.');
-  }
-}
-
-// ── Speichern ──────────────────────────────────────────────────────────────
-const saveBridge = () => {
-  if (!isValid.value) return;
-
-  const lineId   = `bridge_${Date.now()}`;
-  const { soffit, deck, width, Cd, Tz, z_sohle } = form.value;
-
-  let segments = pendingSegments.value;
-
-  // IFC-Import-Pfad: Achse aus Weltkoordinaten berechnen
-  if (pendingFromIfc.value && ifcAxisPoints.value) {
-    const terrain = geoStore.terrain;
-    if (!terrain) { alert('Kein Terrain geladen — kann Brückenachse nicht rasterisieren.'); return; }
-    const pd = terrain.header ?? terrain;
-    const rawCells = computeAxisFromWorldPoints(ifcAxisPoints.value.p1, ifcAxisPoints.value.p2, pd);
-    if (!rawCells.length) { alert('Brückenachse liegt außerhalb des Terrain-Grids.'); return; }
-
-    const xll = pd.xll ?? pd.xllcorner ?? 0;
-    const yll = pd.yll ?? pd.yllcorner ?? 0;
-    const cs  = pd.cellsize ?? 1;
-
-    segments = rawCells.map((cell, i) => ({
-      col: cell.col, row: cell.row,
-      x: xll + (cell.col + 0.5) * cs,
-      y: yll + ((pd.nrows - 1 - cell.row) + 0.5) * cs,
-      z: z_sohle,
-      direction: rawCells.length > 1 && i > 0
-        ? (rawCells[i].row !== rawCells[i - 1].row ? 'E' : 'S')
-        : 'S',
-    }));
-  }
-
-  const batch = segments.map(seg => ({
-    lineId,
-    col:       seg.col,
-    row:       seg.row,
-    x:         seg.x,
-    y:         seg.y,
-    z:         seg.z,
-    direction: seg.direction,
-    z_sohle,
-    soffit,
-    deck,
-    width,
-    Cd,
-    Tz,
-  }));
-
-  geoStore.addBridgeBatch(batch);
-  reset();
-};
-
-const cancel = () => reset();
 </script>
 
 <style scoped>
@@ -560,8 +368,33 @@ const cancel = () => reset();
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: default;
+  user-select: none;
 }
 .header-icon { font-size: 1.1rem; }
+.collapse-dots { margin-left: auto; opacity: 0.4; letter-spacing: 2px; font-size: 0.8rem; }
+
+/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
+.tool-ui-panel.bridge-panel.collapsed {
+  min-width: unset;
+  padding: 8px 16px;
+}
+.bridge-panel.collapsed .panel-header {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+/* Slide-Transition für den Panel-Inhalt (analog ShovelTool). */
+.panel-slide-enter-active,
+.panel-slide-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.panel-slide-enter-from,
+.panel-slide-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
 
 .hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .drawing-hint { color: #ffce54; }
@@ -577,10 +410,6 @@ const cancel = () => reset();
 .btn-remove:hover { background: #c0392b; color: white; }
 .btn-edit { background: none; border: 1px solid #1abc9c; color: #1abc9c; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s; }
 .btn-edit:hover { background: #1abc9c; color: white; }
-
-.mode-switch { display: flex; gap: 6px; margin-bottom: 12px; }
-.mode-btn { flex: 1; padding: 6px; border: 1px solid #4a6278; border-radius: 5px; background: #1e3348; color: #bdc3c7; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.mode-btn.active { border-color: #e74c3c; background: rgba(231,76,60,0.18); color: #ecf0f1; }
 
 .btn-remove-wide { flex: 0 0 auto; padding: 8px 10px; border: 1px solid #c0392b; border-radius: 5px; background: none; color: #c0392b; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
 .btn-remove-wide:hover { background: #c0392b; color: white; }
@@ -604,6 +433,8 @@ const cancel = () => reset();
 
 .state-form { display: flex; flex-direction: column; gap: 10px; }
 .location-badge { font-size: 0.78rem; color: #e74c3c; background: rgba(231,76,60,0.15); border-radius: 4px; padding: 4px 8px; text-align: center; }
+.opening-stats { font-size: 0.78rem; color: #2ecc71; background: rgba(46,204,113,0.12); border-radius: 4px; padding: 4px 8px; text-align: center; margin-top: 6px; }
+.opening-stats strong { color: #d7ffe7; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .input-group { display: flex; flex-direction: column; gap: 4px; }
@@ -630,18 +461,10 @@ const cancel = () => reset();
 .pier-width-row label { font-size: 0.8rem; color: #c8915a; flex: 1; }
 .pier-width-row input[type="number"] { width: 80px; padding: 6px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #1e3348; color: white; font-size: 0.88rem; outline: none; }
 
-.btn-ifc-import {
-  width: 100%;
-  padding: 7px;
-  margin-bottom: 6px;
-  border: 1px dashed rgba(231,76,60,0.5);
-  border-radius: 5px;
-  background: rgba(231,76,60,0.08);
-  color: #e57373;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-ifc-import:hover { background: rgba(231,76,60,0.2); border-style: solid; }
+.subdiv-modes { display: flex; gap: 6px; margin-bottom: 8px; }
+.btn-slim { padding: 5px 8px; font-size: 0.8rem; }
+.subdiv-modes .btn { background: #2c3e50; color: #bdc3c7; border: 1px solid #4a6278; }
+.subdiv-modes .btn:hover { background: #34495e; }
+.subdiv-modes .btn.active { background: #16a085; color: #fff; border-color: #1abc9c; }
+
 </style>

@@ -187,6 +187,33 @@ const structuresPlugin = {
         ctx.moveTo(xL - 3, ySoffit); ctx.lineTo(xR + 3, ySoffit); ctx.stroke();
         ctx.fillStyle = '#cfd8dc'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
         ctx.fillText('Brücke', (xL + xR) / 2, yDeck - 4);
+
+        // Freibord / Einstau / Überströmt: Wasserspiegel ↔ Soffitte/Deck
+        const xm = (xL + xR) / 2;
+        if (s.wsp != null && s.soffit != null) {
+          const yWsp = yS.getPixelForValue(s.wsp - yOffset);
+          ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+          if (s.wsp < s.soffit) {
+            // Freibord: grüne Strecke WSP→Soffitte
+            ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 1.5; ctx.setLineDash([2, 2]);
+            ctx.beginPath(); ctx.moveTo(xm, yWsp); ctx.lineTo(xm, ySoffit); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillText(`Freibord ${(s.soffit - s.wsp).toFixed(2)} m`, xm, ySoffit + 12);
+          } else if (s.deck != null && s.wsp < s.deck) {
+            // Einstau: orange Fläche Soffitte→WSP
+            ctx.fillStyle = 'rgba(243,156,18,0.35)';
+            ctx.fillRect(xL, ySoffit, xR - xL, Math.max(1, yWsp - ySoffit));
+            ctx.fillStyle = '#e67e22';
+            ctx.fillText(`Einstau ${(s.wsp - s.soffit).toFixed(2)} m`, xm, ySoffit - 4);
+          } else {
+            // Deck überströmt
+            ctx.fillStyle = 'rgba(231,76,60,0.4)';
+            ctx.fillRect(xL, yDeck, xR - xL, Math.max(1, ySoffit - yDeck));
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillText('Deck überströmt', xm, yDeck - 14);
+          }
+        }
       }
     }
     ctx.restore();
@@ -291,9 +318,28 @@ const updateChartData = () => {
   chart.options.scales.y.suggestedMax = yHi + span * 0.08 + 0.3;
   chart.options.scales.y.title.text = relativeMode.value ? 'Höhe ü. Sohle (m)' : 'Höhe (m)';
 
+  // Wasserspiegel (absolut) an einer Schnitt-Distanz aus der Wasserlinie interpolieren —
+  // für das Freibord/Einstau-Overlay an Brücken.
+  const wspAt = (d) => {
+    if (!dist.length) return null;
+    const wl = (i) => (depth[i] > 0.001 ? terr[i] + depth[i] : terr[i]);
+    if (d <= dist[0]) return wl(0);
+    for (let i = 1; i < dist.length; i++) {
+      if (d <= dist[i]) {
+        const span = (dist[i] - dist[i - 1]) || 1;
+        const t = (d - dist[i - 1]) / span;
+        return wl(i - 1) + t * (wl(i) - wl(i - 1));
+      }
+    }
+    return wl(dist.length - 1);
+  };
+  const structsMeta = (props.section.structures || []).map(s =>
+    s.kind === 'bridge' ? { ...s, wsp: wspAt(s.distance) } : s
+  );
+
   chart.data.datasets[0].data = waterData;
   chart.data.datasets[1].data = terrainData;
-  chart.$secMeta = { structures: props.section.structures || [], yOffset };
+  chart.$secMeta = { structures: structsMeta, yOffset };
   chart.update();
 };
 
