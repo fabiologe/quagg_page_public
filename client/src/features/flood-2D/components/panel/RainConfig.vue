@@ -33,7 +33,7 @@
 
     <!-- ACTION BUTTON -->
     <button class="config-btn" @click="showModal = true">
-        🌧️ Regen konfigurieren
+        <SvEmoji emoji="🌧" :size="15" /> Regen konfigurieren
     </button>
 
     <RainConfigModal
@@ -46,14 +46,14 @@
     <div class="moisture-card">
       <h4>Bodenvorfeuchte (Antezedenz)</h4>
       <div class="moisture-row">
-        <span class="moisture-label">🏜️</span>
+        <span class="moisture-label"><SvEmoji emoji="🏜" :size="14" /></span>
         <input
           type="range"
           v-model.number="store.antecedentMoisture"
           min="0" max="100" step="5"
           class="slider"
         />
-        <span class="moisture-label">💧</span>
+        <span class="moisture-label"><SvEmoji emoji="💧" :size="14" /></span>
       </div>
       <div class="moisture-value-row">
         <span class="moisture-pct">{{ store.antecedentMoisture }}%</span>
@@ -71,6 +71,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import SvEmoji from '../common/SvEmoji.vue';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
 import RainConfigModal from './RainConfigModal.vue';
 
@@ -124,10 +125,10 @@ const barWidth = computed(() => {
 }
 
 .result-card {
-    background: #2c3e50;
+    background: #1e1e2c;
     border-radius: 6px;
     padding: 1rem;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
 }
 
 h4 {
@@ -160,7 +161,7 @@ h4 {
 }
 
 .bar {
-    background: #3498db;
+    background: #a3e635;
     transition: height 0.3s ease;
 }
 
@@ -175,7 +176,7 @@ h4 {
 .config-btn {
     width: 100%;
     padding: 0.8rem;
-    background: #34495e;
+    background: #2e2740;
     border: 1px solid #7f8c8d;
     color: white;
     font-weight: bold;
@@ -185,7 +186,7 @@ h4 {
     display: flex; justify-content: center; align-items: center; gap: 0.5rem;
 }
 .config-btn:hover {
-    background: #2c3e50;
+    background: #1e1e2c;
     border-color: #bdc3c7;
 }
 
@@ -193,15 +194,15 @@ h4 {
     margin-top: 12px;
     padding: 10px 12px;
     background: #1e2d3d;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     border-radius: 6px;
 }
 .moisture-card h4 { margin: 0 0 8px; font-size: 0.82rem; color: #bdc3c7; }
 .moisture-row { display: flex; align-items: center; gap: 8px; }
 .moisture-label { font-size: 1rem; }
-.slider { flex: 1; cursor: pointer; accent-color: #3498db; }
+.slider { flex: 1; cursor: pointer; accent-color: #a3e635; }
 .moisture-value-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.moisture-pct { font-weight: 700; font-size: 0.9rem; color: #5dade2; min-width: 32px; }
+.moisture-pct { font-weight: 700; font-size: 0.9rem; color: #a3e635; min-width: 32px; }
 .moisture-hint { font-size: 0.74rem; color: #7f8c8d; line-height: 1.3; }
 
 </style>

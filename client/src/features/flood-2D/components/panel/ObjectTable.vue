@@ -26,9 +26,9 @@
         <!-- TYPE ICON -->
         <div class="col-type">
             <span v-if="type === 'NODE'" title="Node">🟢</span>
-            <span v-else-if="type === 'BUILDING'" title="Building">🏢</span>
-            <span v-else-if="type === 'BOUNDARY'" title="Boundary">〰️</span>
-            <span v-else>❓</span>
+            <span v-else-if="type === 'BUILDING'" title="Building"><SvEmoji emoji="🏢" :size="14" /></span>
+            <span v-else-if="type === 'BOUNDARY'" title="Boundary"><SvEmoji emoji="〰" :size="14" /></span>
+            <span v-else><SvEmoji emoji="❓" :size="14" /></span>
         </div>
 
         <!-- ROLE / INFO -->
@@ -50,7 +50,7 @@
         <!-- ACTIONS -->
         <div class="col-actions">
             <button class="action-btn" @click.stop="$emit('zoom-to', item)" title="Zoom to Target">
-                🎯
+                <SvEmoji emoji="🎯" :size="14" />
             </button>
         </div>
       </div>
@@ -65,6 +65,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { computed } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
@@ -126,7 +127,7 @@ const getRoleClass = (item) => {
 .object-table {
     display: flex; flex-direction: column;
     height: 100%;
-    background: #2c3e50;
+    background: #1e1e2c;
     font-size: 0.9rem;
     color: #ecf0f1;
 }
@@ -134,9 +135,9 @@ const getRoleClass = (item) => {
 .table-header {
     display: flex;
     padding: 0.5rem;
-    background: #34495e;
+    background: #2e2740;
     font-weight: bold;
-    border-bottom: 2px solid #233140;
+    border-bottom: 2px solid #16161f;
     color: #bdc3c7;
     font-size: 0.8rem;
     text-transform: uppercase;
@@ -151,7 +152,7 @@ const getRoleClass = (item) => {
     display: flex;
     align-items: center;
     padding: 0.5rem;
-    border-bottom: 1px solid #34495e;
+    border-bottom: 1px solid #2e2740;
     cursor: pointer;
     transition: background 0.1s;
 }
@@ -161,7 +162,7 @@ const getRoleClass = (item) => {
 }
 
 .table-row.selected {
-    background: #2980b9;
+    background: #6d43d4;
     color: #fff;
 }
 
@@ -205,5 +206,5 @@ const getRoleClass = (item) => {
 /* SCROLLBAR */
 .table-body::-webkit-scrollbar { width: 6px; }
 .table-body::-webkit-scrollbar-thumb { background: #7f8c8d; border-radius: 3px; }
-.table-body::-webkit-scrollbar-track { background: #2c3e50; }
+.table-body::-webkit-scrollbar-track { background: #1e1e2c; }
 </style>

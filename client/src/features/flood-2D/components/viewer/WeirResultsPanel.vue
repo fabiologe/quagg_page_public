@@ -1,7 +1,7 @@
 <template>
   <div class="weir-panel" v-if="series.length" :style="panelStyle">
     <div class="panel-header" :style="headerStyle" @mousedown="startDrag">
-      <div class="title"><span class="icon">🌊</span> Wehr-Durchfluss</div>
+      <div class="title"><span class="icon"><SvEmoji emoji="🌊" :size="14" /></span> Wehr-Durchfluss</div>
       <div class="header-actions">
         <button class="reset-btn" @click.stop="resetZoom" title="Ansicht zurücksetzen">⟲</button>
         <button class="close-btn" @click.stop="collapsed = !collapsed" :title="collapsed ? 'Aufklappen' : 'Einklappen'">
@@ -34,7 +34,7 @@
           ⤴ Überströmt +{{ fmt(currentOvertop, 2) }} m
         </span>
         <span class="kpi" v-if="active.overtopFrames > 0">
-          ⏱ {{ overtopMinutes }} überströmt
+          <SvEmoji emoji="⏱" :size="13" /> {{ overtopMinutes }} überströmt
         </span>
       </div>
 
@@ -46,6 +46,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, watch, onMounted, onUnmounted, shallowRef, computed } from 'vue';
 import {
   Chart, LineElement, PointElement, LineController,

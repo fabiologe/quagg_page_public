@@ -1,0 +1,102 @@
+--- a/lisflood.h
++++ b/lisflood.h
+@@ -393,6 +393,7 @@
+ 	char bcifilename[256];
+ 	char bdyfilename[256];
+ 	char weirfilename[256];
++	char couplingfilename[256]; // QUAGG: flow.coupling (1D/2D)
+ 	char opfilename[256];
+ 	char stagefilename[256];
+ 	char ascheaderfilename[256];
+@@ -598,6 +599,7 @@
+ 	int profileoutput;
+ 	int porosity;
+ 	int weirs;
++	int coupling; // QUAGG: 1D/2D SWMM-Kopplung aktiv
+ 	int save_Ts;   // MT: added flag to output adaptive timestep
+ 	int save_QLs;  // MT: added flag to output Qlimits
+ 	int diffusive; // MT: added flag to indicate wish to use diffusive channel solver instead of default kinematic
+--- a/pars.cpp
++++ b/pars.cpp
+@@ -250,6 +250,12 @@
+ 		if (verbose == ON && mode == CMD_LINE) printf("Weir file set by command line: %s\n", Fnameptr->weirfilename);
+ 		return;
+ 	}
++	// QUAGG 1D/2D-Kopplung: Pfad zur flow.coupling (Schacht<->Zelle-Map + SWMM-.inp).
++	if (read_string_param(param_name, line_number, param_value_ptr, "couplingfile", Fnameptr->couplingfilename, verbose, mode))
++	{
++		if (verbose == ON && mode == CMD_LINE) printf("Coupling file set by command line: %s\n", Fnameptr->couplingfilename);
++		return;
++	}
+ 	// Turn on steady-state checking, and check for a specified tolerance (MDW)
+ 	if (read_empty_param(param_name, line_number, param_value_ptr, "steady", verbose, mode))
+ 	{
+--- a/lisflood.cpp
++++ b/lisflood.cpp
+@@ -19,6 +19,7 @@
+ #include "sgc.h"
+ #include "swe/fv1.h"
+ #include "swe/dg2.h"
++#include "coupling.h" // QUAGG 1D/2D-Kopplung (SWMM)
+ #ifdef CUDA
+ 	#include "cuda/fv1/cuda_fv1_simulate.cuh"
+ 	#include "cuda/dg2/cuda_dg2_simulate.cuh"
+@@ -732,6 +733,7 @@
+ 
+ 	//start simulation
+ 	time(&ParSolver.time_start);
++	Coupling_Init(Statesptr, Fnameptr, Parptr, verbosemode); // QUAGG: SWMM oeffnen falls couplingfile
+ 	if (Statesptr->SGC == ON) // SGC output
+ 	{
+ 		Fast_MainStart(Fnameptr, &Fps, Statesptr, Parptr, Solverptr, BCptr, Stageptr, CSTypePtr, Arrptr, SGCptr, ChannelSegmentsVecPtr, Damptr, verbosemode); //Damptr added by FEOL
+@@ -760,6 +762,7 @@
+ 		IterateQ(Fnameptr, &Fps, Statesptr, Parptr, Solverptr, BCptr, Stageptr, CSTypePtr, Arrptr, SGCptr, RiversIndexVecPtr, RiversIndexPtr, ChannelSegmentsVecPtr, verbosemode);
+ 	}
+ 	time(&ParSolver.time_finish);
++	Coupling_Finalize(Statesptr, verbosemode); // QUAGG: SWMM-Report/Close
+ 
+ 	//Final checkpoint
+ 	if (SimStates.checkpoint == ON) WriteCheckpoint(Fnameptr, Statesptr, Parptr, Solverptr, BCptr, CSTypePtr, Arrptr, verbosemode);
+--- a/iterateq.cpp
++++ b/iterateq.cpp
+@@ -10,6 +10,7 @@
+ #include "lisflood.h"
+ #include "rain/rain.h"
+ #include "sgc.h"
++#include "coupling.h" // QUAGG 1D/2D-Kopplung (SWMM)
+ 
+ //-----------------------------------------------------------------------------
+ // ITERATE THROUGH TIME STEPS
+@@ -172,6 +173,7 @@
+ 		// Update t with final Tstep calculated
+ 		if (Solverptr->t>C(0.0)) Solverptr->MinTstep = getmin(Solverptr->MinTstep, Solverptr->Tstep);
+ 		Solverptr->t += Solverptr->Tstep;
++		Coupling_Update(Statesptr, Parptr, Solverptr, BCptr, Arrptr); // QUAGG: 1D/2D-Austausch (No-Op wenn coupling OFF)
+ 		Solverptr->itCount += 1;
+ 		// Update time of initial flood inundation (in hours) and total inundation time (in seconds)
+ 		if ((Statesptr->reset_timeinit == ON) & (Solverptr->t>Parptr->reset_timeinit_time))
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -35,6 +35,7 @@
+ 	util.cpp
+ 	utility.cpp
+ 	weir_flow.cpp
++	coupling.cpp
+ 	lisflood2/DataTypes.cpp
+ 	lisflood2/file_tool.cpp
+ 	lisflood2/lis2_output.cpp
+@@ -63,6 +64,14 @@
+ target_sources(lisflood PRIVATE lisflood.cpp)
+ target_link_libraries(lisflood PRIVATE lisflood-base)
+ 
++# QUAGG 1D/2D-Kopplung: nur wenn -DQUAGG_COUPLING=ON (Docker-Build mit libswmm5).
++if (QUAGG_COUPLING)
++	add_compile_definitions(QUAGG_COUPLING)
++	target_include_directories(lisflood-base INTERFACE ${SWMM_INC})
++	target_link_libraries(lisflood PRIVATE ${SWMM_LIB})
++	target_link_options(lisflood PRIVATE -Wl,-rpath,/opt/swmm)
++endif()
++
+ check_language(CUDA)
+ if (CMAKE_CUDA_COMPILER)
+ 	enable_language(CUDA)

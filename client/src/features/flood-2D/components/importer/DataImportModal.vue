@@ -56,7 +56,7 @@
           
           <label class="file-drop-zone">
             <input type="file" accept=".xml" @change="handleFileSelect" :disabled="importing">
-            <span v-if="!importing">📁 Wähle .XML Datei</span>
+            <span v-if="!importing"><SvEmoji emoji="📁" :size="13" /> Wähle .XML Datei</span>
             <span v-else>Importiere...</span>
           </label>
         </div>
@@ -69,7 +69,7 @@
 
           <label class="file-drop-zone">
             <input type="file" accept=".json,.geojson" @change="handleFileSelect" :disabled="importing">
-            <span v-if="!importing">📁 Wähle Gebäudedaten (.json)</span>
+            <span v-if="!importing"><SvEmoji emoji="📁" :size="13" /> Wähle Gebäudedaten (.json)</span>
             <span v-else>Importiere...</span>
           </label>
         </div>
@@ -83,7 +83,7 @@
 
           <label class="file-drop-zone">
             <input type="file" accept=".json,.geojson" @change="handleFileSelect" :disabled="importing">
-            <span v-if="!importing">📁 Wähle Grenzen (.json)</span>
+            <span v-if="!importing"><SvEmoji emoji="📁" :size="13" /> Wähle Grenzen (.json)</span>
             <span v-else>Importiere...</span>
           </label>
         </div>
@@ -104,12 +104,12 @@
              </select>
           </div>
           <div v-else class="status-warn">
-              ⚠ Terrain Grid ist noch nicht initialisiert. Bitte erst im Editor öffnen.
+              <SvEmoji emoji="⚠" :size="13" /> Terrain Grid ist noch nicht initialisiert. Bitte erst im Editor öffnen.
           </div>
 
           <label class="file-drop-zone" :class="{ disabled: !surfaceStore.isInitialized }">
             <input type="file" accept=".json,.geojson" @change="handleFileSelect" :disabled="importing || !surfaceStore.isInitialized">
-            <span v-if="!importing">📁 Wähle Oberflächen (.json)</span>
+            <span v-if="!importing"><SvEmoji emoji="📁" :size="13" /> Wähle Oberflächen (.json)</span>
             <span v-else>Importiere...</span>
           </label>
         </div>
@@ -128,6 +128,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore';

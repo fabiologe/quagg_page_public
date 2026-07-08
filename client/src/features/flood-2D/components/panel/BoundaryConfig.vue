@@ -1,6 +1,7 @@
 
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
@@ -210,9 +211,9 @@ const goToProfileManager = () => {};
 
 // ── Globale Randbedingung ──────────────────────────────────────────────────
 const globalTypeOptions = [
-    { value: 'CLOSED', label: '🔒 Geschlossen' },
-    { value: 'FREE',   label: '↗️ Frei (FREE)' },
-    { value: 'HFIX',   label: '📏 Fester Pegel' },
+    { value: 'CLOSED', icon: '🔒', label: 'Geschlossen' },
+    { value: 'FREE',   icon: '↗',  label: 'Frei (FREE)' },
+    { value: 'HFIX',   icon: '📏', label: 'Fester Pegel' },
 ];
 
 const globalStatusText = computed(() => {
@@ -277,7 +278,7 @@ const hfixBelowTerrain = computed(() => {
               />
           </div>
           <div v-else-if="!selectedProfileId" class="hint-warn">
-              ⚠️ Bitte eine Ganglinie auswählen oder erstellen.
+              <SvEmoji emoji="⚠" :size="13" /> Bitte eine Ganglinie auswählen oder erstellen.
           </div>
       </div>
 
@@ -358,7 +359,7 @@ const hfixBelowTerrain = computed(() => {
     </div>
     <!-- Globale Randbedingung — immer sichtbar, unterhalb der Objekt-Config -->
     <div class="global-boundary-panel">
-      <div class="global-header">🌐 Globale Randbedingung</div>
+      <div class="global-header"><SvEmoji emoji="🌐" :size="14" /> Globale Randbedingung</div>
       <p class="global-desc">
         Gilt für alle 4 Domänenkanten wenn keine manuellen Boundaries gesetzt sind.
       </p>
@@ -370,14 +371,14 @@ const hfixBelowTerrain = computed(() => {
           class="gtype-btn"
           :class="{ active: hydStore.globalBoundaryType === opt.value }"
           @click="hydStore.globalBoundaryType = opt.value"
-        >{{ opt.label }}</button>
+        ><SvEmoji :emoji="opt.icon" :size="13" /> {{ opt.label }}</button>
       </div>
 
       <div v-if="hydStore.globalBoundaryType === 'HFIX'" class="global-hfix-input">
         <label>Außen-Wasserspiegel [m NHN]</label>
         <input type="number" v-model.number="hydStore.globalBoundaryHfix" step="0.1" />
         <small v-if="hfixBelowTerrain" class="hint-warn">
-          ⚠️ Pegel liegt unter dem tiefsten Geländepunkt ({{ geoStore.terrain.minZ.toFixed(1) }} m) — wirkt wie freier Auslauf.
+          <SvEmoji emoji="⚠" :size="13" /> Pegel liegt unter dem tiefsten Geländepunkt ({{ geoStore.terrain.minZ.toFixed(1) }} m) — wirkt wie freier Auslauf.
         </small>
       </div>
 
@@ -388,39 +389,39 @@ const hfixBelowTerrain = computed(() => {
 
 <style scoped>
 .boundary-config-panel {
-    background: #2c3e50;
+    background: #1e1e2c;
     color: #ecf0f1;
     padding: 10px;
     height: 100%;
     display: flex; flex-direction: column;
 }
-.panel-header { border-bottom: 1px solid #34495e; margin-bottom: 10px; padding-bottom: 5px; }
+.panel-header { border-bottom: 1px solid #2e2740; margin-bottom: 10px; padding-bottom: 5px; }
 .panel-header h4 { margin: 0; font-size: 1rem; color: #bdc3c7; }
 
 .form-group { margin-bottom: 15px; }
 .form-group label { display: block; font-size: 0.85rem; color: #bdc3c7; margin-bottom: 5px; }
 
 .main-select, .sub-select, .value-input {
-    width: 100%; padding: 8px; background: #1e272e; border: 1px solid #34495e; color: white; border-radius: 4px;
+    width: 100%; padding: 8px; background: #1e272e; border: 1px solid #2e2740; color: white; border-radius: 4px;
 }
 .main-select { font-weight: bold; }
 
 .select-row { display: flex; gap: 5px; }
 .btn-new {
-    background: #27ae60; border: none; color: white; width: 30px; border-radius: 4px; cursor: pointer; font-size: 1.2rem;
+    background: #a3e635; border: none; color: #12121a; width: 30px; border-radius: 4px; cursor: pointer; font-size: 1.2rem;
 }
-.btn-new:hover { background: #2ecc71; }
+.btn-new:hover { background: #b6f04d; }
 
 .embedded-editor {
     height: 250px;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     border-radius: 4px;
     overflow: hidden;
     margin-top: 10px;
 }
 
 .info-box {
-    background: rgba(52, 152, 219, 0.1); border-left: 3px solid #3498db; padding: 10px; font-size: 0.9rem;
+    background: rgba(163,230,53, 0.1); border-left: 3px solid #a3e635; padding: 10px; font-size: 0.9rem;
 }
 .hint-warn { color: #f39c12; font-size: 0.9rem; margin-top: 5px; }
 .hint-info { color: #7f8c8d; font-size: 0.8rem; margin-top: 3px; display: block; }
@@ -429,12 +430,12 @@ const hfixBelowTerrain = computed(() => {
 .segment-info {
     font-size: 0.8rem; padding: 7px 9px; border-radius: 4px; margin-bottom: 12px; line-height: 1.35;
 }
-.seg-edge     { background: rgba(41,128,185,0.15); color: #5dade2; border: 1px solid rgba(41,128,185,0.4); }
+.seg-edge     { background: rgba(41,128,185,0.15); color: #a3e635; border: 1px solid rgba(41,128,185,0.4); }
 .seg-interior { background: rgba(127,140,141,0.12); color: #bdc3c7; border: 1px solid rgba(127,140,141,0.3); }
 
 /* ── Global Boundary Panel ── */
 .global-boundary-panel { padding: 4px 0; display: flex; flex-direction: column; gap: 10px; }
-.global-header { font-size: 0.88rem; font-weight: 700; color: #5dade2; border-bottom: 1px solid #34495e; padding-bottom: 6px; }
+.global-header { font-size: 0.88rem; font-weight: 700; color: #a3e635; border-bottom: 1px solid #2e2740; padding-bottom: 6px; }
 .global-desc { font-size: 0.78rem; color: #7f8c8d; line-height: 1.4; margin: 0; }
 .global-type-row { display: flex; gap: 6px; }
 .gtype-btn {
@@ -442,8 +443,8 @@ const hfixBelowTerrain = computed(() => {
     background: #1e3348; color: #bdc3c7; font-size: 0.75rem; font-weight: 600;
     cursor: pointer; transition: all 0.15s; text-align: center;
 }
-.gtype-btn:hover  { background: #2471a3; border-color: #2980b9; color: #fff; }
-.gtype-btn.active { background: #2980b9; border-color: #5dade2; color: #fff; }
+.gtype-btn:hover  { background: #2471a3; border-color: #6d43d4; color: #fff; }
+.gtype-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
 
 .global-hfix-input { display: flex; flex-direction: column; gap: 4px; }
 .global-hfix-input label { font-size: 0.78rem; color: #bdc3c7; }
@@ -451,11 +452,11 @@ const hfixBelowTerrain = computed(() => {
     padding: 6px 8px; border-radius: 4px; border: 1px solid #4a6278;
     background: #1e3348; color: white; font-size: 0.88rem; outline: none;
 }
-.global-hfix-input input:focus { border-color: #2980b9; }
+.global-hfix-input input:focus { border-color: #6d43d4; }
 
 .global-status { font-size: 0.78rem; padding: 6px 8px; border-radius: 4px; }
 .status-warn { background: rgba(241,196,15,0.12); color: #f1c40f; border: 1px solid rgba(241,196,15,0.3); }
-.status-ok   { background: rgba(39,174,96,0.12);  color: #2ecc71; border: 1px solid rgba(39,174,96,0.3); }
+.status-ok   { background: rgba(39,174,96,0.12);  color: #b6f04d; border: 1px solid rgba(39,174,96,0.3); }
 
 /* ── Fließrichtungs-Winkel (Kompass-Rad) ── */
 .angle-config { margin-top: 10px; }
@@ -465,16 +466,16 @@ const hfixBelowTerrain = computed(() => {
     border: 2px solid #4a6278; background: #1e3348; flex-shrink: 0;
 }
 .angle-dial.clickable { cursor: pointer; }
-.angle-dial.clickable:hover { border-color: #5dade2; }
+.angle-dial.clickable:hover { border-color: #a3e635; }
 .angle-needle {
     position: absolute; left: 50%; top: 50%; width: 3px; height: 24px;
-    background: #5dade2; border-radius: 2px; transform-origin: bottom center;
+    background: #a3e635; border-radius: 2px; transform-origin: bottom center;
     margin-left: -1.5px; margin-top: -24px;
 }
 .angle-needle::after {
     content: ''; position: absolute; top: -5px; left: -3.5px;
     border-left: 5px solid transparent; border-right: 5px solid transparent;
-    border-bottom: 7px solid #5dade2;
+    border-bottom: 7px solid #a3e635;
 }
 .dial-n { position: absolute; top: 1px; left: 50%; transform: translateX(-50%); font-size: 0.6rem; color: #7f8c8d; }
 .angle-input-col { flex: 1; display: flex; flex-direction: column; gap: 6px; }
@@ -486,7 +487,7 @@ const hfixBelowTerrain = computed(() => {
     background: #1e3348; color: #bdc3c7; font-size: 0.78rem; font-weight: 600; cursor: pointer;
 }
 .preset-btn:hover  { background: #2471a3; color: #fff; }
-.preset-btn.active { background: #2980b9; border-color: #5dade2; color: #fff; }
+.preset-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
 </style>
 
 

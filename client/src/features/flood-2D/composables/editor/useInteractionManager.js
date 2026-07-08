@@ -170,8 +170,9 @@ export function useInteractionManager(activeToolRef, tools) {
         }
 
         const currentToolName = activeToolRef.value;
-        // ZOMBIE-KILLER: Das 3D-Canvas ignoriert Klicks für UI-basierte Rohr-Tools komplett
-        if (currentToolName === 'CULVERT' || currentToolName === 'NODE') return null;
+        // ZOMBIE-KILLER: Das 3D-Canvas ignoriert Doppelklicks für UI-basierte Setz-Tools komplett
+        if (currentToolName === 'CULVERT' || currentToolName === 'NODE'
+            || currentToolName === 'NET_NODE' || currentToolName === 'NET_CONDUIT') return null;
 
         const tool = tools[currentToolName];
 

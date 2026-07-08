@@ -258,7 +258,7 @@ const applyAssignment = () => {
 }
 .assignment-modal {
     width: 900px; height: 600px;
-    background: #2c3e50; border-radius: 8px;
+    background: #1e1e2c; border-radius: 8px;
     display: flex; overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     color: #ecf0f1;
@@ -266,27 +266,27 @@ const applyAssignment = () => {
 
 /* COLUMNS */
 .col-left {
-    flex: 1; border-right: 1px solid #34495e;
+    flex: 1; border-right: 1px solid #2e2740;
     display: flex; flex-direction: column;
-    background: #233140;
+    background: #16161f;
 }
 .col-right {
     flex: 1; display: flex; flex-direction: column;
-    background: #2c3e50;
+    background: #1e1e2c;
     padding: 20px;
 }
 
 /* LEFT SIDE */
 .list-header {
-    padding: 15px; border-bottom: 1px solid #34495e;
+    padding: 15px; border-bottom: 1px solid #2e2740;
 }
 .list-header h3 { margin: 0 0 10px 0; font-size: 1.1rem; }
 
 .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
 .tabs button {
-    flex: 1; padding: 4px; background: #34495e; color: #bdc3c7; border: none; cursor: pointer; border-radius: 3px;
+    flex: 1; padding: 4px; background: #2e2740; color: #bdc3c7; border: none; cursor: pointer; border-radius: 3px;
 }
-.tabs button.active { background: #3498db; color: white; }
+.tabs button.active { background: #a3e635; color: #12121a; }
 
 .search-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
 .select-all { cursor: pointer; user-select: none; }
@@ -301,7 +301,7 @@ const applyAssignment = () => {
     cursor: pointer;
 }
 .list-item:hover { background: #2f4050; }
-.list-item.selected { background: #34495e; border-left: 3px solid #3498db; }
+.list-item.selected { background: #2e2740; border-left: 3px solid #a3e635; }
 
 .item-label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; }
 .icon { font-size: 1.1rem; }
@@ -311,27 +311,27 @@ const applyAssignment = () => {
 .status-none { opacity: 0.5; font-style: italic; }
 
 /* RIGHT SIDE */
-.config-header { margin-bottom: 20px; border-bottom: 1px solid #34495e; padding-bottom: 10px; }
+.config-header { margin-bottom: 20px; border-bottom: 1px solid #2e2740; padding-bottom: 10px; }
 .config-header h3 { margin: 0 0 5px 0; }
-.target-info { font-size: 0.9rem; color: #3498db; }
+.target-info { font-size: 0.9rem; color: #a3e635; }
 
 .config-body { flex: 1; }
 .form-group { margin-bottom: 20px; }
 .form-group label { display: block; font-size: 0.9rem; margin-bottom: 6px; color: #bdc3c7; }
 
 .main-select, .sub-select, .value-input {
-    width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #34495e;
+    width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #2e2740;
     background: #1e272e; color: white; font-size: 1rem;
 }
-.main-select:focus, .sub-select:focus, .value-input:focus { border-color: #3498db; outline: none; }
+.main-select:focus, .sub-select:focus, .value-input:focus { border-color: #a3e635; outline: none; }
 
 .info-box {
-    background: rgba(52, 152, 219, 0.1); border: 1px solid #3498db; 
-    padding: 10px; border-radius: 4px; font-size: 0.9rem; color: #3498db;
+    background: rgba(163,230,53, 0.1); border: 1px solid #a3e635; 
+    padding: 10px; border-radius: 4px; font-size: 0.9rem; color: #a3e635;
 }
 
 .modal-footer {
-    display: flex; gap: 10px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid #34495e;
+    display: flex; gap: 10px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid #2e2740;
 }
 .btn-cancel {
     padding: 10px 20px; background: transparent; color: #bdc3c7; border: 1px solid #7f8c8d; border-radius: 4px; cursor: pointer;
@@ -339,9 +339,9 @@ const applyAssignment = () => {
 .btn-cancel:hover { color: white; border-color: white; }
 
 .btn-save {
-    padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
+    padding: 10px 20px; background: #a3e635; color: #12121a; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
 }
-.btn-save:hover { background: #2ecc71; }
+.btn-save:hover { background: #b6f04d; }
 .btn-save:disabled { background: #7f8c8d; cursor: not-allowed; opacity: 0.5; }
 
 .empty-selection { padding: 40px; text-align: center; color: #7f8c8d; font-size: 1.1rem; }

@@ -1,9 +1,9 @@
 <template>
   <div class="pattern-generator">
     <div class="toolbar">
-      <button class="pat-btn" @click="openModal('WAVE')" title="Flash Flood Wave">🌊 Welle</button>
-      <button class="pat-btn" @click="openModal('BLOCK')" title="Constant Block">🧱 Block</button>
-      <button class="pat-btn" @click="openModal('LINEAR')" title="Linear Ramp">📈 Linear</button>
+      <button class="pat-btn" @click="openModal('WAVE')" title="Flash Flood Wave"><SvEmoji emoji="🌊" :size="14" /> Welle</button>
+      <button class="pat-btn" @click="openModal('BLOCK')" title="Constant Block"><SvEmoji emoji="🧱" :size="14" /> Block</button>
+      <button class="pat-btn" @click="openModal('LINEAR')" title="Linear Ramp"><SvEmoji emoji="📈" :size="14" /> Linear</button>
     </div>
 
     <!-- Parameter Popover/Modal -->
@@ -32,6 +32,7 @@
 
 <script setup>
 import { ref } from 'vue';
+import SvEmoji from '../common/SvEmoji.vue';
 
 const emit = defineEmits(['generate']);
 
@@ -92,8 +93,8 @@ const generate = () => {
 
 .pat-btn {
     flex: 1;
-    background: #2c3e50;
-    border: 1px solid #34495e;
+    background: #1e1e2c;
+    border: 1px solid #2e2740;
     color: #bdc3c7;
     padding: 0.4rem;
     border-radius: 4px;
@@ -102,7 +103,7 @@ const generate = () => {
     transition: all 0.2s;
 }
 .pat-btn:hover {
-    background: #34495e; color: #fff; border-color: #3498db;
+    background: #2e2740; color: #fff; border-color: #a3e635;
 }
 
 /* POPOVER */
@@ -114,8 +115,8 @@ const generate = () => {
 }
 
 .popover {
-    background: #233140;
-    border: 1px solid #3498db;
+    background: #16161f;
+    border: 1px solid #a3e635;
     padding: 1rem;
     border-radius: 6px;
     width: 250px;
@@ -123,13 +124,13 @@ const generate = () => {
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-.pop-title { margin-top: 0; margin-bottom: 1rem; text-align: center; color: #3498db; }
+.pop-title { margin-top: 0; margin-bottom: 1rem; text-align: center; color: #a3e635; }
 
 .form-row { margin-bottom: 0.8rem; }
 .form-row label { display: block; font-size: 0.8rem; color: #bdc3c7; margin-bottom: 2px; }
-.form-row input { width: 100%; padding: 4px; background: #2c3e50; border: 1px solid #34495e; color: white; border-radius: 3px; }
+.form-row input { width: 100%; padding: 4px; background: #1e1e2c; border: 1px solid #2e2740; color: white; border-radius: 3px; }
 
 .actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
 .btn-cancel { background: transparent; border: 1px solid #7f8c8d; color: #bdc3c7; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
-.btn-primary { background: #3498db; border: none; color: white; cursor: pointer; padding: 4px 12px; border-radius: 4px; }
+.btn-primary { background: #a3e635; border: none; color: #12121a; cursor: pointer; padding: 4px 12px; border-radius: 4px; }
 </style>

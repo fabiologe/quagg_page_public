@@ -2,7 +2,7 @@
   <div class="result-inspector">
     <!-- Header -->
     <div class="inspector-header">
-      <h3>📋 Solver I/O Inspektor</h3>
+      <h3><SvEmoji emoji="📋" :size="15" /> Solver I/O Inspektor</h3>
     </div>
 
     <!-- Section Toggle -->
@@ -13,7 +13,7 @@
         :class="['sec-btn', { active: activeSection === sec.id }]"
         @click="activeSection = sec.id"
       >
-        {{ sec.icon }} {{ sec.label }}
+        <SvEmoji :emoji="sec.icon" :size="14" /> {{ sec.label }}
         <span v-if="sec.count > 0" class="sec-count">{{ sec.count }}</span>
       </button>
     </div>
@@ -36,20 +36,21 @@
       <div class="viewer-toolbar">
         <span class="file-name">{{ selectedFile }}</span>
         <span class="file-size">{{ currentSize }}</span>
-        <button class="tool-btn" @click="copyToClipboard" title="Kopieren">📋</button>
-        <button class="tool-btn" @click="downloadCurrent" title="Herunterladen">⬇️</button>
+        <button class="tool-btn" @click="copyToClipboard" title="Kopieren"><SvEmoji emoji="📋" :size="13" /></button>
+        <button class="tool-btn" @click="downloadCurrent" title="Herunterladen"><SvEmoji emoji="⬇" :size="13" /></button>
       </div>
       <pre class="raw-content">{{ currentContent }}</pre>
     </div>
 
     <!-- Export -->
     <div class="export-row" v-if="hasAnyData">
-      <button @click="$emit('prepareZip')" class="export-btn">📦 Alle als ZIP</button>
+      <button @click="$emit('prepareZip')" class="export-btn"><SvEmoji emoji="📦" :size="13" /> Alle als ZIP</button>
     </div>
   </div>
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch, toRaw } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore.js';

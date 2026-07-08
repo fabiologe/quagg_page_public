@@ -1,9 +1,9 @@
 <template>
   <div class="surface-config">
-    <h4>🎨 Oberflächen-Materialien</h4>
+    <h4><SvEmoji emoji="🎨" :size="15" /> Oberflächen-Materialien</h4>
     
     <div class="info-box" v-if="!surfaceStore.isInitialized">
-      ⚠ Surface Grid noch nicht initialisiert. Aktiviere das Texture-Tool im 3D-Editor.
+      <SvEmoji emoji="⚠" :size="14" /> Surface Grid noch nicht initialisiert. Aktiviere das Texture-Tool im 3D-Editor.
     </div>
 
     <div v-else class="grid-info">
@@ -36,7 +36,7 @@
             <span
               class="infil-chip"
               :title="`Infiltration: ${toMmh(mat.infiltration ?? 0).toFixed(1)} mm/h`"
-            >💧{{ toMmh(mat.infiltration ?? 0).toFixed(1) }}</span>
+            ><SvEmoji emoji="💧" :size="12" />{{ toMmh(mat.infiltration ?? 0).toFixed(1) }}</span>
             <button
                 v-if="mat.id !== 1"
                 class="btn-delete"
@@ -76,6 +76,7 @@
 
 <script setup>
 import { ref } from 'vue';
+import SvEmoji from '../common/SvEmoji.vue';
 import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore.js';
 
 const surfaceStore = useSurfaceStore();
@@ -130,7 +131,7 @@ const addMaterial = () => {
 .surface-config h4 {
   margin: 0 0 0.75rem;
   font-size: 0.95rem;
-  color: #2c3e50;
+  color: #1e1e2c;
 }
 
 .info-box {
@@ -170,7 +171,7 @@ const addMaterial = () => {
 }
 .material-row:hover { background: #ecf0f1; }
 .material-row.active {
-  border-color: #e67e22;
+  border-color: #8b5cf6;
   background: #fef3e6;
 }
 
@@ -192,7 +193,7 @@ const addMaterial = () => {
 .mat-label {
   flex: 1;
   font-size: 0.85rem;
-  color: #2c3e50;
+  color: #1e1e2c;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -209,7 +210,7 @@ const addMaterial = () => {
   font-variant-numeric: tabular-nums;
 }
 .manning-input:focus {
-  border-color: #3498db;
+  border-color: #a3e635;
   outline: none;
 }
 
@@ -229,8 +230,8 @@ const addMaterial = () => {
 
 .infil-chip {
     font-size: 0.68rem;
-    color: #3498db;
-    background: rgba(52,152,219,0.12);
+    color: #a3e635;
+    background: rgba(163,230,53,0.12);
     border-radius: 8px;
     padding: 2px 5px;
     white-space: nowrap;
@@ -273,15 +274,15 @@ const addMaterial = () => {
 .btn-add {
     width: 100%;
     padding: 8px;
-    background: #3498db;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     font-weight: bold;
     transition: background 0.2s;
 }
-.btn-add:hover { background: #2980b9; }
+.btn-add:hover { background: #6d43d4; }
 
 .add-form {
     display: flex;
@@ -300,7 +301,7 @@ const addMaterial = () => {
     font-size: 0.85rem;
 }
 .form-input:focus {
-    border-color: #3498db;
+    border-color: #a3e635;
     outline: none;
 }
 
@@ -330,13 +331,13 @@ const addMaterial = () => {
 .btn-save {
     flex: 1;
     padding: 6px;
-    background: #27ae60;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
     border: none;
     border-radius: 4px;
     cursor: pointer;
 }
-.btn-save:hover { background: #2ecc71; }
+.btn-save:hover { background: #b6f04d; }
 
 .btn-cancel {
     flex: 1;

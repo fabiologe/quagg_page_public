@@ -9,28 +9,28 @@
     <!-- Y grid + labels -->
     <line v-for="t in yTicks" :key="`yg-${t}`"
       :x1="ML" :y1="zToY(t)" :x2="ML + PW" :y2="zToY(t)"
-      stroke="#253545" stroke-width="0.7" stroke-dasharray="2 4" />
+      stroke="#2b2540" stroke-width="0.7" stroke-dasharray="2 4" />
     <text v-for="t in yTicks" :key="`yl-${t}`"
       :x="ML - 5" :y="zToY(t) + 3.5"
-      text-anchor="end" font-size="8" fill="#5d7a96">{{ t.toFixed(1) }}</text>
+      text-anchor="end" font-size="8" fill="#9a9ab5">{{ t.toFixed(1) }}</text>
 
     <!-- X labels -->
     <text v-for="t in xTicks" :key="`xl-${t}`"
       :x="sToX(t)" :y="MT + PH + 15"
-      text-anchor="middle" font-size="7.5" fill="#5d7a96">
+      text-anchor="middle" font-size="7.5" fill="#9a9ab5">
       {{ t >= 1000 ? (t / 1000).toFixed(2) + 'km' : t.toFixed(0) + 'm' }}
     </text>
 
     <!-- Axis frame -->
-    <line :x1="ML" :y1="MT" :x2="ML" :y2="MT + PH + 1" stroke="#3d5166" stroke-width="1" />
-    <line :x1="ML - 1" :y1="MT + PH" :x2="ML + PW" :y2="MT + PH" stroke="#3d5166" stroke-width="1" />
+    <line :x1="ML" :y1="MT" :x2="ML" :y2="MT + PH + 1" stroke="#3a2f5c" stroke-width="1" />
+    <line :x1="ML - 1" :y1="MT + PH" :x2="ML + PW" :y2="MT + PH" stroke="#3a2f5c" stroke-width="1" />
 
     <!-- Y-axis unit -->
-    <text :x="7" :y="MT + PH / 2 + 10" font-size="7.5" fill="#5d7a96"
+    <text :x="7" :y="MT + PH / 2 + 10" font-size="7.5" fill="#9a9ab5"
       :transform="`rotate(-90, 7, ${MT + PH / 2})`">m NN</text>
 
     <!-- DEM profile -->
-    <path :d="demPath" fill="none" stroke="#3498db" stroke-width="1.5"
+    <path :d="demPath" fill="none" stroke="#8b5cf6" stroke-width="1.5"
       stroke-linejoin="round" clip-path="url(#lclip)" />
 
     <!-- Zone overlay -->
@@ -41,17 +41,17 @@
     <!-- Survey point dots -->
     <circle v-for="(d, i) in surveyDots" :key="`sd-${i}`"
       :cx="sToX(d.station)" :cy="zToY(d.z)"
-      r="2.5" fill="#2ecc71" stroke="#1a7a45" stroke-width="0.7"
+      r="2.5" fill="#a3e635" stroke="#7fb51f" stroke-width="0.7"
       clip-path="url(#lclip)" />
 
     <!-- Legend -->
-    <line :x1="ML + 2" :y1="9" :x2="ML + 14" :y2="9" stroke="#3498db" stroke-width="1.5" />
-    <text :x="ML + 17" :y="12" font-size="7.5" fill="#7f8c8d">DGM-Profil</text>
+    <line :x1="ML + 2" :y1="9" :x2="ML + 14" :y2="9" stroke="#8b5cf6" stroke-width="1.5" />
+    <text :x="ML + 17" :y="12" font-size="7.5" fill="#9a9ab5">DGM-Profil</text>
     <line v-if="zonePath" :x1="ML + 60" :y1="9" :x2="ML + 72" :y2="9"
       stroke="#f97316" stroke-width="1.5" stroke-dasharray="4 2" />
-    <text v-if="zonePath" :x="ML + 75" :y="12" font-size="7.5" fill="#7f8c8d">Bathy-Zone</text>
-    <circle :cx="ML + (zonePath ? 122 : 68)" :cy="9" r="2.5" fill="#2ecc71" />
-    <text :x="ML + (zonePath ? 127 : 73)" :y="12" font-size="7.5" fill="#7f8c8d">
+    <text v-if="zonePath" :x="ML + 75" :y="12" font-size="7.5" fill="#9a9ab5">Bathy-Zone</text>
+    <circle :cx="ML + (zonePath ? 122 : 68)" :cy="9" r="2.5" fill="#a3e635" />
+    <text :x="ML + (zonePath ? 127 : 73)" :y="12" font-size="7.5" fill="#9a9ab5">
       {{ surveyDots.length }} Messpkt.
     </text>
   </svg>
@@ -285,13 +285,13 @@ const surveyDots = computed(() => coreData.value?.surveyDots ?? []);
 .laengs-svg {
     width: 100%;
     display: block;
-    background: #1a2634;
+    background: #12121a;
     border-radius: 5px;
-    border: 1px solid #2c3e50;
+    border: 1px solid #3a2f5c;
 }
 .laengs-empty {
     font-size: 0.74rem;
-    color: #5d7a96;
+    color: #9a9ab5;
     padding: 0.25rem 0;
 }
 </style>

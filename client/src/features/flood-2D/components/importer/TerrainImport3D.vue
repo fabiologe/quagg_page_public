@@ -1,41 +1,38 @@
 <template>
-  <div class="terrain-import-container">
-    
+  <div class="terrain-import-container sv-theme">
+
     <!-- 3D Canvas (Background) -->
     <div class="canvas-wrapper">
        <div ref="canvasContainer" class="canvas-mount"></div>
-       
+
        <!-- Header Overlay -->
        <div class="overlay-header">
           <div class="header-content">
-            <h2>Import Terrain (3D Preview)</h2>
-            <p>Inspect Geometry before Simulation</p>
+            <h2 class="sv-title">SaintV<span class="sv-accent">-2D</span></h2>
+            <p class="sv-subtitle">// terrain import · point cloud → grid</p>
           </div>
-          
+
           <div class="header-actions">
-             <button @click="$emit('cancel')" class="btn-secondary">
+             <button @click="$emit('cancel')" class="sv-btn">
                Start Over
              </button>
 
-             <label class="btn-file">
+             <label class="sv-btn sv-btn-file">
                 <input type="file" accept=".xyz,.txt,.asc" @change="handleFileUpload" />
                 <span>Datei wählen (.xyz · .txt · .asc)</span>
              </label>
-             
-             <button v-if="parsedData" @click="acceptTerrain" class="btn-primary">
+
+             <button v-if="parsedData" @click="acceptTerrain" class="sv-btn sv-btn-go">
                Accept Terrain
              </button>
           </div>
        </div>
 
        <!-- Loading Overlay -->
-       <div v-if="loading" class="overlay-loading">
-         <div class="spinner"></div>
-         <span>{{ loadingText }}</span>
-       </div>
+       <SaintVLoader v-if="loading" :text="loadingText" />
 
        <!-- Stats Overlay -->
-       <div v-if="stats" class="overlay-stats">
+       <div v-if="stats" class="overlay-stats sv-panel">
          <div class="stats-title">Terrain Statistics</div>
          <div class="stat-row"><span>Grid:</span> <span>{{ stats.cols }} x {{ stats.rows }}</span></div>
          <div class="stat-row"><span>Resolution:</span> <span>~{{ stats.cellsize.toFixed(2) }}m</span></div>
@@ -44,23 +41,28 @@
        </div>
 
        <!-- Performance-Hinweis (nicht blockierend) -->
-       <div v-if="perfHint" class="overlay-perf">⚠ {{ perfHint }}</div>
+       <div v-if="perfHint" class="overlay-perf"><SvEmoji emoji="⚠" :size="13" /> {{ perfHint }}</div>
 
        <!-- Resampling unstrukturierter Daten auf ein reguläres Gitter -->
-       <div v-if="parsedData" class="overlay-resample">
+       <div v-if="parsedData" class="overlay-resample sv-panel">
+         <div v-if="importAnalysis" class="resample-badge">
+           {{ importAnalysis.isRegular ? 'Reguläres Gitter erkannt' : 'Irreguläre Punktwolke' }}
+           · {{ importAnalysis.count.toLocaleString() }} Punkte
+           · Vorschlag {{ importAnalysis.suggestedCellsize }} m
+         </div>
          <label class="resample-toggle">
            <input type="checkbox" v-model="resampleEnabled" />
-           Auf reguläres Raster resampeln (IDW)
+           Zielauflösung anpassen (TIN + IDW)
          </label>
          <div v-if="resampleEnabled" class="resample-body">
            <div class="resample-row">
              <label>Auflösung [m]</label>
-             <input type="number" v-model.number="targetCellsize" step="0.5" min="0.1" />
-             <button class="btn-resample" @click="applyResample">Anwenden</button>
+             <input class="sv-input" type="number" v-model.number="targetCellsize" step="0.5" min="0.1" />
+             <button class="sv-btn sv-btn-go" @click="applyResample">Anwenden</button>
            </div>
            <div class="resample-hint">
-             Füllt Lücken unstrukturierter Punktwolken und erzeugt ein gleichmäßiges
-             {{ targetCellsize }}×{{ targetCellsize }} m-Gitter.
+             Interpoliert die Punktwolke (Dreiecksvermaschung, IDW-Fallback am Rand)
+             auf ein gleichmäßiges {{ targetCellsize }}×{{ targetCellsize }} m-Gitter.
            </div>
          </div>
        </div>
@@ -70,11 +72,19 @@
 </template>
 
 <script setup>
+import SvEmoji from '@/features/flood-2D/components/common/SvEmoji.vue';
 import { ref, onMounted, onUnmounted } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useScenarioStore } from '@/stores/scenarioStore';
-import { createDemFromXYZ, resampleGrid } from '@/features/flood-2D/middleware/Rasterizer.js';
+import {
+    parseXyzPoints,
+    analyzeGeometry,
+    buildHeader,
+    buildRegularDem,
+    makeTerrainObject,
+} from '@/features/flood-2D/middleware/importers/xyzTerrainImporter.js';
+import SaintVLoader from '@/features/flood-2D/components/common/SaintVLoader.vue';
 
 const store = useScenarioStore();
 const emit = defineEmits(['confirm', 'cancel']);
@@ -88,9 +98,11 @@ const stats = ref(null);
 const canvasContainer = ref(null);
 const perfHint = ref('');               // nicht-blockierender Performance-Hinweis bei großen Rastern
 
-// Resampling unstrukturierter Daten auf ein reguläres Gitter (IDW-Füllung + bilinear)
+// Resampling unstrukturierter Daten auf ein reguläres Gitter (TIN + IDW-Fallback)
 const resampleEnabled = ref(false);
 const targetCellsize = ref(1.0);
+const importAnalysis = ref(null);       // { isRegular, count, suggestedCellsize, … }
+let importPoints = null;                // Float64Array [x,y,z,…] — für Rebuild ohne Re-Parse
 
 // Three.js Objects
 let scene, camera, renderer, controls, terrainMesh, animationId;
@@ -132,7 +144,7 @@ onUnmounted(() => {
 
 const initThreeJS = () => {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf0f2f5); // Light Gray Background
+    scene.background = new THREE.Color(0x12121a); // SaintV dark theme
     // scene.fog = new THREE.FogExp2(0xf0f2f5, 0.002); // Fog disabled per user request
 
     const width = canvasContainer.value.clientWidth;
@@ -158,7 +170,7 @@ const initThreeJS = () => {
     dirLight.position.set(100, 300, 100);
     scene.add(dirLight);
 
-    const gridHelper = new THREE.GridHelper(2000, 40, 0xcccccc, 0xe5e5e5);
+    const gridHelper = new THREE.GridHelper(2000, 40, 0x8b5cf6, 0x2a2a3a);
     scene.add(gridHelper);
 
     animate();
@@ -204,29 +216,27 @@ const handleFileUpload = async (event) => {
         try {
            const content = e.target.result;
            rawContent.value = content; // Store raw for simulation
-           
-           loadingText.value = 'Parsing Point Cloud...';
-           await new Promise(r => setTimeout(r, 10)); 
 
-           const result = parseXYZ(content);
-           
-           if (result) {
-               parsedData.value = result; 
-               stats.value = result.stats;
-               loadingText.value = 'Generating 3D Mesh...';
-               
-               // USER REQUEST: Update Store Immediately (Directly at Import)
-               store.demRaw = content;
-               store.setTerrain(result);
-               console.log("Terrain Updated Immediately. Center:", result.center);
+           loadingText.value = 'Analysiere Punktwolke...';
+           await new Promise(r => setTimeout(r, 10));
 
-               await new Promise(r => setTimeout(r, 10)); 
-               
-               buildTerrainMesh(result);
-           }
+           // Robuster Import: parsen → Geometrie analysieren → sichere Zellweite.
+           importPoints = parseXyzPoints(content);
+           const analysis = analyzeGeometry(importPoints);
+           importAnalysis.value = analysis;
+           targetCellsize.value = analysis.suggestedCellsize;
+           // Irreguläre Wolken → Resample-Panel automatisch aufklappen.
+           resampleEnabled.value = !analysis.isRegular;
+
+           loadingText.value = analysis.isRegular
+               ? 'Generating 3D Mesh...'
+               : 'Interpolation (TIN + IDW)…';
+           await new Promise(r => setTimeout(r, 10));
+
+           buildFromPoints(analysis.suggestedCellsize);
         } catch (err) {
             console.error(err);
-            alert("Parsing Failed: " + err.message);
+            alert("Import fehlgeschlagen: " + err.message);
         } finally {
             loading.value = false;
         }
@@ -235,100 +245,36 @@ const handleFileUpload = async (event) => {
     event.target.value = '';
 };
 
-const parseXYZ = (text) => {
-    const lines = text.trim().split('\n');
-    const points = [];
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || line.startsWith('#') || isNaN(line.codePointAt(0))) continue; 
-        const parts = line.split(/[\s,]+/); 
-        if (parts.length >= 3) {
-            points.push({ x: parseFloat(parts[0]), y: parseFloat(parts[1]), z: parseFloat(parts[2]) });
-        }
-    }
-    if (points.length === 0) throw new Error("No numeric points found.");
+// Baut aus den geparsten Punkten ein reguläres DGM bei gegebener Zellweite,
+// aktualisiert Store, Stats und 3D-Mesh. Kein Re-Parse (Punkte bleiben im Speicher).
+const buildFromPoints = (cellsize) => {
+    if (!importPoints || !importAnalysis.value) return;
+    const cs = Number(cellsize) > 0 ? Number(cellsize) : importAnalysis.value.suggestedCellsize;
+    const header = buildHeader(importAnalysis.value.extent, cs);
+    const { data } = buildRegularDem(importPoints, header, { method: 'tin' });
+    const result = makeTerrainObject(data, header);
 
-    const uniqueX = [...new Set(points.map(p => p.x))].sort((a,b) => a-b);
-    const uniqueY = [...new Set(points.map(p => p.y))].sort((a,b) => a-b);
-    const minX = uniqueX[0], maxX = uniqueX[uniqueX.length-1];
-    const minY = uniqueY[0], maxY = uniqueY[uniqueY.length-1];
-    let cellsize = uniqueX.length > 1 ? (uniqueX[1]-uniqueX[0]) : 1.0;
-    cellsize = Math.round(cellsize * 100) / 100 || 1.0;
-    
-    const ncols = Math.round((maxX - minX) / cellsize) + 1;
-    const nrows = Math.round((maxY - minY) / cellsize) + 1;
-    // Kein hartes Limit mehr — große Raster sollen berechenbar bleiben. Nur ein
-    // nicht-blockierender Performance-Hinweis bei sehr großen Gittern.
-    perfHint.value = (ncols * nrows > 50_000_000)
-        ? `Großes Raster: ${ncols}×${nrows} ≈ ${((ncols * nrows) / 1e6).toFixed(0)} Mio Zellen — Vorschau & Berechnung können im Browser langsam werden.`
+    parsedData.value = result;
+    stats.value = result.stats;
+    perfHint.value = (result.ncols * result.nrows > 50_000_000)
+        ? `Großes Raster: ${result.ncols}×${result.nrows} ≈ ${((result.ncols * result.nrows) / 1e6).toFixed(0)} Mio Zellen — kann langsam werden.`
         : '';
 
-    const gridData = new Float32Array(ncols * nrows).fill(-9999);
-    let minZ = Infinity, maxZ = -Infinity;
-
-    for (const p of points) {
-        if (p.z < minZ) minZ = p.z;
-        if (p.z > maxZ) maxZ = p.z;
-        const col = Math.round((p.x - minX) / cellsize);
-        const row = Math.round((p.y - minY) / cellsize);
-        if (col >= 0 && col < ncols && row >= 0 && row < nrows) {
-             gridData[row * ncols + col] = p.z;
-        }
-    }
-
-    return {
-        gridData, ncols, nrows, cellsize, minZ, maxZ,
-        center: { x: (minX + maxX)/2, y: (minY + maxY)/2 },
-        bounds: { width: (maxX-minX)||100, height: (maxY-minY)||100 },
-        // Add stats object for convenience
-        stats: { cols: ncols, rows: nrows, cellsize, minZ, maxZ }
-    };
+    // Store sofort aktualisieren (wie bisher).
+    store.demRaw = rawContent.value;
+    store.setTerrain(result);
+    buildTerrainMesh(result);
+    console.log(`[TerrainImport] ${result.ncols}×${result.nrows} @ ${cs} m (${importAnalysis.value.isRegular ? 'regulär' : 'TIN+IDW'})`);
 };
 
-// Baut aus einem regulären Raster (Float32Array + Header) die parsedData-Struktur,
-// die buildTerrainMesh/Store erwarten (gridData, Maße, Zentrum, bounds, stats).
-const computeResult = (data, header) => {
-    const { ncols, nrows, cellsize } = header;
-    let minZ = Infinity, maxZ = -Infinity;
-    for (let i = 0; i < data.length; i++) {
-        const v = data[i];
-        if (v > -9000) { if (v < minZ) minZ = v; if (v > maxZ) maxZ = v; }
-    }
-    if (minZ === Infinity) { minZ = 0; maxZ = 1; }
-    const cx = header.xll ?? header.xllcorner;     // Zell-Zentrum von (0,0)
-    const cy = header.yll ?? header.yllcorner;
-    const width  = (ncols - 1) * cellsize;
-    const height = (nrows - 1) * cellsize;
-    return {
-        gridData: data, ncols, nrows, cellsize, minZ, maxZ,
-        center: { x: cx + width / 2, y: cy + height / 2 },
-        bounds: { width: width || 100, height: height || 100 },
-        stats: { cols: ncols, rows: nrows, cellsize, minZ, maxZ },
-    };
-};
-
-// Unstrukturierte/lückenhafte Punktwolke → gleichmäßiges Gitter: IDW-Füllung
-// (createDemFromXYZ) auf ein Zwischengitter, dann bilinear auf die Zielauflösung.
+// Panel „Anwenden": mit gewählter Zielauflösung neu rastern (ohne Re-Parse).
 const applyResample = async () => {
-    if (!rawContent.value) return;
+    if (!importPoints) return;
     loading.value = true;
-    loadingText.value = 'Resampling (IDW-Füllung)…';
+    loadingText.value = 'Interpolation (TIN + IDW)…';
     await new Promise(r => setTimeout(r, 10));
     try {
-        const cs = Number(targetCellsize.value) > 0 ? Number(targetCellsize.value) : 1.0;
-        // createDemFromXYZ trennt nur an Whitespace → Komma/Semikolon vorab normalisieren.
-        const normalized = rawContent.value.replace(/[,;]+/g, ' ');
-        const dem = createDemFromXYZ(normalized);
-        const rs  = resampleGrid(dem.data, dem.header, cs, 'bilinear');
-        const result = computeResult(rs.data, rs.header);
-        parsedData.value = result;
-        stats.value = result.stats;
-        perfHint.value = (result.ncols * result.nrows > 50_000_000)
-            ? `Großes Raster: ${result.ncols}×${result.nrows} ≈ ${((result.ncols * result.nrows) / 1e6).toFixed(0)} Mio Zellen — kann langsam werden.`
-            : '';
-        store.setTerrain(result);
-        buildTerrainMesh(result);
-        console.log(`[TerrainImport] Resampled auf ${cs} m → ${result.ncols}×${result.nrows}`);
+        buildFromPoints(targetCellsize.value);
     } catch (err) {
         console.error(err);
         alert('Resampling fehlgeschlagen: ' + err.message);
@@ -474,13 +420,16 @@ defineExpose({ setCameraView });
     right: 0;
     z-index: 10;
     padding: 1rem 1.5rem;
-    background: rgba(255, 255, 255, 0.9);
-    border-bottom: 1px solid #ddd;
+    background: rgba(18, 18, 26, 0.85);
+    border-bottom: 1px solid var(--sv-border);
     display: flex;
     justify-content: space-between;
     align-items: center;
     backdrop-filter: blur(8px);
+    box-shadow: 0 2px 20px rgba(139, 92, 246, 0.15);
 }
+.sv-btn-file { position: relative; display: inline-flex; align-items: center; }
+.sv-btn-file input { display: none; }
 
 .header-content h2 {
     margin: 0;
@@ -578,31 +527,29 @@ defineExpose({ setCameraView });
     position: absolute;
     bottom: 1.5rem;
     left: 1.5rem;
-    background: rgba(255, 255, 255, 0.95);
     padding: 1rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     font-size: 0.85rem;
-    color: #34495e;
     min-width: 200px;
 }
 .stats-title {
     font-weight: 700;
     margin-bottom: 0.5rem;
-    color: #2c3e50;
+    color: var(--sv-text-violet);
     text-transform: uppercase;
     font-size: 0.75rem;
     letter-spacing: 0.5px;
+    text-shadow: var(--sv-glow-violet);
 }
 .stat-row {
     display: flex;
     justify-content: space-between;
     padding: 0.25rem 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+    color: var(--sv-text-dim);
 }
 .stat-row:last-child { border: none; }
-.val-min { color: #2980b9; font-weight: bold; }
-.val-max { color: #8e44ad; font-weight: bold; }
+.val-min { color: var(--sv-text-violet); font-weight: bold; }
+.val-max { color: var(--sv-text-lime); font-weight: bold; }
 
 /* ── Performance-Hinweis ─────────────────────────────────────────────────── */
 .overlay-perf {
@@ -626,13 +573,17 @@ defineExpose({ setCameraView });
     position: absolute;
     bottom: 1.5rem;
     right: 1.5rem;
-    background: rgba(255, 255, 255, 0.95);
     padding: 0.85rem 1rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     font-size: 0.85rem;
-    color: #34495e;
     max-width: 280px;
+}
+.resample-badge {
+    font-size: 0.75rem;
+    color: var(--sv-text-lime);
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--sv-border-lime);
+    letter-spacing: 0.03em;
 }
 .resample-toggle {
     display: flex;
@@ -640,36 +591,22 @@ defineExpose({ setCameraView });
     gap: 0.5rem;
     font-weight: 600;
     cursor: pointer;
+    color: var(--sv-text);
 }
-.resample-toggle input { cursor: pointer; }
+.resample-toggle input { cursor: pointer; accent-color: var(--sv-violet); }
 .resample-body { margin-top: 0.6rem; }
 .resample-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
-.resample-row label { flex-shrink: 0; }
-.resample-row input[type=number] {
-    width: 64px;
-    padding: 0.25rem 0.4rem;
-    border: 1px solid #cdd5db;
-    border-radius: 4px;
-}
-.btn-resample {
-    margin-left: auto;
-    background: #2980b9;
-    color: #fff;
-    border: none;
-    padding: 0.35rem 0.75rem;
-    border-radius: 5px;
-    cursor: pointer;
-    font-weight: 600;
-}
-.btn-resample:hover { background: #2471a3; }
+.resample-row label { flex-shrink: 0; color: var(--sv-text-dim); }
+.resample-row .sv-input { width: 64px; }
+.resample-row .sv-btn { margin-left: auto; }
 .resample-hint {
     margin-top: 0.5rem;
     font-size: 0.74rem;
-    color: #7f8c8d;
+    color: var(--sv-text-dim);
     line-height: 1.35;
 }
 </style>

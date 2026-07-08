@@ -1,8 +1,17 @@
 <template>
   <div class="texture-tool-ui">
-    <div class="tool-panel">
-        <div class="panel-header">🎨 Texture Brush</div>
+    <div
+      class="tool-panel"
+      :class="{ collapsed: !panelVisible }"
+      @mouseenter="onPanelEnter"
+      @mouseleave="onPanelLeave"
+    >
+        <div class="panel-header">
+          <SvEmoji emoji="🎨" :size="13" /> Texture Brush
+          <span v-if="!panelVisible" class="collapse-dots">···</span>
+        </div>
 
+      <div v-show="panelVisible">
         <!-- MATERIAL SELECTOR + CRUD -->
         <label class="control-label">Material</label>
         <div class="material-grid">
@@ -19,7 +28,7 @@
                         <span class="mat-name">{{ mat.name }}</span>
                         <span class="mat-n">{{ mat.manning }}</span>
                     </button>
-                    <button class="icon-btn" title="Bearbeiten" @click.stop="startEdit(mat)">✎</button>
+                    <button class="icon-btn" title="Bearbeiten" @click.stop="startEdit(mat)"><SvEmoji emoji="✎" :size="12" /></button>
                     <button v-if="mat.id !== 1" class="icon-btn danger" title="Löschen"
                             @click.stop="surfaceStore.deleteMaterial(mat.id)">🗑</button>
                 </template>
@@ -58,20 +67,29 @@
                 ✅ Grid: {{ surfaceStore.gridNCols }}×{{ surfaceStore.gridNRows }}
             </span>
             <span v-else class="status-warn">
-                ⚠ Kein Grid — Klicke auf Terrain zum Initialisieren
+                <SvEmoji emoji="⚠" :size="13" /> Kein Grid — Klicke auf Terrain zum Initialisieren
             </span>
         </div>
 
         <div class="hint">Klicke und ziehe auf dem Terrain zum Malen</div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import SvEmoji from '../common/SvEmoji.vue';
+import { ref, computed } from 'vue';
 import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore.js';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 
 const surfaceStore = useSurfaceStore();
+
+// Panel per Hover einklappbar (analog ShovelTool); offene Material-Bearbeitung
+// (Umbenennen/Neu anlegen) hält das Panel aus, damit die Eingabe nicht verschwindet.
+const editingMaterial = computed(() => editId.value != null || addOpen.value);
+const { onPanelEnter, onPanelLeave, panelVisible } =
+  useCollapsiblePanel({ forceOpen: editingMaterial });
 
 // Manning-n auf den hydraulisch sinnvollen Bereich begrenzen.
 const clampN = (v) => Math.min(0.1, Math.max(0.01, Number.isFinite(v) ? v : 0.035));
@@ -139,7 +157,17 @@ function addMaterial() {
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-.panel-header { font-weight: bold; margin-bottom: 15px; color: #ecf0f1; border-bottom: 1px solid #7f8c8d; padding-bottom: 5px; }
+.panel-header {
+    font-weight: bold; margin-bottom: 15px; color: #ecf0f1;
+    border-bottom: 1px solid #7f8c8d; padding-bottom: 5px;
+    display: flex; align-items: center; gap: 6px;
+    cursor: default; user-select: none;
+}
+.collapse-dots { margin-left: auto; opacity: 0.45; letter-spacing: 2px; font-size: 0.8rem; }
+
+/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
+.tool-panel.collapsed { width: auto; padding: 8px 14px; }
+.tool-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 
 .control-label { font-size: 0.8rem; margin-bottom: 4px; color: #bdc3c7; display: block; }
 

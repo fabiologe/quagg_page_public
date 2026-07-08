@@ -165,20 +165,29 @@ export const BoundaryTools = {
             if (p.y > maxY) maxY = p.y;
         }
 
-        // Determine Cell Size (robust estimate)
-        const xs = points.map(p => p.x).sort((a, b) => a - b);
-        let cellSize = 1.0;
-        for (let i = 1; i < xs.length; i++) {
-            const diff = xs[i] - xs[i - 1];
-            if (diff > 0.001) {
-                cellSize = diff;
-                break;
-            }
+        // Zellweite robust schätzen: MEDIAN der Abstände eindeutiger X-Werte
+        // (NICHT der erste/kleinste Abstand — der lässt bei irregulären Wolken
+        // ncols*nrows explodieren und Float32Array mit „Invalid length" werfen).
+        const uniqX = [...new Set(points.map(p => p.x))].sort((a, b) => a - b);
+        const gaps = [];
+        for (let i = 1; i < uniqX.length; i++) {
+            const g = uniqX[i] - uniqX[i - 1];
+            if (g > 1e-6) gaps.push(g);
         }
+        gaps.sort((a, b) => a - b);
+        let cellSize = gaps.length ? gaps[gaps.length >> 1] : 1.0; // Median
         cellSize = Math.round(cellSize * 1000) / 1000;
+        if (!(cellSize > 0) || !isFinite(cellSize)) cellSize = 1.0;
 
-        const ncols = Math.round((maxX - minX) / cellSize) + 1;
-        const nrows = Math.round((maxY - minY) / cellSize) + 1;
+        // Zellbudget: Dimensionen deckeln, damit die Allokation nie überläuft.
+        const MAX_CELLS = 40_000_000;
+        let ncols = Math.max(1, Math.round((maxX - minX) / cellSize) + 1);
+        let nrows = Math.max(1, Math.round((maxY - minY) / cellSize) + 1);
+        while (ncols * nrows > MAX_CELLS) {
+            cellSize *= 2;
+            ncols = Math.max(1, Math.round((maxX - minX) / cellSize) + 1);
+            nrows = Math.max(1, Math.round((maxY - minY) / cellSize) + 1);
+        }
 
         return {
             ncols,

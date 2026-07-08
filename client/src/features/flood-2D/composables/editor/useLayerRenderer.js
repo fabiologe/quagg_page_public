@@ -159,19 +159,35 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         return null;
     };
 
+    // Geometrisches Zentrum DIREKT aus dem Grid-Header (xll + (ncols-1)*cs/2). Das ist
+    // exakt die Zentrierung des Terrain-Meshes (bounds = (ncols-1)*cs, um Szene-0 gespiegelt)
+    // in BEIDEN Ansichten. Es DECKELT ein veraltetes/fehlendes grid.center — genau die Ursache
+    // dafür, dass die Schächte im Ergebnis-Viewer (props.terrain.center = null → früher
+    // Fallback auf den ersten Knoten) nicht zum Editor passten.
+    const geometricCenter = (g) => {
+        if (!g || !g.cellsize || !g.ncols || !g.nrows) return null;
+        const xll = g.xllcorner ?? g.xll;
+        const yll = g.yllcorner ?? g.yll;
+        if (xll == null || yll == null) return null;
+        return { x: xll + (g.ncols - 1) * g.cellsize / 2, y: yll + (g.nrows - 1) * g.cellsize / 2 };
+    };
+
     const updateWorldOffset = () => {
         const grid = getActiveGrid();
-        if (grid && grid.center) {
-            worldOffset.value = grid.center;
-        } else if (geoStore.nodes && geoStore.nodes.length > 0 && !worldOffset.value) {
-            // Fallback: Initialize offset from first node
+        const gc = geometricCenter(grid);
+        if (gc) { worldOffset.value = gc; return; }
+        if (grid && grid.center) { worldOffset.value = grid.center; return; }
+        if (geoStore.nodes && geoStore.nodes.length > 0 && !worldOffset.value) {
+            // Letzter Fallback (kein Grid): Offset aus dem ersten Knoten.
             worldOffset.value = { x: geoStore.nodes[0].x, y: geoStore.nodes[0].y };
-            console.log("[LayerRenderer] World Offset initialized from first Node (No Grid):", worldOffset.value);
+            console.log("[LayerRenderer] World Offset from first Node (no grid header):", worldOffset.value);
         }
     };
 
     const getLocalPos = (x, y, z) => {
-        if (!worldOffset.value) updateWorldOffset();
+        // IMMER frisch aus dem aktuellen Grid ableiten (nicht cachen) — im Ergebnis-Viewer
+        // trifft das Terrain async ein; ein veralteter Offset würde Knoten/Netz verschieben.
+        updateWorldOffset();
         if (!worldOffset.value) return new THREE.Vector3(0, 0, 0); // Should not happen if data exists
 
         const grid = getActiveGrid();
@@ -888,5 +904,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         renderBridges,
         hydraulicGroup,
         selectionGroup,
+        // Welt→Szene-Transform, damit weitere Layer (z. B. Kanalnetz) dieselbe Zentrierung nutzen.
+        getLocalPos,
+        worldOffset,
     };
 }

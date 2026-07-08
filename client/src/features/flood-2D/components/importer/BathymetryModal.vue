@@ -5,7 +5,7 @@
       <!-- ── Header ──────────────────────────────────────────────────── -->
       <div class="modal-header">
         <div class="header-left">
-          <span class="header-icon">🌊</span>
+          <span class="header-icon"><SvEmoji emoji="🌊" :size="16" /></span>
           <div>
             <h3>Bathymetrie Preprocessing</h3>
             <p class="header-sub">DGM + Vermessungspunkte → fusioniertes Raster für LISFLOOD-FP</p>
@@ -44,15 +44,15 @@
         <!-- Kanal-Modus: DGM vorhanden, aber keine Vermessungspunkte ──── -->
         <div v-if="channelOnlyMode"
           style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.7rem 0.85rem;margin-bottom:0.75rem;
-                 background:#0e2438;border:1px solid #1d4e6b;border-radius:8px;font-size:0.8rem;line-height:1.45;color:#bcd4e6">
-          <span style="font-size:1.1rem;flex-shrink:0">🪏</span>
+                 background:var(--sv-bg);border:1px solid var(--sv-border);border-radius:8px;font-size:0.8rem;line-height:1.45;color:var(--sv-text-dim)">
+          <span style="flex-shrink:0"><SvEmoji emoji="🪏" :size="17" /></span>
           <div>
-            <strong style="color:#e6f2fb">Kanal-Modus — keine Vermessungspunkte geladen.</strong>
+            <strong style="color:var(--sv-text-violet)">Kanal-Modus — keine Vermessungspunkte geladen.</strong>
             Zeichne den Flussschlauch als <em>Mittellinie</em> und setze Breite + Sohltiefe.
             Daraus entsteht ein Sub-Grid-Gerinne (SGC), das direkt in den Solver geht —
             Vermessungspunkte sind dafür nicht nötig. Validierung, Offset, IDW-Interpolation,
             Blending und QS erscheinen erst mit geladenen Vermessungspunkten.
-            <div style="margin-top:0.35rem;color:#7fa8c4">
+            <div style="margin-top:0.35rem;color:var(--sv-text-dim)">
               Danach im Solver-Panel den Schalter „SGC“ aktivieren, damit das Gerinne exportiert wird.
             </div>
           </div>
@@ -79,7 +79,7 @@
               </button>
               <span v-if="lastValidatedAt" class="val-timestamp">Zuletzt: {{ lastValidatedAt }}</span>
             </div>
-            <div v-if="validationStale" class="tp-warn">⚠ Terrain wurde verändert — Ergebnis veraltet.</div>
+            <div v-if="validationStale" class="tp-warn"><SvEmoji emoji="⚠" :size="13" /> Terrain wurde verändert — Ergebnis veraltet.</div>
             <div v-if="bathyStore.validationReport" class="report" :class="{ 'report-stale': validationStale }">
               <div class="report-header" :class="bathyStore.validationReport.status">
                 <span>{{ statusEmoji }}</span><span>{{ statusLabel }}</span>
@@ -122,7 +122,7 @@
                 <!-- Otsu-Cluster-Karte wenn Bimodalität erkannt -->
                 <div v-if="bathyStore.validationReport.summary.isBimodal" class="otsu-card">
                   <div class="otsu-header">
-                    ⚠ Zwei Populationen erkannt — Otsu-Grenze: Δ = {{ bathyStore.validationReport.summary.otsuThreshold.toFixed(2) }} m
+                    <SvEmoji emoji="⚠" :size="13" /> Zwei Populationen erkannt — Otsu-Grenze: Δ = {{ bathyStore.validationReport.summary.otsuThreshold.toFixed(2) }} m
                     &ensp;·&ensp; BC = {{ bathyStore.validationReport.summary.bimodalityCoeff.toFixed(3) }}
                   </div>
                   <div class="otsu-clusters">
@@ -211,7 +211,7 @@
 
               <!-- Outlier-Hinweis -->
               <div v-if="outlierCount > 0" class="outlier-bar">
-                <span class="ob-icon">⚠</span>
+                <span class="ob-icon"><SvEmoji emoji="⚠" :size="13" /></span>
                 <span>
                   <strong>{{ outlierCount }} Ausreißer</strong> mit |Δ| &gt; 2m —
                   wahrscheinlich Strukturpunkte (Brücke, Wehr, Mast) oder Messpunkte auf Gelände
@@ -241,7 +241,7 @@
                       :title="pt.outlier ? '⚠ Ausreißer: |Δ| > 2m — nicht als Referenzpunkt geeignet' : ''"
                       @click="!pt.outlier && (selectedRefIdx = selectedRefIdx === pt.origIdx ? -1 : pt.origIdx)">
                       <td>
-                        <span v-if="pt.outlier" class="outlier-flag" title="Ausreißer |Δ| > 2m">⚠</span>
+                        <span v-if="pt.outlier" class="outlier-flag" title="Ausreißer |Δ| > 2m"><SvEmoji emoji="⚠" :size="13" /></span>
                         <span v-else class="sel-radio" :class="{ 'sel-active': selectedRefIdx === pt.origIdx }"></span>
                       </td>
                       <td class="pt-label">{{ pt.label || `P${pt.origIdx + 1}` }}</td>
@@ -340,7 +340,7 @@
               <span class="sl-sub">— echtes Flussgerinne (Sub-Grid), schmaler als eine Rasterzelle möglich</span>
             </div>
             <p class="step-desc" style="margin-top:0.2rem;opacity:0.8">
-              ℹ️ <strong>Brücken brauchen hier KEINEN Kanal</strong> — sie laufen ohne Sub-Grid direkt auf der
+              <SvEmoji emoji="ℹ" :size="13" /> <strong>Brücken brauchen hier KEINEN Kanal</strong> — sie laufen ohne Sub-Grid direkt auf der
               Floodplain. Dieses Feld nur für ein tatsächliches (schmales) Flussgerinne nutzen.
             </p>
             <div class="sgc-params">
@@ -351,7 +351,7 @@
                   @change="e => bathyStore.setChannelParams({ width: Math.max(0.1, Number(e.target.value) || 0.1) })" />
                 <span class="sgc-cells" :class="{ 'sgc-cells-warn': sgcWidthTooWide }">
                   = {{ sgcWidthCells.toFixed(1) }} Zellen
-                  <template v-if="sgcWidthTooWide"> ⚠ kein Sub-Grid mehr — im DGM auflösen</template>
+                  <template v-if="sgcWidthTooWide"> <SvEmoji emoji="⚠" :size="13" /> kein Sub-Grid mehr — im DGM auflösen</template>
                 </span>
               </label>
               <label>
@@ -374,7 +374,7 @@
             <!-- Live-Check: passt die Brücke quer ins Gerinne? -->
             <template v-if="hasCommittedLine">
               <div v-for="(it, i) in bridgeFitIssues" :key="i" class="tp-warn" style="margin-top:0.4rem">
-                ⚠ {{ it.message }}
+                <SvEmoji emoji="⚠" :size="13" /> {{ it.message }}
               </div>
             </template>
 
@@ -389,7 +389,7 @@
               Zellen ohne Punkt in der Nähe erhalten einen globalen IDW-Fallback (keine Lücken).
             </p>
             <div v-if="channelOnlyMode" class="tp-warn" style="margin-top:0.2rem">
-              ⚠ Ohne Vermessungspunkte dient das Polygon nur der Visualisierung — es erreicht den Solver
+              <SvEmoji emoji="⚠" :size="13" /> Ohne Vermessungspunkte dient das Polygon nur der Visualisierung — es erreicht den Solver
               nicht. Für die Sohle nutze die <strong>Mittellinie + SGC</strong> oben.
             </div>
             <div class="polyline-status" :class="hasCommittedPolygon ? 'pl-ok' : 'pl-empty'">
@@ -456,7 +456,7 @@
                 </div>
                 <div class="mc-row">
                   <span class="mc-key">Außerhalb Polygon</span>
-                  <span class="mc-val" style="color:#5d7a96">Laser-DGM unverändert</span>
+                  <span class="mc-val" style="color:var(--sv-text-dim)">Laser-DGM unverändert</span>
                 </div>
               </template>
               <template v-else>
@@ -470,7 +470,7 @@
                 </div>
                 <div class="mc-row">
                   <span class="mc-key">Empfehlung</span>
-                  <span class="mc-val" style="color:#5d7a96">Flussschlauch-Polygon zeichnen für lückenlose Füllung</span>
+                  <span class="mc-val" style="color:var(--sv-text-dim)">Flussschlauch-Polygon zeichnen für lückenlose Füllung</span>
                 </div>
               </template>
             </div>
@@ -496,7 +496,7 @@
               <label class="param-label"
                 :title="hasCommittedPolygon ? 'Gilt nur für lokales IDW — Lücken nutzen automatisch globalen Fallback unabhängig von dieser Zahl' : 'Min. Punkte im Suchradius'">
                 Min. Punkte
-                <span v-if="hasCommittedPolygon" style="color:#5d7a96;font-size:0.68rem"> (lokal)</span>
+                <span v-if="hasCommittedPolygon" style="color:var(--sv-text-dim);font-size:0.68rem"> (lokal)</span>
               </label>
               <input type="range" v-model.number="bathyBrushSettings.minPoints" min="1" max="10" step="1" class="param-slider" />
               <span class="param-val">{{ bathyBrushSettings.minPoints }}</span>
@@ -512,7 +512,7 @@
             <label class="checkbox-label">
               <input type="checkbox" v-model="bathyBrushSettings.zClamp" />
               Z-Begrenzung — Ergebnis ≤ umgebende DGM-Zellen
-              <span v-if="hasCommittedPolygon" style="color:#5d7a96;font-size:0.71rem">
+              <span v-if="hasCommittedPolygon" style="color:var(--sv-text-dim);font-size:0.71rem">
                 &ensp;(im Polygon-Modus meist deaktivieren — Sohle liegt unter Laserscan)
               </span>
             </label>
@@ -706,6 +706,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch } from 'vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { useBathymetryStore } from '@/features/flood-2D/stores/useBathymetryStore.js';
@@ -1556,48 +1557,49 @@ function runCrossVal() {
     z-index: 1100;
 }
 .modal-content {
-    background: #2c3e50; color: #ecf0f1;
+    background: var(--sv-surface); color: var(--sv-text);
     width: 640px; max-height: 92vh;
     border-radius: 10px;
-    box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+    border: 1px solid var(--sv-border);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.6), var(--sv-glow-violet);
     display: flex; flex-direction: column;
     overflow: hidden;
-    font-family: 'Segoe UI', sans-serif;
+    font-family: var(--sv-font);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .modal-header {
     display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 0.9rem 1.2rem; background: #1e2d3d;
-    border-bottom: 1px solid #3d5166; flex-shrink: 0;
+    padding: 0.9rem 1.2rem; background: var(--sv-bg-2);
+    border-bottom: 1px solid var(--sv-border); flex-shrink: 0;
 }
 .header-left   { display: flex; gap: 0.65rem; align-items: flex-start; }
 .header-icon   { font-size: 1.35rem; margin-top: 2px; }
 .modal-header h3 { margin: 0 0 0.1rem; font-size: 0.95rem; color: #fff; }
-.header-sub    { margin: 0; font-size: 0.72rem; color: #7f8c8d; }
-.close-btn     { background: none; border: none; color: #95a5a6; font-size: 1.5rem; cursor: pointer; line-height: 1; }
+.header-sub    { margin: 0; font-size: 0.72rem; color: var(--sv-text-dim); }
+.close-btn     { background: none; border: none; color: var(--sv-text-dim); font-size: 1.5rem; cursor: pointer; line-height: 1; }
 .close-btn:hover { color: #fff; }
 
 /* ── Status Bar ───────────────────────────────────────────────────────────── */
 .status-bar {
     display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.55rem 1.2rem; background: #233140;
-    border-bottom: 1px solid #3d5166; flex-shrink: 0;
+    padding: 0.55rem 1.2rem; background: var(--sv-bg);
+    border-bottom: 1px solid var(--sv-border); flex-shrink: 0;
 }
 .status-item {
     display: flex; align-items: center; gap: 0.45rem; flex: 1;
     padding: 0.35rem 0.6rem; border-radius: 5px;
-    border: 1px solid #3d5166; background: #2c3e50;
+    border: 1px solid var(--sv-border); background: var(--sv-surface-2);
 }
-.status-item.ok      { border-color: #27ae60; }
-.status-item.missing { border-color: #465c71; opacity: 0.6; }
+.status-item.ok      { border-color: var(--sv-lime); }
+.status-item.missing { border-color: var(--sv-border); opacity: 0.6; }
 .status-icon               { font-size: 0.85rem; }
-.status-item.ok .status-icon    { color: #27ae60; }
-.status-item.missing .status-icon { color: #7f8c8d; }
+.status-item.ok .status-icon    { color: var(--sv-lime); }
+.status-item.missing .status-icon { color: var(--sv-text-dim); }
 .status-body   { display: flex; flex-direction: column; gap: 0.02rem; min-width: 0; }
-.status-label  { font-weight: 600; font-size: 0.74rem; color: #ecf0f1; }
-.status-detail { font-size: 0.68rem; color: #95a5a6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.status-divider { color: #465c71; font-size: 0.9rem; flex-shrink: 0; }
+.status-label  { font-weight: 600; font-size: 0.74rem; color: var(--sv-text); }
+.status-detail { font-size: 0.68rem; color: var(--sv-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-divider { color: var(--sv-border); font-size: 0.9rem; flex-shrink: 0; }
 
 /* ── Missing hint ─────────────────────────────────────────────────────────── */
 .missing-hint {
@@ -1615,14 +1617,14 @@ function runCrossVal() {
 
 /* ── Step card ────────────────────────────────────────────────────────────── */
 .step {
-    border: 1px solid #3d5166;
+    border: 1px solid var(--sv-border);
     border-radius: 7px;
     overflow: hidden;
-    background: #233140;
+    background: var(--sv-bg);
     transition: border-color 0.15s;
 }
 .step.step-open {
-    border-color: #2980b9;
+    border-color: var(--sv-violet);
 }
 
 /* ── Step header ──────────────────────────────────────────────────────────── */
@@ -1642,36 +1644,36 @@ function runCrossVal() {
     border: 2px solid currentColor;
     transition: all 0.15s;
 }
-.badge-pending { color: #5d7a96; border-color: #3d5166; background: #1e2d3d; }
+.badge-pending { color: var(--sv-text-dim); border-color: var(--sv-border); background: var(--sv-bg-2); }
 .badge-running { color: #f39c12; border-color: #f39c12; background: rgba(243,156,18,0.1); }
-.badge-ok      { color: #27ae60; border-color: #27ae60; background: rgba(39,174,96,0.12); }
+.badge-ok      { color: var(--sv-lime); border-color: var(--sv-lime); background: rgba(39,174,96,0.12); }
 .badge-warn    { color: #f39c12; border-color: #f39c12; background: rgba(243,156,18,0.12); }
 .badge-error   { color: #e74c3c; border-color: #e74c3c; background: rgba(231,76,60,0.12); }
 
 .step-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.05rem; }
-.step-title   { font-size: 0.84rem; font-weight: 700; color: #ecf0f1; }
-.step-summary { font-size: 0.72rem; color: #7f8c8d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-title   { font-size: 0.84rem; font-weight: 700; color: var(--sv-text); }
+.step-summary { font-size: 0.72rem; color: var(--sv-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.chevron { color: #5d7a96; flex-shrink: 0; transition: transform 0.2s; }
+.chevron { color: var(--sv-text-dim); flex-shrink: 0; transition: transform 0.2s; }
 .chevron.open { transform: rotate(180deg); }
 
 /* ── Step body ────────────────────────────────────────────────────────────── */
 .step-body {
     padding: 0 0.85rem 0.85rem;
     display: flex; flex-direction: column; gap: 0.65rem;
-    border-top: 1px solid #3d5166;
+    border-top: 1px solid var(--sv-border);
 }
 
 .step-desc {
-    font-size: 0.78rem; color: #95a5a6; line-height: 1.5;
+    font-size: 0.78rem; color: var(--sv-text-dim); line-height: 1.5;
     margin-top: 0.65rem; margin-bottom: 0;
 }
 
 /* ── Section label (within step body) ────────────────────────────────────── */
 .section-label {
     font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.08em; color: #5d7a96;
-    border-bottom: 1px solid #3d5166; padding-bottom: 0.25rem;
+    letter-spacing: 0.08em; color: var(--sv-text-dim);
+    border-bottom: 1px solid var(--sv-border); padding-bottom: 0.25rem;
 }
 
 /* ── SGC-Gerinneparameter ────────────────────────────────────────────────── */
@@ -1686,48 +1688,48 @@ function runCrossVal() {
 .sgc-cells { font-size: 0.68rem; color: #6c8299; }
 .sgc-cells-warn { color: #ffb300; font-weight: 600; }
 .sgc-params input {
-    padding: 0.35rem 0.45rem; border: 1px solid #3d5166; border-radius: 4px;
+    padding: 0.35rem 0.45rem; border: 1px solid var(--sv-border); border-radius: 4px;
     background: #1e2c3a; color: #e8eef4; font-size: 0.8rem;
 }
-.sgc-params input:focus { border-color: #2980b9; outline: none; }
+.sgc-params input:focus { border-color: var(--sv-violet); outline: none; }
 
 /* ── Step footer ──────────────────────────────────────────────────────────── */
 .step-footer {
     display: flex; align-items: center; justify-content: flex-end;
     gap: 0.5rem; padding-top: 0.3rem;
-    border-top: 1px solid #3d5166; margin-top: 0.1rem;
+    border-top: 1px solid var(--sv-border); margin-top: 0.1rem;
 }
 .btn-next {
     padding: 0.4rem 1rem; border: none; border-radius: 5px;
-    background: #2980b9; color: #fff;
+    background: var(--sv-violet); color: #fff;
     font-weight: 700; font-size: 0.82rem; cursor: pointer;
     transition: background 0.15s;
 }
-.btn-next:hover:not(:disabled) { background: #3498db; }
+.btn-next:hover:not(:disabled) { background: var(--sv-violet); }
 .btn-next:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-skip {
-    padding: 0.4rem 0.75rem; border: 1px solid #3d5166; border-radius: 5px;
-    background: transparent; color: #7f8c8d;
+    padding: 0.4rem 0.75rem; border: 1px solid var(--sv-border); border-radius: 5px;
+    background: transparent; color: var(--sv-text-dim);
     font-size: 0.8rem; cursor: pointer; transition: all 0.15s;
 }
-.btn-skip:hover { border-color: #5d7a96; color: #bdc3c7; }
+.btn-skip:hover { border-color: var(--sv-text-dim); color: var(--sv-text-dim); }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 .btn-run {
     padding: 0.5rem 1.1rem; border: none; border-radius: 6px;
-    background: #2980b9; color: #fff;
+    background: var(--sv-violet); color: #fff;
     font-weight: 700; font-size: 0.85rem; cursor: pointer;
     transition: background 0.2s; align-self: flex-start;
 }
-.btn-run:hover:not(:disabled) { background: #3498db; }
+.btn-run:hover:not(:disabled) { background: var(--sv-violet); }
 .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-run.btn-run-active { background: #8e44ad; }
 .btn-run.btn-run-active:hover { background: #9b59b6; }
 
 .btn-secondary {
-    padding: 0.35rem 0.85rem; border: 1px solid #2980b9;
+    padding: 0.35rem 0.85rem; border: 1px solid var(--sv-violet);
     border-radius: 5px; background: transparent;
-    color: #3498db; font-size: 0.78rem; cursor: pointer; white-space: nowrap;
+    color: var(--sv-violet); font-size: 0.78rem; cursor: pointer; white-space: nowrap;
 }
 .btn-secondary:hover:not(:disabled) { background: rgba(52,152,219,0.15); }
 .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -1741,40 +1743,40 @@ function runCrossVal() {
 
 /* ── Row / option areas ───────────────────────────────────────────────────── */
 .row-actions    { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
-.val-timestamp  { font-size: 0.71rem; color: #7f8c8d; }
+.val-timestamp  { font-size: 0.71rem; color: var(--sv-text-dim); }
 .fill-options   { display: flex; flex-direction: column; gap: 0.35rem; }
 
 /* ── Params grid ──────────────────────────────────────────────────────────── */
 .params-grid {
     display: grid; grid-template-columns: 100px 1fr 50px;
     align-items: center; gap: 0.4rem 0.55rem;
-    padding: 0.65rem; background: #1e2d3d; border-radius: 5px;
-    border: 1px solid #3d5166;
+    padding: 0.65rem; background: var(--sv-bg-2); border-radius: 5px;
+    border: 1px solid var(--sv-border);
 }
-.param-label  { font-size: 0.75rem; color: #95a5a6; }
-.param-slider { width: 100%; accent-color: #2980b9; }
-.param-val    { font-size: 0.72rem; color: #ecf0f1; font-family: monospace; text-align: right; }
+.param-label  { font-size: 0.75rem; color: var(--sv-text-dim); }
+.param-slider { width: 100%; accent-color: var(--sv-violet); }
+.param-val    { font-size: 0.72rem; color: var(--sv-text); font-family: monospace; text-align: right; }
 .power-btns   { display: flex; gap: 3px; }
 .power-btns button {
-    flex: 1; padding: 0.12rem 0; border: 1px solid #3d5166;
-    border-radius: 3px; background: #2c3e50; color: #7f8c8d;
+    flex: 1; padding: 0.12rem 0; border: 1px solid var(--sv-border);
+    border-radius: 3px; background: var(--sv-surface-2); color: var(--sv-text-dim);
     font-size: 0.75rem; cursor: pointer;
 }
-.power-btns button.active { background: #2980b9; color: #fff; border-color: #2980b9; }
+.power-btns button.active { background: var(--sv-violet); color: #fff; border-color: var(--sv-violet); }
 
 /* ── Checkbox ─────────────────────────────────────────────────────────────── */
 .checkbox-label {
     display: flex; align-items: center; gap: 0.4rem;
-    font-size: 0.78rem; color: #bdc3c7; cursor: pointer; user-select: none;
+    font-size: 0.78rem; color: var(--sv-text-dim); cursor: pointer; user-select: none;
 }
-.checkbox-label input[type="checkbox"] { accent-color: #2980b9; cursor: pointer; }
+.checkbox-label input[type="checkbox"] { accent-color: var(--sv-violet); cursor: pointer; }
 
 /* ── Progress bar ─────────────────────────────────────────────────────────── */
 .progress-bar-wrap {
-    height: 4px; background: #1e2d3d; border-radius: 2px; overflow: hidden;
+    height: 4px; background: var(--sv-bg-2); border-radius: 2px; overflow: hidden;
 }
 .progress-bar {
-    height: 100%; background: #2980b9; border-radius: 2px;
+    height: 100%; background: var(--sv-violet); border-radius: 2px;
     transition: width 0.3s ease;
 }
 
@@ -1783,8 +1785,8 @@ function runCrossVal() {
     padding: 0.28rem 0.65rem; border-radius: 4px;
     font-size: 0.76rem; font-weight: 600; align-self: flex-start;
 }
-.pl-ok    { background: rgba(0,229,255,0.1); border: 1px solid #00e5ff; color: #00e5ff; }
-.pl-empty { background: rgba(93,122,150,0.12); border: 1px solid #3d5166; color: #7f8c8d; }
+.pl-ok    { background: rgba(0,229,255,0.1); border: 1px solid var(--sv-lime); color: var(--sv-lime); }
+.pl-empty { background: rgba(93,122,150,0.12); border: 1px solid var(--sv-border); color: var(--sv-text-dim); }
 .polyline-actions { display: flex; align-items: center; gap: 0.5rem; }
 
 /* ── Pick hint ────────────────────────────────────────────────────────────── */
@@ -1795,25 +1797,25 @@ function runCrossVal() {
 }
 
 /* ── Section label sub-text ───────────────────────────────────────────────── */
-.sl-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: #465c71; margin-left: 0.4rem; }
+.sl-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--sv-border); margin-left: 0.4rem; }
 
 /* ── Reference point table ────────────────────────────────────────────────── */
 .ref-table-wrap {
     max-height: 200px; overflow-y: auto;
-    border: 1px solid #3d5166; border-radius: 5px;
-    background: #1e2d3d;
+    border: 1px solid var(--sv-border); border-radius: 5px;
+    background: var(--sv-bg-2);
 }
 .ref-table {
     width: 100%; border-collapse: collapse;
     font-size: 0.73rem;
 }
 .ref-table thead tr {
-    background: #233140; position: sticky; top: 0; z-index: 1;
+    background: var(--sv-bg); position: sticky; top: 0; z-index: 1;
 }
 .ref-table th {
     padding: 0.3rem 0.55rem; text-align: left;
-    color: #7f8c8d; font-weight: 600; font-size: 0.68rem;
-    border-bottom: 1px solid #3d5166;
+    color: var(--sv-text-dim); font-weight: 600; font-size: 0.68rem;
+    border-bottom: 1px solid var(--sv-border);
 }
 .ref-table tbody tr {
     cursor: pointer; transition: background 0.1s;
@@ -1830,14 +1832,14 @@ function runCrossVal() {
 
 .sel-radio {
     display: inline-block; width: 10px; height: 10px;
-    border-radius: 50%; border: 2px solid #3d5166;
+    border-radius: 50%; border: 2px solid var(--sv-border);
     background: transparent; transition: all 0.15s;
 }
-.sel-radio.sel-active { border-color: #2980b9; background: #2980b9; }
+.sel-radio.sel-active { border-color: var(--sv-violet); background: var(--sv-violet); }
 
-.pt-label { color: #ecf0f1; font-weight: 600; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pt-coord { color: #7f8c8d; font-size: 0.68rem; font-family: monospace; }
-.pt-z     { color: #bdc3c7; font-family: monospace; }
+.pt-label { color: var(--sv-text); font-weight: 600; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-coord { color: var(--sv-text-dim); font-size: 0.68rem; font-family: monospace; }
+.pt-z     { color: var(--sv-text-dim); font-family: monospace; }
 .pt-delta { font-family: monospace; font-weight: 700; }
 
 /* ── Outlier bar ──────────────────────────────────────────────────────────── */
@@ -1845,31 +1847,31 @@ function runCrossVal() {
     display: flex; align-items: flex-start; gap: 0.5rem;
     background: rgba(230,126,34,0.1); border: 1px solid rgba(230,126,34,0.3);
     border-radius: 5px; padding: 0.45rem 0.7rem; margin-bottom: 0.5rem;
-    font-size: 0.74rem; color: #bdc3c7; line-height: 1.4;
+    font-size: 0.74rem; color: var(--sv-text-dim); line-height: 1.4;
 }
 .ob-icon { color: #e67e22; font-size: 0.85rem; flex-shrink: 0; margin-top: 1px; }
 .ob-toggle { margin-left: auto; flex-shrink: 0; display: flex; align-items: center;
-    gap: 0.3rem; white-space: nowrap; cursor: pointer; color: #7f8c8d; }
+    gap: 0.3rem; white-space: nowrap; cursor: pointer; color: var(--sv-text-dim); }
 
 /* ── Offset summary ───────────────────────────────────────────────────────── */
 .offset-summary {
-    padding: 0.6rem 0.75rem; background: #1e2d3d;
-    border: 1px solid #3d5166; border-radius: 5px;
+    padding: 0.6rem 0.75rem; background: var(--sv-bg-2);
+    border: 1px solid var(--sv-border); border-radius: 5px;
     display: flex; flex-direction: column; gap: 0.2rem;
 }
 .os-main { display: flex; align-items: center; justify-content: space-between; }
-.os-label  { font-size: 0.78rem; color: #95a5a6; }
+.os-label  { font-size: 0.78rem; color: var(--sv-text-dim); }
 .os-value  { font-size: 1rem; font-family: monospace; font-weight: 700; }
-.os-secondary { font-size: 0.71rem; color: #5d7a96; }
-.os-interp    { font-size: 0.73rem; color: #bdc3c7; }
+.os-secondary { font-size: 0.71rem; color: var(--sv-text-dim); }
+.os-interp    { font-size: 0.73rem; color: var(--sv-text-dim); }
 
 /* ── Mod info ─────────────────────────────────────────────────────────────── */
 .mod-info {
     display: flex; align-items: center; gap: 0.45rem;
-    font-size: 0.76rem; color: #2ecc71; font-weight: 600;
+    font-size: 0.76rem; color: var(--sv-lime); font-weight: 600;
 }
 .mod-dot {
-    width: 7px; height: 7px; border-radius: 50%; background: #2ecc71; flex-shrink: 0;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--sv-lime); flex-shrink: 0;
 }
 
 /* ── Warnings / errors / hints / ok ──────────────────────────────────────── */
@@ -1885,13 +1887,13 @@ function runCrossVal() {
 }
 .tp-hint {
     padding: 0.45rem 0.8rem;
-    background: rgba(41,128,185,0.08); border: 1px solid #2980b9;
+    background: rgba(41,128,185,0.08); border: 1px solid var(--sv-violet);
     border-radius: 5px; color: #7fb3d3; font-size: 0.78rem; line-height: 1.5;
 }
 .tp-ok {
     padding: 0.4rem 0.8rem;
-    background: rgba(39,174,96,0.1); border: 1px solid #27ae60;
-    border-radius: 5px; color: #2ecc71; font-size: 0.8rem; font-weight: 600;
+    background: rgba(39,174,96,0.1); border: 1px solid var(--sv-lime);
+    border-radius: 5px; color: var(--sv-lime); font-size: 0.8rem; font-weight: 600;
 }
 
 /* ── Virtual Raster stats card ────────────────────────────────────────────── */
@@ -1901,107 +1903,109 @@ function runCrossVal() {
     background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.25);
     border-radius: 5px;
 }
-.vrs-count { font-size: 0.8rem; font-weight: 700; color: #00d4ff; }
-.vrs-sep   { color: #3d5166; }
-.vrs-range { font-size: 0.78rem; color: #95a5a6; font-family: monospace; }
+.vrs-count { font-size: 0.8rem; font-weight: 700; color: var(--sv-text-violet); }
+.vrs-sep   { color: var(--sv-border); }
+.vrs-range { font-size: 0.78rem; color: var(--sv-text-dim); font-family: monospace; }
 .vrs-toggle {
     display: flex; align-items: center; gap: 0.3rem;
-    margin-left: auto; font-size: 0.75rem; color: #bdc3c7;
+    margin-left: auto; font-size: 0.75rem; color: var(--sv-text-dim);
     cursor: pointer; user-select: none;
 }
-.vrs-toggle input { accent-color: #00d4ff; cursor: pointer; }
+.vrs-toggle input { accent-color: var(--sv-text-violet); cursor: pointer; }
 
 /* ── Fuse button ──────────────────────────────────────────────────────────── */
 .btn-fuse {
-    background: #1a7a3a !important;
-    border-color: #27ae60 !important;
+    background: linear-gradient(135deg, var(--sv-lime-dim), var(--sv-lime)) !important;
+    border-color: var(--sv-lime) !important;
+    color: #12121a !important;
+    font-weight: 700;
 }
-.btn-fuse:hover:not(:disabled) { background: #27ae60 !important; }
+.btn-fuse:hover:not(:disabled) { filter: brightness(1.08); box-shadow: var(--sv-glow-lime); }
 
 /* ── Delta summary bar ────────────────────────────────────────────────────── */
 .delta-summary {
-    display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid #3d5166;
+    display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid var(--sv-border);
     background: rgba(15,25,35,0.5);
 }
 .ds-item {
     display: flex; flex-direction: column; align-items: center;
     padding: 0.45rem 0.9rem; gap: 0.1rem; flex: 1; min-width: 80px;
-    border-right: 1px solid #2c3e50;
+    border-right: 1px solid var(--sv-surface-2);
 }
 .ds-item:last-child { border-right: none; }
-.ds-label { font-size: 0.68rem; color: #5d7a96; text-transform: uppercase; letter-spacing: 0.03em; }
-.ds-value { font-size: 0.87rem; font-weight: 700; color: #ecf0f1; }
-.ds-range  { font-size: 0.76rem; font-weight: 400; color: #7f8c8d; }
+.ds-label { font-size: 0.68rem; color: var(--sv-text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+.ds-value { font-size: 0.87rem; font-weight: 700; color: var(--sv-text); }
+.ds-range  { font-size: 0.76rem; font-weight: 400; color: var(--sv-text-dim); }
 
 /* ── Otsu-Cluster-Karte ───────────────────────────────────────────────────── */
 .otsu-card {
-    border-top: 1px solid #3d5166;
+    border-top: 1px solid var(--sv-border);
     background: rgba(243,156,18,0.05);
 }
 .otsu-header {
     padding: 0.4rem 0.85rem; font-size: 0.74rem; color: #f39c12; font-weight: 600;
-    border-bottom: 1px solid #3d5166;
+    border-bottom: 1px solid var(--sv-border);
 }
 .otsu-clusters { display: flex; }
 .otsu-cluster {
     flex: 1; display: flex; flex-direction: column; gap: 0.1rem;
     padding: 0.4rem 0.85rem; font-size: 0.73rem;
 }
-.otsu-a { border-right: 1px solid #2c3e50; background: rgba(52,152,219,0.06); }
+.otsu-a { border-right: 1px solid var(--sv-surface-2); background: rgba(52,152,219,0.06); }
 .otsu-b { background: rgba(231,76,60,0.06); }
-.oc-label { font-weight: 600; color: #bdc3c7; }
-.oc-n     { color: #7f8c8d; }
-.oc-med   { color: #ecf0f1; font-weight: 600; }
+.oc-label { font-weight: 600; color: var(--sv-text-dim); }
+.oc-n     { color: var(--sv-text-dim); }
+.oc-med   { color: var(--sv-text); font-weight: 600; }
 
 /* ── Report ───────────────────────────────────────────────────────────────── */
-.report { border: 1px solid #3d5166; border-radius: 6px; overflow: hidden; }
+.report { border: 1px solid var(--sv-border); border-radius: 6px; overflow: hidden; }
 .report-stale { opacity: 0.65; }
 .report-header {
     display: flex; align-items: center; gap: 0.45rem;
     padding: 0.5rem 0.85rem; font-weight: 600; font-size: 0.83rem;
 }
-.report-header.ok    { background: rgba(39,174,96,0.18);  color: #2ecc71; }
+.report-header.ok    { background: rgba(39,174,96,0.18);  color: var(--sv-lime); }
 .report-header.warn  { background: rgba(243,156,18,0.18); color: #f39c12; }
 .report-header.error { background: rgba(231,76,60,0.18);  color: #e74c3c; }
 .check-list { list-style: none; margin: 0; padding: 0; }
 .check-item {
     display: flex; align-items: flex-start; gap: 0.55rem;
-    padding: 0.4rem 0.85rem; border-bottom: 1px solid #1e2d3d; font-size: 0.76rem;
+    padding: 0.4rem 0.85rem; border-bottom: 1px solid var(--sv-bg-2); font-size: 0.76rem;
 }
 .check-item:last-child { border-bottom: none; }
 .check-item.ok    { background: rgba(39,174,96,0.04); }
 .check-item.warn  { background: rgba(243,156,18,0.06); }
 .check-item.error { background: rgba(231,76,60,0.06); }
 .ci-icon { padding-top: 1px; min-width: 11px; }
-.check-item.ok    .ci-icon { color: #27ae60; }
+.check-item.ok    .ci-icon { color: var(--sv-lime); }
 .check-item.warn  .ci-icon { color: #f39c12; }
 .check-item.error .ci-icon { color: #e74c3c; }
 .ci-body    { display: flex; flex-direction: column; gap: 0.03rem; }
-.ci-label   { font-weight: 600; color: #ecf0f1; }
-.ci-detail  { color: #7f8c8d; font-size: 0.71rem; }
+.ci-label   { font-weight: 600; color: var(--sv-text); }
+.ci-detail  { color: var(--sv-text-dim); font-size: 0.71rem; }
 
 /* ── Result card ──────────────────────────────────────────────────────────── */
-.result-card { border: 1px solid #3d5166; border-radius: 6px; overflow: hidden; }
+.result-card { border: 1px solid var(--sv-border); border-radius: 6px; overflow: hidden; }
 .rc-header {
     padding: 0.5rem 0.85rem; font-weight: 600; font-size: 0.82rem;
 }
-.rc-header.oc-ok    { background: rgba(39,174,96,0.18);  color: #2ecc71; }
+.rc-header.oc-ok    { background: rgba(39,174,96,0.18);  color: var(--sv-lime); }
 .rc-header.oc-warn  { background: rgba(243,156,18,0.18); color: #f39c12; }
 .rc-header.oc-error { background: rgba(231,76,60,0.18);  color: #e74c3c; }
 .rc-grid {
     display: grid; grid-template-columns: 1fr 1fr;
     padding: 0.45rem 0.85rem 0.6rem; gap: 0.22rem 1.2rem;
-    background: #1e2d3d;
+    background: var(--sv-bg-2);
 }
-.rc-grid span   { font-size: 0.74rem; color: #7f8c8d; align-self: center; }
-.rc-grid strong { font-size: 0.76rem; color: #ecf0f1; font-family: monospace; }
+.rc-grid span   { font-size: 0.74rem; color: var(--sv-text-dim); align-self: center; }
+.rc-grid strong { font-size: 0.76rem; color: var(--sv-text); font-family: monospace; }
 .rc-actions {
     display: flex; align-items: center; gap: 0.65rem;
     padding: 0.55rem 0.85rem; background: #1a2634;
-    border-top: 1px solid #3d5166;
+    border-top: 1px solid var(--sv-border);
 }
-.rc-hint { font-size: 0.69rem; color: #7f8c8d; }
-.val-ok   { color: #2ecc71 !important; }
+.rc-hint { font-size: 0.69rem; color: var(--sv-text-dim); }
+.val-ok   { color: var(--sv-lime) !important; }
 .val-warn { color: #f39c12 !important; }
 .val-err  { color: #e74c3c !important; }
 
@@ -2057,7 +2061,7 @@ function runCrossVal() {
 .mc-key {
     flex: 0 0 auto;
     min-width: 13rem;
-    color: #7f8c8d;
+    color: var(--sv-text-dim);
 }
 .mc-val  { color: #b0c4d8; }
 .mc-fallback { color: #4ade80; }

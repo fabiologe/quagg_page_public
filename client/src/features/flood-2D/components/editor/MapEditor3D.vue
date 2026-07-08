@@ -13,16 +13,19 @@
          @mousedown="handleWrapperMouseDown"
          @mouseup="handleWrapperMouseUp"
        ></div>
-       
+
+       <!-- Leerer Zustand: Terminal/ASCII-Startbildschirm bis ein Raster geladen ist -->
+       <DefaultMap v-if="!hasTerrain && !loading" />
+
        <!-- Header Overlay -->
        <div class="overlay-header">
           <div class="header-content">
-            <h2>Import Terrain (3D Preview)</h2>
-            <p>Inspect Geometry before Simulation</p>
+            <h2 class="sv-title">SaintV<span class="sv-accent">-2D</span></h2>
+            <p class="sv-subtitle">// 2D terrain editor</p>
           </div>
-          
+
           <div class="header-actions">
-             <button @click="$emit('cancel')" class="btn-secondary">
+             <button @click="$emit('cancel')" class="sv-btn">
                Start Over
              </button>
 
@@ -44,31 +47,52 @@
                >↷</button>
              </div>
 
-             <label class="btn-file">
+             <label class="sv-btn sv-btn-file">
                 <input type="file" accept=".xyz,.txt,.asc" @change="handleFileUpload" />
                 <span>Select .XYZ File</span>
              </label>
-             
+
              <CompassRose :angle="compassAngle" />
           </div>
        </div>
 
+       <!-- Kanalnetz-UI (Import, Tabelle, Eigenschaften) lebt komplett im ScenarioManager-
+            „Netz"-Tab. 3D-Szene zeigt nur das gerenderte Netz + die Setz-Werkzeuge. -->
+
        <!-- Loading Overlay -->
-       <div v-if="loading" class="overlay-loading">
-         <div class="spinner"></div>
-         <span>{{ loadingText }}</span>
+       <SaintVLoader v-if="loading" :text="loadingText" />
+
+       <!-- XYZ-Import: Auflösungs-Dialog (irreguläre Punktwolken) -->
+       <div v-if="showImportPanel && importAnalysis" class="import-panel sv-panel sv-theme">
+         <div class="import-title sv-title">SaintV<span class="sv-accent">-2D</span></div>
+         <div class="import-badge">
+           {{ importAnalysis.isRegular ? 'Reguläres Gitter' : 'Irreguläre Punktwolke' }}
+           · {{ importAnalysis.count.toLocaleString() }} Punkte
+         </div>
+         <div class="import-row">
+           <label>Ziel-Zellweite [m]</label>
+           <input class="sv-input" type="number" min="0.1" step="0.5" v-model.number="importCellsize" />
+         </div>
+         <div class="import-quick">
+           <button class="sv-btn" @click="importCellsize = 1">1 m</button>
+           <button class="sv-btn" @click="importCellsize = 2">2 m</button>
+           <button class="sv-btn" @click="importCellsize = importAnalysis.suggestedCellsize">
+             Vorschlag {{ importAnalysis.suggestedCellsize }} m
+           </button>
+         </div>
+         <div class="import-hint">
+           ≈ {{ Math.max(1, Math.round(importAnalysis.extent.width / (importCellsize || 1)) + 1) }}
+           × {{ Math.max(1, Math.round(importAnalysis.extent.height / (importCellsize || 1)) + 1) }} Zellen
+           · TIN + IDW-Interpolation
+         </div>
+         <div class="import-actions">
+           <button class="sv-btn" @click="cancelImport">Abbrechen</button>
+           <button class="sv-btn sv-btn-go" @click="startBuild">Importieren</button>
+         </div>
        </div>
 
-       <!-- Stats Overlay -->
-       <div v-if="stats" class="overlay-stats">
-         <div class="stats-title-row">
-             <div class="stats-title">Terrain Statistics</div>
-         </div>
-         <div class="stat-row"><span>Grid:</span> <span>{{ stats.cols }} x {{ stats.rows }}</span></div>
-         <div class="stat-row"><span>Resolution:</span> <span>~{{ stats.cellsize.toFixed(2) }}m</span></div>
-         <div class="stat-row"><span>Min Z:</span> <span class="val-min">{{ stats.minZ.toFixed(2) }}m</span></div>
-         <div class="stat-row"><span>Max Z:</span> <span class="val-max">{{ stats.maxZ.toFixed(2) }}m</span></div>
-       </div>
+       <!-- Stats Overlay (eigene, einklappbare Komponente) -->
+       <TerrainStatics :stats="stats" />
 
        <!-- Tool UIs (Context Sensitive) -->
        
@@ -100,9 +124,13 @@
        <BridgeTool v-if="simStore.activeTool === 'BRIDGE'" />
 
        <!-- NODE/SOURCE UI -->
-       <NodeTool 
+       <NodeTool
           v-if="simStore.activeTool === 'NODE'"
        />
+
+       <!-- KANALNETZ: Schacht setzen / Haltung ziehen (Unified Geometry Engine) -->
+       <NetNodeTool v-if="simStore.activeTool === 'NET_NODE'" />
+       <NetConduitTool v-if="simStore.activeTool === 'NET_CONDUIT'" />
 
        <!-- BOUNDARY UI -->
        <BoundaryTool
@@ -340,6 +368,11 @@ import { useBuildingTool } from '../../composables/editor/useBuildingTool.js';
 import { useCulvertTool } from '../../composables/editor/useCulvertTool.js';
 import { useTextureTool } from '../../composables/editor/useTextureTool.js';
 import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
+import { useNetworkRenderer } from '../../composables/editor/useNetworkRenderer.js';
+import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
+import NetNodeTool from '../tools/NetNodeTool.vue';
+import NetConduitTool from '../tools/NetConduitTool.vue';
+import { getNetworkConduitToolInstance } from '../../composables/editor/useNetworkConduitTool.js';
 import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
@@ -363,6 +396,9 @@ import {
 // --- UI COMPONENTS ---
 import LayerControl from './LayerControl.vue';
 import CompassRose from './CompassRose.vue';
+import TerrainStatics from './TerrainStatics.vue';
+import SaintVLoader from '../common/SaintVLoader.vue';
+import DefaultMap from './DefaultMap.vue';
 import BuildingTool from '../tools/BuildingTool.vue';
 import CulvertTool from '../tools/CulvertTool.vue';
 import WeirTool from '../tools/WeirTool.vue';
@@ -387,8 +423,17 @@ const loadingText = ref('');
 const parsedData = ref(null);
 const rawContent = ref(null);
 const stats = ref(null);
+
+// Leerer Editor (kein Raster) → Terminal/ASCII-Startbildschirm zeigen
+const hasTerrain = computed(() => !!(parsedData.value?.gridData || geoStore.terrain?.gridData));
+
+// XYZ-Import (Auflösungs-Dialog für irreguläre/große Punktwolken)
+const importAnalysis = ref(null);
+const importCellsize = ref(1);
+const showImportPanel = ref(false);
+let importWorker = null;
 const selectedInfo = ref(null); // { x, y, z, col, row }
-const activeLayerMode = ref('CLASSIC'); // 'CLASSIC' | 'SURFACE' | 'SOLID' | 'WIREFRAME' | 'CONTOUR' | 'TIFF'
+const activeLayerMode = ref('WIREFRAME'); // 'CLASSIC' | 'SURFACE' | 'SOLID' | 'WIREFRAME' | 'CONTOUR' | 'TIFF' — Standard: Rasteransicht
 const compassAngle = ref(0);
 
 // --- THREE.JS OBJECTS ---
@@ -396,7 +441,9 @@ let scene, renderer, controls, animationId;
 let cameraPerspective, cameraOrtho, activeCamera;
 let terrainMesh, interactionPlane;
 let selectionMesh;
+let networkRenderer = null;   // Kanalnetz-Renderer (G2), in initScene gesetzt
 const raycaster = new THREE.Raycaster();
+const networkStore = useNetworkStore();
 
 // --- TOOLS SETUP ---
 const drawTool = useDrawTool();
@@ -499,8 +546,12 @@ function cancelChannelPolygon() {
     simStore.setActiveTool(null);
 }
 
+// Kanalnetz-Haltungs-Werkzeug (Singleton; Renderer wird in initScene gesetzt).
+const networkConduitTool = getNetworkConduitToolInstance();
+
 // Tool Mapping
 const tools = {
+    'NET_CONDUIT': networkConduitTool,
     'DRAW': buildingTool,
     'SHOVEL': shovelTool,
     'BATHY_BRUSH': bathyBrushTool,
@@ -573,6 +624,7 @@ const TOOL_RESET_ON = {
     DRAW_POLY: 'BUILDING',
     DRAW:      'BUILDING',
     CULVERT:   'BUILDING',   // Culvert-Tool committet als BUILDING-Modifikation
+    NET_NODE:  'NET_NODE',   // Kanalnetz-Schacht (useNetworkStore.addNode)
 };
 function _handleObjectPlaced(e) {
     const expected = TOOL_RESET_ON[simStore.activeTool];
@@ -639,16 +691,21 @@ const setLayerMode = (mode) => {
     activeLayerMode.value = mode;
 };
 
-watch(activeLayerMode, (val) => {
-    if (terrainMesh && terrainMesh.material.uniforms) {
-        terrainMesh.material.uniforms.uShowSurface.value = (val === 'SURFACE') ? 1.0 : 0.0;
-        terrainMesh.material.uniforms.uIsSolid.value = (val === 'SOLID') ? 1.0 : 0.0;
-        terrainMesh.material.uniforms.uIsWireframe.value = (val === 'WIREFRAME') ? 1.0 : 0.0;
-        terrainMesh.material.uniforms.uIsContour.value = (val === 'CONTOUR') ? 1.0 : 0.0;
-        // terrainMesh.material.wireframe = (val === 'WIREFRAME'); // Disabled: Native wireframe draws diagonals. We use custom Shader Grid instead.
-        terrainMesh.material.needsUpdate = true;
-    }
-});
+// Aktuellen Layer-Modus auf die Terrain-Shader-Uniforms schreiben. Wird sowohl vom
+// Watcher (Moduswechsel per LayerControl) als auch direkt nach jedem Mesh-Bau
+// aufgerufen, damit der Startmodus (Standard: WIREFRAME) auch beim ersten Terrain
+// greift — der Watcher feuert bei Initialwert nicht.
+const applyLayerMode = (val) => {
+    if (!terrainMesh || !terrainMesh.material.uniforms) return;
+    terrainMesh.material.uniforms.uShowSurface.value = (val === 'SURFACE') ? 1.0 : 0.0;
+    terrainMesh.material.uniforms.uIsSolid.value = (val === 'SOLID') ? 1.0 : 0.0;
+    terrainMesh.material.uniforms.uIsWireframe.value = (val === 'WIREFRAME') ? 1.0 : 0.0;
+    terrainMesh.material.uniforms.uIsContour.value = (val === 'CONTOUR') ? 1.0 : 0.0;
+    // terrainMesh.material.wireframe = (val === 'WIREFRAME'); // Disabled: Native wireframe draws diagonals. We use custom Shader Grid instead.
+    terrainMesh.material.needsUpdate = true;
+};
+
+watch(activeLayerMode, (val) => applyLayerMode(val));
 
 // --- UPDATE ON EXTERNAL SURFACE DATA ---
 watch(() => surfaceStore.gridVersion, () => {
@@ -693,8 +750,14 @@ onMounted(() => {
     const activeGrid = computed(() => parsedData.value || geoStore.terrain);
 
     // Initialize Layer Renderer (Visualizes Imported Data).
-    // Verdrahtet sich intern selbst über reaktive Watcher — kein Rückgabewert nötig.
-    useLayerRenderer(scene, geoStore, activeGrid);
+    // Verdrahtet sich intern selbst über reaktive Watcher — getLocalPos wird geteilt.
+    const layer = useLayerRenderer(scene, geoStore, activeGrid);
+
+    // Kanalnetz-Renderer (Unified Geometry Engine, G2): rendert Schächte + Haltungen aus
+    // useNetworkStore mit demselben Welt→Szene-Transform. Self-contained wie useLayerRenderer.
+    networkRenderer = useNetworkRenderer(scene, layer.getLocalPos);
+    // Haltungs-Werkzeug braucht den Renderer fürs Schacht-Snapping (Picking).
+    networkConduitTool.setRenderer(networkRenderer);
 
     // Render terrestrial survey points as colored point cloud
     useSurveyPointsRenderer(scene);
@@ -734,6 +797,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     cancelAnimationFrame(animationId);
+    teardownImportWorker();
     if(renderer) renderer.dispose();
     if(controls) controls.dispose();
     if(terrainMesh) {
@@ -879,6 +943,14 @@ const handleInfoClick = (ctx) => {
     // Note: InteractionManager already updated coordinates.
     // But we need to use them.
     raycaster.setFromCamera(pointer, camera);
+
+     // Kanalnetz-Picking (G2): zuerst prüfen, ob ein Schacht/Haltung getroffen wurde.
+     if (networkRenderer && networkStore.hasNetwork) {
+         const netHits = raycaster.intersectObjects(networkRenderer.group.children, false);
+         const picked = networkRenderer.pickFromIntersects(netHits);
+         if (picked) { networkStore.select(picked.id); return; }
+     }
+
      const plane = interactionPlane;
      const target = new THREE.Vector3();
      raycaster.ray.intersectPlane(plane, target);
@@ -1082,87 +1154,101 @@ const setCameraView = (axis) => {
 
 
 // --- FILE UPLOAD & TERRAIN GEN ---
+// Robuster XYZ-Import (auch irregulär & sehr groß) via terrainImportWorker:
+//   1) analyze  → erkennt regulär/irregulär + schlägt sichere Zellweite vor
+//   2) build    → TIN (Delaunay) + IDW-Fallback auf reguläres Gitter
+// Reguläre, budgetkonforme Gitter werden ohne Nachfrage importiert; bei
+// irregulären Wolken erscheint ein Auflösungs-Dialog (Zellweite überschreibbar).
+
+function ensureImportWorker() {
+    if (importWorker) return importWorker;
+    importWorker = new Worker(
+        new URL('../../workers/terrainImportWorker.js', import.meta.url),
+        { type: 'module' },
+    );
+    importWorker.onmessage = ({ data }) => {
+        if (data.type === 'progress') {
+            loadingText.value = `Rasterung… ${data.value | 0}%`;
+        } else if (data.type === 'analyzed') {
+            importAnalysis.value = data.analysis;
+            importCellsize.value = data.analysis.suggestedCellsize;
+            if (data.analysis.isRegular) {
+                // Reguläres Gitter → direkt bauen, kein Dialog.
+                startBuild();
+            } else {
+                loading.value = false;
+                showImportPanel.value = true; // Auflösung wählen lassen
+            }
+        } else if (data.type === 'built') {
+            applyImportedTerrain(data.terrain);
+            loading.value = false;
+            teardownImportWorker();
+        } else if (data.type === 'error') {
+            loading.value = false;
+            showImportPanel.value = false;
+            teardownImportWorker();
+            alert('Import fehlgeschlagen: ' + data.message);
+        }
+    };
+    importWorker.onerror = (e) => {
+        loading.value = false;
+        showImportPanel.value = false;
+        teardownImportWorker();
+        alert('Import-Worker-Fehler: ' + (e.message || e));
+    };
+    return importWorker;
+}
+
+function teardownImportWorker() {
+    if (importWorker) { importWorker.terminate(); importWorker = null; }
+}
+
+function applyImportedTerrain(result) {
+    parsedData.value = result;
+    stats.value = result.stats;
+    geoStore.importTerrain(result);
+    console.log(`[MapEditor3D] Terrain importiert: ${result.ncols}×${result.nrows} @ ${result.cellsize} m`);
+    buildTerrainMesh(result);
+}
+
+const startBuild = () => {
+    showImportPanel.value = false;
+    loading.value = true;
+    loadingText.value = 'Rasterung…';
+    ensureImportWorker().postMessage({
+        type: 'build',
+        cellsize: Number(importCellsize.value) || 0,
+        method: 'tin',
+    });
+};
+
+const cancelImport = () => {
+    showImportPanel.value = false;
+    importAnalysis.value = null;
+    teardownImportWorker();
+};
+
 const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+    teardownImportWorker(); // evtl. hängenden Vorlauf verwerfen
     loading.value = true;
-    loadingText.value = "Reading File...";
-    
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-           rawContent.value = e.target.result;
-           await new Promise(r => setTimeout(r, 50)); // Render UI
-           const result = parseXYZ(rawContent.value);
-           if (result) {
-               parsedData.value = result;
-               stats.value = result.stats;
-               // store.editorMode = 'IMPORT_TERRAIN'; // Removed dependency on old store
-               
-               // USER REQUEST: Update Store Immediately
-               // store.demRaw = rawContent.value;
-               geoStore.importTerrain(result);
-               console.log("Terrain Updated Immediately (Map3D). Center:", result.center);
+    loadingText.value = 'Datei lesen…';
+    showImportPanel.value = false;
+    importAnalysis.value = null;
 
-               buildTerrainMesh(result);
-           }
-        } catch(e) {
-            alert(e.message);
-        } finally {
-            loading.value = false;
-        }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        rawContent.value = e.target.result;
+        loadingText.value = 'Analysiere Punktwolke…';
+        ensureImportWorker().postMessage({ type: 'analyze', text: rawContent.value });
+    };
+    reader.onerror = () => {
+        loading.value = false;
+        alert('Datei konnte nicht gelesen werden.');
     };
     reader.readAsText(file);
     event.target.value = '';
-};
-
-
-const parseXYZ = (text) => {
-    const lines = text.trim().split('\n');
-    const points = [];
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || line.startsWith('#') || isNaN(line.codePointAt(0))) continue; 
-        const parts = line.split(/[\s,]+/); 
-        if (parts.length >= 3) {
-            points.push({ x: parseFloat(parts[0]), y: parseFloat(parts[1]), z: parseFloat(parts[2]) });
-        }
-    }
-    if (points.length === 0) throw new Error("No numeric points found.");
-
-    const uniqueX = [...new Set(points.map(p => p.x))].sort((a,b) => a-b);
-    const uniqueY = [...new Set(points.map(p => p.y))].sort((a,b) => a-b);
-    const minX = uniqueX[0], maxX = uniqueX[uniqueX.length-1];
-    const minY = uniqueY[0], maxY = uniqueY[uniqueY.length-1];
-    let cellsize = uniqueX.length > 1 ? (uniqueX[1]-uniqueX[0]) : 1.0;
-    cellsize = Math.round(cellsize * 100) / 100 || 1.0;
-    
-    const ncols = Math.round((maxX - minX) / cellsize) + 1;
-    const nrows = Math.round((maxY - minY) / cellsize) + 1;
-    // Kein hartes Limit mehr — große Raster sollen berechenbar bleiben; nur ein Hinweis.
-    if (ncols * nrows > 50_000_000)
-        console.warn(`[MapEditor3D] Großes Raster (${ncols}×${nrows} ≈ ${((ncols * nrows) / 1e6).toFixed(0)} Mio Zellen) — kann im Browser langsam werden.`);
-
-    const gridData = new Float32Array(ncols * nrows).fill(-9999);
-    let minZ = Infinity, maxZ = -Infinity;
-
-    for (const p of points) {
-        if (p.z < minZ) minZ = p.z;
-        if (p.z > maxZ) maxZ = p.z;
-        const col = Math.round((p.x - minX) / cellsize);
-        const row = Math.round((p.y - minY) / cellsize);
-        if (col >= 0 && col < ncols && row >= 0 && row < nrows) {
-             gridData[row * ncols + col] = p.z;
-        }
-    }
-
-    return {
-        gridData, ncols, nrows, cellsize, minZ, maxZ,
-        xllcorner: minX, yllcorner: minY, // Keep origin for Export
-        center: { x: (minX + maxX)/2, y: (minY + maxY)/2 },
-        bounds: { width: (maxX-minX)||100, height: (maxY-minY)||100 },
-        stats: { cols: ncols, rows: nrows, cellsize, minZ, maxZ }
-    };
 };
 
 const buildTerrainMesh = (result) => {
@@ -1223,6 +1309,10 @@ const buildTerrainMesh = (result) => {
     terrainMesh.userData.isTerrain = true; // IMPORTANT: Tagging for Shovel Tool
     terrainMesh.rotation.x = -Math.PI / 2;
     scene.add(terrainMesh);
+
+    // Startmodus (Standard: WIREFRAME) auf das frische Mesh anwenden — der
+    // activeLayerMode-Watcher feuert beim Initialwert nicht.
+    applyLayerMode(activeLayerMode.value);
     
     // Position camera
     const maxDim = Math.max(bounds.width, bounds.height);
@@ -1267,62 +1357,41 @@ defineExpose({
 .overlay-header {
     position: absolute; top: 0; left: 0; right: 0;
     z-index: 10; padding: 1rem 1.5rem;
-    background: rgba(255, 255, 255, 0.9);
-    border-bottom: 1px solid #ddd;
+    background: rgba(18, 18, 26, 0.85);
+    border-bottom: 1px solid var(--sv-border);
     display: flex; justify-content: space-between; align-items: center;
     backdrop-filter: blur(8px);
+    box-shadow: 0 2px 20px rgba(139, 92, 246, 0.15);
 }
-.header-content h2 { margin: 0; font-size: 1.25rem; font-weight: 600; color: #2c3e50; }
-.header-content p { margin: 0.25rem 0 0; font-size: 0.875rem; color: #7f8c8d; }
 
 .header-actions { display: flex; gap: 1rem; align-items: center; }
-
-/* Buttons */
-.btn-secondary {
-    padding: 0.5rem 1rem;
-    background-color: transparent; border: 1px solid #bdc3c7;
-    border-radius: 4px; color: #7f8c8d;
-    cursor: pointer; font-weight: 500; transition: all 0.2s;
-}
-.btn-secondary:hover { background-color: #ecf0f1; color: #2c3e50; }
 
 /* Undo / Redo */
 .undo-redo-group {
     display: flex;
     gap: 2px;
-    background: rgba(255,255,255,0.9);
-    border: 1px solid #bdc3c7;
-    border-radius: 4px;
+    background: var(--sv-surface-2);
+    border: 1px solid var(--sv-border);
+    border-radius: 6px;
     overflow: hidden;
 }
 .btn-icon {
     width: 32px; height: 32px;
     border: none;
     background: transparent;
-    color: #2c3e50;
+    color: var(--sv-text);
+    font-family: var(--sv-font);
     font-size: 1.1rem;
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: background 0.15s, color 0.15s;
     border-radius: 0;
 }
-.btn-icon:hover:not(:disabled) { background: #e8f4fd; color: #2980b9; }
+.btn-icon:hover:not(:disabled) { background: rgba(139, 92, 246, 0.2); color: var(--sv-text-lime); }
 .btn-icon:disabled, .btn-icon.disabled {
     opacity: 0.35;
     cursor: not-allowed;
 }
-
-.btn-file {
-    position: relative; display: inline-block; cursor: pointer;
-}
-.btn-file input { display: none; }
-.btn-file span {
-    display: inline-block; padding: 0.5rem 1rem;
-    background-color: #ecf0f1; border: 1px solid #bdc3c7;
-    border-radius: 4px; color: #2c3e50; font-weight: 500;
-    transition: background 0.2s;
-}
-.btn-file:hover span { background-color: #bdc3c7; }
 
 .btn-primary {
     padding: 0.5rem 1.25rem; background-color: #3498db;
@@ -1333,68 +1402,56 @@ defineExpose({
 .btn-primary:hover { background-color: #2980b9; }
 
 /* Loading */
-.overlay-loading {
-    position: absolute; inset: 0;
-    background: rgba(255, 255, 255, 0.85); z-index: 50;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+/* XYZ-Import Auflösungs-Dialog (SaintV-2D Theme) */
+.import-panel {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 60; width: 320px;
+    padding: 16px 18px;
+    pointer-events: auto;
 }
-.spinner {
-    width: 48px; height: 48px;
-    border: 4px solid #3498db; border-top: 4px solid transparent;
-    border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1rem;
+.import-title { font-size: 1.15rem; margin-bottom: 6px; }
+.import-badge {
+    font-size: 0.8rem; color: var(--sv-text-lime); margin-bottom: 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--sv-border-lime);
+    letter-spacing: 0.03em;
 }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.import-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.import-row label { font-size: 0.85rem; color: var(--sv-text-dim); }
+.import-row .sv-input { width: 90px; }
+.import-quick { display: flex; gap: 6px; margin-bottom: 10px; }
+.import-quick .sv-btn { flex: 1; padding: 4px 6px; font-size: 0.8rem; }
+.import-hint { font-size: 0.75rem; color: var(--sv-text-dim); margin-bottom: 14px; }
+.import-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Stats */
-.overlay-stats {
-    position: absolute;
-    bottom: 1.5rem;
-    left: 1.5rem;
-    background: rgba(44, 62, 80, 0.9);
-    color: white;
-    padding: 15px;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    pointer-events: auto;
-    backdrop-filter: blur(8px);
-    width: 250px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    z-index: 100;
-}
-.stats-title-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-    border-bottom: 1px solid #7f8c8d;
-    padding-bottom: 5px;
-}
-.stats-title { font-weight: bold; color: #ecf0f1; }
-
-.stat-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-.val-min { color: #2980b9; font-weight: bold; }
-.val-max { color: #8e44ad; font-weight: bold; }
-
 
 
 /* Tool Panels (Shovel/Boundary) */
 .tool-ui-panel {
     position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: rgba(44, 62, 80, 0.9); color: white;
-    padding: 10px 15px; border-radius: 6px;
-    backdrop-filter: blur(4px); pointer-events: auto;
+    background: var(--sv-surface); color: var(--sv-text);
+    font-family: var(--sv-font);
+    padding: 10px 15px; border-radius: var(--sv-radius);
+    border: 1px solid var(--sv-border);
+    box-shadow: var(--sv-glow-violet);
+    backdrop-filter: blur(6px); pointer-events: auto;
     text-align: center;
     min-width: 200px;
 }
-.panel-header { font-weight: bold; margin-bottom: 8px; color: #dcdcdc; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 4px; }
-.hint { font-size: 0.85rem; opacity: 0.8; margin-bottom: 8px; }
+.panel-header { font-weight: bold; margin-bottom: 8px; color: var(--sv-text-violet); border-bottom: 1px solid var(--sv-border); padding-bottom: 4px; }
+.hint { font-size: 0.85rem; color: var(--sv-text-dim); margin-bottom: 8px; }
 
 .actions button {
-    margin: 0 4px; padding: 4px 8px; border: none;
-    background: #3498db; color: white; cursor: pointer;
-    border-radius: 3px; font-size: 0.8rem;
+    margin: 0 4px; padding: 4px 8px;
+    border: 1px solid var(--sv-border);
+    background: var(--sv-surface-2); color: var(--sv-text);
+    font-family: var(--sv-font);
+    cursor: pointer;
+    border-radius: 4px; font-size: 0.8rem;
+    transition: all 0.15s ease;
 }
-.actions .btn-clear { background: #e74c3c; }
+.actions button:hover { border-color: var(--sv-violet); box-shadow: var(--sv-glow-violet); color: var(--sv-text-violet); }
+.actions .btn-clear { background: #7a2531; border-color: rgba(231, 76, 60, 0.5); }
 
 /* Crop Tool Panel */
 .crop-tool-ui {

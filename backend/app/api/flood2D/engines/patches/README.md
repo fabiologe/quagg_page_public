@@ -71,6 +71,67 @@ Grund: `UpdateQs` (fp_acc.cpp, läuft direkt nach `UpdateH`) überschreibt `Qxol
 ein in `Qxold` gesetzter Wert würde sofort ausradiert. Setzen nach der Divergenz vermeidet
 zudem einen Massenfehler.
 
+### `quagg-coupling.patch`
+Fügt die **1D/2D-Kopplung EPA-SWMM ↔ LISFLOOD-FP** ein (In-Process-Lockstep). Statt SWMM extern
+über einen Python-Treiber zu steppen, linkt LISFLOOD `libswmm5` und treibt SWMM aus der
+`IterateQ`-Schleife — feinere Kopplung, `handler.py` bleibt ein einfacher Launcher.
+
+- **Neue Dateien** (nicht im Patch, per Dockerfile in `/src` kopiert): `engines/docker/coupling.{h,cpp}`.
+  Die eigentliche Austauschlogik lebt dort; der Patch fügt nur Aufruf-Stellen ein.
+- **lisflood.h**: `int coupling` (States) + `char couplingfilename[256]` (Fnames).
+- **pars.cpp**: `couplingfile`-Keyword (Pfad zur `flow.coupling`).
+- **lisflood.cpp**: `Coupling_Init(...)` vor dem Solver-Branch, `Coupling_Finalize(...)` danach.
+- **iterateq.cpp**: ein `Coupling_Update(...)`-Hook nach `t += Tstep`.
+- **CMakeLists.txt**: `coupling.cpp` in `lisflood-base`; unter `-DQUAGG_COUPLING=ON` wird
+  `libswmm5` gelinkt (`SWMM_LIB`), der Header eingebunden (`SWMM_INC`), rpath `/opt/swmm` gesetzt.
+
+**Sicherheits-Design / Regression:** Ohne `-DQUAGG_COUPLING` sind `Coupling_*` reine No-Ops
+(coupling.cpp kompiliert ohne libswmm5) → der pristine-Build ist unberührt. MIT dem Flag, aber
+**ohne** `couplingfile` in der `.par`, bleibt `coupling==OFF` und der Hook kehrt sofort zurück →
+verhaltensgleich (Gate: `../docker/test_bridge_no_sgc.py` grün). Kopplungsnachweis:
+`../docker/test_coupling.py` (SWMM-Überstau erscheint im 2D).
+
+**`flow.coupling`-Format** (Text, wie `flow.weir`; Weltkoordinaten):
+```
+<swmm.inp> <dt_c[s]> <n>
+<node-id> <x> <y> <rim[mNN]> <Cw> <Amax>
+...
+```
+**Austauschlogik** (ratenbasiert, seit 2026-07-08): Alle `dt_c` wird SWMM lockstep vorgerückt und je
+Schacht eine Rate `Q` bestimmt; die wird dann **jeden 2D-Zeitschritt** als Quellterm `H += Q·Tstep/dA`
+angewendet (kein instantaner Volumen-Slug mehr → keine Druckstöße/Phantom-Quellen im acceleration-Schema).
+- JUNCTION/STORAGE — **bidirektionales Deckel-Wehr über die Kopfdifferenz** `dh = hu − max(hd, rim)`
+  (hu/hd = größerer/kleinerer von 2D-WSE und SWMM-`NODE_HEAD`): `Q=Cw·dh·√(g·dh)`.
+  2D höher → Einzug (positiver LATFLOW); Netz höher → **Flutung aufs Gelände** (negativer LATFLOW,
+  gleiche Menge ins Raster) — der Schacht bekommt dafür im coupled-Export `SurDepth 999`
+  (Druckabfluss statt SWMM-internem Fluten). `Cw` bündelt Cd·L; `Amax`=0 → keine Zusatz-Kappung.
+  Stabilisierung der expliziten Kopplung: Qeq-Limiter (max. ¼ der Kopfdifferenz pro Intervall
+  ausgleichen), Kappung auf verfügbares 2D-/1D-Volumen, 50/50-LATFLOW-Relaxation. Ohne diese drei
+  schaukelt sich der Austausch am SWMM-Slot-Schacht auf (Head springt, `Q~dh^1.5` → Explosion) bzw.
+  SWMM produziert große Kontinuitätsfehler (= im Netz „erzeugtes" Wasser).
+- Notventil: flutet SWMM doch intern (SurDepth klein, `ALLOW_PONDING NO`), wird `NODE_OVERFLOW`
+  während der SWMM-Schritte **integriert** und als Pool ratenkontrolliert ins Raster ausgeliefert —
+  Momentanraten-Sampling am Intervallende erzeugt nachweislich Phantom-Wasser (Rate kollabiert,
+  sobald LATFLOW=0 gesetzt wird).
+- OUTFALL: `NODE_INFLOW` wird während der SWMM-Schritte integriert und ins Raster ausgeliefert
+  (`NODE_OVERFLOW` ist an Outfalls immer 0 — vorher ging Auslass-Wasser komplett verloren).
+  Bewusst keine Stage-Rückkopplung (positive Rückkopplung, unbilanzierter Rückfluss).
+- Massenbilanz: jede getauschte m³ wird in `BCptr->VolInMT/VolOutMT` eingebucht → `Verror` in
+  `res.mass` bleibt echt (vorher zählte Kopplungswasser als Massenfehler → „Instabilität"-Badge).
+  Liefert das 2D weniger als SWMM per LATFLOW schon erhielt (Zelle leergelaufen), wird die Differenz
+  als Bilanz-Schuld geführt und beim nächsten Intervall vom Einzug abgezogen.
+- Schutz: `rim < DEM` wird auf Geländehöhe geklemmt (fehlendes coverZ → Dauereinzug-Falle);
+  Knoten auf NoData-Zellen werden deaktiviert (Client-seitig im couplingDetector + Solver-seitig).
+- Regression: `../docker/test_coupling_roundtrip.py` (2D→1D→Outfall→2D, Erhaltung + Verror +
+  [COUPLE]-Logs) und `../docker/test_coupling.py` (Notventil-Überstau).
+- Logging: `[COUPLE]`-Zeilen auf stdout (Init-Tabelle, Status/Σ-Bilanz alle ≥60 s Sim-Zeit, Endsumme);
+  `handler.py` reicht sie UNGEDROSSELT als log-Events durch → sichtbar in der Solver-Konsole des
+  Flood2D-Runners (`[SOLVER] [COUPLE] …`).
+
+**Achtung Zeilenenden:** Die LISFLOOD-Quellen sind CRLF. Diff-**Metazeilen** (`---`/`+++`/`@@`) müssen
+LF-only sein, die **Inhaltszeilen** CRLF — sonst strippt GNU patch alle CRs und kein Hunk matcht
+(„different line endings"). Editor-Autokonvertierung auf durchgehend CRLF macht den Patch kaputt.
+
 ## Build (so wird der Patch angewandt)
 
 Single Source of Truth = **versionierter Quell-Tarball** `../vendor/lisflood-fp-8.0.3-src.tar.gz`

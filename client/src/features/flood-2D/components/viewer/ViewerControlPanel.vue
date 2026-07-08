@@ -1,7 +1,7 @@
 <template>
   <div class="vcp" :class="{ collapsed: !open }">
     <div class="vcp-head" @click="open = !open">
-      <span class="vcp-title">🎛 Steuerung</span>
+      <span class="vcp-title"><SvEmoji emoji="🎛" :size="15" /> Steuerung</span>
       <button class="vcp-toggle" :title="open ? 'Einklappen' : 'Ausklappen'">{{ open ? '▾' : '▸' }}</button>
     </div>
 
@@ -16,7 +16,7 @@
             :class="['vcp-chip', { active: activeLayer === layer.id }]"
             @click="$emit('update:activeLayer', layer.id)"
             :title="layer.label"
-          >{{ layer.icon }} {{ layer.label }}</button>
+          ><SvEmoji :emoji="layer.icon" :size="14" /> {{ layer.label }}</button>
         </div>
       </div>
 
@@ -30,19 +30,22 @@
             :class="['vcp-chip', { active: activeTool === tool.id }]"
             @click="$emit('update:activeTool', activeTool === tool.id ? null : tool.id)"
             :title="tool.label"
-          >{{ tool.icon }} {{ tool.label }}</button>
+          ><SvEmoji :emoji="tool.icon" :size="14" /> {{ tool.label }}</button>
         </div>
       </div>
 
       <!-- Regler -->
       <div class="vcp-section">
         <label class="vcp-slider">
-          <span>💧 Deckkraft</span>
+          <span><SvEmoji emoji="💧" :size="14" /> Deckkraft</span>
           <input type="range" min="0" max="1" step="0.01" :value="waterOpacity"
                  @input="$emit('update:waterOpacity', Number($event.target.value))" />
         </label>
         <label v-if="activeLayer === 'flow' || activeLayer === 'streamlines'" class="vcp-slider">
-          <span>{{ activeLayer === 'streamlines' ? '🌀 Liniendichte' : '🧭 Pfeildichte' }}</span>
+          <span>
+            <SvEmoji :emoji="activeLayer === 'streamlines' ? '🌀' : '🧭'" :size="14" />
+            {{ activeLayer === 'streamlines' ? 'Liniendichte' : 'Pfeildichte' }}
+          </span>
           <input type="range" min="0" max="1" step="0.01" :value="flowDensity"
                  @input="$emit('update:flowDensity', Number($event.target.value))" />
         </label>
@@ -66,6 +69,7 @@
 <script setup>
 import { ref } from 'vue';
 import VelocityColorControl from '@/features/flood-2D/components/viewer/VelocityColorControl.vue';
+import SvEmoji from '@/features/flood-2D/components/common/SvEmoji.vue';
 
 defineProps({
   layers: { type: Array, default: () => [] },

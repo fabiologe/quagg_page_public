@@ -114,7 +114,19 @@ export class RunpodBackend extends SolverBackend {
                 throw new Error(`Zeitlimit überschritten (Job ${this.jobId}).`);
             }
 
-            const chunk = await this.transport.streamChunks(this.jobId);
+            // Transiente Poll-Fehler (Server kurz überlastet/Netz weg) NICHT fatal werten:
+            // der Job läuft serverseitig weiter. Weiterpollen bis zur Inaktivitäts-Deadline;
+            // nur echte 4xx (Job unbekannt → fatal-Flag vom Transport) brechen sofort ab.
+            let chunk;
+            try {
+                chunk = await this.transport.streamChunks(this.jobId);
+            } catch (e) {
+                if (e.fatal) throw e;
+                this.emit({ type: 'WARNING', message: `Polling gestört (Job läuft weiter): ${e.message}` });
+                await new Promise(r => setTimeout(r, interval));
+                interval = Math.min(interval * 1.5, POLL_BACKOFF_MAX_MS);
+                continue; // lastActivity läuft weiter → Inaktivitäts-Deadline greift irgendwann
+            }
 
             if (!running && chunk.status === 'IN_PROGRESS') {
                 running = true;

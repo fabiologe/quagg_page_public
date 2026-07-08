@@ -1,10 +1,10 @@
 <template>
   <div class="flood-solver-container">
-    <h2>🌊 2D Flood Simulation (WASM)</h2>
+    <h2><SvEmoji emoji="🌊" :size="16" /> 2D Flood Simulation (WASM)</h2>
 
     <!-- SIMULATION PARAMETERS -->
     <div class="sim-params">
-      <h3>⚙️ Parameter</h3>
+      <h3><SvEmoji emoji="⚙" :size="15" /> Parameter</h3>
 
       <!-- Run Presets -->
       <div class="presets-row">
@@ -15,7 +15,7 @@
           :class="{ active: activePresetId === p.id }"
           :title="p.hint"
           @click="applyPreset(p)"
-        >{{ p.label }}</button>
+        ><SvEmoji :emoji="p.icon" :size="14" /> {{ p.label }}</button>
       </div>
 
       <div class="param-grid">
@@ -55,13 +55,13 @@
       </div>
 
       <p v-if="simStore.solverMode === 'runpod'" class="param-hint">
-        ☁️ Job: {{ simStore.jobId || '—' }} · Phase: <strong>{{ simStore.jobPhase }}</strong>
-        <span v-if="simStore.jobError"> · ⚠️ {{ simStore.jobError }}</span>
+        <SvEmoji emoji="☁" :size="13" /> Job: {{ simStore.jobId || '—' }} · Phase: <strong>{{ simStore.jobPhase }}</strong>
+        <span v-if="simStore.jobError"> · <SvEmoji emoji="⚠" :size="13" /> {{ simStore.jobError }}</span>
       </p>
 
       <!-- ── Genauigkeit (High-End-Pfad) ─────────────────────────────────── -->
       <div v-if="simStore.solverMode === 'runpod'" class="accuracy-section">
-        <div class="accuracy-header">🎯 Genauigkeit (High-End)</div>
+        <div class="accuracy-header"><SvEmoji emoji="🎯" :size="14" /> Genauigkeit (High-End)</div>
 
         <div class="param-grid">
           <label>Numerik-Schema</label>
@@ -98,14 +98,14 @@
         </div>
       </div>
       <p class="param-hint">
-        📊 {{ estimatedFrames }} Frames ·
+        <SvEmoji emoji="📊" :size="13" /> {{ estimatedFrames }} Frames ·
         {{ (simStore.simDuration / 60).toFixed(0) }} min Laufzeit
         <span v-if="cflStatus.dtMax"> · CFL-Limit: {{ cflStatus.dtMax.toFixed(2) }} s</span>
       </p>
 
       <!-- Mass Balance Report (Remote-Engines liefern u.U. kein summary) -->
       <div v-if="massReport?.summary" class="mass-badge" :class="massReportLevel">
-        💧 Massenbilanz:
+        <SvEmoji emoji="💧" :size="13" /> Massenbilanz:
         <strong>Verror={{ massReport.summary['Verror']?.toExponential(2) ?? '?' }}</strong>
         · Qin={{ massReport.summary['Qin']?.toFixed(1) ?? '?' }} m³/s
         · Qout={{ massReport.summary['Qout']?.toFixed(1) ?? '?' }} m³/s
@@ -120,11 +120,11 @@
         Start Simulation
       </button>
       <button v-else @click="abortSimulation" class="stop-btn">
-        🛑 Stop Simulation
+        <SvEmoji emoji="🛑" :size="13" /> Stop Simulation
       </button>
 
       <button @click="showInspector = !showInspector" class="dry-run-btn" type="button">
-          {{ showInspector ? '✕ Raw Viewer schließen' : '📋 Raw Viewer' }}
+          <template v-if="showInspector">✕ Raw Viewer schließen</template><template v-else><SvEmoji emoji="📋" :size="13" /> Raw Viewer</template>
       </button>
 
       <button 
@@ -134,7 +134,7 @@
         class="viewer-btn"
         title="3D Ergebnis-Viewer öffnen"
       >
-        🗺️ 3D Viewer
+        <SvEmoji emoji="🗺" :size="13" /> 3D Viewer
       </button>
       
       <div v-if="status" class="status-indicator">
@@ -158,7 +158,7 @@
     <div v-if="preRunGate.open" class="gate-overlay" @click.self="resolvePreRunGate(false)">
       <div class="gate-modal">
         <div class="gate-header">
-          <span class="gate-icon">⛔</span>
+          <span class="gate-icon"><SvEmoji emoji="⛔" :size="13" /></span>
           <h3>Kritische Probleme vor dem Start</h3>
         </div>
         <p class="gate-sub">
@@ -176,6 +176,7 @@
 </template>
 
 <script setup>
+import SvEmoji from './common/SvEmoji.vue';
 import { ref, onUnmounted, computed, watch, toRaw } from 'vue';
 
 import JSZip from 'jszip';
@@ -191,6 +192,7 @@ import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
 import { createSolverBackend } from '@/features/flood-2D/services/solver/index.js';
 import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
 import ResultInspector from '@/features/flood-2D/components/viewer/ResultInspector.vue';
+import { useCoupledExport } from '@/features/flood-2D/composables/useCoupledExport.js';
 
 // Stores
 const geoStore = useGeoStore();
@@ -198,6 +200,10 @@ const hydStore = useHydraulicStore();
 const simStore = useSimulationStore();
 const surfaceStore = useSurfaceStore();
 const bathyStore = useBathymetryStore();
+
+// 1D/2D-Kopplung (SWMM↔LISFLOOD): reichert im runpod-Modus den Datei-Satz an.
+// Gesamte Logik in sauberen Modulen (services/geometry/*, services/swmm/coupledScenario).
+const { augmentInputs: augmentCoupledInputs, buildBmiCulverts } = useCoupledExport({ geoStore });
 
 
 
@@ -231,9 +237,9 @@ const issueIcon = (sev) => sev === Severity.ERROR ? '⛔' : sev === Severity.WAR
 
 // ── Run Presets ───────────────────────────────────────────────────────────────
 const RUN_PRESETS = [
-    { id: 'quick',    label: '⚡ Schnell',   hint: '5 min Sim · dt=2s · grobe Tests',        config: { simDuration: 300,  timeStep: 2.0, saveInterval: 30,  massInterval: 30  } },
-    { id: 'standard', label: '⚖️ Standard',  hint: '1h Sim · dt=0.5s · Balance',             config: { simDuration: 3600, timeStep: 0.5, saveInterval: 60,  massInterval: 60  } },
-    { id: 'precise',  label: '🔬 Präzise',   hint: '1h Sim · dt=0.1s · hohe Ausgabefrequenz', config: { simDuration: 3600, timeStep: 0.1, saveInterval: 30,  massInterval: 30  } },
+    { id: 'quick',    icon: '⚡', label: 'Schnell',  hint: '5 min Sim · dt=2s · grobe Tests',        config: { simDuration: 300,  timeStep: 2.0, saveInterval: 30,  massInterval: 30  } },
+    { id: 'standard', icon: '⚖', label: 'Standard', hint: '1h Sim · dt=0.5s · Balance',             config: { simDuration: 3600, timeStep: 0.5, saveInterval: 60,  massInterval: 60  } },
+    { id: 'precise',  icon: '🔬', label: 'Präzise',  hint: '1h Sim · dt=0.1s · hohe Ausgabefrequenz', config: { simDuration: 3600, timeStep: 0.1, saveInterval: 30,  massInterval: 30  } },
 ];
 const activePresetId = ref(null);
 const applyPreset = (preset) => { simStore.setFullConfig(preset.config); activePresetId.value = preset.id; };
@@ -750,28 +756,35 @@ const startPreparation = async () => {
                  };
              }
 
-             for (const link of rawLinks) {
-                 const inNode  = nodeMap.get(link.sourceId);
-                 const outNode = nodeMap.get(link.targetId);
+             // Phase 2C: EIN Modell, zwei Kompilate. Ist ein Netz-Store-Netz vorhanden,
+             // kompiliert es zu den BMI-Culverts; sonst der Legacy-geoStore.culvertLinks-Pfad.
+             const netCulverts = buildBmiCulverts();
+             if (netCulverts) {
+                 activeCulverts = netCulverts;
+             } else {
+                 for (const link of rawLinks) {
+                     const inNode  = nodeMap.get(link.sourceId);
+                     const outNode = nodeMap.get(link.targetId);
 
-                 if (!inNode || !outNode) {
-                     appendLog(`⚠️ Culvert [${link.id}]: Node nicht gefunden (source=${link.sourceId}, target=${link.targetId}) — übersprungen.`);
-                     continue;
+                     if (!inNode || !outNode) {
+                         appendLog(`⚠️ Culvert [${link.id}]: Node nicht gefunden (source=${link.sourceId}, target=${link.targetId}) — übersprungen.`);
+                         continue;
+                     }
+
+                     activeCulverts.push({
+                         inX:      inNode.x,
+                         inY:      inNode.y,
+                         outX:     outNode.x,
+                         outY:     outNode.y,
+                         // hydraulic parameters — new schema
+                         z_in:      link.z_in      ?? null,  // null → BMI worker derives from DEM
+                         z_out:     link.z_out     ?? null,
+                         diameter:  link.diameter  ?? 1.0,
+                         length:    link.length    ?? 10.0,
+                         manning_n: link.manning_n ?? 0.013,
+                         Cd:        link.Cd        ?? 0.6,
+                     });
                  }
-
-                 activeCulverts.push({
-                     inX:      inNode.x,
-                     inY:      inNode.y,
-                     outX:     outNode.x,
-                     outY:     outNode.y,
-                     // hydraulic parameters — new schema
-                     z_in:      link.z_in      ?? null,  // null → BMI worker derives from DEM
-                     z_out:     link.z_out     ?? null,
-                     diameter:  link.diameter  ?? 1.0,
-                     length:    link.length    ?? 10.0,
-                     manning_n: link.manning_n ?? 0.013,
-                     Cd:        link.Cd        ?? 0.6,
-                 });
              }
 
 
@@ -811,6 +824,15 @@ const startPreparation = async () => {
          } catch (genErr) {
              throw new Error(`InputGenerator fehlgeschlagen: ${genErr.message}`);
          }
+
+         // 3b. 1D/2D-Kopplung anreichern (nur runpod + Kanalnetz vorhanden; sonst unverändert).
+         //     Alle Logik im Composable/Modul — hier nur Aufruf + Log.
+         const coupled = augmentCoupledInputs(generatedFiles, { solverMode: simStore.solverMode });
+         if (coupled.active) {
+             generatedFiles = coupled.files;
+             appendLog(`🔗 1D/2D-Kopplung aktiv: ${coupled.summary}.`);
+         }
+         for (const w of coupled.warnings) appendLog(`⚠️ ${w}`);
 
          // Set input files for the UI Inspector
          inputFiles.value = generatedFiles;
@@ -867,8 +889,9 @@ onUnmounted(() => {
 
 .run-btn {
     padding: 0.75rem 1.5rem;
-    background: #2196F3;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
+    font-weight: 700;
     border: none;
     border-radius: 4px;
     font-size: 1rem;
@@ -882,7 +905,7 @@ onUnmounted(() => {
 }
 
 .run-btn:hover:not(:disabled) {
-    background: #1976D2;
+    background: #b6f04d;
 }
 
 .stop-btn {
@@ -918,7 +941,7 @@ onUnmounted(() => {
 
 .viewer-btn {
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #0078d7, #00bcd4);
+    background: linear-gradient(135deg, #6d43d4, #8b5cf6);
     color: white;
     border: none;
     border-radius: 4px;
@@ -943,7 +966,7 @@ onUnmounted(() => {
 .sim-params h3 {
     margin: 0 0 0.75rem;
     font-size: 0.95rem;
-    color: #2c3e50;
+    color: #1e1e2c;
 }
 .param-grid {
     display: grid;
@@ -965,9 +988,9 @@ onUnmounted(() => {
     font-variant-numeric: tabular-nums;
 }
 .param-grid input[type='number']:focus {
-    border-color: #3498db;
+    border-color: #a3e635;
     outline: none;
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+    box-shadow: 0 0 0 2px rgba(163,230,53, 0.15);
 }
 .toggle-row {
     display: flex;
@@ -1025,7 +1048,7 @@ onUnmounted(() => {
 .accuracy-header {
     font-size: 0.8rem;
     font-weight: 700;
-    color: #2980b9;
+    color: #6d43d4;
     margin-bottom: 0.5rem;
 }
 .cell-estimate {
@@ -1034,7 +1057,7 @@ onUnmounted(() => {
     color: #7f8c8d;
     margin-top: 0.15rem;
 }
-.cell-estimate.estimate-warn { color: #e67e22; font-weight: 600; }
+.cell-estimate.estimate-warn { color: #8b5cf6; font-weight: 600; }
 .param-hint {
     margin: 0.75rem 0 0;
     font-size: 0.78rem;
@@ -1059,8 +1082,8 @@ onUnmounted(() => {
     cursor: pointer;
     transition: all 0.15s;
 }
-.preset-btn:hover  { background: #2471a3; border-color: #2980b9; color: #fff; }
-.preset-btn.active { background: #2980b9; border-color: #5dade2; color: #fff; }
+.preset-btn:hover  { background: #2471a3; border-color: #6d43d4; color: #fff; }
+.preset-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
 
 /* ── CFL Chip ────────────────────────────────────────────────────────────── */
 .dt-field {
@@ -1076,7 +1099,7 @@ onUnmounted(() => {
     border-radius: 10px;
     white-space: nowrap;
 }
-.cfl-chip.stable   { background: rgba(39,174,96,.25);  color: #2ecc71; }
+.cfl-chip.stable   { background: rgba(39,174,96,.25);  color: #b6f04d; }
 .cfl-chip.marginal { background: rgba(241,196,15,.25); color: #f1c40f; }
 .cfl-chip.unstable { background: rgba(231,76,60,.25);  color: #e74c3c; }
 .cfl-chip.unknown  { background: rgba(127,140,141,.2); color: #95a5a6; }
@@ -1089,7 +1112,7 @@ onUnmounted(() => {
     font-size: 0.8rem;
     line-height: 1.5;
 }
-.mass-badge.good { background: rgba(39,174,96,.18);  border: 1px solid rgba(39,174,96,.4);  color: #2ecc71; }
+.mass-badge.good { background: rgba(39,174,96,.18);  border: 1px solid rgba(39,174,96,.4);  color: #b6f04d; }
 .mass-badge.warn { background: rgba(241,196,15,.18); border: 1px solid rgba(241,196,15,.4); color: #f1c40f; }
 .mass-badge.bad  { background: rgba(231,76,60,.18);  border: 1px solid rgba(231,76,60,.4);  color: #e74c3c; }
 
@@ -1097,13 +1120,13 @@ onUnmounted(() => {
     font-weight: bold;
 }
 
-.success { color: #2ecc71; }
+.success { color: #b6f04d; }
 .error { color: #e74c3c; }
 .warning { color: #f39c12; }
 
 .logs-container {
     margin-top: 2rem;
-    background: #2c3e50;
+    background: #1e1e2c;
     color: #ecf0f1;
     padding: 1rem;
     border-radius: 4px;
@@ -1147,7 +1170,7 @@ pre {
 .save-zip-btn {
     display: inline-block;
     padding: 0.5rem 1rem;
-    background: #2ecc71;
+    background: #b6f04d;
     color: white;
     text-decoration: none;
     border-radius: 4px;
@@ -1176,8 +1199,8 @@ pre {
 
 .download-btn {
     padding: 0.25rem 0.5rem;
-    background: #27ae60;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
     border: none;
     border-radius: 3px;
     cursor: pointer;

@@ -3,7 +3,7 @@
     <!-- Loading State -->
     <div v-if="bridge.isLoading.value" class="loading-overlay">
       <div class="loading-content">
-        <div class="spinner"></div>
+        <img class="loading-svg" src="/construction%20animations/Loading%20Icon%20-%20Plan.svg" alt="Lädt…" />
         <h2>Lade Simulationsdaten...</h2>
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: bridge.loadProgress.value + '%' }"></div>
@@ -65,7 +65,7 @@
           class="instability-badge"
           :title="outlierTitle"
         >
-          ⚠ {{ outlierCount }} Instabilitätsstelle{{ outlierCount === 1 ? '' : 'n' }}
+          <SvEmoji emoji="⚠" :size="13" /> {{ outlierCount }} Instabilitätsstelle{{ outlierCount === 1 ? '' : 'n' }}
           <small>gekappt&nbsp;· Probe zeigt Rohwert</small>
         </div>
 
@@ -139,7 +139,7 @@
 
     <!-- No Data -->
     <div v-else class="no-data">
-      <h2>😕 Keine Daten</h2>
+      <h2><SvEmoji emoji="😕" :size="20" /> Keine Daten</h2>
       <p v-if="bridge.error.value">{{ bridge.error.value }}</p>
       <p v-else>Starte zuerst eine Simulation im Hauptfenster.</p>
     </div>
@@ -147,6 +147,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '@/features/flood-2D/components/common/SvEmoji.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useResultDataFromOpener } from '@/features/flood-2D/composables/useResultDataBridge.js';
 
@@ -623,9 +624,9 @@ const map3d = ref(null);
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #1a1a2e;
+  background: var(--sv-bg);
   overflow: hidden;
-  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-family: var(--sv-font);
 }
 
 /* Loading */
@@ -635,30 +636,28 @@ const map3d = ref(null);
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: radial-gradient(circle at 50% 40%, #1b1b28 0%, var(--sv-bg) 70%);
 }
 
 .loading-content {
   text-align: center;
-  color: #e0e0e0;
+  color: var(--sv-text-lime);
+  font-family: var(--sv-font);
+  letter-spacing: 0.06em;
+  text-shadow: var(--sv-glow-lime);
 }
 
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(255,255,255,0.15);
-  border-top-color: #4fc3f7;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 1rem;
+.loading-svg {
+  width: 160px;
+  height: 160px;
+  margin: 0 auto 0.5rem;
+  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.5));
 }
-
-@keyframes spin { to { transform: rotate(360deg); } }
 
 .progress-bar {
   width: 300px;
   height: 6px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(139, 92, 246, 0.18);
   border-radius: 3px;
   margin: 1rem auto;
   overflow: hidden;
@@ -666,14 +665,14 @@ const map3d = ref(null);
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #4fc3f7, #00bcd4);
+  background: linear-gradient(90deg, var(--sv-violet), var(--sv-lime));
   border-radius: 3px;
   transition: width 0.3s ease;
 }
 
 .progress-text {
   font-size: 0.85rem;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
 }
 
 /* Viewport */
@@ -735,7 +734,7 @@ const map3d = ref(null);
   background: rgba(20, 20, 40, 0.92);
   backdrop-filter: blur(16px);
   border-radius: 14px;
-  border: 1px solid rgba(79, 195, 247, 0.25);
+  border: 1px solid rgba(163,230,53, 0.25);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   z-index: 20;
   overflow: hidden;
@@ -746,8 +745,8 @@ const map3d = ref(null);
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: rgba(79, 195, 247, 0.12);
-  border-bottom: 1px solid rgba(79, 195, 247, 0.15);
+  background: rgba(163,230,53, 0.12);
+  border-bottom: 1px solid rgba(163,230,53, 0.15);
   font-weight: 600;
   color: #e0e0e0;
   font-size: 0.9rem;
@@ -797,7 +796,7 @@ const map3d = ref(null);
 }
 
 .info-value.wsp {
-  color: #4fc3f7;
+  color: #a3e635;
 }
 
 .info-value.wet {

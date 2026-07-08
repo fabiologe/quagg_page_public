@@ -1,8 +1,17 @@
 <template>
-  <div class="tool-ui-panel culvert-panel" v-show="isActive">
-    <div class="panel-header">Culvert Tool (1D/2D)</div>
-    
-    <div class="panel-content">
+  <div
+    class="tool-ui-panel culvert-panel"
+    :class="{ collapsed: !panelVisible }"
+    v-show="isActive"
+    @mouseenter="onPanelEnter"
+    @mouseleave="onPanelLeave"
+  >
+    <div class="panel-header">
+      <SvIcon name="Interface-Essential-Hierarchy-4--Streamline-Pixel" :size="18" class="header-icon" /> Culvert Tool (1D/2D)
+      <span v-if="!panelVisible" class="collapse-dots">···</span>
+    </div>
+
+    <div class="panel-content" v-show="panelVisible">
       <!-- State: Warten auf Klicks -->
       <div v-if="!pendingCulvert" class="state-idle">
         <div class="hint" v-if="!sourceNode">
@@ -66,12 +75,18 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
+import SvIcon from '../common/SvIcon.vue';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 
 const simStore = useSimulationStore();
 const geoStore = useGeoStore();
 
 // --- 1. Aktivierung ---
 const isActive = computed(() => simStore.activeTool === 'CULVERT');
+
+// Panel per Hover einklappbar (analog ShovelTool); das Parameter-Popup bleibt offen.
+const { onPanelEnter, onPanelLeave, panelVisible } =
+  useCollapsiblePanel({ forceOpen: () => pendingCulvert.value });
 
 // --- 2. State-Machine ---
 const sourceNode     = ref(null);
@@ -204,29 +219,41 @@ const cancelCulvert = () => {
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(44, 62, 80, 0.95);
-    color: #ecf0f1;
+    background: var(--sv-surface);
+    color: var(--sv-text);
+    font-family: var(--sv-font);
     padding: 16px 20px;
     border-radius: 8px;
     backdrop-filter: blur(8px);
     pointer-events: auto;
     text-align: center;
     min-width: 260px;
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
-    border: 2px solid #e67e22; /* Pinia/Tool Marker Color */
+    box-shadow: var(--sv-glow-violet);
+    border: 2px solid var(--sv-violet);
     z-index: 1000;
 }
 
 .panel-header {
     font-weight: 700;
     margin-bottom: 12px;
-    color: #e67e22;
+    color: #8b5cf6;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     padding-bottom: 8px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: default;
+    user-select: none;
 }
+.collapse-dots { margin-left: auto; opacity: 0.4; letter-spacing: 2px; font-size: 0.8rem; }
+
+/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
+.tool-ui-panel.culvert-panel.collapsed { min-width: unset; padding: 8px 16px; }
+.culvert-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 
 .hint {
     font-size: 0.95rem;
@@ -239,7 +266,7 @@ const cancelCulvert = () => {
 }
 
 .step-badge {
-    background: #e67e22;
+    background: #8b5cf6;
     color: white;
     width: 22px;
     height: 22px;
@@ -302,7 +329,7 @@ const cancelCulvert = () => {
 }
 
 .input-group input:focus {
-    border-color: #e67e22;
+    border-color: #8b5cf6;
 }
 
 .actions {
@@ -322,12 +349,13 @@ const cancelCulvert = () => {
 }
 
 .btn-save {
-    background: #e67e22;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
+    font-weight: 700;
 }
 
 .btn-save:hover {
-    background: #d35400;
+    background: #b6f04d;
 }
 
 .btn-cancel {

@@ -7,7 +7,7 @@
       :active="activeTool === 'SELECT'"
       title="Select & Edit"
     >
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+      <SvIcon name="Interface-Essential-Cursor--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <div class="separator"></div>
@@ -18,7 +18,7 @@
       :active="false"
       title="Import Data"
     >
-        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+        <SvIcon name="Interface-Essential-Clound-Download--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- Projekt speichern (.flood2d) -->
@@ -27,7 +27,7 @@
       :active="false"
       :title="hasResults ? 'Projekt speichern (Pre + optional Ergebnisse)' : 'Projekt speichern (.flood2d)'"
     >
-        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3h11l3 3v15a0 0 0 01 0 0H5a0 0 0 01 0 0V3z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 3v5h7M8 21v-7h8v7"></path></svg>
+        <SvIcon name="Interface-Essential-Floppy-Disk--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- Projekt laden (.flood2d) -->
@@ -36,7 +36,7 @@
       :active="false"
       title="Projekt laden (.flood2d)"
     >
-        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v5m0 0l-2-2m2 2l2-2"></path></svg>
+        <SvIcon name="Content-Files-Folder-Open--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
     <input ref="fileInput" type="file" accept=".flood2d,.zip" style="display:none" @change="onProjectFileChange" />
 
@@ -51,7 +51,7 @@
       :active="activeTool === 'DRAW_POLY' || activeTool === 'DRAW'" 
       title="Draw Building"
     >
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+      <SvIcon name="Building-Real-Eastate-House-2--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- WEIR Tool (Wehr / Überlauf) -->
@@ -61,14 +61,7 @@
       title="Wehr / Überlauf setzen"
     >
       <!-- Dam/Weir icon: horizontal wall with water arrows -->
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <!-- Dam wall -->
-        <rect x="9" y="4" width="3" height="16" rx="1" stroke-width="2" fill="none"/>
-        <!-- Water left -->
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9h6M3 13h6"/>
-        <!-- Overflow arrow right -->
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8h4l2 2-2 2h-4"/>
-      </svg>
+      <SvIcon name="Weir.png" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- Add Node / Source Point -->
@@ -77,7 +70,7 @@
       :active="activeTool === 'NODE'"
       title="Add Source Point / Node"
     >
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+      <SvIcon name="Map-Navigation-Pin-Location-1--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
     
     <div class="separator"></div>
@@ -108,19 +101,35 @@
       :active="activeTool === 'BOUNDARY'"
       title="Define Boundaries"
     >
-       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+       <SvIcon name="Design-Artboard-Shapes--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- CULVERT Tool (Durchlässe) -->
-    <ToolButton 
+    <ToolButton
       @click="setTool('CULVERT')"
       :active="activeTool === 'CULVERT'"
       title="Create Culvert"
     >
        <!-- Arch/Tunnel Icon -->
-       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21h18M5 21v-7a7 7 0 0114 0v7"></path>
-       </svg>
+       <SvIcon name="Interface-Essential-Link--Streamline-Pixel" :size="24" color="currentColor" />
+    </ToolButton>
+
+    <!-- KANALNETZ: Schacht setzen -->
+    <ToolButton
+      @click="setTool('NET_NODE')"
+      :active="activeTool === 'NET_NODE'"
+      title="Kanalnetz: Schacht setzen"
+    >
+      <span style="font-size:18px; line-height:1">🕳️</span>
+    </ToolButton>
+
+    <!-- KANALNETZ: Haltung ziehen -->
+    <ToolButton
+      @click="setTool('NET_CONDUIT')"
+      :active="activeTool === 'NET_CONDUIT'"
+      title="Kanalnetz: Haltung ziehen (Schacht → Schacht)"
+    >
+      <span style="font-size:18px; line-height:1">🧵</span>
     </ToolButton>
 
     <!-- BRIDGE Tool (Brückenbauwerk) -->
@@ -129,12 +138,7 @@
       :active="activeTool === 'BRIDGE'"
       title="Brücke / Bridge setzen"
     >
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8h18"/>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 8v8M18 8v8"/>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 16h18"/>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 16 Q12 11 18 16"/>
-      </svg>
+      <SvIcon name="Bridge.png" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- TEXTURE Tool (Surface Roughness Painting) -->
@@ -144,10 +148,7 @@
       title="Texture Brush (Oberfläche bemalen)"
     >
        <!-- Paint Brush Icon -->
-       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 4l-4 4M14 8l-6 6c-1 1-1.5 2.5-1.5 4V20h2c1.5 0 3-.5 4-1.5l6-6M14 8l2-2"></path>
-         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21c0-2 1.5-4 4-4"></path>
-       </svg>
+       <SvIcon name="Design-Color-Painting-Palette--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <ToolButton
@@ -155,13 +156,7 @@
       :active="activeTool === 'CROP'"
       title="Terrain zuschneiden (Rechteck / Polygon)"
     >
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
-        <circle cx="6" cy="6" r="2.5"/>
-        <circle cx="6" cy="18" r="2.5"/>
-        <line x1="8.12" y1="7.62" x2="21" y2="21"/>
-        <line x1="8.12" y1="16.38" x2="21" y2="3"/>
-        <line x1="14" y1="12" x2="21" y2="12" stroke-dasharray="2 2"/>
-      </svg>
+      <SvIcon name="Interface-Essential-Scisor--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
     
     <div class="separator"></div>
@@ -173,14 +168,7 @@
       title="Bathymetrie Preprocessing (DGM + Vermessung)"
     >
       <!-- Topo/Cross-section icon -->
-      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M3 17l4-8 4 5 3-3 4 6"/>
-        <line x1="3" y1="20" x2="21" y2="20" stroke-width="1.5"/>
-        <circle cx="7" cy="9" r="1.5" fill="currentColor" stroke="none"/>
-        <circle cx="11" cy="14" r="1.5" fill="currentColor" stroke="none"/>
-        <circle cx="14" cy="11" r="1.5" fill="currentColor" stroke="none"/>
-      </svg>
+      <SvIcon name="Interface-Essential-Stat--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <div class="separator"></div>
@@ -191,7 +179,7 @@
       :active="activeTool === 'PAN'"
       title="Pan View"
     >
-       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"></path></svg>
+       <SvIcon name="Interface-Essential-Move--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <!-- INFO Tool -->
@@ -200,7 +188,7 @@
       :active="activeTool === 'INFO'"
       title="Inspect Terrain"
     >
-       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+       <SvIcon name="Interface-Essential-Information-Circle-2--Streamline-Pixel" :size="24" color="currentColor" />
     </ToolButton>
 
     <div class="separator"></div>
@@ -237,6 +225,7 @@ import { computed, ref, nextTick } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore.js';
 import { saveProject, loadProject, downloadBlob } from '../../composables/useProjectFile.js';
 import ToolButton from '../tools/ToolButton.vue'; // Import Component
+import SvIcon from '../common/SvIcon.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
 
 const props = defineProps({
@@ -370,27 +359,27 @@ const setTool = (tool) => {
 .toolbar-container {
     width: 64px;
     height: 100%;
-    background-color: white;
-    border-right: 1px solid #e0e0e0;
+    background-color: var(--sv-bg-2);
+    border-right: 1px solid var(--sv-border);
     display: flex;
     flex-direction: column;
     align-items: center;
     padding-top: 1rem;
     gap: 0.5rem;
-    box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+    box-shadow: 2px 0 18px rgba(139, 92, 246, 0.18);
     z-index: 10;
 }
 
 /* Common button styles moved to ToolButton.vue */
 
 .icon-txt {
-   font-family: sans-serif;
+   font-family: var(--sv-font);
 }
 
 .separator {
     width: 32px;
     height: 1px;
-    background-color: #eee;
+    background-color: var(--sv-border);
     margin: 0.5rem 0;
 }
 
@@ -401,7 +390,7 @@ const setTool = (tool) => {
     gap: 4px;
     margin-top: 4px;
     padding: 4px;
-    background: #f9f9f9;
+    background: var(--sv-surface-2);
     border-radius: 4px;
 }
 
@@ -409,15 +398,16 @@ const setTool = (tool) => {
     width: 32px;
     height: 24px;
     font-size: 0.7rem;
-    border: 1px solid #ddd;
-    background: white;
+    border: 1px solid var(--sv-border);
+    background: var(--sv-bg);
     border-radius: 3px;
     cursor: pointer;
-    color: #555;
+    color: var(--sv-text-dim);
+    font-family: var(--sv-font);
     transition: all 0.2s;
 }
 .tool-btn-mini:hover {
-    background: #eee;
-    color: #000;
+    background: rgba(139, 92, 246, 0.2);
+    color: var(--sv-text-lime);
 }
 </style>

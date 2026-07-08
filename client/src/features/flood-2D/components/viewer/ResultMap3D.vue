@@ -10,6 +10,7 @@ import { useSectionTool } from '@/features/flood-2D/composables/useSectionTool';
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useLayerRenderer } from '@/features/flood-2D/composables/editor/useLayerRenderer';
+import { useNetworkRenderer } from '@/features/flood-2D/composables/editor/useNetworkRenderer';
 import { makeResultCoords } from '@/features/flood-2D/composables/viewer/useResultCoords';
 import { useResultScene } from '@/features/flood-2D/composables/viewer/useResultScene';
 import { useFlowArrows } from '@/features/flood-2D/composables/viewer/useFlowArrows';
@@ -117,6 +118,7 @@ const mouse = new THREE.Vector2();
 let volumeToolState = null;
 let sectionToolState = null;
 let layerRenderer = null;
+let networkRenderer = null;   // Kanalnetz im Ergebnis-Viewer (read-only)
 
 
 // --- INIT ---
@@ -144,6 +146,7 @@ onUnmounted(() => {
   streamApi.dispose();
   dangerApi.dispose();
   sceneApi.dispose();
+  networkRenderer?.dispose?.();
   window.removeEventListener('resize', onResize);
   window.removeEventListener('flood-viewer-dispose', _handleViewerDispose);
 });
@@ -243,7 +246,12 @@ function initScene() {
   // This is CRITICAL because the renderer needs the terrain's center point
   // to calculate the local coordinate offset for drawing features.
   layerRenderer = useLayerRenderer(scene, geoStore, computed(() => props.terrain));
-  
+
+  // Kanalnetz (useNetworkStore) auch im Ergebnis-Viewer rendern — self-contained, nutzt
+  // denselben (geometrisch abgeleiteten) Welt→Szene-Transform wie der Editor, sodass die
+  // Schächte/Haltungen exakt auf dem Ergebnis-Gelände liegen.
+  networkRenderer = useNetworkRenderer(scene, layerRenderer.getLocalPos);
+
   if (geoStore.buildings?.features?.length > 0) {
       layerRenderer.renderBuildings();
   }

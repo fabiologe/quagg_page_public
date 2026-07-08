@@ -1,16 +1,22 @@
 <template>
-  <div class="tool-ui-panel weir-panel" :class="{ collapsed: isCollapsed }" v-show="isActive">
-    <div class="panel-header" @click="collapsed = !collapsed" title="Ein-/Ausklappen">
-      <span class="header-icon">〰</span> Wehr / Überlauf
-      <span class="collapse-toggle">{{ isCollapsed ? '▸' : '▾' }}</span>
+  <div
+    class="tool-ui-panel weir-panel"
+    :class="{ collapsed: !panelVisible }"
+    v-show="isActive"
+    @mouseenter="onPanelEnter"
+    @mouseleave="onPanelLeave"
+  >
+    <div class="panel-header">
+      <SvIcon name="Weir.png" :size="18" class="header-icon" /> Wehr / Überlauf
+      <span v-if="!panelVisible" class="collapse-toggle">···</span>
     </div>
 
-    <div class="panel-content" v-show="!isCollapsed">
+    <div class="panel-content" v-show="panelVisible">
 
       <!-- Modus: klassische 2-Klick-Linie vs. editierbare Polylinie -->
       <div class="mode-switch">
         <button class="mode-btn" :class="{ active: weir3DState.mode === 'LINE' }" @click="setMode('LINE')">➖ Linie</button>
-        <button class="mode-btn" :class="{ active: weir3DState.mode === 'POLYLINE' }" @click="setMode('POLYLINE')">✏ Polylinie</button>
+        <button class="mode-btn" :class="{ active: weir3DState.mode === 'POLYLINE' }" @click="setMode('POLYLINE')"><SvEmoji emoji="✏" :size="13" /> Polylinie</button>
       </div>
 
       <!-- ════ Polylinien-Modus (zeichnen + Ecken ziehen) ════ -->
@@ -32,9 +38,9 @@
         </div>
 
         <div v-else-if="weir3DState.phase === 'EDIT'" class="state-idle">
-          <div class="location-badge" v-if="editingWeir">✏ {{ editingWeir.points.length }} Ecken · {{ (editingWeir.openings || []).length }} Öffnung(en)</div>
+          <div class="location-badge" v-if="editingWeir"><SvEmoji emoji="✏" :size="13" /> {{ editingWeir.points.length }} Ecken · {{ (editingWeir.openings || []).length }} Öffnung(en)</div>
           <div class="sub-hint">
-            <strong style="color:#3498db">Basis</strong> ziehen = Lage · <strong style="color:#5dade2">Krone</strong> ziehen = Höhe (Profil) ·
+            <strong style="color:#3498db">Basis</strong> ziehen = Lage · <strong style="color:#a3e635">Krone</strong> ziehen = Höhe (Profil) ·
             andere Linie anklicken zum Wechseln · Enter: fertig
           </div>
           <div class="input-group">
@@ -96,7 +102,7 @@
           <div v-for="l in weirLines" :key="l.id" class="weir-item">
             <span class="weir-label">{{ l.label || l.id.substring(0,10) }}</span>
             <span class="weir-meta">{{ l.points.length }} Pkt · hc={{ l.hc.toFixed(2) }}m</span>
-            <button class="btn-edit" @click="editWeirLine(l.id)" title="Bearbeiten">✏</button>
+            <button class="btn-edit" @click="editWeirLine(l.id)" title="Bearbeiten"><SvEmoji emoji="✏" :size="13" /></button>
             <button class="btn-remove" @click="geoStore.removeWeirLine(l.id)" title="Löschen">✕</button>
           </div>
         </div>
@@ -137,7 +143,7 @@
       <!-- Schritt 2: Parameter-Formular -->
       <div v-else class="state-form">
         <div class="location-badge">
-          📍 Linie mit {{ pendingSegments.length }} Segmenten
+          <SvEmoji emoji="📍" :size="13" /> Linie mit {{ pendingSegments.length }} Segmenten
         </div>
 
         <!-- Linie Info -->
@@ -181,7 +187,7 @@
         </div>
 
         <div class="validation-error" v-if="!isValid">
-          ⚠ hc muss über der Geländehöhe liegen (> {{ terrainZ.toFixed(2) }} m)
+          <SvEmoji emoji="⚠" :size="13" /> hc muss über der Geländehöhe liegen (> {{ terrainZ.toFixed(2) }} m)
         </div>
       </div>
       </template>
@@ -191,9 +197,11 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
+import SvIcon from '../common/SvIcon.vue';
 
 const props = defineProps({
   toolInstance: { type: Object, default: null }
@@ -205,14 +213,17 @@ const geoStore = useGeoStore();
 const isActive = computed(() => simStore.activeTool === 'WEIR');
 const weirs    = computed(() => geoStore.weirs);
 
-// Panel einklappbar (Klick auf den Header). REIN MANUELL — kein Auto-Zuklappen,
-// sonst bliebe es im Polylinien-Modus (startet in DRAW) dauerhaft zu.
-const collapsed = ref(false);
-const isCollapsed = computed(() => collapsed.value);
+// Panel einklappbar per Hover (analog ShovelTool/BridgeTool): klappt auch während
+// des Zeichnens/Editierens ein, sobald die Maus das Panel verlässt. Nur das offene
+// Bestätigungs-Formular (pendingWeir) bleibt sichtbar, damit die Bestätigung nicht
+// beim Wegbewegen verschwindet.
+const { onPanelEnter, onPanelLeave, panelVisible } =
+  useCollapsiblePanel({ forceOpen: () => pendingWeir.value });
 const isDrawingAxis = computed(() => props.toolInstance?.state?.value === 'DRAWING');
 
 // ── Polylinien-Modus (editierbar) ───────────────────────────────────────────
 import { weir3DState, getWeir3DToolInstance } from '../../composables/editor/useWeir3DTool.js';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 const weir3d = getWeir3DToolInstance();
 
 // „Fertig": Bearbeitung abschließen UND das Werkzeug deaktivieren (Auto-Reset), damit nicht
@@ -337,8 +348,9 @@ const cancel = () => reset();
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(26, 42, 58, 0.96);
-  color: #ecf0f1;
+  background: var(--sv-surface);
+  color: var(--sv-text);
+  font-family: var(--sv-font);
   padding: 16px 20px;
   border-radius: 10px;
   backdrop-filter: blur(10px);
@@ -347,8 +359,8 @@ const cancel = () => reset();
   max-width: 380px;
   max-height: calc(100vh - 48px);
   overflow-y: auto;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  border: 2px solid #2980b9;
+  box-shadow: var(--sv-glow-violet);
+  border: 2px solid var(--sv-violet);
   z-index: 1000;
 }
 
@@ -356,27 +368,27 @@ const cancel = () => reset();
 .panel-header {
   font-weight: 700;
   font-size: 0.95rem;
-  color: #5dade2;
+  color: #a3e635;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(93, 173, 226, 0.3);
+  border-bottom: 1px solid rgba(163,230,53, 0.3);
   padding-bottom: 8px;
   margin-bottom: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
 }
 .weir-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
-.collapse-toggle { margin-left: auto; color: #5dade2; font-size: 0.85rem; }
+.collapse-toggle { margin-left: auto; color: #a3e635; font-size: 0.85rem; }
 
 .header-icon { font-size: 1.1rem; }
 
 /* Hint */
 .hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .drawing-hint { color: #ffce54; }
-.step-badge { background: #2980b9; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
+.step-badge { background: #8b5cf6; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
 .sub-hint { font-size: 0.8rem; color: #95a5a6; line-height: 1.4; margin-bottom: 12px; }
 
 /* Existing weirs list */
@@ -390,45 +402,45 @@ const cancel = () => reset();
 
 /* Form */
 .state-form { display: flex; flex-direction: column; gap: 10px; }
-.location-badge { font-size: 0.78rem; color: #5dade2; background: rgba(41,128,185,0.18); border-radius: 4px; padding: 4px 8px; text-align: center; }
+.location-badge { font-size: 0.78rem; color: #a3e635; background: rgba(139,92,246,0.18); border-radius: 4px; padding: 4px 8px; text-align: center; }
 
 .input-group { display: flex; flex-direction: column; gap: 4px; }
 .input-group label { font-size: 0.82rem; color: #bdc3c7; }
-.input-group input[type="number"] { padding: 7px 10px; border-radius: 5px; border: 1px solid #4a6278; background: #1e3348; color: white; font-size: 0.9rem; outline: none; transition: border-color 0.2s; }
-.input-group input[type="number"]:focus { border-color: #2980b9; }
+.input-group input[type="number"] { padding: 7px 10px; border-radius: 5px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.9rem; outline: none; transition: border-color 0.2s; }
+.input-group input[type="number"]:focus { border-color: #8b5cf6; }
 .field-hint { font-size: 0.74rem; color: #7f8c8d; line-height: 1.3; }
 
 .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; }
-.checkbox-label input { accent-color: #2980b9; width: 14px; height: 14px; }
+.checkbox-label input { accent-color: #8b5cf6; width: 14px; height: 14px; }
 
 /* Direction grid */
 .direction-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.dir-btn { padding: 6px 4px; border: 1px solid #4a6278; background: #1e3348; color: #bdc3c7; border-radius: 4px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s; }
-.dir-btn:hover { background: #2471a3; border-color: #2980b9; color: white; }
-.dir-btn.active { background: #2980b9; border-color: #5dade2; color: white; }
+.dir-btn { padding: 6px 4px; border: 1px solid #3a2f5c; background: #12121a; color: #bdc3c7; border-radius: 4px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+.dir-btn:hover { background: #6d43d4; border-color: #8b5cf6; color: white; }
+.dir-btn.active { background: #8b5cf6; border-color: #a3e635; color: white; }
 .dir-hint { font-size: 0.72rem; color: #7f8c8d; line-height: 1.3; min-height: 2.5em; }
 
 /* Buttons */
 .mode-switch { display: flex; gap: 6px; margin-bottom: 12px; }
-.mode-btn { flex: 1; padding: 6px; border: 1px solid #4a6278; border-radius: 5px; background: #1e3348; color: #bdc3c7; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.mode-btn.active { border-color: #2980b9; background: rgba(41,128,185,0.22); color: #ecf0f1; }
-.btn-edit { background: none; border: 1px solid #2980b9; color: #5dade2; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; }
-.btn-edit:hover { background: #2980b9; color: white; }
+.mode-btn { flex: 1; padding: 6px; border: 1px solid #3a2f5c; border-radius: 5px; background: #12121a; color: #bdc3c7; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.mode-btn.active { border-color: #8b5cf6; background: rgba(139,92,246,0.22); color: #ecf0f1; }
+.btn-edit { background: none; border: 1px solid #8b5cf6; color: #a3e635; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; }
+.btn-edit:hover { background: #8b5cf6; color: white; }
 .btn-remove-wide { flex: 0 0 auto; padding: 8px 10px; border: 1px solid #c0392b; border-radius: 5px; background: none; color: #c0392b; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
 .btn-remove-wide:hover { background: #c0392b; color: white; }
 .btn-slim { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; border: none; border-radius: 5px; font-weight: 600; cursor: pointer; }
 .op-soffit { font-size: 0.72rem; color: #95a5a6; display: flex; align-items: center; gap: 4px; }
-.op-soffit input { width: 58px; padding: 3px 6px; border-radius: 4px; border: 1px solid #4a6278; background: #1e3348; color: white; font-size: 0.8rem; outline: none; }
+.op-soffit input { width: 58px; padding: 3px 6px; border-radius: 4px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.8rem; outline: none; }
 .op-row { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .op-head { display: flex; align-items: center; justify-content: space-between; }
 .op-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px; }
 .actions { display: flex; gap: 8px; margin-top: 4px; }
 .btn { flex: 1; padding: 8px; border: none; border-radius: 5px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
 .btn:active { transform: scale(0.97); }
-.btn-save { background: #2980b9; color: white; }
+.btn-save { background: #a3e635; color: #12121a; font-weight: 700; }
 .btn-save:hover:not(:disabled) { background: #1f6691; }
 .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-cancel { background: #4a6278; color: white; }
+.btn-cancel { background: #3a2f5c; color: white; }
 .btn-cancel:hover { background: #5d7a91; }
 
 .validation-error { font-size: 0.78rem; color: #e74c3c; text-align: center; margin-top: -4px; }

@@ -9,6 +9,7 @@
  *   manifest.json      — Version, Terrain-Header, hasResults, Surface-/Results-Metadaten
  *   terrain.f32        — Float32 gridData (bottom-up)
  *   geometry.json      — GEO_FIELDS (modifications/boundaries/nodes/weirs/bridges/culvertLinks)
+ *   network.json       — Kanalnetz (useNetworkStore: nodes/links/format) für die 1D/2D-Kopplung
  *   hydraulics.json    — Ganglinien/Assignments/Regen/globale Boundary/…
  *   sim.json           — Simulationsparameter
  *   surface/grid.i8 + surface/materials.json   — optional (Textur-Pipeline)
@@ -16,12 +17,13 @@
  */
 import JSZip from 'jszip';
 import { toRaw } from 'vue';
-import { useGeoStore } from '../stores/useGeoStore';
-import { useHydraulicStore } from '../stores/useHydraulicStore';
-import { useSurfaceStore } from '../stores/useSurfaceStore';
-import { useSimulationStore } from '../stores/useSimulationStore';
-import { GEO_FIELDS, buildResultData } from './useResultDataBridge';
-import { migrateBoundaries } from '../utils/boundarySegments';
+import { useGeoStore } from '../stores/useGeoStore.js';
+import { useHydraulicStore } from '../stores/useHydraulicStore.js';
+import { useSurfaceStore } from '../stores/useSurfaceStore.js';
+import { useSimulationStore } from '../stores/useSimulationStore.js';
+import { useNetworkStore } from '../stores/useNetworkStore.js';
+import { GEO_FIELDS, buildResultData } from './useResultDataBridge.js';
+import { migrateBoundaries } from '../utils/boundarySegments.js';
 
 const MAGIC = 'flood-2D-project';
 const VERSION = 1;
@@ -90,6 +92,15 @@ export async function saveProject({ includeResults = false, onProgress = null } 
   const geometry = {};
   for (const f of GEO_FIELDS) geometry[f] = J(geoStore[f]);
   zip.file('geometry.json', JSON.stringify(geometry));
+
+  // Kanalnetz (Unified Geometry Engine) — Quelle des gekoppelten 1D/2D-Laufs.
+  // Die reaktiven Arrays SIND die editierbare Wahrheit (toModel() ist daraus ableitbar).
+  const net = useNetworkStore();
+  if (net.hasNetwork) {
+    zip.file('network.json', JSON.stringify({
+      nodes: J(net.nodes), links: J(net.links), format: net.format || null,
+    }));
+  }
 
   // Hydraulik / Randbedingungen / Regen
   zip.file('hydraulics.json', JSON.stringify({
@@ -221,6 +232,18 @@ export async function loadProject(file, onProgress = null) {
     for (const f of GEO_FIELDS) if (geom[f] !== undefined && geom[f] !== null) geoStore[f] = geom[f];
     // Alt-/Linien-Brücken aufs Polygon-mesh3d-Modell heben (einheitliches Rendering & Solver).
     geoStore.migrateBridges?.();
+  }
+
+  // Kanalnetz: immer deterministisch wiederherstellen — Projekt OHNE network.json leert den
+  // Store (sonst leckt ein Netz aus der vorherigen Session in das geladene Projekt).
+  const net = useNetworkStore();
+  const nf = zip.file('network.json');
+  if (nf) {
+    const n = JSON.parse(await nf.async('string'));
+    net.setArrays(n.nodes || [], n.links || []);
+    net.format = n.format ?? null;
+  } else {
+    net.clear();
   }
 
   // Hydraulik

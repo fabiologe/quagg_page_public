@@ -1,8 +1,17 @@
 <template>
-  <div class="tool-ui-panel node-panel" v-show="isActive">
-    <div class="panel-header">Source Point / Node Tool</div>
-    
-    <div class="panel-content">
+  <div
+    class="tool-ui-panel node-panel"
+    :class="{ collapsed: !panelVisible }"
+    v-show="isActive"
+    @mouseenter="onPanelEnter"
+    @mouseleave="onPanelLeave"
+  >
+    <div class="panel-header">
+      Source Point / Node Tool
+      <span v-if="!panelVisible" class="collapse-dots">···</span>
+    </div>
+
+    <div class="panel-content" v-show="panelVisible">
       <!-- Zustand 1: Warten auf Klick -->
       <div v-if="!pendingNode" class="state-idle">
         <div class="hint">
@@ -45,6 +54,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 
 const simStore = useSimulationStore();
 const geoStore = useGeoStore();
@@ -52,6 +62,10 @@ const geoStore = useGeoStore();
 // --- 1. Aktivierung ---
 // Reagiert auf 'NODE', wie zuvor im Toolbar-Fix eingerichtet
 const isActive = computed(() => simStore.activeTool === 'NODE');
+
+// Panel per Hover einklappbar (analog ShovelTool); das Bestätigungs-Popup bleibt offen.
+const { onPanelEnter, onPanelLeave, panelVisible } =
+  useCollapsiblePanel({ forceOpen: () => !!pendingNode.value });
 
 // --- 2. State-Machine ---
 const pendingNode = ref(null);
@@ -145,7 +159,18 @@ const cancelNode = () => {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: default;
+    user-select: none;
 }
+.collapse-dots { margin-left: auto; opacity: 0.4; letter-spacing: 2px; font-size: 0.8rem; }
+
+/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
+.tool-ui-panel.node-panel.collapsed { min-width: unset; padding: 8px 16px; }
+.node-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 
 .hint {
     font-size: 0.95rem;

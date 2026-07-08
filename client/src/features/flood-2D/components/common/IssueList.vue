@@ -3,9 +3,9 @@
     <div v-if="title || showCounts" class="issue-list__head">
       <span v-if="title" class="issue-list__title">{{ title }}</span>
       <span v-if="showCounts" class="issue-list__counts">
-        <span v-if="counts.error" class="issue-badge issue-badge--error">{{ icon('error') }} {{ counts.error }}</span>
-        <span v-if="counts.warn"  class="issue-badge issue-badge--warn">{{ icon('warn') }} {{ counts.warn }}</span>
-        <span v-if="counts.info"  class="issue-badge issue-badge--info">{{ icon('info') }} {{ counts.info }}</span>
+        <span v-if="counts.error" class="issue-badge issue-badge--error"><SvEmoji :emoji="icon('error')" :size="13" /> {{ counts.error }}</span>
+        <span v-if="counts.warn"  class="issue-badge issue-badge--warn"><SvEmoji :emoji="icon('warn')" :size="13" /> {{ counts.warn }}</span>
+        <span v-if="counts.info"  class="issue-badge issue-badge--info"><SvEmoji :emoji="icon('info')" :size="13" /> {{ counts.info }}</span>
       </span>
     </div>
 
@@ -16,7 +16,7 @@
         class="issue-list__item"
         :class="'issue-list__item--' + norm(it.severity)"
       >
-        <span class="issue-list__icon">{{ icon(it.severity) }}</span>
+        <span class="issue-list__icon"><SvEmoji :emoji="icon(it.severity)" :size="13" /></span>
         <span class="issue-list__text">
           <slot name="message" :issue="it">{{ it.message }}</slot>
         </span>
@@ -38,6 +38,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import SvEmoji from './SvEmoji.vue';
 
 /**
  * Wiederverwendbare Issue-/Warn-Liste.

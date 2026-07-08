@@ -8,7 +8,7 @@
       :style="headerStyle"
       @mousedown="startDrag"
     >
-      <span>📍 Zellenabfrage</span>
+      <span><SvEmoji emoji="📍" :size="14" /> Zellenabfrage</span>
       <button class="close-btn" @click.stop="handleClose">&times;</button>
     </div>
     <div class="cell-info-body">
@@ -44,6 +44,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, onMounted } from 'vue';
 
 const props = defineProps({

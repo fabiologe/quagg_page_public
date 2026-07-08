@@ -27,21 +27,23 @@ defineEmits(['click']);
     border: none;
     background: transparent;
     border-radius: 6px;
-    color: #666;
+    color: var(--sv-text-dim);
     cursor: pointer;
     transition: all 0.2s;
     font-weight: 700;
     font-size: 0.9rem;
+    font-family: var(--sv-font);
 }
 
 .tool-btn:hover {
-    background-color: #f5f5f5;
-    color: #333;
+    background-color: rgba(139, 92, 246, 0.18);
+    color: var(--sv-text-lime);
 }
 
 .tool-btn.active {
-    background-color: #e3f2fd; /* Light Blue */
-    color: #3498db;
-    border: 2px solid #3498db;
+    background-color: rgba(139, 92, 246, 0.22);
+    color: var(--sv-text-lime);
+    border: 2px solid var(--sv-violet);
+    box-shadow: var(--sv-glow-violet);
 }
 </style>

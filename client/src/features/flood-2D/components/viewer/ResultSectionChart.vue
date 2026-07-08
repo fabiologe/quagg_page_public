@@ -2,7 +2,7 @@
   <div class="section-chart-panel" v-if="section && section.data && section.data.length > 0" :style="panelStyle">
     <div class="panel-header" :style="headerStyle" @mousedown="startDrag">
       <div class="title" :style="{ color: section.color }">
-        <span class="icon">📏</span> Querschnitt (Frame {{ currentFrame }})
+        <span class="icon"><SvEmoji emoji="📏" :size="14" /></span> Querschnitt (Frame {{ currentFrame }})
       </div>
       <div class="header-actions">
         <button class="reset-btn" @click.stop="resetZoom" title="Ansicht zurücksetzen">⟲ Reset</button>
@@ -17,12 +17,12 @@
         <span>Relativ</span>
       </label>
       <label class="ctrl-slider" title="Gleitender Mittelwert — glättet Spikes im Wasserspiegel/Gelände">
-        <span>🪥 Glättung</span>
+        <span><SvEmoji emoji="🪥" :size="14" /> Glättung</span>
         <input type="range" min="0" max="8" step="1" v-model.number="smoothWindow" />
         <span class="ctrl-val">{{ smoothWindow === 0 ? 'aus' : smoothWindow }}</span>
       </label>
       <span v-if="section.structures && section.structures.length" class="ctrl-info">
-        🏗️ {{ section.structures.length }} Bauwerk{{ section.structures.length === 1 ? '' : 'e' }}
+        <SvEmoji emoji="🏗" :size="13" /> {{ section.structures.length }} Bauwerk{{ section.structures.length === 1 ? '' : 'e' }}
       </span>
     </div>
 
@@ -35,6 +35,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, watch, onMounted, onUnmounted, shallowRef, computed } from 'vue';
 import {
   Chart, LineElement, PointElement, LineController,

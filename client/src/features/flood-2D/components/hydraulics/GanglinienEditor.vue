@@ -8,14 +8,14 @@
         :class="{ active: mode === 'GRAPH' }" 
         @click="mode = 'GRAPH'"
       >
-        📈 Grafik
+        <SvEmoji emoji="📈" :size="13" /> Grafik
       </button>
       <button 
         class="tab-btn" 
         :class="{ active: mode === 'TABLE' }" 
         @click="mode = 'TABLE'"
       >
-        🔢 Tabelle
+        <SvEmoji emoji="🔢" :size="13" /> Tabelle
       </button>
     </div>
 
@@ -36,25 +36,25 @@
               <!-- GRID & LABELS -->
               <g class="grid">
                   <!-- Axis Lines -->
-                  <line :x1="padding.left" :y1="height - padding.bottom" :x2="width - padding.right" :y2="height - padding.bottom" stroke="#34495e" stroke-width="1" />
-                  <line :x1="padding.left" :y1="padding.top" :x2="padding.left" :y2="height - padding.bottom" stroke="#34495e" stroke-width="1" />
+                  <line :x1="padding.left" :y1="height - padding.bottom" :x2="width - padding.right" :y2="height - padding.bottom" stroke="#2e2740" stroke-width="1" />
+                  <line :x1="padding.left" :y1="padding.top" :x2="padding.left" :y2="height - padding.bottom" stroke="#2e2740" stroke-width="1" />
 
                   <!-- X Grid & Labels -->
                   <g v-for="tick in xTicks" :key="'x-'+tick.val">
-                      <line :x1="tick.x" :y1="padding.top" :x2="tick.x" :y2="height - padding.bottom" stroke="#2c3e50" stroke-width="1" stroke-dasharray="2,2" />
+                      <line :x1="tick.x" :y1="padding.top" :x2="tick.x" :y2="height - padding.bottom" stroke="#1e1e2c" stroke-width="1" stroke-dasharray="2,2" />
                       <text :x="tick.x" :y="height - 5" fill="#7f8c8d" font-size="10" text-anchor="middle">{{ tick.label }}</text>
                   </g>
 
                   <!-- Y Grid & Labels -->
                   <g v-for="tick in yTicks" :key="'y-'+tick.val">
-                      <line :x1="padding.left" :y1="tick.y" :x2="width - padding.right" :y2="tick.y" stroke="#2c3e50" stroke-width="1" stroke-dasharray="2,2" />
+                      <line :x1="padding.left" :y1="tick.y" :x2="width - padding.right" :y2="tick.y" stroke="#1e1e2c" stroke-width="1" stroke-dasharray="2,2" />
                       <text :x="padding.left - 5" :y="tick.y + 4" fill="#7f8c8d" font-size="10" text-anchor="end">{{ tick.label }}</text>
                   </g>
               </g>
 
               <!-- DATA LINE -->
-              <path :d="pathD" fill="none" stroke="#3498db" stroke-width="2" />
-              <path :d="areaD" fill="rgba(52, 152, 219, 0.2)" stroke="none" />
+              <path :d="pathD" fill="none" stroke="#a3e635" stroke-width="2" />
+              <path :d="areaD" fill="rgba(163,230,53, 0.2)" stroke="none" />
 
               <!-- POINTS -->
               <circle 
@@ -112,6 +112,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 
 const props = defineProps({
@@ -324,8 +325,8 @@ const addPointRow = () => {
 /* TABS */
 .editor-tabs {
     display: flex;
-    background: #1a252f;
-    border-bottom: 1px solid #34495e;
+    background: #101018;
+    border-bottom: 1px solid #2e2740;
 }
 .tab-btn {
     flex: 1;
@@ -337,8 +338,8 @@ const addPointRow = () => {
     font-weight: 500;
     border-bottom: 2px solid transparent;
 }
-.tab-btn:hover { color: white; background: #2c3e50; }
-.tab-btn.active { color: #3498db; border-bottom-color: #3498db; }
+.tab-btn:hover { color: white; background: #1e1e2c; }
+.tab-btn.active { color: #a3e635; border-bottom-color: #a3e635; }
 
 /* MODES */
 .mode-graph, .mode-table {
@@ -361,7 +362,7 @@ const addPointRow = () => {
     display: block; /* Removes inline gap */
 }
 .control-point {
-    fill: #34495e; stroke: #3498db; stroke-width: 2; cursor: grab;
+    fill: #2e2740; stroke: #a3e635; stroke-width: 2; cursor: grab;
 }
 .control-point:hover { fill: #ecf0f1; r: 8; }
 .control-point.active { fill: #e74c3c; stroke: white; cursor: grabbing; }
@@ -381,12 +382,12 @@ const addPointRow = () => {
 .input-cell {
     width: 100%;
     background: #2d3436;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     color: white;
     padding: 4px;
     border-radius: 3px;
 }
-.input-cell:focus { border-color: #3498db; outline: none; }
+.input-cell:focus { border-color: #a3e635; outline: none; }
 
 .btn-del-row {
     background: none; border: none; color: #c0392b; cursor: pointer; font-size: 1.2rem;
@@ -395,8 +396,8 @@ const addPointRow = () => {
 
 .btn-add-row {
     margin: 10px; padding: 8px;
-    background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer;
+    background: #a3e635; color: #12121a; border: none; border-radius: 4px; cursor: pointer;
 }
-.btn-add-row:hover { background: #2ecc71; }
+.btn-add-row:hover { background: #b6f04d; }
 
 </style>

@@ -4,20 +4,21 @@
     <!-- HEADER -->
     <div class="cm-header">
       <div class="cm-title">
-        <span class="cm-icon">🔌</span>
+        <span class="cm-icon"><SvEmoji emoji="🔌" :size="16" /></span>
         <div>
           <h4>1D/2D Rohrkopplung</h4>
           <p class="cm-subtitle">Verbinde Schächte als Durchlässe für den BMI-Solver</p>
         </div>
       </div>
       <div class="bmi-badge" :class="{ active: simStore.useBmiSolver }">
-        {{ simStore.useBmiSolver ? '🧪 BMI aktiv' : '⚙️ Classic' }}
+        <SvEmoji :emoji="simStore.useBmiSolver ? '🧪' : '⚙'" :size="13" />
+        {{ simStore.useBmiSolver ? 'BMI aktiv' : 'Classic' }}
       </div>
     </div>
 
     <!-- KEIN TERRAIN ODER NODES -->
     <div v-if="nodes.length === 0" class="empty-state">
-      <div class="empty-icon">📍</div>
+      <div class="empty-icon"><SvEmoji emoji="📍" :size="22" /></div>
       <p>Keine Schächte geladen.</p>
       <small>Importiere zuerst ein Kanalnetz (ISYBAU .xml) über den Daten-Importer.</small>
     </div>
@@ -87,7 +88,7 @@
         </div>
 
         <div v-if="duplicateWarning" class="warn-msg">
-          ⚠️ Dieses Paar ist bereits vorhanden.
+          <SvEmoji emoji="⚠" :size="14" /> Dieses Paar ist bereits vorhanden.
         </div>
       </div>
 
@@ -133,7 +134,7 @@
                 class="btn-icon btn-edit"
                 title="maxQ bearbeiten"
                 @click="startEdit(link)"
-              >✏️</button>
+              ><SvEmoji emoji="✏" :size="13" /></button>
               <button
                 class="btn-icon btn-del"
                 title="Paar entfernen"
@@ -185,6 +186,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import SvEmoji from '../common/SvEmoji.vue';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { useSimulationStore } from '@/features/flood-2D/stores/useSimulationStore.js';
 
@@ -274,7 +276,7 @@ function getNodeLabel(nodeId) {
     height: 100%;
     background: #1e2d3a;
     color: #ecf0f1;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: var(--sv-font);
     font-size: 0.88rem;
     overflow: hidden;
     position: relative;
@@ -287,7 +289,7 @@ function getNodeLabel(nodeId) {
     align-items: center;
     padding: 14px 16px 10px;
     background: #253547;
-    border-bottom: 1px solid #34495e;
+    border-bottom: 1px solid #2e2740;
     flex-shrink: 0;
 }
 .cm-title {
@@ -304,7 +306,7 @@ function getNodeLabel(nodeId) {
     border-radius: 12px;
     font-size: 0.72rem;
     font-weight: 600;
-    background: #2c3e50;
+    background: #1e1e2c;
     color: #7f8c8d;
     border: 1px solid #3d5166;
     white-space: nowrap;
@@ -336,7 +338,7 @@ function getNodeLabel(nodeId) {
 .add-form {
     padding: 14px 16px;
     background: #253547;
-    border-bottom: 1px solid #34495e;
+    border-bottom: 1px solid #2e2740;
     flex-shrink: 0;
 }
 .form-title {
@@ -380,7 +382,7 @@ function getNodeLabel(nodeId) {
 
 .arrow-col {
     font-size: 1.4rem;
-    color: #3498db;
+    color: #a3e635;
     padding-bottom: 2px;
     flex: 0 0 auto;
     align-self: flex-end;
@@ -388,7 +390,7 @@ function getNodeLabel(nodeId) {
 
 .node-select {
     background: #1a2635;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     color: #ecf0f1;
     padding: 7px 8px;
     border-radius: 5px;
@@ -397,11 +399,11 @@ function getNodeLabel(nodeId) {
     cursor: pointer;
     transition: border-color 0.2s;
 }
-.node-select:focus { border-color: #3498db; outline: none; }
+.node-select:focus { border-color: #a3e635; outline: none; }
 
 .q-input {
     background: #1a2635;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     color: #ecf0f1;
     padding: 7px 8px;
     border-radius: 5px;
@@ -411,13 +413,13 @@ function getNodeLabel(nodeId) {
     font-variant-numeric: tabular-nums;
     transition: border-color 0.2s;
 }
-.q-input:focus { border-color: #3498db; outline: none; }
+.q-input:focus { border-color: #a3e635; outline: none; }
 .q-input--lg { width: 100%; font-size: 1.1rem; margin-bottom: 16px; }
 
 .btn-add-link {
     padding: 8px 16px;
-    background: #27ae60;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
     border: none;
     border-radius: 5px;
     font-size: 0.85rem;
@@ -428,11 +430,11 @@ function getNodeLabel(nodeId) {
     flex-shrink: 0;
 }
 .btn-add-link:hover:not(:disabled) {
-    background: #2ecc71;
+    background: #b6f04d;
     transform: translateY(-1px);
 }
 .btn-add-link:disabled {
-    background: #2c3e50;
+    background: #1e1e2c;
     color: #5d7f99;
     cursor: not-allowed;
 }
@@ -457,8 +459,8 @@ function getNodeLabel(nodeId) {
     flex-shrink: 0;
 }
 .link-count {
-    background: #2c3e50;
-    color: #3498db;
+    background: #1e1e2c;
+    color: #a3e635;
     padding: 1px 7px;
     border-radius: 10px;
     font-size: 0.72rem;
@@ -471,7 +473,7 @@ function getNodeLabel(nodeId) {
 }
 .link-list::-webkit-scrollbar { width: 4px; }
 .link-list::-webkit-scrollbar-track { background: transparent; }
-.link-list::-webkit-scrollbar-thumb { background: #34495e; border-radius: 2px; }
+.link-list::-webkit-scrollbar-thumb { background: #2e2740; border-radius: 2px; }
 
 .link-item {
     display: flex;
@@ -485,7 +487,7 @@ function getNodeLabel(nodeId) {
     transition: border-color 0.2s, background 0.2s;
 }
 .link-item:hover {
-    border-color: #3498db44;
+    border-color: #a3e63544;
     background: #2a3d52;
 }
 
@@ -502,7 +504,7 @@ function getNodeLabel(nodeId) {
     border-radius: 50%;
     flex-shrink: 0;
 }
-.dot-in  { background: #3498db; box-shadow: 0 0 5px #3498db66; }
+.dot-in  { background: #a3e635; box-shadow: 0 0 5px #a3e63566; }
 .dot-out { background: #e74c3c; box-shadow: 0 0 5px #e74c3c66; }
 .node-label {
     font-family: 'Consolas', 'Monaco', monospace;
@@ -526,14 +528,14 @@ function getNodeLabel(nodeId) {
 }
 .q-badge {
     background: #1a2635;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     border-radius: 10px;
     padding: 2px 7px;
     display: flex;
     align-items: baseline;
     gap: 2px;
 }
-.q-val { font-size: 0.82rem; font-weight: 700; color: #3498db; font-variant-numeric: tabular-nums; }
+.q-val { font-size: 0.82rem; font-weight: 700; color: #a3e635; font-variant-numeric: tabular-nums; }
 .q-unit { font-size: 0.64rem; color: #7f8c8d; }
 .arrow-head { font-size: 0.7rem; color: #e74c3c; }
 
@@ -549,14 +551,14 @@ function getNodeLabel(nodeId) {
 .btn-icon {
     width: 26px; height: 26px;
     background: none;
-    border: 1px solid #34495e;
+    border: 1px solid #2e2740;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.75rem;
     display: flex; align-items: center; justify-content: center;
     transition: background 0.15s;
 }
-.btn-edit:hover { background: #2c3e50; }
+.btn-edit:hover { background: #1e1e2c; }
 .btn-del {
     color: #e74c3c;
     font-size: 1.1rem;
@@ -583,7 +585,7 @@ function getNodeLabel(nodeId) {
     color: #7f8c8d;
     flex-shrink: 0;
 }
-.summary-bar strong { color: #3498db; }
+.summary-bar strong { color: #a3e635; }
 
 /* ─── Transition ─────────────────────────────────────────────────────────── */
 .link-fade-enter-active, .link-fade-leave-active { transition: all 0.25s ease; }
@@ -602,8 +604,8 @@ function getNodeLabel(nodeId) {
     z-index: 100;
 }
 .edit-modal {
-    background: #2c3e50;
-    border: 1px solid #34495e;
+    background: #1e1e2c;
+    border: 1px solid #2e2740;
     border-radius: 10px;
     padding: 20px 24px;
     width: 260px;
@@ -616,7 +618,7 @@ function getNodeLabel(nodeId) {
     margin: 0 0 14px;
     word-break: break-all;
 }
-.edit-arrow { color: #3498db; margin: 0 4px; }
+.edit-arrow { color: #a3e635; margin: 0 4px; }
 .edit-actions {
     display: flex;
     gap: 8px;
@@ -634,13 +636,13 @@ function getNodeLabel(nodeId) {
 .btn-cancel:hover { color: #ecf0f1; border-color: #7f8c8d; }
 .btn-save {
     padding: 7px 14px;
-    background: #27ae60;
-    color: white;
+    background: #a3e635;
+    color: #12121a;
     border: none;
     border-radius: 5px;
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 600;
 }
-.btn-save:hover { background: #2ecc71; }
+.btn-save:hover { background: #b6f04d; }
 </style>

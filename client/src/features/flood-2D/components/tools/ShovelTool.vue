@@ -40,7 +40,7 @@
                     {{ tool.surveyPointCount }} Vermessungspunkte geladen
                 </div>
                 <div v-else class="anchor-warn">
-                    ⚠ Keine Vermessungspunkte — Bathymetrie-Modal öffnen
+                    <SvEmoji emoji="⚠" :size="13" /> Keine Vermessungspunkte — Bathymetrie-Modal öffnen
                 </div>
             </div>
 
@@ -81,11 +81,23 @@
             <label class="control-label">Pinselform</label>
             <div class="toggle-group start">
                 <button :class="{ active: tool.settings.brushShape === 'CIRCLE' }"
-                        @click="tool.settings.brushShape = 'CIRCLE'" title="Kreis">⭕</button>
+                        @click="tool.settings.brushShape = 'CIRCLE'" title="Kreis">
+                    <svg class="shape-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="8"/>
+                    </svg>
+                </button>
                 <button :class="{ active: tool.settings.brushShape === 'SQUARE' }"
-                        @click="tool.settings.brushShape = 'SQUARE'" title="Rechteck">⬜</button>
+                        @click="tool.settings.brushShape = 'SQUARE'" title="Rechteck">
+                    <svg class="shape-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="4" y="4" width="16" height="16" rx="1"/>
+                    </svg>
+                </button>
                 <button :class="{ active: tool.settings.brushShape === 'POLYGON' }"
-                        @click="tool.settings.brushShape = 'POLYGON'" title="Freiform-Polygon">⬡</button>
+                        @click="tool.settings.brushShape = 'POLYGON'" title="Freiform-Polygon">
+                    <svg class="shape-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                        <path d="M12 3 20 7.5 20 16.5 12 21 4 16.5 4 7.5Z"/>
+                    </svg>
+                </button>
             </div>
 
             <!-- Circle params -->
@@ -174,6 +186,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -248,12 +261,14 @@ const formattedArea = computed(() => {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba(30, 45, 60, 0.88);
+    background: var(--sv-surface);
+    font-family: var(--sv-font);
+    letter-spacing: 0.04em;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--sv-border);
     border-radius: 20px;
     padding: 5px 12px 5px 10px;
-    color: #94a3b8;
+    color: var(--sv-text-dim);
     font-size: 0.78rem;
     cursor: default;
     user-select: none;
@@ -262,17 +277,17 @@ const formattedArea = computed(() => {
     white-space: nowrap;
 }
 .tool-trigger.trigger-open {
-    background: rgba(30, 45, 60, 0.96);
-    border-color: rgba(255,255,255,0.15);
-    color: #ecf0f1;
+    border-color: var(--sv-violet);
+    color: var(--sv-text-violet);
+    box-shadow: var(--sv-glow-violet);
 }
 .tool-trigger.trigger-review {
-    background: rgba(46, 204, 113, 0.18);
-    border-color: rgba(46, 204, 113, 0.5);
-    color: #2ecc71;
+    background: rgba(163, 230, 53, 0.14);
+    border-color: var(--sv-lime);
+    color: var(--sv-text-lime);
 }
 .tool-trigger.trigger-anchor {
-    border-color: rgba(249, 115, 22, 0.4);
+    border-color: rgba(249, 115, 22, 0.5);
     color: #f97316;
 }
 .trigger-icon { opacity: 0.7; flex-shrink: 0; }
@@ -281,15 +296,16 @@ const formattedArea = computed(() => {
 
 /* ── Panel ────────────────────────────────────────────────────────────────── */
 .tool-panel {
-    background: rgba(30, 45, 60, 0.95);
-    color: white;
+    background: var(--sv-surface);
+    color: var(--sv-text);
+    font-family: var(--sv-font);
     padding: 14px 16px;
     border-radius: 8px;
     font-size: 0.88rem;
     backdrop-filter: blur(10px);
     width: 300px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.45);
-    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: var(--sv-glow-violet);
+    border: 1px solid var(--sv-border);
 }
 
 /* ── Panel slide transition ───────────────────────────────────────────────── */
@@ -314,7 +330,7 @@ const formattedArea = computed(() => {
 }
 .control-row { margin-bottom: 10px; }
 .control-row label { display: block; font-size: 0.8rem; margin-bottom: 3px; color: #bdc3c7; }
-.control-row input[type=range] { width: 100%; cursor: pointer; accent-color: #3498db; }
+.control-row input[type=range] { width: 100%; cursor: pointer; accent-color: var(--sv-violet); }
 
 .area-row {
     font-size: 0.78rem;
@@ -332,20 +348,22 @@ const formattedArea = computed(() => {
 }
 .toggle-group button {
     flex: 1;
-    border: none;
-    background: #2c3e50;
+    border: 1px solid var(--sv-border);
+    background: var(--sv-bg);
     color: #bdc3c7;
+    font-family: var(--sv-font);
     padding: 5px 4px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.81rem;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.toggle-group button:hover  { background: #34495e; color: #ecf0f1; }
-.toggle-group button.active { background: #2980b9; color: #fff; font-weight: 600; }
-.toggle-group button.anchor.active { background: #c0520a; color: #fff; }
+.toggle-group button:hover  { background: var(--sv-violet-dim); border-color: var(--sv-violet); color: #fff; }
+.toggle-group button.active { background: var(--sv-violet); border-color: var(--sv-lime); color: #fff; font-weight: 600; }
+.toggle-group button.anchor.active { background: #c0520a; border-color: #f97316; color: #fff; }
 .toggle-group button.anchor { color: #f97316; }
-.toggle-group.start button  { flex: unset; width: 44px; font-size: 1rem; }
+.toggle-group.start button  { flex: unset; width: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 6px 4px; }
+.shape-icon { width: 18px; height: 18px; display: block; }
 
 /* ── Anchor ───────────────────────────────────────────────────────────────── */
 .anchor-box {
@@ -375,7 +393,7 @@ const formattedArea = computed(() => {
     color: #bdc3c7;
 }
 .fade-label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
-.fade-label input[type=checkbox] { accent-color: #3498db; cursor: pointer; }
+.fade-label input[type=checkbox] { accent-color: var(--sv-violet); cursor: pointer; }
 .fade-val { font-size: 0.75rem; color: #94a3b8; }
 
 /* ── Polygon panel ────────────────────────────────────────────────────────── */
@@ -425,13 +443,15 @@ const formattedArea = computed(() => {
 
 .btn-group { display: flex; gap: 8px; }
 .btn-confirm {
-    background: #2ecc71; color: white; border: none;
+    background: var(--sv-lime); color: #12121a; border: none;
     padding: 8px; border-radius: 4px; flex: 1; cursor: pointer; font-weight: bold;
+    font-family: var(--sv-font);
 }
-.btn-confirm:hover { background: #27ae60; }
+.btn-confirm:hover { filter: brightness(1.08); box-shadow: var(--sv-glow-lime); }
 .btn-cancel {
     background: #e74c3c; color: white; border: none;
     padding: 8px; border-radius: 4px; flex: 1; cursor: pointer; font-weight: bold;
+    font-family: var(--sv-font);
 }
 .btn-cancel:hover { background: #c0392b; }
 

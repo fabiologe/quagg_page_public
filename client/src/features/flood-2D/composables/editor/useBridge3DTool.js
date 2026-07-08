@@ -1112,7 +1112,10 @@ export function useBridge3DTool() {
     // ── Tool-Lebenszyklus ────────────────────────────────────────────────────
     const activate = (scene) => {
         scene_ref = scene;
-        if (bridge3DState.phase === 'IDLE') startDrawing();
+        // Kein Auto-Start des Zeichnens: das Werkzeug ruht in IDLE, damit das Panel
+        // (analog ShovelTool) als eingeklappte Pille startet und der Nutzer per
+        // „Neues Polygon" bewusst den Zeichen-Schritt beginnt. Sofortiges
+        // startDrawing() hielte die Phase dauerhaft ≠ IDLE → Panel nie einklappbar.
         sm.attachShortcuts({
             onCancel:  () => cancel(),
             onUndo:    () => undoLastPoint(),

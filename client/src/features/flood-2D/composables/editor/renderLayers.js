@@ -26,6 +26,7 @@ export const RENDER_ORDER = {
   TERRAIN: 0,
   BUILDINGS: 5,
   NODES: 6,
+  NETWORK: 6,      // Kanalnetz (Schächte + Haltungen) — feste Geometrie wie Nodes
   WEIRS: 7,
   BRIDGES: 8,
   BOUNDARY_LINES: 9,

@@ -391,7 +391,9 @@ def pump_stdout(proc, tail_buffer):
         count += 1
         tail_buffer.append(line)
         del tail_buffer[:-30]
-        if count <= LOG_HEAD_LINES or count % LOG_EVERY_NTH == 0:
+        # [COUPLE]-Zeilen (1D/2D-Massenbilanz, coupling.cpp) IMMER durchreichen —
+        # die Drossel würde sonst genau die Bilanz-Diagnose verschlucken.
+        if line.startswith("[COUPLE]") or count <= LOG_HEAD_LINES or count % LOG_EVERY_NTH == 0:
             emit("log", text=line)
 
 

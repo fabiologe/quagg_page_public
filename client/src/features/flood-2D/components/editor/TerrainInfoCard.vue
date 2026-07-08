@@ -1,7 +1,7 @@
 <template>
   <div class="terrain-info-card" v-if="visible">
     <div class="card-header">
-      <span class="icon">📍</span>
+      <span class="icon"><SvEmoji emoji="📍" :size="14" /></span>
       <span class="title">Terrain Inspection</span>
       <button class="close-btn" @click="$emit('close')">×</button>
     </div>
@@ -32,6 +32,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 defineProps({
   visible: Boolean,
   x: Number,

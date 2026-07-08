@@ -8,7 +8,7 @@
       :style="headerStyle"
       @mousedown="startDrag"
     >
-      <span class="title" :style="{ color: polygon.color }">🧊 Volumen-Analyse</span>
+      <span class="title" :style="{ color: polygon.color }"><SvEmoji emoji="🧊" :size="14" /> Volumen-Analyse</span>
       <button class="clear-btn" @click.stop="handleClear" title="Polygon löschen">Löschen</button>
     </div>
 
@@ -59,6 +59,7 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 

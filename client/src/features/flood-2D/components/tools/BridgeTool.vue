@@ -7,7 +7,7 @@
     @mouseleave="onPanelLeave"
   >
     <div class="panel-header">
-      <span class="header-icon">🌉</span> Brücke / Durchfahrt
+      <SvIcon name="Bridge.png" :size="18" class="header-icon" /> Brücke / Durchfahrt
       <span v-if="!panelVisible" class="collapse-dots">···</span>
     </div>
 
@@ -39,7 +39,7 @@
         <!-- Extrudieren -->
         <div v-else-if="bridge3DState.phase === 'EXTRUDE_FORM'" class="state-form">
           <div class="location-badge">
-            🧊 Footprint: {{ bridge3DState.draftPoints.length }} Punkte — auf Brückendicke extrudieren
+            <SvEmoji emoji="🧊" :size="13" /> Footprint: {{ bridge3DState.draftPoints.length }} Punkte — auf Brückendicke extrudieren
           </div>
           <div class="form-grid">
             <div class="input-group">
@@ -81,7 +81,7 @@
             </div>
           </div>
           <div class="validation-error" v-if="!isValid3d">
-            ⚠ Deck muss mindestens 0.1 m über der Soffitte liegen
+            <SvEmoji emoji="⚠" :size="13" /> Deck muss mindestens 0.1 m über der Soffitte liegen
           </div>
           <div class="actions">
             <button class="btn btn-save" :disabled="!isValid3d" @click="tool3d.applyExtrude(form3d)">Extrudieren</button>
@@ -92,10 +92,10 @@
         <!-- Vertex-Editing -->
         <div v-else-if="bridge3DState.phase === 'EDIT' || bridge3DState.phase === 'LOOPCUT' || bridge3DState.phase === 'PIER' || bridge3DState.phase === 'SUBDIVIDE'" class="state-idle">
           <div class="location-badge" v-if="editingBridge">
-            ✏ {{ editingBridge.id.substring(0, 16) }} · {{ editingBridge.poly.length }} Ecken · {{ editingBridge.cells.length }} Zellen
+            <SvEmoji emoji="✏" :size="13" /> {{ editingBridge.id.substring(0, 16) }} · {{ editingBridge.poly.length }} Ecken · {{ editingBridge.cells.length }} Zellen
           </div>
           <div class="opening-stats" v-if="openingStats">
-            💧 Effektive Öffnung: <strong>{{ openingStats.open.toFixed(1) }} m</strong>
+            <SvEmoji emoji="💧" :size="13" /> Effektive Öffnung: <strong>{{ openingStats.open.toFixed(1) }} m</strong>
             · Verbauung durch Pfeiler: <strong>{{ (openingStats.blockage * 100).toFixed(0) }} %</strong>
           </div>
           <template v-if="bridge3DState.phase === 'SUBDIVIDE'">
@@ -115,15 +115,15 @@
               <span v-if="bridge3DState.hoverCutV != null"> (v = {{ bridge3DState.hoverCutV.toFixed(2) }})</span>
             </div>
             <div class="hint drawing-hint" v-else>
-              ✂ Loop Cut: Klick auf den Körper setzt die Station
+              <SvEmoji emoji="✂" :size="13" /> Loop Cut: Klick auf den Körper setzt die Station
               <span v-if="bridge3DState.hoverCutU != null"> (u = {{ bridge3DState.hoverCutU.toFixed(2) }})</span>
             </div>
             <div class="sub-hint">Neuen Stützpunkt setzen, dann die Griffe in der Höhe ziehen (Bogen). Esc: zurück ohne Schnitt</div>
-            <div class="validation-error" v-if="bridge3DState.cutInvalid">⚠ Zu nah am Rechengitter — Mindestabstand = Zellweite (feiner ist nicht berechenbar)</div>
+            <div class="validation-error" v-if="bridge3DState.cutInvalid"><SvEmoji emoji="⚠" :size="13" /> Zu nah am Rechengitter — Mindestabstand = Zellweite (feiner ist nicht berechenbar)</div>
           </template>
           <template v-else-if="bridge3DState.phase === 'PIER'">
             <div class="hint drawing-hint">
-              🛑 Pfeiler: Klick setzt einen Pfeiler (volle Sperrung) — Klick in einen
+              <SvEmoji emoji="🛑" :size="13" /> Pfeiler: Klick setzt einen Pfeiler (volle Sperrung) — Klick in einen
               bestehenden entfernt ihn
             </div>
             <div class="pier-width-row">
@@ -131,7 +131,7 @@
               <input type="number" v-model.number="bridge3DState.pierWidth" step="0.5" min="0.5" />
             </div>
             <div class="sel-info" v-if="pierDim">
-              📏 Pfeiler: <strong>{{ pierDim.left.toFixed(1) }}–{{ pierDim.right.toFixed(1) }} m</strong>
+              <SvEmoji emoji="📏" :size="13" /> Pfeiler: <strong>{{ pierDim.left.toFixed(1) }}–{{ pierDim.right.toFixed(1) }} m</strong>
               entlang der Spannweite (Breite {{ bridge3DState.pierWidth.toFixed(1) }} m)
             </div>
             <div class="sub-hint">
@@ -148,11 +148,11 @@
             <!-- Lot-Info + exakte Höhe über Raster für die Auswahl -->
             <div v-if="bridge3DState.selectionInfo" class="sel-info">
               <div class="sel-info-line" v-if="bridge3DState.selectionInfo.count === 1">
-                📐 Punkt: <strong>{{ fmtDz(bridge3DState.selectionInfo.dz) }} m</strong> über Raster
+                <SvEmoji emoji="📐" :size="13" /> Punkt: <strong>{{ fmtDz(bridge3DState.selectionInfo.dz) }} m</strong> über Raster
                 ({{ bridge3DState.selectionInfo.z.toFixed(2) }} m NHN · Lot {{ bridge3DState.selectionInfo.terrZ.toFixed(2) }} m)
               </div>
               <div class="sel-info-line" v-else>
-                📐 {{ bridge3DState.selectionInfo.count }} Punkte ausgewählt
+                <SvEmoji emoji="📐" :size="13" /> {{ bridge3DState.selectionInfo.count }} Punkte ausgewählt
               </div>
               <div class="height-row">
                 <input type="number" v-model.number="heightAbove" step="0.05" min="0" />
@@ -161,7 +161,7 @@
             </div>
             <!-- Pfeiler bearbeiten: Ecken ziehen (orange) + Kanten unterteilen -->
             <div v-if="selPier" class="sel-info pier-dim">
-              <div class="sel-info-line">🛑 Pfeiler #{{ selPier.index + 1 }} · {{ selPier.corners }} Ecken</div>
+              <div class="sel-info-line"><SvEmoji emoji="🛑" :size="13" /> Pfeiler #{{ selPier.index + 1 }} · {{ selPier.corners }} Ecken</div>
               <div class="sub-hint" style="margin:4px 0">
                 Orange Ecken in der Fläche ziehen, oranges Kopf-Handle = Höhe.
                 „Ecken einfügen" verfeinert das Polygon (für Rundungen).
@@ -180,7 +180,7 @@
                (während LOOPCUT/PIER ausblenden statt nur ausgrauen → weniger Clutter). -->
           <div class="actions" v-if="bridge3DState.phase === 'EDIT'">
             <button class="btn btn-cancel" @click="tool3d.startSubdivide()" title="Auf eine Kante klicken → neue ziehbare Ecke (für Bögen)">✚ Stützpunkt</button>
-            <button class="btn btn-pier" @click="tool3d.startPier()">🛑 Pfeiler</button>
+            <button class="btn btn-pier" @click="tool3d.startPier()"><SvEmoji emoji="🛑" :size="13" /> Pfeiler</button>
           </div>
           <div class="actions">
             <button class="btn btn-save" @click="onFinishBridge">Fertig</button>
@@ -207,9 +207,9 @@
           :key="b.id"
           class="bridge-item"
         >
-          <span class="bridge-label">{{ b.kind === 'mesh3d' ? '🧊 ' : '' }}{{ b.id.substring(0, 12) }}</span>
+          <span class="bridge-label"><SvEmoji v-if="b.kind === 'mesh3d'" emoji="🧊" :size="12" /> {{ b.id.substring(0, 12) }}</span>
           <span class="bridge-meta">{{ b.cells.length }} Zellen · soffit={{ b.soffit.toFixed(1) }}m</span>
-          <button v-if="b.kind === 'mesh3d'" class="btn-edit" @click="editMesh3D(b.id)" title="3D-Körper bearbeiten">✏</button>
+          <button v-if="b.kind === 'mesh3d'" class="btn-edit" @click="editMesh3D(b.id)" title="3D-Körper bearbeiten"><SvEmoji emoji="✏" :size="13" /></button>
           <button class="btn-remove" @click="geoStore.removeBridge(b.id)" title="Löschen">✕</button>
         </div>
       </div>
@@ -220,10 +220,13 @@
 </template>
 
 <script setup>
+import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
+import SvIcon from '../common/SvIcon.vue';
 import { bridge3DState, getBridge3DToolInstance } from '../../composables/editor/useBridge3DTool.js';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 import { PIER_NOSE_SHAPES, pierShapeCd } from '../../middleware/structureFiles.js';
 import { latticeToCells } from '../../utils/BridgeMeshLattice.js';
 
@@ -318,16 +321,10 @@ watch(() => bridge3DState.selectionInfo, (info) => {
 const editMesh3D = (id) => tool3d.startEdit(id);
 
 // ── Einklappbares Panel (Hover) – analog ShovelTool ─────────────────────────
-// Idle → nur der Header-Pill ist sichtbar; Hover oder ein aktiver Arbeitsschritt
-// (Zeichnen/Formular/3D-Editing) klappt den Inhalt aus. So bleibt es nie mitten
-// im Schritt zu und verdeckt im Leerlauf nicht den Viewport.
-const hovered = ref(false);
-let closeTimer = null;
-const onPanelEnter = () => { clearTimeout(closeTimer); hovered.value = true; };
-const onPanelLeave = () => { closeTimer = setTimeout(() => { hovered.value = false; }, 200); };
-
-const bridgeBusy = computed(() => !!bridge3DState.phase && bridge3DState.phase !== 'IDLE');
-const panelVisible = computed(() => hovered.value || bridgeBusy.value);
+// Nur der Header-Pill ist sichtbar; Hover klappt den Inhalt aus und klappt beim
+// Verlassen wieder ein – auch mitten in der Bearbeitung, damit das Panel den
+// Viewport nie dauerhaft verdeckt.
+const { onPanelEnter, onPanelLeave, panelVisible } = useCollapsiblePanel();
 
 // „Fertig": Editing abschließen UND das Werkzeug deaktivieren (Auto-Reset), damit
 // nicht versehentlich gleich der nächste Brückenkörper gezeichnet wird.
@@ -343,26 +340,28 @@ const onFinishBridge = () => {
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(26, 42, 58, 0.96);
-  color: #ecf0f1;
+  box-sizing: border-box;
+  background: var(--sv-surface);
+  color: var(--sv-text);
+  font-family: var(--sv-font);
   padding: 16px 20px;
   border-radius: 10px;
   backdrop-filter: blur(10px);
   pointer-events: auto;
   min-width: 320px;
   max-width: 420px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  border: 2px solid #e74c3c;
+  box-shadow: var(--sv-glow-violet);
+  border: 2px solid var(--sv-violet);
   z-index: 1000;
 }
 
 .panel-header {
   font-weight: 700;
   font-size: 0.95rem;
-  color: #e74c3c;
+  color: #8b5cf6;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(231, 76, 60, 0.3);
+  border-bottom: 1px solid rgba(139,92,246, 0.3);
   padding-bottom: 8px;
   margin-bottom: 12px;
   display: flex;
@@ -398,7 +397,7 @@ const onFinishBridge = () => {
 
 .hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .drawing-hint { color: #ffce54; }
-.step-badge { background: #e74c3c; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
+.step-badge { background: #8b5cf6; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
 .sub-hint { font-size: 0.8rem; color: #95a5a6; line-height: 1.4; margin: 10px 0; }
 
 .existing-list { margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; }
@@ -408,19 +407,19 @@ const onFinishBridge = () => {
 .bridge-meta { font-size: 0.75rem; color: #7f8c8d; }
 .btn-remove { background: none; border: 1px solid #c0392b; color: #c0392b; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s; }
 .btn-remove:hover { background: #c0392b; color: white; }
-.btn-edit { background: none; border: 1px solid #1abc9c; color: #1abc9c; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s; }
-.btn-edit:hover { background: #1abc9c; color: white; }
+.btn-edit { background: none; border: 1px solid #a3e635; color: #a3e635; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s; }
+.btn-edit:hover { background: #a3e635; color: white; }
 
 .btn-remove-wide { flex: 0 0 auto; padding: 8px 10px; border: 1px solid #c0392b; border-radius: 5px; background: none; color: #c0392b; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
 .btn-remove-wide:hover { background: #c0392b; color: white; }
 
-.input-group select { padding: 6px 8px; border-radius: 5px; border: 1px solid #4a6278; background: #1e3348; color: white; font-size: 0.88rem; outline: none; }
-.input-group select:focus { border-color: #e74c3c; }
+.input-group select { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border-radius: 5px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.88rem; outline: none; }
+.input-group select:focus { border-color: #8b5cf6; }
 
 .sel-info { margin: 8px 0; padding: 8px; border: 1px solid rgba(241,196,15,0.4); border-radius: 6px; background: rgba(241,196,15,0.08); }
 .sel-info-line { font-size: 0.8rem; color: #f1c40f; margin-bottom: 6px; }
 .height-row { display: flex; gap: 6px; }
-.height-row input[type="number"] { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 5px; border: 1px solid #4a6278; background: #1e3348; color: white; font-size: 0.88rem; outline: none; }
+.height-row input[type="number"] { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 5px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.88rem; outline: none; }
 .height-row input[type="number"]:focus { border-color: #f1c40f; }
 .btn-slim { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; }
 
@@ -428,30 +427,30 @@ const onFinishBridge = () => {
 .pier-dim .sel-info-line { color: #c8915a; }
 .pier-dim-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
 .pier-dim-grid label { font-size: 0.78rem; color: #c8915a; }
-.pier-dim-grid input[type="number"] { width: 100%; min-width: 0; padding: 5px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #1e3348; color: white; font-size: 0.85rem; outline: none; }
+.pier-dim-grid input[type="number"] { width: 100%; min-width: 0; padding: 5px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #12121a; color: white; font-size: 0.85rem; outline: none; }
 .pier-dim-grid input[type="number"]:focus { border-color: #c8915a; }
 
 .state-form { display: flex; flex-direction: column; gap: 10px; }
-.location-badge { font-size: 0.78rem; color: #e74c3c; background: rgba(231,76,60,0.15); border-radius: 4px; padding: 4px 8px; text-align: center; }
+.location-badge { font-size: 0.78rem; color: #8b5cf6; background: rgba(139,92,246,0.15); border-radius: 4px; padding: 4px 8px; text-align: center; }
 .opening-stats { font-size: 0.78rem; color: #2ecc71; background: rgba(46,204,113,0.12); border-radius: 4px; padding: 4px 8px; text-align: center; margin-top: 6px; }
 .opening-stats strong { color: #d7ffe7; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.input-group { display: flex; flex-direction: column; gap: 4px; }
+.input-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .input-group label { font-size: 0.78rem; color: #bdc3c7; }
-.input-group input[type="number"] { padding: 6px 8px; border-radius: 5px; border: 1px solid #4a6278; background: #1e3348; color: white; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
-.input-group input[type="number"]:focus { border-color: #e74c3c; }
+.input-group input[type="number"] { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border-radius: 5px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
+.input-group input[type="number"]:focus { border-color: #8b5cf6; }
 .field-hint { font-size: 0.7rem; color: #7f8c8d; line-height: 1.3; }
 
-.validation-error { font-size: 0.78rem; color: #e74c3c; text-align: center; }
+.validation-error { font-size: 0.78rem; color: #8b5cf6; text-align: center; }
 
 .actions { display: flex; gap: 8px; margin-top: 4px; }
 .btn { flex: 1; padding: 8px; border: none; border-radius: 5px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
 .btn:active { transform: scale(0.97); }
-.btn-save { background: #e74c3c; color: white; }
+.btn-save { background: #a3e635; color: #12121a; font-weight: 700; }
 .btn-save:hover:not(:disabled) { background: #c0392b; }
 .btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-cancel { background: #4a6278; color: white; }
+.btn-cancel { background: #3a2f5c; color: white; }
 .btn-cancel:hover { background: #5d7a91; }
 .btn-pier { background: #8b5a2b; color: white; }
 .btn-pier:hover:not(:disabled) { background: #a06a35; }
@@ -459,12 +458,12 @@ const onFinishBridge = () => {
 
 .pier-width-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
 .pier-width-row label { font-size: 0.8rem; color: #c8915a; flex: 1; }
-.pier-width-row input[type="number"] { width: 80px; padding: 6px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #1e3348; color: white; font-size: 0.88rem; outline: none; }
+.pier-width-row input[type="number"] { width: 80px; padding: 6px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #12121a; color: white; font-size: 0.88rem; outline: none; }
 
 .subdiv-modes { display: flex; gap: 6px; margin-bottom: 8px; }
 .btn-slim { padding: 5px 8px; font-size: 0.8rem; }
-.subdiv-modes .btn { background: #2c3e50; color: #bdc3c7; border: 1px solid #4a6278; }
+.subdiv-modes .btn { background: #2c3e50; color: #bdc3c7; border: 1px solid #3a2f5c; }
 .subdiv-modes .btn:hover { background: #34495e; }
-.subdiv-modes .btn.active { background: #16a085; color: #fff; border-color: #1abc9c; }
+.subdiv-modes .btn.active { background: #16a085; color: #fff; border-color: #a3e635; }
 
 </style>

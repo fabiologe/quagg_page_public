@@ -7,6 +7,7 @@
  * works reliably across windows (no window.opener security issues).
  */
 import { ref, toRaw } from 'vue';
+import { useNetworkStore } from '../stores/useNetworkStore.js';
 
 const DB_NAME = 'flood-result-bridge';
 const DB_VERSION = 1;
@@ -286,6 +287,15 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
             bounds: rawTerrain.bounds ? JSON.parse(JSON.stringify(toRaw(rawTerrain.bounds))) : null
         },
         ...geoSerialized,
+        // Kanalnetz (useNetworkStore) mit ins Ergebnis-Paket — der Viewer ist ein EIGENES
+        // Fenster mit frischem Pinia-Store, sonst wäre das Netz dort leer/unsichtbar.
+        network: (() => {
+            const net = useNetworkStore();
+            return {
+                nodes: JSON.parse(JSON.stringify(toRaw(net.nodes) || [])),
+                links: JSON.parse(JSON.stringify(toRaw(net.links) || [])),
+            };
+        })(),
         header: simStore.resultHeader
             ? JSON.parse(JSON.stringify(toRaw(simStore.resultHeader)))
             : null,
@@ -329,7 +339,7 @@ export async function prepareResultData(simStore, geoStore, opts = {}) {
 }
 
 // ─── Consumer (Popup Window) ───
-import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
+import { useGeoStore } from '../stores/useGeoStore.js';
 
 /**
  * Reads data from IndexedDB and hydrates reactive refs.
@@ -407,6 +417,12 @@ export function useResultDataFromOpener() {
                 if (data[f]) geoStore[f] = data[f];
             }
             console.log('[ResultBridge] hydrate geo:', GEO_FIELDS.map(f => `${f}=${data[f]?.length ?? (data[f]?.features?.length ?? '–')}`).join(' '));
+
+            // Kanalnetz ins Viewer-Fenster hydrieren (frischer Pinia-Store, sonst leer).
+            if (data.network) {
+                useNetworkStore().setArrays(data.network.nodes, data.network.links);
+                console.log('[ResultBridge] hydrate network:', data.network.nodes?.length ?? 0, 'Schächte,', data.network.links?.length ?? 0, 'Haltungen');
+            }
 
             // Hydrate depth frames
             const frameEntries = Object.entries(data.frames || {});

@@ -1,0 +1,147 @@
+/**
+ * theme-saintv.css — „SaintV-2D" Design-Theme (Matrix / Neon)
+ *
+ * Gedämpftes Violett + Lime auf fast-schwarzem Grund, Share-Tech-Mono-Schrift,
+ * dezenter Neon-Glow. Zentrale CSS-Variablen + wiederverwendbare Klassen für
+ * flood-2D-Panels, Buttons, Titel, Badges und Ladeanimation.
+ *
+ * Nutzung: Variablen sind global (:root). Klassen via .sv-* oder Scoping unter
+ * .sv-theme. Schrift: var(--sv-font).
+ */
+
+:root {
+    /* Kern-Palette */
+    --sv-violet:      #8B5CF6;
+    --sv-violet-dim:  #6d43d4;
+    --sv-lime:        #A3E635;
+    --sv-lime-dim:    #7fb51f;
+
+    /* Flächen / Hintergrund */
+    --sv-bg:          #12121A;
+    --sv-bg-2:        #1b1b28;
+    --sv-surface:     rgba(27, 27, 40, 0.92);
+    --sv-surface-2:   rgba(40, 40, 60, 0.85);
+    --sv-border:      rgba(139, 92, 246, 0.35);
+    --sv-border-lime: rgba(163, 230, 53, 0.35);
+
+    /* Text */
+    --sv-text:        #e6e6f0;
+    --sv-text-dim:    #9a9ab5;
+    --sv-text-lime:   #A3E635;
+    --sv-text-violet: #b79cff;
+
+    /* Effekte */
+    --sv-glow-violet: 0 0 8px rgba(139, 92, 246, 0.45);
+    --sv-glow-lime:   0 0 8px rgba(163, 230, 53, 0.40);
+    --sv-radius:      8px;
+
+    /* Schrift */
+    --sv-font:        'Share Tech Mono', 'Courier New', monospace;
+}
+
+/* ── Basis-Scope: alles unter .sv-theme bekommt Font + Textfarbe ───────────── */
+.sv-theme {
+    font-family: var(--sv-font);
+    color: var(--sv-text);
+}
+
+/* ── Titel / Logo ─────────────────────────────────────────────────────────── */
+.sv-title {
+    font-family: var(--sv-font);
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    color: var(--sv-text-violet);
+    text-shadow: var(--sv-glow-violet);
+    margin: 0;
+}
+.sv-title .sv-accent { color: var(--sv-text-lime); text-shadow: var(--sv-glow-lime); }
+.sv-subtitle {
+    font-family: var(--sv-font);
+    color: var(--sv-text-dim);
+    letter-spacing: 0.05em;
+    margin: 0.2rem 0 0;
+    font-size: 0.8rem;
+}
+
+/* ── Panel / Surface ──────────────────────────────────────────────────────── */
+.sv-panel {
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-border);
+    border-radius: var(--sv-radius);
+    color: var(--sv-text);
+    font-family: var(--sv-font);
+    backdrop-filter: blur(6px);
+    box-shadow: var(--sv-glow-violet);
+}
+.sv-badge {
+    font-family: var(--sv-font);
+    color: var(--sv-text-lime);
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--sv-border-lime);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.sv-btn {
+    font-family: var(--sv-font);
+    letter-spacing: 0.05em;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--sv-border);
+    background: var(--sv-surface-2);
+    color: var(--sv-text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.sv-btn:hover {
+    border-color: var(--sv-violet);
+    box-shadow: var(--sv-glow-violet);
+    color: var(--sv-text-violet);
+}
+.sv-btn-primary {
+    background: linear-gradient(135deg, var(--sv-violet-dim), var(--sv-violet));
+    border-color: var(--sv-violet);
+    color: #fff;
+}
+.sv-btn-primary:hover { box-shadow: var(--sv-glow-violet); filter: brightness(1.1); color: #fff; }
+.sv-btn-go {
+    background: linear-gradient(135deg, var(--sv-lime-dim), var(--sv-lime));
+    border-color: var(--sv-lime);
+    color: #12121A;
+    font-weight: 700;
+}
+.sv-btn-go:hover { box-shadow: var(--sv-glow-lime); filter: brightness(1.08); color: #12121A; }
+
+/* Datei-Auswahl-Button (verstecktes <input>) */
+.sv-btn-file { position: relative; display: inline-flex; align-items: center; }
+.sv-btn-file input { display: none; }
+
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+.sv-input {
+    font-family: var(--sv-font);
+    background: var(--sv-bg);
+    color: var(--sv-text-lime);
+    border: 1px solid var(--sv-border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    text-align: right;
+}
+.sv-input:focus {
+    outline: none;
+    border-color: var(--sv-lime);
+    box-shadow: var(--sv-glow-lime);
+}
+
+/* ── Ladeanimation (Loading Icon - Plan.svg) ──────────────────────────────── */
+.sv-loading {
+    position: absolute; inset: 0; z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1rem;
+    background: rgba(18, 18, 26, 0.88);
+    backdrop-filter: blur(3px);
+    font-family: var(--sv-font);
+    color: var(--sv-text-lime);
+    letter-spacing: 0.08em;
+    text-shadow: var(--sv-glow-lime);
+}
+.sv-loading img { width: 160px; height: 160px; filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.5)); }
+.sv-loading .sv-loading-text { font-size: 0.95rem; }
