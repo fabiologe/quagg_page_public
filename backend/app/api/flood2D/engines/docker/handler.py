@@ -27,6 +27,7 @@ import argparse
 import json
 import re
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -381,8 +382,170 @@ def _to_float(s):
         return s
 
 
+# ── SWMM-Binärausgabe (.out) → 1D-Ergebnis-Serien ───────────────────────────
+# Format: EPA-SWMM 5 "binary output file" (output.c) — stabil seit 5.0.
+# Aufbau: Header (7×int32) · ID-Namen · Objekt-Properties · Variablen-Codes ·
+# Startdatum/Report-Step · pro Periode ein Record · Closing (6×int32 am Ende
+# mit Offsets, Periodenzahl, Fehlercode, Magic). Wir lesen die Offsets vom
+# Dateiende und springen direkt — kein SWMM-Toolkit nötig (stdlib struct).
+SWMM_MAGIC = 516114522
+SWMM_NODE_TYPES = ["junction", "outfall", "storage", "divider"]
+SWMM_LINK_TYPES = ["conduit", "pump", "orifice", "weir", "outlet"]
+# Variablen-Indizes (npolluts hängen hinten dran, stören die Hydraulik-Indizes nicht):
+# Node: 0 depth, 1 head, 2 volume, 3 latflow, 4 totalInflow, 5 flooding
+# Link: 0 flow, 1 depth, 2 velocity, 3 volume, 4 capacity
+# System: 9 inflow, 10 flooding, 11 outflow, 12 storedVolume (MAX_SYS_RESULTS=15)
+
+
+def read_swmm_out(path, max_values=6_000_000):
+    """SWMM-.out → {reportStep, times[s], nodes{id:{…}}, links{id:{…}}, system{…}}.
+    Bei sehr großen Läufen werden Perioden per Stride ausgedünnt (max_values kappt
+    die Gesamtzahl gelesener Node+Link-Werte); die letzte Periode bleibt immer drin."""
+    data = path.read_bytes()
+    if len(data) < 100:
+        raise ValueError(f"{path.name}: zu kurz ({len(data)} B)")
+    pos_ids, pos_props, pos_results, n_periods, err_code, magic2 = \
+        struct.unpack_from("<6i", data, len(data) - 24)
+    if struct.unpack_from("<i", data, 0)[0] != SWMM_MAGIC or magic2 != SWMM_MAGIC:
+        raise ValueError(f"{path.name}: kein SWMM-Binärformat (Magic fehlt)")
+    if err_code != 0:
+        raise ValueError(f"{path.name}: SWMM meldet Fehlercode {err_code}")
+    _version, _flow_units, n_sub, n_node, n_link, _n_pollut = \
+        struct.unpack_from("<6i", data, 4)
+
+    off = pos_ids
+
+    def read_ids(count):
+        nonlocal off
+        ids = []
+        for _ in range(count):
+            (ln,) = struct.unpack_from("<i", data, off)
+            off += 4
+            ids.append(data[off:off + ln].decode("utf-8", "replace"))
+            off += ln
+        return ids
+
+    read_ids(n_sub)
+    node_ids = read_ids(n_node)
+    link_ids = read_ids(n_link)
+
+    # Objekt-Properties (Anzahl+Codes, dann je Objekt ein Record). ACHTUNG
+    # Mischformat (output.c): der Typ-Code ist int32, die Werte float32 —
+    # Node = <type:i, invert:f, maxDepth:f>, Link = <type:i, off1:f, off2:f,
+    # maxDepth:f, length:f>. Alles als float lesen macht aus Typ 1 (outfall)
+    # ein Denormal ≈1.4e-45 → int() = 0 = junction.
+    off = pos_props
+    (nsp,) = struct.unpack_from("<i", data, off)
+    off += 4 + 4 * nsp + 4 * nsp * n_sub                       # Subcatch überspringen
+    (nnp,) = struct.unpack_from("<i", data, off)
+    off += 4 + 4 * nnp
+    node_props = [struct.unpack_from("<i" + "f" * (nnp - 1), data, off + 4 * nnp * j)
+                  for j in range(n_node)]                      # (type, invert, maxDepth)
+    off += 4 * nnp * n_node
+    (nlp,) = struct.unpack_from("<i", data, off)
+    off += 4 + 4 * nlp
+    link_props = [struct.unpack_from("<i" + "f" * (nlp - 1), data, off + 4 * nlp * j)
+                  for j in range(n_link)]                      # (type, off1, off2, maxDepth, length)
+    off += 4 * nlp * n_link
+
+    counts = []
+    for _ in range(4):  # Subcatch-, Node-, Link-, System-Variablenzahl + Codes
+        (n,) = struct.unpack_from("<i", data, off)
+        counts.append(n)
+        off += 4 + 4 * n
+    n_sub_vars, n_node_vars, n_link_vars, n_sys_vars = counts
+    (start_date,) = struct.unpack_from("<d", data, off)        # Tage seit 30.12.1899
+    off += 8
+    (report_step,) = struct.unpack_from("<i", data, off)
+
+    rec = 8 + 4 * (n_sub * n_sub_vars + n_node * n_node_vars
+                   + n_link * n_link_vars + n_sys_vars)
+    total = n_periods * (n_node * 5 + n_link * 5 + 4)
+    stride = max(1, -(-total // max_values))                    # ceil
+    periods = list(range(0, n_periods, stride))
+    if periods and periods[-1] != n_periods - 1:
+        periods.append(n_periods - 1)
+
+    r4 = lambda v: round(v, 4)  # noqa: E731 — JSON-Größe
+    nodes = {nid: {"type": SWMM_NODE_TYPES[node_props[j][0]]
+                   if 0 <= node_props[j][0] < len(SWMM_NODE_TYPES) else "junction",
+                   "invert": r4(node_props[j][1]),
+                   "maxDepth": r4(node_props[j][2]),
+                   "depth": [], "head": [], "volume": [], "totalInflow": [], "flooding": []}
+             for j, nid in enumerate(node_ids)}
+    links = {lid: {"type": SWMM_LINK_TYPES[link_props[j][0]]
+                   if 0 <= link_props[j][0] < len(SWMM_LINK_TYPES) else "conduit",
+                   "maxDepth": r4(link_props[j][3]),
+                   "length": r4(link_props[j][4]),
+                   "flow": [], "depth": [], "velocity": [], "volume": [], "capacity": []}
+             for j, lid in enumerate(link_ids)}
+    system = {"inflow": [], "flooding": [], "outflow": [], "storedVolume": []}
+    times = []
+
+    node_base = 8 + 4 * n_sub * n_sub_vars
+    link_base = node_base + 4 * n_node * n_node_vars
+    sys_base = link_base + 4 * n_link * n_link_vars
+    NODE_KEYS = ("depth", "head", "volume", None, "totalInflow", "flooding")
+    LINK_KEYS = ("flow", "depth", "velocity", "volume", "capacity")
+    for p in periods:
+        base = pos_results + p * rec
+        if base + rec > len(data):
+            break
+        # Jeder Record beginnt mit dem Zeitstempel (float64, Tage seit 30.12.1899)
+        # → Sim-Sekunden relativ zum Report-Start.
+        (date,) = struct.unpack_from("<d", data, base)
+        times.append(round((date - start_date) * 86400.0))
+        for j, nid in enumerate(node_ids):
+            vals = struct.unpack_from("<6f", data, base + node_base + 4 * j * n_node_vars)
+            d = nodes[nid]
+            for k, key in enumerate(NODE_KEYS):
+                if key:
+                    d[key].append(r4(vals[k]))
+        for j, lid in enumerate(link_ids):
+            vals = struct.unpack_from("<5f", data, base + link_base + 4 * j * n_link_vars)
+            d = links[lid]
+            for k, key in enumerate(LINK_KEYS):
+                d[key].append(r4(vals[k]))
+        if n_sys_vars >= 13:
+            sv = struct.unpack_from(f"<{n_sys_vars}f", data, base + sys_base)
+            system["inflow"].append(r4(sv[9]))
+            system["flooding"].append(r4(sv[10]))
+            system["outflow"].append(r4(sv[11]))
+            system["storedVolume"].append(r4(sv[12]))
+    return {"reportStep": report_step, "stride": stride, "flowUnits": "CMS",
+            "times": times, "nodes": nodes, "links": links, "system": system}
+
+
+# ── [COUPLE]-Loglzeilen → strukturiertes Kopplungsbudget ────────────────────
+COUPLE_END_RE = re.compile(
+    r"\[COUPLE\] Ende: 1D->2D gesamt ([-\d.]+) m3 \| 2D->1D gesamt ([-\d.]+) m3 "
+    r"\| unverrechnete Bilanz-Schuld ([-\d.]+) m3")
+COUPLE_NODE_RE = re.compile(
+    r"\[COUPLE\]\s+(\S+)\s+(JUNCTION|OUTFALL)\s+Sum 1D->2D ([-\d.]+) m3 \| 2D->1D ([-\d.]+) m3")
+
+
+def coupling_budget(couple_lines):
+    """Finalize-Zeilen aus coupling.cpp → {to2d, to1d, debt, nodes:{id:{to2d,to1d,kind}}}."""
+    budget = None
+    nodes = {}
+    for line in couple_lines:
+        m = COUPLE_END_RE.match(line)
+        if m:
+            budget = {"to2d": float(m.group(1)), "to1d": float(m.group(2)),
+                      "debt": float(m.group(3))}
+            continue
+        m = COUPLE_NODE_RE.match(line)
+        if m:
+            nodes[m.group(1)] = {"kind": m.group(2).lower(),
+                                 "to2d": float(m.group(3)), "to1d": float(m.group(4))}
+    if budget is None:
+        return None
+    budget["nodes"] = nodes
+    return budget
+
+
 # ── Solver-stdout drosselnd weiterleiten ────────────────────────────────────
-def pump_stdout(proc, tail_buffer):
+def pump_stdout(proc, tail_buffer, couple_lines):
     count = 0
     for line in proc.stdout:
         line = line.rstrip()
@@ -392,8 +555,22 @@ def pump_stdout(proc, tail_buffer):
         tail_buffer.append(line)
         del tail_buffer[:-30]
         # [COUPLE]-Zeilen (1D/2D-Massenbilanz, coupling.cpp) IMMER durchreichen —
-        # die Drossel würde sonst genau die Bilanz-Diagnose verschlucken.
-        if line.startswith("[COUPLE]") or count <= LOG_HEAD_LINES or count % LOG_EVERY_NTH == 0:
+        # die Drossel würde sonst genau die Bilanz-Diagnose verschlucken. Zusätzlich
+        # sammeln für das strukturierte Kopplungsbudget im done-Payload.
+        if line.startswith("[COUPLE]"):
+            couple_lines.append(line)
+            emit("log", text=line)
+            # END_TIME-Falle als echte Warnung heben: ab hier rechnet 2D OHNE Netz —
+            # das Ergebnis sieht plausibel aus, ist aber ab diesem Zeitpunkt falsch.
+            # (Client synct die SWMM-Dauer inzwischen automatisch auf sim_time;
+            # das hier fängt alte/fremde network.inp ab.)
+            if "SWMM-Simulationsdauer zu Ende" in line:
+                emit("warning", text=(
+                    "Kanalnetz-Simulation endete VOR der 2D-Simulation ("
+                    + line.split("]", 1)[-1].strip().split(":", 1)[0]
+                    + ") — ab da lief die 2D-Rechnung ohne 1D-Austausch. "
+                    "END_TIME der network.inp prüfen."))
+        elif count <= LOG_HEAD_LINES or count % LOG_EVERY_NTH == 0:
             emit("log", text=line)
 
 
@@ -490,7 +667,9 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: proc.terminate())
 
     tail_buffer = []
-    pump = threading.Thread(target=pump_stdout, args=(proc, tail_buffer), daemon=True)
+    couple_lines = []
+    pump = threading.Thread(target=pump_stdout, args=(proc, tail_buffer, couple_lines),
+                            daemon=True)
     pump.start()
 
     mass = MassTail(results / f"{resroot}.mass")
@@ -595,6 +774,42 @@ def main():
             done_payload["maxVelocityFile"] = "max-velocity.bin"
         except Exception as e:  # noqa: BLE001
             emit("warning", text=f"Max-Geschwindigkeit nicht lesbar: {e}")
+
+    # ── 1D-Kanalnetz-Ergebnisse (gekoppelter Lauf): SWMM schreibt <inp>.out
+    #    neben die network.inp (coupling.cpp nutzt den absoluten inp-Pfad, cwd=inputs).
+    #    Serien für alle Knoten/Haltungen + Systembilanz → network-results.json.
+    couplefile = par.get("couplingfile", "")
+    if couplefile:
+        out_path = None
+        cf = inputs / couplefile
+        if cf.exists():
+            try:
+                inp_name = cf.read_text(errors="replace").split()[0]
+                cand = inputs / f"{inp_name}.out"
+                out_path = cand if cand.exists() else None
+            except Exception:  # noqa: BLE001
+                out_path = None
+        if out_path is None:
+            out_path = next(inputs.glob("*.inp.out"), None)
+        if out_path is None:
+            emit("warning", text="Kopplung aktiv, aber keine SWMM-.out gefunden — "
+                                 "keine 1D-Ergebnisse.")
+        else:
+            try:
+                net = read_swmm_out(out_path)
+                (results / "network-results.json").write_text(
+                    json.dumps(net, ensure_ascii=False), encoding="utf-8")
+                done_payload["networkResultsFile"] = "network-results.json"
+                emit("log", text=f"1D-Ergebnisse: {len(net['nodes'])} Knoten, "
+                                 f"{len(net['links'])} Haltungen, {len(net['times'])} "
+                                 f"Zeitschritte (Report-Step {net['reportStep']}s"
+                                 + (f", Stride {net['stride']}" if net["stride"] > 1 else "")
+                                 + ").")
+            except Exception as e:  # noqa: BLE001
+                emit("warning", text=f"SWMM-.out nicht lesbar: {e}")
+        budget = coupling_budget(couple_lines)
+        if budget:
+            done_payload["couplingBudget"] = budget
 
     report = mass.report()
     if report:

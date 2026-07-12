@@ -99,13 +99,13 @@ const open = ref(true);
   right: 16px;
   z-index: 12;
   width: 320px;
-  background: rgba(20, 24, 40, 0.86);
+  background: var(--sv-surface);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--sv-border);
+  border-radius: var(--sv-radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), var(--sv-glow-violet);
   overflow: hidden;
-  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-family: var(--sv-font);
 }
 .vcp.collapsed { width: 180px; }
 
@@ -117,17 +117,18 @@ const open = ref(true);
   cursor: pointer;
   user-select: none;
 }
-.vcp-head:hover { background: rgba(255, 255, 255, 0.05); }
+.vcp-head:hover { background: rgba(139, 92, 246, 0.1); }
 .vcp-title {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #e0e0e0;
+  color: var(--sv-text-violet);
+  text-shadow: var(--sv-glow-violet);
   letter-spacing: 0.3px;
 }
 .vcp-toggle {
   background: none;
   border: none;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
   font-size: 0.9rem;
   cursor: pointer;
   line-height: 1;
@@ -147,27 +148,28 @@ const open = ref(true);
   font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #78909c;
+  color: var(--sv-text-dim);
 }
 .vcp-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .vcp-chip {
   padding: 5px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--sv-border);
   border-radius: 6px;
   background: transparent;
-  color: #bdc3c7;
+  color: var(--sv-text-dim);
   font-size: 0.74rem;
+  font-family: var(--sv-font);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
-.vcp-chip:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.vcp-chip:hover { background: rgba(139, 92, 246, 0.15); color: var(--sv-text); }
 .vcp-chip.active {
-  background: rgba(52, 152, 219, 0.35);
-  border-color: #3498db;
-  color: #5dade2;
+  background: rgba(139, 92, 246, 0.25);
+  border-color: var(--sv-lime);
+  color: var(--sv-lime);
 }
 
 .vcp-slider {
@@ -176,12 +178,12 @@ const open = ref(true);
   justify-content: space-between;
   gap: 10px;
   font-size: 0.72rem;
-  color: #b0bec5;
+  color: var(--sv-text-dim);
 }
 .vcp-slider input[type="range"] {
   flex: 1;
   max-width: 170px;
-  accent-color: #3498db;
+  accent-color: var(--sv-lime);
   cursor: pointer;
 }
 

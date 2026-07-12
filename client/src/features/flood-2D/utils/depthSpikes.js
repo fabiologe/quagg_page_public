@@ -31,7 +31,8 @@ export function analyzeDepthSpikes(depth, ncols, nrows, opts = {}) {
   // 1) Spikes per RÄUMLICHER ISOLATION erkennen — UNABHÄNGIG von globaler Statistik
   //    (sonst frisst ein Spike sein eigenes Perzentil und bleibt unerkannt).
   const flagged = [];
-  const isSpike = N > 0 ? new Uint8Array(N) : null;
+  // Nur allozieren, wenn die Spike-Suche überhaupt läuft (2,6 MB je Frame bei großen Rastern)
+  const isSpike = (N > 0 && haveDims && doFlag) ? new Uint8Array(N) : null;
   if (haveDims && doFlag) {
     for (let i = 0; i < N; i++) {
       const d = depth[i];

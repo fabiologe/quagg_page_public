@@ -36,11 +36,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
 
     // --- GROUPS --- (renderOrder zentral aus renderLayers.js)
-    const nodeGroup = new THREE.Group();
-    nodeGroup.name = 'Layer_Nodes';
-    nodeGroup.renderOrder = RENDER_ORDER.NODES;
-    scene.add(nodeGroup);
-
     const buildingGroup = new THREE.Group();
     buildingGroup.name = 'Layer_Buildings';
     buildingGroup.renderOrder = RENDER_ORDER.BUILDINGS;
@@ -73,14 +68,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     scene.add(selectionGroup);
 
     // Reuse Geometries/Materials for performance
-    // Increased size for visibility (0.4 -> 3.0 for debugging)
-    const nodeGeometry = new THREE.SphereGeometry(3.0, 16, 16);
-    const nodeMaterial = new THREE.MeshStandardMaterial({
-        color: 0xff00ff, // Magenta for high visibility
-        roughness: 0.4,
-        metalness: 0.1
-    });
-
     const buildingMaterial = new THREE.MeshStandardMaterial({
         color: 0xbdc3c7, // Light Grey
         roughness: 0.8
@@ -132,7 +119,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     // werden (sonst sind sie nach dem ersten Render-Durchgang kaputt). clearGroup
     // disposed nur Geometrien + Materialien, die NICHT hier drin sind (per-Render erzeugte).
     const sharedMaterials = new Set([
-        nodeMaterial, buildingMaterial, boundaryMaterial,
+        buildingMaterial, boundaryMaterial,
         bridgeOpenMat, bridgeDeckMat, bridgePierMat, bridgeEdgeMat,
         weirMatBidi, weirMatUni, weirWallLineMat, weirOpeningMat,
     ]);
@@ -177,11 +164,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         const gc = geometricCenter(grid);
         if (gc) { worldOffset.value = gc; return; }
         if (grid && grid.center) { worldOffset.value = grid.center; return; }
-        if (geoStore.nodes && geoStore.nodes.length > 0 && !worldOffset.value) {
-            // Letzter Fallback (kein Grid): Offset aus dem ersten Knoten.
-            worldOffset.value = { x: geoStore.nodes[0].x, y: geoStore.nodes[0].y };
-            console.log("[LayerRenderer] World Offset from first Node (no grid header):", worldOffset.value);
-        }
     };
 
     const getLocalPos = (x, y, z) => {
@@ -257,45 +239,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     };
 
     // --- RENDERERS ---
-
-    const renderNodes = () => {
-        clearGroup(nodeGroup);
-        updateWorldOffset();
-
-        if (!geoStore.nodes || geoStore.nodes.length === 0) return;
-
-        let first = true;
-        geoStore.nodes.forEach(node => {
-            // BUGFIX: Wir erstellen die Geometrie für jeden Knoten neu,
-            // da clearGroup() andernfalls unsere global geteilte Geometrie sofort zerstört (.dispose),
-            // was dazu führt, dass THREE.js sie beim nächsten Re-Render ignoriert!
-            const dynNodeGeom = new THREE.SphereGeometry(3.0, 16, 16);
-            const mesh = new THREE.Mesh(dynNodeGeom, nodeMaterial);
-
-            // Pos: Beachte, dass alte Nodes "cover_level" hatten, neue Tools (Culvert/NodeTool) setzen "z".
-            const nodeZ = node.z !== undefined && node.z !== null ? node.z : node.cover_level;
-            const pos = getLocalPos(node.x, node.y, nodeZ);
-            mesh.position.copy(pos);
-
-            if (first) {
-                console.log(`[LayerRenderer] Node[0] Local Pos: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`);
-                first = false;
-            }
-
-            // Metadata
-            mesh.userData = {
-                id: node.id,
-                type: 'node',
-                data: node,
-                selectable: true
-            };
-
-            nodeGroup.add(mesh);
-        });
-
-        applyChildOrder(nodeGroup, RENDER_ORDER.NODES);
-        console.log(`[LayerRenderer] Rendered ${geoStore.nodes.length} nodes.`);
-    };
+    // (Punkt-Quellen/Nodes entfernt 2026-07 — Schächte rendert useNetworkRenderer.)
 
     const renderBuildings = () => {
         clearGroup(buildingGroup);
@@ -516,12 +460,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         // Szenario aus den Stores (gleiche Form wie im Flood2DSolverRunner) → BCI bauen.
         const scenario = {
             boundaries: geoStore.boundaries?.features || [],
-            manholes: (geoStore.nodes || []).map(n => ({
-                type: 'Feature',
-                id: n.id,
-                geometry: { type: 'Point', coordinates: [n.x, n.y] },
-                properties: { name: n.displayName || `Node_${n.id}` }
-            })),
             assignments: hydraulicStore.assignments || {},
             ganglinien: hydraulicStore.ganglinien || {},
             globalBoundaryType: hydraulicStore.globalBoundaryType,
@@ -775,7 +713,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
         // Find objects in other groups
         // We need lookup maps for efficient access, but looping scene groups is ok for small N.
-        const searchGroups = [nodeGroup, buildingGroup, boundaryGroup];
+        const searchGroups = [buildingGroup, boundaryGroup];
 
         searchGroups.forEach(group => {
             group.children.forEach(child => {
@@ -831,7 +769,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             const jobs = new Set(_pendingRenders);
             _pendingRenders.clear();
             if (jobs.has('offset'))     updateWorldOffset();   // zuerst: Layer-Positionen hängen daran
-            if (jobs.has('nodes'))      renderNodes();
             if (jobs.has('buildings'))  renderBuildings();
             if (jobs.has('hydraulics')) renderHydraulics();
             if (jobs.has('weirs'))      renderWeirs();
@@ -839,8 +776,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             if (jobs.has('selection') && simStoreArg) renderSelectionHighlight(simStoreArg);
         });
     }
-
-    watch(() => geoStore.nodes, () => schedule('nodes'), { deep: true, immediate: true });
 
     // Buildings + Boundaries (Footprints)
     watch([() => geoStore.buildings.features, () => geoStore.boundaries.features],
@@ -855,15 +790,14 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
     // Grid-Offset (Store ODER Preview) → alle Layer neu positionieren
     if (gridRef) {
-        watch(gridRef, () => schedule('offset', 'nodes', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
+        watch(gridRef, () => schedule('offset', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
     }
-    watch(() => geoStore.terrain, () => schedule('offset', 'nodes', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
+    watch(() => geoStore.terrain, () => schedule('offset', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
 
-    // Hydraulik (Pfeil-Vorschau): Assignments, globale BC-Einstellung, Boundaries, Nodes
+    // Hydraulik (Pfeil-Vorschau): Assignments, globale BC-Einstellung, Boundaries
     watch(() => hydraulicStore.assignments, () => schedule('hydraulics'), { deep: true, immediate: true });
     watch(() => [hydraulicStore.globalBoundaryType, hydraulicStore.globalBoundaryHfix], () => schedule('hydraulics'));
     watch(() => geoStore.boundaries, () => schedule('hydraulics'), { deep: true });
-    watch(() => geoStore.nodes,      () => schedule('hydraulics'), { deep: true });
 
     // Selektion
     if (simStoreArg) {
@@ -874,30 +808,25 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     // --- CLEANUP ---
     onUnmounted(() => {
         _disposed = true;
-        scene.remove(nodeGroup);
         scene.remove(buildingGroup);
         scene.remove(boundaryGroup);
         scene.remove(hydraulicGroup);
         scene.remove(weirGroup);
         scene.remove(bridgeGroup);
-        clearGroup(nodeGroup);
         clearGroup(buildingGroup);
         clearGroup(boundaryGroup);
         clearGroup(hydraulicGroup);
         clearGroup(weirGroup);
         clearGroup(bridgeGroup);
-        nodeGeometry.dispose();
         // Beim endgültigen Unmount auch die geteilten Materialien freigeben.
         for (const m of sharedMaterials) m.dispose?.();
     });
 
     return {
-        nodeGroup,
         buildingGroup,
         boundaryGroup,
         weirGroup,
         bridgeGroup,
-        renderNodes,
         renderBuildings,
         renderHydraulics,
         renderWeirs,

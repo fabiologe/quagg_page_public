@@ -33,9 +33,6 @@ export const useGeoStore = defineStore('geo', () => {
      */
     const terrainVersion = ref(0);
 
-    /** @type {import('vue').Ref<Array<{id: string, x: number, y: number, z: number, type: string}>>} */
-    const nodes = ref([]);
-
     /** @type {import('vue').Ref<{type: 'FeatureCollection', features: Array<any>}>} */
     const boundaries = ref({ type: 'FeatureCollection', features: [] });
 
@@ -91,88 +88,8 @@ export const useGeoStore = defineStore('geo', () => {
         }
     );
 
-    function addNode(node) {
-        // Plausibilitäts-Check: liegt der Knoten im aktuellen Terrain-Extent? Nach einem DEM-Wechsel
-        // (anderes Gebiet) können geklickte/programmatische Koordinaten außerhalb liegen → der Solver
-        // verwirft sie still. Wir warnen, blockieren aber nicht (Culvert-Flow soll robust bleiben).
-        const t = terrain.value;
-        if (t && Number.isFinite(node?.x) && Number.isFinite(node?.y)) {
-            const xll = t.xllcorner ?? t.xll ?? 0;
-            const yll = t.yllcorner ?? t.yll ?? 0;
-            const cs  = t.cellsize ?? 1;
-            const xMax = xll + (t.ncols ?? 0) * cs;
-            const yMax = yll + (t.nrows ?? 0) * cs;
-            if (node.x < xll || node.x > xMax || node.y < yll || node.y > yMax) {
-                console.warn(`[GeoStore] Node ${node.id ?? ''} liegt außerhalb des Terrain-Extents `
-                    + `(x ${node.x.toFixed(1)} ∉ [${xll.toFixed(1)}, ${xMax.toFixed(1)}], `
-                    + `y ${node.y.toFixed(1)} ∉ [${yll.toFixed(1)}, ${yMax.toFixed(1)}]) — wird vom Solver ignoriert.`);
-            }
-        }
-        saveSnapshot('Node hinzugefügt');
-        nodes.value.push(node);
-        notifyObjectPlaced('NODE');
-    }
-
-    function removeNode(id) {
-        saveSnapshot('Node gelöscht');
-        nodes.value = nodes.value.filter(n => n.id !== id);
-    }
-
-    // ── Culvert-Links (1D/2D BMI-Kopplung) ─────────────────────────────────
-    /**
-     * Verknüpfte Durchlass-Paare für den BMI-WebWorker.
-     * @type {import('vue').Ref<Array<{
-     *   id: string, sourceId: string, targetId: string,
-     *   z_in: number, z_out: number, diameter: number,
-     *   length: number, manning_n: number, Cd: number
-     * }>>}
-     */
-    const culvertLinks = ref([]);
-
-    /**
-     * Verbindet zwei Knoten als Durchlass (Einlauf → Auslauf).
-     * @param {string} sourceId
-     * @param {string} targetId
-     * @param {object} params - { z_in, z_out, diameter, length, manning_n, Cd }
-     */
-    function addCulvertLink(sourceId, targetId, params = {}) {
-        if (!sourceId || !targetId) return;
-        if (sourceId === targetId) {
-            console.warn('[GeoStore] addCulvertLink: sourceId === targetId — Ringbezug verhindert.');
-            return;
-        }
-        const exists = culvertLinks.value.some(
-            l => l.sourceId === sourceId && l.targetId === targetId
-        );
-        if (exists) {
-            console.warn(`[GeoStore] addCulvertLink: Paar [${sourceId}→${targetId}] bereits vorhanden.`);
-            return;
-        }
-        saveSnapshot('Culvert-Link hinzugefügt');
-        culvertLinks.value.push({
-            id:        `link_${sourceId}_${targetId}`,
-            sourceId,
-            targetId,
-            z_in:      params.z_in      ?? 0.0,
-            z_out:     params.z_out     ?? 0.0,
-            diameter:  params.diameter  ?? 1.0,
-            length:    params.length    ?? 10.0,
-            manning_n: params.manning_n ?? 0.013,
-            Cd:        params.Cd        ?? 0.6,
-            // Optionale Kapazitäts-Obergrenze [m³/s] (CulvertLinkManager). null →
-            // voller 4-Zustands-Durchfluss im BMI-Worker (simulation.bmi.js).
-            maxQ:      params.maxQ ?? null,
-        });
-    }
-
-    /**
-     * Entfernt einen Culvert-Link anhand seiner ID.
-     * @param {string} linkId
-     */
-    function removeCulvertLink(linkId) {
-        saveSnapshot('Culvert-Link gelöscht');
-        culvertLinks.value = culvertLinks.value.filter(l => l.id !== linkId);
-    }
+    // Punkt-Quellen/-Senken (NodeTool) und Culvert-Links (CulvertLinkManager) wurden
+    // 2026-07 entfernt — das Kanalnetz (useNetworkStore, SWMM-1D) ersetzt beide.
 
     // ── Brücken (als Wehr-Erweiterung: Soffitte + Deck-Linie) ──────────────
     /**
@@ -384,6 +301,17 @@ export const useGeoStore = defineStore('geo', () => {
         notifyObjectPlaced('BOUNDARY');
     }
 
+    /** Boundary-Feature entfernen (Match wie getFeatureById: f.id oder properties.id). */
+    function removeBoundary(id) {
+        const exists = boundaries.value.features.some(f => f.id === id || (f.properties && f.properties.id === id));
+        if (!exists) return false;
+        saveSnapshot('Grenze entfernt');
+        boundaries.value.features = boundaries.value.features.filter(
+            f => !(f.id === id || (f.properties && f.properties.id === id))
+        );
+        return true;
+    }
+
     function addModification(type, geometry, properties = {}) {
         saveSnapshot(`${type} hinzugefügt`);
         const payload = {
@@ -568,10 +496,6 @@ export const useGeoStore = defineStore('geo', () => {
     }
 
     function getFeatureById(id) {
-        // Search in nodes
-        const node = nodes.value.find(n => n.id === id);
-        if (node) return node;
-
         // Search in modifications (which covers buildings)
         const modification = modifications.value.find(m => m.id === id);
         if (modification) return modification;
@@ -603,27 +527,21 @@ export const useGeoStore = defineStore('geo', () => {
     return {
         terrain,
         terrainVersion,
-        nodes,
         buildings,
         excavations,
         boundaries,
         modifications,
         mapCenter,
         importTerrain,
-        addNode,
-        removeNode,
         addBuilding,
         addBoundary,
+        removeBoundary,
         addModification,
         clearModifications,
         cropTerrain,
         maskTerrainByPolygon,
         getFeatureById,
         updateFeatureProperty,
-        // 1D/2D Rohrkopplung
-        culvertLinks,
-        addCulvertLink,
-        removeCulvertLink,
         // Wehre (LISFLOOD weirfile)
         weirs,
         addWeir,

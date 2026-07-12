@@ -62,41 +62,18 @@ const segmentCount = computed(() => Math.max(0, pointCount.value - 1));
 </script>
 
 <style scoped>
-.tool-ui-panel {
-    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: rgba(46, 204, 113, 0.95); /* Green for Boundary */
-    color: white;
-    padding: 12px 18px; border-radius: 8px;
-    backdrop-filter: blur(4px); pointer-events: auto;
-    text-align: center;
-    min-width: 220px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-}
-.tool-ui-panel.review {
-    background: rgba(155, 89, 182, 0.96); /* Lila für Review (passt zu den Vorschauzellen) */
-}
-.panel-header {
-    font-weight: 700; margin-bottom: 8px; color: #fff;
-    border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 6px;
-    text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.85rem;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    cursor: default; user-select: none;
-}
-.collapse-dots { margin-left: auto; opacity: 0.45; letter-spacing: 2px; font-size: 0.8rem; }
-
-/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
-.tool-ui-panel.boundary-panel.collapsed { min-width: unset; padding: 8px 16px; }
-.boundary-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
-.hint { font-size: 0.9rem; font-weight: 500; margin-bottom: 4px; }
-.sub-hint { font-size: 0.75rem; color: #e8f8f5; line-height: 1.4; }
+/* Chrome kommt GLOBAL aus styles/tool-panel.css (Vorlage WeirTool) —
+   hier nur der Review-Akzent (Rahmen wechselt auf Lime wie die Vorschauzellen). */
+.tool-ui-panel.review { border-color: var(--sv-lime, #a3e635); }
 
 .btn-group { display: flex; gap: 8px; margin-top: 10px; }
 .btn-confirm, .btn-cancel {
-    flex: 1; padding: 7px 10px; border: none; border-radius: 5px;
-    font-size: 0.82rem; font-weight: 700; cursor: pointer; color: #fff;
-    transition: filter 0.15s;
+    flex: 1; padding: 8px; border: none; border-radius: 5px;
+    font-size: 0.88rem; font-weight: 700; cursor: pointer;
+    transition: all 0.2s; font-family: inherit;
 }
-.btn-confirm { background: #27ae60; }
-.btn-cancel  { background: #c0392b; }
-.btn-confirm:hover, .btn-cancel:hover { filter: brightness(1.12); }
+.btn-confirm { background: var(--sv-lime, #a3e635); color: #12121a; }
+.btn-confirm:hover { background: #b6f04d; }
+.btn-cancel  { background: #3a2f5c; color: #fff; }
+.btn-cancel:hover { background: #5d7a91; }
 </style>

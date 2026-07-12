@@ -94,6 +94,8 @@ C1     CIRCULAR 0.4   0     0     0     1
 [REPORT]
 INPUT      NO
 CONTINUITY YES
+NODES      ALL
+LINKS      ALL
 """)
 
     # rim J1 = Senkensohle (Deckel in der Senke), rim OUT = Gelaende.
@@ -229,6 +231,37 @@ def main():
                     ok = False
         else:
             print("❌ keine [COUPLE] Ende-Bilanzzeile gefunden")
+            ok = False
+
+        # 7) 1D-Ergebnis-Pipeline: done-Event trägt networkResultsFile + couplingBudget,
+        #    die JSON enthält Serien für J1/OUT/C1 (Phase R, 2026-07).
+        done_ev = next((e for e in events if e.get("event") == "done"), {})
+        nrf = done_ev.get("networkResultsFile")
+        if nrf and (job / "results" / nrf).exists():
+            net = json.loads((job / "results" / nrf).read_text())
+            n_t = len(net.get("times", []))
+            j1 = net.get("nodes", {}).get("J1", {})
+            c1 = net.get("links", {}).get("C1", {})
+            if n_t > 0 and len(j1.get("depth", [])) == n_t and len(c1.get("flow", [])) == n_t:
+                print(f"✅ 1D-Ergebnisse im done-Payload: {n_t} Zeitschritte, "
+                      f"J1 max depth {max(j1['depth']):.3f} m, C1 max Q {max(c1['flow']):.4f} m3/s")
+            else:
+                print(f"❌ network-results.json unvollständig (times={n_t}, "
+                      f"J1-depth={len(j1.get('depth', []))}, C1-flow={len(c1.get('flow', []))})")
+                ok = False
+            if max(c1.get("flow", [0])) <= 0.0:
+                print("❌ C1 führt laut 1D-Serie NIE Wasser — Kopplung kam nicht im Netz an?")
+                ok = False
+        else:
+            print(f"❌ kein networkResultsFile im done-Event (done={ {k: v for k, v in done_ev.items() if k != 'massReport'} })")
+            ok = False
+        budget = done_ev.get("couplingBudget")
+        if budget and "to2d" in budget and "to1d" in budget and budget.get("nodes"):
+            print(f"✅ couplingBudget strukturiert: 1D->2D {budget['to2d']:.2f} m3, "
+                  f"2D->1D {budget['to1d']:.2f} m3, Schuld {budget['debt']:.3f} m3, "
+                  f"{len(budget['nodes'])} Knoten")
+        else:
+            print("❌ kein/unvollständiges couplingBudget im done-Event")
             ok = False
 
         print("\n" + ("✅ ROUNDTRIP-REGRESSION BESTANDEN" if ok else "❌ ROUNDTRIP-REGRESSION FEHLGESCHLAGEN"))

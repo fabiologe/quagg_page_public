@@ -335,54 +335,8 @@ const onFinishBridge = () => {
 </script>
 
 <style scoped>
-.tool-ui-panel.bridge-panel {
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  box-sizing: border-box;
-  background: var(--sv-surface);
-  color: var(--sv-text);
-  font-family: var(--sv-font);
-  padding: 16px 20px;
-  border-radius: 10px;
-  backdrop-filter: blur(10px);
-  pointer-events: auto;
-  min-width: 320px;
-  max-width: 420px;
-  box-shadow: var(--sv-glow-violet);
-  border: 2px solid var(--sv-violet);
-  z-index: 1000;
-}
-
-.panel-header {
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: #8b5cf6;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(139,92,246, 0.3);
-  padding-bottom: 8px;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: default;
-  user-select: none;
-}
-.header-icon { font-size: 1.1rem; }
-.collapse-dots { margin-left: auto; opacity: 0.4; letter-spacing: 2px; font-size: 0.8rem; }
-
-/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
-.tool-ui-panel.bridge-panel.collapsed {
-  min-width: unset;
-  padding: 8px 16px;
-}
-.bridge-panel.collapsed .panel-header {
-  border-bottom: none;
-  padding-bottom: 0;
-  margin-bottom: 0;
-}
+/* Chrome kommt GLOBAL aus styles/tool-panel.css (Vorlage WeirTool) —
+   hier nur Brücken-Spezifisches. */
 
 /* Slide-Transition für den Panel-Inhalt (analog ShovelTool). */
 .panel-slide-enter-active,
@@ -395,13 +349,7 @@ const onFinishBridge = () => {
   transform: translateY(8px);
 }
 
-.hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.drawing-hint { color: #ffce54; }
-.step-badge { background: #8b5cf6; color: white; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; flex-shrink: 0; }
-.sub-hint { font-size: 0.8rem; color: #95a5a6; line-height: 1.4; margin: 10px 0; }
 
-.existing-list { margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; }
-.list-title { font-size: 0.78rem; color: #7f8c8d; text-transform: uppercase; margin-bottom: 6px; }
 .bridge-item { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .bridge-label { font-size: 0.85rem; font-weight: 600; flex: 1; }
 .bridge-meta { font-size: 0.75rem; color: #7f8c8d; }
@@ -440,18 +388,9 @@ const onFinishBridge = () => {
 .input-group label { font-size: 0.78rem; color: #bdc3c7; }
 .input-group input[type="number"] { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border-radius: 5px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.88rem; outline: none; transition: border-color 0.2s; }
 .input-group input[type="number"]:focus { border-color: #8b5cf6; }
-.field-hint { font-size: 0.7rem; color: #7f8c8d; line-height: 1.3; }
 
 .validation-error { font-size: 0.78rem; color: #8b5cf6; text-align: center; }
 
-.actions { display: flex; gap: 8px; margin-top: 4px; }
-.btn { flex: 1; padding: 8px; border: none; border-radius: 5px; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all 0.2s; }
-.btn:active { transform: scale(0.97); }
-.btn-save { background: #a3e635; color: #12121a; font-weight: 700; }
-.btn-save:hover:not(:disabled) { background: #c0392b; }
-.btn-save:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-cancel { background: #3a2f5c; color: white; }
-.btn-cancel:hover { background: #5d7a91; }
 .btn-pier { background: #8b5a2b; color: white; }
 .btn-pier:hover:not(:disabled) { background: #a06a35; }
 .btn-pier:disabled { opacity: 0.45; cursor: not-allowed; }

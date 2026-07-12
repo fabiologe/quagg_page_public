@@ -8,7 +8,6 @@
             <h3>Objekt-Auswahl</h3>
             <div class="tabs">
                 <button :class="{ active: filter === 'ALL' }" @click="filter = 'ALL'">Alle</button>
-                <button :class="{ active: filter === 'NODE' }" @click="filter = 'NODE'">Punkte</button>
                 <button :class="{ active: filter === 'BOUNDARY' }" @click="filter = 'BOUNDARY'">Linien</button>
             </div>
             <div class="search-row">
@@ -120,14 +119,11 @@ const geoStore = useGeoStore();
 const hydStore = useHydraulicStore();
 
 // --- LIST LOGIC ---
-const filter = ref('ALL'); // ALL, NODE, BOUNDARY
+const filter = ref('ALL'); // ALL, BOUNDARY
 
 // Merge all geometry items into uniform list
 const allItems = computed(() => {
     const list = [];
-    if (geoStore.nodes) {
-        list.push(...geoStore.nodes.map(n => ({ id: n.id, type: 'NODE', _raw: n })));
-    }
     if (geoStore.boundaries && geoStore.boundaries.features) {
         list.push(...geoStore.boundaries.features.map(f => ({ 
             id: f.id || (f.properties ? f.properties.id : 'unknown'), 
@@ -154,7 +150,7 @@ const filteredItems = computed(() => {
 });
 
 const getIcon = (type) => {
-    return type === 'NODE' ? '📍' : '➖';
+    return '➖';
 };
 
 const getStatus = (id) => {

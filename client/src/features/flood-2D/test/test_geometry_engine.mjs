@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NetworkModel } from '../services/geometry/NetworkModel.js';
-import { fromGeoStore, fromSewerNodesEdges } from '../services/geometry/adapters.js';
+import { fromSewerNodesEdges } from '../services/geometry/adapters.js';
 import { classifyCell, detectCouplingNodes, worldToCell } from '../services/geometry/couplingDetector.js';
 import { buildCoupledInputsFromModel } from '../services/swmm/couplingExport.js';
 
@@ -18,22 +18,17 @@ const IMAGE = process.argv[2] || 'lisflood-fp:coupling';
 let fails = 0;
 const ok  = (c, m) => { if (c) console.log('  ✅ ' + m); else { console.error('  ❌ ' + m); fails++; } };
 
-// ── 1) Adapter-Round-Trip ───────────────────────────────────────────────────────
+// ── 1) Adapter-Round-Trip (Sewer/ISYBAU-Form; der Legacy-geoStore-Adapter wurde entfernt) ──
 console.log('1) Adapter → NetworkModel → SwmmBuilder(coupled)');
 {
-    const geoStore = {
-        nodes: [
-            { id: 'S1', x: 10, y: 10, z: 8.0, coverZ: 10.0, type: 'manhole' },
-            { id: 'S2', x: 60, y: 10, z: 7.5, coverZ: 9.0, type: 'SINK' },  // → outfall
-        ],
-        culvertLinks: [
-            { id: 'L1', sourceId: 'S1', targetId: 'S2', diameter: 0.4, length: 50, manning_n: 0.013 },
-        ],
-    };
-    const model = fromGeoStore(geoStore);
+    const model = fromSewerNodesEdges(
+        [{ id: 'S1', x: 10, y: 10, z: 8.0, coverZ: 10.0, isManhole: true },
+         { id: 'S2', x: 60, y: 10, z: 7.5, coverZ: 9.0, is_sink: true }],   // → outfall
+        [{ id: 'L1', fromNodeId: 'S1', toNodeId: 'S2', length: 50,
+           roughness: 77, profile: { type: 0, height: 0.4 } }]);
     ok(model.nodeList.length === 2, 'zwei Knoten übernommen');
     ok(model.linkList.length === 1, 'ein Link übernommen');
-    ok(model.nodes.get('S2').role === 'outfall', 'SINK → outfall-Rolle');
+    ok(model.nodes.get('S2').role === 'outfall', 'is_sink → outfall-Rolle');
     ok(model.neighbors('S1').includes('S2'), 'Topologie S1→S2 erkannt');
 
     const store = model.toSwmmStore();

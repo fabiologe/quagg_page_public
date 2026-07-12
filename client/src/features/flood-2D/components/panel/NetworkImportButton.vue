@@ -1,7 +1,7 @@
 <template>
   <div class="net-import">
     <button class="net-btn" :disabled="busy" @click="pick" title="ISYBAU-XML oder IFC importieren">
-      <SvEmoji emoji="🕳️" :size="15" />
+      <SvIcon name="Schacht.png" :size="15" color="currentColor" />
       {{ busy ? 'Importiere…' : 'Entwässerungsnetz importieren' }}
     </button>
     <input ref="fileInput" type="file" accept=".xml,.ifc,.ifcxml" class="hidden-input" @change="onFile" />
@@ -13,7 +13,7 @@
 
 <script setup>
 import { ref } from 'vue';
-import SvEmoji from '../common/SvEmoji.vue';
+import SvIcon from '../common/SvIcon.vue';
 import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
 import { importDrainageNetwork } from '@/features/flood-2D/services/geometry/import/index.js';
 

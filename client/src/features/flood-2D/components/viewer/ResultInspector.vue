@@ -137,21 +137,9 @@ const rasterFiles = computed(() => {
   return files;
 });
 
-// ─── BOUNDARIES section: nodes, boundaries, assignments, ganglinien ───
+// ─── BOUNDARIES section: boundaries, assignments, ganglinien ───
 const boundaryFiles = computed(() => {
   const files = {};
-
-  // Nodes
-  const rawNodes = toRaw(geoStore.nodes);
-  if (rawNodes && rawNodes.length > 0) {
-    let txt = `# Knoten (${rawNodes.length})\n`;
-    txt += `# ID | X | Y | Z | Typ\n`;
-    txt += '─'.repeat(60) + '\n';
-    for (const n of rawNodes) {
-      txt += `${n.id}  ${n.x?.toFixed(2)}  ${n.y?.toFixed(2)}  ${(n.z || 0).toFixed(2)}  ${n.type || ''}\n`;
-    }
-    files['nodes.txt'] = txt;
-  }
 
   // Boundaries (GeoJSON)
   const rawBounds = toRaw(geoStore.boundaries);

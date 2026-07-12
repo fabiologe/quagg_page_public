@@ -62,6 +62,33 @@ export function bciClaimedCells(bci, header) {
     return cells;
 }
 
+/** Numerisches Keyword aus einer run.par lesen (Zeilenformat `key wert`) — oder null. */
+function parNum(par, key) {
+    const m = String(par || '').match(new RegExp(`^\\s*${key}\\s+([\\d.eE+-]+)`, 'm'));
+    const n = m ? Number(m[1]) : NaN;
+    return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Zeit-Synchronisation 1D↔2D „unter der Haube": der Nutzer stellt nur die 2D-Dauer ein,
+ * die SWMM-Laufzeit folgt automatisch. Ohne diese Kopplung endete SWMM nach dem Builder-
+ * Default (6 h) und das Netz „starb" mitten im 2D-Lauf — nur als Logzeile gemeldet
+ * (coupling.cpp: „SWMM-Simulationsdauer zu Ende").
+ *   - durationHours  ← sim_time + 5 min Puffer (Lockstep dt_c läuft nie über das Ende)
+ *   - reportStepSeconds ← saveint (1D-Ergebnisframes takten wie die 2D-Frames)
+ * Explizit gesetzte swmm-Optionen gewinnen immer.
+ */
+export function syncedSwmmOptions(par, swmm = {}) {
+    const out = { ...swmm };
+    const simTime = parNum(par, 'sim_time');
+    if (out.durationHours == null && simTime > 0)
+        out.durationHours = (simTime + 300) / 3600;
+    const saveint = parNum(par, 'saveint');
+    if (out.reportStepSeconds == null && saveint > 0)
+        out.reportStepSeconds = Math.max(1, Math.round(saveint));
+    return out;
+}
+
 /** true, wenn der Datei-Satz mit dem Kopplungs-Solver-Pfad (acceleration, kein SGC/fv1/dg2) läuft. */
 function couplingSchemeOk(par) {
     const p = String(par || '');
@@ -91,7 +118,8 @@ export function buildCoupledFiles(baseFiles, model, opts = {}) {
 
     const dem = parseAscGrid(terrain);
     const { files: coupFiles, warnings: cw, couplingNodes, diagnostics } =
-        buildCoupledInputsFromModel(model, dem, opts);
+        buildCoupledInputsFromModel(model, dem,
+            { ...opts, swmm: syncedSwmmOptions(baseFiles['run.par'], opts.swmm) });
     warnings.push(...cw);
 
     if (!couplingNodes || couplingNodes.length === 0) {

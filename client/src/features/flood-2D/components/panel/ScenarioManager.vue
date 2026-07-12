@@ -16,49 +16,49 @@
         @click="activeTab = 'SURFACE'"
         title="Oberflächen-Materialien"
       >
-        <SvEmoji emoji="🎨" :size="14" /> Oberfläche
+        <SvEmoji emoji="🎨" :size="14" /><span class="tab-label">Oberfläche</span>
       </button>
       <button
         :class="{ active: activeTab === 'BUILDINGS' }"
         @click="activeTab = 'BUILDINGS'"
         title="Gebäude"
       >
-        <SvEmoji emoji="🏢" :size="14" /> Buildings ({{ geoStore.buildings.features.length }})
+        <SvEmoji emoji="🏢" :size="14" /><span class="tab-label">Buildings ({{ geoStore.buildings.features.length }})</span>
       </button>
       <button 
         :class="{ active: activeTab === 'BOUNDARIES' }" 
         @click="activeTab = 'BOUNDARIES'"
         title="Grenzen"
       >
-        Bounds ({{ geoStore.boundaries.features.length }})
+        <SvIcon name="Design-Artboard-Shapes--Streamline-Pixel" :size="14" /><span class="tab-label">Bounds ({{ geoStore.boundaries.features.length }})</span>
       </button>
       <button 
         :class="{ active: activeTab === 'PROFILES' }" 
         @click="activeTab = 'PROFILES'"
         title="Hydraulische Ganglinien"
       >
-        Ganglinien ({{ ganglinienList.length }})
+        <SvEmoji emoji="📈" :size="14" /><span class="tab-label">Ganglinien ({{ ganglinienList.length }})</span>
       </button>
       <button
         :class="{ active: activeTab === 'NETWORK' }"
         @click="activeTab = 'NETWORK'"
         title="Kanalnetz (ISYBAU/IFC) — Schächte & Haltungen für die High-End-Kopplung"
       >
-        <SvEmoji emoji="🕳️" :size="14" /> Netz ({{ netStore.nodes.length + netStore.links.length }})
+        <SvIcon name="Schacht.png" :size="14" /><span class="tab-label">Netz ({{ netStore.nodes.length + netStore.links.length }})</span>
       </button>
       <button 
         :class="{ active: activeTab === 'RAIN' }" 
         @click="activeTab = 'RAIN'"
         title="Niederschlag"
       >
-        <SvEmoji emoji="🌧" :size="14" /> Regen
+        <SvEmoji emoji="🌧" :size="14" /><span class="tab-label">Regen</span>
       </button>
       <button 
         :class="{ active: activeTab === 'SIMULATION' }" 
         @click="activeTab = 'SIMULATION'"
         title="Simulation & Debug"
       >
-        <SvEmoji emoji="⚡" :size="14" /> Run
+        <SvEmoji emoji="⚡" :size="14" /><span class="tab-label">Run</span>
       </button>
     </div>
 
@@ -142,10 +142,10 @@
 
       </div>
 
-      <RainConfig v-if="activeTab === 'RAIN'" />
+      <div v-if="activeTab === 'RAIN'" class="tab-scroll"><RainConfig /></div>
 
       <!-- KANALNETZ (Unified Geometry Engine): Import + Tabelle + Detail-Editor -->
-      <div v-if="activeTab === 'NETWORK'" class="network-tab">
+      <div v-if="activeTab === 'NETWORK'" class="network-tab tab-scroll">
         <NetworkImportButton />
         <NetworkTable />
 
@@ -159,11 +159,8 @@
               <SvEmoji emoji="➕" :size="13" /> Neu erstellen ▾
             </button>
             <div v-if="netCreateOpen" class="na-menu">
-              <button @click="createNet('NET_NODE')"><SvEmoji emoji="🕳️" :size="13" /> Schacht setzen (3D)</button>
-              <button @click="createNet('NET_CONDUIT')"><SvEmoji emoji="🧵" :size="13" /> Haltung ziehen (3D)</button>
-              <button @click="mergeLegacy" title="Legacy Nodes + Culverts (geoStore) ins Netz übernehmen">
-                <SvEmoji emoji="♻️" :size="13" /> Legacy übernehmen ({{ geoStore.nodes.length + geoStore.culvertLinks.length }})
-              </button>
+              <button @click="createNet('NET_NODE')"><SvIcon name="Schacht.png" :size="13" color="currentColor" /> Schacht setzen (3D)</button>
+              <button @click="createNet('NET_CONDUIT')"><SvIcon name="Haltung.png" :size="13" color="currentColor" /> Haltung ziehen (3D)</button>
             </div>
           </div>
           <button class="na-btn" @click="showNetCheck = true" title="Diskrepanzen zwischen DGM-Raster und Netz prüfen">
@@ -178,13 +175,13 @@
       <Flood2DSolverRunner v-if="activeTab === 'SIMULATION'" />
 
       <!-- SURFACE MATERIALS -->
-      <SurfaceConfig v-if="activeTab === 'SURFACE'" />
+      <div v-if="activeTab === 'SURFACE'" class="tab-scroll"><SurfaceConfig /></div>
 
     </div>
 
     <!-- CONFIGURATION PANEL (Bottom) -->
     <!-- Only show property config if NOT in Profiles/Rain/Sim tab, OR if selection matches -->
-    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION' && activeTab !== 'SURFACE' && activeTab !== 'CULVERTS' && activeTab !== 'NETWORK'">
+    <div class="panel-config" v-if="activeTab !== 'PROFILES' && activeTab !== 'RAIN' && activeTab !== 'SIMULATION' && activeTab !== 'SURFACE' && activeTab !== 'NETWORK'">
         <!-- NEW: Multi-select support -->
         <div v-if="currentSelectionIds.length > 1" class="bulk-hint">
             <div class="bulk-icon"><SvEmoji emoji="🎯" :size="26" /></div>
@@ -222,6 +219,7 @@ import PatternGenerator from '../hydraulics/PatternGenerator.vue';
 import AssignmentModal from '../hydraulics/AssignmentModal.vue';
 import Flood2DSolverRunner from '../Flood2DSolverRunner.vue';
 import SvEmoji from '../common/SvEmoji.vue';
+import SvIcon from '../common/SvIcon.vue';
 import SurfaceConfig from './SurfaceConfig.vue';
 import NetworkTable from './NetworkTable.vue';
 import NetworkImportButton from './NetworkImportButton.vue';
@@ -229,7 +227,6 @@ import NetworkPropertyPanel from './NetworkPropertyPanel.vue';
 import NetworkDataTable from './NetworkDataTable.vue';
 import NetworkRasterCheck from './NetworkRasterCheck.vue';
 import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
-import { fromGeoStore } from '@/features/flood-2D/services/geometry/adapters.js';
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
@@ -244,14 +241,9 @@ const showNetTable = ref(false);
 const showNetCheck = ref(false);
 const netCreateOpen = ref(false);
 function createNet(tool) { simStore.setActiveTool(tool); netCreateOpen.value = false; }
-function mergeLegacy() {
-    netStore.mergeModel(fromGeoStore({ nodes: geoStore.nodes, culvertLinks: geoStore.culvertLinks }));
-    netCreateOpen.value = false;
-}
 
 const totalItems = computed(() => {
-    return (geoStore.nodes ? geoStore.nodes.length : 0) + 
-           (geoStore.buildings.features ? geoStore.buildings.features.length : 0) + 
+    return (geoStore.buildings.features ? geoStore.buildings.features.length : 0) +
            (geoStore.boundaries.features ? geoStore.boundaries.features.length : 0);
 });
 
@@ -306,12 +298,6 @@ const handleZoom = (item) => {
 // NEW: Auto-Switch Tab on Selection
 watch(() => simStore.selection, (newId) => {
     if (!newId) return;
-    
-    // Check Nodes
-    if (geoStore.nodes.some(n => n.id === newId)) {
-        activeTab.value = 'NODES';
-        return;
-    }
     // Check Buildings
     if (geoStore.buildings.features.some(f => f.id === newId)) {
         activeTab.value = 'BUILDINGS';
@@ -343,6 +329,9 @@ watch(() => simStore.selection, (newId) => {
     width: 100%; /* Will be constrained by parent container */
     overflow: hidden;
     font-family: var(--sv-font);
+    /* Panel ist per Resize-Bar frei streckbar (200–1200px) → eigene
+       Container-Queries statt Viewport-Media-Queries. */
+    container-type: inline-size;
 }
 
 .panel-header {
@@ -351,8 +340,8 @@ watch(() => simStore.selection, (newId) => {
     border-bottom: 1px solid #2e2740;
     display: flex; justify-content: space-between; align-items: center;
 }
-.panel-header h3 { margin: 0; font-size: 1rem; color: var(--sv-text-violet); text-shadow: var(--sv-glow-violet); text-transform: uppercase; letter-spacing: 1px; }
-.stats { font-size: 0.8rem; color: #95a5a6; }
+.panel-header h3 { margin: 0; font-size: 1rem; color: var(--sv-text-violet); text-shadow: var(--sv-glow-violet); text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stats { font-size: 0.8rem; color: #95a5a6; white-space: nowrap; }
 
 /* TABS */
 .tabs {
@@ -361,22 +350,39 @@ watch(() => simStore.selection, (newId) => {
     border-bottom: 1px solid #2e2740;
 }
 .tabs button {
-    flex: 1;
-    padding: 0.8rem 0.5rem;
+    flex: 1 1 0;
+    min-width: 26px; /* Icon + Luft = kleinste Button-Größe */
+    padding: 0.8rem 0.2rem;
     background: transparent;
     border: none;
     color: #bdc3c7;
     font-size: 0.8rem;
+    font-family: var(--sv-font);
     cursor: pointer;
     border-bottom: 3px solid transparent;
     transition: all 0.2s;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; overflow: hidden;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
 }
 .tabs button:hover { background: #2e2740; color: #fff; }
 .tabs button.active {
     color: #a3e635;
     border-bottom-color: #a3e635;
     background: #16161f;
+}
+/* Tab-Text verschwindet beim Zusammendrücken kontinuierlich Buchstabe für
+   Buchstabe (clip statt ellipsis, kein Breakpoint-Popping); das Icon bleibt
+   als Minimalgröße des Buttons immer stehen. */
+.tab-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: clip;
+}
+
+@container (max-width: 359px) {
+    .stats { display: none; }
 }
 
 .panel-content {
@@ -385,6 +391,14 @@ watch(() => simStore.selection, (newId) => {
     background: #16161f;
     display: flex; flex-direction: column;
 }
+
+/* Einheitlicher Tab-Scroll: RAIN/NETWORK/SURFACE scrollen im Wrapper (OBJECTS scrollt in
+   der ObjectTable, PROFILES spaltenweise, SIMULATION im Runner selbst). */
+.tab-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+/* Kind-Roots mit eigenem height:100% (RainConfig) würden im Scroll-Wrapper wieder
+   clippen — auf Inhaltshöhe wachsen lassen. */
+.tab-scroll > * { height: auto !important; }
+.network-tab { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 
 /* PROFILES MANAGER LAYOUT */
 .profiles-manager {

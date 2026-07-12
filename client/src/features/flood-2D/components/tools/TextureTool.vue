@@ -1,17 +1,16 @@
 <template>
-  <div class="texture-tool-ui">
     <div
-      class="tool-panel"
+      class="tool-ui-panel texture-panel"
       :class="{ collapsed: !panelVisible }"
       @mouseenter="onPanelEnter"
       @mouseleave="onPanelLeave"
     >
         <div class="panel-header">
           <SvEmoji emoji="🎨" :size="13" /> Texture Brush
-          <span v-if="!panelVisible" class="collapse-dots">···</span>
+          <span v-if="!panelVisible" class="collapse-toggle">···</span>
         </div>
 
-      <div v-show="panelVisible">
+      <div class="panel-content" v-show="panelVisible">
         <!-- MATERIAL SELECTOR + CRUD -->
         <label class="control-label">Material</label>
         <div class="material-grid">
@@ -71,10 +70,9 @@
             </span>
         </div>
 
-        <div class="hint">Klicke und ziehe auf dem Terrain zum Malen</div>
+        <div class="paint-hint">Klicke und ziehe auf dem Terrain zum Malen</div>
       </div>
     </div>
-  </div>
 </template>
 
 <script setup>
@@ -137,38 +135,8 @@ function addMaterial() {
 </script>
 
 <style scoped>
-.texture-tool-ui {
-    position: absolute;
-    top: 80px; /* Below the toolbar/header */
-    left: 20px;
-    pointer-events: none;
-    z-index: 100;
-}
-
-.tool-panel {
-    background: rgba(44, 62, 80, 0.9);
-    color: white;
-    padding: 15px;
-    border-radius: 8px;
-    pointer-events: auto;
-    font-size: 0.9rem;
-    backdrop-filter: blur(8px);
-    width: 280px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.panel-header {
-    font-weight: bold; margin-bottom: 15px; color: #ecf0f1;
-    border-bottom: 1px solid #7f8c8d; padding-bottom: 5px;
-    display: flex; align-items: center; gap: 6px;
-    cursor: default; user-select: none;
-}
-.collapse-dots { margin-left: auto; opacity: 0.45; letter-spacing: 2px; font-size: 0.8rem; }
-
-/* Eingeklappt: kompakte Pille, nur der Header bleibt sichtbar (Hover klappt aus). */
-.tool-panel.collapsed { width: auto; padding: 8px 14px; }
-.tool-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
-
+/* Chrome kommt GLOBAL aus styles/tool-panel.css (Vorlage WeirTool) —
+   hier nur die Material-Palette/Brush-Spezifika. */
 .control-label { font-size: 0.8rem; margin-bottom: 4px; color: #bdc3c7; display: block; }
 
 .material-grid {
@@ -285,5 +253,5 @@ function addMaterial() {
 .status-ok { color: #2ecc71; }
 .status-warn { color: #f39c12; }
 
-.hint { text-align: center; font-size: 0.8rem; opacity: 0.6; margin-top: 8px; font-style: italic; }
+.paint-hint { text-align: center; font-size: 0.8rem; opacity: 0.6; margin-top: 8px; font-style: italic; }
 </style>

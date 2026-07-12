@@ -30,14 +30,79 @@ export class NetworkModel {
         return out;
     }
 
-    /** Basis-Validierung: Links mit fehlenden Endknoten, isolierte Knoten. */
+    /**
+     * Netz-Validierung (E4): Topologie + Hydraulik-Plausibilität.
+     *  error   — verhindert sinnvollen SWMM-Lauf (fehlende Endknoten, Sohle über Deckel,
+     *            Sonderbauwerk ohne abgehende Haltung → würde stiller Junction)
+     *  warning — läuft, aber verdächtig (Gegengefälle, Nullängen, isolierte Knoten,
+     *            Teilnetz ohne Auslass → Wasser kann das Netz nicht verlassen)
+     */
     validate() {
         const issues = [];
+        const err = (id, msg) => issues.push({ level: 'error', id, msg });
+        const warn = (id, msg) => issues.push({ level: 'warning', id, msg });
+
+        // Knoten-Checks
+        const linkedNodes = new Set();
+        const outgoing = new Map();   // nodeId → Anzahl abgehender Haltungen
         for (const l of this.links.values()) {
-            if (!l.refs.fromNodeId || !this.nodes.has(l.refs.fromNodeId))
-                issues.push({ level: 'error', id: l.id, msg: `Haltung ${l.id}: Anfangsknoten fehlt/unbekannt` });
-            if (!l.refs.toNodeId || !this.nodes.has(l.refs.toNodeId))
-                issues.push({ level: 'error', id: l.id, msg: `Haltung ${l.id}: Endknoten fehlt/unbekannt` });
+            if (l.refs.fromNodeId) {
+                linkedNodes.add(l.refs.fromNodeId);
+                outgoing.set(l.refs.fromNodeId, (outgoing.get(l.refs.fromNodeId) ?? 0) + 1);
+            }
+            if (l.refs.toNodeId) linkedNodes.add(l.refs.toNodeId);
+        }
+        for (const n of this.nodes.values()) {
+            if (Number.isFinite(n.geom.invert) && Number.isFinite(n.geom.rim)
+                && n.geom.invert > n.geom.rim + 1e-6)
+                err(n.id, `Schacht ${n.id}: Sohle (${n.geom.invert.toFixed(2)}) liegt über dem Deckel (${n.geom.rim.toFixed(2)})`);
+            if (this.links.size > 0 && !linkedNodes.has(n.id))
+                warn(n.id, `Schacht ${n.id}: isoliert (keine Haltung angeschlossen)`);
+            // Sonderbauwerk-Regel (SwmmBuilder): Pumpe/Wehr/Drossel wird nur zum SWMM-
+            // Sonder-Link, wenn eine Haltung vom Knoten ABGEHT — sonst stiller Junction.
+            if (['pump', 'weir', 'orifice'].includes(n.role) && !(outgoing.get(n.id) > 0))
+                err(n.id, `${n.role === 'pump' ? 'Pumpe' : n.role === 'weir' ? 'Wehr' : 'Drossel'} ${n.id}: keine abgehende Haltung (würde als einfacher Schacht exportiert)`);
+        }
+
+        // Haltungs-Checks
+        for (const l of this.links.values()) {
+            const from = l.refs.fromNodeId ? this.nodes.get(l.refs.fromNodeId) : null;
+            const to = l.refs.toNodeId ? this.nodes.get(l.refs.toNodeId) : null;
+            if (!from) err(l.id, `Haltung ${l.id}: Anfangsknoten fehlt/unbekannt`);
+            if (!to) err(l.id, `Haltung ${l.id}: Endknoten fehlt/unbekannt`);
+            if (!from || !to) continue;
+            const len = l.geom.length
+                ?? Math.hypot(to.geom.x - from.geom.x, to.geom.y - from.geom.y);
+            if (len < 0.5)
+                warn(l.id, `Haltung ${l.id}: (nahezu) Nulllänge (${len.toFixed(2)} m)`);
+            // Gegengefälle: Sohle am Ende höher als am Anfang (z1/z2-Offsets bevorzugt)
+            const z1 = Number.isFinite(Number(l.attrs.z1)) ? Number(l.attrs.z1) : from.geom.invert;
+            const z2 = Number.isFinite(Number(l.attrs.z2)) ? Number(l.attrs.z2) : to.geom.invert;
+            if (l.conveyance !== 'open' && Number.isFinite(z1) && Number.isFinite(z2) && z2 > z1 + 1e-3)
+                warn(l.id, `Haltung ${l.id}: Gegengefälle (Sohle ${z1.toFixed(2)} → ${z2.toFixed(2)} m)`);
+        }
+
+        // Teilnetz ohne Auslass: Zusammenhangskomponenten über ungerichtete Kanten;
+        // jede Komponente mit Haltungen braucht mindestens einen Outfall.
+        const parent = new Map();
+        const find = (a) => { while (parent.get(a) !== a) { parent.set(a, parent.get(parent.get(a))); a = parent.get(a); } return a; };
+        const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+        for (const id of this.nodes.keys()) parent.set(id, id);
+        for (const l of this.links.values()) {
+            if (this.nodes.has(l.refs.fromNodeId) && this.nodes.has(l.refs.toNodeId))
+                union(l.refs.fromNodeId, l.refs.toNodeId);
+        }
+        const compHasOutfall = new Map();
+        const compSize = new Map();
+        for (const n of this.nodes.values()) {
+            if (!linkedNodes.has(n.id)) continue;   // isolierte Knoten oben gemeldet
+            const root = find(n.id);
+            compSize.set(root, (compSize.get(root) ?? 0) + 1);
+            if (n.role === 'outfall') compHasOutfall.set(root, true);
+        }
+        for (const [root, size] of compSize) {
+            if (size > 1 && !compHasOutfall.get(root))
+                warn(root, `Teilnetz um ${root} (${size} Knoten): kein Auslass (outfall) — Wasser kann das Netz nicht verlassen`);
         }
         return issues;
     }
@@ -58,9 +123,30 @@ export class NetworkModel {
                     canOverflow: n.attrs.canOverflow ?? true,
                     is_sink: n.role === 'outfall',
                     type: n.attrs.type ?? n.role,
-                    volume: num0(n.attrs.volume),
+                    // PUMPENSUMPF-REGEL (QA-Fund 2026-07, test_coupling_pump.py): eine Pumpe
+                    // an einem SWMM-JUNCTION friert bei Zufluss-Slug > Förderleistung dauerhaft
+                    // ein (Preissmann-SLOT pressurisiert, Pumpe fördert nie wieder — auch
+                    // standalone reproduzierbar). Ein Pumpen-Knoten bekommt daher immer ein
+                    // echtes Sumpf-Volumen → SwmmBuilder klassifiziert ihn als [STORAGE]
+                    // (Nassschacht, 4 m² Sohlfläche), der Sonder-Link [PUMPS] bleibt über
+                    // bauwerkstyp=6 erhalten.
+                    volume: num0(n.attrs.volume)
+                        || (n.role === 'pump' ? Math.max(depth, 0.5) * 4.0 : 0),
                     bauwerkstyp: n.attrs.bauwerkstyp ?? ROLE_TO_BTYP[n.role] ?? null,
                     constantInflow: num0(n.attrs.constantInflow),
+                    // Zufluss-Ganglinie [{t: Minuten, q: l/s}] → SWMM [INFLOWS]+[TIMESERIES]
+                    inflowSeries: Array.isArray(n.attrs.inflowSeries) ? n.attrs.inflowSeries : null,
+                    // Outfall-Randbedingung: 'free'|'normal'|'fixed' + Vorfluter-WSP [m NHN]
+                    outflowType: n.attrs.outfallType ?? null,
+                    fixedStage: n.attrs.fixedStage ?? null,
+                    // Sonderbauwerk-Parameter (Editor-Authoring, P-Phase): der SwmmBuilder
+                    // liest sie direkt vom Knoten (addPumps/addCurves/addWeirs/addOrifices).
+                    pumpRate: num0(n.attrs.pumpRate),      // Förderleistung [l/s]
+                    onDepth: num0(n.attrs.onDepth),        // Pumpe EIN ab Wasserstand [m]
+                    offDepth: num0(n.attrs.offDepth),      // Pumpe AUS unter Wasserstand [m]
+                    wehrHeight: num0(n.attrs.wehrHeight),  // Schwellenhöhe ab Sohle [m]
+                    wehrWidth: num0(n.attrs.wehrWidth),    // Wehrbreite [m]
+                    maxOutflow: num0(n.attrs.maxOutflow),  // Drossel-Abfluss [l/s]
                 };
             });
         const swmmEdges = this.linkList

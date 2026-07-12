@@ -109,11 +109,6 @@
           :toolInstance="buildingTool"
        />
 
-       <!-- CULVERT UI -->
-       <CulvertTool 
-          v-if="simStore.activeTool === 'CULVERT'"
-       />
-
        <!-- WEIR UI -->
        <WeirTool
           v-if="simStore.activeTool === 'WEIR'"
@@ -122,11 +117,6 @@
 
        <!-- BRIDGE UI -->
        <BridgeTool v-if="simStore.activeTool === 'BRIDGE'" />
-
-       <!-- NODE/SOURCE UI -->
-       <NodeTool
-          v-if="simStore.activeTool === 'NODE'"
-       />
 
        <!-- KANALNETZ: Schacht setzen / Haltung ziehen (Unified Geometry Engine) -->
        <NetNodeTool v-if="simStore.activeTool === 'NET_NODE'" />
@@ -145,7 +135,8 @@
 
        <!-- CROP / POLYGON-CROP unified panel -->
        <div v-if="simStore.activeTool === 'CROP'" class="crop-tool-ui" :class="{ 'polygon-crop-ui': cropMode === 'POLYGON' }">
-         <div class="tool-panel">
+         <div class="tool-panel" :class="{ collapsed: !cropPanel.panelVisible.value }"
+              @mouseenter="cropPanel.onPanelEnter" @mouseleave="cropPanel.onPanelLeave">
 
            <!-- Header -->
            <div class="panel-header">
@@ -157,8 +148,10 @@
                <line x1="8.12" y1="16.38" x2="21" y2="3"/>
              </svg>
              Terrain zuschneiden
+             <span v-if="!cropPanel.panelVisible.value" class="collapse-dots">···</span>
            </div>
 
+           <template v-if="cropPanel.panelVisible.value">
            <!-- Mode toggle (only when not actively drawing) -->
            <div v-if="!cropTool.isDrawing.value && !polygonCropTool.isDrawing.value"
                 class="crop-mode-toggle">
@@ -208,6 +201,7 @@
            <div class="hint" style="margin-top:8px;font-size:0.75rem;opacity:0.5">
              Rechtsklick = Abbrechen
            </div>
+           </template>
 
          </div>
        </div>
@@ -365,7 +359,6 @@ import { useDrawTool } from '../../composables/editor/useDrawTool.js';
 import { useShovelTool } from '../../composables/editor/useShovelTool.js';
 import { useBoundaryTool } from '../../composables/editor/useBoundaryTool.js';
 import { useBuildingTool } from '../../composables/editor/useBuildingTool.js';
-import { useCulvertTool } from '../../composables/editor/useCulvertTool.js';
 import { useTextureTool } from '../../composables/editor/useTextureTool.js';
 import { useLayerRenderer } from '../../composables/editor/useLayerRenderer.js';
 import { useNetworkRenderer } from '../../composables/editor/useNetworkRenderer.js';
@@ -373,7 +366,9 @@ import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
 import NetNodeTool from '../tools/NetNodeTool.vue';
 import NetConduitTool from '../tools/NetConduitTool.vue';
 import { getNetworkConduitToolInstance } from '../../composables/editor/useNetworkConduitTool.js';
+import { getNetworkNodeToolInstance } from '../../composables/editor/useNetworkNodeTool.js';
 import { useCropTool } from '../../composables/editor/useCropTool.js';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
 import { useWeirTool } from '../../composables/editor/useWeirTool.js';
 import { getWeir3DToolInstance, weir3DState } from '../../composables/editor/useWeir3DTool.js';
@@ -400,10 +395,8 @@ import TerrainStatics from './TerrainStatics.vue';
 import SaintVLoader from '../common/SaintVLoader.vue';
 import DefaultMap from './DefaultMap.vue';
 import BuildingTool from '../tools/BuildingTool.vue';
-import CulvertTool from '../tools/CulvertTool.vue';
 import WeirTool from '../tools/WeirTool.vue';
 import BridgeTool from '../tools/BridgeTool.vue';
-import NodeTool from '../tools/NodeTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
 import TextureTool from '../tools/TextureTool.vue';
@@ -451,10 +444,14 @@ const shovelTool = useShovelTool();
 const bathyBrushTool = useBathyBrushTool();
 const boundaryTool = useBoundaryTool();
 const buildingTool = useBuildingTool();
-const culvertTool = useCulvertTool();
 const textureTool = useTextureTool();
 const cropTool = useCropTool();
 const polygonCropTool = usePolygonCropTool();
+// Einheitliches Hover-Einklappen fürs Zuschneiden-Panel (Muster Tool-Panels);
+// während des aktiven Zeichnens (BBOX-2.-Ecke / Polygon-Punkte) bleibt es offen.
+const cropPanel = useCollapsiblePanel({
+    forceOpen: () => !!(cropTool.isDrawing.value || polygonCropTool.isDrawing.value),
+});
 const weirTool   = useWeirTool();
 const weir3DTool = getWeir3DToolInstance();
 const bridge3DTool = getBridge3DToolInstance();
@@ -546,12 +543,14 @@ function cancelChannelPolygon() {
     simStore.setActiveTool(null);
 }
 
-// Kanalnetz-Haltungs-Werkzeug (Singleton; Renderer wird in initScene gesetzt).
+// Kanalnetz-Werkzeuge (Singletons; Renderer wird in initScene gesetzt).
 const networkConduitTool = getNetworkConduitToolInstance();
+const networkNodeTool = getNetworkNodeToolInstance();
 
 // Tool Mapping
 const tools = {
     'NET_CONDUIT': networkConduitTool,
+    'NET_NODE': networkNodeTool,      // Drag bestehender Schächte; Setzen via map-click
     'DRAW': buildingTool,
     'SHOVEL': shovelTool,
     'BATHY_BRUSH': bathyBrushTool,
@@ -619,11 +618,9 @@ const applyCameraLock = () => {
 // intern ein Objekt anderen Typs anlegt. WEIR/BRIDGE setzen sich über ihren „Fertig"-Button
 // zurück (mehrstufiger Edit-Flow), nicht hierüber.
 const TOOL_RESET_ON = {
-    NODE:      'NODE',
     BOUNDARY:  'BOUNDARY',
     DRAW_POLY: 'BUILDING',
     DRAW:      'BUILDING',
-    CULVERT:   'BUILDING',   // Culvert-Tool committet als BUILDING-Modifikation
     NET_NODE:  'NET_NODE',   // Kanalnetz-Schacht (useNetworkStore.addNode)
 };
 function _handleObjectPlaced(e) {
@@ -684,6 +681,12 @@ watch(() => [weir3DState.phase, weir3DState.dragging], ([, dragging]) => {
     if (!controls) return;
     controls.enabled = !dragging;
     if (activeTool.value === 'WEIR' && weir3DState.mode === 'POLYLINE') applyCameraLock();
+}, { flush: 'sync' });
+
+// --- NET_NODE: Schacht-Drag friert die Kamera ein (Muster Brücke/Wehr) ---
+watch(() => networkNodeTool.state.dragging, (dragging) => {
+    if (!controls) return;
+    controls.enabled = !dragging;
 }, { flush: 'sync' });
 
 // --- SHADER TOGGLE ---
@@ -758,6 +761,7 @@ onMounted(() => {
     networkRenderer = useNetworkRenderer(scene, layer.getLocalPos);
     // Haltungs-Werkzeug braucht den Renderer fürs Schacht-Snapping (Picking).
     networkConduitTool.setRenderer(networkRenderer);
+    networkNodeTool.setRenderer(networkRenderer);
 
     // Render terrestrial survey points as colored point cloud
     useSurveyPointsRenderer(scene);
@@ -806,7 +810,6 @@ onUnmounted(() => {
     }
     // Reset Tools
     buildingTool.reset(scene); // Resets wrapped draw tool
-    culvertTool.reset(scene);
     boundaryTool.reset(scene);
     window.removeEventListener('keydown', _handleKeydown);
     window.removeEventListener('flood2d-object-placed', _handleObjectPlaced);
@@ -1262,26 +1265,55 @@ const buildTerrainMesh = (result) => {
     // Per-vertex validity flag: 1.0 = real data, 0.0 = NODATA
     const validArray = new Float32Array(count);
 
+    // Value of the data cell at (col, geomRow), clamped for the phantom right/top border.
+    // null = NODATA.
+    const cellValue = (col, geomRow) => {
+        const dataCol = Math.min(Math.max(col, 0), ncols - 1);
+        const gridRow = (nrows - 1) - Math.min(Math.max(geomRow, 0), nrows - 1);
+        const val = gridData[gridRow * ncols + dataCol];
+        return (val > -9000) ? val : null;
+    };
+
     for (let i = 0; i < count; i++) {
         const col     = i % (ncols + 1);
         const geomRow = Math.floor(i / (ncols + 1));
-        // Phantom right/top border: clamp to last real data cell
-        const dataCol = Math.min(col, ncols - 1);
-        const gridRow = (nrows - 1) - Math.min(geomRow, nrows - 1);
-        const idx = gridRow * ncols + dataCol;
-        let zVal = minZ;
-        let valid = 0.0;
-        if (idx >= 0 && idx < gridData.length) {
-             const val = gridData[idx];
-             if (val > -9000) {
-                 zVal = val;
-                 valid = 1.0;
-             }
-        }
-        geometry.attributes.position.setZ(i, (zVal - minZ));
-        validArray[i] = valid;
+        // Höhe primär aus der eigenen Zelle, sonst aus einer Nachbarzelle des Vertex:
+        // Eck-Vertices gültiger Randzellen dürfen nie auf minZ fallen (Spike-Optik).
+        const val = cellValue(col, geomRow)
+            ?? cellValue(col - 1, geomRow)
+            ?? cellValue(col, geomRow - 1)
+            ?? cellValue(col - 1, geomRow - 1);
+        geometry.attributes.position.setZ(i, (val ?? minZ) - minZ);
+        validArray[i] = (val !== null) ? 1.0 : 0.0;
     }
     geometry.setAttribute('aValid', new THREE.BufferAttribute(validArray, 1));
+
+    // --- HARD CUT: NODATA-Zellen physisch aus dem Index-Buffer stanzen ---
+    // (gleiche Technik wie useTerrainLayer im Result-Viewer). Der Shader-Discard
+    // über vValid schneidet nur weich (Interpolation → halbe Randzellen sichtbar);
+    // ohne Faces gibt es weder Rand-Spikes noch Raycast-Treffer der Tools
+    // außerhalb des gültigen Rasters.
+    const srcIndex = geometry.getIndex();
+    const faceCount = ncols * nrows;
+    const faceValid = new Uint8Array(faceCount);
+    let validFaces = 0;
+    for (let f = 0; f < faceCount; f++) {
+        const faceCol = f % ncols;
+        const gridRow = (nrows - 1) - Math.floor(f / ncols);
+        if (gridData[gridRow * ncols + faceCol] > -9000) {
+            faceValid[f] = 1;
+            validFaces++;
+        }
+    }
+    if (srcIndex && validFaces < faceCount) {
+        const newIndex = new Uint32Array(validFaces * 6);
+        let w = 0;
+        for (let f = 0; f < faceCount; f++) {
+            if (!faceValid[f]) continue;
+            for (let k = 0; k < 6; k++) newIndex[w++] = srcIndex.getX(f * 6 + k);
+        }
+        geometry.setIndex(new THREE.BufferAttribute(newIndex, 1));
+    }
 
     // Surface color attribute (for Texture Pipeline painting)
     // Default to Asphalt (Light Gray #95a5a6) — will be updated by useTextureTool
@@ -1293,8 +1325,6 @@ const buildTerrainMesh = (result) => {
         surfaceColorArray[i + 2] = defaultColor.b; // B
     }
     geometry.setAttribute('aSurfaceColor', new THREE.BufferAttribute(surfaceColorArray, 3));
-
-    geometry.computeVertexNormals();
 
     geometry.computeVertexNormals();
 
@@ -1349,9 +1379,20 @@ defineExpose({
 </script>
 
 <style scoped>
-.terrain-import-container { width: 100%; height: 100%; background: #f5f5f5; font-family: sans-serif; }
+/* Dunkler Grund hinter dem Canvas: blitzt beim Panel-Resize einen Frame lang
+   durch (Canvas hinkt hinterher) und darf dann nicht weiß aufleuchten. */
+.terrain-import-container { width: 100%; height: 100%; background: var(--sv-bg); font-family: var(--sv-font); }
 .canvas-wrapper { width: 100%; height: 100%; position: relative; }
 .canvas-mount { width: 100%; height: 100%; }
+/* Canvas füllt IMMER den Container: renderer.setSize() schreibt inline px-Maße,
+   die beim Panel-Resize einen Event hinterherhinken → Spalt. CSS überstimmt die
+   Inline-Maße; der Drawing-Buffer zieht beim nächsten resize() nach (kurzes
+   minimales Stretching statt sichtbarem Spalt). */
+.canvas-mount :deep(canvas) {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+}
 
 /* Header & Overlay */
 .overlay-header {
@@ -1426,18 +1467,9 @@ defineExpose({
 /* Stats */
 
 
-/* Tool Panels (Shovel/Boundary) */
-.tool-ui-panel {
-    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: var(--sv-surface); color: var(--sv-text);
-    font-family: var(--sv-font);
-    padding: 10px 15px; border-radius: var(--sv-radius);
-    border: 1px solid var(--sv-border);
-    box-shadow: var(--sv-glow-violet);
-    backdrop-filter: blur(6px); pointer-events: auto;
-    text-align: center;
-    min-width: 200px;
-}
+/* Tool-Panel-Chrome kommt GLOBAL aus styles/tool-panel.css (Vorlage WeirTool).
+   ACHTUNG: keine scoped .tool-ui-panel-Regel hier — sie träfe als Parent-Scope die
+   Wurzeln ALLER Kind-Panels und würde das globale Chrome überstimmen. */
 .panel-header { font-weight: bold; margin-bottom: 8px; color: var(--sv-text-violet); border-bottom: 1px solid var(--sv-border); padding-bottom: 4px; }
 .hint { font-size: 0.85rem; color: var(--sv-text-dim); margin-bottom: 8px; }
 
@@ -1463,24 +1495,37 @@ defineExpose({
     z-index: 100;
 }
 .crop-tool-ui .tool-panel {
-    background: rgba(44, 62, 80, 0.92);
-    color: white;
-    padding: 15px 18px;
+    /* Einheitliches Panel-Chrome (Vorlage WeirTool / styles/tool-panel.css) */
+    background: var(--sv-surface, #253547);
+    color: var(--sv-text, #ecf0f1);
+    font-family: var(--sv-font, sans-serif);
+    padding: 16px 20px;
     border-radius: 10px;
     pointer-events: auto;
     font-size: 0.9rem;
     backdrop-filter: blur(10px);
     width: 270px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,69,0,0.4);
+    box-shadow: var(--sv-glow-violet, 0 4px 20px rgba(0,0,0,0.4));
+    border: 2px solid var(--sv-violet, #8b5cf6);
 }
+/* Hover-Einklappen (Muster tool-ui-panel.collapsed): nur die Header-Pille bleibt */
+.crop-tool-ui .tool-panel.collapsed { width: auto; padding: 8px 16px; }
+.crop-tool-ui .tool-panel.collapsed .panel-header { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+.crop-tool-ui .collapse-dots { margin-left: auto; opacity: .4; letter-spacing: 2px; font-size: 0.8rem; }
 .crop-tool-ui .panel-header {
-    font-weight: bold;
+    font-weight: 700;
+    font-size: 0.95rem;
     margin-bottom: 12px;
-    color: #ecf0f1;
-    border-bottom: 1px solid rgba(255,69,0,0.4);
-    padding-bottom: 6px;
+    color: var(--sv-lime, #a3e635);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(163, 230, 53, 0.3);
+    padding-bottom: 8px;
     display: flex;
     align-items: center;
+    gap: 6px;
+    cursor: default;
+    user-select: none;
 }
 .crop-tool-ui .hint {
     text-align: center;
@@ -1546,10 +1591,5 @@ defineExpose({
 }
 
 /* Polygon Crop panel accent colour override */
-.polygon-crop-ui .tool-panel {
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,58,237,0.5);
-}
-.polygon-crop-ui .panel-header {
-    border-bottom-color: rgba(124,58,237,0.5);
-}
+/* Polygon-Modus nutzt dasselbe einheitliche Chrome (kein eigener Rahmen mehr). */
 </style>

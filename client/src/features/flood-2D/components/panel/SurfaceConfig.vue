@@ -131,12 +131,16 @@ const addMaterial = () => {
 .surface-config h4 {
   margin: 0 0 0.75rem;
   font-size: 0.95rem;
-  color: #1e1e2c;
+  font-family: var(--sv-font);
+  letter-spacing: 0.05em;
+  color: var(--sv-text-lime);
+  text-shadow: var(--sv-glow-lime);
 }
 
 .info-box {
-  background: #ffeaa7;
-  color: #856404;
+  background: rgba(243, 156, 18, 0.12);
+  color: #f39c12;
+  border: 1px solid rgba(243, 156, 18, 0.4);
   padding: 0.5rem 0.75rem;
   border-radius: 4px;
   font-size: 0.82rem;
@@ -144,8 +148,9 @@ const addMaterial = () => {
 }
 
 .grid-info {
-  background: #d5f5e3;
-  color: #1e8449;
+  background: rgba(163, 230, 53, 0.1);
+  color: var(--sv-lime);
+  border: 1px solid var(--sv-border-lime);
   padding: 0.5rem 0.75rem;
   border-radius: 4px;
   font-size: 0.82rem;
@@ -166,13 +171,14 @@ const addMaterial = () => {
   border-radius: 4px;
   cursor: pointer;
   border: 2px solid transparent;
-  background: #f8f9fa;
+  background: #1e1e2c;
   transition: all 0.15s;
 }
-.material-row:hover { background: #ecf0f1; }
+.material-row:hover { background: #2e2740; }
 .material-row.active {
-  border-color: #8b5cf6;
-  background: #fef3e6;
+  border-color: var(--sv-violet);
+  background: rgba(139, 92, 246, 0.15);
+  box-shadow: var(--sv-glow-violet);
 }
 
 .mat-main {
@@ -186,14 +192,14 @@ const addMaterial = () => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 1px solid #bdc3c7;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   flex-shrink: 0;
 }
 
 .mat-label {
   flex: 1;
   font-size: 0.85rem;
-  color: #1e1e2c;
+  color: var(--sv-text);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -203,9 +209,12 @@ const addMaterial = () => {
 .manning-input {
   width: 58px;
   padding: 2px 4px;
-  border: 1px solid #ccc;
+  background: var(--sv-bg);
+  color: var(--sv-text-lime);
+  border: 1px solid var(--sv-border);
   border-radius: 3px;
   font-size: 0.78rem;
+  font-family: var(--sv-font);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -242,7 +251,7 @@ const addMaterial = () => {
 .coverage-bar-container {
     width: 100%;
     height: 12px;
-    background: #e0e0e0;
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 6px;
     position: relative;
     overflow: hidden;
@@ -259,15 +268,15 @@ const addMaterial = () => {
     transform: translateY(-50%);
     right: 6px;
     font-size: 0.65rem;
-    color: #333;
+    color: #fff;
     font-weight: bold;
-    text-shadow: 0 0 2px rgba(255,255,255,0.8);
+    text-shadow: 0 0 3px rgba(0,0,0,0.9);
 }
 
 /* Add Material Section */
 .add-material-section {
     margin-top: 15px;
-    border-top: 1px dashed #bdc3c7;
+    border-top: 1px dashed var(--sv-border);
     padding-top: 10px;
 }
 
@@ -282,13 +291,14 @@ const addMaterial = () => {
     font-weight: bold;
     transition: background 0.2s;
 }
-.btn-add:hover { background: #6d43d4; }
+.btn-add:hover { background: #b6f04d; }
 
 .add-form {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: #ecf0f1;
+    background: #1e1e2c;
+    border: 1px solid var(--sv-border);
     padding: 10px;
     border-radius: 6px;
 }
@@ -296,13 +306,17 @@ const addMaterial = () => {
 .form-input {
     width: 100%;
     padding: 6px;
-    border: 1px solid #bdc3c7;
+    background: var(--sv-bg);
+    color: var(--sv-text);
+    border: 1px solid var(--sv-border);
     border-radius: 4px;
     font-size: 0.85rem;
+    font-family: var(--sv-font);
 }
 .form-input:focus {
-    border-color: #a3e635;
+    border-color: var(--sv-lime);
     outline: none;
+    box-shadow: var(--sv-glow-lime);
 }
 
 .form-row {
@@ -342,17 +356,17 @@ const addMaterial = () => {
 .btn-cancel {
     flex: 1;
     padding: 6px;
-    background: #95a5a6;
-    color: white;
-    border: none;
+    background: var(--sv-surface-2);
+    color: var(--sv-text-dim);
+    border: 1px solid var(--sv-border);
     border-radius: 4px;
     cursor: pointer;
 }
-.btn-cancel:hover { background: #7f8c8d; }
+.btn-cancel:hover { border-color: var(--sv-violet); color: var(--sv-text); }
 
 .legend {
   margin-top: 0.75rem;
-  color: #7f8c8d;
+  color: var(--sv-text-dim);
   font-size: 0.75rem;
   text-align: center;
 }

@@ -27,10 +27,11 @@ const props = defineProps({
   depthData: { type: Object, default: null }, // Float32Array or null
   elevData: { type: Object, default: null }, // Wasserspiegel .elev des Frames (Float32Array) — exakte Solver-Oberfläche
   maxWaterDepth: { type: Number, default: 1.0 },
-  layerMode: { type: Number, default: 0 }, // 0=depth, 1=velocity, 2=max/hazard
+  layerMode: { type: Number, default: 0 }, // 0=depth (realistisch beleuchtet), 1=velocity, 2=max/hazard
   bciContent: { type: String, default: null },
   activeTool: { type: String, default: null },
   flowData: { type: Object, default: null },     // { vx: Float32Array, vy: Float32Array } | null (zell-zentriert)
+  qFluxData: { type: Object, default: null },    // { qx: Float32Array, qy: Float32Array } | null (m³/s, zell-zentriert) — Impuls-Quelle der Wasser-Advektion
   showFlow: { type: Boolean, default: false },   // Fließpfeil-Layer aktiv?
   showStreamlines: { type: Boolean, default: false }, // animierte Strömungslinien-Layer aktiv?
   detectSpikes: { type: Boolean, default: true },     // Tiefen-Dorne kappen + als Gefahr markieren (nur Tiefen-Layer)
@@ -39,7 +40,8 @@ const props = defineProps({
   velocityMin: { type: Number, default: 0.0 },   // unteres Ende der Velocity-Farbskala (Bereichsregler)
   velocityMax: { type: Number, default: 1.0 },   // oberes Ende der Velocity-Farbskala (Bereichsregler)
   flowDensity: { type: Number, default: 0.5 },   // 0..1 Dichte der Fließpfeile
-  waterOpacity: { type: Number, default: 0.85 }  // globale Wasser-Deckkraft 0..1
+  waterOpacity: { type: Number, default: 0.85 }, // globale Wasser-Deckkraft 0..1
+  networkState: { type: Object, default: null }  // 1D-Netz-Zustand des Frames (useNetworkResults.stateAtFrame)
 });
 
 const emit = defineEmits(['cellProbed', 'sectionDrawn', 'waterStats']);
@@ -251,6 +253,7 @@ function initScene() {
   // denselben (geometrisch abgeleiteten) Welt→Szene-Transform wie der Editor, sodass die
   // Schächte/Haltungen exakt auf dem Ergebnis-Gelände liegen.
   networkRenderer = useNetworkRenderer(scene, layerRenderer.getLocalPos);
+  if (props.networkState) networkRenderer.applyResults(props.networkState);
 
   if (geoStore.buildings?.features?.length > 0) {
       layerRenderer.renderBuildings();
@@ -264,13 +267,6 @@ function initScene() {
       console.log('[ResultMap3D] GeoStore buildings loaded, triggering render.');
       terrainApi.regenerateMask(props.terrain); // Maske aktualisieren, wenn Gebäude eintreffen
       layerRenderer.renderBuildings();
-    }
-  }, { deep: true });
-
-  watch(() => geoStore.nodes, (newNodes) => {
-    if (newNodes && newNodes.length > 0 && layerRenderer && terrainMesh) {
-      console.log('[ResultMap3D] GeoStore nodes loaded, triggering render.');
-      layerRenderer.renderNodes();
     }
   }, { deep: true });
 
@@ -302,7 +298,8 @@ function initScene() {
   window.addEventListener('resize', onResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
-  sceneApi.start();
+  // Pre-Render: Refraktions-RT des Wassers befüllen (nur aktiv im Tiefen-Modus)
+  sceneApi.start((r, s, c) => waterApi.renderRefraction(r, s, c));
   console.log('[ResultMap3D] Scene initialized ✅');
 }
 
@@ -480,6 +477,9 @@ watch([() => props.showStreamlines, () => props.flowData, () => props.flowDensit
   });
 
 
+// 1D-Netz-Ergebnisse: Füllgrad/Wasserstand des aktuellen Frames aufs Netz malen.
+watch(() => props.networkState, (s) => { networkRenderer?.applyResults?.(s); });
+
 watch(() => props.activeTool, (newTool) => {
   if (volumeToolState) {
     if (newTool === 'volume') volumeToolState.enable();
@@ -531,7 +531,6 @@ function buildTerrain(t) {
   if (layerRenderer) {
       // Features auf Basis des nun solide geladenen Terrains (neu) rendern
       layerRenderer.renderBuildings();
-      layerRenderer.renderNodes();
       if (geoStore.weirs?.length > 0) {
           layerRenderer.renderWeirs();
       }

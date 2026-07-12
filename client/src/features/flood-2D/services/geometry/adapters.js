@@ -10,30 +10,7 @@ const roleFromNodeType = (t) => {
     return 'manhole';
 };
 
-/**
- * geoStore (flood-2D) → NetworkModel: nodes {id,x,y,z,type} + culvertLinks.
- */
-export function fromGeoStore(geoStore, model = new NetworkModel()) {
-    for (const n of (geoStore.nodes ?? [])) {
-        model.addNode({
-            id: n.id, x: n.x, y: n.y,
-            invert: n.z ?? n.bottom_level ?? 0,
-            rim: n.coverZ ?? n.cover_level ?? n.z ?? 0,
-            role: roleFromNodeType(n.type),
-            attrs: { type: n.type, isManhole: n.type !== 'SOURCE' },
-        });
-    }
-    for (const c of (geoStore.culvertLinks ?? [])) {
-        model.addLink({
-            id: c.id, fromNodeId: c.sourceId, toNodeId: c.targetId,
-            role: 'conduit', conveyance: 'covered',
-            profile: { shape: 'circular', height: c.diameter ?? 1.0 },
-            length: c.length ?? null,
-            attrs: { z1: c.z_in, z2: c.z_out, roughness: c.manning_n, Cd: c.Cd, maxQ: c.maxQ },
-        });
-    }
-    return model;
-}
+// (fromGeoStore entfernt 2026-07 — der Legacy-geoStore-Pfad nodes/culvertLinks existiert nicht mehr.)
 
 /**
  * ISYBAU-/Sewer-Domäne (reiche Node/Edge-Objekte) → NetworkModel.

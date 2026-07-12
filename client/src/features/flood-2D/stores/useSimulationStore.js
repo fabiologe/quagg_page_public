@@ -48,7 +48,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     const solverMode = ref('wasm');
 
     /**
-     * Rückwärtskompatibler Alias (Projekt-Dateien, CulvertLinkManager):
+     * Rückwärtskompatibler Alias (alte Projekt-Dateien):
      * true ⇔ solverMode === 'bmi'.
      */
     const useBmiSolver = computed({
@@ -144,6 +144,20 @@ export const useSimulationStore = defineStore('simulation', () => {
     /** Inundation duration grid from res.totaltm (written at end) */
     const durationGrid = ref(null);
 
+    /** 1D-Kanalnetz-Ergebnisse (gekoppelter SWMM-Lauf, aus der .out via handler.py):
+     * { reportStep, times[s], nodes:{id:{type,invert,maxDepth,depth[],head[],volume[],
+     *   totalInflow[],flooding[]}}, links:{id:{type,maxDepth,length,flow[],depth[],
+     *   velocity[],volume[],capacity[]}}, system:{inflow[],flooding[],outflow[],storedVolume[]} } */
+    const networkResults = ref(null);
+
+    /** Kopplungsbudget aus den [COUPLE]-Finalize-Zeilen (coupling.cpp):
+     * { to2d, to1d, debt, nodes:{id:{kind,to2d,to1d}} } — Volumina in m³ */
+    const couplingBudget = ref(null);
+
+    /** 2D-Massenbilanz (res.mass via handler.py MassTail):
+     * { headers, rows, summary, maxError } — bisher nur Runner-Badge, jetzt auch Viewer */
+    const massReport = ref(null);
+
     /** @type {import('vue').Ref<number>} */
     const currentFrameIndex = ref(-1);
 
@@ -175,6 +189,10 @@ export const useSimulationStore = defineStore('simulation', () => {
         elevFrames.value.set(frameId, data);
     }
 
+    function setNetworkResults(data) { networkResults.value = data; }
+    function setCouplingBudget(data) { couplingBudget.value = data; }
+    function setMassReport(data) { massReport.value = data; }
+
     function setMaxDepthGrid(data) { maxDepthGrid.value = data; }
     function setMaxHazardGrid(data) { maxHazardGrid.value = data; }
     function setMaxVelocityGrid(data) { maxVelocityGrid.value = data; }
@@ -197,6 +215,9 @@ export const useSimulationStore = defineStore('simulation', () => {
         maxElevGrid.value = null;
         arrivalTimeGrid.value = null;
         durationGrid.value = null;
+        networkResults.value = null;
+        couplingBudget.value = null;
+        massReport.value = null;
     }
 
     /** @type {import('vue').Ref<number>} */
@@ -298,6 +319,12 @@ export const useSimulationStore = defineStore('simulation', () => {
         maxElevGrid,
         arrivalTimeGrid,
         durationGrid,
+        networkResults,
+        couplingBudget,
+        massReport,
+        setNetworkResults,
+        setCouplingBudget,
+        setMassReport,
         currentFrameIndex,
         resultHeader,
         addResultFrame,

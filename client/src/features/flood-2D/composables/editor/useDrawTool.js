@@ -22,19 +22,17 @@ export function useDrawTool(config = { isPolygon: true }) {
     const getIntersect = (pointer, raycaster, camera, context) => {
         raycaster.setFromCamera(pointer, camera);
 
-        // 1. Try Terrain
+        // 1. Terrain — sobald ein Gelände existiert, ist es die einzige gültige
+        // Zeichenfläche. Kein Ebenen-Fallback: sonst könnte man neben dem Raster zeichnen.
         if (context.terrainMesh) {
             const intersects = raycaster.intersectObject(context.terrainMesh);
-            if (intersects.length > 0) {
-                return intersects[0].point;
-            }
+            return intersects.length > 0 ? intersects[0].point : null;
         }
 
-        // 2. Fallback: Plane
+        // 2. Fallback nur ohne Terrain (leeres Projekt): Ebene
         const target = new THREE.Vector3();
         const plane = context.interactionPlane || new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-        raycaster.ray.intersectPlane(plane, target);
-        return target;
+        return raycaster.ray.intersectPlane(plane, target);
     };
 
     // --- VISUALS ---

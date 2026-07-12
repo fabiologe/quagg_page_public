@@ -49,13 +49,31 @@ ok('network.inp' in res.files && 'flow.coupling' in res.files, 'network.inp + fl
 ok(/\bcouplingfile flow\.coupling\b/.test(res.files['run.par']), 'couplingfile in run.par');
 ok(res.couplingNodes.some(c => c.id === 'MH' && c.sink), 'MH als Senken-Kopplung');
 
-console.log('2) Guards');
+console.log('2) Zeit-Synchronisation 1D↔2D (unter der Haube)');
+{
+    // ohne explizite swmm-Optionen: SWMM-Dauer folgt sim_time (400 s + 300 s Puffer
+    // = 700 s → END_TIME 00:11:40), REPORT_STEP folgt saveint (60 s).
+    const auto = buildCoupledFiles(baseFiles(), makeModel(), { dtCouple: 2.0 });
+    const inp = auto.files['network.inp'];
+    ok(/END_TIME\s+00:11:40/.test(inp), 'END_TIME automatisch aus sim_time (+5 min Puffer)');
+    ok(/REPORT_STEP\s+00:01:00/.test(inp), 'REPORT_STEP automatisch aus saveint');
+    // langer 2D-Lauf (12 h): der alte 6-h-Default darf NICHT mehr greifen
+    const long = buildCoupledFiles({ ...baseFiles(), 'run.par': basePar.replace('sim_time 400', 'sim_time 43200') }, makeModel(), { dtCouple: 2.0 });
+    ok(/END_TIME\s+12:05:00/.test(long.files['network.inp']), '12-h-2D-Lauf → SWMM 12:05 h (Default 6 h überstimmt)');
+    // feineres 2D-Ausgabeintervall taktet auch die 1D-Ergebnisse
+    const fine = buildCoupledFiles({ ...baseFiles(), 'run.par': basePar.replace('saveint 60', 'saveint 30') }, makeModel(), { dtCouple: 2.0 });
+    ok(/REPORT_STEP\s+00:00:30/.test(fine.files['network.inp']), 'saveint 30 s → REPORT_STEP 00:00:30');
+    // explizite Option gewinnt (res oben: durationHours 0.2 = 720 s)
+    ok(/END_TIME\s+00:12:00/.test(res.files['network.inp']), 'explizite durationHours überstimmt die Automatik');
+}
+
+console.log('3) Guards');
 ok(buildCoupledFiles({ ...baseFiles(), 'run.par': basePar.replace('acceleration', 'fv1') }, makeModel()).active === false, 'fv1 → deaktiviert');
 ok(buildCoupledFiles({ ...baseFiles(), 'run.par': basePar + 'SGCwidth sgc.width.asc\n' }, makeModel()).active === false, 'SGC → deaktiviert');
 ok(buildCoupledFiles({ 'run.par': basePar }, makeModel()).active === false, 'kein terrain.asc → deaktiviert');
 ok(buildCoupledFiles(baseFiles(), new NetworkModel()).active === false, 'leeres Netz → deaktiviert');
 
-console.log('3) End-to-End (Docker)');
+console.log('4) End-to-End (Docker)');
 let hasDocker = false;
 try { execFileSync('docker', ['image', 'inspect', IMAGE], { stdio: 'ignore' }); hasDocker = true; }
 catch { console.log('  ℹ️  Image nicht gefunden — Docker-Teil übersprungen.'); }

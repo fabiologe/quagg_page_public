@@ -9,6 +9,7 @@ import { defineStore } from 'pinia';
 import { ref, computed, markRaw } from 'vue';
 import { NetworkModel } from '../services/geometry/NetworkModel.js';
 import { makeNode, makeLink } from '../services/geometry/entities.js';
+import { notifyPreMutate } from '../composables/historyBridge.js';
 
 export const useNetworkStore = defineStore('flood2dNetwork', () => {
     const nodes = ref([]);       // [{ id, role, x, y, rim, invert, attrs }]
@@ -17,6 +18,10 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
     const format = ref(null);    // 'isybau-xml' | 'ifc' | …
     const warnings = ref([]);
     const selectedId = ref(null);
+    // Vorfüllfaktor [%]: Netz-Auslastung vor dem Regen (0 = leer). Wird beim Kopplungs-
+    // Export unter der Haube in SWMM-Basisabfluss + Teilfüllung übersetzt (prefill.js) —
+    // der Nutzer pflegt KEINE Tagesganglinien. Getrennt vom Initialzustand einzelner Becken.
+    const prefillPercent = ref(0);
 
     const hasNetwork = computed(() => nodes.value.length > 0 || links.value.length > 0);
     const nodeById = computed(() => new Map(nodes.value.map(n => [n.id, n])));
@@ -40,7 +45,7 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
         }));
     }
 
-    function clear() { setModel(null); }
+    function clear() { setModel(null); prefillPercent.value = 0; }
     function select(id) { selectedId.value = id; }
 
     /** Direkt aus serialisierten Arrays befüllen (Ergebnis-Viewer-Fenster / Projekt-Load). */
@@ -55,6 +60,7 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
     function updateNode(id, patch = {}) {
         const n = nodes.value.find(x => x.id === id);
         if (!n) return;
+        notifyPreMutate(`Schacht ${id} ändern`);
         const { attrs, ...rest } = patch;
         Object.assign(n, rest);
         if (attrs) n.attrs = { ...n.attrs, ...attrs };
@@ -62,21 +68,25 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
     function updateLink(id, patch = {}) {
         const l = links.value.find(x => x.id === id);
         if (!l) return;
+        notifyPreMutate(`Haltung ${id} ändern`);
         const { attrs, profile, ...rest } = patch;
         Object.assign(l, rest);
         if (attrs) l.attrs = { ...l.attrs, ...attrs };
         if (profile) l.profile = { ...l.profile, ...profile };
     }
     function deleteNode(id) {
+        notifyPreMutate(`Schacht ${id} löschen`);
         nodes.value = nodes.value.filter(n => n.id !== id);
         links.value = links.value.filter(l => l.fromNodeId !== id && l.toNodeId !== id);
         if (selectedId.value === id) selectedId.value = null;
     }
     function deleteLink(id) {
+        notifyPreMutate(`Haltung ${id} löschen`);
         links.value = links.value.filter(l => l.id !== id);
         if (selectedId.value === id) selectedId.value = null;
     }
     function addNode(spec = {}) {
+        notifyPreMutate('Schacht setzen');
         const id = spec.id ?? `MH_${Date.now()}`;
         nodes.value.push({
             id, role: spec.role ?? 'manhole',
@@ -91,6 +101,7 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
         return id;
     }
     function addLink(spec = {}) {
+        notifyPreMutate('Haltung ziehen');
         const id = spec.id ?? `H_${Date.now()}`;
         links.value.push({
             id, role: spec.role ?? 'conduit', conveyance: spec.conveyance ?? 'covered',
@@ -108,6 +119,7 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
      * echtes CRS — reines Offset/Scale-Matching. Höhen (z/rim/invert) bleiben unberührt.
      */
     function transformCoords({ dx = 0, dy = 0, scale = 1, pivotX = 0, pivotY = 0 } = {}) {
+        notifyPreMutate('Netz auf Raster registrieren');
         const tx = (x) => (x - pivotX) * scale + pivotX + dx;
         const ty = (y) => (y - pivotY) * scale + pivotY + dy;
         nodes.value = nodes.value.map(n => ({ ...n, x: tx(n.x), y: ty(n.y) }));
@@ -147,7 +159,7 @@ export const useNetworkStore = defineStore('flood2dNetwork', () => {
             || links.value.find(l => l.id === selectedId.value) || null;
     });
 
-    return { nodes, links, model, format, warnings, selectedId, selected,
+    return { nodes, links, model, format, warnings, selectedId, selected, prefillPercent,
              hasNetwork, nodeById, setModel, clear, select,
              setArrays, updateNode, updateLink, deleteNode, deleteLink, addNode, addLink, toModel, transformCoords, mergeModel };
 });

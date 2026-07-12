@@ -52,9 +52,9 @@
          </div>
 
          <!-- PANEL CONTENT -->
-         <aside 
-            class="right-panel" 
-            :class="{ closed: !panelOpen }" 
+         <aside
+            class="right-panel"
+            :class="{ closed: !panelOpen, resizing: isResizing }"
             :style="{ width: panelOpen ? panelWidth + 'px' : '0px' }"
          >
              <ScenarioManager />
@@ -155,7 +155,12 @@ const doResize = (e) => {
     // Limits
     if (newWidth > 200 && newWidth < 1200) {
         panelWidth.value = newWidth;
-        if (editorRef.value && editorRef.value.resize) editorRef.value.resize();
+        // Erst NACH dem DOM-Update messen: resize() liest clientWidth des
+        // Containers — synchron aufgerufen wäre das noch die alte Breite
+        // (Canvas hinkt einen Event hinterher → Spalt).
+        nextTick(() => {
+            if (editorRef.value && editorRef.value.resize) editorRef.value.resize();
+        });
     }
 };
 
@@ -185,14 +190,14 @@ onErrorCaptured((err, instance, info) => {
     display: flex;
     width: 100vw; height: 100vh;
     overflow: hidden;
-    background: #1e272e;
+    background: var(--sv-bg);
 }
 
 .left-sidebar {
-    flex: 0 0 60px;
+    /* auto = exakt so breit wie die Toolbar (kein Gap bei Breitenänderungen) */
+    flex: 0 0 auto;
     z-index: 20;
-    border-right: 1px solid #2d3436;
-    background: white;
+    background: var(--sv-bg-2);
 }
 
 .main-content {
@@ -200,6 +205,9 @@ onErrorCaptured((err, instance, info) => {
     position: relative;
     display: flex;
     overflow: hidden; /* Ensure map doesn't overflow */
+    /* Dunkler Grund: beim Panel-Resize hinkt der Canvas einen Frame hinterher —
+       die kurz sichtbare Lücke muss Theme-dunkel sein, nicht weiß. */
+    background: var(--sv-bg);
 }
 
 /* Map takes available space */
@@ -230,22 +238,24 @@ onErrorCaptured((err, instance, info) => {
     width: 8px;
     height: 100%;
     cursor: ew-resize;
-    background: #2d3436;
+    background: var(--sv-bg-2);
     transition: background 0.2s;
-    border-left: 1px solid #1a1a1a;
+    border-left: 1px solid var(--sv-border);
 }
 .resize-bar:hover, .resize-bar:active {
-    background: #3498db;
+    background: var(--sv-violet-dim);
+    box-shadow: var(--sv-glow-violet);
 }
 
 .panel-toggle {
     width: 24px;
     height: 48px;
-    background: #233140;
-    border: 1px solid #2d3436;
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-border);
     border-right: none;
     border-radius: 4px 0 0 4px;
-    color: #bdc3c7;
+    color: var(--sv-text-dim);
+    font-family: var(--sv-font);
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     font-size: 1.2rem;
@@ -253,18 +263,24 @@ onErrorCaptured((err, instance, info) => {
     box-shadow: -2px 0 5px rgba(0,0,0,0.2);
 }
 .panel-toggle:hover {
-    background: #34495e;
-    color: #fff;
+    background: rgba(139, 92, 246, 0.22);
+    color: var(--sv-lime);
+    box-shadow: var(--sv-glow-violet);
 }
 
 /* PANEL */
 .right-panel {
-    background: #233140;
+    background: #16161f; /* = ScenarioManager-Grund, kein Blitzer beim Strecken */
     box-shadow: -5px 0 15px rgba(0,0,0,0.3);
     height: 100%;
     overflow: hidden;
-    transition: width 0.05s linear; /* Very fast for responsiveness */
+    transition: width 0.15s ease; /* nur fürs Auf-/Zuklappen */
     display: flex; flex-direction: column;
+}
+/* Beim Drag-Resize keine Transition: die Breite muss der Maus 1:1 folgen,
+   sonst blitzt zwischen Panel und Canvas ein Streifen auf. */
+.right-panel.resizing {
+    transition: none;
 }
 
 .right-panel.closed {

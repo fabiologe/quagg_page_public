@@ -172,7 +172,9 @@ function readDataViaWorker(key, timeoutMs = 60000) {
 // eingebrannt (Flood2DSolverRunner.openViewer), und die separat hydrierte Gebäudemaske
 // clippte über der Gerinnefläche zusätzlich das WASSER weg (Wasser = Klon der geclippten
 // Terrain-Geometrie). Streamlines blenden Gebäude über das gridData-NoData-Gate aus.
-export const GEO_FIELDS = ['modifications', 'boundaries', 'nodes', 'weirs', 'weirLines', 'bridges', 'culvertLinks'];
+// ('nodes'/'culvertLinks' entfernt 2026-07 — das Kanalnetz lebt im useNetworkStore und
+//  wandert als 'network'-Feld mit; Alt-Projekte mit diesen Feldern werden still ignoriert.)
+export const GEO_FIELDS = ['modifications', 'boundaries', 'weirs', 'weirLines', 'bridges'];
 
 function serializeGeoFields(geoStore) {
     const out = {};
@@ -313,6 +315,11 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         maxElevGrid:     _sliceGrid(simStore.maxElevGrid),
         arrivalTimeGrid: _sliceGrid(simStore.arrivalTimeGrid),
         durationGrid:    _sliceGrid(simStore.durationGrid),
+        // 1D-Kanalnetz-Serien + Kopplungs-/Massenbilanz: kleine JSON-Objekte (pro Element
+        // eine Zahlenreihe, keine Raster) → wandern mit ins Meta-Record der IndexedDB.
+        networkResults: simStore.networkResults ? JSON.parse(JSON.stringify(toRaw(simStore.networkResults))) : null,
+        couplingBudget: simStore.couplingBudget ? JSON.parse(JSON.stringify(toRaw(simStore.couplingBudget))) : null,
+        massReport: simStore.massReport ? JSON.parse(JSON.stringify(toRaw(simStore.massReport))) : null,
         timestamp: Date.now(),
         bciContent: bciContent
     };
@@ -363,6 +370,9 @@ export function useResultDataFromOpener() {
     const totalFrames = ref(0);
     const simDuration = ref(3600);
     const bciContent = ref('');
+    const networkResults = ref(null);
+    const couplingBudget = ref(null);
+    const massReport = ref(null);
     const isLoading = ref(true);
     const loadProgress = ref(0);
     const error = ref(null);
@@ -462,6 +472,11 @@ export function useResultDataFromOpener() {
             });
 
             // Hydrate summary grids
+            // 1D-Kanalnetz-Ergebnisse + Kopplungs-/Massenbilanz (kleine JSON-Objekte)
+            if (data.networkResults) networkResults.value = data.networkResults;
+            if (data.couplingBudget) couplingBudget.value = data.couplingBudget;
+            if (data.massReport)     massReport.value     = data.massReport;
+
             const _hydrate = (v) => v == null ? null : (v instanceof Float32Array ? v : new Float32Array(v));
             if (data.maxDepthGrid)    maxDepthGrid.value    = _hydrate(data.maxDepthGrid);
             if (data.maxHazardGrid)   maxHazardGrid.value   = _hydrate(data.maxHazardGrid);
@@ -499,6 +514,9 @@ export function useResultDataFromOpener() {
         totalFrames,
         simDuration,
         bciContent,
+        networkResults,
+        couplingBudget,
+        massReport,
         isLoading,
         loadProgress,
         error,

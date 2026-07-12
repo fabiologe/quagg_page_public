@@ -92,14 +92,14 @@ export function useBoundaryTool() {
 
         let hitPoint = null;
         if (terrainMesh) {
+            // Nur echte Terrain-Treffer zählen — kein Ebenen-Fallback, sonst
+            // landen Punkte neben dem Raster oder in NODATA-Löchern im Store.
             const intersects = raycaster.intersectObject(terrainMesh);
             if (intersects.length > 0) hitPoint = intersects[0].point;
-        }
-        if (!hitPoint) {
+        } else {
             const plane = interactionPlane || new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
             const target = new THREE.Vector3();
-            raycaster.ray.intersectPlane(plane, target);
-            if (target) hitPoint = target;
+            if (raycaster.ray.intersectPlane(plane, target)) hitPoint = target;
         }
 
         if (hitPoint) {
@@ -126,14 +126,13 @@ export function useBoundaryTool() {
 
         let hitPoint = null;
         if (terrainMesh) {
+            // Nur echte Terrain-Treffer (siehe onClick) — kein Ebenen-Fallback.
             const intersects = raycaster.intersectObject(terrainMesh);
             if (intersects.length > 0) hitPoint = intersects[0].point;
-        }
-        if (!hitPoint) {
+        } else {
             const plane = interactionPlane || new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
             const target = new THREE.Vector3();
-            raycaster.ray.intersectPlane(plane, target);
-            if (target) hitPoint = target;
+            if (raycaster.ray.intersectPlane(plane, target)) hitPoint = target;
         }
 
         if (hitPoint) {
@@ -153,6 +152,7 @@ export function useBoundaryTool() {
             // Acceptable for now.
             return { action: 'HOVER', point: snapped };
         }
+        if (ghostMarker) ghostMarker.visible = false;
     };
 
     const onRightClick = (context) => {

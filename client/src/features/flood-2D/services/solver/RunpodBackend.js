@@ -237,6 +237,21 @@ export class RunpodBackend extends SolverBackend {
                         this.emit({ type: evType, payload: channels.depth, header: this._headerFromMeta(meta) });
                     }
                 }
+                // 1D-Kanalnetz-Ergebnisse (gekoppelter Lauf): handler.py liest die
+                // SWMM-.out und liefert Serien je Knoten/Haltung + Systembilanz als JSON
+                // ({times[s], nodes:{id:{depth,head,volume,totalInflow,flooding}},
+                //   links:{id:{flow,depth,velocity,volume,capacity}}, system:{…}}).
+                if (output.networkResultsUrl) {
+                    try {
+                        const buf = await this.transport.fetchBinary(output.networkResultsUrl);
+                        this.emit({ type: 'NETWORK_RESULT', data: JSON.parse(new TextDecoder().decode(buf)) });
+                    } catch (e) {
+                        this.emit({ type: 'WARNING', message: `1D-Ergebnisse nicht ladbar: ${e.message}` });
+                    }
+                }
+                if (output.couplingBudget) {
+                    this.emit({ type: 'COUPLING_BUDGET', data: output.couplingBudget });
+                }
                 if (output.massReport) {
                     this.emit({ type: 'MASS_REPORT', data: output.massReport });
                 }

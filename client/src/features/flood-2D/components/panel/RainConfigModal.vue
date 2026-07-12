@@ -173,22 +173,9 @@ const returnPeriods = [
 // Reference point for Import Modal
 const referencePoint = computed(() => {
     if (hydStore.rainLocation) return { x: hydStore.rainLocation.lon, y: hydStore.rainLocation.lat };
-    
-    // Priority 1: DEM Grid Center (from GeoStore)
-    if (geoStore.terrain && geoStore.terrain.center) return { x: geoStore.terrain.center.x, y: geoStore.terrain.center.y };
 
-    // Priority 2: Nodes Center
-    if (geoStore.nodes && geoStore.nodes.length > 0) {
-        let sumX = 0, sumY = 0, count = 0;
-        for (const n of geoStore.nodes) {
-            if (n.x && n.y) {
-                sumX += n.x;
-                sumY += n.y;
-                count++;
-            }
-        }
-        if (count > 0) return { x: sumX / count, y: sumY / count };
-    }
+    // DEM Grid Center (from GeoStore)
+    if (geoStore.terrain && geoStore.terrain.center) return { x: geoStore.terrain.center.x, y: geoStore.terrain.center.y };
 
     return null;
 });
@@ -196,11 +183,6 @@ const referencePoint = computed(() => {
 const rawCenter = computed(() => {
     if (geoStore.terrain && geoStore.terrain.center) {
         return geoStore.terrain.center;
-    }
-    // Fallback display
-    if (geoStore.nodes && geoStore.nodes.length > 0) {
-       const pt = referencePoint.value;
-       if (pt && !hydStore.rainLocation) return pt; 
     }
     return null;
 });

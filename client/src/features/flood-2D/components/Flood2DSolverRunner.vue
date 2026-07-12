@@ -46,9 +46,9 @@
         <label>Engine</label>
         <div class="toggle-row bmi-toggle-row" :class="{ 'bmi-active': simStore.solverMode !== 'wasm' }">
           <select v-model="simStore.solverMode" :disabled="isRunning" class="engine-select">
-            <option value="wasm">⚙️ Classic WASM (Blackbox, lokal)</option>
-            <option value="bmi">🧪 BMI Frame-by-Frame (God Mode, lokal)</option>
-            <option value="runpod">☁️ RUNPOD Remote (LISFLOOD 8.2)</option>
+            <option value="wasm">Classic WASM (Blackbox, lokal)</option>
+            <option value="bmi">BMI Frame-by-Frame (God Mode, lokal)</option>
+            <option value="runpod">RUNPOD Remote (LISFLOOD 8.2)</option>
           </select>
         </div>
 
@@ -203,7 +203,7 @@ const bathyStore = useBathymetryStore();
 
 // 1D/2D-Kopplung (SWMM↔LISFLOOD): reichert im runpod-Modus den Datei-Satz an.
 // Gesamte Logik in sauberen Modulen (services/geometry/*, services/swmm/coupledScenario).
-const { augmentInputs: augmentCoupledInputs, buildBmiCulverts } = useCoupledExport({ geoStore });
+const { augmentInputs: augmentCoupledInputs, buildBmiCulverts } = useCoupledExport();
 
 
 
@@ -435,6 +435,20 @@ const handleSolverEvent = (data) => {
 
                     case 'MASS_REPORT':
                         massReport.value = data.data;
+                        simStore.setMassReport(data.data); // → Bridge/Viewer (Massenbilanz-Panel)
+                        break;
+
+                    case 'NETWORK_RESULT': {
+                        simStore.setNetworkResults(data.data);
+                        const n = Object.keys(data.data?.nodes || {}).length;
+                        const l = Object.keys(data.data?.links || {}).length;
+                        appendLog(`[RESULT] 1D-Kanalnetz-Ergebnisse: ${n} Knoten, ${l} Haltungen, ${data.data?.times?.length ?? 0} Zeitschritte.`);
+                        break;
+                    }
+
+                    case 'COUPLING_BUDGET':
+                        simStore.setCouplingBudget(data.data);
+                        appendLog(`[RESULT] Kopplungsbilanz: 1D→2D ${data.data?.to2d?.toFixed(1)} m³, 2D→1D ${data.data?.to1d?.toFixed(1)} m³, Schuld ${data.data?.debt?.toFixed(3)} m³.`);
                         break;
 
                     case 'ERROR':
@@ -477,9 +491,9 @@ const runSimulation = async () => {
             backend.onEvent(handleSolverEvent);
 
             const engineLabel = {
-                wasm: '⚙️ Classic WASM (Blackbox)',
-                bmi: '🧪 BMI (Frame-by-Frame)',
-                runpod: '☁️ RUNPOD Remote'
+                wasm: 'Classic WASM (Blackbox)',
+                bmi: 'BMI (Frame-by-Frame)',
+                runpod: 'RUNPOD Remote'
             }[backendMode] || backendMode;
             appendLog(`Engine: ${engineLabel}`);
         }
@@ -594,13 +608,6 @@ const runDryCheck = async () => {
              rainSeries: hydStore.rainSeries,
              // Corrected: Boundaries come from GeoStore (Features), Assignments from HydStore
              boundaries: geoStore.boundaries ? geoStore.boundaries.features : [],
-             // Manholes (Nodes) -> Map to GeoJSON Point Features
-             manholes: geoStore.nodes ? geoStore.nodes.map(n => ({
-                 type: 'Feature',
-                 id: n.id,
-                 geometry: { type: 'Point', coordinates: [n.x, n.y] },
-                 properties: { name: n.displayName || `Node_${n.id}` }
-             })) : [],
              assignments: hydStore.assignments,
              ganglinien: hydStore.ganglinien,
              globalRoughness: hydStore.globalRoughness,
@@ -696,12 +703,6 @@ const startPreparation = async () => {
              })) : null,
              rainSeries: hydStore.rainSeries ? JSON.parse(JSON.stringify(hydStore.rainSeries)) : null,
              boundaries: geoStore.boundaries ? JSON.parse(JSON.stringify(geoStore.boundaries.features)) : [],
-             manholes: geoStore.nodes ? JSON.parse(JSON.stringify(geoStore.nodes)).map(n => ({
-                 type: 'Feature',
-                 id: n.id,
-                 geometry: { type: 'Point', coordinates: [n.x, n.y] },
-                 properties: { name: n.displayName || `Node_${n.id}` }
-             })) : [],
              assignments: JSON.parse(JSON.stringify(hydStore.assignments)),
              ganglinien: JSON.parse(JSON.stringify(hydStore.ganglinien)),
              globalRoughness: hydStore.globalRoughness,
@@ -730,20 +731,13 @@ const startPreparation = async () => {
                  : null
           };
 
-         // 2. Node-zu-Culvert-Mapping ─────────────────────────────────────────
-         //    Nur relevant für den BMI-Worker (simulation.bmi.js).
-         //    Liest culvertLinks aus dem HydraulicStore, löst die Node-IDs gegen
-         //    die echten Welt-Koordinaten aus dem GeoStore auf und baut das
-         //    activeCulverts-Array, das der Worker erwartet.
+         // 2. Kanalnetz → BMI-Culverts (nur BMI-Worker simulation.bmi.js).
+         //    Das Netz kommt AUSSCHLIESSLICH aus dem useNetworkStore („eine Geometrie,
+         //    mehrere Kompilate"); der Legacy-geoStore-Pfad wurde 2026-07 entfernt.
          let activeCulverts = [];
          let dmgHeader = null;
 
          if (simStore.solverMode === 'bmi') {
-             const rawNodes = toRaw(geoStore.nodes) || [];
-             const nodeMap = new Map(rawNodes.map(n => [n.id, n]));
-
-             const rawLinks = toRaw(geoStore.culvertLinks) || [];
-
              const t = geoStore.terrain;
              if (t) {
                  const h = t.header ?? t;
@@ -756,39 +750,7 @@ const startPreparation = async () => {
                  };
              }
 
-             // Phase 2C: EIN Modell, zwei Kompilate. Ist ein Netz-Store-Netz vorhanden,
-             // kompiliert es zu den BMI-Culverts; sonst der Legacy-geoStore.culvertLinks-Pfad.
-             const netCulverts = buildBmiCulverts();
-             if (netCulverts) {
-                 activeCulverts = netCulverts;
-             } else {
-                 for (const link of rawLinks) {
-                     const inNode  = nodeMap.get(link.sourceId);
-                     const outNode = nodeMap.get(link.targetId);
-
-                     if (!inNode || !outNode) {
-                         appendLog(`⚠️ Culvert [${link.id}]: Node nicht gefunden (source=${link.sourceId}, target=${link.targetId}) — übersprungen.`);
-                         continue;
-                     }
-
-                     activeCulverts.push({
-                         inX:      inNode.x,
-                         inY:      inNode.y,
-                         outX:     outNode.x,
-                         outY:     outNode.y,
-                         // hydraulic parameters — new schema
-                         z_in:      link.z_in      ?? null,  // null → BMI worker derives from DEM
-                         z_out:     link.z_out     ?? null,
-                         diameter:  link.diameter  ?? 1.0,
-                         length:    link.length    ?? 10.0,
-                         manning_n: link.manning_n ?? 0.013,
-                         Cd:        link.Cd        ?? 0.6,
-                     });
-                 }
-             }
-
-
-
+             activeCulverts = buildBmiCulverts() ?? [];
              appendLog(`🔌 BMI: ${activeCulverts.length} Culvert-Paar(e) gemapped. Header: xll=${dmgHeader?.xllcorner}, yll=${dmgHeader?.yllcorner}, cs=${dmgHeader?.cellsize}`);
          }
 
@@ -874,10 +836,27 @@ onUnmounted(() => {
 
 <style scoped>
 .flood-solver-container {
-    padding: 2rem;
+    padding: 1rem 1.25rem;
+    flex: 1;
+    min-height: 0;
     height: 100%;
     overflow-y: auto;
-    background: #f8f9fa;
+    background: var(--sv-bg);
+    color: var(--sv-text);
+    font-family: var(--sv-font);
+}
+.flood-solver-container h2 {
+    margin: 0 0 1rem;
+    font-size: 1rem;
+    font-weight: 400;
+    color: var(--sv-text-violet);
+    text-shadow: var(--sv-glow-violet);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+/* Alle Checkboxen im Runner: Lime statt Browser-Blau */
+.flood-solver-container input[type='checkbox'] {
+    accent-color: var(--sv-lime);
 }
 
 .controls {
@@ -926,17 +905,18 @@ onUnmounted(() => {
 .dry-run-btn {
     padding: 0.75rem 1.5rem;
     background: transparent;
-    color: #666;
-    border: 1px solid #ccc;
+    color: var(--sv-text-dim);
+    border: 1px solid var(--sv-border);
     border-radius: 4px;
     font-size: 1rem;
+    font-family: var(--sv-font);
     cursor: pointer;
     transition: all 0.2s;
 }
 .dry-run-btn:hover {
-    background: #e0e0e0;
-    color: #333;
-    border-color: #999;
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--sv-text);
+    border-color: var(--sv-violet);
 }
 
 .viewer-btn {
@@ -957,16 +937,19 @@ onUnmounted(() => {
 
 /* Simulation Parameters */
 .sim-params {
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-border);
+    border-radius: var(--sv-radius);
     padding: 1rem 1.25rem;
     margin-bottom: 1rem;
 }
 .sim-params h3 {
     margin: 0 0 0.75rem;
     font-size: 0.95rem;
-    color: #1e1e2c;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    color: var(--sv-text-lime);
+    text-shadow: var(--sv-glow-lime);
 }
 .param-grid {
     display: grid;
@@ -976,21 +959,24 @@ onUnmounted(() => {
 }
 .param-grid label {
     font-size: 0.82rem;
-    color: #555;
+    color: var(--sv-text-dim);
     white-space: nowrap;
 }
 .param-grid input[type='number'] {
     width: 100%;
     padding: 0.4rem 0.6rem;
-    border: 1px solid #ccc;
+    background: var(--sv-bg);
+    color: var(--sv-text-lime);
+    border: 1px solid var(--sv-border);
     border-radius: 4px;
     font-size: 0.85rem;
+    font-family: var(--sv-font);
     font-variant-numeric: tabular-nums;
 }
 .param-grid input[type='number']:focus {
-    border-color: #a3e635;
+    border-color: var(--sv-lime);
     outline: none;
-    box-shadow: 0 0 0 2px rgba(163,230,53, 0.15);
+    box-shadow: var(--sv-glow-lime);
 }
 .toggle-row {
     display: flex;
@@ -999,7 +985,7 @@ onUnmounted(() => {
 }
 .toggle-label {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--sv-text-dim);
 }
 
 /* BMI Dev-Switch */
@@ -1009,28 +995,18 @@ onUnmounted(() => {
     transition: background 0.2s;
 }
 .bmi-toggle-row.bmi-active {
-    background: rgba(243, 156, 18, 0.08);
-    outline: 1px solid rgba(243, 156, 18, 0.35);
-}
-.bmi-toggle-row input[type='checkbox']:disabled + .bmi-label {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-.bmi-label {
-    font-size: 0.8rem;
-    color: #7f5200;
-}
-.bmi-toggle-row.bmi-active .bmi-label {
-    color: #b7771d;
-    font-weight: 500;
+    background: rgba(139, 92, 246, 0.1);
+    outline: 1px solid var(--sv-border);
 }
 .engine-select {
     width: 100%;
     padding: 0.3rem 0.4rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--sv-border);
     border-radius: 4px;
     font-size: 0.8rem;
-    background: #fff;
+    font-family: var(--sv-font);
+    background: var(--sv-bg);
+    color: var(--sv-text);
 }
 .engine-select:disabled {
     opacity: 0.45;
@@ -1041,27 +1017,20 @@ onUnmounted(() => {
 .accuracy-section {
     margin-top: 0.75rem;
     padding: 0.6rem 0.7rem;
-    border: 1px solid rgba(41, 128, 185, 0.35);
+    border: 1px solid var(--sv-border);
     border-radius: 6px;
-    background: rgba(41, 128, 185, 0.05);
+    background: rgba(139, 92, 246, 0.07);
 }
 .accuracy-header {
     font-size: 0.8rem;
     font-weight: 700;
-    color: #6d43d4;
+    color: var(--sv-text-violet);
     margin-bottom: 0.5rem;
 }
-.cell-estimate {
-    display: block;
-    font-size: 0.72rem;
-    color: #7f8c8d;
-    margin-top: 0.15rem;
-}
-.cell-estimate.estimate-warn { color: #8b5cf6; font-weight: 600; }
 .param-hint {
     margin: 0.75rem 0 0;
     font-size: 0.78rem;
-    color: #7f8c8d;
+    color: var(--sv-text-dim);
 }
 
 /* ── Run Presets ─────────────────────────────────────────────────────────── */
@@ -1073,17 +1042,18 @@ onUnmounted(() => {
 .preset-btn {
     flex: 1;
     padding: 6px 10px;
-    border: 1px solid #4a6278;
+    border: 1px solid var(--sv-border);
     border-radius: 6px;
-    background: #1e3348;
-    color: #bdc3c7;
+    background: var(--sv-surface-2);
+    color: var(--sv-text-dim);
     font-size: 0.82rem;
+    font-family: var(--sv-font);
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s;
 }
-.preset-btn:hover  { background: #2471a3; border-color: #6d43d4; color: #fff; }
-.preset-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
+.preset-btn:hover  { border-color: var(--sv-violet); color: var(--sv-text); box-shadow: var(--sv-glow-violet); }
+.preset-btn.active { background: var(--sv-violet-dim); border-color: var(--sv-lime); color: #fff; }
 
 /* ── CFL Chip ────────────────────────────────────────────────────────────── */
 .dt-field {
@@ -1125,20 +1095,29 @@ onUnmounted(() => {
 .warning { color: #f39c12; }
 
 .logs-container {
-    margin-top: 2rem;
-    background: #1e1e2c;
-    color: #ecf0f1;
+    margin-top: 1.5rem;
+    background: var(--sv-bg-2);
+    color: var(--sv-text);
+    border: 1px solid var(--sv-border);
     padding: 1rem;
-    border-radius: 4px;
+    border-radius: var(--sv-radius);
     height: 400px;
     overflow-y: auto;
+}
+.logs-container h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    color: var(--sv-text-dim);
 }
 
 pre {
     margin: 0;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-family: var(--sv-font);
     white-space: pre-wrap;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    color: var(--sv-text-lime);
 }
 
 .results-container {
@@ -1220,23 +1199,24 @@ pre {
 }
 .gate-modal {
     width: min(560px, 100%);
-    background: #14202c; color: #e6f2fb;
-    border: 1px solid #2a4a63; border-radius: 12px;
-    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+    background: var(--sv-bg-2); color: var(--sv-text);
+    border: 1px solid var(--sv-border); border-radius: var(--sv-radius);
+    box-shadow: 0 18px 50px rgba(0,0,0,.5), var(--sv-glow-violet);
     padding: 1.25rem 1.4rem;
+    font-family: var(--sv-font);
 }
 .gate-header { display: flex; align-items: center; gap: 0.55rem; }
-.gate-header h3 { margin: 0; font-size: 1.05rem; }
+.gate-header h3 { margin: 0; font-size: 1.05rem; color: var(--sv-text-violet); }
 .gate-icon { font-size: 1.3rem; }
-.gate-sub { color: #aac3d6; font-size: 0.85rem; line-height: 1.5; margin: 0.6rem 0 0.8rem; }
+.gate-sub { color: var(--sv-text-dim); font-size: 0.85rem; line-height: 1.5; margin: 0.6rem 0 0.8rem; }
 /* Issue-Liste im Gate via wiederverwendbare <IssueList>-Komponente. */
 .gate-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
 .gate-cancel, .gate-proceed {
     padding: 0.55rem 1rem; border-radius: 7px; font-size: 0.85rem; cursor: pointer;
-    border: 1px solid transparent;
+    border: 1px solid transparent; font-family: var(--sv-font);
 }
-.gate-cancel  { background: #1f3343; color: #cfe2f0; border-color: #2a4a63; }
-.gate-cancel:hover  { background: #274056; }
-.gate-proceed { background: #b4661a; color: #fff; }
-.gate-proceed:hover { background: #cf7720; }
+.gate-cancel  { background: var(--sv-surface-2); color: var(--sv-text); border-color: var(--sv-border); }
+.gate-cancel:hover  { border-color: var(--sv-violet); box-shadow: var(--sv-glow-violet); }
+.gate-proceed { background: var(--sv-violet-dim); color: #fff; }
+.gate-proceed:hover { background: var(--sv-violet); box-shadow: var(--sv-glow-violet); }
 </style>

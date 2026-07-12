@@ -17,6 +17,7 @@ import { registerHistoryManager } from './historyBridge.js';
 import { useGeoStore }       from '../stores/useGeoStore.js';
 import { useHydraulicStore } from '../stores/useHydraulicStore.js';
 import { useSurfaceStore }   from '../stores/useSurfaceStore.js';
+import { useNetworkStore }   from '../stores/useNetworkStore.js';
 
 const MAX_SNAPSHOTS = 50;
 
@@ -35,12 +36,15 @@ function deepClean(obj) {
 }
 
 function extractGeo(store) {
+    // ALLE Vektor-Felder, die geoStore-Mutationen per saveSnapshot() schützen — fehlt
+    // eines, „verbraucht" Undo den History-Eintrag, ohne die Änderung zurückzunehmen
+    // (Symptom: 1. Undo wirkungslos, 2. Undo wirft eine ältere Aktion mit weg).
     return {
-        nodes:         deepClean(store.nodes),
         boundaries:    deepClean(store.boundaries),
         modifications: deepClean(store.modifications),
         weirs:         deepClean(store.weirs),
-        culvertLinks:  deepClean(store.culvertLinks),
+        weirLines:     deepClean(store.weirLines),
+        bridges:       deepClean(store.bridges),
     };
 }
 
@@ -62,15 +66,23 @@ function extractSurf(store) {
     };
 }
 
+function extractNet(store) {
+    return {
+        nodes: deepClean(store.nodes),
+        links: deepClean(store.links),
+    };
+}
+
 
 // ─── Restore-Helfer ───────────────────────────────────────────────────────────
 
 function restoreGeo(store, snap) {
-    store.nodes         = snap.nodes;
     store.boundaries    = snap.boundaries;
     store.modifications = snap.modifications;
     store.weirs         = snap.weirs;
-    store.culvertLinks  = snap.culvertLinks;
+    // Alt-Snapshots (vor dem Fix) haben die Felder nicht — dann nicht anfassen.
+    if (snap.weirLines) store.weirLines = snap.weirLines;
+    if (snap.bridges)   store.bridges   = snap.bridges;
 }
 
 function restoreHyd(store, snap) {
@@ -87,12 +99,24 @@ function restoreSurf(store, snap) {
     store.brushRadius      = snap.brushRadius;
 }
 
+function restoreNet(store, snap) {
+    // Alt-Snapshots (vor dem Netz-Undo) haben kein net-Feld — dann nichts anfassen.
+    if (!snap) return;
+    store.nodes = snap.nodes;
+    store.links = snap.links;
+    if (store.selectedId && !snap.nodes.some(n => n.id === store.selectedId)
+        && !snap.links.some(l => l.id === store.selectedId)) {
+        store.selectedId = null;
+    }
+}
+
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export function useHistoryManager() {
     const geoStore  = useGeoStore();
     const hydStore  = useHydraulicStore();
     const surfStore = useSurfaceStore();
+    const netStore  = useNetworkStore();
 
     const canUndo     = computed(() => _past.value.length > 0);
     const canRedo     = computed(() => _future.value.length > 0);
@@ -118,6 +142,7 @@ export function useHistoryManager() {
             geo:   extractGeo(geoStore),
             hyd:   extractHyd(hydStore),
             surf:  extractSurf(surfStore),
+            net:   extractNet(netStore),
         });
 
         // Neue Action invalidiert Redo-Future
@@ -142,14 +167,16 @@ export function useHistoryManager() {
             geo:   extractGeo(geoStore),
             hyd:   extractHyd(hydStore),
             surf:  extractSurf(surfStore),
+            net:   extractNet(netStore),
         });
 
         const prev = _past.value.pop();
 
-        // ATOMAR: kein await, kein nextTick zwischen den drei Writes
+        // ATOMAR: kein await, kein nextTick zwischen den Writes
         restoreGeo(geoStore, prev.geo);
         restoreHyd(hydStore, prev.hyd);
         restoreSurf(surfStore, prev.surf);
+        restoreNet(netStore, prev.net);
 
         console.debug(`[HistoryManager] undo: restored "${prev.label}"`);
     }
@@ -164,6 +191,7 @@ export function useHistoryManager() {
             geo:   extractGeo(geoStore),
             hyd:   extractHyd(hydStore),
             surf:  extractSurf(surfStore),
+            net:   extractNet(netStore),
         });
 
         const next = _future.value.pop();
@@ -171,6 +199,7 @@ export function useHistoryManager() {
         restoreGeo(geoStore, next.geo);
         restoreHyd(hydStore, next.hyd);
         restoreSurf(surfStore, next.surf);
+        restoreNet(netStore, next.net);
 
         console.debug(`[HistoryManager] redo: restored "${next.label}"`);
     }
@@ -188,7 +217,6 @@ export function useHistoryManager() {
             index: i,
             label: s.label,
             time:  new Date(s.ts).toISOString(),
-            nodes: s.geo.nodes.length,
             weirs: s.geo.weirs.length,
         })));
     }

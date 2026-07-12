@@ -2,7 +2,7 @@
   <div class="net-table">
     <!-- SCHÄCHTE -->
     <div class="nt-section-head">
-      <SvEmoji emoji="🕳️" :size="13" /> Schächte <span class="nt-count">{{ net.nodes.length }}</span>
+      <SvIcon name="Schacht.png" :size="13" color="currentColor" /> Schächte <span class="nt-count">{{ net.nodes.length }}</span>
     </div>
     <div class="nt-rows">
       <div
@@ -21,7 +21,7 @@
 
     <!-- HALTUNGEN -->
     <div class="nt-section-head">
-      <SvEmoji emoji="🧵" :size="13" /> Haltungen <span class="nt-count">{{ net.links.length }}</span>
+      <SvIcon name="Haltung.png" :size="13" color="currentColor" /> Haltungen <span class="nt-count">{{ net.links.length }}</span>
     </div>
     <div class="nt-rows">
       <div
@@ -37,14 +37,53 @@
       </div>
       <div v-if="net.links.length === 0" class="nt-empty">Keine Haltungen.</div>
     </div>
+
+    <!-- VORFÜLLUNG: ein Wert, keine Tagesganglinien — Übersetzung in SWMM-Basisabfluss/
+         Teilfüllung passiert beim Kopplungs-Export unter der Haube (prefill.js). -->
+    <template v-if="net.hasNetwork">
+      <div class="nt-section-head">
+        <SvEmoji emoji="💧" :size="13" /> Vorfüllung
+        <span class="nt-count">{{ net.prefillPercent }} %</span>
+      </div>
+      <div class="nt-prefill">
+        <input type="range" min="0" max="80" step="5" :value="net.prefillPercent"
+               @input="net.prefillPercent = Number($event.target.value)" />
+        <div class="nt-prefill-hint">
+          Netz-Auslastung vor dem Regen (Trockenwetter). 0 % = leeres Netz —
+          Basisabfluss &amp; Anfangsfüllung werden automatisch berechnet.
+        </div>
+      </div>
+    </template>
+
+    <!-- NETZ-PRÜFUNG (NetworkModel.validate: Topologie + Hydraulik-Plausibilität) -->
+    <template v-if="net.hasNetwork">
+      <div class="nt-section-head">
+        <SvEmoji emoji="🔍" :size="13" /> Prüfung
+        <span class="nt-count" :style="issues.length ? 'color:#ff7043' : ''">{{ issues.length }}</span>
+      </div>
+      <IssueList :issues="issues" dense showCounts maxHeight="22vh" emptyText="Netz plausibel ✓" />
+    </template>
   </div>
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import SvEmoji from '../common/SvEmoji.vue';
+import SvIcon from '../common/SvIcon.vue';
+import IssueList from '../common/IssueList.vue';
 import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
 
 const net = useNetworkStore();
+
+// Live-Validierung: baut bei jeder Netz-Änderung das Modell und prüft es
+// (Sohle>Deckel, Gegengefälle, Nullängen, isolierte Knoten, Teilnetz ohne Auslass,
+// Sonderbauwerk ohne abgehende Haltung). IssueList erwartet {severity, message}.
+const issues = computed(() => {
+  void net.nodes.length; void net.links.length; // Reaktivitäts-Anker
+  try {
+    return net.toModel().validate().map(i => ({ severity: i.level, message: i.msg, code: i.id }));
+  } catch { return []; }
+});
 const ROLE_COLOR = { manhole: '#3b82f6', inlet: '#22c55e', outfall: '#ef4444', storage: '#a855f7', junction: '#38bdf8' };
 const roleColor = (r) => ROLE_COLOR[r] || '#64748b';
 const short = (id, n = 10) => (id ? (String(id).length > n ? String(id).slice(0, n) + '…' : String(id)) : '–');
@@ -72,4 +111,7 @@ const fmt = (v) => (Number.isFinite(v) ? v.toFixed(2) : '–');
 .nt-del { background: none; border: none; color: #e74c3c; font-size: 0.95rem; line-height: 1; cursor: pointer; opacity: 0; }
 .nt-row:hover .nt-del { opacity: 1; }
 .nt-empty { padding: 8px; color: #5d7f99; font-style: italic; text-align: center; }
+.nt-prefill { padding: 2px 10px 6px; display: flex; flex-direction: column; gap: 4px; }
+.nt-prefill input[type=range] { width: 100%; accent-color: var(--sv-lime, #a3e635); }
+.nt-prefill-hint { color: #5d7f99; font-size: 0.68rem; line-height: 1.35; }
 </style>

@@ -1,4 +1,5 @@
 import { getHortonParams } from './mappings.js';
+import { fillDepthRatio, manningQfull } from './prefill.js';
 /**
  * Builder Service for SWMM .inp generation.
  * Uses Domain Models (Node, Edge) instead of raw JSON.
@@ -14,7 +15,9 @@ export class SwmmBuilder {
             durationHours: 6,
             startDate: new Date("2024-01-01T00:00:00"),
             rainInterval: null, // "0:05"
-            rainSeries: []
+            rainSeries: [],
+            reportStepSeconds: null, // null → 60s; coupled-Modus synct auf 2D-saveint
+            prefillFraction: 0       // 0..1: Netz-Auslastung vor dem Regen (Vorfüllfaktor)
         };
     }
 
@@ -43,6 +46,10 @@ export class SwmmBuilder {
         const nodes = this.store.getAllNodes;
         const edges = this.store.getAllEdges;
 
+        // Vorfüllplan VOR dem Sektionsbau: addJunctions (InitDepth), addLinks (InitFlow)
+        // und addInflows (Basisabfluss) lesen daraus.
+        this.prefill = this.computePrefill(nodes, edges);
+
         this.classifyAndAddNodes(nodes);
         this.addLinks(edges, nodes);   // populates this.specialLinks
 
@@ -68,6 +75,11 @@ export class SwmmBuilder {
         // ponden (bliebe sonst in SWMM), sondern wird als NODE_OVERFLOW abgegeben, damit
         // der Kopplungs-Hook es ins 2D-Raster überführt (massenerhaltend). Standalone: YES.
         const allowPonding = this.options.coupled ? 'NO' : 'YES';
+        // REPORT_STEP = Schreibtakt der .out-Zeitreihen. Im coupled-Modus liefert
+        // coupledScenario hier das 2D-saveint durch, damit 1D- und 2D-Ergebnisframes
+        // im Viewer dieselbe Taktung haben.
+        const reportStep = this.formatHMS(this.safeFloat(this.options.reportStepSeconds, 0) > 0
+            ? this.options.reportStepSeconds : 60);
         this.sections.push(`[TITLE]
 Isybau Generated Simulation
 [OPTIONS]
@@ -87,7 +99,7 @@ END_TIME             ${this.formatTime(this.endDate, true)}
 SWEEP_START          01/01
 SWEEP_END            12/31
 DRY_DAYS             0
-REPORT_STEP          00:01:00
+REPORT_STEP          ${reportStep}
 WET_STEP             00:00:30
 DRY_STEP             00:01:00
 ROUTING_STEP         00:00:01
@@ -104,7 +116,17 @@ LAT_FLOW_TOL         5
 MINIMUM_STEP         0.5
 THREADS              1
 SURCHARGE_METHOD     SLOT
+
+[REPORT]
+INPUT                NO
+CONTINUITY           YES
+FLOWSTATS            YES
+NODES                ALL
+LINKS                ALL
 `);
+        // NODES/LINKS ALL: nur so schreibt SWMM die Zeitreihen ALLER Knoten/Haltungen
+        // in die Binärausgabe (.out) — die liest handler.py nach dem gekoppelten Lauf
+        // als 1D-Ergebnis (networkResultsFile) für den ErgebnisViewer.
     }
 
 
@@ -208,6 +230,82 @@ SURCHARGE_METHOD     SLOT
         if (n.bauwerkstyp != null) return n.bauwerkstyp;
         const t = parseInt(n.type);
         return isNaN(t) ? null : t;
+    }
+
+    // Profilform + Maße einer Kante für die Vorfüll-Hydraulik (Spiegel des
+    // addLinks-Mappings, reduziert auf die Teilfüllungs-relevanten Klassen).
+    profileDims(e) {
+        const p = e.profile || {};
+        const t = p.type;
+        const ts = String(t ?? '').toLowerCase();
+        let shape = 'CIRCULAR';
+        if (t === 3 || t === 5 || ts.includes('rect') || ts.includes('rechteck')) shape = 'RECT';
+        else if (t === 8 || ts.includes('trapez')) shape = 'TRAPEZOIDAL';
+        const H = this.safeFloat(p.height, 0) > 0 ? this.safeFloat(p.height) : 1.0;
+        const W = this.safeFloat(p.width, 0) > 0 ? this.safeFloat(p.width) : H;
+        return { shape, H, W };
+    }
+
+    /**
+     * Vorfüllfaktor f (options.prefillFraction, 0..1) → physikalischer Plan:
+     *   initFlow[edge]   = f·Q_voll (Manning)                → [CONDUITS] InitFlow
+     *   nodeDepth[node]  = Rohrsohlen-Offset + Teilfüllungstiefe → [JUNCTIONS] InitDepth
+     *   nodeInflow[node] = Bilanz Σab−Σzu der f·Q_voll        → [DWF] (trägt die Auslastung dauerhaft)
+     * Ein Wert vom Ingenieur („Netz zu 30 % ausgelastet"), der Rest ist Teilfüllungskurve.
+     * Getrennt vom individuellen Initialzustand einzelner Bauwerke (Storage-InitDepth).
+     */
+    computePrefill(nodes, edges) {
+        const f = Math.min(Math.max(this.safeFloat(this.options.prefillFraction, 0), 0), 1);
+        const plan = { f, initFlow: new Map(), nodeInflow: new Map(), nodeDepth: new Map(), total: 0 };
+        if (f <= 0 || !Array.isArray(edges) || edges.length === 0) return plan;
+
+        const LINK_BTYPES = new Set([6, 7, 8, 9]);
+        const nodeMap = new Map(nodes.map(n => [n.id, n]));
+        const desiredOut = new Map(), desiredIn = new Map();
+        const bump = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+        const deeper = (k, v) => { if (v > (plan.nodeDepth.get(k) || 0)) plan.nodeDepth.set(k, v); };
+
+        for (const e of edges) {
+            const n1 = nodeMap.get(e.fromNodeId), n2 = nodeMap.get(e.toNodeId);
+            if (!n1 || !n2) continue;
+            if (LINK_BTYPES.has(this.getBtyp(n1))) continue;   // Sonderlinks: keine Vorfüllung
+
+            const { shape, H, W } = this.profileDims(e);
+            let length = this.safeFloat(e.length, 0);
+            if (length <= 0.01) {
+                length = Math.hypot(this.safeFloat(n1.x, 0) - this.safeFloat(n2.x, 0),
+                                    this.safeFloat(n1.y, 0) - this.safeFloat(n2.y, 0)) || 10;
+            }
+            // Rohrsohlen wie addLinks: e.z1/z2 wenn gesetzt, sonst Schachtsohle
+            const zu = this.safeFloat(e.z1, -9999) !== -9999 ? this.safeFloat(e.z1) : this.safeFloat(n1.z, 0);
+            const zd = this.safeFloat(e.z2, -9999) !== -9999 ? this.safeFloat(e.z2) : this.safeFloat(n2.z, 0);
+            const slope = (zu - zd) / length;
+            const kst = this.safeFloat(e.roughness, 0);
+            const n = kst > 1 ? 1 / kst : (kst > 0 ? kst : 0.011);
+
+            const Qf = f * manningQfull(shape, H, W, n, slope);
+            if (!(Qf > 0)) continue;
+            plan.initFlow.set(e.id, Qf);
+            bump(desiredOut, e.fromNodeId, Qf);
+            bump(desiredIn, e.toNodeId, Qf);
+
+            // Anfangswasserstand an den Endknoten: Sohlen-Offset + Teilfüllungstiefe
+            const y = fillDepthRatio(shape, f) * H;
+            deeper(e.fromNodeId, Math.max(0, zu - this.safeFloat(n1.z, 0)) + y);
+            deeper(e.toNodeId, Math.max(0, zd - this.safeFloat(n2.z, 0)) + y);
+        }
+
+        // Knotenbilanz: nur wo mehr abfließen soll als zufließt, wird eingespeist
+        for (const [id, out] of desiredOut) {
+            const q = out - (desiredIn.get(id) || 0);
+            if (q > 1e-6) { plan.nodeInflow.set(id, q); plan.total += q; }
+        }
+        if (plan.total > 0) {
+            this.warnings.push(`Vorfüllung ${(f * 100).toFixed(0)} %: Basisabfluss `
+                + `${(plan.total * 1000).toFixed(1)} l/s automatisch auf ${plan.nodeInflow.size} `
+                + `Zulaufknoten verteilt (Manning-Teilfüllung, kein Tagesgang nötig).`);
+        }
+        return plan;
     }
 
     classifyAndAddNodes(nodes) {
@@ -371,7 +469,11 @@ SURCHARGE_METHOD     SLOT
                 aPonded = 0;
             }
 
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          ${this.pad(surDepth)} ${this.pad(aPonded)}\n`;
+            // InitDepth aus dem Vorfüllplan (auf Schachttiefe gekappt) — Lauf startet
+            // ohne Auffüll-Transiente auf der gewählten Netz-Auslastung.
+            const initDepth = Math.min(this.prefill?.nodeDepth.get(n.id) ?? 0,
+                                       this.safeFloat(n.depth, 999));
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} ${this.pad(initDepth)} ${this.pad(surDepth)} ${this.pad(aPonded)}\n`;
         }
         this.sections.push(text);
     }
@@ -379,16 +481,17 @@ SURCHARGE_METHOD     SLOT
     addOutfalls(nodes) {
         let text = '[OUTFALLS]\n;;Name           Elevation  Type       Stage Data       Gated    RouteTo\n';
         for (const n of nodes) {
-            // Map UI outflowType to SWMM Type
-            // 'throttled' isn't a direct SWMM type, assuming FREE or NORMAL.
-            // If user wants specific stage (Gedrosselt usually implies control), ideal is Regulator.
-            // For node-only Outfall: FREE is standard.
-            // We'll annotate the type in comment if specific.
+            // FREE = freier Auslauf, NORMAL = Normalabfluss-Randbedingung,
+            // FIXED = fester Vorfluter-Wasserstand (Stage in m NHN, Pflichtspalte).
             let type = 'FREE';
+            let stage = '';
             if (n.outflowType === 'normal') type = 'NORMAL';
-            if (n.outflowType === 'fixed') type = 'FIXED';
-
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(type)}${n.outflowType === 'throttled' ? ' ;Throttled' : ''} \n`;
+            if (n.outflowType === 'fixed') {
+                const s = this.safeFloat(n.fixedStage, -9999);
+                if (s !== -9999) { type = 'FIXED'; stage = this.pad(s); }
+                else this.warnings.push(`Auslauf ${n.id}: FIXED ohne Wasserstand — als FREE exportiert.`);
+            }
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(type)} ${stage}${n.outflowType === 'throttled' ? ' ;Throttled' : ''} \n`;
         }
         this.sections.push(text);
     }
@@ -499,7 +602,11 @@ SURCHARGE_METHOD     SLOT
 
     addPumps() {
         if (!this.specialLinks.pumps.length) return;
-        let text = '[PUMPS]\n;;Name           Node1          Node2          PumpCurve    InitStatus OffCutoff  OnCutoff\n';
+        // SWMM-Spaltenordnung: … Status STARTUP SHUTOFF — Startup (EIN-Wasserstand)
+        // ZUERST und ≥ Shutoff, sonst ERROR 122 „startup depth not higher than shutoff".
+        // (Bug bis 2026-07: Spalten vertauscht → jede Pumpe brach den SWMM-Start ab;
+        // gefunden durch test_coupling_pump.py der QA-Kampagne.)
+        let text = '[PUMPS]\n;;Name           Node1          Node2          PumpCurve    InitStatus Startup    Shutoff\n';
 
         for (const { id, from, to } of this.specialLinks.pumps) {
             if (!to) { this.warnings.push(`Pumpe ${id}: Kein Zielknoten — übersprungen.`); continue; }
@@ -508,7 +615,7 @@ SURCHARGE_METHOD     SLOT
             const onDepth  = this.safeFloat(from.onDepth,  0) > 0 ? this.safeFloat(from.onDepth)  : this.safeFloat(from.depth, 2.0) * 0.4;
             const offDepth = this.safeFloat(from.offDepth, 0) > 0 ? this.safeFloat(from.offDepth) : onDepth * 0.4;
 
-            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad('CRV_' + id)} ON         ${this.pad(offDepth)} ${this.pad(onDepth)}\n`;
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad('CRV_' + id)} ON         ${this.pad(onDepth)} ${this.pad(offDepth)}\n`;
         }
         this.sections.push(text);
     }
@@ -545,22 +652,42 @@ SURCHARGE_METHOD     SLOT
     }
 
     addInflows(nodes) {
-        let text = '[DWF]\n;;Node           Parameter  Average    TimePatterns\n';
+        // (1) Vorfüllungs-Basisabfluss als [DWF] — das IST physikalisch Trockenwetter-
+        //     abfluss, nur automatisch aus dem Vorfüllfaktor bilanziert (kein Tagesgang).
+        if (this.prefill && this.prefill.nodeInflow.size > 0) {
+            let dwf = '[DWF]\n;;Node           Parameter  Average    TimePatterns\n';
+            for (const [id, q] of this.prefill.nodeInflow) {
+                dwf += `${this.pad(id)} FLOW       ${q.toFixed(6)} \n`;
+            }
+            this.sections.push(dwf);
+        }
+
+        // (2) Direkte Zuflüsse (konstant + Ganglinie) als [INFLOWS]: externer Zufluss
+        //     (z. B. „30 m³/s auf Schacht X"), NICHT Trockenwetter. UI-Einheit l/s → CMS.
+        let inflows = '[INFLOWS]\n;;Node           Constituent  TimeSeries       Type   Mfactor  Sfactor  Baseline\n';
+        let ts = '';
         let count = 0;
         for (const n of nodes) {
-            const flow = this.safeFloat(n.constantInflow, 0);
-            if (flow > 0) {
-                // Formatting: Node FLOW Value
-                // SWMM DWF usually in same units as Flow Units? default CMS (m3/s) or LPS?
-                // Header says FLOW_UNITS CMS.
-                // Input is "l/s" in UI.
-                // Convert l/s to CMS: / 1000
-                const flowCMS = flow / 1000.0;
-                text += `${this.pad(n.id)} FLOW       ${flowCMS.toFixed(6)} \n`;
-                count++;
+            const baseCMS = this.safeFloat(n.constantInflow, 0) / 1000.0;
+            const series = Array.isArray(n.inflowSeries)
+                ? n.inflowSeries.filter(p => Number.isFinite(Number(p?.t)) && Number.isFinite(Number(p?.q)))
+                : [];
+            if (baseCMS <= 0 && series.length === 0) continue;
+
+            const tsName = series.length ? `TSIN_${n.id}` : '""';
+            inflows += `${this.pad(n.id)} FLOW         ${this.pad(tsName)} FLOW   1.0      1.0      ${baseCMS.toFixed(6)}\n`;
+            // Ganglinie: Zeit als Stunden seit Simulationsstart (H:MM), Q l/s → m³/s
+            for (const p of series) {
+                const tMin = Math.max(0, Math.round(Number(p.t)));
+                const hhmm = `${Math.floor(tMin / 60)}:${String(tMin % 60).padStart(2, '0')}`;
+                ts += `${this.pad(`TSIN_${n.id}`)} ${hhmm.padEnd(10)} ${(Number(p.q) / 1000).toFixed(6)}\n`;
             }
+            count++;
         }
-        if (count > 0) this.sections.push(text);
+        if (count > 0) {
+            this.sections.push(inflows);
+            if (ts) this.sections.push('[TIMESERIES]\n;;Name           Time       Value\n' + ts);
+        }
     }
 
     addCoordinates(nodes) {
@@ -651,7 +778,8 @@ SURCHARGE_METHOD     SLOT
             if (z1 !== -9999) inOffset = Math.max(0, z1 - n1Z);
             if (z2 !== -9999) outOffset = Math.max(0, z2 - n2Z);
 
-            conduits += `${this.pad(e.id)} ${this.pad(e.fromNodeId)} ${this.pad(e.toNodeId)} ${this.pad(length)} ${this.pad(roughness)} ${this.pad(inOffset)} ${this.pad(outOffset)} 0 0\n`;
+            const initFlow = this.prefill?.initFlow.get(e.id) ?? 0;
+            conduits += `${this.pad(e.id)} ${this.pad(e.fromNodeId)} ${this.pad(e.toNodeId)} ${this.pad(length)} ${this.pad(roughness)} ${this.pad(inOffset)} ${this.pad(outOffset)} ${this.pad(initFlow)} 0\n`;
 
             // XSections
             let shape = 'CIRCULAR';
@@ -756,6 +884,13 @@ SURCHARGE_METHOD     SLOT
             return s.padEnd(10);
         }
         return String(val).padEnd(16);
+    }
+
+    // Sekunden → SWMM-Intervallformat HH:MM:SS (z. B. 90 → 00:01:30)
+    formatHMS(seconds) {
+        const s = Math.max(1, Math.round(this.safeFloat(seconds, 60)));
+        const pad = (n) => n.toString().padStart(2, '0');
+        return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
     }
 
     formatDate(d) {

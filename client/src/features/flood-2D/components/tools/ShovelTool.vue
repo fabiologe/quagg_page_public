@@ -1,9 +1,20 @@
 <template>
-  <div class="shovel-tool-ui" @mouseenter="onEnter" @mouseleave="onLeave">
+  <div
+    class="tool-ui-panel shovel-panel"
+    :class="{ collapsed: !panelVisible, review: tool.state === 'REVIEW' }"
+    @mouseenter="onPanelEnter"
+    @mouseleave="onPanelLeave"
+  >
+    <div class="panel-header">
+      <svg class="header-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m8 3 4 8 5-5 5 15H2L8 3z"/>
+      </svg>
+      {{ triggerLabel }}
+      <span v-if="!panelVisible" class="collapse-toggle">···</span>
+    </div>
 
-    <!-- ── PANEL (slides up above trigger) ──────────────────────────────── -->
-    <Transition name="panel-slide">
-      <div v-if="panelVisible" class="tool-panel">
+    <div class="panel-content" v-show="panelVisible">
 
         <!-- REVIEW MODE -->
         <div v-if="tool.state === 'REVIEW'" class="review-panel">
@@ -165,54 +176,26 @@
             </div>
         </div>
 
-      </div>
-    </Transition>
-
-    <!-- ── TRIGGER PILL (always visible) ────────────────────────────────── -->
-    <div class="tool-trigger" :class="{
-        'trigger-open':   panelVisible,
-        'trigger-review': tool.state === 'REVIEW',
-        'trigger-anchor': tool.settings.mode === 'ANCHOR' && tool.state !== 'REVIEW',
-    }">
-      <svg class="trigger-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="m8 3 4 8 5-5 5 15H2L8 3z"/>
-      </svg>
-      <span class="trigger-label">{{ triggerLabel }}</span>
-      <span v-if="!panelVisible" class="trigger-dots">···</span>
     </div>
-
   </div>
 </template>
 
 <script setup>
 import SvEmoji from '../common/SvEmoji.vue';
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 
 const props = defineProps({
     tool: { type: Object, required: true },
 });
 
-// ── Hover logic ───────────────────────────────────────────────────────────────
-const hovered = ref(false);
-let closeTimer = null;
+// Einheitliches Hover-Einklappen (Muster WeirTool); Review-Bestätigung und aktives
+// Polygon-Zeichnen halten das Panel offen (modale Momente).
+const { onPanelEnter, onPanelLeave, panelVisible } = useCollapsiblePanel({
+    forceOpen: () => props.tool.state === 'REVIEW' || props.tool.isDrawingPolygon,
+});
 
-const onEnter = () => {
-    clearTimeout(closeTimer);
-    hovered.value = true;
-};
-const onLeave = () => {
-    closeTimer = setTimeout(() => { hovered.value = false; }, 180);
-};
-
-// Panel auto-opens during REVIEW and active polygon drawing
-const panelVisible = computed(() =>
-    hovered.value ||
-    props.tool.state === 'REVIEW' ||
-    props.tool.isDrawingPolygon
-);
-
-// ── Trigger label ─────────────────────────────────────────────────────────────
+// ── Header label (dynamisch: Modus/Review-Status) ────────────────────────────
 const triggerLabel = computed(() => {
     if (props.tool.state === 'REVIEW')
         return `${props.tool.pendingChanges?.length ?? 0} Zellen`;
@@ -242,82 +225,10 @@ const formattedArea = computed(() => {
 </script>
 
 <style scoped>
-/* ── Shell ────────────────────────────────────────────────────────────────── */
-.shovel-tool-ui {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    pointer-events: auto;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-}
-
-/* ── Trigger pill ─────────────────────────────────────────────────────────── */
-.tool-trigger {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--sv-surface);
-    font-family: var(--sv-font);
-    letter-spacing: 0.04em;
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--sv-border);
-    border-radius: 20px;
-    padding: 5px 12px 5px 10px;
-    color: var(--sv-text-dim);
-    font-size: 0.78rem;
-    cursor: default;
-    user-select: none;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    transition: background 0.18s, border-color 0.18s, color 0.18s;
-    white-space: nowrap;
-}
-.tool-trigger.trigger-open {
-    border-color: var(--sv-violet);
-    color: var(--sv-text-violet);
-    box-shadow: var(--sv-glow-violet);
-}
-.tool-trigger.trigger-review {
-    background: rgba(163, 230, 53, 0.14);
-    border-color: var(--sv-lime);
-    color: var(--sv-text-lime);
-}
-.tool-trigger.trigger-anchor {
-    border-color: rgba(249, 115, 22, 0.5);
-    color: #f97316;
-}
-.trigger-icon { opacity: 0.7; flex-shrink: 0; }
-.trigger-label { font-weight: 500; letter-spacing: 0.02em; }
-.trigger-dots { opacity: 0.35; font-size: 0.7rem; letter-spacing: 2px; }
-
-/* ── Panel ────────────────────────────────────────────────────────────────── */
-.tool-panel {
-    background: var(--sv-surface);
-    color: var(--sv-text);
-    font-family: var(--sv-font);
-    padding: 14px 16px;
-    border-radius: 8px;
-    font-size: 0.88rem;
-    backdrop-filter: blur(10px);
-    width: 300px;
-    box-shadow: var(--sv-glow-violet);
-    border: 1px solid var(--sv-border);
-}
-
-/* ── Panel slide transition ───────────────────────────────────────────────── */
-.panel-slide-enter-active,
-.panel-slide-leave-active {
-    transition: opacity 0.16s ease, transform 0.16s ease;
-}
-.panel-slide-enter-from,
-.panel-slide-leave-to {
-    opacity: 0;
-    transform: translateY(8px);
-}
+/* Chrome kommt GLOBAL aus styles/tool-panel.css (Vorlage WeirTool) —
+   hier nur Schaufel-Spezifisches. Review-Moment markiert sich am Rahmen. */
+.tool-ui-panel.review { border-color: var(--sv-lime, #a3e635); }
+.header-icon { opacity: 0.8; flex-shrink: 0; }
 
 /* ── Controls ─────────────────────────────────────────────────────────────── */
 .control-label {

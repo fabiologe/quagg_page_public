@@ -4,6 +4,7 @@ import Tres from '@tresjs/core'
 import App from './App.vue'
 import router from './router'
 import './features/flood-2D/styles/theme-saintv.css'
+import './features/flood-2D/styles/tool-panel.css'
 
 try {
   const app = createApp(App)

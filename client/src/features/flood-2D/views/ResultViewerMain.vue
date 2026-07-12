@@ -33,6 +33,7 @@
           :maxWaterDepth="currentLayerMax"
           :layerMode="activeLayerMode"
           :flowData="currentFlowData"
+          :qFluxData="currentQFluxData"
           :showFlow="activeLayer === 'flow'"
           :showStreamlines="activeLayer === 'streamlines'"
           :detectSpikes="depthLikeLayer"
@@ -45,6 +46,7 @@
           :bciContent="bridge.bciContent.value"
           :probeActive="activeTool === 'probe'"
           :activeTool="activeTool"
+          :networkState="networkFrameState"
           @cellProbed="onCellProbed"
           @sectionDrawn="onSectionDrawn"
           @waterStats="onWaterStats"
@@ -123,6 +125,19 @@
           :saveInterval="saveIntervalSec"
         />
 
+        <!-- 1D-Kanalnetz: Ganglinien je Schacht/Haltung + Systemvolumen/Bilanz
+             (gekoppelte Läufe; Serien aus der SWMM-.out via handler.py) -->
+        <NetworkResultsPanel
+          v-if="hasNetworkResults"
+          :nodeSeries="nodeSeries"
+          :linkSeries="linkSeries"
+          :system="systemSeries"
+          :budget="bridge.couplingBudget.value"
+          :massReport="bridge.massReport.value"
+          :currentFrame="currentFrame"
+          :saveInterval="saveIntervalSec"
+        />
+
         <!-- Cell Info Panels -->
         <template v-if="activeTool === 'probe'">
           <TransitionGroup name="slide-info">
@@ -159,11 +174,13 @@ import ResultVolumePanel from '@/features/flood-2D/components/viewer/ResultVolum
 import ResultProbePanel from '@/features/flood-2D/components/viewer/ResultProbePanel.vue';
 import ViewerControlPanel from '@/features/flood-2D/components/viewer/ViewerControlPanel.vue';
 import WeirResultsPanel from '@/features/flood-2D/components/viewer/WeirResultsPanel.vue';
+import NetworkResultsPanel from '@/features/flood-2D/components/viewer/NetworkResultsPanel.vue';
 
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { calculateVolumeWithConfidence } from '@/features/flood-2D/utils/VolumeCalculator';
 import { useWeirResults } from '@/features/flood-2D/composables/viewer/useWeirResults.js';
+import { useNetworkResults } from '@/features/flood-2D/composables/viewer/useNetworkResults.js';
 
 // --- Data Bridge (reads from window.opener) ---
 const bridge = useResultDataFromOpener();
@@ -182,6 +199,10 @@ const { weirSeries, hasWeirData } = useWeirResults({
   saveInterval: saveIntervalSec,
 });
 
+// --- 1D-Kanalnetz-Ergebnisse (gekoppelter SWMM-Lauf; Serien aus der Bridge) ---
+const { nodeSeries, linkSeries, systemSeries, hasNetworkResults, stateAtFrame } =
+  useNetworkResults({ networkResults: bridge.networkResults, saveInterval: saveIntervalSec });
+
 // --- VOLUME ---
 const analysisStore = useAnalysisStore();
 
@@ -197,6 +218,11 @@ let playTimer = null;
 const playbackSpeed = ref(1);
 
 const currentDepthData = ref(null);
+
+// 1D-Netz-Zustand des aktuellen Frames (Füllgrad/Überstau) → ResultMap3D-Einfärbung
+const networkFrameState = computed(() =>
+  hasNetworkResults.value ? stateAtFrame(currentFrame.value) : null
+);
 
 // ── Layer Switcher ──────────────────────────────────────────────────────────
 const activeLayer = ref('depth'); // 'depth' | 'velocity' | 'max_depth' | 'hazard'
@@ -224,7 +250,7 @@ const availableLayers = computed(() => {
   return layers;
 });
 
-// 0=depth, 1=velocity, 2=max_depth/hazard (heat map)
+// 0=depth (realistisch beleuchtet: Fresnel/Wellen/Himmel), 1=velocity, 2=max_depth/hazard (heat map)
 // Flow rendert die Pfeile ÜBER dem normalen (Tiefen-)Wassershader → Modus 0.
 const STATIC_GRID_LAYERS = ['max_depth', 'hazard', 'max_velocity', 'max_elev', 'arrival', 'duration'];
 const activeLayerMode = computed(() => {
@@ -260,7 +286,8 @@ const currentElevData = computed(() => {
 
 // Geschwindigkeits-Betrag des aktuellen Frames (für die Heatmap-Farbe)
 const currentVelocityData = computed(() => {
-  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow' || activeLayer.value === 'streamlines')
+  if (activeLayer.value === 'velocity' || activeLayer.value === 'flow' || activeLayer.value === 'streamlines'
+      || activeLayer.value === 'depth') // auch für Tiefe: aTurb bekommt Geschwindigkeits-Anteil → mehr Wellen/Schaum
     return bridge.velocityFrames?.value?.get(currentFrame.value) ?? null;
   return null;
 });
@@ -268,6 +295,12 @@ const currentVelocityData = computed(() => {
 // Vektorfeld (Vx/Vy, zell-zentriert) des aktuellen Frames für die Fließpfeile
 const currentFlowData = computed(() =>
   bridge.velocityVectorFrames?.value?.get(currentFrame.value) ?? null
+);
+
+// Kantenfluss-Feld (Qx/Qy in m³/s, zell-zentriert) — Impuls-Quelle für die
+// Wasser-Advektion im Shader (q=v·h ist träger als v im dünnen Film).
+const currentQFluxData = computed(() =>
+  bridge.qFluxFrames?.value?.get(currentFrame.value) ?? null
 );
 
 // ── Velocity-Farbbereich + Histogramm ───────────────────────────────────────

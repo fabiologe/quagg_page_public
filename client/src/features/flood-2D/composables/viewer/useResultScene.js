@@ -42,6 +42,8 @@ export function useResultScene() {
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    // Position auch als uSunDir im Wasser-Shader (useWaterSurface.js, Modus 0)
+    // hinterlegt — bei Änderung BEIDE Stellen anpassen, sonst wandert der Sonnen-Glint.
     dirLight.position.set(200, 600, 200);
     scene.add(dirLight);
     const fillLight = new THREE.DirectionalLight(0x4fc3f7, 0.15);
@@ -51,12 +53,19 @@ export function useResultScene() {
     return { scene, camera, renderer, controls };
   }
 
-  /** Startet den requestAnimationFrame-Loop (Controls-Update + Render). */
-  function start() {
+  /**
+   * Startet den requestAnimationFrame-Loop (Controls-Update + Render).
+   * @param {(renderer, scene, camera) => void} [preRender]  optionaler Pass VOR dem
+   *        Haupt-Render (z. B. Refraktions-RenderTarget des Wassers befüllen).
+   */
+  function start(preRender) {
     const loop = () => {
       animationId = requestAnimationFrame(loop);
       if (controls) controls.update();
-      if (renderer && scene && camera) renderer.render(scene, camera);
+      if (renderer && scene && camera) {
+        if (preRender) preRender(renderer, scene, camera);
+        renderer.render(scene, camera);
+      }
     };
     loop();
   }

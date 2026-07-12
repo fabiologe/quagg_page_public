@@ -1,24 +1,13 @@
 <template>
   <div class="toolbar-container">
     
-    <!-- Select Tool -->
-    <ToolButton 
-      @click="setTool('SELECT')"
-      :active="activeTool === 'SELECT'"
-      title="Select & Edit"
-    >
-      <SvIcon name="Interface-Essential-Cursor--Streamline-Pixel" :size="24" color="currentColor" />
-    </ToolButton>
-
-    <div class="separator"></div>
-
     <!-- Import / Export -->
     <ToolButton
       @click="$emit('open-import')"
       :active="false"
       title="Import Data"
     >
-        <SvIcon name="Interface-Essential-Clound-Download--Streamline-Pixel" :size="24" color="currentColor" />
+        <SvIcon name="Interface-Essential-Clound-Download--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- Projekt speichern (.flood2d) -->
@@ -27,7 +16,7 @@
       :active="false"
       :title="hasResults ? 'Projekt speichern (Pre + optional Ergebnisse)' : 'Projekt speichern (.flood2d)'"
     >
-        <SvIcon name="Interface-Essential-Floppy-Disk--Streamline-Pixel" :size="24" color="currentColor" />
+        <SvIcon name="Interface-Essential-Floppy-Disk--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- Projekt laden (.flood2d) -->
@@ -36,7 +25,7 @@
       :active="false"
       title="Projekt laden (.flood2d)"
     >
-        <SvIcon name="Content-Files-Folder-Open--Streamline-Pixel" :size="24" color="currentColor" />
+        <SvIcon name="Content-Files-Folder-Open--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
     <input ref="fileInput" type="file" accept=".flood2d,.zip" style="display:none" @change="onProjectFileChange" />
 
@@ -51,7 +40,7 @@
       :active="activeTool === 'DRAW_POLY' || activeTool === 'DRAW'" 
       title="Draw Building"
     >
-      <SvIcon name="Building-Real-Eastate-House-2--Streamline-Pixel" :size="24" color="currentColor" />
+      <SvIcon name="Building-Real-Eastate-House-2--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- WEIR Tool (Wehr / Überlauf) -->
@@ -61,18 +50,9 @@
       title="Wehr / Überlauf setzen"
     >
       <!-- Dam/Weir icon: horizontal wall with water arrows -->
-      <SvIcon name="Weir.png" :size="24" color="currentColor" />
+      <SvIcon name="Weir.png" :size="20" color="currentColor" />
     </ToolButton>
 
-    <!-- Add Node / Source Point -->
-    <ToolButton 
-      @click="setTool('NODE')"
-      :active="activeTool === 'NODE'"
-      title="Add Source Point / Node"
-    >
-      <SvIcon name="Map-Navigation-Pin-Location-1--Streamline-Pixel" :size="24" color="currentColor" />
-    </ToolButton>
-    
     <div class="separator"></div>
 
     <!-- SHOVEL Tool -->
@@ -82,7 +62,7 @@
       title="Shovel (Modify Terrain)"
     >
        <!-- Shovel in Dirt Icon -->
-       <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+       <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
          <!-- Shovel Group (Rotated -45deg) -->
          <g transform="rotate(-45 12 12)">
              <!-- Handle & Shaft -->
@@ -101,17 +81,7 @@
       :active="activeTool === 'BOUNDARY'"
       title="Define Boundaries"
     >
-       <SvIcon name="Design-Artboard-Shapes--Streamline-Pixel" :size="24" color="currentColor" />
-    </ToolButton>
-
-    <!-- CULVERT Tool (Durchlässe) -->
-    <ToolButton
-      @click="setTool('CULVERT')"
-      :active="activeTool === 'CULVERT'"
-      title="Create Culvert"
-    >
-       <!-- Arch/Tunnel Icon -->
-       <SvIcon name="Interface-Essential-Link--Streamline-Pixel" :size="24" color="currentColor" />
+       <SvIcon name="Design-Artboard-Shapes--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- KANALNETZ: Schacht setzen -->
@@ -120,7 +90,7 @@
       :active="activeTool === 'NET_NODE'"
       title="Kanalnetz: Schacht setzen"
     >
-      <span style="font-size:18px; line-height:1">🕳️</span>
+      <SvIcon name="Schacht.png" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- KANALNETZ: Haltung ziehen -->
@@ -129,7 +99,7 @@
       :active="activeTool === 'NET_CONDUIT'"
       title="Kanalnetz: Haltung ziehen (Schacht → Schacht)"
     >
-      <span style="font-size:18px; line-height:1">🧵</span>
+      <SvIcon name="Haltung.png" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- BRIDGE Tool (Brückenbauwerk) -->
@@ -138,7 +108,7 @@
       :active="activeTool === 'BRIDGE'"
       title="Brücke / Bridge setzen"
     >
-      <SvIcon name="Bridge.png" :size="24" color="currentColor" />
+      <SvIcon name="Bridge.png" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- TEXTURE Tool (Surface Roughness Painting) -->
@@ -148,7 +118,7 @@
       title="Texture Brush (Oberfläche bemalen)"
     >
        <!-- Paint Brush Icon -->
-       <SvIcon name="Design-Color-Painting-Palette--Streamline-Pixel" :size="24" color="currentColor" />
+       <SvIcon name="Design-Color-Painting-Palette--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <ToolButton
@@ -156,7 +126,7 @@
       :active="activeTool === 'CROP'"
       title="Terrain zuschneiden (Rechteck / Polygon)"
     >
-      <SvIcon name="Interface-Essential-Scisor--Streamline-Pixel" :size="24" color="currentColor" />
+      <SvIcon name="Interface-Essential-Scisor--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
     
     <div class="separator"></div>
@@ -168,7 +138,7 @@
       title="Bathymetrie Preprocessing (DGM + Vermessung)"
     >
       <!-- Topo/Cross-section icon -->
-      <SvIcon name="Interface-Essential-Stat--Streamline-Pixel" :size="24" color="currentColor" />
+      <SvIcon name="Interface-Essential-Stat--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <div class="separator"></div>
@@ -179,7 +149,7 @@
       :active="activeTool === 'PAN'"
       title="Pan View"
     >
-       <SvIcon name="Interface-Essential-Move--Streamline-Pixel" :size="24" color="currentColor" />
+       <SvIcon name="Interface-Essential-Move--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <!-- INFO Tool -->
@@ -188,7 +158,7 @@
       :active="activeTool === 'INFO'"
       title="Inspect Terrain"
     >
-       <SvIcon name="Interface-Essential-Information-Circle-2--Streamline-Pixel" :size="24" color="currentColor" />
+       <SvIcon name="Interface-Essential-Information-Circle-2--Streamline-Pixel" :size="20" color="currentColor" />
     </ToolButton>
 
     <div class="separator"></div>
@@ -311,8 +281,6 @@ const setMode = (m) => {
       store.setActiveTool('DRAW_POLY');
   } else if (m === 'DRAW_LINE') {
       store.setActiveTool('DRAW_LINE');
-  } else if (m === 'NODE') {
-      store.setActiveTool('NODE');
   } else if (m === 'SELECT') {
       store.setActiveTool('SELECT');
   }
@@ -357,18 +325,23 @@ const setTool = (tool) => {
 
 <style scoped>
 .toolbar-container {
-    width: 64px;
+    width: 52px;
     height: 100%;
     background-color: var(--sv-bg-2);
     border-right: 1px solid var(--sv-border);
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 1rem;
-    gap: 0.5rem;
+    padding: 0.5rem 0;
+    gap: 3px;
     box-shadow: 2px 0 18px rgba(139, 92, 246, 0.18);
     z-index: 10;
+    /* Fallback bei sehr niedrigen Fenstern: scrollen statt Buttons abschneiden */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
 }
+.toolbar-container::-webkit-scrollbar { display: none; }
 
 /* Common button styles moved to ToolButton.vue */
 
@@ -377,10 +350,11 @@ const setTool = (tool) => {
 }
 
 .separator {
-    width: 32px;
+    width: 28px;
     height: 1px;
+    flex-shrink: 0;
     background-color: var(--sv-border);
-    margin: 0.5rem 0;
+    margin: 3px 0;
 }
 
 /* Mini Buttons for Views */

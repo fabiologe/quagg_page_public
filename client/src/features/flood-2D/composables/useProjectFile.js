@@ -8,7 +8,7 @@
  * Format `.flood2d` (ZIP):
  *   manifest.json      — Version, Terrain-Header, hasResults, Surface-/Results-Metadaten
  *   terrain.f32        — Float32 gridData (bottom-up)
- *   geometry.json      — GEO_FIELDS (modifications/boundaries/nodes/weirs/bridges/culvertLinks)
+ *   geometry.json      — GEO_FIELDS (modifications/boundaries/weirs/weirLines/bridges)
  *   network.json       — Kanalnetz (useNetworkStore: nodes/links/format) für die 1D/2D-Kopplung
  *   hydraulics.json    — Ganglinien/Assignments/Regen/globale Boundary/…
  *   sim.json           — Simulationsparameter
@@ -99,6 +99,7 @@ export async function saveProject({ includeResults = false, onProgress = null } 
   if (net.hasNetwork) {
     zip.file('network.json', JSON.stringify({
       nodes: J(net.nodes), links: J(net.links), format: net.format || null,
+      prefillPercent: Number(net.prefillPercent) || 0,
     }));
   }
 
@@ -175,6 +176,13 @@ export async function saveProject({ includeResults = false, onProgress = null } 
       if (rd.arrivalTimeGrid) zip.file('results/arrival.f32',   f32buf(rd.arrivalTimeGrid));
       if (rd.durationGrid)    zip.file('results/duration.f32',  f32buf(rd.durationGrid));
 
+      // 1D-Kanalnetz-Serien + Kopplungs-/Massenbilanz (kleine JSON, gekoppelte Läufe)
+      if (rd.networkResults || rd.couplingBudget || rd.massReport) {
+        zip.file('results/network1d.json', JSON.stringify({
+          networkResults: rd.networkResults, couplingBudget: rd.couplingBudget, massReport: rd.massReport,
+        }));
+      }
+
       manifest.hasResults = true;
       manifest.results = {
         frameIds, cellCount, hasVel, hasVec,
@@ -242,6 +250,7 @@ export async function loadProject(file, onProgress = null) {
     const n = JSON.parse(await nf.async('string'));
     net.setArrays(n.nodes || [], n.links || []);
     net.format = n.format ?? null;
+    net.prefillPercent = Number(n.prefillPercent) || 0;
   } else {
     net.clear();
   }
@@ -327,6 +336,15 @@ export async function loadProject(file, onProgress = null) {
 
     if (manifest.results.maxWaterDepth) sim.maxWaterDepth = manifest.results.maxWaterDepth;
     if (manifest.results.simDuration) sim.simDuration = manifest.results.simDuration;
+
+    // 1D-Kanalnetz-Serien + Kopplungs-/Massenbilanz (gekoppelte Läufe)
+    const n1 = zip.file('results/network1d.json');
+    if (n1) {
+      const j = JSON.parse(await n1.async('string'));
+      if (j.networkResults) sim.setNetworkResults(j.networkResults);
+      if (j.couplingBudget) sim.setCouplingBudget(j.couplingBudget);
+      if (j.massReport)     sim.setMassReport(j.massReport);
+    }
   }
 
   return { hasResults: !!manifest.hasResults, frameCount: manifest.results?.frameIds?.length || 0 };

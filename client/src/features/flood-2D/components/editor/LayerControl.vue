@@ -54,10 +54,12 @@ const selectMode = (mode) => {
     position: absolute;
     bottom: 16px;
     right: 16px;
-    background: rgba(44, 62, 80, 0.85);
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-border);
     backdrop-filter: blur(8px);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: var(--sv-radius);
+    box-shadow: var(--sv-glow-violet);
+    font-family: var(--sv-font);
     display: flex;
     flex-direction: column;
     overflow: visible; /* Changed from hidden to allow dropdown */
@@ -65,9 +67,9 @@ const selectMode = (mode) => {
 }
 .layer-btn {
     padding: 10px;
-    color: #bdc3c7;
+    color: var(--sv-text-dim);
     cursor: pointer;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--sv-border);
     transition: all 0.2s;
     user-select: none;
     display: flex;
@@ -75,10 +77,11 @@ const selectMode = (mode) => {
     justify-content: center;
 }
 .layer-btn:last-child { border-bottom: none; }
-.layer-btn:hover:not(.disabled) { background: rgba(52, 152, 219, 0.2); color: #ecf0f1; }
+.layer-btn:hover:not(.disabled) { background: rgba(139, 92, 246, 0.18); color: var(--sv-text-lime); }
 .layer-btn.active {
-    background: #3498db;
-    color: white;
+    background: rgba(139, 92, 246, 0.22);
+    color: var(--sv-lime);
+    box-shadow: inset 0 0 8px rgba(163, 230, 53, 0.15);
 }
 .layer-btn.disabled {
     opacity: 0.4;
@@ -97,10 +100,11 @@ const selectMode = (mode) => {
     bottom: 0;
     right: 100%;
     margin-right: 10px;
-    background: rgba(44, 62, 80, 0.95);
+    background: var(--sv-surface);
+    border: 1px solid var(--sv-border);
     backdrop-filter: blur(8px);
-    border-radius: 8px;
-    box-shadow: -4px 4px 15px rgba(0,0,0,0.3);
+    border-radius: var(--sv-radius);
+    box-shadow: -4px 4px 15px rgba(0,0,0,0.35), var(--sv-glow-violet);
     overflow: hidden;
     min-width: 200px;
     display: flex;
@@ -110,9 +114,10 @@ const selectMode = (mode) => {
 .layer-dropdown-item {
     padding: 12px 16px;
     font-size: 0.85rem;
-    color: #bdc3c7;
+    font-family: var(--sv-font);
+    color: var(--sv-text-dim);
     cursor: pointer;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--sv-border);
     transition: all 0.2s;
     white-space: nowrap;
 }
@@ -120,12 +125,12 @@ const selectMode = (mode) => {
     border-bottom: none;
 }
 .layer-dropdown-item:hover:not(.disabled) {
-    background: rgba(52, 152, 219, 0.2); 
-    color: #ecf0f1;
+    background: rgba(139, 92, 246, 0.18);
+    color: var(--sv-text-lime);
 }
 .layer-dropdown-item.active {
-    background: #3498db;
-    color: white;
+    background: rgba(139, 92, 246, 0.22);
+    color: var(--sv-lime);
 }
 .layer-dropdown-item.disabled {
     opacity: 0.4;

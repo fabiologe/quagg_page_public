@@ -39,6 +39,34 @@
     --sv-font:        'Share Tech Mono', 'Courier New', monospace;
 }
 
+/* ── Scrollbars (global) ──────────────────────────────────────────────────────
+   Zentrale „Mutter"-Definition: gilt für ALLE scrollbaren Elemente (Panels,
+   Modals, Tabellen, Dropdowns), damit nirgends weiße System-Scrollbars das
+   Theme brechen. Firefox über scrollbar-*, Chromium/WebKit über ::-webkit-*. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sv-violet-dim) var(--sv-bg-2);
+}
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+*::-webkit-scrollbar-track {
+    background: var(--sv-bg-2);
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--sv-violet-dim);
+    border-radius: 6px;
+    border: 2px solid var(--sv-bg-2);
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--sv-violet);
+    box-shadow: var(--sv-glow-violet);
+}
+*::-webkit-scrollbar-corner {
+    background: var(--sv-bg-2);
+}
+
 /* ── Basis-Scope: alles unter .sv-theme bekommt Font + Textfarbe ───────────── */
 .sv-theme {
     font-family: var(--sv-font);

@@ -79,14 +79,11 @@ export function useHighEndSolverExport() {
         };
 
         // ── 2. Geo Entities ───────────────────────────────────────────────────
-        const nodes = toRaw(geoStore.nodes).map(n => ({
-            id:   n.id,
-            type: n.type || 'GENERIC',
-            x:    n.x,
-            y:    n.y,
-            z:    n.z ?? 0,
-            displayName: n.displayName || n.id,
-        }));
+        // (nodes/culverts entfernt 2026-07 — das Kanalnetz läuft als SWMM-1D-Kopplung
+        //  über coupledScenario.js, nicht mehr über geo.nodes/geo.culverts. Die leeren
+        //  Arrays bleiben im Payload, damit das Backend-Schema stabil bleibt.)
+        const nodes = [];
+        const culverts = [];
 
         const weirs = toRaw(geoStore.weirs).map(w => ({
             id:        w.id,
@@ -126,39 +123,6 @@ export function useHighEndSolverExport() {
                 w:         b.width   ?? 5.0,
             })),
         }));
-
-        // Culvert serialization — full hydraulic params + row/col for culvert_middleware.py
-        const xll      = header.xllcorner ?? header.xll ?? 0;
-        const yll      = header.yllcorner ?? header.yll ?? 0;
-        const cellsize = header.cellsize ?? 1;
-        const nrows    = header.nrows ?? 0;
-        const rawNodes = toRaw(geoStore.nodes);
-        const nodeMap  = new Map(rawNodes.map(n => [n.id, n]));
-
-        const culverts = toRaw(geoStore.culvertLinks).map(l => {
-            const inNode  = nodeMap.get(l.sourceId);
-            const outNode = nodeMap.get(l.targetId);
-            // Grid row/col (0-based, top-down for culvert_middleware.py interface)
-            const toRowCol = (node) => {
-                if (!node) return { row: null, col: null };
-                const col = Math.floor((node.x - xll) / cellsize);
-                const row = (nrows - 1) - Math.floor((node.y - yll) / cellsize);
-                return { row, col };
-            };
-            return {
-                id:        l.id,
-                sourceId:  l.sourceId,
-                targetId:  l.targetId,
-                inlet:     toRowCol(inNode),
-                outlet:    toRowCol(outNode),
-                z_in:      l.z_in      ?? 0.0,
-                z_out:     l.z_out     ?? 0.0,
-                diameter:  l.diameter  ?? 1.0,
-                length:    l.length    ?? 10.0,
-                manning_n: l.manning_n ?? 0.013,
-                Cd:        l.Cd        ?? 0.6,
-            };
-        });
 
         const modifications = toRaw(geoStore.modifications).map(m => ({
             id:         m.id,

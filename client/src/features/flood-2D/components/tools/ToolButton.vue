@@ -19,8 +19,9 @@ defineEmits(['click']);
 
 <style scoped>
 .tool-btn {
-    width: 40px;
-    height: 40px;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -31,7 +32,7 @@ defineEmits(['click']);
     cursor: pointer;
     transition: all 0.2s;
     font-weight: 700;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-family: var(--sv-font);
 }
 

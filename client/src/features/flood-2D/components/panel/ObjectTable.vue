@@ -25,20 +25,15 @@
 
         <!-- TYPE ICON -->
         <div class="col-type">
-            <span v-if="type === 'NODE'" title="Node">🟢</span>
-            <span v-else-if="type === 'BUILDING'" title="Building"><SvEmoji emoji="🏢" :size="14" /></span>
+            <span v-if="type === 'BUILDING'" title="Building"><SvEmoji emoji="🏢" :size="14" /></span>
             <span v-else-if="type === 'BOUNDARY'" title="Boundary"><SvEmoji emoji="〰" :size="14" /></span>
             <span v-else><SvEmoji emoji="❓" :size="14" /></span>
         </div>
 
         <!-- ROLE / INFO -->
         <div class="col-role">
-            <!-- Node Specifics -->
-            <span v-if="type === 'NODE'" class="badge" :class="getRoleClass(item)">
-                {{ getNodeRole(item) }}
-            </span>
             <!-- Building Height -->
-            <span v-else-if="type === 'BUILDING'" class="info">
+            <span v-if="type === 'BUILDING'" class="info">
                 {{ formatNumber(item.properties.height) }}m
             </span>
              <!-- Boundary Name -->
@@ -52,6 +47,12 @@
             <button class="action-btn" @click.stop="$emit('zoom-to', item)" title="Zoom to Target">
                 <SvEmoji emoji="🎯" :size="14" />
             </button>
+            <button
+                v-if="type === 'BOUNDARY'"
+                class="del-btn"
+                @click.stop="deleteBoundary(item)"
+                title="Boundary löschen"
+            >×</button>
         </div>
       </div>
 
@@ -72,7 +73,7 @@ import { useGeoStore } from '../../stores/useGeoStore';
 import { useHydraulicStore } from '../../stores/useHydraulicStore'; // IMPORT
 
 const props = defineProps({
-  type: { type: String, required: true }, // NODE, BUILDING, BOUNDARY
+  type: { type: String, required: true }, // BUILDING, BOUNDARY
   items: { type: Array, required: true }
 });
 
@@ -105,20 +106,15 @@ const formatNumber = (val) => {
     return typeof val === 'number' ? val.toFixed(2) : '-';
 };
 
-// --- ROLES (Nodes) ---
-const getNodeRole = (item) => {
-    const assign = hydStore.getAssignment(item.id);
-    if (assign) {
-        if (assign.type === 'INFLOW_DYNAMIC') return '🌊 Inflow';
-        if (assign.type === 'INFLOW_CONSTANT') return '🚰 Inflow (K)';
-        if (assign.type === 'OUTFLOW_FREE') return '↘️ Outflow';
-        if (assign.type === 'WATERLEVEL_FIX') return '🛑 Level';
-    }
-    return '-'; // or item.role if exists
-};
-
-const getRoleClass = (item) => {
-    return 'neutral';
+// --- DELETE (Boundary) ---
+const deleteBoundary = (item) => {
+    const id = item.id || item.properties?.id;
+    if (!id) return;
+    if (!geoStore.removeBoundary(id)) return;
+    // Verwaiste Ganglinien-Zuweisung + Selektion aufräumen
+    hydStore.removeAssignment(id);
+    if (simStore.selection === id) simStore.clearSelection();
+    if (simStore.multiSelection?.has?.(id)) simStore.toggleSelection(id);
 };
 
 </script>
@@ -170,7 +166,7 @@ const getRoleClass = (item) => {
 .col-id { flex: 0 0 80px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-type { flex: 0 0 40px; text-align: center; }
 .col-role { flex: 1; padding: 0 0.5rem; overflow: hidden; }
-.col-actions { flex: 0 0 40px; display: flex; justify-content: flex-end; }
+.col-actions { flex: 0 0 56px; display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 
 /* BADGES */
 .badge {
@@ -195,6 +191,19 @@ const getRoleClass = (item) => {
     transition: opacity 0.2s;
 }
 .action-btn:hover { opacity: 1; transform: scale(1.1); }
+
+/* Rotes Lösch-X — Stil wie .nt-del in NetworkTable (Schacht/Haltung) */
+.del-btn {
+    background: none; border: none;
+    color: #e74c3c;
+    font-size: 1.1rem; line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.table-row:hover .del-btn { opacity: 1; }
+.del-btn:hover { transform: scale(1.2); }
 
 .empty-state {
     padding: 2rem;

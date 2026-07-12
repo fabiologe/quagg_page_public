@@ -132,6 +132,11 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         return assignments.value[id] || null;
     }
 
+    /** Zuweisung eines gelöschten Geo-Objekts entfernen (verwaiste Einträge vermeiden). */
+    function removeAssignment(id) {
+        if (assignments.value[id]) delete assignments.value[id];
+    }
+
     function getAssignmentsByGanglinie(id) {
         let count = 0;
         for (const key in assignments.value) {
@@ -195,6 +200,7 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         assignToObjects,
         assignBoundaryCondition,
         getAssignment,
+        removeAssignment,
         getAssignmentsByGanglinie,
         setKostraGrid,
         setRainData,

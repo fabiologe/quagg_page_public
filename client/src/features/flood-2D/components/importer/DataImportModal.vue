@@ -10,15 +10,8 @@
         <button
           :class="{ active: activeTab === 'BATHYMETRY' }"
           @click="activeTab = 'BATHYMETRY'"
-          class="tab-highlight"
         >
           Vermessungspunkte
-        </button>
-        <button
-          :class="{ active: activeTab === 'NODES' }"
-          @click="activeTab = 'NODES'"
-        >
-          Kanalnetz (.xml)
         </button>
         <button
           :class="{ active: activeTab === 'BUILDINGS' }"
@@ -47,19 +40,8 @@
           <BathymetryImportTab @stage1-done="$emit('close')" />
         </div>
 
-        <!-- NODE IMPORT -->
-        <div v-if="activeTab === 'NODES'" class="import-panel">
-          <p class="description">
-            Importiere Schächte und Einläufe aus ISYBAU/XML Daten.
-            <br><small>Erwartet Tag: &lt;AbwassertechnischeAnlage&gt;</small>
-          </p>
-          
-          <label class="file-drop-zone">
-            <input type="file" accept=".xml" @change="handleFileSelect" :disabled="importing">
-            <span v-if="!importing"><SvEmoji emoji="📁" :size="13" /> Wähle .XML Datei</span>
-            <span v-else>Importiere...</span>
-          </label>
-        </div>
+        <!-- Kanalnetz-Import wandert in den Netz-Tab (NetworkImportButton, ISYBAU/IFC →
+             useNetworkStore) — der Legacy-XML-Import in geoStore.nodes wurde entfernt. -->
 
         <div v-if="activeTab === 'BUILDINGS'" class="import-panel">
           <p class="description">
@@ -136,14 +118,13 @@ import { BoundaryTools } from '@/features/flood-2D/middleware/BoundaryTools.js';
 import BathymetryImportTab from './BathymetryImportTab.vue';
 
 // Import parsers
-import { parseXMLNodes } from '@/features/flood-2D/middleware/importers/XMLNodeParser.js';
 import { parseGeoJSONBuildings, parseGeoJSONBoundaries, parseGeoJSONSurfaces } from '@/features/flood-2D/middleware/importers/GeoJSONParser.js';
 
 const emit = defineEmits(['close']);
 const geoStore = useGeoStore();
 const surfaceStore = useSurfaceStore();
 
-const activeTab = ref('NODES'); // BATHYMETRY | NODES | BUILDINGS | BOUNDARIES | SURFACE
+const activeTab = ref('BATHYMETRY'); // BATHYMETRY | BUILDINGS | BOUNDARIES | SURFACE
 const importing = ref(false);
 const feedback = ref(null);
 const selectedSurfaceMaterial = ref(1); // Default is Asphalt
@@ -159,20 +140,7 @@ const handleFileSelect = async (event) => {
         const name = file.name.toLowerCase();
         let result = null;
 
-        if (activeTab.value === 'NODES') {
-            if (!name.endsWith('.xml')) throw new Error("Bitte eine .xml Datei für Kanalnetz wählen.");
-            
-            const text = await file.text();
-            const nodes = await parseXMLNodes(text); // Assume parser returns array
-            
-            let count = 0;
-            if (nodes && nodes.length) {
-                nodes.forEach(n => geoStore.addNode(n));
-                count = nodes.length;
-            }
-            result = { type: 'XML', count };
-            
-        } else if (activeTab.value === 'BUILDINGS') {
+        if (activeTab.value === 'BUILDINGS') {
             if (!(name.endsWith('.json') || name.endsWith('.geojson'))) throw new Error("Bitte eine .json/.geojson Datei wählen.");
             
             const text = await file.text();
@@ -282,81 +250,80 @@ const handleFileSelect = async (event) => {
 }
 
 .modal-content {
-    background: #2c3e50;
-    color: #ecf0f1;
+    background: var(--sv-bg-2);
+    color: var(--sv-text);
     width: 660px;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    border: 1px solid var(--sv-border);
+    border-radius: var(--sv-radius);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5), var(--sv-glow-violet);
     overflow: hidden;
-    font-family: 'Segoe UI', sans-serif;
+    font-family: var(--sv-font);
 }
 
 .modal-header {
-    background: #34495e;
+    background: var(--sv-bg);
     padding: 1rem 1.5rem;
     display: flex; justify-content: space-between; align-items: center;
-    border-bottom: 1px solid #465c71;
+    border-bottom: 1px solid var(--sv-border);
 }
-.modal-header h3 { margin: 0; font-size: 1.1rem; color: #fff; }
-.close-btn { 
-    background: none; border: none; color: #95a5a6; font-size: 1.5rem; cursor: pointer; 
+.modal-header h3 {
+    margin: 0; font-size: 1.1rem;
+    color: var(--sv-text-violet);
+    text-shadow: var(--sv-glow-violet);
+    text-transform: uppercase; letter-spacing: 1px;
 }
-.close-btn:hover { color: #fff; }
+.close-btn {
+    background: none; border: none; color: var(--sv-text-dim); font-size: 1.5rem; cursor: pointer;
+}
+.close-btn:hover { color: var(--sv-lime); }
 
 /* TABS */
 .tabs {
     display: flex;
-    background: #233140;
+    background: var(--sv-bg);
 }
 .tabs button {
     flex: 1;
     padding: 1rem;
     background: transparent;
     border: none;
-    color: #95a5a6;
+    color: var(--sv-text-dim);
+    font-family: var(--sv-font);
     font-weight: 600;
     cursor: pointer;
     border-bottom: 3px solid transparent;
     transition: all 0.2s;
 }
-.tabs button:hover { background: #2c3e50; color: #bdc3c7; }
+.tabs button:hover { background: rgba(139, 92, 246, 0.12); color: var(--sv-text); }
 .tabs button.active {
-    color: #3498db;
-    border-bottom-color: #3498db;
-    background: #2c3e50;
-}
-
-.tabs button.tab-highlight {
-    color: #2ecc71;
-    border-bottom-color: transparent;
-}
-.tabs button.tab-highlight.active {
-    color: #2ecc71;
-    border-bottom-color: #2ecc71;
+    color: var(--sv-lime);
+    border-bottom-color: var(--sv-lime);
+    background: var(--sv-bg-2);
 }
 
 .tab-content { padding: 1.5rem; text-align: center; }
 .bathy-panel { text-align: left; }
 
-.description { margin-bottom: 1.5rem; color: #bdc3c7; line-height: 1.5; font-size: 0.95rem; }
-.description small { color: #7f8c8d; }
+.description { margin-bottom: 1.5rem; color: var(--sv-text); line-height: 1.5; font-size: 0.95rem; }
+.description small { color: var(--sv-text-dim); }
 
 /* DROP ZONE */
 .file-drop-zone {
     display: block;
-    border: 2px dashed #465c71;
-    border-radius: 8px;
+    border: 2px dashed var(--sv-border);
+    border-radius: var(--sv-radius);
     padding: 2rem;
     cursor: pointer;
     transition: all 0.2s;
-    background: #34495e;
+    background: var(--sv-surface-2);
 }
 .file-drop-zone:hover {
-    border-color: #3498db;
-    background: #3b536b;
+    border-color: var(--sv-lime);
+    background: rgba(139, 92, 246, 0.15);
+    box-shadow: var(--sv-glow-lime);
 }
 .file-drop-zone input { display: none; }
-.file-drop-zone span { font-weight: bold; color: #ecf0f1; }
+.file-drop-zone span { font-weight: bold; color: var(--sv-text); }
 
 /* FEEDBACK */
 .feedback-msg {
@@ -366,15 +333,15 @@ const handleFileSelect = async (event) => {
     font-size: 0.9rem;
     text-align: center;
 }
-.feedback-msg.success { background: rgba(46, 204, 113, 0.2); color: #2ecc71; border: 1px solid #2ecc71; }
-.feedback-msg.error { background: rgba(231, 76, 60, 0.2); color: #e74c3c; border: 1px solid #e74c3c; }
-.feedback-msg.warning { background: rgba(243, 156, 18, 0.2); color: #f39c12; border: 1px solid #f39c12; }
-.feedback-msg.info { background: rgba(52, 152, 219, 0.2); color: #3498db; border: 1px solid #3498db; }
+.feedback-msg.success { background: rgba(163, 230, 53, 0.12); color: var(--sv-lime); border: 1px solid var(--sv-border-lime); }
+.feedback-msg.error { background: rgba(231, 76, 60, 0.15); color: #e74c3c; border: 1px solid rgba(231, 76, 60, 0.45); }
+.feedback-msg.warning { background: rgba(243, 156, 18, 0.15); color: #f39c12; border: 1px solid rgba(243, 156, 18, 0.45); }
+.feedback-msg.info { background: rgba(139, 92, 246, 0.15); color: var(--sv-text-violet); border: 1px solid var(--sv-border); }
 
 /* MISC */
 .material-select-wrapper { margin-bottom: 20px; }
-.material-select-wrapper label { color: #bdc3c7; font-size: 0.85rem; padding-right: 10px; }
-.material-select { padding: 4px; border-radius: 4px; background: #ecf0f1; border: 1px solid #95a5a6; }
+.material-select-wrapper label { color: var(--sv-text-dim); font-size: 0.85rem; padding-right: 10px; }
+.material-select { padding: 4px; border-radius: 4px; background: var(--sv-bg); color: var(--sv-text-lime); border: 1px solid var(--sv-border); font-family: var(--sv-font); }
 .status-warn { color: #f39c12; margin-bottom: 10px; font-size: 0.85rem; font-weight: bold; }
 .file-drop-zone.disabled { opacity: 0.5; cursor: not-allowed; }
 

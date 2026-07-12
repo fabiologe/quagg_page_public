@@ -13,7 +13,7 @@
  * Zone shape:
  *  {
  *    id:        string          unique key
- *    type:      ZoneType        'BATHYMETRY' | 'BRIDGE' | 'CULVERT' | 'WEIR'
+ *    type:      ZoneType        'BATHYMETRY' | 'BRIDGE' | 'WEIR'
  *    label:     string          display name
  *    priority:  number          merge order — higher wins on overlap
  *    indices:   Uint32Array|null  grid cell indices (null = not yet computed)
@@ -32,7 +32,6 @@ import { useGeoStore } from './useGeoStore.js';
 export const ZoneType = Object.freeze({
     BATHYMETRY: 'BATHYMETRY',
     BRIDGE:     'BRIDGE',
-    CULVERT:    'CULVERT',
     WEIR:       'WEIR',
 });
 
@@ -40,7 +39,6 @@ export const ZoneType = Object.freeze({
 export const ZonePriority = Object.freeze({
     BATHYMETRY:  10,
     BRIDGE:     100,
-    CULVERT:     80,
     WEIR:        60,
 });
 
@@ -48,7 +46,6 @@ export const ZonePriority = Object.freeze({
 export const ZoneColors = Object.freeze({
     BATHYMETRY: { lo: [0x1a/255, 0x2f/255, 0xe0/255], hi: [0x00, 1.00, 0x99/255] },
     BRIDGE:     { lo: [1.00, 0.40, 0.00],              hi: [1.00, 0.85, 0.00]     },
-    CULVERT:    { lo: [1.00, 0.20, 0.20],              hi: [1.00, 0.65, 0.65]     },
     WEIR:       { lo: [0.60, 0.20, 1.00],              hi: [0.85, 0.60, 1.00]     },
 });
 

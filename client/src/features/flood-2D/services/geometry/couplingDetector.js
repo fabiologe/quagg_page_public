@@ -84,6 +84,9 @@ export function detectCouplingNodes(model, dem, opts = {}) {
 
     for (const n of model.nodeList) {
         if (!COUPLING_ROLES.has(n.role)) continue;
+        // Explizit verdeckelt (Panel „koppelt nicht"): kein 2D-Austausch — Amax=0 hieße
+        // im Solver „unbegrenzt", darum wird der Knoten hier ganz ausgelassen.
+        if (n.attrs.couple === false) continue;
         const { col, row } = worldToCell(n.geom.x, n.geom.y, header);
         if (!inBounds(col, row, header)) {
             warnings.push(`Knoten ${n.id} liegt außerhalb des DEM — nicht koppelbar.`);
