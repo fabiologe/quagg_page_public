@@ -37,6 +37,12 @@
                 {{ tab.label }}
             </button>
           </div>
+
+          <div class="sidebar-group">
+            <button class="tab-btn tutorial-btn" @click="restartTutorial">
+                🐀 Tutorial starten
+            </button>
+          </div>
         </div>
 
         <!-- Content Area -->
@@ -318,12 +324,20 @@ Wehr1    S1     S2    TRANSVERSE  1.20      1.84</div>
 <script setup>
 import { ref } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
+import { useTutorialGuide } from '../../tutorial/useTutorialGuide.js';
 
 defineProps({
   isOpen: Boolean
 });
 
-defineEmits(['close']);
+const emit = defineEmits(['close']);
+
+const { resetAndStartTour } = useTutorialGuide();
+
+function restartTutorial() {
+  emit('close'); // Modal zu, damit die Ratte freie Sicht hat
+  resetAndStartTour();
+}
 
 const userTabs = [
   { id: 'general', label: 'Allgemein' },
@@ -368,7 +382,6 @@ const activeTab = ref('general');
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  font-size: 1.1rem;
   color: #aeadd2;
 }
 
@@ -411,43 +424,55 @@ const activeTab = ref('general');
 }
 
 .group-title {
-    font-size: 0.75rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.42rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: #8f8be1;
-    font-weight: 700;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.4rem;
     padding-left: 0.5rem;
 }
 
+/* Vertikale Sidebar-Nav — bewusst kein boxed Pixel-Button (siehe Design Schema
+   unten): text-align:left + volle Breite passen nicht zu einer Button-Reihe. */
 .tab-btn {
   text-align: left;
   padding: 0.75rem 1rem;
   background: transparent;
   border: none;
+  border-left: 3px solid transparent;
   border-radius: 6px;
   cursor: pointer;
-  color: #64748b;
+  color: #594491;
   font-weight: 500;
   font-size: 0.9rem;
   transition: all 0.2s;
 }
 
+.tutorial-btn {
+  color: #00994d;
+  border-left-color: #00e855;
+}
+.tutorial-btn:hover {
+  background: rgba(0, 232, 85, 0.08);
+  color: #007a3d;
+}
+
 .tab-btn:hover {
-  background: #e2e8f0;
-  color: #334155;
+  background: #f3f2fb;
+  color: #040647;
 }
 
 .tab-btn.active {
-  background: #fff;
-  color: #0ea5e9;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  font-weight: 600;
+  background: #f3f2fb;
+  color: #040647;
+  border-left-color: #2ecc71;
+  font-weight: 700;
 }
 
 .tab-btn.tech-btn.active {
-    color: #8b5cf6; /* Purple for tech tabs */
-    border-left: 3px solid #8b5cf6;
+    color: #040647;
+    border-left-color: #8f8be1;
 }
 
 .help-content {
@@ -463,7 +488,6 @@ const activeTab = ref('general');
   margin-bottom: 1.5rem;
   font-family: 'Press Start 2P', monospace;
   font-size: 0.52rem;
-  color: #8f8be1;
   letter-spacing: -0.02em;
   color: #1e293b;
   border-bottom: 2px solid #f1f5f9;
@@ -473,9 +497,9 @@ const activeTab = ref('general');
 .content-section h5 {
   margin-top: 2rem;
   margin-bottom: 1rem;
-  font-size: 1.1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
   color: #475569;
-  font-weight: 700;
 }
 
 .content-section p, .content-section li {
@@ -550,53 +574,6 @@ const activeTab = ref('general');
 .help-content::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 .help-content::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* ── Design Schema ────────────────────────────── */
-.tab-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
-  letter-spacing: 0.06em;
-  background: transparent !important;
-  border: 1px solid #594491 !important;
-  color: #aeadd2 !important;
-  border-radius: 5px !important;
-  padding: 0.45rem 0.75rem !important;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491 !important; color: #fff !important; }
-.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
-
-.primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
-  transition: background 0.15s;
-}
-.primary-btn:hover:not(:disabled) { background: #594491 !important; }
-.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
-
-.secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
-  transition: background 0.12s;
-}
-.secondary-btn:hover { background: #f3f2fb !important; }
-
-.modal-body h3, .panel h3 {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.55rem !important;
-  color: #594491 !important;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #aeadd2 !important;
-  padding-bottom: 0.4rem !important;
-  margin-bottom: 0.75rem !important;
-}
-
 .info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -615,9 +592,10 @@ const activeTab = ref('general');
 }
 
 .info-card-title {
-  font-weight: 700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.44rem;
   color: #1e293b;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
 
 .color-dot {

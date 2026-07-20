@@ -24,6 +24,9 @@
       <span v-if="section.structures && section.structures.length" class="ctrl-info">
         <SvEmoji emoji="🏗" :size="13" /> {{ section.structures.length }} Bauwerk{{ section.structures.length === 1 ? '' : 'e' }}
       </span>
+      <span v-if="section.network && section.network.length" class="ctrl-info">
+        <SvEmoji emoji="🕳" :size="13" /> {{ section.network.length }} Netz-Element{{ section.network.length === 1 ? '' : 'e' }}
+      </span>
     </div>
 
     <div class="panel-body">
@@ -221,6 +224,74 @@ const structuresPlugin = {
   },
 };
 
+// Plugin: Kanalnetz-Durchstoßpunkte (Rohre als Querschnitts-Kreise, Schächte als
+// Kästen Sohle→Deckel) mit Füllstand des aktuellen Frames (liest chart.$secMeta.network).
+const networkPlugin = {
+  id: 'sectionNetwork',
+  afterDatasetsDraw(chart) {
+    const meta = chart.$secMeta;
+    if (!meta || !meta.network?.length) return;
+    const { network, yOffset } = meta;
+    const xS = chart.scales.x, yS = chart.scales.y, ctx = chart.ctx, area = chart.chartArea;
+    const WATER = 'rgba(56,189,248,0.55)';
+    const FLOOD = 'rgba(255,112,67,0.6)';
+    ctx.save();
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    for (const c of network) {
+      const cx = xS.getPixelForValue(c.distance);
+      if (cx < area.left - 10 || cx > area.right + 10) continue;
+
+      if (c.kind === 'pipe') {
+        const zBot = c.invert - yOffset;
+        const D = c.diameter;
+        const yBot = yS.getPixelForValue(zBot);
+        const yTop = yS.getPixelForValue(zBot + D);
+        const rx = Math.max(Math.abs(xS.getPixelForValue(c.distance + D / 2) - cx), 3);
+        const ry = Math.max((yBot - yTop) / 2, 3);
+        const cy = (yBot + yTop) / 2;
+        // Wasserfüllung, auf den Rohrkreis geclippt (Fließtiefe des aktuellen Frames)
+        const depth = Math.min(Math.max(c.res?.depth ?? 0, 0), D);
+        if (depth > 0.001) {
+          const yW = yS.getPixelForValue(zBot + depth);
+          ctx.save();
+          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
+          ctx.fillStyle = WATER;
+          ctx.fillRect(cx - rx - 1, yW, 2 * rx + 2, Math.max(1, yBot - yW));
+          ctx.restore();
+        }
+        // Rohrwand (Vollfüllung/Überdruck → rot; offenes Gerinne → cyan)
+        ctx.strokeStyle = c.res?.surcharged ? '#ef4444'
+          : (c.conveyance === 'open' ? '#06b6d4' : '#94a3b8');
+        ctx.lineWidth = c.res?.surcharged ? 2.5 : 1.5;
+        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#b0bec5';
+        ctx.fillText(c.id, cx, yBot + 11);
+      } else if (c.kind === 'manhole') {
+        const zBot = c.invert - yOffset;
+        const zTop = (c.rim ?? c.invert + 2) - yOffset;
+        let yBot = yS.getPixelForValue(zBot);
+        let yTop = yS.getPixelForValue(zTop);
+        const halfW = Math.max(Math.abs(xS.getPixelForValue(c.distance + c.diameter / 2) - cx), 3);
+        yBot = Math.min(yBot, area.bottom); yTop = Math.max(yTop, area.top);
+        // Wasserstand im Schacht (depth = m über Sohle; Überstau → Signalfarbe)
+        const depth = Math.max(c.res?.depth ?? 0, 0);
+        if (depth > 0.001) {
+          const yW = Math.max(yS.getPixelForValue(zBot + depth), yTop);
+          ctx.fillStyle = c.res?.flooded ? FLOOD : WATER;
+          ctx.fillRect(cx - halfW + 1, yW, 2 * halfW - 2, Math.max(1, yBot - yW));
+        }
+        ctx.strokeStyle = c.res?.flooded ? '#ff7043' : '#64748b';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(cx - halfW, yTop, 2 * halfW, Math.max(1, yBot - yTop));
+        ctx.fillStyle = '#b0bec5';
+        ctx.fillText(c.id, cx, yTop - 4);
+      }
+    }
+    ctx.restore();
+  },
+};
+
 const initChart = () => {
   if (!chartCanvas.value) return;
   const ctx = chartCanvas.value.getContext('2d');
@@ -246,10 +317,10 @@ const initChart = () => {
       animation: { duration: 0 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: true, position: 'top', labels: { color: '#e0e0e0', font: { size: 11 } } },
+        legend: { display: true, position: 'top', labels: { color: '#e6e6f0', font: { size: 11 } } },
         tooltip: {
-          backgroundColor: 'rgba(20, 20, 40, 0.9)', titleColor: '#e0e0e0', bodyColor: '#e0e0e0',
-          borderColor: 'rgba(79, 195, 247, 0.3)', borderWidth: 1,
+          backgroundColor: 'rgba(27, 27, 40, 0.94)', titleColor: '#e6e6f0', bodyColor: '#e6e6f0',
+          borderColor: 'rgba(139, 92, 246, 0.35)', borderWidth: 1,
           callbacks: {
             title: (c) => `Distanz: ${c[0].parsed.x.toFixed(1)} m`,
             label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(2)} m`,
@@ -263,18 +334,18 @@ const initChart = () => {
       scales: {
         x: {
           type: 'linear',
-          title: { display: true, text: 'Distanz (m)', color: '#90a4ae' },
-          ticks: { color: '#90a4ae', maxTicksLimit: 10 },
-          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          title: { display: true, text: 'Distanz (m)', color: '#9a9ab5' },
+          ticks: { color: '#9a9ab5', maxTicksLimit: 10 },
+          grid: { color: 'rgba(139, 92, 246, 0.1)' },
         },
         y: {
-          title: { display: true, text: 'Höhe (m)', color: '#90a4ae' },
-          ticks: { color: '#90a4ae' },
-          grid: { color: 'rgba(255, 255, 255, 0.1)' },
+          title: { display: true, text: 'Höhe (m)', color: '#9a9ab5' },
+          ticks: { color: '#9a9ab5' },
+          grid: { color: 'rgba(139, 92, 246, 0.1)' },
         },
       },
     },
-    plugins: [structuresPlugin],
+    plugins: [structuresPlugin, networkPlugin],
   });
 };
 
@@ -314,6 +385,17 @@ const updateChartData = () => {
       if (rv > yHi) yHi = rv;
     }
   }
+  // Kanalnetz liegt UNTER dem Gelände — Rohrsohlen/Schachtsohlen in den Y-Bereich
+  // einbeziehen, sonst hängen die Querschnitte unterhalb der Chart-Kante.
+  for (const c of (props.section.network || [])) {
+    const vals = c.kind === 'pipe' ? [c.invert, c.invert + c.diameter] : [c.invert, c.rim];
+    for (const v of vals) {
+      if (v == null || !isFinite(v)) continue;
+      const rv = v - yOffset;
+      if (rv < yLo) yLo = rv;
+      if (rv > yHi) yHi = rv;
+    }
+  }
   const span = Math.max(0.1, yHi - yLo);
   chart.options.scales.y.suggestedMin = yLo - span * 0.08 - 0.3;
   chart.options.scales.y.suggestedMax = yHi + span * 0.08 + 0.3;
@@ -340,7 +422,7 @@ const updateChartData = () => {
 
   chart.data.datasets[0].data = waterData;
   chart.data.datasets[1].data = terrainData;
-  chart.$secMeta = { structures: structsMeta, yOffset };
+  chart.$secMeta = { structures: structsMeta, yOffset, network: props.section.network || [] };
   chart.update();
 };
 
@@ -357,16 +439,17 @@ watch([relativeMode, smoothWindow], updateChartData);
   position: absolute;
   width: 700px;
   max-width: 90vw;
-  background: rgba(20, 20, 40, 0.92);
+  background: var(--sv-surface);
   backdrop-filter: blur(16px);
-  border-radius: 12px;
-  border: 1px solid rgba(79, 195, 247, 0.3);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  border-radius: var(--sv-radius);
+  border: 1px solid var(--sv-border);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), var(--sv-glow-violet);
   z-index: 20;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+  font-family: var(--sv-font);
   transition: box-shadow 0.2s, border-color 0.2s;
 }
 
@@ -375,11 +458,11 @@ watch([relativeMode, smoothWindow], updateChartData);
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: rgba(79, 195, 247, 0.1);
-  border-bottom: 1px solid rgba(79, 195, 247, 0.2);
+  background: rgba(139, 92, 246, 0.1);
+  border-bottom: 1px solid var(--sv-border);
 }
 
-.title { color: #e0e0e0; font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.title { color: #e6e6f0; font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 .icon { font-size: 1.2rem; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 
@@ -389,25 +472,26 @@ watch([relativeMode, smoothWindow], updateChartData);
   gap: 18px;
   padding: 7px 16px;
   background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.12);
   font-size: 0.78rem;
-  color: #b0bec5;
+  color: var(--sv-text-dim);
 }
 .ctrl-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.ctrl-toggle input { cursor: pointer; }
+.ctrl-toggle input { cursor: pointer; accent-color: var(--sv-lime); }
 .ctrl-slider { display: flex; align-items: center; gap: 8px; }
-.ctrl-slider input[type="range"] { width: 110px; cursor: pointer; }
-.ctrl-val { min-width: 22px; text-align: right; font-variant-numeric: tabular-nums; color: #90a4ae; }
-.ctrl-info { margin-left: auto; color: #cfd8dc; }
+.ctrl-slider input[type="range"] { width: 110px; cursor: pointer; accent-color: var(--sv-lime); }
+.ctrl-val { min-width: 22px; text-align: right; font-variant-numeric: tabular-nums; color: var(--sv-text-dim); }
+.ctrl-info { margin-left: auto; color: var(--sv-text); }
 
 .reset-btn {
-  background: rgba(79, 195, 247, 0.2);
-  border: 1px solid rgba(79, 195, 247, 0.4);
-  color: #e0e0e0; font-size: 0.8rem; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+  background: rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--sv-border);
+  color: var(--sv-text); font-size: 0.8rem; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+  font-family: var(--sv-font);
 }
-.reset-btn:hover { background: rgba(79, 195, 247, 0.4); color: #fff; }
+.reset-btn:hover { background: rgba(139, 92, 246, 0.4); color: var(--sv-lime); }
 .close-btn {
-  background: none; border: none; color: #90a4ae; font-size: 1.5rem; cursor: pointer; line-height: 1; padding: 0 4px; transition: color 0.2s;
+  background: none; border: none; color: var(--sv-text-dim); font-size: 1.5rem; cursor: pointer; line-height: 1; padding: 0 4px; transition: color 0.2s;
 }
 .close-btn:hover { color: #ff5252; }
 

@@ -158,6 +158,10 @@ export const useSimulationStore = defineStore('simulation', () => {
      * { headers, rows, summary, maxError } — bisher nur Runner-Badge, jetzt auch Viewer */
     const massReport = ref(null);
 
+    /** SWMM-.rpt als Klartext (gekoppelter Lauf): Kontinuitätsfehler, Warnungen,
+     * Peak-Tabellen — wichtigste 1D-Plausibilitätszahlen. */
+    const swmmReport = ref(null);
+
     /** @type {import('vue').Ref<number>} */
     const currentFrameIndex = ref(-1);
 
@@ -192,6 +196,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     function setNetworkResults(data) { networkResults.value = data; }
     function setCouplingBudget(data) { couplingBudget.value = data; }
     function setMassReport(data) { massReport.value = data; }
+    function setSwmmReport(text) { swmmReport.value = text; }
 
     function setMaxDepthGrid(data) { maxDepthGrid.value = data; }
     function setMaxHazardGrid(data) { maxHazardGrid.value = data; }
@@ -218,6 +223,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         networkResults.value = null;
         couplingBudget.value = null;
         massReport.value = null;
+        swmmReport.value = null;
     }
 
     /** @type {import('vue').Ref<number>} */
@@ -295,9 +301,7 @@ export const useSimulationStore = defineStore('simulation', () => {
         setProgress,
         addLog,
         clearLogs,
-        // addResultFrame, // Disabled per user request
-        // clearResults,   // Disabled per user request
-        setResults: (val) => { results.value = val; }, // Fixed: Inline definition or restore
+        setResults: (val) => { results.value = val; },
         setConfig,
         setFullConfig,
 
@@ -322,9 +326,11 @@ export const useSimulationStore = defineStore('simulation', () => {
         networkResults,
         couplingBudget,
         massReport,
+        swmmReport,
         setNetworkResults,
         setCouplingBudget,
         setMassReport,
+        setSwmmReport,
         currentFrameIndex,
         resultHeader,
         addResultFrame,

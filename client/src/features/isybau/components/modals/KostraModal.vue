@@ -163,10 +163,14 @@ const fetchData = async () => {
         if (data.raw) {
             store.updateKostraData(data.raw);
         }
-        
+
         if (data.raw) {
             emit('data-loaded', data.raw);
         }
+      } else {
+        // fetchKostraData fängt API-Fehler intern ab und liefert null —
+        // ohne diesen Zweig endet der Spinner kommentarlos.
+        error.value = "KOSTRA-Abruf fehlgeschlagen (DWD-Dienst nicht erreichbar oder keine Daten für diesen Punkt).";
       }
     } else {
       error.value = "Transformation fehlgeschlagen. Bitte prüfen Sie das gewählte Koordinatensystem.";
@@ -343,6 +347,8 @@ const applyResult = () => {
 
 .result-box h4 {
   margin: 0 0 0.5rem 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.48rem;
   color: #2980b9;
 }
 
@@ -375,29 +381,34 @@ const applyResult = () => {
   gap: 1rem;
 }
 
-.primary-btn, .apply-btn {
+.primary-btn {
   background: #040647;
-  color: white;
+  color: #fff;
   border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
   cursor: pointer;
-  font-weight: 500;
+  transition: background 0.15s;
 }
-
-.primary-btn:disabled {
-  background: #bdc3c7;
-  cursor: not-allowed;
-}
+.primary-btn:hover:not(:disabled) { background: #594491; }
+.primary-btn:disabled { background: #aeadd2; cursor: not-allowed; }
 
 .secondary-btn {
-  background: white;
+  background: #fff;
   border: 1px solid #aeadd2;
-  color: #594491;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
+  color: #040647;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
   cursor: pointer;
+  transition: background 0.12s;
 }
+.secondary-btn:hover { background: #f3f2fb; }
 
 .result-summary {
   display: flex;
@@ -448,10 +459,20 @@ const applyResult = () => {
 }
 
 .apply-btn {
-  background: #27ae60;
+  background: #040647;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
   width: auto;
   margin-top: 0;
+  transition: background 0.15s;
 }
+.apply-btn:hover { background: #594491; }
 
 .clickable-cell {
   cursor: pointer;
@@ -514,53 +535,6 @@ const applyResult = () => {
   color: white;
   font-weight: bold;
   border-color: #2980b9;
-}
-
-/* ── Design Schema ────────────────────────────── */
-.tab-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
-  letter-spacing: 0.06em;
-  background: transparent !important;
-  border: 1px solid #594491 !important;
-  color: #aeadd2 !important;
-  border-radius: 5px !important;
-  padding: 0.45rem 0.75rem !important;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491 !important; color: #fff !important; }
-.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
-
-.primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
-  transition: background 0.15s;
-}
-.primary-btn:hover:not(:disabled) { background: #594491 !important; }
-.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
-
-.secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
-  transition: background 0.12s;
-}
-.secondary-btn:hover { background: #f3f2fb !important; }
-
-.modal-body h3, .panel h3 {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.55rem !important;
-  color: #594491 !important;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #aeadd2 !important;
-  padding-bottom: 0.4rem !important;
-  margin-bottom: 0.75rem !important;
 }
 
 </style>

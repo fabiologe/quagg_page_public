@@ -85,6 +85,9 @@ export class Edge {
             id: this.id,
             fromNodeId: this.fromNodeId,
             toNodeId: this.toNodeId,
+            // type NICHT vergessen: ohne dieses Feld degradierten Leitung/Rinne/
+            // Gerinne bei Projekt-Speichern, Undo und XML-Export zu 'Haltung'
+            type: this.type,
             length: this.length,
             profile: this.profile,
             material: this.material,

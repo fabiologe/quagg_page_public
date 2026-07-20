@@ -11,11 +11,10 @@
           <!-- Common: ID -->
           <div class="form-group">
             <label>ID / Name</label>
-            <input 
-              v-model="formData.id" 
-              type="text" 
-              class="form-input" 
-              :disabled="isEdit" 
+            <input
+              v-model="formData.id"
+              type="text"
+              class="form-input"
               required
             />
           </div>
@@ -185,10 +184,6 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
-  isEdit: {
-    type: Boolean,
-    default: false
-  },
   // Passing nodes for dropdown list
   availableNodes: {
     type: Array,
@@ -216,8 +211,7 @@ const calculatedDepth = computed(() => {
 
 const title = computed(() => {
   const typeMap = { node: 'Schacht', edge: 'Haltung', area: 'Fläche' };
-  const action = props.isEdit ? 'bearbeiten' : 'erstellen';
-  return `${typeMap[props.mode] || 'Element'} ${action}`;
+  return `${typeMap[props.mode] || 'Element'} erstellen`;
 });
 
 // Watch logic for Haltung Selection
@@ -267,45 +261,10 @@ watch(() => props.isOpen, async (val) => {
   }
 }, { immediate: true });
 
+// Dieses Modal wird nur zum ERSTELLEN geöffnet — Bearbeiten läuft über
+// ElementInfo.vue im 2D-Viewer.
 const initForm = () => {
-  console.log("ElementPropertiesModal: initForm. elementData:", props.elementData);
-  // Clone data or set defaults
-  if (props.isEdit && props.elementData) {
-    // Clone first
-    formData.value = { ...props.elementData };
-    
-    // Fix: Flatten Profile Data for Form
-    if (props.mode === 'edge' && props.elementData.profile) {
-        const p = props.elementData.profile;
-        
-        // Map types: Ensure int
-        const typeMap = { 'CIRCULAR': 0, 'EGG': 1, 'RECT_CLOSED': 3, 'RECT_OPEN': 5, 'TRAPEZOIDAL': 8 };
-        let pType = p.type;
-        if (typeof pType === 'string') pType = typeMap[pType] !== undefined ? typeMap[pType] : 0;
-        else if (pType === undefined) pType = 0;
-        
-        formData.value.profileType = pType;
-        formData.value.geom1 = p.height || 0.3;
-        formData.value.geom2 = p.width || 0;
-        if (pType === 8) {
-            formData.value.slope = p.slope || 1.5;
-        }
-
-        if (!formData.value.material) {
-             formData.value.material = 'Beton'; 
-        }
-    }
-    
-    // Fix: Node defaults if missing
-    if (props.mode === 'node') {
-        if (formData.value.diameter === undefined) formData.value.diameter = 1.0;
-        // If cover is missing but depth exists, calc cover? Or just leave as is.
-        if (formData.value.cover === undefined && formData.value.z !== undefined && formData.value.depth !== undefined) {
-            formData.value.cover = formData.value.z + formData.value.depth;
-        }
-    }
-
-  } else {
+  {
     // Defaults for new elements
     const defaults = { id: generateId(props.mode) };
     if (props.mode === 'node') {
@@ -313,13 +272,19 @@ const initForm = () => {
         Object.assign(defaults, { type: "Schacht", z: 0, cover: 2.0, diameter: 1.0, depth: 2.0, canOverflow: true, isManhole: true });
     } else if (props.mode === 'edge') {
         const defaultMat = 'Beton';
-        Object.assign(defaults, { 
-            profileType: 0, 
-            geom1: 0.3, 
-            material: defaultMat, 
+        // Sohlhöhe der beiden angeklickten Schächte übernehmen (metaFromId/metaToId
+        // kommen aus dem Zwei-Klick-Flow im Editor) — sonst bleibt hier null stehen
+        // und der Solver/die Tabelle sehen eine Haltung "auf Höhe 0" statt auf
+        // Höhe des Schachts.
+        const fromNode = props.availableNodes.find(n => n.id === props.elementData?.metaFromId);
+        const toNode = props.availableNodes.find(n => n.id === props.elementData?.metaToId);
+        Object.assign(defaults, {
+            profileType: 0,
+            geom1: 0.3,
+            material: defaultMat,
             roughness: getRoughness(defaultMat),
-            z1: null,
-            z2: null
+            z1: fromNode ? fromNode.z : null,
+            z2: toNode ? toNode.z : null
         });
     } else if (props.mode === 'area') {
         Object.assign(defaults, { size: 0.1, runoffCoeff: 0.5, slope: 0.5, nodeId: null });
@@ -461,7 +426,9 @@ const save = () => {
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.82rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
   transition: background 0.12s;
 }
 .btn-secondary:hover { background: #594491; color: #fff; }
@@ -532,4 +499,10 @@ const save = () => {
   margin-bottom: 0.75rem !important;
 }
 
+
+/* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #2ecc71;
+}
 </style>

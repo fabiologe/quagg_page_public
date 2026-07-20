@@ -118,16 +118,6 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         });
     }
 
-    // Compat wrapper for old calls (if any exist during migration)
-    // Deprecated: Remove after UI update
-    function assignToObjects(geoIdsArray, ganglinieId) {
-        assignBoundaryCondition(geoIdsArray, {
-            type: 'INFLOW_DYNAMIC',
-            value: null,
-            profileId: ganglinieId
-        });
-    }
-
     function getAssignment(id) {
         return assignments.value[id] || null;
     }
@@ -197,7 +187,6 @@ export const useHydraulicStore = defineStore('hydraulic', () => {
         deleteGanglinie,
         updateGanglinieData,
         setActiveGanglinie,
-        assignToObjects,
         assignBoundaryCondition,
         getAssignment,
         removeAssignment,

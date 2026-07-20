@@ -37,7 +37,14 @@ console.log('1) Pumpe: [PUMPS] + [CURVES] mit Editor-Parametern');
     check(!/\[JUNCTIONS\][^]*PW/.test(inp.split('[OUTFALLS]')[0]), 'PW nicht (auch) als Junction');
     check(/DRUCK\s+PW\s+OUT\s+CRV_DRUCK/.test(inp), 'Pumpen-Link PW→OUT mit Kennlinie CRV_DRUCK');
     check(inp.includes('[CURVES]') && inp.includes('CRV_DRUCK'), '[CURVES] mit CRV_DRUCK');
-    check(/CRV_DRUCK\s+PUMP\d?\s/.test(inp) || inp.includes('0.05'), 'Kennlinie nutzt pumpRate 50 l/s (0.05 m³/s)');
+    // Kurventyp MUSS PUMP1–PUMP5 sein — „Pump" allein = SWMM ERROR 205, Kopplung tot
+    // (Praxis-Fund 2026-07-13: err=200 beim swmm_open, Lauf lief ohne 1D weiter).
+    check(/CRV_DRUCK\s+PUMP3\s/.test(inp), 'Kennlinie mit gültigem SWMM-Keyword PUMP3');
+    // PUMP3-Orientierung: X=Förderhöhe aufsteigend, Y=Flow — Freilauf (0 → 1.4·Q_d),
+    // Auslegung (H_d → Q_d), Abriegelung (1.3·H_d → 0). Verdreht = Phantom-Förderung.
+    check(/CRV_DRUCK\s+PUMP3\s+0\.0000\s+0\.0700/.test(inp), 'Freilauf-Punkt: H=0 → Q=1.4·Q_d (0.07 m³/s)');
+    check(/CRV_DRUCK\s+10\.000\s+0\.0500/.test(inp), 'Auslegungspunkt: H_d=10 m → Q_d=0.05 m³/s (X=Head, Y=Flow)');
+    check(/CRV_DRUCK\s+13\.000\s+0\.0000/.test(inp), 'Abriegelung: 1.3·H_d → Q=0');
     // SWMM-Ordnung: Startup (EIN=1.2) VOR Shutoff (AUS=0.3) — vertauscht = ERROR 122.
     check(/DRUCK[^\n]*1\.2[^\n]*0\.3/.test(inp), 'Startup/Shutoff-Wasserstände (1.2 vor 0.3 m) in SWMM-Ordnung');
     check(!inp.includes('[REPORT]\n') || /NODES\s+ALL/.test(inp), '[REPORT] NODES ALL gesetzt (1D-Ergebnisse)');

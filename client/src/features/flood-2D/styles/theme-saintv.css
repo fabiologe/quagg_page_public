@@ -159,6 +159,37 @@
     box-shadow: var(--sv-glow-lime);
 }
 
+/* ── Number-Input-Spinner (global) ────────────────────────────────────────────
+   Zentrale „Mutter"-Definition analog zu den Scrollbars: die weißen System-
+   Spinner aller <input type="number"> brechen das dunkle Theme. Chromium/WebKit
+   bekommt eigene Violett-Pfeile (Spin-Funktion bleibt erhalten, Pfeile
+   erscheinen bei Hover/Fokus); Firefox kann die Spinner nicht stylen, dort
+   werden sie ausgeblendet (Pfeiltasten/Scroll steppen weiterhin). */
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    align-self: stretch;
+    width: 16px;
+    margin: 0 0 0 4px;
+    cursor: pointer;
+    opacity: 0;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='14' viewBox='0 0 8 14'><path d='M4 0 8 5H0z' fill='%238B5CF6'/><path d='M4 14 0 9h8z' fill='%238B5CF6'/></svg>") center / 8px 14px no-repeat;
+    transition: opacity 0.15s ease;
+}
+input[type="number"]:hover::-webkit-inner-spin-button,
+input[type="number"]:focus::-webkit-inner-spin-button {
+    opacity: 0.65;
+}
+input[type="number"]::-webkit-inner-spin-button:hover {
+    opacity: 1;
+}
+
 /* ── Ladeanimation (Loading Icon - Plan.svg) ──────────────────────────────── */
 .sv-loading {
     position: absolute; inset: 0; z-index: 60;

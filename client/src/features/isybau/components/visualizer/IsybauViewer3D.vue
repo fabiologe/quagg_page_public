@@ -19,6 +19,8 @@
     <Viewer3DInfoPanel
       :element="selectedElement"
       :result="selectedResult"
+      :edges="props.edges"
+      :systemStats="props.systemStats"
       @close="selectedElement = null"
     />
   </div>
@@ -38,6 +40,7 @@ const props = defineProps({
   areas:            { type: Array,   default: () => [] },
   nodeResults:      { type: Map,     default: () => new Map() },
   edgeResults:      { type: Map,     default: () => new Map() },
+  systemStats:      { type: Object,  default: () => ({}) },
   autoShowResults:  { type: Boolean, default: false },
 });
 

@@ -195,50 +195,6 @@ export function gridToASC(data, header) {
 }
 
 /**
- * Main Baking Function (Strict Implementation)
- * @param {Float32Array} baseRaster - Source Raster
- * @param {object} gridInfo - Header info { ncols, nrows, cellsize, xll, yll }
- * @param {Array} modifications - Array of modification objects
- * @returns {Float32Array} New baked raster
- */
-export function bakeTerrain(baseRaster, gridInfo, modifications) {
-    // Safety First: Copy the raster
-    const newRaster = new Float32Array(baseRaster);
-
-    if (!modifications || modifications.length === 0) {
-        return newRaster;
-    }
-
-    const { ncols, nrows, cellsize } = gridInfo;
-    const xll = gridInfo.xll !== undefined ? gridInfo.xll : gridInfo.xllcorner;
-    const yll = gridInfo.yll !== undefined ? gridInfo.yll : gridInfo.yllcorner;
-
-    // Helper: Grid to World (Cell Center)
-    // xll is assumed to be corner. Center = corner + col * size + size/2
-    // BUT legacy code mostly used xll + col * size. adhering to "Standard" center logic often safer.
-    // If col = round((x-xll)/cs), implies x ~ xll + col*cs.
-    const getCellX = (c) => xll + c * cellsize;
-    const getCellY = (r) => yll + r * cellsize;
-
-    for (const mod of modifications) {
-        // [AUDIT FIX]: applyBuilding() (+10m spike) has been deprecated and disabled.
-        // Buildings should strictly use maskBuildingsAsNoData() to become NoData grids for the solver.
-        if (mod.type === 'BUILDING') {
-            console.warn(`[Rasterizer] Legacy applyBuilding requested for ${mod.properties?.name || 'Building'}. Ignored to prevent +10m UI contamination.`);
-        }
-    }
-
-    return newRaster;
-}
-
-// Named Export Alias for compatibility if any old code calls it differently, 
-// OR user requested strict "export function bakeTerrain" which is above.
-// Also exporting burnBuildings as alias if needed by InputGenerator before refill? 
-// No, Worker now calls bakeTerrain (or burnBuildings). I will export both names pointing to logic.
-export const burnBuildings    = bakeTerrain;  // Legacy-Alias
-export const burnModifications = bakeTerrain;  // Alias für non-BUILDING Mods
-
-/**
  * NoData-Masking für Gebäude.
  *
  * Setzt alle Rasterzellen, die von einem Gebäude-Polygon überdeckt werden,
@@ -348,10 +304,7 @@ export const Rasterizer = {
     createDemFromXYZ,
     gridToASC,
     resampleGrid,
-    bakeTerrain,
-    burnBuildings: bakeTerrain,
     maskBuildingsAsNoData,   // Phase 9: NoData-Strategie für Gebäude
-    burnModifications: bakeTerrain,
     /**
      * Generates a Roughness Map (friction.asc).
      * @param {object} header 

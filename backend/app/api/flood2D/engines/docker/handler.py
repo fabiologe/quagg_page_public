@@ -807,6 +807,17 @@ def main():
                                  + ").")
             except Exception as e:  # noqa: BLE001
                 emit("warning", text=f"SWMM-.out nicht lesbar: {e}")
+        # SWMM-.rpt (Kontinuitätsfehler, Warnungen, Peak-Tabellen) mitliefern:
+        # swmm_report() schreibt sie neben die .inp (coupling.cpp, Finalize).
+        rpt_path = out_path.with_suffix(".rpt") if out_path is not None else None
+        if rpt_path is None or not rpt_path.exists():
+            rpt_path = next(inputs.glob("*.inp.rpt"), None)
+        if rpt_path is not None and rpt_path.exists():
+            try:
+                (results / "swmm-report.rpt").write_bytes(rpt_path.read_bytes())
+                done_payload["swmmReportFile"] = "swmm-report.rpt"
+            except Exception as e:  # noqa: BLE001
+                emit("warning", text=f"SWMM-.rpt nicht lesbar: {e}")
         budget = coupling_budget(couple_lines)
         if budget:
             done_payload["couplingBudget"] = budget

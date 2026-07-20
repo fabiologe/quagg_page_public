@@ -110,13 +110,13 @@ const headerStyle = computed(() => ({
 .cell-info-panel {
   position: absolute;
   width: 250px;
-  background: rgba(20, 20, 40, 0.92);
+  background: var(--sv-surface);
   backdrop-filter: blur(16px);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  font-family: 'Inter', sans-serif;
-  color: #e0e0e0;
+  border-radius: var(--sv-radius);
+  border: 1px solid var(--sv-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), var(--sv-glow-violet);
+  font-family: var(--sv-font);
+  color: var(--sv-text);
   z-index: 25;
   user-select: none;
 }
@@ -126,23 +126,25 @@ const headerStyle = computed(() => ({
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(139, 92, 246, 0.12);
+  border-bottom: 1px solid var(--sv-border);
   font-weight: 600;
   font-size: 0.95rem;
+  color: var(--sv-lime);
+  text-shadow: var(--sv-glow-lime);
 }
 
 .close-btn {
   background: transparent;
   border: none;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0 4px;
 }
 
 .close-btn:hover {
-  color: #fff;
+  color: var(--sv-lime);
 }
 
 .cell-info-body {
@@ -161,16 +163,16 @@ const headerStyle = computed(() => ({
 
 .info-row.small {
   font-size: 0.75rem;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
 }
 
 .info-label {
-  color: #90a4ae;
+  color: var(--sv-text-dim);
 }
 
 .info-value {
   font-weight: 600;
-  color: #fff;
+  color: var(--sv-text);
 }
 
 .info-value.wet {
@@ -183,7 +185,7 @@ const headerStyle = computed(() => ({
 
 .info-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--sv-border);
   margin: 4px 0;
 }
 </style>

@@ -369,7 +369,7 @@ const onFinishBridge = () => {
 .height-row { display: flex; gap: 6px; }
 .height-row input[type="number"] { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 5px; border: 1px solid #3a2f5c; background: #12121a; color: white; font-size: 0.88rem; outline: none; }
 .height-row input[type="number"]:focus { border-color: #f1c40f; }
-.btn-slim { flex: 0 0 auto; padding: 6px 10px; font-size: 0.8rem; }
+.btn-slim { flex: 0 0 auto; padding: 5px 8px; font-size: 0.8rem; }
 
 .pier-dim { border-color: rgba(139,90,43,0.6); background: rgba(139,90,43,0.12); }
 .pier-dim .sel-info-line { color: #c8915a; }
@@ -400,7 +400,6 @@ const onFinishBridge = () => {
 .pier-width-row input[type="number"] { width: 80px; padding: 6px 8px; border-radius: 5px; border: 1px solid #8b5a2b; background: #12121a; color: white; font-size: 0.88rem; outline: none; }
 
 .subdiv-modes { display: flex; gap: 6px; margin-bottom: 8px; }
-.btn-slim { padding: 5px 8px; font-size: 0.8rem; }
 .subdiv-modes .btn { background: #2c3e50; color: #bdc3c7; border: 1px solid #3a2f5c; }
 .subdiv-modes .btn:hover { background: #34495e; }
 .subdiv-modes .btn.active { background: #16a085; color: #fff; border-color: #a3e635; }

@@ -643,10 +643,13 @@ LINKS                ALL
                 this.warnings.push(`Pumpe ${id}: Keine Förderleistung angegeben, Schätzung aus Leistung: ${(Q_d * 1000).toFixed(1)} l/s.`);
             }
 
-            // TYPE3 Q-H Kennlinie: 3 Punkte (Abriegelung, Auslegung, Freilauf)
-            text += `${this.pad(name)} Pump       0.0000     ${(H_d * 1.3).toFixed(3)}\n`;
-            text += `${this.pad(name)}            ${Q_d.toFixed(4)}  ${H_d.toFixed(3)}\n`;
-            text += `${this.pad(name)}            ${(Q_d * 1.4).toFixed(4)} 0.000\n`;
+            // PUMP3-Kennlinie (Q über Förderhöhen-DIFFERENZ Auslass−Zulauf):
+            // SWMM erwartet Keyword PUMP1–PUMP5 („Pump" allein = ERROR 205) und die
+            // Punkte als X=Head aufsteigend, Y=Flow — nicht (Q,H) wie im Datenblatt.
+            // 3 Punkte: Freilauf (H=0), Auslegung (H_d), Abriegelung (1.3·H_d, Q=0).
+            text += `${this.pad(name)} PUMP3      0.0000     ${(Q_d * 1.4).toFixed(4)}\n`;
+            text += `${this.pad(name)}            ${H_d.toFixed(3)}    ${Q_d.toFixed(4)}\n`;
+            text += `${this.pad(name)}            ${(H_d * 1.3).toFixed(3)}   0.0000\n`;
         }
         this.sections.push(text);
     }

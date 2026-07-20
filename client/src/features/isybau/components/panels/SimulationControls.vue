@@ -40,7 +40,7 @@
         
         <div class="control-group">
             <label>Regendaten</label>
-            <div class="button-row">
+            <div class="button-row" data-tutorial="rain-config">
                 <button class="secondary-btn" @click="store.ui.showRainModal = true">
                     <img class="ic" src="/saintv1d/icons/Weather-Umbrella--Streamline-Pixel.svg" />
                     Modellregen
@@ -57,8 +57,11 @@
                     <strong>Modellregen:</strong> {{ store.rain.activeModelRain.type }}
                     ({{ store.rain.activeModelRain.series.length }} Stützstellen)
                 </div>
-                <div v-else class="rain-info">
+                <div v-else-if="store.rain.intensity > 0" class="rain-info">
                     <strong>KOSTRA:</strong> {{ store.rain.intensity }} l/(s·ha)
+                </div>
+                <div v-else class="rain-info rain-info-empty">
+                    Kein Regen konfiguriert — Modellregen oder KOSTRA wählen.
                 </div>
             </div>
 
@@ -97,7 +100,7 @@
             </div>
         </div>
 
-        <button @click="startSimulation" class="primary-btn" :disabled="loading">
+        <button @click="startSimulation" class="primary-btn" :disabled="loading" data-tutorial="run-simulation">
             <img v-if="!loading" class="ic" src="/saintv1d/icons/Computers-Devices-Electronics-Chipset--Streamline-Pixel.svg" />
             <img v-if="loading" class="ic spin" src="/saintv1d/icons/Interface-Essential-Synchronize-Arrows-Square-2--Streamline-Pixel.svg" />
             {{ loading ? 'Simulation läuft...' : 'Berechnung starten' }}
@@ -106,7 +109,20 @@
             <div class="progress-bar-fill"></div>
         </div>
 
-        <div v-if="error" class="error-msg">{{ error }}</div>
+        <div v-if="error" class="error-msg">
+            {{ error }}
+            <button v-if="invalidElementId" class="error-link" @click="jumpToInvalidElement">
+                → Element öffnen
+            </button>
+        </div>
+        <div v-if="preSolveWarnings.length" class="warning-list">
+            <div v-for="w in preSolveWarnings" :key="w.id + w.text" class="warning-msg">
+                {{ w.text }}
+                <button class="warning-link" @click="store.openPreprocessingFor(w.id, w.elementType)">
+                    → Element öffnen
+                </button>
+            </div>
+        </div>
         <div v-if="success" class="success-msg">Netz berechnet</div>
 
         <!-- Actions for results -->
@@ -169,6 +185,12 @@ const closePedantPopup = () => {
 const loading = computed(() => store.simulation.status === 'running');
 const error = computed(() => store.simulation.error);
 const success = computed(() => store.simulation.status === 'success');
+const invalidElementId = computed(() => store.simulation.invalidElementId);
+const preSolveWarnings = computed(() => store.simulation.preSolveWarnings);
+
+const jumpToInvalidElement = () => {
+    store.openPreprocessingFor(store.simulation.invalidElementId, store.simulation.invalidElementType);
+};
 
 // Chart Logic
 const miniChartData = computed(() => {
@@ -252,13 +274,22 @@ const downloadResults = () => {
 .control-box h3 {
     margin-top: 0;
     margin-bottom: 0.75rem;
-    font-size: 0.8rem;
-    font-weight: 800;
-    letter-spacing: 0.1em;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #040647;
     border-bottom: 2px solid #aeadd2;
     padding-bottom: 0.5rem;
+}
+
+.control-group > label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.44rem;
+    letter-spacing: 0.05em;
+    color: #594491;
 }
 
 /* Compact Stats */
@@ -271,13 +302,13 @@ const downloadResults = () => {
     display: flex;
     justify-content: center;
     gap: 0.5rem;
-    font-size: 0.82rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.42rem;
     color: #aeadd2;
     align-items: center;
 }
 .stats-row strong {
     color: #fff;
-    font-weight: 700;
 }
 .divider {
     color: #594491;
@@ -293,35 +324,72 @@ const downloadResults = () => {
 /* Buttons & Inputs */
 .primary-btn {
   width: 100%;
-  padding: 0.7rem;
+  padding: 0.75rem;
   background: #040647;
   color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   margin-top: 0.5rem;
-  font-weight: 700;
-  font-size: 0.88rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.54rem;
   transition: background 0.15s;
 }
 .primary-btn:hover:not(:disabled) { background: #594491; }
 .primary-btn:disabled { background: #aeadd2; cursor: default; }
 .secondary-btn {
     flex: 1;
-    padding: 0.45rem;
+    padding: 0.5rem;
     background: #fff;
     border: 1px solid #aeadd2;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 0.82rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.46rem;
     text-align: center;
     color: #040647;
-    font-weight: 600;
     transition: background 0.12s, border-color 0.12s;
 }
 .secondary-btn:hover { background: #aeadd2; border-color: #8f8be1; }
 
 .error-msg { color: #b91c1c; margin-top: 0.5rem; font-size: 0.82rem; }
+.error-link {
+    display: block;
+    margin-top: 0.3rem;
+    background: none;
+    border: none;
+    padding: 0;
+    color: #b91c1c;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.44rem;
+    line-height: 1.6;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.error-link:hover { color: #7f1616; }
+.warning-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.warning-msg {
+    color: #92590a;
+    background: #fef6e7;
+    border-left: 3px solid #e0a020;
+    border-radius: 4px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.78rem;
+}
+.warning-link {
+    display: block;
+    margin-top: 0.2rem;
+    background: none;
+    border: none;
+    padding: 0;
+    color: #92590a;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.42rem;
+    line-height: 1.6;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.warning-link:hover { color: #6b4107; }
 .success-msg { color: #594491; margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
 .input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid #aeadd2; border-radius: 6px; box-sizing: border-box; color: #040647; }
 .input-with-action input:focus { outline: none; border-color: #594491; }
@@ -357,6 +425,11 @@ const downloadResults = () => {
     border-left: 3px solid #8f8be1;
 }
 
+.rain-info-empty {
+    color: #8a8a9e;
+    font-style: italic;
+}
+
 .results-actions {
     margin-top: 1rem;
     display: flex;
@@ -367,14 +440,14 @@ const downloadResults = () => {
 }
 .action-btn {
     width: 100%;
-    padding: 0.6rem 0.75rem;
+    padding: 0.65rem 0.75rem;
     background: #594491;
     color: white;
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    font-weight: 700;
-    font-size: 0.82rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.46rem;
     text-align: left;
     display: flex;
     align-items: center;

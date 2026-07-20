@@ -1,8 +1,17 @@
 <template>
   <Transition name="slide-up">
-    <div v-if="selectedElement" class="info-window" @click.stop>
-      <div class="info-header">
-        <h3>{{ typeLabel }} Bearbeiten</h3>
+    <div
+      v-if="selectedElement"
+      ref="panelEl"
+      class="info-window"
+      :class="{ dragging: isDragging }"
+      :style="dragStyle"
+      @click.stop
+      @mousedown.stop
+      @wheel.stop
+    >
+      <div class="info-header" @mousedown="startDrag">
+        <h3>{{ typeLabel }} {{ readonly ? 'Ergebnisse' : 'Bearbeiten' }}</h3>
         <button @click="$emit('close')" class="close-btn" @mousedown.stop>·×</button>
       </div>
       
@@ -15,37 +24,63 @@
 
         <!-- ================= SIMULATION RESULTS ================= -->
         <div v-if="currentResult" class="info-group result-box">
-             <div class="result-header">Simulation (Aktuell)</div>
-             
-             <!-- Warning Badge -->
+             <div class="result-header">Simulation (Maxima)</div>
+
+             <!-- Warning Badges -->
              <div v-if="currentResult.floodWarning" class="flood-badge">
-                 ⚠️ ÜBERFLUTUNG: {{ currentResult.floodVolume?.toFixed(3) }} m³ 
+                 ⚠️ ÜBERFLUTUNG: {{ currentResult.floodVolume?.toFixed(3) }} m³
                  <div class="sub-text">(auf Gelände)</div>
              </div>
+             <div v-else-if="currentResult.surcharged" class="flood-badge surcharge-badge">
+                 Eingestaut (Abfluss unter Druck)
+             </div>
+             <div v-if="currentResult.continuityWarning" class="flood-badge">
+                 ⚠️ Kontinuitätsfehler {{ currentResult.continuityError?.toFixed(1) }} % — Ergebnis unzuverlässig
+             </div>
+             <div v-if="relatedLinkId" class="link-hint-box">
+                 ⚙️ Hydraulisches Ergebnis (Durchfluss, Auslastung) siehe Haltung <strong>{{ relatedLinkId }}</strong> im Ergebnis-Modal.
+             </div>
 
-             <div class="info-row compact">
-                 <span class="label">Tiefe:</span>
-                 <span class="value" :class="{'text-red': currentResult.isFlooded}">
-                     {{ currentResult.depth?.toFixed(3) }} m
-                 </span>
-             </div>
-             <div class="info-row compact">
-                 <span class="label">Volumen:</span>
-                 <span class="value">{{ currentResult.volume?.toFixed(3) }} m³</span>
-             </div>
-             
-             <!-- Link Specific Result: Utilization -->
-             <div v-if="elementType === 'edge' && currentResult.utilizationText" class="info-row compact">
-                 <span class="label">Auslastung:</span>
-                 <span class="value" :style="currentResult.utilizationStyle">
-                     {{ currentResult.utilizationText }}
-                 </span>
-             </div>
+             <!-- Node Results -->
+             <template v-if="elementType === 'node'">
+                 <div class="info-row compact">
+                     <span class="label">Max. Tiefe:</span>
+                     <span class="value" :class="{'text-red': currentResult.isFlooded}">
+                         {{ currentResult.maxDepth?.toFixed(3) }} m
+                     </span>
+                 </div>
+                 <div class="info-row compact" v-if="currentResult.volume != null">
+                     <span class="label">Max. Volumen:</span>
+                     <span class="value">{{ currentResult.volume.toFixed(3) }} m³</span>
+                 </div>
+                 <div class="info-row compact" v-if="currentResult.vmax != null">
+                     <span class="label">Vmax (möglich):</span>
+                     <span class="value">{{ currentResult.vmax.toFixed(3) }} m³</span>
+                 </div>
+             </template>
+
+             <!-- Edge Results -->
+             <template v-if="elementType === 'edge'">
+                 <div class="info-row compact" v-if="currentResult.maxFlow != null">
+                     <span class="label">Max. Abfluss:</span>
+                     <span class="value">{{ currentResult.maxFlow.toFixed(1) }} l/s</span>
+                 </div>
+                 <div class="info-row compact" v-if="currentResult.maxVelocity != null">
+                     <span class="label">Max. Geschwindigkeit:</span>
+                     <span class="value">{{ currentResult.maxVelocity.toFixed(2) }} m/s</span>
+                 </div>
+                 <div v-if="currentResult.utilizationText" class="info-row compact">
+                     <span class="label">Auslastung:</span>
+                     <span class="value" :style="currentResult.utilizationStyle">
+                         {{ currentResult.utilizationText }}
+                     </span>
+                 </div>
+             </template>
         </div>
 
 
         <!-- ================= EDGE EDITOR ================= -->
-        <template v-if="elementType === 'edge'">
+        <template v-if="!readonly && elementType === 'edge'">
              <div class="info-group">
                 <label>Material</label>
                 <select v-model="localData.material" @change="updateRoughness" class="full-select">
@@ -101,7 +136,7 @@
         </template>
 
         <!-- ================= NODE EDITOR ================= -->
-        <template v-else-if="elementType === 'node'">
+        <template v-else-if="!readonly && elementType === 'node'">
             <div class="info-group">
                 <label>Typ</label>
                 <select v-model="localData.type" class="full-select">
@@ -125,29 +160,131 @@
             </div>
 
             <!-- Conditional Inputs based on Type -->
-             <div v-if="[1, 6, 14, 'Standard', 'Bauwerk'].includes(localData.type)" class="info-group">
+             <div v-if="[14, 'Standard', 'Bauwerk'].includes(localData.type)" class="info-group">
                  <label>Konst. Zufluss (l/s)</label>
                  <input type="number" v-model.number="localData.constantInflow" step="0.1" class="full-input">
              </div>
 
-             <div v-if="[2, 3, 4, 12, 13].includes(localData.type)" class="info-group">
-                 <label>Speichervolumen (m³)</label>
-                 <input type="number" v-model.number="localData.volume" step="1" class="full-input">
+             <!-- 10, 11, 14: Rechen/Sieb/Einlaufbauwerk -->
+             <div v-if="[10, 11, 14].includes(localData.type)" class="info-group">
+                 <label>Verlustbeiwert (Eintritt)</label>
+                 <input type="number" v-model.number="localData.lossCoeff" step="0.1" min="0" class="full-input" :title="lossCoeffHint(localData.type)">
+                 <span class="hint-text">{{ lossCoeffHint(localData.type) }}</span>
              </div>
 
-             <div v-if="[2, 7].includes(localData.type)" class="info-group">
-                 <label>Wehrhöhe (m)</label>
-                 <input type="number" v-model.number="localData.weirHeight" step="0.01" class="full-input">
+             <!-- 1, 6: Pumpwerk/Pumpe -->
+             <template v-if="[1, 6].includes(localData.type)">
+                 <div class="flex-row">
+                     <div class="info-group half">
+                         <label>Förderleistung (l/s)</label>
+                         <input type="number" v-model.number="localData.pumpRate" step="0.1" class="full-input">
+                     </div>
+                     <div class="info-group half">
+                         <label>Förderhöhe (m)</label>
+                         <input type="number" v-model.number="localData.pumpHead" step="0.1" class="full-input">
+                     </div>
+                 </div>
+                 <div class="flex-row">
+                     <div class="info-group half">
+                         <label>Einschalt (m)</label>
+                         <input type="number" v-model.number="localData.onDepth" step="0.1" class="full-input">
+                     </div>
+                     <div class="info-group half">
+                         <label>Ausschalt (m)</label>
+                         <input type="number" v-model.number="localData.offDepth" step="0.1" class="full-input">
+                     </div>
+                 </div>
+                 <!-- Nur wenn der Knoten tatsächlich zu einem SWMM-PUMP3-Sonderlink wird
+                      (Bauwerkstyp 6) — Typ 1 "Pumpwerk" kann je nach Volumen stattdessen
+                      als [STORAGE] landen (siehe classifyPreview in utils/mappings.js) und
+                      hätte dann gar keine Pumpenkennlinie. -->
+                 <PumpCurvePreview v-if="isPumpLink" :node="localData" />
+             </template>
+
+             <!-- 2, 3, 4, 12, 13: Becken/Speicher -->
+             <template v-if="[2, 3, 4, 12, 13].includes(localData.type)">
+                 <div class="info-group">
+                     <label>Speichervolumen (m³)</label>
+                     <input type="number" v-model.number="localData.volume" step="1" class="full-input">
+                 </div>
+                 <div class="flex-row">
+                     <div class="info-group half">
+                         <label>Max. Tiefe (m)</label>
+                         <input type="number" v-model.number="localData.maxDepth" step="0.1" class="full-input">
+                     </div>
+                     <div class="info-group half">
+                         <label>Start-Tiefe (m)</label>
+                         <input type="number" v-model.number="localData.initDepth" step="0.1" class="full-input">
+                     </div>
+                 </div>
+                 <div class="info-group">
+                     <label>Form</label>
+                     <select v-model="localData.storageShape" class="full-select">
+                         <option value="PRISMATIC">Prismatisch (konstante Fläche)</option>
+                         <option value="CONICAL">Trichterförmig (linear)</option>
+                         <option value="PYRAMIDAL">Pyramidal (quadratisch)</option>
+                     </select>
+                 </div>
+             </template>
+
+             <!-- 7: Wehr -->
+             <template v-if="localData.type === 7">
+                 <div class="flex-row">
+                     <div class="info-group half">
+                         <label>Wehrhöhe (m)</label>
+                         <input type="number" v-model.number="localData.weirHeight" step="0.01" class="full-input">
+                     </div>
+                     <div class="info-group half">
+                         <label>Breite (m)</label>
+                         <input type="number" v-model.number="localData.wehrWidth" step="0.01" class="full-input">
+                     </div>
+                 </div>
+                 <div class="info-group">
+                     <label>Kronenform</label>
+                     <select :value="presetKeyFor(localData.dischargeCoeff)" @change="localData.dischargeCoeff = parseFloat($event.target.value)" class="full-select">
+                         <option value="">— Kronenform wählen —</option>
+                         <option v-for="p in WeirCrestPresets" :key="p.cw" :value="p.cw">{{ p.label }}</option>
+                     </select>
+                 </div>
+                 <div class="info-group">
+                     <label>Beiwert Cw</label>
+                     <input type="number" v-model.number="localData.dischargeCoeff" step="0.01" class="full-input">
+                 </div>
+             </template>
+
+             <!-- 8: Drossel -->
+             <div v-if="localData.type === 8" class="info-group">
+                 <label>Max. Abfluss (l/s)</label>
+                 <input type="number" v-model.number="localData.maxOutflow" step="0.1" class="full-input">
              </div>
+
+             <!-- 9: Schieber -->
+             <template v-if="localData.type === 9">
+                 <div class="info-group">
+                     <label>Öffnung (0-1)</label>
+                     <input type="number" v-model.number="localData.initialOpening" step="0.1" min="0" max="1" class="full-input">
+                 </div>
+                 <div class="info-group">
+                     <label>Schieberbreite (m)</label>
+                     <input type="number" v-model.number="localData.gateWidth" step="0.05" class="full-input">
+                 </div>
+             </template>
 
             <div class="info-group checkbox-row">
-                <input type="checkbox" id="canOverflow" v-model="localData.canOverflow">
+                <input type="checkbox" id="isManhole" v-model="localData.isManhole">
+                <label for="isManhole">Schacht an Oberfläche (Deckel vorhanden)</label>
+            </div>
+            <div class="info-group checkbox-row">
+                <input type="checkbox" id="canOverflow" v-model="localData.canOverflow" :disabled="localData.isManhole === false">
                 <label for="canOverflow">Kann überstauen (Deckel offen)</label>
+            </div>
+            <div v-if="localData.isManhole === false" class="hint-text">
+                Unterirdischer/virtueller Knoten (z.B. Status 2): Überstau ist nicht möglich.
             </div>
         </template>
 
         <!-- ================= AREA EDITOR ================= -->
-        <template v-else-if="elementType === 'area'">
+        <template v-else-if="!readonly && elementType === 'area'">
             <div class="info-group">
                 <label>Fläche (ha)</label>
                 <div class="value-display">{{ localData.size?.toFixed(4) }}</div>
@@ -167,8 +304,12 @@
       </div>
       
       <div class="info-footer">
-          <button @click="save" class="primary-btn full-width">
+          <button v-if="!readonly" @click="save" class="primary-btn full-width">
             <img class="ic" src="/saintv1d/icons/Interface-Essential-Floppy-Disk--Streamline-Pixel.svg" /> Speichern
+          </button>
+          <button @click="store.openPreprocessingFor(selectedElement.id, elementType)" class="secondary-btn full-width" style="margin-top:0.5rem"
+                  title="Öffnet 'Daten bearbeiten' mit diesem Element vorselektiert">
+            <img class="ic" src="/saintv1d/icons/Interface-Essential-Setting-Slide--Streamline-Pixel.svg" /> Bearbeiten (Tabelle)
           </button>
           <button @click="$emit('show-details', selectedElement)" class="secondary-btn full-width" style="margin-top:0.5rem">
             <img class="ic" src="/saintv1d/icons/Interface-Essential-Expand-3--Streamline-Pixel.svg" /> Ergebnisse
@@ -179,16 +320,94 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
-import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp } from '../../utils/mappings.js';
+import { computed, ref, watch, onUnmounted } from 'vue';
+import { useIsybauStore } from '../../store/index.js';
+import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, lossCoeffHint } from '../../utils/mappings.js';
+import PumpCurvePreview from '../common/PumpCurvePreview.vue';
+
+const presetKeyFor = (cw) => {
+    const match = WeirCrestPresets.find(p => Math.abs(p.cw - cw) < 0.005);
+    return match ? match.cw : '';
+};
+
+// Zeigt die Kennlinien-Vorschau nur, wenn der Knoten wirklich als [PUMPS]-
+// Sonderlink gebaut wird (siehe SwmmBuilder.addLinks()) — Typ 1 "Pumpwerk" kann
+// je nach Volumen stattdessen zu [STORAGE] klassifiziert werden (classifyPreview).
+const isPumpLink = computed(() => LINK_SECTION_BY_BTYP[getEffectiveBauwerkstyp(localData.value)] === '[PUMPS]');
+
+const store = useIsybauStore();
 
 const props = defineProps({
   selectedElement: Object,
   hydraulics: Map,
   nodeResults: Map,
+  edges: Map,
+  // Ergebnisansicht: keine Editier-Felder, kein Speichern (siehe IsybauViewer.readonly)
+  readonly: { type: Boolean, default: false },
+});
+
+// Pumpe/Wehr/Drossel/Schieber (Bauwerkstyp 6/7/8/9) sind in SWMM LINKS — benannt
+// nach der ausgehenden Haltung dieses Knotens. Das reale Hydraulik-Ergebnis liegt
+// dort, nicht am Knoten selbst; rein informativ (kein Sprung, da diese Popover in
+// zwei unabhängigen Selektions-Kontexten laufen — Editor vs. Ergebnisansicht).
+const relatedLinkId = computed(() => {
+    if (elementType.value !== 'node' || !props.edges) return null;
+    const btyp = props.selectedElement?.bauwerkstyp ?? props.selectedElement?.type;
+    if (!LINK_BAUWERKSTYPEN.has(btyp)) return null;
+    const edge = Array.from(props.edges.values()).find(e => e.fromNodeId === props.selectedElement.id);
+    return edge?.id ?? null;
 });
 
 const emit = defineEmits(['close', 'save', 'show-details']);
+
+// --- Verschiebbarkeit ---
+// Das Popover hängt per CSS an bottom/right fest. Beim ersten Ziehen wechseln
+// wir auf explizite left/top-Koordinaten (relativ zum .isybau-viewer-Container,
+// dem einzigen positionierten Vorfahren) und lassen die Position danach über
+// Elementwechsel hinweg bestehen (wie ein frei schwebendes Werkzeugfenster).
+const panelEl = ref(null);
+const isDragging = ref(false);
+const dragPos = ref(null); // { left, top } in px, oder null = Default-Ecke unten rechts
+let dragStartX = 0, dragStartY = 0, dragBaseLeft = 0, dragBaseTop = 0;
+
+const dragStyle = computed(() => {
+    if (!dragPos.value) return {};
+    return { left: `${dragPos.value.left}px`, top: `${dragPos.value.top}px`, right: 'auto', bottom: 'auto' };
+});
+
+const startDrag = (e) => {
+    if (e.button !== 0) return;
+    const panel = panelEl.value;
+    const container = panel?.parentElement;
+    if (!panel || !container) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    dragBaseLeft = panelRect.left - containerRect.left;
+    dragBaseTop = panelRect.top - containerRect.top;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+
+    isDragging.value = true;
+    window.addEventListener('mousemove', onDrag);
+    window.addEventListener('mouseup', stopDrag);
+};
+
+const onDrag = (e) => {
+    if (!isDragging.value) return;
+    dragPos.value = {
+        left: dragBaseLeft + (e.clientX - dragStartX),
+        top: dragBaseTop + (e.clientY - dragStartY)
+    };
+};
+
+const stopDrag = () => {
+    isDragging.value = false;
+    window.removeEventListener('mousemove', onDrag);
+    window.removeEventListener('mouseup', stopDrag);
+};
+
+onUnmounted(stopDrag);
 
 // Local State Copy
 const localData = ref({});
@@ -230,7 +449,8 @@ function initLocalData(el) {
     else if (elementType.value === 'node') {
         // Ensure standard fields
         if (data.coverZ === undefined) data.coverZ = data.z + (data.depth || 0);
-        if (data.canOverflow === undefined) data.canOverflow = true; 
+        if (data.isManhole === undefined) data.isManhole = true;
+        if (data.canOverflow === undefined) data.canOverflow = data.isManhole !== false;
         if (!data.type || data.type === 'Schacht') data.type = 'Standard';
         
         // Map integer types to 'Standard'/'Bauwerk' string if needed for select fallback
@@ -240,56 +460,46 @@ function initLocalData(el) {
     localData.value = data;
 }
 
-// Result Computation
+// Result Computation — liest die Summary-Objekte des ResultsAssembler
+// (nodes/edges aus store.simulation.results), keine Zeitschritt-Daten.
 const currentResult = computed(() => {
     // NODE LOGIC
     if (elementType.value === 'node') {
         if (!props.nodeResults || !props.selectedElement) return null;
-        
+
         const res = props.nodeResults.get(props.selectedElement.id);
         if (!res) return null;
 
-        const node = props.selectedElement;
-        const maxDepth = node.depth || 0;
-        const currentDepth = res.depth || 0;
-        
-        // Check for flooding
-        const floodVolume = res.floodVolume || 0; // 10^6 ltr usually, Parser now extracts value
-        
-        // Volume Logic
-        let currentVol = res.vol || 0; // SWMM Base Volume
-        
-        const isManhole = node.isManhole !== false; 
-        
-        if (currentDepth > maxDepth && isManhole) {
-            const surcharge = currentDepth - maxDepth;
-            const aPonded = node.apondedArea || 20.0;
-            currentVol = res.vol + (surcharge * aPonded);
-        }
-        
+        const floodVolume = res.floodingVolume || 0; // Parser liefert bereits m³
+        const continuityError = res.continuityError ?? null;
+
         return {
-            depth: currentDepth,
-            volume: currentVol,
-            isFlooded: currentDepth > maxDepth,
-            floodWarning: floodVolume > 0,
-            floodVolume: floodVolume * 1000 // Convert 10^6 L to m^3
+            maxDepth: res.maxDepth || 0,
+            volume: res.maxVolumeStored ?? null,
+            vmax: res.maxAvailableVolume ?? null,
+            isFlooded: !!res.overflow || floodVolume > 0.001,
+            surcharged: !!res.surcharged,
+            floodWarning: floodVolume > 0.001,
+            floodVolume,
+            continuityError,
+            continuityWarning: continuityError !== null && Math.abs(continuityError) >= 10
         };
     }
-    
+
     // EDGE LOGIC
     if (elementType.value === 'edge') {
         if (!props.hydraulics || !props.selectedElement) return null;
         const res = props.hydraulics.get(props.selectedElement.id);
         if(!res) return null;
-        
+
         // Utilization Logic (Simplified - logic moved to Parser)
         // Parser already calculates 'utilization' as capped Filling Degree (Max/Full Depth * 100)
         let utilPercent = res.utilization || 0;
-        
+
         let displayVal = utilPercent;
         let displayText = `${displayVal.toFixed(0)}%`;
         let displayStyle = {};
-        
+
         // Visuals
         if (displayVal >= 90) {
              displayStyle = { color: '#c0392b', fontWeight: 'bold' }; // Red (Full/High)
@@ -300,7 +510,8 @@ const currentResult = computed(() => {
         }
 
         return {
-            depth: res.depth, 
+            maxFlow: res.maxFlow ?? null,
+            maxVelocity: res.maxVelocity ?? null,
             utilizationText: displayText,
             utilizationStyle: displayStyle,
         };
@@ -340,6 +551,7 @@ const save = () => {
     }
 
     emit('save', { id: payload.id, type: elementType.value, data: payload });
+    emit('close');
 };
 
 
@@ -356,39 +568,54 @@ watch(() => props.selectedElement, (val) => {
   right: 1rem;
   width: 320px;
   max-height: 70vh;
-  background: white;
+  background: #06093a;
   border-radius: 8px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 25px rgba(4,6,71,0.4);
   display: flex;
   flex-direction: column;
   z-index: 500;
   overflow: hidden;
-  border: 1px solid #ddd;
+  border: 1px solid #594491;
+}
+
+.info-window.dragging {
+  user-select: none;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
 }
 
 .info-header {
-  background: #f8f9fa;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #eee;
+  background: #040647;
+  padding: 0.65rem 1rem;
+  border-bottom: 2px solid #594491;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  cursor: grab;
+}
+
+.info-window.dragging .info-header {
+  cursor: grabbing;
 }
 
 .info-header h3 {
   margin: 0;
-  font-size: 1rem;
-  color: #333;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  color: #2ecc71;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .close-btn {
   background: none;
   border: none;
   font-size: 1.5rem;
-  color: #888;
+  color: #8f8be1;
   cursor: pointer;
   line-height: 1;
+  transition: color 0.2s;
 }
+.close-btn:hover { color: #2ecc71; }
 
 .info-content {
   padding: 1rem;
@@ -401,7 +628,7 @@ watch(() => props.selectedElement, (val) => {
     justify-content: space-between;
     margin-bottom: 0.5rem;
     font-size: 0.9rem;
-    color: #666;
+    color: #aeadd2;
 }
 
 .info-group {
@@ -411,18 +638,24 @@ watch(() => props.selectedElement, (val) => {
 .info-group label {
     display: block;
     font-size: 0.8rem;
-    color: #555;
+    color: #aeadd2;
     margin-bottom: 2px;
 }
 
 .full-input, .full-select {
     width: 100%;
     padding: 6px;
-    border: 1px solid #ddd;
+    border: 1px solid #594491;
     border-radius: 4px;
+    background: #0a0d5c;
+    color: #fff;
     font-size: 0.9rem;
     box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.15s;
 }
+.full-input:focus, .full-select:focus { border-color: #2ecc71; }
+.full-input:disabled, .full-select:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .flex-row {
     display: flex;
@@ -446,22 +679,24 @@ watch(() => props.selectedElement, (val) => {
 .checkbox-row label {
     margin: 0;
     font-size: 0.9rem;
+    color: #aeadd2;
 }
 
 .info-footer {
     padding: 1rem;
-    border-top: 1px solid #eee;
-    background: #fcfcfc;
+    border-top: 1px solid #594491;
+    background: #040647;
 }
 
 .primary-btn {
     background: #040647;
-    color: white;
-    border: none;
-    padding: 8px;
+    color: #fff;
+    border: 1px solid #594491;
+    padding: 10px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-weight: 700;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.48rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -479,16 +714,20 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .secondary-btn {
-    background: white;
-    border: 1px solid #ddd;
-    color: #666;
-    padding: 8px;
-    border-radius: 4px;
+    background: transparent;
+    border: 1px solid #594491;
+    color: #aeadd2;
+    padding: 10px 8px;
+    border-radius: 6px;
     cursor: pointer;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.48rem;
+    transition: background 0.15s;
 }
 
 .secondary-btn:hover {
-    background: #f0f0f0;
+    background: #594491;
+    color: #fff;
 }
 
 .full-width {
@@ -524,6 +763,31 @@ watch(() => props.selectedElement, (val) => {
     margin-bottom: 8px;
     font-size: 0.9rem;
     animation: pulse 2s infinite;
+}
+
+.hint-text {
+    font-size: 0.75rem;
+    color: #8f8be1;
+    margin: -4px 0 8px 0;
+}
+
+input[type="checkbox"] { accent-color: #2ecc71; }
+
+.link-hint-box {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-bottom: 8px;
+    font-size: 0.78rem;
+    color: #1e40af;
+}
+
+.surcharge-badge {
+    background: #fff8e1;
+    border-color: #f9a825;
+    color: #b26a00;
+    animation: none;
 }
 
 .sub-text {

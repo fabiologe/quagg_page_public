@@ -1,4 +1,4 @@
-import { Rasterizer, maskBuildingsAsNoData, burnModifications } from './Rasterizer.js';
+import { Rasterizer, maskBuildingsAsNoData } from './Rasterizer.js';
 import { Hydraulics } from './Hydraulics.js';
 import { BoundaryTools } from './BoundaryTools.js';
 import { SgcGenerator } from './SgcGenerator.js';
@@ -129,15 +129,12 @@ export class InputGenerator {
 
         console.log(`[InputGenerator] Terrain Header: ncols=${header.ncols}, nrows=${header.nrows}, cellsize=${header.cellsize}, xll=${header.xll}, yll=${header.yll}`);
 
-        // ── Building NoData-Masking & Terrain-Modifikationen ───────────────────
+        // ── Building NoData-Masking ─────────────────────────────────────────────
         //
-        // Strategie:
-        //   BUILDING   → NoData-Maske (-9999 = Zero-Flux-Boundary für LISFLOOD-FP)
-        //               Verhindert numerische Schockwellen durch 90°-Wände.
-        //   Sonstige    → Höhen-Delta (Abgrabungen, Teiche, etc.)
+        // BUILDING → NoData-Maske (-9999 = Zero-Flux-Boundary für LISFLOOD-FP)
+        //            Verhindert numerische Schockwellen durch 90°-Wände.
         //
-        const buildingMods    = [];
-        const nonBuildingMods = [];
+        const buildingMods = [];
 
         if (scenario.buildings && scenario.buildings.features) {
             scenario.buildings.features.forEach(f => buildingMods.push({
@@ -148,11 +145,11 @@ export class InputGenerator {
         }
         if (scenario.modifications) {
             scenario.modifications.forEach(m => {
-                (m.type === 'BUILDING' ? buildingMods : nonBuildingMods).push(m);
+                if (m.type === 'BUILDING') buildingMods.push(m);
             });
         }
 
-        // Pass 1: Gebäude als -9999 (NoData = impermeabler Rand) maskieren.
+        // Gebäude als -9999 (NoData = impermeabler Rand) maskieren.
         // LISFLOOD-FP behandelt -9999-Zellen nativ als Zero-Flux-Boundary →
         // Wasser prallt physikalisch ab ohne +10m-Sloshing-Artefakte.
         if (buildingMods.length > 0) {
@@ -164,11 +161,6 @@ export class InputGenerator {
         // ausschließlich über die Orifice-Geometrie (Querschnittsverengung); ein
         // Pfeiler ist eine lokale volle Sperrung, die weiter unten aus dem SGC-
         // Gerinne (Breite 0) und der .weir-Datei entfernt wird — ohne Geländeeingriff.
-
-        // Pass 2: Sonstige Höhen-Änderungen (Abgrabungen, Teiche, etc.)
-        if (nonBuildingMods.length > 0) {
-            data = Rasterizer.burnBuildings(data, header, nonBuildingMods);
-        }
 
         // CRITICAL FIX: The UI expects terrain data to be untouched.
         // We do NOT mutate the global `scenario.grid` pointer here. 

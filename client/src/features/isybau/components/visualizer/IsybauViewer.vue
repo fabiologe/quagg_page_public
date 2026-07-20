@@ -10,6 +10,10 @@
     @wheel.prevent="zoom"
     @click="handleMapClick"
     @dblclick="handleMapDblClick"
+    @touchstart="onTouchStart"
+    @touchmove.prevent="onTouchMove"
+    @touchend="onTouchEnd"
+    @touchcancel="onTouchEnd"
   >
     <!-- Always render SVG to capture clicks, even if empty -->
     <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
@@ -82,7 +86,7 @@
               :points="getPolygonPoints(edge.coords)"
               class="edge-line"
               vector-effect="non-scaling-stroke"
-              :class="{ 'selected': selectedElement?.id === edge.id }"
+              :class="{ 'selected': selectedElement?.id === edge.id, 'multi-selected': multiSelectedSet.has(edge.id) }"
               :style="{ stroke: getEdgeColor(edge.id) }"
               @click.stop="selectElement(edge, 'edge', $event)"
             />
@@ -95,7 +99,7 @@
               :y2="bounds.maxY - getNode(edge.toNodeId).y"
               class="edge-line"
               vector-effect="non-scaling-stroke"
-              :class="{ 'selected': selectedElement?.id === edge.id }"
+              :class="{ 'selected': selectedElement?.id === edge.id, 'multi-selected': multiSelectedSet.has(edge.id) }"
               :style="{ stroke: getEdgeColor(edge.id) }"
               @click.stop="selectElement(edge, 'edge', $event)"
             />
@@ -122,7 +126,7 @@
                 :cy="bounds.maxY - node.y"
                 :r="(node.diameter / 2) * arrowSizeMultiplier"
                 class="node-circle"
-                :class="{ 'selected': selectedElement?.id === node.id }"
+                :class="{ 'selected': selectedElement?.id === node.id, 'multi-selected': multiSelectedSet.has(node.id) }"
                 :style="{ fill: getNodeColor(node.id) }"
                 @click.stop="selectElement(node, 'node', $event)"
                 />
@@ -143,7 +147,7 @@
                     :x2="(node.x - bounds.minX) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     class="node-x"
-                    :class="{ 'selected': selectedElement?.id === node.id }"
+                    :class="{ 'selected': selectedElement?.id === node.id, 'multi-selected': multiSelectedSet.has(node.id) }"
                     :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
                     vector-effect="non-scaling-stroke"
                   />
@@ -153,7 +157,7 @@
                     :x2="(node.x - bounds.minX) - ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     class="node-x"
-                    :class="{ 'selected': selectedElement?.id === node.id }"
+                    :class="{ 'selected': selectedElement?.id === node.id, 'multi-selected': multiSelectedSet.has(node.id) }"
                     :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
                     vector-effect="non-scaling-stroke"
                   />
@@ -191,8 +195,18 @@
       </g>
     </svg>
     
+    <!-- Box-Select: Auswahlrechteck (Screen-Space-Overlay) -->
+    <div v-if="boxSelect.active" class="box-select-rect" :style="boxRectStyle"></div>
+
+    <!-- Box-Select: Aktionsleiste -->
+    <div v-if="multiSelectedIds.length" class="multi-select-bar" @mousedown.stop @click.stop @wheel.stop>
+        <span class="msb-count">{{ multiSelectedIds.length }} ausgewählt</span>
+        <button class="msb-btn msb-danger" @click="deleteMultiSelection">Löschen</button>
+        <button class="msb-btn" @click="clearMultiSelection">Aufheben</button>
+    </div>
+
     <!-- Extracted Controls -->
-    <ViewerControls 
+    <ViewerControls
         :mode="mode"
         :textSizeMultiplier="textSizeMultiplier"
         :arrowSizeMultiplier="arrowSizeMultiplier"
@@ -209,10 +223,12 @@
         v-if="selectedElement && (interactionMode === 'editProperties' || enablePopover)"
         :selectedElement="selectedElement"
         :hydraulics="hydraulics"
+        :edges="edges"
         :runoffDetails="runoffDetails"
         :getMapping="getMapping"
         :getAreaRunoff="getAreaRunoff"
         :nodeResults="nodeResults"
+        :readonly="readonly"
         @close="selectedElement = null"
         @update="updateElement"
         @save="$emit('save-element', $event)"
@@ -223,7 +239,7 @@
 
 <script setup>
 import { computed, ref, watch, reactive } from 'vue';
-import { getMapping } from '../../utils/mappings.js';
+import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN } from '../../utils/mappings.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 
@@ -277,15 +293,21 @@ const props = defineProps({
       type: Boolean,
       default: true
   },
+  // Doppelrolle des Viewers explizit machen: true = reine Ergebnisansicht
+  // (ElementInfo zeigt nur Ergebnisse, keine Editier-Felder/Speichern).
+  readonly: {
+      type: Boolean,
+      default: false
+  },
   focusTarget: {
-      type: String, 
+      type: String,
       default: null
   }
 });
 
 
 
-const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details']);
+const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details', 'delete-elements']);
 
 const container = ref(null); // Reference to root div
 
@@ -410,8 +432,79 @@ const handleMapDblClick = (e) => {
 
 // Update mousedown to handleMouseDown
 const handleMouseDown = (e) => {
+    if (props.interactionMode === 'boxSelect' && e.button === 0) {
+        boxSelect.active = true;
+        boxSelect.additive = e.shiftKey;
+        boxSelect.x0 = boxSelect.x1 = e.clientX;
+        boxSelect.y0 = boxSelect.y1 = e.clientY;
+        return;
+    }
     startPan(e);
 };
+
+// --- Box-Select (Rechteck-Mehrfachauswahl) ---
+const boxSelect = reactive({ active: false, additive: false, x0: 0, y0: 0, x1: 0, y1: 0 });
+const multiSelectedIds = ref([]);
+const multiSelectedSet = computed(() => new Set(multiSelectedIds.value));
+
+const boxRectStyle = computed(() => {
+    const rect = container.value?.getBoundingClientRect();
+    const ox = rect?.left || 0;
+    const oy = rect?.top || 0;
+    return {
+        left: `${Math.min(boxSelect.x0, boxSelect.x1) - ox}px`,
+        top: `${Math.min(boxSelect.y0, boxSelect.y1) - oy}px`,
+        width: `${Math.abs(boxSelect.x1 - boxSelect.x0)}px`,
+        height: `${Math.abs(boxSelect.y1 - boxSelect.y0)}px`
+    };
+});
+
+const finalizeBoxSelect = () => {
+    // Mini-Rechteck = Klick → Auswahl aufheben
+    if (Math.abs(boxSelect.x1 - boxSelect.x0) < 4 && Math.abs(boxSelect.y1 - boxSelect.y0) < 4) {
+        if (!boxSelect.additive) multiSelectedIds.value = [];
+        return;
+    }
+
+    const a = getEventCoords(boxSelect.x0, boxSelect.y0);
+    const b = getEventCoords(boxSelect.x1, boxSelect.y1);
+    if (!a || !b) return;
+
+    const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
+    const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
+    const inside = (p) => p && p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+
+    const ids = boxSelect.additive ? [...multiSelectedIds.value] : [];
+    const idSet = new Set(ids);
+
+    for (const node of props.nodeArray) {
+        if (inside(node) && !idSet.has(node.id)) { ids.push(node.id); idSet.add(node.id); }
+    }
+    // Haltungen: ausgewählt, wenn BEIDE Endknoten im Rahmen liegen
+    for (const edge of props.edgeArray) {
+        const n1 = getNode(edge.fromNodeId);
+        const n2 = getNode(edge.toNodeId);
+        if (inside(n1) && inside(n2) && !idSet.has(edge.id)) { ids.push(edge.id); idSet.add(edge.id); }
+    }
+
+    multiSelectedIds.value = ids;
+};
+
+const clearMultiSelection = () => { multiSelectedIds.value = []; };
+
+const deleteMultiSelection = () => {
+    if (!multiSelectedIds.value.length) return;
+    emit('delete-elements', [...multiSelectedIds.value]);
+    multiSelectedIds.value = [];
+};
+
+// Auswahl verwerfen, wenn der Modus gewechselt wird
+watch(() => props.interactionMode, (m) => {
+    if (m !== 'boxSelect') {
+        multiSelectedIds.value = [];
+        boxSelect.active = false;
+    }
+});
 
 
 
@@ -654,19 +747,40 @@ const getEdgeArrowTransform = (edge) => {
 const getEdgeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
   if (!props.hydraulics || !props.hydraulics.has(id)) return null;
-  
+
   const res = props.hydraulics.get(id);
   const util = res.utilization || 0;
-  
+
   if (util > 90) return '#e74c3c'; // Red (>90%)
   if (util >= 75) return '#f39c12'; // Orange (>75%)
   return null;
 };
 
+// Pumpe/Wehr/Drossel/Schieber sind in Realität/ISYBAU ein KNOTEN-Element (auch
+// wenn SWMM sie intern als Haltung/Link führt) — einheitlich hell lila, damit
+// ein Blick "Sonderbauwerk" signalisiert statt die Haltung optisch zu verbiegen.
+const SONDERBAUWERK_COLOR = '#c9a0dc';
+
 const getNodeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
+
+  const node = getNode(id);
+  const btyp = node ? getEffectiveBauwerkstyp(node) : null;
+  if (btyp != null && LINK_BAUWERKSTYPEN.has(btyp)) {
+    // Das reale Hydraulik-Ergebnis liegt an der ausgehenden Haltung, nicht am
+    // Knoten selbst — Status trotzdem hier am Knoten anzeigen (rot/orange bei
+    // hoher Auslastung), sonst bleibt es bei der hell-lila Grundfarbe.
+    const edge = Array.from(props.edges?.values?.() || []).find(e => e.fromNodeId === id);
+    const res = edge && props.hydraulics ? props.hydraulics.get(edge.id) : null;
+    if (res) {
+      const util = res.utilization || 0;
+      if (util > 90) return '#e74c3c';
+      if (util >= 75) return '#f39c12';
+    }
+    return SONDERBAUWERK_COLOR;
+  }
+
   if (!props.nodeResults || !props.nodeResults.has(id)) return null;
-  
   const res = props.nodeResults.get(id);
   if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return '#e74c3c'; // Red
   return null;
@@ -751,6 +865,12 @@ const startPan = (e) => {
 };
 
 const pan = (e) => {
+  if (boxSelect.active) {
+      boxSelect.x1 = e.clientX;
+      boxSelect.y1 = e.clientY;
+      return;
+  }
+
   if (draggingLabelId.value) {
       const coords = getEventCoords(e.clientX, e.clientY);
       if (coords) {
@@ -773,22 +893,34 @@ const pan = (e) => {
   
   const dx = e.clientX - startX.value;
   const dy = e.clientY - startY.value;
-  
+
   accumulatedMove.value += Math.abs(dx) + Math.abs(dy);
   if (accumulatedMove.value > dragThreshold) {
     isDragging.value = true;
   }
-  
-  const sensitivity = bounds.value.width / 800; 
-  
-  translateX.value += dx * sensitivity / scale.value;
-  translateY.value += dy * sensitivity / scale.value;
-  
+
+  // 1:1-Pan: Bildschirm-Pixel exakt in ViewBox-Einheiten übersetzen.
+  // Die Translation ist die ÄUSSERSTE Stufe des Transforms
+  // ("translate(c+t) scale(s) translate(-c)") und wirkt damit unskaliert —
+  // daher KEINE Division durch scale (die machte das Pannen beim Reinzoomen
+  // zäh und beim Rauszoomen sprunghaft).
+  const ctm = container.value?.querySelector('svg')?.getScreenCTM();
+  const unitsPerPx = (ctm && ctm.a) ? 1 / ctm.a : bounds.value.width / (container.value?.clientWidth || 800);
+
+  translateX.value += dx * unitsPerPx;
+  translateY.value += dy * unitsPerPx;
+
   startX.value = e.clientX;
   startY.value = e.clientY;
 };
 
 const endPan = () => {
+  if (boxSelect.active) {
+      finalizeBoxSelect();
+      boxSelect.active = false;
+      return;
+  }
+
   if (draggingLabelId.value) {
       draggingLabelId.value = null;
   }
@@ -799,41 +931,97 @@ const endPan = () => {
   }, 50); // Small delay to prevent click event processing
 };
 
-// Zoom Logic
-const zoom = (e) => {
-  const zoomFactor = 0.1;
-  let delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-
-  // Make zooming proportional
-  const newScale = Math.max(0.1, Math.min(50, scale.value * (1 + delta)));
+// Zoom Logic — hält den angegebenen Bildschirmpunkt (clientX/clientY) fest,
+// während skaliert wird (Maus-Cursor bei Wheel, Finger-Mittelpunkt bei Pinch).
+const zoomAtPoint = (clientX, clientY, rawNewScale) => {
+  const newScale = Math.max(0.1, Math.min(50, rawNewScale));
   if (newScale === scale.value) return;
 
   const svg = container.value?.querySelector('svg');
-  if(!svg) {
+  if (!svg) {
     scale.value = newScale;
     return;
   }
-  
+
   const pt = svg.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  
+  pt.x = clientX;
+  pt.y = clientY;
+
   // Transform screen coordinate to SVG viewport coordinate (svgP.x, svgP.y)
   // This is the position on the screen, measured in SVG units.
   const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
-  
+
   const cx = Number.isFinite(bounds.value.centerX) ? bounds.value.centerX : 50;
   const cy = Number.isFinite(bounds.value.centerY) ? bounds.value.centerY : 50;
-  
-  // Find the exact coordinate on the original map that lies under the cursor
+
+  // Find the exact coordinate on the original map that lies under the point
   const rawX = (svgP.x - (cx + translateX.value)) / scale.value + cx;
   const rawY = (svgP.y - (cy + translateY.value)) / scale.value + cy;
-  
-  // Adjust transform so that the same map coordinate stays under the cursor at the new scale
+
+  // Adjust transform so that the same map coordinate stays under the point at the new scale
   translateX.value += (rawX - cx) * (scale.value - newScale);
   translateY.value += (rawY - cy) * (scale.value - newScale);
-  
+
   scale.value = newScale;
+};
+
+const zoom = (e) => {
+  const zoomFactor = 0.1;
+  const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
+  zoomAtPoint(e.clientX, e.clientY, scale.value * (1 + delta));
+};
+
+// Touch: 1 Finger = Pan (wie Maus-Drag), 2 Finger = Pinch-Zoom. Ohne eigene
+// Touch-Handler + touch-action:none fängt der Browser das Pinch-Gesture ab und
+// zoomt die ganze Seite statt der Karte (wie es die 3D-Ansicht schon nicht tut).
+let pinchStartDist = 0;
+
+const touchDist = (touches) => Math.hypot(
+  touches[0].clientX - touches[1].clientX,
+  touches[0].clientY - touches[1].clientY,
+);
+const touchMid = (touches) => ({
+  x: (touches[0].clientX + touches[1].clientX) / 2,
+  y: (touches[0].clientY + touches[1].clientY) / 2,
+});
+
+// Nicht handleMouseDown()/startPan() wiederverwenden: startPan gated auf
+// e.button (0=links, 1=Mitte) — ein Touch-Objekt hat kein .button, wäre also
+// immer 'undefined' und startPan bräche sofort ab (Pan-Funktion faktisch tot).
+const startTouchPan = (touch) => {
+  if (mode.value !== 'pan') return; // gleiche Gate wie beim Maus-Pan
+  isPanning.value = true;
+  isDragging.value = false;
+  accumulatedMove.value = 0;
+  startX.value = touch.clientX;
+  startY.value = touch.clientY;
+};
+
+const onTouchStart = (e) => {
+  if (e.touches.length === 2) {
+    isPanning.value = false;
+    pinchStartDist = touchDist(e.touches);
+  } else if (e.touches.length === 1) {
+    startTouchPan(e.touches[0]);
+  }
+};
+
+const onTouchMove = (e) => {
+  if (e.touches.length === 2) {
+    const dist = touchDist(e.touches);
+    if (pinchStartDist > 0) {
+      const mid = touchMid(e.touches);
+      zoomAtPoint(mid.x, mid.y, scale.value * (dist / pinchStartDist));
+    }
+    pinchStartDist = dist;
+  } else if (e.touches.length === 1) {
+    pan(e.touches[0]);
+  }
+};
+
+const onTouchEnd = (e) => {
+  if (e.touches.length < 2) pinchStartDist = 0;
+  if (e.touches.length === 0) endPan();
 };
 
 const resetView = () => {
@@ -843,10 +1031,12 @@ const resetView = () => {
   selectedElement.value = null;
 };
 
-// Reset when data changes
-watch(() => props.nodes, () => {
-  resetView();
-}, { deep: true });
+// Ansicht nur bei FRISCHEM Netz zurücksetzen (0 → n Knoten, z.B. XML-Import).
+// Der frühere deep-Watcher resettete bei JEDER Datenänderung (Haltung anlegen,
+// Mehrfach-Löschen, Eigenschaft speichern) — die Karte sprang ständig weg.
+watch(() => props.nodes.size, (n, old) => {
+  if (old === 0 && n > 0) resetView();
+});
 
 </script>
 
@@ -860,6 +1050,7 @@ watch(() => props.nodes, () => {
   position: relative;
   cursor: default;
   user-select: none; /* Prevent text selection during pan */
+  touch-action: none; /* Pinch/Pan selbst übernehmen statt Browser-Seiten-Zoom */
 }
 
 .isybau-viewer.mode-pan {
@@ -982,6 +1173,67 @@ svg {
   stroke-width: 3px;
 }
 
+/* Box-Select: markierte Elemente */
+.edge-line.multi-selected {
+  stroke: #8f8be1 !important;
+  stroke-width: 5px;
+}
+.node-circle.multi-selected {
+  fill: #8f8be1 !important;
+  stroke: #594491;
+  stroke-width: 0.15;
+}
+.node-x.multi-selected {
+  stroke: #8f8be1 !important;
+  stroke-width: 3px;
+}
+
+/* Box-Select: Auswahlrechteck */
+.box-select-rect {
+  position: absolute;
+  border: 1.5px dashed #2ecc71;
+  background: rgba(46, 204, 113, 0.08);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Box-Select: Aktionsleiste */
+.multi-select-bar {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #040647;
+  border: 1px solid #594491;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  z-index: 1001;
+  box-shadow: 0 4px 16px rgba(4,6,71,0.4);
+}
+.msb-count {
+  color: #2ecc71;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.05em;
+}
+.msb-btn {
+  background: transparent;
+  border: 1px solid #594491;
+  color: #aeadd2;
+  border-radius: 5px;
+  padding: 0.4rem 0.7rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.46rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.msb-btn:hover { background: #594491; color: #fff; }
+.msb-btn.msb-danger { border-color: #e74c3c; color: #e74c3c; }
+.msb-btn.msb-danger:hover { background: #e74c3c; color: #fff; }
+
 .node-label {
   fill: #2c3e50;
   pointer-events: all;
@@ -1011,175 +1263,6 @@ svg {
   justify-content: center;
   height: 100%;
   color: #999;
-}
-
-.controls {
-  position: absolute;
-  bottom: 1rem;
-  left: 1rem;
-  background: white;
-  padding: 0.5rem;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 10;
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.mode-toggle {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.size-control {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.5rem;
-}
-
-.size-control input[type="range"] {
-  width: 80px;
-  cursor: pointer;
-}
-
-.controls button {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-  font-size: 1.1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.controls button.active {
-  background: #e3f2fd;
-  border-color: #2196F3;
-  color: #2196F3;
-}
-
-.separator-v {
-  width: 1px;
-  height: 24px;
-  background: #eee;
-}
-
-.controls button:hover {
-  background: #f0f0f0;
-  transform: scale(1.05);
-}
-
-/* Info Window */
-.info-window {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 300px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  overflow: hidden;
-  z-index: 20;
-}
-
-.info-header {
-  background: linear-gradient(135deg, #2c3e50, #34495e);
-  color: white;
-  padding: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.info-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  opacity: 0.8;
-}
-
-.close-btn:hover {
-  opacity: 1;
-}
-
-.info-content {
-  padding: 1rem;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-  font-size: 0.95rem;
-}
-
-.label {
-  color: #7f8c8d;
-  font-weight: 500;
-}
-
-.value {
-  text-align: right;
-}
-
-.edit-input {
-  width: 80px;
-  text-align: right;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 2px 4px;
-  font-size: 0.9rem;
-}
-
-.edit-input:focus {
-  border-color: #3498db;
-  outline: none;
-}
-
-.separator {
-  height: 1px;
-  background: #eee;
-  margin: 0.5rem 0;
-}
-
-.raw-details {
-  margin-top: 1rem;
-  border-top: 1px solid #eee;
-  padding-top: 0.5rem;
-}
-
-.raw-details summary {
-  cursor: pointer;
-  color: #3498db;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
-}
-
-.raw-details pre {
-  background: #f8f9fa;
-  padding: 0.5rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  overflow-x: auto;
-  max-height: 200px;
 }
 
 /* Transitions */

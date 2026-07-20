@@ -4,7 +4,7 @@
 //
 //   node src/features/flood-2D/test/test_network_results.mjs
 
-import { buildNetworkSeries, timeIndexAt, networkStateAtTime }
+import { buildNetworkSeries, timeIndexAt, networkStateAtTime, networkNorms }
     from '../composables/viewer/useNetworkResults.js';
 
 let failed = 0;
@@ -83,6 +83,22 @@ check(Math.abs(stE.nodes.get('J1').depth - 0.5) < 1e-9, 'J1 nach Ende: hält let
 // vor dem ersten Step: ersten Wert halten
 const st0 = networkStateAtTime(NET, 0);
 check(Math.abs(st0.links.get('C1').fill - 0.2) < 1e-9, 'C1 bei t=0: klemmt auf ersten Report-Step');
+
+console.log('5) networkNorms + velocity im Frame-Zustand (3D-Färbmodi Q/v)');
+const norms = networkNorms(NET);
+check(norms.Qmax === 0.7 && norms.vMax === 2.2,
+    `globale Maxima: Qmax ${norms.Qmax}, vMax ${norms.vMax}`);
+check(networkNorms(null).Qmax === 0 && networkNorms({}).vMax === 0,
+    'null/leer → Nullen (kein Crash, Färbung fällt auf Basis zurück)');
+// Vorzeichen: Rückstau (negatives Q) muss betragsmäßig in die Skala eingehen
+const normsNeg = networkNorms({ links: { R1: { flow: [-1.2, 0.3], velocity: [-0.8, 0.1] } } });
+check(normsNeg.Qmax === 1.2 && normsNeg.vMax === 0.8, 'negative Q/v gehen als Betrag ein');
+// velocity wird wie flow linear interpoliert (t=90 zwischen 0.5 und 1.5)
+check(Math.abs(stM.links.get('C1').velocity - 1.0) < 1e-9,
+    `C1 bei t=90: v ${stM.links.get('C1').velocity} (linear 0.5→1.5)`);
+// depth (Fließtiefe im Rohr — Füllstand im Querschnitts-Chart) interpoliert mit
+check(Math.abs(stM.links.get('C1').depth - 0.2) < 1e-9,
+    `C1 bei t=90: Fließtiefe ${stM.links.get('C1').depth} (linear 0.1→0.3)`);
 
 console.log('');
 if (failed) { console.log(`❌ NETWORK-RESULTS: ${failed} Checks fehlgeschlagen`); process.exit(1); }

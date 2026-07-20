@@ -446,6 +446,13 @@ const handleSolverEvent = (data) => {
                         break;
                     }
 
+                    case 'SWMM_REPORT':
+                        simStore.setSwmmReport(data.text);
+                        // Klartext-Report auch in den Solver-I/O-Inspektor (Tab „Ergebnisse")
+                        resultFiles.value['swmm-report.rpt'] = data.text;
+                        appendLog('[RESULT] SWMM-Report (.rpt) empfangen.');
+                        break;
+
                     case 'COUPLING_BUDGET':
                         simStore.setCouplingBudget(data.data);
                         appendLog(`[RESULT] Kopplungsbilanz: 1D→2D ${data.data?.to2d?.toFixed(1)} m³, 2D→1D ${data.data?.to1d?.toFixed(1)} m³, Schuld ${data.data?.debt?.toFixed(3)} m³.`);
@@ -555,23 +562,16 @@ const openViewer = async () => {
             })));
         }
         
-        // 2. Echte Geländemanipulationen (Teiche/Abgrabungen) sammeln
-        const nonBuildingMods = [];
+        // 2. Weitere Modifikationen (bisher ausschließlich BUILDING) einsammeln
         if (geoStore.modifications) {
             geoStore.modifications.forEach(m => {
                 if (m.type === 'BUILDING') buildingMods.push(m);
-                else nonBuildingMods.push(m);
             });
         }
-        
+
         // --- CHIRURGISCHER SCHNITT: Terrain bleibt unter Gebäuden flach (NoData) ---
         if (buildingMods.length > 0) {
             bakedTerrainData.gridData = Rasterizer.maskBuildingsAsNoData(bakedTerrainData.gridData, header, buildingMods);
-        }
-        
-        // Erdbau/Bodensenkungen normal ins Mesh brennen
-        if (nonBuildingMods.length > 0) {
-            bakedTerrainData.gridData = Rasterizer.burnBuildings(bakedTerrainData.gridData, header, nonBuildingMods);
         }
         // (Kein Export-Resampling mehr — Solver UND Viewer arbeiten in nativer DEM-Auflösung,
         //  daher passt die Wasserhaut-Geometrie automatisch zur Frame-Auflösung.)

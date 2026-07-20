@@ -10,7 +10,7 @@
     <div class="upload-section">
 
       <!-- XML Import -->
-      <label for="file-upload" class="file-btn">
+      <label for="file-upload" class="file-btn" data-tutorial="xml-import">
         <img class="px-icon" src="/saintv1d/icons/Content-Files-Notepad--Streamline-Pixel.svg" />
         <div class="btn-text">
           <span class="btn-label">XML importieren</span>
@@ -31,6 +31,12 @@
         <span>Projekte</span>
       </button>
 
+      <!-- XML Export (nur mit geladenem Netz) -->
+      <button v-if="hasData" class="folder-btn" @click="handleXmlExport">
+        <img class="px-icon" src="/saintv1d/icons/Interface-Essential-Clound-Download--Streamline-Pixel.svg" />
+        <span>XML exportieren</span>
+      </button>
+
     </div>
 
     <!-- Slot (shown when data loaded) -->
@@ -48,6 +54,7 @@
 import { computed } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { parseIsybauXML } from '../../utils/xmlParser.js';
+import { buildIsybauXML } from '../../utils/xmlExporter.js';
 import TerminalHero from './TerminalHero.vue';
 
 const props = defineProps({
@@ -70,7 +77,32 @@ const handleFileUpload = async (event) => {
   } catch (e) {
     console.error('Parse Error', e);
     alert('Fehler beim Lesen der XML: ' + e.message);
+  } finally {
+    // Gleiche Datei erneut wählbar machen
+    event.target.value = '';
   }
+};
+
+const handleXmlExport = () => {
+  const { xml, warnings } = buildIsybauXML({
+    nodes: store.nodeArray.map(n => n.toJSON ? n.toJSON() : n),
+    edges: store.edgeArray.map(e => e.toJSON ? e.toJSON() : e),
+    areas: store.areaArray.map(a => a.toJSON ? a.toJSON() : a),
+    metadata: store.metadata
+  });
+
+  if (warnings.length) {
+    alert('Export mit Hinweisen:\n\n' + warnings.join('\n'));
+  }
+
+  const base = (store.metadata.fileName || 'kanalnetz').replace(/\.xml$/i, '');
+  const blob = new Blob([xml], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${base}_export.xml`;
+  a.click();
+  URL.revokeObjectURL(url);
 };
 </script>
 
@@ -138,13 +170,13 @@ const handleFileUpload = async (event) => {
   align-items: center;
   gap: 0.65rem;
   width: 100%;
-  padding: 0.55rem 0.75rem;
+  padding: 0.6rem 0.75rem;
   background: #594491;
   color: #fff;
   border: none;
   border-radius: 7px;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
   cursor: pointer;
   transition: background 0.15s;
   box-sizing: border-box;
@@ -167,9 +199,9 @@ const handleFileUpload = async (event) => {
   min-width: 0;
 }
 .btn-label {
-  font-size: 0.85rem;
-  font-weight: 700;
-  line-height: 1.2;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  line-height: 1.4;
 }
 .file-name {
   font-size: 0.7rem;

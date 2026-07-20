@@ -260,125 +260,104 @@ export class RptParser {
         });
 
         // --- 6. Link Flow Summary ---
-        // Columns: Link, Type, MaxFlow, Day, Time, MaxVel, Max/Full Flow, Max/Full Depth
+        // Spaltenzahl hängt vom Linktyp ab (verifiziert gegen solver/src/solver/statsrpt.c,
+        // writeLinkFlows): CONDUIT druckt alle 8 Spalten; PUMP bricht nach der
+        // Q/Qvoll-Spalte ab (keine Geschwindigkeit/Tiefe) → 6 Tokens; WEIR/ORIFICE
+        // drucken weder Geschwindigkeit noch Q/Qvoll, nur ggf. h/hvoll (nur wenn
+        // xsect.yFull > 0 — bei unserem hardcodierten BOTTOM-Orifice nie der Fall)
+        // → 5-6 Tokens. Mit der alten fixen `len >= 8`-Schwelle wurden Pumpen/Wehre/
+        // Drosseln/Schieber hier IMMER stillschweigend übersprungen.
+        // Columns (CONDUIT): Link, Type, MaxFlow, Day, Time, MaxVel, Max/Full Flow, Max/Full Depth
         // Example: RW34  CONDUIT  0.112  0  00:20  1.58  1.30  1.00
         // Indices: [0]   [1]      [2]    [3][4]    [5]   [6]   [7]
         parseTable(/(Link|Conduit) Flow Summary/, (parts) => {
             const id = parts[0];
+            const type = parts[1];
             const getVal = (idx) => parseFloat(parts[idx]);
             const len = parts.length;
 
-            // Robust check: sometimes Type has space? rare.
-            // Check if last element is number
-            if (len >= 8) {
-                if (!edges[id]) edges[id] = {};
-                edges[id].type = parts[1];
-                edges[id].maxFlow = getVal(2) * 1000; // CMS -> L/s
-                edges[id].timeOfMaxFlow = parts[4];
+            if (len < 5) return; // keine echte Datenzeile (ID, Typ, MaxFlow, Day, Time fehlen)
+
+            if (!edges[id]) edges[id] = {};
+            edges[id].type = type;
+            edges[id].maxFlow = getVal(2) * 1000; // CMS -> L/s
+            edges[id].timeOfMaxFlow = parts[4];
+
+            if (type === 'CONDUIT' && len >= 8) {
                 edges[id].maxVelocity = getVal(5); // m/s
                 edges[id].flowCapacityRatio = getVal(6); // Max/Full Flow
                 edges[id].depthRatio = getVal(7); // Max/Full Depth
+            } else if (type === 'PUMP' && len >= 6) {
+                // SWMM druckt für Pumpen direkt Q/Qvoll, keine Geschwindigkeit/Tiefe
+                edges[id].flowCapacityRatio = getVal(5);
+            } else if ((type === 'WEIR' || type === 'ORIFICE') && len >= 6) {
+                // SWMM druckt für Wehre/Drosseln/Schieber weder Geschwindigkeit noch
+                // Q/Qvoll — nur h/hvoll, und auch nur wenn eine Vollfülltiefe bekannt ist.
+                edges[id].depthRatio = getVal(5);
+            }
+            // sonst (DUMMY/OUTLET, oder Orifice ohne Vollfülltiefe): nur maxFlow/timeOfMaxFlow
 
-                // Calculate Capacity (Qvoll)
-                // Qvoll = Qmax / Ratio
-                // If Ratio > 0.01
+            if (edges[id].flowCapacityRatio !== undefined) {
                 if (Math.abs(edges[id].flowCapacityRatio) > 0.01) {
                     edges[id].capacity = edges[id].maxFlow / edges[id].flowCapacityRatio;
-                } else {
+                } else if (type === 'CONDUIT') {
                     edges[id].capacity = calculateCapacity(id);
                 }
-
+            }
+            if (edges[id].depthRatio !== undefined) {
                 edges[id].utilization = edges[id].depthRatio * 100;
             }
         });
 
-        // --- Post-Process: Calculate Vmax (Volume Stored) for Nodes ---
-        // SWMM Report doesn't explicitly give "Max Volume Stored" in summary for all nodes, 
-        // only "Ponded Volume" (Overflow).
-        // Use MaxDepth * Area? Or Approximation?
-        // Actually, best we can do is MaxDepth * CrossSection (if simple) or 
-        // use the TimeSeries binary for accurate Vmax. 
-        // BUT user asked for "Vmax also was möglich ist an Volumen" -> This implies Capacity vs Current Volume.
-        // "was möglich ist" = Max Possible Volume (Storage Capacity)
-        // "Vmax" = Max Stored Volume during sim.
+        // Vmax (maxAvailableVolume) und Überstau-Kennzeichnung (HGL > Deckelhöhe)
+        // werden im ResultsAssembler aus der Eingangs-Geometrie berechnet.
 
-        // Let's iterate nodes and calculate 'MaxPossibleVolume' based on geometry.
-        Object.keys(nodes).forEach(id => {
-            const nodeInput = nodesIn[id];
-            if (nodeInput) {
-                // Calculate Max Storage Volume
-                // If Cylinder: PI * r^2 * MaxDepth
-                const depth = parseFloat(nodeInput.maxDepth) || 0; // Physical depth
-                // Or use z_cover - z_invert
-
-                // Simplification for now
-                // We will populate 'maxAvailableVolume'
-                nodes[id].maxAvailableVolume = 0; // TODO: Calculate if geometry known
-            }
-
-            // Check for Overflow based on Rim Elevation (User Request)
-            const input = nodesIn[id];
-            if (input && nodes[id].maxHGL !== undefined) {
-                const rim = input.coverZ !== undefined ? Number(input.coverZ) : (Number(input.z) + Number(input.maxDepth || 3));
-                const maxHGL = nodes[id].maxHGL;
-
-                // Precision tolerance
-                if (maxHGL > (rim + 0.01)) {
-                    nodes[id].overflow = true;
-                    nodes[id].overflowReason = "HGL > Rim";
+        // --- 7. Diagnose-Listen (Kontinuität/Instabilität/kritische Elemente) ---
+        // Format im Report: Titel ist von '****'-Zeilen UMRAHMT — die Zeile nach
+        // dem Titel ist wieder '****' und darf den Block nicht sofort beenden.
+        // (Genau dieser Fehler ließ alle vier Listen immer leer.)
+        const parseDiagnosticList = (title, lineRegex, mapFn) => {
+            const out = [];
+            let inBlock = false;
+            let seenData = false;
+            for (let line of report.split('\n')) {
+                line = line.trim();
+                if (!inBlock) {
+                    if (line.includes(title)) {
+                        inBlock = true;
+                        seenData = false;
+                    }
+                    continue;
+                }
+                if (line.startsWith('*') || line === '' || line === 'None') {
+                    // Titel-Unterstreichung überspringen; nach Daten (oder 'None') endet der Block
+                    if (seenData || line === 'None') inBlock = false;
+                    continue;
+                }
+                const match = line.match(lineRegex);
+                if (match) {
+                    out.push(mapFn(match));
+                    seenData = true;
+                } else if (seenData) {
+                    inBlock = false;
                 }
             }
-        });
+            return out;
+        };
 
-
-
-
-        // --- 7. Highest Continuity Errors ---
         // Format: Node RW31 (-69.41%)
-        const continuityErrors = [];
-        let inContinuityBlock = false;
-        report.split('\n').forEach(line => {
-            line = line.trim();
-            if (line.includes("Highest Continuity Errors")) {
-                inContinuityBlock = true;
-                return;
-            }
-            if (inContinuityBlock) {
-                if (line.startsWith('*') || line === '') {
-                    if (line.startsWith('*')) inContinuityBlock = false;
-                    return;
-                }
-                if (line.startsWith('Node')) {
-                    const match = line.match(/Node\s+(\S+)\s+\(([-\d\.]+)%\)/);
-                    if (match) {
-                        continuityErrors.push({ id: match[1], error: parseFloat(match[2]) });
-                    }
-                }
-            }
-        });
+        const continuityErrors = parseDiagnosticList(
+            'Highest Continuity Errors',
+            /Node\s+(\S+)\s+\(([-\d\.]+)%\)/,
+            m => ({ id: m[1], error: parseFloat(m[2]) })
+        );
 
-        // --- 7b. Highest Flow Instability Indexes ---
-        const instabilityIndexes = [];
-        let inInstabilityBlock = false;
-        report.split('\n').forEach(line => {
-            line = line.trim();
-            if (line.includes("Highest Flow Instability Indexes")) {
-                inInstabilityBlock = true;
-                return;
-            }
-            if (inInstabilityBlock) {
-                if (line.startsWith('*') || line === '') {
-                    if (line.startsWith('*')) inInstabilityBlock = false;
-                    return;
-                }
-                if (line.startsWith('Link')) {
-                    const match = line.match(/Link\s+(\S+)\s+\((\d+)\)/);
-                    if (match) {
-                        instabilityIndexes.push({ id: match[1], index: parseInt(match[2], 10) });
-                    }
-                }
-            }
-        });
+        // Format: Link S00-1 (2)
+        const instabilityIndexes = parseDiagnosticList(
+            'Highest Flow Instability Indexes',
+            /Link\s+(\S+)\s+\((\d+)\)/,
+            m => ({ id: m[1], index: parseInt(m[2], 10) })
+        );
 
         // --- 8. Conduit Surcharge Summary ---
         parseTable(/Conduit Surcharge Summary/, (parts) => {
@@ -406,114 +385,100 @@ export class RptParser {
         systemStats.instabilityIndexes = instabilityIndexes;
 
         // --- 7c. Time-Step Critical Elements ---
-        const criticalElements = [];
-        let inCriticalBlock = false;
-        report.split('\n').forEach(line => {
-            line = line.trim();
-            if (line.includes("Time-Step Critical Elements")) {
-                inCriticalBlock = true;
-                return;
-            }
-            if (inCriticalBlock) {
-                if (line.startsWith('*') || line === 'None' || line === '') {
-                    if (line.startsWith('*') || line === '') inCriticalBlock = false;
-                    return;
-                }
-                // Line: "Link FK007 (55.00%)" or "Node..."
-                const match = line.match(/(Link|Node)\s+(\S+)\s+\(([-\d\.]+)%\)/);
-                if (match) {
-                    criticalElements.push({ type: match[1], id: match[2], value: parseFloat(match[3]) });
-                }
-            }
-        });
-        systemStats.criticalElements = criticalElements;
+        // Line: "Link FK007 (55.00%)" or "Node..."
+        systemStats.criticalElements = parseDiagnosticList(
+            'Time-Step Critical Elements',
+            /(Link|Node)\s+(\S+)\s+\(([-\d\.]+)%\)/,
+            m => ({ type: m[1], id: m[2], value: parseFloat(m[3]) })
+        );
 
         // --- 7d. Most Frequent Nonconverging Nodes ---
-        const nonConvergingNodes = [];
-        let inNonConvBlock = false;
-        report.split('\n').forEach(line => {
-            line = line.trim();
-            if (line.includes("Most Frequent Nonconverging Nodes")) {
-                inNonConvBlock = true;
-                return;
-            }
-            if (inNonConvBlock) {
-                if (line.startsWith('*') || line === 'None' || line === '') {
-                    if (line.startsWith('*') || line === '') inNonConvBlock = false;
-                    return;
-                }
-                // Line: "Node AL001 (0.21%)"
-                const match = line.match(/Node\s+(\S+)\s+\(([-\d\.]+)%\)/);
-                if (match) {
-                    nonConvergingNodes.push({ id: match[1], value: parseFloat(match[2]) });
-                }
-            }
-        });
-        systemStats.nonConvergingNodes = nonConvergingNodes;
+        // Line: "Node AL001 (0.21%)"
+        systemStats.nonConvergingNodes = parseDiagnosticList(
+            'Most Frequent Nonconverging Nodes',
+            /Node\s+(\S+)\s+\(([-\d\.]+)%\)/,
+            m => ({ id: m[1], value: parseFloat(m[2]) })
+        );
 
+
+        // Safe parsing for the remaining tables: malformed rows must not inject NaN into the UI.
+        const num = (v) => {
+            const f = parseFloat(v);
+            return isNaN(f) ? 0 : f;
+        };
 
         // --- 9. Outfall Loading Summary ---
         parseTable(/Outfall Loading Summary/, (parts) => {
             // [0]OutfallNode [1]FlowFreq [2]AvgFlow [3]MaxFlow [4]TotalVol
             const id = parts[0];
             if (id === 'System') return; // Skip System Summary line here
+            if (isNaN(parseFloat(parts[1]))) return; // Header remnant / non-data row
 
             systemStats.outfallLoading.push({
                 id: parts[0],
-                freq: parseFloat(parts[1]),
-                avgFlow: parseFloat(parts[2]),
-                maxFlow: parseFloat(parts[3]),
-                totalVol: parseFloat(parts[4])
+                freq: num(parts[1]),
+                avgFlow: num(parts[2]),
+                maxFlow: num(parts[3]),
+                totalVol: num(parts[4])
             });
         });
 
         // --- 10. Flow Classification Summary ---
         parseTable(/Flow Classification Summary/, (parts) => {
             // [0]Conduit [1]AdjLen [2]Dry [3]UpDry [4]DwnDry [5]SubCrit [6]SupCrit [7]UpCrit [8]DwnCrit [9]NormLtd [10]InletCtrl
-            const id = parts[0];
+            if (isNaN(parseFloat(parts[1]))) return;
 
             systemStats.flowClassification.push({
                 id: parts[0],
-                adjustedLength: parseFloat(parts[1]),
+                adjustedLength: num(parts[1]),
                 fractions: {
-                    dry: parseFloat(parts[2]),
-                    upDry: parseFloat(parts[3]),
-                    downDry: parseFloat(parts[4]),
-                    subCrit: parseFloat(parts[5]),
-                    supCrit: parseFloat(parts[6]),
-                    upCrit: parseFloat(parts[7]),
-                    downCrit: parseFloat(parts[8]),
-                    normLtd: parseFloat(parts[9]),
-                    inletCtrl: parseFloat(parts[10])
+                    dry: num(parts[2]),
+                    upDry: num(parts[3]),
+                    downDry: num(parts[4]),
+                    subCrit: num(parts[5]),
+                    supCrit: num(parts[6]),
+                    upCrit: num(parts[7]),
+                    downCrit: num(parts[8]),
+                    normLtd: num(parts[9]),
+                    inletCtrl: num(parts[10])
                 }
             });
         });
 
-        // --- 12. Node Storage Summary ---
         // --- 12. Storage Volume Summary ---
         parseTable(/(?:Node Storage|Storage Volume) Summary/, (parts) => {
             // [0]Name [1]AvgVol [2]AvgPcntFull [3]EvapPcnt [4]ExfilPcnt [5]MaxVol [6]MaxPcntFull [7]Days [8]Hr:Min [9]MaxOutflow
+            if (isNaN(parseFloat(parts[1]))) return;
 
             systemStats.storageSummary.push({
                 id: parts[0],
-                avgVol: parseFloat(parts[1]) * 1000,
-                avgPcntFull: parseFloat(parts[2]),
-                maxVol: parseFloat(parts[5]) * 1000,
-                maxPcntFull: parseFloat(parts[6]),
-                maxOutflow: parseFloat(parts[9])
+                avgVol: num(parts[1]) * 1000,
+                avgPcntFull: num(parts[2]),
+                maxVol: num(parts[5]) * 1000,
+                maxPcntFull: num(parts[6]),
+                maxOutflow: num(parts[9])
             });
         });
 
         // --- 13. Pumping Summary ---
         parseTable(/Pumping Summary/, (parts) => {
-            // [0]Name [1]PcntUtilized [2]StartUps [3]MinFlow [4]AvgFlow [5]MaxFlow [6]TotalVol [7]Power(Kw) [8]TotalEnergy
+            // Reale SWMM-Spalten (statsrpt.c, writePumpFlows):
+            // [0]Name [1]PcntUtilized [2]StartUps [3]MinFlow [4]AvgFlow [5]MaxFlow
+            // [6]TotalVol [7]PowerUsage(kWh) [8]%TimeOffCurve(Low) [9]%TimeOffCurve(High)
+            // parts[8] ist NICHT die Energie (war vorher fälschlich als totalEnergy gelesen).
+            if (isNaN(parseFloat(parts[1]))) return;
+
             systemStats.pumpingSummary.push({
                 id: parts[0],
-                percentUtilized: parseFloat(parts[1]),
-                startUps: parseFloat(parts[2]),
-                maxFlow: parseFloat(parts[5]),
-                totalVol: parseFloat(parts[6]),
-                totalEnergy: parseFloat(parts[8])
+                percentUtilized: num(parts[1]),
+                startUps: num(parts[2]),
+                minFlow: num(parts[3]),
+                avgFlow: num(parts[4]),
+                maxFlow: num(parts[5]),
+                totalVol: num(parts[6]),
+                totalEnergy: num(parts[7]),
+                pctTimeOffCurveLow: num(parts[8]),
+                pctTimeOffCurveHigh: num(parts[9])
             });
         });
 

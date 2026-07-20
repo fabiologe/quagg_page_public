@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { Node } from '../core/domain/Node.js';
 import { Edge } from '../core/domain/Edge.js';
 import { Area } from '../core/domain/Area.js';
+import { validateNetwork } from '../utils/preSolveValidation.js';
 
 let workerControllerInstance = null;
 
@@ -19,7 +20,8 @@ export const useIsybauStore = defineStore('isybau-module', {
             selectedId: null,
             selectedType: null, // 'node', 'edge', 'area'
             edgeStartNode: null,
-            drawingPoints: [] // Temporary points for Area creation
+            drawingPoints: [], // Temporary points for Area creation
+            focusTargetId: null // kurzzeitiges Highlight-/Scroll-Ziel in den Viewern
         },
         // Phase 2: Rain / Simulation Configuration
         rain: {
@@ -30,19 +32,30 @@ export const useIsybauStore = defineStore('isybau-module', {
             returnPeriod: 1 // Years (T)
         },
         // UI State for Modals
+        // Sichtbarkeit ALLER Modals lebt hier — Komponenten togglen nur Flags,
+        // die Verdrahtung übernimmt components/modals/IsybauModals.vue.
         ui: {
             showKostraModal: false,
             showRainModal: false,
             showResultsModal: false,
             showDebugModal: false,
             showPreprocessingModal: false,
-            showValidationModal: false
+            showValidationModal: false,
+            showHelpModal: false,
+            showProjectManager: false,
+            showElementModal: false,
+            preprocessingFocusId: null, // Element, das das Preprocessing beim Öffnen vorselektiert
+            preprocessingFocusType: null, // 'node' | 'edge' | 'area' — nötig, da Haltungs- und Schacht-IDs in ISYBAU-Daten kollidieren können
+            elementModal: { mode: 'node', data: {} }, // Kontext fürs Erstellen-Modal
+            importWarnings: [] // Sammelbericht übersprungener Elemente beim Import
         },
         simulation: {
             status: 'idle', // idle, running, success, error
-            progress: 0,
             results: null,
-            error: null
+            error: null,
+            invalidElementId: null, // Element, das eine Vorab-Validierung als Ursache identifiziert hat
+            invalidElementType: null, // 'node' | 'edge'
+            preSolveWarnings: [] // nicht-fatale Vorab-Funde (z.B. WARN08), blockieren den Lauf nicht
         },
         // History
         history: {
@@ -63,6 +76,16 @@ export const useIsybauStore = defineStore('isybau-module', {
 
         getNodeById: (state) => (id) => state.nodes.get(id),
         getEdgeById: (state) => (id) => state.edges.get(id),
+
+        // Serialisierter Projektstand für Speichern (ProjectManager)
+        projectSnapshot: (state) => ({
+            nodes:       Array.from(state.nodes.values()).map(n => n.toJSON ? n.toJSON() : n),
+            edges:       Array.from(state.edges.values()).map(e => e.toJSON ? e.toJSON() : e),
+            areas:       state.areas.map(a => a.toJSON ? a.toJSON() : a),
+            inspections: state.inspections,
+            metadata:    state.metadata,
+            rain:        state.rain,
+        }),
 
         // Helper for Map Center (for KOSTRA ref)
         center: (state) => {
@@ -106,6 +129,10 @@ export const useIsybauStore = defineStore('isybau-module', {
         loadParsedData(parsedData) {
             this.clear();
 
+            // Sammelbericht: übersprungene Elemente werden dem User gemeldet
+            // statt nur in der Konsole zu verschwinden.
+            const importWarnings = [];
+
             if (parsedData.metadata) {
                 this.metadata = parsedData.metadata;
             }
@@ -120,6 +147,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                             this.nodes.set(node.id, node);
                         } catch (e) {
                             console.warn(`Failed to hydrate node ${raw.id}:`, e);
+                            importWarnings.push(`Knoten ${raw.id} übersprungen: ${e.message}`);
                         }
                     });
                 } else if (Array.isArray(parsedData.network.nodes)) {
@@ -144,6 +172,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                             this.edges.set(edge.id, edge);
                         } catch (e) {
                             console.warn(`Failed to hydrate edge ${raw.id}:`, e);
+                            importWarnings.push(`Haltung ${raw.id} übersprungen: ${e.message}`);
                         }
                     });
                 } else if (Array.isArray(parsedData.network.edges)) {
@@ -154,8 +183,25 @@ export const useIsybauStore = defineStore('isybau-module', {
                 }
             }
 
+            // Hydrate Inspections (Befahrungen / TV-Daten)
+            this.inspections = Array.isArray(parsedData.inspections) ? parsedData.inspections : [];
+
             // Hydrate Areas
-            const rawAreas = (parsedData.hydraulics && parsedData.hydraulics.areas) || (parsedData.network && parsedData.network.areas) || [];
+            let rawAreas = (parsedData.hydraulics && parsedData.hydraulics.areas) || (parsedData.network && parsedData.network.areas) || [];
+
+            // Fallback: Wenn keine Flächen-Polygone vorhanden sind, aber hydraulische
+            // Einzugsgebiete (<Einzugsgebiet>), diese als Flächen ohne Geometrie übernehmen.
+            // Nur als Fallback, sonst würde dieselbe Fläche doppelt in den Abfluss eingehen.
+            const rawCatchments = (parsedData.hydraulics && parsedData.hydraulics.catchments) || [];
+            if (rawAreas.length === 0 && rawCatchments.length > 0) {
+                rawAreas = rawCatchments.map(c => ({
+                    id: c.id || `EZG_${c.nodeId}`,
+                    points: [],
+                    size: c.area,
+                    runoffCoeff: c.runoffCoeff,
+                    nodeId: c.nodeId
+                }));
+            }
 
             this.areas = rawAreas.map(raw => {
                 try {
@@ -193,21 +239,29 @@ export const useIsybauStore = defineStore('isybau-module', {
 
                             // Persist edgeId in Area model for reference
                             area.edgeId = edge.id;
+                        } else if (this.nodes.has(targetEdgeId)) {
+                            // Fallback: Referenz zeigt direkt auf einen Knoten (z.B. aus
+                            // dem eigenen XML-Export von gezeichneten Flächen mit
+                            // Knoten-Anschluss). Erst NACH der Haltungs-Suche prüfen,
+                            // da Haltungs- und Knoten-IDs in ISYBAU-Daten kollidieren können.
+                            area.nodeId = targetEdgeId;
                         } else {
                             console.warn(`Area ${area.id} references missing Edge '${raw.edgeId}' (Target: '${targetEdgeId}')`);
+                            importWarnings.push(`Fläche ${area.id}: referenzierte Haltung '${raw.edgeId}' nicht gefunden — kein Anschlussknoten.`);
                         }
                     }
 
                     return area;
                 } catch (e) {
                     console.warn(`Failed to hydrate area ${raw.id}:`, e);
+                    importWarnings.push(`Fläche ${raw.id} übersprungen: ${e.message}`);
                     return null;
                 }
             }).filter(a => a !== null);
 
-            console.log(`Loaded ${this.areas.length} areas.`);
-
             console.log(`IsybauStore: Loaded ${this.nodes.size} nodes, ${this.edges.size} edges, ${this.areas.length} areas.`);
+
+            this.ui.importWarnings = importWarnings;
         },
 
         clear() {
@@ -285,6 +339,83 @@ export const useIsybauStore = defineStore('isybau-module', {
             }
         },
 
+        // --- UI-/Workflow-Actions (Verdrahtung siehe components/modals/IsybauModals.vue) ---
+
+        /** Element in den Viewern kurz hervorheben/anfahren (z.B. aus Tabellenzeile). */
+        flashFocus(id) {
+            this.editor.focusTargetId = id;
+            // Watcher triggern nur auf Wertwechsel — nach kurzer Zeit zurücksetzen,
+            // damit derselbe Klick erneut funktioniert.
+            setTimeout(() => { this.editor.focusTargetId = null; }, 500);
+        },
+
+        /** Erstellen-Modal mit Kontext öffnen (Editor-Klick: Knoten/Haltung/Fläche). */
+        openElementModal(mode, data = {}) {
+            this.ui.elementModal = { mode, data };
+            this.ui.showElementModal = true;
+        },
+
+        /** Save-Handler des ElementPropertiesModal (nur Erstellen, kein Edit). */
+        createElement({ mode, data }) {
+            if (mode === 'area') {
+                const points = data.points || [];
+                if (points.length < 3) {
+                    console.error('createElement: Fläche braucht mindestens 3 Punkte');
+                    return;
+                }
+                this.addArea({ points, properties: data });
+            } else if (mode === 'edge') {
+                this.addEdge({
+                    fromId: data.metaFromId || data.fromNodeId,
+                    toId: data.metaToId || data.toNodeId,
+                    properties: data
+                });
+            } else if (mode === 'node') {
+                const props = { ...data };
+                // Map UI field 'cover' to Domain field 'coverZ'
+                if (props.cover !== undefined) {
+                    props.coverZ = props.cover;
+                    delete props.cover;
+                }
+                this.addNode(data.x, data.y, props);
+            }
+            this.ui.showElementModal = false;
+        },
+
+        /** Gespeichertes Projekt (IndexedDB-Snapshot) in den Store laden. */
+        loadProjectSnapshot(data) {
+            this.loadParsedData({
+                metadata: data.metadata || {},
+                network: { nodes: data.nodes, edges: data.edges },
+                hydraulics: { areas: data.areas || [] },
+                inspections: data.inspections || [],
+            });
+            if (data.rain) Object.assign(this.rain, data.rain);
+        },
+
+        /**
+         * „In Tabelle bearbeiten" aus ElementInfo: Preprocessing öffnen + Element vorselektieren.
+         * @param {string} id
+         * @param {'node'|'edge'|'area'} type - explizit, denn Haltungs-ID und
+         *   Zulaufknoten-ID sind in ISYBAU-Daten oft identisch (z.B. beide "06001").
+         *   Ohne den Typ würde die Suche im Preprocessing immer zuerst den Knoten
+         *   finden und fälschlich dorthin springen statt zur Haltung.
+         */
+        openPreprocessingFor(id, type) {
+            this.ui.preprocessingFocusId = id;
+            this.ui.preprocessingFocusType = type;
+            this.ui.showPreprocessingModal = true;
+        },
+
+        /** „Übernehmen" im Preprocessing: Daten mergen + Auto-Validierung öffnen. */
+        applyPreprocessing(data) {
+            this.updateNetworkData(data);
+            this.ui.showPreprocessingModal = false;
+            if (this.areas.length > 0) {
+                this.ui.showValidationModal = true;
+            }
+        },
+
         // --- CRUD Actions ---
 
         addNode(x, y, properties = {}) {
@@ -326,6 +457,34 @@ export const useIsybauStore = defineStore('isybau-module', {
             if (this.edges.has(id)) {
                 this.edges.delete(id);
             }
+        },
+
+        /**
+         * Mehrfach-Löschen (Rechteck-Auswahl im Editor): Knoten, Haltungen und
+         * Flächen in EINEM Undo-Schritt; Haltungen an gelöschten Knoten kaskadieren.
+         */
+        removeMany(ids = []) {
+            if (!ids.length) return;
+            this.saveHistory();
+            const idSet = new Set(ids);
+
+            for (const id of idSet) {
+                this.nodes.delete(id);
+            }
+            for (const [eId, edge] of this.edges) {
+                if (idSet.has(eId) || idSet.has(edge.fromNodeId) || idSet.has(edge.toNodeId)) {
+                    this.edges.delete(eId);
+                }
+            }
+            this.areas = this.areas.filter(a => !idSet.has(a.id));
+
+            if (this.editor.selectedId && idSet.has(this.editor.selectedId)) {
+                this.clearSelection();
+            }
+
+            // Force Reactivity for Maps
+            this.nodes = new Map(this.nodes);
+            this.edges = new Map(this.edges);
         },
 
         // --- Area Actions ---
@@ -539,7 +698,16 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.saveHistory();
             const node = this.nodes.get(id);
             if (node) {
-                Object.assign(node, props);
+                // isManhole/canOverflow nie blind zuweisen — die Kopplung
+                // (isManhole=false erzwingt canOverflow=false) liegt im Node-Modell.
+                const { isManhole, canOverflow, ...rest } = props;
+                Object.assign(node, rest);
+                if ((isManhole !== undefined || canOverflow !== undefined) && node.applyOverflowState) {
+                    node.applyOverflowState({
+                        isManhole: isManhole !== undefined ? isManhole : node.isManhole,
+                        canOverflow: canOverflow !== undefined ? canOverflow : node.canOverflow
+                    });
+                }
             }
         },
 
@@ -562,6 +730,27 @@ export const useIsybauStore = defineStore('isybau-module', {
         updateNetworkData(data) {
             this.saveHistory();
 
+            // Löschungen aus dem Preprocessing übernehmen — ohne diesen Schritt
+            // kämen im Modal gelöschte Zeilen nach „Übernehmen" wieder zurück,
+            // weil unten nur per ID gemerged wird.
+            if (Array.isArray(data.deletedNodeIds) && data.deletedNodeIds.length) {
+                const idSet = new Set(data.deletedNodeIds);
+                for (const id of idSet) this.nodes.delete(id);
+                // Haltungen an gelöschten Knoten kaskadieren
+                for (const [eId, edge] of this.edges) {
+                    if (idSet.has(edge.fromNodeId) || idSet.has(edge.toNodeId)) {
+                        this.edges.delete(eId);
+                    }
+                }
+                this.nodes = new Map(this.nodes);
+                this.edges = new Map(this.edges);
+            }
+            if (Array.isArray(data.deletedEdgeIds) && data.deletedEdgeIds.length) {
+                const idSet = new Set(data.deletedEdgeIds);
+                for (const id of idSet) this.edges.delete(id);
+                this.edges = new Map(this.edges);
+            }
+
             // Bulk update from PreprocessingModal
             if (data.nodes) {
                 // Create new map for reactivity
@@ -571,6 +760,8 @@ export const useIsybauStore = defineStore('isybau-module', {
                     if (node) {
                         // Merge props back
                         Object.assign(node, updatedNode);
+                        // Überstau-Kopplung re-normalisieren (Bulk-Edit setzt teils nur canOverflow)
+                        if (node.applyOverflowState) node.applyOverflowState();
                     }
                 });
                 this.nodes = pendingNodes;
@@ -630,7 +821,12 @@ export const useIsybauStore = defineStore('isybau-module', {
                 slope: properties.slope,
                 runoffCoeff: properties.runoffCoeff, // Expecting correctly named prop
                 nodeId: properties.nodeId,
-                size: properties.size // ha
+                size: properties.size, // ha
+                // Haltungs-Anschluss (Outlet auf Edge): ohne diese Felder ginge die
+                // 50/50-Aufteilung auf Zulauf-/Ablaufknoten für gezeichnete Flächen verloren
+                nodeId2: properties.nodeId2,
+                splitRatio: properties.splitRatio,
+                edgeId: properties.edgeId
             });
 
             this.areas.push(area);
@@ -639,9 +835,39 @@ export const useIsybauStore = defineStore('isybau-module', {
 
         // Simulation Runner
         async runSimulation() {
+            if (this.simulation.status === 'running') {
+                console.warn('Simulation läuft bereits — zweiter Start ignoriert.');
+                return;
+            }
             this.simulation.status = 'running';
-            this.simulation.progress = 0;
             this.simulation.error = null;
+            this.simulation.invalidElementId = null;
+            this.simulation.invalidElementType = null;
+            this.simulation.preSolveWarnings = [];
+
+            // Vorab-Validierung gegen bekannte SWMM-Solver-Abbrüche (siehe
+            // utils/preSolveValidation.js) — spart einen sinnlosen Solver-Start,
+            // wenn z.B. eine Pumpen-Anspringtiefe <= Abschalttiefe ist, und zeigt
+            // eine deutsche Meldung statt des rohen SWMM-Fehlertexts. Warnungen
+            // (z.B. Sohlgefälle >= Haltungslänge) sind nicht fatal — der Solver
+            // rechnet trotzdem weiter — und blockieren den Lauf daher nicht.
+            const findings = validateNetwork(this.nodeArray, this.edgeArray);
+            const firstError = findings.find(f => f.severity === 'error');
+            if (firstError) {
+                const label = firstError.elementType === 'node' ? 'Knoten' : 'Haltung';
+                this.simulation.status = 'error';
+                this.simulation.error = `${label} ${firstError.id}: ${firstError.message}`;
+                this.simulation.invalidElementId = firstError.id;
+                this.simulation.invalidElementType = firstError.elementType;
+                return;
+            }
+            this.simulation.preSolveWarnings = findings
+                .filter(f => f.severity === 'warning')
+                .map(f => ({
+                    id: f.id,
+                    elementType: f.elementType,
+                    text: `${f.elementType === 'node' ? 'Knoten' : 'Haltung'} ${f.id}: ${f.message}`
+                }));
 
             try {
                 // Serializing payload for Worker (Rescue Phase 3)

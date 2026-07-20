@@ -72,8 +72,8 @@
             <div class="type-badge fictive">◌ Fiktiv</div>
           </template>
 
-          <!-- Pumpwerk / Pumpe (bwType 1, 6) -->
-          <template v-else-if="bwType === 1 || bwType === 6">
+          <!-- Pumpwerk (bwType 1) -->
+          <template v-else-if="bwType === 1">
             <div class="type-badge pumpwerk">⚙ Pumpwerk</div>
             <div class="info-row" v-if="element.pumpRate">
               <span class="lbl">Förderleistung</span>
@@ -89,9 +89,26 @@
             </div>
           </template>
 
-          <!-- Wehr (bwType 7) -->
+          <!-- Pumpe (bwType 6) — Sonderbauwerk-Knoten (hell lila) -->
+          <template v-else-if="bwType === 6">
+            <div class="type-badge sonderbauwerk">⚙ Pumpe</div>
+            <div class="info-row" v-if="element.pumpRate">
+              <span class="lbl">Förderleistung</span>
+              <span class="val">{{ element.pumpRate }} l/s</span>
+            </div>
+            <div class="info-row" v-if="element.onDepth != null">
+              <span class="lbl">Ein-Tiefe</span>
+              <span class="val">{{ element.onDepth }} m</span>
+            </div>
+            <div class="info-row" v-if="element.offDepth != null">
+              <span class="lbl">Aus-Tiefe</span>
+              <span class="val">{{ element.offDepth }} m</span>
+            </div>
+          </template>
+
+          <!-- Wehr (bwType 7) — Sonderbauwerk-Knoten (hell lila) -->
           <template v-else-if="bwType === 7">
-            <div class="type-badge wehr">〰 Wehr / Überlauf</div>
+            <div class="type-badge sonderbauwerk">〰 Wehr / Überlauf</div>
             <div class="info-row" v-if="element.weirHeight">
               <span class="lbl">Wehrhöhe</span>
               <span class="val">{{ element.wehrHeight?.toFixed(2) ?? element.weirHeight?.toFixed(2) }} m</span>
@@ -119,9 +136,9 @@
             </div>
           </template>
 
-          <!-- Drossel / Schieber (bwType 8, 9) -->
+          <!-- Drossel / Schieber (bwType 8, 9) — Sonderbauwerk-Knoten (hell lila) -->
           <template v-else-if="bwType === 8 || bwType === 9">
-            <div class="type-badge drossel">⊘ {{ bwType === 8 ? 'Drossel' : 'Schieber' }}</div>
+            <div class="type-badge sonderbauwerk">⊘ {{ bwType === 8 ? 'Drossel' : 'Schieber' }}</div>
             <div class="info-row" v-if="element.maxOutflow">
               <span class="lbl">Max. Abfluss</span>
               <span class="val">{{ element.maxOutflow }} l/s</span>
@@ -166,6 +183,27 @@
             </div>
           </template>
 
+          <!-- Pumpwerk-Betrieb (aus systemStats.pumpingSummary der zugehörigen Haltung) -->
+          <template v-if="pumpSummary">
+            <div class="info-row">
+              <span class="lbl">Pumpe: Nutzung</span>
+              <span class="val">{{ pumpSummary.percentUtilized?.toFixed(1) }} %</span>
+            </div>
+            <div class="info-row">
+              <span class="lbl">Pumpe: Starts</span>
+              <span class="val">{{ pumpSummary.startUps }}</span>
+            </div>
+            <div class="info-row" v-if="pumpSummary.totalEnergy != null">
+              <span class="lbl">Energie</span>
+              <span class="val">{{ pumpSummary.totalEnergy.toFixed(2) }} kWh</span>
+            </div>
+          </template>
+
+          <!-- Knoten→Link-Verweis für Pumpe/Wehr/Drossel/Schieber ohne eigenes Ergebnis -->
+          <div v-if="relatedLinkId && !pumpSummary" class="link-hint">
+            ⚙ Ergebnis siehe Haltung <strong>{{ relatedLinkId }}</strong>
+          </div>
+
           <!-- Edge results -->
           <template v-if="isEdge">
             <div class="info-row">
@@ -190,16 +228,35 @@
 <script setup>
 import { computed } from 'vue';
 import { getNodeBwType } from './useSceneBuilder.js';
+import { LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
 const props = defineProps({
   element: { type: Object, default: null },
   result:  { type: Object, default: null },
+  edges:   { type: Map,    default: () => new Map() },
+  systemStats: { type: Object, default: () => ({}) },
 });
 defineEmits(['close']);
 
 const isEdge = computed(() => props.element && (props.element.fromNodeId || props.element.from));
 const isArea = computed(() => props.element && Array.isArray(props.element.points));
 const bwType = computed(() => (!props.element || isEdge.value || isArea.value) ? 0 : getNodeBwType(props.element));
+
+// Pumpe/Wehr/Drossel/Schieber sind in SWMM LINKS — benannt nach der ausgehenden
+// Haltung dieses Knotens. Das reale Hydraulik-Ergebnis liegt dort, nicht am
+// Knoten; informativer Hinweis + (für Pumpen) direkte Kennzahlen aus dem Report.
+const relatedLinkId = computed(() => {
+  if (!props.element || isEdge.value || isArea.value || !LINK_BAUWERKSTYPEN.has(bwType.value)) return null;
+  const edge = Array.from(props.edges.values()).find(e => e.fromNodeId === props.element.id);
+  return edge?.id ?? null;
+});
+
+const pumpSummary = computed(() => {
+  if (bwType.value !== 1 && bwType.value !== 6) return null;
+  const id = relatedLinkId.value;
+  if (!id) return null;
+  return props.systemStats?.pumpingSummary?.find(p => p.id === id) ?? null;
+});
 
 const TITLES = {
   1: 'Pumpwerk (3D)', 2: 'Becken / Speicher (3D)', 3: 'Kläranlage (3D)',
@@ -216,18 +273,22 @@ const title = computed(() => {
   return TITLES[bwType.value] ?? 'Schacht (3D)';
 });
 
+// Pumpe/Wehr/Drossel/Schieber (6/7/8/9): einheitliches helles Lila, da sie in
+// Realität/ISYBAU ein Knotenelement sind — ein Blick soll "Sonderbauwerk"
+// signalisieren statt vier unterschiedliche Farben je Subtyp zu erfordern.
+const SONDERBAUWERK_GRADIENT = 'linear-gradient(135deg,#7c5295,#c9a0dc)';
 const HEADER_GRADIENTS = {
   1: 'linear-gradient(135deg,#b45309,#d97706)',   // Pumpwerk orange
-  6: 'linear-gradient(135deg,#b45309,#d97706)',
+  6: SONDERBAUWERK_GRADIENT,
   2: 'linear-gradient(135deg,#0f766e,#14b8a6)',   // Becken teal
   3: 'linear-gradient(135deg,#0f766e,#14b8a6)',
   4: 'linear-gradient(135deg,#0f766e,#14b8a6)',
   12:'linear-gradient(135deg,#0f766e,#14b8a6)',
   13:'linear-gradient(135deg,#0f766e,#14b8a6)',
   5: 'linear-gradient(135deg,#065f46,#059669)',   // Auslass green
-  7: 'linear-gradient(135deg,#92400e,#f59e0b)',   // Wehr amber
-  8: 'linear-gradient(135deg,#4c1d95,#7c3aed)',   // Drossel purple
-  9: 'linear-gradient(135deg,#4c1d95,#7c3aed)',
+  7: SONDERBAUWERK_GRADIENT,
+  8: SONDERBAUWERK_GRADIENT,
+  9: SONDERBAUWERK_GRADIENT,
 };
 const headerGradient = computed(() => {
   if (isEdge.value)  return 'linear-gradient(135deg,#1e3a5f,#2563eb)';
@@ -316,9 +377,8 @@ const edgeUtilClass = computed(() => {
   display: inline-block;
 }
 .type-badge.pumpwerk { background: rgba(217,119,6,0.2);  color: #fbbf24; border: 1px solid #d97706; }
-.type-badge.wehr     { background: rgba(245,158,11,0.2); color: #fde68a; border: 1px solid #f59e0b; }
+.type-badge.sonderbauwerk { background: rgba(201,160,220,0.2); color: #e9d5f5; border: 1px solid #c9a0dc; }
 .type-badge.becken   { background: rgba(20,184,166,0.2); color: #5eead4; border: 1px solid #14b8a6; }
-.type-badge.drossel  { background: rgba(124,58,237,0.2); color: #c4b5fd; border: 1px solid #7c3aed; }
 .type-badge.outfall  { background: rgba(5,150,105,0.2);  color: #6ee7b7; border: 1px solid #059669; }
 .type-badge.fictive  { background: rgba(239,68,68,0.2);  color: #fca5a5; border: 1px solid #ef4444; }
 
@@ -334,6 +394,16 @@ const edgeUtilClass = computed(() => {
   letter-spacing: 0.06em;
   color: #4a5568;
   font-family: monospace;
+}
+
+.link-hint {
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(37,99,235,0.15);
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  color: #bfdbfe;
 }
 
 .res-bad    { color: #fc8181; }

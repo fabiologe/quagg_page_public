@@ -255,6 +255,18 @@ def main():
         else:
             print(f"❌ kein networkResultsFile im done-Event (done={ {k: v for k, v in done_ev.items() if k != 'massReport'} })")
             ok = False
+        # SWMM-.rpt wird als Klartext mitgeliefert (Kontinuität/Warnungen → Inspector-Tab).
+        srf = done_ev.get("swmmReportFile")
+        if srf and (job / "results" / srf).exists():
+            rpt = (job / "results" / srf).read_text(errors="replace")
+            if "Continuity" in rpt:
+                print(f"✅ swmmReportFile im done-Payload ({len(rpt)} Zeichen, Kontinuitäts-Abschnitt vorhanden)")
+            else:
+                print("❌ swmm-report.rpt ohne Continuity-Abschnitt — Report unvollständig?")
+                ok = False
+        else:
+            print("❌ kein swmmReportFile im done-Event")
+            ok = False
         budget = done_ev.get("couplingBudget")
         if budget and "to2d" in budget and "to1d" in budget and budget.get("nodes"):
             print(f"✅ couplingBudget strukturiert: 1D->2D {budget['to2d']:.2f} m3, "

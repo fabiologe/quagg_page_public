@@ -37,7 +37,10 @@ export function useResultScene() {
     controls.dampingFactor = 0.08;
     controls.screenSpacePanning = false;
     controls.minDistance = 5;
-    controls.maxPolarAngle = Math.PI / 2.15;
+    // Orbit auch UNTER das Gelände lassen (Kanalnetz liegt unterflur; Terrain ist
+    // DoubleSide → von unten sieht man die Geländeunterseite + die Rohre davor).
+    // Kleines Epsilon vor PI, damit die Kamera nicht exakt im Pol landet.
+    controls.maxPolarAngle = Math.PI - 0.02;
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));

@@ -7,7 +7,9 @@
         "dev": "NODE_OPTIONS='--insecure-http-parser' vite",
         "build": "vite build",
         "preview": "vite preview",
-        "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
+        "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "dependencies": {
         "@mapbox/mapbox-gl-draw": "^1.5.1",
@@ -33,6 +35,7 @@
         "leaflet-draw": "^1.0.4",
         "leaflet-geometryutil": "^0.10.3",
         "leaflet-snap": "^0.0.4",
+        "lottie-web": "^5.13.0",
         "maplibre-gl": "^5.15.0",
         "pinia": "^2.3.1",
         "polygon-clipping": "^0.15.7",
@@ -53,6 +56,7 @@
         "jsdom": "^27.4.0",
         "vite": "^5.0.0",
         "vite-plugin-static-copy": "^3.2.0",
+        "vitest": "^4.1.10",
         "xmldom": "^0.6.0"
     }
 }

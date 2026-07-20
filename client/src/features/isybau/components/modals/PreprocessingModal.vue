@@ -27,7 +27,7 @@
           <Transition name="fade">
               <div v-if="undoState.show" class="undo-toast" :class="undoState.type">
                   <span>{{ undoState.message }}</span>
-                  <button v-if="undoState.action" @click="performUndo">Rückgängig</button>
+                  <button v-if="undoState.action" @click="performUndo" class="undo-action-btn">Rückgängig</button>
                   <button @click="dismissUndo" class="close-toast">×</button>
               </div>
           </Transition>
@@ -48,8 +48,11 @@
                If absolute inside draggable, it works! -->
           <div v-if="showBulkEdit" class="bulk-edit-overlay">
               <div class="bulk-edit-modal">
-                <h4>Massenbearbeitung ({{ selectedIds.length }} Elemente)</h4>
-                
+                <div class="bulk-edit-header">
+                    <h4>Massenbearbeitung ({{ selectedIds.length }} Elemente)</h4>
+                    <button class="close-btn" @click="showBulkEdit = false">×</button>
+                </div>
+
                 <div class="bulk-controls">
                     <!-- Edges Bulk Edit -->
                     <template v-if="activeTab === 'edges'">
@@ -103,14 +106,17 @@
                             </select>
                         </div>
 
-                        <!-- Dynamic Node Fields -->
-                        <div class="bulk-field" v-if="parseInt(bulkForm.nodeType) === 7">
+                        <!-- Dynamic Node Fields: sichtbar, wenn der gewählte Ziel-Typ ODER
+                             mind. eine bereits selektierte Zeile den passenden Bestandstyp hat
+                             (sonst war Wehrhöhe/Förderleistung nur bei einem gleichzeitigen
+                             Typwechsel bearbeitbar — im Regelfall verdeckt). -->
+                        <div class="bulk-field" v-if="parseInt(bulkForm.nodeType) === 7 || selectedTypes.has(7)">
                             <label>Wehrhöhe (m):</label>
                             <input type="number" v-model.number="bulkForm.weirHeight" step="0.01" class="bulk-input">
                         </div>
-                         <div class="bulk-field" v-if="parseInt(bulkForm.nodeType) === 1">
-                            <label>Förderleistung (l/s)? (Zukunft):</label>
-                            <input disabled placeholder="Feature kommt..." class="bulk-input">
+                         <div class="bulk-field" v-if="[1, 6].includes(parseInt(bulkForm.nodeType)) || selectedTypes.has(1) || selectedTypes.has(6)">
+                            <label>Förderleistung (l/s):</label>
+                            <input type="number" v-model.number="bulkForm.pumpRate" step="0.1" placeholder="Unverändert" class="bulk-input">
                         </div>
 
                         <div class="bulk-divider"></div>
@@ -157,9 +163,9 @@
                     <th class="sortable" @click="sortBy('type')">Typ</th>
                     <th>Zufluss (l/s)</th>
                     <th>Deckel (m)</th>
+                    <th>Tiefe (m)</th>
                     <th>Sohle (m)</th>
                     <th>Druckdicht</th>
-                    <th>Validierung</th>
                   </tr>
                   <!-- Filter Row -->
                   <tr class="filter-row">
@@ -174,9 +180,10 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr 
-                    v-for="node in filteredNodes" 
-                    :key="node.id" 
+                  <tr
+                    v-for="node in filteredNodes"
+                    :key="node.id"
+                    :data-row-id="node.id"
                     class="clickable-row"
                     :class="{ 'selected': selectedIds.includes(node.id) }"
                                   >
@@ -201,16 +208,16 @@
                       <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.coverZ <= node.z }">
+                      <input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.coverZ <= node.z }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.z >= node.coverZ }">
+                      <input type="number" v-model.number="node.depth" step="0.01" class="small-input" @click.stop>
+                    </td>
+                    <td>
+                      <input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td class="text-center">
                       <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
-                    </td>
-                    <td>
-                         <span v-if="node.z >= node.coverZ" class="error-badge" title="Sohle muss tiefer als Deckel liegen">Sohle >= Deckel</span>
                     </td>
                   </tr>
                 </tbody>
@@ -229,13 +236,14 @@
                     <th>Deckel (m)</th>
                     <th>Sohle (m)</th>
                     <th>Druckdicht</th>
-                    <th>-</th>
+                    <th>Validierung</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr 
-                    v-for="node in filteredStructures" 
+                  <tr
+                    v-for="node in filteredStructures"
                     :key="node.id"
+                    :data-row-id="node.id"
                     class="clickable-row"
                     :class="{ 'selected': selectedIds.includes(node.id) }"
                                   >
@@ -255,7 +263,11 @@
                         <option v-for="(label, key) in Bauwerkstyp" :key="key" :value="parseInt(key)">
                           {{ label }}
                         </option>
+                        <option value="Divider">Verteiler (Divider)</option>
                       </select>
+                      <span class="classify-badge" :title="classificationTitle(node)">
+                          → {{ classifyPreview(node).linkSection || classifyPreview(node).section }}
+                      </span>
                     </td>
                     <td>
                       <!-- Config inputs per Type -->
@@ -265,6 +277,10 @@
                         <div class="input-group">
                              <input type="number" v-model.number="node.pumpRate" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Förderleistung (l/s)</span>
+                        </div>
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.pumpHead" step="0.1" class="small-input" @click.stop title="Förderhöhe für die Q-H-Kennlinie">
+                             <span class="hint-text">Förderhöhe (m)</span>
                         </div>
                         <div class="input-group">
                              <input type="number" v-model.number="node.onDepth" step="0.1" class="small-input" @click.stop>
@@ -291,14 +307,26 @@
                              <span class="hint-text">Start-Tiefe (m)</span>
                         </div>
                         <div class="input-group">
-                              <select v-model="node.storageShape" class="small-select" @click.stop>
-                                  <option value="FUNCTIONAL">Funktional</option>
-                                  <option value="CYLINDRICAL">Zylindrisch</option>
-                                  <option value="CONICAL">Konisch</option>
-                                  <option value="PARABOLOID">Parabolisch</option>
-                                  <option value="PYRAMIDAL">Pyramidal</option>
+                              <select v-model="node.storageShape" class="small-select" @click.stop
+                                      title="Flächenverlauf über die Tiefe — Gesamtvolumen bleibt erhalten">
+                                  <option value="PRISMATIC">Prismatisch (konstante Fläche)</option>
+                                  <option value="CONICAL">Trichterförmig (linear)</option>
+                                  <option value="PYRAMIDAL">Pyramidal (quadratisch)</option>
+                                  <option value="TABULAR">Tabellarisch (Tiefe/Fläche-Kurve)</option>
                               </select>
                              <span class="hint-text">Form</span>
+                        </div>
+                        <div class="input-group">
+                             <input type="number" v-model.number="node.evapFactor" step="0.05" min="0" max="1" class="small-input" @click.stop title="Anteil der potentiellen Verdunstung, der auf die Speicherfläche angesetzt wird">
+                             <span class="hint-text">Verdunstung (0-1)</span>
+                        </div>
+                        <div v-if="node.storageShape === 'TABULAR'" class="input-group-col">
+                             <span class="hint-text">Tiefe/Fläche-Stützstellen</span>
+                             <CurveTableEditor
+                                 v-model:points="node.storageCurve"
+                                 x-key="depth" y-key="area"
+                                 x-label="Tiefe (m)" y-label="Fläche (m²)"
+                             />
                         </div>
                       </div>
 
@@ -309,18 +337,27 @@
                              <span class="hint-text">Wehrhöhe (m)</span>
                         </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.weirWidth" step="0.01" class="small-input" @click.stop>
+                             <input type="number" v-model.number="node.wehrWidth" step="0.01" class="small-input" @click.stop>
                              <span class="hint-text">Breite (m)</span>
                         </div>
+                        <div class="input-group">
+                              <select v-model="node.weirType" class="small-select" @click.stop title="Wehrform (Kammer-Geometrie)">
+                                  <option value="TRANSVERSE">Frontal (Transverse)</option>
+                                  <option value="SIDEFLOW">Seitlich (Sideflow)</option>
+                                  <option value="V-NOTCH">Dreiecksüberfall (V-Notch)</option>
+                              </select>
+                             <span class="hint-text">Wehrform</span>
+                        </div>
+                        <div class="input-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" v-model="node.gated" @click.stop>
+                                Rückschlagklappe
+                            </label>
+                        </div>
                         <div class="input-group" style="grid-column: span 2;">
-                             <select class="weir-preset-select" @change="node.dischargeCoeff = parseFloat($event.target.value)" @click.stop title="Überfallbeiwert μ → Cw = (2/3)·μ·√(2g)">
+                             <select class="weir-preset-select" :value="presetKeyFor(node.dischargeCoeff)" @change="node.dischargeCoeff = parseFloat($event.target.value)" @click.stop title="Überfallbeiwert μ → Cw = (2/3)·μ·√(2g)">
                                  <option value="">— Kronenform wählen —</option>
-                                 <option value="1.48">① Breit, scharfkantig, waagerecht (μ≈0.50 → Cw=1.48)</option>
-                                 <option value="1.55">② Breit, gut abger. Kanten (μ≈0.53 → Cw=1.55)</option>
-                                 <option value="2.04">③ Breit, vollst. abgerundet (μ≈0.69 → Cw=2.04)</option>
-                                 <option value="1.89">④ Scharfkantig, Strahl belüftet (μ≈0.64 → Cw=1.89)</option>
-                                 <option value="2.19">⑤ Rundkronig, lotrechte OW-Seite (μ≈0.74 → Cw=2.19)</option>
-                                 <option value="2.27">⑥ Dachförmig, abgerundete Krone (μ≈0.77 → Cw=2.27)</option>
+                                 <option v-for="p in weirPresets" :key="p.cw" :value="p.cw">{{ p.label }}</option>
                              </select>
                              <span class="hint-text">Kronenform</span>
                         </div>
@@ -336,20 +373,83 @@
                              <input type="number" v-model.number="node.maxOutflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Max. Abfluss (l/s)</span>
                         </div>
+                        <div class="input-group">
+                              <select v-model="node.orificeType" class="small-select" @click.stop title="Lage der Öffnung im Schacht">
+                                  <option value="BOTTOM">Sohle (Bottom)</option>
+                                  <option value="SIDE">Seitlich (Side)</option>
+                              </select>
+                             <span class="hint-text">Lage</span>
+                        </div>
+                        <div class="input-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" v-model="node.gated" @click.stop>
+                                Rückschlagklappe
+                            </label>
+                        </div>
                        </div>
-                       
+
                         <!-- 9: Gate (Schieber) -->
                        <div v-if="node.type === 9" class="input-group-col">
                          <div class="input-group">
                              <input type="number" v-model.number="node.initialOpening" step="0.1" max="1" class="small-input" @click.stop>
                              <span class="hint-text">Öffnung (0-1)</span>
                         </div>
+                         <div class="input-group">
+                             <input type="number" v-model.number="node.gateWidth" step="0.05" class="small-input" @click.stop>
+                             <span class="hint-text">Schieberbreite (m)</span>
+                        </div>
+                        <div class="input-group">
+                              <select v-model="node.orificeType" class="small-select" @click.stop title="Lage der Öffnung im Schacht">
+                                  <option value="BOTTOM">Sohle (Bottom)</option>
+                                  <option value="SIDE">Seitlich (Side)</option>
+                              </select>
+                             <span class="hint-text">Lage</span>
+                        </div>
+                        <div class="input-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" v-model="node.gated" @click.stop>
+                                Rückschlagklappe
+                            </label>
+                        </div>
                       </div>
 
                        <!-- 14: Inlet (Einlaufbauwerk) + 10, 11 Misc -->
-                       <div v-if="[10, 11, 14].includes(node.type)" class="input-group">
-                        <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
-                        <span class="hint-text">Zufluss (l/s)</span>
+                       <div v-if="[10, 11, 14].includes(node.type)" class="input-group-col">
+                        <div class="input-group">
+                          <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                          <span class="hint-text">Zufluss (l/s)</span>
+                        </div>
+                        <div class="input-group">
+                          <input type="number" v-model.number="node.lossCoeff" step="0.1" min="0" class="small-input" @click.stop :title="lossCoeffHint(node.type)">
+                          <span class="hint-text">Verlustbeiwert (Eintritt)</span>
+                        </div>
+                      </div>
+
+                      <!-- Divider: Verteiler -->
+                      <div v-if="node.type === 'Divider'" class="input-group-col">
+                        <div class="input-group">
+                          <select
+                            :value="effectiveDividerLinkId(node)"
+                            @change="node.dividerLinkId = $event.target.value"
+                            class="small-select" @click.stop
+                            title="Welche ausgehende Haltung wird abgezweigt? Vorbelegt nach höherer Sohlhöhe (Überlauf liegt konventionell höher als die Hauptleitung)"
+                          >
+                            <option value="">— wählen —</option>
+                            <option v-for="e in dividerOutgoingEdges(node)" :key="e.id" :value="e.id">{{ e.id }}</option>
+                          </select>
+                          <span class="hint-text">Abgezweigte Haltung</span>
+                        </div>
+                        <div class="input-group">
+                          <select v-model="node.dividerType" class="small-select" @click.stop>
+                            <option value="OVERFLOW">Überlauf (Overflow)</option>
+                            <option value="CUTOFF">Abflussgrenze (Cutoff)</option>
+                          </select>
+                          <span class="hint-text">Divider-Typ</span>
+                        </div>
+                        <div class="input-group" v-if="node.dividerType === 'CUTOFF'">
+                          <input type="number" v-model.number="node.dividerCutoffFlow" step="0.1" min="0" class="small-input" @click.stop>
+                          <span class="hint-text">Abflussgrenze (l/s)</span>
+                        </div>
                       </div>
 
                       <!-- Type 5 (Auslaufbauwerk) Loose Check -->
@@ -401,12 +501,14 @@
                          </div>
                       </div>
                     </td>
-                    <td><input type="number" v-model.number="node.coverZ" class="small-input" @click.stop></td>
-                    <td><input type="number" v-model.number="node.z" class="small-input" @click.stop></td>
+                    <td><input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.coverZ <= node.z }"></td>
+                    <td><input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.z >= node.coverZ }"></td>
                     <td class="text-center">
                       <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
-                    <td></td>
+                    <td>
+                        <span v-for="msg in structureWarnings(node)" :key="msg" class="error-badge" style="display:block; margin-bottom:2px;">{{ msg }}</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -429,6 +531,8 @@
                     <th>B (mm)</th>
                     <th>Z1</th>
                     <th>Z2</th>
+                    <th title="Tiefe des Rohranschlusses unter Deckel (Von-Knoten)">T1 (m)</th>
+                    <th title="Tiefe des Rohranschlusses unter Deckel (Nach-Knoten)">T2 (m)</th>
                   </tr>
                    <tr class="filter-row">
                       <th class="col-checkbox sticky-left-1"></th>
@@ -443,12 +547,15 @@
                       <th></th>
                       <th></th>
                       <th></th>
+                      <th></th>
+                      <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr 
-                    v-for="edge in filteredEdges" 
+                  <tr
+                    v-for="edge in filteredEdges"
                     :key="edge.id"
+                    :data-row-id="edge.id"
                     class="clickable-row"
                     :class="{ 'selected': selectedIds.includes(edge.id) }"
                                   >
@@ -461,7 +568,7 @@
                             <button class="locate-btn" @click.stop="locate(edge.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                         </div>
                     </td>
-                    <td class="small-text">{{ edge.from }} -> {{ edge.to }}</td>
+                    <td class="small-text">{{ edge.fromNodeId }} -> {{ edge.toNodeId }}</td>
                     <td>
                       <select v-model="edge.material" @change="updateRoughness(edge)" class="small-select" @click.stop>
                         <option v-for="(kst, mat) in MaterialRoughness" :key="mat" :value="mat">{{ mat }}</option>
@@ -488,6 +595,8 @@
                     </td>
                     <td><input type="number" v-model.number="edge.z1" step="0.01" class="small-input" @click.stop></td>
                     <td><input type="number" v-model.number="edge.z2" step="0.01" class="small-input" @click.stop></td>
+                    <td class="small-text" :title="`Deckel ${edge.fromNodeId}: ${nodeCoverZ(edge.fromNodeId)?.toFixed(2) ?? '-'} m`">{{ depthBelowCover(edge.fromNodeId, edge.z1)?.toFixed(2) ?? '-' }}</td>
+                    <td class="small-text" :title="`Deckel ${edge.toNodeId}: ${nodeCoverZ(edge.toNodeId)?.toFixed(2) ?? '-'} m`">{{ depthBelowCover(edge.toNodeId, edge.z2)?.toFixed(2) ?? '-' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -508,7 +617,7 @@
                     </tr>
                   </thead>
                    <tbody>
-                    <tr v-for="area in filteredAreas" :key="area.id" class="clickable-row" :class="{ 'selected': selectedIds.includes(area.id) }" >
+                    <tr v-for="area in filteredAreas" :key="area.id" :data-row-id="area.id" class="clickable-row" :class="{ 'selected': selectedIds.includes(area.id) }" >
                         <td class="col-checkbox sticky-left-1" @click.stop>
                             <input type="checkbox" :value="area.id" v-model="selectedIds">
                         </td>
@@ -555,9 +664,11 @@
 
 <script setup>
 import { useIsybauStore } from '../../store/index.js';
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, nextTick } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
-import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion } from '../../utils/mappings.js';
+import CurveTableEditor from '../common/CurveTableEditor.vue';
+import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, classifyPreview, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
+import { checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints } from '../../utils/preSolveValidation.js';
 import * as XLSX from 'xlsx';
 
 const props = defineProps({
@@ -567,6 +678,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'apply', 'select-element']);
+
+const store = useIsybauStore();
 
 // === UI State ===
 const showBulkEdit = ref(false);
@@ -590,6 +703,8 @@ const nodes = ref([]);
 const edges = ref([]);
 const areas = ref([]);
 const isDirty = ref(false);
+// Vorgemerkte Löschungen (werden erst mit "Übernehmen" wirksam)
+const deletedIds = ref({ nodes: [], edges: [] });
 
 const selectedIds = ref([]);
 const sortKey = ref('id');
@@ -648,6 +763,14 @@ const processedNodes = computed(() => sortList(filterList(nodes.value)));
 const filteredNodes = computed(() => processedNodes.value.filter(n => n.type === 'Standard'));
 const filteredStructures = computed(() => processedNodes.value.filter(n => n.type !== 'Standard'));
 
+// Welche Bauwerkstypen sind unter den aktuell selektierten Zeilen? Steuert die
+// Bulk-Edit-Sichtbarkeit (Wehrhöhe/Förderleistung sollen bearbeitbar sein, wenn
+// mind. eine ausgewählte Zeile bereits vom passenden Typ ist — nicht nur, wenn
+// man gleichzeitig den Typ ändert).
+const selectedTypes = computed(() => new Set(
+    nodes.value.filter(n => selectedIds.value.includes(n.id)).map(n => n.type)
+));
+
 const processedEdges = computed(() => sortList(filterList(edges.value)));
 const filteredEdges = computed(() => processedEdges.value);
 
@@ -678,6 +801,86 @@ const locate = (id) => {
     emit('select-element', { id: id, type: 'any' }); // 'any' for viewer to figure out, or specific
 };
 
+// Wehr-Kronenform-Presets: siehe utils/mappings.js (WeirCrestPresets) — gemeinsam
+// mit ElementInfo.vue genutzt. presetKeyFor() erlaubt ein v-model-artiges
+// Verhalten (Auswahl bleibt nach Neu-Öffnen des Modals sichtbar).
+const weirPresets = WeirCrestPresets;
+const presetKeyFor = (cw) => {
+    const match = weirPresets.find(p => Math.abs(p.cw - cw) < 0.005);
+    return match ? match.cw : '';
+};
+
+// === Klassifizierungs-Vorschau (welche SWMM-Sektion bekommt dieser Knoten?) ===
+// Zeigt bei Pumpe/Wehr/Drossel/Schieber die KONKRET betroffene Haltungs-ID (die
+// erste ausgehende, siehe SwmmBuilder.addLinks()) — macht die Node↔Haltung-
+// Kopplung beim Typ-Wechsel Schacht→Pumpe sofort sichtbar, ohne zu simulieren.
+const classificationTitle = (node) => {
+    const { section, linkSection } = classifyPreview(node);
+    if (!linkSection) return `Knoten → ${section}`;
+    const outgoing = edges.value.filter(e => e.fromNodeId === node.id);
+    if (outgoing.length === 0) return `Knoten → ${section}, ausgehende Haltung → ${linkSection} (fehlt!)`;
+    const extra = outgoing.length > 1 ? ` (+${outgoing.length - 1} weitere bleiben Kanal)` : '';
+    return `Knoten → ${section}, Haltung ${outgoing[0].id} → ${linkSection}${extra}`;
+};
+
+// === Flow-Divider: welche Haltung wird abgezweigt? ===
+// Auto-Vorschlag nur bei genau 2 Kandidaten eindeutig (Konvention: Überlauf-/
+// Nebenleitung liegt höher als die Hauptleitung) — Dropdown bleibt änderbar,
+// SwmmBuilder.addDividers() wendet dieselbe Fallback-Logik nochmal an, falls der
+// Nutzer die Auswahl nie geöffnet hat.
+const dividerOutgoingEdges = (node) => edges.value.filter(e => e.fromNodeId === node.id);
+const autoDividerLinkId = (node) => {
+    const outgoing = dividerOutgoingEdges(node);
+    if (outgoing.length !== 2) return null;
+    const z1 = (e) => e.z1 ?? node.z ?? 0;
+    return z1(outgoing[0]) >= z1(outgoing[1]) ? outgoing[0].id : outgoing[1].id;
+};
+const effectiveDividerLinkId = (node) => {
+    const outgoing = dividerOutgoingEdges(node);
+    if (node.dividerLinkId && outgoing.some(e => e.id === node.dividerLinkId)) return node.dividerLinkId;
+    return autoDividerLinkId(node) ?? '';
+};
+
+// === Proaktive Validierung für die Bauwerke-Tabelle (analog zur Schächte-Tab-Badge) ===
+const structureWarnings = (node) => {
+    const warnings = [];
+    if (node.z >= node.coverZ) warnings.push('Sohle >= Deckel');
+
+    if (node.type === 7 && !(node.weirHeight > 0)) warnings.push('Wehrhöhe fehlt');
+    if ([1, 6].includes(node.type) && !(node.pumpRate > 0)) warnings.push('Förderleistung fehlt');
+    if ([2, 3, 4, 12, 13].includes(node.type) && !(node.volume > 0)) warnings.push('Volumen fehlt');
+    if (node.type === 8 && !(node.maxOutflow > 0)) warnings.push('Max. Abfluss fehlt');
+
+    // Harte Solver-Abbrüche (ERR_122/138/171) vorab erkennen — dieselben
+    // Prüf-Funktionen wie die Vorab-Validierung vor dem Simulationsstart
+    // (siehe utils/preSolveValidation.js), damit Badge und Startsperre nicht
+    // auseinanderlaufen können.
+    [checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints].forEach(check => {
+        const finding = check(node);
+        if (finding) warnings.push(finding.message);
+    });
+
+    const outgoingEdges = edges.value.filter(e => e.fromNodeId === node.id);
+    if ([1, 6, 7, 8, 9].includes(node.type) && outgoingEdges.length === 0) {
+        warnings.push('Kein Zielknoten (fehlende Haltung)');
+    }
+    // Pumpe/Wehr/Drossel/Schieber: nur die ERSTE ausgehende Haltung wird zum
+    // Sonderlink (siehe SwmmBuilder.addLinks()) — ein Knoten mit Verzweigung, der
+    // per Typ-Dropdown zu Pumpe/Wehr/etc. gewechselt wird, würde sonst überraschend
+    // nur eine von mehreren Haltungen hydraulisch wirksam übersetzen.
+    if ([6, 7, 8, 9].includes(node.type) && outgoingEdges.length > 1) {
+        warnings.push('Mehrere ausgehende Haltungen (nur eine wird zum Sonderlink)');
+    }
+    if (node.type === 'Divider') {
+        if (outgoingEdges.length < 2) {
+            warnings.push('Verteiler braucht ≥2 ausgehende Haltungen');
+        } else if (!effectiveDividerLinkId(node)) {
+            warnings.push('Abgezweigte Haltung fehlt');
+        }
+    }
+    return warnings;
+};
+
 
 const handleTypeChange = (node, previousCategory) => {
     // Logic: If I change a Standard Node to Bauwerk, it moves to the other tab!
@@ -700,15 +903,22 @@ const handleTypeChange = (node, previousCategory) => {
             node.type = 'Bauwerk'; // or whatever it was. 'Bauwerk' generic.
         });
     }
+
+    // Rechen/Sieb/Einlaufbauwerk: Verlustbeiwert startet sonst bei 0 (= kein
+    // [LOSSES]-Eintrag, Nutzer weiß oft nicht welcher Wert plausibel ist) —
+    // sinnvollen Richtwert vorbelegen, überschreibt keinen bereits gesetzten Wert.
+    if (!node.lossCoeff && LossCoeffDefaults[newType] != null) {
+        node.lossCoeff = LossCoeffDefaults[newType];
+    }
 };
 
 
 // === Bulk Edit ===
-const bulkForm = ref({ material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, runoffCoeff: null, canOverflow: null });
+const emptyBulkForm = () => ({ material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, pumpRate: null, runoffCoeff: null, canOverflow: null });
+const bulkForm = ref(emptyBulkForm());
 
 const openBulkEdit = () => {
-    // Reset form
-    bulkForm.value = { material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, runoffCoeff: null, canOverflow: null };
+    bulkForm.value = emptyBulkForm();
     showBulkEdit.value = true;
 };
 
@@ -739,10 +949,14 @@ const applyBulkEdit = () => {
 
             if (bulkForm.value.nodeType !== '') {
                 n.type = bulkForm.value.nodeType;
-                if (n.type === 7 && bulkForm.value.weirHeight) n.weirHeight = bulkForm.value.weirHeight;
                 changed = true;
-            } else if (bulkForm.value.weirHeight && n.type === 7) {
+            }
+            if (bulkForm.value.weirHeight && n.type === 7) {
                 n.weirHeight = bulkForm.value.weirHeight;
+                changed = true;
+            }
+            if (bulkForm.value.pumpRate && [1, 6].includes(n.type)) {
+                n.pumpRate = bulkForm.value.pumpRate;
                 changed = true;
             }
 
@@ -772,19 +986,31 @@ const applyBulkEdit = () => {
 };
 
 const deleteSelected = () => {
-    if (!confirm(`Sicher, dass du ${selectedIds.value.length} Elemente löschen möchtest? Dies kann nicht rückgängig gemacht werden (außer durch Neuladen).`)) return;
-    
-    // Naive delete from Local State
+    if (!confirm(`Sicher, dass du ${selectedIds.value.length} Elemente löschen möchtest? Wird erst mit "Übernehmen" endgültig.`)) return;
+
+    // Lokal entfernen UND als gelöscht vormerken — beim Übernehmen räumt
+    // store.updateNetworkData die Elemente dann wirklich aus dem Store.
     if (activeTab.value === 'nodes' || activeTab.value === 'structures') {
+        deletedIds.value.nodes.push(...selectedIds.value);
         nodes.value = nodes.value.filter(n => !selectedIds.value.includes(n.id));
     } else if (activeTab.value === 'edges') {
+        deletedIds.value.edges.push(...selectedIds.value);
         edges.value = edges.value.filter(e => !selectedIds.value.includes(e.id));
     } else if (activeTab.value === 'areas') {
+        // Flächen werden beim Apply komplett ersetzt — lokales Entfernen genügt
         areas.value = areas.value.filter(a => !selectedIds.value.includes(a.id));
     }
-    
+
     selectedIds.value = [];
     isDirty.value = true;
+};
+
+// Grobe PRISMATIC-Näherung als Startpunkt für den TABULAR-Kurven-Editor,
+// falls ein Knoten (Legacy-Projekt ohne storageCurve) noch keine Stützstellen hat.
+const defaultStorageCurve = (depth, volume) => {
+    const d = depth > 0 ? depth : 3.0;
+    const a = volume > 0 ? volume / d : 10.0;
+    return [{ depth: 0, area: a }, { depth: d / 2, area: a }, { depth: d, area: a }];
 };
 
 // === Initialization ===
@@ -793,6 +1019,7 @@ watch(() => props.isOpen, (newVal) => {
     isDirty.value = false;
     // Reset selections on open
     selectedIds.value = [];
+    deletedIds.value = { nodes: [], edges: [] };
     
     // Init Nodes
     nodes.value = Array.from(props.network.nodes.values()).map(n => {
@@ -821,20 +1048,37 @@ watch(() => props.isOpen, (newVal) => {
         // Bauwerk-Felder mit XML-Werten vorbelegen (User kann überschreiben)
         volume:    n.volume    || bd.volume    || 0,
         maxDepth:  n.maxDepth  || bd.maxDepth  || 0,
+        initDepth: n.initDepth || 0,
+        storageShape: n.storageShape || 'PRISMATIC',
+        evapFactor: n.evapFactor || 0,
         // Pumpe
         pumpRate:  n.pumpRate  || (bd.pumpPower && bd.pumpHead
                     ? parseFloat(((bd.pumpPower * 1000 * 0.7) / (1000 * 9.81 * bd.pumpHead) * 1000).toFixed(1))
                     : 0),
+        pumpHead:  n.pumpHead  || bd.pumpHead || 0,
         onDepth:   n.onDepth   || 0,
         offDepth:  n.offDepth  || 0,
-        // Wehr
-        wehrHeight:     n.wehrHeight     || (bd.wehrSchwelle != null ? Math.max(0, bd.wehrSchwelle - n.z) : 0),
+        // Wehr — Domain-Feld heißt weirHeight (die Zeilen-Inputs binden darauf)
+        weirHeight:     n.weirHeight     || (bd.wehrSchwelle != null ? Math.max(0, bd.wehrSchwelle - n.z) : 0),
         wehrWidth:      n.wehrWidth      || bd.wehrLaenge || 0,
         dischargeCoeff: n.dischargeCoeff || 0,
-        // Drossel
+        weirType: n.weirType || 'TRANSVERSE',
+        gated: n.gated || false,
+        // Drossel / Schieber
         maxOutflow: n.maxOutflow || bd.nennleistung || 0,
-        // Schieber
+        orificeType: n.orificeType || 'BOTTOM',
         initialOpening: n.initialOpening ?? 1.0,
+        gateWidth: n.gateWidth || bd.schieberBreite || 0,
+        // Rechen/Sieb/Einlaufbauwerk
+        lossCoeff: n.lossCoeff || 0,
+        // TABULAR-Speicherkurve
+        storageCurve: (Array.isArray(n.storageCurve) && n.storageCurve.length >= 2)
+          ? n.storageCurve
+          : defaultStorageCurve(n.maxDepth || bd.maxDepth || 0, n.volume || bd.volume || 0),
+        // Flow-Divider
+        dividerType: n.dividerType || 'OVERFLOW',
+        dividerLinkId: n.dividerLinkId || null,
+        dividerCutoffFlow: n.dividerCutoffFlow || 0,
       };
     });
 
@@ -872,8 +1116,56 @@ watch(() => props.isOpen, (newVal) => {
           runoffCoeff: a.runoffCoeff || getRunoffCoeff(a.property, a.function, a.slope),
           nodeId: a.nodeId || '',
     }));
+
+    // Fokus-Sprung aus ElementInfo („In Tabelle bearbeiten"): richtigen Tab
+    // wählen, Zeile selektieren und hinscrollen.
+    const focusId = store.ui.preprocessingFocusId;
+    const focusType = store.ui.preprocessingFocusType;
+    if (focusId) {
+        store.ui.preprocessingFocusId = null;
+        store.ui.preprocessingFocusType = null;
+        focusElement(focusId, focusType);
+    }
   }
 }, { immediate: true });
+
+// function-Deklaration (gehoistet): wird vom isOpen-Watcher mit { immediate: true }
+// schon während des Setups aufgerufen — eine const wäre dort noch nicht initialisiert.
+//
+// `type` ist Pflicht für den Regelfall: In ISYBAU-Daten teilt sich eine Haltung
+// oft die ID mit ihrem Zulaufknoten (z.B. beide "06001"). Ohne expliziten Typ
+// würde die Suche immer zuerst im Knoten-Array fündig und fälschlich zum
+// Schacht statt zur Haltung springen. `type` fehlt nur bei alten/externen
+// Aufrufern — dafür bleibt die Rate-Reihenfolge als Fallback erhalten.
+function focusElement(id, type) {
+    let tab = null;
+    if (type === 'edge') {
+        tab = edges.value.some(e => e.id === id) ? 'edges' : null;
+    } else if (type === 'area') {
+        tab = areas.value.some(a => a.id === id) ? 'areas' : null;
+    } else if (type === 'node') {
+        const node = nodes.value.find(n => n.id === id);
+        tab = node ? (node.type === 'Standard' ? 'nodes' : 'structures') : null;
+    } else {
+        // Fallback ohne Typangabe: bisherige Rate-Priorität Knoten > Haltung > Fläche
+        const node = nodes.value.find(n => n.id === id);
+        if (node) tab = node.type === 'Standard' ? 'nodes' : 'structures';
+        else if (edges.value.some(e => e.id === id)) tab = 'edges';
+        else if (areas.value.some(a => a.id === id)) tab = 'areas';
+    }
+    if (!tab) return;
+
+    activeTab.value = tab;
+    selectedIds.value = [id];
+    nextTick(() => {
+        const row = document.querySelector(`[data-row-id="${CSS.escape(id)}"]`);
+        if (row) {
+            row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            row.classList.add('row-flash');
+            setTimeout(() => row.classList.remove('row-flash'), 2500);
+        }
+    });
+};
 
 
 const updateRoughness = (edge) => { edge.roughness = getRoughness(edge.material); };
@@ -884,6 +1176,15 @@ const onProfileChange = (edge) => {
 const calculateSlope = (edge) => {
      if (!edge.length) return 0;
      return (((edge.z1 - edge.z2) / edge.length) * 100).toFixed(2);
+};
+
+// T1/T2: wie tief liegt der Rohranschluss unter dem Deckel des jeweiligen Knotens
+// (rein informativ — Deckelhöhe wird im Schächte/Bauwerke-Tab gepflegt, nicht hier).
+const nodeCoverZ = (nodeId) => nodes.value.find(n => n.id === nodeId)?.coverZ;
+const depthBelowCover = (nodeId, z) => {
+    const coverZ = nodeCoverZ(nodeId);
+    if (coverZ == null || z == null) return null;
+    return coverZ - z;
 };
 
 const exportXlsx = () => {
@@ -907,7 +1208,17 @@ const exportXlsx = () => {
     XLSX.utils.book_append_sheet(wb, wsNodes, 'Schächte');
 
     // --- Bauwerke ---
-    const structHeaders = ['ID', 'Typ', 'Deckel (m)', 'Sohle (m)', 'Druckdicht', 'Volumen (m³)', 'Max. Tiefe (m)', 'Zufluss (l/s)', 'Wehrhöhe (m)', 'Max. Abfluss (l/s)'];
+    const structHeaders = [
+        'ID', 'Typ', 'Deckel (m)', 'Sohle (m)', 'Druckdicht',
+        'Volumen (m³)', 'Max. Tiefe (m)', 'Start-Tiefe (m)', 'Form', 'Verdunstung (0-1)',
+        'Zufluss (l/s)',
+        'Wehrhöhe (m)', 'Wehrbreite (m)', 'Beiwert Cw', 'Wehrform', 'Rückschlagklappe',
+        'Max. Abfluss (l/s)', 'Lage (Orifice)',
+        'Förderleistung (l/s)', 'Förderhöhe (m)', 'Einschalt (m)', 'Ausschalt (m)',
+        'Öffnung (0-1)', 'Schieberbreite (m)',
+        'Auslauftyp', 'Gedr. Max. Abfluss (l/s)', 'Als Senke',
+        'Verlustbeiwert (Eintritt)'
+    ];
     const structRows = nodes.value
         .filter(n => n.type !== 'Standard')
         .map(n => [
@@ -918,9 +1229,27 @@ const exportXlsx = () => {
             n.canOverflow === false ? 'Ja' : 'Nein',
             n.volume ?? '',
             n.maxDepth ?? '',
+            n.initDepth ?? '',
+            n.storageShape ?? '',
+            n.evapFactor ?? '',
             n.constantInflow ?? '',
             n.weirHeight ?? '',
-            n.maxOutflow ?? ''
+            n.wehrWidth ?? '',
+            n.dischargeCoeff ?? '',
+            n.weirType ?? '',
+            n.gated ? 'Ja' : 'Nein',
+            n.maxOutflow ?? '',
+            n.orificeType ?? '',
+            n.pumpRate ?? '',
+            n.pumpHead ?? '',
+            n.onDepth ?? '',
+            n.offDepth ?? '',
+            n.initialOpening ?? '',
+            n.gateWidth ?? '',
+            n.outflowType ?? '',
+            n.constantOutflow ?? '',
+            n.is_sink ? 'Ja' : 'Nein',
+            n.lossCoeff ?? ''
         ]);
     const wsStructures = XLSX.utils.aoa_to_sheet([structHeaders, ...structRows]);
     XLSX.utils.book_append_sheet(wb, wsStructures, 'Bauwerke');
@@ -986,7 +1315,9 @@ const apply = () => {
             ...e,
             profile: { ...e.profile, height: e.profile.height / 1000, width: e.profile.width / 1000 }
         })),
-        areas: areas.value
+        areas: areas.value,
+        deletedNodeIds: deletedIds.value.nodes,
+        deletedEdgeIds: deletedIds.value.edges
     });
 };
 </script>
@@ -996,7 +1327,7 @@ const apply = () => {
 .modal-header { padding: 0.65rem 1rem; border-bottom: 2px solid #594491; background: #040647; display: flex; justify-content: space-between; align-items: center; cursor: move; }
 .header-left { display: flex; gap: 1rem; align-items: center; }
 .bulk-btns { display: flex; gap: 0.5rem; }
-.bulk-btn-link { background: none; border: none; font-size: 0.9rem; color: #594491; cursor: pointer; text-decoration: underline; padding: 0 5px; }
+.bulk-btn-link { background: none; border: none; font-family: 'Press Start 2P', monospace; font-size: 0.48rem; color: #594491; cursor: pointer; text-decoration: underline; padding: 0 5px; }
 .bulk-btn-link.text-red { color: #e74c3c; }
 .ic-del { width: 13px; height: 13px; image-rendering: pixelated; filter: invert(35%) sepia(90%) saturate(700%) hue-rotate(330deg) brightness(90%); vertical-align: middle; }
 
@@ -1038,13 +1369,57 @@ const apply = () => {
 .clickable-row:hover td { background-color: #f1f8ff !important; }
 .clickable-row.selected td { background-color: #e3f2fd !important; }
 
-/* Inputs */
-.small-input { width: 70px; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; }
-.medium-input { width: 100px; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; }
-.medium-select { width: 150px; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; }
+/* Fokus-Sprung aus ElementInfo: Zeile kurz aufblinken lassen */
+.row-flash td { animation: row-flash-anim 2.5s ease-out; }
+@keyframes row-flash-anim {
+    0%   { background-color: #8f8be1 !important; }
+    100% { background-color: #e3f2fd; }
+}
+
+/* Bauwerke: Parameter-Zellen (input-group/-col, hint-text, checkbox-label waren
+   bisher komplett unstyled — Ergänzung, damit die neuen Phase-2-Felder nicht noch
+   inkonsistenter wirken als der Rest der Tabelle). */
+.input-group-col { display: grid; grid-template-columns: repeat(2, minmax(90px, 1fr)); gap: 0.4rem 0.6rem; align-items: end; }
+.input-group { display: flex; flex-direction: column; gap: 2px; }
+.hint-text { font-size: 0.68rem; color: #7f7d99; white-space: nowrap; }
+.checkbox-label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: #040647; white-space: nowrap; }
+
+/* Klassifizierungs-Badge (welche SWMM-Sektion bekommt dieser Knoten?) */
+.classify-badge { display: block; margin-top: 3px; font-size: 0.68rem; color: #594491; font-family: monospace; }
+
+/* Inputs & Dropdowns — dasselbe dunkle Feld-Design wie ElementInfo.vue
+   .full-input/.full-select und ElementPropertiesModal.vue .form-input/
+   .form-select (Navy-Fill #0a0d5c, Lila-Rahmen, Limetten-Fokusring), statt der
+   vorherigen hellen Variante — Formularfelder sollen app-weit gleich aussehen,
+   unabhängig davon, ob sie in einem Modal-Formular oder einer Tabellenzelle sitzen. */
+input[type="checkbox"] { accent-color: #2ecc71; }
+.small-input, .medium-input, .filter-input,
+.small-select, .medium-select, .weir-preset-select {
+  border: 1px solid #594491;
+  border-radius: 4px;
+  background: #0a0d5c;
+  color: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.small-input, .medium-input { width: 70px; padding: 4px; }
+.medium-input { width: 100px; }
+.medium-select { width: 150px; padding: 4px; }
+.filter-input { width: 100%; padding: 4px; font-size: 0.8rem; }
+.small-select { padding: 3px 4px; font-size: 0.82rem; }
+.weir-preset-select { width: 100%; padding: 3px 4px; font-size: 0.78rem; box-sizing: border-box; }
+.small-input:focus, .medium-input:focus, .filter-input:focus,
+.small-select:focus, .medium-select:focus, .weir-preset-select:focus {
+  outline: none;
+  border-color: #2ecc71;
+  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+}
+.small-input:disabled, .medium-input:disabled, .filter-input:disabled,
+.small-select:disabled, .medium-select:disabled, .weir-preset-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .split-cell { display: flex; gap: 5px; align-items: center; }
-.filter-input { width: 100%; padding: 4px; border: 1px solid #aeadd2; border-radius: 4px; font-size: 0.8rem; }
-.invalid { border-color: #e74c3c !important; background: #fff5f5; }
+.invalid { border-color: #e74c3c !important; background: rgba(231, 76, 60, 0.25) !important; }
 .text-red { color: #e74c3c; font-weight: bold; }
 .error-badge { font-size: 0.7rem; color: #fff; background: #e74c3c; padding: 2px 4px; border-radius: 4px; }
 
@@ -1055,26 +1430,52 @@ const apply = () => {
 .locate-icon { width: 16px; height: 16px; display: block; }
 
 /* Undo & Bulk */
-.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: white; padding: 10px 20px; border-radius: 20px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 1000; }
-.undo-toast.info { background: #2980b9; }
+.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: #040647; border: 1px solid #594491; color: white; padding: 10px 20px; border-radius: 20px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(4,6,71,0.4); z-index: 1000; }
+.undo-toast.info { background: #594491; }
+.undo-action-btn {
+  background: transparent; border: 1px solid #8f8be1; color: #2ecc71;
+  border-radius: 4px; padding: 0.35rem 0.6rem;
+  font-family: 'Press Start 2P', monospace; font-size: 0.46rem; cursor: pointer;
+  transition: background 0.15s;
+}
+.undo-action-btn:hover { background: #594491; }
+.undo-toast .close-toast {
+  background: none; border: none; color: #aeadd2; font-size: 1.2rem; line-height: 1;
+  cursor: pointer; padding: 0 0.2rem; transition: color 0.2s;
+}
+.undo-toast .close-toast:hover { color: #2ecc71; }
 
-/* Bulk Edit Modal */
-.bulk-edit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 500; display: flex; justify-content: center; align-items: center; }
-.bulk-edit-modal { background: white; padding: 2rem; border-radius: 8px; width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
-.bulk-controls { display: flex; flex-direction: column; gap: 1rem; margin: 1.5rem 0; }
+/* Bulk Edit Modal — eigenständiges PopUp, daher komplettes eigenes
+   Lila/Limetten-Pixel-Header wie das Hauptmodal, statt der alten weißen
+   Bootstrap-Karte ohne Header/Close-Button. */
+.bulk-edit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(4,6,71,0.55); z-index: 500; display: flex; justify-content: center; align-items: center; }
+.bulk-edit-modal { background: #fff; border: 1px solid #594491; border-radius: 8px; width: 400px; box-shadow: 0 4px 25px rgba(4,6,71,0.35); overflow: hidden; }
+.bulk-edit-header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #040647; padding: 0.65rem 1rem; border-bottom: 2px solid #594491;
+}
+.bulk-edit-header h4 {
+  margin: 0; font-family: 'Press Start 2P', monospace; font-size: 0.55rem;
+  color: #2ecc71; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.bulk-controls { display: flex; flex-direction: column; gap: 1rem; margin: 1.5rem 0; padding: 0 1.5rem; }
 .bulk-field { display: flex; flex-direction: column; gap: 5px; }
 .bulk-field-row { display: flex; gap: 1rem; }
-.bulk-select, .bulk-input { padding: 8px; border: 1px solid #aeadd2; border-radius: 4px; width: 100%; box-sizing: border-box; }
-.bulk-buttons { display: flex; gap: 1rem; justify-content: flex-end; }
+.bulk-select, .bulk-input {
+  padding: 8px; border: 1px solid #594491; border-radius: 4px; width: 100%;
+  box-sizing: border-box; background: #0a0d5c; color: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.bulk-select:focus, .bulk-input:focus {
+  outline: none; border-color: #2ecc71; box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+}
+.bulk-buttons { display: flex; gap: 1rem; justify-content: flex-end; padding: 0 1.5rem 1.5rem; }
 .bulk-divider { border: none; border-top: 1px solid #aeadd2; margin: 0.25rem 0; }
 .bulk-hint { font-size: 0.75rem; color: #594491; font-style: italic; }
-.weir-preset-select { width: 100%; padding: 3px 4px; border: 1px solid #aeadd2; border-radius: 4px; font-size: 0.78rem; box-sizing: border-box; }
 
-.modal-footer { padding: 1rem; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 1rem; align-items: center; }
-.export-btn { background: white; border: 1px solid #27ae60; color: #27ae60; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 500; transition: background 0.15s, color 0.15s; }
-.export-btn:hover { background: #27ae60; color: white; }
-.primary-btn { background: #040647; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
-.secondary-btn { background: white; border: 1px solid #aeadd2; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+.modal-footer { padding: 1rem; border-top: 1px solid #aeadd2; display: flex; justify-content: flex-end; gap: 1rem; align-items: center; }
+.export-btn { background: white; border: 1px solid #2ecc71; color: #2ecc71; padding: 0.55rem 1rem; border-radius: 6px; cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 0.48rem; transition: background 0.15s, color 0.15s; }
+.export-btn:hover { background: #2ecc71; color: white; }
 .danger-btn { background: #e74c3c; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
 
 /* Tabs */
@@ -1089,13 +1490,13 @@ const apply = () => {
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
+  color: #8f8be1;
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 
 .close-btn:hover {
-  color: #2ecc71; /* Red 500 */
+  color: #2ecc71;
 }
 .icon-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; }
 
@@ -1108,22 +1509,34 @@ const apply = () => {
   margin: 0;
 }
 
+/* Single source of truth for these two — vorher gab es zwei konkurrierende
+   .primary-btn/.secondary-btn Definitionen (eine schlicht, eine mit !important
+   pixel-Look), die sich Eigenschaften gegenseitig wegschnappten. */
 .primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
+  background: #040647;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover { background: #594491 !important; }
+.primary-btn:hover { background: #594491; }
 
 .secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
+  background: #fff;
+  border: 1px solid #aeadd2;
+  color: #040647;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.secondary-btn:hover { background: #f3f2fb !important; }
+.secondary-btn:hover { background: #f3f2fb; }
 </style>

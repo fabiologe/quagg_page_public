@@ -1,0 +1,428 @@
+/* Modern Isybau Styling (Clean, Flat, functional) */
+.simulation-results-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #fdfdfd;
+    font-family: 'Inter', sans-serif;
+}
+
+/* Modal Header */
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: #040647;
+    border-bottom: 2px solid #594491;
+}
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #2ecc71;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #6b7280;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: #f3f4f6;
+    color: #2ecc71;
+}
+
+/* Tabs — dunkle Leiste wie .tabs/.tab-btn in PreprocessingModal.vue/
+   SimulationDebugModal.vue, statt der hellen Pill-Tabs (vorher durch eine
+   zweite !important-Regel weiter unten ohnehin überschrieben — beide Regeln
+   jetzt zu einer zusammengeführt). */
+.tabs-nav {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: #040647;
+    border-bottom: 2px solid #594491;
+}
+
+.tab-btn {
+    font-family: "Press Start 2P", monospace;
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
+    background: transparent;
+    border: 1px solid #594491;
+    color: #aeadd2;
+    border-radius: 5px;
+    padding: 0.45rem 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.tab-btn:hover { background: #594491; color: #fff; }
+.tab-btn.active {
+    background: #594491;
+    color: #fff;
+    border-color: #8f8be1;
+}
+
+/* Tab Content */
+.tab-content {
+    flex: 1;
+    overflow: hidden; /* For scrolling inside tabs */
+    position: relative;
+    padding: 0;
+}
+
+.tab-pane {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+/* KPI Grid */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.kpi-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #f0f0f0;
+    text-align: center;
+}
+.kpi-card .label { color: #888; font-size: 0.9rem; margin-bottom: 0.5rem; }
+.kpi-card .value { font-size: 1.5rem; font-weight: 700; color: #333; }
+.kpi-card .kpi-sub { font-size: 0.75rem; color: #aaa; margin-top: 0.25rem; }
+.kpi-danger .value { color: #2ecc71; }
+.kpi-warning .value { color: #f59e0b; }
+.kpi-success .value { color: #10b981; }
+
+.grid-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.panel {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #aeadd2;
+    padding: 1.5rem;
+}
+.warning-panel { border-left: 4px solid #f59e0b; }
+
+.detail-row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.95rem; }
+.simple-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.simple-table td { padding: 0.25rem 0; border-bottom: 1px solid #f5f5f5; }
+.simple-table tr:last-child td { border-bottom: none; }
+.simple-table .highlight-row td { background: #fdfdfd; font-weight: bold; border-top: 2px solid #eee; padding-top: 0.5rem; }
+
+/* Bilanz-Tabelle */
+.bilanz-table th { text-align: left; color: #888; font-size: 0.75rem; padding: 0.2rem 0; border-bottom: 2px solid #eee; }
+.bilanz-table .bilanz-header th:not(:first-child) { text-align: right; }
+.bilanz-table .val-right { text-align: right; font-variant-numeric: tabular-nums; }
+.bilanz-note { font-size: 0.72rem; color: #aaa; margin-left: 0.5rem; }
+.bilanz-footnote { font-size: 0.75rem; color: #aaa; margin: 0.75rem 0 0; font-style: italic; }
+
+/* Outfall-Scroll — begrenzt Höhe bei vielen Auslässen, scrollt intern */
+.outfall-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+/* Stabilitätsbericht — Knotenliste scrollbar bei vielen */
+.stability-scroll {
+    max-height: 160px;
+    overflow-y: auto;
+    margin: 0.4rem 0 0.25rem;
+    padding-left: 1.2rem;
+}
+.stability-more {
+    font-size: 0.75rem;
+    color: #f59e0b;
+    margin: 0;
+    font-style: italic;
+}
+
+/* Zähler-Badge neben Panel-Titel */
+.panel-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    background: #ede9fe;
+    color: #594491;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0 0.35rem;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+    font-family: sans-serif;
+}
+
+/* Regen-Panel */
+.rain-panel {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid #3498db;
+    padding: 1rem 1.25rem;
+}
+.rain-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+.rain-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.rain-icon {
+    width: 22px;
+    height: 22px;
+    image-rendering: pixelated;
+    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
+}
+
+/* Pixel-Icon statt rohem Emoji — Limetten-Filter wie überall im Rest der App
+   (z.B. SimulationControls.vue .ic), damit Ergebnis-Panels demselben Design
+   folgen statt bunter Systemschrift-Emojis. */
+.emoji-icon {
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+    image-rendering: pixelated;
+    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
+    margin-right: 3px;
+}
+h3 .emoji-icon { width: 12px; height: 12px; }
+.rain-title strong { display: block; font-family: 'Press Start 2P', monospace; font-size: 0.48rem; color: #1e3a5f; }
+.rain-method-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-weight: 600;
+    margin-top: 0.15rem;
+}
+.rain-meta {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+.rain-kpi {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+.rain-kpi span { font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.03em; }
+.rain-kpi strong { font-size: 1rem; color: #1e3a5f; }
+.rain-chart-box {
+    height: 180px;
+    position: relative;
+}
+
+/* Bezugsflächen-Badge */
+.area-badge {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    font-size: 0.82rem;
+}
+.area-ok   { background: #f0fdf4; border: 1px solid #bbf7d0; }
+.area-warn { background: #fff7ed; border: 1px solid #fed7aa; }
+.area-badge-label { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.area-badge-val   { font-weight: 700; color: #15803d; }
+.area-warn .area-badge-val { color: #c2410c; }
+.area-badge-sub   { color: #9ca3af; font-size: 0.72rem; margin-left: auto; }
+
+/* Knoten→Link-Verweis: Pumpe/Wehr/Drossel/Schieber sind SWMM-Links, das reale
+   Ergebnis liegt an der Haltung, nicht am Bauwerksknoten. */
+.link-hint {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    padding: 0.6rem 0.85rem;
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+    color: #1e40af;
+}
+.link-hint-btn {
+    background: #1d4ed8;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.2rem 0.45rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.44rem;
+    cursor: pointer;
+    margin: 0 0.15rem;
+}
+.link-hint-btn:hover { background: #1e3a8a; }
+
+/* Hinweis statt leerer Zelle: SWMM liefert für Pumpen/Wehre/Drosseln strukturell
+   weniger Link-Flow-Spalten als für normale Haltungen (Conduits). */
+.na-hint { color: #9ca3af; font-style: italic; font-size: 0.82rem; cursor: help; }
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background-color: #f1f8ff !important; }
+
+/* Tables */
+.table-scroll { flex: 1; overflow-y: auto; background: white; border: 1px solid #aeadd2; border-radius: 6px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.data-table th, .data-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #aeadd2; }
+.data-table th { background: #f9fafb; font-weight: 600; color: #4b5563; position: sticky; top: 0; z-index: 1; cursor: pointer; }
+.data-table tr:hover { background: #f8fafc; }
+.row-warning { background: #fff7ed; }
+.row-danger { background: #fef2f2; }
+
+/* Badges */
+.badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+.badge-red { background: #fee2e2; color: #b91c1c; }
+.badge-orange { background: #ffedd5; color: #c2410c; }
+.badge-yellow { background: #fef3c7; color: #b45309; }
+.badge-green { background: #d1fae5; color: #047857; }
+
+/* Toolbar */
+.toolbar { display: flex; justify-content: space-between; margin-bottom: 1rem; }
+.search-input { padding: 0.5rem; border: 1px solid #aeadd2; border-radius: 4px; width: 250px; }
+.filters { display: flex; align-items: center; }
+.filters label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.42rem;
+    color: #594491;
+    cursor: pointer;
+}
+
+/* Overlays */
+.detail-overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    z-index: 20;
+    padding: 2rem;
+    display: flex;
+    justify-content: center;
+}
+.detail-card {
+    background: white;
+    width: 100%;
+    max-width: 800px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    border: 1px solid #aeadd2;
+    display: flex; 
+    flex-direction: column;
+}
+.detail-header { display: flex; justify-content: space-between; padding: 1rem; border-bottom: 1px solid #aeadd2; background: #fafafa; }
+.detail-close-btn {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #594491;
+    transition: color 0.2s;
+    padding: 0 0.3rem;
+}
+.detail-close-btn:hover { color: #2ecc71; }
+.detail-body { padding: 1.5rem; flex: 1; overflow-y: auto; }
+.engineer-inspector { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; background: #f8fbff; padding: 1rem; border-radius: 6px; border: 1px solid #e0f0ff;}
+.text-red { color: #dc2626; font-weight: bold; }
+.btn-icon { background: none; border: 1px solid #aeadd2; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 0.42rem; color: #594491; }
+.btn-icon:hover { background: #f3f4f6; }
+
+.mb-4 { margin-bottom: 1rem; }
+.progress-bar-bg { width: 100px; height: 8px; background: #eee; border-radius: 4px; display: inline-block; margin-right: 5px; }
+.progress-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+
+/* Health Header */
+.health-header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    border: 1px solid #aeadd2;
+}
+.score-circle {
+    width: 60px; height: 60px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: white; font-weight: bold;
+}
+.score-val { font-size: 1.2rem; line-height: 1; }
+.score-label { font-size: 0.6rem; text-transform: uppercase; }
+.health-text { flex: 1; }
+.health-text h3 { margin: 0 0 0.35rem 0; font-family: 'Press Start 2P', monospace; font-size: 0.68rem; }
+.health-text p { margin: 0; color: #666; font-size: 0.9rem; }
+.health-metrics { display: flex; gap: 1.5rem; border-left: 1px solid #eee; padding-left: 1.5rem; }
+.metric { display: flex; flex-direction: column; }
+.metric span { font-size: 0.75rem; color: #888; text-transform: uppercase; }
+.metric strong { font-size: 1.1rem; color: #333; }
+
+.health-excellent .score-circle { background: #10b981; }
+.health-excellent h3 { color: #2ecc71; }
+.health-good .score-circle { background: #3b82f6; } /* Blue */
+.health-good h3 { color: #8f8be1; }
+.health-warning .score-circle { background: #f59e0b; }
+.health-warning h3 { color: #aeadd2; }
+.health-critical .score-circle { background: #ef4444; }
+.health-critical h3 { color: #e74c3c; }
+
+
+.panel h3 {
+  margin-top: 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.55rem;
+  color: #594491;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #aeadd2;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
+input[type="checkbox"],
+input[type="radio"] {
+    accent-color: #2ecc71;
+}

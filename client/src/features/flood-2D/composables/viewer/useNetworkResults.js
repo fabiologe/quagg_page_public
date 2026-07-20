@@ -119,9 +119,26 @@ export function networkStateAtTime(net, tSec) {
             fill: Math.min(Math.max(cap, 0), 1),
             surcharged: cap >= 0.999,
             flow: lerp(l.flow),
+            velocity: lerp(l.velocity),
+            depth: lerp(l.depth),   // Fließtiefe im Rohr (Querschnitts-Füllstand)
         });
     }
     return { nodes, links, time: tSec, index: i0 };
+}
+
+/**
+ * Purer Kern: globale Normierungs-Maxima über ALLE Haltungen und Zeitschritte —
+ * damit die Q-/v-Färbung im 3D über das ganze Netz vergleichbar ist (eine Skala,
+ * nicht je Haltung). Einmal pro Ergebnis-Satz berechnen, nicht pro Frame.
+ * @returns {{Qmax:number, vMax:number}}
+ */
+export function networkNorms(net) {
+    let Qmax = 0, vMax = 0;
+    for (const l of Object.values(net?.links || {})) {
+        for (const q of l.flow || []) { const a = Math.abs(q); if (a > Qmax) Qmax = a; }
+        for (const v of l.velocity || []) { const a = Math.abs(v); if (a > vMax) vMax = a; }
+    }
+    return { Qmax, vMax };
 }
 
 /**
@@ -137,6 +154,8 @@ export function useNetworkResults({ networkResults, saveInterval = 0 }) {
     const systemSeries = computed(() => series.value.system);
     const hasNetworkResults = computed(() =>
         nodeSeries.value.length > 0 || linkSeries.value.length > 0);
+    // Globale Q-/v-Maxima (Farbskala der 3D-Färbmodi) — einmal pro Ergebnis-Satz.
+    const norms = computed(() => networkNorms(unref(networkResults)));
 
     /** 2D-Frame → Sim-Sekunden (saveInterval 0 → Frame als Zeit interpretieren). */
     const frameToSeconds = (frame) => {
@@ -145,8 +164,11 @@ export function useNetworkResults({ networkResults, saveInterval = 0 }) {
     };
 
     /** Zustand aller Elemente zum 2D-Frame (für 3D-Färbung); null ohne Ergebnisse. */
-    const stateAtFrame = (frame) =>
-        networkStateAtTime(unref(networkResults), frameToSeconds(frame));
+    const stateAtFrame = (frame) => {
+        const s = networkStateAtTime(unref(networkResults), frameToSeconds(frame));
+        if (s) s.norms = norms.value;
+        return s;
+    };
 
     return { nodeSeries, linkSeries, systemSeries, hasNetworkResults, stateAtFrame, frameToSeconds };
 }

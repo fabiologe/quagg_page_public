@@ -20,6 +20,26 @@
         </div>
       </div>
 
+      <!-- Kanalnetz (1D): Layer-Toggle + Färbmodus der Haltungen -->
+      <div v-if="networkAvailable" class="vcp-section">
+        <div class="vcp-label">Kanalnetz (1D)</div>
+        <div class="vcp-grid">
+          <button
+            :class="['vcp-chip', { active: showNetwork }]"
+            @click="$emit('update:showNetwork', !showNetwork)"
+            title="Kanalnetz ein-/ausblenden"
+          ><SvEmoji emoji="👁" :size="14" /> Sichtbar</button>
+          <button
+            v-for="m in networkModes"
+            :key="m.id"
+            :class="['vcp-chip', { active: networkColorMode === m.id }]"
+            :disabled="!showNetwork"
+            @click="$emit('update:networkColorMode', m.id)"
+            :title="m.title"
+          >{{ m.label }}</button>
+        </div>
+      </div>
+
       <!-- Werkzeuge -->
       <div class="vcp-section">
         <div class="vcp-label">Werkzeuge</div>
@@ -82,12 +102,23 @@ defineProps({
   velocityGlobalMax: { type: Number, default: 1 },
   velMin: { type: Number, default: 0 },
   velMax: { type: Number, default: 1 },
+  networkAvailable: { type: Boolean, default: false }, // 1D-Ergebnisse vorhanden?
+  showNetwork: { type: Boolean, default: true },
+  networkColorMode: { type: String, default: 'capacity' },
 });
 
 defineEmits([
   'update:activeLayer', 'update:activeTool', 'update:waterOpacity',
   'update:flowDensity', 'update:velMin', 'update:velMax',
+  'update:showNetwork', 'update:networkColorMode',
 ]);
+
+// Färbmodi der Haltungen (Skala jeweils global über das ganze Netz)
+const networkModes = [
+  { id: 'capacity', label: 'Füllgrad',        title: 'Füllgrad (grau → blau, Vollfüllung rot)' },
+  { id: 'flow',     label: 'Durchfluss',      title: '|Q| global normiert (Basis → blau → rot)' },
+  { id: 'velocity', label: 'Geschwindigkeit', title: '|v| global normiert (Basis → blau → rot)' },
+];
 
 const open = ref(true);
 </script>
@@ -166,6 +197,7 @@ const open = ref(true);
   white-space: nowrap;
 }
 .vcp-chip:hover { background: rgba(139, 92, 246, 0.15); color: var(--sv-text); }
+.vcp-chip:disabled { opacity: 0.4; cursor: default; }
 .vcp-chip.active {
   background: rgba(139, 92, 246, 0.25);
   border-color: var(--sv-lime);

@@ -143,6 +143,85 @@ export const Bauwerkstyp = {
     14: "Einlaufbauwerk"
 };
 
+// Spiegelt SwmmBuilder.classifyAndAddNodes()/addLinks() (core/services/SwmmBuilder.js) —
+// von BEIDEN Stellen genutzt, damit die Preprocessing-Tabelle exakt zeigt, welchem
+// SWMM-Objekt ein Bauwerksknoten tatsächlich zugeordnet wird, unabhängig davon,
+// welche Eingabefelder das UI gerade für den gewählten Typ anzeigt (z.B. Pumpwerk(1)/
+// Behandlungsanlage(3)/Klaeranlage(4) zeigen Pumpen-/Becken-Felder, landen aber je
+// nach Volumen in unterschiedlichen SWMM-Sektionen).
+const STORAGE_BTYPES = new Set([1, 2, 12, 13]);
+const OUTFALL_BTYPES = new Set([3, 4, 5]);
+// Pumpe/Wehr/Drossel/Schieber: der Knoten bleibt [JUNCTIONS], aber seine (erste)
+// ausgehende Haltung wird zum benannten SWMM-Sonderlink umgebogen (addLinks()).
+// Einzige Quelle, exportiert, damit ElementInfo/ResultsNodesTab/Viewer3DInfoPanel/
+// SwmmBuilder nicht mehr je eine eigene Kopie dieser Menge pflegen.
+export const LINK_BAUWERKSTYPEN = new Set([6, 7, 8, 9]);
+export const LINK_SECTION_BY_BTYP = { 6: '[PUMPS]', 7: '[WEIRS]', 8: '[ORIFICES]', 9: '[ORIFICES]' };
+
+export const getEffectiveBauwerkstyp = (node) => {
+    if (node.bauwerkstyp != null) return node.bauwerkstyp;
+    const t = parseInt(node.type);
+    return isNaN(t) ? null : t;
+};
+
+/**
+ * @param {object} node - Knoten mit type/bauwerkstyp/volume/bauwerkData/is_sink/punktkennung
+ * @returns {{ section: string, linkSection: string|null }} SWMM-Zielsektion(en)
+ *   (der globale "kein Auslauf gefunden"-Fallback auf den tiefsten Knoten wird hier
+ *   NICHT abgebildet, da er den gesamten Netzkontext braucht)
+ */
+export const classifyPreview = (node) => {
+    const btyp = getEffectiveBauwerkstyp(node);
+    const typeStr = String(node.type);
+    const volume = parseFloat(node.volume) || 0;
+    const hasVolume = volume > 0 || (node.bauwerkData?.volume != null && node.bauwerkData.volume > 0);
+
+    if (hasVolume || STORAGE_BTYPES.has(btyp)) {
+        return { section: '[STORAGE]', linkSection: null };
+    }
+    const isOutfall = OUTFALL_BTYPES.has(btyp) || typeStr === 'Auslaufbauwerk' || node.is_sink === true
+        || (typeStr === 'Anschlusspunkt' && node.punktkennung === 'NN');
+    if (isOutfall) {
+        return { section: '[OUTFALLS]', linkSection: null };
+    }
+    if (LINK_BAUWERKSTYPEN.has(btyp)) {
+        return { section: '[JUNCTIONS]', linkSection: LINK_SECTION_BY_BTYP[btyp] };
+    }
+    // Flow-Divider: kein ISYBAU-Bauwerkstyp (1-14 hat keinen passenden Eintrag) —
+    // String-Sentinel analog zum generischen 'Bauwerk'. Beide ausgehenden Kanten
+    // bleiben normale [CONDUITS], nur der Knoten bekommt einen [DIVIDERS]-Eintrag.
+    if (typeStr === 'Divider') {
+        return { section: '[DIVIDERS]', linkSection: null };
+    }
+    return { section: '[JUNCTIONS]', linkSection: null };
+};
+
+// Wehr-Kronenform-Presets (Überfallbeiwert Cw = (2/3)·μ·√(2g)) — gemeinsam von
+// PreprocessingModal.vue und ElementInfo.vue genutzt, damit beide Editoren
+// exakt dieselben Auswahlmöglichkeiten anbieten (vermeidet das Drift-Problem,
+// das schon einmal zu inkonsistenten weirWidth/wehrWidth-Feldern geführt hat).
+export const WeirCrestPresets = [
+    { cw: 1.48, label: '① Breit, scharfkantig, waagerecht (μ≈0.50 → Cw=1.48)' },
+    { cw: 1.55, label: '② Breit, gut abger. Kanten (μ≈0.53 → Cw=1.55)' },
+    { cw: 2.04, label: '③ Breit, vollst. abgerundet (μ≈0.69 → Cw=2.04)' },
+    { cw: 1.89, label: '④ Scharfkantig, Strahl belüftet (μ≈0.64 → Cw=1.89)' },
+    { cw: 2.19, label: '⑤ Rundkronig, lotrechte OW-Seite (μ≈0.74 → Cw=2.19)' },
+    { cw: 2.27, label: '⑥ Dachförmig, abgerundete Krone (μ≈0.77 → Cw=2.27)' },
+];
+
+// Eintrittsverlustbeiwert (Kentry) für Rechen/Sieb/Einlaufbauwerk (SWMM [LOSSES]).
+// Richtwerte aus der Kirschmer-Formel für Rechen/Siebe bzw. üblichen
+// Einlauf-Verlustbeiwerten — grobe Orientierung, kein Solver-Fixwert, da der
+// tatsächliche Wert von Stababstand/-form, Anströmwinkel und Verschmutzungsgrad
+// abhängt. Von PreprocessingModal.vue UND ElementInfo.vue genutzt (eine Quelle).
+export const LossCoeffHints = {
+    10: 'Rechen (grob): Richtwert 0,5 (sauber) – 1,5 (teilverstopft)',
+    11: 'Sieb (fein): Richtwert 1,0 – 3,0 (steigt mit Verschmutzungsgrad)',
+    14: 'Einlaufbauwerk: Richtwert 0,2 – 0,5 (scharfkantiger Einlauf)',
+};
+export const LossCoeffDefaults = { 10: 0.5, 11: 1.5, 14: 0.3 };
+export const lossCoeffHint = (type) => LossCoeffHints[type] ?? 'Eintrittsverlustbeiwert Kentry (SWMM [LOSSES]) — Haltung bleibt normaler Kanal';
+
 export const getMapping = (category, code) => {
     if (category === 'Flaechenfunktion') return Flaechenfunktion[code] || code;
     if (category === 'Flaechenart') return Flaechenart[code] || code;

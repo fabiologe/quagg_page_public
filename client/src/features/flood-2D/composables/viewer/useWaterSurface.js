@@ -332,6 +332,8 @@ function buildWeirCut(geometry, weirs, terrain) {
  */
 export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props, onStats }) {
   let waterMesh = null;
+  let belowGround = false;    // Kamera unter dem Gelände → Wasserhaut ausblenden (Kanalnetz-Sicht)
+  let overtopCount = 0;       // zuletzt gezeichnete Überfall-Dreiecke (Restore nach belowGround)
   let sourceGeo = null;       // Terrain-Geometrie, aus der geklont wurde (Rebuild-Erkennung)
   let baseZ = null;           // Float32Array: Terrainhöhe je Vertex (WSE-Fallback + Überström-Test)
   let lastVelSrc = null;      // zuletzt hochgeladenes Velocity-Array (Dedupe: update() + Watch feuern je Frame beide)
@@ -755,7 +757,8 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     overtopMesh.geometry.attributes.aTurb.needsUpdate = true;
     overtopMesh.geometry.attributes.uv.needsUpdate = true;
     overtopMesh.geometry.setDrawRange(0, v);
-    overtopMesh.visible = v > 0;
+    overtopCount = v;
+    overtopMesh.visible = v > 0 && !belowGround;
   }
 
   /** Neues Tiefen-Frame: Anzeige-Daten packen (waterFramePack via Worker/LRU) und als
@@ -790,7 +793,19 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     applyFlowTexture(u); // Vx/Vy des Frames → Wellen-/Gischt-Advektion
     applyOpacity();
 
-    waterMesh.visible = true;
+    waterMesh.visible = !belowGround;
+  }
+
+  /**
+   * Kamera unter dem Gelände (Kanalnetz-Inspektion): Wasserhaut + Überfall-Streifen
+   * ausblenden — die Haut ist für Draufsicht gebaut und zeigt von ganz unten Artefakte.
+   * Wird pro Render-Frame aus dem Loop aufgerufen; no-op solange der Zustand gleich bleibt.
+   */
+  function setBelowGround(v) {
+    if (v === belowGround) return;
+    belowGround = v;
+    if (waterMesh) waterMesh.visible = !v;
+    if (overtopMesh) overtopMesh.visible = !v && overtopCount > 0;
   }
 
   /** Pack aus LRU/Worker/synchronem Fallback besorgen und als Frame-Textur anwenden. */
@@ -1088,5 +1103,5 @@ export function useWaterSurface({ getScene, getTerrainMesh, getWeirFaces, props,
     if (u) applyFlowTexture(u);
   });
 
-  return { update, applyOpacity, hide, reset, invalidate, renderRefraction };
+  return { update, applyOpacity, hide, reset, invalidate, renderRefraction, setBelowGround };
 }

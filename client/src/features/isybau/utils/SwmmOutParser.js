@@ -182,18 +182,14 @@ export class SwmmOutParser {
             console.log(`SWMM Parser: Inferred Counts -> Sub=${numSubVars}, Node=${numNodeVars}, Link=${numLinkVars}`);
 
             if (numSubVars < 0 || numNodeVars < 0 || numLinkVars < 0 || numSubVars > 50) {
-                console.warn("SWMM Parser: Inferred counts look bogus. Scanner might have found false positive.");
-                // Fallback to defaults?
-                numSubVars = 1; numNodeVars = 1; numLinkVars = 1;
+                // Weiterlesen mit geratenen Var-Counts erzeugt fehl-ausgerichtete
+                // Müll-Zeitreihen — lieber hart abbrechen, der Aufrufer verwirft
+                // die Zeitreihe und meldet es als Warnung.
+                throw new Error("SWMM .out: Variablen-Anzahl nicht plausibel ermittelbar (Struktur-Erkennung fehlgeschlagen).");
             }
 
         } else {
-            console.warn("SWMM Parser: Could not find SysVars signature. Using fallback/trailer.");
-            // Current offset is likely wrong (2839).
-            // If trailer said 240, and we failed scanning, maybe file is garbage?
-            // Fallback to defaults?
-            // Let's try to proceed with sequential or user trailer as unchecked fallback
-            // But usually scanning logic is superior.
+            throw new Error("SWMM .out: SysVars-Signatur nicht gefunden — Datei-Struktur unbekannt, Zeitreihe nicht lesbar.");
         }
 
         const BYTES_PER_FLOAT = 4;
@@ -328,13 +324,5 @@ export class SwmmOutParser {
         }
 
         return timeSeries;
-    }
-
-    /**
-     * @deprecated Use RptParser.parse() instead.
-     * Logic has been moved to utils/swmm/RptParser.js
-     */
-    static parseReport(report, inputNodesMap, inputEdgesMap) {
-        throw new Error("SwmmOutParser.parseReport is deprecated. Use RptParser.parse.");
     }
 }

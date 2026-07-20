@@ -55,6 +55,20 @@
           Noch keine gespeicherten Projekte.
         </div>
 
+        <!-- Error -->
+        <div v-if="errorMsg" class="pm-error">{{ errorMsg }}</div>
+
+        <!-- Load confirm -->
+        <Transition name="modal-fade">
+          <div v-if="loadTarget" class="pm-confirm">
+            <span>„{{ loadTarget.name }}" laden? Der aktuelle Arbeitsstand wird ersetzt.</span>
+            <div class="pm-confirm-btns">
+              <button class="btn-load" @click="doLoad">Laden</button>
+              <button class="btn-cancel" @click="loadTarget = null">Abbrechen</button>
+            </div>
+          </div>
+        </Transition>
+
         <!-- Delete confirm -->
         <Transition name="modal-fade">
           <div v-if="deleteTarget" class="pm-confirm">
@@ -86,6 +100,8 @@ const projects     = ref([]);
 const newName      = ref('');
 const saving       = ref(false);
 const deleteTarget = ref(null);
+const errorMsg     = ref(null);
+const loadTarget   = ref(null); // Laden bestätigen — überschreibt die aktuelle Arbeit
 
 watch(() => props.isOpen, async (open) => {
   if (open) {
@@ -102,19 +118,38 @@ async function refresh() {
 async function save() {
   if (!newName.value.trim()) return;
   saving.value = true;
+  errorMsg.value = null;
   try {
     await saveProject(newName.value.trim(), props.snapshot);
     newName.value = '';
     await refresh();
+  } catch (e) {
+    console.error('Projekt speichern fehlgeschlagen:', e);
+    errorMsg.value = `Speichern fehlgeschlagen: ${e.message || e.name || 'IndexedDB-Fehler'}`;
   } finally {
     saving.value = false;
   }
 }
 
-async function load(p) {
-  const data = await loadProject(p.id);
-  emit('load', data);
-  emit('close');
+// Laden überschreibt via clear() den aktuellen Stand — daher Bestätigung,
+// sobald bereits Daten geladen sind.
+function load(p) {
+  loadTarget.value = p;
+}
+
+async function doLoad() {
+  if (!loadTarget.value) return;
+  errorMsg.value = null;
+  try {
+    const data = await loadProject(loadTarget.value.id);
+    emit('load', data);
+    emit('close');
+  } catch (e) {
+    console.error('Projekt laden fehlgeschlagen:', e);
+    errorMsg.value = `Laden fehlgeschlagen: ${e.message || e.name || 'IndexedDB-Fehler'}`;
+  } finally {
+    loadTarget.value = null;
+  }
 }
 
 function confirmDelete(p) {
@@ -169,9 +204,9 @@ function formatDate(iso) {
 
 .pm-header h3 {
   margin: 0;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #aeadd2;
 }
@@ -280,6 +315,15 @@ function formatDate(iso) {
   font-style: italic;
 }
 
+.pm-error {
+  padding: 0.65rem 1.1rem;
+  background: #fff5f5;
+  border-top: 1px solid #fca5a5;
+  font-size: 0.85rem;
+  color: #b91c1c;
+  flex-shrink: 0;
+}
+
 /* Delete confirm bar */
 .pm-confirm {
   display: flex;
@@ -305,9 +349,9 @@ function formatDate(iso) {
   color: #fff;
   border: none;
   border-radius: 6px;
-  padding: 0.45rem 0.9rem;
-  font-size: 0.88rem;
-  font-weight: 700;
+  padding: 0.5rem 0.9rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
@@ -320,9 +364,9 @@ function formatDate(iso) {
   color: #594491;
   border: 1px solid #aeadd2;
   border-radius: 5px;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.46rem;
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -333,8 +377,9 @@ function formatDate(iso) {
   border: 1px solid #fca5a5;
   color: #dc2626;
   border-radius: 5px;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.46rem;
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -344,8 +389,9 @@ function formatDate(iso) {
   background: none;
   border: 1px solid #aeadd2;
   border-radius: 5px;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.46rem;
   color: #594491;
   cursor: pointer;
 }

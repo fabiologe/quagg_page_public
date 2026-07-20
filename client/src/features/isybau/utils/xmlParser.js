@@ -86,16 +86,11 @@ const parseNetwork = (doc) => {
  * @param {Map} edges 
  */
 const interpolateZ = (nodes, edges) => {
-    // 1. Identify nodes with missing Z (assuming 0 is missing, or specific flag)
-    // In ISYBAU, 0 might be valid (sea level), but usually unlikely for sewer bottom in many places.
-    // However, we should check if it was explicitly parsed as 0 vs missing.
-    // Our parser sets default 0 if missing.
-    // Let's assume Z=0 AND Depth=0 means missing? Or just Z=0?
-    // Safer: If Z=0, try to interpolate.
-
+    // Fehlende Sohlhöhen sind vom Parser als null markiert — ein echtes z=0
+    // (Meereshöhe) ist gültig und wird NICHT überschrieben.
     const missingNodes = [];
     nodes.forEach((n, id) => {
-        if (n.z === 0) missingNodes.push(id);
+        if (n.z === null || n.z === undefined || isNaN(n.z)) missingNodes.push(id);
     });
 
     if (missingNodes.length === 0) return;
@@ -149,7 +144,7 @@ const interpolateZ = (nodes, edges) => {
 
             neighbors.forEach(nb => {
                 const nbNode = nodes.get(nb.to);
-                if (nbNode.z !== 0) {
+                if (nbNode && nbNode.z !== null && nbNode.z !== undefined && !isNaN(nbNode.z)) {
                     sumZ += nbNode.z;
                     count++;
                 }
@@ -157,7 +152,7 @@ const interpolateZ = (nodes, edges) => {
 
             if (count > 0) {
                 const newZ = sumZ / count;
-                if (Math.abs(newZ - node.z) > 0.01) {
+                if (node.z === null || node.z === undefined || Math.abs(newZ - node.z) > 0.01) {
                     node.z = newZ;
                     // Also update coverZ if it was based on depth
                     if (node.depth > 0) node.coverZ = node.z + node.depth;
@@ -166,6 +161,13 @@ const interpolateZ = (nodes, edges) => {
             }
         });
     }
+
+    // Letzter Fallback: isolierte Knoten ohne bekannte Nachbarn → 0, damit
+    // nachgelagerte Berechnungen nicht auf null laufen.
+    missingNodes.forEach(id => {
+        const node = nodes.get(id);
+        if (node.z === null || node.z === undefined || isNaN(node.z)) node.z = 0;
+    });
 };
 
 
@@ -248,7 +250,8 @@ const parseNode = (obj, id) => {
     const points = geom.getElementsByTagName("Punkt");
     if (points.length === 0) return null;
 
-    let x = 0, y = 0, z = 0;
+    let x = 0, y = 0;
+    let z = null; // null = fehlt (echtes z=0, z.B. Meereshöhe, bleibt erhalten)
     let coverZ = null;
     let foundSMP = false;
 
@@ -261,7 +264,7 @@ const parseNode = (obj, id) => {
 
         const validX = !isNaN(px) ? px : 0;
         const validY = !isNaN(py) ? py : 0;
-        const validZ = !isNaN(pz) ? pz : 0;
+        const validZ = !isNaN(pz) ? pz : null;
 
         if (attr === "SMP") {
             x = validX;
@@ -308,7 +311,7 @@ const parseNode = (obj, id) => {
         }
     }
 
-    if (coverZ === null && depth > 0) {
+    if (coverZ === null && z !== null && depth > 0) {
         coverZ = z + depth;
     }
 

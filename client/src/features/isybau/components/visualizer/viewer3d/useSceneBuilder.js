@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
 const NETWORK_GROUP = '__network__';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -212,13 +213,18 @@ export function useSceneBuilder() {
     noGeo      : new THREE.MeshStandardMaterial({ color: 0x7f8c8d, roughness: 0.8 }),
     pumpwerk   : new THREE.MeshStandardMaterial({ color: 0xe67e22, roughness: 0.5 }),
     becken     : new THREE.MeshStandardMaterial({ color: 0x1abc9c, roughness: 0.6 }),
-    wehr       : new THREE.MeshStandardMaterial({ color: 0xf39c12, roughness: 0.4, side: THREE.DoubleSide }),
-    drossel    : new THREE.MeshStandardMaterial({ color: 0x9b59b6, roughness: 0.5 }),
+    // Pumpe/Wehr/Drossel/Schieber (Bauwerkstyp 6/7/8/9): in Realität/ISYBAU ein
+    // KNOTEN-Element (auch wenn SWMM sie intern als Link führt) — einheitlich
+    // hell lila, damit ein Blick "Sonderbauwerk" signalisiert statt vier
+    // unterschiedliche Farben je Subtyp zu erfordern.
+    sonderbauwerk: new THREE.MeshStandardMaterial({ color: 0xc9a0dc, roughness: 0.45, side: THREE.DoubleSide }),
     circle     : new THREE.MeshStandardMaterial({ color: 0x3498db, roughness: 0.5 }),
     rect       : new THREE.MeshStandardMaterial({ color: 0x8e44ad, roughness: 0.5, side: THREE.DoubleSide }),
     trapez     : new THREE.MeshStandardMaterial({ color: 0x95a5a6, roughness: 0.5, side: THREE.DoubleSide }),
     maul       : new THREE.MeshStandardMaterial({ color: 0x5d8aa8, roughness: 0.5, side: THREE.DoubleSide }),
-    area       : new THREE.MeshBasicMaterial({ color: 0x2980b9, side: THREE.DoubleSide, transparent: true, opacity: 0.25 }),
+    // depthWrite:false — transparente, koplanare Flächen dürfen den Tiefenpuffer
+    // nicht beschreiben, sonst z-fighten sie gegeneinander und gegen den Boden (Flackern).
+    area       : new THREE.MeshBasicMaterial({ color: 0x2980b9, side: THREE.DoubleSide, transparent: true, opacity: 0.25, depthWrite: false }),
     ground     : new THREE.MeshStandardMaterial({ color: 0x1a2035, roughness: 1.0 }),
     selected   : new THREE.MeshStandardMaterial({ color: 0x2ecc71, emissive: 0x1a7a40, roughness: 0.3 }),
     // Result overlay materials
@@ -281,12 +287,12 @@ export function useSceneBuilder() {
     networkGroup.add(ground);
 
     const doWater = showResults && showWaterLevel;
-    if (showNodes) _buildNodes(nodes, bounds, zScale, networkGroup, nodeResults, showResults, doWater);
+    if (showNodes) _buildNodes(nodes, edges, bounds, zScale, networkGroup, nodeResults, edgeResults, showResults, doWater);
     if (showEdges) _buildEdges(edges, nodes, bounds, zScale, networkGroup, edgeResults, showResults, doWater);
     if (showAreas) _buildAreas(areas, bounds, networkGroup);
   }
 
-  function _buildNodes(nodes, b, zScale, group, nodeResults, showResults, doWater) {
+  function _buildNodes(nodes, edges, b, zScale, group, nodeResults, edgeResults, showResults, doWater) {
     for (const node of nodes.values()) {
       if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
 
@@ -321,8 +327,8 @@ export function useSceneBuilder() {
         mesh = new THREE.Mesh(new THREE.ConeGeometry(r, height, 12), mats.outfall);
         mesh.position.set(x, bottomY + height / 2, nz);
 
-      // ── Pumpwerk (1) / Pumpe (6) ────────────────────────────────────
-      } else if (bwType === 1 || bwType === 6) {
+      // ── Pumpwerk (1) ─────────────────────────────────────────────────
+      } else if (bwType === 1) {
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.pumpwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
         const ring = new THREE.Mesh(
@@ -332,12 +338,25 @@ export function useSceneBuilder() {
         ring.position.set(x, topY + r * 0.12, nz);
         group.add(ring);
 
-      // ── Wehr / Überlauf (7) ─────────────────────────────────────────
+      // ── Pumpe (6) — Sonderbauwerk-Knoten (hell lila) ────────────────
+      } else if (bwType === 6) {
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.sonderbauwerk);
+        mesh.position.set(x, bottomY + height / 2, nz);
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(r * 0.55, r * 0.12, 8, 16),
+          mats.sonderbauwerk
+        );
+        ring.position.set(x, topY + r * 0.12, nz);
+        group.add(ring);
+
+      // ── Wehr / Überlauf (7) — Sonderbauwerk-Knoten (hell lila) ──────
       } else if (bwType === 7) {
-        const laenge = node.bauwerkData?.wehrLaenge ?? node.weirWidth ?? 1;
+        // node.weirWidth existierte nie im Domain-Modell (Rename auf wehrWidth) —
+        // die UI-Breite wurde hier bisher immer ignoriert.
+        const laenge = node.wehrWidth || node.bauwerkData?.wehrLaenge || 1;
         mesh = new THREE.Mesh(
           new THREE.BoxGeometry(laenge, height, 0.25),
-          mats.wehr
+          mats.sonderbauwerk
         );
         mesh.position.set(x, bottomY + height / 2, nz);
 
@@ -347,9 +366,9 @@ export function useSceneBuilder() {
         mesh = new THREE.Mesh(new THREE.BoxGeometry(side, height, side), mats.becken);
         mesh.position.set(x, bottomY + height / 2, nz);
 
-      // ── Drossel (8) / Schieber (9) ───────────────────────────────────
+      // ── Drossel (8) / Schieber (9) — Sonderbauwerk-Knoten (hell lila) ─
       } else if (bwType === 8 || bwType === 9) {
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 6), mats.drossel);
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 6), mats.sonderbauwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
 
       // ── Standard Schacht mit Diameter ──────────────────────────────
@@ -376,10 +395,23 @@ export function useSceneBuilder() {
 
       // ── Result-based material override ─────────────────────────────
       if (showResults && node.status !== 2) {
-        const res = nodeResults.get(node.id);
-        if (res) {
-          if (res.overflow)   mesh.material = mats.resOverflow;
-          else if (res.surcharged) mesh.material = mats.resSurcharge;
+        if (LINK_BAUWERKSTYPEN.has(bwType)) {
+          // Pumpe/Wehr/Drossel/Schieber haben selbst kein SWMM-Ergebnis — das
+          // liegt an der ausgehenden Haltung (siehe SwmmBuilder.addLinks()).
+          // Status trotzdem am KNOTEN zeigen, nicht nur "hell lila" belassen.
+          const relatedEdge = Array.from(edges.values()).find(e => (e.fromNodeId ?? e.from) === node.id);
+          const res = relatedEdge ? edgeResults.get(relatedEdge.id) : null;
+          if (res) {
+            const util = res.utilization ?? (res.depthRatio != null ? res.depthRatio * 100 : null);
+            if      (util > 90)  mesh.material = mats.resOverflow;
+            else if (util >= 75) mesh.material = mats.resSurcharge;
+          }
+        } else {
+          const res = nodeResults.get(node.id);
+          if (res) {
+            if (res.overflow)   mesh.material = mats.resOverflow;
+            else if (res.surcharged) mesh.material = mats.resSurcharge;
+          }
         }
       }
 
@@ -513,6 +545,7 @@ export function useSceneBuilder() {
   }
 
   function _buildAreas(areas, b, group) {
+    let idx = 0;
     for (const area of areas) {
       if (!area.points || area.points.length < 3) continue;
       const shape = new THREE.Shape();
@@ -523,7 +556,11 @@ export function useSceneBuilder() {
       const geo  = new THREE.ShapeGeometry(shape);
       geo.rotateX(Math.PI / 2);
       const mesh = new THREE.Mesh(geo, mats.area);
-      mesh.position.y = 0.05;
+      // Höhen leicht staffeln + feste renderOrder: verhindert instabile
+      // Transparenz-Sortierung (Flackern) zwischen überlappenden Flächen.
+      mesh.position.y = 0.2 + idx * 0.02;
+      mesh.renderOrder = 1 + idx;
+      idx++;
       register(mesh, area, group);
     }
   }

@@ -73,18 +73,19 @@ const ticks = computed(() => {
 
 <style scoped>
 .result-legend {
-  background: rgba(15, 15, 30, 0.88);
+  background: var(--sv-surface);
   backdrop-filter: blur(12px);
-  border-radius: 10px;
+  border-radius: var(--sv-radius);
   padding: 12px 14px;
   min-width: 48px;
-  border: 1px solid rgba(79, 195, 247, 0.15);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--sv-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), var(--sv-glow-violet);
+  font-family: var(--sv-font);
 }
 
 .legend-title {
   font-size: 0.7rem;
-  color: #90a4ae;
+  color: var(--sv-text-lime);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -115,7 +116,7 @@ const ticks = computed(() => {
 
 .legend-ticks span {
   font-size: 0.65rem;
-  color: #b0bec5;
+  color: var(--sv-text-dim);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }

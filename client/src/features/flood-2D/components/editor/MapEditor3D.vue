@@ -1018,7 +1018,8 @@ const initThreeJS = () => {
     controls.dampingFactor = 0.05;
     controls.screenSpacePanning = false;
     controls.minDistance = 10;
-    controls.maxPolarAngle = Math.PI / 2.2;
+    // Unter-Gelände-Orbit fürs Kanalnetz (Haltungen/Schachtsohlen liegen unterflur).
+    controls.maxPolarAngle = Math.PI - 0.02;
     
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
@@ -1128,7 +1129,8 @@ const setCameraView = (axis) => {
             controls.enableDamping = true;
             controls.screenSpacePanning = false;
             controls.minDistance = 10;
-            controls.maxPolarAngle = Math.PI / 2.2;
+            // Unter-Gelände-Orbit fürs Kanalnetz (wie im Init-Setup).
+            controls.maxPolarAngle = Math.PI - 0.02;
             controls.enableDamping = true;
         }
         controls.enableRotate = true;

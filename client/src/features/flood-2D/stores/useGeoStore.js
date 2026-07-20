@@ -52,10 +52,6 @@ export const useGeoStore = defineStore('geo', () => {
         };
     });
 
-    const excavations = computed(() => {
-        return modifications.value.filter(m => m.type === 'EXCAVATION');
-    });
-
     // Actions
     function importTerrain(data) {
         terrain.value = data;
@@ -528,7 +524,6 @@ export const useGeoStore = defineStore('geo', () => {
         terrain,
         terrainVersion,
         buildings,
-        excavations,
         boundaries,
         modifications,
         mapCenter,

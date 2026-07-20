@@ -47,9 +47,12 @@
           :probeActive="activeTool === 'probe'"
           :activeTool="activeTool"
           :networkState="networkFrameState"
+          :showNetwork="showNetwork"
+          :networkColorMode="networkColorMode"
           @cellProbed="onCellProbed"
           @sectionDrawn="onSectionDrawn"
           @waterStats="onWaterStats"
+          @sectionDraftChanged="sectionDrafting = $event"
         />
 
         <!-- Legende für JEDEN Layer (Tiefe/Velocity/Heatmaps), Skala spike-bereinigt. -->
@@ -82,6 +85,14 @@
                @closeRequested="removeSection"
              />
           </TransitionGroup>
+
+          <!-- Schnitt begonnen, aber noch nicht abgeschlossen: Endpunkt folgt frei
+               der Maus — erst Doppelklick oder dieser Button übernimmt die Linie. -->
+          <div v-if="sectionDrafting" class="section-confirm-hint">
+            <span>Endpunkt setzen: Doppelklick oder</span>
+            <button class="confirm-btn" @click="map3d?.confirmSection()">✓ Bestätigen</button>
+            <span class="hint-key">(Enter · Esc = abbrechen)</span>
+          </div>
         </template>
 
         <!-- Volume Panels -->
@@ -109,12 +120,17 @@
           :velocityGlobalMax="velocityGlobalMax"
           :velMin="velColorMin"
           :velMax="effVelMax"
+          :networkAvailable="hasNetworkResults"
+          :showNetwork="showNetwork"
+          :networkColorMode="networkColorMode"
           @update:activeLayer="activeLayer = $event"
           @update:activeTool="activeTool = $event"
           @update:waterOpacity="waterOpacity = $event"
           @update:flowDensity="flowDensity = $event"
           @update:velMin="velColorMin = $event"
           @update:velMax="velColorMax = $event"
+          @update:showNetwork="showNetwork = $event"
+          @update:networkColorMode="networkColorMode = $event"
         />
 
         <!-- Wehr-Durchfluss Q(t) — eigenes Panel, sichtbar sobald .Qx/.Qy-Daten da sind -->
@@ -123,6 +139,7 @@
           :series="weirSeries"
           :currentFrame="currentFrame"
           :saveInterval="saveIntervalSec"
+          @openChart="openWeirChart"
         />
 
         <!-- 1D-Kanalnetz: Ganglinien je Schacht/Haltung + Systemvolumen/Bilanz
@@ -136,6 +153,19 @@
           :massReport="bridge.massReport.value"
           :currentFrame="currentFrame"
           :saveInterval="saveIntervalSec"
+          @openChart="openNetworkChart"
+        />
+
+        <!-- Ausgeklinkte Ganglinien-Fenster (⧉ in den Panels): eins je Element,
+             beliebig viele parallel, Cursor läuft mit der Timeline. -->
+        <GanglinieWindow
+          v-for="(w, i) in chartWindows"
+          :key="w.key"
+          :win="w"
+          :index="i"
+          :currentFrame="currentFrame"
+          :saveInterval="saveIntervalSec"
+          @close="closeChart"
         />
 
         <!-- Cell Info Panels -->
@@ -175,6 +205,8 @@ import ResultProbePanel from '@/features/flood-2D/components/viewer/ResultProbeP
 import ViewerControlPanel from '@/features/flood-2D/components/viewer/ViewerControlPanel.vue';
 import WeirResultsPanel from '@/features/flood-2D/components/viewer/WeirResultsPanel.vue';
 import NetworkResultsPanel from '@/features/flood-2D/components/viewer/NetworkResultsPanel.vue';
+import GanglinieWindow from '@/features/flood-2D/components/viewer/GanglinieWindow.vue';
+import { buildNetworkChartSpec, buildWeirChartSpec } from '@/features/flood-2D/components/viewer/ganglinienSpec.js';
 
 import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
@@ -215,7 +247,6 @@ onMounted(() => {
 const currentFrame = ref(0);
 const playing = ref(false);
 let playTimer = null;
-const playbackSpeed = ref(1);
 
 const currentDepthData = ref(null);
 
@@ -223,6 +254,43 @@ const currentDepthData = ref(null);
 const networkFrameState = computed(() =>
   hasNetworkResults.value ? stateAtFrame(currentFrame.value) : null
 );
+
+// Netz-Layer-Sichtbarkeit + Färbmodus der Haltungen (ViewerControlPanel → ResultMap3D)
+const showNetwork = ref(true);
+const networkColorMode = ref('capacity'); // 'capacity' | 'flow' | 'velocity'
+
+// ── Ausgeklinkte Ganglinien-Fenster (⧉-Button in Netz-/Wehr-Panel) ──────────
+// Offene Fenster als {kind:'net'|'weir', id}; die Specs werden reaktiv aus den
+// aktuellen Serien gebaut (Re-Hydration ersetzt die Daten, Fenster bleiben offen).
+const openCharts = ref([]);
+
+function openNetworkChart(sel) {
+  if (!sel) return;
+  if (!openCharts.value.some(c => c.kind === 'net' && c.id === sel)) {
+    openCharts.value.push({ kind: 'net', id: sel });
+  }
+}
+function openWeirChart(id) {
+  if (!id) return;
+  if (!openCharts.value.some(c => c.kind === 'weir' && c.id === id)) {
+    openCharts.value.push({ kind: 'weir', id });
+  }
+}
+function closeChart(key) {
+  openCharts.value = openCharts.value.filter(c =>
+    (c.kind === 'net' ? `net:${c.id}` : `weir:${c.id}`) !== key);
+}
+
+const chartWindows = computed(() =>
+  openCharts.value
+    .map(c => c.kind === 'net'
+      ? buildNetworkChartSpec(c.id, {
+          nodeSeries: nodeSeries.value,
+          linkSeries: linkSeries.value,
+          system: systemSeries.value,
+        })
+      : buildWeirChartSpec(c.id, weirSeries.value))
+    .filter(Boolean));  // Element nach Re-Run verschwunden → Fenster fällt weg
 
 // ── Layer Switcher ──────────────────────────────────────────────────────────
 const activeLayer = ref('depth'); // 'depth' | 'velocity' | 'max_depth' | 'hazard'
@@ -421,7 +489,7 @@ watch(currentFrame, (val) => {
 // Playback loop
 watch(playing, (isPlaying) => {
   if (isPlaying) {
-    const fps = 10 * playbackSpeed.value;
+    const fps = 10;
     playTimer = setInterval(() => {
       if (currentFrame.value < bridge.totalFrames.value - 1) {
         currentFrame.value++;
@@ -445,6 +513,10 @@ const tools = [
   { id: 'section', icon: '📏', label: 'Querschnitt' },
   { id: 'volume', icon: '🧊', label: 'Volumenberechnung' }
 ];
+
+// Querschnitt: Start gesetzt, aber noch nicht abgeschlossen (ResultMap3D meldet
+// dies über sectionDraftChanged — erst Doppelklick/Enter/Bestätigen-Button beendet).
+const sectionDrafting = ref(false);
 
 // --- Probe ---
 // Store the static cell position info for all active probes
@@ -498,23 +570,19 @@ const probedCellList = computed(() => {
 // --- SECTION ---
 const sections = ref([]); 
 
-function onSectionDrawn({ id, color, samples, structures }) {
+function onSectionDrawn({ id, color, samples, structures, network }) {
   sections.value.push({
     id,
     color,
     baseData: samples,
-    structures: structures || []   // gekreuzte Wehre/Brücken (statisch)
+    structures: structures || [],  // gekreuzte Wehre/Brücken (statisch)
+    network: network || []         // gekreuzte Haltungen/Schächte (Füllstand kommt je Frame)
   });
 }
 
 function removeSection(id) {
   sections.value = sections.value.filter(s => s.id !== id);
   if (map3d.value) map3d.value.removeSection(id);
-}
-
-function clearAllSections() {
-  sections.value = [];
-  if (map3d.value) map3d.value.clearSection();
 }
 
 // Reactively compute water depth for ALL sections based on currentFrame
@@ -585,11 +653,21 @@ const computedSectionsList = computed(() => {
       return { ...pt, waterDepth, wsp };
     });
     
+    // Kanalnetz-Durchstoßpunkte mit dem 1D-Zustand des AKTUELLEN Frames anreichern
+    // (Fließtiefe/Füllgrad/Q/v aus networkFrameState; ohne Ergebnisse bleibt res null
+    // → das Chart zeichnet dann nur die Rohr-/Schacht-Geometrie).
+    const st = networkFrameState.value;
+    const network = (section.network || []).map(c => ({
+      ...c,
+      res: (c.kind === 'pipe' ? st?.links?.get(c.id) : st?.nodes?.get(c.id)) ?? null,
+    }));
+
     return {
       id: section.id,
       color: section.color,
       data: computedData,
-      structures: section.structures || []
+      structures: section.structures || [],
+      network
     };
   });
 });
@@ -626,13 +704,6 @@ const volumePanelData = computed(() =>
     ...(volumeSeriesById.value[pv.id] || { series: [], maxVolume: pv.volume })
   }))
 );
-
-function clearVolumeAnalysis() {
-  analysisStore.clearAnalysis();
-  if (map3d.value) {
-    map3d.value.clearVolume();
-  }
-}
 
 function removeVolumeAnalysis(id) {
   analysisStore.removePolygon(id);
@@ -757,6 +828,38 @@ const map3d = ref(null);
   0%, 100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
   50%      { box-shadow: 0 2px 14px rgba(255, 23, 68, 0.7); }
 }
+
+/* Querschnitt: Hinweis + Bestätigen-Button, solange der Schnitt noch nicht fertig ist */
+.section-confirm-hint {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid rgba(163, 230, 53, 0.35);
+  color: #e0e0e0;
+  font-size: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+.section-confirm-hint .hint-key { color: #90a4ae; font-size: 11px; }
+.confirm-btn {
+  background: rgba(163, 230, 53, 0.2);
+  border: 1px solid rgba(163, 230, 53, 0.6);
+  color: #d9f99d;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.confirm-btn:hover { background: rgba(163, 230, 53, 0.35); }
 
 /* Cell Info Panel */
 .cell-info-panel {

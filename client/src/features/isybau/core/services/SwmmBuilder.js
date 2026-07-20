@@ -1,4 +1,5 @@
-import { getHortonParams } from '../../utils/mappings.js';
+import { getHortonParams, getEffectiveBauwerkstyp, classifyPreview, LINK_BAUWERKSTYPEN, Bauwerkstyp } from '../../utils/mappings.js';
+import { computePumpCurvePoints } from '../../utils/pumpCurve.js';
 /**
  * Builder Service for SWMM .inp generation.
  * Uses Domain Models (Node, Edge) instead of raw JSON.
@@ -37,8 +38,9 @@ export class SwmmBuilder {
         const nodes = this.store.getAllNodes;
         const edges = this.store.getAllEdges;
 
-        this.classifyAndAddNodes(nodes);
+        this.classifyAndAddNodes(nodes, edges);
         this.addLinks(edges, nodes);   // populates this.specialLinks
+        this.addLosses(edges, nodes);
 
         this.addWeirs();
         this.addOrifices();
@@ -94,6 +96,16 @@ LAT_FLOW_TOL         5
 MINIMUM_STEP         0.5
 THREADS              1
 SURCHARGE_METHOD     SLOT
+
+[REPORT]
+;; Ohne diesen Block schreibt SWMM KEINE Objekte in die binäre .out-Datei
+;; (Header-Counts = 0) — sämtliche Ganglinien im Viewer wären leer.
+INPUT                NO
+CONTINUITY           YES
+FLOWSTATS            YES
+SUBCATCHMENTS        ALL
+NODES                ALL
+LINKS                ALL
 `);
     }
 
@@ -194,49 +206,24 @@ SURCHARGE_METHOD     SLOT
     }
 
     // Gibt den effektiven Bauwerkstyp zurück: XML-geparster Wert ODER manuell gesetzter node.type (Integer)
+    // — Single Source of Truth in utils/mappings.js, auch von PreprocessingModal genutzt
+    // (Klassifizierungs-Vorschau), damit beide Stellen nie auseinanderlaufen.
     getBtyp(n) {
-        if (n.bauwerkstyp != null) return n.bauwerkstyp;
-        const t = parseInt(n.type);
-        return isNaN(t) ? null : t;
+        return getEffectiveBauwerkstyp(n);
     }
 
-    classifyAndAddNodes(nodes) {
+    classifyAndAddNodes(nodes, edges) {
         const junctions = [];
         const outfalls  = [];
         const storage   = [];
-
-        // Bauwerkstypen die als STORAGE enden
-        const STORAGE_BTYPES  = new Set([1, 2, 12, 13]);
-        // Bauwerkstypen die als OUTFALL enden
-        const OUTFALL_BTYPES  = new Set([3, 4, 5]);
-        // Bauwerkstypen deren ausgehende Kante zum Sonder-Link wird (bleiben als Junction)
-        // 6=Pumpe, 7=Wehr, 8=Drossel, 9=Schieber
+        const dividers  = [];
 
         for (const n of nodes) {
-            const btyp    = this.getBtyp(n);
-            const typeStr = String(n.type);
-
-            // 1. Storage: explizites Volumen > 0 ODER Bauwerkstyp ist Speicherbauwerk
-            const hasVolume = this.safeFloat(n.volume) > 0 ||
-                              (n.bauwerkData?.volume != null && n.bauwerkData.volume > 0);
-            if (hasVolume || STORAGE_BTYPES.has(btyp)) {
-                storage.push(n);
-                continue;
-            }
-
-            // 2. Outfall: Auslaufbauwerk, Kläre, Behandlung, Anschlusspunkt NN
-            const isOutfall =
-                OUTFALL_BTYPES.has(btyp) ||
-                typeStr === 'Auslaufbauwerk' ||
-                n.is_sink === true ||
-                (typeStr === 'Anschlusspunkt' && n.punktkennung === 'NN');
-
-            if (isOutfall) {
-                outfalls.push(n);
-            } else {
-                // 3. Junction — inkl. Pumpe/Wehr/Drossel/Schieber (deren Kante wird zum Link)
-                junctions.push(n);
-            }
+            const { section } = classifyPreview(n);
+            if (section === '[STORAGE]') storage.push(n);
+            else if (section === '[OUTFALLS]') outfalls.push(n);
+            else if (section === '[DIVIDERS]') dividers.push(n);
+            else junctions.push(n); // inkl. Pumpe/Wehr/Drossel/Schieber (deren Kante wird zum Link)
         }
 
         // Fallback-Auslauf wenn keiner gefunden
@@ -251,7 +238,50 @@ SURCHARGE_METHOD     SLOT
         this.addJunctions(junctions);
         this.addOutfalls(outfalls);
         this.addStorage(storage);
+        this.addDividers(dividers, edges);
         this.addCoordinates(nodes);
+    }
+
+    // Flow-Divider (OVERFLOW/CUTOFF) — node.c:1113 divider_readParams:
+    //   "nodeID elev divLink OVERFLOW [maxDepth initDepth surDepth aPond]"
+    //   "nodeID elev divLink CUTOFF qCutoff [maxDepth initDepth surDepth aPond]"
+    // Beide ausgehenden Haltungen bleiben normale [CONDUITS] (siehe addLinks()) —
+    // hier wird nur festgelegt, WELCHE davon die abgezweigte ist.
+    addDividers(nodes, edges) {
+        if (!nodes.length) return;
+        let text = '[DIVIDERS]\n;;Name           Elevation  DivLink        Type       Parameters\n';
+
+        const outgoingByNode = new Map();
+        for (const e of edges) {
+            if (!outgoingByNode.has(e.fromNodeId)) outgoingByNode.set(e.fromNodeId, []);
+            outgoingByNode.get(e.fromNodeId).push(e);
+        }
+
+        for (const n of nodes) {
+            const outgoing = outgoingByNode.get(n.id) || [];
+            if (outgoing.length < 2) {
+                this.warnings.push(`Verteiler ${n.id}: Braucht mindestens 2 ausgehende Haltungen — übersprungen.`);
+                continue;
+            }
+
+            // Abgezweigte Haltung: manuelle Auswahl > Auto-Vorschlag (höhere Sohlhöhe
+            // Z1 = Überlauf-/Nebenleitung liegt konventionell über der Hauptleitung).
+            // Auto-Vorschlag nur bei genau 2 Kandidaten eindeutig — sonst Pflichtwahl.
+            let divLink = outgoing.find(e => e.id === n.dividerLinkId);
+            if (!divLink && outgoing.length === 2) {
+                const z1 = (e) => this.safeFloat(e.z1, n.z);
+                divLink = z1(outgoing[0]) >= z1(outgoing[1]) ? outgoing[0] : outgoing[1];
+            }
+            if (!divLink) {
+                this.warnings.push(`Verteiler ${n.id}: Abgezweigte Haltung nicht eindeutig (${outgoing.length} Kandidaten) — bitte manuell wählen. Übersprungen.`);
+                continue;
+            }
+
+            const type = n.dividerType === 'CUTOFF' ? 'CUTOFF' : 'OVERFLOW';
+            const param = type === 'CUTOFF' ? ` ${(this.safeFloat(n.dividerCutoffFlow, 0) / 1000).toFixed(4)}` : '';
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(divLink.id)} ${this.pad(type)}${param}\n`;
+        }
+        this.sections.push(text);
     }
 
     addJunctions(nodes) {
@@ -321,34 +351,25 @@ SURCHARGE_METHOD     SLOT
         }
 
         for (const n of nodes) {
-            // Realism Update: Enable Ponding for Manholes
-            // isManhole = True -> Exists on surface -> SurDepth 0, Aponded = Calculated Area
-            // isManhole = False -> Virtual/Buried -> SurDepth 100, Aponded 0 (Sealed)
-            let surDepth = 0;
+            // Überstau-Ableitung. Die Flags werden in Node.applyOverflowState()
+            // normalisiert (isManhole=false erzwingt canOverflow=false), daher gilt:
+            //   canOverflow=true  -> Deckel offen: SurDepth 0, Aponded = angeschlossene Fläche
+            //   canOverflow=false -> versiegelt/unterirdisch: SurDepth 100, Aponded 0
+            // isManhole wird zusätzlich geprüft, um alte Projektdateien mit
+            // unnormalisiertem Zustand identisch zu behandeln.
+            let surDepth = 100.0; // Sealed default
             let aPonded = 0;
 
-            if (n.isManhole) {
-                surDepth = 0;   // Overflows immediately
+            if (n.isManhole !== false && n.canOverflow !== false) {
+                surDepth = 0; // Overflows immediately
 
-                // Get calculated area
                 const calculatedArea = nodePondingMap.get(n.id);
-
                 if (calculatedArea && calculatedArea > 1.0) {
                     aPonded = calculatedArea;
                 } else {
                     // Fallback constant if no area connected (prevent singularities)
                     aPonded = 20.0;
                 }
-
-            } else {
-                surDepth = 100.0; // Virtual/Sealed
-                aPonded = 0;      // No surface area
-            }
-
-            // Legacy/Override check: if explicitly set to canOverflow = false (Sealed Manhole)
-            if (n.canOverflow === false) {
-                surDepth = 100.0;
-                aPonded = 0;
             }
 
             text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          ${this.pad(surDepth)} ${this.pad(aPonded)}\n`;
@@ -358,17 +379,14 @@ SURCHARGE_METHOD     SLOT
 
     addOutfalls(nodes) {
         let text = '[OUTFALLS]\n;;Name           Elevation  Type       Stage Data       Gated    RouteTo\n';
+        // 'throttled' wird nicht als FIXED/NORMAL-Outfall übersetzt, sondern in
+        // addLinks() zu einem echten [ORIFICES]-Sonderlink (siehe dort) — der Node
+        // bleibt hydraulisch ein simpler FREE-Outfall, nur mit Kommentar markiert.
+        // (Entfernt: NORMAL/FIXED-Mapping für outflowType war totes Gleis — UI bietet
+        // nur 'free'/'throttled' an. FIXED ohne den von outfall_readParams (node.c)
+        // geforderten 4. Token "Stage Data" hätte den Solver mit ERR_ITEMS abgebrochen.)
         for (const n of nodes) {
-            // Map UI outflowType to SWMM Type
-            // 'throttled' isn't a direct SWMM type, assuming FREE or NORMAL.
-            // If user wants specific stage (Gedrosselt usually implies control), ideal is Regulator.
-            // For node-only Outfall: FREE is standard.
-            // We'll annotate the type in comment if specific.
-            let type = 'FREE';
-            if (n.outflowType === 'normal') type = 'NORMAL';
-            if (n.outflowType === 'fixed') type = 'FIXED';
-
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(type)}${n.outflowType === 'throttled' ? ' ;Throttled' : ''} \n`;
+            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad('FREE')}${n.outflowType === 'throttled' ? ' ;Throttled' : ''} \n`;
         }
         this.sections.push(text);
     }
@@ -376,6 +394,7 @@ SURCHARGE_METHOD     SLOT
     addStorage(nodes) {
         if (nodes.length === 0) return;
         let text = '[STORAGE]\n;;Name           Elev       MaxDepth   InitDepth  Shape      Curve Name/Params            SurDepth  Fevap\n';
+        let curvesText = '';
 
         for (const n of nodes) {
             const bd = n.bauwerkData;
@@ -388,22 +407,82 @@ SURCHARGE_METHOD     SLOT
                 this.warnings.push(`Speicher ${n.id}: Kein Volumen definiert, Fallback 10 m³.`);
             }
 
-            // Tiefe: bauwerkData.maxDepth > node.depth > 3m
-            let depth = this.safeFloat(bd?.maxDepth, 0);
+            // Tiefe: UI maxDepth > bauwerkData.maxDepth > node.depth > 3m
+            let depth = this.safeFloat(n.maxDepth, 0);
+            if (depth <= 0) depth = this.safeFloat(bd?.maxDepth, 0);
             if (depth <= 0) depth = this.safeFloat(n.depth, 0);
             if (depth <= 0) depth = 3.0;
 
-            const area = volume / depth;
             const initDepth = this.safeFloat(n.initDepth, 0);
 
-            // Versickerungsanlage: SWMM Seepage Parameter (in [STORAGE] via Fevap-Zeile ist nicht Standard;
-            // für echte Versickerung müsste LID verwendet werden — hier vereinfacht als normaler Storage)
-            const seepageNote = (n.bauwerkstyp === 12 && bd?.seepageRate)
-                ? ` ;Versickerung ${bd.seepageRate} m³/h` : '';
+            // Form als FUNCTIONAL-Preset A(h) = Coeff·h^Expon, volumentreu:
+            //   PRISMATIC:  A = V/D                 (konstante Fläche)
+            //   CONICAL:    A = (2V/D²)·h           (Fläche wächst linear, Trichter)
+            //   PYRAMIDAL:  A = (3V/D³)·h²          (Fläche wächst quadratisch)
+            // (Der Solver kennt nur FUNCTIONAL/TABULAR — Shape-Keywords wie
+            //  CYLINDRICAL existieren in SWMM 5.1/5.2-Kern nicht.)
+            // TABULAR: echte Tiefe/Fläche-Wertetabelle statt FUNCTIONAL-Näherung —
+            // referenziert einen [CURVES]-Eintrag vom Typ STORAGE (node.c:664-666:
+            // "nodeID elev maxDepth initDepth TABULAR curveID surDepth fEvap").
+            // Mind. 2 gültige Stützstellen nötig, sonst Fallback auf PRISMATIC.
+            const curvePts = Array.isArray(n.storageCurve)
+                ? n.storageCurve.filter(p => Number.isFinite(p?.depth) && Number.isFinite(p?.area) && p.depth >= 0 && p.area >= 0)
+                : [];
+            const useTabular = n.storageShape === 'TABULAR' && curvePts.length >= 2;
 
-            text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} ${this.pad(initDepth)} FUNCTIONAL ${area.toFixed(2)} 0          0${seepageNote}\n`;
+            let coeff, expon;
+            if (!useTabular) {
+                if (n.storageShape === 'CONICAL') {
+                    coeff = 2 * volume / (depth * depth);
+                    expon = 1;
+                } else if (n.storageShape === 'PYRAMIDAL') {
+                    coeff = 3 * volume / (depth * depth * depth);
+                    expon = 2;
+                } else {
+                    coeff = volume / depth;
+                    expon = 0;
+                }
+            }
+
+            // Verdunstung: UI evapFactor (0-1), Standard 0
+            const fevap = Math.min(1, Math.max(0, this.safeFloat(n.evapFactor, 0)));
+
+            // Versickerungsanlage (Bauwerkstyp 12): echte SWMM-Exfiltration statt reinem
+            // Kommentar. exfil_readStorageParams erwartet nach SurDepth/Fevap entweder
+            // 1 Token (Ksat) oder 3 (SuctionHead, Ksat, IMDmax) — hier reicht ein reiner
+            // Ksat-Wert. seepageRate (m³/h) wird über die Grundfläche des Speichers in
+            // eine Sickerrate (mm/h) umgerechnet (Näherung: Fläche = Volumen/Tiefe).
+            let exfilToken = '';
+            if (n.bauwerkstyp === 12) {
+                const seepM3h = this.safeFloat(bd?.seepageRate, 0);
+                if (seepM3h > 0) {
+                    const planArea = volume / depth;
+                    if (planArea > 0.01) {
+                        const ksatMmHr = (seepM3h / planArea) * 1000; // m/h -> mm/h
+                        exfilToken = ` ${ksatMmHr.toFixed(4)}`;
+                    } else {
+                        this.warnings.push(`Versickerungsanlage ${n.id}: Grundfläche zu klein für Sickerraten-Berechnung — Versickerung ignoriert.`);
+                    }
+                }
+            }
+
+            if (useTabular) {
+                const curveName = `STOR_${n.id}`;
+                if (!curvesText) curvesText = '[CURVES]\n;;Name           Type       X-Value    Y-Value\n';
+                curvePts.forEach((p, i) => {
+                    curvesText += i === 0
+                        ? `${this.pad(curveName)} STORAGE    ${this.pad(p.depth)} ${this.pad(p.area)}\n`
+                        : `${this.pad(curveName)}            ${this.pad(p.depth)} ${this.pad(p.area)}\n`;
+                });
+                // Tokens: Name Elev MaxDepth InitDepth TABULAR CurveID SurDepth Fevap [Ksat]
+                text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} ${this.pad(initDepth)} TABULAR    ${this.pad(curveName)}            0          ${fevap.toFixed(2)}${exfilToken}\n`;
+            } else {
+                // Tokens: Name Elev MaxDepth InitDepth FUNCTIONAL Coeff Expon Const SurDepth Fevap [Ksat]
+                text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(depth)} ${this.pad(initDepth)} FUNCTIONAL ${coeff.toFixed(3)} ${expon}          0          0          ${fevap.toFixed(2)}${exfilToken}\n`;
+            }
         }
         this.sections.push(text);
+        if (curvesText) this.sections.push(curvesText);
     }
 
     addWeirs() {
@@ -415,10 +494,14 @@ SURCHARGE_METHOD     SLOT
             if (!to) { this.warnings.push(`Wehr ${id}: Kein Zielknoten — übersprungen.`); continue; }
             const bd = from.bauwerkData;
 
-            // Priorität: UI wehrHeight (relativ ab Sohle) > XML SchwellenhoeheMin (absolut) > 70% Schachttiefe
+            // Priorität: UI weirHeight (Domain-Feld, relativ ab Sohle; Legacy-Key wehrHeight)
+            //            > XML SchwellenhoeheMin (absolut) > 70% Schachttiefe
+            const uiWeirHeight = this.safeFloat(from.weirHeight, 0) > 0
+                ? this.safeFloat(from.weirHeight)
+                : this.safeFloat(from.wehrHeight, 0);
             let crestHt;
-            if (this.safeFloat(from.wehrHeight, 0) > 0) {
-                crestHt = this.safeFloat(from.wehrHeight);
+            if (uiWeirHeight > 0) {
+                crestHt = uiWeirHeight;
             } else if (bd?.wehrSchwelle != null) {
                 crestHt = Math.max(0, bd.wehrSchwelle - from.z);
             } else {
@@ -436,8 +519,19 @@ SURCHARGE_METHOD     SLOT
                 ? this.safeFloat(from.dischargeCoeff)
                 : 1.89;
 
-            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} TRANSVERSE ${this.pad(crestHt)} ${cd.toFixed(2)}      NO       0        0          YES\n`;
-            xs   += `${this.pad(id)} RECT_OPEN  ${this.pad(crestHt > 0 ? crestHt : 0.5)} ${this.pad(laenge)} 0          0          1\n`;
+            // Wehrtyp (vorher immer hardcoded TRANSVERSE) + Flap-Gate
+            const weirType = ['TRANSVERSE', 'SIDEFLOW', 'V-NOTCH'].includes(from.weirType) ? from.weirType : 'TRANSVERSE';
+            const gated = from.gated ? 'YES' : 'NO';
+
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad(weirType)}${this.pad(crestHt)} ${cd.toFixed(2)}      ${this.pad(gated)}0        0          YES\n`;
+
+            // V-NOTCH verlangt eine TRIANGULAR-Xsection (weir_validate: ERR_REGULATOR_SHAPE
+            // sonst); Transverse/Sideflow bleiben beim offenen Rechteck als Kammer-Näherung.
+            if (weirType === 'V-NOTCH') {
+                xs += `${this.pad(id)} TRIANGULAR ${this.pad(crestHt > 0 ? crestHt : 0.5)} ${this.pad(laenge)} 0          0          1\n`;
+            } else {
+                xs += `${this.pad(id)} RECT_OPEN  ${this.pad(crestHt > 0 ? crestHt : 0.5)} ${this.pad(laenge)} 0          0          1\n`;
+            }
         }
         this.sections.push(text);
         this.sections.push(xs);
@@ -449,7 +543,7 @@ SURCHARGE_METHOD     SLOT
         let xs   = '[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n';
 
         for (const { id, from, to, subtype } of this.specialLinks.orifices) {
-            if (!to) { this.warnings.push(`Orifice ${id}: Kein Zielknoten — übersprungen.`); continue; }
+            if (!to || !from) { this.warnings.push(`Orifice ${id}: Kein Start-/Zielknoten — übersprungen.`); continue; }
             const bd = from.bauwerkData;
             let diameter = 0.3;
 
@@ -464,13 +558,33 @@ SURCHARGE_METHOD     SLOT
                     diameter = Math.max(0.05, Math.min(Math.sqrt(4 * A / Math.PI), 2.0));
                 }
             } else if (subtype === 'schieber') {
-                // Breite: UI initialOpening skaliert schieberBreite
-                const b = this.safeFloat(from.bauwerkData?.schieberBreite, 0.3);
+                // Breite: UI gateWidth > XML schieberBreite > 0.3m; initialOpening skaliert den Querschnitt
+                const b = this.safeFloat(from.gateWidth, 0) > 0
+                    ? this.safeFloat(from.gateWidth)
+                    : this.safeFloat(from.bauwerkData?.schieberBreite, 0.3);
                 const opening = this.safeFloat(from.initialOpening, 1.0);
                 diameter = b * Math.sqrt(Math.max(0.01, opening)); // reduzierter Querschnitt
+            } else if (subtype === 'auslaufDrossel') {
+                // Gedrosselter Auslauf (outflowType='throttled'): UI-Feld constantOutflow
+                // hatte bisher keine hydraulische Wirkung (nur ein Kommentar in [OUTFALLS]).
+                // Hier auf dieselbe Weise wie eine Drossel in ein Orifice übersetzt.
+                const Q_ls = this.safeFloat(to.constantOutflow, 0);
+                if (Q_ls > 0) {
+                    const A = (Q_ls / 1000) / (0.65 * Math.sqrt(2 * 9.81));
+                    diameter = Math.max(0.05, Math.min(Math.sqrt(4 * A / Math.PI), 2.0));
+                } else {
+                    this.warnings.push(`Gedrosselter Auslauf ${to.id}: Kein Max.-Abfluss angegeben — Standard-Durchmesser 0.3 m.`);
+                }
             }
 
-            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} BOTTOM     0          0.65       NO       0\n`;
+            // Orifice-Typ (BOTTOM|SIDE) + Flap-Gate: nur für echte Drossel-/Schieber-
+            // Bauwerke UI-gesteuert (from = der Bauwerksknoten); der gedrosselte Auslauf
+            // hat keine eigene UI dafür und bleibt BOTTOM/ungated.
+            const isStructure = subtype === 'drossel' || subtype === 'schieber';
+            const orificeType = isStructure && from.orificeType === 'SIDE' ? 'SIDE' : 'BOTTOM';
+            const gated = isStructure && from.gated ? 'YES' : 'NO';
+
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad(orificeType)}0          0.65       ${this.pad(gated)}0\n`;
             xs   += `${this.pad(id)} CIRCULAR   ${this.pad(diameter)} 0          0          0          1\n`;
         }
         this.sections.push(text);
@@ -479,7 +593,13 @@ SURCHARGE_METHOD     SLOT
 
     addPumps() {
         if (!this.specialLinks.pumps.length) return;
-        let text = '[PUMPS]\n;;Name           Node1          Node2          PumpCurve    InitStatus OffCutoff  OnCutoff\n';
+        // Spalten: Name Node1 Node2 PumpCurve Status Startup Shutoff — der Solver
+        // liest Position 6 IMMER als Startup- (Einschalt-) und Position 7 als
+        // Shutoff- (Ausschalt-) Tiefe (link.c: pump_readParams), unabhängig von der
+        // Spaltenbeschriftung. Startup muss > Shutoff sein (Nasspumpe schaltet bei
+        // hohem Stand ein, bei niedrigem aus), sonst bricht pump_validate mit
+        // ERR_PUMP_LIMITS ab.
+        let text = '[PUMPS]\n;;Name           Node1          Node2          PumpCurve    InitStatus Startup    Shutoff\n';
 
         for (const { id, from, to } of this.specialLinks.pumps) {
             if (!to) { this.warnings.push(`Pumpe ${id}: Kein Zielknoten — übersprungen.`); continue; }
@@ -488,7 +608,7 @@ SURCHARGE_METHOD     SLOT
             const onDepth  = this.safeFloat(from.onDepth,  0) > 0 ? this.safeFloat(from.onDepth)  : this.safeFloat(from.depth, 2.0) * 0.4;
             const offDepth = this.safeFloat(from.offDepth, 0) > 0 ? this.safeFloat(from.offDepth) : onDepth * 0.4;
 
-            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad('CRV_' + id)} ON         ${this.pad(offDepth)} ${this.pad(onDepth)}\n`;
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad('CRV_' + id)} ON         ${this.pad(onDepth)} ${this.pad(offDepth)}\n`;
         }
         this.sections.push(text);
     }
@@ -498,28 +618,31 @@ SURCHARGE_METHOD     SLOT
         let text = '[CURVES]\n;;Name           Type       X-Value    Y-Value\n';
 
         for (const { id, from } of this.specialLinks.pumps) {
-            const bd   = from.bauwerkData;
             const name = `CRV_${id}`;
 
-            // Priorität: UI pumpRate (l/s) > Berechnung aus XML Leistung+Förderhöhe
-            const Q_ui = this.safeFloat(from.pumpRate, 0);
-            let Q_d, H_d;
-
-            if (Q_ui > 0) {
-                // User hat Förderleistung direkt eingegeben
-                Q_d = Q_ui / 1000; // l/s → m³/s
-                H_d = this.safeFloat(bd?.pumpHead, 10.0);
-            } else {
-                H_d = this.safeFloat(bd?.pumpHead,  10.0);
-                const P   = this.safeFloat(bd?.pumpPower,  5.0);
-                Q_d = (P * 1000 * 0.7) / (1000 * 9.81 * H_d);
+            // computePumpCurvePoints() ist die einzige Quelle für Q_d/H_d/Punkte —
+            // von PumpCurvePreview.vue (Vorschau im ElementInfo) gemeinsam genutzt,
+            // damit Vorschau und tatsächlich geschriebene .inp-Kennlinie nicht
+            // auseinanderlaufen können (siehe utils/pumpCurve.js).
+            const { H_d, Q_d, estimated, points } = computePumpCurvePoints(from);
+            if (estimated) {
                 this.warnings.push(`Pumpe ${id}: Keine Förderleistung angegeben, Schätzung aus Leistung: ${(Q_d * 1000).toFixed(1)} l/s.`);
             }
 
-            // TYPE3 Q-H Kennlinie: 3 Punkte (Abriegelung, Auslegung, Freilauf)
-            text += `${this.pad(name)} Pump       0.0000     ${(H_d * 1.3).toFixed(3)}\n`;
-            text += `${this.pad(name)}            ${Q_d.toFixed(4)}  ${H_d.toFixed(3)}\n`;
-            text += `${this.pad(name)}            ${(Q_d * 1.4).toFixed(4)} 0.000\n`;
+            // PUMP3 Kennlinie: X-Value = Förderhöhe (Head), Y-Value = Förderleistung
+            // bei dieser Höhe (link.c pump_getFlow: `table_lookup(&Curve[m], head)`
+            // sucht per HEAD und liefert FLOW zurück — nicht umgekehrt!). Vorher
+            // standen Q_d/H_d in den falschen Spalten: der Solver las die Fördermenge
+            // (z.B. 0.03 m³/s) als winzige Förderhöhe und die Förderhöhe (z.B. 10 m)
+            // als Fördermenge von 10 m³/s — daraus resultierte eine um Größenordnungen
+            // zu große Pumpe ("System explodiert" bei z.B. 30 l/s Eingabe).
+            // 3 Punkte, nach Head aufsteigend sortiert (Pflicht laut table_readCurve):
+            // Freilauf (0 Head, max. Fluss) → Auslegung (H_d, Q_d) → Abriegelung (1.3×H_d, 0).
+            // "Pump" (ohne Ziffer) ist KEIN gültiges SWMM-Keyword — table_readCurve
+            // matcht per Präfix gegen PUMP1..PUMP5 und bricht sonst mit ERR_KEYWORD ab.
+            text += `${this.pad(name)} PUMP3      ${points[0].head.toFixed(4)}     ${points[0].flow.toFixed(4)}\n`;
+            text += `${this.pad(name)}            ${points[1].head.toFixed(3)}      ${points[1].flow.toFixed(4)}\n`;
+            text += `${this.pad(name)}            ${points[2].head.toFixed(3)}      ${points[2].flow.toFixed(3)}\n`;
         }
         this.sections.push(text);
     }
@@ -555,22 +678,40 @@ SURCHARGE_METHOD     SLOT
         let conduits  = '[CONDUITS]\n;;Name           Node1          Node2          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow\n';
         let xsections = '[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n';
 
-        // Bauwerkstypen deren ausgehende Kante zum SWMM-Sonderlink wird
-        const LINK_BTYPES = new Set([6, 7, 8, 9]);
-
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+        // Pumpe/Wehr/Drossel/Schieber: ein Bauwerksknoten hat konzeptionell EINE
+        // Pumpe/EIN Wehr, nicht mehrere. Nur die erste ausgehende Haltung wird zum
+        // Sonderlink; weitere ausgehende Haltungen bleiben normale Conduits (mit
+        // Warnung) — sonst würde ein Typ-Wechsel Schacht→Pumpe an einer Verzweigung
+        // versehentlich alle ausgehenden Haltungen zu Pumpen machen.
+        const convertedSpecialNodes = new Set();
 
         for (const e of edges) {
             const n1 = nodeMap.get(e.fromNodeId);
             const n2 = nodeMap.get(e.toNodeId);
 
             // Kante verlässt einen Link-Bauwerk-Knoten → Sonderlink statt Conduit
-            if (n1 && LINK_BTYPES.has(this.getBtyp(n1))) {
+            if (n1 && LINK_BAUWERKSTYPEN.has(this.getBtyp(n1)) && !convertedSpecialNodes.has(n1.id)) {
                 const btyp = this.getBtyp(n1);
+                convertedSpecialNodes.add(n1.id);
                 if (btyp === 7)      this.specialLinks.weirs.push({ id: e.id, from: n1, to: n2, edge: e });
                 else if (btyp === 8) this.specialLinks.orifices.push({ id: e.id, from: n1, to: n2, edge: e, subtype: 'drossel' });
                 else if (btyp === 9) this.specialLinks.orifices.push({ id: e.id, from: n1, to: n2, edge: e, subtype: 'schieber' });
                 else if (btyp === 6) this.specialLinks.pumps.push({ id: e.id, from: n1, to: n2, edge: e });
+                continue;
+            }
+            if (n1 && LINK_BAUWERKSTYPEN.has(this.getBtyp(n1)) && convertedSpecialNodes.has(n1.id)) {
+                const btyp = this.getBtyp(n1);
+                this.warnings.push(`Knoten ${n1.id} (${Bauwerkstyp[btyp] || btyp}): mehrere ausgehende Haltungen — nur eine wurde als Sonderlink übersetzt, Haltung ${e.id} bleibt normaler Kanal.`);
+                // Fällt durch zur normalen Conduit-Behandlung unten.
+            }
+
+            // Kante mündet in einen gedrosselten Auslauf (outflowType='throttled')
+            // → Orifice statt Conduit, damit "Max. Abfluss" tatsächlich hydraulisch
+            // wirkt (vorher nur ein wirkungsloser Kommentar in [OUTFALLS]).
+            if (n1 && n2 && n2.outflowType === 'throttled') {
+                this.specialLinks.orifices.push({ id: e.id, from: n1, to: n2, edge: e, subtype: 'auslaufDrossel' });
                 continue;
             }
 
@@ -693,6 +834,27 @@ SURCHARGE_METHOD     SLOT
 
         this.sections.push(conduits);
         this.sections.push(xsections);
+    }
+
+    // Rechen/Sieb/Einlaufbauwerk (Bauwerkstyp 10/11/14): die Haltung bleibt ein
+    // normaler Conduit (kein Sonderlink), bekommt nur einen zusätzlichen
+    // Eintrittsverlustbeiwert (link_readLossParams, link.c:271: "LinkID cInlet
+    // cOutlet cAvg FlapGate SeepRate"). Rein additiv — kein addLinks()-Intercept.
+    addLosses(edges, nodes) {
+        const LOSS_BTYPES = new Set([10, 11, 14]);
+        const nodeMap = new Map(nodes.map(n => [n.id, n]));
+        let text = '[LOSSES]\n;;Link           Kentry     Kexit      Kavg       FlapGate   Seepage\n';
+        let count = 0;
+
+        for (const e of edges) {
+            const n1 = nodeMap.get(e.fromNodeId);
+            if (!n1 || !LOSS_BTYPES.has(this.getBtyp(n1))) continue;
+            const coeff = this.safeFloat(n1.lossCoeff, 0);
+            if (coeff <= 0) continue;
+            text += `${this.pad(e.id)} ${this.pad(coeff)} 0          0          NO         0\n`;
+            count++;
+        }
+        if (count > 0) this.sections.push(text);
     }
 
     addTimeseries() {

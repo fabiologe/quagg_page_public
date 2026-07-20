@@ -320,6 +320,7 @@ export function buildResultData(simStore, geoStore, { bciContent = null, terrain
         networkResults: simStore.networkResults ? JSON.parse(JSON.stringify(toRaw(simStore.networkResults))) : null,
         couplingBudget: simStore.couplingBudget ? JSON.parse(JSON.stringify(toRaw(simStore.couplingBudget))) : null,
         massReport: simStore.massReport ? JSON.parse(JSON.stringify(toRaw(simStore.massReport))) : null,
+        swmmReport: simStore.swmmReport || null,   // .rpt-Klartext (klein, gekoppelte Läufe)
         timestamp: Date.now(),
         bciContent: bciContent
     };
@@ -373,6 +374,7 @@ export function useResultDataFromOpener() {
     const networkResults = ref(null);
     const couplingBudget = ref(null);
     const massReport = ref(null);
+    const swmmReport = ref(null);
     const isLoading = ref(true);
     const loadProgress = ref(0);
     const error = ref(null);
@@ -476,6 +478,7 @@ export function useResultDataFromOpener() {
             if (data.networkResults) networkResults.value = data.networkResults;
             if (data.couplingBudget) couplingBudget.value = data.couplingBudget;
             if (data.massReport)     massReport.value     = data.massReport;
+            if (data.swmmReport)     swmmReport.value     = data.swmmReport;
 
             const _hydrate = (v) => v == null ? null : (v instanceof Float32Array ? v : new Float32Array(v));
             if (data.maxDepthGrid)    maxDepthGrid.value    = _hydrate(data.maxDepthGrid);
@@ -517,6 +520,7 @@ export function useResultDataFromOpener() {
         networkResults,
         couplingBudget,
         massReport,
+        swmmReport,
         isLoading,
         loadProgress,
         error,

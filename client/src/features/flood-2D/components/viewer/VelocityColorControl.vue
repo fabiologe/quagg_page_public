@@ -163,18 +163,19 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .vel-control {
-  background: rgba(15, 15, 30, 0.9);
+  background: var(--sv-surface);
   backdrop-filter: blur(12px);
-  border-radius: 10px;
+  border-radius: var(--sv-radius);
   padding: 10px 12px 12px;
   width: 320px;
-  border: 1px solid rgba(79, 195, 247, 0.18);
+  border: 1px solid var(--sv-border);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  font-family: var(--sv-font);
   user-select: none;
 }
 .vc-title {
   font-size: 0.7rem;
-  color: #90a4ae;
+  color: var(--sv-text-lime);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -226,15 +227,15 @@ onBeforeUnmount(() => {
   width: 10px;
   height: 14px;
   border-radius: 3px;
-  background: #4fc3f7;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+  background: var(--sv-lime);
+  box-shadow: var(--sv-glow-lime);
 }
 .vc-axis {
   display: flex;
   justify-content: space-between;
   margin-top: 3px;
   font-size: 0.62rem;
-  color: #b0bec5;
+  color: var(--sv-text-dim);
   font-variant-numeric: tabular-nums;
 }
 .vc-inputs {
@@ -246,7 +247,7 @@ onBeforeUnmount(() => {
 .vc-inputs label {
   flex: 1;
   font-size: 0.68rem;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
   display: flex;
   align-items: center;
   gap: 5px;
@@ -254,11 +255,12 @@ onBeforeUnmount(() => {
 .vc-inputs input {
   width: 100%;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--sv-border);
   border-radius: 4px;
-  color: #e0e0e0;
+  color: var(--sv-text);
   padding: 3px 5px;
   font-size: 0.72rem;
+  font-family: var(--sv-font);
   font-variant-numeric: tabular-nums;
 }
 </style>

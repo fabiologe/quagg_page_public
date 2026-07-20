@@ -3,8 +3,8 @@
     <EditorToolbox />
     
     <IsybauViewer 
-        :class="{ 
-            'cursor-crosshair': isDrawMode,
+        :class="{
+            'cursor-crosshair': isDrawMode || store.editor.mode === 'boxSelect',
             'cursor-edge': store.editor.mode === 'addEdge',
             'cursor-delete': store.editor.mode === 'delete',
             'cursor-split': store.editor.mode === 'splitEdge'
@@ -26,6 +26,7 @@
         @save-element="handleElementSave"
         @map-click="handleMapClick"
         @map-dblclick="handleMapDblClick"
+        @delete-elements="handleDeleteElements"
     />
     <div v-if="store.editor.mode === 'addArea'" class="drawing-controls">
         <div class="drawing-tooltip">
@@ -56,6 +57,13 @@ const props = defineProps({
 });
 
 const isDrawMode = computed(() => ['addNode', 'addEdge', 'addArea', 'splitEdge'].includes(store.editor.mode));
+
+// Box-Select: Mehrfach-Löschen in EINEM Undo-Schritt
+const handleDeleteElements = (ids) => {
+    if (!ids?.length) return;
+    if (!confirm(`${ids.length} Elemente löschen? (Haltungen an gelöschten Schächten werden mit entfernt)`)) return;
+    store.removeMany(ids);
+};
 
 const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'map-click', 'map-dblclick', 'show-details', 'create-area', 'create-edge', 'create-node', 'split-edge']);
 
@@ -257,19 +265,21 @@ const handleMapDblClick = () => {
 
 .finish-btn {
     pointer-events: auto;
-    background: #27ae60;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
+    background: #040647;
+    color: #2ecc71;
+    border: 1px solid #594491;
+    padding: 0.85rem 1.5rem;
     border-radius: 20px;
-    font-weight: bold;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.5rem;
     cursor: pointer;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 10px rgba(4,6,71,0.4);
     transition: transform 0.2s, background 0.2s;
 }
 
 .finish-btn:hover {
-    background: #219150;
+    background: #594491;
+    color: #fff;
     transform: scale(1.05);
 }
 </style>

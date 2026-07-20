@@ -169,12 +169,12 @@ defineEmits(['reset-view', 'update:showNodes', 'update:showEdges', 'update:showA
   border: 1px solid rgba(255,255,255,0.08);
 }
 .legend-title {
-  font-size: 0.62rem;
-  color: #718096;
+  font-size: 0.44rem;
+  color: #aeadd2;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 0.35rem;
-  font-family: monospace;
+  margin-bottom: 0.4rem;
+  font-family: 'Press Start 2P', monospace;
 }
 .legend-sep {
   font-size: 0.6rem;

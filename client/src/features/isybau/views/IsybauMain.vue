@@ -1,6 +1,6 @@
 <template>
   <div class="isybau-main">
-    <Sidebar :width="300" @open-project-manager="showProjectManager = true">
+    <Sidebar :width="300" @open-project-manager="store.ui.showProjectManager = true">
         <!-- Pass Props to SimulationControls if needed, or rely on Store -->
         <SimulationControls />
         
@@ -40,21 +40,21 @@
         <div class="view-switcher">
             <button @click="viewMode = '2d'" :class="{ active: viewMode === '2d' }">2D Karte</button>
             <button @click="goto3d(false)" :class="{ active: viewMode === '3d' && !autoResultsFor3d }">3D Ansicht</button>
-            <button v-if="hasResults" @click="viewMode = 'result'" :class="{ active: viewMode === 'result' }">Ergebnisse</button>
+            <button v-if="hasResults" @click="viewMode = 'result'" :class="{ active: viewMode === 'result' }" data-tutorial="view-results">Ergebnisse</button>
             <button v-if="hasResults" @click="goto3d(true)" :class="{ active: viewMode === '3d' && autoResultsFor3d }" class="result3d-tab">Ergebnis 3D</button>
-            <button class="help-btn" @click="showHelpModal = true" title="Hilfe & Anleitung">
+            <button class="help-btn" @click="store.ui.showHelpModal = true" title="Hilfe & Anleitung">
                 <img class="tb-icon" src="/saintv1d/icons/Interface-Essential-Question-Help-Circle-2--Streamline-Pixel.svg" />
             </button>
         </div>
 
         <!-- 2D View (Editor / Map) -->
         <div v-show="viewMode === '2d'" class="view-container">
-            <IsybauEditor 
-                @create-area="handleCreateAreaRequest" 
-                @create-edge="handleCreateEdgeRequest"
-                @create-node="handleCreateNodeRequest"
+            <IsybauEditor
+                @create-area="({ points, size }) => store.openElementModal('area', { size: parseFloat(size.toFixed(4)), points })"
+                @create-edge="({ from, to }) => store.openElementModal('edge', { metaFromId: from, metaToId: to })"
+                @create-node="({ x, y }) => store.openElementModal('node', { x, y })"
                 @split-edge="handleSplitEdge"
-                :focusTarget="focusedElementId"
+                :focusTarget="store.editor.focusTargetId"
             />
         </div>
 
@@ -66,13 +66,15 @@
                 :areas="store.areaArray"
                 :nodeResults="new Map(Object.entries(store.simulation.results?.nodes || {}))"
                 :edgeResults="new Map(Object.entries(store.simulation.results?.edges || {}))"
+                :systemStats="store.simulation.results?.systemStats || {}"
                 :autoShowResults="autoResultsFor3d"
             />
         </div>
 
-        <!-- Results View -->
+        <!-- Results View: derselbe 2D-Renderer, aber explizit read-only -->
         <div v-if="viewMode === 'result'" class="view-container">
             <IsybauViewer
+                readonly
                 :nodes="store.nodes"
                 :edges="store.edges"
                 :areas="store.areaArray"
@@ -81,7 +83,7 @@
                 :hydraulics="new Map(Object.entries(store.simulation.results?.edges || {}))"
                 :nodeResults="new Map(Object.entries(store.simulation.results?.nodes || {}))"
                 :runoffDetails="store.simulation.results?.subcatchments ? Object.values(store.simulation.results.subcatchments) : []"
-                :focusTarget="focusedElementId"
+                :focusTarget="store.editor.focusTargetId"
                 @show-details="handleShowDetails"
             />
         </div>
@@ -90,74 +92,11 @@
         <MessageTicker />
     </div>
 
-    <!-- Global Modals -->
-    <!-- These rely on Store state to open/close -->
-    <KostraModal 
-      v-if="store.ui.showKostraModal" 
-      :is-open="store.ui.showKostraModal" 
-      :reference-point="store.center"
-      @close="store.ui.showKostraModal = false" 
-    />
-    <ModelRainModal 
-      v-if="store.ui.showRainModal" 
-      :is-open="store.ui.showRainModal"
-      :kostra-data="store.rain.kostraData"
-      @close="store.ui.showRainModal = false" 
-    />
-    <PreprocessingModal
-      v-if="store.ui.showPreprocessingModal"
-      :is-open="store.ui.showPreprocessingModal"
-      :network="{ nodes: store.nodes, edges: store.edges }" 
-      :hydraulics="{ catchments: [], areas: store.areaArray }"
-      @close="store.ui.showPreprocessingModal = false"
-      @apply="(data) => { store.updateNetworkData(data); store.ui.showPreprocessingModal = false; }"
-      @select-element="handleHighlightElement"
-    />
-    <SimulationResultsModal
-      v-if="store.ui.showResultsModal"
-      :is-open="store.ui.showResultsModal"
-      :nodes="store.nodes"
-      :edges="store.edges"
-      :areas="store.areaArray"
-      :edgeResults="new Map(Object.entries(store.simulation.results?.edges || {}))"
-      :nodeResults="new Map(Object.entries(store.simulation.results?.nodes || {}))"
-      :timeSeries="store.simulation.results?.timeSeries || []"
-      :areaResults="new Map(Object.entries(store.simulation.results?.subcatchments || {}))"
-      :systemStats="store.simulation.results?.systemStats || {}"
-      :rain="store.rain"
-      @close="store.ui.showResultsModal = false"
-      @show-debug="store.ui.showDebugModal = true"
-    />
-    <SimulationDebugModal
-        v-if="store.ui.showDebugModal"
-        :is-open="store.ui.showDebugModal"
-        :input-text="store.simulation.results?.input || ''"
-        :report-text="store.simulation.results?.report || ''"
-        @close="store.ui.showDebugModal = false"
-    />
-    <IsybauHelpModal
-        v-if="showHelpModal"
-        :is-open="showHelpModal"
-        @close="showHelpModal = false"
-    />
+    <!-- Tutorial-Maskottchen (Kanaltaucher-Ratte): eigenes Modul in ../tutorial/ -->
+    <TutorialMascot />
 
-    <ProjectManagerModal
-        :is-open="showProjectManager"
-        :snapshot="projectSnapshot"
-        @close="showProjectManager = false"
-        @load="handleLoadProject"
-    />
-    
-    <ElementPropertiesModal 
-        :is-open="showElementModal"
-        :mode="elementModalMode"
-        :element-data="elementModalData"
-        :is-edit="elementModalIsEdit"
-        :available-nodes="store.nodeArray"
-        :available-edges="store.edgeArray"
-        @close="showElementModal = false"
-        @save="handleElementSave"
-    />
+    <!-- Global Modals — Verdrahtung zentral in IsybauModals.vue (store.ui.*) -->
+    <IsybauModals @project-loaded="viewMode = '2d'" />
 
     <!-- Validation Warnings Toast -->
     <Transition name="slide-up">
@@ -198,16 +137,10 @@ import IsybauViewer from '../components/visualizer/IsybauViewer.vue';
 import IsybauViewer3D from '../components/visualizer/IsybauViewer3D.vue';
 
 
-// Import Modals (ensure paths are correct)
-import KostraModal from '../components/modals/KostraModal.vue';
-import ModelRainModal from '../components/modals/ModelRainModal.vue';
-import PreprocessingModal from '../components/modals/PreprocessingModal.vue';
-import SimulationResultsModal from '../components/modals/SimulationResultsModal.vue';
-import SimulationDebugModal from '../components/modals/SimulationDebugModal.vue';
-import ElementPropertiesModal from '../components/modals/ElementPropertiesModal.vue';
-import IsybauHelpModal from '../components/modals/IsybauHelpModal.vue';
-import ProjectManagerModal from '../components/modals/ProjectManagerModal.vue';
+// Modals + deren Verdrahtung leben zentral in IsybauModals.vue (store.ui.*)
+import IsybauModals from '../components/modals/IsybauModals.vue';
 import MessageTicker from '../components/ui/MessageTicker.vue';
+import TutorialMascot from '../tutorial/TutorialMascot.vue';
 
 const store = useIsybauStore();
 const viewMode = ref('2d');
@@ -220,145 +153,20 @@ function goto3d(withResults = false) {
   viewMode.value = '3d';
 }
 
-
-// Element Modal State
-const showElementModal = ref(false);
-const elementModalMode = ref('area');
-const elementModalData = ref({});
-const elementModalIsEdit = ref(false);
-
-const showHelpModal       = ref(false);
-const showProjectManager  = ref(false);
-
-// Snapshot des aktuellen Projektstands für das Speichern
-const projectSnapshot = computed(() => ({
-    nodes:    Array.from(store.nodes.values()).map(n => n.toJSON ? n.toJSON() : n),
-    edges:    Array.from(store.edges.values()).map(e => e.toJSON ? e.toJSON() : e),
-    areas:    store.areas.map(a => a.toJSON ? a.toJSON() : a),
-    metadata: store.metadata,
-    rain:     store.rain,
-}));
-
-const handleLoadProject = (data) => {
-    store.loadParsedData({
-        metadata: data.metadata || {},
-        network:  { nodes: data.nodes, edges: data.edges },
-        hydraulics: { areas: data.areas || [] },
-    });
-    if (data.rain) Object.assign(store.rain, data.rain);
-    viewMode.value = '2d';
-};
-
-const handleCreateNodeRequest = ({ x, y }) => {
-    console.log("Opening Generic Modal for Node", x, y);
-    elementModalMode.value = 'node';
-    elementModalIsEdit.value = false;
-    elementModalData.value = {
-        x: x,
-        y: y
-    };
-    showElementModal.value = true;
-};
-
 const handleSplitEdge = (payload) => {
     // payload can be exactly edgeId (fallback) or an object
     const edgeId = payload.edgeId || payload;
     const coords = payload.coords || null;
-    
-    console.log("IsybauMain: Splitting Edge", edgeId, "at coords", coords);
+
     store.splitEdgeWithNode(edgeId, coords);
     // Switch back to view mode to prevent accidental subsequent clics
     store.editor.mode = 'select';
-    
-    // Optional: We can automatically select the new node if returned,
-    // but the store action should handle the primary logic.
 };
 
-const focusedElementId = ref(null);
-const handleHighlightElement = ({ id }) => {
-    console.log("Highlighting Element:", id);
-    focusedElementId.value = id;
-    // Reset after short delay so we can re-trigger if needed? 
-    // Actually watchers work on value change. If I click same row twice, it won't re-trigger. 
-    // Force reset using setTimeout
-    setTimeout(() => { focusedElementId.value = null; }, 500); 
-}; 
-
+// „Ergebnisse anzeigen" aus dem Viewer-Popup: Element fokussieren + Modal öffnen
 const handleShowDetails = (element) => {
-    // Extract ID if it's an object, or use it directly
-    const id = element?.id || element;
-    console.log("Showing Details for:", id);
-    
-    // Set focus target to select the row in the modal
-    focusedElementId.value = id;
-    
-    // Open the modal
+    store.flashFocus(element?.id || element);
     store.ui.showResultsModal = true;
-    
-    // Reset focus after delay (modal watcher needs to catch it first)
-    setTimeout(() => { focusedElementId.value = null; }, 500);
-};
-
-const handleCreateAreaRequest = ({ points, size }) => {
-    console.log("Opening Generic Modal for Area", size);
-    elementModalMode.value = 'area';
-    elementModalIsEdit.value = false;
-    // Pass points in data so we can retrieve them on save
-    elementModalData.value = {
-        size: parseFloat(size.toFixed(4)),
-        points: points
-    };
-    showElementModal.value = true;
-};
-
-const handleCreateEdgeRequest = ({ from, to }) => {
-    console.log("Opening Generic Modal for Edge", from, to);
-    elementModalMode.value = 'edge';
-    elementModalIsEdit.value = false;
-    // Pass topology IDs as hidden metadata or initial data
-    elementModalData.value = {
-        metaFromId: from,
-        metaToId: to
-    };
-    showElementModal.value = true;
-};
-
-const handleElementSave = ({ mode, data }) => {
-    console.log("Saving Element", mode, data);
-    
-    if (mode === 'area') {
-        const points = data.points || [];
-        if (points.length < 3) {
-            console.error("Missing points for area creation");
-            return;
-        }
-        
-        store.addArea({
-            points: points,
-            properties: data
-        });
-    } else if (mode === 'edge') {
-        const fromId = data.metaFromId || data.fromNodeId;
-        const toId = data.metaToId || data.toNodeId;
-        console.log("Saving Edge with IDs:", fromId, toId);
-        
-        store.addEdge({
-            fromId: fromId,
-            toId: toId,
-            properties: data
-        });
-    } else if (mode === 'node') {
-        // Allow passing properties object to addNode
-         const props = { ...data };
-         // Map UI field 'cover' to Domain field 'coverZ'
-         if (props.cover !== undefined) {
-             props.coverZ = props.cover;
-             delete props.cover;
-         }
-         store.addNode(data.x, data.y, props);
-    }
-    
-    showElementModal.value = false;
 };
 
 // --- Validation Warnings Toast ---
@@ -397,6 +205,13 @@ watch(() => store.simulation.results, (newVal) => {
         warningToast.value = { show: false, messages: [] };
     }
 });
+
+// Import-Sammelbericht: beim XML-Import übersprungene Elemente anzeigen
+watch(() => store.ui.importWarnings, (msgs) => {
+    if (msgs && msgs.length > 0) {
+        warningToast.value = { show: true, messages: msgs };
+    }
+});
 </script>
 
 <style scoped>
@@ -429,13 +244,13 @@ watch(() => store.simulation.results, (newVal) => {
 }
 
 .view-switcher button {
-    padding: 0.45rem 1rem;
+    padding: 0.55rem 0.9rem;
     border: none;
     background: transparent;
     cursor: pointer;
     border-radius: 5px;
-    font-weight: 600;
-    font-size: 0.82rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.46rem;
     color: #aeadd2;
     transition: background 0.15s, color 0.15s;
 }
@@ -501,34 +316,49 @@ watch(() => store.simulation.results, (newVal) => {
 
 .sidebar-nav {
   margin-top: 1.5rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #aeadd2;
   padding-top: 1rem;
 }
+.sidebar-nav h3 {
+  margin: 0 0 0.75rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #040647;
+}
 
+/* Theme-konform (SaintV): weiß/violett statt Bootstrap-blau */
 .nav-btn {
   display: block;
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.8rem 0.75rem;
   margin-bottom: 0.5rem;
   background: white;
-  border: 1px solid #ddd;
+  border: 1px solid #aeadd2;
   border-radius: 6px;
   text-align: left;
   cursor: pointer;
-  font-size: 0.95rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  line-height: 1.6;
+  color: #040647;
   transition: all 0.2s;
 }
 
 .nav-btn:hover {
-  background: #f8f9fa;
-  border-color: #bbb;
+  background: #f3f2fb;
+  border-color: #8f8be1;
 }
 
 .nav-btn.active {
-  background: #e3f2fd;
-  border-color: #2196F3;
-  color: #1565C0;
-  font-weight: 500;
+  background: #594491;
+  border-color: #594491;
+  color: #fff;
+  font-weight: 600;
+}
+.nav-btn.active .tb-icon {
+  filter: brightness(0) invert(1);
 }
 
 .nav-btn-result3d {

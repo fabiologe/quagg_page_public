@@ -150,19 +150,19 @@ const copyToClipboard = async (text) => {
 }
 
 .tab-btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  background: none;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border: 1px solid #594491;
+  color: #aeadd2;
+  border-radius: 5px;
+  padding: 0.45rem 0.75rem;
   cursor: pointer;
-  font-weight: 500;
-  color: #594491;
-  border-bottom: 2px solid transparent;
+  transition: background 0.15s, color 0.15s;
 }
-
-.tab-btn.active {
-  color: #3498db;
-  border-bottom: 2px solid #594491;
-}
+.tab-btn:hover { background: #594491; color: #fff; }
+.tab-btn.active { background: #594491; color: #fff; border-color: #8f8be1; }
 
 .tab-content {
   flex: 1;
@@ -179,8 +179,10 @@ const copyToClipboard = async (text) => {
 }
 
 .copy-btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
+    padding: 0.35rem 0.5rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.44rem;
+    color: #594491;
     cursor: pointer;
     background: #f3f2fb;
     border: 1px solid #aeadd2;
@@ -198,53 +200,6 @@ const copyToClipboard = async (text) => {
   white-space: pre-wrap;
   border: 1px solid #aeadd2;
   margin: 0;
-}
-
-/* ── Design Schema ────────────────────────────── */
-.tab-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
-  letter-spacing: 0.06em;
-  background: transparent !important;
-  border: 1px solid #594491 !important;
-  color: #aeadd2 !important;
-  border-radius: 5px !important;
-  padding: 0.45rem 0.75rem !important;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491 !important; color: #fff !important; }
-.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
-
-.primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
-  transition: background 0.15s;
-}
-.primary-btn:hover:not(:disabled) { background: #594491 !important; }
-.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
-
-.secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
-  transition: background 0.12s;
-}
-.secondary-btn:hover { background: #f3f2fb !important; }
-
-.modal-body h3, .panel h3 {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.55rem !important;
-  color: #594491 !important;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #aeadd2 !important;
-  padding-bottom: 0.4rem !important;
-  margin-bottom: 0.75rem !important;
 }
 
 </style>

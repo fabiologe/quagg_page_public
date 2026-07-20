@@ -228,7 +228,7 @@ th:hover {
 }
 
 input:checked + .slider {
-  background-color: #2196F3;
+  background-color: #2ecc71;
 }
 
 input:checked + .slider::before {
@@ -239,51 +239,17 @@ input:checked + .slider::before {
   font-weight: 500;
 }
 
-/* ── Design Schema ────────────────────────────── */
-.tab-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
-  letter-spacing: 0.06em;
-  background: transparent !important;
-  border: 1px solid #594491 !important;
-  color: #aeadd2 !important;
-  border-radius: 5px !important;
-  padding: 0.45rem 0.75rem !important;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491 !important; color: #fff !important; }
-.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
-
-.primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
-  transition: background 0.15s;
-}
-.primary-btn:hover:not(:disabled) { background: #594491 !important; }
-.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
-
 .secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
+  background: #fff;
+  border: 1px solid #aeadd2;
+  color: #040647;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: #f3f2fb !important; }
-
-.modal-body h3, .panel h3 {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.55rem !important;
-  color: #594491 !important;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #aeadd2 !important;
-  padding-bottom: 0.4rem !important;
-  margin-bottom: 0.75rem !important;
-}
-
+.secondary-btn:hover { background: #f3f2fb; }
 </style>

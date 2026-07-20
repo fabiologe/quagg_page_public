@@ -80,9 +80,9 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   background: #594491;
   color: white;
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.44rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 0 0.6rem;
   height: 100%;

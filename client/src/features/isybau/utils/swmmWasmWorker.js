@@ -2,54 +2,42 @@
 import { SwmmBuilder } from '../core/services/SwmmBuilder.js';
 import { SwmmOutParser } from './SwmmOutParser.js';
 import { RptParser } from './swmm/RptParser.js';
+import { ResultsAssembler } from './swmm/ResultsAssembler.js';
 import createSwmmModule from './swmm_solver.js';
 
 let Module = null;
-let isInitialized = false;
+let initPromise = null;
 
-// Initialize Module
-async function initModule() {
-    if (Module) return;
-    try {
-        console.log("Initializing SWMM Wasm Module in Worker...");
-        Module = await createSwmmModule({
-            print: (text) => console.log("[SWMM_OUT]", text),
-            printErr: (text) => console.error("[SWMM_ERR]", text)
+// Initialize Module (guarded against concurrent calls: module-load auto-init + INIT command)
+function initModule() {
+    if (!initPromise) {
+        initPromise = (async () => {
+            console.log("Initializing SWMM Wasm Module in Worker...");
+            Module = await createSwmmModule({
+                print: (text) => console.log("[SWMM_OUT]", text),
+                printErr: (text) => console.error("[SWMM_ERR]", text)
+            });
+            console.log("SWMM Module Initialized.");
+            self.postMessage({ command: 'INIT_SUCCESS' });
+        })().catch(err => {
+            console.error("Failed to initialize SWMM Module:", err);
+            initPromise = null; // allow retry
+            self.postMessage({ command: 'ERROR', message: err.message });
+            throw err;
         });
-        isInitialized = true;
-        console.log("SWMM Module Initialized.");
-        self.postMessage({ command: 'INIT_SUCCESS' });
-    } catch (err) {
-        console.error("Failed to initialize SWMM Module:", err);
-        self.postMessage({ command: 'ERROR', message: err.message });
     }
+    return initPromise;
 }
-
-self.onmessage = async (e) => {
-    const { command, data } = e.data;
-
-    if (command === 'INIT') {
-        await initModule();
-    } else if (command === 'RUN') {
-        if (!Module) {
-            self.postMessage({ command: 'ERROR', message: 'SWMM Module not initialized' });
-            return;
-        }
-        runSimulation(data);
-    }
-};
 
 // Helper to run simulation
 async function runSimulation(data) {
-    if (!isInitialized || !Module) {
-        await initModule();
-    }
-
     try {
+        await initModule();
+
         const { nodes, edges, areas } = data;
 
         // Create a Store Adapter for SwmmBuilder
-        // SwmmBuilder expects 'getAllNodes' and 'getAllEdges' methods
+        // SwmmBuilder expects 'getAllNodes' and 'getAllEdges' getters
         const storeAdapter = {
             get getAllNodes() {
                 if (Array.isArray(nodes)) return nodes;
@@ -95,7 +83,6 @@ async function runSimulation(data) {
 
         console.log(`SWMM finished with code ${res} `);
 
-        // Parse Results
         // 1. Text Report (Summary Tables)
         let reportData = "";
         if (Module.FS.analyzePath(reportPath).exists) {
@@ -104,10 +91,7 @@ async function runSimulation(data) {
             console.error("No report file found!");
         }
 
-        // Parse detailed results, passing input data for geometry calculations
-        // Convert arrays/maps to Map for lookup if needed
-        // Parse detailed results, passing input data for geometry calculations
-        // Convert arrays/maps to Plain Objects for lookup (Parser expects Objects, not Maps)
+        // Lookup maps of the input network (parsers/assembler expect plain objects)
         let nodesMap = {};
         let edgesMap = {};
 
@@ -116,7 +100,6 @@ async function runSimulation(data) {
         } else if (Array.isArray(nodes)) {
             nodes.forEach(n => nodesMap[n.id] = n);
         } else {
-            // Already object
             nodesMap = { ...nodes };
         }
 
@@ -128,7 +111,7 @@ async function runSimulation(data) {
             edgesMap = { ...edges };
         }
 
-        const detailedResults = RptParser.parse(reportData, nodesMap, edgesMap);
+        const rptResult = RptParser.parse(reportData, nodesMap, edgesMap);
 
         // 2. Binary Output (Time Series)
         let timeSeries = [];
@@ -138,65 +121,35 @@ async function runSimulation(data) {
                 const parser = new SwmmOutParser(outBuffer);
                 timeSeries = parser.parse();
                 console.log(`Parsed ${timeSeries.length} time steps from binary output.`);
-
-                // Post-process: Calculate Node Outflow and Max Volume
-                // Iterate through all steps and sum outgoing flow from connected edges
-                if (timeSeries.length > 0) {
-                    timeSeries.forEach(step => {
-                        // Initialize outflow
-                        for (const nodeId in step.nodes) {
-                            step.nodes[nodeId].outflow = 0;
-
-                            // Calculate Max Volume for Summary (as Rpt doesn't have it for all nodes)
-                            // Initialize if needed
-                            if (!detailedResults.nodes[nodeId]) detailedResults.nodes[nodeId] = {};
-                            const nodeSummary = detailedResults.nodes[nodeId];
-
-                            const currentVol = step.nodes[nodeId].vol || 0;
-                            if (currentVol > (nodeSummary.maxVolumeStored || 0)) {
-                                nodeSummary.maxVolumeStored = currentVol;
-                            }
-                        }
-
-                        // Add Edge Flows
-                        Object.values(edgesMap).forEach(edge => {
-                            const resEdge = step.edges[edge.id];
-                            if (resEdge && resEdge.signedQ !== undefined) {
-                                const flow = resEdge.signedQ;
-                                const fromId = edge.fromNodeId || edge.from;
-                                const toId = edge.toNodeId || edge.to;
-
-                                if (flow > 0) {
-                                    // Normal direction: Leaves From
-                                    if (step.nodes[fromId]) step.nodes[fromId].outflow += flow;
-                                } else if (flow < 0) {
-                                    // Reverse direction: Leaves To
-                                    if (step.nodes[toId]) step.nodes[toId].outflow += Math.abs(flow);
-                                }
-                            }
-                        });
-                    });
-                }
             } else {
                 console.warn("No binary output file found for Time Series.");
+                warnings.push("Keine Zeitreihen-Datei (.out) vorhanden — Ganglinien nicht verfügbar.");
             }
         } catch (binErr) {
             console.error("Failed to parse binary output:", binErr);
-            warnings.push("Fehler beim Lesen der Zeitreihen (.out Datei). Detailansicht evtl. unvollständig.");
+            timeSeries = [];
+            warnings.push("Fehler beim Lesen der Zeitreihen (.out Datei): " + binErr.message + " — Ganglinien werden nicht angezeigt.");
         }
+
+        // 3. Merge into the single results contract
+        const assembled = ResultsAssembler.assemble({
+            rptResult,
+            timeSeries,
+            inputNodes: nodesMap,
+            inputEdges: edgesMap
+        });
 
         self.postMessage({
             command: 'COMPLETE',
             results: {
                 report: reportData,
                 input: inpString,
-                warnings: warnings,
-                massBalance: detailedResults.massBalance,
-                nodes: detailedResults.nodes,
-                edges: detailedResults.edges,
-                subcatchments: detailedResults.subcatchments,
-                systemStats: detailedResults.systemStats,
-                timeSeries: timeSeries
+                warnings: [...warnings, ...assembled.warnings],
+                nodes: assembled.nodes,
+                edges: assembled.edges,
+                subcatchments: assembled.subcatchments,
+                systemStats: assembled.systemStats,
+                timeSeries: assembled.timeSeries
             }
         });
 
@@ -206,14 +159,13 @@ async function runSimulation(data) {
     }
 }
 
-
 self.onmessage = async (e) => {
     const { command, data } = e.data;
     if (command === 'INIT') {
-        await initModule();
+        initModule().catch(() => { /* ERROR already posted */ });
     } else if (command === 'START' || command === 'RUN') {
         await runSimulation(data);
     }
 };
 
-initModule();
+initModule().catch(() => { /* ERROR already posted */ });

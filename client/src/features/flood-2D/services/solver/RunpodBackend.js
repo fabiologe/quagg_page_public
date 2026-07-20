@@ -249,6 +249,16 @@ export class RunpodBackend extends SolverBackend {
                         this.emit({ type: 'WARNING', message: `1D-Ergebnisse nicht ladbar: ${e.message}` });
                     }
                 }
+                // SWMM-.rpt (Kontinuitätsfehler, Warnungen, Peak-Tabellen) als Klartext —
+                // wandert in den Solver-I/O-Inspektor und die Result-Bridge.
+                if (output.swmmReportUrl) {
+                    try {
+                        const buf = await this.transport.fetchBinary(output.swmmReportUrl);
+                        this.emit({ type: 'SWMM_REPORT', text: new TextDecoder().decode(buf) });
+                    } catch (e) {
+                        this.emit({ type: 'WARNING', message: `SWMM-Report nicht ladbar: ${e.message}` });
+                    }
+                }
                 if (output.couplingBudget) {
                     this.emit({ type: 'COUPLING_BUDGET', data: output.couplingBudget });
                 }

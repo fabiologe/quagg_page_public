@@ -11,12 +11,14 @@ import { useAnalysisStore } from '@/features/flood-2D/stores/useAnalysisStore';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useLayerRenderer } from '@/features/flood-2D/composables/editor/useLayerRenderer';
 import { useNetworkRenderer } from '@/features/flood-2D/composables/editor/useNetworkRenderer';
+import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore';
 import { makeResultCoords } from '@/features/flood-2D/composables/viewer/useResultCoords';
 import { useResultScene } from '@/features/flood-2D/composables/viewer/useResultScene';
 import { useFlowArrows } from '@/features/flood-2D/composables/viewer/useFlowArrows';
 import { useFlowStreamlines } from '@/features/flood-2D/composables/viewer/useFlowStreamlines';
 import { useDangerMarkers } from '@/features/flood-2D/composables/viewer/useDangerMarkers';
 import { findSectionStructures } from '@/features/flood-2D/utils/sectionStructures';
+import { findSectionNetworkCrossings } from '@/features/flood-2D/utils/sectionNetwork';
 import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResultProbes';
 import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
 import { useWaterSurface } from '@/features/flood-2D/composables/viewer/useWaterSurface';
@@ -41,16 +43,19 @@ const props = defineProps({
   velocityMax: { type: Number, default: 1.0 },   // oberes Ende der Velocity-Farbskala (Bereichsregler)
   flowDensity: { type: Number, default: 0.5 },   // 0..1 Dichte der Fließpfeile
   waterOpacity: { type: Number, default: 0.85 }, // globale Wasser-Deckkraft 0..1
-  networkState: { type: Object, default: null }  // 1D-Netz-Zustand des Frames (useNetworkResults.stateAtFrame)
+  networkState: { type: Object, default: null }, // 1D-Netz-Zustand des Frames (useNetworkResults.stateAtFrame)
+  showNetwork: { type: Boolean, default: true },       // Netz-Layer sichtbar?
+  networkColorMode: { type: String, default: 'capacity' } // 'capacity' | 'flow' | 'velocity'
 });
 
-const emit = defineEmits(['cellProbed', 'sectionDrawn', 'waterStats']);
+const emit = defineEmits(['cellProbed', 'sectionDrawn', 'waterStats', 'sectionDraftChanged']);
 
 const container = ref(null);
 
 // Store/Composable
 const analysisStore = useAnalysisStore();
 const geoStore = useGeoStore(); // Needed for layer renderer + Gebäudemaske
+const networkStore = useNetworkStore(); // 3D-Pick → Auswahl (NetworkResultsPanel folgt)
 
 // Three.js-Infrastruktur (Szene/Kamera/Renderer/Controls/Loop/Dispose) lebt in useResultScene.
 const sceneApi = useResultScene();
@@ -221,6 +226,16 @@ function initScene() {
     camera,
     renderer: { value: { domElement: renderer.domElement } },
     getTerrainMesh: () => terrainMesh,
+    // Schacht-Snap: Kandidaten in Szene-Weltkoordinaten (gleicher Transform wie
+    // networkRenderer/terrainMesh — layerRenderer entsteht erst nach diesem
+    // Setup-Aufruf, daher lazy über den Closure-Zugriff auf die äußere Variable).
+    getSnapNodes: () => {
+      if (!layerRenderer) return [];
+      return networkStore.nodes.map(n => {
+        const p = layerRenderer.getLocalPos(n.x, n.y, n.rim);
+        return { id: n.id, x: p.x, y: p.y, z: p.z };
+      });
+    },
     onSectionDrawn: (startPt, endPt) => {
       if (props.terrain && terrainMesh) {
         const id = Math.random().toString(36).substring(2, 9);
@@ -229,7 +244,10 @@ function initScene() {
 
         const res = computeSectionData(startPt, endPt);
         if (res && res.samples && res.samples.length > 0) {
-          emit('sectionDrawn', { id, color, samples: res.samples, structures: res.structures });
+          emit('sectionDrawn', {
+            id, color, samples: res.samples,
+            structures: res.structures, network: res.network,
+          });
           return { id, color };
         }
       }
@@ -237,9 +255,11 @@ function initScene() {
     },
     onDrawStart: () => {
       if (controls) controls.enabled = false;
+      emit('sectionDraftChanged', true);
     },
     onDrawEnd: () => {
       if (controls) controls.enabled = true;
+      emit('sectionDraftChanged', false);
     }
   });
 
@@ -253,6 +273,8 @@ function initScene() {
   // denselben (geometrisch abgeleiteten) Welt→Szene-Transform wie der Editor, sodass die
   // Schächte/Haltungen exakt auf dem Ergebnis-Gelände liegen.
   networkRenderer = useNetworkRenderer(scene, layerRenderer.getLocalPos);
+  networkRenderer.setColorMode(props.networkColorMode);
+  networkRenderer.setVisible(props.showNetwork);
   if (props.networkState) networkRenderer.applyResults(props.networkState);
 
   if (geoStore.buildings?.features?.length > 0) {
@@ -298,8 +320,14 @@ function initScene() {
   window.addEventListener('resize', onResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
-  // Pre-Render: Refraktions-RT des Wassers befüllen (nur aktiv im Tiefen-Modus)
-  sceneApi.start((r, s, c) => waterApi.renderRefraction(r, s, c));
+  renderer.domElement.addEventListener('pointerup', onPointerUp);
+  // Pre-Render: Refraktions-RT des Wassers befüllen (nur aktiv im Tiefen-Modus).
+  // Kamera unter dem Gelände (y<0 = unter minZ, Terrain ist auf minZ→0 normiert):
+  // Wasserhaut ausblenden — sie ist für Draufsicht gebaut, von unten nur Artefakte.
+  sceneApi.start((r, s, c) => {
+    waterApi.setBelowGround(c.position.y < 0);
+    waterApi.renderRefraction(r, s, c);
+  });
   console.log('[ResultMap3D] Scene initialized ✅');
 }
 
@@ -330,7 +358,11 @@ function onPointerMove(event) {
   // Volume and Section tools handle pointer move via composable event listeners
 }
 
+// Klick-vs-Orbit-Drag: Pick nur, wenn der Zeiger zwischen down und up kaum wandert.
+let _downPt = null;
+
 function onPointerDown(event) {
+  _downPt = { x: event.clientX, y: event.clientY };
   // Volume and Section tools handle pointer down via composable event listeners
   if (props.activeTool === 'volume' || props.activeTool === 'section') return;
 
@@ -352,6 +384,30 @@ function onPointerDown(event) {
     });
     probeApi.place(localPt, cell.terrainZ - coords.minZ, coords.cellsize, id);
   }
+}
+
+// --- 1D-NETZ-PICKING (Klick auf Schacht/Haltung → Auswahl, Panel folgt) ---
+
+function onPointerUp(event) {
+  if (!_downPt) return;
+  const moved = Math.hypot(event.clientX - _downPt.x, event.clientY - _downPt.y);
+  _downPt = null;
+  if (moved > 5) return;        // Orbit-Drag, kein Klick
+  if (props.activeTool) return; // Probe/Section/Volume haben Vorrang
+  pickNetwork(event);
+}
+
+function pickNetwork(event) {
+  if (!networkRenderer || !networkRenderer.group.visible) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(networkRenderer.group.children, false);
+  const picked = networkRenderer.pickFromIntersects(hits);
+  // Treffer wählt das Element (Panel folgt über net.selectedId); Klick ins Leere hebt
+  // nur das 3D-Highlight auf — die Panel-Auswahl bleibt (Watch ignoriert null).
+  networkStore.select(picked ? picked.id : null);
 }
 
 function computeSectionData(startPtWorld, endPtWorld) {
@@ -445,8 +501,20 @@ function computeSectionData(startPtWorld, endPtWorld) {
     } catch (e) {
       console.warn('[ResultMap3D] Bauwerks-Schnitt fehlgeschlagen:', e);
     }
-    console.log(`[ResultMap3D] Sampled ${samples.length} points, ${structures.length} Bauwerk(e) for Cross-Section`);
-    return { samples, structures };
+    // Kanalnetz-Durchstoßpunkte (Haltungen/Schächte) — Ergebnisse (Füllstand je Frame)
+    // reichert ResultViewerMain aus dem networkFrameState an.
+    let network = [];
+    try {
+      network = findSectionNetworkCrossings(
+        realStartX, realStartY, realEndX, realEndY,
+        networkStore.nodes, networkStore.links
+      );
+    } catch (e) {
+      console.warn('[ResultMap3D] Netz-Schnitt fehlgeschlagen:', e);
+    }
+    console.log(`[ResultMap3D] Sampled ${samples.length} points, ${structures.length} Bauwerk(e), `
+      + `${network.length} Netz-Element(e) for Cross-Section`);
+    return { samples, structures, network };
   }
   return null;
 }
@@ -479,6 +547,9 @@ watch([() => props.showStreamlines, () => props.flowData, () => props.flowDensit
 
 // 1D-Netz-Ergebnisse: Füllgrad/Wasserstand des aktuellen Frames aufs Netz malen.
 watch(() => props.networkState, (s) => { networkRenderer?.applyResults?.(s); });
+// Netz-Layer-Sichtbarkeit + Färbmodus (Füllgrad/Q/v) aus dem ViewerControlPanel.
+watch(() => props.showNetwork, (v) => { networkRenderer?.setVisible?.(v); });
+watch(() => props.networkColorMode, (m) => { networkRenderer?.setColorMode?.(m); });
 
 watch(() => props.activeTool, (newTool) => {
   if (volumeToolState) {
@@ -650,11 +721,14 @@ function createHighlightMesh(polygon, terrain) {
 defineExpose({ 
   onResize, 
   clearProbe(id) { probeApi.clear(id); },
-  clearSection() { 
-      if (sectionToolState) sectionToolState.clearAllSections(); 
+  clearSection() {
+      if (sectionToolState) sectionToolState.clearAllSections();
   },
   removeSection(id) {
       if (sectionToolState) sectionToolState.removeSectionMesh(id);
+  },
+  confirmSection() {
+      if (sectionToolState) sectionToolState.confirmDrawing();
   },
   clearVolume() { if (volumeToolState) volumeToolState.clearPolygon(); },
   removeVolumePolygon

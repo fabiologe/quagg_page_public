@@ -40,7 +40,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 12, 20, 0.55);
+  background: rgba(10, 10, 16, 0.6);
   backdrop-filter: blur(4px);
 }
 .lo-card {
@@ -49,10 +49,10 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
   align-items: center;
   gap: 14px;
   padding: 28px 36px;
-  border-radius: 16px;
-  background: rgba(20, 24, 40, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  border-radius: var(--sv-radius, 16px);
+  background: var(--sv-surface, rgba(20, 24, 40, 0.92));
+  border: 1px solid var(--sv-border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5), var(--sv-glow-violet, none);
   min-width: 260px;
 }
 .lo-anim {
@@ -60,29 +60,32 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
   height: 140px;
   object-fit: contain;
   user-select: none;
+  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.5));
 }
 .lo-label {
-  color: #e8eaf0;
-  font-family: 'Inter', 'Segoe UI', sans-serif;
+  color: var(--sv-text-lime, #e8eaf0);
+  font-family: var(--sv-font, 'Inter', 'Segoe UI', sans-serif);
   font-size: 0.95rem;
   font-weight: 600;
   text-align: center;
+  text-shadow: var(--sv-glow-lime, none);
+  letter-spacing: 0.04em;
 }
 .lo-bar {
   width: 220px;
   height: 8px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(139, 92, 246, 0.18);
   overflow: hidden;
 }
 .lo-bar-fill {
   height: 100%;
   border-radius: 5px;
-  background: linear-gradient(90deg, #4fc3f7, #00bcd4);
+  background: linear-gradient(90deg, var(--sv-violet, #4fc3f7), var(--sv-lime, #00bcd4));
   transition: width 0.15s ease;
 }
 .lo-percent {
-  color: #90a4ae;
+  color: var(--sv-text-dim, #90a4ae);
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }

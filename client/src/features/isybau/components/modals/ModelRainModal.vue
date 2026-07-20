@@ -305,7 +305,6 @@ const apply = () => {
   font-family: 'Press Start 2P', monospace;
   font-size: 0.52rem;
   color: #8f8be1;
-  color: #555;
 }
 
 .table-scroll {
@@ -403,66 +402,36 @@ const apply = () => {
 
 .primary-btn {
   background: #040647;
-  color: white;
+  color: #fff;
   border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.secondary-btn {
-  background: white;
-  border: 1px solid #aeadd2;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-/* ── Design Schema ────────────────────────────── */
-.tab-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
   letter-spacing: 0.06em;
-  background: transparent !important;
-  border: 1px solid #594491 !important;
-  color: #aeadd2 !important;
-  border-radius: 5px !important;
-  padding: 0.45rem 0.75rem !important;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491 !important; color: #fff !important; }
-.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
-
-.primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: #594491 !important; }
-.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
+.primary-btn:hover:not(:disabled) { background: #594491; }
+.primary-btn:disabled { background: #aeadd2; cursor: default; }
 
 .secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
+  background: #fff;
+  border: 1px solid #aeadd2;
+  color: #040647;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: #f3f2fb !important; }
+.secondary-btn:hover { background: #f3f2fb; }
 
-.modal-body h3, .panel h3 {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.55rem !important;
-  color: #594491 !important;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #aeadd2 !important;
-  padding-bottom: 0.4rem !important;
-  margin-bottom: 0.75rem !important;
+/* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #2ecc71;
 }
-
 </style>

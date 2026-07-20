@@ -21,6 +21,7 @@ const WATER_COLOR     = 0x38bdf8; // teilgefüllt
 const SURCHARGE_COLOR = 0xef4444; // Vollfüllung/Überdruck (capacity ≥ 1)
 const FLOOD_COLOR     = 0xff7043; // Schacht überstaut (flooding > 0)
 const _waterC = new THREE.Color(WATER_COLOR);
+const _surchC = new THREE.Color(SURCHARGE_COLOR);
 const _tmpC = new THREE.Color();
 
 /**
@@ -156,11 +157,25 @@ export function useNetworkRenderer(scene, getLocalPos) {
         if (lastState) applyResults(lastState);      // Ergebnis-Färbung übersteht re-render
     }
 
+    // Färbmodus der Haltungen im Result-Viewer: 'capacity' (Füllgrad, Default),
+    // 'flow' (|Q|, global normiert) oder 'velocity' (|v|, global normiert).
+    let colorMode = 'capacity';
+    function setColorMode(mode) {
+        if (mode === colorMode) return;
+        colorMode = mode;
+        if (lastState) applyResults(lastState);
+    }
+
+    /** Netz-Layer ein-/ausblenden (Ebenen-Umschalter im Result-Viewer). */
+    function setVisible(v) { group.visible = !!v; }
+
     /**
      * Ergebnis-Zustand aufs Netz malen (Result-Viewer, pro Frame):
-     * Haltungen füllgrad-gefärbt (grau→wasserblau, Vollfüllung rot), Schächte mit
-     * Wassersäule (invert→Wasserstand) und Überstau-Signalfarbe.
-     * @param {{nodes:Map<string,{fill,flooded,depth}>, links:Map<string,{fill,surcharged,flow}>}|null} state
+     * Haltungen füllgrad-gefärbt (grau→wasserblau, Vollfüllung rot) bzw. nach
+     * Q/v (zweistufige Rampe Basis→wasserblau→rot, global über state.norms skaliert),
+     * Schächte mit Wassersäule (invert→Wasserstand) und Überstau-Signalfarbe.
+     * @param {{nodes:Map<string,{fill,flooded,depth}>, links:Map<string,{fill,surcharged,flow,velocity}>,
+     *          norms?:{Qmax:number,vMax:number}}|null} state
      *        aus useNetworkResults.stateAtFrame(frame); null = zurück zur Basis-Darstellung.
      */
     function applyResults(state) {
@@ -185,7 +200,17 @@ export function useNetworkRenderer(scene, getLocalPos) {
             if (net.selectedId === id) continue;     // Auswahl-Farbe gewinnt
             const s = state?.links?.get(id);
             if (!s) { mesh.material.color.set(mesh.userData.baseColor); continue; }
-            if (s.surcharged) {
+            if (colorMode === 'flow' || colorMode === 'velocity') {
+                const norm = colorMode === 'flow' ? (state?.norms?.Qmax || 0) : (state?.norms?.vMax || 0);
+                const val = Math.abs(colorMode === 'flow' ? s.flow : (s.velocity ?? 0));
+                const t = norm > 0 ? Math.min(val / norm, 1) : 0;
+                if (t < 0.5) {
+                    _tmpC.set(mesh.userData.baseColor).lerp(_waterC, t * 2);
+                } else {
+                    _tmpC.copy(_waterC).lerp(_surchC, (t - 0.5) * 2);
+                }
+                mesh.material.color.copy(_tmpC);
+            } else if (s.surcharged) {
                 mesh.material.color.set(SURCHARGE_COLOR);
             } else {
                 _tmpC.set(mesh.userData.baseColor);
@@ -222,5 +247,5 @@ export function useNetworkRenderer(scene, getLocalPos) {
 
     function dispose() { clear(); scene.remove(group); }
 
-    return { group, render, applyResults, previewNodePosition, pickFromIntersects, dispose, getLocalPos };
+    return { group, render, applyResults, setColorMode, setVisible, previewNodePosition, pickFromIntersects, dispose, getLocalPos };
 }

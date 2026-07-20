@@ -176,10 +176,11 @@ export async function saveProject({ includeResults = false, onProgress = null } 
       if (rd.arrivalTimeGrid) zip.file('results/arrival.f32',   f32buf(rd.arrivalTimeGrid));
       if (rd.durationGrid)    zip.file('results/duration.f32',  f32buf(rd.durationGrid));
 
-      // 1D-Kanalnetz-Serien + Kopplungs-/Massenbilanz (kleine JSON, gekoppelte Läufe)
-      if (rd.networkResults || rd.couplingBudget || rd.massReport) {
+      // 1D-Kanalnetz-Serien + Kopplungs-/Massenbilanz + SWMM-.rpt (kleine JSON, gekoppelte Läufe)
+      if (rd.networkResults || rd.couplingBudget || rd.massReport || rd.swmmReport) {
         zip.file('results/network1d.json', JSON.stringify({
           networkResults: rd.networkResults, couplingBudget: rd.couplingBudget, massReport: rd.massReport,
+          swmmReport: rd.swmmReport || null,
         }));
       }
 
@@ -344,6 +345,7 @@ export async function loadProject(file, onProgress = null) {
       if (j.networkResults) sim.setNetworkResults(j.networkResults);
       if (j.couplingBudget) sim.setCouplingBudget(j.couplingBudget);
       if (j.massReport)     sim.setMassReport(j.massReport);
+      if (j.swmmReport)     sim.setSwmmReport(j.swmmReport);
     }
   }
 

@@ -45,6 +45,9 @@ const runoffBilanz = computed(() => {
     runoffMm:       areaHa > 0 ? toMm(r.runoff || 0)       : (r.runoffMm       || 0),
     finalStorageMm: areaHa > 0 ? toMm(r.finalStorage || 0) : (r.finalStorageMm || 0),
     psi: (r.precip > 0) ? (r.runoff / r.precip) : 0,
+    // Ohne eigene Gesamtfläche stammen die mm-Werte aus SWMMs interner
+    // Flächenbasis — muss im Bericht gekennzeichnet werden.
+    areaBaseFallback: !(areaHa > 0),
   };
 });
 
@@ -467,6 +470,10 @@ async function exportPDF() {
     doc.setFontSize(6.5);
     doc.setTextColor(...C.muted);
     doc.text(`Erstellt: ${new Date().toLocaleString('de-DE')}  ·  Einzugsgebiet: ${(props.totalCatchmentAreaHa || 0).toFixed(4)} ha  ·  ${props.nodes?.size || 0} Schächte  ·  ${props.edges?.size || 0} Haltungen`, ML, cy + 5.5);
+    if (rb.areaBaseFallback) {
+      doc.text('Hinweis: Keine Einzugsgebietsfläche vorhanden — mm-Werte beziehen sich auf die SWMM-interne Flächenbasis.', ML, cy + 9);
+      cy += 4;
+    }
     cy += 12;
 
     // KPI boxes

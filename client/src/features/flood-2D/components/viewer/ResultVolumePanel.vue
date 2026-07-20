@@ -216,14 +216,15 @@ function hexToRgba(hex, alpha) {
 .volume-panel {
   position: absolute;
   width: 320px;
-  background: rgba(20, 20, 40, 0.92);
+  background: var(--sv-surface);
   backdrop-filter: blur(16px);
-  border-radius: 12px;
-  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-radius: var(--sv-radius);
+  border: 1px solid var(--sv-border);
+  box-shadow: var(--sv-glow-violet);
   z-index: 20;
   overflow: hidden;
-  font-family: 'Inter', sans-serif;
-  color: #e0e0e0;
+  font-family: var(--sv-font);
+  color: var(--sv-text);
   transition: box-shadow 0.2s, border-color 0.2s;
   user-select: none;
 }
@@ -233,7 +234,7 @@ function hexToRgba(hex, alpha) {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--sv-border);
 }
 
 .title {
@@ -264,7 +265,7 @@ function hexToRgba(hex, alpha) {
 
 .loading-state {
   text-align: center;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
   font-style: italic;
 }
 
@@ -293,7 +294,7 @@ function hexToRgba(hex, alpha) {
 
 .label {
   font-size: 0.72rem;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -301,14 +302,14 @@ function hexToRgba(hex, alpha) {
 .value {
   font-size: 1.8rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--sv-text);
   font-variant-numeric: tabular-nums;
 }
 
 .value-sm {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--sv-text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -319,7 +320,7 @@ function hexToRgba(hex, alpha) {
 .unit {
   font-size: 0.8rem;
   font-weight: 400;
-  color: #90a4ae;
+  color: var(--sv-text-dim);
 }
 
 .spark-wrap {
@@ -341,23 +342,24 @@ function hexToRgba(hex, alpha) {
   justify-content: space-between;
   gap: 10px;
   font-size: 0.74rem;
-  color: #b0bec5;
+  color: var(--sv-text-dim);
 }
 .tol-row input {
   width: 80px;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--sv-border);
   border-radius: 4px;
-  color: #e0e0e0;
+  color: var(--sv-text);
   padding: 3px 6px;
   font-size: 0.78rem;
+  font-family: var(--sv-font);
   font-variant-numeric: tabular-nums;
 }
 
 .info-text {
   font-size: 0.68rem;
-  color: #78909c;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  color: var(--sv-text-dim);
+  border-top: 1px solid var(--sv-border);
   padding-top: 8px;
 }
 </style>

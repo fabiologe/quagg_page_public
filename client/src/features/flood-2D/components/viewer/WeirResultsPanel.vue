@@ -1,8 +1,13 @@
 <template>
-  <div class="weir-panel" v-if="series.length" :style="panelStyle">
-    <div class="panel-header" :style="headerStyle" @mousedown="startDrag">
-      <div class="title"><span class="icon"><SvEmoji emoji="🌊" :size="14" /></span> Wehr-Durchfluss</div>
-      <div class="header-actions">
+  <div class="weir-panel" v-if="series.length" :class="{ collapsed }" :style="panelStyle">
+    <div class="panel-header" :style="headerStyle" @mousedown="startDrag" @click="expandIfCollapsed">
+      <div class="title">
+        <span class="icon"><SvIcon name="Weir.png" :size="collapsed ? 20 : 14" color="currentColor" /></span>
+        <span class="title-text" v-show="!collapsed">Wehr-Durchfluss</span>
+      </div>
+      <div class="header-actions" v-show="!collapsed">
+        <button class="reset-btn" @click.stop="$emit('openChart', selectedId)"
+                title="Ganglinie des Wehrs als eigenes Fenster">⧉</button>
         <button class="reset-btn" @click.stop="resetZoom" title="Ansicht zurücksetzen">⟲</button>
         <button class="close-btn" @click.stop="collapsed = !collapsed" :title="collapsed ? 'Aufklappen' : 'Einklappen'">
           {{ collapsed ? '▸' : '▾' }}
@@ -10,7 +15,9 @@
       </div>
     </div>
 
-    <template v-if="!collapsed">
+    <!-- v-show statt v-if: v-if zerstört das Canvas beim Einklappen — Chart.js hängt
+         dann am toten Element und das Diagramm bleibt nach dem Aufklappen leer. -->
+    <div v-show="!collapsed" class="panel-content">
       <!-- Wehr-Auswahl -->
       <div class="weir-tabs" @mousedown.stop>
         <button
@@ -41,12 +48,13 @@
       <div class="panel-body">
         <div class="chart-container"><canvas ref="chartCanvas"></canvas></div>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <script setup>
 import SvEmoji from '../common/SvEmoji.vue';
+import SvIcon from '../common/SvIcon.vue';
 import { ref, watch, onMounted, onUnmounted, shallowRef, computed } from 'vue';
 import {
   Chart, LineElement, PointElement, LineController,
@@ -62,6 +70,7 @@ const props = defineProps({
   currentFrame: { type: Number, default: 0 },
   saveInterval: { type: Number, default: 0 },
 });
+defineEmits(['openChart']); // ⧉: Ganglinie des gewählten Wehrs als eigenes Fenster
 
 const collapsed = ref(false);
 const selectedId = ref(props.series[0]?.id ?? null);
@@ -120,8 +129,9 @@ function stopDrag() {
   window.removeEventListener('mousemove', onDrag);
   window.removeEventListener('mouseup', stopDrag);
 }
+function expandIfCollapsed() { if (collapsed.value) collapsed.value = false; }
 
-const ACCENT = '#4fc3f7';
+const ACCENT = '#a3e635';
 const panelStyle = computed(() => ({
   left: `${position.value.x}px`,
   top: `${position.value.y}px`,
@@ -162,7 +172,7 @@ function initChart() {
       datasets: [
         {
           label: 'Q (m³/s)', yAxisID: 'yQ', data: [],
-          borderColor: ACCENT, backgroundColor: 'rgba(79,195,247,0.25)',
+          borderColor: ACCENT, backgroundColor: 'rgba(163,230,53,0.22)',
           borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, fill: 'start', tension: 0.15, order: 3,
         },
         {
@@ -185,10 +195,10 @@ function initChart() {
       animation: { duration: 0 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: true, position: 'top', labels: { color: '#e0e0e0', font: { size: 10 }, boxWidth: 12 } },
+        legend: { display: true, position: 'top', labels: { color: '#e6e6f0', font: { size: 10 }, boxWidth: 12 } },
         tooltip: {
-          backgroundColor: 'rgba(20,20,40,0.9)', titleColor: '#e0e0e0', bodyColor: '#e0e0e0',
-          borderColor: 'rgba(79,195,247,0.3)', borderWidth: 1,
+          backgroundColor: 'rgba(27,27,40,0.94)', titleColor: '#e6e6f0', bodyColor: '#e6e6f0',
+          borderColor: 'rgba(163,230,53,0.35)', borderWidth: 1,
           callbacks: {
             title: (c) => `t = ${c[0].parsed.x.toFixed(0)} ${timeUnit.value}`,
             label: (c) => {
@@ -205,9 +215,9 @@ function initChart() {
       scales: {
         x: {
           type: 'linear',
-          title: { display: true, text: `Zeit (${timeUnit.value})`, color: '#90a4ae' },
-          ticks: { color: '#90a4ae', maxTicksLimit: 8 },
-          grid: { color: 'rgba(255,255,255,0.08)' },
+          title: { display: true, text: `Zeit (${timeUnit.value})`, color: '#9a9ab5' },
+          ticks: { color: '#9a9ab5', maxTicksLimit: 8 },
+          grid: { color: 'rgba(139,92,246,0.1)' },
         },
         yQ: {
           type: 'linear', position: 'left', beginAtZero: true,
@@ -253,6 +263,8 @@ const resetZoom = () => { if (chartInstance.value) chartInstance.value.resetZoom
 watch(() => props.series, updateChartData, { deep: true });
 watch(selectedId, updateChartData);
 watch(() => props.currentFrame, updateCursor);
+// Nach dem Aufklappen war das Canvas display:none (Größe 0) — Chart neu einpassen.
+watch(collapsed, (c) => { if (!c) requestAnimationFrame(() => chartInstance.value?.resize()); });
 </script>
 
 <style scoped>
@@ -260,50 +272,60 @@ watch(() => props.currentFrame, updateCursor);
   position: absolute;
   width: 540px;
   max-width: 92vw;
-  background: rgba(20, 20, 40, 0.92);
+  background: var(--sv-surface);
   backdrop-filter: blur(16px);
-  border-radius: 12px;
-  border: 1px solid rgba(79, 195, 247, 0.3);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  border-radius: var(--sv-radius);
+  border: 1px solid var(--sv-border);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), var(--sv-glow-violet);
   z-index: 20;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+  font-family: var(--sv-font);
+  transition: width 0.15s ease;
 }
+/* Eingeklappt: schrumpft auf einen kleinen Icon-Button (~60% kleiner) — Klick öffnet wieder. */
+.weir-panel.collapsed { width: auto; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
 .panel-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 9px 14px; background: rgba(79, 195, 247, 0.12);
-  border-bottom: 1px solid rgba(79, 195, 247, 0.2);
+  padding: 9px 14px; background: rgba(139, 92, 246, 0.12);
+  border-bottom: 1px solid var(--sv-border);
 }
-.title { color: #e0e0e0; font-weight: 600; font-size: 0.92rem; display: flex; align-items: center; gap: 8px; }
-.icon { font-size: 1.15rem; }
+.weir-panel.collapsed .panel-header {
+  padding: 8px 10px; border-bottom: none; cursor: pointer;
+}
+.title { color: var(--sv-lime); font-weight: 600; font-size: 0.92rem; display: flex; align-items: center; gap: 8px; text-shadow: var(--sv-glow-lime); }
+.icon { display: flex; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .reset-btn {
-  background: rgba(79, 195, 247, 0.2); border: 1px solid rgba(79, 195, 247, 0.4);
-  color: #e0e0e0; font-size: 0.85rem; padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  background: rgba(139, 92, 246, 0.2); border: 1px solid var(--sv-border);
+  color: var(--sv-text); font-size: 0.85rem; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
-.reset-btn:hover { background: rgba(79, 195, 247, 0.4); }
-.close-btn { background: none; border: none; color: #90a4ae; font-size: 1rem; cursor: pointer; padding: 0 4px; }
-.close-btn:hover { color: #fff; }
+.reset-btn:hover { background: rgba(139, 92, 246, 0.4); }
+.close-btn { background: none; border: none; color: var(--sv-text-dim); font-size: 1rem; cursor: pointer; padding: 0 4px; }
+.close-btn:hover { color: var(--sv-lime); }
+
+.panel-content { display: flex; flex-direction: column; overflow: hidden; }
 
 .weir-tabs {
   display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.12);
 }
 .weir-tab {
-  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #b0bec5; font-size: 0.74rem; padding: 3px 10px; border-radius: 12px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--sv-border);
+  color: var(--sv-text-dim); font-size: 0.74rem; padding: 3px 10px; border-radius: 12px; cursor: pointer;
   max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--sv-font);
 }
-.weir-tab.active { background: rgba(79, 195, 247, 0.25); border-color: rgba(79, 195, 247, 0.6); color: #fff; }
+.weir-tab.active { background: rgba(139, 92, 246, 0.25); border-color: var(--sv-lime); color: var(--sv-lime); }
 
 .weir-kpis {
   display: flex; flex-wrap: wrap; gap: 14px; padding: 7px 14px;
-  background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 0.76rem; color: #cfd8dc;
+  background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(139, 92, 246, 0.12);
+  font-size: 0.76rem; color: var(--sv-text);
 }
-.kpi b { color: #90a4ae; font-weight: 600; margin-right: 3px; }
+.kpi b { color: var(--sv-text-dim); font-weight: 600; margin-right: 3px; }
 .kpi-overtop { color: #ff7043; font-weight: 600; }
 
 .panel-body { padding: 14px; height: 230px; }

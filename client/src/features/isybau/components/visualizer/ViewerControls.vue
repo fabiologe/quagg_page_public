@@ -1,5 +1,5 @@
 <template>
-  <div class="controls">
+  <div class="controls" @wheel.stop>
     <div class="mode-toggle">
       <button
         @click="$emit('set-mode', 'pan')"
@@ -133,8 +133,8 @@ const cycleGridSize = () => {
 }
 
 .grid-label {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
   color: #2ecc71;
 }
 

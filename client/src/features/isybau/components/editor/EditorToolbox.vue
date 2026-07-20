@@ -1,5 +1,5 @@
 <template>
-  <div class="editor-toolbox">
+  <div class="editor-toolbox" data-tutorial="editor-toolbox">
     
     <div class="tools-group">
       <!-- Edit Mode / Properties -->
@@ -49,13 +49,26 @@
 
       <div class="separator-v" style="margin: 0 4px; border-left: 1px solid #594491;"></div>
 
-      <button 
-        class="tool-btn" 
+      <button
+        class="tool-btn"
         :class="{ active: store.editor.mode === 'splitEdge' }"
         @click="setMode('splitEdge')"
         title="Knoten in Haltung einbauen (Haltung teilen)"
       >
         <img class="tb-ic" src="/saintv1d/icons/Interface-Essential-Scisor--Streamline-Pixel.svg" />
+      </button>
+
+      <button
+        class="tool-btn"
+        :class="{ active: store.editor.mode === 'boxSelect' }"
+        @click="setMode('boxSelect')"
+        title="Rechteck-Mehrfachauswahl (Rahmen aufziehen; Shift = zur Auswahl hinzufügen)"
+      >
+        <svg viewBox="0 0 24 24" fill="none" class="icon-svg" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="4" width="16" height="16" stroke="#2ecc71" stroke-width="2" stroke-dasharray="4 3" fill="#2ecc71" fill-opacity="0.1"/>
+            <circle cx="9" cy="10" r="1.6" fill="#2ecc71"/>
+            <circle cx="15" cy="14" r="1.6" fill="#2ecc71"/>
+        </svg>
       </button>
     </div>
 
@@ -121,6 +134,7 @@ const hint = computed(() => {
         case 'addEdge': return "Start- & Endknoten wählen";
         case 'addArea': return "Punkte klicken (Doppelklick fertig)";
         case 'splitEdge': return "Klicken Sie auf eine Haltung, um sie zu teilen";
+        case 'boxSelect': return "Rahmen aufziehen — Schächte & Haltungen auswählen (Shift: hinzufügen)";
         default: return "";
     }
 });

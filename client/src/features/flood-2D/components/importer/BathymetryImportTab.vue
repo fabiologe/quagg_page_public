@@ -207,8 +207,8 @@ async function onFile(event) {
 /* Spinner */
 .spinner {
     width: 22px; height: 22px;
-    border: 3px solid #465c71;
-    border-top-color: #3498db;
+    border: 3px solid rgba(139, 92, 246, 0.35);
+    border-top-color: var(--sv-lime, #a3e635);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
 }
