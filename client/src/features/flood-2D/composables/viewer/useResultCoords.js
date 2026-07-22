@@ -9,9 +9,10 @@
  *  - Geometrie-Zeile (geomRow) ist **top-down** (0 = Nord): `gridRow = (nrows-1) - geomRow`.
  *  - Plane-lokal: x ∈ [-w/2, w/2], y ∈ [-h/2, h/2].
  *  - bounds.width  = (ncols-1)*cellsize, bounds.height = (nrows-1)*cellsize (Fallback).
- *
- * @param {object} terrain  geoStore.terrain / hydratisiertes Terrain
  */
+import { flipRow, flippedIndex } from '@/features/flood-2D/utils/gridIndex.js';
+
+/** @param {object} terrain  geoStore.terrain / hydratisiertes Terrain */
 export function makeResultCoords(terrain) {
   const { ncols, nrows, cellsize, minZ, maxZ, xllcorner, yllcorner, gridData, center } = terrain;
   const cs = cellsize || 1;
@@ -27,9 +28,9 @@ export function makeResultCoords(terrain) {
     const fracY = (localPt.y + height / 2) / height;
     const col = Math.floor(fracX * ncols);
     const geomRow = Math.floor((1 - fracY) * nrows);
-    const gridRow = (nrows - 1) - geomRow;
+    const gridRow = flipRow(geomRow, nrows);
     if (!inBounds(col, gridRow)) return null;
-    const idx = gridRow * ncols + col;
+    const idx = flippedIndex(geomRow, col, ncols, nrows);
     const terrainZ = gridData ? gridData[idx] : -9999;
     if (terrainZ <= -9000) return null;
     return {

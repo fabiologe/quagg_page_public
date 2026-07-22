@@ -14,6 +14,12 @@
  * Segmente mit >3 m Vertikal-Sprung (Tiefen-Dorne/Brennkanten).
  *
  * Konvention wie useFlowArrows: zell-zentriert, top-down. +vx=Ost, +vy=Süd.
+ *
+ * pierGeoms (pierFlowDeflection.buildPierGeometry) und jetGeoms (weirJetFlow.
+ * buildJetGeometry) werden wie Terrain/Maske nur bei Änderung an den Worker
+ * übertragen; er deflectiert die Linien analytisch im Ring um jeden Pfeiler bzw.
+ * überlagert Kontraktion/Freistrahl an Wehr-Durchlässen, statt sie geradeaus laufen
+ * zu lassen.
  */
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
@@ -27,8 +33,12 @@ const WIDTH_PX = 2.2;     // Linienbreite in BILDSCHIRM-Pixeln (konstant, AA)
  * @param {() => THREE.Scene} getScene
  * @param {() => (Uint8Array|null)} [getMask]  Gebäudemaske (top-down, <128 = Gebäude);
  *        eingebrannte Gebäudezellen tragen v≈0 und würden Linien sonst „gegen 0" ziehen.
+ * @param {() => Array} [getPierGeoms]  Pfeiler-Geometrie für die analytische Umströmungs-
+ *        Deflection im Worker (pierFlowDeflection.buildPierGeometry).
+ * @param {() => Array} [getJetGeoms]  Durchlass-Geometrie für die Kontraktions-/Freistrahl-
+ *        Überlagerung im Worker (weirJetFlow.buildJetGeometry).
  */
-export function useFlowStreamlines(getScene, getMask) {
+export function useFlowStreamlines(getScene, getMask, getPierGeoms, getJetGeoms) {
   let group = null;
   let mesh = null;
   let material = null;
@@ -39,6 +49,8 @@ export function useFlowStreamlines(getScene, getMask) {
   let reqId = 0;             // laufende Nummer — nur die Antwort auf den letzten Request zählt
   let sentGridData = null;   // zuletzt an den Worker übertragenes Terrain (Referenz-Vergleich)
   let sentMask = null;
+  let sentPierGeoms = null;
+  let sentJetGeoms = null;
 
   function ensureGroup() {
     const scene = getScene();
@@ -91,7 +103,9 @@ export function useFlowStreamlines(getScene, getMask) {
     // Terrain + Maske nur bei Änderung übertragen (Referenz-Vergleich) — spart das
     // Klonen der 10-MB-gridData bei jedem Frame.
     const mask = (typeof getMask === 'function') ? getMask() : null;
-    if (terrain.gridData !== sentGridData || mask !== sentMask) {
+    const pierGeoms = (typeof getPierGeoms === 'function') ? getPierGeoms() : null;
+    const jetGeoms = (typeof getJetGeoms === 'function') ? getJetGeoms() : null;
+    if (terrain.gridData !== sentGridData || mask !== sentMask || pierGeoms !== sentPierGeoms || jetGeoms !== sentJetGeoms) {
       const { ncols, nrows, cellsize, minZ } = terrain;
       w.postMessage({
         type: 'terrain',
@@ -102,9 +116,13 @@ export function useFlowStreamlines(getScene, getMask) {
         height: terrain.bounds?.height ?? (nrows - 1) * (cellsize || 1),
         gridData: terrain.gridData,
         mask,
+        pierGeoms,
+        jetGeoms,
       });
       sentGridData = terrain.gridData;
       sentMask = mask;
+      sentPierGeoms = pierGeoms;
+      sentJetGeoms = jetGeoms;
     }
     busy = true;
     reqId++;
@@ -151,7 +169,7 @@ export function useFlowStreamlines(getScene, getMask) {
   }
   function dispose() {
     clear();
-    if (worker) { worker.terminate(); worker = null; busy = false; sentGridData = null; sentMask = null; }
+    if (worker) { worker.terminate(); worker = null; busy = false; sentGridData = null; sentMask = null; sentPierGeoms = null; sentJetGeoms = null; }
     if (material) { material.dispose(); material = null; }
     if (group && group.parent) group.parent.remove(group);
     group = null;

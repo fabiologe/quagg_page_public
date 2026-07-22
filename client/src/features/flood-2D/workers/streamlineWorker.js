@@ -8,15 +8,22 @@
  * Transferable zurück (zero-copy).
  *
  * Protokoll:
- *   → { type:'terrain', ncols, nrows, cellsize, minZ, width, height, gridData, mask }
- *     (einmal je Terrain/Maske gecacht — spart die 10-MB-Klonkosten pro Frame)
+ *   → { type:'terrain', ncols, nrows, cellsize, minZ, width, height, gridData, mask, pierGeoms }
+ *     (einmal je Terrain/Maske/Pfeiler gecacht — spart die 10-MB-Klonkosten pro Frame)
  *   → { type:'build', reqId, vx, vy, depth, density }
  *   ← { type:'lines', reqId, positions:Float32Array, colors:Float32Array } [transfer]
+ *
+ * pierGeoms (pierFlowDeflection.buildPierGeometry) deflectiert die integrierte
+ * Geschwindigkeit analytisch im Ring um jeden Pfeiler (Umströmung), da das Solver-
+ * Feld selbst keine Pfeiler kennt. jetGeoms (weirJetFlow.buildJetGeometry) überlagert
+ * analog Kontraktion/Freistrahl an Wehr-Durchlässen.
  *
  * Konvention wie useFlowArrows: zell-zentriert, top-down. +vx=Ost, +vy=Süd.
  * Grid→Welt: localX = -W/2 + c·cs ; localY = H/2 - r·cs ; (Gruppe um -90° um X).
  */
 import { flippedIndex } from '../utils/gridIndex';
+import { sampleAmbientForPiers, deflectVelocity } from '../utils/pierFlowDeflection';
+import { sampleAmbientForJets, applyJetFlow } from '../utils/weirJetFlow';
 
 const WET_MIN = 0.02;     // m — nur nasse Zellen
 const NODATA  = -9000;    // Velocity-NoData-Schwelle
@@ -44,7 +51,7 @@ function speedColor(t, out, o) {
 let T = null; // gecachtes Terrain: {ncols,nrows,cellsize,minZ,width,height,gridData,mask}
 
 // bilineare Probe über NASSE Zellen; gibt {vx,vy,speed} oder null (außerhalb/trocken)
-function buildSampler(vx, vy, depthField) {
+function buildSampler(vx, vy, depthField, pierGeoms, ambient, jetGeoms, ambientJets) {
   const { ncols, nrows, gridData, mask } = T;
   return (c, r) => {
     if (c < 0 || r < 0 || c > ncols - 1 || r > nrows - 1) return null;
@@ -68,6 +75,14 @@ function buildSampler(vx, vy, depthField) {
     }
     if (wsum <= 1e-6) return null;
     sx /= wsum; sy /= wsum;
+    if (pierGeoms && pierGeoms.length) {
+      const d = deflectVelocity(c, r, sx, sy, pierGeoms, ambient);
+      sx = d.vx; sy = d.vy;
+    }
+    if (jetGeoms && jetGeoms.length) {
+      const j = applyJetFlow(c, r, sx, sy, jetGeoms, ambientJets);
+      sx = j.vx; sy = j.vy;
+    }
     return { vx: sx, vy: sy, speed: Math.hypot(sx, sy) };
   };
 }
@@ -76,7 +91,15 @@ function build(vx, vy, depthField, density) {
   const { ncols, nrows, cellsize, minZ, gridData } = T;
   const cs = cellsize || 1;
   const width = T.width, height = T.height;
-  const sample = buildSampler(vx, vy, depthField);
+  const pierGeoms = T.pierGeoms;
+  const ambient = (pierGeoms && pierGeoms.length)
+    ? sampleAmbientForPiers(pierGeoms, vx, vy, ncols, nrows, T.mask)
+    : null;
+  const jetGeoms = T.jetGeoms;
+  const ambientJets = (jetGeoms && jetGeoms.length)
+    ? sampleAmbientForJets(jetGeoms, vx, vy, ncols, nrows, T.mask)
+    : null;
+  const sample = buildSampler(vx, vy, depthField, pierGeoms, ambient, jetGeoms, ambientJets);
 
   // Referenz-Geschwindigkeit (Farb-Normierung) = Max über nasse Zellen
   let sref = 0;
@@ -158,7 +181,7 @@ function build(vx, vy, depthField, density) {
   const worldZ = (c, r) => {
     const ci = Math.min(ncols - 1, Math.max(0, Math.round(c)));
     const ri = Math.min(nrows - 1, Math.max(0, Math.round(r)));
-    const idxT = (nrows - 1 - ri) * ncols + ci;       // gridData ist bottom-up
+    const idxT = flippedIndex(ri, ci, ncols, nrows);  // gridData ist bottom-up
     const d = depthField ? depthField[ri * ncols + ci] : 0;
     return (gridData[idxT] - minZ) + (d > 0 ? d : 0) + 0.3;
   };

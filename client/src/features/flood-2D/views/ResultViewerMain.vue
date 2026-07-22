@@ -213,6 +213,7 @@ import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { calculateVolumeWithConfidence } from '@/features/flood-2D/utils/VolumeCalculator';
 import { useWeirResults } from '@/features/flood-2D/composables/viewer/useWeirResults.js';
 import { useNetworkResults } from '@/features/flood-2D/composables/viewer/useNetworkResults.js';
+import { flipRow, flippedIndex } from '@/features/flood-2D/utils/gridIndex.js';
 
 // --- Data Bridge (reads from window.opener) ---
 const bridge = useResultDataFromOpener();
@@ -547,7 +548,7 @@ const probedCellList = computed(() => {
     // pos.row follows terrain convention (bottom-up).
     // Depth data from OutputProcessor is TOP-DOWN (row 0 = north, ASC format).
     // So we must FLIP the row for depth data lookup.
-    const depthIdx = (t.nrows - 1 - pos.row) * t.ncols + pos.col; // top-down (depth)
+    const depthIdx = flippedIndex(pos.row, pos.col, t.ncols, t.nrows); // top-down (depth)
 
     // Read water depth from CURRENT frame
     let waterDepth = 0;
@@ -612,7 +613,7 @@ const computedSectionsList = computed(() => {
         const col1 = col0 + 1;
 
         // Convert fy (bottom-up) to depth row (top-down) BEFORE floor
-        const depthFy = (t.nrows - 1) - pt.fy;
+        const depthFy = flipRow(pt.fy, t.nrows);
 
         const row0 = Math.floor(depthFy);
         const row1 = row0 + 1;

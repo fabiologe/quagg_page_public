@@ -106,7 +106,10 @@ console.log('── 3. Ownership-Dedup: keine Zelle Zu- UND Ablauf ──');
     const header = { ncols: 20, nrows: 20, cellsize: 5 };
     const files = gen.processScenario(makeScenario({
         ganglinien: inflowGanglinie,
-        globalBoundaryType: 'FREE', // füllt restliche Kanten mit Auslauf
+        // Global-FREE ist deaktiviert (Watershed-Ansatz geplant, s. Audit 2026-07-21) —
+        // HFIX bleibt der einzige aktive globale Auto-Füll-Typ, testet dieselbe
+        // Ownership-Map-Mechanik (Zellen unterhalb Gelände = garantierter Auslauf).
+        globalBoundaryType: 'HFIX', globalBoundaryHfix: 0, // füllt restliche Kanten mit Auslauf
         boundaries: [{
             type: 'Feature', id: 'b-edge',
             geometry: { type: 'LineString', coordinates: [[0, 20], [0, 60]] }, // West-Zufluss
@@ -122,10 +125,11 @@ console.log('── 3. Ownership-Dedup: keine Zelle Zu- UND Ablauf ──');
 console.log('── 4. Globale Füllung respektiert explizites Segment (kein whole-edge) ──');
 {
     const gen = new InputGenerator();
-    // West-Segment nur über Reihen 4..7 (y=20..40); globaler FREE soll den REST der W-Kante füllen.
+    // West-Segment nur über Reihen 4..7 (y=20..40); globales HFIX soll den REST der W-Kante füllen.
+    // (Global-FREE ist deaktiviert — s. eigener Block unten — HFIX testet dieselbe Ownership-Mechanik.)
     const files = gen.processScenario(makeScenario({
         ganglinien: inflowGanglinie,
-        globalBoundaryType: 'FREE',
+        globalBoundaryType: 'HFIX', globalBoundaryHfix: 0,
         boundaries: [{
             type: 'Feature', id: 'b-edge',
             geometry: { type: 'LineString', coordinates: [[0, 20], [0, 40]] },
@@ -135,9 +139,17 @@ console.log('── 4. Globale Füllung respektiert explizites Segment (kein who
     }));
     const lines = bciLines(files);
     const wQvar = lines.filter(l => /^W\s.*QVAR/.test(l));
-    const wFree = lines.filter(l => /^W\s.*FREE/.test(l));
+    const wHfix = lines.filter(l => /^W\s.*HFIX/.test(l));
     assert(wQvar.length >= 1, 'W-Kante hat QVAR-Segment');
-    assert(wFree.length >= 1, 'W-Kante hat ZUSÄTZLICH globalen FREE-Lauf (alte whole-edge-Suppression weg)');
+    assert(wHfix.length >= 1, 'W-Kante hat ZUSÄTZLICH globale HFIX-Füllung (kein whole-edge-Suppression)');
+}
+
+console.log('── 4b. Globales FREE ist deaktiviert (No-Op, Watershed-Ansatz geplant) ──');
+{
+    const gen = new InputGenerator();
+    const files = gen.processScenario(makeScenario({ globalBoundaryType: 'FREE' }));
+    const lines = bciLines(files);
+    assert(lines.length === 0, `Global-FREE erzeugt KEINE Randbedingungen mehr (deaktiviert)\n     → ${lines.join('\n     → ')}`);
 }
 
 console.log('── 5. NoData-Front-Auslauf nur an unbelegten Zellen ──');
@@ -180,15 +192,18 @@ console.log('── 6. FREE-Auslauf mit/ohne Sohlgefälle ──');
     assert(bciLines(files2).some(l => /^E\s+[\d.]+\s+[\d.]+\s+FREE$/.test(l)), 'bare E .. FREE ohne Slope');
 }
 
-console.log('── 7. Innen-Auslauf ⇒ HFIX-Fallback ──');
+console.log('── 7. Innen-Auslauf ⇒ Snap auf nächste Kante (kein Punkt-HFIX mehr) ──');
 {
+    // (45,45) bei 20×20@5m/xll=0: col=row=9 → W- und S-Kante gleich nah (9 Zellen),
+    // snapCellToEdge nimmt W zuerst. Kein outflowSlope angegeben ⇒ FREE_FALLBACK_SLOPE.
     const gen = new InputGenerator();
     const files = gen.processScenario(makeScenario({
         boundaries: [{ type: 'Feature', id: 'b-of', geometry: { type: 'LineString', coordinates: [[45, 45], [45, 45]] }, properties: { type: 'BOUNDARY', edge: null } }],
         assignments: { 'b-of': { type: 'OUTFLOW_FREE', useNativeFree: true } }
     }));
     const lines = bciLines(files);
-    assert(lines.some(l => /^P\s+[\d.]+\s+[\d.]+\s+HFIX\s+9\.99/.test(l)), `Innen-FREE ⇒ 'P .. HFIX (z-0.01)'\n     → ${lines.join('\n     → ')}`);
+    assert(!lines.some(l => /^P\s.*HFIX/.test(l)), `Innen-FREE erzeugt KEIN Punkt-HFIX mehr (harter Solver-Reset, s. Audit)\n     → ${lines.join('\n     → ')}`);
+    assert(lines.some(l => /^W\s+[\d.]+\s+[\d.]+\s+FREE\s+0\.001000$/.test(l)), `Innen-FREE ⇒ auf W-Kante projiziert, native Zeile mit Fallback-Gefälle\n     → ${lines.join('\n     → ')}`);
 }
 
 console.log('── 8. ScenarioValidator-Regeln ──');

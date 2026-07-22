@@ -8,6 +8,8 @@
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
 import { flippedIndex } from '../../utils/gridIndex';
+import { sampleAmbientForPiers, deflectVelocity } from '../../utils/pierFlowDeflection';
+import { sampleAmbientForJets, applyJetFlow } from '../../utils/weirJetFlow';
 
 // Hoher Kontrast auf blauem Wasser (warm, hell): langsam = weiß → gold → rot-orange = schnell.
 const C0 = new THREE.Color(0xffffff); // langsam: weiß
@@ -44,8 +46,12 @@ function buildArrowGeometry() {
  * @param {() => THREE.Scene} getScene
  * @param {() => (Uint8Array|null)} [getMask]  Hindernis-Maske (top-down, <128 = Gebäude/Pfeiler);
  *        solche Zellen bekommen keinen Pfeil (Pfeiler sind nur im SGC blockiert, nicht im 2D-Feld).
+ * @param {() => Array} [getPierGeoms]  Pfeiler-Geometrie (pierFlowDeflection.buildPierGeometry) —
+ *        deflectiert die Pfeile im Ring um jeden Pfeiler analytisch statt sie geradeaus zu zeigen.
+ * @param {() => Array} [getJetGeoms]  Durchlass-Geometrie (weirJetFlow.buildJetGeometry) —
+ *        überlagert Kontraktion/Freistrahl an Wehr-Durchlässen.
  */
-export function useFlowArrows(getScene, getMask) {
+export function useFlowArrows(getScene, getMask, getPierGeoms, getJetGeoms) {
   let group = null;
   let mesh = null;
 
@@ -84,6 +90,14 @@ export function useFlowArrows(getScene, getMask) {
     const width  = terrain.bounds?.width  ?? (ncols - 1) * cs;
     const height = terrain.bounds?.height ?? (nrows - 1) * cs;
     const mask = (typeof getMask === 'function') ? getMask() : null; // top-down, <128 = Hindernis
+    const pierGeoms = (typeof getPierGeoms === 'function') ? getPierGeoms() : null;
+    const ambient = (pierGeoms && pierGeoms.length)
+      ? sampleAmbientForPiers(pierGeoms, field.vx, field.vy, ncols, nrows, mask)
+      : null;
+    const jetGeoms = (typeof getJetGeoms === 'function') ? getJetGeoms() : null;
+    const ambientJets = (jetGeoms && jetGeoms.length)
+      ? sampleAmbientForJets(jetGeoms, field.vx, field.vy, ncols, nrows, mask)
+      : null;
 
     // Dichte → Zielanzahl → Sampling-Schrittweite
     const dens = Math.min(1, Math.max(0, density));
@@ -116,8 +130,16 @@ export function useFlowArrows(getScene, getMask) {
         const d = depthField ? depthField[idxR] : 1;
         if (!(d > WET_MIN)) continue;
         if (mask && mask[idxR] < 128) continue; // Gebäude/Pfeiler → kein Pfeil
-        const vx = field.vx[idxR], vy = field.vy[idxR];
+        let vx = field.vx[idxR], vy = field.vy[idxR];
         if (!(vx > -9000) || !(vy > -9000)) continue;
+        if (pierGeoms && pierGeoms.length) {
+          const d = deflectVelocity(c, gr, vx, vy, pierGeoms, ambient);
+          vx = d.vx; vy = d.vy;
+        }
+        if (jetGeoms && jetGeoms.length) {
+          const j = applyJetFlow(c, gr, vx, vy, jetGeoms, ambientJets);
+          vx = j.vx; vy = j.vy;
+        }
         const sp = Math.hypot(vx, vy);
         if (sp < 1e-4) continue;
         const idxT = flippedIndex(gr, c, ncols, nrows);

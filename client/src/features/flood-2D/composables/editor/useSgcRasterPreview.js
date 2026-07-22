@@ -31,6 +31,7 @@ export function useSgcRasterPreview(scene) {
     const geoStore = useGeoStore();
     const bathyStore = useBathymetryStore();
     let mesh = null;
+    let visible = true; // vom Host steuerbar (z.B. nur in der WIREFRAME-Rasteransicht zeigen)
 
     function clear() {
         if (mesh && scene) {
@@ -39,6 +40,12 @@ export function useSgcRasterPreview(scene) {
             mesh.material.dispose();
         }
         mesh = null;
+    }
+
+    /** Sichtbarkeit von außen umschalten (überlebt den nächsten rebuild()). */
+    function setVisible(v) {
+        visible = !!v;
+        if (mesh) mesh.visible = visible;
     }
 
     function rebuild() {
@@ -85,8 +92,18 @@ export function useSgcRasterPreview(scene) {
         mesh = new THREE.InstancedMesh(geo, mat, total);
         mesh.frustumCulled = false;
         mesh.renderOrder = 996; // knapp unter der Mittellinie (997) und Pfeilen (998)
+        mesh.visible = visible;
+
+        // Höhe einer Nachbarzelle (gleiche row/col-Konvention wie gridData/generateSgcRasters,
+        // KEIN flipRow — die bestehende Positionsformel unten nutzt r/c ebenfalls direkt).
+        const heightAt = (col, row) => {
+            if (col < 0 || col >= ncols || row < 0 || row >= nrows) return null;
+            const v = gridData[row * ncols + col];
+            return v > -9000 ? v : null;
+        };
 
         const dummy = new THREE.Object3D();
+        const UP = new THREE.Vector3(0, 1, 0);
         const cOpen = new THREE.Color(COLOR_OPEN), cBlk = new THREE.Color(COLOR_BLOCKED);
         let n = 0;
         const place = (idx, color) => {
@@ -94,7 +111,29 @@ export function useSgcRasterPreview(scene) {
             const z = gridData[idx] > -9000 ? gridData[idx] : minZ;
             const rx = xll + c * cellsize + cellsize / 2;
             const ry = yll + r * cellsize + cellsize / 2;
+
+            // Neigung wie die echte Terrain-Mesh: lokaler Gradient aus den Nachbarzellen
+            // (Zentraldifferenz, an Rändern/NODATA einseitig) → Quad kippen statt flach
+            // liegen zu lassen. Eine einzelne Ebene pro Zelle (kein bilinear gebogenes
+            // Doppel-Dreieck wie die echte Mesh-Zelle), für normale Geländeneigungen aber
+            // visuell praktisch deckungsgleich mit dem Wireframe-Kästchen darunter.
+            const hE = heightAt(c + 1, r), hW = heightAt(c - 1, r);
+            const hN = heightAt(c, r + 1), hS = heightAt(c, r - 1); // +row = +realY (Norden)
+            let dzdx = 0;
+            if (hE != null && hW != null) dzdx = (hE - hW) / (2 * cellsize);
+            else if (hE != null) dzdx = (hE - z) / cellsize;
+            else if (hW != null) dzdx = (z - hW) / cellsize;
+            let dzdyReal = 0;
+            if (hN != null && hS != null) dzdyReal = (hN - hS) / (2 * cellsize);
+            else if (hN != null) dzdyReal = (hN - z) / cellsize;
+            else if (hS != null) dzdyReal = (z - hS) / cellsize;
+            // world.x folgt realX direkt, world.z = -(realY-center.y) → Vorzeichen der Y-Komponente
+            // dreht sich beim Übergang von real- auf Weltkoordinaten (Höhenfeld-Normalen-Standardformel
+            // normal ∝ (-∂h/∂worldX, 1, -∂h/∂worldZ), mit ∂h/∂worldZ = -dzdyReal).
+            const normal = new THREE.Vector3(-dzdx, 1, dzdyReal).normalize();
+
             dummy.position.set(rx - center.x, (z - minZ) + 0.3, -(ry - center.y));
+            dummy.quaternion.setFromUnitVectors(UP, normal);
             dummy.updateMatrix();
             mesh.setMatrixAt(n, dummy.matrix);
             mesh.setColorAt(n, color);
@@ -124,5 +163,5 @@ export function useSgcRasterPreview(scene) {
     );
     onUnmounted(clear);
 
-    return { rebuild, clear };
+    return { rebuild, clear, setVisible };
 }

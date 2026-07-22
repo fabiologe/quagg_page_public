@@ -4,7 +4,7 @@ import { BoundaryTools } from './BoundaryTools.js';
 import { SgcGenerator } from './SgcGenerator.js';
 import { latticeToCells, sampleGridZ } from '../utils/BridgeMeshLattice.js';
 import { discretizeWeirPolyline } from '../utils/weirGeometry.js';
-import { cellEdge, mergeCellsToIntervals, edgeCells } from '../utils/boundarySegments.js';
+import { cellEdge, mergeCellsToIntervals, edgeCells, snapCellToEdge } from '../utils/boundarySegments.js';
 import {
     discretizeStructureAxis as _discretizeStructureAxis,
     collectBridgePierCells as _collectBridgePierCells,
@@ -44,9 +44,15 @@ function bridgeOpeningGrounded(soffit, x, y, direction, demGrid, header) {
 const NODATA_SNAP_METERS = 15;
 const snapRadiusCells = (header) => Math.max(2, Math.round(NODATA_SNAP_METERS / (header?.cellsize || 1)));
 
-// FREE-Outlet-Fallback: HFIX wird um diesen Betrag [m] unter Geländehöhe gesetzt,
-// damit Wasser bereits abfließt bevor die Zelle vollständig überstaut ist.
-const FREE_OUTLET_HFIX_OFFSET = 0.01;
+// FREE (freier Auslauf) läuft NIE über Punkt-HFIX ("P x y HFIX knapp unter Gelände") —
+// dieses frühere Muster ist im Solver (iterateq.cpp UpdateH) ein harter Tiefe-Reset auf
+// max(0, BC_Val-DEM) JEDEN Zeitschritt, kein Fluss-Ausgleich → kollidiert mit den
+// Impulsgleichungen und kann Fluss-Umkehr/Instabilität erzeugen (an echten Jobs bestätigt,
+// Audit 2026-07-21). Stattdessen: explizite FREE-Randbedingungen werden auf die nächste
+// Rasterkante projiziert (snapCellToEdge) und laufen über die native, stabile Kanten-
+// Formel. Automatische Rand-Auto-Füllung mit FREE ist deaktiviert (_fillGlobalBoundary,
+// Priority-Flood/Watershed-Ansatz geplant).
+const FREE_FALLBACK_SLOPE = 0.001; // Sf für snapCellToEdge, falls keine explizite outflowSlope angegeben ist
 
 /**
  * InputGenerator.js
@@ -492,6 +498,12 @@ export class InputGenerator {
         const claimed = new Map();
         const edgeLines = [];   // native N/S/E/W-Zeilen (explizit + global)
         const pointLines = [];  // P-Zeilen (Innenquellen + NoData-Front)
+        // FREE-Zellen, die nicht schon auf einer echten Kante liegen (Punktquelle, Innen-
+        // Linie/Polygon, Off-Edge nach NoData-Rescue), werden HIER gesammelt statt sofort als
+        // P-HFIX emittiert — am Ende auf die nächste Kante projiziert + als native FREE-Zeile
+        // geschrieben (Grund: s. Kommentar bei FREE_FALLBACK_SLOPE oben).
+        // Struktur: { N: Map<slopeStr, cells[]>, S: ..., E: ..., W: ... }
+        const freeEdgeAccum = { N: new Map(), S: new Map(), E: new Map(), W: new Map() };
         let boundaryIndex = 0;
 
         for (const b of boundaries) {
@@ -642,6 +654,9 @@ export class InputGenerator {
             const declaredEdge = b.properties?.edge; // 'N'|'S'|'E'|'W'|null/undefined
             const sf = assign.outflowSlope;
             const sfStr = (Number.isFinite(sf) && sf > 0 && sf <= 0.999) ? ` ${sf.toFixed(6)}` : '';
+            // FREE bekommt IMMER ein Gefälle — nie den instabilen "-1 = lokales Gefälle"-Zweig
+            // (s. Kommentar bei FREE_FALLBACK_SLOPE). Nutzt outflowSlope, sonst Fallback.
+            const slopeToken = sfStr || ` ${FREE_FALLBACK_SLOPE.toFixed(6)}`;
             const useNativeFree = assign.useNativeFree !== false;
 
             // Gerichteter INNEN-Zufluss: optionaler Winkel-Token (Welt-Azimut in Grad,
@@ -655,7 +670,7 @@ export class InputGenerator {
                 const cell = finalCells[0];
                 if (claimCell(cell.x, cell.y)) {
                     if (lisfloodType === 'FREE') {
-                        pointLines.push(this._interiorFreeLine(pointWorldCoords[0], pointWorldCoords[1], cell, header, gridData));
+                        this._accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, cell.x, cell.y, slopeToken);
                     } else {
                         const dirSuffix = dirToken ? ` ${dirToken}` : '';
                         pointLines.push(`P ${pointWorldCoords[0].toFixed(4)} ${pointWorldCoords[1].toFixed(4)} ${lisfloodType} ${profileNameForBci}${dirSuffix}`);
@@ -664,7 +679,8 @@ export class InputGenerator {
             } else if (declaredEdge && (lisfloodType !== 'FREE' || useNativeFree)) {
                 // KANTEN-SEGMENT: Zellen, die wirklich auf der deklarierten Kante liegen,
                 // → native N/S/E/W-Zeile mit Impuls. Off-Edge-Zellen (z. B. nach NoData-Rescue
-                // verschoben) fallen auf Innenquelle/HFIX zurück.
+                // verschoben) werden auf die nächste Kante projiziert (FREE) bzw. als Innenquelle
+                // behandelt (sonstige Typen).
                 const onEdge = [], offEdge = [];
                 for (const c of finalCells) {
                     (cellEdge(header, c.x, c.y) === declaredEdge ? onEdge : offEdge).push(c);
@@ -677,14 +693,23 @@ export class InputGenerator {
                 }
                 if (offEdge.length > 0) {
                     this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${offEdge.length} Zelle(n) liegen nicht auf der Kante '${declaredEdge}' — als interne Quelle behandelt.`);
-                    for (const c of offEdge) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken);
+                    for (const c of offEdge) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken);
                 }
             } else {
                 // INNEN-Linie/-Polygon: Punktquellen je Zelle, mit optionaler Fließrichtung.
-                for (const c of finalCells) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken);
+                for (const c of finalCells) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken);
             }
 
             boundaryIndex++;
+        }
+
+        // ── Auf die nächste Kante projizierte FREE-Zellen → native Kanten-Zeilen ────
+        for (const edge of ['N', 'S', 'E', 'W']) {
+            for (const [slope, cells] of freeEdgeAccum[edge]) {
+                for (const iv of mergeCellsToIntervals(cells, edge, header)) {
+                    edgeLines.push(`${edge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} FREE${slope}`);
+                }
+            }
         }
 
         // ── Globale Randbedingung: füllt NUR unbelegte Zellen ──────────────────
@@ -814,56 +839,78 @@ export class InputGenerator {
         return out;
     }
 
-    /** P-Zeile für eine Innenzelle; optionaler Richtungs-Token (Impuls); FREE → HFIX am Gelände. */
-    _claimInteriorCell(cell, lisfloodType, profileName, header, gridData, claimCell, pointLines, dirToken = null) {
+    /**
+     * P-Zeile für eine Innenzelle; optionaler Richtungs-Token (Impuls).
+     * FREE geht NICHT als Punkt raus (s. FREE_FALLBACK_SLOPE-Kommentar), sondern wird
+     * auf die nächste Kante projiziert (freeEdgeAccum, außerhalb dieser Methode geflusht).
+     */
+    _claimInteriorCell(cell, lisfloodType, profileName, header, gridData, claimCell, pointLines, dirToken = null, freeEdgeAccum = null, claimed = null, slopeToken = '') {
         if (!claimCell(cell.x, cell.y)) return;
-        const wx = (header.xll !== undefined ? header.xll : header.xllcorner) + (cell.x + 0.5) * header.cellsize;
-        const wy = (header.yll !== undefined ? header.yll : header.yllcorner) + (cell.y + 0.5) * header.cellsize;
         if (lisfloodType === 'FREE') {
-            pointLines.push(this._interiorFreeLine(wx, wy, cell, header, gridData));
+            this._accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, cell.x, cell.y, slopeToken);
         } else {
+            const wx = (header.xll !== undefined ? header.xll : header.xllcorner) + (cell.x + 0.5) * header.cellsize;
+            const wy = (header.yll !== undefined ? header.yll : header.yllcorner) + (cell.y + 0.5) * header.cellsize;
             const dirSuffix = dirToken ? ` ${dirToken}` : '';
             pointLines.push(`P ${wx.toFixed(4)} ${wy.toFixed(4)} ${lisfloodType} ${profileName}${dirSuffix}`);
         }
     }
 
-    /** Innenliegender freier Auslauf → HFIX knapp unter Gelände (kritische Tiefe). */
-    _interiorFreeLine(wx, wy, cell, header, gridData) {
-        const grid_idx = cell.y * header.ncols + cell.x;
-        let z = (grid_idx >= 0 && grid_idx < gridData.length) ? gridData[grid_idx] : -9999;
-        if (z <= -9990) z = 0;
-        const hfix = (z - FREE_OUTLET_HFIX_OFFSET).toFixed(4);
-        return `P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix}`;
+    /**
+     * FREE-Zelle, die nicht auf einer echten Kante liegt: auf die nächstgelegene Kante
+     * projizieren und für die spätere native FREE-Zeile sammeln (freeEdgeAccum). Belegt
+     * auch die Ziel-Kantenzelle in `claimed`, damit die globale Füllung sie nicht doppelt
+     * beansprucht. Kollidiert die Ziel-Zelle bereits (z. B. zwei Quellen springen auf
+     * dieselbe Kantenzelle), wird die zweite stillschweigend verworfen statt zu überschreiben.
+     */
+    _accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, col, row, slopeToken) {
+        const { edge, col: ec, row: er } = snapCellToEdge(header, col, row);
+        const key = `${ec},${er}`;
+        if (claimed.has(key)) return;
+        claimed.set(key, { role: 'outflow' });
+        const bucket = freeEdgeAccum[edge];
+        if (!bucket.has(slopeToken)) bucket.set(slopeToken, []);
+        bucket.get(slopeToken).push({ col: ec, row: er });
     }
 
     /**
-     * Globale Randbedingung füllt NUR unbelegte Zellen:
-     *  (a) echte Rasterkanten (N/S/E/W) als zusammenhängende native Intervalle,
-     *  (b) die NoData-Front (irreguläres Einzugsgebiet) als P-HFIX-Auslauf.
+     * Globale Randbedingung füllt NUR unbelegte Zellen — aktuell NUR für HFIX (fester
+     * Pegel): (a) echte Rasterkanten (N/S/E/W) als native Intervalle, (b) die NoData-
+     * Front (irreguläres Einzugsgebiet) als P-HFIX-Auslauf.
      * CLOSED ⇒ es wird nichts ergänzt.
+     *
+     * FREE (automatischer freier Auslauf) ist vorübergehend deaktiviert (No-Op): blinde
+     * Kanten-Auto-Füllung war wiederholte Quelle von Solver-Instabilität, weil sie keine
+     * echte Erreichbarkeit vom Zufluss aus prüft (Audit 2026-07-21). Geplant: Priority-
+     * Flood/Watershed-basierte Erkennung echter Auslaufpunkte statt pauschal die ganze
+     * Kante zu markieren. Bis dahin: nur explizite, vom Nutzer gezeichnete FREE-
+     * Randbedingungen (generateBoundaryFiles, auf die nächste Kante projiziert) sind aktiv.
      */
     _fillGlobalBoundary(header, gridData, claimed, edgeLines, pointLines, { globalBoundaryType, globalBoundaryHfix } = {}) {
         if (!globalBoundaryType || globalBoundaryType === 'CLOSED') return;
+        if (globalBoundaryType === 'FREE') {
+            this.warn('Globaler freier Auslauf (FREE) ist vorübergehend deaktiviert (Watershed-Ansatz geplant) — bitte einen expliziten Auslauf zeichnen oder "Fester Pegel" nutzen.');
+            return;
+        }
         const { ncols, nrows, cellsize: cs } = header;
         const xll = header.xll !== undefined ? header.xll : header.xllcorner;
         const yll = header.yll !== undefined ? header.yll : header.yllcorner;
         const ND = -9990;
-        const type = globalBoundaryType; // 'FREE' | 'HFIX'
-        const val = type === 'HFIX' ? ` ${(globalBoundaryHfix ?? 0).toFixed(4)}` : '';
+        const val = ` ${(globalBoundaryHfix ?? 0).toFixed(4)}`;
 
         // (a) Rasterkanten: pro Kante unbelegte, gültige Zellen sammeln → Intervalle
         for (const edge of ['N', 'S', 'E', 'W']) {
-            const free = [];
+            const cells = [];
             for (const c of edgeCells(header, edge)) {
                 const key = `${c.col},${c.row}`;
                 if (claimed.has(key)) continue;
                 if (gridData[c.row * ncols + c.col] <= ND) continue; // NoData-Kante überspringen
                 claimed.set(key, { role: 'global' });
-                free.push(c);
+                cells.push(c);
             }
-            if (free.length === 0) continue;
-            for (const iv of mergeCellsToIntervals(free, edge, header)) {
-                edgeLines.push(`${edge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} ${type}${val}`);
+            if (cells.length === 0) continue;
+            for (const iv of mergeCellsToIntervals(cells, edge, header)) {
+                edgeLines.push(`${edge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} HFIX${val}`);
             }
         }
 
@@ -897,7 +944,7 @@ export class InputGenerator {
                 if (!(isExt(c - 1, r) || isExt(c + 1, r) || isExt(c, r - 1) || isExt(c, r + 1))) continue;
                 const wx = xll + (c + 0.5) * cs;
                 const wy = yll + (r + 0.5) * cs;
-                const hfix = type === 'HFIX' ? (globalBoundaryHfix ?? 0) : (z - FREE_OUTLET_HFIX_OFFSET);
+                const hfix = globalBoundaryHfix ?? 0; // FREE ist deaktiviert, s. Methoden-Kommentar — nur HFIX erreicht diesen Pfad
                 claimed.set(`${c},${r}`, { role: 'global' });
                 pointLines.push(`P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix.toFixed(4)}`);
                 frontierCount++;

@@ -323,8 +323,15 @@ const editMesh3D = (id) => tool3d.startEdit(id);
 // ── Einklappbares Panel (Hover) – analog ShovelTool ─────────────────────────
 // Nur der Header-Pill ist sichtbar; Hover klappt den Inhalt aus und klappt beim
 // Verlassen wieder ein – auch mitten in der Bearbeitung, damit das Panel den
-// Viewport nie dauerhaft verdeckt.
-const { onPanelEnter, onPanelLeave, panelVisible } = useCollapsiblePanel();
+// Viewport nie dauerhaft verdeckt. AUSNAHME (wie ShovelTool.isDrawingPolygon):
+// während DRAW_FOOTPRINT/EXTRUDE_FORM bleibt es offen — das sind die Momente, in
+// denen der Nutzer aktiv "Polygon abschließen"/"Extrudieren" treffen muss; ein
+// eingeklapptes Panel zwang bisher zu einem Hover-dann-Klick-Sprung genau auf den
+// Button, was leicht den benachbarten "Abbrechen"-Button traf und wie ein
+// Zurücksetzen des gezeichneten Polygons wirkte.
+const { onPanelEnter, onPanelLeave, panelVisible } = useCollapsiblePanel({
+  forceOpen: () => bridge3DState.phase === 'DRAW_FOOTPRINT' || bridge3DState.phase === 'EXTRUDE_FORM',
+});
 
 // „Fertig": Editing abschließen UND das Werkzeug deaktivieren (Auto-Reset), damit
 // nicht versehentlich gleich der nächste Brückenkörper gezeichnet wird.

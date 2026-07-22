@@ -13,6 +13,7 @@
  */
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
+import { flippedIndex } from '../../utils/gridIndex.js';
 
 const terrainVertexShader = `
   #include <common>
@@ -181,8 +182,7 @@ export function useTerrainLayer({ getScene, geoStore }) {
     for (let i = 0; i < count; i++) {
       const col = i % ncols;
       const geomRow = Math.floor(i / ncols);
-      const gridRow = (nrows - 1) - geomRow;
-      const idx = gridRow * ncols + col;
+      const idx = flippedIndex(geomRow, col, ncols, nrows);
 
       // Canvas-Y ist top-down wie geomRow → genau dieser Index trifft die Maske
       const maskIdx = geomRow * ncols + col;

@@ -18,13 +18,12 @@ import { createMockRunpodTransport } from './MockRunpodTransport.js';
  * Ohne Base-URL und ohne API-Key fällt 'runpod' automatisch auf den Mock
  * zurück, sodass die Remote-Pipeline auch ohne Backend end-to-end läuft.
  *
- * @param {'wasm'|'bmi'|'runpod'} mode
+ * @param {'wasm'|'runpod'} mode
  * @returns {import('./SolverBackend.js').SolverBackend}
  */
 export function createSolverBackend(mode = 'wasm') {
     switch (mode) {
         case 'wasm':
-        case 'bmi':
             return new WasmWorkerBackend(mode);
 
         case 'runpod': {

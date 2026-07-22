@@ -175,7 +175,6 @@ export function useHighEndSolverExport() {
             saveInterval:     simStore.saveInterval || 60,
             massInterval:     simStore.massInterval || 60,
             useAcceleration:  simStore.useAcceleration ?? false,
-            useBmiSolver:     simStore.useBmiSolver    ?? false,
             globalRoughness:  hydStore.globalRoughness,
         };
 

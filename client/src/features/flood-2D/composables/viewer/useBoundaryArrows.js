@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
+import { flippedIndex } from '../../utils/gridIndex.js';
 
 /**
  * @param {() => THREE.Scene} getScene
@@ -82,8 +83,7 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
         const rowBU = Math.floor((pt.y - yllcorner) / cellsize); // bottom-up
         if (col < 0 || col >= ncols || rowBU < 0 || rowBU >= nrows) return false;
         if (!(gridData[rowBU * ncols + col] > -9000)) return false;
-        const geomRow = (nrows - 1) - rowBU;
-        const maskIdx = geomRow * ncols + col;
+        const maskIdx = flippedIndex(rowBU, col, ncols, nrows);
         if (buildingMask && buildingMask[maskIdx] < 128) return false; // Gebäude
         return true;
       });

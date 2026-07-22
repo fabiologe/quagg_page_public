@@ -2,6 +2,7 @@ import { ref, reactive, watch } from 'vue';
 import * as THREE from 'three';
 import { saveTerrainPatch } from '../historyBridge.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
+import { flipRow } from '../../utils/gridIndex.js';
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -531,7 +532,7 @@ export function useShovelTool() {
             gridData[idx] = newZ;
             const gridRow = Math.floor(idx / ncols);
             const col     = idx % ncols;
-            const geomRow = (nrows - 1) - gridRow;
+            const geomRow = flipRow(gridRow, nrows);
             const zLocal  = newZ - minZ;
             // Geometry now has (ncols+1)*(nrows+1) vertices with phantom border
             positions.setZ(geomRow * (ncols + 1) + col, zLocal);

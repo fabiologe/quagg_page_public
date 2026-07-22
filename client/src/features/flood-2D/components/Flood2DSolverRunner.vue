@@ -44,10 +44,9 @@
         </div>
 
         <label>Engine</label>
-        <div class="toggle-row bmi-toggle-row" :class="{ 'bmi-active': simStore.solverMode !== 'wasm' }">
+        <div class="toggle-row engine-toggle-row" :class="{ 'engine-active': simStore.solverMode !== 'wasm' }">
           <select v-model="simStore.solverMode" :disabled="isRunning" class="engine-select">
             <option value="wasm">Classic WASM (Blackbox, lokal)</option>
-            <option value="bmi">BMI Frame-by-Frame (God Mode, lokal)</option>
             <option value="runpod">RUNPOD Remote (LISFLOOD 8.2)</option>
           </select>
         </div>
@@ -203,7 +202,7 @@ const bathyStore = useBathymetryStore();
 
 // 1D/2D-Kopplung (SWMM↔LISFLOOD): reichert im runpod-Modus den Datei-Satz an.
 // Gesamte Logik in sauberen Modulen (services/geometry/*, services/swmm/coupledScenario).
-const { augmentInputs: augmentCoupledInputs, buildBmiCulverts } = useCoupledExport();
+const { augmentInputs: augmentCoupledInputs } = useCoupledExport();
 
 
 
@@ -272,7 +271,7 @@ const massReportLevel = computed(() => {
     return 'bad';
 });
 
-let backend = null;        // SolverBackend-Instanz (wasm | bmi | runpod)
+let backend = null;        // SolverBackend-Instanz (wasm | runpod)
 let backendMode = null;    // Modus, mit dem backend erstellt wurde
 
 // Derived State from SimStore for UI
@@ -499,7 +498,6 @@ const runSimulation = async () => {
 
             const engineLabel = {
                 wasm: 'Classic WASM (Blackbox)',
-                bmi: 'BMI (Frame-by-Frame)',
                 runpod: 'RUNPOD Remote'
             }[backendMode] || backendMode;
             appendLog(`Engine: ${engineLabel}`);
@@ -731,30 +729,7 @@ const startPreparation = async () => {
                  : null
           };
 
-         // 2. Kanalnetz → BMI-Culverts (nur BMI-Worker simulation.bmi.js).
-         //    Das Netz kommt AUSSCHLIESSLICH aus dem useNetworkStore („eine Geometrie,
-         //    mehrere Kompilate"); der Legacy-geoStore-Pfad wurde 2026-07 entfernt.
-         let activeCulverts = [];
-         let dmgHeader = null;
-
-         if (simStore.solverMode === 'bmi') {
-             const t = geoStore.terrain;
-             if (t) {
-                 const h = t.header ?? t;
-                 dmgHeader = {
-                     xllcorner: h.xll      !== undefined ? h.xll      : (h.xllcorner ?? 0),
-                     yllcorner: h.yll      !== undefined ? h.yll      : (h.yllcorner ?? 0),
-                     cellsize:  h.cellsize ?? 1,
-                     nrows:     h.nrows    ?? 0,
-                     ncols:     h.ncols    ?? 0
-                 };
-             }
-
-             activeCulverts = buildBmiCulverts() ?? [];
-             appendLog(`🔌 BMI: ${activeCulverts.length} Culvert-Paar(e) gemapped. Header: xll=${dmgHeader?.xllcorner}, yll=${dmgHeader?.yllcorner}, cs=${dmgHeader?.cellsize}`);
-         }
-
-         // 3. Input-Dateien im Haupt-Thread generieren (nicht im Worker!)
+         // 2. Input-Dateien im Haupt-Thread generieren (nicht im Worker!)
          // Grund: InputGenerator hat transitive Imports (Rasterizer, Hydraulics etc.) die
          // in einem gebündelten ES-Modul-Worker Production-Build nicht auflösbar sind.
          // Der Worker erhält fertige Dateien und muss keine eigene Generierung mehr leisten.
@@ -787,8 +762,8 @@ const startPreparation = async () => {
              throw new Error(`InputGenerator fehlgeschlagen: ${genErr.message}`);
          }
 
-         // 3b. 1D/2D-Kopplung anreichern (nur runpod + Kanalnetz vorhanden; sonst unverändert).
-         //     Alle Logik im Composable/Modul — hier nur Aufruf + Log.
+         // 3. 1D/2D-Kopplung anreichern (nur runpod + Kanalnetz vorhanden; sonst unverändert).
+         //    Alle Logik im Composable/Modul — hier nur Aufruf + Log.
          const coupled = augmentCoupledInputs(generatedFiles, { solverMode: simStore.solverMode });
          if (coupled.active) {
              generatedFiles = coupled.files;
@@ -803,12 +778,6 @@ const startPreparation = async () => {
          if (backend) {
              await backend.run({
                 files: generatedFiles,        // fertige LISFLOOD-Dateien (terrain.asc, run.par, etc.)
-                scenarioData: {               // nur noch für BMI-Heartbeat-Daten (grid, header)
-                    grid: { gridData: toRaw(geoStore.terrain?.gridData) }
-                },
-                // BMI-spezifisch: nur gesetzt wenn solverMode 'bmi'
-                culverts: activeCulverts,
-                header:   dmgHeader,
                 maxTime:  simStore.simDuration || 3600
              });
              simStore.setStatus('RUNNING');
@@ -988,13 +957,13 @@ onUnmounted(() => {
     color: var(--sv-text-dim);
 }
 
-/* BMI Dev-Switch */
-.bmi-toggle-row {
+/* Engine-Auswahl (hebt hervor, wenn nicht Classic-WASM aktiv ist) */
+.engine-toggle-row {
     border-radius: 4px;
     padding: 0.25rem 0.4rem;
     transition: background 0.2s;
 }
-.bmi-toggle-row.bmi-active {
+.engine-toggle-row.engine-active {
     background: rgba(139, 92, 246, 0.1);
     outline: 1px solid var(--sv-border);
 }

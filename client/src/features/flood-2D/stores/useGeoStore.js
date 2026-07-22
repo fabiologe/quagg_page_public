@@ -175,7 +175,10 @@ export const useGeoStore = defineStore('geo', () => {
 
     // ── Wehre (LISFLOOD weir_flow.cpp, Poleni-Formel) ──────────────────────
     /**
-     * Wehr-Objekte für die LISFLOOD `weirfile`-Eingabe.
+     * Wehr-Zellen für die LISFLOOD `weirfile`-Eingabe — abgeleitet aus den Wehr-Polylinien
+     * (siehe unten, `_syncWeirCells`). Einzige Quelle für neue Wehre ist der Polylinien-Editor
+     * (useWeir3DTool.js); dieses Array bleibt aber das gemeinsame Export-/Render-Format, auch
+     * für in alten Projekten gespeicherte, klassische (nicht-Polylinien) Wehrzellen.
      * @type {import('vue').Ref<Array<{
      *   id: string, x: number, y: number,
      *   direction: string, Cd: number, hc: number, m: number, w: number,
@@ -183,63 +186,6 @@ export const useGeoStore = defineStore('geo', () => {
      * }>>}
      */
     const weirs = ref([]);
-
-    /**
-     * Fügt ein neues Wehr hinzu.
-     * @param {object} weir - { x, y, direction, Cd, hc, m, w, label }
-     */
-    function addWeir(weir) {
-        saveSnapshot('Wehr hinzugefügt');
-        const id = weir.id || `weir_${Date.now()}`;
-        weirs.value.push({
-            id,
-            x:         weir.x,
-            y:         weir.y,
-            direction: weir.direction || 'N',
-            Cd:        parseFloat(weir.Cd)  || 1.704,
-            hc:        parseFloat(weir.hc)  || 0.0,
-            m:         parseFloat(weir.m)   || 0.667,
-            w:         parseFloat(weir.w)   || 5.0,
-            label:     weir.label           || `Wehr ${weirs.value.length + 1}`
-        });
-        console.log(`[GeoStore] Wehr hinzugefügt: ${id} @ (${weir.x.toFixed(1)}, ${weir.y.toFixed(1)})`);
-    }
-
-    /**
-     * Entfernt ein Wehr anhand seiner ID.
-     * @param {string} weirId
-     */
-    function removeWeir(weirId) {
-        saveSnapshot('Wehr gelöscht');
-        weirs.value = weirs.value.filter(w => w.id !== weirId);
-    }
-
-    /**
-     * Fügt eine ganze Linie von Wehren (Batch) mit EINEM einzigen History-Snapshot hinzu.
-     * Verwende diese Methode im WeirTool statt einer forEach-Schleife von addWeir(),
-     * damit Ctrl+Z die gesamte Linie auf einmal rückgängig macht.
-     *
-     * @param {Array<object>} weirSegments - Array von Wehr-Objekten { id, x, y, direction, Cd, hc, m, w, label, lineId }
-     */
-    function addWeirBatch(weirSegments) {
-        if (!weirSegments || weirSegments.length === 0) return;
-        saveSnapshot(`Wehr-Linie hinzugefügt (${weirSegments.length} Segmente)`);
-        weirSegments.forEach(weir => {
-            weirs.value.push({
-                id:        weir.id        || `weir_${Date.now()}_${Math.random()}`,
-                lineId:    weir.lineId   || null,
-                x:         weir.x,
-                y:         weir.y,
-                direction: weir.direction || 'S',
-                Cd:        parseFloat(weir.Cd)  || 1.704,
-                hc:        parseFloat(weir.hc)  || 0.0,
-                m:         parseFloat(weir.m)   || 0.667,
-                w:         parseFloat(weir.w)   || 1.0,
-                label:     weir.label    || `Wehr-Linie Seg.${weirs.value.length + 1}`,
-            });
-        });
-        console.log(`[GeoStore] Wehr-Batch: ${weirSegments.length} Segmente hinzugefügt.`);
-    }
 
     // ── Wehr-Polylinien (editierbare Linie + abgeleitete Zellen) ───────────────
     /**
@@ -537,11 +483,8 @@ export const useGeoStore = defineStore('geo', () => {
         maskTerrainByPolygon,
         getFeatureById,
         updateFeatureProperty,
-        // Wehre (LISFLOOD weirfile)
+        // Wehre (LISFLOOD weirfile) — Zell-Array, gemeinsam mit Polylinien-Editor genutzt
         weirs,
-        addWeir,
-        addWeirBatch,
-        removeWeir,
         // Wehr-Polylinien (editierbar)
         weirLines,
         addWeirLine,

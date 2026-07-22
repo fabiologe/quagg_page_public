@@ -13,15 +13,15 @@ import { reactive } from 'vue';
 import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useToolStateMachine } from './useToolStateMachine.js';
-import { useControlPointEditor } from './useControlPointEditor.js';
+import { useControlPointEditor, handleRadius } from './useControlPointEditor.js';
 import { discretizeWeirPolyline, clampOpening, crestZAt, openingSoffit } from '../../utils/weirGeometry.js';
 import { buildWeirWall, buildWeirWallWire, buildWeirOpenings } from '../../utils/weirWall.js';
 import { sampleGridZ } from '../../utils/BridgeMeshLattice.js';
+import { createDimLabel, scaleDimLabel, dimSidePoints, buildDimTube } from './dimensionLabel.js';
 
 const HANDLE_COLOR = 0x3498db;
 
 export const weir3DState = reactive({
-    mode: 'LINE',      // 'LINE' (klassisch, 2-Klick) | 'POLYLINE' (editierbar)
     phase: 'IDLE',     // IDLE | DRAW | EDIT
     draftPoints: [],   // [{x,y}] während des Zeichnens
     editingId: null,
@@ -33,25 +33,11 @@ let draftLine = null, draftDots = null, previewLine = null;
 let editGroup = null, wallMesh = null, wallWire = null, guideGroup = null, openingGroup = null;
 const cpe = useControlPointEditor();
 let vDrag = null; // { snap:{points,openings}, next:{points,openings} } während eines Drags
+let touchPending = false; // true, solange ein Touch auf einem Handle hält, aber noch nicht "scharf" ist
 
 /** GIS → Terrain-lokal, exakt (ohne den +0.5-Lift von realToWorld). */
 function toLocalExact(x, y, z, terrain) {
     return new THREE.Vector3(x - terrain.center.x, (z ?? terrain.minZ) - terrain.minZ, -(y - terrain.center.y));
-}
-
-/** Text-Sprite (Canvas) für Maß-Labels (kompakte Kopie aus useBridge3DTool). */
-function makeLabel(text) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.font = 'bold 34px sans-serif';
-    const w = ctx.measureText(text).width + 28;
-    ctx.fillStyle = 'rgba(15,25,35,0.8)'; ctx.fillRect((256 - w) / 2, 6, w, 52);
-    ctx.fillStyle = '#5dade2'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 33);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }));
-    sprite.scale.set(6, 1.5, 1); sprite.renderOrder = 1001;
-    return sprite;
 }
 
 // ── Koordinaten (identisch zum Brückentool) ─────────────────────────────────
@@ -95,11 +81,20 @@ function buildPolyline(points, terrain, color, dashed = false) {
     return line;
 }
 
+/** Mittlere Segmentlänge einer offenen Punktkette (Real-Koord.) — Maß für die Element-Größe. */
+function avgSegmentLength(points) {
+    if (!points || points.length < 2) return Infinity;
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) total += Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+    return total / (points.length - 1);
+}
+
 function buildDots(points, terrain, color) {
     const group = new THREE.Group();
+    const r = handleRadius(terrain.cellsize, avgSegmentLength(points));
     for (const p of points) {
         const z = sampleGridZ(headerFromTerrain(terrain), terrain.gridData, p.x, p.y) ?? terrain.minZ;
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }));
         dot.position.copy(realToWorld(p.x, p.y, z, terrain));
         dot.renderOrder = 999;
         group.add(dot);
@@ -110,6 +105,14 @@ function buildDots(points, terrain, color) {
 export function useWeir3DTool() {
     const geoStore = useGeoStore();
     const sm = useToolStateMachine();
+
+    // Drop-Shadow (cpe): lokale (x,z) → Terrain-Höhe (lokal), zeigt beim Ziehen den Aufsetzpunkt auf dem Raster.
+    cpe.setGroundSampler((x, z) => {
+        const terrain = geoStore.terrain;
+        if (!terrain?.center) return null;
+        const zr = sampleGridZ(headerFromTerrain(terrain), terrain.gridData, x + terrain.center.x, -z + terrain.center.y);
+        return zr == null ? null : zr - terrain.minZ;
+    });
 
     const getLine = () => geoStore.weirLines.find(l => l.id === weir3DState.editingId);
     const terrainZAt = (x, y) => sampleGridZ(headerFromTerrain(geoStore.terrain), geoStore.terrain.gridData, x, y) ?? geoStore.terrain.minZ;
@@ -130,21 +133,32 @@ export function useWeir3DTool() {
     };
 
     /** Greifpunkte: pro Ecke Basis (XY) + Krone (Z); pro Öffnung Basis + Soffit;
-     *  polygonale Öffnungen zusätzlich pro Querschnitts-Ecke (PLANE im Wandprofil). */
+     *  polygonale Öffnungen zusätzlich pro Querschnitts-Ecke (PLANE im Wandprofil).
+     *  Eck-Basis-Handles bekommen ein X/Y-Kreuz (zwei Pfeile, rot/grün) — die Bewegung ist dort
+     *  frei in der Ebene. AUSNAHME Öffnungen: die werden beim Ziehen auf die Wehr-Linie projiziert
+     *  (siehe onMove/mOB → projectOntoPolyline), können sich also nur entlang der Wehr-Achse UND in
+     *  Z bewegen — ein X/Y-Kreuz wäre hier irreführend, deshalb ein einzelner Pfeil entlang der
+     *  lokalen Linienrichtung (wie früher `horiz()`, nur noch für Öffnungen). */
     const editHandles = (line) => {
         const terrain = geoStore.terrain;
         const out = [];
         const UP = new THREE.Vector3(0, 1, 0);
-        const horiz = (x, y) => { const d = lineDir(line, x, y); return new THREE.Vector3(d.dx, 0, -d.dy).normalize(); };
+        const AXIS_X = new THREE.Vector3(1, 0, 0);
+        const AXIS_Y = new THREE.Vector3(0, 0, -1); // reale +Y-Richtung im lokalen Terrain-Frame
+        const addXYCross = (key, pos) => {
+            out.push({ key, axes: 'XY', gizmo: 'arrow', dir: AXIS_X, color: 0xe74c3c, pos });
+            out.push({ key, axes: 'XY', gizmo: 'arrow', dir: AXIS_Y, color: 0x2ecc71, pos });
+        };
+        const alongLine = (x, y) => { const d = lineDir(line, x, y); return new THREE.Vector3(d.dx, 0, -d.dy).normalize(); };
         (line.points || []).forEach((p, i) => {
             const tz = terrainZAt(p.x, p.y);
             const cz = Number.isFinite(p.z) ? p.z : (line.hc ?? tz + 1);
-            out.push({ key: `b${i}`, axes: 'XY', gizmo: 'arrow', dir: horiz(p.x, p.y), color: 0x3498db, pos: toLocalExact(p.x, p.y, tz, terrain) });
+            addXYCross(`b${i}`, toLocalExact(p.x, p.y, tz, terrain));
             out.push({ key: `c${i}`, axes: 'Z', gizmo: 'arrow', dir: UP, color: 0x5dade2, pos: toLocalExact(p.x, p.y, cz, terrain) });
         });
         (line.openings || []).forEach((o, k) => {
             const tz = terrainZAt(o.x, o.y);
-            out.push({ key: `ob${k}`, axes: 'XY', gizmo: 'arrow', dir: horiz(o.x, o.y), color: 0xe67e22, pos: toLocalExact(o.x, o.y, tz, terrain) });
+            out.push({ key: `ob${k}`, axes: 'XY', gizmo: 'arrow', dir: alongLine(o.x, o.y), color: 0xe67e22, pos: toLocalExact(o.x, o.y, tz, terrain) });
             out.push({ key: `os${k}`, axes: 'Z', gizmo: 'arrow', dir: UP, color: 0xf39c12, pos: toLocalExact(o.x, o.y, openingSoffit(o), terrain) });
             if (o.type === 'poly' && o.points?.length) {
                 const dir = lineDir(line, o.x, o.y);
@@ -219,7 +233,9 @@ export function useWeir3DTool() {
         const terrain = geoStore.terrain;
         const wg = buildWeirWall(line, terrain);
         if (wg) {
-            wallMesh = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ color: 0xf1c40f, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthTest: false }));
+            // depthTest AN (anders als die restlichen Edit-Overlays): die Wand soll den Öffnungs-
+            // Rohrkörper physikalisch korrekt verdecken können, je nach Blickwinkel.
+            wallMesh = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ color: 0xf1c40f, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthTest: true }));
             wallMesh.renderOrder = 997; editGroup.add(wallMesh);
         }
         const ww = buildWeirWallWire(line, terrain);
@@ -236,7 +252,10 @@ export function useWeir3DTool() {
         if (openingGroup && editGroup) { editGroup.remove(openingGroup); openingGroup.traverse(c => { c.geometry?.dispose(); c.material?.dispose(); }); }
         openingGroup = new THREE.Group();
         for (const geo of buildWeirOpenings(line, geoStore.terrain)) {
-            const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2c3e50, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: false }));
+            // depthWrite:false — der Rohrkörper soll von der Wand VERDECKT werden können (depthTest),
+            // aber selbst keine Tiefe schreiben. Zwei transparente Meshes, die beide schreiben,
+            // flackern (instabile Sortierung zwischen Wand und Rohr, Frame für Frame unterschiedlich).
+            const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2c3e50, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthTest: true, depthWrite: false }));
             m.renderOrder = 999;
             openingGroup.add(m);
         }
@@ -250,7 +269,8 @@ export function useWeir3DTool() {
         editGroup.name = 'Weir3D_Edit';
         buildWall(line);
         scene_ref.add(editGroup);
-        cpe.setHandles(editGroup, editHandles(line));
+        const r = handleRadius(terrain.cellsize, avgSegmentLength(line.points));
+        cpe.setHandles(editGroup, editHandles(line), r);
     };
     const refreshEditVisuals = (line) => {
         const terrain = geoStore.terrain;
@@ -266,35 +286,53 @@ export function useWeir3DTool() {
         if (guideGroup && editGroup) { editGroup.remove(guideGroup); guideGroup.traverse(c => { c.geometry?.dispose(); c.material?.map?.dispose(); c.material?.dispose(); }); }
         guideGroup = null;
     };
+    /** Bemaßungslinie a→b + seitlich versetztes Label (CAD-Stil, mit kurzer Hilfslinie zum
+     *  Fußpunkt auf der eigentlichen Linie) — verdeckt so nicht mehr die Zugstrecke selbst.
+     *  `color` folgt der Achse (rot=X, grün=Y, wie die Verschiebe-Pfeile) — Default Blau für
+     *  die Höhen-Bemaßung. Als Mesh-Schlauch statt THREE.Line, damit die Dicke auch wirklich
+     *  ankommt (WebGL ignoriert linewidth>1 auf den meisten Plattformen). Die Hilfslinie zum
+     *  Label bleibt dagegen eine dünne THREE.Line in Lila — rein zur Führung, keine Achsen-Info. */
+    const addDimSeg = (p1, p2, text, camera, color = 0x5dade2) => {
+        const cs = geoStore.terrain?.cellsize;
+        const r = handleRadius(cs) * 0.25; // 50% dünner als zuvor
+        const tube = buildDimTube(p1, p2, color, r);
+        if (tube) guideGroup.add(tube);
+        const { foot, label: labelPos } = dimSidePoints(p1, p2);
+        const leaderGeo = new THREE.BufferGeometry();
+        leaderGeo.setAttribute('position', new THREE.Float32BufferAttribute([foot.x, foot.y, foot.z, labelPos.x, labelPos.y, labelPos.z], 3));
+        const leader = new THREE.Line(leaderGeo, new THREE.LineBasicMaterial({ color: 0x8B5CF6, depthTest: false, transparent: true, opacity: 0.7 }));
+        leader.renderOrder = 1001; guideGroup.add(leader);
+        const label = createDimLabel(text);
+        label.position.copy(labelPos);
+        if (camera) scaleDimLabel(label, camera, labelPos);
+        guideGroup.add(label);
+    };
     /** Maß-Label beim Krone/Soffit-Ziehen: Höhe über Gelände an der Ecke. */
-    const showHeightGuide = (line, x, y, z) => {
+    const showHeightGuide = (line, x, y, z, camera) => {
         disposeGuides();
         if (!editGroup) return;
         const terrain = geoStore.terrain;
         const tz = terrainZAt(x, y);
         const top = toLocalExact(x, y, z, terrain), bot = toLocalExact(x, y, tz, terrain);
         guideGroup = new THREE.Group();
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute([top.x, top.y, top.z, bot.x, bot.y, bot.z], 3));
-        const ln = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: 0x5dade2, dashSize: 0.6, gapSize: 0.4, depthTest: false }));
-        ln.computeLineDistances(); ln.renderOrder = 1001; guideGroup.add(ln);
-        const label = makeLabel(`${(z - tz).toFixed(2)} m`);
-        label.position.set(top.x, (top.y + bot.y) / 2, top.z);
-        guideGroup.add(label);
+        addDimSeg(top, bot, `${(z - tz).toFixed(2)} m`, camera);
         editGroup.add(guideGroup);
     };
-    /** Maß-Label beim Links-Rechts-Verschieben: zurückgelegte Strecke. */
-    const showMoveGuide = (a, b, dist) => {
+    /** Maß beim Links-Rechts-Verschieben: getrennt in X- und Y-Komponente (Knick-Linie über
+     *  einen Eckpunkt, wie bei CAD-Bemaßungen) — zeigt beide Achsanteile statt nur der Luftlinie.
+     *  Farben passend zu den X/Y-Verschiebe-Pfeilen (rot/grün). */
+    const showMoveGuide = (sReal, nReal, terrain, camera) => {
         disposeGuides();
         if (!editGroup) return;
+        const dx = nReal.x - sReal.x, dy = nReal.y - sReal.y;
+        if (Math.abs(dx) < 0.005 && Math.abs(dy) < 0.005) return;
         guideGroup = new THREE.Group();
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute([a.x, a.y, a.z, b.x, b.y, b.z], 3));
-        const ln = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: 0x5dade2, dashSize: 0.6, gapSize: 0.4, depthTest: false }));
-        ln.computeLineDistances(); ln.renderOrder = 1001; guideGroup.add(ln);
-        const label = makeLabel(`${dist.toFixed(1)} m`);
-        label.position.set((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.6, (a.z + b.z) / 2);
-        guideGroup.add(label);
+        const cornerReal = { x: nReal.x, y: sReal.y };
+        const a = toLocalExact(sReal.x, sReal.y, terrainZAt(sReal.x, sReal.y), terrain);
+        const c = toLocalExact(cornerReal.x, cornerReal.y, terrainZAt(cornerReal.x, cornerReal.y), terrain);
+        const b = toLocalExact(nReal.x, nReal.y, terrainZAt(nReal.x, nReal.y), terrain);
+        if (Math.abs(dx) >= 0.005) addDimSeg(a, c, `X: ${dx >= 0 ? '+' : ''}${dx.toFixed(2)} m`, camera, 0xe74c3c);
+        if (Math.abs(dy) >= 0.005) addDimSeg(c, b, `Y: ${dy >= 0 ? '+' : ''}${dy.toFixed(2)} m`, camera, 0x2ecc71);
         editGroup.add(guideGroup);
     };
     const clearEditVisuals = () => {
@@ -307,6 +345,7 @@ export function useWeir3DTool() {
     const cancelEdit = () => {
         weir3DState.editingId = null;
         weir3DState.dragging = false;
+        touchPending = false;
         vDrag = null;
         clearEditVisuals();
         if (weir3DState.phase === 'EDIT') weir3DState.phase = 'IDLE';
@@ -461,11 +500,24 @@ export function useWeir3DTool() {
         if (weir3DState.phase === 'EDIT') {
             const line = getLine();
             if (!line) return;
-            const k = cpe.beginDrag(ctx);
-            if (k) {
+            const startDrag = (k) => {
                 vDrag = { snap: { points: line.points.map(p => ({ ...p })), openings: (line.openings || []).map(o => ({ ...o })) }, next: null };
                 weir3DState.dragging = true;
-                return;
+                return k;
+            };
+            if (ctx.event?.pointerType === 'touch') {
+                // Touch: nicht sofort greifen (kollidiert mit Ein-Finger-Kameraschwenk) — erst nach
+                // kurzem Halten. Kamera wird SOFORT gesperrt, damit während der Haltezeit nicht schon
+                // geschwenkt wird; bricht das Halten ab (zu viel Bewegung), wird sie in onMove wieder frei.
+                touchPending = cpe.beginTouchPress(ctx, (k) => {
+                    touchPending = false;
+                    if (!cpe.beginDrag(ctx)) { weir3DState.dragging = false; return; }
+                    startDrag(k);
+                });
+                if (touchPending) { weir3DState.dragging = true; return; }
+            } else {
+                const k = cpe.beginDrag(ctx);
+                if (k) { startDrag(k); return; }
             }
             const real = raycastTerrainReal(ctx);
             if (real) {
@@ -487,6 +539,10 @@ export function useWeir3DTool() {
             return;
         }
         if (weir3DState.phase === 'EDIT') {
+            if (touchPending) {
+                if (!cpe.updateTouchPress(ctx)) { touchPending = false; weir3DState.dragging = false; }
+                return;
+            }
             if (weir3DState.dragging && vDrag) {
                 const dd = cpe.dragDelta(ctx);
                 if (!dd) return;
@@ -516,10 +572,10 @@ export function useWeir3DTool() {
                 wline = { ...wline, openings };
                 vDrag.next = { points, openings };
                 refreshEditVisuals(wline);
-                if (mC) { const i = +mC[1]; showHeightGuide(wline, points[i].x, points[i].y, points[i].z); }
-                else if (mOS || mPV) { const k = +(mOS ? mOS[1] : mPV[1]); showHeightGuide(wline, openings[k].x, openings[k].y, openingSoffit(openings[k])); }
-                else if (mB) { const i = +mB[1]; const s = snap.points[i], n = points[i]; const a = toLocalExact(s.x, s.y, terrainZAt(s.x, s.y), terrain), b = toLocalExact(n.x, n.y, terrainZAt(n.x, n.y), terrain); showMoveGuide(a, b, Math.hypot(b.x - a.x, b.z - a.z)); }
-                else if (mOB) { const k = +mOB[1]; const s = snap.openings[k], n = openings[k]; const a = toLocalExact(s.x, s.y, terrainZAt(s.x, s.y), terrain), b = toLocalExact(n.x, n.y, terrainZAt(n.x, n.y), terrain); showMoveGuide(a, b, Math.hypot(b.x - a.x, b.z - a.z)); }
+                if (mC) { const i = +mC[1]; showHeightGuide(wline, points[i].x, points[i].y, points[i].z, ctx.camera); }
+                else if (mOS || mPV) { const k = +(mOS ? mOS[1] : mPV[1]); showHeightGuide(wline, openings[k].x, openings[k].y, openingSoffit(openings[k]), ctx.camera); }
+                else if (mB) { const i = +mB[1]; showMoveGuide(snap.points[i], points[i], terrain, ctx.camera); }
+                else if (mOB) { const k = +mOB[1]; showMoveGuide(snap.openings[k], openings[k], terrain, ctx.camera); }
                 else disposeGuides();
                 return;
             }
@@ -528,6 +584,12 @@ export function useWeir3DTool() {
     };
 
     const onMouseUp = () => {
+        if (touchPending) {
+            // Finger losgelassen, bevor die Haltezeit ablief (kurzer Tap) → nichts greifen, Kamera frei.
+            cpe.cancelTouchPress();
+            touchPending = false;
+            weir3DState.dragging = false;
+        }
         if (weir3DState.phase === 'EDIT' && cpe.state.dragging) {
             cpe.endDrag();
             weir3DState.dragging = false;
@@ -569,6 +631,7 @@ export function useWeir3DTool() {
         activate, deactivate, onMouseDown, onMove, onMouseUp, onClick,
         startDrawing, finishDrawing, startEdit, finishEdit, deleteCurrent, setCrest, setWidth, cancel,
         addOpening, removeOpening, setOpeningSoffit, setOpeningWidth, setOpeningHeight,
+        terrainZAt,
     };
 }
 

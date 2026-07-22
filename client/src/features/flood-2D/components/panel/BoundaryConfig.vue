@@ -212,21 +212,40 @@ const goToProfileManager = () => {};
 // ── Globale Randbedingung ──────────────────────────────────────────────────
 const globalTypeOptions = [
     { value: 'CLOSED', icon: '🔒', label: 'Geschlossen' },
-    { value: 'FREE',   icon: '↗',  label: 'Frei (FREE)' },
+    { value: 'FREE',   icon: '↗',  label: 'Frei (bald)' },
     { value: 'HFIX',   icon: '📏', label: 'Fester Pegel' },
 ];
+
+// FREE (blinde Kanten-Auto-Füllung) war Quelle wiederholter Solver-Instabilität
+// (s. Audit 2026-07-21) und ist vorübergehend deaktiviert — geplant: Priority-
+// Flood/Watershed-basierte Erkennung echter, erreichbarer Auslaufpunkte statt
+// pauschal die ganze Kante zu markieren. Bis dahin: expliziten Auslauf zeichnen
+// oder "Fester Pegel" nutzen.
+function selectGlobalType(opt) {
+    if (opt.value === 'FREE') {
+        alert(
+            'Automatischer freier Auslauf ist vorübergehend deaktiviert.\n\n' +
+            'Geplant: Priority-Flood/Watershed-basierte Erkennung echter, erreichbarer ' +
+            'Auslaufpunkte (respektiert Geländebarrieren, mehrere Zuläufe).\n\n' +
+            'Bis dahin bitte "Geschlossen" + einen expliziten Auslauf zeichnen, ' +
+            'oder "Fester Pegel" nutzen.'
+        );
+        return;
+    }
+    hydStore.globalBoundaryType = opt.value;
+}
 
 const globalStatusText = computed(() => {
     switch (hydStore.globalBoundaryType) {
         case 'CLOSED': return '⚠️ Alle Kanten geschlossen — Wasser kann nicht abfließen';
-        case 'FREE':   return '✅ Freier Auslauf an allen 4 Domänenkanten (empfohlen)';
+        case 'FREE':   return '🚧 Automatischer Auslauf vorübergehend deaktiviert (wirkt wie Geschlossen) — Watershed-Ansatz geplant';
         case 'HFIX':   return `✅ Wasserstand ${hydStore.globalBoundaryHfix.toFixed(1)} m NHN an allen Kanten`;
         default:       return '';
     }
 });
 
 const globalStatusClass = computed(() =>
-    hydStore.globalBoundaryType === 'CLOSED' ? 'status-warn' : 'status-ok'
+    (hydStore.globalBoundaryType === 'CLOSED' || hydStore.globalBoundaryType === 'FREE') ? 'status-warn' : 'status-ok'
 );
 
 // HFIX unterhalb des tiefsten Geländepunkts kann nie Wasser halten — warnen.
@@ -370,7 +389,7 @@ const hfixBelowTerrain = computed(() => {
           :key="opt.value"
           class="gtype-btn"
           :class="{ active: hydStore.globalBoundaryType === opt.value }"
-          @click="hydStore.globalBoundaryType = opt.value"
+          @click="selectGlobalType(opt)"
         ><SvEmoji :emoji="opt.icon" :size="13" /> {{ opt.label }}</button>
       </div>
 

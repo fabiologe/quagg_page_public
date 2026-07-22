@@ -4,6 +4,7 @@ import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
 import { calculateImpact } from './useShovelTool.js';
 import { saveTerrainPatch } from '../historyBridge.js';
+import { flippedIndex } from '../../utils/gridIndex.js';
 
 // ── Singleton settings (shared with BathymetryModal UI) ──────────────────────
 export const bathyBrushSettings = reactive({
@@ -123,7 +124,7 @@ function paint(ctx, bathyStore) {
         bathyStore.markCell(idx);
 
         // Top-down vertex index
-        const vIdx = ((nrows - 1) - row) * ncols + col;
+        const vIdx = flippedIndex(row, col, ncols, nrows);
         positions.setZ(vIdx, newZ - minZ);
         changed = true;
     }

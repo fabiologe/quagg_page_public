@@ -122,7 +122,7 @@ export async function saveProject({ includeResults = false, onProgress = null } 
   zip.file('sim.json', JSON.stringify({
     simDuration: sim.simDuration, timeStep: sim.timeStep,
     saveInterval: sim.saveInterval, massInterval: sim.massInterval,
-    useAcceleration: sim.useAcceleration, useBmiSolver: sim.useBmiSolver,
+    useAcceleration: sim.useAcceleration,
     solverMode: sim.solverMode,
     numericalScheme: sim.numericalScheme, sgcEnabled: sim.sgcEnabled,
   }));
@@ -282,9 +282,10 @@ export async function loadProject(file, onProgress = null) {
   if (sf) {
     const s = JSON.parse(await sf.async('string'));
     const set = (k) => { if (s[k] !== undefined && s[k] !== null) sim[k] = s[k]; };
-    // useBmiSolver (Legacy) VOR solverMode setzen, damit neue Projekte mit
-    // solverMode='runpod' nicht vom Legacy-Boolean überschrieben werden.
-    ['simDuration', 'timeStep', 'saveInterval', 'massInterval', 'useAcceleration', 'useBmiSolver', 'solverMode',
+    // Alte Projekte mit solverMode:'bmi' (entfernter Modus) fallen auf den Store-Default
+    // 'wasm' zurück, statt einen ungültigen Wert zu übernehmen.
+    if (s.solverMode === 'bmi') delete s.solverMode;
+    ['simDuration', 'timeStep', 'saveInterval', 'massInterval', 'useAcceleration', 'solverMode',
      'numericalScheme', 'sgcEnabled'].forEach(set);
   }
 

@@ -7,11 +7,11 @@
          ref="canvasContainer" 
          class="canvas-mount"
          @click="handleWrapperClick"
-         @mousemove="handleWrapperMove"
+         @pointermove="handleWrapperMove"
          @contextmenu="handleWrapperRightClick"
          @dblclick="handleWrapperDoubleClick"
-         @mousedown="handleWrapperMouseDown"
-         @mouseup="handleWrapperMouseUp"
+         @pointerdown="handleWrapperMouseDown"
+         @pointerup="handleWrapperMouseUp"
        ></div>
 
        <!-- Leerer Zustand: Terminal/ASCII-Startbildschirm bis ein Raster geladen ist -->
@@ -110,10 +110,7 @@
        />
 
        <!-- WEIR UI -->
-       <WeirTool
-          v-if="simStore.activeTool === 'WEIR'"
-          :toolInstance="weirTool"
-       />
+       <WeirTool v-if="simStore.activeTool === 'WEIR'" />
 
        <!-- BRIDGE UI -->
        <BridgeTool v-if="simStore.activeTool === 'BRIDGE'" />
@@ -370,7 +367,6 @@ import { getNetworkNodeToolInstance } from '../../composables/editor/useNetworkN
 import { useCropTool } from '../../composables/editor/useCropTool.js';
 import { useCollapsiblePanel } from '../../composables/editor/useCollapsiblePanel.js';
 import { usePolygonCropTool } from '../../composables/editor/usePolygonCropTool.js';
-import { useWeirTool } from '../../composables/editor/useWeirTool.js';
 import { getWeir3DToolInstance, weir3DState } from '../../composables/editor/useWeir3DTool.js';
 import { getBridge3DToolInstance, bridge3DState } from '../../composables/editor/useBridge3DTool.js';
 import { createTerrainMaterial } from '../../composables/editor/MapShader.js';
@@ -400,6 +396,7 @@ import BridgeTool from '../tools/BridgeTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
 import TextureTool from '../tools/TextureTool.vue';
+import { flipRow } from '../../utils/gridIndex.js';
 
 // No props needed for activeTool anymore, using store
 const props = defineProps({}); 
@@ -433,6 +430,15 @@ const compassAngle = ref(0);
 let scene, renderer, controls, animationId;
 let cameraPerspective, cameraOrtho, activeCamera;
 let terrainMesh, interactionPlane;
+let sgcPreview; // { rebuild, clear, setVisible } — Sichtbarkeit an applyLayerMode() gekoppelt (nur WIREFRAME)
+let bridgeRasterPreview; // dito, für die Brücken-Öffnungsbreiten-Vorschau
+// Unsichtbare Tiefen-Maske, exakt deckungsgleich mit terrainMesh — nur für WIREFRAME aktiv (siehe
+// applyLayerMode). Grund: der Wireframe-Shader discard'et fast alle Fragmente (MapShader.js,
+// uIsWireframe-Zweig) und schreibt deshalb kaum Tiefe → vergrabene Geometrie (Weir-Wand-Unterkante,
+// s. weirWall.js GROUND_BURY, aber auch SWMM-Schächte/Haltungen) scheint im Wireframe-Modus plötzlich
+// durchs "leere" Gelände durch. Diese Maske schreibt Tiefe normal (colorWrite:false → unsichtbar),
+// unabhängig vom Shader-Modus der sichtbaren Terrain-Mesh.
+let terrainDepthMesh;
 let selectionMesh;
 let networkRenderer = null;   // Kanalnetz-Renderer (G2), in initScene gesetzt
 const raycaster = new THREE.Raycaster();
@@ -452,7 +458,6 @@ const polygonCropTool = usePolygonCropTool();
 const cropPanel = useCollapsiblePanel({
     forceOpen: () => !!(cropTool.isDrawing.value || polygonCropTool.isDrawing.value),
 });
-const weirTool   = useWeirTool();
 const weir3DTool = getWeir3DToolInstance();
 const bridge3DTool = getBridge3DToolInstance();
 const channelLineTool    = getChannelLineToolInstance();
@@ -509,22 +514,6 @@ const bridgeProxy = {
     onMouseUp(ctx)   { return bridge3DTool.onMouseUp(ctx); },
 };
 
-// Proxy tool: klassische 2-Klick-Linie vs. editierbare Polylinie via weir3DState.mode
-const weirProxy = {
-    activate(s) {
-        if (weir3DState.mode === 'POLYLINE') weir3DTool.activate(s);
-        else weirTool.activate(s);
-    },
-    deactivate(s) {
-        weirTool.deactivate(s);
-        weir3DTool.deactivate(s);
-    },
-    onClick(ctx)     { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onClick(ctx)     : weirTool.onClick?.(ctx); },
-    onMove(ctx)      { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onMove(ctx)      : weirTool.onMove?.(ctx); },
-    onMouseDown(ctx) { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onMouseDown(ctx) : weirTool.onMouseDown?.(ctx); },
-    onMouseUp(ctx)   { return weir3DState.mode === 'POLYLINE' ? weir3DTool.onMouseUp(ctx)   : weirTool.onMouseUp?.(ctx); },
-};
-
 // Channel-line helper actions (called from inline UI)
 function commitChannelLine() {
     getChannelLineToolInstance().commitLine();
@@ -560,7 +549,7 @@ const tools = {
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
     'CROP': cropProxy,          // single entry; delegates via cropMode
-    'WEIR':   weirProxy,        // delegates klassisch/Polylinie via weir3DState.mode
+    'WEIR':   weir3DTool,
     'BRIDGE': bridgeProxy,      // nur Polygon-3D-Körper (LINE-Modus entfernt)
     'SELECT': { /* Default handled by InteractionManager */ }, 
     'INFO': { 
@@ -593,9 +582,7 @@ const applyCameraLock = () => {
         && bridge3DState.mode === 'MESH3D'
         && bridge3DState.phase === 'DRAW_FOOTPRINT';
     // WEIR-Polylinie: Punkte-Zeichnen sperrt LEFT (sonst orbitet die Kamera)
-    const weirDrawing = tool === 'WEIR'
-        && weir3DState.mode === 'POLYLINE'
-        && weir3DState.phase === 'DRAW';
+    const weirDrawing = tool === 'WEIR' && weir3DState.phase === 'DRAW';
     if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK' || bridgeDrawing || weirDrawing) {
         controls.mouseButtons.LEFT = null;
     } else {
@@ -668,19 +655,11 @@ watch(() => [bridge3DState.phase, bridge3DState.dragging], ([, dragging]) => {
     if (activeTool.value === 'BRIDGE' && bridge3DState.mode === 'MESH3D') applyCameraLock();
 }, { flush: 'sync' });
 
-// --- WEIR-Polylinie: Sub-Modus-Wechsel + Kamera (analog Brücke) ---
-watch(() => weir3DState.mode, (mode, oldMode) => {
-    if (activeTool.value !== 'WEIR' || !scene) return;
-    if (oldMode === 'POLYLINE') weir3DTool.deactivate(scene);
-    else weirTool.deactivate(scene);
-    if (mode === 'POLYLINE') weir3DTool.activate(scene);
-    else weirTool.activate(scene);
-    applyCameraLock();
-});
+// --- WEIR-Polylinie: Kamera-Sperre während Drag/Draw (analog Brücke) ---
 watch(() => [weir3DState.phase, weir3DState.dragging], ([, dragging]) => {
     if (!controls) return;
     controls.enabled = !dragging;
-    if (activeTool.value === 'WEIR' && weir3DState.mode === 'POLYLINE') applyCameraLock();
+    if (activeTool.value === 'WEIR') applyCameraLock();
 }, { flush: 'sync' });
 
 // --- NET_NODE: Schacht-Drag friert die Kamera ein (Muster Brücke/Wehr) ---
@@ -706,6 +685,13 @@ const applyLayerMode = (val) => {
     terrainMesh.material.uniforms.uIsContour.value = (val === 'CONTOUR') ? 1.0 : 0.0;
     // terrainMesh.material.wireframe = (val === 'WIREFRAME'); // Disabled: Native wireframe draws diagonals. We use custom Shader Grid instead.
     terrainMesh.material.needsUpdate = true;
+    // WIREFRAME discard'et fast alle Fragmente → kaum Tiefe. Maske nur dann zuschalten (sonst in den
+    // anderen Modi überflüssig, die schreiben ihre Tiefe schon selbst normal/vollflächig).
+    if (terrainDepthMesh) terrainDepthMesh.visible = (val === 'WIREFRAME');
+    // SGC-/Brücken-Rasterzellen-Vorschau nur zeigen, wenn die Rasterzellen-Grenzen selbst
+    // sichtbar sind (Rasteransicht/WIREFRAME) — sonst wirkt es wie ein unmotiviert schwebender Layer.
+    if (sgcPreview) sgcPreview.setVisible(val === 'WIREFRAME');
+    if (bridgeRasterPreview) bridgeRasterPreview.setVisible(val === 'WIREFRAME');
 };
 
 watch(activeLayerMode, (val) => applyLayerMode(val));
@@ -771,11 +757,16 @@ onMounted(() => {
 
     // Live-Vorschau des echten SGC-Gerinnerasters (gestempelte Zellen + Pfeiler-Sperren),
     // reagiert auf die eingestellte Breite — zeigt die KORRIDOR-Breite, nicht nur die Linie.
-    useSgcRasterPreview(scene);
+    // Nur in der WIREFRAME-Rasteransicht sichtbar (siehe applyLayerMode) — nur dort sieht
+    // man die Rasterzellen-Grenzen selbst, gegen die die eingefärbten Quads einrasten.
+    sgcPreview = useSgcRasterPreview(scene);
+    sgcPreview.setVisible(activeLayerMode.value === 'WIREFRAME');
 
     // Live-Vorschau der gerasterten Brückenzellen + effektiver Öffnungsbreite (Pfeiler
     // sub-grid): zeigt im BRÜCKEN-Werkzeug, was der Solver wirklich rechnet.
-    useBridgeRasterPreview(scene);
+    // Nur in der WIREFRAME-Rasteransicht sichtbar (siehe applyLayerMode) — analog SGC-Vorschau.
+    bridgeRasterPreview = useBridgeRasterPreview(scene);
+    bridgeRasterPreview.setVisible(activeLayerMode.value === 'WIREFRAME');
 
     // Restore if data exists
     if (geoStore.terrain && geoStore.terrain.gridData) {
@@ -808,6 +799,7 @@ onUnmounted(() => {
         terrainMesh.geometry.dispose();
         terrainMesh.material.dispose();
     }
+    if(terrainDepthMesh) terrainDepthMesh.material.dispose();
     // Reset Tools
     buildingTool.reset(scene); // Resets wrapped draw tool
     boundaryTool.reset(scene);
@@ -901,6 +893,7 @@ const handleWrapperClick = (event) => {
 
 const handleWrapperMove = (event) => {
     if (!renderer || !activeCamera) return;
+    if (event.isPrimary === false) return; // Zweitfinger (Pinch/Zoom) ignorieren, nur der erste steuert Tools
     const context = {
         scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore
     };
@@ -923,6 +916,7 @@ const handleWrapperDoubleClick = (event) => {
 
 const handleWrapperMouseDown = (event) => {
     if (!renderer || !activeCamera) return;
+    if (event.isPrimary === false) return; // Zweitfinger (Pinch/Zoom) ignorieren, nur der erste steuert Tools
     const context = {
         scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
     };
@@ -931,6 +925,7 @@ const handleWrapperMouseDown = (event) => {
 
 const handleWrapperMouseUp = (event) => {
     if (!renderer || !activeCamera) return;
+    if (event.isPrimary === false) return; // Zweitfinger (Pinch/Zoom) ignorieren, nur der erste steuert Tools
     const context = {
         scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
     };
@@ -964,8 +959,8 @@ const handleInfoClick = (ctx) => {
          const localY = -target.z + bounds.height / 2;
          const col = Math.round(localX / cellsize);
          const geomRow = Math.round(localY / cellsize); 
-         const gridRow = (nrows - 1) - geomRow;
-         
+         const gridRow = flipRow(geomRow, nrows);
+
          if (col >= 0 && col < ncols && gridRow >= 0 && gridRow < nrows) {
              const idx = gridRow * ncols + col;
              let zVal = minZ;
@@ -1271,7 +1266,7 @@ const buildTerrainMesh = (result) => {
     // null = NODATA.
     const cellValue = (col, geomRow) => {
         const dataCol = Math.min(Math.max(col, 0), ncols - 1);
-        const gridRow = (nrows - 1) - Math.min(Math.max(geomRow, 0), nrows - 1);
+        const gridRow = flipRow(Math.min(Math.max(geomRow, 0), nrows - 1), nrows);
         const val = gridData[gridRow * ncols + dataCol];
         return (val > -9000) ? val : null;
     };
@@ -1301,7 +1296,7 @@ const buildTerrainMesh = (result) => {
     let validFaces = 0;
     for (let f = 0; f < faceCount; f++) {
         const faceCol = f % ncols;
-        const gridRow = (nrows - 1) - Math.floor(f / ncols);
+        const gridRow = flipRow(Math.floor(f / ncols), nrows);
         if (gridData[gridRow * ncols + faceCol] > -9000) {
             faceValid[f] = 1;
             validFaces++;
@@ -1341,6 +1336,19 @@ const buildTerrainMesh = (result) => {
     terrainMesh.userData.isTerrain = true; // IMPORTANT: Tagging for Shovel Tool
     terrainMesh.rotation.x = -Math.PI / 2;
     scene.add(terrainMesh);
+
+    // Tiefen-Maske neu aufbauen (teilt sich die Geometrie mit terrainMesh, eigenes Material) —
+    // Sichtbarkeit wird in applyLayerMode() an den Layer-Modus gekoppelt (nur WIREFRAME).
+    if (terrainDepthMesh) {
+        scene.remove(terrainDepthMesh);
+        terrainDepthMesh.material.dispose();
+    }
+    // side:DoubleSide wie die sichtbare Terrain-Mesh (MapShader.js) — sonst fehlt die Tiefen-Maske
+    // von unten (Unter-Gelände-Orbit fürs Kanalnetz, s.o.).
+    terrainDepthMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, depthTest: true, side: THREE.DoubleSide }));
+    terrainDepthMesh.rotation.x = -Math.PI / 2;
+    terrainDepthMesh.visible = false;
+    scene.add(terrainDepthMesh);
 
     // Startmodus (Standard: WIREFRAME) auf das frische Mesh anwenden — der
     // activeLayerMode-Watcher feuert beim Initialwert nicht.

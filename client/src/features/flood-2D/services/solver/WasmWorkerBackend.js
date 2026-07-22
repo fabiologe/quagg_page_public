@@ -1,9 +1,8 @@
 import { SolverBackend } from './SolverBackend.js';
 
 /**
- * WasmWorkerBackend — dünner Wrapper um die bestehenden WASM-Worker.
- * mode 'wasm' → simulation.main.js (Classic/Blackbox)
- * mode 'bmi'  → simulation.bmi.js  (Frame-by-Frame, abort-fähig)
+ * WasmWorkerBackend — dünner Wrapper um den lokalen WASM-Worker (simulation.main.js,
+ * Classic/Blackbox).
  *
  * Worker-Messages werden unverändert als SolverEvents durchgereicht.
  */
@@ -22,9 +21,7 @@ export class WasmWorkerBackend extends SolverBackend {
         }
 
         // Vite braucht literale new URL(...)-Ausdrücke fürs Worker-Bundling.
-        const workerUrl = this.mode === 'bmi'
-            ? new URL('../../middleware/simulation.bmi.js', import.meta.url)
-            : new URL('../../middleware/simulation.main.js', import.meta.url);
+        const workerUrl = new URL('../../middleware/simulation.main.js', import.meta.url);
 
         this.worker = new Worker(workerUrl, { type: 'module' });
 
@@ -49,7 +46,7 @@ export class WasmWorkerBackend extends SolverBackend {
 
     async abort() {
         if (!this.worker) return;
-        // BMI-Worker: erst abort-Signal, damit _bmi_finalize() sauber läuft,
+        // Erst abort-Signal, damit der Worker sauber aufräumen kann,
         // dann mit kleinem Verzug terminieren als Fallback.
         this.worker.postMessage({ type: 'abort' });
         const w = this.worker;

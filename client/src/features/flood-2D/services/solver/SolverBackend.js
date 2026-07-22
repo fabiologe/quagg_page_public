@@ -1,6 +1,6 @@
 /**
  * SolverBackend — gemeinsames Interface für alle Solver-Ausführungspfade:
- *   - WasmWorkerBackend  (lokal, simulation.main.js / simulation.bmi.js)
+ *   - WasmWorkerBackend  (lokal, simulation.main.js)
  *   - RunpodBackend      (remote, LISFLOOD 8.2 auf RUNPOD Serverless)
  *
  * Das Event-Vokabular entspricht 1:1 den bisherigen Worker-Messages, sodass
@@ -27,8 +27,6 @@
  * @typedef {{
  *   files: Object<string,string>,
  *   scenarioData: Object,
- *   culverts: Array,
- *   header: Object|null,
  *   maxTime: number
  * }} RunPayload
  */

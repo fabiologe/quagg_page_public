@@ -82,6 +82,26 @@ function edgeDistances(header, col, row) {
 }
 
 /**
+ * Projiziert eine beliebige Zelle auf die nächstgelegene Rasterkante (kürzeste
+ * Zell-Distanz). Für Randbedingungen, die stabil nur auf der echten Kante
+ * funktionieren (native FREE) — Innenpunkte werden dorthin "geschoben".
+ * @returns {{edge:Edge, col:number, row:number, distance:number}}
+ */
+export function snapCellToEdge(header, col, row) {
+    const { ncols, nrows } = header;
+    const d = edgeDistances(header, col, row);
+    let edge = 'W';
+    for (const e of ['E', 'S', 'N']) if (d[e] < d[edge]) edge = e;
+    const snapped = {
+        W: { col: 0, row },
+        E: { col: ncols - 1, row },
+        S: { col, row: 0 },
+        N: { col, row: nrows - 1 },
+    }[edge];
+    return { edge, col: snapped.col, row: snapped.row, distance: d[edge] };
+}
+
+/**
  * Linie auf die nächste Rasterkante einrasten, falls innerhalb `thresholdCells`.
  *
  * Vorgehen: für beide Endpunkte die Zell-Distanz zu jeder Kante bilden; die Kante

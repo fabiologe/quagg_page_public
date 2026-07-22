@@ -14,6 +14,7 @@ import { reactive } from 'vue';
 import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
+import { flipRow, flippedIndex } from '../../utils/gridIndex.js';
 
 export const refPickState = reactive({
     hoveredOrigIdx:  -1,
@@ -48,9 +49,9 @@ function lookupDemZ(pt, terrain) {
     const yll = terrain.yllcorner ?? 0;
     const col     = Math.floor((pt.x - xll) / cellsize);
     const geomRow = Math.floor((pt.y - yll) / cellsize);
-    const gridRow = (nrows - 1) - geomRow;
+    const gridRow = flipRow(geomRow, nrows);
     if (col < 0 || col >= ncols || gridRow < 0 || gridRow >= nrows) return null;
-    const z = gridData[gridRow * ncols + col];
+    const z = gridData[flippedIndex(geomRow, col, ncols, nrows)];
     return z > -9000 ? z : null;
 }
 

@@ -22,7 +22,11 @@ import { findSectionNetworkCrossings } from '@/features/flood-2D/utils/sectionNe
 import { useResultProbes } from '@/features/flood-2D/composables/viewer/useResultProbes';
 import { useTerrainLayer } from '@/features/flood-2D/composables/viewer/useTerrainLayer';
 import { useWaterSurface } from '@/features/flood-2D/composables/viewer/useWaterSurface';
-import { collectPierCells } from '@/features/flood-2D/utils/BridgeMeshLattice.js';
+import { collectBridgeCells } from '@/features/flood-2D/utils/BridgeMeshLattice.js';
+import { collectWeirCrestCells } from '@/features/flood-2D/utils/weirGeometry.js';
+import { buildPierGeometry } from '@/features/flood-2D/utils/pierFlowDeflection.js';
+import { buildJetGeometry } from '@/features/flood-2D/utils/weirJetFlow.js';
+import { flipRow, flippedIndex } from '@/features/flood-2D/utils/gridIndex.js';
 
 const props = defineProps({
   terrain: { type: Object, default: null },
@@ -85,10 +89,19 @@ const waterApi = useWaterSurface({
 });
 const probeApi = useResultProbes(() => scene); // Probe-Ring-Marker
 
-// Hindernis-Maske fürs Velocity-Overlay: Gebäudemaske (top-down, <128) + Brücken-PFEILER.
-// Pfeiler sind nicht im 2D-Velocity-Raster (Physik blockt sie nur im SGC-Sub-Grid), daher
-// laufen Linien/Pfeile sonst hindurch. Hier werden ihre Zellen wie Gebäude maskiert (rein
-// optisch, passend zum 3D-Modell). Gemerkt, bis sich Brücken/Terrain ändern.
+// Wehr-Zellen ändern sich, wenn eine Öffnung an derselben Zelle wächst/schrumpft, OHNE
+// dass sich deren "col,row,direction"-basierte id ändert — Cache-Keys, die von
+// geoStore.weirs abhängen, müssen deshalb explizit die orifice-Belegung mit hashen.
+function weirCacheKey(weirs) {
+  return weirs.map(w => `${w.id}${w.orifice ? '1' : '0'}`).join(',');
+}
+
+// Hindernis-Maske fürs Velocity-Overlay: Gebäudemaske (top-down, <128) + volles
+// Brücken-Bauwerk (Deck-Slab läuft durchgehend über die Fläche, auch über Pfeiler) +
+// Wehr-Krone. Diese Bauwerke sind solide 3D-Meshes im Ergebnis-Viewer; Pfeile/
+// Streamlines (depthTest:false) liefen sonst sichtbar hindurch. Durchlässe (Wehr-
+// Öffnungen) werden bewusst NICHT aufgenommen — die bekommen stattdessen die Jet-
+// Überlagerung (siehe jetGeometryList). Gemerkt, bis sich Bauwerke/Terrain ändern.
 let _obstacleCache = { key: null, mask: null };
 function obstacleMask() {
   const t = props.terrain;
@@ -96,27 +109,62 @@ function obstacleMask() {
   const { ncols, nrows } = t;
   const base = terrainApi.getMask(); // kann null sein (vor Terrain-Build)
   const bridges = geoStore.bridges || [];
-  const key = `${ncols}x${nrows}|${base ? 'm' : '0'}|${bridges.map(b => b.id).join(',')}`;
+  const weirs = geoStore.weirs || [];
+  const key = `${ncols}x${nrows}|${base ? 'm' : '0'}|${bridges.map(b => b.id).join(',')}|${weirCacheKey(weirs)}`;
   if (_obstacleCache.key === key) return _obstacleCache.mask;
 
-  const piers = collectPierCells(bridges, t); // "col,row", row bottom-up (row 0 = Süd)
-  if (piers.size === 0) { _obstacleCache = { key, mask: base }; return base; }
+  const bridgeCells = collectBridgeCells(bridges, t); // "col,row", row bottom-up (row 0 = Süd)
+  const weirCrest = collectWeirCrestCells(weirs, t);
+  if (bridgeCells.size === 0 && weirCrest.size === 0) { _obstacleCache = { key, mask: base }; return base; }
 
   const out = base ? base.slice() : new Uint8Array(ncols * nrows).fill(255);
-  for (const k of piers) {
-    const ci = k.indexOf(',');
-    const col = +k.slice(0, ci), rS = +k.slice(ci + 1);
-    const rTop = nrows - 1 - rS; // Maske ist top-down wie das Velocity-Raster
-    if (col >= 0 && col < ncols && rTop >= 0 && rTop < nrows) out[rTop * ncols + col] = 0;
-  }
+  const stamp = (set) => {
+    for (const k of set) {
+      const ci = k.indexOf(',');
+      const col = +k.slice(0, ci), rS = +k.slice(ci + 1);
+      const rTop = flipRow(rS, nrows); // Maske ist top-down wie das Velocity-Raster
+      if (col >= 0 && col < ncols && rTop >= 0 && rTop < nrows) out[rTop * ncols + col] = 0;
+    }
+  };
+  stamp(bridgeCells); stamp(weirCrest);
   _obstacleCache = { key, mask: out };
   return out;
 }
 
+// Pfeiler-Geometrie (Grid-Index-Koordinaten) für die analytische Umströmungs-Deflection
+// im Ring um jeden Pfeiler (a≤r≤R) — ergänzt obstacleMask(), die nur das Innere (r<a)
+// abdeckt. Gemerkt wie obstacleMask, bis sich Brücken/Terrain ändern.
+let _pierGeomCache = { key: null, geoms: [] };
+function pierGeometryList() {
+  const t = props.terrain;
+  if (!t) return [];
+  const bridges = geoStore.bridges || [];
+  const key = `${t.ncols}x${t.nrows}x${t.cellsize}|${bridges.map(b => b.id).join(',')}`;
+  if (_pierGeomCache.key === key) return _pierGeomCache.geoms;
+  const geoms = buildPierGeometry(bridges, t);
+  _pierGeomCache = { key, geoms };
+  return geoms;
+}
+
+// Durchlass-Geometrie (Grid-Index-Koordinaten) für die analytische Kontraktions-/
+// Freistrahl-Überlagerung an Wehr-Öffnungen — ergänzt obstacleMask(), die Durchlässe
+// bewusst ausspart. Gemerkt wie obstacleMask, bis sich Wehre/Terrain ändern.
+let _jetGeomCache = { key: null, geoms: [] };
+function jetGeometryList() {
+  const t = props.terrain;
+  if (!t) return [];
+  const weirs = geoStore.weirs || [];
+  const key = `${t.ncols}x${t.nrows}x${t.cellsize}|${weirCacheKey(weirs)}`;
+  if (_jetGeomCache.key === key) return _jetGeomCache.geoms;
+  const geoms = buildJetGeometry(weirs, t);
+  _jetGeomCache = { key, geoms };
+  return geoms;
+}
+
 // Fließpfeil-Overlay (gerichtete Velocity-Pfeile) — eigenes Composable
-const flowApi = useFlowArrows(() => scene, obstacleMask);
+const flowApi = useFlowArrows(() => scene, obstacleMask, pierGeometryList, jetGeometryList);
 // Strömungslinien-Overlay (integrierte, animierte CFD-Linien) — eigenes Composable
-const streamApi = useFlowStreamlines(() => scene, obstacleMask); // Gebäude + Pfeiler ausblenden
+const streamApi = useFlowStreamlines(() => scene, obstacleMask, pierGeometryList, jetGeometryList); // Gebäude + Bauwerke ausblenden, Umströmung/Jet an Pfeilern/Durchlässen
 
 const highlightMeshes = new Map(); // Track multiple polygon highlight meshes
 const raycaster = new THREE.Raycaster();
@@ -665,8 +713,7 @@ function createHighlightMesh(polygon, terrain) {
     const row = Math.floor(idx / ncols); // top-down index (VolumeCalculator-Konvention)
     
     // Convert to bottom-up index to read terrain Z safely from Map3D gridData
-    const gridRow = (nrows - 1) - row;
-    const terrainIdx = gridRow * ncols + col;
+    const terrainIdx = flippedIndex(row, col, ncols, nrows);
     
     const zVal = gridData[terrainIdx];
     if (zVal <= -9000) continue; 

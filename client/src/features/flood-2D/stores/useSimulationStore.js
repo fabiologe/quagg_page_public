@@ -41,20 +41,10 @@ export const useSimulationStore = defineStore('simulation', () => {
     /**
      * Solver-Ausführungspfad:
      *   'wasm'   — produktiver Blackbox-Worker (simulation.main.js)
-     *   'bmi'    — experimenteller Frame-by-Frame-Worker (simulation.bmi.js)
      *   'runpod' — Remote-Lauf auf RUNPOD (LISFLOOD 8.2); ohne API-Key → Mock
-     * @type {import('vue').Ref<'wasm'|'bmi'|'runpod'>}
+     * @type {import('vue').Ref<'wasm'|'runpod'>}
      */
     const solverMode = ref('wasm');
-
-    /**
-     * Rückwärtskompatibler Alias (alte Projekt-Dateien):
-     * true ⇔ solverMode === 'bmi'.
-     */
-    const useBmiSolver = computed({
-        get: () => solverMode.value === 'bmi',
-        set: (v) => { solverMode.value = v ? 'bmi' : 'wasm'; }
-    });
 
     // ── Genauigkeits-Settings (High-End-Pfad, nur solverMode 'runpod') ───────
     // (Export-Zellweite entfernt — Solver rechnet immer in nativer DEM-Auflösung.)
@@ -243,7 +233,6 @@ export const useSimulationStore = defineStore('simulation', () => {
         if (cfg.massInterval !== undefined) massInterval.value = cfg.massInterval;
         if (cfg.useAcceleration !== undefined) useAcceleration.value = cfg.useAcceleration;
         if (cfg.solverMode !== undefined) solverMode.value = cfg.solverMode;
-        else if (cfg.useBmiSolver !== undefined) useBmiSolver.value = cfg.useBmiSolver; // Legacy-Projekte
         if (cfg.numericalScheme !== undefined) numericalScheme.value = cfg.numericalScheme;
         if (cfg.sgcEnabled !== undefined) sgcEnabled.value = cfg.sgcEnabled;
         if (cfg.useGpu !== undefined) useGpu.value = cfg.useGpu;
@@ -284,7 +273,6 @@ export const useSimulationStore = defineStore('simulation', () => {
         massInterval,
         useAcceleration,
         solverMode,
-        useBmiSolver,
         numericalScheme,
         sgcEnabled,
         useGpu,

@@ -30,6 +30,7 @@ export function useBridgeRasterPreview(scene) {
     const geoStore = useGeoStore();
     const simStore = useSimulationStore();
     let mesh = null;
+    let visible = true; // vom Host steuerbar (z.B. nur in der WIREFRAME-Rasteransicht zeigen)
 
     function clear() {
         if (mesh && scene) {
@@ -38,6 +39,12 @@ export function useBridgeRasterPreview(scene) {
             mesh.material.dispose();
         }
         mesh = null;
+    }
+
+    /** Sichtbarkeit von außen umschalten (überlebt den nächsten rebuild()). */
+    function setVisible(v) {
+        visible = !!v;
+        if (mesh) mesh.visible = visible;
     }
 
     function rebuild() {
@@ -72,8 +79,18 @@ export function useBridgeRasterPreview(scene) {
         mesh = new THREE.InstancedMesh(geo, mat, cells.length);
         mesh.frustumCulled = false;
         mesh.renderOrder = 995; // knapp unter der SGC-Vorschau (996)
+        mesh.visible = visible;
+
+        // Höhe einer Nachbarzelle (gleiche row/col-Konvention wie latticeToCells/gridData,
+        // kein flipRow — siehe useSgcRasterPreview.js für dieselbe Herleitung).
+        const heightAt = (col, row) => {
+            if (col < 0 || col >= ncols || row < 0 || row >= nrows) return null;
+            const v = gridData[row * ncols + col];
+            return v > -9000 ? v : null;
+        };
 
         const dummy = new THREE.Object3D();
+        const UP = new THREE.Vector3(0, 1, 0);
         const col = new THREE.Color();
         let n = 0;
         for (const c of cells) {
@@ -88,7 +105,23 @@ export function useBridgeRasterPreview(scene) {
             const z = gridData[idx] > -9000 ? gridData[idx] : minZ;
             const rx = xll + c.col * cellsize + cellsize / 2;
             const ry = yll + c.row * cellsize + cellsize / 2;
+
+            // Neigung wie die echte Terrain-Mesh (siehe useSgcRasterPreview.js): lokaler
+            // Gradient aus den Nachbarzellen statt flach liegender Quad.
+            const hE = heightAt(c.col + 1, c.row), hW = heightAt(c.col - 1, c.row);
+            const hN = heightAt(c.col, c.row + 1), hS = heightAt(c.col, c.row - 1);
+            let dzdx = 0;
+            if (hE != null && hW != null) dzdx = (hE - hW) / (2 * cellsize);
+            else if (hE != null) dzdx = (hE - z) / cellsize;
+            else if (hW != null) dzdx = (z - hW) / cellsize;
+            let dzdyReal = 0;
+            if (hN != null && hS != null) dzdyReal = (hN - hS) / (2 * cellsize);
+            else if (hN != null) dzdyReal = (hN - z) / cellsize;
+            else if (hS != null) dzdyReal = (z - hS) / cellsize;
+            const normal = new THREE.Vector3(-dzdx, 1, dzdyReal).normalize();
+
             dummy.position.set(rx - center.x, (z - minZ) + 0.35, -(ry - center.y));
+            dummy.quaternion.setFromUnitVectors(UP, normal);
             dummy.updateMatrix();
             mesh.setMatrixAt(n, dummy.matrix);
             mesh.setColorAt(n, col);
@@ -116,5 +149,5 @@ export function useBridgeRasterPreview(scene) {
     );
     onUnmounted(clear);
 
-    return { rebuild, clear };
+    return { rebuild, clear, setVisible };
 }

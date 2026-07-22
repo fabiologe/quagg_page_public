@@ -2,6 +2,7 @@ import { ref, reactive, watch } from 'vue';
 import * as THREE from 'three';
 import { useSurfaceStore } from '@/features/flood-2D/stores/useSurfaceStore.js';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
+import { flipRow } from '@/features/flood-2D/utils/gridIndex.js';
 
 /**
  * useTextureTool.js
@@ -115,7 +116,7 @@ export function useTextureTool() {
                 if (col < 0 || col >= ncols || gridRow < 0 || gridRow >= nrows) continue;
 
                 // gridRow (0=bottom) → geomRow (0=top). Stride = ncols+1 (PlaneGeometry with ncols segments has ncols+1 vertices/row)
-                const geomRow = (nrows - 1) - gridRow;
+                const geomRow = flipRow(gridRow, nrows);
                 const vertexIdx = geomRow * (ncols + 1) + col;
                 colorAttr.setXYZ(vertexIdx, color.r, color.g, color.b);
                 updated = true;
@@ -146,7 +147,7 @@ export function useTextureTool() {
 
         for (let geomRow = 0; geomRow < nrows; geomRow++) {
             // Geometry row 0 = top (north), Grid row 0 = bottom (south)
-            const gridRow = (nrows - 1) - geomRow;
+            const gridRow = flipRow(geomRow, nrows);
             for (let col = 0; col < ncols; col++) {
                 const gridIdx = gridRow * ncols + col;
                 const matId = surfaceStore.surfaceGrid[gridIdx] || 1;

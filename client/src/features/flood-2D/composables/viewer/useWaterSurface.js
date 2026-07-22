@@ -24,6 +24,7 @@ import { watch } from 'vue';
 import * as THREE from 'three';
 import { RENDER_ORDER } from '../editor/renderLayers';
 import { packWaterFrame, WET } from '../../utils/waterFramePack.js';
+import { flipRow } from '../../utils/gridIndex.js';
 
 // GPU-Displacement: die Geometrie bleibt statisch, Z kommt je Vertex aus uSurfMap
 // (R = Anzeige-Tiefe fürs Discard/Farbe, G = Anzeige-WSE inkl. Trockenzellen-Fill — beides
@@ -287,7 +288,7 @@ function buildWeirCut(geometry, weirs, terrain) {
     if (w.orifice || /B$/.test(w.direction || '')) continue;
     const col = Math.floor((w.x - xllcorner) / cellsize);
     const gridRow = Math.floor((w.y - yllcorner) / cellsize); // bottom-up
-    const geomRow = (nrows - 1) - gridRow;                     // top-down (Vertex-Zeile)
+    const geomRow = flipRow(gridRow, nrows);                   // top-down (Vertex-Zeile)
     if (col < 0 || col >= ncols || geomRow < 0 || geomRow >= nrows) continue;
     const dir = (w.direction || 'S')[0]; // N/S/E/W, 'F'-Suffix ignorieren
     let nc = col, nr = geomRow;

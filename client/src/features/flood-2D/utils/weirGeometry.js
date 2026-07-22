@@ -160,7 +160,7 @@ function orificeAt(openings, x, y, cellsize) {
 /**
  * Wehr-Polylinie → Zellen. Alle Segmente werden Bresenham-gerastert, doppelte
  * Zellen zusammengefasst; Eckzellen bekommen beide Flächen (L-Form), damit die
- * Barriere lückenlos bleibt (Muster aus useWeirTool.stepFace).
+ * Barriere lückenlos bleibt.
  *
  * Optional: Kronenhöhe `hc` pro Zelle aus dem z-Profil der Punkte interpoliert;
  * Zellen in einer Öffnung bekommen `orifice:{soffit,width,height,type}` (Rohr/Durchlass).
@@ -224,4 +224,27 @@ function zAt(gridData, header, cell) {
     if (!gridData) return undefined;
     const z = gridData[cell.row * header.ncols + cell.col];
     return z > -9000 ? z : undefined;
+}
+
+/**
+ * Wehr-KRONENZELLEN (KEINE Durchlässe) als Set "col,row" (row bottom-up) — die 3D-
+ * Wand (weirWall.js buildWeirWall) ist an diesen Zellen eine solide Barriere;
+ * Fließpfeile/Streamlines müssen dort wie an Gebäuden enden. Durchlass-Zellen
+ * (w.orifice != null) werden bewusst NICHT aufgenommen — sie sind ein echtes Loch
+ * (buildWeirWall schneidet dort eine Öffnung) und bekommen stattdessen die Jet-
+ * Überlagerung (weirJetFlow.js).
+ * @param {Array} weirs   geoStore.weirs (flach, pro Zelle: {x,y,orifice,...})
+ * @param {object} header {ncols, nrows, cellsize, xll|xllcorner, yll|yllcorner}
+ * @returns {Set<string>} "col,row"
+ */
+export function collectWeirCrestCells(weirs, header) {
+    const { ncols, nrows } = header;
+    const keys = new Set();
+    for (const w of (weirs || [])) {
+        if (w.orifice != null) continue;
+        const { col, row } = worldToCell(header, w.x, w.y);
+        if (col < 0 || col >= ncols || row < 0 || row >= nrows) continue;
+        keys.add(`${col},${row}`);
+    }
+    return keys;
 }

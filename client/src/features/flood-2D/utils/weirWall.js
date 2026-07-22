@@ -10,7 +10,6 @@
  * Kein node-Test (three.js) — die Hydraulik-Diskretisierung liegt in weirGeometry.js.
  */
 import * as THREE from 'three';
-import { sampleGridZ } from './BridgeMeshLattice.js';
 import { openingSection } from './weirGeometry.js';
 
 function headerOf(grid) {
@@ -24,8 +23,46 @@ function headerOf(grid) {
 function toLocal(grid, x, y, z) {
     return new THREE.Vector3(x - grid.center.x, z - grid.minZ, -(y - grid.center.y));
 }
+/**
+ * Geländehöhe an (x,y), BILINEAR interpoliert (nicht `sampleGridZ` aus BridgeMeshLattice.js, das
+ * auf die nächste Zelle RUNDET — reicht für die Solver-Zellzuordnung, erzeugt hier aber sichtbare
+ * Zell-Sprünge/Stufen) UND bewusst um GROUND_BURY abgesenkt.
+ *
+ * Der Grund für die Absenkung: die sichtbare Terrain-MESH (buildTerrainMesh in MapEditor3D.vue) ist
+ * eine eigene, geglättete/pro-Zelle-triangulierte Darstellung der Rasterdaten — an Kanten/Böschungen
+ * weicht ihre tatsächliche Bildschirm-Optik immer etwas von jeder rechnerischen Höhen-Interpolation
+ * ab (egal wie genau man rechnet, man jagt sonst einem beweglichen Ziel hinterher). Statt die
+ * Wand-Unterkante exakt auf die Geländehöhe zu legen, wird sie absichtlich ein Stück TIEFER gelegt,
+ * als sicher unter die sichtbare Oberfläche eingegraben — das Terrain-Mesh selbst (opak, normales
+ * depthTest/depthWrite) deckt den überstehenden Rest dann einfach ab (Wand-Material hat depthTest:true,
+ * s. useWeir3DTool.js). Ergebnis: nie mehr eine sichtbare Lücke, unabhängig von Mesh-Glättung.
+ * Rein optisch — für Solver/Hydraulik zählt weiterhin die ungeschönte Rasterhöhe (weirGeometry.js/
+ * InputGenerator.js), hier wird nur die 3D-Vorschau eingegraben.
+ */
 function terrainZ(grid, hdr, x, y) {
-    return hdr ? (sampleGridZ(hdr, grid.gridData, x, y) ?? grid.minZ) : grid.minZ;
+    if (!hdr || !grid.gridData) return grid.minZ;
+    const { ncols, nrows, cellsize } = hdr;
+    const xll = hdr.xll !== undefined ? hdr.xll : hdr.xllcorner;
+    const yll = hdr.yll !== undefined ? hdr.yll : hdr.yllcorner;
+    const fc = (x - xll) / cellsize, fr = (y - yll) / cellsize;
+    const c0 = Math.floor(fc), r0 = Math.floor(fr), tx = fc - c0, ty = fr - r0;
+    const at = (col, row) => {
+        if (col < 0 || col >= ncols || row < 0 || row >= nrows) return null;
+        const v = grid.gridData[row * ncols + col];
+        return v > -9000 ? v : null;
+    };
+    const z00 = at(c0, r0), z10 = at(c0 + 1, r0), z01 = at(c0, r0 + 1), z11 = at(c0 + 1, r0 + 1);
+    const fallback = z00 ?? z10 ?? z01 ?? z11;
+    if (fallback == null) return grid.minZ;
+    const top = (z00 ?? fallback) + ((z10 ?? fallback) - (z00 ?? fallback)) * tx;
+    const bot = (z01 ?? fallback) + ((z11 ?? fallback) - (z01 ?? fallback)) * tx;
+    // Großzügig statt knapp bemessen: das SWMM-Kanalnetz (useNetworkRenderer.js, Schächte/Haltungen)
+    // nutzt genau dasselbe Prinzip — Standard-depthTest, keine Sonderbehandlung fürs Durchscheinen
+    // durchs Terrain, dafür eigens ein Unter-Gelände-Orbit (MapEditor3D.vue maxPolarAngle) zum
+    // gezielten Nachschauen. Niemand blickt beim normalen Arbeiten von unten unters Gelände, also
+    // kostet ein tieferes Eingraben nichts — 2× Zellweite statt der knappen 0.25×.
+    const GROUND_BURY = cellsize * 2; // m
+    return top + (bot - top) * ty - GROUND_BURY;
 }
 function crestOf(line, p, grid) {
     return Number.isFinite(p.z) ? p.z : (line.hc ?? grid.minZ + 1);
@@ -68,24 +105,29 @@ function openingArc(line, o) {
     return sBest;
 }
 
-/** Vier Eckpunkte (links/rechts × Boden/Krone) eines verdichteten Stützpunkts. */
-function sampleCorners(grid, s, hw) {
+/** Vier Eckpunkte (links/rechts × Boden/Krone) eines verdichteten Stützpunkts. Boden-Höhe wird
+ *  JE SEITE separat vom Gelände abgetastet (nicht die Zentrallinien-Höhe wiederverwendet) — sonst
+ *  reißt bei Quergefälle über die Wandbreite eine Lücke zwischen Wand-Unterkante und Gelände auf. */
+function sampleCorners(grid, hdr, s, hw) {
     const px = -s.dy, py = s.dx; // Normale (Fließrichtung)
     const Lx = s.x + px * hw, Ly = s.y + py * hw;
     const Rx = s.x - px * hw, Ry = s.y - py * hw;
+    const zL = terrainZ(grid, hdr, Lx, Ly), zR = terrainZ(grid, hdr, Rx, Ry);
     return {
-        bl: toLocal(grid, Lx, Ly, s.baseZ), tl: toLocal(grid, Lx, Ly, s.crestZ),
-        br: toLocal(grid, Rx, Ry, s.baseZ), tr: toLocal(grid, Rx, Ry, s.crestZ),
+        bl: toLocal(grid, Lx, Ly, zL), tl: toLocal(grid, Lx, Ly, s.crestZ),
+        br: toLocal(grid, Rx, Ry, zR), tr: toLocal(grid, Rx, Ry, s.crestZ),
     };
 }
 
-/** Eckpunkte eines Stützpunkts für eine z-Bande [zLo,zHi] (links/rechts × unten/oben). */
-function bandCorners(grid, s, hw, zLo, zHi) {
+/** Eckpunkte eines Stützpunkts für eine z-Bande (links/rechts × unten/oben), Unterkante
+ *  ebenfalls je Seite vom Gelände abgetastet (siehe sampleCorners). */
+function bandCorners(grid, hdr, s, hw, zHi) {
     const px = -s.dy, py = s.dx;
     const Lx = s.x + px * hw, Ly = s.y + py * hw, Rx = s.x - px * hw, Ry = s.y - py * hw;
+    const zL = terrainZ(grid, hdr, Lx, Ly), zR = terrainZ(grid, hdr, Rx, Ry);
     return {
-        bl: toLocal(grid, Lx, Ly, zLo), tl: toLocal(grid, Lx, Ly, zHi),
-        br: toLocal(grid, Rx, Ry, zLo), tr: toLocal(grid, Rx, Ry, zHi),
+        bl: toLocal(grid, Lx, Ly, zL), tl: toLocal(grid, Lx, Ly, zHi),
+        br: toLocal(grid, Rx, Ry, zR), tr: toLocal(grid, Rx, Ry, zHi),
     };
 }
 
@@ -135,7 +177,7 @@ export function buildWeirWall(line, grid) {
         let prev = null;
         for (let k = 0; k <= n; k++) {
             const s = sampleAtArc(line, grid, a0 + (a1 - a0) * k / n, hdr);
-            const c = bandCorners(grid, s, hw, s.baseZ, s.crestZ);
+            const c = bandCorners(grid, hdr, s, hw, s.crestZ);
             if (prev) { quad(prev.tl, c.tl, c.tr, prev.tr); quad(prev.bl, c.bl, c.br, prev.br); quad(prev.bl, c.bl, c.tl, prev.tl); quad(prev.br, c.br, c.tr, prev.tr); }
             else quad(c.bl, c.br, c.tr, c.tl); // Stirnkappe Start
             prev = c;
@@ -147,15 +189,37 @@ export function buildWeirWall(line, grid) {
     const buildPanel = (op) => {
         const ctr = sampleAtArc(line, grid, op.arc, hdr);
         const nL = sampleAtArc(line, grid, op.arc - op.sExt, hdr), nR = sampleAtArc(line, grid, op.arc + op.sExt, hdr);
-        const contour = [{ s: -op.sExt, z: nL.baseZ }, { s: op.sExt, z: nR.baseZ }, { s: op.sExt, z: nR.crestZ }, { s: -op.sExt, z: nL.crestZ }]; // CCW
+        const fnx = -ctr.dy, fny = ctr.dx; // Fließrichtung (Normale)
+        // Boden-Ecken JE WANDSEITE separat vom Gelände abtasten (Quergefälle über die Wandbreite,
+        // wie bei bandCorners) — sonst Lücke zw. Panel-Unterkante und Gelände.
+        const zLf = terrainZ(grid, hdr, nL.x + fnx * hw, nL.y + fny * hw);
+        const zLb = terrainZ(grid, hdr, nL.x - fnx * hw, nL.y - fny * hw);
+        const zRf = terrainZ(grid, hdr, nR.x + fnx * hw, nR.y + fny * hw);
+        const zRb = terrainZ(grid, hdr, nR.x - fnx * hw, nR.y - fny * hw);
+        const contour = [{ s: -op.sExt, z: nL.baseZ }, { s: op.sExt, z: nR.baseZ }, { s: op.sExt, z: nR.crestZ }, { s: -op.sExt, z: nL.crestZ }]; // CCW, nur für Triangulierung
         // Loch muss zur CCW-Außenkontur GEGENläufig (CW) sein, sonst wird nicht ausgeschnitten.
         let area = 0; for (let i = 0; i < op.section.length; i++) { const a = op.section[i], b = op.section[(i + 1) % op.section.length]; area += a.s * b.z - b.s * a.z; }
-        const hole = area > 0 ? op.section.slice().reverse() : op.section;
+        // Defensiv: Loch-Punkte innerhalb der Außenkontur (mit Sicherheitsabstand) halten. Bei frei
+        // gezogenen/gescherten Poly-Querschnitten kann ein Punkt sonst über den Trapez-Rand hinaus
+        // ragen → triangulateShape liefert dann entartete/überlappende Dreiecke → Flackern.
+        const EPS = 0.02;
+        const floorAt = (s) => { const t = op.sExt > 1e-6 ? (s + op.sExt) / (2 * op.sExt) : 0.5; return nL.baseZ + t * (nR.baseZ - nL.baseZ); };
+        const ceilAt = (s) => { const t = op.sExt > 1e-6 ? (s + op.sExt) / (2 * op.sExt) : 0.5; return nL.crestZ + t * (nR.crestZ - nL.crestZ); };
+        const clampedSection = op.section.map(p => {
+            const lo = floorAt(p.s) + EPS, hi = ceilAt(p.s) - EPS;
+            return { s: p.s, z: hi > lo ? Math.min(hi, Math.max(lo, p.z)) : (lo + hi) / 2 };
+        });
+        const hole = area > 0 ? clampedSection.slice().reverse() : clampedSection;
         const tris = THREE.ShapeUtils.triangulateShape(contour.map(p => new THREE.Vector2(p.s, p.z)), [hole.map(p => new THREE.Vector2(p.s, p.z))]);
         const all = [...contour, ...hole];
-        const fnx = -ctr.dy, fny = ctr.dx; // Fließrichtung (Normale)
-        const map = (p, e) => toLocal(grid, op.o.x + ctr.dx * p.s + fnx * e, op.o.y + ctr.dy * p.s + fny * e, p.z);
-        const front = all.map(p => map(p, hw)), back = all.map(p => map(p, -hw));
+        // idx 0/1 = die beiden äußeren Boden-Ecken der Kontur → je Seite eigene Geländehöhe statt
+        // der (zentralen) Kontur-Höhe; alle anderen Punkte (Krone + Loch) sind seitenunabhängig.
+        const mapSide = (p, idx, e, zL, zR) => {
+            const z = idx === 0 ? zL : idx === 1 ? zR : p.z;
+            return toLocal(grid, op.o.x + ctr.dx * p.s + fnx * e, op.o.y + ctr.dy * p.s + fny * e, z);
+        };
+        const front = all.map((p, idx) => mapSide(p, idx, hw, zLf, zRf));
+        const back = all.map((p, idx) => mapSide(p, idx, -hw, zLb, zRb));
         for (const [a, b, c] of tris) { tri(front[a], front[b], front[c]); tri(back[a], back[c], back[b]); }
         for (let i = 0; i < 4; i++) { const a = i, b = (i + 1) % 4; quad(front[a], back[a], back[b], front[b]); } // Außenkanten
     };
@@ -186,8 +250,9 @@ export function buildWeirWallWire(line, grid) {
     if (!grid?.center) return null;
     const samples = densify(line, grid);
     if (samples.length < 2) return null;
+    const hdr = grid.gridData ? headerOf(grid) : null;
     const hw = (line.width ?? grid.cellsize) / 2;
-    const c = samples.map(s => sampleCorners(grid, s, hw));
+    const c = samples.map(s => sampleCorners(grid, hdr, s, hw));
     const seg = [];
     const push = (a, b) => seg.push(a.x, a.y, a.z, b.x, b.y, b.z);
     for (let i = 0; i < c.length - 1; i++) {
@@ -219,7 +284,11 @@ function lineDirAt(points, x, y) {
 /**
  * Öffnungs-Körper: das Querschnitts-Polygon (s entlang Linie, z absolut) wird QUER
  * (Fließrichtung) durch die Wand extrudiert — rund, rechteckig oder frei-polygonal,
- * je `opening.type`. Geht durch die ganze Wanddicke (line.width) hindurch.
+ * je `opening.type`. Geht durch die ganze Wanddicke (line.width) hindurch. NUR die
+ * Rohr-Innenwand (Seitenflächen) — bewusst OHNE Stirnflächen-Kappen an den Enden, sonst
+ * wirkt die Öffnung wie ein solider dunkler Pfropfen statt einem echten, durchsichtigen
+ * Loch (die Wand selbst hat an dieser Stelle bereits ein echtes geometrisches Loch, s.
+ * buildWeirWall → buildPanel).
  * @returns {Array<THREE.BufferGeometry>}
  */
 export function buildWeirOpenings(line, grid) {
@@ -240,9 +309,7 @@ export function buildWeirOpenings(line, grid) {
         }
         const pos = [];
         const tri = (a, b, c) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-        const tris = THREE.ShapeUtils.triangulateShape(section.map(p => new THREE.Vector2(p.s, p.z)), []);
-        for (const [a, b, c] of tris) { tri(front[a], front[b], front[c]); tri(back[a], back[c], back[b]); } // Stirnflächen
-        for (let i = 0; i < n; i++) { const j = (i + 1) % n; tri(front[i], front[j], back[j]); tri(front[i], back[j], back[i]); } // Wände
+        for (let i = 0; i < n; i++) { const j = (i + 1) % n; tri(front[i], front[j], back[j]); tri(front[i], back[j], back[i]); } // nur Rohr-Innenwand
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.computeVertexNormals();

@@ -737,6 +737,30 @@ export function collectPierCells(bridges, header) {
 }
 
 /**
+ * ALLE Zellen aller mesh3d-Brückenkörper (nicht nur Pfeiler) als Set "col,row"
+ * (row bottom-up). Der Deck-Slab (Bridge3DGeometry.js buildCellBody) läuft
+ * DURCHGEHEND über die gesamte Fußabdruck-Fläche (auch über Pfeiler) und wird im
+ * Ergebnis-Viewer als solides Mesh gerendert — Fließpfeile/Streamlines (depthTest:
+ * false) würden sonst sichtbar durch die ganze Brücke laufen, nicht nur an
+ * Pfeilern. Bewusst OHNE piers-Guard: auch pfeilerlose Brücken (reine Deck-Platte)
+ * müssen über ihre volle Fläche maskiert werden. Ist eine strikte Obermenge von
+ * collectPierCells().
+ * @param {Array} bridges  geoStore.bridges
+ * @param {object} header  {ncols, nrows, cellsize, xll|xllcorner, yll|yllcorner}
+ * @returns {Set<string>}  "col,row"
+ */
+export function collectBridgeCells(bridges, header) {
+    const keys = new Set();
+    for (const bridge of (bridges || [])) {
+        if (bridge.kind !== 'mesh3d' || !bridge.lattice) continue;
+        for (const cell of latticeToCells(bridge, header, null)) {
+            keys.add(`${cell.col},${cell.row}`);
+        }
+    }
+    return keys;
+}
+
+/**
  * Terrain-Höhe an einer Weltkoordinate (Zellzentren-Konvention wie
  * rasterizeFootprint, row 0 = Süd). Liefert null außerhalb/NoData.
  * @param {object} header  {ncols, nrows, cellsize, xll|xllcorner, yll|yllcorner}
