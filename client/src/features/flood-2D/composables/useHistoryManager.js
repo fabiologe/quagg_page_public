@@ -45,6 +45,7 @@ function extractGeo(store) {
         weirs:         deepClean(store.weirs),
         weirLines:     deepClean(store.weirLines),
         bridges:       deepClean(store.bridges),
+        sgcChannels:   deepClean(store.sgcChannels),
     };
 }
 
@@ -81,8 +82,9 @@ function restoreGeo(store, snap) {
     store.modifications = snap.modifications;
     store.weirs         = snap.weirs;
     // Alt-Snapshots (vor dem Fix) haben die Felder nicht — dann nicht anfassen.
-    if (snap.weirLines) store.weirLines = snap.weirLines;
-    if (snap.bridges)   store.bridges   = snap.bridges;
+    if (snap.weirLines)   store.weirLines   = snap.weirLines;
+    if (snap.bridges)     store.bridges     = snap.bridges;
+    if (snap.sgcChannels) store.sgcChannels = snap.sgcChannels;
 }
 
 function restoreHyd(store, snap) {

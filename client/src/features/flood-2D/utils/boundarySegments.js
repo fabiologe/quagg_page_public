@@ -15,6 +15,7 @@
  */
 
 import { worldToCell } from './weirGeometry.js';
+import { computeExteriorMask, isNearExteriorFront, FRONT_TOLERANCE_CELLS_DEFAULT } from './terrainFront.js';
 
 /** @typedef {'N'|'S'|'E'|'W'} Edge */
 
@@ -200,10 +201,13 @@ export function mergeCellsToIntervals(cells, edge, header) {
  * @param {{features:Array}} boundariesFC  GeoJSON FeatureCollection (geoStore.boundaries)
  * @param {Object<string,object>} assignments  hyd.assignments
  * @param {object} header  Raster-Header
- * @returns {{ snapped:number, interior:number, fieldsStripped:number }}
+ * @param {Float32Array|Array|null} [gridData]  bottom-up Terrain, für den nearFront-
+ *        Backfill (Ablauf-Eignung bei irregulärem/geclipptem Gelände, s. terrainFront.js).
+ *        Ohne gridData bleibt nearFront bei Alt-Projekten schlicht unbelegt (⇒ false).
+ * @returns {{ snapped:number, interior:number, fieldsStripped:number, nearFrontBackfilled:number }}
  */
-export function migrateBoundaries(boundariesFC, assignments, header) {
-    const stats = { snapped: 0, interior: 0, fieldsStripped: 0 };
+export function migrateBoundaries(boundariesFC, assignments, header, gridData = null) {
+    const stats = { snapped: 0, interior: 0, fieldsStripped: 0, nearFrontBackfilled: 0 };
     const features = boundariesFC?.features || [];
 
     for (const f of features) {
@@ -218,6 +222,21 @@ export function migrateBoundaries(boundariesFC, assignments, header) {
                 f.properties.edge = null; // Punkte/Polygone: Innenquelle
                 stats.interior++;
             }
+        }
+    }
+
+    // nearFront-Backfill für Alt-Projekte (vor diesem Feature gespeichert): ohne dieses
+    // Feld bliebe Ablauf für geclipptes/irreguläres Gelände dauerhaft auf 'NONE' gesperrt,
+    // bis der Nutzer die Linie neu zeichnet.
+    if (gridData && header) {
+        const mask = computeExteriorMask(gridData, header);
+        for (const f of features) {
+            if (f.properties.nearFront !== undefined) continue;
+            const coords = f.geometry?.type === 'LineString' ? f.geometry.coordinates
+                : f.geometry?.type === 'Point' ? [f.geometry.coordinates]
+                : null;
+            f.properties.nearFront = coords ? isNearExteriorFront(coords, header, mask, FRONT_TOLERANCE_CELLS_DEFAULT) : false;
+            stats.nearFrontBackfilled++;
         }
     }
 

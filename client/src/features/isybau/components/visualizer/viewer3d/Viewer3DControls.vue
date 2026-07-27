@@ -19,6 +19,11 @@
       <span class="toggle-dot" />
       <span class="toggle-label">Flächen</span>
     </label>
+    <label v-if="hasTerrain" class="ctrl-toggle" title="Gelände (DGM) ein-/ausblenden">
+      <input type="checkbox" :checked="showTerrain" @change="$emit('update:showTerrain', $event.target.checked)" />
+      <span class="toggle-dot" />
+      <span class="toggle-label">Gelände</span>
+    </label>
 
     <div class="ctrl-divider" />
 
@@ -68,12 +73,14 @@ defineProps({
   showNodes:      { type: Boolean, default: true  },
   showEdges:      { type: Boolean, default: true  },
   showAreas:      { type: Boolean, default: true  },
+  showTerrain:    { type: Boolean, default: true  },
+  hasTerrain:     { type: Boolean, default: false },
   showResults:    { type: Boolean, default: false },
   showWaterLevel: { type: Boolean, default: true  },
   zScale:         { type: Number,  default: 1     },
   hasResults:     { type: Boolean, default: false },
 });
-defineEmits(['reset-view', 'update:showNodes', 'update:showEdges', 'update:showAreas', 'update:showResults', 'update:showWaterLevel', 'update:zScale']);
+defineEmits(['reset-view', 'update:showNodes', 'update:showEdges', 'update:showAreas', 'update:showTerrain', 'update:showResults', 'update:showWaterLevel', 'update:zScale']);
 </script>
 
 <style scoped>

@@ -1,0 +1,114 @@
+QUAGG timeseries-memset patch -- behebt einen Speicherfehler im Original-Vendor-Code
+(nicht durch einen der vorherigen QUAGG-Patches verursacht), der JEDEN Lauf mit 2 oder
+mehr referenzierten .bdy-Zeitreihen-Profilen (QVAR/HVAR, Rand ODER Punktquelle) zum
+zufaelligen Absturz (SIGSEGV) bringen konnte. Siehe engines/patches/README.md.
+Betrifft: lisflood.h (BoundCs::allTimeSeries), lisflood.cpp (Initialisierung).
+
+Gefunden beim Testen eines echten Kundenprojekts (RunPod-Job, Exit-Code -11/Exit 245,
+keine stderr-Ausgabe -- reproduziert lokal identisch: Segfault in InterpolateTimeSeries(),
+aufgerufen aus UpdateH()).
+
+Root Cause, Teil 1 (input.cpp, LoadBCVar(), unveraendert seit dem Original-Vendor-Code):
+Fuer jedes in profiles.bdy gefundene Profil wird ein neues TimeSeries-Objekt an
+BCptr->allTimeSeries (Typ std::vector<TimeSeries>) angehaengt, und SOFORT eine Referenz
+auf dieses frisch angehaengte Element genommen ("TimeSeries& timeSeries =
+BCptr->allTimeSeries.back();"), deren Adresse dauerhaft in BC_TimeSeries[]/PS_TimeSeries[]
+gespeichert wird -- fuer die spaetere Nutzung in JEDEM Zeitschritt (InterpolateTimeSeries()).
+Ein std::vector KANN aber seinen kompletten internen Speicherblock bei einem push_back()
+verschieben (Reallokation), sobald die Kapazitaet erschoepft ist -- das macht JEDE zuvor
+genommene Referenz auf ein aelteres Element schlagartig ungueltig (dangling pointer). Bei
+genau 1 Profil tritt das nie auf (keine zweite Reallokation noetig); ab 2 Profilen ist es
+vom internen Kapazitaetswachstum des Vectors abhaengig, ob/wann es zuschlaegt --
+klassisches, schwer reproduzierbares undefined-behavior-Muster.
+
+Root Cause, Teil 2 (lisflood.cpp, main(), ebenfalls unveraendert seit dem Original):
+"BoundCs Bounds;" wird als normales C++-Stack-Objekt deklariert (sein Konstruktor,
+inkl. des std::vector/std::deque-Members allTimeSeries, laeuft dabei ganz normal). Direkt
+danach steht "memset(&Bounds, 0, sizeof(BoundCs));" -- das ueberschreibt den GESAMTEN Speicher
+des Structs mit Nullbytes, inklusive des bereits korrekt konstruierten C++-Container-Members.
+Das ist undefined behavior fuer jeden nicht-trivialen (non-POD) Member. Fuer std::vector
+"funktioniert" es in der Praxis meistens zufaellig: libstdc++s leerer vector besteht intern
+aus drei Nullpointern, was zufaellig genau dem Bytemuster von memset(...,0,...) entspricht --
+daher blieb dieser zweite Bug lange unbemerkt, er aendert nur unmerklich das Timing/Ausmass
+des ERSTEN Bugs (Teil 1).
+
+Interaktion der beiden Bugs: Der naheliegende Fix fuer Teil 1 (vector -> deque, da deque
+Referenzen auf bestehende Elemente bei push_back/pop_back an den Enden nicht ungueltig macht)
+deckte Teil 2 sofort auf: deques leerer Zustand ist bei libstdc++ NICHT einfach "alles Null"
+(es braucht einen gueltigen internen "Map"-Zeiger auch im leeren Zustand) -- ein reiner
+vector->deque-Tausch allein crashte prompt beim ALLERERSTEN push_back() mit einem
+Null-Pointer-Konstruktionsversuch tief in der STL (verifiziert per gdb-Backtrace).
+
+Fix (beide Teile noetig, jeder fuer sich unvollstaendig):
+  - lisflood.h: BoundCs::allTimeSeries von std::vector<TimeSeries> auf
+    std::deque<TimeSeries> geaendert (behebt Teil 1 -- stabile Referenzen).
+  - lisflood.cpp: direkt nach "memset(&Bounds, 0, sizeof(BoundCs));" wird
+    "new (&Bounds.allTimeSeries) std::deque<TimeSeries>();" (placement new) eingefuegt,
+    um den Container gezielt neu zu konstruieren, OHNE die anderen (gewollt genullten)
+    Felder von BoundCs anzutasten (behebt Teil 2).
+
+Sicherheits-Design: rein additiv/korrigierend, aendert an keiner anderen Stelle etwas.
+allTimeSeries wird ausschliesslich in LoadBCVar() genutzt (push_back/back()/pop_back(),
+alle drei von deque identisch unterstuetzt) -- ein reiner Drop-in-Tausch des Containertyps.
+
+Verifiziert:
+  - Lokaler Build: keine neuen Compiler-Warnungen/-Fehler.
+  - Patch appliziert sauber auf `pristine + weir-flow + inflow-momentum + coupling +
+    outflow-free-direction + sgc-trapezoid + sgc-bridge-blowup + bridge-flow-index`
+    (exakte Docker-Reihenfolge), Ergebnis byte-identisch zur bearbeiteten Arbeitskopie.
+  - ECHTES Kundenprojekt (identische Eingabedateien wie beim realen RunPod-Crash, 2
+    referenzierte .bdy-Profile): vorher Segfault (verifiziert per gdb: Absturz in
+    InterpolateTimeSeries() bzw. nach dem ersten Fix-Teil in LoadBCVar() selbst),
+    nachher Exit 0, vollstaendiger Lauf ueber 100s (10000 Zeitschritte), plausible
+    Massebilanz (Verror konvergiert Richtung 0).
+  - Negativkontrolle: sowohl das echte Kundenprojekt als auch ein neuer synthetischer
+    Stresstest mit 10 referenzierten Profilen crashen zuverlaessig (Exit 139/SIGSEGV)
+    gegen die ungepatchte Basis (pristine + alle 7 vorherigen Patches) und laufen
+    fehlerfrei durch mit diesem Patch.
+  - Alle bestehenden lokalen Repro-Szenarien (SGC-Bridge-Blowup-Repro, Bruecke-ohne-SGC)
+    unveraendert gruen.
+
+--- a/lisflood.h
++++ b/lisflood.h
+@@ -19,6 +19,8 @@
+ #include <string.h>
+ //#include <omp.h>
+ #include <vector> // CCS
++#include <deque> // QUAGG-FIX5: allTimeSeries needs stable references across push_back, see below
++#include <new> // QUAGG-FIX5: placement-new to re-construct allTimeSeries after memset(), see lisflood.cpp
+ #include <iostream> // CCS
+ //#include <netcdf.h> // JCN
+ 
+@@ -468,7 +470,16 @@
+ 	NUMERIC_TYPE VolInMT; // added by JCN stores volume in over mass inteval
+ 	NUMERIC_TYPE VolOutMT; // added by JCN stores volume out over mass inteval
+ 
+-	std::vector<TimeSeries> allTimeSeries;
++	// QUAGG-FIX5: was std::vector<TimeSeries>. input.cpp's LoadBCVar() takes a reference to
++	// allTimeSeries.back() right after each push_back and stores that ADDRESS into
++	// BC_TimeSeries[]/PS_TimeSeries[] for later use every timestep. A vector can reallocate
++	// its whole backing buffer on push_back, silently invalidating every reference taken on
++	// an earlier iteration -- with 2+ .bdy profiles this reliably produces dangling pointers,
++	// segfaulting later in InterpolateTimeSeries() (observed: real job, Exit -11/SIGSEGV, see
++	// engines/patches/README.md). deque never invalidates references to existing elements on
++	// push_back/pop_back at the ends (only vector does) -- exactly the guarantee needed here,
++	// same push_back/back()/pop_back() interface, drop-in replacement.
++	std::deque<TimeSeries> allTimeSeries;
+ };
+ 
+ //-------------------------------------------
+--- a/lisflood.cpp
++++ b/lisflood.cpp
+@@ -74,6 +74,12 @@
+ 	memset(&Params, 0, sizeof(Pars));
+ 	memset(&ParSolver, 0, sizeof(Solver));
+ 	memset(&Bounds, 0, sizeof(BoundCs));
++	// QUAGG-FIX5: BoundCs::allTimeSeries is a non-trivial C++ container (std::deque, see
++	// lisflood.h) -- the raw memset() above stomps its just-constructed internal state with
++	// zero bytes, which is undefined behavior for a non-POD member. Re-run its constructor
++	// in place so it's a genuinely valid empty container again (all the OTHER BoundCs fields
++	// are plain C-style data, for which zero-init via memset is fine and intended).
++	new (&Bounds.allTimeSeries) std::deque<TimeSeries>();
+ 	memset(&OutLocs, 0, sizeof(Stage));
+ 	memset(&SGCchanprams, 0, sizeof(SGCprams));
+ 	memset(&DamDataprams, 0, sizeof(DamData));

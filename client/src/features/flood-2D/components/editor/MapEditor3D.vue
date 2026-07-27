@@ -94,6 +94,14 @@
        <!-- Stats Overlay (eigene, einklappbare Komponente) -->
        <TerrainStatics :stats="stats" />
 
+       <!-- SGC-Vorschau: Ein/Aus-Schalter + Kanal-/Zellzahl, unabhängig vom Layer-Modus -->
+       <SgcPreviewPanel
+         :visible="sgcPreviewVisible"
+         @update:visible="sgcPreviewVisible = $event"
+         :channel-count="sgcPreviewStats.channelCount"
+         :cell-count="sgcPreviewStats.cellCount"
+       />
+
        <!-- Tool UIs (Context Sensitive) -->
        
        <!-- SHOVEL UI -->
@@ -114,6 +122,9 @@
 
        <!-- BRIDGE UI -->
        <BridgeTool v-if="simStore.activeTool === 'BRIDGE'" />
+
+       <!-- CHANNEL UI (Gerinne-Querschnitt ins Terrain einrechnen) -->
+       <ChannelTool v-if="simStore.activeTool === 'CHANNEL_STRUCTURE'" :toolInstance="channelStructureTool" />
 
        <!-- KANALNETZ: Schacht setzen / Haltung ziehen (Unified Geometry Engine) -->
        <NetNodeTool v-if="simStore.activeTool === 'NET_NODE'" />
@@ -375,6 +386,7 @@ import { useSurveyPointsRenderer } from '../../composables/editor/useSurveyPoint
 import { useVirtualRasterRenderer } from '../../composables/editor/useVirtualRasterRenderer.js';
 import { useBathyBrushTool } from '../../composables/editor/useBathyBrushTool.js';
 import { channelLineState, getChannelLineToolInstance } from '../../composables/editor/useChannelLineTool.js';
+import { useChannelStructureTool } from '../../composables/editor/useChannelStructureTool.js';
 import { useSgcRasterPreview } from '../../composables/editor/useSgcRasterPreview.js';
 import { useBridgeRasterPreview } from '../../composables/editor/useBridgeRasterPreview.js';
 import { channelPolygonState, getChannelPolygonToolInstance } from '../../composables/editor/useChannelPolygonTool.js';
@@ -388,6 +400,7 @@ import {
 import LayerControl from './LayerControl.vue';
 import CompassRose from './CompassRose.vue';
 import TerrainStatics from './TerrainStatics.vue';
+import SgcPreviewPanel from './SgcPreviewPanel.vue';
 import SaintVLoader from '../common/SaintVLoader.vue';
 import DefaultMap from './DefaultMap.vue';
 import BuildingTool from '../tools/BuildingTool.vue';
@@ -396,6 +409,7 @@ import BridgeTool from '../tools/BridgeTool.vue';
 import BoundaryTool from '../tools/BoundaryTool.vue';
 import ShovelTool from '../tools/ShovelTool.vue';
 import TextureTool from '../tools/TextureTool.vue';
+import ChannelTool from '../tools/ChannelTool.vue';
 import { flipRow } from '../../utils/gridIndex.js';
 
 // No props needed for activeTool anymore, using store
@@ -425,12 +439,16 @@ let importWorker = null;
 const selectedInfo = ref(null); // { x, y, z, col, row }
 const activeLayerMode = ref('WIREFRAME'); // 'CLASSIC' | 'SURFACE' | 'SOLID' | 'WIREFRAME' | 'CONTOUR' | 'TIFF' — Standard: Rasteransicht
 const compassAngle = ref(0);
+// SGC-Vorschau-Panel (SgcPreviewPanel.vue): eigener Sichtbarkeits-Schalter (Default an) +
+// reaktive Kanal-/Zellzahl, von useSgcRasterPreview.js befüllt (siehe initScene()).
+const sgcPreviewVisible = ref(true);
+const sgcPreviewStats = reactive({ channelCount: 0, cellCount: 0 });
 
 // --- THREE.JS OBJECTS ---
 let scene, renderer, controls, animationId;
 let cameraPerspective, cameraOrtho, activeCamera;
 let terrainMesh, interactionPlane;
-let sgcPreview; // { rebuild, clear, setVisible } — Sichtbarkeit an applyLayerMode() gekoppelt (nur WIREFRAME)
+let sgcPreview; // { rebuild, clear, setVisible } — Sichtbarkeit über sgcPreviewVisible (SgcPreviewPanel.vue)
 let bridgeRasterPreview; // dito, für die Brücken-Öffnungsbreiten-Vorschau
 // Unsichtbare Tiefen-Maske, exakt deckungsgleich mit terrainMesh — nur für WIREFRAME aktiv (siehe
 // applyLayerMode). Grund: der Wireframe-Shader discard'et fast alle Fragmente (MapShader.js,
@@ -462,6 +480,7 @@ const weir3DTool = getWeir3DToolInstance();
 const bridge3DTool = getBridge3DToolInstance();
 const channelLineTool    = getChannelLineToolInstance();
 const channelPolygonTool = getChannelPolygonToolInstance();
+const channelStructureTool = useChannelStructureTool();
 const refPickTool        = getRefPickToolInstance();
 const { saveState, undo, redo, canUndo, canRedo } = useHistoryManager();
 
@@ -545,6 +564,7 @@ const tools = {
     'BATHY_BRUSH': bathyBrushTool,
     'CHANNEL_LINE':    channelLineTool,
     'CHANNEL_POLYGON': channelPolygonTool,
+    'CHANNEL_STRUCTURE': channelStructureTool,
     'OFFSET_REF_PICK': refPickTool,
     'BOUNDARY': boundaryTool,
     'TEXTURE': textureTool,
@@ -583,7 +603,11 @@ const applyCameraLock = () => {
         && bridge3DState.phase === 'DRAW_FOOTPRINT';
     // WEIR-Polylinie: Punkte-Zeichnen sperrt LEFT (sonst orbitet die Kamera)
     const weirDrawing = tool === 'WEIR' && weir3DState.phase === 'DRAW';
-    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK' || bridgeDrawing || weirDrawing) {
+    // Ablauf-Picker (Sub-Modus von BOUNDARY) erlaubt jetzt auch Ziehen ("Polylinie" durch
+    // mehrere Randzellen) — braucht dieselbe Sperre wie SHOVEL/TEXTURE, sonst orbitet die
+    // Kamera beim Ziehen statt Zellen aufzunehmen.
+    const boundaryOutflowMode = tool === 'BOUNDARY' && boundaryTool.mode.value === 'OUTFLOW';
+    if (tool === 'SHOVEL' || tool === 'TEXTURE' || tool === 'CHANNEL_LINE' || tool === 'CHANNEL_POLYGON' || tool === 'CHANNEL_STRUCTURE' || tool === 'BATHY_BRUSH' || tool === 'OFFSET_REF_PICK' || bridgeDrawing || weirDrawing || boundaryOutflowMode) {
         controls.mouseButtons.LEFT = null;
     } else {
         if (activeCamera === cameraOrtho) {
@@ -662,6 +686,12 @@ watch(() => [weir3DState.phase, weir3DState.dragging], ([, dragging]) => {
     if (activeTool.value === 'WEIR') applyCameraLock();
 }, { flush: 'sync' });
 
+// --- BOUNDARY Zulauf↔Ablauf-Umschalter: Ablauf braucht die Picker-Kamera-Sperre sofort,
+// auch wenn das Tool schon aktiv ist (kein activeTool-Wechsel, der applyCameraLock sonst triggert).
+watch(() => boundaryTool.mode.value, () => {
+    if (activeTool.value === 'BOUNDARY') applyCameraLock();
+});
+
 // --- NET_NODE: Schacht-Drag friert die Kamera ein (Muster Brücke/Wehr) ---
 watch(() => networkNodeTool.state.dragging, (dragging) => {
     if (!controls) return;
@@ -688,13 +718,17 @@ const applyLayerMode = (val) => {
     // WIREFRAME discard'et fast alle Fragmente → kaum Tiefe. Maske nur dann zuschalten (sonst in den
     // anderen Modi überflüssig, die schreiben ihre Tiefe schon selbst normal/vollflächig).
     if (terrainDepthMesh) terrainDepthMesh.visible = (val === 'WIREFRAME');
-    // SGC-/Brücken-Rasterzellen-Vorschau nur zeigen, wenn die Rasterzellen-Grenzen selbst
+    // Brücken-Rasterzellen-Vorschau nur zeigen, wenn die Rasterzellen-Grenzen selbst
     // sichtbar sind (Rasteransicht/WIREFRAME) — sonst wirkt es wie ein unmotiviert schwebender Layer.
-    if (sgcPreview) sgcPreview.setVisible(val === 'WIREFRAME');
+    // SGC-Vorschau (sgcPreview) ist NICHT mehr an den Layer-Modus gekoppelt — eigener
+    // Ein/Aus-Schalter im SgcPreviewPanel.vue (sgcPreviewVisible-Watcher weiter unten).
     if (bridgeRasterPreview) bridgeRasterPreview.setVisible(val === 'WIREFRAME');
 };
 
 watch(activeLayerMode, (val) => applyLayerMode(val));
+
+// SGC-Vorschau-Sichtbarkeit (SgcPreviewPanel.vue-Schalter) direkt aufs Composable durchreichen.
+watch(sgcPreviewVisible, (v) => { if (sgcPreview) sgcPreview.setVisible(v); });
 
 // --- UPDATE ON EXTERNAL SURFACE DATA ---
 watch(() => surfaceStore.gridVersion, () => {
@@ -757,10 +791,10 @@ onMounted(() => {
 
     // Live-Vorschau des echten SGC-Gerinnerasters (gestempelte Zellen + Pfeiler-Sperren),
     // reagiert auf die eingestellte Breite — zeigt die KORRIDOR-Breite, nicht nur die Linie.
-    // Nur in der WIREFRAME-Rasteransicht sichtbar (siehe applyLayerMode) — nur dort sieht
-    // man die Rasterzellen-Grenzen selbst, gegen die die eingefärbten Quads einrasten.
-    sgcPreview = useSgcRasterPreview(scene);
-    sgcPreview.setVisible(activeLayerMode.value === 'WIREFRAME');
+    // Sichtbarkeit über den eigenen Schalter im SgcPreviewPanel.vue (nicht mehr an den
+    // Layer-Modus gekoppelt), Kanal-/Zellzahl fließt in dessen Anzeige (sgcPreviewStats).
+    sgcPreview = useSgcRasterPreview(scene, sgcPreviewStats);
+    sgcPreview.setVisible(sgcPreviewVisible.value);
 
     // Live-Vorschau der gerasterten Brückenzellen + effektiver Öffnungsbreite (Pfeiler
     // sub-grid): zeigt im BRÜCKEN-Werkzeug, was der Solver wirklich rechnet.

@@ -1,0 +1,141 @@
+QUAGG SGC-trapezoid patch -- vervollstaendigt SGCchan_type 7 (Trapez-Querschnitt)
+im vendorten LISFLOOD-FP 8.0.3. Siehe engines/patches/README.md.
+Betrifft: sgc.cpp, lisflood2/sgm_fast.cpp.
+
+Typ 7 (Sohlbreite + Boeschungsneigung, A=(we+sl*h)*h) war nur in den
+Pro-Zeitschritt-Funktionen CalcSGC_A/CalcSGC_R (und deren "fast"-Duplikaten
+SGC2_CalcA/SGC2_CalcR in sgm_fast.cpp) aktiv implementiert. Die drei
+Volumen<->Tiefe-Funktionen fielen fuer Typ 7 in den default-Zweig
+("Should not be here!") und liessen SGCc/SGCbfV auf 0 -- das fuehrte zu
+einem echten Solver-Absturz (korrumpierte Kanalgeometrie -> "Bridge must
+have sub grid flows on either side" -> Exit 255), reproduziert und hier
+gefixt:
+  - CalcSGCz (sgc.cpp): einmalige Initialisierung, berechnet SGCc/SGCbfV
+    jetzt korrekt aus der Bankfull-Trapezflaeche (we+sl*bfH)*bfH -- dieselbe
+    Formel wie das bereits aktive CalcSGC_A case 7.
+  - CalcSGC_UpV/CalcSGC_UpH (sgc.cpp) + SGC2_CalcUpV/SGC2_CalcUpH
+    (lisflood2/sgm_fast.cpp): Volumen<->Tiefe pro Zeitschritt. Diese
+    Funktionen bekommen keine Breite als Parameter (nur Neigung + einen
+    geformten Skalar c) -- ein echtes Trapez ist unterhalb der Bankfull-
+    Tiefe quadratisch in der Tiefe und laesst sich damit nicht exakt
+    abbilden, ohne die Signatur an 5+ Aufrufstellen zu aendern. Nutzt
+    stattdessen dieselbe lineare Naeherung (v=h*c bzw. h=V/c), die der
+    Vendor selbst schon fuer den einzigen anderen Nicht-Rechteck-Fall
+    (Dreieck, Case 3/4) verwendet -- unterhalb Bankfull eine bewusste
+    Naeherung, oberhalb exakt (SGCbfV stimmt exakt).
+  - w0 (SGCwidth) ist fuer Typ 7 unveraendert die SOHLBREITE (verifiziert:
+    CalcSGC_A/R lesen SGCwidth direkt als "we", ohne Umrechnung) -- der
+    auskommentierte Original-Entwurf in CalcSGCz ging von Bankfull-Breite
+    aus und haette ein nie allokiertes SGCsl-Array gebraucht; nicht
+    uebernommen.
+
+Verifiziert lokal (g++/cmake, ohne Docker): baut ohne neue Warnungen in
+sgc.cpp/sgm_fast.cpp. Testlauf mit einem vorhandenen Vendor-SGC-Testfall
+(testing/T002_BCTest/BCTest_SGC.par, SGCchan 7 + SGCs ergaenzt) laeuft
+sauber durch (Exit 0, keine "Should not be here"-Ausgabe, endliche
+Wasserstaende, Massebilanz exakt 0 Fehler) und zeigt bei gleicher
+Sohlbreite eine PLAUSIBEL geringere Spitzenwassertiefe als die Rechteck-
+Kontrollgruppe (1.302 m vs. 1.436 m am Zufluss-Zentrum) -- die groessere
+Abflusskapazitaet eines Trapezquerschnitts. Docker-Image/RunPod-Verifikation
+gegen ein echtes App-Szenario (inkl. Bruecke ueber dem Kanal, die
+urspruenglich abstuerzende Kombination) steht noch aus, siehe README.md.
+
+--- a/sgc.cpp
++++ b/sgc.cpp
+@@ -220,6 +220,14 @@
+ 		v = h*c;
+ 		break;
+ 
++	case 7: // trapazoidal channel (QUAGG) - linear-in-depth approximation below
++			// bankfull, same convention as the triangular case 3/4 above: this
++			// function's signature has no separate width parameter, so an exact
++			// quadratic V(h) for a true trapezoid cannot be represented here.
++			// c is derived in CalcSGCz from the bankfull cross-section area.
++		v = h*c;
++		break;
++
+ 	default: // its all gone wrong
+ 		printf("should not be here! Something is wrong with the SGC channel model in CalcSGC_UpV");
+ 		break;
+@@ -492,19 +500,31 @@
+ 				Arrptr->SGCbfV[p0] = Arrptr->SGCc[p0] * Arrptr->SGCbfH[p0]; // calculate bank full volume
+ 				break;	// Break terminates the switch statement
+ 
+-				/*
++				/* Original upstream draft (never enabled) — assumed SGCwidth was BANKFULL
++				width and converted it to bed width via a persistent per-cell SGCsl array
++				that is never allocated anywhere in this codebase:
+ 				case 7: // trapazoidal channel
+-				// sub-grid channels pre-processor for trapazoidal channel
+-				// NOTE that in the case of the trapazoidal channel width at bankfull is changed to width at bed by this pre-processor
+-				// Calculate z using the hydraulic geometry
+ 				Arrptr->SGCz[p0] = getmin (z0 - r*pow(w0,p), Arrptr->DEM[p0] - C(0.01));
+-				// check if DEM is channel bed and if so make the channel bed C(0.01) m below the DEM such that the channel is essentially rectangular at DEM height
+-				//if (Arrptr->SGCz[p0] == Arrptr->DEM[p0]) Arrptr->SGCz[p0]-=C(0.01);
+-				Arrptr->SGCsl[p0] = sl;  // for the trapazoidal channel SGCsl is an input parameter
+-				// Calculate a new for trapazoidal channel bed
++				Arrptr->SGCsl[p0] = sl;
+ 				Arrptr->SGCwidth[p0] = Arrptr->SGCwidth[p0] - 2*(Arrptr->DEM[p0]-Arrptr->SGCz[p0])*Arrptr->SGCsl[p0];
+-				break;	// Break terminates the switch statement
++				break;
+ 				*/
++			case 7: // trapazoidal channel (QUAGG) - w0 is already the BED width here
++					// (verified: CalcSGC_A/CalcSGC_R read Arrptr->SGCwidth[p0] directly as
++					// "we" in A=(we+sl*h)*h, unmodified — same convention as case 1), and
++					// sl is the independent per-group side slope already read into the
++					// local `sl` above (SGCptr->SGCs[gr]) — no width rewrite needed, unlike
++					// case 3/4 where sl is instead DERIVED from width (not our situation).
++					// SGCc = length * mean width at bankfull, so SGCbfV=SGCc*bfH reproduces
++					// the exact bankfull trapezoid area (we+sl*bfH)*bfH (same formula as the
++					// already-live CalcSGC_A case 7). Below bankfull, CalcSGC_UpV/UpH apply
++					// this linearly (v=h*c) — the same approximation the vendor already uses
++					// for the triangular case 3/4, since this function's SGCc/SGCbfV are only
++					// used through that linear interface elsewhere in the solver.
++				Arrptr->SGCc[p0] = Arrptr->SGCc[p0] * (w0 + sl * Arrptr->SGCbfH[p0]); // calculate SGCc
++				Arrptr->SGCbfV[p0] = Arrptr->SGCc[p0] * Arrptr->SGCbfH[p0]; // calculate bank full volume
++				break;	// Break terminates the switch statement
++
+ 			default: // its all gone wrong
+ 				printf("Should not be here! Something is wrong with the SGC channel model in CalcSGCz");
+ 				break;
+@@ -1683,7 +1703,11 @@
+ 		h = pow(V / c, C(2.0) / C(3.0));
+ 		break;  // Break terminates the switch statement
+ 
+-	case 6: // Rectangular channel (no banks) - This model has a top width and bed elevation and top 
++	case 6: // Rectangular channel (no banks) - This model has a top width and bed elevation and top
++		h = V / c;
++		break;
++
++	case 7: // trapazoidal channel (QUAGG) - inverse of CalcSGC_UpV's linear approximation
+ 		h = V / c;
+ 		break;
+ 
+--- a/lisflood2/sgm_fast.cpp
++++ b/lisflood2/sgm_fast.cpp
+@@ -395,7 +395,12 @@
+ 		h = pow(V / c, C(2.0) / C(3.0));
+ 		break;  // Break terminates the switch statement
+ 
+-	case 6: // Rectangular channel (no banks) - This model has a top width and bed elevation and top 
++	case 6: // Rectangular channel (no banks) - This model has a top width and bed elevation and top
++		h = V / c;
++		break;
++
++	case 7: // trapazoidal channel (QUAGG) - linear-in-depth approximation below bankfull,
++			// same convention/reasoning as sgc.cpp CalcSGC_UpH (see there for the derivation).
+ 		h = V / c;
+ 		break;
+ 
+@@ -445,6 +450,11 @@
+ 		v = h*c;
+ 		break;
+ 
++	case 7: // trapazoidal channel (QUAGG) - linear-in-depth approximation below bankfull,
++			// same convention/reasoning as sgc.cpp CalcSGC_UpV (see there for the derivation).
++		v = h*c;
++		break;
++
+ 	default: // its all gone wrong
+ 		printf("should not be here! Something is wrong with the SGC channel model in SGC2_CalcUpV");
+ 		break;

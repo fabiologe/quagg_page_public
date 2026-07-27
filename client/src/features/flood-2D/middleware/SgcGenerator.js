@@ -98,4 +98,105 @@ export function generateSgcRasters(channel, demData, header) {
     return { width, bed, bank, cellCount };
 }
 
-export const SgcGenerator = { generateSgcRasters };
+/**
+ * Legacy-Einzelkanal (bathyStore.channelPolyline/channelParams) + neue Mehrfach-
+ * Kanal-Liste (geoStore.sgcChannels) zu EINER Liste zusammenführen — von
+ * Flood2DSolverRunner.vue (Export) UND useSgcRasterPreview.js (Live-Vorschau)
+ * genutzt, damit die Merge-Logik nicht zweimal existiert.
+ * @param {{polyline:Array, width:number, bedMode:string, bedDepth:number, bedZStart:number, bedZEnd:number, manningN:number}|null} legacyChannel
+ * @param {Array} channelList  geoStore.sgcChannels (bereits im {shape,bedWidth,...}-Format)
+ * @returns {Array} kombinierte Liste im {shape,polyline,bedWidth,bedMode,bedDepth,bedZStart,bedZEnd,sideSlope,manningN}-Format
+ */
+export function mergeSgcChannels(legacyChannel, channelList) {
+    const merged = [];
+    if (legacyChannel && legacyChannel.polyline?.length >= 2) {
+        merged.push({
+            shape: 'rect',
+            polyline: legacyChannel.polyline,
+            bedWidth: legacyChannel.width,
+            bedMode: legacyChannel.bedMode,
+            bedDepth: legacyChannel.bedDepth,
+            bedZStart: legacyChannel.bedZStart,
+            bedZEnd: legacyChannel.bedZEnd,
+            sideSlope: 0,
+            manningN: legacyChannel.manningN,
+        });
+    }
+    for (const c of (channelList || [])) merged.push(c);
+    return merged;
+}
+
+/**
+ * Mehrere Kanäle zu EINEM Raster-Satz stempeln (LISFLOOD SGCchangroup-Modus).
+ * Läuft generateSgcRasters() je Kanal (bestehende, geprüfte Korridor-Logik bleibt
+ * unangetastet), aber mit EINEM globalen "stamped"-Set über alle Kanäle hinweg:
+ * bei Überlappung gewinnt der ZUERST in der Liste stehende Kanal. Zusätzlich zu
+ * width/bed/bank wird ein group-Raster befüllt (Zellindex → Kanal-Index, für
+ * SGCchangroup + sgc.chanprams.txt, siehe buildSgcChanPramsFile).
+ * @param {Array} channels  [{polyline, shape, bedWidth, bedMode, bedDepth, bedZStart, bedZEnd, sideSlope, manningN}]
+ * @param {Float32Array} demData
+ * @param {object} header
+ * @returns {{width:Float32Array, bed:Float32Array, bank:Float32Array, group:Float32Array, cellCount:number}}
+ */
+export function generateMultiSgcRasters(channels, demData, header) {
+    const { ncols, nrows } = header;
+    const size = ncols * nrows;
+    const width = new Float32Array(size);
+    const bed = new Float32Array(size).fill(-9999);
+    const bank = new Float32Array(size).fill(-9999);
+    const group = new Float32Array(size).fill(-1);
+    const stamped = new Set();
+    let cellCount = 0;
+
+    (channels || []).forEach((channel, channelIndex) => {
+        const single = generateSgcRasters(
+            {
+                polyline: channel.polyline,
+                width: channel.bedWidth ?? channel.width,
+                bedMode: channel.bedMode,
+                bedDepth: channel.bedDepth,
+                bedZStart: channel.bedZStart,
+                bedZEnd: channel.bedZEnd,
+            },
+            demData, header,
+        );
+        if (single.cellCount === 0) return;
+        for (let idx = 0; idx < size; idx++) {
+            if (single.width[idx] <= 0) continue;
+            if (stamped.has(idx)) continue; // von einem früheren Kanal schon belegt
+            stamped.add(idx);
+            width[idx] = single.width[idx];
+            bed[idx] = single.bed[idx];
+            bank[idx] = single.bank[idx];
+            group[idx] = channelIndex;
+            cellCount++;
+        }
+    });
+
+    return { width, bed, bank, group, cellCount };
+}
+
+/**
+ * Text für sgc.chanprams.txt (LISFLOOD LoadSGCChanPrams, input.cpp:2319-2360):
+ * erste Zeile = Anzahl Gruppen, danach je Zeile "index type p r slope n m a".
+ *
+ * SGCchan_type 7 (Trapez) benötigt quagg-sgc-trapezoid.patch (CalcSGCz/CalcSGC_UpV/
+ * CalcSGC_UpH vervollständigt) UND quagg-sgc-bridge-blowup.patch (CalcBridgeQ,
+ * verhindert eine Massebilanz-Explosion, sobald ein SGC-Kanal unter einer Brücke
+ * durchfließt) — beide seit 2026-07-25 im Docker-Image. Siehe engines/patches/README.md.
+ * @param {Array} channels  gleiche Liste wie generateMultiSgcRasters (Reihenfolge = Gruppen-Index)
+ * @returns {string}
+ */
+export function buildSgcChanPramsFile(channels) {
+    const list = channels || [];
+    const lines = [String(list.length)];
+    list.forEach((channel, i) => {
+        const type = channel.shape === 'trapezoid' ? 7 : 1;
+        const slope = channel.shape === 'trapezoid' ? (channel.sideSlope ?? 1.5) : 0;
+        const n = channel.manningN ?? 0.03;
+        lines.push(`${i} ${type} 0.78 0.12 ${slope} ${n} 1 -1`);
+    });
+    return lines.join('\n') + '\n';
+}
+
+export const SgcGenerator = { generateSgcRasters, generateMultiSgcRasters, buildSgcChanPramsFile, mergeSgcChannels };

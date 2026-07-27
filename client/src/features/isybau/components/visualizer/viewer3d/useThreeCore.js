@@ -5,10 +5,10 @@ export function useThreeCore() {
   let scene = null, camera = null, renderer = null, controls = null;
   let animationId = null;
 
-  function init(container) {
+  function init(container, bgColor = 0x0d1117) {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d1117);
-    scene.fog = new THREE.Fog(0x0d1117, 800, 30000);
+    scene.background = new THREE.Color(bgColor);
+    scene.fog = new THREE.Fog(bgColor, 800, 30000);
 
     const w = container.clientWidth || 800;
     const h = container.clientHeight || 600;
@@ -85,6 +85,13 @@ export function useThreeCore() {
     controls?.reset();
   }
 
+  // Dark/Light-Umschalter: Szenenhintergrund + Nebelfarbe live nachziehen
+  function setBackground(bgColor) {
+    if (!scene) return;
+    scene.background = new THREE.Color(bgColor);
+    if (scene.fog) scene.fog.color.set(bgColor);
+  }
+
   // Correct double-click focus: use Box3 from actual vertices, not mesh.position
   function focusMesh(mesh) {
     if (!mesh || !controls || !camera) return;
@@ -111,6 +118,6 @@ export function useThreeCore() {
     get camera()   { return camera;   },
     get renderer() { return renderer; },
     get controls() { return controls; },
-    init, startLoop, stopLoop, handleResize, fitToNetwork, resetView, focusMesh, dispose,
+    init, startLoop, stopLoop, handleResize, fitToNetwork, resetView, focusMesh, setBackground, dispose,
   };
 }

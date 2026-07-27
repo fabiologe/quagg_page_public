@@ -8,7 +8,9 @@
  * nicht nur die Mittellinie.
  *
  * Selbstständiger, reaktiver Renderer (Muster: useVirtualRasterRenderer):
- *   - hört auf channelPolyline, channelParams (Breite!), Brücken und Terrain
+ *   - hört auf channelPolyline/channelParams (Bathymetrie-Einzelkanal), geoStore.
+ *     sgcChannels (Channel-Tool-Mehrfachkanäle, zusammengeführt via mergeSgcChannels),
+ *     Brücken und Terrain
  *   - baut bei jeder Änderung ein InstancedMesh kleiner Quads neu auf
  *   - offene Gerinnezellen = cyan, vom Pfeiler gesperrte Zellen = rot
  *
@@ -21,17 +23,23 @@ import { watch, onUnmounted } from 'vue';
 import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
-import { generateSgcRasters } from '../../middleware/SgcGenerator.js';
+import { generateMultiSgcRasters, mergeSgcChannels } from '../../middleware/SgcGenerator.js';
 import { collectPierCells } from '../../utils/BridgeMeshLattice.js';
 
 const COLOR_OPEN = 0x00bcd4;    // offene Gerinnezelle
 const COLOR_BLOCKED = 0xff3b30; // Pfeiler-Sperre (SGC-Breite 0)
 
-export function useSgcRasterPreview(scene) {
+/**
+ * @param {THREE.Scene} scene
+ * @param {{channelCount:number, cellCount:number}} [statsOut]  reaktives Objekt (vom
+ *   Aufrufer erzeugt, z. B. `reactive({channelCount:0, cellCount:0})`) — wird bei jedem
+ *   rebuild() mit den aktuellen Zahlen befüllt, für SgcPreviewPanel.vue (Legende/Anzeige).
+ */
+export function useSgcRasterPreview(scene, statsOut = null) {
     const geoStore = useGeoStore();
     const bathyStore = useBathymetryStore();
     let mesh = null;
-    let visible = true; // vom Host steuerbar (z.B. nur in der WIREFRAME-Rasteransicht zeigen)
+    let visible = true; // vom Host steuerbar (SgcPreviewPanel.vue-Toggle, s. setVisible)
 
     function clear() {
         if (mesh && scene) {
@@ -51,11 +59,16 @@ export function useSgcRasterPreview(scene) {
     function rebuild() {
         clear();
         const terrain = geoStore.terrain;
-        const poly = bathyStore.channelPolyline;
-        // Nur das gezeichnete Bathymetrie-Gerinne (echtes Sub-Grid-Gerinne) vorschauen.
-        // Brücken erzeugen KEIN SGC (sie laufen ohne Sub-Grid auf der Floodplain) → hier
+        // Bathymetrie-Einzelkanal (Legacy) + Channel-Tool-Mehrfachkanäle zusammen —
+        // gleiche Merge-Quelle wie der Export (Flood2DSolverRunner.vue). Brücken
+        // erzeugen KEIN SGC (sie laufen ohne Sub-Grid auf der Floodplain) → hier
         // bewusst nicht dargestellt.
-        if (!scene || !terrain?.center || !terrain.gridData || !poly || poly.length < 2) return;
+        const legacy = bathyStore.channelPolyline.length >= 2
+            ? { polyline: bathyStore.channelPolyline, ...bathyStore.channelParams }
+            : null;
+        const channels = mergeSgcChannels(legacy, geoStore.sgcChannels);
+        if (statsOut) { statsOut.channelCount = channels.length; statsOut.cellCount = 0; }
+        if (!scene || !terrain?.center || !terrain.gridData || channels.length === 0) return;
 
         const { ncols, nrows, cellsize, minZ, center, gridData } = terrain;
         const xll = terrain.xllcorner ?? terrain.xll ?? 0;
@@ -64,7 +77,7 @@ export function useSgcRasterPreview(scene) {
 
         let grids;
         try {
-            grids = generateSgcRasters({ polyline: poly, ...bathyStore.channelParams }, gridData, header);
+            grids = generateMultiSgcRasters(channels, gridData, header);
         } catch {
             return;
         }
@@ -82,6 +95,7 @@ export function useSgcRasterPreview(scene) {
             }
         }
         const total = open.length + blocked.length;
+        if (statsOut) statsOut.cellCount = total;
         if (total === 0) return;
 
         const geo = new THREE.PlaneGeometry(cellsize * 0.9, cellsize * 0.9);
@@ -155,6 +169,7 @@ export function useSgcRasterPreview(scene) {
             bathyStore.channelParams.width,
             bathyStore.channelParams.bedDepth,
             bathyStore.channelParams.bedMode,
+            geoStore.sgcChannels,
             geoStore.bridges?.length,
             geoStore.terrain?.gridData,
         ],

@@ -3,6 +3,7 @@ import { Node } from '../core/domain/Node.js';
 import { Edge } from '../core/domain/Edge.js';
 import { Area } from '../core/domain/Area.js';
 import { validateNetwork } from '../utils/preSolveValidation.js';
+import { detectCRS } from '../utils/KostraService.js';
 
 let workerControllerInstance = null;
 
@@ -12,6 +13,10 @@ export const useIsybauStore = defineStore('isybau-module', {
         edges: new Map(), // ID -> Edge instance
         areas: [], // Catchment areas
         inspections: [], // Befahrungen / TV-Daten
+
+        // Hochgeladenes DGM (siehe utils/xyzTerrainImporter.js) — sitzungsbezogen,
+        // bewusst NICHT Teil des Projekt-Snapshots (siehe getters.projectSnapshot).
+        terrain: null,
 
         // Metadata / Global Props (from XML)
         metadata: {},
@@ -44,10 +49,13 @@ export const useIsybauStore = defineStore('isybau-module', {
             showHelpModal: false,
             showProjectManager: false,
             showElementModal: false,
+            showEzgCrsModal: false, // EZG-Karte: Koordinatensystem-Bestätigung
+            showNewProjectLocationModal: false, // "Neu starten": Standortwahl vor dem ersten Klick
             preprocessingFocusId: null, // Element, das das Preprocessing beim Öffnen vorselektiert
             preprocessingFocusType: null, // 'node' | 'edge' | 'area' — nötig, da Haltungs- und Schacht-IDs in ISYBAU-Daten kollidieren können
             elementModal: { mode: 'node', data: {} }, // Kontext fürs Erstellen-Modal
-            importWarnings: [] // Sammelbericht übersprungener Elemente beim Import
+            importWarnings: [], // Sammelbericht übersprungener Elemente beim Import
+            darkMode: typeof localStorage !== 'undefined' && localStorage.getItem('isybau-theme') === 'dark'
         },
         simulation: {
             status: 'idle', // idle, running, success, error
@@ -262,6 +270,18 @@ export const useIsybauStore = defineStore('isybau-module', {
             console.log(`IsybauStore: Loaded ${this.nodes.size} nodes, ${this.edges.size} edges, ${this.areas.length} areas.`);
 
             this.ui.importWarnings = importWarnings;
+
+            // EZG-Karte: Koordinatensystem schätzen (nur eine Vermutung, blockiert
+            // den Import nicht). Bereits bestätigte CRS (z.B. beim Neuladen eines
+            // gespeicherten Projekts) werden nicht überschrieben.
+            if (!this.metadata.crs?.confirmed && this.nodes.size > 0) {
+                const c = this.center;
+                this.metadata.crs = {
+                    epsg: detectCRS(c.x, c.y),
+                    confirmed: false,
+                    source: 'auto'
+                };
+            }
         },
 
         clear() {
@@ -271,7 +291,17 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.inspections = [];
             this.editor.selectedId = null;
             this.simulation.results = null;
+            this.terrain = null;
             return; // Explicit return
+        },
+
+        /** Ergebnis von terrainImportWorker.js übernehmen (siehe Sidebar.vue-Upload). */
+        importTerrain(data) {
+            this.terrain = data;
+        },
+
+        clearTerrain() {
+            this.terrain = null;
         },
 
         // --- History Actions ---
@@ -341,12 +371,38 @@ export const useIsybauStore = defineStore('isybau-module', {
 
         // --- UI-/Workflow-Actions (Verdrahtung siehe components/modals/IsybauModals.vue) ---
 
+        /** EZG-Karte: vom Nutzer bestätigtes/überschriebenes Koordinatensystem übernehmen. */
+        confirmCRS(epsg) {
+            this.metadata.crs = { epsg, confirmed: true, source: 'confirmed' };
+            this.ui.showEzgCrsModal = false;
+        },
+
+        /**
+         * "Neu starten": Startort für ein leeres Projekt festlegen. Anders als
+         * confirmCRS() (Bestätigung eines aus XML-Koordinaten GESCHÄTZTEN CRS)
+         * legt dies CRS UND einen Referenzpunkt (bereits projizierte lokale
+         * Meter) gleichzeitig fest — deshalb eine eigene Action statt
+         * confirmCRS() zu erweitern.
+         */
+        setOriginAnchor({ epsg, x, y, label }) {
+            this.metadata.crs = { epsg, confirmed: true, source: 'anchor' };
+            this.metadata.originAnchor = { x, y, label };
+        },
+
         /** Element in den Viewern kurz hervorheben/anfahren (z.B. aus Tabellenzeile). */
         flashFocus(id) {
             this.editor.focusTargetId = id;
             // Watcher triggern nur auf Wertwechsel — nach kurzer Zeit zurücksetzen,
             // damit derselbe Klick erneut funktioniert.
             setTimeout(() => { this.editor.focusTargetId = null; }, 500);
+        },
+
+        /** Dark/Light umschalten (Sidebar-Button unten links) — persistiert in localStorage. */
+        toggleDarkMode() {
+            this.ui.darkMode = !this.ui.darkMode;
+            try {
+                localStorage.setItem('isybau-theme', this.ui.darkMode ? 'dark' : 'light');
+            } catch (e) { /* Storage evtl. deaktiviert (Privatmodus) — Theme bleibt sitzungsbezogen */ }
         },
 
         /** Erstellen-Modal mit Kontext öffnen (Editor-Klick: Knoten/Haltung/Fläche). */
@@ -377,6 +433,8 @@ export const useIsybauStore = defineStore('isybau-module', {
                     props.coverZ = props.cover;
                     delete props.cover;
                 }
+                // UI-only Hinweis-Flag (DGM-Vorschlag) — kein Domain-Feld
+                delete props.demSuggested;
                 this.addNode(data.x, data.y, props);
             }
             this.ui.showElementModal = false;

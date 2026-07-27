@@ -42,6 +42,16 @@ const basePar = 'DEMfile terrain.asc\nresroot res\ndirroot results\nsim_time 400
     + 'saveint 60\nmassint 30\nfpfric 0.03\nbcifile flow.bci\nacceleration\n';
 const baseFiles = () => ({ 'terrain.asc': asc, 'run.par': basePar, 'flow.bci': 'N 0 100 FREE\nS 0 100 FREE\nE 0 100 FREE\nW 0 100 FREE\n' });
 
+// SGC-Breitenraster (gleiche Dimensionen/Ausrichtung wie terrain.asc): `activeCells` markiert
+// die Zellen, die eine echte SGC-Kanalzelle sind (Breite > 0), alle anderen bleiben 0.
+function makeSgcAsc(activeCells) {
+    const w = new Float32Array(M * M).fill(0);
+    for (const { col, row } of activeCells) w[row * M + col] = 2.0;
+    let a = `ncols ${M}\nnrows ${M}\nxllcorner 0\nyllcorner 0\ncellsize ${CS}\nNODATA_value -9999\n`;
+    for (let r = 0; r < M; r++) a += Array.from({ length: M }, (_, c) => w[r * M + c].toFixed(2)).join(' ') + '\n';
+    return a;
+}
+
 console.log('1) Anreicherung');
 const res = buildCoupledFiles(baseFiles(), makeModel(), { dtCouple: 2.0, swmm: { durationHours: 0.2 } });
 ok(res.active === true, 'Kopplung aktiv');
@@ -69,9 +79,50 @@ console.log('2) Zeit-Synchronisation 1D↔2D (unter der Haube)');
 
 console.log('3) Guards');
 ok(buildCoupledFiles({ ...baseFiles(), 'run.par': basePar.replace('acceleration', 'fv1') }, makeModel()).active === false, 'fv1 → deaktiviert');
-ok(buildCoupledFiles({ ...baseFiles(), 'run.par': basePar + 'SGCwidth sgc.width.asc\n' }, makeModel()).active === false, 'SGC → deaktiviert');
 ok(buildCoupledFiles({ 'run.par': basePar }, makeModel()).active === false, 'kein terrain.asc → deaktiviert');
 ok(buildCoupledFiles(baseFiles(), new NetworkModel()).active === false, 'leeres Netz → deaktiviert');
+
+console.log('3b) SGC zellengenau statt modellweit (Regression: früher deaktivierte JEDES SGCwidth die GESAMTE Kopplung)');
+{
+    const parWithSgc = basePar + 'SGCwidth sgc.width.asc\n';
+    // (a) SGC-Kanal weit weg von beiden Schächten → Kopplung bleibt für BEIDE aktiv
+    const far = buildCoupledFiles(
+        { ...baseFiles(), 'run.par': parWithSgc, 'sgc.width.asc': makeSgcAsc([{ col: 3, row: 3 }]) },
+        makeModel(), { dtCouple: 2.0 });
+    ok(far.active === true, 'SGC-Kanal fern der Schächte → Kopplung bleibt aktiv (nicht mehr modellweit gesperrt)');
+    ok(far.couplingNodes.some(c => c.id === 'MH') && far.couplingNodes.some(c => c.id === 'OUT'),
+        'beide Schächte weiterhin gekoppelt, wenn ihre Zellen SGC-frei sind');
+
+    // (b) SGC-Kanal GENAU auf MHs Zelle → nur MH wird übersprungen, OUT bleibt gekoppelt
+    const onMh = buildCoupledFiles(
+        { ...baseFiles(), 'run.par': parWithSgc, 'sgc.width.asc': makeSgcAsc([{ col: 10, row: 10 }]) },
+        makeModel(), { dtCouple: 2.0 });
+    ok(onMh.active === true, 'MH auf SGC-Zelle, OUT bleibt gültig → Kopplung insgesamt weiterhin aktiv');
+    ok(!onMh.couplingNodes.some(c => c.id === 'MH'), 'MH selbst NICHT mehr in couplingNodes (liegt auf SGC-Zelle)');
+    ok(onMh.couplingNodes.some(c => c.id === 'OUT'), 'OUT unberührt gekoppelt (andere Zelle)');
+    ok(onMh.warnings.some(w => w.includes('MH') && w.includes('SGC-Kanalzelle')), 'Warnung nennt MH + SGC-Kanalzelle');
+
+    // (c) SGC-Kanal deckt BEIDE Zellen ab → kein gültiger Kopplungsschacht mehr übrig → deaktiviert
+    const onBoth = buildCoupledFiles(
+        { ...baseFiles(), 'run.par': parWithSgc, 'sgc.width.asc': makeSgcAsc([{ col: 10, row: 10 }, { col: 19, row: 10 }]) },
+        makeModel(), { dtCouple: 2.0 });
+    ok(onBoth.active === false, 'SGC deckt alle Kopplungszellen ab → Kopplung fällt auf deaktiviert zurück');
+}
+
+console.log('3c) Schacht mit ausschließlich offenem Gerinne (kein Rohr ins SWMM-Netz) wird übersprungen');
+{
+    const mhX = (dc + 0.5) * CS, mhY = (M - 1 - dr + 0.5) * CS;
+    const m = new NetworkModel();
+    m.addNode({ id: 'MH', x: mhX, y: mhY, invert: 6.0, rim: 8.0, role: 'manhole' });
+    m.addNode({ id: 'G1', x: mhX + 20, y: mhY, invert: 5.8, rim: 7.8, role: 'manhole' });
+    m.addLink({ id: 'RI1', fromNodeId: 'MH', toNodeId: 'G1', conveyance: 'open',
+        length: 20, profile: { shape: 'rect', width: 1.0 } });
+    const res = buildCoupledFiles(baseFiles(), m, { dtCouple: 2.0 });
+    ok(!res.couplingNodes.some(c => c.id === 'MH') && !res.couplingNodes.some(c => c.id === 'G1'),
+        'Knoten ohne jeden Rohr-Anschluss (nur offenes Gerinne) werden übersprungen');
+    ok(res.warnings.some(w => w.includes('nur offene Gerinne')), 'Warnung erklärt den Ausschluss');
+    ok(res.active === false, 'kein Kopplungsschacht übrig → deaktiviert');
+}
 
 console.log('4) End-to-End (Docker)');
 let hasDocker = false;

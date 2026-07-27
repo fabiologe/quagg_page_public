@@ -402,11 +402,32 @@ const parseEdge = (obj, id) => {
     const status = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
 
     const profil = obj.getElementsByTagName("Profil")[0];
+    const profilartCode = parseInt(profil?.getElementsByTagName("Profilart")[0]?.textContent || 0);
+    // Profilart-Code → SGC-relevante Querschnittsform (mappings.js: Profilart). Nur offene
+    // Querschnitte (Rechteck offen=5, Trapez=8, Doppeltrapez=9) sind fürs SGC-Raster relevant;
+    // alle anderen (Kreis/Ei/Maul/geschlossenes Rechteck/...) bleiben geschlossene Rohre (SWMM).
+    const SGC_SHAPE_BY_PROFILART = { 5: 'rect', 8: 'trapezoid', 9: 'trapezoid' };
+    const sgcShape = SGC_SHAPE_BY_PROFILART[profilartCode] ?? null;
+    // Böschungsneigung/getrennte Sohlbreite: KEIN bestätigtes Tag im ISYBAU-Austauschformat
+    // bekannt (keine echten Rinne/Gerinne/Trapez-Beispieldaten verfügbar, Stand 2026-07-25) —
+    // Kandidaten-Tags werden defensiv probiert, bleiben aber undefined statt geraten/defaulted
+    // zu werden, wenn sie fehlen. Der Default (1.5, wie SgcGenerator) wird bewusst NICHT hier
+    // gesetzt, sondern an der Compiler-Grenze (services/geometry/networkToSgc.js), damit es
+    // dafür genau eine dokumentierte Stelle gibt.
+    const sideSlopeRaw = profil?.getElementsByTagName("Boeschungsneigung")[0]?.textContent
+        ?? profil?.getElementsByTagName("Neigung")[0]?.textContent;
+    const sideSlope = sideSlopeRaw != null ? parseFloat(sideSlopeRaw) : undefined;
+    const bedWidthRaw = profil?.getElementsByTagName("Sohlbreite")[0]?.textContent;
+    const bedWidth = bedWidthRaw != null ? parseFloat(bedWidthRaw) / 1000 : undefined;
+
     const profile = {
-        type: parseInt(profil?.getElementsByTagName("Profilart")[0]?.textContent || 0),
+        type: profilartCode,
         id: profil?.getElementsByTagName("Profilbezeichnung")[0]?.textContent || profil?.getElementsByTagName("ProfilID")[0]?.textContent || "",
         height: parseFloat(profil?.getElementsByTagName("Profilhoehe")[0]?.textContent || 300) / 1000,
-        width: parseFloat(profil?.getElementsByTagName("Profilbreite")[0]?.textContent || 300) / 1000
+        width: parseFloat(profil?.getElementsByTagName("Profilbreite")[0]?.textContent || 300) / 1000,
+        ...(sgcShape ? { shape: sgcShape } : {}),
+        ...(bedWidth !== undefined ? { bedWidth } : {}),
+        ...(sideSlope !== undefined ? { sideSlope } : {}),
     };
 
     return {

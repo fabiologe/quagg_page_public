@@ -1,0 +1,147 @@
+QUAGG bridge-flow-index patch -- entfernt einen zu strengen, asymmetrischen
+Setup-Check, der eine Bruecke ueber einem VOELLIG GUELTIGEN SGC-Kanal mit
+"Invalid bridge cell. Bridge must have sub grid flows on either side."
+abstuerzen liess. Siehe engines/patches/README.md.
+Betrifft: lisflood2/lisflood_processing.cpp (Bridge-Setup-Validierung),
+lisflood2/sgm_fast.cpp (CalcBridgeQ, usVel-Fallback).
+
+Reproduziert an einem echten Kundenprojekt (314x428 Zellen, 1x1m, Typ-7-
+Trapezkanal, 5 Bruecken): 2 von 5 Bruecken (eine EB, eine SB) standen exakt
+ueber durchgehendem, gueltigem Kanal (Breite 2m auf beiden Zellen, an denen
+die Bruecke selbst haengt) -- der Solver brach trotzdem mit Exit 255 ab.
+
+Root Cause (per Debug-Instrumentierung direkt am Absturzpunkt verifiziert,
+nicht geraten): Fuer eine an Spalte xi haengende `EB`-Bruecke prueft
+`lisflood_processing.cpp` (Bridge-Setup, `EWeir_Bridge`-Zweig) zwei Eintraege
+in `Weir_pair_stream_flow_index` -- die "upstream flow"-Indizes, die
+`CalcBridgeQ` (sgm_fast.cpp) fuer die Anstroemgeschwindigkeit `usVel` beim
+Druckabfluss (Orifice, `Qp`) braucht:
+
+    West-Check:  flow_Qx_lookup_grid_tmp[padded_q_index - 1]  (Spalten xi-1, xi   -- die Bruecke selbst)
+    Ost-Check:   flow_Qx_lookup_grid_tmp[padded_q_index + 1]  (Spalten xi+1, xi+2 -- ZWEI Zellen jenseits der Bruecke)
+
+Der West-Check prueft effektiv nur die zwei Zellen, ueber denen die Bruecke
+selbst haengt (praktisch immer erfuellt, wenn ueberhaupt ein Kanal da ist).
+Der Ost-Check verlangt aber zusaetzlich, dass der Kanal NOCH ZWEI Zellen
+WEITER nach Osten reicht (Spalten xi+1 UND xi+2) -- eine asymmetrische
+Anforderung ohne Gegenstueck auf der Westseite. Analog fuer `SB`-Bruecken in
+Y-Richtung (Norden symmetrisch zur Bruecke, Sueden zwei Zeilen extra). Beim
+Kundenprojekt verlaeuft der Kanal an beiden betroffenen Kreuzungen leicht
+diagonal (treppenfoermig im Raster) -- der Korridor ist an der Bruecke genau
+2 Zellen breit, reicht aber nicht die zusaetzlich verlangten 2 Zellen weiter.
+Ob das im Original-Vendor-Code eine bewusste (aber sehr fragile) Anforderung
+oder ein Off-by-One-Fehler ist, liess sich nicht abschliessend klaeren --
+sicherer als eine Vermutung ueber die "richtige" Index-Verschiebung zu raten
+(Risiko: stiller Out-of-Bounds-Read/falsche Physik statt eines klaren
+Abbruchs) ist es, den Check zu entschaerfen, s. Fix unten.
+
+Warum das sicher ist: `Weir_pair_stream_flow_index` wird in `CalcBridgeQ`
+AUSSCHLIESSLICH fuer `usVel`/`heg` verwendet, die wiederum NUR in `Qp` (den
+Druckabfluss-Zweig) einfliessen -- niemals in `Qoc` (den dominanten,
+Freispiegel-Zweig unterhalb der Soffitte, s. quagg-sgc-bridge-blowup.patch).
+`usVel=0` (kein Anstroem-Geschwindigkeitskopf) ist eine etablierte, sichere
+Vereinfachung, keine Instabilitaetsquelle -- anders als eine geratene
+Index-Verschiebung, die ggf. auf falsche/fremde `sg_flow_Q`-Werte zeigen
+wuerde.
+
+Fix:
+  - `lisflood_processing.cpp`: der harte `exit(-1)` in beiden
+    `EWeir_Bridge`-Zweigen (Qx- und Qy-Richtung) entfernt.
+    `Weir_pair_stream_flow_index` bleibt in diesem Fall bei -1 (dem
+    ohnehin schon vorhandenen Default aus `AllocateWeir`).
+  - `sgm_fast.cpp`, `CalcBridgeQ`: beide `usVel`-Berechnungen (Positive-Flow-
+    und Negative-Flow-Zweig) pruefen den Index jetzt vor dem Array-Zugriff;
+    bei -1 wird `usVel = 0` gesetzt statt `sg_flow_Q[-1]` (undefiniertes
+    Verhalten / Out-of-Bounds-Read) zu lesen.
+
+Sicherheits-Design: reiner Additiv-Fix (weniger Abbruchbedingungen, ein
+zusaetzlicher Guard vor einem Array-Zugriff) -- fuer Bruecken, bei denen
+beide Indizes bereits gueltig waren, ist das Verhalten bitidentisch (der
+Guard greift nur bei genau dem Wert, der vorher den Absturz ausgeloest
+haette).
+
+Verifiziert:
+  - Lokaler Build: keine neuen Compiler-Warnungen/-Fehler.
+  - Patch appliziert sauber auf `pristine + weir-flow + inflow-momentum +
+    coupling + outflow-free-direction + sgc-trapezoid + sgc-bridge-blowup`
+    (exakte Docker-Reihenfolge), Ergebnis byte-identisch zur bearbeiteten
+    Arbeitskopie.
+  - ECHTES Kundenprojekt (314x428 Zellen, 5 Bruecken, Typ-7-Trapezkanal, aus
+    einem realen fehlgeschlagenen RunPod-Job): vorher Exit 255 ("Invalid
+    bridge cell"), nachher Exit 0, vollstaendiger Lauf ueber 100s
+    Simulationszeit (10000 Zeitschritte), res.max durchgehend endlich (895
+    nasse Zellen, max. Tiefe 1.84 m), Massebilanzfehler klein und gegen Ende
+    des Laufs auf Rauschniveau (Verror 7.6e-6 bei t=100s).
+  - Regressions-Repro aus quagg-sgc-bridge-blowup.patch (1x1m, SGC-Kanal +
+    Bruecke): weiterhin Exit 0, Vol waechst exakt linear, Verror auf
+    Maschinenrauschen -- unveraendert.
+  - `test_bridge_no_sgc.py` (Bruecke ganz ohne SGC): weiterhin gruen,
+    res.max endlich -- unveraendert (dieser Pfad nutzt `Weir_pair_stream_
+    flow_index` gar nicht ueber das SGC-Array).
+
+--- a/lisflood2/lisflood_processing.cpp
++++ b/lisflood2/lisflood_processing.cpp
+@@ -1009,13 +1009,14 @@
+ 
+ 				if (weirs->Weir_Typ[weir_id] == EWeir_Bridge)
+ 				{
+-					if (weirs->Weir_pair_stream_flow_index[weir_id * 2] == -1 ||
+-						weirs->Weir_pair_stream_flow_index[weir_id * 2 + 1] == -1)
+-					{
+-						// bridges use the upstream flow, which is assumed to be in the cell to the east or west
+-						printf("\nInvalid bridge cell. Bridge must have sub grid flows on either side.\n");
+-						exit(-1);
+-					}
++					// QUAGG-FIX4: this used to hard-abort the whole run whenever the SGC
++					// channel didn't extend a further cell beyond the bridge's own two
++					// straddling cells (an asymmetric, fragile requirement -- see
++					// engines/patches/README.md). Weir_pair_stream_flow_index feeds only
++					// the upstream-velocity term of the pressure/orifice branch in
++					// CalcBridgeQ (sgm_fast.cpp), never the dominant below-soffit flow
++					// path; CalcBridgeQ now falls back to usVel=0 when an index is -1, so
++					// simply leaving it at -1 here (already the default) is safe.
+ 					total_bridges++;
+ #ifdef _DEBUG
+ 					//printf("Bridge (x) (%d,%d)\n", x, y);
+@@ -1069,13 +1070,7 @@
+ 
+ 					if (weirs->Weir_Typ[weir_id] == EWeir_Bridge)
+ 					{
+-						if (weirs->Weir_pair_stream_flow_index[weir_id * 2] == -1 ||
+-							weirs->Weir_pair_stream_flow_index[weir_id * 2 + 1] == -1)
+-						{
+-							// bridges use the upstream flow, which is assumed to be in the cell to the north or south
+-							printf("\nInvalid bridge cell. Bridge must have sub grid flows on either side.\n");
+-							exit(-1);
+-						}
++						// QUAGG-FIX4: see the analogous Qx-direction block above.
+ 						total_bridges++;
+ #ifdef _DEBUG
+ 						//printf("Bridge (y) (%d,%d)\n", x, y);
+--- a/lisflood2/sgm_fast.cpp
++++ b/lisflood2/sgm_fast.cpp
+@@ -723,13 +723,22 @@
+ 		// orifice bridge flow
+ 		if (surfaceElevation0 > surfaceElevation1) { // Positive flow
+ 			Zratio = h0 / Z; // calc current flow depth to bridge opening ratio
+-			usVel = sub_grid_state->sg_flow_Q[weirs->Weir_pair_stream_flow_index[weir_pair_id0]] / (h0*weirs->cell_pair.sg_cell_SGC_width[weir_pair_id0]); // MT calculate upstream velocity
++			// QUAGG-FIX4: the upstream-flow lookup can legitimately be -1 (no adjacent
++			// regular SGC flow face available two cells out -- see lisflood_processing.cpp,
++			// EWeir_Bridge validation). That used to be a hard setup-time abort even though
++			// this value only feeds the pressure/orifice branch (Qp) below, never Qoc (the
++			// dominant, below-soffit flow path). Fall back to usVel=0 (no upstream approach
++			// velocity/energy head) instead of indexing sg_flow_Q with -1.
++			int usIdx0 = weirs->Weir_pair_stream_flow_index[weir_pair_id0];
++			usVel = (usIdx0 >= 0) ? sub_grid_state->sg_flow_Q[usIdx0] / (h0*weirs->cell_pair.sg_cell_SGC_width[weir_pair_id0]) : C(0.0); // MT calculate upstream velocity
+ 			heg = (usVel*usVel) / (2 * g); // MT calculate upstream energy gradient height
+ 			Qp = Cd*Area*SQRT(2 * g*(surfaceElevation0 - surfaceElevation1 + heg)); // calc bridge orifice flow
+ 		}
+ 		else { // Negative flow
+ 			Zratio = h1 / Z; // calc current flow depth to bridge opening ratio
+-			usVel = sub_grid_state->sg_flow_Q[weirs->Weir_pair_stream_flow_index[weir_pair_id1]] / (h1*weirs->cell_pair.sg_cell_SGC_width[weir_pair_id1]); // MT calculate upstream velocity
++			// QUAGG-FIX4: see positive-flow branch above.
++			int usIdx1 = weirs->Weir_pair_stream_flow_index[weir_pair_id1];
++			usVel = (usIdx1 >= 0) ? sub_grid_state->sg_flow_Q[usIdx1] / (h1*weirs->cell_pair.sg_cell_SGC_width[weir_pair_id1]) : C(0.0); // MT calculate upstream velocity
+ 			heg = (usVel*usVel) / (2 * g); // MT calculate upstream energy gradient height
+ 			Qp = -(Cd*Area*SQRT(2 * g*(surfaceElevation1 - surfaceElevation0 + heg))); // calc bridge orifice flow
+ 		}

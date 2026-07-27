@@ -55,6 +55,23 @@
 .tool-ui-panel .collapse-dots { margin-left: auto; color: var(--sv-lime, #a3e635); font-size: 0.85rem; letter-spacing: 2px; opacity: .9; }
 .tool-ui-panel .header-icon { font-size: 1.1rem; }
 
+/* SGC-Badge: markiert Werkzeuge, deren Ergebnis vom Sub-Grid-Channel-Raster abhängt
+ * (erzeugen es selbst ODER werden davon geclippt/eingeschränkt, z. B. Brücken-Pfeiler).
+ * Nur sichtbar bei ausgeklapptem Panel — collapse-toggle/-dots übernehmen sonst dieselbe
+ * margin-left:auto-Ecke (beide Zustände sind ohnehin exklusiv, siehe v-if/v-else). */
+.tool-ui-panel .sgc-badge {
+  margin-left: auto;
+  background: rgba(163, 230, 53, 0.18);
+  border: 1px solid var(--sv-lime, #a3e635);
+  color: var(--sv-lime, #a3e635);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
 /* Hinweise / Schritt-Badges */
 .tool-ui-panel .hint { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .tool-ui-panel .drawing-hint { color: #ffce54; }

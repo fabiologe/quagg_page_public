@@ -42,7 +42,13 @@
 
             <div class="form-group">
                <label>Deckelhöhe (mNHN)</label>
-               <input v-model.number="formData.cover" type="number" step="0.01" class="form-input" required placeholder="z.B. 102.50" :disabled="!formData.isManhole" />
+               <input
+                 v-model.number="formData.cover"
+                 type="number" step="0.01" class="form-input" required
+                 placeholder="z.B. 102.50" :disabled="!formData.isManhole"
+                 @input="formData.demSuggested = false"
+               />
+               <small v-if="formData.demSuggested" class="hint">Vorschlag aus geladenem DGM — bitte prüfen</small>
             </div>
 
             <div class="form-group">

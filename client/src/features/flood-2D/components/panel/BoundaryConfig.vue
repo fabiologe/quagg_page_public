@@ -3,10 +3,7 @@
 <script setup>
 import SvEmoji from '../common/SvEmoji.vue';
 import { ref, computed, watch } from 'vue';
-import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore';
 import { useHydraulicStore } from '@/features/flood-2D/stores/useHydraulicStore';
-
-// ── Global Boundary State ─────────────────────────────────────────────────
 import GanglinienEditor from '../hydraulics/GanglinienEditor.vue';
 
 const props = defineProps({
@@ -14,17 +11,26 @@ const props = defineProps({
 });
 
 const hydStore = useHydraulicStore();
-const geoStore = useGeoStore();
 
 // --- STATE ---
-// Role/Mode simplified to German UI concepts
-const activeType = ref('NONE'); // NONE, INFLOW_CONSTANT, INFLOW_DYNAMIC, OUTFLOW_FREE, WATERLEVEL_FIX
+// activeType ist UI-Gruppierung: NONE, INFLOW_CONSTANT, INFLOW_DYNAMIC, OUTFLOW.
+// 'OUTFLOW' wird NIE persistiert — saveSettings löst es über outflowMode in die zwei
+// tatsächlich gespeicherten Store-Typen auf (OUTFLOW_FREE bzw. WATERLEVEL_FIX).
+const activeType = ref('NONE');
 const constantValue = ref(0);
 const selectedProfileId = ref(null);
-const useNativeFree = ref(true);
-const outflowSlope = ref(null);       // Sf (m/m) für FREE; null = kritische Tiefe
+const outflowSlope = ref(null);       // Sf (m/m) für OUTFLOW/Frei; null = Standard-Sicherheitsgefälle
+const outflowMode = ref('FREE');      // 'FREE' | 'HFIX' | 'HVAR' — nur wenn activeType === 'OUTFLOW'
+const stageValue = ref(null);         // fester Wasserspiegel [m NHN] ODER [m über Gelände], nur bei outflowMode === 'HFIX'
+const stageRelative = ref(false);     // true: stageValue ist relativ zur Geländehöhe statt absolut NHN
 const directed = ref(false);          // gerichteter Zufluss an/aus
 const flowAngleDeg = ref(0);          // Welt-Azimut 0=Ost, 90=Nord (nur wenn directed)
+
+const outflowModeOptions = [
+    { value: 'FREE', icon: '↘️', label: 'Frei' },
+    { value: 'HFIX', icon: '📏', label: 'Fester Pegel' },
+    { value: 'HVAR', icon: '🌊', label: 'Pegel-Ganglinie' },
+];
 
 // Schnellwahl-Buttons (Himmelsrichtungen) — schreiben den Azimut.
 const compassPresets = [
@@ -56,15 +62,6 @@ const onDialClick = (e) => {
     setAngle(Math.round(deg));
 };
 
-// UI Options
-const typeOptions = [
-    { value: 'NONE', label: 'Keine Auswahl' },
-    { value: 'INFLOW_CONSTANT', label: '🚰 Konstanter Zufluss' },
-    { value: 'INFLOW_DYNAMIC', label: '🌊 Zufluss (Ganglinie)' },
-    { value: 'OUTFLOW_FREE', label: '↘️ Freier Auslauf' },
-    { value: 'WATERLEVEL_FIX', label: '🛑 Wasserstand (Ganglinie)' }
-];
-
 // Computed
 const shortId = computed(() => {
     if (!props.selectedItem || !props.selectedItem.id) return '';
@@ -78,15 +75,58 @@ const isNode = computed(() => {
 });
 
 // Lage des Segments (read-only aus der Geometrie): Modellkante vs. Innenlage.
-// Hinweis: Der IMPULS hängt NICHT mehr von der Lage ab — eine Innenquelle bekommt
-// Impuls über die Fließrichtung (Solver-Patch). Die Lage ist nur noch informativ.
+// Ablauf (Frei/Fester Pegel/Pegel-Ganglinie) ist solverseitig NUR als echte Modellkante
+// gültig (FREE wird vom LISFLOOD-Parser als Innen-Punktquelle verworfen) — daher hier
+// zusätzlich der Hinweis, dass Ablauf bei Innen-Lage nicht wählbar ist. Zufluss bleibt
+// davon unberührt (Impuls funktioniert über die Fließrichtung unabhängig von der Lage).
 const EDGE_LABEL = { N: 'Nord', S: 'Süd', E: 'Ost', W: 'West' };
+// Dreistufig: 'FULL' = echte Rechteck-Kante ODER mindestens eine literale Kantenzelle unter
+// den geklickten Randzellen (properties.literalEdgeArc, Ablauf-Picker) — "Frei" landet EXAKT
+// dort, wo geklickt wurde. 'STAGE_ONLY' = nur Front-Innenzellen geklickt (properties.nearFront
+// true, literalEdgeArc leer — z. B. ein schiefes/rotiertes DGM, dessen wahre Kante diagonal
+// durchs Raster läuft und die literale Rechteck-Kante nirgends berührt) — der InputGenerator
+// setzt hier eine DIREKTE Punkt-FREE-Randbedingung mit Richtungs-Token an genau dieser Zelle
+// (quagg-outflow-free-direction.patch, s. engines/patches/README.md) — "Frei" landet also auch
+// hier normalerweise EXAKT an der geklickten Stelle; nur eine reine Diagonal-Eckzelle (grenzt
+// nur über die Ecke, nicht orthogonal, an die NoData-Front) fällt auf eine Projektion auf die
+// nächste Kante zurück (_accumulateFreeAtNearestEdge). 'NONE' = weder noch (reine Innen-Lage,
+// kein Rand/keine Front) — hier lehnt der Solver FREE als reine Punktquelle ab, komplett gesperrt.
+const outflowEligibility = computed(() => {
+    if (props.selectedItem?.properties?.edge) return 'FULL';
+    if (props.selectedItem?.properties?.literalEdgeArc?.length) return 'FULL';
+    if (props.selectedItem?.properties?.nearFront) return 'STAGE_ONLY';
+    return 'NONE';
+});
+const outflowAllowed = computed(() => outflowEligibility.value !== 'NONE');
+const freeDisabledTooltip = 'Frei ist nur auf der Rasterkante oder nahe der Geländegrenze gültig ' +
+    '(LISFLOOD lehnt sie als reine Innen-Punktquelle ab). Diese Linie liegt vollständig im Inneren — ' +
+    '"Fester Pegel"/"Pegel-Ganglinie" nutzen oder die Linie näher an den Rasterrand/die Geländegrenze zeichnen.';
+
 const segmentInfo = computed(() => {
     const edge = props.selectedItem?.properties?.edge;
+    const arc = props.selectedItem?.properties?.literalEdgeArc;
     if (edge && EDGE_LABEL[edge]) {
         return { cls: 'seg-edge', text: `⬛ Kanten-Segment (${EDGE_LABEL[edge]}) auf dem Modellrand.` };
     }
-    return { cls: 'seg-interior', text: '📍 Innen-Lage — Impuls über „Fließrichtung" wählbar (keine Kante nötig).' };
+    if (arc?.length) {
+        return {
+            cls: 'seg-edge',
+            text: `⬛ Randbogen aufgelöst (${arc.length} Zellen) — „Frei" ist hier ebenfalls gültig.`
+        };
+    }
+    if (outflowEligibility.value === 'STAGE_ONLY') {
+        return {
+            cls: 'seg-front',
+            text: '🟡 Nahe der Geländegrenze (nicht Rasterkante) — „Frei" wird hier direkt an dieser Stelle ' +
+                  'gesetzt (Punkt-Randbedingung mit Richtung). Nur reine Diagonal-Eckzellen ohne direkten ' +
+                  'Geländeabschluss weichen auf die nächste Rasterkante aus.'
+        };
+    }
+    return {
+        cls: 'seg-interior',
+        text: '📍 Innen-Lage — Impuls über „Fließrichtung" wählbar (keine Kante nötig). ' +
+              'Ablauf ist hier NICHT wählbar (nur auf der Modellkante oder nahe der Geländegrenze möglich).'
+    };
 });
 
 const ganglinienOptions = computed(() => {
@@ -108,7 +148,8 @@ const currentProfileData = computed({
 });
 
 const showGanglinienEditor = computed(() => {
-    return (activeType.value === 'INFLOW_DYNAMIC' || activeType.value === 'WATERLEVEL_FIX') && !!selectedProfileId.value;
+    return (activeType.value === 'INFLOW_DYNAMIC' || (activeType.value === 'OUTFLOW' && outflowMode.value === 'HVAR'))
+        && !!selectedProfileId.value;
 });
 
 // --- SYNC ENGINE ---
@@ -121,11 +162,31 @@ watch(() => props.selectedItem, (newItem) => {
 
     const assignment = hydStore.assignments[newItem.id];
     if (assignment) {
-        activeType.value = assignment.type;
-        constantValue.value = (assignment.value !== undefined && assignment.value !== null) ? assignment.value : 0;
-        selectedProfileId.value = assignment.profileId || null;
-        useNativeFree.value = assignment.useNativeFree !== undefined ? assignment.useNativeFree : true;
-        outflowSlope.value = (assignment.outflowSlope ?? null);
+        if (assignment.type === 'OUTFLOW_FREE') {
+            activeType.value = 'OUTFLOW';
+            outflowMode.value = 'FREE';
+            outflowSlope.value = (assignment.outflowSlope ?? null);
+            selectedProfileId.value = null;
+            stageValue.value = null;
+            stageRelative.value = false;
+            constantValue.value = 0;
+        } else if (assignment.type === 'WATERLEVEL_FIX') {
+            activeType.value = 'OUTFLOW';
+            outflowMode.value = assignment.profileId ? 'HVAR' : 'HFIX';
+            selectedProfileId.value = assignment.profileId || null;
+            stageValue.value = (assignment.value ?? null);
+            stageRelative.value = assignment.relative ?? false;
+            outflowSlope.value = null;
+            constantValue.value = 0;
+        } else {
+            activeType.value = assignment.type; // INFLOW_CONSTANT | INFLOW_DYNAMIC
+            constantValue.value = (assignment.value !== undefined && assignment.value !== null) ? assignment.value : 0;
+            selectedProfileId.value = assignment.profileId || null;
+            outflowMode.value = 'FREE';
+            outflowSlope.value = null;
+            stageValue.value = null;
+            stageRelative.value = false;
+        }
         // Winkel laden; Legacy flowDir (N/S/E/W) zu Azimut mappen.
         const LEGACY = { E: 0, N: 90, W: 180, S: 270 };
         if (Number.isFinite(assignment.flowAngleDeg)) {
@@ -139,15 +200,43 @@ watch(() => props.selectedItem, (newItem) => {
         activeType.value = 'NONE';
         constantValue.value = 0;
         selectedProfileId.value = null;
-        useNativeFree.value = true;
+        outflowMode.value = 'FREE';
         outflowSlope.value = null;
+        stageValue.value = null;
+        stageRelative.value = false;
         directed.value = false;
         flowAngleDeg.value = 0;
+    }
+
+    // Eignung kann sich geändert haben (Terrain bearbeitet) oder das Objekt hat noch gar
+    // keine Zuweisung (outflowMode steht dann auf seinem Ref-Default 'FREE') — "Frei" nie als
+    // scheinbar aktiv anzeigen, wenn es aktuell gar nicht wählbar ist (sonst wirkt der Button
+    // gleichzeitig "aktiv" UND gesperrt, ohne dass je echt FREE gespeichert worden wäre).
+    if (outflowMode.value === 'FREE' && outflowEligibility.value === 'NONE') {
+        outflowMode.value = 'HFIX';
     }
 
 }, { immediate: true });
 
 // --- ACTIONS ---
+
+// Wrapper fürs Verhaltenstyp-Dropdown: verhindert (defensiv — das disabled <option> sollte
+// das eigentlich schon verhindern), dass "Ablauf" auf einem Innen-Objekt gespeichert wird.
+function onTypeChange() {
+    if (activeType.value === 'OUTFLOW' && !outflowAllowed.value) {
+        activeType.value = 'NONE';
+        return;
+    }
+    saveSettings();
+}
+
+function setOutflowMode(mode) {
+    // Defensiv (das :disabled am Button sollte das schon verhindern): "Frei" braucht Rand-
+    // oder Geländegrenzen-Nähe (FULL oder STAGE_ONLY), nur bei reiner Innen-Lage gesperrt.
+    if (mode === 'FREE' && outflowEligibility.value === 'NONE') return;
+    outflowMode.value = mode;
+    saveSettings();
+}
 
 const saveSettings = () => {
     if (!props.selectedItem || !props.selectedItem.id) return;
@@ -157,12 +246,14 @@ const saveSettings = () => {
         if (hydStore.assignments[id]) delete hydStore.assignments[id];
         return;
     }
+    if (activeType.value === 'OUTFLOW' && !outflowAllowed.value) return; // Sicherheitsnetz
 
     // Integrity Check
     let finalProfileId = null;
     let finalValue = null;
+    let resolvedType = activeType.value;
 
-    if (activeType.value === 'INFLOW_DYNAMIC' || activeType.value === 'WATERLEVEL_FIX') {
+    if (activeType.value === 'INFLOW_DYNAMIC') {
         // Ohne Profil wird die Zuweisung gespeichert (Auswahl bleibt erhalten),
         // aber der InputGenerator überspringt sie mit Warnung.
         finalProfileId = selectedProfileId.value;
@@ -172,19 +263,37 @@ const saveSettings = () => {
             constantValue.value = 0;
         }
         finalValue = constantValue.value;
+    } else if (activeType.value === 'OUTFLOW') {
+        // "Ablauf" ist reine UI-Gruppierung — löst sich hier auf die zwei tatsächlich
+        // gespeicherten Store-Typen auf (OUTFLOW_FREE bzw. WATERLEVEL_FIX).
+        // Sicherheitsnetz: "Frei" nie bei reiner Innen-Lage speichern (s. setOutflowMode).
+        if (outflowMode.value === 'FREE' && outflowEligibility.value !== 'NONE') {
+            resolvedType = 'OUTFLOW_FREE';
+        } else if (outflowMode.value === 'HFIX') {
+            resolvedType = 'WATERLEVEL_FIX';
+            finalValue = Number.isFinite(stageValue.value) ? stageValue.value : null;
+        } else {
+            resolvedType = 'WATERLEVEL_FIX';
+            finalProfileId = selectedProfileId.value;
+        }
     }
 
     const payload = {
-        type: activeType.value,
+        type: resolvedType,
         value: finalValue,
         profileId: finalProfileId,
-        useNativeFree: useNativeFree.value
     };
 
-    // Sohlgefälle nur beim freien Auslauf; auf physikalisch sinnvolles Intervall klemmen.
-    if (activeType.value === 'OUTFLOW_FREE') {
+    // Relativ-Bezug (Geländehöhe + Wert statt absolut NHN) nur bei festem Pegel relevant.
+    if (activeType.value === 'OUTFLOW' && outflowMode.value === 'HFIX') {
+        payload.relative = stageRelative.value || false;
+    }
+
+    // Sohlgefälle nur beim freien Auslauf; kein Höchstwert (Solver kennt kein Sf-Limit) —
+    // leer/ungültig ⇒ InputGenerator nutzt den Standard-Sicherheitsgefälle-Fallback.
+    if (activeType.value === 'OUTFLOW' && outflowMode.value === 'FREE') {
         const sf = Number(outflowSlope.value);
-        payload.outflowSlope = (Number.isFinite(sf) && sf > 0 && sf <= 0.999) ? sf : null;
+        payload.outflowSlope = (Number.isFinite(sf) && sf > 0) ? sf : null;
     }
 
     // Fließrichtung (Welt-Azimut) nur bei Zuflüssen; gibt dem Solver Impuls an der Quellzelle.
@@ -209,53 +318,6 @@ const createNewProfile = () => {
 
 const goToProfileManager = () => {};
 
-// ── Globale Randbedingung ──────────────────────────────────────────────────
-const globalTypeOptions = [
-    { value: 'CLOSED', icon: '🔒', label: 'Geschlossen' },
-    { value: 'FREE',   icon: '↗',  label: 'Frei (bald)' },
-    { value: 'HFIX',   icon: '📏', label: 'Fester Pegel' },
-];
-
-// FREE (blinde Kanten-Auto-Füllung) war Quelle wiederholter Solver-Instabilität
-// (s. Audit 2026-07-21) und ist vorübergehend deaktiviert — geplant: Priority-
-// Flood/Watershed-basierte Erkennung echter, erreichbarer Auslaufpunkte statt
-// pauschal die ganze Kante zu markieren. Bis dahin: expliziten Auslauf zeichnen
-// oder "Fester Pegel" nutzen.
-function selectGlobalType(opt) {
-    if (opt.value === 'FREE') {
-        alert(
-            'Automatischer freier Auslauf ist vorübergehend deaktiviert.\n\n' +
-            'Geplant: Priority-Flood/Watershed-basierte Erkennung echter, erreichbarer ' +
-            'Auslaufpunkte (respektiert Geländebarrieren, mehrere Zuläufe).\n\n' +
-            'Bis dahin bitte "Geschlossen" + einen expliziten Auslauf zeichnen, ' +
-            'oder "Fester Pegel" nutzen.'
-        );
-        return;
-    }
-    hydStore.globalBoundaryType = opt.value;
-}
-
-const globalStatusText = computed(() => {
-    switch (hydStore.globalBoundaryType) {
-        case 'CLOSED': return '⚠️ Alle Kanten geschlossen — Wasser kann nicht abfließen';
-        case 'FREE':   return '🚧 Automatischer Auslauf vorübergehend deaktiviert (wirkt wie Geschlossen) — Watershed-Ansatz geplant';
-        case 'HFIX':   return `✅ Wasserstand ${hydStore.globalBoundaryHfix.toFixed(1)} m NHN an allen Kanten`;
-        default:       return '';
-    }
-});
-
-const globalStatusClass = computed(() =>
-    (hydStore.globalBoundaryType === 'CLOSED' || hydStore.globalBoundaryType === 'FREE') ? 'status-warn' : 'status-ok'
-);
-
-// HFIX unterhalb des tiefsten Geländepunkts kann nie Wasser halten — warnen.
-const hfixBelowTerrain = computed(() => {
-    const minZ = geoStore.terrain?.minZ;
-    return hydStore.globalBoundaryType === 'HFIX'
-        && Number.isFinite(minZ)
-        && hydStore.globalBoundaryHfix < minZ;
-});
-
 </script>
 
 <template>
@@ -265,17 +327,24 @@ const hfixBelowTerrain = computed(() => {
     </div>
 
     <div v-if="selectedItem" class="panel-body">
-      
+
       <!-- TYPE SELECTION -->
       <div class="form-group">
           <label>Verhaltenstyp</label>
-          <select v-model="activeType" @change="saveSettings" class="main-select">
-              <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          <select v-model="activeType" @change="onTypeChange" class="main-select">
+              <option value="NONE">Keine Auswahl</option>
+              <optgroup label="Zulauf">
+                  <option value="INFLOW_CONSTANT">🚰 Konstanter Zufluss</option>
+                  <option value="INFLOW_DYNAMIC">🌊 Zufluss (Ganglinie)</option>
+              </optgroup>
+              <option value="OUTFLOW" :disabled="!outflowAllowed">
+                  ↘️ Ablauf{{ outflowAllowed ? '' : ' (nur auf Kante/nahe Gelände)' }}
+              </option>
           </select>
       </div>
 
-      <!-- DYNAMIC CONFIG -->
-      <div v-if="activeType === 'INFLOW_DYNAMIC' || activeType === 'WATERLEVEL_FIX'" class="dynamic-config">
+      <!-- DYNAMIC CONFIG (Zufluss-Ganglinie + Ablauf-Pegel-Ganglinie teilen sich den Editor) -->
+      <div v-if="activeType === 'INFLOW_DYNAMIC' || (activeType === 'OUTFLOW' && outflowMode === 'HVAR')" class="dynamic-config">
           <div class="form-group">
             <label>Ganglinie wählen</label>
             <div class="select-row">
@@ -291,7 +360,7 @@ const hfixBelowTerrain = computed(() => {
 
           <!-- EMBEDDED EDITOR -->
           <div v-if="showGanglinienEditor" class="embedded-editor">
-              <GanglinienEditor 
+              <GanglinienEditor
                 v-model="currentProfileData"
                 :duration="10800"
               />
@@ -350,58 +419,62 @@ const hfixBelowTerrain = computed(() => {
           </div>
       </div>
 
-      <!-- SEGMENT-LAGE (read-only, aus Geometrie) -->
-      <div v-if="activeType !== 'NONE'" class="segment-info" :class="segmentInfo.cls">
+      <!-- SEGMENT-LAGE (read-only, aus Geometrie) — immer sichtbar, auch vor der Typwahl,
+           damit der "Ablauf nur auf Kante"-Hinweis schon vorab erkennbar ist. -->
+      <div class="segment-info" :class="segmentInfo.cls">
           {{ segmentInfo.text }}
       </div>
 
-       <!-- OUTFLOW CONFIG -->
-       <div v-if="activeType === 'OUTFLOW_FREE'" class="info-box outflow-config">
-          <p>Das Wasser fließt hier frei aus dem System (Critical Depth).</p>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer;">
-              <input type="checkbox" v-model="useNativeFree" @change="saveSettings">
-              <span style="font-size:0.9rem; color:#bdc3c7;">Als Modell-Rand (N/E/S/W) behandeln</span>
-          </label>
-          <small class="hint-info" style="margin-top:8px;">Nur wirksam, wenn die Grenze exakt auf dem Rasterrand liegt. Andernfalls wird intern ein Abfluss-Wehr (HFIX) simuliert.</small>
-
-          <div class="form-group" style="margin-top:12px;">
-              <label>Sohlgefälle Sf (m/m) — optional</label>
-              <input type="number" v-model.number="outflowSlope" @change="saveSettings"
-                     step="0.001" min="0" max="0.999" placeholder="leer = kritische Tiefe" class="value-input">
-              <small class="hint-info">
-                  Normalabfluss: steuert die Abflussgeschwindigkeit am Modell-Rand. Leer ⇒ kritische
-                  Tiefe (lokales Geländegefälle). Nur bei „Als Modell-Rand" wirksam.
-              </small>
+       <!-- ABLAUF CONFIG -->
+       <div v-if="activeType === 'OUTFLOW'" class="info-box outflow-config">
+          <div class="form-group">
+              <label>Verhalten</label>
+              <div class="mode-row">
+                  <button v-for="opt in outflowModeOptions" :key="opt.value" class="mode-btn"
+                          :class="{ active: outflowMode === opt.value }"
+                          :disabled="opt.value === 'FREE' && outflowEligibility === 'NONE'"
+                          :title="opt.value === 'FREE' && outflowEligibility === 'NONE' ? freeDisabledTooltip : ''"
+                          @click="setOutflowMode(opt.value)">{{ opt.icon }} {{ opt.label }}</button>
+              </div>
           </div>
+
+          <template v-if="outflowMode === 'FREE'">
+              <p>Das Wasser fließt hier frei aus dem Modell ab.</p>
+              <div class="form-group" style="margin-top:12px;">
+                  <label>Sohlgefälle Sf (m/m) — optional</label>
+                  <input type="number" v-model.number="outflowSlope" @change="saveSettings"
+                         step="0.1" min="0.001" placeholder="Standard: 10 (steil, verhindert Rückstau)" class="value-input">
+                  <small class="hint-info">
+                      Steuert die Abflussgeschwindigkeit (Normalabfluss/Manning) am Modellrand.
+                      Größere Werte = schnellerer, garantiert rückstaufreier Abfluss — kein
+                      Höchstwert. Der Standard ist bewusst steil gewählt, damit hier nie Wasser
+                      aufstaut.
+                  </small>
+              </div>
+          </template>
+
+          <template v-else-if="outflowMode === 'HFIX'">
+              <div class="form-group" style="margin-top:12px;">
+                  <label>Bezug</label>
+                  <div class="mode-row">
+                      <button class="mode-btn" :class="{ active: !stageRelative }"
+                              @click="stageRelative = false; saveSettings()">Absolut (m NHN)</button>
+                      <button class="mode-btn" :class="{ active: stageRelative }"
+                              @click="stageRelative = true; saveSettings()">Relativ (über Gelände)</button>
+                  </div>
+              </div>
+              <div class="form-group">
+                  <label>{{ stageRelative ? 'Wasserstand über Gelände (m)' : 'Fester Wasserspiegel (m NHN)' }}</label>
+                  <input type="number" v-model.number="stageValue" @change="saveSettings" step="0.1" class="value-input">
+                  <small v-if="stageRelative" class="hint-info">
+                      Wasserspiegel = Geländehöhe an dieser Randbedingung + der hier eingegebene Wert
+                      (z. B. 0.3 m dauerhaft im Wasser stehend, unabhängig von der absoluten Höhe).
+                  </small>
+              </div>
+          </template>
+          <!-- HVAR: Ganglinien-Auswahl wird oben im gemeinsamen dynamic-config-Block gerendert -->
       </div>
 
-    </div>
-    <!-- Globale Randbedingung — immer sichtbar, unterhalb der Objekt-Config -->
-    <div class="global-boundary-panel">
-      <div class="global-header"><SvEmoji emoji="🌐" :size="14" /> Globale Randbedingung</div>
-      <p class="global-desc">
-        Gilt für alle 4 Domänenkanten wenn keine manuellen Boundaries gesetzt sind.
-      </p>
-
-      <div class="global-type-row">
-        <button
-          v-for="opt in globalTypeOptions"
-          :key="opt.value"
-          class="gtype-btn"
-          :class="{ active: hydStore.globalBoundaryType === opt.value }"
-          @click="selectGlobalType(opt)"
-        ><SvEmoji :emoji="opt.icon" :size="13" /> {{ opt.label }}</button>
-      </div>
-
-      <div v-if="hydStore.globalBoundaryType === 'HFIX'" class="global-hfix-input">
-        <label>Außen-Wasserspiegel [m NHN]</label>
-        <input type="number" v-model.number="hydStore.globalBoundaryHfix" step="0.1" />
-        <small v-if="hfixBelowTerrain" class="hint-warn">
-          <SvEmoji emoji="⚠" :size="13" /> Pegel liegt unter dem tiefsten Geländepunkt ({{ geoStore.terrain.minZ.toFixed(1) }} m) — wirkt wie freier Auslauf.
-        </small>
-      </div>
-
-      <div class="global-status" :class="globalStatusClass">{{ globalStatusText }}</div>
     </div>
   </div>
 </template>
@@ -451,31 +524,19 @@ const hfixBelowTerrain = computed(() => {
 }
 .seg-edge     { background: rgba(41,128,185,0.15); color: #a3e635; border: 1px solid rgba(41,128,185,0.4); }
 .seg-interior { background: rgba(127,140,141,0.12); color: #bdc3c7; border: 1px solid rgba(127,140,141,0.3); }
+.seg-front    { background: rgba(241,196,15,0.12);  color: #f1c40f; border: 1px solid rgba(241,196,15,0.3); }
 
-/* ── Global Boundary Panel ── */
-.global-boundary-panel { padding: 4px 0; display: flex; flex-direction: column; gap: 10px; }
-.global-header { font-size: 0.88rem; font-weight: 700; color: #a3e635; border-bottom: 1px solid #2e2740; padding-bottom: 6px; }
-.global-desc { font-size: 0.78rem; color: #7f8c8d; line-height: 1.4; margin: 0; }
-.global-type-row { display: flex; gap: 6px; }
-.gtype-btn {
+/* ── Ablauf-Verhalten-Umschalter (gleicher Stil wie preset-row/gtype-btn) ── */
+.mode-row { display: flex; gap: 6px; }
+.mode-btn {
     flex: 1; padding: 7px 4px; border: 1px solid #4a6278; border-radius: 5px;
     background: #1e3348; color: #bdc3c7; font-size: 0.75rem; font-weight: 600;
     cursor: pointer; transition: all 0.15s; text-align: center;
 }
-.gtype-btn:hover  { background: #2471a3; border-color: #6d43d4; color: #fff; }
-.gtype-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
-
-.global-hfix-input { display: flex; flex-direction: column; gap: 4px; }
-.global-hfix-input label { font-size: 0.78rem; color: #bdc3c7; }
-.global-hfix-input input {
-    padding: 6px 8px; border-radius: 4px; border: 1px solid #4a6278;
-    background: #1e3348; color: white; font-size: 0.88rem; outline: none;
-}
-.global-hfix-input input:focus { border-color: #6d43d4; }
-
-.global-status { font-size: 0.78rem; padding: 6px 8px; border-radius: 4px; }
-.status-warn { background: rgba(241,196,15,0.12); color: #f1c40f; border: 1px solid rgba(241,196,15,0.3); }
-.status-ok   { background: rgba(39,174,96,0.12);  color: #b6f04d; border: 1px solid rgba(39,174,96,0.3); }
+.mode-btn:hover  { background: #2471a3; border-color: #6d43d4; color: #fff; }
+.mode-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
+.mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-btn:disabled:hover { background: #1e3348; border-color: #4a6278; color: #bdc3c7; }
 
 /* ── Fließrichtungs-Winkel (Kompass-Rad) ── */
 .angle-config { margin-top: 10px; }
@@ -508,5 +569,4 @@ const hfixBelowTerrain = computed(() => {
 .preset-btn:hover  { background: #2471a3; color: #fff; }
 .preset-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
 </style>
-
 

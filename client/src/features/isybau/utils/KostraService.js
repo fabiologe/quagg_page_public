@@ -34,6 +34,30 @@ export const transformToWGS84 = (x, y, sourceCRS) => {
     }
 };
 
+/**
+ * Heuristically guesses the CRS of a coordinate pair based on its magnitude
+ * (typical German reference systems). Only a starting suggestion for the
+ * user to confirm/override — never treated as ground truth.
+ */
+export const detectCRS = (x, y) => {
+    // 1. WGS84 (Lat/Lon)
+    if (Math.abs(x) <= 180 && Math.abs(y) <= 90) {
+        return "EPSG:4326";
+    }
+
+    // 2. Gauss-Krüger (leading digit of the Rechtswert indicates the zone)
+    if (x > 2000000 && x < 3000000) return "EPSG:31466"; // GK2
+    if (x > 3000000 && x < 4000000) return "EPSG:31467"; // GK3
+    if (x > 4000000 && x < 5000000) return "EPSG:31468"; // GK4
+    if (x > 5000000 && x < 6000000) return "EPSG:31469"; // GK5
+
+    // 3. ETRS89 / UTM (8-digit Rechtswert starting with the zone number)
+    if (x > 31000000 && x < 33000000) return "EPSG:25832";
+
+    // Default fallback: UTM32N is the most common CRS for western/central Germany
+    return "EPSG:25832";
+};
+
 import { KostraApiService } from '../../kostra/services/KostraApiService';
 
 export const fetchKostraData = async (lat, lon) => {

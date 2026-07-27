@@ -73,9 +73,16 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         roughness: 0.8
     });
 
+    // Unsichtbar (Nutzerwunsch: keine gelben Boundary-Linien mehr, weder im MapEditor noch im
+    // Ergebnis-Viewer — beide teilen sich diesen Composable). transparent+opacity:0 statt
+    // mesh.visible=false: die Line bleibt raycastbar (useInteractionManager.js sucht
+    // userData.selectable an scene.children, THREE.Raycaster überspringt sonst unsichtbare
+    // Objekte), Klick-Auswahl einer Boundary im 3D-View bleibt also erhalten.
     const boundaryMaterial = new THREE.LineBasicMaterial({
-        color: 0xf1c40f, // Yellow
-        linewidth: 2
+        color: 0xf1c40f,
+        linewidth: 2,
+        transparent: true,
+        opacity: 0,
     });
 
     // Unlit (MeshBasic): unabhängig von der Beleuchtung — so können die Brücken im
@@ -462,8 +469,6 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             boundaries: geoStore.boundaries?.features || [],
             assignments: hydraulicStore.assignments || {},
             ganglinien: hydraulicStore.ganglinien || {},
-            globalBoundaryType: hydraulicStore.globalBoundaryType,
-            globalBoundaryHfix: hydraulicStore.globalBoundaryHfix,
         };
 
         let bci = '';
@@ -794,9 +799,8 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     }
     watch(() => geoStore.terrain, () => schedule('offset', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
 
-    // Hydraulik (Pfeil-Vorschau): Assignments, globale BC-Einstellung, Boundaries
+    // Hydraulik (Pfeil-Vorschau): Assignments, Boundaries
     watch(() => hydraulicStore.assignments, () => schedule('hydraulics'), { deep: true, immediate: true });
-    watch(() => [hydraulicStore.globalBoundaryType, hydraulicStore.globalBoundaryHfix], () => schedule('hydraulics'));
     watch(() => geoStore.boundaries, () => schedule('hydraulics'), { deep: true });
 
     // Selektion

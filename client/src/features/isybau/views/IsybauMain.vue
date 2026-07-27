@@ -1,5 +1,5 @@
 <template>
-  <div class="isybau-main">
+  <div class="isybau-main" :data-theme="store.ui.darkMode ? 'dark' : 'light'">
     <Sidebar :width="300" @open-project-manager="store.ui.showProjectManager = true">
         <!-- Pass Props to SimulationControls if needed, or rely on Store -->
         <SimulationControls />
@@ -52,7 +52,7 @@
             <IsybauEditor
                 @create-area="({ points, size }) => store.openElementModal('area', { size: parseFloat(size.toFixed(4)), points })"
                 @create-edge="({ from, to }) => store.openElementModal('edge', { metaFromId: from, metaToId: to })"
-                @create-node="({ x, y }) => store.openElementModal('node', { x, y })"
+                @create-node="handleCreateNode"
                 @split-edge="handleSplitEdge"
                 :focusTarget="store.editor.focusTargetId"
             />
@@ -84,6 +84,7 @@
                 :nodeResults="new Map(Object.entries(store.simulation.results?.nodes || {}))"
                 :runoffDetails="store.simulation.results?.subcatchments ? Object.values(store.simulation.results.subcatchments) : []"
                 :focusTarget="store.editor.focusTargetId"
+                :origin-anchor="store.metadata.originAnchor"
                 @show-details="handleShowDetails"
             />
         </div>
@@ -130,6 +131,8 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useIsybauStore } from '../store/index.js';
+import { sampleTerrainAt } from '../utils/terrainSampling.js';
+import { useEzgLayer } from '../composables/useEzgLayer.js';
 import Sidebar from '../components/panels/Sidebar.vue';
 import SimulationControls from '../components/panels/SimulationControls.vue';
 import IsybauEditor from '../components/editor/IsybauEditor.vue';
@@ -141,16 +144,43 @@ import IsybauViewer3D from '../components/visualizer/IsybauViewer3D.vue';
 import IsybauModals from '../components/modals/IsybauModals.vue';
 import MessageTicker from '../components/ui/MessageTicker.vue';
 import TutorialMascot from '../tutorial/TutorialMascot.vue';
+import '../styles/theme.css';
 
 const store = useIsybauStore();
 const viewMode = ref('2d');
 const autoResultsFor3d = ref(false);
+const ezgLayer = useEzgLayer();
+
+// Terrarium-Höhenlinien (30m, aus der EZG-Karte) sind gegenstandslos, sobald
+// ein eigenes, präziseres DGM hochgeladen wurde — useEzgLayer.js unterdrückt
+// künftige Nachlade-/Neuberechnungs-Aufrufe bereits selbst (contoursSuppressed()),
+// hier zusätzlich die BEREITS gezeichneten Linien einmalig wegwischen, sonst
+// blieben sie bis zum nächsten Pan/Intervall-Wechsel sichtbar stehen.
+watch(() => store.terrain, (terrain) => {
+  if (terrain) ezgLayer.clearContours();
+});
 
 const hasResults = computed(() => !!store.simulation.results);
 
 function goto3d(withResults = false) {
   autoResultsFor3d.value = withResults;
   viewMode.value = '3d';
+}
+
+// Neuer Schacht: Deckelhöhe aus geladenem DGM vorschlagen (überschreibbar,
+// siehe demSuggested-Hinweis in ElementPropertiesModal.vue). Ohne geladenes
+// DGM oder außerhalb dessen NODATA-Bereich bleibt der bisherige feste
+// Default (2.0) im Modal unangetastet.
+function handleCreateNode({ x, y }) {
+  const data = { x, y };
+  if (store.terrain) {
+    const z = sampleTerrainAt(store.terrain, x, y);
+    if (z !== null) {
+      data.cover = Math.round(z * 100) / 100;
+      data.demSuggested = true;
+    }
+  }
+  store.openElementModal('node', data);
 }
 
 const handleSplitEdge = (payload) => {
@@ -235,7 +265,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     left: 50%;
     transform: translateX(-50%);
     z-index: 100;
-    background: #040647;
+    background: var(--isy-header-bg);
     padding: 0.25rem;
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(4,6,71,0.35);
@@ -251,17 +281,17 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border-radius: 5px;
     font-family: 'Press Start 2P', monospace;
     font-size: 0.46rem;
-    color: #aeadd2;
+    color: var(--isy-border);
     transition: background 0.15s, color 0.15s;
 }
 
 .view-switcher button:hover {
-    background: #594491;
+    background: var(--isy-accent);
     color: #fff;
 }
 
 .view-switcher button.active {
-    background: #594491;
+    background: var(--isy-accent);
     color: #fff;
 }
 
@@ -277,9 +307,9 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .help-btn {
     margin-left: 0.25rem;
-    background: #0d0e5a !important;
-    border: 1px solid #594491 !important;
-    color: #8f8be1 !important;
+    background: var(--isy-header-alt) !important;
+    border: 1px solid var(--isy-accent) !important;
+    color: var(--isy-accent-hover) !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -287,7 +317,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 
 .help-btn:hover {
-    background: #594491 !important;
+    background: var(--isy-accent) !important;
     color: #fff !important;
 }
 
@@ -311,12 +341,12 @@ watch(() => store.ui.importWarnings, (msgs) => {
     justify-content: center;
     align-items: center;
     height: 100%;
-    color: #888;
+    color: var(--isy-text-dim);
 }
 
 .sidebar-nav {
   margin-top: 1.5rem;
-  border-top: 1px solid #aeadd2;
+  border-top: 1px solid var(--isy-border);
   padding-top: 1rem;
 }
 .sidebar-nav h3 {
@@ -325,7 +355,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
   font-size: 0.5rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #040647;
+  color: var(--isy-text);
 }
 
 /* Theme-konform (SaintV): weiß/violett statt Bootstrap-blau */
@@ -334,26 +364,26 @@ watch(() => store.ui.importWarnings, (msgs) => {
   width: 100%;
   padding: 0.8rem 0.75rem;
   margin-bottom: 0.5rem;
-  background: white;
-  border: 1px solid #aeadd2;
+  background: var(--isy-btn-bg);
+  border: 1px solid var(--isy-border);
   border-radius: 6px;
   text-align: left;
   cursor: pointer;
   font-family: 'Press Start 2P', monospace;
   font-size: 0.5rem;
   line-height: 1.6;
-  color: #040647;
+  color: var(--isy-text);
   transition: all 0.2s;
 }
 
 .nav-btn:hover {
-  background: #f3f2fb;
-  border-color: #8f8be1;
+  background: var(--isy-accent-soft);
+  border-color: var(--isy-accent-hover);
 }
 
 .nav-btn.active {
-  background: #594491;
-  border-color: #594491;
+  background: var(--isy-accent);
+  border-color: var(--isy-accent);
   color: #fff;
   font-weight: 600;
 }
@@ -381,14 +411,14 @@ watch(() => store.ui.importWarnings, (msgs) => {
     bottom: 20px;
     right: 20px;
     width: 400px;
-    background: #e3f2fd; /* Light Blue as requested */
+    background: var(--isy-toast-bg);
     border-left: 5px solid #f39c12; /* Warning Orange */
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     border-radius: 4px;
     padding: 1rem;
     z-index: 2000;
     font-size: 0.9rem;
-    color: #2c3e50;
+    color: var(--isy-toast-text);
 }
 
 .toast-header {

@@ -11,7 +11,15 @@ import { registerNetworkImporter } from './importDrainageNetwork.js';
 const toArr = (v) => (v instanceof Map ? [...v.values()] : Array.isArray(v) ? v : []);
 // ISYBAU-Profilmaße sind in mm (z. B. 600 = DN600). mm→m (kein Rohr > 10 m). Mirror isyifc.
 const toMeters = (v) => { const n = Number(v); if (!Number.isFinite(n) || n <= 0) return n; return n > 10 ? n / 1000 : n; };
-const normProfile = (p) => (p ? { type: p.type, height: toMeters(p.height), width: toMeters(p.width) } : p);
+const normProfile = (p) => (p ? {
+    type: p.type, height: toMeters(p.height), width: toMeters(p.width),
+    // shape/bedWidth/sideSlope: nur gesetzt, wenn der Parser sie fand (offene Profile fürs SGC,
+    // s. xmlParser.js parseEdge) — bewusst nicht defaulted, das passiert an der Compiler-Grenze
+    // (services/geometry/networkToSgc.js).
+    ...(p.shape ? { shape: p.shape } : {}),
+    ...(p.bedWidth !== undefined ? { bedWidth: p.bedWidth } : {}),
+    ...(p.sideSlope !== undefined ? { sideSlope: p.sideSlope } : {}),
+} : p);
 
 registerNetworkImporter('isybau-xml', (content) => {
     const parsed = parseIsybauXML(content) || {};

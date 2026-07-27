@@ -72,12 +72,28 @@
         @zoom-to="handleZoom"
       />
 
-      <ObjectTable 
-        v-if="activeTab === 'BOUNDARIES'"
-        :items="geoStore.boundaries.features"
-        type="BOUNDARY"
-        @zoom-to="handleZoom"
-      />
+      <div v-if="activeTab === 'BOUNDARIES'" class="boundaries-split">
+        <div class="boundaries-group">
+          <div class="boundaries-group-header">
+            <SvEmoji emoji="🚰" :size="14" /><span>Zulauf ({{ inflowBoundaries.length }})</span>
+          </div>
+          <ObjectTable
+            :items="inflowBoundaries"
+            type="BOUNDARY"
+            @zoom-to="handleZoom"
+          />
+        </div>
+        <div class="boundaries-group">
+          <div class="boundaries-group-header">
+            <SvEmoji emoji="↘️" :size="14" /><span>Ablauf ({{ outflowBoundaries.length }})</span>
+          </div>
+          <ObjectTable
+            :items="outflowBoundaries"
+            type="BOUNDARY"
+            @zoom-to="handleZoom"
+          />
+        </div>
+      </div>
 
       <!-- PROFILE MANAGER -->
       <div v-if="activeTab === 'PROFILES'" class="profiles-manager">
@@ -227,6 +243,7 @@ import NetworkPropertyPanel from './NetworkPropertyPanel.vue';
 import NetworkDataTable from './NetworkDataTable.vue';
 import NetworkRasterCheck from './NetworkRasterCheck.vue';
 import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
+import { classifyBoundaryDirection } from '@/features/flood-2D/utils/boundaryClassification.js';
 
 const geoStore = useGeoStore();
 const simStore = useSimulationStore();
@@ -252,6 +269,14 @@ const selectedItem = computed(() => {
     if (!simStore.selection) return null;
     return geoStore.getFeatureById(simStore.selection);
 });
+
+// Zulauf/Ablauf-Split für den BOUNDARIES-Tab: bevorzugt die im Panel konfigurierte Rolle
+// (hydStore.assignments), fällt für noch unkonfigurierte Objekte auf die beim Zeichnen
+// gesetzte Absicht zurück (properties.boundary_type).
+const inflowBoundaries = computed(() => (geoStore.boundaries.features || [])
+    .filter(f => classifyBoundaryDirection(f.properties, hydStore.assignments[f.id]) !== 'OUTFLOW'));
+const outflowBoundaries = computed(() => (geoStore.boundaries.features || [])
+    .filter(f => classifyBoundaryDirection(f.properties, hydStore.assignments[f.id]) === 'OUTFLOW'));
 
 const ganglinienList = computed(() => {
     return hydStore.ganglinien ? Object.values(hydStore.ganglinien) : [];
@@ -399,6 +424,31 @@ watch(() => simStore.selection, (newId) => {
    clippen — auf Inhaltshöhe wachsen lassen. */
 .tab-scroll > * { height: auto !important; }
 .network-tab { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+
+/* BOUNDARIES-TAB: Zulauf/Ablauf getrennt, je eine scrollbare ObjectTable */
+.boundaries-split {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+.boundaries-group {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 2px solid #2e2740;
+}
+.boundaries-group:last-child { border-bottom: none; }
+.boundaries-group-header {
+    display: flex; align-items: center; gap: 6px;
+    padding: 0.4rem 0.5rem;
+    background: #2e2740;
+    color: #bdc3c7;
+    font-size: 0.8rem;
+    font-weight: bold;
+    flex: 0 0 auto;
+}
 
 /* PROFILES MANAGER LAYOUT */
 .profiles-manager {

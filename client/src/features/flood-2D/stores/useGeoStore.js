@@ -237,6 +237,38 @@ export const useGeoStore = defineStore('geo', () => {
         weirs.value = weirs.value.filter(w => w.lineId !== id);
     }
 
+    // ── SGC-Kanäle (Sub-Grid-Channel, Channel-Tool) ────────────────────────────
+    /**
+     * Mehrfach-Kanal-Liste des Channel-Toolbar-Werkzeugs — unabhängig von der
+     * Bathymetrie-Einzelkanal-Mittellinie (bathyStore.channelPolyline), beide
+     * werden erst beim Export zusammengeführt (SgcGenerator.mergeSgcChannels).
+     * @type {import('vue').Ref<Array<{ id:string, polyline:Array<{x,y,terrainZ}>,
+     *   shape:'rect'|'trapezoid', bedWidth:number, bedMode:'depth'|'absolute',
+     *   bedDepth:number, bedZStart:number, bedZEnd:number, sideSlope:number,
+     *   manningN:number }>>}
+     */
+    const sgcChannels = ref([]);
+
+    /** Neuen SGC-Kanal hinzufügen. */
+    function addSgcChannel(channel) {
+        saveSnapshot('Kanal hinzugefügt');
+        sgcChannels.value.push(channel);
+    }
+
+    /** SGC-Kanal patchen ({bedWidth?, depth?, sideSlope?, ...}). */
+    function updateSgcChannel(id, patch) {
+        const c = sgcChannels.value.find(c => c.id === id);
+        if (!c) return;
+        saveSnapshot('Kanal bearbeitet');
+        Object.assign(c, patch);
+    }
+
+    /** SGC-Kanal entfernen. */
+    function removeSgcChannel(id) {
+        saveSnapshot('Kanal entfernt');
+        sgcChannels.value = sgcChannels.value.filter(c => c.id !== id);
+    }
+
     function addBoundary(feature) {
         saveSnapshot('Grenze hinzugefügt');
         boundaries.value.features.push(feature);
@@ -490,6 +522,11 @@ export const useGeoStore = defineStore('geo', () => {
         addWeirLine,
         updateWeirLine,
         removeWeirLine,
+        // SGC-Kanäle (Channel-Tool, Mehrfach-Liste)
+        sgcChannels,
+        addSgcChannel,
+        updateSgcChannel,
+        removeSgcChannel,
         // Brücken (Wehr-Erweiterung mit Soffitte/Deck)
         bridges,
         addBridgeBatch,

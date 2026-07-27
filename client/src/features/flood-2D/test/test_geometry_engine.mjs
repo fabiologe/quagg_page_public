@@ -13,6 +13,9 @@ import { NetworkModel } from '../services/geometry/NetworkModel.js';
 import { fromSewerNodesEdges } from '../services/geometry/adapters.js';
 import { classifyCell, detectCouplingNodes, worldToCell } from '../services/geometry/couplingDetector.js';
 import { buildCoupledInputsFromModel } from '../services/swmm/couplingExport.js';
+import { toSgcChannels } from '../services/geometry/networkToSgc.js';
+import { makeTerrainSampler } from '../services/geometry/terrainSample.js';
+import { SgcGenerator } from '../middleware/SgcGenerator.js';
 
 const IMAGE = process.argv[2] || 'lisflood-fp:coupling';
 let fails = 0;
@@ -42,6 +45,32 @@ console.log('1) Adapter → NetworkModel → SwmmBuilder(coupled)');
     ok(m2.toSwmmStore().getAllEdges.length === 0, 'offenes Gerinne NICHT im SWMM-Export');
 }
 
+// ── 1b) Netz → SGC-Kanäle → Raster (End-to-End ohne Docker) ─────────────────────
+console.log('1b) Netz (offenes Gerinne) → toSgcChannels → generateMultiSgcRasters stempelt Zellen');
+{
+    const ncols = 20, nrows = 20, cellsize = 1;
+    const demData = new Float32Array(ncols * nrows).fill(10.0);
+    const terrainHeader = { ncols, nrows, cellsize, xllcorner: 0, yllcorner: 0 };
+    const terrain = { gridData: demData, center: { x: (ncols - 1) * cellsize / 2, y: (nrows - 1) * cellsize / 2 }, cellsize, ncols, nrows };
+
+    const model = fromSewerNodesEdges(
+        [{ id: 'K1', x: 5, y: 10, z: 8.0 }, { id: 'K2', x: 15, y: 10, z: 7.5 }],
+        [{ id: 'GE1', fromNodeId: 'K1', toNodeId: 'K2', kantenTyp: 3,
+           profile: { type: 8, shape: 'trapezoid', width: 2.0, sideSlope: 1.5 } }]
+    );
+    const { channels, warnings } = toSgcChannels(model, { terrainSampler: makeTerrainSampler(terrain) });
+    ok(channels.length === 1, 'ein SGC-Kanal aus dem Netz kompiliert');
+    ok(warnings.length === 0, `keine Warnung (Böschungsneigung war gesetzt), war [${warnings}]`);
+
+    const rasters = SgcGenerator.generateMultiSgcRasters(channels, demData, terrainHeader);
+    ok(rasters.cellCount > 0, `Kanal stempelt tatsächlich Zellen ins Raster (${rasters.cellCount})`);
+    const midIdx = 10 * ncols + 10;   // Zelle bei (10,10), liegt auf der Kanal-Linie y=10
+    ok(rasters.width[midIdx] > 0, 'Zelle auf der Kanal-Achse hat SGC-Breite > 0');
+
+    const chanprams = SgcGenerator.buildSgcChanPramsFile(channels);
+    ok(chanprams.trim().split('\n')[1].startsWith('0 7 '), `chanprams exportiert Typ 7 (Trapez), war "${chanprams.trim().split('\n')[1]}"`);
+}
+
 // ── 2) Kopplungs-Erkennung: Senke über Knoten (der harte Fall) ──────────────────
 console.log('2) Coupling-Detektor: Senke/Rücken');
 const N = 11, CS = 5.0;
@@ -65,6 +94,8 @@ grid[2 * N + 2] = 12.0;
     const model = new NetworkModel();
     model.addNode({ id: 'MH_sink',  x: sinkX,  y: sinkY,  invert: 6, rim: 10, role: 'manhole' });
     model.addNode({ id: 'MH_ridge', x: ridgeX, y: ridgeY, invert: 9, rim: 12, role: 'manhole' });
+    // Rohr-Anschluss (conveyance:covered, Default) — sonst greift der Gerinne-only-Ausschluss.
+    model.addLink({ id: 'C1', fromNodeId: 'MH_sink', toNodeId: 'MH_ridge', length: 20, profile: { shape: 'circular', height: 0.3 } });
 
     const { couplingNodes, warnings } = detectCouplingNodes(model, { grid, header });
     const sinkNode  = couplingNodes.find(c => c.id === 'MH_sink');
@@ -74,6 +105,40 @@ grid[2 * N + 2] = 12.0;
     ok(ridgeNode && ridgeNode.quality === 'ridge', 'Knoten auf dem Rücken → quality=ridge');
     ok(warnings.some(w => w.includes('MH_ridge') && w.includes('Geländerücken')),
        'Warnung: Rücken-Knoten fängt kein Oberflächenwasser');
+}
+
+console.log('2b) Coupling-Detektor: zellengenaue SGC-Sperre + Gerinne-only-Ausschluss');
+{
+    const sinkX = header.xllcorner + (sinkCol + 0.5) * CS;
+    const sinkY = header.yllcorner + (header.nrows - 1 - sinkRow + 0.5) * CS;
+    const ridgeX = header.xllcorner + (2 + 0.5) * CS;
+    const ridgeY = header.yllcorner + (header.nrows - 1 - 2 + 0.5) * CS;
+    // SGC-Breitenraster: nur die Senken-Zelle ist eine echte SGC-Kanalzelle.
+    const sgcWidthGrid = new Float32Array(N * N).fill(0);
+    sgcWidthGrid[sinkRow * N + sinkCol] = 1.5;
+
+    const model = new NetworkModel();
+    model.addNode({ id: 'MH_sink',  x: sinkX,  y: sinkY,  invert: 6, rim: 10, role: 'manhole' });
+    model.addNode({ id: 'MH_ridge', x: ridgeX, y: ridgeY, invert: 9, rim: 12, role: 'manhole' });
+    model.addLink({ id: 'C1', fromNodeId: 'MH_sink', toNodeId: 'MH_ridge', length: 20, profile: { shape: 'circular', height: 0.3 } });
+
+    const { couplingNodes, warnings } = detectCouplingNodes(model, { grid, header }, { sgcWidthGrid });
+    ok(!couplingNodes.some(c => c.id === 'MH_sink'), 'Knoten auf SGC-Kanalzelle wird übersprungen (MH_sink)');
+    ok(couplingNodes.some(c => c.id === 'MH_ridge'), 'Knoten NICHT auf SGC-Zelle bleibt gekoppelt (MH_ridge), auch wenn andernorts SGC existiert');
+    ok(warnings.some(w => w.includes('MH_sink') && w.includes('SGC-Kanalzelle')), 'Warnung nennt MH_sink + SGC-Kanalzelle');
+
+    // Knoten mit ausschließlich offenem Gerinne (kein Rohr ins SWMM-Netz) → übersprungen,
+    // Auslauf-Rolle bleibt explizite Ausnahme.
+    const m2 = new NetworkModel();
+    m2.addNode({ id: 'MH1', x: sinkX, y: sinkY, invert: 6, rim: 10, role: 'manhole' });
+    m2.addNode({ id: 'G1', x: ridgeX, y: ridgeY, invert: 9, rim: 12, role: 'manhole' });
+    m2.addNode({ id: 'OUT1', x: sinkX, y: sinkY, invert: 5, rim: 9, role: 'outfall' });
+    m2.addLink({ id: 'RI1', fromNodeId: 'MH1', toNodeId: 'G1', conveyance: 'open', length: 20, profile: { shape: 'rect', width: 1.0 } });
+    const r2 = detectCouplingNodes(m2, { grid, header });
+    ok(!r2.couplingNodes.some(c => c.id === 'MH1') && !r2.couplingNodes.some(c => c.id === 'G1'),
+       'Knoten ohne Rohr-Anschluss (nur offenes Gerinne) werden übersprungen, auch ohne SGC-Raster');
+    ok(r2.warnings.some(w => w.includes('MH1') && w.includes('nur offene Gerinne')), 'Warnung erklärt MH1-Ausschluss');
+    ok(r2.couplingNodes.some(c => c.id === 'OUT1'), 'Auslauf bleibt Ausnahme, auch ohne eigenen Rohr-Anschluss');
 }
 
 // ── 3) End-to-End: Senke über Manhole → gekoppelter Docker-Lauf ─────────────────

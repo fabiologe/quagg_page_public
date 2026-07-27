@@ -111,6 +111,18 @@
       <SvIcon name="Bridge.png" :size="20" color="currentColor" />
     </ToolButton>
 
+    <!-- CHANNEL Tool (offenes Gerinne: Trapez/Rechteck ins Terrain einrechnen) -->
+    <ToolButton
+      @click="setTool('CHANNEL_STRUCTURE')"
+      :active="activeTool === 'CHANNEL_STRUCTURE'"
+      title="Channel / Gerinne zeichnen"
+    >
+      <!-- Offener Trapez-Querschnitt -->
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h4l3 8h4l3-8h4"></path>
+      </svg>
+    </ToolButton>
+
     <!-- TEXTURE Tool (Surface Roughness Painting) -->
     <ToolButton 
       @click="setTool('TEXTURE')"

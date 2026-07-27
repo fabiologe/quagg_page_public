@@ -275,16 +275,21 @@ export function useSceneBuilder() {
       showNodes = true, showEdges = true, showAreas = true, zScale = 1,
       showResults = false, showWaterLevel = true,
       nodeResults = new Map(), edgeResults = new Map(),
+      hideGround = false,
     } = options;
     clear(scene);
     networkGroup = new THREE.Group();
     networkGroup.name = NETWORK_GROUP;
     scene.add(networkGroup);
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), mats.ground);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.05;
-    networkGroup.add(ground);
+    // Platzhalter-Boden nur ohne geladenes DGM (useTerrainLayer.js) — sonst
+    // Z-Fighting mit dem echten Geländemesh bei y≈0.
+    if (!hideGround) {
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), mats.ground);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.05;
+      networkGroup.add(ground);
+    }
 
     const doWater = showResults && showWaterLevel;
     if (showNodes) _buildNodes(nodes, edges, bounds, zScale, networkGroup, nodeResults, edgeResults, showResults, doWater);
@@ -570,5 +575,12 @@ export function useSceneBuilder() {
     Object.values(mats).forEach(m => m.dispose());
   }
 
-  return { clickableObjects, objectDataMap, buildScene, clear, setSelected, disposeFully };
+  // Dark/Light Umschalter: Platzhalter-Boden füllt fast das ganze Bild —
+  // ohne diese Anpassung bliebe die Szene trotz Hintergrundfarben-Wechsel
+  // (useThreeCore.setBackground) optisch dunkel.
+  function setGroundColor(hex) {
+    mats.ground.color.set(hex);
+  }
+
+  return { clickableObjects, objectDataMap, buildScene, clear, setSelected, setGroundColor, disposeFully };
 }

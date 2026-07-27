@@ -1,0 +1,197 @@
+QUAGG SGC-bridge-blowup patch -- behebt katastrophische Fehlberechnung wenn
+ein Sub-Grid-Channel (SGC) unter einer Bruecke (<dir>B) hindurchfliesst, im
+vendorten LISFLOOD-FP 8.0.3 mit acceleration-Schema. Siehe engines/patches/README.md.
+Betrifft: lisflood2/sgm_fast.cpp (CalcBridgeQ, SGC2_UpdateBridgesFlow_row, Do_Update).
+
+Reproduziert an einem 30x12-Testraster (1x1m Zellen, SGC-Kanal + eine Bruecke
+quer darueber, acceleration-Schema): sobald die Benetzungsfront die Bruecken-
+zelle erreicht, schiesst die Massebilanz innerhalb eines Zeitschritts von
+sauber auf >50.000 m3 Fehler hoch (kein Crash, aber grob falsches Ergebnis).
+Root Cause identifiziert ueber Debug-Instrumentierung: CalcBridgeQ() berechnet
+den Freispiegelabfluss (Qoc) unter der Bruecke ueber
+
+    hflow = max(se0,se1) - max(z0,z1)   // z = rohe DEM-Hoehe
+
+Das ist die richtige Formel fuer eine PLANE Ueberschwemmungsflaeche, bei der
+Wasser niemals unter das DEM-Niveau z faellt. Bei einem SGC-Kanal ist das
+falsch: der Kanal liegt unterhalb des DEM/floodplain-Niveaus, der Wasserstand
+liegt beim Fliessen im Kanalbett also LEGITIM unterhalb von z (h_grid ist dann
+negativ relativ zu z, siehe SGC_BankFullHeight-Konvention). hflow wird dadurch
+negativ, sobald der Kanal nur "im Bett" fliesst (nicht ueberflutet) -- eine
+negative Flaeche A=Width*hflow und ein negativer hydraulischer Radius R werden
+ungeprueft in CalculateQ() gefuettert und produzieren ein physikalisch
+sinnloses Qoc (schon lange VOR dem sichtbaren Blowup, z.B. Qoc=50730 bei einer
+Wassertiefe von 2mm). Die klassische (nicht-Bruecken-) SGC-Kanalzelle-zu-Zelle-
+Berechnung in derselben Datei (ProcessSubGridQBlock()) macht es hingegen
+richtig: sie misst hflow gegen die Kanalsohle (z - SGC_BankFullHeight), nicht
+gegen die rohe DEM-Hoehe, und benutzt SGC2_CalcA/SGC2_CalcR (kanal-bewusste
+Flaeche/Radius) statt der naiven Width*hflow-Rechteckformel. CalcBridgeQ()
+hatte diese Kanal-Bewusstheit nie erhalten -- vermutlich, weil die Funktion
+urspruenglich nur fuer Bruecken UEBER reiner Ueberschwemmungsflaeche (ohne SGC
+darunter) gedacht war.
+
+Verifiziert mit dem vendor-eigenen offiziellen Testfall
+(testing/T016c_Bridge_orifice_test/MT_SGC_orifice.par, grosse Zellen, SGC-
+Kanal + Bruecke, 5.440.500s Simulationszeit): dieser Fall blieb VOR diesem
+Fix zwar numerisch endlich (kein Absturz), zeigte aber die ganze Laufzeit
+ueber Qout=0.000 (kein Abfluss durch die Bruecke, obwohl physikalisch klar
+erwartet) und einen Massebilanzfehler in Millionenhoehe (Verror bis zu
+2.87e6 bei Vol~4e7, d.h. ~7% relativer Fehler) -- der Bug war also nicht nur
+ein Problem feiner (1x1m) Raster, sondern hat auch das vendor-eigene grosse
+Referenzszenario die ganze Zeit leise falsch gerechnet. Nach dem Fix: Qout
+waechst auf einen physikalisch plausiblen Wert (~810-860 m3/s, vergleichbar
+mit Qin), Verror faellt auf numerisches Rauschen (< 50 bei Vol~1e8).
+
+Fix (CalcBridgeQ, lisflood2/sgm_fast.cpp):
+  - Neuer Fall-Zweig: ist an mindestens einer Seite ein SGC-Kanal vorhanden
+    (SGCwidth > 0), wird hflow jetzt gegen die Kanalsohle (z - BankFullHeight)
+    gemessen, und Flaeche/Radius werden ueber SGC2_CalcA/SGC2_CalcR (dieselben
+    Funktionen, die ProcessSubGridQBlock() fuer normale SGC-Kanalflaechen
+    benutzt) berechnet -- inkl. der "kleinste Flaeche gewinnt"-Konvention fuer
+    die Kontrollquerschnitts-Wahl zwischen den beiden Seiten. Ist an KEINER
+    Seite ein SGC-Kanal vorhanden (SGCwidth beidseitig 0), bleibt exakt die
+    urspruengliche, unveraenderte Vendor-Formel erhalten (reine Ueberschwemm-
+    ungsflaeche durch die Bruecke) -- der neue Zweig ist also ein reiner
+    Additiv-Fix, kein Verhaltenswechsel fuer den Nicht-SGC-Bruecken-Fall.
+  - CalcBridgeQ() und SGC2_UpdateBridgesFlow_row() bekommen dafuer einen
+    neuen SGCptr-Parameter (schon in Do_Update() vorhanden, wird nur eine
+    Ebene tiefer durchgereicht).
+
+Sicherheits-Design:
+  - hflow > depth_thresh-Wache genau wie beim bereits existierenden Vendor-
+    Muster (ProcessSubGridQBlock, SGC2_UpdateQx_row) -- kein Qoc-Aufruf mit
+    hflow<=0.
+  - Bei SGCwidth=0 (kein Kanal) ist der neue Zweig unerreichbar, die alte
+    Formel bleibt bitgleich -- verifiziert per Regressionstest ohne SGC
+    (engines/docker/test_bridge_no_sgc.py, unveraendert gruen).
+
+Verifiziert:
+  - Lokaler Build (cmake): keine neuen Compiler-Warnungen/-Fehler.
+  - Lokaler Repro-Lauf (SGC-Kanal Typ 1 + Bruecke, 1x1m Raster, saveint 1):
+    vorher Exit 124 (haengt in Divergenz), Vol explodiert bei t=30 auf 50734;
+    nachher Exit 0, Vol waechst exakt linear (0.1 m3/s Zufluss), Verror auf
+    Maschinenrauschen (1e-7) durch den gesamten Lauf.
+  - Vendor-Testfall MT_SGC_orifice.par (grosse Zellen): siehe oben, Qout>0
+    und Verror auf Rauschniveau statt Millionenfehler.
+  - test_bridge_no_sgc.py (Bruecke ohne jedes SGC-Keyword): unveraendert
+    gruen, res.max weiterhin endlich, keine Verhaltensaenderung.
+
+--- a/lisflood2/sgm_fast.cpp
++++ b/lisflood2/sgm_fast.cpp
+@@ -602,7 +602,8 @@
+ 	const NUMERIC_TYPE * h_grid,
+ 	WetDryRowBound* wet_dry_bounds,
+ 	const SubGridState * sub_grid_state,
+-	const NUMERIC_TYPE max_Froude)
++	const NUMERIC_TYPE max_Froude,
++	const SGCprams * SGCptr)
+ {
+ 	NUMERIC_TYPE z0, z1, h0, h1, Q;
+ 	NUMERIC_TYPE usVel; // MT upstream velocity for energy gradient height calc.
+@@ -660,12 +661,64 @@
+ 		dh = surfaceElevation0 - surfaceElevation1; // difference in water level
+ 		//Sf=-dh/Parptr->dx; //CCS_deletion
+ 		Sf = -dh / cell_length; // CCS added for subgrid lat long compatibility.
+-		hflow = getmax(surfaceElevation0, surfaceElevation1) - getmax(z0, z1); // calculate the max flow depth
+-		A = Width*hflow; // calc open channel flow area
+-		R = A / (Width + 2 * hflow); // calc hydraulic radius from open channel flow
+ 
+-		// calculate open channel flow using SGC flow
+-		Qoc = CalculateQ(Sf, R, delta_time, g, A, g_friction_sq, weirs->Weir_Q_old_SG[weir_id], max_Froude);
++		NUMERIC_TYPE bankFullHeight0 = weirs->cell_pair.sg_cell_SGC_BankFullHeight[weir_pair_id0];
++		NUMERIC_TYPE bankFullHeight1 = weirs->cell_pair.sg_cell_SGC_BankFullHeight[weir_pair_id1];
++		NUMERIC_TYPE sgcWidth0 = weirs->cell_pair.sg_cell_SGC_width[weir_pair_id0];
++		NUMERIC_TYPE sgcWidth1 = weirs->cell_pair.sg_cell_SGC_width[weir_pair_id1];
++
++		if (sgcWidth0 > C(0.0) || sgcWidth1 > C(0.0))
++		{
++			// QUAGG-FIX3: a sub-grid channel runs under this bridge. hflow must be
++			// measured against the channel invert (z - BankFullHeight), not the raw
++			// floodplain DEM z -- otherwise hflow goes negative whenever the channel
++			// is flowing in-bank (water surface legitimately sits below the nominal
++			// floodplain elevation there), which fed a negative A/R into CalculateQ
++			// and caused a catastrophic blow-up the instant a wetting front reached
++			// the bridge. Mirrors the formula ProcessSubGridQBlock() already uses
++			// for ordinary (non-bridge) SGC channel faces.
++			hflow = getmax(surfaceElevation0, surfaceElevation1)
++				- getmax(z0 - bankFullHeight0, z1 - bankFullHeight1); // channel-aware flow depth
++
++			if (hflow > depth_thresh)
++			{
++				NUMERIC_TYPE channel_area0, channel_area1;
++				NUMERIC_TYPE cw0 = sgcWidth0, cw1 = sgcWidth1;
++				int channel_group0 = weirs->cell_pair.sg_cell_SGC_group[weir_pair_id0];
++				int channel_group1 = weirs->cell_pair.sg_cell_SGC_group[weir_pair_id1];
++
++				SGC2_CalcA(channel_group0, hflow, bankFullHeight0, &channel_area0, &cw0, SGCptr);
++				SGC2_CalcA(channel_group1, hflow, bankFullHeight1, &channel_area1, &cw1, SGCptr);
++
++				// always use the smallest flow area (control section), same as ordinary SGC faces
++				if (channel_area0 < channel_area1)
++				{
++					A = channel_area0;
++					R = SGC2_CalcR(channel_group0, hflow, bankFullHeight0, cw0, sgcWidth0, A, SGCptr);
++				}
++				else
++				{
++					A = channel_area1;
++					R = SGC2_CalcR(channel_group1, hflow, bankFullHeight1, cw1, sgcWidth1, A, SGCptr);
++				}
++				Qoc = CalculateQ(Sf, R, delta_time, g, A, g_friction_sq, weirs->Weir_Q_old_SG[weir_id], max_Froude);
++			}
++			else
++			{
++				Qoc = C(0.0);
++			}
++		}
++		else
++		{
++			// unchanged vendor behaviour: no SGC channel here, plain floodplain flow
++			// through the bridge opening (z is a valid ground reference in this case).
++			hflow = getmax(surfaceElevation0, surfaceElevation1) - getmax(z0, z1); // calculate the max flow depth
++			A = Width*hflow; // calc open channel flow area
++			R = A / (Width + 2 * hflow); // calc hydraulic radius from open channel flow
++
++			// calculate open channel flow using SGC flow
++			Qoc = CalculateQ(Sf, R, delta_time, g, A, g_friction_sq, weirs->Weir_Q_old_SG[weir_id], max_Froude);
++		}
+ 
+ 		// orifice bridge flow
+ 		if (surfaceElevation0 > surfaceElevation1) { // Positive flow
+@@ -827,7 +880,8 @@
+ 	WetDryRowBound * wet_dry_bounds,
+ 	SubGridState * sub_grid_state,
+ 	WeirLayout * weirs,
+-	const NUMERIC_TYPE max_Froude)
++	const NUMERIC_TYPE max_Froude,
++	const SGCprams * SGCptr)
+ {
+ 	const int weir_row_cols_padded = weirs->row_cols_padded;
+ 
+@@ -848,7 +902,7 @@
+ 			grid_index_this, grid_index_next, weir_id,
+ 			g, delta_time, curr_time, depth_thresh,
+ 			dx_col[j], h_grid,
+-			wet_dry_bounds, sub_grid_state, max_Froude);
++			wet_dry_bounds, sub_grid_state, max_Froude, SGCptr);
+ 		// update flow array
+ 		weirs->Weir_Q_old_SG[weir_id] = Q;
+ 
+@@ -866,7 +920,7 @@
+ 			grid_index_this, grid_index_next, weir_id,
+ 			g, delta_time, curr_time, depth_thresh,
+ 			dy_col[j], h_grid,
+-			wet_dry_bounds, sub_grid_state, max_Froude);
++			wet_dry_bounds, sub_grid_state, max_Froude, SGCptr);
+ 		// update flow array
+ 		weirs->Weir_Q_old_SG[weir_id] = Q;
+ 
+@@ -3865,7 +3919,7 @@
+ #else
+ 					SGC2_UpdateBridgesFlow_row(j, grid_cols, grid_rows, grid_cols_padded,
+ 						delta_time, curr_time, depth_thresh, g, dx_col, dy_col, h_grid, Qx_grid, Qy_grid,
+-						wet_dry_bounds, sub_grid_state_rows, weir_bridges, Parptr->max_Froude);
++						wet_dry_bounds, sub_grid_state_rows, weir_bridges, Parptr->max_Froude, SGCptr);
+ #endif
+ 				}
+ 				if (Statesptr->hazard == ON)

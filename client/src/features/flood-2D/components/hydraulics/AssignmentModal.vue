@@ -45,16 +45,25 @@
             <div class="form-group">
                 <label>Verhaltenstyp</label>
                 <select v-model="config.type" class="main-select">
-                    <option value="INFLOW_DYNAMIC">🌊 Zufluss (Ganglinie)</option>
-                    <option value="WATERLEVEL_FIX">🛑 Wasserstand (Ganglinie)</option>
-                    <option value="INFLOW_CONSTANT">🚰 Konstanter Zufluss</option>
-                    <option value="OUTFLOW_FREE">↘️ Freier Auslauf</option>
+                    <optgroup label="Zulauf">
+                        <option value="INFLOW_DYNAMIC">🌊 Zufluss (Ganglinie)</option>
+                        <option value="INFLOW_CONSTANT">🚰 Konstanter Zufluss</option>
+                    </optgroup>
+                    <option value="OUTFLOW" :disabled="outflowEligibility === 'NONE'">
+                        ↘️ Ablauf{{ outflowEligibility === 'NONE' ? ' (nur auf Kante/nahe Gelände)' : '' }}
+                    </option>
                     <!-- <option value="SINK">🕳️ Senke / Gully</option> -->
                 </select>
+                <div class="hint" v-if="config.type === 'OUTFLOW' && outflowEligibility === 'NONE'">
+                    Ablauf ist nur verfügbar, wenn alle ausgewählten Objekte auf einer Modellkante oder nahe der Geländegrenze liegen.
+                </div>
+                <div class="hint" v-else-if="config.type === 'OUTFLOW' && outflowEligibility === 'STAGE_ONLY'">
+                    Mindestens ein ausgewähltes Objekt liegt nicht auf der Rasterkante, sondern nur nahe der Geländegrenze — "Frei" wird dort direkt gesetzt (Punkt-Randbedingung mit Richtung); nur reine Diagonal-Eckzellen weichen auf die nächste Rasterkante aus.
+                </div>
             </div>
 
-            <!-- Dynamic: Profile Selection -->
-            <div class="form-group" v-if="['INFLOW_DYNAMIC', 'WATERLEVEL_FIX'].includes(config.type)">
+            <!-- Dynamic: Profile Selection (Zufluss-Ganglinie + Ablauf-Pegel-Ganglinie) -->
+            <div class="form-group" v-if="config.type === 'INFLOW_DYNAMIC' || (config.type === 'OUTFLOW' && config.outflowMode === 'HVAR')">
                 <label>Ganglinie wählen</label>
                 <select v-model="config.profileId" class="sub-select">
                     <option :value="null" disabled>-- Bitte wählen --</option>
@@ -73,16 +82,41 @@
                 <input type="number" v-model.number="config.value" step="0.1" class="value-input">
             </div>
 
-             <!-- Description / Hint -->
-             <div class="info-box outflow-config" v-if="config.type === 'OUTFLOW_FREE'">
-                <p>Das Wasser fließt an dieser Grenze ungehindert ab (Critical Depth Condition).</p>
-                <label style="display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer;">
-                    <input type="checkbox" v-model="config.useNativeFree">
-                    <span style="font-size:0.9rem; color:#bdc3c7;">Als Modell-Rand (N/E/S/W) behandeln</span>
-                </label>
-                <small class="hint" style="color:#bdc3c7; display:block; margin-top:8px;">Nur wirksam, wenn die Grenze exakt auf dem Rasterrand liegt. Andernfalls wird intern ein Abfluss-Wehr (HFIX) simuliert.</small>
+            <!-- Ablauf: Verhalten-Umschalter (Frei/Fester Pegel/Pegel-Ganglinie) -->
+            <div class="form-group" v-if="config.type === 'OUTFLOW'">
+                <label>Verhalten</label>
+                <div class="mode-row">
+                    <button v-for="opt in outflowModeOptions" :key="opt.value" class="mode-btn"
+                            :class="{ active: config.outflowMode === opt.value }"
+                            :disabled="opt.value === 'FREE' && outflowEligibility === 'NONE'"
+                            :title="opt.value === 'FREE' && outflowEligibility === 'NONE' ? freeDisabledTooltip : ''"
+                            @click="setOutflowMode(opt.value)">{{ opt.icon }} {{ opt.label }}</button>
+                </div>
             </div>
-            
+
+            <div class="info-box outflow-config" v-if="config.type === 'OUTFLOW' && config.outflowMode === 'FREE'">
+                <p>Das Wasser fließt an dieser Grenze frei aus dem Modell ab.</p>
+                <div class="form-group" style="margin-top:10px;">
+                    <label>Sohlgefälle Sf (m/m) — optional</label>
+                    <input type="number" v-model.number="config.outflowSlope" step="0.1" min="0.001"
+                           placeholder="Standard: 10 (steil, verhindert Rückstau)" class="value-input">
+                </div>
+            </div>
+            <div class="form-group" v-else-if="config.type === 'OUTFLOW' && config.outflowMode === 'HFIX'">
+                <label>Bezug</label>
+                <div class="mode-row">
+                    <button class="mode-btn" :class="{ active: !config.stageRelative }"
+                            @click="config.stageRelative = false">Absolut (m NHN)</button>
+                    <button class="mode-btn" :class="{ active: config.stageRelative }"
+                            @click="config.stageRelative = true">Relativ (über Gelände)</button>
+                </div>
+                <label style="margin-top:10px;">{{ config.stageRelative ? 'Wasserstand über Gelände (m)' : 'Fester Wasserspiegel (m NHN)' }}</label>
+                <input type="number" v-model.number="config.stageValue" step="0.1" class="value-input">
+                <small v-if="config.stageRelative" class="hint-info">
+                    Wasserspiegel = Geländehöhe an der Randbedingung + dieser Wert.
+                </small>
+            </div>
+
         </div>
         <div class="empty-selection" v-else>
             <p>⬅️ Bitte wähle Objekte aus der Liste.</p>
@@ -156,12 +190,12 @@ const getIcon = (type) => {
 const getStatus = (id) => {
     const assign = hydStore.getAssignment(id);
     if (!assign) return '<span class="status-none">Unkonfiguriert</span>';
-    
+
     // Icons for status
     if (assign.type === 'INFLOW_DYNAMIC') return '🟢 Zufluss (dyn)';
     if (assign.type === 'INFLOW_CONSTANT') return '🟢 Zufluss (konst)';
-    if (assign.type === 'WATERLEVEL_FIX') return '🌊 Pegel';
-    if (assign.type === 'OUTFLOW_FREE') return '↘️ Auslauf';
+    if (assign.type === 'WATERLEVEL_FIX') return assign.profileId ? '🌊 Ablauf (Pegel-Ganglinie)' : '📏 Ablauf (Fester Pegel)';
+    if (assign.type === 'OUTFLOW_FREE') return '↘️ Ablauf (Frei)';
     return '⚙️ ' + assign.type;
 };
 
@@ -180,6 +214,31 @@ watch(() => props.targetIds, (newIds) => {
 }, { immediate: true });
 
 const selectedIds = computed(() => new Set(selectionArray.value));
+
+// Ablauf-Eignung über die gesamte Mehrfachauswahl — "schwächster gemeinsamer Nenner":
+// ein einziges ungeeignetes Objekt zieht die ganze Auswahl runter.
+// 'FULL' = alle auf echter Rechteck-Kante ODER mit aufgelöstem literalem Randbogen
+// (properties.literalEdgeArc, terrainFront.js — useBoundaryTool.js commit()) — beide Fälle
+// liefern garantiert gültige N/S/E/W-Kantenzellen, "Frei" landet EXAKT dort.
+// 'STAGE_ONLY' = alle mindestens nahe der (ggf. irregulären) Geländegrenze OHNE literalen
+// Randbogen (properties.nearFront) — der InputGenerator setzt hier eine DIREKTE Punkt-FREE mit
+// Richtungs-Token an genau dieser Zelle (quagg-outflow-free-direction.patch), "Frei" landet
+// also normalerweise auch hier EXAKT an der geklickten Stelle; nur eine reine Diagonal-
+// Eckzelle fällt auf eine Projektion auf die nächste Kante zurück.
+// 'NONE' = mindestens ein Objekt ist vollständig innen (kein Rand/keine Front) — dort lehnt
+// der Solver FREE als reine Punktquelle ab, komplett gesperrt.
+const outflowEligibility = computed(() => {
+    if (selectionArray.value.length === 0) return 'NONE';
+    const items = selectionArray.value.map(id => allItems.value.find(i => i.id === id)?._raw?.properties || {});
+    const hasEdgeAccess = (p) => !!p.edge || !!p.literalEdgeArc?.length;
+    if (items.every(hasEdgeAccess)) return 'FULL';
+    if (items.every(p => hasEdgeAccess(p) || !!p.nearFront)) return 'STAGE_ONLY';
+    return 'NONE';
+});
+const freeDisabledTooltip = 'Frei ist nur auf der Rasterkante oder nahe der Geländegrenze gültig ' +
+    '(LISFLOOD lehnt sie als reine Innen-Punktquelle ab). Mindestens ein ausgewähltes Objekt liegt ' +
+    'vollständig im Inneren — "Fester Pegel"/"Pegel-Ganglinie" nutzen oder näher an den Rasterrand/die ' +
+    'Geländegrenze zeichnen.';
 
 const isAllSelected = computed(() => {
     return filteredItems.value.length > 0 && 
@@ -206,42 +265,84 @@ const ganglinienList = computed(() => {
     return hydStore.ganglinien ? Object.values(hydStore.ganglinien) : [];
 });
 
+// "Ablauf" ist reine UI-Gruppierung (config.type='OUTFLOW', NIE persistiert) — löst sich in
+// applyAssignment() auf die zwei tatsächlich gespeicherten Store-Typen auf (OUTFLOW_FREE /
+// WATERLEVEL_FIX), analog zu BoundaryConfig.vue.
+const outflowModeOptions = [
+    { value: 'FREE', icon: '↘️', label: 'Frei' },
+    { value: 'HFIX', icon: '📏', label: 'Fester Pegel' },
+    { value: 'HVAR', icon: '🌊', label: 'Pegel-Ganglinie' },
+];
+
 const config = ref({
     type: 'INFLOW_DYNAMIC',
     value: null,
     profileId: null,
-    useNativeFree: true
+    outflowMode: 'FREE',
+    outflowSlope: null,
+    stageValue: null,
+    stageRelative: false,
 });
 
 // Reset config params when type changes
 watch(() => config.value.type, (newType) => {
-    if (newType === 'OUTFLOW_FREE') {
+    if (newType === 'OUTFLOW') {
         config.value.profileId = null;
         config.value.value = null;
-        if (config.value.useNativeFree === undefined) config.value.useNativeFree = true;
+        // outflowMode steht auf seinem Ref-Default 'FREE' (s. o.) — nie als scheinbar aktiv
+        // anzeigen, wenn die aktuelle Auswahl das gar nicht hergibt (sonst "aktiv" UND gesperrt
+        // gleichzeitig, s. BoundaryConfig.vue-Pendant).
+        if (config.value.outflowMode === 'FREE' && outflowEligibility.value === 'NONE') {
+            config.value.outflowMode = 'HFIX';
+        }
     }
     if (newType === 'INFLOW_CONSTANT') {
         config.value.profileId = null;
         if (config.value.value === null) config.value.value = 0;
     }
-    if (newType === 'INFLOW_DYNAMIC' || newType === 'WATERLEVEL_FIX') {
+    if (newType === 'INFLOW_DYNAMIC') {
         config.value.value = null;
         // Keep profileId if possible, or reset
     }
 });
 
+function setOutflowMode(mode) {
+    // Defensiv (das :disabled am Button sollte das schon verhindern): "Frei" braucht Rand-
+    // oder Geländegrenzen-Nähe über die gesamte Auswahl, nur bei reiner Innen-Lage gesperrt.
+    if (mode === 'FREE' && outflowEligibility.value === 'NONE') return;
+    config.value.outflowMode = mode;
+}
+
 const isValidConfig = computed(() => {
-    if (config.value.type === 'INFLOW_DYNAMIC' || config.value.type === 'WATERLEVEL_FIX') {
+    if (config.value.type === 'INFLOW_DYNAMIC') {
         return !!config.value.profileId;
     }
     if (config.value.type === 'INFLOW_CONSTANT') {
         return config.value.value !== null && config.value.value !== '';
     }
-    return true; // Free outflow always valid
+    if (config.value.type === 'OUTFLOW') {
+        if (outflowEligibility.value === 'NONE') return false;
+        if (config.value.outflowMode === 'HVAR') return !!config.value.profileId;
+        if (config.value.outflowMode === 'HFIX') return Number.isFinite(config.value.stageValue);
+        return true; // Frei ist gültig (Eignung bereits oben abgesichert)
+    }
+    return true;
 });
 
 const applyAssignment = () => {
-    hydStore.assignBoundaryCondition(selectionArray.value, config.value);
+    let payload;
+    if (config.value.type === 'OUTFLOW') {
+        if (config.value.outflowMode === 'FREE') {
+            payload = { type: 'OUTFLOW_FREE', value: null, profileId: null, outflowSlope: config.value.outflowSlope };
+        } else if (config.value.outflowMode === 'HFIX') {
+            payload = { type: 'WATERLEVEL_FIX', value: config.value.stageValue, profileId: null, relative: config.value.stageRelative || false };
+        } else {
+            payload = { type: 'WATERLEVEL_FIX', value: null, profileId: config.value.profileId };
+        }
+    } else {
+        payload = { type: config.value.type, value: config.value.value, profileId: config.value.profileId };
+    }
+    hydStore.assignBoundaryCondition(selectionArray.value, payload);
     emit('close');
 };
 
@@ -342,4 +443,17 @@ const applyAssignment = () => {
 
 .empty-selection { padding: 40px; text-align: center; color: #7f8c8d; font-size: 1.1rem; }
 .hint { color: #e74c3c; font-size: 0.8rem; margin-top: 4px; }
+.hint-info { color: #7f8c8d; font-size: 0.8rem; margin-top: 3px; display: block; }
+
+/* ── Ablauf-Verhalten-Umschalter ── */
+.mode-row { display: flex; gap: 6px; }
+.mode-btn {
+    flex: 1; padding: 7px 4px; border: 1px solid #4a6278; border-radius: 5px;
+    background: #1e3348; color: #bdc3c7; font-size: 0.75rem; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; text-align: center;
+}
+.mode-btn:hover  { background: #2471a3; border-color: #6d43d4; color: #fff; }
+.mode-btn.active { background: #6d43d4; border-color: #a3e635; color: #fff; }
+.mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-btn:disabled:hover { background: #1e3348; border-color: #4a6278; color: #bdc3c7; }
 </style>

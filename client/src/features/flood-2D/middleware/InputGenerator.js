@@ -4,7 +4,8 @@ import { BoundaryTools } from './BoundaryTools.js';
 import { SgcGenerator } from './SgcGenerator.js';
 import { latticeToCells, sampleGridZ } from '../utils/BridgeMeshLattice.js';
 import { discretizeWeirPolyline } from '../utils/weirGeometry.js';
-import { cellEdge, mergeCellsToIntervals, edgeCells, snapCellToEdge } from '../utils/boundarySegments.js';
+import { cellEdge, mergeCellsToIntervals, snapCellToEdge } from '../utils/boundarySegments.js';
+import { collectLiteralEdgeCells, collectPerimeterCells, findNearestPerimeterCell, computeExteriorMask, outwardCardinalDirections } from '../utils/terrainFront.js';
 import {
     discretizeStructureAxis as _discretizeStructureAxis,
     collectBridgePierCells as _collectBridgePierCells,
@@ -50,9 +51,45 @@ const snapRadiusCells = (header) => Math.max(2, Math.round(NODATA_SNAP_METERS / 
 // Impulsgleichungen und kann Fluss-Umkehr/Instabilität erzeugen (an echten Jobs bestätigt,
 // Audit 2026-07-21). Stattdessen: explizite FREE-Randbedingungen werden auf die nächste
 // Rasterkante projiziert (snapCellToEdge) und laufen über die native, stabile Kanten-
-// Formel. Automatische Rand-Auto-Füllung mit FREE ist deaktiviert (_fillGlobalBoundary,
-// Priority-Flood/Watershed-Ansatz geplant).
-const FREE_FALLBACK_SLOPE = 0.001; // Sf für snapCellToEdge, falls keine explizite outflowSlope angegeben ist
+// Formel. Eine automatische globale Rand-Auto-Füllung gibt es nicht (mehr) — jeder
+// Auslauf muss explizit gezeichnet werden (s. BoundaryConfig.vue).
+//
+// Default-Wert ist bewusst STEIL (>>1): Sf ist ein Manning-Reibungsgefälle, der
+// Gleichgewichts-Abfluss skaliert mit √Sf (selbstlimitierend, kein linearer Anstieg) und
+// der Solver hat KEIN Sf-Limit (boundary.cpp) — ein steiles Gefälle garantiert
+// überkritischen/freien Abfluss (kein physikalischer Rückstau möglich) und ist numerisch
+// sicher: der adaptive CFL-Zeitschritt ist rein tiefenbasiert (fp_acc.cpp, Geschwindigkeits-
+// term ist im Solver-Quellcode auskommentiert), ein steiles Sf verlangsamt die Simulation
+// also NICHT. Einziger Effekt: ein kleiner, selbstkorrigierender erster-Zeitschritt-
+// Transient (Tiefe wird bei 0 geklemmt, kein Crash/NaN).
+const FREE_OUTFLOW_DEFAULT_SLOPE = 10.0; // Sf (m/m) — Standard für "Frei", falls kein outflowSlope angegeben ist
+
+/**
+ * Mittlere Geländehöhe an einer Randbedingungs-Geometrie (Punkt/Linie/Polygon), für den
+ * "relativ zum Gelände"-Bezug eines festen Pegels (WATERLEVEL_FIX mit relative:true,
+ * s. BoundaryConfig.vue/AssignmentModal.vue). Sampelt an den ROHEN Geometrie-Koordinaten
+ * (nicht an den diskretisierten Export-Zellen — die Diskretisierung inkl. NoData-Snapping
+ * passiert erst später in generateBoundaryFiles) — für die typischen kurzen Randobjekte
+ * ist das eine ausreichend genaue Näherung ohne die komplexe Zell-Diskretisierung hier
+ * duplizieren zu müssen.
+ * @returns {number|null} mittlere Geländehöhe, oder null wenn keine gültige Zelle getroffen wurde
+ */
+function terrainZAtBoundary(boundary, header, gridData) {
+    if (!boundary || boundary.type !== 'Feature' || !boundary.geometry) return null;
+    const { type, coordinates } = boundary.geometry;
+    let pts;
+    if (type === 'Point') pts = [coordinates];
+    else if (type === 'LineString') pts = coordinates;
+    else if (type === 'Polygon') pts = coordinates[0] || [];
+    else return null;
+
+    let sum = 0, count = 0;
+    for (const [x, y] of pts) {
+        const z = sampleGridZ(header, gridData, x, y);
+        if (z != null) { sum += z; count++; }
+    }
+    return count > 0 ? sum / count : null;
+}
 
 /**
  * InputGenerator.js
@@ -260,35 +297,45 @@ export class InputGenerator {
             hasBci = true;
         }
 
-        // 5a. SGC Sub-Grid-Gerinne (optional, High-End-Pfad) — gezeichnete
-        // Kanal-Mittellinie wird als eingebettetes Gerinne (schmaler als eine
-        // Zelle möglich) in drei Raster gestempelt. MUSS vor der Wehr-Datei
-        // laufen: v8-Brücken (<dir>B) sind nur über SGC-Zellen gültig, daher
-        // wird das Breitenraster zum Clippen der Brückenzellen gebraucht.
+        // 5a. SGC Sub-Grid-Gerinne (optional, High-End-Pfad) — gezeichnete Kanal-
+        // Mittellinien werden als eingebettete Gerinne (schmaler als eine Zelle
+        // möglich) in Raster gestempelt. MUSS vor der Wehr-Datei laufen: v8-Brücken
+        // (<dir>B) sind nur über SGC-Zellen gültig, daher wird das Breitenraster
+        // zum Clippen der Brückenzellen gebraucht.
+        //
+        // Mehrere Kanäle möglich (Bathymetrie-Einzelkanal + Channel-Tool-Kanäle,
+        // von Flood2DSolverRunner.vue bereits zu scenario.sgcChannels zusammen-
+        // geführt) über SGCchangroup (Gruppen-ID-Raster) + SGCchanprams (Typ/
+        // Neigung/Manning je Gruppe, LoadSGCChanPrams in input.cpp). Rechteck
+        // (Typ 1) und Trapez (Typ 7) beide nutzbar, s. SgcGenerator.buildSgcChanPramsFile.
         //
         // Pfeiler: nach dem Stempeln wird die SGC-Breite an allen Pfeilerzellen
         // auf 0 gesetzt (collectBridgePierCells, rein geometrisch). So sperrt ein
         // Pfeiler den Sub-Grid-Fluss auch UNTER der Soffitte — ohne DGM-Eingriff.
         let hasSgc = false;
         let sgcWidthGrid = null;
+        let sgcManningN = 0.03;
         const hasBridges = (scenario.bridges || []).length > 0;
-        // SGC = Sub-Grid-CHANNEL, NUR aus einer gezeichneten Bathymetrie-Mittellinie
-        // (echtes schmales Flussgerinne). BRÜCKEN brauchen KEIN SGC: der quagg-Patch
+        // SGC = Sub-Grid-CHANNEL, NUR aus gezeichneten Kanal-Mittellinien (echte
+        // schmale Flussgerinne). BRÜCKEN brauchen KEIN SGC: der quagg-Patch
         // (weir_flow.cpp) lässt EWeir_Bridge ohne Sub-Grid auf der Floodplain laufen
         // (test_bridge_no_sgc.py). Würden wir SGC für Brücken erzeugen, triggerte das die
         // fragile SGC-Wehr-Validierung in lisflood_processing.cpp (fehlerhafte Face-
         // Indexierung) → „Invalid bridge cell ... either side" → Absturz. Also: kein
         // Auto-SGC unter Brücken.
-        if (scenario.sgc && scenario.sgc.polyline?.length >= 2) {
-            if ((scenario.sgc.width ?? 0) > 4 * header.cellsize) {
-                this.info(`SGC-Gerinne ${scenario.sgc.width} m breit > 4 Zellen (${(4 * header.cellsize).toFixed(1)} m) — besser direkt im DGM auflösen statt Sub-Grid.`);
+        const sgcChannels = (scenario.sgcChannels || []).filter(c => c.polyline?.length >= 2);
+        if (sgcChannels.length > 0) {
+            for (const channel of sgcChannels) {
+                if ((channel.bedWidth ?? 0) > 4 * header.cellsize) {
+                    this.info(`SGC-Gerinne ${channel.bedWidth} m breit > 4 Zellen (${(4 * header.cellsize).toFixed(1)} m) — besser direkt im DGM auflösen statt Sub-Grid.`);
+                }
+                if (channel.bedMode !== 'absolute' && !((channel.bedDepth ?? 0) > 0)) {
+                    this.warn(`SGC-Sohltiefe ${channel.bedDepth} m ungültig (muss > 0 sein) — Gerinne wird trotzdem gestempelt.`);
+                }
             }
-            if (scenario.sgc.bedMode !== 'absolute' && !((scenario.sgc.bedDepth ?? 0) > 0)) {
-                this.warn(`SGC-Sohltiefe ${scenario.sgc.bedDepth} m ungültig (muss > 0 sein) — Gerinne wird trotzdem gestempelt.`);
-            }
-            const sgcRasters = SgcGenerator.generateSgcRasters(scenario.sgc, data, header);
+            const sgcRasters = SgcGenerator.generateMultiSgcRasters(sgcChannels, data, header);
             if (sgcRasters.cellCount === 0) {
-                this.warn('SGC-Gerinne ergibt 0 Zellen im Export-Raster (Polyline außerhalb?) — SGC deaktiviert.');
+                this.warn('SGC-Gerinne ergeben 0 Zellen im Export-Raster (Polylinien außerhalb?) — SGC deaktiviert.');
             } else {
                 // Pfeilerzellen aus dem Gerinne stanzen (Breite 0 = volle Sperrung).
                 const pierKeys = this.collectBridgePierCells(scenario.bridges || [], header);
@@ -302,13 +349,18 @@ export class InputGenerator {
                     }
                     if (punched > 0) console.log(`[InputGenerator] Pfeiler: SGC-Breite an ${punched} Zelle(n) auf 0 gesetzt (volle Sperrung, kein DGM-Eingriff).`);
                 }
-                for (const [name, raster] of [['sgc.width.asc', sgcRasters.width], ['sgc.bed.asc', sgcRasters.bed], ['sgc.bank.asc', sgcRasters.bank]]) {
+                for (const [name, raster] of [['sgc.width.asc', sgcRasters.width], ['sgc.bed.asc', sgcRasters.bed], ['sgc.bank.asc', sgcRasters.bank], ['sgc.group.asc', sgcRasters.group]]) {
                     if (fs) Rasterizer.writeGridToFS(fs, '/' + name, raster, header);
                     else this.files[name] = Rasterizer.gridToASC(raster, header);
                 }
+                const chanpramsContent = SgcGenerator.buildSgcChanPramsFile(sgcChannels);
+                if (fs) fs.writeFile('/sgc.chanprams.txt', chanpramsContent);
+                else this.files['sgc.chanprams.txt'] = chanpramsContent;
+
                 hasSgc = true;
                 sgcWidthGrid = sgcRasters.width;
-                console.log(`[InputGenerator] ✅ SGC: ${sgcRasters.cellCount} Gerinne-Zellen gestempelt (Bathymetrie-Kanal, Breite ${scenario.sgc.width} m).`);
+                sgcManningN = sgcChannels[0]?.manningN ?? 0.03;
+                console.log(`[InputGenerator] ✅ SGC: ${sgcRasters.cellCount} Gerinne-Zellen aus ${sgcChannels.length} Kanal/Kanälen gestempelt.`);
             }
         }
 
@@ -353,7 +405,7 @@ export class InputGenerator {
             engine: scenario.engine || 'v5',
             scheme: scenario.numericalScheme || 'acceleration',
             hasSgc,
-            sgcManningN: scenario.sgc?.manningN ?? 0.03,
+            sgcManningN,
             useGpu: scenario.useGpu ?? false
         });
 
@@ -413,13 +465,32 @@ export class InputGenerator {
      * @returns {{ bciContent: string, bdyContent: string }}
      */
     buildBci(scenario, header, data) {
+        const combinedBoundaries = [
+            ...(scenario.boundaries || []),
+            ...(scenario.manholes || [])
+        ];
+
         // Pre-process Assignments: statische Werte → synthetische Ganglinien (sonst kein BDY-Profil).
         const ganglinien = { ...scenario.ganglinien };
         const assignments = { ...scenario.assignments };
         for (const [id, assign] of Object.entries(assignments)) {
             if (assign.type === 'INFLOW_CONSTANT' || assign.type === 'INFLOW_FIX' || assign.type === 'WATERLEVEL_FIX') {
                 if (assign.value !== undefined && assign.value !== null) {
-                    const val = parseFloat(assign.value);
+                    let val = parseFloat(assign.value);
+                    // Fester Pegel "relativ zum Gelände" (BoundaryConfig.vue/AssignmentModal.vue):
+                    // val ist als Offset gemeint (z.B. "immer 0.3m Wasser"), nicht als absolute
+                    // NHN-Höhe. Vor dem Bau der Ganglinie in eine absolute Höhe umrechnen, indem
+                    // die mittlere Geländehöhe an dieser Randbedingung addiert wird — danach läuft
+                    // der Rest der Pipeline unverändert mit einer normalen absoluten HVAR-Höhe.
+                    if (assign.type === 'WATERLEVEL_FIX' && assign.relative) {
+                        const b = combinedBoundaries.find(x => x.id === id);
+                        const terrainZ = terrainZAtBoundary(b, header, data);
+                        if (terrainZ != null) {
+                            val = terrainZ + val;
+                        } else {
+                            this.warn(`Fester Pegel (relativ) ${String(id).substring(0, 8)}: Geländehöhe an dieser Stelle nicht ermittelbar (außerhalb Raster/NoData) — Offset ${val} m wird als absolute Höhe (m NHN) behandelt.`);
+                        }
+                    }
                     const shortId = id.split('-')[0] || id.substring(0, 8);
                     const synthName = `const_${shortId}`;
                     if (!ganglinien[synthName]) {
@@ -436,11 +507,6 @@ export class InputGenerator {
             }
         }
 
-        const combinedBoundaries = [
-            ...(scenario.boundaries || []),
-            ...(scenario.manholes || [])
-        ];
-
         // Hydraulik-Plausibilität (Kanten-Segmente / Innen-Auslauf / Sohlgefälle /
         // Boundary außerhalb Raster) + Nozzle-Tauglichkeit gerichteter Zuläufe in den
         // Pipeline-IssueCollector mergen → erscheint im Pre-Run-Gate.
@@ -455,20 +521,17 @@ export class InputGenerator {
 
         console.log(`[InputGenerator] Total BCI Entities: ${combinedBoundaries.length} (Boundaries: ${scenario.boundaries?.length || 0}, Manholes: ${scenario.manholes?.length || 0})`);
 
-        // EINE Ownership-Map-Pass erzeugt das gesamte BCI: explizite Boundaries
-        // claimen ihre Zellen zuerst (explizit gewinnt), danach füllt die globale
-        // Randbedingung nur die UNBELEGTEN Rand-/NoData-Front-Zellen. Dadurch kann
-        // keine Zelle gleichzeitig Zu- und Ablauf bekommen.
+        // EINE Ownership-Map-Pass erzeugt das gesamte BCI: explizite Boundaries claimen
+        // ihre Zellen (Ablauf ist bewusst nur auf Rand-/Geländegrenzen-Objekten wählbar,
+        // s. BoundaryConfig.vue) — dadurch kann keine Zelle gleichzeitig Zu- und Ablauf
+        // bekommen. Keine automatische globale Randbedingung mehr (entfernt: war komplett
+        // ans UI-Panel gekoppelt und konnte ohne dieses nie von CLOSED wegkommen).
         const { bciContent, bdyContent } = this.generateBoundaryFiles(
             assignments,
             combinedBoundaries,
             ganglinien,
             header,
-            data,
-            {
-                globalBoundaryType: scenario?.globalBoundaryType,
-                globalBoundaryHfix: scenario?.globalBoundaryHfix,
-            }
+            data
         );
 
         return { bciContent, bdyContent };
@@ -476,13 +539,13 @@ export class InputGenerator {
 
     /**
      * Combined BCI + BDY Generation (Ownership-Map). Diskretisierung + Flux-Splitting
-     * bleiben; die Zell→BCI-Abbildung läuft über die claimed-Map (explizit gewinnt,
-     * globale Füllung nur auf unbelegten Zellen).
+     * bleiben; die Zell→BCI-Abbildung läuft über die claimed-Map (jede Zelle gehört
+     * genau einer expliziten Randbedingung).
      *
      * LISFLOOD QVAR expects flow per unit width (m²/s): user's total Q (m³/s) / (N × cellsize).
      * @returns {{ bciContent: string, bdyContent: string }}
      */
-    generateBoundaryFiles(assignments, boundaries, ganglinien, header, gridData, globalOpts = {}) {
+    generateBoundaryFiles(assignments, boundaries, ganglinien, header, gridData) {
         let bdyContent = 'LISFLOOD boundary conditions\n'; // Required comment line (skipped by parser)
         const bdyProfiles = new Map(); // name -> { data: [{t,v}], ndata } — tracks unique profiles
 
@@ -490,6 +553,22 @@ export class InputGenerator {
 
         const xll = header.xll !== undefined ? header.xll : header.xllcorner;
         const yll = header.yll !== undefined ? header.yll : header.yllcorner;
+
+        // Gültige (Nicht-NoData) literale Rand-Zellen — für FREE-Snapping (s. unten):
+        // ein geclipptes/irreguläres DEM kann an der literalen Rechteck-Kante NoData sein
+        // (das Gelände reicht dort nicht bis zum Rasterrand). Ein blinder Snap auf die
+        // NÄCHSTE Kante (ohne Gültigkeitsprüfung) würde dann eine FREE-Randbedingung auf
+        // eine nicht existente Zelle legen — der Solver stürzt dabei ab (SIGSEGV/Exit -11,
+        // beobachtet 2026-07-23). Einmal pro Export berechnet (O(ncols+nrows)).
+        const validEdgeCells = collectLiteralEdgeCells(gridData, header);
+        // Gültige Randzellen (Kante + Front-Innenzellen) — Gegenstück zu validEdgeCells, für
+        // properties.perimeterCells (Ablauf-Picker). Ein Boundary-Objekt trägt seine geklickten
+        // Zellen als gespeicherte {col,row}-Liste; stimmt das aktuelle Gelände nicht mehr damit
+        // überein (nachträglich bearbeitet, oder eine Altlast aus einer früheren Tool-Version),
+        // würden sonst Nicht-Randzellen unbesehen mit exportiert. Hier einmalig neu berechnet und
+        // gegen die gespeicherten Zellen geprüft — ungültig gewordene werden ausgeklammert (2026-07-23).
+        const exteriorMask = computeExteriorMask(gridData, header);
+        const validPerimeterCells = collectPerimeterCells(gridData, header, exteriorMask);
 
         // ── Ownership-Map ──────────────────────────────────────────────────────
         // Jede Perimeter-/NoData-Front-Zelle gehört GENAU einer Bedingung.
@@ -501,7 +580,7 @@ export class InputGenerator {
         // FREE-Zellen, die nicht schon auf einer echten Kante liegen (Punktquelle, Innen-
         // Linie/Polygon, Off-Edge nach NoData-Rescue), werden HIER gesammelt statt sofort als
         // P-HFIX emittiert — am Ende auf die nächste Kante projiziert + als native FREE-Zeile
-        // geschrieben (Grund: s. Kommentar bei FREE_FALLBACK_SLOPE oben).
+        // geschrieben (Grund: s. Kommentar bei FREE_OUTFLOW_DEFAULT_SLOPE oben).
         // Struktur: { N: Map<slopeStr, cells[]>, S: ..., E: ..., W: ... }
         const freeEdgeAccum = { N: new Map(), S: new Map(), E: new Map(), W: new Map() };
         let boundaryIndex = 0;
@@ -543,6 +622,8 @@ export class InputGenerator {
             let rawCells = [];
             let isPointSource = false;
             let pointWorldCoords = null;
+            let isLiteralEdgeArc = false;
+            let isFrontOnlyFree = false;
 
             if (b.type === 'Feature') {
                 if (b.geometry.type === 'Point') {
@@ -551,10 +632,54 @@ export class InputGenerator {
                     const c = this.getGridIndex(b.geometry.coordinates[0], b.geometry.coordinates[1], header);
                     rawCells.push({ x: c.col, y: c.row_world });
                 } else if (b.geometry.type === 'LineString') {
-                    console.log(`[InputGenerator] DIAG Boundary ${b.id}: Input coords =`, JSON.stringify(b.geometry.coordinates));
-                    console.log(`[InputGenerator] DIAG Header: xll=${xll}, yll=${yll}, cellsize=${header.cellsize}, ncols=${header.ncols}, nrows=${header.nrows}`);
-                    rawCells = BoundaryTools.discretizePolyline(b.geometry.coordinates, header.cellsize, xll, yll);
-                    console.log(`[InputGenerator] DIAG Boundary ${b.id}: rawCells (bottom-up) =`, JSON.stringify(rawCells.slice(0, 5)), `... (${rawCells.length} total)`);
+                    if (lisfloodType === 'FREE' && b.properties?.literalEdgeArc) {
+                        // FREE braucht laut Solver-Grammatik zwingend eine native N/S/E/W-Zeile
+                        // (Front-Innenzellen aus perimeterCells wären hier ungültig) — literalEdgeArc
+                        // ist die vom Ablauf-Picker (useOutflowPickerTool.js/outflowBrush.js)
+                        // geklickte Teilmenge, die NUR literale Kantenzellen enthält. Zellen sind
+                        // bereits garantiert gültige Kantenzellen — werden NICHT über
+                        // _accumulateFreeAtNearestEdge gesnappt (isLiteralEdgeArc-Zweig unten), sonst
+                        // Selbst-Kollision in der claimed-Map.
+                        const requested = b.properties.literalEdgeArc;
+                        const stillValid = requested.filter(c => validEdgeCells.has(`${c.col},${c.row}`));
+                        if (stillValid.length < requested.length) {
+                            this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${requested.length - stillValid.length}/${requested.length} ` +
+                                `gespeicherte Zelle(n) sind laut aktuellem Gelände keine Kantenzellen mehr (Terrain seither verändert?) — ausgeklammert.`);
+                        }
+                        rawCells = stillValid.map(c => ({ x: c.col, y: c.row }));
+                        isLiteralEdgeArc = true;
+                    } else if (lisfloodType === 'FREE' && b.properties?.perimeterCells) {
+                        // FREE-Auswahl, in der KEINE literale Kantenzelle dabei ist (nur Front-
+                        // Innenzellen — z. B. ein schiefes/rotiertes DGM, dessen wahre Kante
+                        // diagonal durchs Raster läuft und die literale Rechteck-Kante nirgends
+                        // berührt). Jede Zelle bekommt DIREKT eine Punkt-FREE-Randbedingung mit
+                        // expliziter Austrittsrichtung (quagg-outflow-free-direction.patch, s.
+                        // engines/patches/README.md) — nur eine reine Eckzelle, die ausschließlich
+                        // DIAGONAL an die NoData-Front grenzt (keine gültige Einzel-Kante), fällt
+                        // unten im Fallthrough auf die alte Kanten-Projektion zurück
+                        // (_claimInteriorCell → _accumulateFreeAtNearestEdge). Bewusst NICHT
+                        // isLiteralEdgeArc: diese Zellen sind KEINE garantierten Kantenzellen.
+                        const requested = b.properties.perimeterCells;
+                        const stillValid = requested.filter(c => validPerimeterCells.has(`${c.col},${c.row}`));
+                        if (stillValid.length < requested.length) {
+                            this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${requested.length - stillValid.length}/${requested.length} ` +
+                                `gespeicherte Zelle(n) sind laut aktuellem Gelände keine Randzellen mehr (Terrain seither verändert?) — ausgeklammert.`);
+                        }
+                        rawCells = stillValid.map(c => ({ x: c.col, y: c.row }));
+                        isFrontOnlyFree = true;
+                    } else if (b.properties?.perimeterCells && lisfloodType !== 'FREE') {
+                        // Alle vom Ablauf-Picker angemalten/geklickten Randzellen (Rand + Front-
+                        // Innenzellen) statt der (hier irrelevanten) Linien-Geometrie.
+                        const requested = b.properties.perimeterCells;
+                        const stillValid = requested.filter(c => validPerimeterCells.has(`${c.col},${c.row}`));
+                        if (stillValid.length < requested.length) {
+                            this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${requested.length - stillValid.length}/${requested.length} ` +
+                                `gespeicherte Zelle(n) sind laut aktuellem Gelände keine Randzellen mehr (Terrain seither verändert?) — ausgeklammert.`);
+                        }
+                        rawCells = stillValid.map(c => ({ x: c.col, y: c.row }));
+                    } else {
+                        rawCells = BoundaryTools.discretizePolyline(b.geometry.coordinates, header.cellsize, xll, yll);
+                    }
                 } else if (b.geometry.type === 'Polygon') {
                     rawCells = BoundaryTools.getCellsInPolygon(b.geometry.coordinates[0], header.cellsize, xll, yll);
                 }
@@ -653,11 +778,12 @@ export class InputGenerator {
 
             const declaredEdge = b.properties?.edge; // 'N'|'S'|'E'|'W'|null/undefined
             const sf = assign.outflowSlope;
-            const sfStr = (Number.isFinite(sf) && sf > 0 && sf <= 0.999) ? ` ${sf.toFixed(6)}` : '';
+            // Kein Obergrenze: der Solver kennt kein Sf-Limit (s. Kommentar bei
+            // FREE_OUTFLOW_DEFAULT_SLOPE) — ein sehr steiler, vom Nutzer gewählter Wert ist gültig.
+            const sfStr = (Number.isFinite(sf) && sf > 0) ? ` ${sf.toFixed(6)}` : '';
             // FREE bekommt IMMER ein Gefälle — nie den instabilen "-1 = lokales Gefälle"-Zweig
-            // (s. Kommentar bei FREE_FALLBACK_SLOPE). Nutzt outflowSlope, sonst Fallback.
-            const slopeToken = sfStr || ` ${FREE_FALLBACK_SLOPE.toFixed(6)}`;
-            const useNativeFree = assign.useNativeFree !== false;
+            // (s. Kommentar bei FREE_OUTFLOW_DEFAULT_SLOPE). Nutzt outflowSlope, sonst Fallback.
+            const slopeToken = sfStr || ` ${FREE_OUTFLOW_DEFAULT_SLOPE.toFixed(6)}`;
 
             // Gerichteter INNEN-Zufluss: optionaler Winkel-Token (Welt-Azimut in Grad,
             // 0=Ost, 90=Nord) an der P-QVAR-Zeile → der gepatchte Solver rechnet die
@@ -665,18 +791,56 @@ export class InputGenerator {
             // Legacy: fehlt flowAngleDeg, wird flowDir (N/S/E/W) gemappt.
             const dirToken = (role === 'inflow') ? this._inflowAngleToken(assign) : null;
 
-            if (isPointSource && pointWorldCoords) {
+            if (isLiteralEdgeArc) {
+                // Bogen-Zellen sind bereits garantiert gültige literale Randzellen (s. o.) —
+                // wie ein Kanten-Segment behandeln (nach EIGENER cellEdge() gruppieren, da der
+                // Bogen über eine Ecke laufen und mehrere Kanten kreuzen kann), claim + merge
+                // DIREKT in edgeLines. Bewusst NICHT über _claimInteriorCell/
+                // _accumulateFreeAtNearestEdge: die Zelle wäre dort schon durch ihre eigene
+                // claimCell(cell.x,cell.y) belegt, bevor der "Snap auf sich selbst" (Distanz 0)
+                // sie erneut prüft → würde fälschlich als Kollision verworfen.
+                const byEdge = { N: [], S: [], E: [], W: [] };
+                for (const c of finalCells) {
+                    const e = cellEdge(header, c.x, c.y);
+                    if (e) byEdge[e].push(c);
+                }
+                for (const e of ['N', 'S', 'E', 'W']) {
+                    const claimedCells = byEdge[e].filter(c => claimCell(c.x, c.y));
+                    if (claimedCells.length === 0) continue;
+                    for (const iv of mergeCellsToIntervals(claimedCells, e, header)) {
+                        edgeLines.push(`${e} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} FREE${slopeToken}`);
+                    }
+                }
+            } else if (isFrontOnlyFree) {
+                // Front-Innenzellen ohne literale Kante (s. o.): pro Zelle direkte Punkt-FREE-
+                // Zeile mit Richtungs-Token, wenn sie orthogonal an die NoData-Front grenzt
+                // (quagg-outflow-free-direction.patch — derselbe Manning-Normalabfluss wie eine
+                // native Kanten-FREE-Zeile, nur auf der Kante DIESER Zelle statt am Rasterrand).
+                // Nur eine reine Eckzelle (ausschließlich DIAGONAL angebunden, keine gültige
+                // Einzel-Kante) fällt auf die alte Kanten-Projektion zurück (_claimInteriorCell).
+                for (const c of finalCells) {
+                    const dirs = outwardCardinalDirections(c.x, c.y, header, exteriorMask);
+                    if (dirs.length > 0) {
+                        if (!claimCell(c.x, c.y)) continue; // schon belegt (Überlappung) — überspringen
+                        const wx = xll + (c.x + 0.5) * header.cellsize;
+                        const wy = yll + (c.y + 0.5) * header.cellsize;
+                        for (const d of dirs) pointLines.push(`P ${wx.toFixed(4)} ${wy.toFixed(4)} FREE${slopeToken} ${d}`);
+                    } else {
+                        this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken, validEdgeCells);
+                    }
+                }
+            } else if (isPointSource && pointWorldCoords) {
                 // Reine Punktquelle (Innen): mit optionaler Fließrichtung.
                 const cell = finalCells[0];
                 if (claimCell(cell.x, cell.y)) {
                     if (lisfloodType === 'FREE') {
-                        this._accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, cell.x, cell.y, slopeToken);
+                        this._accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, cell.x, cell.y, slopeToken, validEdgeCells);
                     } else {
                         const dirSuffix = dirToken ? ` ${dirToken}` : '';
                         pointLines.push(`P ${pointWorldCoords[0].toFixed(4)} ${pointWorldCoords[1].toFixed(4)} ${lisfloodType} ${profileNameForBci}${dirSuffix}`);
                     }
                 }
-            } else if (declaredEdge && (lisfloodType !== 'FREE' || useNativeFree)) {
+            } else if (declaredEdge) {
                 // KANTEN-SEGMENT: Zellen, die wirklich auf der deklarierten Kante liegen,
                 // → native N/S/E/W-Zeile mit Impuls. Off-Edge-Zellen (z. B. nach NoData-Rescue
                 // verschoben) werden auf die nächste Kante projiziert (FREE) bzw. als Innenquelle
@@ -688,16 +852,16 @@ export class InputGenerator {
                 const claimedOnEdge = onEdge.filter(c => claimCell(c.x, c.y));
                 if (claimedOnEdge.length > 0) {
                     const intervals = mergeCellsToIntervals(claimedOnEdge, declaredEdge, header);
-                    const lisType = lisfloodType === 'FREE' ? `FREE${sfStr}` : `${lisfloodType} ${profileNameForBci}`;
+                    const lisType = lisfloodType === 'FREE' ? `FREE${slopeToken}` : `${lisfloodType} ${profileNameForBci}`;
                     for (const iv of intervals) edgeLines.push(`${declaredEdge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} ${lisType}`);
                 }
                 if (offEdge.length > 0) {
                     this.warn(`Boundary ${String(b.id).substring(0, 8)}: ${offEdge.length} Zelle(n) liegen nicht auf der Kante '${declaredEdge}' — als interne Quelle behandelt.`);
-                    for (const c of offEdge) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken);
+                    for (const c of offEdge) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken, validEdgeCells);
                 }
             } else {
                 // INNEN-Linie/-Polygon: Punktquellen je Zelle, mit optionaler Fließrichtung.
-                for (const c of finalCells) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken);
+                for (const c of finalCells) this._claimInteriorCell(c, lisfloodType, profileNameForBci, header, gridData, claimCell, pointLines, dirToken, freeEdgeAccum, claimed, slopeToken, validEdgeCells);
             }
 
             boundaryIndex++;
@@ -711,9 +875,6 @@ export class InputGenerator {
                 }
             }
         }
-
-        // ── Globale Randbedingung: füllt NUR unbelegte Zellen ──────────────────
-        this._fillGlobalBoundary(header, gridData, claimed, edgeLines, pointLines, globalOpts);
 
         // ── Finale Emission ────────────────────────────────────────────────────
         const bciContent = [...edgeLines, ...pointLines].join('\n') + (edgeLines.length + pointLines.length ? '\n' : '');
@@ -841,13 +1002,19 @@ export class InputGenerator {
 
     /**
      * P-Zeile für eine Innenzelle; optionaler Richtungs-Token (Impuls).
-     * FREE geht NICHT als Punkt raus (s. FREE_FALLBACK_SLOPE-Kommentar), sondern wird
+     * FREE geht NICHT als Punkt raus (s. FREE_OUTFLOW_DEFAULT_SLOPE-Kommentar), sondern wird
      * auf die nächste Kante projiziert (freeEdgeAccum, außerhalb dieser Methode geflusht).
+     *
+     * Absicherung, kein Normalfall mehr: die UI lässt "Ablauf" nur noch auf Rand-Objekten
+     * zu (BoundaryConfig.vue/AssignmentModal.vue), daher landet hier praktisch nur noch
+     * (a) ein Alt-Projekt mit einer vor diesem Umbau gespeicherten Innen-Ablauf-Zuweisung,
+     * oder (b) der offEdge-Grenzfall (Rand-deklariertes Segment, das durch Rundung/NoData-
+     * Rescue leicht neben der echten Kante liegt).
      */
-    _claimInteriorCell(cell, lisfloodType, profileName, header, gridData, claimCell, pointLines, dirToken = null, freeEdgeAccum = null, claimed = null, slopeToken = '') {
+    _claimInteriorCell(cell, lisfloodType, profileName, header, gridData, claimCell, pointLines, dirToken = null, freeEdgeAccum = null, claimed = null, slopeToken = '', validEdgeCells = null) {
         if (!claimCell(cell.x, cell.y)) return;
         if (lisfloodType === 'FREE') {
-            this._accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, cell.x, cell.y, slopeToken);
+            this._accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, cell.x, cell.y, slopeToken, validEdgeCells);
         } else {
             const wx = (header.xll !== undefined ? header.xll : header.xllcorner) + (cell.x + 0.5) * header.cellsize;
             const wy = (header.yll !== undefined ? header.yll : header.yllcorner) + (cell.y + 0.5) * header.cellsize;
@@ -857,102 +1024,44 @@ export class InputGenerator {
     }
 
     /**
-     * FREE-Zelle, die nicht auf einer echten Kante liegt: auf die nächstgelegene Kante
-     * projizieren und für die spätere native FREE-Zeile sammeln (freeEdgeAccum). Belegt
-     * auch die Ziel-Kantenzelle in `claimed`, damit die globale Füllung sie nicht doppelt
-     * beansprucht. Kollidiert die Ziel-Zelle bereits (z. B. zwei Quellen springen auf
-     * dieselbe Kantenzelle), wird die zweite stillschweigend verworfen statt zu überschreiben.
+     * FREE-Zelle, die nicht auf einer echten Kante liegt: auf die nächstgelegene GÜLTIGE
+     * Kantenzelle projizieren (validEdgeCells — nur Nicht-NoData-Zellen der literalen
+     * Rechteck-Kante, s. collectLiteralEdgeCells) und für die spätere native FREE-Zeile
+     * sammeln (freeEdgeAccum). Ein geclipptes/irreguläres DEM kann an der naiv nächsten
+     * Kante NoData sein — eine FREE-Randbedingung dort lässt den Solver abstürzen
+     * (SIGSEGV/Exit -11, beobachtet 2026-07-23). Ohne validEdgeCells (Alt-Aufrufer/Tests)
+     * oder wenn GAR KEINE gültige Kantenzelle existiert (Gelände berührt den Rasterrand
+     * nirgends), Fallback auf den alten blinden Snap — dann lieber eine (seltene, vorher
+     * schon mögliche) Instabilität als eine stillschweigend verworfene Randbedingung.
+     * Belegt auch die Ziel-Kantenzelle in `claimed`, damit die globale Füllung sie nicht
+     * doppelt beansprucht. Kollidiert die Ziel-Zelle bereits (z. B. zwei Quellen springen
+     * auf dieselbe Kantenzelle), wird die zweite stillschweigend verworfen statt überschrieben.
      */
-    _accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, col, row, slopeToken) {
-        const { edge, col: ec, row: er } = snapCellToEdge(header, col, row);
+    _accumulateFreeAtNearestEdge(freeEdgeAccum, claimed, header, col, row, slopeToken, validEdgeCells = null) {
+        let edge, ec, er;
+        if (validEdgeCells) {
+            const nearestValid = findNearestPerimeterCell(col, row, validEdgeCells);
+            if (!nearestValid) {
+                // Gelände berührt den Rasterrand NIRGENDS (validEdgeCells leer) — jeder Snap-Punkt
+                // wäre NoData. Lieber den Auslauf verwerfen als einen garantierten Solver-Absturz
+                // (SIGSEGV/Exit -11) zu riskieren.
+                this.warn(`FREE-Auslauf bei (${col},${row}): KEINE gültige Randzelle im gesamten Raster ` +
+                    `gefunden (Gelände berührt den Rasterrand nirgends) — Auslauf wird NICHT geschrieben ` +
+                    `(sonst Solver-Absturz auf NoData-Rand). Terrain/Randlage prüfen!`);
+                return;
+            }
+            ec = nearestValid.col; er = nearestValid.row;
+            edge = cellEdge(header, ec, er);
+        } else {
+            // Alt-Aufrufer/Tests ohne validEdgeCells: unverändertes Verhalten (blinder Snap).
+            ({ edge, col: ec, row: er } = snapCellToEdge(header, col, row));
+        }
         const key = `${ec},${er}`;
         if (claimed.has(key)) return;
         claimed.set(key, { role: 'outflow' });
         const bucket = freeEdgeAccum[edge];
         if (!bucket.has(slopeToken)) bucket.set(slopeToken, []);
         bucket.get(slopeToken).push({ col: ec, row: er });
-    }
-
-    /**
-     * Globale Randbedingung füllt NUR unbelegte Zellen — aktuell NUR für HFIX (fester
-     * Pegel): (a) echte Rasterkanten (N/S/E/W) als native Intervalle, (b) die NoData-
-     * Front (irreguläres Einzugsgebiet) als P-HFIX-Auslauf.
-     * CLOSED ⇒ es wird nichts ergänzt.
-     *
-     * FREE (automatischer freier Auslauf) ist vorübergehend deaktiviert (No-Op): blinde
-     * Kanten-Auto-Füllung war wiederholte Quelle von Solver-Instabilität, weil sie keine
-     * echte Erreichbarkeit vom Zufluss aus prüft (Audit 2026-07-21). Geplant: Priority-
-     * Flood/Watershed-basierte Erkennung echter Auslaufpunkte statt pauschal die ganze
-     * Kante zu markieren. Bis dahin: nur explizite, vom Nutzer gezeichnete FREE-
-     * Randbedingungen (generateBoundaryFiles, auf die nächste Kante projiziert) sind aktiv.
-     */
-    _fillGlobalBoundary(header, gridData, claimed, edgeLines, pointLines, { globalBoundaryType, globalBoundaryHfix } = {}) {
-        if (!globalBoundaryType || globalBoundaryType === 'CLOSED') return;
-        if (globalBoundaryType === 'FREE') {
-            this.warn('Globaler freier Auslauf (FREE) ist vorübergehend deaktiviert (Watershed-Ansatz geplant) — bitte einen expliziten Auslauf zeichnen oder "Fester Pegel" nutzen.');
-            return;
-        }
-        const { ncols, nrows, cellsize: cs } = header;
-        const xll = header.xll !== undefined ? header.xll : header.xllcorner;
-        const yll = header.yll !== undefined ? header.yll : header.yllcorner;
-        const ND = -9990;
-        const val = ` ${(globalBoundaryHfix ?? 0).toFixed(4)}`;
-
-        // (a) Rasterkanten: pro Kante unbelegte, gültige Zellen sammeln → Intervalle
-        for (const edge of ['N', 'S', 'E', 'W']) {
-            const cells = [];
-            for (const c of edgeCells(header, edge)) {
-                const key = `${c.col},${c.row}`;
-                if (claimed.has(key)) continue;
-                if (gridData[c.row * ncols + c.col] <= ND) continue; // NoData-Kante überspringen
-                claimed.set(key, { role: 'global' });
-                cells.push(c);
-            }
-            if (cells.length === 0) continue;
-            for (const iv of mergeCellsToIntervals(cells, edge, header)) {
-                edgeLines.push(`${edge} ${iv.a.toFixed(4)} ${iv.b.toFixed(4)} HFIX${val}`);
-            }
-        }
-
-        // (b) NoData-Front: Außen-NoData per Flood-Fill vom Rasterrand markieren …
-        const total = ncols * nrows;
-        const exterior = new Uint8Array(total);
-        const stack = [];
-        const seedExt = (c, r) => {
-            if (c < 0 || c >= ncols || r < 0 || r >= nrows) return;
-            const k = r * ncols + c;
-            if (exterior[k] || gridData[k] > ND) return;
-            exterior[k] = 1; stack.push(k);
-        };
-        for (let c = 0; c < ncols; c++) { seedExt(c, 0); seedExt(c, nrows - 1); }
-        for (let r = 0; r < nrows; r++) { seedExt(0, r); seedExt(ncols - 1, r); }
-        while (stack.length) {
-            const k = stack.pop();
-            const c = k % ncols, r = (k - c) / ncols;
-            seedExt(c - 1, r); seedExt(c + 1, r); seedExt(c, r - 1); seedExt(c, r + 1);
-        }
-        // … gültige Innenzellen an Außen-NoData, die NICHT belegt sind → P-HFIX-Auslauf
-        const isExt = (c, r) => (c >= 0 && c < ncols && r >= 0 && r < nrows && exterior[r * ncols + c] === 1);
-        let frontierCount = 0, capped = false;
-        const FRONTIER_CAP = 50000;
-        for (let r = 1; r < nrows - 1; r++) {
-            for (let c = 1; c < ncols - 1; c++) {
-                if (frontierCount >= FRONTIER_CAP) { capped = true; break; }
-                const z = gridData[r * ncols + c];
-                if (!(z > ND)) continue;
-                if (claimed.has(`${c},${r}`)) continue; // explizit/global belegt → kein Front-Auslauf
-                if (!(isExt(c - 1, r) || isExt(c + 1, r) || isExt(c, r - 1) || isExt(c, r + 1))) continue;
-                const wx = xll + (c + 0.5) * cs;
-                const wy = yll + (r + 0.5) * cs;
-                const hfix = globalBoundaryHfix ?? 0; // FREE ist deaktiviert, s. Methoden-Kommentar — nur HFIX erreicht diesen Pfad
-                claimed.set(`${c},${r}`, { role: 'global' });
-                pointLines.push(`P ${wx.toFixed(4)} ${wy.toFixed(4)} HFIX ${hfix.toFixed(4)}`);
-                frontierCount++;
-            }
-            if (capped) break;
-        }
-        if (capped) this.warn(`NoData-Front-Auslauf bei ${FRONTIER_CAP} Zellen gekappt — Teile der irregulären Küste bekommen keinen Auslauf (Wasser kann dort anstauen).`);
-        if (frontierCount > 0) console.log(`[InputGenerator] Globale Randbedingung (${type}): ${frontierCount} NoData-Front-Auslauf-Zellen (unbelegt) ergänzt.`);
     }
 
     /**
@@ -1239,8 +1348,12 @@ export class InputGenerator {
                 config.SGCwidth = 'sgc.width.asc';   // Kanal-Breitenraster (0 = kein Gerinne)
                 config.SGCbed   = 'sgc.bed.asc';     // Sohlhöhenraster
                 config.SGCbank  = 'sgc.bank.asc';    // Böschungsoberkante (= DEM)
-                config.SGCn     = Number(sgcManningN).toFixed(4); // Gerinne-Manning (skalar)
-                config.SGCchan  = '1';               // Rechteck-Querschnitt
+                config.SGCn     = Number(sgcManningN).toFixed(4); // Fallback-Manning (Solver-Default außerhalb der Gruppen)
+                // Typ/Neigung/Manning je Kanal (Rechteck=Typ 1, Trapez=Typ 7) statt
+                // globalem SGCchan-Skalar — ersetzt SGCptr->SGCchantype[0] durch die
+                // gruppenweise Zuordnung aus SGCgroup.asc (LoadSGCChanPrams, input.cpp).
+                config.SGCchangroup = 'sgc.group.asc';
+                config.SGCchanprams = 'sgc.chanprams.txt';
             }
             // porfile (Porositätsraster, partielle Zellblockade): bewusst deferred.
         }

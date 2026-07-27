@@ -113,8 +113,6 @@ export async function saveProject({ includeResults = false, onProgress = null } 
     kostraGrid: J(hyd.kostraGrid),
     rainLocation: J(hyd.rainLocation),
     globalRoughness: hyd.globalRoughness,
-    globalBoundaryType: hyd.globalBoundaryType,
-    globalBoundaryHfix: hyd.globalBoundaryHfix,
     antecedentMoisture: hyd.antecedentMoisture,
   }));
 
@@ -262,7 +260,7 @@ export async function loadProject(file, onProgress = null) {
     const h = JSON.parse(await hf.async('string'));
     const set = (k) => { if (h[k] !== undefined && h[k] !== null) hyd[k] = h[k]; };
     ['ganglinien', 'assignments', 'rainData', 'rainSeries', 'rainConfig', 'kostraGrid', 'rainLocation',
-     'globalRoughness', 'globalBoundaryType', 'globalBoundaryHfix', 'antecedentMoisture'].forEach(set);
+     'globalRoughness', 'antecedentMoisture'].forEach(set);
   }
 
   // Boundary-Migration auf das Kanten-Segment-Modell (idempotent): alte Boundaries
@@ -271,9 +269,9 @@ export async function loadProject(file, onProgress = null) {
   if (geoStore.boundaries?.features?.length) {
     const mh = { ncols: terrainObj.ncols, nrows: terrainObj.nrows, cellsize: terrainObj.cellsize,
                  xllcorner: terrainObj.xllcorner, yllcorner: terrainObj.yllcorner };
-    const stats = migrateBoundaries(geoStore.boundaries, hyd.assignments || {}, mh);
-    if (stats.snapped || stats.interior || stats.fieldsStripped) {
-      console.log(`[useProjectFile] Boundary-Migration: ${stats.snapped} an Kante gesnappt, ${stats.interior} als Innenquelle, ${stats.fieldsStripped} veraltete Felder entfernt.`);
+    const stats = migrateBoundaries(geoStore.boundaries, hyd.assignments || {}, mh, terrainObj.gridData);
+    if (stats.snapped || stats.interior || stats.fieldsStripped || stats.nearFrontBackfilled) {
+      console.log(`[useProjectFile] Boundary-Migration: ${stats.snapped} an Kante gesnappt, ${stats.interior} als Innenquelle, ${stats.fieldsStripped} veraltete Felder entfernt, ${stats.nearFrontBackfilled} nearFront nachgetragen.`);
     }
   }
 

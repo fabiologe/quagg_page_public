@@ -19,6 +19,7 @@
         :interactionMode="store.editor.mode"
         :enablePopover="['view', 'select', 'editProperties'].includes(store.editor.mode)"
         :focusTarget="focusTarget"
+        :origin-anchor="store.metadata.originAnchor"
         @select-node="handleNodeSelect"
         @select-edge="handleEdgeSelect"
         @select-area="handleAreaSelect"

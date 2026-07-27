@@ -44,10 +44,42 @@
     <button @click="$emit('reset-view')" title="Ansicht zurücksetzen">
       <img class="vc-ic" src="/saintv1d/icons/Interface-Essential-Synchronize-Arrows-Square-2--Streamline-Pixel.svg" />
     </button>
+    <div class="separator-v"></div>
+    <button
+      @click="ezgLayer.toggle()"
+      class="ezg-toggle-btn"
+      :class="{ active: ezgLayer.enabled.value, loading: ezgLayer.status.value === 'loading', error: ezgLayer.status.value === 'error' }"
+      :title="ezgTitle"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" :stroke="ezgLayer.enabled.value ? '#2ecc71' : '#aeadd2'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"></path><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>
+      <span class="ezg-label">EZG-Karte</span>
+    </button>
+    <button
+      v-if="ezgLayer.enabled.value && !store.terrain"
+      @click="ezgLayer.cycleContourInterval()"
+      class="grid-toggle-btn contour-toggle-btn"
+      :title="contourTitle"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c47f3d" stroke-width="2" stroke-linecap="round"><path d="M2 12c2-3 4 3 6 0s4 3 6 0 4 3 6 0" /><path d="M2 18c2-3 4 3 6 0s4 3 6 0 4 3 6 0" /></svg>
+      <span class="grid-label contour-label">{{ ezgLayer.contourInterval.value === 0 ? 'Aus' : ezgLayer.contourInterval.value + 'm' }}</span>
+    </button>
+    <button
+      v-if="ezgLayer.enabled.value"
+      @click="ezgLayer.refresh()"
+      class="ezg-reload-btn"
+      :class="{ loading: ezgLayer.status.value === 'loading' || ezgLayer.contourStatus.value === 'loading' }"
+      title="EZG-Karte: Bereich neu laden (z.B. wenn das Netz über den Kartenrand hinausgewachsen ist)"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeadd2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" /></svg>
+    </button>
   </div>
 </template>
 
 <script setup>
+import { computed } from 'vue';
+import { useEzgLayer } from '../../composables/useEzgLayer.js';
+import { useIsybauStore } from '../../store/index.js';
+
 const props = defineProps({
   mode: String,
   textSizeMultiplier: Number,
@@ -63,6 +95,24 @@ const cycleGridSize = () => {
   else if (props.gridSize === 10) nextValue = 0;
   emit('update:gridSize', nextValue);
 };
+
+const ezgLayer = useEzgLayer();
+const store = useIsybauStore();
+const ezgTitle = computed(() => {
+  if (ezgLayer.status.value === 'loading') return 'EZG-Karte: Luftbild wird geladen...';
+  if (ezgLayer.status.value === 'error') return `EZG-Karte: Fehler — ${ezgLayer.error.value || 'unbekannt'}`;
+  if (ezgLayer.enabled.value && store.terrain) {
+    return 'EZG-Karte ausblenden (Höhenlinien deaktiviert — eigenes DGM geladen)';
+  }
+  return ezgLayer.enabled.value ? 'EZG-Karte ausblenden' : 'EZG-Karte einblenden (Luftbild & Höhenlinien)';
+});
+
+const contourTitle = computed(() => {
+  if (ezgLayer.contourStatus.value === 'loading') return 'Höhenlinien werden geladen...';
+  if (ezgLayer.contourStatus.value === 'error') return `Höhenlinien: Fehler — ${ezgLayer.contourError.value || 'unbekannt'}`;
+  const interval = ezgLayer.contourInterval.value;
+  return `Höhenlinien-Intervall: ${interval === 0 ? 'Aus' : interval + 'm'} (klicken zum Wechseln)`;
+});
 </script>
 
 <style scoped>
@@ -136,6 +186,57 @@ const cycleGridSize = () => {
   font-family: 'Press Start 2P', monospace;
   font-size: 0.5rem;
   color: #2ecc71;
+}
+
+/* EZG-Karte toggle */
+.ezg-toggle-btn {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  width: auto !important;
+  padding: 0 8px !important;
+}
+
+.ezg-toggle-btn.active {
+  background: #594491;
+  border-color: #8f8be1;
+}
+
+.ezg-toggle-btn.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ezg-toggle-btn.error {
+  border-color: #e74c3c;
+}
+
+.ezg-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #aeadd2;
+}
+
+.contour-toggle-btn {
+  min-width: unset !important;
+}
+
+.contour-label {
+  color: #c47f3d;
+}
+
+.ezg-reload-btn.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ezg-reload-btn.loading svg {
+  animation: ezg-spin 0.9s linear infinite;
+}
+
+@keyframes ezg-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Size sliders */

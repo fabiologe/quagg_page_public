@@ -85,13 +85,13 @@
           <label>SGC Sub-Grid-Gerinne</label>
           <div class="toggle-row">
             <input type="checkbox" id="sgc-toggle" v-model="simStore.sgcEnabled"
-              :disabled="isRunning || bathyStore.channelPolyline.length < 2"
+              :disabled="isRunning || sgcChannelTotal === 0"
               @change="simStore.sgcEnabled && (simStore.numericalScheme = 'acceleration')" />
             <label for="sgc-toggle" class="toggle-label">
-              <template v-if="bathyStore.channelPolyline.length >= 2">
-                Kanal-Mittellinie als Sub-Grid-Gerinne exportieren (erzwingt Acceleration)
+              <template v-if="sgcChannelTotal > 0">
+                {{ sgcChannelTotal }} Kanal{{ sgcChannelTotal === 1 ? '' : 'e' }} als Sub-Grid-Gerinne exportieren (erzwingt Acceleration)
               </template>
-              <template v-else>Keine Kanal-Mittellinie gezeichnet (Bathymetrie → Kanal-Geometrie)</template>
+              <template v-else>Keine Kanäle gezeichnet (Bathymetrie-Modal oder Channel-Werkzeug)</template>
             </label>
           </div>
         </div>
@@ -188,10 +188,14 @@ import { InputGenerator } from '@/features/flood-2D/middleware/InputGenerator.js
 import { Severity } from '@/features/flood-2D/middleware/ScenarioValidator.js';
 import IssueList from '@/features/flood-2D/components/common/IssueList.vue';
 import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
+import { SgcGenerator } from '@/features/flood-2D/middleware/SgcGenerator.js';
 import { createSolverBackend } from '@/features/flood-2D/services/solver/index.js';
 import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
 import ResultInspector from '@/features/flood-2D/components/viewer/ResultInspector.vue';
 import { useCoupledExport } from '@/features/flood-2D/composables/useCoupledExport.js';
+import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
+import { toSgcChannels } from '@/features/flood-2D/services/geometry/networkToSgc.js';
+import { makeTerrainSampler } from '@/features/flood-2D/services/geometry/terrainSample.js';
 
 // Stores
 const geoStore = useGeoStore();
@@ -199,10 +203,39 @@ const hydStore = useHydraulicStore();
 const simStore = useSimulationStore();
 const surfaceStore = useSurfaceStore();
 const bathyStore = useBathymetryStore();
+const netStore = useNetworkStore();
 
 // 1D/2D-Kopplung (SWMM↔LISFLOOD): reichert im runpod-Modus den Datei-Satz an.
 // Gesamte Logik in sauberen Modulen (services/geometry/*, services/swmm/coupledScenario).
 const { augmentInputs: augmentCoupledInputs } = useCoupledExport();
+
+// ── SGC-Kanäle fürs Szenario ─────────────────────────────────────────────────
+// Bathymetrie-Einzelkanal (Legacy, bathyStore.channelPolyline/channelParams) +
+// Channel-Tool-Mehrfachkanäle (geoStore.sgcChannels) werden hier zusammengeführt
+// — SgcGenerator.mergeSgcChannels ist die gemeinsame Quelle mit useSgcRasterPreview.js,
+// damit die Merge-Logik nicht zweimal existiert. Netz-Gerinne (ISYBAU-Rinnen/-Gerinne,
+// conveyance:'open') kommen als DRITTE Quelle über networkToSgc.js dazu — bewusst NICHT
+// in mergeSgcChannels gezogen (das bleibt 2-argumentig, auch von useSgcRasterPreview.js
+// für die Live-Vorschau genutzt, wo ein Netz nicht zwingend Teil sein muss), sondern erst
+// hier an der Export-Stelle angehängt.
+const sgcChannelTotal = computed(() => (bathyStore.channelPolyline.length >= 2 ? 1 : 0)
+    + geoStore.sgcChannels.length
+    + netStore.links.filter(l => l.conveyance === 'open').length);
+function buildSgcChannelsForExport() {
+    if (simStore.solverMode !== 'runpod' || !simStore.sgcEnabled) return [];
+    const legacy = bathyStore.channelPolyline.length >= 2
+        ? { polyline: toRaw(bathyStore.channelPolyline), ...toRaw(bathyStore.channelParams) }
+        : null;
+    const merged = SgcGenerator.mergeSgcChannels(legacy, geoStore.sgcChannels);
+    let networkChannels = [];
+    if (netStore.hasNetwork) {
+        const sampler = makeTerrainSampler(toRaw(geoStore.terrain));
+        const { channels, warnings } = toSgcChannels(netStore.toModel(), { terrainSampler: sampler });
+        networkChannels = channels;
+        warnings.forEach(w => appendLog(`⚠️ ${w}`));
+    }
+    return JSON.parse(JSON.stringify([...merged, ...networkChannels]));
+}
 
 
 
@@ -617,9 +650,7 @@ const runDryCheck = async () => {
              engine:          simStore.solverMode === 'runpod' ? 'v8' : 'v5',
              numericalScheme: simStore.solverMode === 'runpod' ? simStore.numericalScheme : 'acceleration',
              useGpu:          simStore.solverMode === 'runpod' ? simStore.useGpu : false,
-             sgc: (simStore.solverMode === 'runpod' && simStore.sgcEnabled && bathyStore.channelPolyline.length >= 2)
-                 ? { polyline: toRaw(bathyStore.channelPolyline), ...toRaw(bathyStore.channelParams) }
-                 : null
+             sgcChannels: buildSgcChannelsForExport()
         };
 
         console.log("📦 INPUT DATA:", scenarioData);
@@ -716,17 +747,12 @@ const startPreparation = async () => {
              bridges:             geoStore.bridges ? JSON.parse(JSON.stringify(geoStore.bridges)) : [],
              infiltration:        surfaceStore.computeWeightedInfiltration?.() ?? 0,
              antecedentMoisture:  hydStore.antecedentMoisture ?? 0,
-             globalBoundaryType:  hydStore.globalBoundaryType,
-             globalBoundaryHfix:  hydStore.globalBoundaryHfix,
 
              // ── Genauigkeit (High-End-Pfad, nur runpod) ─────────────────
              engine:          simStore.solverMode === 'runpod' ? 'v8' : 'v5',
              numericalScheme: simStore.solverMode === 'runpod' ? simStore.numericalScheme : 'acceleration',
              useGpu:          simStore.solverMode === 'runpod' ? simStore.useGpu : false,
-             sgc: (simStore.solverMode === 'runpod' && simStore.sgcEnabled && bathyStore.channelPolyline.length >= 2)
-                 ? { polyline: JSON.parse(JSON.stringify(bathyStore.channelPolyline)),
-                     ...JSON.parse(JSON.stringify(bathyStore.channelParams)) }
-                 : null
+             sgcChannels: buildSgcChannelsForExport()
           };
 
          // 2. Input-Dateien im Haupt-Thread generieren (nicht im Worker!)

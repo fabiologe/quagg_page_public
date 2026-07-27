@@ -132,9 +132,18 @@ export function validateBridgeChannelFit(bridges, channelParams, collector = new
 /**
  * Validiert die Zufluss-/Abfluss-Hydraulik im Kanten-Segment-Modell:
  *  - Segment als Kante markiert (properties.edge), liegt aber nicht auf dem Rasterrand → WARN
- *  - innenliegender freier Auslauf (edge=null) → INFO (HFIX-Wehr statt nativer FREE-Rand)
+ *    (Ablauf-Typen bekommen die schärfere Formulierung, s.u.)
+ *  - innenliegender Ablauf (edge=null): OUTFLOW_FREE mit literalEdgeArc → keine Meldung
+ *    (garantiert gültige Kantenzellen); mit nearFront (kein literalEdgeArc) → INFO (bekommt
+ *    beim Export normalerweise eine DIREKTE Punkt-FREE mit Richtungs-Token an genau dieser
+ *    Zelle, quagg-outflow-free-direction.patch — nur eine reine Diagonal-Eckzelle fällt auf
+ *    eine Projektion auf die nächste Kante zurück; s. useOutflowPickerTool.js); weder noch →
+ *    ERROR (unklare Snap-Ziel-Kante). WATERLEVEL_FIX → INFO bei nearFront/literalEdgeArc
+ *    (bewusst unterstützte Platzierung bei irregulärem/geclipptem Gelände), sonst WARN
+ *    (HVAR/HFIX funktionieren technisch als Innen-Punktquelle, reine Modell-Konsistenz-
+ *    Abweichung, kein Solver-Risiko)
  *  - zwei Segmente überlappen auf derselben Kante → WARN (erstes gewinnt, zweites verliert Zellen)
- *  - outflowSlope außerhalb (0, 0.999] → ERROR
+ *  - outflowSlope ≤ 0 → ERROR (kein Höchstwert — der Solver kennt kein Sf-Limit)
  *
  * Reine Regel ohne Seiteneffekte; `header` optional (nur für Kanten-/Überlappungsprüfung).
  *
@@ -185,9 +194,16 @@ export function validateBoundaryHydraulics(assignments, boundaries, header = nul
             const cells = BoundaryTools.discretizePolyline(b.geometry.coordinates, header.cellsize, xll, yll);
             const onEdge = cells.filter(c => cellEdge(header, c.x, c.y) === declaredEdge);
             if (cells.length > 0 && onEdge.length === 0) {
+                const isAblauf = assign.type === 'OUTFLOW_FREE' || assign.type === 'WATERLEVEL_FIX';
+                const label = isAblauf ? 'Ablauf' : 'Segment';
+                const consequence = isAblauf
+                    ? (assign.type === 'OUTFLOW_FREE'
+                        ? 'wird automatisch auf die nächste Rasterkante verschoben (Lage weicht ggf. von der Zeichnung ab)'
+                        : 'wird als interne Punktquelle behandelt')
+                    : 'wird als interne Punktquelle behandelt (Impuls bleibt über die Fließrichtung erhalten, falls gesetzt)';
                 collector.warn(
-                    `Segment ${shortId(id)} ist als Kante '${declaredEdge}' markiert, liegt aber nicht auf dem Rasterrand — ` +
-                    `wird als interne Punktquelle behandelt (kein Impuls). Näher an den Rand zeichnen.`,
+                    `${label} ${shortId(id)} ist als Kante '${declaredEdge}' markiert, liegt aber nicht auf dem Rasterrand — ` +
+                    `${consequence}. Näher an den Rand zeichnen.`,
                     { code: `seg-off-edge-${id}`, context: { boundaryId: id, edge: declaredEdge } },
                 );
             } else if (onEdge.length > 0) {
@@ -195,21 +211,65 @@ export function validateBoundaryHydraulics(assignments, boundaries, header = nul
             }
         }
 
-        // ── Innenliegender freier Auslauf ────────────────────────────────────
-        if (assign.type === 'OUTFLOW_FREE' && (declaredEdge === null || declaredEdge === undefined)) {
-            collector.info(
-                `Auslauf ${shortId(id)}: innenliegend — wird als HFIX-Wehr (kein nativer FREE-Rand) modelliert.`,
-                { code: `interior-free-${id}`, context: { boundaryId: id } },
-            );
+        // ── Innenliegender Ablauf ─────────────────────────────────────────────
+        // FREE ist solverseitig NUR als echte Rand-Bedingung gültig (Punktquelle wird vom
+        // LISFLOOD-Parser verworfen) — ABER seit dem Ablauf-Picker (literalEdgeArc/
+        // perimeterCells+nearFront, useOutflowPickerTool.js) projiziert InputGenerator.js
+        // jede Front-Innenzelle EINZELN auf ihre nächste gültige Kantenzelle
+        // (_accumulateFreeAtNearestEdge) — das ist der NORMALE, beabsichtigte Pfad für ein
+        // schiefes/rotiertes DGM, keine Rettungsaktion für einen seltenen Sonderfall mehr.
+        // Dreistufig wie outflowEligibility in BoundaryConfig.vue/AssignmentModal.vue:
+        // literalEdgeArc vorhanden ⇒ exakter Randbogen, gar keine Meldung nötig; nearFront
+        // ohne literalEdgeArc ⇒ funktioniert, landet aber ggf. an anderer Stelle (INFO);
+        // weder noch ⇒ echte Abweichung vom Ablauf-Modell (ERROR — hier weiß InputGenerator.js
+        // nicht mal, auf welche Kante projizieren, Snap kann beliebig weit/instabil ausfallen).
+        // WATERLEVEL_FIX (HVAR/HFIX) funktioniert ohnehin technisch als Innen-Punktquelle,
+        // unverändert dreistufig wie zuvor.
+        if ((assign.type === 'OUTFLOW_FREE' || assign.type === 'WATERLEVEL_FIX') && (declaredEdge === null || declaredEdge === undefined)) {
+            const nearFront = !!b?.properties?.nearFront;
+            const hasLiteralEdgeArc = !!b?.properties?.literalEdgeArc?.length;
+            if (assign.type === 'OUTFLOW_FREE' && hasLiteralEdgeArc) {
+                // Randbogen aufgelöst — garantiert gültige Kantenzellen, keine Abweichung.
+            } else if (assign.type === 'OUTFLOW_FREE' && nearFront) {
+                collector.info(
+                    `Auslauf ${shortId(id)}: liegt nahe der (ggf. irregulären) Geländegrenze statt der Rasterkante — ` +
+                    `wird beim Export direkt an dieser Stelle als Punkt-Randbedingung mit Richtung gesetzt. Nur eine ` +
+                    `reine Diagonal-Eckzelle ohne direkten Geländeabschluss würde stattdessen auf die nächste ` +
+                    `Rasterkante ausweichen. Bei schiefem/geclipptem Gelände eine unterstützte, beabsichtigte Platzierung.`,
+                    { code: `ablauf-interior-${id}`, context: { boundaryId: id, type: assign.type, nearFront } },
+                );
+            } else if (assign.type === 'OUTFLOW_FREE') {
+                collector.error(
+                    `Auslauf ${shortId(id)}: innenliegend — FREE ist nur als echter Modellrand oder nahe der ` +
+                    `Geländegrenze gültig und wird beim Export automatisch auf die nächste Rasterkante verschoben ` +
+                    `(Lage weicht ggf. stark von der Zeichnung ab). Auf den Rasterrand/die Geländegrenze zeichnen, ` +
+                    `um die Lage selbst zu kontrollieren.`,
+                    { code: `ablauf-interior-${id}`, context: { boundaryId: id, type: assign.type, nearFront } },
+                );
+            } else if (nearFront) {
+                collector.info(
+                    `Ablauf ${shortId(id)} (Pegel): liegt nahe der (ggf. irregulären) Geländegrenze statt der ` +
+                    `Rasterkante — wird als interne Punktquelle simuliert. Bei geclipptem/irregulärem Gelände eine ` +
+                    `unterstützte, beabsichtigte Platzierung.`,
+                    { code: `ablauf-interior-${id}`, context: { boundaryId: id, type: assign.type, nearFront } },
+                );
+            } else {
+                collector.warn(
+                    `Ablauf ${shortId(id)} (Pegel): innenliegend — wird als interne Punktquelle simuliert (technisch ` +
+                    `gültig), weicht aber vom Ablauf-Modell (nur Modellkante/Geländegrenze) ab. Auf den Rasterrand ` +
+                    `zeichnen oder Zufluss nutzen.`,
+                    { code: `ablauf-interior-${id}`, context: { boundaryId: id, type: assign.type, nearFront } },
+                );
+            }
         }
 
         // ── Abfluss-Sohlgefälle ──────────────────────────────────────────────
         if (assign.type === 'OUTFLOW_FREE' && assign.outflowSlope !== undefined && assign.outflowSlope !== null) {
             const sf = Number(assign.outflowSlope);
-            if (!Number.isFinite(sf) || sf <= 0 || sf > 0.999) {
+            if (!Number.isFinite(sf) || sf <= 0) {
                 collector.error(
-                    `Auslauf ${shortId(id)}: Sohlgefälle Sf=${assign.outflowSlope} liegt außerhalb des gültigen Bereichs (0, 0.999]. ` +
-                    `Wert korrigieren oder leer lassen (kritische Tiefe).`,
+                    `Auslauf ${shortId(id)}: Sohlgefälle Sf=${assign.outflowSlope} ist ungültig (muss > 0 sein). ` +
+                    `Wert korrigieren oder leer lassen (Standard: steiles Sicherheitsgefälle, verhindert Rückstau).`,
                     { code: `outflow-slope-${id}`, context: { boundaryId: id, outflowSlope: assign.outflowSlope } },
                 );
             }

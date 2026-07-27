@@ -26,7 +26,10 @@
         <!-- TYPE ICON -->
         <div class="col-type">
             <span v-if="type === 'BUILDING'" title="Building"><SvEmoji emoji="🏢" :size="14" /></span>
-            <span v-else-if="type === 'BOUNDARY'" title="Boundary"><SvEmoji emoji="〰" :size="14" /></span>
+            <span
+                v-else-if="type === 'BOUNDARY'"
+                :title="boundaryDirectionLabel(item)"
+            ><SvEmoji :emoji="boundaryDirectionIcon(item)" :size="14" :color="boundaryDirectionColor(item)" /></span>
             <span v-else><SvEmoji emoji="❓" :size="14" /></span>
         </div>
 
@@ -71,6 +74,7 @@ import { computed } from 'vue';
 import { useSimulationStore } from '../../stores/useSimulationStore';
 import { useGeoStore } from '../../stores/useGeoStore';
 import { useHydraulicStore } from '../../stores/useHydraulicStore'; // IMPORT
+import { classifyBoundaryDirection } from '../../utils/boundaryClassification.js';
 
 const props = defineProps({
   type: { type: String, required: true }, // BUILDING, BOUNDARY
@@ -104,6 +108,21 @@ const formatId = (id) => {
 
 const formatNumber = (val) => {
     return typeof val === 'number' ? val.toFixed(2) : '-';
+};
+
+// --- Zulauf/Ablauf-Klassifikation (Icon/Farbe) ---
+const boundaryDirection = (item) => classifyBoundaryDirection(item.properties, hydStore.assignments[item.id]);
+const boundaryDirectionIcon = (item) => {
+    const d = boundaryDirection(item);
+    return d === 'INFLOW' ? '🚰' : d === 'OUTFLOW' ? '↘️' : '〰';
+};
+const boundaryDirectionLabel = (item) => {
+    const d = boundaryDirection(item);
+    return d === 'INFLOW' ? 'Zulauf' : d === 'OUTFLOW' ? 'Ablauf' : 'Boundary (nicht klassifiziert)';
+};
+const boundaryDirectionColor = (item) => {
+    const d = boundaryDirection(item);
+    return d === 'INFLOW' ? '#3498db' : d === 'OUTFLOW' ? '#e67e22' : 'var(--sv-lime)';
 };
 
 // --- DELETE (Boundary) ---

@@ -1,0 +1,190 @@
+QUAGG outflow-direction patch -- Punkt-FREE mit expliziter Austrittskante.
+Siehe engines/patches/README.md. Betrifft: lisflood.h, input.cpp, iterateq.cpp.
+Erweitert den Punktquellen-Grammatik um "P x y FREE <slope> <N|E|S|W>": dieselbe
+Manning-Normalabfluss-Formel wie eine native Kanten-FREE-Zeile (boundary.cpp), nur
+auf der Kante EINER beliebigen Zelle statt am literalen Rasterrand -- fuer
+schiefe/rotierte DGMs, deren wahre Kante die Rechteck-Kante nirgends beruehrt.
+Ohne Richtungs-Token byte-identisch zum bisherigen (stillen) No-Op. Setzt die
+NoData-Empfaengerzelle nach der Divergenz-Schleife hart auf H=0 zurueck (sonst
+zaehlt DomainVol() das abgefuehrte Wasser dort weiter mit -- es "verschwindet"
+sonst gar nicht aus der Massebilanz) und traegt in Qpoint_neg ein (sonst bleibt
+der Abfluss in res.mass' Qout-Spalte unsichtbar).
+
+--- a/lisflood.h
++++ b/lisflood.h
+@@ -187,6 +187,11 @@
+ 	TRIB7 = 7,
+ 	// rivers
+ 	RATE8 = 8,
++	// QUAGG outflow-direction: point FREE with an explicit outward edge (acceleration, SGC OFF).
++	// Distinct from FREE6 (SGC-only point FREE) even though the two are runtime-mutually-
++	// exclusive (SGC is a single global flag for the whole run) -- kept separate so FREE6's
++	// SGC-side consumers (sgc.cpp/sgm_fast.cpp) stay untouched and unambiguous.
++	FREE9 = 9,
+ };
+ 
+ enum EWeirType
+--- a/input.cpp
++++ b/input.cpp
+@@ -1784,6 +1784,33 @@
+ 			BCptr->PS_Val[pi] = BC_tmp;
+ 			BCptr->PS_Ident[pi] = FREE6;
+ 		}
++		// QUAGG outflow-direction: point FREE with an explicit outward edge (cardinal only --
++		// FREE is a 1-D per-edge Manning normal-depth calc, exactly like at the rasterrand, so a
++		// free angle has no single edge to apply it to). For interior "front" cells that are not
++		// reachable via the literal rectangle border (e.g. a clipped/rotated DEM whose true edge
++		// never touches row0/rowmax/col0/colmax). Direction token is REQUIRED here (unlike the
++		// inflow-momentum patch's optional token) -- without one there is no edge to apply the
++		// outflow to, so the line stays inert (byte-identical no-op, same as today's silent drop
++		// when SGC is off). See iterateq.cpp for the actual Manning calc (FREE9).
++		else if (!STRCMPi(buff, "FREE") && BCptr->xpi[pi] > -1 && pi > -1 && Statesptr->SGC == OFF)
++		{
++			char dirtok[16] = ""; char kw[80]; NUMERIC_TYPE v;
++			EDirection dir = DirectionNA;
++			if (sscanf(buff2, "%s%" NUM_FMT"%15s", kw, &v, dirtok) == 3)
++			{
++				if      (!STRCMPi(dirtok, "N") || !STRCMPi(dirtok, "North")) dir = North;
++				else if (!STRCMPi(dirtok, "E") || !STRCMPi(dirtok, "East"))  dir = East;
++				else if (!STRCMPi(dirtok, "S") || !STRCMPi(dirtok, "South")) dir = South;
++				else if (!STRCMPi(dirtok, "W") || !STRCMPi(dirtok, "West"))  dir = West;
++			}
++			if (dir != DirectionNA)
++			{
++				if (verbose == ON) printf("Point FREE (direction) at [%" NUM_FMT",%" NUM_FMT"] (%d,%d) slope=%" NUM_FMT" dir=%s\n", px, py, BCptr->xpi[pi], BCptr->ypi[pi], v, dirtok);
++				BCptr->PS_Val[pi] = v;
++				BCptr->PS_Dir[pi] = dir;
++				BCptr->PS_Ident[pi] = FREE9;
++			}
++		}
+ 		else
+ 		{
+ 			if (verbose == ON) printf("WARNING: Incorrect boundary condition in .bci file\n");
+--- a/iterateq.cpp
++++ b/iterateq.cpp
+@@ -515,6 +515,86 @@
+ 
+ 	}
+ 
++	// QUAGG outflow-direction: Punkt-FREE mit expliziter Austrittskante (fuer Zellen, die die
++	// literale Rechteck-Kante nirgends erreichen -- z. B. ein schiefes/rotiertes DGM, dessen
++	// wahre Kante diagonal durchs Raster laeuft). Nutzt DIESELBE Manning-Normalabfluss-Formel
++	// wie eine native Kanten-FREE-Zeile (boundary.cpp, FREE1/acceleration), nur auf der Kante
++	// DIESER Zelle in der angegebenen Richtung statt am Rasterrand. MUSS VOR der Divergenz-
++	// Schleife unten stehen (anders als der inflow-momentum-Block weiter unten, der bewusst
++	// NACH ihr steht) -- FREE muss DIESEN Zeitschritt Volumen abfuehren, nicht nur die naechste
++	// Reibungs-Rueckkopplung beeinflussen (die native Kanten-FREE laeuft in BCs() ebenfalls VOR
++	// UpdateH: Reihenfolge pro Zeitschritt ist FloodplainQ -> BCs -> UpdateH -> UpdateQs).
++	for (int ps_index = 0; ps_index<BCptr->numPS; ps_index++)
++	{
++		if (BCptr->PS_Ident[ps_index] != FREE9) continue;
++		if (!(Statesptr->acceleration == ON && Statesptr->SGC == OFF)) continue;
++
++		int xi = BCptr->xpi[ps_index];
++		int yi = BCptr->ypi[ps_index];
++		int p0 = xi + yi * Parptr->xsz;
++		if (Arrptr->ChanMask[p0] != -1) continue; // kein natives Kanalsegment hier (wie boundary.cpp)
++		NUMERIC_TYPE h0 = Arrptr->H[p0];
++		if (h0 <= Solverptr->DepthThresh) continue; // Wet-Gate (wie boundary.cpp FREE1)
++		NUMERIC_TYPE hflow = h0; // wie boundary.cpp: hflow = die eigene Tiefe der Austrittszelle
++		NUMERIC_TYPE fn = (Arrptr->Manningsn != NULL) ? Arrptr->Manningsn[p0] : Parptr->FPn;
++
++		int xsz1 = Parptr->xsz + 1;
++		NUMERIC_TYPE *qptr, *qoldptr;
++		int sign;
++		int p1 = -1; // "rueckwaertiger" Nachbar (tiefer im gueltigen Gelaende), nur fuer Auto-Sf
++		switch (BCptr->PS_Dir[ps_index])
++		{
++			case North:
++				qptr = Arrptr->Qy + (xi + yi*xsz1); qoldptr = Arrptr->Qyold + (xi + yi*xsz1);
++				sign = -1;
++				if (yi + 1 < Parptr->ysz) p1 = xi + (yi + 1) * Parptr->xsz;
++				break;
++			case South:
++				qptr = Arrptr->Qy + (xi + (yi + 1)*xsz1); qoldptr = Arrptr->Qyold + (xi + (yi + 1)*xsz1);
++				sign = 1;
++				if (yi - 1 >= 0) p1 = xi + (yi - 1) * Parptr->xsz;
++				break;
++			case East:
++				qptr = Arrptr->Qx + (xi + 1 + yi*xsz1); qoldptr = Arrptr->Qxold + (xi + 1 + yi*xsz1);
++				sign = 1;
++				if (xi - 1 >= 0) p1 = (xi - 1) + yi * Parptr->xsz;
++				break;
++			case West:
++				qptr = Arrptr->Qx + (xi + yi*xsz1); qoldptr = Arrptr->Qxold + (xi + yi*xsz1);
++				sign = -1;
++				if (xi + 1 < Parptr->xsz) p1 = (xi + 1) + yi * Parptr->xsz;
++				break;
++			default:
++				continue; // input.cpp erzeugt FREE9 nur bei N/E/S/W -- sollte nie eintreten
++		}
++
++		NUMERIC_TYPE Sf;
++		if (BCptr->PS_Val[ps_index] < C(-0.999)) // -1 = kein Gefaelle angegeben -> aus DEM-Gefaelle (wie boundary.cpp)
++		{
++			if (p1 >= 0)
++			{
++				NUMERIC_TYPE h1 = Arrptr->H[p1], z1 = Arrptr->DEM[p1];
++				NUMERIC_TYPE dh = Arrptr->DEM[p0] + h0 - z1 - h1;
++				Sf = -dh / Parptr->dx;
++			}
++			else Sf = C(0.001); // kein rueckwaertiger Nachbar (Zelle am aeussersten Rand) -> flaches Sicherheitsgefaelle statt Absturz
++		}
++		else Sf = BCptr->PS_Val[ps_index]; // vom Nutzer vorgegebenes Sohlgefaelle
++
++		NUMERIC_TYPE q0 = *qoldptr;
++		*qoldptr = (NUMERIC_TYPE)sign * (FABS(q0) + FABS(Solverptr->g*Solverptr->Tstep*hflow*Sf))
++		           / (1 + Solverptr->g*Solverptr->Tstep*hflow*fn*fn*FABS(q0) / (pow(hflow, (C(10.) / C(3.)))));
++		*qptr = *qoldptr * Parptr->dx; // wie boundary.cpp (Kommentar dort: potenziell redundant zu UpdateQs, unveraendert uebernommen)
++
++		// QUAGG: in die Massebilanz eintragen (wie QFIX4/QVAR5 oben) -- ohne dies entfernt der
++		// Divergenz-Schritt zwar tatsaechlich Wasser aus der Zelle (Qx/Qy wird von der Schleife
++		// unten korrekt gelesen), aber BoundaryFlux() (boundary.cpp) berechnet Qout NUR aus den
++		// 4 literalen Rand-Kanten PLUS Qpoint_neg -- ein rein interner Punkt-Abfluss ohne diesen
++		// Eintrag bliebe in res.mass' Qout-Spalte unsichtbar (verifiziert: echter, gemessener
++		// Tiefenrueckgang an der Zelle, aber Qout=0.000 durchgehend, 2026-07-23).
++		BCptr->Qpoint_neg += -FABS(*qptr);
++	}
++
+ 	// Calculate dV (-ve => outflow) and update NewH
+ #pragma omp parallel for private( i,qxptr0,qyptr0,qyptr1,hptr,mptr,dV,dAPorTemp)
+ 	for (j = 0; j<Parptr->ysz; j++)
+@@ -552,6 +632,38 @@
+ 		}
+ 	}
+ 
++	// QUAGG outflow-direction: die NoData-Zelle, in die eine Punkt-FREE-Zelle (FREE9, oben)
++	// entwaessert, existiert im Array (anders als am echten Rasterrand, wo "jenseits der Kante"
++	// gar kein Array-Slot mehr ist) -- die Divergenz-Schleife oben schreibt ihr per
++	// (*hptr)+=dV/dA DASSELBE Wasser gut, das der Quellzelle gerade abgezogen wurde. DomainVol()
++	// (util.cpp) summiert H ueber ALLE Zellen ohne NoData-Ausschluss (nur ChanMask-Filter) --
++	// ohne diesen Reset "verschwindet" das Wasser also gar nicht aus der Bilanz, es wandert nur
++	// eine Zelle weiter (verifiziert: Tiefe an der Quellzelle sinkt korrekt, aber Vol/Verror
++	// zeigen keinen echten Abfluss, 2026-07-23). Fix: die Empfaenger-Zelle NACH der Divergenz-
++	// Schleife hart auf 0 zuruecksetzen -- sie ist NoData (DEM=nodata_elevation, riesiger
++	// Sentinel-Wert), bekommt aus keiner anderen Quelle je sinnvollen Zufluss (deren hflow
++	// kollabiert dort ohnehin auf ~0, s. CalcFPQxAcc/CalcFPQyAcc), daher unschaedlich fuer jede
++	// andere Physik. Recompute der Nachbarzelle ist bewusst dieselbe Fallunterscheidung wie oben
++	// (kein State zwischen den beiden Schleifen noetig, reine Index-Arithmetik).
++	for (int ps_index = 0; ps_index<BCptr->numPS; ps_index++)
++	{
++		if (BCptr->PS_Ident[ps_index] != FREE9) continue;
++		if (!(Statesptr->acceleration == ON && Statesptr->SGC == OFF)) continue;
++
++		int xi = BCptr->xpi[ps_index];
++		int yi = BCptr->ypi[ps_index];
++		int pOut = -1;
++		switch (BCptr->PS_Dir[ps_index])
++		{
++			case North: if (yi - 1 >= 0)             pOut = xi + (yi - 1) * Parptr->xsz; break;
++			case South: if (yi + 1 < Parptr->ysz)     pOut = xi + (yi + 1) * Parptr->xsz; break;
++			case East:  if (xi + 1 < Parptr->xsz)     pOut = (xi + 1) + yi * Parptr->xsz; break;
++			case West:  if (xi - 1 >= 0)              pOut = (xi - 1) + yi * Parptr->xsz; break;
++			default: continue;
++		}
++		if (pOut >= 0) Arrptr->H[pOut] = C(0.0);
++	}
++
+ 	// QUAGG inflow-momentum: gerichteter Zufluss MIT Impuls an einer (Innen-)Zelle.
+ 	// Setzt den Kantenfluss Qx/Qy in Fliessrichtung; UpdateQs kopiert ihn danach nach
+ 	// Qxold/Qyold, sodass der Traegheits-Solver (fp_acc) ihn im naechsten Schritt als q0

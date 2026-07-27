@@ -78,6 +78,37 @@
           entsprechen — sonst greift der 2D↔1D-Austausch auf inkonsistente Höhen zu. „Sohle über Gelände"
           heißt der Schacht ragt aus dem Raster (Datenfehler / falsche Tiefe).
         </div>
+
+        <!-- Haltungen: Rohrscheitel vs. Gelände. Meist ein Vermessungs-/DGM-Abgleichfehler
+             (Invert/Profilhöhe aus ISYBAU vs. separat erhobenes DGM) — selten eine echte
+             oberirdische Rohrquerung. Rein informativ, kein Auto-Fix (anders als Deckel). -->
+        <div v-if="pipeRows.length" class="nrc-summary">
+          <span class="chip ok">{{ pipeCounts.ok }} ok</span>
+          <span class="chip err">{{ pipeCounts.exceeds }} Rohrscheitel über Gelände</span>
+        </div>
+        <div v-if="pipeRows.length" class="nrc-body">
+          <table class="nrc-table">
+            <thead><tr>
+              <th>Haltung</th><th>Scheitel Zulauf</th><th>Gelände Zulauf</th>
+              <th>Scheitel Ablauf</th><th>Gelände Ablauf</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="r in pipeRows" :key="r.id" :class="r.cls" @click="net.select(r.id)">
+                <td class="mono" :title="r.id">{{ r.id }}</td>
+                <td>{{ fmt(r.crownFrom) }}</td>
+                <td>{{ r.terrainFrom == null ? '—' : fmt(r.terrainFrom) }}</td>
+                <td>{{ fmt(r.crownTo) }}</td>
+                <td>{{ r.terrainTo == null ? '—' : fmt(r.terrainTo) }}</td>
+                <td><span class="tag" :class="r.cls">{{ r.label }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="pipeRows.length" class="nrc-note">
+          Scheitel = Rohrsohle + Profilhöhe. Liegt er über dem Gelände, würde das Rohr oberirdisch
+          verlaufen — meist ein Vermessungs-/DGM-Abgleichfehler (unterschiedliche Erhebungen/Auflösung),
+          seltener eine echte Rohrbrücke. Kein Auto-Fix — bitte Sohle/Profil bzw. Gelände prüfen.
+        </div>
       </template>
     </div>
   </div>
@@ -134,6 +165,31 @@ const rows = computed(() => {
 });
 const counts = computed(() => rows.value.reduce((a, r) => { a[r.cls === 'out' ? 'outside' : r.cls === 'err' ? 'invert' : r.cls === 'warn' ? 'rim' : 'ok']++; return a; }, { ok: 0, rim: 0, invert: 0, outside: 0 }));
 const rimFixable = computed(() => rows.value.filter(r => (r.cls === 'warn' || r.cls === 'err') && r.terrain != null));
+
+// Haltungen: Rohrscheitel (Sohle + Profilhöhe) vs. Gelände an beiden Endknoten. Nur `covered`
+// (Rohre) geprüft — offene Gerinne (SGC) sollen an der Oberfläche liegen, das ist gewollt.
+const pipeRows = computed(() => {
+    if (!sampler) return [];
+    return net.links.filter(l => l.conveyance !== 'open').map(l => {
+        const from = net.nodeById.get(l.fromNodeId);
+        const to = net.nodeById.get(l.toNodeId);
+        if (!from || !to) return null;
+        const z1 = Number.isFinite(Number(l.attrs?.z1)) ? Number(l.attrs.z1) : from.invert;
+        const z2 = Number.isFinite(Number(l.attrs?.z2)) ? Number(l.attrs.z2) : to.invert;
+        const height = Number(l.profile?.height) || 0;
+        const crownFrom = z1 + height, crownTo = z2 + height;
+        const terrainFrom = sampler.sampleZ(from.x, from.y);
+        const terrainTo = sampler.sampleZ(to.x, to.y);
+        let cls = 'ok', label = 'ok';
+        if (terrainFrom == null || terrainTo == null) { cls = 'out'; label = 'außerhalb'; }
+        else if (crownFrom > terrainFrom + 1e-6 || crownTo > terrainTo + 1e-6) { cls = 'err'; label = 'Rohrscheitel über Gelände'; }
+        return { id: l.id, crownFrom, crownTo, terrainFrom, terrainTo, cls, label };
+    }).filter(Boolean);
+});
+const pipeCounts = computed(() => pipeRows.value.reduce((a, r) => {
+    if (r.cls === 'err') a.exceeds++; else if (r.cls === 'ok') a.ok++;
+    return a;
+}, { ok: 0, exceeds: 0 }));
 
 function fixRim(r) { if (r.terrain != null) net.updateNode(r.id, { rim: r.terrain }); }
 function fixAllRims() { rimFixable.value.forEach(fixRim); }

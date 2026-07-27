@@ -49,6 +49,11 @@ export function makeLink({ id, points = null, fromNodeId, toNodeId, role = 'cond
                 shape:  profile.shape ?? profile.type ?? 'circular',
                 height: num(profile.height ?? profile.h, 0),
                 width:  num(profile.width ?? profile.w, 0),
+                // bedWidth/sideSlope: nur für offene Trapez-/Rechteckquerschnitte relevant
+                // (SGC-Export, s. services/geometry/networkToSgc.js) — undefined statt 0/default,
+                // wenn die Quelle sie nicht liefert (Default gehört an die Compiler-Grenze).
+                ...(profile.bedWidth !== undefined ? { bedWidth: num(profile.bedWidth) } : {}),
+                ...(profile.sideSlope !== undefined ? { sideSlope: num(profile.sideSlope) } : {}),
             },
             length: length != null ? num(length) : null,
         },

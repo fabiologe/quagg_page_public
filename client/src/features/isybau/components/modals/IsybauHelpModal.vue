@@ -127,6 +127,14 @@
                     <li><strong>Löschen:</strong> Kaskadenlöschung — ein Knoten löscht alle angeschlossenen Haltungen mit.</li>
                 </ul>
 
+                <h5>🗺️ EZG-Karte (Einzugsgebiete kartieren)</h5>
+                <ul>
+                    <li><strong>Aktivieren:</strong> Schaltfläche "EZG-Karte" unten links im 2D-Editor. Legt ein echtes Luftbild und Höhenlinien als Hintergrund unter das Netz.</li>
+                    <li><strong>Koordinatensystem:</strong> Beim ersten Aktivieren wird das Bezugssystem der Netzkoordinaten (z.B. GK2–GK5, UTM32N/33N) automatisch geschätzt — bitte in der Abfrage prüfen und ggf. korrigieren, sonst liegt das Luftbild an der falschen Stelle.</li>
+                    <li><strong>Höhenlinien-Intervall:</strong> Zweite Schaltfläche daneben (z.B. "2m") schaltet den Linienabstand durch (1 m → 2 m → 5 m → aus) — hilfreich, um Wasserscheiden/Kämme für die Einzugsgebietsgrenze zu erkennen.</li>
+                    <li>Einzugsgebiete werden weiterhin ganz normal mit dem <strong>Fläche</strong>-Werkzeug über dem Hintergrund nachgezeichnet.</li>
+                </ul>
+
                 <h5>📋 Daten bearbeiten (Preprocessing)</h5>
                 <ul>
                     <li>Tabellarische Bearbeitung aller Knoten, Haltungen und Flächen.</li>

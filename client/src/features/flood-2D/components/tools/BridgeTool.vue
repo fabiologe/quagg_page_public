@@ -8,6 +8,7 @@
   >
     <div class="panel-header">
       <SvIcon name="Bridge.png" :size="18" class="header-icon" /> Brücke / Durchfahrt
+      <span v-if="panelVisible" class="sgc-badge" title="v8-Brücken sind nur über Sub-Grid-Channel-Zellen gültig">SGC</span>
       <span v-if="!panelVisible" class="collapse-dots">···</span>
     </div>
 

@@ -9,10 +9,12 @@
       v-model:showNodes="showNodes"
       v-model:showEdges="showEdges"
       v-model:showAreas="showAreas"
+      v-model:showTerrain="showTerrain"
       v-model:showResults="showResults"
       v-model:showWaterLevel="showWaterLevel"
       v-model:zScale="zScale"
       :hasResults="hasResults"
+      :hasTerrain="!!store.terrain"
       @reset-view="core.resetView()"
     />
 
@@ -29,10 +31,14 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as THREE from 'three';
+import { useIsybauStore }  from '../../store/index.js';
 import { useThreeCore }    from './viewer3d/useThreeCore.js';
 import { useSceneBuilder } from './viewer3d/useSceneBuilder.js';
+import { useTerrainLayer } from './viewer3d/useTerrainLayer.js';
 import Viewer3DControls    from './viewer3d/Viewer3DControls.vue';
 import Viewer3DInfoPanel   from './viewer3d/Viewer3DInfoPanel.vue';
+
+const store = useIsybauStore();
 
 const props = defineProps({
   nodes:            { type: Map,     required: true },
@@ -51,6 +57,7 @@ const canvasEl = ref(null);
 const showNodes       = ref(true);
 const showEdges       = ref(true);
 const showAreas       = ref(true);
+const showTerrain     = ref(true);
 const showResults     = ref(props.autoShowResults);
 const showWaterLevel  = ref(true);
 const zScale          = ref(1);
@@ -71,8 +78,9 @@ const selectedResult = computed(() => {
 });
 
 // Three.js sub-systems
-const core    = useThreeCore();
-const builder = useSceneBuilder();
+const core        = useThreeCore();
+const builder     = useSceneBuilder();
+const terrainLayer = useTerrainLayer();
 
 // Mouse-to-raycaster helper
 const mouse = new THREE.Vector2();
@@ -124,6 +132,7 @@ function scheduleRebuild(fitCam = false) {
       showWaterLevel: showWaterLevel.value,
       nodeResults:    props.nodeResults,
       edgeResults:    props.edgeResults,
+      hideGround:     !!store.terrain,
     });
     if (pendingFitCam) { core.fitToNetwork(b.spanX, b.spanY, b.spanZ); pendingFitCam = false; }
   }, 150);
@@ -159,6 +168,27 @@ watch(renderKey, () => {
 
 // Layer toggles / z-scale / result mode trigger a rebuild without camera reset
 watch([showNodes, showEdges, showAreas, zScale, showResults, showWaterLevel], () => scheduleRebuild(false));
+
+// ─── DGM-Terrain-Layer ──────────────────────────────────────────────────────
+// Bewusst getrennt vom renderKey/scheduleRebuild-Pfad oben: ein neuer DGM-
+// Upload oder der Sichtbarkeits-Toggle baut NUR das (potenziell große)
+// Terrain-Mesh neu — kosmetische Knoten-/Kanten-Edits lösen KEINE
+// DGM-Neu-Triangulierung aus.
+watch(() => [store.terrain, showTerrain.value], () => {
+  if (!core.scene) return;
+  if (store.terrain && showTerrain.value) {
+    terrainLayer.build(core.scene, store.terrain, bounds.value, zScale.value);
+  } else {
+    terrainLayer.clear(core.scene);
+  }
+  scheduleRebuild(false); // Platzhalter-Boden (hideGround) mit dem DGM-Zustand synchron halten
+});
+
+// Billiger Transform-Pfad: Pan/zScale verschiebt/skaliert nur das bereits
+// gebaute Mesh (position/scale.z), ohne es neu zu triangulieren.
+watch(() => [bounds.value.centerX, bounds.value.centerY, bounds.value.minZ, zScale.value], () => {
+  terrainLayer.updateTransform(bounds.value, zScale.value);
+});
 
 // ─── Raycasting ───────────────────────────────────────────────────────────
 let pointerMoved = false;
@@ -198,10 +228,17 @@ function onDblClick(e) {
 // ─── Resize ───────────────────────────────────────────────────────────────
 function onResize() { core.handleResize(canvasEl.value); }
 
+// Dark/Light Umschalter: Szenenhintergrund + Platzhalter-Boden live nachziehen (schwarz ↔ weiß)
+watch(() => store.ui.darkMode, (dark) => {
+  core.setBackground(dark ? 0x0d1117 : 0xffffff);
+  builder.setGroundColor(dark ? 0x1a2035 : 0xffffff);
+});
+
 // ─── Lifecycle ────────────────────────────────────────────────────────────
 onMounted(() => {
   if (!canvasEl.value) return;
-  core.init(canvasEl.value);
+  core.init(canvasEl.value, store.ui.darkMode ? 0x0d1117 : 0xffffff);
+  builder.setGroundColor(store.ui.darkMode ? 0x1a2035 : 0xffffff);
   core.startLoop();
 
   canvasEl.value.addEventListener('pointerdown', onPointerDown);
@@ -212,6 +249,9 @@ onMounted(() => {
 
   // Initial build if data already present
   if (props.nodes.size) scheduleRebuild(true);
+  if (store.terrain && showTerrain.value) {
+    terrainLayer.build(core.scene, store.terrain, bounds.value, zScale.value);
+  }
 });
 
 onBeforeUnmount(() => {
@@ -222,6 +262,7 @@ onBeforeUnmount(() => {
   canvasEl.value?.removeEventListener('dblclick',    onDblClick);
   window.removeEventListener('resize', onResize);
   builder.disposeFully(core.scene);
+  terrainLayer.dispose();
   core.dispose();
 });
 </script>
@@ -231,7 +272,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   position: relative;
-  background: #0d1117;
+  background: var(--isy-viewer-bg, #0d1117);
   overflow: hidden;
 }
 

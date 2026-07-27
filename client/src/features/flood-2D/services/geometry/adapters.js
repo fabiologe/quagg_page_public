@@ -38,9 +38,14 @@ export function fromSewerNodesEdges(nodes = [], edges = [], model = new NetworkM
     // Endpunkt-Referenzen fromNodeId/toNodeId bleiben unverändert → Topologie intakt).
     const usedIds = new Set(model.nodeList.map(n => n.id));
     for (const e of edges) {
-        // kantenTyp Rinne/Gerinne → offenes Gerinne (2D/SGC), sonst Rohr (SWMM 1D).
-        const kt = String(e.kantenTyp ?? '').toLowerCase();
-        const open = kt.includes('rinne') || kt.includes('gerinne');
+        // kantenTyp Rinne(2)/Gerinne(3) → offenes Gerinne (2D/SGC), sonst Rohr (SWMM 1D).
+        // QUAGG-FIX: kantenTyp ist der numerische ISYBAU-Code (xmlParser.js: kantenTypRaw,
+        // 0=Haltung/1=Leitung/2=Rinne/3=Gerinne), kein String — ein String.includes()-Check
+        // ("rinne"/"gerinne") konnte hier NIE zutreffen. Jede importierte Rinne/Gerinne wurde
+        // dadurch bisher fälschlich als conveyance:'covered' (Rohr) klassifiziert.
+        const ktNum = Number(e.kantenTyp);
+        const ktStr = String(e.kantenTyp ?? '').toLowerCase();
+        const open = ktNum === 2 || ktNum === 3 || ktStr.includes('rinne') || ktStr.includes('gerinne');
         let lid = String(e.id ?? `H_${e.fromNodeId}_${e.toNodeId}`);
         if (usedIds.has(lid)) lid = `${lid}_${e.toNodeId ?? ''}`;   // ASCII-sicher (SWMM-tauglich)
         while (usedIds.has(lid)) lid = `${lid}_`;

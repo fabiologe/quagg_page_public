@@ -1,0 +1,43 @@
+/**
+ * theme.css — Isybau Shell-Theme (Light/Dark)
+ *
+ * Nur die immer sichtbare Hülle (Sidebar, Toolbar, Nav, Toast) ist an diese
+ * Variablen gebunden. Editor/3D/Modals bleiben bewusst hell (siehe
+ * project_isybau_dark_mode Memo) — Umstellung folgt in einem Folge-Schritt.
+ *
+ * Aktiviert über [data-theme="dark"] auf .isybau-main (siehe IsybauMain.vue).
+ */
+
+.isybau-main {
+    --isy-bg:           #ffffff;
+    --isy-bg-alt:       #f4f3fb;
+    --isy-border:       #aeadd2;
+    --isy-header-bg:    #040647;
+    --isy-header-alt:   #0d0e5a;
+    --isy-accent:       #594491;
+    --isy-accent-hover: #8f8be1;
+    --isy-accent-soft:  #f3f2fb;
+    --isy-text:         #040647;
+    --isy-text-dim:     #594491;
+    --isy-btn-bg:       #ffffff;
+    --isy-toast-bg:     #e3f2fd;
+    --isy-toast-text:   #2c3e50;
+    --isy-viewer-bg:    #ffffff;
+}
+
+.isybau-main[data-theme="dark"] {
+    --isy-bg:           #1b1b28;
+    --isy-bg-alt:       #24243a;
+    --isy-border:       #40405c;
+    --isy-header-bg:    #0a0a14;
+    --isy-header-alt:   #14142a;
+    --isy-accent:       #8f8be1;
+    --isy-accent-hover: #a6a2ff;
+    --isy-accent-soft:  #2a2a42;
+    --isy-text:         #e6e6f0;
+    --isy-text-dim:     #b3b0d9;
+    --isy-btn-bg:       #24243a;
+    --isy-toast-bg:     #1e2a38;
+    --isy-toast-text:   #dfeeff;
+    --isy-viewer-bg:    #0d1117;
+}

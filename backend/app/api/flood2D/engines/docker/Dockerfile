@@ -83,6 +83,48 @@ COPY engines/docker/coupling.cpp /src/coupling.cpp
 COPY engines/patches/quagg-coupling.patch /tmp/quagg-coupling.patch
 RUN patch -p1 --forward -d /src < /tmp/quagg-coupling.patch
 
+# QUAGG outflow-direction: Punkt-FREE mit expliziter Austrittskante ("P x y FREE <slope>
+# <N|E|S|W>") -- fuer Randzellen, die die literale Rechteck-Kante nirgends erreichen (schiefes/
+# rotiertes DGM). Nutzt PS_Dir aus dem inflow-momentum-Patch mit; muss deshalb NACH diesem
+# angewandt werden. Siehe engines/patches/README.md.
+COPY engines/patches/quagg-outflow-free-direction.patch /tmp/quagg-outflow-free-direction.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-outflow-free-direction.patch
+
+# QUAGG SGC-trapezoid: vervollstaendigt SGCchan_type 7 (Trapez-Querschnitt) in sgc.cpp +
+# lisflood2/sgm_fast.cpp -- ohne diesen Patch stuerzt der Solver bei einem Trapez-SGC-Kanal
+# ab (korrumpierte Kanalgeometrie -> "Bridge must have sub grid flows on either side").
+# Siehe engines/patches/README.md.
+COPY engines/patches/quagg-sgc-trapezoid.patch /tmp/quagg-sgc-trapezoid.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-sgc-trapezoid.patch
+
+# QUAGG SGC-bridge-blowup: CalcBridgeQ() (lisflood2/sgm_fast.cpp) mass ihren
+# Freispiegelabfluss unter einer Bruecke gegen die rohe DEM-Hoehe statt gegen die
+# SGC-Kanalsohle -- sobald ein SGC-Kanal unter der Bruecke im Bett fliesst (nicht
+# ueberflutet), wird hflow negativ und produziert eine physikalisch sinnlose
+# Flaeche/Radius, die in eine katastrophale Massebilanz-Explosion muendet (fein
+# aufgeloest) bzw. ins vendor-eigene Referenzszenario leise falschen Abfluss
+# einschleust (grob aufgeloest, Qout=0 die ganze Laufzeit). Siehe
+# engines/patches/README.md.
+COPY engines/patches/quagg-sgc-bridge-blowup.patch /tmp/quagg-sgc-bridge-blowup.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-sgc-bridge-blowup.patch
+
+# QUAGG bridge-flow-index: entfernt einen zu strengen, asymmetrischen Setup-Check
+# (lisflood2/lisflood_processing.cpp), der eine Bruecke ueber einem GUELTIGEN SGC-Kanal
+# mit "Invalid bridge cell. Bridge must have sub grid flows on either side." abstuerzen
+# liess, sobald der Kanal nicht zusaetzlich 2 Zellen ueber die Bruecke hinausreichte.
+# CalcBridgeQ() (sgm_fast.cpp) faellt jetzt sicher auf usVel=0 zurueck statt abzustuerzen.
+# Siehe engines/patches/README.md.
+COPY engines/patches/quagg-bridge-flow-index.patch /tmp/quagg-bridge-flow-index.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-bridge-flow-index.patch
+
+# QUAGG timeseries-memset: behebt einen Original-Vendor-Speicherfehler (keiner der QUAGG-
+# Patches war die Ursache), der JEDEN Lauf mit 2+ referenzierten .bdy-Zeitreihen-Profilen
+# (QVAR/HVAR) sporadisch mit SIGSEGV abstuerzen lassen konnte: memset() ueberschreibt einen
+# bereits konstruierten C++-Container-Member (undefined behavior), dessen Referenzen zudem
+# bei Vector-Reallokation ungueltig wurden. Siehe engines/patches/README.md.
+COPY engines/patches/quagg-timeseries-memset.patch /tmp/quagg-timeseries-memset.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-timeseries-memset.patch
+
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -D_CONFIG=/src/config.docker.cmake \

@@ -27,6 +27,21 @@
       
       <g :transform="transformString">
 
+        <!-- EZG-Karte: Luftbild-Hintergrund (georeferenziert, unter allem anderen).
+             aerialImageBounds ist die TATSÄCHLICHE Ausdehnung des gelieferten
+             Kachel-Mosaiks (kachel-ausgerichtet), nicht die ursprünglich
+             angefragte Box — sonst würde das Bild leicht verzerrt/verschoben sitzen. -->
+        <image
+          v-if="ezgLayer.aerialImageUrl.value && ezgLayer.aerialImageBounds.value"
+          :x="ezgLayer.aerialImageBounds.value.minX - bounds.minX"
+          :y="bounds.maxY - ezgLayer.aerialImageBounds.value.maxY"
+          :width="ezgLayer.aerialImageBounds.value.maxX - ezgLayer.aerialImageBounds.value.minX"
+          :height="ezgLayer.aerialImageBounds.value.maxY - ezgLayer.aerialImageBounds.value.minY"
+          :href="ezgLayer.aerialImageUrl.value"
+          preserveAspectRatio="none"
+          style="pointer-events: none;"
+        />
+
         <!-- Areas (Catchments) -->
         <g class="areas">
           <polygon
@@ -194,7 +209,17 @@
         </g>
       </g>
     </svg>
-    
+
+    <!-- EZG-Karte: Höhenlinien, GPU-gerendert (Three.js/WebGL) statt SVG —
+         SVG-Rendering blieb trotz DOM-Batching, Polylinien-Verkettung und
+         Douglas-Peucker-Vereinfachung beim Pannen spürbar ruckelig
+         (CPU-seitiges Path-Rastern). Liegt bewusst ÜBER der gesamten SVG
+         (einfacher als die SVG in zwei Ebenen um das Luftbild herum zu
+         splitten — bei dünnen, halbtransparenten Referenzlinien optisch
+         kaum ein Unterschied). pointer-events:none wird im Composable selbst
+         auf dem Canvas gesetzt, Klicks gehen ungehindert zur SVG durch. -->
+    <div ref="contourCanvasHost" class="contour-gpu-host"></div>
+
     <!-- Box-Select: Auswahlrechteck (Screen-Space-Overlay) -->
     <div v-if="boxSelect.active" class="box-select-rect" :style="boxRectStyle"></div>
 
@@ -234,14 +259,41 @@
         @save="$emit('save-element', $event)"
         @show-details="$emit('show-details', $event)"
     />
+
+    <!-- EZG-Karte: blockierender Ladezustand, solange Luftbild und/oder
+         Höhenlinien für den Bereich geholt werden — verhindert, dass man auf
+         einem halb geladenen Hintergrund lostippt/zeichnet. -->
+    <LoadingOverlay
+      :visible="ezgLoading"
+      label="EZG-Karte wird geladen — Luftbild & Höhenlinien für den Bereich…"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch, reactive } from 'vue';
+import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN } from '../../utils/mappings.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
+import LoadingOverlay from '../common/LoadingOverlay.vue';
+import { useEzgLayer } from '../../composables/useEzgLayer.js';
+import { useContourGpuLayer } from './useContourGpuLayer.js';
+import { computeViewportWorldBounds } from '../../utils/geoBounds.js';
+
+const ezgLayer = useEzgLayer();
+// Blockierender Ladezustand: Luftbild ODER Höhenlinien laden noch für den
+// aktuellen Bereich — "preladen" heißt hier bewusst warten, bis BEIDES fertig
+// ist, statt mit einem halb sichtbaren Hintergrund weiterarbeiten zu lassen.
+const ezgLoading = computed(() =>
+  ezgLayer.status.value === 'loading' || ezgLayer.contourStatus.value === 'loading'
+);
+
+// EZG-Karte: Höhenlinien werden GPU-gerendert (Three.js), nicht mehr als
+// SVG-<path>. useContourGpuLayer() ist bewusst KEIN Singleton wie useEzgLayer
+// — jede IsybauViewer-Instanz (2D-Editor UND Ergebnis-Ansicht) bekommt ihren
+// eigenen WebGL-Kontext/Canvas.
+const contourCanvasHost = ref(null);
+const contourGpu = useContourGpuLayer();
 
 const props = defineProps({
   nodes: {
@@ -301,6 +353,12 @@ const props = defineProps({
   },
   focusTarget: {
       type: String,
+      default: null
+  },
+  // "Neu starten": Startort-Anker (lokale Meter im gewählten CRS), an dem
+  // die Karte zentriert startet, solange noch kein Knoten existiert.
+  originAnchor: {
+      type: Object,
       default: null
   }
 });
@@ -558,61 +616,171 @@ const startY = ref(0);
 
 // Calculate initial bounds
 const bounds = computed(() => {
-  if (!props.nodes.size) return { minX: 0, minY: 0, width: 100, height: 100 };
-
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-  console.group('IsybauViewer Bounds Calc');
-  console.log('Total Nodes:', props.nodes.size);
-  let validNodes = 0;
-
-  for (const [id, node] of props.nodes.entries()) {
+  for (const node of props.nodes.values()) {
     if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
-        validNodes++;
         if (node.x < minX) minX = node.x;
         if (node.y < minY) minY = node.y;
         if (node.x > maxX) maxX = node.x;
         if (node.y > maxY) maxY = node.y;
-    } else {
-        console.warn(`Invalid Node coords for ${id}:`, node.x, node.y);
     }
   }
-  
-  console.log('Valid Nodes:', validNodes);
-  console.log('MinX:', minX, 'MaxX:', maxX);
 
-  // If no valid nodes found, return default
+  // Seitenverhältnis des Anzeige-Containers — die Karte füllt den Bildschirm
+  // per "Cover"-Fitting immer proportional dazu (siehe unten), statt dem
+  // Netz-Seitenverhältnis blind zu folgen.
+  const containerAspect = (container.value?.clientWidth && container.value?.clientHeight)
+      ? container.value.clientWidth / container.value.clientHeight
+      : 1;
+
+  // Kein gültiger Knoten (auch der Fall "Projekt noch komplett leer"): auf
+  // den "Neu starten"-Anker zentrieren, falls einer gesetzt ist, statt auf
+  // (0,0) — sonst würde der ALLERERSTE Klick auf die leere Karte NaN-
+  // Koordinaten erzeugen (getEventCoords() liest centerX/centerY/maxY
+  // ungeprüft) und, falls ein Anker existiert, an der falschen Stelle landen.
   if (minX === Infinity || !Number.isFinite(minX)) {
-      console.warn('Bounds invalid or infinite, using default');
-      console.groupEnd();
-      return { minX: 0, minY: 0, width: 100, height: 100, centerX: 50, centerY: 50, maxY: 100 };
+      if (props.originAnchor && Number.isFinite(props.originAnchor.x) && Number.isFinite(props.originAnchor.y)) {
+          minX = maxX = props.originAnchor.x;
+          minY = maxY = props.originAnchor.y;
+      } else {
+          const base = 115;
+          const w = containerAspect >= 1 ? base * containerAspect : base;
+          const h = containerAspect >= 1 ? base : base / containerAspect;
+          return { minX: 0, minY: 0, width: w, height: h, centerX: w / 2, centerY: h / 2, maxY: h };
+      }
   }
-  
-  console.groupEnd();
 
   const padding = 5;
-  // Ensure minimum 50m span so a single node doesn't collapse the coordinate space
-  const MIN_EXTENT = 50;
+  // Mindestkantenlänge, damit ein Einzelknoten/Anker-Punkt den Koordinatenraum
+  // nicht kollabieren lässt.
+  const MIN_EXTENT = 57.5;
   const rawW = maxX - minX;
   const rawH = maxY - minY;
   const extentX = Math.max(rawW, MIN_EXTENT);
   const extentY = Math.max(rawH, MIN_EXTENT);
-  // Center within the expanded extent
+
+  // "Cover"-Fitting (wie CSS object-fit:cover): die Ansicht auf das
+  // Container-Seitenverhältnis erweitern, nie beschneiden — nur die zu knappe
+  // Achse wird aufgeweitet, das komplette Netz bleibt immer sichtbar.
+  const coverExtentY = Math.max(extentX / containerAspect, extentY);
+  const coverExtentX = coverExtentY * containerAspect;
+
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
-  const adjMinX = cx - extentX / 2;
-  const adjMinY = cy - extentY / 2;
-  const adjMaxY = cy + extentY / 2;
+  const adjMinX = cx - coverExtentX / 2;
+  const adjMinY = cy - coverExtentY / 2;
+  const adjMaxY = cy + coverExtentY / 2;
 
   return {
     minX: adjMinX - padding,
     minY: adjMinY - padding,
     maxY: adjMaxY + padding,
-    width: extentX + padding * 2,
-    height: extentY + padding * 2,
-    centerX: (extentX + padding * 2) / 2,
-    centerY: (extentY + padding * 2) / 2
+    width: coverExtentX + padding * 2,
+    height: coverExtentY + padding * 2,
+    centerX: (coverExtentX + padding * 2) / 2,
+    centerY: (coverExtentY + padding * 2) / 2
   };
+});
+
+// EZG-Karte: GPU-Kontur-Layer — Lifecycle + Kamera-/Geometrie-Sync.
+let contourResizeObserver = null;
+
+function syncContourCamera() {
+  contourGpu.updateCamera(bounds.value, translateX.value, translateY.value, scale.value);
+  contourGpu.render();
+}
+
+// Während eines aktiven Drags feuert translateX/Y einmal PRO mousemove-Event
+// (potenziell dutzende Male pro Sekunde). Mehrere Trigger innerhalb
+// desselben Frames werden zu EINEM rAF-Callback gebündelt, der immer die
+// AKTUELLSTE translateX/Y/scale liest (nicht die zum Zeitpunkt der
+// Anmeldung) — nie mehr als ein Kamera-Update+Render pro angezeigtem Frame.
+let contourCameraSyncScheduled = false;
+function scheduleContourCameraSync() {
+  if (contourCameraSyncScheduled) return;
+  contourCameraSyncScheduled = true;
+  requestAnimationFrame(() => {
+    contourCameraSyncScheduled = false;
+    syncContourCamera();
+  });
+}
+
+function syncContourResize() {
+  if (!container.value) return;
+  contourGpu.resize(container.value, bounds.value.width, bounds.value.height);
+  syncContourCamera();
+}
+
+onMounted(() => {
+  if (!contourCanvasHost.value) return;
+  contourGpu.init(contourCanvasHost.value);
+  syncContourResize();
+  contourGpu.updateGeometry(ezgLayer.contourPositions.value);
+  contourGpu.render();
+
+  contourResizeObserver = new ResizeObserver(() => syncContourResize());
+  contourResizeObserver.observe(container.value);
+});
+
+let expandCoverageTimer = null;
+
+onBeforeUnmount(() => {
+  contourResizeObserver?.disconnect();
+  contourResizeObserver = null;
+  contourGpu.dispose();
+  clearTimeout(expandCoverageTimer);
+});
+
+// Pan/Zoom UND Bounds-Änderungen (Node-Edits) verschieben nur die Kamera —
+// die Geometrie selbst bleibt unangetastet (siehe useContourGpuLayer.js).
+// Gebündelt (siehe scheduleContourCameraSync) statt direkt — sonst ein
+// vollständiges WebGL-Kamera-Update+Render PRO Reactivity-Tick, bei aktivem
+// Drag also potenziell dutzende Male pro Sekunde.
+watch([translateX, translateY, scale, bounds], () => {
+  scheduleContourCameraSync();
+});
+
+// Der Kontur-Canvas repliziert SVGs preserveAspectRatio="xMidYMid meet" über
+// einen manuell berechneten Viewport/Scissor (siehe useContourGpuLayer.js
+// resize()) — diese Buchstaben-/Balken-Berechnung hängt vom SEITENVERHÄLTNIS
+// von bounds.width/height ab, nicht nur von der Container-Größe, braucht
+// also einen eigenen Watcher (statt im obigen mitzulaufen): resize() (inkl.
+// renderer.setSize()) ist nur bei tatsächlicher Seitenverhältnis-Änderung
+// nötig, nicht bei jedem Pan/Zoom-Tick.
+watch(bounds, () => {
+  syncContourResize();
+});
+
+// Neue/vereinfachte Höhenlinien (refresh()/Intervall-Wechsel) — Geometrie
+// neu aufbauen, Kamera bleibt unverändert. Per requestAnimationFrame
+// verzögert (nicht direkt im watch-Callback): status/contourStatus wechseln
+// im SELBEN Vue-Flush auf 'ready', wodurch die LoadingOverlay verschwindet —
+// rAF erzwingt einen Frame-Grenzübertritt, damit der Browser das bereits
+// verschwundene Overlay sicher malt, BEVOR das WebGL-Rebuild läuft (auch
+// wenn Letzteres nach dem Flatten-im-Worker-Fix, siehe ezgContourWorker.js,
+// nur noch einstellige Millisekunden dauert — costs nothing, hält aber die
+// Reihenfolge robust gegen künftig wieder wachsende Punktzahlen).
+watch(() => ezgLayer.contourPositions.value, (positions) => {
+  requestAnimationFrame(() => {
+    contourGpu.updateGeometry(positions);
+    contourGpu.render();
+  });
+});
+
+// EZG-Karte: dynamisches Nachladen beim Pannen — sobald der sichtbare
+// Ausschnitt sich dem Rand der geladenen Luftbild-/Höhenlinien-Fläche
+// nähert, wird automatisch nachgeladen (siehe expandCoverage() in
+// useEzgLayer.js). Debounced (400ms nach der letzten Pan/Zoom-Änderung),
+// weil das ein echter Netzwerk-Request ist — beim aktiven Ziehen feuert
+// translateX/Y sonst dutzende Male pro Sekunde.
+watch([translateX, translateY, scale], () => {
+  if (!ezgLayer.enabled.value) return;
+  clearTimeout(expandCoverageTimer);
+  expandCoverageTimer = setTimeout(() => {
+    const viewport = computeViewportWorldBounds(bounds.value, translateX.value, translateY.value, scale.value);
+    ezgLayer.expandCoverage(viewport);
+  }, 400);
 });
 
 // Base Unit for Universal Visual Scaling
@@ -1186,6 +1354,17 @@ svg {
 .node-x.multi-selected {
   stroke: #8f8be1 !important;
   stroke-width: 3px;
+}
+
+/* EZG-Karte: GPU-Kontur-Canvas — deckt die SVG komplett ab, malt aber nur
+   Linien (WebGLRenderer mit alpha:true), Rest bleibt transparent. */
+.contour-gpu-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 /* Box-Select: Auswahlrechteck */

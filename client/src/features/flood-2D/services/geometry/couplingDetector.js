@@ -69,14 +69,31 @@ export function nearestSink(grid, col, row, header, radius = 3) {
 }
 
 /**
+ * Prüft, ob an `nodeId` mindestens eine verdeckelte Leitung (Rohr/Haltung, ins SWMM-Netz)
+ * hängt. Ein Knoten mit ausschließlich offenen Gerinnen (conveyance:'open', laufen über SGC,
+ * nicht durch SWMM) hat sonst keinen sinnvollen 1D-Kopplungspunkt.
+ */
+function hasCoveredLink(model, nodeId) {
+    for (const l of model.linkList) {
+        if (l.conveyance === 'open') continue;
+        if (l.refs.fromNodeId === nodeId || l.refs.toNodeId === nodeId) return true;
+    }
+    return false;
+}
+
+/**
  * Erkennt die Kopplungsknoten geometrisch.
  * @param {NetworkModel} model
  * @param {{grid:Float32Array|number[], header:object}} dem   DEM-Raster (row-major top-down)
- * @param {object} opts { snapRadius=3, Cw=1.0, Amax=0 }
+ * @param {object} opts { snapRadius=3, Cw=1.0, Amax=0, sgcWidthGrid=null }
+ *   sgcWidthGrid: optionales SGC-Breiten-Raster (gleiche Dimensionen/Ausrichtung wie dem.grid,
+ *   z. B. aus sgc.width.asc geparst) — Knoten auf einer echten SGC-Zelle werden übersprungen,
+ *   weil coupling.cpp die Solver-Tiefe dort ohne SGC-Bankfull-Korrektur liest (siehe Kontext
+ *   im Kopplungs-Fix-Plan).
  * @returns {{couplingNodes:Array, warnings:string[], diagnostics:Array}}
  */
 export function detectCouplingNodes(model, dem, opts = {}) {
-    const { snapRadius = 3, Cw = 1.0, Amax = 0 } = opts;
+    const { snapRadius = 3, Cw = 1.0, Amax = 0, sgcWidthGrid = null } = opts;
     const { grid, header } = dem;
     const couplingNodes = [];
     const warnings = [];
@@ -87,9 +104,21 @@ export function detectCouplingNodes(model, dem, opts = {}) {
         // Explizit verdeckelt (Panel „koppelt nicht"): kein 2D-Austausch — Amax=0 hieße
         // im Solver „unbegrenzt", darum wird der Knoten hier ganz ausgelassen.
         if (n.attrs.couple === false) continue;
+        // Nur offene Gerinne angeschlossen (kein Rohr ins SWMM-Netz): kein sinnvoller
+        // 1D-Kopplungspunkt. Auslauf bleibt Ausnahme (echter Rohr→Gerinne-Übergang).
+        if (n.role !== 'outfall' && !hasCoveredLink(model, n.id)) {
+            warnings.push(`Knoten ${n.id}: nur offene Gerinne angeschlossen (kein Rohr ins `
+                + `SWMM-Netz) — 2D-Kopplung übersprungen.`);
+            continue;
+        }
         const { col, row } = worldToCell(n.geom.x, n.geom.y, header);
         if (!inBounds(col, row, header)) {
             warnings.push(`Knoten ${n.id} liegt außerhalb des DEM — nicht koppelbar.`);
+            continue;
+        }
+        if (sgcWidthGrid && at(sgcWidthGrid, col, row, header) > 0) {
+            warnings.push(`Knoten ${n.id} liegt auf einer SGC-Kanalzelle (${col},${row}) — `
+                + `2D-Kopplung hier übersprungen (Solver liest dort keine SGC-korrigierte Tiefe).`);
             continue;
         }
         const nodata = header.NODATA_value ?? -9999;

@@ -150,7 +150,7 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
     const _wd = new THREE.Vector3();
     const color = new THREE.Color();
     const cInflow = new THREE.Color(0x2196f3);  // QVAR
-    const cOutflow = new THREE.Color(0xff5722);  // HFIX/FREE
+    const cOutflow = new THREE.Color(0xf44336);  // HFIX/FREE — echtes Rot (Ablauf-Wunsch des Nutzers)
     const cStage = new THREE.Color(0x9c27b0);    // HVAR
     const cUnknown = new THREE.Color(0x888888);
 

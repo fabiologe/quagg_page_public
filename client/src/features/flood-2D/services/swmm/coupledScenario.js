@@ -89,10 +89,14 @@ export function syncedSwmmOptions(par, swmm = {}) {
     return out;
 }
 
-/** true, wenn der Datei-Satz mit dem Kopplungs-Solver-Pfad (acceleration, kein SGC/fv1/dg2) läuft. */
+/**
+ * true, wenn der Datei-Satz mit dem Kopplungs-Solver-Pfad (acceleration, kein fv1/dg2) läuft.
+ * SGC selbst ist HIER kein Ausschlussgrund mehr — das wird zellengenau in
+ * detectCouplingNodes() (opts.sgcWidthGrid) entschieden, nicht mehr modellweit: sonst würde
+ * ein Netz mit Rohren UND einem einzigen Gerinne komplett kopplungslos.
+ */
 function couplingSchemeOk(par) {
     const p = String(par || '');
-    if (/\bSGCwidth\b/.test(p)) return { ok: false, reason: 'SGC-Gerinne aktiv (Kopplung läuft nur im acceleration-Pfad ohne SGC)' };
     if (/\bfv1\b/.test(p) || /\bdg2\b/.test(p)) return { ok: false, reason: 'fv1/dg2-Schema aktiv (Kopplung nur im acceleration-Pfad)' };
     if (!/\bacceleration\b/.test(p)) return { ok: false, reason: 'kein acceleration-Schema in run.par' };
     return { ok: true };
@@ -117,9 +121,12 @@ export function buildCoupledFiles(baseFiles, model, opts = {}) {
     if (!scheme.ok) { warnings.push(`Kopplung deaktiviert: ${scheme.reason}.`); return off(); }
 
     const dem = parseAscGrid(terrain);
+    // sgc.width.asc (falls vorhanden) teilt exakt Raster-Dimensionen/-Ausrichtung mit
+    // terrain.asc (beide über Rasterizer.gridToASC geschrieben) — direkt per col/row nutzbar.
+    const sgcWidthGrid = baseFiles['sgc.width.asc'] ? parseAscGrid(baseFiles['sgc.width.asc']).grid : null;
     const { files: coupFiles, warnings: cw, couplingNodes, diagnostics } =
         buildCoupledInputsFromModel(model, dem,
-            { ...opts, swmm: syncedSwmmOptions(baseFiles['run.par'], opts.swmm) });
+            { ...opts, sgcWidthGrid, swmm: syncedSwmmOptions(baseFiles['run.par'], opts.swmm) });
     warnings.push(...cw);
 
     if (!couplingNodes || couplingNodes.length === 0) {

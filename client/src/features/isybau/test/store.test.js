@@ -175,4 +175,42 @@ describe('IsybauStore', () => {
         // Status unverändert, kein Fehler geworfen
         expect(store.simulation.status).toBe('running');
     });
+
+    it('loadParsedData schätzt das CRS anhand der Netz-Koordinaten (unconfirmed)', () => {
+        store.loadParsedData({
+            network: {
+                nodes: new Map([
+                    ['N1', { id: 'N1', x: 3456000, y: 5540000, z: 10 }] // GK3-typische Werte
+                ]),
+                edges: new Map()
+            }
+        });
+        expect(store.metadata.crs.epsg).toBe('EPSG:31467');
+        expect(store.metadata.crs.confirmed).toBe(false);
+        expect(store.metadata.crs.source).toBe('auto');
+    });
+
+    it('confirmCRS markiert das CRS als bestätigt und schließt die Modal', () => {
+        store.ui.showEzgCrsModal = true;
+        store.confirmCRS('EPSG:25832');
+        expect(store.metadata.crs).toEqual({ epsg: 'EPSG:25832', confirmed: true, source: 'confirmed' });
+        expect(store.ui.showEzgCrsModal).toBe(false);
+    });
+
+    it('loadParsedData überschreibt ein bereits bestätigtes CRS nicht (z.B. beim Neuladen eines Projekts)', () => {
+        store.metadata.crs = { epsg: 'EPSG:25833', confirmed: true, source: 'confirmed' };
+        store.loadParsedData({
+            network: {
+                nodes: new Map([['N1', { id: 'N1', x: 3456000, y: 5540000, z: 10 }]]),
+                edges: new Map()
+            }
+        });
+        expect(store.metadata.crs).toEqual({ epsg: 'EPSG:25833', confirmed: true, source: 'confirmed' });
+    });
+
+    it('setOriginAnchor legt CRS ("Neu starten") UND den Referenzpunkt gleichzeitig fest', () => {
+        store.setOriginAnchor({ epsg: 'EPSG:25832', x: 405000, y: 5477000, label: 'Kaiserslautern' });
+        expect(store.metadata.crs).toEqual({ epsg: 'EPSG:25832', confirmed: true, source: 'anchor' });
+        expect(store.metadata.originAnchor).toEqual({ x: 405000, y: 5477000, label: 'Kaiserslautern' });
+    });
 });

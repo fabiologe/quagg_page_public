@@ -79,6 +79,19 @@
     @close="store.ui.showElementModal = false"
     @save="store.createElement"
   />
+
+  <EzgCrsConfirmModal
+    :is-open="store.ui.showEzgCrsModal"
+    :guessed-epsg="store.metadata.crs?.epsg"
+    @close="handleEzgCrsCancel"
+    @confirm="handleEzgCrsConfirm"
+  />
+
+  <NewProjectLocationModal
+    :is-open="store.ui.showNewProjectLocationModal"
+    @close="store.ui.showNewProjectLocationModal = false"
+    @confirm="handleNewProjectLocationConfirm"
+  />
 </template>
 
 <script setup>
@@ -95,6 +108,9 @@ import SimulationDebugModal from './SimulationDebugModal.vue';
 import IsybauHelpModal from './IsybauHelpModal.vue';
 import ProjectManagerModal from './ProjectManagerModal.vue';
 import ElementPropertiesModal from './ElementPropertiesModal.vue';
+import EzgCrsConfirmModal from './EzgCrsConfirmModal.vue';
+import NewProjectLocationModal from './NewProjectLocationModal.vue';
+import { useEzgLayer } from '../../composables/useEzgLayer.js';
 
 const store = useIsybauStore();
 
@@ -112,5 +128,30 @@ const validationDetails = computed(() => computeRunoffValidation({
 const handleLoadProject = (data) => {
     store.loadProjectSnapshot(data);
     emit('project-loaded');
+};
+
+// --- EZG-Karte: CRS-Bestätigung ---
+const handleEzgCrsConfirm = (epsg) => {
+    store.confirmCRS(epsg);
+    useEzgLayer().refresh(); // Layer war schon "enabled", wartete nur auf Bestätigung
+};
+
+const handleEzgCrsCancel = () => {
+    store.ui.showEzgCrsModal = false;
+    useEzgLayer().disable(); // sonst bliebe der Toggle "aktiv" ohne sichtbaren Layer
+};
+
+// --- "Neu starten": Standort-Anker für ein leeres/neues Projekt ---
+const handleNewProjectLocationConfirm = ({ epsg, x, y, label }) => {
+    // Bestätigung erst hier, unmittelbar vor dem destruktiven Schritt — nicht
+    // schon beim Öffnen des Modals. Suchen/Stöbern bleibt so folgenlos, erst
+    // "Bestätigen & Loslegen" bei bestehendem Netz kann etwas kosten.
+    if (store.nodes.size > 0) {
+        if (!confirm('Neues Projekt starten? Der aktuelle Netzentwurf geht verloren.')) return;
+        store.clear();
+    }
+    store.setOriginAnchor({ epsg, x, y, label });
+    store.ui.showNewProjectLocationModal = false;
+    useEzgLayer().enable(); // Luftbild/Höhenlinien sofort laden — der ganze Sinn des Features
 };
 </script>

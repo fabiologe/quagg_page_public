@@ -3,6 +3,7 @@
     <div class="np-head">
       <span class="np-kind"><SvIcon :name="isLink ? 'Haltung.png' : 'Schacht.png'" :size="14" color="currentColor" /> {{ isLink ? 'Haltung' : 'Schacht' }}</span>
       <code class="np-id">{{ sel.id }}</code>
+      <span v-if="isLink && sel.conveyance === 'open'" class="np-sgc-badge" title="Offenes Gerinne — wird als Sub-Grid-Gerinne (SGC) ins 2D-Raster exportiert">SGC</span>
       <button class="np-close" @click="net.select(null)" title="Auswahl aufheben">×</button>
     </div>
 
@@ -151,10 +152,25 @@
           <button :class="{ on: sel.conveyance === 'open' }" @click="upd({ conveyance: 'open' })" title="Offenes Gerinne (2D/SGC)">Gerinne</button>
         </div>
       </div>
+      <template v-if="sel.conveyance === 'open'">
+        <label class="np-row">Form
+          <select :value="sel.profile?.shape ?? 'rect'" @change="upd({ profile: { shape: $event.target.value } })">
+            <option value="rect">Rechteck</option>
+            <option value="trapezoid">Trapez</option>
+          </select>
+        </label>
+        <label v-if="sel.profile?.shape === 'trapezoid'" class="np-row">Böschungsneigung 1:m
+          <input type="number" step="0.1" min="0" :value="sel.profile?.sideSlope ?? ''" placeholder="1.5"
+                 @change="upd({ profile: { sideSlope: numOrNull($event) } })" />
+        </label>
+        <div v-if="sel.profile?.shape === 'trapezoid' && sel.profile?.sideSlope == null" class="np-hint">
+          Keine Böschungsneigung gesetzt — SGC-Export nutzt Standard 1.5.
+        </div>
+      </template>
       <label class="np-row">Profilhöhe [m]
         <input type="number" step="0.05" :value="sel.profile?.height ?? ''" @change="upd({ profile: { height: num($event) } })" />
       </label>
-      <label class="np-row">Profilbreite [m]
+      <label class="np-row">{{ sel.conveyance === 'open' ? 'Sohlbreite [m]' : 'Profilbreite [m]' }}
         <input type="number" step="0.05" :value="sel.profile?.width ?? ''" @change="upd({ profile: { width: num($event) } })" />
       </label>
       <label class="np-row">Rauheit kSt
@@ -277,6 +293,18 @@ function remove() {
 .np-head { display: flex; align-items: center; gap: 6px; }
 .np-kind { font-weight: 600; }
 .np-id { margin-left: 2px; font-size: 0.72rem; color: #a3e635; overflow: hidden; text-overflow: ellipsis; }
+.np-sgc-badge {
+  background: rgba(163, 230, 53, 0.18);
+  border: 1px solid #a3e635;
+  color: #a3e635;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
 .np-close { margin-left: auto; background: none; border: none; color: #95a5a6; font-size: 1.1rem; cursor: pointer; line-height: 1; }
 .np-close:hover { color: #ecf0f1; }
 .np-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.76rem; color: #bdc3c7; }
