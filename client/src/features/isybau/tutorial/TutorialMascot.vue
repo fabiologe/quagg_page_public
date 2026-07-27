@@ -95,8 +95,10 @@ let sound = null;
 // GIF + MP3 werden zusammen mit den Lotties direkt beim Mount vorgeladen,
 // damit die Kill-Sequenz ohne Nachlade-Ruckler durchläuft.
 const KILL_GIF_SRC = '/saintv1d/tutorial/kill_rat.gif';
+const SPEAK_SOUND_SRC = '/saintv1d/tutorial/rat_speak_sound.mp3';
 let preloadedGif = null;
 let preloadedAudio = null;
+let preloadedSpeakAudio = null;
 
 function preloadKillAssets() {
   if (preloadedGif) return;
@@ -108,6 +110,9 @@ function preloadKillAssets() {
   }
   preloadedGif = new Image();
   preloadedGif.src = KILL_GIF_SRC;
+  preloadedSpeakAudio = new Audio(SPEAK_SOUND_SRC);
+  preloadedSpeakAudio.preload = 'auto';
+  preloadedSpeakAudio.load();
 }
 
 // Kein Autoplay-Problem: die Kill-Sequenz folgt immer auf einen Klick ([Nein]),
@@ -123,6 +128,24 @@ function stopSound() {
   if (sound) {
     sound.pause();
     sound = null;
+  }
+}
+
+// Eigener Sound-Slot fuer die Sprechblase, unabhaengig von playSound/stopSound
+// (Schuss-SFX), damit ein Tour-Klick waehrend der Kill-Sequenz nichts abwuergt.
+let speakSound = null;
+
+function playSpeakSound() {
+  stopSpeakSound();
+  speakSound = preloadedSpeakAudio || new Audio(SPEAK_SOUND_SRC);
+  speakSound.currentTime = 0;
+  speakSound.play().catch(() => {}); // erster Auftritt nach 5s hat evtl. noch keine Nutzer-Geste
+}
+
+function stopSpeakSound() {
+  if (speakSound) {
+    speakSound.pause();
+    speakSound = null;
   }
 }
 
@@ -205,6 +228,7 @@ watch(
   activeStep,
   (step) => {
     stopTyping();
+    stopSpeakSound();
     bubbleVisible.value = false;
     gifVisible.value = false;
     typedText.value = '';
@@ -229,6 +253,7 @@ watch(
       bubbleTimer = setTimeout(() => {
         bubbleVisible.value = true;
         typeMessage(step.message);
+        playSpeakSound();
       }, BUBBLE_DELAY_MS);
     }
   },
@@ -250,6 +275,7 @@ onUnmounted(() => {
   clearTimeout(startupTimer);
   stopTyping();
   stopSound();
+  stopSpeakSound();
   for (const layer of moodLayers.values()) layer.anim.destroy();
   moodLayers.clear();
 });

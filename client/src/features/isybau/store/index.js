@@ -291,7 +291,11 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.inspections = [];
             this.editor.selectedId = null;
             this.simulation.results = null;
-            this.terrain = null;
+            // terrain bewusst NICHT hier zurücksetzen: clear() läuft auch bei
+            // jedem XML-Import (loadParsedData()) — DGM ist an den realen
+            // Standort gebunden, nicht an den Netzentwurf, und soll genau den
+            // Workflow "erst DGM hochladen, dann Netz importieren" überstehen.
+            // Explizites Entfernen weiterhin über clearTerrain() möglich.
             return; // Explicit return
         },
 

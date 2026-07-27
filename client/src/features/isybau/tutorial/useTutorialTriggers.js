@@ -1,6 +1,7 @@
 import { watch } from 'vue';
 import { useIsybauStore } from '../store/index.js';
 import { useTutorialGuide } from './useTutorialGuide.js';
+import { useEzgLayer } from '../composables/useEzgLayer.js';
 
 /**
  * Beobachtet den isybau-Store und übersetzt Zustandsänderungen in
@@ -57,5 +58,32 @@ export function useTutorialTriggers() {
       else if (status === 'success') trigger('simulation-success', store);
       else if (status === 'error') trigger('simulation-error', store);
     }
+  );
+
+  // "Neu starten": Standort setzt den Georeferenz-Anker fuer ein leeres Projekt.
+  watch(
+    () => store.metadata.originAnchor,
+    (anchor, oldAnchor) => {
+      if (anchor && !oldAnchor) trigger('location-set', store);
+    }
+  );
+
+  // Eigenes DGM ersetzt die grobe EZG-Hoehenlinien-Naeherung.
+  watch(
+    () => store.terrain,
+    (terrain, oldTerrain) => {
+      if (terrain && !oldTerrain) trigger('terrain-imported', store);
+    }
+  );
+
+  // ezgLayer.enabled lebt als Modul-Singleton in useEzgLayer.js, nicht im Store.
+  const ezgLayer = useEzgLayer();
+  watch(ezgLayer.enabled, (enabled) => {
+    if (enabled) trigger('ezg-enabled', store);
+  });
+
+  watch(
+    () => store.ui.darkMode,
+    () => trigger('theme-toggled', store)
   );
 }

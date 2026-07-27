@@ -9,8 +9,16 @@
     <!-- Import + Projekte -->
     <div class="upload-section">
 
-      <!-- XML Import -->
-      <label for="file-upload" class="file-btn" data-tutorial="xml-import">
+      <!-- XML Import — gesperrt, solange "Neu starten" noch keinen Standort
+           bestätigt hat (sonst kollidiert das eigene CRS der XML mit der
+           gerade laufenden Standortwahl). -->
+      <label
+        for="file-upload"
+        class="file-btn"
+        :class="{ disabled: store.ui.showNewProjectLocationModal }"
+        data-tutorial="xml-import"
+        :title="store.ui.showNewProjectLocationModal ? 'Erst Standort bestätigen oder Neu starten abbrechen' : ''"
+      >
         <img class="px-icon" src="/saintv1d/icons/Content-Files-Notepad--Streamline-Pixel.svg" />
         <div class="btn-text">
           <span class="btn-label">XML importieren</span>
@@ -21,12 +29,19 @@
         id="file-upload"
         type="file"
         accept=".xml"
+        :disabled="store.ui.showNewProjectLocationModal"
         @change="handleFileUpload"
         class="file-upload-input"
       />
 
-      <!-- DGM-Import (Gelände) -->
-      <label for="dem-upload" class="file-btn" title="XYZ/TXT-Punktwolke oder ESRI-ASCII-Grid (.asc)">
+      <!-- DGM-Import (Gelände) — gleiche Sperre: ein DGM-Upload mitten in der
+           Standortwahl hätte keinen sinnvollen Bezug zum noch unbestätigten Anker. -->
+      <label
+        for="dem-upload"
+        class="file-btn"
+        :class="{ disabled: store.ui.showNewProjectLocationModal }"
+        :title="store.ui.showNewProjectLocationModal ? 'Erst Standort bestätigen oder Neu starten abbrechen' : 'XYZ/TXT-Punktwolke oder ESRI-ASCII-Grid (.asc)'"
+      >
         <img class="px-icon" src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" />
         <div class="btn-text">
           <span class="btn-label">Gelände (DGM) laden</span>
@@ -37,6 +52,7 @@
         id="dem-upload"
         type="file"
         accept=".xyz,.txt,.asc"
+        :disabled="store.ui.showNewProjectLocationModal"
         @change="handleDemUpload"
         class="file-upload-input"
       />
@@ -127,6 +143,9 @@ const store = useIsybauStore();
 const hasData = computed(() => store.nodes.size > 0);
 
 const handleFileUpload = async (event) => {
+  // Zusätzlich zur :disabled-Bindung am Input selbst — Verteidigung in der
+  // Tiefe, falls der Input trotz "Neu starten"-Modal irgendwie ausgelöst wird.
+  if (store.ui.showNewProjectLocationModal) { event.target.value = ''; return; }
   const file = event.target.files[0];
   if (!file) return;
   const text = await file.text();
@@ -241,6 +260,7 @@ function cancelDemImport() {
 }
 
 const handleDemUpload = async (event) => {
+  if (store.ui.showNewProjectLocationModal) { event.target.value = ''; return; }
   const file = event.target.files[0];
   if (!file) return;
   teardownDemWorker(); // evtl. hängenden Vorlauf verwerfen
@@ -324,6 +344,11 @@ onBeforeUnmount(() => teardownDemWorker());
   user-select: none;
 }
 .file-btn:hover { background: var(--isy-accent); }
+.file-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 /* Projekte button */
 .folder-btn {

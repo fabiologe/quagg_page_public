@@ -148,6 +148,62 @@ export const TUTORIAL_INFO = {
     ],
   },
 
+  'standort-georeferenz': {
+    title: 'STARTORT & GEOREFERENZ',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Ein importiertes ISYBAU-XML bringt seine Koordinaten schon mit. Zeichnest du dagegen ein Netz von null, braucht das Tool einen Referenzpunkt — sonst weiss es nicht, wo auf der Erde dein Netz liegt.',
+      },
+      {
+        type: 'p',
+        text: 'Dieser Startort ("Neu starten": Adresssuche oder manuelle Koordinaten) treibt zwei Dinge an: die KOSTRA-Regendaten fuer den Bemessungsregen und die EZG-Karte (Luftbild + Hoehenlinien) als Zeichenhilfe.',
+      },
+      {
+        type: 'p',
+        text: 'Ohne Startort bleibt beides deaktiviert — das Netz laesst sich trotzdem zeichnen und rechnen, nur eben ohne Ortsbezug.',
+      },
+    ],
+  },
+
+  'dgm-gelaende': {
+    title: 'EIGENES GELAENDEMODELL (DGM)',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Ein DGM (Digitales Gelaendemodell) laesst sich als XYZ/TXT-Punktwolke oder als ESRI-ASCII-Grid (.asc) laden — deutlich praeziser als die 30-m-Hoehendaten der EZG-Karte.',
+      },
+      {
+        type: 'p',
+        text: 'Irregulaere Punktwolken werden per TIN (Dreiecksvermaschung) trianguliert und auf ein regelmaessiges Raster gerechnet. Das Tool schlaegt dabei eine Zellweite aus der Punktdichte vor.',
+      },
+      {
+        type: 'p',
+        text: 'Sobald ein DGM geladen ist, schlaegt das Tool Deckelhoehen an den Schaechten direkt aus dem Raster vor — das ist die Grundlage fuer einen belastbaren Ueberflutungsnachweis, denn der haengt an der Differenz zwischen Wasserspiegel und echter Gelaendehoehe.',
+      },
+      { type: 'ref', text: 'DWA-A 118 — Ueberstau- und Ueberflutungsnachweis' },
+    ],
+  },
+
+  'ezg-karte': {
+    title: 'EZG-KARTE: LUFTBILD & HOEHENLINIEN',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Die EZG-Karte legt ein georeferenziertes Luftbild (Esri World Imagery) und Hoehenlinien unter dein Netz — eine schnelle Orientierung am echten Gelaende, ohne eigene Vermessungsdaten.',
+      },
+      {
+        type: 'p',
+        text: 'Die Hoehenlinien stammen aus SRTM/ASTER-Hoehendaten (Terrarium-Kacheln, ca. 30 m Rasterweite) — grob genug fuer die Einzugsgebiets-Form (daher der Name), aber kein Ersatz fuer eine echte Vermessung.',
+      },
+      {
+        type: 'p',
+        text: 'Ladest du ein eigenes DGM hoch, treten die 30-m-Hoehenlinien automatisch zurueck: das praezisere Modell gewinnt.',
+      },
+      { type: 'ref', text: 'NASA SRTM / USGS EROS; Esri World Imagery' },
+    ],
+  },
+
   fehlerdiagnose: {
     title: 'WENN DIE SIMULATION STREIKT',
     blocks: [

@@ -144,4 +144,33 @@ export const REACTIVE_STEPS = {
     once: true,
     message: 'Dein erstes Element steht! Weiter so — Schacht fuer Schacht zum Netz.',
   },
+  'location-set': {
+    id: 'reactive-location-set',
+    mood: 'happy',
+    info: 'standort-georeferenz',
+    once: true,
+    message: 'Startort gesetzt! Damit legt sich gleich die EZG-Karte mit Luftbild und Hoehenlinien unter dein Netz.',
+  },
+  'terrain-imported': {
+    id: 'reactive-terrain-imported',
+    mood: 'happy',
+    info: 'dgm-gelaende',
+    once: true,
+    message: (store) =>
+      `Eigenes Gelaendemodell geladen: ${store.terrain.ncols}x${store.terrain.nrows} Zellen. Ab jetzt schlage ich dir Deckelhoehen daraus vor.`,
+  },
+  'ezg-enabled': {
+    id: 'reactive-ezg-enabled',
+    mood: 'surprised',
+    info: 'ezg-karte',
+    once: true,
+    message: 'EZG-Karte an: Luftbild und Hoehenlinien im Hintergrund helfen dir, das Netz am echten Gelaende auszurichten.',
+  },
+  'theme-toggled': {
+    id: 'reactive-theme-toggled',
+    mood: 'surprised',
+    once: true,
+    message: (store) =>
+      store.ui.darkMode ? 'Oh, jetzt wird es dunkel hier unten!' : 'Autsch, Tageslicht! Aber gut fuer die Augen.',
+  },
 };
