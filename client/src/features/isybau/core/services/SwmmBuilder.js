@@ -1,5 +1,6 @@
 import { getHortonParams, getEffectiveBauwerkstyp, classifyPreview, LINK_BAUWERKSTYPEN, Bauwerkstyp } from '../../utils/mappings.js';
 import { computePumpCurvePoints } from '../../utils/pumpCurve.js';
+import { buildDwfPatternValues } from '../../utils/dwfPattern.js';
 /**
  * Builder Service for SWMM .inp generation.
  * Uses Domain Models (Node, Edge) instead of raw JSON.
@@ -46,6 +47,8 @@ export class SwmmBuilder {
         this.addOrifices();
         this.addPumps();
         this.addCurves();
+        this.computeAreaDwfContributions();
+        this.addDwfPatterns();
         this.addInflows(nodes);
         this.addTimeseries();
 
@@ -135,6 +138,13 @@ LINKS                ALL
 
         const areasList = this.store.areas;
         const usedNames = new Set();
+        // Ohne diese Prüfung schreibt createEntry() jede Outlet-Referenz roh in
+        // [SUBCATCHMENTS], auch wenn der Knoten gar nicht im Netz existiert (z.B.
+        // verwaiste nodeId/nodeId2 aus einem ISYBAU-Import, dessen Referenzziel
+        // außerhalb des importierten Teilnetzes lag). SWMM bricht dann mit
+        // "ERROR 209: undefined object" die GESAMTE Analyse ab, statt nur das
+        // eine Teileinzugsgebiet zu verlieren.
+        const validNodeIds = new Set((this.store.getAllNodes || []).map(n => n.id));
 
         for (const area of areasList) {
             let name = area.id || `Area_${Math.random().toString(36).substr(2, 5)}`;
@@ -150,14 +160,12 @@ LINKS                ALL
             const imperv = this.safeFloat(area.runoffCoeff, 0.5) * 100;
             const width = Math.sqrt(sizeHa * 10000);
 
-            // Slope mapping
-            let slope = 0.5;
-            if (area.slope === 2) slope = 2.5;
-            else if (area.slope === 3) slope = 7.0;
-            else if (area.slope === 4) slope = 12.0;
-            else if (area.slope === 5) slope = 20.0;
-            else {
-                this.warnings.push(`Fläche ${name}: Gefälleklasse fehlte, gesetzt auf 0.5 % (Standard).`);
+            // Slope mapping: Neigungsklasse (1-5, siehe mappings.js) -> repräsentativer SWMM %Slope
+            const SLOPE_CLASS_PERCENT = { 1: 0.5, 2: 2.5, 3: 7.0, 4: 12.0, 5: 20.0 };
+            let slope = SLOPE_CLASS_PERCENT[area.slope];
+            if (slope === undefined) {
+                slope = 0.5;
+                this.warnings.push(`Fläche ${name}: Gefälleklasse fehlte oder ungültig (Wert: ${area.slope}), gesetzt auf 0.5 % (Standard, Neigungsklasse 1).`);
             }
 
             const splitRatio = this.safeFloat(area.splitRatio, 50);
@@ -167,6 +175,10 @@ LINKS                ALL
                 let outlet = outletNode;
                 if (!outlet) {
                     this.warnings.push(`Fläche ${subName}: Kein Anschlussknoten definiert — Teileinzugsgebiet wird übersprungen.`);
+                    return;
+                }
+                if (!validNodeIds.has(outlet)) {
+                    this.warnings.push(`Fläche ${subName}: Anschlussknoten "${outlet}" existiert nicht im Netz — Teileinzugsgebiet wird übersprungen (SWMM würde sonst mit ERROR 209 abbrechen).`);
                     return;
                 }
 
@@ -647,11 +659,92 @@ LINKS                ALL
         this.sections.push(text);
     }
 
+    // Trockenwetterzufluss aus Schmutzfracht-Stammdaten (Area.schmutzfracht) je
+    // Anschlussknoten aufsummieren — Grundlage für addDwfPatterns()/addInflows().
+    // Getrennt von beiden, weil addDwfPatterns() den gewichteten Spitzenfaktor
+    // braucht, addInflows() nur die Summenflüsse.
+    computeAreaDwfContributions() {
+        this.areaDwfByNode = new Map();
+        const areas = this.store.areas || [];
+
+        for (const area of areas) {
+            const sf = area.schmutzfracht;
+            if (!sf || sf.einwohnerwerte == null) continue;
+
+            if (!area.nodeId) {
+                this.warnings.push(`Fläche ${area.id}: Schmutzfracht-Daten vorhanden, aber kein Anschlussknoten — kein Trockenwetterzufluss erzeugt.`);
+                continue;
+            }
+
+            const wasserverbrauch = this.safeFloat(sf.wasserverbrauch, 0);
+            if (wasserverbrauch <= 0) {
+                this.warnings.push(`Fläche ${area.id}: Einwohnerwerte gesetzt, aber kein Wasserverbrauch — kein Trockenwetterzufluss erzeugt.`);
+                continue;
+            }
+
+            const einwohnerwerte = this.safeFloat(sf.einwohnerwerte, 0);
+            const flow = einwohnerwerte * wasserverbrauch / 86400; // l/(E*d) * E / (s/d) = l/s
+            if (flow <= 0) continue;
+
+            if (!this.areaDwfByNode.has(area.nodeId)) {
+                this.areaDwfByNode.set(area.nodeId, { flow: 0, contributions: [] });
+            }
+            const entry = this.areaDwfByNode.get(area.nodeId);
+            entry.flow += flow;
+            entry.contributions.push({ areaId: area.id, flow, tagesspitzenfaktor: this.safeFloat(sf.tagesspitzenfaktor, null) });
+        }
+    }
+
+    // [PATTERNS] HOURLY je Knoten mit Tagesspitzenfaktor. Kurvenform kommt aus
+    // utils/dwfPattern.js — einzige Quelle, auch von der Live-Vorschau
+    // (DwfPatternPreview.vue) genutzt, damit Solver-Export und UI-Vorschau nie
+    // auseinanderlaufen.
+    addDwfPatterns() {
+        this.dwfPatternByNode = new Map();
+        let text = '[PATTERNS]\n;;Name           Type       Value1   Value2   Value3   Value4   Value5   Value6\n';
+        let any = false;
+
+        for (const [nodeId, entry] of this.areaDwfByNode) {
+            const withFactor = entry.contributions.filter(c => c.tagesspitzenfaktor != null && c.tagesspitzenfaktor > 0);
+            if (withFactor.length === 0) continue;
+
+            const totalFlow = withFactor.reduce((s, c) => s + c.flow, 0);
+            const peakFactor = totalFlow > 0
+                ? withFactor.reduce((s, c) => s + c.flow * c.tagesspitzenfaktor, 0) / totalFlow
+                : withFactor[0].tagesspitzenfaktor;
+
+            if (new Set(withFactor.map(c => c.tagesspitzenfaktor)).size > 1) {
+                this.warnings.push(`Knoten ${nodeId}: mehrere Flächen mit abweichenden Tagesspitzenfaktoren — gewichteter Mittelwert (${peakFactor.toFixed(2)}) verwendet.`);
+            }
+
+            const values = buildDwfPatternValues(peakFactor);
+
+            const patternId = `DWF_${nodeId}`;
+            this.dwfPatternByNode.set(nodeId, patternId);
+
+            for (let i = 0; i < 24; i += 6) {
+                const chunk = values.slice(i, i + 6).map(v => v.toFixed(3)).join(' ');
+                text += i === 0
+                    ? `${this.pad(patternId)} HOURLY     ${chunk}\n`
+                    : `${this.pad(patternId)}            ${chunk}\n`;
+            }
+            any = true;
+        }
+
+        if (any) this.sections.push(text);
+    }
+
     addInflows(nodes) {
         let text = '[DWF]\n;;Node           Parameter  Average    TimePatterns\n';
         let count = 0;
+        const areaByNode = this.areaDwfByNode || new Map();
+        const patternByNode = this.dwfPatternByNode || new Map();
+
         for (const n of nodes) {
-            const flow = this.safeFloat(n.constantInflow, 0);
+            const manualFlow = this.safeFloat(n.constantInflow, 0);
+            const areaEntry = areaByNode.get(n.id);
+            const areaFlow = areaEntry ? areaEntry.flow : 0;
+            const flow = manualFlow + areaFlow;
             if (flow > 0) {
                 // Formatting: Node FLOW Value
                 // SWMM DWF usually in same units as Flow Units? default CMS (m3/s) or LPS?
@@ -659,7 +752,8 @@ LINKS                ALL
                 // Input is "l/s" in UI.
                 // Convert l/s to CMS: / 1000
                 const flowCMS = flow / 1000.0;
-                text += `${this.pad(n.id)} FLOW       ${flowCMS.toFixed(6)} \n`;
+                const pattern = patternByNode.get(n.id) || '';
+                text += `${this.pad(n.id)} FLOW       ${flowCMS.toFixed(6)} ${pattern}\n`;
                 count++;
             }
         }
@@ -881,10 +975,13 @@ LINKS                ALL
                 text += `default_rain     ${this.formatDate(this.options.startDate)} ${timeStr}      ${val.toFixed(4)}\n`;
             }
         } else {
-            // Default fake rain
+            // Kein Regen in der UI konfiguriert => echte Nullreihe, damit RG1
+            // strukturell gültig bleibt (SWMM braucht eine TIMESERIES-Quelle),
+            // aber tatsächlich 0 mm/h liefert. Vorher stand hier ein hartkodiertes
+            // 10 mm/h-Fake-Regenereignis, das jede reine Trockenwetter/Schmutz-
+            // fracht-Simulation unbemerkt mit echtem Regenabfluss verfälscht hat.
+            this.warnings.push('Kein Regen konfiguriert — RG1/default_rain liefert 0 mm/h (reine Trockenwetter-Simulation).');
             text += `default_rain     ${this.formatDate(this.options.startDate)} 00:00      0.0\n`;
-            text += `default_rain     ${this.formatDate(this.options.startDate)} 01:00      10.0\n`;
-            text += `default_rain     ${this.formatDate(this.options.startDate)} 02:00      0.0\n`;
         }
         this.sections.push(text);
     }

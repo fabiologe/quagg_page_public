@@ -254,14 +254,28 @@ const handleMapDblClick = () => {
     z-index: 100;
 }
 
+/* Gleicher Terminal-Sprechblasen-Stil wie tutorial/TutorialMascot.vue
+   (.speech-bubble/.bubble-text) — grün-glühender Rahmen statt lila UI-Chrome. */
 .drawing-tooltip {
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
+    background: #040647;
+    border: 1px solid #00e855;
+    box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+    color: #00e855;
+    text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
     padding: 0.5rem 1rem;
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.44rem;
     text-align: center;
     backdrop-filter: blur(4px);
+}
+
+.drawing-tooltip small {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.36rem;
+    color: #00994d;
+    text-shadow: none;
 }
 
 .finish-btn {

@@ -1,0 +1,96 @@
+QUAGG coupling-sgc-hook patch -- haengt die 1D/2D-SWMM-Kopplung (coupling.cpp) in die
+SGC-Zeitschleife des lisflood2-Fast-Pfads ein. Siehe engines/patches/README.md.
+Betrifft: lisflood2/sgm_fast.cpp (3 Hunks). Die eigentliche Logik liegt in coupling.cpp/
+coupling.h (werden per COPY eingespielt, brauchen keinen Patch): Coupling_RegisterFastGrid
++ Coupling_UpdateFast.
+
+PROBLEM (verifiziert 2026-07-28, test_coupling_sgc.py):
+lisflood.cpp verzweigt die Zeitschleife nach Schema --
+    SGC == ON  -> Fast_MainStart() -> Fast_IterateLoop()   (lisflood2/sgm_fast.cpp)
+    sonst      -> IterateQ()                                (iterateq.cpp)
+-- und NUR IterateQ ruft Coupling_Update() (quagg-coupling.patch). Mit aktivem SGC lief
+der Austausch also GAR NICHT: Init/Finalize haengen in lisflood.cpp und liefen weiter,
+der Lauf meldete "[COUPLE] aktiv", tauschte aber exakt 0.00 m3. Da offene Gerinne im
+Client grundsaetzlich als SGC exportiert werden, schlossen sich Kopplung und Gerinne
+gegenseitig aus -- ausgerechnet der haeufigste Fall (Rohrnetz muendet ins Gerinne).
+
+WARUM DER KLASSISCHE HOOK DORT NICHT FUNKTIONIERT HAETTE:
+1. Fast_MainInit alloziert EIGENE, gepadete Gitter (Stride grid_cols_padded =
+   xsz+1+64/sizeof(NUMERIC_TYPE), auf Vielfache von 8 aufgerundet) und GIBT DIE
+   ORIGINALE FREI (lisflood_processing.cpp ~1782-1812): Arrptr->H/DEM/SGCz/SGCwidth/
+   SGCc/SGCbfH/SGCbfV/dx/dy/dA sind waehrend der Schleife NULL. Coupling_Update liest
+   Arrptr->H[cell] mit cell = col + row*xsz -> Absturz bzw. Unsinn.
+2. Andere H-Konvention: h_grid ist RELATIV ZUM DEM gefuehrt (auf Gerinnezellen negativ
+   bis -SGCbfH; Umstellung beim Init, lisflood_processing.cpp ~1680-1685). Wasserspiegel
+   = dem_grid + h_grid, universell fuer Gerinne- und Floodplain-Zellen.
+3. H darf nicht direkt beschrieben werden: SGC2_ProcessH_Row leitet h jeden Schritt
+   zentral aus volume_grid ab (Bankfull-Logik ueber V >= SGCbfV) und wuerde jede direkte
+   h-Aenderung im naechsten Schritt ueberschreiben -- das Wasser verschwaende spurlos.
+   Alle Quellen des Fast-Pfads (Punktquellen, Regen, Dam, Superlinks) buchen deshalb
+   ausschliesslich VOLUMEN und weiten die wet_dry_bounds->fp_vol-Zeilengrenzen (Muster
+   SGC2_PointSources_Vol_row bzw. SGC2_CalcLinksQ).
+
+LOESUNG (dieser Patch + coupling.cpp-Erweiterung):
+- Hunk 1: #include "../coupling.h".
+- Hunk 2 (Fast_IterateLoop, VOR der omp-parallel-Region): Coupling_RegisterFastGrid()
+  registriert h_grid/volume_grid/dem_grid/SGC_BankFullHeight_grid/cell_area_col/
+  wet_dry_bounds/boundary_cond + grid_cols_padded einmalig. No-Op ohne couplingfile.
+- Hunk 3 (im grossen "#pragma omp single"-Block der Zeitschleife, direkt nach
+  curr_time/Solverptr->t/itCount): Coupling_UpdateFast(..., delta_time) -- seriell,
+  exakt die Stelle, die dem IterateQ-Hook "nach t += Tstep" entspricht. Der fp_vol-
+  Reset des Blocks liegt davor, die Weitung ueberlebt also bis zum naechsten Do_Update.
+- coupling.cpp bucht im Fast-Modus ueber volume_grid (Einzug volumen-gekappt: auf
+  Gerinnezellen unter bankfull waere h*dA um Zellflaeche/Kanalflaeche zu gross),
+  Wasserspiegel = dem+h, Deckel-Klemmung gegen die Kanalsohle (dem - bfH), Massenkonto
+  ueber boundary_cond->VolInMT/VolOutMT (geht in Verror ein). Wehrformel, Qeq-Limiter,
+  Relaxation, Pool-Lieferung und [COUPLE]-Logformat sind mit dem klassischen Pfad
+  identisch (gemeinsamer Code).
+
+VERIFIKATION:
+1. Lokaler g++-Syntax-Check (gepatchte sgm_fast.cpp + coupling.cpp) ohne neue Warnungen.
+2. Patch appliziert sauber auf pristine 8.0.3 + alle 8 Vorgaenger-Patches in exakter
+   Dockerfile-Reihenfolge (diff-Basis ist genau dieser Stand).
+3. test_coupling_sgc.py: vorher 0.00 m3 Austausch trotz "[COUPLE] aktiv" -> nachher
+   echter bidirektionaler Austausch auf Gerinnezellen inkl. Datums-Beweis (Schacht mit
+   Deckel UEBER dem Gerinne-WSP zieht NICHT; ohne SGCz-Datum wuerde DEM+H ihn fluten).
+4. Bestehende Regressionen unveraendert gruen: test_coupling.py, test_coupling_roundtrip.py,
+   test_coupling_pump.py (alle ohne SGC -> klassischer Pfad byte-identisch),
+   test_sgc_trapezoid.py, test_sgc_bridge_blowup.py, test_bridge_asymmetric_sgc.py,
+   test_bridge_no_sgc.py, test_multiprofile_bdy.py.
+
+--- a/lisflood2/sgm_fast.cpp	2026-07-28 14:04:58.488583881 +0000
++++ b/lisflood2/sgm_fast.cpp	2026-07-28 14:17:09.071213395 +0000
+@@ -14,6 +14,7 @@
+ #include "../sgc.h"
+ #include "lis2_output.h"
+ #include "file_tool.h"
++#include "../coupling.h" // QUAGG 1D/2D-SWMM-Kopplung (Fast-Pfad-Hook)
+ 
+ #if defined (__INTEL_COMPILER) && _PROFILE_MODE > 0
+ #include "ittnotify.h"
+@@ -4246,6 +4247,13 @@
+ 	int stop_loop = OFF;
+ 	itCount = Solverptr->itCount;
+ 
++	// QUAGG: 1D/2D-SWMM-Kopplung im Fast-Pfad. Die klassische Coupling_Update-Variante
++	// haengt in IterateQ und liest Arrptr->H - beides existiert hier nicht (die
++	// gepadeten Gitter ersetzen Arrptr, die Originale sind freigegeben). Darum die
++	// Fast-Gitter einmalig registrieren; No-Op ohne couplingfile.
++	Coupling_RegisterFastGrid(Statesptr, h_grid, volume_grid, dem_grid, SGC_BankFullHeight_grid,
++		cell_area_col, wet_dry_bounds, boundary_cond, grid_cols_padded);
++
+ #pragma omp parallel default(shared)
+ 	{
+ 		// main iteration loop
+@@ -4594,6 +4602,11 @@
+ 				Solverptr->itCount++;
+ 				itCount = Solverptr->itCount;
+ 
++				// QUAGG: 1D/2D-SWMM-Austausch - seriell (omp single), nach dem t-Vorruecken
++				// wie der IterateQ-Hook. Bucht ueber volume_grid (+ fp_vol-Weitung); die
++				// Umrechnung in h uebernimmt SGC2_ProcessH_Row im naechsten Schritt.
++				Coupling_UpdateFast(Statesptr, Parptr, Solverptr, delta_time);
++
+ 				// Calculate mass balance error (very rare)
+ 				if (curr_time >= Parptr->MassTotal)
+ 				{

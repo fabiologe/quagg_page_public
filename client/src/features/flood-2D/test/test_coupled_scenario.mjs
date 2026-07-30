@@ -82,31 +82,53 @@ ok(buildCoupledFiles({ ...baseFiles(), 'run.par': basePar.replace('acceleration'
 ok(buildCoupledFiles({ 'run.par': basePar }, makeModel()).active === false, 'kein terrain.asc → deaktiviert');
 ok(buildCoupledFiles(baseFiles(), new NetworkModel()).active === false, 'leeres Netz → deaktiviert');
 
-console.log('3b) SGC zellengenau statt modellweit (Regression: früher deaktivierte JEDES SGCwidth die GESAMTE Kopplung)');
+console.log('3b) Knoten AUF SGC-Gerinnezellen koppeln (seit quagg-coupling-sgc-hook, 2026-07-28)');
 {
+    // Historie in zwei Stufen: (1) früher deaktivierte JEDES SGCwidth die GESAMTE Kopplung
+    // (modellweit); (2) danach wurden nur die betroffenen Zellen übersprungen, weil der
+    // Solver-Fast-Pfad keinen Kopplungs-Hook hatte. Seit dem Hook-Patch koppeln Knoten
+    // auf Gerinnezellen VOLLWERTIG — der Solver bucht dort über volume_grid mit Sohl-Datum
+    // (verifiziert: engines/docker/test_coupling_sgc.py). Der Detector nutzt die SGC-Lage
+    // nur noch für die Deckel-Klemmung (zRef = Kanalsohle statt Bankoberkante).
     const parWithSgc = basePar + 'SGCwidth sgc.width.asc\n';
-    // (a) SGC-Kanal weit weg von beiden Schächten → Kopplung bleibt für BEIDE aktiv
+    // Sohlraster für (c): Kanalsohle 7.0 m auf MHs Zelle, sonst = DEM (8.0 in der Delle, 10 außen).
+    const bedAsc = (() => {
+        let a = `ncols ${M}\nnrows ${M}\nxllcorner 0\nyllcorner 0\ncellsize ${CS}\nNODATA_value -9999\n`;
+        for (let r = 0; r < M; r++) a += Array.from({ length: M }, (_, c) =>
+            (r === dr && c === dc ? 7.0 : g[r * M + c]).toFixed(2)).join(' ') + '\n';
+        return a;
+    })();
+
+    // (a) SGC-Kanal fern der Schächte → alles koppelt (wie immer)
     const far = buildCoupledFiles(
         { ...baseFiles(), 'run.par': parWithSgc, 'sgc.width.asc': makeSgcAsc([{ col: 3, row: 3 }]) },
         makeModel(), { dtCouple: 2.0 });
-    ok(far.active === true, 'SGC-Kanal fern der Schächte → Kopplung bleibt aktiv (nicht mehr modellweit gesperrt)');
+    ok(far.active === true, 'SGC-Kanal fern der Schächte → Kopplung aktiv');
     ok(far.couplingNodes.some(c => c.id === 'MH') && far.couplingNodes.some(c => c.id === 'OUT'),
-        'beide Schächte weiterhin gekoppelt, wenn ihre Zellen SGC-frei sind');
+        'beide Schächte gekoppelt');
 
-    // (b) SGC-Kanal GENAU auf MHs Zelle → nur MH wird übersprungen, OUT bleibt gekoppelt
+    // (b) SGC-Kanal GENAU auf MHs Zelle → MH bleibt jetzt GEKOPPELT (kein Ausschluss mehr)
     const onMh = buildCoupledFiles(
         { ...baseFiles(), 'run.par': parWithSgc, 'sgc.width.asc': makeSgcAsc([{ col: 10, row: 10 }]) },
         makeModel(), { dtCouple: 2.0 });
-    ok(onMh.active === true, 'MH auf SGC-Zelle, OUT bleibt gültig → Kopplung insgesamt weiterhin aktiv');
-    ok(!onMh.couplingNodes.some(c => c.id === 'MH'), 'MH selbst NICHT mehr in couplingNodes (liegt auf SGC-Zelle)');
-    ok(onMh.couplingNodes.some(c => c.id === 'OUT'), 'OUT unberührt gekoppelt (andere Zelle)');
-    ok(onMh.warnings.some(w => w.includes('MH') && w.includes('SGC-Kanalzelle')), 'Warnung nennt MH + SGC-Kanalzelle');
+    ok(onMh.active === true, 'Kopplung aktiv');
+    ok(onMh.couplingNodes.some(c => c.id === 'MH'),
+        'MH auf SGC-Zelle IST gekoppelt (Solver-Hook vorhanden, kein Ausschluss mehr)');
+    ok(onMh.couplingNodes.some(c => c.id === 'OUT'), 'OUT ebenfalls gekoppelt');
+    ok(!onMh.warnings.some(w => w.includes('SGC-Kanalzelle')),
+        'keine Ausschluss-Warnung mehr für SGC-Zellen');
 
-    // (c) SGC-Kanal deckt BEIDE Zellen ab → kein gültiger Kopplungsschacht mehr übrig → deaktiviert
-    const onBoth = buildCoupledFiles(
-        { ...baseFiles(), 'run.par': parWithSgc, 'sgc.width.asc': makeSgcAsc([{ col: 10, row: 10 }, { col: 19, row: 10 }]) },
-        makeModel(), { dtCouple: 2.0 });
-    ok(onBoth.active === false, 'SGC deckt alle Kopplungszellen ab → Kopplung fällt auf deaktiviert zurück');
+    // (c) Deckel-Klemmung auf Gerinnezellen: gegen die KANALSOHLE (sgc.bed.asc), nicht
+    // gegen die Bankoberkante — ein Rohr-Auslauf am Gerinne darf unter Bankniveau abgeben.
+    const model = makeModel();
+    for (const n of model.nodeList) if (n.id === 'MH') n.geom.rim = 7.2;   // unter DEM (8.0), über Sohle (7.0)
+    const clamped = buildCoupledFiles(
+        { ...baseFiles(), 'run.par': parWithSgc,
+          'sgc.width.asc': makeSgcAsc([{ col: 10, row: 10 }]), 'sgc.bed.asc': bedAsc },
+        model, { dtCouple: 2.0 });
+    const mh = clamped.couplingNodes.find(c => c.id === 'MH');
+    ok(!!mh && Math.abs(mh.rim - 7.2) < 1e-6,
+        `Deckel 7.2 m (unter Bank 8.0, über Sohle 7.0) bleibt UNGEKLEMMT (rim=${mh?.rim})`);
 }
 
 console.log('3c) Schacht mit ausschließlich offenem Gerinne (kein Rohr ins SWMM-Netz) wird übersprungen');

@@ -12,6 +12,16 @@ export function lat2tileY(lat, zoom) {
     const rad = (lat * Math.PI) / 180;
     return Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * Math.pow(2, zoom));
 }
+
+/** Fraktionaler (nicht geflooreter) Kachel-X-Index — Sub-Pixel-Genauigkeit fürs Rücksampeln. */
+export function lon2tileXFrac(lon, zoom) {
+    return ((lon + 180) / 360) * Math.pow(2, zoom);
+}
+/** Fraktionaler (nicht geflooreter) Kachel-Y-Index — Gegenstück zu lat2tileY. */
+export function lat2tileYFrac(lat, zoom) {
+    const rad = (lat * Math.PI) / 180;
+    return ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * Math.pow(2, zoom);
+}
 export function tileX2lon(x, zoom) {
     return (x / Math.pow(2, zoom)) * 360 - 180;
 }

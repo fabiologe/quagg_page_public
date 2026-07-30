@@ -125,6 +125,15 @@ RUN patch -p1 --forward -d /src < /tmp/quagg-bridge-flow-index.patch
 COPY engines/patches/quagg-timeseries-memset.patch /tmp/quagg-timeseries-memset.patch
 RUN patch -p1 --forward -d /src < /tmp/quagg-timeseries-memset.patch
 
+# QUAGG coupling-sgc-hook: haengt die 1D/2D-SWMM-Kopplung in die SGC-Zeitschleife des
+# lisflood2-Fast-Pfads ein (Coupling_RegisterFastGrid/Coupling_UpdateFast, sgm_fast.cpp).
+# Vorher lief bei SGC == ON die Kopplung GAR NICHT ("[COUPLE] aktiv", aber 0.00 m3 —
+# Coupling_Update haengt nur in IterateQ, der Fast-Pfad hat eigene gepadete Gitter).
+# MUSS als letzter Patch laufen: diff-Basis ist der Stand nach ALLEN Vorgaengern
+# (sgc-bridge-blowup + bridge-flow-index aendern sgm_fast.cpp ebenfalls).
+COPY engines/patches/quagg-coupling-sgc-hook.patch /tmp/quagg-coupling-sgc-hook.patch
+RUN patch -p1 --forward -d /src < /tmp/quagg-coupling-sgc-hook.patch
+
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -D_CONFIG=/src/config.docker.cmake \
@@ -134,7 +143,9 @@ RUN cmake -S /src -B /build \
     && cmake --build /build --target lisflood -j"$(nproc)"
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-FROM ${RUNTIME_IMAGE}
+# ACHTUNG: Nicht mehr das letzte Stage! Lokale Builds brauchen --target runtime
+# (siehe README), sonst wird das runpod-Stage mit anderem ENTRYPOINT gebaut.
+FROM ${RUNTIME_IMAGE} AS runtime
 
 # volles python3 (nicht -minimal): der Handler braucht die stdlib (json, ...)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -152,3 +163,18 @@ COPY codec.py /opt/lisflood/codec.py
 WORKDIR /job
 ENTRYPOINT ["python3", "-u", "/opt/lisflood/handler.py"]
 CMD ["--job", "/job"]
+
+# ── RunPod-Serverless-Worker ─────────────────────────────────────────────────
+# Gleiches Runtime-Image + runpod-SDK/boto3 + Wrapper (runpod_worker.py), der
+# handler.py als Subprozess faehrt und Binaer-Ergebnisse gzip't nach S3/R2 laedt.
+# Build:  docker build --target runpod -t lisflood-fp:runpod -f engines/docker/Dockerfile .
+# pip braucht auf ubuntu 24.04 --break-system-packages (PEP 668, kein venv noetig
+# im Wegwerf-Container).
+FROM runtime AS runpod
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip \
+    && pip3 install --no-cache-dir --break-system-packages runpod boto3 \
+    && apt-get purge -y python3-pip && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+COPY engines/docker/runpod_worker.py /opt/lisflood/runpod_worker.py
+ENTRYPOINT ["python3", "-u", "/opt/lisflood/runpod_worker.py"]
+CMD []

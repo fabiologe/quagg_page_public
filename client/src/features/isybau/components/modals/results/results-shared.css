@@ -352,6 +352,13 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     flex-direction: column;
 }
 .detail-header { display: flex; justify-content: space-between; padding: 1rem; border-bottom: 1px solid #aeadd2; background: #fafafa; }
+.detail-header h3 {
+    margin: 0;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    color: #594491;
+    letter-spacing: 0.06em;
+}
 .detail-close-btn {
     background: none;
     border: none;

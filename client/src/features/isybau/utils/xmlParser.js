@@ -301,6 +301,10 @@ const parseNode = (obj, id) => {
     const depthRaw = schacht ? parseFloat(schacht.getElementsByTagName("Schachttiefe")[0]?.textContent) : 0;
     const depth    = !isNaN(depthRaw) ? depthRaw : (bauwerkData?.maxDepth ?? 0);
     const status   = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
+    // Kanaltyp (KM/KR/KS) — direkt an der AbwassertechnischeAnlage, nicht nur an
+    // Kanten vorhanden (siehe parseEdge). Für die Netz-Einfärbung (mappings.js:
+    // getEntwaesserungsartColor).
+    const entwaesserungsart = obj.getElementsByTagName("Entwaesserungsart")[0]?.textContent?.trim() || null;
 
     let diameter = 0;
     if (schacht) {
@@ -329,7 +333,8 @@ const parseNode = (obj, id) => {
         bauwerkstyp: bauwerkData?.bauwerkstyp ?? null,
         bauwerkData,
         volume: bauwerkData?.volume ?? 0,
-        isManhole: status !== 2
+        isManhole: status !== 2,
+        entwaesserungsart
     };
 };
 
@@ -400,6 +405,10 @@ const parseEdge = (obj, id) => {
     const material = obj.getElementsByTagName("Material")[0]?.textContent;
     const roughness = getRoughness(material);
     const status = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
+    // Kanaltyp (KM/KR/KS) — siehe parseNode für Details, dort steht der Wert
+    // genauso häufig (in ISYBAU-Praxisdaten sogar zuverlässiger: 51/51 Kanten
+    // vs. 45/64 Knoten in unserer Testdatei).
+    const entwaesserungsart = obj.getElementsByTagName("Entwaesserungsart")[0]?.textContent?.trim() || null;
 
     const profil = obj.getElementsByTagName("Profil")[0];
     const profilartCode = parseInt(profil?.getElementsByTagName("Profilart")[0]?.textContent || 0);
@@ -443,7 +452,8 @@ const parseEdge = (obj, id) => {
         status,
         profile,
         z1,
-        z2
+        z2,
+        entwaesserungsart
     };
 };
 
@@ -485,11 +495,31 @@ const parseHydraulics = (doc) => {
 
     for (let i = 0; i < gebiete.length; i++) {
         const g = gebiete[i];
+
+        // ISYBAU "Gebiet" (GebietType) — Schmutzfracht-Stammdaten, unabhängig vom
+        // Fallback oben (der auf GebietsID/KnotenID/Flaeche/Abflussbeiwert beruht,
+        // welche im offiziellen Schema so nicht vorkommen, hier aber bewusst
+        // unangetastet bleiben). Gebietskennung ist das schema-korrekte ID-Feld.
+        const gebietskennung = g.getElementsByTagName("Gebietskennung")[0]?.textContent || null;
+        const gebietsname = g.getElementsByTagName("Gebietsname")[0]?.textContent || null;
+        const kommentar = g.getElementsByTagName("Kommentar")[0]?.textContent || null;
+        const ewText = g.getElementsByTagName("Einwohnerwerte")[0]?.textContent;
+        const edText = g.getElementsByTagName("Einwohnerdichte")[0]?.textContent;
+        const twk = g.getElementsByTagName("Trockenwetterkennung")[0]?.textContent || null;
+        const hasSchmutzfracht = gebietsname || kommentar || ewText || edText || twk;
+
         catchments.push({
-            id: g.getElementsByTagName("GebietsID")[0]?.textContent,
+            id: gebietskennung || g.getElementsByTagName("GebietsID")[0]?.textContent,
             nodeId: g.getElementsByTagName("KnotenID")[0]?.textContent, // Discharge point
             area: parseFloat(g.getElementsByTagName("Flaeche")[0]?.textContent) || 0, // ha
-            runoffCoeff: parseFloat(g.getElementsByTagName("Abflussbeiwert")[0]?.textContent) || 0
+            runoffCoeff: parseFloat(g.getElementsByTagName("Abflussbeiwert")[0]?.textContent) || 0,
+            schmutzfracht: hasSchmutzfracht ? {
+                gebietsname,
+                kommentar,
+                einwohnerwerte: ewText ? parseFloat(ewText) : null,
+                einwohnerdichte: edText ? parseFloat(edText) : null,
+                trockenwetterkennung: twk
+            } : null
         });
     }
 

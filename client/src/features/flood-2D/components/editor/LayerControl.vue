@@ -63,7 +63,10 @@ const selectMode = (mode) => {
     display: flex;
     flex-direction: column;
     overflow: visible; /* Changed from hidden to allow dropdown */
-    z-index: 100;
+    /* Hintergrund-Chrome: unter ALLEN Arbeits-Panels (Tool-Panels 1000, SGC-Vorschau/
+       Info-Karte/Crop-UI 100) — nur über dem Header (10). Sonst verdeckt die
+       Layer-Leiste die eigentlichen Inhalte. */
+    z-index: 20;
 }
 .layer-btn {
     padding: 10px;

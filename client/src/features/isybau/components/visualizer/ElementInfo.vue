@@ -296,9 +296,32 @@
              </div>
 
              <div class="info-group">
+                 <label>Neigungsklasse</label>
+                 <select v-model.number="localData.slope" class="full-select">
+                     <option :value="null" disabled>– wählen –</option>
+                     <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
+                         {{ key }} - {{ label }}
+                     </option>
+                 </select>
+             </div>
+
+             <div class="info-group">
                  <label>Anschluss Knoten (ID)</label>
                  <input type="text" v-model="localData.nodeId" class="full-input" placeholder="Schacht ID">
              </div>
+
+             <div class="info-group">
+                 <button type="button" class="secondary-btn full-width" @click="showSchmutzfracht = true">
+                     {{ localData.schmutzfracht ? '✓ Schmutzfracht-Daten bearbeiten' : '+ Schmutzfracht-Daten' }}
+                 </button>
+             </div>
+             <SchmutzfrachtDialog
+                 :is-open="showSchmutzfracht"
+                 :model-value="localData.schmutzfracht"
+                 :area-size="localData.size"
+                 @close="showSchmutzfracht = false"
+                 @update:modelValue="onSchmutzfrachtSave"
+             />
         </template>
 
       </div>
@@ -322,8 +345,9 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
-import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, lossCoeffHint } from '../../utils/mappings.js';
+import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, lossCoeffHint, Neigungsklasse } from '../../utils/mappings.js';
 import PumpCurvePreview from '../common/PumpCurvePreview.vue';
+import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
 
 const presetKeyFor = (cw) => {
     const match = WeirCrestPresets.find(p => Math.abs(p.cw - cw) < 0.005);
@@ -411,6 +435,7 @@ onUnmounted(stopDrag);
 
 // Local State Copy
 const localData = ref({});
+const showSchmutzfracht = ref(false);
 
 
 
@@ -456,7 +481,11 @@ function initLocalData(el) {
         // Map integer types to 'Standard'/'Bauwerk' string if needed for select fallback
         // But our select supports ints.
     }
-    
+    else if (elementType.value === 'area') {
+        // Legacy/ungültige Werte (z.B. alter Prozent-Rohwert) nicht als Klasse vorspiegeln
+        if (![1, 2, 3, 4, 5].includes(data.slope)) data.slope = null;
+    }
+
     localData.value = data;
 }
 
@@ -532,6 +561,19 @@ const onProfileChange = () => {
     }
 };
 
+
+// Schmutzfracht hat eine eigene "Speichern"/"Daten entfernen"-Aktion im
+// Sub-Dialog. Die darf NICHT nur in localData landen wie die übrigen Felder,
+// sonst geht sie beim nächsten initLocalData() (Elementwechsel) oder beim
+// Schließen ohne Klick auf die separate äußere "Speichern"-Schaltfläche
+// verloren — genau das war der gemeldete Bug (Daten in ElementInfo gespeichert,
+// aber im PreprocessingModal nicht vorhanden). Deshalb sofortiges,
+// eigenständiges Commit an den Store — nur schmutzfracht, keine anderen evtl.
+// noch unfertigen Feldänderungen, und kein emit('close').
+const onSchmutzfrachtSave = (schmutzfracht) => {
+    localData.value.schmutzfracht = schmutzfracht;
+    emit('save', { id: localData.value.id, type: 'area', data: { schmutzfracht } });
+};
 
 const save = () => {
     // Convert back to store format

@@ -9,15 +9,18 @@
     <!-- Import + Projekte -->
     <div class="upload-section">
 
-      <!-- XML Import — gesperrt, solange "Neu starten" noch keinen Standort
-           bestätigt hat (sonst kollidiert das eigene CRS der XML mit der
-           gerade laufenden Standortwahl). -->
+      <!-- XML Import — gesperrt (a) solange "Neu starten" noch keinen Standort
+           bestätigt hat, UND (b) dauerhaft für den Rest des Projekts, sobald
+           per "Neu starten" ein manueller Anker gesetzt wurde: ein Import
+           würde das eigene CRS der XML-Datei über den gewählten Anker legen —
+           man hat sich mit "Neu starten" bewusst für den Hand-gezeichnet-Weg
+           entschieden, nicht für den Datei-Import-Weg. -->
       <label
         for="file-upload"
         class="file-btn"
-        :class="{ disabled: store.ui.showNewProjectLocationModal }"
+        :class="{ disabled: xmlUploadLocked }"
         data-tutorial="xml-import"
-        :title="store.ui.showNewProjectLocationModal ? 'Erst Standort bestätigen oder Neu starten abbrechen' : ''"
+        :title="xmlUploadTitle"
       >
         <img class="px-icon" src="/saintv1d/icons/Content-Files-Notepad--Streamline-Pixel.svg" />
         <div class="btn-text">
@@ -29,7 +32,7 @@
         id="file-upload"
         type="file"
         accept=".xml"
-        :disabled="store.ui.showNewProjectLocationModal"
+        :disabled="xmlUploadLocked"
         @change="handleFileUpload"
         class="file-upload-input"
       />
@@ -86,7 +89,7 @@
       </button>
 
       <!-- Neu starten: Standort wählen, bevor der erste Knoten gesetzt wird -->
-      <button class="folder-btn" @click="store.ui.showNewProjectLocationModal = true">
+      <button class="folder-btn" data-tutorial="neu-starten" @click="store.ui.showNewProjectLocationModal = true">
         <img class="px-icon" src="/saintv1d/icons/Map-Navigation-Pin-Location-1--Streamline-Pixel.svg" />
         <span>Neu starten</span>
       </button>
@@ -142,10 +145,21 @@ const emit = defineEmits(['open-project-manager']);
 const store = useIsybauStore();
 const hasData = computed(() => store.nodes.size > 0);
 
+// XML-Import bleibt dauerhaft gesperrt, sobald per "Neu starten" ein
+// manueller Standort-Anker gesetzt wurde (store.metadata.originAnchor) —
+// nicht nur, solange das Modal selbst offen ist.
+const xmlUploadLocked = computed(() => store.ui.showNewProjectLocationModal || !!store.metadata.originAnchor);
+const xmlUploadTitle = computed(() => {
+  if (store.ui.showNewProjectLocationModal) return 'Erst Standort bestätigen oder Neu starten abbrechen';
+  if (store.metadata.originAnchor) return 'Nach "Neu starten" nicht mehr möglich — Projekt ist auf Hand-Zeichnen festgelegt';
+  return '';
+});
+
 const handleFileUpload = async (event) => {
   // Zusätzlich zur :disabled-Bindung am Input selbst — Verteidigung in der
-  // Tiefe, falls der Input trotz "Neu starten"-Modal irgendwie ausgelöst wird.
-  if (store.ui.showNewProjectLocationModal) { event.target.value = ''; return; }
+  // Tiefe, falls der Input trotz Sperre irgendwie ausgelöst wird (siehe
+  // xmlUploadLocked: Modal offen ODER manueller "Neu starten"-Anker gesetzt).
+  if (xmlUploadLocked.value) { event.target.value = ''; return; }
   const file = event.target.files[0];
   if (!file) return;
   const text = await file.text();

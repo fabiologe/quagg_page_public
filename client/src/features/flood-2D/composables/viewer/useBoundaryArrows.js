@@ -90,7 +90,7 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
       points.length = 0;
       points.push(...filtered);
       if (points.length !== before) {
-        console.log(`[BoundaryArrows] ${before - points.length} ungültige (NoData/Gebäude) herausgefiltert, ${points.length} verbleiben.`);
+        console.debug(`[BoundaryArrows] ${before - points.length} ungültige (NoData/Gebäude) herausgefiltert, ${points.length} verbleiben.`);
       }
       if (points.length === 0) return;
     }
@@ -203,7 +203,7 @@ export function useBoundaryArrows(getScene, getBuildingMask) {
 
     coneGeom.dispose();
     shaftGeom.dispose();
-    console.log(`[BoundaryArrows] 🔵 Rendered ${points.length} boundary arrows.`);
+    console.debug(`[BoundaryArrows] 🔵 Rendered ${points.length} boundary arrows.`);
   }
 
   function setVisible(v) { if (mesh) mesh.visible = v; }

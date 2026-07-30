@@ -36,7 +36,12 @@ const CASES = {
 };
 
 /**
- * @param {Float32Array|number[]} raster - row-major, Länge width*height
+ * @param {Float32Array|number[]} raster - row-major, Länge width*height.
+ *   NaN-Zellen gelten als "keine Daten" (z.B. NODATA-Bereiche eines
+ *   hochgeladenen DGM außerhalb der Vermessung) — sie fließen weder in
+ *   min/max noch in irgendeine Zelle ein (jede Zelle mit >=1 NaN-Eckpunkt
+ *   wird komplett übersprungen). Terrarium-Raster enthalten nie NaN, das
+ *   Verhalten für den bestehenden Pfad ist damit unverändert.
  * @param {number} width
  * @param {number} height
  * @param {number} interval - Höhenlinien-Abstand in Metern (> 0)
@@ -49,6 +54,7 @@ export function marchingSquares(raster, width, height, interval) {
     let min = Infinity, max = -Infinity;
     for (let i = 0; i < raster.length; i++) {
         const v = raster[i];
+        if (Number.isNaN(v)) continue;
         if (v < min) min = v;
         if (v > max) max = v;
     }
@@ -64,6 +70,8 @@ export function marchingSquares(raster, width, height, interval) {
                 const tr = raster[row * width + col + 1];
                 const bl = raster[(row + 1) * width + col];
                 const br = raster[(row + 1) * width + col + 1];
+
+                if (Number.isNaN(tl) || Number.isNaN(tr) || Number.isNaN(bl) || Number.isNaN(br)) continue;
 
                 let caseIndex = 0;
                 if (tl > level) caseIndex |= 8;

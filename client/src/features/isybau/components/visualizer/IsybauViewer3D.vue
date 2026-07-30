@@ -14,7 +14,8 @@
       v-model:showWaterLevel="showWaterLevel"
       v-model:zScale="zScale"
       :hasResults="hasResults"
-      :hasTerrain="!!store.terrain"
+      :hasTerrain="!!effectiveTerrain"
+      :terrainSource="terrainSource"
       @reset-view="core.resetView()"
     />
 
@@ -35,6 +36,7 @@ import { useIsybauStore }  from '../../store/index.js';
 import { useThreeCore }    from './viewer3d/useThreeCore.js';
 import { useSceneBuilder } from './viewer3d/useSceneBuilder.js';
 import { useTerrainLayer } from './viewer3d/useTerrainLayer.js';
+import { useApiTerrainFallback } from './viewer3d/useApiTerrainFallback.js';
 import Viewer3DControls    from './viewer3d/Viewer3DControls.vue';
 import Viewer3DInfoPanel   from './viewer3d/Viewer3DInfoPanel.vue';
 
@@ -81,6 +83,15 @@ const selectedResult = computed(() => {
 const core        = useThreeCore();
 const builder     = useSceneBuilder();
 const terrainLayer = useTerrainLayer();
+const apiTerrainFallback = useApiTerrainFallback();
+
+// Priorität: manuelles DGM > automatisches API-Fallback-Gelände > nichts.
+const effectiveTerrain = computed(() => store.terrain || apiTerrainFallback.fallbackTerrain.value);
+const terrainSource = computed(() => {
+  if (store.terrain) return 'manual';
+  if (apiTerrainFallback.fallbackTerrain.value) return 'api';
+  return null;
+});
 
 // Mouse-to-raycaster helper
 const mouse = new THREE.Vector2();
@@ -132,7 +143,7 @@ function scheduleRebuild(fitCam = false) {
       showWaterLevel: showWaterLevel.value,
       nodeResults:    props.nodeResults,
       edgeResults:    props.edgeResults,
-      hideGround:     !!store.terrain,
+      hideGround:     !!effectiveTerrain.value,
     });
     if (pendingFitCam) { core.fitToNetwork(b.spanX, b.spanY, b.spanZ); pendingFitCam = false; }
   }, 150);
@@ -171,17 +182,17 @@ watch([showNodes, showEdges, showAreas, zScale, showResults, showWaterLevel], ()
 
 // ─── DGM-Terrain-Layer ──────────────────────────────────────────────────────
 // Bewusst getrennt vom renderKey/scheduleRebuild-Pfad oben: ein neuer DGM-
-// Upload oder der Sichtbarkeits-Toggle baut NUR das (potenziell große)
-// Terrain-Mesh neu — kosmetische Knoten-/Kanten-Edits lösen KEINE
-// DGM-Neu-Triangulierung aus.
-watch(() => [store.terrain, showTerrain.value], () => {
+// Upload/API-Fallback-Update oder der Sichtbarkeits-Toggle baut NUR das
+// (potenziell große) Terrain-Mesh neu — kosmetische Knoten-/Kanten-Edits
+// lösen KEINE Neu-Triangulierung aus.
+watch(() => [effectiveTerrain.value, showTerrain.value], () => {
   if (!core.scene) return;
-  if (store.terrain && showTerrain.value) {
-    terrainLayer.build(core.scene, store.terrain, bounds.value, zScale.value);
+  if (effectiveTerrain.value && showTerrain.value) {
+    terrainLayer.build(core.scene, effectiveTerrain.value, bounds.value, zScale.value);
   } else {
     terrainLayer.clear(core.scene);
   }
-  scheduleRebuild(false); // Platzhalter-Boden (hideGround) mit dem DGM-Zustand synchron halten
+  scheduleRebuild(false); // Platzhalter-Boden (hideGround) mit dem Terrain-Zustand synchron halten
 });
 
 // Billiger Transform-Pfad: Pan/zScale verschiebt/skaliert nur das bereits
@@ -249,8 +260,8 @@ onMounted(() => {
 
   // Initial build if data already present
   if (props.nodes.size) scheduleRebuild(true);
-  if (store.terrain && showTerrain.value) {
-    terrainLayer.build(core.scene, store.terrain, bounds.value, zScale.value);
+  if (effectiveTerrain.value && showTerrain.value) {
+    terrainLayer.build(core.scene, effectiveTerrain.value, bounds.value, zScale.value);
   }
 });
 

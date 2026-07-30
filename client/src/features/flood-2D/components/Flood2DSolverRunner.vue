@@ -153,7 +153,10 @@
       @prepareZip="prepareZip"
     />
 
-    <!-- ── Pre-Run-Gate: kritische Pipeline-Probleme vor dem Upload ──────── -->
+    <!-- ── Pre-Run-Gate: kritische Pipeline-Probleme vor dem Upload ────────
+         Teleport nach <body>: entkommt dem z-index:15-Stacking-Context des rechten
+         Panels (sonst liegen Canvas-Overlays ÜBER dem Gate, s. NetworkRasterCheck). -->
+    <Teleport to="body">
     <div v-if="preRunGate.open" class="gate-overlay" @click.self="resolvePreRunGate(false)">
       <div class="gate-modal">
         <div class="gate-header">
@@ -171,6 +174,7 @@
         </div>
       </div>
     </div>
+    </Teleport>
   </div>
 </template>
 
@@ -691,7 +695,30 @@ const runDryCheck = async () => {
     }
 };
 
+// RunPod ist scharf geschaltet (begrenztes Guthaben) — vor jedem RunPod-Lauf muss
+// das Passwort stimmen, sonst wird NICHT versendet. Einmal pro Browser-Tab merken,
+// damit nicht bei jedem Klick neu getippt werden muss.
+const RUNPOD_LAUNCH_PASSWORD = 'Dannyistcool';
+let runpodLaunchPassword = sessionStorage.getItem('flood2d-runpod-pw') || '';
+
+const confirmRunpodPassword = () => {
+    if (runpodLaunchPassword === RUNPOD_LAUNCH_PASSWORD) return true;
+    const entered = prompt('RunPod-Lauf: Passwort eingeben (Kosten-Gate, begrenztes Guthaben).');
+    if (entered !== RUNPOD_LAUNCH_PASSWORD) {
+        if (entered) alert('Falsches Passwort — Lauf nicht gestartet.');
+        return false;
+    }
+    runpodLaunchPassword = entered;
+    sessionStorage.setItem('flood2d-runpod-pw', entered);
+    return true;
+};
+
 const startPreparation = async () => {
+    if (simStore.solverMode === 'runpod' && !confirmRunpodPassword()) {
+        appendLog('⏹️ Lauf abgebrochen (Passwort-Gate).');
+        return;
+    }
+
     // ── Harter CFL-Gate ───────────────────────────────────────────────────────
     // Instabile Zeitschritte (dt > dt_max = cs/√(g·h)) erzeugen am Solver negative
     // Tiefen / NaN. Statt nur zu warnen (cflStatus-Chip) wird der Versand hier
@@ -804,7 +831,8 @@ const startPreparation = async () => {
          if (backend) {
              await backend.run({
                 files: generatedFiles,        // fertige LISFLOOD-Dateien (terrain.asc, run.par, etc.)
-                maxTime:  simStore.simDuration || 3600
+                maxTime:  simStore.simDuration || 3600,
+                launchPassword: runpodLaunchPassword   // Kosten-Gate, ignoriert vom WASM-Pfad
              });
              simStore.setStatus('RUNNING');
          } else {

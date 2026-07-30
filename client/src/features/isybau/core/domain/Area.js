@@ -19,7 +19,8 @@ export class Area {
         edgeId = null,
         nodeId = null,
         nodeId2 = null,
-        splitRatio = 50
+        splitRatio = 50,
+        schmutzfracht = null
     }) {
         this.id = id;
         this.points = points; // Array of {x, y}
@@ -52,6 +53,12 @@ export class Area {
         this.nodeId2 = nodeId2;
         this.splitRatio = Number(splitRatio); // Percentage 0-100
 
+        // Optionale ISYBAU-"Gebiet"-Stammdaten (Einwohnerwerte/-dichte, Trockenwetter-
+        // Referenz) — eigener ISYBAU-Objekttyp (GebietType), hier bewusst an die Area
+        // gehängt statt separat gehalten, da GebietType selbst keine Knoten-Referenz
+        // hat. Analog zu Node.js' bauwerkData: null wenn nicht vorhanden.
+        this.schmutzfracht = schmutzfracht ?? null;
+
         // If connected to Edge but not Nodes, try to derive in Store/Service
         // checks later, but here we just store raw links.
     }
@@ -76,7 +83,8 @@ export class Area {
             edgeId: data.edgeId,
             nodeId: data.nodeId,   // Likely undefined in raw XML, added later
             nodeId2: data.nodeId2,
-            splitRatio: data.splitRatio || 50
+            splitRatio: data.splitRatio || 50,
+            schmutzfracht: data.schmutzfracht
         });
     }
 
@@ -114,7 +122,8 @@ export class Area {
             edgeId: this.edgeId,
             nodeId: this.nodeId,
             nodeId2: this.nodeId2,
-            splitRatio: this.splitRatio
+            splitRatio: this.splitRatio,
+            schmutzfracht: this.schmutzfracht
         };
     }
 }

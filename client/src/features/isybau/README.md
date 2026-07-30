@@ -68,7 +68,6 @@ schreibt ausschließlich dort.
 | `components/panels/Sidebar.vue` | Linke Spalte: XML-Import (xmlParser + `store.loadParsedData`), Projekte-Button, hostet SimulationControls per Slot. |
 | `components/panels/SimulationControls.vue` | Steuerpult: Regen wählen (Modellregen/KOSTRA), Daten bearbeiten, Simulationsdauer, **„Berechnung starten"**, Ergebnis-/Debug-/Download-Buttons. |
 | `components/panels/TerminalHero.vue` | Deko: Retro-Terminal-Animation, solange kein Projekt geladen ist (`data/terminal-takes.json`). |
-| `components/ui/MessageTicker.vue` | Deko: Laufband am unteren Rand (`data/ticker-messages.json`). |
 
 ## Modals (Sichtbarkeit über `store.ui.*`)
 

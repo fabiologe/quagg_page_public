@@ -185,10 +185,15 @@ Kanal-Solver (unabhängig): kinematic (default), `diffusive`, `ch_dynamic` (voll
 
 - **Build-Kontext:** `backend/app/api/flood2D/` (wegen `codec.py` + Vendor-Tarball + Patches).
   ```bash
-  # CPU (dieser Server):
-  docker build -f engines/docker/Dockerfile -t lisflood-fp:latest .
+  # CPU (dieser Server) — --target runtime ist PFLICHT, seit das runpod-Stage
+  # das letzte im Dockerfile ist (sonst falscher ENTRYPOINT auf :latest!):
+  docker build -f engines/docker/Dockerfile --target runtime -t lisflood-fp:latest .
+  # RunPod-Serverless-Worker (CPU, handler.py + S3/R2-Upload-Wrapper):
+  docker build -f engines/docker/Dockerfile --target runpod -t lisflood-fp:runpod .
   # GPU (RunPod, RTX 4090/L40 = sm_89):
   CUDA_ARCH=89 bash engines/docker/build-cuda.sh        # → lisflood-fp:cuda
+  # Multi-Arch (buildx, pusht in die Registry) — s. Abschnitt 5c:
+  bash engines/docker/build-multiarch.sh                # → :runpod (amd64)
   ```
 - **Dockerfile:** multi-stage. Quelle = Vendor-Tarball (extrahiert) + QUAGG-Patch → cmake Release
   `--target lisflood`. `config.docker.cmake`: NetCDF aus, alle Solver im Binary; CUDA wird automatisch
@@ -215,6 +220,72 @@ Kanal-Solver (unabhängig): kinematic (default), `diffusive`, `ch_dynamic` (voll
   `proxy_buffering off`.
 - **Smoke-Test-Referenz:** `/tmp/lisjob/inputs/` (`run.par` + `terrain.asc` + `flow.bci`, 20×10, 60 s,
   ein QFIX-Zulauf — minimaler Funktionstest, **ohne** Wehre/SGC).
+
+### 5b. RunPod-Serverless-Worker (`--target runpod`, seit 2026-07-29)
+
+- **Architektur:** `runpod_worker.py` (Generator-Handler, runpod-SDK) fährt den **unveränderten**
+  `handler.py` als Subprozess und reicht dessen NDJSON-Events durch. Binär-Ergebnisse
+  (`frame-*.bin`, Max-Raster, `network-results.json`, `swmm-report.rpt`) werden **gzip-komprimiert
+  nach S3/R2 geladen** (`ContentEncoding: gzip` → Browser-`fetch()` dekomprimiert transparent,
+  Client-Codec unverändert), lokal sofort gelöscht (Container-Disk bleibt klein) und als
+  **presigned URLs** in die Events geschrieben — exakt die `file→url`-Übersetzung von
+  `docker_engine.py`. Der Client-Transport (`runpodTransport.js`) lässt `https://…`-URLs schon
+  heute unverändert durch → **null Client-Änderungen**.
+- **Input** = das JobInput des Backends (`schemas.py`): `files` als `text` / `gzip+base64` /
+  **`s3`** (`{"encoding":"s3","key":…}` — für DGMs, die das 10-MB-`/run`-Limit sprengen).
+- **Ohne S3-Env** (lokale Tests): kleine Ergebnisse als `data:`-URLs inline (Cap 8 MB/Datei).
+- **Env-Vars (RunPod-Endpoint-Secrets):** `S3_ENDPOINT` (R2: `https://<account>.r2.cloudflarestorage.com`),
+  `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, optional `S3_PREFIX` (Default `jobs`),
+  `S3_URL_EXPIRY` (Default 86400 s), `QUAGG_GZIP_LEVEL` (Default 4), `QUAGG_HEARTBEAT` (Default 2),
+  `QUAGG_KEEP_JOBDIR=1` (Debug).
+- **Endpoint-Empfehlung:** **CPU-Worker** (16–32 vCPU — acceleration+SGC+Kopplung sind OpenMP-CPU;
+  CUDA lohnt nur für ungekoppelte fv1/dg2), Container-Disk ≥ 20 GB (Peak = transiente ASCII-Frames,
+  .bin wird nach Upload sofort gelöscht), `executionTimeout` ≥ geplante Wandzeit (Default RunPod ist
+  zu kurz für große Läufe!).
+- **Tests:** `python3 test_runpod_worker.py` (26 Unit-Checks, ohne Docker/SDK/boto3) und
+  `python3 test_runpod_e2e.py [IMAGE]` (echter Solver-Lauf durch den Worker im Container, Inline-
+  Fallback, plus `--test_input`-Smoke über das SDK; braucht weder Volume-Mount noch S3).
+- **Backend-Relay (`engines/runpod_engine.py`, seit 2026-07-29):** `FLOOD2D_ENGINE=runpod`
+  reicht das JobInput 1:1 an `api.runpod.ai/v2/{endpoint}/run` weiter, pollt `/stream` und
+  emittet die Events unverändert (Worker liefert fertige presigned URLs). Keys in
+  `backend/.env`: `RUNPOD_API_KEY` + `RUNPOD_ENDPOINT_ID` (Fallback-Loader in
+  `engines/__init__.py`, da PM2 die .env nicht exportiert). Abbruch → `POST /cancel`;
+  Wall-Budget wie DockerEngine (`FLOOD2D_MAX_WALL_S`). Test:
+  `venv/bin/python app/api/flood2D/test_runpod_engine.py` (Fake-RunPod-Stub, 11 Checks).
+- **Registry:** `docker.io/fabiologe/lisflood_acc_modi` (PUBLIC — RunPod konnte das private
+  Repo ohne hinterlegte Registry-Credentials nicht pullen: `IMAGE_AUTH_ERROR`). Tags:
+  `:runpod` (Worker), `:runpod-20260729` (Rollback).
+
+### 5c. Multi-Arch-Builds (`build-multiarch.sh`, seit 2026-07-29)
+
+- **Warum buildx:** Der klassische `docker build` kann keine Multi-Arch-Manifeste erzeugen.
+  `build-multiarch.sh` legt bei Bedarf einen Builder mit `docker-container`-Driver an,
+  installiert für ARM-Ziele die QEMU-binfmt-Handler (`tonistiigi/binfmt`, Host-weit,
+  einmalig) und pusht ein Manifest, aus dem `docker pull` automatisch die passende
+  Variante zieht.
+- **⚠️ Architektur-Status (WICHTIG, auch im Skriptkopf dokumentiert):**
+
+  | Plattform | Status | Grundlage |
+  |---|---|---|
+  | `linux/amd64` | **getestet** | E2E (`test_runpod_e2e.py`) + SGC-Kopplungs-Regression (`test_coupling_sgc.py`) grün gegen das buildx-Image |
+  | `linux/arm64` | **ungetestet** | nur Kompilier-Nachweis via QEMU; auf **keiner** echten ARM-Maschine (Apple Silicon) validiert — **Nutzung auf eigene Gefahr** |
+  | Intel-Mac / Windows+Docker Desktop | amd64-Variante | läuft über dieselbe amd64-Ebene |
+
+  ARM ist bewusst **nicht** im Default (`PLATFORMS=linux/amd64`). Grund: Ohne Regression auf
+  echter ARM-Hardware ist nicht belegt, dass die Fließkomma-Ergebnisse identisch sind —
+  bei einem Nachweiswerkzeug ist das kein Detail. Erst mit `PLATFORMS=linux/amd64,linux/arm64`
+  mitbauen, wenn jemand die Tests auf Apple Silicon gefahren hat.
+- **ARM-Portierbarkeit vorab statisch geprüft (2026-07-29):** weder LISFLOOD-FP 8.0.3 noch
+  SWMM 5.2.4 enthalten SSE/AVX-Intrinsics oder `-march`-Flags; das einzige x86-Konstrukt
+  (`_mm_malloc`/`_mm_free` in `utility.cpp`) hängt hinter `#if defined(_MSC_VER) ||
+  defined(__INTEL_COMPILER)` — der GCC-Pfad nutzt `posix_memalign` und ist ARM-tauglich.
+- **Beispiele:**
+  ```bash
+  # aus backend/app/api/flood2D
+  bash engines/docker/build-multiarch.sh                          # amd64 → :runpod
+  TARGET=runtime TAG=latest bash engines/docker/build-multiarch.sh # lokaler Pfad
+  PLATFORMS=linux/amd64,linux/arm64 bash engines/docker/build-multiarch.sh  # + ARM (ungetestet!)
+  ```
 
 ---
 

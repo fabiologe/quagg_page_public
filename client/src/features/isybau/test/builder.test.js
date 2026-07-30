@@ -430,4 +430,141 @@ describe('SwmmBuilder', () => {
 
         expect(warnings.some(w => w.includes('P1') && w.includes('mehrere ausgehende Haltungen'))).toBe(true);
     });
+
+    // === Neigungsklasse (Gefälle) ===
+    // [SUBCATCHMENTS]-Spalten: Name RainGage Outlet Area %Imperv Width Slope CurbLen
+    it('Fläche mit gültiger Neigungsklasse 1: kein "Gefälleklasse fehlte"-Warning, %Slope = 0.500', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, slope: 1, nodeId: 'N1' }]
+        }));
+        expect(warnings.some(w => w.includes('Gefälleklasse'))).toBe(false);
+        const subLine = inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0].split('\n').find(l => l.startsWith('F1'));
+        expect(subLine.trim().split(/\s+/)[6]).toBe('0.500');
+    });
+
+    it('Fläche mit Neigungsklasse 3: %Slope = 7.000', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F3', size: 0.5, runoffCoeff: 0.9, slope: 3, nodeId: 'N1' }]
+        }));
+        expect(warnings.some(w => w.includes('Gefälleklasse'))).toBe(false);
+        const subLine = inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0].split('\n').find(l => l.startsWith('F3'));
+        expect(subLine.trim().split(/\s+/)[6]).toBe('7.000');
+    });
+
+    it('Fläche ohne Neigungsklasse: Warning + Fallback %Slope = 0.500', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F2', size: 0.5, runoffCoeff: 0.9, slope: 0, nodeId: 'N1' }]
+        }));
+        expect(warnings.some(w => w.includes('F2') && w.includes('Gefälleklasse'))).toBe(true);
+        const subLine = inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0].split('\n').find(l => l.startsWith('F2'));
+        expect(subLine.trim().split(/\s+/)[6]).toBe('0.500');
+    });
+
+    // === Regen: kein Fake-Sturm mehr, wenn keine Regenreihe konfiguriert ist ===
+    it('Ohne konfigurierten Regen: [TIMESERIES] liefert nur 0.0 mm/h, kein 10mm/h-Fake-Ereignis', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, slope: 1, nodeId: 'N1' }]
+        }));
+        const tsBlock = inpContent.split('[TIMESERIES]')[1];
+        expect(tsBlock).toContain('0.0');
+        expect(tsBlock).not.toContain('10.0');
+        expect(warnings.some(w => w.includes('Kein Regen konfiguriert'))).toBe(true);
+    });
+
+    // === Verwaiste Outlet-Referenz: nicht crashen lassen, sondern überspringen ===
+    // Verhindert SWMM "ERROR 209: undefined object" (bricht sonst die GESAMTE
+    // Analyse ab, nicht nur das eine Teileinzugsgebiet).
+    it('Fläche mit Outlet-Referenz auf nicht-existierenden Knoten: übersprungen + Warning, kein Crash', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, slope: 1, nodeId: 'NICHT_VORHANDEN' }]
+        }));
+        const subBlock = inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0];
+        expect(subBlock).not.toContain('F1');
+        expect(warnings.some(w => w.includes('F1') && w.includes('existiert nicht im Netz'))).toBe(true);
+    });
+
+    it('Split-Fläche: gültiger nodeId, ungültiger nodeId2 — nur der gültige Teil wird geschrieben', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, slope: 1, nodeId: 'N1', nodeId2: 'NICHT_VORHANDEN', splitRatio: 50 }]
+        }));
+        const subBlock = inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0];
+        expect(subBlock).toContain('F1 ');
+        expect(subBlock).not.toContain('F1_2');
+        expect(warnings.some(w => w.includes('F1_2') && w.includes('existiert nicht im Netz'))).toBe(true);
+    });
+
+    // === Schmutzfracht -> [DWF] Trockenwetterzufluss ===
+    const dwfLineFor = (inpContent, nodeId) =>
+        inpContent.split('[DWF]')[1].split('[')[0].split('\n').find(l => l.startsWith(nodeId));
+
+    it('Schmutzfracht ohne Tagesspitzenfaktor: [DWF] Flow aus Einwohnerwerte*Wasserverbrauch, kein Pattern', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, nodeId: 'N1', schmutzfracht: { einwohnerwerte: 100, wasserverbrauch: 120 } }]
+        }));
+        expect(inpContent).not.toContain('[PATTERNS]');
+        const line = dwfLineFor(inpContent, 'N1');
+        const cols = line.trim().split(/\s+/);
+        expect(cols[1]).toBe('FLOW');
+        expect(parseFloat(cols[2])).toBeCloseTo(100 * 120 / 86400 / 1000, 6);
+        expect(cols.length).toBe(3); // keine TimePatterns-Spalte
+        expect(warnings.some(w => w.includes('Trockenwetterzufluss'))).toBe(false);
+    });
+
+    it('Schmutzfracht mit Tagesspitzenfaktor: [PATTERNS] HOURLY mit Mittelwert 1.0 und Maximum = Faktor', () => {
+        const { inpContent } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, nodeId: 'N1', schmutzfracht: { einwohnerwerte: 100, wasserverbrauch: 120, tagesspitzenfaktor: 1.5 } }]
+        }));
+        expect(inpContent).toContain('[PATTERNS]');
+        const patSection = inpContent.split('[PATTERNS]')[1].split('[')[0];
+        const values = patSection.split('\n')
+            .filter(l => l.startsWith('DWF_N1'))
+            .flatMap(l => l.replace('DWF_N1', '').replace('HOURLY', '').trim().split(/\s+/).filter(Boolean).map(Number));
+        expect(values.length).toBe(24);
+        const mean = values.reduce((a, b) => a + b, 0) / 24;
+        expect(mean).toBeCloseTo(1.0, 2);
+        expect(Math.max(...values)).toBeCloseTo(1.5, 2);
+
+        const dwfLine = dwfLineFor(inpContent, 'N1');
+        expect(dwfLine).toContain('DWF_N1');
+    });
+
+    it('Fehlender Wasserverbrauch: Warnung, kein Trockenwetterzufluss', () => {
+        const { inpContent, warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, nodeId: 'N1', schmutzfracht: { einwohnerwerte: 100 } }]
+        }));
+        expect(warnings.some(w => w.includes('F1') && w.includes('Wasserverbrauch'))).toBe(true);
+        expect(inpContent).not.toContain('[DWF]');
+    });
+
+    it('Kombination: manueller constantInflow + Schmutzfracht-Zufluss werden am selben Knoten summiert', () => {
+        const net = baseNetwork();
+        net.nodes[0].constantInflow = 5; // N1, l/s
+        const { inpContent } = buildInp(makeStore({
+            ...net,
+            areas: [{ id: 'F1', size: 0.5, runoffCoeff: 0.9, nodeId: 'N1', schmutzfracht: { einwohnerwerte: 100, wasserverbrauch: 120 } }]
+        }));
+        const cols = dwfLineFor(inpContent, 'N1').trim().split(/\s+/);
+        const expectedCMS = (5 + 100 * 120 / 86400) / 1000;
+        expect(parseFloat(cols[2])).toBeCloseTo(expectedCMS, 6);
+    });
+
+    it('Mehrere Flächen am selben Knoten mit abweichenden Tagesspitzenfaktoren: gewichteter Mittelwert + Warnung', () => {
+        const { warnings } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [
+                { id: 'F1', size: 0.5, runoffCoeff: 0.9, nodeId: 'N1', schmutzfracht: { einwohnerwerte: 100, wasserverbrauch: 120, tagesspitzenfaktor: 1.2 } },
+                { id: 'F2', size: 0.5, runoffCoeff: 0.9, nodeId: 'N1', schmutzfracht: { einwohnerwerte: 100, wasserverbrauch: 120, tagesspitzenfaktor: 1.8 } }
+            ]
+        }));
+        expect(warnings.some(w => w.includes('N1') && w.includes('abweichenden Tagesspitzenfaktoren'))).toBe(true);
+    });
 });

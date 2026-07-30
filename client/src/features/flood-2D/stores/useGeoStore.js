@@ -6,8 +6,9 @@ import { migrateBridgeShape } from '../utils/BridgeMeshLattice.js';
 import { notifyPreMutate, registerTerrainAccessors, saveTerrainSnapshot } from '../composables/historyBridge.js';
 
 // Synchroner Aufruf über Bridge — kein async, kein Null-Race beim ersten Aufruf.
+// scope 'geo': die History darf die Klone der übrigen Stores wiederverwenden.
 function saveSnapshot(label) {
-    notifyPreMutate(label);
+    notifyPreMutate(label, 'geo');
 }
 
 // Signalisiert der UI, dass GENAU EIN Objekt fertig platziert wurde → Werkzeug-Auto-Reset
@@ -32,6 +33,29 @@ export const useGeoStore = defineStore('geo', () => {
      * @type {import('vue').Ref<number>}
      */
     const terrainVersion = ref(0);
+
+    /**
+     * Revisionszähler je Datengruppe. Renderer hängen sich daran statt an deep-Watcher
+     * über die Arrays: Vues Deep-Traversal kostete bei 2000 Gebäuden ~228 ms PRO
+     * Änderung, allein fürs Nachziehen der Abhängigkeiten (gemessen mit leerem Callback,
+     * Performance-Audit 2026-07-27).
+     *
+     * Zweiter, ebenso wichtiger Grund: ein FLACHER Watcher auf ein Array übersieht
+     * push()/in-place-Änderungen, weil die Array-Identität gleich bleibt — genau daran
+     * verpasste die SGC-Zellvorschau neu gezeichnete Kanäle. Ein Zähler ist unabhängig
+     * davon, ob eine Mutation das Array ersetzt oder verändert.
+     *
+     * REGEL: Jede Aktion, die eine dieser Sammlungen ändert, MUSS touch(<gruppe>) rufen.
+     * Wer am Store vorbei zuweist (Undo-Restore), ruft touch() ohne Argument.
+     * Abgesichert von test_geostore_revisions.mjs.
+     */
+    const revisions = ref({ mod: 0, boundary: 0, weir: 0, bridge: 0, sgc: 0 });
+    function touch(kind) {
+        const r = revisions.value;
+        if (kind) r[kind] = (r[kind] ?? 0) + 1;
+        else for (const k of Object.keys(r)) r[k]++;   // alles neu (z. B. Undo-Restore)
+        revisions.value = { ...r };                    // eine Referenzänderung genügt Watchern
+    }
 
     /** @type {import('vue').Ref<{type: 'FeatureCollection', features: Array<any>}>} */
     const boundaries = ref({ type: 'FeatureCollection', features: [] });
@@ -120,6 +144,7 @@ export const useGeoStore = defineStore('geo', () => {
             cells:   bridgeCells,
         });
         console.log(`[GeoStore] Brücke hinzugefügt: ${lineId} (${bridgeCells.length} Zellen)`);
+        touch('bridge');
     }
 
     /**
@@ -129,6 +154,7 @@ export const useGeoStore = defineStore('geo', () => {
     function removeBridge(bridgeId) {
         saveSnapshot('Brücke gelöscht');
         bridges.value = bridges.value.filter(b => b.id !== bridgeId);
+        touch('bridge');
     }
 
     // ── 3D-Brückenkörper (kind: 'mesh3d', Footprint + Lattice) ─────────────
@@ -141,6 +167,7 @@ export const useGeoStore = defineStore('geo', () => {
         saveSnapshot('3D-Brückenkörper hinzugefügt');
         bridges.value.push(bridge);
         console.log(`[GeoStore] 3D-Brückenkörper hinzugefügt: ${bridge.id} (${bridge.cells?.length ?? 0} Zellen)`);
+        touch('bridge');
     }
 
     /**
@@ -155,6 +182,7 @@ export const useGeoStore = defineStore('geo', () => {
         if (!b) return;
         saveSnapshot(label);
         Object.assign(b, patch);
+        touch('bridge');
     }
 
     /**
@@ -171,6 +199,7 @@ export const useGeoStore = defineStore('geo', () => {
         });
         if (changed) console.log(`[GeoStore] ${changed} Alt-Brücke(n) auf Polygon-mesh3d migriert.`);
         return changed;
+        touch('bridge');
     }
 
     // ── Wehre (LISFLOOD weir_flow.cpp, Poleni-Formel) ──────────────────────
@@ -212,6 +241,7 @@ export const useGeoStore = defineStore('geo', () => {
                 label: attrs.label || 'Wehr-Polylinie',
             });
         }
+        touch('weir');
     }
 
     /** Neue Wehr-Polylinie + abgeleitete Zellen hinzufügen. */
@@ -219,6 +249,7 @@ export const useGeoStore = defineStore('geo', () => {
         saveSnapshot('Wehr-Polylinie hinzugefügt');
         weirLines.value.push(line);
         _syncWeirCells(line.id, cells, line);
+        touch('weir');
     }
 
     /** Wehr-Polylinie patchen ({points?, hc?, …}) + Zellen neu setzen. */
@@ -228,6 +259,7 @@ export const useGeoStore = defineStore('geo', () => {
         saveSnapshot(label);
         Object.assign(l, patch);
         _syncWeirCells(id, cells, l);
+        touch('weir');
     }
 
     /** Wehr-Polylinie + ihre Zellen entfernen. */
@@ -235,6 +267,7 @@ export const useGeoStore = defineStore('geo', () => {
         saveSnapshot('Wehr-Polylinie entfernt');
         weirLines.value = weirLines.value.filter(l => l.id !== id);
         weirs.value = weirs.value.filter(w => w.lineId !== id);
+        touch('weir');
     }
 
     // ── SGC-Kanäle (Sub-Grid-Channel, Channel-Tool) ────────────────────────────
@@ -253,6 +286,7 @@ export const useGeoStore = defineStore('geo', () => {
     function addSgcChannel(channel) {
         saveSnapshot('Kanal hinzugefügt');
         sgcChannels.value.push(channel);
+        touch('sgc');
     }
 
     /** SGC-Kanal patchen ({bedWidth?, depth?, sideSlope?, ...}). */
@@ -261,18 +295,21 @@ export const useGeoStore = defineStore('geo', () => {
         if (!c) return;
         saveSnapshot('Kanal bearbeitet');
         Object.assign(c, patch);
+        touch('sgc');
     }
 
     /** SGC-Kanal entfernen. */
     function removeSgcChannel(id) {
         saveSnapshot('Kanal entfernt');
         sgcChannels.value = sgcChannels.value.filter(c => c.id !== id);
+        touch('sgc');
     }
 
     function addBoundary(feature) {
         saveSnapshot('Grenze hinzugefügt');
         boundaries.value.features.push(feature);
         notifyObjectPlaced('BOUNDARY');
+        touch('boundary');
     }
 
     /** Boundary-Feature entfernen (Match wie getFeatureById: f.id oder properties.id). */
@@ -283,6 +320,7 @@ export const useGeoStore = defineStore('geo', () => {
         boundaries.value.features = boundaries.value.features.filter(
             f => !(f.id === id || (f.properties && f.properties.id === id))
         );
+        touch('boundary');
         return true;
     }
 
@@ -299,6 +337,7 @@ export const useGeoStore = defineStore('geo', () => {
         modifications.value.push(payload);
         console.log(`[GeoStore] Added ${type}:`, payload);
         notifyObjectPlaced(payload.type);
+        touch('mod');
     }
 
     // Legacy Action Wrapper
@@ -329,6 +368,7 @@ export const useGeoStore = defineStore('geo', () => {
 
     function clearModifications() {
         modifications.value = [];
+        touch('mod');
     }
 
     /**
@@ -484,6 +524,9 @@ export const useGeoStore = defineStore('geo', () => {
     function updateFeatureProperty(id, prop, value) {
         const feature = getFeatureById(id);
         if (!feature) return;
+        // In-Place-Änderung: Gruppe anhand der Herkunft bestimmen und melden — sonst
+        // bekäme der Renderer die geänderte Eigenschaft (z. B. Gebäudehöhe) nie mit.
+        const inMods = modifications.value.some(m => m === feature);
 
         // Handle Modification/GeoJSON Feature (with properties)
         if (feature.type && feature.type !== 'Feature' && !feature.properties) {
@@ -496,6 +539,7 @@ export const useGeoStore = defineStore('geo', () => {
             if (!feature.properties) feature.properties = {};
             feature.properties[prop] = value;
         }
+        touch(inMods ? 'mod' : 'boundary');
     }
 
     return {
@@ -535,5 +579,7 @@ export const useGeoStore = defineStore('geo', () => {
         updateBridge3D,
         migrateBridges,
         notifyTerrainModified: () => { terrainVersion.value++; },
+        revisions,
+        touch,
     };
 });

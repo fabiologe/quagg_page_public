@@ -16,6 +16,7 @@
 
 import { ref } from 'vue';
 import * as THREE from 'three';
+import { useNetworkStore } from '../../stores/useNetworkStore.js';
 
 export function useCropTool() {
     // ── Public reactive state ─────────────────────────────────────────────────
@@ -158,6 +159,15 @@ export function useCropTool() {
             const geoStore = ctx.geoStore;
             if (geoStore?.cropTerrain) {
                 geoStore.cropTerrain(boundingBox);
+                // Netz mit zuschneiden: Schächte außerhalb der neuen Raster-BBox (plus
+                // ihre Haltungen) fliegen raus — sonst schweben sie neben dem Raster und
+                // sind weder koppel- noch prüfbar. Eigener Undo-Schritt (Vektor-History),
+                // der Terrain-Crop liegt in der separaten Terrain-History.
+                const removed = useNetworkStore().cropOutside(
+                    (x, y) => x >= boundingBox.minX && x <= boundingBox.maxX
+                           && y >= boundingBox.minY && y <= boundingBox.maxY,
+                    'Netz an Raster-Zuschnitt angepasst');
+                if (removed > 0) console.log(`[CropTool] Netz zugeschnitten: ${removed} Schächte außerhalb entfernt.`);
             } else {
                 console.error('[CropTool] geoStore.cropTerrain not available!');
             }

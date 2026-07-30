@@ -21,6 +21,7 @@ wheels/
 .installed.cfg
 *.egg
 .env
+.env.r2
 .env.production
 .env.development
 venv/

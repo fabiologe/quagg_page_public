@@ -210,6 +210,16 @@
       </g>
     </svg>
 
+    <!-- Entwässerungsart-Legende: Standard-Einfärbung von Kanten+Knoten nach
+         Kanaltyp (getEdgeColor/getNodeColor), immer sichtbar da kein Toggle
+         existiert. -->
+    <div class="entw-legend">
+      <div class="entw-legend-title">Kanaltyp</div>
+      <div v-for="item in entwLegendItems" :key="item.label" class="entw-legend-item">
+        <span class="entw-dot" :style="{ background: item.color }"></span>{{ item.label }}
+      </div>
+    </div>
+
     <!-- EZG-Karte: Höhenlinien, GPU-gerendert (Three.js/WebGL) statt SVG —
          SVG-Rendering blieb trotz DOM-Batching, Polylinien-Verkettung und
          Douglas-Peucker-Vereinfachung beim Pannen spürbar ruckelig
@@ -272,7 +282,7 @@
 
 <script setup>
 import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
-import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN } from '../../utils/mappings.js';
+import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../utils/mappings.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
@@ -912,16 +922,28 @@ const getEdgeArrowTransform = (edge) => {
   return `translate(${mx}, ${my}) rotate(${angle}) scale(${(2.0 * arrowSizeMultiplier.value * baseUnit.value)/scale.value})`;
 };
 
+const entwLegendItems = [
+  { label: 'Regenwasser', color: ENTWAESSERUNGSART_COLOR.KR },
+  { label: 'Schmutzwasser', color: ENTWAESSERUNGSART_COLOR.KS },
+  { label: 'Mischwasser', color: ENTWAESSERUNGSART_COLOR.KM },
+  { label: 'Unbekannt', color: ENTWAESSERUNGSART_DEFAULT_COLOR },
+];
+
 const getEdgeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
-  if (!props.hydraulics || !props.hydraulics.has(id)) return null;
 
-  const res = props.hydraulics.get(id);
-  const util = res.utilization || 0;
+  if (props.hydraulics && props.hydraulics.has(id)) {
+    const res = props.hydraulics.get(id);
+    const util = res.utilization || 0;
 
-  if (util > 90) return '#e74c3c'; // Red (>90%)
-  if (util >= 75) return '#f39c12'; // Orange (>75%)
-  return null;
+    if (util > 90) return '#e74c3c'; // Red (>90%)
+    if (util >= 75) return '#f39c12'; // Orange (>75%)
+  }
+
+  // Kein Auslastungs-Override aktiv: Entwässerungsart (KM/KR/KS) ist die
+  // Standardfärbung — Lila/Blau/Braun, Schwarz wenn nicht klassifiziert
+  // (siehe mappings.js: getEntwaesserungsartColor).
+  return getEntwaesserungsartColor(props.edges?.get(id)?.entwaesserungsart);
 };
 
 // Pumpe/Wehr/Drossel/Schieber sind in Realität/ISYBAU ein KNOTEN-Element (auch
@@ -948,10 +970,15 @@ const getNodeColor = (id) => {
     return SONDERBAUWERK_COLOR;
   }
 
-  if (!props.nodeResults || !props.nodeResults.has(id)) return null;
-  const res = props.nodeResults.get(id);
-  if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return '#e74c3c'; // Red
-  return null;
+  if (props.nodeResults && props.nodeResults.has(id)) {
+    const res = props.nodeResults.get(id);
+    if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return '#e74c3c'; // Red
+  }
+
+  // Kein Ergebnis-Override aktiv: Entwässerungsart (KM/KR/KS) ist die
+  // Standardfärbung für normale Schächte (Sonderbauwerke behalten oben ihr
+  // eigenes Lila als Funktions-Kennzeichnung).
+  return getEntwaesserungsartColor(node?.entwaesserungsart);
 };
 
 // Drag Detection
@@ -1354,6 +1381,50 @@ svg {
 .node-x.multi-selected {
   stroke: #8f8be1 !important;
   stroke-width: 3px;
+}
+
+/* Entwässerungsart-Legende — oben rechts, unaufdringlich, immer sichtbar.
+   Gleiches Pixel-Design wie ViewerControls (.grid-label/.ezg-label): dunkles
+   Panel + 'Press Start 2P' für Titel/Labels, damit sie sich nicht wie ein
+   Fremdkörper zwischen den anderen Viewer-Overlays anfühlt. */
+.entw-legend {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: #040647;
+  border: 1px solid #594491;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  box-shadow: 0 4px 16px rgba(4,6,71,0.4);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+.entw-legend-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #2ecc71;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+.entw-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.4rem;
+  color: #aeadd2;
+  line-height: 1.4;
+}
+.entw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.25);
+  flex-shrink: 0;
 }
 
 /* EZG-Karte: GPU-Kontur-Canvas — deckt die SVG komplett ab, malt aber nur

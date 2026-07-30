@@ -25,6 +25,7 @@ import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useBathymetryStore } from '../../stores/useBathymetryStore.js';
 import { generateMultiSgcRasters, mergeSgcChannels } from '../../middleware/SgcGenerator.js';
 import { collectPierCells } from '../../utils/BridgeMeshLattice.js';
+import { requestRender } from './renderTrigger.js';
 
 const COLOR_OPEN = 0x00bcd4;    // offene Gerinnezelle
 const COLOR_BLOCKED = 0xff3b30; // Pfeiler-Sperre (SGC-Breite 0)
@@ -54,10 +55,12 @@ export function useSgcRasterPreview(scene, statsOut = null) {
     function setVisible(v) {
         visible = !!v;
         if (mesh) mesh.visible = visible;
+        requestRender();
     }
 
     function rebuild() {
         clear();
+        requestRender();   // schon das Leeren verändert das Bild (auch bei frühem Ausstieg)
         const terrain = geoStore.terrain;
         // Bathymetrie-Einzelkanal (Legacy) + Channel-Tool-Mehrfachkanäle zusammen —
         // gleiche Merge-Quelle wie der Export (Flood2DSolverRunner.vue). Brücken
@@ -163,15 +166,22 @@ export function useSgcRasterPreview(scene, statsOut = null) {
     // deep:false — alle Trigger sind Primitive oder werden als neue Referenz gesetzt
     // (channelPolyline wird bei jeder Bearbeitung als neues Array ersetzt; gridData
     // wechselt bei Terrain-Reload). KEIN deep-Watch über gridData (Performance!).
+    // ARRAY VON GETTERN statt eines Getters auf ein Array-Literal: Letzteres liefert
+    // jedes Mal eine neue Referenz, Vue hält das immer für geändert — das komplette
+    // SGC-Raster (generateMultiSgcRasters über das ganze Gitter) würde dann bei jeder
+    // beliebigen Store-Änderung neu gerechnet.
+    // Revisionszähler statt der sgcChannels-Referenz: addSgcChannel PUSHT nur, die
+    // Array-Identität bleibt gleich — ein neu gezeichneter Kanal tauchte hier vorher
+    // erst auf, wenn zufällig etwas anderes den Watcher auslöste.
     watch(
-        () => [
-            bathyStore.channelPolyline,
-            bathyStore.channelParams.width,
-            bathyStore.channelParams.bedDepth,
-            bathyStore.channelParams.bedMode,
-            geoStore.sgcChannels,
-            geoStore.bridges?.length,
-            geoStore.terrain?.gridData,
+        [
+            () => bathyStore.channelPolyline,
+            () => bathyStore.channelParams.width,
+            () => bathyStore.channelParams.bedDepth,
+            () => bathyStore.channelParams.bedMode,
+            () => geoStore.revisions.sgc,
+            () => geoStore.revisions.bridge,
+            () => geoStore.terrain?.gridData,
         ],
         rebuild,
         { immediate: true },

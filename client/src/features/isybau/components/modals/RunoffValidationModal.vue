@@ -132,6 +132,15 @@ const sortedData = computed(() => {
   align-items: center;
 }
 
+.modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0;
+  color: #aeadd2;
+}
+
 .modal-body {
   padding: 1rem;
   overflow-y: auto;

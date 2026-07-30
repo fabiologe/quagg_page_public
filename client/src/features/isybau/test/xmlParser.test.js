@@ -25,6 +25,11 @@ describe('parseIsybauXML (Fixture test.xml)', () => {
             expect(Number.isNaN(n.z)).toBe(false);
         }
     });
+
+    it('Entwaesserungsart (KM/KR/KS) wird an Knoten UND Kanten geparst', () => {
+        expect(parsed.network.nodes.get('FK008')?.entwaesserungsart).toBe('KR');
+        expect(parsed.network.edges.get('BE008')?.entwaesserungsart).toBe('KM');
+    });
 });
 
 describe('parseIsybauXML (Synthetik: z=0 bleibt erhalten)', () => {

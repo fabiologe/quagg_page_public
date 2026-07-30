@@ -324,6 +324,14 @@ function initScene() {
   networkRenderer.setColorMode(props.networkColorMode);
   networkRenderer.setVisible(props.showNetwork);
   if (props.networkState) networkRenderer.applyResults(props.networkState);
+  // TERRAIN-NACHZÜGLER: getLocalPos speist sich hier aus props.terrain (nicht aus dem
+  // geoStore wie im Editor). Rendert der Netz-Renderer, bevor die Prop propagiert ist
+  // (IndexedDB-Hydration setzt Netz + Terrain im selben Tick), liegen ALLE Schächte/
+  // Haltungen bei (0,0,0) — ein unsichtbarer Klumpen, den keine Store-Revision mehr
+  // repariert („Kanalnetz im Ergebnis-Viewer verschwunden", Fund 2026-07-29). Sobald
+  // das Terrain wirklich da ist bzw. wechselt: kompletter Neuaufbau mit korrektem
+  // Welt→Szene-Transform; die Ergebnis-Färbung (lastState) übersteht das im Renderer.
+  watch(() => props.terrain, (t) => { if (t) networkRenderer?.rebuild?.(); });
 
   if (geoStore.buildings?.features?.length > 0) {
       layerRenderer.renderBuildings();

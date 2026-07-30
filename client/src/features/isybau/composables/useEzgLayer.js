@@ -14,7 +14,7 @@
  * Elevation-Proxys darf das bereits funktionierende Luftbild nicht mit
  * herunterreißen, und umgekehrt.
  */
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useIsybauStore } from '../store/index.js';
 import { computeLocalNetworkBounds, padLocalBounds, localBoundsToWGS84, wgs84BoundsToLocal, unionLocalBounds, containsWithMargin } from '../utils/geoBounds.js';
 import { fetchAerialImage } from '../services/EzgImageryService.js';
@@ -36,12 +36,25 @@ const contourInterval = ref(2); // Meter; 0 = aus
  * Nutzer ein eigenes, präziseres DGM hochgeladen hat (store.terrain, siehe
  * xyzTerrainImporter.js) — Mischen beider Quellen an der Kachel-/Upload-Grenze
  * würde grobe und präzise Höhendaten sichtbar nebeneinander zeigen ("Äpfel
- * mit Birnen"). Ein einziger Gate-Punkt statt an jeder Aufrufstelle einzeln
- * geprüft: deckt refresh(), expandCoverage() UND den manuellen
- * Intervall-Umschalter (cycleContourInterval) gleichermaßen ab.
+ * mit Birnen"). Deckt NUR die Kontur-BERECHNUNG (Marching Squares) ab, nicht
+ * das Fetchen selbst (siehe elevationFetchSuppressed()) — sonst würde ein rein
+ * kosmetisches "Höhenlinien aus"-Umschalten (contourInterval=0, unabhängig von
+ * jedem DGM) auch die für useApiTerrainFallback.js (3D-Fallback-Gelände)
+ * benötigten Rohdaten verhungern lassen.
  */
-function contoursSuppressed() {
+function contourComputeSuppressed() {
     return contourInterval.value <= 0 || !!useIsybauStore().terrain;
+}
+
+/**
+ * Das WGS84-Höhenraster selbst (cachedElevationGrids) NICHT mehr fetchen,
+ * sobald ein eigenes, präziseres DGM existiert — das deckt dann sowohl die
+ * 2D-Höhenlinien als auch das 3D-Fallback-Gelände ab, die groben Terrarium-
+ * Kacheln wären nur verschwendeter Netzwerk-Traffic. Unabhängig vom
+ * contourInterval-Toggle (der ist rein kosmetisch fürs 2D-Liniendisplay).
+ */
+function elevationFetchSuppressed() {
+    return !!useIsybauStore().terrain;
 }
 const contourStatus = ref('idle'); // 'idle' | 'loading' | 'ready' | 'error'
 const contourError = ref(null);
@@ -75,6 +88,12 @@ let currentObjectUrl = null;
 // Einträgen neu zusammen.
 let cachedElevationGrids = [];
 let cachedEpsg = null;
+// cachedElevationGrids/cachedEpsg sind bewusst plain (nicht reaktiv) — dieser
+// Zähler ist der einzige reaktive Anknüpfpunkt dafür, damit z.B.
+// useApiTerrainFallback.js (3D-Ansicht) auf neu geladene/nachgeladene Kacheln
+// reagieren kann, ohne die Grids selbst in einen (teuren, tiefen) Vue-Proxy
+// zu zwingen. Bei jeder Mutation von cachedElevationGrids mit hochzählen.
+const elevationGridVersion = ref(0);
 // Zuletzt angefragte (gepolsterte) lokale Box — Basis fürs Pan-Nachladen
 // (expandCoverage() wächst diese Box, statt bei jedem Pan alles neu zu holen).
 let lastRequestedLocalBounds = null;
@@ -124,7 +143,7 @@ function revokeCurrentImage() {
 
 /** Berechnet die Konturen für EIN Höhenraster im Worker. @returns {Promise<Float32Array>} */
 function computeContoursForGrid(grid, epsg) {
-    if (contoursSuppressed()) return Promise.resolve(new Float32Array(0));
+    if (contourComputeSuppressed()) return Promise.resolve(new Float32Array(0));
     const worker = ensureContourWorker();
     const myReqId = ++contourReqId;
     return new Promise((resolve) => {
@@ -141,6 +160,85 @@ function computeContoursForGrid(grid, epsg) {
         });
     });
 }
+
+/**
+ * Höhenlinien direkt aus dem hochgeladenen DGM (store.terrain, siehe
+ * xyzTerrainImporter.js) statt aus den groben Terrarium-Kacheln. Läuft
+ * UNABHÄNGIG vom enabled-Toggle (der ist nur für Luftbild+Terrarium
+ * zuständig) — wer ein eigenes DGM hochgeladen hat, muss nicht zusätzlich
+ * die EZG-Luftbild-Ebene einschalten, um seine eigenen Höhenlinien zu sehen.
+ * Wird über den watch(() => store.terrain, ...) unten getriggert.
+ */
+async function computeContoursForTerrain() {
+    const terrain = useIsybauStore().terrain;
+    if (!terrain || contourInterval.value <= 0) {
+        contourPositions.value = new Float32Array(0);
+        contourStatus.value = 'idle';
+        return;
+    }
+
+    contourStatus.value = 'loading';
+    contourError.value = null;
+    try {
+        const { gridData, ncols, nrows, cellsize, xllcorner, yllcorner } = terrain;
+        // NODATA (siehe makeTerrainObject: v <= -9000, gleiche Schwelle) -> NaN,
+        // damit marchingSquares() diese Zellen überspringt statt eine falsche
+        // Steilklippen-Kontur an der Vermessungsgrenze zu zeichnen. Eigene Kopie
+        // (nicht gridData selbst transferieren!) — das Original wird u.a. vom
+        // 3D-Terrain-Mesh weiterverwendet.
+        const raster = new Float32Array(gridData.length);
+        for (let i = 0; i < gridData.length; i++) {
+            const v = gridData[i];
+            raster[i] = v <= -9000 ? NaN : v;
+        }
+
+        const worker = ensureContourWorker();
+        const myReqId = ++contourReqId;
+        const positions = await new Promise((resolve) => {
+            pendingContourResolvers.set(myReqId, resolve);
+            worker.postMessage({
+                type: 'compute',
+                reqId: myReqId,
+                raster,
+                width: ncols,
+                height: nrows,
+                interval: contourInterval.value,
+                localGrid: { xllcorner, yllcorner, cellsize }
+            }, [raster.buffer]);
+        });
+
+        // terrain könnte sich während des Wartens geändert haben (neuer Upload/
+        // Entfernen) — Ergebnis dann verwerfen statt veraltete Linien zu zeigen.
+        if (useIsybauStore().terrain !== terrain) return;
+        contourPositions.value = positions;
+        contourStatus.value = 'ready';
+    } catch (e) {
+        contourError.value = e.message || 'Höhenlinien-Berechnung fehlgeschlagen';
+        contourStatus.value = 'error';
+    }
+}
+
+/**
+ * Zentraler Dispatcher: welche Kontur-Quelle gerade aktiv ist, entscheidet
+ * store.terrain (siehe contourComputeSuppressed()/elevationFetchSuppressed()
+ * für die Begründung der Exklusivität). ALLE Trigger, die Konturen neu
+ * anzeigen sollen (Intervall-Wechsel, DGM-Upload/-Entfernen, enabled-Toggle),
+ * laufen hier zusammen statt an mehreren Stellen verstreut zu entscheiden.
+ */
+function refreshContourSource() {
+    if (useIsybauStore().terrain) {
+        computeContoursForTerrain();
+    } else if (enabled.value) {
+        recomputeContoursFromCache();
+    } else {
+        contourPositions.value = new Float32Array(0);
+        contourStatus.value = 'idle';
+    }
+}
+
+// DGM hochgeladen/entfernt -> Konturen sofort neu (unabhängig vom
+// EZG-Luftbild-Toggle, siehe computeContoursForTerrain()).
+watch(() => useIsybauStore().terrain, () => refreshContourSource());
 
 /** Hängt b hinter a — vermeidet unnötiges Kopieren, falls eine Seite leer ist. */
 function concatPositions(a, b) {
@@ -159,7 +257,7 @@ function concatPositions(a, b) {
  * @returns {Promise<void>}
  */
 async function recomputeContoursFromCache() {
-    if (cachedElevationGrids.length === 0 || contoursSuppressed()) {
+    if (cachedElevationGrids.length === 0 || contourComputeSuppressed()) {
         contourPositions.value = new Float32Array(0);
         return;
     }
@@ -188,10 +286,12 @@ async function refreshAerial(wgs84Bounds, epsg) {
 
 /** Kompletter (Neu-)Aufbau — verwirft alle bisherigen Raster/Konturen. Für refresh() (Erstladen/"Aktualisieren"). */
 async function refreshContours(wgs84Bounds, epsg) {
-    if (contoursSuppressed()) {
+    if (elevationFetchSuppressed()) {
+        // Eigenes DGM aktiv — keine Terrarium-Kacheln holen, stattdessen die
+        // eigenen Konturen (neu) berechnen statt sie stumpf zu löschen.
         cachedElevationGrids = [];
-        contourPositions.value = new Float32Array(0);
-        contourStatus.value = 'idle';
+        elevationGridVersion.value++;
+        await computeContoursForTerrain();
         return;
     }
     contourStatus.value = 'loading';
@@ -201,6 +301,7 @@ async function refreshContours(wgs84Bounds, epsg) {
         if (!enabled.value) return; // zwischenzeitlich deaktiviert — Ergebnis verwerfen
         cachedElevationGrids = [grid]; // Neustart: ab hier wieder EIN Bereich
         cachedEpsg = epsg;
+        elevationGridVersion.value++;
         // Bewusst AWAITED (nicht fire-and-forget): erst wenn der Worker die
         // fertige Geometrie zurückgeliefert hat, gilt diese Ebene als
         // 'ready' — sonst würde die LoadingOverlay schon verschwinden,
@@ -233,15 +334,16 @@ async function refreshContours(wgs84Bounds, epsg) {
  * GPU-Geometrie.
  */
 async function appendContours(deltaWgs84Bounds, epsg) {
-    if (contoursSuppressed()) return; // aus, oder eigenes DGM aktiv — nichts zu berechnen, contourPositions bleibt wie es ist
+    if (elevationFetchSuppressed()) return; // eigenes DGM aktiv — nichts zu holen, contourPositions bleibt wie es ist
     contourStatus.value = 'loading';
     contourError.value = null;
     try {
         const grid = await fetchElevationGrid(deltaWgs84Bounds);
-        const newPositions = await computeContoursForGrid(grid, epsg);
+        const newPositions = await computeContoursForGrid(grid, epsg); // leer, falls contourComputeSuppressed()
         if (!enabled.value) return; // zwischenzeitlich deaktiviert — Ergebnis verwerfen, nicht ins frisch geleerte contourPositions schreiben
         cachedElevationGrids.push(grid);
         cachedEpsg = epsg;
+        elevationGridVersion.value++;
         contourPositions.value = concatPositions(contourPositions.value, newPositions);
         contourStatus.value = 'ready';
     } catch (e) {
@@ -350,7 +452,7 @@ async function expandCoverage(viewportLocalBounds) {
 /** Konturintervall ändern und (ohne erneuten Netzwerk-Fetch) neu berechnen. */
 function setContourInterval(value) {
     contourInterval.value = value;
-    recomputeContoursFromCache();
+    refreshContourSource();
 }
 
 /** Zyklus wie cycleGridSize() in ViewerControls.vue: 1m -> 2m -> 5m -> aus -> 1m. */
@@ -362,16 +464,28 @@ function cycleContourInterval() {
 }
 
 /**
- * Bereits gezeichnete Terrarium-Konturen verwerfen (z.B. sobald ein eigenes,
- * präziseres DGM hochgeladen wurde, siehe contoursSuppressed()) — reiner
- * Höhenlinien-Reset, das Luftbild bleibt unberührt (Nutzer wollte nur die
- * Höhenlinien "einfrieren", nicht die ganze EZG-Karte).
+ * Bereits gezeichnete Terrarium-Konturen UND das gecachte Rohraster verwerfen
+ * (z.B. sobald ein eigenes, präziseres DGM hochgeladen wurde, siehe
+ * elevationFetchSuppressed()) — Luftbild bleibt unberührt (Nutzer wollte nur
+ * die Höhenlinien/das API-Fallback-Gelände "einfrieren", nicht die ganze
+ * EZG-Karte).
  */
 function clearContours() {
     contourPositions.value = new Float32Array(0);
     cachedElevationGrids = [];
     contourStatus.value = 'idle';
     contourError.value = null;
+    elevationGridVersion.value++;
+}
+
+/**
+ * Momentaufnahme der gecachten WGS84-Höhenkacheln für useApiTerrainFallback.js
+ * (3D-Fallback-Gelände). cachedElevationGrids/cachedEpsg sind bewusst plain —
+ * Aufrufer müssen selbst auf elevationGridVersion reagieren, um Änderungen
+ * mitzubekommen (siehe Kommentar dort).
+ */
+function getElevationGrids() {
+    return { grids: cachedElevationGrids, epsg: cachedEpsg };
 }
 
 function enable() {
@@ -386,11 +500,13 @@ function disable() {
     aerialImageBounds.value = null;
     status.value = 'idle';
     error.value = null;
-    contourPositions.value = new Float32Array(0);
-    contourStatus.value = 'idle';
     contourError.value = null;
     cachedElevationGrids = [];
+    elevationGridVersion.value++;
     lastRequestedLocalBounds = null;
+    // Löscht Terrarium-Konturen, lässt eigene DGM-Konturen (falls aktiv)
+    // unberührt — das Luftbild-Ausschalten betrifft nur die EZG-Quelle.
+    refreshContourSource();
 }
 
 function toggle() {
@@ -417,6 +533,8 @@ export function useEzgLayer() {
         expandCoverage,
         setContourInterval,
         cycleContourInterval,
-        clearContours
+        clearContours,
+        elevationGridVersion,
+        getElevationGrids
     };
 }

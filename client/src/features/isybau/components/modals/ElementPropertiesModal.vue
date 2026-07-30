@@ -136,8 +136,12 @@
                <input v-model.number="formData.runoffCoeff" type="number" step="0.01" min="0" max="1" class="form-input" required />
              </div>
              <div class="form-group">
-               <label>Neigung (%)</label>
-               <input v-model.number="formData.slope" type="number" step="0.1" class="form-input" />
+               <label>Neigungsklasse</label>
+               <select v-model.number="formData.slope" class="form-select">
+                   <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
+                       {{ key }} - {{ label }}
+                   </option>
+               </select>
              </div>
              <div class="form-group">
                <label>Auslass</label>
@@ -178,7 +182,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
-import { MaterialRoughness, getRoughness, Bauwerkstyp } from '../../utils/mappings.js';
+import { MaterialRoughness, getRoughness, Bauwerkstyp, Neigungsklasse } from '../../utils/mappings.js';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -293,7 +297,7 @@ const initForm = () => {
             z2: toNode ? toNode.z : null
         });
     } else if (props.mode === 'area') {
-        Object.assign(defaults, { size: 0.1, runoffCoeff: 0.5, slope: 0.5, nodeId: null });
+        Object.assign(defaults, { size: 0.1, runoffCoeff: 0.5, slope: 1, nodeId: null });
         if (props.elementData) Object.assign(defaults, props.elementData);
         // Always recompute from points — immune to timing and NaN from parent
         if (defaults.points && defaults.points.length >= 3) {

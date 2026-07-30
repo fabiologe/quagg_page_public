@@ -52,6 +52,18 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
     expect(guide.activeStep.value.id).toBe('editor');
   });
 
+  it('advanceOn als Array: JEDER der gelisteten Trigger schaltet weiter (Netz-Start-Gabelung)', () => {
+    guide.startTour();
+    guide.next(); // → xml-import (advanceOn: ['xml-imported', 'location-set'])
+    expect(guide.activeStep.value.id).toBe('xml-import');
+
+    guide.trigger('simulation-success', fakeStore); // falsches Signal
+    expect(guide.activeStep.value.id).toBe('xml-import');
+
+    guide.trigger('location-set', fakeStore); // "Neu starten"-Pfad statt XML-Import
+    expect(guide.activeStep.value.id).toBe('editor');
+  });
+
   it('während der Tour werden KEINE reaktiven Steps angezeigt', () => {
     guide.startTour();
     guide.trigger('simulation-error', fakeStore);

@@ -33,8 +33,9 @@
             </div>
 
             <div class="hint">
-              Offener Querschnitt (kein Deckel). Die Sohle liegt {{ depth.toFixed(2) }} m unter dem
-              Gelände entlang der gezeichneten Linie.
+              Offener Querschnitt (kein Deckel). Die Sohle liegt {{ depthN.toFixed(2) }} m unter dem
+              Gelände entlang der gezeichneten Linie. Die grüne 3D-Vorschau in der Szene
+              folgt den Werten live.
             </div>
           </div>
 
@@ -44,7 +45,7 @@
               <polyline :points="profilePoints" class="section-outline" />
             </svg>
             <div class="preview-legend">
-              <span>Sohle {{ bedWidth.toFixed(1) }} m</span>
+              <span>Sohle {{ bedWidthN.toFixed(1) }} m</span>
               <span v-if="shape === 'trapezoid'">Oben {{ (halfTop * 2).toFixed(1) }} m</span>
             </div>
           </div>
@@ -60,13 +61,15 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 const props = defineProps({
   isOpen: Boolean,
+  // Vorbelegung beim Öffnen (Weiterzeichnen: Querschnitt des angeschlossenen Kanals).
+  initial: { type: Object, default: null },
 });
 
-const emit = defineEmits(['close', 'apply']);
+const emit = defineEmits(['close', 'apply', 'update']);
 
 const shape = ref('rect'); // 'trapezoid' | 'rect'
 const bedWidth = ref(2);
@@ -74,14 +77,25 @@ const depth = ref(1);
 const sideSlope = ref(1.5);
 const manningN = ref(0.03);
 
-const halfBed = computed(() => Math.max(0, bedWidth.value) / 2);
+// v-model.number liefert beim Leeren/Zwischentippen einen LEERSTRING (kein Number) —
+// direktes bedWidth.toFixed(...) im Template crashte dann die ganze Komponente
+// („$setup.bedWidth.toFixed is not a function", Build-Fund 2026-07-28). Die rohen Refs
+// bleiben an den Inputs (freies Tippen), aber ALLES Abgeleitete (Anzeige, SVG-Geometrie,
+// apply/update-Emits) läuft über diese sanierten Werte mit sinnvollen Fallbacks.
+const numOr = (v, fb) => { const n = Number(v); return Number.isFinite(n) ? n : fb; };
+const bedWidthN  = computed(() => Math.max(numOr(bedWidth.value, 2), 0.1));
+const depthN     = computed(() => Math.max(numOr(depth.value, 1), 0.1));
+const sideSlopeN = computed(() => Math.max(numOr(sideSlope.value, 1.5), 0));
+const manningNN  = computed(() => Math.max(numOr(manningN.value, 0.03), 0.005));
+
+const halfBed = computed(() => bedWidthN.value / 2);
 const halfTop = computed(() => shape.value === 'rect'
   ? halfBed.value
-  : halfBed.value + Math.max(0, sideSlope.value) * Math.max(0, depth.value));
+  : halfBed.value + sideSlopeN.value * depthN.value);
 
 // SVG-Koordinaten: y wächst nach unten — passt direkt zur "Tiefe unter Gelände".
 const profilePoints = computed(() => {
-  const hb = halfBed.value, ht = halfTop.value, d = Math.max(0, depth.value);
+  const hb = halfBed.value, ht = halfTop.value, d = depthN.value;
   if (shape.value === 'rect') {
     return `${-hb},0 ${-hb},${d} ${hb},${d} ${hb},0`;
   }
@@ -90,7 +104,7 @@ const profilePoints = computed(() => {
 
 const viewBox = computed(() => {
   const ht = Math.max(halfTop.value, 0.5);
-  const d = Math.max(depth.value, 0.5);
+  const d = Math.max(depthN.value, 0.5);
   const padX = ht * 0.3 + 0.3;
   const padY = d * 0.3 + 0.3;
   const w = ht * 2 + padX * 2;
@@ -100,15 +114,34 @@ const viewBox = computed(() => {
 
 const close = () => emit('close');
 
-const apply = () => {
-  emit('apply', {
-    shape: shape.value,
-    bedWidth: bedWidth.value,
-    depth: depth.value,
-    sideSlope: shape.value === 'trapezoid' ? sideSlope.value : 0,
-    manningN: manningN.value,
-  });
-};
+const currentSection = () => ({
+  shape: shape.value,
+  bedWidth: bedWidthN.value,
+  depth: depthN.value,
+  sideSlope: shape.value === 'trapezoid' ? sideSlopeN.value : 0,
+  manningN: manningNN.value,
+});
+
+const apply = () => emit('apply', currentSection());
+
+// Weiterzeichnen: beim Öffnen die Werte des angeschlossenen Kanals übernehmen
+// (nur plausible Zahlen — kaputte Quellwerte lassen die Defaults stehen).
+watch(() => props.isOpen, (open) => {
+  if (!open || !props.initial) return;
+  const ini = props.initial;
+  shape.value = ini.shape === 'trapezoid' ? 'trapezoid' : 'rect';
+  if (Number(ini.bedWidth) > 0) bedWidth.value = Number(ini.bedWidth);
+  if (Number(ini.depth) > 0) depth.value = Number(ini.depth);
+  if (shape.value === 'trapezoid' && Number(ini.sideSlope) > 0) sideSlope.value = Number(ini.sideSlope);
+  if (Number(ini.manningN) > 0) manningN.value = Number(ini.manningN);
+});
+
+// Live-3D-Vorschau: jede Eingabe sofort an den Trog-Ghost in der Szene melden
+// (useChannelGhostPreview via ChannelTool → updateDraftSection). Beim Öffnen einmal
+// initial feuern, damit der Ghost direkt mit den Defaults erscheint.
+watch([shape, bedWidth, depth, sideSlope, manningN, () => props.isOpen], () => {
+  if (props.isOpen) emit('update', currentSection());
+}, { immediate: true });
 </script>
 
 <style scoped>

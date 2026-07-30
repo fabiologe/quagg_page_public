@@ -11,7 +11,7 @@
         @click="net.select(n.id)"
       >
         <span class="nt-dot" :style="{ background: roleColor(n.role) }"></span>
-        <span class="nt-id" :title="n.id">{{ short(n.id) }}</span>
+        <span class="nt-id">{{ n.id }}</span>
         <span class="nt-role">{{ n.role }}</span>
         <span class="nt-info">▽{{ fmt(n.rim) }} / ⌄{{ fmt(n.invert) }}</span>
         <button class="nt-del" @click.stop="net.deleteNode(n.id)" title="Schacht löschen">×</button>
@@ -30,9 +30,9 @@
         @click="net.select(l.id)"
       >
         <span class="nt-dot" :style="{ background: l.conveyance === 'open' ? '#06b6d4' : '#94a3b8' }"></span>
-        <span class="nt-id" :title="l.id">{{ short(l.id) }}</span>
+        <span class="nt-id">{{ l.id }}</span>
         <span class="nt-role">{{ l.conveyance === 'open' ? 'Gerinne' : 'Rohr' }}</span>
-        <span class="nt-info">{{ short(l.fromNodeId, 6) }}→{{ short(l.toNodeId, 6) }}</span>
+        <span class="nt-info">{{ l.fromNodeId || '–' }}→<wbr>{{ l.toNodeId || '–' }}</span>
         <button class="nt-del" @click.stop="net.deleteLink(l.id)" title="Haltung löschen">×</button>
       </div>
       <div v-if="net.links.length === 0" class="nt-empty">Keine Haltungen.</div>
@@ -58,10 +58,11 @@
     <!-- NETZ-PRÜFUNG (NetworkModel.validate: Topologie + Hydraulik-Plausibilität) -->
     <template v-if="net.hasNetwork">
       <div class="nt-section-head">
-        <SvEmoji emoji="🔍" :size="13" /> Prüfung
+        Prüfung
         <span class="nt-count" :style="issues.length ? 'color:#ff7043' : ''">{{ issues.length }}</span>
       </div>
-      <IssueList :issues="issues" dense showCounts maxHeight="22vh" emptyText="Netz plausibel ✓" />
+      <IssueList :issues="issues" dense showCounts clickable maxHeight="22vh"
+                 emptyText="Netz plausibel ✓" @select="onIssueClick" />
     </template>
   </div>
 </template>
@@ -81,12 +82,16 @@ const net = useNetworkStore();
 const issues = computed(() => {
   void net.nodes.length; void net.links.length; // Reaktivitäts-Anker
   try {
-    return net.toModel().validate().map(i => ({ severity: i.level, message: i.msg, code: i.id }));
+    return net.toModel().validate().map(i => ({ severity: i.level, message: i.msg, code: i.id, hint: i.hint }));
   } catch { return []; }
 });
+
+// Klick auf eine Prüfungs-Meldung springt zum Verursacher: Element selektieren →
+// Lime-Highlight in 3D + Tabelle, NetworkPropertyPanel öffnet sich darunter (dort ist
+// die Lösung umsetzbar, z. B. Rolle=outfall beim Teilnetz ohne Auslass).
+const onIssueClick = (it) => { if (it.code) net.select(it.code); };
 const ROLE_COLOR = { manhole: '#3b82f6', inlet: '#22c55e', outfall: '#ef4444', storage: '#a855f7', junction: '#38bdf8' };
 const roleColor = (r) => ROLE_COLOR[r] || '#64748b';
-const short = (id, n = 10) => (id ? (String(id).length > n ? String(id).slice(0, n) + '…' : String(id)) : '–');
 const fmt = (v) => (Number.isFinite(v) ? v.toFixed(2) : '–');
 </script>
 
@@ -105,9 +110,11 @@ const fmt = (v) => (Number.isFinite(v) ? v.toFixed(2) : '–');
 .nt-row:hover { background: #ffffff0a; }
 .nt-row.selected { background: rgba(163,230,53,.12); box-shadow: inset 2px 0 0 #a3e635; }
 .nt-dot { width: 9px; height: 9px; border-radius: 50%; }
-.nt-id { font-family: monospace; color: #bdc3c7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* IDs ausgeschrieben (kein „…"): lange ISYBAU-Namen brechen um statt abzuschneiden. */
+.nt-id { font-family: monospace; color: #bdc3c7; overflow-wrap: anywhere; }
 .nt-role { color: #8b5cf6; font-size: 0.72rem; }
-.nt-info { color: #7f8c8d; font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* from→to der Haltungen: volle Schacht-Namen, Umbruch bevorzugt am <wbr> hinterm Pfeil. */
+.nt-info { color: #7f8c8d; font-size: 0.72rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; max-width: 24ch; }
 .nt-del { background: none; border: none; color: #e74c3c; font-size: 0.95rem; line-height: 1; cursor: pointer; opacity: 0; }
 .nt-row:hover .nt-del { opacity: 1; }
 .nt-empty { padding: 8px; color: #5d7f99; font-style: italic; text-align: center; }

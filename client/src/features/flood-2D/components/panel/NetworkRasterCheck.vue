@@ -1,8 +1,12 @@
 <template>
+  <!-- Teleport nach <body>: der .right-panel-container hat z-index:15 und deckelt als
+       Stacking-Context JEDES innere z-index — das fixed Modal (3000) wirkte sonst wie
+       „15" und Canvas-Overlays (LayerControl/Tool-Panels) lagen DRÜBER. -->
+  <Teleport to="body">
   <div class="nrc-overlay" @click.self="$emit('close')">
     <div class="nrc-modal">
       <div class="nrc-head">
-        <span><SvEmoji emoji="⛰️" :size="15" /> Raster vs. Netz — Abgleich</span>
+        <span>Raster vs. Netz — Abgleich</span>
         <button class="nrc-x" @click="$emit('close')">×</button>
       </div>
 
@@ -32,8 +36,15 @@
           <label>Skala <input type="number" step="0.01" v-model.number="mScale" /></label>
           <button class="nrc-btn" @click="applyManual">Anwenden</button>
           <span class="spacer"></span>
-          <button class="nrc-btn" @click="autoMove" title="Netz-Mitte auf DGM-Mitte schieben (Skala 1)">Auto: verschieben</button>
-          <button class="nrc-btn" @click="autoFit" title="Netz auf DGM einpassen (verschieben + skalieren)">Auto: einpassen</button>
+          <!-- Auto-Ausrichtung ist NUR für den CRS-/Frame-Versatz gedacht (Netz außerhalb
+               des DGM). Ein bereits passendes Netz würde sie auf die DGM-Mitte zerren
+               („ins Nirvana") → bei guter Abdeckung gesperrt, dazwischen Rückfrage. -->
+          <button class="nrc-btn" :disabled="alignBlocked" @click="autoMove"
+                  :title="alignBlocked ? 'Koordinaten passen bereits zum DGM — Verschieben würde das Netz von seiner korrekten Lage wegziehen.' : 'Netz-Mitte auf DGM-Mitte schieben (Skala 1)'">
+            Auto: verschieben</button>
+          <button class="nrc-btn" :disabled="alignBlocked" @click="autoFit"
+                  :title="alignBlocked ? 'Koordinaten passen bereits zum DGM — Einpassen würde das Netz verschieben und skalieren.' : 'Netz auf DGM einpassen (verschieben + skalieren)'">
+            Auto: einpassen</button>
         </div>
 
         <div class="nrc-summary">
@@ -45,8 +56,9 @@
             <input type="number" step="0.1" min="0" v-model.number="tol" />
           </label>
           <span class="spacer"></span>
-          <button class="nrc-btn" :disabled="!rimFixable.length" @click="fixAllRims">
-            Alle Deckel auf Gelände setzen ({{ rimFixable.length }})
+          <button class="nrc-btn" :disabled="!rimFixable.length" @click="fixAllRims"
+                  title="Deckel≠Gelände: Deckel nachziehen · Sohle über Gelände: ganzen Schacht aufs Gelände (Tiefe bleibt). Ein einziger Undo-Schritt.">
+            Alle auf Gelände setzen ({{ rimFixable.length }})
           </button>
         </div>
 
@@ -57,7 +69,7 @@
               <th>Sohle</th><th>Tiefe</th><th>Status</th><th></th>
             </tr></thead>
             <tbody>
-              <tr v-for="r in rows" :key="r.id" :class="r.cls" @click="net.select(r.id)">
+              <tr v-for="r in rows" :key="r.id" :class="r.cls" @click="pick(r.id)">
                 <td class="mono" :title="r.id">{{ r.id }}</td>
                 <td>{{ fmt(r.rim) }}</td>
                 <td>{{ r.terrain == null ? '—' : fmt(r.terrain) }}</td>
@@ -66,8 +78,15 @@
                 <td>{{ fmt(r.depth) }}</td>
                 <td><span class="tag" :class="r.cls">{{ r.label }}</span></td>
                 <td>
-                  <button v-if="r.cls==='warn' || r.cls==='err'" class="nrc-fix"
+                  <!-- warn: nur Deckel aufs Gelände. err (Sohle über Gelände): ganzen Schacht
+                       aufs Gelände setzen (Tiefe bleibt) — nur der Deckel würde sonst UNTER
+                       der Sohle landen (neuer Fehler „Sohle über Deckel"). -->
+                  <button v-if="r.cls==='warn'" class="nrc-fix"
+                          title="Deckelhöhe auf die DGM-Höhe setzen"
                           @click.stop="fixRim(r)">Deckel→Gelände</button>
+                  <button v-else-if="r.cls==='err'" class="nrc-fix"
+                          title="Deckel auf DGM-Höhe, Sohle rückt mit (Schachttiefe bleibt erhalten)"
+                          @click.stop="fixRim(r)">Schacht→Gelände</button>
                 </td>
               </tr>
             </tbody>
@@ -76,7 +95,8 @@
         <div class="nrc-note">
           Klärt Diskrepanzen für die Kopplung: der Deckel (rim) sollte dem DGM an der Schachtposition
           entsprechen — sonst greift der 2D↔1D-Austausch auf inkonsistente Höhen zu. „Sohle über Gelände"
-          heißt der Schacht ragt aus dem Raster (Datenfehler / falsche Tiefe).
+          heißt der Schacht ragt aus dem Raster (Datenfehler / falsche Tiefe). Auslässe (outfall) sind
+          davon ausgenommen — sie münden naturgemäß an der Oberfläche.
         </div>
 
         <!-- Haltungen: Rohrscheitel vs. Gelände. Meist ein Vermessungs-/DGM-Abgleichfehler
@@ -85,6 +105,7 @@
         <div v-if="pipeRows.length" class="nrc-summary">
           <span class="chip ok">{{ pipeCounts.ok }} ok</span>
           <span class="chip err">{{ pipeCounts.exceeds }} Rohrscheitel über Gelände</span>
+          <span class="chip out">{{ pipeCounts.outside }} außerhalb Raster</span>
         </div>
         <div v-if="pipeRows.length" class="nrc-body">
           <table class="nrc-table">
@@ -93,7 +114,7 @@
               <th>Scheitel Ablauf</th><th>Gelände Ablauf</th><th>Status</th>
             </tr></thead>
             <tbody>
-              <tr v-for="r in pipeRows" :key="r.id" :class="r.cls" @click="net.select(r.id)">
+              <tr v-for="r in pipeRows" :key="r.id" :class="r.cls" @click="pick(r.id)">
                 <td class="mono" :title="r.id">{{ r.id }}</td>
                 <td>{{ fmt(r.crownFrom) }}</td>
                 <td>{{ r.terrainFrom == null ? '—' : fmt(r.terrainFrom) }}</td>
@@ -105,43 +126,65 @@
           </table>
         </div>
         <div v-if="pipeRows.length" class="nrc-note">
-          Scheitel = Rohrsohle + Profilhöhe. Liegt er über dem Gelände, würde das Rohr oberirdisch
-          verlaufen — meist ein Vermessungs-/DGM-Abgleichfehler (unterschiedliche Erhebungen/Auflösung),
-          seltener eine echte Rohrbrücke. Kein Auto-Fix — bitte Sohle/Profil bzw. Gelände prüfen.
+          Scheitel = Rohrsohle + Profilhöhe, entlang der gesamten Rohrachse gegen das DGM abgetastet
+          (auch Geländeeinschnitte zwischen den Schächten werden erkannt). Liegt er über dem Gelände,
+          würde das Rohr oberirdisch verlaufen — meist ein Vermessungs-/DGM-Abgleichfehler
+          (unterschiedliche Erhebungen/Auflösung), seltener eine echte Rohrbrücke. Kein Auto-Fix —
+          bitte Sohle/Profil bzw. Gelände prüfen.
         </div>
       </template>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
-import SvEmoji from '../common/SvEmoji.vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useNetworkStore } from '@/features/flood-2D/stores/useNetworkStore.js';
 import { useGeoStore } from '@/features/flood-2D/stores/useGeoStore.js';
 import { makeTerrainSampler } from '@/features/flood-2D/services/geometry/terrainSample.js';
 
-defineEmits(['close']);
+const emit = defineEmits(['close']);
 const net = useNetworkStore();
 const geoStore = useGeoStore();
 const tol = ref(0.5);
-const sampler = makeTerrainSampler(geoStore.terrain);
+// Toleranz geklemmt: v-model.number umgeht das min="0"-Attribut, negativ ⇒ alles „warn".
+const tolSafe = computed(() => Math.max(Number(tol.value) || 0, 0));
+// REAKTIV statt Einmal-Snapshot: DGM kann bei offenem Dialog importiert/gecroppt werden.
+const sampler = computed(() => makeTerrainSampler(geoStore.terrain));
 const fmt = (v) => (Number.isFinite(v) ? v.toFixed(2) : '—');
 const fmt0 = (v) => (Number.isFinite(v) ? Math.round(v).toString() : '—');
+// Profilhöhe defensiv mm→m (DN600 = 600) — wie useNetworkRenderer.linkRadius/sectionNetwork;
+// Alt-Projektdateien liefern teils mm, sonst wird JEDER Scheitel „über Gelände" gemeldet.
+const profH = (v) => { const h = Number(v); if (!Number.isFinite(h) || h <= 0) return 0; return h > 10 ? h / 1000 : h; };
 
-// BBox Netz vs DGM (CRS-/Frame-Abgleich).
+// ESC schließt das Modal (wie Overlay-Klick/×).
+const onKey = (e) => { if (e.key === 'Escape') emit('close'); };
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
+
+// Zeilen-Klick: Element auswählen UND Modal schließen — die Auswahl (3D-Highlight +
+// NetworkPropertyPanel via ScenarioManager-Watcher) wäre hinter dem Modal unsichtbar.
+function pick(id) { net.select(id); emit('close'); }
+
+// BBox Netz vs DGM (CRS-/Frame-Abgleich). Schleife statt Math.min(...spread):
+// der Spread wirft bei sehr großen Netzen (>~100k Knoten) einen RangeError.
 const bbox = computed(() => {
     const ns = net.nodes;
-    const net_ = ns.length ? {
-        minX: Math.min(...ns.map(n => n.x)), maxX: Math.max(...ns.map(n => n.x)),
-        minY: Math.min(...ns.map(n => n.y)), maxY: Math.max(...ns.map(n => n.y)),
-    } : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-    return { net: net_, dem: sampler?.bounds ?? { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of ns) {
+        if (n.x < minX) minX = n.x; if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y; if (n.y > maxY) maxY = n.y;
+    }
+    const net_ = ns.length ? { minX, maxX, minY, maxY } : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    return { net: net_, dem: sampler.value?.bounds ?? { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
 });
 const coverage = computed(() => {
-    const total = net.nodes.length || 1;
+    // Leeres Netz ist KEIN CRS-Versatz — neutral melden statt rotem Fehlalarm.
+    if (net.nodes.length === 0)
+        return { inside: 0, pct: 0, cls: 'warn', msg: 'Kein Schacht im Netz — zuerst ein Entwässerungsnetz importieren.' };
     const inside = counts.value.ok + counts.value.rim + counts.value.invert;   // alles außer 'außerhalb'
-    const pct = Math.round((inside / total) * 100);
+    const pct = Math.round((inside / net.nodes.length) * 100);
     let cls = 'ok', msg = 'Koordinaten passen zum DGM.';
     if (pct === 0) { cls = 'err'; msg = 'KEIN Schacht im DGM — Koordinaten-/CRS-Versatz (Netz und DGM in unterschiedlichen Systemen?).'; }
     else if (pct < 80) { cls = 'warn'; msg = 'Viele Schächte außerhalb — teilweiser Versatz oder DGM zu klein.'; }
@@ -149,16 +192,19 @@ const coverage = computed(() => {
 });
 
 const rows = computed(() => {
-    if (!sampler) return [];
+    const s = sampler.value;
+    if (!s) return [];
     return net.nodes.map(n => {
-        const terrain = sampler.sampleZ(n.x, n.y);
+        const terrain = s.sampleZ(n.x, n.y);
         const depth = n.rim - n.invert;
         let cls = 'ok', label = 'ok', dRim = null;
         if (terrain == null) { cls = 'out'; label = 'außerhalb'; }
         else {
             dRim = n.rim - terrain;
-            if (n.invert >= terrain - 1e-6) { cls = 'err'; label = 'Sohle über Gelände'; }
-            else if (Math.abs(dRim) > tol.value) { cls = 'warn'; label = 'Deckel≠Gelände'; }
+            // Outfall-Ausnahme: ein Auslass mündet naturgemäß an der Oberfläche
+            // (Gerinnesohle im DGM) — invert ≈ terrain ist dort korrekt, kein Fehler.
+            if (n.role !== 'outfall' && n.invert >= terrain - 1e-6) { cls = 'err'; label = 'Sohle über Gelände'; }
+            else if (Math.abs(dRim) > tolSafe.value) { cls = 'warn'; label = 'Deckel≠Gelände'; }
         }
         return { id: n.id, rim: n.rim, invert: n.invert, depth, terrain, dRim, cls, label };
     });
@@ -166,53 +212,109 @@ const rows = computed(() => {
 const counts = computed(() => rows.value.reduce((a, r) => { a[r.cls === 'out' ? 'outside' : r.cls === 'err' ? 'invert' : r.cls === 'warn' ? 'rim' : 'ok']++; return a; }, { ok: 0, rim: 0, invert: 0, outside: 0 }));
 const rimFixable = computed(() => rows.value.filter(r => (r.cls === 'warn' || r.cls === 'err') && r.terrain != null));
 
-// Haltungen: Rohrscheitel (Sohle + Profilhöhe) vs. Gelände an beiden Endknoten. Nur `covered`
-// (Rohre) geprüft — offene Gerinne (SGC) sollen an der Oberfläche liegen, das ist gewollt.
+// Haltungen: Rohrscheitel (Sohle + Profilhöhe) vs. Gelände — ENTLANG der Achse abgetastet
+// (Polylinie bzw. gerade Verbindung), nicht nur an den Endknoten: ein Geländeeinschnitt
+// mitten zwischen zwei Schächten wird sonst nicht erkannt. Nur `covered` (Rohre) geprüft —
+// offene Gerinne (SGC) sollen an der Oberfläche liegen, das ist gewollt.
 const pipeRows = computed(() => {
-    if (!sampler) return [];
+    const s = sampler.value;
+    if (!s) return [];
+    const step = Math.max(s.cellsize * 2, 1);   // Abtastweite entlang der Achse
     return net.links.filter(l => l.conveyance !== 'open').map(l => {
         const from = net.nodeById.get(l.fromNodeId);
         const to = net.nodeById.get(l.toNodeId);
         if (!from || !to) return null;
         const z1 = Number.isFinite(Number(l.attrs?.z1)) ? Number(l.attrs.z1) : from.invert;
         const z2 = Number.isFinite(Number(l.attrs?.z2)) ? Number(l.attrs.z2) : to.invert;
-        const height = Number(l.profile?.height) || 0;
+        const height = profH(l.profile?.height);
+        // Stützpunkte: eigene Polylinie (x,y,z = Rohrsohle) oder gerade Sohlverbindung.
+        let pts = null;
+        if (Array.isArray(l.points) && l.points.length >= 2) {
+            const clean = l.points.filter(p =>
+                Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.isFinite(p?.z));
+            if (clean.length >= 2) pts = clean;
+        }
+        if (!pts) pts = [{ x: from.x, y: from.y, z: z1 }, { x: to.x, y: to.y, z: z2 }];
+        let maxOver = null, anyTerrain = false;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const a = pts[i], b = pts[i + 1];
+            const nSteps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+            for (let k = 0; k <= nSteps; k++) {
+                const t = k / nSteps;
+                const terr = s.sampleZ(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                if (terr == null) continue;
+                anyTerrain = true;
+                const over = (a.z + (b.z - a.z) * t + height) - terr;
+                if (maxOver == null || over > maxOver) maxOver = over;
+            }
+        }
         const crownFrom = z1 + height, crownTo = z2 + height;
-        const terrainFrom = sampler.sampleZ(from.x, from.y);
-        const terrainTo = sampler.sampleZ(to.x, to.y);
+        const terrainFrom = s.sampleZ(from.x, from.y);
+        const terrainTo = s.sampleZ(to.x, to.y);
         let cls = 'ok', label = 'ok';
-        if (terrainFrom == null || terrainTo == null) { cls = 'out'; label = 'außerhalb'; }
-        else if (crownFrom > terrainFrom + 1e-6 || crownTo > terrainTo + 1e-6) { cls = 'err'; label = 'Rohrscheitel über Gelände'; }
+        if (!anyTerrain) { cls = 'out'; label = 'außerhalb'; }
+        else if (maxOver > 1e-6) { cls = 'err'; label = `Scheitel +${maxOver.toFixed(2)} m über Gelände`; }
         return { id: l.id, crownFrom, crownTo, terrainFrom, terrainTo, cls, label };
     }).filter(Boolean);
 });
 const pipeCounts = computed(() => pipeRows.value.reduce((a, r) => {
-    if (r.cls === 'err') a.exceeds++; else if (r.cls === 'ok') a.ok++;
+    if (r.cls === 'err') a.exceeds++; else if (r.cls === 'out') a.outside++; else a.ok++;
     return a;
-}, { ok: 0, exceeds: 0 }));
+}, { ok: 0, exceeds: 0, outside: 0 }));
 
-function fixRim(r) { if (r.terrain != null) net.updateNode(r.id, { rim: r.terrain }); }
-function fixAllRims() { rimFixable.value.forEach(fixRim); }
+// warn: nur Deckel nachziehen. err (Sohle über Gelände): ganzen Schacht aufs Gelände
+// setzen und die Tiefe erhalten — NUR den Deckel zu senken würde ihn unter die Sohle
+// legen (neuer Validierungsfehler „Sohle über Deckel").
+function rimPatch(r) {
+    if (r.cls === 'err') {
+        const depth = Math.max(Number.isFinite(r.depth) ? r.depth : 0, 0.5);
+        return { id: r.id, rim: r.terrain, invert: r.terrain - depth };
+    }
+    return { id: r.id, rim: r.terrain };
+}
+function fixRim(r) { if (r.terrain != null) net.updateNode(r.id, rimPatch(r)); }
+// EIN Undo-Schritt für den ganzen Batch — updateNode pro Schacht würde die
+// History fluten (MAX_SNAPSHOTS-FIFO frisst dann alle älteren Einträge).
+function fixAllRims() {
+    net.updateNodesBatch(rimFixable.value.map(rimPatch), 'Deckel auf Gelände setzen');
+}
 
 // Ausrichten (Offset/Scale-Matching CAD↔Raster).
 const mDx = ref(0), mDy = ref(0), mScale = ref(1);
 const netCenter = () => { const b = bbox.value.net; return { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }; };
 function applyManual() {
     const c = netCenter();
-    net.transformCoords({ dx: mDx.value || 0, dy: mDy.value || 0, scale: mScale.value || 1, pivotX: c.x, pivotY: c.y });
+    // Skala nur > 0 zulassen: 0/NaN wäre Kollaps auf einen Punkt, negativ spiegelt das Netz.
+    const sIn = Number(mScale.value);
+    const scale = Number.isFinite(sIn) && sIn > 0 ? sIn : 1;
+    net.transformCoords({ dx: mDx.value || 0, dy: mDy.value || 0, scale, pivotX: c.x, pivotY: c.y });
     mDx.value = 0; mDy.value = 0; mScale.value = 1;
 }
+// Auto-Ausrichtung sperren, wenn das Netz schon (überwiegend) im DGM liegt: die Buttons
+// zentrieren stumpf auf die DGM-Mitte — ein korrekt georeferenziertes Teilnetz am
+// DGM-Rand würde dadurch von seiner richtigen Lage WEGgezogen.
+const alignBlocked = computed(() => net.nodes.length > 0 && coverage.value.pct >= 80);
+// Teilweise Abdeckung (1–79 %): kann echter Versatz ODER ein zu kleines DGM sein —
+// vor dem Verschieben einmal nachfragen statt kommentarlos zu transformieren.
+function confirmAlign(aktion) {
+    const pct = coverage.value.pct;
+    if (pct === 0) return true;
+    return window.confirm(
+        `${pct} % der Schächte liegen bereits im DGM — möglicherweise passt das Netz schon `
+        + `und nur das DGM ist zu klein.\n\n${aktion} transformiert das GESAMTE Netz. Fortfahren?\n`
+        + `(Rückgängig: ↶ in der Editor-Leiste / Ctrl+Z)`);
+}
 function autoMove() {
-    if (!sampler) return;
+    if (!sampler.value || alignBlocked.value || !confirmAlign('„Auto: verschieben"')) return;
     const c = netCenter();
-    net.transformCoords({ dx: sampler.center.x - c.x, dy: sampler.center.y - c.y, scale: 1 });
+    net.transformCoords({ dx: sampler.value.center.x - c.x, dy: sampler.value.center.y - c.y, scale: 1 });
 }
 function autoFit() {
-    if (!sampler) return;
+    if (!sampler.value || alignBlocked.value || !confirmAlign('„Auto: einpassen"')) return;
     const b = bbox.value, c = netCenter();
     const netW = Math.max(b.net.maxX - b.net.minX, 1e-6), netH = Math.max(b.net.maxY - b.net.minY, 1e-6);
     const scale = Math.min((b.dem.maxX - b.dem.minX) / netW, (b.dem.maxY - b.dem.minY) / netH) * 0.95;
-    net.transformCoords({ dx: sampler.center.x - c.x, dy: sampler.center.y - c.y, scale, pivotX: c.x, pivotY: c.y });
+    net.transformCoords({ dx: sampler.value.center.x - c.x, dy: sampler.value.center.y - c.y, scale, pivotX: c.x, pivotY: c.y });
 }
 </script>
 

@@ -212,16 +212,22 @@ const hint = computed(() => {
     transform: scaleX(-1);
 }
 
+/* Gleicher Terminal-Sprechblasen-Stil wie tutorial/TutorialMascot.vue
+   (.speech-bubble/.bubble-text) — grün-glühender Rahmen statt lila UI-Chrome. */
 .tool-hint {
     position: absolute;
     bottom: -30px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0,0,0,0.7);
-    color: white;
-    padding: 2px 8px;
+    background: #040647;
+    border: 1px solid #00e855;
+    box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+    color: #00e855;
+    text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+    padding: 4px 10px;
     border-radius: 4px;
-    font-size: 0.8rem;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.42rem;
     white-space: nowrap;
     pointer-events: none;
 }

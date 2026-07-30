@@ -97,6 +97,11 @@ export class Node {
         this.bauwerkstyp  = options.bauwerkstyp  ?? null;
         this.bauwerkData  = options.bauwerkData  ?? null;
 
+        // Kanaltyp nach ISYBAU <Entwaesserungsart> (KM/KR/KS) — für die
+        // Netz-Einfärbung (mappings.js: getEntwaesserungsartColor). Nur
+        // Anzeige, aktuell keine manuelle Editier-UI dafür.
+        this.entwaesserungsart = options.entwaesserungsart ?? null;
+
         this.applyOverflowState({ isManhole, canOverflow: options.canOverflow });
 
         // Simulation / Runtime State (not persisted in raw basics)
@@ -133,6 +138,7 @@ export class Node {
             punktkennung: data.punktkennung,
             bauwerkstyp:  data.bauwerkstyp,
             bauwerkData:  data.bauwerkData,
+            entwaesserungsart: data.entwaesserungsart,
             wehrWidth: data.wehrWidth,
             dischargeCoeff: data.dischargeCoeff,
             maxOutflow: data.maxOutflow,
@@ -207,6 +213,7 @@ export class Node {
             punktkennung: this.punktkennung,
             bauwerkstyp:  this.bauwerkstyp,
             bauwerkData:  this.bauwerkData,
+            entwaesserungsart: this.entwaesserungsart,
             wehrWidth: this.wehrWidth,
             dischargeCoeff: this.dischargeCoeff,
             maxOutflow: this.maxOutflow,

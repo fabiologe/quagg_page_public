@@ -207,7 +207,8 @@ export const useIsybauStore = defineStore('isybau-module', {
                     points: [],
                     size: c.area,
                     runoffCoeff: c.runoffCoeff,
-                    nodeId: c.nodeId
+                    nodeId: c.nodeId,
+                    schmutzfracht: c.schmutzfracht || null
                 }));
             }
 
@@ -266,6 +267,16 @@ export const useIsybauStore = defineStore('isybau-module', {
                     return null;
                 }
             }).filter(a => a !== null);
+
+            // Schmutzfracht-Daten aus <Einzugsgebiet>-Blöcken auf gleichnamige Flächen
+            // mergen — unabhängig vom reinen Geometrie-Fallback oben, da ein "Gebiet"
+            // laut ISYBAU-Schema unabhängig von einer "Fläche" existiert und eine
+            // Fläche mit Polygon-Geometrie zusätzlich Gebietsdaten haben kann.
+            for (const c of rawCatchments) {
+                if (!c.schmutzfracht) continue;
+                const match = this.areas.find(a => a.id === c.id);
+                if (match) match.schmutzfracht = c.schmutzfracht;
+            }
 
             console.log(`IsybauStore: Loaded ${this.nodes.size} nodes, ${this.edges.size} edges, ${this.areas.length} areas.`);
 
@@ -473,9 +484,6 @@ export const useIsybauStore = defineStore('isybau-module', {
         applyPreprocessing(data) {
             this.updateNetworkData(data);
             this.ui.showPreprocessingModal = false;
-            if (this.areas.length > 0) {
-                this.ui.showValidationModal = true;
-            }
         },
 
         // --- CRUD Actions ---

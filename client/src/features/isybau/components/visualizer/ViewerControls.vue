@@ -55,7 +55,7 @@
       <span class="ezg-label">EZG-Karte</span>
     </button>
     <button
-      v-if="ezgLayer.enabled.value && !store.terrain"
+      v-if="store.terrain || ezgLayer.enabled.value"
       @click="ezgLayer.cycleContourInterval()"
       class="grid-toggle-btn contour-toggle-btn"
       :title="contourTitle"
@@ -102,7 +102,7 @@ const ezgTitle = computed(() => {
   if (ezgLayer.status.value === 'loading') return 'EZG-Karte: Luftbild wird geladen...';
   if (ezgLayer.status.value === 'error') return `EZG-Karte: Fehler — ${ezgLayer.error.value || 'unbekannt'}`;
   if (ezgLayer.enabled.value && store.terrain) {
-    return 'EZG-Karte ausblenden (Höhenlinien deaktiviert — eigenes DGM geladen)';
+    return 'EZG-Karte ausblenden (Luftbild — Höhenlinien kommen vom eigenen DGM und bleiben davon unabhängig)';
   }
   return ezgLayer.enabled.value ? 'EZG-Karte ausblenden' : 'EZG-Karte einblenden (Luftbild & Höhenlinien)';
 });
@@ -111,7 +111,8 @@ const contourTitle = computed(() => {
   if (ezgLayer.contourStatus.value === 'loading') return 'Höhenlinien werden geladen...';
   if (ezgLayer.contourStatus.value === 'error') return `Höhenlinien: Fehler — ${ezgLayer.contourError.value || 'unbekannt'}`;
   const interval = ezgLayer.contourInterval.value;
-  return `Höhenlinien-Intervall: ${interval === 0 ? 'Aus' : interval + 'm'} (klicken zum Wechseln)`;
+  const source = store.terrain ? ' (eigenes DGM)' : '';
+  return `Höhenlinien-Intervall${source}: ${interval === 0 ? 'Aus' : interval + 'm'} (klicken zum Wechseln)`;
 });
 </script>
 

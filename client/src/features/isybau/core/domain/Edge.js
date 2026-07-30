@@ -2,7 +2,7 @@
  * Domain Model for an Edge (Haltung/Leitung) connecting two Nodes.
  */
 export class Edge {
-    constructor({ id, fromNodeId, toNodeId, length, roughness = 0.011, profile = null, type = "Haltung", coords = [], material = null, z1 = null, z2 = null }) {
+    constructor({ id, fromNodeId, toNodeId, length, roughness = 0.011, profile = null, type = "Haltung", coords = [], material = null, z1 = null, z2 = null, entwaesserungsart = null }) {
         this.id = id;
         this.fromNodeId = fromNodeId;
         this.toNodeId = toNodeId;
@@ -25,6 +25,11 @@ export class Edge {
         this.status = 0; // Status
 
         this.type = type;
+
+        // Kanaltyp nach ISYBAU <Entwaesserungsart> (KM/KR/KS) — für die
+        // Netz-Einfärbung (mappings.js: getEntwaesserungsartColor). Nur
+        // Anzeige, aktuell keine manuelle Editier-UI dafür.
+        this.entwaesserungsart = entwaesserungsart;
 
         this.qCurrent = 0;
         this.vCurrent = 0;
@@ -63,6 +68,7 @@ export class Edge {
         // Hydrate additional fields
         edge.material = data.material;
         edge.status = data.status;
+        edge.entwaesserungsart = data.entwaesserungsart ?? null;
 
         // z1/z2: Try to get from explicit data, OR extract from geometry (poly line)
         // Usually z1 = upstream invert, z2 = downstream invert.
@@ -95,7 +101,8 @@ export class Edge {
             z1: this.z1,
             z2: this.z2,
             status: this.status,
-            coords: this.coords
+            coords: this.coords,
+            entwaesserungsart: this.entwaesserungsart
         };
     }
 }

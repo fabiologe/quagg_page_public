@@ -132,6 +132,7 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
             + tag('Objektbezeichnung', n.id)
             + `<Objektart>2</Objektart>`
             + tag('Status', String(fin(n.status) ?? 0))
+            + tag('Entwaesserungsart', n.entwaesserungsart || null)
             + `<Knoten><KnotenTyp>0</KnotenTyp>${kern}</Knoten>`
             + `<Geometrie><GeoObjektart>1</GeoObjektart><GeoObjekttyp>P</GeoObjekttyp>`
             + `<Geometriedaten><Knoten>${smp}${dmp}</Knoten></Geometriedaten></Geometrie>`
@@ -168,6 +169,7 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
             + tag('Objektbezeichnung', e.id)
             + `<Objektart>1</Objektart>`
             + tag('Status', String(fin(e.status) ?? 0))
+            + tag('Entwaesserungsart', e.entwaesserungsart || null)
             + `<Kante>`
             + `<KantenTyp>${kantenTyp}</KantenTyp>`
             + tag('KnotenZulauf', from)
@@ -214,11 +216,19 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
             + `</Flaeche>`;
     };
 
+    // Schmutzfracht-Felder gehören laut ISYBAU-Schema zu "Gebiet", nicht zu "Flaeche".
+    const buildSchmutzfrachtTags = (sf) => !sf ? '' : tag('Gebietsname', sf.gebietsname)
+        + tag('Kommentar', sf.kommentar)
+        + tag('Einwohnerwerte', sf.einwohnerwerte != null ? num(sf.einwohnerwerte, 2) : null)
+        + tag('Einwohnerdichte', sf.einwohnerdichte != null ? num(sf.einwohnerdichte, 2) : null)
+        + tag('Trockenwetterkennung', sf.trockenwetterkennung);
+
     const buildEinzugsgebiet = (a) => `<Einzugsgebiet>`
         + tag('GebietsID', a.id)
         + tag('KnotenID', a.nodeId || null)
         + tag('Flaeche', num(fin(a.size), 4))
         + tag('Abflussbeiwert', num(fin(a.runoffCoeff), 3))
+        + buildSchmutzfrachtTags(a.schmutzfracht)
         + `</Einzugsgebiet>`;
 
     const areasWithGeom = areas.filter(a => Array.isArray(a.points) && a.points.length >= 3);
@@ -228,6 +238,11 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
     if (areasWithGeom.length > 0 && areasNoGeom.length > 0) {
         warnings.push(`${areasNoGeom.length} Fläche(n) ohne Polygon-Geometrie als <Einzugsgebiet> exportiert — beim Re-Import werden sie ignoriert, solange Flächen mit Geometrie vorhanden sind.`);
     }
+    // Flächen MIT Geometrie exportieren als <Flaeche> — Schmutzfracht-Daten gehören
+    // aber zu <Gebiet>/<Einzugsgebiet>, nicht zu <Flaeche>. Für solche Flächen daher
+    // zusätzlich einen schlanken <Einzugsgebiet>-Block (gleiche ID) nur mit den
+    // Schmutzfracht-Tags exportieren, sonst gingen die Daten beim Export verloren.
+    const areasWithSchmutzfracht = areasWithGeom.filter(a => a.schmutzfracht);
 
     const hydObjekte = edges.map(e =>
         `<HydraulikObjekt>${tag('Objektbezeichnung', e.id)}<HydObjektTyp>1</HydObjektTyp><Haltung></Haltung></HydraulikObjekt>`
@@ -261,6 +276,7 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
         + `<HydraulikObjekte>${hydObjekte}</HydraulikObjekte>`
         + areasWithGeom.map(buildFlaeche).join('')
         + areasNoGeom.map(buildEinzugsgebiet).join('')
+        + areasWithSchmutzfracht.map(buildEinzugsgebiet).join('')
         + `</Rechennetz>`
         + `</Hydraulikdatenkollektiv>`
         + `</Datenkollektive>`

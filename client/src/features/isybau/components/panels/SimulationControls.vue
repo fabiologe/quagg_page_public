@@ -75,22 +75,10 @@
                 Daten bearbeiten
             </button>
 
-            <button class="secondary-btn full" @click="openPedantPopup">
+            <button class="secondary-btn full" @click="store.ui.showValidationModal = true">
                 <img class="ic" src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" />
                 Abfluss validieren
             </button>
-
-            <!-- Pedant Popup -->
-            <Transition name="pedant-pop">
-              <div v-if="showPedant" class="pedant-popup">
-                <div class="pedant-header">
-                  <img class="pedant-ic" src="/saintv1d/icons/Interface-Essential-Information-Circle-2--Streamline-Pixel.svg" />
-                  <span>Validierung</span>
-                  <button class="pedant-close" @click="closePedantPopup">×</button>
-                </div>
-                <p class="pedant-msg">Schau dir die .inp und .rpt Dateien an du Pedant 😄</p>
-              </div>
-            </Transition>
         </div>
 
         <div class="control-group">
@@ -151,7 +139,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
@@ -161,25 +149,6 @@ ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 const store = useIsybauStore();
 const startSimulation = async () => {
     await store.runSimulation();
-};
-
-// Pedant popup
-const showPedant = ref(false);
-let pedantAudio = null;
-
-const openPedantPopup = () => {
-    showPedant.value = true;
-    pedantAudio = new Audio('/saintv1d/yoshiyuki_tatsuya-pixel-melody-430745.mp3');
-    pedantAudio.volume = 0.6;
-    pedantAudio.play().catch(() => {});
-};
-
-const closePedantPopup = () => {
-    showPedant.value = false;
-    if (pedantAudio) {
-        pedantAudio.pause();
-        pedantAudio.currentTime = 0;
-    }
 };
 
 const loading = computed(() => store.simulation.status === 'running');
@@ -488,62 +457,4 @@ const downloadResults = () => {
 @keyframes spin { 100% { transform: rotate(360deg); } }
 .ic.spin { animation: spin 1s linear infinite; }
 
-/* Pedant Popup */
-.pedant-popup {
-    position: relative;
-    margin-top: 0.5rem;
-    background: #040647;
-    border: 2px solid #2ecc71;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 0 12px rgba(46,204,113,0.3);
-}
-
-.pedant-header {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.6rem;
-    background: #0d1a0d;
-    border-bottom: 1px solid #2ecc71;
-}
-
-.pedant-header span {
-    flex: 1;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 0.55rem;
-    color: #2ecc71;
-}
-
-.pedant-ic {
-    width: 14px;
-    height: 14px;
-    image-rendering: pixelated;
-    filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
-}
-
-.pedant-close {
-    background: none;
-    border: none;
-    color: #2ecc71;
-    font-size: 1rem;
-    cursor: pointer;
-    line-height: 1;
-    padding: 0;
-}
-.pedant-close:hover { color: #fff; }
-
-.pedant-msg {
-    margin: 0;
-    padding: 0.7rem 0.75rem;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 0.55rem;
-    color: #2ecc71;
-    line-height: 1.8;
-}
-
-.pedant-pop-enter-active { transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); }
-.pedant-pop-leave-active { transition: all 0.15s ease-in; }
-.pedant-pop-enter-from  { opacity: 0; transform: scale(0.85); }
-.pedant-pop-leave-to    { opacity: 0; transform: scale(0.9); }
 </style>

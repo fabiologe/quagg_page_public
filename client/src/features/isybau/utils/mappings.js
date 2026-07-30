@@ -164,6 +164,20 @@ export const getEffectiveBauwerkstyp = (node) => {
     return isNaN(t) ? null : t;
 };
 
+// Entwässerungsart (ISYBAU <Entwaesserungsart>, Werte KM/KR/KS) — Farbkennung
+// nach Kanaltyp. Steht laut Schema sowohl an Kanten (Haltungen) als auch an
+// Knoten (Schächte) direkt an der AbwassertechnischeAnlage. Single Source of
+// Truth für 2D-SVG (IsybauViewer.vue) und 3D-Szene (useSceneBuilder.js),
+// damit beide Renderer nie auseinanderlaufen.
+export const ENTWAESSERUNGSART_COLOR = {
+    KR: '#3498db', // Regenwasser — Blau
+    KS: '#8b5a2b', // Schmutzwasser — Braun
+    KM: '#9b59b6', // Mischwasser — Lila
+};
+export const ENTWAESSERUNGSART_DEFAULT_COLOR = '#000000'; // unbekannt/nicht klassifiziert — Schwarz
+
+export const getEntwaesserungsartColor = (value) => ENTWAESSERUNGSART_COLOR[value] || ENTWAESSERUNGSART_DEFAULT_COLOR;
+
 /**
  * @param {object} node - Knoten mit type/bauwerkstyp/volume/bauwerkData/is_sink/punktkennung
  * @returns {{ section: string, linkSection: string|null }} SWMM-Zielsektion(en)

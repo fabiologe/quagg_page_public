@@ -336,7 +336,7 @@
          v-if="selectedInfo"
          :visible="true"
          v-bind="selectedInfo"
-         @close="selectedInfo = null; if(selectionMesh) selectionMesh.visible = false;"
+         @close="selectedInfo = null; if(selectionMesh) selectionMesh.visible = false; renderScheduler.request();"
        />
 
     </div>
@@ -355,6 +355,16 @@
 <script setup>
 import { ref, onMounted, onUnmounted, reactive, toRef, watch, computed } from 'vue';
 import * as THREE from 'three';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+
+// BVH-Raycasting aktivieren: Meshes MIT computeBoundsTree() werden von O(Dreiecke) auf
+// O(log n) beschleunigt, alle anderen fallen in acceleratedRaycast aufs Standard-
+// verhalten zurück. Ohne BVH kostet jeder pointermove-Raycast gegen das volle
+// Terrain-Mesh (Millionen Dreiecke) zweistellige Millisekunden → Viewer ruckelt beim
+// Zeichnen/Croppen/Pinseln (jede Mausbewegung raycastet, s. useDrawTool.getIntersect).
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useSimulationStore } from '../../stores/useSimulationStore.js';
@@ -401,6 +411,9 @@ import LayerControl from './LayerControl.vue';
 import CompassRose from './CompassRose.vue';
 import TerrainStatics from './TerrainStatics.vue';
 import SgcPreviewPanel from './SgcPreviewPanel.vue';
+import { useChannelGhostPreview } from '../../composables/editor/useChannelGhostPreview.js';
+import { useRenderScheduler } from '../../composables/editor/useRenderScheduler.js';
+import { registerRenderRequester, unregisterRenderRequester } from '../../composables/editor/renderTrigger.js';
 import SaintVLoader from '../common/SaintVLoader.vue';
 import DefaultMap from './DefaultMap.vue';
 import BuildingTool from '../tools/BuildingTool.vue';
@@ -443,6 +456,12 @@ const compassAngle = ref(0);
 // reaktive Kanal-/Zellzahl, von useSgcRasterPreview.js befüllt (siehe initScene()).
 const sgcPreviewVisible = ref(true);
 const sgcPreviewStats = reactive({ channelCount: 0, cellCount: 0 });
+
+// Zeichnet nur noch, wenn es etwas Neues zu zeigen gibt (s. useRenderScheduler).
+// Alles, was die Szene abseits der Kamera verändert, meldet sich über renderTrigger.
+const renderScheduler = useRenderScheduler();
+const _requestRender = (holdMs) => renderScheduler.request(holdMs);
+registerRenderRequester(_requestRender);
 
 // --- THREE.JS OBJECTS ---
 let scene, renderer, controls, animationId;
@@ -723,6 +742,10 @@ const applyLayerMode = (val) => {
     // SGC-Vorschau (sgcPreview) ist NICHT mehr an den Layer-Modus gekoppelt — eigener
     // Ein/Aus-Schalter im SgcPreviewPanel.vue (sgcPreviewVisible-Watcher weiter unten).
     if (bridgeRasterPreview) bridgeRasterPreview.setVisible(val === 'WIREFRAME');
+    // Kanalnetz als AUSNAHME der Tiefenmaske: im WIREFRAME per X-Ray durchs Gelände sichtbar
+    // (Schächte+Haltungen liegen unter Terrain-Niveau); Weir/Brücke bleiben maskiert.
+    if (networkRenderer) networkRenderer.setXray(val === 'WIREFRAME');
+    renderScheduler.request();
 };
 
 watch(activeLayerMode, (val) => applyLayerMode(val));
@@ -796,6 +819,11 @@ onMounted(() => {
     sgcPreview = useSgcRasterPreview(scene, sgcPreviewStats);
     sgcPreview.setVisible(sgcPreviewVisible.value);
 
+    // 3D-Gerinnekörper-Vorschau (Trog entlang der gezeichneten Polylinie): eingebaute
+    // Kanäle cyan, Live-Entwurf (Querschnitt-Popup offen) lime — ergänzt die Zell-
+    // Vorschau oben um die Anschauung „wie sieht das Gerinne aus".
+    useChannelGhostPreview(scene, channelStructureTool.draft);
+
     // Live-Vorschau der gerasterten Brückenzellen + effektiver Öffnungsbreite (Pfeiler
     // sub-grid): zeigt im BRÜCKEN-Werkzeug, was der Solver wirklich rechnet.
     // Nur in der WIREFRAME-Rasteransicht sichtbar (siehe applyLayerMode) — analog SGC-Vorschau.
@@ -830,6 +858,7 @@ onUnmounted(() => {
     if(renderer) renderer.dispose();
     if(controls) controls.dispose();
     if(terrainMesh) {
+        terrainMesh.geometry.disposeBoundsTree?.();
         terrainMesh.geometry.dispose();
         terrainMesh.material.dispose();
     }
@@ -839,6 +868,10 @@ onUnmounted(() => {
     boundaryTool.reset(scene);
     window.removeEventListener('keydown', _handleKeydown);
     window.removeEventListener('flood2d-object-placed', _handleObjectPlaced);
+    // War bisher nicht abgemeldet: jeder Mount hinterließ einen resize-Handler, der auf
+    // einen bereits entsorgten Renderer zugreift.
+    window.removeEventListener('resize', onWindowResize);
+    unregisterRenderRequester(_requestRender);   // keine Anforderungen in eine tote Szene
 });
 
 
@@ -905,9 +938,14 @@ function _rebuildTerrainMesh() {
 
 // --- EVENT HANDLERS ---
 
+// Pointerdown-Position des letzten Primär-Pointers: ein „click" feuert auch nach einem
+// Orbit-Drag — die Kanalnetz-Direktauswahl unten darf solche Drags nicht als Klick werten.
+let _clickDownPos = null;
+
 const handleWrapperClick = (event) => {
+    renderScheduler.request(120);   // Werkzeug-Vorschauen folgen der Eingabe (s. useRenderScheduler)
     if (!renderer || !activeCamera) return;
-    
+
     const context = {
         scene,
         camera: activeCamera,
@@ -920,12 +958,27 @@ const handleWrapperClick = (event) => {
         geoStore,
         simStore // NEW: Pass SimStore for Selection Logic
     };
-    
+
     const res = interactionManager.handleClick(event, context);
     // Actions 'FINISHED' etc are now handled inside useBuildingTool for DRAW
+
+    // Kanalnetz-Direktauswahl: ohne aktives Werkzeug (bzw. im SELECT-Modus) wählt ein Klick
+    // auf Schacht/Haltung das Element — der ScenarioManager schaltet per selectedId-Watcher
+    // auf den Netz-Tab und zeigt das NetworkPropertyPanel. Klick ins Leere wählt ab.
+    // (INFO pickt das Netz weiterhin selbst in handleInfoClick.)
+    const dragged = _clickDownPos &&
+        (Math.abs(event.clientX - _clickDownPos.x) > 5 || Math.abs(event.clientY - _clickDownPos.y) > 5);
+    const toolName = simStore.activeTool;
+    if (!dragged && (!toolName || toolName === 'SELECT') && networkRenderer && networkStore.hasNetwork) {
+        // raycaster wurde in interactionManager.handleClick bereits auf den Klick gesetzt.
+        const netHits = raycaster.intersectObjects(networkRenderer.group.children, false);
+        const picked = networkRenderer.pickFromIntersects(netHits);
+        networkStore.select(picked ? picked.id : null);
+    }
 };
 
 const handleWrapperMove = (event) => {
+    renderScheduler.request(120);   // Werkzeug-Vorschauen folgen der Eingabe (s. useRenderScheduler)
     if (!renderer || !activeCamera) return;
     if (event.isPrimary === false) return; // Zweitfinger (Pinch/Zoom) ignorieren, nur der erste steuert Tools
     const context = {
@@ -935,12 +988,14 @@ const handleWrapperMove = (event) => {
 };
 
 const handleWrapperRightClick = (event) => {
+    renderScheduler.request(120);   // Werkzeug-Vorschauen folgen der Eingabe (s. useRenderScheduler)
     if (!renderer || !activeCamera) return;
     const context = { scene }; 
     interactionManager.handleRightClick(event, context);
 };
 
 const handleWrapperDoubleClick = (event) => {
+    renderScheduler.request(120);   // Werkzeug-Vorschauen folgen der Eingabe (s. useRenderScheduler)
     if (!renderer || !activeCamera) return;
     const context = {
         scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
@@ -949,8 +1004,10 @@ const handleWrapperDoubleClick = (event) => {
 };
 
 const handleWrapperMouseDown = (event) => {
+    renderScheduler.request(120);   // Werkzeug-Vorschauen folgen der Eingabe (s. useRenderScheduler)
     if (!renderer || !activeCamera) return;
     if (event.isPrimary === false) return; // Zweitfinger (Pinch/Zoom) ignorieren, nur der erste steuert Tools
+    _clickDownPos = { x: event.clientX, y: event.clientY }; // Drag-Guard für die Netz-Auswahl (s. handleWrapperClick)
     const context = {
         scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
     };
@@ -958,12 +1015,21 @@ const handleWrapperMouseDown = (event) => {
 };
 
 const handleWrapperMouseUp = (event) => {
+    renderScheduler.request(120);   // Werkzeug-Vorschauen folgen der Eingabe (s. useRenderScheduler)
     if (!renderer || !activeCamera) return;
     if (event.isPrimary === false) return; // Zweitfinger (Pinch/Zoom) ignorieren, nur der erste steuert Tools
     const context = {
-        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore 
+        scene, camera: activeCamera, renderer, container: canvasContainer.value, raycaster, terrainMesh, interactionPlane, parsedData: parsedData.value, geoStore
     };
     interactionManager.handleMouseUp(event, context);
+
+    // Höhen-editierende Striche (Schaufel/Bathy-Pinsel) mutieren die Vertex-Positionen →
+    // BVH-Hüllen nachziehen. refit() ist um Größenordnungen billiger als ein Neubau;
+    // die minimal veraltete Hülle WÄHREND des Strichs ist tolerierbar.
+    const t = simStore.activeTool;
+    if ((t === 'SHOVEL' || t === 'BATHY_BRUSH') && terrainMesh?.geometry?.boundsTree) {
+        terrainMesh.geometry.boundsTree.refit();
+    }
 };
 
 const handleInfoClick = (ctx) => {
@@ -1074,7 +1140,12 @@ const initThreeJS = () => {
 
 const animate = () => {
     animationId = requestAnimationFrame(animate);
-    controls.update();
+
+    // controls.update() liefert true, solange sich die Kamera bewegt — inklusive des
+    // Ausklingens der Dämpfung. Muss JEDES Frame laufen (rechnet die Dämpfung fort),
+    // ist aber reine Mathematik ohne GPU-Kosten.
+    const cameraMoved = controls.update();
+    if (!renderScheduler.tick(cameraMoved)) return;   // nichts Neues → kein Bild
 
     if (activeCamera && controls) {
         if (activeCamera === cameraOrtho) {
@@ -1086,7 +1157,11 @@ const animate = () => {
             const dz = activeCamera.position.z - controls.target.z;
             // Add a small threshold to avoid precision jitter when looking perfectly down
             if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
-                compassAngle.value = Math.atan2(dx, dz) * (180 / Math.PI);
+                // Auf 0,5° gerundet: beim Orbiten schrieb das sonst 60×/s einen neuen
+                // Float in einen reaktiven Ref und rechnete die Kompassnadel jedes Frame
+                // neu. Feiner als ein halbes Grad ist an der Nadel ohnehin nicht sichtbar.
+                const deg = Math.round(Math.atan2(dx, dz) * (180 / Math.PI) * 2) / 2;
+                if (deg !== compassAngle.value) compassAngle.value = deg;
             }
         }
     }
@@ -1096,6 +1171,8 @@ const animate = () => {
 
 const onWindowResize = () => {
     if (!renderer || !canvasContainer.value) return;
+    // Größenwechsel läuft über mehrere Frames nach (Panel-Resize per Drag) → Fenster halten.
+    renderScheduler.request(300);
     const width = canvasContainer.value.clientWidth;
     const height = canvasContainer.value.clientHeight;
     
@@ -1183,6 +1260,7 @@ const setCameraView = (axis) => {
     }
     controls.target.set(0, 0, 0);
     controls.update();
+    renderScheduler.request(500);   // Geometrie + Textur-Uploads laufen einige Frames nach
 };
 
 
@@ -1359,10 +1437,16 @@ const buildTerrainMesh = (result) => {
 
     geometry.computeVertexNormals();
 
+    // BVH über die FINALE Geometrie (nach dem NoData-Index-Filter oben) — beschleunigt
+    // alle Terrain-Raycasts (Zeichnen, Croppen, Schaufel, map-click). Nach Höhen-
+    // Mutationen (Schaufel-Strich) genügt ein refit(), s. handleWrapperMouseUp.
+    geometry.computeBoundsTree();
+
     const material = createTerrainMaterial(minZ, maxZ, { width: displayWidth, height: displayHeight }, cellsize);
 
     if (terrainMesh) {
          scene.remove(terrainMesh);
+         terrainMesh.geometry.disposeBoundsTree();
          terrainMesh.geometry.dispose();
          terrainMesh.material.dispose();
     }

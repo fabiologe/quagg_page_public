@@ -88,9 +88,6 @@
                 @show-details="handleShowDetails"
             />
         </div>
-
-        <!-- Message Ticker -->
-        <MessageTicker />
     </div>
 
     <!-- Tutorial-Maskottchen (Kanaltaucher-Ratte): eigenes Modul in ../tutorial/ -->
@@ -132,7 +129,6 @@
 import { ref, computed } from 'vue';
 import { useIsybauStore } from '../store/index.js';
 import { sampleTerrainAt } from '../utils/terrainSampling.js';
-import { useEzgLayer } from '../composables/useEzgLayer.js';
 import Sidebar from '../components/panels/Sidebar.vue';
 import SimulationControls from '../components/panels/SimulationControls.vue';
 import IsybauEditor from '../components/editor/IsybauEditor.vue';
@@ -142,23 +138,12 @@ import IsybauViewer3D from '../components/visualizer/IsybauViewer3D.vue';
 
 // Modals + deren Verdrahtung leben zentral in IsybauModals.vue (store.ui.*)
 import IsybauModals from '../components/modals/IsybauModals.vue';
-import MessageTicker from '../components/ui/MessageTicker.vue';
 import TutorialMascot from '../tutorial/TutorialMascot.vue';
 import '../styles/theme.css';
 
 const store = useIsybauStore();
 const viewMode = ref('2d');
 const autoResultsFor3d = ref(false);
-const ezgLayer = useEzgLayer();
-
-// Terrarium-Höhenlinien (30m, aus der EZG-Karte) sind gegenstandslos, sobald
-// ein eigenes, präziseres DGM hochgeladen wurde — useEzgLayer.js unterdrückt
-// künftige Nachlade-/Neuberechnungs-Aufrufe bereits selbst (contoursSuppressed()),
-// hier zusätzlich die BEREITS gezeichneten Linien einmalig wegwischen, sonst
-// blieben sie bis zum nächsten Pan/Intervall-Wechsel sichtbar stehen.
-watch(() => store.terrain, (terrain) => {
-  if (terrain) ezgLayer.clearContours();
-});
 
 const hasResults = computed(() => !!store.simulation.results);
 

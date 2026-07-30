@@ -160,7 +160,7 @@ export function maskGridByPolygon(gridData, header, polygon) {
             if (result[idx] <= -9000) continue;   // already NODATA – skip
 
             const cx = xll + col * cellsize;      // world X of cell centre
-            if (!_pointInPolygon(cx, cy, polygon)) {
+            if (!pointInPolygon(cx, cy, polygon)) {
                 result[idx] = nodata;
                 masked++;
             }
@@ -174,8 +174,10 @@ export function maskGridByPolygon(gridData, header, polygon) {
 /**
  * Ray-casting Point-in-Polygon test (same algorithm as Rasterizer.js).
  * Polygon vertices: array of {x, y} in world coords.
+ * Exportiert: auch der Netz-Zuschnitt (useNetworkStore.cropOutside via usePolygonCropTool)
+ * nutzt exakt denselben Test — Raster-Maske und Netz-Loeschung bleiben deckungsgleich.
  */
-function _pointInPolygon(px, py, polygon) {
+export function pointInPolygon(px, py, polygon) {
     let inside = false;
     const n = polygon.length;
     for (let i = 0, j = n - 1; i < n; j = i++) {

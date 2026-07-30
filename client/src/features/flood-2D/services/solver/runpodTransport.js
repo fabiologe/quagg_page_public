@@ -65,14 +65,19 @@ export function createRunpodTransport({ apiKey, endpointId, baseUrl = DEFAULT_BA
     const json = (res) => res.json();
 
     return {
-        /** @param {Object} input Job-Input (Dateien, maxTime, ...) → { id, status } */
-        async runJob(input) {
+        /**
+         * @param {Object} input Job-Input (Dateien, maxTime, ...)
+         * @param {string} [launchPassword] Kosten-Gate des quagg-Backends (router.py
+         *   prüft das VOR dem Anlegen des Jobs — geht nicht an api.runpod.ai).
+         * @returns { id, status }
+         */
+        async runJob(input, launchPassword) {
             // /run nur einmal senden (Idempotenz via clientJobToken im Input);
             // Netz-Retry würde sonst doppelte Jobs erzeugen.
             const res = await fetchWithRetry(`${base}/run`, {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ input })
+                body: JSON.stringify({ input, launchPassword })
             }, { retryable: false });
             return json(res);
         },

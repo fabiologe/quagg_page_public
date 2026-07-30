@@ -1,0 +1,354 @@
+/* ==========================================================================
+   flood-3D Theme — DarkBlue/Black, modern, flüssig.
+   Gilt für PreViewer und PostViewer (beide Views importieren diese Datei).
+   Diagramm- und Feldfarben (uPlot/vtk) bleiben die validierte
+   dataviz-Palette — das Theme stylt nur die Oberfläche.
+   ========================================================================== */
+
+.f3d-root {
+  --f3d-bg: #070b14;
+  --f3d-bg-2: #0a101f;
+  --f3d-surface: #0e1526;
+  --f3d-surface-2: #131c33;
+  --f3d-border: #1c2a47;
+  --f3d-border-strong: #2c4370;
+  --f3d-text: #e9eefb;
+  --f3d-text-2: #8fa0c2;
+  --f3d-accent: #4d9fff;
+  --f3d-accent-deep: #2563eb;
+  --f3d-good: #2dd4a0;
+  --f3d-bad: #ff6b6b;
+  --f3d-warn: #e8a13c;
+  --f3d-radius: 10px;
+  --f3d-glow: 0 0 0 1px rgba(77, 159, 255, 0.28), 0 6px 24px rgba(37, 99, 235, 0.18);
+
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background:
+    radial-gradient(1100px 500px at 85% -10%, rgba(37, 99, 235, 0.13), transparent 60%),
+    radial-gradient(900px 420px at -10% 110%, rgba(23, 63, 141, 0.12), transparent 55%),
+    linear-gradient(180deg, var(--f3d-bg-2), var(--f3d-bg));
+  color: var(--f3d-text);
+  font-family: 'Inter', system-ui, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+/* dezente, fließende Akzentlinie am oberen Rand — Signatur des Werkzeugs */
+.f3d-root::before {
+  content: '';
+  height: 2px;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, transparent, #1d4ed8 18%, #4d9fff 42%,
+    #7dd3fc 55%, #4d9fff 68%, #1d4ed8 85%, transparent);
+  background-size: 220% 100%;
+  animation: f3d-flow 14s linear infinite;
+  opacity: 0.85;
+}
+
+@keyframes f3d-flow {
+  from { background-position: 0% 0; }
+  to { background-position: 220% 0; }
+}
+
+@keyframes f3d-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --------------------------------------------------------------- Kopf --- */
+
+.f3d-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--f3d-border);
+  background: rgba(10, 16, 31, 0.75);
+  backdrop-filter: blur(10px);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.f3d-header-title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.f3d-header-title h1 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.f3d-brand {
+  font-weight: 800;
+  font-size: 1.02rem;
+  letter-spacing: 0.02em;
+  background: linear-gradient(90deg, #7dd3fc, #4d9fff 55%, #2563eb);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  white-space: nowrap;
+}
+.f3d-back {
+  color: var(--f3d-text-2);
+  text-decoration: none;
+  font-size: 1.1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+.f3d-back:hover { color: var(--f3d-accent); transform: translateX(-2px); }
+
+/* Tabs: Unterstrich-Glow, flüssiger Wechsel */
+.f3d-tabs { display: flex; gap: 2px; flex-wrap: wrap; }
+.f3d-tab {
+  position: relative;
+  background: none;
+  border: none;
+  color: var(--f3d-text-2);
+  padding: 8px 13px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+.f3d-tab::after {
+  content: '';
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #4d9fff, #7dd3fc);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition: opacity 0.18s ease, transform 0.22s ease;
+}
+.f3d-tab:hover { color: var(--f3d-text); background: rgba(77, 159, 255, 0.06); }
+.f3d-tab.active { color: var(--f3d-text); }
+.f3d-tab.active::after { opacity: 1; transform: scaleX(1); }
+.f3d-tab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--f3d-warn);
+  color: #14100a;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 16px;
+  animation: f3d-pulse 1.4s ease-in-out infinite;
+}
+
+/* --------------------------------------------------------------- Layout - */
+
+.f3d-body { display: flex; flex: 1; min-height: 0; }
+.f3d-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--f3d-border);
+  background: rgba(10, 16, 31, 0.45);
+}
+.f3d-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+.f3d-content > * { animation: f3d-in 0.28s ease both; }
+
+/* ---------------------------------------------------------- Bausteine --- */
+
+.f3d-card {
+  background: linear-gradient(180deg, rgba(19, 28, 51, 0.6), rgba(12, 18, 34, 0.85));
+  border: 1px solid var(--f3d-border);
+  border-radius: var(--f3d-radius);
+  padding: 14px 16px;
+  transition: border-color 0.18s ease, box-shadow 0.2s ease;
+}
+.f3d-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.f3d-card-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--f3d-text);
+  letter-spacing: 0.01em;
+}
+
+.f3d-table-wrap { overflow-x: auto; }
+.f3d-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.f3d-table th {
+  text-align: left;
+  color: var(--f3d-text-2);
+  font-weight: 550;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--f3d-border-strong);
+  white-space: nowrap;
+}
+.f3d-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--f3d-border);
+  color: var(--f3d-text);
+  vertical-align: top;
+}
+.f3d-table tbody tr { transition: background 0.14s ease; }
+.f3d-table tbody tr:hover { background: rgba(77, 159, 255, 0.05); }
+.f3d-table tr:last-child td { border-bottom: none; }
+
+/* Badges (Bewertung) und Chips (Status) mit Punkt */
+.f3d-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 550;
+  white-space: nowrap;
+  border: 1px solid var(--f3d-border-strong);
+  color: var(--f3d-text-2);
+  background: rgba(28, 42, 71, 0.35);
+}
+.f3d-badge.res-erfuellt {
+  color: var(--f3d-good);
+  border-color: rgba(45, 212, 160, 0.5);
+  background: rgba(45, 212, 160, 0.08);
+}
+.f3d-badge.res-nicht_erfuellt {
+  color: var(--f3d-bad);
+  border-color: rgba(255, 107, 107, 0.5);
+  background: rgba(255, 107, 107, 0.08);
+}
+.f3d-badge.res-informativ {
+  color: var(--f3d-accent);
+  border-color: rgba(77, 159, 255, 0.5);
+  background: rgba(77, 159, 255, 0.08);
+}
+
+.f3d-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 550;
+  border: 1px solid var(--f3d-border-strong);
+  color: var(--f3d-text-2);
+  background: rgba(28, 42, 71, 0.35);
+  white-space: nowrap;
+}
+.f3d-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.9;
+}
+.f3d-chip.status-completed { color: var(--f3d-good); border-color: rgba(45, 212, 160, 0.45); }
+.f3d-chip.status-failed { color: var(--f3d-bad); border-color: rgba(255, 107, 107, 0.45); }
+.f3d-chip.status-building, .f3d-chip.status-meshing,
+.f3d-chip.status-solving, .f3d-chip.status-extracting,
+.f3d-chip.status-converting_fields {
+  color: var(--f3d-warn);
+  border-color: rgba(232, 161, 60, 0.45);
+}
+.f3d-chip.status-building::before, .f3d-chip.status-meshing::before,
+.f3d-chip.status-solving::before, .f3d-chip.status-extracting::before,
+.f3d-chip.status-converting_fields::before {
+  animation: f3d-pulse 1.4s ease-in-out infinite;
+}
+@keyframes f3d-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* Buttons: Sekundär als Umriss, Primär mit Verlaufs-Glow */
+.f3d-btn {
+  background: rgba(19, 28, 51, 0.6);
+  border: 1px solid var(--f3d-border-strong);
+  border-radius: 8px;
+  color: var(--f3d-text);
+  padding: 6px 12px;
+  font-size: 0.79rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.18s ease,
+    background 0.16s ease, transform 0.12s ease;
+}
+.f3d-btn:hover:not(:disabled) {
+  border-color: var(--f3d-accent);
+  background: rgba(37, 99, 235, 0.14);
+  box-shadow: 0 0 12px rgba(77, 159, 255, 0.18);
+}
+.f3d-btn:active:not(:disabled) { transform: translateY(1px); }
+.f3d-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.f3d-btn-primary, .f3d-btn-run {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: rgba(125, 211, 252, 0.35);
+  color: #fff;
+}
+.f3d-btn-primary:hover:not(:disabled), .f3d-btn-run:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3b76f0, #2458e6);
+  box-shadow: var(--f3d-glow);
+  border-color: rgba(125, 211, 252, 0.55);
+}
+
+/* Eingaben */
+.f3d-select, .f3d-num, textarea.f3d-json {
+  background: rgba(7, 11, 20, 0.7);
+  color: var(--f3d-text);
+  border: 1px solid var(--f3d-border-strong);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 0.8rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.f3d-select:focus, .f3d-num:focus, textarea.f3d-json:focus {
+  outline: none;
+  border-color: var(--f3d-accent);
+  box-shadow: 0 0 0 3px rgba(77, 159, 255, 0.15);
+}
+.f3d-root input[type='range'] { accent-color: var(--f3d-accent); }
+.f3d-root input[type='checkbox'] { accent-color: var(--f3d-accent-deep); }
+
+.f3d-muted { color: var(--f3d-text-2); }
+.f3d-small { font-size: 0.72rem; }
+.f3d-error {
+  color: var(--f3d-bad);
+  font-size: 0.82rem;
+  background: rgba(255, 107, 107, 0.07);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+/* Scrollbars */
+.f3d-root *::-webkit-scrollbar { width: 9px; height: 9px; }
+.f3d-root *::-webkit-scrollbar-track { background: transparent; }
+.f3d-root *::-webkit-scrollbar-thumb {
+  background: #1e2c4c;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.f3d-root *::-webkit-scrollbar-thumb:hover { background-color: #2c4370; }
+.f3d-root * { scrollbar-width: thin; scrollbar-color: #1e2c4c transparent; }
+
+/* uPlot-Legenden an das Theme angleichen */
+.f3d-root .u-legend { color: var(--f3d-text-2); }
+.f3d-root .u-legend .u-value { color: var(--f3d-text); }

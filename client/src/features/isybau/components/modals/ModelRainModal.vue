@@ -250,6 +250,15 @@ const apply = () => {
   cursor: move;
 }
 
+.modal-header h3 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0;
+  color: #aeadd2;
+}
+
 .close-btn {
   background: none;
   border: none;

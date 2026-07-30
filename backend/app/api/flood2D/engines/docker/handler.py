@@ -25,6 +25,7 @@ Läuft mit python3-minimal (nur stdlib).
 """
 import argparse
 import json
+import os
 import re
 import signal
 import struct
@@ -716,6 +717,20 @@ def main():
             out.write_bytes(buf)
             processed.add(path.name)
             emit("frame", frame=frame_no, file=out.name, min=dmin, max=dmax, time=frame_time)
+            # ASCII-Quellen des Frames SOFORT löschen — das .bin ist ab hier die Wahrheit.
+            # Ohne das blieben pro Speicherschritt 7-8 ASCII-Raster liegen (bei einem
+            # 1680×1583-Raster ~190 MB je Frame → ein 2-h-Lauf ~23 GB, Platte voll
+            # MITTEN im Lauf; Fund 2026-07-28). Summen-/Max-Raster (res.max/.mxe/
+            # .maxHaz/.maxVc/…) und res.mass sind frameNUMMERN-frei und bleiben.
+            # QUAGG_KEEP_ASCII=1 (docker run -e …) behält alles fürs Debugging.
+            if os.environ.get("QUAGG_KEEP_ASCII") != "1":
+                for suffix in (".wd", ".elev", ".Vx", ".Vy", ".Qx", ".Qy",
+                               ".SGCVx", ".SGCVy", ".SGCVc"):
+                    src = results / f"{resroot}-{frame_no:04d}{suffix}"
+                    try:
+                        src.unlink(missing_ok=True)
+                    except OSError:
+                        pass   # z. B. noch offen — dann räumt der nächste Job-Prune
 
     while proc.poll() is None:
         time.sleep(POLL_S)

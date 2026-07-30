@@ -102,6 +102,8 @@ function couplingSchemeOk(par) {
     return { ok: true };
 }
 
+
+
 /**
  * Reichert baseFiles um die Kopplung an. Rein — keine Vue-Abhängigkeit.
  * @param {Record<string,string>} baseFiles  Ergebnis von InputGenerator.processScenario (inkl. terrain.asc, run.par)
@@ -119,14 +121,22 @@ export function buildCoupledFiles(baseFiles, model, opts = {}) {
 
     const scheme = couplingSchemeOk(baseFiles['run.par']);
     if (!scheme.ok) { warnings.push(`Kopplung deaktiviert: ${scheme.reason}.`); return off(); }
+    // SGC + Kopplung: seit quagg-coupling-sgc-hook.patch (2026-07-28, lisflood-fp:latest)
+    // läuft der 1D/2D-Austausch auch in der SGC-Zeitschleife (Fast_MainStart) — die
+    // frühere Warnung „SGC aktiv → Kopplung tauscht 0 m³" ist damit Geschichte
+    // (verifiziert: engines/docker/test_coupling_sgc.py).
 
     const dem = parseAscGrid(terrain);
     // sgc.width.asc (falls vorhanden) teilt exakt Raster-Dimensionen/-Ausrichtung mit
     // terrain.asc (beide über Rasterizer.gridToASC geschrieben) — direkt per col/row nutzbar.
     const sgcWidthGrid = baseFiles['sgc.width.asc'] ? parseAscGrid(baseFiles['sgc.width.asc']).grid : null;
+    // Sohlhöhenraster: auf Gerinnezellen ist die Kanalsohle die Bezugshöhe des Wassers,
+    // nicht die Bankoberkante — der Solver rechnet dort SGCz+H (cell_zref in coupling.cpp),
+    // der Detector klemmt die Deckelhöhen entsprechend.
+    const sgcBedGrid = baseFiles['sgc.bed.asc'] ? parseAscGrid(baseFiles['sgc.bed.asc']).grid : null;
     const { files: coupFiles, warnings: cw, couplingNodes, diagnostics } =
         buildCoupledInputsFromModel(model, dem,
-            { ...opts, sgcWidthGrid, swmm: syncedSwmmOptions(baseFiles['run.par'], opts.swmm) });
+            { ...opts, sgcWidthGrid, sgcBedGrid, swmm: syncedSwmmOptions(baseFiles['run.par'], opts.swmm) });
     warnings.push(...cw);
 
     if (!couplingNodes || couplingNodes.length === 0) {

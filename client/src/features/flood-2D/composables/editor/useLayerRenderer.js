@@ -3,6 +3,7 @@ import { watch, onUnmounted, ref } from 'vue';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useHydraulicStore } from '../../stores/useHydraulicStore.js';
 import { RENDER_ORDER } from './renderLayers.js';
+import { requestRender } from './renderTrigger.js';
 import { InputGenerator } from '../../middleware/InputGenerator.js';
 import { useBoundaryArrows } from '../viewer/useBoundaryArrows.js';
 import { buildBridge3DGeometry, buildPierGeometry } from '../../utils/Bridge3DGeometry.js';
@@ -450,7 +451,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
 
         applyChildOrder(buildingGroup, RENDER_ORDER.BUILDINGS);
         applyChildOrder(boundaryGroup, RENDER_ORDER.BOUNDARY_LINES);
-        console.log(`[LayerRenderer] Rendered ${buildingGroup.children.length} buildings, ${boundaryGroup.children.length} boundaries.`);
+        console.debug(`[LayerRenderer] Rendered ${buildingGroup.children.length} buildings, ${boundaryGroup.children.length} boundaries.`);
     };
 
     // --- HYDRAULIC / BOUNDARY VISUALIZATION ---
@@ -600,9 +601,9 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             const m = weirGroup.children[0];
             const h = m.geometry?.parameters?.height;
             const terrMaxZ = grid ? grid.maxZ : 0;
-            console.log(`[LayerRenderer][DIAG] Weir[0] Y=${m.position.y.toFixed(2)} boxH=${typeof h === 'number' ? h.toFixed(2) : '?'} | Terrain lokal 0..${(terrMaxZ - terrainMinZ).toFixed(2)} (minZ=${terrainMinZ}, maxZ=${terrMaxZ})`);
+            console.debug(`[LayerRenderer][DIAG] Weir[0] Y=${m.position.y.toFixed(2)} boxH=${typeof h === 'number' ? h.toFixed(2) : '?'} | Terrain lokal 0..${(terrMaxZ - terrainMinZ).toFixed(2)} (minZ=${terrainMinZ}, maxZ=${terrMaxZ})`);
         }
-        console.log(`[LayerRenderer] Rendered ${geoStore.weirs.length} weirs.`);
+        console.debug(`[LayerRenderer] Rendered ${geoStore.weirs.length} weirs.`);
     };
 
     const renderBridge3D = (bridge, grid) => {
@@ -700,7 +701,7 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
         const firstMesh = bridgeGroup.children[0];
         const firstPos = firstMesh ? `(${firstMesh.position.x.toFixed(1)}, ${firstMesh.position.y.toFixed(1)}, ${firstMesh.position.z.toFixed(1)})` : 'none';
         applyChildOrder(bridgeGroup, RENDER_ORDER.BRIDGES);
-        console.log(`[LayerRenderer] Rendered ${geoStore.bridges.length} bridge(s) → ${bridgeGroup.children.length} meshes, firstPos=${firstPos}, gridCenter=${getActiveGrid()?.center ? 'ok' : 'MISSING'}`);
+        console.debug(`[LayerRenderer] Rendered ${geoStore.bridges.length} bridge(s) → ${bridgeGroup.children.length} meshes, firstPos=${firstPos}, gridCenter=${getActiveGrid()?.center ? 'ok' : 'MISSING'}`);
     };
 
     // --- SELECTION HIGHLIGHT ---
@@ -779,19 +780,28 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
             if (jobs.has('weirs'))      renderWeirs();
             if (jobs.has('bridges'))    renderBridges();
             if (jobs.has('selection') && simStoreArg) renderSelectionHighlight(simStoreArg);
+            requestRender();   // Szene verändert → Editor braucht ein neues Bild
         });
     }
 
+    // Datenänderungen kommen über geoStore.revisions (Zähler je Gruppe) statt über
+    // deep-Watcher auf den Arrays: Vues Deep-Traversal kostete bei 2000 Gebäuden ~228 ms
+    // PRO Änderung, allein fürs Nachziehen der Abhängigkeiten (gemessen mit leerem
+    // Callback). Der Store meldet jede Mutation über touch() — auch In-Place-Änderungen,
+    // die ein flacher Watcher übersehen würde (s. test_geostore_revisions.mjs).
+
     // Buildings + Boundaries (Footprints)
-    watch([() => geoStore.buildings.features, () => geoStore.boundaries.features],
-          () => schedule('buildings'), { deep: true, immediate: true });
+    // ARRAY VON GETTERN, nicht Getter-auf-Array: ein Getter, der ein Array-Literal
+    // zurückgibt, liefert jedes Mal eine neue Referenz — Vue hielte das immer für
+    // geändert und würde den Layer bei JEDER fremden Revision mit neu bauen.
+    watch([() => geoStore.revisions.mod, () => geoStore.revisions.boundary],
+          () => schedule('buildings'), { immediate: true });
 
     // Weirs
-    watch(() => geoStore.weirs,        () => schedule('weirs'), { deep: true, immediate: true });
-    watch(() => geoStore.weirLines,    () => schedule('weirs'), { deep: true });
-    watch(() => weir3DState.editingId, () => schedule('weirs')); // Edit-Linie aus-/einblenden
+    watch(() => geoStore.revisions.weir, () => schedule('weirs'), { immediate: true });
+    watch(() => weir3DState.editingId,   () => schedule('weirs')); // Edit-Linie aus-/einblenden
     // Bridges
-    watch(() => geoStore.bridges,      () => schedule('bridges'), { deep: true, immediate: true });
+    watch(() => geoStore.revisions.bridge, () => schedule('bridges'), { immediate: true });
 
     // Grid-Offset (Store ODER Preview) → alle Layer neu positionieren
     if (gridRef) {
@@ -799,9 +809,11 @@ export function useLayerRenderer(scene, geoStoreArg = null, gridRef = null, simS
     }
     watch(() => geoStore.terrain, () => schedule('offset', 'buildings', 'hydraulics', 'weirs', 'bridges'), { deep: true });
 
-    // Hydraulik (Pfeil-Vorschau): Assignments, Boundaries
+    // Hydraulik (Pfeil-Vorschau): Assignments, Boundaries.
+    // assignments bleibt bei deep — es ist ein flaches Wörterbuch je Objekt-ID und wird
+    // von Komponenten direkt beschrieben (kein Store-Mutator, der melden könnte).
     watch(() => hydraulicStore.assignments, () => schedule('hydraulics'), { deep: true, immediate: true });
-    watch(() => geoStore.boundaries, () => schedule('hydraulics'), { deep: true });
+    watch(() => geoStore.revisions.boundary, () => schedule('hydraulics'));
 
     // Selektion
     if (simStoreArg) {

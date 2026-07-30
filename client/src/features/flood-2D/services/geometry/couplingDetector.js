@@ -93,7 +93,7 @@ function hasCoveredLink(model, nodeId) {
  * @returns {{couplingNodes:Array, warnings:string[], diagnostics:Array}}
  */
 export function detectCouplingNodes(model, dem, opts = {}) {
-    const { snapRadius = 3, Cw = 1.0, Amax = 0, sgcWidthGrid = null } = opts;
+    const { snapRadius = 3, Cw = 1.0, Amax = 0, sgcWidthGrid = null, sgcBedGrid = null } = opts;
     const { grid, header } = dem;
     const couplingNodes = [];
     const warnings = [];
@@ -116,11 +116,15 @@ export function detectCouplingNodes(model, dem, opts = {}) {
             warnings.push(`Knoten ${n.id} liegt außerhalb des DEM — nicht koppelbar.`);
             continue;
         }
-        if (sgcWidthGrid && at(sgcWidthGrid, col, row, header) > 0) {
-            warnings.push(`Knoten ${n.id} liegt auf einer SGC-Kanalzelle (${col},${row}) — `
-                + `2D-Kopplung hier übersprungen (Solver liest dort keine SGC-korrigierte Tiefe).`);
-            continue;
-        }
+        // Knoten auf SGC-Gerinnezellen sind seit quagg-coupling-sgc-hook.patch (2026-07-28)
+        // vollwertig koppelbar — das ist der häufigste Fall überhaupt (Rohrnetz mündet ins
+        // Gerinne). Der Solver-Hook (Coupling_RegisterFastGrid/Coupling_UpdateFast in
+        // coupling.cpp) bucht dort über volume_grid mit korrektem Sohl-Datum; verifiziert
+        // in engines/docker/test_coupling_sgc.py. Historie: bis dahin lief die Kopplung
+        // bei aktivem SGC GAR NICHT (Coupling_Update hing nur in IterateQ, der SGC-Pfad
+        // Fast_MainStart hatte keinen Hook) — deshalb war hier ein Ausschluss.
+        // onSgcCell steuert nur noch die Deckel-Klemmung (zRef = Kanalsohle) + Diagnose.
+        const onSgcCell = !!(sgcWidthGrid && at(sgcWidthGrid, col, row, header) > 0);
         const nodata = header.NODATA_value ?? -9999;
         const demZ = at(grid, col, row, header);
         if (demZ === nodata || !Number.isFinite(demZ)) {
@@ -128,16 +132,27 @@ export function detectCouplingNodes(model, dem, opts = {}) {
                 + `(Austausch dort würde Wasser außerhalb des Geländes erzeugen).`);
             continue;
         }
+        // Bezugshöhe der Zelle — Spiegelbild von cell_zref() in coupling.cpp: auf einer
+        // Gerinnezelle steht das Wasser auf der KANALSOHLE, nicht auf der Bankoberkante.
+        // Ohne diese Unterscheidung würde die Klemmung unten den Auslauf eines Rohrs, das
+        // in ein Gerinne mündet, auf Bankniveau hochziehen — er könnte dann erst abgeben,
+        // wenn das Netz über Geländeoberkante unter Druck steht. Der Solver klemmt die
+        // Sohle auf höchstens DEM−0,01 (sgc.cpp, SGCbed-Zweig); hier gleich mitgeführt.
+        let zRef = demZ;
+        if (onSgcCell && sgcBedGrid) {
+            const bedZ = at(sgcBedGrid, col, row, header);
+            if (Number.isFinite(bedZ) && bedZ !== nodata) zRef = Math.min(bedZ, demZ - 0.01);
+        }
         // Deckelhöhe plausibilisieren: fehlendes coverZ fällt im Adapter auf 0 zurück —
-        // ein rim unter Geländehöhe würde im Solver Dauereinzug erzeugen (Wasser
+        // ein rim unter der Bezugshöhe würde im Solver Dauereinzug erzeugen (Wasser
         // "verschwindet" im Netz und taucht als Überstau an anderer Stelle wieder auf).
         let rim = Number(n.geom.rim);
-        if (!Number.isFinite(rim) || rim < demZ - 0.02) {
+        if (!Number.isFinite(rim) || rim < zRef - 0.02) {
             if (Number.isFinite(rim) && rim !== 0) {
-                warnings.push(`Knoten ${n.id}: Deckelhöhe ${rim.toFixed(2)} liegt unter Gelände `
-                    + `(${demZ.toFixed(2)}) — auf Geländehöhe gesetzt.`);
+                warnings.push(`Knoten ${n.id}: Deckelhöhe ${rim.toFixed(2)} liegt unter der `
+                    + `Bezugshöhe (${zRef.toFixed(2)}${onSgcCell ? ', Gerinnesohle' : ''}) — angehoben.`);
             }
-            rim = demZ;
+            rim = zRef;
         }
         const cls = classifyCell(grid, col, row, header);
         let quality = cls === 'sink' ? 'sink' : cls === 'ridge' ? 'ridge' : 'flat';
@@ -162,7 +177,7 @@ export function detectCouplingNodes(model, dem, opts = {}) {
             Cw: n.attrs.Cw ?? Cw, Amax: n.attrs.Amax ?? Amax,
             sink: fedBySink, quality, cell: { col, row }, sinkCell,
         });
-        diagnostics.push({ id: n.id, cell: { col, row }, quality, fedBySink });
+        diagnostics.push({ id: n.id, cell: { col, row }, quality, fedBySink, onSgcCell });
     }
     return { couplingNodes, warnings, diagnostics };
 }

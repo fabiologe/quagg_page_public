@@ -71,6 +71,26 @@ describe('marchingSquares', () => {
         );
         expect(touchesTopLeftCorner).toBe(true);
     });
+
+    // NoData (NaN) — relevant für hochgeladene DGMs (xyzTerrainImporter.js:
+    // NODATA-Zellen außerhalb der Vermessung), Terrarium-Raster haben nie NaN.
+    it('NaN-Zellen fließen nicht in min/max ein (sonst falsche Levels durch NODATA-Sentinel)', () => {
+        const width = 3, height = 2;
+        // Eine NaN-Ecke oben rechts — ohne NaN-Ausschluss würde min/max sonst
+        // von einem echten NODATA-Sentinel (z.B. -9999) dominiert.
+        const raster = new Float32Array([10, 20, NaN, 10, 20, 30]);
+        const segments = marchingSquares(raster, width, height, 5);
+        const levels = [...new Set(segments.map((s) => s.elevation))].sort((a, b) => a - b);
+        // Bei korrektem NaN-Ausschluss bleibt der reale Wertebereich 10..30 maßgeblich.
+        expect(Math.min(...levels)).toBeGreaterThanOrEqual(10);
+        expect(Math.max(...levels)).toBeLessThanOrEqual(30);
+    });
+
+    it('Zellen mit einem NaN-Eckpunkt werden komplett übersprungen (keine Steilklippen-Kontur an der NODATA-Grenze)', () => {
+        const width = 2, height = 2;
+        const raster = new Float32Array([10, NaN, 10, 10]);
+        expect(marchingSquares(raster, width, height, 5)).toEqual([]);
+    });
 });
 
 describe('segmentsToLocalCoords', () => {

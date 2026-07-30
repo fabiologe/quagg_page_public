@@ -19,10 +19,10 @@
       <span class="toggle-dot" />
       <span class="toggle-label">Flächen</span>
     </label>
-    <label v-if="hasTerrain" class="ctrl-toggle" title="Gelände (DGM) ein-/ausblenden">
+    <label v-if="hasTerrain" class="ctrl-toggle" :title="terrainToggleTitle">
       <input type="checkbox" :checked="showTerrain" @change="$emit('update:showTerrain', $event.target.checked)" />
       <span class="toggle-dot" />
-      <span class="toggle-label">Gelände</span>
+      <span class="toggle-label">Gelände{{ terrainSource === 'api' ? ' (API, ~30m)' : '' }}</span>
     </label>
 
     <div class="ctrl-divider" />
@@ -69,18 +69,29 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue';
+
+const props = defineProps({
   showNodes:      { type: Boolean, default: true  },
   showEdges:      { type: Boolean, default: true  },
   showAreas:      { type: Boolean, default: true  },
   showTerrain:    { type: Boolean, default: true  },
   hasTerrain:     { type: Boolean, default: false },
+  // 'manual' (hochgeladenes DGM) | 'api' (Terrarium-Fallback, ~30m) | null
+  terrainSource:  { type: String,  default: null  },
   showResults:    { type: Boolean, default: false },
   showWaterLevel: { type: Boolean, default: true  },
   zScale:         { type: Number,  default: 1     },
   hasResults:     { type: Boolean, default: false },
 });
 defineEmits(['reset-view', 'update:showNodes', 'update:showEdges', 'update:showAreas', 'update:showTerrain', 'update:showResults', 'update:showWaterLevel', 'update:zScale']);
+
+const terrainToggleTitle = computed(() => {
+  if (props.terrainSource === 'api') {
+    return 'Gelände ein-/ausblenden — automatisch aus Terrarium-Höhendaten (~30m, ungenau), kein eigenes DGM hochgeladen';
+  }
+  return 'Gelände (DGM) ein-/ausblenden';
+});
 </script>
 
 <style scoped>

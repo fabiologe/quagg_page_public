@@ -103,7 +103,9 @@ function trigger(name, context) {
   // Rückfrage/Kill-Sequenz nicht durch reaktive Kommentare unterbrechen
   if (activeStep.value?.kind) return;
   if (tourActive.value) {
-    if (activeStep.value?.advanceOn === name) next();
+    const advanceOn = activeStep.value?.advanceOn;
+    const matches = Array.isArray(advanceOn) ? advanceOn.includes(name) : advanceOn === name;
+    if (matches) next();
     return;
   }
   const step = REACTIVE_STEPS[name];

@@ -107,7 +107,7 @@ grid[2 * N + 2] = 12.0;
        'Warnung: Rücken-Knoten fängt kein Oberflächenwasser');
 }
 
-console.log('2b) Coupling-Detektor: zellengenaue SGC-Sperre + Gerinne-only-Ausschluss');
+console.log('2b) Coupling-Detektor: SGC-Zellen koppeln (seit Solver-Hook 2026-07-28) + Gerinne-only-Ausschluss');
 {
     const sinkX = header.xllcorner + (sinkCol + 0.5) * CS;
     const sinkY = header.yllcorner + (header.nrows - 1 - sinkRow + 0.5) * CS;
@@ -123,9 +123,14 @@ console.log('2b) Coupling-Detektor: zellengenaue SGC-Sperre + Gerinne-only-Aussc
     model.addLink({ id: 'C1', fromNodeId: 'MH_sink', toNodeId: 'MH_ridge', length: 20, profile: { shape: 'circular', height: 0.3 } });
 
     const { couplingNodes, warnings } = detectCouplingNodes(model, { grid, header }, { sgcWidthGrid });
-    ok(!couplingNodes.some(c => c.id === 'MH_sink'), 'Knoten auf SGC-Kanalzelle wird übersprungen (MH_sink)');
-    ok(couplingNodes.some(c => c.id === 'MH_ridge'), 'Knoten NICHT auf SGC-Zelle bleibt gekoppelt (MH_ridge), auch wenn andernorts SGC existiert');
-    ok(warnings.some(w => w.includes('MH_sink') && w.includes('SGC-Kanalzelle')), 'Warnung nennt MH_sink + SGC-Kanalzelle');
+    // Seit quagg-coupling-sgc-hook.patch koppelt der Solver auch auf Gerinnezellen
+    // (Buchung über volume_grid, Sohl-Datum) — der frühere Zell-Ausschluss ist aufgehoben.
+    ok(couplingNodes.some(c => c.id === 'MH_sink'), 'Knoten auf SGC-Kanalzelle IST gekoppelt (MH_sink, kein Ausschluss mehr)');
+    ok(couplingNodes.some(c => c.id === 'MH_ridge'), 'Knoten neben der SGC-Zelle ebenfalls gekoppelt (MH_ridge)');
+    ok(!warnings.some(w => w.includes('SGC-Kanalzelle')), 'keine SGC-Ausschluss-Warnung mehr');
+    const sgcDiag = (detectCouplingNodes(model, { grid, header }, { sgcWidthGrid }).diagnostics || [])
+        .find(d => d.id === 'MH_sink');
+    ok(!!sgcDiag && sgcDiag.onSgcCell === true, 'Diagnose markiert MH_sink als Gerinnezellen-Kopplung (onSgcCell)');
 
     // Knoten mit ausschließlich offenem Gerinne (kein Rohr ins SWMM-Netz) → übersprungen,
     // Auslauf-Rolle bleibt explizite Ausnahme.

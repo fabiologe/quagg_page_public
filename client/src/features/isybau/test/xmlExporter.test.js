@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // ── Synthetisches Netz mit allen Bauwerks-Sonderfällen ──────────────────────
 const makeNetwork = () => {
     const nodes = [
-        new Node({ id: 'S1', x: 1000, y: 2000, z: 100.5, depth: 2.5, coverZ: 103.0, diameter: 1.0, type: 'Schacht' }),
+        new Node({ id: 'S1', x: 1000, y: 2000, z: 100.5, depth: 2.5, coverZ: 103.0, diameter: 1.0, type: 'Schacht', entwaesserungsart: 'KM' }),
         new Node({ id: 'S2', x: 1050, y: 2000, z: 99.8, depth: 2.0, type: 'Schacht' }),
         // Wehr (7): UI-Felder gesetzt — müssen Export-Priorität haben
         new Node({ id: 'W1', x: 1100, y: 2000, z: 99.0, depth: 3.0, type: 'Bauwerk', bauwerkstyp: 7, weirHeight: 1.2, wehrWidth: 2.5 }),
@@ -32,7 +32,7 @@ const makeNetwork = () => {
         new Node({ id: 'AP1', x: 1400, y: 2000, z: 96.0, type: 'Anschlusspunkt', punktkennung: 'NN' }),
     ];
     const edges = [
-        new Edge({ id: 'H1', fromNodeId: 'S1', toNodeId: 'S2', length: 50, material: 'PVC', roughness: 0.011, z1: 100.5, z2: 99.8, profile: { type: 0, height: 0.3, width: 0.3 }, coords: [{ x: 1000, y: 2000, z: 100.5 }, { x: 1050, y: 2000, z: 99.8 }] }),
+        new Edge({ id: 'H1', fromNodeId: 'S1', toNodeId: 'S2', length: 50, material: 'PVC', roughness: 0.011, z1: 100.5, z2: 99.8, profile: { type: 0, height: 0.3, width: 0.3 }, coords: [{ x: 1000, y: 2000, z: 100.5 }, { x: 1050, y: 2000, z: 99.8 }], entwaesserungsart: 'KR' }),
         new Edge({ id: 'H2', fromNodeId: 'S2', toNodeId: 'W1', length: 50, material: 'B', z1: 99.8, z2: 99.0, profile: { type: 1, height: 0.5, width: 0.4 }, type: 'Leitung' }),
     ];
     const areas = [
@@ -76,6 +76,13 @@ describe('buildIsybauXML → parseIsybauXML (Roundtrip)', () => {
         expect(s1.coverZ).toBeCloseTo(103.0, 3);
         expect(s1.depth).toBeCloseTo(2.5, 3);
         expect(s1.diameter).toBeCloseTo(1.0, 3);
+    });
+
+    it('Entwaesserungsart (KM/KR/KS) kommt an Knoten UND Kanten zurück', () => {
+        expect(nodes.get('S1').entwaesserungsart).toBe('KM');
+        expect(edges.get('H1').entwaesserungsart).toBe('KR');
+        // Kein Wert gesetzt (H2/S2) => sauber null, kein leerer String/undefined
+        expect(edges.get('H2').entwaesserungsart).toBeNull();
     });
 
     it('Wehr (7): UI weirHeight wird als absolute Schwelle exportiert', () => {
@@ -173,6 +180,36 @@ describe('buildIsybauXML Sonderfälle', () => {
         expect(c.nodeId).toBe('S1');
         expect(c.area).toBeCloseTo(1.5, 3);
         expect(c.runoffCoeff).toBeCloseTo(0.4, 3);
+    });
+
+    it('Fläche mit Geometrie UND Schmutzfracht: zusätzlicher Einzugsgebiet-Block trägt die Daten', () => {
+        const schmutzfracht = { gebietsname: 'Musterhausen', kommentar: 'Testkommentar', einwohnerwerte: 250.5, einwohnerdichte: 45.2, trockenwetterkennung: 'T01' };
+        const a = new Area({ id: 'F1', points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }], size: 0.8, runoffCoeff: 0.6, nodeId: 'S1', schmutzfracht }).toJSON();
+        const { xml, warnings } = buildIsybauXML({ nodes: [], edges: [], areas: [a] });
+        expect(warnings).toEqual([]);
+        const parsed = parseIsybauXML(xml);
+        // Fläche selbst bleibt unverändert als <Flaeche> (mit Geometrie) erhalten
+        expect(parsed.hydraulics.areas.length).toBe(1);
+        expect(parsed.hydraulics.areas[0].id).toBe('F1');
+        // Schmutzfracht kommt über den zusätzlichen <Einzugsgebiet>-Block zurück
+        const c = parsed.hydraulics.catchments.find(c => c.id === 'F1');
+        expect(c).toBeDefined();
+        expect(c.schmutzfracht.gebietsname).toBe('Musterhausen');
+        expect(c.schmutzfracht.kommentar).toBe('Testkommentar');
+        expect(c.schmutzfracht.einwohnerwerte).toBeCloseTo(250.5, 2);
+        expect(c.schmutzfracht.einwohnerdichte).toBeCloseTo(45.2, 2);
+        expect(c.schmutzfracht.trockenwetterkennung).toBe('T01');
+    });
+
+    it('Fläche ohne Geometrie mit Schmutzfracht: Fallback-Einzugsgebiet trägt beides', () => {
+        const schmutzfracht = { gebietsname: 'EZG Nord', kommentar: null, einwohnerwerte: 80, einwohnerdichte: null, trockenwetterkennung: null };
+        const a = new Area({ id: 'EZG2', points: [], size: 1.1, runoffCoeff: 0.3, nodeId: 'S1', schmutzfracht }).toJSON();
+        const { xml } = buildIsybauXML({ nodes: [], edges: [], areas: [a] });
+        const parsed = parseIsybauXML(xml);
+        const c = parsed.hydraulics.catchments[0];
+        expect(c.area).toBeCloseTo(1.1, 3);
+        expect(c.schmutzfracht.gebietsname).toBe('EZG Nord');
+        expect(c.schmutzfracht.einwohnerwerte).toBeCloseTo(80, 2);
     });
 
     it('Mischfall Flächen mit/ohne Geometrie warnt', () => {

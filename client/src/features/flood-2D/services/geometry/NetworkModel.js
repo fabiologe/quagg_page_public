@@ -39,8 +39,10 @@ export class NetworkModel {
      */
     validate() {
         const issues = [];
-        const err = (id, msg) => issues.push({ level: 'error', id, msg });
-        const warn = (id, msg) => issues.push({ level: 'warning', id, msg });
+        // hint = Lösungsvorschlag für die klickbare Prüfliste (NetworkTable → IssueList);
+        // id = betroffenes Element, wird dort zum Auswahl-Sprungziel.
+        const err = (id, msg, hint) => issues.push({ level: 'error', id, msg, hint });
+        const warn = (id, msg, hint) => issues.push({ level: 'warning', id, msg, hint });
 
         // Knoten-Checks
         const linkedNodes = new Set();
@@ -55,31 +57,38 @@ export class NetworkModel {
         for (const n of this.nodes.values()) {
             if (Number.isFinite(n.geom.invert) && Number.isFinite(n.geom.rim)
                 && n.geom.invert > n.geom.rim + 1e-6)
-                err(n.id, `Schacht ${n.id}: Sohle (${n.geom.invert.toFixed(2)}) liegt über dem Deckel (${n.geom.rim.toFixed(2)})`);
+                err(n.id, `Schacht ${n.id}: Sohle (${n.geom.invert.toFixed(2)}) liegt über dem Deckel (${n.geom.rim.toFixed(2)})`,
+                    'Deckel- (rim) bzw. Sohlhöhe (invert) im Eigenschaften-Panel korrigieren.');
             if (this.links.size > 0 && !linkedNodes.has(n.id))
-                warn(n.id, `Schacht ${n.id}: isoliert (keine Haltung angeschlossen)`);
+                warn(n.id, `Schacht ${n.id}: isoliert (keine Haltung angeschlossen)`,
+                    'Haltung anschließen („Neu erstellen → Haltung ziehen") oder den Schacht löschen.');
             // Sonderbauwerk-Regel (SwmmBuilder): Pumpe/Wehr/Drossel wird nur zum SWMM-
             // Sonder-Link, wenn eine Haltung vom Knoten ABGEHT — sonst stiller Junction.
             if (['pump', 'weir', 'orifice'].includes(n.role) && !(outgoing.get(n.id) > 0))
-                err(n.id, `${n.role === 'pump' ? 'Pumpe' : n.role === 'weir' ? 'Wehr' : 'Drossel'} ${n.id}: keine abgehende Haltung (würde als einfacher Schacht exportiert)`);
+                err(n.id, `${n.role === 'pump' ? 'Pumpe' : n.role === 'weir' ? 'Wehr' : 'Drossel'} ${n.id}: keine abgehende Haltung (würde als einfacher Schacht exportiert)`,
+                    'Vom Knoten eine ABGEHENDE Haltung ziehen — erst dann wird das Sonderbauwerk exportiert.');
         }
 
         // Haltungs-Checks
         for (const l of this.links.values()) {
             const from = l.refs.fromNodeId ? this.nodes.get(l.refs.fromNodeId) : null;
             const to = l.refs.toNodeId ? this.nodes.get(l.refs.toNodeId) : null;
-            if (!from) err(l.id, `Haltung ${l.id}: Anfangsknoten fehlt/unbekannt`);
-            if (!to) err(l.id, `Haltung ${l.id}: Endknoten fehlt/unbekannt`);
+            if (!from) err(l.id, `Haltung ${l.id}: Anfangsknoten fehlt/unbekannt`,
+                'Haltung löschen und neu von Schacht zu Schacht ziehen.');
+            if (!to) err(l.id, `Haltung ${l.id}: Endknoten fehlt/unbekannt`,
+                'Haltung löschen und neu von Schacht zu Schacht ziehen.');
             if (!from || !to) continue;
             const len = l.geom.length
                 ?? Math.hypot(to.geom.x - from.geom.x, to.geom.y - from.geom.y);
             if (len < 0.5)
-                warn(l.id, `Haltung ${l.id}: (nahezu) Nulllänge (${len.toFixed(2)} m)`);
+                warn(l.id, `Haltung ${l.id}: (nahezu) Nulllänge (${len.toFixed(2)} m)`,
+                    'Endpunkte prüfen (Doppel-Import? identische Schächte?) — ggf. Haltung löschen.');
             // Gegengefälle: Sohle am Ende höher als am Anfang (z1/z2-Offsets bevorzugt)
             const z1 = Number.isFinite(Number(l.attrs.z1)) ? Number(l.attrs.z1) : from.geom.invert;
             const z2 = Number.isFinite(Number(l.attrs.z2)) ? Number(l.attrs.z2) : to.geom.invert;
             if (l.conveyance !== 'open' && Number.isFinite(z1) && Number.isFinite(z2) && z2 > z1 + 1e-3)
-                warn(l.id, `Haltung ${l.id}: Gegengefälle (Sohle ${z1.toFixed(2)} → ${z2.toFixed(2)} m)`);
+                warn(l.id, `Haltung ${l.id}: Gegengefälle (Sohle ${z1.toFixed(2)} → ${z2.toFixed(2)} m)`,
+                    'Sohlhöhen prüfen: z1/z2-Offsets der Haltung bzw. die Schacht-Sohlen im Eigenschaften-Panel.');
         }
 
         // Teilnetz ohne Auslass: Zusammenhangskomponenten über ungerichtete Kanten;
@@ -102,7 +111,8 @@ export class NetworkModel {
         }
         for (const [root, size] of compSize) {
             if (size > 1 && !compHasOutfall.get(root))
-                warn(root, `Teilnetz um ${root} (${size} Knoten): kein Auslass (outfall) — Wasser kann das Netz nicht verlassen`);
+                warn(root, `Teilnetz um ${root} (${size} Knoten): kein Auslass (outfall) — Wasser kann das Netz nicht verlassen`,
+                    'Den tiefsten Schacht des Teilnetzes im Eigenschaften-Panel auf Rolle „outfall" stellen (oder eine Haltung zum restlichen Netz ziehen).');
         }
         return issues;
     }

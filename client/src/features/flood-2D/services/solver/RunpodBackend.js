@@ -62,7 +62,7 @@ export class RunpodBackend extends SolverBackend {
     }
 
     async run(payload) {
-        const { files, maxTime } = payload;
+        const { files, maxTime, launchPassword } = payload;
         if (!files || Object.keys(files).length === 0) {
             throw new Error('RunpodBackend: keine Input-Dateien im Payload.');
         }
@@ -83,7 +83,7 @@ export class RunpodBackend extends SolverBackend {
             deliver: 'urls',
             clientJobToken: (crypto.randomUUID?.() ?? `job-${Date.now()}`)
         };
-        const res = await this.transport.runJob(input);
+        const res = await this.transport.runJob(input, launchPassword);
         this.jobId = res.id;
         this.setJobState('queued');
         this.emit({ type: 'LOG', text: `RUNPOD: Job ${res.id} angenommen (${res.status}).` });
@@ -187,8 +187,19 @@ export class RunpodBackend extends SolverBackend {
                 //                 SGC-Kanalwert überschrieben (handler.py: |v_sgc|>eps)
                 //   qx,qy  [m³/s] Kantenfluss-Normalkomponenten (für Wehr-Durchfluss)
                 // 'velocity' liefert der Solver nicht als eigenen Kanal — Betrag = |(vx,vy)|.
-                const buf = await this.transport.fetchBinary(output.url);
-                const { meta, channels } = decodeFrame(buf);
+                //
+                // Download-Fehler sind NICHT fatal: der Solver läuft serverseitig weiter,
+                // ein verlorener Zwischen-Frame kostet nur eine Timeline-Stufe. Vor dem
+                // CORS-Fix (Bucket-Policy, 2026-07-29) hat genau so ein Fehler komplette
+                // bezahlte Läufe abgebrochen.
+                let meta, channels;
+                try {
+                    const buf = await this.transport.fetchBinary(output.url);
+                    ({ meta, channels } = decodeFrame(buf));
+                } catch (e) {
+                    this.emit({ type: 'WARNING', message: `Frame ${output.frame ?? '?'} nicht ladbar (Lauf läuft weiter): ${e.message}` });
+                    break;
+                }
                 const header = this._headerFromMeta(meta);
                 let velocity = channels.velocity;
                 if (!velocity && channels.vx && channels.vy) {
@@ -216,25 +227,24 @@ export class RunpodBackend extends SolverBackend {
 
             case 'done': {
                 this.setJobState('downloading');
-                if (output.maxDepthUrl) {
-                    const { meta, channels } = decodeFrame(await this.transport.fetchBinary(output.maxDepthUrl));
-                    this.emit({ type: 'MAX_DEPTH_GRID', payload: channels.depth, header: this._headerFromMeta(meta) });
-                }
-                if (output.maxHazardUrl) {
-                    const { meta, channels } = decodeFrame(await this.transport.fetchBinary(output.maxHazardUrl));
-                    this.emit({ type: 'MAX_HAZARD_GRID', payload: channels.depth, header: this._headerFromMeta(meta) });
-                }
-                // Weitere Summen-Raster (alle Einkanal über channels.depth kodiert).
-                const extraGrids = [
+                // Alle Summen-Raster einzeln absichern: ein fehlgeschlagener Download
+                // darf weder die übrigen Raster noch MASS_REPORT/FINISHED verhindern
+                // (der Lauf ist bezahlt und serverseitig fertig).
+                const grids = [
+                    ['maxDepthUrl',    'MAX_DEPTH_GRID'],
+                    ['maxHazardUrl',   'MAX_HAZARD_GRID'],
                     ['maxVelocityUrl', 'MAX_VELOCITY_GRID'],
                     ['maxElevUrl',     'MAX_ELEV_GRID'],
                     ['arrivalTimeUrl', 'ARRIVAL_TIME_GRID'],
                     ['durationUrl',    'DURATION_GRID'],
                 ];
-                for (const [urlKey, evType] of extraGrids) {
-                    if (output[urlKey]) {
+                for (const [urlKey, evType] of grids) {
+                    if (!output[urlKey]) continue;
+                    try {
                         const { meta, channels } = decodeFrame(await this.transport.fetchBinary(output[urlKey]));
                         this.emit({ type: evType, payload: channels.depth, header: this._headerFromMeta(meta) });
+                    } catch (e) {
+                        this.emit({ type: 'WARNING', message: `${evType} nicht ladbar: ${e.message}` });
                     }
                 }
                 // 1D-Kanalnetz-Ergebnisse (gekoppelter Lauf): handler.py liest die

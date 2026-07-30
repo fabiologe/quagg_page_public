@@ -612,8 +612,10 @@
                       <th>Fläche (ha)</th>
                       <th>Versiegelungsgrad (0-1)</th>
                       <th>Funktion (Horton)</th>
+                      <th>Neigungsklasse</th>
                       <th>Anschluss 1</th>
                       <th>Anschluss 2 / Split (%)</th>
+                      <th>Schmutzfracht</th>
                     </tr>
                   </thead>
                    <tbody>
@@ -638,6 +640,14 @@
                                 </option>
                             </select>
                         </td>
+                        <td>
+                             <select v-model.number="area.slope" class="medium-select" @click.stop>
+                                <option :value="null" disabled>– wählen –</option>
+                                <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
+                                    {{ key }} - {{ label }}
+                                </option>
+                            </select>
+                        </td>
                         <td><input type="text" v-model="area.nodeId" class="medium-input" placeholder="Knoten 1" @click.stop></td>
                         <td>
                              <div class="split-cell">
@@ -645,12 +655,26 @@
                                 <input type="number" v-model.number="area.splitRatio" placeholder="%" class="small-input" v-if="area.nodeId2" @click.stop  title="Anteil zu Knoten 1 (%)">
                              </div>
                         </td>
+                        <td>
+                            <button type="button" class="sf-btn" @click.stop="schmutzfrachtTarget = area; showSchmutzfrachtDialog = true"
+                                    :title="area.schmutzfracht ? 'Schmutzfracht-Daten bearbeiten' : 'Schmutzfracht-Daten hinzufügen'">
+                                {{ area.schmutzfracht ? '✓' : '+' }}
+                            </button>
+                        </td>
                     </tr>
                    </tbody>
                  </table>
             </div>
           </div>
         </div>
+
+        <SchmutzfrachtDialog
+            :is-open="showSchmutzfrachtDialog"
+            :model-value="schmutzfrachtTarget?.schmutzfracht"
+            :area-size="schmutzfrachtTarget?.size ?? 0"
+            @close="showSchmutzfrachtDialog = false"
+            @update:modelValue="v => { if (schmutzfrachtTarget) schmutzfrachtTarget.schmutzfracht = v; }"
+        />
 
         <div class="modal-footer">
           <button class="secondary-btn" @click="close">Abbrechen</button>
@@ -667,7 +691,8 @@ import { useIsybauStore } from '../../store/index.js';
 import { ref, watch, computed, nextTick } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import CurveTableEditor from '../common/CurveTableEditor.vue';
-import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, classifyPreview, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
+import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
+import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
 import { checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints } from '../../utils/preSolveValidation.js';
 import * as XLSX from 'xlsx';
 
@@ -683,6 +708,8 @@ const store = useIsybauStore();
 
 // === UI State ===
 const showBulkEdit = ref(false);
+const schmutzfrachtTarget = ref(null);
+const showSchmutzfrachtDialog = ref(false);
 
 const activeTab = ref('nodes');
 const tabs = [
@@ -1115,6 +1142,7 @@ watch(() => props.isOpen, (newVal) => {
         ...a,
           runoffCoeff: a.runoffCoeff || getRunoffCoeff(a.property, a.function, a.slope),
           nodeId: a.nodeId || '',
+          slope: [1, 2, 3, 4, 5].includes(a.slope) ? a.slope : null,
     }));
 
     // Fokus-Sprung aus ElementInfo („In Tabelle bearbeiten"): richtigen Tab
@@ -1274,16 +1302,27 @@ const exportXlsx = () => {
     XLSX.utils.book_append_sheet(wb, wsEdges, 'Haltungen');
 
     // --- Flächen ---
-    const areaHeaders = ['ID', 'Fläche (ha)', 'Versiegelungsgrad', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)'];
-    const areaRows = areas.value.map(a => [
-        a.id,
-        a.size != null ? parseFloat(a.size.toFixed(4)) : '',
-        a.runoffCoeff ?? '',
-        a.function != null ? (Flaechenfunktion[a.function] ?? a.function) : '',
-        a.nodeId ?? '',
-        a.nodeId2 ?? '',
-        a.nodeId2 ? (a.splitRatio ?? 50) : ''
-    ]);
+    const areaHeaders = ['ID', 'Fläche (ha)', 'Versiegelungsgrad', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)',
+        'Gebietsname', 'Kommentar', 'Einwohnerwerte (E)', 'Einwohnerdichte (E/ha)', 'Wasserverbrauch (l/E·d)', 'Tagesspitzenfaktor', 'Trockenwetterkennung'];
+    const areaRows = areas.value.map(a => {
+        const sf = a.schmutzfracht;
+        return [
+            a.id,
+            a.size != null ? parseFloat(a.size.toFixed(4)) : '',
+            a.runoffCoeff ?? '',
+            a.function != null ? (Flaechenfunktion[a.function] ?? a.function) : '',
+            a.nodeId ?? '',
+            a.nodeId2 ?? '',
+            a.nodeId2 ? (a.splitRatio ?? 50) : '',
+            sf?.gebietsname ?? '',
+            sf?.kommentar ?? '',
+            sf?.einwohnerwerte ?? '',
+            sf?.einwohnerdichte != null ? parseFloat(sf.einwohnerdichte.toFixed(2)) : '',
+            sf?.wasserverbrauch ?? '',
+            sf?.tagesspitzenfaktor ?? '',
+            sf?.trockenwetterkennung ?? ''
+        ];
+    });
     const wsAreas = XLSX.utils.aoa_to_sheet([areaHeaders, ...areaRows]);
     XLSX.utils.book_append_sheet(wb, wsAreas, 'Flächen');
 
@@ -1407,6 +1446,19 @@ input[type="checkbox"] { accent-color: #2ecc71; }
 .filter-input { width: 100%; padding: 4px; font-size: 0.8rem; }
 .small-select { padding: 3px 4px; font-size: 0.82rem; }
 .weir-preset-select { width: 100%; padding: 3px 4px; font-size: 0.78rem; box-sizing: border-box; }
+.sf-btn {
+  border: 1px solid #594491;
+  border-radius: 4px;
+  background: #0a0d5c;
+  color: #2ecc71;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 700;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sf-btn:hover { border-color: #2ecc71; box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2); }
 .small-input:focus, .medium-input:focus, .filter-input:focus,
 .small-select:focus, .medium-select:focus, .weir-preset-select:focus {
   outline: none;

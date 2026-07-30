@@ -6,7 +6,9 @@
       <button class="pat-btn" @click="openModal('LINEAR')" title="Linear Ramp"><SvEmoji emoji="📈" :size="14" /> Linear</button>
     </div>
 
-    <!-- Parameter Popover/Modal -->
+    <!-- Parameter Popover/Modal — Teleport: entkommt dem z-index:15-Stacking-Context
+         des rechten Panels (s. NetworkRasterCheck). -->
+    <Teleport to="body">
     <div v-if="isOpen" class="popover-overlay" @click.self="close">
       <div class="popover">
         <h4 class="pop-title">{{ activeType }} generieren</h4>
@@ -27,6 +29,7 @@
         </div>
       </div>
     </div>
+    </Teleport>
   </div>
 </template>
 

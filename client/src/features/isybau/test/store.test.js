@@ -83,6 +83,22 @@ describe('IsybauStore', () => {
         expect(store.areas[0].id).toBe('F1');
     });
 
+    it('loadParsedData merged Schmutzfracht aus Einzugsgebiet auf gleichnamige Fläche mit Geometrie', () => {
+        store.loadParsedData({
+            network: { nodes: new Map(), edges: new Map() },
+            hydraulics: {
+                areas: [{ id: 'F1', points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }], size: 1.0 }],
+                catchments: [{
+                    id: 'F1',
+                    schmutzfracht: { gebietsname: 'Testgebiet', kommentar: null, einwohnerwerte: 120, einwohnerdichte: null, trockenwetterkennung: 'T01' }
+                }]
+            }
+        });
+        expect(store.areas).toHaveLength(1);
+        expect(store.areas[0].id).toBe('F1');
+        expect(store.areas[0].schmutzfracht).toEqual({ gebietsname: 'Testgebiet', kommentar: null, einwohnerwerte: 120, einwohnerdichte: null, trockenwetterkennung: 'T01' });
+    });
+
     it('loadParsedData meldet übersprungene Elemente als importWarnings', () => {
         store.loadParsedData({
             network: {

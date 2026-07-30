@@ -16,6 +16,8 @@
 
 import { ref } from 'vue';
 import { useDrawTool } from './useDrawTool.js';
+import { useNetworkStore } from '../../stores/useNetworkStore.js';
+import { pointInPolygon } from '../../utils/GridCropper.js';
 
 export function usePolygonCropTool() {
     // Inner draw engine (reuses all rubber-band / snap / marker logic)
@@ -78,6 +80,12 @@ export function usePolygonCropTool() {
         const geoStore = ctx.geoStore;
         if (geoStore?.maskTerrainByPolygon) {
             geoStore.maskTerrainByPolygon(worldPolygon);
+            // Netz mit zuschneiden — EXAKT derselbe Punkt-in-Polygon-Test wie die
+            // Raster-Maske (GridCropper), damit Raster und Netz deckungsgleich bleiben.
+            const removed = useNetworkStore().cropOutside(
+                (x, y) => pointInPolygon(x, y, worldPolygon),
+                'Netz an Polygon-Maske angepasst');
+            if (removed > 0) console.log(`[PolygonCropTool] Netz zugeschnitten: ${removed} Schächte außerhalb entfernt.`);
         } else {
             console.error('[PolygonCropTool] geoStore.maskTerrainByPolygon not available!');
         }

@@ -1,4 +1,7 @@
 <template>
+  <!-- Teleport nach <body>: entkommt dem z-index:15-Stacking-Context des rechten Panels
+       (sonst liegen Canvas-Overlays wie LayerControl ÜBER dem Modal, s. NetworkRasterCheck). -->
+  <Teleport to="body">
   <div class="ndt-overlay" @click.self="$emit('close')">
     <div class="ndt-modal">
       <div class="ndt-head">
@@ -83,6 +86,7 @@
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup>

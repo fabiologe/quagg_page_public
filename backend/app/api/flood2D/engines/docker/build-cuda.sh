@@ -10,7 +10,7 @@ set -euo pipefail
 CUDA_ARCH="${CUDA_ARCH:-89}"
 TAG="${TAG:-lisflood-fp:cuda}"
 
-docker build -f engines/docker/Dockerfile \
+docker build -f engines/docker/Dockerfile --target runtime \
   --build-arg BASE_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04 \
   --build-arg RUNTIME_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04 \
   --build-arg CUDA_ARCH="${CUDA_ARCH}" \

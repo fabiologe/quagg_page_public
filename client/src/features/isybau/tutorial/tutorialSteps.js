@@ -6,9 +6,11 @@
 //   id        eindeutiger Name (Debug/Tests)
 //   mood      Key aus moods.js (happy | sad | asking | surprised | rain)
 //   message   String ODER Funktion (store) => String für dynamische Texte
-//   highlight optional: data-tutorial-Anker, der hervorgehoben wird
-//   advanceOn optional (nur Tour): Trigger-Name, der den Step automatisch
-//             weiterschaltet ([Weiter] bleibt als Alternative sichtbar)
+//   highlight optional: data-tutorial-Anker (String ODER Array mehrerer
+//             Anker), der/die hervorgehoben werden
+//   advanceOn optional (nur Tour): Trigger-Name ODER Array mehrerer
+//             gleichwertiger Trigger-Namen, die den Step automatisch
+//             weiterschalten ([Weiter] bleibt als Alternative sichtbar)
 //   once      optional (nur reaktiv): Step feuert nur einmal pro Sitzung
 //   info      optional: Key aus tutorialInfo.js — zeigt [Mehr dazu]-Button
 //             mit Lernkarte fuer Studenten
@@ -26,10 +28,10 @@ export const TOUR_STEPS = [
     id: 'xml-import',
     mood: 'asking',
     info: 'isybau-xml',
-    highlight: 'xml-import',
-    advanceOn: 'xml-imported',
+    highlight: ['xml-import', 'neu-starten'],
+    advanceOn: ['xml-imported', 'location-set'],
     message:
-      'Zuerst brauchen wir ein Netz: Lad links ein ISYBAU-XML hoch — oder klick auf Weiter und zeichne selbst eins.',
+      'Hast du schon ein Netz, das du durchrechnen willst? Dann lad es links als ISYBAU-XML hoch. Fangen wir lieber neu an, klick auf "Neu starten" — dann waehlen wir zusammen einen Standort, und Luftbild samt Hoehenlinien legen sich gleich passend unter dein neues Netz.',
   },
   {
     id: 'editor',

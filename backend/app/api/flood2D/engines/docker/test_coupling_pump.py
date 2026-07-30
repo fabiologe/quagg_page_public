@@ -142,7 +142,13 @@ def main():
     try:
         print(f"[pump] Image={IMAGE}  Szenario: Senke->Pumpe P1->BERGAUF->OUT ({v0:.1f} m3)")
         proc = subprocess.run(
-            ["docker", "run", "--rm", "-v", f"{job}:/job", IMAGE,
+            ["docker", "run", "--rm",
+             # Dieser Test liest die ROHEN res-*.wd-Frames (Physik-Pruefung am
+             # Solver-Output). Der Handler raeumt die seit dem ASCII-Cleanup
+             # (2026-07-28) nach dem Encode weg -- die Escape-Hatch behaelt sie
+             # und wird hier gleich mitgetestet.
+             "-e", "QUAGG_KEEP_ASCII=1",
+             "-v", f"{job}:/job", IMAGE,
              "--job", "/job", "--heartbeat", "5"],
             capture_output=True, text=True, timeout=300,
         )

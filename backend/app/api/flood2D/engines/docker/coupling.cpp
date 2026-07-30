@@ -40,6 +40,10 @@
 #include <cstdlib>   // realpath
 #include <climits>   // PATH_MAX
 
+// Fast-Pfad-Typen (WetDryRowBound/IndexRange/BoundaryCondition) — zieht ../lisflood.h
+// per #pragma once erneut, harmlos.
+#include "lisflood2/DataTypes.h"
+
 extern "C" {
 #include "swmm5.h"
 }
@@ -85,6 +89,64 @@ static double g_sumOut[MAXN];   // kumulativ 2D->1D [m3]
 static double g_debt = 0.0;     // m3, die SWMM erhielt, die das 2D nicht liefern konnte
 static double g_next_log = 0.0;
 static double g_log_int = 60.0; // [COUPLE]-Statuszeile alle X Sim-Sekunden
+
+// ---- Fast-Pfad (lisflood2, SGC == ON): gepadete Gitter, via Coupling_RegisterFastGrid ----
+// Der Fast-Pfad gibt Arrptr->H/DEM/SGCz/dA vor der Zeitschleife FREI und arbeitet auf
+// eigenen Arrays mit Stride gf_cols_padded. h_grid ist dort RELATIV ZUM DEM gefuehrt
+// (auf Gerinnezellen negativ bis -SGCbfH) -> Wasserspiegel = dem + h, universell.
+static bool g_fast = false;
+static NUMERIC_TYPE *gf_h = NULL;
+static NUMERIC_TYPE *gf_vol = NULL;              // Zellvolumen [m3] — EINZIGER Schreibkanal
+static const NUMERIC_TYPE *gf_dem = NULL;
+static const NUMERIC_TYPE *gf_bfH = NULL;        // Bankfull-Tiefe (0 ohne Gerinne)
+static const NUMERIC_TYPE *gf_area_col = NULL;   // Zellflaeche je Zeile (latlong-korrekt)
+static WetDryRowBound *gf_wdb = NULL;
+static BoundaryCondition *gf_bc = NULL;
+static int gf_cols_padded = 0;
+
+static inline int fidx(int k) { return g_col[k] + g_row[k] * gf_cols_padded; }
+
+// Roh-DEM (NoData-Pruefung/Diagnose)
+static inline double cell_dem_raw(Arrays *Arrptr, int k)
+{
+    return g_fast ? (double)gf_dem[fidx(k)] : Arrptr->DEM[g_cell[k]];
+}
+// Wasserspiegel der Zelle
+static inline double cell_wse(States *Statesptr, Arrays *Arrptr, int k);
+// Bezugshoehe (Boden, auf dem das Wasser steht — Kanalsohle auf Gerinnezellen)
+static inline double cell_bed(States *Statesptr, Arrays *Arrptr, int k);
+// verfuegbares Wasser-VOLUMEN [m3] — auf Gerinnezellen unter bankfull ist h*dA um den
+// Faktor dA/(Kanalbreite*dx) zu gross; der Fast-Pfad liest darum direkt volume_grid.
+static inline double cell_avail_vol(Pars *Parptr, Arrays *Arrptr, int k)
+{
+    if (g_fast) {
+        const double v = (double)gf_vol[fidx(k)];
+        return (v > 0.0) ? v : 0.0;
+    }
+    const double h = Arrptr->H[g_cell[k]];
+    return ((h > 0.0) ? h : 0.0) * Parptr->dA;
+}
+// Zellflaeche (Stabilitaets-Limiter)
+static inline double cell_area(Pars *Parptr, int k)
+{
+    return g_fast ? (double)gf_area_col[g_row[k]] : Parptr->dA;
+}
+
+// Wasser im Fast-Pfad buchen: NUR ueber volume_grid (SGC2_ProcessH_Row leitet h daraus
+// ab und wuerde ein direktes h_grid-Update im naechsten Schritt ueberschreiben) — plus
+// Weitung der fp_vol-Zeilengrenzen (Muster SGC2_PointSources_Vol_row, sgm_fast.cpp:2421ff):
+// ohne sie wird eine frisch benetzte Floodplain-Zelle von ProcessH_Row nicht besucht und
+// das gebuchte Volumen laege unsichtbar herum.
+static inline void fast_add_volume(int k, double dV)
+{
+    const int fi = fidx(k);
+    double v = (double)gf_vol[fi] + dV;
+    if (v < 0.0) v = 0.0;
+    gf_vol[fi] = (NUMERIC_TYPE)v;
+    IndexRange *r = &gf_wdb->fp_vol[g_row[k]];
+    if (g_col[k] < r->start)   r->start = g_col[k];
+    if (g_col[k] + 1 > r->end) r->end   = g_col[k] + 1;
+}
 
 void Coupling_Init(States *Statesptr, Fnames *Fnameptr, Pars *Parptr, const int verbose)
 {
@@ -200,45 +262,84 @@ static void advance_swmm_to(double t_target)
 
 // Austauschraten je Schacht neu bestimmen (alle dt_c). rimEff = max(rim, DEM) wird hier
 // lazily beim ersten Refresh geklemmt (im Init ist Arrptr noch nicht verfuegbar).
-static void refresh_rates(Pars *Parptr, Solver *Solverptr, Arrays *Arrptr)
+// Bezugshoehe der Zelle ("wo liegt der Boden, auf dem das Wasser steht").
+//
+// OHNE Sub-Grid-Channel ist das die DEM. MIT SGC steht das Wasser einer Gerinnezelle auf
+// der KANALSOHLE, nicht auf der Bank-Oberkante: LISFLOOD fuehrt Arrptr->H dort relativ zu
+// SGCz. Die eigene .elev-Ausgabe des Solvers rechnet deshalb ebenfalls SGCz+H
+// (output.cpp: write_ascfile(..., Arrptr->H, Arrptr->SGCz, 3, ...)), und sgc.cpp setzt
+// SGCz auf NICHT-Gerinnezellen explizit gleich der DEM ("to allow easy water surface
+// elevation outputs"). SGCz+H ist damit die universell richtige Formel und faellt ohne
+// Gerinne exakt auf DEM+H zurueck.
+//
+// Vorher rechnete die Kopplung stur DEM+H. Auf einer Gerinnezelle war der 2D-Wasser-
+// spiegel damit um die volle Bankfull-Tiefe (DEM-SGCz) zu hoch: der Solver "sah" dort
+// dauerhaft Wasser bis Gelaendeoberkante -> Dauereinzug ins Netz und blockierte
+// 1D->2D-Abgabe. Genau deswegen hat der Client Kopplungsknoten auf Gerinnezellen bisher
+// ausgeschlossen (couplingDetector.js) — also gerade den haeufigsten Fall, den
+// Rohr->Gerinne-Auslauf.
+static inline double cell_zref(States *Statesptr, Arrays *Arrptr, int cell)
+{
+    if (Statesptr->SGC == ON && Arrptr->SGCz != NULL) return Arrptr->SGCz[cell];
+    return Arrptr->DEM[cell];
+}
+
+// Modus-uebergreifende Accessoren (Definition nach cell_zref; Deklaration oben).
+// Fast-Pfad: dem/bfH/h aus den gepadeten Gittern — bfH ist 0 auf Nicht-Gerinnezellen,
+// damit fallen beide Formeln dort exakt auf DEM bzw. DEM+h zurueck.
+static inline double cell_bed(States *Statesptr, Arrays *Arrptr, int k)
+{
+    if (g_fast) return (double)gf_dem[fidx(k)] - (double)gf_bfH[fidx(k)];
+    return cell_zref(Statesptr, Arrptr, g_cell[k]);
+}
+static inline double cell_wse(States *Statesptr, Arrays *Arrptr, int k)
+{
+    if (g_fast) return (double)gf_dem[fidx(k)] + (double)gf_h[fidx(k)];
+    return cell_zref(Statesptr, Arrptr, g_cell[k]) + Arrptr->H[g_cell[k]];
+}
+
+static void refresh_rates(States *Statesptr, Pars *Parptr, Solver *Solverptr, Arrays *Arrptr)
 {
     static bool rimChecked = false;
     if (!rimChecked) {
         rimChecked = true;
         for (int k = 0; k < g_n; k++) {
-            const double demZ = Arrptr->DEM[g_cell[k]];
+            const double demRaw = cell_dem_raw(Arrptr, k);
+            const double bedZ   = cell_bed(Statesptr, Arrptr, k);
             // Diagnose-Tabelle: WO landet jeder Kopplungsschacht wirklich? (Zelle col,row
             // top-down + Weltkoordinate + Hoehen). Damit ist "Wasser kommt an der falschen
             // Stelle raus" sofort pruefbar (Randzelle? andere Position als der Marker?).
-            printf("[COUPLE] Schacht '%s' %s -> Zelle (%d,%d) @ Welt(%.2f, %.2f), rim=%.2f, DEM=%.2f%s\n",
+            printf("[COUPLE] Schacht '%s' %s -> Zelle (%d,%d) @ Welt(%.2f, %.2f), rim=%.2f, Sohle=%.2f%s\n",
                    g_name[k], g_isOutfall[k] ? "OUTFALL " : "JUNCTION", g_col[k], g_row[k],
-                   g_x[k], g_y[k], g_rim[k], (demZ >= 1.0e9) ? -9999.0 : demZ,
+                   g_x[k], g_y[k], g_rim[k], (demRaw >= 1.0e9) ? -9999.0 : bedZ,
                    (g_col[k] == 0 || g_row[k] == 0 || g_col[k] == Parptr->xsz - 1 || g_row[k] == Parptr->ysz - 1)
                        ? "  << RANDZELLE!" : "");
-            if (demZ >= 1.0e9) {   // DEM_NO_DATA (1e10) bzw. nodata_elevation: Zelle ist maskiert
+            if (demRaw >= 1.0e9) {   // DEM_NO_DATA (1e10) bzw. nodata_elevation: Zelle ist maskiert
                 printf("[COUPLE] WARNING: Schacht '%s' liegt auf einer NoData-Zelle - deaktiviert "
                        "(Austausch dort wuerde Wasser ausserhalb des Gelaendes erzeugen)\n", g_name[k]);
                 g_skip[k] = true;
                 continue;
             }
-            if (g_rim[k] < demZ - 0.02) {
-                printf("[COUPLE] WARNING: Schacht '%s': Deckel rim=%.2f liegt %.2f m UNTER Gelaende (%.2f) - "
-                       "auf Gelaendehoehe geklemmt (fehlendes coverZ im Export?)\n",
-                       g_name[k], g_rim[k], demZ - g_rim[k], demZ);
-                g_rim[k] = demZ;
+            // Deckel-Klemmung gegen die BEZUGSHOEHE (Kanalsohle auf Gerinnezellen): ein
+            // Rohr-Auslauf am Gerinne darf unterhalb der Bankoberkante abgeben — Klemmung
+            // gegen das DEM wuerde ihn kuenstlich auf Bankniveau heben.
+            if (g_rim[k] < bedZ - 0.02) {
+                printf("[COUPLE] WARNING: Schacht '%s': Deckel rim=%.2f liegt %.2f m UNTER der Bezugshoehe (%.2f) - "
+                       "angehoben (fehlendes coverZ im Export?)\n",
+                       g_name[k], g_rim[k], bedZ - g_rim[k], bedZ);
+                g_rim[k] = bedZ;
             }
         }
     }
 
-    const double dA = Parptr->dA;
     const double hmin = (Solverptr->DepthThresh > HMIN) ? Solverptr->DepthThresh : HMIN;
 
     for (int k = 0; k < g_n; k++) {
         if (g_skip[k]) { g_Q[k] = 0.0; continue; }
-        const int cell = g_cell[k];
         const int idx  = g_nodeIdx[k];
-        const double h2d   = Arrptr->H[cell];
-        const double wse2d = Arrptr->DEM[cell] + h2d;
+        const double dA = cell_area(Parptr, k);
+        // Wasserspiegel modus-uebergreifend: klassisch SGCz+H, fast dem+h (h relativ DEM).
+        const double wse2d = cell_wse(Statesptr, Arrptr, k);
 
         // Integriertes 1D->2D-Volumen (Outfall-Abfluss bzw. Notventil-Ueberstau) in den
         // Ausliefer-Pool uebernehmen: wird ratenkontrolliert ueber das naechste Intervall
@@ -291,7 +392,9 @@ static void refresh_rates(Pars *Parptr, Solver *Solverptr, Arrays *Arrptr)
 
             if (Q > 0.0 && wse2d > head1d) {
                 // 2D -> 1D: Einzug, gekappt auf das im Intervall verfuegbare 2D-Volumen.
-                const double Qmax2d = h2d * dA / g_dt_c;
+                // Volumenbasiert: auf Gerinnezellen (Fast-Pfad) waere h*dA um den Faktor
+                // Zellflaeche/Kanalflaeche zu gross.
+                const double Qmax2d = cell_avail_vol(Parptr, Arrptr, k) / g_dt_c;
                 if (Q > Qmax2d) Q = Qmax2d;
                 // Bilanz-Schulden abtragen: was SWMM frueher zu viel bekam, jetzt weniger.
                 if (g_debt > 0.0 && Q > 0.0) {
@@ -321,6 +424,27 @@ static void refresh_rates(Pars *Parptr, Solver *Solverptr, Arrays *Arrptr)
     }
 }
 
+// Status-/Bilanzzeile — von beiden Update-Pfaden geteilt (Format wird von handler.py
+// geparst: coupling_budget; NICHT aendern ohne handler.py-Regexe zu pruefen).
+static void log_status(double t)
+{
+    if (t < g_next_log) return;
+    double sumIn = 0.0, sumOut = 0.0; int active = 0;
+    for (int k = 0; k < g_n; k++) {
+        sumIn += g_sumIn[k]; sumOut += g_sumOut[k];
+        if (g_Q[k] != 0.0 || g_pend[k] > 0.0) active++;
+    }
+    printf("[COUPLE] t=%.1fs: %d/%d Schaechte aktiv | 1D->2D gesamt %.2f m3 | 2D->1D gesamt %.2f m3 | offene Bilanz-Schuld %.3f m3\n",
+           t, active, g_n, sumIn, sumOut, g_debt);
+    for (int k = 0; k < g_n; k++) {
+        const double qEff = g_Q[k] + ((g_pend[k] > 0.0) ? g_prate[k] : 0.0);
+        if (qEff == 0.0 && g_sumIn[k] == 0.0 && g_sumOut[k] == 0.0) continue;
+        printf("[COUPLE]   %-16s %s Q=%+.4f m3/s (Sum 1D->2D %.2f m3, 2D->1D %.2f m3)\n",
+               g_name[k], g_isOutfall[k] ? "OUTFALL " : "JUNCTION", qEff, g_sumIn[k], g_sumOut[k]);
+    }
+    do { g_next_log += g_log_int; } while (g_next_log <= t);
+}
+
 void Coupling_Update(States *Statesptr, Pars *Parptr, Solver *Solverptr, BoundCs *BCptr, Arrays *Arrptr)
 {
     if (!g_open || Statesptr->coupling != ON) return;
@@ -333,7 +457,7 @@ void Coupling_Update(States *Statesptr, Pars *Parptr, Solver *Solverptr, BoundCs
             printf("[COUPLE] t=%.1fs: SWMM-Simulationsdauer zu Ende - Netz liefert/nimmt ab jetzt nichts mehr "
                    "(END_TIME der network.inp < 2D-Dauer?)\n", Solverptr->t);
         }
-        refresh_rates(Parptr, Solverptr, Arrptr);
+        refresh_rates(Statesptr, Parptr, Solverptr, Arrptr);
         do { g_next_t += g_dt_c; } while (g_next_t <= Solverptr->t);
     }
 
@@ -376,22 +500,92 @@ void Coupling_Update(States *Statesptr, Pars *Parptr, Solver *Solverptr, BoundCs
     }
 
     // (C) Periodische Status-/Bilanzzeile (landet via handler.py in der Solver-Konsole).
-    if (Solverptr->t >= g_next_log) {
-        double sumIn = 0.0, sumOut = 0.0; int active = 0;
-        for (int k = 0; k < g_n; k++) {
-            sumIn += g_sumIn[k]; sumOut += g_sumOut[k];
-            if (g_Q[k] != 0.0 || g_pend[k] > 0.0) active++;
+    log_status(Solverptr->t);
+}
+
+// ── Fast-Pfad (SGC == ON): identische Logik, aber gepadete Gitter + Volumen-Buchung ──
+
+void Coupling_RegisterFastGrid(States *Statesptr,
+    NUMERIC_TYPE *h_grid, NUMERIC_TYPE *volume_grid,
+    const NUMERIC_TYPE *dem_grid, const NUMERIC_TYPE *SGC_BankFullHeight_grid,
+    const NUMERIC_TYPE *cell_area_col,
+    WetDryRowBound *wet_dry_bounds, BoundaryCondition *boundary_cond,
+    const int grid_cols_padded)
+{
+    if (!g_open || Statesptr->coupling != ON) return;
+    gf_h = h_grid;
+    gf_vol = volume_grid;
+    gf_dem = dem_grid;
+    gf_bfH = SGC_BankFullHeight_grid;
+    gf_area_col = cell_area_col;
+    gf_wdb = wet_dry_bounds;
+    gf_bc = boundary_cond;
+    gf_cols_padded = grid_cols_padded;
+    g_fast = true;
+    printf("[COUPLE] Fast-Pfad (SGC) registriert: gepadete Gitter (stride=%d) - Austausch laeuft ueber volume_grid\n",
+           grid_cols_padded);
+}
+
+void Coupling_UpdateFast(States *Statesptr, Pars *Parptr, Solver *Solverptr,
+    const NUMERIC_TYPE delta_time)
+{
+    if (!g_open || Statesptr->coupling != ON || !g_fast) return;
+
+    // (A) Raten-Refresh alle dt_c (SWMM lockstep vorruecken) — identisch zum klassischen
+    // Pfad; refresh_rates liest im Fast-Modus ueber die Accessoren, Arrptr bleibt NULL
+    // (die Original-Arrays sind zu diesem Zeitpunkt ohnehin freigegeben).
+    if (Solverptr->t >= g_next_t) {
+        advance_swmm_to(Solverptr->t);
+        if (g_swmm_done && !g_done_logged) {
+            g_done_logged = true;
+            printf("[COUPLE] t=%.1fs: SWMM-Simulationsdauer zu Ende - Netz liefert/nimmt ab jetzt nichts mehr "
+                   "(END_TIME der network.inp < 2D-Dauer?)\n", Solverptr->t);
         }
-        printf("[COUPLE] t=%.1fs: %d/%d Schaechte aktiv | 1D->2D gesamt %.2f m3 | 2D->1D gesamt %.2f m3 | offene Bilanz-Schuld %.3f m3\n",
-               Solverptr->t, active, g_n, sumIn, sumOut, g_debt);
-        for (int k = 0; k < g_n; k++) {
-            const double qEff = g_Q[k] + ((g_pend[k] > 0.0) ? g_prate[k] : 0.0);
-            if (qEff == 0.0 && g_sumIn[k] == 0.0 && g_sumOut[k] == 0.0) continue;
-            printf("[COUPLE]   %-16s %s Q=%+.4f m3/s (Sum 1D->2D %.2f m3, 2D->1D %.2f m3)\n",
-                   g_name[k], g_isOutfall[k] ? "OUTFALL " : "JUNCTION", qEff, g_sumIn[k], g_sumOut[k]);
-        }
-        do { g_next_log += g_log_int; } while (g_next_log <= Solverptr->t);
+        refresh_rates(Statesptr, Parptr, Solverptr, NULL);
+        do { g_next_t += g_dt_c; } while (g_next_t <= Solverptr->t);
     }
+
+    // (B) Raten anwenden — Buchung AUSSCHLIESSLICH ueber volume_grid (+ fp_vol-Weitung);
+    // SGC2_ProcessH_Row rechnet das Volumen im naechsten Schritt geometrie-korrekt in h um
+    // (Kanalquerschnitt unter bankfull, Zellflaeche darueber). Massenkonto: das Fast-
+    // Pendant zu BCptr ist boundary_cond (VolInMT/VolOutMT gehen in Verror ein).
+    const double dt = (double)delta_time;
+    for (int k = 0; k < g_n; k++) {
+        if (g_skip[k]) continue;
+
+        // 1D -> 2D aus dem Ausliefer-Pool (Outfall/Ueberstau, integriert)
+        if (g_pend[k] > 0.0 && g_prate[k] > 0.0) {
+            double dV = g_prate[k] * dt;
+            if (dV > g_pend[k]) dV = g_pend[k];
+            g_pend[k]      -= dV;
+            fast_add_volume(k, dV);
+            gf_bc->VolInMT += dV;
+            g_sumIn[k]     += dV;
+        }
+
+        const double Q = g_Q[k];
+        if (Q > 0.0) {                       // 1D -> 2D (Netz drueckt uebers Deckel-Wehr)
+            const double dV = Q * dt;
+            fast_add_volume(k, dV);
+            gf_bc->VolInMT += dV;
+            g_sumIn[k]     += dV;
+        } else if (Q < 0.0) {                // 2D -> 1D (Einzug in den Schacht)
+            const double want = -Q * dt;
+            const double have = (double)gf_vol[fidx(k)];
+            const double dV   = (want < have) ? want : ((have > 0.0) ? have : 0.0);
+            if (dV > 0.0) {
+                fast_add_volume(k, -dV);
+                gf_bc->VolOutMT += dV;
+                g_sumOut[k]     += dV;
+            }
+            // SWMM bekommt LATFLOW kontinuierlich - lieferte das 2D weniger (Zelle
+            // leergelaufen), als Schuld merken und beim naechsten Refresh verrechnen.
+            if (want > dV) g_debt += want - dV;
+        }
+    }
+
+    // (C) Periodische Status-/Bilanzzeile.
+    log_status(Solverptr->t);
 }
 
 void Coupling_Finalize(States *Statesptr, const int verbose)
@@ -418,6 +612,10 @@ void Coupling_Finalize(States *Statesptr, const int verbose)
 
 void Coupling_Init(States *, Fnames *, Pars *, const int) {}
 void Coupling_Update(States *, Pars *, Solver *, BoundCs *, Arrays *) {}
+void Coupling_RegisterFastGrid(States *, NUMERIC_TYPE *, NUMERIC_TYPE *,
+    const NUMERIC_TYPE *, const NUMERIC_TYPE *, const NUMERIC_TYPE *,
+    WetDryRowBound *, BoundaryCondition *, const int) {}
+void Coupling_UpdateFast(States *, Pars *, Solver *, const NUMERIC_TYPE) {}
 void Coupling_Finalize(States *, const int) {}
 
 #endif

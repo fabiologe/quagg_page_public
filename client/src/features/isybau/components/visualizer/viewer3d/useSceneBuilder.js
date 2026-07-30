@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
+import { LINK_BAUWERKSTYPEN, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../../utils/mappings.js';
 
 const NETWORK_GROUP = '__network__';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -207,7 +207,6 @@ export function useSceneBuilder() {
 
   const mats = {
     // Geometry / type materials
-    manhole    : new THREE.MeshStandardMaterial({ color: 0x34495e, roughness: 0.7 }),
     fictive    : new THREE.MeshStandardMaterial({ color: 0xe74c3c, roughness: 0.5 }),
     outfall    : new THREE.MeshStandardMaterial({ color: 0x2ecc71, roughness: 0.5 }),
     noGeo      : new THREE.MeshStandardMaterial({ color: 0x7f8c8d, roughness: 0.8 }),
@@ -218,10 +217,6 @@ export function useSceneBuilder() {
     // hell lila, damit ein Blick "Sonderbauwerk" signalisiert statt vier
     // unterschiedliche Farben je Subtyp zu erfordern.
     sonderbauwerk: new THREE.MeshStandardMaterial({ color: 0xc9a0dc, roughness: 0.45, side: THREE.DoubleSide }),
-    circle     : new THREE.MeshStandardMaterial({ color: 0x3498db, roughness: 0.5 }),
-    rect       : new THREE.MeshStandardMaterial({ color: 0x8e44ad, roughness: 0.5, side: THREE.DoubleSide }),
-    trapez     : new THREE.MeshStandardMaterial({ color: 0x95a5a6, roughness: 0.5, side: THREE.DoubleSide }),
-    maul       : new THREE.MeshStandardMaterial({ color: 0x5d8aa8, roughness: 0.5, side: THREE.DoubleSide }),
     // depthWrite:false — transparente, koplanare Flächen dürfen den Tiefenpuffer
     // nicht beschreiben, sonst z-fighten sie gegeneinander und gegen den Boden (Flackern).
     area       : new THREE.MeshBasicMaterial({ color: 0x2980b9, side: THREE.DoubleSide, transparent: true, opacity: 0.25, depthWrite: false }),
@@ -235,7 +230,22 @@ export function useSceneBuilder() {
     utilLow    : new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.4, side: THREE.DoubleSide }),
     utilOk     : new THREE.MeshStandardMaterial({ color: 0x2980b9, roughness: 0.5, side: THREE.DoubleSide }),
     waterLevel : new THREE.MeshStandardMaterial({ color: 0x3498db, transparent: true, opacity: 0.75, roughness: 0.2, emissive: 0x0a2d4a }),
+    // Entwässerungsart (ISYBAU KM/KR/KS) — Standard-Einfärbung an Haltungen
+    // (ersetzt die bisherige Profilform-Farbe circle/rect/trapez/maul) und an
+    // normalen Schächten (ersetzt "manhole"). Sonderbauwerke/Auslauf/Speicher/
+    // Fiktivpunkte behalten ihre eigene Funktions-Farbe (siehe _buildNodes).
+    entwKM     : new THREE.MeshStandardMaterial({ color: ENTWAESSERUNGSART_COLOR.KM, roughness: 0.5, side: THREE.DoubleSide }),
+    entwKR     : new THREE.MeshStandardMaterial({ color: ENTWAESSERUNGSART_COLOR.KR, roughness: 0.5, side: THREE.DoubleSide }),
+    entwKS     : new THREE.MeshStandardMaterial({ color: ENTWAESSERUNGSART_COLOR.KS, roughness: 0.5, side: THREE.DoubleSide }),
+    entwDefault: new THREE.MeshStandardMaterial({ color: ENTWAESSERUNGSART_DEFAULT_COLOR, roughness: 0.6, side: THREE.DoubleSide }),
   };
+
+  function getEntwMaterial(entwaesserungsart) {
+    if (entwaesserungsart === 'KM') return mats.entwKM;
+    if (entwaesserungsart === 'KR') return mats.entwKR;
+    if (entwaesserungsart === 'KS') return mats.entwKS;
+    return mats.entwDefault;
+  }
 
   // Original material cache for restoring after deselect
   const _origMats = new Map();
@@ -378,7 +388,7 @@ export function useSceneBuilder() {
 
       // ── Standard Schacht mit Diameter ──────────────────────────────
       } else if (node.diameter > 0) {
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.manhole);
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), getEntwMaterial(node.entwaesserungsart));
         mesh.position.set(x, bottomY + height / 2, nz);
 
         // Manhole cover disc on top
@@ -391,7 +401,7 @@ export function useSceneBuilder() {
 
       // ── Schacht ohne Diameter (Marker) ─────────────────────────────
       } else {
-        mesh = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), mats.noGeo);
+        mesh = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), getEntwMaterial(node.entwaesserungsart));
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.set(x, bottomY + 0.02, nz);
       }
@@ -477,23 +487,18 @@ export function useSceneBuilder() {
       if (pType === 4 || pType === 8) {
         // Trapezkanalquerschnitt — open channel, no top lid
         geo = buildOrientedPipe(trapezoidPts(h, w), path3D, true);
-        mat = mats.trapez;
       } else if (pType === 5) {
         // Offenes Rechteckgerinne — open rectangle, no top lid
         geo = buildOrientedPipe(rectPts(h, w), path3D, true);
-        mat = mats.rect;
       } else if (pType === 3 || pType === 'Rechteckprofil') {
         // Geschlossenes Rechteckprofil
         geo = buildOrientedPipe(rectPts(h, w), path3D, false);
-        mat = mats.rect;
       } else if (pType === 2) {
         // Maulprofil (horseshoe section)
         geo = buildOrientedPipe(maulprofilPts(h, w), path3D, false);
-        mat = mats.maul;
       } else if (pType === 1 || pType === 'Egg') {
         // Eiprofil
         geo = buildOrientedPipe(eggPts(h, w), path3D, false);
-        mat = mats.circle;
       } else {
         // Kreisprofil (0) — TubeGeometry has its own stable frame
         const curvePath = new THREE.CurvePath();
@@ -502,10 +507,14 @@ export function useSceneBuilder() {
         }
         const steps = Math.max(path3D.length - 1, Math.ceil(curvePath.getLength() * 1.5));
         geo = new THREE.TubeGeometry(curvePath, steps, Math.max(0.02, h / 2), 8, false);
-        mat = mats.circle;
       }
 
       if (!geo) continue;
+
+      // Entwässerungsart (KM/KR/KS) ist die Standardfärbung, unabhängig von
+      // der Profilform (die bestimmt nur noch die Geometrie, nicht mehr die
+      // Farbe — vorher war es umgekehrt: circle/rect/trapez/maul je Profiltyp).
+      mat = getEntwMaterial(edge.entwaesserungsart);
 
       // ── Utilization coloring ────────────────────────────────────────
       if (showResults) {

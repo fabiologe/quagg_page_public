@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { useGeoStore } from '../../stores/useGeoStore.js';
 import { useSimulationStore } from '../../stores/useSimulationStore.js';
 import { latticeToCells } from '../../utils/BridgeMeshLattice.js';
+import { requestRender } from './renderTrigger.js';
 
 const COLOR_OPEN = new THREE.Color(0xffcc80);    // voll offen — hellorange
 const COLOR_PART = new THREE.Color(0xfb8c00);    // teilverbaut — kräftigeres Orange
@@ -43,12 +44,14 @@ export function useBridgeRasterPreview(scene) {
 
     /** Sichtbarkeit von außen umschalten (überlebt den nächsten rebuild()). */
     function setVisible(v) {
+        requestRender();
         visible = !!v;
         if (mesh) mesh.visible = visible;
     }
 
     function rebuild() {
         clear();
+        requestRender();   // schon das Leeren verändert das Bild
         const terrain = geoStore.terrain;
         // Nur im Brücken-Werkzeug zeigen (kontextuelle Vorschau).
         if (simStore.activeTool !== 'BRIDGE') return;

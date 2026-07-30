@@ -83,6 +83,22 @@ const router = createRouter({
       meta: { layout: 'empty' }
     },
     {
+      path: '/tools/flood-3d',
+      name: 'Flood3D',
+      component: () => import('@/features/flood-3D/views/Flood3DPreMain.vue'),
+      meta: { layout: 'empty' }
+    },
+    {
+      // alte Viewer-/Editor-Deeplinks (?runs=…, ?case=…) weiterleiten —
+      // der Nachweis-Viewer lebt jetzt als Phase „Ergebnis" im Projekt
+      path: '/tools/flood-3d/viewer',
+      redirect: (to) => ({ path: '/tools/flood-3d', query: to.query })
+    },
+    {
+      path: '/tools/flood-3d/editor',
+      redirect: (to) => ({ path: '/tools/flood-3d', query: to.query })
+    },
+    {
       path: '/isyscan',
       name: 'isyscan-poc',
       component: () => import('@/features/isyscan/views/IsyScanView.vue'),

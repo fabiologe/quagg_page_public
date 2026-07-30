@@ -168,11 +168,11 @@
         <!-- 3 Aktionen unter der Schacht/Haltung-Liste -->
         <div class="net-actions">
           <button class="na-btn" @click="showNetTable = true" title="Alle Daten in einer Tabelle bearbeiten (Mehrfachauswahl)">
-            <SvEmoji emoji="📋" :size="13" /> Tabelle bearbeiten
+            Tabelle bearbeiten
           </button>
           <div class="na-create">
             <button class="na-btn" @click="netCreateOpen = !netCreateOpen" title="Neuen Schacht/Haltung erstellen">
-              <SvEmoji emoji="➕" :size="13" /> Neu erstellen ▾
+              Neu erstellen ▾
             </button>
             <div v-if="netCreateOpen" class="na-menu">
               <button @click="createNet('NET_NODE')"><SvIcon name="Schacht.png" :size="13" color="currentColor" /> Schacht setzen (3D)</button>
@@ -180,7 +180,7 @@
             </div>
           </div>
           <button class="na-btn" @click="showNetCheck = true" title="Diskrepanzen zwischen DGM-Raster und Netz prüfen">
-            <SvEmoji emoji="⛰️" :size="13" /> Raster vs. Netz
+            Raster vs. Netz
           </button>
         </div>
 
@@ -333,6 +333,12 @@ watch(() => simStore.selection, (newId) => {
         activeTab.value = 'BOUNDARIES';
         return;
     }
+});
+
+// Kanalnetz: 3D-Klick auf Schacht/Haltung (MapEditor3D) setzt netStore.selectedId →
+// auf den Netz-Tab wechseln, dort hängt das NetworkPropertyPanel (v-if selectedId).
+watch(() => netStore.selectedId, (id) => {
+    if (id) activeTab.value = 'NETWORK';
 });
 </script>
 

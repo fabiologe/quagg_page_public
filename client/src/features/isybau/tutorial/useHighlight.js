@@ -11,30 +11,35 @@ const HIGHLIGHT_CLASS = 'sv-tutorial-highlight';
  */
 export function useHighlight() {
   const { activeStep } = useTutorialGuide();
-  let current = null;
-  let retryTimer = null;
+  let currentEls = [];
+  let retryTimers = [];
 
   function clear() {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-    if (current) {
-      current.classList.remove(HIGHLIGHT_CLASS);
-      current = null;
-    }
+    retryTimers.forEach(clearTimeout);
+    retryTimers = [];
+    currentEls.forEach((el) => el.classList.remove(HIGHLIGHT_CLASS));
+    currentEls = [];
   }
 
   // Das Ziel kann in einer noch nicht gemounteten Ansicht liegen (v-if) —
   // ein paar kurze Retries überbrücken das, ohne einen MutationObserver.
-  function apply(anchor, attempt = 0) {
+  function applyOne(anchor, attempt = 0) {
     const el = document.querySelector(`[data-tutorial="${anchor}"]`);
     if (el) {
       el.classList.add(HIGHLIGHT_CLASS);
-      current = el;
+      currentEls.push(el);
       return;
     }
     if (attempt < 5) {
-      retryTimer = setTimeout(() => apply(anchor, attempt + 1), 300);
+      retryTimers.push(setTimeout(() => applyOne(anchor, attempt + 1), 300));
     }
+  }
+
+  // highlight darf ein einzelner Anker ODER ein Array sein (z.B. wenn ein
+  // Step zwei gleichwertige Wege zeigt, wie "XML importieren" vs. "Neu starten").
+  function apply(anchorOrAnchors) {
+    const anchors = Array.isArray(anchorOrAnchors) ? anchorOrAnchors : [anchorOrAnchors];
+    anchors.forEach((a) => applyOne(a));
   }
 
   watch(

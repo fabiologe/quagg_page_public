@@ -483,6 +483,34 @@ von `deque` identisch unterstützt) — reiner Drop-in-Containertausch.
 - Alle bestehenden lokalen Repro-Szenarien (SGC-Bridge-Blowup-Repro,
   Brücke-ohne-SGC) unverändert grün.
 
+### `quagg-coupling-sgc-hook.patch`
+Hängt die **1D/2D-SWMM-Kopplung in die SGC-Zeitschleife** des lisflood2-Fast-Pfads ein
+(3 Hunks in `lisflood2/sgm_fast.cpp`; die Logik liegt in `coupling.cpp`/`coupling.h`,
+die per COPY eingespielt werden).
+
+- **Problem** (verifiziert 2026-07-28, `../docker/test_coupling_sgc.py`): `lisflood.cpp`
+  verzweigt bei `SGC == ON` nach `Fast_MainStart()` → `Fast_IterateLoop()` (lisflood2/),
+  und nur `IterateQ()` rief `Coupling_Update()`. Mit aktivem SGC lief der Austausch GAR
+  NICHT — der Lauf meldete `[COUPLE] aktiv`, tauschte aber 0,00 m³. Da der Client offene
+  Gerinne grundsätzlich als SGC exportiert, schlossen sich Kopplung und Gerinne aus.
+- **Warum nicht einfach derselbe Hook:** der Fast-Pfad alloziert eigene, gepadete Gitter
+  (`grid_cols_padded`) und **gibt `Arrptr->H/DEM/SGCz/dA` frei**; `h_grid` ist dort
+  **relativ zum DEM** (auf Gerinnezellen negativ bis −SGCbfH); H darf nicht direkt
+  beschrieben werden (`SGC2_ProcessH_Row` leitet h zentral aus `volume_grid` ab).
+- **Lösung:** `Coupling_RegisterFastGrid()` (einmalig vor der Schleife) +
+  `Coupling_UpdateFast()` (im `omp single` nach dem t-Vorrücken). Buchung ausschließlich
+  über `volume_grid` + `fp_vol`-Weitung (Muster `SGC2_PointSources_Vol_row`), Einzug
+  volumen-gekappt (h·dA wäre auf Gerinnezellen um Zellfläche/Kanalfläche zu groß),
+  Wasserspiegel = `dem + h`, Deckel-Klemmung gegen die Kanalsohle (`dem − bfH`),
+  Massenkonto über `boundary_cond->VolInMT/VolOutMT`. Wehrformel/Limiter/Relaxation/
+  Logformat identisch zum klassischen Pfad (gemeinsamer Code).
+- **MUSS als letzter Patch** angewandt werden (diff-Basis = Stand nach allen Vorgängern;
+  `sgc-bridge-blowup` + `bridge-flow-index` ändern `sgm_fast.cpp` ebenfalls).
+- Verifiziert (Image `lisflood-fp:sgc-coupling-hook`, 2026-07-28): neuer Positiv-Test
+  `test_coupling_sgc.py` (Einzug 272 m³ / Rücklieferung 263 m³ auf Gerinnezellen,
+  Datums-Beweis: Schacht mit Deckel über dem Gerinne-WSP zieht 0,000 m³) + alle 8
+  bestehenden Docker-Regressionen unverändert grün.
+
 ## Build (so wird der Patch angewandt)
 
 Single Source of Truth = **versionierter Quell-Tarball** `../vendor/lisflood-fp-8.0.3-src.tar.gz`
@@ -505,6 +533,8 @@ COPY engines/patches/quagg-bridge-flow-index.patch /tmp/...
 RUN patch -p1 --forward -d /src < /tmp/quagg-bridge-flow-index.patch
 COPY engines/patches/quagg-timeseries-memset.patch /tmp/...
 RUN patch -p1 --forward -d /src < /tmp/quagg-timeseries-memset.patch
+COPY engines/patches/quagg-coupling-sgc-hook.patch /tmp/...
+RUN patch -p1 --forward -d /src < /tmp/quagg-coupling-sgc-hook.patch   # ALS LETZTER (diff-Basis = alle Vorgaenger)
 RUN cmake -S /src -B /build ... && cmake --build ...
 ```
 

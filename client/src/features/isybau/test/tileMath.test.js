@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lon2tileX, lat2tileY, tileX2lon, tileY2lat, chooseZoomForTileBudget, tileRangeForBounds } from '../utils/tileMath.js';
+import { lon2tileX, lat2tileY, tileX2lon, tileY2lat, chooseZoomForTileBudget, tileRangeForBounds, lon2tileXFrac, lat2tileYFrac } from '../utils/tileMath.js';
 
 describe('tile <-> lon/lat round trip', () => {
     it('tileX2lon(lon2tileX(lon)) liegt in derselben Kachel', () => {
@@ -34,6 +34,22 @@ describe('chooseZoomForTileBudget', () => {
         const range = tileRangeForBounds(bigBounds, zoom);
         expect(range.xMax - range.xMin + 1).toBeLessThanOrEqual(6);
         expect(range.yMax - range.yMin + 1).toBeLessThanOrEqual(6);
+    });
+});
+
+describe('lon2tileXFrac / lat2tileYFrac', () => {
+    it('floor(frac) matches the integer tile index', () => {
+        const zoom = 15;
+        const lon = 7.77, lat = 49.44;
+        expect(Math.floor(lon2tileXFrac(lon, zoom))).toBe(lon2tileX(lon, zoom));
+        expect(Math.floor(lat2tileYFrac(lat, zoom))).toBe(lat2tileY(lat, zoom));
+    });
+
+    it('is monotonically increasing in lon (x) / non-decreasing tile index as lat drops (y)', () => {
+        const zoom = 12;
+        expect(lon2tileXFrac(7.0, zoom)).toBeLessThan(lon2tileXFrac(8.0, zoom));
+        // Y grows southward
+        expect(lat2tileYFrac(50.0, zoom)).toBeLessThan(lat2tileYFrac(49.0, zoom));
     });
 });
 

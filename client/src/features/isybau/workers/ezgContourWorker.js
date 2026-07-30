@@ -14,6 +14,12 @@
  * Protokoll:
  *   → { type:'compute', reqId, raster:Float32Array, width, height,
  *       interval, epsg, tileParams:{z,xMin,yMin,tileSize} }
+ *   — ODER, für ein bereits lokales Raster (z.B. ein hochgeladenes DGM,
+ *     siehe useEzgLayer.js computeContoursForTerrain()), tileParams/epsg
+ *     durch localGrid ersetzen — keine proj4-Reprojektion nötig, das Raster
+ *     ist schon in lokalen ISYBAU-Metern:
+ *   → { type:'compute', reqId, raster:Float32Array, width, height,
+ *       interval, localGrid:{xllcorner,yllcorner,cellsize} }
  *   ← { type:'result', reqId, positions:Float32Array } [transfer]
  *     (flaches x,y,0, x,y,0-Array, ein Punktpaar pro Liniensegment — exakt
  *     das Format, das LineSegmentsGeometry.setPositions() in
@@ -51,21 +57,30 @@ const CONTOUR_SIMPLIFY_EPSILON = 1.5;
 self.onmessage = (e) => {
     const msg = e.data;
     if (msg.type !== 'compute') return;
-    const { reqId, raster, width, height, interval, epsg, tileParams } = msg;
+    const { reqId, raster, width, height, interval, epsg, tileParams, localGrid } = msg;
 
     if (!(interval > 0)) {
         self.postMessage({ type: 'result', reqId, positions: new Float32Array(0) }, []);
         return;
     }
 
-    const { z, xMin, yMin, tileSize } = tileParams;
-    const pixelToLocal = (col, row) => {
-        const tileFracX = xMin + col / tileSize;
-        const tileFracY = yMin + row / tileSize;
-        const lon = tileX2lon(tileFracX, z);
-        const lat = tileY2lat(tileFracY, z);
-        return proj4('EPSG:4326', epsg, [lon, lat]);
-    };
+    // localGrid (eigenes DGM, siehe xyzTerrainImporter.js makeTerrainObject):
+    // Raster ist bereits in lokalen ISYBAU-Metern, keine proj4-Reprojektion.
+    // row 0 = Süden (gridIndex.js-Konvention, terrain.gridData ist bottom-up),
+    // also y = yllcorner + row*cellsize (KEIN Flip nötig, im Gegensatz zu
+    // useTerrainLayer.js' PlaneGeometry-Vertices, die top-down sind).
+    const pixelToLocal = localGrid
+        ? (col, row) => [localGrid.xllcorner + col * localGrid.cellsize, localGrid.yllcorner + row * localGrid.cellsize]
+        : (() => {
+            const { z, xMin, yMin, tileSize } = tileParams;
+            return (col, row) => {
+                const tileFracX = xMin + col / tileSize;
+                const tileFracY = yMin + row / tileSize;
+                const lon = tileX2lon(tileFracX, z);
+                const lat = tileY2lat(tileFracY, z);
+                return proj4('EPSG:4326', epsg, [lon, lat]);
+            };
+        })();
 
     const segments = marchingSquares(raster, width, height, interval);
     const localSegments = segmentsToLocalCoords(segments, pixelToLocal);

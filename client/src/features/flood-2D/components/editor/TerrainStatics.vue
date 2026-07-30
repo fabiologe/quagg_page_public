@@ -47,7 +47,9 @@ const { onPanelEnter, onPanelLeave, panelVisible } = useCollapsiblePanel();
     backdrop-filter: blur(8px);
     width: 250px;
     box-shadow: var(--sv-glow-violet);
-    z-index: 100;
+    /* Hintergrund-Chrome wie LayerControl: unter den Arbeits-Panels (100/1000),
+       damit die Statistik nie Tool-/Vorschau-Inhalte verdeckt. */
+    z-index: 20;
 }
 .stats-title-row {
     display: flex;

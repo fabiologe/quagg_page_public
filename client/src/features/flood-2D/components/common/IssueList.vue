@@ -14,11 +14,16 @@
         v-for="(it, i) in issues"
         :key="it.code || i"
         class="issue-list__item"
-        :class="'issue-list__item--' + norm(it.severity)"
+        :class="['issue-list__item--' + norm(it.severity), { 'issue-list__item--clickable': clickable }]"
+        :title="clickable ? 'Klicken: betroffenes Element auswählen' : null"
+        @click="clickable && $emit('select', it, i)"
       >
         <span class="issue-list__icon"><SvEmoji :emoji="icon(it.severity)" :size="13" /></span>
         <span class="issue-list__text">
           <slot name="message" :issue="it">{{ it.message }}</slot>
+          <span v-if="it.hint" class="issue-list__hint">
+            <SvEmoji emoji="💡" :size="11" /> {{ it.hint }}
+          </span>
         </span>
         <button
           v-if="dismissible"
@@ -42,20 +47,23 @@ import SvEmoji from './SvEmoji.vue';
 
 /**
  * Wiederverwendbare Issue-/Warn-Liste.
- * Feature-agnostisch: erwartet Objekte mit { severity, message, code? }.
- * severity ∈ 'error' | 'warn'(='warning') | 'info'. Rein präsentational.
+ * Feature-agnostisch: erwartet Objekte mit { severity, message, code?, hint? }.
+ * severity ∈ 'error' | 'warn'(='warning') | 'info'. hint = optionaler Lösungsvorschlag
+ * (zweite Zeile). Mit clickable emittiert ein Klick auf eine Zeile 'select' (issue, index)
+ * — der Konsument entscheidet, was „auswählen" heißt (z. B. Netz-Element selektieren).
  */
 const props = defineProps({
-  issues: { type: Array, default: () => [] },          // [{ severity, message, code? }]
+  issues: { type: Array, default: () => [] },          // [{ severity, message, code?, hint? }]
   title: { type: String, default: '' },
   dense: { type: Boolean, default: false },
   maxHeight: { type: String, default: '46vh' },
   dismissible: { type: Boolean, default: false },
   showCounts: { type: Boolean, default: false },
+  clickable: { type: Boolean, default: false },
   emptyText: { type: String, default: 'Keine Hinweise.' },
 });
 
-defineEmits(['dismiss']);
+defineEmits(['dismiss', 'select']);
 
 const norm = (sev) => {
   const s = String(sev || '').toLowerCase();
@@ -115,8 +123,18 @@ const counts = computed(() => {
 .issue-list--dense .issue-list__item { padding: 0.35rem 0.5rem; font-size: 0.78rem; margin-bottom: 0.28rem; }
 .issue-list__item--error { border-color: #7a2230; background: #2a1418; }
 .issue-list__item--warn  { border-color: #7a5a1d; background: #2a2210; }
+.issue-list__item--clickable { cursor: pointer; }
+.issue-list__item--clickable:hover { border-color: var(--sv-lime, #a3e635); }
 .issue-list__icon { flex-shrink: 0; }
 .issue-list__text { flex: 1; }
+.issue-list__hint {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  margin-top: 0.2rem;
+  font-size: 0.92em;
+  color: #90a4ae;
+}
 .issue-list__dismiss {
   flex-shrink: 0;
   background: transparent;

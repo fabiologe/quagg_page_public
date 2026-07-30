@@ -1,4 +1,7 @@
 <template>
+  <!-- Teleport nach <body>: entkommt dem z-index:15-Stacking-Context des rechten Panels
+       (sonst liegen Canvas-Overlays ÜBER dem Modal, s. NetworkRasterCheck). -->
+  <Teleport to="body">
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="assignment-modal">
       
@@ -135,6 +138,7 @@
 
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup>

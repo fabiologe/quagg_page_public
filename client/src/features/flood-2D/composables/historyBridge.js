@@ -19,8 +19,15 @@ export function registerHistoryManager(fn) {
     _saveStateFn = fn;
 }
 
-export function notifyPreMutate(label) {
-    _saveStateFn?.(label);
+/**
+ * Meldet eine BEVORSTEHENDE Mutation → History legt vorher einen Snapshot an.
+ * @param {string} label   Anzeigetext im Verlauf
+ * @param {'geo'|'net'} [scope]  welcher Store gleich mutiert. Erlaubt der History,
+ *   die Klone der NICHT betroffenen Stores wiederzuverwenden (Copy-on-Write) statt
+ *   bei jedem Edit alle Daten neu zu kopieren. Ohne Angabe wird defensiv alles geklont.
+ */
+export function notifyPreMutate(label, scope) {
+    _saveStateFn?.(label, scope);
 }
 
 // ─── Terrain History (Raster-Daten) ──────────────────────────────────────────
