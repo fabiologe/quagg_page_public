@@ -166,7 +166,11 @@ export function useTerrainLayer() {
                 uColorMid: { value: new THREE.Color(0x8b7355) },  // erdbraun (Hang)
                 uColorHigh: { value: new THREE.Color(0xe8ddc8) }, // heller Stein (Kuppe)
                 uLightDir: { value: new THREE.Vector3(-0.4, 0.75, 0.35).normalize() },
-                uAmbient: { value: 0.4 },
+                // 0.4 -> 0.6: Nutzer-Feedback "zu starke Schatten" — Flächen, die vom
+                // fixen uLightDir wegzeigen (steile Böschungen/Grabenflanken), fielen
+                // auf 40% Helligkeit, wirkte hart/kontrastreich. Bewusst nicht höher
+                // (z.B. 0.8+), sonst geht die Relief-Wirkung des Hillshadings verloren.
+                uAmbient: { value: 0.6 },
             },
             vertexShader: terrainVertexShader,
             fragmentShader: terrainFragmentShader,

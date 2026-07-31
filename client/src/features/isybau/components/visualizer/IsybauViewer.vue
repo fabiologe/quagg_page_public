@@ -47,12 +47,29 @@
           <polygon
             v-for="area in areas"
             :key="area.id"
-            :points="getPolygonPoints(area.points)"
+            :points="displayAreaPoints(area)"
             class="area-polygon"
             @click.stop="selectElement(area, 'area', $event)"
+            @dblclick.stop="dblClickToAddVertex(area, $event)"
           >
             <title>{{ area.id }}</title>
           </polygon>
+        </g>
+
+        <!-- Flächen-Eckpunkt-Handles: nur für die ausgewählte Fläche, C2
+             Vertex-Editing. Eigene <g> NACH den Polygonen (Stacking-Order
+             für Klick-Priorität der Handles über der Kante). -->
+        <g v-if="selectedAreaForEdit" class="area-vertex-handles">
+          <circle
+            v-for="(p, i) in selectedAreaForEdit.points"
+            :key="i"
+            :cx="vertexDisplayPoint(selectedAreaForEdit, i).x - bounds.minX"
+            :cy="bounds.maxY - vertexDisplayPoint(selectedAreaForEdit, i).y"
+            :r="vertexHandleRadius"
+            class="area-vertex-handle"
+            @pointerdown.stop.prevent="startVertexDrag(selectedAreaForEdit, i, $event)"
+            @contextmenu.stop.prevent="removeVertex(selectedAreaForEdit, i)"
+          />
         </g>
 
         <!-- Drawing Preview -->
@@ -218,6 +235,15 @@
       <div v-for="item in entwLegendItems" :key="item.label" class="entw-legend-item">
         <span class="entw-dot" :style="{ background: item.color }"></span>{{ item.label }}
       </div>
+      <div v-if="cursorCoords" class="entw-legend-coords">
+        X: {{ cursorCoords.x.toFixed(2) }}<br>Y: {{ cursorCoords.y.toFixed(2) }}
+      </div>
+    </div>
+
+    <!-- Höhenlinien-Hover-Tooltip — gleicher Sprechblasen-Stil wie
+         .tool-hint/.drawing-tooltip (EditorToolbox.vue/IsybauEditor.vue). -->
+    <div v-if="contourHover" class="contour-hover-tooltip" :style="{ left: (contourHover.clientX + 14) + 'px', top: (contourHover.clientY + 14) + 'px' }">
+      Höhe: {{ contourHover.elevation != null ? contourHover.elevation.toFixed(1) + ' m' : '–' }}
     </div>
 
     <!-- EZG-Karte: Höhenlinien, GPU-gerendert (Three.js/WebGL) statt SVG —
@@ -289,6 +315,7 @@ import LoadingOverlay from '../common/LoadingOverlay.vue';
 import { useEzgLayer } from '../../composables/useEzgLayer.js';
 import { useContourGpuLayer } from './useContourGpuLayer.js';
 import { computeViewportWorldBounds } from '../../utils/geoBounds.js';
+import { closestPointOnSegment, dist } from '../../utils/geometry2d.js';
 
 const ezgLayer = useEzgLayer();
 // Blockierender Ladezustand: Luftbild ODER Höhenlinien laden noch für den
@@ -375,7 +402,7 @@ const props = defineProps({
 
 
 
-const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details', 'delete-elements']);
+const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details', 'delete-elements', 'update-area-point', 'insert-area-point', 'remove-area-point']);
 
 const container = ref(null); // Reference to root div
 
@@ -500,6 +527,12 @@ const handleMapDblClick = (e) => {
 
 // Update mousedown to handleMouseDown
 const handleMouseDown = (e) => {
+    // Eckpunkt-Drag (C2 Vertex-Editing) hat Priorität — sonst startet gleichzeitig
+    // ein Pan (die "compatibility mousedown" nach dem pointerdown auf dem Handle
+    // bubbelt trotz @pointerdown.stop weiter hoch, .stop wirkt nur auf das
+    // Pointer-Event selbst), das Ziehen der Ecke und das Verschieben der ganzen
+    // Karte kämpfen dann gegeneinander (Nutzer-Feedback).
+    if (vertexDrag.value) return;
     if (props.interactionMode === 'boxSelect' && e.button === 0) {
         boxSelect.active = true;
         boxSelect.additive = e.shiftKey;
@@ -587,17 +620,29 @@ const selectedElement = ref(null);
 
 const selectElement = (element, type, event = null) => {
   if (mode.value !== 'select' && isDragging.value) return;
+  // mode.value ist NUR der Pan/Select-Toggle (siehe ViewerControls.vue),
+  // NICHT store.editor.mode/props.interactionMode — pickNodeRef/pickEdgeRef
+  // gehören deshalb NICHT in diese Liste (wären hier nie erreichbar).
   const allowableModes = ['view', 'select', 'addEdge', 'pan', 'delete'];
-  if (!allowableModes.includes(mode.value)) return;
-  
-  selectedElement.value = element;
-  
+  if (!allowableModes.includes(mode.value) && !['pickNodeRef', 'pickEdgeRef'].includes(props.interactionMode)) return;
+
+  // Während eines Viewer-Picks (store.startPickRef(), siehe ElementInfo.vue/
+  // PreprocessingModal.vue "Im Viewer wählen") darf die AKTUELLE Auswahl NICHT
+  // überschrieben werden — sonst springt selectedElement auf das gerade
+  // angeklickte Ziel-Element (z.B. den Knoten), die ElementInfo-Instanz der
+  // Fläche, die den Pick gestartet hat, verliert ihre localData (reinitialisiert
+  // sich auf den neuen selectedElement-Wert) und der Pick geht ins Leere.
+  const isPicking = ['pickNodeRef', 'pickEdgeRef'].includes(props.interactionMode);
+  if (!isPicking) {
+    selectedElement.value = element;
+  }
+
   // Fetch real map coordinates if event is provided
   let mapCoords = null;
   if (event) {
       mapCoords = getEventCoords(event.clientX, event.clientY);
   }
-  
+
   if (type === 'node') emit('select-node', element);
   else if (type === 'edge') emit('select-edge', { element, mapCoords });
   else if (type === 'area') emit('select-area', element);
@@ -726,7 +771,7 @@ onMounted(() => {
   if (!contourCanvasHost.value) return;
   contourGpu.init(contourCanvasHost.value);
   syncContourResize();
-  contourGpu.updateGeometry(ezgLayer.contourPositions.value);
+  contourGpu.updateGeometry(ezgLayer.contourPositions.value, ezgLayer.contourElevations.value);
   contourGpu.render();
 
   contourResizeObserver = new ResizeObserver(() => syncContourResize());
@@ -773,7 +818,7 @@ watch(bounds, () => {
 // Reihenfolge robust gegen künftig wieder wachsende Punktzahlen).
 watch(() => ezgLayer.contourPositions.value, (positions) => {
   requestAnimationFrame(() => {
-    contourGpu.updateGeometry(positions);
+    contourGpu.updateGeometry(positions, ezgLayer.contourElevations.value);
     contourGpu.render();
   });
 });
@@ -835,6 +880,93 @@ const transformString = computed(() => {
 const getPolygonPoints = (points) => {
   const b = bounds.value;
   return points.map(p => `${p.x - b.minX},${b.maxY - p.y}`).join(' ');
+};
+
+// === C2: Flächen-Eckpunkt-Editing ===
+// selectedElement.value?.points existiert nur für Flächen (siehe ElementInfo.vue
+// elementType-Diskriminator: gleiches Prinzip). readonly (Ergebnis-Ansicht,
+// siehe IsybauMain.vue) zeigt nie Editier-Handles — dort läuft kein
+// update-area-point-Listener, das Ziehen würde sonst wirkungslos (aber
+// irreführend interaktiv aussehend) ins Leere laufen.
+const selectedAreaForEdit = computed(() => (!props.readonly && selectedElement.value?.points ? selectedElement.value : null));
+
+// vertexHandleRadius in Weltmetern, konstant in Bildschirm-Pixeln (r/scale) —
+// dasselbe Prinzip wie die bestehenden Zeichenpunkt-Handles.
+const vertexHandleRadius = computed(() => 3 / (scale.value || 1));
+
+// Aktiver Drag: rein lokale Vorschau, KEIN Store-Write pro Pointermove-Tick
+// (sonst Undo-Stack-Spam) — nur bei pointerup wird EINMAL committet, siehe
+// store.updateAreaPoint()-Dokumentation für die Begründung.
+const vertexDrag = ref(null); // { areaId, pointIndex, x, y } | null
+let vertexDragMoved = false;
+
+/** Anzeige-Position eines Eckpunkts: während des aktiven Drags die lokale Vorschau, sonst der Store-Wert. */
+const vertexDisplayPoint = (area, index) => {
+  if (vertexDrag.value && vertexDrag.value.areaId === area.id && vertexDrag.value.pointIndex === index) {
+    return { x: vertexDrag.value.x, y: vertexDrag.value.y };
+  }
+  return area.points[index];
+};
+
+/** Polygon-Punkte fürs <polygon points="...">, inkl. aktiver Drag-Vorschau. */
+const displayAreaPoints = (area) => {
+  if (vertexDrag.value && vertexDrag.value.areaId === area.id) {
+    const pts = area.points.map((p, i) => (i === vertexDrag.value.pointIndex ? { x: vertexDrag.value.x, y: vertexDrag.value.y } : p));
+    return getPolygonPoints(pts);
+  }
+  return getPolygonPoints(area.points);
+};
+
+const onVertexDragMove = (e) => {
+  if (!vertexDrag.value) return;
+  const coords = getEventCoords(e.clientX, e.clientY);
+  if (!coords) return;
+  vertexDragMoved = true;
+  vertexDrag.value = { ...vertexDrag.value, x: coords.x, y: coords.y };
+};
+
+const onVertexDragEnd = () => {
+  window.removeEventListener('pointermove', onVertexDragMove);
+  window.removeEventListener('pointerup', onVertexDragEnd);
+  if (vertexDrag.value && vertexDragMoved) {
+    const { areaId, pointIndex, x, y } = vertexDrag.value;
+    // Kein lokales Optimistic-Update nötig: area.points kommt als Prop vom
+    // Store zurück — wird der Commit dort abgelehnt (Selbstüberschneidung/
+    // Clipping-Ergebnis ungültig), bleibt die Anzeige einfach unverändert,
+    // sobald vertexDrag hier auf null gesetzt wird.
+    emit('update-area-point', { areaId, pointIndex, coords: { x, y } });
+  }
+  vertexDrag.value = null;
+};
+
+const startVertexDrag = (area, index, e) => {
+  const coords = getEventCoords(e.clientX, e.clientY);
+  if (!coords) return;
+  vertexDragMoved = false;
+  vertexDrag.value = { areaId: area.id, pointIndex: index, x: coords.x, y: coords.y };
+  window.addEventListener('pointermove', onVertexDragMove);
+  window.addEventListener('pointerup', onVertexDragEnd);
+};
+
+/** Doppelklick auf eine Kante der AUSGEWÄHLTEN Fläche fügt dort einen neuen Eckpunkt ein. */
+const dblClickToAddVertex = (area, e) => {
+  if (selectedAreaForEdit.value?.id !== area.id) return;
+  const coords = getEventCoords(e.clientX, e.clientY);
+  if (!coords) return;
+  const pts = area.points;
+  let bestIdx = -1, bestDist = Infinity, bestPoint = null;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const cp = closestPointOnSegment(coords.x, coords.y, a.x, a.y, b.x, b.y);
+    const d = dist(coords.x, coords.y, cp.x, cp.y);
+    if (d < bestDist) { bestDist = d; bestIdx = i; bestPoint = cp; }
+  }
+  if (bestIdx >= 0) emit('insert-area-point', { areaId: area.id, insertAfterIndex: bestIdx, coords: bestPoint });
+};
+
+/** Rechtsklick auf ein Handle entfernt den Eckpunkt (Guard gegen <3 Punkte lebt im Store). */
+const removeVertex = (area, index) => {
+  emit('remove-area-point', { areaId: area.id, pointIndex: index });
 };
 
 // Flow Paths Calculation
@@ -992,6 +1124,32 @@ const draggingLabelId = ref(null);
 const startLabelX = ref(0);
 const startLabelY = ref(0);
 
+// Höhenlinien-Hover: { elevation, clientX, clientY } | null — rAF-gedrosselt,
+// da pan() bei jedem Mousemove feuert. Die eigentliche Nächste-Segment-Suche
+// läuft in useContourGpuLayer.js gegen ein einmalig gebautes Bucket-Grid
+// (nicht Brute-Force), siehe dort für die Begründung.
+const contourHover = ref(null);
+// Aktuelle Cursor-Weltkoordinate, für die Koordinatenanzeige unter der
+// Entwässerungsart-Legende — unthrottled (im Gegensatz zu updateContourHover,
+// keine teure Bucket-Suche dahinter, nur getEventCoords()).
+const cursorCoords = ref(null);
+const HOVER_TOLERANCE_PX = 8;
+let hoverRafPending = false;
+
+const updateContourHover = (e) => {
+  if (hoverRafPending) return;
+  hoverRafPending = true;
+  requestAnimationFrame(() => {
+    hoverRafPending = false;
+    if (!ezgLayer.contourPositions.value.length) { contourHover.value = null; return; }
+    const coords = getEventCoords(e.clientX, e.clientY);
+    if (!coords) { contourHover.value = null; return; }
+    const tolWorld = HOVER_TOLERANCE_PX / (scale.value || 1);
+    const hit = contourGpu.findNearestSegment(coords.x, coords.y, tolWorld);
+    contourHover.value = hit ? { elevation: hit.elevation, clientX: e.clientX, clientY: e.clientY } : null;
+  });
+};
+
 const startLabelDrag = (node, e) => {
     if (e.button !== 0) return; // Only left click
     draggingLabelId.value = node.id;
@@ -1060,6 +1218,12 @@ const startPan = (e) => {
 };
 
 const pan = (e) => {
+  cursorCoords.value = getEventCoords(e.clientX, e.clientY); // Koordinatenanzeige, unabhängig vom aktuellen Modus/Zustand
+
+  // Eckpunkt-Drag hat Priorität — siehe handleMouseDown() für die Begründung.
+  // onVertexDragMove() läuft über einen eigenen window-Listener, kein Pan hier nötig.
+  if (vertexDrag.value) return;
+
   if (boxSelect.active) {
       boxSelect.x1 = e.clientX;
       boxSelect.y1 = e.clientY;
@@ -1084,8 +1248,13 @@ const pan = (e) => {
       return;
   }
 
-  if (!isPanning.value) return;
-  
+  if (!isPanning.value) {
+    updateContourHover(e);
+    return;
+  }
+
+  contourHover.value = null; // Tooltip während des aktiven Pannens ausblenden
+
   const dx = e.clientX - startX.value;
   const dy = e.clientY - startY.value;
 
@@ -1110,6 +1279,8 @@ const pan = (e) => {
 };
 
 const endPan = () => {
+  contourHover.value = null; // Tooltip weg, sobald die Maus den Viewer verlässt (@mouseleave) oder losgelassen wird
+
   if (boxSelect.active) {
       finalizeBoxSelect();
       boxSelect.active = false;
@@ -1249,11 +1420,16 @@ watch(() => props.nodes.size, (n, old) => {
 }
 
 .isybau-viewer.mode-pan {
-  cursor: grab;
+  /* Eigene, 40% größere Cursor-Variante (public/saintv1d/icons/cursor-pan.svg,
+     45x45 statt 32x32, gleiche viewBox/Pfade) — macht die blockige Pixel-Optik
+     als Cursor deutlicher sichtbar (Nutzer-Feedback: "mehr pixelig"). Hotspot
+     22,22 = Mitte (symmetrisches 4-Wege-Move-Symbol). grab bleibt als Fallback
+     für Browser ohne SVG-Cursor-Unterstützung. */
+  cursor: url('/saintv1d/icons/cursor-pan.svg') 22 22, grab;
 }
 
 .isybau-viewer.mode-pan:active {
-  cursor: grabbing;
+  cursor: url('/saintv1d/icons/cursor-pan.svg') 22 22, grabbing;
 }
 
 .isybau-viewer.mode-select {
@@ -1263,7 +1439,14 @@ watch(() => props.nodes.size, (n, old) => {
 svg {
   width: 100%;
   height: 100%;
-  display: block; 
+  display: block;
+  /* Ohne position wäre die SVG "nicht positioniert" und würde IMMER hinter
+     .contour-gpu-host (position:absolute, späteres DOM-Geschwister) landen —
+     unabhängig von der DOM-Reihenfolge. Elemente/Labels müssen über den
+     Höhenlinien liegen, siehe .contour-gpu-host unten (Klicks bleiben
+     unverändert bei der SVG, der Kontur-Canvas hat pointer-events:none). */
+  position: relative;
+  z-index: 1;
 }
 
 /* Areas */
@@ -1274,6 +1457,19 @@ svg {
   vector-effect: non-scaling-stroke;
   cursor: pointer;
   transition: fill 0.2s;
+}
+
+/* Flächen-Eckpunkt-Handles (C2 Vertex-Editing) — nur bei ausgewählter Fläche
+   sichtbar, Ziehen verschiebt, Rechtsklick löscht. */
+.area-vertex-handle {
+  fill: #2ecc71;
+  stroke: #040647;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  cursor: grab;
+}
+.area-vertex-handle:hover {
+  fill: #fff;
 }
 
 .isybau-viewer.mode-addEdge {
@@ -1427,6 +1623,37 @@ svg {
   flex-shrink: 0;
 }
 
+/* Cursor-Koordinatenanzeige — direkt unter der Kanaltyp-Legende, gleiches
+   Panel, eigener abgesetzter Block. */
+.entw-legend-coords {
+  margin-top: 0.3rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(148, 139, 225, 0.3);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.4rem;
+  color: #8f8be1;
+  line-height: 1.6;
+}
+
+/* Höhenlinien-Hover — gleicher Terminal-Sprechblasen-Stil wie
+   tutorial/TutorialMascot.vue .speech-bubble/.bubble-text (siehe auch
+   .tool-hint in EditorToolbox.vue / .drawing-tooltip in IsybauEditor.vue). */
+.contour-hover-tooltip {
+  position: fixed;
+  z-index: 20;
+  background: #040647;
+  border: 1px solid #00e855;
+  box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+  color: #00e855;
+  text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* EZG-Karte: GPU-Kontur-Canvas — deckt die SVG komplett ab, malt aber nur
    Linien (WebGLRenderer mit alpha:true), Rest bleibt transparent. */
 .contour-gpu-host {
@@ -1488,8 +1715,14 @@ svg {
   fill: #2c3e50;
   pointer-events: all;
   cursor: grab;
-  text-shadow: 0px 0px 0.2px white;
-  opacity: 0.8;
+  /* Weißer Halo statt text-shadow (wirkt in SVG praktisch nicht) — bleibt
+     auch über Luftbildern lesbar, ohne ein eigenes <rect> pro Label zu
+     brauchen. Gleiches Muster wie ifc-viewer/IfcPdfExportModal.vue. */
+  paint-order: stroke;
+  stroke: rgba(255,255,255,0.85);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  opacity: 1;
   transition: font-size 0.2s;
 }
 

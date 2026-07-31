@@ -14,6 +14,8 @@
 import { ref, computed } from 'vue';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { resolveSubcatchmentSize } from '../../utils/subcatchmentSize.js';
+import { summarizeOutfallCatchments } from '../../utils/outfallCatchments.js';
 
 const props = defineProps({
   nodes:               { type: Map,    default: () => new Map() },
@@ -469,7 +471,7 @@ async function exportPDF() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...C.muted);
-    doc.text(`Erstellt: ${new Date().toLocaleString('de-DE')}  ·  Einzugsgebiet: ${(props.totalCatchmentAreaHa || 0).toFixed(4)} ha  ·  ${props.nodes?.size || 0} Schächte  ·  ${props.edges?.size || 0} Haltungen`, ML, cy + 5.5);
+    doc.text(`Erstellt: ${new Date().toLocaleString('de-DE')}  ·  Einzugsgebiet: ${(props.totalCatchmentAreaHa || 0).toLocaleString('de-DE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} ha  ·  ${props.nodes?.size || 0} Schächte  ·  ${props.edges?.size || 0} Haltungen`, ML, cy + 5.5);
     if (rb.areaBaseFallback) {
       doc.text('Hinweis: Keine Einzugsgebietsfläche vorhanden — mm-Werte beziehen sich auf die SWMM-interne Flächenbasis.', ML, cy + 9);
       cy += 4;
@@ -501,7 +503,7 @@ async function exportPDF() {
     doc.text('Bezugsfläche:', ML + 2, cyL + 4.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(21, 128, 61);
-    doc.text(`${(props.totalCatchmentAreaHa || 0).toFixed(4)} ha`, ML + 24, cyL + 4.5);
+    doc.text(`${(props.totalCatchmentAreaHa || 0).toLocaleString('de-DE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} ha`, ML + 24, cyL + 4.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(156, 163, 175);
     doc.text(`= ${((props.totalCatchmentAreaHa || 0) * 10000).toLocaleString('de-DE')} m²`, ML + colW - 2, cyL + 4.5, { align: 'right' });
@@ -570,6 +572,26 @@ async function exportPDF() {
           fmt((o.avgFlow || 0) * 1000, 1),
           fmt((o.maxFlow || 0) * 1000, 1),
           fmt((o.totalVol || 0) * 1000, 1),
+        ]),
+      });
+      cy = doc.lastAutoTable.finalY + 4;
+    }
+
+    // Ausleitungen — angeschlossene Einzugsgebiete (Netz-Herkunft, nicht
+    // Hydraulik): welche Flächen entwässern über das Kanalnetz zu welcher
+    // Ausleitung, siehe outfallCatchments.js für die (vereinfachte) Herleitung.
+    const outfallCatchments = summarizeOutfallCatchments(props.areas, props.nodes, props.edges);
+    if (outfallCatchments.length) {
+      cy = sectionTitle(doc, cy + 2, `Ausleitungen — angeschlossene Einzugsgebiete (${outfallCatchments.length})`);
+      autoTable(doc, {
+        ...tableDefaults(),
+        startY: cy,
+        head:   [['Outfall', 'Angeschlossene Fläche (ha)', 'Mittl. Beiwert Ψ', 'Befestigte Fläche (ha)']],
+        body:   outfallCatchments.map(o => [
+          o.outfallId,
+          fmt(o.totalAreaHa, 4),
+          fmt(o.avgRunoffCoeff, 3),
+          fmt(o.impervAreaHa, 4),
         ]),
       });
     }
@@ -672,7 +694,10 @@ async function exportPDF() {
       head:   [['ID', 'Fläche (ha)', 'N (mm)', 'Infil. (mm)', 'Abfl. (mm)', 'Ψ', 'Q_peak (m³/s)']],
       body:   areaEntries.map(([id, d]) => [
         id,
-        fmt(d.size ?? 0, 4),
+        // d (SWMM .rpt "Subcatchment Runoff Summary") hat KEIN size-Feld — die
+        // echte Flächengröße kommt aus der Eingabe-Fläche (core/domain/Area.js),
+        // inkl. Split-/".1"-Suffix-Auflösung, siehe subcatchmentSize.js.
+        fmt(resolveSubcatchmentSize(id, props.areas), 4),
         fmt(d.precip ?? 0, 2),
         fmt(d.totalInfil ?? 0, 2),
         fmt(d.totalRunoffMm ?? d.runoffMm ?? 0, 2),

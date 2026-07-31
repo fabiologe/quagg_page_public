@@ -24,6 +24,11 @@
       <span class="toggle-dot" />
       <span class="toggle-label">Gelände{{ terrainSource === 'api' ? ' (API, ~30m)' : '' }}</span>
     </label>
+    <label class="ctrl-toggle" title="Netz-Renderstyle: Solid (volle Körper) oder Drahtkörper (macht den Wasserstand im Rohr-/Schachtinneren sichtbar) — unabhängig davon, ob Ergebnisse angezeigt werden">
+      <input type="checkbox" :checked="wireframeMode" @change="$emit('update:wireframeMode', $event.target.checked)" />
+      <span class="toggle-dot" />
+      <span class="toggle-label">Drahtkörper</span>
+    </label>
 
     <div class="ctrl-divider" />
 
@@ -81,10 +86,11 @@ const props = defineProps({
   terrainSource:  { type: String,  default: null  },
   showResults:    { type: Boolean, default: false },
   showWaterLevel: { type: Boolean, default: true  },
+  wireframeMode:  { type: Boolean, default: false },
   zScale:         { type: Number,  default: 1     },
   hasResults:     { type: Boolean, default: false },
 });
-defineEmits(['reset-view', 'update:showNodes', 'update:showEdges', 'update:showAreas', 'update:showTerrain', 'update:showResults', 'update:showWaterLevel', 'update:zScale']);
+defineEmits(['reset-view', 'update:showNodes', 'update:showEdges', 'update:showAreas', 'update:showTerrain', 'update:showResults', 'update:showWaterLevel', 'update:wireframeMode', 'update:zScale']);
 
 const terrainToggleTitle = computed(() => {
   if (props.terrainSource === 'api') {

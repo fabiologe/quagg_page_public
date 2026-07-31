@@ -22,16 +22,18 @@ import { lon2tileX, lat2tileY, tileX2lon, tileY2lat, chooseZoomForTileBudget } f
 
 const TILE_SIZE = 256;
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
-// Großzügiger als bei den Höhenkacheln (Fotos sind klein, ~20-100 KB/Kachel)
-// und bewusst NICHT Esris Maximal-Zoom (19): etwas gröber liefert zuverlässig
-// das GANZE Netz im Bild statt maximale Schärfe über einem zu kleinen
-// Ausschnitt (Nutzer-Feedback: Kanäle fielen aus dem alten Einzelbild heraus).
+// Großzügiger als bei den Höhenkacheln (Fotos sind klein, ~20-100 KB/Kachel).
 // 16x16 statt 10x10 (nochmal hochgesetzt, seit useEzgLayer.js refresh() den
 // initialen Ausschnitt auf ~3x Netzspannweite vergrößert hat) — sonst würde
 // chooseZoomForTileBudget den größeren Ausschnitt sofort mit einem gröberen
 // Zoom erkaufen, statt die zusätzliche Fläche in guter Auflösung zu zeigen.
+// MAX_ZOOM = Esris tatsächliches Maximum (19) — das schützt vor Unschärfe im
+// Nahbereich, OHNE das alte "Kanäle fallen aus dem Bild"-Problem zurückzuholen:
+// MAX_TILES_PER_SIDE bleibt der eigentliche Deckel, chooseZoomForTileBudget()
+// fällt bei größeren Ausschnitten weiterhin automatisch auf einen gröberen
+// Zoom zurück, sobald 19 das Kachel-Budget sprengen würde.
 const MAX_TILES_PER_SIDE = 16;
-const MAX_ZOOM = 18;
+const MAX_ZOOM = 19;
 
 let aerialWorker = null;
 let aerialReqId = 0;

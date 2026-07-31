@@ -53,9 +53,82 @@
 
       </div>
 
+      <!-- Rechenort: Cloud (RunPod) oder lokaler Companion (Docker auf dem Nutzer-PC) -->
+      <div v-if="simStore.solverMode === 'runpod'" class="toggle-row">
+        <select v-model="computeLocation" :disabled="isRunning" class="engine-select">
+          <option value="cloud">Cloud (RunPod, Passwort nötig)</option>
+          <option value="local">Lokal (dieser PC, Docker Desktop)</option>
+        </select>
+      </div>
+      <p v-if="simStore.solverMode === 'runpod' && computeLocation === 'local'" class="param-hint">
+        <template v-if="companionStatus === null">Suche lokalen Companion (Port 8642) …</template>
+        <template v-else-if="companionStatus.ok">
+          <SvEmoji emoji="✅" :size="13" /> Companion v{{ companionStatus.version }} ·
+          <template v-if="companionStatus.docker?.available">Docker {{ companionStatus.docker.version }}</template>
+          <template v-else><SvEmoji emoji="⚠" :size="13" /> Docker nicht verfügbar: {{ companionStatus.docker?.error }}</template>
+          · {{ fmtBytes(companionStatus.disk?.freeBytes) }} frei
+          <span class="dim-path">· Speicherort: {{ companionStatus.disk?.location || companionStatus.disk?.dataDir }}
+            ({{ companionStatus.runs?.count ?? 0 }} Läufe, älteste werden ab {{ companionStatus.runs?.kept ?? 10 }} automatisch gelöscht)</span>
+          <span v-if="localRuns.length" class="local-runs-row">
+            <select v-model="selectedLocalRun" class="engine-select local-runs-select">
+              <option value="" disabled>Früheren Lauf laden …</option>
+              <option v-for="r in localRuns" :key="r.id" :value="r.id">
+                {{ new Date(r.mtime * 1000).toLocaleString() }} · {{ r.frames }} Frames · {{ fmtBytes(r.sizeBytes) }}
+              </option>
+            </select>
+            <button class="storage-cleanup-btn" type="button"
+                    :disabled="!selectedLocalRun || localRunBusy || isRunning"
+                    @click="loadLocalRun">{{ localRunBusy ? '…' : 'In Viewer laden' }}</button>
+          </span>
+        </template>
+        <template v-else>
+          <SvEmoji emoji="⚠" :size="13" /> Kein Companion gefunden — einmalige Einrichtung:
+          <span class="companion-cmd-row">
+            <strong>1-Klick-Installer:</strong>
+            <a href="/downloads/install-quagg-companion.bat" download>Windows (.bat, „Als Administrator ausführen")</a>
+            ·
+            <a href="/downloads/install-quagg-companion.sh" download>Mac/Linux (.sh)</a>
+            <button type="button" class="storage-cleanup-btn" @click="probeCompanion">Erneut suchen</button>
+          </span>
+          <span class="dim-path">Für Fortgeschrittene — direkt per Docker
+            (<a href="#" @click.prevent="copyCompanionCmd">{{ cmdCopied ? 'Kopiert ✓' : 'Kommando kopieren' }}</a>)
+            oder mit Python: <a href="/downloads/quagg_local_companion.py" download>quagg_local_companion.py</a></span>
+        </template>
+      </p>
+
+      <!-- Frühere Cloud-Läufe wieder in den Viewer laden (Manifest + Re-Presign) -->
+      <p v-if="simStore.solverMode === 'runpod' && computeLocation === 'cloud' && cloudRuns.length"
+         class="param-hint">
+        <span class="local-runs-row">
+          <select v-model="selectedCloudRun" class="engine-select local-runs-select">
+            <option value="" disabled>Früheren Cloud-Lauf laden …</option>
+            <option v-for="r in cloudRuns" :key="r.id" :value="r.id">
+              {{ new Date(r.mtime * 1000).toLocaleString() }} · {{ r.frames }} Frames · {{ r.id }}
+            </option>
+          </select>
+          <button class="storage-cleanup-btn" type="button"
+                  :disabled="!selectedCloudRun || cloudRunBusy || isRunning"
+                  @click="loadCloudRun">{{ cloudRunBusy ? '…' : 'In Viewer laden' }}</button>
+        </span>
+      </p>
+
       <p v-if="simStore.solverMode === 'runpod'" class="param-hint">
         <SvEmoji emoji="☁" :size="13" /> Job: {{ simStore.jobId || '—' }} · Phase: <strong>{{ simStore.jobPhase }}</strong>
         <span v-if="simStore.jobError"> · <SvEmoji emoji="⚠" :size="13" /> {{ simStore.jobError }}</span>
+      </p>
+
+      <!-- Speicher-Belegung (R2-Ergebnisse + Server-Jobverzeichnisse) -->
+      <p v-if="simStore.solverMode === 'runpod' && storageInfo" class="param-hint storage-hint">
+        <SvEmoji emoji="💾" :size="13" />
+        <template v-if="storageInfo.error">Speicher-Info nicht ladbar: {{ storageInfo.error }}</template>
+        <template v-else>
+          Cloud: <strong>{{ fmtBytes(storageInfo.r2?.totalBytes) }}</strong>
+          ({{ storageInfo.r2?.jobCount ?? 0 }} Läufe<template v-if="storageInfo.r2?.lifecycleDays">, auto-Löschung nach {{ storageInfo.r2.lifecycleDays }} Tagen</template>)
+          · Server: <strong>{{ fmtBytes(storageInfo.server?.totalBytes) }}</strong>
+          <button class="storage-cleanup-btn" type="button" :disabled="storageBusy || isRunning"
+                  title="Alle Cloud-Ergebnisse löschen (laufende Jobs blockieren das)"
+                  @click="cleanupStorage">{{ storageBusy ? '…' : 'Aufräumen' }}</button>
+        </template>
       </p>
 
       <!-- ── Genauigkeit (High-End-Pfad) ─────────────────────────────────── -->
@@ -126,14 +199,25 @@
           <template v-if="showInspector">✕ Raw Viewer schließen</template><template v-else><SvEmoji emoji="📋" :size="13" /> Raw Viewer</template>
       </button>
 
-      <button 
-        v-if="geoStore.terrain || simStore.totalFrameCount > 0" 
-        @click.prevent="openViewer" 
+      <button
+        v-if="geoStore.terrain || simStore.totalFrameCount > 0"
+        @click.prevent="openViewer"
         type="button"
         class="viewer-btn"
         title="3D Ergebnis-Viewer öffnen"
       >
         <SvEmoji emoji="🗺" :size="13" /> 3D Viewer
+      </button>
+
+      <button
+        v-if="hasGisGrids"
+        @click.prevent="exportGeoTiffs"
+        type="button"
+        class="dry-run-btn"
+        :disabled="gisExportBusy"
+        title="Summenraster (Max-Tiefe, Geschwindigkeit, Hazard, …) als georeferenzierte GeoTIFFs für QGIS"
+      >
+        <SvEmoji emoji="🌍" :size="13" /> {{ gisExportBusy ? 'Exportiere …' : 'GIS-Export (GeoTIFF)' }}
       </button>
       
       <div v-if="status" class="status-indicator">
@@ -193,7 +277,8 @@ import { Severity } from '@/features/flood-2D/middleware/ScenarioValidator.js';
 import IssueList from '@/features/flood-2D/components/common/IssueList.vue';
 import { Rasterizer } from '@/features/flood-2D/middleware/Rasterizer.js';
 import { SgcGenerator } from '@/features/flood-2D/middleware/SgcGenerator.js';
-import { createSolverBackend } from '@/features/flood-2D/services/solver/index.js';
+import { createSolverBackend, COMPANION_BASE } from '@/features/flood-2D/services/solver/index.js';
+import { writeGeoTiff } from '@/features/flood-2D/utils/geoTiffWriter.js';
 import { prepareResultData } from '@/features/flood-2D/composables/useResultDataBridge.js';
 import ResultInspector from '@/features/flood-2D/components/viewer/ResultInspector.vue';
 import { useCoupledExport } from '@/features/flood-2D/composables/useCoupledExport.js';
@@ -310,6 +395,7 @@ const massReportLevel = computed(() => {
 
 let backend = null;        // SolverBackend-Instanz (wasm | runpod)
 let backendMode = null;    // Modus, mit dem backend erstellt wurde
+let backendLocal = false;  // Rechenort, mit dem backend erstellt wurde (Cloud/Companion)
 
 // Derived State from SimStore for UI
 const status = computed(() => simStore.status || 'IDLE');
@@ -526,17 +612,18 @@ const runSimulation = async () => {
     massReport.value = null;
 
     try {
-        // Backend neu erstellen, wenn keins existiert oder der Modus gewechselt wurde
-        if (!backend || backendMode !== simStore.solverMode) {
+        // Backend neu erstellen, wenn keins existiert oder Modus/Rechenort wechselte
+        const wantLocal = usesLocalCompanion();
+        if (!backend || backendMode !== simStore.solverMode || backendLocal !== wantLocal) {
             if (backend) backend.dispose();
             backendMode = simStore.solverMode;
-            backend = createSolverBackend(backendMode);
+            backendLocal = wantLocal;
+            backend = createSolverBackend(backendMode, { local: wantLocal });
             backend.onEvent(handleSolverEvent);
 
-            const engineLabel = {
-                wasm: 'Classic WASM (Blackbox)',
-                runpod: 'RUNPOD Remote'
-            }[backendMode] || backendMode;
+            const engineLabel = backendMode === 'runpod'
+                ? (wantLocal ? 'Lokaler Companion (Docker auf diesem PC)' : 'RUNPOD Remote (Cloud)')
+                : 'Classic WASM (Blackbox)';
             appendLog(`Engine: ${engineLabel}`);
         }
 
@@ -701,6 +788,233 @@ const runDryCheck = async () => {
 const RUNPOD_LAUNCH_PASSWORD = 'Dannyistcool';
 let runpodLaunchPassword = sessionStorage.getItem('flood2d-runpod-pw') || '';
 
+// ── GIS-Export: Summenraster als georeferenzierte GeoTIFFs (QGIS-ready) ──────
+const GIS_GRIDS = [
+    ['maxDepthGrid',    'max-tiefe'],
+    ['maxElevGrid',     'max-wasserspiegel'],
+    ['maxVelocityGrid', 'max-geschwindigkeit'],
+    ['maxHazardGrid',   'max-hazard'],
+    ['arrivalTimeGrid', 'ankunftszeit'],
+    ['durationGrid',    'ueberflutungsdauer'],
+];
+const gisExportBusy = ref(false);
+const hasGisGrids = computed(() => GIS_GRIDS.some(([key]) => simStore[key]));
+
+const exportGeoTiffs = async () => {
+    // Header: aus dem ersten Ergebnis-Frame (Solver-Lauf) oder dem Terrain.
+    const h = simStore.resultHeader || geoStore.terrain;
+    if (!h?.ncols) { appendLog('⚠️ GIS-Export: kein Raster-Header verfügbar.'); return; }
+    gisExportBusy.value = true;
+    try {
+        const geo = { ncols: h.ncols, nrows: h.nrows, cellsize: h.cellsize,
+                      xllcorner: h.xllcorner ?? 0, yllcorner: h.yllcorner ?? 0,
+                      epsg: 25832, nodata: h.NODATA_value ?? -9999 };
+        const zip = new JSZip();
+        let count = 0;
+        for (const [key, name] of GIS_GRIDS) {
+            const grid = simStore[key];
+            if (!grid) continue;
+            zip.file(`${name}.tif`, await writeGeoTiff({ data: grid, ...geo }));
+            count++;
+        }
+        zip.file('LIESMICH.txt',
+            `quagg Flood2D GIS-Export (${new Date().toISOString()})\n`
+            + `Raster: ${geo.ncols}×${geo.nrows}, Zellgröße ${geo.cellsize} m, `
+            + `Ursprung (${geo.xllcorner}, ${geo.yllcorner})\n`
+            + `CRS: EPSG:${geo.epsg} (ETRS89 / UTM 32N) — falls das Projekt in einem `
+            + `anderen System liegt, in QGIS über "Layer-KBS zuweisen" korrigieren.\n`
+            + `NoData: ${geo.nodata}. Kompression: Deflate. Einheiten: m bzw. m/s, `
+            + `Ankunftszeit/Dauer in Stunden (Solver-Ausgabe).\n`);
+        const blob = await zip.generateAsync({ type: 'blob',
+            compression: 'STORE' }); // .tif sind schon Deflate-komprimiert
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `flood2d-gis-${new Date().toISOString().slice(0, 10)}.zip`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        appendLog(`🌍 GIS-Export: ${count} GeoTIFFs (EPSG:25832, Deflate) heruntergeladen.`);
+    } catch (e) {
+        appendLog(`⚠️ GIS-Export fehlgeschlagen: ${e.message}`);
+    } finally {
+        gisExportBusy.value = false;
+    }
+};
+
+// ── Rechenort: Cloud (RunPod) oder lokaler Companion ─────────────────────────
+// Der Companion (quagg_local_companion.py) spricht dasselbe Protokoll auf
+// http://127.0.0.1:8642 — createSolverBackend tauscht nur die Base-URL.
+const computeLocation = ref(sessionStorage.getItem('flood2d-compute-loc') || 'cloud');
+const companionStatus = ref(null);   // null = suche | {ok:true,...} | {ok:false}
+const localRuns = ref([]);           // frühere Läufe auf dem Nutzer-PC (GET /runs)
+const selectedLocalRun = ref('');
+const localRunBusy = ref(false);
+
+// Windows-freundliche Companion-Verteilung: EIN docker-run-Kommando statt
+// Python-Skript (Docker Desktop ist für den lokalen Pfad ohnehin Pflicht).
+const COMPANION_DOCKER_CMD =
+    'docker run -d --restart unless-stopped --name quagg-companion '
+    + '-p 127.0.0.1:8642:8642 -v /var/run/docker.sock:/var/run/docker.sock '
+    + '-v quagg-flood2d-data:/data fabiologe/lisflood_acc_modi:companion';
+const cmdCopied = ref(false);
+const copyCompanionCmd = async () => {
+    try {
+        await navigator.clipboard.writeText(COMPANION_DOCKER_CMD);
+        cmdCopied.value = true;
+        setTimeout(() => { cmdCopied.value = false; }, 2000);
+    } catch {
+        prompt('Kommando manuell kopieren:', COMPANION_DOCKER_CMD);
+    }
+};
+
+const probeCompanion = async () => {
+    companionStatus.value = null;
+    try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2500);
+        const res = await fetch(`${COMPANION_BASE}/health`, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        companionStatus.value = { ok: true, ...(await res.json()) };
+        // Frühere Läufe fürs "im Viewer laden" (nur abgeschlossene sind sinnvoll).
+        try {
+            const rr = await fetch(`${COMPANION_BASE}/runs`);
+            localRuns.value = ((await rr.json()).runs || [])
+                .filter(r => r.status === 'COMPLETED' && (r.frames ?? 0) > 0);
+        } catch {
+            localRuns.value = [];
+        }
+    } catch {
+        companionStatus.value = { ok: false };
+        localRuns.value = [];
+    }
+};
+
+// Früheren Lauf (lokal ODER Cloud) in den Ergebnis-Viewer laden: Manifest holen
+// und die frame/done-Events durch die normale Download+Decode-Pipeline spielen.
+const loadSavedRun = async (runId, { local, manifestUrl, label }) => {
+    const res = await fetch(manifestUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const manifest = await res.json();
+
+    // Passendes Backend sicherstellen (gleiches Muster wie runSimulation).
+    if (!backend || backendMode !== 'runpod' || backendLocal !== local) {
+        if (backend) backend.dispose();
+        backendMode = 'runpod';
+        backendLocal = local;
+        backend = createSolverBackend('runpod', { local });
+        backend.onEvent(handleSolverEvent);
+    }
+    simStore.clearResults();
+    resultFiles.value = {};
+    massReport.value = null;
+    appendLog(`📂 Lade ${label} ${runId} (${manifest.events?.length ?? 0} Events) ...`);
+    await backend.replayEvents(manifest.events);
+    appendLog(`✅ Lauf ${runId} geladen — über "3D Viewer" ansehen.`);
+    if (!geoStore.terrain) {
+        appendLog('⚠️ Kein Terrain geladen — für die 3D-Ansicht erst das zugehörige Projekt öffnen.');
+    }
+};
+
+const loadLocalRun = async () => {
+    const runId = selectedLocalRun.value;
+    if (!runId || localRunBusy.value) return;
+    localRunBusy.value = true;
+    try {
+        await loadSavedRun(runId, { local: true, label: 'lokalen Lauf',
+            manifestUrl: `${COMPANION_BASE}/runs/${runId}/manifest` });
+    } catch (e) {
+        appendLog(`⚠️ Lokaler Lauf nicht ladbar: ${e.message}`);
+    } finally {
+        localRunBusy.value = false;
+    }
+};
+
+// Cloud-Pendant: Backend hält Manifeste der letzten 20 Läufe, R2-Objekte leben
+// 7 Tage; die URLs im Manifest werden serverseitig frisch presigned.
+const cloudRuns = ref([]);
+const selectedCloudRun = ref('');
+const cloudRunBusy = ref(false);
+
+const loadCloudRunsList = async () => {
+    try {
+        const res = await fetch(`${RUNPOD_BASE}/runs`);
+        cloudRuns.value = ((await res.json()).runs || [])
+            .filter(r => r.status === 'COMPLETED' && (r.frames ?? 0) > 0);
+    } catch {
+        cloudRuns.value = [];
+    }
+};
+
+const loadCloudRun = async () => {
+    const runId = selectedCloudRun.value;
+    if (!runId || cloudRunBusy.value) return;
+    cloudRunBusy.value = true;
+    try {
+        await loadSavedRun(runId, { local: false, label: 'Cloud-Lauf',
+            manifestUrl: `${RUNPOD_BASE}/runs/${runId}/manifest` });
+    } catch (e) {
+        appendLog(`⚠️ Cloud-Lauf nicht ladbar (R2-Ergebnisse verfallen nach 7 Tagen): ${e.message}`);
+    } finally {
+        cloudRunBusy.value = false;
+    }
+};
+
+watch(computeLocation, (loc) => {
+    sessionStorage.setItem('flood2d-compute-loc', loc);
+    if (loc === 'local') probeCompanion();
+}, { immediate: true });
+
+// ── Speicher-Belegung (GET /storage) + Aufräumen (DELETE /storage/r2) ────────
+// Base-URL wie in services/solver/index.js: eigenes Backend statt api.runpod.ai.
+const RUNPOD_BASE = import.meta.env?.VITE_RUNPOD_BASE_URL || '/flood2dpod';
+const storageInfo = ref(null);
+const storageBusy = ref(false);
+
+const fmtBytes = (n) => {
+    if (!Number.isFinite(n)) return '0 B';
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + ' MB';
+    if (n >= 1e3) return (n / 1e3).toFixed(0) + ' kB';
+    return n + ' B';
+};
+
+const loadStorage = async () => {
+    try {
+        const res = await fetch(`${RUNPOD_BASE}/storage`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        storageInfo.value = await res.json();
+    } catch (e) {
+        storageInfo.value = { error: e.message };
+    }
+};
+
+const cleanupStorage = async () => {
+    if (!confirmRunpodPassword()) return;
+    if (!confirm('Alle Cloud-Ergebnisse (R2) löschen? Viewer-Links alter Läufe werden ungültig.')) return;
+    storageBusy.value = true;
+    try {
+        const res = await fetch(`${RUNPOD_BASE}/storage/r2`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ launchPassword: runpodLaunchPassword })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        appendLog(`🧹 Cloud-Speicher aufgeräumt: ${data.deleted} Objekte, ${fmtBytes(data.freedBytes)} freigegeben.`);
+    } catch (e) {
+        appendLog(`⚠️ Aufräumen fehlgeschlagen: ${e.message}`);
+    } finally {
+        storageBusy.value = false;
+        await loadStorage();
+    }
+};
+
+// Belegung + Cloud-Läufe laden, sobald der RunPod-Modus gewählt wird.
+watch(() => simStore.solverMode, (m) => {
+    if (m === 'runpod') { loadStorage(); loadCloudRunsList(); }
+}, { immediate: true });
+
 const confirmRunpodPassword = () => {
     if (runpodLaunchPassword === RUNPOD_LAUNCH_PASSWORD) return true;
     const entered = prompt('RunPod-Lauf: Passwort eingeben (Kosten-Gate, begrenztes Guthaben).');
@@ -713,10 +1027,64 @@ const confirmRunpodPassword = () => {
     return true;
 };
 
+// Geschätzte Ergebnisdatenmenge eines Remote-Laufs: 6 float32-Kanäle pro Frame
+// (depth/elev/vx/vy/qx/qy, codec.py) × Zellen × Frames. R2 speichert gzip
+// (nullenreiche Raster ≈ Faktor 5–10 kleiner); die Rohgröße bestimmt Download
+// und Browser-RAM. Ab 2 GB roh wird vor dem Start bestätigt (Speicherplatz-
+// prüfung Phase 2; die harte Server-Grenze sitzt zusätzlich im Backend, 507).
+const RESULT_WARN_BYTES = 2 * 1024 ** 3;
+const estimateResultBytes = () => {
+    const t = geoStore.terrain;
+    if (!t?.ncols || !t?.nrows) return 0;
+    return t.ncols * t.nrows * 6 * 4 * Math.max(estimatedFrames.value, 1);
+};
+
+const usesLocalCompanion = () =>
+    simStore.solverMode === 'runpod' && computeLocation.value === 'local';
+
 const startPreparation = async () => {
-    if (simStore.solverMode === 'runpod' && !confirmRunpodPassword()) {
-        appendLog('⏹️ Lauf abgebrochen (Passwort-Gate).');
+    // Einheitlicher Gate-Abbruch: Status zurücksetzen, sonst bleibt der
+    // Start-Button gesperrt (isRunning hing nach Abbruch — Fix 2026-07-29).
+    const abortGate = (msg) => {
+        appendLog(`⏹️ ${msg}`);
+        simStore.setStatus('IDLE');
+        isRunning.value = false;
+    };
+
+    // Passwort-Gate nur für die Cloud (lokale Läufe kosten nichts).
+    if (simStore.solverMode === 'runpod' && !usesLocalCompanion() && !confirmRunpodPassword()) {
+        abortGate('Lauf abgebrochen (Passwort-Gate).');
         return;
+    }
+    if (usesLocalCompanion()) {
+        await probeCompanion();
+        if (!companionStatus.value?.ok) {
+            alert('Lokaler Companion nicht erreichbar (Port 8642).\n\n'
+                + 'quagg_local_companion.py starten oder Rechenort "Cloud" wählen.');
+            abortGate('Lauf abgebrochen (Companion nicht erreichbar).');
+            return;
+        }
+        if (!companionStatus.value.docker?.available) {
+            alert(`Docker auf diesem PC nicht verfügbar:\n${companionStatus.value.docker?.error}\n\n`
+                + 'Docker Desktop starten und erneut versuchen.');
+            abortGate('Lauf abgebrochen (Docker lokal nicht verfügbar).');
+            return;
+        }
+    }
+
+    if (simStore.solverMode === 'runpod') {
+        const est = estimateResultBytes();
+        if (est > RESULT_WARN_BYTES) {
+            const ok = confirm(
+                `Große Ergebnisdaten erwartet:\n\n`
+                + `~${fmtBytes(est)} roh (${estimatedFrames.value} Frames à 6 Kanäle), `
+                + `komprimiert grob ${fmtBytes(est / 6)}.\n\n`
+                + `Tipp: Speicherintervall (${simStore.saveInterval || 60} s) vergrößern `
+                + `reduziert die Datenmenge proportional.\n\nTrotzdem starten?`
+            );
+            if (!ok) { abortGate('Lauf abgebrochen (Datenmengen-Warnung).'); return; }
+            appendLog(`▶️ Datenmengen-Warnung bestätigt (~${fmtBytes(est)} roh).`);
+        }
     }
 
     // ── Harter CFL-Gate ───────────────────────────────────────────────────────
@@ -1054,6 +1422,65 @@ onUnmounted(() => {
     margin: 0.75rem 0 0;
     font-size: 0.78rem;
     color: var(--sv-text-dim);
+}
+
+.storage-hint {
+    margin-top: 0.35rem;
+}
+
+.dim-path {
+    opacity: 0.65;
+    font-size: 0.7rem;
+    word-break: break-all;
+}
+
+.local-runs-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.companion-cmd-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 4px 0;
+}
+.companion-cmd {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.65rem;
+    padding: 3px 6px;
+    border: 1px solid var(--sv-border, #555);
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: nowrap;
+    user-select: all;
+}
+.local-runs-select {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.72rem;
+}
+
+.storage-cleanup-btn {
+    margin-left: 6px;
+    padding: 1px 8px;
+    font-size: 0.72rem;
+    border: 1px solid var(--sv-border, #555);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--sv-text-dim);
+    cursor: pointer;
+}
+.storage-cleanup-btn:hover:not(:disabled) {
+    color: var(--sv-text, #eee);
+    border-color: var(--sv-text-dim);
+}
+.storage-cleanup-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 /* ── Run Presets ─────────────────────────────────────────────────────────── */

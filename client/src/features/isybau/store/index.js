@@ -4,6 +4,11 @@ import { Edge } from '../core/domain/Edge.js';
 import { Area } from '../core/domain/Area.js';
 import { validateNetwork } from '../utils/preSolveValidation.js';
 import { detectCRS } from '../utils/KostraService.js';
+import { clipNewArea, snapPoint, hasSelfIntersection } from '../utils/areaClipping.js';
+
+// Feste Snap-Toleranz in Weltmetern (bewusst NICHT zoomabhängig in Pixeln —
+// siehe areaClipping.js snapPoint()-Doku).
+const AREA_SNAP_TOLERANCE_M = 0.4;
 
 let workerControllerInstance = null;
 
@@ -21,12 +26,13 @@ export const useIsybauStore = defineStore('isybau-module', {
         // Metadata / Global Props (from XML)
         metadata: {},
         editor: {
-            mode: 'view', // 'view', 'select', 'pan', 'addNode', 'addEdge', 'addArea'
+            mode: 'view', // 'view', 'select', 'pan', 'addNode', 'addEdge', 'addArea', 'pickNodeRef', 'pickEdgeRef'
             selectedId: null,
             selectedType: null, // 'node', 'edge', 'area'
             edgeStartNode: null,
             drawingPoints: [], // Temporary points for Area creation
-            focusTargetId: null // kurzzeitiges Highlight-/Scroll-Ziel in den Viewern
+            focusTargetId: null, // kurzzeitiges Highlight-/Scroll-Ziel in den Viewern
+            pickCallback: null // siehe startPickRef()/resolvePickRef() — Ziel-Formular für den Viewer-Picker
         },
         // Phase 2: Rain / Simulation Configuration
         rain: {
@@ -434,7 +440,21 @@ export const useIsybauStore = defineStore('isybau-module', {
                     console.error('createElement: Fläche braucht mindestens 3 Punkte');
                     return;
                 }
-                this.addArea({ points, properties: data });
+                // Gegen bestehende Flächen clippen — verhindert Überlappungen
+                // (das Snapping in addDrawingPoint() vermeidet Lücken beim
+                // Zeichnen, das Clipping hier fängt trotzdem verbleibende
+                // Überschneidungen ab, z.B. wenn nicht exakt gesnappt wurde).
+                const fragments = clipNewArea(points, this.areas);
+                if (fragments.length === 0) {
+                    console.warn('createElement: Fläche liegt komplett innerhalb bestehender Flächen — nichts angelegt.');
+                    this.ui.showElementModal = false;
+                    return;
+                }
+                const baseId = data.id || `Area_${Date.now()}`;
+                fragments.forEach((fragPoints, i) => {
+                    const properties = { ...data, id: fragments.length > 1 ? `${baseId}_${i + 1}` : baseId };
+                    this.addArea({ points: fragPoints, properties });
+                });
             } else if (mode === 'edge') {
                 this.addEdge({
                     fromId: data.metaFromId || data.fromNodeId,
@@ -797,6 +817,60 @@ export const useIsybauStore = defineStore('isybau-module', {
             }
         },
 
+        /**
+         * Committet eine neue Position für EINEN Eckpunkt einer bestehenden
+         * Fläche (C2-Vertex-Editing in IsybauViewer.vue) — nur EINMALIG bei
+         * pointerup aufgerufen, nie pro Pointermove-Tick (sonst würde jeder
+         * Zwischenschritt einen eigenen Undo-Eintrag erzeugen, siehe
+         * saveHistory() weiter unten).
+         *
+         * Lehnt ab (liefert false, Fläche bleibt unverändert), wenn der neue
+         * Punkt eine selbstüberschneidende Polygonform erzeugen würde. Bei
+         * Überlappung mit einer anderen Fläche wird automatisch geclippt
+         * (dieselbe Logik wie beim Zeichnen, clipNewArea) — nur wenn das
+         * Clipping zu GENAU einem Fragment führt (der übliche Fall bei einer
+         * einzelnen Eckpunkt-Verschiebung); bei 0 oder >1 Fragmenten wird der
+         * Drag ebenfalls abgelehnt statt die Fläche unerwartet zu vervielfachen
+         * oder verschwinden zu lassen.
+         * @returns {boolean} true = committet, false = abgelehnt
+         */
+        updateAreaPoint(areaId, pointIndex, coords) {
+            const area = this.areas.find(a => a.id === areaId);
+            if (!area || !area.points[pointIndex]) return false;
+
+            const trial = area.points.map((p, i) => i === pointIndex ? { x: coords.x, y: coords.y } : p);
+            if (hasSelfIntersection(trial)) return false;
+
+            const others = this.areas.filter(a => a.id !== areaId);
+            const fragments = clipNewArea(trial, others);
+            if (fragments.length !== 1) return false;
+
+            this.saveHistory();
+            area.points = fragments[0];
+            return true;
+        },
+
+        /**
+         * Fügt einen neuen Eckpunkt in eine bestehende Fläche ein (Doppelklick
+         * auf eine Kante, siehe C2 in IsybauViewer.vue). insertAfterIndex = i
+         * bedeutet: neuer Punkt zwischen points[i] und points[i+1].
+         */
+        insertAreaPoint(areaId, insertAfterIndex, coords) {
+            const area = this.areas.find(a => a.id === areaId);
+            if (!area) return;
+            this.saveHistory();
+            area.points.splice(insertAfterIndex + 1, 0, { x: coords.x, y: coords.y });
+        },
+
+        /** Entfernt einen Eckpunkt (Rechtsklick auf Handle) — Guard gegen entartete Polygone (<3 Punkte). */
+        removeAreaPoint(areaId, pointIndex) {
+            const area = this.areas.find(a => a.id === areaId);
+            if (!area || area.points.length <= 3) return false;
+            this.saveHistory();
+            area.points.splice(pointIndex, 1);
+            return true;
+        },
+
         updateNetworkData(data) {
             this.saveHistory();
 
@@ -869,12 +943,38 @@ export const useIsybauStore = defineStore('isybau-module', {
         },
 
         // --- Area Actions ---
+        // Snapt an Vertices/Kanten bestehender Flächen (Priorität: Vertex vor
+        // Kante), damit direkt angrenzende Flächen keine Lücke lassen — siehe
+        // areaClipping.js snapPoint().
         addDrawingPoint(point) {
-            this.editor.drawingPoints.push(point);
+            const snapped = snapPoint(point, this.areas, AREA_SNAP_TOLERANCE_M);
+            this.editor.drawingPoints.push(snapped);
         },
 
         resetDrawing() {
             this.editor.drawingPoints = [];
+        },
+
+        // --- Knoten/Haltung im Viewer wählen (statt Text-ID eintippen) ---
+        // Formulare (PreprocessingModal.vue/ElementInfo.vue) rufen startPickRef()
+        // auf; IsybauEditor.vue handleNodeSelect()/handleEdgeSelect() prüfen
+        // editor.mode zuerst auf 'pickNodeRef'/'pickEdgeRef' und rufen bei
+        // Treffer resolvePickRef() statt der normalen Auswahl-Logik auf.
+        startPickRef(kind, callback) {
+            this.editor.mode = kind === 'edge' ? 'pickEdgeRef' : 'pickNodeRef';
+            this.editor.pickCallback = callback;
+        },
+
+        resolvePickRef(elementId) {
+            const cb = this.editor.pickCallback;
+            this.editor.mode = 'view';
+            this.editor.pickCallback = null;
+            cb?.(elementId);
+        },
+
+        cancelPickRef() {
+            this.editor.mode = 'view';
+            this.editor.pickCallback = null;
         },
 
         addArea(payload) {

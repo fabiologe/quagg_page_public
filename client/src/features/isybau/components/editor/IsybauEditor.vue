@@ -17,7 +17,7 @@
         :drawingPoints="store.editor.drawingPoints"
         :show-grid="true"
         :interactionMode="store.editor.mode"
-        :enablePopover="['view', 'select', 'editProperties'].includes(store.editor.mode)"
+        :enablePopover="['view', 'select', 'editProperties', 'pickNodeRef', 'pickEdgeRef'].includes(store.editor.mode)"
         :focusTarget="focusTarget"
         :origin-anchor="store.metadata.originAnchor"
         @select-node="handleNodeSelect"
@@ -28,6 +28,9 @@
         @map-click="handleMapClick"
         @map-dblclick="handleMapDblClick"
         @delete-elements="handleDeleteElements"
+        @update-area-point="({ areaId, pointIndex, coords }) => store.updateAreaPoint(areaId, pointIndex, coords)"
+        @insert-area-point="({ areaId, insertAfterIndex, coords }) => store.insertAreaPoint(areaId, insertAfterIndex, coords)"
+        @remove-area-point="({ areaId, pointIndex }) => store.removeAreaPoint(areaId, pointIndex)"
     />
     <div v-if="store.editor.mode === 'addArea'" class="drawing-controls">
         <div class="drawing-tooltip">
@@ -71,6 +74,11 @@ const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-e
 // ...
 
 const handleNodeSelect = (element) => {
+    if (store.editor.mode === 'pickNodeRef') {
+        store.resolvePickRef(element.id);
+        return;
+    }
+
     if (store.editor.mode === 'delete') {
         store.removeNode(element.id);
         return;
@@ -107,7 +115,12 @@ const handleEdgeSelect = (payload) => {
     // IsybauViewer now emits { element, mapCoords } for edges to support geometric tools
     const element = payload.element || payload;
     const mapCoords = payload.mapCoords || null;
-    
+
+    if (store.editor.mode === 'pickEdgeRef') {
+        store.resolvePickRef(element.id);
+        return;
+    }
+
     if (store.editor.mode === 'delete') {
         store.removeEdge(element.id);
         return;
@@ -149,9 +162,16 @@ const handleKeydown = (e) => {
     if (e.key === 'Enter' && store.editor.mode === 'addArea') {
         handleMapDblClick();
     }
-    // Escape to cancel
-    if (e.key === 'Escape' && store.editor.mode === 'addArea') {
+    // Escape: JEDES aktive Bearbeitungswerkzeug schließen, nicht nur addArea —
+    // setzt konsequent auf 'view' zurück statt nur den Zeichenzustand zu leeren
+    // (vorher blieb man z.B. in addNode/addEdge/splitEdge/boxSelect gefangen).
+    if (e.key === 'Escape' && store.editor.mode !== 'view') {
         store.resetDrawing();
+        store.editor.mode = 'view';
+        store.editor.edgeStartNode = null;
+        store.editor.selectedId = null;
+        store.editor.selectedType = null;
+        store.editor.pickCallback = null;
     }
 };
 

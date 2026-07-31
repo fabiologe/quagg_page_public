@@ -84,6 +84,32 @@ check('STATUS FINISHED erreicht', events.some(e => e.type === 'STATUS' && e.stat
 check('JOB_STATE endet auf done',
       events.filter(e => e.type === 'JOB_STATE').at(-1)?.phase === 'done');
 
+// ── Teil 2: replayEvents (früheren Lauf aus Companion-Manifest laden) ────────
+console.log('Manifest-Replay stellt einen gespeicherten Lauf wieder her:');
+{
+    const b2 = new RunpodBackend({ transport, pollIntervalMs: 5 });
+    const evs2 = [];
+    b2.onEvent(ev => evs2.push(ev));
+    await b2.replayEvents([
+        { event: 'frame', frame: 0, url: 'https://r2/ok.bin', min: 0, max: 1, time: 0 },
+        { event: 'frame', frame: 1, url: 'https://r2/ok.bin', min: 0, max: 1, time: 30 },
+        { event: 'done', maxDepthUrl: 'https://r2/ok.bin', massReport: { summary: {} } },
+    ]);
+    const t2 = evs2.map(e => e.type);
+    check('2 RESULT-Frames', evs2.filter(e => e.type === 'RESULT').length === 2, JSON.stringify(t2));
+    check('MAX_DEPTH_GRID + MASS_REPORT', t2.includes('MAX_DEPTH_GRID') && t2.includes('MASS_REPORT'));
+    check('endet mit STATUS FINISHED', evs2.some(e => e.type === 'STATUS' && e.status === 'FINISHED'));
+
+    // Manifest OHNE done (abgebrochener Lauf) muss trotzdem sauber enden.
+    const b3 = new RunpodBackend({ transport, pollIntervalMs: 5 });
+    const evs3 = [];
+    b3.onEvent(ev => evs3.push(ev));
+    await b3.replayEvents([{ event: 'frame', frame: 0, url: 'https://r2/ok.bin', min: 0, max: 1 }]);
+    check('ohne done: FINISHED + JOB_STATE done trotzdem',
+          evs3.some(e => e.type === 'STATUS' && e.status === 'FINISHED')
+          && evs3.filter(e => e.type === 'JOB_STATE').at(-1)?.phase === 'done');
+}
+
 console.log();
 if (failures) { console.log(`FEHLGESCHLAGEN: ${failures}`); process.exit(1); }
 console.log('Alle Tests bestanden.');

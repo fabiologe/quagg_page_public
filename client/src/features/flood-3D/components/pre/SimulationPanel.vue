@@ -149,15 +149,52 @@
                 @click="store.runMeshPreview()">
           {{ store.meshPreviewLoading ? 'vernetze …' : 'Netz- und Kostenvorschau' }}
         </button>
-        <button class="f3d-btn f3d-btn-run f3d-cta" :disabled="store.nFehler > 0"
+        <div class="f3d-field">
+          <label>Rechenort</label>
+          <select v-model="rechenort" class="f3d-select">
+            <option value="server">Server</option>
+            <option value="local" :disabled="!companion?.foamSupported">
+              Lokal (dieser PC, Docker)
+            </option>
+          </select>
+          <p v-if="companion?.foamSupported" class="f3d-muted f3d-small">
+            ✓ Local Companion v{{ companion.version }} erkannt
+            {{ companion.docker?.available ? '· Docker läuft' : '· Docker NICHT erreichbar!' }}
+            — der Lauf rechnet auf deiner Maschine, das Ergebnis wird
+            automatisch übernommen.
+          </p>
+          <p v-else-if="companion && !companion.foamSupported" class="f3d-muted f3d-small">
+            Companion gefunden, aber zu alt (v{{ companion.version }}) —
+            Version 1.3+ nötig für OpenFOAM. Update herunterladen und
+            ausführen:
+            <a :href="UPDATE_WIN" download>Windows (.bat)</a> ·
+            <a :href="UPDATE_MAC" download>macOS/Linux</a>, danach
+            <a href="#" @click.prevent="checkCompanion">erneut suchen</a>.
+          </p>
+          <p v-else class="f3d-muted f3d-small">
+            Kein Local Companion auf diesem PC gefunden (localhost:8642).
+            Einmalig einrichten:
+            <a :href="INSTALL_WIN" download>Windows (.bat)</a> ·
+            <a :href="INSTALL_MAC" download>macOS/Linux</a>, danach
+            <a href="#" @click.prevent="checkCompanion">erneut suchen</a>.
+          </p>
+        </div>
+        <button class="f3d-btn f3d-btn-run f3d-cta"
+                :disabled="store.nFehler > 0 || localRunning"
                 :title="store.nFehler ? 'Erst Fehler der Prüfung beheben' : ''"
-                @click="store.startRun()">
-          ▶ Simulation starten
+                @click="startClicked">
+          {{ localRunning ? '⏳ läuft lokal …' : '▶ Simulation starten' }}
         </button>
         <p v-if="store.nFehler" class="f3d-error">
           {{ store.nFehler }} Prüfungsfehler blockieren den Start — Details
           in der Phase „Modell".
         </p>
+        <div v-if="localLog.length" class="f3d-locallog">
+          <div v-if="localProgress != null" class="f3d-localbar">
+            <div :style="{ width: `${Math.round(localProgress * 100)}%` }"></div>
+          </div>
+          <pre>{{ localLog.slice(-14).join('\n') }}</pre>
+        </div>
       </article>
       <MeshPreviewCard v-if="store.meshPreview || store.meshPreviewLoading" />
       <ValidationPanel />
@@ -170,13 +207,67 @@
 // vorher lebten sie unsichtbar in der YAML. Jede Feldänderung ist ein
 // Undo-Schritt und aktualisiert die Live-Vorschau (Gebiet/Gelände wirken
 // sofort sichtbar in der Modell-Phase).
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { companionHealth, runLocally } from '../../services/localCompanion'
 import { usePreStore } from '../../stores/usePreStore'
 import MeshPreviewCard from './MeshPreviewCard.vue'
 import ValidationPanel from './ValidationPanel.vue'
 
 const store = usePreStore()
 const spec = computed(() => store.spec)
+
+// Lokaler Rechenweg über den quagg Local Companion (wie beim Flood2D-Solver).
+// Der Companion läuft als Docker-Image; Installer und Update liegen unter
+// /downloads (erneutes Ausführen des Installers aktualisiert ebenfalls).
+const INSTALL_WIN = '/downloads/install-quagg-companion.bat'
+const INSTALL_MAC = '/downloads/install-quagg-companion.sh'
+const UPDATE_WIN = '/downloads/update-quagg-companion.bat'
+const UPDATE_MAC = '/downloads/update-quagg-companion.command'
+
+const companion = ref(null)
+const rechenort = ref('server')
+const localRunning = ref(false)
+const localLog = ref([])
+const localProgress = ref(null)
+
+async function checkCompanion(autoSelect = true) {
+  companion.value = await companionHealth()
+  // Nach bewusstem „erneut suchen" direkt auf Lokal stellen — beim
+  // Seitenladen bleibt Server die Vorauswahl
+  if (autoSelect && companion.value?.foamSupported) rechenort.value = 'local'
+}
+
+onMounted(() => checkCompanion(false))
+
+async function startClicked() {
+  if (rechenort.value !== 'local') {
+    store.startRun()
+    return
+  }
+  localRunning.value = true
+  localLog.value = []
+  localProgress.value = null
+  try {
+    if (store.dirty) await store.saveCase()
+    await runLocally(store.activeCaseId, (ev) => {
+      if (ev.event === 'progress' && ev.fraction != null) {
+        localProgress.value = ev.fraction
+        if (ev.time != null) {
+          localLog.value.push(`t = ${ev.time} s / ${ev.end_time} s`)
+        }
+      } else if (ev.text) {
+        localLog.value.push(ev.text)
+      }
+    })
+    await store.loadCaseRuns()
+    store.activePhase = 'ergebnis'
+  } catch (e) {
+    store.error = `Lokaler Lauf: ${e.message}`
+    localLog.value.push(`FEHLER: ${e.message}`)
+  } finally {
+    localRunning.value = false
+  }
+}
 
 const set = (fn) => store.updateSettings(fn)
 
@@ -244,5 +335,32 @@ function setExtent(idx, e) {
 .f3d-num { width: 110px; }
 .f3d-grow { width: 100%; }
 .f3d-sim-cta { display: flex; flex-direction: column; gap: 10px; }
+/* Download-/Aktionslinks in den Hinweistexten: weiß statt Akzentfarbe,
+   damit sie sich vom gedämpften Fließtext klar abheben */
+.f3d-sim-cta a {
+  color: var(--f3d-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.f3d-sim-cta a:hover { color: #fff; }
 .f3d-cta { padding: 10px; font-size: 0.9rem; }
+.f3d-locallog pre {
+  margin: 6px 0 0;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--f3d-bg);
+  border: 1px solid var(--f3d-border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.7rem;
+  color: var(--f3d-text-2);
+  white-space: pre-wrap;
+}
+.f3d-localbar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--f3d-border);
+  overflow: hidden;
+}
+.f3d-localbar > div { height: 100%; background: var(--f3d-accent); }
 </style>

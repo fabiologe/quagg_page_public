@@ -20,15 +20,15 @@
  *     ist schon in lokalen ISYBAU-Metern:
  *   → { type:'compute', reqId, raster:Float32Array, width, height,
  *       interval, localGrid:{xllcorner,yllcorner,cellsize} }
- *   ← { type:'result', reqId, positions:Float32Array } [transfer]
- *     (flaches x,y,0, x,y,0-Array, ein Punktpaar pro Liniensegment — exakt
- *     das Format, das LineSegmentsGeometry.setPositions() in
- *     useContourGpuLayer.js erwartet. Elevation-Zuordnung wird NICHT mehr
- *     mitgeliefert: die Gruppierung nach Höhenlinie dient hier nur noch dem
- *     korrekten Verketten INNERHALB eines Levels (stitchSegmentsToPolylines
- *     darf Segmente verschiedener Level nicht mischen) — der Renderer selbst
- *     färbt alle Level gleich (violett+giftgrün Halo), es gibt aktuell
- *     keinen Konsumenten für Elevation-Metadaten.
+ *   ← { type:'result', reqId, positions:Float32Array, elevations:Float32Array } [transfer]
+ *     positions: flaches x,y,0, x,y,0-Array, ein Punktpaar pro Liniensegment —
+ *     exakt das Format, das LineSegmentsGeometry.setPositions() in
+ *     useContourGpuLayer.js erwartet.
+ *     elevations: EIN Wert pro Segment (also positions.length/6 Einträge,
+ *     nicht pro Punkt) — für den Hover-Tooltip (IsybauViewer.vue), der die
+ *     Höhe der am nächsten liegenden Höhenlinie anzeigt. Absichtlich WIEDER
+ *     eingeführt (war entfernt, siehe unten), aber als eigenes flaches Array
+ *     statt verschachtelt — vermeidet die alte Perf-Regression.
  *
  * WICHTIG (Performance): Das Ergebnis geht bewusst als FLACHES, per Transfer
  * (zero-copy) übertragenes Float32Array zurück, nicht als verschachtelte
@@ -38,6 +38,7 @@
  * (tausende einzelne {x,y}-Objekte) — GENAU die Art von Hänger, die der
  * ganze Worker-Umbau eigentlich vermeiden sollte. Ein Float32Array via
  * Transferable ist dagegen ein reiner Zeiger-Übergang, praktisch kostenlos.
+ * Das separate elevations-Array bleibt bei diesem Prinzip (flach, transferable).
  *
  * pixelToLocal wird HIER aus den rohen Kachel-Parametern rekonstruiert
  * (dieselbe Formel wie ElevationService.js' pixelToWGS84 + proj4), weil
@@ -87,6 +88,7 @@ self.onmessage = (e) => {
     const byLevel = groupSegmentsByElevation(localSegments);
 
     const positions = [];
+    const elevations = [];
     for (const group of byLevel) {
         const lines = stitchSegmentsToPolylines(group.segments).map((pts) =>
             simplifyPolyline(pts, CONTOUR_SIMPLIFY_EPSILON)
@@ -95,10 +97,15 @@ self.onmessage = (e) => {
             for (let i = 0; i < line.length - 1; i++) {
                 const a = line[i], b = line[i + 1];
                 positions.push(a.x, a.y, 0, b.x, b.y, 0);
+                elevations.push(group.elevation);
             }
         }
     }
 
     const positionsArray = new Float32Array(positions);
-    self.postMessage({ type: 'result', reqId, positions: positionsArray }, [positionsArray.buffer]);
+    const elevationsArray = new Float32Array(elevations);
+    self.postMessage(
+        { type: 'result', reqId, positions: positionsArray, elevations: elevationsArray },
+        [positionsArray.buffer, elevationsArray.buffer]
+    );
 };

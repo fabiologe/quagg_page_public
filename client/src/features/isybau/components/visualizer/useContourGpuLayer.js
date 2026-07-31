@@ -24,6 +24,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { computeViewportWorldBounds } from '../../utils/geoBounds.js';
+import { distanceToSegment } from '../../utils/geometry2d.js';
 
 // Zweifarbiger "Halo"-Look: dicke violette Außenlinie + dünnere giftgrüne
 // Innenlinie obendrauf — bleibt auch auf dunklem/kontrastarmem Luftbild gut
@@ -42,6 +43,16 @@ export function useContourGpuLayer() {
     let innerMaterial = null;
     let outerMesh = null;
     let innerMesh = null;
+
+    // Hover-Hit-Test-Index — siehe buildHoverIndex()/findNearestSegment()
+    // unten. Buckets werden EINMALIG beim Geometrie-Empfang gebaut (nicht pro
+    // Mousemove!), sonst wäre die Suche bei einem großen hochgeladenen DGM
+    // (kein Tile-Budget-Deckel, potenziell Hunderttausende Segmente) zu
+    // langsam für ein 60fps-Mousemove-Event.
+    let hoverPositions = null;
+    let hoverElevations = null;
+    let hoverBuckets = null;
+    let hoverCellSize = 1;
 
     function init(hostEl) {
         scene = new THREE.Scene();
@@ -79,6 +90,67 @@ export function useContourGpuLayer() {
     }
 
     /**
+     * Baut ein uniformes Bucket-Grid über die Segment-Mittelpunkte — EINMALIG
+     * pro Geometrie-Update, nicht pro Mousemove. findNearestSegment() durchsucht
+     * dann nur die 3x3-Bucket-Nachbarschaft um die Mausposition statt aller
+     * Segmente (O(1)-artig statt O(n), siehe Modul-Kommentar oben).
+     */
+    function buildHoverIndex(positions, elevations) {
+        hoverPositions = positions;
+        hoverElevations = elevations;
+        hoverBuckets = new Map();
+        if (!positions || positions.length === 0) return;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < positions.length; i += 3) {
+            const x = positions[i], y = positions[i + 1];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+        const diagonal = Math.hypot(maxX - minX, maxY - minY) || 1;
+        hoverCellSize = Math.max(diagonal / 64, 1e-6);
+
+        const segCount = positions.length / 6;
+        for (let s = 0; s < segCount; s++) {
+            const i = s * 6;
+            const midX = (positions[i] + positions[i + 3]) / 2;
+            const midY = (positions[i + 1] + positions[i + 4]) / 2;
+            const key = `${Math.floor(midX / hoverCellSize)},${Math.floor(midY / hoverCellSize)}`;
+            let arr = hoverBuckets.get(key);
+            if (!arr) { arr = []; hoverBuckets.set(key, arr); }
+            arr.push(s);
+        }
+    }
+
+    /**
+     * Nächstes Kontur-Segment zu einem Welt-Punkt (z.B. Maus-Position),
+     * innerhalb maxDist. Für den Hover-Tooltip in IsybauViewer.vue.
+     * @returns {{elevation:number|null, distance:number}|null}
+     */
+    function findNearestSegment(worldX, worldY, maxDist) {
+        if (!hoverBuckets || !hoverPositions || hoverPositions.length === 0) return null;
+        const bx = Math.floor(worldX / hoverCellSize);
+        const by = Math.floor(worldY / hoverCellSize);
+        let bestDist = maxDist;
+        let bestSeg = -1;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const arr = hoverBuckets.get(`${bx + dx},${by + dy}`);
+                if (!arr) continue;
+                for (const s of arr) {
+                    const i = s * 6;
+                    const d = distanceToSegment(worldX, worldY, hoverPositions[i], hoverPositions[i + 1], hoverPositions[i + 3], hoverPositions[i + 4]);
+                    if (d < bestDist) { bestDist = d; bestSeg = s; }
+                }
+            }
+        }
+        if (bestSeg === -1) return null;
+        return { elevation: hoverElevations ? hoverElevations[bestSeg] : null, distance: bestDist };
+    }
+
+    /**
      * Baut die Geometrie aus dem (in ezgContourWorker.js bereits verketteten,
      * Douglas-Peucker-vereinfachten UND geflatteten) Positions-Array neu auf
      * — EIN Mesh für die gesamte Kontur-Ebene, unabhängig von der
@@ -92,10 +164,15 @@ export function useContourGpuLayer() {
      * bereits im Worker geflattet, siehe ezgContourWorker.js für die
      * Profiling-Begründung).
      * @param {Float32Array} positions
+     * @param {Float32Array} [elevations] - ein Wert pro Segment (positions.length/6
+     *   Einträge), für findNearestSegment()/den Hover-Tooltip. Optional, damit
+     *   bestehende Aufrufer ohne Elevation weiter funktionieren.
      */
-    function updateGeometry(positions) {
+    function updateGeometry(positions, elevations = null) {
         if (outerMesh) { scene.remove(outerMesh); outerMesh.geometry?.dispose(); outerMesh = null; }
         if (innerMesh) { scene.remove(innerMesh); innerMesh = null; } // teilt sich die Geometrie mit outerMesh, nicht doppelt disposen
+
+        buildHoverIndex(positions, elevations);
 
         if (!positions || positions.length === 0) return;
 
@@ -226,7 +303,10 @@ export function useContourGpuLayer() {
         renderer = null;
         scene = null;
         camera = null;
+        hoverPositions = null;
+        hoverElevations = null;
+        hoverBuckets = null;
     }
 
-    return { init, updateGeometry, updateCamera, resize, render, dispose };
+    return { init, updateGeometry, updateCamera, resize, render, dispose, findNearestSegment };
 }

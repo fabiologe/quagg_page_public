@@ -67,6 +67,28 @@ async function writeResultData(resultData) {
     const frameIds = Object.keys(frames).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
     meta.frameIds = frameIds;
     meta.schema = 'per-frame-v1';
+    // Globales |v|-Maximum HIER vorberechnen (Daten sind ohnehin im RAM) —
+    // der Viewer lädt Frames lazy und kann keinen Vollscan mehr machen.
+    let vmax = 0;
+    for (const arr of Object.values(velocityFrames)) {
+        for (let i = 0; i < arr.length; i++) {
+            const v = arr[i];
+            if (v > vmax && v < 9000) vmax = v;
+        }
+    }
+    if (vmax === 0) {
+        let m2 = 0;
+        for (const comp of Object.values(velocityVectorFrames)) {
+            if (!comp?.vx || !comp?.vy) continue;
+            const { vx, vy } = comp;
+            for (let i = 0; i < vx.length; i++) {
+                const q = vx[i] * vx[i] + vy[i] * vy[i];
+                if (q > m2 && q < 9000 * 9000) m2 = q;
+            }
+        }
+        vmax = Math.sqrt(m2);
+    }
+    meta.velocityGlobalMax = vmax;
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
@@ -378,6 +400,86 @@ export function useResultDataFromOpener() {
     const isLoading = ref(true);
     const loadProgress = ref(0);
     const error = ref(null);
+    const frameIds = ref([]);          // sortierte Frame-Ids (aus dem Meta-Record)
+    const velocityGlobalMax = ref(0);  // vom Producer vorberechnet (Vollscan entfällt)
+
+    // ── Lazy-Frame-Cache ─────────────────────────────────────────────────────
+    // Frames werden NICHT mehr komplett hydriert (74 MB/Frame bei 2,66-Mio-Zellen-
+    // Rastern → RAM-Kollaps beim Viewer-Öffnen, fehlende/flackernde Frames nach
+    // OOM). Stattdessen: Meta sofort, Frames einzeln aus IndexedDB bei Bedarf,
+    // kleiner LRU + Prefetch des Folge-Frames fürs Playback.
+    const FRAME_CACHE_MAX = 6;
+    const _lru = [];              // frameIds, älteste zuerst
+    const _inflight = new Map();  // frameId -> Promise (Dedupe paralleler ensureFrame)
+
+    const _touchLru = (id) => {
+        const i = _lru.indexOf(id);
+        if (i >= 0) _lru.splice(i, 1);
+        _lru.push(id);
+    };
+    const _evictLru = (protectedId) => {
+        while (_lru.length > FRAME_CACHE_MAX) {
+            let idx = 0;
+            if (_lru[idx] === protectedId) idx = 1;
+            if (idx >= _lru.length) break;
+            const victim = _lru.splice(idx, 1)[0];
+            resultFrames.value.delete(victim);
+            velocityFrames.value.delete(victim);
+            velocityVectorFrames.value.delete(victim);
+            elevFrames.value.delete(victim);
+            qFluxFrames.value.delete(victim);
+        }
+    };
+    const _F = (a) => (a instanceof Float32Array ? a : new Float32Array(a));
+
+    /** Frame-Record roh lesen, OHNE ihn in den Cache zu legen — für
+     *  Streaming-Auswertungen über alle Frames (Volumen-Ganglinie). */
+    const readFrameRecord = (id) => readData(FRAME_PREFIX + id);
+
+    /** Frame in den Cache laden (idempotent, dedupliziert). true = verfügbar.
+     *  withPrefetch=false bei Prefetch-internen Aufrufen — sonst kaskadiert
+     *  der Prefetch (0→1→2→…) und lädt beim Öffnen doch wieder ALLE Frames. */
+    const ensureFrame = async (id, withPrefetch = true) => {
+        if (id == null || Number.isNaN(id)) return false;
+        if (resultFrames.value.has(id)) {
+            _touchLru(id);
+            if (withPrefetch) _prefetchNext(id);
+            return true;
+        }
+        if (_inflight.has(id)) { await _inflight.get(id); return resultFrames.value.has(id); }
+        const p = (async () => {
+            const rec = await readFrameRecord(id);
+            if (!rec || !rec.depth) return;
+            resultFrames.value.set(id, _F(rec.depth));
+            if (rec.elev) elevFrames.value.set(id, _F(rec.elev));
+            if (rec.vx && rec.vy) {
+                const vx = _F(rec.vx), vy = _F(rec.vy);
+                velocityVectorFrames.value.set(id, { vx, vy });
+                // |v| lazy ableiten statt als 7. Kanal zu speichern (RAM/IDB).
+                if (!rec.velocity) {
+                    const vel = new Float32Array(vx.length);
+                    for (let i = 0; i < vx.length; i++) vel[i] = Math.hypot(vx[i], vy[i]);
+                    velocityFrames.value.set(id, vel);
+                }
+            }
+            if (rec.velocity) velocityFrames.value.set(id, _F(rec.velocity));
+            if (rec.qx && rec.qy) qFluxFrames.value.set(id, { qx: _F(rec.qx), qy: _F(rec.qy) });
+            _touchLru(id);
+            _evictLru(id);
+        })();
+        _inflight.set(id, p);
+        try { await p; } finally { _inflight.delete(id); }
+        if (withPrefetch) _prefetchNext(id);
+        return resultFrames.value.has(id);
+    };
+
+    const _prefetchNext = (id) => {
+        const ids = frameIds.value;
+        const next = ids[ids.indexOf(id) + 1];
+        if (next != null && !resultFrames.value.has(next) && !_inflight.has(next)) {
+            ensureFrame(next, false).catch(() => {});
+        }
+    };
 
     const loadData = async () => {
         isLoading.value = true;
@@ -385,21 +487,24 @@ export function useResultDataFromOpener() {
         error.value = null;
 
         try {
-            console.log('[ResultBridge] Reading from IndexedDB (Worker, Fallback Main-Thread)...');
-            let data;
-            try {
-                data = await readDataViaWorker(DATA_KEY);
-                console.log('[ResultBridge] Hydrierung via Worker (off-main-thread).');
-            } catch (werr) {
-                console.warn('[ResultBridge] Worker-Hydrierung fehlgeschlagen → Main-Thread-Fallback:', werr?.message || werr);
-                data = await readResultDataMainThread();
-            }
+            console.log('[ResultBridge] Lese Meta-Record aus IndexedDB...');
+            let data = await readData(DATA_KEY);
 
             if (!data) {
                 error.value = 'Keine Daten gefunden. Bitte zuerst Simulation starten.';
                 console.error('[ResultBridge] No data in IndexedDB');
                 isLoading.value = false;
                 return;
+            }
+
+            const lazy = data.schema === 'per-frame-v1';
+            if (!lazy) {
+                // Alt-Format (kompletter Blob in einem Record): wie früher voll
+                // hydrieren — data enthält die Frames bereits inline.
+                console.log('[ResultBridge] Alt-Format erkannt → Voll-Hydration.');
+            } else {
+                frameIds.value = data.frameIds || [];
+                velocityGlobalMax.value = data.velocityGlobalMax || 0;
             }
 
             loadProgress.value = 20;
@@ -436,42 +541,36 @@ export function useResultDataFromOpener() {
                 console.log('[ResultBridge] hydrate network:', data.network.nodes?.length ?? 0, 'Schächte,', data.network.links?.length ?? 0, 'Haltungen');
             }
 
-            // Hydrate depth frames
-            const frameEntries = Object.entries(data.frames || {});
-            console.log('[ResultBridge] Loading', frameEntries.length, 'depth frames...');
-            frameEntries.forEach(([frameId, frameArray], index) => {
-                resultFrames.value.set(Number(frameId), frameArray instanceof Float32Array ? frameArray : new Float32Array(frameArray));
-                loadProgress.value = 40 + Math.round(((index + 1) / frameEntries.length) * 40);
-            });
-
-            // Hydrate velocity frames (optional)
-            Object.entries(data.velocityFrames || {}).forEach(([frameId, arr]) => {
-                velocityFrames.value.set(Number(frameId), arr instanceof Float32Array ? arr : new Float32Array(arr));
-            });
-
-            // Hydrate velocity VECTOR frames (Vx/Vy, optional)
-            Object.entries(data.velocityVectorFrames || {}).forEach(([frameId, comp]) => {
-                if (!comp || !comp.vx || !comp.vy) return;
-                velocityVectorFrames.value.set(Number(frameId), {
-                    vx: comp.vx instanceof Float32Array ? comp.vx : new Float32Array(comp.vx),
-                    vy: comp.vy instanceof Float32Array ? comp.vy : new Float32Array(comp.vy),
+            if (!lazy) {
+                // ── Alt-Format: alles inline hydrieren (wie früher) ─────────
+                const frameEntries = Object.entries(data.frames || {});
+                console.log('[ResultBridge] Loading', frameEntries.length, 'depth frames...');
+                frameEntries.forEach(([frameId, frameArray], index) => {
+                    resultFrames.value.set(Number(frameId), _F(frameArray));
+                    loadProgress.value = 40 + Math.round(((index + 1) / frameEntries.length) * 40);
                 });
-            });
-
-            // Hydrate Wasserspiegel-Frames (.elev, optional — Ober-/Unterwasser am Wehr)
-            Object.entries(data.elevFrames || {}).forEach(([frameId, arr]) => {
-                if (!arr) return;
-                elevFrames.value.set(Number(frameId), arr instanceof Float32Array ? arr : new Float32Array(arr));
-            });
-
-            // Hydrate Kantenfluss-Frames (Qx/Qy, optional — Wehr-Durchfluss)
-            Object.entries(data.qFluxFrames || {}).forEach(([frameId, comp]) => {
-                if (!comp || !comp.qx || !comp.qy) return;
-                qFluxFrames.value.set(Number(frameId), {
-                    qx: comp.qx instanceof Float32Array ? comp.qx : new Float32Array(comp.qx),
-                    qy: comp.qy instanceof Float32Array ? comp.qy : new Float32Array(comp.qy),
+                Object.entries(data.velocityFrames || {}).forEach(([frameId, arr]) => {
+                    velocityFrames.value.set(Number(frameId), _F(arr));
                 });
-            });
+                Object.entries(data.velocityVectorFrames || {}).forEach(([frameId, comp]) => {
+                    if (!comp || !comp.vx || !comp.vy) return;
+                    velocityVectorFrames.value.set(Number(frameId), { vx: _F(comp.vx), vy: _F(comp.vy) });
+                });
+                Object.entries(data.elevFrames || {}).forEach(([frameId, arr]) => {
+                    if (!arr) return;
+                    elevFrames.value.set(Number(frameId), _F(arr));
+                });
+                Object.entries(data.qFluxFrames || {}).forEach(([frameId, comp]) => {
+                    if (!comp || !comp.qx || !comp.qy) return;
+                    qFluxFrames.value.set(Number(frameId), { qx: _F(comp.qx), qy: _F(comp.qy) });
+                });
+                frameIds.value = [...resultFrames.value.keys()].sort((a, b) => a - b);
+            } else {
+                // ── Lazy-Modus: Frames kommen einzeln via ensureFrame() ─────
+                // Ersten Frame sofort anstoßen, damit der Viewer direkt etwas zeigt.
+                if (frameIds.value.length) ensureFrame(frameIds.value[0]).catch(() => {});
+                loadProgress.value = 80;
+            }
 
             // Hydrate summary grids
             // 1D-Kanalnetz-Ergebnisse + Kopplungs-/Massenbilanz (kleine JSON-Objekte)
@@ -507,6 +606,11 @@ export function useResultDataFromOpener() {
         velocityVectorFrames,
         elevFrames,
         qFluxFrames,
+        // Lazy-Frame-API (per-frame-v1): Viewer lädt Frames bei Bedarf.
+        frameIds,
+        velocityGlobalMax,
+        ensureFrame,
+        readFrameRecord,
         maxDepthGrid,
         maxHazardGrid,
         maxVelocityGrid,

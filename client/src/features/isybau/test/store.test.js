@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { useIsybauStore } from '../store/index.js';
 import { Node } from '../core/domain/Node.js';
+import { Area } from '../core/domain/Area.js';
 
 describe('IsybauStore', () => {
     let store;
@@ -228,5 +229,84 @@ describe('IsybauStore', () => {
         store.setOriginAnchor({ epsg: 'EPSG:25832', x: 405000, y: 5477000, label: 'Kaiserslautern' });
         expect(store.metadata.crs).toEqual({ epsg: 'EPSG:25832', confirmed: true, source: 'anchor' });
         expect(store.metadata.originAnchor).toEqual({ x: 405000, y: 5477000, label: 'Kaiserslautern' });
+    });
+
+    describe('Flächen-Vertex-Editing (updateAreaPoint/insertAreaPoint/removeAreaPoint)', () => {
+        const sq = (x0, y0, s) => [
+            { x: x0, y: y0 }, { x: x0 + s, y: y0 }, { x: x0 + s, y: y0 + s }, { x: x0, y: y0 + s }
+        ];
+
+        it('updateAreaPoint verschiebt einen Punkt und liefert true', () => {
+            store.areas.push(new Area({ id: 'A1', points: sq(0, 0, 10) }));
+            const ok = store.updateAreaPoint('A1', 0, { x: 1, y: 1 });
+            expect(ok).toBe(true);
+            expect(store.areas[0].points[0]).toEqual({ x: 1, y: 1 });
+        });
+
+        it('lehnt eine selbstüberschneidende Form ab (Punkt unverändert)', () => {
+            const points = sq(0, 0, 10);
+            store.areas.push(new Area({ id: 'A1', points: [...points] }));
+            // Punkt 1 so weit ziehen, dass ein "bowtie" entsteht (über die gegenüberliegende Kante hinweg)
+            const ok = store.updateAreaPoint('A1', 1, { x: -5, y: 10 });
+            expect(ok).toBe(false);
+            expect(store.areas[0].points[1]).toEqual(points[1]);
+        });
+
+        it('clippt automatisch bei Überlappung mit einer anderen Fläche', () => {
+            store.areas.push(new Area({ id: 'A1', points: sq(0, 0, 10) }));
+            store.areas.push(new Area({ id: 'A2', points: sq(20, 0, 10) }));
+            // A1's rechte obere Ecke (10,10) so weit nach rechts ziehen, dass sie in A2 hineinragt
+            const ok = store.updateAreaPoint('A1', 2, { x: 25, y: 10 });
+            expect(ok).toBe(true);
+            // Kein Punkt von A1 darf jetzt innerhalb von A2 (x>=20) liegen
+            for (const p of store.areas[0].points) {
+                expect(p.x).toBeLessThanOrEqual(20.001);
+            }
+        });
+
+        it('insertAreaPoint fügt einen Punkt an der richtigen Stelle ein', () => {
+            store.areas.push(new Area({ id: 'A1', points: sq(0, 0, 10) }));
+            store.insertAreaPoint('A1', 0, { x: 5, y: 0 });
+            expect(store.areas[0].points).toHaveLength(5);
+            expect(store.areas[0].points[1]).toEqual({ x: 5, y: 0 });
+        });
+
+        it('removeAreaPoint entfernt einen Punkt, aber nie unter 3 Punkte', () => {
+            store.areas.push(new Area({ id: 'A1', points: sq(0, 0, 10) }));
+            expect(store.removeAreaPoint('A1', 0)).toBe(true);
+            expect(store.areas[0].points).toHaveLength(3);
+            expect(store.removeAreaPoint('A1', 0)).toBe(false); // Guard: nicht unter 3
+            expect(store.areas[0].points).toHaveLength(3);
+        });
+    });
+
+    describe('Viewer-Picker (startPickRef/resolvePickRef/cancelPickRef)', () => {
+        it('startPickRef setzt den Editor-Modus und merkt sich den Callback', () => {
+            const cb = () => {};
+            store.startPickRef('node', cb);
+            expect(store.editor.mode).toBe('pickNodeRef');
+            expect(store.editor.pickCallback).toBe(cb);
+
+            store.startPickRef('edge', cb);
+            expect(store.editor.mode).toBe('pickEdgeRef');
+        });
+
+        it('resolvePickRef ruft den Callback mit der Element-ID auf und setzt auf view zurück', () => {
+            let received = null;
+            store.startPickRef('node', (id) => { received = id; });
+            store.resolvePickRef('N42');
+            expect(received).toBe('N42');
+            expect(store.editor.mode).toBe('view');
+            expect(store.editor.pickCallback).toBeNull();
+        });
+
+        it('cancelPickRef bricht ab, OHNE den Callback aufzurufen', () => {
+            let called = false;
+            store.startPickRef('node', () => { called = true; });
+            store.cancelPickRef();
+            expect(called).toBe(false);
+            expect(store.editor.mode).toBe('view');
+            expect(store.editor.pickCallback).toBeNull();
+        });
     });
 });

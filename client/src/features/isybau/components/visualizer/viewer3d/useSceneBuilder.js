@@ -247,6 +247,25 @@ export function useSceneBuilder() {
     return mats.entwDefault;
   }
 
+  // Netz-Renderstyle Solid<->Drahtkörper (Nutzer-Wunsch: Drahtkörper macht die
+  // Wasserspiegel-Anzeige — mats.waterLevel, IMMER solide, siehe unten — durch
+  // die Rohr-/Schachtwände hindurch sichtbar). Betrifft alle "Körper"-Materialien
+  // der Netzgeometrie, NICHT area/ground/selected (Highlight soll klar solide
+  // bleiben) und NICHT waterLevel selbst (muss sichtbar bleiben, das ist ja der
+  // Zweck). Materialien sind Singletons in mats — einmal umgeschaltet, bleibt
+  // der Zustand über künftige buildScene()-Rebuilds hinweg erhalten (kein Reset).
+  const WIREFRAME_MATERIAL_KEYS = [
+    'fictive', 'outfall', 'noGeo', 'pumpwerk', 'becken', 'sonderbauwerk',
+    'resOverflow', 'resSurcharge', 'utilHigh', 'utilMed', 'utilLow', 'utilOk',
+    'entwKM', 'entwKR', 'entwKS', 'entwDefault'
+  ];
+
+  function setWireframe(enabled) {
+    for (const key of WIREFRAME_MATERIAL_KEYS) {
+      mats[key].wireframe = enabled;
+    }
+  }
+
   // Original material cache for restoring after deselect
   const _origMats = new Map();
 
@@ -591,5 +610,5 @@ export function useSceneBuilder() {
     mats.ground.color.set(hex);
   }
 
-  return { clickableObjects, objectDataMap, buildScene, clear, setSelected, setGroundColor, disposeFully };
+  return { clickableObjects, objectDataMap, buildScene, clear, setSelected, setGroundColor, setWireframe, disposeFully };
 }

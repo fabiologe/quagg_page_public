@@ -135,6 +135,8 @@ const hint = computed(() => {
         case 'addArea': return "Punkte klicken (Doppelklick fertig)";
         case 'splitEdge': return "Klicken Sie auf eine Haltung, um sie zu teilen";
         case 'boxSelect': return "Rahmen aufziehen — Schächte & Haltungen auswählen (Shift: hinzufügen)";
+        case 'pickNodeRef': return "Schacht im Viewer anklicken (Esc zum Abbrechen)";
+        case 'pickEdgeRef': return "Haltung im Viewer anklicken (Esc zum Abbrechen)";
         default: return "";
     }
 });

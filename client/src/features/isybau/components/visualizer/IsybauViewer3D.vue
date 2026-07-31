@@ -12,6 +12,7 @@
       v-model:showTerrain="showTerrain"
       v-model:showResults="showResults"
       v-model:showWaterLevel="showWaterLevel"
+      v-model:wireframeMode="wireframeMode"
       v-model:zScale="zScale"
       :hasResults="hasResults"
       :hasTerrain="!!effectiveTerrain"
@@ -62,6 +63,9 @@ const showAreas       = ref(true);
 const showTerrain     = ref(true);
 const showResults     = ref(props.autoShowResults);
 const showWaterLevel  = ref(true);
+// Solid (Standard) <-> Drahtkörper — siehe watch() weiter unten (nach builder-
+// Deklaration) für die Begründung.
+const wireframeMode   = ref(false);
 const zScale          = ref(1);
 const selectedElement = ref(null);
 
@@ -179,6 +183,13 @@ watch(renderKey, () => {
 
 // Layer toggles / z-scale / result mode trigger a rebuild without camera reset
 watch([showNodes, showEdges, showAreas, zScale, showResults, showWaterLevel], () => scheduleRebuild(false));
+
+// Solid<->Drahtkörper: reine Material-Mutation auf bereits existierenden
+// Singleton-Materialien (setWireframe() in useSceneBuilder.js) — macht
+// mats.waterLevel (immer solide) durch die Rohr-/Schachtwände hindurch
+// sichtbar. Braucht KEINEN scheduleRebuild(), die laufende Render-Loop
+// (core.startLoop()) zeigt die Änderung im nächsten Frame von selbst.
+watch(wireframeMode, (v) => builder.setWireframe(v));
 
 // ─── DGM-Terrain-Layer ──────────────────────────────────────────────────────
 // Bewusst getrennt vom renderKey/scheduleRebuild-Pfad oben: ein neuer DGM-

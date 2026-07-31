@@ -1,5 +1,10 @@
 <template>
   <aside class="f3d-objtree">
+    <button class="f3d-btn f3d-objimport" @click="showImport = true">
+      ⬇ Geometrie importieren (DXF/STL)
+    </button>
+    <ImportModal v-if="showImport" @close="showImport = false" />
+
     <div v-for="group in groups" :key="group.kind" class="f3d-objgroup">
       <div class="f3d-objgroup-head">
         <span>{{ group.label }}</span>
@@ -31,12 +36,14 @@
 <script setup>
 // Objektbaum (Spez. Kap. 6.1): alle Objekte mit Typ und Validierungsstatus,
 // Klick springt zum Objekt; "Neu anlegen" fügt Katalog-Vorlagen ein.
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import { TYPE_LABELS, TEMPLATES } from '../../utils/preTemplates'
+import ImportModal from './ImportModal.vue'
 
 const store = usePreStore()
 const addChoice = reactive({})
+const showImport = ref(false)
 
 const groups = computed(() => {
   const s = store.spec
@@ -125,4 +132,5 @@ function add(group) {
 .f3d-objstatus.sev-warnung { color: #c98500; }
 .f3d-objstatus.sev-hinweis { color: var(--f3d-accent); }
 .f3d-objadd { display: flex; gap: 6px; margin-top: 6px; }
+.f3d-objimport { width: 100%; margin-bottom: 4px; }
 </style>

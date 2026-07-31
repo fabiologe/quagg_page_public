@@ -88,6 +88,21 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
     },
 
+    // Nach dem Geometrie-Import: der Server hat den Fall bereits
+    // geschrieben und liefert ihn zurück — nur Zustand nachziehen, ohne
+    // Phase oder Undo-Verlauf zu verlieren (openCase täte beides).
+    async adoptImportedSpec(spec) {
+      const snap = this.spec ? JSON.stringify(this.spec) : null
+      if (snap) {
+        this.undoStack.push(snap)
+        this.redoStack = []
+      }
+      this.spec = spec
+      this.dirty = false
+      this.selection = null
+      await Promise.all([this.refreshGeometry(), this.refreshValidation()])
+    },
+
     async openCase(caseId) {
       this.loading = true
       this.error = ''

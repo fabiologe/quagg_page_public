@@ -373,8 +373,13 @@ const currentQFluxData = computed(() =>
 );
 
 // ── Velocity-Farbbereich + Histogramm ───────────────────────────────────────
-// Globales Geschwindigkeits-Max über ALLE Frames → stabile Reglergrenzen beim Abspielen.
+// Globales Geschwindigkeits-Max über ALLE Frames → stabile Reglergrenzen beim
+// Abspielen. Kommt vorberechnet aus dem Bridge-Meta (Producer hat alle Frames im
+// RAM); der Scan über geladene Frames ist nur noch Fallback für Alt-Daten —
+// mit Lazy-Loading wäre ein Vollscan hier unmöglich/instabil.
 const velocityGlobalMax = computed(() => {
+  const pre = bridge.velocityGlobalMax?.value;
+  if (pre > 0) return pre;
   const frames = bridge.velocityFrames?.value;
   if (!frames || frames.size === 0) return 0;
   let m = 0;
@@ -474,10 +479,17 @@ const currentLayerMax = computed(() => {
 });
 // ───────────────────────────────────────────────────────────────────────────
 
-watch(currentFrame, (val) => {
+watch(currentFrame, async (val) => {
+  // Lazy-Bridge: Frame bei Bedarf aus IndexedDB nachladen. WICHTIG: den alten
+  // Frame stehen lassen, bis der neue da ist — das Nullen bei fehlendem Frame
+  // war das Wasser-Flackern beim Playback (und nach OOM fehlten Frames ganz).
   const frames = bridge.resultFrames.value;
   if (frames && frames.has(val)) {
     currentDepthData.value = frames.get(val);
+  } else if (bridge.ensureFrame) {
+    const ok = await bridge.ensureFrame(val);
+    if (currentFrame.value !== val) return; // Nutzer ist weitergesprungen
+    if (ok) currentDepthData.value = bridge.resultFrames.value.get(val);
   } else {
     currentDepthData.value = null;
   }
@@ -676,27 +688,50 @@ const computedSectionsList = computed(() => {
 // --- VOLUME ---
 // Volumen-Ganglinie je Polygon über ALLE Frames (Volumen ist unabhängig von Toleranz & aktuellem Frame
 // → einmalig, stabil; rechnet nur neu, wenn Polygone oder Frames wechseln).
-const volumeSeriesById = computed(() => {
-  const out = {};
-  const frames = bridge.resultFrames?.value;
-  const header = analysisStore.currentGridHeader;
-  if (!frames || frames.size === 0 || !header) return out;
-  const cs = header.cellsize;
-  const sortedKeys = [...frames.keys()].sort((a, b) => a - b);
-  for (const poly of analysisStore.polygons) {
-    let maxVolume = 0;
-    const series = sortedKeys.map(fk => {
-      const depth = frames.get(fk);
-      const v = calculateVolumeWithConfidence(
-        poly.indices.activeIndices, poly.indices.boundaryIndices, depth, cs, 0
-      ).volume;
-      if (v > maxVolume) maxVolume = v;
-      return { frame: fk, volume: v };
-    });
-    out[poly.id] = { series, maxVolume };
-  }
-  return out;
-});
+// Lazy-Bridge: die Frames liegen nicht mehr alle im RAM. Die Ganglinie streamt
+// deshalb Frame für Frame aus IndexedDB (readFrameRecord — ohne den LRU-Cache
+// zu verdrängen); Peak-RAM = 1 Frame statt alle. Ref + Watcher statt computed,
+// weil das Streaming asynchron ist.
+const volumeSeriesById = ref({});
+let volumeSeriesToken = 0;
+watch(
+  // Kein deep-watch: polygons tragen große Index-Arrays — Identität über die
+  // Id-Liste reicht (Polygone sind nach dem Zeichnen unveränderlich).
+  [() => analysisStore.polygons.map(p => p.id).join(','),
+   () => bridge.frameIds?.value?.length ?? 0,
+   () => bridge.resultFrames.value.size > 0],
+  async () => {
+    const polys = analysisStore.polygons;
+    const ids = bridge.frameIds?.value;
+    const header = analysisStore.currentGridHeader;
+    const token = ++volumeSeriesToken;
+    if (!polys?.length || !header) { volumeSeriesById.value = {}; return; }
+    const cs = header.cellsize;
+    // Frame-Id-Quelle: Lazy-Meta; Fallback Alt-Format = geladene Frames.
+    const sortedKeys = (ids?.length ? [...ids] : [...bridge.resultFrames.value.keys()]).sort((a, b) => a - b);
+    const acc = {};
+    for (const poly of polys) acc[poly.id] = { series: [], maxVolume: 0 };
+    for (const fk of sortedKeys) {
+      let depth = bridge.resultFrames.value.get(fk);
+      if (!depth && bridge.readFrameRecord) {
+        const rec = await bridge.readFrameRecord(fk).catch(() => null);
+        if (token !== volumeSeriesToken) return; // Polygone/Frames haben gewechselt
+        depth = rec?.depth ? (rec.depth instanceof Float32Array ? rec.depth : new Float32Array(rec.depth)) : null;
+      }
+      if (!depth) continue;
+      for (const poly of polys) {
+        const v = calculateVolumeWithConfidence(
+          poly.indices.activeIndices, poly.indices.boundaryIndices, depth, cs, 0
+        ).volume;
+        const a = acc[poly.id];
+        a.series.push({ frame: fk, volume: v });
+        if (v > a.maxVolume) a.maxVolume = v;
+      }
+    }
+    if (token === volumeSeriesToken) volumeSeriesById.value = acc;
+  },
+  { immediate: true }
+);
 
 // Aktuelle Frame-Statistik (Volumen/Fehler/Konfidenz) mit Ganglinie + Max zusammenführen.
 const volumePanelData = computed(() =>

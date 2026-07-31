@@ -208,13 +208,13 @@
                       <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.coverZ <= node.z }" title="Sohle muss tiefer als Deckel liegen">
+                      <input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.depth" step="0.01" class="small-input" @click.stop>
+                      <input type="number" v-model.number="node.depth" step="0.01" class="small-input" @click.stop @change="onDepthChange(node)">
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
+                      <input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td class="text-center">
                       <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
@@ -501,8 +501,8 @@
                          </div>
                       </div>
                     </td>
-                    <td><input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.coverZ <= node.z }"></td>
-                    <td><input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop :class="{ 'invalid': node.z >= node.coverZ }"></td>
+                    <td><input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }"></td>
+                    <td><input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }"></td>
                     <td class="text-center">
                       <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
@@ -641,17 +641,32 @@
                             </select>
                         </td>
                         <td>
-                             <select v-model.number="area.slope" class="medium-select" @click.stop>
-                                <option :value="null" disabled>– wählen –</option>
-                                <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
-                                    {{ key }} - {{ label }}
-                                </option>
-                            </select>
+                             <div class="split-cell">
+                                <select v-model.number="area.slope" class="medium-select" @click.stop>
+                                    <option :value="null" disabled>– wählen –</option>
+                                    <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
+                                        {{ key }} - {{ label }}
+                                    </option>
+                                </select>
+                                <button type="button" class="pick-btn" @click.stop="suggestSlope(area)" :disabled="!store.terrain" :title="store.terrain ? 'Neigung aus DGM ermitteln' : 'Kein DGM geladen'">
+                                    <img src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" alt="Neigung ermitteln" class="pick-icon" />
+                                </button>
+                             </div>
                         </td>
-                        <td><input type="text" v-model="area.nodeId" class="medium-input" placeholder="Knoten 1" @click.stop></td>
+                        <td>
+                            <div class="split-cell">
+                                <input type="text" v-model="area.nodeId" class="medium-input" placeholder="Knoten 1" @click.stop>
+                                <button type="button" class="pick-btn" @click.stop="pickNodeInto(area, 'nodeId')" title="Knoten im Viewer wählen">
+                                    <img src="/saintv1d/icons/Interface-Essential-Cursor-Click-Point--Streamline-Pixel.svg" alt="Wählen" class="pick-icon" />
+                                </button>
+                            </div>
+                        </td>
                         <td>
                              <div class="split-cell">
                                 <input type="text" v-model="area.nodeId2" placeholder="Knoten 2" class="medium-input" @click.stop>
+                                <button type="button" class="pick-btn" @click.stop="pickNodeInto(area, 'nodeId2')" title="Knoten im Viewer wählen">
+                                    <img src="/saintv1d/icons/Interface-Essential-Cursor-Click-Point--Streamline-Pixel.svg" alt="Wählen" class="pick-icon" />
+                                </button>
                                 <input type="number" v-model.number="area.splitRatio" placeholder="%" class="small-input" v-if="area.nodeId2" @click.stop  title="Anteil zu Knoten 1 (%)">
                              </div>
                         </td>
@@ -694,6 +709,8 @@ import CurveTableEditor from '../common/CurveTableEditor.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
 import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
 import { checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints } from '../../utils/preSolveValidation.js';
+import { depthFromCoverAndZ, coverZFromZAndDepth } from '../../utils/heightCoupling.js';
+import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
 import * as XLSX from 'xlsx';
 
 const props = defineProps({
@@ -937,6 +954,46 @@ const handleTypeChange = (node, previousCategory) => {
     if (!node.lossCoeff && LossCoeffDefaults[newType] != null) {
         node.lossCoeff = LossCoeffDefaults[newType];
     }
+};
+
+// Knoten im Viewer wählen statt Text-ID eintippen — setzt den Editor kurz in
+// einen Pick-Modus (store.editor.mode='pickNodeRef'), der nächste Knoten-Klick
+// im Viewer schreibt seine ID zurück in area[field]. Der Nutzer kann das
+// Modal (DraggableModal, kein Klick-Backdrop) einfach zur Seite ziehen, um an
+// den Viewer zu kommen.
+const pickNodeInto = (area, field) => {
+    store.startPickRef('node', (id) => { area[field] = id; });
+};
+
+// Neigungsklasse aus dem geladenen DGM vorschlagen (nur Button-getriggert).
+const suggestSlope = (area) => {
+    if (!store.terrain || !area.points) return;
+    const result = suggestSlopeClassFromTerrain(area.points, store.terrain);
+    if (result) {
+        area.slope = result.slopeClass;
+    } else {
+        console.warn(`Neigung aus DGM: keine gültigen Höhendaten innerhalb der Fläche ${area.id} gefunden.`);
+    }
+};
+
+// === Deckelhöhe/Sohlhöhe/Tiefe-Kopplung (coverZ - z = depth) ===
+// Deckelhöhe geändert -> Tiefe neu (Sohle bleibt Referenz)
+const onCoverZChange = (node) => {
+    const d = depthFromCoverAndZ(node.coverZ, node.z);
+    if (d != null) node.depth = d;
+};
+// Tiefe geändert -> Deckelhöhe neu (Sohle bleibt Referenz)
+const onDepthChange = (node) => {
+    const c = coverZFromZAndDepth(node.z, node.depth);
+    if (c != null) node.coverZ = c;
+};
+// Sohlhöhe geändert -> Deckelhöhe neu (Tiefe bleibt Referenz — Deckel folgt
+// der neuen Sohle). Bewusst NICHT stattdessen depth aus coverZ-z neu
+// berechnen, sonst "springen" bei einer Sohl-Änderung Tiefe UND Deckel
+// gleichzeitig.
+const onZChange = (node) => {
+    const c = coverZFromZAndDepth(node.z, node.depth);
+    if (c != null) node.coverZ = c;
 };
 
 
@@ -1480,6 +1537,13 @@ input[type="checkbox"] { accent-color: #2ecc71; }
 .locate-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; }
 .locate-btn:hover { opacity: 1; transform: scale(1.1); }
 .locate-icon { width: 16px; height: 16px; display: block; }
+
+/* Pick Button (Knoten/Haltung im Viewer wählen) */
+.pick-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; flex-shrink: 0; }
+.pick-btn:hover { opacity: 1; transform: scale(1.1); }
+.pick-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+.pick-btn:disabled:hover { transform: none; }
+.pick-icon { width: 16px; height: 16px; display: block; }
 
 /* Undo & Bulk */
 .undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: #040647; border: 1px solid #594491; color: white; padding: 10px 20px; border-radius: 20px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(4,6,71,0.4); z-index: 1000; }

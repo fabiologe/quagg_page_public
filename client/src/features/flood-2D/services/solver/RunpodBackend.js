@@ -87,6 +87,11 @@ export class RunpodBackend extends SolverBackend {
         this.jobId = res.id;
         this.setJobState('queued');
         this.emit({ type: 'LOG', text: `RUNPOD: Job ${res.id} angenommen (${res.status}).` });
+        // Health-Check-Fallback des Backends: RunPod nicht erreichbar ⇒ der Lauf
+        // rechnet lokal auf dem Server (Details kommen als warning im Stream).
+        if (res.engine && res.engine !== 'runpod') {
+            this.emit({ type: 'WARNING', message: `Lauf rechnet auf '${res.engine}' statt RunPod (automatischer Fallback).` });
+        }
         this.emit({ type: 'STATUS', status: 'RUNNING' });
 
         // 3. Poll-Loop (nicht awaiten — run() resolved bei Annahme)
@@ -285,6 +290,26 @@ export class RunpodBackend extends SolverBackend {
     _headerFromMeta(meta) {
         const { ncols, nrows, cellsize, xllcorner, yllcorner, NODATA_value } = meta;
         return { ncols, nrows, cellsize, xllcorner, yllcorner, NODATA_value: NODATA_value ?? -9999 };
+    }
+
+    /**
+     * Gespeicherten Lauf wiederherstellen (Companion-Manifest oder Cloud-Replay):
+     * die persistierten frame/done-Events laufen durch dieselbe Download+Decode-
+     * Pipeline wie live — der Ergebnis-Viewer sieht keinen Unterschied zu einem
+     * gerade beendeten Lauf. URLs in den Events werden vom Transport aufgelöst
+     * (Companion: /files/… gegen http://127.0.0.1:8642).
+     * @param {Array<Object>} events  frame/done/warning-Events aus dem Manifest
+     */
+    async replayEvents(events) {
+        this.setJobState('downloading');
+        for (const ev of (events || [])) {
+            await this._handleOutput(ev);
+        }
+        // Manifest ohne done-Event (abgebrochener Lauf): Zustand sauber beenden.
+        if (!(events || []).some(e => e?.event === 'done')) {
+            this.setJobState('done');
+            this.emit({ type: 'STATUS', status: 'FINISHED' });
+        }
     }
 
     async abort() {

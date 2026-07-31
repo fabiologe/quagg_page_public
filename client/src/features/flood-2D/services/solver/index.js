@@ -18,15 +18,29 @@ import { createMockRunpodTransport } from './MockRunpodTransport.js';
  * Ohne Base-URL und ohne API-Key fällt 'runpod' automatisch auf den Mock
  * zurück, sodass die Remote-Pipeline auch ohne Backend end-to-end läuft.
  *
+ * Lokaler Companion (quagg_local_companion.py auf dem Nutzer-PC): spricht
+ * dasselbe Protokoll auf localhost — `local: true` tauscht nur die Base-URL,
+ * Backend-Klasse und Transport bleiben identisch.
+ *
  * @param {'wasm'|'runpod'} mode
+ * @param {{ local?: boolean }} [opts]
  * @returns {import('./SolverBackend.js').SolverBackend}
  */
-export function createSolverBackend(mode = 'wasm') {
+export const COMPANION_BASE = 'http://127.0.0.1:8642';
+
+export function createSolverBackend(mode = 'wasm', { local = false } = {}) {
     switch (mode) {
         case 'wasm':
             return new WasmWorkerBackend(mode);
 
         case 'runpod': {
+            if (local) {
+                console.info(`[SolverFactory] Lokaler Companion: ${COMPANION_BASE}`);
+                return new RunpodBackend({
+                    transport: createRunpodTransport({
+                        apiKey: 'local', endpointId: 'pod', baseUrl: COMPANION_BASE })
+                });
+            }
             const env = import.meta.env || {};
             const baseUrl = env.VITE_RUNPOD_BASE_URL;
             const apiKey = env.VITE_RUNPOD_API_KEY;

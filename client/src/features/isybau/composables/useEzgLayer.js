@@ -71,6 +71,12 @@ const contourError = ref(null);
 // Main-Thread mehrere Sekunden (Profiling) — der genaue Hänger, den der
 // Worker-Umbau eigentlich vermeiden sollte.
 const contourPositions = ref(new Float32Array(0));
+// Paralleles Array zu contourPositions — EIN Wert pro Segment (nicht pro
+// Punkt, also contourPositions.length/6 Einträge), für den Hover-Tooltip in
+// IsybauViewer.vue (Höhe der am nächsten liegenden Höhenlinie). Muss bei
+// JEDER Mutation von contourPositions synchron mitgeführt werden, sonst
+// laufen Index-Zuordnung und Positionen auseinander.
+const contourElevations = ref(new Float32Array(0));
 
 let currentObjectUrl = null;
 // EIN Eintrag { raster, width, height, pixelToWGS84, tileParams } PRO
@@ -108,11 +114,13 @@ const isExpanding = ref(false); // eigener Ladezustand fürs Pan-Nachladen, bloc
 // terminate() nötig).
 let contourWorker = null;
 let contourReqId = 0;
-// reqId -> resolve(positions), damit jeder Aufrufer (recomputeContoursFromCache
-// für einen Vollaufbau, appendContours für ein einzelnes Delta-Raster) selbst
-// entscheidet, was mit dem Ergebnis passiert (ersetzen vs. anhängen) — der
-// Worker/onmessage-Handler mutiert contourPositions NICHT mehr direkt.
+// reqId -> resolve({positions, elevations}), damit jeder Aufrufer
+// (recomputeContoursFromCache für einen Vollaufbau, appendContours für ein
+// einzelnes Delta-Raster) selbst entscheidet, was mit dem Ergebnis passiert
+// (ersetzen vs. anhängen) — der Worker/onmessage-Handler mutiert
+// contourPositions/contourElevations NICHT mehr direkt.
 const pendingContourResolvers = new Map();
+const EMPTY_CONTOUR_RESULT = { positions: new Float32Array(0), elevations: new Float32Array(0) };
 
 function ensureContourWorker() {
     if (contourWorker) return contourWorker;
@@ -122,13 +130,13 @@ function ensureContourWorker() {
         if (msg.type !== 'result') return;
         const resolve = pendingContourResolvers.get(msg.reqId);
         pendingContourResolvers.delete(msg.reqId);
-        resolve?.(msg.positions);
+        resolve?.({ positions: msg.positions, elevations: msg.elevations });
     };
     contourWorker.onerror = (err) => {
         console.error('EZG-Karte: Kontur-Worker-Fehler', err.message || err);
         contourError.value = err.message || 'Höhenlinien-Berechnung fehlgeschlagen';
         contourStatus.value = 'error';
-        for (const resolve of pendingContourResolvers.values()) resolve(new Float32Array(0));
+        for (const resolve of pendingContourResolvers.values()) resolve(EMPTY_CONTOUR_RESULT);
         pendingContourResolvers.clear();
     };
     return contourWorker;
@@ -141,9 +149,9 @@ function revokeCurrentImage() {
     }
 }
 
-/** Berechnet die Konturen für EIN Höhenraster im Worker. @returns {Promise<Float32Array>} */
+/** Berechnet die Konturen für EIN Höhenraster im Worker. @returns {Promise<{positions:Float32Array, elevations:Float32Array}>} */
 function computeContoursForGrid(grid, epsg) {
-    if (contourComputeSuppressed()) return Promise.resolve(new Float32Array(0));
+    if (contourComputeSuppressed()) return Promise.resolve(EMPTY_CONTOUR_RESULT);
     const worker = ensureContourWorker();
     const myReqId = ++contourReqId;
     return new Promise((resolve) => {
@@ -173,6 +181,7 @@ async function computeContoursForTerrain() {
     const terrain = useIsybauStore().terrain;
     if (!terrain || contourInterval.value <= 0) {
         contourPositions.value = new Float32Array(0);
+        contourElevations.value = new Float32Array(0);
         contourStatus.value = 'idle';
         return;
     }
@@ -194,7 +203,7 @@ async function computeContoursForTerrain() {
 
         const worker = ensureContourWorker();
         const myReqId = ++contourReqId;
-        const positions = await new Promise((resolve) => {
+        const { positions, elevations } = await new Promise((resolve) => {
             pendingContourResolvers.set(myReqId, resolve);
             worker.postMessage({
                 type: 'compute',
@@ -211,6 +220,7 @@ async function computeContoursForTerrain() {
         // Entfernen) — Ergebnis dann verwerfen statt veraltete Linien zu zeigen.
         if (useIsybauStore().terrain !== terrain) return;
         contourPositions.value = positions;
+        contourElevations.value = elevations;
         contourStatus.value = 'ready';
     } catch (e) {
         contourError.value = e.message || 'Höhenlinien-Berechnung fehlgeschlagen';
@@ -232,6 +242,7 @@ function refreshContourSource() {
         recomputeContoursFromCache();
     } else {
         contourPositions.value = new Float32Array(0);
+        contourElevations.value = new Float32Array(0);
         contourStatus.value = 'idle';
     }
 }
@@ -259,12 +270,14 @@ function concatPositions(a, b) {
 async function recomputeContoursFromCache() {
     if (cachedElevationGrids.length === 0 || contourComputeSuppressed()) {
         contourPositions.value = new Float32Array(0);
+        contourElevations.value = new Float32Array(0);
         return;
     }
     const results = await Promise.all(
         cachedElevationGrids.map((grid) => computeContoursForGrid(grid, cachedEpsg))
     );
-    contourPositions.value = results.reduce(concatPositions, new Float32Array(0));
+    contourPositions.value = results.map(r => r.positions).reduce(concatPositions, new Float32Array(0));
+    contourElevations.value = results.map(r => r.elevations).reduce(concatPositions, new Float32Array(0));
 }
 
 async function refreshAerial(wgs84Bounds, epsg) {
@@ -339,12 +352,13 @@ async function appendContours(deltaWgs84Bounds, epsg) {
     contourError.value = null;
     try {
         const grid = await fetchElevationGrid(deltaWgs84Bounds);
-        const newPositions = await computeContoursForGrid(grid, epsg); // leer, falls contourComputeSuppressed()
+        const { positions: newPositions, elevations: newElevations } = await computeContoursForGrid(grid, epsg); // leer, falls contourComputeSuppressed()
         if (!enabled.value) return; // zwischenzeitlich deaktiviert — Ergebnis verwerfen, nicht ins frisch geleerte contourPositions schreiben
         cachedElevationGrids.push(grid);
         cachedEpsg = epsg;
         elevationGridVersion.value++;
         contourPositions.value = concatPositions(contourPositions.value, newPositions);
+        contourElevations.value = concatPositions(contourElevations.value, newElevations);
         contourStatus.value = 'ready';
     } catch (e) {
         console.error('EZG-Karte: Höhenlinien-Nachladen fehlgeschlagen', e);
@@ -472,6 +486,7 @@ function cycleContourInterval() {
  */
 function clearContours() {
     contourPositions.value = new Float32Array(0);
+    contourElevations.value = new Float32Array(0);
     cachedElevationGrids = [];
     contourStatus.value = 'idle';
     contourError.value = null;
@@ -523,6 +538,7 @@ export function useEzgLayer() {
         aerialImageBounds,
         contourInterval,
         contourPositions,
+        contourElevations,
         contourStatus,
         contourError,
         isExpanding,

@@ -158,6 +158,11 @@
                     <input type="number" v-model.number="localData.z" step="0.01" class="full-input">
                 </div>
             </div>
+            <div class="info-group">
+                <label>Tiefe (m)</label>
+                <div class="value-display">{{ derivedDepth != null ? derivedDepth.toFixed(2) : '–' }}</div>
+                <small class="hint-text">Automatisch aus Deckelhöhe − Sohlhöhe.</small>
+            </div>
 
             <!-- Conditional Inputs based on Type -->
              <div v-if="[14, 'Standard', 'Bauwerk'].includes(localData.type)" class="info-group">
@@ -297,17 +302,27 @@
 
              <div class="info-group">
                  <label>Neigungsklasse</label>
-                 <select v-model.number="localData.slope" class="full-select">
-                     <option :value="null" disabled>– wählen –</option>
-                     <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
-                         {{ key }} - {{ label }}
-                     </option>
-                 </select>
+                 <div class="input-with-pick">
+                     <select v-model.number="localData.slope" class="full-select">
+                         <option :value="null" disabled>– wählen –</option>
+                         <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
+                             {{ key }} - {{ label }}
+                         </option>
+                     </select>
+                     <button type="button" class="pick-btn" @click="suggestSlope" :disabled="!store.terrain" :title="store.terrain ? 'Neigung aus DGM ermitteln' : 'Kein DGM geladen'">
+                         <img src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" alt="Neigung ermitteln" class="pick-icon" />
+                     </button>
+                 </div>
              </div>
 
              <div class="info-group">
                  <label>Anschluss Knoten (ID)</label>
-                 <input type="text" v-model="localData.nodeId" class="full-input" placeholder="Schacht ID">
+                 <div class="input-with-pick">
+                     <input type="text" v-model="localData.nodeId" class="full-input" placeholder="Schacht ID">
+                     <button type="button" class="pick-btn" @click="pickNodeIntoLocalData" title="Knoten im Viewer wählen">
+                         <img src="/saintv1d/icons/Interface-Essential-Cursor-Click-Point--Streamline-Pixel.svg" alt="Wählen" class="pick-icon" />
+                     </button>
+                 </div>
              </div>
 
              <div class="info-group">
@@ -346,6 +361,8 @@
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, lossCoeffHint, Neigungsklasse } from '../../utils/mappings.js';
+import { depthFromCoverAndZ } from '../../utils/heightCoupling.js';
+import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
 import PumpCurvePreview from '../common/PumpCurvePreview.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
 
@@ -436,6 +453,11 @@ onUnmounted(stopDrag);
 // Local State Copy
 const localData = ref({});
 const showSchmutzfracht = ref(false);
+
+// Live-Anzeige der Tiefe (Deckelhöhe - Sohlhöhe) — der eigentliche Store-Wert
+// wird weiterhin erst bei save() geschrieben (siehe payload.depth dort), hier
+// nur die sofortige Rückmeldung fürs Tippen.
+const derivedDepth = computed(() => depthFromCoverAndZ(localData.value.coverZ, localData.value.z));
 
 
 
@@ -575,6 +597,25 @@ const onSchmutzfrachtSave = (schmutzfracht) => {
     emit('save', { id: localData.value.id, type: 'area', data: { schmutzfracht } });
 };
 
+// Knoten im Viewer wählen statt Text-ID eintippen (siehe store.startPickRef()
+// für die Funktionsweise). Schreibt direkt in localData, nicht in den Store —
+// der äußere "Speichern"-Button committet wie gewohnt.
+const pickNodeIntoLocalData = () => {
+    store.startPickRef('node', (id) => { localData.value.nodeId = id; });
+};
+
+// Neigungsklasse aus dem geladenen DGM vorschlagen (nur Button-getriggert,
+// keine automatische Herleitung — siehe Build-Test-Fixliste-Session).
+const suggestSlope = () => {
+    if (!store.terrain || !localData.value.points) return;
+    const result = suggestSlopeClassFromTerrain(localData.value.points, store.terrain);
+    if (result) {
+        localData.value.slope = result.slopeClass;
+    } else {
+        console.warn('Neigung aus DGM: keine gültigen Höhendaten innerhalb der Fläche gefunden.');
+    }
+};
+
 const save = () => {
     // Convert back to store format
     const payload = { ...localData.value };
@@ -597,10 +638,15 @@ const save = () => {
 };
 
 
-// Watch for selection changes to re-init
+// Watch for selection changes to re-init. deep:true ist nötig, weil
+// store.updateNetworkData() (PreprocessingModal "Übernehmen") Node/Edge-
+// Objekte per Object.assign IN-PLACE mutiert (gleiche Referenz) — ohne
+// deep:true feuert dieser Watcher dann nicht, weil sich props.selectedElement
+// selbst nicht ändert, nur seine Felder. localData ist ein reiner JSON-Klon
+// (initLocalData), also keine Rückkopplung durch eigene Eingaben des Nutzers.
 watch(() => props.selectedElement, (val) => {
     if (val) initLocalData(val);
-}, { immediate: true });
+}, { immediate: true, deep: true });
 </script>
 
 <style scoped>
@@ -807,11 +853,23 @@ watch(() => props.selectedElement, (val) => {
     animation: pulse 2s infinite;
 }
 
+.input-with-pick { display: flex; align-items: center; gap: 6px; }
+.input-with-pick .full-input { flex: 1; }
+.pick-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; flex-shrink: 0; }
+.pick-btn:hover { opacity: 1; transform: scale(1.1); }
+.pick-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+.pick-btn:disabled:hover { transform: none; }
+.pick-icon { width: 16px; height: 16px; display: block; }
+
 .hint-text {
     font-size: 0.75rem;
     color: #8f8be1;
     margin: -4px 0 8px 0;
 }
+
+/* War bisher in dieser Datei genutzt (Fläche-Anzeige), aber nie definiert —
+   Regel 1:1 aus ElementPropertiesModal.vue/SchmutzfrachtDialog.vue übernommen. */
+.value-display { color: #2ecc71; font-weight: 600; padding: 0.35rem 0; }
 
 input[type="checkbox"] { accent-color: #2ecc71; }
 
