@@ -1079,9 +1079,9 @@ const getEdgeColor = (id) => {
 };
 
 // Pumpe/Wehr/Drossel/Schieber sind in Realität/ISYBAU ein KNOTEN-Element (auch
-// wenn SWMM sie intern als Haltung/Link führt) — einheitlich hell lila, damit
+// wenn SWMM sie intern als Haltung/Link führt) — einheitlich graubeige, damit
 // ein Blick "Sonderbauwerk" signalisiert statt die Haltung optisch zu verbiegen.
-const SONDERBAUWERK_COLOR = '#c9a0dc';
+const SONDERBAUWERK_COLOR = '#65625c';
 
 const getNodeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
@@ -1462,14 +1462,14 @@ svg {
 /* Flächen-Eckpunkt-Handles (C2 Vertex-Editing) — nur bei ausgewählter Fläche
    sichtbar, Ziehen verschiebt, Rechtsklick löscht. */
 .area-vertex-handle {
-  fill: #2ecc71;
-  stroke: #040647;
+  fill: var(--isy-pixel-green, #219653);
+  stroke: var(--isy-pixel-bg, #040647);
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
   cursor: grab;
 }
 .area-vertex-handle:hover {
-  fill: #fff;
+  fill: var(--isy-pixel-text, #fff);
 }
 
 .isybau-viewer.mode-addEdge {
@@ -1478,8 +1478,8 @@ svg {
 
 /* When confirming a node in addEdge mode, give strong green feedback */
 .isybau-viewer.mode-addEdge .node-circle:hover {
-  fill: #2ecc71 !important;
-  stroke: #2ecc71;
+  fill: var(--isy-pixel-green, #219653) !important;
+  stroke: var(--isy-pixel-green, #219653);
   stroke-width: 2px;
   cursor: cell; /* Often distinct from crosshair */
 }
@@ -1490,13 +1490,13 @@ svg {
 
 .area-polygon.selected {
   fill: rgba(231, 76, 60, 0.3);
-  stroke: #e74c3c;
+  stroke: var(--isy-pixel-danger, #e74c3c);
   stroke-width: 2px;
 }
 
 /* Flow Paths */
 .flow-line {
-  stroke: #3498db;
+  stroke: var(--isy-pixel-info, #3498db);
   stroke-width: 1.5px;
   stroke-dasharray: 5, 5;
   opacity: 0.8;
@@ -1505,7 +1505,7 @@ svg {
 
 .flow-label {
   font-size: 12px;
-  fill: #2980b9;
+  fill: var(--isy-pixel-info-hover, #2980b9);
   font-weight: bold;
   pointer-events: none;
   text-shadow: 0px 0px 2px white;
@@ -1527,7 +1527,7 @@ svg {
 }
 
 .edge-line.selected {
-  stroke: #e74c3c;
+  stroke: var(--isy-pixel-danger, #e74c3c);
   stroke-width: 4px;
 }
 
@@ -1548,7 +1548,7 @@ svg {
 }
 
 .node-circle.selected {
-  fill: #e74c3c;
+  fill: var(--isy-pixel-danger, #e74c3c);
   stroke: white;
   stroke-width: 0.1;
 }
@@ -1560,22 +1560,22 @@ svg {
 }
 
 .node-x.selected {
-  stroke: #e74c3c !important;
+  stroke: var(--isy-pixel-danger, #e74c3c) !important;
   stroke-width: 3px;
 }
 
 /* Box-Select: markierte Elemente */
 .edge-line.multi-selected {
-  stroke: #8f8be1 !important;
+  stroke: var(--isy-pixel-border-hover, #65625c) !important;
   stroke-width: 5px;
 }
 .node-circle.multi-selected {
-  fill: #8f8be1 !important;
-  stroke: #594491;
+  fill: var(--isy-pixel-border-hover, #65625c) !important;
+  stroke: var(--isy-pixel-border, #4a4844);
   stroke-width: 0.15;
 }
 .node-x.multi-selected {
-  stroke: #8f8be1 !important;
+  stroke: var(--isy-pixel-border-hover, #65625c) !important;
   stroke-width: 3px;
 }
 
@@ -1587,8 +1587,8 @@ svg {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: #040647;
-  border: 1px solid #594491;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 8px;
   padding: 0.5rem 0.7rem;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
@@ -1599,9 +1599,9 @@ svg {
   pointer-events: none;
 }
 .entw-legend-title {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin-bottom: 0.15rem;
@@ -1610,9 +1610,9 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.4rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   line-height: 1.4;
 }
 .entw-dot {
@@ -1629,9 +1629,9 @@ svg {
   margin-top: 0.3rem;
   padding-top: 0.35rem;
   border-top: 1px solid rgba(148, 139, 225, 0.3);
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.4rem;
-  color: #8f8be1;
+  color: var(--isy-pixel-border-hover, #65625c);
   line-height: 1.6;
 }
 
@@ -1641,14 +1641,14 @@ svg {
 .contour-hover-tooltip {
   position: fixed;
   z-index: 20;
-  background: #040647;
-  border: 1px solid #00e855;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-green-glow, #128040);
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
-  color: #00e855;
+  color: var(--isy-pixel-green-glow, #128040);
   text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
   padding: 4px 10px;
   border-radius: 4px;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.42rem;
   white-space: nowrap;
   pointer-events: none;
@@ -1668,7 +1668,7 @@ svg {
 /* Box-Select: Auswahlrechteck */
 .box-select-rect {
   position: absolute;
-  border: 1.5px dashed #2ecc71;
+  border: 1.5px dashed var(--isy-pixel-green, #219653);
   background: rgba(46, 204, 113, 0.08);
   pointer-events: none;
   z-index: 50;
@@ -1683,33 +1683,33 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background: #040647;
-  border: 1px solid #594491;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 8px;
   padding: 0.5rem 0.9rem;
   z-index: 1001;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
 }
 .msb-count {
-  color: #2ecc71;
-  font-family: 'Press Start 2P', monospace;
+  color: var(--isy-pixel-green, #219653);
+  font-family: var(--isy-pixel-font);
   font-size: 0.55rem;
   letter-spacing: 0.05em;
 }
 .msb-btn {
   background: transparent;
-  border: 1px solid #594491;
-  color: #aeadd2;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 5px;
   padding: 0.4rem 0.7rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.46rem;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.msb-btn:hover { background: #594491; color: #fff; }
-.msb-btn.msb-danger { border-color: #e74c3c; color: #e74c3c; }
-.msb-btn.msb-danger:hover { background: #e74c3c; color: #fff; }
+.msb-btn:hover { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-text, #fff); }
+.msb-btn.msb-danger { border-color: var(--isy-pixel-danger, #e74c3c); color: var(--isy-pixel-danger, #e74c3c); }
+.msb-btn.msb-danger:hover { background: var(--isy-pixel-danger, #e74c3c); color: var(--isy-pixel-text, #fff); }
 
 .node-label {
   fill: #2c3e50;
@@ -1733,7 +1733,7 @@ svg {
 }
 
 .label-guide-line {
-  stroke: #f39c12; /* Orange */
+  stroke: var(--isy-pixel-warning, #f39c12); /* Orange */
   stroke-width: 1px;
   stroke-dasharray: 4, 4;
   opacity: 0.7;

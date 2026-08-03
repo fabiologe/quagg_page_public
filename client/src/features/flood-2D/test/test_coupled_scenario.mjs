@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { NetworkModel } from '../services/geometry/NetworkModel.js';
 import { buildCoupledFiles, parseAscGrid } from '../services/swmm/coupledScenario.js';
 
-const IMAGE = process.argv[2] || 'lisflood-fp:coupling';
+const IMAGE = process.argv[2] || 'fabiologe/quagg-lisflood:latest';
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('  ✅ ' + m); else { console.error('  ❌ ' + m); fails++; } };
 

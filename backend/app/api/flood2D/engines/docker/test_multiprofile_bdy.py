@@ -23,7 +23,7 @@ als die 2, die am echten Kundenprojekt schon reichten -- und prüft:
      pointer-Korruption würde falsche/vertauschte Werte liefern, nicht nur crashen).
 
 Aufruf (aus beliebigem Verzeichnis):
-    python3 test_multiprofile_bdy.py [IMAGE]      # default: lisflood-fp:latest
+    python3 test_multiprofile_bdy.py [IMAGE]      # default: fabiologe/quagg-lisflood:latest
 Exit-Code 0 = bestanden.
 """
 import json
@@ -32,7 +32,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 15, 15, 1.0
 DEM_Z = 10.0
 N_PROFILES = 10

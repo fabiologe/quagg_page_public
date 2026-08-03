@@ -32,8 +32,8 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   max-height: min(430px, 55vh);
   display: flex;
   flex-direction: column;
-  background: #040647;
-  border: 1px solid #00e855;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-green-glow, #128040);
   border-radius: 4px;
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
   pointer-events: auto;
@@ -49,10 +49,10 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
 }
 
 .info-title {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.48rem;
   line-height: 1.5;
-  color: #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
   text-shadow: 0 0 10px rgba(0, 255, 101, 0.8);
 }
 
@@ -60,22 +60,22 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   background: none;
   border: none;
   cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.42rem;
-  color: #00994d;
+  color: var(--isy-pixel-green-active, #00994d);
   padding: 0;
   flex-shrink: 0;
 }
 
 .info-close:hover {
-  color: #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
 }
 
 .info-body {
   overflow-y: auto;
   padding: 0.6rem 0.7rem 0.7rem;
   scrollbar-width: thin;
-  scrollbar-color: #00994d #040647;
+  scrollbar-color: var(--isy-pixel-green-active, #00994d) var(--isy-pixel-bg, #040647);
 }
 
 /* Längere Absätze in Share Tech Mono — deutlich lesbarer als Press Start 2P. */
@@ -94,7 +94,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   background: rgba(0, 232, 85, 0.06);
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.8rem;
-  color: #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
   text-shadow: 0 0 8px rgba(0, 255, 101, 0.6);
   text-align: center;
   white-space: pre-wrap;
@@ -104,6 +104,6 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   margin: 0 0 0.4rem;
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.62rem;
-  color: #00994d;
+  color: var(--isy-pixel-green-active, #00994d);
 }
 </style>

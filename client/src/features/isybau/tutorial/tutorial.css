@@ -1,7 +1,7 @@
 /* Globale Highlight-Klasse fürs Tutorial — gesetzt von useHighlight.js auf
    Elemente mit passendem data-tutorial-Anker. Terminal-grüner Puls-Glow. */
 .sv-tutorial-highlight {
-  outline: 2px solid #00e855 !important;
+  outline: 2px solid var(--isy-pixel-green-glow, #128040) !important;
   outline-offset: 2px;
   border-radius: 4px;
   animation: sv-tutorial-pulse 1.4s ease-in-out infinite;

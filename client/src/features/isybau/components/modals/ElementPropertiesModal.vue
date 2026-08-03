@@ -360,159 +360,49 @@ const save = () => {
 };
 </script>
 
+<!-- Geteilte Basis (modal-header-Kern, close-btn, modal-footer, tab-btn, form-group "Plain")
+     + "Dark Form"-Familie (btn-primary/-secondary, form-input/-select, form-group "Dark",
+     modal-actions) — nur diese Datei + SchmutzfrachtDialog.vue nutzen modalDark.css. -->
+<style scoped src="./shared/modalBase.css"></style>
+<style scoped src="./shared/modalDark.css"></style>
 <style scoped>
 /* Cleaned up styles */
 .modal-header {
-  background: #040647;
   padding: 0.65rem 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   cursor: move;
   flex-shrink: 0;
+  background: var(--isy-pixel-bg, #040647);
 }
 
 .modal-header h3 {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.58rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71; /* Red 500 */
 }
 .modal-body {
   padding: 1rem;
   overflow-y: auto;
   max-height: calc(90vh - 56px);
-  background: #06093a;
+  background: var(--isy-pixel-bg-deep, #06093a);
   scrollbar-width: thin;
-  scrollbar-color: #594491 #040647;
+  scrollbar-color: var(--isy-pixel-border, #4a4844) var(--isy-pixel-bg, #040647);
 }
 .modal-body::-webkit-scrollbar { width: 6px; }
-.modal-body::-webkit-scrollbar-track { background: #040647; }
-.modal-body::-webkit-scrollbar-thumb { background: #594491; border-radius: 3px; }
-.modal-body::-webkit-scrollbar-thumb:hover { background: #8f8be1; }
-.form-group { margin-bottom: 1rem; display: flex; flex-direction: column; }
-.form-input, .form-select {
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
-.btn-primary {
-  background: #040647;
-  color: #2ecc71;
-  border: 1px solid #594491;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 700;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.52rem;
-  letter-spacing: 0.06em;
-  transition: background 0.15s, border-color 0.15s;
-}
-.btn-primary:hover { background: #594491; border-color: #8f8be1; color: #fff; }
-
-.btn-secondary {
-  background: transparent;
-  color: #aeadd2;
-  border: 1px solid #594491;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.52rem;
-  letter-spacing: 0.06em;
-  transition: background 0.12s;
-}
-.btn-secondary:hover { background: #594491; color: #fff; }
+.modal-body::-webkit-scrollbar-track { background: var(--isy-pixel-bg, #040647); }
+.modal-body::-webkit-scrollbar-thumb { background: var(--isy-pixel-border, #4a4844); border-radius: 3px; }
+.modal-body::-webkit-scrollbar-thumb:hover { background: var(--isy-pixel-border-hover, #65625c); }
 .outlet-radio-group { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
-.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; color: #aeadd2; }
-.hint { font-size: 0.78rem; color: #8f8be1; margin-top: 0.2rem; }
-.form-group label { font-size: 0.75rem; color: #aeadd2; margin-bottom: 3px; }
-.form-input, .form-select {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid #594491;
-  border-radius: 5px;
-  background: #0a0d5c;
-  color: #fff;
-  font-size: 0.88rem;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.form-input:focus, .form-select:focus { border-color: #2ecc71; }
-.form-input:disabled, .form-select:disabled { opacity: 0.4; cursor: not-allowed; }
-.checkbox-group .checkbox-label { color: #aeadd2; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
-.value-display { color: #2ecc71; font-weight: 600; padding: 0.35rem 0; }
-.modal-actions { border-top: 1px solid #594491; padding-top: 0.75rem; margin-top: 0.5rem; }
-
-/* ── Design Schema ────────────────────────────── */
-.tab-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
-  letter-spacing: 0.06em;
-  background: transparent !important;
-  border: 1px solid #594491 !important;
-  color: #aeadd2 !important;
-  border-radius: 5px !important;
-  padding: 0.45rem 0.75rem !important;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491 !important; color: #fff !important; }
-.tab-btn.active { background: #594491 !important; color: #fff !important; border-color: #8f8be1 !important; }
-
-.primary-btn {
-  background: #040647 !important;
-  color: #fff !important;
-  border: none !important;
-  border-radius: 6px !important;
-  font-weight: 700 !important;
-  transition: background 0.15s;
-}
-.primary-btn:hover:not(:disabled) { background: #594491 !important; }
-.primary-btn:disabled { background: #aeadd2 !important; cursor: default; }
-
-.secondary-btn {
-  background: #fff !important;
-  border: 1px solid #aeadd2 !important;
-  color: #040647 !important;
-  border-radius: 6px !important;
-  font-weight: 600 !important;
-  transition: background 0.12s;
-}
-.secondary-btn:hover { background: #f3f2fb !important; }
-
-.modal-body h3, .panel h3 {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 0.55rem !important;
-  color: #594491 !important;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #aeadd2 !important;
-  padding-bottom: 0.4rem !important;
-  margin-bottom: 0.75rem !important;
-}
-
+.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; color: var(--isy-pixel-text-dim, #4a4a4a); }
+.hint { font-size: 0.78rem; color: var(--isy-pixel-border-hover, #65625c); margin-top: 0.2rem; }
+.checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim, #4a4a4a); font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+.value-display { color: var(--isy-pixel-green, #219653); font-weight: 600; padding: 0.35rem 0; }
 
 /* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: #2ecc71;
+  accent-color: var(--isy-pixel-green, #219653);
 }
 </style>

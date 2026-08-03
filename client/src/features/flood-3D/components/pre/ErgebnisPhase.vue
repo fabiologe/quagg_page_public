@@ -11,6 +11,9 @@
       </nav>
 
       <TargetsPanel v-if="post.activeTab === 'nachweis'" />
+      <BilanzPanel v-else-if="post.activeTab === 'bilanz'" />
+      <VerweilzeitPanel v-else-if="post.activeTab === 'verweilzeit'" />
+      <BauwerkePanel v-else-if="post.activeTab === 'bauwerke'" />
       <QualityPanel v-else-if="post.activeTab === 'qualitaet'" />
       <TimeSeriesPanel v-else-if="post.activeTab === 'zeitreihen'" />
       <GrundrissPanel v-else-if="post.activeTab === 'grundriss'" />
@@ -32,6 +35,9 @@ import { usePreStore } from '../../stores/usePreStore'
 import ExtremesTable from '../post/ExtremesTable.vue'
 import FiguresPanel from '../post/FiguresPanel.vue'
 import GrundrissPanel from '../post/GrundrissPanel.vue'
+import BilanzPanel from '../post/BilanzPanel.vue'
+import VerweilzeitPanel from '../post/VerweilzeitPanel.vue'
+import BauwerkePanel from '../post/BauwerkePanel.vue'
 import QualityPanel from '../post/QualityPanel.vue'
 import Raum3DPanel from '../post/Raum3DPanel.vue'
 import RunListPanel from '../post/RunListPanel.vue'

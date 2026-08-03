@@ -277,14 +277,14 @@ const handleMapDblClick = () => {
 /* Gleicher Terminal-Sprechblasen-Stil wie tutorial/TutorialMascot.vue
    (.speech-bubble/.bubble-text) — grün-glühender Rahmen statt lila UI-Chrome. */
 .drawing-tooltip {
-    background: #040647;
-    border: 1px solid #00e855;
+    background: var(--isy-pixel-bg, #040647);
+    border: 1px solid var(--isy-pixel-green-glow, #128040);
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
-    color: #00e855;
+    color: var(--isy-pixel-green-glow, #128040);
     text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
     padding: 0.5rem 1rem;
     border-radius: 4px;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
     text-align: center;
     backdrop-filter: blur(4px);
@@ -294,18 +294,18 @@ const handleMapDblClick = () => {
     display: block;
     margin-top: 0.35rem;
     font-size: 0.36rem;
-    color: #00994d;
+    color: var(--isy-pixel-green-active, #00994d);
     text-shadow: none;
 }
 
 .finish-btn {
     pointer-events: auto;
-    background: #040647;
-    color: #2ecc71;
-    border: 1px solid #594491;
+    background: var(--isy-pixel-bg, #040647);
+    color: var(--isy-pixel-green, #219653);
+    border: 1px solid var(--isy-pixel-border, #4a4844);
     padding: 0.85rem 1.5rem;
     border-radius: 20px;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.5rem;
     cursor: pointer;
     box-shadow: 0 4px 10px rgba(4,6,71,0.4);
@@ -313,8 +313,8 @@ const handleMapDblClick = () => {
 }
 
 .finish-btn:hover {
-    background: #594491;
-    color: #fff;
+    background: var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-text, #fff);
     transform: scale(1.05);
 }
 </style>

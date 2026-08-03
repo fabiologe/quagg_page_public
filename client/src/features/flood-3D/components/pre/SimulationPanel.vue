@@ -13,6 +13,31 @@
           <input class="f3d-num f3d-grow" :value="spec.meta.nachweis?.lastfall ?? ''"
                  @change="set((s) => { s.meta.nachweis.lastfall = $event.target.value })" />
         </div>
+        <div class="f3d-field">
+          <label>Bearbeiter</label>
+          <input class="f3d-num f3d-grow" :value="spec.meta.nachweis?.bearbeiter ?? ''"
+                 @change="set((s) => { s.meta.nachweis.bearbeiter = $event.target.value })" />
+        </div>
+        <div class="f3d-field">
+          <label>Regelwerk (mit Komma trennen)</label>
+          <input class="f3d-num f3d-grow"
+                 :value="(spec.meta.nachweis?.regelwerk ?? []).join(', ')"
+                 @change="set((s) => { s.meta.nachweis.regelwerk =
+                   $event.target.value.split(',').map((x) => x.trim()).filter(Boolean) })" />
+        </div>
+        <div class="f3d-field">
+          <label>Bezugssystem (EPSG)</label>
+          <input class="f3d-num f3d-grow" type="number"
+                 :value="spec.meta.crs?.epsg ?? ''"
+                 @change="set((s) => { const v = Number($event.target.value)
+                   s.meta.crs = v > 0 ? { epsg: v } : null })" />
+        </div>
+        <p class="f3d-muted f3d-small">
+          Diese Angaben wandern unverändert ins Ergebnis und stehen dort über
+          den Nachweiskriterien. Gerechnet wird immer in lokalen Metern; die
+          beim CAD-Import abgezogene Landeskoordinate merkt sich der Fall
+          getrennt.
+        </p>
       </article>
 
       <article class="f3d-card">
@@ -25,6 +50,7 @@
           <input type="number" step="any" min="1" class="f3d-num"
                  :value="spec.solver.end_time"
                  @change="setNum('solver.end_time', $event)" />
+          <Hinweis pfad="solver.end_time" />
         </div>
         <div class="f3d-field">
           <label>Anfangswasserspiegel (m NHN)</label>
@@ -32,6 +58,19 @@
                  :value="spec.solver.initial_level ?? ''"
                  placeholder="leer = trocken"
                  @change="setNumOrNull('solver.initial_level', $event)" />
+          <Hinweis pfad="solver.initial_level" />
+        </div>
+        <div class="f3d-field">
+          <label>Verweilzeit mitrechnen</label>
+          <input type="checkbox" :checked="spec.evaluation?.verweilzeit ?? false"
+                 @change="set((s) => { s.evaluation.verweilzeit = $event.target.checked })" />
+          <p class="f3d-muted f3d-small">
+            Rechnet einen Markierungsstoff mit, der ab t = 0 mit dem Zufluss
+            eintritt. Seine Durchbruchskurve am Ablauf zeigt die tatsächliche
+            Verweilzeit und ob ein Teil des Zuflusses kurzgeschlossen
+            durchläuft — für Absetz- und Rückhaltebecken die entscheidende
+            Frage. Kostet rund 5 % Rechenzeit.
+          </p>
         </div>
         <div class="f3d-field">
           <label>Turbulenzmodell</label>
@@ -41,6 +80,7 @@
             <option value="kEpsilon">k-ε</option>
             <option value="laminar">laminar (ohne Turbulenz)</option>
           </select>
+          <Hinweis pfad="solver.turbulence" />
         </div>
       </article>
 
@@ -54,26 +94,28 @@
           <input type="number" step="0.05" min="0.1" max="1" class="f3d-num"
                  :value="spec.solver.max_co"
                  @change="setNum('solver.max_co', $event)" />
-          <span class="f3d-muted f3d-small">kleiner = stabiler, langsamer</span>
+          <Hinweis pfad="solver.max_co" />
         </div>
         <div class="f3d-field">
           <label>Alpha-Courant-Grenze (max_alpha_co)</label>
           <input type="number" step="0.05" min="0.1" max="1" class="f3d-num"
                  :value="spec.solver.max_alpha_co"
                  @change="setNum('solver.max_alpha_co', $event)" />
-          <span class="f3d-muted f3d-small">bestimmt den Zeitschritt an der Wasseroberfläche</span>
+          <Hinweis pfad="solver.max_alpha_co" />
         </div>
         <div class="f3d-field">
           <label>3D-Felder schreiben alle (s)</label>
           <input type="number" step="any" min="0.1" class="f3d-num"
                  :value="spec.solver.write_interval_fields"
                  @change="setNum('solver.write_interval_fields', $event)" />
+          <Hinweis pfad="solver.write_interval_fields" />
         </div>
         <div class="f3d-field">
           <label>Zeitreihen schreiben alle (s)</label>
           <input type="number" step="any" min="0.01" class="f3d-num"
                  :value="spec.solver.write_interval_series"
                  @change="setNum('solver.write_interval_series', $event)" />
+          <Hinweis pfad="solver.write_interval_series" />
         </div>
       </article>
 
@@ -101,6 +143,7 @@
             <input type="number" step="any" class="f3d-num" :value="spec.domain.extent[3]"
                    @change="setExtent(3, $event)" />
           </div>
+          <Hinweis pfad="domain.extent" />
         </div>
         <div class="f3d-field">
           <label>Höhenbereich z (m NHN)</label>
@@ -111,13 +154,14 @@
             <input type="number" step="any" class="f3d-num" :value="spec.domain.z_max"
                    @change="setNum('domain.z_max', $event)" />
           </div>
+          <Hinweis pfad="domain.z" />
         </div>
         <div class="f3d-field">
           <label>Basiszellgröße (m)</label>
           <input type="number" step="0.05" min="0.05" class="f3d-num"
                  :value="spec.mesh?.base_cell ?? ''"
                  @change="setNum('mesh.base_cell', $event)" />
-          <span class="f3d-muted f3d-small">kleinere Zellen = feiner, teurer</span>
+          <Hinweis pfad="mesh.base_cell" />
         </div>
       </article>
 
@@ -134,6 +178,7 @@
           <input type="number" step="0.05" min="0.05" class="f3d-num"
                  :value="spec.terrain.base.resolution"
                  @change="setNum('terrain.base.resolution', $event)" />
+          <Hinweis pfad="terrain.base.resolution" />
         </div>
       </article>
     </div>
@@ -185,6 +230,21 @@
                 @click="startClicked">
           {{ localRunning ? '⏳ läuft lokal …' : '▶ Simulation starten' }}
         </button>
+        <button v-if="localRunning && localJobId" class="f3d-btn"
+                :disabled="pausing" @click="pauseClicked">
+          {{ pausing ? 'hält an …' : '⏸ Pause (Stand wird gesichert)' }}
+        </button>
+        <div v-if="!localRunning && offeneLaeufe.length" class="f3d-resume">
+          <p class="f3d-muted f3d-small">
+            Auf diesem PC liegen unterbrochene Läufe. Fortsetzen rechnet ab
+            dem letzten geschriebenen Zeitschritt weiter — das Netz bleibt
+            stehen.
+          </p>
+          <button v-for="r in offeneLaeufe" :key="r.id" class="f3d-btn f3d-grow"
+                  @click="resumeClicked(r)">
+            ▶ {{ r.id }} fortsetzen ({{ Math.round(r.sizeBytes / 1e6) }} MB)
+          </button>
+        </div>
         <p v-if="store.nFehler" class="f3d-error">
           {{ store.nFehler }} Prüfungsfehler blockieren den Start — Details
           in der Phase „Modell".
@@ -207,14 +267,29 @@
 // vorher lebten sie unsichtbar in der YAML. Jede Feldänderung ist ein
 // Undo-Schritt und aktualisiert die Live-Vorschau (Gebiet/Gelände wirken
 // sofort sichtbar in der Modell-Phase).
-import { computed, onMounted, ref } from 'vue'
-import { companionHealth, runLocally } from '../../services/localCompanion'
+import { computed, h, onMounted, ref } from 'vue'
+import { begrenzen, hinweis } from '../../utils/simHints'
+import { companionHealth, pauseLocalRun, runLocally,
+  unterbrocheneLaeufe } from '../../services/localCompanion'
 import { usePreStore } from '../../stores/usePreStore'
 import MeshPreviewCard from './MeshPreviewCard.vue'
 import ValidationPanel from './ValidationPanel.vue'
 
 const store = usePreStore()
 const spec = computed(() => store.spec)
+
+// Einordnung unter jedem Eingabefeld: übersetzt den Wert in die Sprache
+// des konkreten Falls (Zellzahl, Rechenzeit, Datenmenge) statt allgemeiner
+// Merksätze. Rot = so lässt der Lauf sich nicht starten.
+const Hinweis = (props) => {
+  const h1 = hinweis(props.pfad, spec.value, store.meshPreview)
+  if (!h1) return null
+  // Kinder eines nativen Elements muessen Text/Array sein — eine Funktion
+  // waere ein Slot-Objekt und bliebe leer
+  return h('p', { class: ['f3d-hint', h1.level && `f3d-hint-${h1.level}`] },
+    h1.text)
+}
+Hinweis.props = ['pfad']
 
 // Lokaler Rechenweg über den quagg Local Companion (wie beim Flood2D-Solver).
 // Der Companion läuft als Docker-Image; Installer und Update liegen unter
@@ -228,10 +303,29 @@ const companion = ref(null)
 const rechenort = ref('server')
 const localRunning = ref(false)
 const localLog = ref([])
+const localJobId = ref(null)
+const pausing = ref(false)
+const offeneLaeufe = ref([])
 const localProgress = ref(null)
+
+async function pauseClicked() {
+  pausing.value = true
+  try {
+    await pauseLocalRun(localJobId.value)
+  } catch (e) {
+    store.error = `Pause: ${e.message}`
+  } finally {
+    pausing.value = false
+  }
+}
+
+function resumeClicked(r) {
+  starteLokal({ jobId: r.id, runId: null })
+}
 
 async function checkCompanion(autoSelect = true) {
   companion.value = await companionHealth()
+  offeneLaeufe.value = await unterbrocheneLaeufe()
   // Nach bewusstem „erneut suchen" direkt auf Lokal stellen — beim
   // Seitenladen bleibt Server die Vorauswahl
   if (autoSelect && companion.value?.foamSupported) rechenort.value = 'local'
@@ -239,41 +333,65 @@ async function checkCompanion(autoSelect = true) {
 
 onMounted(() => checkCompanion(false))
 
-async function startClicked() {
-  if (rechenort.value !== 'local') {
-    store.startRun()
-    return
-  }
+const fmtDauer = (s) => (s == null ? '?'
+  : s > 3600 ? `${(s / 3600).toFixed(1)} h`
+    : s > 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`)
+
+async function starteLokal(resumeJob = null) {
   localRunning.value = true
   localLog.value = []
   localProgress.value = null
+  localJobId.value = null
   try {
-    if (store.dirty) await store.saveCase()
+    if (!resumeJob && store.dirty) await store.saveCase()
     await runLocally(store.activeCaseId, (ev) => {
-      if (ev.event === 'progress' && ev.fraction != null) {
+      if (ev.event === 'job') {
+        localJobId.value = ev.jobId
+      } else if (ev.event === 'progress' && ev.fraction != null) {
         localProgress.value = ev.fraction
         if (ev.time != null) {
-          localLog.value.push(`t = ${ev.time} s / ${ev.end_time} s`)
+          const rest = ev.eta_s ? ` · noch ca. ${fmtDauer(ev.eta_s)}` : ''
+          localLog.value.push(
+            `t = ${ev.time} s / ${ev.end_time} s `
+            + `(${Math.round(ev.fraction * 100)} %${rest})`)
         }
       } else if (ev.text) {
         localLog.value.push(ev.text)
       }
-    })
+    }, resumeJob)
     await store.loadCaseRuns()
+    offeneLaeufe.value = await unterbrocheneLaeufe()
     store.activePhase = 'ergebnis'
   } catch (e) {
     store.error = `Lokaler Lauf: ${e.message}`
     localLog.value.push(`FEHLER: ${e.message}`)
+    // nach Abbruch/Absturz kann derselbe Lauf fortgesetzt werden
+    offeneLaeufe.value = await unterbrocheneLaeufe()
   } finally {
     localRunning.value = false
   }
 }
 
+async function startClicked() {
+  if (rechenort.value === 'server') {
+    store.startRun()
+    return
+  }
+  await starteLokal(null)
+}
+
 const set = (fn) => store.updateSettings(fn)
 
 function setNum(path, e) {
-  const v = Number(e.target.value)
+  let v = Number(e.target.value)
   if (Number.isNaN(v)) return
+  // harte Grenzen: unsinnige Werte gar nicht erst in die Spezifikation
+  // lassen (0 Zellgröße, negative Dauer, …)
+  const vb = begrenzen(path, v)
+  if (vb !== v) {
+    v = vb
+    e.target.value = String(v)
+  }
   const keys = path.split('.')
   store.updateSettings((s) => {
     let o = s
@@ -334,6 +452,14 @@ function setExtent(idx, e) {
 .f3d-pair span { color: var(--f3d-text-2); font-size: 0.75rem; }
 .f3d-num { width: 110px; }
 .f3d-grow { width: 100%; }
+.f3d-hint {
+  margin: 3px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--f3d-text-2);
+}
+.f3d-hint-warn { color: #c98500; }
+.f3d-hint-bad { color: var(--f3d-bad); }
 .f3d-sim-cta { display: flex; flex-direction: column; gap: 10px; }
 /* Download-/Aktionslinks in den Hinweistexten: weiß statt Akzentfarbe,
    damit sie sich vom gedämpften Fließtext klar abheben */

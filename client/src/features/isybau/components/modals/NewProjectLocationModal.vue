@@ -197,6 +197,7 @@ watch(() => props.isOpen, (open) => {
 });
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 .modal-overlay {
   position: fixed;
@@ -224,34 +225,15 @@ watch(() => props.isOpen, (open) => {
 
 .modal-header {
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1;
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -259,7 +241,7 @@ watch(() => props.isOpen, (open) => {
 }
 
 .description {
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
@@ -273,7 +255,7 @@ watch(() => props.isOpen, (open) => {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.25rem;
-  border-bottom: 1px solid #aeadd2;
+  border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .mode-tab {
@@ -282,15 +264,15 @@ watch(() => props.isOpen, (open) => {
   border-bottom: 2px solid transparent;
   padding: 0.5rem 0.25rem;
   cursor: pointer;
-  color: #8f8be1;
+  color: var(--isy-pixel-border-hover, #65625c);
   font-size: 0.85rem;
   font-weight: 500;
   transition: color 0.15s, border-color 0.15s;
 }
 
 .mode-tab.active {
-  color: #040647;
-  border-bottom-color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
+  border-bottom-color: var(--isy-pixel-green, #219653);
 }
 
 .search-row {
@@ -302,37 +284,18 @@ watch(() => props.isOpen, (open) => {
 .search-row input {
   flex: 1;
   padding: 0.5rem;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 4px;
   font-size: 1rem;
 }
 
 .found-place {
   font-size: 0.85rem;
-  color: #040647;
-  background: #f3f2fb;
+  background: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-green-bright, #18a34a);
   border-radius: 4px;
   padding: 0.5rem;
   margin: 0 0 1rem;
-}
-
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #040647;
-}
-
-.form-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #aeadd2;
-  border-radius: 4px;
-  font-size: 1rem;
 }
 
 .manual-coords-group {
@@ -348,53 +311,45 @@ watch(() => props.isOpen, (open) => {
 
 .input-wrapper label {
   font-size: 0.8rem;
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   margin-bottom: 0.2rem;
 }
 
 .input-wrapper input {
   padding: 0.5rem;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 4px;
   width: 100%;
   box-sizing: border-box;
 }
 
-.modal-footer {
-  padding: 1rem;
-  border-top: 1px solid #aeadd2;
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-}
-
 .primary-btn {
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: #594491; }
-.primary-btn:disabled { background: #aeadd2; cursor: not-allowed; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: not-allowed; }
 
 .secondary-btn {
-  background: #fff;
-  border: 1px solid #aeadd2;
-  color: #040647;
+  background: transparent;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover:not(:disabled) { background: #f3f2fb; }
+.secondary-btn:hover:not(:disabled) { background: var(--isy-pixel-content-bg, #f3f2fb); }
 .secondary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

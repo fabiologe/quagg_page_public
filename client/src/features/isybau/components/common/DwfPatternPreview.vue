@@ -61,7 +61,7 @@ const chartData = computed(() => ({
     {
       label: 'Tagesmittel',
       data: hourLabels.map(() => 1),
-      borderColor: '#8f8be1',
+      borderColor: '#65625c',
       borderDash: [4, 3],
       borderWidth: 1,
       pointRadius: 0,
@@ -84,14 +84,14 @@ const chartOptions = {
   },
   scales: {
     x: {
-      title: { display: true, text: 'Stunde', color: '#8f8be1', font: { size: 10 } },
-      ticks: { color: '#aeadd2', font: { size: 9 }, maxTicksLimit: 12 },
+      title: { display: true, text: 'Stunde', color: '#65625c', font: { size: 10 } },
+      ticks: { color: '#4a4a4a', font: { size: 9 }, maxTicksLimit: 12 },
       grid: { color: 'rgba(148, 139, 225, 0.15)' }
     },
     y: {
       beginAtZero: true,
-      title: { display: true, text: 'Faktor', color: '#8f8be1', font: { size: 10 } },
-      ticks: { color: '#aeadd2', font: { size: 9 } },
+      title: { display: true, text: 'Faktor', color: '#65625c', font: { size: 10 } },
+      ticks: { color: '#4a4a4a', font: { size: 9 } },
       grid: { color: 'rgba(148, 139, 225, 0.15)' }
     }
   }
@@ -100,17 +100,17 @@ const chartOptions = {
 
 <style scoped>
 .dwf-pattern-preview {
-  background: #040647;
-  border: 1px solid #594491;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 6px;
   padding: 0.6rem 0.75rem;
   margin-top: 0.5rem;
 }
 .dpp-title {
   margin: 0 0 0.5rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   display: flex;
@@ -122,7 +122,7 @@ const chartOptions = {
   text-transform: none;
   letter-spacing: normal;
   font-size: 0.62rem;
-  color: #8f8be1;
+  color: var(--isy-pixel-border-hover, #65625c);
 }
 .dpp-chart-container {
   height: 140px;
@@ -133,7 +133,7 @@ const chartOptions = {
   flex-direction: column;
   gap: 0.2rem;
   font-size: 0.72rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 .dpp-hint {
   color: #e0a020;

@@ -159,90 +159,29 @@ const remove = () => {
 };
 </script>
 
+<style scoped src="../modals/shared/modalBase.css"></style>
+<style scoped src="../modals/shared/modalDark.css"></style>
 <style scoped>
 .modal-header {
-  background: #040647;
   padding: 0.65rem 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   cursor: move;
   flex-shrink: 0;
+  background: var(--isy-pixel-bg, #040647);
 }
 .modal-header h3 {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.58rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1;
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-.close-btn:hover { color: #2ecc71; }
 .modal-body {
   padding: 1rem;
   overflow-y: auto;
   max-height: calc(90vh - 56px);
-  background: #06093a;
+  background: var(--isy-pixel-bg-deep, #06093a);
 }
-.form-group { margin-bottom: 1rem; display: flex; flex-direction: column; }
-.form-group label { font-size: 0.75rem; color: #aeadd2; margin-bottom: 3px; }
-.form-input {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid #594491;
-  border-radius: 5px;
-  background: #0a0d5c;
-  color: #fff;
-  font-size: 0.88rem;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.form-input:focus { border-color: #2ecc71; }
-.hint { font-size: 0.78rem; color: #8f8be1; margin-top: 0.2rem; }
-.value-display { color: #2ecc71; font-weight: 600; padding: 0.35rem 0; }
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1rem;
-  border-top: 1px solid #594491;
-  padding-top: 0.75rem;
-}
-.btn-primary {
-  background: #040647;
-  color: #2ecc71;
-  border: 1px solid #594491;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 700;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.52rem;
-  letter-spacing: 0.06em;
-  transition: background 0.15s, border-color 0.15s;
-}
-.btn-primary:hover { background: #594491; border-color: #8f8be1; color: #fff; }
-.btn-secondary {
-  background: transparent;
-  color: #aeadd2;
-  border: 1px solid #594491;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.52rem;
-  letter-spacing: 0.06em;
-  transition: background 0.12s;
-}
-.btn-secondary:hover { background: #594491; color: #fff; }
+.hint { font-size: 0.78rem; color: var(--isy-pixel-border-hover, #65625c); margin-top: 0.2rem; }
+.value-display { color: var(--isy-pixel-green, #219653); font-weight: 600; padding: 0.35rem 0; }
 </style>

@@ -1,28 +1,127 @@
 /**
- * theme.css — Isybau Shell-Theme (Light/Dark)
+ * theme.css — Isybau Shell-Theme (Light/Dark) + Pixel-Theme-Palette
  *
- * Nur die immer sichtbare Hülle (Sidebar, Toolbar, Nav, Toast) ist an diese
- * Variablen gebunden. Editor/3D/Modals bleiben bewusst hell (siehe
- * project_isybau_dark_mode Memo) — Umstellung folgt in einem Folge-Schritt.
+ * Die immer sichtbare Hülle (Sidebar, Toolbar, Nav, Toast) ist an die
+ * --isy-*-Variablen auf .isybau-main gebunden und wechselt über
+ * [data-theme="dark"] (siehe IsybauMain.vue) zwischen Hell/Dunkel.
  *
- * Aktiviert über [data-theme="dark"] auf .isybau-main (siehe IsybauMain.vue).
+ * Modals/Editor-Panels/Viewer/Tutorial nutzen die --isy-pixel-*-Variablen
+ * unten (SaintV-Pixel-Theme). Sie liegen auf :root statt .isybau-main, weil
+ * mehrere Modals via <Teleport to="body"> aus dem .isybau-main-Teilbaum
+ * herausspringen (CSS-Custom-Properties vererben sich nicht über Teleport-
+ * Grenzen) — IsybauMain.vue spiegelt store.ui.darkMode deshalb zusätzlich als
+ * [data-theme] auf <html> (document.documentElement), damit :root[data-theme]
+ * überall greift, auch außerhalb von .isybau-main.
+ *
+ * Nur die Oberflächen-/Text-Rollen (bg/border/text) wechseln zwischen Hell
+ * (Retro-Beige, wie die Shell) und Dunkel (Navy/Lila, unverändert wie zuvor).
+ * Akzent-/Semantik-Farben (Grün-Familie, Danger/Warning/Info) bleiben in
+ * beiden Modi konstant — dieselbe Markenidentität, ausreichend Kontrast auf
+ * beiden Hintergründen.
  */
 
+:root {
+    /* Pixel-Theme Akzent/Semantik — modusunabhängig konstant. Border/Border-
+       Hover waren ursprünglich lila (--isy-pixel-border), auf Nutzer-Wunsch
+       ("weg mit dem lila") auf dunkles, entsättigtes Grau umgestellt (2
+       Nachjustierungen: erst weniger braun, dann noch dunkler/gräulicher) und
+       dabei bewusst aus den Hell/Dunkel-Blöcken hierher verschoben — die
+       Akzentfarbe soll überall gleich sein, nicht je nach Modus variieren. */
+    --isy-pixel-border:        #4a4844;
+    --isy-pixel-border-hover:  #65625c;
+    /* Grün-Familie ursprünglich neonhell (fürs Auge okay auf dauerhaft
+       dunklem Navy) — seit --isy-pixel-bg im Hell-Modus auf Beige wechselt
+       (s.o.), war z.B. Modal-Header-Text (Grün auf --isy-pixel-bg) und die
+       Tutorial-Sprechblase (Grün auf --isy-pixel-bg) im Hell-Modus praktisch
+       unlesbar (heller Text auf hellem Grund). Nutzer-Wunsch: dunkler. Alle
+       3 abgestuft nachgedunkelt, Reihenfolge (dunkel→heller) bleibt gleich. */
+    --isy-pixel-green:         #219653;
+    --isy-pixel-green-glow:    #128040;
+    --isy-pixel-green-bright:  #18a34a;
+    --isy-pixel-green-active:  #00994d;
+    --isy-pixel-green-hover:   #27ae60;
+    --isy-pixel-danger:         #e74c3c;
+    --isy-pixel-danger-hover:   #c0392b;
+    --isy-pixel-warning:        #f39c12;
+    --isy-pixel-warning-hover:  #e67e22;
+    --isy-pixel-warning-alt:    #f1c40f;
+    --isy-pixel-info:           #3498db;
+    --isy-pixel-info-hover:     #2980b9;
+    --isy-pixel-font: 'Press Start 2P', monospace;
+    /* Pixel-Button-Form (Nutzer-Wunsch): gestufte "Pixel-Rundung" statt
+       glattem border-radius (2-Stufen-Treppe, 3px je Stufe, 6px Ecken-
+       Einzug) + harter, unscharfer "Pixel-Schatten" (0 Blur/Spread, reiner
+       Versatz) statt weichem CSS-Blur-Schatten. Beides konstant über
+       Hell/Dunkel, gilt für Shell- UND Pixel-Theme-Modal-Buttons. */
+    --isy-pixel-clip-corner: polygon(
+      0 6px, 3px 6px, 3px 3px, 6px 3px, 6px 0,
+      calc(100% - 6px) 0, calc(100% - 6px) 3px, calc(100% - 3px) 3px, calc(100% - 3px) 6px, 100% 6px,
+      100% calc(100% - 6px), calc(100% - 3px) calc(100% - 6px), calc(100% - 3px) calc(100% - 3px), calc(100% - 6px) calc(100% - 3px), calc(100% - 6px) 100%,
+      6px 100%, 6px calc(100% - 3px), 3px calc(100% - 3px), 3px calc(100% - 6px), 0 calc(100% - 6px)
+    );
+    --isy-pixel-btn-shadow:        3px 3px 0 0 rgba(0,0,0,0.35);
+    --isy-pixel-btn-shadow-hover:  4px 4px 0 0 rgba(0,0,0,0.4);
+    --isy-pixel-btn-shadow-active: 1px 1px 0 0 rgba(0,0,0,0.35);
+    /* Windows-95-artiger 3D-Bevel (Nutzer-Wunsch): helle Kante oben/links,
+       dunkle Kante unten/rechts = "erhaben". Im :active-Zustand werden die
+       Seiten vertauscht = "eingedrückt" (siehe Button-Regeln). */
+    --isy-pixel-bevel-light: #9d988e;
+    --isy-pixel-bevel-dark:  #1e1d1b;
+}
+
+/* Pixel-Theme Oberflächen — Hell (Retro-Beige, Default). Fallback ohne
+   [data-theme] (z.B. bevor IsybauMain.vue den Watcher zum ersten Mal
+   ausführt) greift ebenfalls hell, da store.ui.darkMode standardmäßig false ist.
+   Nutzer-Wunsch: nochmal ~10% gräulicher/bleicher ("Retro-Office"-Look wie
+   altes Beige-Computergehäuse-Plastik statt warmes Sandbeige). */
+:root[data-theme="light"],
+:root:not([data-theme]) {
+    --isy-pixel-bg:            #eeeae1;
+    --isy-pixel-bg-alt:        #e2ddd0;
+    --isy-pixel-bg-deep:       #d0c8b4;
+    --isy-pixel-content-bg:    #f5f2ea;
+    --isy-pixel-accent-soft:   #4a4844;
+    --isy-pixel-text-dim:      #4a4a4a;
+    --isy-pixel-text:          #030430;
+}
+
+/* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
+:root[data-theme="dark"] {
+    --isy-pixel-bg:            #040647;
+    --isy-pixel-bg-alt:        #0a0d5c;
+    --isy-pixel-bg-deep:       #06093a;
+    --isy-pixel-content-bg:    #f3f2fb;
+    --isy-pixel-accent-soft:   #65625c;
+    --isy-pixel-text-dim:      #b0b0ac;
+    --isy-pixel-text:          #fff;
+}
+
 .isybau-main {
-    --isy-bg:           #ffffff;
-    --isy-bg-alt:       #f4f3fb;
-    --isy-border:       #aeadd2;
-    --isy-header-bg:    #040647;
-    --isy-header-alt:   #0d0e5a;
-    --isy-accent:       #594491;
-    --isy-accent-hover: #8f8be1;
-    --isy-accent-soft:  #f3f2fb;
-    --isy-text:         #040647;
-    --isy-text-dim:     #594491;
-    --isy-btn-bg:       #ffffff;
-    --isy-toast-bg:     #e3f2fd;
-    --isy-toast-text:   #2c3e50;
-    --isy-viewer-bg:    #ffffff;
+    /* Retro-Beige (Nutzer-Wunsch): warme, gedeckte Grundtöne statt kühlem
+       Weiß/Lavendel. Akzent/Text-Dim waren ursprünglich lila — auf Nutzer-
+       Wunsch ("weg mit dem lila") auf Dunkelbeige/Grau umgestellt: Ruhezustand
+       = dunkelgrauer Text, aktiver/geklickter Button = dunkelbeige Fläche
+       (--isy-accent) + giftgrüner Text (siehe --isy-pixel-green-bright, direkt
+       in den Button-Regeln referenziert). Dark-Mode-Block unten spiegelt das. */
+    --isy-bg:           #eeeae1;
+    --isy-bg-alt:       #e2ddd0;
+    --isy-border:       #b0a890;
+    --isy-header-bg:    #030430;
+    --isy-header-alt:   #0a0b48;
+    --isy-accent:       #4a4844;
+    --isy-accent-hover: #65625c;
+    --isy-accent-soft:  #d0c8b4;
+    --isy-text:         #030430;
+    --isy-text-dim:     #4a4a4a;
+    --isy-btn-bg:       #f2efe6;
+    --isy-toast-bg:     #e6dcc3;
+    --isy-toast-text:   #3d2f14;
+    --isy-viewer-bg:    #eeeae1;
+    /* Pixel-Schatten (Nutzer-Wunsch): harter Versatz statt weichem Blur —
+       siehe --isy-pixel-clip-corner/-btn-shadow oben für die Begründung. */
+    --isy-btn-shadow:        2px 2px 0 0 rgba(3,4,48,0.3);
+    --isy-btn-shadow-hover:  3px 3px 0 0 rgba(3,4,48,0.35);
+    --isy-btn-shadow-active: 1px 1px 0 0 rgba(3,4,48,0.3);
 }
 
 .isybau-main[data-theme="dark"] {
@@ -31,13 +130,77 @@
     --isy-border:       #40405c;
     --isy-header-bg:    #0a0a14;
     --isy-header-alt:   #14142a;
-    --isy-accent:       #8f8be1;
-    --isy-accent-hover: #a6a2ff;
-    --isy-accent-soft:  #2a2a42;
+    --isy-accent:       #5c5954;
+    --isy-accent-hover: #726e68;
+    --isy-accent-soft:  #302f2c;
     --isy-text:         #e6e6f0;
-    --isy-text-dim:     #b3b0d9;
+    --isy-text-dim:     #b0b0ac;
     --isy-btn-bg:       #24243a;
     --isy-toast-bg:     #1e2a38;
     --isy-toast-text:   #dfeeff;
     --isy-viewer-bg:    #0d1117;
+    --isy-btn-shadow:        2px 2px 0 0 rgba(0,0,0,0.55);
+    --isy-btn-shadow-hover:  3px 3px 0 0 rgba(0,0,0,0.6);
+    --isy-btn-shadow-active: 1px 1px 0 0 rgba(0,0,0,0.55);
+}
+
+/**
+ * Universelles Pixel-Button-Erscheinungsbild (Nutzer-Wunsch: "wirklich alle"
+ * Buttons im Projekt sollen wie die zentralen Shell-/Modal-Buttons aussehen,
+ * auch die noch nicht einzeln migrierten in PreprocessingModal.vue,
+ * ModelRainModal.vue, ProjectManagerModal.vue, EditorToolbox.vue etc.).
+ *
+ * Statt Dutzende Einzeldateien nachzuziehen (das war gerade der Grund für
+ * "durcheinander" — nur ein Teil der Buttons hatte die neue Form), erzwingt
+ * diese Regel Form/Bevel/Schatten GLOBAL für jeden <button> während isybau
+ * aktiv ist. !important ist hier bewusst nötig: viele ältere, noch nicht
+ * angefasste Button-Klassen setzen selbst `border: 1px solid ...` — als
+ * Klassen-Selektor spezifischer als ein bloßer Element-Selektor, würde ohne
+ * !important weiterhin gewinnen. Nur Form wird erzwungen, NICHT Hintergrund-/
+ * Textfarbe — Rot für "Löschen" o.ä. bleibt dadurch erhalten.
+ *
+ * Scope html[data-theme] statt bloß `button`, damit das NICHT in andere
+ * Features (flood-2D, flood-3D, ...) leakt: das Attribut existiert nur,
+ * während IsybauMain.vue gemountet ist (watch+onBeforeUnmount dort setzt/
+ * entfernt es auf <html>) — exakt derselbe Mechanismus, der schon die
+ * --isy-pixel-*-Variablen an Teleport-Modals vorbeischleust.
+ *
+ * .close-btn/.icon-btn/.theme-toggle/.close-toast bleiben ausgenommen — reine
+ * Icon-Buttons ohne sichtbare Fläche, ein Bevel-Rahmen um ein einzelnes "×"
+ * sähe falsch aus.
+ *
+ * ZWEI Selektor-Pfade, nicht nur einer: `html[data-theme] button` hängt an
+ * einem JS-gesetzten Attribut (IsybauMain.vue-Watcher) — falls das aus
+ * irgendeinem Grund nicht/verzögert greift, würde SONST GAR NICHTS matchen.
+ * `.isybau-main button` ist rein template-statisch (die Klasse steht direkt
+ * im Root-Div von IsybauMain.vue, kein JS nötig) und deckt bereits den
+ * Großteil ab (Sidebar, SimulationControls, EditorToolbox, ElementInfo, ...)
+ * — nur Teleport-Modals brauchen weiterhin den html[data-theme]-Pfad. Beide
+ * zusammen als Redundanz, damit ein einzelner Mechanismus nicht die ganze
+ * Regel lahmlegt. */
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast),
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast) {
+    clip-path: var(--isy-pixel-clip-corner) !important;
+    border-width: 2px !important;
+    border-style: solid !important;
+    border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) !important;
+    box-shadow: var(--isy-pixel-btn-shadow) !important;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s !important;
+}
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):hover,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):hover {
+    box-shadow: var(--isy-pixel-btn-shadow-hover) !important;
+    transform: translateY(-1px);
+}
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):active,
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast).active,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):active,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast).active {
+    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) !important;
+    box-shadow: var(--isy-pixel-btn-shadow-active) !important;
+    transform: translateY(0);
+}
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):disabled,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):disabled {
+    transform: none;
 }

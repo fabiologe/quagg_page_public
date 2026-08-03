@@ -61,14 +61,14 @@ const chartOptions = {
   scales: {
     x: {
       type: 'linear',
-      title: { display: true, text: 'Förderhöhe H (m)', color: '#8f8be1', font: { size: 10 } },
-      ticks: { color: '#aeadd2', font: { size: 9 } },
+      title: { display: true, text: 'Förderhöhe H (m)', color: '#65625c', font: { size: 10 } },
+      ticks: { color: '#4a4a4a', font: { size: 9 } },
       grid: { color: 'rgba(148, 139, 225, 0.15)' }
     },
     y: {
       beginAtZero: true,
-      title: { display: true, text: 'Förderleistung Q (l/s)', color: '#8f8be1', font: { size: 10 } },
-      ticks: { color: '#aeadd2', font: { size: 9 } },
+      title: { display: true, text: 'Förderleistung Q (l/s)', color: '#65625c', font: { size: 10 } },
+      ticks: { color: '#4a4a4a', font: { size: 9 } },
       grid: { color: 'rgba(148, 139, 225, 0.15)' }
     }
   }
@@ -77,17 +77,17 @@ const chartOptions = {
 
 <style scoped>
 .pump-curve-preview {
-  background: #040647;
-  border: 1px solid #594491;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 6px;
   padding: 0.6rem 0.75rem;
   margin-top: 0.5rem;
 }
 .pcp-title {
   margin: 0 0 0.5rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -100,7 +100,7 @@ const chartOptions = {
   flex-direction: column;
   gap: 0.2rem;
   font-size: 0.72rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 .pcp-estimated {
   color: #e0a020;

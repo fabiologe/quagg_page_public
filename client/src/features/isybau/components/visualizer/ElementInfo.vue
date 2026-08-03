@@ -656,14 +656,14 @@ watch(() => props.selectedElement, (val) => {
   right: 1rem;
   width: 320px;
   max-height: 70vh;
-  background: #06093a;
+  background: var(--isy-pixel-bg-deep, #06093a);
   border-radius: 8px;
   box-shadow: 0 4px 25px rgba(4,6,71,0.4);
   display: flex;
   flex-direction: column;
   z-index: 500;
   overflow: hidden;
-  border: 1px solid #594491;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
 }
 
 .info-window.dragging {
@@ -672,9 +672,9 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .info-header {
-  background: #040647;
+  background: var(--isy-pixel-bg, #040647);
   padding: 0.65rem 1rem;
-  border-bottom: 2px solid #594491;
+  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -687,9 +687,9 @@ watch(() => props.selectedElement, (val) => {
 
 .info-header h3 {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.58rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -698,12 +698,12 @@ watch(() => props.selectedElement, (val) => {
   background: none;
   border: none;
   font-size: 1.5rem;
-  color: #8f8be1;
+  color: var(--isy-pixel-border-hover, #65625c);
   cursor: pointer;
   line-height: 1;
   transition: color 0.2s;
 }
-.close-btn:hover { color: #2ecc71; }
+.close-btn:hover { color: var(--isy-pixel-green, #219653); }
 
 .info-content {
   padding: 1rem;
@@ -716,7 +716,7 @@ watch(() => props.selectedElement, (val) => {
     justify-content: space-between;
     margin-bottom: 0.5rem;
     font-size: 0.9rem;
-    color: #aeadd2;
+    color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .info-group {
@@ -726,23 +726,23 @@ watch(() => props.selectedElement, (val) => {
 .info-group label {
     display: block;
     font-size: 0.8rem;
-    color: #aeadd2;
+    color: var(--isy-pixel-text-dim, #4a4a4a);
     margin-bottom: 2px;
 }
 
 .full-input, .full-select {
     width: 100%;
     padding: 6px;
-    border: 1px solid #594491;
+    border: 1px solid var(--isy-pixel-border, #4a4844);
     border-radius: 4px;
-    background: #0a0d5c;
-    color: #fff;
+    background: var(--isy-pixel-bg-alt, #0a0d5c);
+    color: var(--isy-pixel-text, #fff);
     font-size: 0.9rem;
     box-sizing: border-box;
     outline: none;
     transition: border-color 0.15s;
 }
-.full-input:focus, .full-select:focus { border-color: #2ecc71; }
+.full-input:focus, .full-select:focus { border-color: var(--isy-pixel-green, #219653); }
 .full-input:disabled, .full-select:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .flex-row {
@@ -767,23 +767,23 @@ watch(() => props.selectedElement, (val) => {
 .checkbox-row label {
     margin: 0;
     font-size: 0.9rem;
-    color: #aeadd2;
+    color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .info-footer {
     padding: 1rem;
-    border-top: 1px solid #594491;
-    background: #040647;
+    border-top: 1px solid var(--isy-pixel-border, #4a4844);
+    background: var(--isy-pixel-bg, #040647);
 }
 
 .primary-btn {
-    background: #040647;
-    color: #fff;
-    border: 1px solid #594491;
+    background: var(--isy-pixel-bg, #040647);
+    color: var(--isy-pixel-text, #fff);
+    border: 1px solid var(--isy-pixel-border, #4a4844);
     padding: 10px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.48rem;
     display: flex;
     align-items: center;
@@ -791,7 +791,7 @@ watch(() => props.selectedElement, (val) => {
     gap: 0.4rem;
     transition: background 0.15s;
 }
-.primary-btn:hover { background: #594491; }
+.primary-btn:hover { background: var(--isy-pixel-border, #4a4844); }
 
 .ic {
     width: 14px;
@@ -803,19 +803,19 @@ watch(() => props.selectedElement, (val) => {
 
 .secondary-btn {
     background: transparent;
-    border: 1px solid #594491;
-    color: #aeadd2;
+    border: 1px solid var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-text-dim, #4a4a4a);
     padding: 10px 8px;
     border-radius: 6px;
     cursor: pointer;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.48rem;
     transition: background 0.15s;
 }
 
 .secondary-btn:hover {
-    background: #594491;
-    color: #fff;
+    background: var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-text, #fff);
 }
 
 .full-width {
@@ -863,15 +863,15 @@ watch(() => props.selectedElement, (val) => {
 
 .hint-text {
     font-size: 0.75rem;
-    color: #8f8be1;
+    color: var(--isy-pixel-border-hover, #65625c);
     margin: -4px 0 8px 0;
 }
 
 /* War bisher in dieser Datei genutzt (Fläche-Anzeige), aber nie definiert —
    Regel 1:1 aus ElementPropertiesModal.vue/SchmutzfrachtDialog.vue übernommen. */
-.value-display { color: #2ecc71; font-weight: 600; padding: 0.35rem 0; }
+.value-display { color: var(--isy-pixel-green, #219653); font-weight: 600; padding: 0.35rem 0; }
 
-input[type="checkbox"] { accent-color: #2ecc71; }
+input[type="checkbox"] { accent-color: var(--isy-pixel-green, #219653); }
 
 .link-hint-box {
     background: #eff6ff;

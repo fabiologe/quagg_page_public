@@ -852,10 +852,18 @@ const localRunBusy = ref(false);
 
 // Windows-freundliche Companion-Verteilung: EIN docker-run-Kommando statt
 // Python-Skript (Docker Desktop ist für den lokalen Pfad ohnehin Pflicht).
+// Muss zum tatsaechlich laufenden Container passen (2026-08-01 abgeglichen): ohne
+// das 3D-Volume und die SIBLING_VOLUME-Variablen kann der Companion dem Solver-
+// Container den Job-Ordner nicht durchreichen -> lokale Laeufe schlagen fehl.
 const COMPANION_DOCKER_CMD =
     'docker run -d --restart unless-stopped --name quagg-companion '
     + '-p 127.0.0.1:8642:8642 -v /var/run/docker.sock:/var/run/docker.sock '
-    + '-v quagg-flood2d-data:/data fabiologe/lisflood_acc_modi:companion';
+    + '-v quagg-flood2d-data:/data -v quagg-flood3d-data:/data3d '
+    + '-e QUAGG_COMPANION_DATA=/data -e QUAGG_COMPANION_DATA_3D=/data3d '
+    + '-e QUAGG_SIBLING_VOLUME=quagg-flood2d-data '
+    + '-e QUAGG_SIBLING_VOLUME_OPENFOAM=quagg-flood3d-data '
+    + '-e QUAGG_COMPANION_BIND=0.0.0.0 '
+    + 'fabiologe/quagg-companion:latest';
 const cmdCopied = ref(false);
 const copyCompanionCmd = async () => {
     try {

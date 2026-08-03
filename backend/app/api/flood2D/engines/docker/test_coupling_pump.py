@@ -16,7 +16,7 @@ Pumpen-Foerderung. Prueft damit end-to-end:
   5. couplingBudget: J1 hat 2D->1D-Volumen aufgenommen.
 
 Aufruf:
-    python3 test_coupling_pump.py [IMAGE]     # default: lisflood-fp:latest
+    python3 test_coupling_pump.py [IMAGE]     # default: fabiologe/quagg-lisflood:latest
 Exit 0 = bestanden.
 """
 import json
@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 20, 20, 5.0
 GROUND = 10.0
 DIP_Z = 9.6

@@ -12,7 +12,9 @@
         <label>Raster</label>
         <select v-model="raster" class="f3d-select">
           <option value="depth">Wassertiefe</option>
-          <option value="umag">Geschwindigkeitsbetrag</option>
+          <option value="umag">Geschwindigkeit (Oberfläche)</option>
+          <option value="umagM">Geschwindigkeit (tiefengemittelt)</option>
+          <option value="froude">Froude-Zahl</option>
           <option value="tau" :disabled="!hasTau">Sohlschubspannung</option>
           <option value="none">kein Raster</option>
         </select>
@@ -30,10 +32,26 @@
           <input type="checkbox" v-model="showArrows" />
           Geschwindigkeitspfeile
         </label>
+        <label class="f3d-check" v-if="raster !== 'none'">
+          <input type="checkbox" v-model="umhuellend" @change="huelleUmschalten" />
+          Umhüllende (Maximum über die Laufzeit)
+        </label>
+        <p v-if="huellenFortschritt > 0 && huellenFortschritt < 1"
+           class="f3d-muted f3d-small">
+          Umhüllende wird gebildet … {{ Math.round(huellenFortschritt * 100) }} %
+        </p>
+        <label class="f3d-check" v-if="raster === 'froude'">
+          <input type="checkbox" v-model="showFroudeLine" />
+          Grenzlinie Fr = 1 (strömend / schießend)
+        </label>
       </div>
 
       <div class="f3d-ctl-group" v-if="raster !== 'none'">
-        <label>Farbskala {{ RASTER_LABELS[raster] }}</label>
+        <label>
+          Farbskala {{ RASTER_LABELS[raster] }}
+          <KennwertHilfe :groesse="HILFE_SCHLUESSEL[raster]"
+                         :wert="shownRange[1]" />
+        </label>
         <div class="f3d-legend" :style="{ background: VIRIDIS_CSS }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(shownRange[0]) }}</span>
@@ -107,16 +125,25 @@
 // gezogener Längsschnitt mit Gelände, Wasserspiegel, Energielinie und
 // Froude-Zahl. Alles clientseitig aus den vorhandenen Felddaten berechnet.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFields }
   from '../../composables/useFieldCache'
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
 import { isoSegments } from '../../utils/marchingSquares'
+import { einordnen } from '../../utils/kennwerte'
 import UPlotChart from './UPlotChart.vue'
 
 const G = 9.81
-const RASTER_LABELS = { depth: 'Wassertiefe', umag: 'Geschwindigkeit', tau: 'Sohlschubspannung' }
-const RASTER_UNITS = { depth: 'm', umag: 'm/s', tau: 'N/m²' }
+const RASTER_LABELS = { depth: 'Wassertiefe', umag: 'Geschwindigkeit (Oberfläche)',
+  umagM: 'Geschwindigkeit (tiefengemittelt)', froude: 'Froude-Zahl',
+  tau: 'Sohlschubspannung' }
+const RASTER_UNITS = { depth: 'm', umag: 'm/s', umagM: 'm/s', froude: '—',
+  tau: 'N/m²' }
+// Rasterschlüssel -> Erklärtext (Oberflächen- und Tiefenmittel teilen sich
+// die Einordnung der Fließgeschwindigkeit)
+const HILFE_SCHLUESSEL = { depth: 'depth', umag: 'umag', umagM: 'umag',
+  froude: 'froude', tau: 'bed_shear' }
 
 const store = usePostStore()
 const canvasHost = ref(null)
@@ -129,6 +156,7 @@ const raster = ref('depth')
 const showContours = ref(true)
 const contourInterval = ref(0.1)
 const showArrows = ref(false)
+const showFroudeLine = ref(true)
 const lockScale = ref(false)
 const lockMin = ref(0)
 const lockMax = ref(1)
@@ -150,6 +178,9 @@ const fmt = (v) => (v == null || Number.isNaN(v) ? '–'
 let terrain = null          // { z: Float32Array (ny*nx) }
 let grid = null
 let pf = null               // abgeleitete Grundrissfelder
+let huelle = null           // Maximum je Rasterfeld ueber ALLE Zeitpunkte
+const umhuellend = ref(false)
+const huellenFortschritt = ref(0)
 let playTimer = null
 let requestSeq = 0
 let resizeObs = null
@@ -180,6 +211,44 @@ async function loadRun() {
   } finally {
     loading.value = false
   }
+}
+
+// Maximum je Zelle ueber alle Ausgabezeitpunkte. Genau diese Karten
+// wandern in den Bericht: die groesste Tiefe, die hoechste Geschwindigkeit
+// und die groesste Froude-Zahl, die im Verlauf irgendwann aufgetreten sind
+// — ein einzelner Zeitpunkt zeigt davon nur einen Ausschnitt.
+async function baueHuelle() {
+  const felder = ['depth', 'umag', 'umagM', 'froude', 'tau']
+  const acc = {}
+  huellenFortschritt.value = 0.001
+  for (let i = 0; i < times.value.length; i++) {
+    const vol = await getVolume(activeRunId.value, times.value[i])
+    const f = planFields(vol, terrain?.z)
+    for (const name of felder) {
+      const q = f[name]
+      if (!q) continue
+      if (!acc[name]) acc[name] = Float32Array.from(q)
+      else for (let c = 0; c < q.length; c++) {
+        // NaN (z. B. Froude am Benetzungsrand) darf das Maximum nicht kippen
+        if (Number.isFinite(q[c]) && !(acc[name][c] >= q[c])) acc[name][c] = q[c]
+      }
+    }
+    huellenFortschritt.value = (i + 1) / times.value.length
+  }
+  huelle = acc
+  huellenFortschritt.value = 1
+}
+
+async function huelleUmschalten() {
+  if (umhuellend.value && !huelle) {
+    try {
+      await baueHuelle()
+    } catch (e) {
+      error.value = e.message
+      umhuellend.value = false
+    }
+  }
+  draw()
 }
 
 async function update() {
@@ -218,9 +287,19 @@ function worldToCanvas(L, x, y) {
     PAD + (pf.origin[1] + L.worldH - y) * L.scale]
 }
 
+// Welche Tiefe entscheidet, ob eine Zelle „nass" ist? Bei der Umhüllenden
+// die größte je aufgetretene — sonst bliebe die Karte am Zeitpunkt t = 0
+// vollständig leer, obwohl das Maximum überall Werte hat.
+function maskeTiefe() {
+  return umhuellend.value && huelle?.depth ? huelle.depth : pf.depth
+}
+
 function rasterValues() {
+  if (umhuellend.value && huelle) return huelle[raster.value] ?? null
   if (raster.value === 'depth') return pf.depth
   if (raster.value === 'umag') return pf.umag
+  if (raster.value === 'umagM') return pf.umagM
+  if (raster.value === 'froude') return pf.froude
   if (raster.value === 'tau') return pf.tau
   return null
 }
@@ -258,7 +337,7 @@ function draw() {
   if (values) {
     for (let c = 0; c < values.length; c++) {
       const v = values[c]
-      if (raster.value !== 'tau' && !(pf.depth[c] > 0.01)) continue
+      if (raster.value !== 'tau' && !(maskeTiefe()[c] > 0.01)) continue
       if (raster.value === 'tau' && !(v > 1e-9)) continue
       if (v < lo) lo = v
       if (v > hi) hi = v
@@ -277,7 +356,7 @@ function draw() {
       let r = 34 * shade + 14
       let g = 44 * shade + 18
       let b = 66 * shade + 30
-      const wet = pf.depth[col] > 0.01
+      const wet = maskeTiefe()[col] > 0.01
       const show = values && (raster.value === 'tau' ? values[col] > 1e-9 : wet)
       if (show) {
         const [vr, vg, vb] = viridis((values[col] - rLo) / span)
@@ -323,6 +402,33 @@ function draw() {
           ctx.moveTo(x0, y0)
           ctx.lineTo(x1, y1)
         }
+      }
+      ctx.stroke()
+    }
+  }
+
+  // Grenzlinie Fr = 1: trennt stroemenden von schiessendem Abfluss. Im
+  // Wasserbau die Linie, an der man den Wechselsprung ablesen kann.
+  if (raster.value === 'froude' && showFroudeLine.value) {
+    const fr = rasterValues()
+    if (fr) {
+      const feld = new Float32Array(fr.length)
+      const tiefe = umhuellend.value && huelle ? huelle.depth : pf.depth
+      for (let c = 0; c < fr.length; c++) {
+        feld[c] = tiefe[c] > 0.01 ? fr[c] : NaN
+      }
+      ctx.beginPath()
+      ctx.strokeStyle = '#ff4d4d'
+      ctx.lineWidth = 2
+      for (const [i0, j0, i1, j1] of isoSegments(feld, nx, ny, 1.0)) {
+        const [x0, y0] = worldToCanvas(L,
+          pf.origin[0] + (i0 + 0.5) * pf.spacing[0],
+          pf.origin[1] + (j0 + 0.5) * pf.spacing[1])
+        const [x1, y1] = worldToCanvas(L,
+          pf.origin[0] + (i1 + 0.5) * pf.spacing[0],
+          pf.origin[1] + (j1 + 0.5) * pf.spacing[1])
+        ctx.moveTo(x0, y0)
+        ctx.lineTo(x1, y1)
       }
       ctx.stroke()
     }
@@ -433,7 +539,15 @@ function onMove(e) {
   if (pf.depth[col] > 0.01) {
     rows.push(['Wasserspiegel', `${pf.surface[col].toFixed(2)} m`])
     rows.push(['Wassertiefe', `${fmt(pf.depth[col])} m`])
-    rows.push(['|U|', `${fmt(pf.umag[col])} m/s`])
+    rows.push(['|U| Oberfläche', `${fmt(pf.umag[col])} m/s`])
+    rows.push(['|U| tiefengemittelt', `${fmt(pf.umagM[col])} m/s`])
+    rows.push(['Froude-Zahl', `${fmt(pf.froude[col])}`
+      + (pf.froude[col] > 1 ? ' (schießend)' : ' (strömend)')])
+    if (pf.tau) {
+      const st = einordnen('bed_shear', pf.tau[col])
+      rows.push(['Sohlschubspannung', `${fmt(pf.tau[col])} N/m²`
+        + (st ? ` — ${st.text.split('.')[0]}` : '')])
+    }
   } else {
     rows.push(['Zustand', 'trocken'])
   }
@@ -481,6 +595,7 @@ function computeProfile() {
   const wsp = []
   const energy = []
   const froude = []
+  const grenz = []
   for (let m = 0; m < n; m++) {
     const f = m / (n - 1)
     const x = x0 + (x1 - x0) * f
@@ -488,17 +603,27 @@ function computeProfile() {
     s.push(total * f)
     const g = terrain ? sampleColumn(terrain.z, x, y) : NaN
     ground.push(g)
-    const depth = sampleColumn(pf.depth, x, y)
-    if (depth > 0.01) {
+    // Tiefe aus dem Phasenanteil und die TIEFENGEMITTELTE Geschwindigkeit —
+    // mit der Oberflächengeschwindigkeit wären Energiehöhe und Froude-Zahl
+    // systematisch zu groß (sie ist die schnellste im Profil).
+    const h = sampleColumn(pf.hInt, x, y)
+    if (h > 0.01) {
       const surf = sampleColumn(pf.surface, x, y)
-      const u = sampleColumn(pf.umag, x, y)
+      const u = sampleColumn(pf.umagM, x, y)
       wsp.push(surf)
       energy.push(surf + (u * u) / (2 * G))
-      froude.push(u / Math.sqrt(G * depth))
+      froude.push(u / Math.sqrt(G * h))
+      // Grenztiefe aus dem spezifischen Abfluss q = u·h: y_kr = (q²/g)^(1/3).
+      // Wo der Wasserspiegel sie schneidet, geht der Abfluss durch den
+      // kritischen Zustand — die Linie, an der man Kontrollquerschnitte
+      // im Längsschnitt ablesen kann.
+      const q = u * h
+      grenz.push(g + Math.cbrt((q * q) / G))
     } else {
       wsp.push(null)
       energy.push(null)
       froude.push(null)
+      grenz.push(null)
     }
   }
   profile.value = {
@@ -507,6 +632,7 @@ function computeProfile() {
       { label: 'Gelände', t: s, v: ground, color: '#c98500' },
       { label: 'Wasserspiegel', t: s, v: wsp, color: '#3987e5' },
       { label: 'Energielinie', t: s, v: energy, color: '#199e70', dash: [6, 4], width: 1.5 },
+      { label: 'Grenztiefe', t: s, v: grenz, color: '#d55181', dash: [2, 3], width: 1 },
     ],
     froude: [
       { label: 'Froude-Zahl', t: s, v: froude, color: '#d55181' },
@@ -540,7 +666,10 @@ watch(() => store.selectedRunIds, (ids) => {
 watch(activeRunId, loadRun)
 watch(timeIdx, update)
 watch([raster, showContours, contourInterval, showArrows, lockScale,
-  lockMin, lockMax], () => draw())
+  lockMin, lockMax, umhuellend, showFroudeLine], () => draw())
+// Laufwechsel verwirft die Umhüllende — sie gehört zu genau einem Lauf
+watch(activeRunId, () => { huelle = null; umhuellend.value = false
+  huellenFortschritt.value = 0 })
 
 onBeforeUnmount(() => {
   clearInterval(playTimer)

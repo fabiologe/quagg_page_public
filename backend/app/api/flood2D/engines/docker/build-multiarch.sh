@@ -4,7 +4,7 @@
 # engines/vendor + engines/patches).
 #
 #   PLATFORMS : Ziel-Architekturen (default nur linux/amd64 — s. WARNUNG unten)
-#   REPO      : Registry-Repo (default fabiologe/lisflood_acc_modi)
+#   REPO      : Registry-Repo (default fabiologe/quagg-lisflood)
 #   TAG       : Basis-Tag (default runpod)
 #   TARGET    : Dockerfile-Stage: runpod (RunPod-Worker) | runtime (handler.py)
 #   PUSH      : 1 = in die Registry pushen (default), 0 = nur Cache/lokal
@@ -25,7 +25,7 @@
 set -euo pipefail
 
 PLATFORMS="${PLATFORMS:-linux/amd64}"
-REPO="${REPO:-fabiologe/lisflood_acc_modi}"
+REPO="${REPO:-fabiologe/quagg-lisflood}"
 TAG="${TAG:-runpod}"
 TARGET="${TARGET:-runpod}"
 PUSH="${PUSH:-1}"

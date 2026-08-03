@@ -1,0 +1,85 @@
+/**
+ * modalBase.css — geteilte Basis für die "Plain"/"Draggable Header"-Modal-
+ * Familie (siehe Modal-CSS-Konsolidierungsplan, Session 2026-08-01).
+ * Eingebunden per <style scoped src="./shared/modalBase.css"> (bzw.
+ * "../modals/shared/modalBase.css" aus components/common/) — Vue vergibt
+ * dabei dieselbe Scope-ID wie den übrigen <style>-Blöcken der jeweiligen
+ * Komponente, exakt wie das bereits bestehende results-shared.css-Muster
+ * für die Ergebnis-Tabs. Dadurch bleibt jede Regel weiterhin sauber pro
+ * Komponente gescoped — keine Kollision mit gleichnamigen Klassen in
+ * anderen Features (flood-2D, PipeHydraulics, ...).
+ *
+ * Jede Verbraucher-Datei behält einen eigenen, kleinen lokalen <style
+ * scoped>-Block für Deltas (v.a. .modal-header padding/background/
+ * cursor:move) — hier steht bewusst nur der über alle 10 Modal-Dateien
+ * identische Kern.
+ */
+
+.modal-header {
+  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--isy-pixel-border-hover, #65625c);
+  transition: color 0.2s;
+  padding: 0 0.5rem;
+}
+.close-btn:hover {
+  color: var(--isy-pixel-green-bright, #18a34a);
+}
+
+.modal-footer {
+  padding: 1rem;
+  border-top: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+/* Chip/Pillen-Tab — NICHT die Sidebar-Nav-Tab-Variante aus IsybauHelpModal.vue
+   (strukturell anderes UI-Element, bleibt dort bewusst lokal). */
+.tab-btn {
+  font-family: var(--isy-pixel-font);
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border-radius: 5px;
+  clip-path: var(--isy-pixel-clip-corner);
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  box-shadow: var(--isy-pixel-btn-shadow);
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.tab-btn:hover { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); box-shadow: var(--isy-pixel-btn-shadow-hover); transform: translateY(-1px); }
+.tab-btn.active { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b); }
+.tab-btn:active { transform: translateY(0); border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b); box-shadow: var(--isy-pixel-btn-shadow-active); }
+
+/* "Plain"-Formgruppe: natives <select>, Block-Layout (Gegenstück zur
+   "Dark"-Variante in modalDark.css, die ein anderes, flex-column-Layout
+   für dunkle Formulare nutzt). */
+.form-group { margin-bottom: 1rem; }
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--isy-pixel-border, #4a4844);
+}
+.form-group select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border-radius: 4px;
+  font-size: 1rem;
+}

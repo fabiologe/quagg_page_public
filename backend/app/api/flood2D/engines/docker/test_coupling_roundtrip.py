@@ -16,7 +16,7 @@ Prueft die drei Kopplungs-Bugs von 2026-07 (Instabilitaet, Phantom-Wasser, tote 
   5. [COUPLE]-Logzeilen erscheinen in den log-Events (Diagnose-Kanal funktioniert).
 
 Aufruf:
-    python3 test_coupling_roundtrip.py [IMAGE]     # default: lisflood-fp:latest
+    python3 test_coupling_roundtrip.py [IMAGE]     # default: fabiologe/quagg-lisflood:latest
 Exit 0 = bestanden.
 """
 import json
@@ -26,7 +26,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 20, 20, 5.0
 GROUND = 10.0
 DIP_Z = 9.6

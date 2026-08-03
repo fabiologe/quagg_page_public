@@ -134,6 +134,12 @@ RUN patch -p1 --forward -d /src < /tmp/quagg-timeseries-memset.patch
 COPY engines/patches/quagg-coupling-sgc-hook.patch /tmp/quagg-coupling-sgc-hook.patch
 RUN patch -p1 --forward -d /src < /tmp/quagg-coupling-sgc-hook.patch
 
+# QUAGG Versionsstempel: haelt fest, WELCHE Patches wirklich in diesem Image stecken.
+# Ohne das laesst sich hinterher nicht mehr feststellen, gegen welchen Solver-Stand ein
+# Ergebnis gerechnet wurde — am 2026-08-01 waren :latest, :runpod und :local nachweislich
+# auseinandergelaufen (coupling-sgc-hook fehlte in zweien davon).
+RUN ls -1 /tmp/*.patch | xargs -n1 basename | sort > /opt/quagg-patches.txt
+
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -D_CONFIG=/src/config.docker.cmake \
@@ -158,6 +164,12 @@ COPY --from=swmm-build /swmm/libswmm5.so /opt/swmm/libswmm5.so
 COPY --from=swmm-build /swmm/swmm5 /opt/swmm/swmm5
 COPY engines/docker/handler.py /opt/lisflood/handler.py
 COPY codec.py /opt/lisflood/codec.py
+
+# Versionsstempel (vgl. build-Stage): Patch-Liste im Image + Git-SHA des Repos beim Bau.
+# Bauen mit:  docker build --build-arg QUAGG_SHA=$(git rev-parse --short HEAD) ...
+ARG QUAGG_SHA=unknown
+ENV QUAGG_SOLVER_SHA=${QUAGG_SHA}
+COPY --from=build /opt/quagg-patches.txt /opt/lisflood/PATCHES.txt
 
 # Job-Verzeichnis wird vom Backend gemountet: /job/inputs + /job/results
 WORKDIR /job

@@ -245,6 +245,7 @@ const applyResult = () => {
 };
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 .modal-overlay {
   position: fixed;
@@ -272,34 +273,15 @@ const applyResult = () => {
 
 .modal-header {
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71; /* Red 500 */
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -307,39 +289,20 @@ const applyResult = () => {
 }
 
 .description {
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
 
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #040647;
-}
-
-.form-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #aeadd2;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
 .reference-info {
   font-size: 0.85rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   margin-bottom: 1rem;
 }
 
 .result-box {
-  background: #f3f2fb;
-  border: 1px solid #aeadd2;
+  background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   padding: 1rem;
   border-radius: 4px;
   margin-top: 1rem;
@@ -347,68 +310,61 @@ const applyResult = () => {
 
 .result-box h4 {
   margin: 0 0 0.5rem 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.48rem;
-  color: #2980b9;
+  color: var(--isy-pixel-info-hover, #2980b9);
 }
 
 .result-value {
   font-size: 1.2rem;
   font-weight: bold;
-  color: #040647;
+  color: var(--isy-pixel-green-bright, #18a34a);
   margin-bottom: 0.5rem;
 }
 
 .source {
   font-size: 0.8rem;
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   margin: 0;
 }
 
 .error-box {
   background: #fde8e8;
-  color: #c0392b;
+  color: var(--isy-pixel-danger-hover, #c0392b);
   padding: 1rem;
   border-radius: 4px;
   margin-top: 1rem;
 }
 
-.modal-footer {
-  padding: 1rem;
-  border-top: 1px solid #aeadd2;
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-}
 
 .primary-btn {
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: #594491; }
-.primary-btn:disabled { background: #aeadd2; cursor: not-allowed; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: not-allowed; }
 
 .secondary-btn {
-  background: #fff;
-  border: 1px solid #aeadd2;
-  color: #040647;
+  background: transparent;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: #f3f2fb; }
+.secondary-btn:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
 
 .result-summary {
   display: flex;
@@ -419,7 +375,7 @@ const applyResult = () => {
 
 .data-details {
   margin: 1rem 0;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 4px;
   background: white;
 }
@@ -427,7 +383,7 @@ const applyResult = () => {
 .data-details summary {
   padding: 0.5rem;
   cursor: pointer;
-  background: #f3f2fb;
+  background: var(--isy-pixel-content-bg, #f3f2fb);
   font-weight: 500;
 }
 
@@ -444,7 +400,7 @@ const applyResult = () => {
 
 .kostra-table th, .kostra-table td {
   padding: 0.4rem;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   text-align: right;
 }
 
@@ -459,12 +415,12 @@ const applyResult = () => {
 }
 
 .apply-btn {
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
@@ -472,7 +428,7 @@ const applyResult = () => {
   margin-top: 0;
   transition: background 0.15s;
 }
-.apply-btn:hover { background: #594491; }
+.apply-btn:hover { background: var(--isy-pixel-border, #4a4844); }
 
 .clickable-cell {
   cursor: pointer;
@@ -480,7 +436,7 @@ const applyResult = () => {
 }
 
 .clickable-cell:hover {
-  background-color: #f3f2fb;
+  background-color: var(--isy-pixel-content-bg, #f3f2fb);
 }
 
 .reference-input-group {
@@ -497,13 +453,13 @@ const applyResult = () => {
 
 .input-wrapper label {
     font-size: 0.8rem;
-    color: #594491;
+    color: var(--isy-pixel-border, #4a4844);
     margin-bottom: 0.2rem;
 }
 
 .input-wrapper input {
     padding: 0.5rem;
-    border: 1px solid #aeadd2;
+    border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
     border-radius: 4px;
     width: 120px;
 }
@@ -531,10 +487,10 @@ const applyResult = () => {
 }
 
 .selected-cell {
-  background-color: #3498db !important;
+  background-color: var(--isy-pixel-info, #3498db) !important;
   color: white;
   font-weight: bold;
-  border-color: #2980b9;
+  border-color: var(--isy-pixel-info-hover, #2980b9);
 }
 
 </style>

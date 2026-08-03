@@ -252,15 +252,15 @@ function onResize() { core.handleResize(canvasEl.value); }
 
 // Dark/Light Umschalter: Szenenhintergrund + Platzhalter-Boden live nachziehen (schwarz ↔ weiß)
 watch(() => store.ui.darkMode, (dark) => {
-  core.setBackground(dark ? 0x0d1117 : 0xffffff);
-  builder.setGroundColor(dark ? 0x1a2035 : 0xffffff);
+  core.setBackground(dark ? 0x0d1117 : 0xf2e8d5);
+  builder.setGroundColor(dark ? 0x1a2035 : 0xf2e8d5);
 });
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────
 onMounted(() => {
   if (!canvasEl.value) return;
-  core.init(canvasEl.value, store.ui.darkMode ? 0x0d1117 : 0xffffff);
-  builder.setGroundColor(store.ui.darkMode ? 0x1a2035 : 0xffffff);
+  core.init(canvasEl.value, store.ui.darkMode ? 0x0d1117 : 0xf2e8d5);
+  builder.setGroundColor(store.ui.darkMode ? 0x1a2035 : 0xf2e8d5);
   core.startLoop();
 
   canvasEl.value.addEventListener('pointerdown', onPointerDown);
@@ -311,7 +311,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   color: #4a5568;
   font-size: 0.9rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   text-align: center;
   padding: 2rem;
 }

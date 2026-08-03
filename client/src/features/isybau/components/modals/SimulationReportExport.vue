@@ -58,18 +58,23 @@ const A4W = 210, A4H = 297;
 const ML = 14, MR = 14, MT = 12;
 const CW = A4W - ML - MR;
 
+// Palette an das App-weite "Retro-Office"-Theme angeglichen (theme.css) — war
+// vorher Navy/Lila/Lavendel (siehe git-history), jetzt dieselbe gedeckte
+// Graubeige+Grün-Familie wie der Rest der App, für einen 1990er-Amtsbericht-
+// Look statt modernem Lila-Gradient. Namen (navy/purple/...) bewusst
+// beibehalten, um den Rest der Funktion unverändert zu lassen.
 const C = {
-  navy:   [4, 6, 71],
-  purple: [89, 68, 145],
-  purpleL:[174, 173, 210],
-  green:  [46, 204, 113],
-  blue:   [52, 152, 219],
-  red:    [231, 76, 60],
-  orange: [243, 156, 18],
-  bg:     [248, 249, 252],
-  border: [220, 218, 240],
+  navy:   [74, 72, 68],    // war Navy-Blau — jetzt --isy-pixel-border (dunkles Graubeige)
+  purple: [101, 98, 92],   // war Lila — jetzt --isy-pixel-border-hover (helleres Graubeige)
+  purpleL:[157, 152, 142], // war helles Lavendel — jetzt --isy-pixel-bevel-light (Beige-Grau)
+  green:  [33, 150, 83],   // nachgedunkeltes --isy-pixel-green
+  blue:   [52, 152, 219],  // unverändert (--isy-pixel-info)
+  red:    [231, 76, 60],   // unverändert (--isy-pixel-danger)
+  orange: [243, 156, 18],  // unverändert (--isy-pixel-warning)
+  bg:     [245, 242, 234], // war blasses Lavendel-Weiß — jetzt warmes Papier-Beige
+  border: [200, 194, 178], // war helles Lavendel — jetzt gedecktes Beige-Grau
   text:   [51, 51, 51],
-  muted:  [130, 130, 140],
+  muted:  [120, 117, 108], // war lila-stichiges Grau — jetzt neutrales Warmgrau
   white:  [255, 255, 255],
 };
 
@@ -196,13 +201,13 @@ function drawRainChart(doc, x, y, w, h, series, interval) {
   const barW   = w / series.length;
 
   // Background + border
-  doc.setFillColor(250, 250, 253);
+  doc.setFillColor(250, 248, 243);
   doc.setDrawColor(...C.border);
   doc.setLineWidth(0.2);
   doc.rect(x, y, w, chartH, 'FD');
 
   // Horizontal guide lines
-  doc.setDrawColor(230, 228, 245);
+  doc.setDrawColor(225, 220, 208);
   doc.setLineWidth(0.15);
   [0.25, 0.5, 0.75].forEach(f => {
     const gy = y + chartH * (1 - f);
@@ -270,7 +275,7 @@ function drawNetwork(doc, x, y, w, h) {
   const areaRes = props.areaResults;
 
   // Background
-  doc.setFillColor(240, 244, 248);
+  doc.setFillColor(244, 241, 234);
   doc.setDrawColor(...C.border);
   doc.setLineWidth(0.2);
   doc.rect(x, y, w, h, 'FD');
@@ -327,7 +332,7 @@ function drawNetwork(doc, x, y, w, h) {
     else                 fill = [252, 165, 165]; // red
 
     doc.setFillColor(...fill);
-    doc.setDrawColor(180, 180, 200);
+    doc.setDrawColor(180, 176, 164);
     doc.setLineWidth(0.15);
 
     // Draw polygon via lines (jsPDF has no polygon fill natively, use moveTo/lineTo)
@@ -423,7 +428,7 @@ function drawNetwork(doc, x, y, w, h) {
     } else if (type === 'tri') {
       doc.triangle(lx + 2, ly, lx + 0.5, ly + 3.5, lx + 3.5, ly + 3.5, 'F');
     } else {
-      doc.setDrawColor(180, 180, 200);
+      doc.setDrawColor(180, 176, 164);
       doc.setLineWidth(0.15);
       doc.rect(lx, ly + 0.5, 4, 3, 'FD');
     }
@@ -453,7 +458,7 @@ async function exportPDF() {
     const tableDefaults = (extra = {}) => ({
       styles:          { fontSize: 6.5, cellPadding: 1.5 },
       headStyles:      { fillColor: C.navy, textColor: C.white, fontSize: 7, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [248, 249, 255] },
+      alternateRowStyles: { fillColor: [244, 241, 233] },
       margin:          { left: ML, right: MR, top: 20, bottom: 12 },
       ...extra,
     });
@@ -733,18 +738,18 @@ async function exportPDF() {
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 0.75rem;
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 5px;
   cursor: pointer;
   font-size: 0.72rem;
   font-weight: 600;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   letter-spacing: 0.04em;
   transition: background 0.15s, opacity 0.15s;
 }
-.pdf-export-btn:hover:not(:disabled) { background: #594491; }
+.pdf-export-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
 .pdf-export-btn:disabled { opacity: 0.5; cursor: default; }
 .pdf-icon {
   width: 18px;

@@ -223,6 +223,26 @@ export function maskBuildingsAsNoData(baseRaster, header, buildings) {
     const getCellX = (c) => xll + c * cellsize;
     const getCellY = (r) => yll + r * cellsize;
 
+    // Flächenanteil-Test statt reinem Zentrum-Test: N×N gleichverteilte Stichproben pro
+    // Zelle (Sub-Zellen-Mittelpunkte), maskiert nur wenn ≥ COVERAGE_THRESHOLD davon im
+    // Polygon liegen. Deutlich weniger willkürlich an Gebäudekanten als "trifft das
+    // Zentrum?", bleibt aber bewusst ein binärer NoData-Entscheid (kein echtes Polygon-
+    // Clipping) — kein Solver-seitiger Eingriff nötig (s. Porosity-Recherche 2026-07-21:
+    // echte Sub-Zellen-Genauigkeit bräuchte den Porosity-Mechanismus, der aber das
+    // acceleration-Schema domänenweit abschaltet — hier bewusst nicht verfolgt).
+    const SUBSAMPLES = 3; // 3×3 = 9 Proben/Zelle
+    const COVERAGE_THRESHOLD = 0.5;
+    const sampleOffsets = Array.from({ length: SUBSAMPLES }, (_, i) => ((i + 0.5) / SUBSAMPLES - 0.5) * cellsize);
+    const cellCoverage = (cx, cy, polygon) => {
+        let hits = 0;
+        for (const dy of sampleOffsets) {
+            for (const dx of sampleOffsets) {
+                if (isPointInPolygon(cx + dx, cy + dy, polygon)) hits++;
+            }
+        }
+        return hits / (sampleOffsets.length * sampleOffsets.length);
+    };
+
     let totalMasked = 0;
 
     for (const mod of buildings) {
@@ -250,12 +270,12 @@ export function maskBuildingsAsNoData(baseRaster, header, buildings) {
 
         if (maxC < 0 || maxR < 0 || minC >= ncols || minR >= nrows) continue; // Gebäude außerhalb Grid
 
-        // ─ 2. BBox-Scan + Point-in-Polygon ──────────────────────────────
+        // ─ 2. BBox-Scan + Flächenanteil-Test ──────────────────────────────
         let cellsMasked = 0;
         for (let r = minR; r <= maxR; r++) {
             const cy = getCellY(r);
             for (let c = minC; c <= maxC; c++) {
-                if (isPointInPolygon(getCellX(c), cy, polygon)) {
+                if (cellCoverage(getCellX(c), cy, polygon) >= COVERAGE_THRESHOLD) {
                     // ─ 3. NoData injizieren (überschreibt auch bestehende Höhen) ─
                     newRaster[r * ncols + c] = -9999;
                     cellsMasked++;

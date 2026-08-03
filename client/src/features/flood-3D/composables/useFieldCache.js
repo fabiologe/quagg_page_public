@@ -74,6 +74,49 @@ export function planFields(vol, terrainZ) {
       }
     }
   }
+  // Tiefengemittelte Groessen und Froude-Zahl. Die Werte oben stammen aus
+  // der OBERSTEN Nasszelle (Oberflaechengeschwindigkeit) — fuer den
+  // Wasserbau zaehlt der Mittelwert ueber die Tiefe, und nur damit ist die
+  // Froude-Zahl definiert.
+  const hInt = new Float32Array(nx * ny)      // Wassertiefe aus dem Phasenanteil
+  const uxM = new Float32Array(nx * ny)
+  const uyM = new Float32Array(nx * ny)
+  const umagM = new Float32Array(nx * ny)
+  const froude = new Float32Array(nx * ny)
+  const dz = spacing[2]
+  const hMin = Math.max(2 * dz, 0.02)     // Mindesttiefe für eine Froude-Zahl
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const col = j * nx + i
+      let h = 0
+      let sx = 0
+      let sy = 0
+      for (let k = 0; k < nz; k++) {
+        const idx = (k * ny + j) * nx + i
+        const a = Math.min(Math.max(alpha[idx], 0), 1)
+        if (a <= 0) continue
+        h += a * dz
+        if (U) {
+          sx += a * dz * U[idx]
+          sy += a * dz * U[n + idx]
+        }
+      }
+      hInt[col] = h
+      if (h > 1e-6) {
+        uxM[col] = sx / h
+        uyM[col] = sy / h
+        umagM[col] = Math.hypot(uxM[col], uyM[col])
+        // Fr = v / sqrt(g h); Fr > 1 heisst schiessend.
+        // Am Benetzungsrand geht h gegen null und Fr gegen unendlich —
+        // solche Zellen bleiben ausgespart, sonst sprengt ein einzelner
+        // Millimeterfilm die Farbskala (gemessen: Fr = 2782).
+        froude[col] = h >= hMin ? umagM[col] / Math.sqrt(9.81 * h) : NaN
+      } else {
+        froude[col] = NaN
+      }
+    }
+  }
   const tau = vol.fields.bed_shear ? vol.fields.bed_shear.data : null
-  return { nx, ny, origin, spacing, surface, depth, ux, uy, umag, tau }
+  return { nx, ny, origin, spacing, surface, depth, ux, uy, umag, tau,
+    hInt, uxM, uyM, umagM, froude }
 }

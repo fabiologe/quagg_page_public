@@ -24,7 +24,11 @@
           <tbody>
             <tr v-for="t in entry.targets" :key="t.id">
               <td>
-                <div class="f3d-target-name">{{ KIND_LABELS[t.kind] ?? t.kind }}</div>
+                <div class="f3d-target-name">
+                  {{ KIND_LABELS[t.kind] ?? t.kind }}
+                  <KennwertHilfe v-if="HILFE[t.kind]" :groesse="HILFE[t.kind]"
+                                 :wert="t.value" />
+                </div>
                 <div class="f3d-muted f3d-small">{{ t.id }}</div>
               </td>
               <td>
@@ -67,8 +71,21 @@
 
 <script setup>
 import { ref, watchEffect } from 'vue'
+import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { KIND_LABELS, RESULT_LABELS, fmt, fmtPercent } from '../../utils/labels'
+
+// Nachweiskriterium -> erklärte Größe. Der Nutzer sieht hier eine
+// Bewertung, ohne die Größe dahinter zwangsläufig zu kennen.
+const HILFE = {
+  max_level: 'level',
+  discharge_ratio: 'discharge',
+  max_force: 'force',
+  min_bed_shear: 'bed_shear',
+  max_bed_shear: 'bed_shear',
+  overfall_cd: 'overfall_cd',
+  head_difference: 'energy_head',
+}
 
 const store = usePostStore()
 const entries = ref([])

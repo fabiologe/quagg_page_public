@@ -114,7 +114,7 @@ onUnmounted(() => { running = false; });
   position: relative;
   flex: 1;
   min-height: 0;
-  background: #040647;
+  background: var(--isy-pixel-bg, #040647);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -133,10 +133,10 @@ onUnmounted(() => { running = false; });
 
 /* ── Lines ── */
 .t-line {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   line-height: 1.7;
-  color: #00e855;
+  color: var(--isy-pixel-green-glow, #128040);
   white-space: pre-wrap;
   word-break: break-all;
   text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
@@ -145,13 +145,13 @@ onUnmounted(() => { running = false; });
 
 /* Command line: brighter */
 .t-line.cmd {
-  color: #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
   text-shadow: 0 0 12px rgba(0, 255, 101, 0.9);
 }
 
 /* [OK] status: slightly dimmer green */
 .t-line.ok {
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   text-shadow: 0 0 6px rgba(46, 204, 113, 0.5);
 }
 
@@ -170,15 +170,15 @@ onUnmounted(() => { running = false; });
 /* Progress dots */
 .t-line.dots {
   letter-spacing: 0.35em;
-  color: #00994d;
+  color: var(--isy-pixel-green-active, #00994d);
 }
 
 /* ── Cursor ── */
 .cursor {
   display: inline-block;
   animation: blink 0.85s step-start infinite;
-  color: #00ff65;
-  text-shadow: 0 0 10px #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
+  text-shadow: 0 0 10px var(--isy-pixel-green-bright, #18a34a);
 }
 
 @keyframes blink {

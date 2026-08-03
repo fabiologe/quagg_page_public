@@ -182,7 +182,7 @@ function formatDate(iso) {
 }
 
 .pm-modal {
-  background: #fff;
+  background: var(--isy-pixel-text, #fff);
   border-radius: 10px;
   width: 520px;
   max-height: 80vh;
@@ -197,18 +197,18 @@ function formatDate(iso) {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1.1rem;
-  border-bottom: 2px solid #594491;
-  background: #040647;
+  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
+  background: var(--isy-pixel-bg, #040647);
   flex-shrink: 0;
 }
 
 .pm-header h3 {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.55rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .close-btn {
@@ -216,10 +216,10 @@ function formatDate(iso) {
   border: none;
   font-size: 1.3rem;
   line-height: 1;
-  color: #8f8be1;
+  color: var(--isy-pixel-border-hover, #65625c);
   cursor: pointer;
 }
-.close-btn:hover { color: #fff; }
+.close-btn:hover { color: var(--isy-pixel-text, #fff); }
 
 /* Save bar */
 .pm-save-bar {
@@ -237,7 +237,7 @@ function formatDate(iso) {
   border-radius: 6px;
   font-size: 0.9rem;
 }
-.pm-name-input:focus { outline: none; border-color: #594491; box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
+.pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border, #4a4844); box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
 
 /* List */
 .pm-list-header {
@@ -254,8 +254,8 @@ function formatDate(iso) {
 }
 
 .pm-count {
-  background: #aeadd2;
-  color: #040647;
+  background: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-bg, #040647);
   font-size: 0.72rem;
   font-weight: 700;
   padding: 0.1rem 0.45rem;
@@ -278,7 +278,7 @@ function formatDate(iso) {
   gap: 1rem;
   transition: background 0.12s;
 }
-.pm-item:hover { background: #f3f2fb; }
+.pm-item:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
 
 .pm-item-info {
   display: flex;
@@ -290,7 +290,7 @@ function formatDate(iso) {
 .pm-item-name {
   font-size: 0.92rem;
   font-weight: 700;
-  color: #040647;
+  color: var(--isy-pixel-border, #4a4844);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -345,32 +345,35 @@ function formatDate(iso) {
 
 /* Buttons */
 .btn-primary {
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 6px;
   padding: 0.5rem 0.9rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
-.btn-primary:hover:not(:disabled) { background: #594491; }
+.btn-primary:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
 .btn-primary:disabled { opacity: 0.45; cursor: default; }
 
 .btn-load {
-  background: #f3f2fb;
-  color: #594491;
-  border: 1px solid #aeadd2;
+  background: var(--isy-pixel-content-bg, #f3f2fb);
+  color: var(--isy-pixel-border, #4a4844);
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 5px;
   padding: 0.35rem 0.7rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.46rem;
   cursor: pointer;
   transition: background 0.12s;
 }
-.btn-load:hover { background: #aeadd2; color: #040647; }
+.btn-load:hover { background: var(--isy-pixel-text-dim, #4a4a4a); color: var(--isy-pixel-bg, #040647); }
 
 .btn-delete {
   background: none;
@@ -378,7 +381,7 @@ function formatDate(iso) {
   color: #dc2626;
   border-radius: 5px;
   padding: 0.35rem 0.5rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.46rem;
   cursor: pointer;
   transition: background 0.12s;
@@ -387,15 +390,15 @@ function formatDate(iso) {
 
 .btn-cancel {
   background: none;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 5px;
   padding: 0.35rem 0.6rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.46rem;
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   cursor: pointer;
 }
-.btn-cancel:hover { background: #f3f2fb; }
+.btn-cancel:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
 
 /* Icons */
 .ic {
@@ -406,8 +409,6 @@ function formatDate(iso) {
     filter: invert(63%) sepia(36%) saturate(736%) hue-rotate(103deg) brightness(99%) contrast(96%);
     vertical-align: middle;
 }
-.btn-primary { display: flex; align-items: center; gap: 0.4rem; }
-
 /* Transition */
 .modal-fade-enter-active,
 .modal-fade-leave-active { transition: opacity 0.18s ease; }

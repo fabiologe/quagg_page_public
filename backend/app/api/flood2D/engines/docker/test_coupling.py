@@ -13,7 +13,7 @@ Prüft:
      -> der eigentliche Kopplungsnachweis (ohne Kopplung bliebe das Becken trocken).
 
 Aufruf:
-    python3 test_coupling.py [IMAGE]        # default: lisflood-fp:latest
+    python3 test_coupling.py [IMAGE]        # default: fabiologe/quagg-lisflood:latest
 Exit 0 = bestanden.
 """
 import json
@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 20, 20, 5.0        # 100 m x 100 m, Zelle 5 m
 GROUND = 10.0                          # flaches Gelaende (mNN)
 NODE_X, NODE_Y = 52.5, 52.5           # ~Mitte -> Zelle (10, 9 top-down)

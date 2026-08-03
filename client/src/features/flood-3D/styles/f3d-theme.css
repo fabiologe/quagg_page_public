@@ -295,6 +295,12 @@
   box-shadow: 0 0 12px rgba(77, 159, 255, 0.18);
 }
 .f3d-btn:active:not(:disabled) { transform: translateY(1px); }
+/* laufendes Zeichenwerkzeug — gleiche Farbe wie die Vorschau in der Szene */
+.f3d-btn.active {
+  border-color: #ffd24d;
+  background: rgba(255, 210, 77, 0.16);
+  color: #ffe9a8;
+}
 .f3d-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .f3d-btn-primary, .f3d-btn-run {

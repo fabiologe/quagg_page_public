@@ -2,11 +2,13 @@
   <section class="f3d-timeseries">
     <p v-if="loading" class="f3d-muted">Zeitreihen werden geladen …</p>
     <template v-else>
-      <UPlotChart v-for="chart in charts" :key="chart.id"
-                  :title="chart.title" :series="chart.series"
-                  :ylabel="chart.ylabel" :height="260"
-                  sync-key="f3d-zeit"
-                  @cursor-time="(t) => (store.currentTime = t)" />
+      <div v-for="chart in charts" :key="chart.id" class="f3d-zeitblock">
+        <UPlotChart :title="chart.title" :series="chart.series"
+                    :ylabel="chart.ylabel" :height="260"
+                    sync-key="f3d-zeit"
+                    @cursor-time="(t) => (store.currentTime = t)" />
+        <KennwertHilfe v-if="chart.hilfe" :groesse="chart.hilfe" />
+      </div>
       <p v-if="!charts.length" class="f3d-muted">
         Keine Zeitreihen für die ausgewählten Läufe.
       </p>
@@ -22,6 +24,7 @@
 // werden als gestrichelte Linien eingezeichnet.
 import { ref, watchEffect } from 'vue'
 import { usePostStore, LIMIT_COLOR } from '../../stores/usePostStore'
+import KennwertHilfe from './KennwertHilfe.vue'
 import UPlotChart from './UPlotChart.vue'
 
 const store = usePostStore()
@@ -29,12 +32,14 @@ const charts = ref([])
 const loading = ref(false)
 
 const GROUPS = [
-  { id: 'level', quantity: 'level', component: '', title: 'Wasserspiegellage je Pegelpunkt', ylabel: 'Wasserspiegel in m' },
-  { id: 'discharge', quantity: 'discharge', component: '', title: 'Durchfluss je Querschnitt', ylabel: 'Durchfluss in m³/s' },
-  { id: 'energy', quantity: 'energy_head', component: '', title: 'Energiehöhe je Querschnitt', ylabel: 'Energiehöhe in m' },
-  { id: 'cd', quantity: 'overfall_cd', component: '', title: 'Überfallbeiwert je Wehr', ylabel: 'C_d (–)' },
-  { id: 'force', quantity: 'force', component: 'magnitude', title: 'Kraftbetrag je Bauteil', ylabel: 'Kraft in kN', scale: 1e-3 },
-  { id: 'moment', quantity: 'moment', component: 'magnitude', title: 'Momentbetrag je Bauteil', ylabel: 'Moment in kN·m', scale: 1e-3 },
+  { id: 'level', quantity: 'level', component: '', title: 'Wasserspiegellage je Pegelpunkt', ylabel: 'Wasserspiegel in m', hilfe: 'level' },
+  { id: 'discharge', quantity: 'discharge', component: '', title: 'Durchfluss je Querschnitt', ylabel: 'Durchfluss in m³/s', hilfe: 'discharge' },
+  { id: 'energy', quantity: 'energy_head', component: '', title: 'Energiehöhe je Querschnitt', ylabel: 'Energiehöhe in m', hilfe: 'energy_head' },
+  { id: 'cd', quantity: 'overfall_cd', component: '', title: 'Überfallbeiwert je Wehr', ylabel: 'C_d (–)', hilfe: 'overfall_cd' },
+  { id: 'force', quantity: 'force', component: 'magnitude', title: 'Kraftbetrag je Bauteil', ylabel: 'Kraft in kN', scale: 1e-3, hilfe: 'force' },
+  { id: 'moment', quantity: 'moment', component: 'magnitude', title: 'Momentbetrag je Bauteil', ylabel: 'Moment in kN·m', scale: 1e-3, hilfe: 'moment' },
+  { id: 'tracer', quantity: 'tracer', component: '', title: 'Markierungsstoff am Ablauf', ylabel: 'Anteil (–)', hilfe: 'T' },
+  { id: 'shear', quantity: 'bed_shear', component: 'max', title: 'Schubspannung je Bauwerk (max.)', ylabel: 'τ in N/m²', hilfe: 'bed_shear' },
 ]
 
 function levelLimits(results) {
@@ -102,5 +107,8 @@ watchEffect(async () => {
 </script>
 
 <style scoped>
+.f3d-zeitblock { position: relative; }
+.f3d-zeitblock > .f3d-hilfe { position: absolute; top: 0.4rem; right: 0.6rem; }
+
 .f3d-timeseries { display: flex; flex-direction: column; gap: 14px; }
 </style>

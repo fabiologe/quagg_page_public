@@ -12,7 +12,7 @@ daraus plausible Zeitreihen dekodiert:
   4. coupling_budget(): [COUPLE]-Finalize-Zeilen → strukturiertes Budget.
 
 Aufruf:
-    python3 test_swmm_out_reader.py [IMAGE]     # default: lisflood-fp:latest
+    python3 test_swmm_out_reader.py [IMAGE]     # default: fabiologe/quagg-lisflood:latest
 Exit-Code 0 = bestanden.
 """
 import shutil
@@ -26,7 +26,7 @@ sys.path.insert(0, str(_HERE.parents[1]))   # …/flood2D — handler importiert
 from handler import coupling_budget, read_swmm_out  # noqa: E402
 from test_swmm_native import INP, SWMM_BIN  # noqa: E402
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 
 
 def check(cond, msg):

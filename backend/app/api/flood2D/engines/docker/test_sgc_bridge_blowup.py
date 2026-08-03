@@ -17,7 +17,7 @@ m³ innerhalb eines Zeitschritts), die ein reiner "ist res.max endlich"-Check
 nicht zuverlässig gefangen hätte.
 
 Aufruf (aus beliebigem Verzeichnis):
-    python3 test_sgc_bridge_blowup.py [IMAGE]      # default: lisflood-fp:latest
+    python3 test_sgc_bridge_blowup.py [IMAGE]      # default: fabiologe/quagg-lisflood:latest
 Exit-Code 0 = bestanden.
 """
 import json
@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 30, 12, 1.0
 CH_ROWS = (5, 6)
 BRIDGE_COL = 15

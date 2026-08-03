@@ -17,7 +17,7 @@ import { toSgcChannels } from '../services/geometry/networkToSgc.js';
 import { makeTerrainSampler } from '../services/geometry/terrainSample.js';
 import { SgcGenerator } from '../middleware/SgcGenerator.js';
 
-const IMAGE = process.argv[2] || 'lisflood-fp:coupling';
+const IMAGE = process.argv[2] || 'fabiologe/quagg-lisflood:latest';
 let fails = 0;
 const ok  = (c, m) => { if (c) console.log('  ✅ ' + m); else { console.error('  ❌ ' + m); fails++; } };
 

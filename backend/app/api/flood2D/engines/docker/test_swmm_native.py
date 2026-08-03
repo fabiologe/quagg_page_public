@@ -13,7 +13,7 @@ Der native Solver ist byte-gleich zum Browser-WASM (identische C-Quellen aus
 client/.../isybau/solver) — ein Abweichen hier = Build-/Flag-Problem, nicht Physik.
 
 Aufruf (aus beliebigem Verzeichnis):
-    python3 test_swmm_native.py [IMAGE]     # default: lisflood-fp:latest
+    python3 test_swmm_native.py [IMAGE]     # default: fabiologe/quagg-lisflood:latest
 Exit-Code 0 = bestanden.
 """
 import re
@@ -22,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 SWMM_BIN = "/opt/swmm/swmm5"   # Runtime-Stage; im swmm-build-Stage-Image: /swmm/swmm5
 
 INP = """\

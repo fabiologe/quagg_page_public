@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildCoupledInputs, selectCouplingNodes } from '../services/swmm/couplingExport.js';
 
-const IMAGE = process.argv[2] || 'lisflood-fp:coupling';
+const IMAGE = process.argv[2] || 'fabiologe/quagg-lisflood:latest';
 
 // ── kleines Kanalnetz: J1 (Schacht, Basiszufluss) -> C1 -> OUT (Auslauf) ─────────
 const NODE_X = 52.5, NODE_Y = 52.5, GROUND = 10.0;

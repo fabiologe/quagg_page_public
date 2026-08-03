@@ -364,6 +364,7 @@ const techTabs = [
 const activeTab = ref('general');
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 /* Reuse styles from previous step */
 .help-container {
@@ -371,41 +372,22 @@ const activeTab = ref('general');
   flex-direction: column;
   height: 100%;
   font-family: 'Inter', sans-serif;
-  color: #040647;
-  background: #fff;
+  color: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-text, #fff);
 }
 
 .modal-header {
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #040647;
+  background: var(--isy-pixel-bg, #040647);
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71; /* Red 500 */
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -432,11 +414,11 @@ const activeTab = ref('general');
 }
 
 .group-title {
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.42rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #8f8be1;
+    color: var(--isy-pixel-border-hover, #65625c);
     margin-bottom: 0.4rem;
     padding-left: 0.5rem;
 }
@@ -451,15 +433,15 @@ const activeTab = ref('general');
   border-left: 3px solid transparent;
   border-radius: 6px;
   cursor: pointer;
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   font-weight: 500;
   font-size: 0.9rem;
   transition: all 0.2s;
 }
 
 .tutorial-btn {
-  color: #00994d;
-  border-left-color: #00e855;
+  color: var(--isy-pixel-green-active, #00994d);
+  border-left-color: var(--isy-pixel-green-glow, #128040);
 }
 .tutorial-btn:hover {
   background: rgba(0, 232, 85, 0.08);
@@ -467,20 +449,20 @@ const activeTab = ref('general');
 }
 
 .tab-btn:hover {
-  background: #f3f2fb;
-  color: #040647;
+  background: var(--isy-pixel-content-bg, #f3f2fb);
+  color: var(--isy-pixel-green, #219653);
 }
 
 .tab-btn.active {
-  background: #f3f2fb;
-  color: #040647;
-  border-left-color: #2ecc71;
+  background: var(--isy-pixel-content-bg, #f3f2fb);
+  color: var(--isy-pixel-green, #219653);
+  border-left-color: var(--isy-pixel-green, #219653);
   font-weight: 700;
 }
 
 .tab-btn.tech-btn.active {
-    color: #040647;
-    border-left-color: #8f8be1;
+    color: var(--isy-pixel-green, #219653);
+    border-left-color: var(--isy-pixel-border-hover, #65625c);
 }
 
 .help-content {
@@ -494,7 +476,7 @@ const activeTab = ref('general');
 .content-section h4 {
   margin-top: 0;
   margin-bottom: 1.5rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: -0.02em;
   color: #1e293b;
@@ -505,7 +487,7 @@ const activeTab = ref('general');
 .content-section h5 {
   margin-top: 2rem;
   margin-bottom: 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   color: #475569;
 }
@@ -600,7 +582,7 @@ const activeTab = ref('general');
 }
 
 .info-card-title {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.44rem;
   color: #1e293b;
   margin-bottom: 0.5rem;

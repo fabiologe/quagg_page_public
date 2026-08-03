@@ -333,8 +333,8 @@ onUnmounted(() => {
   top: -25px;
   left: clamp(15px, 2.857vw, 40px);
   max-width: min(240px, 45vw);
-  background: #040647;
-  border: 1px solid #00e855;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-green-glow, #128040);
   border-radius: 4px;
   padding: 0.65rem 1.75rem 0.65rem 0.75rem;
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
@@ -350,7 +350,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 0.5rem solid transparent;
   border-right: 0.5rem solid transparent;
-  border-top: 0.5rem solid #00e855;
+  border-top: 0.5rem solid var(--isy-pixel-green-glow, #128040);
 }
 
 .speech-bubble::before {
@@ -362,15 +362,15 @@ onUnmounted(() => {
   height: 0;
   border-left: 0.4rem solid transparent;
   border-right: 0.4rem solid transparent;
-  border-top: 0.4rem solid #040647;
+  border-top: 0.4rem solid var(--isy-pixel-bg, #040647);
   z-index: 1;
 }
 
 .bubble-text {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
   line-height: 1.7;
-  color: #00e855;
+  color: var(--isy-pixel-green-glow, #128040);
   text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
   white-space: pre-wrap;
   word-break: break-word;
@@ -393,14 +393,14 @@ onUnmounted(() => {
   background: none;
   border: none;
   cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.42rem;
-  color: #00994d;
+  color: var(--isy-pixel-green-active, #00994d);
   padding: 0;
 }
 
 .bubble-close:hover {
-  color: #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
 }
 
 /* ── Tour buttons ── */
@@ -415,18 +415,18 @@ onUnmounted(() => {
   border: none;
   cursor: pointer;
   padding: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.44rem;
-  color: #00ff65;
+  color: var(--isy-pixel-green-bright, #18a34a);
   text-shadow: 0 0 8px rgba(0, 255, 101, 0.7);
 }
 
 .bubble-btn:hover {
-  color: #fff;
+  color: var(--isy-pixel-text, #fff);
 }
 
 .bubble-btn-dim {
-  color: #00994d;
+  color: var(--isy-pixel-green-active, #00994d);
   text-shadow: none;
 }
 
@@ -436,7 +436,7 @@ onUnmounted(() => {
 }
 
 .bubble-btn-info:hover {
-  color: #fff;
+  color: var(--isy-pixel-text, #fff);
 }
 
 /* Lernkarte schwebt über Bubble + Ratte, rechtsbündig am Container.

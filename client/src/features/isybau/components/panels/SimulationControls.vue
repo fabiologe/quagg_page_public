@@ -25,11 +25,11 @@
     <!-- Compact Stats -->
     <div class="control-box stats-compact">
          <div class="stats-row">
-            <span><strong>{{ store.nodes.size }}</strong> Knoten</span>
+            <span class="stat-item"><strong>{{ store.nodes.size }}</strong><span class="stat-label">Knoten</span></span>
             <span class="divider">•</span>
-            <span><strong>{{ store.edges.size }}</strong> Haltungen</span>
+            <span class="stat-item"><strong>{{ store.edges.size }}</strong><span class="stat-label">Haltungen</span></span>
             <span class="divider">•</span>
-            <span><strong>{{ store.areas.length }}</strong> Flächen</span>
+            <span class="stat-item"><strong>{{ store.areas.length }}</strong><span class="stat-label">Flächen</span></span>
          </div>
     </div>
 
@@ -238,88 +238,99 @@ const downloadResults = () => {
   background: white;
   padding: 1rem;
   border-radius: 8px;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
 }
 .control-box h3 {
     margin-top: 0;
     margin-bottom: 0.75rem;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.5rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #040647;
-    border-bottom: 2px solid #aeadd2;
+    color: var(--isy-pixel-border, #4a4844);
+    border-bottom: 2px solid var(--isy-pixel-text-dim, #4a4a4a);
     padding-bottom: 0.5rem;
+}
+
+.control-group + .control-group {
+    margin-top: 1.1rem;
 }
 
 .control-group > label {
     display: block;
     margin-bottom: 0.4rem;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
     letter-spacing: 0.05em;
-    color: #594491;
+    color: var(--isy-pixel-border, #4a4844);
 }
 
 /* Compact Stats */
 .stats-compact {
     padding: 0.6rem 1rem;
     text-align: center;
-    background: #040647;
+    background: var(--isy-pixel-bg, #040647);
 }
 .stats-row {
     display: flex;
     justify-content: center;
-    gap: 0.5rem;
-    font-family: 'Press Start 2P', monospace;
+    gap: 0.8rem;
+    font-family: var(--isy-pixel-font);
     font-size: 0.42rem;
-    color: #aeadd2;
+    color: var(--isy-pixel-text-dim, #4a4a4a);
     align-items: center;
 }
-.stats-row strong {
-    color: #fff;
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+}
+.stat-item strong {
+    color: var(--isy-pixel-text, #fff);
+    font-size: 0.58rem;
 }
 .divider {
-    color: #594491;
+    color: var(--isy-pixel-border, #4a4844);
 }
 
 
 /* Meta Info */
 .meta-item { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
 .meta-row { display: flex; justify-content: space-between; gap: 0.5rem; }
-.label { font-size: 0.75rem; color: #594491; font-weight: 700; }
-.value { font-size: 0.88rem; color: #040647; overflow: hidden; text-overflow: ellipsis; }
+.label { font-size: 0.75rem; color: var(--isy-pixel-border, #4a4844); font-weight: 700; }
+.value { font-size: 0.88rem; color: var(--isy-pixel-border, #4a4844); overflow: hidden; text-overflow: ellipsis; }
 
 /* Buttons & Inputs */
 .primary-btn {
   width: 100%;
   padding: 0.75rem;
-  background: #040647;
-  color: white;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-green, #219653);
   border: none;
   border-radius: 6px;
   cursor: pointer;
   margin-top: 0.5rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.54rem;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: #594491; }
-.primary-btn:disabled { background: #aeadd2; cursor: default; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: default; }
 .secondary-btn {
     flex: 1;
     padding: 0.5rem;
-    background: #fff;
-    border: 1px solid #aeadd2;
+    background: transparent;
+    border: 1px solid var(--isy-pixel-border, #4a4844);
     border-radius: 6px;
     cursor: pointer;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.46rem;
     text-align: center;
-    color: #040647;
+    color: var(--isy-pixel-text-dim, #4a4a4a);
     transition: background 0.12s, border-color 0.12s;
 }
-.secondary-btn:hover { background: #aeadd2; border-color: #8f8be1; }
+.secondary-btn:hover { background: var(--isy-pixel-text-dim, #4a4a4a); border-color: var(--isy-pixel-border-hover, #65625c); }
 
 .error-msg { color: #b91c1c; margin-top: 0.5rem; font-size: 0.82rem; }
 .error-link {
@@ -329,7 +340,7 @@ const downloadResults = () => {
     border: none;
     padding: 0;
     color: #b91c1c;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
     line-height: 1.6;
     text-decoration: underline;
@@ -352,20 +363,20 @@ const downloadResults = () => {
     border: none;
     padding: 0;
     color: #92590a;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.42rem;
     line-height: 1.6;
     text-decoration: underline;
     cursor: pointer;
 }
 .warning-link:hover { color: #6b4107; }
-.success-msg { color: #594491; margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
-.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid #aeadd2; border-radius: 6px; box-sizing: border-box; color: #040647; }
-.input-with-action input:focus { outline: none; border-color: #594491; }
+.success-msg { color: var(--isy-pixel-border, #4a4844); margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
+.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid var(--isy-pixel-text-dim, #4a4a4a); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border, #4a4844); }
+.input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border, #4a4844); }
 .button-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
 .secondary-btn.full { margin-top: 0.4rem; width: 100%; }
 
-/* Pixel art icons — gefärbt wie das Raster (#2ecc71) */
+/* Pixel art icons — gefärbt wie das Raster (var(--isy-pixel-green, #219653)) */
 .ic {
     width: 16px;
     height: 16px;
@@ -386,12 +397,12 @@ const downloadResults = () => {
 }
 .rain-status {
     font-size: 0.78rem;
-    color: #594491;
+    color: var(--isy-pixel-border, #4a4844);
     margin-bottom: 0.5rem;
     padding: 0.35rem 0.5rem;
-    background: #f3f2fb;
+    background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
     border-radius: 6px;
-    border-left: 3px solid #8f8be1;
+    border-left: 3px solid var(--isy-pixel-border-hover, #65625c);
 }
 
 .rain-info-empty {
@@ -404,18 +415,18 @@ const downloadResults = () => {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border-top: 2px solid #aeadd2;
+    border-top: 2px solid var(--isy-pixel-text-dim, #4a4a4a);
     padding-top: 1rem;
 }
 .action-btn {
     width: 100%;
     padding: 0.65rem 0.75rem;
-    background: #594491;
+    background: var(--isy-pixel-border, #4a4844);
     color: white;
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.46rem;
     text-align: left;
     display: flex;
@@ -423,12 +434,12 @@ const downloadResults = () => {
     gap: 0.5rem;
     transition: background 0.15s;
 }
-.action-btn:hover { background: #040647; }
+.action-btn:hover { background: var(--isy-pixel-bg, #040647); }
 
 .progress-bar-container {
     width: 100%;
     height: 5px;
-    background: #aeadd2;
+    background: var(--isy-pixel-text-dim, #4a4a4a);
     margin-top: 4px;
     border-radius: 3px;
     overflow: hidden;
@@ -437,10 +448,10 @@ const downloadResults = () => {
     height: 100%;
     background: repeating-linear-gradient(
         45deg,
-        #594491,
-        #594491 10px,
-        #8f8be1 10px,
-        #8f8be1 20px
+        var(--isy-pixel-border, #4a4844),
+        var(--isy-pixel-border, #4a4844) 10px,
+        var(--isy-pixel-border-hover, #65625c) 10px,
+        var(--isy-pixel-border-hover, #65625c) 20px
     );
     width: 100%;
     animation: progress-slide 1s linear infinite;

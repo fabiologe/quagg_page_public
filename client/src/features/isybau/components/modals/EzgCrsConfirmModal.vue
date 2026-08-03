@@ -67,6 +67,7 @@ const close = () => emit('close');
 const confirm = () => emit('confirm', selectedCRS.value);
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 .modal-overlay {
   position: fixed;
@@ -94,34 +95,15 @@ const confirm = () => emit('confirm', selectedCRS.value);
 
 .modal-header {
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1;
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -129,69 +111,42 @@ const confirm = () => emit('confirm', selectedCRS.value);
 }
 
 .description {
-  color: #594491;
+  color: var(--isy-pixel-border, #4a4844);
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
 
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #040647;
-}
-
-.form-group select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #aeadd2;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
 .guess-hint {
   font-size: 0.85rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   margin: 0;
 }
 
-.modal-footer {
-  padding: 1rem;
-  border-top: 1px solid #aeadd2;
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-}
-
 .primary-btn {
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover { background: #594491; }
+.primary-btn:hover { background: var(--isy-pixel-border, #4a4844); }
 
 .secondary-btn {
-  background: #fff;
-  border: 1px solid #aeadd2;
-  color: #040647;
+  background: transparent;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: #f3f2fb; }
+.secondary-btn:hover { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); }
 </style>

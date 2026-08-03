@@ -1,6 +1,12 @@
 <template>
   <section class="f3d-card f3d-meshpreview">
     <header class="f3d-card-head"><h3>Netz- und Kostenvorschau</h3></header>
+    <p v-if="store.meshPreviewStale && !store.meshPreviewLoading"
+       class="f3d-stale">
+      ⚠ Das Vorschaunetz gehört zu einem älteren Stand des Falls (gedreht,
+      zugeschnitten oder Bauwerk geändert). Die Zahlen unten und die
+      Netzansicht im Editor zeigen den ALTEN Zustand — Vorschau neu ausführen.
+    </p>
     <p v-if="store.meshPreviewLoading" class="f3d-muted">
       blockMesh + snappyHexMesh + checkMesh laufen im Container …
     </p>
@@ -53,6 +59,14 @@ const fmt = (v) => fmtNum(v)
 </script>
 
 <style scoped>
+.f3d-stale {
+  margin: 0 0 6px;
+  color: #e8b24a;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  border-left: 3px solid #c98500;
+  padding: 4px 8px;
+}
 .f3d-stats { display: flex; flex-direction: column; gap: 5px; margin: 0; }
 .f3d-stat { display: flex; justify-content: space-between; gap: 12px; }
 .f3d-stat dt { color: var(--f3d-text-2); font-size: 0.78rem; }

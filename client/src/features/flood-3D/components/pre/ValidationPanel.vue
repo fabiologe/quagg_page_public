@@ -5,7 +5,13 @@
       <span class="f3d-muted f3d-small" v-if="!store.validation.length">
         keine Befunde
       </span>
+      <button v-else class="f3d-btn f3d-btn-s" :disabled="store.loading"
+              title="Randbedingung auf die Fläche legen, an der ihr Bauwerk endet · Rohrachse bis dorthin führen · Verfeinerungsquader ins Gebiet beschneiden"
+              @click="anschluss">⚯ Anschlüsse herstellen</button>
     </header>
+    <p v-if="meldungen.length" class="f3d-muted f3d-small f3d-anschluss">
+      {{ meldungen.join(' · ') }}
+    </p>
     <button v-for="(f, i) in store.validation" :key="i"
             class="f3d-finding" :class="`sev-${f.severity}`"
             @click="jump(f)">
@@ -21,9 +27,20 @@
 <script setup>
 // Validierungspanel (Spez. Kap. 6.1): Meldungen nach Schweregrad, jede mit
 // Sprung zum betroffenen Objekt.
+import { ref } from 'vue'
 import { usePreStore, KIND_PATHS } from '../../stores/usePreStore'
 
 const store = usePreStore()
+const meldungen = ref([])
+
+// Nach Drehung oder Zuschnitt zeigt die Randbedingung auf die falsche
+// Gebietsfläche und die Rohrachse endet im Nirgendwo — beides folgt
+// zwingend aus der Geometrie und wird hier in einem Zug gerichtet.
+async function anschluss() {
+  const m = await store.anschlussHerstellen()
+  meldungen.value = m.length ? m : ['Anschlüsse waren bereits stimmig']
+  setTimeout(() => { meldungen.value = [] }, 15000)
+}
 
 const icon = (s) => ({ fehler: '✗', warnung: '⚠', hinweis: 'ℹ' }[s] ?? '·')
 
@@ -40,6 +57,12 @@ function jump(finding) {
 
 <style scoped>
 .f3d-validation { display: flex; flex-direction: column; gap: 6px; }
+.f3d-anschluss {
+  margin: 0;
+  border-left: 3px solid var(--f3d-accent);
+  padding: 4px 8px;
+  line-height: 1.35;
+}
 .f3d-finding {
   display: flex;
   flex-direction: column;

@@ -15,7 +15,7 @@ Teil A — Worker-Handler direkt (python3 -c im Container): Input-JSON via stdin
 Teil B — Entrypoint mit --test_input: beweist, dass das runpod-SDK den
   Generator-Handler faehrt (Smoke: Exit 0, kein Traceback, 'Job result').
 
-Aufruf:  python3 test_runpod_e2e.py [IMAGE]    # default lisflood-fp:runpod
+Aufruf:  python3 test_runpod_e2e.py [IMAGE]    # default fabiologe/quagg-lisflood:runpod
 Exit 0 = bestanden.
 """
 import base64
@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))  # codec (backend/app/api/flood2D)
 from codec import decode_frame  # noqa: E402
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:runpod"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:runpod"
 NCOLS, NROWS, CS = 12, 10, 5.0
 GROUND, DIP_Z, H0 = 10.0, 9.5, 0.3
 FAILURES = []

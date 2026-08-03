@@ -75,6 +75,7 @@ const copyToClipboard = async (text) => {
 };
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 .modal-overlay {
   position: fixed;
@@ -102,36 +103,17 @@ const copyToClipboard = async (text) => {
 }
 
 .modal-header {
-  background: #040647;
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  background: var(--isy-pixel-bg, #040647);
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71; /* Red 500 */
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -146,23 +128,8 @@ const copyToClipboard = async (text) => {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
-  border-bottom: 1px solid #aeadd2;
+  border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
 }
-
-.tab-btn {
-  font-family: "Press Start 2P", monospace;
-  font-size: 0.5rem;
-  letter-spacing: 0.06em;
-  background: transparent;
-  border: 1px solid #594491;
-  color: #aeadd2;
-  border-radius: 5px;
-  padding: 0.45rem 0.75rem;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.tab-btn:hover { background: #594491; color: #fff; }
-.tab-btn.active { background: #594491; color: #fff; border-color: #8f8be1; }
 
 .tab-content {
   flex: 1;
@@ -180,25 +147,25 @@ const copyToClipboard = async (text) => {
 
 .copy-btn {
     padding: 0.35rem 0.5rem;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
-    color: #594491;
+    color: var(--isy-pixel-border, #4a4844);
     cursor: pointer;
-    background: #f3f2fb;
-    border: 1px solid #aeadd2;
+    background: var(--isy-pixel-content-bg, #f3f2fb);
+    border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
     border-radius: 3px;
 }
 
 .code-view {
   flex: 1;
-  background: #f3f2fb;
+  background: var(--isy-pixel-content-bg, #f3f2fb);
   padding: 1rem;
   border-radius: 4px;
   overflow: auto;
   font-family: monospace;
   font-size: 0.85rem;
   white-space: pre-wrap;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   margin: 0;
 }
 

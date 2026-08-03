@@ -7,7 +7,11 @@
         <p v-if="entry.error" class="f3d-error">{{ entry.error }}</p>
         <dl v-else class="f3d-stats">
           <div v-for="stat in entry.stats" :key="stat.label" class="f3d-stat">
-            <dt>{{ stat.label }}</dt>
+            <dt>
+              {{ stat.label }}
+              <KennwertHilfe v-if="stat.hilfe" :groesse="stat.hilfe"
+                             :wert="stat.roh" />
+            </dt>
             <dd :class="stat.cls">{{ stat.value }}</dd>
           </div>
         </dl>
@@ -29,6 +33,7 @@
 import { ref, watchEffect } from 'vue'
 import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
+import KennwertHilfe from './KennwertHilfe.vue'
 import UPlotChart from './UPlotChart.vue'
 
 const store = usePostStore()
@@ -41,15 +46,19 @@ function stats(quality) {
   return [
     {
       label: 'Massenbilanzfehler (rel., max.)',
+      hilfe: 'massenbilanz', roh: mb,
       value: mb != null ? fmt(mb) : '–',
       cls: mb != null && mb > 0.01 ? 'bad' : 'good',
     },
-    { label: 'Residuum p_rgh', value: res != null ? fmt(res) : '–', cls: '' },
-    { label: 'Courant-Zahl (Mittel)', value: fmt(quality.courant_mean), cls: '' },
+    { label: 'Residuum p_rgh', value: res != null ? fmt(res) : '–', cls: '',
+      hilfe: 'residual', roh: res },
+    { label: 'Courant-Zahl (Mittel)', value: fmt(quality.courant_mean), cls: '',
+      hilfe: 'courant', roh: quality.courant_mean },
     {
       label: 'Courant-Zahl (max.)',
       value: fmt(quality.courant_max),
       cls: quality.courant_max > 1 ? 'bad' : '',
+      hilfe: 'courant', roh: quality.courant_max,
     },
     {
       label: 'checkMesh',
@@ -59,6 +68,7 @@ function stats(quality) {
     {
       // Gültigkeit der (rauen) Wandfunktionen: y+ sollte grob 30…300 liegen
       label: 'y⁺ (min … max)',
+      hilfe: 'y_plus', roh: quality.y_plus_range?.[1],
       value: quality.y_plus_range
         ? `${fmt(quality.y_plus_range[0])} … ${fmt(quality.y_plus_range[1])}`
         : '–',

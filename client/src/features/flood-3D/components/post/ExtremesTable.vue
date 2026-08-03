@@ -20,6 +20,8 @@
               <td>{{ QUANTITY_LABELS[e.quantity] ?? e.quantity }}
                 <span v-if="e.component && e.component !== 'magnitude'"
                       class="f3d-muted"> ({{ e.component }})</span>
+                <KennwertHilfe v-if="hilfe(e)" :groesse="hilfe(e)"
+                               :wert="e.value" />
               </td>
               <td>{{ STAT_LABELS[e.stat] ?? e.stat ?? '–' }}</td>
               <td class="f3d-num">{{ fmt(e.value, e.unit) }}</td>
@@ -38,6 +40,13 @@
 import { ref, watchEffect } from 'vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { QUANTITY_LABELS, STAT_LABELS, fmt } from '../../utils/labels'
+import { KENNWERTE } from '../../utils/kennwerte'
+import KennwertHilfe from './KennwertHilfe.vue'
+
+// Erklärung zur Größe der Zeile, wenn es eine gibt
+function hilfe(e) {
+  return KENNWERTE[e.quantity] ? e.quantity : null
+}
 
 const store = usePostStore()
 const entries = ref([])

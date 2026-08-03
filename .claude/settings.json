@@ -204,7 +204,19 @@
       "Bash(curl -s -o /dev/null -w \"Installer .bat: HTTP %{http_code}\\\\n\" https://quagg-engineering.org/downloads/install-quagg-companion.bat)",
       "Bash(curl -s -o /dev/null -w \"Installer .sh: HTTP %{http_code}\\\\n\" https://quagg-engineering.org/downloads/install-quagg-companion.sh)",
       "Bash(node /tmp/claude-0/-home-fabio-quagg-page/33b76351-88b2-45f6-bc96-b520ef14a06c/scratchpad/sfc.mjs src/features/flood-2D/views/ResultViewerMain.vue src/features/flood-2D/components/Flood2DSolverRunner.vue)",
-      "Bash(node src/features/flood-2D/test/test_result_bridge_lazy.mjs)"
+      "Bash(node src/features/flood-2D/test/test_result_bridge_lazy.mjs)",
+      "Bash(curl -s -X POST http://127.0.0.1:8001/FastAPI/flood3d/cases/bohrprobe/anschluss)",
+      "Bash(time curl -s -X POST --max-time 1200 http://127.0.0.1:8001/FastAPI/flood3d/cases/bohrprobe/mesh-preview)",
+      "Bash(curl -s http://127.0.0.1:8001/FastAPI/flood3d/cases/bohrprobe/validate)",
+      "Bash(curl -s -X POST --max-time 1200 http://127.0.0.1:8001/FastAPI/flood3d/cases/bohrprobe/mesh-preview)",
+      "Bash(curl -s http://127.0.0.1:8001/FastAPI/flood3d/cases/Rentrisch_3D/validate)",
+      "Bash(time curl -s -X POST --max-time 1500 http://127.0.0.1:8001/FastAPI/flood3d/cases/Rentrisch_3D/mesh-preview)",
+      "Bash(curl -s http://127.0.0.1:8001/FastAPI/flood3d/cases/Rentrisch_3D/mesh-preview)",
+      "Bash(curl -s http://127.0.0.1:8001/FastAPI/flood3d/cases/Rentrisch_3D/terrain-solid)",
+      "Bash(curl -s http://127.0.0.1:8001/FastAPI/flood3d/cases/koerperprobe/validate)",
+      "Bash(time curl -s -X POST --max-time 1500 http://127.0.0.1:8001/FastAPI/flood3d/cases/koerperprobe/mesh-preview)",
+      "Bash(sed -n '/def _op_boeschung/,/def _op_pad/p' core/terrain.py)",
+      "Bash(sed -n '/def tin_from_lines/,/^def /p' core/importer.py)"
     ],
     "additionalDirectories": [
       "/home/fabio/quagg_page/backend/data/flood2d_jobs/pod-bf3b5648d68a/inputs",

@@ -108,20 +108,19 @@ const terrainToggleTitle = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  background: rgba(6, 9, 58, 0.85);
-  border: 1px solid #2ecc71;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-green, #219653);
   border-radius: 8px;
   padding: 0.6rem;
-  backdrop-filter: blur(6px);
   z-index: 10;
   min-width: 130px;
 }
 
 .ctrl-btn {
   background: transparent;
-  border: 1px solid #594491;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 4px;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
   font-size: 1.2rem;
   width: 32px;
   height: 32px;
@@ -132,7 +131,7 @@ const terrainToggleTitle = computed(() => {
   align-self: flex-start;
   transition: background 0.15s;
 }
-.ctrl-btn:hover { background: #594491; }
+.ctrl-btn:hover { background: var(--isy-pixel-border, #4a4844); }
 
 .ctrl-divider {
   height: 1px;
@@ -146,19 +145,19 @@ const terrainToggleTitle = computed(() => {
   gap: 0.5rem;
   cursor: pointer;
   font-size: 0.75rem;
-  color: #a0aec0;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 .ctrl-toggle input { display: none; }
 .toggle-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: #374151;
-  border: 1px solid #594491;
+  background: var(--isy-pixel-bg-alt, #0a0d5c);
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   flex-shrink: 0;
   transition: background 0.15s;
 }
-.ctrl-toggle input:checked + .toggle-dot { background: #2ecc71; }
-.ctrl-toggle:hover .toggle-label { color: #fff; }
+.ctrl-toggle input:checked + .toggle-dot { background: var(--isy-pixel-green, #219653); }
+.ctrl-toggle:hover .toggle-label { color: var(--isy-pixel-text, #fff); }
 
 .ctrl-zscale {
   display: flex;
@@ -167,23 +166,23 @@ const terrainToggleTitle = computed(() => {
 }
 .zscale-label {
   font-size: 0.7rem;
-  color: #a0aec0;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   font-family: monospace;
 }
 .ctrl-zscale input[type=range] {
   width: 100%;
-  accent-color: #2ecc71;
+  accent-color: var(--isy-pixel-green, #219653);
   cursor: pointer;
 }
 
-.result-toggle .toggle-label { color: #f1c40f; }
-.result-dot { border-color: #f1c40f !important; }
-.ctrl-toggle input:checked + .result-dot { background: #f1c40f !important; }
+.result-toggle .toggle-label { color: var(--isy-pixel-warning-alt, #f1c40f); }
+.result-dot { border-color: var(--isy-pixel-warning-alt, #f1c40f) !important; }
+.ctrl-toggle input:checked + .result-dot { background: var(--isy-pixel-warning-alt, #f1c40f) !important; }
 
 .water-toggle { padding-left: 0.6rem; }
-.water-toggle .toggle-label { color: #3498db; font-size: 0.7rem; }
-.water-dot { border-color: #3498db !important; }
-.ctrl-toggle input:checked + .water-dot { background: #3498db !important; }
+.water-toggle .toggle-label { color: var(--isy-pixel-info, #3498db); font-size: 0.7rem; }
+.water-dot { border-color: var(--isy-pixel-info, #3498db) !important; }
+.ctrl-toggle input:checked + .water-dot { background: var(--isy-pixel-info, #3498db) !important; }
 
 .result-legend {
   margin-top: 0.2rem;
@@ -194,15 +193,15 @@ const terrainToggleTitle = computed(() => {
 }
 .legend-title {
   font-size: 0.44rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.4rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
 }
 .legend-sep {
   font-size: 0.6rem;
-  color: #4a5568;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   margin: 0.3rem 0 0.2rem;
   border-top: 1px solid rgba(255,255,255,0.06);
   padding-top: 0.25rem;
@@ -212,7 +211,7 @@ const terrainToggleTitle = computed(() => {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.66rem;
-  color: #a0aec0;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   padding: 0.1rem 0;
 }
 .dot {

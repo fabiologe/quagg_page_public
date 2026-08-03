@@ -239,39 +239,21 @@ const apply = () => {
 };
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 /* Cleaned up styles */
 .modal-header {
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   cursor: move;
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71; /* Red 500 */
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -311,14 +293,14 @@ const apply = () => {
 
 .table-wrapper h4 {
   margin: 0 0 0.5rem 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
-  color: #8f8be1;
+  color: var(--isy-pixel-border-hover, #65625c);
 }
 
 .table-scroll {
   overflow: auto;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 4px;
 }
 
@@ -330,13 +312,13 @@ const apply = () => {
 
 .kostra-table th, .kostra-table td {
   padding: 0.3rem 0.5rem;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   text-align: right;
   white-space: nowrap;
 }
 
 .kostra-table th {
-  background: #f3f2fb;
+  background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
   font-weight: 600;
   text-align: center;
   position: sticky;
@@ -349,39 +331,32 @@ const apply = () => {
 }
 
 .clickable-col:hover, .clickable-cell:hover {
-  background-color: #f3f2fb;
+  background-color: var(--isy-pixel-content-bg, #f3f2fb);
 }
 
 .active-col {
-  background-color: #f3f2fb !important;
-  border-left: 3px solid #594491;
-  border-right: 3px solid #594491;
+  background-color: var(--isy-pixel-content-bg, #f3f2fb) !important;
+  border-left: 3px solid var(--isy-pixel-border, #4a4844);
+  border-right: 3px solid var(--isy-pixel-border, #4a4844);
 }
 
 .kostra-table th.active-col {
-  border-top: 2px solid #594491;
-  color: #594491;
+  border-top: 2px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border, #4a4844);
 }
 
 .kostra-table tr:last-child td.active-col {
-  border-bottom: 2px solid #594491;
+  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
 }
 
 .form-group {
   margin-bottom: 1.5rem;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #040647;
-}
-
 .form-group input, .form-group select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #aeadd2;
+  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 4px;
 }
 
@@ -398,49 +373,42 @@ const apply = () => {
 
 .hint {
   font-size: 0.8rem;
-  color: #e74c3c;
+  color: var(--isy-pixel-danger, #e74c3c);
 }
 
-.modal-footer {
-  padding: 1rem;
-  border-top: 1px solid #aeadd2;
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-}
 
 .primary-btn {
-  background: #040647;
-  color: #fff;
+  background: var(--isy-pixel-bg, #040647);
+  color: var(--isy-pixel-text, #fff);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: #594491; }
-.primary-btn:disabled { background: #aeadd2; cursor: default; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: default; }
 
 .secondary-btn {
-  background: #fff;
-  border: 1px solid #aeadd2;
-  color: #040647;
+  background: transparent;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: #f3f2fb; }
+.secondary-btn:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
 
 /* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: #2ecc71;
+  accent-color: var(--isy-pixel-green, #219653);
 }
 </style>

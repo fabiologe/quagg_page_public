@@ -19,10 +19,10 @@
         title="Schacht hinzufügen"
       >
         <svg viewBox="0 0 24 24" fill="none" class="icon-svg" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="9" stroke="#2ecc71" stroke-width="2" fill="#2ecc71" fill-opacity="0.15"/>
-            <circle cx="12" cy="12" r="3" stroke="#2ecc71" stroke-width="2"/>
-            <path d="M12 3V21" stroke="#2ecc71" stroke-width="1.5"/>
-            <path d="M3 12H21" stroke="#2ecc71" stroke-width="1.5"/>
+            <circle cx="12" cy="12" r="9" stroke="var(--isy-pixel-green, #219653)" stroke-width="2" fill="var(--isy-pixel-green, #219653)" fill-opacity="0.15"/>
+            <circle cx="12" cy="12" r="3" stroke="var(--isy-pixel-green, #219653)" stroke-width="2"/>
+            <path d="M12 3V21" stroke="var(--isy-pixel-green, #219653)" stroke-width="1.5"/>
+            <path d="M3 12H21" stroke="var(--isy-pixel-green, #219653)" stroke-width="1.5"/>
         </svg>
       </button>
        <button 
@@ -32,10 +32,10 @@
         title="Haltung zeichnen"
       >
         <svg viewBox="0 0 24 24" fill="none" class="icon-svg" xmlns="http://www.w3.org/2000/svg">
-            <rect x="6" y="8" width="12" height="15" fill="#2ecc71" fill-opacity="0.2" stroke="#2ecc71" stroke-width="1.5"/>
-            <rect x="7" y="8" width="2" height="15" fill="#2ecc71" fill-opacity="0.35" stroke="none"/>
-            <rect x="4" y="3" width="16" height="5" fill="#2ecc71" fill-opacity="0.2" stroke="#2ecc71" stroke-width="1.5"/>
-            <rect x="5" y="3.5" width="2" height="4" fill="#2ecc71" fill-opacity="0.35" stroke="none"/>
+            <rect x="6" y="8" width="12" height="15" fill="var(--isy-pixel-green, #219653)" fill-opacity="0.2" stroke="var(--isy-pixel-green, #219653)" stroke-width="1.5"/>
+            <rect x="7" y="8" width="2" height="15" fill="var(--isy-pixel-green, #219653)" fill-opacity="0.35" stroke="none"/>
+            <rect x="4" y="3" width="16" height="5" fill="var(--isy-pixel-green, #219653)" fill-opacity="0.2" stroke="var(--isy-pixel-green, #219653)" stroke-width="1.5"/>
+            <rect x="5" y="3.5" width="2" height="4" fill="var(--isy-pixel-green, #219653)" fill-opacity="0.35" stroke="none"/>
         </svg>
       </button>
        <button 
@@ -44,10 +44,10 @@
         @click="setMode('addArea')"
         title="Fläche zeichnen"
       >
-        <span style="font-weight: 900; font-family: 'Press Start 2P', monospace; font-size: 0.6rem; color: #2ecc71;">m²</span>
+        <span style="font-weight: 900; font-family: 'Press Start 2P', monospace; font-size: 0.6rem; color: var(--isy-pixel-green, #219653);">m²</span>
       </button>
 
-      <div class="separator-v" style="margin: 0 4px; border-left: 1px solid #594491;"></div>
+      <div class="separator-v" style="margin: 0 4px; border-left: 1px solid var(--isy-pixel-border, #4a4844);"></div>
 
       <button
         class="tool-btn"
@@ -65,9 +65,9 @@
         title="Rechteck-Mehrfachauswahl (Rahmen aufziehen; Shift = zur Auswahl hinzufügen)"
       >
         <svg viewBox="0 0 24 24" fill="none" class="icon-svg" xmlns="http://www.w3.org/2000/svg">
-            <rect x="4" y="4" width="16" height="16" stroke="#2ecc71" stroke-width="2" stroke-dasharray="4 3" fill="#2ecc71" fill-opacity="0.1"/>
-            <circle cx="9" cy="10" r="1.6" fill="#2ecc71"/>
-            <circle cx="15" cy="14" r="1.6" fill="#2ecc71"/>
+            <rect x="4" y="4" width="16" height="16" stroke="var(--isy-pixel-green, #219653)" stroke-width="2" stroke-dasharray="4 3" fill="var(--isy-pixel-green, #219653)" fill-opacity="0.1"/>
+            <circle cx="9" cy="10" r="1.6" fill="var(--isy-pixel-green, #219653)"/>
+            <circle cx="15" cy="14" r="1.6" fill="var(--isy-pixel-green, #219653)"/>
         </svg>
       </button>
     </div>
@@ -148,11 +148,11 @@ const hint = computed(() => {
     top: 60px;
     left: 50%;
     transform: translateX(-50%);
-    background: #040647;
+    background: var(--isy-pixel-bg, #040647);
     padding: 0.35rem;
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(4,6,71,0.4);
-    border: 1px solid #594491;
+    border: 1px solid var(--isy-pixel-border, #4a4844);
     display: flex;
     gap: 0.5rem;
     z-index: 1000;
@@ -166,7 +166,7 @@ const hint = computed(() => {
 .tool-btn {
     width: 36px;
     height: 36px;
-    border: 1px solid #594491;
+    border: 1px solid var(--isy-pixel-border, #4a4844);
     background: transparent;
     border-radius: 5px;
     cursor: pointer;
@@ -178,20 +178,20 @@ const hint = computed(() => {
 }
 
 .tool-btn:hover:not(:disabled) {
-    background: #594491;
+    background: var(--isy-pixel-border, #4a4844);
 }
 
 .tool-btn.active {
-    background: #594491;
-    border-color: #8f8be1;
-    box-shadow: 0 0 0 1px #8f8be1;
+    background: var(--isy-pixel-border, #4a4844);
+    border-color: var(--isy-pixel-border-hover, #65625c);
+    box-shadow: 0 0 0 1px var(--isy-pixel-border-hover, #65625c);
 }
 
 .tool-btn.danger {
-    border-color: #e74c3c;
+    border-color: var(--isy-pixel-danger, #e74c3c);
 }
 .tool-btn.danger:hover:not(:disabled) {
-    background: #e74c3c;
+    background: var(--isy-pixel-danger, #e74c3c);
 }
 .tool-btn:disabled {
     opacity: 0.3;
@@ -200,7 +200,7 @@ const hint = computed(() => {
 
 .separator-h {
     width: 1px;
-    background: #594491;
+    background: var(--isy-pixel-border, #4a4844);
 }
 
 /* Icons */
@@ -221,14 +221,14 @@ const hint = computed(() => {
     bottom: -30px;
     left: 50%;
     transform: translateX(-50%);
-    background: #040647;
-    border: 1px solid #00e855;
+    background: var(--isy-pixel-bg, #040647);
+    border: 1px solid var(--isy-pixel-green-glow, #128040);
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
-    color: #00e855;
+    color: var(--isy-pixel-green-glow, #128040);
     text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
     padding: 4px 10px;
     border-radius: 4px;
-    font-family: 'Press Start 2P', monospace;
+    font-family: var(--isy-pixel-font);
     font-size: 0.42rem;
     white-space: nowrap;
     pointer-events: none;

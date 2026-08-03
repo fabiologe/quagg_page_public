@@ -126,7 +126,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../store/index.js';
 import { sampleTerrainAt } from '../utils/terrainSampling.js';
 import Sidebar from '../components/panels/Sidebar.vue';
@@ -144,6 +144,17 @@ import '../styles/theme.css';
 const store = useIsybauStore();
 const viewMode = ref('2d');
 const autoResultsFor3d = ref(false);
+
+// --isy-pixel-*-Tokens (theme.css) liegen auf :root statt .isybau-main, da
+// Teleport-Modals aus dem .isybau-main-Teilbaum herausspringen — deshalb hier
+// zusätzlich data-theme auf <html> spiegeln, damit :root[data-theme] überall
+// greift (nicht nur innerhalb von .isybau-main).
+watch(
+  () => store.ui.darkMode,
+  (dark) => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; },
+  { immediate: true }
+);
+onBeforeUnmount(() => { delete document.documentElement.dataset.theme; });
 
 const hasResults = computed(() => !!store.simulation.results);
 
@@ -186,7 +197,6 @@ const handleShowDetails = (element) => {
 
 // --- Validation Warnings Toast ---
 const warningToast = ref({ show: false, messages: [] });
-import { watch } from 'vue'; // Ensure watch is imported
 import rainGif from '../components/visualizer/raining-14436.gif';
 
 const showRainOverlay = ref(false);
@@ -250,7 +260,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     left: 50%;
     transform: translateX(-50%);
     z-index: 100;
-    background: var(--isy-header-bg);
+    background: var(--isy-bg-alt);
     padding: 0.25rem;
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(4,6,71,0.35);
@@ -260,50 +270,76 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .view-switcher button {
     padding: 0.55rem 0.9rem;
-    border: none;
+    border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
     border-radius: 5px;
-    font-family: 'Press Start 2P', monospace;
+    clip-path: var(--isy-pixel-clip-corner);
+    font-family: var(--isy-pixel-font);
     font-size: 0.46rem;
     color: var(--isy-border);
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s;
 }
 
 .view-switcher button:hover {
     background: var(--isy-accent);
-    color: #fff;
+    color: var(--isy-pixel-green-bright, #18a34a);
+    border-width: 2px;
+    border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e);
+    box-shadow: var(--isy-btn-shadow-hover);
+    transform: translateY(-1px);
 }
 
 .view-switcher button.active {
     background: var(--isy-accent);
-    color: #fff;
+    color: var(--isy-pixel-green-bright, #18a34a);
+    border-width: 2px;
+    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+    box-shadow: var(--isy-btn-shadow-active);
+}
+.view-switcher button.active:active,
+.view-switcher button:active {
+    transform: translateY(0);
+    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+    box-shadow: var(--isy-btn-shadow-active);
 }
 
 .view-switcher button.result3d-tab {
-    border-color: #f39c12;
+    border-color: var(--isy-pixel-warning, #f39c12);
     color: #7d4e00;
 }
 .view-switcher button.result3d-tab.active {
-    background: #f39c12;
-    color: #fff;
-    border-color: #f39c12;
+    background: var(--isy-pixel-warning, #f39c12);
+    color: var(--isy-pixel-text, #fff);
+    border-color: var(--isy-pixel-warning, #f39c12);
 }
 
 .help-btn {
     margin-left: 0.25rem;
-    background: var(--isy-header-alt) !important;
-    border: 1px solid var(--isy-accent) !important;
+    background: var(--isy-bg-alt) !important;
+    border-width: 2px !important;
+    border-style: solid !important;
+    border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) !important;
     color: var(--isy-accent-hover) !important;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0.35rem 0.5rem !important;
+    clip-path: var(--isy-pixel-clip-corner);
+    box-shadow: var(--isy-btn-shadow);
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .help-btn:hover {
     background: var(--isy-accent) !important;
-    color: #fff !important;
+    color: var(--isy-pixel-green-bright, #18a34a) !important;
+    box-shadow: var(--isy-btn-shadow-hover);
+    transform: translateY(-1px);
+}
+.help-btn:active {
+    transform: translateY(0);
+    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) !important;
+    box-shadow: var(--isy-btn-shadow-active);
 }
 
 .tb-icon {
@@ -336,7 +372,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 .sidebar-nav h3 {
   margin: 0 0 0.75rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -350,44 +386,58 @@ watch(() => store.ui.importWarnings, (msgs) => {
   padding: 0.8rem 0.75rem;
   margin-bottom: 0.5rem;
   background: var(--isy-btn-bg);
-  border: 1px solid var(--isy-border);
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e);
   border-radius: 6px;
+  clip-path: var(--isy-pixel-clip-corner);
   text-align: left;
   cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
   line-height: 1.6;
   color: var(--isy-text);
-  transition: all 0.2s;
+  box-shadow: var(--isy-btn-shadow);
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .nav-btn:hover {
   background: var(--isy-accent-soft);
-  border-color: var(--isy-accent-hover);
+  box-shadow: var(--isy-btn-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.nav-btn:active {
+  transform: translateY(0);
+  border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+  box-shadow: var(--isy-btn-shadow-active);
 }
 
 .nav-btn.active {
   background: var(--isy-accent);
-  border-color: var(--isy-accent);
-  color: #fff;
+  border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+  color: var(--isy-pixel-green-bright, #18a34a);
   font-weight: 600;
+  box-shadow: var(--isy-btn-shadow-hover);
 }
 .nav-btn.active .tb-icon {
-  filter: brightness(0) invert(1);
+  filter: invert(63%) sepia(97%) saturate(1000%) hue-rotate(88deg) brightness(103%) contrast(105%);
 }
 
 .nav-btn-result3d {
-  border-color: #f39c12;
+  border-color: var(--isy-pixel-warning, #f39c12);
   color: #7d4e00;
 }
 .nav-btn-result3d:hover {
   background: #fff8eb;
-  border-color: #e67e22;
+  border-color: var(--isy-pixel-warning-hover, #e67e22);
+  box-shadow: var(--isy-btn-shadow), 0 0 9px rgba(243,156,18,0.5);
 }
 .nav-btn-result3d.active {
   background: #fff3cd;
-  border-color: #f39c12;
+  border-color: var(--isy-pixel-warning, #f39c12);
   color: #7d4e00;
+  box-shadow: var(--isy-btn-shadow), 0 0 8px rgba(243,156,18,0.4);
 }
 
 /* Warning Toast */
@@ -397,7 +447,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     right: 20px;
     width: 400px;
     background: var(--isy-toast-bg);
-    border-left: 5px solid #f39c12; /* Warning Orange */
+    border-left: 5px solid var(--isy-pixel-warning, #f39c12); /* Warning Orange */
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     border-radius: 4px;
     padding: 1rem;
@@ -435,7 +485,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .toast-body li {
     margin-bottom: 0.25rem;
-    color: #c0392b; /* Dark Red for errors/msgs */
+    color: var(--isy-pixel-danger-hover, #c0392b); /* Dark Red for errors/msgs */
 }
 
 .slide-up-enter-active, .slide-up-leave-active {

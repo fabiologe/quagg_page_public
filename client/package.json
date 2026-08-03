@@ -9,7 +9,9 @@
         "build:unsafe": "vite build",
         "preview": "vite preview",
         "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
-        "test": "vitest run",
+        "test": "vitest run && npm run test:node",
+        "test:vitest": "vitest run",
+        "test:node": "node scripts/run-node-tests.mjs",
         "test:watch": "vitest"
     },
     "dependencies": {

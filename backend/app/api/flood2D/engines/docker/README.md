@@ -35,7 +35,7 @@ als Planungsgrundlage. Die `⚠️ Bekannte Risiken`-Sektion am Ende listet die 
                           router.py  →  job_manager.write_inputs()   (entpackt → /job/inputs)
                                                  │
                                                  ▼  docker_engine.py:83
-                          docker run --rm -v {job}:/job  lisflood-fp:latest
+                          docker run --rm -v {job}:/job  fabiologe/quagg-lisflood:latest
                                                  │
                                                  ▼  ENTRYPOINT  handler.py  (im Container)
                           cwd=/job/inputs →  /opt/lisflood/lisflood run.par
@@ -185,16 +185,32 @@ Kanal-Solver (unabhängig): kinematic (default), `diffusive`, `ch_dynamic` (voll
 
 - **Build-Kontext:** `backend/app/api/flood2D/` (wegen `codec.py` + Vendor-Tarball + Patches).
   ```bash
+  # QUAGG_SHA stempelt Repo-Stand + Patch-Liste ins Image (s. unten "Versionsstempel").
+  SHA="$(git rev-parse --short HEAD)$(git diff --quiet -- . || echo -dirty)"
+
   # CPU (dieser Server) — --target runtime ist PFLICHT, seit das runpod-Stage
   # das letzte im Dockerfile ist (sonst falscher ENTRYPOINT auf :latest!):
-  docker build -f engines/docker/Dockerfile --target runtime -t lisflood-fp:latest .
+  docker build -f engines/docker/Dockerfile --target runtime \
+      --build-arg QUAGG_SHA="$SHA" -t fabiologe/quagg-lisflood:latest .
   # RunPod-Serverless-Worker (CPU, handler.py + S3/R2-Upload-Wrapper):
-  docker build -f engines/docker/Dockerfile --target runpod -t lisflood-fp:runpod .
+  docker build -f engines/docker/Dockerfile --target runpod \
+      --build-arg QUAGG_SHA="$SHA" -t fabiologe/quagg-lisflood:runpod .
   # GPU (RunPod, RTX 4090/L40 = sm_89):
   CUDA_ARCH=89 bash engines/docker/build-cuda.sh        # → lisflood-fp:cuda
   # Multi-Arch (buildx, pusht in die Registry) — s. Abschnitt 5c:
   bash engines/docker/build-multiarch.sh                # → :runpod (amd64)
   ```
+  **Beide Ziele immer gemeinsam aus demselben Commit bauen.** Einzeln nachgezogene Images sind
+  am 2026-07-30 auseinandergelaufen (`:latest` fehlte ein Patch, den `:local` hatte) — Details
+  im Vorfallsabschnitt von `../patches/README.md`.
+
+- **Versionsstempel:** Jedes Image trägt seinen Bau-Stand. Prüfen mit
+  ```bash
+  docker run --rm --entrypoint sh <image> -c 'echo $QUAGG_SOLVER_SHA; cat /opt/lisflood/PATCHES.txt'
+  ```
+  Derselbe Stempel geht als erstes `solver_version`-Event über das Handler-Protokoll raus und
+  landet als `results/solver_version.json` neben den Ergebnissen — damit lässt sich zu jedem
+  archivierten Lauf (und jedem Benchmark) nachträglich sagen, welcher Solver ihn gerechnet hat.
 - **Dockerfile:** multi-stage. Quelle = Vendor-Tarball (extrahiert) + QUAGG-Patch → cmake Release
   `--target lisflood`. `config.docker.cmake`: NetCDF aus, alle Solver im Binary; CUDA wird automatisch
   einkompiliert, **wenn mit nvcc-Base gebaut** (`CMAKE_CUDA_ARCHITECTURES` aus build-arg `CUDA_ARCH`,
@@ -214,7 +230,7 @@ Kanal-Solver (unabhängig): kinematic (default), `diffusive`, `ch_dynamic` (voll
   (`test_bridge_no_sgc.py lisflood-fp:cuda`, acceleration-Schema) läuft **im GPU-Image** identisch durch
   → ein Binary deckt GPU- *und* CPU-Pfad ab. GPU-Ausführung selbst steht auf RunPod aus.
 - **Env-Vars (Backend/`docker_engine.py`):** `FLOOD2D_ENGINE` (auto|docker|mock), `FLOOD2D_DOCKER_IMAGE`
-  (Default `lisflood-fp:latest`), `FLOOD2D_GPU` (auto|1|0), `FLOOD2D_HEARTBEAT` (Default 2 s),
+  (Default `fabiologe/quagg-lisflood:latest`), `FLOOD2D_GPU` (auto|1|0), `FLOOD2D_HEARTBEAT` (Default 2 s),
   `FLOOD2D_MAX_WALL_S` (Default 21600 = 6 h).
 - **nginx:** `location /flood2dpod/ → 127.0.0.1:8001`, `client_max_body_size 200m`, `proxy_read_timeout 300s`,
   `proxy_buffering off`.
@@ -252,7 +268,7 @@ Kanal-Solver (unabhängig): kinematic (default), `diffusive`, `ch_dynamic` (voll
   `engines/__init__.py`, da PM2 die .env nicht exportiert). Abbruch → `POST /cancel`;
   Wall-Budget wie DockerEngine (`FLOOD2D_MAX_WALL_S`). Test:
   `venv/bin/python app/api/flood2D/test_runpod_engine.py` (Fake-RunPod-Stub, 11 Checks).
-- **Registry:** `docker.io/fabiologe/lisflood_acc_modi` (PUBLIC — RunPod konnte das private
+- **Registry:** `docker.io/fabiologe/quagg-lisflood` (PUBLIC — RunPod konnte das private
   Repo ohne hinterlegte Registry-Credentials nicht pullen: `IMAGE_AUTH_ERROR`). Tags:
   `:runpod` (Worker), `:runpod-20260729` (Rollback).
 

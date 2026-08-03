@@ -80,7 +80,7 @@ const removeRow = (i) => {
 <style scoped>
 .curve-table-editor { margin: 0.25rem 0; }
 .curve-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-.curve-table th { text-align: left; padding: 2px 4px; color: #594491; font-weight: 700; }
+.curve-table th { text-align: left; padding: 2px 4px; color: var(--isy-pixel-border, #4a4844); font-weight: 700; }
 .curve-table td { padding: 2px 4px; }
 /* Scoped Style greift nicht auf die Parent-Modal-Regel für .small-input durch
    (Vue-Scoping) — daher hier vollständig eigenständig im selben (dunklen) Look
@@ -89,27 +89,27 @@ const removeRow = (i) => {
   width: 100%;
   box-sizing: border-box;
   padding: 3px 4px;
-  border: 1px solid #594491;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 4px;
-  background: #0a0d5c;
-  color: #fff;
+  background: var(--isy-pixel-bg-alt, #0a0d5c);
+  color: var(--isy-pixel-text, #fff);
   font-size: 0.82rem;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .curve-table .small-input:focus {
   outline: none;
-  border-color: #2ecc71;
+  border-color: var(--isy-pixel-green, #219653);
   box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
 }
 .row-remove-btn {
-  background: none; border: none; color: #e74c3c; cursor: pointer;
-  font-family: 'Press Start 2P', monospace; font-size: 0.55rem; padding: 0 4px;
+  background: none; border: none; color: var(--isy-pixel-danger, #e74c3c); cursor: pointer;
+  font-family: var(--isy-pixel-font); font-size: 0.55rem; padding: 0 4px;
 }
-.row-remove-btn:disabled { color: #aeadd2; cursor: not-allowed; }
+.row-remove-btn:disabled { color: var(--isy-pixel-text-dim, #4a4a4a); cursor: not-allowed; }
 .row-add-btn {
-  margin-top: 4px; background: none; border: 1px dashed #594491; border-radius: 4px;
-  color: #594491; font-family: 'Press Start 2P', monospace; font-size: 0.5rem; padding: 4px 8px; cursor: pointer;
+  margin-top: 4px; background: none; border: 1px dashed var(--isy-pixel-border, #4a4844); border-radius: 4px;
+  color: var(--isy-pixel-border, #4a4844); font-family: var(--isy-pixel-font); font-size: 0.5rem; padding: 4px 8px; cursor: pointer;
   transition: background 0.15s;
 }
-.row-add-btn:hover { background: #f3f2fb; }
+.row-add-btn:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
 </style>

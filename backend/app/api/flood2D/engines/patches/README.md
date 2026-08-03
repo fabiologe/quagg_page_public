@@ -560,46 +560,48 @@ RUN cmake -S /src -B /build ... && cmake --build ...
 - ✅ 126-MB-Client-Dublette `client/.../LISFLOOD-FP-8/` aus Git entfernt; loser Trunk aus dem
   Docker-Kontext genommen (`.dockerignore`).
 
+## Welche Patches stecken in einem Image?
+
+**Das Dockerfile ist die einzige Wahrheit** (`../docker/Dockerfile`, `COPY engines/patches/…`),
+nicht dieser Abschnitt. Bis 2026-08-01 stand hier eine per Hand gepflegte Liste, die drei Patches
+fälschlich als „noch nicht gebaut" führte, obwohl sie längst drin waren — und gleichzeitig einen
+echten Bruch verschwieg (s. unten). Handgepflegte Release-Notes driften; deshalb gilt jetzt:
+
+- Welche Patches ein **Image** hat: `docker run --rm --entrypoint sh <image> -c 'cat /opt/lisflood/PATCHES.txt'`
+- Aus welchem **Repo-Stand** es gebaut wurde: `… -c 'echo $QUAGG_SOLVER_SHA'`
+- Beides steht zusätzlich in jedem Ergebnis (`results/solver_version.json`) und geht als erstes
+  `solver_version`-Event über das Handler-Protokoll raus.
+
+### Vorfall 2026-08-01: die Images waren auseinandergelaufen
+
+Alle 9 Patches standen korrekt im Dockerfile, aber die gebauten Images hatten unterschiedliche
+Stände, weil sie zu verschiedenen Zeitpunkten gebaut wurden:
+
+| Image | gebaut | `coupling-sgc-hook` |
+|---|---|---|
+| `lisflood-fp:latest` | 2026-07-28 21:15 | ❌ fehlte |
+| `lisflood-fp:runpod` | 2026-07-29 11:31 | ❌ fehlte |
+| `lisflood_acc_modi:local` | 2026-07-30 19:56 | ✅ |
+
+Die `COPY`-Zeile kam erst mit `5074ec7` (2026-07-30 19:21) dazu — nach dem Bau der ersten beiden.
+Folge: SWMM↔LISFLOOD-Kopplung auf SGC-Zellen rechnete je nach Backend anders, ohne sichtbares
+Symptom. **Behoben am 2026-08-01**: alle Images aus einem Stand neu gebaut, Versionsstempel
+eingeführt, Regressionssuite 11/11 grün. Regel seither: Solver-Images werden nie einzeln
+nachgezogen, sondern immer runtime + runpod gemeinsam aus demselben Commit.
+
 ## ⚠️ Offen
 
 - **Upstream-Provenienz** (genauer LISFLOOD-FP-Commit/Tag, aus dem der Tarball stammt) ist nicht
   dokumentiert. Bei einem späteren echten 8.2-Upgrade: Upstream-Quelle + Commit hier festhalten.
-- **`quagg-outflow-free-direction.patch` (2026-07-23):** lokal (g++/cmake, ohne Docker) gebaut und
-  mit einem End-to-End-Testlauf gegen ein handgebautes Szenario verifiziert (echter Volumenverlust
-  am Punkt-FREE, byte-identischer No-Op ohne Richtungs-Token) — **noch KEIN Docker-Image gebaut,
-  kein RunPod-Lauf, keine echte App-Szenario-Verifikation.** Vor Produktiv-Einsatz: Image neu
-  bauen (`docker build -f engines/docker/Dockerfile ...`) und mindestens einen echten
-  Flood2D-Lauf mit einem schiefen/geclippten DGM + Ablauf-Picker-Objekt durchführen.
-- **`quagg-sgc-trapezoid.patch` (2026-07-25):** nur lokal (g++/cmake) gegen einen einzelnen
-  globalen SGC-Kanal (`SGCchan 7`, ohne `SGCchangroup`) verifiziert. **Noch offen vor
-  Produktiv-Einsatz:** Docker-Image neu bauen, `../docker/test_bridge_no_sgc.py` gegen das
-  neue Image gegenrechnen (Rechteck-Pfad unverändert), UND einen Test mit `SGCchangroup`+
-  `SGCchanprams` (Typ 7, Mehrfachkanal-Modus — der Modus, den das Channel-Tool im Client
-  tatsächlich exportiert) **inklusive einer Brücke über dem Trapez-Kanal** — genau die
-  Kombination, die den ursprünglichen Absturz auslöste. Erst danach in
-  `ChannelSectionModal.vue`/`SgcGenerator.buildSgcChanPramsFile` (client) Typ 7 wieder
-  aktivieren. **Update 2026-07-25:** Dieser Brücke-über-Trapez-Test hätte wegen
-  `quagg-sgc-bridge-blowup.patch` (s. oben) sowieso divergiert — beide Patches müssen
-  zusammen gebaut/getestet werden, s. dessen Abschnitt für den kombinierten Docker-Test.
-- **`quagg-sgc-bridge-blowup.patch` (2026-07-25):** ✅ Docker-Image gebaut
-  (`lisflood-fp:sgc-bridge-blowup-fix`, dann auf `:latest` promoted),
-  `test_bridge_no_sgc.py` + `test_sgc_trapezoid.py` + neuer
-  `test_sgc_bridge_blowup.py` (Massebilanz-basiert, Negativkontrolle gegen
-  das alte Image bestanden) grün. Noch offen: kein direkter RunPod-Lauf
-  (nur lokaler Docker-Test) — s. `quagg-bridge-flow-index.patch` unten für
-  den anschließend gefundenen dritten, unabhängigen Bug in genau diesem
-  Kontext.
-- **`quagg-bridge-flow-index.patch` (2026-07-25):** ✅ Docker-Image gebaut
-  (`lisflood-fp:bridge-flow-index-fix`, dann auf `:latest` promoted),
-  komplette Regressionssuite grün, neuer Test
-  `test_bridge_asymmetric_sgc.py` (Positiv+Negativkontrolle) bestanden.
-  Direkt danach beim erneuten Testen desselben Kundenprojekts (jetzt ohne
-  SGC-Kanal, dafür 21 Brücken) ein vierter, unabhängiger Bug gefunden — s.
-  `quagg-timeseries-memset.patch` unten.
-- **`quagg-timeseries-memset.patch` (2026-07-25):** lokal (g++/cmake, ohne
-  Docker) gebaut und gegen ECHTE Daten eines fehlgeschlagenen RunPod-Jobs
-  (Segfault, per `gdb` verifiziert) sowie einen synthetischen 10-Profile-
-  Stresstest verifiziert (s. oben) — **noch KEIN Docker-Image gebaut, kein
-  erneuter RunPod-Lauf.** Vor Produktiv-Einsatz: Image neu bauen, komplette
-  Regressionssuite gegenrechnen (dieser Bug betrifft potenziell JEDEN Lauf
-  mit 2+ `.bdy`-Profilen, nicht nur SGC/Brücken-Szenarien — hohe Priorität).
+- **`quagg-sgc-trapezoid.patch` — Mehrfachkanal-Kombination ungetestet.** Verifiziert ist Typ 7
+  als einzelner globaler Kanal (`SGCchan 7`) sowie Brücke-über-Trapez (`test_sgc_trapezoid.py`).
+  **Nicht** getestet ist `SGCchangroup` + `SGCchanprams` mit Typ 7 **und** einer Brücke darüber —
+  also genau der Mehrfachkanal-Modus, den das Channel-Tool im Client tatsächlich exportiert.
+  Die Kombination ist im UI ohne Warnung nutzbar. Vor Produktiv-Einsatz entweder Test nachziehen
+  oder im Client sperren.
+- **Kein echter RunPod-Cloud-Lauf.** `test_runpod_e2e.py` fährt gegen das lokale Image, nicht gegen
+  RunPod (keine Queue, kein S3/R2, keine GPU). Der CUDA-Build ist gebaut, aber nie auf
+  RunPod-Hardware gelaufen.
+- **Keine Validierung gegen Ground Truth.** Die gesamte Suite ist Regression (tut der Code, was er
+  soll) — nicht Physik-Verifikation (stimmt das Ergebnis mit der Realität). Fahrplan dazu:
+  `ROADMAP_FLOOD2D_PRODUKTION.md`, Phase P1.

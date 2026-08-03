@@ -9,6 +9,14 @@
               title="Koordinatentreue Draufsicht" @click="toggleTopView">
         Draufsicht
       </button>
+      <button class="f3d-tool" :class="{ active: solverView }"
+              :disabled="!!store.terrainSolid"
+              :title="store.terrainSolid
+                ? 'Nicht nötig: der Fall zeigt bereits den Geländekörper, den der Vernetzer bekommt'
+                : 'Gelände auf die Basiszelle abgetastet — so grob sieht es der Vernetzer'"
+              @click="solverView = !solverView">
+        Solverblick
+      </button>
       <button class="f3d-tool" :class="{ active: meshView }"
               title="Vernetzte Oberfläche der Netzvorschau (Solver-Zellen)"
               @click="toggleMeshView">
@@ -34,6 +42,9 @@
       </label>
     </div>
     <div v-if="meshHint" class="f3d-meshhint f3d-muted f3d-small">{{ meshHint }}</div>
+    <div v-if="solverHint && !meshView" class="f3d-meshhint f3d-muted f3d-small">
+      {{ solverHint }}
+    </div>
 
     <div v-if="chooserPts" class="f3d-chooser">
       <span class="f3d-muted f3d-small">
@@ -54,8 +65,19 @@
         Δz {{ fmtDelta(dragDelta.dz) }}</span>
     </div>
 
+    <div v-if="rotInfo" class="f3d-stanzbar">
+      <strong>⟳ Modellgebiet</strong>
+      <span>{{ rotInfo }}</span>
+    </div>
+
+    <div v-if="mode === 'stanzen'" class="f3d-stanzbar">
+      <strong>{{ stanzTitel }}</strong>
+      <span>{{ stanzInfo || 'Auf den Körper zeigen …' }}</span>
+      <button class="f3d-btn" @click="store.endPlatzierung()">Abbrechen</button>
+    </div>
+
     <div class="f3d-editor3d-hint f3d-muted f3d-small">
-      <template v-if="mode === 'select'">Klick wählt · Ecken ziehbar (Raster-/Punktfang, Alt = frei) · Entf löscht Ecke · Strg+D dupliziert · Shift/Strg+Ziehen verschiebt · Strg = Z erzwingen · Doppelklick zentriert</template>
+      <template v-if="mode === 'select'">Klick wählt · Ecken ziehbar (Raster-/Punktfang, Alt = frei) · Bohrung/Öffnung am Marker über den Körper ziehen · Entf löscht Ecke oder Bearbeitung · Strg+D dupliziert · Shift/Strg+Ziehen verschiebt · Strg = Z erzwingen · Doppelklick zentriert</template>
       <template v-else-if="mode === 'move'">Objekt anklicken und ziehen · Zug entlang einer Führungslinie rastet ein (Strg = Z erzwingen) · daneben ziehen dreht die Kamera</template>
       <template v-else-if="mode === 'gauge'">Klick ins Gelände setzt einen Pegelpunkt</template>
       <template v-else-if="mode === 'section'">Zwei Klicks spannen die Querschnittslinie auf</template>
@@ -94,6 +116,8 @@ const mode = ref('select')
 const topView = ref(false)
 const meshView = ref(false)
 const meshHint = ref('')
+const solverView = ref(false)     // Gelände in Solver-Auflösung zeigen
+const solverHint = ref('')
 const clipActive = ref(false)
 const clipAxis = ref('x')
 const clipPos = ref(0)
@@ -102,6 +126,19 @@ const clipRange = ref([0, 100])
 const coords = ref('')
 const drawPts = ref([])          // [[x,y], ...] der aktuellen Zeichnung
 const chooserPts = ref(null)     // abgeschlossene Zeichnung -> Zielauswahl
+
+// --- Bearbeitung einzeichnen ("stanzen") ---------------------------------
+// Bohrung, Öffnung und Abschneiden werden nicht getippt, sondern auf den
+// Körper gezeigt: Vorschau folgt dem Cursor auf der Oberfläche, Mausrad
+// ändert das Maß, Klick stanzt. Die Bohrrichtung kommt aus der Normalen
+// der getroffenen Fläche — genau so bohrt man auch in echt.
+const stanzMass = ref({ d: 0.8, w: 1.2, h: 0.9 })
+const stanzInfo = ref('')
+const STANZ_TITEL = { bohrung: '⌀ Bohrung setzen', oeffnung: '▭ Öffnung setzen',
+  schnitt: '✂ Abschneiden' }
+const stanzTitel = computed(() =>
+  STANZ_TITEL[store.platzierung?.art] ?? 'Bearbeitung setzen')
+let stanzHit = null              // { punkt: Vector3, normale: Vector3 }
 
 const drawTargets = computed(() => {
   const n = chooserPts.value?.length ?? 0
@@ -133,6 +170,7 @@ let downPos = null
 let lastHoverCheck = 0         // Hover-Raycasts drosseln (Frame-Budget)
 
 const groups = { terrain: null, solids: null, markers: null, preview: null,
+  stanz: null,
   mesh: null, handles: null }
 const selectable = []          // Meshes mit userData { kind, id }
 let highlighted = null
@@ -170,7 +208,23 @@ function buildTerrain() {
   clearGroup('terrain')
   const t = store.terrain
   if (!t) return
-  const [ny, nx] = t.dims
+  // Arbeitet der Fall mit einem GELÄNDEKÖRPER, ist die Höhenfläche nicht
+  // mehr die Wahrheit: der Vernetzer bekommt einen Volumenkörper, der
+  // Hohlräume haben kann. Dann wird auch genau der gezeigt.
+  if (store.terrainSolid) { buildTerrainSolid(); return }
+  // Anzeige normalerweise in der Auflösung des Höhenrasters. Im
+  // „Solverblick" wird stattdessen auf die BASISZELLE abgetastet und flach
+  // schattiert — das ist die Auflösung, mit der der Vernetzer arbeitet.
+  // Die glatte Rasterdarstellung verspricht sonst eine Genauigkeit, die
+  // das Rechennetz gar nicht hat.
+  const cell = store.spec?.mesh?.base_cell
+  const grob = solverView.value && cell > 0
+  const step = grob ? cell : t.resolution
+  const [rny, rnx] = t.dims
+  const breite = (rnx - 1) * t.resolution
+  const hoehe = (rny - 1) * t.resolution
+  const nx = grob ? Math.max(2, Math.round(breite / step) + 1) : rnx
+  const ny = grob ? Math.max(2, Math.round(hoehe / step) + 1) : rny
   const geo = new THREE.BufferGeometry()
   const pos = new Float32Array(nx * ny * 3)
   const col = new Float32Array(nx * ny * 3)
@@ -187,10 +241,13 @@ function buildTerrain() {
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
       const k = j * nx + i
-      pos[k * 3] = t.x0 + i * t.resolution
-      pos[k * 3 + 1] = t.y0 + j * t.resolution
-      pos[k * 3 + 2] = t.z[k]
-      c.lerpColors(cLow, cHigh, (t.z[k] - zMin) / span)
+      const x = t.x0 + i * step
+      const y = t.y0 + j * step
+      const z = grob ? terrainZ(x, y) : t.z[k]
+      pos[k * 3] = x
+      pos[k * 3 + 1] = y
+      pos[k * 3 + 2] = z
+      c.lerpColors(cLow, cHigh, (z - zMin) / span)
       col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b
     }
   }
@@ -206,10 +263,79 @@ function buildTerrain() {
   geo.setIndex(idx)
   geo.computeVertexNormals()
   const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-    vertexColors: true, side: THREE.DoubleSide }))
+    vertexColors: true, side: THREE.DoubleSide, flatShading: grob }))
   groups.terrain = new THREE.Group()
   groups.terrain.add(mesh)
   scene.add(groups.terrain)
+  if (grob) {
+    const tiefste = feinsteZelle()
+    solverHint.value = `Solverblick: Gelände auf die Basiszelle `
+      + `${cell.toFixed(3).replace('.', ',')} m abgetastet (Anzeige sonst `
+      + `${t.resolution.toFixed(3).replace('.', ',')} m Raster)`
+      + (tiefste < cell ? ` · in den Verfeinerungsboxen rechnet der Solver `
+        + `bis ${tiefste.toFixed(3).replace('.', ',')} m fein` : '')
+      + ' · das FERTIGE Netz zeigt „Netz" nach der Netzvorschau'
+  } else {
+    solverHint.value = ''
+  }
+}
+
+// Geländekörper: Oberseite in Geländefarben, Schnitt- und Seitenflächen in
+// Erdton — erst dadurch sieht man, dass es ein Volumen ist und keine Haut.
+function buildTerrainSolid() {
+  const ts = store.terrainSolid
+  const geo = new STLLoader().parse(ts.stl)
+  geo.computeVertexNormals()
+  const pos = geo.getAttribute('position')
+  const nor = geo.getAttribute('normal')
+  let zMin = Infinity
+  let zMax = -Infinity
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i)
+    if (z < zMin) zMin = z
+    if (z > zMax) zMax = z
+  }
+  const span = Math.max(zMax - zMin, 0.01)
+  const cLow = new THREE.Color(0x3d5240)
+  const cHigh = new THREE.Color(0xb8a577)
+  const cErde = new THREE.Color(0x6b5136)
+  const cTief = new THREE.Color(0x3a2c1d)
+  const c = new THREE.Color()
+  const col = new Float32Array(pos.count * 3)
+  for (let i = 0; i < pos.count; i++) {
+    const f = (pos.getZ(i) - zMin) / span
+    if (nor.getZ(i) > 0.35) c.lerpColors(cLow, cHigh, f)
+    else c.lerpColors(cTief, cErde, Math.min(1, f * 1.4))
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide }))
+  groups.terrain = new THREE.Group()
+  groups.terrain.add(mesh)
+  // Kanten des Körpers betonen — sonst verschwimmt der Schnittrand
+  const kanten = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo, 50),
+    new THREE.LineBasicMaterial({ color: 0x241a10, transparent: true,
+      opacity: 0.5 }))
+  groups.terrain.add(kanten)
+  scene.add(groups.terrain)
+  solverHint.value = `Geländekörper: ${ts.volume.toLocaleString('de-DE')} m³, `
+    + `${ts.triangles.toLocaleString('de-DE')} Dreiecke, `
+    + (ts.watertight ? 'geschlossen' : 'NICHT geschlossen — snappy kann so '
+      + 'nicht entscheiden, was Erdreich ist')
+    + (ts.importiert ? ' · importierter Volumenkörper' : ' · aus dem Höhenfeld aufgezogen')
+    + (ts.bohrungen?.length ? ` · durchbohrt von ${ts.bohrungen.join(', ')}` : '')
+}
+
+// feinste Zelle im Modell (Basiszelle durch die höchste Verfeinerungsstufe)
+function feinsteZelle() {
+  const cell = store.spec?.mesh?.base_cell ?? 0
+  let stufe = 0
+  for (const r of store.spec?.mesh?.refinements ?? []) {
+    stufe = Math.max(stufe, r.level ?? 0)
+  }
+  return cell / 2 ** stufe
 }
 
 function buildSolids() {
@@ -244,7 +370,21 @@ function buildMarkers() {
     const dbox = new THREE.Box3(
       new THREE.Vector3(dx0, dy0, spec.domain.z_min),
       new THREE.Vector3(dx1, dy1, spec.domain.z_max))
-    groups.markers.add(new THREE.Box3Helper(dbox, 0x2c4370))
+    const gebietFarbe = store.selection?.kind === 'domain' ? 0x4d9fff : 0x2c4370
+    groups.markers.add(new THREE.Box3Helper(dbox, gebietFarbe))
+    // Klickziel an den vier senkrechten Kanten: der Quader selbst wäre als
+    // Vollkörper im Weg, die Kanten sind eindeutig und stören nicht
+    for (const [cx, cy] of [[dx0, dy0], [dx1, dy0], [dx1, dy1], [dx0, dy1]]) {
+      const h = spec.domain.z_max - spec.domain.z_min
+      const kante = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.25, 0.25, h, 6),
+        new THREE.MeshBasicMaterial({ visible: false }))
+      kante.rotation.x = Math.PI / 2
+      kante.position.set(cx, cy, (spec.domain.z_min + spec.domain.z_max) / 2)
+      kante.userData = { kind: 'domain', id: 'domain' }
+      groups.markers.add(kante)
+      selectable.push(kante)
+    }
   }
 
   // Verfeinerungsboxen als Drahtkörper
@@ -262,6 +402,45 @@ function buildMarkers() {
     pick.userData = { kind: 'refinement', id: r.id }
     groups.markers.add(pick)
     selectable.push(pick)
+  }
+
+  // Geländekanten aus der Vermessung: mit IHRER Höhe zeichnen, nicht auf
+  // das Gelände gelegt — man muss sehen, wohin die Kante das Gelände zieht.
+  for (const op of spec.terrain?.operations ?? []) {
+    const linien = op.type === 'bruchkante' ? [[op.polyline, 0xffd24d]]
+      : op.type === 'boeschung' ? [[op.oberkante, 0xffd24d],
+        [op.unterkante, 0x4d9fff]]
+        : op.type === 'aussenkante'
+          ? [[[...op.polygon, op.polygon[0]], 0x67d98f]] : []
+    for (const [pts, farbe] of linien) {
+      if (!pts?.length) continue
+      const v = pts.map((q) => new THREE.Vector3(q[0], q[1], q[2] ?? 0))
+      const linie = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(v),
+        new THREE.LineBasicMaterial({ color: farbe }))
+      linie.userData = { kind: 'terrain_op', id: op.id }
+      groups.markers.add(linie)
+      // dicker unsichtbarer Zylinder je Segment als Klickziel
+      for (let i = 1; i < v.length; i++) {
+        const mitte = v[i - 1].clone().lerp(v[i], 0.5)
+        const laenge = v[i - 1].distanceTo(v[i])
+        if (laenge < 1e-6) continue
+        const ziel = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.35, 0.35, laenge, 6),
+          new THREE.MeshBasicMaterial({ visible: false }))
+        ziel.position.copy(mitte)
+        ziel.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+          v[i].clone().sub(v[i - 1]).normalize())
+        ziel.userData = { kind: 'terrain_op', id: op.id }
+        groups.markers.add(ziel)
+        selectable.push(ziel)
+      }
+    }
+    // Kein Füllband zwischen Ober- und Unterkante mehr: Stützpunkt i der
+    // einen Linie gehört nicht zwangsläufig zu Stützpunkt i der anderen
+    // (unterschiedliche Punktzahl, gegenläufige Richtung aus dem DXF), das
+    // Band verhedderte sich zu einer sinnlosen gelben Fläche. Die Böschung
+    // ist ohnehin im Geländeraster zu sehen — die Kanten reichen als Marke.
   }
 
   // Pegelpunkte
@@ -289,6 +468,70 @@ function buildMarkers() {
       new THREE.LineBasicMaterial({ color: 0x199e70, linewidth: 2 }))
     line.userData = { kind: 'section', id: sec.id }
     groups.markers.add(line)
+  }
+
+  // Gesetzte Bearbeitungen sichtbar machen: Aussparungen als Ring bzw.
+  // Rechteck am Ort des Lochs, Schnitte als Ebene. Sonst steht der Stapel
+  // nur als JSON da und man findet ein gesetztes Loch nicht wieder.
+  for (const st of spec.structures ?? []) {
+    for (const op of st.edits ?? []) {
+      if (op.type === 'aussparung') {
+        const lage = op.point
+          ? { p: op.point, d: op.direction ? [-op.direction[1], op.direction[0]]
+            : [1, 0] }
+          : openingPos(st, op)
+        if (!lage) continue
+        const mat = new THREE.MeshBasicMaterial({ color: 0xc98500,
+          side: THREE.DoubleSide, transparent: true, opacity: 0.9,
+          depthTest: false })
+        let geo
+        if (op.shape === 'kreis') {
+          const r = (op.diameter ?? 0.5) / 2
+          geo = new THREE.RingGeometry(Math.max(r - 0.06, 0.02), r, 24)
+        } else {
+          geo = new THREE.PlaneGeometry(op.width ?? 1, op.height ?? 1)
+        }
+        const marke = op.shape === 'kreis'
+          ? new THREE.Mesh(geo, mat)
+          : new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+            new THREE.LineBasicMaterial({ color: 0xc98500, depthTest: false }))
+        marke.position.set(lage.p[0], lage.p[1], op.z ?? 0)
+        // senkrechte Bohrung liegt flach, waagerechte steht quer zur Achse
+        if (!op.vertikal) {
+          marke.rotation.set(Math.PI / 2, 0, Math.atan2(lage.d[1], lage.d[0]))
+        }
+        marke.renderOrder = 3
+        marke.userData = { kind: 'structure', id: st.id }
+        groups.markers.add(marke)
+        selectable.push(marke)
+        // Der sichtbare Ring ist nur wenige Zentimeter breit — als Ziel
+        // für Maus und Strahl viel zu dünn. Deshalb eine unsichtbare
+        // Vollfläche darüber, die dieselbe Lage hat.
+        const ziel = new THREE.Mesh(
+          op.shape === 'kreis'
+            ? new THREE.CircleGeometry((op.diameter ?? 0.5) / 2, 20)
+            : new THREE.PlaneGeometry(op.width ?? 1, op.height ?? 1),
+          new THREE.MeshBasicMaterial({ visible: false,
+            side: THREE.DoubleSide }))
+        ziel.position.copy(marke.position)
+        ziel.rotation.copy(marke.rotation)
+        ziel.userData = { kind: 'structure', id: st.id,
+          editId: op.id, editIdx: (st.edits ?? []).indexOf(op) }
+        groups.markers.add(ziel)
+        selectable.push(ziel)
+      } else if (op.type === 'schnitt' && op.achse === 'z') {
+        const d = spec.domain
+        if (!d) continue
+        const [x0, y0, x1, y1] = d.extent
+        const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0)
+        const ebene = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color: 0xc98500, depthTest: false }))
+        ebene.position.set((x0 + x1) / 2, (y0 + y1) / 2, op.position)
+        ebene.renderOrder = 3
+        ebene.userData = { kind: 'structure', id: st.id }
+        groups.markers.add(ebene)
+      }
+    }
   }
 
   // Randflächenmarkierungen (Vorbelegung wie meshgen.assign_faces).
@@ -462,6 +705,137 @@ function updatePreview(hoverPt) {
   scene.add(groups.preview)
 }
 
+// --- Bearbeitung auf den Körper zeichnen ---------------------------------
+
+// Mesh des gerade bearbeiteten Bauwerks (nur DAS wird angepeilt — sonst
+// bohrt man versehentlich durch den Nachbarkörper)
+function stanzMesh() {
+  const id = store.platzierung?.id
+  if (!id || !groups.solids) return null
+  return groups.solids.children.find((c) => c.userData?.id === id) ?? null
+}
+
+function stanzPick(e) {
+  const m = stanzMesh()
+  if (!m) return null
+  const hits = _ray(e).intersectObjects([m], false)
+  if (!hits.length) return null
+  const h = hits[0]
+  const n = h.face
+    ? h.face.normal.clone().applyMatrix3(
+      new THREE.Matrix3().getNormalMatrix(m.matrixWorld)).normalize()
+    : new THREE.Vector3(0, 0, 1)
+  return { punkt: h.point.clone(), normale: n }
+}
+
+// Ausrichtung der Vorschau: Normale der getroffenen Fläche
+function _stanzQuat(normale) {
+  return new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1), normale.clone().normalize())
+}
+
+function updateStanzPreview() {
+  clearGroup('stanz')
+  const p = store.platzierung
+  if (!p || !stanzHit) { stanzInfo.value = ''; return }
+  const g = new THREE.Group()
+  const { punkt, normale } = stanzHit
+  const farbe = 0xffd24d
+  const linie = new THREE.LineBasicMaterial({ color: farbe, depthTest: false })
+  const flaeche = new THREE.MeshBasicMaterial({ color: farbe, depthTest: false,
+    transparent: true, opacity: 0.22, side: THREE.DoubleSide })
+  const m = stanzMass.value
+
+  if (p.art === 'schnitt') {
+    // waagerechte Ebene auf Trefferhöhe, so groß wie der Körper
+    const mesh = stanzMesh()
+    const box = new THREE.Box3().setFromObject(mesh)
+    const bx = Math.max(box.max.x - box.min.x, 1) * 1.15
+    const by = Math.max(box.max.y - box.min.y, 1) * 1.15
+    const geo = new THREE.PlaneGeometry(bx, by)
+    const ebene = new THREE.Mesh(geo, flaeche)
+    ebene.position.set((box.min.x + box.max.x) / 2,
+      (box.min.y + box.max.y) / 2, punkt.z)
+    g.add(ebene)
+    g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), linie)
+      .translateX(ebene.position.x).translateY(ebene.position.y)
+      .translateZ(punkt.z))
+    stanzInfo.value = `Abschneiden bei z = ${punkt.z.toFixed(2)} m · `
+      + 'Klick schneidet alles darüber weg · Esc bricht ab'
+  } else {
+    const senkrecht = Math.abs(normale.z) > 0.7
+    const q = _stanzQuat(normale)
+    const gruppe = new THREE.Group()
+    if (p.art === 'bohrung') {
+      const ring = new THREE.RingGeometry(m.d / 2 * 0.97, m.d / 2, 40)
+      gruppe.add(new THREE.Mesh(ring, flaeche))
+      gruppe.add(new THREE.LineLoop(
+        new THREE.CircleGeometry(m.d / 2, 40), linie))
+      stanzInfo.value = `Bohrung ⌀ ${m.d.toFixed(2)} m `
+        + `(${senkrecht ? 'senkrecht' : 'waagerecht'}) · Mausrad ändert das `
+        + 'Maß · Klick stanzt · Esc bricht ab'
+    } else {
+      const rechteck = new THREE.PlaneGeometry(m.w, m.h)
+      gruppe.add(new THREE.Mesh(rechteck, flaeche))
+      gruppe.add(new THREE.LineSegments(
+        new THREE.EdgesGeometry(rechteck), linie))
+      stanzInfo.value = `Öffnung ${m.w.toFixed(2)} × ${m.h.toFixed(2)} m · `
+        + 'Mausrad = Breite, Shift+Rad = Höhe · Klick stanzt · Esc bricht ab'
+    }
+    // Bohrachse als Strich, damit die Richtung sichtbar ist
+    const tiefe = 1.5
+    gruppe.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0.02), new THREE.Vector3(0, 0, -tiefe)]), linie))
+    gruppe.quaternion.copy(q)
+    gruppe.position.copy(punkt).addScaledVector(normale, 0.02)
+    g.add(gruppe)
+  }
+  g.renderOrder = 999
+  groups.stanz = g
+  scene.add(g)
+}
+
+function stanzKlick() {
+  const p = store.platzierung
+  if (!p || !stanzHit) return
+  const { punkt, normale } = stanzHit
+  const r2 = (v) => Number(v.toFixed(2))
+  const nr = ((store.selectedObject?.edits?.length) ?? 0) + 1
+  let edit
+  if (p.art === 'schnitt') {
+    edit = { id: `schnitt_${nr}`, type: 'schnitt', achse: 'z',
+      position: r2(punkt.z), behalten: 'unter' }
+  } else {
+    const senkrecht = Math.abs(normale.z) > 0.7
+    const nxy = new THREE.Vector2(normale.x, normale.y)
+    if (nxy.lengthSq() < 1e-9) nxy.set(0, 1)
+    nxy.normalize()
+    const m = stanzMass.value
+    edit = { id: `${p.art}_${nr}`, type: 'aussparung',
+      shape: p.art === 'bohrung' ? 'kreis' : 'rechteck',
+      point: [r2(punkt.x), r2(punkt.y)],
+      direction: [r2(nxy.x), r2(nxy.y)],
+      z: r2(punkt.z), vertikal: senkrecht }
+    if (p.art === 'bohrung') edit.diameter = r2(m.d)
+    else { edit.width = r2(m.w); edit.height = r2(m.h) }
+  }
+  store.addEdit(p.id, edit)
+  store.endPlatzierung()
+}
+
+watch(() => store.platzierung, (p) => {
+  stanzHit = null
+  clearGroup('stanz')
+  stanzInfo.value = ''
+  if (p) {
+    mode.value = 'stanzen'
+    cancelDrawing()
+    if (store.selection?.id !== p.id) store.select('structure', p.id)
+  } else if (mode.value === 'stanzen') {
+    mode.value = 'select'
+  }
+})
+
 function handleToolClick(pt) {
   const xy = [Number(pt.x.toFixed(2)), Number(pt.y.toFixed(2))]
   if (mode.value === 'gauge') {
@@ -572,10 +946,75 @@ function buildRefineBox(pts) {
 
 let dragging = null            // { idx } während eines Handle-Drags
 let objectDrag = null          // Ganzes-Objekt-Verschieben: { start, mesh }
+// Gesetzte Bearbeitung wieder anfassen: der Marker wird über die
+// Oberfläche des Körpers gezogen, geschrieben wird erst beim Loslassen
+// (ein Store-Schreiben je pointermove würde die Vorschau lahmlegen).
+let editDrag = null            // { structId, idx, mesh }
 let lastMove = null            // letztes pointermove-Event (für Entf-Löschen)
 let rebuildPending = false     // Szenen-Rebuild bis Drag-Ende aufschieben
 
 const _r2 = (v) => Number(v.toFixed(2))
+
+// Importierte Körper haben weder Achse noch Grundrisspolygon — sie werden
+// über eine Transform-Bearbeitung bewegt, die bei Bedarf angelegt wird.
+function transformEdit(o) {
+  o.edits = o.edits ?? []
+  let t = o.edits.find((e) => e.type === 'transform')
+  if (!t) {
+    t = { id: 'lage', type: 'transform', verschieben: [0, 0, 0],
+      drehen_deg: 0, skalieren: 1 }
+    o.edits.push(t)
+  }
+  t.verschieben = t.verschieben ?? [0, 0, 0]
+  return t
+}
+
+// Mittelpunkt eines importierten Körpers aus der Server-Vorschau
+function importPos(obj) {
+  const mesh = (groups.solids?.children ?? [])
+    .find((c) => c.userData?.id === obj.id)
+  if (mesh) {
+    mesh.geometry.computeBoundingBox()
+    const b = mesh.geometry.boundingBox
+    return [(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2,
+      (b.min.z + b.max.z) / 2]
+  }
+  const t = (obj.edits ?? []).find((e) => e.type === 'transform')
+  return t?.verschieben ?? [0, 0, 0]
+}
+
+// Lage einer Aussparung auf der Bauteilachse — Spiegel von
+// solids._axis_point_and_dir (Wand: Polylinie, Becken: geschlossener Umfang)
+function openingPos(st, op) {
+  let pts
+  if (st.type === 'wall') pts = (st.alignment?.points ?? []).map((q) => [q[0], q[1]])
+  else if (st.type === 'basin') pts = [...(st.footprint ?? [])]
+  else return null
+  if (pts.length < 2) return null
+  if (st.type === 'basin') pts = [...pts, pts[0]]
+  const seg = []
+  let ges = 0
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i][0] - pts[i - 1][0]
+    const dy = pts[i][1] - pts[i - 1][1]
+    const L = Math.hypot(dx, dy)
+    seg.push({ a: pts[i - 1], dx, dy, L })
+    ges += L
+  }
+  let st_ = Math.min(Math.max(op.station ?? 0, 0), ges)
+  for (const sgm of seg) {
+    if (sgm.L <= 0) continue
+    if (st_ <= sgm.L) {
+      const f = st_ / sgm.L
+      return { p: [sgm.a[0] + f * sgm.dx, sgm.a[1] + f * sgm.dy],
+        d: [sgm.dx / sgm.L, sgm.dy / sgm.L] }
+    }
+    st_ -= sgm.L
+  }
+  const last = seg[seg.length - 1]
+  return { p: [last.a[0] + last.dx, last.a[1] + last.dy],
+    d: [last.dx / last.L, last.dy / last.L] }
+}
 
 // Wirksames Zu-/Ablauf-Fenster — Spiegel von casebuilder.resolve_window:
 // rechteck (span), kreis (Rohrmündung, freie Höhe), trapez, oder
@@ -695,9 +1134,19 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
   if (kind === 'section') { obj.polyline = obj.polyline.map(mv); return obj }
   if (kind === 'terrain_op') {
     if (obj.polyline) obj.polyline = obj.polyline.map(mv)
-    if (obj.polygon) obj.polygon = obj.polygon.map(mv)
+    if (obj.polygon) obj.polygon = obj.polygon.map(mv)   // 2D wie 3D
     if (obj.center) obj.center = mv(obj.center)
+    // Böschung besteht aus ZWEI Linien — ohne diesen Zweig ließe sie sich
+    // als Ganzes gar nicht verschieben
+    if (obj.oberkante) obj.oberkante = obj.oberkante.map(mv)
+    if (obj.unterkante) obj.unterkante = obj.unterkante.map(mv)
     lift('level')
+    return obj
+  }
+  if (kind === 'structure' && obj.type === 'imported') {
+    const t = transformEdit(obj)
+    t.verschieben = [_r2(t.verschieben[0] + dx), _r2(t.verschieben[1] + dy),
+      _r2(t.verschieben[2] + dz)]
     return obj
   }
   if (kind === 'structure') {
@@ -708,6 +1157,15 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
     if (obj.crest_polyline) obj.crest_polyline = obj.crest_polyline.map(mv)
     if (obj.center) obj.center = mv(obj.center)
     lift('invert_level', 'base_level', 'top_level')
+    return obj
+  }
+  if (kind === 'domain') {
+    const e = obj.extent
+    obj.extent = [e[0] + dx, e[1] + dy, e[2] + dx, e[3] + dy]
+    if (dz) {
+      obj.z_min = _r2(obj.z_min + dz)
+      obj.z_max = _r2(obj.z_max + dz)
+    }
     return obj
   }
   if (kind === 'refinement' && obj.extent) {
@@ -723,8 +1181,15 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
 function objectZable(kind, obj) {
   if (!obj) return false
   if (kind === 'gauge') return obj.point?.length > 2
-  if (kind === 'structure' || kind === 'refinement') return true
-  if (kind === 'terrain_op') return typeof obj.level === 'number'
+  if (kind === 'structure' || kind === 'refinement'
+      || kind === 'domain') return true
+  if (kind === 'terrain_op') {
+    // Vermessungskanten tragen ihre Höhe im Stützpunkt, nicht in einem
+    // Höhenfeld — auch sie dürfen als Ganzes gehoben werden
+    if (obj.oberkante || obj.type === 'bruchkante'
+        || obj.type === 'aussenkante') return true
+    return typeof obj.level === 'number'
+  }
   return false
 }
 
@@ -809,6 +1274,27 @@ function handleAccess(kind, obj) {
       }
     }
     const zable = zPair != null || zSingle != null
+    // Vermessungskanten tragen die Höhe JE Stützpunkt — hier zieht der
+    // Z-Zug genau diesen einen Punkt, nicht ein Höhenfeld der Operation.
+    if (obj.type === 'aussenkante') {
+      // Rahmen am Gebietsrand: Höhe steckt im Eckpunkt, nicht in einem
+      // Höhenfeld — Strg-Zug stellt genau diese eine Ecke
+      return { points: obj.polygon.map((q) => [q[0], q[1]]), closed: true,
+        zAt: (i) => obj.polygon[i][2],
+        insert: _insert3d((o) => o.polygon),
+        remove: (o, i) => _removeAt(o.polygon, i, 3),
+        write: (o, i, p) => { o.polygon[i] = [p[0], p[1], o.polygon[i][2]] },
+        writeZ: (o, i, dz) => { o.polygon[i][2] = _r2(o.polygon[i][2] + dz) } }
+    }
+    if (obj.type === 'bruchkante' || obj.type === 'boeschung') {
+      const feld = obj.type === 'bruchkante' ? 'polyline' : 'oberkante'
+      return { points: obj[feld].map((q) => [q[0], q[1]]), closed: false,
+        zAt: (i) => obj[feld][i][2],
+        insert: _insert3d((o) => o[feld]),
+        remove: (o, i) => _removeAt(o[feld], i, 2),
+        write: (o, i, p) => { o[feld][i] = [p[0], p[1], o[feld][i][2]] },
+        writeZ: (o, i, dz) => { o[feld][i][2] = _r2(o[feld][i][2] + dz) } }
+    }
     if (obj.polyline) {
       return { points: obj.polyline, closed: false,
         insert: _insert2d('polyline'),
@@ -824,6 +1310,22 @@ function handleAccess(kind, obj) {
         write: (o, i, p) => { o.polygon[i] = p },
         ...(zable ? { writeZ: (o, i, dz) => opZ(o, i, dz, o.polygon.length) }
           : {}) }
+    }
+    if (obj.center && typeof obj.radius === 'number') {
+      // zweiter Griff auf dem Wirkkreis: Ziehen stellt den Radius. Vorher
+      // ließ sich die Reichweite nur tippen, obwohl sie im Grundriss die
+      // wichtigste Größe dieser Operationen ist.
+      const rad = Math.max(obj.radius, 0.1)
+      return {
+        points: [obj.center, [obj.center[0] + rad, obj.center[1]]],
+        write: (o, i, p) => {
+          if (i === 0) { o.center = p; return }
+          const d = Math.hypot(p[0] - o.center[0], p[1] - o.center[1])
+          o.radius = Math.max(_r2(d), 0.1)
+        },
+        ...(typeof obj.level === 'number'
+          ? { writeZ: (o, i, dz) => { o.level = _r2(o.level + dz) } } : {}),
+      }
     }
     if (obj.center) {
       return { points: [obj.center], write: (o, i, p) => { o.center = p },
@@ -917,6 +1419,26 @@ function handleAccess(kind, obj) {
         zAt: topZ != null ? () => topZ + 0.3 : undefined,
         write: (o, i, p) => { o.center = p },
         writeZ: (o, i, dz) => structZ(o, dz) }
+    }
+    if (obj.type === 'imported') {
+      // Ein Greifpunkt in der Körpermitte: Ziehen verschiebt in x/y,
+      // Strg-Zug in z. Einzelne Netzknoten eines Imports anzufassen wäre
+      // sinnlos — ein STL hat Tausende davon.
+      const pos = importPos(obj)
+      return {
+        points: [[pos[0], pos[1]]],
+        zAt: () => pos[2],
+        write: (o, i, q) => {
+          const t = transformEdit(o)
+          t.verschieben = [_r2(t.verschieben[0] + (q[0] - pos[0])),
+            _r2(t.verschieben[1] + (q[1] - pos[1])), t.verschieben[2]]
+        },
+        writeZ: (o, i, dz) => {
+          const t = transformEdit(o)
+          t.verschieben = [t.verschieben[0], t.verschieben[1],
+            _r2(t.verschieben[2] + dz)]
+        },
+      }
     }
     if (obj.footprint?.length) {
       return { points: obj.footprint,
@@ -1026,6 +1548,35 @@ function handleAccess(kind, obj) {
       },
     }
   }
+  if (kind === 'domain') {
+    // Acht Eckgriffe: vier unten auf der Sohle, vier oben am Deckel.
+    // Waagerechtes Ziehen verschiebt an jeder Ecke die beiden angrenzenden
+    // Kanten, Strg-Zug stellt die Höhe — unten die Unterkante (z_min),
+    // oben die Oberkante (z_max). Damit lässt sich die Berechnungsbox im
+    // Bild zurechtrücken statt über sechs Zahlen.
+    const [ax0, ay0, ax1, ay1] = obj.extent
+    const ecken = [[ax0, ay0], [ax1, ay0], [ax1, ay1], [ax0, ay1]]
+    return {
+      points: [...ecken, ...ecken],
+      loops: [[0, 1, 2, 3], [4, 5, 6, 7]],
+      // Index 0-3 = Sohle, 4-7 = Deckel
+      zAt: (i) => (i < 4 ? obj.z_min - 0.3 : obj.z_max + 0.3),
+      write: (o, i, p) => {
+        const e = [...o.extent]
+        const k = i % 4
+        if (k === 0) { e[0] = p[0]; e[1] = p[1] }
+        else if (k === 1) { e[2] = p[0]; e[1] = p[1] }
+        else if (k === 2) { e[2] = p[0]; e[3] = p[1] }
+        else { e[0] = p[0]; e[3] = p[1] }
+        o.extent = [Math.min(e[0], e[2]), Math.min(e[1], e[3]),
+          Math.max(e[0], e[2]), Math.max(e[1], e[3])]
+      },
+      writeZ: (o, i, dz) => {
+        if (i < 4) o.z_min = _r2(Math.min(o.z_min + dz, o.z_max - 0.1))
+        else o.z_max = _r2(Math.max(o.z_max + dz, o.z_min + 0.1))
+      },
+    }
+  }
   if (kind === 'refinement' && obj.type === 'box') {
     const e = obj.extent
     return {
@@ -1052,7 +1603,7 @@ function handleAccess(kind, obj) {
 
 function buildHandles() {
   // nie mitten im Zug neu bauen — sonst verlieren wir die gegriffenen Teile
-  if (dragging || objectDrag) return
+  if (dragging || objectDrag || rotDrag) return
   clearGroup('handles')
   const sel = store.selection
   const access = sel && handleAccess(sel.kind, store.selectedObject)
@@ -1089,11 +1640,17 @@ function buildHandles() {
     positions.push(m.position.clone())
   })
 
-  // Verbindungslinien zwischen den Stützpunkten (Umriss)
-  if (positions.length > 1) {
-    const linePts = access.closed ? [...positions, positions[0]] : positions
+  // Verbindungslinien zwischen den Stützpunkten (Umriss). `loops` trennt
+  // mehrere Ringe — beim Modellgebiet liegen Sohle und Deckel getrennt
+  // übereinander, ein durchgehender Zug ergäbe eine Diagonale quer durch.
+  const ringe = access.loops
+    ?? (positions.length > 1
+      ? [access.closed ? [...positions.keys(), 0] : [...positions.keys()]]
+      : [])
+  for (const ring of ringe) {
+    const idx = access.loops ? [...ring, ring[0]] : ring
     const outline = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(linePts),
+      new THREE.BufferGeometry().setFromPoints(idx.map((i) => positions[i])),
       new THREE.LineBasicMaterial({ color: 0x4d9fff, transparent: true,
         opacity: 0.9, depthTest: false }))
     outline.renderOrder = 3
@@ -1113,6 +1670,8 @@ function buildHandles() {
       groups.handles.add(guide)
     }
   }
+
+  if (sel.kind === 'domain') buildRotGizmo()
 
   // „+"-Zwischenpunkte auf den Kantenmitten: Klick-Zug fügt eine Ecke ein
   if (access.insert && positions.length > 1) {
@@ -1136,6 +1695,193 @@ function buildHandles() {
     }
   }
   scene.add(groups.handles)
+}
+
+// --- Drehgriff für das Modellgebiet --------------------------------------
+// Ein Rechengebiet muss achsparallel bleiben (blockMesh, Randflächennamen,
+// Höhenraster hängen daran). Schief liegt nicht der Quader, sondern das
+// Modell — also dreht dieser Griff das MODELL und der Quader legt sich neu
+// darum. Darstellung: dicke z-Achse durch die Gebietsmitte, darüber ein
+// gekrümmter Doppelpfeil, an dem gezogen wird.
+const ROT_FARBE = 0x4d9fff
+let rotDrag = null            // { cx, cy, z, start, grad } während des Zugs
+const rotInfo = ref('')
+
+function rotGeometrie() {
+  const d = store.spec?.domain
+  if (!d) return null
+  const [x0, y0, x1, y1] = d.extent
+  const spanne = Math.max(d.z_max - d.z_min, 1)
+  return {
+    cx: (x0 + x1) / 2, cy: (y0 + y1) / 2,
+    r: Math.max(Math.min(x1 - x0, y1 - y0) * 0.2, 1.5),
+    z0: d.z_min, zTop: d.z_max + Math.max(spanne * 0.35, 1.5),
+  }
+}
+
+function buildRotGizmo() {
+  const g = rotGeometrie()
+  if (!g || !groups.handles) return
+  const voll = new THREE.MeshBasicMaterial({ color: ROT_FARBE,
+    depthTest: false, transparent: true, opacity: 0.9 })
+  const unsichtbar = new THREE.MeshBasicMaterial({ transparent: true,
+    opacity: 0, depthTest: false, depthWrite: false })
+  const dick = g.r * 0.055
+
+  // dicke z-Achse: zeigt, worum gedreht wird
+  const hoehe = g.zTop - g.z0
+  const achse = new THREE.Mesh(
+    new THREE.CylinderGeometry(dick, dick, hoehe, 12), voll)
+  achse.rotation.x = Math.PI / 2
+  achse.position.set(g.cx, g.cy, g.z0 + hoehe / 2)
+  achse.renderOrder = 4
+  const spitze = new THREE.Mesh(
+    new THREE.ConeGeometry(dick * 2.4, dick * 7, 12), voll)
+  spitze.rotation.x = Math.PI / 2
+  spitze.position.set(g.cx, g.cy, g.zTop + dick * 3.5)
+  spitze.renderOrder = 4
+  groups.handles.add(achse, spitze)
+
+  // gekrümmter Doppelpfeil um die Achse
+  const bogen = Math.PI * 1.45
+  const ring = new THREE.Group()
+  const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(g.r, dick * 0.8, 10, 64, bogen), voll)
+  torus.renderOrder = 4
+  ring.add(torus)
+  for (const [winkel, dreh] of [[0, Math.PI], [bogen, bogen]]) {
+    const kopf = new THREE.Mesh(
+      new THREE.ConeGeometry(dick * 2.2, dick * 6.5, 12), voll)
+    kopf.position.set(g.r * Math.cos(winkel), g.r * Math.sin(winkel), 0)
+    kopf.rotation.z = dreh          // Kegel zeigt entlang der Tangente
+    kopf.renderOrder = 4
+    ring.add(kopf)
+  }
+  // großzügiges, unsichtbares Greifband auf demselben Bogen
+  const greifer = new THREE.Mesh(
+    new THREE.TorusGeometry(g.r, dick * 4, 8, 48, bogen), unsichtbar)
+  greifer.userData = { rotGizmo: true }
+  ring.add(greifer)
+  ring.position.set(g.cx, g.cy, g.zTop)
+  groups.handles.add(ring)
+}
+
+function pickRotGizmo(e) {
+  if (!groups.handles) return false
+  const ziele = []
+  groups.handles.traverse((c) => { if (c.userData?.rotGizmo) ziele.push(c) })
+  return ziele.length > 0 && _ray(e).intersectObjects(ziele, false).length > 0
+}
+
+// Eine Szenengruppe um die senkrechte Achse durch (cx, cy) drehen — nur
+// Vorschau, gerechnet wird serverseitig.
+function drehGruppe(gruppe, rad, cx, cy) {
+  if (!gruppe) return
+  const c = Math.cos(rad)
+  const s = Math.sin(rad)
+  gruppe.rotation.z = rad
+  gruppe.position.set(cx - (c * cx - s * cy), cy - (s * cx + c * cy), 0)
+}
+
+function rotVorschauZuruecksetzen() {
+  for (const name of ['terrain', 'solids', 'markers']) {
+    const gruppe = groups[name]
+    if (!gruppe) continue
+    gruppe.rotation.z = 0
+    gruppe.position.set(0, 0, 0)
+  }
+  clearGroup('rotbox')
+}
+
+// Umriss des Gebiets, das nach der Drehung entstünde (achsparallel um die
+// gedrehte Geometrie herum) — gestrichelt, damit der Zuschnitt vorab sichtbar ist
+function zeigeNeuesGebiet(rad) {
+  clearGroup('rotbox')
+  const d = store.spec?.domain
+  if (!d) return
+  const [x0, y0, x1, y1] = d.extent
+  const cx = (x0 + x1) / 2
+  const cy = (y0 + y1) / 2
+  const c = Math.cos(rad)
+  const s = Math.sin(rad)
+  const xs = []
+  const ys = []
+  for (const [px, py] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
+    xs.push(cx + c * (px - cx) - s * (py - cy))
+    ys.push(cy + s * (px - cx) + c * (py - cy))
+  }
+  const [nx0, nx1] = [Math.min(...xs), Math.max(...xs)]
+  const [ny0, ny1] = [Math.min(...ys), Math.max(...ys)]
+  const z = d.z_max
+  const linie = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [[nx0, ny0], [nx1, ny0], [nx1, ny1], [nx0, ny1], [nx0, ny0]]
+      .map(([x, y]) => new THREE.Vector3(x, y, z))),
+  new THREE.LineDashedMaterial({ color: 0x7dd3fc, dashSize: 1.2, gapSize: 0.8,
+    depthTest: false }))
+  linie.computeLineDistances()
+  linie.renderOrder = 5
+  groups.rotbox = new THREE.Group()
+  groups.rotbox.add(linie)
+  scene.add(groups.rotbox)
+}
+
+function rotWinkel(e) {
+  const p = planePick(e, rotDrag.z)
+  if (!p) return null
+  return Math.atan2(p.y - rotDrag.cy, p.x - rotDrag.cx)
+}
+
+function startRotDrag(e) {
+  const g = rotGeometrie()
+  if (!g) return false
+  rotDrag = { cx: g.cx, cy: g.cy, z: g.zTop, start: 0, grad: 0 }
+  const a = rotWinkel(e)
+  if (a == null) { rotDrag = null; return false }
+  rotDrag.start = a
+  controls.enabled = false
+  renderer.domElement.style.cursor = 'grabbing'
+  renderer.domElement.setPointerCapture(e.pointerId)
+  rotInfo.value = 'Modell drehen: 0,0° · Shift rastet auf 15° · Esc bricht ab'
+  return true
+}
+
+function dragRotTo(e) {
+  const a = rotWinkel(e)
+  if (a == null) return
+  let grad = ((a - rotDrag.start) * 180) / Math.PI
+  grad = ((grad + 180) % 360 + 360) % 360 - 180      // auf ±180° bringen
+  if (e.shiftKey) grad = Math.round(grad / 15) * 15
+  else grad = Math.round(grad * 10) / 10
+  rotDrag.grad = grad
+  const rad = (grad * Math.PI) / 180
+  for (const name of ['terrain', 'solids', 'markers']) {
+    drehGruppe(groups[name], rad, rotDrag.cx, rotDrag.cy)
+  }
+  zeigeNeuesGebiet(rad)
+  rotInfo.value = `Modell drehen: ${grad.toFixed(1).replace('.', ',')}°`
+    + ' · Shift rastet auf 15° · Esc bricht ab'
+}
+
+function cancelRotDrag() {
+  rotDrag = null
+  rotInfo.value = ''
+  rotVorschauZuruecksetzen()
+  controls.enabled = true
+  renderer.domElement.style.cursor = 'default'
+}
+
+async function commitRotDrag() {
+  const grad = rotDrag?.grad ?? 0
+  cancelRotDrag()
+  if (Math.abs(grad) < 0.05) return
+  // Der Server dreht jede Koordinate des Falls und tastet das Höhenraster
+  // neu ab; danach kommen Gelände und Körper ohnehin frisch zurück.
+  const hinweise = await store.drehen(grad)
+  buildHandles()
+  // Das Drehen schreibt den Fall — der Weg zurück ist der Verlaufsstapel
+  rotInfo.value = [`Um ${grad.toFixed(1).replace('.', ',')}° gedreht`,
+    ...hinweise, 'Strg+Z stellt den Stand davor wieder her'].join(' · ')
+  setTimeout(() => { rotInfo.value = '' }, 15000)
 }
 
 function _ray(e) {
@@ -1380,6 +2126,93 @@ function dragHandleTo(e) {
   updateDragDelta(e, dx, dy, dz, snap.lock)
 }
 
+// Marker einer Bearbeitung unter dem Zeiger (nur am gewählten Bauwerk)
+function pickEditMarker(e) {
+  if (!groups.markers) return null
+  const sel = store.selection
+  if (sel?.kind !== 'structure') return null
+  const ziele = groups.markers.children.filter(
+    (c) => c.userData?.editIdx != null && c.userData.id === sel.id)
+  if (!ziele.length) return null
+  const hits = _ray(e).intersectObjects(ziele, false)
+  return hits.length ? hits[0].object : null
+}
+
+function startEditDrag(e, marke) {
+  // sichtbarer Ring liegt an derselben Stelle wie das Klickziel
+  const sichtbar = (groups.markers?.children ?? []).find(
+    (c) => c !== marke && c.userData?.editIdx == null
+      && c.userData?.id === marke.userData.id
+      && c.position.distanceTo(marke.position) < 1e-6)
+  editDrag = { structId: marke.userData.id, idx: marke.userData.editIdx,
+    mesh: marke, sichtbar, treffer: null }
+  controls.enabled = false
+  renderer.domElement.style.cursor = 'grabbing'
+  renderer.domElement.setPointerCapture(e.pointerId)
+}
+
+function dragEditTo(e) {
+  if (!editDrag) return
+  const mesh = (groups.solids?.children ?? []).find(
+    (c) => c.userData?.id === editDrag.structId)
+  if (!mesh) return
+  const hits = _ray(e).intersectObjects([mesh], false)
+  if (!hits.length) return
+  const h = hits[0]
+  const n = h.face
+    ? h.face.normal.clone().applyMatrix3(
+      new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize()
+    : new THREE.Vector3(0, 0, 1)
+  editDrag.treffer = { punkt: h.point.clone(), normale: n }
+  // Marker sofort mitziehen; die Spezifikation folgt beim Loslassen
+  const senkrecht = Math.abs(n.z) > 0.7
+  for (const m of [editDrag.mesh, editDrag.sichtbar]) {
+    if (!m) continue
+    m.position.copy(h.point).addScaledVector(n, 0.02)
+    m.rotation.set(senkrecht ? 0 : Math.PI / 2, 0,
+      senkrecht ? 0 : Math.atan2(n.x, -n.y) + Math.PI / 2)
+  }
+  coords.value = `Bearbeitung → x = ${h.point.x.toFixed(2)} `
+    + `y = ${h.point.y.toFixed(2)} z = ${h.point.z.toFixed(2)} m`
+}
+
+function commitEditDrag() {
+  const drag = editDrag
+  editDrag = null
+  controls.enabled = true
+  renderer.domElement.style.cursor = 'default'
+  if (!drag?.treffer) { buildMarkers(); return }
+  const st = (store.spec?.structures ?? []).find((o) => o.id === drag.structId)
+  const alt = st?.edits?.[drag.idx]
+  if (!alt || alt.type !== 'aussparung') { buildMarkers(); return }
+  const { punkt, normale } = drag.treffer
+  const senkrecht = Math.abs(normale.z) > 0.7
+  const nxy = new THREE.Vector2(normale.x, normale.y)
+  if (nxy.lengthSq() < 1e-9) nxy.set(0, 1)
+  nxy.normalize()
+  const klon = JSON.parse(JSON.stringify(st))
+  klon.edits[drag.idx] = { ...alt, station: undefined,
+    point: [_r2(punkt.x), _r2(punkt.y)],
+    direction: [_r2(nxy.x), _r2(nxy.y)],
+    z: _r2(punkt.z), vertikal: senkrecht }
+  delete klon.edits[drag.idx].station
+  store.updateObject('structure', drag.structId, klon)
+}
+
+// Entf über einem Bearbeitungs-Marker löscht die Bearbeitung
+function deleteHoveredEdit() {
+  if (!lastMove) return false
+  const marke = pickEditMarker(lastMove)
+  if (!marke) return false
+  const st = (store.spec?.structures ?? []).find(
+    (o) => o.id === marke.userData.id)
+  if (!st?.edits?.length) return false
+  const klon = JSON.parse(JSON.stringify(st))
+  klon.edits.splice(marke.userData.editIdx, 1)
+  store.updateObject('structure', st.id, klon)
+  return true
+}
+
 function dragObjectTo(e) {
   if (!objectDrag) return
   if (!objectDrag.basePos) objectDrag.basePos = objectDrag.mesh.position.clone()
@@ -1531,6 +2364,11 @@ async function toggleMeshView() {
       groups.mesh.add(solid, wire)
     }
     scene.add(groups.mesh)
+    if (data.stale) {
+      meshHint.value = '⚠ Dieses Netz gehört zu einem älteren Stand des '
+        + 'Falls — es zeigt NICHT die aktuelle Geometrie. Netz- und '
+        + 'Kostenvorschau in der Phase „Simulation" neu ausführen.'
+    }
     // Vorschaugeometrie ausblenden — das Netz IST jetzt die Geometrie
     if (groups.terrain) groups.terrain.visible = false
     if (groups.solids) groups.solids.visible = false
@@ -1541,6 +2379,8 @@ async function toggleMeshView() {
       : `Netz nicht ladbar: ${e.message}`
   }
 }
+
+watch(solverView, () => buildTerrain())
 
 watch(meshView, (on) => {
   if (!on) {
@@ -1667,6 +2507,12 @@ onMounted(() => {
     downPos = [e.clientX, e.clientY]
     if (mode.value !== 'select' && mode.value !== 'move') return
     if (e.button !== 0) return          // rechts/mitte bleibt der Kamera
+    const marke = pickEditMarker(e)
+    if (marke) { startEditDrag(e, marke); return }
+    // Drehgriff des Modellgebiets zuerst — er liegt über allem anderen
+    if (store.selection?.kind === 'domain' && pickRotGizmo(e)) {
+      if (startRotDrag(e)) return
+    }
     let h = pickHandle(e)
     if (h && h.userData.insertAfter != null) {
       // Zwischenpunkt: neue Ecke einfügen und direkt weiterziehen
@@ -1769,10 +2615,10 @@ onMounted(() => {
   // läuft NACH dem Haupt-Handler: wenn keine Objekt-Interaktion gestartet
   // wurde, arbeitet die Kamera — Pivot verankern + Faust-Cursor
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (e.button !== 2 && !dragging && !objectDrag && !topView.value) {
+    if (e.button !== 2 && !dragging && !objectDrag && !rotDrag && !topView.value) {
       anchorPivotToViewCenter()
     }
-    if (e.button === 0 && !dragging && !objectDrag) {
+    if (e.button === 0 && !dragging && !objectDrag && !rotDrag) {
       renderer.domElement.style.cursor = 'grabbing'
     }
   })
@@ -1787,8 +2633,18 @@ onMounted(() => {
   }, { passive: true })
 
   renderer.domElement.addEventListener('pointerup', (e) => {
+    if (rotDrag) {
+      commitRotDrag()
+      downPos = null
+      return
+    }
     if (dragging) {
       commitHandleDrag()
+      downPos = null
+      return
+    }
+    if (editDrag) {
+      commitEditDrag()
       downPos = null
       return
     }
@@ -1800,7 +2656,11 @@ onMounted(() => {
     renderer.domElement.style.cursor =
       mode.value === 'select' || mode.value === 'move' ? 'default' : 'crosshair'
     if (downPos && Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) < 5) {
-      if (mode.value === 'select' || mode.value === 'move') {
+      if (mode.value === 'stanzen') {
+        stanzHit = stanzPick(e) ?? stanzHit
+        updateStanzPreview()
+        if (stanzHit) stanzKlick()
+      } else if (mode.value === 'select' || mode.value === 'move') {
         pick(e)
       } else {
         const pt = groundPick(e)
@@ -1811,12 +2671,32 @@ onMounted(() => {
   })
   renderer.domElement.addEventListener('pointermove', (e) => {
     lastMove = e                      // für Entf (Ecke unterm Cursor löschen)
+    if (rotDrag) {
+      dragRotTo(e)
+      return
+    }
     if (dragging) {
       dragHandleTo(e)
       return
     }
+    if (editDrag) {
+      dragEditTo(e)
+      return
+    }
     if (objectDrag) {
       dragObjectTo(e)
+      return
+    }
+    if (mode.value === 'stanzen') {
+      // gleiche Drosselung wie beim Hover: die Vorschau wird bei jedem
+      // Aufruf neu gebaut, 120 Hz wären reine Verschwendung
+      const jetzt = performance.now()
+      if (jetzt - lastHoverCheck < 40) return
+      lastHoverCheck = jetzt
+      const h = stanzPick(e)
+      if (h) stanzHit = h
+      updateStanzPreview()
+      renderer.domElement.style.cursor = h ? 'crosshair' : 'not-allowed'
       return
     }
     // Maustaste unten = die Kamera arbeitet. Dann darf die Hover-Logik
@@ -1834,6 +2714,12 @@ onMounted(() => {
     // im Verschieben-Werkzeug bzw. mit gehaltener Shift-/Strg-Taste
     // (Strg = Höhen-Verschieben — auch das braucht die Kamera-Sperre!).
     if (mode.value === 'select' || mode.value === 'move') {
+      const overEdit = !!pickEditMarker(e)
+      if (overEdit) {
+        controls.enabled = false
+        renderer.domElement.style.cursor = 'grab'
+        return
+      }
       const overHandle = !!pickHandle(e)
       let overMovable = false
       if (!overHandle) {
@@ -1859,6 +2745,24 @@ onMounted(() => {
       : ''
     if (mode.value !== 'select' && drawPts.value.length && pt) updatePreview(pt)
   })
+  renderer.domElement.addEventListener('wheel', (e) => {
+    // Beim Stanzen ändert das Rad das Maß statt der Kameradistanz — das
+    // ist der schnellste Weg zur passenden Öffnung, ohne Zahlen zu tippen
+    if (mode.value !== 'stanzen') return
+    e.preventDefault()
+    e.stopPropagation()
+    const f = e.deltaY < 0 ? 1.1 : 1 / 1.1
+    const m = { ...stanzMass.value }
+    if (store.platzierung?.art === 'bohrung') {
+      m.d = Math.min(Math.max(m.d * f, 0.05), 50)
+    } else if (e.shiftKey) {
+      m.h = Math.min(Math.max(m.h * f, 0.05), 50)
+    } else {
+      m.w = Math.min(Math.max(m.w * f, 0.05), 50)
+    }
+    stanzMass.value = m
+    updateStanzPreview()
+  }, { passive: false, capture: true })
   renderer.domElement.addEventListener('dblclick', (e) => {
     if (mode.value === 'draw') {
       finishDrawing()
@@ -1956,6 +2860,8 @@ function duplicateSelected() {
 
 function onKeydown(e) {
   if (e.key === 'Escape') {
+    if (rotDrag) { cancelRotDrag(); return }
+    if (store.platzierung) store.endPlatzierung()
     cancelDrawing()
     mode.value = 'select'
     return
@@ -1966,7 +2872,7 @@ function onKeydown(e) {
     return
   }
   if ((e.key === 'Delete' || e.key === 'Backspace') && !dragging && !objectDrag) {
-    deleteHoveredCorner()
+    if (!deleteHoveredEdit()) deleteHoveredCorner()
   }
 }
 
@@ -1976,6 +2882,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   clearGroup('terrain'); clearGroup('solids'); clearGroup('markers')
   clearGroup('preview'); clearGroup('mesh'); clearGroup('handles')
+  clearGroup('stanz'); clearGroup('rotbox')
   controls?.dispose()
   renderer?.dispose()
 })
@@ -1992,6 +2899,23 @@ onBeforeUnmount(() => {
   border: 1px solid var(--f3d-border);
 }
 .f3d-editor3d :deep(canvas) { display: block; }
+.f3d-stanzbar {
+  position: absolute;
+  top: 3.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(20, 26, 40, 0.92);
+  border: 1px solid #ffd24d;
+  color: #ffe9a8;
+  font-size: 0.82rem;
+  z-index: 6;
+}
+
 .f3d-editor3d-hint {
   position: absolute;
   left: 10px;

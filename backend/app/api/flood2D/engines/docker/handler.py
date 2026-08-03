@@ -6,6 +6,7 @@ Protokoll (eine JSON-Zeile pro Event, vom DockerEngine im Backend konsumiert):
 
     {"event": "log",      "text": ...}
     {"event": "warning",  "text": ...}
+    {"event": "solver_version", "sha": "<git-sha>", "patches": [...]}  ← erstes Event
     {"event": "progress", "time": <Sim-Sekunden>, "mass": {...}}      ← Heartbeat
     {"event": "frame",    "frame": n, "file": "frame-0000.bin", "min":, "max":, "time":}
     {"event": "done",     "massReport": {...}, "maxDepthFile": "max-depth.bin"}
@@ -48,6 +49,25 @@ LOG_EVERY_NTH = 50     # ...danach nur jede N-te (gegen Event-Flut)
 
 def emit(event, **kw):
     print(json.dumps({"event": event, **kw}, ensure_ascii=False), flush=True)
+
+
+def solver_version():
+    """Herkunft dieses Solvers: Git-SHA des Repos beim Image-Bau (ENV, vom
+    Dockerfile-ARG QUAGG_SHA) + die tatsächlich angewandten Patches (Datei, im
+    build-Stage nach dem letzten Patch erzeugt).
+
+    Grund: Am 2026-08-01 stellte sich heraus, dass :latest, :runpod und :local
+    unterschiedliche Patch-Stände hatten — dieselbe Rechnung lieferte je nach
+    Backend andere Ergebnisse, ohne dass man es sehen konnte. Der Stempel geht
+    als erstes Event raus UND landet in results/, damit jedes archivierte
+    Ergebnis seinen Solver-Stand mitführt.
+    """
+    patches = []
+    pf = Path("/opt/lisflood/PATCHES.txt")
+    if pf.exists():
+        patches = [ln.strip() for ln in pf.read_text(
+            encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    return {"sha": os.environ.get("QUAGG_SOLVER_SHA", "unknown"), "patches": patches}
 
 
 # ── run.par lesen/patchen ───────────────────────────────────────────────────
@@ -587,6 +607,12 @@ def main():
     inputs = job / "inputs"
     results = job / "results"
     results.mkdir(parents=True, exist_ok=True)
+
+    # Solver-Herkunft als erstes Event + neben die Ergebnisse legen (s. solver_version).
+    ver = solver_version()
+    emit("solver_version", **ver)
+    (results / "solver_version.json").write_text(
+        json.dumps(ver, indent=2), encoding="utf-8")
 
     par_files = sorted(inputs.glob("*.par"))
     if not par_files:

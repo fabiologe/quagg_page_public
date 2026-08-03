@@ -10,14 +10,21 @@
 
       <div class="f3d-ctl-group">
         <label>Feldgröße</label>
-        <select v-model="activeFieldKey" class="f3d-select">
-          <option v-for="f in FIELD_OPTIONS" :key="f.key" :value="f.key">{{ f.label }}</option>
-        </select>
+        <div class="f3d-row">
+          <select v-model="activeFieldKey" class="f3d-select f3d-grow">
+            <option v-for="f in FIELD_OPTIONS" :key="f.key" :value="f.key">{{ f.label }}</option>
+          </select>
+          <KennwertHilfe :groesse="hilfeSchluessel" :wert="shownRange[1]" />
+        </div>
       </div>
 
       <div class="f3d-ctl-group">
         <label>Darstellung</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.structures" /> Bauwerke (Eingabegeometrie)</label>
+        <label class="f3d-check">
+          <input type="checkbox" v-model="praesentation" />
+          Präsentation (Bauwerke und Gelände neutral grau)
+        </label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.meshSurface" /> Solver-Netz (Zellfacetten)</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.terrain" /> Gelände</label>
         <label class="f3d-check f3d-indent">
@@ -25,6 +32,24 @@
           Sohlschubspannung einfärben
         </label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.surface" /> Wasseroberfläche (Isofläche α = 0,5)</label>
+        <label class="f3d-check f3d-sub" v-if="layers.surface">
+          <input type="checkbox" v-model="realistisch" />
+          Realistisch darstellen
+        </label>
+        <div class="f3d-row f3d-sub" v-if="layers.surface">
+          <span class="f3d-lbl">Glättung</span>
+          <input type="range" min="0" max="3" step="1" v-model.number="glaettung" />
+          <span class="f3d-mono">{{ glaettung }}×</span>
+        </div>
+        <p v-if="layers.surface && glaettung === 0" class="f3d-hint-inline">
+          Ohne Glättung zeigt die Oberfläche die Facetten des
+          Darstellungsrasters — nicht die des Rechennetzes.
+        </p>
+        <p v-if="realistisch" class="f3d-hint-inline">
+          Schaudarstellung: Glanzlicht und Wasserfarbe statt Feldeinfärbung.
+          Die Geometrie bleibt exakt die gerechnete Oberfläche — für die
+          Auswertung wieder abschalten.
+        </p>
         <label class="f3d-check"><input type="checkbox" v-model="layers.body" /> Wasserkörper (Luftphase ausgeblendet)</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.slice" /> Schnittebene</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.arrows" /> Vektorpfeile</label>
@@ -83,14 +108,27 @@
         <label>Stromlinien</label>
         <div class="f3d-row">
           <span class="f3d-lbl">Anzahl</span>
-          <input type="range" min="20" max="400" step="20" v-model.number="slCount" />
+          <input type="range" min="20" max="1500" step="20" v-model.number="slCount" />
           <span class="f3d-mono">{{ slCount }}</span>
         </div>
         <div class="f3d-row">
+          <span class="f3d-lbl">Stärke</span>
+          <input type="range" min="0.3" max="4" step="0.1" v-model.number="slThick" />
+          <span class="f3d-mono">{{ slThick.toFixed(1) }}×</span>
+        </div>
+        <label class="f3d-check">
+          <input type="checkbox" v-model="slSeedAll" />
+          Startpunkte im ganzen Wasserkörper
+        </label>
+        <div class="f3d-row" v-if="!slSeedAll">
           <span class="f3d-lbl">Starthöhe</span>
           <input type="range" min="0" :max="grid ? grid.dims[2] - 1 : 0" v-model.number="slHeightIdx" />
           <span class="f3d-mono">{{ slHeightLabel }}</span>
         </div>
+        <p v-if="slHeightAuto" class="f3d-hint-inline">
+          Die gewählte Höhe liegt über dem Wasser — gezeichnet wird von der
+          Ebene mit den meisten Nasszellen aus.
+        </p>
         <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(velRange[0]) }} m/s</span>
@@ -117,7 +155,10 @@
       </div>
 
       <div class="f3d-ctl-group" v-if="layers.terrain && layers.terrainShear">
-        <label>Sohlschubspannung in N/m²</label>
+        <label>
+          Sohlschubspannung in N/m²
+          <KennwertHilfe groesse="bed_shear" :wert="tauRange[1]" />
+        </label>
         <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(tauRange[0]) }}</span>
@@ -192,6 +233,7 @@ import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData'
 import vtkImageMarchingCubes from '@kitware/vtk.js/Filters/General/ImageMarchingCubes'
 import vtkImageStreamline from '@kitware/vtk.js/Filters/General/ImageStreamline'
 import vtkTubeFilter from '@kitware/vtk.js/Filters/General/TubeFilter'
+import { VaryRadius } from '@kitware/vtk.js/Filters/General/TubeFilter/Constants'
 import vtkArrowSource from '@kitware/vtk.js/Filters/Sources/ArrowSource'
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor'
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper'
@@ -206,16 +248,28 @@ import vtkSTLReader from '@kitware/vtk.js/IO/Geometry/STLReader'
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction'
 import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps'
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction'
+import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { fetchGeometry, fetchTimesteps, fetchVolume } from '../../services/volume'
 
 const store = usePostStore()
 
-const FIELD_OPTIONS = [
-  { key: 'umag', label: 'Geschwindigkeitsbetrag', unit: 'm/s' },
-  { key: 'p_rgh', label: 'Druck (reduziert)', unit: 'Pa' },
-  { key: 'alpha', label: 'Phasenanteil', unit: '—' },
+// Alle Feldgrößen, die der Solver liefern kann. Angeboten wird nur, was
+// im Lauf wirklich vorliegt (laminar hat kein k/omega/nut) — die Liste
+// kommt aus dem Feldindex des Laufs.
+const ALL_FIELDS = [
+  { key: 'umag', label: 'Geschwindigkeitsbetrag', unit: 'm/s', needs: 'U' },
+  { key: 'alpha', label: 'Wasseranteil (Phase)', unit: '—', needs: 'alpha' },
+  { key: 'p_rgh', label: 'Druck (reduziert)', unit: 'Pa', needs: 'p_rgh' },
+  { key: 'p', label: 'Druck (gesamt)', unit: 'Pa', needs: 'p' },
+  { key: 'k', label: 'Turbulente kinetische Energie', unit: 'm²/s²', needs: 'k' },
+  { key: 'omega', label: 'Turbulente Frequenz ω', unit: '1/s', needs: 'omega' },
+  { key: 'nut', label: 'Wirbelviskosität', unit: 'm²/s', needs: 'nut' },
+  { key: 'T', label: 'Markierungsstoff (Verweilzeit)', unit: '—', needs: 'T' },
 ]
+const availableFieldKeys = ref(['umag', 'alpha', 'p_rgh'])
+const FIELD_OPTIONS = computed(() =>
+  ALL_FIELDS.filter((f) => availableFieldKeys.value.includes(f.needs)))
 const LEGEND_GRADIENT = 'linear-gradient(90deg,#440154,#414487,#2a788e,#22a884,#7ad151,#fde725)'
 const VIEWS_KEY = 'flood3d-camera-views'
 const G = 9.81
@@ -223,6 +277,9 @@ const G = 9.81
 const viewport = ref(null)
 const activeRunId = ref(null)
 const activeFieldKey = ref('umag')
+// Schlüssel der Erklärtexte: der Viewer nennt den Geschwindigkeitsbetrag
+// „umag", die Sohlschubspannung kommt aus einem eigenen Feld
+const hilfeSchluessel = computed(() => activeFieldKey.value)
 const layers = ref({
   terrain: true, terrainShear: true, surface: true, body: false,
   slice: false, arrows: false, iso: false, streamlines: false,
@@ -235,7 +292,17 @@ const arrowScale = ref(3)
 const arrowStride = ref(3)
 const arrowsOnSlice = ref(false)
 const isoValue = ref(0.5)
-const slCount = ref(120)
+const slCount = ref(300)
+const slThick = ref(1)          // Strichstärke, 1 = Standard
+// Schaudarstellung: Wasser sieht aus wie Wasser statt wie eine Messfläche.
+// Bewusst KEINE Auswertung — die Farbskala wird dabei bedeutungslos.
+const realistisch = ref(false)
+// true, wenn die gewählte Starthöhe trocken war und automatisch die
+// nasseste Ebene genommen wurde
+const slHeightAuto = ref(false)
+const slSeedAll = ref(true)     // Startpunkte im ganzen Wasserkörper
+const glaettung = ref(1)        // Durchgänge über das Alphafeld
+const praesentation = ref(false)
 const slHeightIdx = ref(16)
 const velRange = ref([0, 1])
 const times = ref([])
@@ -254,7 +321,8 @@ const loading = ref(false)
 const error = ref('')
 
 const activeField = computed(() =>
-  FIELD_OPTIONS.find((f) => f.key === activeFieldKey.value) ?? FIELD_OPTIONS[0])
+  FIELD_OPTIONS.value.find((f) => f.key === activeFieldKey.value)
+  ?? FIELD_OPTIONS.value[0])
 const shownRange = computed(() =>
   colorLock.value ? [colorMin.value, colorMax.value] : autoRange.value)
 
@@ -353,12 +421,24 @@ function buildPipelines() {
   // Stromlinien
   vtk.vectorImage = vtkImageData.newInstance()
   vtk.seedPD = vtkPolyData.newInstance()
-  vtk.slFilter = vtkImageStreamline.newInstance({ integrationStep: 0.4, maximumNumberOfSteps: 600 })
-  vtk.tube = vtkTubeFilter.newInstance({ radius: 0.25, numberOfSides: 8, capping: true })
+  vtk.slFilter = vtkImageStreamline.newInstance({ integrationStep: 0.3,
+    maximumNumberOfSteps: 600 })
+  // Der Radius wird beim Zeichnen aus der Modellgröße gesetzt (s. u.) — ein
+  // fester Wert ergibt im 10-m-Becken Schläuche und im 200-m-Modell Fäden.
+  // 4 Seiten reichen: bei zwei Pixel Strichstärke sieht niemand ein
+  // Achteck, aber die Geometrie halbiert sich gegenüber 8 Seiten.
+  vtk.tube = vtkTubeFilter.newInstance({ radius: 0.02, numberOfSides: 4,
+    capping: false, varyRadius: VaryRadius.VARY_RADIUS_BY_SCALAR,
+    radiusFactor: 2.5 })
   vtk.slMapper = vtkMapper.newInstance({ useLookupTableScalarRange: true })
   vtk.slMapper.setLookupTable(vtk.ctfVel)
   vtk.slActor = vtkActor.newInstance()
   vtk.slActor.setMapper(vtk.slMapper)
+  // wenig Schattierung, damit die Farbskala die Farbe bestimmt und nicht
+  // das Licht — bei dünnen Röhren sonst alles weißlich
+  vtk.slActor.getProperty().setAmbient(0.55)
+  vtk.slActor.getProperty().setDiffuse(0.55)
+  vtk.slActor.getProperty().setSpecular(0.1)
 
   vtk.picker = vtkCellPicker.newInstance()
   vtk.picker.setTolerance(0.005)
@@ -441,6 +521,68 @@ function cellIndexAt(x, y, z) {
 function sampleNearest(values, x, y, z) {
   const [i, j, k] = cellIndexAt(x, y, z)
   return values[(k * grid.dims[1] + j) * grid.dims[0] + i]
+}
+
+// Trilinear statt Nachbarzelle: die Einfärbung der Wasseroberfläche kam
+// vorher aus JE EINER Zelle, dadurch die fleckigen Kacheln — mit
+// Interpolation entsteht ein stetiger Verlauf.
+function sampleLinear(values, x, y, z) {
+  const { origin, spacing, dims } = grid
+  const fx = (x - origin[0]) / spacing[0] - 0.5
+  const fy = (y - origin[1]) / spacing[1] - 0.5
+  const fz = (z - origin[2]) / spacing[2] - 0.5
+  const i0 = Math.min(dims[0] - 2, Math.max(0, Math.floor(fx)))
+  const j0 = Math.min(dims[1] - 2, Math.max(0, Math.floor(fy)))
+  const k0 = Math.min(dims[2] - 2, Math.max(0, Math.floor(fz)))
+  const tx = Math.min(1, Math.max(0, fx - i0))
+  const ty = Math.min(1, Math.max(0, fy - j0))
+  const tz = Math.min(1, Math.max(0, fz - k0))
+  const at = (i, j, k) => values[(k * dims[1] + j) * dims[0] + i]
+  const c00 = at(i0, j0, k0) * (1 - tx) + at(i0 + 1, j0, k0) * tx
+  const c10 = at(i0, j0 + 1, k0) * (1 - tx) + at(i0 + 1, j0 + 1, k0) * tx
+  const c01 = at(i0, j0, k0 + 1) * (1 - tx) + at(i0 + 1, j0, k0 + 1) * tx
+  const c11 = at(i0, j0 + 1, k0 + 1) * (1 - tx) + at(i0 + 1, j0 + 1, k0 + 1) * tx
+  return (c00 * (1 - ty) + c10 * ty) * (1 - tz)
+       + (c01 * (1 - ty) + c11 * ty) * tz
+}
+
+// Getrennter 3x3x3-Mittelwert über das Alphafeld. Die Treppenstufen der
+// Wasseroberfläche kommen NICHT vom Solver, sondern vom groben
+// Darstellungsraster: Marching Cubes auf einem 0/1-Feld erzeugt zwangsläufig
+// Facetten in Zellgröße. Ein Durchgang glättet die Kanten, ohne den
+// Wasserspiegel zu verschieben (symmetrischer Kern).
+function glaetteFeld(values, durchgaenge) {
+  const [nx, ny, nz] = grid.dims
+  let a = values
+  for (let d = 0; d < durchgaenge; d++) {
+    const b = new Float32Array(a.length)
+    const idx = (i, j, k) => (k * ny + j) * nx + i
+    for (let k = 0; k < nz; k++) {
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          let sum = 0
+          let n = 0
+          for (let dk = -1; dk <= 1; dk++) {
+            const kk = k + dk
+            if (kk < 0 || kk >= nz) continue
+            for (let dj = -1; dj <= 1; dj++) {
+              const jj = j + dj
+              if (jj < 0 || jj >= ny) continue
+              for (let di = -1; di <= 1; di++) {
+                const ii = i + di
+                if (ii < 0 || ii >= nx) continue
+                sum += a[idx(ii, jj, kk)]
+                n++
+              }
+            }
+          }
+          b[idx(i, j, k)] = sum / n
+        }
+      }
+    }
+    a = b
+  }
+  return a
 }
 
 function cellCenter(i, j, k) {
@@ -533,13 +675,37 @@ function updateStreamlines(alpha, U, umag) {
     vtkDataArray.newInstance({ name: 'velocity', values: inter, numberOfComponents: 3 }))
   vtk.vectorImage.modified()
 
-  // Startpunkte: deterministisch verteilte Nasszellen auf der Starthöhe
-  const k = Math.min(slHeightIdx.value, dims[2] - 1)
-  const candidates = []
-  for (let j = 0; j < ny; j++) {
-    for (let i = 0; i < nx; i++) {
-      const idx = (k * ny + j) * nx + i
-      if (alpha[idx] >= 0.5 && umag[idx] > 1e-3) candidates.push([i, j])
+  // Startpunkte: deterministisch verteilte Nasszellen auf der Starthöhe.
+  // Liegt die gewählte Höhe über dem Wasser, gäbe es KEINE Startpunkte und
+  // damit gar keine Stromlinien — statt einer leeren Szene wird dann die
+  // Ebene mit den meisten Nasszellen genommen.
+  const nass = (k) => {
+    const out = []
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const idx = (k * ny + j) * nx + i
+        if (alpha[idx] >= 0.5 && umag[idx] > 1e-3) out.push([i, j, k])
+      }
+    }
+    return out
+  }
+  let k = Math.min(slHeightIdx.value, dims[2] - 1)
+  let candidates = []
+  slHeightAuto.value = false
+  if (slSeedAll.value) {
+    // Startpunkte aus dem GANZEN Wasserkörper. Eine einzelne Höhenebene
+    // trifft in flachem Wasser oft nur eine Handvoll Zellen — dann standen
+    // hier zwei einsame Fäden in einer leeren Szene.
+    for (let kk = 0; kk < dims[2]; kk++) candidates.push(...nass(kk))
+  } else {
+    candidates = nass(k)
+    if (!candidates.length) {
+      let best = -1
+      for (let kk = 0; kk < dims[2]; kk++) {
+        const c = nass(kk)
+        if (c.length > best) { best = c.length; k = kk; candidates = c }
+      }
+      slHeightAuto.value = candidates.length > 0
     }
   }
   let s = 42
@@ -547,8 +713,8 @@ function updateStreamlines(alpha, U, umag) {
   const seeds = []
   const count = Math.min(slCount.value, candidates.length)
   for (let m = 0; m < count; m++) {
-    const [i, j] = candidates[Math.floor(rnd() * candidates.length)]
-    seeds.push(...cellCenter(i, j, k))
+    const [i, j, kk] = candidates[Math.floor(rnd() * candidates.length)]
+    seeds.push(...cellCenter(i, j, kk))
   }
   vtk.seedPD.getPoints().setData(Float32Array.from(seeds), 3)
   vtk.seedPD.modified()
@@ -556,16 +722,39 @@ function updateStreamlines(alpha, U, umag) {
   vtk.slFilter.setInputData(vtk.vectorImage, 0)
   vtk.slFilter.setInputData(vtk.seedPD, 1)
   const lines = vtk.slFilter.getOutputData()
-  vtk.tube.setInputData(lines)
-  const tubes = vtk.tube.getOutputData()
-  const tp = tubes.getPoints().getData()
-  const scal = new Float32Array(tp.length / 3)
+  // Geschwindigkeit schon auf die LINIE legen: davon lebt sowohl die
+  // Einfärbung als auch der mitwachsende Radius (langsam = dünn).
+  const lp = lines.getPoints().getData()
+  const scal = new Float32Array(lp.length / 3)
   for (let i = 0; i < scal.length; i++) {
-    scal[i] = sampleNearest(umag, tp[i * 3], tp[i * 3 + 1], tp[i * 3 + 2])
+    scal[i] = sampleLinear(umag, lp[i * 3], lp[i * 3 + 1], lp[i * 3 + 2])
   }
-  tubes.getPointData().setScalars(
+  lines.getPointData().setScalars(
     vtkDataArray.newInstance({ name: 'mag', values: scal, numberOfComponents: 1 }))
-  vtk.slMapper.setInputData(tubes)
+  lines.modified()
+
+  // Strichstärke aus der Modellgröße: klassische CFD-Darstellung liegt bei
+  // etwa 1 ‰ der Gebietsdiagonale, nicht bei einem festen Meterwert.
+  const [dx, dy, dz] = [grid.dims[0] * grid.spacing[0],
+    grid.dims[1] * grid.spacing[1], grid.dims[2] * grid.spacing[2]]
+  const diag = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  // rund 1,2 ‰ der Diagonale ergibt bei üblicher Zoomstufe eine zwei Pixel
+  // breite Linie — dünn wie in klassischer CFD-Software, aber sichtbar
+  vtk.tube.setRadius(diag * 0.0012 * slThick.value)
+  // Bei gleich schnellen Startpunkten ist der Skalarbereich entartet; der
+  // Rohrfilter teilt dann durch null und liefert NaN-Geometrie (nichts zu
+  // sehen). In dem Fall gleichmäßige Stärke.
+  const sr = lines.getPointData().getScalars()?.getRange?.() ?? [0, 1]
+  vtk.tube.setVaryRadius(sr[1] - sr[0] > 1e-6
+    ? VaryRadius.VARY_RADIUS_BY_SCALAR : VaryRadius.VARY_RADIUS_OFF)
+  vtk.tube.setInputData(lines)
+  const rohre = vtk.tube.getOutputData()
+  // Der Rohrfilter KOPIERT die Punktdaten, macht sie aber nicht zu den
+  // aktiven Skalaren — ohne das zeichnet der Mapper einfarbige weiße
+  // Schläuche statt der Geschwindigkeitsfarbe.
+  const mag = rohre.getPointData().getArrayByName('mag')
+  if (mag) rohre.getPointData().setScalars(mag)
+  vtk.slMapper.setInputData(rohre)
 }
 
 async function updateScene() {
@@ -605,7 +794,8 @@ async function updateScene() {
       masked[i] = alpha[i] >= 0.5 ? field[i] : sentinel
     }
 
-    setImageScalars(vtk.alphaImage, 'alpha', alpha)
+    setImageScalars(vtk.alphaImage, 'alpha',
+      glaettung.value > 0 ? glaetteFeld(alpha, glaettung.value) : alpha)
     setImageScalars(vtk.fieldImage, 'field', masked)
 
     vtk.ctfField.setMappingRange(rLo, rHi)
@@ -623,7 +813,7 @@ async function updateScene() {
       const pts = pd.getPoints().getData()
       const scalars = new Float32Array(pts.length / 3)
       for (let i = 0; i < scalars.length; i++) {
-        scalars[i] = sampleNearest(field, pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2])
+        scalars[i] = sampleLinear(field, pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2])
       }
       pd.getPointData().setScalars(
         vtkDataArray.newInstance({ name: 'field', values: scalars, numberOfComponents: 1 }))
@@ -641,7 +831,10 @@ async function updateScene() {
         vtkDataArray.newInstance({ name: 'tau', values: tau.data, numberOfComponents: 1 }))
       vtk.terrainData.modified()
     }
-    vtk.terrainMapper.setScalarVisibility(layers.value.terrainShear && !!tau)
+    // In der Präsentationsansicht bleibt auch das Gelände farblos — Farbe
+    // trägt dort nur das Wasser, sonst konkurrieren zwei Skalen im Bild.
+    vtk.terrainMapper.setScalarVisibility(
+      layers.value.terrainShear && !!tau && !praesentation.value)
 
     if (layers.value.arrows) updateGlyphs(alpha, vol.fields.U, umag, vHi)
     if (layers.value.iso) updateIso()
@@ -649,15 +842,50 @@ async function updateScene() {
 
     vtk.terrainActor.setVisibility(layers.value.terrain)
     vtk.surfaceActor.setVisibility(layers.value.surface)
-    // Pfeile/Stromlinien liegen im Wasserkörper — Oberfläche durchscheinend
-    vtk.surfaceActor.getProperty().setOpacity(
-      layers.value.arrows || layers.value.streamlines ? 0.4 : 0.92)
+    const durchsicht = layers.value.arrows || layers.value.streamlines
+    const prop = vtk.surfaceActor.getProperty()
+    if (realistisch.value) {
+      // Wasseroptik: eine ruhige Tiefenfarbe, kräftiges Glanzlicht und ein
+      // schmaler Specular-Kegel. Die Feldeinfärbung wird abgeschaltet —
+      // sonst mischt sich eine Messgröße in eine Schaudarstellung.
+      vtk.surfaceMapper.setScalarVisibility(false)
+      prop.setColor(0.16, 0.42, 0.55)
+      prop.setAmbient(0.18)
+      prop.setDiffuse(0.55)
+      prop.setSpecular(0.9)
+      prop.setSpecularPower(60)
+      prop.setSpecularColor(1, 1, 1)
+      prop.setOpacity(durchsicht ? 0.45 : 0.82)
+    } else {
+      vtk.surfaceMapper.setScalarVisibility(true)
+      prop.setColor(1, 1, 1)
+      prop.setAmbient(0.1)
+      prop.setDiffuse(0.9)
+      prop.setSpecular(0.3)
+      prop.setSpecularPower(20)
+      prop.setOpacity(durchsicht ? 0.4 : 0.92)
+    }
     vtk.volumeActor.setVisibility(layers.value.body)
     vtk.sliceActor.setVisibility(layers.value.slice)
     vtk.glyphActor.setVisibility(layers.value.arrows)
     vtk.isoActor.setVisibility(layers.value.iso)
     vtk.slActor.setVisibility(layers.value.streamlines)
-    for (const a of vtk.structureActors) a.setVisibility(layers.value.structures)
+    // Präsentationsansicht wie im klassischen CFD-Bild: alles Feste in
+    // neutralem Grau, Farbe bleibt allein dem Wasser vorbehalten. Die
+    // Bauteilfarben helfen beim Modellieren, im Ergebnisbild lenken sie ab.
+    for (const [i, a] of vtk.structureActors.entries()) {
+      a.setVisibility(layers.value.structures)
+      const pr = a.getProperty()
+      if (praesentation.value) {
+        pr.setColor(0.82, 0.80, 0.78)
+        pr.setSpecular(0.12)
+      } else {
+        pr.setColor(...STRUCT_COLORS[i % STRUCT_COLORS.length])
+        pr.setSpecular(0.25)
+      }
+    }
+    vtk.terrainActor.getProperty().setColor(
+      ...(praesentation.value ? [0.86, 0.85, 0.83] : [0.45, 0.42, 0.38]))
     for (const a of vtk.meshActors) a.setVisibility(layers.value.meshSurface)
     // Solver-Netz ersetzt die Höhenfeld-Ansicht des Geländes
     if (layers.value.meshSurface) vtk.terrainActor.setVisibility(false)
@@ -926,6 +1154,10 @@ async function loadRun() {
       fetchGeometry(activeRunId.value),
     ])
     grid = index.grid
+    availableFieldKeys.value = index.fields ?? []
+    if (!FIELD_OPTIONS.value.some((f) => f.key === activeFieldKey.value)) {
+      activeFieldKey.value = FIELD_OPTIONS.value[0]?.key ?? 'umag'
+    }
     times.value = index.timesteps.map((e) => e.time)
     if (timeIdx.value >= times.value.length) timeIdx.value = 0
     // Zeitcursor aus den anderen Ansichten übernehmen (Zeitreihen/Grundriss)
@@ -975,7 +1207,9 @@ watch(() => store.selectedRunIds, (ids) => {
 watch(activeRunId, loadRun)
 watch([timeIdx, activeFieldKey, layers, sliceAxis, sliceIdx, sliceCount,
   colorLock, colorMin, colorMax, arrowScale, arrowStride, arrowsOnSlice,
-  isoValue, slCount, slHeightIdx], updateScene, { deep: true })
+  isoValue, slCount, slHeightIdx, slThick, slSeedAll, realistisch,
+  glaettung, praesentation], updateScene,
+{ deep: true })
 
 onBeforeUnmount(() => {
   clearInterval(playTimer)
@@ -985,6 +1219,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.f3d-sub { margin-left: 1.1rem; opacity: 0.9; }
+.f3d-hint-inline {
+  margin: 0.15rem 0 0.35rem 1.1rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--f3d-muted, #8fa3c0);
+}
+
 .f3d-raum {
   display: flex;
   gap: 14px;

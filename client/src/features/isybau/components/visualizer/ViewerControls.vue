@@ -23,8 +23,8 @@
         class="grid-toggle-btn"
         :title="`Raster: ${gridSize === 0 ? 'Aus' : gridSize + 'x' + gridSize + 'm'}`"
       >
-        <svg v-if="gridSize === 0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeadd2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="3" x2="21" y2="21"></line></svg>
-        <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18"></path><path d="M3 15h18"></path><path d="M9 3v18"></path><path d="M15 3v18"></path></svg>
+        <svg v-if="gridSize === 0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a4a4a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="3" x2="21" y2="21"></line></svg>
+        <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--isy-pixel-green, #219653)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18"></path><path d="M3 15h18"></path><path d="M9 3v18"></path><path d="M15 3v18"></path></svg>
         <span class="grid-label">{{ gridSize === 0 ? 'Aus' : gridSize + 'm' }}</span>
       </button>
     </div>
@@ -51,7 +51,7 @@
       :class="{ active: ezgLayer.enabled.value, loading: ezgLayer.status.value === 'loading', error: ezgLayer.status.value === 'error' }"
       :title="ezgTitle"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" :stroke="ezgLayer.enabled.value ? '#2ecc71' : '#aeadd2'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"></path><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" :stroke="ezgLayer.enabled.value ? 'var(--isy-pixel-green, #219653)' : 'var(--isy-pixel-text-dim, #4a4a4a)'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"></path><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>
       <span class="ezg-label">EZG-Karte</span>
     </button>
     <button
@@ -70,7 +70,7 @@
       :class="{ loading: ezgLayer.status.value === 'loading' || ezgLayer.contourStatus.value === 'loading' }"
       title="EZG-Karte: Bereich neu laden (z.B. wenn das Netz über den Kartenrand hinausgewachsen ist)"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeadd2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" /></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a4a4a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" /></svg>
     </button>
   </div>
 </template>
@@ -121,11 +121,11 @@ const contourTitle = computed(() => {
   position: absolute;
   bottom: 1rem;
   left: 1rem;
-  background: #040647;
+  background: var(--isy-pixel-bg, #040647);
   padding: 0.4rem;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
-  border: 1px solid #594491;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   z-index: 10;
   display: flex;
   gap: 0.4rem;
@@ -139,7 +139,7 @@ const contourTitle = computed(() => {
 
 .controls button {
   background: transparent;
-  border: 1px solid #594491;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 5px;
   width: 32px;
   height: 32px;
@@ -151,12 +151,12 @@ const contourTitle = computed(() => {
 }
 
 .controls button.active {
-  background: #594491;
-  border-color: #8f8be1;
+  background: var(--isy-pixel-border, #4a4844);
+  border-color: var(--isy-pixel-border-hover, #65625c);
 }
 
 .controls button:hover {
-  background: #594491;
+  background: var(--isy-pixel-border, #4a4844);
 }
 
 /* Pixel art icons */
@@ -184,9 +184,9 @@ const contourTitle = computed(() => {
 }
 
 .grid-label {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: #2ecc71;
+  color: var(--isy-pixel-green, #219653);
 }
 
 /* EZG-Karte toggle */
@@ -199,8 +199,8 @@ const contourTitle = computed(() => {
 }
 
 .ezg-toggle-btn.active {
-  background: #594491;
-  border-color: #8f8be1;
+  background: var(--isy-pixel-border, #4a4844);
+  border-color: var(--isy-pixel-border-hover, #65625c);
 }
 
 .ezg-toggle-btn.loading {
@@ -209,13 +209,13 @@ const contourTitle = computed(() => {
 }
 
 .ezg-toggle-btn.error {
-  border-color: #e74c3c;
+  border-color: var(--isy-pixel-danger, #e74c3c);
 }
 
 .ezg-label {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .contour-toggle-btn {
@@ -249,7 +249,7 @@ const contourTitle = computed(() => {
 }
 
 .size-label {
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   font-weight: 700;
   line-height: 1;
 }
@@ -259,13 +259,13 @@ const contourTitle = computed(() => {
 .size-control input[type="range"] {
   width: 70px;
   cursor: pointer;
-  accent-color: #594491;
+  accent-color: var(--isy-pixel-border, #4a4844);
 }
 
 .separator-v {
   width: 1px;
   height: 20px;
-  background: #594491;
+  background: var(--isy-pixel-border, #4a4844);
   flex-shrink: 0;
 }
 </style>

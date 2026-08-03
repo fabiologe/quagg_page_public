@@ -98,6 +98,7 @@ const sortedData = computed(() => {
 });
 </script>
 
+<style scoped src="./shared/modalBase.css"></style>
 <style scoped>
 .modal-overlay {
   position: fixed;
@@ -124,21 +125,17 @@ const sortedData = computed(() => {
 }
 
 .modal-header {
-  background: #040647;
   padding: 1rem;
-  border-bottom: 2px solid #594491;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  background: var(--isy-pixel-bg, #040647);
 }
 
 .modal-header h3 {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: #aeadd2;
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 .modal-body {
@@ -150,7 +147,7 @@ const sortedData = computed(() => {
 .controls {
   margin-bottom: 1rem;
   padding: 0.5rem;
-  background: #f3f2fb;
+  background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
   border-radius: 4px;
 }
 
@@ -167,11 +164,11 @@ table {
 th, td {
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid #aeadd2;
+  border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
 }
 
 th {
-  background: #f3f2fb;
+  background: var(--isy-pixel-content-bg, #f3f2fb);
   font-weight: 600;
   cursor: pointer;
   user-select: none;
@@ -179,28 +176,6 @@ th {
 
 th:hover {
   background: #e9ecef;
-}
-
-.modal-footer {
-  padding: 1rem;
-  border-top: 1px solid #aeadd2;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #8f8be1; /* Slate 400 */
-  transition: color 0.2s;
-  padding: 0 0.5rem;
-}
-
-.close-btn:hover {
-  color: #2ecc71; /* Red 500 */
 }
 
 /* Toggle Switch */
@@ -237,7 +212,7 @@ th:hover {
 }
 
 input:checked + .slider {
-  background-color: #2ecc71;
+  background-color: var(--isy-pixel-green, #219653);
 }
 
 input:checked + .slider::before {
@@ -249,16 +224,16 @@ input:checked + .slider::before {
 }
 
 .secondary-btn {
-  background: #fff;
-  border: 1px solid #aeadd2;
-  color: #040647;
+  background: transparent;
+  border: 1px solid var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   border-radius: 6px;
   padding: 0.55rem 1rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: #f3f2fb; }
+.secondary-btn:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
 </style>

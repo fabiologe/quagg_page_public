@@ -9,8 +9,8 @@ import { useNetworkStore } from '../../stores/useNetworkStore.js';
 /**
  * useChannelStructureTool.js — Channel/Gerinne-Werkzeug: Polylinie zeichnen,
  * bei Abschluss (Enter / "Linie abschließen") öffnet das Panel ein Popup
- * (ChannelSectionModal.vue) für den Querschnitt (aktuell nur Rechteck — Trapez-
- * Option im Popup deaktiviert, SGCchan_type 7 fehlt im Solver, s. SgcGenerator.
+ * (ChannelSectionModal.vue) für den Querschnitt (Rechteck = SGCchan_type 1,
+ * Trapez = Typ 7 via quagg-sgc-trapezoid.patch, s. SgcGenerator.
  * buildSgcChanPramsFile). Beim Bestätigen wird der Kanal als ECHTES LISFLOOD-
  * SGC-Sub-Grid-Gerinne in geoStore.sgcChannels abgelegt — KEINE Terrain-/DGM-
  * Mutation. Der Export (InputGenerator.js) rechnet daraus sgc.width/bed/bank/

@@ -16,6 +16,9 @@ export const RUN_DASHES = [[], [10, 5], [3, 3], [10, 3, 3, 3]]
 // Ansichten der Ergebnis-Phase (Spez. Kap. 8)
 export const VIEWER_TABS = [
   { id: 'nachweis', label: 'Nachweis' },
+  { id: 'bilanz', label: 'Bilanz' },
+  { id: 'verweilzeit', label: 'Verweilzeit' },
+  { id: 'bauwerke', label: 'Bauwerke' },
   { id: 'qualitaet', label: 'Qualität' },
   { id: 'zeitreihen', label: 'Zeitreihen' },
   { id: 'grundriss', label: 'Grundriss & Schnitt' },

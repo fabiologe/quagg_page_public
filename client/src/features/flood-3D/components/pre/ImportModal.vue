@@ -17,7 +17,7 @@
           <p><strong>DXF, STL oder OBJ</strong> hierher ziehen</p>
           <p class="f3d-muted f3d-small">
             oder <label class="f3d-link">auswählen<input type="file"
-              accept=".dxf,.stl,.obj" hidden @change="onPick" /></label>
+              accept=".dxf,.stl,.obj,.asc,.xyz" hidden @change="onPick" /></label>
           </p>
           <p class="f3d-muted f3d-small f3d-imp-tip">
             DXF: Gelände-TIN als 3DFACE/POLYFACE, Bauwerke vorher mit
@@ -68,6 +68,31 @@
             <input type="checkbox" v-model="deriveDomain" />
             Modellgebiet aus dem Gelände ableiten
           </label>
+          <div class="f3d-row">
+            <span class="f3d-lbl">Modell drehen</span>
+            <input type="number" step="1" v-model.number="rotation"
+                   class="f3d-num" />
+            <span class="f3d-lbl">°</span>
+          </div>
+          <p class="f3d-muted f3d-small">
+            Das Rechengebiet ist ein achsparalleler Quader. Liegt das Bauwerk
+            schräg im Landessystem, dreht diese Angabe beim Import einmal
+            alles — Gelände, Kanten, Bauwerke — in ein lokales System, in dem
+            es gerade steht. Der Quader passt dann eng darum und man rechnet
+            keine leeren Ecken mit. Der Winkel wird im Fall gespeichert.
+          </p>
+          <label class="f3d-check" v-if="hatKanten">
+            <input type="checkbox" v-model="terrainAusLinien"
+                   @change="kantenKaestchenGesetzt = true" />
+            Gelände aus den Kanten vermaschen
+          </label>
+          <p v-if="hatKanten" class="f3d-muted f3d-small">
+            Ohne Gelände-Layer bilden die Kanten selbst das Gelände: die
+            Stützpunkte werden vermascht, zwischen weit auseinanderliegenden
+            Kanten wird nichts erfunden — dort führt die nächstgelegene Höhe
+            weiter. Mit Gelände-Layer bleibt dieses maßgeblich und die Kanten
+            ändern es nur örtlich.
+          </p>
         </div>
 
         <div class="f3d-imp-table-wrap">
@@ -134,8 +159,26 @@
                   <span v-else class="f3d-muted">–</span>
                 </td>
               </tr>
+              <tr v-if="pick[c.id].role === 'gelaende_koerper'
+                        && c.stats.watertight === false" :key="c.id + '-w'">
+                <td colspan="6" class="f3d-warn f3d-small">
+                  „{{ c.name }}“ ist nicht geschlossen — als Volumengelände
+                  kann der Vernetzer daran nicht entscheiden, was Erdreich
+                  ist. Der Import versucht die Löcher zu schließen; gelingt
+                  das nicht, meldet es die Prüfung.
+                </td>
+              </tr>
             </tbody>
           </table>
+          <p class="f3d-muted f3d-small">
+            <strong>Gelände (Höhenfläche)</strong> wird zu einem Höhenraster
+            verrechnet — eine Höhe je Punkt, schnell und für offenes Gelände
+            richtig. <strong>Gelände als Volumenkörper</strong> gibt den
+            Körper unverändert an den Vernetzer weiter: nur so kann das
+            Gelände Hohlräume haben (Rohr durch den Damm, Kanal unter der
+            Sohle). Der Körper muss geschlossen sein; das Höhenraster für
+            Prüfung und Anzeige leitet der Import aus seiner Oberseite ab.
+          </p>
         </div>
 
         <p v-if="error" class="f3d-error">{{ error }}</p>
@@ -166,7 +209,7 @@
 // Kandidaten zerlegt (DXF je Layer, STL je Komponente); hier wird nur noch
 // DEKLARIERT, was was ist. Die Rollen-Vorschläge kommen aus der Heuristik
 // des Analyzers — der Nutzer bestätigt oder korrigiert.
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { flood3dApi } from '../../services/api'
 import { usePreStore } from '../../stores/usePreStore'
 
@@ -184,24 +227,38 @@ const unitFactor = ref(1)
 const offX = ref(0)
 const offY = ref(0)
 const deriveDomain = ref(false)
+const terrainAusLinien = ref(false)
+const rotation = ref(0)
+// merkt sich, ob der Nutzer das Kästchen selbst gesetzt hat — sonst folgt
+// es der Rollenwahl (Gelände-Layer vorhanden? dann bleibt der maßgeblich)
+const kantenKaestchenGesetzt = ref(false)
 
-const KIND = { mesh: 'Netz', polyline: 'Polylinie', acis: 'ACIS-Körper' }
+const KIND = { mesh: 'Netz', polyline: 'Polylinie', acis: 'ACIS-Körper',
+  raster: 'Höhenraster', hinweis: 'Hinweis', kreis: 'Rohrmündung' }
 // Beispieldateien (client/public/beispiele, erzeugt von make_beispiele.py)
 const SAMPLES = [
   { file: 'gelaende_bauwerke.dxf', label: 'DXF-Beispiel',
     hint: 'Gelände-TIN mit Gerinne, 2 Mauern, 2 Pfeiler, Wehr, 2 Trassen — je eigener Layer' },
   { file: 'koerper.stl', label: 'STL-Beispiel',
     hint: 'Mehrkörper: 3 eckige Pfeiler, runder Pfeiler, Wand, Beckenring' },
+  { file: 'boeschungskanten.dxf', label: 'Böschungskanten',
+    hint: 'Gelände-TIN + Ober-/Unterkante als 3D-Polylinie + Grabensohle' },
   { file: 'problemfall.dxf', label: 'Problemfall',
     hint: 'Millimeter + Landeskoordinaten + roher 3DSOLID — zeigt die Warnungen' },
 ]
 const ROLE_LABELS = {
-  gelaende: 'Gelände', wand: 'Wand', pfeiler: 'Pfeiler', wehr: 'Wehr',
+  gelaende: 'Gelände (Höhenfläche)',
+  gelaende_koerper: 'Gelände als Volumenkörper',
+  wand: 'Wand', pfeiler: 'Pfeiler', wehr: 'Wehr',
   becken: 'Becken', bauwerk: 'Bauwerk', querschnitt: 'Querschnitt',
+  boeschung_ok: 'Böschungsoberkante', boeschung_uk: 'Böschungsunterkante',
+  bruchkante: 'Bruchkante (Gelände)',
+  zusatzraster: 'Zusatzraster (Bereich ersetzen)',
+  zulaufrohr: 'Rohr am Zulauf', ablaufrohr: 'Rohr am Ablauf',
   ignorieren: '— ignorieren —',
 }
-const MESH_ROLES = ['gelaende', 'wand', 'pfeiler', 'wehr', 'becken',
-  'bauwerk', 'ignorieren']
+const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
+  'wehr', 'becken', 'bauwerk', 'ignorieren']
 const MATERIALS = ['stahl', 'beton_glatt', 'beton', 'mauerwerk', 'holz',
   'erde', 'steinschuettung']
 const SOLID_ROLES = new Set(['wand', 'pfeiler', 'wehr', 'becken', 'bauwerk'])
@@ -211,11 +268,33 @@ const spanX = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][0] - manifest.value.bbox[0][0] : 0))
 const spanY = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][1] - manifest.value.bbox[0][1] : 0))
+const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok', 'boeschung_uk'])
+const hatKanten = computed(() => Object.entries(pick)
+  .some(([, p]) => KANTEN_ROLLEN.has(p.role))
+  || (manifest.value?.candidates ?? []).some(
+    (c) => KANTEN_ROLLEN.has(c.role_guess)))
+const GELAENDE_ROLLEN = new Set(['gelaende', 'gelaende_koerper'])
+const hatGelaendeLayer = computed(() => Object.values(pick)
+  .some((p) => GELAENDE_ROLLEN.has(p.role)))
+// Ohne Gelände-Layer sind die Kanten der einzige Weg zu einem Gelände.
+// Das Kästchen folgt der Rollenwahl, bis der Nutzer es selbst anfasst.
+watch([hatKanten, hatGelaendeLayer], ([kanten, gelaende]) => {
+  if (!kantenKaestchenGesetzt.value) {
+    terrainAusLinien.value = kanten && !gelaende
+  }
+}, { immediate: true })
+
 const nAktiv = computed(() => Object.values(pick)
   .filter((p) => p.role !== 'ignorieren').length)
 
-const rolesFor = (c) => (c.kind === 'polyline' ? ['querschnitt', 'ignorieren']
-  : c.kind === 'acis' ? ['ignorieren'] : MESH_ROLES)
+const LINIEN_ROLLEN = ['boeschung_ok', 'boeschung_uk', 'bruchkante',
+  'querschnitt', 'ignorieren']
+const RASTER_ROLLEN = ['gelaende', 'zusatzraster', 'ignorieren']
+const ROHR_ROLLEN = ['ablaufrohr', 'zulaufrohr', 'ignorieren']
+const rolesFor = (c) => (c.kind === 'polyline' ? LINIEN_ROLLEN
+  : c.kind === 'raster' ? RASTER_ROLLEN
+    : c.kind === 'kreis' ? ROHR_ROLLEN
+      : (c.kind === 'acis' || c.kind === 'hinweis') ? ['ignorieren'] : MESH_ROLES)
 const usesName = (id) => SOLID_ROLES.has(pick[id]?.role)
 
 function close() { emit('close') }
@@ -256,6 +335,7 @@ async function upload(file) {
     if (m.unit_suspect) unitFactor.value = 0.001
     if (m.offset_suggest) suggestOffset()
     deriveDomain.value = m.candidates.some((c) => c.role_guess === 'gelaende')
+    kantenKaestchenGesetzt.value = false
   } catch (e) {
     error.value = e.message
     manifest.value = null
@@ -281,6 +361,8 @@ async function apply() {
         decisions,
         unit_factor: unitFactor.value,
         offset: (offX.value || offY.value) ? [offX.value, offY.value] : null,
+        terrain_from_lines: terrainAusLinien.value,
+        rotation_deg: rotation.value || 0,
         derive_domain: deriveDomain.value,
       })
     report.value = res.report

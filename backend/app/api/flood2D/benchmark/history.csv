@@ -1,0 +1,4 @@
+generated,solver_sha,image,case,scheme,cellsize,rmse,mae,nse,rel_error_pct,front_error_m,profile_slope_mm_per_km,steady_drift_m,passed
+2026-08-01T09:50:35+00:00,73653c3-dirty,fabiologe/quagg-lisflood:latest,ritter_dambreak,fv1,2.0,0.08202438302561449,0.05946039216688707,0.9992425680809262,0.3364384502118388,-10.0,,,True
+2026-08-01T09:50:35+00:00,73653c3-dirty,fabiologe/quagg-lisflood:latest,ritter_dambreak,acceleration,2.0,1.8778007520312627,1.3386165214411858,0.60303092493036,0.07825628773466091,-154.0,,,True
+2026-08-01T09:50:35+00:00,73653c3-dirty,fabiologe/quagg-lisflood:latest,manning_normalflow,acceleration,10.0,0.0013777069154765694,0.00124913249430239,nan,0.06828531549132018,0.0,1.949104315048138,0.0,True

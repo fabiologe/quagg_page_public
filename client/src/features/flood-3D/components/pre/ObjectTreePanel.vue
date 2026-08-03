@@ -1,7 +1,7 @@
 <template>
   <aside class="f3d-objtree">
     <button class="f3d-btn f3d-objimport" @click="showImport = true">
-      ⬇ Geometrie importieren (DXF/STL)
+      ⬇ Geometrie importieren (DXF/STL/Raster)
     </button>
     <ImportModal v-if="showImport" @close="showImport = false" />
 
@@ -29,6 +29,9 @@
         <button class="f3d-btn" :disabled="!addChoice[group.kind]"
                 @click="add(group)">+</button>
       </div>
+      <p v-if="hinweis.kind === group.kind" class="f3d-objhinweis">
+        {{ hinweis.text }}
+      </p>
     </div>
   </aside>
 </template>
@@ -38,17 +41,42 @@
 // Klick springt zum Objekt; "Neu anlegen" fügt Katalog-Vorlagen ein.
 import { computed, reactive, ref } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
-import { TYPE_LABELS, TEMPLATES } from '../../utils/preTemplates'
+import {
+  TYPE_LABELS, TEMPLATES, vorlageAnpassen,
+} from '../../utils/preTemplates'
+import {
+  REFERENZ_QUELLEN, fehlendeBausteine, referenzListe,
+} from '../../utils/feldTypen'
 import ImportModal from './ImportModal.vue'
+
+// Höhe des Geländerasters an einer Stelle (bilinear, wie im Editor) — die
+// Außenkante startet mit dem, was heute dort steht
+function gelaendeZ(t, x, y) {
+  if (!t) return 0
+  const [ny, nx] = t.dims
+  const fx = Math.min(nx - 1.001, Math.max(0, (x - t.x0) / t.resolution))
+  const fy = Math.min(ny - 1.001, Math.max(0, (y - t.y0) / t.resolution))
+  const i = Math.floor(fx); const j = Math.floor(fy)
+  const dx = fx - i; const dy = fy - j
+  const z = t.z
+  return z[j * nx + i] * (1 - dx) * (1 - dy) + z[j * nx + i + 1] * dx * (1 - dy)
+    + z[(j + 1) * nx + i] * (1 - dx) * dy + z[(j + 1) * nx + i + 1] * dx * dy
+}
 
 const store = usePreStore()
 const addChoice = reactive({})
+// Hinweis gehört zu genau der Gruppe, in der er ausgelöst wurde
+const hinweis = ref({ kind: '', text: '' })
 const showImport = ref(false)
 
 const groups = computed(() => {
   const s = store.spec
   if (!s) return []
   return [
+    // Das Modellgebiet steht bewusst ganz oben: es ist das Objekt, das man
+    // am häufigsten zurechtrückt, und war bisher nur über Zahlen erreichbar.
+    { kind: 'domain', label: 'Modellgebiet',
+      items: s.domain ? [{ id: 'domain', type: 'domain' }] : [] },
     { kind: 'terrain_op', label: 'Geländeoperationen',
       items: s.terrain?.operations ?? [], templates: TEMPLATES.terrain_op },
     { kind: 'structure', label: 'Bauwerke',
@@ -79,14 +107,75 @@ function statusIcon(id) {
   return { fehler: '✗', warnung: '⚠', hinweis: 'ℹ' }[store.worstSeverity(id)] ?? '✓'
 }
 
+function randRahmen(obj) {
+  const dom = store.spec?.domain
+  if (!dom) return
+  const [x0, y0, x1, y1] = dom.extent
+  const r2 = (v) => Number(v.toFixed(2))
+  obj.polygon = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+    .map(([x, y]) => [x, y, r2(gelaendeZ(store.terrain, x, y))])
+  // Bezug: die erste Böschung (deren Oberkante) bzw. Bruchkante
+  const ops = store.spec?.terrain?.operations ?? []
+  obj.innen = (ops.find((o) => o.type === 'boeschung')
+    ?? ops.find((o) => o.type === 'bruchkante'))?.id ?? null
+}
+
+// Nachweiskriterien verweisen auf Pegel, Querschnitte, Bauwerke oder
+// Verfeinerungsboxen. Leere Verweise blockieren das Speichern, weil das
+// Backend hart prüft — also gleich mit dem ersten vorhandenen belegen.
+function verweiseFuellen(obj) {
+  const quellen = REFERENZ_QUELLEN[obj.kind] ?? {}
+  for (const [feld, quelle] of Object.entries(quellen)) {
+    const liste = referenzListe(store.spec, quelle)
+    if (!liste.length) continue
+    // zwei Querschnitte eines Verhältnisses sollen nicht derselbe sein
+    const belegt = Object.keys(quellen)
+      .filter((k) => k !== feld && quellen[k] === quelle)
+      .map((k) => obj[k])
+    obj[feld] = liste.find((x) => !belegt.includes(x)) ?? liste[0]
+  }
+}
+
 function add(group) {
   const tpl = group.templates[addChoice[group.kind]]
-  if (tpl) store.addObject(group.kind, JSON.parse(JSON.stringify(tpl)))
+  if (tpl) {
+    const obj = JSON.parse(JSON.stringify(tpl))
+    // Die Außenkante ist nur als Rahmen AM Gebietsrand sinnvoll: vier Ecken
+    // mit der Höhe, die das Gelände dort heute hat — von da aus stellt der
+    // Bearbeiter sie ein.
+    if (obj.type === 'aussenkante') randRahmen(obj)
+    // Vorlagen sind im Bezugsraum notiert (Gelände 95 m, Grundriss um 20 m).
+    // Ohne Umrechnung landet jede Vorlage in einem importierten Fall weit
+    // neben oder unter dem Gelände.
+    else vorlageAnpassen(obj, store.spec, (x, y) => gelaendeZ(store.terrain, x, y))
+    if (obj.kind) {
+      const fehlt = fehlendeBausteine(store.spec, obj.kind)
+      if (fehlt.length) {
+        // Ohne Bezugsobjekt wäre das Kriterium nicht speicherbar — sagen,
+        // was fehlt, statt einen kaputten Eintrag anzulegen
+        hinweis.value = {
+          kind: group.kind,
+          text: `„${addChoice[group.kind]}" braucht zuerst: ${fehlt.join(', ')}`,
+        }
+        setTimeout(() => { hinweis.value = { kind: '', text: '' } }, 8000)
+        addChoice[group.kind] = ''
+        return
+      }
+      verweiseFuellen(obj)
+    }
+    store.addObject(group.kind, obj)
+  }
   addChoice[group.kind] = ''
 }
 </script>
 
 <style scoped>
+.f3d-objhinweis {
+  margin: 2px 0 0;
+  color: #e8b24a;
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
 .f3d-objtree {
   display: flex;
   flex-direction: column;

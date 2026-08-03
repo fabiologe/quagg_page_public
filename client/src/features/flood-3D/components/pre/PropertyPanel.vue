@@ -15,13 +15,64 @@
       </select>
       <input v-else-if="field.widget === 'number'" type="number" step="any"
              v-model.number="draft[field.key]" class="f3d-num f3d-grow" />
+      <select v-else-if="field.widget === 'raster'" v-model="draft[field.key]"
+              class="f3d-select">
+        <option value="">— Raster wählen —</option>
+        <option v-for="r in store.rasterDateien" :key="r.name" :value="r.name">
+          {{ r.name }}{{ r.basis ? ' (Basisgelände)' : '' }} · {{ r.mb }} MB
+        </option>
+      </select>
       <input v-else-if="field.widget === 'text'" type="text"
              v-model="draft[field.key]" class="f3d-num f3d-grow" />
       <input v-else-if="field.widget === 'check'" type="checkbox"
              v-model="draft[field.key]" />
+      <select v-else-if="field.widget === 'referenz'" class="f3d-select"
+              v-model="draft[field.key]">
+        <option value="" disabled>— {{ field.quellname }} wählen —</option>
+        <option v-for="o in field.optionen" :key="o" :value="o">{{ o }}</option>
+      </select>
+      <PunktListe v-else-if="field.widget === 'punkte'"
+                  v-model="draft[field.key]" :dim="field.dim"
+                  :min="field.min" :geschlossen="field.geschlossen" />
+      <div v-else-if="field.widget === 'zahlen'" class="f3d-zahlen">
+        <label v-for="(nm, i) in field.namen" :key="i" class="f3d-zahl">
+          <span>{{ nm }}</span>
+          <input type="number" step="any" class="f3d-num"
+                 :value="draft[field.key][i]"
+                 @change="setzeZahl(field.key, i, $event.target.value)" />
+        </label>
+      </div>
+      <UnterGruppe v-else-if="field.widget === 'gruppe'"
+                   v-model="draft[field.key]" :labels="labelsFuer(field.key)"
+                   :typ="draft.type" :gruppe="field.key"
+                   :verbergen="VERBERGEN[field.key] ?? []" />
       <textarea v-else v-model="jsonDrafts[field.key]" rows="3"
                 class="f3d-json" spellcheck="false"></textarea>
+      <button v-if="field.umschaltbar" class="f3d-jsonschalter"
+              :title="jsonModus[field.key]
+                ? 'zurück zur Eingabemaske' : 'als JSON bearbeiten'"
+              @click="jsonUmschalten(field.key)">
+        {{ jsonModus[field.key] ? '↩ Maske' : '{ } JSON' }}
+      </button>
     </div>
+
+    <p v-if="draft.type === 'aussenkante'" class="f3d-muted f3d-small">
+      Außerhalb der äußersten Vermessungslinie ist nichts gemessen — dort
+      führt der Import die NÄCHSTGELEGENE bekannte Höhe fort, weshalb die
+      Außenkante jeder Welle der Oberkante folgt. Dieser Rahmen setzt an
+      ihre Stelle eine bestimmte Kante: zwischen der inneren Bezugskante
+      und ihm wird linear übergeblendet. Ecken lassen sich in der Szene
+      ziehen (Strg = Höhe).
+    </p>
+
+    <p v-if="draft.type === 'culvert'" class="f3d-muted f3d-small">
+      Das Gelände ist ein Höhenfeld — ein z je Punkt — und kann von sich aus
+      keinen Tunnel haben: ein Rohr im Damm wird beim Vernetzen zugeschüttet,
+      seine Mündung bekommt dann keine einzige Fläche. „Durch das Gelände
+      bohren" baut das Gelände stattdessen als Erdkörper und schneidet die
+      Rohrbohrung heraus (kostet etwas Zeit beim Fallaufbau). Liegt das Rohr
+      ohnehin frei, bleibt der Schalter aus.
+    </p>
 
     <div v-if="isFlowBc" class="f3d-prop">
       <label>Fenster (Öffnung auf der Randfläche)</label>
@@ -53,7 +104,63 @@
       </button>
     </div>
 
-    <div v-if="isStructure" class="f3d-prop">
+    <div v-if="hatKoerper" class="f3d-prop">
+      <label>Bearbeiten ({{ draft.edits?.length ?? 0 }})</label>
+      <div class="f3d-openrow">
+        <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'bohrung' }"
+                @click="zeichnen('bohrung')">
+          ✎ Bohrung
+        </button>
+        <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'oeffnung' }"
+                @click="zeichnen('oeffnung')">
+          ✎ Öffnung
+        </button>
+      </div>
+      <div class="f3d-openrow">
+        <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'schnitt' }"
+                @click="zeichnen('schnitt')">
+          ✎ Abschneiden
+        </button>
+        <button class="f3d-btn f3d-grow" @click="addEdit('gelaende')">
+          ＋ Gelände
+        </button>
+      </div>
+      <div class="f3d-openrow">
+        <button class="f3d-btn f3d-grow" @click="addEdit('auf_gebiet')">
+          ＋ Auf Gebiet
+        </button>
+        <button class="f3d-btn f3d-grow" @click="addEdit('transform')">
+          ＋ Lage
+        </button>
+        <button class="f3d-btn f3d-grow" @click="addEdit('heilen')">
+          ＋ Heilen
+        </button>
+      </div>
+      <p class="f3d-muted f3d-small">
+        Wird der Reihe nach auf den Körper angewandt. Die drei mit ✎ werden in
+        die Szene <strong>gezeichnet</strong>: auf den Körper zeigen, Mausrad
+        ändert das Maß, Klick stanzt — die Bohrrichtung kommt aus der
+        getroffenen Fläche. <strong>Gelände</strong> setzt den Körper auf und
+        bindet ihn ein (bzw. kappt die Übertiefe), <strong>Auf Gebiet</strong>
+        stutzt Überstände am Modellrand weg, <strong>Lage</strong>
+        verschiebt/dreht/skaliert, <strong>Heilen</strong> schließt Löcher in
+        importierten Netzen. Alle Maße bleiben im Feld darüber änderbar.
+      </p>
+    </div>
+
+    <div v-if="hatKoerper" class="f3d-prop">
+      <label class="f3d-check">
+        <input type="checkbox" :checked="kraefteAn" @change="kraefteUmschalten" />
+        Kräfte und Kippmoment auswerten
+      </label>
+      <p class="f3d-muted f3d-small">
+        Liefert Horizontalkraft, Auftrieb und das Moment um die Fußmitte
+        dieses Bauwerks — die Größen für den Standsicherheitsnachweis. Die
+        Wandschubspannung wird ohnehin für jedes Bauwerk mitgeschrieben.
+      </p>
+    </div>
+
+    <div v-if="hatKoerper" class="f3d-prop">
       <label>Material (Wandrauheit)</label>
       <select class="f3d-select" v-model="materialDraft">
         <option value="">— glatt (Standard) —</option>
@@ -93,89 +200,159 @@
 // Koordinaten regelmäßig aus dem CAD übernommen werden.
 import { computed, reactive, ref, watch } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
+import PunktListe from './PunktListe.vue'
+import UnterGruppe from './UnterGruppe.vue'
+import {
+  ENUM_LABELS, ENUM_OPTIONS, GESCHLOSSEN, QUELL_NAMEN, REFERENZ_QUELLEN,
+  istPunktListe, istZahlenreihe, punktDim, referenzListe, widgetFor,
+  zahlenNamen,
+} from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
 
 const store = usePreStore()
 const draft = ref(null)
+// In der Untergruppe ausgeblendet, weil woanders bedient (Fensterform über
+// den Select darüber) oder ohne Wirkung (Spline ist in der casespec
+// vorgesehen, wird aber nirgends ausgewertet)
+const VERBERGEN = { window: ['shape', 'follow'], alignment: ['kind'] }
+// Beschriftungen, die nur für einen Objekttyp gelten — `level` ist bei der
+// Verfeinerungsbox eine Stufe, bei einer Geländeoperation eine Höhe
+const TYP_LABELS = {
+  box: { level: 'Verfeinerungsstufe (1 = halbe Zelle)' },
+  surface: { level: 'Verfeinerungsstufe (1 = halbe Zelle)' },
+}
 const jsonDrafts = reactive({})
+// Felder, die der Nutzer bewusst als JSON bearbeitet
+const jsonModus = reactive({})
 const parseError = ref('')
 
 const FIELD_LABELS = {
-  polyline: 'Polylinie [[x,y],…]', polygon: 'Polygon [[x,y],…]',
+  polyline: 'Polylinie', polygon: 'Polygon',
+  oberkante: 'Oberkante (Höhe je Stützpunkt)',
+  unterkante: 'Unterkante (Höhe je Stützpunkt)',
+  kanten_breite: 'Kantenwirkung nach außen (m)',
+  breite: 'Wirkungsbreite (m)', modus: 'Wirkung',
+  einbindetiefe: 'Einbindetiefe unter Gelände (m)',
+  innen: 'Innere Bezugskante (id einer Böschung/Bruchkante)',
   invert_start: 'Sohlhöhe Anfang (m)', invert_end: 'Sohlhöhe Ende (m)',
   bottom_width: 'Sohlbreite (m)', depth: 'Tiefe (m)',
   side_slope: 'Böschungsneigung 1:n', level: 'Höhe (m NHN)',
   crest_level: 'Kronenhöhe (m)', crest_width: 'Kronenbreite (m)',
-  center: 'Mittelpunkt [x,y]', radius: 'Radius (m)', strength: 'Stärke',
-  falloff: 'Abklingfunktion', direction: 'Richtung [x,y]',
+  center: 'Mittelpunkt', radius: 'Radius (m)', strength: 'Stärke',
+  falloff: 'Abklingfunktion', direction: 'Richtung',
   level_start: 'Höhe Anfang (m)', level_end: 'Höhe Ende (m)',
   blend_width: 'Übergangsbreite (m)', source: 'Quelldatei',
-  height: 'Höhe (m)', thickness: 'Dicke (m)', alignment: 'Achse (kind, points)',
-  window: 'Fenster — shape: rechteck (span, z_min/z_max) | '
-    + 'kreis (center, z_center, diameter) | '
-    + 'trapez (center, bottom_width, top_width, z_min, z_max)',
-  footprint: 'Grundriss [[x,y],…]', invert_level: 'Sohlhöhe (m)',
+  height: 'Höhe (m)', thickness: 'Dicke (m)', alignment: 'Achse',
+  edits: 'Bearbeitungen [{id, type, …}] — Reihenfolge zählt',
+  window: 'Fenster (Öffnung auf der Randfläche)',
+  footprint: 'Grundriss', invert_level: 'Sohlhöhe (m)',
   invert_slope: 'Sohlgefälle', wall_height: 'Wandhöhe (m)',
   wall_thickness: 'Wanddicke (m)',
-  axis: 'Achse [[x,y,z],…]', profile: 'Profil (kind, Abmessungen)',
-  plane_polygon: 'Rechenebene [[x,y,z],…]', bar_spacing: 'Stabteilung (m)',
+  axis: 'Achse (z = Sohlhöhe je Punkt)', profile: 'Profil',
+  durchstoesst_gelaende: 'Durch das Gelände bohren (Rohr steckt im Damm)',
+  plane_polygon: 'Rechenebene', bar_spacing: 'Stabteilung (m)',
   bar_thickness: 'Stabdicke (m)', approach_angle_deg: 'Anströmwinkel (°)',
-  resistance: 'Widerstand (d, f, Verlegungsgrad)',
+  resistance: 'Widerstand',
   base_level: 'Fußhöhe (m)', top_level: 'Kopfhöhe (m)',
-  extent: 'Ausdehnung [x0,y0,z0,x1,y1,z1]', target: 'Ziel-Bauwerk (patch)',
+  extent: 'Ausdehnung', target: 'Ziel-Bauwerk (patch)',
   q: 'Zufluss (m³/s)', face: 'Gebietsrand', patch: 'Patchname',
   column_time: 'Zeitspalte', column_q: 'Durchflussspalte',
-  point: 'Punkt [x,y]', at: 'Pegel/Bauwerk', of: 'Zähler-Querschnitt',
+  point: 'Punkt', at: 'Pegel/Bauwerk', of: 'Zähler-Querschnitt',
   to: 'Nenner-Querschnitt', limit_max: 'Grenzwert max.',
   limit_min: 'Grenzwert min.', component: 'Komponente', region: 'Region',
   batter_deg: 'Neigung (°)', cutwater: 'Anlauf (veraltet)',
-  rotation_deg: 'Drehung (°)', insert_point: 'Einfügepunkt [x,y,z]',
-  crest_polyline: 'Kronenachse [[x,y,zKrone],…]',
+  rotation_deg: 'Drehung (°)', insert_point: 'Einfügepunkt',
+  crest_polyline: 'Kronenachse (z = Kronenhöhe)',
   slope_upstream: 'Neigung Oberwasser 1:n', slope_downstream: 'Neigung Unterwasser 1:n',
   profile_type: 'Wehrprofil', bar_shape: 'Stabform', bar_depth: 'Stabtiefe (m)',
   approach_angle_deg: 'Anströmwinkel (°, 90 = frontal)',
   shape: 'Grundrissform', length: 'Länge (m)', width: 'Breite/Ø (m)',
-}
-
-// Auswahlfelder für Formvarianten (Werte = casespec-Literale)
-const ENUM_OPTIONS = {
-  profile_type: ['trapez', 'breitkronig', 'scharfkantig', 'rundkronig'],
-  bar_shape: ['rechteck', 'rund', 'tropfen'],
-  shape: ['polygon', 'rechteck', 'rund', 'tropfen'],
-  falloff: ['smooth', 'linear', 'constant'],
-  face: ['x_min', 'x_max', 'y_min', 'y_max', 'z_max'],
-  component: ['x', 'y', 'z', 'magnitude'],
-}
-const ENUM_LABELS = {
-  trapez: 'Trapez (Dachwehr)', breitkronig: 'breitkronig',
-  scharfkantig: 'scharfkantig (Platte)', rundkronig: 'rundkronig',
-  rechteck: 'Rechteck', rund: 'rund', tropfen: 'Tropfen', polygon: 'Polygon',
-  smooth: 'weich', linear: 'linear', constant: 'konstant',
+  // Felder in Untergruppen (Profil, Widerstand, Achse, Fenster)
+  kind: 'Profilart', diameter: 'Durchmesser (m)', points: 'Stützpunkte',
+  model: 'Widerstandsmodell', blockage_ratio: 'Verlegungsgrad (0…1)',
+  z_min: 'Unterkante (m NHN)', z_max: 'Oberkante (m NHN)',
+  z_center: 'Achshöhe (m NHN)', span: 'Lage entlang der Kante (von/bis)',
+  follow: 'gekoppelt an', top_width: 'Breite Oberkante (m)',
 }
 
 const fields = computed(() => {
   if (!draft.value) return []
+  // Bauwerke/Operationen unterscheidet `type`, Nachweiskriterien `kind`
+  const typ = draft.value.type ?? draft.value.kind
   return Object.entries(draft.value)
     .filter(([k]) => !['id', 'type', 'kind', 'material',
       'material_ks'].includes(k))
-    .map(([k, v]) => ({
-      key: k,
-      label: FIELD_LABELS[k] ?? k,
-      widget: ENUM_OPTIONS[k] ? 'enum'
-        : typeof v === 'number' ? 'number'
-          : typeof v === 'boolean' ? 'check'
-            : typeof v === 'string' ? 'text' : 'json',
-    }))
+    .map(([k, v]) => {
+      const eigen = widgetFor(k, v, typ)
+      const widget = jsonModus[k] ? 'json' : eigen
+      return {
+        key: k,
+        label: TYP_LABELS[typ]?.[k] ?? FIELD_LABELS[k] ?? k,
+        widget,
+        // JSON bleibt als Rückfallebene erreichbar, aber nur dort, wo es
+        // etwas zu sehen gibt — bei Zahlen und Text wäre der Schalter Unfug
+        umschaltbar: !['number', 'text', 'check', 'enum', 'raster',
+          'referenz'].includes(eigen),
+        dim: punktDim(k, v, typ),
+        min: GESCHLOSSEN.has(k) ? 3 : 2,
+        geschlossen: GESCHLOSSEN.has(k),
+        namen: Array.isArray(v) ? zahlenNamen(k, v.length) : [],
+        optionen: eigen === 'referenz'
+          ? referenzListe(store.spec, REFERENZ_QUELLEN[typ][k]) : [],
+        quellname: eigen === 'referenz'
+          ? QUELL_NAMEN[REFERENZ_QUELLEN[typ][k]] : '',
+      }
+    })
 })
+
+// In der Untergruppe heißen Felder teils anders als oben: `center` ist im
+// Randfenster die Lage ENTLANG der Kante, kein Mittelpunkt in x/y
+const GRUPPEN_LABELS = {
+  window: { center: 'Lage entlang der Kante (m)',
+    bottom_width: 'Breite unten (m)', top_width: 'Breite oben (m)' },
+}
+
+function labelsFuer(key) {
+  return { ...FIELD_LABELS, ...(GRUPPEN_LABELS[key] ?? {}) }
+}
+
+function setzeZahl(key, i, wert) {
+  const z = Number(wert)
+  const neu = [...draft.value[key]]
+  neu[i] = Number.isFinite(z) ? z : 0
+  draft.value[key] = neu
+}
+
+// Ein Feld zwischen Maske und JSON umschalten. Beim Zurückschalten wird
+// der Text übernommen — sonst ginge eine Änderung still verloren.
+function jsonUmschalten(key) {
+  if (jsonModus[key]) {
+    try {
+      draft.value[key] = JSON.parse(jsonDrafts[key])
+    } catch {
+      parseError.value = `Feld „${FIELD_LABELS[key] ?? key}": ungültiges JSON`
+      return
+    }
+    delete jsonDrafts[key]
+    delete jsonModus[key]
+    parseError.value = ''
+  } else {
+    jsonDrafts[key] = JSON.stringify(draft.value[key])
+    jsonModus[key] = true
+  }
+}
 
 watch(() => [store.selection, store.selectedObject], () => {
   parseError.value = ''
   const obj = store.selectedObject
   draft.value = obj ? JSON.parse(JSON.stringify(obj)) : null
   for (const k of Object.keys(jsonDrafts)) delete jsonDrafts[k]
+  for (const k of Object.keys(jsonModus)) delete jsonModus[k]
   if (draft.value) {
     for (const [k, v] of Object.entries(draft.value)) {
-      if (v !== null && typeof v === 'object') {
+      // nur was keine eigene Maske hat, bleibt JSON-Text
+      if (v !== null && typeof v === 'object'
+          && widgetFor(k, v, draft.value.type ?? draft.value.kind) === 'json') {
         jsonDrafts[k] = JSON.stringify(v)
       }
     }
@@ -265,6 +442,24 @@ function profilePolygon(kind, mid, zBase, B) {
 // Bauwerks-Material -> Wandrauheit (eigener Select statt Generikfeld,
 // darum ist `material` oben aus fields() ausgenommen)
 const isStructure = computed(() => store.selection?.kind === 'structure')
+// Ein Rechen hat keinen eigenen Körper im Netz — er wirkt als poröse Zone.
+// Bearbeitungen und Wandrauheit gingen dort ins Leere, also gar nicht erst
+// anbieten (Widerstand und Stabgeometrie stehen in den Feldern darüber).
+const kraefteAn = computed(() => (store.spec?.evaluation?.force_patches ?? [])
+  .includes(draft.value?.patch))
+
+function kraefteUmschalten(ev) {
+  const patch = draft.value?.patch
+  if (!patch || !store.spec) return
+  const liste = [...(store.spec.evaluation.force_patches ?? [])]
+  const i = liste.indexOf(patch)
+  if (ev.target.checked && i < 0) liste.push(patch)
+  if (!ev.target.checked && i >= 0) liste.splice(i, 1)
+  store.setForcePatches(liste)
+}
+
+const hatKoerper = computed(() => isStructure.value
+  && draft.value?.type !== 'screen')
 const MATERIALS = ['stahl', 'beton_glatt', 'beton', 'mauerwerk', 'holz',
   'erde', 'steinschuettung']
 const MATERIAL_LABELS = {
@@ -288,6 +483,71 @@ const ksDraft = computed({
   },
 })
 
+// Aussparungen: nur Wand und Becken; neue Öffnung mittig auf der Achse
+// und auf halber Bauteilhöhe, damit sie garantiert im Bauteil liegt
+// Bearbeitungen gelten fuer JEDES Bauwerk, auch importierte
+
+function achsLaenge(o) {
+  const pts = o.type === 'wall'
+    ? (o.alignment?.points ?? []).map((p) => [p[0], p[1]])
+    : [...(o.footprint ?? []), (o.footprint ?? [])[0]].filter(Boolean)
+  let l = 0
+  for (let i = 1; i < pts.length; i++) {
+    l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+  }
+  return l
+}
+
+function mitteZ(o) {
+  if (o.type === 'wall') {
+    return Math.max(...o.alignment.points.map((p) => p[2])) - o.height / 2
+  }
+  if (o.type === 'basin') return o.invert_level + o.wall_height / 2
+  if (o.type === 'pier') return (o.base_level + o.top_level) / 2
+  const d = store.spec?.domain
+  return d ? (d.z_min + d.z_max) / 2 : 0
+}
+
+const zeichnet = computed(() =>
+  store.platzierung?.id === draft.value?.id ? store.platzierung.art : null)
+
+// Zeichnen statt tippen: der Editor zeigt die Bearbeitung am Körper und
+// stanzt sie beim Klick ein. Vorher den Entwurf übernehmen, sonst gingen
+// nicht übernommene Feldänderungen beim Zurückschreiben verloren.
+function zeichnen(art) {
+  if (zeichnet.value === art) { store.endPlatzierung(); return }
+  apply()
+  store.startPlatzierung(art, draft.value.id)
+}
+
+function addEdit(art) {
+  const o = draft.value
+  const liste = o.edits ? [...o.edits] : []
+  const nr = liste.length + 1
+  const z = Math.round(mitteZ(o) * 100) / 100
+  const st = Math.round(achsLaenge(o) / 2 * 100) / 100
+  // Bauwerke ohne Achse (Import, Pfeiler) werden ueber einen Punkt
+  // gebohrt, alle anderen ueber die Station auf der Achse
+  const lage = st > 0 ? { station: st } : { point: [0, 0], direction: [0, 1] }
+  const vorlagen = {
+    aussparung_kreis: { id: `bohrung_${nr}`, type: 'aussparung',
+      shape: 'kreis', ...lage, z, diameter: 0.8 },
+    aussparung_rechteck: { id: `oeffnung_${nr}`, type: 'aussparung',
+      shape: 'rechteck', ...lage, z, width: 1.0, height: 0.8 },
+    schnitt: { id: `schnitt_${nr}`, type: 'schnitt', achse: 'z',
+      position: z, behalten: 'unter' },
+    auf_gebiet: { id: `zuschnitt_${nr}`, type: 'auf_gebiet', rand: 0 },
+    gelaende: { id: `gelaende_${nr}`, type: 'gelaende', modus: 'auto',
+      einbindetiefe: 0.3 },
+    transform: { id: `lage_${nr}`, type: 'transform',
+      verschieben: [0, 0, 0], drehen_deg: 0, skalieren: 1 },
+    heilen: { id: `heilen_${nr}`, type: 'heilen' },
+  }
+  liste.push(vorlagen[art])
+  o.edits = liste
+  jsonDrafts.edits = JSON.stringify(liste)
+}
+
 const windowKind = computed({
   get: () => {
     const w = draft.value?.window
@@ -298,13 +558,15 @@ const windowKind = computed({
   set: (v) => {
     if (!v) {
       draft.value.window = null
-      jsonDrafts.window = 'null'
+      delete jsonDrafts.window
       return
     }
     draft.value.window = v.startsWith('follow:')
       ? { follow: v.slice(7) }
       : windowTemplate(v)
-    jsonDrafts.window = JSON.stringify(draft.value.window)
+    // kein jsonDrafts mehr: das Fenster hat eine eigene Maske, und ein
+    // stehengebliebener Textstand würde sie beim Übernehmen überschreiben
+    delete jsonDrafts.window
   },
 })
 
@@ -386,5 +648,26 @@ function remove() {
   padding: 6px;
   resize: vertical;
 }
+.f3d-zahlen { display: flex; flex-wrap: wrap; gap: 4px; }
+.f3d-zahl {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 62px;
+  min-width: 62px;
+}
+.f3d-zahl > span { color: var(--f3d-text-2); font-size: 0.64rem; }
+.f3d-zahl .f3d-num { width: 100%; min-width: 0; }
+.f3d-jsonschalter {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--f3d-text-2);
+  cursor: pointer;
+  font-size: 0.64rem;
+  padding: 1px 0 0;
+}
+.f3d-jsonschalter:hover { color: var(--f3d-accent); }
+.f3d-openrow { display: flex; gap: 6px; }
 .f3d-prop-actions { display: flex; gap: 8px; margin-top: 4px; }
 </style>

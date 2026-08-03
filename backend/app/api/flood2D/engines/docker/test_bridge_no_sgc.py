@@ -11,7 +11,7 @@ KEINEN SGC-Keywords, lässt es im Container laufen und prüft:
   3. Wasser erreicht/passiert die Brücke (Info, kein hartes Gate).
 
 Aufruf (aus beliebigem Verzeichnis):
-    python3 test_bridge_no_sgc.py [IMAGE]      # default: lisflood-fp:latest
+    python3 test_bridge_no_sgc.py [IMAGE]      # default: fabiologe/quagg-lisflood:latest
 Exit-Code 0 = bestanden.
 """
 import json
@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 30, 12, 1.0
 CH_ROWS = (5, 6)            # Kanal-Zeilen (file row, top-down)
 BRIDGE_COL = 15            # Brücke quer über den Kanal bei x≈15.5

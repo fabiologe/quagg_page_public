@@ -40,6 +40,12 @@ export const flood3dApi = {
   caseTerrain: (caseId) => getJson(`/cases/${caseId}/terrain`),
   caseSolids: (caseId) => getJson(`/cases/${caseId}/solids`),
   caseValidate: (caseId) => getJson(`/cases/${caseId}/validate`),
+  caseRasters: (caseId) => getJson(`/cases/${caseId}/rasters`),
+  caseRotate: (caseId, deg) =>
+    sendJson(`/cases/${caseId}/rotate`, 'POST', { deg }),
+  caseAnschluss: (caseId) => sendJson(`/cases/${caseId}/anschluss`, 'POST', {}),
+  meshPreviewState: (caseId) => getJson(`/cases/${caseId}/mesh-preview`),
+  caseTerrainSolid: (caseId) => getJson(`/cases/${caseId}/terrain-solid`),
   importAnalyze: async (caseId, file) => {
     const res = await fetch(
       `${BASE}/cases/${caseId}/import?filename=${encodeURIComponent(file.name)}`,
@@ -67,6 +73,28 @@ export const flood3dApi = {
       throw new Error(detail)
     }
     return { runId: res.headers.get('X-F3D-Run-Id'), blob: await res.blob() }
+  },
+  // Grosse Ergebnisse stückweise übertragen — ein 400-MB-Body scheitert
+  // an jeder Proxy-Grenze (nginx: 200 MB).
+  importRunChunked: async (runId, blob, onProgress = null) => {
+    const CHUNK = 24 * 1024 * 1024
+    const teile = Math.max(1, Math.ceil(blob.size / CHUNK))
+    for (let i = 0; i < teile; i++) {
+      const stueck = blob.slice(i * CHUNK, (i + 1) * CHUNK)
+      const last = i === teile - 1
+      const res = await fetch(
+        `${BASE}/runs/${runId}/import-chunk?index=${i}&last=${last}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' },
+          body: stueck })
+      if (!res.ok) {
+        let detail = res.statusText
+        try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
+        throw new Error(`Teil ${i + 1}/${teile}: ${detail}`)
+      }
+      if (onProgress) onProgress((i + 1) / teile)
+      if (last) return res.json()
+    }
+    return null
   },
   importRun: async (runId, blob) => {
     const res = await fetch(`${BASE}/runs/${runId}/import`, {

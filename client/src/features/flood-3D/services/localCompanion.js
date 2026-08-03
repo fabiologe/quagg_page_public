@@ -36,22 +36,56 @@ function bytesToBase64(bytes) {
 // Kompletter lokaler Lauf: Bundle holen -> Companion rechnen lassen ->
 // Artefakte zum Server importieren. onEvent bekommt jede NDJSON-Zeile des
 // Runners (log/progress) für die Live-Anzeige.
-export async function runLocally(caseId, onEvent) {
-  onEvent({ event: 'log', text: 'Fall wird auf dem Server paketiert …' })
-  const { runId, blob } = await flood3dApi.caseBundle(caseId)
-  onEvent({ event: 'log', text: `Bundle geladen (${Math.round(blob.size / 1024)} kB), Lauf ${runId}` })
+// Angefangene, nicht beendete OpenFOAM-Läufe auf dieser Maschine —
+// Grundlage für "nach Absturz fortsetzen".
+export async function unterbrocheneLaeufe() {
+  try {
+    const res = await fetch(`${COMPANION_BASE}/runs`,
+      { signal: AbortSignal.timeout(2500) })
+    if (!res.ok) return []
+    const { runs } = await res.json()
+    return (runs ?? []).filter((r) => r.engine === 'openfoam'
+      && r.status !== 'COMPLETED')
+  } catch {
+    return []
+  }
+}
 
-  const bytes = new Uint8Array(await blob.arrayBuffer())
+export async function pauseLocalRun(jobId) {
+  const res = await fetch(`${COMPANION_BASE}/v2/flood3d/pause/${jobId}`,
+    { method: 'POST' })
+  if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function runLocally(caseId, onEvent, resumeJob = null) {
+  let runId = resumeJob?.runId ?? null
+  let files = {}
+  if (resumeJob) {
+    onEvent({ event: 'log',
+      text: `Lauf ${runId} wird fortgesetzt — Netz und bereits gerechnete `
+          + 'Zeitschritte bleiben erhalten.' })
+  } else {
+    onEvent({ event: 'log', text: 'Fall wird auf dem Server paketiert …' })
+    const bundle = await flood3dApi.caseBundle(caseId)
+    runId = bundle.runId
+    onEvent({ event: 'log', text: `Bundle geladen (${Math.round(bundle.blob.size / 1024)} kB), Lauf ${runId}` })
+    const bytes = new Uint8Array(await bundle.blob.arrayBuffer())
+    files = { 'case.zip': { encoding: 'base64', data: bytesToBase64(bytes) } }
+  }
+
   const res = await fetch(`${COMPANION_BASE}/v2/flood3d/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ input: {
       engine: 'openfoam',
-      files: { 'case.zip': { encoding: 'base64', data: bytesToBase64(bytes) } },
+      resume_job: resumeJob?.jobId ?? undefined,
+      files,
     } }),
   })
   if (!res.ok) throw new Error((await res.json()).error ?? `Companion: HTTP ${res.status}`)
   const { id: jobId } = await res.json()
+  onEvent({ event: 'job', jobId })
 
   // Ereignisse einsammeln, bis der Runner fertig oder gescheitert ist
   let artifactsUrl = null
@@ -62,7 +96,12 @@ export async function runLocally(caseId, onEvent) {
     const { status, stream } = await sres.json()
     for (const { output: ev } of stream ?? []) {
       onEvent(ev)
-      if (ev.event === 'done') artifactsUrl = ev.artifactsUrl
+      if (ev.event === 'done') {
+        artifactsUrl = ev.artifactsUrl
+        // Bei Wiederaufnahme kennt der Browser die Server-Laufnummer nicht —
+        // der Runner meldet sie mit (sie steht im Fall unter run_id.txt).
+        if (ev.run_id) runId = ev.run_id
+      }
       if (ev.event === 'error') throw new Error(ev.text)
     }
     if (status === 'COMPLETED') break
@@ -72,11 +111,17 @@ export async function runLocally(caseId, onEvent) {
     }
   }
   if (!artifactsUrl) throw new Error('Lauf beendet, aber keine Artefakte gemeldet')
+  if (!runId) throw new Error('Lauf beendet, aber ohne Laufnummer — Import nicht möglich')
 
   onEvent({ event: 'log', text: 'Lade Artefakte und übertrage sie zum Server …' })
   const art = await fetch(`${COMPANION_BASE}${artifactsUrl}`)
   if (!art.ok) throw new Error(`Artefakte nicht abrufbar: HTTP ${art.status}`)
-  await flood3dApi.importRun(runId, await art.blob())
+  const paket = await art.blob()
+  onEvent({ event: 'log',
+    text: `Artefakte: ${(paket.size / 1e6).toFixed(0)} MB werden übertragen …` })
+  await flood3dApi.importRunChunked(runId, paket, (f) => {
+    if (f < 1) onEvent({ event: 'progress', phase: 'upload', fraction: f })
+  })
   onEvent({ event: 'log', text: `Lauf ${runId} übernommen — Ergebnis-Phase ist bereit.` })
   return runId
 }

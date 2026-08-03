@@ -273,10 +273,10 @@ const title = computed(() => {
   return TITLES[bwType.value] ?? 'Schacht (3D)';
 });
 
-// Pumpe/Wehr/Drossel/Schieber (6/7/8/9): einheitliches helles Lila, da sie in
+// Pumpe/Wehr/Drossel/Schieber (6/7/8/9): einheitliches Graubeige, da sie in
 // Realität/ISYBAU ein Knotenelement sind — ein Blick soll "Sonderbauwerk"
 // signalisieren statt vier unterschiedliche Farben je Subtyp zu erfordern.
-const SONDERBAUWERK_GRADIENT = 'linear-gradient(135deg,#7c5295,#c9a0dc)';
+const SONDERBAUWERK_GRADIENT = 'linear-gradient(135deg,#4a4844,#65625c)';
 const HEADER_GRADIENTS = {
   1: 'linear-gradient(135deg,#b45309,#d97706)',   // Pumpwerk orange
   6: SONDERBAUWERK_GRADIENT,
@@ -294,7 +294,7 @@ const headerGradient = computed(() => {
   if (isEdge.value)  return 'linear-gradient(135deg,#1e3a5f,#2563eb)';
   if (isArea.value)  return 'linear-gradient(135deg,#1e3a5f,#2980b9)';
   if (props.element?.status === 2) return 'linear-gradient(135deg,#7f1d1d,#ef4444)'; // fictive red
-  return HEADER_GRADIENTS[bwType.value] ?? 'linear-gradient(135deg,#040647,#594491)';
+  return HEADER_GRADIENTS[bwType.value] ?? 'linear-gradient(135deg,#040647,#4a4844)';
 });
 
 const PROFILE_NAMES = {
@@ -326,8 +326,8 @@ const edgeUtilClass = computed(() => {
   position: absolute;
   top: 1rem; right: 1rem;
   width: 280px;
-  background: rgba(6, 9, 58, 0.92);
-  border: 1px solid #594491;
+  background: var(--isy-pixel-bg, #040647);
+  border: 1px solid var(--isy-pixel-border, #4a4844);
   border-radius: 10px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   overflow: hidden;
@@ -345,14 +345,14 @@ const edgeUtilClass = computed(() => {
 .info-header h3 {
   margin: 0;
   font-size: 0.75rem;
-  color: #fff;
-  font-family: 'Press Start 2P', monospace;
+  color: var(--isy-pixel-text, #fff);
+  font-family: var(--isy-pixel-font);
 }
 .close-btn {
   background: none; border: none; color: #a0aec0;
   font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 0;
 }
-.close-btn:hover { color: #fff; }
+.close-btn:hover { color: var(--isy-pixel-text, #fff); }
 
 .info-body { padding: 0.75rem 1rem; }
 
@@ -377,7 +377,7 @@ const edgeUtilClass = computed(() => {
   display: inline-block;
 }
 .type-badge.pumpwerk { background: rgba(217,119,6,0.2);  color: #fbbf24; border: 1px solid #d97706; }
-.type-badge.sonderbauwerk { background: rgba(201,160,220,0.2); color: #e9d5f5; border: 1px solid #c9a0dc; }
+.type-badge.sonderbauwerk { background: rgba(101,98,92,0.25); color: #d8d5cf; border: 1px solid var(--isy-pixel-accent-soft, #65625c); }
 .type-badge.becken   { background: rgba(20,184,166,0.2); color: #5eead4; border: 1px solid #14b8a6; }
 .type-badge.outfall  { background: rgba(5,150,105,0.2);  color: #6ee7b7; border: 1px solid #059669; }
 .type-badge.fictive  { background: rgba(239,68,68,0.2);  color: #fca5a5; border: 1px solid #ef4444; }

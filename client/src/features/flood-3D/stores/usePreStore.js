@@ -6,6 +6,13 @@
 import { defineStore } from 'pinia'
 import { flood3dApi } from '../services/api'
 
+function b64Buffer(b64) {
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return bytes.buffer
+}
+
 // Objektlisten der casespec: Auswahl-Kind -> Pfad in der Spec
 export const KIND_PATHS = {
   terrain_op: (s) => s.terrain?.operations,
@@ -25,6 +32,9 @@ export const usePreStore = defineStore('flood3d-pre', {
     dirty: false,
     validation: [],
     terrain: null,        // { x0, y0, resolution, dims, z: Float32Array }
+    // Geländekörper (Volumen statt Höhenfläche) — nur gesetzt, wenn der
+    // Fall wirklich mit einem Körper vernetzt wird
+    terrainSolid: null,   // { stl: ArrayBuffer, volume, watertight, … }
     solids: [],           // [{ patch, stl: ArrayBuffer }]
     geometryVersion: 0,
     selection: null,      // { kind, id }
@@ -32,6 +42,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     error: '',
     meshPreview: null,    // Ergebnis des Vernetzungsprobelaufs
     meshPreviewLoading: false,
+    meshPreviewStale: false,   // Vorschaunetz gehört nicht mehr zum Fall
     startedRun: null,     // { run_id } des zuletzt gestarteten Laufs
     // Bearbeitungsverlauf: Snapshots der GESAMTEN spec (JSON-Strings).
     // Jede Mutation läuft durch update/add/removeObject — damit ist die
@@ -41,11 +52,22 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Workflow-Phase des Arbeitsbereichs: modell | simulation | laeufe
     activePhase: 'modell',
     caseRuns: [],          // Läufe DIESES Falls (run_id-Präfix)
+    // Bearbeitung, die gerade in die Szene GEZEICHNET wird:
+    // { art: 'bohrung'|'oeffnung'|'schnitt', id, mass } — der Editor zeigt
+    // eine Vorschau am Körper und stanzt sie beim Klick ein. Zahlen tippen
+    // kann man danach immer noch.
+    platzierung: null,
+    rasterDateien: [],     // Höhenraster neben dem Fall (Bereich ersetzen)
   }),
 
   getters: {
     selectedObject(state) {
       if (!state.selection || !state.spec) return null
+      // Das Modellgebiet ist kein Listenobjekt, aber man muss es anfassen
+      // können wie eines — sonst lässt es sich nur über Zahlen ändern.
+      if (state.selection.kind === 'domain') {
+        return { id: 'domain', type: 'domain', ...state.spec.domain }
+      }
       const list = KIND_PATHS[state.selection.kind]?.(state.spec)
       return list?.find((o) => o.id === state.selection.id) ?? null
     },
@@ -88,6 +110,13 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
     },
 
+    async ladeRaster() {
+      if (!this.activeCaseId) return
+      try {
+        this.rasterDateien = await flood3dApi.caseRasters(this.activeCaseId)
+      } catch { this.rasterDateien = [] }
+    },
+
     // Nach dem Geometrie-Import: der Server hat den Fall bereits
     // geschrieben und liefert ihn zurück — nur Zustand nachziehen, ohne
     // Phase oder Undo-Verlauf zu verlieren (openCase täte beides).
@@ -100,7 +129,66 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.spec = spec
       this.dirty = false
       this.selection = null
-      await Promise.all([this.refreshGeometry(), this.refreshValidation()])
+      await Promise.all([this.refreshGeometry(), this.refreshValidation(),
+        this.ladeRaster()])
+    },
+
+    // Den ganzen Fall um die z-Achse drehen. Das Rechengebiet bleibt
+    // achsparallel — es ist das MODELL, das sich dreht. Der Server rechnet
+    // das (inkl. neu abgetastetem Höhenraster) und schreibt den Fall; hier
+    // wird nur der Zustand nachgezogen. Rückgabe: Hinweise des Servers.
+    async drehen(grad) {
+      if (!this.activeCaseId || !grad) return []
+      // ungespeicherte Änderungen zuerst sichern — der Server dreht das,
+      // was in der case.yaml steht
+      if (this.dirty && !(await this.saveCase())) return []
+      const snap = this.spec ? JSON.stringify(this.spec) : null
+      this.loading = true
+      try {
+        const res = await flood3dApi.caseRotate(this.activeCaseId, grad)
+        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
+        this.spec = res.spec
+        this.validation = res.validation
+        this.dirty = false
+        if (this.meshPreview) this.meshPreviewStale = true
+        await Promise.all([this.refreshGeometry(), this.ladeRaster()])
+        return res.hinweise ?? []
+      } catch (e) {
+        this.error = `Drehen fehlgeschlagen: ${e.message}`
+        return []
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // Mechanische Anschlüsse herstellen: Randbedingung auf die Fläche
+    // legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
+    // Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
+    async anschlussHerstellen() {
+      if (!this.activeCaseId) return []
+      if (this.dirty && !(await this.saveCase())) return []
+      const snap = this.spec ? JSON.stringify(this.spec) : null
+      this.loading = true
+      try {
+        const res = await flood3dApi.caseAnschluss(this.activeCaseId)
+        if (res.meldungen.length && snap) {
+          this.undoStack.push(snap)
+          this.redoStack = []
+        }
+        this.spec = res.spec
+        this.validation = res.validation
+        this.dirty = false
+        if (res.meldungen.length) {
+          if (this.meshPreview) this.meshPreviewStale = true
+          await this.refreshGeometry()
+        }
+        return res.meldungen
+      } catch (e) {
+        this.error = `Anschluss fehlgeschlagen: ${e.message}`
+        return []
+      } finally {
+        this.loading = false
+      }
     },
 
     async openCase(caseId) {
@@ -115,7 +203,9 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.activePhase = 'modell'
         this.loadCaseRuns()
         this.selection = null
-        await Promise.all([this.refreshGeometry(), this.refreshValidation()])
+        this.ladeMeshPreviewStand()
+        await Promise.all([this.refreshGeometry(), this.refreshValidation(),
+          this.ladeRaster()])
       } catch (e) {
         this.error = e.message
       } finally {
@@ -123,12 +213,29 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
     },
 
+    // Gespeicherte Netzvorschau samt Aktualitätsmarke — ohne sie zeigt die
+    // Netzansicht nach einer Änderung klaglos das alte Netz.
+    async ladeMeshPreviewStand() {
+      try {
+        const s = await flood3dApi.meshPreviewState(this.activeCaseId)
+        this.meshPreview = s.preview
+        this.meshPreviewStale = s.stale
+      } catch {
+        this.meshPreview = null
+        this.meshPreviewStale = false
+      }
+    },
+
     async refreshGeometry() {
       const id = this.activeCaseId
-      const [terrain, solids] = await Promise.all([
+      const [terrain, solids, koerper] = await Promise.all([
         flood3dApi.caseTerrain(id).catch(() => null),
         flood3dApi.caseSolids(id).catch(() => ({ solids: [], errors: [] })),
+        // 404 = dieser Fall arbeitet mit einer Höhenfläche, kein Körper
+        flood3dApi.caseTerrainSolid(id).catch(() => null),
       ])
+      this.terrainSolid = koerper
+        ? { ...koerper, stl: b64Buffer(koerper.stl_b64) } : null
       if (terrain) {
         const bin = atob(terrain.z_b64)
         const bytes = new Uint8Array(bin.length)
@@ -176,6 +283,8 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Bauwerke und Prüfung vom Server holen — OHNE zu speichern. Damit
     // reagiert die 3D-Szene unmittelbar auf Drag und Formularänderungen.
     scheduleDraftPreview() {
+      // jede Änderung entwertet ein vorhandenes Vorschaunetz
+      if (this.meshPreview) this.meshPreviewStale = true
       clearTimeout(this._draftTimer)
       this._draftTimer = setTimeout(() => this.refreshDraftPreview(), 350)
     },
@@ -235,7 +344,43 @@ export const usePreStore = defineStore('flood3d-pre', {
       this._restoreSnapshot(this.redoStack.pop())
     },
 
+    startPlatzierung(art, id) {
+      this.platzierung = { art, id }
+    },
+
+    endPlatzierung() {
+      this.platzierung = null
+    },
+
+    // Eine gezeichnete Bearbeitung an ein Bauwerk hängen.
+    addEdit(id, edit) {
+      const st = (this.spec?.structures ?? []).find((o) => o.id === id)
+      if (!st) return
+      const kopie = JSON.parse(JSON.stringify(st))
+      kopie.edits = [...(kopie.edits ?? []), edit]
+      this.updateObject('structure', id, kopie)
+    },
+
+    // Kraftauswertung je Bauwerk — steht in der Auswertung, nicht am
+    // Bauwerk selbst, deshalb ein eigener Weg mit Undo-Eintrag
+    setForcePatches(liste) {
+      if (!this.spec) return
+      this.recordUndo()
+      this.spec.evaluation.force_patches = liste
+      this.dirty = true
+      this.scheduleDraftPreview()
+    },
+
     updateObject(kind, id, updated) {
+      if (kind === 'domain') {
+        this.recordUndo()
+        const { id: _id, type: _t, ...rest } = updated
+        Object.assign(this.spec.domain, rest)
+        this.dirty = true
+        this.error = ''
+        this.scheduleDraftPreview()
+        return
+      }
       const list = KIND_PATHS[kind]?.(this.spec)
       const i = list?.findIndex((o) => o.id === id)
       if (i != null && i >= 0) {
@@ -289,6 +434,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       try {
         if (this.dirty) await this.saveCase()
         this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId)
+        this.meshPreviewStale = false
       } catch (e) {
         this.error = `Netzvorschau: ${e.message}`
       } finally {

@@ -14,7 +14,7 @@ direkt hinter der Brücke) statt eines langen durchgehenden Kanals, um genau die
 frühere asymmetrische Anforderung ("2 Zellen extra Richtung Osten") zu treffen.
 
 Aufruf (aus beliebigem Verzeichnis):
-    python3 test_bridge_asymmetric_sgc.py [IMAGE]      # default: lisflood-fp:latest
+    python3 test_bridge_asymmetric_sgc.py [IMAGE]      # default: fabiologe/quagg-lisflood:latest
 Exit-Code 0 = bestanden.
 """
 import json
@@ -24,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else "lisflood-fp:latest"
+IMAGE = sys.argv[1] if len(sys.argv) > 1 else "fabiologe/quagg-lisflood:latest"
 NCOLS, NROWS, CS = 20, 8, 1.0
 CH_ROW = 4               # Kanal-Zeile (file row, top-down)
 BRIDGE_COL = 10          # Brücke bei x≈10.5
