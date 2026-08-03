@@ -1,0 +1,36 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|  Erzeugt von quagg flood3D casebuilder — nicht von Hand bearbeiten,         |
+|  maßgeblich ist die casespec (Spez. Kap. 4.1).                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      fvOptions;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+rechen_1_porosity
+{
+    type            explicitPorositySource;
+    active          true;
+    explicitPorositySourceCoeffs
+    {
+        selectionMode   cellZone;
+        cellZone        rechen_1Zone;
+        type            DarcyForchheimer;
+        d               (0 0 0);
+        f               (244.898 0 0);
+        coordinateSystem
+        {
+            origin          (6 8 94.6);
+            e1              (1 0 0);
+            e2              (0 1 0);
+        }
+    }
+}
+
+
+// ************************************************************************* //

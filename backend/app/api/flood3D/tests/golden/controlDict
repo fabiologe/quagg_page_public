@@ -1,0 +1,293 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|  Erzeugt von quagg flood3D casebuilder — nicht von Hand bearbeiten,         |
+|  maßgeblich ist die casespec (Spez. Kap. 4.1).                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     interFoam;
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         60;
+deltaT          0.001;
+writeControl    adjustableRunTime;
+writeInterval   5;
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  7;
+writeCompression on;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable yes;
+adjustTimeStep  yes;
+maxCo           0.5;
+maxAlphaCo      0.3;
+maxDeltaT       1;
+
+functions
+{
+    forces_wand_becken
+    {
+        type            forces;
+        libs            (forces);
+        patches         (wand_becken);
+        rho             rho;
+        CofR            (8 5.5 96);
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    discharge_qs_zulauf
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      sampledSurface;
+        name            qs_zulauf;
+        sampledSurfaceDict
+        {
+            type            plane;
+            planeType       pointAndNormal;
+            pointAndNormalDict
+            {
+                point           (4 9 96);
+                normal          (1 0 0);
+            }
+        }
+        operation       weightedAreaIntegrate;
+        fields          (U);
+        weightField     alpha.water;
+        surfaceFormat   none;
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    discharge_qs_ablauf
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      sampledSurface;
+        name            qs_ablauf;
+        sampledSurfaceDict
+        {
+            type            plane;
+            planeType       pointAndNormal;
+            pointAndNormalDict
+            {
+                point           (20 9 96);
+                normal          (1 0 0);
+            }
+        }
+        operation       weightedAreaIntegrate;
+        fields          (U);
+        weightField     alpha.water;
+        surfaceFormat   none;
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    patchflow_inlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            inlet;
+        operation       weightedAreaIntegrate;
+        fields          (U);
+        weightField     alpha.water;
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    patchflow_outlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            outlet;
+        operation       weightedAreaIntegrate;
+        fields          (U);
+        weightField     alpha.water;
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    tau_betrag
+    {
+        type            mag;
+        libs            (fieldFunctionObjects);
+        field           wallShearStress;
+        result          tauMag;
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    writeTime;
+        log             no;
+    }
+    shear_wand_becken
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            wand_becken;
+        operation       max;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shearmean_wand_becken
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            wand_becken;
+        operation       areaAverage;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shear_becken_1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            becken_1;
+        operation       max;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shearmean_becken_1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            becken_1;
+        operation       areaAverage;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shear_dl_1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            dl_1;
+        operation       max;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shearmean_dl_1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            dl_1;
+        operation       areaAverage;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shear_pfeiler_1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            pfeiler_1;
+        operation       max;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    shearmean_pfeiler_1
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            pfeiler_1;
+        operation       areaAverage;
+        fields          (tauMag);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    gauge_pegel_becken
+    {
+        type            interfaceHeight;
+        libs            (fieldFunctionObjects);
+        alpha           alpha.water;
+        locations       ((12 14 96));
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    wall_shear
+    {
+        type            wallShearStress;
+        libs            (fieldFunctionObjects);
+        patches         (terrain wand_becken becken_1 dl_1 pfeiler_1);
+        // jeden Zeitschritt RECHNEN (sonst laesen die Auswertungen unten
+        // ein veraltetes Feld), aber nur zu den Ausgabezeitpunkten SCHREIBEN
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    writeTime;
+        log             no;
+    }
+    water_volume
+    {
+        type            volFieldValue;
+        libs            (fieldFunctionObjects);
+        operation       volIntegrate;
+        fields          (alpha.water);
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    residuals
+    {
+        type            solverInfo;
+        libs            (utilityFunctionObjects);
+        fields          (p_rgh U alpha.water);
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
+    y_plus
+    {
+        type            yPlus;
+        libs            (fieldFunctionObjects);
+        writeFields     false;
+        writeControl    writeTime;
+        log             no;
+    }
+}
+
+// ************************************************************************* //

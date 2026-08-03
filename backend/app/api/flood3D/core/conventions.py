@@ -1,0 +1,91 @@
+"""
+Einheiten-, Vorzeichen- und Namenskonventionen (Spez. Kap. 3, Modul conventions).
+
+Alle Werte in der normalisierten Zwischendatei sind SI. Die hier definierten
+Enums sind die einzige Quelle für die Spalten `quantity` und `component`
+(Spez. 4.2) — extract, evaluate und render importieren sie von hier, damit
+kein String-Tippfehler zwei Module auseinanderlaufen lässt.
+"""
+from enum import Enum
+
+
+class Quantity(str, Enum):
+    FORCE = "force"          # N
+    MOMENT = "moment"        # N m
+    DISCHARGE = "discharge"  # m3/s
+    LEVEL = "level"          # m, absolute Höhe (level_reference: absolute)
+    VOLUME = "volume"        # m3
+    RESIDUAL = "residual"    # -
+    COURANT = "courant"      # -
+    TIMESTEP = "timestep"    # s
+    CONTINUITY = "continuity"  # kumulierter Kontinuitätsfehler, m3
+    BED_SHEAR = "bed_shear"  # N/m2
+    ENERGY_HEAD = "energy_head"  # m, Energiehöhe je Querschnitt
+    OVERFALL_CD = "overfall_cd"  # -, Überfallbeiwert je Wehr
+    TRACER = "tracer"        # -, Markierungsstoff (0…1) für die Verweilzeit
+
+
+UNITS: dict[Quantity, str] = {
+    Quantity.FORCE: "N",
+    Quantity.MOMENT: "N m",
+    Quantity.DISCHARGE: "m3/s",
+    Quantity.LEVEL: "m",
+    Quantity.VOLUME: "m3",
+    Quantity.RESIDUAL: "-",
+    Quantity.COURANT: "-",
+    Quantity.TIMESTEP: "s",
+    Quantity.CONTINUITY: "m3",
+    Quantity.BED_SHEAR: "N/m2",
+    Quantity.ENERGY_HEAD: "m",
+    Quantity.OVERFALL_CD: "-",
+    Quantity.TRACER: "-",
+}
+
+
+class Component(str, Enum):
+    X = "x"
+    Y = "y"
+    Z = "z"
+    MAGNITUDE = "magnitude"
+    PRESSURE = "pressure"    # Druckanteil einer Kraft/eines Moments
+    VISCOUS = "viscous"      # Reibungsanteil
+    POROUS = "porous"
+    MEAN = "mean"
+    MAX = "max"
+    MIN = "min"
+    INITIAL = "initial"      # Anfangsresiduum einer Iteration
+    FINAL = "final"
+    NONE = ""
+
+
+# Spalten der normalisierten Zwischendatei (Spez. 4.2). Reihenfolge ist Teil
+# des Vertrags — die Referenz-Parquets der Regressionstests hängen daran.
+NORMALIZED_COLUMNS = [
+    "run_id", "time", "quantity", "location_id",
+    "component", "value", "unit", "source",
+]
+
+
+def section_normal(polyline) -> tuple[float, float, float]:
+    """
+    Normale eines Auswerte-Querschnitts (Grundriss, Rechtsdrehung).
+    EINE Quelle für casebuilder (Schnittebene) UND extract (Projektion des
+    Durchflussvektors) — liefen die auseinander, käme ein falscher
+    Durchfluss heraus, ohne dass es auffällt.
+    """
+    x0, y0 = float(polyline[0][0]), float(polyline[0][1])
+    x1, y1 = float(polyline[-1][0]), float(polyline[-1][1])
+    dx, dy = x1 - x0, y1 - y0
+    length = (dx * dx + dy * dy) ** 0.5 or 1.0
+    return (dy / length, -dx / length, 0.0)
+
+
+# Aussennormale je Gebietsflaeche. Positiver Durchfluss heisst damit
+# „verlaesst das Gebiet" — ein Zulauf zaehlt negativ.
+FACE_NORMALS = {
+    "x_min": (-1.0, 0.0, 0.0),
+    "x_max": (1.0, 0.0, 0.0),
+    "y_min": (0.0, -1.0, 0.0),
+    "y_max": (0.0, 1.0, 0.0),
+    "z_max": (0.0, 0.0, 1.0),
+}

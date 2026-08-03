@@ -96,8 +96,28 @@ backend/app/*
 backend/app/api/*
 !backend/app/api/flood2D/
 backend/app/api/flood2D/*
+# codec.py wird vom Dockerfile per COPY in das Image gezogen. Ohne sie schlaegt
+# der Build aus einem frischen Clone fehl (gefunden 2026-08-01).
+!backend/app/api/flood2D/codec.py
+# Benchmark-Harness (analytische Validierungsfaelle). Versioniert: Quelltext,
+# Ergebnistabelle (RESULTS.md) und Zeitreihe (history.csv) — die sind der
+# eigentliche Nachweis. Nicht versioniert: report.json (Rohdaten inkl. Profilen).
+!backend/app/api/flood2D/benchmark/
+backend/app/api/flood2D/benchmark/report.json
 !backend/app/api/flood2D/engines/
 backend/app/api/flood2D/engines/*
 !backend/app/api/flood2D/engines/patches/
 !backend/app/api/flood2D/engines/docker/
 !backend/app/api/flood2D/engines/vendor/
+# flood-3D — Quelltext versionieren, Falldaten NICHT. Unter data/ liegen
+# Hoehenraster, importierte STL-Koerper, Vorschaunetze und Ergebnisfelder:
+# 932 MB gegenueber 708 KB Quelltext (gemessen 2026-08-03). Die Faelle sind
+# Arbeitsstaende des Bearbeiters, kein Quelltext — sie gehoeren in die
+# Datensicherung, nicht in die Historie.
+!backend/app/api/flood3D/
+backend/app/api/flood3D/*
+!backend/app/api/flood3D/*.py
+!backend/app/api/flood3D/*.md
+!backend/app/api/flood3D/core/
+!backend/app/api/flood3D/engines/
+!backend/app/api/flood3D/tests/

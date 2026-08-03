@@ -1,0 +1,178 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|  Erzeugt von quagg flood3D casebuilder — nicht von Hand bearbeiten,         |
+|  maßgeblich ist die casespec (Spez. Kap. 4.1).                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      snappyHexMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+castellatedMesh true;
+snap            true;
+addLayers       true;
+
+geometry
+{
+    terrain.stl
+    {
+        type triSurfaceMesh;
+        name terrain;
+    }
+    becken_1.stl
+    {
+        type triSurfaceMesh;
+        name becken_1;
+    }
+    dl_1.stl
+    {
+        type triSurfaceMesh;
+        name dl_1;
+    }
+    pfeiler_1.stl
+    {
+        type triSurfaceMesh;
+        name pfeiler_1;
+    }
+    wand_becken.stl
+    {
+        type triSurfaceMesh;
+        name wand_becken;
+    }
+    r01
+    {
+        type searchableBox;
+        min (4 6 94);
+        max (12 12 97);
+    }
+};
+
+castellatedMeshControls
+{
+    maxLocalCells       2000000;
+    maxGlobalCells      8000000;
+    minRefinementCells  10;
+    maxLoadUnbalance    0.10;
+    nCellsBetweenLevels 2;
+
+    features
+    (
+        { file "becken_1.eMesh"; level 0; }
+        { file "dl_1.eMesh"; level 1; }
+        { file "pfeiler_1.eMesh"; level 1; }
+        { file "wand_becken.eMesh"; level 2; }
+    );
+
+    refinementSurfaces
+    {
+        terrain
+        {
+            level (1 1);
+            patchInfo { type wall; }
+        }
+        becken_1
+        {
+            level (1 1);
+            patchInfo { type wall; }
+        }
+        dl_1
+        {
+            level (2 2);
+            patchInfo { type wall; }
+        }
+        pfeiler_1
+        {
+            level (2 2);
+            patchInfo { type wall; }
+        }
+        wand_becken
+        {
+            level (3 3);
+            patchInfo { type wall; }
+        }
+    };
+
+    resolveFeatureAngle 30;
+
+    refinementRegions
+    {
+        r01
+        {
+            mode inside;
+            levels ((1e15 2));
+        }
+    };
+
+    locationInMesh (3.6 9 96.6096);
+    allowFreeStandingZoneFaces true;
+}
+
+snapControls
+{
+    nSmoothPatch    3;
+    tolerance       2.0;
+    nSolveIter      50;
+    nRelaxIter      5;
+    nFeatureSnapIter 10;
+    implicitFeatureSnap true;
+    explicitFeatureSnap false;
+    multiRegionFeatureSnap false;
+}
+
+addLayersControls
+{
+    relativeSizes   true;
+    layers
+    {
+        "wand_becken"
+        {
+            nSurfaceLayers 3;
+        }
+    };
+    expansionRatio      1.2;
+    finalLayerThickness 0.3;
+    minThickness        0.1;
+    nGrow               0;
+    featureAngle        60;
+    slipFeatureAngle    30;
+    nRelaxIter          3;
+    nSmoothSurfaceNormals 1;
+    nSmoothNormals      3;
+    nSmoothThickness    10;
+    maxFaceThicknessRatio 0.5;
+    maxThicknessToMedialRatio 0.3;
+    minMedialAxisAngle  90;
+    nBufferCellsNoExtrude 0;
+    nLayerIter          50;
+}
+
+meshQualityControls
+{
+    maxNonOrtho         65;
+    maxBoundarySkewness 20;
+    maxInternalSkewness 4;
+    maxConcave          80;
+    minVol              1e-13;
+    minTetQuality       1e-15;
+    minArea             -1;
+    minTwist            0.02;
+    minDeterminant      0.001;
+    minFaceWeight       0.05;
+    minVolRatio         0.01;
+    minTriangleTwist    -1;
+    nSmoothScale        4;
+    errorReduction      0.75;
+}
+
+writeFlags
+(
+    scalarLevels
+);
+
+mergeTolerance 1e-6;
+
+// ************************************************************************* //
