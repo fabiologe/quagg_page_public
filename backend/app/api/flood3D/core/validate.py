@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from .casespec import CaseSpec
+from .kur import kur
 from .meshgen import assign_faces, cell_counts
 from .solids import (build_solids, check_solid, gewollt_verschnitten,
                      grundriss, ueberschneidungen)
@@ -30,8 +31,18 @@ def pts_z_max(struct) -> float:
     return max(p[2] for p in struct.alignment.points)
 
 
-def _finding(object_id: str, severity: str, message: str) -> dict:
-    return {"object_id": object_id, "severity": severity, "message": message}
+def _finding(object_id: str, severity: str, message: str,
+             fix: dict | None = None) -> dict:
+    """
+    Ein Befund. `fix` ist die zugehörige Kur (core/kur.py) — eine benannte
+    Aktion, die das Panel als Knopf anbietet. Nur dort setzen, wo die
+    Reparatur aus dem Befund EINDEUTIG folgt und keine fachliche
+    Festlegung berührt.
+    """
+    b = {"object_id": object_id, "severity": severity, "message": message}
+    if fix is not None:
+        b["fix"] = fix
+    return b
 
 
 def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
@@ -55,8 +66,8 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
             f(_finding(ziel.id, "fehler",
                        f"Für \u201e{ziel.at}\u201c ist die Kraftauswertung "
                        "nicht eingeschaltet — das Kriterium bliebe ohne "
-                       "Zahlenwert. Im Eigenschaftspanel des Bauwerks "
-                       "\u201eKräfte und Momente auswerten\u201c ankreuzen."))
+                       "Zahlenwert.",
+                       fix=kur("kraftauswertung_ein", patch=ziel.at)))
 
     # LTSInterFoam braucht ein lokales Zeitschema (localEuler) und eine
     # eigene PIMPLE-Steuerung. Beides ist noch nicht verdrahtet — der Fall
@@ -150,14 +161,14 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                     f(_finding(patch, "warnung",
                                f"Zwischen Körper und Gelände klafft bis zu "
                                f"{spalt:.2f} m — dort rechnet der Solver "
-                               "Wasser hindurch. Bearbeitung „Gelände“ setzt "
-                               "den Körper auf und bindet ihn ein."))
+                               "Wasser hindurch.",
+                               fix=kur("gelaende_einbinden", patch=patch)))
                 elif tiefe is not None and tiefe > 1.0:
                     f(_finding(patch, "hinweis",
                                f"Körper reicht {tiefe:.1f} m unter das "
                                "Gelände. Das ändert die Strömung nicht, "
-                               "kostet aber Dreiecke und schlechte Zellen — "
-                               "Bearbeitung „Gelände“ kappt die Übertiefe."))
+                               "kostet aber Dreiecke und schlechte Zellen.",
+                               fix=kur("gelaende_einbinden", patch=patch)))
 
     # ---- Geländekanten aus der Vermessung --------------------------------
     for op in (spec.terrain.operations if spec.terrain else []):
@@ -372,7 +383,9 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 f(_finding(s.id, "fehler",
                            f"{label} {min_dim:g} m wird von der lokalen "
                            f"Zellgröße {local_cell(s.patch, mitte):g} m nicht aufgelöst "
-                           "— Verfeinerungsstufe erhöhen oder Abmessung prüfen"))
+                           "— Verfeinerungsstufe erhöhen oder Abmessung prüfen",
+                           fix=kur("verfeinerung_erhoehen", patch=s.patch,
+                                   mass=min_dim)))
 
         # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
         # (ein z je x/y) und hat keinen Tunnel — was darunter liegt, räumt
@@ -434,7 +447,8 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 if level is not None and not (bz0 <= level <= bz1):
                     f(_finding(r.id, "warnung",
                                "Verfeinerungsbox erfasst den erwarteten Bereich "
-                               f"der freien Oberfläche ({level:g} m) vertikal nicht"))
+                               f"der freien Oberfläche ({level:g} m) vertikal nicht",
+                               fix=kur("box_auf_spiegel", refinement=r.id)))
 
             nx, ny, nz = cell_counts(spec)
             if nx * ny * nz > 4_000_000:
@@ -590,8 +604,9 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                             f(_finding(b.id, "warnung",
                                        f"Rohrinneres ({cv.profile.diameter:g} m) "
                                        f"wird mit weniger als 4 Zellen "
-                                       f"({zelle:g} m) aufgelöst — "
-                                       "Verfeinerungsbox um den Stutzen legen"))
+                                       f"({zelle:g} m) aufgelöst",
+                                       fix=kur("box_ans_fenster",
+                                               boundary=b.id, level=2)))
             e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
             r = resolve_window(spec, b)
             if r is None:
@@ -627,8 +642,9 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                f"Fensteröffnung ist {min_dim:g} m klein — "
                                f"weniger als 2 Zellen ({zelle:g} m örtliche "
                                "Zellgröße); die Öffnung wird im Netz kaum "
-                               "aufgelöst, ggf. Verfeinerungsbox ans Fenster "
-                               "legen"))
+                               "aufgelöst",
+                               fix=kur("box_ans_fenster", boundary=b.id,
+                                       level=2)))
             if zlo is not None and zhi is not None and zlo >= zhi:
                 f(_finding(b.id, "fehler",
                            "Fenster-Unterkante liegt über der Oberkante"))
@@ -655,8 +671,62 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 f(_finding(b.id, "fehler",
                            "Zuflussganglinie ist zeitlich nicht monoton — "
                            "doppelte oder rückläufige Zeitpunkte"))
+            elif len(t) > 2:
+                # Der Solver interpoliert zwischen den Stützstellen linear.
+                # Eine Lücke schneidet damit still die Spitze ab — sichtbar
+                # wird das erst am zu kleinen Zufluss im Ergebnis.
+                schritt = np.diff(t)
+                gross = float(schritt.max())
+                ueblich = float(np.median(schritt))
+                if gross > max(10 * ueblich, 2 * spec.solver.write_interval_series):
+                    stelle = float(t[int(np.argmax(schritt))])
+                    f(_finding(b.id, "warnung",
+                               f"Zuflussganglinie hat bei t = {stelle:g} s eine "
+                               f"Lücke von {gross:g} s (sonst {ueblich:g} s). "
+                               "Der Solver interpoliert linear darüber hinweg — "
+                               "eine Spitze in dieser Lücke geht verloren."))
         except Exception as e:
             f(_finding(b.id, "fehler", f"Zuflussganglinie nicht lesbar: {e}"))
+
+    # Abstand der Bauwerke zu den Zu- und Ablaufrändern. Steht ein Bauwerk am
+    # Rand, wirkt die Randbedingung unmittelbar auf seine Umströmung zurück.
+    # Ausgenommen sind Bauwerke, an die eine Randbedingung bewusst gekoppelt
+    # ist (Rohrmündung im Gebietsrand).
+    if spec.domain is not None and spec.structures:
+        gekoppelt = {getattr(b.window, "follow", None)
+                     for b in spec.boundaries if getattr(b, "window", None)}
+        x0, y0, x1, y1 = spec.domain.extent
+        for s in spec.structures:
+            if s.id in gekoppelt or s.type == "screen":
+                continue
+            pkte = _plan_punkte(s)
+            if len(pkte) < 2:
+                continue
+            px, py = pkte[:, 0], pkte[:, 1]
+            abstaende = {"x_min": float(px.min() - x0), "x_max": float(x1 - px.max()),
+                         "y_min": float(py.min() - y0), "y_max": float(y1 - py.max())}
+            # Maßstab ist die SPERRBREITE quer zur Randfläche, nicht die
+            # Länge längs: eine Mauer parallel zur Strömung verdrängt nichts,
+            # eine quer stehende schon.
+            quer = {"x_min": float(py.max() - py.min()),
+                    "x_max": float(py.max() - py.min()),
+                    "y_min": float(px.max() - px.min()),
+                    "y_max": float(px.max() - px.min())}
+            for b in inflows + outflows:
+                face = _bc_face(spec, b)
+                if face is None or face == "z_max":
+                    continue
+                d = abstaende.get(face)
+                breite = quer.get(face, 0.0)
+                if d is None or breite <= 0 or d >= breite:
+                    continue
+                f(_finding(s.id, "warnung",
+                           f"Nur {max(d, 0):.1f} m bis zum Rand "
+                           f"\u201e{b.id}\u201c "
+                           f"({face}), das Bauwerk selbst ist {breite:.1f} m "
+                           "groß — die Randbedingung wirkt auf die Umströmung "
+                           "zurück. Spez. Kap. 7 nennt als Vorbelegung fünf "
+                           "Gerinnebreiten stromauf und zehn stromab."))
 
     for s in spec.structures:
         if s.type == "screen":
@@ -708,6 +778,25 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
 
     order = {"fehler": 0, "warnung": 1, "hinweis": 2}
     return sorted(findings, key=lambda x: (order[x["severity"]], x["object_id"]))
+
+
+def _plan_punkte(struct) -> np.ndarray:
+    """
+    Grundrisspunkte eines Bauwerks (n, 2) — je nach Typ aus Achse, Grundriss,
+    Kronenlinie oder Rechenebene. Leer, wenn der Typ keine Lage in der Ebene
+    trägt (importierte Körper mit Einfügepunkt).
+    """
+    for feld in ("footprint", "axis", "crest_polyline", "plane_polygon"):
+        werte = getattr(struct, feld, None)
+        if werte:
+            return np.asarray(werte, dtype=float)[:, :2]
+    ausricht = getattr(struct, "alignment", None)
+    if ausricht is not None and ausricht.points:
+        return np.asarray(ausricht.points, dtype=float)[:, :2]
+    mitte = getattr(struct, "center", None)
+    if mitte is not None:
+        return np.asarray([mitte], dtype=float)[:, :2]
+    return np.zeros((0, 2))
 
 
 def _gelaendelage(mesh, terrain) -> tuple[float | None, float | None]:

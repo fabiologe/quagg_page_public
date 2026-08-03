@@ -20,7 +20,9 @@ from .synthetic_case import build_spec_stage3
 def _wand(openings=(), laenge=10.0, dicke=0.5, hoehe=3.0, z_ok=100.0):
     return cs.StructWall(
         id="wand_1", type="wall", patch="wand_1",
-        alignment=cs.Alignment(points=[(0, 0, z_ok), (laenge, 0, z_ok)]),
+        # bewusst mitten im Gebiet: auf dem Gebietsrand stehend meldet die
+        # Randabstandsregel zu Recht die Rückwirkung der Randbedingung
+        alignment=cs.Alignment(points=[(6, 9, z_ok), (6 + laenge, 9, z_ok)]),
         height=hoehe, thickness=dicke, edits=list(openings))
 
 

@@ -191,6 +191,31 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
     },
 
+    // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
+    // Auswertung oder Anschluss — keine fachliche Festlegung.
+    async kurAnwenden(fix) {
+      if (!this.activeCaseId || !fix) return ''
+      if (this.dirty && !(await this.saveCase())) return ''
+      const snap = this.spec ? JSON.stringify(this.spec) : null
+      this.loading = true
+      try {
+        const res = await flood3dApi.caseKur(this.activeCaseId, fix.aktion,
+          fix.args ?? {})
+        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
+        this.spec = res.spec
+        this.validation = res.validation
+        this.dirty = false
+        if (this.meshPreview) this.meshPreviewStale = true
+        await this.refreshGeometry()
+        return res.meldung
+      } catch (e) {
+        this.error = `Kur fehlgeschlagen: ${e.message}`
+        return ''
+      } finally {
+        this.loading = false
+      }
+    },
+
     async openCase(caseId) {
       this.loading = true
       this.error = ''

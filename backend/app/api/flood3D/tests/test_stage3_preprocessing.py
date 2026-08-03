@@ -434,3 +434,142 @@ def test_kanten_werden_erfasst_und_in_jedem_pfad_gezogen(tmp_path):
     from ..core import runner
     quelle = inspect.getsource(runner.mesh_preview)
     assert "_kanten_ziehen" in quelle, "Netzvorschau zieht die Kanten nicht"
+
+
+def test_randabstand_meldet_nur_sperrende_bauwerke():
+    """
+    Ein quer zur Strömung stehendes Bauwerk am Zuflussrand lässt die
+    Randbedingung auf die eigene Umströmung zurückwirken. Eine Mauer
+    PARALLEL zur Strömung verdrängt dagegen nichts — Maßstab ist die
+    Sperrbreite quer zur Randfläche.
+    """
+    from ..core.validate import validate_case
+
+    def wand(punkte):
+        spec = build_spec_stage3()
+        spec.terrain = None
+        spec.structures = [cs.StructWall(
+            id="w", type="wall", patch="w",
+            alignment=cs.Alignment(points=punkte), height=2.0, thickness=0.4)]
+        spec.mesh.refinements = []
+        spec.mesh.boundary_layers = None
+        spec.evaluation.force_patches = []
+        spec.evaluation.targets = []
+        return [x["message"] for x in validate_case(spec, ".")
+                if x["object_id"] == "w" and "bis zum Rand" in x["message"]]
+
+    # quer zum Zuflussrand x_min, 12 m breit, nur 2 m entfernt
+    assert wand([(2, 3, 97.0), (2, 15, 97.0)])
+    # parallel zur Strömung: keine Sperrbreite, kein Befund
+    assert not wand([(2, 9, 97.0), (14, 9, 97.0)])
+
+
+def test_ganglinienluecke_wird_gemeldet(tmp_path):
+    """
+    Der Solver interpoliert zwischen den Stützstellen linear — eine Lücke
+    schneidet die Spitze still ab.
+    """
+    from ..core.validate import validate_case
+
+    spec = build_spec_stage3()
+    spec.solver.end_time = 60.0
+    csv = tmp_path / "zufluss.csv"
+    zeilen = ["t,Q"] + [f"{t},0.5" for t in range(0, 21, 2)] + ["55,2.0", "60,0.5"]
+    csv.write_text("\n".join(zeilen))
+    spec.boundaries[0] = cs.BcInflowHydrograph(
+        id="zulauf", patch="inlet", type="inflow_hydrograph",
+        source="zufluss.csv", column_time="t", column_q="Q")
+    msgs = [x["message"] for x in validate_case(spec, tmp_path)
+            if x["object_id"] == "zulauf"]
+    assert any("Lücke" in m for m in msgs), msgs
+
+
+def _kuren_im_fall(spec, base=".") -> list[dict]:
+    from ..core.validate import validate_case
+
+    return [b["fix"] for b in validate_case(spec, base) if b.get("fix")]
+
+
+def test_jede_kur_beseitigt_ihren_eigenen_befund(tmp_path):
+    """
+    Der Kern des Kur-Systems: was die Prüfung vorschlägt, muss den Befund
+    auch wirklich abstellen — sonst ist der Knopf eine Behauptung.
+    """
+    from ..core.kur import anwenden
+    from ..core.validate import validate_case
+
+    def probe(bauen, erwartet: str) -> str:
+        """Kur `erwartet` anwenden und melden, was von ihrem Befund übrig bleibt."""
+        spec = bauen()
+        fix = next((k for k in _kuren_im_fall(spec, tmp_path)
+                    if k["aktion"] == erwartet), None)
+        assert fix is not None, f"kein Befund mit Kur {erwartet}"
+        anwenden(spec, fix["aktion"], fix["args"])
+        # Fall muss danach noch gültig sein
+        cs.CaseSpec.model_validate(spec.model_dump(mode="json"))
+        offen = [b["message"] for b in validate_case(spec, tmp_path)
+                 if b.get("fix", {}).get("aktion") == erwartet
+                 and b.get("fix", {}).get("args") == fix["args"]]
+        return offen[0] if offen else ""
+
+    # 1) zu dünne Wand gegen die Zellgröße
+    def duenn():
+        spec = build_spec_stage3()
+        spec.terrain = None
+        spec.mesh.base_cell = 1.0
+        spec.mesh.refinements = []
+        spec.mesh.boundary_layers = None
+        spec.evaluation.force_patches = []
+        spec.evaluation.targets = []
+        spec.structures = [cs.StructWall(
+            id="w", type="wall", patch="w",
+            alignment=cs.Alignment(points=[(8, 9, 97.0), (16, 9, 97.0)]),
+            height=2.0, thickness=0.4)]
+        return spec
+
+    assert not probe(duenn, "verfeinerung_erhoehen")
+
+    # 2) Kraftkriterium ohne Kraftauswertung
+    def kraft():
+        spec = build_spec_stage3()
+        spec.terrain = None
+        spec.evaluation.force_patches = []
+        spec.evaluation.targets = [cs.TargetMaxForce(
+            id="last", kind="max_force", at="becken_1")]
+        return spec
+
+    assert not probe(kraft, "kraftauswertung_ein")
+
+    # 3) Verfeinerungsbox verfehlt den Wasserspiegel
+    def spiegel():
+        spec = build_spec_stage3()
+        spec.terrain = None
+        spec.evaluation.force_patches = []
+        spec.evaluation.targets = []
+        spec.mesh.refinements = [cs.RefineBox(
+            id="r", type="box", extent=(4, 6, 93.0, 12, 12, 94.0), level=2)]
+        spec.solver.initial_level = 96.0
+        return spec
+
+    assert not probe(spiegel, "box_auf_spiegel")
+
+
+def test_kur_bindet_koerper_ins_gelaende_ein(tmp_path):
+    from ..core.kur import anwenden
+    from ..core.validate import validate_case
+
+    spec = build_spec_stage3()
+    spec.terrain.operations = []
+    spec.evaluation.force_patches = []
+    spec.evaluation.targets = []
+    spec.mesh.refinements = []
+    spec.structures = [cs.StructBasin(
+        id="b", type="basin", patch="b",
+        footprint=[(10, 10), (16, 10), (16, 15), (10, 15)],
+        invert_level=97.5, wall_height=2.0, wall_thickness=0.3)]
+    fix = next(b["fix"] for b in validate_case(spec, tmp_path)
+               if b.get("fix", {}).get("aktion") == "gelaende_einbinden")
+    anwenden(spec, fix["aktion"], fix["args"])
+    assert any(e.type == "gelaende" for e in spec.structures[0].edits)
+    assert not [b for b in validate_case(spec, tmp_path)
+                if b.get("fix", {}).get("aktion") == "gelaende_einbinden"]

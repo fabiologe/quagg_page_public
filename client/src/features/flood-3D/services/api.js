@@ -44,6 +44,8 @@ export const flood3dApi = {
   caseRotate: (caseId, deg) =>
     sendJson(`/cases/${caseId}/rotate`, 'POST', { deg }),
   caseAnschluss: (caseId) => sendJson(`/cases/${caseId}/anschluss`, 'POST', {}),
+  caseKur: (caseId, aktion, args) =>
+    sendJson(`/cases/${caseId}/kur`, 'POST', { aktion, args }),
   meshPreviewState: (caseId) => getJson(`/cases/${caseId}/mesh-preview`),
   caseTerrainSolid: (caseId) => getJson(`/cases/${caseId}/terrain-solid`),
   importAnalyze: async (caseId, file) => {

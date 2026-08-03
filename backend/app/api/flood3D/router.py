@@ -591,6 +591,31 @@ async def case_anschluss(case_id: str):
             "validation": validate_case(spec, d)}
 
 
+@router.post("/cases/{case_id}/kur")
+async def case_kur(case_id: str, payload: dict = Body(...)):
+    """
+    Die Reparatur zu einem Prüfbefund ausführen. Der Befund selbst liefert
+    Aktion und Argumente (`fix` in der Prüfung) — hier wird nur noch
+    angewandt und gespeichert.
+    """
+    from .core.kur import anwenden
+
+    spec, d = _load_case(case_id)
+    aktion = str(payload.get("aktion") or "")
+    args = payload.get("args") or {}
+    try:
+        meldung = anwenden(spec, aktion, args)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Kur fehlgeschlagen: {e}")
+    spec.to_yaml(d / "case.yaml")
+    return {"ok": True, "meldung": meldung,
+            "spec": spec.model_dump(mode="json", exclude_none=True),
+            "validation": validate_case(spec, d)}
+
+
 @router.get("/cases/{case_id}/schema")
 async def case_schema(case_id: str):
     return CaseSpec.json_schema()

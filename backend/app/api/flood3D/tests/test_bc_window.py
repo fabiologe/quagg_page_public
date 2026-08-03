@@ -278,8 +278,13 @@ def test_stutzen_endet_vor_dem_rand():
 def test_stutzen_kleines_rohr_warnung():
     spec = _spec_mit_stutzen(profile=cs.CulvertProfile(
         kind="circular", diameter=1.2))
-    assert any("Verfeinerungsbox um den Stutzen" in m
+    assert any("weniger als 4 Zellen" in m
                for m in _messages(spec, "zulauf"))
+    # der Befund trägt seine Kur: Verfeinerungsbox ans Fenster
+    from ..core.validate import validate_case
+    kuren = [b.get("fix") for b in validate_case(spec, ".")
+             if b["object_id"] == "zulauf" and b.get("fix")]
+    assert any(k["aktion"] == "box_ans_fenster" for k in kuren), kuren
 
 
 # ---- Polygon-Fenster (frei gezeichneter Querschnitt) ---------------------
