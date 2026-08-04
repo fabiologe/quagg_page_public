@@ -206,17 +206,54 @@ class OpAussenkante(_Model):
     """
     id: str
     type: Literal["aussenkante"]
-    polygon: list[Point3]              # Rahmen, Höhe je Eckpunkt
+    # Rahmen mit Höhe je Eckpunkt. OHNE Angabe läuft das Gelände von der
+    # inneren Bezugskante mit `gefaelle` bis an den Gebietsrand weiter —
+    # das ist der Regelfall und braucht keine Handarbeit.
+    polygon: list[Point3] | None = None
+    # Höhenänderung je Meter nach außen. 0 = das Gelände bleibt auf der
+    # Höhe der Bezugskante (Plateau hinter der Krone), negativ = es fällt
+    # ab, positiv = es steigt an.
+    gefaelle: float = 0.0
     # Innere Bezugskante: id einer Böschung (deren Oberkante) oder einer
     # Bruchkante. Ohne Angabe wird die erste Böschungsoberkante im
     # Operationsstapel genommen.
     innen: str | None = None
 
 
+class OpBerechnungskoerper(_Model):
+    """
+    Der Erdkörper, mit dem gerechnet wird.
+
+    Normalerweise ist das Gelände eine offene Höhenfläche: der Vernetzer
+    schneidet daran ab, mehr braucht es nicht. Sobald aber etwas DURCH das
+    Erdreich gehen soll (Rohr durch den Damm, Schacht, Kammer), muss das
+    Gelände ein geschlossener Körper sein — ein Höhenfeld hat ein z je
+    Punkt und kann keinen Hohlraum tragen.
+
+    Diese Operation macht den Körper zu einem sichtbaren, einstellbaren
+    Objekt statt zu einer Nebenwirkung: sie schaltet ihn ein und legt fest,
+    wie tief er unter das Gelände reicht und wie weit er seitlich über den
+    Gebietsrand steht. Der Überstand ist kein Schönheitsfehler, sondern
+    nötig: eine Körperwand GENAU auf der Gebietsfläche schneidet
+    snappyHexMesh gegen sich selbst.
+
+    Sie verändert das Höhenfeld nicht — sie beschreibt nur, was daraus
+    gebaut wird.
+    """
+    id: str
+    type: Literal["berechnungskoerper"]
+    # Sohle des Erdkörpers (m NHN). Ohne Angabe: eine Zellhöhe unter dem
+    # tiefsten Punkt von Gelände und Modellgebiet.
+    unterkante: float | None = None
+    # Seitlicher Überstand über den Gebietsrand (m). Ohne Angabe: zwei
+    # Basiszellen.
+    ueberstand: float | None = None
+
+
 TerrainOp = Annotated[
     Union[OpChannelCarve, OpPad, OpRaiseLower, OpSmooth,
           OpRamp, OpEmbankment, OpReplaceRegion, OpSetLevel,
-          OpBruchkante, OpBoeschung, OpAussenkante],
+          OpBruchkante, OpBoeschung, OpAussenkante, OpBerechnungskoerper],
     Field(discriminator="type"),
 ]
 

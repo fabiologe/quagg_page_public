@@ -107,14 +107,10 @@ function statusIcon(id) {
   return { fehler: '✗', warnung: '⚠', hinweis: 'ℹ' }[store.worstSeverity(id)] ?? '✓'
 }
 
+// Die Außenkante braucht ihre innere Bezugslinie — von dort läuft das
+// Gelände nach außen. Einen Rahmen bekommt sie nur, wenn der Bearbeiter die
+// Ecken selbst setzen will; der Regelfall ist die Fortführung der Kante.
 function randRahmen(obj) {
-  const dom = store.spec?.domain
-  if (!dom) return
-  const [x0, y0, x1, y1] = dom.extent
-  const r2 = (v) => Number(v.toFixed(2))
-  obj.polygon = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-    .map(([x, y]) => [x, y, r2(gelaendeZ(store.terrain, x, y))])
-  // Bezug: die erste Böschung (deren Oberkante) bzw. Bruchkante
   const ops = store.spec?.terrain?.operations ?? []
   obj.innen = (ops.find((o) => o.type === 'boeschung')
     ?? ops.find((o) => o.type === 'bruchkante'))?.id ?? null

@@ -677,6 +677,40 @@ async def case_validate(case_id: str):
     return validate_case(spec, d)
 
 
+# Ab dieser Rastergröße wird der Erdkörper in der Entwurfsvorschau NICHT
+# mitgerechnet: der Boolesche Abzug dauert dann länger als die Vorschau
+# selbst, und die Szene soll dem Ziehen folgen können. Der Körper wird
+# beim Speichern nachgezogen.
+_KOERPER_VORSCHAU_KNOTEN = 120_000
+
+
+def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
+    """
+    Erdkörper für die Live-Vorschau. Ohne ihn folgt der Volumenkörper dem
+    Ziehen an Böschungskante, Rohr oder Gebietsecke erst nach dem Speichern.
+    """
+    from .core.solids import gelaende_mit_durchlaessen
+
+    if feld.z.size > _KOERPER_VORSCHAU_KNOTEN:
+        out["koerper_zu_gross"] = True
+        return None
+    try:
+        koerper = gelaende_mit_durchlaessen(feld, spec, hinweise=[], base_dir=d)
+    except Exception:
+        return None
+    if koerper is None:
+        return None
+    return {"stl_b64": base64.b64encode(
+                koerper.export(file_type="stl")).decode(),
+            "watertight": bool(koerper.is_watertight),
+            "volume": round(float(abs(koerper.volume)), 2),
+            "triangles": int(len(koerper.faces)),
+            "importiert": bool(spec.terrain.base.koerper),
+            "bohrungen": [s.id for s in spec.structures
+                          if s.type == "culvert"
+                          and getattr(s, "durchstoesst_gelaende", False)]}
+
+
 @router.post("/cases/{case_id}/preview")
 async def case_preview(case_id: str, payload: dict = Body(...)):
     """
@@ -692,7 +726,7 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
         raise HTTPException(status_code=422, detail=str(e))
 
     out: dict = {"validation": validate_case(spec, d), "solids": [],
-                 "terrain": None}
+                 "terrain": None, "terrain_solid": None}
     if spec.terrain is not None and spec.domain is not None:
         try:
             t = TerrainField.from_spec(spec.terrain, spec.domain, d)
@@ -701,6 +735,7 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
                 "dims": list(t.z.shape),
                 "z_b64": base64.b64encode(t.z.astype("<f4").tobytes()).decode(),
             }
+            out["terrain_solid"] = _koerper_vorschau(spec, t, d, out)
         except Exception:
             pass    # Geländeproblem steht bereits in der Validierung
     try:

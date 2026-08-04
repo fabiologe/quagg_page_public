@@ -15,6 +15,10 @@
       </select>
       <input v-else-if="field.widget === 'number'" type="number" step="any"
              v-model.number="draft[field.key]" class="f3d-num f3d-grow" />
+      <input v-else-if="field.widget === 'zahl_optional'" type="number"
+             step="any" class="f3d-num f3d-grow" placeholder="automatisch"
+             :value="draft[field.key] ?? ''"
+             @change="setzeOptional(field.key, $event.target.value)" />
       <select v-else-if="field.widget === 'raster'" v-model="draft[field.key]"
               class="f3d-select">
         <option value="">— Raster wählen —</option>
@@ -58,11 +62,23 @@
 
     <p v-if="draft.type === 'aussenkante'" class="f3d-muted f3d-small">
       Außerhalb der äußersten Vermessungslinie ist nichts gemessen — dort
-      führt der Import die NÄCHSTGELEGENE bekannte Höhe fort, weshalb die
-      Außenkante jeder Welle der Oberkante folgt. Dieser Rahmen setzt an
-      ihre Stelle eine bestimmte Kante: zwischen der inneren Bezugskante
-      und ihm wird linear übergeblendet. Ecken lassen sich in der Szene
-      ziehen (Strg = Höhe).
+      führt der Import die NÄCHSTGELEGENE bekannte Höhe fort. Die kann
+      höher liegen als jede gemessene Oberkante und über den Gebietsdeckel
+      hinauswachsen. Diese Operation führt stattdessen die Bezugskante mit
+      dem angegebenen Gefälle bis an den Gebietsrand weiter (0 = Plateau
+      auf Kronenhöhe). Wer die Ecken selbst setzen will, legt ein Polygon
+      an — dann wird zwischen Kante und Rahmen übergeblendet, und die Ecken
+      lassen sich in der Szene ziehen (Strg = Höhe).
+    </p>
+
+    <p v-if="draft.type === 'berechnungskoerper'" class="f3d-muted f3d-small">
+      Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
+      schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr
+      durch den Damm, Schacht, Kammer), muss daraus ein geschlossener
+      Körper werden: ein Höhenfeld hat ein z je Punkt und kann keinen
+      Hohlraum tragen. Diese Operation schaltet den Körper ein. Der
+      seitliche Überstand ist kein Schönheitsfehler: eine Körperwand genau
+      auf der Gebietsfläche schneidet snappyHexMesh gegen sich selbst.
     </p>
 
     <p v-if="draft.type === 'culvert'" class="f3d-muted f3d-small">
@@ -203,9 +219,9 @@ import { usePreStore } from '../../stores/usePreStore'
 import PunktListe from './PunktListe.vue'
 import UnterGruppe from './UnterGruppe.vue'
 import {
-  ENUM_LABELS, ENUM_OPTIONS, GESCHLOSSEN, QUELL_NAMEN, REFERENZ_QUELLEN,
-  istPunktListe, istZahlenreihe, punktDim, referenzListe, widgetFor,
-  zahlenNamen,
+  ENUM_LABELS, ENUM_OPTIONS, GESCHLOSSEN, OPTIONAL_ZAHLEN, QUELL_NAMEN,
+  REFERENZ_QUELLEN, istPunktListe, istZahlenreihe, punktDim, referenzListe,
+  widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
 
@@ -234,6 +250,9 @@ const FIELD_LABELS = {
   breite: 'Wirkungsbreite (m)', modus: 'Wirkung',
   einbindetiefe: 'Einbindetiefe unter Gelände (m)',
   innen: 'Innere Bezugskante (id einer Böschung/Bruchkante)',
+  gefaelle: 'Gefälle nach außen (m je m; 0 = Plateau)',
+  unterkante: 'Sohle des Erdkörpers (m NHN, leer = automatisch)',
+  ueberstand: 'Überstand über den Gebietsrand (m, leer = 2 Zellen)',
   invert_start: 'Sohlhöhe Anfang (m)', invert_end: 'Sohlhöhe Ende (m)',
   bottom_width: 'Sohlbreite (m)', depth: 'Tiefe (m)',
   side_slope: 'Böschungsneigung 1:n', level: 'Höhe (m NHN)',
@@ -279,11 +298,18 @@ const fields = computed(() => {
   if (!draft.value) return []
   // Bauwerke/Operationen unterscheidet `type`, Nachweiskriterien `kind`
   const typ = draft.value.type ?? draft.value.kind
-  return Object.entries(draft.value)
+  // leere Optionalfelder ergänzen — sonst fehlen sie im Formular, weil sie
+  // als null gar nicht erst übertragen werden
+  const eintraege = Object.entries(draft.value)
+  for (const k of OPTIONAL_ZAHLEN[typ] ?? []) {
+    if (!(k in draft.value)) eintraege.push([k, null])
+  }
+  return eintraege
     .filter(([k]) => !['id', 'type', 'kind', 'material',
       'material_ks'].includes(k))
     .map(([k, v]) => {
-      const eigen = widgetFor(k, v, typ)
+      const eigen = (OPTIONAL_ZAHLEN[typ] ?? []).includes(k)
+        ? 'zahl_optional' : widgetFor(k, v, typ)
       const widget = jsonModus[k] ? 'json' : eigen
       return {
         key: k,
@@ -314,6 +340,12 @@ const GRUPPEN_LABELS = {
 
 function labelsFuer(key) {
   return { ...FIELD_LABELS, ...(GRUPPEN_LABELS[key] ?? {}) }
+}
+
+// Leeres Feld heißt „Vorbelegung" — als null übernehmen, nicht als 0
+function setzeOptional(key, wert) {
+  const s = String(wert).trim()
+  draft.value[key] = s === '' ? null : Number(s)
 }
 
 function setzeZahl(key, i, wert) {

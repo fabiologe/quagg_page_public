@@ -198,3 +198,44 @@ def test_maulprofil_wird_gebaut():
     # Scheitel als Halbkreis: Höhe 1,6 m + 2 x 0,15 m Wand
     assert m.extents[2] == pytest.approx(1.9, abs=0.02)
     assert bohrkoerper(cv, ueberstand=0.5) is not None
+
+
+def test_berechnungskoerper_schaltet_den_volumenkoerper_ein():
+    """
+    Der Erdkörper soll ein sichtbares Objekt sein und keine Nebenwirkung
+    des Schalters am Rohr: die Geländeoperation schaltet ihn ein und trägt
+    Sohle und Überstand.
+    """
+    from ..core.solids import gelaende_mit_durchlaessen
+
+    spec = build_spec_stage3()
+    spec.terrain.operations = []
+    spec.structures = []
+    feld = _feld(spec)
+    assert gelaende_mit_durchlaessen(feld, spec) is None, "ohne Angabe Fläche"
+
+    spec.terrain.operations = [cs.OpBerechnungskoerper(
+        id="koerper", type="berechnungskoerper",
+        unterkante=90.0, ueberstand=1.5)]
+    k = gelaende_mit_durchlaessen(_feld(spec), spec)
+    assert k is not None and k.is_watertight and k.volume > 0
+    assert k.bounds[0][2] == pytest.approx(90.0, abs=0.01), "Sohle wie angegeben"
+    x0, y0, x1, y1 = spec.domain.extent
+    assert k.bounds[0][0] == pytest.approx(x0 - 1.5, abs=0.01)
+    assert k.bounds[1][1] == pytest.approx(y1 + 1.5, abs=0.01)
+
+
+def test_berechnungskoerper_ohne_masse_nimmt_sinnvolle_vorbelegung():
+    from ..core.solids import gelaende_mit_durchlaessen
+
+    spec = build_spec_stage3()
+    spec.terrain.operations = [cs.OpBerechnungskoerper(
+        id="koerper", type="berechnungskoerper")]
+    spec.structures = []
+    feld = _feld(spec)
+    k = gelaende_mit_durchlaessen(feld, spec)
+    # vier Zellhöhen (mindestens 1 m) unter dem tiefsten Punkt von
+    # Gelände und Modellgebiet
+    tief = min(float(feld.z.min()), spec.domain.z_min)
+    luft = max(4 * spec.mesh.base_cell, 1.0)
+    assert k.bounds[0][2] == pytest.approx(tief - luft, abs=0.05)

@@ -327,12 +327,19 @@ export const usePreStore = defineStore('flood3d-pre', {
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
           this.terrain = { ...p.terrain, z: new Float32Array(bytes.buffer) }
         }
-        this.solids = p.solids.map((s) => {
-          const bin = atob(s.stl_b64)
-          const bytes = new Uint8Array(bin.length)
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-          return { patch: s.patch, stl: bytes.buffer }
-        })
+        this.solids = p.solids.map((s) => ({
+          patch: s.patch, stl: b64Buffer(s.stl_b64),
+        }))
+        // Der Erdkörper gehört in die Vorschau: sonst folgt er dem Ziehen an
+        // Böschungskante, Rohr oder Gebietsecke erst nach dem Speichern.
+        // Bei sehr großen Rastern lässt der Server ihn weg (koerper_zu_gross)
+        // — dann bleibt der letzte gespeicherte Stand stehen.
+        if (p.terrain_solid) {
+          this.terrainSolid = { ...p.terrain_solid,
+            stl: b64Buffer(p.terrain_solid.stl_b64) }
+        } else if (!p.koerper_zu_gross) {
+          this.terrainSolid = null
+        }
         this.geometryVersion++
       } catch (e) {
         // Entwurf aktuell nicht baubar (z. B. Tippfehler) — Meldung zeigen

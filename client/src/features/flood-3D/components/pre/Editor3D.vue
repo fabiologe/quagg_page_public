@@ -410,7 +410,9 @@ function buildMarkers() {
     const linien = op.type === 'bruchkante' ? [[op.polyline, 0xffd24d]]
       : op.type === 'boeschung' ? [[op.oberkante, 0xffd24d],
         [op.unterkante, 0x4d9fff]]
-        : op.type === 'aussenkante'
+        // Außenkante ohne Rahmen führt die Bezugskante selbst fort — dann
+        // gibt es nichts zu zeichnen und erst recht nichts zu spreizen
+        : op.type === 'aussenkante' && op.polygon?.length
           ? [[[...op.polygon, op.polygon[0]], 0x67d98f]] : []
     for (const [pts, farbe] of linien) {
       if (!pts?.length) continue
@@ -1186,8 +1188,8 @@ function objectZable(kind, obj) {
   if (kind === 'terrain_op') {
     // Vermessungskanten tragen ihre Höhe im Stützpunkt, nicht in einem
     // Höhenfeld — auch sie dürfen als Ganzes gehoben werden
-    if (obj.oberkante || obj.type === 'bruchkante'
-        || obj.type === 'aussenkante') return true
+    if (obj.oberkante || obj.type === 'bruchkante') return true
+    if (obj.type === 'aussenkante') return !!obj.polygon?.length
     return typeof obj.level === 'number'
   }
   return false
@@ -1276,7 +1278,7 @@ function handleAccess(kind, obj) {
     const zable = zPair != null || zSingle != null
     // Vermessungskanten tragen die Höhe JE Stützpunkt — hier zieht der
     // Z-Zug genau diesen einen Punkt, nicht ein Höhenfeld der Operation.
-    if (obj.type === 'aussenkante') {
+    if (obj.type === 'aussenkante' && obj.polygon?.length) {
       // Rahmen am Gebietsrand: Höhe steckt im Eckpunkt, nicht in einem
       // Höhenfeld — Strg-Zug stellt genau diese eine Ecke
       return { points: obj.polygon.map((q) => [q[0], q[1]]), closed: true,

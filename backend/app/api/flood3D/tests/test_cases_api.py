@@ -109,3 +109,35 @@ def test_profil(client):
     assert ground.min() == pytest.approx(94.7, abs=0.05)   # Gerinne
     assert ground.max() == pytest.approx(96.0, abs=0.05)   # Umgebung
     assert r["initial_level"] == pytest.approx(94.9)
+
+
+def test_entwurfsvorschau_traegt_den_erdkoerper_mit(client):
+    """
+    Der Volumenkörper muss dem Ziehen folgen — an der Böschungskante, am
+    Rohr und an der Gebietsecke. Ohne ihn in der Entwurfsvorschau käme er
+    erst nach dem Speichern nach, und man zieht ins Blinde.
+    """
+    from ..core import casespec as cs
+
+    spec = build_spec_stage3()
+    spec.terrain.operations.append(cs.OpBerechnungskoerper(
+        id="koerper", type="berechnungskoerper"))
+    p = client.post("/cases/demo/preview",
+                    json=spec.model_dump(mode="json", exclude_none=True)).json()
+    assert p["terrain_solid"] is not None
+    ausgang = p["terrain_solid"]["volume"]
+    assert ausgang > 0 and p["terrain_solid"]["watertight"]
+
+    # Gebietsecke ziehen -> kleinerer Körper
+    enger = spec.model_copy(deep=True)
+    x0, y0, x1, y1 = enger.domain.extent
+    enger.domain.extent = (x0, y0, x1 - 4.0, y1)
+    p2 = client.post("/cases/demo/preview",
+                     json=enger.model_dump(mode="json", exclude_none=True)).json()
+    assert p2["terrain_solid"]["volume"] < ausgang
+
+    # Ohne Berechnungskörper und ohne Bohrung bleibt es die Höhenfläche
+    flach = build_spec_stage3()
+    p3 = client.post("/cases/demo/preview",
+                     json=flach.model_dump(mode="json", exclude_none=True)).json()
+    assert p3["terrain_solid"] is None

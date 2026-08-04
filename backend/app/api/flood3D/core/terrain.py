@@ -285,28 +285,53 @@ class TerrainField:
 
     def _op_aussenkante(self, op):
         """
-        Zwischen innerer Bezugskante und Außenrahmen linear überblenden.
-        Innerhalb der Bezugskante bleibt das Gelände unangetastet — dort
+        Das Gelände außerhalb der letzten Vermessungslinie bestimmen.
+
+        Regelfall (ohne `polygon`): von der Bezugskante aus mit `gefaelle`
+        nach außen fortführen, bis an den Gebietsrand. Das ist die Antwort
+        auf die Frage, was hinter der Böschungsoberkante passiert — ohne
+        diese Operation steht dort, was der Import aus der NÄCHSTEN
+        gemessenen Höhe fortgeführt hat, und das kann jede Welle des
+        Aufmaßes bis über den Gebietsdeckel tragen.
+
+        Mit `polygon`: zwischen Bezugskante und diesem Rahmen linear
+        überblenden — für den Fall, dass die Ränder von Hand gesetzt werden.
+
+        Innerhalb der Bezugskante bleibt das Gelände unangetastet, dort
         liegt die Vermessung.
         """
-        rahmen = np.asarray(op.polygon, dtype=float)
-        if len(rahmen) < 3:
-            return
         innen = self._bezugskante(op)
         if innen is None:
             return
         xx, yy = self.mesh_xy()
-        # Rahmen und Bezugskante geschlossen behandeln
-        r = np.vstack([rahmen, rahmen[:1]])
         i = np.vstack([innen, innen[:1]]) if not np.allclose(
             innen[0], innen[-1]) else innen
         d_i, s_i = _dist_and_param_to_polyline(xx, yy, i[:, :2])
-        d_r, s_r = _dist_and_param_to_polyline(xx, yy, r[:, :2])
         z_i = _z_entlang(i, s_i)
+        aussen = ~_polygon_mask(xx, yy, i[:, :2])
+
+        if not op.polygon:
+            # adaptiv: die Kante trägt sich selbst nach außen fort
+            self.z = np.where(aussen, z_i + op.gefaelle * d_i, self.z)
+            return
+
+        rahmen = np.asarray(op.polygon, dtype=float)
+        if len(rahmen) < 3:
+            return
+        r = np.vstack([rahmen, rahmen[:1]])
+        d_r, s_r = _dist_and_param_to_polyline(xx, yy, r[:, :2])
         z_r = _z_entlang(r, s_r)
         t = d_i / np.maximum(d_i + d_r, 1e-9)
-        aussen = ~_polygon_mask(xx, yy, i[:, :2])
         self.z = np.where(aussen, z_i + (z_r - z_i) * t, self.z)
+
+    def _op_berechnungskoerper(self, op):
+        """
+        Verändert das Höhenfeld NICHT. Die Operation beschreibt, was aus
+        dem Feld gebaut wird (solids.gelaende_mit_durchlaessen liest sie) —
+        sie steht im Stapel, damit der Erdkörper ein sichtbares und
+        einstellbares Objekt ist und keine Nebenwirkung eines Schalters am
+        Rohr.
+        """
 
     def _bezugskante(self, op) -> np.ndarray | None:
         """Innere Linie der Außenkante: benannte Operation oder die erste

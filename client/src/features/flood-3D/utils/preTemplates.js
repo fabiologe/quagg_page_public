@@ -7,6 +7,7 @@ export const TYPE_LABELS = {
   replace_region: 'Bereich ersetzen', set_level: 'Absoluthöhe',
   bruchkante: 'Bruchkante', boeschung: 'Böschung (OK/UK)',
   aussenkante: 'Außenkante (Gebietsrand)',
+  berechnungskoerper: 'Berechnungskörper (Volumen)',
   wall: 'Wand', screen: 'Rechen', culvert: 'Durchlass', weir: 'Wehr',
   pier: 'Pfeiler', basin: 'Becken', imported: 'Importkörper',
   box: 'Box', surface: 'Fläche',
@@ -45,12 +46,16 @@ export const TEMPLATES = {
     'Böschung (OK/UK)': { id: 'boeschung', type: 'boeschung',
       oberkante: [[10, 14, 97.0], [30, 14, 96.6]],
       unterkante: [[10, 10, 94.5], [30, 10, 94.2]], kanten_breite: 0 },
-    // Der Rahmen wird beim Einfügen auf das Modellgebiet gesetzt und die
-    // Höhen aus dem Gelände abgegriffen (siehe randVorlage im Objektbaum) —
-    // ohne das stünde eine Außenkante irgendwo im Nichts.
+    // Regelfall ohne Rahmen: das Gelände läuft von der Bezugskante mit
+    // `gefaelle` bis an den Gebietsrand weiter. Die Bezugskante wird beim
+    // Einfügen aus dem Fall gesetzt (siehe randRahmen im Objektbaum).
     'Außenkante (Gebietsrand)': { id: 'aussenkante', type: 'aussenkante',
-      polygon: [[0, 0, 100], [20, 0, 100], [20, 20, 100], [0, 20, 100]],
-      innen: null },
+      gefaelle: 0.0, innen: null },
+    // Erdkörper statt Höhenfläche — nötig, sobald etwas DURCH das Erdreich
+    // geht. Ohne Maße gilt die Vorbelegung (vier Zellen unter dem tiefsten
+    // Punkt, zwei Zellen seitlicher Überstand).
+    'Berechnungskörper (Volumen)': { id: 'koerper',
+      type: 'berechnungskoerper' },
     'Bereich ersetzen': { id: 'ersatz', type: 'replace_region',
       polygon: [[10, 10], [20, 10], [20, 20], [10, 20]], source: '' },
     Absoluthöhe: { id: 'hoehe', type: 'set_level',

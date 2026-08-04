@@ -726,7 +726,15 @@ def gelaende_mit_durchlaessen(field, spec: CaseSpec, hinweise: list | None = Non
     rohre = [s for s in spec.structures
              if s.type == "culvert" and getattr(s, "durchstoesst_gelaende", False)]
     importiert = gelaende_koerper_laden(spec, base_dir)
-    if importiert is None and (not rohre or spec.domain is None):
+    # Die Geländeoperation „Berechnungskörper" schaltet den Körper
+    # ausdrücklich ein und trägt seine Maße — sie ist der sichtbare Weg
+    # dorthin, der Schalter am Rohr der stillschweigende.
+    erklaert = next((o for o in (spec.terrain.operations if spec.terrain else [])
+                     if o.type == "berechnungskoerper"), None)
+    if importiert is None and erklaert is None \
+            and (not rohre or spec.domain is None):
+        return None
+    if spec.domain is None:
         return None
     zelle = spec.mesh.base_cell if spec.mesh else 0.25
     if importiert is not None:
@@ -734,7 +742,13 @@ def gelaende_mit_durchlaessen(field, spec: CaseSpec, hinweise: list | None = Non
     else:
         unterkante = (min(float(np.min(field.z)), spec.domain.z_min)
                       - max(4 * zelle, 1.0))
-        koerper = field.to_solid(unterkante, ueberstand=2 * zelle)
+        ueberstand = 2 * zelle
+        if erklaert is not None:
+            if erklaert.unterkante is not None:
+                unterkante = float(erklaert.unterkante)
+            if erklaert.ueberstand is not None:
+                ueberstand = max(float(erklaert.ueberstand), 0.0)
+        koerper = field.to_solid(unterkante, ueberstand=ueberstand)
     for s in rohre:
         bohrung = bohrkoerper(s, ueberstand=max(4 * zelle, 1.0))
         if bohrung is None:

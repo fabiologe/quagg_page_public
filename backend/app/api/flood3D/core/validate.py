@@ -116,6 +116,31 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    "das Höhenraster, dort kann kein Hohlraum "
                                    "sein"))
 
+    # Passt das Gelände überhaupt in das Modellgebiet? Ragt es über den
+    # Deckel, schneidet die Gebietsgrenze in den Berg und die
+    # Atmosphärenfläche liegt dort im Erdreich. Nach außen wächst das
+    # Gelände oft unbemerkt: hinter der letzten Vermessungslinie führt der
+    # Import die nächstgelegene Höhe fort, und die kann höher liegen als
+    # jede gemessene Oberkante.
+    if terrain is not None and spec.domain is not None:
+        hoch = float(np.max(terrain.z))
+        tief = float(np.min(terrain.z))
+        if hoch > spec.domain.z_max:
+            f(_finding("domain", "warnung",
+                       f"Das Gelände reicht bis {hoch:.2f} m und damit "
+                       f"{hoch - spec.domain.z_max:.2f} m über den "
+                       f"Gebietsdeckel ({spec.domain.z_max:g} m). Dort "
+                       "schneidet die Gebietsgrenze in den Berg, und die "
+                       "Atmosphärenfläche liegt im Erdreich.",
+                       fix=kur("gebiet_hoehe_anpassen")))
+        if tief < spec.domain.z_min:
+            f(_finding("domain", "warnung",
+                       f"Das Gelände liegt bis {tief:.2f} m tief und damit "
+                       f"{spec.domain.z_min - tief:.2f} m unter der "
+                       f"Gebietssohle ({spec.domain.z_min:g} m) — der untere "
+                       "Teil des Modells fehlt im Rechengebiet.",
+                       fix=kur("gebiet_hoehe_anpassen")))
+
     # ---- Geometrie ------------------------------------------------------
     solids = {}
     try:

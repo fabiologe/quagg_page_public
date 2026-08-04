@@ -25,6 +25,7 @@ KUR_LABELS = {
     "gelaende_einbinden": "In das Gelände einbinden",
     "kraftauswertung_ein": "Kraftauswertung einschalten",
     "anschluesse_herstellen": "Anschlüsse herstellen",
+    "gebiet_hoehe_anpassen": "Gebietshöhe ans Gelände anpassen",
 }
 
 
@@ -171,6 +172,34 @@ def _kraftauswertung_ein(spec: CaseSpec, args: dict) -> str:
             "werden ab dem nächsten Lauf als Zeitreihe geschrieben")
 
 
+def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict) -> str:
+    """
+    Gebietsdeckel und -sohle so weit ziehen, dass das Gelände hineinpasst.
+    Eine halbe Basiszelle Luft, damit die Grenze nicht auf der Oberfläche
+    liegt. Fachlich unkritisch: das Gebiet ist der Ausschnitt, nicht das
+    Modell — es wird nur groß genug gemacht.
+    """
+    from .terrain import TerrainField
+
+    if spec.terrain is None:
+        return "Ohne Gelände gibt es nichts anzupassen"
+    feld = TerrainField.from_spec(spec.terrain, spec.domain,
+                                  args.get("base_dir", "."))
+    luft = 0.5 * spec.mesh.base_cell
+    hoch = float(feld.z.max())
+    tief = float(feld.z.min())
+    alt_max, alt_min = spec.domain.z_max, spec.domain.z_min
+    if hoch > spec.domain.z_max:
+        spec.domain.z_max = round(hoch + luft, 3)
+    if tief < spec.domain.z_min:
+        spec.domain.z_min = round(tief - luft, 3)
+    if (spec.domain.z_max, spec.domain.z_min) == (alt_max, alt_min):
+        return "Das Gelände passt bereits in das Modellgebiet"
+    return (f"Gebietshöhe von {alt_min:g} … {alt_max:g} auf "
+            f"{spec.domain.z_min:g} … {spec.domain.z_max:g} m gezogen — "
+            "das Gelände passt jetzt hinein")
+
+
 def _anschluesse(spec: CaseSpec, args: dict) -> str:
     from .anschluss import anschluesse_herstellen
 
@@ -184,6 +213,7 @@ _KUREN = {
     "box_auf_spiegel": _box_auf_spiegel,
     "gelaende_einbinden": _gelaende_einbinden,
     "kraftauswertung_ein": _kraftauswertung_ein,
+    "gebiet_hoehe_anpassen": _gebiet_hoehe_anpassen,
     "anschluesse_herstellen": _anschluesse,
 }
 

@@ -139,6 +139,13 @@ export function fehlendeBausteine(spec, kind) {
   return [...fehlt]
 }
 
+// Felder, die leer bleiben dürfen und dann eine Vorbelegung bedeuten. Sie
+// fallen als `null` aus dem JSON heraus und wären im Panel gar nicht
+// sichtbar — man könnte sie also nie setzen.
+export const OPTIONAL_ZAHLEN = {
+  berechnungskoerper: ['unterkante', 'ueberstand'],
+}
+
 export function widgetFor(key, v, typ) {
   if (REFERENZ_QUELLEN[typ]?.[key]) return 'referenz'
   if (key === 'source' && typ === 'replace_region') return 'raster'
