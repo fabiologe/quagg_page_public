@@ -34,6 +34,8 @@ export const ENUM_LABELS = {
 // beim Pfeiler etwas anderes als beim Randfenster
 const GRUPPEN_ENUMS = {
   window: { shape: ['rechteck', 'kreis', 'trapez', 'polygon'] },
+  // Bearbeitungen: eine Aussparung ist rund oder rechteckig, nichts sonst
+  aussparung: { shape: ['kreis', 'rechteck'] },
 }
 
 export function enumFor(key, gruppe) {
@@ -100,6 +102,12 @@ export const UNTERGRUPPEN = new Set(['profile', 'resistance', 'alignment',
 // Bauwerk oder eine Verfeinerungsbox. Als Freitext getippt blockiert eine
 // falsche Kennung das Speichern — das Backend prüft hart.
 export const REFERENZ_QUELLEN = {
+  // Flächenverfeinerung: seit die Sohle verfeinerbar ist, gehört „terrain"
+  // in dieselbe Auswahl wie die Bauwerke — als Freitext getippt war es
+  // vorher ein Fehler
+  surface: { target: 'flaeche' },
+  // Die Außenkante braucht ihre innere Bezugslinie
+  aussenkante: { innen: 'kante' },
   max_level: { at: 'gauge' },
   max_force: { at: 'patch' },
   discharge_ratio: { of: 'section', to: 'section' },
@@ -111,7 +119,8 @@ export const REFERENZ_QUELLEN = {
 
 export const QUELL_NAMEN = {
   gauge: 'Pegelpunkt', section: 'Querschnitt', patch: 'Bauwerk',
-  box: 'Verfeinerungsbox', weir: 'Wehr',
+  box: 'Verfeinerungsbox', weir: 'Wehr', flaeche: 'Fläche',
+  kante: 'Bezugskante',
 }
 
 export function referenzListe(spec, quelle) {
@@ -119,6 +128,15 @@ export function referenzListe(spec, quelle) {
   if (quelle === 'gauge') return (spec.evaluation?.gauges ?? []).map((g) => g.id)
   if (quelle === 'section') return (spec.evaluation?.sections ?? []).map((s) => s.id)
   if (quelle === 'patch') return (spec.structures ?? []).map((s) => s.patch)
+  if (quelle === 'flaeche') {
+    const patches = (spec.structures ?? []).map((s) => s.patch)
+    return spec.terrain ? ['terrain', ...patches] : patches
+  }
+  if (quelle === 'kante') {
+    return (spec.terrain?.operations ?? [])
+      .filter((o) => ['boeschung', 'bruchkante'].includes(o.type))
+      .map((o) => o.id)
+  }
   if (quelle === 'weir') {
     return (spec.structures ?? []).filter((s) => s.type === 'weir').map((s) => s.id)
   }
@@ -149,6 +167,7 @@ export const OPTIONAL_ZAHLEN = {
 export function widgetFor(key, v, typ) {
   if (REFERENZ_QUELLEN[typ]?.[key]) return 'referenz'
   if (key === 'source' && typ === 'replace_region') return 'raster'
+  if (key === 'edits') return 'edits'
   if (ENUM_OPTIONS[key]) return 'enum'
   if (typeof v === 'number') return 'number'
   if (typeof v === 'boolean') return 'check'
@@ -157,5 +176,9 @@ export function widgetFor(key, v, typ) {
   if (istZahlenreihe(v)) return 'zahlen'
   if (v !== null && typeof v === 'object' && !Array.isArray(v)
       && UNTERGRUPPEN.has(key)) return 'gruppe'
+  // Ein Feld, das auf null steht, ist NICHT GESETZT. Als JSON-Textarea
+  // gerendert stünde daneben ein leeres Kästchen ohne Inhalt und ohne
+  // Wirkung — etwa `window` (hat einen eigenen Auswahlkasten) oder `innen`.
+  if (v === null || v === undefined) return 'leer'
   return 'json'
 }

@@ -2120,6 +2120,11 @@ function dragHandleTo(e) {
   }
   dragging.last = [x, y]
   dragging.dz = dz
+  // Der Erdkörper wird serverseitig gebaut und kommt erst nach dem
+  // Loslassen zurück. Beim Ziehen am Gebiet lässt er sich aber sofort auf
+  // den neuen Zuschnitt beschneiden — der Körper folgt dann der Ecke,
+  // statt eine Vierteldrehung lang falsch dazustehen.
+  if (store.selection?.kind === 'domain') koerperBeschneiden(gezogenesGebiet())
   const zNote = e.ctrlKey && !access?.writeZ ? ' · Z hier nicht möglich' : ''
   coords.value = (snap.lock === 'z'
     ? `Δz = ${fmtDelta(dz)}`
@@ -2263,6 +2268,9 @@ function dragObjectTo(e) {
 
 function _endDrag() {
   hideAxisGuides()
+  // Beschnitt vom Gebietszug aufheben — der echte Körper kommt mit der
+  // Entwurfsvorschau nach und braucht ihn nicht mehr
+  koerperBeschneiden(null)
   dragDelta.value = null
   renderer.domElement.style.cursor = mode.value === 'select' ? 'default' : 'crosshair'
   if (rebuildPending) {
@@ -2290,6 +2298,41 @@ function commitObjectDrag() {
     drag.last?.[0] ?? 0, drag.last?.[1] ?? 0, drag.dz ?? 0)
   store.updateObject(sel.kind, sel.id, clone)
   _endDrag()
+}
+
+// Aus den gezogenen Griffen das vorläufige Gebiet ableiten
+function gezogenesGebiet() {
+  const pkte = (groups.handles?.children ?? [])
+    .filter((c) => c.userData.handleIdx != null)
+    .map((c) => c.position)
+  if (pkte.length < 4) return null
+  const xs = pkte.map((p) => p.x)
+  const ys = pkte.map((p) => p.y)
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+}
+
+// Beschnitt NUR am Geländekörper, nicht global: sonst würden Griffe und
+// Bauwerke mit weggeschnitten. Ohne Gebiet wird der Beschnitt aufgehoben.
+function koerperBeschneiden(extent) {
+  const teile = groups.terrain?.children ?? []
+  if (!teile.length) return
+  const ebenen = extent ? (() => {
+    const [x0, y0, x1, y1] = extent
+    renderer.localClippingEnabled = true
+    return [
+      new THREE.Plane(new THREE.Vector3(1, 0, 0), -x0),
+      new THREE.Plane(new THREE.Vector3(-1, 0, 0), x1),
+      new THREE.Plane(new THREE.Vector3(0, 1, 0), -y0),
+      new THREE.Plane(new THREE.Vector3(0, -1, 0), y1),
+    ]
+  })() : null
+  // auch die Körperkanten mitschneiden — sonst stehen sie beim Ziehen
+  // über den neuen Zuschnitt hinaus
+  for (const teil of teile) {
+    if (!teil.material) continue
+    teil.material.clippingPlanes = ebenen
+    teil.material.needsUpdate = true
+  }
 }
 
 function commitHandleDrag() {
@@ -2828,6 +2871,46 @@ watch(() => store.geometryVersion, rebuild)
 // Marker (Pegel/Schnitte/Boxen/Ränder) folgen der Spec auch ohne Speichern
 watch(() => JSON.stringify([store.spec?.evaluation, store.spec?.mesh?.refinements,
   store.spec?.boundaries]), () => { buildMarkers() })
+
+// Stützpunkt aus der Punktliste hervorheben. Eigene Gruppe statt eines
+// Eintrags in `markers`: das hängt am Zeiger und darf nicht bei jedem
+// Überfahren die ganze Markerebene neu bauen.
+let fokusMarke = null
+
+function fokusMarkeBauen() {
+  const g = new THREE.Group()
+  const kugel = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffd34d, depthTest: false }))
+  kugel.renderOrder = 999
+  // Lot auf das Gelände: ein Punkt in der Luft ist sonst nicht zu verorten
+  const lot = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+    new THREE.LineBasicMaterial({ color: 0xffd34d, depthTest: false }))
+  lot.renderOrder = 999
+  g.add(kugel, lot)
+  g.visible = false
+  return { g, kugel, lot }
+}
+
+watch(() => store.fokusPunkt, (p) => {
+  if (!scene) return
+  if (!fokusMarke) {
+    fokusMarke = fokusMarkeBauen()
+    scene.add(fokusMarke.g)
+  }
+  if (!p) { fokusMarke.g.visible = false; return }
+  // Größe an das Gebiet hängen, damit die Marke in jedem Maßstab sichtbar
+  // ist, ohne das Modell zu verdecken
+  const ext = store.spec?.domain?.extent
+  const r = ext ? Math.max(0.15, Math.min(ext[2] - ext[0], ext[3] - ext[1]) / 120)
+    : 0.3
+  fokusMarke.kugel.scale.setScalar(r)
+  fokusMarke.g.position.set(p.x, p.y, p.z)
+  fokusMarke.lot.scale.set(1, 1, Math.max(p.z - (store.spec?.domain?.z_min ?? p.z), 0.01))
+  fokusMarke.g.visible = true
+})
 
 function _typing() {
   const tag = document.activeElement?.tagName

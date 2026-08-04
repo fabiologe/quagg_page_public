@@ -5,7 +5,9 @@
       <span>x</span><span>y</span><span v-if="dreiD">z</span>
       <span class="f3d-pl-weg"></span>
     </div>
-    <div v-for="(p, i) in punkte" :key="i" class="f3d-pl-zeile">
+    <div v-for="(p, i) in punkte" :key="i" class="f3d-pl-zeile"
+         @mouseenter="store.zeigePunkt(p)" @mouseleave="store.zeigePunkt(null)"
+         @focusin="store.zeigePunkt(p)" @focusout="store.zeigePunkt(null)">
       <span class="f3d-pl-nr">{{ i + 1 }}</span>
       <input type="number" step="any" class="f3d-num" :value="p[0]"
              @change="setzen(i, 0, $event.target.value)" />
@@ -31,7 +33,13 @@
 // Wasserbau regelmäßig aus dem CAD und werden abgetippt — eine Zahl je
 // Feld, sichtbare Nummerierung und eine Längenangabe zur Kontrolle sind
 // dafür das Richtige. Die JSON-Ansicht bleibt im Panel als Rückfallebene.
-import { computed } from 'vue'
+//
+// Die Zeile zeigt beim Überfahren „ihren" Punkt in der Szene. Ohne das ist
+// bei einem Polygon mit zwanzig Stützpunkten nicht zu erkennen, welche
+// Zeile welche Ecke ist. Der Store ist hier der kürzeste Weg — sonst müsste
+// das Ereignis durch UnterGruppe und EditListe durchgereicht werden.
+import { computed, onUnmounted } from 'vue'
+import { usePreStore } from '../../stores/usePreStore'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
@@ -42,6 +50,11 @@ const props = defineProps({
   geschlossen: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
+
+const store = usePreStore()
+// Wird die Liste ausgeblendet, während der Zeiger auf einer Zeile steht,
+// bliebe der Marker sonst für immer stehen
+onUnmounted(() => store.zeigePunkt(null))
 
 const punkte = computed(() => props.modelValue ?? [])
 const dreiD = computed(() => props.dim >= 3)

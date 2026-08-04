@@ -58,6 +58,10 @@ export const usePreStore = defineStore('flood3d-pre', {
     // kann man danach immer noch.
     platzierung: null,
     rasterDateien: [],     // Höhenraster neben dem Fall (Bereich ersetzen)
+    // Stützpunkt, den der Editor gerade hervorheben soll — die Zeile einer
+    // Punktliste zeigt sonst nicht, welcher Punkt in der Szene gemeint ist.
+    // { x, y, z } oder null.
+    fokusPunkt: null,
   }),
 
   getters: {
@@ -90,6 +94,36 @@ export const usePreStore = defineStore('flood3d-pre', {
   },
 
   actions: {
+    // Höhe des Geländerasters an einer Stelle (bilinear, wie im Editor).
+    // Steht hier, weil sowohl der Objektbaum (Vorlagen ans Gelände hängen)
+    // als auch die Punktliste (2D-Punkt in der Szene zeigen) sie braucht.
+    gelaendeZ(x, y) {
+      const t = this.terrain
+      if (!t) return 0
+      const [ny, nx] = t.dims
+      const fx = Math.min(nx - 1.001, Math.max(0, (x - t.x0) / t.resolution))
+      const fy = Math.min(ny - 1.001, Math.max(0, (y - t.y0) / t.resolution))
+      const i = Math.floor(fx)
+      const j = Math.floor(fy)
+      const dx = fx - i
+      const dy = fy - j
+      const z = t.z
+      return z[j * nx + i] * (1 - dx) * (1 - dy)
+        + z[j * nx + i + 1] * dx * (1 - dy)
+        + z[(j + 1) * nx + i] * (1 - dx) * dy
+        + z[(j + 1) * nx + i + 1] * dx * dy
+    },
+
+    // Stützpunkt in der Szene hervorheben (null = wieder ausblenden). Ohne
+    // eigene Höhe wird das Gelände abgetastet.
+    zeigePunkt(p) {
+      if (!p) { this.fokusPunkt = null; return }
+      const [x, y, z] = p
+      this.fokusPunkt = {
+        x, y, z: Number.isFinite(z) ? z : this.gelaendeZ(x, y),
+      }
+    },
+
     async loadCases() {
       try {
         this.cases = await flood3dApi.listCases()
@@ -458,6 +492,9 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.dirty = true
       this.select(kind, obj.id)
       this.scheduleDraftPreview()
+      // eingefügtes Objekt zurückgeben: id und patch werden hier vergeben,
+      // der Aufrufer kennt sie sonst nicht
+      return obj
     },
 
     async runMeshPreview() {

@@ -88,6 +88,58 @@ def stutzen_anschliessen(spec: CaseSpec, cv, face: str,
             f"Fläche {face} hinaus (Rohrlage und -neigung unverändert)")
 
 
+def gerinne_anschliessen(spec: CaseSpec, ch, face: str,
+                         ueberstand: float | None = None) -> str | None:
+    """
+    Gerinneachse bis auf die Gebietsfläche `face` führen — dasselbe wie
+    `stutzen_anschliessen`, nur für die 2D-Polylinie einer
+    channel_carve-Operation.
+
+    Das Sohlgefälle bleibt: die Sohlhöhe am verlängerten Ende wird mit dem
+    vorhandenen Gefälle fortgeschrieben. Damit ändert sich die Fachaussage
+    nicht, das Gerinne reicht nur bis an die Kante.
+    """
+    if spec.domain is None or len(ch.polyline) < 2:
+        return None
+    ebene = spec.domain.extent[_PLANE[face]]
+    achse = _ACHSE[face]
+    if ueberstand is None:
+        ueberstand = spec.mesh.base_cell if spec.mesh else 0.25
+
+    kopf = abs(ch.polyline[0][achse] - ebene) <= abs(ch.polyline[-1][achse] - ebene)
+    p = np.asarray(ch.polyline[0] if kopf else ch.polyline[-1], dtype=float)
+    nachbar = np.asarray(ch.polyline[1] if kopf else ch.polyline[-2], dtype=float)
+    richtung = p - nachbar
+    if np.linalg.norm(richtung) < 1e-9:
+        return (f"Gerinne „{ch.id}“: die letzten beiden Stützpunkte liegen "
+                "aufeinander — die Richtung lässt sich nicht fortsetzen")
+    ziel = _durchstoss(p, richtung, ebene, achse, ueberstand)
+    if ziel is None:
+        return (f"Gerinne „{ch.id}“ läuft parallel zur Fläche {face} — bitte "
+                "die Achse ausrichten oder eine andere Fläche wählen")
+
+    # Sohlgefälle über die vorhandene Länge, um das verlängerte Ende
+    # fortzuschreiben
+    pts = np.asarray(ch.polyline, dtype=float)
+    laenge = float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+    zuwachs = float(np.linalg.norm(ziel[:2] - p))
+    gefaelle = ((ch.invert_end - ch.invert_start) / laenge
+                if laenge > 1e-9 else 0.0)
+    neu = (round(float(ziel[0]), 4), round(float(ziel[1]), 4))
+    if kopf:
+        ch.polyline[0] = neu
+        ch.invert_start = round(ch.invert_start - gefaelle * zuwachs, 4)
+        sohle = ch.invert_start
+    else:
+        ch.polyline[-1] = neu
+        ch.invert_end = round(ch.invert_end + gefaelle * zuwachs, 4)
+        sohle = ch.invert_end
+    return (f"Gerinne „{ch.id}“: Achsende um {zuwachs:.2f} m in seiner "
+            f"eigenen Richtung verlängert — es steht jetzt {ueberstand:g} m "
+            f"über die Fläche {face} hinaus, Sohle dort {sohle:g} m "
+            "(Gefälle unverändert)")
+
+
 def boxen_ins_gebiet(spec: CaseSpec) -> list[str]:
     """Verfeinerungsquader auf das Modellgebiet beschneiden."""
     meldungen: list[str] = []
@@ -195,18 +247,18 @@ def anschluesse_herstellen(spec: CaseSpec) -> list[str]:
             meldungen.append(f"Rand „{b.id}“ auf die Fläche {face} gelegt "
                              f"(war {b.face}) — dort endet „{w.follow}“")
             b.face = face
-        if cv is not None:
-            zelle = spec.mesh.base_cell if spec.mesh else 0.25
-            # Soll: das Achsende steht eine Basiszelle ÜBER die Fläche
-            # hinaus. Nur wenn es davon merklich abweicht, wird angefasst —
-            # sonst meldete jede Reparatur eine Verschiebung um 0,00 m.
-            aussen = 1.0 if face.endswith("max") else -1.0
-            ueber = aussen * (ende[_ACHSE[face]]
-                              - spec.domain.extent[_PLANE[face]])
-            if abs(ueber - zelle) > 0.5 * zelle:
-                m = stutzen_anschliessen(spec, cv, face)
-                if m:
-                    meldungen.append(m)
+        zelle = spec.mesh.base_cell if spec.mesh else 0.25
+        # Soll: das Achsende steht eine Basiszelle ÜBER die Fläche
+        # hinaus. Nur wenn es davon merklich abweicht, wird angefasst —
+        # sonst meldete jede Reparatur eine Verschiebung um 0,00 m.
+        aussen = 1.0 if face.endswith("max") else -1.0
+        ueber = aussen * (ende[_ACHSE[face]]
+                          - spec.domain.extent[_PLANE[face]])
+        if abs(ueber - zelle) > 0.5 * zelle:
+            m = (stutzen_anschliessen(spec, cv, face) if cv is not None
+                 else gerinne_anschliessen(spec, ch, face))
+            if m:
+                meldungen.append(m)
 
     meldungen.extend(gebiet_umschliesst_fenster(spec))
     meldungen.extend(boxen_ins_gebiet(spec))

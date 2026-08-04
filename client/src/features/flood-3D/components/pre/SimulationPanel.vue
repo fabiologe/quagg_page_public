@@ -19,11 +19,22 @@
                  @change="set((s) => { s.meta.nachweis.bearbeiter = $event.target.value })" />
         </div>
         <div class="f3d-field">
-          <label>Regelwerk (mit Komma trennen)</label>
-          <input class="f3d-num f3d-grow"
-                 :value="(spec.meta.nachweis?.regelwerk ?? []).join(', ')"
-                 @change="set((s) => { s.meta.nachweis.regelwerk =
-                   $event.target.value.split(',').map((x) => x.trim()).filter(Boolean) })" />
+          <label>Regelwerk</label>
+          <label v-for="r in REGELWERKE" :key="r.id" class="f3d-regelwerk">
+            <input type="checkbox" :checked="istGewaehlt(r.id)"
+                   @change="regelwerkUmschalten(r.id, $event.target.checked)" />
+            <span>
+              <strong>{{ r.id }}</strong> — {{ r.titel }}<template v-if="r.hinweis">
+                <em> ({{ r.hinweis }})</em></template>
+            </span>
+          </label>
+          <input class="f3d-num f3d-grow" placeholder="weitere, mit Komma getrennt"
+                 :value="eigeneRegelwerke(spec.meta.nachweis?.regelwerk).join(', ')"
+                 @change="eigeneSetzen($event.target.value)" />
+          <p class="f3d-muted f3d-small">
+            Die maßgebliche Fassung und der maßgebliche Abschnitt sind
+            projektbezogen festzulegen und gehören in die Anmerkung.
+          </p>
         </div>
         <div class="f3d-field">
           <label>Bezugssystem (EPSG)</label>
@@ -269,6 +280,7 @@
 // sofort sichtbar in der Modell-Phase).
 import { computed, h, onMounted, ref } from 'vue'
 import { begrenzen, hinweis } from '../../utils/simHints'
+import { REGELWERKE, REGELWERK_IDS, eigeneRegelwerke } from '../../utils/regelwerke'
 import { companionHealth, pauseLocalRun, runLocally,
   unterbrocheneLaeufe } from '../../services/localCompanion'
 import { usePreStore } from '../../stores/usePreStore'
@@ -382,6 +394,41 @@ async function startClicked() {
 
 const set = (fn) => store.updateSettings(fn)
 
+// --- Regelwerk ------------------------------------------------------------
+// Auswahl aus dem Katalog plus Freitextzeile für alles, was nicht darin
+// steht. Beide schreiben in dieselbe Liste; die Reihenfolge des Katalogs
+// bleibt erhalten, damit die Angabe im Ergebnis vergleichbar aussieht.
+
+function istGewaehlt(id) {
+  return (store.spec?.meta?.nachweis?.regelwerk ?? []).includes(id)
+}
+
+function regelwerkSchreiben(liste) {
+  set((s) => {
+    s.meta.nachweis = s.meta.nachweis ?? {}
+    s.meta.nachweis.regelwerk = liste
+  })
+}
+
+function regelwerkUmschalten(id, an) {
+  const alt = store.spec?.meta?.nachweis?.regelwerk ?? []
+  const gewaehlt = new Set(alt)
+  if (an) gewaehlt.add(id)
+  else gewaehlt.delete(id)
+  regelwerkSchreiben([
+    ...REGELWERK_IDS.filter((x) => gewaehlt.has(x)),
+    ...eigeneRegelwerke(alt),
+  ])
+}
+
+function eigeneSetzen(text) {
+  const alt = store.spec?.meta?.nachweis?.regelwerk ?? []
+  regelwerkSchreiben([
+    ...REGELWERK_IDS.filter((x) => alt.includes(x)),
+    ...text.split(',').map((x) => x.trim()).filter(Boolean),
+  ])
+}
+
 function setNum(path, e) {
   let v = Number(e.target.value)
   if (Number.isNaN(v)) return
@@ -448,6 +495,16 @@ function setExtent(idx, e) {
   margin-bottom: 10px;
 }
 .f3d-field > label { color: var(--f3d-text-2); font-size: 0.76rem; }
+.f3d-regelwerk {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.35;
+  font-size: 0.72rem;
+}
+.f3d-regelwerk input { margin-top: 2px; flex: none; }
+.f3d-regelwerk strong { color: var(--f3d-text); }
+.f3d-regelwerk em { color: var(--f3d-text-2); font-style: normal; }
 .f3d-pair { display: flex; align-items: center; gap: 8px; }
 .f3d-pair span { color: var(--f3d-text-2); font-size: 0.75rem; }
 .f3d-num { width: 110px; }

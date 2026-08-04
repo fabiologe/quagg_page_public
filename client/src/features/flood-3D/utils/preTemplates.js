@@ -164,6 +164,22 @@ const ORT_FELDER = new Set(['polyline', 'polygon', 'oberkante', 'unterkante',
   'axis', 'footprint', 'crest_polyline', 'plane_polygon', 'center', 'point',
   'extent'])
 
+// Skalare LÄNGENMASSE in der Ebene. Sie müssen denselben Faktor mitgehen wie
+// der Grundriss — sonst behält ein auf ein Drittel geschrumpftes Becken
+// seinen Radius von 5 m und quillt wieder über. Senkrechte Maße (Höhe,
+// Tiefe, Wandhöhe) bleiben unangetastet: eine 2 m hohe Wand ist in einem
+// kleinen Gebiet immer noch 2 m hoch.
+const MASS_FELDER = new Set(['radius', 'bottom_width', 'crest_width',
+  'thickness', 'wall_thickness', 'diameter', 'width', 'length', 'breite',
+  'kanten_breite', 'blend_width'])
+
+// Maße, an denen die Vernetzbarkeit hängt — die kleinste Abmessung eines
+// Bauteils. Vier Zellen darüber sind die Faustregel, mit der auch die
+// Backend-Prüfung und die Kur „Verfeinerung erhöhen" arbeiten.
+const DUENNSTES = {
+  wall: 'thickness', basin: 'wall_thickness', culvert: 'diameter',
+}
+
 function punktlisten(obj) {
   const raus = []
   for (const [k, v] of Object.entries(obj)) {
@@ -197,7 +213,15 @@ export function vorlageAnpassen(obj, spec, gelaendeZ) {
   const cy = (y0 + y1) / 2
   // nur verkleinern, nie vergrößern: eine 20-m-Wand passt nicht in ein
   // 9-m-Becken, umgekehrt soll die Vorlage ihre Maße behalten
-  const spanne = Math.max(bx[1] - bx[0], by[1] - by[0])
+  let spanne = Math.max(bx[1] - bx[0], by[1] - by[0])
+  // Bei runden Operationen spannt nicht die Punktliste den Grundriss auf,
+  // sondern der Radius: „Anheben/Absenken" hat nur einen Mittelpunkt und
+  // wäre sonst in jedem Gebiet gleich groß.
+  for (const k of Object.keys(obj)) {
+    if (typeof obj[k] !== 'number') continue
+    if (k === 'radius') spanne = Math.max(spanne, 2 * obj[k])
+    else if (k === 'width' || k === 'length') spanne = Math.max(spanne, obj[k])
+  }
   const platz = 0.5 * Math.min(x1 - x0, y1 - y0)
   const s = spanne > platz && spanne > 0 ? platz / spanne : 1
   const r2 = (v) => Number(v.toFixed(2))
@@ -225,6 +249,18 @@ export function vorlageAnpassen(obj, spec, gelaendeZ) {
     }
   }
 
+  // Skalare Längenmaße gehen denselben Weg wie der Grundriss
+  if (s !== 1) {
+    for (const k of Object.keys(obj)) {
+      if (MASS_FELDER.has(k) && typeof obj[k] === 'number') {
+        obj[k] = r2(obj[k] * s)
+      }
+    }
+    if (obj.profile?.diameter) obj.profile.diameter = r2(obj.profile.diameter * s)
+    if (obj.profile?.width) obj.profile.width = r2(obj.profile.width * s)
+    if (obj.profile?.height) obj.profile.height = r2(obj.profile.height * s)
+  }
+
   // Skalare Höhen an das Gelände in der Mitte hängen
   const boden = gelaendeZ(cx, cy)
   const ausnahme = KEINE_HOEHE[obj.type] ?? []
@@ -237,4 +273,41 @@ export function vorlageAnpassen(obj, spec, gelaendeZ) {
     }
   }
   return obj
+}
+
+
+// --- Verfeinerung, die ein neues Bauteil braucht --------------------------
+// Die Standard-Basiszelle ist 1,0 m, eine Wand 0,40 m dick: der Neufall löst
+// damit sofort genau die Prüfung aus, die die Spezifikation als wichtigste
+// bezeichnet („Mindestabmessung gegen die lokale Zellgröße"). Die Abmessung
+// ist dabei richtig — zu grob ist das Netz. Also kommt die Flächen-
+// verfeinerung gleich mit, statt den Nutzer erst warnen und dann per Kur
+// nachbessern zu lassen. Rückgabe: die anzulegende Verfeinerung oder null.
+
+export function noetigeVerfeinerung(obj, spec) {
+  const zelle = spec?.mesh?.base_cell
+  const feld = DUENNSTES[obj?.type]
+  if (!zelle || !feld) return null
+  const mass = obj[feld] ?? obj.profile?.diameter
+  if (!(mass > 0)) return null
+
+  // vorhandene Stufe an dieser Fläche zählt mit
+  const vorhanden = (spec.mesh.refinements ?? [])
+    .filter((r) => r.type === 'surface' && r.target === obj.patch)
+    .reduce((a, r) => Math.max(a, r.level), 0)
+  let stufe = vorhanden
+  while (mass < (4 * zelle) / 2 ** stufe && stufe < 5) stufe += 1
+  if (stufe <= vorhanden) return null
+
+  const ids = new Set((spec.mesh.refinements ?? []).map((r) => r.id))
+  let id = `fein_${obj.patch}`
+  let n = 2
+  while (ids.has(id)) { id = `fein_${obj.patch}_${n}`; n += 1 }
+  return {
+    refinement: { id, type: 'surface', target: obj.patch, level: stufe },
+    text: `${mass.toFixed(2).replace('.', ',')} m gegen `
+      + `${zelle.toString().replace('.', ',')} m Basiszelle — `
+      + `Flächenverfeinerung Stufe ${stufe} ergänzt, sonst löst das Netz das `
+      + 'Bauteil nicht auf',
+  }
 }

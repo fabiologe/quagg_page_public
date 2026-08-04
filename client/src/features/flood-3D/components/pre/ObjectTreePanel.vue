@@ -42,26 +42,12 @@
 import { computed, reactive, ref } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import {
-  TYPE_LABELS, TEMPLATES, vorlageAnpassen,
+  TYPE_LABELS, TEMPLATES, vorlageAnpassen, noetigeVerfeinerung,
 } from '../../utils/preTemplates'
 import {
   REFERENZ_QUELLEN, fehlendeBausteine, referenzListe,
 } from '../../utils/feldTypen'
 import ImportModal from './ImportModal.vue'
-
-// Höhe des Geländerasters an einer Stelle (bilinear, wie im Editor) — die
-// Außenkante startet mit dem, was heute dort steht
-function gelaendeZ(t, x, y) {
-  if (!t) return 0
-  const [ny, nx] = t.dims
-  const fx = Math.min(nx - 1.001, Math.max(0, (x - t.x0) / t.resolution))
-  const fy = Math.min(ny - 1.001, Math.max(0, (y - t.y0) / t.resolution))
-  const i = Math.floor(fx); const j = Math.floor(fy)
-  const dx = fx - i; const dy = fy - j
-  const z = t.z
-  return z[j * nx + i] * (1 - dx) * (1 - dy) + z[j * nx + i + 1] * dx * (1 - dy)
-    + z[(j + 1) * nx + i] * (1 - dx) * dy + z[(j + 1) * nx + i + 1] * dx * dy
-}
 
 const store = usePreStore()
 const addChoice = reactive({})
@@ -143,7 +129,7 @@ function add(group) {
     // Vorlagen sind im Bezugsraum notiert (Gelände 95 m, Grundriss um 20 m).
     // Ohne Umrechnung landet jede Vorlage in einem importierten Fall weit
     // neben oder unter dem Gelände.
-    else vorlageAnpassen(obj, store.spec, (x, y) => gelaendeZ(store.terrain, x, y))
+    else vorlageAnpassen(obj, store.spec, (x, y) => store.gelaendeZ(x, y))
     if (obj.kind) {
       const fehlt = fehlendeBausteine(store.spec, obj.kind)
       if (fehlt.length) {
@@ -159,7 +145,19 @@ function add(group) {
       }
       verweiseFuellen(obj)
     }
-    store.addObject(group.kind, obj)
+    const neu = store.addObject(group.kind, obj)
+    // Ein neues Bauteil ist meist dünner als die Basiszelle. Statt es in die
+    // Prüfung laufen zu lassen, kommt die Verfeinerung gleich mit — sichtbar,
+    // damit niemand über die Zellzahl stolpert. `neu` statt `obj`: id und
+    // patch vergibt erst der Store.
+    const fein = noetigeVerfeinerung(neu, store.spec)
+    if (fein) {
+      store.addObject('refinement', fein.refinement)
+      // Ausgewählt bleibt das Bauteil, nicht die nachgezogene Verfeinerung
+      store.select(group.kind, neu.id)
+      hinweis.value = { kind: group.kind, text: fein.text }
+      setTimeout(() => { hinweis.value = { kind: '', text: '' } }, 8000)
+    }
   }
   addChoice[group.kind] = ''
 }

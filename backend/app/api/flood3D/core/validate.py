@@ -31,6 +31,37 @@ def pts_z_max(struct) -> float:
     return max(p[2] for p in struct.alignment.points)
 
 
+def _flaechen_zelle(mesh, patch: str) -> float:
+    """
+    Zellgröße an einer Bauwerksfläche: die Basiszelle, je Verfeinerungsstufe
+    halbiert. Jede Prüfung auf „wird das aufgelöst?" muss hiermit messen und
+    nicht mit der blanken Basiszelle — sonst warnt sie weiter, obwohl der
+    Nutzer genau das getan hat, was sie empfiehlt, und die angebotene Kur
+    kann den Befund nie beseitigen.
+    """
+    stufe = max((r.level for r in mesh.refinements
+                 if r.type == "surface" and r.target == patch), default=0)
+    return mesh.base_cell / 2 ** stufe
+
+
+def _erwarteter_spiegel(spec) -> tuple[float, str] | None:
+    """
+    Wasserspiegellage, die der Fall im Betrieb erwarten lässt — samt
+    Herkunft für die Meldung. Nicht `initial_level`: das ist der
+    Startzustand und sagt nichts über den Betrieb (ein Becken läuft
+    regelmäßig leer an). Genommen wird, was der Fall selbst festlegt:
+    zuerst der Unterwasserstand eines festen Ablaufs, sonst der Einstau,
+    gegen den geprüft wird. Gibt es beides nicht, ist nichts zu prüfen.
+    """
+    for b in spec.boundaries:
+        if b.type == "outflow_fixed_level":
+            return float(b.level), f"fester Pegel am Ablauf „{b.id}“"
+    for t in (spec.evaluation.targets if spec.evaluation else []):
+        if t.kind == "max_level" and t.limit_max is not None:
+            return float(t.limit_max), f"Einstaukriterium „{t.id}“"
+    return None
+
+
 def _finding(object_id: str, severity: str, message: str,
              fix: dict | None = None) -> dict:
     """
@@ -169,10 +200,14 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                     and lo[2] > float(np.max(ground))):
                 f(_finding(patch, "fehler",
                            "Bauwerk hängt in der Luft — Unterkante liegt "
-                           "vollständig über dem Gelände, keine Einbindung"))
+                           "vollständig über dem Gelände, keine Einbindung",
+                           fix=kur("gelaende_einbinden", patch=patch)))
             # Durchlässe liegen bestimmungsgemäß unter dem Gelände
             if (struct_types.get(patch) != "culvert"
                     and hi[2] < float(np.min(ground))):
+                # Bewusst ohne Kur: „Gelände einbinden" würde den Körper nur
+                # unten kappen, nicht anheben. Wie hoch ein Bauteil steht,
+                # ist eine fachliche Festlegung und keine Reparatur.
                 f(_finding(patch, "warnung",
                            "Bauwerk verschwindet vollständig unter dem Gelände "
                            "und ist hydraulisch wirkungslos"))
@@ -352,11 +387,15 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"Aussparung {e.id}: reicht über das Bauteil hinaus "
                            f"(Öffnung {e.z - h / 2:.2f} … {e.z + h / 2:.2f} m, "
                            f"Bauteil {unten:.2f} … {oben:.2f} m)"))
-            if spec.mesh is not None and min(b, h) < 2 * spec.mesh.base_cell:
+            zelle = (_flaechen_zelle(spec.mesh, st.patch)
+                     if spec.mesh is not None else None)
+            if zelle is not None and min(b, h) < 2 * zelle:
                 f(_finding(st.id, "warnung",
                            f"Aussparung {e.id} ist {min(b, h):g} m klein — "
-                           f"weniger als zwei Zellen ({spec.mesh.base_cell:g} m "
-                           "Raster); sie wird im Netz kaum aufgelöst"))
+                           f"weniger als zwei Zellen ({zelle:g} m örtliche "
+                           "Zellgröße); sie wird im Netz kaum aufgelöst",
+                           fix=kur("verfeinerung_erhoehen", patch=st.patch,
+                                   mass=min(b, h))))
             steg = min(e.z - h / 2 - unten, oben - (e.z + h / 2))
             if -1e-6 <= steg < 0.5 * dicke:
                 f(_finding(st.id, "warnung",
@@ -385,12 +424,11 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
 
         def local_cell(patch: str, punkt=None) -> float:
             # Eine Verfeinerungsbox über der Stelle zählt genauso wie eine
-            # Flächenverfeinerung — sonst warnt die Prüfung weiter, obwohl
-            # der Nutzer genau das getan hat, was sie empfiehlt.
-            stufe = surface_levels.get(patch, 0)
+            # Flächenverfeinerung.
+            zelle = _flaechen_zelle(spec.mesh, patch)
             if punkt is not None:
-                stufe = max(stufe, box_level(punkt))
-            return spec.mesh.base_cell / 2 ** stufe
+                zelle = min(zelle, spec.mesh.base_cell / 2 ** box_level(punkt))
+            return zelle
 
         for s in spec.structures:
             min_dim, label = None, ""
@@ -452,22 +490,32 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            "\u201edurch das Gelände bohren\u201c einschalten "
                            "(das Gelände wird dann als Erdkörper mit "
                            "ausgeschnittener Bohrung gebaut) oder das "
-                           "Modellgebiet an der Mündungsebene abschneiden."))
+                           "Modellgebiet an der Mündungsebene abschneiden.",
+                           fix=kur("durchstoss_ein", struct=s.id)))
 
         if spec.domain is not None:
             x0, y0, x1, y1 = spec.domain.extent
             for r in spec.mesh.refinements:
                 if r.type == "surface":
-                    if r.target not in {s.patch for s in spec.structures}:
+                    # „terrain" ist ein gültiges Ziel: die Sohle ist die
+                    # Fläche, an der der Sohlschubnachweis hängt.
+                    erlaubt = {s.patch for s in spec.structures} | {"terrain"}
+                    if r.target not in erlaubt:
                         f(_finding(r.id, "fehler",
                                    f"Verfeinerung zielt auf unbekanntes "
                                    f"Bauwerk {r.target}"))
+                    elif r.target == "terrain" and spec.terrain is None:
+                        f(_finding(r.id, "warnung",
+                                   "Verfeinerung zielt auf das Gelände, der "
+                                   "Fall hat aber keines — sie bleibt "
+                                   "wirkungslos"))
                     continue
                 bx0, by0, bz0, bx1, by1, bz1 = r.extent
                 if (bx0 < x0 or by0 < y0 or bx1 > x1 or by1 > y1
                         or bz0 < spec.domain.z_min or bz1 > spec.domain.z_max):
                     f(_finding(r.id, "fehler",
-                               "Verfeinerungsbox ragt aus dem Modellgebiet heraus"))
+                               "Verfeinerungsbox ragt aus dem Modellgebiet heraus",
+                               fix=kur("anschluesse_herstellen")))
                 level = spec.solver.initial_level
                 if level is not None and not (bz0 <= level <= bz1):
                     f(_finding(r.id, "warnung",
@@ -553,7 +601,8 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
             assign_faces(spec)
             flaechen_ok = True
         except ValueError as e:
-            f(_finding("domain", "fehler", str(e)))
+            f(_finding("domain", "fehler", str(e),
+                       fix=kur("anschluesse_herstellen")))
             flaechen_ok = False
         for b in spec.boundaries if flaechen_ok else []:
             w = getattr(b, "window", None)
@@ -611,7 +660,8 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    f"Gerinne „{ch.id}“ endet {dist:g} m vor "
                                    f"dem Gebietsrand {face} — es muss bis an "
                                    "die Kante reichen, damit die Öffnung "
-                                   "angeschlossen ist"))
+                                   "angeschlossen ist",
+                                   fix=kur("anschluesse_herstellen")))
                         continue
                 else:
                     dist, _pt = _culvert_end(spec, face, cv)
@@ -620,7 +670,8 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    f"Stutzen „{cv.id}“ endet {dist:g} m vor "
                                    f"dem Gebietsrand {face} — die Rohrachse "
                                    "muss bis an die Kante reichen, damit die "
-                                   "Mündung angeschlossen ist"))
+                                   "Mündung angeschlossen ist",
+                                   fix=kur("anschluesse_herstellen")))
                         continue
                     if spec.mesh is not None and cv.profile.kind == "circular":
                         mitte = np.asarray(cv.axis, dtype=float).mean(axis=0)
@@ -648,7 +699,8 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 f(_finding(b.id, "fehler",
                            f"Fenster [{zlo:g}, {zhi:g}] liegt außerhalb der "
                            f"Gebietshöhe [{spec.domain.z_min:g}, "
-                           f"{spec.domain.z_max:g}]"))
+                           f"{spec.domain.z_max:g}]",
+                           fix=kur("anschluesse_herstellen")))
             if spec.mesh is not None:
                 min_dim = hi - lo
                 if zlo is not None and zhi is not None:
@@ -673,6 +725,28 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
             if zlo is not None and zhi is not None and zlo >= zhi:
                 f(_finding(b.id, "fehler",
                            "Fenster-Unterkante liegt über der Oberkante"))
+            # Spez. Kap. 7: der Zuflussrand soll unterhalb der ERWARTETEN
+            # Wasserspiegellage liegen. Erwartet heißt im Betrieb, nicht bei
+            # t = 0 — der Anfangswasserspiegel taugt nicht als Maßstab, sonst
+            # fiele jedes Becken darunter, das leer anläuft. Maßstab ist der
+            # Pegel, den der Fall selbst festlegt: der Unterwasserstand eines
+            # festen Ablaufs, sonst der geprüfte Einstau.
+            # Eine Rohrmündung (Kreisfenster oder an einen Stutzen gekoppelt)
+            # mündet bestimmungsgemäß frei aus und bleibt außen vor.
+            muendung = (r["shape"] == "kreis"
+                        or _follow_culvert(spec, w) is not None)
+            if (b.type in ("inflow_hydrograph", "inflow_constant")
+                    and not muendung and zlo is not None
+                    and _erwarteter_spiegel(spec) is not None
+                    and zlo > _erwarteter_spiegel(spec)[0] + 1e-6):
+                spiegel, herkunft = _erwarteter_spiegel(spec)
+                f(_finding(b.id, "hinweis",
+                           f"Der Zulaufquerschnitt beginnt erst bei "
+                           f"{zlo:.2f} m und liegt damit über der erwarteten "
+                           f"Wasserspiegellage von {spiegel:.2f} m "
+                           f"({herkunft}) — der Zufluss stürzt ein, statt "
+                           "eingestaut zuzuströmen. Bei einem Absturz ist "
+                           "das gewollt."))
 
     for b in inflows:
         if b.type != "inflow_hydrograph":
@@ -721,6 +795,19 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
         gekoppelt = {getattr(b.window, "follow", None)
                      for b in spec.boundaries if getattr(b, "window", None)}
         x0, y0, x1, y1 = spec.domain.extent
+        # Maßstab ist die GERINNEBREITE, wo ein Gerinne im Modell liegt — so
+        # nennt es die Spezifikation. Ohne Gerinne bleibt als Ersatzmaß die
+        # Sperrbreite des Bauwerks quer zur Randfläche.
+        gerinne = [op for op in (spec.terrain.operations if spec.terrain else [])
+                   if op.type == "channel_carve"]
+        gerinnebreite = max(
+            (op.bottom_width + 2 * op.side_slope * op.depth for op in gerinne),
+            default=0.0)
+        # Spez. Kap. 7 nennt fünf Gerinnebreiten stromauf und zehn stromab.
+        # Diese Vorbelegung ist nach Kap. 14.5 projektbezogen festzulegen —
+        # ihre Unterschreitung ist deshalb ein Hinweis. Ein Bauwerk, das dem
+        # Rand näher steht als es selbst breit ist, bleibt eine Warnung.
+        FAKTOR = {"zulauf": 5, "ablauf": 10}
         for s in spec.structures:
             if s.id in gekoppelt or s.type == "screen":
                 continue
@@ -742,16 +829,34 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 if face is None or face == "z_max":
                     continue
                 d = abstaende.get(face)
-                breite = quer.get(face, 0.0)
-                if d is None or breite <= 0 or d >= breite:
+                sperre = quer.get(face, 0.0)
+                if d is None or sperre <= 0:
+                    continue
+                if d >= sperre:
+                    # Der harte Fall ist abgewendet; jetzt gegen die
+                    # Vorbelegung der Spezifikation messen.
+                    rolle = "zulauf" if b in inflows else "ablauf"
+                    mass = gerinnebreite if gerinnebreite > 0 else sperre
+                    masswort = ("Gerinnebreiten" if gerinnebreite > 0
+                                else "Bauwerksbreiten")
+                    richtung = "stromauf" if rolle == "zulauf" else "stromab"
+                    soll = FAKTOR[rolle] * mass
+                    if d < soll:
+                        f(_finding(s.id, "hinweis",
+                                   f"{d:.1f} m bis zum Rand "
+                                   f"„{b.id}“ ({face}). Spez. "
+                                   f"Kap. 7 nennt als Vorbelegung "
+                                   f"{FAKTOR[rolle]} {masswort} {richtung}, "
+                                   f"hier also {soll:.1f} m ({mass:.1f} m je "
+                                   "Breite). Die Vorbelegung ist "
+                                   "projektbezogen festzulegen."))
                     continue
                 f(_finding(s.id, "warnung",
                            f"Nur {max(d, 0):.1f} m bis zum Rand "
                            f"\u201e{b.id}\u201c "
-                           f"({face}), das Bauwerk selbst ist {breite:.1f} m "
-                           "groß — die Randbedingung wirkt auf die Umströmung "
-                           "zurück. Spez. Kap. 7 nennt als Vorbelegung fünf "
-                           "Gerinnebreiten stromauf und zehn stromab."))
+                           f"({face}), das Bauwerk selbst ist {sperre:.1f} m "
+                           "groß — die Randbedingung wirkt unmittelbar auf "
+                           "die Umströmung zurück."))
 
     for s in spec.structures:
         if s.type == "screen":

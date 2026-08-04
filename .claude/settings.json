@@ -216,7 +216,16 @@
       "Bash(curl -s http://127.0.0.1:8001/FastAPI/flood3d/cases/koerperprobe/validate)",
       "Bash(time curl -s -X POST --max-time 1500 http://127.0.0.1:8001/FastAPI/flood3d/cases/koerperprobe/mesh-preview)",
       "Bash(sed -n '/def _op_boeschung/,/def _op_pad/p' core/terrain.py)",
-      "Bash(sed -n '/def tin_from_lines/,/^def /p' core/importer.py)"
+      "Bash(sed -n '/def tin_from_lines/,/^def /p' core/importer.py)",
+      "Bash(NODE_OPTIONS=--max-old-space-size=2560 npx vite build --outDir dist_neu)",
+      "Bash(/home/fabio/quagg_page/backend/venv/bin/python -)",
+      "Bash(python -m pytest app/api/flood3D -q)",
+      "Bash(curl -s -m 10 http://localhost:8001/FastAPI/flood3d/cases)",
+      "Bash(curl -s -m 15 http://localhost:8001/FastAPI/flood3d/cases)",
+      "Bash(time curl -s -m 900 -X POST http://localhost:8001/FastAPI/flood3d/cases/_ResteA_Probe/mesh-preview)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -m 10 https://quagg-engineering.org/)",
+      "Bash(curl -s -o /dev/null -w \"tools=%{http_code}\\\\n\" -m 10 https://quagg-engineering.org/tools/flood-3d)",
+      "Bash(read f *)"
     ],
     "additionalDirectories": [
       "/home/fabio/quagg_page/backend/data/flood2d_jobs/pod-bf3b5648d68a/inputs",

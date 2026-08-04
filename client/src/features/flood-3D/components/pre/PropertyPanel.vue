@@ -50,6 +50,8 @@
                    v-model="draft[field.key]" :labels="labelsFuer(field.key)"
                    :typ="draft.type" :gruppe="field.key"
                    :verbergen="VERBERGEN[field.key] ?? []" />
+      <EditListe v-else-if="field.widget === 'edits'"
+                 v-model="draft[field.key]" :labels="FIELD_LABELS" />
       <textarea v-else v-model="jsonDrafts[field.key]" rows="3"
                 class="f3d-json" spellcheck="false"></textarea>
       <button v-if="field.umschaltbar" class="f3d-jsonschalter"
@@ -218,6 +220,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import PunktListe from './PunktListe.vue'
 import UnterGruppe from './UnterGruppe.vue'
+import EditListe from './EditListe.vue'
 import {
   ENUM_LABELS, ENUM_OPTIONS, GESCHLOSSEN, OPTIONAL_ZAHLEN, QUELL_NAMEN,
   REFERENZ_QUELLEN, istPunktListe, istZahlenreihe, punktDim, referenzListe,
@@ -307,6 +310,11 @@ const fields = computed(() => {
   return eintraege
     .filter(([k]) => !['id', 'type', 'kind', 'material',
       'material_ks'].includes(k))
+    // Nicht gesetzte Felder ohne eigene Maske weglassen: sie erzeugten
+    // bisher eine leere JSON-Textarea neben dem Bedienelement, das sie
+    // eigentlich setzt (etwa `window` neben dem Fenster-Auswahlkasten)
+    .filter(([k, v]) => (OPTIONAL_ZAHLEN[typ] ?? []).includes(k)
+      || widgetFor(k, v, typ) !== 'leer')
     .map(([k, v]) => {
       const eigen = (OPTIONAL_ZAHLEN[typ] ?? []).includes(k)
         ? 'zahl_optional' : widgetFor(k, v, typ)
@@ -577,7 +585,10 @@ function addEdit(art) {
   }
   liste.push(vorlagen[art])
   o.edits = liste
-  jsonDrafts.edits = JSON.stringify(liste)
+  // Nur wenn das Feld gerade als JSON bearbeitet wird, muss der Text
+  // mitgezogen werden — sonst gewinnt in apply() der alte Textstand. Mit
+  // der Liste als Maske ist `draft.edits` die Quelle.
+  if (jsonModus.edits) jsonDrafts.edits = JSON.stringify(liste)
 }
 
 const windowKind = computed({

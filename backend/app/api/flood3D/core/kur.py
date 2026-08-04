@@ -26,6 +26,7 @@ KUR_LABELS = {
     "kraftauswertung_ein": "Kraftauswertung einschalten",
     "anschluesse_herstellen": "Anschlüsse herstellen",
     "gebiet_hoehe_anpassen": "Gebietshöhe ans Gelände anpassen",
+    "durchstoss_ein": "Durch das Gelände bohren",
 }
 
 
@@ -200,6 +201,26 @@ def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict) -> str:
             "das Gelände passt jetzt hinein")
 
 
+def _durchstoss_ein(spec: CaseSpec, args: dict) -> str:
+    """
+    Am vergrabenen Durchlass das Bohren einschalten. Das Gelände wird
+    dadurch nicht mehr als Höhenfläche, sondern als Erdkörper mit
+    ausgeschnittener Bohrung gebaut — nur so kann ein Rohr durch einen Damm
+    führen. Fachlich ändert sich nichts: Lage, Neigung und Querschnitt des
+    Rohres bleiben, wie sie sind.
+    """
+    st = next((s for s in spec.structures
+               if s.id == args["struct"] and s.type == "culvert"), None)
+    if st is None:
+        return f"Durchlass „{args['struct']}“ gibt es nicht mehr"
+    if st.durchstoesst_gelaende:
+        return f"„{st.id}“ bohrt sich bereits durch das Gelände"
+    st.durchstoesst_gelaende = True
+    return (f"„{st.id}“ bohrt sich jetzt durch das Gelände — der Erdkörper "
+            "bekommt den Rohrquerschnitt als Hohlraum ausgeschnitten, die "
+            "Mündung wird dadurch als Fläche angeschnitten")
+
+
 def _anschluesse(spec: CaseSpec, args: dict) -> str:
     from .anschluss import anschluesse_herstellen
 
@@ -215,6 +236,7 @@ _KUREN = {
     "kraftauswertung_ein": _kraftauswertung_ein,
     "gebiet_hoehe_anpassen": _gebiet_hoehe_anpassen,
     "anschluesse_herstellen": _anschluesse,
+    "durchstoss_ein": _durchstoss_ein,
 }
 
 

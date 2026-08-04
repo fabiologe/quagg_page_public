@@ -141,10 +141,15 @@ def snappy_dict(spec: CaseSpec, solid_patches: list[str], has_terrain: bool,
                       if r.type == "surface"}
 
     if has_terrain:
+        # Die Sohle ist verfeinerbar wie jede andere Fläche — der
+        # Sohlschubnachweis hängt an genau ihr. Ohne eigene Angabe bleibt
+        # es bei Stufe 1: das Gelände trägt die Strömung, ist aber
+        # großflächig, und jede Stufe mehr kostet über die ganze Fläche.
+        t_level = surface_levels.get("terrain", 1)
         geometry += ('    terrain.stl\n    {\n        type triSurfaceMesh;\n'
                      '        name terrain;\n    }\n')
         refinement_surfaces += ("        terrain\n        {\n"
-                                "            level (1 1);\n"
+                                f"            level ({t_level} {t_level});\n"
                                 "            patchInfo { type wall; }\n"
                                 "        }\n")
 
