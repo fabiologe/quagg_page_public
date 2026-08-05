@@ -38,6 +38,8 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Serverseitig aufgelöste Regeln aus der Geometrie-Antwort:
     // { bcFaces, fenster, oeffnungen } — siehe uebernehmeGeometrie
     aufgeloest: { bcFaces: {}, fenster: {}, oeffnungen: {} },
+    // Import-Verwaltung: {import_id: {filename, candidates, wiederholbar}}
+    importe: {},
     // Geländekörper (Volumen statt Höhenfläche) — nur gesetzt, wenn der
     // Fall wirklich mit einem Körper vernetzt wird
     terrainSolid: null,   // { stl: ArrayBuffer, volume, watertight, … }
@@ -274,10 +276,37 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
     // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
-    async importNeuAbleiten(importId) {
-      return this.serverMutation(
-        (id) => flood3dApi.importReapply(id, importId),
+    async importNeuAbleiten(importId, rollen = null) {
+      const meldungen = await this.serverMutation(
+        (id) => flood3dApi.importReapply(id, importId, rollen),
         'Neu ableiten fehlgeschlagen', { raster: true })
+      this.ladeImporte()
+      return meldungen
+    },
+
+    // Import-Verwaltung (Dateinamen, Kandidaten, Wiederholbarkeit) — vom
+    // Baum (Grundlagen-Gruppen) und vom PropertyPanel (Zuordnung) gelesen
+    async ladeImporte() {
+      if (!this.activeCaseId) { this.importe = {}; return }
+      try {
+        const res = await flood3dApi.listImports(this.activeCaseId)
+        this.importe = Object.fromEntries(
+          (res.imports ?? []).map((i) => [i.import_id, i]))
+      } catch { this.importe = {} }
+    },
+
+    // DER eine Löschweg (Baum und Eigenschaftenpanel): Grundlagen-Objekte
+    // nur mit Rückfrage — meist ist die Zuordnung der gemeinte Weg
+    loescheObjekt(kind, id) {
+      const o = KIND_PATHS[kind]?.(this.spec)?.find((x) => x.id === id)
+      if (o?.herkunft === 'import' && !window.confirm(
+        `„${id}" stammt aus einem Import. Wirklich löschen?\n`
+        + 'Beim Neu-Ableiten des Imports kommt es wieder — dauerhaft '
+        + 'entfernt wird es über die Zuordnung (ignorieren).')) {
+        return false
+      }
+      this.removeObject(kind, id)
+      return true
     },
 
     // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
@@ -339,6 +368,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.loadCaseRuns()
         this.selection = null
         this.ladeMeshPreviewStand()
+        this.ladeImporte()
         await Promise.all([this.refreshGeometry(), this.refreshValidation(),
           this.ladeRaster()])
       } catch (e) {

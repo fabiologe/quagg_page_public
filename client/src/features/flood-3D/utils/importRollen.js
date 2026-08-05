@@ -1,0 +1,49 @@
+// Rollenkatalog des Geometrie-Imports — EINE Quelle für den Import-Dialog
+// und die nachträgliche Umzuordnung (PropertyPanel „Zuordnung ändern").
+// Nach WIRKUNG gruppiert, nicht alphabetisch: eine Linie formt entweder
+// das Gelände, oder sie wird ein Bauteil, das umströmt wird.
+export const ROLE_LABELS = {
+  gelaende: 'Gelände (Höhenfläche)',
+  gelaende_koerper: 'Gelände als Volumenkörper',
+  wand: 'Wand', pfeiler: 'Pfeiler', wehr: 'Wehr',
+  becken: 'Becken', bauwerk: 'Bauwerk', querschnitt: 'Querschnitt',
+  boeschung_ok: 'Böschungsoberkante', boeschung_uk: 'Böschungsunterkante',
+  bruchkante: 'Bruchkante (Gelände)',
+  sohle: 'Sohle (Ankerfläche)', beckenrand: 'Beckenrand', krone: 'Krone',
+  mauer: 'Mauerkrone → Wand', wehrkrone: 'Überfallkante → Wehr',
+  zusatzraster: 'Zusatzraster (Bereich ersetzen)',
+  zulaufrohr: 'Rohr am Zulauf', ablaufrohr: 'Rohr am Ablauf',
+  ignorieren: '— ignorieren —',
+}
+export const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
+  'wehr', 'becken', 'bauwerk', 'ignorieren']
+export const MATERIALS = ['stahl', 'beton_glatt', 'beton', 'mauerwerk',
+  'holz', 'erde', 'steinschuettung']
+export const SOLID_ROLES = new Set(['wand', 'pfeiler', 'wehr', 'becken',
+  'bauwerk'])
+// Rollen, aus denen ein GELÄNDE entstehen kann. Mauerkrone und
+// Überfallkante gehören ausdrücklich nicht dazu: sie werden Bauteile.
+export const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok',
+  'boeschung_uk', 'sohle', 'beckenrand', 'krone'])
+export const LINIEN_ROLLEN = [
+  { titel: 'formt das Gelände',
+    rollen: ['bruchkante', 'boeschung_ok', 'boeschung_uk', 'sohle',
+      'beckenrand', 'krone'] },
+  { titel: 'wird ein Bauteil (umströmt)', rollen: ['mauer', 'wehrkrone'] },
+  { titel: 'sonstiges', rollen: ['querschnitt', 'ignorieren'] },
+]
+export const RASTER_ROLLEN = [{ titel: 'Höhendaten',
+  rollen: ['gelaende', 'zusatzraster', 'ignorieren'] }]
+export const ROHR_ROLLEN = [{ titel: 'Rohrmündung',
+  rollen: ['zulaufrohr', 'ablaufrohr', 'ignorieren'] }]
+export const NETZ_ROLLEN = [
+  { titel: 'Gelände', rollen: ['gelaende', 'gelaende_koerper'] },
+  { titel: 'Bauteil', rollen: MESH_ROLES.filter((r) => SOLID_ROLES.has(r)) },
+  { titel: 'sonstiges', rollen: ['ignorieren'] },
+]
+export const NUR_IGNORIEREN = [{ titel: 'sonstiges', rollen: ['ignorieren'] }]
+export const rollenFuerKind = (kind) => (kind === 'polyline' ? LINIEN_ROLLEN
+  : kind === 'raster' ? RASTER_ROLLEN
+    : kind === 'kreis' ? ROHR_ROLLEN
+      : (kind === 'acis' || kind === 'hinweis') ? NUR_IGNORIEREN
+        : NETZ_ROLLEN)

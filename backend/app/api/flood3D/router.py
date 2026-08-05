@@ -576,6 +576,13 @@ async def case_imports(case_id: str):
             except Exception:               # noqa: BLE001
                 continue
             iid = m.get("import_id") or mdatei.parent.name
+            anwendung = None
+            apfad = mdatei.parent / "anwendung.json"
+            if apfad.is_file():
+                try:
+                    anwendung = _json.loads(apfad.read_text())
+                except Exception:           # noqa: BLE001
+                    anwendung = None
             ergebnis.append({
                 "import_id": iid,
                 "filename": m.get("filename"),
@@ -583,13 +590,16 @@ async def case_imports(case_id: str):
                 "candidates": m.get("candidates"),
                 "unit_suspect": m.get("unit_suspect"),
                 "aktiv": iid in aktiv_ids or iid in quelle,
-                "wiederholbar": (mdatei.parent / "anwendung.json").is_file(),
+                "wiederholbar": anwendung is not None,
+                # die GESPEICHERTE Zuordnung — Grundlage für „Rolle ändern"
+                "anwendung": anwendung,
             })
     return {"imports": ergebnis}
 
 
 @router.post("/cases/{case_id}/import/{import_id}/reapply")
-async def case_import_reapply(case_id: str, import_id: str):
+async def case_import_reapply(case_id: str, import_id: str,
+                              payload: dict = Body(default={})):
     """
     Import mit seiner gespeicherten Anwendung neu ableiten: baut die
     derived/-Dateien neu und ersetzt die Fallobjekte (idempotent). Der Weg,
@@ -604,7 +614,8 @@ async def case_import_reapply(case_id: str, import_id: str):
         raise HTTPException(status_code=404,
                             detail="Import ohne gespeicherte Anwendung")
     try:
-        info = import_neu_ableiten(spec, d, import_id)
+        info = import_neu_ableiten(spec, d, import_id,
+                                    rollen=payload.get("rollen"))
         spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

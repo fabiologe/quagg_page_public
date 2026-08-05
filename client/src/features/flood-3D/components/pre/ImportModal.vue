@@ -220,6 +220,9 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { flood3dApi } from '../../services/api'
 import { usePreStore } from '../../stores/usePreStore'
+import {
+  KANTEN_ROLLEN, MATERIALS, ROLE_LABELS, SOLID_ROLES, rollenFuerKind,
+} from '../../utils/importRollen'
 
 const emit = defineEmits(['close'])
 const store = usePreStore()
@@ -254,35 +257,11 @@ const SAMPLES = [
   { file: 'problemfall.dxf', label: 'Problemfall',
     hint: 'Millimeter + Landeskoordinaten + roher 3DSOLID — zeigt die Warnungen' },
 ]
-const ROLE_LABELS = {
-  gelaende: 'Gelände (Höhenfläche)',
-  gelaende_koerper: 'Gelände als Volumenkörper',
-  wand: 'Wand', pfeiler: 'Pfeiler', wehr: 'Wehr',
-  becken: 'Becken', bauwerk: 'Bauwerk', querschnitt: 'Querschnitt',
-  boeschung_ok: 'Böschungsoberkante', boeschung_uk: 'Böschungsunterkante',
-  bruchkante: 'Bruchkante (Gelände)',
-  sohle: 'Sohle (Ankerfläche)', beckenrand: 'Beckenrand', krone: 'Krone',
-  mauer: 'Mauerkrone → Wand', wehrkrone: 'Überfallkante → Wehr',
-  zusatzraster: 'Zusatzraster (Bereich ersetzen)',
-  zulaufrohr: 'Rohr am Zulauf', ablaufrohr: 'Rohr am Ablauf',
-  ignorieren: '— ignorieren —',
-}
-const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
-  'wehr', 'becken', 'bauwerk', 'ignorieren']
-const MATERIALS = ['stahl', 'beton_glatt', 'beton', 'mauerwerk', 'holz',
-  'erde', 'steinschuettung']
-const SOLID_ROLES = new Set(['wand', 'pfeiler', 'wehr', 'becken', 'bauwerk'])
-
 const fmt = (v) => (v == null ? '–' : Number(v).toFixed(2))
 const spanX = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][0] - manifest.value.bbox[0][0] : 0))
 const spanY = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][1] - manifest.value.bbox[0][1] : 0))
-// Rollen, aus denen ein GELÄNDE entstehen kann. Mauerkrone und
-// Überfallkante gehören ausdrücklich nicht dazu: sie werden Bauteile, und
-// aus ihnen allein ließe sich kein Gelände bilden.
-const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok', 'boeschung_uk',
-  'sohle', 'beckenrand', 'krone'])
 const hatKanten = computed(() => Object.entries(pick)
   .some(([, p]) => KANTEN_ROLLEN.has(p.role))
   || (manifest.value?.candidates ?? []).some(
@@ -301,32 +280,7 @@ watch([hatKanten, hatGelaendeLayer], ([kanten, gelaende]) => {
 const nAktiv = computed(() => Object.values(pick)
   .filter((p) => p.role !== 'ignorieren').length)
 
-// Nach WIRKUNG gruppiert, nicht alphabetisch: eine Linie formt entweder
-// das Gelände, oder sie wird ein Bauteil, das umströmt wird. Genau diese
-// Unterscheidung ist die Entscheidung, die hier zu treffen ist — flach
-// untereinander gelistet sähe „Beckenrand" aus wie „Mauerkrone".
-const LINIEN_ROLLEN = [
-  { titel: 'formt das Gelände',
-    rollen: ['bruchkante', 'boeschung_ok', 'boeschung_uk', 'sohle',
-      'beckenrand', 'krone'] },
-  { titel: 'wird ein Bauteil (umströmt)', rollen: ['mauer', 'wehrkrone'] },
-  { titel: 'sonstiges', rollen: ['querschnitt', 'ignorieren'] },
-]
-const RASTER_ROLLEN = [{ titel: 'Höhendaten',
-  rollen: ['gelaende', 'zusatzraster', 'ignorieren'] }]
-const ROHR_ROLLEN = [{ titel: 'Rohrmündung',
-  rollen: ['zulaufrohr', 'ablaufrohr', 'ignorieren'] }]
-const NETZ_ROLLEN = [
-  { titel: 'Gelände', rollen: ['gelaende', 'gelaende_koerper'] },
-  { titel: 'Bauteil', rollen: MESH_ROLES.filter((r) => SOLID_ROLES.has(r)) },
-  { titel: 'sonstiges', rollen: ['ignorieren'] },
-]
-const NUR_IGNORIEREN = [{ titel: 'sonstiges', rollen: ['ignorieren'] }]
-const rolesFor = (c) => (c.kind === 'polyline' ? LINIEN_ROLLEN
-  : c.kind === 'raster' ? RASTER_ROLLEN
-    : c.kind === 'kreis' ? ROHR_ROLLEN
-      : (c.kind === 'acis' || c.kind === 'hinweis') ? NUR_IGNORIEREN
-        : NETZ_ROLLEN)
+const rolesFor = (c) => rollenFuerKind(c.kind)
 const usesName = (id) => SOLID_ROLES.has(pick[id]?.role)
 
 function close() { emit('close') }
