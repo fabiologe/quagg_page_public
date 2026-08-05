@@ -543,12 +543,26 @@ def einsetzen(spec: CaseSpec, name: str, args: dict | None = None,
     p = _Bauplan(spec)
     eintrag["bauen"](p, args or {}, base_dir)
 
-    # Herkunft stempeln: die Teile eines Rezepts sind als solche erkennbar
-    # (und die UI kann sie später als EIN Bauwerk gruppieren)
+    # Herkunft UND Gruppe stempeln: die Teile eines Rezepts gehören
+    # zusammen — der Baum zeigt sie als EIN Bauwerk, löschbar als Ganzes.
+    # Die Gruppenkennung ist je Einsetzung eindeutig (zweiter
+    # Drosselschacht = drosselschacht_2).
+    belegt = {getattr(o, "gruppe", None)
+              for liste in (spec.structures, spec.mesh.refinements,
+                            spec.evaluation.gauges, spec.evaluation.sections,
+                            spec.evaluation.targets)
+              for o in liste}
+    gruppe = name
+    n = 2
+    while gruppe in belegt:
+        gruppe = f"{name}_{n}"
+        n += 1
     for o in (*p.structures, *p.refinements, *p.gauges, *p.sections,
               *p.targets):
-        if getattr(o, "herkunft", None) is None and hasattr(o, "herkunft"):
+        if hasattr(o, "herkunft") and getattr(o, "herkunft", None) is None:
             o.herkunft = "rezept"
+        if hasattr(o, "gruppe"):
+            o.gruppe = gruppe
 
     spec.structures.extend(p.structures)
     spec.mesh.refinements.extend(p.refinements)
