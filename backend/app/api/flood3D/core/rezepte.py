@@ -543,6 +543,13 @@ def einsetzen(spec: CaseSpec, name: str, args: dict | None = None,
     p = _Bauplan(spec)
     eintrag["bauen"](p, args or {}, base_dir)
 
+    # Herkunft stempeln: die Teile eines Rezepts sind als solche erkennbar
+    # (und die UI kann sie später als EIN Bauwerk gruppieren)
+    for o in (*p.structures, *p.refinements, *p.gauges, *p.sections,
+              *p.targets):
+        if getattr(o, "herkunft", None) is None and hasattr(o, "herkunft"):
+            o.herkunft = "rezept"
+
     spec.structures.extend(p.structures)
     spec.mesh.refinements.extend(p.refinements)
     # Bezugsobjekte VOR den Kriterien: ein Kriterium mit unbekanntem Pegel

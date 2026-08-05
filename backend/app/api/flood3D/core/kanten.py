@@ -133,7 +133,9 @@ def _boeschung(ok: Vermessungskante, uk: Vermessungskante,
         id=_neue_id(f"{stamm}_{_stamm(uk)}", belegt), type="boeschung",
         oberkante=[tuple(p) for p in ok.polyline],
         unterkante=[tuple(p) for p in uk.polyline],
-        aus_kanten=sorted([ok.id, uk.id]))
+        aus_kanten=sorted([ok.id, uk.id]),
+        herkunft=ok.herkunft or uk.herkunft,
+        import_ref=ok.import_ref or uk.import_ref)
 
 
 def _hoeher(a: Vermessungskante,
@@ -146,14 +148,16 @@ def _ebnen(k: Vermessungskante, belegt: set[str]) -> OpBruchkante:
     return OpBruchkante(
         id=_neue_id(f"eben_{_stamm(k)}", belegt), type="bruchkante",
         polyline=[tuple(p) for p in k.polyline], breite=k.breite,
-        modus="ebnen", aus_kanten=[k.id])
+        modus="ebnen", aus_kanten=[k.id],
+        herkunft=k.herkunft, import_ref=k.import_ref)
 
 
 def _als_kante(k: Vermessungskante, belegt: set[str]) -> OpBruchkante:
     return OpBruchkante(
         id=_neue_id(f"kante_{_stamm(k)}", belegt), type="bruchkante",
         polyline=[tuple(p) for p in k.polyline], breite=k.breite,
-        modus="ziehen", aus_kanten=[k.id])
+        modus="ziehen", aus_kanten=[k.id],
+        herkunft=k.herkunft, import_ref=k.import_ref)
 
 
 EINBINDUNG = 0.3      # wie weit ein abgeleitetes Bauteil ins Erdreich greift
@@ -196,7 +200,8 @@ def _bauteil(k: Vermessungskante, belegt: set[str], feld):
             id=kennung, type="wall", patch=kennung,
             alignment=Alignment(points=punkte, kind="polyline"),
             height=round(hoehe, 3), thickness=k.breite,
-            material="beton", aus_kanten=[k.id]), (
+            material="beton", aus_kanten=[k.id],
+            herkunft=k.herkunft, import_ref=k.import_ref), (
             wie if fuss is not None else "Höhe 1,00 m vorbelegt — kein "
             "Gelände zum Messen")
     # Ein vermessener Kronenzug sagt nichts über die Wehrform. Breitkronig
@@ -207,7 +212,8 @@ def _bauteil(k: Vermessungskante, belegt: set[str], feld):
         id=kennung, type="weir", patch=kennung, crest_polyline=punkte,
         crest_width=k.breite, slope_upstream=0.0, slope_downstream=0.0,
         profile_type="breitkronig", base_level=fuss, material="beton",
-        aus_kanten=[k.id]), (
+        aus_kanten=[k.id],
+        herkunft=k.herkunft, import_ref=k.import_ref), (
         wie if fuss is not None else "Fußhöhe vorbelegt (Krone − 2 m) — "
         "kein Gelände zum Messen")
 

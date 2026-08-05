@@ -26,7 +26,26 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9. _()-]*$")
+# Umlaute sind im deutschsprachigen Workflow der Normalfall
+# („Gelände_Bestand.dxf") — die Liste bleibt eine Positivliste ohne
+# Pfadtrenner, führende Punkte oder Steuerzeichen.
+SAFE_FILENAME = re.compile(r"^[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9. _()+-]*$")
+
+# Abgeleitete Dateien (gerasterte TINs, transformierte STL-Kopien,
+# Netzvorschau) leben unter derived/ im Fallverzeichnis: wegwerfbar und
+# über die gespeicherte Import-Anwendung (anwendung.json) neu ableitbar.
+# Quellen bleiben oben: case.yaml und imports/.
+DERIVED = "derived"
+
+
+def derived_pfad(case_dir: Path, name: str) -> Path:
+    p = case_dir / DERIVED
+    p.mkdir(exist_ok=True)
+    return p / name
+
+
+def _rel(case_dir: Path, p: Path) -> str:
+    return p.relative_to(case_dir).as_posix()
 
 # Einheiten-Verdacht: Gebäudemaße in mm ergeben BBoxen im Zehntausender-
 # Bereich; Landeskoordinaten (UTM) ergeben Offsets im Millionenbereich.
@@ -73,6 +92,12 @@ def _guess_role(stats: dict, name: str = "") -> str:
             return role
     sx, sy = stats["span_xy"]
     dz = stats["z_range"][1] - stats["z_range"][0]
+    # Die Schwellen unten sind METER-Maße. Millimeter-Dateien (BricsCAD-
+    # Normalfall) lägen ohne Umrechnung um den Faktor 10³ daneben — ein
+    # mm-Gelände zerfiele in Ein-Dreieck-Kandidaten, kein Körper träfe
+    # seine Klasse. Derselbe Verdacht wie beim globalen unit_suspect.
+    if max(sx, sy) > UNIT_SUSPECT_SPAN:
+        sx, sy, dz = sx / 1000.0, sy / 1000.0, dz / 1000.0
     if not stats["watertight"] and sx * sy > 25 and max(sx, sy) > 10:
         return "gelaende"
     if stats["watertight"]:
@@ -220,6 +245,54 @@ _DXF_BEKANNT = {
     "ATTRIB", "ATTDEF", "VIEWPORT",
 }
 
+# Lesbar, aber ohne verwertbare 3D-Geometrie: Beschriftung und
+# 2D-Darstellung. Wird beim Import GEZÄHLT und gemeldet — die Regel des
+# Importers lautet: nichts verschwindet ohne Zahl.
+_NUR_ANZEIGE = {"TEXT", "MTEXT", "DIMENSION", "LEADER", "HATCH", "SOLID",
+                "POINT", "ATTDEF", "VIEWPORT"}
+
+
+def _segmente_verketten(linien: list) -> list:
+    """
+    2-Punkt-Segmente (LINEs) zu Zügen verbinden: Endpunkt auf Endpunkt
+    (mm-genau). Eine als 200 Einzellinien exportierte Böschungskante wird
+    so EIN Kandidat statt 200. Echte Polylinien bleiben unangetastet.
+    """
+    segs = [l for l in linien if len(l) == 2]
+    zuege = [l for l in linien if len(l) != 2]
+    if len(segs) <= 1:
+        return zuege + segs
+
+    def key(p):
+        return (round(float(p[0]), 3), round(float(p[1]), 3),
+                round(float(p[2]), 3))
+
+    adj: dict[tuple, list] = {}
+    for i, s in enumerate(segs):
+        adj.setdefault(key(s[0]), []).append((i, 0))
+        adj.setdefault(key(s[1]), []).append((i, 1))
+    benutzt = [False] * len(segs)
+    ketten: list = []
+    # offene Enden zuerst (Grad != 2), damit Züge nicht mittendrin starten;
+    # danach der Rest — das sind geschlossene Ringe
+    starts = [k for k, v in adj.items() if len(v) != 2] + list(adj)
+    for start in starts:
+        for i, ende in adj.get(start, []):
+            if benutzt[i]:
+                continue
+            benutzt[i] = True
+            kette = [segs[i][ende], segs[i][1 - ende]]
+            while True:
+                naechste = [(j, e2) for j, e2 in adj.get(key(kette[-1]), [])
+                            if not benutzt[j]]
+                if len(naechste) != 1:
+                    break                     # Ende oder Verzweigung
+                j, e2 = naechste[0]
+                benutzt[j] = True
+                kette.append(segs[j][1 - e2])
+            ketten.append(kette)
+    return zuege + ketten
+
 
 def _dxf_saeubern(text: str) -> tuple[str, dict]:
     """
@@ -301,12 +374,18 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
     msp = doc.modelspace()
 
     unbekannt: dict[str, int] = {}
+    uebersprungen: dict[str, int] = {}
     kreise_per_layer: dict[str, list] = {}
     tri_per_layer: dict[str, MeshVertexMerger] = {}
     lines_per_layer: dict[str, list[list[list[float]]]] = {}
     acis_layers: dict[str, int] = {}
 
-    for e in msp:
+    # Blockreferenzen werden AUFGELÖST statt übersprungen — ein Bauwerk, das
+    # als Block eingefügt ist, wäre sonst komplett unsichtbar und der Layer
+    # sähe leer aus. Der Stapel erlaubt Blöcke in Blöcken.
+    stapel = list(msp)
+    while stapel:
+        e = stapel.pop(0)
         # Fremdentitäten kennt ezdxf teils nur als Hülle ohne Standard-
         # attribute — ein blindes e.dxf.layer wirft dort einen Fehler und
         # riss den gesamten Import mit sich.
@@ -318,6 +397,26 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
             layer = e.dxf.get("layer", "0") or "0"
         except Exception:                   # noqa: BLE001
             unbekannt[t] = unbekannt.get(t, 0) + 1
+            continue
+        if t == "INSERT":
+            try:
+                subs = list(e.virtual_entities())
+            except Exception:               # noqa: BLE001
+                unbekannt["INSERT"] = unbekannt.get("INSERT", 0) + 1
+                continue
+            for s in subs:
+                # Layer „0" IM Block bedeutet: erbt den Layer der Referenz
+                try:
+                    if (s.dxf.get("layer", "0") or "0") == "0":
+                        s.dxf.layer = layer
+                except Exception:           # noqa: BLE001
+                    pass
+            stapel = subs + stapel
+            continue
+        if t in _NUR_ANZEIGE:
+            # lesbar, aber ohne verwertbare Geometrie (Beschriftung,
+            # 2D-Darstellung) — gezählt, damit nichts stillschweigend fehlt
+            uebersprungen[t] = uebersprungen.get(t, 0) + 1
             continue
         if t == "3DFACE":
             merger = tri_per_layer.setdefault(layer, MeshVertexMerger())
@@ -367,6 +466,27 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
             pts = _dxf_polyline_points(e)
             if len(pts) >= 2:
                 lines_per_layer.setdefault(layer, []).append(pts)
+        elif t == "LINE":
+            # Einzelne LINEs sind oft segmentierte Bruch-/Böschungskanten —
+            # sie werden gesammelt und unten zu Zügen verkettet.
+            try:
+                s, z = e.dxf.start, e.dxf.end
+                lines_per_layer.setdefault(layer, []).append(
+                    [[float(s.x), float(s.y), float(s.z)],
+                     [float(z.x), float(z.y), float(z.z)]])
+            except Exception:               # noqa: BLE001
+                unbekannt["LINE"] = unbekannt.get("LINE", 0) + 1
+        elif t in ("ARC", "SPLINE", "ELLIPSE"):
+            # Bögen/Splines als verdichtete Polylinie (Pfeilhöhe 2 cm) —
+            # 3D-Splines sind der Normalfall für vermessene Kanten
+            try:
+                pts = [[float(p[0]), float(p[1]), float(p[2])]
+                       for p in e.flattening(0.02)]
+            except Exception:               # noqa: BLE001
+                unbekannt[t] = unbekannt.get(t, 0) + 1
+                continue
+            if len(pts) >= 2:
+                lines_per_layer.setdefault(layer, []).append(pts)
         elif t in ("3DSOLID", "REGION", "BODY"):
             acis_layers[layer] = acis_layers.get(layer, 0) + 1
 
@@ -392,6 +512,7 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
             c["_mesh"] = part
             cands.append(c)
     for layer, lines in sorted(lines_per_layer.items()):
+        lines = _segmente_verketten(lines)
         for i, pts in enumerate(lines, 1):
             arr = np.asarray(pts)
             hat_z = arr.shape[1] > 2 and float(np.ptp(arr[:, 2])) > 1e-6
@@ -422,6 +543,17 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
                     "wurde eingelesen. Fehlt dadurch das Gelände, in "
                     "BricsCAD/Civil die Oberfläche über EXPORTTIN bzw. "
                     "„In 3D-Flächen konvertieren\" ausgeben.",
+        })
+    if uebersprungen:
+        liste = ", ".join(f"{n}× {t}"
+                          for t, n in sorted(uebersprungen.items()))
+        cands.append({
+            "name": "Beschriftung/2D-Darstellung", "kind": "hinweis",
+            "role_guess": "ignorieren",
+            "stats": {"anzahl": sum(uebersprungen.values())},
+            "hint": f"Übersprungen, weil ohne 3D-Geometrie: {liste}. "
+                    "Das ist normal für Pläne mit Texten, Bemaßung und "
+                    "Schraffuren — hier nur der Vollständigkeit halber.",
         })
 
     for layer, kreise in sorted(kreise_per_layer.items()):
@@ -470,6 +602,74 @@ def analyze_raster(data: bytes, filename: str) -> list[dict]:
              "kb": round(len(data) / 1024)}
     return [{"name": filename.rsplit(".", 1)[0], "kind": "raster",
              "role_guess": "gelaende", "stats": stats, "_raster": data}]
+
+
+def _raster_transformieren(roh: bytes, unit: float,
+                           off: np.ndarray) -> tuple[bytes, np.ndarray | None]:
+    """
+    Einheitenfaktor und Offset auf ein fertiges Höhenraster anwenden —
+    dieselbe Konvention wie bei Meshes und Linien: erst skalieren, dann
+    verschieben (der Offset ist in der Zieleinheit angegeben). NODATA-Werte
+    bleiben unangetastet. Liefert die (ggf. unveränderten) Bytes und die
+    Bounding-Box [[x0,y0,z0],[x1,y1,z1]], damit „Gebiet ableiten" auch beim
+    Rasterimport funktioniert.
+    """
+    import io as _io
+
+    text = roh.decode("utf-8", errors="replace")
+    zeilen = text.splitlines()
+    kopf: dict[str, float] = {}
+    kopf_ende = 0
+    for i, zeile in enumerate(zeilen[:6]):
+        teile = zeile.split()
+        if len(teile) == 2 and teile[0].lower() in (
+                "ncols", "nrows", "cellsize", "xllcorner", "yllcorner",
+                "nodata_value"):
+            kopf[teile[0].lower()] = float(teile[1])
+            kopf_ende = i + 1
+
+    ox = float(off[0]) if off is not None else 0.0
+    oy = float(off[1]) if off is not None else 0.0
+    unveraendert = unit == 1.0 and ox == 0.0 and oy == 0.0
+
+    if "ncols" in kopf:                                   # ESRI-ASCII
+        nodata = kopf.get("nodata_value", -9999.0)
+        werte = np.atleast_2d(np.loadtxt(
+            _io.StringIO("\n".join(zeilen[kopf_ende:]))))
+        gueltig = werte[werte != nodata]
+        x0 = kopf.get("xllcorner", 0.0) * unit - ox
+        y0 = kopf.get("yllcorner", 0.0) * unit - oy
+        zelle = kopf.get("cellsize", 1.0) * unit
+        nx, ny = int(kopf.get("ncols", 0)), int(kopf.get("nrows", 0))
+        bbox = None
+        if gueltig.size:
+            zmin, zmax = float(gueltig.min()) * unit, float(gueltig.max()) * unit
+            bbox = np.array([[x0, y0, zmin],
+                             [x0 + nx * zelle, y0 + ny * zelle, zmax]])
+        if unveraendert:
+            return roh, bbox
+        werte = np.where(werte != nodata, werte * unit, nodata)
+        buf = _io.StringIO()
+        buf.write(f"ncols {nx}\nnrows {ny}\n"
+                  f"xllcorner {x0:.3f}\nyllcorner {y0:.3f}\n"
+                  f"cellsize {zelle:.6g}\nNODATA_value {nodata:g}\n")
+        np.savetxt(buf, werte, fmt="%.3f")
+        return buf.getvalue().encode("utf-8"), bbox
+
+    # XYZ: eine Zeile je Punkt, mindestens x y z
+    arr = np.atleast_2d(np.loadtxt(_io.StringIO(text)))
+    if arr.shape[1] < 3:
+        raise ValueError("XYZ-Raster hat weniger als drei Spalten — "
+                         "erwartet wird „x y z“ je Zeile.")
+    pts = arr[:, :3] * unit
+    pts[:, 0] -= ox
+    pts[:, 1] -= oy
+    bbox = np.array([pts.min(axis=0), pts.max(axis=0)])
+    if unveraendert:
+        return roh, bbox
+    buf = _io.StringIO()
+    np.savetxt(buf, pts, fmt="%.3f")
+    return buf.getvalue().encode("utf-8"), bbox
 
 
 def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
@@ -905,6 +1105,35 @@ def _mittlere_neigung(ok: np.ndarray, uk: np.ndarray) -> float:
     return float(d.mean() / dz) if dz > 1e-6 else float("inf")
 
 
+def import_objekte_entfernen(spec, import_id: str) -> int:
+    """
+    Alle Objekte entfernen, die aus dem Import `import_id` stammen
+    (erkennbar am import_ref). Grundlage des idempotenten Re-Apply und
+    später des „Import löschen"-Wegs.
+    """
+    def bleibt(o) -> bool:
+        r = getattr(o, "import_ref", None)
+        return r is None or r.import_id != import_id
+
+    n = 0
+    vorher = len(spec.structures)
+    spec.structures = [s for s in spec.structures if bleibt(s)]
+    n += vorher - len(spec.structures)
+    vorher = len(spec.evaluation.sections)
+    spec.evaluation.sections = [s for s in spec.evaluation.sections
+                                if bleibt(s)]
+    n += vorher - len(spec.evaluation.sections)
+    if spec.terrain is not None:
+        vorher = len(spec.terrain.kanten)
+        spec.terrain.kanten = [k for k in spec.terrain.kanten if bleibt(k)]
+        n += vorher - len(spec.terrain.kanten)
+        vorher = len(spec.terrain.operations)
+        spec.terrain.operations = [o for o in spec.terrain.operations
+                                   if bleibt(o)]
+        n += vorher - len(spec.terrain.operations)
+    return n
+
+
 def apply_import(spec, case_dir: Path, import_id: str,
                  decisions: list[dict], unit_factor: float = 1.0,
                  offset: list[float] | None = None,
@@ -917,12 +1146,20 @@ def apply_import(spec, case_dir: Path, import_id: str,
     pfeiler | wehr | becken | bauwerk | querschnitt | ignorieren.
     Rückgabe: geänderte Spec (als dict) + Bericht.
     """
-    from .casespec import (OpBoeschung, OpBruchkante, Section,
-                          StructImported, Vermessungskante)
+    from .casespec import (ImportRef, OpBoeschung, OpBruchkante, Section,
+                          StructImported, Vermessungskante, transform_import)
 
     imp_dir = case_dir / "imports" / import_id
     manifest = json.loads((imp_dir / "manifest.json").read_text())
     by_id = {c["id"]: c for c in manifest["candidates"]}
+
+    def ref(cid: str) -> ImportRef:
+        return ImportRef(import_id=import_id, kandidat=cid)
+
+    # Re-Apply ERSETZT: alles, was aus diesem Import stammt, fliegt vorher
+    # raus. Zweimal Übernehmen (andere Rolle, andere Auflösung) erzeugt
+    # damit keine _2-Duplikate mehr, sondern den neu abgeleiteten Stand.
+    ersetzt = import_objekte_entfernen(spec, import_id)
     off = np.asarray([offset[0], offset[1], 0.0] if offset else [0, 0, 0],
                      dtype=float)
     # Modell drehen: das Rechengebiet ist ein achsparalleler Quader. Liegt
@@ -932,6 +1169,17 @@ def apply_import(spec, case_dir: Path, import_id: str,
     # Bauwerk gerade steht — danach passt der Quader eng darum.
     rot = math.radians(rotation_deg or 0.0)
     _c, _s = math.cos(rot), math.sin(rot)
+    # Ein fertiges Raster lässt sich nicht drehen, ohne es neu abzutasten —
+    # das gehört nicht in den Import. Ehrlich ablehnen statt still ignorieren
+    # (sonst liegen Raster und gedrehte Körper desselben Imports schief
+    # zueinander und niemand merkt es).
+    if rot and any(by_id.get(d.get("candidate"), {}).get("kind") == "raster"
+                   and d.get("role") != "ignorieren" for d in decisions):
+        raise ValueError(
+            "Drehung beim Import ist für fertige Höhenraster (.asc/.xyz) "
+            "nicht möglich — ein Raster müsste dafür neu abgetastet werden. "
+            "Ohne Drehwinkel importieren und den Fall danach über „Modell "
+            "drehen“ ausrichten, oder das Gelände als TIN/Kanten liefern.")
 
     def drehen(pkte: np.ndarray) -> np.ndarray:
         """(n,2) oder (n,3) um die z-Achse durch den Ursprung drehen."""
@@ -943,6 +1191,9 @@ def apply_import(spec, case_dir: Path, import_id: str,
         a[..., 1] = _s * x + _c * y
         return a
     report: list[str] = []
+    if ersetzt:
+        report.append(f"{ersetzt} Objekte aus früherem Übernehmen dieses "
+                      "Imports ersetzt — kein Duplikat angelegt.")
     terrain_bbox = None
     gelaende_gesetzt = False
 
@@ -985,7 +1236,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
         from .casespec import Terrain, TerrainBase
         res = spec.terrain.base.resolution if spec.terrain else 0.5
         linien = [linie_laden(by_id[d["candidate"]]) for d in ent]
-        asc = case_dir / f"gelaende_{import_id}_linien.asc"
+        asc = derived_pfad(case_dir, f"gelaende_{import_id}_linien.asc")
 
         # Geschlossene Kanten sind GRENZEN, keine bloßen Punktwolken. Liegt
         # eine Sohle in einem Beckenrand, gehört die Fläche dazwischen
@@ -1014,7 +1265,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
         # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
         vk = spec.terrain.kanten if spec.terrain else []
         mat = spec.terrain.material if spec.terrain else "erde"
-        spec.terrain = Terrain(base=TerrainBase(source=asc.name,
+        spec.terrain = Terrain(base=TerrainBase(source=_rel(case_dir, asc),
                                                 resolution=res),
                                kanten=vk, operations=ops, material=mat)
         nonlocal terrain_bbox
@@ -1103,7 +1354,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 axis=[tuple(np.round(mitte - n * halb, 3)),
                       tuple(np.round(mitte + n * halb, 3))],
                 profile=CulvertProfile(kind="circular", diameter=round(d, 3)),
-                rolle=rolle, material=None))
+                rolle=rolle, material=None,
+                herkunft="import", import_ref=ref(c["id"])))
             report.append(
                 f"Rohrmündung „{sid}“: DN{d * 1000:.0f}, Achse "
                 f"({mitte[0]:.2f}, {mitte[1]:.2f}, {mitte[2]:.2f}), "
@@ -1118,23 +1370,39 @@ def apply_import(spec, case_dir: Path, import_id: str,
         if c["kind"] == "raster":
             roh = (imp_dir / f"{c['id']}.grid").read_bytes()
             name = re.sub(r"[^A-Za-z0-9_.-]", "_", c["name"])[:40]
-            ziel = case_dir / f"{name}.asc"
+            ziel = derived_pfad(case_dir, f"{name}.asc")
+            # Einheit/Offset gelten für ALLE Kandidaten eines Imports gleich —
+            # sonst liegen Raster und Bauwerkskörper zueinander verschoben.
+            roh, raster_bbox = _raster_transformieren(roh, unit_factor, off)
             ziel.write_bytes(roh)
+            umgerechnet = (f"; Einheit ×{unit_factor:g}, Offset "
+                           f"({off[0]:g}, {off[1]:g}) angewandt"
+                           if unit_factor != 1.0 or off[0] or off[1] else "")
             if role == "gelaende":
                 from .casespec import Terrain, TerrainBase
                 res = spec.terrain.base.resolution if spec.terrain else 0.5
                 ops = spec.terrain.operations if spec.terrain else []
                 mat = spec.terrain.material if spec.terrain else "erde"
                 spec.terrain = Terrain(
-                    base=TerrainBase(source=ziel.name, resolution=res),
+                    base=TerrainBase(source=_rel(case_dir, ziel),
+                                     resolution=res),
                     kanten=(spec.terrain.kanten if spec.terrain else []),
                     operations=ops, material=mat)
                 report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
-                              f"({c['stats'].get('format')})")
+                              f"({c['stats'].get('format')}){umgerechnet}")
+                if raster_bbox is not None:
+                    terrain_bbox = raster_bbox
+                if gelaende_gesetzt:
+                    report.append(
+                        "ACHTUNG: mehrere Layer als Gelände gewählt — "
+                        f"„{c['name']}“ ersetzt das vorherige. Für zwei "
+                        "Zustände (Bestand/Planung) zwei Fälle anlegen.")
+                gelaende_gesetzt = True
             else:
                 report.append(
                     f"Zusatzraster „{ziel.name}“ liegt jetzt im Fall — in "
-                    "einer Operation „Bereich ersetzen“ auswählbar")
+                    f"einer Operation „Bereich ersetzen“ auswählbar"
+                    f"{umgerechnet}")
             continue
 
         if role in ("gelaende", "gelaende_koerper"):
@@ -1142,7 +1410,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
 
             m = load_mesh(c["id"])
             res = spec.terrain.base.resolution if spec.terrain else 1.0
-            asc = case_dir / f"gelaende_{import_id}.asc"
+            asc = derived_pfad(case_dir, f"gelaende_{import_id}.asc")
             koerper_name = None
             if role == "gelaende_koerper":
                 # Volumenkörper: er selbst geht an den Vernetzer, das
@@ -1152,17 +1420,19 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 if not m.is_watertight:
                     m.fill_holes()
                     m.fix_normals()
-                koerper_name = f"gelaendekoerper_{import_id}.stl"
+                koerper_name = _rel(case_dir, derived_pfad(
+                    case_dir, f"gelaendekoerper_{import_id}.stl"))
                 m.export(case_dir / koerper_name)
                 info = rasterize_tin_to_asc(oberseite(m), asc, res)
             else:
                 info = rasterize_tin_to_asc(m, asc, res)
-                m.export(case_dir / f"gelaende_{import_id}_tin.stl")
+                m.export(derived_pfad(case_dir,
+                                      f"gelaende_{import_id}_tin.stl"))
             from .casespec import Terrain, TerrainBase
             ops = spec.terrain.operations if spec.terrain else []
             mat = spec.terrain.material if spec.terrain else "erde"
             spec.terrain = Terrain(
-                base=TerrainBase(source=asc.name, resolution=res,
+                base=TerrainBase(source=_rel(case_dir, asc), resolution=res,
                                  koerper=koerper_name),
                 kanten=(spec.terrain.kanten if spec.terrain else []),
                 operations=ops, material=mat)
@@ -1212,7 +1482,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 n += 1
             existing.add(sid)
             m = load_mesh(c["id"])
-            stl_name = f"import_{sid}.stl"
+            stl_name = _rel(case_dir,
+                            derived_pfad(case_dir, f"import_{sid}.stl"))
             m.export(case_dir / stl_name)
             # Vorbelegung aus der Rolle: ohne Material rechnet der Solver
             # eine hydraulisch GLATTE Wand — für ein Betonbauteil die
@@ -1223,7 +1494,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 else None)
             spec.structures.append(StructImported(
                 id=sid, type="imported", patch=sid, source=stl_name,
-                role=role, material=werkstoff))
+                role=role, material=werkstoff,
+                herkunft="import", import_ref=ref(c["id"])))
             report.append(f"{role} „{sid}“: {c['stats']['n_triangles']} "
                           f"Dreiecke{'' if c['stats']['watertight'] else ' (NICHT wasserdicht!)'}"
                           + (f"; Material {werkstoff} vorbelegt"
@@ -1241,7 +1513,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
             spec.evaluation.sections.append(Section(
                 id=sid[:40],
                 polyline=[[round(float(p[0]), 2), round(float(p[1]), 2)]
-                          for p in arr]))
+                          for p in arr],
+                herkunft="import", import_ref=ref(c["id"])))
             report.append(f"Querschnitt „{sid}“ aus Trasse übernommen")
 
         elif role in KANTEN_ROLLEN:
@@ -1260,7 +1533,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
             sid = _kanten_id(c["name"], "kante", vorhandene_kanten)
             spec.terrain.kanten.append(Vermessungskante(
                 id=sid, polyline=_p3(arr), rolle=KANTEN_ROLLEN[role],
-                breite=1.0, quelle=c["name"]))
+                breite=1.0, quelle=c["name"],
+                herkunft="import", import_ref=ref(c["id"])))
             vorhandene_kanten.add(sid)
             report.append(
                 f"{ROLLEN_TEXT[role]} „{sid}“: {len(arr)} Stützpunkte, "
@@ -1276,15 +1550,24 @@ def apply_import(spec, case_dir: Path, import_id: str,
         from .kanten import verknuepfen
         report.extend(verknuepfen(spec))
 
-    if rotation_deg:
-        spec.meta.crs_rotation_deg = float(rotation_deg)
-        report.append(f"Modell um {rotation_deg:g}° gedreht — das "
-                      "Rechengebiet liegt damit eng um das Bauwerk; der "
-                      "Winkel ist im Fall gespeichert")
-    if offset:
-        spec.meta.crs_offset = [float(offset[0]), float(offset[1])]
-        report.append(f"Koordinaten um ({offset[0]:g}, {offset[1]:g}) "
-                      "verschoben — Ursprung im Fall gespeichert")
+    if rotation_deg or offset or unit_factor != 1.0:
+        neu = transform_import(unit_factor, offset, rotation_deg or 0.0)
+        alt = spec.meta.transform
+        if alt is None:
+            spec.meta.transform = neu
+            report.append(
+                f"Verortung gespeichert: Drehung {neu.rotation_deg:g}°, "
+                f"Verschiebung ({neu.translation[0]:g}, "
+                f"{neu.translation[1]:g}), Einheit ×{unit_factor:g} — "
+                "die Rückverortung in Landeskoordinaten ist damit "
+                "rechnerisch möglich")
+        elif (alt.rotation_deg != neu.rotation_deg
+              or alt.translation != neu.translation):
+            report.append(
+                "ACHTUNG: Lage-Parameter weichen vom ersten Import ab — "
+                "die gespeicherte Verortung bezieht sich weiterhin auf den "
+                "ersten Import. Gleiche Einheit/Offset/Drehung für alle "
+                "Importe eines Falls verwenden.")
 
     if derive_domain and terrain_bbox is not None:
         from .casespec import Domain
@@ -1311,4 +1594,34 @@ def apply_import(spec, case_dir: Path, import_id: str,
                           f"bisherige Wert ({lvl}) lag außerhalb des neuen "
                           "Gebiets")
 
+    # Die ANWENDUNG gehört zu den Rohdaten: mit ihr ist jede Ableitung in
+    # derived/ reproduzierbar (Wegwerf-Test) und ein Re-Apply braucht keine
+    # erneute Deklaration im Dialog.
+    (imp_dir / "anwendung.json").write_text(json.dumps({
+        "decisions": decisions,
+        "unit_factor": unit_factor,
+        "offset": [float(offset[0]), float(offset[1])] if offset else None,
+        "derive_domain": bool(derive_domain),
+        "terrain_from_lines": terrain_from_lines,
+        "rotation_deg": float(rotation_deg or 0.0),
+    }, ensure_ascii=False, indent=1))
+
     return {"report": report}
+
+
+def import_neu_ableiten(spec, case_dir: Path, import_id: str) -> dict:
+    """
+    Den Import mit seiner GESPEICHERTEN Anwendung erneut ableiten: baut
+    alle derived/-Dateien neu und ersetzt die Fallobjekte (idempotent).
+    `derive_domain` wird dabei bewusst NICHT wiederholt — Gebiet und
+    Anfangswasserspiegel sind inzwischen ggf. Handarbeit.
+    """
+    a = json.loads(
+        (case_dir / "imports" / import_id / "anwendung.json").read_text())
+    return apply_import(
+        spec, case_dir, import_id, a.get("decisions") or [],
+        unit_factor=float(a.get("unit_factor", 1.0)),
+        offset=a.get("offset"),
+        derive_domain=False,
+        terrain_from_lines=a.get("terrain_from_lines"),
+        rotation_deg=float(a.get("rotation_deg") or 0.0))

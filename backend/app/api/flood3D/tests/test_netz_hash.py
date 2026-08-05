@@ -116,8 +116,8 @@ def test_preview_stand_nutzt_den_netz_hash(tmp_path):
 
     spec = _kopie()
     d = tmp_path / "fall"
-    (d / "_mesh_preview").mkdir(parents=True)
-    (d / "_mesh_preview" / "mesh_preview.json").write_text(json.dumps(
+    (d / "derived" / "mesh_preview").mkdir(parents=True)
+    (d / "derived" / "mesh_preview" / "mesh_preview.json").write_text(json.dumps(
         {"cells": 1000, "case_hash": spec.case_hash(),
          "netz_hash": spec.netz_hash()}))
 
@@ -134,8 +134,8 @@ def test_alte_vorschau_ohne_netz_hash_faellt_auf_den_fall_hash_zurueck(tmp_path)
 
     spec = _kopie()
     d = tmp_path / "fall"
-    (d / "_mesh_preview").mkdir(parents=True)
-    (d / "_mesh_preview" / "mesh_preview.json").write_text(json.dumps(
+    (d / "derived" / "mesh_preview").mkdir(parents=True)
+    (d / "derived" / "mesh_preview" / "mesh_preview.json").write_text(json.dumps(
         {"cells": 1000, "case_hash": spec.case_hash()}))
 
     assert _preview_stand(spec, d)["stale"] is False

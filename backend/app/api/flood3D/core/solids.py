@@ -908,6 +908,12 @@ def braucht_erdkoerper(spec: CaseSpec, field=None) -> bool:
     """
     if spec.domain is None:
         return False
+    # Expliziter Schalter gewinnt — "auto" ist die Inferenz darunter
+    modus = spec.terrain.erdkoerper if spec.terrain is not None else "auto"
+    if modus == "an":
+        return True
+    if modus == "aus":
+        return False
     if spec.terrain is not None and getattr(spec.terrain.base, "koerper", None):
         return True
     if any(o.type == "berechnungskoerper"
@@ -917,6 +923,18 @@ def braucht_erdkoerper(spec: CaseSpec, field=None) -> bool:
                or (s.type == "culvert"
                    and getattr(s, "durchstoesst_gelaende", False))
                for s in spec.structures)
+
+
+def erdkoerper_abgeschaltet_aber_noetig(spec: CaseSpec, field=None) -> bool:
+    """
+    Regelseite zum Schalter: `erdkoerper: aus`, obwohl die Inferenz ihn
+    verlangt — Bohrungen/Aushübe wirkten dann still nicht.
+    """
+    if spec.terrain is None or spec.terrain.erdkoerper != "aus":
+        return False
+    probe = spec.model_copy(deep=True)
+    probe.terrain.erdkoerper = "auto"
+    return braucht_erdkoerper(probe, field)
 
 
 def aushub_grundriss(struct) -> tuple[shapely.base.BaseGeometry, float] | None:

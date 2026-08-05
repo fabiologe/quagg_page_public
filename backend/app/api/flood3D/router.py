@@ -288,7 +288,7 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
     unberührt. Ältere Vorschauen kennen den Netz-Hash noch nicht — für die
     bleibt es beim Vergleich über den ganzen Fall.
     """
-    p = d / "_mesh_preview" / "mesh_preview.json"
+    p = _derived_dir(d) / "mesh_preview" / "mesh_preview.json"
     if not p.is_file():
         return {"vorhanden": False, "stale": False, "preview": None}
     try:
@@ -381,7 +381,7 @@ async def case_mesh_surface(case_id: str):
     from .core.meshsurface import mesh_surface_patches
 
     spec, d = _load_case(case_id)
-    extracted = mesh_surface_patches(d / "_mesh_preview")
+    extracted = mesh_surface_patches(_derived_dir(d) / "mesh_preview")
     if not extracted:
         raise HTTPException(
             status_code=404,
@@ -431,6 +431,13 @@ def _case_dir(case_id: str, must_exist: bool = True) -> Path:
     if must_exist and not (d / "case.yaml").exists():
         raise HTTPException(status_code=404, detail=f"Fall {case_id} unbekannt.")
     return d
+
+
+def _derived_dir(d: Path) -> Path:
+    """Ableitungsablage des Falls — wegwerfbar, siehe importer.DERIVED."""
+    p = d / "derived"
+    p.mkdir(exist_ok=True)
+    return p
 
 
 def _load_case(case_id: str) -> tuple[CaseSpec, Path]:
@@ -507,10 +514,11 @@ async def put_case(case_id: str, payload: dict = Body(...)):
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     spec.to_yaml(d / "case.yaml")
+    # Geometrie gleich mitliefern: das Speichern war bisher 4 Roundtrips
+    # (PUT + 3 Geometrie-GETs) — jetzt einer. `validation`/`netz_stale`
+    # stecken in der Geometrie-Antwort.
     return {"ok": True, "case_hash": spec.case_hash(),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+            **_geometrie_payload(spec, d)}
 
 
 @router.post("/cases/{case_id}/import")
@@ -536,6 +544,93 @@ async def case_import_analyze(case_id: str, request: Request,
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Import fehlgeschlagen: {e}")
+
+
+@router.get("/cases/{case_id}/imports")
+async def case_imports(case_id: str):
+    """
+    Alle Importe des Falls: Manifest + Status. `aktiv` heißt, mindestens
+    ein Fallobjekt verweist per import_ref darauf (oder das Gelände stammt
+    daraus); alles andere ist verwaist und kann gefahrlos neu übernommen
+    oder aufgeräumt werden. Kandidaten-Netze liegen unter
+    `import/{import_id}/{kandidat}.stl` (3D-Vorschau).
+    """
+    import json as _json
+
+    spec, d = _load_case(case_id)
+    aktiv_ids: set[str] = set()
+    for liste in (spec.structures, spec.evaluation.sections,
+                  (spec.terrain.kanten if spec.terrain else []),
+                  (spec.terrain.operations if spec.terrain else [])):
+        for o in liste:
+            r = getattr(o, "import_ref", None)
+            if r is not None:
+                aktiv_ids.add(r.import_id)
+    quelle = spec.terrain.base.source if spec.terrain else ""
+    ergebnis = []
+    imp_root = d / "imports"
+    if imp_root.is_dir():
+        for mdatei in sorted(imp_root.glob("*/manifest.json")):
+            try:
+                m = _json.loads(mdatei.read_text())
+            except Exception:               # noqa: BLE001
+                continue
+            iid = m.get("import_id") or mdatei.parent.name
+            ergebnis.append({
+                "import_id": iid,
+                "filename": m.get("filename"),
+                "created": m.get("created"),
+                "candidates": m.get("candidates"),
+                "unit_suspect": m.get("unit_suspect"),
+                "aktiv": iid in aktiv_ids or iid in quelle,
+                "wiederholbar": (mdatei.parent / "anwendung.json").is_file(),
+            })
+    return {"imports": ergebnis}
+
+
+@router.post("/cases/{case_id}/import/{import_id}/reapply")
+async def case_import_reapply(case_id: str, import_id: str):
+    """
+    Import mit seiner gespeicherten Anwendung neu ableiten: baut die
+    derived/-Dateien neu und ersetzt die Fallobjekte (idempotent). Der Weg,
+    der aus „derived/ ist weg" oder „Auflösung geändert" einen normalen
+    Vorgang macht statt eines Neu-Uploads.
+    """
+    from .core.importer import import_neu_ableiten
+
+    spec, d = _load_case(case_id)
+    if not _SAFE.match(import_id) \
+            or not (d / "imports" / import_id / "anwendung.json").is_file():
+        raise HTTPException(status_code=404,
+                            detail="Import ohne gespeicherte Anwendung")
+    try:
+        info = import_neu_ableiten(spec, d, import_id)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    spec.to_yaml(d / "case.yaml")
+    return {"ok": True, "report": info["report"],
+            "spec": spec.model_dump(mode="json", exclude_none=True),
+            "validation": validate_case(spec, d),
+            "netz_stale": _preview_stand(spec, d)["stale"]}
+
+
+@router.delete("/cases/{case_id}/derived")
+async def case_derived_leeren(case_id: str):
+    """
+    Die Ableitungsablage leeren — der Härtetest der Schichtentrennung:
+    danach stellt ein Reapply (je Import) alles bitidentisch wieder her.
+    Quellen (case.yaml, imports/) bleiben unberührt.
+    """
+    import shutil
+
+    d = _case_dir(case_id)
+    entfernt = []
+    for pfad in (d / "derived", d / "_mesh_preview"):
+        if pfad.exists():
+            shutil.rmtree(pfad)
+            entfernt.append(pfad.name)
+    return {"ok": True, "entfernt": entfernt}
 
 
 @router.get("/cases/{case_id}/import/{import_id}/{cand_id}.stl")
@@ -584,32 +679,51 @@ async def case_import_apply(case_id: str, import_id: str,
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
+def _mutation(case_id: str, wirken, fehlertext: str) -> dict:
+    """
+    DER eine Vertrag aller Fall-Mutationen: laden → wirken(spec, d) →
+    erneut validieren → NUR BEI ÄNDERUNG speichern → einheitliche Antwort
+    {meldungen, geaendert, spec, validation, netz_stale}. Eine Kur, die
+    „war schon so" meldet, fasst die case.yaml nicht mehr an.
+    """
+    spec, d = _load_case(case_id)
+    vorher = spec.model_dump(mode="json", exclude_none=True)
+    try:
+        meldungen = wirken(spec, d)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"{fehlertext}: {e}")
+    nachher = spec.model_dump(mode="json", exclude_none=True)
+    geaendert = nachher != vorher
+    if geaendert:
+        spec.to_yaml(d / "case.yaml")
+    if isinstance(meldungen, str):
+        meldungen = [meldungen] if meldungen else []
+    return {"ok": True, "meldungen": meldungen, "geaendert": geaendert,
+            "spec": nachher,
+            "validation": validate_case(spec, d),
+            "netz_stale": _preview_stand(spec, d)["stale"]}
+
+
 @router.post("/cases/{case_id}/rotate")
 async def case_rotate(case_id: str, payload: dict = Body(...)):
     """
     Den ganzen Fall um die z-Achse drehen. Nicht das Gebiet steht danach
     schief, sondern das Modell steht gerade — das achsparallele Rechengebiet
-    legt sich dadurch eng um ein schräg liegendes Bauwerk.
+    legt sich dadurch eng um ein schräg liegendes Bauwerk. Läuft als Kur
+    über den einen Mutationsvertrag.
     """
-    from .core.rotate import rotate_case
+    from .core.kur import anwenden
 
-    spec, d = _load_case(case_id)
     grad = float(payload.get("deg") or 0.0)
-    if spec.domain is None:
-        raise HTTPException(status_code=422, detail="Fall ohne Modellgebiet.")
-    if not (-360 <= grad <= 360):
-        raise HTTPException(status_code=422, detail="Drehwinkel außerhalb ±360°.")
-    try:
-        info = rotate_case(spec, grad, d)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Drehung fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, **info,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: anwenden(spec, "drehen",
+                                              {"deg": grad}, d),
+                     "Drehung fehlgeschlagen")
 
 
 @router.post("/cases/{case_id}/anschluss")
@@ -619,21 +733,12 @@ async def case_anschluss(case_id: str):
     legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
     Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
     """
-    from .core.anschluss import anschluesse_herstellen
+    from .core.kur import anwenden
 
-    spec, d = _load_case(case_id)
-    try:
-        meldungen = anschluesse_herstellen(spec)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Anschluss fehlgeschlagen: {e}")
-    if meldungen:
-        spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldungen": meldungen,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: anwenden(spec, "anschluesse_herstellen",
+                                              {}, d),
+                     "Anschluss fehlgeschlagen")
 
 
 @router.post("/cases/{case_id}/kur")
@@ -641,26 +746,15 @@ async def case_kur(case_id: str, payload: dict = Body(...)):
     """
     Die Reparatur zu einem Prüfbefund ausführen. Der Befund selbst liefert
     Aktion und Argumente (`fix` in der Prüfung) — hier wird nur noch
-    angewandt und gespeichert.
+    angewandt; gespeichert wird nur, wenn sich wirklich etwas ändert.
     """
     from .core.kur import anwenden
 
-    spec, d = _load_case(case_id)
     aktion = str(payload.get("aktion") or "")
     args = payload.get("args") or {}
-    try:
-        meldung = anwenden(spec, aktion, args)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Kur fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldung": meldung,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: anwenden(spec, aktion, args, d),
+                     "Kur fehlgeschlagen")
 
 
 @router.post("/cases/{case_id}/kanten-verknuepfen")
@@ -676,27 +770,19 @@ async def case_kanten_verknuepfen(case_id: str):
     from .core.kanten import verknuepfen
     from .core.terrain import TerrainField
 
-    spec, d = _load_case(case_id)
-    # Nur zum Messen der Gründungstiefe abgeleiteter Bauteile. Scheitert
-    # das Gelände, wird vorbelegt statt abgebrochen — die Kantenlogik
-    # selbst braucht es nicht.
-    feld = None
-    if spec.terrain is not None and spec.domain is not None:
-        try:
-            feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
-        except Exception:
-            feld = None
-    try:
-        meldungen = verknuepfen(spec, feld)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except Exception as e:
-        raise HTTPException(status_code=422,
-                            detail=f"Kanten verknüpfen fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldungen": meldungen,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    def wirken(spec, d):
+        # Nur zum Messen der Gründungstiefe abgeleiteter Bauteile. Scheitert
+        # das Gelände, wird vorbelegt statt abgebrochen — die Kantenlogik
+        # selbst braucht es nicht.
+        feld = None
+        if spec.terrain is not None and spec.domain is not None:
+            try:
+                feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+            except Exception:
+                feld = None
+        return verknuepfen(spec, feld)
+
+    return _mutation(case_id, wirken, "Kanten verknüpfen fehlgeschlagen")
 
 
 @router.get("/rezepte")
@@ -717,23 +803,11 @@ async def case_rezept(case_id: str, payload: dict = Body(...)):
     """
     from .core.rezepte import einsetzen
 
-    spec, d = _load_case(case_id)
     name = str(payload.get("rezept") or "")
     args = payload.get("args") or {}
-    try:
-        meldungen = einsetzen(spec, name, args, d)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=422,
-                            detail=f"Rezept fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldungen": meldungen,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: einsetzen(spec, name, args, d),
+                     "Rezept fehlgeschlagen")
 
 
 @router.get("/cases/{case_id}/schema")
@@ -784,10 +858,19 @@ async def case_rasters(case_id: str):
     except HTTPException:
         pass
     out = []
-    for f in sorted(d.glob("*")):
-        if f.is_file() and f.suffix.lower() in (".asc", ".xyz"):
-            out.append({"name": f.name, "mb": round(f.stat().st_size / 1e6, 2),
-                        "basis": f.name == basis})
+    # Quellen im Fallwurzelverzeichnis (Alt-Fälle) plus importierte Raster
+    # unter derived/ — aber KEINE Gelände-Ableitungen (gelaende_*,
+    # gelaende_gedreht_*): eine Ableitung des eigenen Geländes als Quelle
+    # für „Bereich ersetzen" wäre eine Rückkopplungsschleife.
+    kandidaten = list(d.glob("*")) + list((d / "derived").glob("*"))
+    for f in sorted(kandidaten):
+        if not (f.is_file() and f.suffix.lower() in (".asc", ".xyz")):
+            continue
+        name = f.relative_to(d).as_posix()
+        if f.name.startswith("gelaende_") and name != basis:
+            continue
+        out.append({"name": name, "mb": round(f.stat().st_size / 1e6, 2),
+                    "basis": name == basis})
     return out
 
 
@@ -844,35 +927,17 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
                           and getattr(s, "durchstoesst_gelaende", False)]}
 
 
-@router.post("/cases/{case_id}/preview")
-async def case_preview(case_id: str, payload: dict = Body(...)):
+def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
     """
-    Live-Vorschau eines ENTWURFS ohne Speichern: der Editor schickt die
-    aktuelle casespec, zurück kommen Gelände, Bauwerkskörper und Prüfung.
-    Damit reagiert die Szene unmittelbar auf jede Änderung (scharfer Editor),
-    während die maßgebliche Geometrie serverseitig bleibt (Spez. Kap. 3).
+    DIE eine Geometrie-Antwort: Gelände, Bauwerkskörper, Erdkörper, Prüfung
+    — plus die serverseitig aufgelösten Regeln (Randflächen, wirksame
+    Fenster, Öffnungslagen), damit der Editor sie nicht spiegeln muss.
+    Genutzt von /preview (Entwurf), PUT (Speichern) und GET /geometry.
     """
-    d = _case_dir(case_id)
-    try:
-        spec = CaseSpec.model_validate(migriere(payload))
-    except Exception as e:
-        # KEIN 422: die Vorschau ist der Kanal, über den der Editor erfährt,
-        # was nicht stimmt — ein Fehlerstatus lässt ihn auf dem letzten
-        # Stand einfrieren und zeigt dann etwas, das es nicht mehr gibt.
-        # Also 200 mit einem Befund; die Szene bleibt stehen, aber sichtbar
-        # als veraltet markiert. `PUT` behält seine 422 — eine unlesbare
-        # Datei wird nicht geschrieben.
-        return {"validation": [{"object_id": "case", "severity": "fehler",
-                                "message": f"Entwurf nicht lesbar: {e}"}],
-                "spec_ungueltig": True, "solids": [], "terrain": None,
-                "terrain_solid": None, "netz_stale": False}
-
     out: dict = {"validation": validate_case(spec, d), "solids": [],
                  "terrain": None, "terrain_solid": None,
-                 # Ob das gespeicherte Vorschaunetz noch zu DIESEM Entwurf
-                 # steht. Der Editor hat das bisher selbst geraten und nach
-                 # jeder Eingabe auf „veraltet" gestellt — auch nach einer,
-                 # die kein Netzelement berührt.
+                 # Ob das gespeicherte Vorschaunetz noch zu DIESEM Stand
+                 # steht — der Editor rät das nicht mehr selbst.
                  "netz_stale": _preview_stand(spec, d)["stale"]}
     if spec.terrain is not None and spec.domain is not None:
         try:
@@ -895,7 +960,89 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
                     mesh.export(file_type="stl")).decode()})
     except Exception:
         pass        # Bauwerksproblem steht bereits in der Validierung
+
+    # Aufgelöste Serverregeln (Audit P4.3): welcher Rand auf welcher
+    # Gebietsfläche sitzt, das wirksame Fenster dazu, und wo die
+    # Bearbeitungen auf der Bauteilachse liegen. Der Editor trägt heute
+    # Spiegel dieser drei Regeln (resolveBcFaces/resolveWindow/openingPos)
+    # — diese Antwort ist der Weg, sie beim Editor3D-Schnitt zu löschen.
+    try:
+        from .core.casebuilder import resolve_window
+        from .core.meshgen import assign_faces
+        from .core.solids import _axis_point_and_dir
+
+        flaechen = assign_faces(spec)
+        # geschlüsselt nach OBJEKT-ID (nicht Patchname) — der Editor
+        # adressiert seine Randbedingungen über die Kennung
+        patch_zu_face = {patch: face
+                         for face, (patch, _typ) in flaechen.items()}
+        out["bc_faces"] = {b.id: patch_zu_face[b.patch]
+                           for b in spec.boundaries
+                           if b.patch in patch_zu_face}
+        out["fenster"] = {}
+        for b in spec.boundaries:
+            w = resolve_window(spec, b)
+            if w is not None:
+                out["fenster"][b.id] = w
+        out["oeffnungen"] = {}
+        for s in spec.structures:
+            achse = None
+            geschlossen = False
+            if s.type == "wall" and s.alignment and len(s.alignment.points) >= 2:
+                achse = np.asarray([p[:2] for p in s.alignment.points])
+            elif s.type == "basin" and len(s.footprint) >= 2:
+                achse = np.asarray(s.footprint, dtype=float)
+                geschlossen = True
+            if achse is None:
+                continue
+            for e in (s.edits or []):
+                station = getattr(e, "station", None)
+                if station is None:
+                    continue
+                p, richt = _axis_point_and_dir(achse, float(station),
+                                               geschlossen)
+                out["oeffnungen"].setdefault(s.id, {})[e.id] = {
+                    "point": [round(float(p[0]), 3), round(float(p[1]), 3)],
+                    "dir": [round(float(richt[0]), 4),
+                            round(float(richt[1]), 4)]}
+    except Exception:
+        pass        # Zusatzinformation — nie Grund, die Antwort zu verweigern
     return out
+
+
+@router.post("/cases/{case_id}/preview")
+async def case_preview(case_id: str, payload: dict = Body(...)):
+    """
+    Live-Vorschau eines ENTWURFS ohne Speichern: der Editor schickt die
+    aktuelle casespec, zurück kommen Gelände, Bauwerkskörper und Prüfung.
+    Damit reagiert die Szene unmittelbar auf jede Änderung (scharfer Editor),
+    während die maßgebliche Geometrie serverseitig bleibt (Spez. Kap. 3).
+    """
+    d = _case_dir(case_id)
+    try:
+        spec = CaseSpec.model_validate(migriere(payload))
+    except Exception as e:
+        # KEIN 422: die Vorschau ist der Kanal, über den der Editor erfährt,
+        # was nicht stimmt — ein Fehlerstatus lässt ihn auf dem letzten
+        # Stand einfrieren und zeigt dann etwas, das es nicht mehr gibt.
+        # Also 200 mit einem Befund; die Szene bleibt stehen, aber sichtbar
+        # als veraltet markiert. `PUT` behält seine 422 — eine unlesbare
+        # Datei wird nicht geschrieben.
+        return {"validation": [{"object_id": "case", "severity": "fehler",
+                                "message": f"Entwurf nicht lesbar: {e}"}],
+                "spec_ungueltig": True, "solids": [], "terrain": None,
+                "terrain_solid": None, "netz_stale": False}
+    return _geometrie_payload(spec, d)
+
+
+@router.get("/cases/{case_id}/geometry")
+async def case_geometry(case_id: str):
+    """
+    Der GESPEICHERTE Stand als eine Geometrie-Antwort — ersetzt die drei
+    Einzel-GETs terrain/solids/terrain-solid (ein Roundtrip statt drei).
+    """
+    spec, d = _load_case(case_id)
+    return _geometrie_payload(spec, d)
 
 
 @router.post("/cases/{case_id}/profile")
@@ -946,11 +1093,15 @@ async def case_mesh_preview(case_id: str):
     spec, d = _load_case(case_id)
 
     def work():
-        # Nicht unter /tmp (Snap-Docker-Falle) — Vorschau neben den Fall legen
-        preview_dir = d / "_mesh_preview"
+        # Nicht unter /tmp (Snap-Docker-Falle) — Vorschau neben den Fall,
+        # aber unter derived/: wegwerfbar, gehoert nicht zu den Quellen
+        preview_dir = _derived_dir(d) / "mesh_preview"
         import shutil
         if preview_dir.exists():
             shutil.rmtree(preview_dir)
+        alt = d / "_mesh_preview"          # Ablage vor P2 aufraeumen
+        if alt.exists():
+            shutil.rmtree(alt)
         info = build_case(spec, preview_dir, d)
         if info["problems"]:
             raise FoamError("Geometrieprobleme: " + "; ".join(info["problems"]))

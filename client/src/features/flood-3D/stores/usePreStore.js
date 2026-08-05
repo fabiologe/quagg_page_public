@@ -5,6 +5,7 @@
 // neu vom Server geladen werden muss.
 import { defineStore } from 'pinia'
 import { flood3dApi } from '../services/api'
+import { setzeSchema } from '../utils/feldTypen'
 import { aufraeumplan } from '../utils/aufraeumen'
 
 function b64Buffer(b64) {
@@ -34,6 +35,9 @@ export const usePreStore = defineStore('flood3d-pre', {
     dirty: false,
     validation: [],
     terrain: null,        // { x0, y0, resolution, dims, z: Float32Array }
+    // Serverseitig aufgelöste Regeln aus der Geometrie-Antwort:
+    // { bcFaces, fenster, oeffnungen } — siehe uebernehmeGeometrie
+    aufgeloest: { bcFaces: {}, fenster: {}, oeffnungen: {} },
     // Geländekörper (Volumen statt Höhenfläche) — nur gesetzt, wenn der
     // Fall wirklich mit einem Körper vernetzt wird
     terrainSolid: null,   // { stl: ArrayBuffer, volume, watertight, … }
@@ -216,70 +220,64 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.ladeRaster()])
     },
 
-    // Den ganzen Fall um die z-Achse drehen. Das Rechengebiet bleibt
-    // achsparallel — es ist das MODELL, das sich dreht. Der Server rechnet
-    // das (inkl. neu abgetastetem Höhenraster) und schreibt den Fall; hier
-    // wird nur der Zustand nachgezogen. Rückgabe: Hinweise des Servers.
-    async drehen(grad) {
-      if (!this.activeCaseId || !grad) return []
-      // ungespeicherte Änderungen zuerst sichern — der Server dreht das,
-      // was in der case.yaml steht
-      if (this.dirty && !(await this.saveCase())) return []
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseRotate(this.activeCaseId, grad)
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await Promise.all([this.refreshGeometry(), this.ladeRaster()])
-        return res.hinweise ?? []
-      } catch (e) {
-        this.melden(`Drehen fehlgeschlagen: ${e.message}`, 'fehler')
-        return []
-      } finally {
-        this.loading = false
-      }
-    },
-
-    // Mechanische Anschlüsse herstellen: Randbedingung auf die Fläche
-    // legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
-    // Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
-    async anschlussHerstellen() {
+    // DER eine Weg für Server-Mutationen (Kur, Drehen, Anschluss, Rezept,
+    // Kantenableitung): ungespeicherte Änderungen sichern, wirken lassen,
+    // Zustand nachziehen — mit EINEM Undo-Schritt, auch wenn ein Rezept
+    // ein halbes Dutzend Objekte einsetzt. Der Server speichert nur bei
+    // echter Änderung (res.geaendert) und sagt über den Netz-Hash, ob die
+    // Vorschau veraltet ist.
+    async serverMutation(aufruf, fehlerText, { raster = false } = {}) {
       if (!this.activeCaseId) return []
       if (this.dirty && !(await this.saveCase())) return []
       const snap = this.spec ? JSON.stringify(this.spec) : null
       this.loading = true
       try {
-        const res = await flood3dApi.caseAnschluss(this.activeCaseId)
-        if (res.meldungen.length && snap) {
+        const res = await aufruf(this.activeCaseId)
+        if (res.geaendert !== false && snap) {
           this.undoStack.push(snap)
           this.redoStack = []
         }
         this.spec = res.spec
         this.validation = res.validation
         this.dirty = false
-        if (res.meldungen.length) {
-          // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
         if (this.meshPreview && res.netz_stale !== undefined) {
           this.meshPreviewStale = res.netz_stale
         }
-          await this.refreshGeometry()
-        }
-        return res.meldungen
+        const nacharbeit = [this.refreshGeometry()]
+        if (raster) nacharbeit.push(this.ladeRaster())
+        await Promise.all(nacharbeit)
+        return res.meldungen ?? []
       } catch (e) {
-        this.melden(`Anschluss fehlgeschlagen: ${e.message}`, 'fehler')
+        this.melden(`${fehlerText}: ${e.message}`, 'fehler')
         return []
       } finally {
         this.loading = false
       }
+    },
+
+    // Den ganzen Fall um die z-Achse drehen — das Rechengebiet bleibt
+    // achsparallel, es ist das MODELL, das sich dreht.
+    async drehen(grad) {
+      if (!grad) return []
+      return this.serverMutation(
+        (id) => flood3dApi.caseRotate(id, grad),
+        'Drehen fehlgeschlagen', { raster: true })
+    },
+
+    // Mechanische Anschlüsse herstellen: Randbedingung auf die Fläche
+    // legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
+    // Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
+    async anschlussHerstellen() {
+      return this.serverMutation(
+        (id) => flood3dApi.caseAnschluss(id), 'Anschluss fehlgeschlagen')
+    },
+
+    // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
+    // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
+    async importNeuAbleiten(importId) {
+      return this.serverMutation(
+        (id) => flood3dApi.importReapply(id, importId),
+        'Neu ableiten fehlgeschlagen', { raster: true })
     },
 
     // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
@@ -298,89 +296,40 @@ export const usePreStore = defineStore('flood3d-pre', {
     // und mit EINEM Undo-Schritt wieder rückgängig zu machen, obwohl ein
     // Rezept ein halbes Dutzend Objekte einsetzt.
     async rezeptEinsetzen(name, args = {}) {
-      if (!this.activeCaseId || !name) return []
-      if (this.dirty && !(await this.saveCase())) return []
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseRezept(this.activeCaseId, name, args)
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await this.refreshGeometry()
-        return res.meldungen ?? []
-      } catch (e) {
-        this.melden(`Rezept fehlgeschlagen: ${e.message}`, 'fehler')
-        return []
-      } finally {
-        this.loading = false
-      }
+      if (!name) return []
+      return this.serverMutation(
+        (id) => flood3dApi.caseRezept(id, name, args),
+        'Rezept fehlgeschlagen')
     },
 
     // Aus den Vermessungskanten die Geländeoperationen ableiten. Was in
     // der Zeichnung steht, bleibt erhalten; was daraus folgt, entsteht neu
     // — gepaart wird über die LAGE, nicht über den Layernamen.
     async kantenVerknuepfen() {
-      if (!this.activeCaseId) return []
-      if (this.dirty && !(await this.saveCase())) return []
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseKantenVerknuepfen(this.activeCaseId)
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await this.refreshGeometry()
-        return res.meldungen ?? []
-      } catch (e) {
-        this.melden(`Kanten verknüpfen: ${e.message}`, 'fehler')
-        return []
-      } finally {
-        this.loading = false
-      }
+      return this.serverMutation(
+        (id) => flood3dApi.caseKantenVerknuepfen(id),
+        'Kanten verknüpfen fehlgeschlagen')
     },
 
     async kurAnwenden(fix) {
-      if (!this.activeCaseId || !fix) return ''
-      if (this.dirty && !(await this.saveCase())) return ''
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseKur(this.activeCaseId, fix.aktion,
-          fix.args ?? {})
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await this.refreshGeometry()
-        return res.meldung
-      } catch (e) {
-        this.melden(`Kur fehlgeschlagen: ${e.message}`, 'fehler')
-        return ''
-      } finally {
-        this.loading = false
-      }
+      if (!fix) return ''
+      const meldungen = await this.serverMutation(
+        (id) => flood3dApi.caseKur(id, fix.aktion, fix.args ?? {}),
+        'Kur fehlgeschlagen')
+      return meldungen.join(' · ')
     },
 
     async openCase(caseId) {
       this.loading = true
       this.error = ''
       try {
+        // Das Backend-Schema als Feldkunde-Quelle (einmal je Sitzung) —
+        // Auswahlwerte kommen damit aus der casespec statt aus Kopien
+        if (!this._schemaGeladen) {
+          flood3dApi.caseSchema(caseId)
+            .then((s) => { setzeSchema(s); this._schemaGeladen = true })
+            .catch(() => {})
+        }
         this.spec = await flood3dApi.getCase(caseId)
         this.activeCaseId = caseId
         this.dirty = false
@@ -412,46 +361,78 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
     },
 
-    async refreshGeometry() {
-      const id = this.activeCaseId
-      const [terrain, solids, koerper] = await Promise.all([
-        flood3dApi.caseTerrain(id).catch(() => null),
-        flood3dApi.caseSolids(id).catch(() => ({ solids: [], errors: [] })),
-        // 404 = dieser Fall arbeitet mit einer Höhenfläche, kein Körper
-        flood3dApi.caseTerrainSolid(id).catch(() => null),
-      ])
-      this.terrainSolid = koerper
-        ? { ...koerper, stl: b64Buffer(koerper.stl_b64) } : null
-      if (terrain) {
-        const bin = atob(terrain.z_b64)
-        const bytes = new Uint8Array(bin.length)
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-        this.terrain = { ...terrain, z: new Float32Array(bytes.buffer) }
-      } else {
+    // DIE eine Übernahme einer Geometrie-Antwort — /preview (Entwurf),
+    // PUT (Speichern) und GET /geometry liefern dieselbe Form; base64 →
+    // Buffer passiert nur hier. `entwurf`: bei unlesbarem/kaputtem Entwurf
+    // bleibt die letzte Geometrie sichtbar stehen (als veraltet markiert)
+    // statt die Szene zu leeren.
+    uebernehmeGeometrie(p, { entwurf = false } = {}) {
+      this.validation = p.validation
+      // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) — eine
+      // Änderung, die kein Netzelement berührt, entwertet es nicht
+      if (this.meshPreview && p.netz_stale !== undefined) {
+        this.meshPreviewStale = p.netz_stale
+      }
+      if (p.spec_ungueltig) {
+        this.previewStale = true
+        return
+      }
+      this.previewStale = false
+      if (p.terrain) {
+        this.terrain = { ...p.terrain,
+          z: new Float32Array(b64Buffer(p.terrain.z_b64)) }
+      } else if (!entwurf) {
         this.terrain = null
       }
-      this.solids = solids.solids.map((s) => {
-        const bin = atob(s.stl_b64)
-        const bytes = new Uint8Array(bin.length)
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-        return { patch: s.patch, stl: bytes.buffer }
-      })
+      this.solids = (p.solids ?? []).map((s) => ({
+        patch: s.patch, stl: b64Buffer(s.stl_b64),
+      }))
+      // Erdkörper: bei sehr großen Rastern lässt der Server ihn weg
+      // (koerper_zu_gross) — dann bleibt der letzte Stand stehen, aber als
+      // veraltet markiert, sobald sich die Geometrie geändert hat. Braucht
+      // der Fall gar keinen Körper mehr, verschwindet er.
+      if (p.terrain_solid) {
+        this.terrainSolid = { ...p.terrain_solid,
+          stl: b64Buffer(p.terrain_solid.stl_b64) }
+        this.terrainSolidStale = false
+      } else if (p.koerper_zu_gross) {
+        this.terrainSolidStale =
+          p.koerper_signatur !== this.terrainSolid?.signatur
+      } else {
+        this.terrainSolid = null
+        this.terrainSolidStale = false
+      }
+      // Serverseitig aufgelöste Regeln (Randflächen, wirksame Fenster,
+      // Öffnungslagen) — sie ERSETZEN die früheren Editor-Spiegel der
+      // Serverlogik. Fenster: Serverschlüssel (lo/hi, z_w0/z_w1) auf die
+      // Editor-Form (span, zw0/zw1) gebracht — eine Stelle, ein Vertrag.
+      const fenster = {}
+      for (const [id, w] of Object.entries(p.fenster ?? {})) {
+        fenster[id] = { ...w, span: [w.lo, w.hi],
+          zw0: w.z_w0, zw1: w.z_w1 }
+      }
+      this.aufgeloest = { bcFaces: p.bc_faces ?? {},
+        fenster, oeffnungen: p.oeffnungen ?? {} }
       this.geometryVersion++
     },
 
-    async refreshValidation() {
-      this.validation = await flood3dApi.caseValidate(this.activeCaseId)
-        .catch(() => [])
+    async refreshGeometry() {
+      if (!this.activeCaseId) return
+      try {
+        this.uebernehmeGeometrie(
+          await flood3dApi.caseGeometry(this.activeCaseId))
+      } catch (e) {
+        this.melden(`Geometrie: ${e.message}`, 'fehler')
+      }
     },
-
     async saveCase() {
       this.loading = true
       this.error = ''
       try {
         const result = await flood3dApi.saveCase(this.activeCaseId, this.spec)
-        this.validation = result.validation
+        // PUT liefert die Geometrie gleich mit — kein Nachladen mehr
+        this.uebernehmeGeometrie(result)
         this.dirty = false
-        await this.refreshGeometry()
         return true
       } catch (e) {
         this.melden(`Speichern fehlgeschlagen: ${e.message}`, 'fehler')
@@ -484,49 +465,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       try {
         const p = await flood3dApi.casePreview(this.activeCaseId, this.spec)
         if (seq !== this._draftSeq) return
-        this.validation = p.validation
-        // Der Server vergleicht den Netz-Hash des Entwurfs mit dem des
-        // gespeicherten Vorschaunetzes — das ist die einzige verlässliche
-        // Antwort auf „steht das Netz noch?"
-        if (this.meshPreview && p.netz_stale !== undefined) {
-          this.meshPreviewStale = p.netz_stale
-        }
-        // Entwurf gerade nicht lesbar (etwa halb getipptes JSON): die
-        // Geometrie bleibt stehen — aber SICHTBAR als veraltet, statt
-        // stillschweigend etwas zu zeigen, das es nicht mehr gibt
-        if (p.spec_ungueltig) {
-          this.previewStale = true
-          return
-        }
-        this.previewStale = false
-        if (p.terrain) {
-          const bin = atob(p.terrain.z_b64)
-          const bytes = new Uint8Array(bin.length)
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-          this.terrain = { ...p.terrain, z: new Float32Array(bytes.buffer) }
-        }
-        this.solids = p.solids.map((s) => ({
-          patch: s.patch, stl: b64Buffer(s.stl_b64),
-        }))
-        // Der Erdkörper gehört in die Vorschau: sonst folgt er dem Ziehen an
-        // Böschungskante, Rohr oder Gebietsecke erst nach dem Speichern.
-        // Bei sehr großen Rastern lässt der Server ihn weg
-        // (koerper_zu_gross) — dann bleibt der letzte Stand stehen, aber
-        // als veraltet markiert, sobald sich die Geometrie geändert hat.
-        // Braucht der Fall gar keinen Körper mehr (letzter Aushub gelöscht),
-        // kommt weder Körper noch Flag: dann verschwindet er.
-        if (p.terrain_solid) {
-          this.terrainSolid = { ...p.terrain_solid,
-            stl: b64Buffer(p.terrain_solid.stl_b64) }
-          this.terrainSolidStale = false
-        } else if (p.koerper_zu_gross) {
-          this.terrainSolidStale =
-            p.koerper_signatur !== this.terrainSolid?.signatur
-        } else {
-          this.terrainSolid = null
-          this.terrainSolidStale = false
-        }
-        this.geometryVersion++
+        this.uebernehmeGeometrie(p, { entwurf: true })
       } catch (e) {
         // Netzfehler o. Ä. — die Szene zeigt jetzt einen alten Stand, und
         // das muss sichtbar sein statt nur in einer Fehlerzeile zu stehen

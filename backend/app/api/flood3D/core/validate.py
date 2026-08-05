@@ -232,6 +232,18 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    "das Höhenraster, dort kann kein Hohlraum "
                                    "sein"))
 
+    # ---- Erdkörper-Schalter gegen die Inferenz ---------------------------
+    # Regel und Kur messen dieselbe Größe: die Kur stellt den Schalter auf
+    # „auto" zurück, danach ist genau dieser Befund weg.
+    from .solids import erdkoerper_abgeschaltet_aber_noetig
+    if erdkoerper_abgeschaltet_aber_noetig(spec, gewachsen):
+        f(_finding("terrain", "warnung",
+                   "Der Erdkörper ist abgeschaltet (terrain.erdkoerper: "
+                   "aus), aber Bohrungen oder Aushübe verlangen ihn — sie "
+                   "wirken so nicht: das Rohr durchstößt nichts, der "
+                   "Schacht bleibt zu.",
+                   fix=kur("erdkoerper_auto")))
+
     # ---- Aushub: Hohlraum im Erdreich ------------------------------------
     # Ein ausgehobener Körper hat keine eigene Fläche — seine Wandungen
     # gehören nach dem Ausschneiden zur Geländefläche. Daraus folgen drei

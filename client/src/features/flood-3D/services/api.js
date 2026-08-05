@@ -37,8 +37,6 @@ export const flood3dApi = {
   getCase: (caseId) => getJson(`/cases/${caseId}`),
   saveCase: (caseId, spec) => sendJson(`/cases/${caseId}`, 'PUT', spec),
   caseSchema: (caseId) => getJson(`/cases/${caseId}/schema`),
-  caseTerrain: (caseId) => getJson(`/cases/${caseId}/terrain`),
-  caseSolids: (caseId) => getJson(`/cases/${caseId}/solids`),
   caseValidate: (caseId) => getJson(`/cases/${caseId}/validate`),
   caseRasters: (caseId) => getJson(`/cases/${caseId}/rasters`),
   caseRotate: (caseId, deg) =>
@@ -52,7 +50,7 @@ export const flood3dApi = {
   caseRezept: (caseId, rezept, args) =>
     sendJson(`/cases/${caseId}/rezept`, 'POST', { rezept, args }),
   meshPreviewState: (caseId) => getJson(`/cases/${caseId}/mesh-preview`),
-  caseTerrainSolid: (caseId) => getJson(`/cases/${caseId}/terrain-solid`),
+  caseGeometry: (caseId) => getJson(`/cases/${caseId}/geometry`),
   importAnalyze: async (caseId, file) => {
     const res = await fetch(
       `${BASE}/cases/${caseId}/import?filename=${encodeURIComponent(file.name)}`,
@@ -66,6 +64,12 @@ export const flood3dApi = {
   },
   importApply: (caseId, importId, payload) =>
     sendJson(`/cases/${caseId}/import/${importId}/apply`, 'POST', payload),
+  listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
+  importMeshUrl: (caseId, importId, candId) =>
+    `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
+  importReapply: (caseId, importId) =>
+    sendJson(`/cases/${caseId}/import/${importId}/reapply`, 'POST', {}),
+  clearDerived: (caseId) => sendJson(`/cases/${caseId}/derived`, 'DELETE', {}),
   caseProfile: (caseId, polyline, samples = 200) =>
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),
@@ -102,19 +106,6 @@ export const flood3dApi = {
       if (last) return res.json()
     }
     return null
-  },
-  importRun: async (runId, blob) => {
-    const res = await fetch(`${BASE}/runs/${runId}/import`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/zip' },
-      body: blob,
-    })
-    if (!res.ok) {
-      let detail = res.statusText
-      try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-      throw new Error(detail)
-    }
-    return res.json()
   },
   runLog: (runId, tail = 80) => getJson(`/runs/${runId}/log`, { tail }),
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
@@ -25,6 +26,23 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ImportRef(_Model):
+    """Verweis auf den Rohdaten-Kandidaten unter imports/<import_id>/."""
+    import_id: str
+    kandidat: str
+
+
+class _Objekt(_Model):
+    """
+    Gemeinsame Herkunftsangabe aller Fallobjekte. None bedeutet: von Hand
+    angelegt (der Normalfall — deshalb kein Pflichtfeld und kein Eintrag im
+    YAML). „import" trägt zusätzlich den Verweis auf die Rohdaten — damit
+    ist ein Import wiederholbar und seine Objekte sind gezielt ersetzbar.
+    """
+    herkunft: Literal["manuell", "import", "kur", "rezept"] | None = None
+    import_ref: ImportRef | None = None
+
+
 # --------------------------------------------------------------------------
 # meta
 # --------------------------------------------------------------------------
@@ -32,10 +50,68 @@ class _Model(BaseModel):
 class Crs(_Model):
     """
     Bezugssystem als Dokumentation des Nachweises (steht im Ergebnis).
-    Verschoben wird über `Meta.crs_offset` — ein zweiter, nie angewandter
-    Ursprung mit Drehung hat nur Verwirrung gestiftet.
+    Die Verortung des lokalen Systems steht in `Meta.transform` — ein
+    zweiter, nie angewandter Ursprung mit Drehung hat nur Verwirrung
+    gestiftet.
     """
     epsg: int
+
+
+class CrsTransform(_Model):
+    """
+    DIE eine Abbildung Landeskoordinaten (Meter) → lokales Fallsystem:
+    p_lokal = R(rotation_deg) @ p_welt + translation. Gilt für Import UND
+    nachträgliches Drehen (Komposition über `transform_drehung`).
+    `unit_factor` dokumentiert nur die Einheit der Quelldatei (mm → 0.001)
+    — in p_welt ist er bereits verrechnet. Rückverortung über
+    `lokal_nach_welt` / `welt_nach_lokal`.
+    """
+    unit_factor: float = 1.0
+    rotation_deg: float = 0.0
+    translation: tuple[float, float] = (0.0, 0.0)
+
+
+def _rot2(deg: float) -> tuple[float, float]:
+    a = math.radians(deg)
+    return math.cos(a), math.sin(a)
+
+
+def welt_nach_lokal(t: "CrsTransform", x: float, y: float) -> tuple[float, float]:
+    c, s = _rot2(t.rotation_deg)
+    return (c * x - s * y + t.translation[0],
+            s * x + c * y + t.translation[1])
+
+
+def lokal_nach_welt(t: "CrsTransform", x: float, y: float) -> tuple[float, float]:
+    dx, dy = x - t.translation[0], y - t.translation[1]
+    c, s = _rot2(-t.rotation_deg)
+    return (c * dx - s * dy, s * dx + c * dy)
+
+
+def transform_import(unit_factor: float, offset, rotation_deg: float) -> "CrsTransform":
+    """Importkonvention: p_lokal = R(θ)·(p_welt − off)  ⇒  t = −R(θ)·off."""
+    ox, oy = (float(offset[0]), float(offset[1])) if offset else (0.0, 0.0)
+    c, s = _rot2(rotation_deg)
+    return CrsTransform(unit_factor=float(unit_factor),
+                        rotation_deg=float(rotation_deg) % 360.0,
+                        translation=(-(c * ox - s * oy), -(s * ox + c * oy)))
+
+
+def transform_drehung(t: "CrsTransform | None", phi_deg: float,
+                      zentrum) -> "CrsTransform":
+    """
+    Nachträgliche Drehung um `zentrum` (im LOKALEN System) anhängen:
+    p' = R(φ)·(p − c) + c  ⇒  θ' = θ+φ, t' = R(φ)·t + c − R(φ)·c.
+    """
+    t = t or CrsTransform()
+    c_, s_ = _rot2(phi_deg)
+    tx, ty = t.translation
+    cx, cy = float(zentrum[0]), float(zentrum[1])
+    return CrsTransform(
+        unit_factor=t.unit_factor,
+        rotation_deg=(t.rotation_deg + phi_deg) % 360.0,
+        translation=(c_ * tx - s_ * ty + cx - (c_ * cx - s_ * cy),
+                     s_ * tx + c_ * ty + cy - (s_ * cx + c_ * cy)))
 
 
 class Conventions(_Model):
@@ -57,15 +133,13 @@ class Meta(_Model):
     vertical_datum: str = "DHHN2016"
     conventions: Conventions = Conventions()
     nachweis: Nachweis = Nachweis()
-    # Beim CAD-Import abgezogene Landeskoordinate (x, y). Rechnen in
-    # UTM-Zahlen ruiniert float32-Viewer und snappy — der Fall lebt lokal,
-    # dieser Wert macht die Rückverortung möglich.
-    crs_offset: tuple[float, float] | None = None
-    # Drehung des lokalen Systems gegenüber der Landeskoordinate (Grad,
-    # gegen den Uhrzeigersinn). Wird beim Import EINMAL auf alle Geometrie
-    # angewandt, damit das achsparallele Rechengebiet eng um ein schräg
-    # liegendes Bauwerk passt.
-    crs_rotation_deg: float = 0.0
+    # Der Fall lebt in einem LOKALEN System (UTM-Zahlen ruinieren
+    # float32-Viewer und snappy; ein achsparalleles Gebiet soll eng um ein
+    # schräg liegendes Bauwerk passen). Diese eine Abbildung macht die
+    # Rückverortung in die Landeskoordinaten rechnerisch möglich — sie
+    # ersetzt die alten Felder crs_offset/crs_rotation_deg, die zwei
+    # verschiedene Drehkonventionen mischten und das Drehzentrum verloren.
+    transform: CrsTransform | None = None
 
 
 # --------------------------------------------------------------------------
@@ -88,9 +162,16 @@ class TerrainBase(_Model):
     # daraus abgeleitete Höhenraster trägt alles, was eine Höhe je Punkt
     # braucht (Prüfung, Fensterlage, Anzeige).
     koerper: str | None = None
+    # Kettenfreies Drehen: `original` ist die Rasterquelle VOR der ersten
+    # Drehung, `original_abbildung` die akkumulierte Abbildung original →
+    # aktuelles System. Jede weitere Drehung tastet vom ORIGINAL ab statt
+    # vom letzten Resampling — sonst verwischt jedes Drehen das Gelände
+    # ein Stück mehr.
+    original: str | None = None
+    original_abbildung: CrsTransform | None = None
 
 
-class OpChannelCarve(_Model):
+class OpChannelCarve(_Objekt):
     id: str
     type: Literal["channel_carve"]
     polyline: list[Point2]
@@ -101,14 +182,14 @@ class OpChannelCarve(_Model):
     side_slope: float
 
 
-class OpPad(_Model):
+class OpPad(_Objekt):
     id: str
     type: Literal["pad"]
     polygon: list[Point2]
     level: float
 
 
-class OpRaiseLower(_Model):
+class OpRaiseLower(_Objekt):
     id: str
     type: Literal["raise_lower"]
     center: Point2
@@ -117,7 +198,7 @@ class OpRaiseLower(_Model):
     falloff: Literal["smooth", "linear", "constant"] = "smooth"
 
 
-class OpSmooth(_Model):
+class OpSmooth(_Objekt):
     id: str
     type: Literal["smooth"]
     center: Point2
@@ -126,7 +207,7 @@ class OpSmooth(_Model):
     polygon: list[Point2] | None = None
 
 
-class OpRamp(_Model):
+class OpRamp(_Objekt):
     id: str
     type: Literal["ramp"]
     polygon: list[Point2]
@@ -135,7 +216,7 @@ class OpRamp(_Model):
     direction: Point2             # Interpolationsrichtung im Grundriss
 
 
-class OpEmbankment(_Model):
+class OpEmbankment(_Objekt):
     id: str
     type: Literal["embankment"]
     polyline: list[Point2]
@@ -144,14 +225,14 @@ class OpEmbankment(_Model):
     side_slope: float
 
 
-class OpReplaceRegion(_Model):
+class OpReplaceRegion(_Objekt):
     id: str
     type: Literal["replace_region"]
     polygon: list[Point2]
     source: str                   # Quellraster
 
 
-class OpSetLevel(_Model):
+class OpSetLevel(_Objekt):
     id: str
     type: Literal["set_level"]
     polygon: list[Point2]
@@ -159,7 +240,7 @@ class OpSetLevel(_Model):
     blend_width: float = 0.0
 
 
-class OpBruchkante(_Model):
+class OpBruchkante(_Objekt):
     """
     Bruchkante mit Höhe je Stützpunkt — so kommen Böschungs-, Mauer- und
     Sohlkanten aus der Vermessung (3D-Polylinie im DXF).
@@ -225,7 +306,7 @@ KantenRolle = Literal[
 BAUTEIL_ROLLEN = ("mauer", "wehrkrone")
 
 
-class Vermessungskante(_Model):
+class Vermessungskante(_Objekt):
     """
     Eine Linie aus der Zeichnung, mit ihrer Bedeutung im Bauwerk.
 
@@ -255,7 +336,7 @@ class Vermessungskante(_Model):
         return abs(a[0] - b[0]) < 1e-6 and abs(a[1] - b[1]) < 1e-6
 
 
-class OpBoeschung(_Model):
+class OpBoeschung(_Objekt):
     """
     Böschung aus Ober- UND Unterkante (beide mit Höhe je Stützpunkt).
     Zwischen den Linien entsteht die Regelfläche: jeder Punkt bekommt die
@@ -274,7 +355,7 @@ class OpBoeschung(_Model):
     aus_kanten: list[str] = []
 
 
-class OpAussenkante(_Model):
+class OpAussenkante(_Objekt):
     """
     Die Höhe am Rand des Modellgebiets. Außerhalb der äußersten
     Vermessungslinie ist nichts gemessen — dort führt der Import die
@@ -304,7 +385,7 @@ class OpAussenkante(_Model):
     innen: str | None = None
 
 
-class OpBerechnungskoerper(_Model):
+class OpBerechnungskoerper(_Objekt):
     """
     Der Erdkörper, mit dem gerechnet wird.
 
@@ -357,6 +438,13 @@ class Terrain(_Model):
     operations: list[TerrainOp] = []
     material: Material = "erde"
     material_ks: float | None = None
+    # DER Schalter, ob das Gelände als geschlossener ERDKÖRPER an den
+    # Vernetzer geht (nur so trägt es Bohrungen und Aushübe) oder als
+    # offene Höhenfläche. "auto" = die eine Inferenz in
+    # solids.braucht_erdkoerper (Körperdatei, Berechnungskörper-Operation,
+    # durchstoßender Durchlass, Aushub) — vorher entschieden diese vier
+    # Auslöser verstreut und ohne Übersteuerungsmöglichkeit.
+    erdkoerper: Literal["auto", "an", "aus"] = "auto"
 
 
 # --------------------------------------------------------------------------
@@ -364,7 +452,7 @@ class Terrain(_Model):
 # --------------------------------------------------------------------------
 
 class Alignment(_Model):
-    kind: Literal["polyline", "spline"] = "polyline"
+    kind: Literal["polyline"] = "polyline"
     points: list[Point3]
 
 
@@ -374,7 +462,7 @@ class Alignment(_Model):
 # wie ein Stapel: erst zuschneiden, dann Loch bohren, dann heilen.
 # --------------------------------------------------------------------------
 
-class EditAussparung(_Model):
+class EditAussparung(_Objekt):
     """
     Durchgehende Öffnung: Rohrdurchführung, Schütz, Entleerung.
     Lage entweder über `station` (Abstand entlang der Bauwerksachse; beim
@@ -409,7 +497,7 @@ class EditAussparung(_Model):
         return self
 
 
-class EditSchnitt(_Model):
+class EditSchnitt(_Objekt):
     """
     Abschneiden an einer waagerechten oder senkrechten Ebene — z. B.
     „alles über 100,50 m weg" (Kronenhöhe kappen) oder ein importierter
@@ -422,7 +510,7 @@ class EditSchnitt(_Model):
     behalten: Literal["unter", "ueber"] = "unter"
 
 
-class EditAufGebiet(_Model):
+class EditAufGebiet(_Objekt):
     """
     Auf das Modellgebiet zuschneiden. Importierte CAD-Körper ragen fast
     immer über den Rand hinaus; snappyHexMesh quittiert das mit
@@ -433,7 +521,7 @@ class EditAufGebiet(_Model):
     rand: float = 0.0                 # Sicherheitsabstand nach innen
 
 
-class EditTransform(_Model):
+class EditTransform(_Objekt):
     """Verschieben, um z drehen, skalieren — Einpassen von Importen."""
     id: str
     type: Literal["transform"] = "transform"
@@ -442,7 +530,7 @@ class EditTransform(_Model):
     skalieren: float = 1.0
 
 
-class EditHeilen(_Model):
+class EditHeilen(_Objekt):
     """
     Löcher schließen und Normalen richten. Für importierte Netze, die
     nicht wasserdicht sind — ohne das lehnt die Prüfung sie ab.
@@ -451,7 +539,7 @@ class EditHeilen(_Model):
     type: Literal["heilen"] = "heilen"
 
 
-class EditGelaende(_Model):
+class EditGelaende(_Objekt):
     """
     Anschluss an das Gelände. Ein Körper, der über dem Gelände endet, lässt
     Wasser darunter durchlaufen (der Vernetzer baut dort brav Zellen); ein
@@ -496,7 +584,7 @@ Edit = Annotated[
 Wirkung = Literal["auto", "bauteil", "aushub"]
 
 
-class StructWall(_Model):
+class StructWall(_Objekt):
     id: str
     type: Literal["wall"]
     patch: str
@@ -521,7 +609,7 @@ class ScreenResistance(_Model):
     blockage_ratio: float = 0.0   # angesetzter Verlegungsgrad
 
 
-class StructScreen(_Model):
+class StructScreen(_Objekt):
     id: str
     type: Literal["screen"]
     patch: str
@@ -554,7 +642,7 @@ class CulvertProfile(_Model):
         return self
 
 
-class StructCulvert(_Model):
+class StructCulvert(_Objekt):
     id: str
     type: Literal["culvert"]
     patch: str
@@ -580,7 +668,7 @@ class StructCulvert(_Model):
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
 
 
-class StructWeir(_Model):
+class StructWeir(_Objekt):
     id: str
     type: Literal["weir"]
     patch: str
@@ -600,7 +688,7 @@ class StructWeir(_Model):
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
 
 
-class StructPier(_Model):
+class StructPier(_Objekt):
     id: str
     type: Literal["pier"]
     patch: str
@@ -634,7 +722,7 @@ class StructPier(_Model):
         return self
 
 
-class StructBasin(_Model):
+class StructBasin(_Objekt):
     id: str
     type: Literal["basin"]
     patch: str
@@ -652,7 +740,7 @@ class StructBasin(_Model):
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
 
 
-class StructImported(_Model):
+class StructImported(_Objekt):
     id: str
     type: Literal["imported"]
     patch: str
@@ -680,7 +768,7 @@ class StructImported(_Model):
 # Bauteil die Schale dazwischen.
 # --------------------------------------------------------------------------
 
-class StructSchacht(_Model):
+class StructSchacht(_Objekt):
     """Senkrechter Schacht (Straßenablauf, Kontrollschacht, Pumpensumpf)."""
     id: str
     type: Literal["schacht"]
@@ -708,7 +796,7 @@ class StructSchacht(_Model):
         return self
 
 
-class StructKammer(_Model):
+class StructKammer(_Objekt):
     """
     Kammer mit freiem Grundriss (Drossel-, Trenn-, Verteilerbauwerk,
     Stauraum). Der Grundriss ist die LICHTE Innenkante.
@@ -751,7 +839,7 @@ class GrabenProfil(_Model):
         return self
 
 
-class StructGraben(_Model):
+class StructGraben(_Objekt):
     """
     Profilsweep entlang einer Achse: Graben, Stauraumkanal, Zulaufrinne.
     z je Achspunkt ist die SOHLHÖHE — das Gefälle steckt damit in der Achse
@@ -788,14 +876,14 @@ Structure = Annotated[
 # mesh
 # --------------------------------------------------------------------------
 
-class RefineBox(_Model):
+class RefineBox(_Objekt):
     id: str
     type: Literal["box"]
     extent: tuple[float, float, float, float, float, float]  # x0 y0 z0 x1 y1 z1
     level: int
 
 
-class RefineSurface(_Model):
+class RefineSurface(_Objekt):
     id: str
     type: Literal["surface"]
     target: str                   # Struktur-ID
@@ -859,7 +947,7 @@ class BcWindow(_Model):
     points: list[tuple[float, float]] | None = None
 
 
-class _Bc(_Model):
+class _Bc(_Objekt):
     id: str
     patch: str
     # Zuordnung zum Gebietsrand für blockMesh. Ohne Angabe gilt die
@@ -932,17 +1020,17 @@ class Solver(_Model):
 # evaluation (Spez. 2 + 4.1) — steuert functionObjects UND PostProzessing
 # --------------------------------------------------------------------------
 
-class Section(_Model):
+class Section(_Objekt):
     id: str
     polyline: list[Point2]
 
 
-class Gauge(_Model):
+class Gauge(_Objekt):
     id: str
     point: Point2
 
 
-class TargetDischargeRatio(_Model):
+class TargetDischargeRatio(_Objekt):
     id: str
     kind: Literal["discharge_ratio"]
     of: str                       # Section-ID Zähler
@@ -951,14 +1039,14 @@ class TargetDischargeRatio(_Model):
     limit_min: float | None = None
 
 
-class TargetMaxLevel(_Model):
+class TargetMaxLevel(_Objekt):
     id: str
     kind: Literal["max_level"]
     at: str                       # Gauge-ID
     limit_max: float | None = None
 
 
-class TargetMaxForce(_Model):
+class TargetMaxForce(_Objekt):
     id: str
     kind: Literal["max_force"]
     at: str                       # Patch-/Struktur-ID
@@ -966,14 +1054,14 @@ class TargetMaxForce(_Model):
     limit_max: float | None = None
 
 
-class TargetMinBedShear(_Model):
+class TargetMinBedShear(_Objekt):
     id: str
     kind: Literal["min_bed_shear"]
     region: str
     limit_min: float | None = None
 
 
-class TargetMaxBedShear(_Model):
+class TargetMaxBedShear(_Objekt):
     """Sohlensicherung: τ_max ≤ τ_zulässig (Steinklasse/Material)."""
     id: str
     kind: Literal["max_bed_shear"]
@@ -981,7 +1069,7 @@ class TargetMaxBedShear(_Model):
     limit_max: float | None = None
 
 
-class TargetOverfallCd(_Model):
+class TargetOverfallCd(_Objekt):
     """
     Überfallbeiwert eines Wehrs: C_d = Q / (2/3·√(2g)·b·h^1.5) aus dem
     Durchfluss über den Querschnitt, dem Oberwasserstand am Pegel und
@@ -996,7 +1084,7 @@ class TargetOverfallCd(_Model):
     limit_min: float | None = None
 
 
-class TargetHeadDifference(_Model):
+class TargetHeadDifference(_Objekt):
     id: str
     kind: Literal["head_difference"]
     upstream: str                 # Section-ID
@@ -1043,12 +1131,6 @@ class Evaluation(_Model):
 
 # Felder, die es einmal gab und die nie eine Wirkung hatten. `extra="forbid"`
 # ist scharf — ohne diese Liste ließe sich kein alter Fall mehr öffnen.
-_ENTFALLEN = {
-    ("structures", "*"): ["cutwater"],
-    ("meta", "crs"): ["origin", "rotation_deg"],
-}
-
-
 def migriere(daten: dict) -> dict:
     """Alte case.yaml lesbar halten: entfallene Angaben still verwerfen."""
     if not isinstance(daten, dict):
@@ -1056,10 +1138,31 @@ def migriere(daten: dict) -> dict:
     for st in daten.get("structures") or []:
         if isinstance(st, dict):
             st.pop("cutwater", None)
-    crs = (daten.get("meta") or {}).get("crs")
-    if isinstance(crs, dict):
-        crs.pop("origin", None)
-        crs.pop("rotation_deg", None)
+            # Importkörper aus der Zeit vor dem herkunft-Feld
+            if st.get("type") == "imported" and not st.get("herkunft"):
+                st["herkunft"] = "import"
+            # "spline" war wählbar, aber nie gebaut — ehrlich: polyline
+            al = st.get("alignment")
+            if isinstance(al, dict) and al.get("kind") == "spline":
+                al["kind"] = "polyline"
+    meta = daten.get("meta")
+    if isinstance(meta, dict):
+        crs = meta.get("crs")
+        if isinstance(crs, dict):
+            crs.pop("origin", None)
+            crs.pop("rotation_deg", None)
+        # Alte Verortung (zwei Felder, zwei Drehkonventionen) in die eine
+        # transform-Abbildung überführen. Die alten Felder stammten aus der
+        # IMPORT-Konvention: erst Offset abziehen, dann um den Ursprung
+        # drehen — daraus folgt t = −R(θ)·off.
+        off = meta.pop("crs_offset", None)
+        rot = float(meta.pop("crs_rotation_deg", 0.0) or 0.0)
+        if (off or rot) and not meta.get("transform"):
+            ox, oy = (float(off[0]), float(off[1])) if off else (0.0, 0.0)
+            c, s = _rot2(rot)
+            meta["transform"] = {
+                "rotation_deg": rot % 360.0,
+                "translation": [-(c * ox - s * oy), -(s * ox + c * oy)]}
     return daten
 
 

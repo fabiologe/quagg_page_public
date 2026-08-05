@@ -28,6 +28,8 @@ KUR_LABELS = {
     "gebiet_hoehe_anpassen": "Gebietshöhe ans Gelände anpassen",
     "durchstoss_ein": "Durch das Gelände bohren",
     "verweis_entfernen": "Verweis ins Leere entfernen",
+    "erdkoerper_auto": "Erdkörper wieder automatisch",
+    "drehen": "Modell drehen",
 }
 
 
@@ -59,7 +61,8 @@ def _refine_surface(spec: CaseSpec, patch: str, stufe: int) -> str:
         neu = f"fein_{patch}_{n}"
         n += 1
     spec.mesh.refinements.append(
-        RefineSurface(id=neu, type="surface", target=patch, level=stufe))
+        RefineSurface(id=neu, type="surface", target=patch, level=stufe,
+                      herkunft="kur"))
     return (f"Flächenverfeinerung „{neu}“ an „{patch}“ mit Stufe {stufe} "
             "angelegt")
 
@@ -121,7 +124,8 @@ def _box_ans_fenster(spec: CaseSpec, args: dict) -> str:
         n += 1
     spec.mesh.refinements.append(
         RefineBox(id=neu, type="box",
-                  extent=tuple(round(float(v), 3) for v in ext), level=stufe))
+                  extent=tuple(round(float(v), 3) for v in ext), level=stufe,
+                  herkunft="kur"))
     return (f"Verfeinerungsbox „{neu}“ um die Öffnung von „{b.id}“ gelegt "
             f"(Stufe {stufe}, entspricht {zelle / 2 ** stufe:g} m Zellgröße)")
 
@@ -159,7 +163,8 @@ def _gelaende_einbinden(spec: CaseSpec, args: dict) -> str:
     while neu in ids:
         neu = f"gelaende_{n}"
         n += 1
-    st.edits.append(EditGelaende(id=neu, modus="auto", einbindetiefe=0.3))
+    st.edits.append(EditGelaende(id=neu, modus="auto", einbindetiefe=0.3,
+                                 herkunft="kur"))
     return (f"Bearbeitung \u201eGelände\u201c an \u201e{st.id}\u201c "
             "angehängt — der Körper wird bis 0,30 m unter das tiefste Gelände "
             "geführt und die Übertiefe gekappt")
@@ -277,8 +282,19 @@ def _anschluesse(spec: CaseSpec, args: dict) -> str:
     return " · ".join(meldungen) if meldungen else "Anschlüsse waren stimmig"
 
 
+def _erdkoerper_auto(spec: CaseSpec, args: dict) -> str:
+    if spec.terrain is None:
+        return "Kein Gelände — nichts umzustellen"
+    if spec.terrain.erdkoerper == "auto":
+        return "Der Erdkörper stand schon auf „auto“"
+    spec.terrain.erdkoerper = "auto"
+    return ("Erdkörper auf „auto“ gestellt — Bohrungen und Aushübe wirken "
+            "wieder")
+
+
 _KUREN = {
     "verfeinerung_erhoehen": _verfeinerung_erhoehen,
+    "erdkoerper_auto": _erdkoerper_auto,
     "box_ans_fenster": _box_ans_fenster,
     "box_auf_spiegel": _box_auf_spiegel,
     "gelaende_einbinden": _gelaende_einbinden,
@@ -290,8 +306,31 @@ _KUREN = {
 }
 
 
-def anwenden(spec: CaseSpec, aktion: str, args: dict | None = None) -> str:
+def _drehen(spec: CaseSpec, args: dict, base_dir) -> str:
+    """
+    Den ganzen Fall drehen — als Kur, damit ALLE Fall-Mutationen über
+    denselben Vertrag laufen (anwenden -> nur bei Änderung speichern).
+    """
+    from .rotate import rotate_case
+
+    grad = float(args.get("deg") or 0.0)
+    if not grad:
+        raise ValueError("Kein Drehwinkel angegeben.")
+    if not (-360 <= grad <= 360):
+        raise ValueError("Drehwinkel außerhalb ±360°.")
+    if spec.domain is None:
+        raise ValueError("Fall ohne Modellgebiet.")
+    info = rotate_case(spec, grad, base_dir or ".")
+    hinweise = info.get("hinweise") or []
+    kopf = f"Modell um {grad:g}° gedreht"
+    return " · ".join([kopf, *hinweise])
+
+
+def anwenden(spec: CaseSpec, aktion: str, args: dict | None = None,
+             base_dir=None) -> str:
     """Eine Kur ausführen. Rückgabe: was geändert wurde, in Klartext."""
+    if aktion == "drehen":
+        return _drehen(spec, args or {}, base_dir)
     fn = _KUREN.get(aktion)
     if fn is None:
         raise ValueError(f"Unbekannte Kur: {aktion}")

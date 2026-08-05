@@ -31,27 +31,28 @@ from .meshgen import (assign_faces, blockmesh_dict, feature_flaechen,
 from .solids import (build_solids, export_solids, gelaende_koerper_bauen)
 from .terrain import TerrainField
 
-RHO_WATER = 1000.0
-G = 9.81
 
 
 # --------------------------------------------------------------------------
 # functionObjects (Namenskontrakt zu extract/readers.py)
 # --------------------------------------------------------------------------
 
-def _momentbezug(spec: CaseSpec, base_dir) -> dict:
+def _momentbezug(spec: CaseSpec, base_dir, koerper=None) -> dict:
     """
     Fußmitte je Bauwerkspatch als Momentbezugspunkt (x, y aus dem
     Grundrissschwerpunkt, z von der Unterkante). Scheitert der Körperbau,
     bleibt der Punkt weg — die Kraft ist dann trotzdem auswertbar.
+    `koerper`: bereits gebaute Solids durchreichen — build_case baute sie
+    sonst ZWEIMAL (Boolesche Operationen inklusive).
     """
     if not spec.evaluation.force_patches:
         return {}
-    try:
-        from .solids import build_solids
-        koerper = build_solids(spec, base_dir)
-    except Exception:                       # noqa: BLE001
-        return {}
+    if koerper is None:
+        try:
+            from .solids import build_solids
+            koerper = build_solids(spec, base_dir)
+        except Exception:                   # noqa: BLE001
+            return {}
     out = {}
     for patch, mesh in koerper.items():
         if patch not in spec.evaluation.force_patches or not len(mesh.faces):
@@ -67,7 +68,7 @@ def _fo_series_controls(spec: CaseSpec) -> str:
             f"        log             no;\n")
 
 
-def function_objects(spec: CaseSpec, base_dir=".") -> str:
+def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
     ctl = _fo_series_controls(spec)
     out = ""
 
@@ -76,7 +77,7 @@ def function_objects(spec: CaseSpec, base_dir=".") -> str:
     # Modellkoordinate — eine Zahl ohne Bedeutung. Erst um die Fußkante
     # gerechnet ist es das Kippmoment, das der Standsicherheitsnachweis
     # braucht.
-    bezug = _momentbezug(spec, base_dir)
+    bezug = _momentbezug(spec, base_dir, koerper)
     for patch in spec.evaluation.force_patches:
         cofr = bezug.get(patch, (0.0, 0.0, 0.0))
         out += f"""    forces_{patch}
@@ -273,7 +274,7 @@ def function_objects(spec: CaseSpec, base_dir=".") -> str:
 # system/
 # --------------------------------------------------------------------------
 
-def control_dict(spec: CaseSpec, base_dir=".") -> str:
+def control_dict(spec: CaseSpec, base_dir=".", koerper=None) -> str:
     s = spec.solver
     body = f"""application     {s.application};
 startFrom       startTime;
@@ -297,7 +298,7 @@ maxDeltaT       1;
 
 functions
 {{
-{function_objects(spec, base_dir)}}}"""
+{function_objects(spec, base_dir, koerper)}}}"""
     return foam_file("controlDict", body, location="system")
 
 
@@ -1107,7 +1108,8 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
     sfe = surface_feature_dict(kanten)
     if sfe is not None:
         (out / "system" / "surfaceFeatureExtractDict").write_text(sfe)
-    (out / "system" / "controlDict").write_text(control_dict(spec, base_dir))
+    (out / "system" / "controlDict").write_text(
+        control_dict(spec, base_dir, solids))
     (out / "system" / "fvSchemes").write_text(
         foam_file("fvSchemes", _FV_SCHEMES, location="system"))
     (out / "system" / "fvSolution").write_text(

@@ -61,7 +61,10 @@ def test_vier_vierteldrehungen_sind_die_identitaet(tmp_path):
     assert jetzt["structures"] == original["structures"]
     assert jetzt["evaluation"] == original["evaluation"]
     assert jetzt["terrain"]["operations"] == original["terrain"]["operations"]
-    assert spec.meta.crs_rotation_deg == 0.0   # 4 × 90° ist wieder Norden
+    # 4 × 90° um dieselbe Mitte ist wieder die Identität
+    assert spec.meta.transform.rotation_deg == pytest.approx(0.0)
+    assert spec.meta.transform.translation[0] == pytest.approx(0.0, abs=1e-9)
+    assert spec.meta.transform.translation[1] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_randfenster_wandert_auf_die_neue_flaeche(tmp_path):

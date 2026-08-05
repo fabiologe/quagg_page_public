@@ -200,7 +200,7 @@ def test_apply_uebernimmt_gelaende_wand_und_trasse(case):
     # Gelände: Rasterdatei ist die neue Basis, TIN liegt daneben
     assert spec.terrain.base.source.endswith(".asc")
     assert (d / spec.terrain.base.source).exists()
-    assert (d / f"gelaende_{m['import_id']}_tin.stl").exists()
+    assert (d / "derived" / f"gelaende_{m['import_id']}_tin.stl").exists()
 
     # Wand: als StructImported mit Rolle und Material
     wand = next(s for s in spec.structures if s.id == "wand_west")
@@ -243,7 +243,9 @@ def test_apply_mit_einheiten_und_offset(case):
     lo, hi = mesh.bounds
     assert (hi - lo) == pytest.approx([2.0, 0.5, 3.0], abs=1e-3)
     assert lo[0] == pytest.approx(-1.0, abs=1e-3)      # zentriert um 0
-    assert tuple(spec.meta.crs_offset) == (32500.0, 5600.0)
+    # Verortung: p_lokal = R(0)·p_welt − off
+    assert spec.meta.transform.translation == (-32500.0, -5600.0)
+    assert spec.meta.transform.unit_factor == pytest.approx(0.001)
 
 
 def test_apply_ignoriert_und_meldet_acis(case):
@@ -451,7 +453,7 @@ def test_modell_drehen_richtet_alles_gleich_aus(case):
     n_ops = len(spec.terrain.operations)
     apply_import(spec, d, m["import_id"], ent, rotation_deg=30.0)
 
-    assert spec.meta.crs_rotation_deg == pytest.approx(30.0)
+    assert spec.meta.transform.rotation_deg == pytest.approx(30.0)
     # Eine gedrehte Linie behält ihre Länge, aber nicht ihre Richtung
     neue = spec.evaluation.sections[-1].polyline
     laenge = sum(math.dist(neue[i], neue[i + 1]) for i in range(len(neue) - 1))
@@ -529,3 +531,179 @@ def test_offener_koerper_wird_als_fehler_gemeldet(case):
     befunde = [f for f in validate_case(spec, d)
                if f["object_id"] == "terrain" and f["severity"] == "fehler"]
     assert befunde and "nicht geschlossen" in befunde[0]["message"]
+
+
+# ---- Raster-Import: Einheit, Offset, Drehung ------------------------------
+
+def _asc_mm_bytes() -> bytes:
+    """2×2-ESRI-Raster in Millimetern und Landeskoordinaten, ein NODATA."""
+    return (b"ncols 2\nnrows 2\n"
+            b"xllcorner 32500000\nyllcorner 5600000\n"
+            b"cellsize 10000\nNODATA_value -9999\n"
+            b"100000 101000\n"
+            b"102000 -9999\n")
+
+
+def test_raster_import_wendet_einheit_und_offset_an(case):
+    spec, d = case
+    m = analyze_file(_asc_mm_bytes(), "dgm_mm.asc", d)
+    cid = m["candidates"][0]["id"]
+
+    info = apply_import(spec, d, m["import_id"],
+                        decisions=[{"candidate": cid, "role": "gelaende"}],
+                        unit_factor=0.001, offset=[32500.0, 5600.0],
+                        derive_domain=True)
+
+    text = (d / spec.terrain.base.source).read_text()
+    kopf = dict(z.split() for z in text.splitlines()[:6])
+    assert float(kopf["xllcorner"]) == pytest.approx(0.0)
+    assert float(kopf["yllcorner"]) == pytest.approx(0.0)
+    assert float(kopf["cellsize"]) == pytest.approx(10.0)
+    # Höhen in Meter, NODATA unangetastet
+    assert "100.000" in text and "-9999" in text
+    # terrain_bbox kommt jetzt auch aus dem Raster -> Domäne ableitbar
+    assert spec.domain.extent == (0.0, 0.0, 20.0, 20.0)
+    assert spec.domain.z_min == pytest.approx(99.5)
+    assert any("Einheit" in r for r in info["report"])
+
+
+def test_raster_import_ohne_transformation_bleibt_bitgleich(case):
+    spec, d = case
+    roh = (b"ncols 2\nnrows 2\nxllcorner 0\nyllcorner 0\n"
+           b"cellsize 10\nNODATA_value -9999\n"
+           b"100 101\n102 -9999\n")
+    m = analyze_file(roh, "dgm.asc", d)
+    cid = m["candidates"][0]["id"]
+    apply_import(spec, d, m["import_id"],
+                 decisions=[{"candidate": cid, "role": "gelaende"}])
+    assert (d / spec.terrain.base.source).read_bytes() == roh
+
+
+def test_raster_import_lehnt_drehung_ehrlich_ab(case):
+    spec, d = case
+    m = analyze_file(_asc_mm_bytes(), "dgm_mm.asc", d)
+    cid = m["candidates"][0]["id"]
+    with pytest.raises(ValueError, match="[Dd]rehung"):
+        apply_import(spec, d, m["import_id"],
+                     decisions=[{"candidate": cid, "role": "gelaende"}],
+                     unit_factor=0.001, rotation_deg=15.0)
+    # ignoriertes Raster blockiert die Drehung nicht
+    m2 = analyze_file(_asc_mm_bytes(), "dgm_mm2.asc", d)
+    apply_import(spec, d, m2["import_id"],
+                 decisions=[{"candidate": m2["candidates"][0]["id"],
+                             "role": "ignorieren"}],
+                 rotation_deg=15.0)
+
+
+def test_xyz_import_liefert_bbox_fuer_domaene(case):
+    spec, d = case
+    roh = b"0 0 100\n10 0 101\n0 10 102\n"
+    m = analyze_file(roh, "punkte.xyz", d)
+    cid = m["candidates"][0]["id"]
+    apply_import(spec, d, m["import_id"],
+                 decisions=[{"candidate": cid, "role": "gelaende"}],
+                 derive_domain=True)
+    assert (d / spec.terrain.base.source).read_bytes() == roh
+    assert spec.domain.extent == (0.0, 0.0, 10.0, 10.0)
+
+
+# ---- DXF-Vollständigkeit: Blöcke, LINEs, Bögen, Zählregel -----------------
+
+def _dxf_block_kanten_text_bytes() -> bytes:
+    """Bauwerk als Blockreferenz, Kante aus Einzel-LINEs, Bogen, Text."""
+    import ezdxf
+
+    doc = ezdxf.new("R2010")
+    blk = doc.blocks.new("BW")
+    box = trimesh.creation.box(extents=(2.0, 2.0, 2.0))
+    for f in box.faces:
+        p = [tuple(box.vertices[k]) for k in f]
+        blk.add_3dface([p[0], p[1], p[2], p[2]], dxfattribs={"layer": "0"})
+
+    msp = doc.modelspace()
+    msp.add_blockref("BW", (10.0, 10.0, 100.0),
+                     dxfattribs={"layer": "BAUWERK"})
+    # segmentierte Bruchkante: drei LINEs, Ende auf Anfang
+    msp.add_line((0, 0, 50), (5, 0, 51), dxfattribs={"layer": "KANTE"})
+    msp.add_line((5, 0, 51), (10, 0, 52), dxfattribs={"layer": "KANTE"})
+    msp.add_line((10, 0, 52), (15, 0, 53), dxfattribs={"layer": "KANTE"})
+    msp.add_arc((0.0, 0.0), 5.0, 0, 90, dxfattribs={"layer": "BOGEN"})
+    msp.add_text("Notiz", dxfattribs={"layer": "NOTIZ"})
+    msp.add_point((1.0, 2.0, 3.0), dxfattribs={"layer": "NOTIZ"})
+
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
+def test_blockreferenz_wird_aufgeloest(tmp_path):
+    m = analyze_file(_dxf_block_kanten_text_bytes(), "plan.dxf", tmp_path)
+    meshes = [c for c in m["candidates"]
+              if c["kind"] == "mesh" and c["name"].startswith("BAUWERK")]
+    assert meshes, "Block-Inhalt fehlt — INSERT wurde nicht aufgelöst"
+    assert meshes[0]["stats"]["n_triangles"] == 12
+    # Block wurde am Einfügepunkt platziert, nicht am Ursprung
+    lo, hi = meshes[0]["stats"]["bbox"]
+    assert lo[0] == pytest.approx(9.0) and hi[2] == pytest.approx(101.0)
+
+
+def test_lines_werden_zu_einem_zug_verkettet(tmp_path):
+    m = analyze_file(_dxf_block_kanten_text_bytes(), "plan.dxf", tmp_path)
+    kanten = [c for c in m["candidates"]
+              if c["kind"] == "polyline" and c["name"].startswith("KANTE")]
+    assert len(kanten) == 1, "drei LINEs müssen EIN Kandidat werden"
+    assert kanten[0]["stats"]["n_points"] == 4
+    assert kanten[0]["stats"]["hoehen"] is True
+    assert kanten[0]["stats"]["z_min"] == pytest.approx(50.0)
+    assert kanten[0]["stats"]["z_max"] == pytest.approx(53.0)
+
+
+def test_bogen_wird_polylinie(tmp_path):
+    m = analyze_file(_dxf_block_kanten_text_bytes(), "plan.dxf", tmp_path)
+    bogen = [c for c in m["candidates"] if c["name"].startswith("BOGEN")]
+    assert bogen and bogen[0]["kind"] == "polyline"
+    assert bogen[0]["stats"]["n_points"] >= 5
+    # Bogenlänge r*pi/2 ~ 7,85 m
+    assert bogen[0]["stats"]["length"] == pytest.approx(7.85, abs=0.2)
+
+
+def test_nichts_verschwindet_ohne_zahl(tmp_path):
+    m = analyze_file(_dxf_block_kanten_text_bytes(), "plan.dxf", tmp_path)
+    hinweis = [c for c in m["candidates"]
+               if c["name"] == "Beschriftung/2D-Darstellung"]
+    assert hinweis, "TEXT/POINT müssen gezählt gemeldet werden"
+    assert hinweis[0]["stats"]["anzahl"] == 2
+    assert "TEXT" in hinweis[0]["hint"] and "POINT" in hinweis[0]["hint"]
+
+
+def test_rollen_heuristik_erkennt_mm_gelaende(tmp_path):
+    """mm-Datei: Schwellen sind Meter-Maße — ein 20×20-m-Gelände in mm
+    (20000er-Spannweite) muss trotzdem als EIN Gelände erkannt werden."""
+    import ezdxf
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for i in range(2):
+        for j in range(2):
+            x0, y0 = i * 10000.0, j * 10000.0
+            x1, y1 = x0 + 10000.0, y0 + 10000.0
+            msp.add_3dface([(x0, y0, 100000.0), (x1, y0, 100000.0),
+                            (x1, y1, 101000.0), (x0, y1, 101000.0)],
+                           dxfattribs={"layer": "OBERFLAECHE"})
+    buf = io.StringIO()
+    doc.write(buf)
+    m = analyze_file(buf.getvalue().encode("utf-8"), "dgm_mm.dxf", tmp_path)
+
+    meshes = [c for c in m["candidates"] if c["kind"] == "mesh"]
+    assert len(meshes) == 1, "mm-Gelände darf nicht in Teile zerfallen"
+    assert meshes[0]["role_guess"] == "gelaende"
+    assert m["unit_suspect"] is True
+
+
+def test_umlaut_dateinamen_sind_erlaubt(tmp_path):
+    m = analyze_file(_dxf_bytes(), "Gelände_Bestand (Süd).dxf", tmp_path)
+    assert m["candidates"]
+    # Gefährliches bleibt draußen
+    for boese in ("../auf.dxf", ".versteckt.dxf", "a/b.dxf", "a\\b.dxf"):
+        with pytest.raises(ValueError, match="[Uu]nsicherer"):
+            analyze_file(_dxf_bytes(), boese, tmp_path)
