@@ -201,3 +201,21 @@ def test_geometrie_antwort_buendelt_alles(raster_case, monkeypatch):
     assert body["ok"] is True and "case_hash" in body
     assert body["terrain"] is not None and isinstance(body["solids"], list)
     assert isinstance(body["bc_faces"], dict)
+
+
+def test_rezept_stempelt_gruppe_eindeutig(raster_case):
+    """Die Teile einer Einsetzung teilen EINE Gruppe; die zweite Einsetzung
+    desselben Rezepts bekommt eine neue — der Baum zeigt zwei Bauwerke."""
+    from ..core.rezepte import einsetzen
+
+    spec, d = raster_case
+    einsetzen(spec, "drosselschacht", {}, d)
+    einsetzen(spec, "drosselschacht", {"mitte": [30.0, 30.0]}, d)
+    gruppen = {s.gruppe for s in spec.structures if s.herkunft == "rezept"}
+    assert gruppen == {"drosselschacht", "drosselschacht_2"}
+    # auch Verfeinerungen/Pegel/Kriterien tragen die Gruppe ihrer Einsetzung
+    for liste in (spec.mesh.refinements, spec.evaluation.gauges,
+                  spec.evaluation.targets):
+        for o in liste:
+            if o.herkunft == "rezept":
+                assert o.gruppe in gruppen

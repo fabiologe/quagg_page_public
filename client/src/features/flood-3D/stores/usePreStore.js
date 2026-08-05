@@ -692,6 +692,37 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Eintrag in der Kraftauswertung — das alles blieb bisher liegen und
     // wurde danach als Fehler gemeldet, den der Bearbeiter selbst suchen
     // musste. EIN Undo-Schritt für die ganze Kaskade.
+    // Ein eingesetztes Rezept als GANZES löschen — ein Undo-Schritt,
+    // Aufräumkaskade je Teil (verwaiste Verfeinerungen/Verweise gehen mit)
+    loescheGruppe(gruppe) {
+      if (!this.spec || !gruppe) return
+      const mitglieder = []
+      for (const [kind, pfad] of Object.entries(KIND_PATHS)) {
+        for (const o of pfad(this.spec) ?? []) {
+          if (o.gruppe === gruppe) mitglieder.push({ kind, id: o.id })
+        }
+      }
+      if (!mitglieder.length) return
+      if (!window.confirm(
+        `Bauwerk „${gruppe}“ mit ${mitglieder.length} Teilen löschen?`)) {
+        return
+      }
+      this.recordUndo()
+      let spec = this.spec
+      for (const m of mitglieder) {
+        const plan = aufraeumplan(spec, m.kind, m.id)
+        if (plan.ok) spec = plan.spec
+      }
+      this.spec = spec
+      this.dirty = true
+      if (mitglieder.some((m) => m.id === this.selection?.id)) {
+        this.selection = null
+      }
+      this.scheduleDraftPreview()
+      this.melden(
+        `Bauwerk „${gruppe}“ gelöscht (${mitglieder.length} Teile)`, 'erfolg')
+    },
+
     removeObject(kind, id) {
       if (!this.spec) return []
       const plan = aufraeumplan(this.spec, kind, id)

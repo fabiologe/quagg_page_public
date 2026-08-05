@@ -41,6 +41,11 @@ class _Objekt(_Model):
     """
     herkunft: Literal["manuell", "import", "kur", "rezept"] | None = None
     import_ref: ImportRef | None = None
+    # Zusammengehörigkeit über Objektgrenzen hinweg: die Teile EINES
+    # eingesetzten Rezepts (Aushub, Bauteile, Verfeinerung, Pegel,
+    # Kriterium) tragen dieselbe Gruppe — der Baum zeigt sie als ein
+    # Bauwerk, löschbar als Ganzes. None = gehört zu keiner Gruppe.
+    gruppe: str | None = None
 
 
 # --------------------------------------------------------------------------

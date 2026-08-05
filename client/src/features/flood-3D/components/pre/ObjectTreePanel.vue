@@ -77,6 +77,40 @@
       </div>
     </section>
 
+    <!-- Eingesetzte Rezepte: EIN Bauwerk je Einsetzung, über alle
+         Objektarten hinweg (Aushub, Bauteile, Verfeinerung, Pegel,
+         Kriterium) — zusammenklappbar, als Ganzes löschbar. -->
+    <section v-if="rezeptGruppen.length" class="f3d-abschnitt">
+      <h4 class="f3d-abschnitt-kopf">Bauwerke (eingesetzt)</h4>
+      <div v-for="g in rezeptGruppen" :key="g.gruppe" class="f3d-objgroup">
+        <div class="f3d-objrow">
+          <button class="f3d-objitem" @click="klappen(g.gruppe)">
+            <span class="f3d-objstatus" :class="g.statusKlasse">{{ g.statusZeichen }}</span>
+            <span class="f3d-objname">⚒ {{ g.gruppe }}</span>
+            <span class="f3d-muted f3d-small">{{ g.items.length }} Teile
+              {{ zu.has(g.gruppe) ? '▸' : '▾' }}</span>
+          </button>
+          <button class="f3d-objloesch" title="Bauwerk mit allen Teilen löschen"
+                  @click="store.loescheGruppe(g.gruppe)">✕</button>
+        </div>
+        <template v-if="!zu.has(g.gruppe)">
+          <div v-for="item in g.items" :key="item.kind + item.id"
+               class="f3d-objrow f3d-gruppenteil">
+            <button class="f3d-objitem"
+                    :class="{ selected: store.selection?.kind === item.kind
+                      && store.selection?.id === item.id }"
+                    @click="store.select(item.kind, item.id)">
+              <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+              <span class="f3d-objname">{{ item.id }}</span>
+              <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+            </button>
+            <button class="f3d-objloesch" title="nur dieses Teil löschen"
+                    @click="loeschen(item)">✕</button>
+          </div>
+        </template>
+      </div>
+    </section>
+
     <section v-for="a in abschnitte" :key="a.id" class="f3d-abschnitt">
       <h4 class="f3d-abschnitt-kopf">{{ a.label }}</h4>
       <div v-for="group in a.gruppen" :key="group.kind"
@@ -115,7 +149,7 @@
 // Objektbaum (Spez. Kap. 6.1): alle Objekte mit Typ und Validierungsstatus,
 // Klick springt zum Objekt; "Neu anlegen" fügt Katalog-Vorlagen ein.
 import { computed, onMounted, ref } from 'vue'
-import { usePreStore } from '../../stores/usePreStore'
+import { KIND_PATHS, usePreStore } from '../../stores/usePreStore'
 import {
   TYPE_LABELS, TEMPLATES, vorlageAnpassen, noetigeVerfeinerung,
 } from '../../utils/preTemplates'
@@ -202,6 +236,36 @@ const grundlagen = computed(() => {
   return Object.values(je)
 })
 
+// --- Eingesetzte Rezepte: eine Gruppe je Einsetzung -----------------------
+const zu = ref(new Set())          // zugeklappte Gruppen
+function klappen(gruppe) {
+  const s = new Set(zu.value)
+  if (s.has(gruppe)) s.delete(gruppe)
+  else s.add(gruppe)
+  zu.value = s
+}
+
+const rezeptGruppen = computed(() => {
+  const s = store.spec
+  if (!s) return []
+  const je = {}
+  for (const [kind, pfad] of Object.entries(KIND_PATHS)) {
+    for (const o of pfad(s) ?? []) {
+      if (!o.gruppe) continue
+      const g = (je[o.gruppe] ??= { gruppe: o.gruppe, items: [] })
+      g.items.push({ kind, id: o.id, type: o.type ?? o.kind })
+    }
+  }
+  for (const g of Object.values(je)) {
+    const stufen = g.items.map((i) => store.worstSeverity(i.id))
+    const schlimmste = stufen.includes('fehler') ? 'fehler'
+      : stufen.includes('warnung') ? 'warnung' : null
+    g.statusKlasse = schlimmste ? `sev-${schlimmste}` : 'sev-ok'
+    g.statusZeichen = { fehler: '✗', warnung: '⚠' }[schlimmste] ?? '✓'
+  }
+  return Object.values(je)
+})
+
 // DER eine Löschweg (Rückfrage bei Import-Objekten sitzt im Store)
 function loeschen(item) {
   store.loescheObjekt(item.kind, item.id)
@@ -259,7 +323,7 @@ const gruppenNachKind = computed(() => {
   // Import-Objekte stehen im Abschnitt „Grundlagen" — hier nur Handarbeit,
   // Kuren und Rezepte
   const ohneImport = (liste) => (liste ?? []).filter(
-    (o) => o.herkunft !== 'import')
+    (o) => o.herkunft !== 'import' && !o.gruppe)
   return {
     domain: { kind: 'domain', label: 'Modellgebiet',
       items: s.domain ? [{ id: 'domain', type: 'domain' }] : [] },
@@ -276,15 +340,15 @@ const gruppenNachKind = computed(() => {
     structure: { kind: 'structure', label: 'Bauwerke',
       items: ohneImport(s.structures), templates: TEMPLATES.structure },
     refinement: { kind: 'refinement', label: 'Verfeinerungen',
-      items: s.mesh?.refinements ?? [], templates: TEMPLATES.refinement },
+      items: ohneImport(s.mesh?.refinements), templates: TEMPLATES.refinement },
     boundary: { kind: 'boundary', label: 'Randbedingungen',
-      items: s.boundaries ?? [], templates: TEMPLATES.boundary },
+      items: ohneImport(s.boundaries), templates: TEMPLATES.boundary },
     section: { kind: 'section', label: 'Querschnitte',
       items: ohneImport(s.evaluation?.sections), templates: TEMPLATES.section },
     gauge: { kind: 'gauge', label: 'Pegelpunkte',
-      items: s.evaluation?.gauges ?? [], templates: TEMPLATES.gauge },
+      items: ohneImport(s.evaluation?.gauges), templates: TEMPLATES.gauge },
     target: { kind: 'target', label: 'Nachweiskriterien',
-      items: s.evaluation?.targets ?? [], templates: TEMPLATES.target },
+      items: ohneImport(s.evaluation?.targets), templates: TEMPLATES.target },
   }
 })
 
@@ -451,5 +515,6 @@ function add(kind, name) {
 .f3d-objrow:hover .f3d-objloesch { opacity: 1; }
 .f3d-objloesch:hover { color: var(--f3d-bad); background: rgba(255,255,255,0.05); }
 .f3d-unterkopf { padding-top: 6px; text-transform: none; letter-spacing: 0; }
+.f3d-gruppenteil { margin-left: 14px; }
 .f3d-objimport { width: 100%; margin-bottom: 4px; }
 </style>
