@@ -35,32 +35,53 @@
       <div v-for="g in grundlagen" :key="g.import_id" class="f3d-objgroup">
         <div class="f3d-objgroup-head">
           <span>🔒 {{ g.filename ?? g.import_id }}</span>
-          <span class="f3d-muted f3d-small">{{ g.roh.length + g.zugeordnet.length }}</span>
+          <span class="f3d-muted f3d-small">{{ g.kandidaten.length }} CAD-Objekte</span>
         </div>
-        <div v-if="g.roh.length" class="f3d-objgroup-head f3d-unterkopf">
-          <span>aus der Zeichnung</span>
+
+        <!-- Die PIPELINE, lesbar von oben nach unten: CAD-Objekt →
+             Zuordnung (änderbar) → was daraus im Modell wurde. -->
+        <div v-for="k in g.kandidaten" :key="k.id" class="f3d-kandidat">
+          <div class="f3d-objrow">
+            <span class="f3d-objitem f3d-kandidat-kopf">
+              <span class="f3d-objname">{{ k.name }}</span>
+              <span class="f3d-muted f3d-small">{{ k.cadArt }}</span>
+            </span>
+          </div>
+          <div class="f3d-objrow f3d-gruppenteil" v-if="k.rollen">
+            <select class="f3d-select f3d-grow f3d-small"
+                    :value="k.rolle" :disabled="store.loading"
+                    :title="'Zuordnung ändern leitet den Import neu ab'"
+                    @change="zuordnen(g.import_id, k.id, $event.target.value)">
+              <optgroup v-for="og in k.rollen" :key="og.titel" :label="og.titel">
+                <option v-for="r in og.rollen" :key="r" :value="r">
+                  {{ ROLE_LABELS[r] ?? r }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div v-for="item in k.objekte" :key="item.kind + item.id"
+               class="f3d-objrow f3d-gruppenteil">
+            <button class="f3d-objitem"
+                    :class="{ selected: store.selection?.kind === item.kind
+                      && store.selection?.id === item.id }"
+                    @click="store.select(item.kind, item.id)">
+              <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+              <span class="f3d-objname">{{ item.id }}</span>
+              <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+            </button>
+            <button v-if="item.kind !== 'terrain'" class="f3d-objloesch"
+                    title="löschen" @click="loeschen(item)">✕</button>
+          </div>
         </div>
-        <div v-for="item in g.roh" :key="item.kind + item.id" class="f3d-objrow">
+
+        <div v-if="g.abgeleitet.length" class="f3d-objgroup-head f3d-unterkopf">
+          <span>daraus abgeleitet (Verknüpfung)</span>
+        </div>
+        <div v-for="item in g.abgeleitet" :key="item.kind + item.id"
+             class="f3d-objrow">
           <button class="f3d-objitem"
                   :class="{ selected: store.selection?.kind === item.kind
                     && store.selection?.id === item.id }"
-                  :title="'aus dem Import — Zuordnung im Eigenschaftenpanel änderbar'"
-                  @click="store.select(item.kind, item.id)">
-            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
-            <span class="f3d-objname">{{ item.id }}</span>
-            <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
-          </button>
-          <button v-if="item.kind !== 'terrain'" class="f3d-objloesch"
-                  title="löschen" @click="loeschen(item)">✕</button>
-        </div>
-        <div v-if="g.zugeordnet.length" class="f3d-objgroup-head f3d-unterkopf">
-          <span>zugeordnet / abgeleitet</span>
-        </div>
-        <div v-for="item in g.zugeordnet" :key="item.kind + item.id" class="f3d-objrow">
-          <button class="f3d-objitem"
-                  :class="{ selected: store.selection?.kind === item.kind
-                    && store.selection?.id === item.id }"
-                  :title="'aus den Kanten abgeleitet — beim Neu-Ableiten/Verknüpfen ersetzt'"
                   @click="store.select(item.kind, item.id)">
             <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
             <span class="f3d-objname">{{ item.id }}</span>
@@ -69,6 +90,7 @@
           <button class="f3d-objloesch" title="löschen"
                   @click="loeschen(item)">✕</button>
         </div>
+
         <button v-if="g.wiederholbar" class="f3d-btn f3d-btn-s f3d-verknuepfen"
                 :disabled="store.loading" @click="neuAbleiten(g.import_id)"
                 title="Import mit den gespeicherten Einstellungen erneut ableiten — ersetzt die Objekte oben, Handarbeit bleibt unberührt.">
@@ -157,6 +179,7 @@ import {
   REFERENZ_QUELLEN, fehlendeBausteine, referenzListe,
 } from '../../utils/feldTypen'
 import ImportModal from './ImportModal.vue'
+import { ROLE_LABELS, rollenFuerKind } from '../../utils/importRollen'
 
 const store = usePreStore()
 
@@ -194,47 +217,87 @@ async function neuAnlegen() {
   neuWahl.value = ''
 }
 
-// --- Grundlagen (Schicht a): was aus Importen stammt ----------------------
-// Je Import zwei Listen: „aus der Zeichnung" (Kanten, Trassen, Körper,
-// Rohrmündungen — die rohe Übernahme) und „zugeordnet/abgeleitet" (was die
-// Verknüpfung daraus gemacht hat, erkennbar an aus_kanten). Dateiname und
-// Wiederholbarkeit kommen aus der Import-Verwaltung im Store.
+// --- Grundlagen (Schicht a): die Import-Pipeline --------------------------
+// Lesbar von oben nach unten: CAD-Objekt (Netz/TIN, Polylinie, Kreis …) →
+// Zuordnung (änderbar, leitet neu ab) → was daraus im Modell wurde.
+// „daraus abgeleitet" sind die Produkte der Kantenverknüpfung
+// (aus_kanten gesetzt).
+const CAD_ART = { mesh: 'Netz / TIN', polyline: 'Polylinie', kreis: 'Kreis',
+  raster: 'Raster', acis: '3D-Volumen (ACIS)', hinweis: 'Hinweis' }
+
 const grundlagen = computed(() => {
   const s = store.spec
   if (!s) return []
-  const je = {}
-  const gruppe = (iid) => (je[iid] ??= {
-    import_id: iid,
-    filename: store.importe[iid]?.filename,
-    wiederholbar: store.importe[iid]?.wiederholbar ?? false,
-    roh: [],
-    zugeordnet: [],
-  })
-  const sammle = (kind, items) => {
-    for (const o of items ?? []) {
+  // Objekte je (import_id, kandidat) einsammeln
+  const objekte = {}
+  const abgeleitet = {}
+  for (const [kind, pfad] of Object.entries(KIND_PATHS)) {
+    for (const o of pfad(s) ?? []) {
       if (o.herkunft !== 'import' || !o.import_ref) continue
-      const g = gruppe(o.import_ref.import_id)
-      const item = { kind, id: o.id, type: o.type ?? o.kind,
-        herkunft: o.herkunft }
-      if (o.aus_kanten?.length) g.zugeordnet.push(item)
-      else g.roh.push(item)
+      const iid = o.import_ref.import_id
+      const item = { kind, id: o.id, type: o.type ?? o.kind }
+      if (o.aus_kanten?.length) (abgeleitet[iid] ??= []).push(item)
+      else ((objekte[iid] ??= {})[o.import_ref.kandidat] ??= []).push(item)
     }
   }
-  sammle('structure', s.structures)
-  sammle('kante', s.terrain?.kanten)
-  sammle('terrain_op', s.terrain?.operations)
-  sammle('section', s.evaluation?.sections)
-  // Die Geländebasis selbst, wenn sie aus einem Import stammt (erkennbar
-  // an der import_id im Ableitungsdateinamen)
-  const quelle = s.terrain?.base?.source ?? ''
-  for (const iid of Object.keys(store.importe)) {
+  const ids = new Set([...Object.keys(objekte), ...Object.keys(abgeleitet),
+    ...Object.keys(store.importe)])
+  const aus = []
+  for (const iid of ids) {
+    const imp = store.importe[iid]
+    const entschieden = Object.fromEntries((imp?.anwendung?.decisions ?? [])
+      .map((d) => [d.candidate, d.role]))
+    const kandidaten = (imp?.candidates ?? [])
+      .filter((c) => c.kind !== 'hinweis')
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        cadArt: CAD_ART[c.kind] ?? c.kind,
+        rolle: entschieden[c.id] ?? c.role_guess ?? 'ignorieren',
+        // ohne gespeicherte Anwendung keine Auswahl anbieten — sonst
+        // verspricht das Select etwas, das der Server nicht kann
+        rollen: imp?.anwendung ? rollenFuerKind(c.kind) : null,
+        objekte: objekte[iid]?.[c.id] ?? [],
+      }))
+    // Kandidatenliste unbekannt (alter Import / Verwaltung nicht ladbar):
+    // wenigstens die Objekte zeigen
+    if (!kandidaten.length && objekte[iid]) {
+      for (const [cid, items] of Object.entries(objekte[iid])) {
+        kandidaten.push({ id: cid, name: cid, cadArt: '', rolle: '',
+          rollen: null, objekte: items })
+      }
+    }
+    // Geländebasis unter ihrem Kandidaten zeigen
+    const quelle = s.terrain?.base?.source ?? ''
     if (quelle.includes(iid)) {
-      gruppe(iid).roh.unshift({ kind: 'terrain', id: 'gelaende',
+      const ziel = kandidaten.find((k) => ['gelaende', 'gelaende_koerper',
+        'bruchkante', 'boeschung_ok'].includes(k.rolle)) ?? kandidaten[0]
+      ziel?.objekte.unshift({ kind: 'terrain', id: 'gelaende',
         type: 'terrain' })
     }
+    aus.push({
+      import_id: iid,
+      filename: imp?.filename,
+      wiederholbar: imp?.wiederholbar ?? false,
+      kandidaten,
+      abgeleitet: abgeleitet[iid] ?? [],
+    })
   }
-  return Object.values(je)
+  return aus.filter((g) => g.kandidaten.length || g.abgeleitet.length)
 })
+
+// Zuordnung ändern = Import mit geänderter Rolle neu ableiten
+async function zuordnen(importId, kandidat, rolle) {
+  for (const m of await store.importNeuAbleiten(importId,
+    { [kandidat]: rolle })) {
+    store.melden(m, m.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
+  }
+}
+
+// DER eine Löschweg (Rückfrage bei Import-Objekten sitzt im Store)
+function loeschen(item) {
+  store.loescheObjekt(item.kind, item.id)
+}
 
 // --- Eingesetzte Rezepte: eine Gruppe je Einsetzung -----------------------
 const zu = ref(new Set())          // zugeklappte Gruppen
@@ -266,10 +329,7 @@ const rezeptGruppen = computed(() => {
   return Object.values(je)
 })
 
-// DER eine Löschweg (Rückfrage bei Import-Objekten sitzt im Store)
-function loeschen(item) {
-  store.loescheObjekt(item.kind, item.id)
-}
+
 
 async function neuAbleiten(importId) {
   for (const z of await store.importNeuAbleiten(importId)) {
@@ -516,5 +576,8 @@ function add(kind, name) {
 .f3d-objloesch:hover { color: var(--f3d-bad); background: rgba(255,255,255,0.05); }
 .f3d-unterkopf { padding-top: 6px; text-transform: none; letter-spacing: 0; }
 .f3d-gruppenteil { margin-left: 14px; }
+.f3d-kandidat { border-top: 1px dashed var(--f3d-border); padding-top: 4px; margin-top: 4px; }
+.f3d-kandidat-kopf { cursor: default; }
+.f3d-kandidat-kopf .f3d-objname { font-weight: 600; }
 .f3d-objimport { width: 100%; margin-bottom: 4px; }
 </style>
