@@ -141,6 +141,25 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
 {ctl}    }}
 """
 
+    if spec.terrain is not None:
+        # Sohlschubspannung auf Gelände- und Bauwerksflächen (Spez. Kap. 2);
+        # geschrieben zu den Feld-Ausgabezeitpunkten, gelesen von foamfields.
+        patches = " ".join(["terrain"] + [s.patch for s in spec.structures
+                                          if s.type != "screen"])
+        out += f"""    wall_shear
+    {{
+        type            wallShearStress;
+        libs            (fieldFunctionObjects);
+        patches         ({patches});
+        // jeden Zeitschritt RECHNEN (sonst laesen die Auswertungen unten
+        // ein veraltetes Feld), aber nur zu den Ausgabezeitpunkten SCHREIBEN
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    writeTime;
+        log             no;
+    }}
+"""
+
     # Schubspannung je BAUWERKSflaeche — bisher gab es sie nur auf dem
     # Gelaende. Am Pfeiler und am Wehrruecken entscheidet genau dieser Wert
     # ueber Kolk und Oberflaechenangriff.
@@ -223,25 +242,6 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         alpha           alpha.water;
         locations       ({vec((gauge.point[0], gauge.point[1], z_mid))});
 {ctl}    }}
-"""
-
-    if spec.terrain is not None:
-        # Sohlschubspannung auf Gelände- und Bauwerksflächen (Spez. Kap. 2);
-        # geschrieben zu den Feld-Ausgabezeitpunkten, gelesen von foamfields.
-        patches = " ".join(["terrain"] + [s.patch for s in spec.structures
-                                          if s.type != "screen"])
-        out += f"""    wall_shear
-    {{
-        type            wallShearStress;
-        libs            (fieldFunctionObjects);
-        patches         ({patches});
-        // jeden Zeitschritt RECHNEN (sonst laesen die Auswertungen unten
-        // ein veraltetes Feld), aber nur zu den Ausgabezeitpunkten SCHREIBEN
-        executeControl  timeStep;
-        executeInterval 1;
-        writeControl    writeTime;
-        log             no;
-    }}
 """
 
     out += f"""    water_volume

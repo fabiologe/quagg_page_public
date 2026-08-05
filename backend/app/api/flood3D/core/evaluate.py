@@ -136,7 +136,8 @@ def _eval_target(df: pd.DataFrame, target, spec: CaseSpec = None) -> dict:
         if anteil is None:
             return missing("Ohne Volumenreihe und Zufluss keine Bilanz.")
         out["value"] = anteil
-        out["result"], out["utilization"] = _verdict(
+        out["unit"] = "-"
+        out["result"], out["utilisation"] = _verdict(
             anteil, target.limit_max, None)
 
     elif target.kind == "kurzschluss":
@@ -147,7 +148,8 @@ def _eval_target(df: pd.DataFrame, target, spec: CaseSpec = None) -> dict:
             return missing("Ohne Tracer-Durchbruch (Verweilzeit mitrechnen) "
                            "keine Kurzschlusskennzahl.")
         out["value"] = wert
-        out["result"], out["utilization"] = _verdict(
+        out["unit"] = "-"
+        out["result"], out["utilisation"] = _verdict(
             wert, None, target.limit_min)
 
     elif target.kind == "verweilzeit_min":
@@ -156,7 +158,8 @@ def _eval_target(df: pd.DataFrame, target, spec: CaseSpec = None) -> dict:
         if wert is None:
             return missing("Ohne Tracer-Durchbruch keine Verweilzeit t50.")
         out["value"] = round(wert, 1)
-        out["result"], out["utilization"] = _verdict(
+        out["unit"] = "s"
+        out["result"], out["utilisation"] = _verdict(
             wert, None, target.limit_min)
 
     elif target.kind == "head_difference":

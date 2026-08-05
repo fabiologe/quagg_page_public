@@ -336,7 +336,8 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
         # Zeitreihen (min_bed_shear-Target) entstehen aus den Feldern.
         _write_manifest(run_root, status="converting_fields")
         try:
-            run_foam(case_dir, "postProcess -func writeCellCentres -time 0",
+            run_foam(case_dir,
+                     "postProcess -noFunctionObjects -func writeCellCentres -time 0",
                      "log.writeCellCentres", name_suffix="cc")
             convert_case_fields(spec, case_dir, run_root)
         except Exception as e:
