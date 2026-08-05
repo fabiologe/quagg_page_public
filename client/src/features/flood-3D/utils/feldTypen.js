@@ -30,6 +30,11 @@ export const ENUM_OPTIONS = {
 }
 
 export const ENUM_LABELS = {
+  // schlüsselbewusste Einträge ('feld:wert') gewinnen gegen den nackten
+  // Wert — 'auto' bedeutet an der Wirkung etwas anderes als am Erdkörper
+  'erdkoerper:auto': 'automatisch (sobald etwas aushebt/durchstößt)',
+  'erdkoerper:an': 'immer Erdkörper',
+  'erdkoerper:aus': 'nie (offene Höhenfläche)',
   trapez: 'Trapez (Dachwehr)', breitkronig: 'breitkronig',
   scharfkantig: 'scharfkantig (Platte)', rundkronig: 'rundkronig',
   rechteck: 'Rechteck', rund: 'rund', tropfen: 'Tropfen', polygon: 'Polygon',
@@ -65,6 +70,7 @@ const GRUPPEN_ENUMS = {
 // heißt beim Durchlass und beim Graben gleich und meint etwas anderes —
 // über den Feldnamen allein sind die beiden nicht zu unterscheiden.
 const TYP_ENUMS = {
+  terrain: { erdkoerper: ['auto', 'an', 'aus'] },
   // `rolle` heißt am Stutzen etwas anderes als an der Vermessungskante:
   // dort die Bedeutung im Gelände, hier wofür der Stutzen da ist. Über den
   // Feldnamen allein sind die beiden nicht zu unterscheiden.
@@ -387,4 +393,10 @@ export const FIELD_LABELS = {
 export const GRUPPEN_LABELS = {
   window: { center: 'Lage entlang der Kante (m)',
     bottom_width: 'Breite unten (m)', top_width: 'Breite oben (m)' },
+}
+
+
+// Beschriftung eines Enum-Werts, schlüsselbewusst ('feld:wert' vor 'wert')
+export function enumLabel(key, wert) {
+  return ENUM_LABELS[`${key}:${wert}`] ?? ENUM_LABELS[wert] ?? wert
 }
