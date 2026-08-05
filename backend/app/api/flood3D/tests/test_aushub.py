@@ -26,14 +26,14 @@ from ..core.validate import validate_case
 
 
 def _fall(strukturen, koerper: bool = True) -> cs.CaseSpec:
-    ops = [cs.OpBerechnungskoerper(id="kb", type="berechnungskoerper")] \
-        if koerper else []
+    ops = []
     return cs.CaseSpec(
         meta=cs.Meta(id="aushub"),
         domain=cs.Domain(extent=(0.0, 0.0, 20.0, 20.0), z_min=90.0, z_max=102.0),
         terrain=cs.Terrain(
             base=cs.TerrainBase(source="flat:96.0", resolution=0.5),
-            operations=ops),
+            operations=ops,
+            erdkoerper=('an' if koerper else 'auto')),
         structures=strukturen,
         mesh=cs.Mesh(base_cell=0.5),
         solver=cs.Solver(application="interFoam", end_time=60.0,

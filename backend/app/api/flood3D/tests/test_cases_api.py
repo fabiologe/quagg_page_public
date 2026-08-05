@@ -120,8 +120,7 @@ def test_entwurfsvorschau_traegt_den_erdkoerper_mit(client):
     from ..core import casespec as cs
 
     spec = build_spec_stage3()
-    spec.terrain.operations.append(cs.OpBerechnungskoerper(
-        id="koerper", type="berechnungskoerper"))
+    spec.terrain.erdkoerper = "an"
     p = client.post("/cases/demo/preview",
                     json=spec.model_dump(mode="json", exclude_none=True)).json()
     assert p["terrain_solid"] is not None

@@ -446,15 +446,6 @@ class TerrainField:
         t = d_i / np.maximum(d_i + d_r, 1e-9)
         self.z = np.where(aussen, z_i + (z_r - z_i) * t, self.z)
 
-    def _op_berechnungskoerper(self, op):
-        """
-        Verändert das Höhenfeld NICHT. Die Operation beschreibt, was aus
-        dem Feld gebaut wird (solids.gelaende_koerper_bauen liest sie) —
-        sie steht im Stapel, damit der Erdkörper ein sichtbares und
-        einstellbares Objekt ist und keine Nebenwirkung eines Schalters am
-        Rohr.
-        """
-
     def _bezugskante(self, op) -> np.ndarray | None:
         """Innere Linie der Außenkante: benannte Operation oder die erste
         Böschungsoberkante im Stapel."""

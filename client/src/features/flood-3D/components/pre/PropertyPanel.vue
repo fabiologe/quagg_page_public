@@ -43,12 +43,12 @@
       an — dann wird zwischen Kante und Rahmen übergeblendet, und die Ecken
       lassen sich in der Szene ziehen (Strg = Höhe).
     </p>
-    <p v-if="hilfe && draft.type === 'berechnungskoerper'" class="f3d-muted f3d-small">
+    <p v-if="hilfe && draft.type === 'terrain'" class="f3d-muted f3d-small">
       Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
       schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr
       durch den Damm, Schacht, Kammer), muss daraus ein geschlossener
       Körper werden: ein Höhenfeld hat ein z je Punkt und kann keinen
-      Hohlraum tragen. Diese Operation schaltet den Körper ein. Der
+      Hohlraum tragen. Der Erdkörper-Schalter unten steuert das. Der
       seitliche Überstand ist kein Schönheitsfehler: eine Körperwand genau
       auf der Gebietsfläche schneidet snappyHexMesh gegen sich selbst.
     </p>

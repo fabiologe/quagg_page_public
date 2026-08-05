@@ -258,7 +258,9 @@ export function fehlendeBausteine(spec, kind) {
 // fallen als `null` aus dem JSON heraus und wären im Panel gar nicht
 // sichtbar — man könnte sie also nie setzen.
 export const OPTIONAL_ZAHLEN = {
-  berechnungskoerper: ['unterkante', 'ueberstand'],
+  // Erdkörper-Maße am Gelände (früher die Pseudo-Operation
+  // „Berechnungskörper") — leer heißt Vorbelegung
+  terrain: ['erdkoerper_unterkante', 'erdkoerper_ueberstand'],
 }
 
 export function widgetFor(key, v, typ) {
@@ -298,10 +300,7 @@ export const VERBERGEN = { window: ['shape', 'follow'], alignment: ['kind'] }
 export const TYP_LABELS = {
   box: { level: 'Verfeinerungsstufe (1 = halbe Zelle)' },
   surface: { level: 'Verfeinerungsstufe (1 = halbe Zelle)' },
-  berechnungskoerper: {
-    unterkante: 'Sohle des Erdkörpers (m NHN, leer = automatisch)',
-    ueberstand: 'Überstand über den Gebietsrand (m, leer = 2 Zellen)',
-  },
+
   // `radius` heißt bei der Aussparung etwas anderes als bei „Anheben/
   // Absenken" — dort ist es die Ausdehnung im Grundriss, hier die
   // Ausrundung der Innenecken
@@ -310,6 +309,9 @@ export const TYP_LABELS = {
     source: 'Quelle (Raster oder flat:<Höhe>)',
     resolution: 'Rasterweite (m)',
     koerper: 'Volumenkörper (STL, leer = aus dem Raster aufgezogen)',
+    erdkoerper: 'Erdkörper (Volumen statt Höhenfläche)',
+    erdkoerper_unterkante: 'Sohle des Erdkörpers (m NHN, leer = automatisch)',
+    erdkoerper_ueberstand: 'Überstand über den Gebietsrand (m, leer = 2 Zellen)',
   },
   // Aushub-Grundtypen: die Maße sind LICHT, die Wandstärke kommt außen
   // herum dazu (beim Aushub gräbt der Bagger sie mit aus)

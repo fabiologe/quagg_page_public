@@ -7,7 +7,6 @@ export const TYPE_LABELS = {
   replace_region: 'Bereich ersetzen', set_level: 'Absoluthöhe',
   bruchkante: 'Bruchkante', boeschung: 'Böschung (OK/UK)',
   aussenkante: 'Außenkante (Gebietsrand)',
-  berechnungskoerper: 'Berechnungskörper (Volumen)',
   wall: 'Wand', screen: 'Rechen', culvert: 'Durchlass', weir: 'Wehr',
   pier: 'Pfeiler', basin: 'Becken', imported: 'Importkörper',
   schacht: 'Schacht', kammer: 'Kammer', graben: 'Graben/Stauraumkanal',
@@ -53,11 +52,6 @@ export const TEMPLATES = {
     // Einfügen aus dem Fall gesetzt (siehe randRahmen im Objektbaum).
     'Außenkante (Gebietsrand)': { id: 'aussenkante', type: 'aussenkante',
       gefaelle: 0.0, innen: null },
-    // Erdkörper statt Höhenfläche — nötig, sobald etwas DURCH das Erdreich
-    // geht. Ohne Maße gilt die Vorbelegung (vier Zellen unter dem tiefsten
-    // Punkt, zwei Zellen seitlicher Überstand).
-    'Berechnungskörper (Volumen)': { id: 'koerper',
-      type: 'berechnungskoerper' },
     'Bereich ersetzen': { id: 'ersatz', type: 'replace_region',
       polygon: [[10, 10], [20, 10], [20, 20], [10, 20]], source: '' },
     Absoluthöhe: { id: 'hoehe', type: 'set_level',
