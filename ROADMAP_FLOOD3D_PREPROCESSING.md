@@ -80,9 +80,17 @@ im Repo als Fixture (`tests/fixtures/import_gemischt/`).
 
 ---
 
-### P1 — Herkunft & Referenz (das tragende Stück) · ~2–3 Sitzungen
+### P1 — Herkunft & Referenz (das tragende Stück) · ~2–3 Sitzungen · ✅ ERLEDIGT 2026-08-05
 
 **Ziel:** Jedes Objekt kennt seine Herkunft; ein Import ist eine wiederholbare Ableitung, kein Einmalereignis.
+
+*Stand: `_Objekt`-Mixin (herkunft + import_ref) auf 34 Objektklassen; `Meta.transform`
+als die eine Verortung (ersetzt crs_offset/crs_rotation_deg, Migration in `migriere`);
+Importer und `rotate_case` komponieren über `transform_import`/`transform_drehung`,
+Rückverortung `lokal_nach_welt` mit Roundtrip-Test inkl. Import+Drehung-Kette;
+Re-Apply ersetzt per `import_objekte_entfernen` statt `_2`-Duplikate; Kanten-Ableitungen
+(kanten.py) erben die Herkunft; `GET /cases/{id}/imports` mit aktiv/verwaist-Status;
+PropertyPanel blendet die Systemfelder aus. 8 neue Tests, Gesamtsuite 460 grün.*
 
 | Paket | Inhalt |
 |---|---|

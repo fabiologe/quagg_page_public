@@ -374,8 +374,11 @@ const fields = computed(() => {
     if (!(k in draft.value)) eintraege.push([k, null])
   }
   return eintraege
+    // herkunft/import_ref sind Herkunftsangaben des Systems, keine
+    // Eingaben — sie editierbar zu zeigen hieße, die Rohdaten-Referenz
+    // eines Imports zum freien Textfeld zu machen
     .filter(([k]) => !['id', 'type', 'kind', 'material',
-      'material_ks'].includes(k))
+      'material_ks', 'herkunft', 'import_ref'].includes(k))
     // Nicht gesetzte Felder ohne eigene Maske weglassen: sie erzeugten
     // bisher eine leere JSON-Textarea neben dem Bedienelement, das sie
     // eigentlich setzt (etwa `window` neben dem Fenster-Auswahlkasten)

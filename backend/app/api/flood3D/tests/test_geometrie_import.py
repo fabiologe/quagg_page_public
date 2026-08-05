@@ -243,7 +243,9 @@ def test_apply_mit_einheiten_und_offset(case):
     lo, hi = mesh.bounds
     assert (hi - lo) == pytest.approx([2.0, 0.5, 3.0], abs=1e-3)
     assert lo[0] == pytest.approx(-1.0, abs=1e-3)      # zentriert um 0
-    assert tuple(spec.meta.crs_offset) == (32500.0, 5600.0)
+    # Verortung: p_lokal = R(0)·p_welt − off
+    assert spec.meta.transform.translation == (-32500.0, -5600.0)
+    assert spec.meta.transform.unit_factor == pytest.approx(0.001)
 
 
 def test_apply_ignoriert_und_meldet_acis(case):
@@ -451,7 +453,7 @@ def test_modell_drehen_richtet_alles_gleich_aus(case):
     n_ops = len(spec.terrain.operations)
     apply_import(spec, d, m["import_id"], ent, rotation_deg=30.0)
 
-    assert spec.meta.crs_rotation_deg == pytest.approx(30.0)
+    assert spec.meta.transform.rotation_deg == pytest.approx(30.0)
     # Eine gedrehte Linie behält ihre Länge, aber nicht ihre Richtung
     neue = spec.evaluation.sections[-1].polyline
     laenge = sum(math.dist(neue[i], neue[i + 1]) for i in range(len(neue) - 1))

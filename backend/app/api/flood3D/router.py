@@ -538,6 +538,47 @@ async def case_import_analyze(case_id: str, request: Request,
                             detail=f"Import fehlgeschlagen: {e}")
 
 
+@router.get("/cases/{case_id}/imports")
+async def case_imports(case_id: str):
+    """
+    Alle Importe des Falls: Manifest + Status. `aktiv` heißt, mindestens
+    ein Fallobjekt verweist per import_ref darauf (oder das Gelände stammt
+    daraus); alles andere ist verwaist und kann gefahrlos neu übernommen
+    oder aufgeräumt werden. Kandidaten-Netze liegen unter
+    `import/{import_id}/{kandidat}.stl` (3D-Vorschau).
+    """
+    import json as _json
+
+    spec, d = _load_case(case_id)
+    aktiv_ids: set[str] = set()
+    for liste in (spec.structures, spec.evaluation.sections,
+                  (spec.terrain.kanten if spec.terrain else []),
+                  (spec.terrain.operations if spec.terrain else [])):
+        for o in liste:
+            r = getattr(o, "import_ref", None)
+            if r is not None:
+                aktiv_ids.add(r.import_id)
+    quelle = spec.terrain.base.source if spec.terrain else ""
+    ergebnis = []
+    imp_root = d / "imports"
+    if imp_root.is_dir():
+        for mdatei in sorted(imp_root.glob("*/manifest.json")):
+            try:
+                m = _json.loads(mdatei.read_text())
+            except Exception:               # noqa: BLE001
+                continue
+            iid = m.get("import_id") or mdatei.parent.name
+            ergebnis.append({
+                "import_id": iid,
+                "filename": m.get("filename"),
+                "created": m.get("created"),
+                "candidates": m.get("candidates"),
+                "unit_suspect": m.get("unit_suspect"),
+                "aktiv": iid in aktiv_ids or iid in quelle,
+            })
+    return {"imports": ergebnis}
+
+
 @router.get("/cases/{case_id}/import/{import_id}/{cand_id}.stl")
 async def case_import_mesh(case_id: str, import_id: str, cand_id: str):
     """Kandidaten-Netz für die 3D-Vorschau im Import-Dialog."""

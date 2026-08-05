@@ -66,6 +66,9 @@ export const flood3dApi = {
   },
   importApply: (caseId, importId, payload) =>
     sendJson(`/cases/${caseId}/import/${importId}/apply`, 'POST', payload),
+  listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
+  importMeshUrl: (caseId, importId, candId) =>
+    `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
   caseProfile: (caseId, polyline, samples = 200) =>
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),

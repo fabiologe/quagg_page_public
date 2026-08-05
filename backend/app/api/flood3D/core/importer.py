@@ -1089,6 +1089,35 @@ def _mittlere_neigung(ok: np.ndarray, uk: np.ndarray) -> float:
     return float(d.mean() / dz) if dz > 1e-6 else float("inf")
 
 
+def import_objekte_entfernen(spec, import_id: str) -> int:
+    """
+    Alle Objekte entfernen, die aus dem Import `import_id` stammen
+    (erkennbar am import_ref). Grundlage des idempotenten Re-Apply und
+    später des „Import löschen"-Wegs.
+    """
+    def bleibt(o) -> bool:
+        r = getattr(o, "import_ref", None)
+        return r is None or r.import_id != import_id
+
+    n = 0
+    vorher = len(spec.structures)
+    spec.structures = [s for s in spec.structures if bleibt(s)]
+    n += vorher - len(spec.structures)
+    vorher = len(spec.evaluation.sections)
+    spec.evaluation.sections = [s for s in spec.evaluation.sections
+                                if bleibt(s)]
+    n += vorher - len(spec.evaluation.sections)
+    if spec.terrain is not None:
+        vorher = len(spec.terrain.kanten)
+        spec.terrain.kanten = [k for k in spec.terrain.kanten if bleibt(k)]
+        n += vorher - len(spec.terrain.kanten)
+        vorher = len(spec.terrain.operations)
+        spec.terrain.operations = [o for o in spec.terrain.operations
+                                   if bleibt(o)]
+        n += vorher - len(spec.terrain.operations)
+    return n
+
+
 def apply_import(spec, case_dir: Path, import_id: str,
                  decisions: list[dict], unit_factor: float = 1.0,
                  offset: list[float] | None = None,
@@ -1101,12 +1130,20 @@ def apply_import(spec, case_dir: Path, import_id: str,
     pfeiler | wehr | becken | bauwerk | querschnitt | ignorieren.
     Rückgabe: geänderte Spec (als dict) + Bericht.
     """
-    from .casespec import (OpBoeschung, OpBruchkante, Section,
-                          StructImported, Vermessungskante)
+    from .casespec import (ImportRef, OpBoeschung, OpBruchkante, Section,
+                          StructImported, Vermessungskante, transform_import)
 
     imp_dir = case_dir / "imports" / import_id
     manifest = json.loads((imp_dir / "manifest.json").read_text())
     by_id = {c["id"]: c for c in manifest["candidates"]}
+
+    def ref(cid: str) -> ImportRef:
+        return ImportRef(import_id=import_id, kandidat=cid)
+
+    # Re-Apply ERSETZT: alles, was aus diesem Import stammt, fliegt vorher
+    # raus. Zweimal Übernehmen (andere Rolle, andere Auflösung) erzeugt
+    # damit keine _2-Duplikate mehr, sondern den neu abgeleiteten Stand.
+    ersetzt = import_objekte_entfernen(spec, import_id)
     off = np.asarray([offset[0], offset[1], 0.0] if offset else [0, 0, 0],
                      dtype=float)
     # Modell drehen: das Rechengebiet ist ein achsparalleler Quader. Liegt
@@ -1138,6 +1175,9 @@ def apply_import(spec, case_dir: Path, import_id: str,
         a[..., 1] = _s * x + _c * y
         return a
     report: list[str] = []
+    if ersetzt:
+        report.append(f"{ersetzt} Objekte aus früherem Übernehmen dieses "
+                      "Imports ersetzt — kein Duplikat angelegt.")
     terrain_bbox = None
     gelaende_gesetzt = False
 
@@ -1298,7 +1338,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 axis=[tuple(np.round(mitte - n * halb, 3)),
                       tuple(np.round(mitte + n * halb, 3))],
                 profile=CulvertProfile(kind="circular", diameter=round(d, 3)),
-                rolle=rolle, material=None))
+                rolle=rolle, material=None,
+                herkunft="import", import_ref=ref(c["id"])))
             report.append(
                 f"Rohrmündung „{sid}“: DN{d * 1000:.0f}, Achse "
                 f"({mitte[0]:.2f}, {mitte[1]:.2f}, {mitte[2]:.2f}), "
@@ -1433,7 +1474,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 else None)
             spec.structures.append(StructImported(
                 id=sid, type="imported", patch=sid, source=stl_name,
-                role=role, material=werkstoff))
+                role=role, material=werkstoff,
+                herkunft="import", import_ref=ref(c["id"])))
             report.append(f"{role} „{sid}“: {c['stats']['n_triangles']} "
                           f"Dreiecke{'' if c['stats']['watertight'] else ' (NICHT wasserdicht!)'}"
                           + (f"; Material {werkstoff} vorbelegt"
@@ -1451,7 +1493,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
             spec.evaluation.sections.append(Section(
                 id=sid[:40],
                 polyline=[[round(float(p[0]), 2), round(float(p[1]), 2)]
-                          for p in arr]))
+                          for p in arr],
+                herkunft="import", import_ref=ref(c["id"])))
             report.append(f"Querschnitt „{sid}“ aus Trasse übernommen")
 
         elif role in KANTEN_ROLLEN:
@@ -1470,7 +1513,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
             sid = _kanten_id(c["name"], "kante", vorhandene_kanten)
             spec.terrain.kanten.append(Vermessungskante(
                 id=sid, polyline=_p3(arr), rolle=KANTEN_ROLLEN[role],
-                breite=1.0, quelle=c["name"]))
+                breite=1.0, quelle=c["name"],
+                herkunft="import", import_ref=ref(c["id"])))
             vorhandene_kanten.add(sid)
             report.append(
                 f"{ROLLEN_TEXT[role]} „{sid}“: {len(arr)} Stützpunkte, "
@@ -1486,15 +1530,24 @@ def apply_import(spec, case_dir: Path, import_id: str,
         from .kanten import verknuepfen
         report.extend(verknuepfen(spec))
 
-    if rotation_deg:
-        spec.meta.crs_rotation_deg = float(rotation_deg)
-        report.append(f"Modell um {rotation_deg:g}° gedreht — das "
-                      "Rechengebiet liegt damit eng um das Bauwerk; der "
-                      "Winkel ist im Fall gespeichert")
-    if offset:
-        spec.meta.crs_offset = [float(offset[0]), float(offset[1])]
-        report.append(f"Koordinaten um ({offset[0]:g}, {offset[1]:g}) "
-                      "verschoben — Ursprung im Fall gespeichert")
+    if rotation_deg or offset or unit_factor != 1.0:
+        neu = transform_import(unit_factor, offset, rotation_deg or 0.0)
+        alt = spec.meta.transform
+        if alt is None:
+            spec.meta.transform = neu
+            report.append(
+                f"Verortung gespeichert: Drehung {neu.rotation_deg:g}°, "
+                f"Verschiebung ({neu.translation[0]:g}, "
+                f"{neu.translation[1]:g}), Einheit ×{unit_factor:g} — "
+                "die Rückverortung in Landeskoordinaten ist damit "
+                "rechnerisch möglich")
+        elif (alt.rotation_deg != neu.rotation_deg
+              or alt.translation != neu.translation):
+            report.append(
+                "ACHTUNG: Lage-Parameter weichen vom ersten Import ab — "
+                "die gespeicherte Verortung bezieht sich weiterhin auf den "
+                "ersten Import. Gleiche Einheit/Offset/Drehung für alle "
+                "Importe eines Falls verwenden.")
 
     if derive_domain and terrain_bbox is not None:
         from .casespec import Domain

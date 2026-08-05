@@ -10,8 +10,9 @@ legt sich eng darum. Genau das macht dieses Modul: es dreht jede Koordinate
 der Spezifikation und leitet das Gebiet neu ab.
 
 Gedreht wird um den Mittelpunkt des Modellgebiets, damit das Modell an Ort
-und Stelle bleibt. `meta.crs_rotation_deg` summiert die Drehungen mit, damit
-die Rückverortung ins Landessystem erhalten bleibt.
+und Stelle bleibt. `meta.transform` führt die Drehung als Komposition mit —
+inklusive Drehzentrum, damit die Rückverortung ins Landessystem
+(`lokal_nach_welt`) erhalten bleibt.
 
 Drei Dinge kann eine Drehung nicht exakt, sie werden als Hinweis gemeldet:
 eine Randbedingung sitzt auf einer ACHSPARALLELEN Gebietsfläche — nach 37°
@@ -284,10 +285,13 @@ def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict
                         "das Modell ziehen und Zu-/Ablaufstutzen bis an die "
                         "neue Kante verlängern")
 
-    spec.meta.crs_rotation_deg = _normiert(
-        float(spec.meta.crs_rotation_deg or 0.0) + grad)
+    # Verortung mitführen: EINE Konvention mit dem Import (Meta.transform),
+    # inklusive Drehzentrum — vorher summierte hier ein nacktes Winkelfeld,
+    # während der Import denselben Namen mit anderer Konvention beschrieb.
+    from .casespec import transform_drehung
+    spec.meta.transform = transform_drehung(spec.meta.transform, grad, mitte)
     return {"hinweise": hinweise, "extent": spec.domain.extent,
-            "rotation_deg": spec.meta.crs_rotation_deg,
+            "rotation_deg": _normiert(spec.meta.transform.rotation_deg),
             "terrain": neuer_name}
 
 
