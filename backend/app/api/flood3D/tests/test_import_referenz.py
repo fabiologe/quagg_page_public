@@ -303,3 +303,34 @@ def test_rasters_liefert_keine_gelaende_ableitungen(case, monkeypatch):
     res = client.post(f"/cases/{d.name}/import/{m['import_id']}/reapply")
     assert res.status_code == 200
     assert (d / "derived").is_dir()
+
+
+def test_zuordnung_nachtraeglich_aendern(case):
+    """Eine als Querschnitt übernommene Trasse wird zur Bruchkante — ohne
+    Neu-Upload, über die gespeicherte Anwendung; die neue Wahl bleibt."""
+    from ..core.importer import import_neu_ableiten
+
+    spec, d = case
+    m = analyze_file(_dxf_gelaende_wand_kante(), "modell.dxf", d)
+    by = {c["name"]: c for c in m["candidates"]}
+    cid = by["QS_MITTE_linie"]["id"]
+    apply_import(spec, d, m["import_id"], [
+        {"candidate": by["GELAENDE"]["id"], "role": "gelaende"},
+        {"candidate": cid, "role": "querschnitt"},
+    ])
+    assert any(s.id.startswith("qs_") for s in spec.evaluation.sections)
+
+    import_neu_ableiten(spec, d, m["import_id"], rollen={cid: "bruchkante"})
+    assert not any(s.import_ref and s.import_ref.kandidat == cid
+                   for s in spec.evaluation.sections)
+    kante = next(k for k in spec.terrain.kanten
+                 if k.import_ref and k.import_ref.kandidat == cid)
+    assert kante.herkunft == "import"
+
+    # die geänderte Wahl ist gespeichert: erneutes Neu-Ableiten OHNE
+    # Override behält die Bruchkante
+    import_neu_ableiten(spec, d, m["import_id"])
+    assert any(k.import_ref and k.import_ref.kandidat == cid
+               for k in spec.terrain.kanten)
+    assert not any(s.import_ref and s.import_ref.kandidat == cid
+                   for s in spec.evaluation.sections)

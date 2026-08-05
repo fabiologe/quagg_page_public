@@ -27,25 +27,48 @@
       <p v-if="neuHilfe" class="f3d-muted f3d-small">{{ neuHilfe }}</p>
     </div>
 
-    <!-- Schicht (a): aus Grundlagen abgeleitet. Nicht Handarbeit — beim
-         Neu-Ableiten des Imports wird ersetzt, was hier steht. -->
+    <!-- Schicht (a): aus Grundlagen abgeleitet. Gesplittet in das, was
+         IN DER ZEICHNUNG steht (roh), und das, was die Zuordnung daraus
+         gemacht hat (Operationen, Bauteile aus Kanten). -->
     <section v-if="grundlagen.length" class="f3d-abschnitt">
       <h4 class="f3d-abschnitt-kopf">Grundlagen (Import)</h4>
       <div v-for="g in grundlagen" :key="g.import_id" class="f3d-objgroup">
         <div class="f3d-objgroup-head">
           <span>🔒 {{ g.filename ?? g.import_id }}</span>
-          <span class="f3d-muted f3d-small">{{ g.items.length }}</span>
+          <span class="f3d-muted f3d-small">{{ g.roh.length + g.zugeordnet.length }}</span>
         </div>
-        <button v-for="item in g.items" :key="item.kind + item.id"
-                class="f3d-objitem"
-                :class="{ selected: store.selection?.kind === item.kind
-                  && store.selection?.id === item.id }"
-                :title="'aus dem Import — beim Neu-Ableiten ersetzt; Lage über Bearbeitungen ändern'"
-                @click="store.select(item.kind, item.id)">
-          <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
-          <span class="f3d-objname">{{ item.id }}</span>
-          <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
-        </button>
+        <div v-if="g.roh.length" class="f3d-objgroup-head f3d-unterkopf">
+          <span>aus der Zeichnung</span>
+        </div>
+        <div v-for="item in g.roh" :key="item.kind + item.id" class="f3d-objrow">
+          <button class="f3d-objitem"
+                  :class="{ selected: store.selection?.kind === item.kind
+                    && store.selection?.id === item.id }"
+                  :title="'aus dem Import — Zuordnung im Eigenschaftenpanel änderbar'"
+                  @click="store.select(item.kind, item.id)">
+            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+            <span class="f3d-objname">{{ item.id }}</span>
+            <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+          </button>
+          <button v-if="item.kind !== 'terrain'" class="f3d-objloesch"
+                  title="löschen" @click="loeschen(item)">✕</button>
+        </div>
+        <div v-if="g.zugeordnet.length" class="f3d-objgroup-head f3d-unterkopf">
+          <span>zugeordnet / abgeleitet</span>
+        </div>
+        <div v-for="item in g.zugeordnet" :key="item.kind + item.id" class="f3d-objrow">
+          <button class="f3d-objitem"
+                  :class="{ selected: store.selection?.kind === item.kind
+                    && store.selection?.id === item.id }"
+                  :title="'aus den Kanten abgeleitet — beim Neu-Ableiten/Verknüpfen ersetzt'"
+                  @click="store.select(item.kind, item.id)">
+            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+            <span class="f3d-objname">{{ item.id }}</span>
+            <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+          </button>
+          <button class="f3d-objloesch" title="löschen"
+                  @click="loeschen(item)">✕</button>
+        </div>
         <button v-if="g.wiederholbar" class="f3d-btn f3d-btn-s f3d-verknuepfen"
                 :disabled="store.loading" @click="neuAbleiten(g.import_id)"
                 title="Import mit den gespeicherten Einstellungen erneut ableiten — ersetzt die Objekte oben, Handarbeit bleibt unberührt.">
@@ -62,17 +85,21 @@
           <span>{{ group.label }}</span>
           <span class="f3d-muted f3d-small">{{ group.items.length }}</span>
         </div>
-        <button v-for="item in group.items" :key="item.id"
-                class="f3d-objitem"
-                :class="{ selected: store.selection?.kind === group.kind
-                  && store.selection?.id === item.id }"
-                @click="store.select(group.kind, item.id)">
-          <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
-          <span class="f3d-objname">{{ item.id }}</span>
-          <span v-if="herkunftBadge(item)" class="f3d-muted f3d-small"
-                :title="herkunftBadge(item).titel">{{ herkunftBadge(item).zeichen }}</span>
-          <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
-        </button>
+        <div v-for="item in group.items" :key="item.id" class="f3d-objrow">
+          <button class="f3d-objitem"
+                  :class="{ selected: store.selection?.kind === group.kind
+                    && store.selection?.id === item.id }"
+                  @click="store.select(group.kind, item.id)">
+            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+            <span class="f3d-objname">{{ item.id }}</span>
+            <span v-if="herkunftBadge(item)" class="f3d-muted f3d-small"
+                  :title="herkunftBadge(item).titel">{{ herkunftBadge(item).zeichen }}</span>
+            <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+          </button>
+          <button v-if="!['domain', 'terrain'].includes(group.kind)"
+                  class="f3d-objloesch" title="löschen"
+                  @click="loeschen({ kind: group.kind, id: item.id })">✕</button>
+        </div>
         <button v-if="group.verknuepfen && group.items.length"
                 class="f3d-btn f3d-btn-s f3d-verknuepfen"
                 :disabled="store.loading" @click="kantenVerknuepfen"
@@ -87,7 +114,7 @@
 <script setup>
 // Objektbaum (Spez. Kap. 6.1): alle Objekte mit Typ und Validierungsstatus,
 // Klick springt zum Objekt; "Neu anlegen" fügt Katalog-Vorlagen ein.
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import {
   TYPE_LABELS, TEMPLATES, vorlageAnpassen, noetigeVerfeinerung,
@@ -96,7 +123,6 @@ import {
   REFERENZ_QUELLEN, fehlendeBausteine, referenzListe,
 } from '../../utils/feldTypen'
 import ImportModal from './ImportModal.vue'
-import { flood3dApi } from '../../services/api'
 
 const store = usePreStore()
 
@@ -135,43 +161,51 @@ async function neuAnlegen() {
 }
 
 // --- Grundlagen (Schicht a): was aus Importen stammt ----------------------
-// Gruppiert je Import, mit „Neu ableiten" (gespeicherte Anwendung).
-// Dateiname und Wiederholbarkeit kommen aus der Import-Verwaltung.
-const importInfo = ref({})
-
-async function ladeImportInfo() {
-  if (!store.activeCaseId) return
-  try {
-    const res = await flood3dApi.listImports(store.activeCaseId)
-    importInfo.value = Object.fromEntries(
-      (res.imports ?? []).map((i) => [i.import_id, i]))
-  } catch { importInfo.value = {} }
-}
-
+// Je Import zwei Listen: „aus der Zeichnung" (Kanten, Trassen, Körper,
+// Rohrmündungen — die rohe Übernahme) und „zugeordnet/abgeleitet" (was die
+// Verknüpfung daraus gemacht hat, erkennbar an aus_kanten). Dateiname und
+// Wiederholbarkeit kommen aus der Import-Verwaltung im Store.
 const grundlagen = computed(() => {
   const s = store.spec
   if (!s) return []
   const je = {}
+  const gruppe = (iid) => (je[iid] ??= {
+    import_id: iid,
+    filename: store.importe[iid]?.filename,
+    wiederholbar: store.importe[iid]?.wiederholbar ?? false,
+    roh: [],
+    zugeordnet: [],
+  })
   const sammle = (kind, items) => {
     for (const o of items ?? []) {
       if (o.herkunft !== 'import' || !o.import_ref) continue
-      const iid = o.import_ref.import_id
-      const g = (je[iid] ??= {
-        import_id: iid,
-        filename: importInfo.value[iid]?.filename,
-        wiederholbar: importInfo.value[iid]?.wiederholbar ?? false,
-        items: [],
-      })
-      g.items.push({ kind, id: o.id, type: o.type ?? o.kind,
-        herkunft: o.herkunft })
+      const g = gruppe(o.import_ref.import_id)
+      const item = { kind, id: o.id, type: o.type ?? o.kind,
+        herkunft: o.herkunft }
+      if (o.aus_kanten?.length) g.zugeordnet.push(item)
+      else g.roh.push(item)
     }
   }
   sammle('structure', s.structures)
   sammle('kante', s.terrain?.kanten)
   sammle('terrain_op', s.terrain?.operations)
   sammle('section', s.evaluation?.sections)
+  // Die Geländebasis selbst, wenn sie aus einem Import stammt (erkennbar
+  // an der import_id im Ableitungsdateinamen)
+  const quelle = s.terrain?.base?.source ?? ''
+  for (const iid of Object.keys(store.importe)) {
+    if (quelle.includes(iid)) {
+      gruppe(iid).roh.unshift({ kind: 'terrain', id: 'gelaende',
+        type: 'terrain' })
+    }
+  }
   return Object.values(je)
 })
+
+// DER eine Löschweg (Rückfrage bei Import-Objekten sitzt im Store)
+function loeschen(item) {
+  store.loescheObjekt(item.kind, item.id)
+}
 
 async function neuAbleiten(importId) {
   for (const z of await store.importNeuAbleiten(importId)) {
@@ -186,8 +220,7 @@ function herkunftBadge(item) {
   return null
 }
 
-onMounted(() => { store.ladeRezepte(); ladeImportInfo() })
-watch(() => store.activeCaseId, ladeImportInfo)
+onMounted(() => { store.ladeRezepte(); store.ladeImporte() })
 
 // Aus Rolle und Lage der Kanten die Geländeoperationen ableiten. Eine
 // Sohle innerhalb eines Beckenrands ergibt die Böschung dazwischen und
@@ -403,5 +436,20 @@ function add(kind, name) {
 .f3d-objstatus.sev-warnung { color: var(--f3d-warn); }
 .f3d-objstatus.sev-hinweis { color: var(--f3d-accent); }
 .f3d-objadd { display: flex; gap: 6px; margin-top: 6px; }
+.f3d-objrow { display: flex; align-items: stretch; gap: 2px; }
+.f3d-objrow .f3d-objitem { flex: 1; }
+.f3d-objloesch {
+  background: none;
+  border: none;
+  color: var(--f3d-text-2);
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: 6px;
+  opacity: 0;
+  font-size: 0.75rem;
+}
+.f3d-objrow:hover .f3d-objloesch { opacity: 1; }
+.f3d-objloesch:hover { color: var(--f3d-bad); background: rgba(255,255,255,0.05); }
+.f3d-unterkopf { padding-top: 6px; text-transform: none; letter-spacing: 0; }
 .f3d-objimport { width: 100%; margin-bottom: 4px; }
 </style>

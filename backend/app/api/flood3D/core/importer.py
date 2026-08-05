@@ -1609,17 +1609,35 @@ def apply_import(spec, case_dir: Path, import_id: str,
     return {"report": report}
 
 
-def import_neu_ableiten(spec, case_dir: Path, import_id: str) -> dict:
+def import_neu_ableiten(spec, case_dir: Path, import_id: str,
+                        rollen: dict | None = None) -> dict:
     """
     Den Import mit seiner GESPEICHERTEN Anwendung erneut ableiten: baut
     alle derived/-Dateien neu und ersetzt die Fallobjekte (idempotent).
     `derive_domain` wird dabei bewusst NICHT wiederholt — Gebiet und
     Anfangswasserspiegel sind inzwischen ggf. Handarbeit.
+
+    `rollen` ({kandidat: rolle}) ändert die ZUORDNUNG nachträglich — eine
+    als Querschnitt übernommene Trasse wird so z. B. zur Bruchkante, ohne
+    Neu-Upload. Die geänderte Wahl wird in der Anwendung gespeichert und
+    gilt damit auch für jedes künftige Neu-Ableiten.
     """
-    a = json.loads(
-        (case_dir / "imports" / import_id / "anwendung.json").read_text())
+    pfad = case_dir / "imports" / import_id / "anwendung.json"
+    a = json.loads(pfad.read_text())
+    decisions = a.get("decisions") or []
+    if rollen:
+        vorhanden = {d.get("candidate") for d in decisions}
+        for cand, rolle in rollen.items():
+            for d in decisions:
+                if d.get("candidate") == cand:
+                    d["role"] = rolle
+                    break
+            else:
+                decisions.append({"candidate": cand, "role": rolle})
+        a["decisions"] = decisions
+        pfad.write_text(json.dumps(a, ensure_ascii=False, indent=1))
     return apply_import(
-        spec, case_dir, import_id, a.get("decisions") or [],
+        spec, case_dir, import_id, decisions,
         unit_factor=float(a.get("unit_factor", 1.0)),
         offset=a.get("offset"),
         derive_domain=False,

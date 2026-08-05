@@ -69,6 +69,31 @@
       </button>
     </div>
 
+    <!-- Grundlagen-Zuordnung: die Rolle aus dem Import nachträglich
+         ändern — eine als Querschnitt übernommene Trasse wird z. B. zur
+         Bruchkante. Ersetzt Neu-Upload und Handumbau. -->
+    <div v-if="zuordnung" class="f3d-prop f3d-zuordnung">
+      <label>Zuordnung (aus Import „{{ zuordnung.filename }}“)</label>
+      <div class="f3d-pair">
+        <select v-model="zuordnungRolle" class="f3d-select f3d-grow">
+          <optgroup v-for="g in zuordnung.gruppen" :key="g.titel"
+                    :label="g.titel">
+            <option v-for="r in g.rollen" :key="r" :value="r">
+              {{ ROLE_LABELS[r] ?? r }}
+            </option>
+          </optgroup>
+        </select>
+        <button class="f3d-btn" :disabled="store.loading
+                  || zuordnungRolle === zuordnung.rolle"
+                title="Rolle ändern und den Import neu ableiten — das Objekt wird durch seine neue Deutung ersetzt"
+                @click="zuordnungAendern">↻</button>
+      </div>
+      <p class="f3d-muted f3d-small">
+        Ändern leitet den Import neu ab: dieses Objekt wird durch seine
+        neue Deutung ersetzt („ignorieren“ entfernt es dauerhaft).
+      </p>
+    </div>
+
     <p v-if="draft.type === 'bruchkante'" class="f3d-muted f3d-small">
       <strong>Ziehen, Abgraben, Aufschütten</strong> wirken auf einen
       Schlauch der Wirkungsbreite um die <em>Linie</em> — das Innere einer
@@ -261,6 +286,7 @@ import {
   widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
+import { ROLE_LABELS, rollenFuerKind } from '../../utils/importRollen'
 
 const store = usePreStore()
 const draft = ref(null)
@@ -735,18 +761,41 @@ function apply() {
   store.melden(`„${result.id}" übernommen: ${namen.join(', ')}`, 'erfolg')
 }
 
-function remove() {
+// --- Grundlagen-Zuordnung -------------------------------------------------
+const zuordnungRolle = ref('')
+
+const zuordnung = computed(() => {
   const o = store.selectedObject
-  // Grundlagen (Import) löschen ist selten gemeint — meist will man das
-  // Objekt nur nicht MODELLIEREN. Nachfragen, mit dem Hinweis auf den Weg
-  // über die Rollenwahl beim Neu-Ableiten.
-  if (o?.herkunft === 'import' && !window.confirm(
-    `„${o.id}" stammt aus einem Import. Wirklich löschen?\n`
-    + 'Beim Neu-Ableiten des Imports kommt es wieder — dauerhaft entfernt '
-    + 'wird es über die Rollenwahl (ignorieren) beim Neu-Übernehmen.')) {
-    return
+  const ref_ = o?.import_ref
+  if (!ref_) return null
+  const imp = store.importe[ref_.import_id]
+  if (!imp?.anwendung) return null
+  const cand = (imp.candidates ?? []).find((c) => c.id === ref_.kandidat)
+  const entscheidung = (imp.anwendung.decisions ?? [])
+    .find((d) => d.candidate === ref_.kandidat)
+  return {
+    importId: ref_.import_id,
+    kandidat: ref_.kandidat,
+    filename: imp.filename ?? ref_.import_id,
+    rolle: entscheidung?.role ?? cand?.role_guess ?? '',
+    gruppen: rollenFuerKind(cand?.kind ?? 'mesh'),
   }
-  store.removeObject(store.selection.kind, store.selection.id)
+})
+
+watch(zuordnung, (z) => { zuordnungRolle.value = z?.rolle ?? '' },
+  { immediate: true })
+
+async function zuordnungAendern() {
+  const z = zuordnung.value
+  if (!z || !zuordnungRolle.value || zuordnungRolle.value === z.rolle) return
+  for (const m of await store.importNeuAbleiten(
+    z.importId, { [z.kandidat]: zuordnungRolle.value })) {
+    store.melden(m, m.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
+  }
+}
+
+function remove() {
+  store.loescheObjekt(store.selection.kind, store.selection.id)
 }
 </script>
 
