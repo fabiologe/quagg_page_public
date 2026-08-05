@@ -231,12 +231,12 @@ def _quality(df: pd.DataFrame, manifest: dict | None) -> dict:
     q: dict = {}
 
     _, vol = get_series(df, Quantity.VOLUME, "domain")
-    t_c, cont = get_series(df, Quantity.CONTINUITY, "solver")
+    _, cont = get_series(df, Quantity.CONTINUITY, "solver")
     if len(cont) and len(vol) and vol.max() > 0:
         q["mass_balance_error_rel_max"] = float(np.abs(cont).max() / vol.max())
 
     for comp in ("final", "initial"):
-        t_r, res = get_series(df, Quantity.RESIDUAL, "p_rgh", comp)
+        _, res = get_series(df, Quantity.RESIDUAL, "p_rgh", comp)
         if len(res):
             q[f"residual_p_rgh_{comp}"] = float(res[-1])
             break

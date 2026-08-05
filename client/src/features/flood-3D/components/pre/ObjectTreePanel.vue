@@ -76,7 +76,7 @@
     <section v-for="a in abschnitte" :key="a.id" class="f3d-abschnitt">
       <h4 class="f3d-abschnitt-kopf">{{ a.label }}</h4>
       <div v-for="group in a.gruppen" :key="group.kind"
-           class="f3d-objgroup" :class="{ tief: group.eingerueckt }">
+           class="f3d-objgroup">
         <div class="f3d-objgroup-head">
           <span>{{ group.label }}</span>
           <span class="f3d-muted f3d-small">{{ group.items.length }}</span>
@@ -201,7 +201,7 @@ async function neuAnlegen() {
 // „daraus abgeleitet" sind die Produkte der Kantenverknüpfung
 // (aus_kanten gesetzt).
 const CAD_ART = { mesh: 'Netz / TIN', polyline: 'Polylinie', kreis: 'Kreis',
-  raster: 'Raster', acis: '3D-Volumen (ACIS)', hinweis: 'Hinweis' }
+  raster: 'Raster', acis: '3D-Volumen (ACIS)' }
 
 const grundlagen = computed(() => {
   const s = store.spec
@@ -424,7 +424,7 @@ function statusIcon(id) {
 // Die Außenkante braucht ihre innere Bezugslinie — von dort läuft das
 // Gelände nach außen. Einen Rahmen bekommt sie nur, wenn der Bearbeiter die
 // Ecken selbst setzen will; der Regelfall ist die Fortführung der Kante.
-function randRahmen(obj) {
+function innenBelegen(obj) {
   const ops = store.spec?.terrain?.operations ?? []
   obj.innen = (ops.find((o) => o.type === 'boeschung')
     ?? ops.find((o) => o.type === 'bruchkante'))?.id ?? null
@@ -453,7 +453,7 @@ function add(kind, name) {
     // Die Außenkante ist nur als Rahmen AM Gebietsrand sinnvoll: vier Ecken
     // mit der Höhe, die das Gelände dort heute hat — von da aus stellt der
     // Bearbeiter sie ein.
-    if (obj.type === 'aussenkante') randRahmen(obj)
+    if (obj.type === 'aussenkante') innenBelegen(obj)
     // Vorlagen sind im Bezugsraum notiert (Gelände 95 m, Grundriss um 20 m).
     // Ohne Umrechnung landet jede Vorlage in einem importierten Fall weit
     // neben oder unter dem Gelände.
@@ -512,10 +512,6 @@ function add(kind, name) {
 }
 /* Die Operationen wirken AUF das Gelände darüber — die Einrückung sagt das */
 .f3d-verknuepfen { align-self: flex-start; margin-top: 4px; }
-.f3d-objgroup.tief {
-  margin-left: 12px;
-  border-left: 2px solid var(--f3d-border-strong);
-}
 .f3d-objgroup-head {
   display: flex;
   justify-content: space-between;
@@ -562,7 +558,6 @@ function add(kind, name) {
 }
 .f3d-objrow:hover .f3d-objloesch { opacity: 1; }
 .f3d-objloesch:hover { color: var(--f3d-bad); background: rgba(255,255,255,0.05); }
-.f3d-unterkopf { padding-top: 6px; text-transform: none; letter-spacing: 0; }
 .f3d-gruppenteil { margin-left: 14px; }
 .f3d-kandidat { border-top: 1px dashed var(--f3d-border); padding-top: 4px; margin-top: 4px; }
 .f3d-kandidat-kopf { cursor: default; }

@@ -60,7 +60,8 @@ def test_schema(client):
 
 
 def test_terrain_feld(client):
-    t = client.get("/cases/demo/terrain").json()
+    # seit P4 liefert die EINE Geometrie-Antwort das Feld
+    t = client.get("/cases/demo/geometry").json()["terrain"]
     ny, nx = t["dims"]
     z = np.frombuffer(base64.b64decode(t["z_b64"]), dtype="<f4").reshape(ny, nx)
     assert (nx, ny) == (49, 37)          # 24 x 18 m bei 0.5 m Knotenraster
@@ -70,7 +71,7 @@ def test_terrain_feld(client):
 
 
 def test_solids_vorschau(client):
-    data = client.get("/cases/demo/solids").json()
+    data = client.get("/cases/demo/geometry").json()
     patches = {s["patch"] for s in data["solids"]}
     # inkl. Rechenstäbe — nur in der Vorschau, der Solver sieht die poröse Zone
     assert patches == {"wand_becken", "becken_1", "dl_1", "pfeiler_1", "rechen_1"}
@@ -79,7 +80,7 @@ def test_solids_vorschau(client):
 
 
 def test_validierung_liefert_befunde(client):
-    findings = client.get("/cases/demo/validate").json()
+    findings = client.get("/cases/demo/geometry").json()["validation"]
     assert all({"object_id", "severity", "message"} <= set(f) for f in findings)
     # Demo-Fall: Pegel liegt auf Gelände über dem Anfangswasserspiegel
     assert any(f["object_id"] == "pegel_becken" and f["severity"] == "warnung"

@@ -295,6 +295,7 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
         info = json.loads(p.read_text())
     except Exception:
         return {"vorhanden": False, "stale": False, "preview": None}
+    # Altfall-Fallback: Vorschauen vor 2026-08-05 tragen keinen netz_hash
     if info.get("netz_hash"):
         stale = info["netz_hash"] != spec.netz_hash()
     else:
@@ -309,51 +310,11 @@ async def case_mesh_preview_state(case_id: str):
     return _preview_stand(spec, d)
 
 
-@router.get("/cases/{case_id}/terrain-solid")
-async def case_terrain_solid(case_id: str):
-    """
-    Der Geländekörper, wie ihn der Vernetzer bekommt — importierter
-    Volumenkörper oder aus dem Höhenfeld aufgezogener Erdkörper, in beiden
-    Fällen mit ausgeschnittenen Rohrbohrungen. 404 heißt: für diesen Fall
-    genügt die Höhenfläche, es gibt keinen Körper anzuzeigen.
-    """
-    from .core.solids import gelaende_koerper_bauen
-
-    spec, d = _load_case(case_id)
-    if spec.terrain is None or spec.domain is None:
-        raise HTTPException(status_code=404, detail="Fall ohne Gelände.")
-    feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
-    hinweise: list[str] = []
-    try:
-        koerper = gelaende_koerper_bauen(feld, spec, hinweise=hinweise,
-                                            base_dir=d)
-    except Exception as e:
-        raise HTTPException(status_code=422,
-                            detail=f"Geländekörper nicht baubar: {e}")
-    if koerper is None:
-        raise HTTPException(status_code=404,
-                            detail="Dieser Fall arbeitet mit einer "
-                                   "Höhenfläche, nicht mit einem Körper.")
-    return {"stl_b64": base64.b64encode(
-                koerper.export(file_type="stl")).decode(),
-            "watertight": bool(koerper.is_watertight),
-            "volume": round(float(abs(koerper.volume)), 2),
-            "triangles": int(len(koerper.faces)),
-            "importiert": bool(spec.terrain.base.koerper),
-            "bohrungen": [s.id for s in spec.structures
-                          if s.type == "culvert"
-                          and getattr(s, "durchstoesst_gelaende", False)],
-            "hinweise": hinweise}
-
-
 @router.get("/cases/{case_id}/terrain-solid.stl")
 async def case_terrain_solid_stl(case_id: str):
-    """
-    Der Geländekörper als Datei. Bisher gab es ihn nur als base64 in einer
-    JSON-Antwort (für die Anzeige) oder im ZIP des Companion-Pakets — für
-    einen Blick in FreeCAD/Meshlab oder zur Weitergabe an den Prüfer war er
-    nicht zu bekommen.
-    """
+    """BEWUSSTER Prüfer-Export ohne UI-Verlinkung: den Erdkörper als STL
+    laden und in FreeCAD/Meshlab nachmessen — deshalb bleibt die Route,
+    obwohl kein Client sie ruft."""
     from .core.solids import gelaende_koerper_bauen
 
     spec, d = _load_case(case_id)
@@ -826,35 +787,6 @@ async def case_schema(case_id: str):
     return CaseSpec.json_schema()
 
 
-@router.get("/cases/{case_id}/terrain")
-async def case_terrain(case_id: str):
-    spec, d = _load_case(case_id)
-    if spec.terrain is None or spec.domain is None:
-        raise HTTPException(status_code=404, detail="Fall ohne Gelände/Modellgebiet.")
-    t = TerrainField.from_spec(spec.terrain, spec.domain, d)
-    return {"x0": t.x0, "y0": t.y0, "resolution": t.resolution,
-            "dims": list(t.z.shape),
-            "z_b64": base64.b64encode(t.z.astype("<f4").tobytes()).decode()}
-
-
-@router.get("/cases/{case_id}/solids")
-async def case_solids(case_id: str):
-    spec, d = _load_case(case_id)
-    out, errors = [], []
-    try:
-        # mit hinweise= entflechtet build_solids sich durchdringende Körper
-        # genauso wie der Fallbau — sonst zeigt der Editor eine andere
-        # Geometrie, als am Ende gerechnet wird
-        solids = build_solids(spec, d, include_screens=True, hinweise=errors)
-    except Exception as e:
-        return {"solids": [], "errors": [str(e)]}
-    for patch, mesh in sorted(solids.items()):
-        stl = mesh.export(file_type="stl")
-        out.append({"patch": patch,
-                    "stl_b64": base64.b64encode(stl).decode()})
-    return {"solids": out, "errors": errors}
-
-
 @router.get("/cases/{case_id}/rasters")
 async def case_rasters(case_id: str):
     """
@@ -883,12 +815,6 @@ async def case_rasters(case_id: str):
         out.append({"name": name, "mb": round(f.stat().st_size / 1e6, 2),
                     "basis": name == basis})
     return out
-
-
-@router.get("/cases/{case_id}/validate")
-async def case_validate(case_id: str):
-    spec, d = _load_case(case_id)
-    return validate_case(spec, d)
 
 
 # Ab dieser Rastergröße wird der Erdkörper in der Entwurfsvorschau NICHT
@@ -972,11 +898,10 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
     except Exception:
         pass        # Bauwerksproblem steht bereits in der Validierung
 
-    # Aufgelöste Serverregeln (Audit P4.3): welcher Rand auf welcher
-    # Gebietsfläche sitzt, das wirksame Fenster dazu, und wo die
-    # Bearbeitungen auf der Bauteilachse liegen. Der Editor trägt heute
-    # Spiegel dieser drei Regeln (resolveBcFaces/resolveWindow/openingPos)
-    # — diese Antwort ist der Weg, sie beim Editor3D-Schnitt zu löschen.
+    # Aufgelöste Serverregeln: welcher Rand auf welcher Gebietsfläche
+    # sitzt, das wirksame Fenster dazu, und wo die Bearbeitungen auf der
+    # Bauteilachse liegen. Die früheren Editor-Spiegel dieser drei Regeln
+    # sind GELÖSCHT — Marker und Fenstergriffe lesen diese Antwort.
     try:
         from .core.casebuilder import resolve_window
         from .core.meshgen import assign_faces

@@ -27,11 +27,6 @@ from .solids import (build_solids, check_solid, gelaende_mit_aushub,
 from .terrain import TerrainField
 
 
-def pts_z_max(struct) -> float:
-    """Oberkante einer Wand (max. z der Achsstützpunkte)."""
-    return max(p[2] for p in struct.alignment.points)
-
-
 def _flaechen_zelle(mesh, patch: str) -> float:
     """
     Zellgröße an einer Bauwerksfläche: die Basiszelle, je Verfeinerungsstufe

@@ -1097,14 +1097,6 @@ def _kanten_id(name: str, praefix: str, vergeben: set) -> str:
     return sid
 
 
-def _mittlere_neigung(ok: np.ndarray, uk: np.ndarray) -> float:
-    """Mittlere Böschungsneigung 1:n — die Kennzahl, die der Prüfer sucht."""
-    dz = abs(float(ok[:, 2].mean() - uk[:, 2].mean()))
-    # mittlerer Abstand: jeder OK-Punkt zum nächsten UK-Punkt
-    d = np.linalg.norm(ok[:, None, :2] - uk[None, :, :2], axis=2).min(axis=1)
-    return float(d.mean() / dz) if dz > 1e-6 else float("inf")
-
-
 def import_objekte_entfernen(spec, import_id: str) -> int:
     """
     Alle Objekte entfernen, die aus dem Import `import_id` stammen
@@ -1142,12 +1134,14 @@ def apply_import(spec, case_dir: Path, import_id: str,
                  rotation_deg: float = 0.0) -> dict:
     """
     Deklarierte Kandidaten in den Fall übernehmen. decisions:
-    [{candidate, role, patch?, material?}], role in gelaende | wand |
-    pfeiler | wehr | becken | bauwerk | querschnitt | ignorieren.
+    [{candidate, role, patch?, material?}] — gültige Rollen: siehe
+    utils/importRollen.js (Client) bzw. KANTEN_ROLLEN + solid_roles hier,
+    plus gelaende, gelaende_koerper, zusatzraster, zulaufrohr/ablaufrohr,
+    querschnitt, ignorieren.
     Rückgabe: geänderte Spec (als dict) + Bericht.
     """
-    from .casespec import (ImportRef, OpBoeschung, OpBruchkante, Section,
-                          StructImported, Vermessungskante, transform_import)
+    from .casespec import (ImportRef, Section, StructImported,
+                          Vermessungskante, transform_import)
 
     imp_dir = case_dir / "imports" / import_id
     manifest = json.loads((imp_dir / "manifest.json").read_text())
@@ -1212,10 +1206,6 @@ def apply_import(spec, case_dir: Path, import_id: str,
     solid_roles = {"wand": "wand", "pfeiler": "pfeiler", "wehr": "wehr",
                    "becken": "becken", "bauwerk": "bauwerk"}
     existing = {s.id for s in spec.structures}
-    # Böschungskanten werden erst gesammelt und danach paarweise verheiratet
-    kanten: dict[str, dict] = {}
-    vorhandene_ops = {o.id for o in (spec.terrain.operations
-                                     if spec.terrain else [])}
     vorhandene_kanten = {k.id for k in (spec.terrain.kanten
                          if spec.terrain else [])}
     vorhandene_qs = {x.id for x in spec.evaluation.sections}
@@ -1626,7 +1616,6 @@ def import_neu_ableiten(spec, case_dir: Path, import_id: str,
     a = json.loads(pfad.read_text())
     decisions = a.get("decisions") or []
     if rollen:
-        vorhanden = {d.get("candidate") for d in decisions}
         for cand, rolle in rollen.items():
             for d in decisions:
                 if d.get("candidate") == cand:

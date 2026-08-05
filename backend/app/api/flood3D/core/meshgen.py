@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 
-from .casespec import CaseSpec, DomainFace
+from .casespec import CaseSpec
 from .foam import foam_file, vec
 
 _FACE_VERTICES: dict[str, str] = {

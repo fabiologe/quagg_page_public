@@ -53,6 +53,13 @@ async function kur(fix) {
 const icon = (s) => ({ fehler: '✗', warnung: '⚠', hinweis: 'ℹ' }[s] ?? '·')
 
 function jump(finding) {
+  // Befunde am Gebiet/Gelände haben keine Listeneinträge — direkt wählen
+  if (objectId === 'domain') { store.select('domain', 'domain'); return }
+  if (objectId === 'terrain' || objectId === 'gelaende') {
+    store.select('terrain', 'gelaende')
+    return
+  }
+
   for (const kind of Object.keys(KIND_PATHS)) {
     const list = KIND_PATHS[kind](store.spec) ?? []
     if (list.some((o) => o.id === finding.object_id)) {

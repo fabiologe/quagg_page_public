@@ -358,3 +358,9 @@
 /* uPlot-Legenden an das Theme angleichen */
 .f3d-root .u-legend { color: var(--f3d-text-2); }
 .f3d-root .u-legend .u-value { color: var(--f3d-text); }
+
+/* kleine Aktionsknöpfe (Baum, Prüfpanel) — die Klasse war nie definiert */
+.f3d-btn-s {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+}

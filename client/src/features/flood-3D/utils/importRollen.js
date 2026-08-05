@@ -17,6 +17,13 @@ export const ROLE_LABELS = {
 }
 export const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
   'wehr', 'becken', 'bauwerk', 'ignorieren']
+export const MATERIAL_LABELS = {
+  stahl: 'Stahl (k_s 0,1 mm)', beton_glatt: 'Beton glatt (0,5 mm)',
+  beton: 'Beton (2 mm)', mauerwerk: 'Mauerwerk (5 mm)',
+  holz: 'Holz (0,8 mm)', erde: 'Erde (30 mm)',
+  steinschuettung: 'Steinschüttung (100 mm)',
+}
+
 export const MATERIALS = ['stahl', 'beton_glatt', 'beton', 'mauerwerk',
   'holz', 'erde', 'steinschuettung']
 export const SOLID_ROLES = new Set(['wand', 'pfeiler', 'wehr', 'becken',

@@ -93,5 +93,4 @@ onBeforeUnmount(() => clearInterval(pollTimer))
 .f3d-runrow-targets { display: flex; gap: 6px; font-size: 0.76rem; }
 .f3d-runrow-targets .ok { color: var(--f3d-good); }
 .f3d-runrow-targets .fail { color: var(--f3d-bad); }
-.f3d-runrow-actions a { text-decoration: none; display: inline-block; }
 </style>

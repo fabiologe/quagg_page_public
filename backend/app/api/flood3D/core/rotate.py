@@ -10,7 +10,8 @@ legt sich eng darum. Genau das macht dieses Modul: es dreht jede Koordinate
 der Spezifikation und leitet das Gebiet neu ab.
 
 Gedreht wird um den Mittelpunkt des Modellgebiets, damit das Modell an Ort
-und Stelle bleibt. `meta.transform` führt die Drehung als Komposition mit —
+und Stelle bleibt. Erreicht wird dieses Modul ausschließlich über
+den Mutationsvertrag (kur.anwenden("drehen")) — kein zweiter Einstieg. `meta.transform` führt die Drehung als Komposition mit —
 inklusive Drehzentrum, damit die Rückverortung ins Landessystem
 (`lokal_nach_welt`) erhalten bleibt.
 

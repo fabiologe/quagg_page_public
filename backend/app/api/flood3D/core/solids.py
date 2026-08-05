@@ -1056,10 +1056,9 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
     # Bearbeiter auf „aushub" gestellt hat. Die Wandungen des Hohlraums
     # gehören danach zur Geländefläche; ein eigener Patch entsteht nicht.
     if aushub:
-        terrain_fuer_edits = field if field is not None else None
         for s in aushub:
             try:
-                loch = koerper_von(s, base_dir, spec.domain, terrain_fuer_edits)
+                loch = koerper_von(s, base_dir, spec.domain, field)
             except Exception as e:                   # pragma: no cover
                 if hinweise is not None:
                     hinweise.append(f"Aushub {s.id}: Körper nicht erzeugbar ({e})")

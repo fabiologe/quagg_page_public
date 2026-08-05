@@ -37,7 +37,6 @@ export const flood3dApi = {
   getCase: (caseId) => getJson(`/cases/${caseId}`),
   saveCase: (caseId, spec) => sendJson(`/cases/${caseId}`, 'PUT', spec),
   caseSchema: (caseId) => getJson(`/cases/${caseId}/schema`),
-  caseValidate: (caseId) => getJson(`/cases/${caseId}/validate`),
   caseRasters: (caseId) => getJson(`/cases/${caseId}/rasters`),
   caseRotate: (caseId, deg) =>
     sendJson(`/cases/${caseId}/rotate`, 'POST', { deg }),
@@ -70,7 +69,6 @@ export const flood3dApi = {
   importReapply: (caseId, importId, rollen = null) =>
     sendJson(`/cases/${caseId}/import/${importId}/reapply`, 'POST',
       rollen ? { rollen } : {}),
-  clearDerived: (caseId) => sendJson(`/cases/${caseId}/derived`, 'DELETE', {}),
   caseProfile: (caseId, polyline, samples = 200) =>
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),

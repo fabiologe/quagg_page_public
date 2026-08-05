@@ -361,7 +361,7 @@ export const FIELD_LABELS = {
   point: 'Punkt', at: 'Pegel/Bauwerk', of: 'Zähler-Querschnitt',
   to: 'Nenner-Querschnitt', limit_max: 'Grenzwert max.',
   limit_min: 'Grenzwert min.', component: 'Komponente', region: 'Region',
-  batter_deg: 'Neigung (°)', cutwater: 'Anlauf (veraltet)',
+  batter_deg: 'Neigung (°)',
   rotation_deg: 'Drehung (°)', insert_point: 'Einfügepunkt',
   crest_polyline: 'Kronenachse (z = Kronenhöhe)',
   slope_upstream: 'Neigung Oberwasser 1:n', slope_downstream: 'Neigung Unterwasser 1:n',
