@@ -157,6 +157,7 @@ const clipRange = ref([0, 100])
 const coords = ref('')
 const drawPts = ref([])          // [[x,y], ...] der aktuellen Zeichnung
 const chooserPts = ref(null)     // abgeschlossene Zeichnung -> Zielauswahl
+const ringGeschlossen = ref(false)  // per Klick auf den ersten Punkt
 
 // --- Bearbeitung einzeichnen ("stanzen") ---------------------------------
 // Bohrung, Öffnung und Abschneiden werden nicht getippt, sondern auf den
@@ -189,7 +190,9 @@ const drawTargets = computed(() => {
     { label: 'Planum', rolle: 'planum', geschlossen: true },
     { label: 'Becken', rolle: 'becken', geschlossen: true },
     { label: 'Verfeinerungsbox', rolle: 'verfeinerung', geschlossen: true },
+    { label: '3D-Körper (Prisma)', rolle: 'koerper', geschlossen: true },
   ]
+  if (ringGeschlossen.value) return poly
   return n >= 3 ? [...poly, ...line] : line
 })
 
@@ -245,6 +248,9 @@ function setMode(m) {
 }
 
 function cancelDrawing() {
+  ringGeschlossen.value = false
+  zeichenLock = null
+  schliessNah = false
   drawPts.value = []
   chooserPts.value = null
   updatePreview(null)
@@ -260,6 +266,73 @@ function groundPick(e) {
   ray.setFromCamera(ndc, camera)
   const hits = ray.intersectObjects(groups.terrain.children, false)
   return hits.length ? hits[0].point : null
+}
+
+// --- Zeichen-Fang: Punktfang > Achsfang > Rasterfang (Alt = aus) ----------
+// Dieselben Fänge wie beim Griff-Ziehen, nur fürs Zeichnen: der nächste
+// Klickpunkt fängt auf vorhandene Stützpunkte (12 px), auf die X/Y-Achse
+// durch den letzten Punkt (±14°) und aufs Basiszellraster. Der ERSTE
+// eigene Punkt ist zugleich die Schließ-Geste fürs Polygon.
+const SCHLIESS_PX = 14
+let zeichenLock = null           // 'x' | 'y' | null (Achsfang-Hysterese)
+let schliessNah = false          // Cursor überm ersten Punkt
+
+function _px(p3) {
+  const v = new THREE.Vector3(p3[0], p3[1], p3[2] ?? terrainZ(p3[0], p3[1]))
+    .project(camera)
+  const rect = host.value.getBoundingClientRect()
+  return [(v.x + 1) / 2 * rect.width + rect.left,
+    (-v.y + 1) / 2 * rect.height + rect.top]
+}
+
+function fangBeimZeichnen(pt, e) {
+  schliessNah = false
+  if (!pt) return null
+  let p = [pt.x, pt.y]
+  if (e?.altKey) { zeichenLock = null; return p }
+
+  // 1) Schließpunkt: der eigene erste Punkt gewinnt gegen alles
+  const eigene = drawPts.value
+  if (mode.value === 'draw' && eigene.length >= 3) {
+    const [sx, sy] = _px(eigene[0])
+    if (Math.hypot(e.clientX - sx, e.clientY - sy) < SCHLIESS_PX) {
+      schliessNah = true
+      zeichenLock = null
+      return [...eigene[0]]
+    }
+  }
+  // 2) Punktfang auf fremde Stützpunkte
+  let best = null
+  for (const s of collectSnapPoints()) {
+    const [px, py] = _px(s)
+    const d = Math.hypot(e.clientX - px, e.clientY - py)
+    if (d < 12 && (!best || d < best.d)) best = { p: [s[0], s[1]], d }
+  }
+  if (best) { zeichenLock = null; return best.p }
+  // 3) Achsfang relativ zum letzten Punkt (mit Hysterese wie beim Ziehen)
+  const letzter = eigene[eigene.length - 1]
+  if (letzter) {
+    const dx = p[0] - letzter[0]
+    const dy = p[1] - letzter[1]
+    const winkel = Math.abs(Math.atan2(Math.abs(dy), Math.abs(dx))) * 180 / Math.PI
+    const enter = 14
+    const exit = 26
+    if (zeichenLock === 'x' ? winkel < exit : winkel < enter) {
+      zeichenLock = 'x'
+      p = [p[0], letzter[1]]
+    } else if (zeichenLock === 'y' ? winkel > 90 - exit : winkel > 90 - enter) {
+      zeichenLock = 'y'
+      p = [letzter[0], p[1]]
+    } else {
+      zeichenLock = null
+    }
+  }
+  // 4) Rasterfang auf die Basiszelle
+  const zelle = store.spec?.mesh?.base_cell
+  if (zelle && !e?.ctrlKey) {
+    p = [Math.round(p[0] / zelle) * zelle, Math.round(p[1] / zelle) * zelle]
+  }
+  return [Number(p[0].toFixed(2)), Number(p[1].toFixed(2))]
 }
 
 function updatePreview(hoverPt) {
@@ -280,6 +353,31 @@ function updatePreview(hoverPt) {
     groups.preview.add(new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(v3),
       new THREE.LineBasicMaterial({ color: 0xffffff })))
+  }
+  // Achs-Führungslinie durch den letzten Punkt (Fang aktiv)
+  if (zeichenLock && pts.length && hoverPt && !chooserPts.value) {
+    const l = pts[pts.length - 1]
+    const z = terrainZ(l[0], l[1]) + 0.5
+    const w = 500
+    const a = zeichenLock === 'x'
+      ? [new THREE.Vector3(l[0] - w, l[1], z), new THREE.Vector3(l[0] + w, l[1], z)]
+      : [new THREE.Vector3(l[0], l[1] - w, z), new THREE.Vector3(l[0], l[1] + w, z)]
+    const g = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a),
+      new THREE.LineDashedMaterial({ color: zeichenLock === 'x' ? 0xe66767
+        : 0x34c98a, dashSize: 0.6, gapSize: 0.4, transparent: true,
+      opacity: 0.7 }))
+    g.computeLineDistances()
+    groups.preview.add(g)
+  }
+  // Schließring am ersten Punkt, sobald das Polygon möglich ist
+  if (pts.length >= 3 && !chooserPts.value) {
+    const z0 = terrainZ(pts[0][0], pts[0][1]) + 0.5
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.3, 0.45, 20),
+      new THREE.MeshBasicMaterial({ color: schliessNah ? 0x34c98a : 0xd9a326,
+        side: THREE.DoubleSide, depthTest: false }))
+    ring.position.set(pts[0][0], pts[0][1], z0)
+    groups.preview.add(ring)
   }
   for (const p of v3.slice(0, shown.length)) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8),
@@ -436,6 +534,11 @@ function handleToolClick(pt) {
       updatePreview(pt)
     }
   } else if (mode.value === 'draw') {
+    if (schliessNah && drawPts.value.length >= 3) {
+      ringGeschlossen.value = true
+      finishDrawing()
+      return
+    }
     drawPts.value = [...drawPts.value, xy]
     updatePreview(pt)
   }
@@ -445,6 +548,7 @@ function finishDrawing() {
   if (mode.value === 'draw' && drawPts.value.length >= 2) {
     chooserPts.value = drawPts.value
     drawPts.value = []
+    zeichenLock = null
     updatePreview(null)
   }
 }
@@ -453,9 +557,11 @@ async function createFromDrawing(opt) {
   const pts = chooserPts.value
   cancelDrawing()
   mode.value = 'select'
+  const geschlossen = ringGeschlossen.value || opt.geschlossen
+  ringGeschlossen.value = false
   if (!pts) return
   for (const m of await store.skizzeZeichnen({
-    kind: opt.geschlossen ? 'polygon' : 'polyline',
+    kind: geschlossen ? 'polygon' : 'polyline',
     rolle: opt.rolle,
     punkte: pts,
   })) {
@@ -1280,8 +1386,11 @@ onMounted(() => {
       } else if (mode.value === 'select' || mode.value === 'move') {
         pick(e)
       } else {
-        const pt = groundPick(e)
-        if (pt) handleToolClick(pt)
+        const roh = groundPick(e)
+        const gefangen = roh && fangBeimZeichnen(roh, e)
+        if (gefangen) {
+          handleToolClick({ x: gefangen[0], y: gefangen[1] })
+        }
       }
     }
     downPos = null
@@ -1324,6 +1433,15 @@ onMounted(() => {
     const now = performance.now()
     if (now - lastHoverCheck < 40) return
     lastHoverCheck = now
+    // Zeichnen: Fang + Führungslinie LIVE zeigen, nicht erst beim Klick
+    if ((mode.value === 'draw' || mode.value === 'section')
+        && drawPts.value.length && !chooserPts.value) {
+      const roh = groundPick(e)
+      const g = roh && fangBeimZeichnen(roh, e)
+      if (g) updatePreview({ x: g[0], y: g[1] })
+      renderer.domElement.style.cursor = schliessNah ? 'pointer' : 'crosshair'
+      return
+    }
     // Hover-Vorab-Sperre: OrbitControls MUSS schon vor dem pointerdown aus
     // sein, sonst startet die Kamerarotation zeitgleich mit dem Drag
     // (OrbitControls hängt früher am Canvas als unsere Handler). Gesperrt

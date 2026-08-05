@@ -16,6 +16,7 @@ export const ROLE_LABELS = {
   gerinne: 'Gerinne einschneiden', damm: 'Dammschüttung',
   planum: 'Planum', stutzen: 'Stutzen (Rohr)',
   verfeinerung: 'Verfeinerungsbox',
+  koerper: '3D-Körper (Prisma)',
   ignorieren: '— ignorieren —',
 }
 export const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
@@ -40,7 +41,8 @@ export const LINIEN_ROLLEN = [
     rollen: ['bruchkante', 'boeschung_ok', 'boeschung_uk', 'sohle',
       'beckenrand', 'krone', 'gerinne', 'damm', 'planum'] },
   { titel: 'wird ein Bauteil (umströmt)',
-    rollen: ['mauer', 'wehrkrone', 'wand', 'becken', 'stutzen'] },
+    rollen: ['mauer', 'wehrkrone', 'wand', 'becken', 'stutzen',
+      'koerper'] },
   { titel: 'sonstiges',
     rollen: ['querschnitt', 'verfeinerung', 'ignorieren'] },
 ]
