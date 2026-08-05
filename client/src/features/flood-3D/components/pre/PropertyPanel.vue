@@ -3,6 +3,10 @@
     <header class="f3d-card-head">
       <h3>{{ draft.id }}</h3>
       <span class="f3d-muted f3d-small">{{ TYPE_LABELS[draft.type ?? draft.kind] ?? '' }}</span>
+      <button class="f3d-jsonschalter" :class="{ aktiv: hilfe }"
+              :title="hilfe ? 'Erklärtexte ausblenden'
+                : 'Erklärtexte zu diesem Objekttyp einblenden'"
+              @click="hilfe = !hilfe">ℹ</button>
       <button class="f3d-jsonschalter" :class="{ aktiv: experte }"
               :title="experte
                 ? 'Expertenmodus aus (JSON-Schalter verbergen)'
@@ -69,32 +73,7 @@
       </button>
     </div>
 
-    <!-- Grundlagen-Zuordnung: die Rolle aus dem Import nachträglich
-         ändern — eine als Querschnitt übernommene Trasse wird z. B. zur
-         Bruchkante. Ersetzt Neu-Upload und Handumbau. -->
-    <div v-if="zuordnung" class="f3d-prop f3d-zuordnung">
-      <label>Zuordnung (aus Import „{{ zuordnung.filename }}“)</label>
-      <div class="f3d-pair">
-        <select v-model="zuordnungRolle" class="f3d-select f3d-grow">
-          <optgroup v-for="g in zuordnung.gruppen" :key="g.titel"
-                    :label="g.titel">
-            <option v-for="r in g.rollen" :key="r" :value="r">
-              {{ ROLE_LABELS[r] ?? r }}
-            </option>
-          </optgroup>
-        </select>
-        <button class="f3d-btn" :disabled="store.loading
-                  || zuordnungRolle === zuordnung.rolle"
-                title="Rolle ändern und den Import neu ableiten — das Objekt wird durch seine neue Deutung ersetzt"
-                @click="zuordnungAendern">↻</button>
-      </div>
-      <p class="f3d-muted f3d-small">
-        Ändern leitet den Import neu ab: dieses Objekt wird durch seine
-        neue Deutung ersetzt („ignorieren“ entfernt es dauerhaft).
-      </p>
-    </div>
-
-    <p v-if="draft.type === 'bruchkante'" class="f3d-muted f3d-small">
+    <p v-if="hilfe && draft.type === 'bruchkante'" class="f3d-muted f3d-small">
       <strong>Ziehen, Abgraben, Aufschütten</strong> wirken auf einen
       Schlauch der Wirkungsbreite um die <em>Linie</em> — das Innere einer
       geschlossenen Kante bleibt dabei so liegen, wie es der Import
@@ -106,7 +85,7 @@
       folgt auch einer geneigten Kante und schließt am Rand bündig an.
     </p>
 
-    <p v-if="draft.type === 'aussenkante'" class="f3d-muted f3d-small">
+    <p v-if="hilfe && draft.type === 'aussenkante'" class="f3d-muted f3d-small">
       Außerhalb der äußersten Vermessungslinie ist nichts gemessen — dort
       führt der Import die NÄCHSTGELEGENE bekannte Höhe fort. Die kann
       höher liegen als jede gemessene Oberkante und über den Gebietsdeckel
@@ -117,7 +96,7 @@
       lassen sich in der Szene ziehen (Strg = Höhe).
     </p>
 
-    <p v-if="draft.type === 'berechnungskoerper'" class="f3d-muted f3d-small">
+    <p v-if="hilfe && draft.type === 'berechnungskoerper'" class="f3d-muted f3d-small">
       Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
       schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr
       durch den Damm, Schacht, Kammer), muss daraus ein geschlossener
@@ -130,7 +109,7 @@
     <p v-if="wirkungJetzt" class="f3d-wirkung" :class="wirkungJetzt.art">
       <strong>{{ wirkungJetzt.titel }}</strong> {{ wirkungJetzt.text }}
     </p>
-    <p v-if="wirkungJetzt?.art === 'aushub'" class="f3d-muted f3d-small">
+    <p v-if="hilfe && wirkungJetzt?.art === 'aushub'" class="f3d-muted f3d-small">
       Ein Aushub bekommt keine eigene Fläche im Netz — seine Wandungen
       gehören zum Gelände, und dort greift auch die Verfeinerung. Das
       Gelände wird dafür als Erdkörper gebaut, denn ein Höhenfeld hat ein z
@@ -138,7 +117,7 @@
       die Wandstärke gräbt der Bagger mit aus, damit das Bauteil hineinpasst.
     </p>
 
-    <p v-if="draft.type === 'culvert'" class="f3d-muted f3d-small">
+    <p v-if="hilfe && draft.type === 'culvert'" class="f3d-muted f3d-small">
       Das Gelände ist ein Höhenfeld — ein z je Punkt — und kann von sich aus
       keinen Tunnel haben: ein Rohr im Damm wird beim Vernetzen zugeschüttet,
       seine Mündung bekommt dann keine einzige Fläche. „Durch das Gelände
@@ -286,13 +265,15 @@ import {
   widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
-import { ROLE_LABELS, rollenFuerKind } from '../../utils/importRollen'
 
 const store = usePreStore()
 const draft = ref(null)
 // JSON-Rohbearbeitung ist Expertenwerkzeug: die Schalter erscheinen erst,
 // wenn man sie einschaltet — der Normalweg sind Maske, Punktliste, Griffe
 const experte = ref(false)
+// Die Lehrtexte je Objekttyp sind wertvoll — aber nicht bei jedem Öffnen:
+// eingeklappt, bis man sie ruft. Das Panel zeigt sonst mehr Prosa als Felder.
+const hilfe = ref(false)
 const jsonDrafts = reactive({})
 // Felder, die der Nutzer bewusst als JSON bearbeitet
 const jsonModus = reactive({})
@@ -759,39 +740,6 @@ function apply() {
     ?? FIELD_LABELS[k] ?? k)
   store.updateObject(store.selection.kind, store.selection.id, result)
   store.melden(`„${result.id}" übernommen: ${namen.join(', ')}`, 'erfolg')
-}
-
-// --- Grundlagen-Zuordnung -------------------------------------------------
-const zuordnungRolle = ref('')
-
-const zuordnung = computed(() => {
-  const o = store.selectedObject
-  const ref_ = o?.import_ref
-  if (!ref_) return null
-  const imp = store.importe[ref_.import_id]
-  if (!imp?.anwendung) return null
-  const cand = (imp.candidates ?? []).find((c) => c.id === ref_.kandidat)
-  const entscheidung = (imp.anwendung.decisions ?? [])
-    .find((d) => d.candidate === ref_.kandidat)
-  return {
-    importId: ref_.import_id,
-    kandidat: ref_.kandidat,
-    filename: imp.filename ?? ref_.import_id,
-    rolle: entscheidung?.role ?? cand?.role_guess ?? '',
-    gruppen: rollenFuerKind(cand?.kind ?? 'mesh'),
-  }
-})
-
-watch(zuordnung, (z) => { zuordnungRolle.value = z?.rolle ?? '' },
-  { immediate: true })
-
-async function zuordnungAendern() {
-  const z = zuordnung.value
-  if (!z || !zuordnungRolle.value || zuordnungRolle.value === z.rolle) return
-  for (const m of await store.importNeuAbleiten(
-    z.importId, { [z.kandidat]: zuordnungRolle.value })) {
-    store.melden(m, m.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
-  }
 }
 
 function remove() {
