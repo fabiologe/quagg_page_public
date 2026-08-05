@@ -46,6 +46,11 @@ export const flood3dApi = {
   caseAnschluss: (caseId) => sendJson(`/cases/${caseId}/anschluss`, 'POST', {}),
   caseKur: (caseId, aktion, args) =>
     sendJson(`/cases/${caseId}/kur`, 'POST', { aktion, args }),
+  caseKantenVerknuepfen: (caseId) =>
+    sendJson(`/cases/${caseId}/kanten-verknuepfen`, 'POST', {}),
+  rezeptKatalog: () => getJson('/rezepte'),
+  caseRezept: (caseId, rezept, args) =>
+    sendJson(`/cases/${caseId}/rezept`, 'POST', { rezept, args }),
   meshPreviewState: (caseId) => getJson(`/cases/${caseId}/mesh-preview`),
   caseTerrainSolid: (caseId) => getJson(`/cases/${caseId}/terrain-solid`),
   importAnalyze: async (caseId, file) => {

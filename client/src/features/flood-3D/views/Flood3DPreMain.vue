@@ -48,6 +48,11 @@
         </div>
       </header>
 
+      <!-- EIN Meldungsweg für alle vier Phasen. Vorher stand derselbe
+           Fehlerblock dreimal im Markup — und in der Phase „Ergebnis"
+           überhaupt nicht, dort waren Fehler unsichtbar. -->
+      <MeldungsLeiste />
+
       <!-- Phase: Modell -->
       <div v-if="store.activePhase === 'modell'" class="f3d-body">
         <ObjectTreePanel class="f3d-pre-tree" />
@@ -58,14 +63,12 @@
         <aside class="f3d-pre-side">
           <PropertyPanel />
           <ValidationPanel />
-          <p v-if="store.error" class="f3d-error">{{ store.error }}</p>
         </aside>
       </div>
 
       <!-- Phase: Simulation -->
       <main v-else-if="store.activePhase === 'simulation'" class="f3d-content">
         <SimulationPanel />
-        <p v-if="store.error" class="f3d-error">{{ store.error }}</p>
       </main>
 
       <!-- Phase: Ergebnis (integrierter Nachweis-Viewer, auf den Fall gefiltert) -->
@@ -74,7 +77,6 @@
       <!-- Phase: Läufe -->
       <main v-else class="f3d-content">
         <CaseRunsPanel />
-        <p v-if="store.error" class="f3d-error">{{ store.error }}</p>
       </main>
     </template>
   </div>
@@ -90,6 +92,7 @@ import { usePreStore } from '../stores/usePreStore'
 import { usePostStore, VIEWER_TABS } from '../stores/usePostStore'
 import { usePreventPageZoom } from '../composables/usePreventPageZoom'
 import '../styles/f3d-theme.css'
+import MeldungsLeiste from '../components/common/MeldungsLeiste.vue'
 import CaseRunsPanel from '../components/pre/CaseRunsPanel.vue'
 import Editor3D from '../components/pre/Editor3D.vue'
 import ErgebnisPhase from '../components/pre/ErgebnisPhase.vue'
@@ -168,7 +171,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onHistoryKeys))
   cursor: pointer;
   font-size: 1.1rem;
 }
-.f3d-chip-warn { color: #c98500; border-color: #c98500; }
+.f3d-chip-warn { color: var(--f3d-warn); border-color: var(--f3d-warn); }
 .f3d-pre-tree {
   width: 250px;
   flex-shrink: 0;

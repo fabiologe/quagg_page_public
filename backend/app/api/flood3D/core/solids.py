@@ -635,6 +635,137 @@ def build_culvert(struct) -> trimesh.Trimesh:
     return trimesh.util.concatenate(segments)
 
 
+# --------------------------------------------------------------------------
+# Aushub-Grundtypen: Schacht, Kammer, Graben (Stufe B)
+#
+# Alle drei bauen zuerst den LICHTEN Raum und leiten daraus ab:
+#   wirkung = aushub  -> lichter Raum + Wandstärke ringsum (der Bagger nimmt
+#                        die Wand mit, sonst passt das Bauteil nicht hinein)
+#   wirkung = bauteil -> die Schale dazwischen (das ist der Beton)
+# Dieselben Maße, zweimal eingesetzt, ergeben Hohlraum und Wand passgenau.
+# --------------------------------------------------------------------------
+
+def _schacht_grundriss(struct, aufmass: float = 0.0) -> shapely.Polygon:
+    cx, cy = struct.center
+    if struct.shape == "rund":
+        poly = shapely.Point(cx, cy).buffer(struct.width / 2 + aufmass,
+                                            quad_segs=24)
+    else:
+        laenge = struct.length if struct.length is not None else struct.width
+        b, l = struct.width / 2 + aufmass, laenge / 2 + aufmass
+        poly = shapely.Polygon([(cx - b, cy - l), (cx + b, cy - l),
+                                (cx + b, cy + l), (cx - b, cy + l)])
+        if abs(struct.rotation_deg) > 1e-9:
+            poly = shapely.affinity.rotate(poly, struct.rotation_deg,
+                                           origin=(cx, cy))
+    return poly
+
+
+def _schale(aussen: trimesh.Trimesh, innen: trimesh.Trimesh, name: str
+            ) -> trimesh.Trimesh:
+    """Beton = außen minus innen. Der Innenkörper ragt bewusst über."""
+    try:
+        v = trimesh.boolean.difference([aussen, innen])
+    except Exception as e:                           # pragma: no cover
+        raise ValueError(f"{name}: Wandschale nicht erzeugbar ({e})") from e
+    return trimesh.util.concatenate(v) if isinstance(v, list) else v
+
+
+def build_schacht(struct) -> trimesh.Trimesh:
+    t = max(struct.wall_thickness, 0.0)
+    unten, oben = struct.invert_level, struct.top_level
+    if ist_aushub(struct):
+        # Der Aushub reicht eine Wandstärke tiefer: sonst stünde das Bauteil
+        # mit seiner Sohlplatte im gewachsenen Boden
+        return _extrude(_schacht_grundriss(struct, t), unten - t, oben)
+    if t <= 0:
+        return _extrude(_schacht_grundriss(struct), unten, oben)
+    aussen = _extrude(_schacht_grundriss(struct, t), unten - t, oben)
+    innen = _extrude(_schacht_grundriss(struct), unten, oben + t)
+    return _schale(aussen, innen, f"Schacht {struct.id}")
+
+
+def _kammer_sohle(struct, poly: shapely.Polygon) -> float:
+    """Tiefster Punkt der Sohle (Gefälle wird über die Länge gerechnet)."""
+    if abs(struct.invert_slope) < 1e-9:
+        return struct.invert_level
+    minx, miny, maxx, maxy = poly.bounds
+    laenge = max(maxx - minx, maxy - miny)
+    return struct.invert_level - abs(struct.invert_slope) * laenge
+
+
+def build_kammer(struct) -> trimesh.Trimesh:
+    t = max(struct.wall_thickness, 0.0)
+    innen_poly = shapely.Polygon(struct.footprint)
+    unten = _kammer_sohle(struct, innen_poly)
+    oben = struct.top_level
+    if ist_aushub(struct):
+        return _extrude(innen_poly.buffer(t, join_style=2), unten - t, oben)
+    if t <= 0:
+        return _extrude(innen_poly, unten, oben)
+    aussen = _extrude(innen_poly.buffer(t, join_style=2), unten - t, oben)
+    innen = _extrude(innen_poly, unten, oben + t)
+    return _schale(aussen, innen, f"Kammer {struct.id}")
+
+
+def _graben_querschnitt(profil, aufmass: float = 0.0) -> shapely.Polygon:
+    """
+    Querschnitt in der lokalen x-y-Ebene, y nach oben, Sohle auf y = 0.
+    `aufmass` weitet ihn allseitig — damit entsteht die Außenkontur.
+    """
+    if profil.kind == "kreis":
+        return shapely.Point(0.0, profil.width / 2).buffer(
+            profil.width / 2 + aufmass, quad_segs=24)
+    h = profil.height
+    if profil.kind == "maul":
+        return _maulprofil(profil.width, h).buffer(aufmass, join_style=2) \
+            if aufmass > 0 else _maulprofil(profil.width, h)
+    b = profil.width / 2
+    if profil.kind == "rechteck":
+        roh = shapely.Polygon([(-b, 0.0), (b, 0.0), (b, h), (-b, h)])
+    else:                                            # trapez
+        o = b + profil.side_slope * h
+        roh = shapely.Polygon([(-b, 0.0), (b, 0.0), (o, h), (-o, h)])
+    return roh.buffer(aufmass, join_style=2) if aufmass > 0 else roh
+
+
+def _graben_sweep(struct, aufmass: float, nach_unten: float
+                  ) -> trimesh.Trimesh:
+    """
+    Querschnitt entlang der Achse ziehen. z je Achspunkt ist die SOHLE,
+    der Querschnitt sitzt darauf; `nach_unten` legt ihn zusätzlich tiefer.
+    """
+    achse = np.asarray(struct.axis, dtype=float)
+    quer = _graben_querschnitt(struct.profile, aufmass)
+    if nach_unten > 0:
+        quer = shapely.affinity.translate(quer, yoff=-nach_unten)
+    teile = []
+    for a, b in zip(achse[:-1], achse[1:]):
+        vec = b - a
+        laenge = float(np.linalg.norm(vec))
+        if laenge < 1e-9:
+            continue
+        seg = extrude_polygon(quer, height=laenge)
+        seg.apply_translation([0, 0, -laenge / 2])
+        seg.apply_transform(_achsen_transform(vec))
+        seg.apply_translation((a + b) / 2)
+        teile.append(seg)
+    if not teile:
+        raise ValueError(f"Graben {struct.id}: Achse hat keine Länge")
+    return teile[0] if len(teile) == 1 else trimesh.util.concatenate(teile)
+
+
+def build_graben(struct) -> trimesh.Trimesh:
+    t = max(struct.wall_thickness, 0.0)
+    if ist_aushub(struct):
+        return _graben_sweep(struct, aufmass=t, nach_unten=t)
+    if t <= 0:
+        return _graben_sweep(struct, aufmass=0.0, nach_unten=0.0)
+    aussen = _graben_sweep(struct, aufmass=t, nach_unten=t)
+    innen = _graben_sweep(struct, aufmass=0.0, nach_unten=0.0)
+    return _schale(aussen, innen, f"Graben {struct.id}")
+
+
 def bohrkoerper(struct, ueberstand: float) -> trimesh.Trimesh | None:
     """
     Der Raum, den ein Durchlass im Erdreich BRAUCHT: Rohraußenkontur,
@@ -714,28 +845,174 @@ def gelaende_koerper_laden(spec: CaseSpec, base_dir) -> trimesh.Trimesh | None:
     return trimesh.load(pfad, force="mesh")
 
 
-def gelaende_mit_durchlaessen(field, spec: CaseSpec, hinweise: list | None = None,
-                              base_dir=".") -> trimesh.Trimesh | None:
+# Typen, die sich selbst als Aushub erkennen dürfen. Bewusst nur diese drei:
+# eine in den Boden geschobene WAND soll eine eingegrabene Wand bleiben und
+# keine Grube werden — das wäre eine stille Umdeutung von Beton in Wasser.
+AUSHUB_TYPEN = {"schacht", "kammer", "graben"}
+
+# Wie weit die Oberkante über dem Gelände liegen darf und trotzdem als
+# „eingegraben" gilt. Ein Schachtdeckel schließt bündig ab; ohne diesen
+# Spielraum entschiede die dritte Nachkommastelle über Grube oder Bauteil.
+_BUENDIG = 0.05
+
+
+def eingegraben(struct, field) -> bool:
+    """
+    Liegt die Oberkante des Körpers auf oder unter dem gewachsenen Gelände?
+    Das ist die Frage, aus der sich `wirkung: auto` beantwortet.
+    """
+    if field is None or struct.type not in AUSHUB_TYPEN:
+        return False
+    oben = getattr(struct, "top_level", None)
+    if oben is None and struct.type == "graben":
+        p = struct.profile
+        hoehe = p.width if p.kind == "kreis" else (p.height or 0.0)
+        oben = max(float(a[2]) + hoehe for a in struct.axis)
+    if oben is None:
+        return False
+    lage = aushub_grundriss(struct)
+    if lage is None:
+        return False
+    poly = lage[0]
+    rand = np.asarray(poly.exterior.coords, dtype=float)
+    if not len(rand):
+        return False
+    gelaende = field.sample(rand[:, 0], rand[:, 1])
+    return float(np.min(gelaende)) >= oben - _BUENDIG
+
+
+def wirkung_von(struct, field=None) -> str:
+    """
+    Wirkung eines Körpers: „bauteil" oder „aushub". Bei `wirkung: auto`
+    (Vorbelegung der Aushub-Grundtypen) entscheidet die Lage — ein frisch
+    abgesetzter Schacht steht auf dem Gelände und ist ein Bauteil; erst
+    wenn er in den Boden geschoben wird, wird er zur Grube.
+    """
+    gesetzt = getattr(struct, "wirkung", "bauteil")
+    if gesetzt != "auto":
+        return gesetzt
+    return "aushub" if eingegraben(struct, field) else "bauteil"
+
+
+def ist_aushub(struct, field=None) -> bool:
+    """Wird dieser Körper aus dem Erdreich geschnitten statt hineingestellt?"""
+    return wirkung_von(struct, field) == "aushub"
+
+
+def braucht_erdkoerper(spec: CaseSpec, field=None) -> bool:
+    """
+    Ob der Fall den Geländekörper braucht statt der offenen Höhenfläche.
+    Ein Höhenfeld hat ein z je x/y und kann deshalb weder eine Bohrung noch
+    einen Schacht tragen — sobald etwas ausgehoben wird oder durchstößt,
+    muss das Gelände ein geschlossener Körper sein.
+    """
+    if spec.domain is None:
+        return False
+    if spec.terrain is not None and getattr(spec.terrain.base, "koerper", None):
+        return True
+    if any(o.type == "berechnungskoerper"
+           for o in (spec.terrain.operations if spec.terrain else [])):
+        return True
+    return any(ist_aushub(s, field)
+               or (s.type == "culvert"
+                   and getattr(s, "durchstoesst_gelaende", False))
+               for s in spec.structures)
+
+
+def aushub_grundriss(struct) -> tuple[shapely.base.BaseGeometry, float] | None:
+    """
+    Grundriss und Sohle eines Aushubs — ohne den Körper zu bauen.
+
+    Ein geneigter Grabensohle wird durch ihren tiefsten Punkt vertreten. Das
+    ist für die Frage, ob etwas IM Aushub liegt, die richtige Näherung: es
+    gilt dann für den ganzen Graben, was am tiefsten Punkt gilt.
+    """
+    t = max(getattr(struct, "wall_thickness", 0.0) or 0.0, 0.0)
+    if struct.type == "schacht":
+        return _schacht_grundriss(struct, t), struct.invert_level - t
+    if struct.type == "kammer":
+        poly = shapely.Polygon(struct.footprint)
+        return (poly.buffer(t, join_style=2),
+                _kammer_sohle(struct, poly) - t)
+    if struct.type == "graben":
+        achse = np.asarray(struct.axis, dtype=float)
+        p = struct.profile
+        halbe = (p.width / 2 if p.kind in ("kreis", "rechteck", "maul")
+                 else p.width / 2 + p.side_slope * (p.height or 0.0))
+        linie = shapely.LineString(achse[:, :2])
+        return linie.buffer(halbe + t, join_style=2), float(achse[:, 2].min()) - t
+    return None
+
+
+def gelaende_mit_aushub(field, spec: CaseSpec):
+    """
+    Höhenfeld mit eingeschnittenen Aushüben.
+
+    Das Höhenraster kennt nur die gewachsene Oberfläche — der Aushub lebt
+    im Erdkörper. Jede Regel, die „liegt das Bauteil über dem Gelände?"
+    fragt, bekäme damit für alles IN einer Kammer die falsche Antwort: eine
+    Trennwand im ausgehobenen Schacht gälte als „vollständig unter dem
+    Gelände und hydraulisch wirkungslos".
+
+    Rückgabe ist ein neues Feld; das übergebene bleibt unverändert. Ohne
+    Aushub wird dasselbe Feld zurückgegeben (kein Kopieraufwand).
+    """
+    # Entschieden wird gegen das GEWACHSENE Feld (das übergebene) — sonst
+    # senkt der erste Aushub das Gelände und der zweite gilt plötzlich als
+    # freistehend
+    aushuebe = [s for s in spec.structures if ist_aushub(s, field)]
+    if field is None or not aushuebe:
+        return field
+    import dataclasses
+
+    xx, yy = field.mesh_xy()
+    z = np.array(field.z, dtype=float)
+
+    for s in aushuebe:
+        lage = aushub_grundriss(s)
+        if lage is None:
+            continue
+        poly, sohle = lage
+        minx, miny, maxx, maxy = poly.bounds
+        grob = ((xx >= minx) & (xx <= maxx) & (yy >= miny) & (yy <= maxy))
+        if not grob.any():
+            continue
+        # nur die Punkte im Hüllrechteck einzeln gegen das Polygon prüfen.
+        # Die KANTE zählt mit (intersects statt contains): ein Bauteil, das
+        # den Aushub voll ausfüllt — eine Endschwelle über die ganze
+        # Beckenbreite — hat seine Eckpunkte genau auf der Kante und läge
+        # sonst scheinbar im gewachsenen Boden.
+        idx = np.nonzero(grob)
+        drin = shapely.intersects_xy(poly, xx[idx], yy[idx])
+        ziel = (idx[0][drin], idx[1][drin])
+        z[ziel] = np.minimum(z[ziel], sohle)
+
+    return dataclasses.replace(field, z=z)
+
+
+def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
+                           base_dir=".") -> trimesh.Trimesh | None:
     """
     Der Geländekörper, wie ihn der Vernetzer bekommt: entweder der
     importierte Volumenkörper oder ein aus dem Höhenfeld aufgezogener
-    Erdkörper — in beiden Fällen mit ausgeschnittenen Rohrbohrungen.
+    Erdkörper — in beiden Fällen mit allem Ausgehobenen herausgeschnitten
+    (Rohrbohrungen und Bauwerke mit `wirkung: aushub`).
     None heißt: die einfache Höhenfläche genügt (schneller, und für alles
     ohne Hohlraum richtig).
     """
+    # Die billige Frage zuerst — sie kostet keine einzige Boolesche
+    # Operation und kein Laden einer STL-Datei
+    if not braucht_erdkoerper(spec, field):
+        return None
     rohre = [s for s in spec.structures
              if s.type == "culvert" and getattr(s, "durchstoesst_gelaende", False)]
+    aushub = [s for s in spec.structures if ist_aushub(s, field)]
     importiert = gelaende_koerper_laden(spec, base_dir)
     # Die Geländeoperation „Berechnungskörper" schaltet den Körper
     # ausdrücklich ein und trägt seine Maße — sie ist der sichtbare Weg
     # dorthin, der Schalter am Rohr der stillschweigende.
     erklaert = next((o for o in (spec.terrain.operations if spec.terrain else [])
                      if o.type == "berechnungskoerper"), None)
-    if importiert is None and erklaert is None \
-            and (not rohre or spec.domain is None):
-        return None
-    if spec.domain is None:
-        return None
     zelle = spec.mesh.base_cell if spec.mesh else 0.25
     if importiert is not None:
         koerper = importiert
@@ -762,7 +1039,27 @@ def gelaende_mit_durchlaessen(field, spec: CaseSpec, hinweise: list | None = Non
             if hinweise is not None:
                 hinweise.append(f"Durchlass {s.id}: Bohrung durch das Gelände "
                                 f"fehlgeschlagen ({e})")
+
+    # Aushub: Schacht, Kammer, Graben — und jeder andere Körper, den der
+    # Bearbeiter auf „aushub" gestellt hat. Die Wandungen des Hohlraums
+    # gehören danach zur Geländefläche; ein eigener Patch entsteht nicht.
+    if aushub:
+        terrain_fuer_edits = field if field is not None else None
+        for s in aushub:
+            try:
+                loch = koerper_von(s, base_dir, spec.domain, terrain_fuer_edits)
+            except Exception as e:                   # pragma: no cover
+                if hinweise is not None:
+                    hinweise.append(f"Aushub {s.id}: Körper nicht erzeugbar ({e})")
+                continue
+            try:
+                koerper = trimesh.boolean.difference([koerper, loch])
+            except Exception as e:                   # pragma: no cover
+                if hinweise is not None:
+                    hinweise.append(f"Aushub {s.id}: Ausschneiden aus dem "
+                                    f"Gelände fehlgeschlagen ({e})")
     return koerper
+
 
 
 def _rect_shell(width: float, height: float, length: float) -> trimesh.Trimesh:
@@ -877,6 +1174,25 @@ def gewollt_verschnitten(spec: CaseSpec) -> set[str]:
     return {s.patch for s in spec.structures if s.type == "culvert"}
 
 
+_BUILDER = {"wall": build_wall, "basin": build_basin, "pier": build_pier,
+            "culvert": build_culvert, "weir": build_weir,
+            "schacht": build_schacht, "kammer": build_kammer,
+            "graben": build_graben}
+
+
+def koerper_von(struct, base_dir: str | Path = ".", domain=None,
+                terrain=None) -> trimesh.Trimesh:
+    """
+    Der fertige Körper eines Bauwerks — parametrisch gebaut oder importiert,
+    in beiden Fällen mit angewandtem Bearbeitungsstapel. Eine Stelle, damit
+    Vernetzung und Aushub garantiert denselben Körper sehen.
+    """
+    builder = _BUILDER.get(struct.type)
+    mesh = (builder(struct) if builder
+            else build_imported(struct, Path(base_dir)))
+    return apply_edits(mesh, struct, domain, terrain)
+
+
 def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
                  include_screens: bool = False,
                  hinweise: list[str] | None = None
@@ -885,28 +1201,33 @@ def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
     Alle Körper des Falls, Schlüssel = Patchname. Rechenstäbe nur auf
     Wunsch (Vorschau im Editor) — für den Solver bleibt der Rechen eine
     poröse Zone, die Stäbe werden nicht aufgelöst (Spez. 6.3).
+
+    Ausgehobene Körper (`wirkung: aushub`) tauchen hier NICHT auf: sie sind
+    Hohlraum im Gelände, keine eigene Fläche. Sie werden in
+    `gelaende_koerper_bauen` abgezogen.
     """
     base_dir = Path(base_dir)
     out: dict[str, trimesh.Trimesh] = {}
     terrain = None
-    if spec.terrain is not None and any(
-            e.type == "gelaende"
-            for s in spec.structures for e in getattr(s, "edits", [])):
+    # Das Gelände wird gebraucht für Gelände-Bearbeitungen UND für die
+    # Frage, ob ein Körper mit `wirkung: auto` eingegraben ist
+    braucht_gelaende = spec.terrain is not None and (
+        any(e.type == "gelaende"
+            for s in spec.structures for e in getattr(s, "edits", []))
+        or any(s.type in AUSHUB_TYPEN
+               and getattr(s, "wirkung", "bauteil") == "auto"
+               for s in spec.structures))
+    if braucht_gelaende:
         from .terrain import TerrainField
         terrain = TerrainField.from_spec(spec.terrain, spec.domain, base_dir)
     for s in spec.structures:
+        if ist_aushub(s, terrain):
+            continue
         if s.type == "screen":
             if include_screens:
                 out[s.patch] = build_screen_bars(s)
             continue
-        builder = {"wall": build_wall, "basin": build_basin,
-                   "pier": build_pier, "culvert": build_culvert,
-                   "weir": build_weir}.get(s.type)
-        mesh = (builder(s) if builder else build_imported(s, base_dir))
-        # Bearbeitungsstapel zentral — gilt fuer parametrische UND
-        # importierte Koerper gleichermassen
-        mesh = apply_edits(mesh, s, spec.domain, terrain)
-        out[s.patch] = mesh
+        out[s.patch] = koerper_von(s, base_dir, spec.domain, terrain)
     if hinweise is not None:
         hinweise += entflechten(out, gewollt_verschnitten(spec))
     return out

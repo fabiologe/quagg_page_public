@@ -137,6 +137,32 @@ def _dxf_polyline_points(e) -> list[list[float]]:
              float(v.dxf.location.z)] for v in e.vertices]
 
 
+# Import-Rollen, die zu einer VERMESSUNGSKANTE werden, und die Rolle, die
+# die Kante im Fall trägt. Was daraus für das Gelände folgt, leitet
+# core/kanten.py aus Rolle und Lage ab.
+KANTEN_ROLLEN = {
+    "bruchkante": "frei",
+    "boeschung_ok": "boeschung_ok",
+    "boeschung_uk": "boeschung_uk",
+    "sohle": "sohle",
+    "beckenrand": "beckenrand",
+    "krone": "krone",
+    # Diese beiden ergeben ein BAUTEIL statt einer Geländeoperation
+    "mauer": "mauer",
+    "wehrkrone": "wehrkrone",
+}
+ROLLEN_TEXT = {
+    "bruchkante": "Bruchkante", "boeschung_ok": "Böschungsoberkante",
+    "boeschung_uk": "Böschungsunterkante", "sohle": "Sohle",
+    "beckenrand": "Beckenrand", "krone": "Krone",
+    "mauer": "Mauerkrone", "wehrkrone": "Überfallkante",
+}
+# Rollen, aus denen ein GELÄNDE entstehen kann — die Bauteilrollen nicht:
+# aus einer Mauerkrone allein lässt sich keine Höhenfläche bilden.
+GELAENDE_KANTEN = tuple(r for r in KANTEN_ROLLEN
+                        if r not in ("mauer", "wehrkrone"))
+
+
 # Layernamen aus der Vermessung deuten: BOK/BÖOK/OK -> Oberkante usw.
 def _linien_rolle(layer: str) -> str:
     n = layer.lower()
@@ -144,9 +170,18 @@ def _linien_rolle(layer: str) -> str:
         return "boeschung_ok"
     if any(t in n for t in ("buk", "bö_uk", "boe_uk", "unterkante", "_uk")):
         return "boeschung_uk"
-    if any(t in n for t in ("kante", "bruch")):
-        return "bruchkante"
+    # Bauteile vor Gelände: „Wehrkrone" ist ein Wehr, keine Dammkrone
+    if any(t in n for t in ("wehr", "ueberfall", "überfall", "streich")):
+        return "wehrkrone"
+    if any(t in n for t in ("mauer", "wand")):
+        return "mauer"
+    if any(t in n for t in ("beckenrand", "beckenkante")):
+        return "beckenrand"
+    if any(t in n for t in ("krone", "damm")):
+        return "krone"
     if any(t in n for t in ("sohle", "gerinne", "graben")):
+        return "sohle"
+    if any(t in n for t in ("kante", "bruch")):
         return "bruchkante"
     return "querschnitt"
 
@@ -500,13 +535,58 @@ def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
 # Rasterung Gelände-TIN -> ESRI-ASCII
 # --------------------------------------------------------------------------
 
+def _raster_aus_dreiecken(v: np.ndarray, f: np.ndarray,
+                          xx: np.ndarray, yy: np.ndarray) -> np.ndarray:
+    """
+    Gegebene Dreiecke baryzentrisch auf das Raster legen — und sonst nichts.
+
+    Der Punkt ist, was hier NICHT passiert: es wird nicht neu vermascht. Die
+    Dreiecke sind die des TIN, also genau das, was gezeichnet wurde. Wo kein
+    Dreieck liegt, bleibt NaN — dort ist nicht gemessen, und das soll man
+    dem Raster ansehen. (Der vorherige Weg über matplotlib lehnte manches
+    gültige TIN mit „Triangulation is invalid" ab und wich dann auf eine
+    frische Delaunay über die Punktwolke aus. Die füllt die konvexe Hülle
+    lückenlos und spannt dabei quer über ungemessenes Gebiet — beim Becken
+    Dreiecke über die halbe Grube.)
+    """
+    z = np.full(xx.shape, np.nan)
+    if not len(f):
+        return z
+    ny, nx = xx.shape
+    x0, y0 = float(xx[0, 0]), float(yy[0, 0])
+    dx = float(xx[0, 1] - xx[0, 0]) if nx > 1 else 1.0
+    dy = float(yy[1, 0] - yy[0, 0]) if ny > 1 else 1.0
+    for ecken in v[f]:
+        (ax, ay), (bx, by), (cx, cy) = ecken[0, :2], ecken[1, :2], ecken[2, :2]
+        det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(det) < 1e-12:
+            continue                       # steht senkrecht, trägt keine Höhe
+        i0 = max(int(np.floor((ecken[:, 0].min() - x0) / dx)), 0)
+        i1 = min(int(np.ceil((ecken[:, 0].max() - x0) / dx)) + 1, nx)
+        j0 = max(int(np.floor((ecken[:, 1].min() - y0) / dy)), 0)
+        j1 = min(int(np.ceil((ecken[:, 1].max() - y0) / dy)) + 1, ny)
+        if i1 <= i0 or j1 <= j0:
+            continue
+        X, Y = xx[j0:j1, i0:i1], yy[j0:j1, i0:i1]
+        l1 = ((by - cy) * (X - cx) + (cx - bx) * (Y - cy)) / det
+        l2 = ((cy - ay) * (X - cx) + (ax - cx) * (Y - cy)) / det
+        l3 = 1.0 - l1 - l2
+        drin = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+        if not drin.any():
+            continue
+        ziel = z[j0:j1, i0:i1]
+        neu = drin & np.isnan(ziel)
+        ziel[neu] = (l1 * ecken[0, 2] + l2 * ecken[1, 2]
+                     + l3 * ecken[2, 2])[neu]
+    return z
+
+
 def rasterize_tin_to_asc(mesh: trimesh.Trimesh, out_path: Path,
                          resolution: float) -> dict:
     """
-    TIN baryzentrisch auf ein Raster interpolieren (matplotlib-Triangulation
-    — die Lib ist ohnehin da). Zellen außerhalb des TIN bleiben NODATA.
+    TIN baryzentrisch auf ein Raster legen. Zellen außerhalb des TIN
+    bleiben NODATA und werden danach als „nicht gemessen" gefüllt.
     """
-    from matplotlib.tri import LinearTriInterpolator, Triangulation
 
     v = np.asarray(mesh.vertices, dtype=float)
     f = np.asarray(mesh.faces, dtype=int)
@@ -535,29 +615,22 @@ def rasterize_tin_to_asc(mesh: trimesh.Trimesh, out_path: Path,
                          "kein Höhenraster bilden. Ist das wirklich ein "
                          "Gelände und keine Wandfläche?")
 
-    try:
-        tri = Triangulation(v[:, 0], v[:, 1], f)
-        z = np.ma.filled(LinearTriInterpolator(tri, v[:, 2])(xx, yy), np.nan)
-    except (RuntimeError, ValueError):
-        # Letzte Rettung: eigene Vermaschung der Stützpunkte. Verliert die
-        # Zwangskanten des TIN, liefert aber ein brauchbares Raster.
-        from scipy.interpolate import LinearNDInterpolator
-        pkte = v[np.unique(f)]
-        z = LinearNDInterpolator(pkte[:, :2], pkte[:, 2])(xx, yy)
+    # Das TIN selbst rastern — keine zweite Vermaschung, keine erfundenen
+    # Stützpunkte. Die Dreiecke sind die der Zeichnung.
+    z = _raster_aus_dreiecken(v, f, xx, yy)
 
-    # Löcher schließen: ein TIN deckt den Hüllquader nie ganz ab (Ecken,
-    # senkrechte Wände). Blieben sie als NODATA stehen, füllt der Leser sie
-    # mit dem MITTELWERT aller Höhen — mitten im Becken entstand daraus ein
-    # Plateau von über einem Meter.
+    # Was der Hüllquader mehr umfasst als das TIN (Ecken, Ränder), ist NICHT
+    # gemessen. Blieben diese Zellen NODATA, füllte der Leser sie mit dem
+    # MITTELWERT aller Höhen — mitten im Becken entstand daraus ein Plateau
+    # von über einem Meter. Gefüllt wird deshalb WAAGERECHT auf der höchsten
+    # gemessenen Höhe: eine Ebene erfindet keine Form, und dass sie oben
+    # liegt, ist im Einstaunachweis die sichere Seite — Wasser verlässt das
+    # Modell nicht über eine Senke, die niemand vermessen hat.
     aus_tin = float(np.mean(~np.isnan(z)))
     luecke = np.isnan(z)
     if luecke.any() and not luecke.all():
-        from scipy.spatial import cKDTree
-        gy, gx = np.nonzero(~luecke)
-        baum = cKDTree(np.column_stack([xx[~luecke], yy[~luecke]]))
-        _, nachbar = baum.query(np.column_stack([xx[luecke], yy[luecke]]))
-        z = z.copy()
-        z[luecke] = z[~luecke][nachbar]
+        z = np.asarray(z, dtype=float).copy()
+        z[luecke] = float(np.nanmax(z))
 
     nodata = -9999.0
     grid = np.where(np.isnan(z), nodata, z)
@@ -619,6 +692,131 @@ def _kanten_grenze(pkte: list, schritt: float) -> float:
     return float(max(1.5 * np.median(fremd), 3 * schritt))
 
 
+def _asc_schreiben(z: np.ndarray, out_path: Path, x0: float, y0: float,
+                   resolution: float) -> None:
+    nodata = -9999.0
+    grid = np.where(np.isnan(z), nodata, z)
+    zeilen = [f"ncols {z.shape[1]}", f"nrows {z.shape[0]}",
+              f"xllcorner {x0 - resolution / 2:.3f}",
+              f"yllcorner {y0 - resolution / 2:.3f}",
+              f"cellsize {resolution:g}", f"nodata_value {nodata:g}"]
+    for row in grid[::-1]:                     # ESRI: von Nord nach Süd
+        zeilen.append(" ".join(f"{v:.3f}" for v in row))
+    out_path.write_text("\n".join(zeilen))
+
+
+def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
+    """
+    Gelände aus GESCHLOSSENEN Vermessungskanten — mit Zwangskanten.
+
+    `ringe`: [(kennung, (n,3)-Array), …], jeder Ring geschlossen.
+
+    Der Unterschied zur gewöhnlichen Delaunay (`tin_from_lines`): dort wird
+    über die Punktwolke vermascht und hinterher weggeschnitten, was zu weit
+    greift. Das ist eine Näherung — Dreiecke schneiden Ecken ab und springen
+    über das Becken, weil die Vermaschung die Ringe gar nicht kennt.
+
+    Hier sind die Ringe die GRENZE. Liegt die Sohle im Beckenrand, entstehen
+    zwei getrennte Gebiete:
+
+        innerhalb der Sohle                  -> vermascht (die Sohlfläche)
+        zwischen Sohle und Beckenrand        -> vermascht (die Böschung)
+        quer durch das Becken, den Ring
+        ignorierend                          -> gibt es nicht
+
+    Der Ring wird dazu als Polygon MIT LOCH aufgespannt; das Loch ist der
+    nächstinnere Ring. GEOS triangelt so nur den Zwischenraum und benutzt
+    dabei ausschließlich die vorhandenen Stützpunkte — es wird kein einziger
+    Punkt hinzuerfunden.
+    """
+    import shapely
+
+    gueltig = [(kid, np.asarray(p, dtype=float)) for kid, p in ringe
+               if len(np.asarray(p)) >= 4]
+    polys: dict[str, shapely.Polygon] = {}
+    for kid, p in gueltig:
+        poly = shapely.Polygon(p[:, :2])
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if isinstance(poly, shapely.Polygon) and poly.area > 1e-9:
+            polys[kid] = poly
+    if not polys:
+        raise ValueError("Keine geschlossene Kante, aus der eine Fläche "
+                         "entstehen könnte")
+
+    # Höhe je Stützpunkt — die Ringe sind die einzige Höhenquelle
+    hoehen: dict[tuple, float] = {}
+    for _, p in gueltig:
+        for x, y, z in p:
+            hoehen[(round(float(x), 6), round(float(y), 6))] = float(z)
+
+    # Wer liegt in wem? Maßgeblich ist der KLEINSTE umschließende Ring —
+    # bei Rand > Berme > Sohle gehört die Sohle zur Berme, nicht zum Rand.
+    def eltern(kid: str) -> str | None:
+        innen = polys[kid]
+        kand = [(polys[a].area, a) for a in polys
+                if a != kid and polys[a].area > innen.area
+                and polys[a].contains(innen.representative_point())]
+        return min(kand)[1] if kand else None
+
+    kinder: dict[str, list[str]] = {k: [] for k in polys}
+    for kid in polys:
+        e = eltern(kid)
+        if e is not None:
+            kinder[e].append(kid)
+
+    dreiecke: list[np.ndarray] = []
+    for kid, poly in polys.items():
+        loecher = [np.asarray(polys[c].exterior.coords) for c in kinder[kid]]
+        try:
+            flaeche = shapely.Polygon(poly.exterior.coords, holes=loecher)
+            if not flaeche.is_valid:
+                flaeche = flaeche.buffer(0)
+            teile = shapely.constrained_delaunay_triangles(flaeche)
+        except Exception:
+            continue
+        for t in getattr(teile, "geoms", []):
+            ecken = np.asarray(t.exterior.coords)[:3]
+            z = [hoehen.get((round(float(x), 6), round(float(y), 6)))
+                 for x, y in ecken]
+            if any(v is None for v in z):
+                continue          # Punkt ohne Vermessungshöhe: nicht raten
+            dreiecke.append(np.column_stack([ecken, z]))
+
+    if not dreiecke:
+        raise ValueError("Aus den geschlossenen Kanten ließ sich keine "
+                         "Fläche vermaschen")
+
+    alle = np.vstack([np.asarray(p, dtype=float) for _, p in gueltig])
+    x0, y0 = alle[:, 0].min(), alle[:, 1].min()
+    x1, y1 = alle[:, 0].max(), alle[:, 1].max()
+    nx = max(2, int(np.ceil((x1 - x0) / resolution)) + 1)
+    ny = max(2, int(np.ceil((y1 - y0) / resolution)) + 1)
+    xx, yy = np.meshgrid(x0 + np.arange(nx) * resolution,
+                         y0 + np.arange(ny) * resolution)
+
+    ecken = np.vstack(dreiecke)
+    f = np.arange(len(ecken)).reshape(-1, 3)
+    z = _raster_aus_dreiecken(ecken, f, xx, yy)
+    abdeckung = float(np.mean(~np.isnan(z)))
+    luecke = np.isnan(z)
+    if luecke.any() and not luecke.all():
+        # Außerhalb des äußersten Rings ist nichts vermessen. Waagerecht auf
+        # der höchsten gemessenen Höhe: eine Ebene erfindet keine Form, und
+        # oben liegt sie auf der sicheren Seite — Wasser verlässt das Modell
+        # nicht über eine Senke, die niemand aufgenommen hat.
+        z = z.copy()
+        z[luecke] = float(np.nanmax(z))
+
+    _asc_schreiben(z, out_path, float(x0), float(y0), resolution)
+    return {"nx": nx, "ny": ny,
+            "extent": [round(float(x0), 3), round(float(y0), 3),
+                       round(float(x1), 3), round(float(y1), 3)],
+            "n_dreiecke": len(dreiecke), "n_punkte": len(hoehen),
+            "n_ringe": len(polys),
+            "coverage": round(abdeckung, 3)}
+
+
 def tin_from_lines(linien: list, out_path: Path, resolution: float,
                    max_kante: float | None = None) -> dict:
     """
@@ -626,8 +824,8 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
     Vermessungsdaten oft das Einzige, was geliefert wird — ein fertiges TIN
     gibt es nicht. Die Punkte werden vermascht und baryzentrisch
     interpoliert. Dreiecke mit sehr langer Kante fallen heraus (dort würde
-    Gelände erfunden); die verbleibenden Lücken werden von der nächsten
-    bekannten Höhe fortgeführt, damit kein Loch im Rechengebiet bleibt.
+    Gelände erfunden); die verbleibenden Lücken werden STUFENFREI
+    geschlossen (Fläche geringster Krümmung durch die bekannten Höhen).
     """
     from matplotlib.tri import LinearTriInterpolator, Triangulation
     from scipy.spatial import cKDTree
@@ -658,9 +856,16 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
 
     luecke = np.isnan(z)
     if luecke.any():
-        _, nachbar = cKDTree(v[:, :2]).query(
-            np.column_stack([xx[luecke], yy[luecke]]))
-        z[luecke] = v[nachbar, 2]
+        # Außerhalb der Dreiecksmaschen war bisher „nimm die Höhe des
+        # NÄCHSTEN Stützpunkts". Das ergibt ein Voronoi-Feld: stückweise
+        # konstant, mit einer Stufe an jeder Zellgrenze. Liegen Ober- und
+        # Unterkante einer Böschung nebeneinander, stand dazwischen die
+        # volle Höhendifferenz als senkrechte Wand — das waren die
+        # „automatischen Höhensprünge" beim Import von Bruchkanten.
+        # Jetzt wird die Lücke stufenfrei geschlossen: die Fläche mit der
+        # geringsten Krümmung durch die bekannten Höhen.
+        from .terrain import laplace_fuellen
+        z = laplace_fuellen(z, ~luecke)
 
     zeilen = [f"ncols {nx}", f"nrows {ny}",
               f"xllcorner {x0 - resolution / 2:.3f}",
@@ -712,7 +917,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
     pfeiler | wehr | becken | bauwerk | querschnitt | ignorieren.
     Rückgabe: geänderte Spec (als dict) + Bericht.
     """
-    from .casespec import OpBoeschung, OpBruchkante, Section, StructImported
+    from .casespec import (OpBoeschung, OpBruchkante, Section,
+                          StructImported, Vermessungskante)
 
     imp_dir = case_dir / "imports" / import_id
     manifest = json.loads((imp_dir / "manifest.json").read_text())
@@ -759,6 +965,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
     kanten: dict[str, dict] = {}
     vorhandene_ops = {o.id for o in (spec.terrain.operations
                                      if spec.terrain else [])}
+    vorhandene_kanten = {k.id for k in (spec.terrain.kanten
+                         if spec.terrain else [])}
     vorhandene_qs = {x.id for x in spec.evaluation.sections}
 
     def linie_laden(c) -> np.ndarray:
@@ -778,24 +986,67 @@ def apply_import(spec, case_dir: Path, import_id: str,
         res = spec.terrain.base.resolution if spec.terrain else 0.5
         linien = [linie_laden(by_id[d["candidate"]]) for d in ent]
         asc = case_dir / f"gelaende_{import_id}_linien.asc"
-        info = tin_from_lines(linien, asc, res)
+
+        # Geschlossene Kanten sind GRENZEN, keine bloßen Punktwolken. Liegt
+        # eine Sohle in einem Beckenrand, gehört die Fläche dazwischen
+        # vermascht und die quer durchs Becken NICHT — das entscheidet eine
+        # gewöhnliche Delaunay nicht, sie kennt die Ringe gar nicht. Mit
+        # Zwangskanten wird jeder Ring zur Grenze und der nächstinnere zum
+        # Loch, und es entsteht kein einziger neuer Stützpunkt.
+        ringe = [(re.sub(r"[^a-z0-9_]", "_", by_id[d["candidate"]]["name"].lower()),
+                  li) for d, li in zip(ent, linien)
+                 if len(li) >= 4
+                 and abs(li[0][0] - li[-1][0]) < 1e-6
+                 and abs(li[0][1] - li[-1][1]) < 1e-6]
+        info, ueber_ringe = None, False
+        if ringe:
+            try:
+                info = tin_aus_ringen(ringe, asc, res)
+                ueber_ringe = True
+            except Exception as e:
+                report.append(f"Vermaschung über die geschlossenen Kanten "
+                              f"nicht möglich ({e}) — gewöhnliche "
+                              "Vermaschung verwendet.")
+        if info is None:
+            info = tin_from_lines(linien, asc, res)
         ops = spec.terrain.operations if spec.terrain else []
+        # Die Vermessungskanten müssen den Neuaufbau überleben — sie sind
+        # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
+        vk = spec.terrain.kanten if spec.terrain else []
         mat = spec.terrain.material if spec.terrain else "erde"
         spec.terrain = Terrain(base=TerrainBase(source=asc.name,
                                                 resolution=res),
-                               operations=ops, material=mat)
+                               kanten=vk, operations=ops, material=mat)
         nonlocal terrain_bbox
         e = info["extent"]
         zs = np.concatenate([li[:, 2] for li in linien])
         terrain_bbox = np.array([[e[0], e[1], float(zs.min())],
                                  [e[2], e[3], float(zs.max())]])
-        report.append(
-            f"Gelände aus {len(linien)} Kanten vermascht: "
-            f"{info['n_punkte']} Stützpunkte auf {info['nx']}×{info['ny']} "
-            f"Raster, Höhen {zs.min():.2f} … {zs.max():.2f} m. "
-            f"{info['coverage']:.0%} der Fläche liegen zwischen den Kanten "
-            f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge), der Rest "
-            "führt die nächstgelegene Höhe fort.")
+        if ueber_ringe:
+            report.append(
+                f"Gelände aus {info['n_ringe']} geschlossenen Kanten mit "
+                f"ZWANGSKANTEN vermascht: {info['n_dreiecke']} Dreiecke aus "
+                f"{info['n_punkte']} Stützpunkten auf "
+                f"{info['nx']}×{info['ny']} Raster, Höhen {zs.min():.2f} … "
+                f"{zs.max():.2f} m, Abdeckung {info['coverage']:.0%}. Jeder "
+                "Ring ist eine Grenze und der nächstinnere sein Loch — es "
+                "wurde kein Stützpunkt hinzuerfunden, alle liegen auf den "
+                "Kanten."
+                + (f" Die restlichen {1 - info['coverage']:.0%} liegen "
+                   "außerhalb des äußersten Rings und werden waagerecht auf "
+                   "der höchsten gemessenen Höhe ergänzt."
+                   if info["coverage"] < 0.999 else ""))
+        else:
+            report.append(
+                f"Gelände aus {len(linien)} Kanten vermascht: "
+                f"{info['n_punkte']} Stützpunkte auf {info['nx']}×{info['ny']} "
+                f"Raster, Höhen {zs.min():.2f} … {zs.max():.2f} m. "
+                f"{info['coverage']:.0%} der Fläche liegen zwischen den Kanten "
+                f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge). Die "
+                f"übrigen {1 - info['coverage']:.0%} werden stufenfrei "
+                "ergänzt — dort ist nichts gemessen, das Gelände dazwischen "
+                "ist die glatteste Fläche durch die bekannten Höhen und "
+                "keine Aussage der Vermessung.")
 
     # ---- Gelände AUS den Linien -----------------------------------------
     # Vermessungsdaten kommen oft ohne TIN: nur Bruch-, Böschungs- und
@@ -806,8 +1057,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
                             for d in decisions)
     linien_ent = [d for d in decisions
                   if by_id.get(d["candidate"], {}).get("kind") == "polyline"
-                  and d.get("role") in ("bruchkante", "boeschung_ok",
-                                        "boeschung_uk")]
+                  and d.get("role") in GELAENDE_KANTEN]
     aus_linien = terrain_from_lines
     if aus_linien is None:
         aus_linien = (not hat_gelaende_mesh and spec.terrain is None
@@ -844,18 +1094,25 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 sid = f"{sid[:36]}_{n_}"
                 n_ += 1
             existing.add(sid)
+            # Was der Layer über den Zweck sagt, bleibt am Objekt: `role`
+            # trägt hier bereits die Wahl aus dem Dialog, die die
+            # Namensvermutung `role_guess` überschreibt.
+            rolle = {"zulaufrohr": "zulauf", "ablaufrohr": "ablauf"}.get(role)
             spec.structures.append(StructCulvert(
                 id=sid, type="culvert", patch=sid,
                 axis=[tuple(np.round(mitte - n * halb, 3)),
                       tuple(np.round(mitte + n * halb, 3))],
                 profile=CulvertProfile(kind="circular", diameter=round(d, 3)),
-                material=None))
+                rolle=rolle, material=None))
             report.append(
                 f"Rohrmündung „{sid}“: DN{d * 1000:.0f}, Achse "
                 f"({mitte[0]:.2f}, {mitte[1]:.2f}, {mitte[2]:.2f}), "
                 f"Sohle {mitte[2] - d / 2:.3f} m, Richtung "
                 f"({n[0]:.3f}, {n[1]:.3f}); als {halb * 2:.2f} m langer "
-                "Stutzen eingebaut — Randbedingung noch zuordnen")
+                "Stutzen eingebaut"
+                + (f", laut Layer ein {rolle.capitalize()} — "
+                   "„⚯ Anschlüsse herstellen“ koppelt ihn an den passenden "
+                   "Rand" if rolle else " — Randbedingung noch zuordnen"))
             continue
 
         if c["kind"] == "raster":
@@ -870,6 +1127,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 mat = spec.terrain.material if spec.terrain else "erde"
                 spec.terrain = Terrain(
                     base=TerrainBase(source=ziel.name, resolution=res),
+                    kanten=(spec.terrain.kanten if spec.terrain else []),
                     operations=ops, material=mat)
                 report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
                               f"({c['stats'].get('format')})")
@@ -906,6 +1164,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
             spec.terrain = Terrain(
                 base=TerrainBase(source=asc.name, resolution=res,
                                  koerper=koerper_name),
+                kanten=(spec.terrain.kanten if spec.terrain else []),
                 operations=ops, material=mat)
             if koerper_name:
                 report.append(
@@ -927,7 +1186,21 @@ def apply_import(spec, case_dir: Path, import_id: str,
                           f"(Abdeckung {info['coverage']:.0%})"
                           + (f"; {senk} senkrechte Dreiecke übersprungen — "
                              "ein Höhenraster kann keine senkrechte Wand "
-                             "abbilden" if senk else ""))
+                             "abbilden" if senk else "")
+                          + f"; die übrigen {1 - info['coverage']:.0%} "
+                          "liegen außerhalb des TIN und werden waagerecht "
+                          "auf der höchsten gemessenen Höhe ergänzt — dort "
+                          "ist nichts vermessen")
+            if senk > 0.3 * (c["stats"]["n_triangles"] or 1):
+                report.append(
+                    f"ACHTUNG: {senk} von {c['stats']['n_triangles']} "
+                    f"Dreiecken stehen senkrecht — das sind Beckenwände "
+                    "oder Mauern. Ein Höhenraster hat je Punkt genau eine "
+                    "Höhe und kann sie nicht abbilden; zwischen Ober- und "
+                    "Unterkante rechnet es eine Schräge. Für senkrechte "
+                    "Wände denselben Layer als „Gelände als Volumenkörper“ "
+                    "einlesen oder die Kanten als Mauerkrone/Beckenrand "
+                    "zuordnen.")
 
         elif role in solid_roles:
             base = re.sub(r"[^a-z0-9_]", "_", (d.get("patch")
@@ -941,11 +1214,20 @@ def apply_import(spec, case_dir: Path, import_id: str,
             m = load_mesh(c["id"])
             stl_name = f"import_{sid}.stl"
             m.export(case_dir / stl_name)
+            # Vorbelegung aus der Rolle: ohne Material rechnet der Solver
+            # eine hydraulisch GLATTE Wand — für ein Betonbauteil die
+            # falsche Seite der Unsicherheit. „bauwerk" bleibt offen, da
+            # sagt die Rolle nichts über die Oberfläche.
+            werkstoff = d.get("material") or (
+                "beton" if role in ("wand", "pfeiler", "wehr", "becken")
+                else None)
             spec.structures.append(StructImported(
                 id=sid, type="imported", patch=sid, source=stl_name,
-                role=role, material=d.get("material")))
+                role=role, material=werkstoff))
             report.append(f"{role} „{sid}“: {c['stats']['n_triangles']} "
-                          f"Dreiecke{'' if c['stats']['watertight'] else ' (NICHT wasserdicht!)'}")
+                          f"Dreiecke{'' if c['stats']['watertight'] else ' (NICHT wasserdicht!)'}"
+                          + (f"; Material {werkstoff} vorbelegt"
+                             if werkstoff and not d.get("material") else ""))
 
         elif role == "querschnitt":
             arr = linie_laden(c)
@@ -962,58 +1244,37 @@ def apply_import(spec, case_dir: Path, import_id: str,
                           for p in arr]))
             report.append(f"Querschnitt „{sid}“ aus Trasse übernommen")
 
-        elif role == "bruchkante":
+        elif role in KANTEN_ROLLEN:
+            # Die Linie wird als VERMESSUNGSKANTE übernommen, mit ihrer
+            # Rolle. Was daraus für das Gelände folgt (Böschung zwischen
+            # Sohle und Beckenrand, ebene Sohle), leitet core/kanten.py
+            # anschließend aus Rolle UND Lage ab — früher wurde hier
+            # sofort eine Operation erzeugt und die Bedeutung ging
+            # verloren, und Ober-/Unterkante wurden über den LAYERNAMEN
+            # gepaart statt über ihre Lage zueinander.
             if spec.terrain is None:
                 report.append(f"„{c['name']}“ übersprungen: es gibt noch kein "
                               "Gelände, das die Kante verändern könnte")
                 continue
             arr = linie_laden(c)
-            sid = _kanten_id(c["name"], "kante", vorhandene_ops)
-            spec.terrain.operations.append(OpBruchkante(
-                id=sid, type="bruchkante", polyline=_p3(arr), breite=1.0))
-            report.append(f"Bruchkante „{sid}“: {len(arr)} Stützpunkte, "
-                          f"{arr[:, 2].min():.2f} … {arr[:, 2].max():.2f} m")
-
-        elif role in ("boeschung_ok", "boeschung_uk"):
-            seite = "ok" if role == "boeschung_ok" else "uk"
-            k = _paar_schluessel(c["name"])
-            # belegte Seite -> eigener Schlüssel, sonst ginge eine Kante
-            # stillschweigend verloren
-            n = 2
-            while kanten.get(k, {}).get(seite) is not None:
-                k = f"{_paar_schluessel(c['name'])}#{n}"
-                n += 1
-            kanten.setdefault(k, {})[seite] = c
-
-    # ---- Böschungen aus Ober-/Unterkante --------------------------------
-    if kanten and spec.terrain is None:
-        report.append("Böschungskanten übersprungen: es gibt noch kein "
-                      "Gelände, das sie verändern könnten")
-        kanten = {}
-    for schluessel, paar in kanten.items():
-        if "ok" in paar and "uk" in paar:
-            ok = linie_laden(paar["ok"])
-            uk = linie_laden(paar["uk"])
-            sid = _kanten_id(schluessel or "boeschung", "boeschung",
-                             vorhandene_ops)
-            spec.terrain.operations.append(OpBoeschung(
-                id=sid, type="boeschung",
-                oberkante=_p3(ok), unterkante=_p3(uk)))
-            neigung = _mittlere_neigung(ok, uk)
+            sid = _kanten_id(c["name"], "kante", vorhandene_kanten)
+            spec.terrain.kanten.append(Vermessungskante(
+                id=sid, polyline=_p3(arr), rolle=KANTEN_ROLLEN[role],
+                breite=1.0, quelle=c["name"]))
+            vorhandene_kanten.add(sid)
             report.append(
-                f"Böschung „{sid}“ aus Ober- und Unterkante: "
-                f"{ok[:, 2].mean():.2f} m auf {uk[:, 2].mean():.2f} m, "
-                f"mittlere Neigung 1:{neigung:.1f}")
-        else:
-            # nur eine Kante da -> als Bruchkante übernehmen, damit die
-            # Höhe nicht verloren geht
-            c = paar.get("ok") or paar.get("uk")
-            arr = linie_laden(c)
-            sid = _kanten_id(c["name"], "kante", vorhandene_ops)
-            spec.terrain.operations.append(OpBruchkante(
-                id=sid, type="bruchkante", polyline=_p3(arr), breite=1.0))
-            report.append(f"„{c['name']}“ hat keine Gegenkante — als "
-                          f"Bruchkante „{sid}“ übernommen")
+                f"{ROLLEN_TEXT[role]} „{sid}“: {len(arr)} Stützpunkte, "
+                f"{arr[:, 2].min():.2f} … {arr[:, 2].max():.2f} m")
+
+    # ---- Aus den Kanten das Gelände ableiten ----------------------------
+    # Früher wurden Ober- und Unterkante hier über den LAYERNAMEN gepaart
+    # (`_paar_schluessel`). Hießen die Layer „BK_oben" und
+    # „Boeschung_unten", fiel die Paarung aus und beide wurden einzelne
+    # Bruchkanten. Jetzt entscheidet die LAGE, und die Rolle bleibt am
+    # Objekt erhalten — nachträglich änderbar.
+    if spec.terrain is not None and spec.terrain.kanten:
+        from .kanten import verknuepfen
+        report.extend(verknuepfen(spec))
 
     if rotation_deg:
         spec.meta.crs_rotation_deg = float(rotation_deg)

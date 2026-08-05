@@ -10,7 +10,9 @@ export const TYPE_LABELS = {
   berechnungskoerper: 'Berechnungskörper (Volumen)',
   wall: 'Wand', screen: 'Rechen', culvert: 'Durchlass', weir: 'Wehr',
   pier: 'Pfeiler', basin: 'Becken', imported: 'Importkörper',
+  schacht: 'Schacht', kammer: 'Kammer', graben: 'Graben/Stauraumkanal',
   box: 'Box', surface: 'Fläche',
+  domain: 'Rechengebiet', terrain: 'Geländebasis',
   inflow_hydrograph: 'Zufluss (Ganglinie)', inflow_constant: 'Zufluss (konstant)',
   outflow_fixed_level: 'Ablauf (fester Pegel)', outflow_free: 'Ablauf (frei)',
   outflow_constant: 'Ablauf (Drossel, fester Q)',
@@ -97,6 +99,23 @@ export const TEMPLATES = {
     'Pfeiler (Tropfen)': { id: 'pfeiler', type: 'pier', patch: 'pfeiler',
       shape: 'tropfen', center: [12, 12], width: 1.0, length: 3.0,
       rotation_deg: 0, base_level: 93.0, top_level: 97.0 },
+    // Aushub-Grundtypen. Sie werden AUF dem Gelände abgesetzt (Sohle auf
+    // Geländehöhe) und sind damit zunächst Bauteile. Erst wenn man sie in
+    // den Boden schiebt, sodass die Oberkante bündig oder darunter liegt,
+    // werden sie zum Aushub — das entscheidet `wirkung: auto` aus der Lage.
+    // Wer beides zugleich braucht (Grube plus Betonring), nimmt ein Rezept.
+    'Schacht (rund)': { id: 'schacht', type: 'schacht', patch: 'schacht',
+      shape: 'rund', center: [12, 12], width: 1.0,
+      invert_level: 95.0, top_level: 97.0, wall_thickness: 0.12,
+      wirkung: 'auto' },
+    Kammer: { id: 'kammer', type: 'kammer', patch: 'kammer',
+      footprint: [[10, 10], [14, 10], [14, 13], [10, 13]],
+      invert_level: 95.0, top_level: 97.5, wall_thickness: 0.3,
+      wirkung: 'auto' },
+    'Graben/Stauraumkanal': { id: 'graben', type: 'graben', patch: 'graben',
+      axis: [[8, 12, 95.0], [20, 12, 94.9]],
+      profile: { kind: 'trapez', width: 1.5, height: 1.2, side_slope: 1.5 },
+      wall_thickness: 0.0, wirkung: 'auto' },
   },
   refinement: {
     Verfeinerungsbox: { id: 'box', type: 'box',
@@ -178,6 +197,9 @@ const MASS_FELDER = new Set(['radius', 'bottom_width', 'crest_width',
 // Backend-Prüfung und die Kur „Verfeinerung erhöhen" arbeiten.
 const DUENNSTES = {
   wall: 'thickness', basin: 'wall_thickness', culvert: 'diameter',
+  // Beim Aushub ist die lichte Weite maßgeblich (das Wasser muss hindurch),
+  // beim Bauteil die Wandstärke — `noetigeVerfeinerung` entscheidet danach
+  schacht: 'width', kammer: 'wall_thickness', graben: 'width',
 }
 
 function punktlisten(obj) {
@@ -288,26 +310,32 @@ export function noetigeVerfeinerung(obj, spec) {
   const zelle = spec?.mesh?.base_cell
   const feld = DUENNSTES[obj?.type]
   if (!zelle || !feld) return null
-  const mass = obj[feld] ?? obj.profile?.diameter
+  const mass = obj[feld] ?? obj.profile?.width ?? obj.profile?.diameter
   if (!(mass > 0)) return null
+  // Ein Aushub hat keine eigene Fläche — seine Wandungen gehören nach dem
+  // Ausschneiden zur Geländefläche, dort greift auch die Verfeinerung.
+  // Beim Einfügen steht ein neues Bauwerk immer AUF dem Gelände, `auto`
+  // heißt hier also Bauteil; wird es später eingegraben, meldet die Prüfung
+  // die dann fällige Verfeinerung am Gelände.
+  const ziel = obj.wirkung === 'aushub' ? 'terrain' : obj.patch
 
   // vorhandene Stufe an dieser Fläche zählt mit
   const vorhanden = (spec.mesh.refinements ?? [])
-    .filter((r) => r.type === 'surface' && r.target === obj.patch)
+    .filter((r) => r.type === 'surface' && r.target === ziel)
     .reduce((a, r) => Math.max(a, r.level), 0)
   let stufe = vorhanden
   while (mass < (4 * zelle) / 2 ** stufe && stufe < 5) stufe += 1
   if (stufe <= vorhanden) return null
 
   const ids = new Set((spec.mesh.refinements ?? []).map((r) => r.id))
-  let id = `fein_${obj.patch}`
+  let id = `fein_${ziel}`
   let n = 2
-  while (ids.has(id)) { id = `fein_${obj.patch}_${n}`; n += 1 }
+  while (ids.has(id)) { id = `fein_${ziel}_${n}`; n += 1 }
   return {
-    refinement: { id, type: 'surface', target: obj.patch, level: stufe },
+    refinement: { id, type: 'surface', target: ziel, level: stufe },
     text: `${mass.toFixed(2).replace('.', ',')} m gegen `
       + `${zelle.toString().replace('.', ',')} m Basiszelle — `
-      + `Flächenverfeinerung Stufe ${stufe} ergänzt, sonst löst das Netz das `
-      + 'Bauteil nicht auf',
+      + `Flächenverfeinerung Stufe ${stufe} an „${ziel}“ ergänzt, sonst löst `
+      + 'das Netz das Bauwerk nicht auf',
   }
 }

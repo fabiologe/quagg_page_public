@@ -9,7 +9,7 @@
       <label>{{ field.label }}</label>
       <select v-if="field.widget === 'enum'" v-model="draft[field.key]"
               class="f3d-select">
-        <option v-for="opt in ENUM_OPTIONS[field.key]" :key="opt" :value="opt">
+        <option v-for="opt in field.enums" :key="opt" :value="opt">
           {{ ENUM_LABELS[opt] ?? opt }}
         </option>
       </select>
@@ -51,7 +51,8 @@
                    :typ="draft.type" :gruppe="field.key"
                    :verbergen="VERBERGEN[field.key] ?? []" />
       <EditListe v-else-if="field.widget === 'edits'"
-                 v-model="draft[field.key]" :labels="FIELD_LABELS" />
+                 v-model="draft[field.key]" :labels="FIELD_LABELS"
+                 :typ-labels="TYP_LABELS" />
       <textarea v-else v-model="jsonDrafts[field.key]" rows="3"
                 class="f3d-json" spellcheck="false"></textarea>
       <button v-if="field.umschaltbar" class="f3d-jsonschalter"
@@ -61,6 +62,18 @@
         {{ jsonModus[field.key] ? '↩ Maske' : '{ } JSON' }}
       </button>
     </div>
+
+    <p v-if="draft.type === 'bruchkante'" class="f3d-muted f3d-small">
+      <strong>Ziehen, Abgraben, Aufschütten</strong> wirken auf einen
+      Schlauch der Wirkungsbreite um die <em>Linie</em> — das Innere einer
+      geschlossenen Kante bleibt dabei so liegen, wie es der Import
+      hinterlassen hat. <strong>Ebnen</strong> und <strong>stufenfrei
+      ergänzen</strong> füllen die <em>Fläche</em> innerhalb der Kante und
+      brauchen deshalb eine geschlossene (ist der Schlusspunkt vergessen,
+      wird sie gedanklich geschlossen). Ebnen legt die Ausgleichsebene
+      durch die Kantenhöhen — für Planum, Beckensohle, Parkfläche. Ergänzen
+      folgt auch einer geneigten Kante und schließt am Rand bündig an.
+    </p>
 
     <p v-if="draft.type === 'aussenkante'" class="f3d-muted f3d-small">
       Außerhalb der äußersten Vermessungslinie ist nichts gemessen — dort
@@ -81,6 +94,17 @@
       Hohlraum tragen. Diese Operation schaltet den Körper ein. Der
       seitliche Überstand ist kein Schönheitsfehler: eine Körperwand genau
       auf der Gebietsfläche schneidet snappyHexMesh gegen sich selbst.
+    </p>
+
+    <p v-if="wirkungJetzt" class="f3d-wirkung" :class="wirkungJetzt.art">
+      <strong>{{ wirkungJetzt.titel }}</strong> {{ wirkungJetzt.text }}
+    </p>
+    <p v-if="wirkungJetzt?.art === 'aushub'" class="f3d-muted f3d-small">
+      Ein Aushub bekommt keine eigene Fläche im Netz — seine Wandungen
+      gehören zum Gelände, und dort greift auch die Verfeinerung. Das
+      Gelände wird dafür als Erdkörper gebaut, denn ein Höhenfeld hat ein z
+      je Punkt und kann keinen Hohlraum tragen. Die Maße sind lichte Maße;
+      die Wandstärke gräbt der Bagger mit aus, damit das Bauteil hineinpasst.
     </p>
 
     <p v-if="draft.type === 'culvert'" class="f3d-muted f3d-small">
@@ -195,10 +219,13 @@
       </p>
     </div>
 
-    <p v-if="parseError" class="f3d-error">{{ parseError }}</p>
 
     <div class="f3d-prop-actions">
-      <button class="f3d-btn f3d-grow" @click="apply">Übernehmen</button>
+      <button class="f3d-btn f3d-grow" :class="{ bereit: geaenderteFelder.length }"
+              :disabled="store.loading" @click="apply">
+        Übernehmen<template v-if="geaenderteFelder.length">
+          ({{ geaenderteFelder.length }})</template>
+      </button>
       <button class="f3d-btn" @click="remove" title="Objekt löschen">🗑</button>
     </div>
     <p class="f3d-muted f3d-small">
@@ -222,9 +249,9 @@ import PunktListe from './PunktListe.vue'
 import UnterGruppe from './UnterGruppe.vue'
 import EditListe from './EditListe.vue'
 import {
-  ENUM_LABELS, ENUM_OPTIONS, GESCHLOSSEN, OPTIONAL_ZAHLEN, QUELL_NAMEN,
-  REFERENZ_QUELLEN, istPunktListe, istZahlenreihe, punktDim, referenzListe,
-  widgetFor, zahlenNamen,
+  AUSHUB_TYPEN, ENUM_LABELS, GESCHLOSSEN, OPTIONAL_ZAHLEN, QUELL_NAMEN,
+  REFERENZ_QUELLEN, enumFor, istPunktListe, istZahlenreihe, punktDim,
+  referenzListe, widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
 
@@ -236,14 +263,40 @@ const draft = ref(null)
 const VERBERGEN = { window: ['shape', 'follow'], alignment: ['kind'] }
 // Beschriftungen, die nur für einen Objekttyp gelten — `level` ist bei der
 // Verfeinerungsbox eine Stufe, bei einer Geländeoperation eine Höhe
+// Beschriftungen, die nur für EINEN Objekttyp gelten. Sie stehen hier und
+// nicht in FIELD_LABELS, weil dort der zweite Eintrag den ersten still
+// überschreibt: `unterkante` hieß am Ende „Sohle des Erdkörpers", auch an
+// einer Böschung — dort ist es die untere Vermessungskante.
 const TYP_LABELS = {
   box: { level: 'Verfeinerungsstufe (1 = halbe Zelle)' },
   surface: { level: 'Verfeinerungsstufe (1 = halbe Zelle)' },
+  berechnungskoerper: {
+    unterkante: 'Sohle des Erdkörpers (m NHN, leer = automatisch)',
+    ueberstand: 'Überstand über den Gebietsrand (m, leer = 2 Zellen)',
+  },
+  // `radius` heißt bei der Aussparung etwas anderes als bei „Anheben/
+  // Absenken" — dort ist es die Ausdehnung im Grundriss, hier die
+  // Ausrundung der Innenecken
+  aussparung: { radius: 'Eckenausrundung (m)' },
+  terrain: {
+    source: 'Quelle (Raster oder flat:<Höhe>)',
+    resolution: 'Rasterweite (m)',
+    koerper: 'Volumenkörper (STL, leer = aus dem Raster aufgezogen)',
+  },
+  // Aushub-Grundtypen: die Maße sind LICHT, die Wandstärke kommt außen
+  // herum dazu (beim Aushub gräbt der Bagger sie mit aus)
+  schacht: { width: 'Lichte Weite / Durchmesser (m)',
+    length: 'Lichte Länge (m, nur Rechteck)',
+    invert_level: 'Sohle (m NHN)', shape: 'Grundrissform',
+    wall_thickness: 'Wandstärke (m)' },
+  kammer: { footprint: 'Lichter Grundriss',
+    invert_level: 'Sohle (m NHN)', wall_thickness: 'Wandstärke (m)' },
+  graben: { axis: 'Achse (z = Sohlhöhe je Punkt)',
+    profile: 'Querschnitt', wall_thickness: 'Wandstärke (m)' },
 }
 const jsonDrafts = reactive({})
 // Felder, die der Nutzer bewusst als JSON bearbeitet
 const jsonModus = reactive({})
-const parseError = ref('')
 
 const FIELD_LABELS = {
   polyline: 'Polylinie', polygon: 'Polygon',
@@ -254,8 +307,6 @@ const FIELD_LABELS = {
   einbindetiefe: 'Einbindetiefe unter Gelände (m)',
   innen: 'Innere Bezugskante (id einer Böschung/Bruchkante)',
   gefaelle: 'Gefälle nach außen (m je m; 0 = Plateau)',
-  unterkante: 'Sohle des Erdkörpers (m NHN, leer = automatisch)',
-  ueberstand: 'Überstand über den Gebietsrand (m, leer = 2 Zellen)',
   invert_start: 'Sohlhöhe Anfang (m)', invert_end: 'Sohlhöhe Ende (m)',
   bottom_width: 'Sohlbreite (m)', depth: 'Tiefe (m)',
   side_slope: 'Böschungsneigung 1:n', level: 'Höhe (m NHN)',
@@ -273,9 +324,10 @@ const FIELD_LABELS = {
   axis: 'Achse (z = Sohlhöhe je Punkt)', profile: 'Profil',
   durchstoesst_gelaende: 'Durch das Gelände bohren (Rohr steckt im Damm)',
   plane_polygon: 'Rechenebene', bar_spacing: 'Stabteilung (m)',
-  bar_thickness: 'Stabdicke (m)', approach_angle_deg: 'Anströmwinkel (°)',
+  bar_thickness: 'Stabdicke (m)',
   resistance: 'Widerstand',
-  base_level: 'Fußhöhe (m)', top_level: 'Kopfhöhe (m)',
+  base_level: 'Fußhöhe (m)', top_level: 'Oberkante (m NHN)',
+  wirkung: 'Wirkung im Modell',
   extent: 'Ausdehnung', target: 'Ziel-Bauwerk (patch)',
   q: 'Zufluss (m³/s)', face: 'Gebietsrand', patch: 'Patchname',
   column_time: 'Zeitspalte', column_q: 'Durchflussspalte',
@@ -295,6 +347,20 @@ const FIELD_LABELS = {
   z_min: 'Unterkante (m NHN)', z_max: 'Oberkante (m NHN)',
   z_center: 'Achshöhe (m NHN)', span: 'Lage entlang der Kante (von/bis)',
   follow: 'gekoppelt an', top_width: 'Breite Oberkante (m)',
+  rolle: 'Rolle im Bauwerk', quelle: 'aus Layer',
+  // Leeren löst das Objekt von seinen Kanten ab: es gilt dann als von Hand
+  // angelegt und wird beim nächsten Verknüpfen nicht mehr überschrieben.
+  aus_kanten: 'abgeleitet aus (leeren = von Hand übernehmen)',
+  // Felder der Bearbeitungen (EditListe → UnterGruppe). Ohne sie kam der
+  // rohe Feldname in der Oberfläche an — „behalten", „rand", „skalieren"
+  // stehen dort ohne Einheit und ohne Erklärung.
+  achse: 'Schnittachse', position: 'Schnitthöhe bzw. -lage (m)',
+  behalten: 'Welche Seite bleibt stehen',
+  rand: 'Abstand zum Gebietsrand (m)',
+  verschieben: 'Verschieben (dx, dy, dz in m)',
+  drehen_deg: 'Drehen um z (°)', skalieren: 'Maßstab (1 = unverändert)',
+  station: 'Lage auf der Achse (m ab Anfang)',
+  vertikal: 'Senkrecht durch Sohle/Decke statt durch die Wand',
 }
 
 const fields = computed(() => {
@@ -330,6 +396,9 @@ const fields = computed(() => {
         dim: punktDim(k, v, typ),
         min: GESCHLOSSEN.has(k) ? 3 : 2,
         geschlossen: GESCHLOSSEN.has(k),
+        // Auswahlwerte am Objekttyp: `shape` heißt beim Pfeiler und beim
+        // Schacht gleich und meint andere Formen
+        enums: eigen === 'enum' ? enumFor(k, '', typ) : [],
         namen: Array.isArray(v) ? zahlenNamen(k, v.length) : [],
         optionen: eigen === 'referenz'
           ? referenzListe(store.spec, REFERENZ_QUELLEN[typ][k]) : [],
@@ -370,12 +439,12 @@ function jsonUmschalten(key) {
     try {
       draft.value[key] = JSON.parse(jsonDrafts[key])
     } catch {
-      parseError.value = `Feld „${FIELD_LABELS[key] ?? key}": ungültiges JSON`
+      store.melden(`Feld „${FIELD_LABELS[key] ?? key}": ungültiges JSON`,
+        'fehler')
       return
     }
     delete jsonDrafts[key]
     delete jsonModus[key]
-    parseError.value = ''
   } else {
     jsonDrafts[key] = JSON.stringify(draft.value[key])
     jsonModus[key] = true
@@ -383,7 +452,6 @@ function jsonUmschalten(key) {
 }
 
 watch(() => [store.selection, store.selectedObject], () => {
-  parseError.value = ''
   const obj = store.selectedObject
   draft.value = obj ? JSON.parse(JSON.stringify(obj)) : null
   for (const k of Object.keys(jsonDrafts)) delete jsonDrafts[k]
@@ -658,18 +726,107 @@ function addWindowRefinement() {
     extent: ext.map((v) => Math.round(v * 100) / 100), level: 2 })
 }
 
-function apply() {
-  parseError.value = ''
+// --- Aushub oder Bauteil? -------------------------------------------------
+// Bei `wirkung: auto` entscheidet die LAGE: liegt die Oberkante auf oder
+// unter dem gewachsenen Gelände, ist der Körper eingegraben und wirkt als
+// Grube. Der Server rechnet das maßgeblich; hier wird dieselbe Frage
+// gestellt, damit man beim Schieben sieht, was gerade gilt.
+const AUSHUB_BUENDIG = 0.05
+
+function oberkanteVon(o) {
+  if (o.top_level != null) return o.top_level
+  if (o.type === 'graben' && Array.isArray(o.axis) && o.axis.length) {
+    const h = o.profile?.kind === 'kreis'
+      ? (o.profile?.width ?? 0) : (o.profile?.height ?? 0)
+    return Math.max(...o.axis.map((p) => (p[2] ?? 0) + h))
+  }
+  return null
+}
+
+function grundrissPunkte(o) {
+  if (Array.isArray(o.footprint) && o.footprint.length) return o.footprint
+  if (Array.isArray(o.axis) && o.axis.length) return o.axis
+  if (Array.isArray(o.center) && o.center.length >= 2) return [o.center]
+  return []
+}
+
+const wirkungJetzt = computed(() => {
+  const o = draft.value
+  if (!o || !AUSHUB_TYPEN.has(o.type)) return null
+  if (o.wirkung === 'bauteil') {
+    return { art: 'bauteil', titel: 'Bauteil.',
+      text: 'Fest eingestellt — der Körper wird als eigene Fläche vernetzt, '
+        + 'egal wie er liegt.' }
+  }
+  if (o.wirkung === 'aushub') {
+    return { art: 'aushub', titel: 'Aushub.',
+      text: 'Fest eingestellt — der Körper wird aus dem Gelände '
+        + 'herausgeschnitten, egal wie er liegt.' }
+  }
+  const oben = oberkanteVon(o)
+  const pkte = grundrissPunkte(o)
+  if (oben == null || !pkte.length || !store.terrain) return null
+  const boden = Math.min(...pkte.map((p) => store.gelaendeZ(p[0], p[1])))
+  const eingegraben = boden >= oben - AUSHUB_BUENDIG
+  const d = Math.abs(oben - boden).toFixed(2).replace('.', ',')
+  return eingegraben
+    ? { art: 'aushub', titel: 'Aushub —',
+      text: `die Oberkante liegt ${d} m unter dem Gelände, der Körper ist `
+        + 'eingegraben und wird als Hohlraum ausgeschnitten. Höher schieben '
+        + 'macht wieder ein Bauteil daraus.' }
+    : { art: 'bauteil', titel: 'Bauteil —',
+      text: `der Körper steht ${d} m über dem Gelände und wird als eigene `
+        + 'Fläche vernetzt. Erst wenn die Oberkante bündig oder darunter '
+        + 'liegt, wird daraus ein Aushub.' }
+})
+
+// Der Entwurf, wie ihn „Übernehmen" schreiben würde: Maske plus die als
+// JSON bearbeiteten Felder. `null` heißt: ein JSON-Feld ist nicht lesbar.
+function entwurf() {
+  if (!draft.value) return null
   const result = JSON.parse(JSON.stringify(draft.value))
   for (const [k, text] of Object.entries(jsonDrafts)) {
     try {
       result[k] = JSON.parse(text)
     } catch {
-      parseError.value = `Feld „${FIELD_LABELS[k] ?? k}": ungültiges JSON`
-      return
+      return null
     }
   }
+  return result
+}
+
+// Welche Felder sich gegenüber dem gespeicherten Objekt unterscheiden.
+// Damit weiß der Knopf, ob es etwas zu übernehmen gibt — und die
+// Rückmeldung kann sagen, WAS übernommen wurde. Ohne das sah „Übernehmen"
+// bei jeder Zahl gleich aus: nichts rührte sich sichtbar.
+const geaenderteFelder = computed(() => {
+  const neu = entwurf()
+  const alt = store.selectedObject
+  if (!neu || !alt) return []
+  const namen = new Set([...Object.keys(neu), ...Object.keys(alt)])
+  return [...namen].filter(
+    (k) => JSON.stringify(neu[k]) !== JSON.stringify(alt[k]))
+})
+
+function apply() {
+  const result = entwurf()
+  if (result === null) {
+    const kaputt = Object.keys(jsonDrafts).find((k) => {
+      try { JSON.parse(jsonDrafts[k]); return false } catch { return true }
+    })
+    store.melden(`Feld „${FIELD_LABELS[kaputt] ?? kaputt}": ungültiges JSON`,
+      'fehler')
+    return
+  }
+  const felder = geaenderteFelder.value
+  if (!felder.length) {
+    store.melden('Nichts geändert', 'hinweis')
+    return
+  }
+  const namen = felder.map((k) => TYP_LABELS[result.type ?? result.kind]?.[k]
+    ?? FIELD_LABELS[k] ?? k)
   store.updateObject(store.selection.kind, store.selection.id, result)
+  store.melden(`„${result.id}" übernommen: ${namen.join(', ')}`, 'erfolg')
 }
 
 function remove() {
@@ -713,4 +870,18 @@ function remove() {
 .f3d-jsonschalter:hover { color: var(--f3d-accent); }
 .f3d-openrow { display: flex; gap: 6px; }
 .f3d-prop-actions { display: flex; gap: 8px; margin-top: 4px; }
+/* Der Knopf zeigt selbst an, ob es etwas zu übernehmen gibt */
+.f3d-prop-actions .bereit {
+  border-color: var(--f3d-accent, var(--f3d-accent));
+  color: var(--f3d-accent, var(--f3d-accent));
+}
+.f3d-wirkung {
+  margin: 0;
+  padding: 4px 8px;
+  border-left: 3px solid var(--f3d-border);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+.f3d-wirkung.aushub { border-left-color: var(--f3d-warn); color: var(--f3d-warn); }
+.f3d-wirkung.bauteil { border-left-color: var(--f3d-accent); color: var(--f3d-text-2); }
 </style>

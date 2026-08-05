@@ -6,7 +6,9 @@
 
 // Auswahlfelder für Formvarianten (Werte = casespec-Literale)
 export const ENUM_OPTIONS = {
-  modus: ['ziehen', 'absenken', 'anheben'],
+  // Bruchkante: die ersten drei wirken auf einen Schlauch um die LINIE,
+  // die letzten beiden auf die FLÄCHE innerhalb einer geschlossenen Kante
+  modus: ['ziehen', 'absenken', 'anheben', 'ebnen', 'fuellen'],
   behalten: ['unter', 'ueber'],
   achse: ['x', 'y', 'z'],
   profile_type: ['trapez', 'breitkronig', 'scharfkantig', 'rundkronig'],
@@ -15,6 +17,13 @@ export const ENUM_OPTIONS = {
   falloff: ['smooth', 'linear', 'constant'],
   face: ['x_min', 'x_max', 'y_min', 'y_max', 'z_max'],
   component: ['x', 'y', 'z', 'magnitude'],
+  // Aushub oder Bauteil — Beton ist, was übrig bleibt
+  wirkung: ['auto', 'bauteil', 'aushub'],
+  // Was eine Vermessungskante im Bauwerk IST. Daraus und aus der Lage
+  // leitet der Server ab, was daraus folgt. Die letzten beiden ergeben ein
+  // BAUTEIL statt einer Geländeoperation.
+  rolle: ['frei', 'sohle', 'beckenrand', 'boeschung_ok', 'boeschung_uk',
+    'krone', 'mauer', 'wehrkrone'],
   // nur in Untergruppen: Durchlassprofil und Widerstandsmodell
   kind: ['circular', 'rectangular', 'arch'],
   model: ['darcy_forchheimer'],
@@ -25,9 +34,23 @@ export const ENUM_LABELS = {
   scharfkantig: 'scharfkantig (Platte)', rundkronig: 'rundkronig',
   rechteck: 'Rechteck', rund: 'rund', tropfen: 'Tropfen', polygon: 'Polygon',
   smooth: 'weich', linear: 'linear', constant: 'konstant',
+  ziehen: 'Gelände auf die Kante ziehen',
+  absenken: 'nur abgraben', anheben: 'nur aufschütten',
+  ebnen: 'innen ebnen (Ebene durch die Kante)',
+  fuellen: 'innen stufenfrei ergänzen',
   circular: 'Kreis', rectangular: 'Rechteck', arch: 'Maulprofil',
   kreis: 'Kreis (Rohrmündung)',
   darcy_forchheimer: 'Darcy-Forchheimer',
+  frei: 'freie Höhenkante', sohle: 'Sohle (Ankerfläche)',
+  beckenrand: 'Beckenrand', boeschung_ok: 'Böschungsoberkante',
+  boeschung_uk: 'Böschungsunterkante', krone: 'Krone',
+  mauer: 'Mauerkrone → Wand (Bauteil)',
+  wehrkrone: 'Überfallkante → Wehr (Bauteil)',
+  zulauf: 'Zulauf', ablauf: 'Ablauf',
+  auto: 'automatisch (Aushub, sobald eingegraben)',
+  bauteil: 'immer Bauteil (wird vernetzt)',
+  aushub: 'immer Aushub (Hohlraum im Gelände)',
+  maul: 'Maulprofil',
 }
 
 // Auswahlwerte, die nur INNERHALB einer Untergruppe gelten — `shape` heißt
@@ -38,8 +61,32 @@ const GRUPPEN_ENUMS = {
   aussparung: { shape: ['kreis', 'rechteck'] },
 }
 
-export function enumFor(key, gruppe) {
-  return GRUPPEN_ENUMS[gruppe]?.[key] ?? ENUM_OPTIONS[key]
+// Auswahlwerte, die am TYP des übergeordneten Objekts hängen. `profile`
+// heißt beim Durchlass und beim Graben gleich und meint etwas anderes —
+// über den Feldnamen allein sind die beiden nicht zu unterscheiden.
+const TYP_ENUMS = {
+  // `rolle` heißt am Stutzen etwas anderes als an der Vermessungskante:
+  // dort die Bedeutung im Gelände, hier wofür der Stutzen da ist. Über den
+  // Feldnamen allein sind die beiden nicht zu unterscheiden.
+  culvert: { kind: ['circular', 'rectangular', 'arch'],
+    rolle: ['zulauf', 'ablauf'] },
+  graben: { kind: ['trapez', 'rechteck', 'kreis', 'maul'] },
+  schacht: { shape: ['rund', 'rechteck'] },
+}
+
+// Typen, die sich selbst als Aushub erkennen können. Bei allen anderen wäre
+// „automatisch" sinnlos bis gefährlich: eine in den Boden geschobene Wand
+// soll eine eingegrabene Wand bleiben und keine Grube werden.
+export const AUSHUB_TYPEN = new Set(['schacht', 'kammer', 'graben'])
+
+export function enumFor(key, gruppe, typ) {
+  // „automatisch" nur dort anbieten, wo es etwas zu entscheiden gibt
+  if (key === 'wirkung' && typ && !AUSHUB_TYPEN.has(typ)) {
+    return ['bauteil', 'aushub']
+  }
+  return TYP_ENUMS[typ]?.[key]
+    ?? GRUPPEN_ENUMS[gruppe]?.[key]
+    ?? ENUM_OPTIONS[key]
 }
 
 // --- Stützpunktlisten -----------------------------------------------------
@@ -99,8 +146,9 @@ export const UNTERGRUPPEN = new Set(['profile', 'resistance', 'alignment',
 
 // --- Verweise auf andere Objekte des Falls --------------------------------
 // Ein Nachweiskriterium zeigt auf einen Pegel, einen Querschnitt, ein
-// Bauwerk oder eine Verfeinerungsbox. Als Freitext getippt blockiert eine
-// falsche Kennung das Speichern — das Backend prüft hart.
+// Bauwerk oder eine Verfeinerungsbox. Eine falsche Kennung ist ein BEFUND
+// mit Kur — das Schema nimmt sie an, damit ein unfertiger Zwischenstand
+// darstellbar und speicherbar bleibt.
 export const REFERENZ_QUELLEN = {
   // Flächenverfeinerung: seit die Sohle verfeinerbar ist, gehört „terrain"
   // in dieselbe Auswahl wie die Bauwerke — als Freitext getippt war es

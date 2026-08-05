@@ -205,6 +205,84 @@ def gebiet_umschliesst_fenster(spec: CaseSpec) -> list[str]:
     return meldungen
 
 
+def kopplung_ableiten(spec: CaseSpec) -> list[str]:
+    """
+    Welches Bauwerk an welchem Rand liegt, ist messbar — bisher wurde es nur
+    GEPRÜFT. `resolve_window` verwirft eine Kopplung, deren Achsende weiter
+    als zwei Basiszellen von der Fläche entfernt liegt; dieselbe Messung
+    andersherum gelesen sagt, welches Bauwerk an diesen Rand gehört.
+
+    Gesetzt wird nur, was eindeutig ist:
+
+    * nur an einem Fenster, das ohne `follow` gar nicht auflösbar wäre (kein
+      span, kein center) — ein bewusst gesetztes Rechteck bleibt unangetastet,
+    * nur ein Bauwerk in Reichweite; kommen mehrere in Frage, wird das
+      gemeldet und nichts geändert. Welcher von zwei Stutzen der Zulauf ist,
+      ist eine fachliche Entscheidung.
+
+    Trägt der Stutzen aus dem Import eine Rolle („Einlauf"/„Auslauf" stand
+    am Zeichnungslayer), entscheidet sie mit: ein Ablaufrohr wird kein
+    Zulauf, auch wenn es geometrisch passen würde.
+    """
+    from .casebuilder import _bc_face, _culvert_end, _follow_end
+
+    meldungen: list[str] = []
+    if spec.domain is None:
+        return meldungen
+
+    grenze = 2 * (spec.mesh.base_cell if spec.mesh else 1.0)
+    schon = {w.follow for b in spec.boundaries
+             if (w := getattr(b, "window", None)) is not None and w.follow}
+    stutzen = [s for s in spec.structures if s.type == "culvert"]
+    gerinne = [op for op in (spec.terrain.operations if spec.terrain else [])
+               if op.type == "channel_carve"]
+
+    for b in spec.boundaries:
+        w = getattr(b, "window", None)
+        if w is None or w.follow or w.span is not None or w.center is not None:
+            continue
+        art = ("zulauf" if b.type.startswith("inflow")
+               else "ablauf" if b.type.startswith("outflow") else None)
+        if art is None:
+            continue
+        face = _bc_face(spec, b)
+        flaechen = ([face] if face and face != "z_max"
+                    else ["x_min", "x_max", "y_min", "y_max"])
+
+        treffer: list[tuple[float, str, str]] = []
+        for cv in stutzen:
+            if cv.id in schon or (cv.rolle is not None and cv.rolle != art):
+                continue
+            d = min(_culvert_end(spec, fl, cv)[0] for fl in flaechen)
+            if d <= grenze:
+                treffer.append((d, cv.id, "Stutzen"))
+        for ch in gerinne:
+            if ch.id in schon:
+                continue
+            d = min(_follow_end(spec, fl, ch)[0] for fl in flaechen)
+            if d <= grenze:
+                treffer.append((d, ch.id, "Gerinne"))
+
+        if not treffer:
+            continue
+        if len(treffer) > 1:
+            namen = ", ".join(f"„{i}“" for _, i, _ in sorted(treffer))
+            meldungen.append(
+                f"Rand „{b.id}“: {namen} enden alle am Gebietsrand — welches "
+                "davon der "
+                f"{'Zulauf' if art == 'zulauf' else 'Ablauf'} ist, muss von "
+                "Hand entschieden werden")
+            continue
+        d, kennung, was = treffer[0]
+        w.follow = kennung
+        schon.add(kennung)
+        meldungen.append(
+            f"Rand „{b.id}“ an {was} „{kennung}“ gekoppelt — dessen Ende "
+            f"liegt {d:.2f} m von der Gebietsfläche entfernt (Grenze "
+            f"{grenze:.2f} m). Das Fenster war ohne Bezug nicht auflösbar.")
+    return meldungen
+
+
 def anschluesse_herstellen(spec: CaseSpec) -> list[str]:
     """
     Alle mechanischen Anschlüsse in Ordnung bringen. Rückgabe: was geändert
@@ -215,6 +293,10 @@ def anschluesse_herstellen(spec: CaseSpec) -> list[str]:
     meldungen: list[str] = []
     if spec.domain is None:
         return meldungen
+
+    # Erst die Kopplung bestimmen, dann ihre mechanischen Folgen — sonst
+    # bliebe ein frisch gekoppelter Rand bis zum nächsten Klick unverbunden
+    meldungen.extend(kopplung_ableiten(spec))
 
     for b in spec.boundaries:
         w = getattr(b, "window", None)

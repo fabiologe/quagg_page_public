@@ -67,4 +67,25 @@ describe('enumFor', () => {
   it('unterscheidet sie von der Fensterform', () => {
     expect(enumFor('shape', 'window')).toContain('trapez')
   })
+
+  it('unterscheidet Durchlass- und Grabenquerschnitt', () => {
+    // beide Felder heißen `profile.kind` und meinen etwas anderes
+    expect(enumFor('kind', 'profile', 'culvert')).toEqual(
+      ['circular', 'rectangular', 'arch'])
+    expect(enumFor('kind', 'profile', 'graben')).toEqual(
+      ['trapez', 'rechteck', 'kreis', 'maul'])
+  })
+
+  it('gibt dem Schacht nur runde und rechteckige Grundrisse', () => {
+    expect(enumFor('shape', '', 'schacht')).toEqual(['rund', 'rechteck'])
+    // der Pfeiler behält seine eigene, längere Liste
+    expect(enumFor('shape', '', 'pier')).toContain('tropfen')
+  })
+
+  it('bietet „automatisch" nur den Aushub-Typen an', () => {
+    expect(enumFor('wirkung', '', 'kammer')).toEqual(
+      ['auto', 'bauteil', 'aushub'])
+    // eine Wand kann sich nicht selbst als Grube erkennen
+    expect(enumFor('wirkung', '', 'wall')).toEqual(['bauteil', 'aushub'])
+  })
 })

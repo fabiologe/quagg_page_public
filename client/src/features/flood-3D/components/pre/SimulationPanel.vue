@@ -235,11 +235,14 @@
             <a href="#" @click.prevent="checkCompanion">erneut suchen</a>.
           </p>
         </div>
+        <!-- `store.loading` mitsperren: ohne das startete ein Doppelklick
+             zwei Läufe, denn `localRunning` ist beim SERVERlauf immer false -->
         <button class="f3d-btn f3d-btn-run f3d-cta"
-                :disabled="store.nFehler > 0 || localRunning"
+                :disabled="store.nFehler > 0 || localRunning || store.loading"
                 :title="store.nFehler ? 'Erst Fehler der Prüfung beheben' : ''"
                 @click="startClicked">
-          {{ localRunning ? '⏳ läuft lokal …' : '▶ Simulation starten' }}
+          {{ localRunning ? '⏳ läuft lokal …'
+            : (store.loading ? '⏳ startet …' : '▶ Simulation starten') }}
         </button>
         <button v-if="localRunning && localJobId" class="f3d-btn"
                 :disabled="pausing" @click="pauseClicked">
@@ -515,7 +518,7 @@ function setExtent(idx, e) {
   line-height: 1.45;
   color: var(--f3d-text-2);
 }
-.f3d-hint-warn { color: #c98500; }
+.f3d-hint-warn { color: var(--f3d-warn); }
 .f3d-hint-bad { color: var(--f3d-bad); }
 .f3d-sim-cta { display: flex; flex-direction: column; gap: 10px; }
 /* Download-/Aktionslinks in den Hinweistexten: weiß statt Akzentfarbe,

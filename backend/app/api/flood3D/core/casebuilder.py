@@ -28,7 +28,7 @@ from .conventions import section_normal
 from .foam import foam_file, table, vec
 from .meshgen import (assign_faces, blockmesh_dict, feature_flaechen,
                       location_in_mesh, snappy_dict, surface_feature_dict)
-from .solids import (build_solids, export_solids, gelaende_mit_durchlaessen)
+from .solids import (build_solids, export_solids, gelaende_koerper_bauen)
 from .terrain import TerrainField
 
 RHO_WATER = 1000.0
@@ -1083,7 +1083,7 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
         # importierter Geländekörper oder ein Rohr, das WIRKLICH durch den
         # Damm gehen soll, verlangen dagegen einen Volumenkörper — ein
         # Höhenfeld kann keinen Hohlraum haben (ein z je x/y).
-        gebohrt = gelaende_mit_durchlaessen(terrain, spec, hinweise=problems,
+        gebohrt = gelaende_koerper_bauen(terrain, spec, hinweise=problems,
                                             base_dir=base_dir)
         if gebohrt is not None:
             gebohrt.export(out / "constant" / "triSurface" / "terrain.stl")
@@ -1165,6 +1165,8 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
     return {
         "case_dir": str(out),
         "case_hash": spec.case_hash(),
+        # getrennt, weil die Netzvorschau nur hierauf reagieren darf
+        "netz_hash": spec.netz_hash(),
         "terrain": terrain is not None,
         "solids": sorted(solids),
         "screens": [s.id for s in spec.structures if s.type == "screen"],

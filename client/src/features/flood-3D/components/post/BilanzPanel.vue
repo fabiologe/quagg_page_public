@@ -214,9 +214,9 @@ watchEffect(laden)
   font-size: 0.75rem;
   border: 1px solid currentColor;
 }
-.f3d-ampel.good { color: #34c98a; }
-.f3d-ampel.warn { color: #e0a63a; }
-.f3d-ampel.bad { color: #e66767; }
+.f3d-ampel.good { color: var(--f3d-good); }
+.f3d-ampel.warn { color: var(--f3d-warn); }
+.f3d-ampel.bad { color: var(--f3d-bad); }
 .f3d-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
@@ -229,6 +229,6 @@ watchEffect(laden)
   font-variant-numeric: tabular-nums;
   font-size: 1.05rem;
 }
-.f3d-stat dd.good { color: #34c98a; }
-.f3d-stat dd.warn { color: #e0a63a; }
+.f3d-stat dd.good { color: var(--f3d-good); }
+.f3d-stat dd.warn { color: var(--f3d-warn); }
 </style>

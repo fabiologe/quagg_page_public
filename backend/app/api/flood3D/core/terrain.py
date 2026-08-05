@@ -60,6 +60,70 @@ def _dist_and_param_to_polyline(xx, yy, polyline):
     return best_d.reshape(xx.shape), best_s.reshape(xx.shape)
 
 
+def laplace_fuellen(z: np.ndarray, fest: np.ndarray,
+                    schritte: int = 400, toleranz: float = 1e-4) -> np.ndarray:
+    """
+    Freie Rasterknoten stufenfrei aus den festen ergänzen.
+
+    Gelöst wird die Laplace-Gleichung mit den festen Knoten als Randwert:
+    jeder freie Knoten wird zum Mittel seiner vier Nachbarn. Das Ergebnis
+    ist die Fläche mit der geringsten Krümmung, die durch die gegebenen
+    Höhen geht — keine Stufen, keine Beulen, und an den festen Knoten
+    exakt der vorgegebene Wert.
+
+    Der bisherige Weg war „nimm die Höhe des NÄCHSTEN Stützpunkts". Das
+    ist ein Voronoi-Feld: stückweise konstant, mit einer Stufe an jeder
+    Zellgrenze. Liegen Ober- und Unterkante einer Böschung nebeneinander,
+    steht dazwischen die volle Höhendifferenz als senkrechte Wand statt
+    einer Neigung — genau die „automatischen Höhensprünge" beim Import.
+
+    `fest` ist die Maske der bekannten Knoten. Sind keine bekannt, bleibt
+    das Feld unverändert.
+    """
+    z = np.array(z, dtype=float)
+    fest = np.asarray(fest, dtype=bool)
+    if not fest.any() or fest.all():
+        return z
+    # Startwert: die Höhe des nächsten bekannten Knotens. Das ist genau das
+    # alte Voronoi-Feld — als ERGEBNIS untauglich (die Stufen), als
+    # Startwert aber das Beste, was ohne Rechnung zu haben ist: die
+    # Relaxation muss danach nur noch glätten statt die Höhe erst zu
+    # finden. Ohne diesen Start blieb eine 8 m weite Fläche 0,11 m unter
+    # ihrer Randhöhe hängen, weil die Iteration nicht durchlief.
+    from scipy.spatial import cKDTree
+
+    frei = ~fest
+    jj, ii = np.nonzero(fest)
+    _, nachbar = cKDTree(np.column_stack([jj, ii])).query(
+        np.column_stack(np.nonzero(frei)))
+    z[frei] = z[fest][nachbar]
+
+    # Nur um den freien Bereich herum rechnen. Eine Bruchkante mit
+    # `fuellen` betrifft oft ein paar Meter in einem 100-m-Gebiet — über
+    # das ganze Raster zu iterieren kostete dort Sekunden, und das
+    # Gelände wird bei JEDER Eingabe neu gebaut (Entwurfsvorschau).
+    jz, iz = np.nonzero(frei)
+    j0, j1 = max(int(jz.min()) - 1, 0), min(int(jz.max()) + 2, z.shape[0])
+    i0, i1 = max(int(iz.min()) - 1, 0), min(int(iz.max()) + 2, z.shape[1])
+    aus = z
+    z = z[j0:j1, i0:i1]
+    fest = fest[j0:j1, i0:i1]
+
+    for _ in range(max(schritte, 1)):
+        # Rand über 'edge' fortsetzen: am Gebietsrand gilt Neumann
+        # (Ableitung null), das Gelände läuft dort waagerecht aus statt
+        # gegen eine erfundene Höhe zu ziehen
+        p = np.pad(z, 1, mode="edge")
+        mittel = 0.25 * (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:])
+        neu = np.where(fest, z, mittel)
+        aenderung = float(np.max(np.abs(neu - z)))
+        z = neu
+        if aenderung < toleranz:
+            break
+    aus[j0:j1, i0:i1] = z
+    return aus
+
+
 def _z_entlang(poly3: np.ndarray, s: np.ndarray) -> np.ndarray:
     """
     Höhe der 3D-Polylinie am Bogenlängenparameter s (0…1) — das Gegenstück
@@ -251,8 +315,66 @@ class TerrainField:
             self.z = np.minimum(self.z, ziel)
         elif op.modus == "anheben":
             self.z = np.maximum(self.z, ziel)
+        elif op.modus in ("ebnen", "fuellen"):
+            self._kante_flaechig(op, poly, xx, yy, ziel, w)
         else:
             self.z = ziel
+
+    def _kante_flaechig(self, op, poly, xx, yy, ziel, w):
+        """
+        Die Fläche INNERHALB einer geschlossenen Bruchkante herstellen.
+
+        Ohne das wirkt eine geschlossene Kante nur als Ring der Breite
+        `breite`; alles weiter innen bleibt so liegen, wie es der Import
+        hinterlassen hat. Für ein Planum, eine Beckensohle oder eine
+        Parkfläche ist genau das Innere das Gewollte.
+
+            ebnen    Ausgleichsebene durch die Kantenhöhen (kleinste
+                     Fehlerquadrate). Innen garantiert eben.
+            fuellen  Fläche geringster Krümmung durch die Kante — folgt
+                     einer geneigten Kante und schließt bündig an.
+
+        Die Kante selbst wird in beiden Fällen wie gewohnt eingezogen,
+        damit der Übergang nach außen stufenfrei bleibt.
+        """
+        ring = poly[:, :2]
+        if np.linalg.norm(ring[0] - ring[-1]) > 1e-9:
+            ring = np.vstack([ring, ring[:1]])          # gedanklich schließen
+        innen = _polygon_mask(xx, yy, ring)
+        if not innen.any():
+            self.z = ziel                                # zu klein: wie ziehen
+            return
+
+        if op.modus == "ebnen":
+            # z = a*x + b*y + c über die Stützpunkte, kleinste Quadrate.
+            # Bei einer waagerechten Kante fällt daraus exakt ihre Höhe.
+            a = np.column_stack([poly[:, 0], poly[:, 1], np.ones(len(poly))])
+            koef, *_ = np.linalg.lstsq(a, poly[:, 2], rcond=None)
+            flaeche = koef[0] * xx + koef[1] * yy + koef[2]
+            self.z = np.where(innen, flaeche, ziel)
+            return
+
+        # fuellen: die KANTE ist der feste Rand, das Innere wird daraus
+        # stufenfrei ergänzt. Der Kantenschlauch muss mindestens eine
+        # Rasterweite breit sein, sonst trennt er innen und außen nicht und
+        # das Außengelände zieht die Fläche zu sich.
+        schlauch = self._kantenschlauch(op, xx, yy)
+        frei = innen & ~schlauch
+        if not frei.any():
+            self.z = ziel
+            return
+        start = np.where(schlauch, self._z_auf_kante(poly, xx, yy), ziel)
+        self.z = laplace_fuellen(start, ~frei)
+
+    def _kantenschlauch(self, op, xx, yy):
+        dist, _ = _dist_and_param_to_polyline(xx, yy, np.asarray(
+            op.polyline, dtype=float)[:, :2])
+        return dist <= max(op.breite, self.resolution * 1.5)
+
+    @staticmethod
+    def _z_auf_kante(poly, xx, yy):
+        _, s = _dist_and_param_to_polyline(xx, yy, poly[:, :2])
+        return _z_entlang(poly, s)
 
     def _op_boeschung(self, op):
         xx, yy = self.mesh_xy()
@@ -327,7 +449,7 @@ class TerrainField:
     def _op_berechnungskoerper(self, op):
         """
         Verändert das Höhenfeld NICHT. Die Operation beschreibt, was aus
-        dem Feld gebaut wird (solids.gelaende_mit_durchlaessen liest sie) —
+        dem Feld gebaut wird (solids.gelaende_koerper_bauen liest sie) —
         sie steht im Stapel, damit der Erdkörper ein sichtbares und
         einstellbares Objekt ist und keine Nebenwirkung eines Schalters am
         Rohr.

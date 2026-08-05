@@ -2,9 +2,9 @@
   <div class="f3d-gruppe">
     <div v-for="k in schluessel" :key="k" class="f3d-gruppe-feld">
       <label>{{ labels[k] ?? k }}</label>
-      <select v-if="enumFor(k, gruppe)" class="f3d-select f3d-select-s"
+      <select v-if="enumFor(k, gruppe, typ)" class="f3d-select f3d-select-s"
               :value="wert[k]" @change="setzen(k, $event.target.value)">
-        <option v-for="opt in enumFor(k, gruppe)" :key="opt" :value="opt">
+        <option v-for="opt in enumFor(k, gruppe, typ)" :key="opt" :value="opt">
           {{ ENUM_LABELS[opt] ?? opt }}
         </option>
       </select>

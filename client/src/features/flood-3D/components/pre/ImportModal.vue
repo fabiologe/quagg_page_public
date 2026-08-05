@@ -104,8 +104,12 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="c in manifest.candidates" :key="c.id"
-                  :class="{ skip: pick[c.id].role === 'ignorieren' }">
+              <!-- Beide Zeilen gehören in DIESELBE Schleife: die Warnzeile
+                   stand einmal daneben, dort ist `c` nicht definiert — der
+                   ganze Dialog brach beim Rendern ab, sobald eine Datei
+                   analysiert war. -->
+              <template v-for="c in manifest.candidates" :key="c.id">
+              <tr :class="{ skip: pick[c.id]?.role === 'ignorieren' }">
                 <td>
                   <div class="f3d-imp-name">{{ c.name }}</div>
                   <div class="f3d-muted f3d-small">{{ KIND[c.kind] ?? c.kind }}</div>
@@ -140,9 +144,12 @@
                 <td>
                   <select v-model="pick[c.id].role" class="f3d-select"
                           :disabled="c.kind === 'acis'">
-                    <option v-for="r in rolesFor(c)" :key="r" :value="r">
-                      {{ ROLE_LABELS[r] }}
-                    </option>
+                    <optgroup v-for="g in rolesFor(c)" :key="g.titel"
+                              :label="g.titel">
+                      <option v-for="r in g.rollen" :key="r" :value="r">
+                        {{ ROLE_LABELS[r] }}
+                      </option>
+                    </optgroup>
                   </select>
                 </td>
                 <td>
@@ -159,8 +166,8 @@
                   <span v-else class="f3d-muted">–</span>
                 </td>
               </tr>
-              <tr v-if="pick[c.id].role === 'gelaende_koerper'
-                        && c.stats.watertight === false" :key="c.id + '-w'">
+              <tr v-if="pick[c.id]?.role === 'gelaende_koerper'
+                        && c.stats.watertight === false">
                 <td colspan="6" class="f3d-warn f3d-small">
                   „{{ c.name }}“ ist nicht geschlossen — als Volumengelände
                   kann der Vernetzer daran nicht entscheiden, was Erdreich
@@ -168,6 +175,7 @@
                   das nicht, meldet es die Prüfung.
                 </td>
               </tr>
+              </template>
             </tbody>
           </table>
           <p class="f3d-muted f3d-small">
@@ -253,6 +261,8 @@ const ROLE_LABELS = {
   becken: 'Becken', bauwerk: 'Bauwerk', querschnitt: 'Querschnitt',
   boeschung_ok: 'Böschungsoberkante', boeschung_uk: 'Böschungsunterkante',
   bruchkante: 'Bruchkante (Gelände)',
+  sohle: 'Sohle (Ankerfläche)', beckenrand: 'Beckenrand', krone: 'Krone',
+  mauer: 'Mauerkrone → Wand', wehrkrone: 'Überfallkante → Wehr',
   zusatzraster: 'Zusatzraster (Bereich ersetzen)',
   zulaufrohr: 'Rohr am Zulauf', ablaufrohr: 'Rohr am Ablauf',
   ignorieren: '— ignorieren —',
@@ -268,7 +278,11 @@ const spanX = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][0] - manifest.value.bbox[0][0] : 0))
 const spanY = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][1] - manifest.value.bbox[0][1] : 0))
-const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok', 'boeschung_uk'])
+// Rollen, aus denen ein GELÄNDE entstehen kann. Mauerkrone und
+// Überfallkante gehören ausdrücklich nicht dazu: sie werden Bauteile, und
+// aus ihnen allein ließe sich kein Gelände bilden.
+const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok', 'boeschung_uk',
+  'sohle', 'beckenrand', 'krone'])
 const hatKanten = computed(() => Object.entries(pick)
   .some(([, p]) => KANTEN_ROLLEN.has(p.role))
   || (manifest.value?.candidates ?? []).some(
@@ -287,14 +301,32 @@ watch([hatKanten, hatGelaendeLayer], ([kanten, gelaende]) => {
 const nAktiv = computed(() => Object.values(pick)
   .filter((p) => p.role !== 'ignorieren').length)
 
-const LINIEN_ROLLEN = ['boeschung_ok', 'boeschung_uk', 'bruchkante',
-  'querschnitt', 'ignorieren']
-const RASTER_ROLLEN = ['gelaende', 'zusatzraster', 'ignorieren']
-const ROHR_ROLLEN = ['ablaufrohr', 'zulaufrohr', 'ignorieren']
+// Nach WIRKUNG gruppiert, nicht alphabetisch: eine Linie formt entweder
+// das Gelände, oder sie wird ein Bauteil, das umströmt wird. Genau diese
+// Unterscheidung ist die Entscheidung, die hier zu treffen ist — flach
+// untereinander gelistet sähe „Beckenrand" aus wie „Mauerkrone".
+const LINIEN_ROLLEN = [
+  { titel: 'formt das Gelände',
+    rollen: ['bruchkante', 'boeschung_ok', 'boeschung_uk', 'sohle',
+      'beckenrand', 'krone'] },
+  { titel: 'wird ein Bauteil (umströmt)', rollen: ['mauer', 'wehrkrone'] },
+  { titel: 'sonstiges', rollen: ['querschnitt', 'ignorieren'] },
+]
+const RASTER_ROLLEN = [{ titel: 'Höhendaten',
+  rollen: ['gelaende', 'zusatzraster', 'ignorieren'] }]
+const ROHR_ROLLEN = [{ titel: 'Rohrmündung',
+  rollen: ['zulaufrohr', 'ablaufrohr', 'ignorieren'] }]
+const NETZ_ROLLEN = [
+  { titel: 'Gelände', rollen: ['gelaende', 'gelaende_koerper'] },
+  { titel: 'Bauteil', rollen: MESH_ROLES.filter((r) => SOLID_ROLES.has(r)) },
+  { titel: 'sonstiges', rollen: ['ignorieren'] },
+]
+const NUR_IGNORIEREN = [{ titel: 'sonstiges', rollen: ['ignorieren'] }]
 const rolesFor = (c) => (c.kind === 'polyline' ? LINIEN_ROLLEN
   : c.kind === 'raster' ? RASTER_ROLLEN
     : c.kind === 'kreis' ? ROHR_ROLLEN
-      : (c.kind === 'acis' || c.kind === 'hinweis') ? ['ignorieren'] : MESH_ROLES)
+      : (c.kind === 'acis' || c.kind === 'hinweis') ? NUR_IGNORIEREN
+        : NETZ_ROLLEN)
 const usesName = (id) => SOLID_ROLES.has(pick[id]?.role)
 
 function close() { emit('close') }
@@ -436,7 +468,7 @@ async function apply() {
 .f3d-imp-name { color: var(--f3d-text); font-weight: 600; }
 .f3d-imp-id { width: 130px; }
 .f3d-num-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.f3d-warn { color: var(--f3d-warn, #c98500); }
+.f3d-warn { color: var(--f3d-warn, var(--f3d-warn)); }
 .f3d-imp-report {
   background: var(--f3d-bg); border-radius: 6px; padding: 8px 10px;
   font-size: 0.75rem; color: var(--f3d-good);

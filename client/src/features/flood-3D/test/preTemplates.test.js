@@ -101,4 +101,67 @@ describe('noetigeVerfeinerung', () => {
     const box = kopie(TEMPLATES.refinement.Verfeinerungsbox)
     expect(noetigeVerfeinerung(box, fall([0, 0, 40, 40], 1.0))).toBeNull()
   })
+
+  it('verfeinert beim Aushub das Gelände, nicht den Patch', () => {
+    // Ein Hohlraum hat keine eigene Fläche — seine Wandungen gehören nach
+    // dem Ausschneiden zur Geländefläche
+    const kammer = {
+      ...kopie(TEMPLATES.structure.Kammer), patch: 'kammer_1',
+      wirkung: 'aushub',
+    }
+    const fein = noetigeVerfeinerung(kammer, fall([0, 0, 40, 40], 1.0))
+    expect(fein.refinement.target).toBe('terrain')
+    expect(fein.refinement.id).toBe('fein_terrain')
+  })
+
+  it('verfeinert das frisch abgesetzte Bauwerk am Patch selbst', () => {
+    // `auto` heißt beim Einfügen Bauteil: die Vorlage steht AUF dem Gelände
+    const kammer = { ...kopie(TEMPLATES.structure.Kammer), patch: 'kammer_1' }
+    expect(kammer.wirkung).toBe('auto')
+    expect(noetigeVerfeinerung(kammer, fall([0, 0, 40, 40], 1.0))
+      .refinement.target).toBe('kammer_1')
+  })
+
+  it('misst den Graben an seiner Sohlbreite', () => {
+    const graben = {
+      ...kopie(TEMPLATES.structure['Graben/Stauraumkanal']),
+      patch: 'graben_1',
+    }
+    // Sohlbreite 1,5 m gegen 1,0 m Basiszelle -> 4 * 1,0 / 2^2 = 1,0 < 1,5
+    expect(noetigeVerfeinerung(graben, fall([0, 0, 60, 60], 1.0))
+      .refinement.level).toBe(2)
+  })
+})
+
+describe('Aushub-Vorlagen', () => {
+  it('entscheiden die Wirkung aus der Lage', () => {
+    for (const name of ['Schacht (rund)', 'Kammer', 'Graben/Stauraumkanal']) {
+      expect(TEMPLATES.structure[name].wirkung).toBe('auto')
+    }
+  })
+
+  it('stehen AUF dem Gelände, nicht darin', () => {
+    // Der Regelfall beim Einfügen: das Bauwerk wird abgesetzt und ist damit
+    // ein Bauteil. Zum Aushub wird es erst durch Hineinschieben.
+    const REF = 95.0
+    for (const name of ['Schacht (rund)', 'Kammer']) {
+      const t = TEMPLATES.structure[name]
+      expect(t.invert_level).toBeGreaterThanOrEqual(REF)
+      expect(t.top_level).toBeGreaterThan(REF)
+    }
+    const g = TEMPLATES.structure['Graben/Stauraumkanal']
+    const oben = Math.max(...g.axis.map((p) => p[2])) + g.profile.height
+    expect(oben).toBeGreaterThan(REF)
+  })
+
+  it('landen im Gebiet und am Gelände', () => {
+    const obj = kopie(TEMPLATES.structure.Kammer)
+    vorlageAnpassen(obj, fall([100, 200, 140, 240]), flach(120))
+    const xs = obj.footprint.map((p) => p[0])
+    expect(Math.min(...xs)).toBeGreaterThan(100)
+    expect(Math.max(...xs)).toBeLessThan(140)
+    // Sohle liegt auf dem Bezugsgelände -> auf dem echten Gelände
+    expect(obj.invert_level).toBeCloseTo(120.0, 2)
+    expect(obj.top_level).toBeCloseTo(122.5, 2)
+  })
 })

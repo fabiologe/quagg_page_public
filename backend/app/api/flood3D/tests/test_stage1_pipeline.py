@@ -185,15 +185,33 @@ def test_casespec_yaml_roundtrip(spec, tmp_path):
     assert again.case_hash() == spec.case_hash()
 
 
-def test_casespec_unbekannter_pegel_wird_abgelehnt():
-    with pytest.raises(ValueError, match="unbekannter Pegelpunkt"):
-        CaseSpec(
-            meta=Meta(id="kaputt"),
-            solver=Solver(end_time=1.0),
-            evaluation=Evaluation(
-                gauges=[Gauge(id="p1", point=(0, 0))],
-                targets=[TargetMaxLevel(id="t1", kind="max_level",
-                                        at="gibtsnicht", limit_max=1.0)]))
+def test_casespec_unbekannter_pegel_wird_gemeldet_nicht_abgelehnt():
+    """
+    Ein Kriterium ohne Bezugsobjekt ist ein BEFUND, kein Schemafehler.
+
+    Als harter Validator machte diese Regel den Fall im Zwischenzustand
+    unlesbar: wer einen Pegel löschte, auf den ein Kriterium zeigte, bekam
+    422 aus der Entwurfsvorschau (die Szene fror auf dem Stand VOR dem
+    Löschen ein) und aus dem Speichern — der einzige Ausweg war Undo. Ein
+    Editor muss einen unfertigen Stand halten und sichern können; gesperrt
+    wird der LAUF, und das tut die Prüfung.
+    """
+    from ..core.validate import validate_case
+
+    spec = CaseSpec(
+        meta=Meta(id="kaputt"),
+        solver=Solver(end_time=1.0),
+        evaluation=Evaluation(
+            gauges=[Gauge(id="p1", point=(0, 0))],
+            targets=[TargetMaxLevel(id="t1", kind="max_level",
+                                    at="gibtsnicht", limit_max=1.0)]))
+    # lesbar UND speicherbar
+    CaseSpec.model_validate(spec.model_dump(mode="json"))
+
+    befund = next(b for b in validate_case(spec) if b["object_id"] == "t1")
+    assert befund["severity"] == "fehler"
+    assert "gibtsnicht" in befund["message"]
+    assert befund["fix"]["aktion"] == "verweis_entfernen"
 
 
 def test_casespec_schema_generierbar():
