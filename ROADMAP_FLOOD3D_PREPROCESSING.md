@@ -57,9 +57,14 @@ P0 Sichern ─► P1 Herkunft & Referenz ─► P2 derived/ ─► P3 Mutationsv
 
 ---
 
-### P0 — Sichern & Sofort-Bugs (kein Redesign) · ~1–2 Sitzungen
+### P0 — Sichern & Sofort-Bugs (kein Redesign) · ~1–2 Sitzungen · ✅ ERLEDIGT 2026-08-05
 
 **Ziel:** Nichts mehr verlierbar; die vier Import-Bugs weg, die echte Projekte sofort treffen.
+
+*Stand: P0.1 committet+gepusht (master `49f0d16`), P0.2–P0.5 umgesetzt mit 10 neuen
+Tests, Gesamtsuite 452 grün. Rotation+Raster wird jetzt ehrlich abgelehnt; LINEs
+werden zu Zügen verkettet; Blockreferenzen aufgelöst; Zählregel „nichts verschwindet
+ohne Zahl" umgesetzt (eigener Hinweis-Kandidat für Beschriftung/2D).*
 
 | Paket | Inhalt |
 |---|---|
