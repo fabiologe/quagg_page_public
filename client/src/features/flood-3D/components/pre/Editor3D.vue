@@ -171,18 +171,24 @@ const stanzTitel = computed(() =>
   STANZ_TITEL[store.platzierung?.art] ?? 'Bearbeitung setzen')
 let stanzHit = null              // { punkt: Vector3, normale: Vector3 }
 
+// Zeichnen erzeugt ein CAD-OBJEKT (Skizze = Import aus der Hand); der
+// Chooser ist die ZUORDNUNG — dieselben Rollen wie beim Dateiimport,
+// nachträglich im Baum änderbar. Die früheren build*-Funktionen leben
+// als Rollen-Vorbelegungen im Backend (importer._linien_objekt).
 const drawTargets = computed(() => {
   const n = chooserPts.value?.length ?? 0
   const line = [
-    { label: 'Gerinne', build: buildChannel },
-    { label: 'Wand', build: buildWall },
-    { label: 'Dammschüttung', build: buildEmbankment },
-    { label: 'Stutzen (Rohr)', build: buildPipe },
+    { label: 'Gerinne', rolle: 'gerinne' },
+    { label: 'Wand', rolle: 'wand' },
+    { label: 'Dammschüttung', rolle: 'damm' },
+    { label: 'Stutzen (Rohr)', rolle: 'stutzen' },
+    { label: 'Bruchkante', rolle: 'bruchkante' },
+    { label: 'Querschnitt', rolle: 'querschnitt' },
   ]
   const poly = [
-    { label: 'Planum', build: buildPad },
-    { label: 'Becken', build: buildBasin },
-    { label: 'Verfeinerungsbox', build: buildRefineBox },
+    { label: 'Planum', rolle: 'planum', geschlossen: true },
+    { label: 'Becken', rolle: 'becken', geschlossen: true },
+    { label: 'Verfeinerungsbox', rolle: 'verfeinerung', geschlossen: true },
   ]
   return n >= 3 ? [...poly, ...line] : line
 })
@@ -443,82 +449,18 @@ function finishDrawing() {
   }
 }
 
-function createFromDrawing(opt) {
+async function createFromDrawing(opt) {
   const pts = chooserPts.value
-  if (pts) opt.build(pts)
   cancelDrawing()
   mode.value = 'select'
-}
-
-function zAlong(pts) {
-  return pts.map(([x, y]) => terrainZ(x, y))
-}
-
-function buildChannel(pts) {
-  const zmin = Math.min(...zAlong(pts))
-  store.addObject('terrain_op', {
-    id: 'gerinne', type: 'channel_carve', polyline: pts,
-    invert_start: Number((zmin - 1.2).toFixed(2)),
-    invert_end: Number((zmin - 1.4).toFixed(2)),
-    bottom_width: 2.0, depth: 1.5, side_slope: 1.5,
-  })
-}
-
-function buildWall(pts) {
-  const crest = Number((Math.max(...zAlong(pts)) + 1.5).toFixed(2))
-  store.addObject('structure', {
-    id: 'wand', type: 'wall', patch: 'wand',
-    alignment: { kind: 'polyline', points: pts.map(([x, y]) => [x, y, crest]) },
-    height: 2.0, thickness: 0.4,
-  })
-}
-
-function buildPipe(pts) {
-  // Stutzen: Rohr, dessen Mündung frei ragen darf (Freistrahl) — Achse
-  // knapp überm Gelände; erster Punkt an den Gebietsrand, dann im Panel
-  // „Fenster: an Stutzen gekoppelt" wählen
-  const axis = pts.map(([x, y]) =>
-    [x, y, Number((terrainZ(x, y) + 0.6).toFixed(2))])
-  store.addObject('structure', {
-    id: 'stutzen', type: 'culvert', patch: 'stutzen',
-    axis, profile: { kind: 'circular', diameter: 0.8 },
-  })
-}
-
-function buildEmbankment(pts) {
-  store.addObject('terrain_op', {
-    id: 'damm', type: 'embankment', polyline: pts,
-    crest_level: Number((Math.max(...zAlong(pts)) + 1.5).toFixed(2)),
-    crest_width: 2.0, side_slope: 2.0,
-  })
-}
-
-function buildPad(pts) {
-  const z = zAlong(pts)
-  store.addObject('terrain_op', {
-    id: 'planum', type: 'pad', polygon: pts,
-    level: Number((z.reduce((a, b) => a + b, 0) / z.length).toFixed(2)),
-  })
-}
-
-function buildBasin(pts) {
-  store.addObject('structure', {
-    id: 'becken', type: 'basin', patch: 'becken', footprint: pts,
-    invert_level: Number((Math.min(...zAlong(pts)) - 0.5).toFixed(2)),
-    wall_height: 2.0, wall_thickness: 0.3,
-  })
-}
-
-function buildRefineBox(pts) {
-  const xs = pts.map((p) => p[0])
-  const ys = pts.map((p) => p[1])
-  const zmin = Math.min(...zAlong(pts))
-  store.addObject('refinement', {
-    id: 'box', type: 'box',
-    extent: [Math.min(...xs), Math.min(...ys), Number((zmin - 1).toFixed(2)),
-      Math.max(...xs), Math.max(...ys), Number((zmin + 3).toFixed(2))],
-    level: 2,
-  })
+  if (!pts) return
+  for (const m of await store.skizzeZeichnen({
+    kind: opt.geschlossen ? 'polygon' : 'polyline',
+    rolle: opt.rolle,
+    punkte: pts,
+  })) {
+    store.melden(m, m.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
+  }
 }
 
 // --- Stützpunkthandles (Spez. 6.4): im Grundriss ziehbar ------------------
