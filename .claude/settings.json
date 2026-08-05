@@ -225,7 +225,11 @@
       "Bash(time curl -s -m 900 -X POST http://localhost:8001/FastAPI/flood3d/cases/_ResteA_Probe/mesh-preview)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -m 10 https://quagg-engineering.org/)",
       "Bash(curl -s -o /dev/null -w \"tools=%{http_code}\\\\n\" -m 10 https://quagg-engineering.org/tools/flood-3d)",
-      "Bash(read f *)"
+      "Bash(read f *)",
+      "Bash(time curl -s -m 900 -X POST http://localhost:8001/FastAPI/flood3d/cases/_StufeB_Probe/mesh-preview)",
+      "Bash(curl -s -m 20 http://localhost:8001/FastAPI/flood3d/rezepte)",
+      "Bash(time curl -s -m 900 -X POST http://localhost:8001/FastAPI/flood3d/cases/_StufeB_Probe/mesh-preview -o /tmp/mp.json -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s -o /dev/null -w \"start=%{http_code} \" -m 10 https://quagg-engineering.org/)"
     ],
     "additionalDirectories": [
       "/home/fabio/quagg_page/backend/data/flood2d_jobs/pod-bf3b5648d68a/inputs",

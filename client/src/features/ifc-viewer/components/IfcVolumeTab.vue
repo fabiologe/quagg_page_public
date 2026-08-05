@@ -24,8 +24,10 @@
           <div class="total-value">{{ result.totals.count }}</div>
         </div>
         <div class="total-cell">
-          <div class="total-label">Kategorien</div>
-          <div class="total-value">{{ result.byCategory.size }}</div>
+          <div class="total-label">Qto-Quote</div>
+          <div class="total-value" :title="'Anteil der Elemente mit Modell-Quantities (Qto_*) statt BBox-Näherung'">
+            {{ Math.round((result.totals.qtoShare ?? 0) * 100) }} %
+          </div>
         </div>
       </div>
 
@@ -54,10 +56,15 @@
                 Σ m³
                 <span v-if="sortKey === 'volume'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
-              <th class="col-avg" @click="setSort('avg')">
-                ⌀ m³
-                <span v-if="sortKey === 'avg'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+              <th class="col-area" @click="setSort('area')">
+                Σ m²
+                <span v-if="sortKey === 'area'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
               </th>
+              <th class="col-len" @click="setSort('length')">
+                Σ m
+                <span v-if="sortKey === 'length'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+              </th>
+              <th class="col-src" title="Herkunft: Qto = Modell-Quantities, BBox = Näherung">Quelle</th>
             </tr>
           </thead>
           <tbody>
@@ -74,17 +81,22 @@
               </td>
               <td class="col-count">{{ row.count }}</td>
               <td class="col-vol">{{ fmt(row.volume_m3) }}</td>
-              <td class="col-avg">{{ fmt(row.avgVolume_m3) }}</td>
+              <td class="col-area">{{ fmt(row.area_m2) }}</td>
+              <td class="col-len">{{ fmt(row.length_m) }}</td>
+              <td class="col-src">
+                <span class="src-badge" :class="srcClass(row)">{{ srcLabel(row) }}</span>
+              </td>
             </tr>
             <tr v-if="!sortedRows.length" class="vol-row empty">
-              <td colspan="4">Keine Kategorien passen zum Filter.</td>
+              <td colspan="6">Keine Kategorien passen zum Filter.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="hint-row">
-        ⓘ Volumen aus BoundingBox (Width × Height × Depth). Mesh-genaue Berechnung folgt in Sprint Volume-Truth.
+        ⓘ „Qto" = Mengen aus den Modell-Quantities (Qto_*BaseQuantities) des Autorenwerkzeugs.
+        „BBox" = Näherung aus der BoundingBox — nur für Kennwerte (LP 2-3) geeignet.
       </div>
     </template>
   </div>
@@ -111,6 +123,21 @@ function setSort(key) {
 
 function isBilled(cat) { return VOLUME_BILLED_CATEGORIES.has(cat); }
 
+/** Herkunfts-Badge: rein Qto, rein BBox oder gemischt. */
+function srcLabel(row) {
+  const q = row.sources?.qto ?? 0, b = row.sources?.bbox ?? 0;
+  if (q && !b) return 'Qto';
+  if (!q && b) return 'BBox';
+  if (q && b)  return `Qto ${Math.round(q / (q + b) * 100)} %`;
+  return '–';
+}
+function srcClass(row) {
+  const q = row.sources?.qto ?? 0, b = row.sources?.bbox ?? 0;
+  if (q && !b) return 'src-qto';
+  if (!q && b) return 'src-bbox';
+  return 'src-mixed';
+}
+
 const sortedRows = computed(() => {
   if (!props.result?.byCategory) return [];
   let rows = [];
@@ -123,7 +150,8 @@ const sortedRows = computed(() => {
     let av, bv;
     if (sortKey.value === 'name')  { av = a.category; bv = b.category; return av.localeCompare(bv) * dir; }
     if (sortKey.value === 'count') { av = a.count;       bv = b.count; }
-    else if (sortKey.value === 'avg')    { av = a.avgVolume_m3; bv = b.avgVolume_m3; }
+    else if (sortKey.value === 'area')   { av = a.area_m2 ?? 0;  bv = b.area_m2 ?? 0; }
+    else if (sortKey.value === 'length') { av = a.length_m ?? 0; bv = b.length_m ?? 0; }
     else                                  { av = a.volume_m3;    bv = b.volume_m3; }
     return (av - bv) * dir;
   });
@@ -203,7 +231,18 @@ function fmt(n) {
 }
 .vol-table td.col-cat { text-align: left; color: #eceff1; }
 .col-vol { font-weight: 600; color: #ce93d8; }
-.col-avg { color: #90a4ae; }
+.col-area, .col-len { color: #90a4ae; }
+
+.src-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.src-qto   { color: #81c784; border-color: rgba(129,199,132,0.4); }
+.src-bbox  { color: #ffb74d; border-color: rgba(255,183,77,0.4); }
+.src-mixed { color: #90a4ae; border-color: rgba(255,255,255,0.15); }
 
 .vol-row { cursor: pointer; transition: background 0.08s; }
 .vol-row:hover { background: rgba(52,152,219,0.15); }

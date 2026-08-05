@@ -295,16 +295,17 @@ import { ref, computed, reactive } from 'vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { DASH_PATTERNS, HATCH_PATTERNS_OPTIONS } from '../services/DefaultLineStyles.js';
 import { probeCategory } from '../services/CategoryAttributeProbe.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 const props = defineProps({
   open:                { type: Boolean,  default: false },
   categoryNames:       { type: Array,    default: () => [] },
   modelList:           { type: Array,    default: () => [] },
-  getCategoryGroups:   { type: Function, default: null },   // () => engine.getCategoryGroups()
-  getFragmentsList:    { type: Function, default: null },
-  getFragmentsManager: { type: Function, default: null },
 });
 const emit = defineEmits(['close']);
+
+// Engine-Accessoren per provide/inject aus IfcViewer.vue (viewerApi).
+const api = useViewerApi();
 
 const ifc = useIfcStore();
 
@@ -395,9 +396,9 @@ async function openAttrBrowser(category) {
   attrBrowser.loading  = true;
   attrBrowser.result   = null;
 
-  const groups   = props.getCategoryGroups?.() ?? [];
-  const fragList = props.getFragmentsList?.() ?? null;
-  const fragMgr  = props.getFragmentsManager?.() ?? null;
+  const groups   = api.getCategoryGroups?.() ?? [];
+  const fragList = api.getFragmentsList?.() ?? null;
+  const fragMgr  = api.getFragmentsManager?.() ?? null;
   if (!groups.length || !fragMgr) {
     attrBrowser.loading = false;
     attrBrowser.result  = { attributes: [], psets: [], samplesUsed: 0, totalElements: 0 };

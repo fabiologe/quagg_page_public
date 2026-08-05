@@ -85,7 +85,7 @@ export async function classifyKg({
     categoryGroups, fragmentsList, fragmentsManager, rules, overrides = new Map(),
 } = {}) {
     const byKg = new Map();
-    const unassigned = { count: 0, byCategory: new Map() };
+    const unassigned = { count: 0, byCategory: new Map(), elements: [] };
     const perElement = new Map(); // `${modelId}|${localId}` → kgCode
 
     if (!categoryGroups?.length || !fragmentsList || !rules?.length) {
@@ -101,9 +101,12 @@ export async function classifyKg({
             const c = r.condition?.category;
             return !c || c === category;
         });
-        // category-only override might still apply even when catRules is empty;
-        // but matching needs at least one rule — skip otherwise.
-        const needsData = fragmentsManager && _anyRuleForCategoryNeedsData(catRules, category);
+        // Daten werden gebraucht, wenn eine Regel Psets/Attribute liest ODER
+        // Overrides existieren: Overrides adressieren per GlobalId, und die
+        // gibt es nur aus dem Daten-Fetch — sonst griffe ein Override auf
+        // Kategorien ohne Pset-Regeln (z. B. IFCFOOTING) still ins Leere.
+        const needsData = fragmentsManager
+            && (_anyRuleForCategoryNeedsData(catRules, category) || overrides.size > 0);
 
         let map;
         try { map = await group.groupData.get(); } catch { continue; }
@@ -161,6 +164,7 @@ export async function classifyKg({
                 if (!kgCode) {
                     unassigned.count++;
                     unassigned.byCategory.set(category, (unassigned.byCategory.get(category) ?? 0) + 1);
+                    unassigned.elements.push({ modelId, localId, globalId, category });
                     continue;
                 }
 

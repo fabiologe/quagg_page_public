@@ -83,6 +83,11 @@ __devsaves/
 __devsave/
 
 # Large files ignored
+# ifc-4.3.json (61 MB): nur Quelle fuer den Generator von data/entity-schema.js
+# und data/pset-templates.js, wird zur Laufzeit nicht importiert (entfernt 2026-08-04).
+client/src/features/ifc-viewer/services/ifc-4.3.json
+# Lokale IFC-Testdaten (Kunden-Modelle, Norm-PDFs) — nie versionieren.
+client/testdata-local/
 client/src/features/flood-2D/test/dgm1_large.xyz
 client_backup_20251116.tar.gz
 client/public/results.zip

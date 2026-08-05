@@ -282,7 +282,9 @@ und ein Absatz Doku.**
 ### Block D — Datenhalden (nur Platte, kein Repo-Problem)
 
 Nicht versioniert, aber sie füllen die 38-GB-Platte:
-- `backend/data/RAG` — **6,3 GB** (verwaiste ChromaDB, siehe Memory `project_rag_literatur`)
+- ~~`backend/data/RAG` — **6,3 GB** (verwaiste ChromaDB)~~ — am 2026-08-05 gelöscht. Die
+  Literatursuche nutzt `RAG_ROOT=/mnt/storagebox/RAG` (Default in `literatur_search.py`);
+  identische Suchtreffer vor/nach dem Löschen verifiziert.
 - `backend/data/literatur_fts.sqlite` — **867 MB**
 - `backend/app/api/flood3D/data/runs` — **579 MB** (Lauf-Artefakte, Aufbewahrungsfrist nötig)
 - `backend/app/api/flood3D/data/cases` — **229 MB**

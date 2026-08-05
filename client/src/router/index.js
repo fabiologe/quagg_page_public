@@ -99,6 +99,12 @@ const router = createRouter({
       redirect: (to) => ({ path: '/tools/flood-3d', query: to.query })
     },
     {
+      path: '/cde',
+      name: 'cde',
+      component: () => import('@/features/ifc-viewer/views/CdeView.vue'),
+      meta: { layout: 'empty' }
+    },
+    {
       path: '/isyscan',
       name: 'isyscan-poc',
       component: () => import('@/features/isyscan/views/IsyScanView.vue'),
