@@ -325,7 +325,8 @@ def main() -> int:
                      "extrahiert — Bauwerke/Netz fehlen im Viewer")
 
         ypr = _y_plus_range(case)
-        run_foam_step(case, "postProcess -func writeCellCentres -time 0",
+        run_foam_step(case,
+                      "postProcess -noFunctionObjects -func writeCellCentres -time 0",
                       "log.writeCellCentres")
         conv = convert_case_fields(spec, case, job)
         if conv.get("terrain_error"):

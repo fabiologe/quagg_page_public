@@ -123,6 +123,18 @@ functions
         writeInterval   0.1;
         log             no;
     }
+    wall_shear
+    {
+        type            wallShearStress;
+        libs            (fieldFunctionObjects);
+        patches         (terrain wand_becken becken_1 dl_1 pfeiler_1);
+        // jeden Zeitschritt RECHNEN (sonst laesen die Auswertungen unten
+        // ein veraltetes Feld), aber nur zu den Ausgabezeitpunkten SCHREIBEN
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    writeTime;
+        log             no;
+    }
     tau_betrag
     {
         type            mag;
@@ -246,18 +258,6 @@ functions
         locations       ((12 14 96));
         writeControl    runTime;
         writeInterval   0.1;
-        log             no;
-    }
-    wall_shear
-    {
-        type            wallShearStress;
-        libs            (fieldFunctionObjects);
-        patches         (terrain wand_becken becken_1 dl_1 pfeiler_1);
-        // jeden Zeitschritt RECHNEN (sonst laesen die Auswertungen unten
-        // ein veraltetes Feld), aber nur zu den Ausgabezeitpunkten SCHREIBEN
-        executeControl  timeStep;
-        executeInterval 1;
-        writeControl    writeTime;
         log             no;
     }
     water_volume

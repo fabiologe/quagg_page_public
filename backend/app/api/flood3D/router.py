@@ -10,6 +10,8 @@ data/runs neben diesem Modul.
 """
 from __future__ import annotations
 
+import asyncio
+
 import base64
 import json
 import os
@@ -161,9 +163,11 @@ async def delete_run(run_id: str):
 async def run_detail(run_id: str):
     paths = _paths(run_id)
     result = _result(paths)
+    manifest = read_manifest(paths) or {}
     return {"run_id": run_id,
-            "status": (result or {}).get("status", "unbekannt"),
-            "manifest": read_manifest(paths),
+            "status": (result or {}).get(
+                "status", manifest.get("status", "unbekannt")),
+            "manifest": manifest,
             "quality": (result or {}).get("quality", {})}
 
 
@@ -253,6 +257,9 @@ async def run_geometry(run_id: str):
     if tri_dir.is_dir():
         for stl in sorted(tri_dir.glob("*.stl")):
             if stl.stem == "terrain":
+                continue
+            # Vorfüllungs-Prismen sind Anfangszustand, keine Bauwerke
+            if stl.stem.startswith("vorfuellung_"):
                 continue
             solids.append({"patch": stl.stem,
                            "stl_b64": base64.b64encode(stl.read_bytes()).decode()})
@@ -367,9 +374,15 @@ async def run_volume(run_id: str,
         raise HTTPException(status_code=404,
                             detail="Für diesen Lauf liegen keine Felddaten vor.")
     entry = vol_fields.nearest_timestep(index, time)
-    t_actual, data = vol_fields.read_timestep(paths.root, entry["index"])
-    wanted = [f.strip() for f in fields.split(",")] if fields else None
-    blob = vol_fields.pack_volume(t_actual, index["grid"], data, wanted)
+
+    def work():
+        t, data = vol_fields.read_timestep(paths.root, entry["index"])
+        wanted = [f.strip() for f in fields.split(",")] if fields else None
+        return t, vol_fields.pack_volume(t, index["grid"], data, wanted)
+
+    # npz-Dekompression + Packen sind CPU-lastig — nicht den Event-Loop
+    # blockieren (beim Zeit-Scrubbing kommen die Anfragen im Sekundentakt)
+    t_actual, blob = await asyncio.to_thread(work)
     return Response(content=blob, media_type="application/octet-stream",
                     headers={"X-F3D-Time": str(t_actual),
                              "Cache-Control": "max-age=3600"})
@@ -1043,7 +1056,6 @@ async def case_mesh_preview(case_id: str):
     checkMesh-Kennwerte, Laufzeit- und Kostenschätzung. Läuft synchron im
     Threadpool — für Vorschau-Netze im Minutenbereich ausreichend.
     """
-    import asyncio
     import tempfile
 
     from .core.casebuilder import build_case
@@ -1267,6 +1279,16 @@ async def start_run(payload: dict = Body(...)):
 
     case_id = payload.get("case_id", "")
     spec, case_dir = _load_case(case_id)
+
+    # Tor vor dem Lauf: Fehler-Befunde starten keinen bezahlten Lauf, der
+    # erst im Container stirbt.
+    fehler = [b for b in validate_case(spec, case_dir)
+              if b.get("severity") == "fehler"]
+    if fehler:
+        raise HTTPException(
+            status_code=422,
+            detail="Der Fall hat Fehler-Befunde: "
+                   + " | ".join(b["message"] for b in fehler[:5]))
 
     root = runs_root()
     root.mkdir(parents=True, exist_ok=True)
