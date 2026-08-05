@@ -610,6 +610,9 @@ export const usePreStore = defineStore('flood3d-pre', {
         if (kind === 'terrain_op' && this.spec.terrain) {
           this.spec.terrain.operations = []
           list = this.spec.terrain.operations
+        } else if (kind === 'vorfuellung' && this.spec.solver) {
+          this.spec.solver.vorfuellungen = []
+          list = this.spec.solver.vorfuellungen
         } else if (kind === 'refinement' && this.spec.mesh) {
           this.spec.mesh.refinements = []
           list = this.spec.mesh.refinements

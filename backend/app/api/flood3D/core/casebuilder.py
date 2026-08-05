@@ -410,26 +410,57 @@ relaxationFactors
 }"""
 
 
-def set_fields_dict(spec: CaseSpec) -> str | None:
-    if spec.solver.initial_level is None:
+def set_fields_dict(spec: CaseSpec, out: Path | None = None) -> str | None:
+    """
+    Anfangszustand: global `initial_level` (boxToCell), darüber je
+    Vorfüllung ein Teilbereich mit EIGENEM Spiegel — das Polygon wird als
+    Prisma extrudiert (STL neben den Fall) und surfaceToCell setzt alpha.
+    Reihenfolge: Vorfüllungen NACH der Box, spätere überschreiben frühere.
+    """
+    vorf = spec.solver.vorfuellungen
+    if spec.solver.initial_level is None and not vorf:
         return None
     x0, y0, x1, y1 = spec.domain.extent
-    body = f"""defaultFieldValues
-(
-    volScalarFieldValue alpha.water 0
-);
-
-regions
-(
-    boxToCell
+    regionen = []
+    if spec.solver.initial_level is not None:
+        regionen.append(f"""    boxToCell
     {{
         box {vec((x0 - 1, y0 - 1, spec.domain.z_min - 1))} {vec((x1 + 1, y1 + 1, spec.solver.initial_level))};
         fieldValues
         (
             volScalarFieldValue alpha.water 1
         );
-    }}
-);"""
+    }}""")
+    for v in vorf:
+        import shapely as _sh
+
+        from .solids import _extrude
+        name = f"vorfuellung_{v.id}.stl"
+        if out is not None:
+            prisma = _extrude(_sh.Polygon(v.polygon),
+                              spec.domain.z_min - 1.0, float(v.level))
+            ziel = out / "constant" / "triSurface" / name
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            prisma.export(ziel)
+        # outsidePoint sicher außerhalb des Prismas: über dem Deckel
+        aussen = vec((x0 - 0.5, y0 - 0.5, spec.domain.z_max + 0.5))
+        regionen.append(f"""    surfaceToCell
+    {{
+        file "constant/triSurface/{name}";
+        outsidePoints ({aussen});
+        includeCut true;
+        includeInside true;
+        includeOutside false;
+        nearDistance -1;
+        curvature -100;
+        useSurfaceOrientation false;
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 1
+        );
+    }}""")
+    body = ("defaultFieldValues\n(\n    volScalarFieldValue alpha.water 0\n"
+            ");\n\nregions\n(\n" + "\n".join(regionen) + "\n);")
     return foam_file("setFieldsDict", body, location="system")
 
 
@@ -1118,7 +1149,7 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
         "decomposeParDict",
         "numberOfSubdomains 4;\n\nmethod          scotch;", location="system"))
 
-    sf = set_fields_dict(spec)
+    sf = set_fields_dict(spec, out)
     if sf:
         (out / "system" / "setFieldsDict").write_text(sf)
     ts = topo_set_dict(spec)

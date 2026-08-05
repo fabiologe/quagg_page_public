@@ -191,6 +191,7 @@ const drawTargets = computed(() => {
     { label: 'Becken', rolle: 'becken', geschlossen: true },
     { label: 'Verfeinerungsbox', rolle: 'verfeinerung', geschlossen: true },
     { label: '3D-Körper (Prisma)', rolle: 'koerper', geschlossen: true },
+    { label: 'Vorfüllung (Startwasser)', rolle: 'vorfuellung', geschlossen: true },
   ]
   if (ringGeschlossen.value) return poly
   return n >= 3 ? [...poly, ...line] : line

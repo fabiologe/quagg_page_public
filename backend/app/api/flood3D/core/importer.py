@@ -34,7 +34,8 @@ import trimesh
 # Sie gelten für Handskizzen UND für CAD-Polylinien gleichermassen; die
 # Masse sind danach im Eigenschaftenpanel aenderbar.
 LINIEN_OBJEKT_ROLLEN = {"gerinne", "wand", "damm", "stutzen",
-                        "planum", "becken", "verfeinerung", "koerper"}
+                        "planum", "becken", "verfeinerung", "koerper",
+                        "vorfuellung"}
 
 # fester Container fuer Handgezeichnetes: eine "Datei" je Fall
 SKIZZE_ID = "skizze"
@@ -1123,7 +1124,7 @@ def _linien_objekt(spec, case_dir: Path, role: str, arr: np.ndarray,
     pts = [(round(float(p[0]), 3), round(float(p[1]), 3)) for p in arr]
     # geschlossene Ringe: der doppelte Schlusspunkt verfälscht Mittelwerte
     stat_pts = pts[:-1] if len(pts) > 3 and pts[0] == pts[-1] else pts
-    braucht = 3 if role in ("planum", "becken", "verfeinerung", "koerper") else 2
+    braucht = 3 if role in ("planum", "becken", "verfeinerung", "koerper", "vorfuellung") else 2
     if len(pts) < braucht:
         return None
 
@@ -1179,6 +1180,11 @@ def _linien_objekt(spec, case_dir: Path, role: str, arr: np.ndarray,
             id=sid, type="pier", patch=sid, shape="polygon",
             footprint=stat_pts, base_level=r2(zmin - 0.3),
             top_level=r2(zmax + 2.0), material="beton"))]
+    if role == "vorfuellung":
+        # Startwasserspiegel im Bereich: 1 m überm tiefsten Geländepunkt
+        from .casespec import Vorfuellung
+        return [(spec.solver.vorfuellungen, Vorfuellung(
+            id=sid, polygon=stat_pts, level=r2(zmin + 1.0)))]
     if role == "verfeinerung":
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
@@ -1262,6 +1268,10 @@ def import_objekte_entfernen(spec, import_id: str) -> int:
     spec.evaluation.sections = [s for s in spec.evaluation.sections
                                 if bleibt(s)]
     n += vorher - len(spec.evaluation.sections)
+    vorher = len(spec.solver.vorfuellungen)
+    spec.solver.vorfuellungen = [v for v in spec.solver.vorfuellungen
+                                 if bleibt(v)]
+    n += vorher - len(spec.solver.vorfuellungen)
     if spec.terrain is not None:
         vorher = len(spec.terrain.kanten)
         spec.terrain.kanten = [k for k in spec.terrain.kanten if bleibt(k)]
@@ -1674,7 +1684,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
             if neu_objekte is None:
                 report.append(f"„{c['name']}“ übersprungen: für die Rolle "
                               f"„{role}“ braucht es mindestens "
-                              f"{3 if role in ('planum', 'becken', 'verfeinerung', 'koerper') else 2} Punkte")
+                              f"{3 if role in ('planum', 'becken', 'verfeinerung', 'koerper', 'vorfuellung') else 2} Punkte")
                 continue
             for ziel, obj in neu_objekte:
                 obj.herkunft = "import"
