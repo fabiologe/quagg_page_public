@@ -184,9 +184,25 @@ eingefroren).
 
 ---
 
-### P5 — UI-Entflechtung · ~3 Sitzungen
+### P5 — UI-Entflechtung · ~3 Sitzungen · ⏳ WEITGEHEND ERLEDIGT 2026-08-05
 
 **Ziel:** Die drei Schichten sind **sichtbar**; jede Aktion hat einen Weg.
+
+*Stand Etappe 1: Baum mit „Grundlagen (Import)" (🔒, „↻ Neu ableiten"), Herkunfts-
+Badges, EIN Anlegeweg (Rezepte+Katalog in einem Select), Gebiets-Doppelmaske im
+SimulationPanel raus, Lösch-Rückfrage für Import-Objekte, JSON hinter
+Experten-Toggle, Freischneiden/Längsschnitt/Zuschnitt statt viermal „Schnitt",
+Stanzen-Chip sichtbar, Overlay-Kollision behoben.*
+
+*Stand Etappe 2: Die drei Serverregel-Spiegel (resolveWindow/resolveBcFaces/
+openingPos) sind GELÖSCHT — Marker und Fenster-Griffe lesen `store.aufgeloest`
+(bc_faces nach Objekt-ID geschlüsselt, Fenster-Schlüssel adaptiert). Editor3D von
+3.126 auf 2.366 Zeilen: `editor/objektZugriff.js` (Griffe-Registry, Verschieben,
+Fangpunkte — three-frei) und `editor/rotGizmo.js` herausgeschnitten.*
+
+*OFFEN (Folge-Etappe): Marker-Ebene, Zeichenwerkzeuge, Drag-Maschinen und
+Event-Verkabelung herausschneiden (Ziel < 800 Zeilen bleibt); vorher eine
+manuelle Runde im Editor — die Schnitte sind nur baugeprüft, nicht bedient.*
 
 | Paket | Inhalt |
 |---|---|

@@ -403,9 +403,16 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.terrainSolidStale = false
       }
       // Serverseitig aufgelöste Regeln (Randflächen, wirksame Fenster,
-      // Öffnungslagen) — Grundlage, um die Editor-Spiegel in P5 zu löschen
+      // Öffnungslagen) — sie ERSETZEN die früheren Editor-Spiegel der
+      // Serverlogik. Fenster: Serverschlüssel (lo/hi, z_w0/z_w1) auf die
+      // Editor-Form (span, zw0/zw1) gebracht — eine Stelle, ein Vertrag.
+      const fenster = {}
+      for (const [id, w] of Object.entries(p.fenster ?? {})) {
+        fenster[id] = { ...w, span: [w.lo, w.hi],
+          zw0: w.z_w0, zw1: w.z_w1 }
+      }
       this.aufgeloest = { bcFaces: p.bc_faces ?? {},
-        fenster: p.fenster ?? {}, oeffnungen: p.oeffnungen ?? {} }
+        fenster, oeffnungen: p.oeffnungen ?? {} }
       this.geometryVersion++
     },
 

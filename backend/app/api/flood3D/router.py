@@ -972,10 +972,13 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
         from .core.solids import _axis_point_and_dir
 
         flaechen = assign_faces(spec)
-        bc_patches = {b.patch for b in spec.boundaries}
-        out["bc_faces"] = {patch: face
-                           for face, (patch, _typ) in flaechen.items()
-                           if patch in bc_patches}
+        # geschlüsselt nach OBJEKT-ID (nicht Patchname) — der Editor
+        # adressiert seine Randbedingungen über die Kennung
+        patch_zu_face = {patch: face
+                         for face, (patch, _typ) in flaechen.items()}
+        out["bc_faces"] = {b.id: patch_zu_face[b.patch]
+                           for b in spec.boundaries
+                           if b.patch in patch_zu_face}
         out["fenster"] = {}
         for b in spec.boundaries:
             w = resolve_window(spec, b)

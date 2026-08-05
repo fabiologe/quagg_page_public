@@ -122,6 +122,8 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { usePreStore } from '../../stores/usePreStore'
 import { flood3dApi } from '../../services/api'
 import { b64ToBuffer } from '../../services/volume'
+import { erzeugeObjektZugriff } from './editor/objektZugriff'
+import { erzeugeRotGizmo } from './editor/rotGizmo'
 
 const store = usePreStore()
 const host = ref(null)
@@ -510,10 +512,11 @@ function buildMarkers() {
   for (const st of spec.structures ?? []) {
     for (const op of st.edits ?? []) {
       if (op.type === 'aussparung') {
+        const srv = store.aufgeloest?.oeffnungen?.[st.id]?.[op.id]
         const lage = op.point
           ? { p: op.point, d: op.direction ? [-op.direction[1], op.direction[0]]
             : [1, 0] }
-          : openingPos(st, op)
+          : (srv ? { p: srv.point, d: srv.dir } : null)
         if (!lage) continue
         const mat = new THREE.MeshBasicMaterial({ color: 0xc98500,
           side: THREE.DoubleSide, transparent: true, opacity: 0.9,
@@ -580,9 +583,9 @@ function buildMarkers() {
       y_max: { pos: [(x0 + x1) / 2, y1, (z0 + z1) / 2], rot: [Math.PI / 2, 0, 0], size: [x1 - x0, z1 - z0] },
     }
     const colors = { inflow: 0x3987e5, outflow: 0xd95926 }
-    const faces = resolveBcFaces(spec)
+    const faces = store.aufgeloest?.bcFaces ?? {}
     for (const b of spec.boundaries ?? []) {
-      const face = faces.get(b.id)
+      const face = faces[b.id]
       const color = ['inflow_hydrograph', 'inflow_constant'].includes(b.type)
         ? colors.inflow
         : ['outflow_fixed_level', 'outflow_free'].includes(b.type)
@@ -629,7 +632,11 @@ function buildMarkers() {
         groups.markers.add(mesh)
         selectable.push(mesh)
       }
-      const win = resolveWindow(spec, b, face)
+      const srvWin = store.aufgeloest?.fenster?.[b.id]
+      const win = srvWin && face !== 'z_max'
+        ? { ...srvWin, zlo: srvWin.zlo ?? spec.domain.z_min,
+            zhi: srvWin.zhi ?? spec.domain.z_max }
+        : null
       if (win) {
         mkPlane(fg.size, fg.pos, 0.06)
         if (win.shape === 'kreis') {
@@ -987,657 +994,15 @@ let editDrag = null            // { structId, idx, mesh }
 let lastMove = null            // letztes pointermove-Event (für Entf-Löschen)
 let rebuildPending = false     // Szenen-Rebuild bis Drag-Ende aufschieben
 
-const _r2 = (v) => Number(v.toFixed(2))
-
-// Importierte Körper haben weder Achse noch Grundrisspolygon — sie werden
-// über eine Transform-Bearbeitung bewegt, die bei Bedarf angelegt wird.
-function transformEdit(o) {
-  o.edits = o.edits ?? []
-  let t = o.edits.find((e) => e.type === 'transform')
-  if (!t) {
-    t = { id: 'lage', type: 'transform', verschieben: [0, 0, 0],
-      drehen_deg: 0, skalieren: 1 }
-    o.edits.push(t)
-  }
-  t.verschieben = t.verschieben ?? [0, 0, 0]
-  return t
-}
-
-// Mittelpunkt eines importierten Körpers aus der Server-Vorschau
-function importPos(obj) {
-  const mesh = (groups.solids?.children ?? [])
-    .find((c) => c.userData?.id === obj.id)
-  if (mesh) {
-    mesh.geometry.computeBoundingBox()
-    const b = mesh.geometry.boundingBox
-    return [(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2,
-      (b.min.z + b.max.z) / 2]
-  }
-  const t = (obj.edits ?? []).find((e) => e.type === 'transform')
-  return t?.verschieben ?? [0, 0, 0]
-}
-
-// Lage einer Aussparung auf der Bauteilachse — Spiegel von
-// solids._axis_point_and_dir (Wand: Polylinie, Becken: geschlossener Umfang)
-function openingPos(st, op) {
-  let pts
-  if (st.type === 'wall') pts = (st.alignment?.points ?? []).map((q) => [q[0], q[1]])
-  else if (st.type === 'basin') pts = [...(st.footprint ?? [])]
-  else return null
-  if (pts.length < 2) return null
-  if (st.type === 'basin') pts = [...pts, pts[0]]
-  const seg = []
-  let ges = 0
-  for (let i = 1; i < pts.length; i++) {
-    const dx = pts[i][0] - pts[i - 1][0]
-    const dy = pts[i][1] - pts[i - 1][1]
-    const L = Math.hypot(dx, dy)
-    seg.push({ a: pts[i - 1], dx, dy, L })
-    ges += L
-  }
-  let st_ = Math.min(Math.max(op.station ?? 0, 0), ges)
-  for (const sgm of seg) {
-    if (sgm.L <= 0) continue
-    if (st_ <= sgm.L) {
-      const f = st_ / sgm.L
-      return { p: [sgm.a[0] + f * sgm.dx, sgm.a[1] + f * sgm.dy],
-        d: [sgm.dx / sgm.L, sgm.dy / sgm.L] }
-    }
-    st_ -= sgm.L
-  }
-  const last = seg[seg.length - 1]
-  return { p: [last.a[0] + last.dx, last.a[1] + last.dy],
-    d: [last.dx / last.L, last.dy / last.L] }
-}
-
-// Wirksames Zu-/Ablauf-Fenster — Spiegel von casebuilder.resolve_window:
-// rechteck (span), kreis (Rohrmündung, freie Höhe), trapez, oder
-// follow = Trapez aus dem Gerinnequerschnitt am Rand (Sohle + Böschungen,
-// Sohlhöhe − 0.2 m Reserve), wandert mit dem Gerinne
-function resolveWindow(spec, b, face) {
-  const w = b.window
-  const dom = spec?.domain
-  if (!w || !dom || !face || face === 'z_max') return null
-  const [x0, y0, x1, y1] = dom.extent
-  const alongX = !face.startsWith('x')
-  const [e0, e1] = alongX ? [x0, x1] : [y0, y1]
-  if (w.follow) {
-    const plane = { x_min: x0, x_max: x1, y_min: y0, y_max: y1 }[face]
-    const ax = alongX ? 1 : 0
-    const limit = 2 * (spec.mesh?.base_cell ?? 1)
-    const ch = (spec.terrain?.operations ?? []).find(
-      (o) => o.id === w.follow && o.type === 'channel_carve')
-    if (ch?.polyline?.length) {
-      const ends = [[ch.polyline[0], ch.invert_start],
-        [ch.polyline[ch.polyline.length - 1], ch.invert_end]]
-      ends.sort((p, q) => Math.abs(p[0][ax] - plane) - Math.abs(q[0][ax] - plane))
-      const [pt, invert] = ends[0]
-      if (Math.abs(pt[ax] - plane) > limit) return null
-      const bw = ch.bottom_width
-      const tw = bw + 2 * ch.side_slope * ch.depth
-      const c = pt[1 - ax]
-      const lo = Math.max(c - tw / 2, e0)
-      const hi = Math.min(c + tw / 2, e1)
-      if (hi <= lo) return null
-      return { shape: 'trapez', span: [lo, hi], zlo: w.z_min ?? invert - 0.2,
-        zhi: w.z_max ?? invert + ch.depth, center: c, bw, tw,
-        zw0: invert, zw1: invert + ch.depth }
-    }
-    // Stutzen: Fenster = Rohr-Innenquerschnitt am Anschlussende der Achse
-    const cv = (spec.structures ?? []).find(
-      (o) => o.id === w.follow && o.type === 'culvert')
-    if (!cv?.axis?.length) return null
-    const cEnds = [cv.axis[0], cv.axis[cv.axis.length - 1]]
-    cEnds.sort((p, q) => Math.abs(p[ax] - plane) - Math.abs(q[ax] - plane))
-    const pt = cEnds[0]
-    if (Math.abs(pt[ax] - plane) > limit) return null
-    const c = pt[1 - ax]
-    const zc = pt[2]
-    if (cv.profile?.kind === 'circular') {
-      const d = cv.profile.diameter
-      return { shape: 'kreis', span: [c - d / 2, c + d / 2],
-        zlo: zc - d / 2, zhi: zc + d / 2, center: c, zc, d }
-    }
-    const bw = cv.profile?.width ?? 1
-    const hh = cv.profile?.height ?? 1
-    return { shape: 'rechteck', span: [c - bw / 2, c + bw / 2],
-      zlo: zc - hh / 2, zhi: zc + hh / 2 }
-  }
-  if (w.shape === 'kreis') {
-    if (w.center == null || w.z_center == null || w.diameter == null) return null
-    const r = w.diameter / 2
-    return { shape: 'kreis', span: [w.center - r, w.center + r],
-      zlo: w.z_center - r, zhi: w.z_center + r,
-      center: w.center, zc: w.z_center, d: w.diameter }
-  }
-  if (w.shape === 'trapez') {
-    if (w.center == null || w.bottom_width == null || w.top_width == null
-      || w.z_min == null || w.z_max == null) return null
-    const half = Math.max(w.bottom_width, w.top_width) / 2
-    return { shape: 'trapez', span: [w.center - half, w.center + half],
-      zlo: w.z_min, zhi: w.z_max, center: w.center,
-      bw: w.bottom_width, tw: w.top_width, zw0: w.z_min, zw1: w.z_max }
-  }
-  if (w.shape === 'polygon') {
-    if (!w.points || w.points.length < 3) return null
-    const as = w.points.map((q) => q[0])
-    const zs = w.points.map((q) => q[1])
-    return { shape: 'polygon', span: [Math.min(...as), Math.max(...as)],
-      zlo: Math.min(...zs), zhi: Math.max(...zs), points: w.points }
-  }
-  if (!w.span) return null
-  const [s0, s1] = [...w.span].sort((a, b2) => a - b2)
-  return { shape: 'rechteck', span: [s0, s1],
-    zlo: w.z_min ?? dom.z_min, zhi: w.z_max ?? dom.z_max }
-}
-
-// Gebietsrand je Randbedingung — Vorbelegung wie meshgen.assign_faces:
-// erster Zufluss x_min, erster Abfluss x_max, explizites face gewinnt
-function resolveBcFaces(spec) {
-  const map = new Map()
-  let inflowDone = false
-  let outflowDone = false
-  for (const b of spec?.boundaries ?? []) {
-    let face = b.face ?? null
-    if (['inflow_hydrograph', 'inflow_constant'].includes(b.type)) {
-      face = face ?? (inflowDone ? null : 'x_min')
-      inflowDone = true
-    } else if (['outflow_fixed_level', 'outflow_free'].includes(b.type)) {
-      face = face ?? (outflowDone ? null : 'x_max')
-      outflowDone = true
-    }
-    map.set(b.id, face)
-  }
-  return map
-}
-
-function translateObject(kind, obj, dx, dy, dz = 0) {
-  const mv = (p) => {
-    const q = [_r2(p[0] + dx), _r2(p[1] + dy), ...p.slice(2)]
-    if (p.length > 2 && dz) q[2] = _r2(p[2] + dz)
-    return q
-  }
-  // Höhenverschiebung für Objekte, deren z in Skalarfeldern steckt
-  const lift = (...keys) => {
-    if (!dz) return
-    for (const k of keys) {
-      if (typeof obj[k] === 'number') obj[k] = _r2(obj[k] + dz)
-    }
-  }
-  if (kind === 'gauge') { obj.point = mv(obj.point); return obj }
-  if (kind === 'section') { obj.polyline = obj.polyline.map(mv); return obj }
-  if (kind === 'terrain_op') {
-    if (obj.polyline) obj.polyline = obj.polyline.map(mv)
-    if (obj.polygon) obj.polygon = obj.polygon.map(mv)   // 2D wie 3D
-    if (obj.center) obj.center = mv(obj.center)
-    // Böschung besteht aus ZWEI Linien — ohne diesen Zweig ließe sie sich
-    // als Ganzes gar nicht verschieben
-    if (obj.oberkante) obj.oberkante = obj.oberkante.map(mv)
-    if (obj.unterkante) obj.unterkante = obj.unterkante.map(mv)
-    lift('level')
-    return obj
-  }
-  if (kind === 'structure' && obj.type === 'imported') {
-    const t = transformEdit(obj)
-    t.verschieben = [_r2(t.verschieben[0] + dx), _r2(t.verschieben[1] + dy),
-      _r2(t.verschieben[2] + dz)]
-    return obj
-  }
-  if (kind === 'structure') {
-    if (obj.alignment?.points) obj.alignment.points = obj.alignment.points.map(mv)
-    if (obj.axis) obj.axis = obj.axis.map(mv)
-    if (obj.footprint?.length) obj.footprint = obj.footprint.map(mv)
-    if (obj.plane_polygon) obj.plane_polygon = obj.plane_polygon.map(mv)
-    if (obj.crest_polyline) obj.crest_polyline = obj.crest_polyline.map(mv)
-    if (obj.center) obj.center = mv(obj.center)
-    lift('invert_level', 'base_level', 'top_level')
-    return obj
-  }
-  if (kind === 'domain') {
-    const e = obj.extent
-    obj.extent = [e[0] + dx, e[1] + dy, e[2] + dx, e[3] + dy]
-    if (dz) {
-      obj.z_min = _r2(obj.z_min + dz)
-      obj.z_max = _r2(obj.z_max + dz)
-    }
-    return obj
-  }
-  if (kind === 'refinement' && obj.extent) {
-    const e = obj.extent
-    obj.extent = [e[0] + dx, e[1] + dy, _r2(e[2] + dz),
-      e[3] + dx, e[4] + dy, _r2(e[5] + dz)]
-    return obj
-  }
-  return obj
-}
-
-// Kann das Objekt als Ganzes in der Höhe verschoben werden?
-function objectZable(kind, obj) {
-  if (!obj) return false
-  if (kind === 'gauge') return obj.point?.length > 2
-  if (kind === 'structure' || kind === 'refinement'
-      || kind === 'domain') return true
-  if (kind === 'terrain_op') {
-    // Vermessungskanten tragen ihre Höhe im Stützpunkt, nicht in einem
-    // Höhenfeld — auch sie dürfen als Ganzes gehoben werden
-    if (obj.oberkante || obj.type === 'bruchkante') return true
-    if (obj.type === 'aussenkante') return !!obj.polygon?.length
-    return typeof obj.level === 'number'
-  }
-  return false
-}
-
-// Einfüge-Schreiber: neuer Punkt NACH Index i; 3D-Listen interpolieren z
-function _insert2d(field) {
-  return (o, i, p) => { o[field].splice(i + 1, 0, p) }
-}
-
-function _insert3d(getList) {
-  return (o, i, p) => {
-    const list = getList(o)
-    const zA = list[i][2]
-    const zB = list[(i + 1) % list.length][2]
-    list.splice(i + 1, 0, [p[0], p[1], Number(((zA + zB) / 2).toFixed(2))])
-  }
-}
-
-// Fangpunkte für den Punktfang: alle Stützpunkte ANDERER Objekte
-function collectSnapPoints() {
-  const sel = store.selection
-  const pts = []
-  const push = (list) => { for (const q of list ?? []) pts.push([q[0], q[1]]) }
-  for (const s of store.spec?.structures ?? []) {
-    if (sel?.kind === 'structure' && s.id === sel.id) continue
-    push(s.footprint); push(s.axis); push(s.crest_polyline)
-    push(s.alignment?.points); push(s.plane_polygon)
-    if (s.center) pts.push([s.center[0], s.center[1]])
-  }
-  for (const t of store.spec?.terrain?.operations ?? []) {
-    if (sel?.kind === 'terrain_op' && t.id === sel.id) continue
-    push(t.polyline); push(t.polygon)
-  }
-  for (const sec of store.spec?.evaluation?.sections ?? []) {
-    if (sel?.kind === 'section' && sec.id === sel.id) continue
-    push(sec.polyline)
-  }
-  return pts
-}
-
-// Ecken-Löscher: false = Minimum erreicht, nichts tun
-function _removeAt(list, i, min) {
-  if (!list || list.length <= min) return false
-  list.splice(i, 1)
-  return true
-}
-
-function handleAccess(kind, obj) {
-  if (!obj) return null
-  if (kind === 'gauge') {
-    return { points: [obj.point],
-      write: (o, i, p) => { o.point = [p[0], p[1], ...o.point.slice(2)] },
-      ...(obj.point?.length > 2 ? {
-        writeZ: (o, i, dz) => { o.point[2] = _r2(o.point[2] + dz) },
-      } : {}) }
-  }
-  if (kind === 'section') {
-    return { points: obj.polyline, closed: false,
-      insert: _insert2d('polyline'),
-      remove: (o, i) => _removeAt(o.polyline, i, 2),
-      write: (o, i, p) => { o.polyline[i] = p } }
-  }
-  if (kind === 'terrain_op') {
-    // Z-Zug an den Stützpunkten stellt die Höhenfelder der Operation:
-    // Gerinne-Sohle (Anfang/Ende), Rampe (Anfang/Ende), Damm-Krone,
-    // Planum-Höhe. Mittlere Punkte einer Strecke verschieben beide Enden
-    // (das ganze Gefälle parallel).
-    const zPair = obj.invert_start != null
-      ? ['invert_start', 'invert_end']
-      : obj.level_start != null ? ['level_start', 'level_end'] : null
-    const zSingle = obj.crest_level != null ? 'crest_level'
-      : obj.level != null ? 'level' : null
-    const opZ = (o, i, dz, n) => {
-      if (zPair) {
-        if (i === 0) o[zPair[0]] = _r2(o[zPair[0]] + dz)
-        else if (i === n - 1) o[zPair[1]] = _r2(o[zPair[1]] + dz)
-        else {
-          o[zPair[0]] = _r2(o[zPair[0]] + dz)
-          o[zPair[1]] = _r2(o[zPair[1]] + dz)
-        }
-      } else if (zSingle) {
-        o[zSingle] = _r2(o[zSingle] + dz)
-      }
-    }
-    const zable = zPair != null || zSingle != null
-    // Vermessungskanten tragen die Höhe JE Stützpunkt — hier zieht der
-    // Z-Zug genau diesen einen Punkt, nicht ein Höhenfeld der Operation.
-    if (obj.type === 'aussenkante' && obj.polygon?.length) {
-      // Rahmen am Gebietsrand: Höhe steckt im Eckpunkt, nicht in einem
-      // Höhenfeld — Strg-Zug stellt genau diese eine Ecke
-      return { points: obj.polygon.map((q) => [q[0], q[1]]), closed: true,
-        zAt: (i) => obj.polygon[i][2],
-        insert: _insert3d((o) => o.polygon),
-        remove: (o, i) => _removeAt(o.polygon, i, 3),
-        write: (o, i, p) => { o.polygon[i] = [p[0], p[1], o.polygon[i][2]] },
-        writeZ: (o, i, dz) => { o.polygon[i][2] = _r2(o.polygon[i][2] + dz) } }
-    }
-    if (obj.type === 'bruchkante' || obj.type === 'boeschung') {
-      const feld = obj.type === 'bruchkante' ? 'polyline' : 'oberkante'
-      return { points: obj[feld].map((q) => [q[0], q[1]]), closed: false,
-        zAt: (i) => obj[feld][i][2],
-        insert: _insert3d((o) => o[feld]),
-        remove: (o, i) => _removeAt(o[feld], i, 2),
-        write: (o, i, p) => { o[feld][i] = [p[0], p[1], o[feld][i][2]] },
-        writeZ: (o, i, dz) => { o[feld][i][2] = _r2(o[feld][i][2] + dz) } }
-    }
-    if (obj.polyline) {
-      return { points: obj.polyline, closed: false,
-        insert: _insert2d('polyline'),
-        remove: (o, i) => _removeAt(o.polyline, i, 2),
-        write: (o, i, p) => { o.polyline[i] = p },
-        ...(zable ? { writeZ: (o, i, dz) => opZ(o, i, dz, o.polyline.length) }
-          : {}) }
-    }
-    if (obj.polygon) {
-      return { points: obj.polygon, closed: true,
-        insert: _insert2d('polygon'),
-        remove: (o, i) => _removeAt(o.polygon, i, 3),
-        write: (o, i, p) => { o.polygon[i] = p },
-        ...(zable ? { writeZ: (o, i, dz) => opZ(o, i, dz, o.polygon.length) }
-          : {}) }
-    }
-    if (obj.center && typeof obj.radius === 'number') {
-      // zweiter Griff auf dem Wirkkreis: Ziehen stellt den Radius. Vorher
-      // ließ sich die Reichweite nur tippen, obwohl sie im Grundriss die
-      // wichtigste Größe dieser Operationen ist.
-      const rad = Math.max(obj.radius, 0.1)
-      return {
-        points: [obj.center, [obj.center[0] + rad, obj.center[1]]],
-        write: (o, i, p) => {
-          if (i === 0) { o.center = p; return }
-          const d = Math.hypot(p[0] - o.center[0], p[1] - o.center[1])
-          o.radius = Math.max(_r2(d), 0.1)
-        },
-        ...(typeof obj.level === 'number'
-          ? { writeZ: (o, i, dz) => { o.level = _r2(o.level + dz) } } : {}),
-      }
-    }
-    if (obj.center) {
-      return { points: [obj.center], write: (o, i, p) => { o.center = p },
-        ...(zable ? { writeZ: (o, i, dz) => opZ(o, 0, dz, 1) } : {}) }
-    }
-    return null
-  }
-  if (kind === 'structure') {
-    // Handles auf OBJEKThöhe (Krone/Kopf), nicht auf dem Geländeboden —
-    // sonst verschwinden sie unter dem Bauwerk (z. B. Ecke überm Gerinne)
-    if (obj.type === 'wall') {
-      return {
-        points: obj.alignment.points.map((q) => [q[0], q[1]]),
-        closed: false,
-        zAt: (i) => obj.alignment.points[i][2] + 0.3,
-        insert: _insert3d((o) => o.alignment.points),
-        remove: (o, i) => _removeAt(o.alignment.points, i, 2),
-        write: (o, i, p) => {
-          o.alignment.points[i] = [p[0], p[1], o.alignment.points[i][2]]
-        },
-        writeZ: (o, i, dz) => {
-          o.alignment.points[i][2] = _r2(o.alignment.points[i][2] + dz)
-        },
-      }
-    }
-    if (obj.type === 'culvert') {
-      return {
-        points: obj.axis.map((q) => [q[0], q[1]]),
-        closed: false,
-        zAt: (i) => obj.axis[i][2] + 0.6,
-        insert: _insert3d((o) => o.axis),
-        remove: (o, i) => _removeAt(o.axis, i, 2),
-        write: (o, i, p) => { o.axis[i] = [p[0], p[1], o.axis[i][2]] },
-        writeZ: (o, i, dz) => { o.axis[i][2] = _r2(o.axis[i][2] + dz) },
-      }
-    }
-    if (obj.type === 'weir') {
-      return {
-        points: obj.crest_polyline.map((q) => [q[0], q[1]]),
-        closed: false,
-        zAt: (i) => obj.crest_polyline[i][2] + 0.3,
-        insert: _insert3d((o) => o.crest_polyline),
-        remove: (o, i) => _removeAt(o.crest_polyline, i, 2),
-        write: (o, i, p) => {
-          o.crest_polyline[i] = [p[0], p[1], o.crest_polyline[i][2]]
-        },
-        writeZ: (o, i, dz) => {
-          o.crest_polyline[i][2] = _r2(o.crest_polyline[i][2] + dz)
-        },
-      }
-    }
-    if (obj.type === 'screen') {
-      // Alle vier Ecken einzeln greifbar — auch die SOHLKNOTEN. Unter- und
-      // Oberecke liegen im Grundriss exakt übereinander, darum bewegt ein
-      // Grundriss-Zug die ganze Spalte (sonst verdreht sich die Ebene,
-      // Bug „Knoten hängt"); in der Höhe wandert nur die gegriffene Ecke —
-      // so lassen sich Unter- und Oberkante getrennt anpassen.
-      const colOf = (o, i) => o.plane_polygon
-        .map((_p, k) => k)
-        .filter((k) =>
-          Math.abs(o.plane_polygon[k][0] - o.plane_polygon[i][0]) < 1e-6
-          && Math.abs(o.plane_polygon[k][1] - o.plane_polygon[i][1]) < 1e-6)
-      return {
-        points: obj.plane_polygon.map((q) => [q[0], q[1]]),
-        closed: true,
-        zAt: (i) => obj.plane_polygon[i][2] + 0.3,
-        write: (o, i, p) => {
-          for (const k of colOf(o, i)) {
-            o.plane_polygon[k] = [p[0], p[1], o.plane_polygon[k][2]]
-          }
-        },
-        writeZ: (o, i, dz) => {
-          o.plane_polygon[i][2] = _r2(o.plane_polygon[i][2] + dz)
-        },
-      }
-    }
-    const topZ = obj.top_level ?? (obj.invert_level != null
-      ? obj.invert_level + (obj.wall_height ?? 0) : null)
-    // Z-Zug an Pfeiler-/Becken-Ecken stellt die Oberkante: Pfeiler über
-    // top_level, Becken über wall_height (Krone hoch/runter)
-    const structZ = (o, dz) => {
-      if (o.top_level != null) {
-        o.top_level = _r2(Math.max(o.top_level + dz,
-          (o.base_level ?? -1e9) + 0.1))
-      } else if (o.wall_height != null) {
-        o.wall_height = _r2(Math.max(o.wall_height + dz, 0.1))
-      }
-    }
-    if (obj.center) {
-      return { points: [obj.center],
-        zAt: topZ != null ? () => topZ + 0.3 : undefined,
-        write: (o, i, p) => { o.center = p },
-        writeZ: (o, i, dz) => structZ(o, dz) }
-    }
-    if (obj.type === 'imported') {
-      // Ein Greifpunkt in der Körpermitte: Ziehen verschiebt in x/y,
-      // Strg-Zug in z. Einzelne Netzknoten eines Imports anzufassen wäre
-      // sinnlos — ein STL hat Tausende davon.
-      const pos = importPos(obj)
-      return {
-        points: [[pos[0], pos[1]]],
-        zAt: () => pos[2],
-        write: (o, i, q) => {
-          const t = transformEdit(o)
-          t.verschieben = [_r2(t.verschieben[0] + (q[0] - pos[0])),
-            _r2(t.verschieben[1] + (q[1] - pos[1])), t.verschieben[2]]
-        },
-        writeZ: (o, i, dz) => {
-          const t = transformEdit(o)
-          t.verschieben = [t.verschieben[0], t.verschieben[1],
-            _r2(t.verschieben[2] + dz)]
-        },
-      }
-    }
-    if (obj.footprint?.length) {
-      return { points: obj.footprint,
-        closed: true,
-        zAt: topZ != null ? () => topZ + 0.3 : undefined,
-        insert: _insert2d('footprint'),
-        remove: (o, i) => _removeAt(o.footprint, i, 3),
-        write: (o, i, p) => { o.footprint[i] = p },
-        writeZ: (o, i, dz) => structZ(o, dz) }
-    }
-    return null
-  }
-  if (kind === 'boundary') {
-    // Zu-/Ablauf-Fenster: zwei Handles an der Fenster-Oberkante, ziehbar
-    // ENTLANG der Gebietskante (die Querkoordinate wird verworfen — die
-    // Y/X-Führungslinie rastet von selbst). Ohne Fenster sitzen die
-    // Handles an den Kantenenden; sie hineinziehen ERZEUGT das Fenster.
-    if (!['inflow_hydrograph', 'inflow_constant', 'outflow_fixed_level',
-      'outflow_free'].includes(obj.type)) return null
-    // Gekoppeltes Fenster hat keine eigenen Handles — Lage ändert man,
-    // indem man das Gerinne zieht (oder die Kopplung im Panel löst)
-    if (obj.window?.follow) return null
-    const dom = store.spec?.domain
-    const face = resolveBcFaces(store.spec).get(obj.id)
-    if (!dom || !face || face === 'z_max') return null
-    const [x0, y0, x1, y1] = dom.extent
-    const along = face.startsWith('x') ? [y0, y1] : [x0, x1]
-    const fixed = { x_min: x0, x_max: x1, y_min: y0, y_max: y1 }[face]
-    const span = obj.window?.span
-      ? [...obj.window.span].sort((a, b) => a - b) : [...along]
-    const pt = (s) => (face.startsWith('x') ? [fixed, s] : [s, fixed])
-    const zTop = obj.window?.z_max ?? dom.z_max
-    const clampSpan = (v) => _r2(Math.min(Math.max(v, along[0]), along[1]))
-    const shape = obj.window?.shape
-    if (shape === 'polygon') {
-      // Querschnitt zeichnen wie beim Rechen: jede Ecke einzeln greifbar —
-      // Kanten-Zug verschiebt sie entlang der Fläche, Z-Zug in der Höhe,
-      // Klick auf eine Kante fügt eine neue Ecke ein
-      const pts = obj.window.points
-      if (!pts || pts.length < 3) return null
-      return {
-        points: pts.map((q) => pt(q[0])),
-        closed: true,
-        zAt: (i) => pts[i][1],
-        insert: (o, i, p) => {
-          const list = o.window.points
-          const a = clampSpan(face.startsWith('x') ? p[1] : p[0])
-          const zMid = _r2((list[i][1] + list[(i + 1) % list.length][1]) / 2)
-          list.splice(i + 1, 0, [a, zMid])
-        },
-        remove: (o, i) => _removeAt(o.window.points, i, 3),
-        write: (o, i, p) => {
-          o.window.points[i] = [
-            clampSpan(face.startsWith('x') ? p[1] : p[0]),
-            o.window.points[i][1]]
-        },
-        writeZ: (o, i, dz) => {
-          const q = o.window.points[i]
-          q[1] = _r2(Math.min(Math.max(q[1] + dz, dom.z_min), dom.z_max))
-        },
-      }
-    }
-    if (shape === 'kreis' || shape === 'trapez') {
-      // Ein Mittelpunkt-Handle: Kanten-Zug = Lage, Z-Zug = Höhe der
-      // Öffnung (kreis: Achse; trapez: ganzes Fenster hoch/runter)
-      const c = obj.window.center
-      const zRef = shape === 'kreis' ? obj.window.z_center : obj.window.z_max
-      if (c == null || zRef == null) return null
-      return {
-        points: [pt(c)],
-        zAt: () => zRef,
-        write: (o, i, p) => {
-          o.window.center = clampSpan(face.startsWith('x') ? p[1] : p[0])
-        },
-        writeZ: (o, i, dz) => {
-          const win = o.window
-          if (win.shape === 'kreis') {
-            win.z_center = _r2(Math.min(Math.max(win.z_center + dz,
-              dom.z_min), dom.z_max))
-          } else {
-            const zMin = win.z_min + dz
-            const zMax = win.z_max + dz
-            if (zMin >= dom.z_min && zMax <= dom.z_max) {
-              win.z_min = _r2(zMin)
-              win.z_max = _r2(zMax)
-            }
-          }
-        },
-      }
-    }
-    return {
-      points: [pt(span[0]), pt(span[1])],
-      closed: false,
-      zAt: () => zTop,
-      write: (o, i, p) => {
-        const v = clampSpan(face.startsWith('x') ? p[1] : p[0])
-        const s = o.window?.span ? [...o.window.span] : [...along]
-        s[i] = v
-        if (o.window) o.window.span = s
-        else o.window = { span: s }
-      },
-      writeZ: (o, i, dz) => {
-        const base = o.window?.z_max ?? dom.z_max
-        const z = _r2(Math.min(Math.max(base + dz, dom.z_min + 0.1), dom.z_max))
-        if (o.window) o.window.z_max = z
-        else o.window = { span: [...along], z_max: z }
-      },
-    }
-  }
-  if (kind === 'domain') {
-    // Acht Eckgriffe: vier unten auf der Sohle, vier oben am Deckel.
-    // Waagerechtes Ziehen verschiebt an jeder Ecke die beiden angrenzenden
-    // Kanten, Strg-Zug stellt die Höhe — unten die Unterkante (z_min),
-    // oben die Oberkante (z_max). Damit lässt sich die Berechnungsbox im
-    // Bild zurechtrücken statt über sechs Zahlen.
-    const [ax0, ay0, ax1, ay1] = obj.extent
-    const ecken = [[ax0, ay0], [ax1, ay0], [ax1, ay1], [ax0, ay1]]
-    return {
-      points: [...ecken, ...ecken],
-      loops: [[0, 1, 2, 3], [4, 5, 6, 7]],
-      // Index 0-3 = Sohle, 4-7 = Deckel
-      zAt: (i) => (i < 4 ? obj.z_min - 0.3 : obj.z_max + 0.3),
-      write: (o, i, p) => {
-        const e = [...o.extent]
-        const k = i % 4
-        if (k === 0) { e[0] = p[0]; e[1] = p[1] }
-        else if (k === 1) { e[2] = p[0]; e[1] = p[1] }
-        else if (k === 2) { e[2] = p[0]; e[3] = p[1] }
-        else { e[0] = p[0]; e[3] = p[1] }
-        o.extent = [Math.min(e[0], e[2]), Math.min(e[1], e[3]),
-          Math.max(e[0], e[2]), Math.max(e[1], e[3])]
-      },
-      writeZ: (o, i, dz) => {
-        if (i < 4) o.z_min = _r2(Math.min(o.z_min + dz, o.z_max - 0.1))
-        else o.z_max = _r2(Math.max(o.z_max + dz, o.z_min + 0.1))
-      },
-    }
-  }
-  if (kind === 'refinement' && obj.type === 'box') {
-    const e = obj.extent
-    return {
-      points: [[e[0], e[1]], [e[3], e[4]]],
-      zAt: () => e[5] + 0.3,
-      write: (o, i, p) => {
-        const x = [...o.extent]
-        if (i === 0) { x[0] = p[0]; x[1] = p[1] } else { x[3] = p[0]; x[4] = p[1] }
-        o.extent = [Math.min(x[0], x[3]), Math.min(x[1], x[4]), x[2],
-          Math.max(x[0], x[3]), Math.max(x[1], x[4]), x[5]]
-      },
-      // Ecke 1 zieht die Unterkante, Ecke 2 die Oberkante der Box
-      writeZ: (o, i, dz) => {
-        const x = [...o.extent]
-        if (i === 0) x[2] = _r2(x[2] + dz)
-        else x[5] = _r2(x[5] + dz)
-        o.extent = [x[0], x[1], Math.min(x[2], x[5]),
-          x[3], x[4], Math.max(x[2], x[5])]
-      },
-    }
-  }
-  return null
-}
+// Objektzugriff (Griffe, Verschieben, Fangpunkte) — geschnitten nach
+// editor/objektZugriff.js; hier nur noch die Anbindung
+const { _r2, transformEdit, importPos, translateObject, objectZable,
+  collectSnapPoints, handleAccess } = erzeugeObjektZugriff({
+  store, holeGroups: () => groups })
 
 function buildHandles() {
   // nie mitten im Zug neu bauen — sonst verlieren wir die gegriffenen Teile
-  if (dragging || objectDrag || rotDrag) return
+  if (dragging || objectDrag || rotAktiv()) return
   clearGroup('handles')
   const sel = store.selection
   const access = sel && handleAccess(sel.kind, store.selectedObject)
@@ -1737,186 +1102,12 @@ function buildHandles() {
 // Modell — also dreht dieser Griff das MODELL und der Quader legt sich neu
 // darum. Darstellung: dicke z-Achse durch die Gebietsmitte, darüber ein
 // gekrümmter Doppelpfeil, an dem gezogen wird.
-const ROT_FARBE = 0x4d9fff
-let rotDrag = null            // { cx, cy, z, start, grad } während des Zugs
-const rotInfo = ref('')
-
-function rotGeometrie() {
-  const d = store.spec?.domain
-  if (!d) return null
-  const [x0, y0, x1, y1] = d.extent
-  const spanne = Math.max(d.z_max - d.z_min, 1)
-  return {
-    cx: (x0 + x1) / 2, cy: (y0 + y1) / 2,
-    r: Math.max(Math.min(x1 - x0, y1 - y0) * 0.2, 1.5),
-    z0: d.z_min, zTop: d.z_max + Math.max(spanne * 0.35, 1.5),
-  }
-}
-
-function buildRotGizmo() {
-  const g = rotGeometrie()
-  if (!g || !groups.handles) return
-  const voll = new THREE.MeshBasicMaterial({ color: ROT_FARBE,
-    depthTest: false, transparent: true, opacity: 0.9 })
-  const unsichtbar = new THREE.MeshBasicMaterial({ transparent: true,
-    opacity: 0, depthTest: false, depthWrite: false })
-  const dick = g.r * 0.055
-
-  // dicke z-Achse: zeigt, worum gedreht wird
-  const hoehe = g.zTop - g.z0
-  const achse = new THREE.Mesh(
-    new THREE.CylinderGeometry(dick, dick, hoehe, 12), voll)
-  achse.rotation.x = Math.PI / 2
-  achse.position.set(g.cx, g.cy, g.z0 + hoehe / 2)
-  achse.renderOrder = 4
-  const spitze = new THREE.Mesh(
-    new THREE.ConeGeometry(dick * 2.4, dick * 7, 12), voll)
-  spitze.rotation.x = Math.PI / 2
-  spitze.position.set(g.cx, g.cy, g.zTop + dick * 3.5)
-  spitze.renderOrder = 4
-  groups.handles.add(achse, spitze)
-
-  // gekrümmter Doppelpfeil um die Achse
-  const bogen = Math.PI * 1.45
-  const ring = new THREE.Group()
-  const torus = new THREE.Mesh(
-    new THREE.TorusGeometry(g.r, dick * 0.8, 10, 64, bogen), voll)
-  torus.renderOrder = 4
-  ring.add(torus)
-  for (const [winkel, dreh] of [[0, Math.PI], [bogen, bogen]]) {
-    const kopf = new THREE.Mesh(
-      new THREE.ConeGeometry(dick * 2.2, dick * 6.5, 12), voll)
-    kopf.position.set(g.r * Math.cos(winkel), g.r * Math.sin(winkel), 0)
-    kopf.rotation.z = dreh          // Kegel zeigt entlang der Tangente
-    kopf.renderOrder = 4
-    ring.add(kopf)
-  }
-  // großzügiges, unsichtbares Greifband auf demselben Bogen
-  const greifer = new THREE.Mesh(
-    new THREE.TorusGeometry(g.r, dick * 4, 8, 48, bogen), unsichtbar)
-  greifer.userData = { rotGizmo: true }
-  ring.add(greifer)
-  ring.position.set(g.cx, g.cy, g.zTop)
-  groups.handles.add(ring)
-}
-
-function pickRotGizmo(e) {
-  if (!groups.handles) return false
-  const ziele = []
-  groups.handles.traverse((c) => { if (c.userData?.rotGizmo) ziele.push(c) })
-  return ziele.length > 0 && _ray(e).intersectObjects(ziele, false).length > 0
-}
-
-// Eine Szenengruppe um die senkrechte Achse durch (cx, cy) drehen — nur
-// Vorschau, gerechnet wird serverseitig.
-function drehGruppe(gruppe, rad, cx, cy) {
-  if (!gruppe) return
-  const c = Math.cos(rad)
-  const s = Math.sin(rad)
-  gruppe.rotation.z = rad
-  gruppe.position.set(cx - (c * cx - s * cy), cy - (s * cx + c * cy), 0)
-}
-
-function rotVorschauZuruecksetzen() {
-  for (const name of ['terrain', 'solids', 'markers']) {
-    const gruppe = groups[name]
-    if (!gruppe) continue
-    gruppe.rotation.z = 0
-    gruppe.position.set(0, 0, 0)
-  }
-  clearGroup('rotbox')
-}
-
-// Umriss des Gebiets, das nach der Drehung entstünde (achsparallel um die
-// gedrehte Geometrie herum) — gestrichelt, damit der Zuschnitt vorab sichtbar ist
-function zeigeNeuesGebiet(rad) {
-  clearGroup('rotbox')
-  const d = store.spec?.domain
-  if (!d) return
-  const [x0, y0, x1, y1] = d.extent
-  const cx = (x0 + x1) / 2
-  const cy = (y0 + y1) / 2
-  const c = Math.cos(rad)
-  const s = Math.sin(rad)
-  const xs = []
-  const ys = []
-  for (const [px, py] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
-    xs.push(cx + c * (px - cx) - s * (py - cy))
-    ys.push(cy + s * (px - cx) + c * (py - cy))
-  }
-  const [nx0, nx1] = [Math.min(...xs), Math.max(...xs)]
-  const [ny0, ny1] = [Math.min(...ys), Math.max(...ys)]
-  const z = d.z_max
-  const linie = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
-    [[nx0, ny0], [nx1, ny0], [nx1, ny1], [nx0, ny1], [nx0, ny0]]
-      .map(([x, y]) => new THREE.Vector3(x, y, z))),
-  new THREE.LineDashedMaterial({ color: 0x7dd3fc, dashSize: 1.2, gapSize: 0.8,
-    depthTest: false }))
-  linie.computeLineDistances()
-  linie.renderOrder = 5
-  groups.rotbox = new THREE.Group()
-  groups.rotbox.add(linie)
-  scene.add(groups.rotbox)
-}
-
-function rotWinkel(e) {
-  const p = planePick(e, rotDrag.z)
-  if (!p) return null
-  return Math.atan2(p.y - rotDrag.cy, p.x - rotDrag.cx)
-}
-
-function startRotDrag(e) {
-  const g = rotGeometrie()
-  if (!g) return false
-  rotDrag = { cx: g.cx, cy: g.cy, z: g.zTop, start: 0, grad: 0 }
-  const a = rotWinkel(e)
-  if (a == null) { rotDrag = null; return false }
-  rotDrag.start = a
-  controls.enabled = false
-  renderer.domElement.style.cursor = 'grabbing'
-  renderer.domElement.setPointerCapture(e.pointerId)
-  rotInfo.value = 'Modell drehen: 0,0° · Shift rastet auf 15° · Esc bricht ab'
-  return true
-}
-
-function dragRotTo(e) {
-  const a = rotWinkel(e)
-  if (a == null) return
-  let grad = ((a - rotDrag.start) * 180) / Math.PI
-  grad = ((grad + 180) % 360 + 360) % 360 - 180      // auf ±180° bringen
-  if (e.shiftKey) grad = Math.round(grad / 15) * 15
-  else grad = Math.round(grad * 10) / 10
-  rotDrag.grad = grad
-  const rad = (grad * Math.PI) / 180
-  for (const name of ['terrain', 'solids', 'markers']) {
-    drehGruppe(groups[name], rad, rotDrag.cx, rotDrag.cy)
-  }
-  zeigeNeuesGebiet(rad)
-  rotInfo.value = `Modell drehen: ${grad.toFixed(1).replace('.', ',')}°`
-    + ' · Shift rastet auf 15° · Esc bricht ab'
-}
-
-function cancelRotDrag() {
-  rotDrag = null
-  rotInfo.value = ''
-  rotVorschauZuruecksetzen()
-  controls.enabled = true
-  renderer.domElement.style.cursor = 'default'
-}
-
-async function commitRotDrag() {
-  const grad = rotDrag?.grad ?? 0
-  cancelRotDrag()
-  if (Math.abs(grad) < 0.05) return
-  // Der Server dreht jede Koordinate des Falls und tastet das Höhenraster
-  // neu ab; danach kommen Gelände und Körper ohnehin frisch zurück.
-  const hinweise = await store.drehen(grad)
-  buildHandles()
-  // Das Drehen schreibt den Fall — der Weg zurück ist der Verlaufsstapel
-  rotInfo.value = [`Um ${grad.toFixed(1).replace('.', ',')}° gedreht`,
-    ...hinweise, 'Strg+Z stellt den Stand davor wieder her'].join(' · ')
-  setTimeout(() => { rotInfo.value = '' }, 15000)
-}
+// Drehgriff — geschnitten nach editor/rotGizmo.js
+const { rotInfo, rotAktiv, buildRotGizmo, pickRotGizmo, startRotDrag,
+  dragRotTo, cancelRotDrag, commitRotDrag } = erzeugeRotGizmo({
+  store, groups, ray: (e) => _ray(e), planePick: (e, z) => planePick(e, z),
+  clearGroup, buildHandles: () => buildHandles(),
+  holeSzene: () => ({ scene, renderer, controls }) })
 
 function _ray(e) {
   const rect = host.value.getBoundingClientRect()
@@ -2692,10 +1883,10 @@ onMounted(() => {
   // läuft NACH dem Haupt-Handler: wenn keine Objekt-Interaktion gestartet
   // wurde, arbeitet die Kamera — Pivot verankern + Faust-Cursor
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (e.button !== 2 && !dragging && !objectDrag && !rotDrag && !topView.value) {
+    if (e.button !== 2 && !dragging && !objectDrag && !rotAktiv() && !topView.value) {
       anchorPivotToViewCenter()
     }
-    if (e.button === 0 && !dragging && !objectDrag && !rotDrag) {
+    if (e.button === 0 && !dragging && !objectDrag && !rotAktiv()) {
       renderer.domElement.style.cursor = 'grabbing'
     }
   })
@@ -2710,7 +1901,7 @@ onMounted(() => {
   }, { passive: true })
 
   renderer.domElement.addEventListener('pointerup', (e) => {
-    if (rotDrag) {
+    if (rotAktiv()) {
       commitRotDrag()
       downPos = null
       return
@@ -2748,7 +1939,7 @@ onMounted(() => {
   })
   renderer.domElement.addEventListener('pointermove', (e) => {
     lastMove = e                      // für Entf (Ecke unterm Cursor löschen)
-    if (rotDrag) {
+    if (rotAktiv()) {
       dragRotTo(e)
       return
     }
@@ -2977,7 +2168,7 @@ function duplicateSelected() {
 
 function onKeydown(e) {
   if (e.key === 'Escape') {
-    if (rotDrag) { cancelRotDrag(); return }
+    if (rotAktiv()) { cancelRotDrag(); return }
     if (store.platzierung) store.endPlatzierung()
     cancelDrawing()
     mode.value = 'select'
