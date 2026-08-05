@@ -990,6 +990,20 @@ Boundary = Annotated[
 # solver
 # --------------------------------------------------------------------------
 
+class Vorfuellung(_Objekt):
+    """
+    Teilbereich, der mit Wasser auf EIGENER Höhe startet — ein Becken
+    beginnt vorgefüllt, der Rest des Gebiets folgt `initial_level` (bzw.
+    startet trocken). Gesetzt wird das über setFields: das Polygon wird
+    als Prisma bis zur Höhe extrudiert und surfaceToCell setzt alpha=1.
+    Reihenfolge zählt: spätere Bereiche überschreiben frühere.
+    """
+    id: str
+    type: Literal["vorfuellung"] = "vorfuellung"
+    polygon: list[Point2]
+    level: float                  # Wasserspiegel im Bereich (m NHN)
+
+
 class Solver(_Model):
     application: Literal["interFoam", "LTSInterFoam"] = "interFoam"
     end_time: float
@@ -999,6 +1013,9 @@ class Solver(_Model):
     write_interval_fields: float = 10.0
     write_interval_series: float = 0.1
     initial_level: float | None = None    # Anfangswasserspiegel für setFields
+    # Teilbereiche mit eigenem Startwasserspiegel (Becken vorgefüllt
+    # starten) — wirken NACH initial_level
+    vorfuellungen: list[Vorfuellung] = []
 
 
 # --------------------------------------------------------------------------

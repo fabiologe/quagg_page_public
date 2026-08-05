@@ -2,6 +2,7 @@
 // deutsche Typbezeichner. Die IDs werden beim Einfügen durchnummeriert.
 
 export const TYPE_LABELS = {
+  vorfuellung: 'Vorfüllung (Startwasser)',
   massenbilanz: 'Massenbilanz', kurzschluss: 'Kurzschlusskennzahl',
   verweilzeit_min: 'Mindest-Verweilzeit',
   channel_carve: 'Gerinne einschneiden', pad: 'Planum', raise_lower: 'Anheben/Absenken',
@@ -117,6 +118,10 @@ export const TEMPLATES = {
     Verfeinerungsbox: { id: 'box', type: 'box',
       extent: [10, 10, 93.0, 20, 20, 97.0], level: 2 },
     Flächenverfeinerung: { id: 'flaeche', type: 'surface', target: '', level: 2 },
+  },
+  vorfuellung: {
+    'Vorfüllung (Teilbereich)': { id: 'vorfuellung', type: 'vorfuellung',
+      polygon: [[10, 10], [20, 10], [20, 20], [10, 20]], level: 95.5 },
   },
   boundary: {
     'Zufluss (konstant)': { id: 'zufluss', type: 'inflow_constant',

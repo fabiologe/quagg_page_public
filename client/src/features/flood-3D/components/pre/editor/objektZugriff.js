@@ -159,6 +159,16 @@ function _removeAt(list, i, min) {
 }
 
 function handleAccess(kind, obj) {
+  if (kind === 'vorfuellung') {
+    // Polygon-Griffe wie bei einer Geländeoperation; der Wasserspiegel
+    // ist ein Panel-Wert, kein Zieh-Freiheitsgrad
+    return {
+      points: () => (obj.polygon ?? []).map(([x, y]) => [x, y]),
+      closed: true,
+      write: (pts) => store.updateObject(kind, obj.id,
+        { ...obj, polygon: pts.map(([x, y]) => [_r2(x), _r2(y)]) }),
+    }
+  }
   if (!obj) return null
   if (kind === 'gauge') {
     return { points: [obj.point],

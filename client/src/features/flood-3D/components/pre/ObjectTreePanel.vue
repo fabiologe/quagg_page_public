@@ -169,7 +169,7 @@ const neuWahl = ref('')
 
 const KATALOG_LABELS = {
   terrain_op: 'Geländeoperationen', structure: 'Bauwerksformen',
-  refinement: 'Netzverfeinerungen', boundary: 'Randbedingungen',
+  refinement: 'Netzverfeinerungen', vorfuellung: 'Anfangszustand', boundary: 'Randbedingungen',
   section: 'Querschnitte', gauge: 'Pegel', target: 'Nachweiskriterien',
 }
 const katalog = computed(() => Object.entries(TEMPLATES).map(
@@ -365,7 +365,8 @@ const ABSCHNITTE = [
     gruppen: ['domain', 'terrain', 'kante', 'structure',
       'section', 'gauge'] },
   { id: 'wirkung', label: 'Wirkung',
-    gruppen: ['terrain_op', 'boundary', 'refinement', 'target'] },
+    gruppen: ['terrain_op', 'vorfuellung', 'boundary', 'refinement',
+      'target'] },
 ]
 
 const gruppenNachKind = computed(() => {
@@ -388,6 +389,9 @@ const gruppenNachKind = computed(() => {
       items: ohneGruppe(s.evaluation?.gauges) },
     terrain_op: { kind: 'terrain_op', label: 'Geländeoperationen',
       wirkung: true, items: s.terrain?.operations ?? [] },
+    vorfuellung: { kind: 'vorfuellung',
+      label: 'Anfangszustand (Vorfüllung)', wirkung: true,
+      items: ohneGruppe(s.solver?.vorfuellungen) },
     boundary: { kind: 'boundary', label: 'Randbedingungen',
       wirkung: true, items: ohneGruppe(s.boundaries) },
     refinement: { kind: 'refinement', label: 'Netzverfeinerungen',

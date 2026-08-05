@@ -17,6 +17,7 @@ export const ROLE_LABELS = {
   planum: 'Planum', stutzen: 'Stutzen (Rohr)',
   verfeinerung: 'Verfeinerungsbox',
   koerper: '3D-Körper (Prisma)',
+  vorfuellung: 'Vorfüllung (Startwasser)',
   ignorieren: '— ignorieren —',
 }
 export const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
@@ -44,7 +45,7 @@ export const LINIEN_ROLLEN = [
     rollen: ['mauer', 'wehrkrone', 'wand', 'becken', 'stutzen',
       'koerper'] },
   { titel: 'sonstiges',
-    rollen: ['querschnitt', 'verfeinerung', 'ignorieren'] },
+    rollen: ['querschnitt', 'verfeinerung', 'vorfuellung', 'ignorieren'] },
 ]
 export const RASTER_ROLLEN = [{ titel: 'Höhendaten',
   rollen: ['gelaende', 'zusatzraster', 'ignorieren'] }]

@@ -227,6 +227,29 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    "das Höhenraster, dort kann kein Hohlraum "
                                    "sein"))
 
+    # ---- Vorfüllungen: Höhe im Gebiet, überm Gelände ---------------------
+    for v in spec.solver.vorfuellungen:
+        if spec.domain is not None and not (
+                spec.domain.z_min < v.level <= spec.domain.z_max):
+            f(_finding(v.id, "fehler",
+                       f"Vorfüllung „{v.id}“: Spiegel {v.level:g} m liegt "
+                       f"außerhalb des Gebiets ({spec.domain.z_min:g} … "
+                       f"{spec.domain.z_max:g} m)."))
+        elif gewachsen is not None and len(v.polygon) >= 3:
+            import numpy as _np
+            xs = _np.array([p[0] for p in v.polygon])
+            ys = _np.array([p[1] for p in v.polygon])
+            try:
+                zmin = float(_np.min(gewachsen.sample(xs, ys)))
+            except Exception:               # noqa: BLE001
+                zmin = None
+            if zmin is not None and v.level <= zmin:
+                f(_finding(v.id, "warnung",
+                           f"Vorfüllung „{v.id}“: Spiegel {v.level:g} m "
+                           f"liegt unter dem Gelände im Bereich (tiefster "
+                           f"Punkt {zmin:.2f} m) — dort entsteht kein "
+                           "Wasser."))
+
     # ---- Erdkörper-Schalter gegen die Inferenz ---------------------------
     # Regel und Kur messen dieselbe Größe: die Kur stellt den Schalter auf
     # „auto" zurück, danach ist genau dieser Befund weg.

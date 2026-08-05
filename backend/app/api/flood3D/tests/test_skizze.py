@@ -98,3 +98,41 @@ def test_polygon_wird_3d_koerper(case):
     assert len(prisma.footprint) == 4          # offener Ring, kein Doppelpunkt
     assert prisma.base_level == pytest.approx(96.0 - 0.3)
     assert prisma.top_level == pytest.approx(96.0 + 2.0)
+
+
+def test_polygon_wird_vorfuellung(case):
+    """Vorfüllung als Skizzen-Rolle: Bereich startet 1 m überm tiefsten
+    Geländepunkt vorgefüllt — und landet als surfaceToCell im setFields."""
+    from ..core.casebuilder import set_fields_dict
+
+    spec, d = case
+    skizze_hinzufuegen(spec, d, kind="polygon", rolle="vorfuellung",
+                       punkte=[[6, 6], [14, 6], [14, 14], [6, 14]])
+    v = spec.solver.vorfuellungen[0]
+    assert v.level == pytest.approx(97.0)        # flat:96 + 1.0
+    assert v.herkunft == "import"
+
+    sf = set_fields_dict(spec, d)
+    assert "surfaceToCell" in sf
+    assert f"vorfuellung_{v.id}.stl" in sf
+    assert (d / "constant" / "triSurface" / f"vorfuellung_{v.id}.stl").is_file()
+
+
+def test_vorfuellung_validierung(case):
+    from ..core.casespec import Vorfuellung
+    from ..core.validate import validate_case
+
+    spec, d = case
+    spec.solver.vorfuellungen = [Vorfuellung(
+        id="v_hoch", polygon=[[4, 4], [8, 4], [8, 8], [4, 8]],
+        level=spec.domain.z_max + 5.0)]
+    befunde = validate_case(spec, d)
+    assert any(b["object_id"] == "v_hoch" and b["severity"] == "fehler"
+               for b in befunde)
+
+    spec.solver.vorfuellungen = [Vorfuellung(
+        id="v_tief", polygon=[[4, 4], [8, 4], [8, 8], [4, 8]],
+        level=93.0)]                          # im Gebiet, unterm Gelände 96
+    befunde = validate_case(spec, d)
+    assert any(b["object_id"] == "v_tief" and b["severity"] == "warnung"
+               and "unter dem Gelände" in b["message"] for b in befunde)

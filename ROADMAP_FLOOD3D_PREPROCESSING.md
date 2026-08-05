@@ -227,6 +227,17 @@ Netzvorschau ohne Konsole-Fehler.
 
 ---
 
+### KURSKORREKTUR (2026-08-05, Fabio): Nachweis ist Sache des Ingenieurs
+
+Das Werkzeug ist ein **OpenFOAM-Simulationswerkzeug** (interFoam, später
+interFoam + Partikel für Geschiebe u. ä.) — es liefert Simulation und
+Kennwerte als Rohdaten; die Bewertung/den Nachweis macht der Ingenieur.
+**Gestrichen/geparkt**: C1 Nachweis-Assistent, C3 neue Nachweistypen,
+C4 Nachweisblatt, C5 Reifegrad-Ampel. **Bleibt**: C2 (Kennwerte in
+result.json — das sind Rohdaten) und die vorhandenen Grenzwert-Kriterien
+als optionales Werkzeug. Künftige Richtung: Simulationsfähigkeit
+(Randbedingungs-/Anfangszustands-Achsen, später MPPICInterFoam-Partikel).
+
 ### P6 — Wiedereinstieg in den Fahrplan · danach
 
 Erst jetzt Stufe C („der Fall beantwortet eine Frage"), und sie wird billiger:
