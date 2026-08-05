@@ -12,7 +12,7 @@ import trimesh
 
 from ..core import casespec as cs
 from ..core.casebuilder import build_case
-from ..core.solids import bohrkoerper, gelaende_mit_durchlaessen
+from ..core.solids import bohrkoerper, gelaende_koerper_bauen
 from ..core.terrain import TerrainField
 from ..core.validate import validate_case
 from .synthetic_case import build_spec_stage3
@@ -65,7 +65,7 @@ def test_bohrung_macht_ein_echtes_loch_im_erdkoerper():
     zelle = spec.mesh.base_cell
     unterkante = min(float(np.min(feld.z)), spec.domain.z_min) - max(4 * zelle, 1.0)
     voll = feld.to_solid(unterkante, ueberstand=2 * zelle)
-    gebohrt = gelaende_mit_durchlaessen(feld, spec)
+    gebohrt = gelaende_koerper_bauen(feld, spec)
     assert gebohrt is not None and gebohrt.is_watertight
 
     r = 0.4 + 0.15
@@ -77,7 +77,7 @@ def test_bohrung_macht_ein_echtes_loch_im_erdkoerper():
 
 def test_ohne_schalter_bleibt_das_gelaende_die_hoehenflaeche():
     spec = _damm_fall(False)
-    assert gelaende_mit_durchlaessen(_feld(spec), spec) is None
+    assert gelaende_koerper_bauen(_feld(spec), spec) is None
 
 
 def test_pruefung_meldet_das_vergrabene_rohr():
@@ -206,18 +206,18 @@ def test_berechnungskoerper_schaltet_den_volumenkoerper_ein():
     des Schalters am Rohr: die Geländeoperation schaltet ihn ein und trägt
     Sohle und Überstand.
     """
-    from ..core.solids import gelaende_mit_durchlaessen
+    from ..core.solids import gelaende_koerper_bauen
 
     spec = build_spec_stage3()
     spec.terrain.operations = []
     spec.structures = []
     feld = _feld(spec)
-    assert gelaende_mit_durchlaessen(feld, spec) is None, "ohne Angabe Fläche"
+    assert gelaende_koerper_bauen(feld, spec) is None, "ohne Angabe Fläche"
 
     spec.terrain.operations = [cs.OpBerechnungskoerper(
         id="koerper", type="berechnungskoerper",
         unterkante=90.0, ueberstand=1.5)]
-    k = gelaende_mit_durchlaessen(_feld(spec), spec)
+    k = gelaende_koerper_bauen(_feld(spec), spec)
     assert k is not None and k.is_watertight and k.volume > 0
     assert k.bounds[0][2] == pytest.approx(90.0, abs=0.01), "Sohle wie angegeben"
     x0, y0, x1, y1 = spec.domain.extent
@@ -226,14 +226,14 @@ def test_berechnungskoerper_schaltet_den_volumenkoerper_ein():
 
 
 def test_berechnungskoerper_ohne_masse_nimmt_sinnvolle_vorbelegung():
-    from ..core.solids import gelaende_mit_durchlaessen
+    from ..core.solids import gelaende_koerper_bauen
 
     spec = build_spec_stage3()
     spec.terrain.operations = [cs.OpBerechnungskoerper(
         id="koerper", type="berechnungskoerper")]
     spec.structures = []
     feld = _feld(spec)
-    k = gelaende_mit_durchlaessen(feld, spec)
+    k = gelaende_koerper_bauen(feld, spec)
     # vier Zellhöhen (mindestens 1 m) unter dem tiefsten Punkt von
     # Gelände und Modellgebiet
     tief = min(float(feld.z.min()), spec.domain.z_min)

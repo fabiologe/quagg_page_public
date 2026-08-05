@@ -17,6 +17,14 @@
               @click="solverView = !solverView">
         Solverblick
       </button>
+      <button class="f3d-tool" :class="{ active: drahtgitter }"
+              :disabled="!!store.terrainSolid"
+              :title="store.terrainSolid
+                ? 'Der Fall zeigt den Geländekörper — dort gibt es das Rasterdreiecksnetz nicht'
+                : 'Geländefläche als Drahtgitter statt schattiert: die Schummerung glättet optisch, was im Raster steht'"
+              @click="drahtgitter = !drahtgitter">
+        Drahtgitter
+      </button>
       <button class="f3d-tool" :class="{ active: meshView }"
               title="Vernetzte Oberfläche der Netzvorschau (Solver-Zellen)"
               @click="toggleMeshView">
@@ -44,6 +52,15 @@
     <div v-if="meshHint" class="f3d-meshhint f3d-muted f3d-small">{{ meshHint }}</div>
     <div v-if="solverHint && !meshView" class="f3d-meshhint f3d-muted f3d-small">
       {{ solverHint }}
+    </div>
+    <!-- Lieber sagen, dass die Szene alt ist, als sie als aktuell ausgeben -->
+    <div v-if="store.previewStale" class="f3d-veraltet">
+      ⚠ Die Szene zeigt einen älteren Stand — der Entwurf ließ sich zuletzt
+      nicht lesen. Der Prüfbereich rechts nennt den Grund.
+    </div>
+    <div v-else-if="store.terrainSolidStale" class="f3d-veraltet">
+      ⚠ Erdkörper veraltet: das Raster ist zu groß, um ihn beim Ziehen neu zu
+      bauen. Er wird beim Speichern nachgezogen.
     </div>
 
     <div v-if="chooserPts" class="f3d-chooser">
@@ -117,6 +134,9 @@ const topView = ref(false)
 const meshView = ref(false)
 const meshHint = ref('')
 const solverView = ref(false)     // Gelände in Solver-Auflösung zeigen
+// Geländefläche als Drahtgitter statt schattiert. Die Schummerung glättet
+// optisch, was im Raster steht; das Gitter zeigt jede Zelle einzeln.
+const drahtgitter = ref(false)
 const solverHint = ref('')
 const clipActive = ref(false)
 const clipAxis = ref('x')
@@ -262,8 +282,14 @@ function buildTerrain() {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
   geo.setIndex(idx)
   geo.computeVertexNormals()
-  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-    vertexColors: true, side: THREE.DoubleSide, flatShading: grob }))
+  // Drahtgitter statt Schummerung: die Schattierung glättet optisch, was
+  // im Raster steht — Stufen und Knicke verschwinden im Farbverlauf.
+  // Das Gitter zeigt jede Rasterzelle einzeln, und man sieht sofort, wie
+  // fein das Gelände wirklich aufgelöst ist.
+  const mesh = new THREE.Mesh(geo, drahtgitter.value
+    ? new THREE.MeshBasicMaterial({ vertexColors: true, wireframe: true })
+    : new THREE.MeshLambertMaterial({
+      vertexColors: true, side: THREE.DoubleSide, flatShading: grob }))
   groups.terrain = new THREE.Group()
   groups.terrain.add(mesh)
   scene.add(groups.terrain)
@@ -2425,7 +2451,7 @@ async function toggleMeshView() {
   }
 }
 
-watch(solverView, () => buildTerrain())
+watch([solverView, drahtgitter], () => buildTerrain())
 
 watch(meshView, (on) => {
   if (!on) {
@@ -3025,9 +3051,9 @@ onBeforeUnmount(() => {
   pointer-events: none;
   white-space: nowrap;
 }
-.f3d-dragdelta .dd-x { color: #e66767; }
-.f3d-dragdelta .dd-y { color: #34c98a; }
-.f3d-dragdelta .dd-z { color: #4d9fff; }
+.f3d-dragdelta .dd-x { color: var(--f3d-bad); }
+.f3d-dragdelta .dd-y { color: var(--f3d-good); }
+.f3d-dragdelta .dd-z { color: var(--f3d-accent); }
 .f3d-dragdelta span { opacity: 0.65; }
 .f3d-dragdelta span.on { opacity: 1; font-weight: 700; }
 .f3d-meshhint {
@@ -3039,6 +3065,21 @@ onBeforeUnmount(() => {
   border: 1px solid var(--f3d-border);
   border-radius: 8px;
   padding: 6px 10px;
+}
+.f3d-veraltet {
+  position: absolute;
+  top: 48px;
+  right: 10px;
+  max-width: 320px;
+  z-index: 6;
+  background: rgba(10, 16, 31, 0.94);
+  border: 1px solid var(--f3d-warn);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--f3d-warn);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 .f3d-clipbar {
   position: absolute;

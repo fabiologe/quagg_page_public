@@ -27,6 +27,7 @@ KUR_LABELS = {
     "anschluesse_herstellen": "Anschlüsse herstellen",
     "gebiet_hoehe_anpassen": "Gebietshöhe ans Gelände anpassen",
     "durchstoss_ein": "Durch das Gelände bohren",
+    "verweis_entfernen": "Verweis ins Leere entfernen",
 }
 
 
@@ -180,12 +181,16 @@ def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict) -> str:
     liegt. Fachlich unkritisch: das Gebiet ist der Ausschnitt, nicht das
     Modell — es wird nur groß genug gemacht.
     """
+    from .solids import gelaende_mit_aushub
     from .terrain import TerrainField
 
     if spec.terrain is None:
         return "Ohne Gelände gibt es nichts anzupassen"
-    feld = TerrainField.from_spec(spec.terrain, spec.domain,
-                                  args.get("base_dir", "."))
+    # Mit den Aushüben — sonst sieht die Kur die Schachtsohle nicht, gegen
+    # die der Befund gemeldet wurde, und meldet „passt bereits"
+    feld = gelaende_mit_aushub(
+        TerrainField.from_spec(spec.terrain, spec.domain,
+                               args.get("base_dir", ".")), spec)
     luft = 0.5 * spec.mesh.base_cell
     hoch = float(feld.z.max())
     tief = float(feld.z.min())
@@ -221,6 +226,50 @@ def _durchstoss_ein(spec: CaseSpec, args: dict) -> str:
             "Mündung wird dadurch als Fläche angeschnitten")
 
 
+def _verweis_entfernen(spec: CaseSpec, args: dict) -> str:
+    """
+    Einen Verweis beseitigen, der ins Leere zeigt. Vier Sorten, alle
+    ortlos: ein Nachweiskriterium ohne Bezugsobjekt, eine Flächen-
+    verfeinerung ohne Zielfläche, ein Eintrag in der Kraftauswertung oder
+    in der Grenzschichtliste ohne Bauwerk. Nichts davon trägt eine eigene
+    Geometrie — es bleibt nichts zurück, was der Bearbeiter noch
+    einstellen könnte.
+    """
+    art = args.get("art")
+    if art == "target":
+        ziel = next((t for t in spec.evaluation.targets
+                     if t.id == args["id"]), None)
+        if ziel is None:
+            return f"Kriterium „{args['id']}“ gibt es nicht mehr"
+        spec.evaluation.targets.remove(ziel)
+        return (f"Nachweiskriterium „{ziel.id}“ ({ziel.kind}) entfernt — sein "
+                "Bezugsobjekt gibt es nicht mehr")
+    if art == "verfeinerung":
+        ref = next((r for r in spec.mesh.refinements
+                    if r.id == args["id"]), None)
+        if ref is None:
+            return f"Verfeinerung „{args['id']}“ gibt es nicht mehr"
+        spec.mesh.refinements.remove(ref)
+        return (f"Flächenverfeinerung „{ref.id}“ entfernt — die Fläche "
+                f"„{ref.target}“ gibt es nicht mehr")
+    if art == "kraftpatch":
+        wert = args["wert"]
+        if wert not in spec.evaluation.force_patches:
+            return f"„{wert}“ steht nicht mehr in der Kraftauswertung"
+        spec.evaluation.force_patches.remove(wert)
+        return (f"„{wert}“ aus der Kraftauswertung entfernt — das Bauwerk "
+                "gibt es nicht mehr")
+    if art == "grenzschicht":
+        wert = args["wert"]
+        bl = spec.mesh.boundary_layers if spec.mesh else None
+        if bl is None or wert not in bl.patches:
+            return f"„{wert}“ steht nicht mehr in der Grenzschichtliste"
+        bl.patches.remove(wert)
+        return (f"„{wert}“ aus der Grenzschichtliste entfernt — das Bauwerk "
+                "gibt es nicht mehr")
+    raise ValueError(f"Unbekannte Verweisart: {art}")
+
+
 def _anschluesse(spec: CaseSpec, args: dict) -> str:
     from .anschluss import anschluesse_herstellen
 
@@ -237,6 +286,7 @@ _KUREN = {
     "gebiet_hoehe_anpassen": _gebiet_hoehe_anpassen,
     "anschluesse_herstellen": _anschluesse,
     "durchstoss_ein": _durchstoss_ein,
+    "verweis_entfernen": _verweis_entfernen,
 }
 
 

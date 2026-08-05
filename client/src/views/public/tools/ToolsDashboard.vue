@@ -58,13 +58,13 @@
             </div>
           </div>
 
-          <!-- That Open Engine IFC Viewer Card -->
-          <div class="tool-card" @click="showIfcViewer = true">
+          <!-- CDE / IFC Viewer Card -->
+          <div class="tool-card" @click="$router.push('/cde')">
             <div class="icon">🏗️</div>
             <div class="content">
-              <h3>That Open Engine (IFC)</h3>
-              <p>High-End IFC-Viewer basierend auf TOE im dedizierten Fenster.</p>
-              <span class="link-text">Zum Viewer &rarr;</span>
+              <h3>CDE – IFC Viewer</h3>
+              <p>IFC-Viewer mit Planexport, Mengen und DIN-276/277-Auswertung.</p>
+              <span class="link-text">Zum Tool &rarr;</span>
             </div>
           </div>
           
@@ -120,44 +120,12 @@
           </div>
         </div>
       </div>
-    
-      <!-- IFC Windows -->
-      <IfcViewer
-        v-if="showIfcViewer"
-        :propertiesOpen="showIfcProps"
-        @close="closeIfcViewer"
-        @open-properties="showIfcProps = true"
-        @model-loaded="showSpatialTree = true"
-      />
-      <IfcSemanticWindow
-        v-if="showIfcViewer && showIfcProps"
-        @close="showIfcProps = false"
-      />
-      <IfcSpatialWindow
-        v-if="showIfcViewer && showSpatialTree"
-        @close="showSpatialTree = false"
-      />
-
     </div>
   </PublicLayout>
 </template>
 
 <script setup>
-import { ref } from 'vue';
 import PublicLayout from '@/components/layout/PublicLayout.vue'
-import IfcViewer from '@/features/ifc-viewer/components/IfcViewer.vue'
-import IfcSemanticWindow from '@/features/ifc-viewer/components/IfcSemanticWindow.vue'
-import IfcSpatialWindow from '@/features/ifc-viewer/components/IfcSpatialWindow.vue'
-
-const showIfcViewer   = ref(false);
-const showIfcProps    = ref(false);
-const showSpatialTree = ref(false);
-
-function closeIfcViewer() {
-  showIfcViewer.value   = false;
-  showIfcProps.value    = false;
-  showSpatialTree.value = false;
-}
 </script>
 
 <style scoped>

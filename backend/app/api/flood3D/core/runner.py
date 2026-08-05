@@ -211,11 +211,14 @@ def mesh_preview(spec, case_dir: str | Path) -> dict:
     run_foam(case_dir, "checkMesh", "log.checkMesh", name_suffix="cm")
     cm = parse_checkmesh((case_dir / "log.checkMesh").read_text(errors="replace"))
     extract_mesh_surface(spec, case_dir)
-    # Der Fall-Hash macht später prüfbar, ob das Vorschaunetz noch zu der
-    # Spezifikation gehört, die im Editor steht — nach einer Drehung oder
-    # einem Zuschnitt zeigt die Netzansicht sonst stillschweigend Altbestand.
+    # Zwei Hashes, weil zwei Fragen: `case_hash` beantwortet „ist das noch
+    # derselbe Fall?" (Laufmanifest), `netz_hash` „steht dieses Netz noch?".
+    # Nur der zweite darf die Vorschau entwerten — sonst meldet sie sich
+    # nach jedem geänderten Grenzwert als veraltet, obwohl kein Netzelement
+    # anders ist.
     result = {**cm, **estimate_run(spec, cm.get("cells", 0)),
-              "case_hash": spec.case_hash()}
+              "case_hash": spec.case_hash(),
+              "netz_hash": spec.netz_hash()}
     (case_dir / "mesh_preview.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False))
     return result

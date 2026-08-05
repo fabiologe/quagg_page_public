@@ -3,7 +3,8 @@
     <article class="f3d-card">
       <header class="f3d-card-head">
         <h3>Läufe dieses Falls</h3>
-        <button class="f3d-btn" @click="store.loadCaseRuns()">Aktualisieren</button>
+        <button class="f3d-btn" :disabled="store.loading"
+                @click="store.loadCaseRuns()">Aktualisieren</button>
       </header>
 
       <p v-if="!store.caseRuns.length" class="f3d-muted">

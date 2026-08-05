@@ -162,17 +162,97 @@ class OpSetLevel(_Model):
 class OpBruchkante(_Model):
     """
     Bruchkante mit Höhe je Stützpunkt — so kommen Böschungs-, Mauer- und
-    Sohlkanten aus der Vermessung (3D-Polylinie im DXF). Das Gelände wird
-    innerhalb der Wirkungsbreite auf die Linie gezogen und nach außen
-    linear ausgeblendet, sodass keine Stufe stehen bleibt.
-    `modus` entscheidet, ob die Kante das Gelände in beide Richtungen
-    verändert (ziehen) oder nur abgräbt bzw. aufschüttet.
+    Sohlkanten aus der Vermessung (3D-Polylinie im DXF).
+
+    `modus` bestimmt die Wirkung. Die ersten drei wirken auf einen Schlauch
+    der Breite `breite` um die LINIE; die letzten beiden füllen die FLÄCHE
+    innerhalb einer geschlossenen Kante und brauchen deshalb eine solche:
+
+        ziehen    Gelände auf die Kante ziehen, in beide Richtungen
+        absenken  nur abgraben (Sohl-, Grabenkanten)
+        anheben   nur aufschütten (Dammkronen, Mauern)
+        ebnen     innen eine EBENE — die Ausgleichsebene durch die
+                  Kantenhöhen. Für Planum, Beckensohle, Parkfläche: innen
+                  ist es garantiert eben, ohne jeden Höhensprung.
+        fuellen   innen stufenfrei aus der Kante ergänzen (Fläche
+                  geringster Krümmung). Anders als `ebnen` folgt sie einer
+                  geneigten oder unregelmäßigen Kante und schließt am Rand
+                  bündig an.
     """
     id: str
     type: Literal["bruchkante"]
     polyline: list[Point3]
     breite: float = 1.0
-    modus: Literal["ziehen", "absenken", "anheben"] = "ziehen"
+    modus: Literal["ziehen", "absenken", "anheben",
+                   "ebnen", "fuellen"] = "ziehen"
+    # Aus welchen Vermessungskanten abgeleitet. Nicht leer heißt:
+    # „Kanten verknüpfen" erzeugt diese Operation neu. Wer sie von
+    # Hand ändern will, leert das Feld — dann bleibt sie stehen.
+    aus_kanten: list[str] = []
+
+
+# --------------------------------------------------------------------------
+# Vermessungskanten: was in der Zeichnung steht, mit seiner Bedeutung
+#
+# Bisher wurde eine importierte Linie sofort zu einer OPERATION — damit war
+# das Zeichnungselement und seine Wirkung dasselbe Objekt, und die Rolle
+# („das ist die Beckensohle") ging verloren. Die Böschung entstand nur,
+# wenn Ober- und Unterkante zufällig passend BENANNT waren; über den
+# Layernamen gepaart, nicht über die Lage.
+#
+# Jetzt behält die Kante ihre Identität und ihre Rolle. Was daraus für das
+# Gelände folgt, leitet `core/kanten.py` aus Rolle UND Geometrie ab: eine
+# geschlossene Sohle innerhalb eines Beckenrands ergibt die Böschung
+# dazwischen und die ebene Sohle darin.
+# --------------------------------------------------------------------------
+
+# Die ersten sechs formen das GELÄNDE, die letzten beiden sind BAUTEILE.
+# Eine Wehrkrone ist kein Geländeknick: als Bruchkante gezeichnet zöge sie
+# den Boden nach oben, statt ein umströmtes Bauwerk zu sein — und ohne
+# eigene Fläche gäbe es weder Kraft noch Überfallbeiwert.
+KantenRolle = Literal[
+    "frei",          # nur eine Höhenkante, keine weitere Bedeutung
+    "sohle",         # Beckensohle/Grabensohle — innen eben (Ankerfläche)
+    "beckenrand",    # obere Umgrenzung eines Beckens
+    "boeschung_ok",  # Böschungsoberkante
+    "boeschung_uk",  # Böschungsunterkante
+    "krone",         # Dammkrone
+    "mauer",         # Mauerkrone -> Wand (Bauteil, z = Kronenhöhe)
+    "wehrkrone",     # Überfallkante -> Wehr (Bauteil, z = Kronenhöhe)
+]
+
+# Welche Rollen ein Bauteil ergeben statt einer Geländeoperation
+BAUTEIL_ROLLEN = ("mauer", "wehrkrone")
+
+
+class Vermessungskante(_Model):
+    """
+    Eine Linie aus der Zeichnung, mit ihrer Bedeutung im Bauwerk.
+
+    `rolle` sagt, WAS die Linie ist; die Geländeoperationen, die daraus
+    folgen, werden abgeleitet und tragen `aus_kanten` mit den Kennungen,
+    aus denen sie entstanden sind. Wer eine abgeleitete Operation von Hand
+    ändern will, löst sie ab (`aus_kanten` leeren) — dann fasst die
+    Ableitung sie nicht mehr an.
+    """
+    id: str
+    polyline: list[Point3]
+    rolle: KantenRolle = "frei"
+    # Wirkungsbreite der Kante selbst (wie bei OpBruchkante)
+    breite: float = 1.0
+    # Woher sie kam — Layername der Zeichnung, für die Rückverfolgung
+    quelle: str = ""
+
+    @model_validator(mode="after")
+    def _genug_punkte(self):
+        if len(self.polyline) < 2:
+            raise ValueError(f"Kante {self.id}: mindestens 2 Punkte nötig")
+        return self
+
+    @property
+    def geschlossen(self) -> bool:
+        a, b = self.polyline[0], self.polyline[-1]
+        return abs(a[0] - b[0]) < 1e-6 and abs(a[1] - b[1]) < 1e-6
 
 
 class OpBoeschung(_Model):
@@ -188,6 +268,10 @@ class OpBoeschung(_Model):
     oberkante: list[Point3]
     unterkante: list[Point3]
     kanten_breite: float = 0.0       # Bruchkantenwirkung außerhalb des Bands
+    # Aus welchen Vermessungskanten abgeleitet. Nicht leer heißt:
+    # „Kanten verknüpfen" erzeugt diese Operation neu. Wer sie von
+    # Hand ändern will, leert das Feld — dann bleibt sie stehen.
+    aus_kanten: list[str] = []
 
 
 class OpAussenkante(_Model):
@@ -267,6 +351,9 @@ Material = Literal["stahl", "beton_glatt", "beton", "mauerwerk", "holz",
 
 class Terrain(_Model):
     base: TerrainBase
+    # Was in der Zeichnung steht (mit Rolle) — getrennt von dem, was daraus
+    # für das Gelände folgt
+    kanten: list[Vermessungskante] = []
     operations: list[TerrainOp] = []
     material: Material = "erde"
     material_ks: float | None = None
@@ -387,6 +474,28 @@ Edit = Annotated[
 ]
 
 
+# Wirkung eines Bauwerkskörpers auf das Modell.
+#
+# Seit das Gelände ein geschlossener Erdkörper sein kann, ist jedes Bauwerk
+# eine Kombination aus Aushub und Bauteil — wie auf der Baustelle: Beton ist,
+# was übrig bleibt; Wasser ist, was ausgehoben wurde.
+#
+#   bauteil — der Körper wird als eigene Fläche vernetzt (Wand, Pfeiler, Wehr)
+#   aushub  — der Körper wird aus dem Geländekörper HERAUSGESCHNITTEN und
+#             bekommt keine eigene Fläche; seine Wandungen gehören danach zur
+#             Geländefläche. Erzwingt den Erdkörper, weil ein Höhenfeld
+#             (ein z je x/y) keinen Hohlraum tragen kann.
+#   auto    — aus der LAGE entschieden: liegt die Oberkante auf oder unter
+#             dem gewachsenen Gelände, ist der Körper eingegraben und wirkt
+#             als Aushub; steht er heraus, ist er ein Bauteil. Damit ergibt
+#             sich der Aushub aus dem Verschieben und nicht aus einem
+#             Schalter — ein neu abgesetzter Schacht steht zunächst auf dem
+#             Gelände. Gilt nur für die Aushub-Grundtypen (Schacht, Kammer,
+#             Graben): eine in den Boden geschobene WAND soll keine Grube
+#             werden, sondern eine eingegrabene Wand bleiben.
+Wirkung = Literal["auto", "bauteil", "aushub"]
+
+
 class StructWall(_Model):
     id: str
     type: Literal["wall"]
@@ -395,6 +504,11 @@ class StructWall(_Model):
     height: float                 # konstant; je Stützpunkt über points[i].z
     thickness: float
     batter_deg: float = 0.0       # optionale Neigung
+    # Aus welchen Vermessungskanten dieses Bauteil abgeleitet wurde. Nicht
+    # leer heißt: beim nächsten Verknüpfen wird es neu erzeugt. Wer es von
+    # Hand ändern will, leert das Feld — dann gilt es als eigenes.
+    aus_kanten: list[str] = []
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
@@ -419,6 +533,7 @@ class StructScreen(_Model):
     bar_shape: Literal["rechteck", "rund", "tropfen"] = "rechteck"
     approach_angle_deg: float = 90.0
     resistance: ScreenResistance
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
@@ -452,6 +567,14 @@ class StructCulvert(_Model):
     # Rohrbohrung ausgeschnitten: erst dann steht die Leitung wirklich
     # durch. Kostet Rechenzeit beim Fallaufbau, deshalb nicht die Regel.
     durchstoesst_gelaende: bool = False
+    # Wofür der Stutzen da ist. Der Zeichnungslayer weiß es („Einlauf",
+    # „Auslauf", „Drossel"), und ohne dieses Feld ging es beim Import
+    # verloren: aus beiden Kreisen wurde derselbe Stutzen. Dieselbe
+    # Überlegung wie bei [[Vermessungskante.rolle]] — was in der Zeichnung
+    # steht, bleibt am Objekt und wird später zur Kopplung gebraucht, wenn
+    # die Lage allein nicht entscheidet (zwei Rohre an derselben Randfläche).
+    rolle: Literal["zulauf", "ablauf"] | None = None
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
@@ -470,6 +593,8 @@ class StructWeir(_Model):
     profile_type: Literal["trapez", "breitkronig", "scharfkantig",
                           "rundkronig"] = "trapez"
     base_level: float | None = None   # Fußhöhe; ohne Angabe: min. Krone − 2 m
+    aus_kanten: list[str] = []        # siehe StructWall.aus_kanten
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
@@ -489,6 +614,7 @@ class StructPier(_Model):
     rotation_deg: float = 0.0
     base_level: float
     top_level: float
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
@@ -519,6 +645,7 @@ class StructBasin(_Model):
                                              # Ausdehnung des Grundrisses
     wall_height: float
     wall_thickness: float
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
 
     material: Material | None = None
@@ -537,14 +664,122 @@ class StructImported(_Model):
                   "bauwerk"] = "bauwerk"
     insert_point: Point3 = (0.0, 0.0, 0.0)
     rotation_deg: float = 0.0
+    wirkung: Wirkung = "bauteil"
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
 
 
+# --------------------------------------------------------------------------
+# Aushub-Grundtypen (Stufe B)
+#
+# Drei Formen decken den Zielbestand ab: senkrechter Schacht, rechteckige
+# Kammer, Profilsweep entlang einer Achse. Jede kann Hohlraum (`aushub`)
+# oder Beton (`bauteil`) sein — dieselben Maße, zweimal eingesetzt, ergeben
+# das echte Bauwerk: der Aushub nimmt die lichte Weite PLUS Wandstärke, das
+# Bauteil die Schale dazwischen.
+# --------------------------------------------------------------------------
+
+class StructSchacht(_Model):
+    """Senkrechter Schacht (Straßenablauf, Kontrollschacht, Pumpensumpf)."""
+    id: str
+    type: Literal["schacht"]
+    patch: str
+    shape: Literal["rund", "rechteck"] = "rund"
+    center: Point2
+    width: float                      # lichte Weite bzw. Durchmesser
+    length: float | None = None       # rechteck: lichte Länge (None = width)
+    rotation_deg: float = 0.0
+    invert_level: float               # Sohle
+    top_level: float                  # Oberkante (Deckel bzw. Geländehöhe)
+    wall_thickness: float = 0.0
+    wirkung: Wirkung = "auto"
+    edits: list[Edit] = []
+    material: Material | None = None
+    material_ks: float | None = None
+
+    @model_validator(mode="after")
+    def _masse(self):
+        if self.top_level <= self.invert_level:
+            raise ValueError(f"Schacht {self.id}: Oberkante muss über der "
+                             "Sohle liegen")
+        if self.width <= 0:
+            raise ValueError(f"Schacht {self.id}: lichte Weite muss > 0 sein")
+        return self
+
+
+class StructKammer(_Model):
+    """
+    Kammer mit freiem Grundriss (Drossel-, Trenn-, Verteilerbauwerk,
+    Stauraum). Der Grundriss ist die LICHTE Innenkante.
+    """
+    id: str
+    type: Literal["kammer"]
+    patch: str
+    footprint: list[Point2]
+    invert_level: float
+    top_level: float
+    invert_slope: float = 0.0         # Sohlgefälle (Höhe je Länge)
+    wall_thickness: float = 0.0
+    wirkung: Wirkung = "auto"
+    edits: list[Edit] = []
+    material: Material | None = None
+    material_ks: float | None = None
+
+    @model_validator(mode="after")
+    def _masse(self):
+        if len(self.footprint) < 3:
+            raise ValueError(f"Kammer {self.id}: Grundriss braucht mindestens "
+                             "3 Punkte")
+        if self.top_level <= self.invert_level:
+            raise ValueError(f"Kammer {self.id}: Oberkante muss über der Sohle "
+                             "liegen")
+        return self
+
+
+class GrabenProfil(_Model):
+    """Querschnitt eines Grabens; `height` ist die Höhe über der Sohle."""
+    kind: Literal["rechteck", "trapez", "kreis", "maul"] = "trapez"
+    width: float                      # Sohlbreite, bei kreis der Durchmesser
+    height: float | None = None       # nicht bei kreis
+    side_slope: float = 1.5           # nur trapez: 1:n
+
+    @model_validator(mode="after")
+    def _dims(self):
+        if self.kind != "kreis" and self.height is None:
+            raise ValueError(f"{self.kind}-Profil braucht height")
+        return self
+
+
+class StructGraben(_Model):
+    """
+    Profilsweep entlang einer Achse: Graben, Stauraumkanal, Zulaufrinne.
+    z je Achspunkt ist die SOHLHÖHE — das Gefälle steckt damit in der Achse
+    und muss nicht getrennt angegeben werden.
+    """
+    id: str
+    type: Literal["graben"]
+    patch: str
+    axis: list[Point3]
+    profile: GrabenProfil
+    wall_thickness: float = 0.0
+    wirkung: Wirkung = "auto"
+    edits: list[Edit] = []
+    material: Material | None = None
+    material_ks: float | None = None
+
+    @model_validator(mode="after")
+    def _achse(self):
+        if len(self.axis) < 2:
+            raise ValueError(f"Graben {self.id}: Achse braucht mindestens "
+                             "2 Punkte")
+        return self
+
+
 Structure = Annotated[
     Union[StructWall, StructScreen, StructCulvert, StructWeir,
-          StructPier, StructBasin, StructImported],
+          StructPier, StructBasin, StructImported,
+          StructSchacht, StructKammer, StructGraben],
     Field(discriminator="type"),
 ]
 
@@ -788,30 +1023,18 @@ class Evaluation(_Model):
     # gibt es einen Kurzschluss, wie groß ist das tote Volumen.
     verweilzeit: bool = False
 
-    @model_validator(mode="after")
-    def _targets_referenzieren_existierendes(self):
-        # Spez. Kap. 7, Auswertung: jedes Nachweiskriterium verweist auf eine
-        # existierende Auswertungsgröße. Kraftpatches werden erst auf
-        # CaseSpec-Ebene geprüft, weil dort auch Struktur-Patches zählen.
-        sec = {s.id for s in self.sections}
-        gau = {g.id for g in self.gauges}
-        for t in self.targets:
-            if t.kind == "discharge_ratio":
-                fehlt = {t.of, t.to} - sec
-                if fehlt:
-                    raise ValueError(f"Target {t.id}: unbekannte Querschnitte {sorted(fehlt)}")
-            elif t.kind == "max_level" and t.at not in gau:
-                raise ValueError(f"Target {t.id}: unbekannter Pegelpunkt {t.at}")
-            elif t.kind == "head_difference":
-                fehlt = {t.upstream, t.downstream} - sec
-                if fehlt:
-                    raise ValueError(f"Target {t.id}: unbekannte Querschnitte {sorted(fehlt)}")
-            elif t.kind == "overfall_cd":
-                if t.section not in sec:
-                    raise ValueError(f"Target {t.id}: unbekannter Querschnitt {t.section}")
-                if t.gauge not in gau:
-                    raise ValueError(f"Target {t.id}: unbekannter Pegelpunkt {t.gauge}")
-        return self
+    # HINWEIS: dass jedes Nachweiskriterium auf eine existierende
+    # Auswertungsgröße verweist, ist eine PRÜFregel (Spez. Kap. 7,
+    # „Auswertung") und keine Schemaregel — sie steht in
+    # validate._verweise_pruefen.
+    #
+    # Sie stand hier einmal als harter `model_validator` und machte den Fall
+    # damit im Zwischenzustand unlesbar: wer einen Pegel löschte, auf den ein
+    # Kriterium zeigte, bekam 422 aus der Entwurfsvorschau (Szene fror auf
+    # dem Stand VOR dem Löschen ein) UND aus dem Speichern — der einzige Weg
+    # heraus war Undo. Ein Editor muss einen ungültigen Zwischenstand
+    # darstellen und speichern können; verhindert wird der LAUF, und das tut
+    # die Prüfung (der Startknopf sperrt bei Fehlern).
 
 
 # --------------------------------------------------------------------------
@@ -840,6 +1063,19 @@ def migriere(daten: dict) -> dict:
     return daten
 
 
+# Teile des Falls, die das NETZ bestimmen: Gebiet und Basiszelle
+# (blockMesh), Gelände und Bauwerke (snappyHexMesh), Verfeinerungen und
+# Grenzschichten, und die Randbedingungen — deren Fenster schneiden über
+# topoSet/createPatch die Flächen zu.
+#
+# Bewusst NICHT dabei: meta, solver, evaluation. Ein geänderter Grenzwert,
+# eine andere Simulationsdauer oder ein verschobener Pegel ändern kein
+# einziges Netzelement. Über den GESAMTEN Fall gehasht entwerteten sie
+# trotzdem die Vorschau — die Meldung „Vorschaunetz gehört zu einem älteren
+# Stand" stand deshalb nach fast jeder Eingabe.
+NETZ_TEILE = ("domain", "terrain", "structures", "mesh", "boundaries")
+
+
 class CaseSpec(_Model):
     meta: Meta
     domain: Domain | None = None
@@ -850,13 +1086,8 @@ class CaseSpec(_Model):
     solver: Solver
     evaluation: Evaluation = Evaluation()
 
-    @model_validator(mode="after")
-    def _force_patches_existieren(self):
-        patches = {s.patch for s in self.structures}
-        for t in self.evaluation.targets:
-            if t.kind == "max_force" and self.structures and t.at not in patches:
-                raise ValueError(f"Target {t.id}: Kraftpatch {t.at} ist kein Bauwerkspatch")
-        return self
+    # Auch der Kraftpatch eines max_force-Kriteriums wird in der PRÜFUNG
+    # kontrolliert, nicht im Schema — aus demselben Grund wie oben.
 
     # -- Laden / Speichern -------------------------------------------------
 
@@ -873,6 +1104,13 @@ class CaseSpec(_Model):
     def case_hash(self) -> str:
         """Hash über den fachlichen Inhalt, für das Laufmanifest (Spez. 4.4)."""
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True)
+        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+    def netz_hash(self) -> str:
+        """Hash über alles, was die Vernetzung bestimmt — und sonst nichts."""
+        daten = self.model_dump(mode="json")
+        teil = {k: daten.get(k) for k in NETZ_TEILE}
+        blob = json.dumps(teil, sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
     @classmethod

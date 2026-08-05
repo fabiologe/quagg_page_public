@@ -56,6 +56,13 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 3000,
+    // Build-Verzeichnisse nicht beobachten. Ein Produktionsbau schreibt
+    // nach dist_neu und legt es dann über dist um — der Dev-Server hat
+    // daraufhin bei jeder dieser Dateibewegungen die Seite im Browser neu
+    // geladen („page reload dist_neu/index.html"), mitten in der Arbeit.
+    watch: {
+      ignored: ['**/dist/**', '**/dist_neu/**', '**/dist_alt/**']
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8001',

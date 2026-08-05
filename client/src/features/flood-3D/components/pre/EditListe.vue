@@ -16,7 +16,8 @@
         <button class="f3d-edit-btn f3d-edit-weg" title="entfernen"
                 @click="entfernen(i)">✕</button>
       </div>
-      <UnterGruppe v-if="offen === i" :model-value="e" :labels="labels"
+      <UnterGruppe v-if="offen === i" :model-value="e"
+                   :labels="{ ...labels, ...(typLabels[e.type] ?? {}) }"
                    :typ="e.type" :gruppe="e.type" :verbergen="['id', 'type']"
                    @update:model-value="(v) => ersetzen(i, v)" />
     </div>
@@ -42,6 +43,11 @@ const EDIT_LABELS = {
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   labels: { type: Object, default: () => ({}) },
+  // Beschriftungen, die nur für EINE Bearbeitungsart gelten: `radius` ist
+  // bei der Aussparung die Eckenausrundung, anderswo eine Ausdehnung im
+  // Grundriss. In eine gemeinsame Tabelle geschrieben überschreibt der
+  // zweite Eintrag still den ersten.
+  typLabels: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -104,5 +110,5 @@ function schieben(i, d) {
 }
 .f3d-edit-btn:disabled { opacity: 0.3; cursor: default; }
 .f3d-edit-btn:not(:disabled):hover { color: var(--f3d-text); }
-.f3d-edit-weg:hover { color: #e06c5c; }
+.f3d-edit-weg:hover { color: var(--f3d-bad); }
 </style>

@@ -91,12 +91,12 @@ function bereich(i) {
   border-radius: 50%;
   border: 1px solid currentColor;
   background: transparent;
-  color: #8fa0c2;
+  color: var(--f3d-text-2);
   font-size: 0.72rem;
   cursor: pointer;
   vertical-align: middle;
 }
-.f3d-hilfe-knopf:hover, .f3d-hilfe-knopf.offen { color: #4d9fff; }
+.f3d-hilfe-knopf:hover, .f3d-hilfe-knopf.offen { color: var(--f3d-accent); }
 .f3d-hilfe-karte {
   /* Die Karte haengt am <body> und damit AUSSERHALB von .f3d-root, wo die
      Theme-Variablen definiert sind. Farben deshalb ausgeschrieben — sonst
@@ -110,17 +110,17 @@ function bereich(i) {
   overflow: auto;
   padding: 0.7rem 0.8rem;
   border-radius: 8px;
-  border: 1px solid #2c4370;
+  border: 1px solid var(--f3d-border-strong);
   background: #0e1526;
-  color: #d4dcf0;
+  color: var(--f3d-text);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   font-size: 0.78rem;
   line-height: 1.45;
   text-align: left;
   white-space: normal;
 }
-.f3d-hilfe-karte strong { color: #e9eefb; }
-.f3d-hilfe-karte .f3d-muted { color: #8fa0c2; }
+.f3d-hilfe-karte strong { color: var(--f3d-text); }
+.f3d-hilfe-karte .f3d-muted { color: var(--f3d-text-2); }
 .f3d-hilfe-karte header {
   display: flex;
   align-items: baseline;
@@ -172,12 +172,12 @@ function bereich(i) {
 .warn { color: #eab04a; }
 .bad { color: #ff7b7b; }
 .f3d-hilfe-formel {
-  border-top: 1px solid #2c4370;
+  border-top: 1px solid var(--f3d-border-strong);
   padding-top: 0.4rem;
   opacity: 0.85;
 }
 .f3d-hilfe-achtung {
-  border-left: 3px solid #e0a63a;
+  border-left: 3px solid var(--f3d-warn);
   padding-left: 0.5rem;
   opacity: 0.9;
 }

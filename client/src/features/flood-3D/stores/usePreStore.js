@@ -5,6 +5,7 @@
 // neu vom Server geladen werden muss.
 import { defineStore } from 'pinia'
 import { flood3dApi } from '../services/api'
+import { aufraeumplan } from '../utils/aufraeumen'
 
 function b64Buffer(b64) {
   const bin = atob(b64)
@@ -17,6 +18,7 @@ function b64Buffer(b64) {
 export const KIND_PATHS = {
   terrain_op: (s) => s.terrain?.operations,
   structure: (s) => s.structures,
+  kante: (s) => s.terrain?.kanten,
   refinement: (s) => s.mesh?.refinements,
   boundary: (s) => s.boundaries,
   section: (s) => s.evaluation?.sections,
@@ -58,10 +60,26 @@ export const usePreStore = defineStore('flood3d-pre', {
     // kann man danach immer noch.
     platzierung: null,
     rasterDateien: [],     // Höhenraster neben dem Fall (Bereich ersetzen)
+    rezepte: [],           // Bauwerkskatalog (Aushub + Bauteile in einem Zug)
     // Stützpunkt, den der Editor gerade hervorheben soll — die Zeile einer
     // Punktliste zeigt sonst nicht, welcher Punkt in der Szene gemeint ist.
     // { x, y, z } oder null.
     fokusPunkt: null,
+    // Die Szene zeigt einen älteren Stand, weil der Entwurf gerade nicht
+    // lesbar war oder die Vorschau nicht durchkam. Lieber gekennzeichnet
+    // als stillschweigend etwas zeigen, das es nicht mehr gibt.
+    previewStale: false,
+    // Dasselbe für den Erdkörper allein: bei sehr großen Rastern wird er
+    // in der Entwurfsvorschau nicht neu gebaut
+    terrainSolidStale: false,
+    // EIN Meldungsweg für das ganze Werkzeug. Vorher gab es neun
+    // nebeneinander (`error`, `parseError`, `uebernommen`, `hinweis`,
+    // `rezeptMeldungen`, `meldungen`, dazu lokale refs je Panel) — jeder
+    // mit eigener Farbe, eigener Lebensdauer und eigenem Ort. `error`
+    // wurde an 17 Stellen gesetzt, an vier angezeigt, in der Phase
+    // „Ergebnis" nirgends: Fehler waren dort unsichtbar.
+    // [{ id, text, art: 'erfolg'|'hinweis'|'fehler' }]
+    meldungen: [],
   }),
 
   getters: {
@@ -71,6 +89,10 @@ export const usePreStore = defineStore('flood3d-pre', {
       // können wie eines — sonst lässt es sich nur über Zahlen ändern.
       if (state.selection.kind === 'domain') {
         return { id: 'domain', type: 'domain', ...state.spec.domain }
+      }
+      if (state.selection.kind === 'terrain') {
+        if (!state.spec.terrain) return null
+        return { id: 'gelaende', type: 'terrain', ...state.spec.terrain.base }
       }
       const list = KIND_PATHS[state.selection.kind]?.(state.spec)
       return list?.find((o) => o.id === state.selection.id) ?? null
@@ -94,6 +116,33 @@ export const usePreStore = defineStore('flood3d-pre', {
   },
 
   actions: {
+    // --- Meldungen --------------------------------------------------------
+    // Erfolg und Hinweise verschwinden von selbst, Fehler bleiben stehen,
+    // bis sie weggeklickt werden — eine Fehlermeldung, die nach acht
+    // Sekunden verschwindet, hat der Bearbeiter unter Umständen nie gesehen.
+    melden(text, art = 'hinweis') {
+      if (!text) return
+      const id = (this._meldungsNr = (this._meldungsNr ?? 0) + 1)
+      this.meldungen.push({ id, text, art })
+      // Fehler bleiben; alles andere räumt sich selbst weg
+      if (art !== 'fehler') {
+        setTimeout(() => this.meldungWeg(id), art === 'erfolg' ? 4000 : 10000)
+      }
+      // `error` bleibt vorerst als zweiter Kanal bestehen, damit ältere
+      // Anzeigen weiter funktionieren
+      if (art === 'fehler') this.error = text
+    },
+
+    meldungWeg(id) {
+      const i = this.meldungen.findIndex((m) => m.id === id)
+      if (i >= 0) this.meldungen.splice(i, 1)
+    },
+
+    meldungenLeeren() {
+      this.meldungen = []
+      this.error = ''
+    },
+
     // Höhe des Geländerasters an einer Stelle (bilinear, wie im Editor).
     // Steht hier, weil sowohl der Objektbaum (Vorlagen ans Gelände hängen)
     // als auch die Punktliste (2D-Punkt in der Szene zeigen) sie braucht.
@@ -128,7 +177,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       try {
         this.cases = await flood3dApi.listCases()
       } catch (e) {
-        this.error = e.message
+        this.melden(e.message, 'fehler')
       }
     },
 
@@ -139,7 +188,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         await this.loadCases()
         await this.openCase(caseId)
       } catch (e) {
-        this.error = e.message
+        this.melden(e.message, 'fehler')
         throw e
       }
     },
@@ -184,11 +233,15 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.spec = res.spec
         this.validation = res.validation
         this.dirty = false
-        if (this.meshPreview) this.meshPreviewStale = true
+        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
+        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
+        if (this.meshPreview && res.netz_stale !== undefined) {
+          this.meshPreviewStale = res.netz_stale
+        }
         await Promise.all([this.refreshGeometry(), this.ladeRaster()])
         return res.hinweise ?? []
       } catch (e) {
-        this.error = `Drehen fehlgeschlagen: ${e.message}`
+        this.melden(`Drehen fehlgeschlagen: ${e.message}`, 'fehler')
         return []
       } finally {
         this.loading = false
@@ -213,12 +266,16 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.validation = res.validation
         this.dirty = false
         if (res.meldungen.length) {
-          if (this.meshPreview) this.meshPreviewStale = true
+          // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
+        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
+        if (this.meshPreview && res.netz_stale !== undefined) {
+          this.meshPreviewStale = res.netz_stale
+        }
           await this.refreshGeometry()
         }
         return res.meldungen
       } catch (e) {
-        this.error = `Anschluss fehlgeschlagen: ${e.message}`
+        this.melden(`Anschluss fehlgeschlagen: ${e.message}`, 'fehler')
         return []
       } finally {
         this.loading = false
@@ -227,6 +284,72 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
     // Auswertung oder Anschluss — keine fachliche Festlegung.
+    async ladeRezepte() {
+      if (this.rezepte.length) return
+      try {
+        this.rezepte = (await flood3dApi.rezeptKatalog()).rezepte ?? []
+      } catch (e) {
+        this.melden(e.message, 'fehler')
+      }
+    },
+
+    // Ein Bauwerk in einem Zug einsetzen. Läuft bewusst über denselben Weg
+    // wie eine Kur: speichern, anwenden, Prüfung und Geometrie nachziehen —
+    // und mit EINEM Undo-Schritt wieder rückgängig zu machen, obwohl ein
+    // Rezept ein halbes Dutzend Objekte einsetzt.
+    async rezeptEinsetzen(name, args = {}) {
+      if (!this.activeCaseId || !name) return []
+      if (this.dirty && !(await this.saveCase())) return []
+      const snap = this.spec ? JSON.stringify(this.spec) : null
+      this.loading = true
+      try {
+        const res = await flood3dApi.caseRezept(this.activeCaseId, name, args)
+        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
+        this.spec = res.spec
+        this.validation = res.validation
+        this.dirty = false
+        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
+        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
+        if (this.meshPreview && res.netz_stale !== undefined) {
+          this.meshPreviewStale = res.netz_stale
+        }
+        await this.refreshGeometry()
+        return res.meldungen ?? []
+      } catch (e) {
+        this.melden(`Rezept fehlgeschlagen: ${e.message}`, 'fehler')
+        return []
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // Aus den Vermessungskanten die Geländeoperationen ableiten. Was in
+    // der Zeichnung steht, bleibt erhalten; was daraus folgt, entsteht neu
+    // — gepaart wird über die LAGE, nicht über den Layernamen.
+    async kantenVerknuepfen() {
+      if (!this.activeCaseId) return []
+      if (this.dirty && !(await this.saveCase())) return []
+      const snap = this.spec ? JSON.stringify(this.spec) : null
+      this.loading = true
+      try {
+        const res = await flood3dApi.caseKantenVerknuepfen(this.activeCaseId)
+        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
+        this.spec = res.spec
+        this.validation = res.validation
+        this.dirty = false
+        if (this.meshPreview && res.netz_stale !== undefined) {
+          this.meshPreviewStale = res.netz_stale
+        }
+        await this.refreshGeometry()
+        return res.meldungen ?? []
+      } catch (e) {
+        this.melden(`Kanten verknüpfen: ${e.message}`, 'fehler')
+        return []
+      } finally {
+        this.loading = false
+      }
+    },
+
     async kurAnwenden(fix) {
       if (!this.activeCaseId || !fix) return ''
       if (this.dirty && !(await this.saveCase())) return ''
@@ -239,11 +362,15 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.spec = res.spec
         this.validation = res.validation
         this.dirty = false
-        if (this.meshPreview) this.meshPreviewStale = true
+        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
+        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
+        if (this.meshPreview && res.netz_stale !== undefined) {
+          this.meshPreviewStale = res.netz_stale
+        }
         await this.refreshGeometry()
         return res.meldung
       } catch (e) {
-        this.error = `Kur fehlgeschlagen: ${e.message}`
+        this.melden(`Kur fehlgeschlagen: ${e.message}`, 'fehler')
         return ''
       } finally {
         this.loading = false
@@ -266,7 +393,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         await Promise.all([this.refreshGeometry(), this.refreshValidation(),
           this.ladeRaster()])
       } catch (e) {
-        this.error = e.message
+        this.melden(e.message, 'fehler')
       } finally {
         this.loading = false
       }
@@ -327,7 +454,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         await this.refreshGeometry()
         return true
       } catch (e) {
-        this.error = `Speichern fehlgeschlagen: ${e.message}`
+        this.melden(`Speichern fehlgeschlagen: ${e.message}`, 'fehler')
         return false
       } finally {
         this.loading = false
@@ -342,8 +469,11 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Bauwerke und Prüfung vom Server holen — OHNE zu speichern. Damit
     // reagiert die 3D-Szene unmittelbar auf Drag und Formularänderungen.
     scheduleDraftPreview() {
-      // jede Änderung entwertet ein vorhandenes Vorschaunetz
-      if (this.meshPreview) this.meshPreviewStale = true
+      // Ob das Vorschaunetz noch steht, entscheidet der Server anhand des
+      // NETZ-Hashes (Antwort in refreshDraftPreview). Hier pauschal auf
+      // „veraltet" zu stellen war der Grund, warum die Warnung nach jeder
+      // Eingabe stand — auch nach einem geänderten Grenzwert, der kein
+      // einziges Netzelement berührt.
       clearTimeout(this._draftTimer)
       this._draftTimer = setTimeout(() => this.refreshDraftPreview(), 350)
     },
@@ -355,6 +485,20 @@ export const usePreStore = defineStore('flood3d-pre', {
         const p = await flood3dApi.casePreview(this.activeCaseId, this.spec)
         if (seq !== this._draftSeq) return
         this.validation = p.validation
+        // Der Server vergleicht den Netz-Hash des Entwurfs mit dem des
+        // gespeicherten Vorschaunetzes — das ist die einzige verlässliche
+        // Antwort auf „steht das Netz noch?"
+        if (this.meshPreview && p.netz_stale !== undefined) {
+          this.meshPreviewStale = p.netz_stale
+        }
+        // Entwurf gerade nicht lesbar (etwa halb getipptes JSON): die
+        // Geometrie bleibt stehen — aber SICHTBAR als veraltet, statt
+        // stillschweigend etwas zu zeigen, das es nicht mehr gibt
+        if (p.spec_ungueltig) {
+          this.previewStale = true
+          return
+        }
+        this.previewStale = false
         if (p.terrain) {
           const bin = atob(p.terrain.z_b64)
           const bytes = new Uint8Array(bin.length)
@@ -366,18 +510,28 @@ export const usePreStore = defineStore('flood3d-pre', {
         }))
         // Der Erdkörper gehört in die Vorschau: sonst folgt er dem Ziehen an
         // Böschungskante, Rohr oder Gebietsecke erst nach dem Speichern.
-        // Bei sehr großen Rastern lässt der Server ihn weg (koerper_zu_gross)
-        // — dann bleibt der letzte gespeicherte Stand stehen.
+        // Bei sehr großen Rastern lässt der Server ihn weg
+        // (koerper_zu_gross) — dann bleibt der letzte Stand stehen, aber
+        // als veraltet markiert, sobald sich die Geometrie geändert hat.
+        // Braucht der Fall gar keinen Körper mehr (letzter Aushub gelöscht),
+        // kommt weder Körper noch Flag: dann verschwindet er.
         if (p.terrain_solid) {
           this.terrainSolid = { ...p.terrain_solid,
             stl: b64Buffer(p.terrain_solid.stl_b64) }
-        } else if (!p.koerper_zu_gross) {
+          this.terrainSolidStale = false
+        } else if (p.koerper_zu_gross) {
+          this.terrainSolidStale =
+            p.koerper_signatur !== this.terrainSolid?.signatur
+        } else {
           this.terrainSolid = null
+          this.terrainSolidStale = false
         }
         this.geometryVersion++
       } catch (e) {
-        // Entwurf aktuell nicht baubar (z. B. Tippfehler) — Meldung zeigen
-        this.error = `Vorschau: ${e.message}`
+        // Netzfehler o. Ä. — die Szene zeigt jetzt einen alten Stand, und
+        // das muss sichtbar sein statt nur in einer Fehlerzeile zu stehen
+        this.previewStale = true
+        this.melden(`Vorschau: ${e.message}`, 'fehler')
       }
     },
 
@@ -438,10 +592,18 @@ export const usePreStore = defineStore('flood3d-pre', {
     },
 
     updateObject(kind, id, updated) {
-      if (kind === 'domain') {
+      // Modellgebiet und Geländebasis sind keine Listeneinträge, aber man
+      // muss sie anfassen können wie welche. Die Geländebasis war bisher
+      // nur in der Phase „Simulation" erreichbar — getrennt von den
+      // Operationen, die genau auf sie wirken.
+      const einzeln = { domain: () => this.spec.domain,
+        terrain: () => this.spec.terrain?.base }
+      if (einzeln[kind]) {
+        const ziel = einzeln[kind]()
+        if (!ziel) return
         this.recordUndo()
         const { id: _id, type: _t, ...rest } = updated
-        Object.assign(this.spec.domain, rest)
+        Object.assign(ziel, rest)
         this.dirty = true
         this.error = ''
         this.scheduleDraftPreview()
@@ -505,21 +667,30 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId)
         this.meshPreviewStale = false
       } catch (e) {
-        this.error = `Netzvorschau: ${e.message}`
+        this.melden(`Netzvorschau: ${e.message}`, 'fehler')
       } finally {
         this.meshPreviewLoading = false
       }
     },
 
     async startRun() {
+      // `loading` ist hier kein Schönheitsfehler: ohne die Sperre startet
+      // ein Doppelklick ZWEI Läufe — und ein Lauf kostet Rechenzeit und
+      // Geld. Der Knopf war bisher nur gegen den LOKALEN Lauf gesperrt,
+      // und `localRunning` ist beim Serverlauf immer false.
+      if (this.loading) return
+      this.loading = true
       this.error = ''
       try {
         if (this.dirty) await this.saveCase()
         this.startedRun = await flood3dApi.startRun(this.activeCaseId)
+        this.melden('Lauf gestartet', 'erfolg')
         this.activePhase = 'laeufe'          // dem Lauf direkt zuschauen
         await this.loadCaseRuns()
       } catch (e) {
-        this.error = `Lauf starten: ${e.message}`
+        this.melden(`Lauf starten: ${e.message}`, 'fehler')
+      } finally {
+        this.loading = false
       }
     },
 
@@ -532,7 +703,7 @@ export const usePreStore = defineStore('flood3d-pre', {
           .filter((r) => r.run_id.startsWith(`${this.activeCaseId}_`))
           .reverse()
       } catch (e) {
-        this.error = e.message
+        this.melden(e.message, 'fehler')
       }
     },
 
@@ -547,16 +718,33 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.scheduleDraftPreview()
     },
 
+    // Löschen räumt mit auf: ein Nachweiskriterium auf einem gelöschten
+    // Pegel, eine Flächenverfeinerung auf einem entfernten Bauwerk, ein
+    // Eintrag in der Kraftauswertung — das alles blieb bisher liegen und
+    // wurde danach als Fehler gemeldet, den der Bearbeiter selbst suchen
+    // musste. EIN Undo-Schritt für die ganze Kaskade.
     removeObject(kind, id) {
-      const list = KIND_PATHS[kind]?.(this.spec)
-      const i = list?.findIndex((o) => o.id === id)
-      if (i != null && i >= 0) {
-        this.recordUndo()
-        list.splice(i, 1)
-        this.dirty = true
-        if (this.selection?.id === id) this.selection = null
-        this.scheduleDraftPreview()
+      if (!this.spec) return []
+      const plan = aufraeumplan(this.spec, kind, id)
+      if (!plan.ok) return []
+      this.recordUndo()
+      this.spec = plan.spec
+      this.dirty = true
+      if (this.selection?.id === id) this.selection = null
+      this.scheduleDraftPreview()
+
+      if (plan.meldungen.length) {
+        this.melden(`${plan.entfernt} gelöscht · `
+          + plan.meldungen.join(' · '), 'hinweis')
+      } else {
+        this.melden(`${plan.entfernt} gelöscht`, 'erfolg')
       }
+      if (plan.verwaist.length) {
+        this.melden(`Im Grundriss des entfernten Objekts liegen noch: `
+          + `${plan.verwaist.map((v) => v.label).join(', ')} — falls sie dazu `
+          + 'gehörten, jetzt löschen.', 'hinweis')
+      }
+      return plan.meldungen
     },
   },
 })

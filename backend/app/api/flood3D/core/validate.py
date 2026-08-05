@@ -21,8 +21,9 @@ import pandas as pd
 from .casespec import CaseSpec
 from .kur import kur
 from .meshgen import assign_faces, cell_counts
-from .solids import (build_solids, check_solid, gewollt_verschnitten,
-                     grundriss, ueberschneidungen)
+from .solids import (build_solids, check_solid, gelaende_mit_aushub,
+                     gewollt_verschnitten, grundriss, ist_aushub,
+                     ueberschneidungen)
 from .terrain import TerrainField
 
 
@@ -62,6 +63,56 @@ def _erwarteter_spiegel(spec) -> tuple[float, str] | None:
     return None
 
 
+# Verweisfelder je Nachweiskriterium: Feldname -> Art des Bezugsobjekts.
+# Dieselbe Kunde wie `REFERENZ_QUELLEN` im Client (utils/feldTypen.js) — sie
+# muss hier stehen, weil der Fall auch ohne Oberfläche geprüft wird.
+_TARGET_VERWEISE = {
+    "max_level": {"at": "gauge"},
+    "max_force": {"at": "patch"},
+    "discharge_ratio": {"of": "section", "to": "section"},
+    "head_difference": {"upstream": "section", "downstream": "section"},
+    "overfall_cd": {"section": "section", "gauge": "gauge", "weir": "weir"},
+    "min_bed_shear": {"region": "box"},
+    "max_bed_shear": {"region": "box"},
+}
+_QUELL_NAMEN = {"gauge": "Pegelpunkt", "section": "Querschnitt",
+                "patch": "Bauwerk", "box": "Verfeinerungsbox", "weir": "Wehr"}
+
+
+def _verweise_pruefen(spec: CaseSpec, f) -> None:
+    """
+    Jeder Verweis eines Nachweiskriteriums zeigt auf ein existierendes
+    Objekt (Spez. Kap. 7, „Auswertung").
+
+    Diese Regeln standen einmal als harte `model_validator` in casespec und
+    machten den Fall im Zwischenzustand unlesbar — Löschen eines Pegels
+    blockierte Vorschau UND Speichern. Als Prüfregel melden sie dasselbe,
+    lassen den Editor aber arbeiten; gesperrt wird der Lauf.
+
+    `region` (Sohlschubkriterien) und `weir` (Überfallbeiwert) wurden bis
+    dahin von NIEMANDEM geprüft: foamfields überspringt eine unbekannte
+    Region still, das Kriterium bleibt ohne Zahlenwert.
+    """
+    bekannt = {
+        "gauge": {g.id for g in spec.evaluation.gauges},
+        "section": {s.id for s in spec.evaluation.sections},
+        "patch": {s.patch for s in spec.structures},
+        "box": {r.id for r in (spec.mesh.refinements if spec.mesh else [])
+                if r.type == "box"},
+        "weir": {s.id for s in spec.structures if s.type == "weir"},
+    }
+    for t in spec.evaluation.targets:
+        for feld, quelle in _TARGET_VERWEISE.get(t.kind, {}).items():
+            wert = getattr(t, feld, None)
+            if wert is None or wert in bekannt[quelle]:
+                continue
+            f(_finding(t.id, "fehler",
+                       f"Kriterium verweist auf {_QUELL_NAMEN[quelle]} "
+                       f"„{wert}“ — den gibt es im Fall nicht (mehr). Ohne "
+                       "Bezugsobjekt bleibt das Kriterium ohne Zahlenwert.",
+                       fix=kur("verweis_entfernen", art="target", id=t.id)))
+
+
 def _finding(object_id: str, severity: str, message: str,
              fix: dict | None = None) -> dict:
     """
@@ -82,23 +133,57 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     f = findings.append
 
     terrain = None
+    # Gewachsene Oberfläche — für die Frage, ob ein Hohlraum noch OFFEN ist,
+    # zählt sie und nicht die ausgehobene
+    gewachsen = None
     if spec.terrain is not None and spec.domain is not None:
         try:
-            terrain = TerrainField.from_spec(spec.terrain, spec.domain, base_dir)
+            gewachsen = TerrainField.from_spec(spec.terrain, spec.domain,
+                                               base_dir)
+            # Alle weiteren Regeln rechnen mit dem AUSGEHOBENEN Gelände:
+            # eine Trennwand im ausgehobenen Schacht gilt sonst als
+            # „vollständig unter dem Gelände und hydraulisch wirkungslos"
+            terrain = gelaende_mit_aushub(gewachsen, spec)
         except Exception as e:
             f(_finding("terrain", "fehler", f"Gelände nicht erzeugbar: {e}"))
 
     # Ein Kraftkriterium ohne eingeschaltete Kraftauswertung liefert keine
     # Zeitreihe — das fällt sonst erst nach dem bezahlten Lauf auf, als
     # „nicht auswertbar" in der Nachweisübersicht.
+    # Nur für ein Bauwerk, das es gibt: zeigt das Kriterium ins Leere,
+    # meldet das `_verweise_pruefen`. „Kraftauswertung einschalten" für
+    # einen Patch, den es nicht gibt, wäre eine Kur, die ihren eigenen
+    # Befund nicht beseitigen kann.
     kraftpatches = set(spec.evaluation.force_patches)
+    bauwerkspatches = {s.patch for s in spec.structures}
     for ziel in spec.evaluation.targets:
-        if ziel.kind == "max_force" and ziel.at not in kraftpatches:
+        if ziel.kind == "max_force" and ziel.at in bauwerkspatches \
+                and ziel.at not in kraftpatches:
             f(_finding(ziel.id, "fehler",
                        f"Für \u201e{ziel.at}\u201c ist die Kraftauswertung "
                        "nicht eingeschaltet — das Kriterium bliebe ohne "
                        "Zahlenwert.",
                        fix=kur("kraftauswertung_ein", patch=ziel.at)))
+
+    # Ein importierter Körper trägt seit dem Import eine Rolle: der Layer
+    # sagt „Wehr", oder die Gestalt ist schlank und lang, also eine Wand.
+    # Bisher stand sie nur da. Ein Bauteil, das umströmt wird, ist im
+    # Nachweis fast immer wegen seiner BELASTUNG da — und die Kräfte
+    # entstehen nur, wenn der Solver sie während des Laufs mitschreibt:
+    # nachrüsten heißt neu rechnen.
+    KRAFTROLLEN = {"wand": "Wand", "pfeiler": "Pfeiler", "wehr": "Wehr"}
+    for s in spec.structures:
+        rolle = getattr(s, "role", None)
+        if s.type != "imported" or rolle not in KRAFTROLLEN:
+            continue
+        if s.patch in kraftpatches:
+            continue
+        f(_finding(s.id, "hinweis",
+                   f"„{s.id}“ ist als {KRAFTROLLEN[rolle]} importiert, die "
+                   "Kraftauswertung dafür ist aber aus. Sie lässt sich nach "
+                   "dem Lauf nicht nachrüsten — die Kräfte entstehen nur, "
+                   "wenn der Solver sie mitschreibt.",
+                   fix=kur("kraftauswertung_ein", patch=s.patch)))
 
     # LTSInterFoam braucht ein lokales Zeitschema (localEuler) und eine
     # eigene PIMPLE-Steuerung. Beides ist noch nicht verdrahtet — der Fall
@@ -146,6 +231,80 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    f"{y1:.1f}] — außerhalb entscheidet nur "
                                    "das Höhenraster, dort kann kein Hohlraum "
                                    "sein"))
+
+    # ---- Aushub: Hohlraum im Erdreich ------------------------------------
+    # Ein ausgehobener Körper hat keine eigene Fläche — seine Wandungen
+    # gehören nach dem Ausschneiden zur Geländefläche. Daraus folgen drei
+    # Dinge, die sonst erst der Vernetzer bemerkt.
+    # Entschieden wird gegen das GEWACHSENE Gelände: gegen das bereits
+    # ausgehobene gemessen läge jeder Aushub definitionsgemäß frei
+    aushub = [s for s in spec.structures if ist_aushub(s, gewachsen)]
+    if aushub:
+        if spec.terrain is None:
+            f(_finding(aushub[0].id, "fehler",
+                       "Ausgehoben werden kann nur aus einem Gelände — der "
+                       "Fall hat keines. Entweder ein Gelände anlegen oder "
+                       "das Bauwerk auf „Bauteil“ stellen."))
+        for s in aushub:
+            # Verweise auf einen Patch, den es im Netz nicht gibt
+            verweise = []
+            if s.patch in (spec.evaluation.force_patches
+                           if spec.evaluation else []):
+                verweise.append("Kraftauswertung")
+            if any(r.type == "surface" and r.target == s.patch
+                   for r in (spec.mesh.refinements if spec.mesh else [])):
+                verweise.append("Flächenverfeinerung")
+            if spec.mesh is not None and spec.mesh.boundary_layers \
+                    and s.patch in spec.mesh.boundary_layers.patches:
+                verweise.append("Grenzschicht")
+            if verweise:
+                f(_finding(s.id, "fehler",
+                           f"{' und '.join(verweise)} verweist auf den Patch "
+                           f"„{s.patch}“, den es nicht gibt: ein Aushub ist "
+                           "Hohlraum, seine Wandungen gehören zur "
+                           "Geländefläche. Auf „terrain“ verweisen oder das "
+                           "Bauwerk auf „Bauteil“ stellen."))
+        # Geschlossener Hohlraum: der Vernetzer behält nur, was mit dem
+        # locationInMesh-Punkt zusammenhängt — ein rundum verschlossener
+        # Kasten im Erdreich fällt ersatzlos weg. Maßstab ist hier die
+        # GEWACHSENE Oberfläche: gegen das ausgehobene Gelände gemessen
+        # läge jeder Aushub definitionsgemäß frei.
+        # Geprüft wird je VERBUND: sich berührende Aushübe bilden nach dem
+        # Abziehen einen Raum, und reicht einer davon bis an die Oberfläche,
+        # hängt der ganze Raum am Strömungsgebiet.
+        for gruppe in (_aushub_verbund(aushub) if gewachsen is not None else []):
+            lagen = []
+            for s in gruppe:
+                pkte = _plan_punkte(s)
+                deckel = getattr(s, "top_level", None)
+                if deckel is None and s.type == "graben":
+                    deckel = max(p[2] + (s.profile.height or s.profile.width)
+                                 for p in s.axis)
+                if deckel is None or not len(pkte):
+                    continue
+                boden = float(np.min(gewachsen.sample(pkte[:, 0], pkte[:, 1])))
+                lagen.append((s, deckel, boden))
+            if not lagen or any(bo <= de + 1e-6 for _, de, bo in lagen):
+                continue                    # irgendwo offen, alles gut
+            # rundum zu — nur ein Durchlass oder ein Randfenster kann noch
+            # eine Verbindung herstellen
+            angeschlossen = any(
+                c.type == "culvert" and getattr(c, "durchstoesst_gelaende", False)
+                for c in spec.structures)
+            erster, deckel, boden = max(lagen, key=lambda l: l[1])
+            mit = [x.id for x, _, _ in lagen if x.id != erster.id]
+            f(_finding(erster.id, "warnung" if angeschlossen else "fehler",
+                       f"Der Hohlraum liegt vollständig unter dem Gelände "
+                       f"(Oberkante {deckel:.2f} m, Gelände darüber ab "
+                       f"{boden:.2f} m)"
+                       + (f" — zusammen mit {', '.join(mit)}, die im "
+                          "Grundriss daran anschließen" if mit else "")
+                       + ". Der Vernetzer behält nur, was mit dem "
+                       "Strömungsgebiet zusammenhängt — ein rundum "
+                       "verschlossener Hohlraum fällt ersatzlos weg. "
+                       "Abhilfe: bis an die Geländeoberfläche führen oder "
+                       "mit einem Durchlass anschließen („durch das Gelände "
+                       "bohren“)."))
 
     # Passt das Gelände überhaupt in das Modellgebiet? Ragt es über den
     # Deckel, schneidet die Gebietsgrenze in den Berg und die
@@ -438,16 +597,28 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 min_dim, label = s.wall_thickness, "Beckenwanddicke"
             elif s.type == "culvert" and s.profile.diameter:
                 min_dim, label = s.profile.diameter, "Durchlassdurchmesser"
+            elif s.type == "schacht":
+                min_dim, label = s.width, "lichte Schachtweite"
+            elif s.type == "graben":
+                min_dim, label = s.profile.width, "Grabensohlbreite"
+            # Ausgehobene Körper werden nicht als eigene Fläche vernetzt —
+            # aufgelöst werden muss trotzdem der HOHLRAUM, und der liegt in
+            # der Geländefläche
+            if min_dim is not None and ist_aushub(s, gewachsen):
+                label += " (Hohlraum im Gelände)"
             mitte = None
             if s.type == "culvert" and s.axis:
                 a = np.asarray(s.axis, dtype=float)
                 mitte = a.mean(axis=0)
-            if min_dim is not None and min_dim < local_cell(s.patch, mitte):
+            # Ein Aushub hat keine eigene Fläche: seine Wandungen gehören zur
+            # Geländefläche, dort greift auch die Verfeinerung
+            flaeche = "terrain" if ist_aushub(s, gewachsen) else s.patch
+            if min_dim is not None and min_dim < local_cell(flaeche, mitte):
                 f(_finding(s.id, "fehler",
                            f"{label} {min_dim:g} m wird von der lokalen "
-                           f"Zellgröße {local_cell(s.patch, mitte):g} m nicht aufgelöst "
+                           f"Zellgröße {local_cell(flaeche, mitte):g} m nicht aufgelöst "
                            "— Verfeinerungsstufe erhöhen oder Abmessung prüfen",
-                           fix=kur("verfeinerung_erhoehen", patch=s.patch,
+                           fix=kur("verfeinerung_erhoehen", patch=flaeche,
                                    mass=min_dim)))
 
         # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
@@ -503,7 +674,9 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                     if r.target not in erlaubt:
                         f(_finding(r.id, "fehler",
                                    f"Verfeinerung zielt auf unbekanntes "
-                                   f"Bauwerk {r.target}"))
+                                   f"Bauwerk {r.target}",
+                                   fix=kur("verweis_entfernen",
+                                           art="verfeinerung", id=r.id)))
                     elif r.target == "terrain" and spec.terrain is None:
                         f(_finding(r.id, "warnung",
                                    "Verfeinerung zielt auf das Gelände, der "
@@ -534,7 +707,9 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                        - {s.patch for s in spec.structures})
             for p in sorted(fehlend):
                 f(_finding("mesh", "fehler",
-                           f"Grenzschicht verweist auf unbekanntes Bauwerk {p}"))
+                           f"Grenzschicht verweist auf unbekanntes Bauwerk {p}",
+                           fix=kur("verweis_entfernen", art="grenzschicht",
+                                   wert=p)))
 
     # ---- Hydraulik und Randbedingungen ----------------------------------
     inflows = [b for b in spec.boundaries
@@ -811,7 +986,7 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
         for s in spec.structures:
             if s.id in gekoppelt or s.type == "screen":
                 continue
-            pkte = _plan_punkte(s)
+            pkte = _plan_punkte(s, solids)
             if len(pkte) < 2:
                 continue
             px, py = pkte[:, 0], pkte[:, 1]
@@ -904,17 +1079,68 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     for p in spec.evaluation.force_patches:
         if p not in patches:
             f(_finding("evaluation", "fehler",
-                       f"Kraftauswertung verweist auf unbekanntes Bauwerk {p}"))
+                       f"Kraftauswertung verweist auf unbekanntes Bauwerk {p}",
+                       fix=kur("verweis_entfernen", art="kraftpatch", wert=p)))
+
+    _verweise_pruefen(spec, f)
 
     order = {"fehler": 0, "warnung": 1, "hinweis": 2}
     return sorted(findings, key=lambda x: (order[x["severity"]], x["object_id"]))
 
 
-def _plan_punkte(struct) -> np.ndarray:
+def _aushub_verbund(aushub: list) -> list[list]:
+    """
+    Aushübe zu Räumen zusammenfassen.
+
+    Ein Aushub ist eine Subtraktion vom Erdkörper. Überschneiden sich zwei
+    im Grundriss, bleibt nach dem Abziehen EIN zusammenhängender Hohlraum —
+    und reicht auch nur einer davon bis an die Oberfläche, hängt der ganze
+    Raum am Strömungsgebiet. Je Körper geprüft meldete die Hohlraumregel
+    deshalb bisher einen „rundum verschlossenen Kasten", während nebenan
+    der Schacht offen zu Tage lag.
+
+    Berührung genügt: zwischen zwei anstoßenden Aushüben steht kein Erdreich
+    mehr, die Booleschen Operationen verschmelzen sie. Ein Körper ohne
+    ermittelbaren Grundriss bleibt für sich.
+    """
+    from .solids import aushub_grundriss
+
+    formen = [(g[0] if (g := aushub_grundriss(s)) else None) for s in aushub]
+    eltern = list(range(len(aushub)))
+
+    def wurzel(i: int) -> int:
+        while eltern[i] != i:
+            eltern[i] = eltern[eltern[i]]
+            i = eltern[i]
+        return i
+
+    for i, a in enumerate(formen):
+        if a is None:
+            continue
+        for j in range(i + 1, len(formen)):
+            if formen[j] is not None and a.intersects(formen[j]):
+                eltern[wurzel(i)] = wurzel(j)
+
+    gruppen: dict = {}
+    for i, s in enumerate(aushub):
+        gruppen.setdefault(wurzel(i) if formen[i] is not None else f"e{i}",
+                           []).append(s)
+    return list(gruppen.values())
+
+
+def _plan_punkte(struct, solids: dict | None = None) -> np.ndarray:
     """
     Grundrisspunkte eines Bauwerks (n, 2) — je nach Typ aus Achse, Grundriss,
-    Kronenlinie oder Rechenebene. Leer, wenn der Typ keine Lage in der Ebene
-    trägt (importierte Körper mit Einfügepunkt).
+    Kronenlinie oder Rechenebene.
+
+    Ein importierter Körper trägt seine Lage nicht im Schema, sondern in der
+    STL-Datei: `insert_point` ist eine Verschiebung, kein Grundriss. Ohne
+    `solids` bleibt er deshalb leer — und genau daran sind bisher ALLE
+    grundrissbasierten Regeln stillschweigend an ihm vorbeigelaufen, allen
+    voran der Randabstand. Mit dem gebauten Netz liefert der Hüllquader in
+    der Ebene die Antwort, und zwar exakt: die Regeln fragen ausschließlich
+    nach kleinstem und größtem x und y, und dafür ist der Hüllquader keine
+    Näherung, sondern dasselbe Ergebnis.
     """
     for feld in ("footprint", "axis", "crest_polyline", "plane_polygon"):
         werte = getattr(struct, feld, None)
@@ -923,6 +1149,12 @@ def _plan_punkte(struct) -> np.ndarray:
     ausricht = getattr(struct, "alignment", None)
     if ausricht is not None and ausricht.points:
         return np.asarray(ausricht.points, dtype=float)[:, :2]
+    if solids is not None:
+        netz = solids.get(getattr(struct, "patch", None))
+        if netz is not None and len(netz.vertices):
+            lo, hi = netz.bounds
+            return np.array([[lo[0], lo[1]], [hi[0], lo[1]],
+                             [hi[0], hi[1]], [lo[0], hi[1]]], dtype=float)
     mitte = getattr(struct, "center", None)
     if mitte is not None:
         return np.asarray([mitte], dtype=float)[:, :2]

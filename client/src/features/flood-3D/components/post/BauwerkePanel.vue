@@ -158,5 +158,5 @@ watchEffect(laden)
   font-variant-numeric: tabular-nums;
   font-size: 1.05rem;
 }
-.f3d-stat dd.warn { color: #e0a63a; }
+.f3d-stat dd.warn { color: var(--f3d-warn); }
 </style>

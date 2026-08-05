@@ -12,7 +12,7 @@
       <template v-if="choice === '__frei'">
         <input v-model="freeLine" class="f3d-num f3d-grow"
                placeholder="x1,y1 x2,y2" />
-        <button class="f3d-btn" @click="loadProfile">Zeigen</button>
+        <button class="f3d-btn" :disabled="busy" @click="loadProfile">Zeigen</button>
       </template>
     </header>
     <p v-if="error" class="f3d-error">{{ error }}</p>
@@ -39,6 +39,8 @@ const choice = ref('')
 const freeLine = ref('')
 const series = ref([])
 const error = ref('')
+// Doppelklick soll nicht zwei Profilanfragen auslösen
+const busy = ref(false)
 
 const sections = computed(() => store.spec?.evaluation?.sections ?? [])
 
@@ -53,9 +55,11 @@ function currentPolyline() {
 }
 
 async function loadProfile() {
+  if (busy.value) return
   error.value = ''
   const polyline = currentPolyline()
   if (!polyline) { series.value = []; return }
+  busy.value = true
   try {
     const p = await flood3dApi.caseProfile(store.activeCaseId, polyline)
     const out = [{ label: 'Gelände', t: p.s, v: p.ground, color: '#c98500' }]
@@ -69,6 +73,8 @@ async function loadProfile() {
   } catch (e) {
     error.value = e.message
     series.value = []
+  } finally {
+    busy.value = false
   }
 }
 

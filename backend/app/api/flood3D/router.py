@@ -282,6 +282,11 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
     Steht das Vorschaunetz noch zu diesem Fall? Ohne diese Marke zeigt die
     Netzansicht nach jeder Änderung (Drehung, Zuschnitt, verschobenes
     Bauwerk) klaglos das alte Netz — und man sucht den Fehler in der Physik.
+
+    Verglichen wird der NETZ-Hash, nicht der des ganzen Falls: ein
+    geänderter Grenzwert oder eine andere Simulationsdauer lassen das Netz
+    unberührt. Ältere Vorschauen kennen den Netz-Hash noch nicht — für die
+    bleibt es beim Vergleich über den ganzen Fall.
     """
     p = d / "_mesh_preview" / "mesh_preview.json"
     if not p.is_file():
@@ -290,8 +295,11 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
         info = json.loads(p.read_text())
     except Exception:
         return {"vorhanden": False, "stale": False, "preview": None}
-    return {"vorhanden": True, "preview": info,
-            "stale": info.get("case_hash") != spec.case_hash()}
+    if info.get("netz_hash"):
+        stale = info["netz_hash"] != spec.netz_hash()
+    else:
+        stale = info.get("case_hash") != spec.case_hash()
+    return {"vorhanden": True, "preview": info, "stale": stale}
 
 
 @router.get("/cases/{case_id}/mesh-preview")
@@ -309,7 +317,7 @@ async def case_terrain_solid(case_id: str):
     Fällen mit ausgeschnittenen Rohrbohrungen. 404 heißt: für diesen Fall
     genügt die Höhenfläche, es gibt keinen Körper anzuzeigen.
     """
-    from .core.solids import gelaende_mit_durchlaessen
+    from .core.solids import gelaende_koerper_bauen
 
     spec, d = _load_case(case_id)
     if spec.terrain is None or spec.domain is None:
@@ -317,7 +325,7 @@ async def case_terrain_solid(case_id: str):
     feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
     hinweise: list[str] = []
     try:
-        koerper = gelaende_mit_durchlaessen(feld, spec, hinweise=hinweise,
+        koerper = gelaende_koerper_bauen(feld, spec, hinweise=hinweise,
                                             base_dir=d)
     except Exception as e:
         raise HTTPException(status_code=422,
@@ -336,6 +344,35 @@ async def case_terrain_solid(case_id: str):
                           if s.type == "culvert"
                           and getattr(s, "durchstoesst_gelaende", False)],
             "hinweise": hinweise}
+
+
+@router.get("/cases/{case_id}/terrain-solid.stl")
+async def case_terrain_solid_stl(case_id: str):
+    """
+    Der Geländekörper als Datei. Bisher gab es ihn nur als base64 in einer
+    JSON-Antwort (für die Anzeige) oder im ZIP des Companion-Pakets — für
+    einen Blick in FreeCAD/Meshlab oder zur Weitergabe an den Prüfer war er
+    nicht zu bekommen.
+    """
+    from .core.solids import gelaende_koerper_bauen
+
+    spec, d = _load_case(case_id)
+    if spec.terrain is None or spec.domain is None:
+        raise HTTPException(status_code=404, detail="Fall ohne Gelände.")
+    feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+    try:
+        koerper = gelaende_koerper_bauen(feld, spec, hinweise=[], base_dir=d)
+    except Exception as e:
+        raise HTTPException(status_code=422,
+                            detail=f"Geländekörper nicht baubar: {e}")
+    # Ohne Körper die offene Höhenfläche liefern — das ist genau die
+    # Geometrie, die der Vernetzer in diesem Fall bekommt
+    mesh = koerper if koerper is not None else feld.to_trimesh()
+    return Response(
+        content=mesh.export(file_type="stl"),
+        media_type="model/stl",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{case_id}_gelaende.stl"'})
 
 
 @router.get("/cases/{case_id}/mesh-surface")
@@ -471,7 +508,9 @@ async def put_case(case_id: str, payload: dict = Body(...)):
         raise HTTPException(status_code=422, detail=str(e))
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, "case_hash": spec.case_hash(),
-            "validation": validate_case(spec, d)}
+            "validation": validate_case(spec, d),
+
+            "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
 @router.post("/cases/{case_id}/import")
@@ -540,7 +579,9 @@ async def case_import_apply(case_id: str, import_id: str,
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, "report": info["report"],
             "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d)}
+            "validation": validate_case(spec, d),
+
+            "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
 @router.post("/cases/{case_id}/rotate")
@@ -566,7 +607,9 @@ async def case_rotate(case_id: str, payload: dict = Body(...)):
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, **info,
             "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d)}
+            "validation": validate_case(spec, d),
+
+            "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
 @router.post("/cases/{case_id}/anschluss")
@@ -588,7 +631,9 @@ async def case_anschluss(case_id: str):
         spec.to_yaml(d / "case.yaml")
     return {"ok": True, "meldungen": meldungen,
             "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d)}
+            "validation": validate_case(spec, d),
+
+            "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
 @router.post("/cases/{case_id}/kur")
@@ -613,7 +658,82 @@ async def case_kur(case_id: str, payload: dict = Body(...)):
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, "meldung": meldung,
             "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d)}
+            "validation": validate_case(spec, d),
+
+            "netz_stale": _preview_stand(spec, d)["stale"]}
+
+
+@router.post("/cases/{case_id}/kanten-verknuepfen")
+async def case_kanten_verknuepfen(case_id: str):
+    """
+    Aus den Vermessungskanten ableiten, was daraus folgt: eine Sohle
+    innerhalb eines Beckenrands ergibt die Böschung dazwischen und die
+    ebene Sohle darin, eine Ober- und eine Unterkante nebeneinander eine
+    Böschung, zwei einander zugewandte Böschungen die Gerinnesohle bzw.
+    Dammkrone dazwischen. Gepaart wird über die LAGE, nicht über den
+    Layernamen. Mauerkronen und Überfallkanten werden zu BAUTEILEN.
+    """
+    from .core.kanten import verknuepfen
+    from .core.terrain import TerrainField
+
+    spec, d = _load_case(case_id)
+    # Nur zum Messen der Gründungstiefe abgeleiteter Bauteile. Scheitert
+    # das Gelände, wird vorbelegt statt abgebrochen — die Kantenlogik
+    # selbst braucht es nicht.
+    feld = None
+    if spec.terrain is not None and spec.domain is not None:
+        try:
+            feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+        except Exception:
+            feld = None
+    try:
+        meldungen = verknuepfen(spec, feld)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except Exception as e:
+        raise HTTPException(status_code=422,
+                            detail=f"Kanten verknüpfen fehlgeschlagen: {e}")
+    spec.to_yaml(d / "case.yaml")
+    return {"ok": True, "meldungen": meldungen,
+            "spec": spec.model_dump(mode="json", exclude_none=True),
+            "validation": validate_case(spec, d),
+            "netz_stale": _preview_stand(spec, d)["stale"]}
+
+
+@router.get("/rezepte")
+async def rezept_katalog():
+    """Bauwerkskatalog: was sich in einem Zug einsetzen lässt."""
+    from .core.rezepte import katalog
+
+    return {"rezepte": katalog()}
+
+
+@router.post("/cases/{case_id}/rezept")
+async def case_rezept(case_id: str, payload: dict = Body(...)):
+    """
+    Ein Bauwerk in einem Zug einsetzen: Aushub, Bauteile, Verfeinerung,
+    Bezugsobjekte und Nachweiskriterium. Jedes Teil bleibt danach einzeln
+    im Objektbaum bearbeitbar — das Rezept ist die Anordnung, kein neuer
+    Bauwerkstyp.
+    """
+    from .core.rezepte import einsetzen
+
+    spec, d = _load_case(case_id)
+    name = str(payload.get("rezept") or "")
+    args = payload.get("args") or {}
+    try:
+        meldungen = einsetzen(spec, name, args, d)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=422,
+                            detail=f"Rezept fehlgeschlagen: {e}")
+    spec.to_yaml(d / "case.yaml")
+    return {"ok": True, "meldungen": meldungen,
+            "spec": spec.model_dump(mode="json", exclude_none=True),
+            "validation": validate_case(spec, d),
+
+            "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
 @router.get("/cases/{case_id}/schema")
@@ -689,13 +809,23 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
     Erdkörper für die Live-Vorschau. Ohne ihn folgt der Volumenkörper dem
     Ziehen an Böschungskante, Rohr oder Gebietsecke erst nach dem Speichern.
     """
-    from .core.solids import gelaende_mit_durchlaessen
+    from .core.solids import braucht_erdkoerper, gelaende_koerper_bauen
 
+    # Bedarf VOR Größe fragen. Andersherum blieb nach dem Löschen des
+    # letzten Aushubs der alte Körper mit seinem Krater stehen: der Client
+    # behält ihn bei `koerper_zu_gross` bewusst, und die Antwort „gar kein
+    # Körper mehr nötig" wäre ohne jede Boolesche Operation zu haben
+    # gewesen. Jetzt verschwindet er sofort, auch auf Millionenrastern.
+    if not braucht_erdkoerper(spec, feld):
+        return None
     if feld.z.size > _KOERPER_VORSCHAU_KNOTEN:
         out["koerper_zu_gross"] = True
+        # Woran der gehaltene Körper hängt — der Client kann damit sagen,
+        # dass er veraltet ist, statt ihn als aktuell auszugeben
+        out["koerper_signatur"] = spec.netz_hash()
         return None
     try:
-        koerper = gelaende_mit_durchlaessen(feld, spec, hinweise=[], base_dir=d)
+        koerper = gelaende_koerper_bauen(feld, spec, hinweise=[], base_dir=d)
     except Exception:
         return None
     if koerper is None:
@@ -706,6 +836,9 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
             "volume": round(float(abs(koerper.volume)), 2),
             "triangles": int(len(koerper.faces)),
             "importiert": bool(spec.terrain.base.koerper),
+            # Woran dieser Körper hängt — der Client vergleicht sie beim
+            # nächsten Entwurf und weiß, ob der gehaltene noch gilt
+            "signatur": spec.netz_hash(),
             "bohrungen": [s.id for s in spec.structures
                           if s.type == "culvert"
                           and getattr(s, "durchstoesst_gelaende", False)]}
@@ -723,10 +856,24 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
     try:
         spec = CaseSpec.model_validate(migriere(payload))
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        # KEIN 422: die Vorschau ist der Kanal, über den der Editor erfährt,
+        # was nicht stimmt — ein Fehlerstatus lässt ihn auf dem letzten
+        # Stand einfrieren und zeigt dann etwas, das es nicht mehr gibt.
+        # Also 200 mit einem Befund; die Szene bleibt stehen, aber sichtbar
+        # als veraltet markiert. `PUT` behält seine 422 — eine unlesbare
+        # Datei wird nicht geschrieben.
+        return {"validation": [{"object_id": "case", "severity": "fehler",
+                                "message": f"Entwurf nicht lesbar: {e}"}],
+                "spec_ungueltig": True, "solids": [], "terrain": None,
+                "terrain_solid": None, "netz_stale": False}
 
     out: dict = {"validation": validate_case(spec, d), "solids": [],
-                 "terrain": None, "terrain_solid": None}
+                 "terrain": None, "terrain_solid": None,
+                 # Ob das gespeicherte Vorschaunetz noch zu DIESEM Entwurf
+                 # steht. Der Editor hat das bisher selbst geraten und nach
+                 # jeder Eingabe auf „veraltet" gestellt — auch nach einer,
+                 # die kein Netzelement berührt.
+                 "netz_stale": _preview_stand(spec, d)["stale"]}
     if spec.terrain is not None and spec.domain is not None:
         try:
             t = TerrainField.from_spec(spec.terrain, spec.domain, d)

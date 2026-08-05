@@ -1,11 +1,15 @@
 <template>
-  <DraggableModal
+  <component
+    :is="standalone ? 'div' : DraggableModal"
     ref="modalRef"
-    :isOpen="true"
-    initialWidth="1000px"
-    initialHeight="700px"
-    initialTop="80px"
-    initialLeft="center"
+    :class="standalone ? 'standalone-shell' : null"
+    v-bind="standalone ? {} : {
+      isOpen: true,
+      initialWidth: '1000px',
+      initialHeight: '700px',
+      initialTop: '80px',
+      initialLeft: 'center',
+    }"
     @close="emit('close')"
   >
     <div class="viewer-wrapper">
@@ -14,8 +18,10 @@
       <div class="viewer-header">
         <span class="header-title">🏗️ That Open Engine – IFC Viewer</span>
         <div class="header-controls">
-          <button class="hdr-btn" @click="modalRef?.toggleMinimize()" title="Minimieren">_</button>
-          <button class="hdr-btn" @click="modalRef?.toggleMaximize()" title="Vollbild">□</button>
+          <template v-if="!standalone">
+            <button class="hdr-btn" @click="modalRef?.toggleMinimize()" title="Minimieren">_</button>
+            <button class="hdr-btn" @click="modalRef?.toggleMaximize()" title="Vollbild">□</button>
+          </template>
           <button class="hdr-btn hdr-close" @click="emit('close')" title="Schließen">&times;</button>
         </div>
       </div>
@@ -37,14 +43,6 @@
               ➕ Hinzufügen
             </label>
 
-            <div class="dropdown" ref="dropdownRef">
-              <button class="action-btn secondary" @click="dropdownOpen = !dropdownOpen">
-                🏢 Beispiele ▾
-              </button>
-              <div class="dropdown-menu" :class="{ open: dropdownOpen }">
-                <button @click="loadExample('Validated')">Validiertes IFC laden</button>
-              </div>
-            </div>
           </div>
 
           <div v-if="loading" class="loading-badge">
@@ -54,6 +52,19 @@
 
         <!-- Full-canvas loading overlay — hides the half-tessellated frames during initial load -->
         <IfcLoadOverlay :visible="loading" />
+
+        <!-- B4: Zuletzt geöffnete Modelle (lokale Ablage) — nur im Leerzustand -->
+        <div v-if="!modelList.length && !loading && recentModels.length" class="recent-panel">
+          <div class="recent-title">Zuletzt geöffnete Modelle</div>
+          <div v-for="r in recentModels" :key="r.key" class="recent-item">
+            <button class="recent-open" @click="openRecent(r)">
+              <span class="recent-name">{{ r.meta?.name ?? r.key }}</span>
+              <span class="recent-info">{{ fmtBytes(r.size) }} · {{ fmtDate(r.meta?.savedAt) }}</span>
+            </button>
+            <button class="recent-del" @click="deleteRecent(r)" title="Aus lokalem Speicher entfernen">✕</button>
+          </div>
+          <div class="recent-hint">Im Browser gespeichert — ohne Netzverbindung verfügbar.</div>
+        </div>
 
         <!-- B2: Model tags in separate row below top-bar -->
         <div v-if="modelList.length" class="model-tag-row">
@@ -294,6 +305,8 @@
             <IfcAnnotations
               :annotationActive="annotationActive"
               :zoomToPoint="zoomToAnnotation"
+              :applyViewpoint="(vp) => engine?.applyView(vp)"
+              :captureViewpoint="() => engine?.captureView() ?? null"
               @toggle-mode="toggleAnnotationMode"
             />
           </div>
@@ -314,33 +327,6 @@
       <Teleport to="body">
         <IfcPdfExportModal
           v-if="showPdfExport"
-          :getSnapshot="() => engine?.getCanvasSnapshot(3)"
-          :onViewTop="() => engine?.viewTop()"
-          :onViewFront="() => engine?.viewFront()"
-          :onViewSide="() => engine?.viewSide()"
-          :saveRenderState="() => engine?.saveRenderState()"
-          :restoreRenderState="(s) => engine?.restoreRenderState(s)"
-          :applyLayerStyle="(style) => applyLayerStyle(style, engine)"
-          :getScaleSnapshot="(s, dw, dh, dir, px, pz) => engine?.getScaleSnapshot(s, dw, dh, dir, 10, px ?? 0, pz ?? 0)"
-          :truckCamera="(dx, dy) => engine?.truckCamera(dx, dy)"
-          :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
-          :getScene="() => engine?._getWorld()?.scene?.three ?? null"
-          :getPlotFrustum="() => engine?.getLastPlotFrustum()"
-          :getCategoryGroups="() => engine?.getCategoryGroups()"
-          :getFragmentsList="() => engine?.getFragmentsList()"
-          :getFragmentsManager="() => engine?.getFragmentsManager()"
-          :getMeasurements="() => measurements"
-          :getWebIfcAPI="() => engine?.getWebIfcAPI()"
-          :getSectionCutPlane="() => engine?.getSectionCutPlane()"
-          :getModelBoundsXZ="() => engine?.getModelBoundsXZ()"
-          :getOverviewSnapshot="(w, h) => engine?.getOverviewSnapshot(w, h)"
-          :getMainScene="() => engine?.getMainScene()"
-          :getModelCenterY="() => engine?.getModelCenterY() ?? 0"
-          :getClippingPlanes="() => engine?.getClippingPlanes() ?? []"
-          :withSectionVisualsHidden="(fn) => engine?.withSectionVisualsHidden(fn)"
-          :renderToCanvas="(cv, cam) => engine?.renderToCanvas(cv, cam) ?? false"
-          :getCameraTarget="() => engine?.getCameraTarget() ?? { x:0, y:0, z:0 }"
-          :getIfcGridAxes="() => engine?.getIfcGridAxes() ?? []"
           @close="showPdfExport = false"
         />
       </Teleport>
@@ -348,14 +334,6 @@
       <Teleport to="body">
         <IfcPlanningCockpit
           v-if="showPlanningCockpit"
-          :getCategoryGroups="() => engine?.getCategoryGroups() ?? []"
-          :getFragmentsList="() => engine?.getFragmentsList() ?? new Map()"
-          :getFragmentsManager="() => engine?.getFragmentsManager() ?? null"
-          :getSpatialTree="() => engine?.getSpatialTree() ?? null"
-          :getStoreyList="() => engine?.getStoreyList() ?? []"
-          :zoomToElement="(modelId, localId) => engine?.zoomToElement(modelId, localId)"
-          :setElementColors="(colorMap) => engine?.setPerElementColors(colorMap)"
-          :resetElementColors="() => engine?.resetCategoryColors()"
           @close="showPlanningCockpit = false"
         />
       </Teleport>
@@ -365,7 +343,7 @@
         <IfcShortcutsOverlay :open="showShortcuts" @close="showShortcuts = false" />
       </Teleport>
     </div>
-  </DraggableModal>
+  </component>
 </template>
 
 <script setup>
@@ -374,6 +352,7 @@ import DraggableModal from '@/features/isyifc/components/common/DraggableModal.v
 import { IfcEngine }            from '../services/IfcEngine.js';
 import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
 import IfcLayerPanel      from './IfcLayerPanel.vue';
 import IfcPdfExportModal  from './IfcPdfExportModal.vue';
 import IfcPlanningCockpit from './IfcPlanningCockpit.vue';
@@ -385,24 +364,27 @@ import IfcSavedViews       from './IfcSavedViews.vue';
 import IfcAnnotations      from './IfcAnnotations.vue';
 import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
+import { provideViewerApi } from '../composables/viewerApi.js';
+import { computeModelIdentity } from '../services/ModelIdentity.js';
+import { repo } from '../services/RepoFacade.js';
 
-import validatedIfcUrl from '../testdata/6178_A64-2BA_0_2026-03-18 (12).ifc?url';
 
 const emit = defineEmits(['close', 'open-properties', 'model-loaded']);
 const ifc  = useIfcStore();
+const cde  = useCdeStore();
 
 defineProps({
   propertiesOpen: { type: Boolean, default: false },
+  // true = Vollbild-Seite (Route /cde), false = DraggableModal (ToolsDashboard-Altpfad)
+  standalone:     { type: Boolean, default: false },
 });
 
 // ── refs ────────────────────────────────────────────────────────────────────
 const modalRef    = ref(null);
 const canvasRef   = ref(null);
-const dropdownRef = ref(null);
 
 const engine      = shallowRef(null);
 const loading = ref(false);
-const dropdownOpen = ref(false);
 const coords      = ref(null);
 
 // Layer panel
@@ -436,6 +418,10 @@ let _measureToastTimer = null;
 // Multi-model list
 const modelList = ref([]); // [{modelId, name}]
 
+// Stabile Modell-Identität pro geladenem Modell (B3) + lokale Ablage (B4)
+const _modelIdentity = new Map(); // modelId → { key, sha256, projectGlobalId, name }
+const recentModels = ref([]);     // [{ key, meta, size }] aus repo.listBlobs('model:')
+
 // Coordinate display mode
 const coordMode = ref('viewer'); // 'viewer' | 'ifc'
 
@@ -445,9 +431,51 @@ let _hoverTimer  = null;
 let _lastMouse   = null;
 let _selection   = null;  // IfcSelectionHandler — übernimmt Click/Hover/Marquee
 
+// ── viewerApi — Engine-Accessoren für teleportierte Kinder ──────────────────
+// (PDF-Export, Planungs-Cockpit, Vector-Style-Editor) via provide/inject statt
+// Funktions-Props. Closures greifen zur Aufrufzeit auf engine.value zu.
+provideViewerApi({
+  // Snapshots & Ansichten
+  getSnapshot:          () => engine.value?.getCanvasSnapshot(3),
+  onViewTop:            () => engine.value?.viewTop(),
+  onViewFront:          () => engine.value?.viewFront(),
+  onViewSide:           () => engine.value?.viewSide(),
+  saveRenderState:      () => engine.value?.saveRenderState(),
+  restoreRenderState:   (s) => engine.value?.restoreRenderState(s),
+  applyLayerStyle:      (style) => applyLayerStyle(style, engine.value),
+  getScaleSnapshot:     (s, dw, dh, dir, px, pz) => engine.value?.getScaleSnapshot(s, dw, dh, dir, 10, px ?? 0, pz ?? 0),
+  truckCamera:          (dx, dy) => engine.value?.truckCamera(dx, dy),
+  // Szene / Kamera
+  getCamera:            () => engine.value?._getWorld()?.camera?.three ?? null,
+  getScene:             () => engine.value?._getWorld()?.scene?.three ?? null,
+  getPlotFrustum:       () => engine.value?.getLastPlotFrustum(),
+  getMainScene:         () => engine.value?.getMainScene(),
+  getModelCenterY:      () => engine.value?.getModelCenterY() ?? 0,
+  getCameraTarget:      () => engine.value?.getCameraTarget() ?? { x: 0, y: 0, z: 0 },
+  renderToCanvas:       (cv, cam) => engine.value?.renderToCanvas(cv, cam) ?? false,
+  // Modelldaten
+  getCategoryGroups:    () => engine.value?.getCategoryGroups() ?? [],
+  getFragmentsList:     () => engine.value?.getFragmentsList() ?? new Map(),
+  getFragmentsManager:  () => engine.value?.getFragmentsManager() ?? null,
+  getWebIfcAPI:         () => engine.value?.getWebIfcAPI(),
+  getSpatialTree:       () => engine.value?.getSpatialTree() ?? null,
+  getStoreyList:        () => engine.value?.getStoreyList() ?? [],
+  getModelBoundsXZ:     () => engine.value?.getModelBoundsXZ(),
+  getIfcGridAxes:       () => engine.value?.getIfcGridAxes() ?? [],
+  // Schnitt & Overlays
+  getSectionCutPlane:   () => engine.value?.getSectionCutPlane(),
+  getClippingPlanes:    () => engine.value?.getClippingPlanes() ?? [],
+  withSectionVisualsHidden: (fn) => engine.value?.withSectionVisualsHidden(fn),
+  getOverviewSnapshot:  (w, h) => engine.value?.getOverviewSnapshot(w, h),
+  getMeasurements:      () => measurements.value,
+  // Interaktion
+  zoomToElement:        (modelId, localId) => engine.value?.zoomToElement(modelId, localId),
+  setElementColors:     (colorMap) => engine.value?.setPerElementColors(colorMap),
+  resetElementColors:   () => engine.value?.resetCategoryColors(),
+});
+
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  document.addEventListener('click', onDocClick);
   document.addEventListener('keydown', onKeyDown);
 
   engine.value = new IfcEngine();
@@ -513,10 +541,12 @@ onMounted(async () => {
     const offset = engine.value.getCoordOffsetForModel(mid);
     return { box: boxes[0], offset, modelId: mid };
   });
+
+  // B4: lokale Modell-Ablage für den Leerzustand einlesen
+  _refreshRecentModels();
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick);
   document.removeEventListener('keydown', onKeyDown);
   if (canvasRef.value) {
     canvasRef.value.removeEventListener('mousedown',  onMouseDown);
@@ -530,14 +560,37 @@ onBeforeUnmount(() => {
 });
 
 // ── file loading ─────────────────────────────────────────────────────────────
+
+/**
+ * Gemeinsamer Lade-Pfad für Datei-Dialog und „Zuletzt geöffnet":
+ * Identität (GlobalId/SHA-256) berechnen, Modell laden, UI auffrischen,
+ * Blob in die lokale Ablage legen (fire-and-forget).
+ */
+async function _loadBuffer(buf, name, { persist = true } = {}) {
+  const bytes = new Uint8Array(buf);
+  const identity = await computeModelIdentity(bytes, name);
+  const model = await engine.value.loadIfc(bytes, name);
+  if (model?.modelId) _modelIdentity.set(model.modelId, { ...identity, name });
+  await _onModelLoaded();
+  if (persist) _persistModelBlob(bytes, name, identity);
+  // M1: bei aktivem Projekt ins Dokument-Register aufnehmen (Status WIP,
+  // Revisionszählung über die IfcProject-GlobalId)
+  if (cde.activeProjectId && identity.sha256) {
+    cde.registerModel({
+      sha256: identity.sha256,
+      name,
+      size: bytes.byteLength,
+      projectGlobalId: identity.projectGlobalId,
+    }).catch(() => { /* Register optional */ });
+  }
+}
+
 async function onFileUpload(e) {
   const file = e.target.files[0];
   if (!file || loading.value) return;
   loading.value = true;
   try {
-    const buf = await file.arrayBuffer();
-    await engine.value.loadIfc(new Uint8Array(buf), file.name);
-    await _onModelLoaded();
+    await _loadBuffer(await file.arrayBuffer(), file.name);
   } catch (err) {
     console.error('IFC load error:', err);
     alert('Fehler beim Laden der IFC-Datei.');
@@ -552,9 +605,7 @@ async function onFileUploadAdd(e) {
   if (!file || loading.value) return;
   loading.value = true;
   try {
-    const buf = await file.arrayBuffer();
-    await engine.value.loadIfc(new Uint8Array(buf), file.name);
-    await _onModelLoaded();
+    await _loadBuffer(await file.arrayBuffer(), file.name);
   } catch (err) {
     console.error('IFC add error:', err);
     alert('Fehler beim Hinzufügen der IFC-Datei.');
@@ -564,8 +615,79 @@ async function onFileUploadAdd(e) {
   }
 }
 
+// ── Lokale Modell-Ablage (IndexedDB via RepoFacade) ─────────────────────────
+const MAX_RECENT_MODELS = 5;
+
+async function _persistModelBlob(bytes, name, identity) {
+  if (!identity?.sha256) return; // ohne Hash keine stabile Blob-Adresse
+  try {
+    const ok = await repo.setBlob(`model:${identity.sha256}`, new Blob([bytes]), {
+      name,
+      size: bytes.byteLength,
+      savedAt: Date.now(),
+      projectGlobalId: identity.projectGlobalId,
+      key: identity.key,
+    });
+    if (!ok) return; // Backend ohne Blob-Support (localStorage-Fallback)
+    // Ablage deckeln: nur die letzten N Modelle behalten
+    const all = (await repo.listBlobs('model:'))
+      .sort((a, b) => (b.meta?.savedAt ?? 0) - (a.meta?.savedAt ?? 0));
+    for (const row of all.slice(MAX_RECENT_MODELS)) {
+      await repo.deleteBlob(row.key);
+    }
+    await _refreshRecentModels();
+  } catch (e) {
+    console.warn('[CDE] Lokale Modell-Ablage fehlgeschlagen:', e?.message ?? e);
+  }
+}
+
+async function _refreshRecentModels() {
+  recentModels.value = (await repo.listBlobs('model:'))
+    .sort((a, b) => (b.meta?.savedAt ?? 0) - (a.meta?.savedAt ?? 0));
+}
+
+async function openRecent(row) {
+  if (loading.value) return;
+  loading.value = true;
+  try {
+    const stored = await repo.getBlob(row.key);
+    if (!stored?.blob) throw new Error('Blob nicht gefunden');
+    await _loadBuffer(await stored.blob.arrayBuffer(), stored.meta?.name ?? 'model', { persist: false });
+    // savedAt auffrischen, damit die Liste nach letzter Nutzung sortiert bleibt
+    repo.setBlob(row.key, stored.blob, { ...stored.meta, savedAt: Date.now() })
+      .then(() => _refreshRecentModels());
+  } catch (err) {
+    console.error('Recent-model load error:', err);
+    alert('Modell konnte nicht aus dem lokalen Speicher geladen werden.');
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function deleteRecent(row) {
+  await repo.deleteBlob(row.key);
+  await _refreshRecentModels();
+}
+
+/** M2: Modell aus dem Dokument-Register öffnen (CdeView ruft per Template-Ref). */
+async function openBySha(sha256) {
+  await openRecent({ key: `model:${sha256}` });
+}
+defineExpose({ openBySha });
+
+function fmtBytes(n) {
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} kB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+function fmtDate(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
 async function removeModel(modelId) {
   await engine.value?.unloadModel(modelId);
+  _modelIdentity.delete(modelId);
   modelList.value = engine.value.getModelList();
   ifc.setModelList(modelList.value);
   categoryList.value = engine.value.getCategoryList();
@@ -574,24 +696,6 @@ async function removeModel(modelId) {
   ifc.setSpatialTree(tree ?? null);
   // Refresh storey list (might be empty if all models with storeys are unloaded)
   storeyList.value = (await engine.value?.getStoreyList()) ?? [];
-}
-
-async function loadExample(name) {
-  if (loading.value) return;
-  dropdownOpen.value = false;
-  loading.value = true;
-  try {
-    const url = name === 'Validated' ? validatedIfcUrl : '';
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Netzwerkfehler');
-    await engine.value.loadIfc(new Uint8Array(await res.arrayBuffer()), 'example');
-    await _onModelLoaded();
-  } catch (err) {
-    console.error('Example load error:', err);
-    alert('Fehler beim Laden des Beispiels.');
-  } finally {
-    loading.value = false;
-  }
 }
 
 /** Called after every successful loadIfc() to refresh UI state. */
@@ -613,10 +717,13 @@ async function _onModelLoaded() {
   // T1.5: Storey list for the quick-nav panel (skipped silently for infra models)
   engine.value.getStoreyList().then(list => { storeyList.value = list; }).catch(() => {});
 
-  // T2.4: Load persisted annotations for this model + redraw any visuals
+  // T2.4: Load persisted annotations for this model + redraw any visuals.
+  // Schlüssel ist die stabile Modell-Identität (IfcProject.GlobalId bzw.
+  // SHA-256) — der Dateiname dient nur noch der Legacy-Übernahme.
   const firstModel = engine.value?.getModelList()?.[0];
   if (firstModel) {
-    ifc.loadAnnotationsForModel(firstModel.name);
+    const identity = _modelIdentity.get(firstModel.modelId);
+    await ifc.loadAnnotationsForModel(identity?.key ?? firstModel.name, firstModel.name);
     // If annotation mode is on, re-create visuals; otherwise pre-fill engine's data only
     engine.value?.setAnnotations(ifc.annotations);
   }
@@ -813,12 +920,19 @@ function toggleAnnotationMode() {
 }
 
 async function _onAnnotationClick(e) {
-  const text = prompt('Notiz hinzufügen:', '');
+  const text = prompt('Issue anlegen — Beschreibung:', '');
   if (text === null) return;
   // Re-use the last annotation's color so users can place a series of same-colored pins
   const lastColor = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
   const ann = await engine.value?.addAnnotation(e.clientX, e.clientY, text, lastColor);
-  if (ann) ifc.pushAnnotation(ann);
+  if (ann) {
+    // Issue-Felder: Viewpoint (Kamera + Sichtbarkeit + Schnitt) für „so sah
+    // ich es"-Wiederherstellung, Autor aus der CDE-Bearbeiter-Identität.
+    ann.viewpoint = engine.value?.captureView() ?? null;
+    ann.author    = cde.bearbeiter || '';
+    ann.createdAt = Date.now();
+    ifc.pushAnnotation(ann);
+  }
 }
 
 function onAnnotationOffsetChanged({ id, offset }) {
@@ -886,11 +1000,6 @@ async function onMouseUp(e) {
   }
 }
 
-function onDocClick(e) {
-  if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
-    dropdownOpen.value = false;
-  }
-}
 </script>
 
 <style scoped>
@@ -901,6 +1010,51 @@ function onDocClick(e) {
   width: 100%;
   height: 100%;
 }
+
+/* Vollbild-Modus (Route /cde) — füllt den Eltern-Container (CdeView-Host) */
+.standalone-shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+.standalone-shell .viewer-header { cursor: default; }
+
+/* B4: Zuletzt geöffnete Modelle */
+.recent-panel {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 320px; max-width: 420px;
+  background: rgba(15, 30, 40, 0.92);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  z-index: 5;
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.recent-title { color: #eceff1; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.2rem; }
+.recent-item { display: flex; align-items: stretch; gap: 0.3rem; }
+.recent-open {
+  flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  color: #cfd8dc;
+  transition: background 0.1s;
+}
+.recent-open:hover { background: rgba(52,152,219,0.25); color: #fff; }
+.recent-name { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-info { font-size: 0.7rem; color: #90a4ae; flex-shrink: 0; }
+.recent-del {
+  background: none; border: none; color: #90a4ae; cursor: pointer;
+  font-size: 0.8rem; padding: 0 0.3rem;
+}
+.recent-del:hover { color: #ff8a65; }
+.recent-hint { font-size: 0.68rem; color: #78909c; font-style: italic; margin-top: 0.2rem; }
 
 /* ── Header ── */
 .viewer-header {
@@ -962,22 +1116,6 @@ function onDocClick(e) {
 .action-btn.primary:hover { background: #2980b9; transform: translateY(-1px); }
 .action-btn.secondary { background: #e2e8f0; color: #2c3e50; }
 .action-btn.secondary:hover { background: #cbd5e1; }
-
-/* Dropdown */
-.dropdown { position: relative; }
-.dropdown-menu {
-  display: none; position: absolute; top: calc(100% + 0.4rem); left: 0;
-  min-width: 180px; background: #fff; border-radius: 6px;
-  box-shadow: 0 8px 16px rgba(0,0,0,0.12); overflow: hidden; z-index: 30;
-  animation: fadeDown 0.15s ease;
-}
-.dropdown-menu.open { display: block; }
-.dropdown-menu button {
-  width: 100%; padding: 0.7rem 1rem; border: none; background: none;
-  text-align: left; font-size: 0.88rem; color: #333; cursor: pointer;
-  transition: background 0.12s;
-}
-.dropdown-menu button:hover { background: #f1f5f9; color: var(--primary, #3498db); }
 
 /* Loading badge */
 .loading-badge {

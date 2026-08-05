@@ -321,9 +321,6 @@
             :open="showStyleEditor"
             :categoryNames="_currentCategoryNames"
             :modelList="ifc.modelList ?? []"
-            :getCategoryGroups="props.getCategoryGroups"
-            :getFragmentsList="props.getFragmentsList"
-            :getFragmentsManager="props.getFragmentsManager"
             @close="showStyleEditor = false"
           />
 
@@ -347,42 +344,13 @@ import { LAYER_STYLES } from '../services/LayerStyleManager.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import IfcVectorStyleEditor from './IfcVectorStyleEditor.vue';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 const ifc = useIfcStore();
 
-const props = defineProps({
-  getSnapshot:           { type: Function, default: null },
-  onViewTop:             { type: Function, default: null },
-  onViewFront:           { type: Function, default: null },
-  onViewSide:            { type: Function, default: null },
-  saveRenderState:       { type: Function, default: null },
-  restoreRenderState:    { type: Function, default: null },
-  applyLayerStyle:       { type: Function, default: null },
-  // Scale-accurate snapshot: renders with a custom ortho camera, bypasses viewport camera
-  getScaleSnapshot:      { type: Function, default: null }, // (scale, dw, dh, viewDir) => dataUrl|null
-  truckCamera:           { type: Function, default: null }, // (dx, dy) => void — pan main camera in Passend mode
-  // Vector export
-  getCamera:             { type: Function, default: null }, // () => THREE.Camera|null  (viewport cam)
-  getScene:              { type: Function, default: null }, // () => THREE.Scene
-  getPlotFrustum:        { type: Function, default: null }, // () => {left,right,top,bottom,position,target,up,viewDir,scaleRatio,drawWidthMm,drawHeightMm}|null
-  getCategoryGroups:     { type: Function, default: null }, // () => raw category groups for mesh→category resolution
-  getFragmentsList:      { type: Function, default: null }, // () => fragments.list Map<modelId, model>
-  getFragmentsManager:   { type: Function, default: null }, // () => FragmentsManager (for rule-based Pset reads)
-  getMeasurements:       { type: Function, default: null }, // () => [{ p1, p2, dist }] from IfcViewer
-  getWebIfcAPI:          { type: Function, default: null }, // () => { webIfc, modelID, model? }|null
-  getSectionCutPlane:    { type: Function, default: null }, // () => THREE.Plane|null
-  // Overview-Mini-Karte
-  getModelBoundsXZ:      { type: Function, default: null }, // () => {minX,maxX,minZ,maxZ,centerX,centerZ,width,depth}|null
-  getOverviewSnapshot:   { type: Function, default: null }, // (w,h,bounds?) => {dataUrl,bounds}|null (legacy/fallback)
-  getMainScene:          { type: Function, default: null }, // () => THREE.Scene — live view for overview
-  getModelCenterY:       { type: Function, default: null }, // () => number — anchor for top-down cam
-  getClippingPlanes:     { type: Function, default: null }, // () => THREE.Plane[] — sync section cut clipping
-  withSectionVisualsHidden: { type: Function, default: null }, // (renderFn) => void — runs fn with gizmo hidden
-  renderToCanvas:        { type: Function, default: null }, // (canvas2d, cam) => bool — main-renderer blit
-  getCameraTarget:       { type: Function, default: null }, // () => {x,y,z} — engine controls.target in world
-  // IFC-Achsenraster
-  getIfcGridAxes:        { type: Function, default: null }, // () => [{name, start:{x,z}, end:{x,z}}]
-});
+// Engine-Accessoren kommen per provide/inject aus IfcViewer.vue (siehe
+// composables/viewerApi.js) — ersetzt die früheren ~27 Funktions-Props.
+const api = useViewerApi();
 const emit = defineEmits(['close']);
 
 const LS_KEY      = 'ifc-pdf-export-form';
@@ -417,7 +385,7 @@ let   _overviewRafId   = null;
 const overviewView = reactive({ centerX: 0, centerZ: 0, halfW: 1, halfH: 1 });
 
 function resetOverviewView() {
-  const b = props.getModelBoundsXZ?.();
+  const b = api.getModelBoundsXZ?.();
   if (!b) return;
   overviewView.centerX = b.centerX;
   overviewView.centerZ = b.centerZ;
@@ -442,8 +410,8 @@ function resetOverviewView() {
 // the overview canvas. Throttled to ~30 fps; pauses when the tab is hidden.
 async function initOverviewViewer() {
   if (_overview3dCam) return;
-  const scene = props.getMainScene?.();
-  if (!scene || !props.renderToCanvas) return;
+  const scene = api.getMainScene?.();
+  if (!scene || !api.renderToCanvas) return;
 
   // Reveal the canvas stack FIRST so refs become real DOM nodes.
   overviewData.value = { bounds: null };
@@ -466,7 +434,7 @@ async function initOverviewViewer() {
     if (ts - last >= TARGET_INTERVAL_MS) {
       last = ts;
       _updateOverviewCam();
-      try { props.renderToCanvas(cv, _overview3dCam); }
+      try { api.renderToCanvas(cv, _overview3dCam); }
       catch (e) { console.warn('[Overview] renderToCanvas failed', e?.message ?? e); }
       redrawOverview(); // 2D marker layer on top
     }
@@ -476,7 +444,7 @@ async function initOverviewViewer() {
 }
 
 function _updateOverviewCam() {
-  const cy = props.getModelCenterY?.() ?? 0;
+  const cy = api.getModelCenterY?.() ?? 0;
   _overview3dCam.left   = -overviewView.halfW;
   _overview3dCam.right  =  overviewView.halfW;
   _overview3dCam.top    =  overviewView.halfH;
@@ -504,7 +472,7 @@ function redrawOverview() {
   ctx.clearRect(0, 0, cv.width, cv.height);
 
   // Zoom indicator (top-right) when the user has zoomed in past fit-all.
-  const bxz = props.getModelBoundsXZ?.();
+  const bxz = api.getModelBoundsXZ?.();
   if (bxz) {
     const fitHalfW = bxz.width * 0.55; // matches the pad=1.10 in resetOverviewView
     const zoomLevel = fitHalfW > 0 ? fitHalfW / overviewView.halfW : 1;
@@ -525,7 +493,7 @@ function redrawOverview() {
   const halfW = (dw / 1000 * activeScale.value) / 2;
   const halfH = (dh / 1000 * activeScale.value) / 2;
   // Match getScaleSnapshot's target = controls.target + panOffset.
-  const ct = props.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
+  const ct = api.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
   const tx = ct.x + panOffset.x;
   const tz = ct.z + panOffset.z;
 
@@ -613,7 +581,7 @@ function onOverviewWheel(e) {
 
   // Smooth multiplicative zoom — deltaY < 0 = scroll up = zoom in.
   const factor = e.deltaY < 0 ? 1 / 1.18 : 1.18;
-  const bxz = props.getModelBoundsXZ?.();
+  const bxz = api.getModelBoundsXZ?.();
   const maxHalfW = bxz ? (bxz.maxX - bxz.minX) / 2 : overviewView.halfW * 16;
   const maxHalfH = bxz ? (bxz.maxZ - bxz.minZ) / 2 : overviewView.halfH * 16;
   const minHalfW = maxHalfW / OVERVIEW_MAX_ZOOM;
@@ -672,7 +640,7 @@ async function _onOverviewUp(e) {
   const dy = Math.abs(drag.currentPx.y - drag.startPx.y);
   const isClick = dx < CLICK_DRAG_PX && dy < CLICK_DRAG_PX;
 
-  const bxz = props.getModelBoundsXZ?.();
+  const bxz = api.getModelBoundsXZ?.();
   if (!bxz) { redrawOverview(); return; }
 
   // Convert click / drag-rect-centre to world coordinates.
@@ -691,7 +659,7 @@ async function _onOverviewUp(e) {
   // getScaleSnapshot renders at `controls.target + panOffset`, so panOffset
   // must be expressed relative to the live controls target — not the model
   // bbox centre (those only match when the user hasn't panned the main view).
-  const ct = props.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
+  const ct = api.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
   panOffset.x = targetX - ct.x;
   panOffset.z = targetZ - ct.z;
 
@@ -701,7 +669,7 @@ async function _onOverviewUp(e) {
   //  - Passend + Click        → default to 1:100 (otherwise the click would do nothing visible).
   if (activeScale.value !== null) {
     const { dw, dh } = drawingDims.value;
-    snapshot.value = props.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
+    snapshot.value = api.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
     return;
   }
 
@@ -780,12 +748,12 @@ async function onPanEnd(e) {
     const { dw, dh } = drawingDims.value;
     panOffset.x -= dx / el.offsetWidth  * ((dw / 1000) * activeScale.value);
     panOffset.z -= dy / el.offsetHeight * ((dh / 1000) * activeScale.value);
-    snapshot.value = props.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
+    snapshot.value = api.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
   } else {
     // ── Passend mode: pan the main viewport camera ──────────────────────
     // truck() interprets dx/dy as pixel deltas (negate so drag-right shows
     // more of what's to the right, matching natural "grab the canvas" UX).
-    props.truckCamera?.(-dx, -dy);
+    api.truckCamera?.(-dx, -dy);
     // Live-refresh timer will pick up the new view on the next tick
   }
 }
@@ -831,7 +799,7 @@ const paperAspect = computed(() => {
 watch(() => [form.format, form.orientation], () => {
   if (activeScale.value !== null) {
     const { dw, dh } = drawingDims.value;
-    snapshot.value = props.getScaleSnapshot?.(
+    snapshot.value = api.getScaleSnapshot?.(
       activeScale.value, dw, dh, _viewDir(), panOffset.x, panOffset.z
     ) ?? null;
   }
@@ -890,7 +858,7 @@ async function selectScale(scale) {
     panOffset.x = 0; panOffset.z = 0;
     if (_savedMassstab !== null) { form.massstab = _savedMassstab; _savedMassstab = null; }
     _preScaleFrustum = null;
-    snapshot.value = props.getSnapshot?.() ?? null;
+    snapshot.value = api.getSnapshot?.() ?? null;
     return;
   }
 
@@ -907,11 +875,11 @@ async function selectScale(scale) {
   // Smart re-center: if the resulting viewport would lie completely outside
   // the model bbox (e.g. switching 1:1000 → 1:50 left us on a blank wall),
   // snap to model centre so the user lands on something recognisable.
-  const bxz = props.getModelBoundsXZ?.();
+  const bxz = api.getModelBoundsXZ?.();
   if (bxz) {
     const halfW = (dw / 1000 * scale) / 2;
     const halfH = (dh / 1000 * scale) / 2;
-    const ct = props.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
+    const ct = api.getCameraTarget?.() ?? { x: bxz.centerX, z: bxz.centerZ };
     const tx = ct.x + panOffset.x;
     const tz = ct.z + panOffset.z;
     const outsideX = (tx + halfW) < bxz.minX || (tx - halfW) > bxz.maxX;
@@ -926,7 +894,7 @@ async function selectScale(scale) {
   activeScale.value = scale;
   form.massstab     = `1:${scale}`;
 
-  snapshot.value = props.getScaleSnapshot?.(scale, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
+  snapshot.value = api.getScaleSnapshot?.(scale, dw, dh, _viewDir(), panOffset.x, panOffset.z) ?? null;
   redrawOverview();
 }
 
@@ -941,20 +909,20 @@ async function selectStyle(styleId) {
 
   // Save original render state once before first style change
   if (!_savedRenderState) {
-    _savedRenderState = props.saveRenderState?.() ?? null;
+    _savedRenderState = api.saveRenderState?.() ?? null;
   }
 
   activeStyleId.value = styleId;
 
   if (styleId === 'realistic' && _savedRenderState) {
-    await props.restoreRenderState?.(_savedRenderState);
+    await api.restoreRenderState?.(_savedRenderState);
   } else {
-    await props.applyLayerStyle?.(style);
+    await api.applyLayerStyle?.(style);
   }
 
   // Double RAF: frame 1 lets Vue/Three.js process state; frame 2 completes the GPU draw
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  snapshot.value = props.getSnapshot?.() ?? null;
+  snapshot.value = api.getSnapshot?.() ?? null;
 }
 
 // ── Live preview: refresh snapshot from main canvas while in "Passend" mode ──
@@ -965,7 +933,7 @@ function startLiveRefresh() {
   _liveTimer = setInterval(() => {
     // Only auto-refresh in Passend mode and not during an active drag
     if (activeScale.value === null && !_isPanning.value) {
-      const snap = props.getSnapshot?.();
+      const snap = api.getSnapshot?.();
       if (snap) snapshot.value = snap;
     }
   }, 150);
@@ -1004,8 +972,8 @@ onUnmounted(async () => {
   document.removeEventListener('keydown', _onDocKeydown);
   // Restore original render state when the modal is closed
   // This also restores the camera frustum if orthoExtent was saved
-  if (_savedRenderState && props.restoreRenderState) {
-    await props.restoreRenderState(_savedRenderState);
+  if (_savedRenderState && api.restoreRenderState) {
+    await api.restoreRenderState(_savedRenderState);
     _savedRenderState = null;
   }
   _preScaleFrustum = null;
@@ -1013,24 +981,24 @@ onUnmounted(async () => {
 });
 
 function refreshSnapshot() {
-  snapshot.value = props.getSnapshot?.() ?? null;
+  snapshot.value = api.getSnapshot?.() ?? null;
   activeView.value = 'current';
 }
 
 async function setView(dir) {
   activeView.value = dir;
-  if (dir === 'top')   await props.onViewTop?.();
-  if (dir === 'front') await props.onViewFront?.();
-  if (dir === 'side')  await props.onViewSide?.();
+  if (dir === 'top')   await api.onViewTop?.();
+  if (dir === 'front') await api.onViewFront?.();
+  if (dir === 'side')  await api.onViewSide?.();
 
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   if (activeScale.value !== null) {
     panOffset.x = 0; panOffset.z = 0; // view change resets pan
     const { dw, dh } = drawingDims.value;
-    snapshot.value = props.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), 0, 0) ?? null;
+    snapshot.value = api.getScaleSnapshot?.(activeScale.value, dw, dh, _viewDir(), 0, 0) ?? null;
   } else {
-    snapshot.value = props.getSnapshot?.() ?? null;
+    snapshot.value = api.getSnapshot?.() ?? null;
   }
 }
 
@@ -1063,7 +1031,7 @@ const vectorIfcGrids      = ref(false);  // include IFC axes overlay in the PDF 
 const showStyleEditor = ref(false);
 // Category names available in the editor — read from getCategoryGroups()
 const _currentCategoryNames = computed(() => {
-  const groups = props.getCategoryGroups?.() ?? [];
+  const groups = api.getCategoryGroups?.() ?? [];
   return groups.map(g => g.name).filter(Boolean);
 });
 
@@ -1131,7 +1099,7 @@ async function doExport() {
   if (vectorMode.value) {
     // Use the frustum captured during the last scale-snapshot — guarantees the
     // vector plot uses the same world→paper transform as the rendered image.
-    const plotFrustum = props.getPlotFrustum?.() ?? null;
+    const plotFrustum = api.getPlotFrustum?.() ?? null;
     if (!plotFrustum) {
       alert('Bitte zuerst einen Maßstab wählen — der Vektor-Plot braucht eine definierte Ortho-Ansicht.');
       return;
@@ -1143,17 +1111,17 @@ async function doExport() {
       titleBlock:     { ...form },
       logo:           logoDataUrl.value,
       plotFrustum,
-      scene:          props.getScene?.()  ?? null,
-      cutPlane:       props.getSectionCutPlane?.() ?? null,
-      ifcData:        props.getWebIfcAPI?.() ?? null,
-      categoryGroups:   props.getCategoryGroups?.() ?? null,
-      fragmentsList:    props.getFragmentsList?.() ?? null,
-      fragmentsManager: props.getFragmentsManager?.() ?? null,
+      scene:          api.getScene?.()  ?? null,
+      cutPlane:       api.getSectionCutPlane?.() ?? null,
+      ifcData:        api.getWebIfcAPI?.() ?? null,
+      categoryGroups:   api.getCategoryGroups?.() ?? null,
+      fragmentsList:    api.getFragmentsList?.() ?? null,
+      fragmentsManager: api.getFragmentsManager?.() ?? null,
       styleMap:         ifc.resolvedVectorStyleMap,
       styleMapPerModel: ifc.resolvedVectorStyleMapByModel,
       rules:            ifc.vectorRules ?? [],
       annotations:      vectorAnnotations.value  ? (ifc.annotations ?? []) : [],
-      measurements:     vectorMeasurements.value ? (props.getMeasurements?.() ?? []) : [],
+      measurements:     vectorMeasurements.value ? (api.getMeasurements?.() ?? []) : [],
       showLabels:       vectorLabels.value,
       labelTemplateFor: (cat, modelId) => {
         // Per-model override wins over global. Both fall back to '' (off) when
@@ -1168,7 +1136,7 @@ async function doExport() {
       scaleRatio:     activeScale.value ?? null,
       hatch:          vectorHatch.value,
       scaleBar:       vectorScaleBar.value,
-      ifcGridAxes:    vectorIfcGrids.value ? (props.getIfcGridAxes?.() ?? null) : null,
+      ifcGridAxes:    vectorIfcGrids.value ? (api.getIfcGridAxes?.() ?? null) : null,
     });
   } else {
     exportPlanPDF({

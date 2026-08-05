@@ -50,9 +50,12 @@
           :result="kgResult"
           :loading="kgLoading"
           :kgColorMode="kgColorMode"
+          :overrides="kgOverrides"
           @refresh="recomputeKg"
           @toggle-color-mode="onToggleKgColorMode"
           @select-kg="onSelectKg"
+          @select-element="onSelectKgElement"
+          @override-kg="onOverrideKg"
         />
         <IfcVolumeTab
           v-else-if="activeTab === 'volume'"
@@ -68,13 +71,25 @@
           @refresh="recomputeQuantities"
           @select-category="onSelectCategory"
         />
+        <IfcKostenTab
+          v-else-if="activeTab === 'kosten'"
+          :kgResult="kgResult"
+          :kennwerte="kennwerte"
+          :pauschalSumme="pauschalSumme"
+          :loading="kgLoading"
+          @refresh="recomputeKg"
+          @update-kennwert="onUpdateKennwert"
+        />
         <IfcPauschalTab
           v-else-if="activeTab === 'pauschal'"
         />
-        <div v-else-if="activeTab === 'quality'" class="placeholder">
-          <p>✅ Karte 3 — BIM-Qualität via IDS</p>
-          <p class="hint">Kommt im Sprint danach (1.3).</p>
-        </div>
+        <IfcQualityTab
+          v-else-if="activeTab === 'quality'"
+          :result="idsResult"
+          :loading="idsLoading"
+          @refresh="recomputeIds"
+          @select-element="onSelectKgElement"
+        />
       </div>
     </div>
   </DraggableModal>
@@ -88,24 +103,20 @@ import IfcKgEditor     from './IfcKgEditor.vue';
 import IfcVolumeTab    from './IfcVolumeTab.vue';
 import IfcCountTab     from './IfcCountTab.vue';
 import IfcPauschalTab  from './IfcPauschalTab.vue';
+import IfcKostenTab    from './IfcKostenTab.vue';
+import IfcQualityTab   from './IfcQualityTab.vue';
 import { classifyDin277 } from '../services/Din277Classifier.js';
 import { classifyKg }     from '../services/KgClassifier.js';
 import { summarizeQuantities } from '../services/QuantitySummary.js';
 import { KG_DEFAULT_RULES, kgColor } from '../services/Din276Defaults.js';
+import { validateIds } from '../services/IdsValidator.js';
+import { IDS_DEFAULT_SPECS } from '../services/IdsDefaults.js';
+import { mergeKennwerte } from '../services/KgKennwerte.js';
 import { repo } from '../services/RepoFacade.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
-const props = defineProps({
-  // Engine accessors — like the PDF modal pattern, props in instead of singletons.
-  getCategoryGroups:   { type: Function, default: null },
-  getFragmentsList:    { type: Function, default: null },
-  getFragmentsManager: { type: Function, default: null },
-  getSpatialTree:      { type: Function, default: null }, // () => OBC Tree node
-  getStoreyList:       { type: Function, default: null }, // () => [{localId, name, elevation}]
-  zoomToElement:       { type: Function, default: null }, // (modelId, localId) => void
-  // Card 2: KG color mode → recolours the live 3D view by KG code.
-  setElementColors:    { type: Function, default: null }, // (Map<`${modelId}|${localId}`, color>) => void
-  resetElementColors:  { type: Function, default: null }, // () => void
-});
+// Engine-Accessoren per provide/inject aus IfcViewer.vue statt Funktions-Props.
+const api = useViewerApi();
 const emit = defineEmits(['close']);
 
 const tabs = [
@@ -113,8 +124,9 @@ const tabs = [
   { id: 'kg',       icon: '🏷️', label: 'Kostengruppen', disabled: false },
   { id: 'volume',   icon: '📦', label: 'Volumen',       disabled: false },
   { id: 'count',    icon: '🔢', label: 'Stück',         disabled: false },
+  { id: 'kosten',   icon: '💶', label: 'Kosten',        disabled: false },
   { id: 'pauschal', icon: '💰', label: 'Pauschal',      disabled: false },
-  { id: 'quality',  icon: '✅', label: 'BIM-Qualität',  disabled: true },
+  { id: 'quality',  icon: '✅', label: 'BIM-Qualität',  disabled: false },
 ];
 const activeTab = ref('areas');
 
@@ -159,13 +171,13 @@ async function saveKgOverrides() {
 }
 
 async function recomputeKg() {
-  if (!props.getCategoryGroups || !props.getFragmentsList || !props.getFragmentsManager) return;
+  if (!api.getCategoryGroups || !api.getFragmentsList || !api.getFragmentsManager) return;
   kgLoading.value = true;
   try {
     kgResult.value = await classifyKg({
-      categoryGroups:   props.getCategoryGroups(),
-      fragmentsList:    props.getFragmentsList(),
-      fragmentsManager: props.getFragmentsManager(),
+      categoryGroups:   api.getCategoryGroups(),
+      fragmentsList:    api.getFragmentsList(),
+      fragmentsManager: api.getFragmentsManager(),
       rules:            kgRules.value,
       overrides:        kgOverrides.value,
     });
@@ -179,7 +191,7 @@ async function recomputeKg() {
 }
 
 function applyKgColors() {
-  if (!props.setElementColors || !kgResult.value) return;
+  if (!api.setElementColors || !kgResult.value) return;
   const colorMap = new Map();
   for (const [kgCode, bucket] of kgResult.value.byKg.entries()) {
     const hex = kgColor(kgCode);
@@ -187,20 +199,84 @@ function applyKgColors() {
       colorMap.set(`${el.modelId}|${el.localId}`, hex);
     }
   }
-  props.setElementColors(colorMap);
+  api.setElementColors(colorMap);
 }
 
 function onToggleKgColorMode() {
   kgColorMode.value = !kgColorMode.value;
   if (kgColorMode.value) applyKgColors();
-  else props.resetElementColors?.();
+  else api.resetElementColors?.();
 }
 
 function onSelectKg(kgCode) {
   // Zoom to first element of the selected KG bucket — quick navigation.
   const bucket = kgResult.value?.byKg.get(kgCode);
   const first  = bucket?.elements?.[0];
-  if (first) props.zoomToElement?.(first.modelId, first.localId);
+  if (first) api.zoomToElement?.(first.modelId, first.localId);
+}
+
+function onSelectKgElement(el) {
+  api.zoomToElement?.(el.modelId, el.localId);
+}
+
+/**
+ * B5: Manuelle KG-Zuweisung aus dem Editor. kgCode=null entfernt den
+ * Override (zurück zur Regel-Klassifikation). Persistiert via RepoFacade
+ * und rechnet sofort neu, damit Tabelle + Farbmodus den Stand zeigen.
+ */
+async function onOverrideKg({ globalId, kgCode }) {
+  if (!globalId) return;
+  const next = new Map(kgOverrides.value);
+  if (kgCode) next.set(globalId, kgCode);
+  else        next.delete(globalId);
+  kgOverrides.value = next;
+  await saveKgOverrides();
+  await recomputeKg();
+}
+
+// ── Kosten (Kennwerte × KG-Mengen) ──────────────────────────────────────
+const REPO_KEY_KENNWERTE = 'kg-kennwerte';
+const kennwerte      = ref(mergeKennwerte(null));
+const pauschalSumme  = ref(0);
+
+async function loadKennwerte() {
+  kennwerte.value = mergeKennwerte(await repo.get(REPO_KEY_KENNWERTE));
+  // Pauschal-Summe für die Gesamtzeile im Kosten-Tab mitlesen
+  const pauschal = await repo.get('pauschal-items');
+  pauschalSumme.value = Array.isArray(pauschal)
+    ? pauschal.reduce((s, p) => s + (Number(p?.amount_eur) || 0), 0)
+    : 0;
+}
+async function onUpdateKennwert({ kgCode, patch }) {
+  kennwerte.value = { ...kennwerte.value, [kgCode]: { ...kennwerte.value[kgCode], ...patch } };
+  await repo.set(REPO_KEY_KENNWERTE, kennwerte.value);
+}
+
+// ── BIM-Qualität (IDS-Prüfung) ──────────────────────────────────────────
+const idsResult  = ref(null);
+const idsLoading = ref(false);
+
+async function recomputeIds() {
+  if (!api.getCategoryGroups || !api.getFragmentsList || !api.getFragmentsManager) return;
+  idsLoading.value = true;
+  try {
+    idsResult.value = await validateIds({
+      specs:            IDS_DEFAULT_SPECS,
+      categoryGroups:   api.getCategoryGroups(),
+      fragmentsList:    api.getFragmentsList(),
+      fragmentsManager: api.getFragmentsManager(),
+    });
+    // Prüf-Zusammenfassung persistieren — Grundlage für spätere Prüfberichte
+    repo.set('ids-last-summary', {
+      at: Date.now(),
+      ...idsResult.value.summary,
+    });
+  } catch (e) {
+    console.error('[Cockpit] IDS validation failed', e);
+    idsResult.value = null;
+  } finally {
+    idsLoading.value = false;
+  }
 }
 
 // ── Volumen + Stück (shared QuantitySummary) ────────────────────────────
@@ -208,13 +284,14 @@ const quantityResult  = ref(null);
 const quantityLoading = ref(false);
 
 async function recomputeQuantities() {
-  if (!props.getCategoryGroups || !props.getFragmentsList) return;
+  if (!api.getCategoryGroups || !api.getFragmentsList) return;
   quantityLoading.value = true;
   try {
     quantityResult.value = await summarizeQuantities({
-      categoryGroups: props.getCategoryGroups(),
-      fragmentsList:  props.getFragmentsList(),
-      perElementKg:   kgResult.value?.perElement ?? null,
+      categoryGroups:   api.getCategoryGroups(),
+      fragmentsList:    api.getFragmentsList(),
+      fragmentsManager: api.getFragmentsManager?.() ?? null,
+      perElementKg:     kgResult.value?.perElement ?? null,
     });
   } catch (e) {
     console.error('[Cockpit] quantity summary failed', e);
@@ -226,7 +303,7 @@ async function recomputeQuantities() {
 
 function onSelectCategory(category) {
   // Zoom to first element of the selected category — same pattern as KG selection.
-  const groups = props.getCategoryGroups?.() ?? [];
+  const groups = api.getCategoryGroups?.() ?? [];
   const group  = groups.find(g => g.name === category);
   if (!group) return;
   group.groupData.get().then(map => {
@@ -234,7 +311,7 @@ function onSelectCategory(category) {
     for (const [modelId, rawIds] of entries) {
       const localIds = Array.isArray(rawIds) ? rawIds : (rawIds instanceof Set ? [...rawIds] : null);
       if (localIds?.length) {
-        props.zoomToElement?.(modelId, localIds[0]);
+        api.zoomToElement?.(modelId, localIds[0]);
         return;
       }
     }
@@ -243,15 +320,15 @@ function onSelectCategory(category) {
 
 // ── Card 1: DIN 277 areas ────────────────────────────────────────────────
 async function recomputeAreas() {
-  if (!props.getCategoryGroups || !props.getFragmentsList || !props.getFragmentsManager) return;
+  if (!api.getCategoryGroups || !api.getFragmentsList || !api.getFragmentsManager) return;
   areaLoading.value = true;
   try {
-    const categoryGroups   = props.getCategoryGroups();
-    const fragmentsList    = props.getFragmentsList();
-    const fragmentsManager = props.getFragmentsManager();
-    const spatialTree      = props.getSpatialTree ? await props.getSpatialTree() : null;
-    if (props.getStoreyList) {
-      try { storeys.value = await props.getStoreyList(); }
+    const categoryGroups   = api.getCategoryGroups();
+    const fragmentsList    = api.getFragmentsList();
+    const fragmentsManager = api.getFragmentsManager();
+    const spatialTree      = api.getSpatialTree ? await api.getSpatialTree() : null;
+    if (api.getStoreyList) {
+      try { storeys.value = await api.getStoreyList(); }
       catch { storeys.value = []; }
     }
     areaResult.value = await classifyDin277({
@@ -268,7 +345,7 @@ async function recomputeAreas() {
 
 function onSelectSpace(space) {
   if (!space?.modelId || space?.localId == null) return;
-  props.zoomToElement?.(space.modelId, space.localId);
+  api.zoomToElement?.(space.modelId, space.localId);
 }
 
 async function onOverrideClass({ globalId, classCode }) {
@@ -279,7 +356,7 @@ async function onOverrideClass({ globalId, classCode }) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadOverrides(), loadKgPersisted()]);
+  await Promise.all([loadOverrides(), loadKgPersisted(), loadKennwerte()]);
   recomputeAreas();
   // KG zuerst — perElement-Map wird vom Volumen/Stück-Service als Filter genutzt
   await recomputeKg();
@@ -293,6 +370,10 @@ watch(activeTab, (t) => {
   if ((t === 'volume' || t === 'count') && !quantityResult.value && !quantityLoading.value) {
     recomputeQuantities();
   }
+  // Kosten-Tab: Pauschal-Summe auffrischen (kann sich im Pauschal-Tab geändert haben)
+  if (t === 'kosten') loadKennwerte();
+  // BIM-Qualität: beim ersten Öffnen automatisch prüfen
+  if (t === 'quality' && !idsResult.value && !idsLoading.value) recomputeIds();
 });
 </script>
 

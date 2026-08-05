@@ -9,9 +9,6 @@
               title="Randbedingung auf die Fläche legen, an der ihr Bauwerk endet · Rohrachse bis dorthin führen · Verfeinerungsquader ins Gebiet beschneiden"
               @click="anschluss">⚯ Anschlüsse herstellen</button>
     </header>
-    <p v-if="meldungen.length" class="f3d-muted f3d-small f3d-anschluss">
-      {{ meldungen.join(' · ') }}
-    </p>
     <div v-for="(f, i) in store.validation" :key="i"
          class="f3d-finding" :class="`sev-${f.severity}`">
       <button class="f3d-finding-body" @click="jump(f)">
@@ -32,19 +29,17 @@
 <script setup>
 // Validierungspanel (Spez. Kap. 6.1): Meldungen nach Schweregrad, jede mit
 // Sprung zum betroffenen Objekt.
-import { ref } from 'vue'
 import { usePreStore, KIND_PATHS } from '../../stores/usePreStore'
 
 const store = usePreStore()
-const meldungen = ref([])
 
 // Nach Drehung oder Zuschnitt zeigt die Randbedingung auf die falsche
 // Gebietsfläche und die Rohrachse endet im Nirgendwo — beides folgt
 // zwingend aus der Geometrie und wird hier in einem Zug gerichtet.
 async function anschluss() {
   const m = await store.anschlussHerstellen()
-  meldungen.value = m.length ? m : ['Anschlüsse waren bereits stimmig']
-  setTimeout(() => { meldungen.value = [] }, 15000)
+  store.melden(m.length ? m.join(' · ') : 'Anschlüsse waren bereits stimmig',
+    m.length ? 'hinweis' : 'erfolg')
 }
 
 // Die Kur zu einem einzelnen Befund. Was sie geändert hat, steht danach im
@@ -52,10 +47,7 @@ async function anschluss() {
 // keine Hilfe, sondern eine Blackbox.
 async function kur(fix) {
   const text = await store.kurAnwenden(fix)
-  if (text) {
-    meldungen.value = [text]
-    setTimeout(() => { meldungen.value = [] }, 15000)
-  }
+  if (text) store.melden(text, 'hinweis')
 }
 
 const icon = (s) => ({ fehler: '✗', warnung: '⚠', hinweis: 'ℹ' }[s] ?? '·')
@@ -73,12 +65,6 @@ function jump(finding) {
 
 <style scoped>
 .f3d-validation { display: flex; flex-direction: column; gap: 6px; }
-.f3d-anschluss {
-  margin: 0;
-  border-left: 3px solid var(--f3d-accent);
-  padding: 4px 8px;
-  line-height: 1.35;
-}
 .f3d-finding {
   display: flex;
   flex-direction: column;
@@ -101,12 +87,12 @@ function jump(finding) {
 }
 .f3d-kur { align-self: flex-start; }
 .f3d-finding.sev-fehler { border-left-color: var(--f3d-bad); }
-.f3d-finding.sev-warnung { border-left-color: #c98500; }
+.f3d-finding.sev-warnung { border-left-color: var(--f3d-warn); }
 .f3d-finding.sev-hinweis { border-left-color: var(--f3d-accent); }
 .f3d-finding-head { display: flex; gap: 6px; align-items: center; }
 .f3d-finding-icon { font-size: 0.75rem; }
 .sev-fehler .f3d-finding-icon { color: var(--f3d-bad); }
-.sev-warnung .f3d-finding-icon { color: #c98500; }
+.sev-warnung .f3d-finding-icon { color: var(--f3d-warn); }
 .sev-hinweis .f3d-finding-icon { color: var(--f3d-accent); }
 .f3d-finding-obj { color: var(--f3d-text); font-size: 0.76rem; font-weight: 600; }
 .f3d-finding-msg { color: var(--f3d-text-2); font-size: 0.74rem; }
