@@ -27,19 +27,18 @@
       <p v-if="neuHilfe" class="f3d-muted f3d-small">{{ neuHilfe }}</p>
     </div>
 
-    <!-- Schicht (a): aus Grundlagen abgeleitet. Gesplittet in das, was
-         IN DER ZEICHNUNG steht (roh), und das, was die Zuordnung daraus
-         gemacht hat (Operationen, Bauteile aus Kanten). -->
+    <!-- Wurzel 1 · ZEICHNUNG (CAD): die Quelle. Nur Kandidaten mit ihrer
+         Zuordnung; was daraus wurde, steht als Sprung-Verweis — die Objekte
+         selbst leben GENAU EINMAL in Geometrie bzw. Wirkung. Nach getaner
+         Zuordnung zugeklappt: eine Zeile statt vierzehn. -->
     <section v-if="grundlagen.length" class="f3d-abschnitt">
-      <h4 class="f3d-abschnitt-kopf">Grundlagen (Import)</h4>
-      <div v-for="g in grundlagen" :key="g.import_id" class="f3d-objgroup">
-        <div class="f3d-objgroup-head">
+      <h4 class="f3d-abschnitt-kopf">Zeichnung (CAD)</h4>
+      <details v-for="g in grundlagen" :key="g.import_id"
+               class="f3d-objgroup f3d-zeichnung">
+        <summary class="f3d-objgroup-head">
           <span>🔒 {{ g.filename ?? g.import_id }}</span>
           <span class="f3d-muted f3d-small">{{ g.kandidaten.length }} CAD-Objekte</span>
-        </div>
-
-        <!-- Die PIPELINE, lesbar von oben nach unten: CAD-Objekt →
-             Zuordnung (änderbar) → was daraus im Modell wurde. -->
+        </summary>
         <div v-for="k in g.kandidaten" :key="k.id" class="f3d-kandidat">
           <div class="f3d-objrow">
             <span class="f3d-objitem f3d-kandidat-kopf">
@@ -59,51 +58,54 @@
               </optgroup>
             </select>
           </div>
-          <div v-for="item in k.objekte" :key="item.kind + item.id"
-               class="f3d-objrow f3d-gruppenteil">
-            <button class="f3d-objitem"
-                    :class="{ selected: store.selection?.kind === item.kind
-                      && store.selection?.id === item.id }"
-                    @click="store.select(item.kind, item.id)">
-              <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
-              <span class="f3d-objname">{{ item.id }}</span>
-              <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
-            </button>
-            <button v-if="item.kind !== 'terrain'" class="f3d-objloesch"
-                    title="löschen" @click="loeschen(item)">✕</button>
-          </div>
-        </div>
-
-        <div v-if="g.abgeleitet.length" class="f3d-objgroup-head f3d-unterkopf">
-          <span>daraus abgeleitet (Verknüpfung)</span>
-        </div>
-        <div v-for="item in g.abgeleitet" :key="item.kind + item.id"
-             class="f3d-objrow">
-          <button class="f3d-objitem"
-                  :class="{ selected: store.selection?.kind === item.kind
-                    && store.selection?.id === item.id }"
+          <button v-for="item in k.objekte" :key="item.kind + item.id"
+                  class="f3d-verweis f3d-gruppenteil"
+                  title="zum Objekt springen"
                   @click="store.select(item.kind, item.id)">
-            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
-            <span class="f3d-objname">{{ item.id }}</span>
-            <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+            → {{ item.id }}
           </button>
-          <button class="f3d-objloesch" title="löschen"
-                  @click="loeschen(item)">✕</button>
         </div>
-
         <button v-if="g.wiederholbar" class="f3d-btn f3d-btn-s f3d-verknuepfen"
                 :disabled="store.loading" @click="neuAbleiten(g.import_id)"
-                title="Import mit den gespeicherten Einstellungen erneut ableiten — ersetzt die Objekte oben, Handarbeit bleibt unberührt.">
+                title="Import mit den gespeicherten Einstellungen erneut ableiten — ersetzt die zugeordneten Objekte, Handarbeit bleibt unberührt.">
           ↻ Neu ableiten
         </button>
-      </div>
+      </details>
     </section>
 
-    <!-- Eingesetzte Rezepte: EIN Bauwerk je Einsetzung, über alle
-         Objektarten hinweg (Aushub, Bauteile, Verfeinerung, Pegel,
-         Kriterium) — zusammenklappbar, als Ganzes löschbar. -->
-    <section v-if="rezeptGruppen.length" class="f3d-abschnitt">
-      <h4 class="f3d-abschnitt-kopf">Bauwerke (eingesetzt)</h4>
+    <section v-for="a in abschnitte" :key="a.id" class="f3d-abschnitt">
+      <h4 class="f3d-abschnitt-kopf">{{ a.label }}</h4>
+      <div v-for="group in a.gruppen" :key="group.kind"
+           class="f3d-objgroup" :class="{ tief: group.eingerueckt }">
+        <div class="f3d-objgroup-head">
+          <span>{{ group.label }}</span>
+          <span class="f3d-muted f3d-small">{{ group.items.length }}</span>
+        </div>
+        <div v-for="item in group.items" :key="item.id" class="f3d-objrow">
+          <button class="f3d-objitem"
+                  :class="{ selected: store.selection?.kind === group.kind
+                    && store.selection?.id === item.id }"
+                  @click="store.select(group.kind, item.id)">
+            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+            <!-- Wirkung spricht Wirkungssprache: WAS die Operation tut,
+                 die Kennung darunter klein -->
+            <span v-if="group.wirkung" class="f3d-objname">
+              {{ typeLabel(item) }}
+              <span class="f3d-muted f3d-small">{{ item.id }}{{
+                item.aus_kanten?.length ? ' · aus ' + item.aus_kanten[0] : '' }}</span>
+            </span>
+            <span v-else class="f3d-objname">{{ item.id }}</span>
+            <span v-if="herkunftBadge(item)" class="f3d-muted f3d-small"
+                  :title="herkunftBadge(item).titel">{{ herkunftBadge(item).zeichen }}</span>
+            <span v-if="group.kind === 'terrain' && store.terrainSolid"
+                  class="f3d-muted f3d-small" :title="erdkoerperWarum">⬢ Erdkörper</span>
+            <span v-if="!group.wirkung" class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+          </button>
+          <button v-if="!['domain', 'terrain'].includes(group.kind)"
+                  class="f3d-objloesch" title="löschen"
+                  @click="loeschen({ kind: group.kind, id: item.id })">✕</button>
+        </div>
+        <template v-if="group.kind === 'structure'">
       <div v-for="g in rezeptGruppen" :key="g.gruppe" class="f3d-objgroup">
         <div class="f3d-objrow">
           <button class="f3d-objitem" @click="klappen(g.gruppe)">
@@ -131,31 +133,7 @@
           </div>
         </template>
       </div>
-    </section>
-
-    <section v-for="a in abschnitte" :key="a.id" class="f3d-abschnitt">
-      <h4 class="f3d-abschnitt-kopf">{{ a.label }}</h4>
-      <div v-for="group in a.gruppen" :key="group.kind"
-           class="f3d-objgroup" :class="{ tief: group.eingerueckt }">
-        <div class="f3d-objgroup-head">
-          <span>{{ group.label }}</span>
-          <span class="f3d-muted f3d-small">{{ group.items.length }}</span>
-        </div>
-        <div v-for="item in group.items" :key="item.id" class="f3d-objrow">
-          <button class="f3d-objitem"
-                  :class="{ selected: store.selection?.kind === group.kind
-                    && store.selection?.id === item.id }"
-                  @click="store.select(group.kind, item.id)">
-            <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
-            <span class="f3d-objname">{{ item.id }}</span>
-            <span v-if="herkunftBadge(item)" class="f3d-muted f3d-small"
-                  :title="herkunftBadge(item).titel">{{ herkunftBadge(item).zeichen }}</span>
-            <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
-          </button>
-          <button v-if="!['domain', 'terrain'].includes(group.kind)"
-                  class="f3d-objloesch" title="löschen"
-                  @click="loeschen({ kind: group.kind, id: item.id })">✕</button>
-        </div>
+        </template>
         <button v-if="group.verknuepfen && group.items.length"
                 class="f3d-btn f3d-btn-s f3d-verknuepfen"
                 :disabled="store.loading" @click="kantenVerknuepfen"
@@ -228,19 +206,18 @@ const CAD_ART = { mesh: 'Netz / TIN', polyline: 'Polylinie', kreis: 'Kreis',
 const grundlagen = computed(() => {
   const s = store.spec
   if (!s) return []
-  // Objekte je (import_id, kandidat) einsammeln
+  // Objekte je (import_id, kandidat) einsammeln — als SPRUNG-Verweise;
+  // die Objekte selbst stehen in Geometrie bzw. Wirkung
   const objekte = {}
-  const abgeleitet = {}
   for (const [kind, pfad] of Object.entries(KIND_PATHS)) {
     for (const o of pfad(s) ?? []) {
       if (o.herkunft !== 'import' || !o.import_ref) continue
       const iid = o.import_ref.import_id
       const item = { kind, id: o.id, type: o.type ?? o.kind }
-      if (o.aus_kanten?.length) (abgeleitet[iid] ??= []).push(item)
-      else ((objekte[iid] ??= {})[o.import_ref.kandidat] ??= []).push(item)
+      ;((objekte[iid] ??= {})[o.import_ref.kandidat] ??= []).push(item)
     }
   }
-  const ids = new Set([...Object.keys(objekte), ...Object.keys(abgeleitet),
+  const ids = new Set([...Object.keys(objekte),
     ...Object.keys(store.importe)])
   const aus = []
   for (const iid of ids) {
@@ -280,10 +257,9 @@ const grundlagen = computed(() => {
       filename: imp?.filename,
       wiederholbar: imp?.wiederholbar ?? false,
       kandidaten,
-      abgeleitet: abgeleitet[iid] ?? [],
     })
   }
-  return aus.filter((g) => g.kandidaten.length || g.abgeleitet.length)
+  return aus.filter((g) => g.kandidaten.length)
 })
 
 // Zuordnung ändern = Import mit geänderter Rolle neu ableiten
@@ -339,10 +315,24 @@ async function neuAbleiten(importId) {
 
 // Kur- und Rezept-Objekte tragen ihre Herkunft als kleines Zeichen
 function herkunftBadge(item) {
+  if (item.herkunft === 'import') {
+    return { zeichen: '🔒',
+      titel: 'aus dem Import — beim Neu-Ableiten ersetzt; Zuordnung in der Zeichnung ändern' }
+  }
   if (item.herkunft === 'kur') return { zeichen: '⚕', titel: 'durch eine Kur angelegt' }
   if (item.herkunft === 'rezept') return { zeichen: '⚒', titel: 'Teil eines Bauwerksrezepts' }
   return null
 }
+
+// Warum das Gelände als Erdkörper gebaut wird (Badge-Tooltip)
+const erdkoerperWarum = computed(() => {
+  const grund = []
+  if (store.spec?.terrain?.erdkoerper === 'an') grund.push('erzwungen (Schalter)')
+  const bohr = store.terrainSolid?.bohrungen ?? []
+  if (bohr.length) grund.push(`durchstoßen von ${bohr.join(', ')}`)
+  return 'Das Gelände geht als geschlossener Erdkörper an den Vernetzer'
+    + (grund.length ? ` — ${grund.join(' · ')}` : ' (automatisch)')
+})
 
 onMounted(() => { store.ladeRezepte(); store.ladeImporte() })
 
@@ -367,55 +357,53 @@ const showImport = ref(false)
 //
 // Jetzt zwei Ebenen: Abschnitte nach der Rolle im Modell, und das Gelände
 // ist ein eigenes Objekt mit seinen Operationen darunter.
+// Wurzel 2 GEOMETRIE = was im Modell liegt; Wurzel 3 WIRKUNG = was das
+// Modell damit tut. Herkunft ist ein BADGE am Objekt, keine eigene Liste
+// mehr — jedes Objekt steht genau einmal im Baum.
 const ABSCHNITTE = [
-  { id: 'modell', label: 'Modell',
-    gruppen: ['domain', 'terrain', 'kante', 'terrain_op'] },
-  { id: 'bauwerke', label: 'Bauwerke', gruppen: ['structure'] },
-  { id: 'netz', label: 'Netz', gruppen: ['refinement'] },
-  { id: 'hydraulik', label: 'Hydraulik', gruppen: ['boundary'] },
-  { id: 'auswertung', label: 'Auswertung',
-    gruppen: ['section', 'gauge', 'target'] },
+  { id: 'geometrie', label: 'Geometrie',
+    gruppen: ['domain', 'terrain', 'kante', 'structure',
+      'section', 'gauge'] },
+  { id: 'wirkung', label: 'Wirkung',
+    gruppen: ['terrain_op', 'boundary', 'refinement', 'target'] },
 ]
 
 const gruppenNachKind = computed(() => {
   const s = store.spec
   if (!s) return {}
-  // Import-Objekte stehen im Abschnitt „Grundlagen" — hier nur Handarbeit,
-  // Kuren und Rezepte
-  const ohneImport = (liste) => (liste ?? []).filter(
-    (o) => o.herkunft !== 'import' && !o.gruppe)
+  // Rezeptteile stehen als Bauwerks-Box in der structure-Gruppe
+  const ohneGruppe = (liste) => (liste ?? []).filter((o) => !o.gruppe)
   return {
     domain: { kind: 'domain', label: 'Modellgebiet',
       items: s.domain ? [{ id: 'domain', type: 'domain' }] : [] },
-    // Das fehlende Elternobjekt: Quellraster, Auflösung, Volumenkörper
     terrain: { kind: 'terrain', label: 'Gelände',
       items: s.terrain ? [{ id: 'gelaende', type: 'terrain' }] : [] },
-    // Was in der ZEICHNUNG steht, mit seiner Rolle — getrennt von dem,
-    // was daraus für das Gelände folgt
-    kante: { kind: 'kante', label: 'Vermessungskanten', eingerueckt: true,
-      verknuepfen: true, items: ohneImport(s.terrain?.kanten) },
-    terrain_op: { kind: 'terrain_op', label: 'Geländeoperationen',
-      eingerueckt: true,
-      items: ohneImport(s.terrain?.operations), templates: TEMPLATES.terrain_op },
+    kante: { kind: 'kante', label: 'Vermessungskanten',
+      verknuepfen: true, items: s.terrain?.kanten ?? [] },
     structure: { kind: 'structure', label: 'Bauwerke',
-      items: ohneImport(s.structures), templates: TEMPLATES.structure },
-    refinement: { kind: 'refinement', label: 'Verfeinerungen',
-      items: ohneImport(s.mesh?.refinements), templates: TEMPLATES.refinement },
-    boundary: { kind: 'boundary', label: 'Randbedingungen',
-      items: ohneImport(s.boundaries), templates: TEMPLATES.boundary },
+      items: ohneGruppe(s.structures) },
     section: { kind: 'section', label: 'Querschnitte',
-      items: ohneImport(s.evaluation?.sections), templates: TEMPLATES.section },
+      items: ohneGruppe(s.evaluation?.sections) },
     gauge: { kind: 'gauge', label: 'Pegelpunkte',
-      items: ohneImport(s.evaluation?.gauges), templates: TEMPLATES.gauge },
+      items: ohneGruppe(s.evaluation?.gauges) },
+    terrain_op: { kind: 'terrain_op', label: 'Geländeoperationen',
+      wirkung: true, items: s.terrain?.operations ?? [] },
+    boundary: { kind: 'boundary', label: 'Randbedingungen',
+      wirkung: true, items: ohneGruppe(s.boundaries) },
+    refinement: { kind: 'refinement', label: 'Netzverfeinerungen',
+      wirkung: true, items: ohneGruppe(s.mesh?.refinements) },
     target: { kind: 'target', label: 'Nachweiskriterien',
-      items: ohneImport(s.evaluation?.targets), templates: TEMPLATES.target },
+      wirkung: true, items: ohneGruppe(s.evaluation?.targets) },
   }
 })
 
 const abschnitte = computed(() => {
   const g = gruppenNachKind.value
+  // Leere Gruppen existieren nicht — Anlegen läuft über den Katalog oben
+  const sichtbar = (gr) => gr && (gr.items.length
+    || (gr.kind === 'structure' && rezeptGruppen.value.length))
   return ABSCHNITTE
-    .map((a) => ({ ...a, gruppen: a.gruppen.map((k) => g[k]).filter(Boolean) }))
+    .map((a) => ({ ...a, gruppen: a.gruppen.map((k) => g[k]).filter(sichtbar) }))
     .filter((a) => a.gruppen.length)
 })
 
@@ -579,5 +567,18 @@ function add(kind, name) {
 .f3d-kandidat { border-top: 1px dashed var(--f3d-border); padding-top: 4px; margin-top: 4px; }
 .f3d-kandidat-kopf { cursor: default; }
 .f3d-kandidat-kopf .f3d-objname { font-weight: 600; }
+.f3d-verweis {
+  display: block;
+  background: none;
+  border: none;
+  color: var(--f3d-text-2);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 1px 6px;
+  text-align: left;
+}
+.f3d-verweis:hover { color: var(--f3d-accent); }
+.f3d-zeichnung > summary { cursor: pointer; list-style: none; }
+.f3d-zeichnung > summary::-webkit-details-marker { display: none; }
 .f3d-objimport { width: 100%; margin-bottom: 4px; }
 </style>

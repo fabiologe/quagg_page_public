@@ -200,11 +200,11 @@ def test_maulprofil_wird_gebaut():
     assert bohrkoerper(cv, ueberstand=0.5) is not None
 
 
-def test_berechnungskoerper_schaltet_den_volumenkoerper_ein():
+def test_erdkoerper_schalter_traegt_sohle_und_ueberstand():
     """
-    Der Erdkörper soll ein sichtbares Objekt sein und keine Nebenwirkung
-    des Schalters am Rohr: die Geländeoperation schaltet ihn ein und trägt
-    Sohle und Überstand.
+    Der Erdkörper ist eine EIGENSCHAFT des Geländes (kein Stapeleintrag):
+    der Schalter macht ihn an, Sohle und Überstand stehen daneben. Die
+    frühere Pseudo-Operation „Berechnungskörper" ist aufgelöst.
     """
     from ..core.solids import gelaende_koerper_bauen
 
@@ -214,9 +214,9 @@ def test_berechnungskoerper_schaltet_den_volumenkoerper_ein():
     feld = _feld(spec)
     assert gelaende_koerper_bauen(feld, spec) is None, "ohne Angabe Fläche"
 
-    spec.terrain.operations = [cs.OpBerechnungskoerper(
-        id="koerper", type="berechnungskoerper",
-        unterkante=90.0, ueberstand=1.5)]
+    spec.terrain.erdkoerper = "an"
+    spec.terrain.erdkoerper_unterkante = 90.0
+    spec.terrain.erdkoerper_ueberstand = 1.5
     k = gelaende_koerper_bauen(_feld(spec), spec)
     assert k is not None and k.is_watertight and k.volume > 0
     assert k.bounds[0][2] == pytest.approx(90.0, abs=0.01), "Sohle wie angegeben"
@@ -225,12 +225,12 @@ def test_berechnungskoerper_schaltet_den_volumenkoerper_ein():
     assert k.bounds[1][1] == pytest.approx(y1 + 1.5, abs=0.01)
 
 
-def test_berechnungskoerper_ohne_masse_nimmt_sinnvolle_vorbelegung():
+def test_erdkoerper_ohne_masse_nimmt_sinnvolle_vorbelegung():
     from ..core.solids import gelaende_koerper_bauen
 
     spec = build_spec_stage3()
-    spec.terrain.operations = [cs.OpBerechnungskoerper(
-        id="koerper", type="berechnungskoerper")]
+    spec.terrain.operations = []
+    spec.terrain.erdkoerper = "an"
     spec.structures = []
     feld = _feld(spec)
     k = gelaende_koerper_bauen(feld, spec)
@@ -239,3 +239,20 @@ def test_berechnungskoerper_ohne_masse_nimmt_sinnvolle_vorbelegung():
     tief = min(float(feld.z.min()), spec.domain.z_min)
     luft = max(4 * spec.mesh.base_cell, 1.0)
     assert k.bounds[0][2] == pytest.approx(tief - luft, abs=0.05)
+
+
+def test_migration_loest_berechnungskoerper_auf():
+    """Alte Fälle mit der Pseudo-Operation laden sauber: die Operation
+    verschwindet, Schalter und Maße wandern ans Gelände."""
+    spec = build_spec_stage3()
+    daten = spec.model_dump(mode="json", exclude_none=True)
+    daten["terrain"]["operations"].append({
+        "id": "koerper", "type": "berechnungskoerper",
+        "unterkante": 91.0, "ueberstand": 2.5})
+    neu = cs.CaseSpec.model_validate(cs.migriere(daten))
+    assert not any(o.type == "berechnungskoerper"
+                   for o in neu.terrain.operations
+                   if hasattr(o, "type"))
+    assert neu.terrain.erdkoerper == "an"
+    assert neu.terrain.erdkoerper_unterkante == 91.0
+    assert neu.terrain.erdkoerper_ueberstand == 2.5

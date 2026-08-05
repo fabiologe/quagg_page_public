@@ -29,8 +29,7 @@ def _fall() -> cs.CaseSpec:
         domain=cs.Domain(extent=(0.0, 0.0, 30.0, 30.0), z_min=90.0, z_max=102.0),
         terrain=cs.Terrain(
             base=cs.TerrainBase(source="flat:96.0", resolution=0.5),
-            operations=[cs.OpBerechnungskoerper(id="kb",
-                                                type="berechnungskoerper")]),
+            operations=[], erdkoerper="an"),
         structures=[],
         mesh=cs.Mesh(base_cell=0.5),
         solver=cs.Solver(application="interFoam", end_time=60.0,

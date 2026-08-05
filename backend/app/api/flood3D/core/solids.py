@@ -916,9 +916,6 @@ def braucht_erdkoerper(spec: CaseSpec, field=None) -> bool:
         return False
     if spec.terrain is not None and getattr(spec.terrain.base, "koerper", None):
         return True
-    if any(o.type == "berechnungskoerper"
-           for o in (spec.terrain.operations if spec.terrain else [])):
-        return True
     return any(ist_aushub(s, field)
                or (s.type == "culvert"
                    and getattr(s, "durchstoesst_gelaende", False))
@@ -1026,23 +1023,20 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
              if s.type == "culvert" and getattr(s, "durchstoesst_gelaende", False)]
     aushub = [s for s in spec.structures if ist_aushub(s, field)]
     importiert = gelaende_koerper_laden(spec, base_dir)
-    # Die Geländeoperation „Berechnungskörper" schaltet den Körper
-    # ausdrücklich ein und trägt seine Maße — sie ist der sichtbare Weg
-    # dorthin, der Schalter am Rohr der stillschweigende.
-    erklaert = next((o for o in (spec.terrain.operations if spec.terrain else [])
-                     if o.type == "berechnungskoerper"), None)
     zelle = spec.mesh.base_cell if spec.mesh else 0.25
     if importiert is not None:
         koerper = importiert
     else:
+        # Maße vom Gelände (früher die Pseudo-Operation) — leer heißt
+        # Vorbelegung
         unterkante = (min(float(np.min(field.z)), spec.domain.z_min)
                       - max(4 * zelle, 1.0))
         ueberstand = 2 * zelle
-        if erklaert is not None:
-            if erklaert.unterkante is not None:
-                unterkante = float(erklaert.unterkante)
-            if erklaert.ueberstand is not None:
-                ueberstand = max(float(erklaert.ueberstand), 0.0)
+        t = spec.terrain
+        if t is not None and t.erdkoerper_unterkante is not None:
+            unterkante = float(t.erdkoerper_unterkante)
+        if t is not None and t.erdkoerper_ueberstand is not None:
+            ueberstand = max(float(t.erdkoerper_ueberstand), 0.0)
         koerper = field.to_solid(unterkante, ueberstand=ueberstand)
     for s in rohre:
         bohrung = bohrkoerper(s, ueberstand=max(4 * zelle, 1.0))
