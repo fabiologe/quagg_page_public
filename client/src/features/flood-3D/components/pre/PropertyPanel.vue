@@ -3,6 +3,11 @@
     <header class="f3d-card-head">
       <h3>{{ draft.id }}</h3>
       <span class="f3d-muted f3d-small">{{ TYPE_LABELS[draft.type ?? draft.kind] ?? '' }}</span>
+      <button class="f3d-jsonschalter" :class="{ aktiv: experte }"
+              :title="experte
+                ? 'Expertenmodus aus (JSON-Schalter verbergen)'
+                : 'Expertenmodus: Felder als rohes JSON bearbeiten'"
+              @click="experte = !experte">{ }</button>
     </header>
 
     <div v-for="field in fields" :key="field.key" class="f3d-prop">
@@ -55,7 +60,8 @@
                  :typ-labels="TYP_LABELS" />
       <textarea v-else v-model="jsonDrafts[field.key]" rows="3"
                 class="f3d-json" spellcheck="false"></textarea>
-      <button v-if="field.umschaltbar" class="f3d-jsonschalter"
+      <button v-if="field.umschaltbar && (experte || jsonModus[field.key])"
+              class="f3d-jsonschalter"
               :title="jsonModus[field.key]
                 ? 'zurück zur Eingabemaske' : 'als JSON bearbeiten'"
               @click="jsonUmschalten(field.key)">
@@ -258,6 +264,9 @@ import { TYPE_LABELS } from '../../utils/preTemplates'
 
 const store = usePreStore()
 const draft = ref(null)
+// JSON-Rohbearbeitung ist Expertenwerkzeug: die Schalter erscheinen erst,
+// wenn man sie einschaltet — der Normalweg sind Maske, Punktliste, Griffe
+const experte = ref(false)
 const jsonDrafts = reactive({})
 // Felder, die der Nutzer bewusst als JSON bearbeitet
 const jsonModus = reactive({})
@@ -727,6 +736,16 @@ function apply() {
 }
 
 function remove() {
+  const o = store.selectedObject
+  // Grundlagen (Import) löschen ist selten gemeint — meist will man das
+  // Objekt nur nicht MODELLIEREN. Nachfragen, mit dem Hinweis auf den Weg
+  // über die Rollenwahl beim Neu-Ableiten.
+  if (o?.herkunft === 'import' && !window.confirm(
+    `„${o.id}" stammt aus einem Import. Wirklich löschen?\n`
+    + 'Beim Neu-Ableiten des Imports kommt es wieder — dauerhaft entfernt '
+    + 'wird es über die Rollenwahl (ignorieren) beim Neu-Übernehmen.')) {
+    return
+  }
   store.removeObject(store.selection.kind, store.selection.id)
 }
 </script>

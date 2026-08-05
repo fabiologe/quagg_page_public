@@ -5,24 +5,54 @@
     </button>
     <ImportModal v-if="showImport" @close="showImport = false" />
 
+    <!-- EIN Anlegeweg: Rezepte und Katalogvorlagen in einer Auswahl,
+         statt einem Select-Schwarm über sieben Gruppen -->
     <div class="f3d-objgroup">
-      <div class="f3d-objgroup-head">
-        <span>Bauwerk einsetzen</span>
-        <span class="f3d-muted f3d-small">Aushub + Bauteile</span>
-      </div>
       <div class="f3d-objadd">
-        <select v-model="rezeptWahl" class="f3d-select f3d-grow"
-                :title="rezeptHilfe">
-          <option disabled value="">Bauwerk wählen …</option>
-          <option v-for="r in store.rezepte" :key="r.id" :value="r.id">
-            {{ r.label }}
-          </option>
+        <select v-model="neuWahl" class="f3d-select f3d-grow"
+                :title="neuHilfe">
+          <option disabled value="">＋ Neu anlegen …</option>
+          <optgroup label="Bauwerke (in einem Zug)">
+            <option v-for="r in store.rezepte" :key="r.id"
+                    :value="'rezept:' + r.id">{{ r.label }}</option>
+          </optgroup>
+          <optgroup v-for="k in katalog" :key="k.kind" :label="k.label">
+            <option v-for="name in k.namen" :key="name"
+                    :value="k.kind + ':' + name">{{ name }}</option>
+          </optgroup>
         </select>
-        <button class="f3d-btn" :disabled="!rezeptWahl || store.loading"
-                @click="rezeptEinsetzen">+</button>
+        <button class="f3d-btn" :disabled="!neuWahl || store.loading"
+                @click="neuAnlegen">+</button>
       </div>
-      <p v-if="rezeptHilfe" class="f3d-muted f3d-small">{{ rezeptHilfe }}</p>
+      <p v-if="neuHilfe" class="f3d-muted f3d-small">{{ neuHilfe }}</p>
     </div>
+
+    <!-- Schicht (a): aus Grundlagen abgeleitet. Nicht Handarbeit — beim
+         Neu-Ableiten des Imports wird ersetzt, was hier steht. -->
+    <section v-if="grundlagen.length" class="f3d-abschnitt">
+      <h4 class="f3d-abschnitt-kopf">Grundlagen (Import)</h4>
+      <div v-for="g in grundlagen" :key="g.import_id" class="f3d-objgroup">
+        <div class="f3d-objgroup-head">
+          <span>🔒 {{ g.filename ?? g.import_id }}</span>
+          <span class="f3d-muted f3d-small">{{ g.items.length }}</span>
+        </div>
+        <button v-for="item in g.items" :key="item.kind + item.id"
+                class="f3d-objitem"
+                :class="{ selected: store.selection?.kind === item.kind
+                  && store.selection?.id === item.id }"
+                :title="'aus dem Import — beim Neu-Ableiten ersetzt; Lage über Bearbeitungen ändern'"
+                @click="store.select(item.kind, item.id)">
+          <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
+          <span class="f3d-objname">{{ item.id }}</span>
+          <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
+        </button>
+        <button v-if="g.wiederholbar" class="f3d-btn f3d-btn-s f3d-verknuepfen"
+                :disabled="store.loading" @click="neuAbleiten(g.import_id)"
+                title="Import mit den gespeicherten Einstellungen erneut ableiten — ersetzt die Objekte oben, Handarbeit bleibt unberührt.">
+          ↻ Neu ableiten
+        </button>
+      </div>
+    </section>
 
     <section v-for="a in abschnitte" :key="a.id" class="f3d-abschnitt">
       <h4 class="f3d-abschnitt-kopf">{{ a.label }}</h4>
@@ -39,6 +69,8 @@
                 @click="store.select(group.kind, item.id)">
           <span class="f3d-objstatus" :class="statusClass(item.id)">{{ statusIcon(item.id) }}</span>
           <span class="f3d-objname">{{ item.id }}</span>
+          <span v-if="herkunftBadge(item)" class="f3d-muted f3d-small"
+                :title="herkunftBadge(item).titel">{{ herkunftBadge(item).zeichen }}</span>
           <span class="f3d-muted f3d-small">{{ typeLabel(item) }}</span>
         </button>
         <button v-if="group.verknuepfen && group.items.length"
@@ -47,16 +79,6 @@
                 title="Aus Rolle und Lage der Kanten ableiten, was daraus folgt: Böschungen, Sohlen, Kronen — und aus Mauer- und Überfallkanten Bauteile. Von Hand Angelegtes bleibt unangetastet.">
           ⇄ Kanten verknüpfen
         </button>
-        <div class="f3d-objadd" v-if="group.templates">
-          <select v-model="addChoice[group.kind]" class="f3d-select f3d-grow">
-            <option disabled value="">Neu anlegen …</option>
-            <option v-for="(tpl, name) in group.templates" :key="name" :value="name">
-              {{ name }}
-            </option>
-          </select>
-          <button class="f3d-btn" :disabled="!addChoice[group.kind]"
-                  @click="add(group)">+</button>
-        </div>
       </div>
     </section>
   </aside>
@@ -65,7 +87,7 @@
 <script setup>
 // Objektbaum (Spez. Kap. 6.1): alle Objekte mit Typ und Validierungsstatus,
 // Klick springt zum Objekt; "Neu anlegen" fügt Katalog-Vorlagen ein.
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import {
   TYPE_LABELS, TEMPLATES, vorlageAnpassen, noetigeVerfeinerung,
@@ -74,21 +96,98 @@ import {
   REFERENZ_QUELLEN, fehlendeBausteine, referenzListe,
 } from '../../utils/feldTypen'
 import ImportModal from './ImportModal.vue'
+import { flood3dApi } from '../../services/api'
 
 const store = usePreStore()
-const addChoice = reactive({})
 
-// --- Bauwerksrezepte ------------------------------------------------------
-// Ein Drosselschacht ist eine Anordnung, kein Grundkörper: Kammer ausheben,
-// Wand hineinstellen, Öffnung aussparen, verfeinern, Pegel setzen, Kriterium
-// anlegen. Das Rezept macht das in einem Zug und sagt, was es getan hat —
-// jedes Teil bleibt danach einzeln bearbeitbar.
-const rezeptWahl = ref('')
+// --- EIN Anlegeweg --------------------------------------------------------
+// Rezepte (Anordnungen in einem Zug) und Katalogvorlagen in EINER Auswahl.
+// Vorher: ein eigener Select je Gruppe plus einer für Rezepte — acht
+// Bedienelemente für dieselbe Handlung „etwas Neues anlegen".
+const neuWahl = ref('')
 
-const rezeptHilfe = computed(
-  () => store.rezepte.find((r) => r.id === rezeptWahl.value)?.beschreibung ?? '')
+const KATALOG_LABELS = {
+  terrain_op: 'Geländeoperationen', structure: 'Bauwerksformen',
+  refinement: 'Netzverfeinerungen', boundary: 'Randbedingungen',
+  section: 'Querschnitte', gauge: 'Pegel', target: 'Nachweiskriterien',
+}
+const katalog = computed(() => Object.entries(TEMPLATES).map(
+  ([kind, tpls]) => ({ kind, label: KATALOG_LABELS[kind] ?? kind,
+    namen: Object.keys(tpls) })))
 
-onMounted(() => store.ladeRezepte())
+const neuHilfe = computed(() => {
+  if (!neuWahl.value.startsWith('rezept:')) return ''
+  const id = neuWahl.value.slice(7)
+  return store.rezepte.find((r) => r.id === id)?.beschreibung ?? ''
+})
+
+async function neuAnlegen() {
+  const [art, ...rest] = neuWahl.value.split(':')
+  const name = rest.join(':')
+  if (art === 'rezept') {
+    for (const z of await store.rezeptEinsetzen(name)) {
+      store.melden(z, z.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
+    }
+  } else {
+    add(art, name)
+  }
+  neuWahl.value = ''
+}
+
+// --- Grundlagen (Schicht a): was aus Importen stammt ----------------------
+// Gruppiert je Import, mit „Neu ableiten" (gespeicherte Anwendung).
+// Dateiname und Wiederholbarkeit kommen aus der Import-Verwaltung.
+const importInfo = ref({})
+
+async function ladeImportInfo() {
+  if (!store.activeCaseId) return
+  try {
+    const res = await flood3dApi.listImports(store.activeCaseId)
+    importInfo.value = Object.fromEntries(
+      (res.imports ?? []).map((i) => [i.import_id, i]))
+  } catch { importInfo.value = {} }
+}
+
+const grundlagen = computed(() => {
+  const s = store.spec
+  if (!s) return []
+  const je = {}
+  const sammle = (kind, items) => {
+    for (const o of items ?? []) {
+      if (o.herkunft !== 'import' || !o.import_ref) continue
+      const iid = o.import_ref.import_id
+      const g = (je[iid] ??= {
+        import_id: iid,
+        filename: importInfo.value[iid]?.filename,
+        wiederholbar: importInfo.value[iid]?.wiederholbar ?? false,
+        items: [],
+      })
+      g.items.push({ kind, id: o.id, type: o.type ?? o.kind,
+        herkunft: o.herkunft })
+    }
+  }
+  sammle('structure', s.structures)
+  sammle('kante', s.terrain?.kanten)
+  sammle('terrain_op', s.terrain?.operations)
+  sammle('section', s.evaluation?.sections)
+  return Object.values(je)
+})
+
+async function neuAbleiten(importId) {
+  for (const z of await store.importNeuAbleiten(importId)) {
+    store.melden(z, z.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
+  }
+}
+
+// Kur- und Rezept-Objekte tragen ihre Herkunft als kleines Zeichen
+function herkunftBadge(item) {
+  if (item.herkunft === 'kur') return { zeichen: '⚕', titel: 'durch eine Kur angelegt' }
+  if (item.herkunft === 'rezept') return { zeichen: '⚒', titel: 'Teil eines Bauwerksrezepts' }
+  return null
+}
+
+onMounted(() => { store.ladeRezepte(); ladeImportInfo() })
+watch(() => store.activeCaseId, ladeImportInfo)
 
 // Aus Rolle und Lage der Kanten die Geländeoperationen ableiten. Eine
 // Sohle innerhalb eines Beckenrands ergibt die Böschung dazwischen und
@@ -98,13 +197,6 @@ async function kantenVerknuepfen() {
   zeilen.forEach((z, i) => store.melden(z, i === 0 ? 'erfolg' : 'hinweis'))
 }
 
-async function rezeptEinsetzen() {
-  if (!rezeptWahl.value) return
-  for (const z of await store.rezeptEinsetzen(rezeptWahl.value)) {
-    store.melden(z, z.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
-  }
-  rezeptWahl.value = ''
-}
 const showImport = ref(false)
 
 // Gliederung des Objektbaums.
@@ -131,6 +223,10 @@ const ABSCHNITTE = [
 const gruppenNachKind = computed(() => {
   const s = store.spec
   if (!s) return {}
+  // Import-Objekte stehen im Abschnitt „Grundlagen" — hier nur Handarbeit,
+  // Kuren und Rezepte
+  const ohneImport = (liste) => (liste ?? []).filter(
+    (o) => o.herkunft !== 'import')
   return {
     domain: { kind: 'domain', label: 'Modellgebiet',
       items: s.domain ? [{ id: 'domain', type: 'domain' }] : [] },
@@ -140,18 +236,18 @@ const gruppenNachKind = computed(() => {
     // Was in der ZEICHNUNG steht, mit seiner Rolle — getrennt von dem,
     // was daraus für das Gelände folgt
     kante: { kind: 'kante', label: 'Vermessungskanten', eingerueckt: true,
-      verknuepfen: true, items: s.terrain?.kanten ?? [] },
+      verknuepfen: true, items: ohneImport(s.terrain?.kanten) },
     terrain_op: { kind: 'terrain_op', label: 'Geländeoperationen',
       eingerueckt: true,
-      items: s.terrain?.operations ?? [], templates: TEMPLATES.terrain_op },
+      items: ohneImport(s.terrain?.operations), templates: TEMPLATES.terrain_op },
     structure: { kind: 'structure', label: 'Bauwerke',
-      items: s.structures ?? [], templates: TEMPLATES.structure },
+      items: ohneImport(s.structures), templates: TEMPLATES.structure },
     refinement: { kind: 'refinement', label: 'Verfeinerungen',
       items: s.mesh?.refinements ?? [], templates: TEMPLATES.refinement },
     boundary: { kind: 'boundary', label: 'Randbedingungen',
       items: s.boundaries ?? [], templates: TEMPLATES.boundary },
     section: { kind: 'section', label: 'Querschnitte',
-      items: s.evaluation?.sections ?? [], templates: TEMPLATES.section },
+      items: ohneImport(s.evaluation?.sections), templates: TEMPLATES.section },
     gauge: { kind: 'gauge', label: 'Pegelpunkte',
       items: s.evaluation?.gauges ?? [], templates: TEMPLATES.gauge },
     target: { kind: 'target', label: 'Nachweiskriterien',
@@ -166,8 +262,6 @@ const abschnitte = computed(() => {
     .filter((a) => a.gruppen.length)
 })
 
-// flach, für alles was weiter je Gruppe arbeitet
-const groups = computed(() => Object.values(gruppenNachKind.value))
 
 function typeLabel(item) {
   return TYPE_LABELS[item.type ?? item.kind] ?? item.type ?? item.kind ?? ''
@@ -207,8 +301,8 @@ function verweiseFuellen(obj) {
   }
 }
 
-function add(group) {
-  const tpl = group.templates[addChoice[group.kind]]
+function add(kind, name) {
+  const tpl = TEMPLATES[kind]?.[name]
   if (tpl) {
     const obj = JSON.parse(JSON.stringify(tpl))
     // Die Außenkante ist nur als Rahmen AM Gebietsrand sinnvoll: vier Ecken
@@ -224,15 +318,13 @@ function add(group) {
       if (fehlt.length) {
         // Ohne Bezugsobjekt wäre das Kriterium nicht speicherbar — sagen,
         // was fehlt, statt einen kaputten Eintrag anzulegen
-        store.melden(
-          `„${addChoice[group.kind]}" braucht zuerst: ${fehlt.join(', ')}`,
+        store.melden(`„${name}" braucht zuerst: ${fehlt.join(', ')}`,
           'hinweis')
-        addChoice[group.kind] = ''
         return
       }
       verweiseFuellen(obj)
     }
-    const neu = store.addObject(group.kind, obj)
+    const neu = store.addObject(kind, obj)
     // Ein neues Bauteil ist meist dünner als die Basiszelle. Statt es in die
     // Prüfung laufen zu lassen, kommt die Verfeinerung gleich mit — sichtbar,
     // damit niemand über die Zellzahl stolpert. `neu` statt `obj`: id und
@@ -241,11 +333,10 @@ function add(group) {
     if (fein) {
       store.addObject('refinement', fein.refinement)
       // Ausgewählt bleibt das Bauteil, nicht die nachgezogene Verfeinerung
-      store.select(group.kind, neu.id)
+      store.select(kind, neu.id)
       store.melden(fein.text, 'hinweis')
     }
   }
-  addChoice[group.kind] = ''
 }
 </script>
 

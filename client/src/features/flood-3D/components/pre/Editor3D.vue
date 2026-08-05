@@ -4,6 +4,12 @@
       <button v-for="t in TOOLS" :key="t.id" class="f3d-tool"
               :class="{ active: mode === t.id }" :title="t.hint"
               @click="setMode(t.id)">{{ t.label }}</button>
+      <!-- Stanzen wird vom Eigenschaftenpanel gestartet und war in
+           der Werkzeugleiste UNSICHTBAR: kein Werkzeug wirkte aktiv,
+           obwohl jeder Klick stanzte. -->
+      <button v-if="mode === 'stanzen'" class="f3d-tool active"
+              title="Öffnung am Körper platzieren — Mausrad ändert das Maß, Esc bricht ab"
+              @click="setMode('select')">⭙ Stanzen … (Esc)</button>
       <span class="f3d-toolbar-sep"></span>
       <button class="f3d-tool" :class="{ active: topView }"
               title="Koordinatentreue Draufsicht" @click="toggleTopView">
@@ -31,9 +37,9 @@
         Netz
       </button>
       <button class="f3d-tool" :class="{ active: clipActive }"
-              title="Interaktive Schnittebene (Innenräume, Geländeeinbindung)"
+              title="Freischneiden: interaktive Klemm-Ebene der ANSICHT (Innenräume, Geländeeinbindung) — kein Eingriff ins Modell"
               @click="toggleClip">
-        Schnitt
+        Freischneiden
       </button>
     </div>
 
@@ -3148,9 +3154,11 @@ onBeforeUnmount(() => {
 }
 .f3d-chooser {
   position: absolute;
-  top: 48px;
+  /* unter dem Netz-/Solverhinweis (top: 48) — beide lagen exakt
+     uebereinander und verdeckten sich */
+  top: 84px;
   left: 10px;
-  z-index: 5;
+  z-index: 6;
   display: flex;
   gap: 6px;
   align-items: center;

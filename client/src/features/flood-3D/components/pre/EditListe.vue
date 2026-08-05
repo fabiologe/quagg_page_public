@@ -36,7 +36,7 @@ import { computed, ref } from 'vue'
 import UnterGruppe from './UnterGruppe.vue'
 
 const EDIT_LABELS = {
-  aussparung: 'Aussparung', schnitt: 'Abschneiden', gelaende: 'Gelände',
+  aussparung: 'Aussparung', schnitt: 'Zuschnitt (abschneiden)', gelaende: 'Gelände',
   auf_gebiet: 'Auf Gebiet', transform: 'Lage', heilen: 'Heilen',
 }
 

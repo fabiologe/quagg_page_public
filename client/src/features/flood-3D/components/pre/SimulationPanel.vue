@@ -132,64 +132,28 @@
 
       <article class="f3d-card" v-if="spec.domain">
         <header class="f3d-card-head">
-          <h3>Modellgebiet</h3>
+          <h3>Modellgebiet &amp; Netz</h3>
           <span class="f3d-muted f3d-small">ändert das Netz</span>
         </header>
-        <div class="f3d-field">
-          <label>Ausdehnung x (m)</label>
-          <div class="f3d-pair">
-            <input type="number" step="any" class="f3d-num" :value="spec.domain.extent[0]"
-                   @change="setExtent(0, $event)" />
-            <span>bis</span>
-            <input type="number" step="any" class="f3d-num" :value="spec.domain.extent[2]"
-                   @change="setExtent(2, $event)" />
-          </div>
-        </div>
-        <div class="f3d-field">
-          <label>Ausdehnung y (m)</label>
-          <div class="f3d-pair">
-            <input type="number" step="any" class="f3d-num" :value="spec.domain.extent[1]"
-                   @change="setExtent(1, $event)" />
-            <span>bis</span>
-            <input type="number" step="any" class="f3d-num" :value="spec.domain.extent[3]"
-                   @change="setExtent(3, $event)" />
-          </div>
-          <Hinweis pfad="domain.extent" />
-        </div>
-        <div class="f3d-field">
-          <label>Höhenbereich z (m NHN)</label>
-          <div class="f3d-pair">
-            <input type="number" step="any" class="f3d-num" :value="spec.domain.z_min"
-                   @change="setNum('domain.z_min', $event)" />
-            <span>bis</span>
-            <input type="number" step="any" class="f3d-num" :value="spec.domain.z_max"
-                   @change="setNum('domain.z_max', $event)" />
-          </div>
-          <Hinweis pfad="domain.z" />
-        </div>
+        <!-- Gebiet und Gelände werden im MODELL bearbeitet (Editor-Griffe
+             oder Objektbaum → Eigenschaften) — hier stand eine dritte
+             Eingabemaske für dieselben Zahlen. Geblieben ist die Übersicht
+             und die Netzsteuerung, die wirklich hierher gehört. -->
+        <p class="f3d-muted f3d-small">
+          Gebiet {{ spec.domain.extent[0] }}…{{ spec.domain.extent[2] }} ×
+          {{ spec.domain.extent[1] }}…{{ spec.domain.extent[3] }} m,
+          z {{ spec.domain.z_min }}…{{ spec.domain.z_max }} m
+          <template v-if="spec.terrain"> · Gelände
+            „{{ spec.terrain.base.source }}“
+            ({{ spec.terrain.base.resolution }} m)</template>
+          — bearbeiten in der Phase <b>Modell</b>.
+        </p>
         <div class="f3d-field">
           <label>Basiszellgröße (m)</label>
           <input type="number" step="0.05" min="0.05" class="f3d-num"
                  :value="spec.mesh?.base_cell ?? ''"
                  @change="setNum('mesh.base_cell', $event)" />
           <Hinweis pfad="mesh.base_cell" />
-        </div>
-      </article>
-
-      <article class="f3d-card" v-if="spec.terrain">
-        <header class="f3d-card-head"><h3>Geländebasis</h3></header>
-        <div class="f3d-field">
-          <label>Quelle</label>
-          <input class="f3d-num f3d-grow" :value="spec.terrain.base.source"
-                 @change="set((s) => { s.terrain.base.source = $event.target.value })" />
-          <span class="f3d-muted f3d-small">flat:&lt;höhe&gt;, .asc oder .xyz neben dem Fall</span>
-        </div>
-        <div class="f3d-field">
-          <label>Raster-Auflösung (m)</label>
-          <input type="number" step="0.05" min="0.05" class="f3d-num"
-                 :value="spec.terrain.base.resolution"
-                 @change="setNum('terrain.base.resolution', $event)" />
-          <Hinweis pfad="terrain.base.resolution" />
         </div>
       </article>
     </div>
@@ -460,15 +424,6 @@ function setNumOrNull(path, e) {
   })
 }
 
-function setExtent(idx, e) {
-  const v = Number(e.target.value)
-  if (Number.isNaN(v)) return
-  store.updateSettings((s) => {
-    const ext = [...s.domain.extent]
-    ext[idx] = v
-    s.domain.extent = ext
-  })
-}
 </script>
 
 <style scoped>

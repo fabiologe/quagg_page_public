@@ -272,6 +272,14 @@ export const usePreStore = defineStore('flood3d-pre', {
         (id) => flood3dApi.caseAnschluss(id), 'Anschluss fehlgeschlagen')
     },
 
+    // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
+    // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
+    async importNeuAbleiten(importId) {
+      return this.serverMutation(
+        (id) => flood3dApi.importReapply(id, importId),
+        'Neu ableiten fehlgeschlagen', { raster: true })
+    },
+
     // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
     // Auswertung oder Anschluss — keine fachliche Festlegung.
     async ladeRezepte() {

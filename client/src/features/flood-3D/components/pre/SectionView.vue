@@ -1,7 +1,7 @@
 <template>
   <section class="f3d-sectionview f3d-card">
     <header class="f3d-card-head">
-      <h3>Schnittansicht</h3>
+      <h3>Längsschnitt (Gelände)</h3>
       <select v-model="choice" class="f3d-select">
         <option value="">Linie wählen …</option>
         <option v-for="s in sections" :key="s.id" :value="s.id">
@@ -20,7 +20,7 @@
                 ylabel="Höhe in m NHN" xlabel="Station in m"
                 sync-key="f3d-schnitt" />
     <p v-else class="f3d-muted f3d-small">
-      Die Schnittansicht prüft, ob Netzverfeinerung und Wasserspiegel
+      Der Längsschnitt prüft, ob Netzverfeinerung und Wasserspiegel
       vertikal zusammenpassen (Spez. Kap. 6.1).
     </p>
   </section>
