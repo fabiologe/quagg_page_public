@@ -14,12 +14,67 @@
               @click="experte = !experte">{ }</button>
     </header>
 
-    <div v-for="field in fields" :key="field.key" class="f3d-prop">
+    <!-- EINE Struktur für alle Objekte (auch Modellgebiet und Gelände):
+         oben die Maße und Wahlen des Typs — das IST seine Spezifik —,
+         alles Weitere in gleichförmigen Aufklappern. -->
+
+    <p v-if="wirkungJetzt" class="f3d-wirkung" :class="wirkungJetzt.art">
+      <strong>{{ wirkungJetzt.titel }}</strong> {{ wirkungJetzt.text }}
+    </p>
+
+    <p v-if="hilfe && draft.type === 'bruchkante'" class="f3d-muted f3d-small">
+      <strong>Ziehen, Abgraben, Aufschütten</strong> wirken auf einen
+      Schlauch der Wirkungsbreite um die <em>Linie</em> — das Innere einer
+      geschlossenen Kante bleibt dabei so liegen, wie es der Import
+      hinterlassen hat. <strong>Ebnen</strong> und <strong>stufenfrei
+      ergänzen</strong> füllen die <em>Fläche</em> innerhalb der Kante und
+      brauchen deshalb eine geschlossene (ist der Schlusspunkt vergessen,
+      wird sie gedanklich geschlossen). Ebnen legt die Ausgleichsebene
+      durch die Kantenhöhen — für Planum, Beckensohle, Parkfläche. Ergänzen
+      folgt auch einer geneigten Kante und schließt am Rand bündig an.
+    </p>
+    <p v-if="hilfe && draft.type === 'aussenkante'" class="f3d-muted f3d-small">
+      Außerhalb der äußersten Vermessungslinie ist nichts gemessen — dort
+      führt der Import die NÄCHSTGELEGENE bekannte Höhe fort. Die kann
+      höher liegen als jede gemessene Oberkante und über den Gebietsdeckel
+      hinauswachsen. Diese Operation führt stattdessen die Bezugskante mit
+      dem angegebenen Gefälle bis an den Gebietsrand weiter (0 = Plateau
+      auf Kronenhöhe). Wer die Ecken selbst setzen will, legt ein Polygon
+      an — dann wird zwischen Kante und Rahmen übergeblendet, und die Ecken
+      lassen sich in der Szene ziehen (Strg = Höhe).
+    </p>
+    <p v-if="hilfe && draft.type === 'berechnungskoerper'" class="f3d-muted f3d-small">
+      Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
+      schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr
+      durch den Damm, Schacht, Kammer), muss daraus ein geschlossener
+      Körper werden: ein Höhenfeld hat ein z je Punkt und kann keinen
+      Hohlraum tragen. Diese Operation schaltet den Körper ein. Der
+      seitliche Überstand ist kein Schönheitsfehler: eine Körperwand genau
+      auf der Gebietsfläche schneidet snappyHexMesh gegen sich selbst.
+    </p>
+    <p v-if="hilfe && wirkungJetzt?.art === 'aushub'" class="f3d-muted f3d-small">
+      Ein Aushub bekommt keine eigene Fläche im Netz — seine Wandungen
+      gehören zum Gelände, und dort greift auch die Verfeinerung. Das
+      Gelände wird dafür als Erdkörper gebaut, denn ein Höhenfeld hat ein z
+      je Punkt und kann keinen Hohlraum tragen. Die Maße sind lichte Maße;
+      die Wandstärke gräbt der Bagger mit aus, damit das Bauteil hineinpasst.
+    </p>
+    <p v-if="hilfe && draft.type === 'culvert'" class="f3d-muted f3d-small">
+      Das Gelände ist ein Höhenfeld — ein z je Punkt — und kann von sich aus
+      keinen Tunnel haben: ein Rohr im Damm wird beim Vernetzen zugeschüttet,
+      seine Mündung bekommt dann keine einzige Fläche. „Durch das Gelände
+      bohren" baut das Gelände stattdessen als Erdkörper und schneidet die
+      Rohrbohrung heraus (kostet etwas Zeit beim Fallaufbau). Liegt das Rohr
+      ohnehin frei, bleibt der Schalter aus.
+    </p>
+
+    <!-- MASSE & WAHLEN -->
+    <div v-for="field in felderMasse" :key="field.key" class="f3d-prop">
       <label>{{ field.label }}</label>
       <select v-if="field.widget === 'enum'" v-model="draft[field.key]"
               class="f3d-select">
         <option v-for="opt in field.enums" :key="opt" :value="opt">
-          {{ ENUM_LABELS[opt] ?? opt }}
+          {{ enumLabel(field.key, opt) }}
         </option>
       </select>
       <input v-else-if="field.widget === 'number'" type="number" step="any"
@@ -44,9 +99,6 @@
         <option value="" disabled>— {{ field.quellname }} wählen —</option>
         <option v-for="o in field.optionen" :key="o" :value="o">{{ o }}</option>
       </select>
-      <PunktListe v-else-if="field.widget === 'punkte'"
-                  v-model="draft[field.key]" :dim="field.dim"
-                  :min="field.min" :geschlossen="field.geschlossen" />
       <div v-else-if="field.widget === 'zahlen'" class="f3d-zahlen">
         <label v-for="(nm, i) in field.namen" :key="i" class="f3d-zahl">
           <span>{{ nm }}</span>
@@ -55,13 +107,6 @@
                  @change="setzeZahl(field.key, i, $event.target.value)" />
         </label>
       </div>
-      <UnterGruppe v-else-if="field.widget === 'gruppe'"
-                   v-model="draft[field.key]" :labels="labelsFuer(field.key)"
-                   :typ="draft.type" :gruppe="field.key"
-                   :verbergen="VERBERGEN[field.key] ?? []" />
-      <EditListe v-else-if="field.widget === 'edits'"
-                 v-model="draft[field.key]" :labels="FIELD_LABELS"
-                 :typ-labels="TYP_LABELS" />
       <textarea v-else v-model="jsonDrafts[field.key]" rows="3"
                 class="f3d-json" spellcheck="false"></textarea>
       <button v-if="field.umschaltbar && (experte || jsonModus[field.key])"
@@ -73,162 +118,128 @@
       </button>
     </div>
 
-    <p v-if="hilfe && draft.type === 'bruchkante'" class="f3d-muted f3d-small">
-      <strong>Ziehen, Abgraben, Aufschütten</strong> wirken auf einen
-      Schlauch der Wirkungsbreite um die <em>Linie</em> — das Innere einer
-      geschlossenen Kante bleibt dabei so liegen, wie es der Import
-      hinterlassen hat. <strong>Ebnen</strong> und <strong>stufenfrei
-      ergänzen</strong> füllen die <em>Fläche</em> innerhalb der Kante und
-      brauchen deshalb eine geschlossene (ist der Schlusspunkt vergessen,
-      wird sie gedanklich geschlossen). Ebnen legt die Ausgleichsebene
-      durch die Kantenhöhen — für Planum, Beckensohle, Parkfläche. Ergänzen
-      folgt auch einer geneigten Kante und schließt am Rand bündig an.
-    </p>
-
-    <p v-if="hilfe && draft.type === 'aussenkante'" class="f3d-muted f3d-small">
-      Außerhalb der äußersten Vermessungslinie ist nichts gemessen — dort
-      führt der Import die NÄCHSTGELEGENE bekannte Höhe fort. Die kann
-      höher liegen als jede gemessene Oberkante und über den Gebietsdeckel
-      hinauswachsen. Diese Operation führt stattdessen die Bezugskante mit
-      dem angegebenen Gefälle bis an den Gebietsrand weiter (0 = Plateau
-      auf Kronenhöhe). Wer die Ecken selbst setzen will, legt ein Polygon
-      an — dann wird zwischen Kante und Rahmen übergeblendet, und die Ecken
-      lassen sich in der Szene ziehen (Strg = Höhe).
-    </p>
-
-    <p v-if="hilfe && draft.type === 'berechnungskoerper'" class="f3d-muted f3d-small">
-      Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
-      schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr
-      durch den Damm, Schacht, Kammer), muss daraus ein geschlossener
-      Körper werden: ein Höhenfeld hat ein z je Punkt und kann keinen
-      Hohlraum tragen. Diese Operation schaltet den Körper ein. Der
-      seitliche Überstand ist kein Schönheitsfehler: eine Körperwand genau
-      auf der Gebietsfläche schneidet snappyHexMesh gegen sich selbst.
-    </p>
-
-    <p v-if="wirkungJetzt" class="f3d-wirkung" :class="wirkungJetzt.art">
-      <strong>{{ wirkungJetzt.titel }}</strong> {{ wirkungJetzt.text }}
-    </p>
-    <p v-if="hilfe && wirkungJetzt?.art === 'aushub'" class="f3d-muted f3d-small">
-      Ein Aushub bekommt keine eigene Fläche im Netz — seine Wandungen
-      gehören zum Gelände, und dort greift auch die Verfeinerung. Das
-      Gelände wird dafür als Erdkörper gebaut, denn ein Höhenfeld hat ein z
-      je Punkt und kann keinen Hohlraum tragen. Die Maße sind lichte Maße;
-      die Wandstärke gräbt der Bagger mit aus, damit das Bauteil hineinpasst.
-    </p>
-
-    <p v-if="hilfe && draft.type === 'culvert'" class="f3d-muted f3d-small">
-      Das Gelände ist ein Höhenfeld — ein z je Punkt — und kann von sich aus
-      keinen Tunnel haben: ein Rohr im Damm wird beim Vernetzen zugeschüttet,
-      seine Mündung bekommt dann keine einzige Fläche. „Durch das Gelände
-      bohren" baut das Gelände stattdessen als Erdkörper und schneidet die
-      Rohrbohrung heraus (kostet etwas Zeit beim Fallaufbau). Liegt das Rohr
-      ohnehin frei, bleibt der Schalter aus.
-    </p>
-
-    <div v-if="isFlowBc" class="f3d-prop">
-      <label>Fenster (Öffnung auf der Randfläche)</label>
-      <select class="f3d-select" v-model="windowKind">
-        <option value="">— ganze Fläche —</option>
-        <option value="rechteck">Rechteck</option>
-        <option value="kreis">Kreis (Rohrmündung)</option>
-        <option value="trapez">Trapez (Gerinnequerschnitt)</option>
-        <option value="polygon">Polygon (frei zeichnen)</option>
-        <option value="ei">Eiprofil</option>
-        <option value="maul">Maulprofil</option>
-        <option value="tropfen">Tropfenprofil</option>
-        <option v-for="ch in channels" :key="ch.id" :value="'follow:' + ch.id">
-          an Gerinne „{{ ch.id }}“ gekoppelt
-        </option>
-        <option v-for="c in pipes" :key="'p' + c.id" :value="'follow:' + c.id">
-          an Stutzen/Durchlass „{{ c.id }}“ gekoppelt
-        </option>
-      </select>
-      <p class="f3d-muted f3d-small">
-        Nur das Fenster ist Zu-/Ablauf, der Rest der Fläche wird Wand.
-        Kreis und Trapez sind frei in der Höhe (auch über dem Gelände —
-        Freistrahl); gekoppelt folgt das Fenster dem Gerinnequerschnitt
-        am Gebietsrand.
-      </p>
-      <button v-if="windowKind && !windowKind.startsWith('follow:')"
-              class="f3d-btn" @click="addWindowRefinement">
-        ＋ Verfeinerungsbox ans Fenster
-      </button>
-    </div>
-
-    <div v-if="hatKoerper" class="f3d-prop">
-      <label>Bearbeiten ({{ draft.edits?.length ?? 0 }})</label>
-      <div class="f3d-openrow">
-        <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'bohrung' }"
-                @click="zeichnen('bohrung')">
-          ✎ Bohrung
-        </button>
-        <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'oeffnung' }"
-                @click="zeichnen('oeffnung')">
-          ✎ Öffnung
+    <!-- GEOMETRIE: Stützpunkte; bearbeitet wird primär in der Szene -->
+    <details v-if="felderGeometrie.length" class="f3d-klapper">
+      <summary>Geometrie ({{ punkteGesamt }} Stützpunkte)</summary>
+      <div v-for="field in felderGeometrie" :key="field.key" class="f3d-prop">
+        <label>{{ field.label }}</label>
+        <PunktListe v-if="!jsonModus[field.key]"
+                    v-model="draft[field.key]" :dim="field.dim"
+                    :min="field.min" :geschlossen="field.geschlossen" />
+        <textarea v-else v-model="jsonDrafts[field.key]" rows="3"
+                  class="f3d-json" spellcheck="false"></textarea>
+        <button v-if="experte || jsonModus[field.key]" class="f3d-jsonschalter"
+                @click="jsonUmschalten(field.key)">
+          {{ jsonModus[field.key] ? '↩ Maske' : '{ } JSON' }}
         </button>
       </div>
-      <div class="f3d-openrow">
-        <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'schnitt' }"
-                @click="zeichnen('schnitt')">
-          ✎ Abschneiden
-        </button>
-        <button class="f3d-btn f3d-grow" @click="addEdit('gelaende')">
-          ＋ Gelände
+    </details>
+
+    <!-- UNTERGRUPPEN (Profil, Achse, Widerstand …) -->
+    <details v-for="field in felderUntergruppen" :key="field.key"
+             class="f3d-klapper" :open="field.key === 'profile'">
+      <summary>{{ field.label }}</summary>
+      <div class="f3d-prop">
+        <UnterGruppe v-model="draft[field.key]" :labels="labelsFuer(field.key)"
+                     :typ="draft.type" :gruppe="field.key"
+                     :verbergen="VERBERGEN[field.key] ?? []" />
+      </div>
+    </details>
+
+    <!-- FENSTER (nur Zu-/Abflüsse) -->
+    <details v-if="isFlowBc" class="f3d-klapper">
+      <summary>Fenster ({{ windowKind || 'ganze Fläche' }})</summary>
+      <div class="f3d-prop">
+        <select class="f3d-select" v-model="windowKind">
+          <option value="">— ganze Fläche —</option>
+          <option value="rechteck">Rechteck</option>
+          <option value="kreis">Kreis (Rohrmündung)</option>
+          <option value="trapez">Trapez (Gerinnequerschnitt)</option>
+          <option value="polygon">Polygon (frei zeichnen)</option>
+          <option value="ei">Eiprofil</option>
+          <option value="maul">Maulprofil</option>
+          <option value="tropfen">Tropfenprofil</option>
+          <option v-for="ch in channels" :key="ch.id" :value="'follow:' + ch.id">
+            an Gerinne „{{ ch.id }}“ gekoppelt
+          </option>
+          <option v-for="c in pipes" :key="'p' + c.id" :value="'follow:' + c.id">
+            an Stutzen/Durchlass „{{ c.id }}“ gekoppelt
+          </option>
+        </select>
+        <p v-if="hilfe" class="f3d-muted f3d-small">
+          Nur das Fenster ist Zu-/Ablauf, der Rest der Fläche wird Wand.
+          Kreis und Trapez sind frei in der Höhe (auch über dem Gelände —
+          Freistrahl); gekoppelt folgt das Fenster dem Gerinnequerschnitt
+          am Gebietsrand.
+        </p>
+        <div v-if="feldWindow" class="f3d-prop">
+          <UnterGruppe v-model="draft.window" :labels="labelsFuer('window')"
+                       :typ="draft.type" gruppe="window"
+                       :verbergen="VERBERGEN.window ?? []" />
+        </div>
+        <button v-if="windowKind && !windowKind.startsWith('follow:')"
+                class="f3d-btn" @click="addWindowRefinement">
+          ＋ Verfeinerungsbox ans Fenster
         </button>
       </div>
-      <div class="f3d-openrow">
-        <button class="f3d-btn f3d-grow" @click="addEdit('auf_gebiet')">
-          ＋ Auf Gebiet
-        </button>
-        <button class="f3d-btn f3d-grow" @click="addEdit('transform')">
-          ＋ Lage
-        </button>
-        <button class="f3d-btn f3d-grow" @click="addEdit('heilen')">
-          ＋ Heilen
-        </button>
+    </details>
+
+    <!-- BEARBEITUNGEN (nur Körper): der Stapel samt Zeichenknöpfen -->
+    <details v-if="hatKoerper" class="f3d-klapper">
+      <summary>Bearbeitungen ({{ draft.edits?.length ?? 0 }})</summary>
+      <div class="f3d-prop">
+        <div class="f3d-openrow">
+          <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'bohrung' }"
+                  @click="zeichnen('bohrung')">✎ Bohrung</button>
+          <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'oeffnung' }"
+                  @click="zeichnen('oeffnung')">✎ Öffnung</button>
+          <button class="f3d-btn f3d-grow" :class="{ active: zeichnet === 'schnitt' }"
+                  @click="zeichnen('schnitt')">✎ Zuschnitt</button>
+        </div>
+        <div class="f3d-openrow">
+          <button class="f3d-btn f3d-grow" @click="addEdit('gelaende')">＋ Gelände</button>
+          <button class="f3d-btn f3d-grow" @click="addEdit('auf_gebiet')">＋ Auf Gebiet</button>
+          <button class="f3d-btn f3d-grow" @click="addEdit('transform')">＋ Lage</button>
+          <button class="f3d-btn f3d-grow" @click="addEdit('heilen')">＋ Heilen</button>
+        </div>
+        <p v-if="hilfe" class="f3d-muted f3d-small">
+          Wird der Reihe nach auf den Körper angewandt. Die drei mit ✎ werden
+          in die Szene <strong>gezeichnet</strong>: auf den Körper zeigen,
+          Mausrad ändert das Maß, Klick stanzt. <strong>Gelände</strong>
+          bindet ein, <strong>Auf Gebiet</strong> stutzt Überstände,
+          <strong>Lage</strong> verschiebt/dreht/skaliert,
+          <strong>Heilen</strong> schließt Löcher importierter Netze.
+        </p>
+        <EditListe v-if="feldEdits" v-model="draft.edits"
+                   :labels="FIELD_LABELS" :typ-labels="TYP_LABELS" />
       </div>
-      <p class="f3d-muted f3d-small">
-        Wird der Reihe nach auf den Körper angewandt. Die drei mit ✎ werden in
-        die Szene <strong>gezeichnet</strong>: auf den Körper zeigen, Mausrad
-        ändert das Maß, Klick stanzt — die Bohrrichtung kommt aus der
-        getroffenen Fläche. <strong>Gelände</strong> setzt den Körper auf und
-        bindet ihn ein (bzw. kappt die Übertiefe), <strong>Auf Gebiet</strong>
-        stutzt Überstände am Modellrand weg, <strong>Lage</strong>
-        verschiebt/dreht/skaliert, <strong>Heilen</strong> schließt Löcher in
-        importierten Netzen. Alle Maße bleiben im Feld darüber änderbar.
-      </p>
-    </div>
+    </details>
 
-    <div v-if="hatKoerper" class="f3d-prop">
-      <label class="f3d-check">
-        <input type="checkbox" :checked="kraefteAn" @change="kraefteUmschalten" />
-        Kräfte und Kippmoment auswerten
-      </label>
-      <p class="f3d-muted f3d-small">
-        Liefert Horizontalkraft, Auftrieb und das Moment um die Fußmitte
-        dieses Bauwerks — die Größen für den Standsicherheitsnachweis. Die
-        Wandschubspannung wird ohnehin für jedes Bauwerk mitgeschrieben.
-      </p>
-    </div>
-
-    <div v-if="hatKoerper" class="f3d-prop">
-      <label>Material (Wandrauheit)</label>
-      <select class="f3d-select" v-model="materialDraft">
-        <option value="">— glatt (Standard) —</option>
-        <option v-for="m in MATERIALS" :key="m" :value="m">
-          {{ MATERIAL_LABELS[m] }}
-        </option>
-      </select>
-      <input type="number" step="any" min="0" class="f3d-num"
-             v-model.number="ksDraft" placeholder="k_s eigene (m), leer = Katalogwert" />
-      <p class="f3d-muted f3d-small">
-        Setzt die äquivalente Sandrauheit k_s der Wandfunktion auf diesem
-        Bauwerks-Patch (nutkRoughWallFunction); der eigene Wert in m
-        überschreibt den Katalogwert des Materials.
-      </p>
-    </div>
-
+    <!-- MATERIAL & KRÄFTE (nur Körper) -->
+    <details v-if="hatKoerper" class="f3d-klapper">
+      <summary>Material &amp; Kräfte{{ materialDraft ? ` (${materialDraft})` : '' }}</summary>
+      <div class="f3d-prop">
+        <label>Material (Wandrauheit)</label>
+        <select class="f3d-select" v-model="materialDraft">
+          <option value="">— glatt (Standard) —</option>
+          <option v-for="m in MATERIALS" :key="m" :value="m">
+            {{ MATERIAL_LABELS[m] }}
+          </option>
+        </select>
+        <input type="number" step="any" min="0" class="f3d-num"
+               v-model.number="ksDraft" placeholder="k_s eigene (m), leer = Katalogwert" />
+        <label class="f3d-check">
+          <input type="checkbox" :checked="kraefteAn" @change="kraefteUmschalten" />
+          Kräfte und Kippmoment auswerten
+        </label>
+        <p v-if="hilfe" class="f3d-muted f3d-small">
+          k_s = äquivalente Sandrauheit der Wandfunktion auf diesem Patch;
+          die Kraftauswertung liefert Horizontalkraft, Auftrieb und das
+          Kippmoment um die Fußmitte — die Größen des
+          Standsicherheitsnachweises.
+        </p>
+      </div>
+    </details>
 
     <div class="f3d-prop-actions">
       <button class="f3d-btn f3d-grow" :class="{ bereit: geaenderteFelder.length }"
@@ -259,10 +270,10 @@ import PunktListe from './PunktListe.vue'
 import UnterGruppe from './UnterGruppe.vue'
 import EditListe from './EditListe.vue'
 import {
-  AUSHUB_TYPEN, ENUM_LABELS, FIELD_LABELS, GESCHLOSSEN, GRUPPEN_LABELS,
+  AUSHUB_TYPEN, FIELD_LABELS, GESCHLOSSEN, GRUPPEN_LABELS,
   OPTIONAL_ZAHLEN, QUELL_NAMEN, REFERENZ_QUELLEN, TYP_LABELS, VERBERGEN,
-  enumFor, istPunktListe, istZahlenreihe, punktDim, referenzListe,
-  widgetFor, zahlenNamen,
+  enumFor, enumLabel, istPunktListe, istZahlenreihe, punktDim,
+  referenzListe, widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
 
@@ -306,6 +317,7 @@ const fields = computed(() => {
       const widget = jsonModus[k] ? 'json' : eigen
       return {
         key: k,
+        eigen,
         label: TYP_LABELS[typ]?.[k] ?? FIELD_LABELS[k] ?? k,
         widget,
         // JSON bleibt als Rückfallebene erreichbar, aber nur dort, wo es
@@ -742,12 +754,43 @@ function apply() {
   store.melden(`„${result.id}" übernommen: ${namen.join(', ')}`, 'erfolg')
 }
 
+// --- EINE Panel-Struktur: Maße oben, Rest in Aufklappern ------------------
+// Die Partition folgt der Feldkunde: Zahlen/Wahlen sind die Spezifik des
+// Typs und bleiben sichtbar; Punktlisten, Untergruppen und der
+// Bearbeitungsstapel wandern in gleichförmige Klapper.
+const felderMasse = computed(() => fields.value.filter(
+  (f) => !['punkte', 'gruppe', 'edits'].includes(f.eigen)))
+const felderGeometrie = computed(() => fields.value.filter(
+  (f) => f.eigen === 'punkte'))
+const felderUntergruppen = computed(() => fields.value.filter(
+  (f) => f.eigen === 'gruppe' && f.key !== 'window'))
+const feldWindow = computed(() => fields.value.some(
+  (f) => f.eigen === 'gruppe' && f.key === 'window'))
+const feldEdits = computed(() => fields.value.some(
+  (f) => f.eigen === 'edits') || Array.isArray(draft.value?.edits))
+const punkteGesamt = computed(() => felderGeometrie.value.reduce(
+  (n, f) => n + (draft.value?.[f.key]?.length ?? 0), 0))
+
 function remove() {
   store.loescheObjekt(store.selection.kind, store.selection.id)
 }
 </script>
 
 <style scoped>
+.f3d-klapper {
+  border: 1px solid var(--f3d-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.f3d-klapper > summary {
+  cursor: pointer;
+  color: var(--f3d-text-2);
+  font-size: 0.75rem;
+  padding: 3px 0;
+  user-select: none;
+}
+.f3d-klapper[open] > summary { color: var(--f3d-text); }
+
 .f3d-props { display: flex; flex-direction: column; gap: 8px; }
 .f3d-prop { display: flex; flex-direction: column; gap: 3px; }
 .f3d-prop > label { color: var(--f3d-text-2); font-size: 0.72rem; }

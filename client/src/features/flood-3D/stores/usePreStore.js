@@ -98,7 +98,11 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
       if (state.selection.kind === 'terrain') {
         if (!state.spec.terrain) return null
-        return { id: 'gelaende', type: 'terrain', ...state.spec.terrain.base }
+        // erdkoerper sitzt am Terrain, nicht an der Basis — hier gehört er
+        // trotzdem ins Formular: DER Schalter (P3) braucht einen Ort
+        return { id: 'gelaende', type: 'terrain',
+          erdkoerper: state.spec.terrain.erdkoerper ?? 'auto',
+          ...state.spec.terrain.base }
       }
       const list = KIND_PATHS[state.selection.kind]?.(state.spec)
       return list?.find((o) => o.id === state.selection.id) ?? null
@@ -571,7 +575,10 @@ export const usePreStore = defineStore('flood3d-pre', {
         const ziel = einzeln[kind]()
         if (!ziel) return
         this.recordUndo()
-        const { id: _id, type: _t, ...rest } = updated
+        const { id: _id, type: _t, erdkoerper, ...rest } = updated
+        if (kind === 'terrain' && erdkoerper !== undefined) {
+          this.spec.terrain.erdkoerper = erdkoerper
+        }
         Object.assign(ziel, rest)
         this.dirty = true
         this.error = ''
