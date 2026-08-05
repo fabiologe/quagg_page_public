@@ -2,6 +2,8 @@
 // deutsche Typbezeichner. Die IDs werden beim Einfügen durchnummeriert.
 
 export const TYPE_LABELS = {
+  massenbilanz: 'Massenbilanz', kurzschluss: 'Kurzschlusskennzahl',
+  verweilzeit_min: 'Mindest-Verweilzeit',
   channel_carve: 'Gerinne einschneiden', pad: 'Planum', raise_lower: 'Anheben/Absenken',
   smooth: 'Glätten', ramp: 'Rampe', embankment: 'Dammschüttung',
   replace_region: 'Bereich ersetzen', set_level: 'Absoluthöhe',
@@ -134,6 +136,12 @@ export const TEMPLATES = {
     Pegelpunkt: { id: 'pegel', point: [12, 12] },
   },
   target: {
+    'Massenbilanz (eingeschwungen)': { id: 'nw_bilanz',
+      kind: 'massenbilanz', limit_max: 0.02 },
+    'Kurzschluss (t10/τ)': { id: 'nw_kurzschluss',
+      kind: 'kurzschluss', limit_min: 0.3 },
+    'Verweilzeit (t50 mind.)': { id: 'nw_verweilzeit',
+      kind: 'verweilzeit_min', limit_min: 1800.0 },
     'Max. Einstau': { id: 'einstau', kind: 'max_level', at: '', limit_max: 96.0 },
     Abflussaufteilung: { id: 'aufteilung', kind: 'discharge_ratio',
       of: '', to: '', limit_max: 0.35 },

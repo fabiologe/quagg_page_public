@@ -1069,6 +1069,29 @@ class TargetOverfallCd(_Objekt):
     limit_min: float | None = None
 
 
+class TargetMassenbilanz(_Objekt):
+    """|Speicheränderung|/Zufluss am Laufende — die 2 %/10 %-Ampel des
+    Bilanzpanels als benanntes Kriterium (0.02 = eingeschwungen)."""
+    id: str
+    kind: Literal["massenbilanz"]
+    limit_max: float | None = 0.02
+
+
+class TargetKurzschluss(_Objekt):
+    """t10/τ aus der Tracer-Durchbruchskurve — unter 0,3 läuft ein Teil des
+    Zuflusses praktisch direkt durch (Absetzwirkung zählt ihn nicht mit)."""
+    id: str
+    kind: Literal["kurzschluss"]
+    limit_min: float | None = 0.3
+
+
+class TargetVerweilzeitMin(_Objekt):
+    """Mindest-Verweilzeit t50 (s) aus der Durchbruchskurve."""
+    id: str
+    kind: Literal["verweilzeit_min"]
+    limit_min: float | None = None
+
+
 class TargetHeadDifference(_Objekt):
     id: str
     kind: Literal["head_difference"]
@@ -1078,7 +1101,8 @@ class TargetHeadDifference(_Objekt):
 
 
 Target = Annotated[
-    Union[TargetDischargeRatio, TargetMaxLevel, TargetMaxForce,
+    Union[TargetMassenbilanz, TargetKurzschluss, TargetVerweilzeitMin,
+          TargetDischargeRatio, TargetMaxLevel, TargetMaxForce,
           TargetMinBedShear, TargetMaxBedShear, TargetHeadDifference,
           TargetOverfallCd],
     Field(discriminator="kind"),

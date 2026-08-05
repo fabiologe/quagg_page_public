@@ -46,7 +46,7 @@ def _verdict(value: float, limit_max: float | None, limit_min: float | None,
 # Targets
 # --------------------------------------------------------------------------
 
-def _eval_target(df: pd.DataFrame, target) -> dict:
+def _eval_target(df: pd.DataFrame, target, spec: CaseSpec = None) -> dict:
     out: dict = {"id": target.id, "kind": target.kind}
     # Ortsbezug ins Ergebnis echoen, damit Viewer und Bericht Grenzwerte dem
     # Pegel/Querschnitt zuordnen können, ohne die casespec zu laden.
@@ -127,6 +127,37 @@ def _eval_target(df: pd.DataFrame, target) -> dict:
             out.update(value=value, unit="-", limit_max=target.limit_max,
                        limit_min=target.limit_min, result=result,
                        utilisation=util, n_samples=int(len(v)))
+
+    elif target.kind == "massenbilanz":
+        # |dV/dt| am Ende, bezogen auf den Zufluss — die 2 %/10 %-Ampel des
+        # Bilanzpanels als benanntes, prüfbares Kriterium
+        kw = kennwerte(df, spec) if spec is not None else {}
+        anteil = (kw.get("bilanz") or {}).get("anteil")
+        if anteil is None:
+            return missing("Ohne Volumenreihe und Zufluss keine Bilanz.")
+        out["value"] = anteil
+        out["result"], out["utilization"] = _verdict(
+            anteil, target.limit_max, None)
+
+    elif target.kind == "kurzschluss":
+        # t10/τ aus der Tracer-Durchbruchskurve — größer ist besser
+        kw = kennwerte(df, spec) if spec is not None else {}
+        wert = (kw.get("verweilzeit") or {}).get("kurzschluss")
+        if wert is None:
+            return missing("Ohne Tracer-Durchbruch (Verweilzeit mitrechnen) "
+                           "keine Kurzschlusskennzahl.")
+        out["value"] = wert
+        out["result"], out["utilization"] = _verdict(
+            wert, None, target.limit_min)
+
+    elif target.kind == "verweilzeit_min":
+        kw = kennwerte(df, spec) if spec is not None else {}
+        wert = (kw.get("verweilzeit") or {}).get("t50")
+        if wert is None:
+            return missing("Ohne Tracer-Durchbruch keine Verweilzeit t50.")
+        out["value"] = round(wert, 1)
+        out["result"], out["utilization"] = _verdict(
+            wert, None, target.limit_min)
 
     elif target.kind == "head_difference":
         t1, v1 = get_series(df, Quantity.ENERGY_HEAD, target.upstream)
@@ -259,6 +290,131 @@ def _quality(df: pd.DataFrame, manifest: dict | None) -> dict:
 # Gesamtauswertung
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Kennwerte (Stufe C2): die Größen, die bisher NUR im Browser gerechnet
+# wurden (BilanzPanel, VerweilzeitPanel, BauwerkePanel) — jetzt einmal
+# serverseitig, in result.json, und damit an Nachweise bindbar und im
+# Bericht zitierfähig. Formeln 1:1 aus den Panels übernommen.
+# --------------------------------------------------------------------------
+
+def _zeit_bei(t: np.ndarray, v: np.ndarray, f: float) -> float | None:
+    """Erster Zeitpunkt, an dem die Kurve den Anteil f überschreitet
+    (linear interpoliert, damit t50 nicht aufs Schreibintervall rundet)."""
+    for i in range(len(v)):
+        if v[i] >= f:
+            if i == 0:
+                return float(t[0])
+            d = v[i] - v[i - 1]
+            a = (f - v[i - 1]) / d if d > 1e-12 else 0.0
+            return float(t[i - 1] + (t[i] - t[i - 1]) * a)
+    return None
+
+
+def _steigung(t: np.ndarray, v: np.ndarray, anteil: float = 0.25) -> float | None:
+    """Steigung über das letzte Stück der Zeitachse (wie im BilanzPanel)."""
+    if len(t) < 3:
+        return None
+    t_ende = t[-1]
+    t_start = t_ende - (t_ende - t[0]) * anteil
+    i0 = int(np.searchsorted(t, t_start))
+    dt = t_ende - t[i0]
+    if not dt > 0:
+        return None
+    return float((v[-1] - v[i0]) / dt)
+
+
+def _beharrung_ab(t: np.ndarray, q: np.ndarray,
+                  toleranz: float = 0.02) -> float | None:
+    """Erster Zeitpunkt, ab dem der Ablauf im Toleranzband des Endwerts
+    bleibt — und danach nicht wieder ausbricht. Ein Treffer im letzten
+    Zehntel zählt nicht (das ist der Endpunkt, keine Beharrung)."""
+    if len(t) < 10:
+        return None
+    q_ende = q[-1]
+    if not abs(q_ende) > 1e-9:
+        return None
+    abweichung = np.abs(q - q_ende) / abs(q_ende)
+    ok = abweichung <= toleranz
+    # von hinten: längster stabiler Schwanz
+    if not ok[-1]:
+        return None
+    i = len(ok) - 1
+    while i > 0 and ok[i - 1]:
+        i -= 1
+    spaet = t[0] + (t[-1] - t[0]) * 0.9
+    return float(t[i]) if t[i] < spaet else None
+
+
+def _zufluss(spec: CaseSpec) -> float:
+    return sum(float(b.q or 0.0) for b in spec.boundaries
+               if b.type == "inflow_constant")
+
+
+def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
+    out: dict = {}
+
+    # ---- Bilanz: Speicheränderung, Beharrung, Austausch ------------------
+    t, vol = get_series(df, Quantity.VOLUME, "domain")
+    zu = _zufluss(spec)
+    if len(t) >= 3:
+        dv = _steigung(t, vol) or 0.0
+        # Ablaufreihe aus der Bilanz (Zufluss − gleitende Speicheränderung)
+        dv_reihe = np.zeros(len(t))
+        for i in range(len(t)):
+            i0 = max(0, i - 5)
+            dt = t[i] - t[i0]
+            dv_reihe[i] = (vol[i] - vol[i0]) / dt if dt > 0 else 0.0
+        q_ab = np.maximum(zu - dv_reihe, 0.0)
+        dauer = float(t[-1])
+        volumen = float(vol[-1])
+        bilanz = {
+            "zufluss": round(zu, 4),
+            "speicheraenderung": round(dv, 4),
+            "ablauf_aus_bilanz": round(max(zu - dv, 0.0), 4),
+            "anteil": round(abs(dv) / zu, 4) if zu > 0 else None,
+            "beharrung_ab": _beharrung_ab(t, q_ab),
+            "austausch": (round(zu * dauer / volumen, 3)
+                          if volumen > 0 and zu > 0 else None),
+        }
+        out["bilanz"] = bilanz
+
+    # ---- Verweilzeit: τ, t10/t50/t90, Kurzschlusskennzahl ----------------
+    tracer_orte = sorted(df.loc[df["quantity"] == Quantity.TRACER,
+                                "location_id"].unique())
+    if tracer_orte and len(t) and zu > 0:
+        tt, tv = get_series(df, Quantity.TRACER, tracer_orte[0])
+        vol_mittel = float(np.mean(vol)) if len(vol) else 0.0
+        tau = vol_mittel / zu if zu > 0 else None
+        t10 = _zeit_bei(tt, tv, 0.1)
+        out["verweilzeit"] = {
+            "ablauf": tracer_orte[0],
+            "tau": round(tau, 2) if tau else None,
+            "t_an": _zeit_bei(tt, tv, 0.01),
+            "t10": t10,
+            "t50": _zeit_bei(tt, tv, 0.5),
+            "t90": _zeit_bei(tt, tv, 0.9),
+            "kurzschluss": (round(t10 / tau, 3)
+                            if t10 is not None and tau else None),
+            "ausgelaufen": bool(len(tv) and tv[-1] >= 0.85),
+        }
+
+    # ---- Bauwerke: Hebelarm der Resultierenden ---------------------------
+    for patch in spec.evaluation.force_patches:
+        _, fx = get_series(df, Quantity.FORCE, patch, "x")
+        _, fy = get_series(df, Quantity.FORCE, patch, "y")
+        _, mm = get_series(df, Quantity.MOMENT, patch, "magnitude")
+        if not (len(fx) and len(fy) and len(mm)):
+            continue
+        fh = float(np.hypot(fx[-1], fy[-1]))
+        if fh > 1e-6:
+            out.setdefault("bauwerke", {})[patch] = {
+                "horizontalkraft": round(fh, 1),
+                "kippmoment": round(float(mm[-1]), 1),
+                "hebelarm": round(float(mm[-1]) / fh, 3),
+            }
+    return out
+
+
 def evaluate_run(df: pd.DataFrame, spec: CaseSpec, run_id: str,
                  manifest: dict | None = None) -> dict:
     return {
@@ -268,7 +424,8 @@ def evaluate_run(df: pd.DataFrame, spec: CaseSpec, run_id: str,
         "nachweis": spec.meta.nachweis.model_dump(),
         "crs_epsg": spec.meta.crs.epsg if spec.meta.crs else None,
         "quality": _quality(df, manifest),
-        "targets": [_eval_target(df, t) for t in spec.evaluation.targets],
+        "kennwerte": kennwerte(df, spec),
+        "targets": [_eval_target(df, t, spec) for t in spec.evaluation.targets],
         "extremes": _extremes(df),
         "figures": [],
     }
