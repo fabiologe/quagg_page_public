@@ -200,9 +200,17 @@ openingPos) sind GELÖSCHT — Marker und Fenster-Griffe lesen `store.aufgeloest
 3.126 auf 2.366 Zeilen: `editor/objektZugriff.js` (Griffe-Registry, Verschieben,
 Fangpunkte — three-frei) und `editor/rotGizmo.js` herausgeschnitten.*
 
-*OFFEN (Folge-Etappe): Marker-Ebene, Zeichenwerkzeuge, Drag-Maschinen und
-Event-Verkabelung herausschneiden (Ziel < 800 Zeilen bleibt); vorher eine
-manuelle Runde im Editor — die Schnitte sind nur baugeprüft, nicht bedient.*
+*Stand Etappe 3: `editor/szene.js` (Gelände/Körper/Solids), `editor/marker.js`
+(Marker-Ebene, liest die aufgelösten Serverregeln) und `editor/achsen.js`
+(Führungslinien, Snapping, Δ-Anzeige) herausgeschnitten — Editor3D bei 1.773
+Zeilen (von 3.126). Import-Dialog hat eine 3D-Kandidaten-Vorschau (Zeile
+überfahren hebt den Körper hervor) — klassifizieren mit Augen; nach dem Import
+ist die Zuordnung am selegierten Objekt änderbar (PR #2).*
+
+*RESTPOSTEN (bewusst): Zeichenwerkzeuge, Stanzen, Drag-Maschinen und
+Event-Verkabelung stecken noch im Editor (~1.000 Zeilen Kern) — sie sind eng
+mit dem Pointer-Lebenszyklus verwoben; weiterschneiden lohnt erst, wenn eine
+manuelle Runde die bisherigen Schnitte bestätigt hat.*
 
 | Paket | Inhalt |
 |---|---|
