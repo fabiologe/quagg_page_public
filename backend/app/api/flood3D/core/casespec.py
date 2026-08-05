@@ -81,6 +81,9 @@ def _rot2(deg: float) -> tuple[float, float]:
     return math.cos(a), math.sin(a)
 
 
+# Rückverortung ist ein NACHWEIS-VERSPRECHEN: derzeit test- und
+# vertragsgenutzt, ohne Produktions-Leser — Schnittstelle für spätere
+# Export-Wege (Landeskoordinaten im Bericht).
 def welt_nach_lokal(t: "CrsTransform", x: float, y: float) -> tuple[float, float]:
     c, s = _rot2(t.rotation_deg)
     return (c * x - s * y + t.translation[0],
@@ -424,8 +427,7 @@ class Terrain(_Model):
     # DER Schalter, ob das Gelände als geschlossener ERDKÖRPER an den
     # Vernetzer geht (nur so trägt es Bohrungen und Aushübe) oder als
     # offene Höhenfläche. "auto" = die eine Inferenz in
-    # solids.braucht_erdkoerper (Körperdatei, Berechnungskörper-Operation,
-    # durchstoßender Durchlass, Aushub) — vorher entschieden diese vier
+    # solids.braucht_erdkoerper (Körperdatei, durchstoßender Durchlass, Aushub) — vorher entschieden diese vier
     # Auslöser verstreut und ohne Übersteuerungsmöglichkeit.
     erdkoerper: Literal["auto", "an", "aus"] = "auto"
 

@@ -11,7 +11,6 @@ Jeder Schritt schreibt sein Log in den Fallordner, das Laufmanifest
 from __future__ import annotations
 
 import json
-import math
 import os
 import re
 import subprocess

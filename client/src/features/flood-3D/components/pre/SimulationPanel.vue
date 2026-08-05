@@ -292,7 +292,7 @@ async function pauseClicked() {
   try {
     await pauseLocalRun(localJobId.value)
   } catch (e) {
-    store.error = `Pause: ${e.message}`
+    store.melden(`Pause: ${e.message}`, 'fehler')
   } finally {
     pausing.value = false
   }
@@ -342,7 +342,7 @@ async function starteLokal(resumeJob = null) {
     offeneLaeufe.value = await unterbrocheneLaeufe()
     store.activePhase = 'ergebnis'
   } catch (e) {
-    store.error = `Lokaler Lauf: ${e.message}`
+    store.melden(`Lokaler Lauf: ${e.message}`, 'fehler')
     localLog.value.push(`FEHLER: ${e.message}`)
     // nach Abbruch/Absturz kann derselbe Lauf fortgesetzt werden
     offeneLaeufe.value = await unterbrocheneLaeufe()

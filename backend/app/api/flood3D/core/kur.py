@@ -29,6 +29,7 @@ KUR_LABELS = {
     "durchstoss_ein": "Durch das Gelände bohren",
     "verweis_entfernen": "Verweis ins Leere entfernen",
     "erdkoerper_auto": "Erdkörper wieder automatisch",
+    # ohne Prüfbefund — beschriftet die Gizmo-Aktion im Mutationsvertrag
     "drehen": "Modell drehen",
 }
 
@@ -67,7 +68,7 @@ def _refine_surface(spec: CaseSpec, patch: str, stufe: int) -> str:
             "angelegt")
 
 
-def _verfeinerung_erhoehen(spec: CaseSpec, args: dict) -> str:
+def _verfeinerung_erhoehen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Zellgröße am Bauwerk so weit halbieren, bis die kleinste Abmessung
     aufgelöst ist. Vier Zellen über die Dicke sind die Faustregel, mit der
@@ -82,7 +83,7 @@ def _verfeinerung_erhoehen(spec: CaseSpec, args: dict) -> str:
     return _refine_surface(spec, patch, max(stufe, 1))
 
 
-def _box_ans_fenster(spec: CaseSpec, args: dict) -> str:
+def _box_ans_fenster(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Verfeinerungsquader um die Öffnung einer Randbedingung. Zwei Zellen
     Rand ringsum und zwei Zellen tief ins Gebiet — genug, damit die
@@ -130,7 +131,7 @@ def _box_ans_fenster(spec: CaseSpec, args: dict) -> str:
             f"(Stufe {stufe}, entspricht {zelle / 2 ** stufe:g} m Zellgröße)")
 
 
-def _box_auf_spiegel(spec: CaseSpec, args: dict) -> str:
+def _box_auf_spiegel(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """Verfeinerungsquader vertikal bis über den Anfangswasserspiegel ziehen."""
     ref = next((r for r in spec.mesh.refinements
                 if r.id == args["refinement"] and r.type == "box"), None)
@@ -148,7 +149,7 @@ def _box_auf_spiegel(spec: CaseSpec, args: dict) -> str:
             f"gezogen — der Wasserspiegel bei {level:g} m liegt jetzt darin")
 
 
-def _gelaende_einbinden(spec: CaseSpec, args: dict) -> str:
+def _gelaende_einbinden(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """Bearbeitung „Gelände" an ein Bauwerk hängen (Sockel bzw. Kappen)."""
     from .casespec import EditGelaende
 
@@ -170,7 +171,7 @@ def _gelaende_einbinden(spec: CaseSpec, args: dict) -> str:
             "geführt und die Übertiefe gekappt")
 
 
-def _kraftauswertung_ein(spec: CaseSpec, args: dict) -> str:
+def _kraftauswertung_ein(spec: CaseSpec, args: dict, base_dir=None) -> str:
     patch = args["patch"]
     if patch in spec.evaluation.force_patches:
         return f"Die Kraftauswertung für „{patch}“ war bereits eingeschaltet"
@@ -179,7 +180,7 @@ def _kraftauswertung_ein(spec: CaseSpec, args: dict) -> str:
             "werden ab dem nächsten Lauf als Zeitreihe geschrieben")
 
 
-def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict) -> str:
+def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Gebietsdeckel und -sohle so weit ziehen, dass das Gelände hineinpasst.
     Eine halbe Basiszelle Luft, damit die Grenze nicht auf der Oberfläche
@@ -195,7 +196,7 @@ def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict) -> str:
     # die der Befund gemeldet wurde, und meldet „passt bereits"
     feld = gelaende_mit_aushub(
         TerrainField.from_spec(spec.terrain, spec.domain,
-                               args.get("base_dir", ".")), spec)
+                               base_dir or "."), spec)
     luft = 0.5 * spec.mesh.base_cell
     hoch = float(feld.z.max())
     tief = float(feld.z.min())
@@ -211,7 +212,7 @@ def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict) -> str:
             "das Gelände passt jetzt hinein")
 
 
-def _durchstoss_ein(spec: CaseSpec, args: dict) -> str:
+def _durchstoss_ein(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Am vergrabenen Durchlass das Bohren einschalten. Das Gelände wird
     dadurch nicht mehr als Höhenfläche, sondern als Erdkörper mit
@@ -231,7 +232,7 @@ def _durchstoss_ein(spec: CaseSpec, args: dict) -> str:
             "Mündung wird dadurch als Fläche angeschnitten")
 
 
-def _verweis_entfernen(spec: CaseSpec, args: dict) -> str:
+def _verweis_entfernen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Einen Verweis beseitigen, der ins Leere zeigt. Vier Sorten, alle
     ortlos: ein Nachweiskriterium ohne Bezugsobjekt, eine Flächen-
@@ -275,14 +276,14 @@ def _verweis_entfernen(spec: CaseSpec, args: dict) -> str:
     raise ValueError(f"Unbekannte Verweisart: {art}")
 
 
-def _anschluesse(spec: CaseSpec, args: dict) -> str:
+def _anschluesse(spec: CaseSpec, args: dict, base_dir=None) -> str:
     from .anschluss import anschluesse_herstellen
 
     meldungen = anschluesse_herstellen(spec)
     return " · ".join(meldungen) if meldungen else "Anschlüsse waren stimmig"
 
 
-def _erdkoerper_auto(spec: CaseSpec, args: dict) -> str:
+def _erdkoerper_auto(spec: CaseSpec, args: dict, base_dir=None) -> str:
     if spec.terrain is None:
         return "Kein Gelände — nichts umzustellen"
     if spec.terrain.erdkoerper == "auto":
@@ -337,4 +338,4 @@ def anwenden(spec: CaseSpec, aktion: str, args: dict | None = None,
     if spec.mesh is None or spec.domain is None:
         raise ValueError("Ohne Modellgebiet und Netzangaben gibt es nichts "
                          "zu richten")
-    return fn(spec, args or {})
+    return fn(spec, args or {}, base_dir)

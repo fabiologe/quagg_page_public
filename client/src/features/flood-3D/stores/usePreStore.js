@@ -5,27 +5,14 @@
 // neu vom Server geladen werden muss.
 import { defineStore } from 'pinia'
 import { flood3dApi } from '../services/api'
+import { b64ToBuffer as b64Buffer } from '../services/volume'
+import { KIND_PATHS } from '../utils/kindPfade'
 import { setzeSchema } from '../utils/feldTypen'
 import { aufraeumplan } from '../utils/aufraeumen'
 
-function b64Buffer(b64) {
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return bytes.buffer
-}
 
-// Objektlisten der casespec: Auswahl-Kind -> Pfad in der Spec
-export const KIND_PATHS = {
-  terrain_op: (s) => s.terrain?.operations,
-  structure: (s) => s.structures,
-  kante: (s) => s.terrain?.kanten,
-  refinement: (s) => s.mesh?.refinements,
-  boundary: (s) => s.boundaries,
-  section: (s) => s.evaluation?.sections,
-  gauge: (s) => s.evaluation?.gauges,
-  target: (s) => s.evaluation?.targets,
-}
+
+export { KIND_PATHS } from '../utils/kindPfade'
 
 export const usePreStore = defineStore('flood3d-pre', {
   state: () => ({
@@ -61,7 +48,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     activePhase: 'modell',
     caseRuns: [],          // Läufe DIESES Falls (run_id-Präfix)
     // Bearbeitung, die gerade in die Szene GEZEICHNET wird:
-    // { art: 'bohrung'|'oeffnung'|'schnitt', id, mass } — der Editor zeigt
+    // { art: 'bohrung'|'oeffnung'|'schnitt', id } — der Editor zeigt
     // eine Vorschau am Körper und stanzt sie beim Klick ein. Zahlen tippen
     // kann man danach immer noch.
     platzierung: null,
@@ -152,10 +139,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       if (i >= 0) this.meldungen.splice(i, 1)
     },
 
-    meldungenLeeren() {
-      this.meldungen = []
-      this.error = ''
-    },
 
     // Höhe des Geländerasters an einer Stelle (bilinear, wie im Editor).
     // Steht hier, weil sowohl der Objektbaum (Vorlagen ans Gelände hängen)
@@ -226,8 +209,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.spec = spec
       this.dirty = false
       this.selection = null
-      await Promise.all([this.refreshGeometry(), this.refreshValidation(),
-        this.ladeRaster()])
+      await Promise.all([this.refreshGeometry(), this.ladeRaster()])
     },
 
     // DER eine Weg für Server-Mutationen (Kur, Drehen, Anschluss, Rezept,
@@ -377,8 +359,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.selection = null
         this.ladeMeshPreviewStand()
         this.ladeImporte()
-        await Promise.all([this.refreshGeometry(), this.refreshValidation(),
-          this.ladeRaster()])
+        await Promise.all([this.refreshGeometry(), this.ladeRaster()])
       } catch (e) {
         this.melden(e.message, 'fehler')
       } finally {

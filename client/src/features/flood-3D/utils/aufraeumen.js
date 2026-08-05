@@ -1,3 +1,5 @@
+import { KIND_NAMEN, KIND_PATHS } from './kindPfade'
+
 // Löschen räumt auf: was ohne das gelöschte Objekt keinen Inhalt mehr hat,
 // verschwindet mit; was einen eigenen Ort behält, wird gemeldet.
 //
@@ -25,21 +27,7 @@ import {
   PUNKT_FELDER, QUELL_NAMEN, REFERENZ_QUELLEN, referenzListe,
 } from './feldTypen'
 
-const KIND_LISTE = {
-  terrain_op: (s) => s.terrain?.operations,
-  structure: (s) => s.structures,
-  refinement: (s) => s.mesh?.refinements,
-  boundary: (s) => s.boundaries,
-  section: (s) => s.evaluation?.sections,
-  gauge: (s) => s.evaluation?.gauges,
-  target: (s) => s.evaluation?.targets,
-}
 
-const KIND_NAMEN = {
-  terrain_op: 'Geländeoperation', structure: 'Bauwerk',
-  refinement: 'Verfeinerung', boundary: 'Randbedingung',
-  section: 'Querschnitt', gauge: 'Pegelpunkt', target: 'Nachweiskriterium',
-}
 
 const klon = (o) => JSON.parse(JSON.stringify(o))
 
@@ -212,7 +200,7 @@ function eineRunde(spec, meldungen) {
  */
 export function aufraeumplan(spec, kind, id) {
   const neu = klon(spec)
-  const liste = KIND_LISTE[kind]?.(neu)
+  const liste = KIND_PATHS[kind]?.(neu)
   const i = liste?.findIndex((o) => o.id === id)
   if (i == null || i < 0) {
     return { spec: neu, meldungen: [], verwaist: [], runden: 0, ok: false }
