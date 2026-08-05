@@ -84,3 +84,17 @@ def test_verfeinerung_aus_polygon(case):
     assert box.extent[0] == pytest.approx(6.0)
     assert box.extent[2] == pytest.approx(95.0)      # zmin - 1
     assert box.level == 2
+
+
+def test_polygon_wird_3d_koerper(case):
+    """Geschlossenes Polygon → extrudiertes Prisma (parametrischer Pier):
+    Sohle 0,3 m eingebunden, Oberkante 2 m über Gelände, editierbar."""
+    spec, d = case
+    skizze_hinzufuegen(spec, d, kind="polygon", rolle="koerper",
+                       punkte=[[5, 5], [11, 5], [11, 11], [5, 11]])
+    prisma = next(s for s in spec.structures
+                  if s.type == "pier" and s.herkunft == "import")
+    assert prisma.shape == "polygon"
+    assert len(prisma.footprint) == 4          # offener Ring, kein Doppelpunkt
+    assert prisma.base_level == pytest.approx(96.0 - 0.3)
+    assert prisma.top_level == pytest.approx(96.0 + 2.0)
