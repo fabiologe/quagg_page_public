@@ -24,7 +24,6 @@ _FACE_VERTICES: dict[str, str] = {
 def assign_faces(spec: CaseSpec) -> dict[str, tuple[str, str]]:
     """je Quaderfläche (Patchname, Patchtyp); Rest wird Wand."""
     assignment: dict[str, tuple[str, str]] = {}
-    defaults: dict[str, DomainFace] = {}
     for b in spec.boundaries:
         if b.type in ("inflow_hydrograph", "inflow_constant"):
             face_default = "x_min"
@@ -32,7 +31,7 @@ def assign_faces(spec: CaseSpec) -> dict[str, tuple[str, str]]:
             face_default = "x_max"
         else:
             face_default = "z_max"
-        face = b.face or defaults.get(b.id) or face_default
+        face = b.face or face_default
         if face in assignment:
             raise ValueError(
                 f"Randbedingung {b.id}: Gebietsrand {face} ist bereits durch "

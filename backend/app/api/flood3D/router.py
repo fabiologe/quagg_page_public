@@ -514,10 +514,11 @@ async def put_case(case_id: str, payload: dict = Body(...)):
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     spec.to_yaml(d / "case.yaml")
+    # Geometrie gleich mitliefern: das Speichern war bisher 4 Roundtrips
+    # (PUT + 3 Geometrie-GETs) — jetzt einer. `validation`/`netz_stale`
+    # stecken in der Geometrie-Antwort.
     return {"ok": True, "case_hash": spec.case_hash(),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+            **_geometrie_payload(spec, d)}
 
 
 @router.post("/cases/{case_id}/import")
@@ -926,35 +927,17 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
                           and getattr(s, "durchstoesst_gelaende", False)]}
 
 
-@router.post("/cases/{case_id}/preview")
-async def case_preview(case_id: str, payload: dict = Body(...)):
+def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
     """
-    Live-Vorschau eines ENTWURFS ohne Speichern: der Editor schickt die
-    aktuelle casespec, zurück kommen Gelände, Bauwerkskörper und Prüfung.
-    Damit reagiert die Szene unmittelbar auf jede Änderung (scharfer Editor),
-    während die maßgebliche Geometrie serverseitig bleibt (Spez. Kap. 3).
+    DIE eine Geometrie-Antwort: Gelände, Bauwerkskörper, Erdkörper, Prüfung
+    — plus die serverseitig aufgelösten Regeln (Randflächen, wirksame
+    Fenster, Öffnungslagen), damit der Editor sie nicht spiegeln muss.
+    Genutzt von /preview (Entwurf), PUT (Speichern) und GET /geometry.
     """
-    d = _case_dir(case_id)
-    try:
-        spec = CaseSpec.model_validate(migriere(payload))
-    except Exception as e:
-        # KEIN 422: die Vorschau ist der Kanal, über den der Editor erfährt,
-        # was nicht stimmt — ein Fehlerstatus lässt ihn auf dem letzten
-        # Stand einfrieren und zeigt dann etwas, das es nicht mehr gibt.
-        # Also 200 mit einem Befund; die Szene bleibt stehen, aber sichtbar
-        # als veraltet markiert. `PUT` behält seine 422 — eine unlesbare
-        # Datei wird nicht geschrieben.
-        return {"validation": [{"object_id": "case", "severity": "fehler",
-                                "message": f"Entwurf nicht lesbar: {e}"}],
-                "spec_ungueltig": True, "solids": [], "terrain": None,
-                "terrain_solid": None, "netz_stale": False}
-
     out: dict = {"validation": validate_case(spec, d), "solids": [],
                  "terrain": None, "terrain_solid": None,
-                 # Ob das gespeicherte Vorschaunetz noch zu DIESEM Entwurf
-                 # steht. Der Editor hat das bisher selbst geraten und nach
-                 # jeder Eingabe auf „veraltet" gestellt — auch nach einer,
-                 # die kein Netzelement berührt.
+                 # Ob das gespeicherte Vorschaunetz noch zu DIESEM Stand
+                 # steht — der Editor rät das nicht mehr selbst.
                  "netz_stale": _preview_stand(spec, d)["stale"]}
     if spec.terrain is not None and spec.domain is not None:
         try:
@@ -977,7 +960,86 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
                     mesh.export(file_type="stl")).decode()})
     except Exception:
         pass        # Bauwerksproblem steht bereits in der Validierung
+
+    # Aufgelöste Serverregeln (Audit P4.3): welcher Rand auf welcher
+    # Gebietsfläche sitzt, das wirksame Fenster dazu, und wo die
+    # Bearbeitungen auf der Bauteilachse liegen. Der Editor trägt heute
+    # Spiegel dieser drei Regeln (resolveBcFaces/resolveWindow/openingPos)
+    # — diese Antwort ist der Weg, sie beim Editor3D-Schnitt zu löschen.
+    try:
+        from .core.casebuilder import resolve_window
+        from .core.meshgen import assign_faces
+        from .core.solids import _axis_point_and_dir
+
+        flaechen = assign_faces(spec)
+        bc_patches = {b.patch for b in spec.boundaries}
+        out["bc_faces"] = {patch: face
+                           for face, (patch, _typ) in flaechen.items()
+                           if patch in bc_patches}
+        out["fenster"] = {}
+        for b in spec.boundaries:
+            w = resolve_window(spec, b)
+            if w is not None:
+                out["fenster"][b.id] = w
+        out["oeffnungen"] = {}
+        for s in spec.structures:
+            achse = None
+            geschlossen = False
+            if s.type == "wall" and s.alignment and len(s.alignment.points) >= 2:
+                achse = np.asarray([p[:2] for p in s.alignment.points])
+            elif s.type == "basin" and len(s.footprint) >= 2:
+                achse = np.asarray(s.footprint, dtype=float)
+                geschlossen = True
+            if achse is None:
+                continue
+            for e in (s.edits or []):
+                station = getattr(e, "station", None)
+                if station is None:
+                    continue
+                p, richt = _axis_point_and_dir(achse, float(station),
+                                               geschlossen)
+                out["oeffnungen"].setdefault(s.id, {})[e.id] = {
+                    "point": [round(float(p[0]), 3), round(float(p[1]), 3)],
+                    "dir": [round(float(richt[0]), 4),
+                            round(float(richt[1]), 4)]}
+    except Exception:
+        pass        # Zusatzinformation — nie Grund, die Antwort zu verweigern
     return out
+
+
+@router.post("/cases/{case_id}/preview")
+async def case_preview(case_id: str, payload: dict = Body(...)):
+    """
+    Live-Vorschau eines ENTWURFS ohne Speichern: der Editor schickt die
+    aktuelle casespec, zurück kommen Gelände, Bauwerkskörper und Prüfung.
+    Damit reagiert die Szene unmittelbar auf jede Änderung (scharfer Editor),
+    während die maßgebliche Geometrie serverseitig bleibt (Spez. Kap. 3).
+    """
+    d = _case_dir(case_id)
+    try:
+        spec = CaseSpec.model_validate(migriere(payload))
+    except Exception as e:
+        # KEIN 422: die Vorschau ist der Kanal, über den der Editor erfährt,
+        # was nicht stimmt — ein Fehlerstatus lässt ihn auf dem letzten
+        # Stand einfrieren und zeigt dann etwas, das es nicht mehr gibt.
+        # Also 200 mit einem Befund; die Szene bleibt stehen, aber sichtbar
+        # als veraltet markiert. `PUT` behält seine 422 — eine unlesbare
+        # Datei wird nicht geschrieben.
+        return {"validation": [{"object_id": "case", "severity": "fehler",
+                                "message": f"Entwurf nicht lesbar: {e}"}],
+                "spec_ungueltig": True, "solids": [], "terrain": None,
+                "terrain_solid": None, "netz_stale": False}
+    return _geometrie_payload(spec, d)
+
+
+@router.get("/cases/{case_id}/geometry")
+async def case_geometry(case_id: str):
+    """
+    Der GESPEICHERTE Stand als eine Geometrie-Antwort — ersetzt die drei
+    Einzel-GETs terrain/solids/terrain-solid (ein Roundtrip statt drei).
+    """
+    spec, d = _load_case(case_id)
+    return _geometrie_payload(spec, d)
 
 
 @router.post("/cases/{case_id}/profile")

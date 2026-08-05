@@ -452,7 +452,7 @@ class Terrain(_Model):
 # --------------------------------------------------------------------------
 
 class Alignment(_Model):
-    kind: Literal["polyline", "spline"] = "polyline"
+    kind: Literal["polyline"] = "polyline"
     points: list[Point3]
 
 
@@ -1131,12 +1131,6 @@ class Evaluation(_Model):
 
 # Felder, die es einmal gab und die nie eine Wirkung hatten. `extra="forbid"`
 # ist scharf — ohne diese Liste ließe sich kein alter Fall mehr öffnen.
-_ENTFALLEN = {
-    ("structures", "*"): ["cutwater"],
-    ("meta", "crs"): ["origin", "rotation_deg"],
-}
-
-
 def migriere(daten: dict) -> dict:
     """Alte case.yaml lesbar halten: entfallene Angaben still verwerfen."""
     if not isinstance(daten, dict):
@@ -1147,6 +1141,10 @@ def migriere(daten: dict) -> dict:
             # Importkörper aus der Zeit vor dem herkunft-Feld
             if st.get("type") == "imported" and not st.get("herkunft"):
                 st["herkunft"] = "import"
+            # "spline" war wählbar, aber nie gebaut — ehrlich: polyline
+            al = st.get("alignment")
+            if isinstance(al, dict) and al.get("kind") == "spline":
+                al["kind"] = "polyline"
     meta = daten.get("meta")
     if isinstance(meta, dict):
         crs = meta.get("crs")

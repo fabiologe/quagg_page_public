@@ -155,9 +155,21 @@ Kur = ein `case_hash`; jede Kur hat einen Test „Befund weg nach Kur".
 
 ---
 
-### P4 — Feldkunde & API-Konsolidierung · ~2 Sitzungen
+### P4 — Feldkunde & API-Konsolidierung · ~2 Sitzungen · ✅ ERLEDIGT 2026-08-05
 
 **Ziel:** Eine Wahrheit über Felder (das Backend-Schema), halb so viele Endpunkt-Pfade.
+
+*Stand: `GET /schema` wird geladen (`setzeSchema` in feldTypen.js) — Auswahlwerte
+kommen je Objekttyp aus dem Pydantic-Schema, Tabellen sind Fallback +
+Untergruppen-Sonderfälle; alle Beschriftungstabellen aus PropertyPanel nach
+feldTypen.js gezogen (eine Fundstelle). `_geometrie_payload` als DIE Antwort:
+PUT liefert Geometrie mit (Speichern 1 statt 4 Roundtrips), `GET /geometry` ersetzt
+drei Einzel-GETs, base64-Dekodierung nur noch in `uebernehmeGeometrie`. Die Antwort
+trägt die aufgelösten Serverregeln (bc_faces/fenster/oeffnungen, Store `aufgeloest`)
+— das Löschen der drei Editor-Spiegel folgt BEWUSST in P5.3, wo die Marker-Ebene
+ohnehin neu entsteht. Totholz raus: importRun, `_ENTFALLEN`, RHO_WATER/G-Zwillinge,
+meshgen-defaults, `spline` (migriert zu polyline), doppeltes `build_solids` je
+Fallbau. Suite 470 Backend + 46 Client grün.*
 
 | Paket | Inhalt |
 |---|---|

@@ -175,3 +175,29 @@ def test_erdkoerper_schalter_gewinnt_gegen_inferenz(raster_case):
     spec.terrain.erdkoerper = "an"
     kante.durchstoesst_gelaende = False
     assert braucht_erdkoerper(spec) is True          # erzwungen
+
+
+# ---- P4: Geometrie aus einer Quelle ---------------------------------------
+
+def test_geometrie_antwort_buendelt_alles(raster_case, monkeypatch):
+    """GET /geometry ersetzt drei Einzel-GETs; PUT liefert die Geometrie
+    gleich mit (Speichern = 1 Roundtrip statt 4). Beide tragen die
+    serverseitig aufgelösten Regeln (bc_faces/fenster/oeffnungen)."""
+    spec, d = raster_case
+    client = _client(monkeypatch, d)
+
+    g = client.get(f"/cases/{d.name}/geometry").json()
+    assert g["terrain"] is not None
+    assert isinstance(g["validation"], list)
+    assert isinstance(g["bc_faces"], dict) and g["bc_faces"]
+    assert set(g["bc_faces"].values()) <= {"x_min", "x_max", "y_min",
+                                           "y_max", "z_max"}
+    assert "fenster" in g and "oeffnungen" in g and "netz_stale" in g
+
+    res = client.put(f"/cases/{d.name}",
+                     json=spec.model_dump(mode="json", exclude_none=True))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True and "case_hash" in body
+    assert body["terrain"] is not None and isinstance(body["solids"], list)
+    assert isinstance(body["bc_faces"], dict)
