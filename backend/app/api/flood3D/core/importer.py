@@ -31,6 +31,22 @@ import trimesh
 # Pfadtrenner, führende Punkte oder Steuerzeichen.
 SAFE_FILENAME = re.compile(r"^[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9. _()+-]*$")
 
+# Abgeleitete Dateien (gerasterte TINs, transformierte STL-Kopien,
+# Netzvorschau) leben unter derived/ im Fallverzeichnis: wegwerfbar und
+# über die gespeicherte Import-Anwendung (anwendung.json) neu ableitbar.
+# Quellen bleiben oben: case.yaml und imports/.
+DERIVED = "derived"
+
+
+def derived_pfad(case_dir: Path, name: str) -> Path:
+    p = case_dir / DERIVED
+    p.mkdir(exist_ok=True)
+    return p / name
+
+
+def _rel(case_dir: Path, p: Path) -> str:
+    return p.relative_to(case_dir).as_posix()
+
 # Einheiten-Verdacht: Gebäudemaße in mm ergeben BBoxen im Zehntausender-
 # Bereich; Landeskoordinaten (UTM) ergeben Offsets im Millionenbereich.
 UNIT_SUSPECT_SPAN = 5000.0
@@ -1220,7 +1236,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
         from .casespec import Terrain, TerrainBase
         res = spec.terrain.base.resolution if spec.terrain else 0.5
         linien = [linie_laden(by_id[d["candidate"]]) for d in ent]
-        asc = case_dir / f"gelaende_{import_id}_linien.asc"
+        asc = derived_pfad(case_dir, f"gelaende_{import_id}_linien.asc")
 
         # Geschlossene Kanten sind GRENZEN, keine bloßen Punktwolken. Liegt
         # eine Sohle in einem Beckenrand, gehört die Fläche dazwischen
@@ -1249,7 +1265,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
         # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
         vk = spec.terrain.kanten if spec.terrain else []
         mat = spec.terrain.material if spec.terrain else "erde"
-        spec.terrain = Terrain(base=TerrainBase(source=asc.name,
+        spec.terrain = Terrain(base=TerrainBase(source=_rel(case_dir, asc),
                                                 resolution=res),
                                kanten=vk, operations=ops, material=mat)
         nonlocal terrain_bbox
@@ -1354,7 +1370,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
         if c["kind"] == "raster":
             roh = (imp_dir / f"{c['id']}.grid").read_bytes()
             name = re.sub(r"[^A-Za-z0-9_.-]", "_", c["name"])[:40]
-            ziel = case_dir / f"{name}.asc"
+            ziel = derived_pfad(case_dir, f"{name}.asc")
             # Einheit/Offset gelten für ALLE Kandidaten eines Imports gleich —
             # sonst liegen Raster und Bauwerkskörper zueinander verschoben.
             roh, raster_bbox = _raster_transformieren(roh, unit_factor, off)
@@ -1368,7 +1384,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 ops = spec.terrain.operations if spec.terrain else []
                 mat = spec.terrain.material if spec.terrain else "erde"
                 spec.terrain = Terrain(
-                    base=TerrainBase(source=ziel.name, resolution=res),
+                    base=TerrainBase(source=_rel(case_dir, ziel),
+                                     resolution=res),
                     kanten=(spec.terrain.kanten if spec.terrain else []),
                     operations=ops, material=mat)
                 report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
@@ -1393,7 +1410,7 @@ def apply_import(spec, case_dir: Path, import_id: str,
 
             m = load_mesh(c["id"])
             res = spec.terrain.base.resolution if spec.terrain else 1.0
-            asc = case_dir / f"gelaende_{import_id}.asc"
+            asc = derived_pfad(case_dir, f"gelaende_{import_id}.asc")
             koerper_name = None
             if role == "gelaende_koerper":
                 # Volumenkörper: er selbst geht an den Vernetzer, das
@@ -1403,17 +1420,19 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 if not m.is_watertight:
                     m.fill_holes()
                     m.fix_normals()
-                koerper_name = f"gelaendekoerper_{import_id}.stl"
+                koerper_name = _rel(case_dir, derived_pfad(
+                    case_dir, f"gelaendekoerper_{import_id}.stl"))
                 m.export(case_dir / koerper_name)
                 info = rasterize_tin_to_asc(oberseite(m), asc, res)
             else:
                 info = rasterize_tin_to_asc(m, asc, res)
-                m.export(case_dir / f"gelaende_{import_id}_tin.stl")
+                m.export(derived_pfad(case_dir,
+                                      f"gelaende_{import_id}_tin.stl"))
             from .casespec import Terrain, TerrainBase
             ops = spec.terrain.operations if spec.terrain else []
             mat = spec.terrain.material if spec.terrain else "erde"
             spec.terrain = Terrain(
-                base=TerrainBase(source=asc.name, resolution=res,
+                base=TerrainBase(source=_rel(case_dir, asc), resolution=res,
                                  koerper=koerper_name),
                 kanten=(spec.terrain.kanten if spec.terrain else []),
                 operations=ops, material=mat)
@@ -1463,7 +1482,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 n += 1
             existing.add(sid)
             m = load_mesh(c["id"])
-            stl_name = f"import_{sid}.stl"
+            stl_name = _rel(case_dir,
+                            derived_pfad(case_dir, f"import_{sid}.stl"))
             m.export(case_dir / stl_name)
             # Vorbelegung aus der Rolle: ohne Material rechnet der Solver
             # eine hydraulisch GLATTE Wand — für ein Betonbauteil die
@@ -1574,4 +1594,34 @@ def apply_import(spec, case_dir: Path, import_id: str,
                           f"bisherige Wert ({lvl}) lag außerhalb des neuen "
                           "Gebiets")
 
+    # Die ANWENDUNG gehört zu den Rohdaten: mit ihr ist jede Ableitung in
+    # derived/ reproduzierbar (Wegwerf-Test) und ein Re-Apply braucht keine
+    # erneute Deklaration im Dialog.
+    (imp_dir / "anwendung.json").write_text(json.dumps({
+        "decisions": decisions,
+        "unit_factor": unit_factor,
+        "offset": [float(offset[0]), float(offset[1])] if offset else None,
+        "derive_domain": bool(derive_domain),
+        "terrain_from_lines": terrain_from_lines,
+        "rotation_deg": float(rotation_deg or 0.0),
+    }, ensure_ascii=False, indent=1))
+
     return {"report": report}
+
+
+def import_neu_ableiten(spec, case_dir: Path, import_id: str) -> dict:
+    """
+    Den Import mit seiner GESPEICHERTEN Anwendung erneut ableiten: baut
+    alle derived/-Dateien neu und ersetzt die Fallobjekte (idempotent).
+    `derive_domain` wird dabei bewusst NICHT wiederholt — Gebiet und
+    Anfangswasserspiegel sind inzwischen ggf. Handarbeit.
+    """
+    a = json.loads(
+        (case_dir / "imports" / import_id / "anwendung.json").read_text())
+    return apply_import(
+        spec, case_dir, import_id, a.get("decisions") or [],
+        unit_factor=float(a.get("unit_factor", 1.0)),
+        offset=a.get("offset"),
+        derive_domain=False,
+        terrain_from_lines=a.get("terrain_from_lines"),
+        rotation_deg=float(a.get("rotation_deg") or 0.0))

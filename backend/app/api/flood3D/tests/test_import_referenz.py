@@ -227,3 +227,79 @@ def test_kanten_ableitungen_erben_die_herkunft(case):
                  [{"candidate": cid, "role": "bruchkante"}])
     assert len(spec.terrain.operations) == n_ops
     assert len(spec.terrain.kanten) == n_kanten
+
+
+# ---- P2: derived/ ist wegwerfbar ------------------------------------------
+
+def test_wegwerf_derived_ist_bitidentisch_rekonstruierbar(case):
+    """Der Härtetest der Schichtentrennung: derived/ löschen + Reapply mit
+    der gespeicherten Anwendung stellt alles bitidentisch wieder her, ohne
+    die Spec zu verändern."""
+    import hashlib
+    import shutil
+
+    from ..core.importer import import_neu_ableiten
+
+    spec, d = case
+    m = analyze_file(_dxf_gelaende_wand_kante(), "modell.dxf", d)
+    apply_import(spec, d, m["import_id"], _decisions(m))
+
+    derived = d / "derived"
+    dateien = sorted(p.relative_to(derived).as_posix()
+                     for p in derived.rglob("*") if p.is_file())
+    assert dateien, "Ableitungen müssen unter derived/ liegen"
+    # und NUR dort: im Wurzelverzeichnis liegen nur Quellen
+    wurzel = {p.name for p in d.glob("*") if p.is_file()}
+    assert wurzel <= {"case.yaml"}
+    haschs = {n: hashlib.sha256((derived / n).read_bytes()).hexdigest()
+              for n in dateien}
+    spec_vorher = spec.model_dump(mode="json", exclude_none=True)
+
+    shutil.rmtree(derived)
+    import_neu_ableiten(spec, d, m["import_id"])
+
+    dateien_neu = sorted(p.relative_to(derived).as_posix()
+                         for p in derived.rglob("*") if p.is_file())
+    assert dateien_neu == dateien
+    for n in dateien:
+        neu = hashlib.sha256((derived / n).read_bytes()).hexdigest()
+        assert neu == haschs[n], f"{n} ist nach dem Neuableiten anders"
+    assert spec.model_dump(mode="json", exclude_none=True) == spec_vorher
+
+
+def test_rasters_liefert_keine_gelaende_ableitungen(case, monkeypatch):
+    from .. import router as router_modul
+
+    spec, d = case
+    monkeypatch.setenv("FLOOD3D_CASES_ROOT", str(d.parent))
+    m = analyze_file(_dxf_gelaende_wand_kante(), "modell.dxf", d)
+    apply_import(spec, d, m["import_id"], _decisions(m))
+    # Zusatzraster (nicht Gelände) über den Rasterweg
+    roh = (b"ncols 2\nnrows 2\nxllcorner 0\nyllcorner 0\n"
+           b"cellsize 10\nNODATA_value -9999\n100 101\n102 -9999\n")
+    m2 = analyze_file(roh, "zusatz.asc", d)
+    apply_import(spec, d, m2["import_id"],
+                 decisions=[{"candidate": m2["candidates"][0]["id"],
+                             "role": "zusatzraster"}])
+    spec.to_yaml(d / "case.yaml")
+
+    app = FastAPI()
+    app.include_router(router_modul.router)
+    client = TestClient(app)
+    raster = client.get(f"/cases/{d.name}/rasters").json()
+    namen = {r["name"] for r in raster}
+    assert "derived/zusatz.asc" in namen
+    basis = spec.terrain.base.source
+    for r in raster:
+        if r["name"].startswith("derived/gelaende_"):
+            assert r["name"] == basis and r["basis"] is True
+
+    # DELETE derived leert die Ablage, Quellen bleiben
+    res = client.delete(f"/cases/{d.name}/derived")
+    assert res.status_code == 200 and "derived" in res.json()["entfernt"]
+    assert not (d / "derived").exists()
+    assert (d / "imports").is_dir() and (d / "case.yaml").is_file()
+    # und der Reapply-Endpunkt stellt sie wieder her
+    res = client.post(f"/cases/{d.name}/import/{m['import_id']}/reapply")
+    assert res.status_code == 200
+    assert (d / "derived").is_dir()

@@ -143,14 +143,16 @@ def _terrain_drehen(spec: CaseSpec, base_dir: Path, c: float, s: float,
     if not gut.all():
         z = np.where(gut, z, float(z[gut].min()) if gut.any() else 0.0)
 
+    from .importer import derived_pfad
     stempel = abs(hash((round(x0, 3), round(y0, 3), nx, ny))) % 10 ** 8
-    name = f"gelaende_gedreht_{stempel}.asc"
+    ziel = derived_pfad(Path(base_dir), f"gelaende_gedreht_{stempel}.asc")
+    name = ziel.relative_to(base_dir).as_posix()
     zeilen = [f"ncols {nx}", f"nrows {ny}",
               f"xllcorner {x0 - res / 2:.3f}", f"yllcorner {y0 - res / 2:.3f}",
               f"cellsize {res:g}", "nodata_value -9999"]
     for row in z[::-1]:
         zeilen.append(" ".join(f"{v:.3f}" for v in row))
-    (base_dir / name).write_text("\n".join(zeilen))
+    ziel.write_text("\n".join(zeilen))
     return name
 
 

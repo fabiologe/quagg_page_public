@@ -106,9 +106,17 @@ lädt per `migriere` fehlerfrei.
 
 ---
 
-### P2 — Verzeichnistrennung `derived/` · ~1 Sitzung
+### P2 — Verzeichnistrennung `derived/` · ~1 Sitzung · ✅ ERLEDIGT 2026-08-05
 
 **Ziel:** Das Fallverzeichnis lügt nicht mehr: Quellen und Ableitungen getrennt.
+
+*Stand: Importer/rotate/Netzvorschau schreiben nach `derived/` (Spec referenziert
+relative Pfade, Alt-Fälle mit Wurzeldateien laufen weiter); `anwendung.json` macht
+jeden Import per `import_neu_ableiten`/`POST …/reapply` reproduzierbar;
+`GET rasters` filtert Gelände-Ableitungen (Rückkopplungsschleife gekappt);
+`DELETE …/derived` als Aufräumweg. **Der Wegwerf-Test läuft als CI-Test**:
+derived/ löschen + Reapply = bitidentische Dateien + unveränderte Spec.
+Gesamtsuite 462 grün.*
 
 | Paket | Inhalt |
 |---|---|

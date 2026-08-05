@@ -200,7 +200,7 @@ def test_apply_uebernimmt_gelaende_wand_und_trasse(case):
     # Gelände: Rasterdatei ist die neue Basis, TIN liegt daneben
     assert spec.terrain.base.source.endswith(".asc")
     assert (d / spec.terrain.base.source).exists()
-    assert (d / f"gelaende_{m['import_id']}_tin.stl").exists()
+    assert (d / "derived" / f"gelaende_{m['import_id']}_tin.stl").exists()
 
     # Wand: als StructImported mit Rolle und Material
     wand = next(s for s in spec.structures if s.id == "wand_west")

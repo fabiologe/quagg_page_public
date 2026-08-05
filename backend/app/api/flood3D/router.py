@@ -288,7 +288,7 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
     unberührt. Ältere Vorschauen kennen den Netz-Hash noch nicht — für die
     bleibt es beim Vergleich über den ganzen Fall.
     """
-    p = d / "_mesh_preview" / "mesh_preview.json"
+    p = _derived_dir(d) / "mesh_preview" / "mesh_preview.json"
     if not p.is_file():
         return {"vorhanden": False, "stale": False, "preview": None}
     try:
@@ -381,7 +381,7 @@ async def case_mesh_surface(case_id: str):
     from .core.meshsurface import mesh_surface_patches
 
     spec, d = _load_case(case_id)
-    extracted = mesh_surface_patches(d / "_mesh_preview")
+    extracted = mesh_surface_patches(_derived_dir(d) / "mesh_preview")
     if not extracted:
         raise HTTPException(
             status_code=404,
@@ -431,6 +431,13 @@ def _case_dir(case_id: str, must_exist: bool = True) -> Path:
     if must_exist and not (d / "case.yaml").exists():
         raise HTTPException(status_code=404, detail=f"Fall {case_id} unbekannt.")
     return d
+
+
+def _derived_dir(d: Path) -> Path:
+    """Ableitungsablage des Falls — wegwerfbar, siehe importer.DERIVED."""
+    p = d / "derived"
+    p.mkdir(exist_ok=True)
+    return p
 
 
 def _load_case(case_id: str) -> tuple[CaseSpec, Path]:
@@ -575,8 +582,54 @@ async def case_imports(case_id: str):
                 "candidates": m.get("candidates"),
                 "unit_suspect": m.get("unit_suspect"),
                 "aktiv": iid in aktiv_ids or iid in quelle,
+                "wiederholbar": (mdatei.parent / "anwendung.json").is_file(),
             })
     return {"imports": ergebnis}
+
+
+@router.post("/cases/{case_id}/import/{import_id}/reapply")
+async def case_import_reapply(case_id: str, import_id: str):
+    """
+    Import mit seiner gespeicherten Anwendung neu ableiten: baut die
+    derived/-Dateien neu und ersetzt die Fallobjekte (idempotent). Der Weg,
+    der aus „derived/ ist weg" oder „Auflösung geändert" einen normalen
+    Vorgang macht statt eines Neu-Uploads.
+    """
+    from .core.importer import import_neu_ableiten
+
+    spec, d = _load_case(case_id)
+    if not _SAFE.match(import_id) \
+            or not (d / "imports" / import_id / "anwendung.json").is_file():
+        raise HTTPException(status_code=404,
+                            detail="Import ohne gespeicherte Anwendung")
+    try:
+        info = import_neu_ableiten(spec, d, import_id)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    spec.to_yaml(d / "case.yaml")
+    return {"ok": True, "report": info["report"],
+            "spec": spec.model_dump(mode="json", exclude_none=True),
+            "validation": validate_case(spec, d),
+            "netz_stale": _preview_stand(spec, d)["stale"]}
+
+
+@router.delete("/cases/{case_id}/derived")
+async def case_derived_leeren(case_id: str):
+    """
+    Die Ableitungsablage leeren — der Härtetest der Schichtentrennung:
+    danach stellt ein Reapply (je Import) alles bitidentisch wieder her.
+    Quellen (case.yaml, imports/) bleiben unberührt.
+    """
+    import shutil
+
+    d = _case_dir(case_id)
+    entfernt = []
+    for pfad in (d / "derived", d / "_mesh_preview"):
+        if pfad.exists():
+            shutil.rmtree(pfad)
+            entfernt.append(pfad.name)
+    return {"ok": True, "entfernt": entfernt}
 
 
 @router.get("/cases/{case_id}/import/{import_id}/{cand_id}.stl")
@@ -825,10 +878,19 @@ async def case_rasters(case_id: str):
     except HTTPException:
         pass
     out = []
-    for f in sorted(d.glob("*")):
-        if f.is_file() and f.suffix.lower() in (".asc", ".xyz"):
-            out.append({"name": f.name, "mb": round(f.stat().st_size / 1e6, 2),
-                        "basis": f.name == basis})
+    # Quellen im Fallwurzelverzeichnis (Alt-Fälle) plus importierte Raster
+    # unter derived/ — aber KEINE Gelände-Ableitungen (gelaende_*,
+    # gelaende_gedreht_*): eine Ableitung des eigenen Geländes als Quelle
+    # für „Bereich ersetzen" wäre eine Rückkopplungsschleife.
+    kandidaten = list(d.glob("*")) + list((d / "derived").glob("*"))
+    for f in sorted(kandidaten):
+        if not (f.is_file() and f.suffix.lower() in (".asc", ".xyz")):
+            continue
+        name = f.relative_to(d).as_posix()
+        if f.name.startswith("gelaende_") and name != basis:
+            continue
+        out.append({"name": name, "mb": round(f.stat().st_size / 1e6, 2),
+                    "basis": name == basis})
     return out
 
 
@@ -987,11 +1049,15 @@ async def case_mesh_preview(case_id: str):
     spec, d = _load_case(case_id)
 
     def work():
-        # Nicht unter /tmp (Snap-Docker-Falle) — Vorschau neben den Fall legen
-        preview_dir = d / "_mesh_preview"
+        # Nicht unter /tmp (Snap-Docker-Falle) — Vorschau neben den Fall,
+        # aber unter derived/: wegwerfbar, gehoert nicht zu den Quellen
+        preview_dir = _derived_dir(d) / "mesh_preview"
         import shutil
         if preview_dir.exists():
             shutil.rmtree(preview_dir)
+        alt = d / "_mesh_preview"          # Ablage vor P2 aufraeumen
+        if alt.exists():
+            shutil.rmtree(alt)
         info = build_case(spec, preview_dir, d)
         if info["problems"]:
             raise FoamError("Geometrieprobleme: " + "; ".join(info["problems"]))
