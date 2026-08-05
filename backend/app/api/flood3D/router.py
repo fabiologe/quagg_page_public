@@ -587,6 +587,29 @@ async def case_import_reapply(case_id: str, import_id: str,
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
+@router.post("/cases/{case_id}/skizze")
+async def case_skizze(case_id: str, payload: dict = Body(...)):
+    """
+    Handgezeichnetes als CAD-Objekt aufnehmen — die Skizze ist ein Import
+    aus der Hand: Kandidat + Zuordnung in `imports/skizze/`, dann derselbe
+    Ableitungsweg wie beim Dateiimport. payload: {kind: polyline|polygon|
+    kreis, rolle, punkte?|kreis?, name?}.
+    """
+    from .core.importer import skizze_hinzufuegen
+
+    def wirken(spec, d):
+        info = skizze_hinzufuegen(
+            spec, d,
+            kind=str(payload.get("kind") or "polyline"),
+            rolle=str(payload.get("rolle") or "ignorieren"),
+            punkte=payload.get("punkte"),
+            kreis=payload.get("kreis"),
+            name=str(payload.get("name") or ""))
+        return info["report"]
+
+    return _mutation(case_id, wirken, "Skizze fehlgeschlagen")
+
+
 @router.delete("/cases/{case_id}/derived")
 async def case_derived_leeren(case_id: str):
     """

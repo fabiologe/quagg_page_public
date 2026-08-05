@@ -266,6 +266,16 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
     // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
+    // Handgezeichnetes als CAD-Objekt aufnehmen — die Skizze ist ein
+    // Import aus der Hand; die Zuordnung bleibt danach änderbar
+    async skizzeZeichnen(payload) {
+      const meldungen = await this.serverMutation(
+        (id) => flood3dApi.skizzeHinzufuegen(id, payload),
+        'Skizze fehlgeschlagen')
+      this.ladeImporte()
+      return meldungen
+    },
+
     async importNeuAbleiten(importId, rollen = null) {
       const meldungen = await this.serverMutation(
         (id) => flood3dApi.importReapply(id, importId, rollen),

@@ -13,6 +13,9 @@ export const ROLE_LABELS = {
   mauer: 'Mauerkrone → Wand', wehrkrone: 'Überfallkante → Wehr',
   zusatzraster: 'Zusatzraster (Bereich ersetzen)',
   zulaufrohr: 'Rohr am Zulauf', ablaufrohr: 'Rohr am Ablauf',
+  gerinne: 'Gerinne einschneiden', damm: 'Dammschüttung',
+  planum: 'Planum', stutzen: 'Stutzen (Rohr)',
+  verfeinerung: 'Verfeinerungsbox',
   ignorieren: '— ignorieren —',
 }
 export const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
@@ -35,9 +38,11 @@ export const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok',
 export const LINIEN_ROLLEN = [
   { titel: 'formt das Gelände',
     rollen: ['bruchkante', 'boeschung_ok', 'boeschung_uk', 'sohle',
-      'beckenrand', 'krone'] },
-  { titel: 'wird ein Bauteil (umströmt)', rollen: ['mauer', 'wehrkrone'] },
-  { titel: 'sonstiges', rollen: ['querschnitt', 'ignorieren'] },
+      'beckenrand', 'krone', 'gerinne', 'damm', 'planum'] },
+  { titel: 'wird ein Bauteil (umströmt)',
+    rollen: ['mauer', 'wehrkrone', 'wand', 'becken', 'stutzen'] },
+  { titel: 'sonstiges',
+    rollen: ['querschnitt', 'verfeinerung', 'ignorieren'] },
 ]
 export const RASTER_ROLLEN = [{ titel: 'Höhendaten',
   rollen: ['gelaende', 'zusatzraster', 'ignorieren'] }]
