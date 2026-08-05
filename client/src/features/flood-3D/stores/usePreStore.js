@@ -216,70 +216,56 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.ladeRaster()])
     },
 
-    // Den ganzen Fall um die z-Achse drehen. Das Rechengebiet bleibt
-    // achsparallel — es ist das MODELL, das sich dreht. Der Server rechnet
-    // das (inkl. neu abgetastetem Höhenraster) und schreibt den Fall; hier
-    // wird nur der Zustand nachgezogen. Rückgabe: Hinweise des Servers.
-    async drehen(grad) {
-      if (!this.activeCaseId || !grad) return []
-      // ungespeicherte Änderungen zuerst sichern — der Server dreht das,
-      // was in der case.yaml steht
-      if (this.dirty && !(await this.saveCase())) return []
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseRotate(this.activeCaseId, grad)
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await Promise.all([this.refreshGeometry(), this.ladeRaster()])
-        return res.hinweise ?? []
-      } catch (e) {
-        this.melden(`Drehen fehlgeschlagen: ${e.message}`, 'fehler')
-        return []
-      } finally {
-        this.loading = false
-      }
-    },
-
-    // Mechanische Anschlüsse herstellen: Randbedingung auf die Fläche
-    // legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
-    // Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
-    async anschlussHerstellen() {
+    // DER eine Weg für Server-Mutationen (Kur, Drehen, Anschluss, Rezept,
+    // Kantenableitung): ungespeicherte Änderungen sichern, wirken lassen,
+    // Zustand nachziehen — mit EINEM Undo-Schritt, auch wenn ein Rezept
+    // ein halbes Dutzend Objekte einsetzt. Der Server speichert nur bei
+    // echter Änderung (res.geaendert) und sagt über den Netz-Hash, ob die
+    // Vorschau veraltet ist.
+    async serverMutation(aufruf, fehlerText, { raster = false } = {}) {
       if (!this.activeCaseId) return []
       if (this.dirty && !(await this.saveCase())) return []
       const snap = this.spec ? JSON.stringify(this.spec) : null
       this.loading = true
       try {
-        const res = await flood3dApi.caseAnschluss(this.activeCaseId)
-        if (res.meldungen.length && snap) {
+        const res = await aufruf(this.activeCaseId)
+        if (res.geaendert !== false && snap) {
           this.undoStack.push(snap)
           this.redoStack = []
         }
         this.spec = res.spec
         this.validation = res.validation
         this.dirty = false
-        if (res.meldungen.length) {
-          // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
         if (this.meshPreview && res.netz_stale !== undefined) {
           this.meshPreviewStale = res.netz_stale
         }
-          await this.refreshGeometry()
-        }
-        return res.meldungen
+        const nacharbeit = [this.refreshGeometry()]
+        if (raster) nacharbeit.push(this.ladeRaster())
+        await Promise.all(nacharbeit)
+        return res.meldungen ?? []
       } catch (e) {
-        this.melden(`Anschluss fehlgeschlagen: ${e.message}`, 'fehler')
+        this.melden(`${fehlerText}: ${e.message}`, 'fehler')
         return []
       } finally {
         this.loading = false
       }
+    },
+
+    // Den ganzen Fall um die z-Achse drehen — das Rechengebiet bleibt
+    // achsparallel, es ist das MODELL, das sich dreht.
+    async drehen(grad) {
+      if (!grad) return []
+      return this.serverMutation(
+        (id) => flood3dApi.caseRotate(id, grad),
+        'Drehen fehlgeschlagen', { raster: true })
+    },
+
+    // Mechanische Anschlüsse herstellen: Randbedingung auf die Fläche
+    // legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
+    // Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
+    async anschlussHerstellen() {
+      return this.serverMutation(
+        (id) => flood3dApi.caseAnschluss(id), 'Anschluss fehlgeschlagen')
     },
 
     // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
@@ -298,83 +284,27 @@ export const usePreStore = defineStore('flood3d-pre', {
     // und mit EINEM Undo-Schritt wieder rückgängig zu machen, obwohl ein
     // Rezept ein halbes Dutzend Objekte einsetzt.
     async rezeptEinsetzen(name, args = {}) {
-      if (!this.activeCaseId || !name) return []
-      if (this.dirty && !(await this.saveCase())) return []
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseRezept(this.activeCaseId, name, args)
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await this.refreshGeometry()
-        return res.meldungen ?? []
-      } catch (e) {
-        this.melden(`Rezept fehlgeschlagen: ${e.message}`, 'fehler')
-        return []
-      } finally {
-        this.loading = false
-      }
+      if (!name) return []
+      return this.serverMutation(
+        (id) => flood3dApi.caseRezept(id, name, args),
+        'Rezept fehlgeschlagen')
     },
 
     // Aus den Vermessungskanten die Geländeoperationen ableiten. Was in
     // der Zeichnung steht, bleibt erhalten; was daraus folgt, entsteht neu
     // — gepaart wird über die LAGE, nicht über den Layernamen.
     async kantenVerknuepfen() {
-      if (!this.activeCaseId) return []
-      if (this.dirty && !(await this.saveCase())) return []
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseKantenVerknuepfen(this.activeCaseId)
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await this.refreshGeometry()
-        return res.meldungen ?? []
-      } catch (e) {
-        this.melden(`Kanten verknüpfen: ${e.message}`, 'fehler')
-        return []
-      } finally {
-        this.loading = false
-      }
+      return this.serverMutation(
+        (id) => flood3dApi.caseKantenVerknuepfen(id),
+        'Kanten verknüpfen fehlgeschlagen')
     },
 
     async kurAnwenden(fix) {
-      if (!this.activeCaseId || !fix) return ''
-      if (this.dirty && !(await this.saveCase())) return ''
-      const snap = this.spec ? JSON.stringify(this.spec) : null
-      this.loading = true
-      try {
-        const res = await flood3dApi.caseKur(this.activeCaseId, fix.aktion,
-          fix.args ?? {})
-        if (snap) { this.undoStack.push(snap); this.redoStack = [] }
-        this.spec = res.spec
-        this.validation = res.validation
-        this.dirty = false
-        // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) —
-        // eine Kur, die nur die Auswertung ändert, entwertet es nicht
-        if (this.meshPreview && res.netz_stale !== undefined) {
-          this.meshPreviewStale = res.netz_stale
-        }
-        await this.refreshGeometry()
-        return res.meldung
-      } catch (e) {
-        this.melden(`Kur fehlgeschlagen: ${e.message}`, 'fehler')
-        return ''
-      } finally {
-        this.loading = false
-      }
+      if (!fix) return ''
+      const meldungen = await this.serverMutation(
+        (id) => flood3dApi.caseKur(id, fix.aktion, fix.args ?? {}),
+        'Kur fehlgeschlagen')
+      return meldungen.join(' · ')
     },
 
     async openCase(caseId) {

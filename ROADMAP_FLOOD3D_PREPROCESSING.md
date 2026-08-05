@@ -130,9 +130,18 @@ außerhalb `derived/` außer in `case.yaml` und `imports/`.
 
 ---
 
-### P3 — Ein Mutationsvertrag, nicht-destruktiv · ~2 Sitzungen
+### P3 — Ein Mutationsvertrag, nicht-destruktiv · ~2 Sitzungen · ✅ ERLEDIGT 2026-08-05
 
 **Ziel:** Server-Mutationen sind Ableitungen mit Protokoll, keine Überschreiber.
+
+*Stand: Router-`_mutation()` als der eine Vertrag (laden → wirken → nur bei Änderung
+speichern → {meldungen, geaendert, spec, validation, netz_stale}); Drehen und Anschluss
+sind Kur-Aktionen, Rezept/Kanten laufen über denselben Vertrag; Client-Store von fünf
+parallelen Methoden auf EIN `serverMutation()`. Drehen tastet KETTENFREI vom
+Original-Raster ab (`TerrainBase.original` + akkumulierte Abbildung; 4×90° ist
+höhengleich mit dem Original, Test). Kuren/Rezepte stempeln `herkunft`. Erdkörper:
+`terrain.erdkoerper` (auto/an/aus) über der einen Inferenz `braucht_erdkoerper`,
+Regel+Kur `erdkoerper_auto` messen dieselbe Größe (Test). 8 neue Tests, Suite 469 grün.*
 
 | Paket | Inhalt |
 |---|---|

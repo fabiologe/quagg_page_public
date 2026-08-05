@@ -162,6 +162,13 @@ class TerrainBase(_Model):
     # daraus abgeleitete Höhenraster trägt alles, was eine Höhe je Punkt
     # braucht (Prüfung, Fensterlage, Anzeige).
     koerper: str | None = None
+    # Kettenfreies Drehen: `original` ist die Rasterquelle VOR der ersten
+    # Drehung, `original_abbildung` die akkumulierte Abbildung original →
+    # aktuelles System. Jede weitere Drehung tastet vom ORIGINAL ab statt
+    # vom letzten Resampling — sonst verwischt jedes Drehen das Gelände
+    # ein Stück mehr.
+    original: str | None = None
+    original_abbildung: CrsTransform | None = None
 
 
 class OpChannelCarve(_Objekt):
@@ -431,6 +438,13 @@ class Terrain(_Model):
     operations: list[TerrainOp] = []
     material: Material = "erde"
     material_ks: float | None = None
+    # DER Schalter, ob das Gelände als geschlossener ERDKÖRPER an den
+    # Vernetzer geht (nur so trägt es Bohrungen und Aushübe) oder als
+    # offene Höhenfläche. "auto" = die eine Inferenz in
+    # solids.braucht_erdkoerper (Körperdatei, Berechnungskörper-Operation,
+    # durchstoßender Durchlass, Aushub) — vorher entschieden diese vier
+    # Auslöser verstreut und ohne Übersteuerungsmöglichkeit.
+    erdkoerper: Literal["auto", "an", "aus"] = "auto"
 
 
 # --------------------------------------------------------------------------
@@ -1016,7 +1030,7 @@ class Gauge(_Objekt):
     point: Point2
 
 
-class TargetDischargeRatio(_Model):
+class TargetDischargeRatio(_Objekt):
     id: str
     kind: Literal["discharge_ratio"]
     of: str                       # Section-ID Zähler
@@ -1025,14 +1039,14 @@ class TargetDischargeRatio(_Model):
     limit_min: float | None = None
 
 
-class TargetMaxLevel(_Model):
+class TargetMaxLevel(_Objekt):
     id: str
     kind: Literal["max_level"]
     at: str                       # Gauge-ID
     limit_max: float | None = None
 
 
-class TargetMaxForce(_Model):
+class TargetMaxForce(_Objekt):
     id: str
     kind: Literal["max_force"]
     at: str                       # Patch-/Struktur-ID
@@ -1040,14 +1054,14 @@ class TargetMaxForce(_Model):
     limit_max: float | None = None
 
 
-class TargetMinBedShear(_Model):
+class TargetMinBedShear(_Objekt):
     id: str
     kind: Literal["min_bed_shear"]
     region: str
     limit_min: float | None = None
 
 
-class TargetMaxBedShear(_Model):
+class TargetMaxBedShear(_Objekt):
     """Sohlensicherung: τ_max ≤ τ_zulässig (Steinklasse/Material)."""
     id: str
     kind: Literal["max_bed_shear"]
@@ -1055,7 +1069,7 @@ class TargetMaxBedShear(_Model):
     limit_max: float | None = None
 
 
-class TargetOverfallCd(_Model):
+class TargetOverfallCd(_Objekt):
     """
     Überfallbeiwert eines Wehrs: C_d = Q / (2/3·√(2g)·b·h^1.5) aus dem
     Durchfluss über den Querschnitt, dem Oberwasserstand am Pegel und
@@ -1070,7 +1084,7 @@ class TargetOverfallCd(_Model):
     limit_min: float | None = None
 
 
-class TargetHeadDifference(_Model):
+class TargetHeadDifference(_Objekt):
     id: str
     kind: Literal["head_difference"]
     upstream: str                 # Section-ID

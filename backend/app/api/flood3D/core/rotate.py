@@ -29,7 +29,6 @@ from pathlib import Path
 import numpy as np
 
 from .casespec import CaseSpec
-from .terrain import TerrainField
 
 
 def _dreh(pkte, c: float, s: float, mitte: np.ndarray):
@@ -116,32 +115,40 @@ def _naechste_flaeche(p, extent) -> str:
 # Gelände
 # --------------------------------------------------------------------------
 
-def _terrain_drehen(spec: CaseSpec, base_dir: Path, c: float, s: float,
+def _terrain_drehen(spec: CaseSpec, base_dir: Path, grad: float,
                     mitte: np.ndarray, neues_extent) -> str | None:
     """
-    Höhenraster neu abtasten. Ein Raster lässt sich nicht drehen, ohne es
-    neu aufzubauen — für jeden Punkt des NEUEN Rasters wird die Höhe an der
-    zurückgedrehten Stelle im alten Feld geholt.
+    Höhenraster neu abtasten — KETTENFREI: abgetastet wird immer das
+    ORIGINAL (die Quelle vor der ersten Drehung), nie das letzte
+    Resampling. Sonst verwischt jede weitere Drehung das Gelände ein
+    Stück mehr (Resampling auf Resampling). Die akkumulierte Abbildung
+    original → aktuell steht in `base.original_abbildung`.
     """
     if spec.terrain is None or spec.terrain.base.source.startswith("flat:"):
         return None
-    # nur die Basis abtasten; die Operationen wandern als Geometrie mit und
-    # würden sonst zweimal wirken
-    ohne_ops = spec.terrain.model_copy(update={"operations": []})
-    alt = TerrainField.from_spec(ohne_ops, spec.domain, base_dir)
-    res = spec.terrain.base.resolution
+    from .casespec import transform_drehung
+    from .terrain import _load_base
+
+    base = spec.terrain.base
+    original = base.original or base.source
+    abbildung = transform_drehung(base.original_abbildung, float(grad),
+                                  (float(mitte[0]), float(mitte[1])))
+
+    res = base.resolution
     x0, y0, x1, y1 = neues_extent
     nx = max(2, int(round((x1 - x0) / res)) + 1)
     ny = max(2, int(round((y1 - y0) / res)) + 1)
     xx, yy = np.meshgrid(x0 + np.arange(nx) * res, y0 + np.arange(ny) * res)
-    # zurückdrehen: die Quelle liegt im ungedrehten System
-    quelle = _dreh(np.stack([xx, yy], axis=-1), c, -s, mitte)
-    z = np.asarray(alt.sample(quelle[..., 0], quelle[..., 1]), dtype=float)
-    # Ecken außerhalb des alten Rasters: mit dem Randwert füllen, damit
-    # kein Loch im Gelände entsteht
-    gut = np.isfinite(z)
-    if not gut.all():
-        z = np.where(gut, z, float(z[gut].min()) if gut.any() else 0.0)
+    # Rückabbildung neu → original: Inverse von p' = R·p + t
+    th = math.radians(abbildung.rotation_deg)
+    ci, si = math.cos(-th), math.sin(-th)
+    dx = xx - abbildung.translation[0]
+    dy = yy - abbildung.translation[1]
+    z = np.asarray(_load_base(original, Path(base_dir),
+                              ci * dx - si * dy, si * dx + ci * dy),
+                   dtype=float)
+    base.original = original
+    base.original_abbildung = abbildung
 
     from .importer import derived_pfad
     stempel = abs(hash((round(x0, 3), round(y0, 3), nx, ny))) % 10 ** 8
@@ -192,7 +199,7 @@ def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict
                     round(float(ecken[:, 1].max()), 3))
 
     # --- Gelände zuerst (braucht noch das alte Gebiet)
-    neuer_name = _terrain_drehen(spec, base_dir, c, s, mitte, neues_extent)
+    neuer_name = _terrain_drehen(spec, base_dir, grad, mitte, neues_extent)
     spec.domain.extent = neues_extent
     if neuer_name:
         spec.terrain.base.source = neuer_name

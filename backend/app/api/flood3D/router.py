@@ -678,32 +678,51 @@ async def case_import_apply(case_id: str, import_id: str,
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
+def _mutation(case_id: str, wirken, fehlertext: str) -> dict:
+    """
+    DER eine Vertrag aller Fall-Mutationen: laden → wirken(spec, d) →
+    erneut validieren → NUR BEI ÄNDERUNG speichern → einheitliche Antwort
+    {meldungen, geaendert, spec, validation, netz_stale}. Eine Kur, die
+    „war schon so" meldet, fasst die case.yaml nicht mehr an.
+    """
+    spec, d = _load_case(case_id)
+    vorher = spec.model_dump(mode="json", exclude_none=True)
+    try:
+        meldungen = wirken(spec, d)
+        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"{fehlertext}: {e}")
+    nachher = spec.model_dump(mode="json", exclude_none=True)
+    geaendert = nachher != vorher
+    if geaendert:
+        spec.to_yaml(d / "case.yaml")
+    if isinstance(meldungen, str):
+        meldungen = [meldungen] if meldungen else []
+    return {"ok": True, "meldungen": meldungen, "geaendert": geaendert,
+            "spec": nachher,
+            "validation": validate_case(spec, d),
+            "netz_stale": _preview_stand(spec, d)["stale"]}
+
+
 @router.post("/cases/{case_id}/rotate")
 async def case_rotate(case_id: str, payload: dict = Body(...)):
     """
     Den ganzen Fall um die z-Achse drehen. Nicht das Gebiet steht danach
     schief, sondern das Modell steht gerade — das achsparallele Rechengebiet
-    legt sich dadurch eng um ein schräg liegendes Bauwerk.
+    legt sich dadurch eng um ein schräg liegendes Bauwerk. Läuft als Kur
+    über den einen Mutationsvertrag.
     """
-    from .core.rotate import rotate_case
+    from .core.kur import anwenden
 
-    spec, d = _load_case(case_id)
     grad = float(payload.get("deg") or 0.0)
-    if spec.domain is None:
-        raise HTTPException(status_code=422, detail="Fall ohne Modellgebiet.")
-    if not (-360 <= grad <= 360):
-        raise HTTPException(status_code=422, detail="Drehwinkel außerhalb ±360°.")
-    try:
-        info = rotate_case(spec, grad, d)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Drehung fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, **info,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: anwenden(spec, "drehen",
+                                              {"deg": grad}, d),
+                     "Drehung fehlgeschlagen")
 
 
 @router.post("/cases/{case_id}/anschluss")
@@ -713,21 +732,12 @@ async def case_anschluss(case_id: str):
     legen, an der ihr Bauwerk endet, Rohrachse bis dorthin führen,
     Verfeinerungsquader ins Gebiet beschneiden. Ändert keine Hydraulik.
     """
-    from .core.anschluss import anschluesse_herstellen
+    from .core.kur import anwenden
 
-    spec, d = _load_case(case_id)
-    try:
-        meldungen = anschluesse_herstellen(spec)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Anschluss fehlgeschlagen: {e}")
-    if meldungen:
-        spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldungen": meldungen,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: anwenden(spec, "anschluesse_herstellen",
+                                              {}, d),
+                     "Anschluss fehlgeschlagen")
 
 
 @router.post("/cases/{case_id}/kur")
@@ -735,26 +745,15 @@ async def case_kur(case_id: str, payload: dict = Body(...)):
     """
     Die Reparatur zu einem Prüfbefund ausführen. Der Befund selbst liefert
     Aktion und Argumente (`fix` in der Prüfung) — hier wird nur noch
-    angewandt und gespeichert.
+    angewandt; gespeichert wird nur, wenn sich wirklich etwas ändert.
     """
     from .core.kur import anwenden
 
-    spec, d = _load_case(case_id)
     aktion = str(payload.get("aktion") or "")
     args = payload.get("args") or {}
-    try:
-        meldung = anwenden(spec, aktion, args)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Kur fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldung": meldung,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: anwenden(spec, aktion, args, d),
+                     "Kur fehlgeschlagen")
 
 
 @router.post("/cases/{case_id}/kanten-verknuepfen")
@@ -770,27 +769,19 @@ async def case_kanten_verknuepfen(case_id: str):
     from .core.kanten import verknuepfen
     from .core.terrain import TerrainField
 
-    spec, d = _load_case(case_id)
-    # Nur zum Messen der Gründungstiefe abgeleiteter Bauteile. Scheitert
-    # das Gelände, wird vorbelegt statt abgebrochen — die Kantenlogik
-    # selbst braucht es nicht.
-    feld = None
-    if spec.terrain is not None and spec.domain is not None:
-        try:
-            feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
-        except Exception:
-            feld = None
-    try:
-        meldungen = verknuepfen(spec, feld)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except Exception as e:
-        raise HTTPException(status_code=422,
-                            detail=f"Kanten verknüpfen fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldungen": meldungen,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    def wirken(spec, d):
+        # Nur zum Messen der Gründungstiefe abgeleiteter Bauteile. Scheitert
+        # das Gelände, wird vorbelegt statt abgebrochen — die Kantenlogik
+        # selbst braucht es nicht.
+        feld = None
+        if spec.terrain is not None and spec.domain is not None:
+            try:
+                feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+            except Exception:
+                feld = None
+        return verknuepfen(spec, feld)
+
+    return _mutation(case_id, wirken, "Kanten verknüpfen fehlgeschlagen")
 
 
 @router.get("/rezepte")
@@ -811,23 +802,11 @@ async def case_rezept(case_id: str, payload: dict = Body(...)):
     """
     from .core.rezepte import einsetzen
 
-    spec, d = _load_case(case_id)
     name = str(payload.get("rezept") or "")
     args = payload.get("args") or {}
-    try:
-        meldungen = einsetzen(spec, name, args, d)
-        spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=422,
-                            detail=f"Rezept fehlgeschlagen: {e}")
-    spec.to_yaml(d / "case.yaml")
-    return {"ok": True, "meldungen": meldungen,
-            "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
-
-            "netz_stale": _preview_stand(spec, d)["stale"]}
+    return _mutation(case_id,
+                     lambda spec, d: einsetzen(spec, name, args, d),
+                     "Rezept fehlgeschlagen")
 
 
 @router.get("/cases/{case_id}/schema")
