@@ -73,6 +73,10 @@
         Über einer Bruchkante wird der Ring grün — das Gelände zieht sich
         an ihr Höhenprofil.
       </span>
+      <span v-else-if="store.terrainSolid" class="f3d-muted f3d-small">
+        Geformt wird die Deckfläche des Erdkörpers — Bohrungen und
+        Aushübe ziehen nach jedem Strich mit.
+      </span>
     </div>
 
     <div v-if="clipActive" class="f3d-clipbar">
@@ -1749,11 +1753,8 @@ watch(() => store.sculptAktiv, (an) => {
     // grobe Abtastung, dort stimmen die Vertexindizes nicht
     if (solverView.value) solverView.value = false
     if (!sculpt.aktivieren()) { store.sculptAktiv = false; return }
-    // Erdkörper-Fälle: fürs Formen die Höhenfläche einblenden
-    buildTerrain()
   } else {
     sculpt.deaktivieren()
-    buildTerrain()
   }
 })
 

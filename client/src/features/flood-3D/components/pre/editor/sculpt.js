@@ -27,6 +27,43 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
   const stapel = []                   // Strich-Patches für Rückgängig
 
   const mesh = () => groups.terrain?.children?.[0] ?? null
+
+  // Erdkörper: geformt wird DIREKT am Volumenkörper (kein Anzeige-
+  // Wechsel). Seine Deckfläche liegt auf dem Höhenraster — die „Haut"
+  // (alle Soup-Vertices auf Rasterhöhe) wird beim Strich mit dem Gitter
+  // mitgezogen; Sohle, Wände und Bohrungen bleiben stehen. Nach dem
+  // Strich baut die Server-Antwort den Körper ohnehin exakt neu.
+  let haut = null               // Int32Array Vertexindizes der Deckfläche
+  let hautMesh = null           // Gültigkeitsanker: Geometrie gewechselt?
+
+  function bereiteHaut(m) {
+    if (hautMesh === m && haut) return
+    hautMesh = m
+    haut = null
+    const g = gitter()
+    if (!g) return
+    const eps = Math.max(0.05, 0.35 * g.res)
+    const pos = m.geometry.attributes.position
+    const idx = []
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i)
+      if (Math.abs(z - terrainZ(pos.getX(i), pos.getY(i))) < eps) idx.push(i)
+    }
+    haut = Int32Array.from(idx)
+  }
+
+  function hautNachziehen(m, wx0, wy0, wx1, wy1) {
+    if (!haut) return
+    const pos = m.geometry.attributes.position
+    for (let n = 0; n < haut.length; n++) {
+      const i = haut[n]
+      const x = pos.getX(i)
+      const y = pos.getY(i)
+      if (x < wx0 || x > wx1 || y < wy0 || y > wy1) continue
+      pos.setZ(i, terrainZ(x, y))
+    }
+    pos.needsUpdate = true
+  }
   const gitter = () => {
     const t = store.terrain
     if (!t) return null
@@ -194,7 +231,7 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
         if (dz === 0) continue
         z[k] += dz
         strich.dz[k] += dz
-        pos.setZ(k, z[k])
+        if (!strich.solid) pos.setZ(k, z[k])
         geaendert = true
         if (i < strich.bbox[0]) strich.bbox[0] = i
         if (j < strich.bbox[1]) strich.bbox[1] = j
@@ -203,7 +240,13 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
       }
     }
     if (geaendert) {
-      pos.needsUpdate = true
+      if (strich.solid) {
+        // Deckfläche des Erdkörpers ans aktualisierte Gitter anlegen
+        hautNachziehen(m, t.x0 + i0 * res, t.y0 + j0 * res,
+          t.x0 + i1 * res, t.y0 + j1 * res)
+      } else {
+        pos.needsUpdate = true
+      }
       m.geometry.computeVertexNormals()
     }
   }
@@ -247,7 +290,12 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1), holeCamera())
     const h = ray.intersectObject(m, false)
-    return h.length ? h[0].point : null
+    if (!h.length) return null
+    if (!store.terrainSolid) return h[0].point
+    // Erdkörper: nur die Deckfläche ist formbar — Treffer auf Wand,
+    // Sohle oder in der Bohrung würden das x/y sinnlos abbilden
+    const oben = h.find((t) => (t.face?.normal?.z ?? 0) > 0.35)
+    return oben ? oben.point : null
   }
 
   function strichStart(e) {
@@ -257,7 +305,8 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     const g = gitter()
     if (!g) return false
     strich = { dz: new Float64Array(g.nx * g.ny),
-      bbox: [g.nx, g.ny, -1, -1] }
+      bbox: [g.nx, g.ny, -1, -1], solid: !!store.terrainSolid }
+    if (strich.solid) bereiteHaut(mesh())
     holeControls().enabled = false
     holeRenderer().domElement.setPointerCapture(e.pointerId)
     anwenden(p.x, p.y)
