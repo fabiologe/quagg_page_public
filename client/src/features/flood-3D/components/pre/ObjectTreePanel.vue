@@ -80,6 +80,17 @@
         <div class="f3d-objgroup-head">
           <span>{{ group.label }}</span>
           <span class="f3d-muted f3d-small">{{ group.items.length }}</span>
+          <button v-if="TEMPLATES[group.kind]" class="f3d-objplus"
+                  :title="'Neu: ' + group.label"
+                  @click="plusOffen = plusOffen === group.kind ? null : group.kind">
+            ＋
+          </button>
+        </div>
+        <div v-if="plusOffen === group.kind" class="f3d-plusmenu">
+          <button v-for="name in Object.keys(TEMPLATES[group.kind])"
+                  :key="name" class="f3d-objitem" @click="plusAnlegen(group.kind, name)">
+            {{ name }}
+          </button>
         </div>
         <div v-for="item in group.items" :key="item.id" class="f3d-objrow">
           <button class="f3d-objitem"
@@ -181,6 +192,15 @@ const neuHilfe = computed(() => {
   const id = neuWahl.value.slice(7)
   return store.rezepte.find((r) => r.id === id)?.beschreibung ?? ''
 })
+
+// ＋ am Gruppenkopf: dieselben Vorlagen wie der Katalog oben, nur
+// direkt an der Gruppe — ein Klick, Vorlage wählen, fertig
+const plusOffen = ref(null)
+
+function plusAnlegen(kind, name) {
+  add(kind, name)
+  plusOffen.value = null
+}
 
 async function neuAnlegen() {
   const [art, ...rest] = neuWahl.value.split(':')
@@ -403,8 +423,11 @@ const gruppenNachKind = computed(() => {
 
 const abschnitte = computed(() => {
   const g = gruppenNachKind.value
-  // Leere Gruppen existieren nicht — Anlegen läuft über den Katalog oben
+  // Gruppen MIT Katalogvorlagen bleiben auch leer sichtbar — ihr
+  // ＋-Knopf ist der direkte Anlegeweg (z. B. „+ Randbedingung" bei
+  // null Rändern). Ohne Vorlagen (Kanten) verschwindet die leere Gruppe.
   const sichtbar = (gr) => gr && (gr.items.length
+    || TEMPLATES[gr.kind] !== undefined
     || (gr.kind === 'structure' && rezeptGruppen.value.length))
   return ABSCHNITTE
     .map((a) => ({ ...a, gruppen: a.gruppen.map((k) => g[k]).filter(sichtbar) }))
@@ -490,6 +513,22 @@ function add(kind, name) {
 </script>
 
 <style scoped>
+.f3d-objplus {
+  border: none;
+  background: none;
+  color: var(--f3d-akzent, #3987e5);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.3rem;
+}
+.f3d-objplus:hover { filter: brightness(1.3); }
+.f3d-plusmenu {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 0.25rem 1.1rem;
+  border-left: 2px solid var(--f3d-akzent, #3987e5);
+}
 .f3d-objtree {
   display: flex;
   flex-direction: column;
