@@ -43,6 +43,17 @@
       an — dann wird zwischen Kante und Rahmen übergeblendet, und die Ecken
       lassen sich in der Szene ziehen (Strg = Höhe).
     </p>
+    <div v-if="draft.type === 'terrain'" class="f3d-row">
+      <button class="f3d-btn"
+              :class="{ 'f3d-btn-primary': store.sculptAktiv }"
+              :disabled="!!store.terrainSolid && !store.sculptAktiv"
+              :title="store.terrainSolid
+                ? 'Der Fall zeigt den Erdkörper — Formen arbeitet auf der Höhenfläche (Erdkörper-Schalter auf „aus“)'
+                : 'Pinsel im 3D-Fenster: heben, senken, glätten, an Bruchkanten anpassen'"
+              @click="store.sculptAktiv = !store.sculptAktiv">
+        {{ store.sculptAktiv ? '✓ Formen beenden' : '🖌 Gelände formen' }}
+      </button>
+    </div>
     <p v-if="hilfe && draft.type === 'terrain'" class="f3d-muted f3d-small">
       Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
       schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr

@@ -43,6 +43,38 @@
       </button>
     </div>
 
+    <div v-if="store.sculptAktiv" class="f3d-clipbar f3d-sculptbar">
+      <button v-for="m in SCULPT_MODI" :key="m.id" class="f3d-tool"
+              :class="{ active: sculpt.modus.value === m.id }" :title="m.hint"
+              @click="sculpt.modus.value = m.id">{{ m.label }}</button>
+      <span class="f3d-toolbar-sep"></span>
+      <label class="f3d-small">Ø
+        <input type="range" min="0.5" max="25" step="0.5"
+               v-model.number="sculpt.radius.value" />
+        <span class="f3d-mono">{{ sculpt.radius.value.toFixed(1) }} m</span>
+      </label>
+      <label class="f3d-small">Stärke
+        <input type="range" min="0.1" max="1" step="0.05"
+               v-model.number="sculpt.staerke.value" />
+      </label>
+      <button class="f3d-tool"
+              :class="{ active: sculpt.form.value === 'quadrat' }"
+              title="Pinselform: Kreis oder Quadrat"
+              @click="sculpt.form.value =
+                sculpt.form.value === 'kreis' ? 'quadrat' : 'kreis'">
+        {{ sculpt.form.value === 'kreis' ? '◯' : '▢' }}
+      </button>
+      <button class="f3d-tool" :disabled="!sculpt.striche.value"
+              title="Letzten Pinselstrich zurücknehmen (inverses Delta)"
+              @click="sculpt.strichZurueck()">↩ Strich</button>
+      <button class="f3d-tool" title="Formen beenden"
+              @click="store.sculptAktiv = false">✓ Fertig</button>
+      <span v-if="sculpt.modus.value === 'kante'" class="f3d-muted f3d-small">
+        Über einer Bruchkante wird der Ring grün — das Gelände zieht sich
+        an ihr Höhenprofil.
+      </span>
+    </div>
+
     <div v-if="clipActive" class="f3d-clipbar">
       <select v-model="clipAxis" class="f3d-select f3d-select-s">
         <option value="x">x</option>
@@ -125,6 +157,7 @@ import { b64ToBuffer } from '../../services/volume'
 import { erzeugeObjektZugriff } from './editor/objektZugriff'
 import { erzeugeRotGizmo } from './editor/rotGizmo'
 import { erzeugeSzene } from './editor/szene'
+import { erzeugeSculpt } from './editor/sculpt'
 import { erzeugeMarker } from './editor/marker'
 import { erzeugeAchsen } from './editor/achsen'
 
@@ -133,6 +166,13 @@ const host = ref(null)
 
 // Werkzeuge (Spez. Kap. 6.4): Klick-Platzierung gleichwertig zur
 // numerischen Eingabe im Eigenschaftspanel.
+const SCULPT_MODI = [
+  { id: 'heben', label: '▲ Heben', hint: 'Gelände anheben' },
+  { id: 'senken', label: '▼ Senken', hint: 'Gelände absenken' },
+  { id: 'glaetten', label: '≈ Glätten', hint: 'Zum Mittel der Nachbarschaft relaxieren' },
+  { id: 'kante', label: '⌇ Bruchkante', hint: 'Gelände ans Höhenprofil der nächsten Bruchkante heranziehen' },
+]
+
 const TOOLS = [
   { id: 'select', label: 'Auswählen', hint: 'Objekte anklicken · Ecken ziehen · Shift+Ziehen verschiebt' },
   { id: 'move', label: '✥ Verschieben', hint: 'Objekt anklicken und ziehen' },
@@ -219,6 +259,12 @@ const { terrainZ, clearGroup, buildTerrain, buildTerrainSolid,
   feinsteZelle, buildSolids } = erzeugeSzene({
   store, groups, selectable, holeScene: () => scene,
   solverView, drahtgitter, solverHint })
+
+// Gelände formen (Pinsel) — geschnitten nach editor/sculpt.js
+const sculpt = erzeugeSculpt({
+  store, groups, holeScene: () => scene, holeCamera: () => camera,
+  holeRenderer: () => renderer, holeControls: () => controls,
+  melden: (m, art) => store.melden(m, art) })
 
 // Marker-Ebene — geschnitten nach editor/marker.js
 const { buildMarkers } = erzeugeMarker({
@@ -1229,6 +1275,10 @@ onMounted(() => {
 
   renderer.domElement.addEventListener('pointerdown', (e) => {
     downPos = [e.clientX, e.clientY]
+    if (store.sculptAktiv) {
+      if (e.button === 0) sculpt.strichStart(e)
+      return
+    }
     if (mode.value !== 'select' && mode.value !== 'move') return
     if (e.button !== 0) return          // rechts/mitte bleibt der Kamera
     const marke = pickEditMarker(e)
@@ -1339,6 +1389,7 @@ onMounted(() => {
   // läuft NACH dem Haupt-Handler: wenn keine Objekt-Interaktion gestartet
   // wurde, arbeitet die Kamera — Pivot verankern + Faust-Cursor
   renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (store.sculptAktiv && e.button === 0) return
     if (e.button !== 2 && !dragging && !objectDrag && !rotAktiv() && !topView.value) {
       anchorPivotToViewCenter()
     }
@@ -1357,6 +1408,11 @@ onMounted(() => {
   }, { passive: true })
 
   renderer.domElement.addEventListener('pointerup', (e) => {
+    if (store.sculptAktiv) {
+      sculpt.strichEnde()
+      downPos = null
+      return
+    }
     if (rotAktiv()) {
       commitRotDrag()
       downPos = null
@@ -1398,6 +1454,10 @@ onMounted(() => {
   })
   renderer.domElement.addEventListener('pointermove', (e) => {
     lastMove = e                      // für Entf (Ecke unterm Cursor löschen)
+    if (store.sculptAktiv) {
+      sculpt.strichZieh(e)
+      return
+    }
     if (rotAktiv()) {
       dragRotTo(e)
       return
@@ -1558,6 +1618,17 @@ function rebuild() {
   }
 }
 
+watch(() => store.sculptAktiv, (an) => {
+  if (an) {
+    // Formen arbeitet auf dem feinen Höhenraster — Solverblick wäre die
+    // grobe Abtastung, dort stimmen die Vertexindizes nicht
+    if (solverView.value) solverView.value = false
+    if (!sculpt.aktivieren()) store.sculptAktiv = false
+  } else {
+    sculpt.deaktivieren()
+  }
+})
+
 watch(() => store.geometryVersion, rebuild)
 // Marker (Pegel/Schnitte/Boxen/Ränder) folgen der Spec auch ohne Speichern
 watch(() => JSON.stringify([store.spec?.evaluation, store.spec?.mesh?.refinements,
@@ -1653,6 +1724,10 @@ function onKeydown(e) {
 }
 
 onBeforeUnmount(() => {
+  if (store.sculptAktiv) {
+    sculpt.deaktivieren()
+    store.sculptAktiv = false
+  }
   cancelAnimationFrame(rafId)
   resizeObs?.disconnect()
   window.removeEventListener('keydown', onKeydown)

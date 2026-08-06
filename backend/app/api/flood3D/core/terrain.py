@@ -276,6 +276,11 @@ class TerrainField:
         field._base_dir = Path(base_dir)
         for op in terrain.operations:
             field.apply(op)
+        if terrain.sculpt:
+            # Sculpt-Ebene NACH den Operationen: geformt wird, was man
+            # sieht — eine spätere Operation überschreibt den Pinsel nicht
+            from .sculpt import lade_ebene
+            field.z = field.z + lade_ebene(terrain, domain, Path(base_dir))
         return field
 
     # -- Raster --

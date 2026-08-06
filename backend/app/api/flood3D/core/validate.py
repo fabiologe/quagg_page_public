@@ -227,6 +227,13 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                    "das Höhenraster, dort kann kein Hohlraum "
                                    "sein"))
 
+    # ---- Sculpt-Ebene: Datei muss zum Spec-Eintrag existieren ------------
+    if spec.terrain is not None and spec.terrain.sculpt:
+        if not (base_dir / spec.terrain.sculpt).exists():
+            f(_finding("terrain", "fehler",
+                       f"Sculpt-Ebene „{spec.terrain.sculpt}“ fehlt im "
+                       "Fallordner — Formungen gehen beim Rechnen verloren."))
+
     # ---- Vorfüllungen: Höhe im Gebiet, überm Gelände ---------------------
     for v in spec.solver.vorfuellungen:
         if spec.domain is not None and not (

@@ -16,6 +16,9 @@ export { KIND_PATHS } from '../utils/kindPfade'
 
 export const usePreStore = defineStore('flood3d-pre', {
   state: () => ({
+    // Gelände formen (Pinsel im Editor) — vom Baum/Eigenschaften-Panel
+    // ein-, vom Editor ausgeschaltet
+    sculptAktiv: false,
     cases: [],
     activeCaseId: null,
     spec: null,
@@ -218,14 +221,15 @@ export const usePreStore = defineStore('flood3d-pre', {
     // ein halbes Dutzend Objekte einsetzt. Der Server speichert nur bei
     // echter Änderung (res.geaendert) und sagt über den Netz-Hash, ob die
     // Vorschau veraltet ist.
-    async serverMutation(aufruf, fehlerText, { raster = false } = {}) {
+    async serverMutation(aufruf, fehlerText,
+      { raster = false, undo = true } = {}) {
       if (!this.activeCaseId) return []
       if (this.dirty && !(await this.saveCase())) return []
       const snap = this.spec ? JSON.stringify(this.spec) : null
       this.loading = true
       try {
         const res = await aufruf(this.activeCaseId)
-        if (res.geaendert !== false && snap) {
+        if (undo && res.geaendert !== false && snap) {
           this.undoStack.push(snap)
           this.redoStack = []
         }
@@ -274,6 +278,15 @@ export const usePreStore = defineStore('flood3d-pre', {
         'Skizze fehlgeschlagen')
       this.ladeImporte()
       return meldungen
+    },
+
+    // Pinsel-Patches auf die Sculpt-Ebene des Geländes. KEIN globaler
+    // Undo-Eintrag: der Spec-Snapshot kann die Delta-Datei nicht
+    // zurückdrehen — Rückgängig ist das inverse Patch (editor/sculpt.js)
+    async sculptPatches(patches) {
+      return this.serverMutation(
+        (id) => flood3dApi.sculpt(id, patches),
+        'Formen fehlgeschlagen', { undo: false })
     },
 
     async importNeuAbleiten(importId, rollen = null) {
