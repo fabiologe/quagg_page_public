@@ -104,5 +104,67 @@ def patch_anwenden(spec, base_dir, patches: list[dict]) -> str:
         ebene[j0:j0 + pj, i0:i0 + pi] += teil
         dz_max = max(dz_max, float(np.abs(teil).max()))
     _speichern(spec, Path(base_dir), ebene)
-    return (f"Gelände geformt: {len(patches)} Strich(e), "
-            f"größte Änderung {dz_max:.2f} m.")
+    meldung = (f"Gelände geformt: {len(patches)} Strich(e), "
+               f"größte Änderung {dz_max:.2f} m.")
+    beruehrt = _sollhoehen_ueberlapp(spec, patches)
+    if beruehrt:
+        meldung += (" Hinweis: der Strich überlappt "
+                    + ", ".join(f"„{b}“" for b in beruehrt)
+                    + " — dort gelten weiter die Sollhöhen der Operation.")
+    return meldung
+
+
+# Operationen, die eine feste Zielhöhe zusichern — der Pinsel wirkt VOR
+# ihnen, dort bleibt seine Wirkung (teils) aus. Relative Operationen
+# (raise_lower, smooth) vertragen sich mit jedem Untergrund.
+_SOLLHOEHEN_TYPEN = {"channel_carve", "pad", "ramp", "embankment",
+                     "replace_region", "set_level", "bruchkante",
+                     "boeschung", "aussenkante"}
+
+
+def _op_bbox(op):
+    """Grobe Grundriss-Hülle einer Operation, mit Wirkungs-Rand."""
+    pts = None
+    rand = 0.0
+    for attr in ("polygon", "polyline"):
+        p = getattr(op, attr, None)
+        if p:
+            pts = np.asarray(p, dtype=float)[:, :2]
+            break
+    if pts is None:
+        return None
+    t = op.type
+    if t == "channel_carve":
+        rand = op.bottom_width / 2 + op.depth * max(op.side_slope, 0.0)
+    elif t == "embankment":
+        rand = op.crest_width / 2
+    elif t == "bruchkante":
+        rand = getattr(op, "breite", 0.0)
+    elif t == "set_level":
+        rand = getattr(op, "blend_width", 0.0) or 0.0
+    return (pts[:, 0].min() - rand, pts[:, 1].min() - rand,
+            pts[:, 0].max() + rand, pts[:, 1].max() + rand)
+
+
+def _sollhoehen_ueberlapp(spec, patches) -> list[str]:
+    x0, y0, res, _, _ = _gitter(spec.terrain, spec.domain)
+    kisten = []
+    for p in patches:
+        teil = np.asarray(p["dz"])
+        pj, pi = teil.shape
+        kisten.append((x0 + p["i0"] * res, y0 + p["j0"] * res,
+                       x0 + (p["i0"] + pi - 1) * res,
+                       y0 + (p["j0"] + pj - 1) * res))
+    beruehrt = []
+    for op in spec.terrain.operations:
+        if op.type not in _SOLLHOEHEN_TYPEN:
+            continue
+        ob = _op_bbox(op)
+        if ob is None:
+            continue
+        for k in kisten:
+            if not (k[2] < ob[0] or ob[2] < k[0]
+                    or k[3] < ob[1] or ob[3] < k[1]):
+                beruehrt.append(op.id)
+                break
+    return beruehrt

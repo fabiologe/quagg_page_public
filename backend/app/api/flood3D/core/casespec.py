@@ -432,7 +432,8 @@ class Terrain(_Model):
     erdkoerper: Literal["auto", "an", "aus"] = "auto"
     # Sculpt-Ebene: frei geformte Höhenänderung (Pinsel im Editor) als
     # Delta-Raster im Fallordner (core/sculpt.py) — Primärdatum, kein
-    # derived; wirkt NACH dem Operationsstapel. `sculpt_stand` ist der
+    # derived; wirkt VOR dem Operationsstapel (die Operationen behalten
+    # ihre Sollhöhen). `sculpt_stand` ist der
     # Inhalts-Stempel des Rasters, damit case_hash und Netzvorschau jede
     # Formung mitbekommen, obwohl das Delta in einer Datei liegt.
     sculpt: str | None = None
