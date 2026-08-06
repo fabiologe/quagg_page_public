@@ -559,6 +559,180 @@ function addEdit(art) {
     { ...o, edits: [...edits, e] })
 }
 
+// --- Wiederhergestellt nach der Aufräumrunde (e55de7f): der
+// Block-Schnitt hinter den MATERIALS riss diese LEBENDEN
+// Definitionen mit — das Panel crashte beim Rendern
+// (Template-Compiler und Build merken freie Bezeichner nicht).
+const windowKind = computed({
+  get: () => {
+    const w = draft.value?.window
+    if (!w) return ''
+    if (w.follow) return 'follow:' + w.follow
+    return w.shape ?? 'rechteck'
+  },
+  set: (v) => {
+    if (!v) {
+      draft.value.window = null
+      delete jsonDrafts.window
+      return
+    }
+    draft.value.window = v.startsWith('follow:')
+      ? { follow: v.slice(7) }
+      : windowTemplate(v)
+    // kein jsonDrafts mehr: das Fenster hat eine eigene Maske, und ein
+    // stehengebliebener Textstand würde sie beim Übernehmen überschreiben
+    delete jsonDrafts.window
+  },
+})
+
+// Ein-Klick-Verfeinerung: Box (Level 2) um das Fenster, 2 Zellen Rand,
+// 2 Zellen tief ins Gebiet — die Prüfung empfiehlt das bei kleinen Öffnungen
+function addWindowRefinement() {
+  const dom = store.spec?.domain
+  const w = draft.value?.window
+  if (!dom || !w) return
+  const [x0, y0, x1, y1] = dom.extent
+  const face = draft.value.face
+    ?? (['inflow_hydrograph', 'inflow_constant'].includes(draft.value.type)
+      ? 'x_min' : 'x_max')
+  let lo, hi, zlo, zhi
+  if (w.shape === 'kreis') {
+    if (w.center == null || w.diameter == null || w.z_center == null) return
+    lo = w.center - w.diameter / 2; hi = w.center + w.diameter / 2
+    zlo = w.z_center - w.diameter / 2; zhi = w.z_center + w.diameter / 2
+  } else if (w.shape === 'trapez') {
+    if (w.center == null || w.z_min == null) return
+    const h2 = Math.max(w.bottom_width ?? 0, w.top_width ?? 0) / 2
+    lo = w.center - h2; hi = w.center + h2; zlo = w.z_min; zhi = w.z_max
+  } else if (w.shape === 'polygon') {
+    if (!w.points?.length) return
+    const as = w.points.map((q) => q[0])
+    const zs = w.points.map((q) => q[1])
+    lo = Math.min(...as); hi = Math.max(...as)
+    zlo = Math.min(...zs); zhi = Math.max(...zs)
+  } else if (w.span) {
+    [lo, hi] = [...w.span].sort((a, b) => a - b)
+    zlo = w.z_min ?? dom.z_min; zhi = w.z_max ?? dom.z_max
+  } else return
+  const m = 2 * (store.spec?.mesh?.base_cell ?? 0.5)
+  zlo = Math.max(zlo - m, dom.z_min)
+  zhi = Math.min(zhi + m, dom.z_max)
+  let ext
+  if (face === 'x_min') ext = [x0, lo - m, zlo, x0 + 2 * m, hi + m, zhi]
+  else if (face === 'x_max') ext = [x1 - 2 * m, lo - m, zlo, x1, hi + m, zhi]
+  else if (face === 'y_min') ext = [lo - m, y0, zlo, hi + m, y0 + 2 * m, zhi]
+  else ext = [lo - m, y1 - 2 * m, zlo, hi + m, y1, zhi]
+  const ids = new Set((store.spec?.mesh?.refinements ?? []).map((o) => o.id))
+  let rid = `vf_${draft.value.id}`
+  let n = 2
+  while (ids.has(rid)) rid = `vf_${draft.value.id}_${n++}`
+  store.addObject('refinement', { id: rid, type: 'box',
+    extent: ext.map((v) => Math.round(v * 100) / 100), level: 2 })
+}
+
+// --- Aushub oder Bauteil? -------------------------------------------------
+// Bei `wirkung: auto` entscheidet die LAGE: liegt die Oberkante auf oder
+// unter dem gewachsenen Gelände, ist der Körper eingegraben und wirkt als
+// Grube. Der Server rechnet das maßgeblich; hier wird dieselbe Frage
+// gestellt, damit man beim Schieben sieht, was gerade gilt.
+const AUSHUB_BUENDIG = 0.05
+
+function oberkanteVon(o) {
+  if (o.top_level != null) return o.top_level
+  if (o.type === 'graben' && Array.isArray(o.axis) && o.axis.length) {
+    const h = o.profile?.kind === 'kreis'
+      ? (o.profile?.width ?? 0) : (o.profile?.height ?? 0)
+    return Math.max(...o.axis.map((p) => (p[2] ?? 0) + h))
+  }
+  return null
+}
+
+function grundrissPunkte(o) {
+  if (Array.isArray(o.footprint) && o.footprint.length) return o.footprint
+  if (Array.isArray(o.axis) && o.axis.length) return o.axis
+  if (Array.isArray(o.center) && o.center.length >= 2) return [o.center]
+  return []
+}
+
+const wirkungJetzt = computed(() => {
+  const o = draft.value
+  if (!o || !AUSHUB_TYPEN.has(o.type)) return null
+  if (o.wirkung === 'bauteil') {
+    return { art: 'bauteil', titel: 'Bauteil.',
+      text: 'Fest eingestellt — der Körper wird als eigene Fläche vernetzt, '
+        + 'egal wie er liegt.' }
+  }
+  if (o.wirkung === 'aushub') {
+    return { art: 'aushub', titel: 'Aushub.',
+      text: 'Fest eingestellt — der Körper wird aus dem Gelände '
+        + 'herausgeschnitten, egal wie er liegt.' }
+  }
+  const oben = oberkanteVon(o)
+  const pkte = grundrissPunkte(o)
+  if (oben == null || !pkte.length || !store.terrain) return null
+  const boden = Math.min(...pkte.map((p) => store.gelaendeZ(p[0], p[1])))
+  const eingegraben = boden >= oben - AUSHUB_BUENDIG
+  const d = Math.abs(oben - boden).toFixed(2).replace('.', ',')
+  return eingegraben
+    ? { art: 'aushub', titel: 'Aushub —',
+      text: `die Oberkante liegt ${d} m unter dem Gelände, der Körper ist `
+        + 'eingegraben und wird als Hohlraum ausgeschnitten. Höher schieben '
+        + 'macht wieder ein Bauteil daraus.' }
+    : { art: 'bauteil', titel: 'Bauteil —',
+      text: `der Körper steht ${d} m über dem Gelände und wird als eigene `
+        + 'Fläche vernetzt. Erst wenn die Oberkante bündig oder darunter '
+        + 'liegt, wird daraus ein Aushub.' }
+})
+
+// Der Entwurf, wie ihn „Übernehmen" schreiben würde: Maske plus die als
+// JSON bearbeiteten Felder. `null` heißt: ein JSON-Feld ist nicht lesbar.
+function entwurf() {
+  if (!draft.value) return null
+  const result = JSON.parse(JSON.stringify(draft.value))
+  for (const [k, text] of Object.entries(jsonDrafts)) {
+    try {
+      result[k] = JSON.parse(text)
+    } catch {
+      return null
+    }
+  }
+  return result
+}
+
+// Welche Felder sich gegenüber dem gespeicherten Objekt unterscheiden.
+// Damit weiß der Knopf, ob es etwas zu übernehmen gibt — und die
+// Rückmeldung kann sagen, WAS übernommen wurde. Ohne das sah „Übernehmen"
+// bei jeder Zahl gleich aus: nichts rührte sich sichtbar.
+const geaenderteFelder = computed(() => {
+  const neu = entwurf()
+  const alt = store.selectedObject
+  if (!neu || !alt) return []
+  const namen = new Set([...Object.keys(neu), ...Object.keys(alt)])
+  return [...namen].filter(
+    (k) => JSON.stringify(neu[k]) !== JSON.stringify(alt[k]))
+})
+
+function apply() {
+  const result = entwurf()
+  if (result === null) {
+    const kaputt = Object.keys(jsonDrafts).find((k) => {
+      try { JSON.parse(jsonDrafts[k]); return false } catch { return true }
+    })
+    store.melden(`Feld „${FIELD_LABELS[kaputt] ?? kaputt}": ungültiges JSON`,
+      'fehler')
+    return
+  }
+  const felder = geaenderteFelder.value
+  if (!felder.length) {
+    store.melden('Nichts geändert', 'hinweis')
+    return
+  }
+  const namen = felder.map((k) => TYP_LABELS[result.type ?? result.kind]?.[k]
+    ?? FIELD_LABELS[k] ?? k)
+  store.updateObject(store.selection.kind, store.selection.id, result)
+  store.melden(`„${result.id}" übernommen: ${namen.join(', ')}`, 'erfolg')
+}
+
 // --- EINE Panel-Struktur: Maße oben, Rest in Aufklappern ------------------
 // Die Partition folgt der Feldkunde: Zahlen/Wahlen sind die Spezifik des
 // Typs und bleiben sichtbar; Punktlisten, Untergruppen und der
