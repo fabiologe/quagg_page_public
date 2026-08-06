@@ -69,3 +69,23 @@ def test_laufstart_verweigert_fehlerfall(client):
     r = client.post("/runs", json={"case_id": "kaputt"})
     assert r.status_code == 422
     assert "Fehler-Befunde" in r.json()["detail"]
+
+
+def test_doppelbelegte_seite_ist_befund_kein_absturz(tmp_path):
+    """
+    Zulauf und Ablauf auf derselben Gebietsseite („Seite wechseln"): die
+    Prüfung muss das als Befund melden — nicht als ValueError, der PUT
+    und Preview mit 500 umreißt und den Fall auf der Platte festsetzt.
+    """
+    from ..core.casebuilder import _bc_face
+    from ..core.validate import validate_case
+
+    spec = build_spec_stage3()
+    ablauf = next(b for b in spec.boundaries if b.type.startswith("outflow"))
+    zulauf = next(b for b in spec.boundaries if b.type.startswith("inflow"))
+    ablauf.face = "x_min"
+    zulauf.face = "x_min"
+    befunde = validate_case(spec, tmp_path)         # darf nicht werfen
+    assert any(b["severity"] == "fehler" and "belegt" in b["message"]
+               for b in befunde)
+    assert _bc_face(spec, ablauf) == "x_min"
