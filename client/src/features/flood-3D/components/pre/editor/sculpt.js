@@ -298,9 +298,10 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
       melden('Kein Gelände im Fall — nichts zu formen.', 'warnung')
       return false
     }
-    if (store.terrainSolid) {
-      melden('Der Fall zeigt den Erdkörper — Formen arbeitet auf der '
-        + 'Höhenfläche. Erdkörper-Schalter auf „aus" stellen.', 'warnung')
+    if (store.spec?.terrain?.base?.koerper) {
+      melden('Das Gelände kommt als fertiger Volumenkörper (STL) — dort '
+        + 'ist das Höhenraster nicht die Quelle, der Pinsel greift nicht.',
+      'warnung')
       return false
     }
     baueCursor()

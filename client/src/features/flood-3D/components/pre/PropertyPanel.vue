@@ -46,10 +46,10 @@
     <div v-if="draft.type === 'terrain'" class="f3d-row">
       <button class="f3d-btn"
               :class="{ 'f3d-btn-primary': store.sculptAktiv }"
-              :disabled="!!store.terrainSolid && !store.sculptAktiv"
-              :title="store.terrainSolid
-                ? 'Der Fall zeigt den Erdkörper — Formen arbeitet auf der Höhenfläche (Erdkörper-Schalter auf „aus“)'
-                : 'Pinsel im 3D-Fenster: heben, senken, glätten, an Bruchkanten anpassen'"
+              :disabled="!!store.spec?.terrain?.base?.koerper && !store.sculptAktiv"
+              :title="store.spec?.terrain?.base?.koerper
+                ? 'Das Gelände ist ein fertiger Volumenkörper (STL) — das Höhenraster ist nicht die Quelle, der Pinsel greift nicht'
+                : 'Pinsel im 3D-Fenster: heben, senken, glätten, an Bruchkanten anpassen — beim Erdkörper wird auf der Höhenfläche geformt, der Körper folgt daraus'"
               @click="store.sculptAktiv = !store.sculptAktiv">
         {{ store.sculptAktiv ? '✓ Formen beenden' : '🖌 Gelände formen' }}
       </button>

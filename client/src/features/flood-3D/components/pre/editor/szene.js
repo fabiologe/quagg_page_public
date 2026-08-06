@@ -44,7 +44,10 @@ function buildTerrain() {
   // Arbeitet der Fall mit einem GELÄNDEKÖRPER, ist die Höhenfläche nicht
   // mehr die Wahrheit: der Vernetzer bekommt einen Volumenkörper, der
   // Hohlräume haben kann. Dann wird auch genau der gezeigt.
-  if (store.terrainSolid) { buildTerrainSolid(); return }
+  // Beim FORMEN immer die Höhenfläche: der Pinsel arbeitet auf dem
+  // Raster (aus dem der Erdkörper gebaut wird) — der Körper kommt beim
+  // Beenden wieder
+  if (store.terrainSolid && !store.sculptAktiv) { buildTerrainSolid(); return }
   // Anzeige normalerweise in der Auflösung des Höhenrasters. Im
   // „Solverblick" wird stattdessen auf die BASISZELLE abgetastet und flach
   // schattiert — das ist die Auflösung, mit der der Vernetzer arbeitet.

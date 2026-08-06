@@ -1004,6 +1004,114 @@ function _endDrag() {
   }
 }
 
+// ---- Randbedingung an eine andere Gebietsseite ziehen -------------------
+// Der Marker gleitet am UMFANG des Gebiets entlang: nächstgelegene Seite
+// unterm Cursor + Lage entlang der Kante. Beim Loslassen wird face
+// umgesetzt und das Fenster (span/center) an die neue Lage geschoben —
+// der Server löst die Flächen wie immer selbst auf (bc_faces).
+let bcDrag = null                 // { id, ziel, lo, w, obj }
+
+function bcBreite(b, seite) {
+  const win = b?.window
+  const voll = seite.hi - seite.lo
+  if (!win) return voll                       // ohne Fenster: ganze Seite
+  if (win.span) return Math.min(voll, Math.abs(win.span[1] - win.span[0]))
+  if (win.diameter != null) return Math.min(voll, win.diameter)
+  if (win.top_width != null || win.bottom_width != null) {
+    return Math.min(voll, Math.max(win.top_width ?? 0, win.bottom_width ?? 0))
+  }
+  return voll
+}
+
+function seiteUnterCursor(e) {
+  const d = store.spec?.domain
+  if (!d) return null
+  const [x0, y0, x1, y1] = d.extent
+  const p = planePick(e, (d.z_min + d.z_max) / 2) ?? planePick(e, d.z_min)
+  if (!p) return null
+  const kand = [
+    { face: 'x_min', abstand: Math.abs(p.x - x0), t: p.y, lo: y0, hi: y1 },
+    { face: 'x_max', abstand: Math.abs(p.x - x1), t: p.y, lo: y0, hi: y1 },
+    { face: 'y_min', abstand: Math.abs(p.y - y0), t: p.x, lo: x0, hi: x1 },
+    { face: 'y_max', abstand: Math.abs(p.y - y1), t: p.x, lo: x0, hi: x1 },
+  ].sort((a, b) => a.abstand - b.abstand)
+  const seite = kand[0]
+  seite.t = Math.min(seite.hi, Math.max(seite.lo, seite.t))
+  return seite
+}
+
+function startBcDrag(e, id) {
+  const b = (store.spec?.boundaries ?? []).find((x) => x.id === id)
+  if (!b) return false
+  bcDrag = { id }
+  controls.enabled = false
+  renderer.domElement.style.cursor = 'grabbing'
+  renderer.domElement.setPointerCapture(e.pointerId)
+  dragBcTo(e)
+  return true
+}
+
+function dragBcTo(e) {
+  if (!bcDrag) return
+  const seite = seiteUnterCursor(e)
+  if (!seite) return
+  const d = store.spec.domain
+  const b = (store.spec.boundaries ?? []).find((x) => x.id === bcDrag.id)
+  const w = bcBreite(b, seite)
+  const lo = w >= seite.hi - seite.lo ? seite.lo
+    : Math.max(seite.lo, Math.min(seite.hi - w, seite.t - w / 2))
+  bcDrag.ziel = seite
+  bcDrag.lo = lo
+  bcDrag.w = w
+  // Vorschaurahmen: Fensterbreite × volle Gebietshöhe auf der Zielseite
+  const [x0, y0, x1, y1] = d.extent
+  const anKante = (t) => seite.face === 'x_min' ? [x0, t]
+    : seite.face === 'x_max' ? [x1, t]
+      : seite.face === 'y_min' ? [t, y0] : [t, y1]
+  const ecken = [[lo, d.z_min], [lo + w, d.z_min],
+    [lo + w, d.z_max], [lo, d.z_max]]
+  const pts = ecken.map(([t, z]) => {
+    const [x, y] = anKante(t)
+    return new THREE.Vector3(x, y, z)
+  })
+  if (!bcDrag.obj) {
+    bcDrag.obj = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xffc832, depthTest: false }))
+    bcDrag.obj.renderOrder = 40
+    scene.add(bcDrag.obj)
+  } else {
+    bcDrag.obj.geometry.setFromPoints(pts)
+  }
+}
+
+async function commitBcDrag() {
+  const drag = bcDrag
+  bcDrag = null
+  controls.enabled = true
+  renderer.domElement.style.cursor = 'default'
+  if (drag?.obj) {
+    scene.remove(drag.obj)
+    drag.obj.geometry.dispose()
+    drag.obj.material.dispose()
+  }
+  if (!drag?.ziel) return
+  const b = (store.spec.boundaries ?? []).find((x) => x.id === drag.id)
+  if (!b) return
+  const r2 = (v) => Math.round(v * 100) / 100
+  const clone = JSON.parse(JSON.stringify(b))
+  clone.face = drag.ziel.face
+  const win = clone.window
+  if (win && !win.follow) {
+    if (win.span) win.span = [r2(drag.lo), r2(drag.lo + drag.w)]
+    if (win.center != null) win.center = r2(drag.lo + drag.w / 2)
+  }
+  store.updateObject('boundary', drag.id, clone)
+  // Sofort speichern: die Marker lesen die SERVER-Auflösung (bc_faces) —
+  // erst die PUT-Antwort zeigt den Rand an seiner neuen Seite
+  await store.saveCase()
+}
+
 function commitObjectDrag() {
   const drag = objectDrag
   objectDrag = null
@@ -1347,6 +1455,14 @@ onMounted(() => {
     const sel = store.selection
     const hitsSelected = sel && hitInfo.object.userData.kind === sel.kind
       && hitInfo.object.userData.id === sel.id
+    if (hitInfo.object.userData.kind === 'boundary'
+        && (mode.value === 'move' || ((e.shiftKey || e.ctrlKey) && hitsSelected))) {
+      if (!hitsSelected) {
+        store.select('boundary', hitInfo.object.userData.id)
+      }
+      startBcDrag(e, hitInfo.object.userData.id)
+      return
+    }
     let startMove = false
     if (mode.value === 'move') {
       if (!hitsSelected) {
@@ -1418,6 +1534,11 @@ onMounted(() => {
       downPos = null
       return
     }
+    if (bcDrag) {
+      commitBcDrag()
+      downPos = null
+      return
+    }
     if (dragging) {
       commitHandleDrag()
       downPos = null
@@ -1460,6 +1581,10 @@ onMounted(() => {
     }
     if (rotAktiv()) {
       dragRotTo(e)
+      return
+    }
+    if (bcDrag) {
+      dragBcTo(e)
       return
     }
     if (dragging) {
@@ -1623,9 +1748,12 @@ watch(() => store.sculptAktiv, (an) => {
     // Formen arbeitet auf dem feinen Höhenraster — Solverblick wäre die
     // grobe Abtastung, dort stimmen die Vertexindizes nicht
     if (solverView.value) solverView.value = false
-    if (!sculpt.aktivieren()) store.sculptAktiv = false
+    if (!sculpt.aktivieren()) { store.sculptAktiv = false; return }
+    // Erdkörper-Fälle: fürs Formen die Höhenfläche einblenden
+    buildTerrain()
   } else {
     sculpt.deaktivieren()
+    buildTerrain()
   }
 })
 
