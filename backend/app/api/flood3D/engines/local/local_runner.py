@@ -79,6 +79,28 @@ def _mitgelieferter_core(job: Path, case: Path) -> str | None:
     return None
 
 
+def _runner_uebergabe(eigen: str | None) -> None:
+    """
+    Die ins Image gebackene Runner-Kopie übergibt an die aus dem Bundle —
+    dieselbe Logik wie beim Core: das Bundle stammt vom Server, der den
+    Fall gebaut hat, und kennt jeden neuen Pipeline-Schritt. Ohne die
+    Übergabe fehlte z. B. surfaceFeatureExtract (2026-08-06), und snappy
+    brach ohne .eMesh-Kanten ab. Der Umgebungswächter verhindert Schleifen.
+    """
+    if not eigen or os.environ.get("QUAGG_RUNNER_UEBERGEBEN"):
+        return
+    neu = Path(eigen) / "flood3D" / "engines" / "local" / "local_runner.py"
+    try:
+        selbst = Path(__file__).resolve()
+    except OSError:
+        return
+    if not neu.is_file() or neu.resolve() == selbst:
+        return
+    emit(event="log", text="Runner: aus dem Bundle")
+    os.environ["QUAGG_RUNNER_UEBERGEBEN"] = "1"
+    os.execv(sys.executable, [sys.executable, str(neu)] + sys.argv[1:])
+
+
 def run_foam_step(case: Path, command: str, log_name: str,
                   end_time: float | None = None) -> None:
     """
@@ -202,6 +224,7 @@ def main() -> int:
             case = unpack_case(job)
 
         eigen = _mitgelieferter_core(job, case)
+        _runner_uebergabe(eigen)
         sys.path.insert(0, "/opt/quagg")
         if eigen:
             sys.path.insert(0, eigen)

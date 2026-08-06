@@ -1177,6 +1177,15 @@ async def case_bundle(case_id: str):
         # mit ModuleNotFoundError ab
         _sh.copytree(hier / "core", rt / "core",
                      ignore=_sh.ignore_patterns("__pycache__", "*.pyc"))
+        # Auch der RUNNER reist mit: die Image-Kopie übergibt an diese
+        # Bundle-Kopie (local_runner._runner_uebergabe) — sonst fehlt dem
+        # eingebackenen Skript jeder neue Pipeline-Schritt, bis der Nutzer
+        # sein Image neu zieht (2026-08-06: surfaceFeatureExtract fehlte,
+        # snappy fand keine .eMesh-Kanten)
+        eng = rt / "engines" / "local"
+        eng.mkdir(parents=True)
+        _sh.copy2(hier / "engines" / "local" / "local_runner.py",
+                  eng / "local_runner.py")
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(case_out.rglob("*")):
