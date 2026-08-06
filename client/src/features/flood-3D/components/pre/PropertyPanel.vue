@@ -158,6 +158,13 @@
     </details>
 
     <!-- FENSTER (nur Zu-/Abflüsse) -->
+    <div v-if="isFlowBc" class="f3d-row">
+      <button class="f3d-btn" :disabled="store.loading"
+              title="Randbedingung auf die nächste Gebietsseite legen (x_min → y_min → x_max → y_max); das Fenster wird auf der neuen Seite mittig eingesetzt"
+              @click="seiteWechseln">
+        ⇄ Seite wechseln <span class="f3d-mono">({{ aktuelleSeite }})</span>
+      </button>
+    </div>
     <details v-if="isFlowBc" class="f3d-klapper">
       <summary>Fenster ({{ windowKind || 'ganze Fläche' }})</summary>
       <div class="f3d-prop">
@@ -410,6 +417,63 @@ watch(() => [store.selection, store.selectedObject], () => {
 // JSON-Feld oder die Handles im 3D.
 const isFlowBc = computed(() => ['inflow_hydrograph', 'inflow_constant',
   'outflow_fixed_level', 'outflow_free'].includes(draft.value?.type))
+// Seite der Randbedingung: die SERVER-Auflösung, sonst face, sonst die
+// Vorbelegung nach Typ (meshgen._assign_faces)
+const SEITEN_RUNDE = ['x_min', 'y_min', 'x_max', 'y_max']
+const aktuelleSeite = computed(() => {
+  const o = draft.value
+  if (!o) return ''
+  return store.aufgeloest?.bcFaces?.[o.id] ?? o.face
+    ?? (o.type?.startsWith('inflow') ? 'x_min' : 'x_max')
+})
+
+// Ein Klick = nächste Gebietsseite. Das Fenster (span/center) wird auf
+// der neuen Seite mittig eingesetzt (Breite bleibt). Liegen danach
+// Zulauf und Ablauf auf derselben Seite, gibt es sofort eine Warnung —
+// die Prüfung meldet den blockMesh-Konflikt zusätzlich als Fehler.
+async function seiteWechseln() {
+  const o = store.selectedObject
+  const dom = store.spec?.domain
+  if (!o || !dom) return
+  const jetzt = aktuelleSeite.value
+  const seite = SEITEN_RUNDE[
+    (SEITEN_RUNDE.indexOf(jetzt) + 1) % SEITEN_RUNDE.length]
+  const [x0, y0, x1, y1] = dom.extent
+  const [lo, hi] = seite.startsWith('x') ? [y0, y1] : [x0, x1]
+  const clone = JSON.parse(JSON.stringify(o))
+  clone.face = seite
+  const win = clone.window
+  if (win && !win.follow) {
+    const mitte = (lo + hi) / 2
+    const r2 = (v) => Math.round(v * 100) / 100
+    if (win.span) {
+      const w = Math.min(Math.abs(win.span[1] - win.span[0]), hi - lo)
+      win.span = [r2(mitte - w / 2), r2(mitte + w / 2)]
+    }
+    if (win.center != null) win.center = r2(mitte)
+  }
+  store.updateObject('boundary', o.id, clone)
+  await store.saveCase()
+  // Zulauf und Ablauf auf derselben Seite? Sofort sagen.
+  const seiten = {}
+  for (const b of store.spec?.boundaries ?? []) {
+    const f = store.aufgeloest?.bcFaces?.[b.id] ?? b.face
+      ?? (b.type?.startsWith('inflow') ? 'x_min'
+        : b.type?.startsWith('outflow') ? 'x_max' : null)
+    if (!f || f === 'z_max') continue
+    ;(seiten[f] ??= []).push(b)
+  }
+  for (const [f, bs] of Object.entries(seiten)) {
+    const zu = bs.some((b) => b.type?.startsWith('inflow'))
+    const ab = bs.some((b) => b.type?.startsWith('outflow'))
+    if (zu && ab) {
+      store.melden(`Achtung: Zulauf und Ablauf liegen beide auf ${f} — `
+        + 'blockMesh kann zwei Randbedingungen auf einer Seite nicht '
+        + 'abbilden (siehe Prüfung).', 'warnung')
+    }
+  }
+}
+
 const channels = computed(() => (store.spec?.terrain?.operations ?? [])
   .filter((o) => o.type === 'channel_carve'))
 const pipes = computed(() => (store.spec?.structures ?? [])

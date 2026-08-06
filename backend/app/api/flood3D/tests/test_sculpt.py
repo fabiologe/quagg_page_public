@@ -74,15 +74,32 @@ def test_patch_ausserhalb_und_unsinn_werden_abgelehnt(spec, tmp_path):
                        [{"i0": 0, "j0": 0, "dz": [[500.0]]}])
 
 
-def test_sculpt_wirkt_nach_den_operationen(spec, tmp_path):
-    """Die Ebene formt das SICHTBARE Gelände — auch im Gerinne."""
-    voll = build_spec_stage3()             # mit Operationsstapel
-    dz = np.full((3, 3), 0.5)
-    patch_anwenden(voll, tmp_path, [{"i0": 5, "j0": 5, "dz": dz.tolist()}])
-    mit = TerrainField.from_spec(voll.terrain, voll.domain, tmp_path).z
-    voll.terrain.sculpt = None
-    ohne = TerrainField.from_spec(voll.terrain, voll.domain, tmp_path).z
-    assert mit[6, 6] == pytest.approx(ohne[6, 6] + 0.5)
+def test_operationen_behalten_ihre_sollhoehen(tmp_path):
+    """
+    Der Pinsel formt das GEWACHSENE Gelände — die deklarierten
+    Operationen (hier: das Gerinne) behalten ihre Sollhöhen obendrauf.
+    Vorher wirkte die Ebene NACH dem Stapel und hob die Gerinne-Sohle an.
+    """
+    voll = build_spec_stage3()             # mit Gerinne-Operation
+    feld_vor = TerrainField.from_spec(voll.terrain, voll.domain, tmp_path)
+    gerinne = next(o for o in voll.terrain.operations
+                   if o.type == "channel_carve")
+    mx, my = gerinne.polyline[len(gerinne.polyline) // 2][:2]
+    sohle_vor = float(feld_vor.sample([mx], [my])[0])
+    # Fläche großflächig anheben — auch über dem Gerinne
+    g = feld_vor.z.shape
+    meldung = patch_anwenden(voll, tmp_path, [
+        {"i0": 0, "j0": 0, "dz": np.full(g, 1.0).tolist()}])
+    feld = TerrainField.from_spec(voll.terrain, voll.domain, tmp_path)
+    # Sohle unverändert (Sollhöhe), freies Gelände um 1 m gehoben
+    assert float(feld.sample([mx], [my])[0]) == pytest.approx(sohle_vor,
+                                                              abs=0.02)
+    x0, y0, x1, y1 = voll.domain.extent
+    ecke_vor = float(feld_vor.sample([x0], [y0])[0])
+    assert float(feld.sample([x0], [y0])[0]) == pytest.approx(
+        ecke_vor + 1.0, abs=0.02)
+    # und der Hinweis benennt die überlappte Operation
+    assert "Sollhöhen" in meldung and gerinne.id in meldung
 
 
 def test_sculpt_dreht_mit(spec, tmp_path):

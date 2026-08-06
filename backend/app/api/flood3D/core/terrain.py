@@ -274,13 +274,16 @@ class TerrainField:
         field = cls(x0=x0, y0=y0, resolution=res, z=z.astype(float))
         field._ops = list(terrain.operations)
         field._base_dir = Path(base_dir)
-        for op in terrain.operations:
-            field.apply(op)
         if terrain.sculpt:
-            # Sculpt-Ebene NACH den Operationen: geformt wird, was man
-            # sieht — eine spätere Operation überschreibt den Pinsel nicht
+            # Sculpt-Ebene VOR den Operationen: der Pinsel formt das
+            # GEWACHSENE Gelände; die deklarierten Operationen (Gerinne-
+            # Sohle, Planum, Dammkrone …) behalten ihre Sollhöhen
+            # obendrauf. Andersherum verschob jeder Strich die
+            # zugesicherten Höhen — die „Unstimmigkeit" vom 2026-08-06.
             from .sculpt import lade_ebene
             field.z = field.z + lade_ebene(terrain, domain, Path(base_dir))
+        for op in terrain.operations:
+            field.apply(op)
         return field
 
     # -- Raster --
