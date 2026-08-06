@@ -166,6 +166,53 @@ def _terrain_drehen(spec: CaseSpec, base_dir: Path, grad: float,
 
 # --------------------------------------------------------------------------
 
+def _sculpt_drehen(spec, base_dir: Path, c: float, s: float, mitte,
+                   neues_extent, hinweise: list[str]) -> None:
+    """
+    Die Sculpt-Ebene (Pinsel-Deltas, Weltkoordinaten) dreht mit: neues
+    Gitter über dem neuen Gebiet, jeder Punkt zurückgedreht und im alten
+    Delta abgetastet — außerhalb 0. Ohne das stünden die Formungen nach
+    dem Drehen an der falschen Stelle.
+    """
+    t = spec.terrain
+    if t is None or not t.sculpt:
+        return
+    pfad = base_dir / t.sculpt
+    if not pfad.exists():
+        hinweise.append("Sculpt-Ebene fehlt auf der Platte — nicht gedreht.")
+        return
+    from .sculpt import lade_ebene
+    alt_dz = lade_ebene(t, spec.domain, base_dir)
+    ax0, ay0 = spec.domain.extent[0], spec.domain.extent[1]
+    res = t.base.resolution
+    nx0, ny0, nx1, ny1 = neues_extent
+    nx_ = int(round((nx1 - nx0) / res)) + 1
+    ny_ = int(round((ny1 - ny0) / res)) + 1
+    xx, yy = np.meshgrid(nx0 + np.arange(nx_) * res,
+                         ny0 + np.arange(ny_) * res)
+    # p_alt = R^T (p_neu - mitte) + mitte
+    dx, dy = xx - mitte[0], yy - mitte[1]
+    xa = c * dx + s * dy + mitte[0]
+    ya = -s * dx + c * dy + mitte[1]
+    from .terrain import _sample_bilinear
+    a_ny, a_nx = alt_dz.shape
+    neu_dz = _sample_bilinear(alt_dz, ax0, ay0, res, xa, ya)
+    innen = ((xa >= ax0) & (xa <= ax0 + (a_nx - 1) * res)
+             & (ya >= ay0) & (ya <= ay0 + (a_ny - 1) * res))
+    neu_dz = np.where(innen, neu_dz, 0.0)
+    # Von Hand mit dem NEUEN Gitterursprung speichern — sculpt._speichern
+    # liest das Gitter aus spec.domain, und der trägt an dieser Stelle
+    # noch das ALTE Extent (es wird erst nach diesem Aufruf gesetzt).
+    import hashlib
+    from .sculpt import SCULPT_DATEI
+    dz32 = neu_dz.astype(np.float32)
+    np.savez_compressed(base_dir / SCULPT_DATEI,
+                        dz=dz32, x0=nx0, y0=ny0, res=res)
+    t.sculpt = SCULPT_DATEI
+    t.sculpt_stand = hashlib.sha1(dz32.tobytes()).hexdigest()[:12]
+    hinweise.append("Sculpt-Ebene mitgedreht.")
+
+
 def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict:
     """
     Fall um `grad` (gegen den Uhrzeigersinn) um die Gebietsmitte drehen.
@@ -201,6 +248,7 @@ def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict
 
     # --- Gelände zuerst (braucht noch das alte Gebiet)
     neuer_name = _terrain_drehen(spec, base_dir, grad, mitte, neues_extent)
+    _sculpt_drehen(spec, base_dir, c, s, mitte, neues_extent, hinweise)
     spec.domain.extent = neues_extent
     if neuer_name:
         spec.terrain.base.source = neuer_name

@@ -68,6 +68,8 @@ export const flood3dApi = {
     `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
   skizzeHinzufuegen: (caseId, payload) =>
     sendJson(`/cases/${caseId}/skizze`, 'POST', payload),
+  sculpt: (caseId, patches) =>
+    sendJson(`/cases/${caseId}/sculpt`, 'POST', { patches }),
   importReapply: (caseId, importId, rollen = null) =>
     sendJson(`/cases/${caseId}/import/${importId}/reapply`, 'POST',
       rollen ? { rollen } : {}),

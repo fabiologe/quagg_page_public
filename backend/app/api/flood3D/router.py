@@ -717,6 +717,21 @@ def _mutation(case_id: str, wirken, fehlertext: str) -> dict:
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
+@router.post("/cases/{case_id}/sculpt")
+async def case_sculpt(case_id: str, payload: dict = Body(...)):
+    """
+    Pinsel-Patches auf die Sculpt-Ebene des Geländes (core/sculpt.py).
+    Alle Pinsel des Editors — heben, senken, glätten, Bruchkanten-
+    Anpassung — schicken dasselbe: Gitterindizes + dz-Teilfeld.
+    Rückgängig ist das inverse Patch.
+    """
+    def wirken(spec, d):
+        from .core.sculpt import patch_anwenden
+        return patch_anwenden(spec, d, payload.get("patches") or [])
+
+    return _mutation(case_id, wirken, "Formen fehlgeschlagen")
+
+
 @router.post("/cases/{case_id}/rotate")
 async def case_rotate(case_id: str, payload: dict = Body(...)):
     """
