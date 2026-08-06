@@ -37,6 +37,31 @@ function clearGroup(name) {
   groups[name] = null
 }
 
+// Während des Formens wird der Farbraum EINGEFROREN und wie beim
+// Erdkörper über die ganze Körperhöhe (bis zur Sohle) normiert — sonst
+// springt die Einfärbung beim Aktivieren um (andere Normierung) und
+// wandert mit jedem Strich (min/max ändern sich). Genau das machte die
+// Bearbeitung „unmöglich, weil man nicht weiß, was man bearbeitet".
+let sculptFarbraum = null
+
+function sculptFarbraumBestimmen(t) {
+  let zMin = Infinity
+  let zMax = -Infinity
+  for (let i = 0; i < t.z.length; i++) {
+    if (t.z[i] < zMin) zMin = t.z[i]
+    if (t.z[i] > zMax) zMax = t.z[i]
+  }
+  if (store.terrainSolid) {
+    // Sohle wie solids.py: Vorbelegung 4 Zellen unter dem tiefsten Punkt
+    const zelle = store.spec?.mesh?.base_cell ?? 0.5
+    const uk = store.spec?.terrain?.erdkoerper_unterkante
+      ?? (Math.min(zMin, store.spec?.domain?.z_min ?? zMin)
+        - Math.max(4 * zelle, 1.0))
+    zMin = Math.min(zMin, uk)
+  }
+  return [zMin, zMax]
+}
+
 function buildTerrain() {
   clearGroup('terrain')
   const t = store.terrain
@@ -44,10 +69,7 @@ function buildTerrain() {
   // Arbeitet der Fall mit einem GELÄNDEKÖRPER, ist die Höhenfläche nicht
   // mehr die Wahrheit: der Vernetzer bekommt einen Volumenkörper, der
   // Hohlräume haben kann. Dann wird auch genau der gezeigt.
-  // Beim FORMEN immer die Höhenfläche: der Pinsel arbeitet auf dem
-  // Raster (aus dem der Erdkörper gebaut wird) — der Körper kommt beim
-  // Beenden wieder
-  if (store.terrainSolid && !store.sculptAktiv) { buildTerrainSolid(); return }
+  if (store.terrainSolid) { buildTerrainSolid(); return }
   // Anzeige normalerweise in der Auflösung des Höhenrasters. Im
   // „Solverblick" wird stattdessen auf die BASISZELLE abgetastet und flach
   // schattiert — das ist die Auflösung, mit der der Vernetzer arbeitet.
@@ -66,9 +88,15 @@ function buildTerrain() {
   const col = new Float32Array(nx * ny * 3)
   let zMin = Infinity
   let zMax = -Infinity
-  for (let i = 0; i < t.z.length; i++) {
-    zMin = Math.min(zMin, t.z[i])
-    zMax = Math.max(zMax, t.z[i])
+  if (store.sculptAktiv) {
+    sculptFarbraum ??= sculptFarbraumBestimmen(t)
+    ;[zMin, zMax] = sculptFarbraum
+  } else {
+    sculptFarbraum = null
+    for (let i = 0; i < t.z.length; i++) {
+      zMin = Math.min(zMin, t.z[i])
+      zMax = Math.max(zMax, t.z[i])
+    }
   }
   const span = Math.max(zMax - zMin, 0.01)
   const cLow = new THREE.Color(0x3d5240)

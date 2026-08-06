@@ -49,7 +49,7 @@
               :disabled="!!store.spec?.terrain?.base?.koerper && !store.sculptAktiv"
               :title="store.spec?.terrain?.base?.koerper
                 ? 'Das Gelände ist ein fertiger Volumenkörper (STL) — das Höhenraster ist nicht die Quelle, der Pinsel greift nicht'
-                : 'Pinsel im 3D-Fenster: heben, senken, glätten, an Bruchkanten anpassen — beim Erdkörper wird auf der Höhenfläche geformt, der Körper folgt daraus'"
+                : 'Pinsel im 3D-Fenster: heben, senken, glätten, an Bruchkanten anpassen — beim Erdkörper direkt an dessen Deckfläche'"
               @click="store.sculptAktiv = !store.sculptAktiv">
         {{ store.sculptAktiv ? '✓ Formen beenden' : '🖌 Gelände formen' }}
       </button>
