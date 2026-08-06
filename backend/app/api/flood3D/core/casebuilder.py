@@ -467,11 +467,23 @@ def set_fields_dict(spec: CaseSpec, out: Path | None = None) -> str | None:
 # ---- Zu-/Ablauf-Fenster (Spez.: Randbedingung wirkt nur auf Teilfläche) --
 
 def _bc_face(spec: CaseSpec, b) -> str | None:
-    """Gebietsrand der Randbedingung (inkl. Vorbelegungslogik)."""
-    for face, (patch, _t) in assign_faces(spec).items():
-        if patch == b.patch:
-            return face
-    return None
+    """
+    Gebietsrand der Randbedingung (inkl. Vorbelegungslogik).
+
+    Bewusst OHNE assign_faces: das wirft bei doppelt belegter Seite einen
+    ValueError — die Frage nach der Seite EINER Randbedingung darf aber
+    nie am Konflikt zweier anderer scheitern. Genau das riss am
+    2026-08-06 PUT und Preview mit 500 um (validate rief _bc_face
+    ungeschützt, der Fall saß mit dem Konflikt auf der Platte fest).
+    Den Konflikt selbst meldet die Prüfung als Befund mit Kur.
+    """
+    if b.face:
+        return b.face
+    if b.type in ("inflow_hydrograph", "inflow_constant"):
+        return "x_min"
+    if b.type.startswith("outflow"):
+        return "x_max"
+    return "z_max"
 
 
 def _follow_channel(spec: CaseSpec, w):
