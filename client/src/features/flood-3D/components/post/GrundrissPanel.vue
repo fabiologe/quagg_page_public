@@ -44,6 +44,14 @@
           <input type="checkbox" v-model="showFroudeLine" />
           Grenzlinie Fr = 1 (strömend / schießend)
         </label>
+        <p class="f3d-muted f3d-small">
+          Dargestellt ab {{ TIEFE_TROCKEN * 1000 }} mm Wassertiefe;
+          bis {{ TIEFE_BENETZT * 100 }} cm als helle Benetzung,
+          darüber greift das Farbraster.
+          <template v-if="gridLabel">
+            Darstellungsraster {{ gridLabel }} (vom Rechennetz gemittelt).
+          </template>
+        </p>
       </div>
 
       <div class="f3d-ctl-group" v-if="raster !== 'none'">
@@ -129,6 +137,7 @@ import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFields }
   from '../../composables/useFieldCache'
+import { TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
 import { isoSegments } from '../../utils/marchingSquares'
 import { einordnen } from '../../utils/kennwerte'
@@ -168,6 +177,7 @@ const sectionPts = ref([])
 const profile = ref(null)
 const loading = ref(false)
 const error = ref('')
+const gridLabel = ref('')
 
 const shownRange = computed(() =>
   lockScale.value ? [lockMin.value, lockMax.value] : autoRange.value)
@@ -193,6 +203,7 @@ async function loadRun() {
     const [index, geo] = await Promise.all([
       getTimesteps(activeRunId.value), getGeometry(activeRunId.value)])
     grid = index.grid
+    gridLabel.value = grid.spacing.map((s) => Number(s.toPrecision(3))).join(' × ') + ' m'
     hasTau.value = index.fields.includes('bed_shear')
     if (raster.value === 'tau' && !hasTau.value) raster.value = 'depth'
     terrain = geo.terrain
@@ -337,7 +348,7 @@ function draw() {
   if (values) {
     for (let c = 0; c < values.length; c++) {
       const v = values[c]
-      if (raster.value !== 'tau' && !(maskeTiefe()[c] > 0.01)) continue
+      if (raster.value !== 'tau' && !(maskeTiefe()[c] > TIEFE_BENETZT)) continue
       if (raster.value === 'tau' && !(v > 1e-9)) continue
       if (v < lo) lo = v
       if (v > hi) hi = v
@@ -356,7 +367,11 @@ function draw() {
       let r = 34 * shade + 14
       let g = 44 * shade + 18
       let b = 66 * shade + 30
-      const wet = maskeTiefe()[col] > 0.01
+      const tiefe = maskeTiefe()[col]
+      const wet = tiefe > TIEFE_BENETZT
+      // Benetzung: Wasser ist da, aber zu flach fuer belastbare Rasterwerte
+      // — vorher blieben solche Saeulen unsichtbar ("trocken")
+      const benetzt = !wet && tiefe > TIEFE_TROCKEN
       const show = values && (raster.value === 'tau' ? values[col] > 1e-9 : wet)
       if (show) {
         const [vr, vg, vb] = viridis((values[col] - rLo) / span)
@@ -366,6 +381,12 @@ function draw() {
         b = b * (1 - a) + vb * a
       } else if (wet && raster.value === 'none') {
         r = 30; g = 70; b = 140
+      } else if (benetzt && raster.value !== 'tau') {
+        // heller Blauton ueber der Gelaendeschummerung
+        const a = 0.45
+        r = r * (1 - a) + 120 * a
+        g = g * (1 - a) + 170 * a
+        b = b * (1 - a) + 215 * a
       }
       data.data[p] = r
       data.data[p + 1] = g
@@ -381,7 +402,7 @@ function draw() {
   if (showContours.value) {
     const surf = new Float32Array(pf.surface)
     for (let c = 0; c < surf.length; c++) {
-      if (!(pf.depth[c] > 0.01)) surf[c] = NaN
+      if (!(pf.depth[c] > TIEFE_BENETZT)) surf[c] = NaN
     }
     let sMin = Infinity
     let sMax = -Infinity
@@ -415,7 +436,7 @@ function draw() {
       const feld = new Float32Array(fr.length)
       const tiefe = umhuellend.value && huelle ? huelle.depth : pf.depth
       for (let c = 0; c < fr.length; c++) {
-        feld[c] = tiefe[c] > 0.01 ? fr[c] : NaN
+        feld[c] = tiefe[c] > TIEFE_BENETZT ? fr[c] : NaN
       }
       ctx.beginPath()
       ctx.strokeStyle = '#ff4d4d'
@@ -446,7 +467,7 @@ function draw() {
     for (let j = 0; j < ny; j += stride) {
       for (let i = 0; i < nx; i += stride) {
         const col = j * nx + i
-        if (!(pf.depth[col] > 0.01) || pf.umag[col] < 1e-4) continue
+        if (!(pf.depth[col] > TIEFE_BENETZT) || pf.umag[col] < 1e-4) continue
         const len = (6 + 16 * (pf.umag[col] / (uMax || 1)))
         const ang = Math.atan2(-pf.uy[col], pf.ux[col])   // Canvas-y invertiert
         const [cx, cy] = worldToCanvas(L,
@@ -536,22 +557,24 @@ function onMove(e) {
   const col = j * pf.nx + i
   const rows = [['Position', `${x.toFixed(2)} / ${y.toFixed(2)} m`]]
   if (terrain) rows.push(['Gelände', `${terrain.z[col].toFixed(2)} m`])
-  if (pf.depth[col] > 0.01) {
+  if (pf.depth[col] > TIEFE_BENETZT) {
     rows.push(['Wasserspiegel', `${pf.surface[col].toFixed(2)} m`])
     rows.push(['Wassertiefe', `${fmt(pf.depth[col])} m`])
     rows.push(['|U| Oberfläche', `${fmt(pf.umag[col])} m/s`])
     rows.push(['|U| tiefengemittelt', `${fmt(pf.umagM[col])} m/s`])
     rows.push(['Froude-Zahl', `${fmt(pf.froude[col])}`
       + (pf.froude[col] > 1 ? ' (schießend)' : ' (strömend)')])
-    if (pf.tau) {
-      const st = einordnen('bed_shear', pf.tau[col])
-      rows.push(['Sohlschubspannung', `${fmt(pf.tau[col])} N/m²`
-        + (st ? ` — ${st.text.split('.')[0]}` : '')])
-    }
+  } else if (pf.depth[col] > TIEFE_TROCKEN) {
+    rows.push(['Zustand', 'benetzt'])
+    rows.push(['Wassertiefe', `${fmt(pf.depth[col])} m`])
   } else {
     rows.push(['Zustand', 'trocken'])
   }
-  if (pf.tau) rows.push(['Sohlschubspannung', `${fmt(pf.tau[col])} N/m²`])
+  if (pf.tau) {
+    const st = einordnen('bed_shear', pf.tau[col])
+    rows.push(['Sohlschubspannung', `${fmt(pf.tau[col])} N/m²`
+      + (st && pf.depth[col] > TIEFE_BENETZT ? ` — ${st.text.split('.')[0]}` : '')])
+  }
   hover.value = rows
 }
 
@@ -607,12 +630,13 @@ function computeProfile() {
     // mit der Oberflächengeschwindigkeit wären Energiehöhe und Froude-Zahl
     // systematisch zu groß (sie ist die schnellste im Profil).
     const h = sampleColumn(pf.hInt, x, y)
-    if (h > 0.01) {
+    if (h > TIEFE_TROCKEN) {
       const surf = sampleColumn(pf.surface, x, y)
       const u = sampleColumn(pf.umagM, x, y)
       wsp.push(surf)
       energy.push(surf + (u * u) / (2 * G))
-      froude.push(u / Math.sqrt(G * h))
+      // Fr nur bei belastbarer Tiefe — im Benetzungsfilm dominiert das Raster
+      froude.push(h > TIEFE_BENETZT ? u / Math.sqrt(G * h) : null)
       // Grenztiefe aus dem spezifischen Abfluss q = u·h: y_kr = (q²/g)^(1/3).
       // Wo der Wasserspiegel sie schneidet, geht der Abfluss durch den
       // kritischen Zustand — die Linie, an der man Kontrollquerschnitte

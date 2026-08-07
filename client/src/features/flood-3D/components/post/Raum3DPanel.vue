@@ -16,6 +16,11 @@
           </select>
           <KennwertHilfe :groesse="hilfeSchluessel" :wert="shownRange[1]" />
         </div>
+        <p v-if="gridLabel" class="f3d-hint-inline">
+          Darstellungsraster {{ gridLabel }} — die Felder sind vom
+          Rechennetz auf dieses Raster gemittelt; lokale Verfeinerungen
+          sind hier nicht mehr sichtbar.
+        </p>
       </div>
 
       <div class="f3d-ctl-group">
@@ -31,7 +36,7 @@
           <input type="checkbox" v-model="layers.terrainShear" :disabled="!layers.terrain" />
           Sohlschubspannung einfärben
         </label>
-        <label class="f3d-check"><input type="checkbox" v-model="layers.surface" /> Wasseroberfläche (Isofläche α = 0,5)</label>
+        <label class="f3d-check"><input type="checkbox" v-model="layers.surface" /> Wasseroberfläche (Isofläche α = {{ alphaIso.toFixed(2) }})</label>
         <label class="f3d-check f3d-sub" v-if="layers.surface">
           <input type="checkbox" v-model="realistisch" />
           Realistisch darstellen
@@ -41,6 +46,16 @@
           <input type="range" min="0" max="3" step="1" v-model.number="glaettung" />
           <span class="f3d-mono">{{ glaettung }}×</span>
         </div>
+        <div class="f3d-row f3d-sub" v-if="layers.surface">
+          <span class="f3d-lbl">α-Grenze</span>
+          <input type="range" min="0.05" max="0.95" step="0.05" v-model.number="alphaIso" />
+          <span class="f3d-mono">{{ alphaIso.toFixed(2) }}</span>
+        </div>
+        <p v-if="layers.surface && alphaIso !== ALPHA_NASS" class="f3d-hint-inline">
+          Abweichend von α = {{ ALPHA_NASS }}: kleinere Werte zeigen mehr
+          (auch teilgefüllte Zellen und Gischt), größere weniger. Farbskala
+          und Punktabfrage bleiben bei α ≥ {{ ALPHA_NASS }}.
+        </p>
         <p v-if="layers.surface && glaettung === 0" class="f3d-hint-inline">
           Ohne Glättung zeigt die Oberfläche die Facetten des
           Darstellungsrasters — nicht die des Rechennetzes.
@@ -49,6 +64,12 @@
           Schaudarstellung: Glanzlicht und Wasserfarbe statt Feldeinfärbung.
           Die Geometrie bleibt exakt die gerechnete Oberfläche — für die
           Auswertung wieder abschalten.
+        </p>
+        <label class="f3d-check"><input type="checkbox" v-model="layers.film" /> Wasserfilm (flaches Wasser unter der α-Grenze)</label>
+        <p v-if="layers.film" class="f3d-hint-inline">
+          Zeigt Säulen mit Wasser ab {{ TIEFE_TROCKEN * 1000 }} mm Tiefe,
+          die keine Isofläche erzeugen — sonst bliebe Wasser flacher als
+          etwa eine halbe Rasterzelle unsichtbar.
         </p>
         <label class="f3d-check"><input type="checkbox" v-model="layers.body" /> Wasserkörper (Luftphase ausgeblendet)</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.slice" /> Schnittebene</label>
@@ -251,6 +272,7 @@ import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunc
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { fetchGeometry, fetchTimesteps, fetchVolume } from '../../services/volume'
+import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
 
 const store = usePostStore()
 
@@ -281,10 +303,13 @@ const activeFieldKey = ref('umag')
 // „umag", die Sohlschubspannung kommt aus einem eigenen Feld
 const hilfeSchluessel = computed(() => activeFieldKey.value)
 const layers = ref({
-  terrain: true, terrainShear: true, surface: true, body: false,
+  terrain: true, terrainShear: true, surface: true, body: false, film: false,
   slice: false, arrows: false, iso: false, streamlines: false,
   structures: true, meshSurface: false,
 })
+// Isoflächen-Grenze der Wasseroberfläche — Vorgabe ALPHA_NASS, per Regler
+// verstellbar (kleiner = mehr Wasser sichtbar, auch Gischt/Teilfüllung)
+const alphaIso = ref(ALPHA_NASS)
 const sliceAxis = ref('k')
 const sliceIdx = ref(0)
 const sliceCount = ref(1)      // Ebenenstapel entlang der Achse (Spez. Kap. 8)
@@ -319,6 +344,8 @@ const viewName = ref('')
 const savedViews = ref([])
 const loading = ref(false)
 const error = ref('')
+// effektive Aufloesung des Darstellungsrasters (Audit P2-6: stand nirgends)
+const gridLabel = ref('')
 
 const activeField = computed(() =>
   FIELD_OPTIONS.value.find((f) => f.key === activeFieldKey.value)
@@ -440,14 +467,26 @@ function buildPipelines() {
   vtk.slActor.getProperty().setDiffuse(0.55)
   vtk.slActor.getProperty().setSpecular(0.1)
 
+  // Wasserfilm: flache Säulen, die keine Isofläche erzeugen (Σ α·dz über
+  // TIEFE_TROCKEN, aber keine Zelle über der α-Grenze) — als heller,
+  // durchscheinender Belag auf dem Gelände
+  vtk.filmData = vtkPolyData.newInstance()
+  vtk.filmMapper = vtkMapper.newInstance({ scalarVisibility: false })
+  vtk.filmMapper.setInputData(vtk.filmData)
+  vtk.filmActor = vtkActor.newInstance()
+  vtk.filmActor.setMapper(vtk.filmMapper)
+  vtk.filmActor.getProperty().setColor(0.55, 0.75, 0.92)
+  vtk.filmActor.getProperty().setOpacity(0.55)
+  vtk.filmActor.getProperty().setAmbient(0.4)
+
   vtk.picker = vtkCellPicker.newInstance()
   vtk.picker.setTolerance(0.005)
   vtk.structureActors = []
   vtk.meshActors = []
   vtk.sliceExtras = []
 
-  const actors = [vtk.terrainActor, vtk.surfaceActor, vtk.sliceActor,
-    vtk.isoActor, vtk.glyphActor, vtk.slActor, vtk.volumeActor]
+  const actors = [vtk.terrainActor, vtk.surfaceActor, vtk.filmActor,
+    vtk.sliceActor, vtk.isoActor, vtk.glyphActor, vtk.slActor, vtk.volumeActor]
   // Bis zum ersten Datenpaket unsichtbar — Resize-Render auf leeren
   // ImageData bringt die Mapper sonst zum Absturz.
   for (const a of actors) a.setVisibility(false)
@@ -525,7 +564,9 @@ function sampleNearest(values, x, y, z) {
 
 // Trilinear statt Nachbarzelle: die Einfärbung der Wasseroberfläche kam
 // vorher aus JE EINER Zelle, dadurch die fleckigen Kacheln — mit
-// Interpolation entsteht ein stetiger Verlauf.
+// Interpolation entsteht ein stetiger Verlauf. NaN-Nachbarn (Rasterzellen
+// ohne Solverzelle, fill=NaN der Feldablage) werden übersprungen und die
+// Gewichte neu normiert — sonst würde am Gelände jede Interpolation NaN.
 function sampleLinear(values, x, y, z) {
   const { origin, spacing, dims } = grid
   const fx = (x - origin[0]) / spacing[0] - 0.5
@@ -538,12 +579,20 @@ function sampleLinear(values, x, y, z) {
   const ty = Math.min(1, Math.max(0, fy - j0))
   const tz = Math.min(1, Math.max(0, fz - k0))
   const at = (i, j, k) => values[(k * dims[1] + j) * dims[0] + i]
-  const c00 = at(i0, j0, k0) * (1 - tx) + at(i0 + 1, j0, k0) * tx
-  const c10 = at(i0, j0 + 1, k0) * (1 - tx) + at(i0 + 1, j0 + 1, k0) * tx
-  const c01 = at(i0, j0, k0 + 1) * (1 - tx) + at(i0 + 1, j0, k0 + 1) * tx
-  const c11 = at(i0, j0 + 1, k0 + 1) * (1 - tx) + at(i0 + 1, j0 + 1, k0 + 1) * tx
-  return (c00 * (1 - ty) + c10 * ty) * (1 - tz)
-       + (c01 * (1 - ty) + c11 * ty) * tz
+  let sum = 0
+  let wsum = 0
+  for (let dk = 0; dk <= 1; dk++) {
+    for (let dj = 0; dj <= 1; dj++) {
+      for (let di = 0; di <= 1; di++) {
+        const v = at(i0 + di, j0 + dj, k0 + dk)
+        if (!Number.isFinite(v)) continue
+        const w = (di ? tx : 1 - tx) * (dj ? ty : 1 - ty) * (dk ? tz : 1 - tz)
+        sum += v * w
+        wsum += w
+      }
+    }
+  }
+  return wsum > 1e-12 ? sum / wsum : 0
 }
 
 // Getrennter 3x3x3-Mittelwert über das Alphafeld. Die Treppenstufen der
@@ -625,7 +674,7 @@ function updateGlyphs(alpha, U, umag, vHi) {
       for (let i = 0; i < nx; i += onSlice && sliceAxis.value === 'i' ? 1 : stride) {
         if (onSlice && sliceAxis.value === 'i' && i !== sliceIdx.value) continue
         const idx = (k * ny + j) * nx + i
-        if (alpha[idx] < 0.5 || umag[idx] < 1e-3) continue
+        if (alpha[idx] < ALPHA_NASS || umag[idx] < 1e-3) continue
         pts.push(...cellCenter(i, j, k))
         vecs.push(U.data[idx], U.data[n + idx], U.data[2 * n + idx])
         mags.push(umag[idx])
@@ -645,6 +694,45 @@ function updateGlyphs(alpha, U, umag, vHi) {
   vtk.glyphMapper.setScaleFactor(arrowScale.value)
 }
 
+// Wasserfilm: je Säule das Phasenintegral Σ α·dz. Säulen mit Wasser über
+// TIEFE_TROCKEN, aber ohne Zelle über der α-Grenze, bekommen ein flaches
+// Viereck auf Höhe Gelände + Tiefe — sonst bliebe Wasser flacher als etwa
+// eine halbe Rasterzelle in der 3D-Ansicht komplett unsichtbar.
+function updateFilm(alpha) {
+  const { dims, origin, spacing } = grid
+  const [nx, ny, nz] = dims
+  const dz = spacing[2]
+  const pts = []
+  const polys = []
+  // Das Geländeraster liegt auf denselben Säulen wie das Feldraster; wenn
+  // nicht (alter Lauf), lieber kein Film als ein falsch platzierter.
+  if (terrainInfo && terrainInfo.nx === nx && terrainInfo.ny === ny) {
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        let h = 0
+        let sichtbar = false
+        for (let k = 0; k < nz; k++) {
+          const a = alpha[(k * ny + j) * nx + i]
+          if (a >= alphaIso.value) { sichtbar = true; break }
+          if (a > 0) h += Math.min(a, 1) * dz
+        }
+        if (sichtbar || h <= TIEFE_TROCKEN) continue
+        // +2 mm Anhebung gegen Z-Fighting mit dem Gelände — rein optisch
+        const z = terrainInfo.z[j * nx + i] + h + 0.002
+        const x0 = origin[0] + i * spacing[0]
+        const y0 = origin[1] + j * spacing[1]
+        const b = pts.length / 3
+        pts.push(x0, y0, z, x0 + spacing[0], y0, z,
+          x0 + spacing[0], y0 + spacing[1], z, x0, y0 + spacing[1], z)
+        polys.push(4, b, b + 1, b + 2, b + 3)
+      }
+    }
+  }
+  vtk.filmData.getPoints().setData(Float32Array.from(pts), 3)
+  vtk.filmData.getPolys().setData(Uint32Array.from(polys))
+  vtk.filmData.modified()
+}
+
 function updateIso() {
   vtk.isoMC.setContourValue(isoValue.value)
   vtk.isoMapper.setInputData(vtk.isoMC.getOutputData())
@@ -661,7 +749,7 @@ function updateStreamlines(alpha, U, umag) {
   // vtkImageStreamline liest über getPointData().getVectors(), nicht Scalars!
   const inter = new Float32Array(n * 3)
   for (let i = 0; i < n; i++) {
-    const wet = alpha[i] >= 0.5
+    const wet = alpha[i] >= ALPHA_NASS
     inter[i * 3] = wet ? U.data[i] : 0
     inter[i * 3 + 1] = wet ? U.data[n + i] : 0
     inter[i * 3 + 2] = wet ? U.data[2 * n + i] : 0
@@ -684,7 +772,7 @@ function updateStreamlines(alpha, U, umag) {
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const idx = (k * ny + j) * nx + i
-        if (alpha[idx] >= 0.5 && umag[idx] > 1e-3) out.push([i, j, k])
+        if (alpha[idx] >= ALPHA_NASS && umag[idx] > 1e-3) out.push([i, j, k])
       }
     }
     return out
@@ -776,7 +864,7 @@ async function updateScene() {
     let hi = -Infinity
     let vHi = 0
     for (let i = 0; i < field.length; i++) {
-      if (alpha[i] >= 0.5) {
+      if (alpha[i] >= ALPHA_NASS) {
         if (field[i] < lo) lo = field[i]
         if (field[i] > hi) hi = field[i]
         if (umag[i] > vHi) vHi = umag[i]
@@ -791,9 +879,10 @@ async function updateScene() {
     const sentinel = rLo - (rHi - rLo) * 0.5 - 1e-6
     const masked = new Float32Array(field.length)
     for (let i = 0; i < field.length; i++) {
-      masked[i] = alpha[i] >= 0.5 ? field[i] : sentinel
+      masked[i] = alpha[i] >= ALPHA_NASS ? field[i] : sentinel
     }
 
+    vtk.mc.setContourValue(alphaIso.value)
     setImageScalars(vtk.alphaImage, 'alpha',
       glaettung.value > 0 ? glaetteFeld(alpha, glaettung.value) : alpha)
     setImageScalars(vtk.fieldImage, 'field', masked)
@@ -839,9 +928,11 @@ async function updateScene() {
     if (layers.value.arrows) updateGlyphs(alpha, vol.fields.U, umag, vHi)
     if (layers.value.iso) updateIso()
     if (layers.value.streamlines) updateStreamlines(alpha, vol.fields.U, umag)
+    if (layers.value.film) updateFilm(alpha)
 
     vtk.terrainActor.setVisibility(layers.value.terrain)
     vtk.surfaceActor.setVisibility(layers.value.surface)
+    vtk.filmActor.setVisibility(layers.value.film)
     const durchsicht = layers.value.arrows || layers.value.streamlines
     const prop = vtk.surfaceActor.getProperty()
     if (realistisch.value) {
@@ -977,22 +1068,39 @@ function onPointerUp(e) {
   // Klick auf die Wasseroberfläche trifft die Luftzelle knapp darüber —
   // dann die erste Nasszelle darunter abfragen
   const flat = (kk) => (kk * grid.dims[1] + j) * grid.dims[0] + i
-  while (k > 0 && alpha[flat(k)] < 0.5 && alpha[flat(k - 1)] >= 0.5) k--
+  while (k > 0 && alpha[flat(k)] < ALPHA_NASS && alpha[flat(k - 1)] >= ALPHA_NASS) k--
   const idx = flat(k)
   const ux = U.data[idx]
   const uy = U.data[n + idx]
   const uz = U.data[2 * n + idx]
   const umag = Math.sqrt(ux * ux + uy * uy + uz * uz)
 
-  // Wasserspiegel und Tiefe aus der Alphasäule, Froude aus |U| und Tiefe
+  // Tiefe als Saeulenintegral Σ α·dz (volumenerhaltend, zeigt auch Filme),
+  // Wasserspiegel subzellig aus dem Fuellgrad der obersten Nasszelle —
+  // dieselbe Rekonstruktion wie im Grundriss (useFieldCache.planFields),
+  // damit sich Punktabfrage und Karte nicht widersprechen.
+  const dzz = grid.spacing[2]
+  const nzz = grid.dims[2]
   let kTop = -1
-  for (let kk = grid.dims[2] - 1; kk >= 0; kk--) {
-    if (alpha[(kk * grid.dims[1] + j) * grid.dims[0] + i] >= 0.5) { kTop = kk; break }
+  let depth = 0
+  for (let kk = 0; kk < nzz; kk++) {
+    const a = Math.min(Math.max(alpha[flat(kk)], 0), 1)
+    if (a <= 0) continue
+    depth += a * dzz
+    if (a >= ALPHA_NASS) kTop = kk
   }
-  const surfZ = kTop >= 0 ? grid.origin[2] + (kTop + 1) * grid.spacing[2] : null
   const groundZ = terrainInfo ? terrainInfo.z[j * terrainInfo.nx + i] : null
-  const depth = surfZ != null && groundZ != null ? Math.max(surfZ - groundZ, 0) : null
-  const froude = depth > 0.01 ? umag / Math.sqrt(G * depth) : null
+  let surfZ = null
+  if (depth > TIEFE_TROCKEN) {
+    if (kTop >= 0) {
+      const aTop = Math.min(Math.max(alpha[flat(kTop)], 0), 1)
+      const aOver = kTop + 1 < nzz ? Math.min(Math.max(alpha[flat(kTop + 1)], 0), 1) : 0
+      surfZ = grid.origin[2] + kTop * dzz + (aTop + aOver) * dzz
+    } else if (groundZ != null) {
+      surfZ = groundZ + depth
+    }
+  }
+  const froude = depth > TIEFE_BENETZT ? umag / Math.sqrt(G * depth) : null
   const tau = currentVol.fields.bed_shear
     ? currentVol.fields.bed_shear.data[j * grid.dims[0] + i] : null
 
@@ -1004,7 +1112,7 @@ function onPointerUp(e) {
     ['Druck p_rgh', `${fmt(currentVol.fields.p_rgh?.data[idx])} Pa`],
     ['Sohlschubspannung', tau != null ? `${fmt(tau)} N/m²` : '–'],
     ['Wasserspiegel', surfZ != null ? `${surfZ.toFixed(2)} m` : '–'],
-    ['Wassertiefe', depth != null ? `${fmt(depth)} m` : '–'],
+    ['Wassertiefe', depth > TIEFE_TROCKEN ? `${fmt(depth)} m` : 'trocken'],
     ['Froude-Zahl', froude != null ? fmt(froude) : '–'],
   ]
 }
@@ -1154,6 +1262,7 @@ async function loadRun() {
       fetchGeometry(activeRunId.value),
     ])
     grid = index.grid
+    gridLabel.value = grid.spacing.map((s) => Number(s.toPrecision(3))).join(' × ') + ' m'
     availableFieldKeys.value = index.fields ?? []
     if (!FIELD_OPTIONS.value.some((f) => f.key === activeFieldKey.value)) {
       activeFieldKey.value = FIELD_OPTIONS.value[0]?.key ?? 'umag'
@@ -1208,7 +1317,7 @@ watch(activeRunId, loadRun)
 watch([timeIdx, activeFieldKey, layers, sliceAxis, sliceIdx, sliceCount,
   colorLock, colorMin, colorMax, arrowScale, arrowStride, arrowsOnSlice,
   isoValue, slCount, slHeightIdx, slThick, slSeedAll, realistisch,
-  glaettung, praesentation], updateScene,
+  glaettung, praesentation, alphaIso], updateScene,
 { deep: true })
 
 onBeforeUnmount(() => {

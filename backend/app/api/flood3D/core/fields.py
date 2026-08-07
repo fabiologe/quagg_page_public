@@ -11,8 +11,9 @@ bleiben unangetastet (Spez. Kap. 9). Ablage im Laufordner:
                                alpha (nz,ny,nx), U (3,nz,ny,nx), p_rgh …,
                                bed_shear (ny,nx) als Flächengröße
 
-Der Weg vom OpenFOAM-Fall hierher: der Runner schreibt mit foamToVTK ein
-VTU je Zeitpunkt, resample_points() bringt die Zellwerte per Binning auf
+Der Weg vom OpenFOAM-Fall hierher: foamfields.convert_case_fields liest
+die ASCII-Felddateien direkt (kein foamToVTK/VTU), holt die Zellzentren
+aus 0/C und bringt die Zellwerte mit resample_points() per Binning auf
 das uniforme Gitter. Für Tests und Demos erzeugt synthetic_fields.py die
 npz-Dateien direkt.
 
@@ -143,7 +144,7 @@ def pack_volume(time: float, grid_meta: dict, fields: dict[str, np.ndarray],
 
 
 # --------------------------------------------------------------------------
-# Resampling unstrukturiert -> uniform (Andockpunkt für foamToVTK-Ausgaben)
+# Resampling unstrukturiert -> uniform (Zellzentren aus 0/C, foamfields)
 # --------------------------------------------------------------------------
 
 def resample_points(points: np.ndarray, values: np.ndarray,

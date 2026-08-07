@@ -230,18 +230,23 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
         raise FileNotFoundError("Keine Ausgabezeitpunkte mit alpha.water")
 
     # Alles einsammeln, was interFoam schreibt — fehlende Felder werden
-    # unten uebersprungen (laminar hat kein k/omega/nut).
+    # unten uebersprungen (laminar hat kein k/omega/nut). fill je Feld:
+    # alpha 0.0 (Rasterzelle ohne Solverzelle = Luft/Gelaende), alles
+    # andere NaN — eine Fuell-0 waere von einer echt gerechneten 0 nicht
+    # unterscheidbar und erzeugte scharfe Nullkanten am Gelaende
+    # (Audit P2-6; der Docstring von resample_points forderte das schon).
+    nan = float("nan")
     field_specs = [("alpha", "alpha.water", 0.0),
-                   ("U", "U", 0.0),
-                   ("p_rgh", "p_rgh", 0.0),
-                   ("p", "p", 0.0),
-                   ("k", "k", 0.0),
-                   ("omega", "omega", 0.0),
-                   ("nut", "nut", 0.0),
+                   ("U", "U", nan),
+                   ("p_rgh", "p_rgh", nan),
+                   ("p", "p", nan),
+                   ("k", "k", nan),
+                   ("omega", "omega", nan),
+                   ("nut", "nut", nan),
                    # Markierungsstoff der Verweilzeit — als Feld sieht man,
                    # WO das frische Wasser laeuft und welche Ecken es nie
                    # erreicht (totes Volumen)
-                   ("T", "T", 0.0)]
+                   ("T", "T", nan)]
     face_centres = parse_patch_values(case_dir / "0" / "C", "terrain")
     written = []
     written_fields: set[str] = set()
@@ -351,6 +356,49 @@ def bed_shear_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
                     "source": "fields/bed_shear",
                 })
     return rows
+
+
+def viz_volume_check(run_root: str | Path, df) -> dict | None:
+    """
+    Selbsttest (Audit P3-12): Σ α · Rasterzellvolumen aus fields/ gegen die
+    volFieldValue-Volumenreihe des Solvers, je Ausgabezeitpunkt. Das
+    quantifiziert die Verluste des Visualisierungsgitters (ungewichtetes
+    Binning, base_cell-Raster, Teilfuellung am Gelaende) an genau der
+    Groesse, die der Betrachter sieht — eine grosse Abweichung heisst: das
+    Bild zeigt spuerbar anderes Wasservolumen als gerechnet. Ergebnis geht
+    ins Manifest; None, wenn Felder oder Volumenreihe fehlen.
+    """
+    from .conventions import Quantity
+    from .fields import read_index, read_timestep
+    run_root = Path(run_root)
+    index = read_index(run_root)
+    if not index or not index.get("timesteps"):
+        return None
+    sub = df[(df["quantity"] == Quantity.VOLUME.value)
+             & (df["location_id"] == "domain")]
+    if sub.empty:
+        return None
+    t_ref = sub["time"].to_numpy(float)
+    v_ref = sub["value"].to_numpy(float)
+    sx, sy, sz = index["grid"]["spacing"]
+    zellvol = sx * sy * sz
+    rel = []
+    for entry in index["timesteps"]:
+        try:
+            time, fields = read_timestep(run_root, entry["index"])
+        except Exception:
+            continue
+        alpha = fields.get("alpha")
+        if alpha is None:
+            continue
+        viz = float(np.clip(alpha, 0.0, 1.0).sum()) * zellvol
+        soll = float(np.interp(time, t_ref, v_ref))
+        if soll > 1e-9:
+            rel.append(abs(viz - soll) / soll)
+    if not rel:
+        return None
+    return {"viz_volume_error_rel_max": round(float(max(rel)), 4),
+            "viz_volume_error_rel_mean": round(float(np.mean(rel)), 4)}
 
 
 def energy_head_series(spec, run_root: str | Path, run_id: str) -> list[dict]:

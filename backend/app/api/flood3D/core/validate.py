@@ -760,6 +760,29 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     if not outflows:
         f(_finding("boundaries", "fehler", "Kein Abflussrand definiert"))
 
+    # Q → U ausweisen: flowRateInletVelocity verteilt den Volumenstrom
+    # gleichmäßig über die Fensterfläche, und alpha = 1 füllt das ganze
+    # Fenster mit Wasser. Die resultierende Geschwindigkeit stand bisher
+    # nirgends — dabei entscheidet sie, ob der Zulauf als ruhige Anströmung
+    # oder als Strahl ins Modell schießt (Audit P1-5).
+    if spec.domain is not None:
+        from .casebuilder import fenster_flaeche
+        for b in inflows:
+            if b.type != "inflow_constant" or not b.q:
+                continue
+            flaeche = fenster_flaeche(spec, b)
+            if flaeche and flaeche > 0:
+                u = float(b.q) / flaeche
+                f(_finding(b.id, "warnung" if u > 3.0 else "hinweis",
+                           f"Zufluss {b.q:g} m³/s auf rund {flaeche:.2f} m² "
+                           f"Zulauffläche → mittlere Eintrittsgeschwindigkeit "
+                           f"rund {u:.2f} m/s über den GANZEN Querschnitt "
+                           "(die vernetzte, treppige Fensterfläche kann "
+                           "leicht abweichen)."
+                           + (" Das ist strahlartig schnell — Fenster "
+                              "vergrößern oder Zufluss prüfen."
+                              if u > 3.0 else "")))
+
     # Ohne Ausgabezeitpunkt gibt es hinterher keine Felder, keine
     # Wasseroberfläche und keinen 3D-Viewer — und reconstructPar bricht
     # mit "No times selected" ab. Vor dem Lauf abfangen.
@@ -970,6 +993,18 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
         try:
             df = pd.read_csv(csv)
             t = df[b.column_time].to_numpy(float)
+            # Q → U auch fuer den Hydrographen, mit der Spitze als Maßstab
+            if spec.domain is not None and b.column_q in df:
+                from .casebuilder import fenster_flaeche
+                q_max = float(df[b.column_q].to_numpy(float).max())
+                flaeche = fenster_flaeche(spec, b)
+                if q_max > 0 and flaeche and flaeche > 0:
+                    u = q_max / flaeche
+                    f(_finding(b.id, "warnung" if u > 3.0 else "hinweis",
+                               f"Ganglinienspitze {q_max:g} m³/s auf rund "
+                               f"{flaeche:.2f} m² Zulauffläche → mittlere "
+                               f"Eintrittsgeschwindigkeit bis rund {u:.2f} m/s "
+                               "über den ganzen Querschnitt."))
             if t.min() > 0:
                 f(_finding(b.id, "warnung",
                            "Zuflussganglinie beginnt nicht bei t = 0"))

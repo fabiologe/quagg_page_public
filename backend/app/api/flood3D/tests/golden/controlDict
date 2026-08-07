@@ -55,6 +55,7 @@ functions
         {
             type            plane;
             planeType       pointAndNormal;
+            bounds          (3.5 1.5 91.5) (4.5 16.5 100.5);
             pointAndNormalDict
             {
                 point           (4 9 96);
@@ -80,6 +81,7 @@ functions
         {
             type            plane;
             planeType       pointAndNormal;
+            bounds          (19.5 1.5 91.5) (20.5 16.5 100.5);
             pointAndNormalDict
             {
                 point           (20 9 96);
