@@ -45,7 +45,9 @@ const ICON = { erfolg: '✓', hinweis: 'ℹ', fehler: '✗' }
   border: 1px solid var(--f3d-border);
   border-left-width: 3px;
   border-radius: 6px;
-  background: var(--f3d-bg-alt);
+  /* war var(--f3d-bg-alt) — dieses Token gibt es nicht, ohne Fallback
+     blieb die Leiste dadurch ganz ohne eigenen Hintergrund */
+  background: var(--f3d-surface-2, #131c33);
   font-size: 0.76rem;
   line-height: 1.4;
 }

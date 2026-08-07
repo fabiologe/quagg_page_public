@@ -516,7 +516,7 @@ function add(kind, name) {
 .f3d-objplus {
   border: none;
   background: none;
-  color: var(--f3d-akzent, #3987e5);
+  color: var(--f3d-accent, #4d9fff);
   cursor: pointer;
   font-size: 0.95rem;
   line-height: 1;
@@ -527,7 +527,7 @@ function add(kind, name) {
   display: flex;
   flex-direction: column;
   margin: 0 0 0.25rem 1.1rem;
-  border-left: 2px solid var(--f3d-akzent, #3987e5);
+  border-left: 2px solid var(--f3d-accent, #4d9fff);
 }
 .f3d-objtree {
   display: flex;
