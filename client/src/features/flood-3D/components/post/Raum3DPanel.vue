@@ -271,7 +271,9 @@ import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/C
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction'
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
-import { fetchGeometry, fetchTimesteps, fetchVolume } from '../../services/volume'
+import { fetchGeometry, fetchTimesteps } from '../../services/volume'
+import { getVolume } from '../../composables/useFieldCache'
+import { glaetteFeldCached } from '../../utils/glaettung'
 import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
 
 const store = usePostStore()
@@ -368,8 +370,12 @@ let grid = null
 let terrainInfo = null            // { z: Float32Array, nx, ny } für die Punktabfrage
 let currentVol = null
 let downPos = null
-const volumeCache = new Map()
 const vtk = {}
+// Skip-Guards: welche Daten zuletzt in die vtk-Images geschrieben wurden.
+// Ein Layer-Toggle löste vorher die komplette Kette neu aus — Glättung,
+// Maske, Marching Cubes —, obwohl sich die Daten gar nicht geändert hatten.
+let lastAlphaKey = ''
+let lastFieldKey = ''
 
 function buildPipelines() {
   const preset = vtkColorMaps.getPresetByName('Viridis (matplotlib)')
@@ -596,44 +602,9 @@ function sampleLinear(values, x, y, z) {
   return wsum > 1e-12 ? sum / wsum : 0
 }
 
-// Getrennter 3x3x3-Mittelwert über das Alphafeld. Die Treppenstufen der
-// Wasseroberfläche kommen NICHT vom Solver, sondern vom groben
-// Darstellungsraster: Marching Cubes auf einem 0/1-Feld erzeugt zwangsläufig
-// Facetten in Zellgröße. Ein Durchgang glättet die Kanten, ohne den
-// Wasserspiegel zu verschieben (symmetrischer Kern).
-function glaetteFeld(values, durchgaenge) {
-  const [nx, ny, nz] = grid.dims
-  let a = values
-  for (let d = 0; d < durchgaenge; d++) {
-    const b = new Float32Array(a.length)
-    const idx = (i, j, k) => (k * ny + j) * nx + i
-    for (let k = 0; k < nz; k++) {
-      for (let j = 0; j < ny; j++) {
-        for (let i = 0; i < nx; i++) {
-          let sum = 0
-          let n = 0
-          for (let dk = -1; dk <= 1; dk++) {
-            const kk = k + dk
-            if (kk < 0 || kk >= nz) continue
-            for (let dj = -1; dj <= 1; dj++) {
-              const jj = j + dj
-              if (jj < 0 || jj >= ny) continue
-              for (let di = -1; di <= 1; di++) {
-                const ii = i + di
-                if (ii < 0 || ii >= nx) continue
-                sum += a[idx(ii, jj, kk)]
-                n++
-              }
-            }
-          }
-          b[idx(i, j, k)] = sum / n
-        }
-      }
-    }
-    a = b
-  }
-  return a
-}
+// Die 3x3x3-Glättung des Alphafelds (Treppenstufen des Darstellungs-
+// rasters brechen) lebt jetzt separabel und gecacht in utils/glaettung —
+// vorher lief die 27-Nachbarn-Schleife bei JEDEM Szenen-Update neu.
 
 function cellCenter(i, j, k) {
   const { origin, spacing } = grid
@@ -642,14 +613,21 @@ function cellCenter(i, j, k) {
     origin[2] + (k + 0.5) * spacing[2]]
 }
 
+// Welche Felder die Szene wirklich braucht: alpha und U immer (Ober-
+// fläche, Pfeile, Stromlinien), das aktive Feld, und bed_shear für die
+// Geländeeinfärbung. Vorher lud jeder Zeitschritt ALLE Felder — p, k, ω,
+// νt, T inklusive, auch wenn niemand sie ansah; nachgeladen wird bei
+// Feldwechsel nur das Delta (gemeinsamer Cache mit dem Grundriss).
+function benoetigteFelder() {
+  const felder = new Set(['alpha', 'U'])
+  const needs = activeField.value?.needs
+  if (needs) felder.add(needs)
+  if (availableFieldKeys.value.includes('bed_shear')) felder.add('bed_shear')
+  return [...felder]
+}
+
 async function loadVolume(idx) {
-  const key = `${activeRunId.value}|${idx}`
-  if (!volumeCache.has(key)) {
-    const vol = await fetchVolume(activeRunId.value, times.value[idx])
-    volumeCache.set(key, vol)
-    if (volumeCache.size > 12) volumeCache.delete(volumeCache.keys().next().value)
-  }
-  return volumeCache.get(key)
+  return getVolume(activeRunId.value, times.value[idx], benoetigteFelder())
 }
 
 // --- Teil-Updates ---------------------------------------------------------
@@ -884,9 +862,18 @@ async function updateScene() {
     }
 
     vtk.mc.setContourValue(alphaIso.value)
-    setImageScalars(vtk.alphaImage, 'alpha',
-      glaettung.value > 0 ? glaetteFeld(alpha, glaettung.value) : alpha)
-    setImageScalars(vtk.fieldImage, 'field', masked)
+    const volKey = `${activeRunId.value}|${times.value[timeIdx.value]}`
+    const alphaKey = `${volKey}|${glaettung.value}`
+    if (alphaKey !== lastAlphaKey) {
+      setImageScalars(vtk.alphaImage, 'alpha', glaettung.value > 0
+        ? glaetteFeldCached(alpha, grid.dims, glaettung.value) : alpha)
+      lastAlphaKey = alphaKey
+    }
+    const fieldKey = `${volKey}|${activeFieldKey.value}|${rLo}|${rHi}`
+    if (fieldKey !== lastFieldKey) {
+      setImageScalars(vtk.fieldImage, 'field', masked)
+      lastFieldKey = fieldKey
+    }
 
     vtk.ctfField.setMappingRange(rLo, rHi)
     vtk.ctfField.updateRange()
@@ -1021,6 +1008,12 @@ async function updateScene() {
       isoValue.value = Number(((lo + hi) / 2).toPrecision(3))
     }
     renderWindow.render()
+
+    // Beim Abspielen den Folgeschritt schon in den Cache holen — der
+    // Frame-Takt lässt dafür Luft, der Wechsel kommt dann ohne Laden
+    if (playing.value && times.value.length > 1) {
+      loadVolume((timeIdx.value + 1) % times.value.length).catch(() => {})
+    }
   } catch (e) {
     if (seq === requestSeq) error.value = e.message
   } finally {
@@ -1049,11 +1042,19 @@ function onPointerDown(e) {
   downPos = [e.clientX, e.clientY]
 }
 
-function onPointerUp(e) {
+async function onPointerUp(e) {
   if (!probeActive.value || !downPos || !currentVol || !grid) return
   const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1])
   downPos = null
   if (moved > 5) return   // Drag = Kamerabewegung, keine Abfrage
+
+  // Druck gehört nicht zur Standard-Ladeliste der Szene — für die
+  // Abfrage einmalig nachladen; der Cache merged ihn in DASSELBE Volumen
+  if (!currentVol.fields.p_rgh && availableFieldKeys.value.includes('p_rgh')) {
+    try {
+      await getVolume(activeRunId.value, times.value[timeIdx.value], ['p_rgh'])
+    } catch { /* Abfrage zeigt dann eben "–" */ }
+  }
 
   const rect = viewport.value.getBoundingClientRect()
   const pos = [e.clientX - rect.left, rect.height - (e.clientY - rect.top), 0]

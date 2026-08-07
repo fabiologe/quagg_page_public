@@ -365,7 +365,7 @@ async def case_mesh_surface(case_id: str):
 
 
 @router.get("/runs/{run_id}/volume")
-async def run_volume(run_id: str,
+async def run_volume(request: Request, run_id: str,
                      time: float = Query(...),
                      fields: str | None = Query(None)):
     """
@@ -378,18 +378,33 @@ async def run_volume(run_id: str,
         raise HTTPException(status_code=404,
                             detail="Für diesen Lauf liegen keine Felddaten vor.")
     entry = vol_fields.nearest_timestep(index, time)
+    # Der F3DV-Blob ging bisher UNKOMPRIMIERT raus (weder FastAPI- noch
+    # nginx-gzip greifen bei octet-stream) — dabei ist alpha fast überall
+    # exakt 0 oder 1 und U in der Luft konstant: deflate schafft hier
+    # typischerweise 10–20×. Level 3 komprimiert bei ~100 MB/s; der
+    # Browser dekomprimiert Content-Encoding nativ vor arrayBuffer(),
+    # das 4-Byte-Alignment fürs Zero-Copy bleibt also erhalten.
+    gzip_ok = "gzip" in request.headers.get("accept-encoding", "").lower()
 
     def work():
         t, data = vol_fields.read_timestep(paths.root, entry["index"])
         wanted = [f.strip() for f in fields.split(",")] if fields else None
-        return t, vol_fields.pack_volume(t, index["grid"], data, wanted)
+        blob = vol_fields.pack_volume(t, index["grid"], data, wanted)
+        if gzip_ok and len(blob) > 4096:
+            import gzip
+            return t, gzip.compress(blob, compresslevel=3), True
+        return t, blob, False
 
     # npz-Dekompression + Packen sind CPU-lastig — nicht den Event-Loop
     # blockieren (beim Zeit-Scrubbing kommen die Anfragen im Sekundentakt)
-    t_actual, blob = await asyncio.to_thread(work)
+    t_actual, blob, komprimiert = await asyncio.to_thread(work)
+    headers = {"X-F3D-Time": str(t_actual),
+               "Cache-Control": "max-age=3600",
+               "Vary": "Accept-Encoding"}
+    if komprimiert:
+        headers["Content-Encoding"] = "gzip"
     return Response(content=blob, media_type="application/octet-stream",
-                    headers={"X-F3D-Time": str(t_actual),
-                             "Cache-Control": "max-age=3600"})
+                    headers=headers)
 
 
 # --------------------------------------------------------------------------

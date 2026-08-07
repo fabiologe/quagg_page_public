@@ -135,7 +135,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
-import { getGeometry, getTimesteps, getVolume, planFields }
+import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
@@ -195,6 +195,12 @@ let playTimer = null
 let requestSeq = 0
 let resizeObs = null
 
+// Der Grundriss braucht genau diese Felder — p, p_rgh, k, ω, νt, T
+// wurden vorher bei jedem Zeitschritt mitgeladen und nie angefasst
+function feldListe() {
+  return hasTau.value ? ['alpha', 'U', 'bed_shear'] : ['alpha', 'U']
+}
+
 async function loadRun() {
   if (!activeRunId.value) return
   loading.value = true
@@ -233,8 +239,8 @@ async function baueHuelle() {
   const acc = {}
   huellenFortschritt.value = 0.001
   for (let i = 0; i < times.value.length; i++) {
-    const vol = await getVolume(activeRunId.value, times.value[i])
-    const f = planFields(vol, terrain?.z)
+    const vol = await getVolume(activeRunId.value, times.value[i], feldListe())
+    const f = planFieldsCached(vol, terrain?.z)
     for (const name of felder) {
       const q = f[name]
       if (!q) continue
@@ -266,12 +272,20 @@ async function update() {
   if (!grid || !times.value.length) return
   const seq = ++requestSeq
   try {
-    const vol = await getVolume(activeRunId.value, times.value[timeIdx.value])
+    const vol = await getVolume(activeRunId.value, times.value[timeIdx.value],
+      feldListe())
     if (seq !== requestSeq) return
     store.currentTime = vol.time
-    pf = planFields(vol, terrain?.z)
+    pf = planFieldsCached(vol, terrain?.z)
     draw()
     if (profile.value) computeProfile()
+    // Beim Abspielen den Folgeschritt schon in den Cache holen — der
+    // 700-ms-Takt laesst dafuer Luft, der Wechsel kommt dann ohne Laden
+    if (playing.value && times.value.length > 1) {
+      const naechster = (timeIdx.value + 1) % times.value.length
+      getVolume(activeRunId.value, times.value[naechster], feldListe())
+        .catch(() => {})
+    }
   } catch (e) {
     if (seq === requestSeq) error.value = e.message
   }
