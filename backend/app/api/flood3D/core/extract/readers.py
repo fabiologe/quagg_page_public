@@ -128,18 +128,49 @@ def read_discharge(fo_dir: Path, section_id: str, normal,
 # Wasserspiegel je Pegelpunkt
 # --------------------------------------------------------------------------
 
-def read_wall_shear(fo_dir: Path, patch_id: str, komponente,
+def wall_shear_rho_factor(case_dir: Path, rho: float = 1000.0) -> float:
+    """
+    Umrechnungsfaktor fuer wallShearStress-Zeitreihen: interFoam gibt das
+    Feld ueblicherweise KINEMATISCH aus (m²/s², erste Dimension 0) — dann
+    fehlt die Dichte. Erkannt wird das an der dimensions-Zeile der
+    Felddatei eines beliebigen Zeitschritts, also an DERSELBEN Quelle wie
+    beim Gelaendefeld (foamfields) — vorher multiplizierte die Zeitreihe
+    bedingungslos mit 1000 und lief bei dynamischer Ausgabe um den Faktor
+    1000 vom Feld weg. Ohne auffindbare Felddatei bleibt die
+    interFoam-Annahme (kinematisch).
+    """
+    for d in sorted(case_dir.iterdir() if case_dir.is_dir() else []):
+        if not d.is_dir():
+            continue
+        try:
+            float(d.name)
+        except ValueError:
+            continue
+        for p in (d / "wallShearStress", d / "wallShearStress.gz"):
+            if not p.exists():
+                continue
+            if p.suffix == ".gz":
+                import gzip
+                with gzip.open(p, "rt", errors="replace") as fh:
+                    text = fh.read(2048)
+            else:
+                text = p.read_text(errors="replace")[:2048]
+            m = re.search(r"dimensions\s+\[([^\]]+)\]", text)
+            if m:
+                return rho if m.group(1).split()[0] == "0" else 1.0
+    return rho
+
+
+def read_wall_shear(fo_dir: Path, patch_id: str, komponente, rho_faktor: float,
                     run_id: str) -> list[dict]:
     """
     Wandschubspannung auf einer Bauwerksflaeche (max bzw. Flaechenmittel).
-
-    interFoam gibt wallShearStress KINEMATISCH aus (m²/s²) — der Betrag muss
-    mit der Dichte multipliziert werden, sonst steht dort ein Tausendstel
-    des wahren Wertes. Dieselbe Umrechnung wie beim Gelaendefeld.
+    rho_faktor kommt aus wall_shear_rho_factor — Dichte nur dann, wenn das
+    Feld kinematisch geschrieben wurde.
     """
     _, table = read_scalar_fo(fo_dir, "surfaceFieldValue.dat")
     return [_row(run_id, r[0], Quantity.BED_SHEAR, patch_id, komponente,
-                 r[-1] * 1000.0, fo_dir.name) for r in table]
+                 r[-1] * rho_faktor, fo_dir.name) for r in table]
 
 
 def read_tracer(fo_dir: Path, patch_id: str, run_id: str) -> list[dict]:
@@ -154,11 +185,16 @@ def read_tracer(fo_dir: Path, patch_id: str, run_id: str) -> list[dict]:
                  r[-1], fo_dir.name) for r in table]
 
 
-def read_gauge(fo_dir: Path, gauge_id: str, run_id: str) -> list[dict]:
+def read_gauge(fo_dir: Path, gauge_id: str, z_ref: float,
+               run_id: str) -> list[dict]:
     """
     interfaceHeight, ein functionObject je Pegelpunkt. position.dat enthält
     die Lage der Phasengrenze, die z-Spalte (letzte Datenspalte) ist die
-    absolute Wasserspiegellage. Fallback height.dat: einspaltige Höhe.
+    absolute Wasserspiegellage. Fallback height.dat: Höhe der Grenzfläche
+    ÜBER dem Bezugspunkt des functionObjects — erst plus Bezugshöhe z_ref
+    ist das wieder die absolute Lage. Quantity.LEVEL ist als absolute Höhe
+    definiert (conventions); vorher wanderte hier die relative Zahl
+    unverändert in max_level- und Überfall-Nachweise.
     """
     names, table = read_scalar_fo(fo_dir, "position.dat")
     if table:
@@ -166,7 +202,7 @@ def read_gauge(fo_dir: Path, gauge_id: str, run_id: str) -> list[dict]:
                      r[-1], fo_dir.name) for r in table]
     _, table = read_scalar_fo(fo_dir, "height.dat")
     return [_row(run_id, r[0], Quantity.LEVEL, gauge_id, Component.NONE,
-                 r[1], fo_dir.name) for r in table]
+                 r[1] + z_ref, fo_dir.name) for r in table]
 
 
 # --------------------------------------------------------------------------

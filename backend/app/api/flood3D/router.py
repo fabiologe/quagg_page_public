@@ -894,10 +894,24 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
         # Woran der gehaltene Körper hängt — der Client kann damit sagen,
         # dass er veraltet ist, statt ihn als aktuell auszugeben
         out["koerper_signatur"] = spec.netz_hash()
+        # Audit P2-8: vorher verschwand der Körper KOMMENTARLOS aus der
+        # Szene — Aushübe/Bohrungen wurden gerechnet, aber nicht gezeigt
+        out.setdefault("validation", []).append({
+            "object_id": "vorschau", "severity": "hinweis",
+            "message": (f"Erdkörper-Vorschau übersprungen — Geländeraster mit "
+                        f"{feld.z.size} Knoten über der Vorschaugrenze "
+                        f"({_KOERPER_VORSCHAU_KNOTEN}). Aushübe und Bohrungen "
+                        "werden GERECHNET, die Szene zeigt sie nur nicht "
+                        "live; beim Speichern wird der Körper nachgezogen.")})
         return None
     try:
         koerper = gelaende_koerper_bauen(feld, spec, hinweise=[], base_dir=d)
-    except Exception:
+    except Exception as e:
+        out.setdefault("validation", []).append({
+            "object_id": "vorschau", "severity": "warnung",
+            "message": (f"Erdkörper-Vorschau fehlgeschlagen "
+                        f"({type(e).__name__}: {e}) — die Szene zeigt das "
+                        "Gelände ohne Aushub/Bohrung.")})
         return None
     if koerper is None:
         return None
@@ -936,8 +950,14 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
                 "z_b64": base64.b64encode(t.z.astype("<f4").tobytes()).decode(),
             }
             out["terrain_solid"] = _koerper_vorschau(spec, t, d, out)
-        except Exception:
-            pass    # Geländeproblem steht bereits in der Validierung
+        except Exception as e:
+            # Audit P2-8: die Szene blieb still leer/alt, während build_case
+            # an genau derselben Stelle scheitern konnte
+            out["validation"].append({
+                "object_id": "vorschau", "severity": "warnung",
+                "message": (f"Gelände in der Vorschau nicht darstellbar "
+                            f"({type(e).__name__}: {e}) — die Szene ist "
+                            "unvollständig.")})
     try:
         for patch, mesh in sorted(
                 build_solids(spec, d, include_screens=True,
@@ -946,8 +966,12 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
                 "patch": patch,
                 "stl_b64": base64.b64encode(
                     mesh.export(file_type="stl")).decode()})
-    except Exception:
-        pass        # Bauwerksproblem steht bereits in der Validierung
+    except Exception as e:
+        out["validation"].append({
+            "object_id": "vorschau", "severity": "warnung",
+            "message": (f"Bauwerkskörper in der Vorschau nicht darstellbar "
+                        f"({type(e).__name__}: {e}) — die Szene zeigt "
+                        "möglicherweise einen alten Stand.")})
 
     # Aufgelöste Serverregeln: welcher Rand auf welcher Gebietsfläche
     # sitzt, das wirksame Fenster dazu, und wo die Bearbeitungen auf der
@@ -992,8 +1016,24 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
                     "point": [round(float(p[0]), 3), round(float(p[1]), 3)],
                     "dir": [round(float(richt[0]), 4),
                             round(float(richt[1]), 4)]}
-    except Exception:
-        pass        # Zusatzinformation — nie Grund, die Antwort zu verweigern
+    except Exception as e:
+        # Zusatzinformation — nie Grund, die Antwort zu verweigern, aber
+        # auch kein Grund zu schweigen (Audit P2-8)
+        out["validation"].append({
+            "object_id": "vorschau", "severity": "hinweis",
+            "message": (f"Randflächen/Fenster-Marker unvollständig "
+                        f"({type(e).__name__}: {e}).")})
+
+    # Rechen: im Editor stehen Stäbe, im Netz existiert keine Stabgeometrie
+    # — gerechnet wird eine poröse Widerstandszone (Kirschmer). Ohne diesen
+    # Hinweis sah die Szene nach mehr Modell aus, als der Solver bekommt.
+    for s in spec.structures:
+        if s.type == "screen":
+            out["validation"].append({
+                "object_id": s.id, "severity": "hinweis",
+                "message": ("Rechen wird als poröse Widerstandszone gerechnet "
+                            "(Kirschmer-Verlust, 0,15 m Zonentiefe) — die "
+                            "Stäbe in der Szene sind reine Darstellung.")})
     return out
 
 

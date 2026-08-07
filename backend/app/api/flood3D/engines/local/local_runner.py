@@ -235,7 +235,8 @@ def main() -> int:
         from flood3D.core.extract import extract_case
         from flood3D.core.foamfields import (bed_shear_series,
                                              convert_case_fields,
-                                             energy_head_series)
+                                             energy_head_series,
+                                             viz_volume_check)
         from flood3D.core.normalize import write_normalized
         from flood3D.core.render import render_run
         from flood3D.core.runner import (_pruefe_patches, _y_plus_range,
@@ -374,6 +375,10 @@ def main() -> int:
                     "missing_sources": missing, "finished": time.time()}
         if ypr:
             manifest["y_plus_range"] = [round(ypr[0], 2), round(ypr[1], 2)]
+        # Selbsttest: Wasservolumen im Visualisierungsgitter vs. Solver
+        vol_check = viz_volume_check(job, df)
+        if vol_check:
+            manifest.update(vol_check)
         result = evaluate_run(df, spec, run_id, manifest)
         render_run(result, df, spec, job)
         (job / "manifest.json").write_text(json.dumps(manifest))
