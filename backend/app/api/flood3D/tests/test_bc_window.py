@@ -71,8 +71,18 @@ def test_ohne_fenster_kein_createpatch(tmp_path):
 # ---- Prüfregeln ----------------------------------------------------------
 
 def _messages(spec, bc_id):
+    # Nur echte Beanstandungen — der informative Q→U-Hinweis (severity
+    # "hinweis") kommt bei JEDEM Zufluss und ist kein Befund
     return [x["message"] for x in validate_case(spec)
-            if x["object_id"] == bc_id]
+            if x["object_id"] == bc_id and x["severity"] != "hinweis"]
+
+
+def test_zufluss_geschwindigkeit_wird_ausgewiesen():
+    """Audit P1-5: Q/A stand nirgends — jetzt als Hinweis am Zufluss."""
+    spec = _spec_mit_fenster(span=(2.0, 6.0))
+    hinweise = [x["message"] for x in validate_case(spec)
+                if x["object_id"] == "zulauf" and x["severity"] == "hinweis"]
+    assert any("Eintrittsgeschwindigkeit" in m for m in hinweise)
 
 
 def test_validate_fenster_ausserhalb_der_kante():

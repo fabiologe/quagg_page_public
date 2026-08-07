@@ -44,13 +44,14 @@ def extract_case(case_dir: str | Path, spec: CaseSpec, run_id: str,
         collect(f"patchflow_{b.patch}", readers.read_discharge, b.patch, n)
 
     if spec.terrain is not None:
+        rho_faktor = readers.wall_shear_rho_factor(case_dir)
         for st in spec.structures:
             if st.type == "screen":
                 continue
             collect(f"shear_{st.patch}", readers.read_wall_shear, st.patch,
-                    Component.MAX)
+                    Component.MAX, rho_faktor)
             collect(f"shearmean_{st.patch}", readers.read_wall_shear,
-                    st.patch, Component.MEAN)
+                    st.patch, Component.MEAN, rho_faktor)
 
     if spec.evaluation.verweilzeit:
         for b in spec.boundaries:
@@ -60,8 +61,12 @@ def extract_case(case_dir: str | Path, spec: CaseSpec, run_id: str,
     for sec in spec.evaluation.sections:
         collect(f"discharge_{sec.id}", readers.read_discharge, sec.id,
                 section_normal(sec.polyline))
+    # Bezugshöhe der interfaceHeight-Pegel — MUSS mit dem casebuilder
+    # übereinstimmen (dort steht der Pegelpunkt auf halber Gebietshöhe),
+    # sonst liefert der height.dat-Fallback verschobene Absoluthöhen.
+    z_mid = ((spec.domain.z_min + spec.domain.z_max) / 2) if spec.domain else 0.0
     for gauge in spec.evaluation.gauges:
-        collect(f"gauge_{gauge.id}", readers.read_gauge, gauge.id)
+        collect(f"gauge_{gauge.id}", readers.read_gauge, gauge.id, z_mid)
     collect("water_volume", readers.read_volume)
     collect("residuals", readers.read_residuals)
 

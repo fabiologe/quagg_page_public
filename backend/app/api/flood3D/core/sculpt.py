@@ -4,8 +4,10 @@ sculpt — die Sculpt-Ebene des Geländes (Pinsel im Editor).
 Alle Pinsel (heben, senken, glätten, an Bruchkanten anpassen) erzeugen
 dasselbe: ein DELTA aufs Höhenfeld. Das Delta liegt als eigenes Raster
 (`sculpt.npz`: dz, x0, y0, res) im Fallordner — Primärdatum wie ein
-importiertes Raster, KEIN derived. terrain.from_spec addiert es NACH dem
-Operationsstapel: geformt wird, was man sieht.
+importiertes Raster, KEIN derived. terrain.from_spec addiert es VOR dem
+Operationsstapel: der Pinsel formt das gewachsene Gelände, die
+deklarierten Operationen (Gerinnesohle, Planum, …) behalten ihre
+Sollhöhen obendrauf.
 
 Der Client schickt Patches in Gitterindizes des aktuellen Geländerasters
 (i0, j0, dz-Teilfeld) — exakt, ohne Resampling-Verlust. Rückgängig ist

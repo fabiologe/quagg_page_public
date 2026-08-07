@@ -357,6 +357,12 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
         if cd_rows:
             df = pd.concat([df, pd.DataFrame(cd_rows)], ignore_index=True)
         write_normalized(df, run_root / "normalized.parquet")
+        # Selbsttest: zeigt das Visualisierungsgitter dasselbe Wasservolumen
+        # wie der Solver? (Audit P3-12 — quantifiziert die Binning-Verluste)
+        from .foamfields import viz_volume_check
+        vol_check = viz_volume_check(run_root, df)
+        if vol_check:
+            _write_manifest(run_root, **vol_check)
         manifest = _write_manifest(run_root, missing_sources=missing)
         # Ergebnis-JSON trägt den Endzustand, nicht den Zwischenschritt
         result = evaluate_run(df, spec, run_id,

@@ -353,6 +353,29 @@ def _zufluss(spec: CaseSpec) -> float:
                if b.type == "inflow_constant")
 
 
+def _zufluss_reihe(df: pd.DataFrame, spec: CaseSpec,
+                   t: np.ndarray) -> tuple[np.ndarray, list[str]]:
+    """
+    Zufluss als Zeitreihe auf der Volumen-Zeitachse. Konstante Zuflüsse aus
+    der Vorgabe; Hydrographen aus den GEMESSENEN patchflow-Reihen des Laufs
+    (positiv = verlässt das Gebiet, Zufluss zählt daher negativ). Vorher
+    zählte nur inflow_constant — bei einem Hydrographen war der Zufluss 0
+    und massenbilanz/verweilzeit fielen still auf nicht_auswertbar.
+    Zweiter Rückgabewert: Hydrograph-Patches ohne Messreihe.
+    """
+    reihe = np.full(len(t), _zufluss(spec))
+    fehlt: list[str] = []
+    for b in spec.boundaries:
+        if b.type != "inflow_hydrograph":
+            continue
+        tq, vq = get_series(df, Quantity.DISCHARGE, b.patch)
+        if len(tq):
+            reihe = reihe + np.interp(t, tq, -np.asarray(vq, dtype=float))
+        else:
+            fehlt.append(b.patch)
+    return reihe, fehlt
+
+
 def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
     out: dict = {}
 
@@ -360,6 +383,12 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
     t, vol = get_series(df, Quantity.VOLUME, "domain")
     zu = _zufluss(spec)
     if len(t) >= 3:
+        zu_reihe, zu_fehlt = _zufluss_reihe(df, spec, t)
+        # massgeblicher Zufluss: Mittel über dasselbe End-Viertel wie die
+        # Speicheränderungs-Sekante — bei konstantem Zufluss exakt die
+        # Vorgabe, beim Hydrographen der gemessene Endzustand
+        i0 = int(np.searchsorted(t, t[-1] - (t[-1] - t[0]) * 0.25))
+        zu = float(np.mean(zu_reihe[i0:])) if len(zu_reihe) else zu
         dv = _steigung(t, vol) or 0.0
         # Ablaufreihe aus der Bilanz (Zufluss − gleitende Speicheränderung)
         dv_reihe = np.zeros(len(t))
@@ -367,7 +396,7 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
             i0 = max(0, i - 5)
             dt = t[i] - t[i0]
             dv_reihe[i] = (vol[i] - vol[i0]) / dt if dt > 0 else 0.0
-        q_ab = np.maximum(zu - dv_reihe, 0.0)
+        q_ab = np.maximum(zu_reihe - dv_reihe, 0.0)
         dauer = float(t[-1])
         volumen = float(vol[-1])
         bilanz = {
@@ -379,6 +408,9 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
             "austausch": (round(zu * dauer / volumen, 3)
                           if volumen > 0 and zu > 0 else None),
         }
+        if zu_fehlt:
+            # Hydrograph ohne patchflow-Messreihe: Bilanz gilt nur teilweise
+            bilanz["zufluss_unvollstaendig"] = zu_fehlt
         out["bilanz"] = bilanz
 
     # ---- Verweilzeit: τ, t10/t50/t90, Kurzschlusskennzahl ----------------

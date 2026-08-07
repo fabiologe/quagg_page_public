@@ -96,6 +96,23 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         p1 = np.asarray(sec.polyline[-1], dtype=float)
         mid = (p0 + p1) / 2
         n = section_normal(sec.polyline)
+        # Ohne bounds integriert die Ebene ueber das GANZE Modellgebiet —
+        # der Querschnitt misst dann auch Wasser, das die gezeichnete Linie
+        # nie kreuzt (Audit P1-1). Die Box umfasst ALLE Polylinienpunkte
+        # (nicht nur die Endpunkte) plus ein Zellpolster, damit die
+        # angeschnittenen Facetten sicher innerhalb liegen; vertikal die
+        # volle Gebietshoehe. OpenFOAM.com (v2406) liest `bounds` am
+        # sampledPlane; ohne Gebietsangabe bleibt die alte, unbegrenzte Ebene.
+        bounds = ""
+        if spec.domain is not None:
+            xs = [float(p[0]) for p in sec.polyline]
+            ys = [float(p[1]) for p in sec.polyline]
+            pad = spec.mesh.base_cell if spec.mesh is not None else 0.5
+            bounds = (f"            bounds          "
+                      f"({min(xs) - pad:g} {min(ys) - pad:g} "
+                      f"{spec.domain.z_min - pad:g}) "
+                      f"({max(xs) + pad:g} {max(ys) + pad:g} "
+                      f"{spec.domain.z_max + pad:g});\n")
         out += f"""    discharge_{sec.id}
     {{
         type            surfaceFieldValue;
@@ -106,7 +123,7 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         {{
             type            plane;
             planeType       pointAndNormal;
-            pointAndNormalDict
+{bounds}            pointAndNormalDict
             {{
                 point           {vec((mid[0], mid[1], z_mid))};
                 normal          {vec((n[0], n[1], 0.0))};
@@ -616,6 +633,47 @@ def resolve_window(spec: CaseSpec, b) -> dict | None:
     lo, hi = sorted(w.span)
     return {"shape": "rechteck", "lo": lo, "hi": hi,
             "zlo": w.z_min, "zhi": w.z_max}
+
+
+def fenster_flaeche(spec: CaseSpec, b) -> float | None:
+    """
+    Analytische Fläche in m², auf die flowRateInletVelocity den
+    Volumenstrom verteilt: das Fenster der Randbedingung, ohne Fenster die
+    volle Gebietsseite. Die vernetzte Fläche ist eine Treppe aus ganzen
+    Randflächen und kann davon abweichen — als Näherung für die
+    resultierende Eintrittsgeschwindigkeit reicht die analytische Form
+    (Audit P1-5: Q/A war vorher nirgends ausgewiesen).
+    """
+    face = _bc_face(spec, b)
+    if face is None or spec.domain is None:
+        return None
+    x0, y0, x1, y1 = spec.domain.extent
+    e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
+    r = resolve_window(spec, b)
+    if r is None:
+        return (e1 - e0) * (spec.domain.z_max - spec.domain.z_min)
+    if r["shape"] == "kreis":
+        return math.pi * r["d"] ** 2 / 4
+    if r["shape"] == "polygon":
+        pts = r["points"]
+        n = len(pts)
+        doppelt = sum(pts[i][0] * pts[(i + 1) % n][1]
+                      - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))
+        return abs(doppelt) / 2
+    zlo = r["zlo"] if r["zlo"] is not None else spec.domain.z_min
+    zhi = r["zhi"] if r["zhi"] is not None else spec.domain.z_max
+    if r["shape"] == "trapez":
+        # Breite läuft linear zwischen z_w0 und z_w1, außerhalb geklemmt —
+        # numerisch integriert, weil zlo/zhi das Profil beschneiden können
+        span_w = r["z_w1"] - r["z_w0"]
+        zz = np.linspace(zlo, zhi, 101)
+        tt = (np.clip((zz - r["z_w0"]) / span_w, 0.0, 1.0) if span_w > 0
+              else np.zeros_like(zz))
+        breite = np.clip(r["bw"] + (r["tw"] - r["bw"]) * tt, 0.0, e1 - e0)
+        return float(np.trapezoid(breite, zz))
+    lo = max(r["lo"], e0)
+    hi = min(r["hi"], e1)
+    return max(hi - lo, 0.0) * max(zhi - zlo, 0.0)
 
 
 def _window_active(spec: CaseSpec, b) -> bool:
