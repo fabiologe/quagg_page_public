@@ -98,9 +98,11 @@ function bereich(i) {
 }
 .f3d-hilfe-knopf:hover, .f3d-hilfe-knopf.offen { color: var(--f3d-accent); }
 .f3d-hilfe-karte {
-  /* Die Karte haengt am <body> und damit AUSSERHALB von .f3d-root, wo die
-     Theme-Variablen definiert sind. Farben deshalb ausgeschrieben — sonst
-     erbt sie das Schwarz des Dokuments und steht unlesbar auf Dunkelblau. */
+  /* Die Karte haengt am <body> und damit AUSSERHALB von .f3d-root. Die
+     Tokens stehen deshalb auf :root (f3d-theme.css) — hier zusaetzlich
+     mit Fallback, damit der Text auch dann lesbar bleibt, wenn sie
+     jemand zurueck auf .f3d-root schiebt. Genau daran stand der
+     Erklaertext vorher dunkel auf dunkelblau. */
   position: fixed;
   z-index: 200;
   max-height: 70vh;
@@ -110,17 +112,22 @@ function bereich(i) {
   overflow: auto;
   padding: 0.7rem 0.8rem;
   border-radius: 8px;
-  border: 1px solid var(--f3d-border-strong);
+  border: 1px solid var(--f3d-border-strong, #2c4370);
   background: #0e1526;
-  color: var(--f3d-text);
+  color: var(--f3d-text, #e9eefb);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   font-size: 0.78rem;
   line-height: 1.45;
   text-align: left;
   white-space: normal;
 }
-.f3d-hilfe-karte strong { color: var(--f3d-text); }
-.f3d-hilfe-karte .f3d-muted { color: var(--f3d-text-2); }
+.f3d-hilfe-karte strong { color: var(--f3d-text, #e9eefb); }
+/* Die Einheit gehört zur Überschrift und wird mitgelesen — heller als
+   das übliche Grau der Nebenbeschriftung */
+.f3d-hilfe-karte .f3d-muted { color: var(--f3d-text-hilfe, #dee7f9); }
+/* Der Erklaertext selbst ist der Grund fuer die ganze Karte — er steht
+   in voller Textfarbe, nicht gedaempft. */
+.f3d-hilfe-karte p { color: var(--f3d-text, #e9eefb); }
 .f3d-hilfe-karte header {
   display: flex;
   align-items: baseline;
@@ -156,7 +163,10 @@ function bereich(i) {
   gap: 0.5rem;
   padding: 0.2rem 0.3rem;
   border-radius: 4px;
-  opacity: 0.75;
+  /* nur leicht zuruecknehmen: die nicht zutreffenden Stufen sind der
+     Massstab, an dem der aktive Wert eingeordnet wird — unlesbar
+     nuetzen sie nichts */
+  opacity: 0.92;
 }
 .f3d-hilfe-skala li.aktiv {
   opacity: 1;
@@ -172,13 +182,11 @@ function bereich(i) {
 .warn { color: #eab04a; }
 .bad { color: #ff7b7b; }
 .f3d-hilfe-formel {
-  border-top: 1px solid var(--f3d-border-strong);
+  border-top: 1px solid var(--f3d-border-strong, #2c4370);
   padding-top: 0.4rem;
-  opacity: 0.85;
 }
 .f3d-hilfe-achtung {
-  border-left: 3px solid var(--f3d-warn);
+  border-left: 3px solid var(--f3d-warn, #e8a13c);
   padding-left: 0.5rem;
-  opacity: 0.9;
 }
 </style>

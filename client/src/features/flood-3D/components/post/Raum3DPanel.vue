@@ -1334,7 +1334,9 @@ onBeforeUnmount(() => {
   margin: 0.15rem 0 0.35rem 1.1rem;
   font-size: 0.72rem;
   line-height: 1.35;
-  color: var(--f3d-muted, #8fa3c0);
+  /* --f3d-muted gibt es nicht (das Token heisst --f3d-text-2), es griff
+     also immer der Fallback — und der war zu dunkel zum Lesen. */
+  color: var(--f3d-text-hilfe, #dee7f9);
 }
 
 .f3d-raum {

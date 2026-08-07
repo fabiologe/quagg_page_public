@@ -5,7 +5,12 @@
    dataviz-Palette — das Theme stylt nur die Oberfläche.
    ========================================================================== */
 
-.f3d-root {
+/* Die Tokens stehen auf :root, NICHT auf .f3d-root — die Erklärkarte
+   (KennwertHilfe) hängt per <Teleport> am <body> und liegt damit
+   ausserhalb von .f3d-root. Dort wären alle var(--f3d-*) undefiniert,
+   der Text fiele auf die Dokumentfarbe zurück und stünde dunkel auf
+   dunkelblau: unlesbar. Layout und Hintergrund bleiben an .f3d-root. */
+:root {
   --f3d-bg: #070b14;
   --f3d-bg-2: #0a101f;
   --f3d-surface: #0e1526;
@@ -14,6 +19,9 @@
   --f3d-border-strong: #2c4370;
   --f3d-text: #e9eefb;
   --f3d-text-2: #8fa0c2;
+  /* Erklärtexte: heller als --f3d-text-2, sie sind der Inhalt und nicht
+     die Beschriftung daneben */
+  --f3d-text-hilfe: #dee7f9;
   --f3d-accent: #4d9fff;
   --f3d-accent-deep: #2563eb;
   --f3d-good: #2dd4a0;
@@ -21,7 +29,9 @@
   --f3d-warn: #e8a13c;
   --f3d-radius: 10px;
   --f3d-glow: 0 0 0 1px rgba(77, 159, 255, 0.28), 0 6px 24px rgba(37, 99, 235, 0.18);
+}
 
+.f3d-root {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -334,6 +344,12 @@
 
 .f3d-muted { color: var(--f3d-text-2); }
 .f3d-small { font-size: 0.72rem; }
+/* „muted + small" ist im ganzen Modul das Muster der ERKLÄRTEXTE (65×:
+   Hilfe zu Bruchkante, Aushub, Rohr, Netzvorschau …). Die sind nicht
+   Beiwerk, sondern das, was die Größe daneben überhaupt erklärt — und
+   in gedämpftem Blaugrau bei 0,72rem waren sie kaum zu lesen. Eine
+   Regel hier statt 65 Einzeledits in den Komponenten. */
+.f3d-muted.f3d-small { color: var(--f3d-text-hilfe); }
 .f3d-error {
   color: var(--f3d-bad);
   font-size: 0.82rem;
