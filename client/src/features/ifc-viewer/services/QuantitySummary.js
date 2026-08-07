@@ -17,6 +17,12 @@
 
 import * as THREE from 'three';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
+import { collectElementTriangles } from './geometry/MeshAcquire.js';
+import { meshVolume } from './geometry/MeshOps.js';
+
+// Sprint G: Budget für den Mesh-Volumen-Pfad — oberhalb wird auf BBox
+// zurückgefallen, statt den Main-Thread minutenlang zu blockieren.
+const MESH_VOLUME_TRI_BUDGET = 500000;
 
 /** Unwrap OBC's `{value: x}` shape. */
 function _scalar(v) {
@@ -29,8 +35,9 @@ function _scalar(v) {
  * Alle Qto_*-Quantity-Sets eines Items einsammeln → flaches {prop: number}.
  * Späteres Set gewinnt nicht — der erste gefundene Wert bleibt stehen
  * (BaseQuantities kommen praktisch immer zuerst und sind die Referenz).
+ * Exportiert (T1/E2): der KG-Klassifikator liest damit Laufmeter je Element.
  */
-function _collectQto(item) {
+export function collectQto(item) {
     const out = {};
     for (const rel of (item?.IsDefinedBy ?? [])) {
         const name = _scalar(rel?.Name);
@@ -50,9 +57,9 @@ function _collectQto(item) {
 
 const VOLUME_KEYS = ['NetVolume', 'GrossVolume'];
 const AREA_KEYS   = ['NetArea', 'GrossArea', 'NetSideArea', 'GrossSideArea', 'NetFloorArea', 'GrossFloorArea', 'Area'];
-const LENGTH_KEYS = ['Length', 'Height'];
+export const LENGTH_KEYS = ['Length', 'Height'];
 
-function _pick(qto, keys) {
+export function pickQtoValue(qto, keys) {
     for (const k of keys) {
         const v = qto[k];
         if (Number.isFinite(v) && v > 0) return v;
@@ -101,7 +108,7 @@ export async function summarizeQuantities({
 
         let catCount = 0;
         let catVolume = 0, catArea = 0, catLength = 0;
-        const sources = { qto: 0, bbox: 0 };
+        const sources = { qto: 0, mesh: 0, bbox: 0 };
         const byKg = new Map();
 
         for (const [modelId, rawIds] of entries) {
@@ -123,9 +130,30 @@ export async function summarizeQuantities({
                     for (const item of items) {
                         const lid = _scalar(item._localId ?? item.localId ?? item.expressID);
                         if (lid == null) continue;
-                        qtoByLocalId.set(lid, _collectQto(item));
+                        qtoByLocalId.set(lid, collectQto(item));
                     }
                 } catch { /* Qto optional — Fallback BBox */ }
+            }
+
+            // Sprint G: MESH-Volumen für die Rest-Elemente ohne Qto — nur
+            // geschlossene Körper zählen (Divergenzsatz), sonst weiter BBox.
+            const restIds = localIds.filter(id =>
+                pickQtoValue(qtoByLocalId?.get(id) ?? {}, VOLUME_KEYS) == null);
+            const meshVolById = new Map();
+            if (restIds.length) {
+                try {
+                    const got = await collectElementTriangles(model, restIds, { filter: 'none' });
+                    if (got.triCount > 0 && got.triCount <= MESH_VOLUME_TRI_BUDGET) {
+                        for (const range of got.perElement) {
+                            const v = meshVolume(
+                                got.positions.subarray(range.start * 9, range.end * 9),
+                                range.end - range.start);
+                            if (v.closed) meshVolById.set(range.localId, v.volume);
+                        }
+                    } else if (got.triCount > MESH_VOLUME_TRI_BUDGET) {
+                        console.warn(`[QuantitySummary] ${category}: ${got.triCount} Dreiecke > Budget — Mesh-Volumen übersprungen (BBox-Fallback)`);
+                    }
+                } catch { /* Mesh optional — Fallback BBox */ }
             }
 
             for (let i = 0; i < localIds.length; i++) {
@@ -133,15 +161,18 @@ export async function summarizeQuantities({
                 catCount++;
 
                 const qto = qtoByLocalId?.get(localId) ?? {};
-                const qtoVol = _pick(qto, VOLUME_KEYS);
-                const qtoArea = _pick(qto, AREA_KEYS);
-                const qtoLen = _pick(qto, LENGTH_KEYS);
+                const qtoVol = pickQtoValue(qto, VOLUME_KEYS);
+                const qtoArea = pickQtoValue(qto, AREA_KEYS);
+                const qtoLen = pickQtoValue(qto, LENGTH_KEYS);
 
                 let elVol;
                 if (qtoVol != null) {
                     elVol = qtoVol;
                     sources.qto++;
                     qtoCount++;
+                } else if (meshVolById.has(localId)) {
+                    elVol = meshVolById.get(localId);
+                    sources.mesh++;
                 } else {
                     elVol = 0;
                     const box = boxes?.[i];

@@ -180,6 +180,8 @@ async function recomputeKg() {
       fragmentsManager: api.getFragmentsManager(),
       rules:            kgRules.value,
       overrides:        kgOverrides.value,
+      // T1/E2: Laufmeter erheben, sobald irgendein Kennwert in €/m rechnet
+      collectLengths:   Object.values(kennwerte.value).some(k => k?.einheit === 'm'),
     });
     if (kgColorMode.value) applyKgColors();
   } catch (e) {

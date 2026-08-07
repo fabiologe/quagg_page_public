@@ -36,8 +36,8 @@
                 {{ row.kgCode }}
               </td>
               <td class="col-label" :title="kgTitle(row.kgCode)">{{ shortTitle(row.kgCode) }}</td>
-              <td class="col-menge" :title="`${row.count} Elemente · ${fmt(row.volume_m3)} m³`">
-                {{ row.einheit === 'stk' ? row.count : fmt(row.volume_m3) }}
+              <td class="col-menge" :title="`${row.count} Elemente · ${fmt(row.volume_m3)} m³ · ${fmt(row.length_m)} m`">
+                {{ row.einheit === 'stk' ? row.count : row.einheit === 'm' ? fmt(row.length_m) : fmt(row.volume_m3) }}
               </td>
               <td class="col-einheit">
                 <select
@@ -45,8 +45,7 @@
                   :value="row.einheit"
                   @change="onKennwertChange(row.kgCode, { einheit: $event.target.value })"
                 >
-                  <option value="m3">m³</option>
-                  <option value="stk">Stk</option>
+                  <option v-for="e in KENNWERT_EINHEITEN" :key="e" :value="e">{{ EINHEIT_LABELS[e] }}</option>
                 </select>
               </td>
               <td class="col-wert">
@@ -89,7 +88,7 @@
 <script setup>
 import { computed } from 'vue';
 import { kgColor, kgTitle, KG_LOOKUP } from '../services/Din276Defaults.js';
-import { computeKosten } from '../services/KgKennwerte.js';
+import { computeKosten, KENNWERT_EINHEITEN, EINHEIT_LABELS } from '../services/KgKennwerte.js';
 
 const props = defineProps({
   kgResult:      { type: Object,  default: null },  // { byKg } aus KgClassifier
@@ -128,8 +127,9 @@ function _exportRows() {
     Bezeichnung: shortTitle(r.kgCode),
     Elemente: r.count,
     'Volumen_m3': Number(r.volume_m3.toFixed(2)),
-    Menge: r.einheit === 'stk' ? r.count : Number(r.volume_m3.toFixed(2)),
-    Einheit: r.einheit === 'stk' ? 'Stk' : 'm³',
+    'Laenge_m': Number((r.length_m ?? 0).toFixed(2)),
+    Menge: Number(r.menge.toFixed(2)),
+    Einheit: EINHEIT_LABELS[r.einheit] ?? r.einheit,
     'Kennwert_EUR': r.wert ?? '',
     'Betrag_EUR': r.hasKennwert ? Number(r.betrag.toFixed(2)) : '',
   }));

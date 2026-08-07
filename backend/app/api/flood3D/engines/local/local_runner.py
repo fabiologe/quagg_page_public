@@ -372,6 +372,11 @@ def main() -> int:
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
                     "missing_sources": missing, "finished": time.time()}
+        if conv.get("terrain_error"):
+            # Muss mit zum Server: die Warnung im Logstrom ist nach dem
+            # Schließen des Fensters weg, und ohne diesen Eintrag stand
+            # man vor einem Lauf ohne Gelände und ohne Erklärung
+            manifest["terrain_error"] = conv["terrain_error"]
         if ypr:
             manifest["y_plus_range"] = [round(ypr[0], 2), round(ypr[1], 2)]
         result = evaluate_run(df, spec, run_id, manifest)

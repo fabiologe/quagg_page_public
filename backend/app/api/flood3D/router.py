@@ -248,9 +248,13 @@ async def run_geometry(run_id: str):
     paths = _paths(run_id)
     index = vol_fields.read_index(paths.root)
     terrain = vol_fields.read_geometry(paths.root)
-    if index is None or terrain is None:
+    if index is None:
         raise HTTPException(status_code=404,
                             detail="Für diesen Lauf liegt keine Szenengeometrie vor.")
+    # Fehlt nur das Gelände (der Nachlauf auf der Nutzer-Maschine meldet
+    # das als Warnung und liefert den Rest), bleiben Bauwerke und
+    # Netzoberfläche trotzdem sehenswert — ein 404 machte aus einer
+    # fehlenden Schicht einen leeren Viewer.
 
     solids = []
     tri_dir = paths.root / "case" / "constant" / "triSurface"
@@ -273,7 +277,7 @@ async def run_geometry(run_id: str):
 
     return {
         "grid": index["grid"],
-        "terrain": {
+        "terrain": None if terrain is None else {
             "dims": list(terrain.shape),          # (ny, nx)
             "dtype": "f32",
             "z_b64": base64.b64encode(

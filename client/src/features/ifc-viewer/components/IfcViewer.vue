@@ -472,6 +472,13 @@ provideViewerApi({
   zoomToElement:        (modelId, localId) => engine.value?.zoomToElement(modelId, localId),
   setElementColors:     (colorMap) => engine.value?.setPerElementColors(colorMap),
   resetElementColors:   () => engine.value?.resetCategoryColors(),
+  // Sprint T1: Georeferenz + Dokument-Status für den Planexport
+  getAllCoordOffsets:   () => engine.value?.getAllCoordOffsets() ?? {},
+  getWebIfcAPIs:        () => engine.value?.getWebIfcAPIs() ?? [],
+  getLoadedModelSha:    () => {
+    const first = engine.value?.getModelList()?.[0];
+    return first ? (_modelIdentity.get(first.modelId)?.sha256 ?? null) : null;
+  },
 });
 
 // ── lifecycle ────────────────────────────────────────────────────────────────

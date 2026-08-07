@@ -123,18 +123,23 @@ function setSort(key) {
 
 function isBilled(cat) { return VOLUME_BILLED_CATEGORIES.has(cat); }
 
-/** Herkunfts-Badge: rein Qto, rein BBox oder gemischt. */
+/** Herkunfts-Badge: Qto / Mesh / BBox oder gemischt (Sprint G: 'mesh' neu). */
 function srcLabel(row) {
-  const q = row.sources?.qto ?? 0, b = row.sources?.bbox ?? 0;
-  if (q && !b) return 'Qto';
-  if (!q && b) return 'BBox';
-  if (q && b)  return `Qto ${Math.round(q / (q + b) * 100)} %`;
-  return '–';
+  const q = row.sources?.qto ?? 0, m = row.sources?.mesh ?? 0, b = row.sources?.bbox ?? 0;
+  const total = q + m + b;
+  if (!total) return '–';
+  if (q === total) return 'Qto';
+  if (m === total) return 'Mesh';
+  if (b === total) return 'BBox';
+  const parts = [];
+  if (q) parts.push(`Qto ${Math.round(q / total * 100)} %`);
+  if (m) parts.push(`Mesh ${Math.round(m / total * 100)} %`);
+  return parts.join(' · ') || 'BBox';
 }
 function srcClass(row) {
-  const q = row.sources?.qto ?? 0, b = row.sources?.bbox ?? 0;
-  if (q && !b) return 'src-qto';
-  if (!q && b) return 'src-bbox';
+  const q = row.sources?.qto ?? 0, m = row.sources?.mesh ?? 0, b = row.sources?.bbox ?? 0;
+  if ((q || m) && !b) return 'src-qto';
+  if (!q && !m && b) return 'src-bbox';
   return 'src-mixed';
 }
 

@@ -17,7 +17,15 @@
 
 import { findMatchingRule } from './VectorRuleEngine.js';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
+import { collectQto, pickQtoValue, LENGTH_KEYS } from './QuantitySummary.js';
 import * as THREE from 'three';
+
+// T1/E2: Kategorien, deren BBox-Längskante als Laufmeter-Fallback taugt
+// (lineare Bauteile) — für alles andere wäre die BBox-Kante Unsinn.
+const LINEAR_CATEGORIES = new Set([
+    'IFCPIPESEGMENT', 'IFCFLOWSEGMENT', 'IFCDUCT', 'IFCDUCTSEGMENT',
+    'IFCKERB', 'IFCBEAM', 'IFCMEMBER', 'IFCCABLESEGMENT', 'IFCCABLECARRIERSEGMENT',
+]);
 
 /** Unwrap OBC's `{value: x}` shape. */
 function _scalar(v) {
@@ -83,6 +91,7 @@ function _anyRuleForCategoryNeedsData(rules, category) {
  */
 export async function classifyKg({
     categoryGroups, fragmentsList, fragmentsManager, rules, overrides = new Map(),
+    collectLengths = false, // T1/E2: Qto-Längen je Element miterheben (€/m-Kennwerte)
 } = {}) {
     const byKg = new Map();
     const unassigned = { count: 0, byCategory: new Map(), elements: [] };
@@ -101,12 +110,11 @@ export async function classifyKg({
             const c = r.condition?.category;
             return !c || c === category;
         });
-        // Daten werden gebraucht, wenn eine Regel Psets/Attribute liest ODER
-        // Overrides existieren: Overrides adressieren per GlobalId, und die
-        // gibt es nur aus dem Daten-Fetch — sonst griffe ein Override auf
-        // Kategorien ohne Pset-Regeln (z. B. IFCFOOTING) still ins Leere.
+        // Daten werden gebraucht, wenn eine Regel Psets/Attribute liest, ODER
+        // Overrides existieren (GlobalId kommt nur aus dem Daten-Fetch), ODER
+        // Laufmeter erhoben werden sollen (Qto-Längen, T1/E2).
         const needsData = fragmentsManager
-            && (_anyRuleForCategoryNeedsData(catRules, category) || overrides.size > 0);
+            && (_anyRuleForCategoryNeedsData(catRules, category) || overrides.size > 0 || collectLengths);
 
         let map;
         try { map = await group.groupData.get(); } catch { continue; }
@@ -137,6 +145,10 @@ export async function classifyKg({
                             attributes: _flattenAttrs(item),
                             psets:      _flattenPsets(item),
                             globalId:   _scalar(item.GlobalId) ?? '',
+                            // T1/E2: Laufmeter aus den Qto-BaseQuantities
+                            laenge: collectLengths
+                                ? pickQtoValue(collectQto(item), LENGTH_KEYS)
+                                : null,
                         });
                     }
                 } catch (e) {
@@ -175,10 +187,20 @@ export async function classifyKg({
                     volume = size.x * size.y * size.z;
                 }
 
-                if (!byKg.has(kgCode)) byKg.set(kgCode, { count: 0, volume_m3: 0, elements: [] });
+                // T1/E2: Laufmeter — Qto zuerst, BBox-Längskante nur für
+                // lineare Kategorien (Rohr/Bordstein/Träger), sonst 0.
+                let laenge = elemData?.laenge ?? null;
+                if (collectLengths && laenge == null && LINEAR_CATEGORIES.has(category)
+                    && box && !box.isEmpty()) {
+                    box.getSize(size);
+                    laenge = Math.max(size.x, size.y, size.z);
+                }
+
+                if (!byKg.has(kgCode)) byKg.set(kgCode, { count: 0, volume_m3: 0, length_m: 0, elements: [] });
                 const bucket = byKg.get(kgCode);
                 bucket.count++;
                 bucket.volume_m3 += volume;
+                bucket.length_m += laenge ?? 0;
                 bucket.elements.push({ modelId, localId, globalId, category });
 
                 perElement.set(`${modelId}|${localId}`, kgCode);

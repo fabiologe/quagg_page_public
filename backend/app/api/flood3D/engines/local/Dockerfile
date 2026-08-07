@@ -14,7 +14,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-pip \
  && rm -rf /var/lib/apt/lists/* \
  && pip3 install --no-cache-dir --break-system-packages \
-      numpy pandas pyarrow matplotlib pyyaml pydantic shapely trimesh
+      numpy scipy pandas pyarrow matplotlib pyyaml pydantic shapely trimesh
 
 # Nur der abhängigkeitsfreie Core (Spez. Kap. 3) + dieser Runner
 COPY flood3D/__init__.py /opt/quagg/flood3D/__init__.py

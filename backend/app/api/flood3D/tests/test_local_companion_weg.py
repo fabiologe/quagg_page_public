@@ -155,3 +155,34 @@ def test_import_falsche_run_id_in_result(client):
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
     res = c.post(f"/runs/{run_id}/import", content=_artifacts_zip("andere_r007"))
     assert res.status_code == 422
+
+
+def test_geometry_ohne_gelaendeschicht_liefert_die_bauwerke(client):
+    """
+    Konnte der Nachlauf auf der Nutzer-Maschine die Geländeschicht nicht
+    erzeugen (der Runner meldet das ausdrücklich als Warnung und packt den
+    Rest), machte der Server daraus ein 404 — ein leerer Viewer statt
+    „nur das Gelände fehlt". Bauwerke und Netzoberfläche sind da und
+    werden geliefert; `terrain` ist dann null.
+    """
+    import json as _json
+
+    c, runs = client
+    run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
+    assert c.post(f"/runs/{run_id}/import",
+                  content=_artifacts_zip(run_id)).status_code == 200
+    fdir = runs / run_id / "fields"
+    assert not (fdir / "geometry.npz").exists(), "Testannahme: Schicht fehlt"
+    (fdir / "index.json").write_text(_json.dumps({
+        "grid": {"origin": [0, 0, 90], "spacing": [1, 1, 1],
+                 "dims": [4, 4, 4]}, "times": [0.0], "fields": ["alpha"]}))
+
+    res = c.get(f"/runs/{run_id}/geometry")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["terrain"] is None
+    assert [s["patch"] for s in data["solids"]] == ["wand_becken"]
+    # mesh_patches bleibt hier leer — der Testhelfer schreibt kein echtes
+    # STL. Entscheidend ist: die Antwort kommt, statt an der fehlenden
+    # Geländeschicht mit 404 zu scheitern.
+    assert isinstance(data["mesh_patches"], list)

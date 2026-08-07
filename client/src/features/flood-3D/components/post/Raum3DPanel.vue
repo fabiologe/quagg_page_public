@@ -467,6 +467,7 @@ function setImageScalars(image, name, values, numberOfComponents = 1) {
 }
 
 function buildTerrain(geo) {
+  if (!geo.terrain) return          // Schicht fehlt — Rest bleibt nutzbar
   const [ny, nx] = geo.terrain.dims
   const { origin, spacing } = geo.grid
   terrainInfo = { z: geo.terrain.z, nx, ny }

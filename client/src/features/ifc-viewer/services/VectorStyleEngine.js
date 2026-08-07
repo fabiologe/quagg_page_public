@@ -45,6 +45,9 @@ export function styleToLegacy(style) {
         labelTemplate:  style.labelTemplate  ?? '',
         labelFontSize:  style.labelFontSize  ?? 2.2,
         labelAnchor:    style.labelAnchor    ?? 'center',
+        // T1: Punktsymbole (Schacht/Pumpe/…) — ersetzt die Kontur im Plot
+        symbol:     style.symbol     ?? 'none',
+        symbolSize: style.symbolSize ?? 3,
     };
 }
 

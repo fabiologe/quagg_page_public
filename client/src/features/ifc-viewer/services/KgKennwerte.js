@@ -4,6 +4,8 @@
  * Kosten = Menge × Kennwert, je KG:
  *   einheit 'm3'  → Menge = Volumen aus dem KG-Klassifikator (Qto/BBox)
  *   einheit 'stk' → Menge = Elementanzahl
+ *   einheit 'm'   → Menge = Laufmeter (T1/E2 — Rohrgräben, Bordsteine, Leitungen;
+ *                   der KG-Klassifikator braucht dafür collectLengths=true)
  *
  * Die Default-Werte sind grobe BKI-artige Anhaltswerte (Kostenstand ~2025,
  * Neubau, brutto) — sie sind AUSGANGSPUNKT, kein Ersatz für projektspezifische
@@ -14,7 +16,9 @@
  * Roadmap Stufe H).
  */
 
-export const KENNWERT_EINHEITEN = ['m3', 'stk'];
+export const KENNWERT_EINHEITEN = ['m3', 'stk', 'm'];
+
+export const EINHEIT_LABELS = { m3: 'm³', stk: 'Stk', m: 'm' };
 
 export const DEFAULT_KENNWERTE = Object.freeze({
     // KG 300 — Bauwerk / Baukonstruktionen
@@ -31,12 +35,20 @@ export const DEFAULT_KENNWERTE = Object.freeze({
     '370': { einheit: 'stk', wert: 900 },   // Baukonstruktive Einbauten
 
     // KG 400 — Technische Anlagen
-    '411': { einheit: 'stk', wert: 600 },   // Abwasseranlagen (Haltung/Formstück/Schacht gemittelt)
-    '412': { einheit: 'stk', wert: 350 },   // Wasseranlagen
+    '411': { einheit: 'm',   wert: 250 },   // Abwasserleitungen (€/m verlegt, DN-gemittelt)
+    '412': { einheit: 'm',   wert: 180 },   // Wasserleitungen
     '420': { einheit: 'stk', wert: 1200 },  // Wärmeversorgung
     '430': { einheit: 'stk', wert: 400 },   // Raumlufttechnik
     '440': { einheit: 'stk', wert: 250 },   // Elektro
     '460': { einheit: 'stk', wert: 8000 },  // Förderanlagen
+
+    // KG 500 — Außenanlagen / Tiefbau (Sprint T1)
+    '510': { einheit: 'm3',  wert: 25 },    // Erdbau (Lösen/Laden/Einbau gemittelt)
+    '530': { einheit: 'm',   wert: 45 },    // Bordstein/Oberbau-Kanten
+    '531': { einheit: 'm3',  wert: 120 },   // Wegebau (Schichtvolumen)
+    '551': { einheit: 'm',   wert: 450 },   // Kanal außen (€/m inkl. Graben)
+    '552': { einheit: 'm',   wert: 280 },   // Wasserleitung außen
+    '570': { einheit: 'm3',  wert: 15 },    // Vegetations-/Oberboden
 });
 
 /** Gespeicherte Kennwerte mit den Defaults mergen (Defaults liefern Neues nach). */
@@ -54,9 +66,9 @@ export function mergeKennwerte(stored) {
 /**
  * Kostenzeilen aus KG-Klassifikation × Kennwerten.
  *
- * @param {Map} byKg        aus KgClassifier: kgCode → { count, volume_m3 }
+ * @param {Map} byKg        aus KgClassifier: kgCode → { count, volume_m3, length_m }
  * @param {object} kennwerte  kgCode → { einheit, wert }
- * @returns {{ rows: Array<{kgCode, count, volume_m3, menge, einheit, wert, betrag, hasKennwert}>, summe: number }}
+ * @returns {{ rows: Array<{kgCode, count, volume_m3, length_m, menge, einheit, wert, betrag, hasKennwert}>, summe: number }}
  */
 export function computeKosten(byKg, kennwerte) {
     const rows = [];
@@ -67,13 +79,16 @@ export function computeKosten(byKg, kennwerte) {
         const kw = kennwerte?.[kgCode] ?? null;
         const einheit = kw?.einheit ?? 'm3';
         const wert = Number(kw?.wert);
-        const menge = einheit === 'stk' ? bucket.count : bucket.volume_m3;
+        const menge = einheit === 'stk' ? bucket.count
+                    : einheit === 'm'   ? (bucket.length_m ?? 0)
+                    :                     bucket.volume_m3;
         const hasKennwert = Number.isFinite(wert) && wert > 0;
         const betrag = hasKennwert ? menge * wert : 0;
         rows.push({
             kgCode,
             count: bucket.count,
             volume_m3: bucket.volume_m3,
+            length_m: bucket.length_m ?? 0,
             menge, einheit,
             wert: hasKennwert ? wert : null,
             betrag,

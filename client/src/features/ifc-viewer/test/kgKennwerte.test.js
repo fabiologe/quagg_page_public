@@ -53,4 +53,19 @@ describe('computeKosten', () => {
     expect(computeKosten(null, {})).toEqual({ rows: [], summe: 0 })
     expect(computeKosten(new Map(), {})).toEqual({ rows: [], summe: 0 })
   })
+
+  it('T1/E2: Einheit m rechnet mit Laufmetern', () => {
+    const byKgM = new Map([['551', { count: 8, volume_m3: 40, length_m: 320 }]])
+    const { rows, summe } = computeKosten(byKgM, { '551': { einheit: 'm', wert: 450 } })
+    expect(rows[0].menge).toBeCloseTo(320)
+    expect(rows[0].betrag).toBeCloseTo(320 * 450)
+    expect(summe).toBeCloseTo(144000)
+  })
+
+  it('T1/E2: fehlende length_m (alte Buckets) → Menge 0 statt NaN', () => {
+    const byKgM = new Map([['551', { count: 2, volume_m3: 10 }]])
+    const { rows } = computeKosten(byKgM, { '551': { einheit: 'm', wert: 450 } })
+    expect(rows[0].menge).toBe(0)
+    expect(rows[0].betrag).toBe(0)
+  })
 })

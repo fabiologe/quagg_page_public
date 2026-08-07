@@ -73,6 +73,7 @@
                 <th class="col-width">Stärke (mm)</th>
                 <th class="col-dash">Linientyp</th>
                 <th class="col-hatch">Schraffur</th>
+                <th class="col-symbol">Symbol</th>
                 <th class="col-label">Beschriftung</th>
                 <th class="col-on">An</th>
                 <th class="col-reset"></th>
@@ -109,6 +110,13 @@
                   <select :value="row.hatchPattern"
                           @change="onPatch(row.category, { hatchPattern: $event.target.value })">
                     <option v-for="h in HATCH_OPTIONS" :key="h" :value="h">{{ h }}</option>
+                  </select>
+                </td>
+                <td class="col-symbol">
+                  <select :value="row.symbol ?? 'none'"
+                          title="Punktsymbol (T1): ersetzt die Kontur im Lageplan"
+                          @change="onPatch(row.category, { symbol: $event.target.value })">
+                    <option v-for="s in SYMBOL_OPTS" :key="s" :value="s">{{ s }}</option>
                   </select>
                 </td>
                 <td class="col-label">
@@ -293,7 +301,7 @@
 <script setup>
 import { ref, computed, reactive } from 'vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
-import { DASH_PATTERNS, HATCH_PATTERNS_OPTIONS } from '../services/DefaultLineStyles.js';
+import { DASH_PATTERNS, HATCH_PATTERNS_OPTIONS, SYMBOL_OPTIONS } from '../services/DefaultLineStyles.js';
 import { probeCategory } from '../services/CategoryAttributeProbe.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 
@@ -311,6 +319,7 @@ const ifc = useIfcStore();
 
 const DASH_OPTIONS  = Object.keys(DASH_PATTERNS);
 const HATCH_OPTIONS = HATCH_PATTERNS_OPTIONS;
+const SYMBOL_OPTS   = SYMBOL_OPTIONS;
 
 const tab = ref('categories');   // 'categories' | 'rules'
 
@@ -447,6 +456,7 @@ const rows = computed(() => {
       lineWidth:    s.lineWidth    ?? 0.18,
       lineDash:     s.lineDash     ?? 'solid',
       hatchPattern: s.hatchPattern ?? 'none',
+      symbol:       s.symbol       ?? 'none',
       labelTemplate:  s.labelTemplate  ?? '',
       labelFontSize:  s.labelFontSize  ?? 2.2,
       labelAnchor:    s.labelAnchor    ?? 'center',
@@ -592,6 +602,7 @@ function applyBulk() {
 .col-width { width: 90px; }
 .col-dash  { width: 110px; }
 .col-hatch { width: 110px; }
+.col-symbol { width: 90px; }
 .col-label { width: 260px; }
 .vse-font-input { width: 52px; }
 .vse-anchor-input { width: 44px; }

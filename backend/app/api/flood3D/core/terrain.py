@@ -60,6 +60,56 @@ def _dist_and_param_to_polyline(xx, yy, polyline):
     return best_d.reshape(xx.shape), best_s.reshape(xx.shape)
 
 
+def naechste_hoehe(z: np.ndarray, bekannt: np.ndarray) -> np.ndarray:
+    """
+    Jede unbekannte Zelle erbt die Höhe der nächsten bekannten.
+
+    Mit scipy exakt über den kd-Baum. Ohne scipy — das Rechen-Image auf
+    der Nutzer-Maschine trägt nur die Kernpakete, und dieser Code reist
+    im Bundle dorthin — schichtweise Ausbreitung: je Runde bekommen die
+    Zellen am Rand des Bekannten den Mittelwert ihrer bekannten Nachbarn.
+    Das misst Gitterschritte statt Meter; für einen Füll- oder Startwert
+    ist der Unterschied belanglos. Ohne diesen Rückfall verlor ein lokaler
+    Lauf still seine Geländeschicht (ModuleNotFoundError, gefangen und
+    wegprotokolliert).
+    """
+    bekannt = np.asarray(bekannt, dtype=bool)
+    aus = np.array(z, dtype=float)
+    if bekannt.all() or not bekannt.any():
+        return aus
+    try:
+        from scipy.spatial import cKDTree
+        jj, ii = np.nonzero(bekannt)
+        qj, qi = np.nonzero(~bekannt)
+        _, nachbar = cKDTree(np.column_stack([jj, ii])).query(
+            np.column_stack([qj, qi]))
+        aus[~bekannt] = aus[bekannt][nachbar]
+        return aus
+    except ModuleNotFoundError:
+        pass
+    offen = ~bekannt
+    # Vier Nachbarn über Slices — np.roll wickelte über den Gebietsrand
+    RICHTUNGEN = (
+        ((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
+        ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
+        ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+        ((slice(None), slice(None, -1)), (slice(None), slice(1, None))))
+    while offen.any():
+        fest = ~offen
+        summe = np.zeros_like(aus)
+        anzahl = np.zeros(aus.shape)
+        for ziel, quelle in RICHTUNGEN:
+            gut = fest[quelle]
+            summe[ziel] += np.where(gut, aus[quelle], 0.0)
+            anzahl[ziel] += gut
+        neu = offen & (anzahl > 0)
+        if not neu.any():
+            break
+        aus[neu] = summe[neu] / anzahl[neu]
+        offen &= ~neu
+    return aus
+
+
 def laplace_fuellen(z: np.ndarray, fest: np.ndarray,
                     schritte: int = 400, toleranz: float = 1e-4) -> np.ndarray:
     """
@@ -90,13 +140,8 @@ def laplace_fuellen(z: np.ndarray, fest: np.ndarray,
     # Relaxation muss danach nur noch glätten statt die Höhe erst zu
     # finden. Ohne diesen Start blieb eine 8 m weite Fläche 0,11 m unter
     # ihrer Randhöhe hängen, weil die Iteration nicht durchlief.
-    from scipy.spatial import cKDTree
-
     frei = ~fest
-    jj, ii = np.nonzero(fest)
-    _, nachbar = cKDTree(np.column_stack([jj, ii])).query(
-        np.column_stack(np.nonzero(frei)))
-    z[frei] = z[fest][nachbar]
+    z = naechste_hoehe(z, fest)
 
     # Nur um den freien Bereich herum rechnen. Eine Bruchkante mit
     # `fuellen` betrifft oft ein paar Meter in einem 100-m-Gebiet — über
@@ -214,16 +259,8 @@ def _load_esri_ascii(path: Path, xx, yy) -> np.ndarray:
         # Becken mit tiefer Sohle und hohem Rand entstand daraus mitten im
         # Modell ein Plateau auf mittlerer Höhe.
         luecke = z == nodata
-        if not luecke.all():
-            from scipy.spatial import cKDTree
-            jj, ii = np.nonzero(~luecke)
-            baum = cKDTree(np.column_stack([ii, jj]))
-            qj, qi = np.nonzero(luecke)
-            _, nachbar = baum.query(np.column_stack([qi, qj]))
-            z = z.copy()
-            z[luecke] = z[~luecke][nachbar]
-        else:
-            z = np.zeros_like(z)
+        z = (naechste_hoehe(z, ~luecke) if not luecke.all()
+             else np.zeros_like(z))
     x0 = header["xllcorner"] + header["cellsize"] / 2
     y0 = header["yllcorner"] + header["cellsize"] / 2
     return _sample_bilinear(z, x0, y0, header["cellsize"], xx, yy)

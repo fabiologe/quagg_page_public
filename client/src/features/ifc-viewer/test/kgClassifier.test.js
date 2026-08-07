@@ -121,6 +121,37 @@ describe('classifyKg', () => {
     expect(byKg.has('330')).toBe(false)
   })
 
+  it('T1/E2: collectLengths erhebt Laufmeter aus Qto, BBox-Fallback nur linear', async () => {
+    const pipeItem = {
+      _localId: { value: 1 },
+      GlobalId: { value: 'GID-ROHR' },
+      IsDefinedBy: [{
+        Name: { value: 'Qto_PipeSegmentBaseQuantities' },
+        HasProperties: [{ Name: { value: 'Length' }, NominalValue: { value: 42.5 } }],
+      }],
+    }
+    const pipeNoQto = { _localId: { value: 2 }, GlobalId: { value: 'GID-ROHR2' }, IsDefinedBy: [] }
+    const mocks = mockModel({
+      category: 'IFCPIPESEGMENT',
+      localIds: [1, 2],
+      items: [pipeItem, pipeNoQto],
+      boxes: [box(1, 1, 1), box(12, 0.3, 0.3)], // Fallback: längste Kante 12 m
+    })
+    const { byKg } = await classifyKg({ ...mocks, rules: [...KG_DEFAULT_RULES], collectLengths: true })
+    expect(byKg.get('411')?.length_m).toBeCloseTo(42.5 + 12)
+  })
+
+  it('T1/E2: ohne collectLengths bleibt length_m 0 (kein Daten-Mehraufwand)', async () => {
+    const mocks = mockModel({
+      category: 'IFCFOOTING',
+      localIds: [7],
+      items: [],
+      boxes: [box(2, 0.5, 2)],
+    })
+    const { byKg } = await classifyKg({ ...mocks, rules: [...KG_DEFAULT_RULES] })
+    expect(byKg.get('322')?.length_m).toBe(0)
+  })
+
   it('füllt perElement für den KG-Farbmodus', async () => {
     const mocks = mockModel({
       category: 'IFCWALL',
