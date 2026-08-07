@@ -28,18 +28,59 @@ export async function getGeometry(runId) {
   return geometryCache.get(runId)
 }
 
-export async function getVolume(runId, time) {
+// Feld-selektiver Volumen-Cache, EINER fuer alle Ansichten. Vorher luden
+// Grundriss und Raum-Tab denselben Zeitschritt in getrennte Caches — und
+// beide holten immer ALLE Felder (p, p_rgh, k, ω, νt, T inklusive),
+// obwohl der Grundriss nur alpha/U/bed_shear braucht. Jetzt gilt: ein
+// Eintrag je (Lauf, Zeit), Felder werden bei Bedarf NACHGELADEN
+// (?fields=…) und in den Eintrag gemerged — dieselbe Information, aber
+// nur die Bytes, die die Ansicht wirklich zeigt.
+//
+// `felder = null` heisst weiterhin "alles" (Kompatibilitaet).
+export function getVolume(runId, time, felder = null) {
   const key = `${runId}|${time}`
-  if (!volumeCache.has(key)) {
-    volumeCache.set(key, fetchVolume(runId, time).catch((e) => {
-      volumeCache.delete(key)
-      throw e
-    }))
+  let eintrag = volumeCache.get(key)
+  if (!eintrag) {
+    eintrag = { time, grid: null, fields: {},
+      _geladen: new Set(), _ladend: new Map() }
+    volumeCache.set(key, eintrag)
     if (volumeCache.size > VOLUME_LIMIT) {
       volumeCache.delete(volumeCache.keys().next().value)
     }
+  } else {
+    // LRU: zuletzt benutzte Eintraege ans Ende ruecken
+    volumeCache.delete(key)
+    volumeCache.set(key, eintrag)
   }
-  return volumeCache.get(key)
+
+  const wunsch = felder ?? ['*']
+  const offen = wunsch.filter((f) =>
+    !eintrag._geladen.has(f) && !eintrag._geladen.has('*')
+    && !eintrag._ladend.has(f))
+  const laufend = wunsch.map((f) => eintrag._ladend.get(f)).filter(Boolean)
+
+  if (offen.length) {
+    const alle = offen.includes('*')
+    const p = fetchVolume(runId, time, alle ? null : offen)
+      .then((vol) => {
+        eintrag.time = vol.time
+        eintrag.grid = vol.grid
+        Object.assign(eintrag.fields, vol.fields)
+        // Auch angefragte, aber im Lauf nicht vorhandene Felder gelten
+        // als geladen — sonst fragte jeder Aufruf sie erneut an. Die
+        // Aufrufer pruefen ohnehin auf Existenz (vol.fields.bed_shear?).
+        for (const f of offen) eintrag._geladen.add(f)
+        for (const f of Object.keys(vol.fields)) eintrag._geladen.add(f)
+      })
+      .finally(() => {
+        // Fehlgeschlagene Felder bleiben UNGELADEN — der naechste Aufruf
+        // versucht es erneut, statt einen kaputten Eintrag festzuhalten
+        for (const f of offen) eintrag._ladend.delete(f)
+      })
+    for (const f of offen) eintrag._ladend.set(f, p)
+    laufend.push(p)
+  }
+  return Promise.all(laufend).then(() => eintrag)
 }
 
 // Abgeleitete Grundriss-Felder aus einem Volumenpaket, je Säule (i,j):
@@ -138,4 +179,21 @@ export function planFields(vol, terrainZ) {
   const tau = vol.fields.bed_shear ? vol.fields.bed_shear.data : null
   return { nx, ny, origin, spacing, surface, depth, ux, uy, umag, tau,
     hInt, uxM, uyM, umagM, froude }
+}
+
+// Memoisierte Variante: planFields lief vorher bei JEDEM update() neu,
+// obwohl das Volumen laengst aus dem Cache kam — beim Zeit-Scrubbing
+// mit Hin und Zurueck ist das reine Doppelarbeit. Schluessel ist der
+// Cache-Eintrag selbst (WeakMap: verschwindet er aus dem LRU, raeumt
+// der GC die Ableitungen mit); dazu Terrain-Identitaet und die Frage,
+// welche der drei benutzten Feldgruppen inzwischen nachgeladen sind.
+const planCache = new WeakMap()
+
+export function planFieldsCached(vol, terrainZ) {
+  const stand = `${'alpha' in vol.fields}|${'U' in vol.fields}|${'bed_shear' in vol.fields}`
+  const c = planCache.get(vol)
+  if (c && c.terrainZ === terrainZ && c.stand === stand) return c.result
+  const result = planFields(vol, terrainZ)
+  planCache.set(vol, { terrainZ, stand, result })
+  return result
 }

@@ -115,6 +115,22 @@ def test_volume_binaerpaket(client):
     assert [f["name"] for f in header["fields"]] == ["alpha"]
 
 
+def test_volume_gzip_transport(client):
+    """Perf-Audit: alpha ist fast überall 0/1 — der Blob MUSS komprimiert
+    über die Leitung, sonst zahlt jedes Zeit-Scrubbing den vollen Preis."""
+    # httpx schickt Accept-Encoding gzip und entpackt transparent — die
+    # Magic stimmt deshalb auch bei komprimiertem Transport
+    r = client.get("/runs/r001/volume", params={"time": 0.47})
+    assert r.headers.get("content-encoding") == "gzip"
+    assert r.headers.get("vary") == "Accept-Encoding"
+    assert r.content[:4] == b"F3DV"
+    # ohne gzip im Accept-Encoding bleibt es das rohe Binärpaket
+    r = client.get("/runs/r001/volume", params={"time": 0.47},
+                   headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in r.headers
+    assert r.content[:4] == b"F3DV"
+
+
 def test_unbekannter_lauf_und_traversal(client):
     assert client.get("/runs/gibtsnicht").status_code == 404
     assert client.get("/runs/..%2F..%2Fetc/result").status_code in (404, 422)
