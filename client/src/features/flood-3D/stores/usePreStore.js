@@ -19,6 +19,10 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Gelände formen (Pinsel im Editor) — vom Baum/Eigenschaften-Panel
     // ein-, vom Editor ausgeschaltet
     sculptAktiv: false,
+    // Ein modaler Dialog ist offen. Die globalen Tastatur-Handler (Escape
+    // im Editor, Strg+Z in der Hauptansicht) hängen am window und wirkten
+    // sonst HINTER dem Dialog auf die Szene bzw. auf das Modell.
+    dialogOffen: false,
     cases: [],
     activeCaseId: null,
     spec: null,

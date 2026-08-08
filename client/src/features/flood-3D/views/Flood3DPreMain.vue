@@ -115,6 +115,9 @@ const activeRunCount = computed(() =>
 
 // Strg+Z / Strg+Shift+Z / Strg+Y — nicht beim Tippen in Eingabefeldern
 function onHistoryKeys(e) {
+  // Strg+Z hätte sonst hinter einem offenen Dialog Modelländerungen
+  // rückgängig gemacht, die man gar nicht sieht
+  if (store.dialogOffen) return
   const t = e.target
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
       || t.tagName === 'SELECT' || t.isContentEditable)) return
