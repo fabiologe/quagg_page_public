@@ -296,6 +296,14 @@
   font-size: 0.79rem;
   font-weight: 550;
   cursor: pointer;
+  /* Kein Knopf im Modul erreichte bisher 32 px, der Standard lag bei
+     ~25 px — und weil usePreventPageZoom den Browserzoom sperrt, kann
+     das auch niemand ausgleichen. 32 px ist die Mindestgröße aus
+     WCAG 2.5.8. */
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: border-color 0.16s ease, box-shadow 0.18s ease,
     background 0.16s ease, transform 0.12s ease;
 }
@@ -341,6 +349,58 @@
 }
 .f3d-root input[type='range'] { accent-color: var(--f3d-accent); }
 .f3d-root input[type='checkbox'] { accent-color: var(--f3d-accent-deep); }
+
+/* ------------------------------------------------------- Klickziele --- */
+/* Icon-Knöpfe sollen klein AUSSEHEN (sie sitzen in Tabellenzeilen und
+   Panelköpfen), aber nicht klein zu TREFFEN sein. Ein unsichtbares
+   Pseudo-Element vergrößert die Trefffläche auf mindestens 32 px, ohne
+   das Layout zu verschieben. Gemessen waren u. a.: Lauf löschen 14×15,
+   Meldung schliessen 13×13, Karte schliessen 16×16, ?-Knopf 18×18. */
+.f3d-hilfe-knopf,
+.f3d-hilfe-zu,
+.f3d-run-del,
+.f3d-objplus,
+.f3d-objloesch,
+.f3d-meldung-weg,
+.f3d-imp-x,
+.f3d-jsonschalter,
+.f3d-pl-weg,
+.f3d-edit-btn,
+.f3d-edit-auf,
+.f3d-chart-csv,
+.f3d-back,
+.f3d-verweis {
+  position: relative;
+}
+.f3d-hilfe-knopf::after,
+.f3d-hilfe-zu::after,
+.f3d-run-del::after,
+.f3d-objplus::after,
+.f3d-objloesch::after,
+.f3d-meldung-weg::after,
+.f3d-imp-x::after,
+.f3d-jsonschalter::after,
+.f3d-pl-weg::after,
+.f3d-edit-btn::after,
+.f3d-edit-auf::after,
+.f3d-chart-csv::after,
+.f3d-back::after,
+.f3d-verweis::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 32px;
+  min-height: 32px;
+  width: 100%;
+  height: 100%;
+}
+/* Das Löschkreuz im Objektbaum war bis zum Hover unsichtbar (opacity 0)
+   und damit auf Touch gar nicht zu finden. */
+@media (hover: none) {
+  .f3d-objloesch { opacity: 0.65 !important; }
+}
 
 /* ------------------------------------------------- Bedien-Bausteine --- */
 /* Diese acht Klassen werden im ganzen Modul benutzt (rund 135 Stellen),
@@ -413,4 +473,6 @@
 .f3d-btn-s {
   font-size: 0.72rem;
   padding: 3px 8px;
+  /* kleiner geschrieben, aber weiterhin sicher zu treffen */
+  min-height: 28px;
 }
