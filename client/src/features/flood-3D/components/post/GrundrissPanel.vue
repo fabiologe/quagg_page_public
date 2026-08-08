@@ -885,13 +885,10 @@ onBeforeUnmount(() => {
   .f3d-plan-controls { width: 210px; }
 }
 
-@media (max-width: 1024px) {
-  /* gestapelt: die Karte bekommt die volle Breite, die Bedienung
-     wandert darunter */
-  .f3d-plan { flex-direction: column; }
-  .f3d-plan-controls {
-    width: 100%;
-    max-height: 40vh;
-  }
-}
+/* Eine zweite Stufe (Stapeln unter ~1024 px) war gebaut und ist bewusst
+   wieder ENTFERNT: gemessen erzeugte sie 17 neue Überlappungen, weil der
+   3D-Editor mit seinen absolut positionierten Bedienleisten und der
+   Canvas das Stapeln nicht ohne eigene Höhenlogik vertragen. Lieber kein
+   Layout für sehr schmale Fenster als ein kaputtes — das bleibt ein
+   eigener Umbau. */
 </style>

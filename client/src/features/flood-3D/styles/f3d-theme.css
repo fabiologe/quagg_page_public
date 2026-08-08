@@ -495,12 +495,9 @@
   .f3d-content { padding: 12px; }
 }
 
-@media (max-width: 1024px) {
-  .f3d-sidebar {
-    width: 100%;
-    max-height: 34vh;
-    border-right: none;
-    border-bottom: 1px solid var(--f3d-border);
-  }
-  .f3d-header { padding: 8px 12px; }
-}
+/* Eine zweite Stufe (Stapeln unter ~1024 px) war gebaut und ist bewusst
+   wieder ENTFERNT: gemessen erzeugte sie 17 neue Überlappungen, weil der
+   3D-Editor mit seinen absolut positionierten Bedienleisten und der
+   Canvas das Stapeln nicht ohne eigene Höhenlogik vertragen. Lieber kein
+   Layout für sehr schmale Fenster als ein kaputtes — das bleibt ein
+   eigener Umbau. */
