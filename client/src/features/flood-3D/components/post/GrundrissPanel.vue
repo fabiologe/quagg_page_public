@@ -736,7 +736,7 @@ onBeforeUnmount(() => {
 .f3d-plan {
   display: flex;
   gap: 14px;
-  min-height: 560px;
+  min-height: 420px;
 }
 .f3d-plan-controls {
   width: 250px;
@@ -745,6 +745,11 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  /* eigener Scroll statt unbegrenztem Wachsen — vorher hatte die Spalte
+     gar kein overflow und schob die Zeitleiste aus dem Bild */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .f3d-plan-controls > * { min-width: 0; }
 .f3d-ctl-group {
@@ -806,10 +811,14 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
+  /* Diagramme des Laengsschnitts scrollen INNERHALB der Ansicht, damit
+     Karte und Zeitleiste stehen bleiben */
+  overflow-y: auto;
 }
 .f3d-plan-canvas {
   flex: 1;
-  min-height: 420px;
+  min-height: 300px;
   border: 1px solid var(--f3d-border);
   border-radius: 10px;
   background: var(--f3d-bg);
@@ -823,6 +832,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* die Zeitleiste ist Bedienung, kein Beiwerk: sie darf weder
+     schrumpfen noch aus dem Bild geschoben werden */
+  flex-shrink: 0;
   background: var(--f3d-surface);
   border: 1px solid var(--f3d-border);
   border-radius: 10px;

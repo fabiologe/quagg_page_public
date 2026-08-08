@@ -57,4 +57,14 @@ onMounted(() => {
 <style scoped>
 .f3d-ergebnis { display: flex; flex-direction: column; gap: 12px; }
 .f3d-ergebnis-tabs { flex-shrink: 0; }
+/* Grundriss und Raum sind Vollbild-Ansichten: sie bekommen den Platz, der
+   nach der Tableiste bleibt — nicht mehr (sonst schoeben sie ihre eigene
+   Zeitleiste unter die Falz) und nicht weniger. min-height: 0 ist dabei
+   die Bedingung dafuer, dass das overflow-y ihrer Bedienspalten
+   ueberhaupt greift; ohne das waechst die Spalte einfach weiter. */
+.f3d-ergebnis > .f3d-plan,
+.f3d-ergebnis > .f3d-raum {
+  flex: 1 1 0;
+  min-height: 0;
+}
 </style>
