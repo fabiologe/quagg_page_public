@@ -1491,4 +1491,18 @@ onBeforeUnmount(() => {
 /* Während geladen wird, ist die Beschriftung sichtbar vorläufig */
 .f3d-timebar .laedt { opacity: 0.6; font-style: italic; }
 .f3d-timebar input[type='range'] { flex: 1; accent-color: var(--f3d-accent); }
+
+@media (max-width: 1280px) {
+  .f3d-raum-controls { width: 210px; }
+}
+
+@media (max-width: 1024px) {
+  /* gestapelt: die Karte bekommt die volle Breite, die Bedienung
+     wandert darunter */
+  .f3d-raum { flex-direction: column; }
+  .f3d-raum-controls {
+    width: 100%;
+    max-height: 40vh;
+  }
+}
 </style>
