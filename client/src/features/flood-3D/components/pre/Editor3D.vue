@@ -2009,7 +2009,12 @@ onBeforeUnmount(() => {
      Container „Netz“ und „Freischneiden“ ab — die Knöpfe waren schlicht
      nicht erreichbar. Rechts bleibt Platz für die Clip-/Sculpt-Leiste. */
   flex-wrap: wrap;
-  max-width: calc(100% - 370px);
+  /* Rechts bleibt Platz für die Clip-/Sculpt-Leiste, aber nie so wenig,
+     dass die Leiste zum Turm wird: unter ~800 px Szenenbreite hat die
+     Werkzeugleiste Vorrang (die Clip-Leiste erscheint ohnehin nur, wenn
+     Freischneiden aktiv ist). Fenster unter ~1100 px bleiben ein Fall
+     für die Breakpoints in Runde 3. */
+  max-width: max(340px, calc(100% - 370px));
   background: rgba(10, 16, 31, 0.78);
   backdrop-filter: blur(8px);
   border: 1px solid var(--f3d-border);
