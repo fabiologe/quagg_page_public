@@ -55,11 +55,11 @@
       </div>
 
       <div class="f3d-ctl-group" v-if="raster !== 'none'">
-        <label>
-          Farbskala {{ RASTER_LABELS[raster] }}
+        <div class="f3d-gruppenkopf">
+          <span>Farbskala {{ RASTER_LABELS[raster] }}</span>
           <KennwertHilfe :groesse="HILFE_SCHLUESSEL[raster]"
                          :wert="shownRange[1]" />
-        </label>
+        </div>
         <div class="f3d-legend" :style="{ background: VIRIDIS_CSS }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(shownRange[0]) }}</span>
@@ -92,9 +92,15 @@
         </button>
       </div>
 
-      <div class="f3d-ctl-group" v-if="hover">
+      <!-- Platz bleibt reserviert: erschien die Gruppe erst beim Hover,
+           wuchs die Spalte, der ResizeObserver zeichnete den Canvas neu
+           und die Karte sprang unter dem Mauszeiger weg. -->
+      <div class="f3d-ctl-group f3d-cursor-gruppe">
         <label>Cursor</label>
-        <table class="f3d-probe">
+        <p v-if="!hover" class="f3d-muted f3d-small">
+          Mauszeiger über die Karte bewegen
+        </p>
+        <table class="f3d-probe" v-if="hover">
           <tbody>
             <tr v-for="row in hover" :key="row[0]">
               <td>{{ row[0] }}</td>
@@ -736,7 +742,7 @@ onBeforeUnmount(() => {
 .f3d-plan {
   display: flex;
   gap: 14px;
-  min-height: 560px;
+  min-height: 420px;
 }
 .f3d-plan-controls {
   width: 250px;
@@ -745,6 +751,11 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  /* eigener Scroll statt unbegrenztem Wachsen — vorher hatte die Spalte
+     gar kein overflow und schob die Zeitleiste aus dem Bild */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .f3d-plan-controls > * { min-width: 0; }
 .f3d-ctl-group {
@@ -779,6 +790,22 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
   white-space: nowrap;
 }
+/* wie die Gruppen-Beschriftung, aber KEIN <label> — sonst labelt es
+   implizit den ?-Knopf und ein Klick auf die Überschrift öffnet die
+   Erklärkarte */
+.f3d-gruppenkopf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--f3d-text-2);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* Höhe für die längste Belegung (Position, Gelände, Spiegel, Tiefe,
+   zwei Geschwindigkeiten, Froude, Schubspannung) — so bleibt das Layout
+   beim Überfahren der Karte ruhig. */
+.f3d-cursor-gruppe { min-height: 232px; }
 .f3d-legend { height: 12px; border-radius: 4px; }
 .f3d-legend-labels { justify-content: space-between; }
 /* Die Cursor-Tabelle bleibt in der Spalte. Die Sohlschubspannungs-Zeile
@@ -806,10 +833,14 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
+  /* Diagramme des Laengsschnitts scrollen INNERHALB der Ansicht, damit
+     Karte und Zeitleiste stehen bleiben */
+  overflow-y: auto;
 }
 .f3d-plan-canvas {
   flex: 1;
-  min-height: 420px;
+  min-height: 300px;
   border: 1px solid var(--f3d-border);
   border-radius: 10px;
   background: var(--f3d-bg);
@@ -823,6 +854,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* die Zeitleiste ist Bedienung, kein Beiwerk: sie darf weder
+     schrumpfen noch aus dem Bild geschoben werden */
+  flex-shrink: 0;
   background: var(--f3d-surface);
   border: 1px solid var(--f3d-border);
   border-radius: 10px;

@@ -182,10 +182,10 @@
       </div>
 
       <div class="f3d-ctl-group" v-if="layers.terrain && layers.terrainShear">
-        <label>
-          Sohlschubspannung in N/m²
+        <div class="f3d-gruppenkopf">
+          <span>Sohlschubspannung in N/m²</span>
           <KennwertHilfe groesse="bed_shear" :wert="tauRange[1]" />
-        </label>
+        </div>
         <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(tauRange[0]) }}</span>
@@ -1358,8 +1358,10 @@ onBeforeUnmount(() => {
 .f3d-raum {
   display: flex;
   gap: 14px;
-  height: 100%;
-  min-height: 560px;
+  /* height: 100% bezog sich auf einen Container ohne feste Hoehe und war
+     damit wirkungslos — die Ansicht bekommt ihren Platz jetzt von
+     ErgebnisPhase per flex zugewiesen */
+  min-height: 420px;
 }
 .f3d-raum-controls {
   width: 250px;
@@ -1367,7 +1369,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* min-height: 0 fehlte — ohne das hat overflow-y in einer Flexbox
+     keine Wirkung, die Spalte wuchs auf 1400+ px und dehnte den
+     Viewport daneben gleich mit */
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .f3d-ctl-group {
   display: flex;
@@ -1421,6 +1428,18 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
   white-space: nowrap;
 }
+/* wie die Gruppen-Beschriftung, aber KEIN <label> — sonst labelt es
+   implizit den ?-Knopf und ein Klick auf die Überschrift öffnet die
+   Erklärkarte */
+.f3d-gruppenkopf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--f3d-text-2);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 .f3d-legend { height: 12px; border-radius: 4px; }
 .f3d-legend-labels { justify-content: space-between; }
 .f3d-probe { border-collapse: collapse; font-size: 0.74rem; }
@@ -1437,19 +1456,21 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  min-height: 0;
 }
 .f3d-viewport {
   flex: 1;
   border: 1px solid var(--f3d-border);
   border-radius: 8px;
   overflow: hidden;
-  min-height: 480px;
+  min-height: 300px;
   position: relative;
 }
 .f3d-timebar {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
   background: var(--f3d-surface);
   border: 1px solid var(--f3d-border);
   border-radius: 8px;
