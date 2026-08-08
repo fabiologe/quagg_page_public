@@ -610,6 +610,14 @@ function add(kind, name) {
 .f3d-objstatus.sev-fehler { color: var(--f3d-bad); }
 .f3d-objstatus.sev-warnung { color: var(--f3d-warn); }
 .f3d-objstatus.sev-hinweis { color: var(--f3d-accent); }
+/* Ein zugeklapptes <details> verbirgt seinen Inhalt nur über den
+   Browser-Stil — und der verliert gegen JEDE eigene display-Regel. Die
+   Kandidatenzeilen darin (.f3d-objrow{display:flex} usw.) wurden deshalb
+   auch im zugeklappten Zustand gezeichnet: 734 px Inhalt in einem 54 px
+   hohen Element, das sich über alle folgenden Gruppen legte. Das war die
+   Ursache der 17 im Audit gemessenen Zeilenüberlappungen. */
+details.f3d-objgroup:not([open]) > *:not(summary) { display: none; }
+
 .f3d-objadd { display: flex; gap: 6px; margin-top: 6px; }
 .f3d-objrow { display: flex; align-items: stretch; gap: 2px; }
 .f3d-objrow .f3d-objitem { flex: 1; }
