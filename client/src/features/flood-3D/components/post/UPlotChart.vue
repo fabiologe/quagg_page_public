@@ -2,8 +2,15 @@
   <div class="f3d-chart">
     <div class="f3d-chart-head" v-if="title">
       <div class="f3d-chart-title">{{ title }}</div>
-      <button class="f3d-chart-csv" title="Rohdaten als CSV herunterladen"
-              @click="downloadCsv">CSV</button>
+      <!-- Zusatzbedienung (z. B. die Erklärkarte) gehört IN diese Zeile.
+           Vorher legte das Zeitreihenpanel sie absolut darüber — und traf
+           damit den CSV-Knopf, dessen rechtes Drittel keine Klicks mehr
+           bekam. -->
+      <div class="f3d-chart-tools">
+        <slot name="kopf" />
+        <button class="f3d-chart-csv" title="Rohdaten als CSV herunterladen"
+                @click="downloadCsv">CSV</button>
+      </div>
     </div>
     <div ref="host" class="f3d-chart-host"></div>
   </div>
@@ -140,7 +147,14 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 6px;
+}
+.f3d-chart-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
 .f3d-chart-title {
   color: var(--f3d-text);

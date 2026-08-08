@@ -169,10 +169,16 @@
           fixieren (über Zeitpunkte und Läufe)
         </label>
         <div class="f3d-row" v-if="colorLock">
-          <input type="number" step="any" v-model.number="colorMin" class="f3d-num" />
+          <input type="number" step="any" v-model.number="colorMin" class="f3d-num"
+                 title="untere Grenze der Farbskala" />
           <span>bis</span>
-          <input type="number" step="any" v-model.number="colorMax" class="f3d-num" />
+          <input type="number" step="any" v-model.number="colorMax" class="f3d-num"
+                 title="obere Grenze der Farbskala" />
         </div>
+        <p v-if="skalaFehler" class="f3d-hint-inline">
+          Grenzen unbrauchbar (leer oder von ≥ bis) — dargestellt wird
+          weiter der automatische Bereich.
+        </p>
       </div>
 
       <div class="f3d-ctl-group" v-if="layers.terrain && layers.terrainShear">
@@ -275,6 +281,8 @@ import { fetchGeometry, fetchTimesteps } from '../../services/volume'
 import { getVolume } from '../../composables/useFieldCache'
 import { glaetteFeldCached } from '../../utils/glaettung'
 import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
+import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
+  from '../../utils/farbskala'
 
 const store = usePostStore()
 
@@ -352,8 +360,15 @@ const gridLabel = ref('')
 const activeField = computed(() =>
   FIELD_OPTIONS.value.find((f) => f.key === activeFieldKey.value)
   ?? FIELD_OPTIONS.value[0])
-const shownRange = computed(() =>
-  colorLock.value ? [colorMin.value, colorMax.value] : autoRange.value)
+const shownRange = computed(() => wirksamerBereich(
+  colorLock.value, colorMin.value, colorMax.value, autoRange.value))
+const skalaFehler = computed(() =>
+  bereichUngueltig(colorLock.value, colorMin.value, colorMax.value))
+// Grenzen beim Anhaken aus dem sichtbaren Bereich übernehmen (sonst
+// Sprung auf die Startwerte 0…1)
+watch(colorLock, (an) => {
+  if (an) [colorMin.value, colorMax.value] = uebernehmeBereich(autoRange.value)
+})
 
 const fmt = (v) => (v == null || Number.isNaN(v) ? '–'
   : Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3))
@@ -853,7 +868,8 @@ async function updateScene() {
     if (hi <= lo) hi = lo + 1e-6
     autoRange.value = [lo, hi]
     velRange.value = [0, vHi || 1]
-    const [rLo, rHi] = colorLock.value ? [colorMin.value, colorMax.value] : [lo, hi]
+    const [rLo, rHi] = wirksamerBereich(colorLock.value, colorMin.value,
+      colorMax.value, [lo, hi])
 
     const sentinel = rLo - (rHi - rLo) * 0.5 - 1e-6
     const masked = new Float32Array(field.length)

@@ -53,7 +53,11 @@ async function kur(fix) {
 const icon = (s) => ({ fehler: '✗', warnung: '⚠', hinweis: 'ℹ' }[s] ?? '·')
 
 function jump(finding) {
-  // Befunde am Gebiet/Gelände haben keine Listeneinträge — direkt wählen
+  // Befunde am Gebiet/Gelände haben keine Listeneinträge — direkt wählen.
+  // (Stand hier vorher auf einer nie definierten Variable `objectId` —
+  // JEDER Klick auf einen Befund warf damit stumm einen ReferenceError,
+  // der Sprung zum fehlerhaften Objekt hat nie funktioniert.)
+  const objectId = finding.object_id
   if (objectId === 'domain') { store.select('domain', 'domain'); return }
   if (objectId === 'terrain' || objectId === 'gelaende') {
     store.select('terrain', 'gelaende')
