@@ -471,13 +471,15 @@ function setNumOrNull(path, e) {
   margin: 3px 0 0;
   font-size: 0.72rem;
   line-height: 1.45;
-  color: var(--f3d-text-2);
+  /* Erklärtext, nicht Beiwerk — hell genug zum Lesen (die Stufenfarben
+     warn/bad darunter überschreiben das bei gleicher Spezifität) */
+  color: var(--f3d-text-hilfe);
 }
 .f3d-hint-warn { color: var(--f3d-warn); }
 .f3d-hint-bad { color: var(--f3d-bad); }
 .f3d-sim-cta { display: flex; flex-direction: column; gap: 10px; }
-/* Download-/Aktionslinks in den Hinweistexten: weiß statt Akzentfarbe,
-   damit sie sich vom gedämpften Fließtext klar abheben */
+/* Download-/Aktionslinks in den Hinweistexten: weiß statt Akzentfarbe;
+   vom Fließtext trennt sie die Unterstreichung */
 .f3d-sim-cta a {
   color: var(--f3d-text);
   text-decoration: underline;
