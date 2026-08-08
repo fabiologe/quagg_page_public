@@ -342,6 +342,40 @@
 .f3d-root input[type='range'] { accent-color: var(--f3d-accent); }
 .f3d-root input[type='checkbox'] { accent-color: var(--f3d-accent-deep); }
 
+/* ------------------------------------------------- Bedien-Bausteine --- */
+/* Diese acht Klassen werden im ganzen Modul benutzt (rund 135 Stellen),
+   waren aber nur in den SCOPED Styles einzelner Komponenten definiert —
+   in jeder anderen Komponente wirkten sie damit gar nicht: f3d-row ohne
+   Flexbox, f3d-grow ohne Dehnung, f3d-check ohne Ausrichtung. Deshalb
+   stehen sie jetzt hier, global. Die lokalen Fassungen bleiben gültig
+   (scoped schlägt global) und dürfen abweichen, wo es Absicht ist. */
+.f3d-row { display: flex; align-items: center; gap: 8px; }
+.f3d-row input[type='range'] { flex: 1; min-width: 0; }
+.f3d-grow { flex: 1; width: auto; min-width: 0; }
+.f3d-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--f3d-text);
+  font-size: 0.8rem;
+}
+.f3d-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.f3d-field > label { color: var(--f3d-text-2); font-size: 0.76rem; }
+.f3d-lbl { color: var(--f3d-text-2); font-size: 0.75rem; white-space: nowrap; }
+.f3d-mono {
+  font-variant-numeric: tabular-nums;
+  color: var(--f3d-text-2);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.f3d-select-s { width: 60px; }
+.f3d-cta { padding: 10px; font-size: 0.9rem; }
+
 .f3d-muted { color: var(--f3d-text-2); }
 .f3d-small { font-size: 0.72rem; }
 /* „muted + small" ist im ganzen Modul das Muster der ERKLÄRTEXTE (65×:

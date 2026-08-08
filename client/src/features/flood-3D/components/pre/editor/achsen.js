@@ -140,8 +140,16 @@ const fmtDelta = (v) => (Math.abs(v) < 0.005
 
 function updateDragDelta(e, dx, dy, dz, lock) {
   const rect = host.value.getBoundingClientRect()
+  // An den Rand geklemmt: die Anzeige stand vorher stur 18 px rechts
+  // unter dem Cursor und wurde am rechten/unteren Szenenrand vom
+  // overflow:hidden abgeschnitten — also genau dort unlesbar, wo man
+  // sie beim Ziehen braucht. Schaetzmasse der Box, damit sie ganz bleibt.
+  const breite = 190
+  const hoehe = 30
+  const px = Math.min(e.clientX - rect.left + 18, rect.width - breite - 8)
+  const py = Math.min(e.clientY - rect.top + 18, rect.height - hoehe - 8)
   dragDelta.value = { dx, dy, dz, lock,
-    px: e.clientX - rect.left + 18, py: e.clientY - rect.top + 18 }
+    px: Math.max(8, px), py: Math.max(8, py) }
 }
 
 

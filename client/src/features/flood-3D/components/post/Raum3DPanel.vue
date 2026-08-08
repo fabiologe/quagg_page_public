@@ -182,10 +182,10 @@
       </div>
 
       <div class="f3d-ctl-group" v-if="layers.terrain && layers.terrainShear">
-        <label>
-          Sohlschubspannung in N/m²
+        <div class="f3d-gruppenkopf">
+          <span>Sohlschubspannung in N/m²</span>
           <KennwertHilfe groesse="bed_shear" :wert="tauRange[1]" />
-        </label>
+        </div>
         <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(tauRange[0]) }}</span>
@@ -1428,6 +1428,18 @@ onBeforeUnmount(() => {
   color: var(--f3d-text-2);
   font-size: 0.75rem;
   white-space: nowrap;
+}
+/* wie die Gruppen-Beschriftung, aber KEIN <label> — sonst labelt es
+   implizit den ?-Knopf und ein Klick auf die Überschrift öffnet die
+   Erklärkarte */
+.f3d-gruppenkopf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--f3d-text-2);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .f3d-legend { height: 12px; border-radius: 4px; }
 .f3d-legend-labels { justify-content: space-between; }
