@@ -223,24 +223,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onHistoryKeys))
   .f3d-pre-side { width: 265px; }
 }
 
-@media (max-width: 1024px) {
-  .f3d-body { flex-direction: column; overflow-y: auto; }
-  .f3d-pre-tree,
-  .f3d-pre-side {
-    width: 100%;
-    flex-shrink: 0;
-    max-height: 34vh;
-    border-left: none;
-    border-right: none;
-    border-bottom: 1px solid var(--f3d-border);
-  }
-  /* Die Szene braucht eine eigene Höhe, sobald sie nicht mehr per flex
-     den Restplatz bekommt — sonst schrumpft ihr Container auf die Höhe
-     seiner Beschriftung und der Editor läuft über die Nachbarn. */
-  .f3d-pre-center {
-    flex: 0 0 auto;
-    min-height: 460px;
-    overflow: visible;
-  }
-}
+/* Eine zweite Stufe (Stapeln unter ~1024 px) war gebaut und ist bewusst
+   wieder ENTFERNT: gemessen erzeugte sie 17 neue Überlappungen, weil der
+   3D-Editor mit seinen absolut positionierten Bedienleisten und der
+   Canvas das Stapeln nicht ohne eigene Höhenlogik vertragen. Lieber kein
+   Layout für sehr schmale Fenster als ein kaputtes — das bleibt ein
+   eigener Umbau. */
 </style>
