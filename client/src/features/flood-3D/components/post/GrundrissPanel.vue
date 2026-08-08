@@ -69,10 +69,16 @@
           <input type="checkbox" v-model="lockScale" /> fixieren
         </label>
         <div class="f3d-row" v-if="lockScale">
-          <input type="number" step="any" v-model.number="lockMin" class="f3d-num" />
+          <input type="number" step="any" v-model.number="lockMin" class="f3d-num"
+                 title="untere Grenze der Farbskala" />
           <span>bis</span>
-          <input type="number" step="any" v-model.number="lockMax" class="f3d-num" />
+          <input type="number" step="any" v-model.number="lockMax" class="f3d-num"
+                 title="obere Grenze der Farbskala" />
         </div>
+        <p v-if="skalaFehler" class="f3d-muted f3d-small">
+          Grenzen unbrauchbar (leer oder von ≥ bis) — gezeichnet wird
+          weiter mit dem automatischen Bereich.
+        </p>
       </div>
 
       <div class="f3d-ctl-group">
@@ -138,6 +144,8 @@ import { usePostStore } from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
+import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
+  from '../../utils/farbskala'
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
 import { isoSegments } from '../../utils/marchingSquares'
 import { einordnen } from '../../utils/kennwerte'
@@ -179,8 +187,16 @@ const loading = ref(false)
 const error = ref('')
 const gridLabel = ref('')
 
-const shownRange = computed(() =>
-  lockScale.value ? [lockMin.value, lockMax.value] : autoRange.value)
+const shownRange = computed(() => wirksamerBereich(
+  lockScale.value, lockMin.value, lockMax.value, autoRange.value))
+const skalaFehler = computed(() =>
+  bereichUngueltig(lockScale.value, lockMin.value, lockMax.value))
+// Beim Anhaken die Grenzen aus dem sichtbaren Bereich übernehmen —
+// vorher sprang die Skala auf die Startwerte 0…1 und die Karte wurde
+// flächig gelb, als wäre die Rechnung kaputt.
+watch(lockScale, (an) => {
+  if (an) [lockMin.value, lockMax.value] = uebernehmeBereich(autoRange.value)
+})
 
 const fmt = (v) => (v == null || Number.isNaN(v) ? '–'
   : Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3))
@@ -370,7 +386,8 @@ function draw() {
     if (!Number.isFinite(lo)) { lo = 0; hi = 1 }
     autoRange.value = [lo, hi]
   }
-  const [rLo, rHi] = lockScale.value ? [lockMin.value, lockMax.value] : [lo, hi]
+  const [rLo, rHi] = wirksamerBereich(lockScale.value, lockMin.value,
+    lockMax.value, [lo, hi])
   const span = Math.max(rHi - rLo, 1e-9)
 
   for (let j = 0; j < ny; j++) {
@@ -727,7 +744,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
 }
+.f3d-plan-controls > * { min-width: 0; }
 .f3d-ctl-group {
   display: flex;
   flex-direction: column;
@@ -762,12 +781,24 @@ onBeforeUnmount(() => {
 }
 .f3d-legend { height: 12px; border-radius: 4px; }
 .f3d-legend-labels { justify-content: space-between; }
-.f3d-probe { border-collapse: collapse; font-size: 0.74rem; }
+/* Die Cursor-Tabelle bleibt in der Spalte. Die Sohlschubspannungs-Zeile
+   traegt einen Klartext („Kies wird transportiert — ohne Sohlsicherung
+   entsteht hier Kolk"); mit dem geerbten white-space: nowrap der
+   f3d-mono-Zellen lief die Zeile 100–160 px in den Canvas hinein. */
+.f3d-probe {
+  border-collapse: collapse;
+  font-size: 0.74rem;
+  width: 100%;
+  table-layout: fixed;
+}
 .f3d-probe td {
   padding: 2px 6px 2px 0;
   color: var(--f3d-text);
   border-bottom: 1px solid var(--f3d-border);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+.f3d-probe td:first-child { width: 41%; }
 .f3d-probe td:first-child { color: var(--f3d-text-2); }
 .f3d-plan-main {
   flex: 1;
