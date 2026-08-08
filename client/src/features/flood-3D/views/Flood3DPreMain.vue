@@ -214,4 +214,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onHistoryKeys))
   background: var(--f3d-bg-2);
   box-shadow: 0 -8px 16px -8px rgba(0, 0, 0, 0.6);
 }
+
+/* Schmale Fenster: erst die Spalten verkleinern, dann stapeln. Die
+   Regeln müssen hier stehen — die Breiten sind scoped definiert und
+   schlagen jede globale Media Query. */
+@media (max-width: 1280px) {
+  .f3d-pre-tree { width: 210px; }
+  .f3d-pre-side { width: 265px; }
+}
+
+@media (max-width: 1024px) {
+  .f3d-body { flex-direction: column; overflow-y: auto; }
+  .f3d-pre-tree,
+  .f3d-pre-side {
+    width: 100%;
+    flex-shrink: 0;
+    max-height: 34vh;
+    border-left: none;
+    border-right: none;
+    border-bottom: 1px solid var(--f3d-border);
+  }
+  /* Die Szene braucht eine eigene Höhe, sobald sie nicht mehr per flex
+     den Restplatz bekommt — sonst schrumpft ihr Container auf die Höhe
+     seiner Beschriftung und der Editor läuft über die Nachbarn. */
+  .f3d-pre-center {
+    flex: 0 0 auto;
+    min-height: 460px;
+    overflow: visible;
+  }
+}
 </style>
