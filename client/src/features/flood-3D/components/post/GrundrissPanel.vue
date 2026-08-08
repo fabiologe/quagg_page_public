@@ -121,9 +121,18 @@
       </div>
 
       <div class="f3d-timebar" v-if="times.length">
-        <button class="f3d-btn" @click="togglePlay">{{ playing ? '⏸' : '▶' }}</button>
-        <input type="range" min="0" :max="times.length - 1" v-model.number="timeIdx" />
-        <span class="f3d-mono">t = {{ fmt(times[timeIdx]) }} s</span>
+        <button class="f3d-btn" :title="playing ? 'Abspielen anhalten' : 'Zeitschritte abspielen'"
+                :aria-label="playing ? 'Anhalten' : 'Abspielen'"
+                @click="togglePlay">{{ playing ? '⏸' : '▶' }}</button>
+        <input type="range" min="0" :max="times.length - 1" v-model.number="timeIdx"
+               title="Ausgabezeitpunkt wählen" aria-label="Ausgabezeitpunkt" />
+        <!-- Der geLADENE Zeitpunkt, nicht der angeforderte: vorher stand
+             hier times[timeIdx] und behauptete beim Scrubbing einen
+             Zeitpunkt, dessen Bild noch gar nicht da war. -->
+        <span class="f3d-mono" :class="{ laedt: zeitLaedt }">
+          t = {{ fmt(zeitLaedt ? times[timeIdx] : store.currentTime) }} s
+          <template v-if="zeitLaedt"> … lädt</template>
+        </span>
       </div>
 
       <template v-if="profile">
@@ -190,6 +199,9 @@ const sectionMode = ref(false)
 const sectionPts = ref([])
 const profile = ref(null)
 const loading = ref(false)
+// Beim Zeitwechsel gab es bisher GAR KEINE Rückmeldung — Slider ziehen
+// hiess Stillstand ohne Erklärung (loading wurde nur in loadRun gesetzt)
+const zeitLaedt = ref(false)
 const error = ref('')
 const gridLabel = ref('')
 
@@ -293,6 +305,7 @@ async function huelleUmschalten() {
 async function update() {
   if (!grid || !times.value.length) return
   const seq = ++requestSeq
+  zeitLaedt.value = true
   try {
     const vol = await getVolume(activeRunId.value, times.value[timeIdx.value],
       feldListe())
@@ -310,6 +323,8 @@ async function update() {
     }
   } catch (e) {
     if (seq === requestSeq) error.value = e.message
+  } finally {
+    if (seq === requestSeq) zeitLaedt.value = false
   }
 }
 
@@ -862,5 +877,18 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   padding: 8px 12px;
 }
+/* Während geladen wird, ist die Beschriftung sichtbar vorläufig */
+.f3d-timebar .laedt { opacity: 0.6; font-style: italic; }
 .f3d-timebar input[type='range'] { flex: 1; }
+
+@media (max-width: 1280px) {
+  .f3d-plan-controls { width: 210px; }
+}
+
+/* Eine zweite Stufe (Stapeln unter ~1024 px) war gebaut und ist bewusst
+   wieder ENTFERNT: gemessen erzeugte sie 17 neue Überlappungen, weil der
+   3D-Editor mit seinen absolut positionierten Bedienleisten und der
+   Canvas das Stapeln nicht ohne eigene Höhenlogik vertragen. Lieber kein
+   Layout für sehr schmale Fenster als ein kaputtes — das bleibt ein
+   eigener Umbau. */
 </style>

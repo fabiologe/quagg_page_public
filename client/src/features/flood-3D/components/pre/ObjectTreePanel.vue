@@ -22,6 +22,8 @@
           </optgroup>
         </select>
         <button class="f3d-btn" :disabled="!neuWahl || store.loading"
+                title="Gewähltes Objekt anlegen"
+                aria-label="Gewähltes Objekt anlegen"
                 @click="neuAnlegen">+</button>
       </div>
       <p v-if="neuHilfe" class="f3d-muted f3d-small">{{ neuHilfe }}</p>
@@ -516,6 +518,7 @@ function add(kind, name) {
 .f3d-objplus {
   border: none;
   background: none;
+  min-height: 28px;
   color: var(--f3d-accent, #4d9fff);
   cursor: pointer;
   font-size: 0.95rem;
@@ -588,6 +591,7 @@ function add(kind, name) {
   color: var(--f3d-text);
   font-size: 0.8rem;
   padding: 5px 6px;
+  min-height: 32px;
   cursor: pointer;
   text-align: left;
 }

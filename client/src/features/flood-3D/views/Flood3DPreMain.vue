@@ -115,6 +115,9 @@ const activeRunCount = computed(() =>
 
 // Strg+Z / Strg+Shift+Z / Strg+Y — nicht beim Tippen in Eingabefeldern
 function onHistoryKeys(e) {
+  // Strg+Z hätte sonst hinter einem offenen Dialog Modelländerungen
+  // rückgängig gemacht, die man gar nicht sieht
+  if (store.dialogOffen) return
   const t = e.target
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
       || t.tagName === 'SELECT' || t.isContentEditable)) return
@@ -211,4 +214,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onHistoryKeys))
   background: var(--f3d-bg-2);
   box-shadow: 0 -8px 16px -8px rgba(0, 0, 0, 0.6);
 }
+
+/* Schmale Fenster: erst die Spalten verkleinern, dann stapeln. Die
+   Regeln müssen hier stehen — die Breiten sind scoped definiert und
+   schlagen jede globale Media Query. */
+@media (max-width: 1280px) {
+  .f3d-pre-tree { width: 210px; }
+  .f3d-pre-side { width: 265px; }
+}
+
+/* Eine zweite Stufe (Stapeln unter ~1024 px) war gebaut und ist bewusst
+   wieder ENTFERNT: gemessen erzeugte sie 17 neue Überlappungen, weil der
+   3D-Editor mit seinen absolut positionierten Bedienleisten und der
+   Canvas das Stapeln nicht ohne eigene Höhenlogik vertragen. Lieber kein
+   Layout für sehr schmale Fenster als ein kaputtes — das bleibt ein
+   eigener Umbau. */
 </style>
