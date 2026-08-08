@@ -89,9 +89,11 @@
         </option>
       </select>
       <input v-else-if="field.widget === 'number'" type="number" step="any"
+             :min="feldMinimum(field.key) ?? undefined"
              v-model.number="draft[field.key]" class="f3d-num f3d-grow" />
       <input v-else-if="field.widget === 'zahl_optional'" type="number"
-             step="any" class="f3d-num f3d-grow" placeholder="automatisch"
+             step="any" :min="feldMinimum(field.key) ?? undefined"
+             class="f3d-num f3d-grow" placeholder="automatisch"
              :value="draft[field.key] ?? ''"
              @change="setzeOptional(field.key, $event.target.value)" />
       <select v-else-if="field.widget === 'raster'" v-model="draft[field.key]"
@@ -290,7 +292,7 @@ import EditListe from './EditListe.vue'
 import {
   AUSHUB_TYPEN, FIELD_LABELS, GESCHLOSSEN, GRUPPEN_LABELS,
   OPTIONAL_ZAHLEN, QUELL_NAMEN, REFERENZ_QUELLEN, TYP_LABELS, VERBERGEN,
-  enumFor, enumLabel, punktDim,
+  enumFor, enumLabel, feldMinimum, punktDim,
   referenzListe, widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'

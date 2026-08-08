@@ -402,3 +402,21 @@ export const GRUPPEN_LABELS = {
 export function enumLabel(key, wert) {
   return ENUM_LABELS[`${key}:${wert}`] ?? ENUM_LABELS[wert] ?? wert
 }
+
+
+// Größen, die physikalisch nicht negativ sein können. Die Zahlenfelder im
+// Eigenschaftspanel hatten bisher durchweg `step="any"` ohne `min` —
+// negative Durchmesser, Breiten oder Zellgrößen liessen sich eingeben und
+// fielen erst serverseitig beim Speichern auf (UI-Audit 2026-08-08).
+export const NICHT_NEGATIV = new Set([
+  'breite', 'kanten_breite', 'blend_width', 'bottom_width', 'top_width',
+  'depth', 'height', 'thickness', 'radius', 'diameter', 'width',
+  'crest_width', 'wall_height', 'wall_thickness', 'einbindetiefe',
+  'side_slope', 'base_cell', 'resolution', 'n_layers', 'expansion_ratio',
+  'q', 'strength', 'falloff',
+])
+
+/** Untergrenze für ein Zahlenfeld — null, wenn es keine gibt. */
+export function feldMinimum(key) {
+  return NICHT_NEGATIV.has(key) ? 0 : null
+}

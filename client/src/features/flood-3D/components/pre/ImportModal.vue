@@ -1,9 +1,11 @@
 <template>
   <div class="f3d-imp-backdrop" @click.self="close">
-    <section class="f3d-imp">
+    <section class="f3d-imp" ref="dialog" role="dialog" aria-modal="true"
+             aria-labelledby="f3d-imp-titel">
       <header class="f3d-imp-head">
-        <h2>Geometrie importieren</h2>
-        <button class="f3d-imp-x" @click="close">✕</button>
+        <h2 id="f3d-imp-titel">Geometrie importieren</h2>
+        <button ref="schliessKnopf" class="f3d-imp-x" title="Import abbrechen"
+                aria-label="Import abbrechen" @click="close">✕</button>
       </header>
 
       <!-- Schritt 1: Datei wählen -->
@@ -225,7 +227,7 @@
 // Kandidaten zerlegt (DXF je Layer, STL je Komponente); hier wird nur noch
 // DEKLARIERT, was was ist. Die Rollen-Vorschläge kommen aus der Heuristik
 // des Analyzers — der Nutzer bestätigt oder korrigiert.
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
@@ -378,6 +380,48 @@ function hebeHervor(candId) {
 
 watch(manifest, () => nextTick(vorschauBauen))
 onBeforeUnmount(vorschauWeg)
+
+// --- modaler Dialog: Escape, Fokus, und die Szene dahinter ruhigstellen
+const dialog = ref(null)
+const schliessKnopf = ref(null)
+let fokusVorher = null
+
+function aufTaste(e) {
+  if (e.key === 'Escape') {
+    // vor den Editor-Handler: der hätte im Hintergrund die Platzierung
+    // abgebrochen und den Modus zurückgesetzt, während der Dialog offen
+    // stehen blieb
+    e.stopPropagation()
+    e.preventDefault()
+    close()
+    return
+  }
+  if (e.key !== 'Tab' || !dialog.value) return
+  // Fokus im Dialog halten — sonst wandert Tab in den Baum dahinter
+  const ziele = [...dialog.value.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => !el.disabled && el.offsetParent !== null)
+  if (!ziele.length) return
+  const erster = ziele[0]
+  const letzter = ziele[ziele.length - 1]
+  if (e.shiftKey && document.activeElement === erster) {
+    e.preventDefault(); letzter.focus()
+  } else if (!e.shiftKey && document.activeElement === letzter) {
+    e.preventDefault(); erster.focus()
+  }
+}
+
+onMounted(() => {
+  fokusVorher = document.activeElement
+  store.dialogOffen = true
+  document.addEventListener('keydown', aufTaste, true)
+  nextTick(() => schliessKnopf.value?.focus())
+})
+onBeforeUnmount(() => {
+  store.dialogOffen = false
+  document.removeEventListener('keydown', aufTaste, true)
+  fokusVorher?.focus?.()
+})
 
 function close() { vorschauWeg(); emit('close') }
 

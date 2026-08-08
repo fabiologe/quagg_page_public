@@ -1835,6 +1835,9 @@ function duplicateSelected() {
 }
 
 function onKeydown(e) {
+  // Bei offenem Dialog gehört die Tastatur dem Dialog — sonst brach
+  // Escape im Hintergrund unsichtbar die Platzierung ab
+  if (store.dialogOffen) return
   if (e.key === 'Escape') {
     if (rotAktiv()) { cancelRotDrag(); return }
     if (store.platzierung) store.endPlatzierung()

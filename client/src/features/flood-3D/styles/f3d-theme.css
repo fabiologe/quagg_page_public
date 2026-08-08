@@ -476,3 +476,43 @@
   /* kleiner geschrieben, aber weiterhin sicher zu treffen */
   min-height: 28px;
 }
+
+
+/* ------------------------------------------------------ Breakpoints --- */
+/* Bis hierher gab es im ganzen Modul keine einzige Media Query: die
+   Spalten waren unschrumpfbar (Editor 250 + 320, Ergebnis 280 + 250) und
+   fraßen auf einem 1366er-Notebook mehr als die Hälfte der Breite —
+   während usePreventPageZoom den Browserzoom sperrt, mit dem man sich
+   sonst beholfen hätte. Zwei Stufen: erst schmaler, dann gestapelt. */
+
+@media (max-width: 1280px) {
+  .f3d-sidebar { width: 220px; }
+  .f3d-pre-tree { width: 210px; }
+  .f3d-pre-side { width: 260px; }
+  .f3d-content { padding: 12px 12px; }
+  .f3d-plan-controls,
+  .f3d-raum-controls { width: 210px; }
+}
+
+@media (max-width: 1024px) {
+  /* Gestapelt statt gequetscht: die Szene bekommt die volle Breite, die
+     Bedienspalten wandern darunter und scrollen mit der Seite. */
+  .f3d-body { flex-direction: column; overflow-y: auto; }
+  .f3d-sidebar,
+  .f3d-pre-tree,
+  .f3d-pre-side {
+    width: 100%;
+    max-height: 40vh;
+    border-left: none;
+    border-right: none;
+    border-bottom: 1px solid var(--f3d-border);
+  }
+  .f3d-plan,
+  .f3d-raum { flex-direction: column; }
+  .f3d-plan-controls,
+  .f3d-raum-controls {
+    width: 100%;
+    max-height: 45vh;
+  }
+  .f3d-header { padding: 8px 12px; }
+}
