@@ -23,7 +23,10 @@
                   sync-key="f3d-bauwerke" />
     </article>
 
-    <p v-if="!entries.length" class="f3d-muted">
+    <p v-if="fehler" class="f3d-error">
+      Bauwerksgrößen nicht abrufbar: {{ fehler }}
+    </p>
+    <p v-else-if="!entries.length" class="f3d-muted">
       Für die gewählten Läufe liegen keine Bauwerksgrößen vor. Kräfte werden
       nur für Bauwerke gerechnet, bei denen im Modell „Kräfte auswerten“
       angehakt ist; die Schubspannung entsteht für jedes Bauwerk mit Gelände.
@@ -52,19 +55,26 @@ import UPlotChart from './UPlotChart.vue'
 
 const store = usePostStore()
 const entries = ref([])
+const fehler = ref('')
 
 const letzte = (s) => (s?.v?.length ? s.v[s.v.length - 1] : null)
+
+// Abrufprobleme werden gesammelt statt verschluckt — sonst meldet das
+// Panel bei einem 500er dasselbe wie bei einem Lauf ohne Bauwerke
+let ladeFehler = null
 
 async function reihen(runId, quantity, component) {
   try {
     return (await flood3dApi.series(runId, quantity, component)).series ?? []
-  } catch {
+  } catch (e) {
+    ladeFehler = e.message
     return []
   }
 }
 
 async function laden() {
   const out = []
+  ladeFehler = null
   for (const runId of store.selectedRunIds) {
     const [fx, fy, fz, mBetrag, tauMax, tauMittel] = await Promise.all([
       reihen(runId, 'force', 'x'), reihen(runId, 'force', 'y'),
@@ -133,6 +143,7 @@ async function laden() {
     }
   }
   entries.value = out
+  fehler.value = ladeFehler
 }
 
 watchEffect(laden)

@@ -2,7 +2,10 @@
   <section class="f3d-figures">
     <article v-for="entry in entries" :key="entry.runId" class="f3d-card">
       <header class="f3d-card-head"><h3>{{ entry.runId }}</h3></header>
-      <p v-if="!entry.figures.length" class="f3d-muted">Keine Abbildungen vorhanden.</p>
+      <p v-if="entry.error" class="f3d-error">
+        Abbildungen nicht abrufbar: {{ entry.error }}
+      </p>
+      <p v-else-if="!entry.figures.length" class="f3d-muted">Keine Abbildungen vorhanden.</p>
       <div class="f3d-figure-grid">
         <figure v-for="fig in entry.figures" :key="fig.id" class="f3d-figure">
           <img :src="pngUrl(entry.runId, fig)" :alt="fig.caption" loading="lazy" />
@@ -40,8 +43,10 @@ watchEffect(async () => {
     try {
       const result = await store.ensureResult(runId)
       return { runId, figures: result.figures ?? [] }
-    } catch {
-      return { runId, figures: [] }
+    } catch (e) {
+      // Fehler NICHT zu „keine Abbildungen" machen — ein 500er sah
+      // vorher aus wie ein Lauf ohne Bilder
+      return { runId, figures: [], error: e.message }
     }
   }))
 })

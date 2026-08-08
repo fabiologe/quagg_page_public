@@ -536,7 +536,20 @@ function add(kind, name) {
   overflow-y: auto;
   padding: 12px;
 }
-.f3d-abschnitt { display: flex; flex-direction: column; gap: 6px; }
+/* Spalten-Flexboxen stauchen ihre Kinder (flex-shrink ist 1), sobald der
+   Inhalt hoeher ist als der Container. Genau das passierte hier: die
+   Abschnitte wurden zusammengedrueckt, ihr Inhalt lief aber weiter und
+   legte sich UEBER die folgenden Gruppen — im Audit als 17 einander
+   ueberlappende Baumzeilen gemessen. Mit flex-shrink 0 behalten die
+   Abschnitte ihre Hoehe und der Baum scrollt, wie vorgesehen. */
+.f3d-objtree > * { flex-shrink: 0; }
+.f3d-abschnitt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.f3d-abschnitt > * { flex-shrink: 0; }
 .f3d-abschnitt-kopf {
   margin: 6px 2px 0;
   color: var(--f3d-text);
@@ -580,7 +593,18 @@ function add(kind, name) {
 }
 .f3d-objitem:hover { background: rgba(255, 255, 255, 0.04); }
 .f3d-objitem.selected { border-color: var(--f3d-accent); }
-.f3d-objname { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+/* white-space: nowrap fehlte — ohne das greift text-overflow NIE:
+   lange Objektnamen brachen um und wurden von overflow:hidden hart
+   abgeschnitten (halbe Buchstabenzeile) statt mit … gekuerzt.
+   min-width: 0 braucht ein Flex-Kind, damit es unter seine
+   intrinsische Breite schrumpfen darf. */
+.f3d-objname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .f3d-objstatus { width: 14px; text-align: center; }
 .f3d-objstatus.sev-ok { color: var(--f3d-good); }
 .f3d-objstatus.sev-fehler { color: var(--f3d-bad); }

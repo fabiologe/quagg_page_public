@@ -6,8 +6,11 @@
         <UPlotChart :title="chart.title" :series="chart.series"
                     :ylabel="chart.ylabel" :height="260"
                     sync-key="f3d-zeit"
-                    @cursor-time="(t) => (store.currentTime = t)" />
-        <KennwertHilfe v-if="chart.hilfe" :groesse="chart.hilfe" />
+                    @cursor-time="(t) => (store.currentTime = t)">
+          <template #kopf>
+            <KennwertHilfe v-if="chart.hilfe" :groesse="chart.hilfe" />
+          </template>
+        </UPlotChart>
       </div>
       <p v-if="!charts.length" class="f3d-muted">
         Keine Zeitreihen für die ausgewählten Läufe.
@@ -108,7 +111,6 @@ watchEffect(async () => {
 
 <style scoped>
 .f3d-zeitblock { position: relative; }
-.f3d-zeitblock > .f3d-hilfe { position: absolute; top: 0.4rem; right: 0.6rem; }
 
 .f3d-timeseries { display: flex; flex-direction: column; gap: 14px; }
 </style>

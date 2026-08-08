@@ -26,7 +26,9 @@
 import { usePreStore } from '../../stores/usePreStore'
 
 const store = usePreStore()
-const ICON = { erfolg: '✓', hinweis: 'ℹ', fehler: '✗' }
+// 'warnung' wird von PropertyPanel und sculpt.js gesendet, fehlte hier —
+// die Meldung erschien dann ohne Icon und in neutralem Grau
+const ICON = { erfolg: '✓', hinweis: 'ℹ', warnung: '⚠', fehler: '✗' }
 </script>
 
 <style scoped>
@@ -52,11 +54,13 @@ const ICON = { erfolg: '✓', hinweis: 'ℹ', fehler: '✗' }
   line-height: 1.4;
 }
 .f3d-meldung.erfolg { border-left-color: var(--f3d-good); }
-.f3d-meldung.hinweis { border-left-color: var(--f3d-warn); }
+.f3d-meldung.hinweis { border-left-color: var(--f3d-accent); }
+.f3d-meldung.warnung { border-left-color: var(--f3d-warn); }
 .f3d-meldung.fehler { border-left-color: var(--f3d-bad); }
 .f3d-meldung-icon { flex: none; }
 .f3d-meldung.erfolg .f3d-meldung-icon { color: var(--f3d-good); }
-.f3d-meldung.hinweis .f3d-meldung-icon { color: var(--f3d-warn); }
+.f3d-meldung.hinweis .f3d-meldung-icon { color: var(--f3d-accent); }
+.f3d-meldung.warnung .f3d-meldung-icon { color: var(--f3d-warn); }
 .f3d-meldung.fehler .f3d-meldung-icon { color: var(--f3d-bad); }
 .f3d-meldung-text { flex: 1 1 auto; }
 .f3d-meldung-weg {
