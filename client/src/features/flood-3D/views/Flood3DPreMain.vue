@@ -197,4 +197,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onHistoryKeys))
   overflow-y: auto;
   border-left: 1px solid var(--f3d-border);
 }
+/* Eigenschaften und Prüfung teilten sich EINEN Scrollbereich: bei einem
+   Bauwerk mit aufgeklappten Gruppen wurde das Eigenschaftspanel über
+   1000 px hoch und schob die Prüfung komplett unter die Falz — samt der
+   Fehler, auf die der Editor ausdrücklich verweist. Die Prüfung klebt
+   jetzt am unteren Rand und bleibt erreichbar. */
+.f3d-pre-side > .f3d-validation {
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow-y: auto;
+  background: var(--f3d-bg-2);
+  box-shadow: 0 -8px 16px -8px rgba(0, 0, 0, 0.6);
+}
 </style>

@@ -1,14 +1,17 @@
 <template>
   <span v-if="k" class="f3d-hilfe">
     <button ref="knopf" class="f3d-hilfe-knopf" :class="{ offen }" type="button"
-            :title="`Was sagt ${k.label} aus?`" @click="umschalten">?</button>
+            :title="`Was sagt ${k.label} aus?`" :aria-expanded="offen"
+            @click="umschalten">?</button>
 
     <Teleport to="body">
-    <div v-if="offen" class="f3d-hilfe-karte" :style="lage" @click.stop>
+    <div v-if="offen" ref="karte" class="f3d-hilfe-karte" :style="lage"
+         role="dialog" :aria-label="`Erklärung ${k.label}`" @click.stop>
       <header>
         <strong>{{ k.label }}</strong>
         <span class="f3d-muted">in {{ k.einheit }}</span>
-        <button class="f3d-hilfe-zu" type="button" @click="offen = false">×</button>
+        <button class="f3d-hilfe-zu" type="button" title="Erklärung schliessen"
+                aria-label="Erklärung schliessen" @click="schliessen">×</button>
       </header>
 
       <p>{{ k.was }}</p>
@@ -37,7 +40,7 @@
 // Werts, nicht nur einer allgemeinen Tabelle. „22,3 N/m²" allein sagt
 // niemandem etwas; „Kies wird transportiert, ohne Sohlsicherung entsteht
 // hier Kolk" beantwortet die Frage, die dahintersteht.
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { KENNWERTE, einordnen } from '../../utils/kennwerte'
 import { fmt } from '../../utils/labels'
 
@@ -48,25 +51,80 @@ const props = defineProps({
 
 const offen = ref(false)
 const knopf = ref(null)
+const karte = ref(null)
 const lage = ref({})
+
+// Nur EINE Erklärkarte gleichzeitig. Vorher hatte jede Instanz ihr
+// eigenes `offen`, und weil die Lage auf denselben Wert geklemmt wurde,
+// lagen zwei Karten deckungsgleich übereinander — die untere war nur noch
+// zu schliessen, wenn man die obere zuerst zumachte.
+let offeneKarte = null
 
 // Die Karte hängt am body, nicht im Bedienfeld: die Spalten dort sind
 // schmal und scrollen, jede Erklärkarte wäre sonst abgeschnitten.
-function umschalten() {
-  offen.value = !offen.value
-  if (!offen.value) return
+function platzieren() {
   const r = knopf.value?.getBoundingClientRect()
   if (!r) return
-  const breite = Math.min(420, window.innerWidth - 32)
-  const links = Math.min(Math.max(r.left - breite / 2, 12),
-    window.innerWidth - breite - 12)
-  // nach unten aufklappen, aber nie aus dem Fenster laufen — sonst steht
-  // der halbe Text unter dem Bildschirmrand
-  const maxHoehe = window.innerHeight * 0.7
-  const oben = Math.max(12,
-    Math.min(r.bottom + 6, window.innerHeight - maxHoehe - 12))
-  lage.value = { left: `${links}px`, top: `${oben}px`, width: `${breite}px` }
+  const rand = 12
+  const breite = Math.min(420, window.innerWidth - 2 * rand)
+  const links = Math.min(Math.max(r.left - breite / 2, rand),
+    window.innerWidth - breite - rand)
+
+  // Die Karte gehört an ihren Auslöser. Vorher wurde `top` hart auf
+  // 0,3 · Fensterhöhe − 12 geklemmt (bei 768 px also 218 px) — dadurch
+  // legte sich die Karte über die ganze Bedienspalte samt dem Knopf, mit
+  // dem man sie geöffnet hatte. Jetzt: unter den Knopf, wenn dort Platz
+  // ist, sonst darüber; die Höhe richtet sich nach dem, was frei ist.
+  const platzUnten = window.innerHeight - r.bottom - rand - 6
+  const platzOben = r.top - rand - 6
+  const nachUnten = platzUnten >= Math.min(260, platzOben)
+  const maxHoehe = Math.max(160, Math.floor(nachUnten ? platzUnten : platzOben))
+  const stil = { left: `${links}px`, width: `${breite}px`,
+    maxHeight: `${maxHoehe}px` }
+  if (nachUnten) stil.top = `${Math.round(r.bottom + 6)}px`
+  else stil.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`
+  lage.value = stil
 }
+
+function schliessen() {
+  offen.value = false
+  if (offeneKarte === schliessen) offeneKarte = null
+}
+
+function umschalten() {
+  if (offen.value) { schliessen(); return }
+  if (offeneKarte) offeneKarte()      // die andere Karte zuerst zumachen
+  offen.value = true
+  offeneKarte = schliessen
+  nextTick(platzieren)
+}
+
+// Schliessen per Escape und per Klick daneben — beides fehlte, die Karte
+// liess sich nur über ihr eigenes × wieder loswerden.
+function aufTaste(e) { if (e.key === 'Escape') schliessen() }
+function aufKlick(e) {
+  if (!offen.value) return
+  if (karte.value?.contains(e.target) || knopf.value?.contains(e.target)) return
+  schliessen()
+}
+// Position gilt nur für den Moment des Öffnens: scrollt die Spalte oder
+// ändert sich das Fenster, wandert der Anker weg — dann lieber schliessen
+// als eine Karte ohne Bezug stehen zu lassen.
+function aufBewegung() { if (offen.value) schliessen() }
+
+onMounted(() => {
+  document.addEventListener('keydown', aufTaste)
+  document.addEventListener('pointerdown', aufKlick, true)
+  window.addEventListener('resize', aufBewegung)
+  window.addEventListener('scroll', aufBewegung, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', aufTaste)
+  document.removeEventListener('pointerdown', aufKlick, true)
+  window.removeEventListener('resize', aufBewegung)
+  window.removeEventListener('scroll', aufBewegung, true)
+  if (offeneKarte === schliessen) offeneKarte = null
+})
 const k = computed(() => KENNWERTE[props.groesse] ?? null)
 const stufe = computed(() => einordnen(props.groesse, props.wert))
 
@@ -105,7 +163,7 @@ function bereich(i) {
      Erklaertext vorher dunkel auf dunkelblau. */
   position: fixed;
   z-index: 200;
-  max-height: 70vh;
+  /* die tatsaechliche Hoehe kommt aus der Lageberechnung (platzieren) */
   text-transform: none;
   letter-spacing: normal;
   font-weight: 400;

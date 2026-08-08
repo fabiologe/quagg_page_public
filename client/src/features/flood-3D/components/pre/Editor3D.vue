@@ -1929,6 +1929,8 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 48px;
   left: 10px;
+  /* ohne max-width wuchs der Stale-Text bis unter die Clip-Leiste */
+  max-width: min(520px, calc(100% - 380px));
   z-index: 5;
   background: rgba(10, 16, 31, 0.9);
   border: 1px solid var(--f3d-border);
@@ -1937,7 +1939,10 @@ onBeforeUnmount(() => {
 }
 .f3d-veraltet {
   position: absolute;
-  top: 48px;
+  /* lag exakt auf der Clip-/Sculpt-Leiste (beide top:48/right:10) und
+     verdeckte sie mit z-index 6 vollständig — ausgerechnet dann, wenn man
+     wegen des veralteten Netzes hineinschauen will */
+  bottom: 10px;
   right: 10px;
   max-width: 320px;
   z-index: 6;
@@ -1966,6 +1971,17 @@ onBeforeUnmount(() => {
   width: 340px;
 }
 .f3d-clipbar input[type='range'] { flex: 1; min-width: 0; }
+/* .f3d-sculptbar war NIRGENDS definiert und erbte die 340-px-Box der
+   Clip-Leiste — hinein müssen aber vier Modusknöpfe, zwei Regler, drei
+   Aktionen und ein Erklärtext (~900 px Bedarf). Eigene, breitere und
+   umbrechende Box; sie sitzt tiefer, damit sie sich nicht mit der
+   Clip-Leiste deckt, wenn beides aktiv ist. */
+.f3d-clipbar.f3d-sculptbar {
+  width: min(520px, calc(100% - 20px));
+  flex-wrap: wrap;
+  top: 92px;
+  z-index: 6;
+}
 .f3d-select-s { width: 56px; }
 .f3d-mono {
   font-variant-numeric: tabular-nums;
@@ -1988,6 +2004,12 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 4px;
   align-items: center;
+  /* Elf Knöpfe brauchen rund 900 px; die Szene hat bei einem
+     1440er-Notebook nur ~850. Ohne Umbruch schnitt overflow:hidden am
+     Container „Netz“ und „Freischneiden“ ab — die Knöpfe waren schlicht
+     nicht erreichbar. Rechts bleibt Platz für die Clip-/Sculpt-Leiste. */
+  flex-wrap: wrap;
+  max-width: calc(100% - 370px);
   background: rgba(10, 16, 31, 0.78);
   backdrop-filter: blur(8px);
   border: 1px solid var(--f3d-border);
