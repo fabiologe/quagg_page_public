@@ -62,6 +62,7 @@ function manifestRows(m) {
     }
   }
   if (m.duration_s != null) rows.push(['Dauer', `${fmt(m.duration_s / 60)} min`])
+  if (m.cost_eur != null) rows.push(['Ist-Kosten', `${fmt(m.cost_eur)} €`])
   if (m.missing_sources?.length) {
     rows.push(['Fehlende Quellen', m.missing_sources.join(', '), 'bad'])
   }

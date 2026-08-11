@@ -31,6 +31,7 @@
 // Lauf die unterscheidende Größe und bekommt die Farbe; mean/max bzw.
 // Feldnamen werden über das Strichmuster getrennt.
 import { ref, watchEffect } from 'vue'
+import { VORBELEGUNG } from '../../utils/grenzwerte'
 import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
 import KennwertHilfe from './KennwertHilfe.vue'
@@ -72,7 +73,8 @@ function stats(quality) {
       value: quality.y_plus_range
         ? `${fmt(quality.y_plus_range[0])} … ${fmt(quality.y_plus_range[1])}`
         : '–',
-      cls: quality.y_plus_range && quality.y_plus_range[1] > 500 ? 'bad' : '',
+      cls: quality.y_plus_range
+        && quality.y_plus_range[1] > VORBELEGUNG.y_plus_max ? 'bad' : '',
     },
   ]
 }

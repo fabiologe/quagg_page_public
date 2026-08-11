@@ -20,7 +20,7 @@
           <div class="f3d-stat">
             <dt>Speicheränderung
               <KennwertHilfe groesse="speicher" :wert="e.dv" /></dt>
-            <dd :class="Math.abs(e.dv) > 0.05 * Math.max(e.zu, 1e-9) ? 'warn' : 'good'">
+            <dd :class="Math.abs(e.dv) > (e.swWarn ?? 0.02) * Math.max(e.zu, 1e-9) ? 'warn' : 'good'">
               {{ e.dv >= 0 ? '+' : '' }}{{ fmt(e.dv) }} m³/s
             </dd>
           </div>
@@ -67,6 +67,7 @@ import { ref, watchEffect } from 'vue'
 import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
 import { flood3dApi } from '../../services/api'
+import { bilanzSchwellen } from '../../utils/grenzwerte'
 import KennwertHilfe from './KennwertHilfe.vue'
 import UPlotChart from './UPlotChart.vue'
 
@@ -169,14 +170,18 @@ async function laden() {
       const austausch = volumen > 0 && zu > 0 ? (zu * dauer) / volumen : null
 
       const anteil = zu > 0 ? Math.abs(dv) / zu : 0
+      // Schwellen aus dem massenbilanz-Kriterium des Falls, sonst
+      // Vorbelegung — eine Quelle statt Panel-Literale (Audit U15)
+      const result = await store.ensureResult(runId).catch(() => null)
+      const sw = bilanzSchwellen(result)
       let ampel
-      if (anteil > 0.1) {
+      if (anteil > sw.schlecht) {
         ampel = { cls: 'bad', text: 'nicht eingeschwungen',
           hinweis: `Das Wasservolumen wächst am Ende noch mit ${fmt(dv)} m³/s, `
             + `also ${(anteil * 100).toFixed(0)} % des Zuflusses. Der Lauf zeigt `
             + 'den Füllvorgang, nicht den Betriebszustand — länger rechnen oder '
             + 'mit einem höheren Anfangswasserspiegel starten.' }
-      } else if (anteil > 0.02) {
+      } else if (anteil > sw.warn) {
         ampel = { cls: 'warn', text: 'fast eingeschwungen',
           hinweis: `Der Speicher ändert sich noch um ${(anteil * 100).toFixed(0)} % `
             + 'des Zuflusses. Für Durchfluss- und Pegelaussagen vertretbar, für '
@@ -188,7 +193,7 @@ async function laden() {
       }
 
       out.push({ runId, zu, ab, dv, volumen, abGemessen, charts, ampel,
-        tBeharrung, austausch })
+        swWarn: sw.warn, tBeharrung, austausch })
     } catch (e) {
       out.push({ runId, error: e.message,
         ampel: { cls: '', text: '', hinweis: '' } })

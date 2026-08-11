@@ -113,6 +113,7 @@ export const flood3dApi = {
 
   // Läufe (PostViewer)
   listRuns: () => getJson('/runs'),
+  verifikation: () => getJson('/verifikation'),
   deleteRun: (runId) => sendJson(`/runs/${runId}`, 'DELETE'),
   abortRun: (runId) => sendJson(`/runs/${runId}/abort`, 'POST', {}),
   runDetail: (runId) => getJson(`/runs/${runId}`),

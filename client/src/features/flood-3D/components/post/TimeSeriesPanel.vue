@@ -8,6 +8,15 @@
                     sync-key="f3d-zeit"
                     @cursor-time="(t) => (store.currentTime = t)">
           <template #kopf>
+            <!-- Kraftanteile (Audit F7): pressure/viscous liegen längst in
+                 normalized.parquet, angezeigt wurde nur der Betrag -->
+            <select v-if="chart.quantity === 'force' || chart.quantity === 'moment'"
+                    v-model="kraftKomponente" class="f3d-select f3d-select-s"
+                    title="Gesamtbetrag oder nur Druck- bzw. Reibungsanteil">
+              <option value="magnitude">Betrag</option>
+              <option value="pressure">Druckanteil</option>
+              <option value="viscous">Reibungsanteil</option>
+            </select>
             <KennwertHilfe v-if="chart.hilfe" :groesse="chart.hilfe" />
           </template>
         </UPlotChart>
@@ -33,14 +42,17 @@ import UPlotChart from './UPlotChart.vue'
 const store = usePostStore()
 const charts = ref([])
 const loading = ref(false)
+// Kraft/Moment: Betrag oder Druck-/Reibungsanteil (Spez. Kap. 2 verlangt
+// die getrennte Darstellung; Audit F7)
+const kraftKomponente = ref('magnitude')
 
 const GROUPS = [
   { id: 'level', quantity: 'level', component: '', title: 'Wasserspiegellage je Pegelpunkt', ylabel: 'Wasserspiegel in m', hilfe: 'level' },
   { id: 'discharge', quantity: 'discharge', component: '', title: 'Durchfluss je Querschnitt', ylabel: 'Durchfluss in m³/s', hilfe: 'discharge' },
   { id: 'energy', quantity: 'energy_head', component: '', title: 'Energiehöhe je Querschnitt', ylabel: 'Energiehöhe in m', hilfe: 'energy_head' },
   { id: 'cd', quantity: 'overfall_cd', component: '', title: 'Überfallbeiwert je Wehr', ylabel: 'C_d (–)', hilfe: 'overfall_cd' },
-  { id: 'force', quantity: 'force', component: 'magnitude', title: 'Kraftbetrag je Bauteil', ylabel: 'Kraft in kN', scale: 1e-3, hilfe: 'force' },
-  { id: 'moment', quantity: 'moment', component: 'magnitude', title: 'Momentbetrag je Bauteil', ylabel: 'Moment in kN·m', scale: 1e-3, hilfe: 'moment' },
+  { id: 'force', quantity: 'force', component: 'magnitude', title: 'Kraft je Bauteil', ylabel: 'Kraft in kN', scale: 1e-3, hilfe: 'force' },
+  { id: 'moment', quantity: 'moment', component: 'magnitude', title: 'Moment je Bauteil', ylabel: 'Moment in kN·m', scale: 1e-3, hilfe: 'moment' },
   { id: 'tracer', quantity: 'tracer', component: '', title: 'Markierungsstoff am Ablauf', ylabel: 'Anteil (–)', hilfe: 'T' },
   { id: 'shear', quantity: 'bed_shear', component: 'max', title: 'Schubspannung je Bauwerk (max.)', ylabel: 'τ in N/m²', hilfe: 'bed_shear' },
 ]
@@ -68,7 +80,10 @@ watchEffect(async () => {
       ids.map((id) => store.ensureResult(id).catch(() => null)))
     const built = []
 
-    for (const g of GROUPS) {
+    for (const grp of GROUPS) {
+      const g = (grp.quantity === 'force' || grp.quantity === 'moment')
+        ? { ...grp, component: kraftKomponente.value }
+        : grp
       const series = []
       let tMin = Infinity
       let tMax = -Infinity

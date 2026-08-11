@@ -105,6 +105,26 @@ async def _docker_waechter():
               f"entfernt ({', '.join(entfernt)})")
 
 
+@router.get("/verifikation")
+async def verifikation():
+    """
+    Ergebnisse der physikalischen Verifikationsläufe (Spez. Kap. 13):
+    Referenzfälle gegen analytische Formeln, geschrieben von
+    tests/test_verifikation.py (FLOOD3D_VERIFIKATION=1). Der Client zeigt
+    sie in der Phase „Simulation" — damit sichtbar ist, WANN zuletzt
+    belegt wurde, dass die Pipeline richtige Zahlen liefert.
+    """
+    verz = Path(__file__).resolve().parent / "data" / "verifikation"
+    out = []
+    if verz.is_dir():
+        for p in sorted(verz.glob("*.json")):
+            try:
+                out.append(json.loads(p.read_text()))
+            except Exception:                # noqa: BLE001
+                out.append({"fall": p.stem, "beschaedigt": True})
+    return out
+
+
 @router.get("/health")
 async def health():
     root = runs_root()

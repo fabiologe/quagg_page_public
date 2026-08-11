@@ -31,7 +31,7 @@
           <div class="f3d-stat">
             <dt>Kurzschluss-Kennzahl t₁₀/τ
               <KennwertHilfe groesse="verweilzeit" /></dt>
-            <dd :class="e.kurz == null ? '' : (e.kurz < 0.3 ? 'bad' : e.kurz < 0.5 ? 'warn' : 'good')">
+            <dd :class="e.kurz == null ? '' : (e.kurz < e.schwellen.schlecht ? 'bad' : e.kurz < e.schwellen.gut ? 'warn' : 'good')">
               {{ e.kurz == null ? '–' : fmt(e.kurz) }}
             </dd>
           </div>
@@ -78,6 +78,7 @@ import { ref, watchEffect } from 'vue'
 import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
 import { flood3dApi } from '../../services/api'
+import { kurzschlussSchwellen } from '../../utils/grenzwerte'
 import KennwertHilfe from './KennwertHilfe.vue'
 import UPlotChart from './UPlotChart.vue'
 
@@ -111,6 +112,10 @@ async function laden() {
         continue
       }
       const bal = await store.ensureBalance(runId)
+      // Schwellen aus dem FALL-Kriterium (kurzschluss.limit_min), sonst
+      // Vorbelegung — eine Quelle statt Panel-Literale (Audit U15)
+      const result = await store.ensureResult(runId).catch(() => null)
+      const schwellen = kurzschlussSchwellen(result)
       const vol = bal.volume ?? { t: [], v: [] }
 
       const caseId = runId.replace(/_r\d+$/, '')
@@ -152,14 +157,14 @@ async function laden() {
             + 'markiertes Wasser am Ablauf. Für belastbare Kennwerte sollte '
             + 'die Kurve über 0,9 laufen — das dauert erfahrungsgemäß zwei '
             + 'bis drei rechnerische Verweilzeiten.' }
-      } else if (kurz != null && kurz < 0.3) {
+      } else if (kurz != null && kurz < schwellen.schlecht) {
         bewertung = { cls: 'bad', text: 'Kurzschlussströmung',
           hinweis: `Die ersten 10 % erreichen den Ablauf schon nach `
             + `${(kurz * 100).toFixed(0)} % der rechnerischen Verweilzeit. Ein `
             + 'Teil des Zuflusses läuft praktisch direkt durch; für die '
             + 'Absetzwirkung zählt dieser Anteil nicht mit. Abhilfe: '
             + 'Tauchwand, Umlenkung oder Zulauf verlegen.' }
-      } else if (kurz != null && kurz < 0.5) {
+      } else if (kurz != null && kurz < schwellen.gut) {
         bewertung = { cls: 'warn', text: 'teilweise Kurzschluss',
           hinweis: 'Ein Teil des Wassers nimmt eine deutlich kürzere Bahn '
             + 'als die mittlere. Vertretbar, aber verbesserbar.' }
@@ -170,7 +175,7 @@ async function laden() {
       }
 
       out.push({ runId, tau, t10, t50, t90, tAn, kurz, charts, bewertung,
-        leer: false })
+        schwellen, leer: false })
     } catch (e) {
       out.push({ runId, error: e.message, leer: false, charts: [],
         bewertung: { cls: '', text: '', hinweis: '' } })

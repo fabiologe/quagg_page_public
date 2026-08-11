@@ -442,8 +442,14 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
                               {**manifest, "status": "completed"})
         render_run(result, df, spec, run_root)
 
+        dauer = time.time() - t0
         _write_manifest(run_root, status="completed", finished=time.time(),
-                        duration_s=round(time.time() - t0, 1))
+                        duration_s=round(dauer, 1),
+                        # IST-Kosten (Audit U18/Spez. 4.4): bisher gab es
+                        # nur die Schätzung VOR dem Lauf — das Manifest
+                        # trägt jetzt, was der Lauf wirklich gekostet hat
+                        cost_eur=round(dauer / 3600.0 * CORES
+                                       * CORE_PRICE_EUR_H, 2))
     except Exception as e:
         # Ein vom Nutzer abgebrochener Lauf ist kein Fehler: der Abbruch-
         # Endpunkt legt die Marke, das Killen des Containers lässt den

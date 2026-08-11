@@ -235,6 +235,32 @@
         </div>
       </article>
       <MeshPreviewCard v-if="store.meshPreview || store.meshPreviewLoading" />
+
+      <!-- Physikalische Verifikation (Spez. Kap. 13): Referenzfälle gegen
+           analytische Formeln — sichtbar, WANN zuletzt belegt wurde, dass
+           die Pipeline richtige Zahlen liefert (Fabios Wunsch R4) -->
+      <article class="f3d-card">
+        <h3>Physikalische Verifikation</h3>
+        <p v-if="!verifikation.length" class="f3d-muted f3d-small">
+          Noch kein Verifikationslauf gerechnet. Läuft serverseitig:
+          <code>FLOOD3D_VERIFIKATION=1 pytest …/test_verifikation.py</code>
+          — nach jeder Änderung am Fallaufbau und vor jedem Release.
+        </p>
+        <div v-for="v in verifikation" :key="v.fall" class="f3d-verif-zeile">
+          <span class="f3d-chip"
+                :class="v.bestanden ? 'status-completed' : 'status-failed'">
+            {{ v.bestanden ? 'bestanden' : 'NICHT bestanden' }}
+          </span>
+          <span class="f3d-verif-text">
+            <strong>{{ v.titel ?? v.fall }}</strong><br />
+            <span class="f3d-muted f3d-small">
+              C_d = {{ v.cd_sim }} (Band {{ v.band?.[0] }}–{{ v.band?.[1] }},
+              {{ v.band_art }}) · {{ v.zellen?.toLocaleString('de-DE') }} Zellen
+              · geprüft {{ v.geprueft }}
+            </span>
+          </span>
+        </div>
+      </article>
       <ValidationPanel />
     </aside>
   </section>
@@ -250,6 +276,7 @@ import { begrenzen, hinweis } from '../../utils/simHints'
 import { REGELWERKE, REGELWERK_IDS, eigeneRegelwerke } from '../../utils/regelwerke'
 import { companionHealth, pauseLocalRun, runLocally,
   unterbrocheneLaeufe } from '../../services/localCompanion'
+import { flood3dApi } from '../../services/api'
 import { usePreStore } from '../../stores/usePreStore'
 import MeshPreviewCard from './MeshPreviewCard.vue'
 import ValidationPanel from './ValidationPanel.vue'
@@ -278,6 +305,7 @@ const INSTALL_MAC = '/downloads/install-quagg-companion.sh'
 const UPDATE_WIN = '/downloads/update-quagg-companion.bat'
 const UPDATE_MAC = '/downloads/update-quagg-companion.command'
 
+const verifikation = ref([])
 const companion = ref(null)
 const rechenort = ref('server')
 const localRunning = ref(false)
@@ -310,7 +338,12 @@ async function checkCompanion(autoSelect = true) {
   if (autoSelect && companion.value?.foamSupported) rechenort.value = 'local'
 }
 
-onMounted(() => checkCompanion(false))
+onMounted(() => {
+  checkCompanion(false)
+  flood3dApi.verifikation()
+    .then((v) => { verifikation.value = v })
+    .catch(() => { verifikation.value = [] })
+})
 
 const fmtDauer = (s) => (s == null ? '?'
   : s > 3600 ? `${(s / 3600).toFixed(1)} h`
@@ -506,4 +539,11 @@ function setNumOrNull(path, e) {
   overflow: hidden;
 }
 .f3d-localbar > div { height: 100%; background: var(--f3d-accent); }
+.f3d-verif-zeile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+}
+.f3d-verif-text { line-height: 1.35; }
 </style>

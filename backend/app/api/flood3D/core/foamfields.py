@@ -415,11 +415,11 @@ def energy_head_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
     index = read_index(run_root)
     if index is None or "alpha" not in index.get("fields", []):
         return []
-    wanted = set()
-    for t in spec.evaluation.targets:
-        if t.kind == "head_difference":
-            wanted.update((t.upstream, t.downstream))
-    sections = [s for s in spec.evaluation.sections if s.id in wanted]
+    # Von der Target-Kopplung gelöst (Audit U12): die Energiehöhe entsteht
+    # für JEDEN Querschnitt — das Diagramm dafür existiert, und vorher gab
+    # es die Reihe nur, wenn zufällig ein head_difference-Kriterium
+    # angelegt war (Plan-Befund L2).
+    sections = list(spec.evaluation.sections)
     if not sections:
         return []
 
