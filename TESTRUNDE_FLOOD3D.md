@@ -128,7 +128,7 @@ Legende: ☐ offen · ✅ getestet · ✍ Notiz nötig
 | ☐ **Nachweis** (Targets) | Kennwert/Grenzwert/Ausnutzung/Bewertung + Regelwerk | |
 | ☐ **Bilanz / Verweilzeit / Qualität** | Ampeln lesen die FALL-Kriterien (kurzschluss/massenbilanz), sonst Vorbelegung | Kriterium ändern → Ampel folgt |
 | ☐ **Zeitreihen** | gemeinsamer Zeitcursor; **Kraft/Moment: Betrag/Druckanteil/Reibungsanteil**; C_d je Wehr (auch OHNE Kriterium, wenn 1 Querschnitt + 1 Pegel); CSV-Export je Diagramm | |
-| ☐ **Grundriss** | Tiefe/|U|/Sohlschub, WSP-Höhenlinien, Pfeile; Längsschnitt per 2 Klicks (**Schnitt entfernen**) | |
+| ☐ **Grundriss** | Tiefe/\|U\|/Sohlschub, WSP-Höhenlinien, Pfeile; Längsschnitt per 2 Klicks (**Schnitt entfernen**) | |
 | ☐ **Raum (3D)** | Wasserkörper, Isoflächen, Schnittebene + Ebenenstapel, Pfeile, Stromlinien, **Punktabfrage** (Spiegel/Tiefe/Froude = gleiche Regel wie Karten), Kamera **Speichern/Zurücksetzen** (je FALL), **PNG exportieren** | |
 | ☐ **Extremwerte / Abbildungen** | Tabelle; server-gerenderte PNG/SVG | |
 | ☐ **Lauf & Log** | Manifest-Kacheln inkl. **Ist-Kosten**, Gelände-/Feldfehler-Warnzeilen, Viz-Selbsttest; Log-Tail live; **✕ Lauf abbrechen** | Abbruch → Status `abgebrochen`, kein `failed` |
