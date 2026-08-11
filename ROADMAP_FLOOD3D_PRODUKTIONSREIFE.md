@@ -60,6 +60,13 @@ Alles, was heute FALSCHE Zahlen oder falsches Verhalten liefert.
 **Fertig wenn:** Rechen-Testfall rechnet mit korrektem ζ; die vier Editor-Folgefehler
 sind in deiner Testrunde nicht mehr reproduzierbar.
 
+**Testrunde R1/R2 (2026-08-11, Fabio) — Ergebnis:** Pinsel ✓ (aber Fang nur an
+Vermessungskanten → gefixt: fängt jetzt auch Bruchkanten-Operationen),
+Rechtsklick-Pan/Deselekt ✓, Vorfüllung ✓, Ecke↔Kante ✓ (Latenz → R3-Punkt),
+Zoom-Zittern (Altbestand) → gefixt, Solverblick → auf Fabios Frage hin
+ENTFERNT (Netz ist die eine Ansicht), Rechen-Porositätszone jetzt in der
+Szene sichtbar. Commit c25f80b.
+
 ---
 
 ## R2 — Leichen raus, Beschriftungen ehrlich ✅ (erledigt 2026-08-11, Commit ac2ebd9 — Conventions-Felder bewusst behalten, siehe Audit-T4-Vermerk; GET /health behalten für die R5-Betriebsnotiz)
@@ -118,6 +125,11 @@ sonst „vor einem Lauf ohne Gelände und ohne Erklärung".
 - [ ] H6 Raum3D auf den gemeinsamen Feld-Cache umstellen (Doppel-Downloads weg);
       der doppelte WSP-Rekonstruktions-Nachbau wird auf `planFields` zurückgeführt.
 - [ ] F11 Kamera-Speicher je FALL schlüsseln (`flood3d-camera-views:<case>`).
+- [ ] **NEU aus Testrunde R2:** Entwurfsvorschau-Latenz („jede Verschiebung
+      dauert lange"): jeder Draft baut ALLE Körper serverseitig neu. Die
+      Entflechtung ist im Entwurf schon übersprungen (c25f80b) — weiter
+      prüfen: nur die GEÄNDERTE Struktur neu bauen, STL-Cache je Patch,
+      Debounce-Feintuning.
 
 **Fertig wenn:** Ein absichtlich provozierter Feldkonvertierungs-Fehler erscheint
 im Lauf-Panel; ein Lauf lässt sich aus der UI abbrechen.
