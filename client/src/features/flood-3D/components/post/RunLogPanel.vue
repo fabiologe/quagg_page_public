@@ -61,6 +61,13 @@ function manifestRows(m) {
       rows.push(['Max. Nichtorthogonalität', `${fmt(m.checkmesh.max_non_ortho)}°`])
     }
   }
+  // Womit gerechnet wurde, gehört in den Nachweis: Server und
+  // Nutzer-Maschine müssen dieselbe OpenFOAM-Ausgabe fahren
+  if (m.foam?.api) {
+    rows.push(['OpenFOAM', `v${m.foam.api}${m.foam.build ? ` (${m.foam.build})` : ''}`,
+      m.foam_hinweis ? 'bad' : 'good'])
+  }
+  if (m.foam_hinweis) rows.push(['Ausgabe abweichend', m.foam_hinweis, 'bad'])
   if (m.duration_s != null) rows.push(['Dauer', `${fmt(m.duration_s / 60)} min`])
   if (m.cost_eur != null) rows.push(['Ist-Kosten', `${fmt(m.cost_eur)} €`])
   if (m.missing_sources?.length) {

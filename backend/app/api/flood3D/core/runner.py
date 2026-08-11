@@ -516,7 +516,14 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
         vol_check = viz_volume_check(run_root, df)
         if vol_check:
             _write_manifest(run_root, **vol_check)
-        manifest = _write_manifest(run_root, missing_sources=missing)
+        # Welche OpenFOAM-Ausgabe hat gerechnet? Steht im Log-Kopf und
+        # gehoert in den Nachweis — Server und Nutzer-Maschine muessen
+        # dieselbe fahren (s. core/foam.py).
+        from .foam import foam_abweichung, foam_version_aus_log
+        foam_v = foam_version_aus_log(case_dir)
+        foam_hinweis = foam_abweichung(foam_v)
+        manifest = _write_manifest(run_root, missing_sources=missing,
+                                   foam=foam_v, foam_hinweis=foam_hinweis)
         # Ergebnis-JSON trägt den Endzustand, nicht den Zwischenschritt
         endstatus = "teilergebnis" if solver_fehler else "completed"
         result = evaluate_run(df, spec, run_id,

@@ -431,7 +431,14 @@ def main() -> int:
             df = pd.concat([df, pd.DataFrame(cd_rows)], ignore_index=True)
         write_normalized(df, job / "normalized.parquet")
 
+        from flood3D.core.foam import (foam_abweichung,
+                                       foam_version_aus_log)
+        foam_v = foam_version_aus_log(case)
+        foam_hinweis = foam_abweichung(foam_v)
+        if foam_hinweis:
+            emit(event="log", text=f"WARNUNG: {foam_hinweis}")
         manifest = {"status": "completed", "origin": "companion",
+                    "foam": foam_v, "foam_hinweis": foam_hinweis,
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
                     "missing_sources": missing, "finished": time.time()}

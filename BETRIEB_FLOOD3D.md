@@ -14,7 +14,21 @@ steht in der Spezifikation, offene Punkte im Fahrplan.
 
 ## Rechnen (OpenFOAM im Docker)
 
-- Image: `opencfd/openfoam-run:2406` (Env `FLOOD3D_OF_IMAGE`).
+- Image **Server**: `opencfd/openfoam-run:2406` (Env `FLOOD3D_OF_IMAGE`).
+- Image **lokal**: `fabiologe/quagg-foam-local:latest` — gebaut `FROM`
+  demselben `opencfd/openfoam-run:2406`, legt nur Python + unseren Core
+  obendrauf (dort läuft der Läufer *im* Container). Gegenübergestellt am
+  2026-08-11: identische Basis-Schichten (5/5), v2406, OpenMPI 4.1.6,
+  gleicher Werkzeugsatz — **kein Unterschied im Solver**.
+- **Beide Seiten müssen dieselbe Ausgabe fahren.** Sonst liefert derselbe
+  Fall je nach Rechenort andere Zahlen und die eingefrorene Verifikation
+  (C_d) gilt nur noch für eine Seite. Abgesichert durch:
+  `core/foam.py::FOAM_API_ERWARTET` (eine Stelle), Tests gegen
+  `FLOOD3D_OF_IMAGE` **und** gegen das `FROM` im Local-Dockerfile, und
+  jeder Lauf schreibt die tatsächlich gerechnete Ausgabe aus dem Log-Kopf
+  ins Manifest (`foam`), sichtbar im Lauf-&-Log-Panel. Beim Anheben also:
+  Dockerfile, `OF_IMAGE`, `FOAM_API_ERWARTET` gemeinsam — und
+  Verifikation neu laufen lassen.
 - Kerne **Server**: `FLOOD3D_CORES` (Default 4, gedeckelt auf die CPU-Zahl) —
   die Maschine ist geteilt, sie darf nicht vollgelaufen werden.
 - Kerne **lokal** (Companion): **alle Kerne der Nutzer-Maschine, kein Deckel**
