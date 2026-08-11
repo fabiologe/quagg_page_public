@@ -134,7 +134,8 @@ async def health():
 
 # "lokal" = auf der Nutzer-Maschine reserviert/gerechnet — der Server kann
 # den Fortschritt nicht sehen, darum weder pollen noch als hängend markieren
-_TERMINAL_STATUS = {"completed", "failed", "lokal", "abgebrochen"}
+_TERMINAL_STATUS = {"completed", "failed", "lokal", "abgebrochen",
+                    "teilergebnis"}
 
 
 def _run_size_mb(d: Path) -> float:
@@ -1334,16 +1335,7 @@ async def case_bundle(case_id: str):
     # Simulation durch und scheiterte erst danach: teuer und ärgerlich.
     # Deshalb VOR dem Fallbau prüfen und sofort abbrechen.
     import shutil as _sh
-    referenced: list[str] = []
-    if spec.terrain is not None \
-            and not spec.terrain.base.source.startswith("flat:"):
-        referenced.append(spec.terrain.base.source)
-    if spec.terrain is not None and spec.terrain.base.koerper:
-        referenced.append(spec.terrain.base.koerper)
-    for b in spec.boundaries:
-        src = getattr(b, "source", None)
-        if src:
-            referenced.append(src)
+    referenced = spec.datei_referenzen()
     fehlend = [n for n in referenced if not (d / n).is_file()]
     if fehlend:
         raise HTTPException(

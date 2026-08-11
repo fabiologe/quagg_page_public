@@ -26,11 +26,16 @@
                 title="Logs wachsen seit über 15 Minuten nicht mehr — Lauf vermutlich abgestürzt">
             hängt?
           </span>
+          <span v-if="run.status === 'teilergebnis'" class="f3d-chip status-stale"
+                title="Der Lauf wurde abgebrochen oder ist gescheitert — ausgewertet wurde, was bis dahin gerechnet war">
+            Teilergebnis
+          </span>
           <span v-if="run.verfallen" class="f3d-chip status-stale"
                 title="Companion-Reservierung, deren Ergebnis seit über 7 Tagen nicht importiert wurde — kann gelöscht werden">
             verfallen
           </span>
-          <span v-if="run.status === 'completed' && run.has_normalized === false"
+          <span v-if="['completed', 'teilergebnis'].includes(run.status)
+                      && run.has_normalized === false"
                 class="f3d-chip status-stale"
                 title="Lauf ohne normalisierte Zeitreihen — Diagramme und Nachweise bleiben leer">
             ohne Auswertung

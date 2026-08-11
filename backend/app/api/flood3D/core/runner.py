@@ -338,6 +338,19 @@ def _write_manifest(run_root: Path, **updates) -> dict:
     return manifest
 
 
+def geschriebene_zeiten(case_dir: Path) -> list[float]:
+    """Vom Solver geschriebene Zeitpunkte (ohne den Startordner 0)."""
+    zeiten = []
+    for p in Path(case_dir).iterdir():
+        try:
+            t = float(p.name)
+        except ValueError:
+            continue
+        if p.is_dir() and t > 0:
+            zeiten.append(t)
+    return sorted(zeiten)
+
+
 def _y_plus_range(case_dir: Path) -> list[float] | None:
     """Globale y+-Spanne aus postProcessing/y_plus (Zeilen: t patch min max avg)."""
     out = None
@@ -408,42 +421,62 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
 
         _write_manifest(run_root, status="solving", cores=CORES)
         app = spec.solver.application
-        if CORES > 1:
-            from .foam import foam_file
-            (case_dir / "system" / "decomposeParDict").write_text(foam_file(
-                "decomposeParDict",
-                f"numberOfSubdomains {CORES};\n\nmethod          scotch;",
-                location="system"))
-            run_foam(case_dir, "decomposePar -force", "log.decomposePar",
-                     name_suffix="dp")
-            run_foam(case_dir,
-                     f"mpirun --allow-run-as-root -np {CORES} {app} -parallel",
-                     f"log.{app}", timeout=SOLVE_TIMEOUT, name_suffix="solve")
-            try:
-                run_foam(case_dir, "reconstructPar -newTimes",
-                         "log.reconstructPar", name_suffix="rp")
-            except FoamError as e:
-                # Dieselbe Übersetzung wie im Local Companion (F12-Drift):
-                # „No times selected" heißt, der Solver hat keinen einzigen
-                # Zeitschritt geschrieben — meist zu kurze end_time oder
-                # sofortige Divergenz. Der rohe Foam-Fehler half niemandem.
-                log_rp = (case_dir / "log.reconstructPar")
-                if (log_rp.is_file()
-                        and "No times selected"
-                        in log_rp.read_text(errors="replace")):
-                    raise FoamError(
-                        "Der Solver hat keinen einzigen Zeitschritt "
-                        "geschrieben (reconstructPar: No times selected) — "
-                        "meist ist die Simulationsdauer kürzer als das "
-                        "Schreibintervall oder der Lauf ist sofort "
-                        "divergiert. Log des Solvers prüfen.")
-                raise e
-            import shutil
-            for p in case_dir.glob("processor*"):
-                shutil.rmtree(p, ignore_errors=True)
-        else:
-            run_foam(case_dir, app, f"log.{app}", timeout=SOLVE_TIMEOUT,
-                     name_suffix="solve")
+        # Ein abgebrochener oder gescheiterter Solverlauf ist kein Grund,
+        # die schon gerechneten Zeitschritte wegzuwerfen: Felder,
+        # Zeitreihen, Bewertung und Abbildungen entstehen aus dem, was da
+        # ist, und das Ergebnis wird als TEILERGEBNIS gekennzeichnet
+        # (Fabios Befund 2026-08-11: „es sollte alles angezeigt werden,
+        # was schon berechnet wurde").
+        solver_fehler = None
+        try:
+            if CORES > 1:
+                from .foam import foam_file
+                (case_dir / "system" / "decomposeParDict").write_text(foam_file(
+                    "decomposeParDict",
+                    f"numberOfSubdomains {CORES};\n\nmethod          scotch;",
+                    location="system"))
+                run_foam(case_dir, "decomposePar -force", "log.decomposePar",
+                         name_suffix="dp")
+                run_foam(case_dir,
+                         f"mpirun --allow-run-as-root -np {CORES} {app} -parallel",
+                         f"log.{app}", timeout=SOLVE_TIMEOUT, name_suffix="solve")
+                try:
+                    run_foam(case_dir, "reconstructPar -newTimes",
+                             "log.reconstructPar", name_suffix="rp")
+                except FoamError as e:
+                    # Dieselbe Übersetzung wie im Local Companion (F12-Drift):
+                    # „No times selected" heißt, der Solver hat keinen einzigen
+                    # Zeitschritt geschrieben — meist zu kurze end_time oder
+                    # sofortige Divergenz. Der rohe Foam-Fehler half niemandem.
+                    log_rp = (case_dir / "log.reconstructPar")
+                    if (log_rp.is_file()
+                            and "No times selected"
+                            in log_rp.read_text(errors="replace")):
+                        raise FoamError(
+                            "Der Solver hat keinen einzigen Zeitschritt "
+                            "geschrieben (reconstructPar: No times selected) — "
+                            "meist ist die Simulationsdauer kürzer als das "
+                            "Schreibintervall oder der Lauf ist sofort "
+                            "divergiert. Log des Solvers prüfen.")
+                    raise e
+                import shutil
+                for p in case_dir.glob("processor*"):
+                    shutil.rmtree(p, ignore_errors=True)
+            else:
+                run_foam(case_dir, app, f"log.{app}", timeout=SOLVE_TIMEOUT,
+                         name_suffix="solve")
+
+        except FoamError as e:
+            zeiten = geschriebene_zeiten(case_dir)
+            if not zeiten:
+                raise           # nichts gerechnet -> nichts zu zeigen
+            solver_fehler = str(e)
+            print(f"flood3d: {run_id} — Solver beendet ({e}); "
+                  f"{len(zeiten)} geschriebene Zeitschritte werden "
+                  "trotzdem ausgewertet", flush=True)
+            _write_manifest(run_root, teilergebnis=True,
+                            teilergebnis_grund=solver_fehler,
+                            letzte_zeit=zeiten[-1])
 
         # Felder VOR der Bewertung konvertieren — die Sohlschubspannungs-
         # y+-Spanne der Wandfunktionen ins Manifest (Qualitätsansicht) —
@@ -485,12 +518,15 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
             _write_manifest(run_root, **vol_check)
         manifest = _write_manifest(run_root, missing_sources=missing)
         # Ergebnis-JSON trägt den Endzustand, nicht den Zwischenschritt
+        endstatus = "teilergebnis" if solver_fehler else "completed"
         result = evaluate_run(df, spec, run_id,
-                              {**manifest, "status": "completed"})
+                              {**manifest, "status": endstatus})
         render_run(result, df, spec, run_root)
 
         dauer = time.time() - t0
-        _write_manifest(run_root, status="completed", finished=time.time(),
+        # Abgebrochen/gescheitert, aber ausgewertet: der Status sagt das —
+        # die Ergebnisse sind da und im Viewer sichtbar
+        _write_manifest(run_root, status=endstatus, finished=time.time(),
                         duration_s=round(dauer, 1),
                         # IST-Kosten (Audit U18/Spez. 4.4): bisher gab es
                         # nur die Schätzung VOR dem Lauf — das Manifest

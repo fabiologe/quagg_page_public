@@ -194,3 +194,39 @@ def test_geometry_ohne_gelaendeschicht_liefert_die_bauwerke(client):
     # STL. Entscheidend ist: die Antwort kommt, statt an der fehlenden
     # Geländeschicht mit 404 zu scheitern.
     assert isinstance(data["mesh_patches"], list)
+
+
+def test_bundle_nimmt_alle_datei_referenzen_mit(client, tmp_path):
+    """
+    Das Bundle zählte die mitzuschickenden Dateien von Hand auf und vergaß
+    die Pinsel-Ebene: der lokale Lauf rechnete durch, konnte danach aber
+    kein Gelände aufbauen — im 3D-Ergebnis fehlte die Geländeschicht
+    (2026-08-11, Rentrisch_BetaTest06). Jetzt kommt die Liste aus der
+    casespec selbst.
+    """
+    import io
+    import zipfile
+
+    from ..core import casespec as cs
+
+    c, _ = client
+    spec = cs.CaseSpec.model_validate(c.get("/cases/demo").json())
+    spec.terrain.sculpt = "sculpt.npz"
+    assert "sculpt.npz" in spec.datei_referenzen()
+
+    # ohne die Datei neben dem Fall bricht das Bundle SOFORT ab …
+    assert c.put("/cases/demo", json=spec.model_dump(mode="json")).status_code == 200
+    r = c.post("/cases/demo/bundle")
+    assert r.status_code == 422 and "sculpt.npz" in r.json()["detail"]
+
+    # … und mit ihr liegt sie im Archiv
+    import numpy as np
+    from ..router import _case_dir
+    # Format wie core.sculpt.speichern: dz + Rasterbezug
+    np.savez_compressed(_case_dir("demo") / "sculpt.npz",
+                        dz=np.zeros((37, 49), dtype="<f4"),
+                        x0=0.0, y0=0.0, res=0.5)
+    r = c.post("/cases/demo/bundle")
+    assert r.status_code == 200
+    namen = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "sculpt.npz" in namen, namen[:20]

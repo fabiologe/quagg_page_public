@@ -25,7 +25,8 @@
           </span>
         </div>
         <div class="f3d-runrow-actions">
-          <button v-if="run.status === 'completed'" class="f3d-btn f3d-btn-primary"
+          <button v-if="['completed', 'teilergebnis'].includes(run.status)"
+                  class="f3d-btn f3d-btn-primary"
                   @click="openResult(run.run_id, 'nachweis')">
             Ergebnis öffnen
           </button>

@@ -1263,6 +1263,42 @@ class CaseSpec(_Model):
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
 
+    def datei_referenzen(self) -> list[str]:
+        """
+        Alle Dateien, auf die der Fall RELATIV verweist — Geländequelle,
+        Pinsel-Ebene, Volumenkörper, Quellraster von Bereichsersetzungen,
+        importierte STL, Ganglinien-CSV.
+
+        EINE Liste, weil sie an mehreren Stellen gebraucht wird (Bundle
+        für den lokalen Lauf, Vollständigkeitsprüfung). Vorher zählte das
+        Bundle sie von Hand auf und vergaß dabei die Pinsel-Ebene: der
+        lokale Lauf rechnete durch, konnte danach aber kein Gelände
+        aufbauen — im Ergebnis fehlte die Geländeschicht in 3D
+        (2026-08-11 an Rentrisch_BetaTest06).
+        """
+        namen: list[str] = []
+        if self.terrain is not None:
+            b = self.terrain.base
+            if not b.source.startswith("flat:"):
+                namen.append(b.source)
+            for opt in (b.koerper, b.original, self.terrain.sculpt):
+                if opt:
+                    namen.append(opt)
+            for op in self.terrain.operations:
+                quelle = getattr(op, "source", None)
+                if quelle:
+                    namen.append(quelle)
+        for st in self.structures:
+            quelle = getattr(st, "source", None)
+            if quelle:
+                namen.append(quelle)
+        for b in self.boundaries:
+            quelle = getattr(b, "source", None)
+            if quelle:
+                namen.append(quelle)
+        # Reihenfolge erhalten, Doppelte raus
+        return list(dict.fromkeys(namen))
+
     def case_hash(self) -> str:
         """Hash über den fachlichen Inhalt, für das Laufmanifest (Spez. 4.4)."""
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True)
