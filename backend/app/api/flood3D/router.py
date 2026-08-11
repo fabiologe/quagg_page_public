@@ -13,12 +13,14 @@ from __future__ import annotations
 import asyncio
 
 import base64
+import hashlib
 import json
 import os
 import re
 import shutil
 import time
 from functools import lru_cache
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -112,7 +114,7 @@ async def health():
 
 # "lokal" = auf der Nutzer-Maschine reserviert/gerechnet — der Server kann
 # den Fortschritt nicht sehen, darum weder pollen noch als hängend markieren
-_TERMINAL_STATUS = {"completed", "failed", "lokal"}
+_TERMINAL_STATUS = {"completed", "failed", "lokal", "abgebrochen"}
 
 
 def _run_size_mb(d: Path) -> float:
@@ -150,9 +152,15 @@ async def list_runs():
         manifest = read_manifest(paths) or {}
         targets = (result or {}).get("targets", [])
         status = (result or {}).get("status", manifest.get("status", "unbekannt"))
+        # Companion-Reservierung, deren Import nie kam: nach 7 Tagen als
+        # verfallen kennzeichnen — der Löschknopf existiert (Audit H5)
+        verfallen = (status == "lokal"
+                     and (time.time() - float(manifest.get("created", 0)))
+                     > 7 * 86400)
         out.append({
             "run_id": d.name,
             "status": status,
+            "verfallen": verfallen,
             "stale": _run_stale(d, status),
             "size_mb": _run_size_mb(d),
             "title": manifest.get("title", ""),
@@ -953,6 +961,31 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
                           and getattr(s, "durchstoesst_gelaende", False)]}
 
 
+# Entwurfs-Körper-Cache: Bauteile, die weder vom Gelände abhängen (keine
+# gelaende-Bearbeitung, wirkung=bauteil) noch klassifiziert werden müssen,
+# sind allein durch ihre eigene Spezifikation + das Gebiet bestimmt — ihr
+# STL kann über Draft-Zyklen wiederverwendet werden. Bewusst NUR für den
+# Entwurf: der gespeicherte Stand wird immer voll gebaut.
+_DRAFT_SOLIDS: "OrderedDict[str, tuple[str, str | None]]" = OrderedDict()
+_DRAFT_SOLIDS_MAX = 512
+
+
+def _draft_solid_schluessel(s, spec: CaseSpec) -> str | None:
+    """Cache-Schlüssel eines Bauwerks — None, wenn nicht cachebar."""
+    if getattr(s, "wirkung", "bauteil") != "bauteil":
+        return None                  # auto/aushub: Lage-Klassifikation nötig
+    if any(e.type == "gelaende" for e in (getattr(s, "edits", None) or [])):
+        return None                  # Sockel/Kappen hängt am Gelände
+    if s.type == "imported":
+        return None                  # hängt an einer STL-Datei, deren
+                                     # Inhalt ein Reapply still austauscht
+    blob = json.dumps(
+        [s.model_dump(mode="json"),
+         spec.domain.model_dump(mode="json") if spec.domain else None],
+        sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
 def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
     """
     DIE eine Geometrie-Antwort: Gelände, Bauwerkskörper, Erdkörper, Prüfung
@@ -989,19 +1022,45 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
         # bleibt als letzter Fangzaun (z. B. Geländeaufbau).
         ausfaelle: list[dict] = []
         # Entwurfsvorschau OHNE Entflechtung (hinweise=None überspringt die
-        # Booleschen Verschnitte über alle Körperpaare): sie machte jede
-        # Zieh-Rückmeldung träge, und während des Ziehens dürfen sich
-        # Körper ruhig sichtbar durchdringen — der GESPEICHERTE Stand
-        # (PUT/GET) wird weiter entflochten gezeigt (Fabios Befund
-        # Testrunde R2: „jede Verschiebung dauert echt lange").
-        for patch, mesh in sorted(
-                build_solids(spec, d, include_screens=True,
-                             hinweise=None if entwurf else [],
-                             ausfaelle=ausfaelle).items()):
-            out["solids"].append({
-                "patch": patch,
-                "stl_b64": base64.b64encode(
-                    mesh.export(file_type="stl")).decode()})
+        # Booleschen Verschnitte über alle Körperpaare) und MIT Körper-
+        # Cache: beim Ziehen einer Wand ändert sich genau EIN Bauwerk —
+        # alle anderen kommen aus dem Cache statt neu gebaut zu werden
+        # (Fabios Befund Testrunde R2: „jede Verschiebung dauert lange").
+        # Der GESPEICHERTE Stand (PUT/GET) wird weiter voll gebaut und
+        # entflochten gezeigt.
+        fertig: dict[str, str] = {}          # patch -> stl_b64
+        schluessel_je_patch: dict[str, str] = {}
+        bau_spec = spec
+        if entwurf:
+            zu_bauen = []
+            for s in spec.structures:
+                key = _draft_solid_schluessel(s, spec)
+                if key is not None:
+                    treffer = _DRAFT_SOLIDS.get(key)
+                    if treffer is not None:
+                        _DRAFT_SOLIDS.move_to_end(key)
+                        if treffer[1] is not None:
+                            fertig[treffer[0]] = treffer[1]
+                        continue
+                    schluessel_je_patch[s.patch] = key
+                zu_bauen.append(s)
+            bau_spec = spec.model_copy(update={"structures": zu_bauen})
+        for patch, mesh in build_solids(
+                bau_spec, d, include_screens=True,
+                hinweise=None if entwurf else [],
+                ausfaelle=ausfaelle).items():
+            fertig[patch] = base64.b64encode(
+                mesh.export(file_type="stl")).decode()
+        # Cache füllen — auch „kein Körper" (Aushub) ist ein Ergebnis
+        for s in (bau_spec.structures if entwurf else []):
+            key = schluessel_je_patch.get(s.patch)
+            if key is None:
+                continue
+            _DRAFT_SOLIDS[key] = (s.patch, fertig.get(s.patch))
+            while len(_DRAFT_SOLIDS) > _DRAFT_SOLIDS_MAX:
+                _DRAFT_SOLIDS.popitem(last=False)
+        for patch in sorted(fertig):
+            out["solids"].append({"patch": patch, "stl_b64": fertig[patch]})
         for a in ausfaelle:
             out["validation"].append({
                 "object_id": a["id"], "severity": "warnung",
@@ -1451,6 +1510,43 @@ async def start_run(payload: dict = Body(...)):
     _active_runs[run_id] = t
     t.start()
     return {"run_id": run_id, "status": "building"}
+
+
+@router.post("/runs/{run_id}/abort")
+async def abort_run(run_id: str):
+    """
+    Laufenden Serverlauf abbrechen (Audit H3): Marke setzen, Container des
+    aktuellen Schritts killen — der Lauf-Thread endet am FoamError und
+    schreibt status=abgebrochen statt failed. Ohne diesen Endpunkt war ein
+    hängender Lauf nur per SSH totbar.
+    """
+    from .core.runner import laufende_container_stoppen
+
+    root = runs_root().resolve()
+    run_root = (root / run_id).resolve()
+    if run_root.parent != root or not run_root.is_dir():
+        raise HTTPException(status_code=404, detail="Lauf unbekannt")
+    manifest_pfad = run_root / "manifest.json"
+    status = ""
+    if manifest_pfad.is_file():
+        try:
+            status = json.loads(manifest_pfad.read_text()).get("status", "")
+        except Exception:                    # noqa: BLE001
+            status = ""
+    if status in _TERMINAL_STATUS:
+        raise HTTPException(status_code=409,
+                            detail=f"Lauf ist bereits beendet ({status})")
+    (run_root / "ABBRUCH").touch()
+    gestoppt = await asyncio.to_thread(laufende_container_stoppen, run_root)
+    if not gestoppt and run_id not in _active_runs:
+        # kein Container, kein Thread: der Lauf ist verwaist (z. B. nach
+        # einem API-Neustart) — Status direkt ehrlich machen
+        (run_root / "ABBRUCH").unlink(missing_ok=True)
+        m = json.loads(manifest_pfad.read_text()) if manifest_pfad.is_file() else {}
+        m.update({"status": "abgebrochen", "error": "Vom Nutzer abgebrochen "
+                  "(Lauf war verwaist)", "finished": time.time()})
+        manifest_pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+    return {"run_id": run_id, "gestoppte_container": len(gestoppt)}
 
 
 @router.get("/runs/{run_id}/log")

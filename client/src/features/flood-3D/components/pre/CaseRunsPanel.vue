@@ -15,6 +15,10 @@
         <div class="f3d-runrow-main">
           <span class="f3d-runrow-id">{{ run.run_id }}</span>
           <span class="f3d-chip" :class="`status-${run.status}`">{{ run.status }}</span>
+          <span v-if="run.verfallen" class="f3d-chip"
+                title="Companion-Reservierung ohne Ergebnis seit über 7 Tagen — kann gelöscht werden">
+            verfallen
+          </span>
           <span v-if="run.n_targets" class="f3d-runrow-targets">
             <span class="ok">✓ {{ run.n_erfuellt }}</span>
             <span v-if="run.n_nicht_erfuellt" class="fail">✗ {{ run.n_nicht_erfuellt }}</span>
