@@ -262,13 +262,43 @@ def extract_mesh_surface(spec, case_dir: Path) -> bool:
     return find_mesh_surface(case_dir) is not None
 
 
+def _snappy(case_dir: Path) -> None:
+    """
+    snappyHexMesh — parallel, wenn mehr als ein Kern konfiguriert ist
+    (Fahrplan-Entscheidung Fabio, R3-Optional): der Vernetzer ist bei
+    feinen Netzen der teuerste Schritt und lief serverseitig bisher
+    seriell, während der Companion längst parallel vernetzte (F12-Drift).
+    Gleiche Schrittfolge wie dort: decomposePar → mpirun snappy -parallel
+    → reconstructParMesh; danach sind die processor*-Ordner überflüssig.
+    """
+    if CORES > 1:
+        from .foam import foam_file
+        (case_dir / "system" / "decomposeParDict").write_text(foam_file(
+            "decomposeParDict",
+            f"numberOfSubdomains {CORES};\n\nmethod          scotch;",
+            location="system"))
+        run_foam(case_dir, "decomposePar -force -copyZero",
+                 "log.decomposePar_mesh", name_suffix="dpm")
+        run_foam(case_dir,
+                 f"mpirun --allow-run-as-root -np {CORES} "
+                 "snappyHexMesh -overwrite -parallel",
+                 "log.snappyHexMesh", name_suffix="shm")
+        run_foam(case_dir, "reconstructParMesh -constant",
+                 "log.reconstructParMesh", name_suffix="rpm")
+        import shutil
+        for p in case_dir.glob("processor*"):
+            shutil.rmtree(p, ignore_errors=True)
+    else:
+        run_foam(case_dir, "snappyHexMesh -overwrite", "log.snappyHexMesh",
+                 name_suffix="shm")
+
+
 def mesh_preview(spec, case_dir: str | Path) -> dict:
     """blockMesh + snappyHexMesh + checkMesh auf einem fertig gebauten Fall."""
     case_dir = Path(case_dir)
     run_foam(case_dir, "blockMesh", "log.blockMesh", name_suffix="bm")
     _kanten_ziehen(case_dir, "sfe")
-    run_foam(case_dir, "snappyHexMesh -overwrite", "log.snappyHexMesh",
-             name_suffix="shm")
+    _snappy(case_dir)
     # Fenster ausschneiden wie im echten Lauf. Ohne diesen Schritt kann die
     # Vorschau „in Ordnung" melden, obwohl eine Randbedingung im fertigen
     # Netz keine einzige Fläche hat (Rohr unter Gelände, Fenster im
@@ -357,8 +387,9 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
         _write_manifest(run_root, status="meshing")
         run_foam(case_dir, "blockMesh", "log.blockMesh", name_suffix="bm")
         _kanten_ziehen(case_dir, "sfe")
-        run_foam(case_dir, "snappyHexMesh -overwrite", "log.snappyHexMesh",
-                 name_suffix="shm")
+        # parallel wie im Companion — Server und lokal vernetzen jetzt auf
+        # demselben Weg (beendet auch den F12-Drift „zwei Netze, zwei Wege")
+        _snappy(case_dir)
         if (case_dir / "system" / "topoSetDict").exists():
             run_foam(case_dir, "topoSet", "log.topoSet", name_suffix="ts")
         if (case_dir / "system" / "createPatchDict").exists():
