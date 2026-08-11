@@ -232,13 +232,25 @@
           <button class="f3d-btn f3d-grow" @click="addEdit('transform')">＋ Lage</button>
           <button class="f3d-btn f3d-grow" @click="addEdit('heilen')">＋ Heilen</button>
         </div>
+        <!-- Zurücksetzen ist etwas anderes als Heilen: es nimmt die
+             MODELLIERUNG zurück (Bohrungen, Schnitte, Lage), während
+             Heilen nur das Netz repariert. Deshalb ein eigener Knopf. -->
+        <div v-if="draft.edits?.length" class="f3d-openrow">
+          <button class="f3d-btn f3d-grow"
+                  title="Alle Bearbeitungen verwerfen — der Körper geht auf seinen Rohzustand zurück (ein Undo-Schritt, Strg+Z holt sie zurück)"
+                  @click="alleEditsEntfernen">
+            ↺ Alle Bearbeitungen entfernen ({{ draft.edits.length }})
+          </button>
+        </div>
         <p v-if="hilfe" class="f3d-muted f3d-small">
           Wird der Reihe nach auf den Körper angewandt. Die drei mit ✎ werden
           in die Szene <strong>gezeichnet</strong>: auf den Körper zeigen,
           Mausrad ändert das Maß, Klick stanzt. <strong>Gelände</strong>
           bindet ein, <strong>Auf Gebiet</strong> stutzt Überstände,
           <strong>Lage</strong> verschiebt/dreht/skaliert,
-          <strong>Heilen</strong> schließt Löcher importierter Netze.
+          <strong>Heilen</strong> schließt Löcher im Netz (es nimmt
+          <em>keine</em> Bearbeitungen zurück — dafür ✕ je Zeile,
+          „Alle entfernen" oder Strg+Z).
         </p>
         <EditListe v-if="feldEdits" v-model="draft.edits"
                    :labels="FIELD_LABELS" :typ-labels="TYP_LABELS" />
@@ -621,6 +633,21 @@ function zeichnen(art) {
   if (zeichnet.value === art) { store.endPlatzierung(); return }
   apply()
   store.startPlatzierung(art, draft.value.id)
+}
+
+// Modellierung zurücknehmen: der ganze Stapel in EINEM Undo-Schritt.
+// Nicht zu verwechseln mit „Heilen" — das repariert nur das Netz.
+function alleEditsEntfernen() {
+  const o = store.selectedObject
+  if (!o?.edits?.length) return
+  if (o.edits.length > 1 && !window.confirm(
+    `Alle ${o.edits.length} Bearbeitungen an „${o.id}“ entfernen? `
+    + 'Der Körper geht auf seinen Rohzustand zurück — '
+    + 'Strg+Z holt sie zurück.')) return
+  store.updateObject(store.selection.kind, store.selection.id,
+    { ...o, edits: [] })
+  store.melden(`${o.edits.length} Bearbeitungen an „${o.id}“ entfernt`,
+    'erfolg')
 }
 
 function addEdit(art) {

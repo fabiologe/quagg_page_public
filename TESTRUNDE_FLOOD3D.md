@@ -92,7 +92,8 @@ Legende: ☐ offen · ✅ getestet · ✍ Notiz nötig
 | ☐ Fenster-Auswahl | ganze Fläche / Rechteck / Kreis / Trapez / **Polygon (Ecken ziehen)** / **Polygon-Vorlagen Ei/Maul/Tropfen** / an Gerinne/Stutzen gekoppelt | Vorlage einsetzen → wird als Polygon geführt |
 | ☐ **＋ Verfeinerungsbox ans Fenster** | Box um die Öffnung | |
 | ☐ **✎ Bohrung / ✎ Öffnung / ✎ Zuschnitt** | Klick-Platzierung am Körper (Mausrad = Maß, Shift+Rad = Höhe) | Bohrung setzen, Marker nachträglich verschieben |
-| ☐ **＋ Gelände / ＋ Auf Gebiet / ＋ Lage / ＋ Heilen** | Bearbeitungs-Stapel (EditListe: ↑↓ Reihenfolge, ✕) | |
+| ☐ **＋ Gelände / ＋ Auf Gebiet / ＋ Lage / ＋ Heilen** | Bearbeitungs-Stapel (EditListe: ↑↓ Reihenfolge, ✕). **Heilen repariert das NETZ** (Löcher schließen), es nimmt keine Bearbeitungen zurück | Heilen an löchrigem Import: Prüfbefund „nicht wasserdicht" verschwindet |
+| ☐ **↺ Alle Bearbeitungen entfernen** | nimmt die MODELLIERUNG zurück — Rohzustand des Körpers, ein Undo-Schritt | mehrere Bohrungen setzen → entfernen → Strg+Z holt sie zurück |
 | ☐ Rechen-Panel | NUR Stabform/Teilung/Winkel/Verlegungsgrad + Kirschmer-Hilfetext (d/f versteckt, solange 0) | |
 | ☐ Gelände-Panel | Erdkörper-Schalter; „Sohle Erdkörper"-Felder sind RAUS | |
 | ☐ **Übernehmen / 🗑** | Änderungen anwenden / Objekt löschen | |
@@ -103,6 +104,7 @@ Legende: ☐ offen · ✅ getestet · ✍ Notiz nötig
 |---|---|---|
 | ☐ Befund-Klick | springt zum Objekt | |
 | ☐ **⚕ Kur-Knopf** je Befund | Ein-Klick-Reparatur; Befund MUSS danach weg sein | **„In das Gebiet einpassen"**: Wand teils rausziehen (YAML/Panel) → Kur kappt am Rand |
+| ☐ Kur **„Körper heilen"** | erscheint bei nicht wasserdichten Körpern (Regel war bis 2026-08-11 wirkungslos) | löchrige STL importieren → Befund + Kur → danach dicht |
 | ☐ **⚯ Anschlüsse herstellen** | Stutzen/Gerinne an die Randfläche, Boxen ins Gebiet | |
 | ☐ Komplett-draußen-Objekt | FEHLER blockt Lauf + Netzvorschau (422); Bauwerk wird NICHT an den Solver übergeben; andere Körper bleiben sichtbar | |
 
