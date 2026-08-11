@@ -153,9 +153,16 @@
              class="f3d-klapper" :open="field.key === 'profile'">
       <summary>{{ field.label }}</summary>
       <div class="f3d-prop">
+        <p v-if="field.key === 'resistance'" class="f3d-muted f3d-small">
+          So wirkt der Rechen auf die Strömung: er bekommt kein eigenes
+          Netz-Bauteil, sondern eine poröse Widerstandszone (0,15 m tief).
+          Der Verlust wird automatisch nach Kirschmer aus Stabform,
+          Stabteilung und Anströmwinkel abgeleitet — hier ist nur der
+          Verlegungsgrad anzusetzen.
+        </p>
         <UnterGruppe v-model="draft[field.key]" :labels="labelsFuer(field.key)"
                      :typ="draft.type" :gruppe="field.key"
-                     :verbergen="VERBERGEN[field.key] ?? []" />
+                     :verbergen="verbergenFuer(field.key)" />
       </div>
     </details>
 
@@ -363,6 +370,21 @@ const fields = computed(() => {
 
 function labelsFuer(key) {
   return { ...FIELD_LABELS, ...(GRUPPEN_LABELS[key] ?? {}) }
+}
+
+// Rechen-Widerstand: d/f-Vektoren nur zeigen, wenn sie WIRKLICH gesetzt
+// sind — der Normalfall ist die automatische Kirschmer-Ableitung, und ein
+// Formular voller Null-Vektoren verwirrte („was zum … ist das?"). `model`
+// hat genau einen Wert und ist keine Entscheidung.
+function verbergenFuer(key) {
+  const basis = VERBERGEN[key] ?? []
+  if (key !== 'resistance') return basis
+  const w = draft.value?.resistance ?? {}
+  const leer = (v) => !Array.isArray(v) || v.every((x) => !x)
+  const versteckt = ['model']
+  if (leer(w.d)) versteckt.push('d')
+  if (leer(w.f)) versteckt.push('f')
+  return [...basis, ...versteckt]
 }
 
 // Leeres Feld heißt „Vorbelegung" — als null übernehmen, nicht als 0

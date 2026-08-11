@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from ..cli import main as cli_main
@@ -111,6 +112,37 @@ def test_terrain_stl(tmp_path):
 def test_wand_volumen_analytisch():
     s = cs.StructWall(id="w", type="wall", patch="w",
                       alignment=cs.Alignment(points=[(0, 0, 98.0), (10, 0, 98.0)]),
+                      height=2.0, thickness=0.5)
+    mesh = build_wall(s)
+    assert check_solid("w", mesh) == []
+    assert mesh.volume == pytest.approx(10 * 0.5 * 2.0, rel=1e-6)
+
+
+def test_wand_oberkante_folgt_den_stuetzpunkten():
+    """
+    B3: die Oberkante folgt points[i].z je Stützpunkt — vorher kollabierte
+    der Bau alle z auf max/min, das Ziehen EINER Ecke hob die ganze Wand.
+    """
+    s = cs.StructWall(id="w", type="wall", patch="w",
+                      alignment=cs.Alignment(points=[(0, 0, 98.0),
+                                                     (10, 0, 99.0)]),
+                      height=2.0, thickness=0.5)
+    mesh = build_wall(s)
+    assert check_solid("w", mesh) == []
+    # Fuß: min(z) - height = 96.0; Deckel läuft von 98 auf 99
+    assert mesh.bounds[0][2] == pytest.approx(96.0)
+    assert mesh.bounds[1][2] == pytest.approx(99.0)
+    # Trapez-Längsschnitt: Breite · Länge · mittlere Höhe
+    assert mesh.volume == pytest.approx(0.5 * 10 * (2.0 + 3.0) / 2, rel=1e-6)
+    # Oberkante am ersten Ende bleibt bei 98 m (nicht auf 99 gezogen)
+    ecken_x0 = mesh.vertices[np.isclose(mesh.vertices[:, 0], 0.0)]
+    assert ecken_x0[:, 2].max() == pytest.approx(98.0)
+
+
+def test_wand_doppelte_stuetzpunkte_werden_gefiltert():
+    s = cs.StructWall(id="w", type="wall", patch="w",
+                      alignment=cs.Alignment(points=[(0, 0, 98.0), (0, 0, 98.0),
+                                                     (10, 0, 98.0)]),
                       height=2.0, thickness=0.5)
     mesh = build_wall(s)
     assert check_solid("w", mesh) == []

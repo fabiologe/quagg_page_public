@@ -86,6 +86,23 @@ def _series_payload(df: pd.DataFrame, quantity: str, location_id: str,
 
 # --------------------------------------------------------------------------
 
+@router.on_event("startup")
+async def _docker_waechter():
+    """
+    Verwaiste f3d_*-Container beim Start abräumen: Läufe leben in Threads
+    dieses Prozesses — nach einem Neustart wartet auf keinen Container mehr
+    jemand, er rechnet nur ins Leere und frisst Kerne. Genau so entstand
+    der Vorfall vom 2026-08-11 (Vorschau-Container überlebte den Restart
+    und blockierte den Containernamen).
+    """
+    from .core.runner import verwaiste_container_entfernen
+
+    entfernt = await asyncio.to_thread(verwaiste_container_entfernen)
+    if entfernt:
+        print(f"flood3d: {len(entfernt)} verwaiste OpenFOAM-Container "
+              f"entfernt ({', '.join(entfernt)})")
+
+
 @router.get("/health")
 async def health():
     root = runs_root()
@@ -978,13 +995,22 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
                             f"({type(e).__name__}: {e}) — die Szene ist "
                             "unvollständig.")})
     try:
+        # build_solids fängt seit dem B4-Fix jedes Bauwerk einzeln ab und
+        # meldet Ausfälle über `hinweise` — EIN kaputtes Bauwerk lässt die
+        # anderen nicht mehr aus der Szene verschwinden. Das äußere try
+        # bleibt als letzter Fangzaun (z. B. Geländeaufbau).
+        ausfaelle: list[dict] = []
         for patch, mesh in sorted(
                 build_solids(spec, d, include_screens=True,
-                             hinweise=[]).items()):
+                             hinweise=[], ausfaelle=ausfaelle).items()):
             out["solids"].append({
                 "patch": patch,
                 "stl_b64": base64.b64encode(
                     mesh.export(file_type="stl")).decode()})
+        for a in ausfaelle:
+            out["validation"].append({
+                "object_id": a["id"], "severity": "warnung",
+                "message": a["meldung"]})
     except Exception as e:
         out["validation"].append({
             "object_id": "vorschau", "severity": "warnung",
@@ -1121,14 +1147,21 @@ async def case_profile(case_id: str, payload: dict = Body(...)):
 # --------------------------------------------------------------------------
 
 _active_runs: dict[str, object] = {}
+# Fälle, für die gerade eine Netzvorschau rechnet (Doppelstart-Sperre)
+_laufende_previews: set[str] = set()
 
 
 @router.post("/cases/{case_id}/mesh-preview")
-async def case_mesh_preview(case_id: str):
+async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
     """
     Billiger Vernetzungsprobelauf (Spez. Kap. 6.1): Zellenzahl,
     checkMesh-Kennwerte, Laufzeit- und Kostenschätzung. Läuft synchron im
     Threadpool — für Vorschau-Netze im Minutenbereich ausreichend.
+
+    `ohne_verfeinerung`: Schnellvorschau ohne die verschachtelte
+    Verfeinerung (Boxen und Flächenstufen) — deutlich schneller, Zellzahl
+    und Kosten sind dann eine UNTERE Grenze. Das Ergebnis wird als solches
+    gekennzeichnet.
     """
     import tempfile
 
@@ -1136,6 +1169,30 @@ async def case_mesh_preview(case_id: str):
     from .core.runner import FoamError, mesh_preview
 
     spec, d = _load_case(case_id)
+    ohne_verfeinerung = bool((payload or {}).get("ohne_verfeinerung"))
+
+    # Doppelstart-Sperre: ein zweiter Klick löschte sonst das
+    # Arbeitsverzeichnis des noch LAUFENDEN ersten Versuchs (rmtree unten)
+    # — dessen Container schrieb dann ins Leere, und der zweite starb an
+    # der Container-Namenskollision. Ein Fall rechnet immer nur EINE
+    # Vorschau zugleich.
+    if case_id in _laufende_previews:
+        raise HTTPException(
+            status_code=409,
+            detail="Für diesen Fall läuft bereits eine Netzvorschau — "
+                   "bitte warten, bis sie fertig ist (blockMesh + "
+                   "snappyHexMesh brauchen einige Minuten).")
+
+    # Dasselbe Tor wie vor POST /runs: Fehler-Befunde starten keinen
+    # minutenlangen Vernetzungslauf, der erst im Container stirbt — dieser
+    # Endpunkt war der einzige lauf-artige ohne Prüfung.
+    fehler = [b for b in validate_case(spec, d)
+              if b.get("severity") == "fehler"]
+    if fehler:
+        raise HTTPException(
+            status_code=422,
+            detail="Der Fall hat Fehler-Befunde: "
+                   + " | ".join(b["message"] for b in fehler[:5]))
 
     def work():
         # Nicht unter /tmp (Snap-Docker-Falle) — Vorschau neben den Fall,
@@ -1147,11 +1204,27 @@ async def case_mesh_preview(case_id: str):
         alt = d / "_mesh_preview"          # Ablage vor P2 aufraeumen
         if alt.exists():
             shutil.rmtree(alt)
-        info = build_case(spec, preview_dir, d)
+        bau_spec = spec
+        if ohne_verfeinerung:
+            bau_spec = spec.model_copy(deep=True)
+            bau_spec.mesh.refinements = []
+        info = build_case(bau_spec, preview_dir, d)
         if info["problems"]:
             raise FoamError("Geometrieprobleme: " + "; ".join(info["problems"]))
-        return mesh_preview(spec, preview_dir)
+        ergebnis = mesh_preview(bau_spec, preview_dir)
+        if ohne_verfeinerung:
+            # Kennzeichnen und die Hashes des ECHTEN Falls eintragen: die
+            # Schnellvorschau gilt für diesen Stand, ist aber gröber — das
+            # sagt das Flag, nicht ein fälschliches „veraltet"
+            ergebnis["ohne_verfeinerung"] = True
+            ergebnis["case_hash"] = spec.case_hash()
+            ergebnis["netz_hash"] = spec.netz_hash()
+            import json as _json
+            (preview_dir / "mesh_preview.json").write_text(
+                _json.dumps(ergebnis, indent=2, ensure_ascii=False))
+        return ergebnis
 
+    _laufende_previews.add(case_id)
     try:
         return await asyncio.to_thread(work)
     except (FoamError, RuntimeError) as e:
@@ -1159,6 +1232,8 @@ async def case_mesh_preview(case_id: str):
         # Randbedingung ohne einzige Fläche ist ein Modellfehler, kein
         # Serverfehler — der Nutzer soll den Text lesen, keine 500 sehen
         raise HTTPException(status_code=422, detail=str(e))
+    finally:
+        _laufende_previews.discard(case_id)
 
 
 @router.post("/cases/{case_id}/bundle")

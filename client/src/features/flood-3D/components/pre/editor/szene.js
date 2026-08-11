@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 
 export function erzeugeSzene({ store, groups, selectable, holeScene,
-  solverView, drahtgitter, solverHint }) {
+  solverView, solverHint }) {
 const SOLID_COLORS = [0x3987e5, 0xd95926, 0x199e70, 0xc98500, 0xd55181,
   0x9085e9, 0xe66767]
 function terrainZ(x, y) {
@@ -126,14 +126,8 @@ function buildTerrain() {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
   geo.setIndex(idx)
   geo.computeVertexNormals()
-  // Drahtgitter statt Schummerung: die Schattierung glättet optisch, was
-  // im Raster steht — Stufen und Knicke verschwinden im Farbverlauf.
-  // Das Gitter zeigt jede Rasterzelle einzeln, und man sieht sofort, wie
-  // fein das Gelände wirklich aufgelöst ist.
-  const mesh = new THREE.Mesh(geo, drahtgitter.value
-    ? new THREE.MeshBasicMaterial({ vertexColors: true, wireframe: true })
-    : new THREE.MeshLambertMaterial({
-      vertexColors: true, side: THREE.DoubleSide, flatShading: grob }))
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide, flatShading: grob }))
   groups.terrain = new THREE.Group()
   groups.terrain.add(mesh)
   holeScene().add(groups.terrain)
@@ -210,7 +204,12 @@ function feinsteZelle() {
 
 function buildSolids() {
   clearGroup('solids')
-  selectable.length = 0
+  // Nur die EIGENEN Einträge austragen — `selectable.length = 0` löschte
+  // auch die der Marker-Ebene, die danach beim Standalone-Neuaufbau der
+  // Marker doppelt (und verwaist) wieder auftauchten
+  for (let i = selectable.length - 1; i >= 0; i--) {
+    if (selectable[i].userData?.ebene === 'solids') selectable.splice(i, 1)
+  }
   groups.solids = new THREE.Group()
   const loader = new STLLoader()
   store.solids.forEach((s, i) => {
@@ -221,7 +220,8 @@ function buildSolids() {
       shininess: 24, transparent: true, opacity: 0.95 })
     const mesh = new THREE.Mesh(geo, mat)
     const struct = store.spec?.structures?.find((x) => x.patch === s.patch)
-    mesh.userData = { kind: 'structure', id: struct?.id ?? s.patch }
+    mesh.userData = { kind: 'structure', id: struct?.id ?? s.patch,
+      ebene: 'solids' }
     groups.solids.add(mesh)
     selectable.push(mesh)
   })

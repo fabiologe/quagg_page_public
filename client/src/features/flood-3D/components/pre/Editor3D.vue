@@ -1,15 +1,30 @@
 <template>
   <div class="f3d-editor3d" ref="host">
     <div class="f3d-toolbar">
-      <button v-for="t in TOOLS" :key="t.id" class="f3d-tool"
-              :class="{ active: mode === t.id }" :title="t.hint"
-              @click="setMode(t.id)">{{ t.label }}</button>
+      <!-- Auswahl an/aus: aus heißt, jeder Klick und Zug gehört NUR der
+           Kamera — nichts wird gewählt, gegriffen oder verschoben. -->
+      <button class="f3d-tool" :class="{ active: auswahlAktiv }"
+              :title="auswahlAktiv
+                ? 'Auswahl aktiv: Klick wählt, Ecken ziehbar — Klick schaltet die Auswahl aus'
+                : 'Auswahl aus: Klicks und Züge gehören nur der Kamera — Klick schaltet die Auswahl ein'"
+              @click="auswahlAktiv = !auswahlAktiv">
+        {{ auswahlAktiv ? '☑' : '☐' }} Auswählen
+      </button>
       <!-- Stanzen wird vom Eigenschaftenpanel gestartet und war in
            der Werkzeugleiste UNSICHTBAR: kein Werkzeug wirkte aktiv,
            obwohl jeder Klick stanzte. -->
       <button v-if="mode === 'stanzen'" class="f3d-tool active"
               title="Öffnung am Körper platzieren — Mausrad ändert das Maß, Esc bricht ab"
               @click="setMode('select')">⭙ Stanzen … (Esc)</button>
+      <!-- Höhen-Zug (Strg+Ziehen): einzelne Ecke oder die ganze Kante -->
+      <button v-if="zModusVerfuegbar" class="f3d-tool"
+              :class="{ active: zModus === 'kante' }"
+              :title="zModus === 'kante'
+                ? 'Strg+Ziehen hebt die GANZE Kante — Klick schaltet auf einzelne Ecke'
+                : 'Strg+Ziehen hebt die einzelne Ecke — Klick schaltet auf ganze Kante'"
+              @click="zModus = zModus === 'kante' ? 'ecke' : 'kante'">
+        {{ zModus === 'kante' ? '▬ Kante' : '· Ecke' }}
+      </button>
       <span class="f3d-toolbar-sep"></span>
       <button class="f3d-tool" :class="{ active: topView }"
               title="Koordinatentreue Draufsicht" @click="toggleTopView">
@@ -22,14 +37,6 @@
                 : 'Gelände auf die Basiszelle abgetastet — so grob sieht es der Vernetzer'"
               @click="solverView = !solverView">
         Solverblick
-      </button>
-      <button class="f3d-tool" :class="{ active: drahtgitter }"
-              :disabled="!!store.terrainSolid"
-              :title="store.terrainSolid
-                ? 'Der Fall zeigt den Geländekörper — dort gibt es das Rasterdreiecksnetz nicht'
-                : 'Geländefläche als Drahtgitter statt schattiert: die Schummerung glättet optisch, was im Raster steht'"
-              @click="drahtgitter = !drahtgitter">
-        Drahtgitter
       </button>
       <button class="f3d-tool" :class="{ active: meshView }"
               title="Vernetzte Oberfläche der Netzvorschau (Solver-Zellen)"
@@ -70,8 +77,8 @@
       <button class="f3d-tool" title="Formen beenden"
               @click="store.sculptAktiv = false">✓ Fertig</button>
       <span v-if="sculpt.modus.value === 'kante'" class="f3d-muted f3d-small">
-        Über einer Bruchkante wird der Ring grün — das Gelände zieht sich
-        an ihr Höhenprofil.
+        Über einer Bruchkante wird der Ring grün — das Gelände wird im
+        Pinselbereich AUF ihr Höhenprofil gesetzt.
       </span>
       <span v-else-if="store.terrainSolid" class="f3d-muted f3d-small">
         Geformt wird die Deckfläche des Erdkörpers — Bohrungen und
@@ -92,6 +99,16 @@
       </label>
     </div>
     <div v-if="meshHint" class="f3d-meshhint f3d-muted f3d-small">{{ meshHint }}</div>
+    <!-- Snappy-Vorschau direkt aus der Netz-Ansicht: voll oder schnell
+         (ohne verschachtelte Verfeinerung) -->
+    <div v-if="meshAngebot" class="f3d-meshhint f3d-meshangebot">
+      <button class="f3d-btn" :disabled="store.meshPreviewLoading"
+              title="blockMesh + snappyHexMesh mit allen Verfeinerungen — speichert den Fall, dauert einige Minuten"
+              @click="meshRechnen(false)">▦ Netzvorschau rechnen</button>
+      <button class="f3d-btn" :disabled="store.meshPreviewLoading"
+              title="Ohne verschachtelte Verfeinerung: deutlich schneller, Zellzahl/Kosten als untere Grenze"
+              @click="meshRechnen(true)">⚡ Schnell ohne Verfeinerung</button>
+    </div>
     <div v-if="solverHint && !meshView" class="f3d-meshhint f3d-muted f3d-small">
       {{ solverHint }}
     </div>
@@ -103,15 +120,6 @@
     <div v-else-if="store.terrainSolidStale" class="f3d-veraltet">
       ⚠ Erdkörper veraltet: das Raster ist zu groß, um ihn beim Ziehen neu zu
       bauen. Er wird beim Speichern nachgezogen.
-    </div>
-
-    <div v-if="chooserPts" class="f3d-chooser">
-      <span class="f3d-muted f3d-small">
-        {{ chooserPts.length }} Punkte — was soll entstehen?
-      </span>
-      <button v-for="opt in drawTargets" :key="opt.label" class="f3d-btn"
-              @click="createFromDrawing(opt)">{{ opt.label }}</button>
-      <button class="f3d-btn" @click="cancelDrawing">Abbrechen</button>
     </div>
 
     <div v-if="dragDelta" class="f3d-dragdelta"
@@ -136,11 +144,8 @@
     </div>
 
     <div class="f3d-editor3d-hint f3d-muted f3d-small">
-      <template v-if="mode === 'select'">Klick wählt · Ecken ziehbar (Raster-/Punktfang, Alt = frei) · Bohrung/Öffnung am Marker über den Körper ziehen · Entf löscht Ecke oder Bearbeitung · Strg+D dupliziert · Shift/Strg+Ziehen verschiebt · Strg = Z erzwingen · Doppelklick zentriert</template>
-      <template v-else-if="mode === 'move'">Objekt anklicken und ziehen · Zug entlang einer Führungslinie rastet ein (Strg = Z erzwingen) · daneben ziehen dreht die Kamera</template>
-      <template v-else-if="mode === 'gauge'">Klick ins Gelände setzt einen Pegelpunkt</template>
-      <template v-else-if="mode === 'section'">Zwei Klicks spannen die Querschnittslinie auf</template>
-      <template v-else>Klicks setzen Punkte · Doppelklick schließt ab · Esc bricht ab</template>
+      <template v-if="!auswahlAktiv">Auswahl aus — Klicks und Züge steuern nur die Kamera</template>
+      <template v-else-if="mode === 'select'">Klick wählt · Klick ins Leere oder Esc wählt ab · Ecken ziehbar (Raster-/Punktfang, Alt = frei) · Bohrung/Öffnung am Marker über den Körper ziehen · Entf löscht Ecke oder Bearbeitung · Strg+D dupliziert · Shift/Strg+Ziehen verschiebt · Strg = Z erzwingen · Doppelklick zentriert</template>
       <span v-if="coords" class="f3d-coords">{{ coords }}</span>
     </div>
   </div>
@@ -174,24 +179,24 @@ const SCULPT_MODI = [
   { id: 'heben', label: '▲ Heben', hint: 'Gelände anheben' },
   { id: 'senken', label: '▼ Senken', hint: 'Gelände absenken' },
   { id: 'glaetten', label: '≈ Glätten', hint: 'Zum Mittel der Nachbarschaft relaxieren' },
-  { id: 'kante', label: '⌇ Bruchkante', hint: 'Gelände ans Höhenprofil der nächsten Bruchkante heranziehen' },
+  { id: 'kante', label: '⌇ Bruchkante', hint: 'Gelände im Pinselbereich auf das Höhenprofil der nächsten Bruchkante setzen' },
 ]
 
-const TOOLS = [
-  { id: 'select', label: 'Auswählen', hint: 'Objekte anklicken · Ecken ziehen · Shift+Ziehen verschiebt' },
-  { id: 'move', label: '✥ Verschieben', hint: 'Objekt anklicken und ziehen' },
-  { id: 'gauge', label: '+ Pegel', hint: 'Pegelpunkt per Klick setzen' },
-  { id: 'section', label: '+ Querschnitt', hint: 'Querschnittslinie mit 2 Klicks' },
-  { id: 'draw', label: '✏ Zeichnen', hint: 'Polygon/Polylinie für neue Objekte' },
-]
+// Es gibt nur noch zwei Modi: `select` (Regelfall) und `stanzen`
+// (Klick-Platzierung, vom Eigenschaftenpanel gestartet). Die früheren
+// Werkzeuge Verschieben/Pegel/Querschnitt/Zeichnen sind entfernt —
+// Verschieben lebt als Shift/Strg+Ziehen im Auswahlmodus weiter, neue
+// Objekte entstehen über die ＋-Vorlagen im Objektbaum.
 const mode = ref('select')
+// Auswahl-Sperre (E4): aus = Klicks und Züge gehören ausschließlich der
+// Kamera; nichts wird gewählt, gegriffen oder verschoben.
+const auswahlAktiv = ref(true)
 const topView = ref(false)
 const meshView = ref(false)
 const meshHint = ref('')
+// Angebot „Netzvorschau jetzt rechnen?" in der Netz-Ansicht (E6)
+const meshAngebot = ref(false)
 const solverView = ref(false)     // Gelände in Solver-Auflösung zeigen
-// Geländefläche als Drahtgitter statt schattiert. Die Schummerung glättet
-// optisch, was im Raster steht; das Gitter zeigt jede Zelle einzeln.
-const drahtgitter = ref(false)
 const solverHint = ref('')
 const clipActive = ref(false)
 const clipAxis = ref('x')
@@ -199,9 +204,6 @@ const clipPos = ref(0)
 const clipFlip = ref(false)
 const clipRange = ref([0, 100])
 const coords = ref('')
-const drawPts = ref([])          // [[x,y], ...] der aktuellen Zeichnung
-const chooserPts = ref(null)     // abgeschlossene Zeichnung -> Zielauswahl
-const ringGeschlossen = ref(false)  // per Klick auf den ersten Punkt
 
 // --- Bearbeitung einzeichnen ("stanzen") ---------------------------------
 // Bohrung, Öffnung und Abschneiden werden nicht getippt, sondern auf den
@@ -216,32 +218,6 @@ const stanzTitel = computed(() =>
   STANZ_TITEL[store.platzierung?.art] ?? 'Bearbeitung setzen')
 let stanzHit = null              // { punkt: Vector3, normale: Vector3 }
 
-// Zeichnen erzeugt ein CAD-OBJEKT (Skizze = Import aus der Hand); der
-// Chooser ist die ZUORDNUNG — dieselben Rollen wie beim Dateiimport,
-// nachträglich im Baum änderbar. Die früheren build*-Funktionen leben
-// als Rollen-Vorbelegungen im Backend (importer._linien_objekt).
-const drawTargets = computed(() => {
-  const n = chooserPts.value?.length ?? 0
-  const line = [
-    { label: 'Gerinne', rolle: 'gerinne' },
-    { label: 'Wand', rolle: 'wand' },
-    { label: 'Dammschüttung', rolle: 'damm' },
-    { label: 'Stutzen (Rohr)', rolle: 'stutzen' },
-    { label: 'Bruchkante', rolle: 'bruchkante' },
-    { label: 'Querschnitt', rolle: 'querschnitt' },
-  ]
-  const poly = [
-    { label: 'Planum', rolle: 'planum', geschlossen: true },
-    { label: 'Becken', rolle: 'becken', geschlossen: true },
-    { label: 'Verfeinerungsbox', rolle: 'verfeinerung', geschlossen: true },
-    { label: '3D-Körper (Prisma)', rolle: 'koerper', geschlossen: true },
-    { label: 'Vorfüllung (Startwasser)', rolle: 'vorfuellung', geschlossen: true },
-  ]
-  if (ringGeschlossen.value) return poly
-  return n >= 3 ? [...poly, ...line] : line
-})
-
-
 let renderer = null
 let scene = null
 let camera = null
@@ -252,7 +228,7 @@ let fitted = false
 let downPos = null
 let lastHoverCheck = 0         // Hover-Raycasts drosseln (Frame-Budget)
 
-const groups = { terrain: null, solids: null, markers: null, preview: null,
+const groups = { terrain: null, solids: null, markers: null,
   stanz: null,
   mesh: null, handles: null }
 const selectable = []          // Meshes mit userData { kind, id }
@@ -262,7 +238,7 @@ let highlighted = null
 const { terrainZ, clearGroup, buildTerrain, buildTerrainSolid,
   feinsteZelle, buildSolids } = erzeugeSzene({
   store, groups, selectable, holeScene: () => scene,
-  solverView, drahtgitter, solverHint })
+  solverView, solverHint })
 
 // Gelände formen (Pinsel) — geschnitten nach editor/sculpt.js
 const sculpt = erzeugeSculpt({
@@ -291,20 +267,10 @@ function fitCamera() {
   controls.update()
 }
 
-// --- Werkzeuge: Klick-Platzierung und Zeichnen ----------------------------
+// --- Modusverwaltung ------------------------------------------------------
 
 function setMode(m) {
   mode.value = m
-  cancelDrawing()
-}
-
-function cancelDrawing() {
-  ringGeschlossen.value = false
-  zeichenLock = null
-  schliessNah = false
-  drawPts.value = []
-  chooserPts.value = null
-  updatePreview(null)
 }
 
 function groundPick(e) {
@@ -317,126 +283,6 @@ function groundPick(e) {
   ray.setFromCamera(ndc, camera)
   const hits = ray.intersectObjects(groups.terrain.children, false)
   return hits.length ? hits[0].point : null
-}
-
-// --- Zeichen-Fang: Punktfang > Achsfang > Rasterfang (Alt = aus) ----------
-// Dieselben Fänge wie beim Griff-Ziehen, nur fürs Zeichnen: der nächste
-// Klickpunkt fängt auf vorhandene Stützpunkte (12 px), auf die X/Y-Achse
-// durch den letzten Punkt (±14°) und aufs Basiszellraster. Der ERSTE
-// eigene Punkt ist zugleich die Schließ-Geste fürs Polygon.
-const SCHLIESS_PX = 14
-let zeichenLock = null           // 'x' | 'y' | null (Achsfang-Hysterese)
-let schliessNah = false          // Cursor überm ersten Punkt
-
-function _px(p3) {
-  const v = new THREE.Vector3(p3[0], p3[1], p3[2] ?? terrainZ(p3[0], p3[1]))
-    .project(camera)
-  const rect = host.value.getBoundingClientRect()
-  return [(v.x + 1) / 2 * rect.width + rect.left,
-    (-v.y + 1) / 2 * rect.height + rect.top]
-}
-
-function fangBeimZeichnen(pt, e) {
-  schliessNah = false
-  if (!pt) return null
-  let p = [pt.x, pt.y]
-  if (e?.altKey) { zeichenLock = null; return p }
-
-  // 1) Schließpunkt: der eigene erste Punkt gewinnt gegen alles
-  const eigene = drawPts.value
-  if (mode.value === 'draw' && eigene.length >= 3) {
-    const [sx, sy] = _px(eigene[0])
-    if (Math.hypot(e.clientX - sx, e.clientY - sy) < SCHLIESS_PX) {
-      schliessNah = true
-      zeichenLock = null
-      return [...eigene[0]]
-    }
-  }
-  // 2) Punktfang auf fremde Stützpunkte
-  let best = null
-  for (const s of collectSnapPoints()) {
-    const [px, py] = _px(s)
-    const d = Math.hypot(e.clientX - px, e.clientY - py)
-    if (d < 12 && (!best || d < best.d)) best = { p: [s[0], s[1]], d }
-  }
-  if (best) { zeichenLock = null; return best.p }
-  // 3) Achsfang relativ zum letzten Punkt (mit Hysterese wie beim Ziehen)
-  const letzter = eigene[eigene.length - 1]
-  if (letzter) {
-    const dx = p[0] - letzter[0]
-    const dy = p[1] - letzter[1]
-    const winkel = Math.abs(Math.atan2(Math.abs(dy), Math.abs(dx))) * 180 / Math.PI
-    const enter = 14
-    const exit = 26
-    if (zeichenLock === 'x' ? winkel < exit : winkel < enter) {
-      zeichenLock = 'x'
-      p = [p[0], letzter[1]]
-    } else if (zeichenLock === 'y' ? winkel > 90 - exit : winkel > 90 - enter) {
-      zeichenLock = 'y'
-      p = [letzter[0], p[1]]
-    } else {
-      zeichenLock = null
-    }
-  }
-  // 4) Rasterfang auf die Basiszelle
-  const zelle = store.spec?.mesh?.base_cell
-  if (zelle && !e?.ctrlKey) {
-    p = [Math.round(p[0] / zelle) * zelle, Math.round(p[1] / zelle) * zelle]
-  }
-  return [Number(p[0].toFixed(2)), Number(p[1].toFixed(2))]
-}
-
-function updatePreview(hoverPt) {
-  if (groups.preview) {
-    clearGroup('preview')
-  }
-  const pts = drawPts.value
-  if (!pts.length && !chooserPts.value) return
-  groups.preview = new THREE.Group()
-  const shown = chooserPts.value ?? pts
-  const v3 = shown.map(([x, y]) =>
-    new THREE.Vector3(x, y, terrainZ(x, y) + 0.5))
-  if (hoverPt && !chooserPts.value) {
-    v3.push(new THREE.Vector3(hoverPt.x, hoverPt.y,
-      terrainZ(hoverPt.x, hoverPt.y) + 0.5))
-  }
-  if (v3.length > 1) {
-    groups.preview.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(v3),
-      new THREE.LineBasicMaterial({ color: 0xffffff })))
-  }
-  // Achs-Führungslinie durch den letzten Punkt (Fang aktiv)
-  if (zeichenLock && pts.length && hoverPt && !chooserPts.value) {
-    const l = pts[pts.length - 1]
-    const z = terrainZ(l[0], l[1]) + 0.5
-    const w = 500
-    const a = zeichenLock === 'x'
-      ? [new THREE.Vector3(l[0] - w, l[1], z), new THREE.Vector3(l[0] + w, l[1], z)]
-      : [new THREE.Vector3(l[0], l[1] - w, z), new THREE.Vector3(l[0], l[1] + w, z)]
-    const g = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a),
-      new THREE.LineDashedMaterial({ color: zeichenLock === 'x' ? 0xe66767
-        : 0x34c98a, dashSize: 0.6, gapSize: 0.4, transparent: true,
-      opacity: 0.7 }))
-    g.computeLineDistances()
-    groups.preview.add(g)
-  }
-  // Schließring am ersten Punkt, sobald das Polygon möglich ist
-  if (pts.length >= 3 && !chooserPts.value) {
-    const z0 = terrainZ(pts[0][0], pts[0][1]) + 0.5
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.3, 0.45, 20),
-      new THREE.MeshBasicMaterial({ color: schliessNah ? 0x34c98a : 0xd9a326,
-        side: THREE.DoubleSide, depthTest: false }))
-    ring.position.set(pts[0][0], pts[0][1], z0)
-    groups.preview.add(ring)
-  }
-  for (const p of v3.slice(0, shown.length)) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffffff }))
-    m.position.copy(p)
-    groups.preview.add(m)
-  }
-  scene.add(groups.preview)
 }
 
 // --- Bearbeitung auf den Körper zeichnen ---------------------------------
@@ -563,62 +409,11 @@ watch(() => store.platzierung, (p) => {
   stanzInfo.value = ''
   if (p) {
     mode.value = 'stanzen'
-    cancelDrawing()
     if (store.selection?.id !== p.id) store.select('structure', p.id)
   } else if (mode.value === 'stanzen') {
     mode.value = 'select'
   }
 })
-
-function handleToolClick(pt) {
-  const xy = [Number(pt.x.toFixed(2)), Number(pt.y.toFixed(2))]
-  if (mode.value === 'gauge') {
-    store.addObject('gauge', { id: 'pegel', point: xy })
-    mode.value = 'select'
-  } else if (mode.value === 'section') {
-    drawPts.value = [...drawPts.value, xy]
-    if (drawPts.value.length === 2) {
-      store.addObject('section', { id: 'qs', polyline: drawPts.value })
-      cancelDrawing()
-      mode.value = 'select'
-    } else {
-      updatePreview(pt)
-    }
-  } else if (mode.value === 'draw') {
-    if (schliessNah && drawPts.value.length >= 3) {
-      ringGeschlossen.value = true
-      finishDrawing()
-      return
-    }
-    drawPts.value = [...drawPts.value, xy]
-    updatePreview(pt)
-  }
-}
-
-function finishDrawing() {
-  if (mode.value === 'draw' && drawPts.value.length >= 2) {
-    chooserPts.value = drawPts.value
-    drawPts.value = []
-    zeichenLock = null
-    updatePreview(null)
-  }
-}
-
-async function createFromDrawing(opt) {
-  const pts = chooserPts.value
-  cancelDrawing()
-  mode.value = 'select'
-  const geschlossen = ringGeschlossen.value || opt.geschlossen
-  ringGeschlossen.value = false
-  if (!pts) return
-  for (const m of await store.skizzeZeichnen({
-    kind: geschlossen ? 'polygon' : 'polyline',
-    rolle: opt.rolle,
-    punkte: pts,
-  })) {
-    store.melden(m, m.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
-  }
-}
 
 // --- Stützpunkthandles (Spez. 6.4): im Grundriss ziehbar ------------------
 
@@ -634,8 +429,17 @@ let rebuildPending = false     // Szenen-Rebuild bis Drag-Ende aufschieben
 // Objektzugriff (Griffe, Verschieben, Fangpunkte) — geschnitten nach
 // editor/objektZugriff.js; hier nur noch die Anbindung
 const { _r2, transformEdit, importPos, translateObject, objectZable,
-  collectSnapPoints, handleAccess } = erzeugeObjektZugriff({
-  store, holeGroups: () => groups })
+  collectSnapPoints, handleAccess, clampDomain, clampMarge } =
+  erzeugeObjektZugriff({ store, holeGroups: () => groups })
+
+// Höhen-Zug: einzelne Ecke oder ganze Kante? Nur sinnvoll bei Objekten
+// mit Punkt-z (Wand, Wehr, Durchlass, Rechen, Bruchkante …).
+const zModus = ref('ecke')       // 'ecke' | 'kante'
+const zModusVerfuegbar = computed(() => {
+  const sel = store.selection
+  const access = sel && handleAccess(sel.kind, store.selectedObject)
+  return !!access?.zJePunkt
+})
 
 function buildHandles() {
   // nie mitten im Zug neu bauen — sonst verlieren wir die gegriffenen Teile
@@ -843,6 +647,12 @@ function dragHandleTo(e) {
       if (snap.lock !== 'y') x = _r2(Math.round(x / g) * g)
       if (snap.lock !== 'x') y = _r2(Math.round(y / g) * g)
     }
+  }
+  // Ans Modellgebiet klemmen: außerhalb liegende Punkte crashen den Solver
+  // (Domain-Ecken dürfen das Gebiet natürlich vergrößern, Randfenster
+  // klemmen selbst entlang ihrer Kante)
+  if (!['domain', 'boundary'].includes(store.selection?.kind)) {
+    ;[x, y] = clampDomain([x, y], clampMarge(store.selectedObject))
   }
   for (const part of dragging.parts) {
     part.position.set(x, y, dragging.zBase + dz)
@@ -1181,7 +991,15 @@ function commitHandleDrag() {
   const clone = JSON.parse(JSON.stringify(store.selectedObject))
   const access = handleAccess(sel.kind, clone)
   if (drag.last) access.write(clone, drag.idx, drag.last)
-  if (drag.dz && access.writeZ) access.writeZ(clone, drag.idx, drag.dz)
+  if (drag.dz && access.writeZ) {
+    if (zModus.value === 'kante' && access.zJePunkt) {
+      // ganze Kante: der Höhenzug hebt ALLE Stützpunkte gemeinsam
+      const anzahl = access.zPunkte ?? access.points.length
+      for (let i = 0; i < anzahl; i++) access.writeZ(clone, i, drag.dz)
+    } else {
+      access.writeZ(clone, drag.idx, drag.dz)
+    }
+  }
   store.updateObject(sel.kind, sel.id, clone)
   _endDrag()
 }
@@ -1229,6 +1047,7 @@ watch([clipActive, clipAxis, clipPos, clipFlip], applyClip)
 async function toggleMeshView() {
   meshView.value = !meshView.value
   meshHint.value = ''
+  meshAngebot.value = false
   clearGroup('mesh')
   if (!meshView.value) return
   try {
@@ -1248,21 +1067,51 @@ async function toggleMeshView() {
     scene.add(groups.mesh)
     if (data.stale) {
       meshHint.value = '⚠ Dieses Netz gehört zu einem älteren Stand des '
-        + 'Falls — es zeigt NICHT die aktuelle Geometrie. Netz- und '
-        + 'Kostenvorschau in der Phase „Simulation" neu ausführen.'
+        + 'Falls — es zeigt NICHT die aktuelle Geometrie.'
+      meshAngebot.value = true
+    } else if (store.meshPreview?.ohne_verfeinerung) {
+      meshHint.value = '⚡ Schnellvorschau ohne Verfeinerung — Zellzahl und '
+        + 'Kosten sind eine untere Grenze.'
+      meshAngebot.value = true
     }
     // Vorschaugeometrie ausblenden — das Netz IST jetzt die Geometrie
     if (groups.terrain) groups.terrain.visible = false
     if (groups.solids) groups.solids.visible = false
   } catch (e) {
     meshView.value = false
-    meshHint.value = e.message.includes('Netzvorschau')
-      ? 'Noch kein Vorschaunetz — Netz- und Kostenvorschau in der Phase „Simulation" ausführen.'
-      : `Netz nicht ladbar: ${e.message}`
+    if (e.message.includes('Netzvorschau')) {
+      // Kein Vorschaunetz — direkt hier anbieten statt in die Phase
+      // „Simulation" zu schicken (der Lauf existiert, nur der Knopf fehlte)
+      meshHint.value = 'Noch kein Vorschaunetz für diesen Fall.'
+      meshAngebot.value = true
+    } else {
+      meshHint.value = `Netz nicht ladbar: ${e.message}`
+    }
   }
 }
 
-watch([solverView, drahtgitter], () => buildTerrain())
+// Netzvorschau direkt aus der Netz-Ansicht rechnen (E6). `ohne` = ohne
+// die verschachtelte Verfeinerung (schneller, gröber).
+async function meshRechnen(ohne) {
+  meshAngebot.value = false
+  meshHint.value = (ohne
+    ? '⚡ Schnellvorschau (ohne Verfeinerung) läuft'
+    : '▦ Netzvorschau läuft')
+    + ' — blockMesh + snappyHexMesh brauchen einige Minuten …'
+  const ok = await store.runMeshPreview({ ohneVerfeinerung: ohne })
+  if (meshView.value) {
+    meshView.value = false
+    clearGroup('mesh')
+  }
+  if (ok) {
+    await toggleMeshView()
+  } else {
+    meshHint.value = ''
+    meshAngebot.value = true
+  }
+}
+
+watch(solverView, () => buildTerrain())
 
 watch(meshView, (on) => {
   if (!on) {
@@ -1311,10 +1160,15 @@ function setHighlight(mesh) {
 }
 
 function pick(e) {
+  if (!auswahlAktiv.value) return
   const hitInfo = pickSelectable(e)
   if (hitInfo) {
     const { kind, id } = hitInfo.object.userData
     store.select(kind, id)
+  } else if (store.selection) {
+    // Klick ins Leere (oder außerhalb der Domain) wählt ab — vorher gab
+    // es schlicht keinen Weg, eine Auswahl wieder loszuwerden
+    store.deselect()
   }
 }
 
@@ -1391,8 +1245,9 @@ onMounted(() => {
       if (e.button === 0) sculpt.strichStart(e)
       return
     }
-    if (mode.value !== 'select' && mode.value !== 'move') return
+    if (mode.value !== 'select') return
     if (e.button !== 0) return          // rechts/mitte bleibt der Kamera
+    if (!auswahlAktiv.value) return     // Auswahl aus: alles gehört der Kamera
     const marke = pickEditMarker(e)
     if (marke) { startEditDrag(e, marke); return }
     // Drehgriff des Modellgebiets zuerst — er liegt über allem anderen
@@ -1451,32 +1306,20 @@ onMounted(() => {
       renderer.domElement.setPointerCapture(e.pointerId)
       return
     }
-    // Körper-Verschieben: im Verschieben-Werkzeug direkt, im
-    // Auswählen-Modus nur mit gehaltener Shift-Taste — einfaches Ziehen
-    // gehört der Kamera (kein versehentliches Verschieben mehr).
+    // Körper-Verschieben: nur mit gehaltener Shift-/Strg-Taste am bereits
+    // gewählten Objekt — einfaches Ziehen gehört der Kamera (kein
+    // versehentliches Verschieben mehr).
     const hitInfo = pickSelectable(e)
     if (!hitInfo) return
     const sel = store.selection
     const hitsSelected = sel && hitInfo.object.userData.kind === sel.kind
       && hitInfo.object.userData.id === sel.id
     if (hitInfo.object.userData.kind === 'boundary'
-        && (mode.value === 'move' || ((e.shiftKey || e.ctrlKey) && hitsSelected))) {
-      if (!hitsSelected) {
-        store.select('boundary', hitInfo.object.userData.id)
-      }
+        && (e.shiftKey || e.ctrlKey) && hitsSelected) {
       startBcDrag(e, hitInfo.object.userData.id)
       return
     }
-    let startMove = false
-    if (mode.value === 'move') {
-      if (!hitsSelected) {
-        store.select(hitInfo.object.userData.kind, hitInfo.object.userData.id)
-      }
-      startMove = true
-    } else if ((e.shiftKey || e.ctrlKey) && hitsSelected) {
-      startMove = true
-    }
-    if (startMove) {
+    if ((e.shiftKey || e.ctrlKey) && hitsSelected) {
       // Drag-Ebene auf Höhe des Griffpunkts AM Objekt (kein Parallaxe-Sprung)
       const zGrab = hitInfo.point.z
       const pt = planePick(e, zGrab)
@@ -1559,24 +1402,25 @@ onMounted(() => {
       return
     }
     renderer.domElement.style.cursor =
-      mode.value === 'select' || mode.value === 'move' ? 'default' : 'crosshair'
-    if (downPos && Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) < 5) {
+      mode.value === 'select' ? 'default' : 'crosshair'
+    // Nur die LINKE Taste klickt: ein Rechtsklick ohne Zug löste sonst
+    // eine Selektion aus (der Bewegungs-Schwellwert prüfte nie e.button)
+    if (e.button === 0 && downPos
+        && Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) < 5) {
       if (mode.value === 'stanzen') {
         stanzHit = stanzPick(e) ?? stanzHit
         updateStanzPreview()
         if (stanzHit) stanzKlick()
-      } else if (mode.value === 'select' || mode.value === 'move') {
-        pick(e)
       } else {
-        const roh = groundPick(e)
-        const gefangen = roh && fangBeimZeichnen(roh, e)
-        if (gefangen) {
-          handleToolClick({ x: gefangen[0], y: gefangen[1] })
-        }
+        pick(e)
       }
     }
     downPos = null
   })
+  // Ohne eigenen Handler hing das Browser-Kontextmenü davon ab, ob
+  // OrbitControls gerade enabled war — der Rechtsklick-Pan wirkte dadurch
+  // „manchmal gestört". Das Menü hat im 3D-Editor nie einen Zweck.
+  renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
   renderer.domElement.addEventListener('pointermove', (e) => {
     lastMove = e                      // für Entf (Ecke unterm Cursor löschen)
     if (store.sculptAktiv) {
@@ -1623,52 +1467,38 @@ onMounted(() => {
     const now = performance.now()
     if (now - lastHoverCheck < 40) return
     lastHoverCheck = now
-    // Zeichnen: Fang + Führungslinie LIVE zeigen, nicht erst beim Klick
-    if ((mode.value === 'draw' || mode.value === 'section')
-        && drawPts.value.length && !chooserPts.value) {
-      const roh = groundPick(e)
-      const g = roh && fangBeimZeichnen(roh, e)
-      if (g) updatePreview({ x: g[0], y: g[1] })
-      renderer.domElement.style.cursor = schliessNah ? 'pointer' : 'crosshair'
-      return
-    }
-    // Hover-Vorab-Sperre: OrbitControls MUSS schon vor dem pointerdown aus
+    // Hover-Vorab-Sperre: das ROTIEREN muss schon vor dem pointerdown aus
     // sein, sonst startet die Kamerarotation zeitgleich mit dem Drag
     // (OrbitControls hängt früher am Canvas als unsere Handler). Gesperrt
-    // wird nur, was wirklich greifbar ist: Handles immer; Objektkörper nur
-    // im Verschieben-Werkzeug bzw. mit gehaltener Shift-/Strg-Taste
-    // (Strg = Höhen-Verschieben — auch das braucht die Kamera-Sperre!).
-    if (mode.value === 'select' || mode.value === 'move') {
+    // wird NUR enableRotate — `enabled = false` schaltete früher auch den
+    // Rechtsklick-Pan und das Zoomen mit ab („Pan manchmal gestört").
+    // Gesperrt wird nur, was wirklich greifbar ist: Handles immer;
+    // Objektkörper nur mit gehaltener Shift-/Strg-Taste (Strg =
+    // Höhen-Verschieben — auch das braucht die Rotations-Sperre!).
+    if (mode.value === 'select' && auswahlAktiv.value) {
       const overEdit = !!pickEditMarker(e)
-      if (overEdit) {
-        controls.enabled = false
-        renderer.domElement.style.cursor = 'grab'
-        return
-      }
-      const overHandle = !!pickHandle(e)
+      const overHandle = !overEdit && !!pickHandle(e)
       let overMovable = false
-      if (!overHandle) {
+      if (!overEdit && !overHandle && (e.shiftKey || e.ctrlKey)
+          && store.selection) {
         const hitInfo = pickSelectable(e)
-        if (hitInfo) {
-          if (mode.value === 'move') {
-            overMovable = true
-          } else if ((e.shiftKey || e.ctrlKey) && store.selection) {
-            overMovable = hitInfo.object.userData.kind === store.selection.kind
-              && hitInfo.object.userData.id === store.selection.id
-          }
-        }
+        overMovable = !!hitInfo
+          && hitInfo.object.userData.kind === store.selection.kind
+          && hitInfo.object.userData.id === store.selection.id
       }
-      controls.enabled = !(overHandle || overMovable)
-      renderer.domElement.style.cursor =
-        overHandle || overMovable ? 'grab' : 'default'
+      const greifbar = overEdit || overHandle || overMovable
+      controls.enableRotate = !topView.value && !greifbar
+      renderer.domElement.style.cursor = greifbar ? 'grab' : 'default'
+      if (overEdit) return
     } else {
-      renderer.domElement.style.cursor = 'crosshair'
+      controls.enableRotate = !topView.value
+      renderer.domElement.style.cursor =
+        mode.value === 'stanzen' ? 'crosshair' : 'default'
     }
     const pt = groundPick(e)
     coords.value = pt
       ? `x = ${pt.x.toFixed(2)}  y = ${pt.y.toFixed(2)}  z = ${terrainZ(pt.x, pt.y).toFixed(2)} m`
       : ''
-    if (mode.value !== 'select' && drawPts.value.length && pt) updatePreview(pt)
   })
   renderer.domElement.addEventListener('wheel', (e) => {
     // Beim Stanzen ändert das Rad das Maß statt der Kameradistanz — das
@@ -1689,10 +1519,6 @@ onMounted(() => {
     updateStanzPreview()
   }, { passive: false, capture: true })
   renderer.domElement.addEventListener('dblclick', (e) => {
-    if (mode.value === 'draw') {
-      finishDrawing()
-      return
-    }
     // Doppelklick zentriert die Kamera auf den Geländepunkt
     const pt = groundPick(e)
     if (pt) {
@@ -1759,9 +1585,12 @@ watch(() => store.sculptAktiv, (an) => {
 })
 
 watch(() => store.geometryVersion, rebuild)
-// Marker (Pegel/Schnitte/Boxen/Ränder) folgen der Spec auch ohne Speichern
+// Marker (Pegel/Schnitte/Boxen/Ränder/Vorfüllungen/Vermessungskanten)
+// folgen der Spec auch ohne Speichern
 watch(() => JSON.stringify([store.spec?.evaluation, store.spec?.mesh?.refinements,
-  store.spec?.boundaries]), () => { buildMarkers() })
+  store.spec?.boundaries, store.spec?.solver?.vorfuellungen,
+  store.spec?.terrain?.kanten]),
+() => { buildMarkers() })
 
 // Stützpunkt aus der Punktliste hervorheben. Eigene Gruppe statt eines
 // Eintrags in `markers`: das hängt am Zeiger und darf nicht bei jedem
@@ -1840,8 +1669,8 @@ function onKeydown(e) {
   if (store.dialogOffen) return
   if (e.key === 'Escape') {
     if (rotAktiv()) { cancelRotDrag(); return }
-    if (store.platzierung) store.endPlatzierung()
-    cancelDrawing()
+    if (store.platzierung) { store.endPlatzierung(); return }
+    if (store.selection) store.deselect()
     mode.value = 'select'
     return
   }
@@ -1864,7 +1693,7 @@ onBeforeUnmount(() => {
   resizeObs?.disconnect()
   window.removeEventListener('keydown', onKeydown)
   clearGroup('terrain'); clearGroup('solids'); clearGroup('markers')
-  clearGroup('preview'); clearGroup('mesh'); clearGroup('handles')
+  clearGroup('mesh'); clearGroup('handles')
   clearGroup('stanz'); clearGroup('rotbox')
   controls?.dispose()
   renderer?.dispose()
@@ -1932,6 +1761,14 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 48px;
   left: 10px;
+}
+/* Knopfzeile unter dem Hinweistext — beide sind absolut, sonst überlappen sie */
+.f3d-meshangebot {
+  top: 84px;
+  display: flex;
+  gap: 0.5rem;
+}
+.f3d-meshhint {
   /* ohne max-width wuchs der Stale-Text bis unter die Clip-Leiste */
   max-width: min(520px, calc(100% - 380px));
   z-index: 5;

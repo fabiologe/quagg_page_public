@@ -221,12 +221,19 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
             + z[ju * nx + i] + z[jo * nx + i]) / 4
           dz = (mittel - z[k]) * 0.45 * staerke.value * w
         } else if (modus.value === 'kante') {
-          // ans Höhenprofil der Kante heranziehen — Gewicht nach Abstand
-          // zur LINIE, nicht zum Cursor (so entsteht ein sauberes Band)
+          // Das Gelände wird im Pinselbereich AUF die Kantenhöhe GESETZT
+          // (Abstand zur LINIE, nicht zum Cursor — so entsteht ein
+          // sauberes Band). Nur am Rand des Bandes federt ein Übergang.
+          // Vorher stand hier eine gedämpfte Relaxation (·0,5·Stärke·cos²),
+          // deren Gewicht zum Rand auf 0 fiel — die Zellen erreichten die
+          // Kantenhöhe nie, es sah aus wie „Absenken um die Kante".
+          // Setzen ist idempotent: der zweite Tick derselben Stelle ändert
+          // nichts mehr, strich.dz und Undo bleiben damit exakt.
           const f = fussAufKante(fangKante.kante, x, y)
           if (!f || f.d >= r) continue
-          const wl = gewicht(f.d, r)
-          dz = (f.z - z[k]) * 0.5 * staerke.value * wl
+          const kern = r * 0.7
+          const wl = f.d <= kern ? 1 : gewicht(f.d - kern, r - kern)
+          dz = (f.z - z[k]) * wl
         }
         if (dz === 0) continue
         z[k] += dz

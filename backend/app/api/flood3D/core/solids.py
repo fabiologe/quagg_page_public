@@ -333,26 +333,39 @@ def _kappen(mesh: trimesh.Trimesh, ursprung: np.ndarray,
 
 
 def build_wall(struct) -> trimesh.Trimesh:
+    """
+    Wand als Querschnitts-Sweep entlang der Achse. Die Oberkante folgt
+    dabei points[i].z JE STÜTZPUNKT (casespec: „height: konstant; je
+    Stützpunkt über points[i].z") — vorher kollabierte der Bau alle z auf
+    max/min und extrudierte zwischen zwei konstanten Ebenen, womit das
+    Ziehen einer einzelnen Ecke immer die GANZE Oberkante hob. Der Fuß
+    bleibt eine Ebene: tiefster Punkt minus Einbindehöhe.
+    """
     pts = np.asarray(struct.alignment.points, dtype=float)
-    z_top = float(pts[:, 2].max())
+    if len(pts) >= 2:
+        # doppelte aufeinanderfolgende Stützpunkte filtern —
+        # _sweep_sections teilte sonst durch die Segmentlänge null
+        halten = np.ones(len(pts), dtype=bool)
+        halten[1:] = np.linalg.norm(np.diff(pts[:, :2], axis=0),
+                                    axis=1) > 1e-9
+        pts = pts[halten]
+    if len(pts) < 2:
+        raise ValueError(f"Wand {struct.id}: Achse braucht mindestens zwei "
+                         "verschiedene Stützpunkte")
     z_bottom = float(pts[:, 2].min()) - struct.height
-    if abs(struct.batter_deg) > 1e-6:
-        # Anlauf: die Wand steht nicht senkrecht, sondern verbreitert sich
-        # nach unten (positiver Winkel) — Stützmauern werden so gebaut.
-        # Umgesetzt als Trapezquerschnitt, der über die Achse gezogen wird;
-        # eine Extrusion kann das nicht.
-        h = max(z_top - z_bottom, 1e-6)
-        zulage = h * math.tan(math.radians(struct.batter_deg))
-        halb_o = struct.thickness / 2
-        halb_u = max(halb_o + zulage, 0.02)
-        quer = np.array([[-halb_u, z_bottom], [halb_u, z_bottom],
-                         [halb_o, z_top], [-halb_o, z_top]])
-        achse = pts[:, :2]
-        return _sweep_sections(achse, [quer for _ in range(len(achse))])
-    line = shapely.LineString(pts[:, :2])
-    footprint = line.buffer(struct.thickness / 2, cap_style="flat",
-                            join_style="mitre")
-    return _extrude(footprint, z_bottom, z_top)
+    halb_o = struct.thickness / 2
+    # Anlauf: die Wand steht nicht senkrecht, sondern verbreitert sich
+    # nach unten (positiver Winkel) — Stützmauern werden so gebaut
+    anlauf = (math.tan(math.radians(struct.batter_deg))
+              if abs(struct.batter_deg) > 1e-6 else 0.0)
+    sections = []
+    for z_top in pts[:, 2]:
+        h = max(float(z_top) - z_bottom, 1e-6)
+        halb_u = max(halb_o + h * anlauf, 0.02) if anlauf else halb_o
+        sections.append(np.array([[-halb_u, z_bottom], [halb_u, z_bottom],
+                                  [halb_o, float(z_top)],
+                                  [-halb_o, float(z_top)]]))
+    return _sweep_sections(pts[:, :2], sections)
 
 
 def _gefaelle_richtung(poly: shapely.Polygon, vorgabe) -> np.ndarray:
@@ -766,16 +779,35 @@ def build_graben(struct) -> trimesh.Trimesh:
     return _schale(aussen, innen, f"Graben {struct.id}")
 
 
-def bohrkoerper(struct, ueberstand: float) -> trimesh.Trimesh | None:
+def bohrkoerper(struct, ueberstand: float, domain=None,
+                zelle: float = 0.25) -> trimesh.Trimesh | None:
     """
-    Der Raum, den ein Durchlass im Erdreich BRAUCHT: Rohraußenkontur,
-    an beiden Enden um `ueberstand` verlängert. Genau dieser Körper wird
-    aus dem Geländekörper herausgeschnitten, damit die Leitung wirklich
-    durchsteht statt vom Vernetzer zugeschüttet zu werden.
+    Der Raum, den ein Durchlass im Erdreich BRAUCHT: Rohraußenkontur, an
+    den Enden verlängert. Genau dieser Körper wird aus dem Geländekörper
+    herausgeschnitten, damit die Leitung wirklich durchsteht statt vom
+    Vernetzer zugeschüttet zu werden.
+
+    Wie weit ein Ende verlängert wird, hängt von seiner Lage ab: an einer
+    MÜNDUNG (Ende außerhalb des Gebiets oder nahe einer Gebietsfläche)
+    der volle `ueberstand` — der Schnitt muss die Böschungs-/Gebietsfläche
+    sicher durchstoßen. Ein Ende MITTEN IM GEBIET bekommt nur ein kleines
+    Epsilon gegen deckungsgleiche Flächen: der volle Überstand fräste
+    sonst einen offenen Graben über das Rohrende hinaus ins
+    Simulationsgebiet.
     """
     axis = np.asarray(struct.axis, dtype=float)
     if len(axis) < 2:
         return None
+
+    def end_ueberstand(p) -> float:
+        if domain is None:
+            return ueberstand
+        x0, y0, x1, y1 = domain.extent
+        rand = 2 * zelle
+        muendung = (p[0] <= x0 + rand or p[0] >= x1 - rand
+                    or p[1] <= y0 + rand or p[1] >= y1 - rand)
+        return ueberstand if muendung else 0.05
+
     # Enden in Achsrichtung verlängern — ein Schnitt genau auf der
     # Geländeoberfläche oder der Gebietsfläche wäre deckungsgleich
     a0, a1 = axis[0], axis[1]
@@ -783,9 +815,9 @@ def bohrkoerper(struct, ueberstand: float) -> trimesh.Trimesh | None:
     v0 = a0 - a1
     v1 = e0 - e1
     if np.linalg.norm(v0) > 1e-9:
-        axis[0] = a0 + ueberstand * v0 / np.linalg.norm(v0)
+        axis[0] = a0 + end_ueberstand(a0) * v0 / np.linalg.norm(v0)
     if np.linalg.norm(v1) > 1e-9:
-        axis[-1] = e0 + ueberstand * v1 / np.linalg.norm(v1)
+        axis[-1] = e0 + end_ueberstand(e0) * v1 / np.linalg.norm(v1)
 
     teile = []
     for a, b in zip(axis[:-1], axis[1:]):
@@ -809,6 +841,11 @@ def bohrkoerper(struct, ueberstand: float) -> trimesh.Trimesh | None:
             seg.apply_translation([0, 0, -length / 2])
         seg.apply_transform(_achsen_transform(vec))
         seg.apply_translation((a + b) / 2)
+        # Ein Segment mit negativem Volumen hat gekippte Normalen — als
+        # Subtrahend einer Booleschen Operation FÜGT es Material hinzu,
+        # statt zu bohren (das „negativ ins Gelände geschnittene Rohr")
+        if seg.volume < 0:
+            seg.invert()
         teile.append(seg)
     if not teile:
         return None
@@ -1005,6 +1042,40 @@ def gelaende_mit_aushub(field, spec: CaseSpec):
     return dataclasses.replace(field, z=z)
 
 
+def _sicher_abziehen(koerper: trimesh.Trimesh, werkzeug: trimesh.Trimesh
+                     ) -> tuple[trimesh.Trimesh, str | None]:
+    """
+    Boolesche Differenz MIT Ergebnisprüfung. Die manifold-Engine liefert
+    auf zweifelhaftem Input keine Exception, sondern still Müll — mal ist
+    das Rohr ausgehöhlt, mal als Material HINZUGEFÜGT. Deshalb wird das
+    Ergebnis gemessen: es muss ein geschlossener Körper sein und darf
+    nicht größer werden als der Ausgangskörper. Scheitert das, einmal mit
+    der blender-Engine nachversucht; sonst bleibt der Körper ungebohrt
+    und der Fehler wird GEMELDET statt geschluckt.
+    """
+    alt_vol = abs(koerper.volume)
+    fehler = None
+    for engine in (None, "blender"):
+        try:
+            if engine is None:
+                neu = trimesh.boolean.difference([koerper, werkzeug])
+            else:
+                neu = trimesh.boolean.difference([koerper, werkzeug],
+                                                 engine=engine)
+        except Exception as e:                       # noqa: BLE001
+            fehler = f"{type(e).__name__}: {e}"
+            continue
+        if not neu.is_volume:
+            fehler = "Ergebnis ist kein geschlossener Körper"
+            continue
+        if abs(neu.volume) > alt_vol * (1 + 1e-6) + 1e-6:
+            fehler = ("Ergebnis ist größer als der Ausgangskörper — "
+                      "invertierter Schnitt")
+            continue
+        return neu, None
+    return koerper, fehler
+
+
 def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
                            base_dir=".") -> trimesh.Trimesh | None:
     """
@@ -1038,19 +1109,31 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
         if t is not None and t.erdkoerper_ueberstand is not None:
             ueberstand = max(float(t.erdkoerper_ueberstand), 0.0)
         koerper = field.to_solid(unterkante, ueberstand=ueberstand)
+    # Ein nicht wasserdichter Ausgangskörper (importierte STL) macht jede
+    # Boolesche Operation zum Glücksspiel — erst reparieren, sonst gar
+    # nicht erst schneiden und das KLAR sagen
+    if (rohre or aushub) and not koerper.is_volume:
+        trimesh.repair.fix_normals(koerper)
+        koerper.fill_holes()
+        if not koerper.is_volume:
+            if hinweise is not None:
+                hinweise.append(
+                    "Geländekörper ist nicht wasserdicht — Bohrungen und "
+                    "Aushübe können nicht ausgeschnitten werden")
+            return koerper
     for s in rohre:
-        bohrung = bohrkoerper(s, ueberstand=max(4 * zelle, 1.0))
+        bohrung = bohrkoerper(s, ueberstand=max(4 * zelle, 1.0),
+                              domain=spec.domain, zelle=zelle)
         if bohrung is None:
             if hinweise is not None:
                 hinweise.append(f"Durchlass {s.id}: Profil lässt sich nicht "
                                 "durch das Gelände bohren")
             continue
-        try:
-            koerper = trimesh.boolean.difference([koerper, bohrung])
-        except Exception as e:                       # pragma: no cover
-            if hinweise is not None:
-                hinweise.append(f"Durchlass {s.id}: Bohrung durch das Gelände "
-                                f"fehlgeschlagen ({e})")
+        koerper, fehler = _sicher_abziehen(koerper, bohrung)
+        if fehler is not None and hinweise is not None:
+            hinweise.append(f"Durchlass {s.id}: Bohrung durch das Gelände "
+                            f"fehlgeschlagen ({fehler}) — das Rohr steckt "
+                            "weiter im Erdreich")
 
     # Aushub: Schacht, Kammer, Graben — und jeder andere Körper, den der
     # Bearbeiter auf „aushub" gestellt hat. Die Wandungen des Hohlraums
@@ -1063,12 +1146,10 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
                 if hinweise is not None:
                     hinweise.append(f"Aushub {s.id}: Körper nicht erzeugbar ({e})")
                 continue
-            try:
-                koerper = trimesh.boolean.difference([koerper, loch])
-            except Exception as e:                   # pragma: no cover
-                if hinweise is not None:
-                    hinweise.append(f"Aushub {s.id}: Ausschneiden aus dem "
-                                    f"Gelände fehlgeschlagen ({e})")
+            koerper, fehler = _sicher_abziehen(koerper, loch)
+            if fehler is not None and hinweise is not None:
+                hinweise.append(f"Aushub {s.id}: Ausschneiden aus dem "
+                                f"Gelände fehlgeschlagen ({fehler})")
     return koerper
 
 
@@ -1206,7 +1287,8 @@ def koerper_von(struct, base_dir: str | Path = ".", domain=None,
 
 def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
                  include_screens: bool = False,
-                 hinweise: list[str] | None = None
+                 hinweise: list[str] | None = None,
+                 ausfaelle: list[dict] | None = None
                  ) -> dict[str, trimesh.Trimesh]:
     """
     Alle Körper des Falls, Schlüssel = Patchname. Rechenstäbe nur auf
@@ -1216,6 +1298,12 @@ def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
     Ausgehobene Körper (`wirkung: aushub`) tauchen hier NICHT auf: sie sind
     Hohlraum im Gelände, keine eigene Fläche. Sie werden in
     `gelaende_koerper_bauen` abgezogen.
+
+    `ausfaelle`: wird eine Liste übergeben, fängt der Bau jedes Bauwerk
+    EINZELN ab — ein kaputtes Bauwerk (etwa außerhalb des Gebiets gezogen)
+    ließ sonst die komplette Schleife platzen und damit ALLE Körper aus der
+    Szene verschwinden. Je Ausfall ein Eintrag {id, meldung}. Ohne die
+    Liste wirft der erste Fehler wie bisher.
     """
     base_dir = Path(base_dir)
     out: dict[str, trimesh.Trimesh] = {}
@@ -1232,13 +1320,22 @@ def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
         from .terrain import TerrainField
         terrain = TerrainField.from_spec(spec.terrain, spec.domain, base_dir)
     for s in spec.structures:
-        if ist_aushub(s, terrain):
-            continue
-        if s.type == "screen":
-            if include_screens:
-                out[s.patch] = build_screen_bars(s)
-            continue
-        out[s.patch] = koerper_von(s, base_dir, spec.domain, terrain)
+        try:
+            if ist_aushub(s, terrain):
+                continue
+            if s.type == "screen":
+                if include_screens:
+                    out[s.patch] = build_screen_bars(s)
+                continue
+            out[s.patch] = koerper_von(s, base_dir, spec.domain, terrain)
+        except Exception as e:
+            if ausfaelle is None:
+                raise
+            ausfaelle.append({
+                "id": s.id,
+                "meldung": (f"Bauwerk „{s.id}“ nicht baubar "
+                            f"({type(e).__name__}: {e}) — es fehlt in "
+                            "Szene und Netz")})
     if hinweise is not None:
         hinweise += entflechten(out, gewollt_verschnitten(spec))
     return out

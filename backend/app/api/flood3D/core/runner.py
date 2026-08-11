@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 OF_IMAGE = os.environ.get("FLOOD3D_OF_IMAGE", "opencfd/openfoam-run:2406")
@@ -85,6 +86,27 @@ def _pruefe_patches(case: Path, spec) -> None:
           "Patches: " + ", ".join(sorted(vorhanden)))
 
 
+def verwaiste_container_entfernen() -> list[str]:
+    """
+    Alle f3d_*-Container abräumen. Gedacht für den API-Start: Läufe leben
+    in Threads DIESES Prozesses — nach einem Neustart wartet auf keinen
+    Container mehr irgendjemand, er rechnet nur noch ins Leere (und
+    blockiert seit dem uuid-Fix zwar keinen Namen mehr, aber Kerne und
+    Platte). Rückgabe: die entfernten Namen, für das Server-Log.
+    """
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "-a", "--filter", "name=f3d_",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=20)
+    except Exception:                          # noqa: BLE001 — kein Docker,
+        return []                              # kein Problem
+    namen = [n for n in out.stdout.split() if n.startswith("f3d_")]
+    for n in namen:
+        subprocess.run(["docker", "rm", "-f", n], capture_output=True)
+    return namen
+
+
 def run_foam(case_dir: str | Path, command: str, log_name: str,
              timeout: int = MESH_TIMEOUT, name_suffix: str = "") -> Path:
     """
@@ -93,7 +115,14 @@ def run_foam(case_dir: str | Path, command: str, log_name: str,
     Beenden der CLI allein den Solver weiterlaufen ließe.
     """
     case_dir = Path(case_dir).resolve()
-    container = f"f3d_{case_dir.name}_{name_suffix or log_name}".replace(".", "_")
+    # Eindeutiger Zusatz je Aufruf: der Verzeichnisname allein ist NICHT
+    # eindeutig — jede Netzvorschau heißt `derived/mesh_preview`, egal zu
+    # welchem Fall. Zwei Vorschauen (Doppelklick, zweiter Fall) kollidierten
+    # sonst am Containernamen („Conflict. The container name … is already
+    # in use") und der zweite Lauf starb mit 422.
+    eindeutig = uuid.uuid4().hex[:8]
+    container = (f"f3d_{case_dir.name}_{name_suffix or log_name}_{eindeutig}"
+                 .replace(".", "_"))
     log_path = case_dir / log_name
     cmd = ["docker", "run", "--rm", "--name", container,
            "-v", f"{case_dir}:/case", "-w", "/case",

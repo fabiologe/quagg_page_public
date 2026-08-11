@@ -168,6 +168,255 @@ def boxen_ins_gebiet(spec: CaseSpec) -> list[str]:
     return meldungen
 
 
+def _mund_toleranz(spec: CaseSpec) -> float:
+    """
+    Erlaubter Überstand einer Rohr-/Grabenachse über den Gebietsrand: der
+    Mündungs-Überstand ist GEWOLLT (`stutzen_anschliessen` legt Enden
+    bewusst hinter die Fläche, `bohrkoerper` verlängert um bis zu
+    max(4·Zelle, 1 m)). Erst was darüber hinausragt, ist ein Befund.
+    """
+    zelle = spec.mesh.base_cell if spec.mesh else 0.25
+    return max(4 * zelle, 1.0) + zelle
+
+
+def _gebiet_box(spec: CaseSpec, rand: float = 0.0):
+    from shapely.geometry import box
+    x0, y0, x1, y1 = spec.domain.extent
+    return box(x0 - rand, y0 - rand, x1 + rand, y1 + rand)
+
+
+def _anteil_linie(pts, gebiet) -> float:
+    """Längenanteil einer Polylinie AUSSERHALB des Gebiets (0 … 1)."""
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+    xy = [(float(p[0]), float(p[1])) for p in pts]
+    if len(xy) < 2:
+        return 0.0 if (xy and gebiet.covers(Point(xy[0]))) else 1.0
+    linie = LineString(xy)
+    if linie.length < 1e-9:
+        return 0.0 if gebiet.covers(Point(xy[0])) else 1.0
+    # Doppelt durchlaufene Strecken herausrechnen (eine senkrechte
+    # Rechen-Ebene ist in der Draufsicht eine Hin-und-zurück-Linie; der
+    # Verschnitt dedupliziert, die Rohlänge nicht — das Verhältnis löge)
+    linie = unary_union(linie)
+    if linie.length < 1e-9:
+        return 0.0 if gebiet.covers(Point(xy[0])) else 1.0
+    return 1.0 - linie.intersection(gebiet).length / linie.length
+
+
+def _anteil_flaeche(pts, gebiet) -> float:
+    """Flächenanteil eines Polygons AUSSERHALB des Gebiets (0 … 1)."""
+    from shapely.geometry import Polygon
+    xy = [(float(p[0]), float(p[1])) for p in pts]
+    if len(xy) < 3:
+        return _anteil_linie(pts, gebiet)
+    poly = Polygon(xy)
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    if poly.area < 1e-9:
+        return _anteil_linie(pts, gebiet)
+    return 1.0 - poly.intersection(gebiet).area / poly.area
+
+
+def _linie_kappen(pts, gebiet):
+    """
+    Polylinie am Gebietsrand kappen; z an den Schnittpunkten linear entlang
+    der Linie interpoliert. None, wenn nichts Brauchbares übrig bleibt.
+    Bei mehreren Teilstücken bleibt das längste — die Linie behält damit
+    ihre Fachaussage, sie reicht nur noch bis an die Kante.
+    """
+    from shapely.geometry import LineString, Point
+    xy = [(float(p[0]), float(p[1])) for p in pts]
+    if len(xy) < 2:
+        return None
+    linie = LineString(xy)
+    schnitt = linie.intersection(gebiet)
+    if schnitt.is_empty:
+        return None
+    if schnitt.geom_type == "MultiLineString":
+        schnitt = max(schnitt.geoms, key=lambda g: g.length)
+    if schnitt.geom_type != "LineString" or schnitt.length < 1e-9:
+        return None
+    stationen = np.concatenate(
+        [[0.0], np.cumsum(np.linalg.norm(
+            np.diff(np.asarray(xy, dtype=float), axis=0), axis=1))])
+    z = np.asarray([float(p[2]) for p in pts])
+    neu = []
+    for x, y in schnitt.coords:
+        s = linie.project(Point(x, y))
+        neu.append((round(float(x), 4), round(float(y), 4),
+                    round(float(np.interp(s, stationen, z)), 4)))
+    return neu if len(neu) >= 2 else None
+
+
+def _flaeche_kappen(pts, gebiet):
+    """Polygon mit dem Gebiet verschneiden; None, wenn nichts übrig bleibt."""
+    from shapely.geometry import Polygon
+    xy = [(float(p[0]), float(p[1])) for p in pts]
+    if len(xy) < 3:
+        return None
+    poly = Polygon(xy)
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    schnitt = poly.intersection(gebiet)
+    if schnitt.is_empty:
+        return None
+    if schnitt.geom_type == "MultiPolygon":
+        schnitt = max(schnitt.geoms, key=lambda g: g.area)
+    if schnitt.geom_type != "Polygon" or schnitt.area < 1e-9:
+        return None
+    coords = list(schnitt.exterior.coords)[:-1]
+    if len(coords) < 3:
+        return None
+    return [(round(float(x), 4), round(float(y), 4)) for x, y in coords]
+
+
+def gebietslage(spec: CaseSpec) -> list[dict]:
+    """
+    Welche Objekte über das Modellgebiet hinausragen — die EINE Messung, mit
+    der sowohl die Prüfregel als auch die Kur `ins_gebiet` arbeiten (beide
+    müssen dieselbe Größe messen, sonst meldet die Kur Erfolg und der
+    Befund steht weiter).
+
+    Je Eintrag: `id`, `art` (Klartext), `anteil` (Anteil außerhalb, 0 … 1),
+    `voll` (liegt vollständig draußen), `klippbar` (die Kur kann es
+    mechanisch ans Gebiet kappen, ohne eine fachliche Festlegung zu
+    berühren). Rohr- und Grabenachsen dürfen um den Mündungs-Überstand
+    hinausstehen; gemessen wird gegen das entsprechend vergrößerte Gebiet.
+    """
+    lagen: list[dict] = []
+    if spec.domain is None:
+        return lagen
+    gebiet = _gebiet_box(spec)
+    gebiet_mund = _gebiet_box(spec, _mund_toleranz(spec))
+
+    def merken(obj_id, art, anteil, klippbar_wenn_teil):
+        if anteil <= 1e-6:
+            return
+        voll = anteil >= 1.0 - 1e-6
+        lagen.append({"id": obj_id, "art": art,
+                      "anteil": round(float(anteil), 4), "voll": voll,
+                      "klippbar": klippbar_wenn_teil and not voll})
+
+    for s in spec.structures:
+        if s.type == "wall":
+            merken(s.id, "Wand",
+                   _anteil_linie(s.alignment.points, gebiet), True)
+        elif s.type == "weir":
+            merken(s.id, "Wehr",
+                   _anteil_linie(s.crest_polyline, gebiet), True)
+        elif s.type in ("culvert", "graben"):
+            art = "Durchlass" if s.type == "culvert" else "Graben"
+            merken(s.id, art, _anteil_linie(s.axis, gebiet_mund), True)
+        elif s.type == "screen":
+            merken(s.id, "Rechen",
+                   _anteil_flaeche(s.plane_polygon, gebiet), False)
+        elif s.type in ("basin", "kammer"):
+            art = "Becken" if s.type == "basin" else "Kammer"
+            merken(s.id, art, _anteil_flaeche(s.footprint, gebiet), True)
+        elif s.type == "pier":
+            if s.shape == "polygon":
+                merken(s.id, "Pfeiler",
+                       _anteil_flaeche(s.footprint, gebiet), False)
+            elif s.center is not None:
+                from shapely.geometry import Point
+                r = max(s.width or 0.0, s.length or 0.0) / 2 or 0.1
+                kreis = Point(s.center).buffer(r, resolution=8)
+                merken(s.id, "Pfeiler",
+                       1.0 - kreis.intersection(gebiet).area / kreis.area,
+                       False)
+        elif s.type == "schacht":
+            from shapely.geometry import Point
+            r = max(s.width, s.length or 0.0) / 2 or 0.1
+            kreis = Point(s.center).buffer(r, resolution=8)
+            merken(s.id, "Schacht",
+                   1.0 - kreis.intersection(gebiet).area / kreis.area, False)
+        # imported: die Lage steckt im STL — sie wird beim Fallaufbau am
+        # gebauten Körper gemessen (build_case), nicht hier am Spec.
+
+    for v in (spec.solver.vorfuellungen if spec.solver else []):
+        merken(v.id, "Vorfüllung", _anteil_flaeche(v.polygon, gebiet), True)
+    return lagen
+
+
+def ins_gebiet(spec: CaseSpec) -> list[str]:
+    """
+    Kur zu `gebietslage`: alles Klippbare am Gebietsrand kappen (Polylinien
+    mit z-Interpolation, Grundrisse per Verschnitt). Was vollständig draußen
+    liegt oder sich nicht mechanisch kappen lässt (Rechen-Ebene, Pfeiler,
+    Schacht), wird nur GEMELDET — ob so ein Objekt gelöscht oder verschoben
+    wird, ist eine fachliche Entscheidung.
+    """
+    meldungen: list[str] = []
+    if spec.domain is None:
+        return meldungen
+    gebiet = _gebiet_box(spec)
+    gebiet_mund = _gebiet_box(spec, _mund_toleranz(spec))
+    lagen = {l["id"]: l for l in gebietslage(spec)}
+    if not lagen:
+        return meldungen
+
+    def kappen_linie(obj_id, art, pts, box_):
+        neu = _linie_kappen(pts, box_)
+        if neu is None:
+            meldungen.append(f"{art} „{obj_id}“ liegt außerhalb des Gebiets "
+                             "— bitte löschen oder verschieben")
+            return None
+        meldungen.append(f"{art} „{obj_id}“ am Gebietsrand gekappt "
+                         f"({len(pts)} → {len(neu)} Stützpunkte)")
+        return neu
+
+    def kappen_flaeche(obj_id, art, pts):
+        neu = _flaeche_kappen(pts, gebiet)
+        if neu is None:
+            meldungen.append(f"{art} „{obj_id}“ liegt außerhalb des Gebiets "
+                             "— bitte löschen oder verschieben")
+            return None
+        meldungen.append(f"{art} „{obj_id}“ auf das Gebiet beschnitten")
+        return neu
+
+    for s in spec.structures:
+        lage = lagen.get(s.id)
+        if lage is None:
+            continue
+        if not lage["klippbar"]:
+            meldungen.append(
+                f"{lage['art']} „{s.id}“ ragt aus dem Gebiet heraus "
+                f"({lage['anteil']:.0%} außerhalb) — kappen würde die Form "
+                "verändern, bitte verschieben oder löschen")
+            continue
+        if s.type == "wall":
+            neu = kappen_linie(s.id, lage["art"], s.alignment.points, gebiet)
+            if neu is not None:
+                s.alignment.points = neu
+        elif s.type == "weir":
+            neu = kappen_linie(s.id, lage["art"], s.crest_polyline, gebiet)
+            if neu is not None:
+                s.crest_polyline = neu
+        elif s.type in ("culvert", "graben"):
+            neu = kappen_linie(s.id, lage["art"], s.axis, gebiet_mund)
+            if neu is not None:
+                s.axis = neu
+        elif s.type in ("basin", "kammer"):
+            neu = kappen_flaeche(s.id, lage["art"], s.footprint)
+            if neu is not None:
+                s.footprint = neu
+
+    for v in (spec.solver.vorfuellungen if spec.solver else []):
+        lage = lagen.get(v.id)
+        if lage is None:
+            continue
+        if not lage["klippbar"]:
+            meldungen.append(
+                f"Vorfüllung „{v.id}“ liegt vollständig außerhalb des "
+                "Gebiets — bitte löschen oder verschieben")
+            continue
+        neu = kappen_flaeche(v.id, "Vorfüllung", v.polygon)
+        if neu is not None:
+            v.polygon = neu
+    return meldungen
+
+
 def gebiet_umschliesst_fenster(spec: CaseSpec) -> list[str]:
     """
     Gebietshöhe so weit aufziehen, dass jede Öffnung hineinpasst. Eine

@@ -430,9 +430,17 @@ export const usePreStore = defineStore('flood3d-pre', {
       } else if (!entwurf) {
         this.terrain = null
       }
-      this.solids = (p.solids ?? []).map((s) => ({
-        patch: s.patch, stl: b64Buffer(s.stl_b64),
-      }))
+      // Nur eine VORHANDENE Liste übernehmen — fehlt sie in der Antwort
+      // (Serverfehler beim Körperbau), bleibt im Entwurf die letzte Szene
+      // stehen statt dass alle Bauwerke verschwinden (gleicher Schutz wie
+      // beim Gelände oben)
+      if (Array.isArray(p.solids)) {
+        this.solids = p.solids.map((s) => ({
+          patch: s.patch, stl: b64Buffer(s.stl_b64),
+        }))
+      } else if (!entwurf) {
+        this.solids = []
+      }
       // Erdkörper: bei sehr großen Rastern lässt der Server ihn weg
       // (koerper_zu_gross) — dann bleibt der letzte Stand stehen, aber als
       // veraltet markiert, sobald sich die Geometrie geändert hat. Braucht
@@ -490,6 +498,12 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     select(kind, id) {
       this.selection = { kind, id }
+    },
+
+    // Auswahl aufheben (Esc, Klick ins Leere) — vorher konnte `selection`
+    // nur durch Löschen/Fallwechsel wieder null werden
+    deselect() {
+      this.selection = null
     },
 
     // Live-Vorschau des Entwurfs: nach jeder Änderung (entprellt) Gelände,
@@ -659,15 +673,20 @@ export const usePreStore = defineStore('flood3d-pre', {
       return obj
     },
 
-    async runMeshPreview() {
+    // `ohneVerfeinerung`: Schnellvorschau ohne die verschachtelte
+    // Verfeinerung — schneller, Zellzahl/Kosten sind eine untere Grenze
+    async runMeshPreview({ ohneVerfeinerung = false } = {}) {
       this.meshPreviewLoading = true
       this.error = ''
       try {
         if (this.dirty) await this.saveCase()
-        this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId)
+        this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId,
+          ohneVerfeinerung ? { ohne_verfeinerung: true } : {})
         this.meshPreviewStale = false
+        return true
       } catch (e) {
         this.melden(`Netzvorschau: ${e.message}`, 'fehler')
+        return false
       } finally {
         this.meshPreviewLoading = false
       }

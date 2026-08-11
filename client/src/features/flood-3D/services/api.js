@@ -76,7 +76,8 @@ export const flood3dApi = {
   caseProfile: (caseId, polyline, samples = 200) =>
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),
-  meshPreview: (caseId) => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', {}),
+  meshPreview: (caseId, opts = {}) =>
+    sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts),
   caseMeshSurface: (caseId) => getJson(`/cases/${caseId}/mesh-surface`),
   startRun: (caseId) => sendJson('/runs', 'POST', { case_id: caseId }),
   caseBundle: async (caseId) => {

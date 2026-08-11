@@ -25,6 +25,7 @@ KUR_LABELS = {
     "gelaende_einbinden": "In das Gelände einbinden",
     "kraftauswertung_ein": "Kraftauswertung einschalten",
     "anschluesse_herstellen": "Anschlüsse herstellen",
+    "ins_gebiet": "In das Gebiet einpassen",
     "gebiet_hoehe_anpassen": "Gebietshöhe ans Gelände anpassen",
     "durchstoss_ein": "Durch das Gelände bohren",
     "verweis_entfernen": "Verweis ins Leere entfernen",
@@ -283,6 +284,14 @@ def _anschluesse(spec: CaseSpec, args: dict, base_dir=None) -> str:
     return " · ".join(meldungen) if meldungen else "Anschlüsse waren stimmig"
 
 
+def _ins_gebiet(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    from .anschluss import ins_gebiet
+
+    meldungen = ins_gebiet(spec)
+    return (" · ".join(meldungen) if meldungen
+            else "Alles liegt bereits im Gebiet")
+
+
 def _erdkoerper_auto(spec: CaseSpec, args: dict, base_dir=None) -> str:
     if spec.terrain is None:
         return "Kein Gelände — nichts umzustellen"
@@ -302,6 +311,7 @@ _KUREN = {
     "kraftauswertung_ein": _kraftauswertung_ein,
     "gebiet_hoehe_anpassen": _gebiet_hoehe_anpassen,
     "anschluesse_herstellen": _anschluesse,
+    "ins_gebiet": _ins_gebiet,
     "durchstoss_ein": _durchstoss_ein,
     "verweis_entfernen": _verweis_entfernen,
 }
