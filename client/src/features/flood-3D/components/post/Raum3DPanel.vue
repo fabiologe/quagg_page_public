@@ -289,10 +289,10 @@ import { usePostStore } from '../../stores/usePostStore'
 // Geometrie/Zeitschritte über den GEMEINSAMEN Feld-Cache (Audit H6):
 // der Direktweg über services/volume lud beim Tabwechsel Grundriss↔Raum
 // alles doppelt
-import { getGeometry, getTimesteps, getVolume }
+import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { glaetteFeldCached } from '../../utils/glaettung'
-import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
+import { ALPHA_NASS, TIEFE_TROCKEN } from '../../utils/anzeigeSchwellen'
 import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
   from '../../utils/farbskala'
 
@@ -326,8 +326,6 @@ function viewsKey() {
   const caseId = (activeRunId.value ?? '').replace(/_r\d+$/, '')
   return caseId ? `flood3d-camera-views:${caseId}` : VIEWS_KEY_ALT
 }
-const G = 9.81
-
 const viewport = ref(null)
 const activeRunId = ref(null)
 const activeFieldKey = ref('umag')
@@ -1117,34 +1115,17 @@ async function onPointerUp(e) {
   const uz = U.data[2 * n + idx]
   const umag = Math.sqrt(ux * ux + uy * uy + uz * uz)
 
-  // Tiefe als Saeulenintegral Σ α·dz (volumenerhaltend, zeigt auch Filme),
-  // Wasserspiegel subzellig aus dem Fuellgrad der obersten Nasszelle —
-  // dieselbe Rekonstruktion wie im Grundriss (useFieldCache.planFields),
-  // damit sich Punktabfrage und Karte nicht widersprechen.
-  const dzz = grid.spacing[2]
-  const nzz = grid.dims[2]
-  let kTop = -1
-  let depth = 0
-  for (let kk = 0; kk < nzz; kk++) {
-    const a = Math.min(Math.max(alpha[flat(kk)], 0), 1)
-    if (a <= 0) continue
-    depth += a * dzz
-    if (a >= ALPHA_NASS) kTop = kk
-  }
-  const groundZ = terrainInfo ? terrainInfo.z[j * terrainInfo.nx + i] : null
-  let surfZ = null
-  if (depth > TIEFE_TROCKEN) {
-    if (kTop >= 0) {
-      const aTop = Math.min(Math.max(alpha[flat(kTop)], 0), 1)
-      const aOver = kTop + 1 < nzz ? Math.min(Math.max(alpha[flat(kTop + 1)], 0), 1) : 0
-      surfZ = grid.origin[2] + kTop * dzz + (aTop + aOver) * dzz
-    } else if (groundZ != null) {
-      surfZ = groundZ + depth
-    }
-  }
-  const froude = depth > TIEFE_BENETZT ? umag / Math.sqrt(G * depth) : null
-  const tau = currentVol.fields.bed_shear
-    ? currentVol.fields.bed_shear.data[j * grid.dims[0] + i] : null
+  // Spiegel/Tiefe/Froude aus DERSELBEN Implementierung wie die Karten
+  // (useFieldCache.planFields, memoisiert) — der frühere Inline-Nachbau
+  // hier nutzte für Froude die OBERFLÄCHEN- statt der tiefengemittelten
+  // Geschwindigkeit: Punktabfrage und Grundriss-Karte widersprachen sich
+  // an derselben Stelle (Audit H6, Teil 2).
+  const plan = planFieldsCached(currentVol, terrainInfo?.z)
+  const col = j * grid.dims[0] + i
+  const depth = plan.hInt[col]
+  const surfZ = Number.isNaN(plan.surface[col]) ? null : plan.surface[col]
+  const froude = Number.isNaN(plan.froude[col]) ? null : plan.froude[col]
+  const tau = plan.tau ? plan.tau[col] : null
 
   probeResult.value = [
     ['Position', `${x.toFixed(2)} / ${y.toFixed(2)} / ${z.toFixed(2)} m`],
