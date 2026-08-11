@@ -4,6 +4,24 @@
 
 Version 0.1, Entwurf als Umsetzungsvorlage
 
+> **Umsetzungsstand (2026-08-11, Tag `flood3d-v1.0-beta`):** Die Spezifikation
+> ist die Vorlage, nicht das Protokoll — der Code weicht an dokumentierten
+> Stellen bewusst ab. Verworfen bzw. ersetzt (Begründungen im Fahrplan
+> `ROADMAP_FLOOD3D_PRODUKTIONSREIFE.md` und im Audit
+> `AUDIT_FLOOD3D_DEAD_ENDS.md`, Abschnitt V):
+> **Bericht als Dokument** (docx-Pipeline, `POST /runs/{id}/report`) →
+> Nachweisblatt als Panel; **GeoTIFF-Import** → asc/xyz genügen, bis ein
+> echter Anwendungsfall GeoTIFF braucht; **deck.gl-Grundriss** → eigenes
+> Canvas-Panel; **Spline-Achsen** → auf polyline reduziert; **Schema-
+> generiertes Eigenschaftspanel** → `feldTypen.js` als bewusste Quelle;
+> **LTSInterFoam** → aus dem Schema entfernt, bis Stufe F es lauffähig
+> macht; **RunPod/Miet-Rechenleistung** → ersetzt durch Serverlauf +
+> Local Companion (eigene Hardware). Die Kap.-9-Endpunkttabelle ist durch
+> die konsolidierten Endpunkte (`/preview`, `/geometry`) überholt.
+> Kap. 13 (physikalische Verifikation) ist seit 2026-08-11 erfüllt:
+> Wehrüberfall-Referenzfall bestanden (C_d = 0,6443 im Band 0,55–0,75).
+
+
 ---
 
 # 1 Ziel und Zweck

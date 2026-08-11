@@ -167,15 +167,16 @@ oder als neue Befunde in R1-Manier nachgezogen.
 
 ---
 
-## R5 — Abschluss: Versionsstand & Betrieb
+## R5 — Abschluss ✅ (erledigt 2026-08-11 — Merge auf master + Tag `flood3d-v1.0-beta`, `BETRIEB_FLOOD3D.md`, Spez-Umsetzungsvermerk; Push zu GitHub bewusst Handarbeit)
 
-- [ ] Merge auf master + Tag (z. B. `flood3d-v1.0-beta`), damit „Produktionsstand"
+- [x] Merge auf master + Tag (z. B. `flood3d-v1.0-beta`), damit „Produktionsstand"
       ein benennbarer Commit ist.
-- [ ] `data/cases`-Backupweg festlegen (mind. case.yaml + imports/ sichern).
-- [ ] Kurze Betriebsnotiz in README oder eigenem `BETRIEB_FLOOD3D.md`:
+- [x] `data/cases`-Backupweg festlegen (mind. case.yaml + imports/ sichern) —
+      Weg + tar-Einzeiler in `BETRIEB_FLOOD3D.md`; Automatik bewusst offen.
+- [x] Kurze Betriebsnotiz in README oder eigenem `BETRIEB_FLOOD3D.md`:
       PM2-Restart wann nötig, Docker-Image, Timeouts, Kerne, bekannte Deckel
       (1,5 M Viz-Zellen, 120 k Körper-Knoten, 20 min Mesh-Timeout).
-- [ ] Spez-Stand ehrlich machen: `spezifikation-3d-cfd-nachweis.md` bekommt einen
+- [x] Spez-Stand ehrlich machen: `spezifikation-3d-cfd-nachweis.md` bekommt einen
       Vermerk je bewusst verworfener Position (V-Liste: Bericht-Dokument, GeoTIFF,
       deck.gl, Spline, Schema-Panel) — die Spez. lügt sonst gegen den Code.
 
