@@ -95,6 +95,14 @@ client/public/results.zip
 # Ausnahmen möglich sind. Versioniert wird NUR die Solver-Patch-SSOT + die
 # Docker-Build-Dateien — NICHT der 126-MB-Upstream-Baum, NICHT Python-Interna.
 backend/*
+# Der Local Companion ist selbstgeschriebene Quelle, die NUR hier liegt
+# (laeuft auf der Nutzer-Maschine, wird nicht vom Server ausgeliefert).
+# Ohne Ausnahme waere er bei einem Plattenschaden weg (2026-08-11).
+!backend/companion/
+backend/companion/*
+!backend/companion/*.py
+!backend/companion/*.md
+!backend/companion/Dockerfile
 !backend/app/
 backend/app/*
 !backend/app/api/
