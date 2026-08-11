@@ -435,7 +435,14 @@ def gebiet_umschliesst_fenster(spec: CaseSpec) -> list[str]:
             continue
         try:
             r = resolve_window(spec, b)
-        except Exception:
+        except Exception as e:               # noqa: BLE001
+            # Ein unauflösbares Fenster wurde hier bisher STUMM übergangen
+            # — die Kur meldete dann „alles stimmig", obwohl sie eine
+            # Öffnung gar nicht prüfen konnte (Audit F9)
+            meldungen.append(
+                f"Fenster von „{b.id}“ ließ sich nicht auflösen "
+                f"({type(e).__name__}) — die Gebietshöhe wurde dafür "
+                "nicht geprüft")
             continue
         if r is None or r.get("zlo") is None:
             continue

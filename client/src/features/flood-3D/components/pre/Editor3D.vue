@@ -973,6 +973,10 @@ function koerperBeschneiden(extent) {
       new THREE.Plane(new THREE.Vector3(0, -1, 0), y1),
     ]
   })() : null
+  // Beim Aufheben auch das globale Clipping-Flag zurücknehmen — sonst
+  // bleibt es bis zum nächsten „Freischneiden"-Toggle hängen (Audit F6).
+  // Nur, wenn das Freischneiden es nicht selbst gerade braucht.
+  if (!extent && !clipActive.value) renderer.localClippingEnabled = false
   // auch die Körperkanten mitschneiden — sonst stehen sie beim Ziehen
   // über den neuen Zuschnitt hinaus
   for (const teil of teile) {

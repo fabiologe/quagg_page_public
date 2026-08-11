@@ -245,7 +245,7 @@ def test_rechen_staebe_vorschau():
 
 
 def test_kirschmer_ableitung():
-    from ..core.casebuilder import _screen_resistance
+    from ..core.casebuilder import _SCREEN_ZONE_TIEFE, _screen_resistance
     s = cs.StructScreen(
         id="r", type="screen", patch="r",
         plane_polygon=[(0, 0, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1)],
@@ -254,7 +254,12 @@ def test_kirschmer_ableitung():
         resistance=cs.ScreenResistance())      # d = f = 0 -> Kirschmer
     _, f = _screen_resistance(s)
     zeta = 2.42 * (0.008 / 0.012) ** (4 / 3)
-    assert f[0] == pytest.approx(zeta / 0.06, rel=1e-6)
+    # f ist auf die ZONENTIEFE normiert, nicht auf die Stabtiefe: der
+    # Solver integriert Δp = ½ρu²·f·L über die Zone — nur f = ζ/L_Zone
+    # liefert den Kirschmer-Verlust ζ·½ρu². Die frühere Normierung auf
+    # bar_depth überschätzte den Verlust um L_Zone/bar_depth (2,5×).
+    assert f[0] == pytest.approx(zeta / _SCREEN_ZONE_TIEFE, rel=1e-6)
+    assert f[0] * _SCREEN_ZONE_TIEFE == pytest.approx(zeta, rel=1e-6)
 
     explizit = cs.StructScreen(
         id="r2", type="screen", patch="r2",

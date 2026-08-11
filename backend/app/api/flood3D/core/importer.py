@@ -447,7 +447,11 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
                     face = [tuple(v) for v in face]
                     for k in range(1, len(face) - 1):
                         merger.add_face([face[0], face[k], face[k + 1]])
-            except Exception:
+            except Exception:               # noqa: BLE001
+                # NICHT stumm verschwinden lassen: eine unlesbare Netz-
+                # Entität fehlt sonst im Import, ohne dass es irgendwo
+                # steht (Audit F9) — der Zähler landet im Import-Bericht
+                unbekannt[t] = unbekannt.get(t, 0) + 1
                 continue
         elif t == "POLYLINE" and e.is_poly_face_mesh:
             merger = tri_per_layer.setdefault(layer, MeshVertexMerger())
@@ -458,7 +462,8 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
                     face = [tuple(v) for v in face]
                     for k in range(1, len(face) - 1):
                         merger.add_face([face[0], face[k], face[k + 1]])
-            except Exception:
+            except Exception:               # noqa: BLE001
+                unbekannt["POLYLINE"] = unbekannt.get("POLYLINE", 0) + 1
                 continue
         elif t == "CIRCLE":
             # Ein Kreis ist die vollständige Beschreibung einer Rohrmündung:
@@ -977,6 +982,7 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
             kinder[e].append(kid)
 
     dreiecke: list[np.ndarray] = []
+    vermaschung_fehlgeschlagen: list[str] = []
     for kid, poly in polys.items():
         loecher = [np.asarray(polys[c].exterior.coords) for c in kinder[kid]]
         try:
@@ -984,7 +990,10 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
             if not flaeche.is_valid:
                 flaeche = flaeche.buffer(0)
             teile = shapely.constrained_delaunay_triangles(flaeche)
-        except Exception:
+        except Exception:                   # noqa: BLE001
+            # Ein nicht vermaschbarer Ring darf nicht STUMM aus der
+            # Fläche verschwinden (Audit F9) — er wird unten gemeldet
+            vermaschung_fehlgeschlagen.append(kid)
             continue
         for t in getattr(teile, "geoms", []):
             ecken = np.asarray(t.exterior.coords)[:3]
@@ -1025,6 +1034,8 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
                        round(float(x1), 3), round(float(y1), 3)],
             "n_dreiecke": len(dreiecke), "n_punkte": len(hoehen),
             "n_ringe": len(polys),
+            **({"vermaschung_fehlgeschlagen": vermaschung_fehlgeschlagen}
+               if vermaschung_fehlgeschlagen else {}),
             "coverage": round(abdeckung, 3)}
 
 

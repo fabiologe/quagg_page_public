@@ -78,7 +78,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     // mit eigener Farbe, eigener Lebensdauer und eigenem Ort. `error`
     // wurde an 17 Stellen gesetzt, an vier angezeigt, in der Phase
     // „Ergebnis" nirgends: Fehler waren dort unsichtbar.
-    // [{ id, text, art: 'erfolg'|'hinweis'|'fehler' }]
+    // [{ id, text, art: 'erfolg'|'hinweis'|'warnung'|'fehler' }]
     meldungen: [],
   }),
 
@@ -132,8 +132,11 @@ export const usePreStore = defineStore('flood3d-pre', {
       if (!text) return
       const id = (this._meldungsNr = (this._meldungsNr ?? 0) + 1)
       this.meldungen.push({ id, text, art })
-      // Fehler bleiben; alles andere räumt sich selbst weg
-      if (art !== 'fehler') {
+      // Fehler UND Warnungen bleiben stehen, bis sie weggeklickt werden —
+      // eine Warnung, die nach zehn Sekunden verschwindet, hat der
+      // Bearbeiter unter Umständen nie gesehen (Audit F3). Nur Erfolg und
+      // Hinweise räumen sich selbst weg.
+      if (art !== 'fehler' && art !== 'warnung') {
         setTimeout(() => this.meldungWeg(id), art === 'erfolg' ? 4000 : 10000)
       }
       // `error` bleibt vorerst als zweiter Kanal bestehen, damit ältere
@@ -401,6 +404,10 @@ export const usePreStore = defineStore('flood3d-pre', {
         const s = await flood3dApi.meshPreviewState(this.activeCaseId)
         this.meshPreview = s.preview
         this.meshPreviewStale = s.stale
+        if (s.beschaedigt) {
+          this.melden('Die gespeicherte Netzvorschau ist beschädigt — '
+            + 'bitte neu rechnen.', 'warnung')
+        }
       } catch {
         this.meshPreview = null
         this.meshPreviewStale = false

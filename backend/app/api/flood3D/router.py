@@ -322,7 +322,11 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
     try:
         info = json.loads(p.read_text())
     except Exception:
-        return {"vorhanden": False, "stale": False, "preview": None}
+        # Eine BESCHÄDIGTE Vorschaudatei ist etwas anderes als „nie
+        # gerechnet" — als vorhanden-aber-kaputt melden, damit der Nutzer
+        # weiß, dass er neu rechnen muss (Audit F5)
+        return {"vorhanden": True, "beschaedigt": True, "stale": True,
+                "preview": None}
     # Altfall-Fallback: Vorschauen vor 2026-08-05 tragen keinen netz_hash
     if info.get("netz_hash"):
         stale = info["netz_hash"] != spec.netz_hash()
@@ -1459,8 +1463,14 @@ async def start_run(payload: dict = Body(...)):
     def work():
         try:
             run_pipeline(spec, case_dir, run_root, run_id)
-        except Exception:
-            pass    # Fehlerzustand steht im Manifest
+        except Exception as e:                   # noqa: BLE001
+            # Der Fehlerzustand steht NORMALERWEISE im Manifest — aber
+            # wenn das Manifest-Schreiben selbst scheitert (Platte voll),
+            # verschwände der Lauf sonst spurlos in `status: building`.
+            # Deshalb zusätzlich ins Server-Log (Audit F8).
+            print(f"flood3d: Lauf {run_id} abgebrochen "
+                  f"({type(e).__name__}: {e}) — Details im Manifest, "
+                  "sofern es sich schreiben ließ", flush=True)
         finally:
             _active_runs.pop(run_id, None)
 

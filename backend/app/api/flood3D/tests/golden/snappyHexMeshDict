@@ -107,7 +107,7 @@ castellatedMeshControls
         }
     };
 
-    locationInMesh (3.6 9 96.6096);
+    locationInMesh (7.2 9 96.5862);
     allowFreeStandingZoneFaces true;
 }
 

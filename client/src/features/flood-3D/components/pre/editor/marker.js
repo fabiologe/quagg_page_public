@@ -151,7 +151,9 @@ function buildMarkers() {
     groups.markers.add(stab)
   }
 
-  // Querschnittslinien
+  // Querschnittslinien — mit unsichtbaren Zylinder-Klickzielen je Segment
+  // (die dünne Linie selbst war fürs Anklicken nie in `selectable`, obwohl
+  // Griffe und Verschieben voll unterstützt sind; Audit U5)
   for (const sec of spec.evaluation?.sections ?? []) {
     const pts = sec.polyline.map(([x, y]) =>
       new THREE.Vector3(x, y, terrainZ(x, y) + 0.6))
@@ -160,6 +162,20 @@ function buildMarkers() {
       new THREE.LineBasicMaterial({ color: 0x199e70, linewidth: 2 }))
     line.userData = { kind: 'section', id: sec.id }
     groups.markers.add(line)
+    for (let i = 1; i < pts.length; i++) {
+      const mitte = pts[i - 1].clone().lerp(pts[i], 0.5)
+      const laenge = pts[i - 1].distanceTo(pts[i])
+      if (laenge < 1e-6) continue
+      const ziel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, laenge, 6),
+        new THREE.MeshBasicMaterial({ visible: false }))
+      ziel.position.copy(mitte)
+      ziel.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+        pts[i].clone().sub(pts[i - 1]).normalize())
+      ziel.userData = { kind: 'section', id: sec.id }
+      groups.markers.add(ziel)
+      merken(ziel)
+    }
   }
 
   // Vorfüllungen (Anfangszustand): transparente Wasserebene auf z = level,

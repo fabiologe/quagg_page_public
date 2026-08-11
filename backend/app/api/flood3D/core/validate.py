@@ -544,8 +544,14 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"{v:.2f} m³. Beim Fallbau wird der gemeinsame "
                            f"Teil {patch_zu_id.get(b, b)} abgezogen "
                            "(gleiche Berandung, sauberere Zellen)."))
-        except Exception:                    # noqa: BLE001
-            pass
+        except Exception as e:               # noqa: BLE001
+            # Die Durchdringungsprüfung selbst ist gescheitert — das darf
+            # nicht LAUTLOS passieren: beim Fallbau würde trotzdem
+            # entflochten, nur eben ungeprüft (Audit F9)
+            f(_finding("structures", "hinweis",
+                       "Durchdringungsprüfung nicht möglich "
+                       f"({type(e).__name__}) — ob sich Körper überlappen, "
+                       "ist ungeprüft; der Fallbau entflechtet trotzdem."))
 
     # ---- Bearbeitungen --------------------------------------------------
     for st in spec.structures:
@@ -1153,8 +1159,12 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                f"„{s.bar_shape}“, Teilung "
                                f"{s.bar_spacing * 1000:.0f} mm, Anströmwinkel "
                                f"{s.approach_angle_deg:g}°)"))
-                except Exception:
-                    pass
+                except Exception as e:       # noqa: BLE001
+                    f(_finding(s.id, "hinweis",
+                               "Kirschmer-Ableitung nicht berechenbar "
+                               f"({type(e).__name__}) — mit welchen "
+                               "Widerstandsbeiwerten der Rechen gerechnet "
+                               "wird, ist damit unklar."))
             # der wirklich kaputte Fall: lichte Weite ≤ 0 — die
             # Kirschmer-Formel entartet (bisher versteckte das der
             # 1e-4-Boden in _screen_resistance)

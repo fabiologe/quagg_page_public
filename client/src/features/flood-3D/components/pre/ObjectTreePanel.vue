@@ -182,6 +182,7 @@ const neuWahl = ref('')
 
 const KATALOG_LABELS = {
   terrain_op: 'Geländeoperationen', structure: 'Bauwerksformen',
+  kante: 'Vermessungskanten',
   refinement: 'Netzverfeinerungen', vorfuellung: 'Anfangszustand', boundary: 'Randbedingungen',
   section: 'Querschnitte', gauge: 'Pegel', target: 'Nachweiskriterien',
 }

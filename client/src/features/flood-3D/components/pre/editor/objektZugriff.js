@@ -104,6 +104,14 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
   if (kind === 'gauge') { obj.point = mv(obj.point); return obj }
   if (kind === 'kante') { obj.polyline = obj.polyline.map(mv); return obj }
   if (kind === 'section') { obj.polyline = obj.polyline.map(mv); return obj }
+  if (kind === 'vorfuellung') {
+    // Ohne diesen Zweig bewegte Shift-Ziehen die Wasserebene nur OPTISCH:
+    // commitObjectDrag schrieb dann ein unverändertes Objekt zurück und
+    // die Vorfüllung sprang an ihren alten Platz (Audit F2)
+    if (obj.polygon) obj.polygon = obj.polygon.map(mv)
+    lift('level')
+    return obj
+  }
   if (kind === 'terrain_op') {
     if (obj.polyline) obj.polyline = obj.polyline.map(mv)
     if (obj.polygon) obj.polygon = obj.polygon.map(mv)   // 2D wie 3D
@@ -154,6 +162,8 @@ function objectZable(kind, obj) {
   if (!obj) return false
   if (kind === 'gauge') return obj.point?.length > 2
   if (kind === 'kante') return true
+  // Strg-Zug an der Wasserebene stellt den Spiegel (level)
+  if (kind === 'vorfuellung') return typeof obj.level === 'number'
   if (kind === 'structure' || kind === 'refinement'
       || kind === 'domain') return true
   if (kind === 'terrain_op') {

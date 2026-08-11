@@ -84,15 +84,62 @@ def blockmesh_dict(spec: CaseSpec) -> str:
     return foam_file("blockMeshDict", body, location="system")
 
 
+def _bauwerk_bboxen(spec: CaseSpec) -> list[tuple[float, float, float, float]]:
+    """Grundriss-Hüllen aller Bauwerke — grob, aber billig (kein trimesh)."""
+    boxen = []
+    for s in spec.structures:
+        pts: list[tuple[float, float]] = []
+        for feld in ("axis", "crest_polyline", "footprint", "plane_polygon"):
+            pts += [(p[0], p[1]) for p in (getattr(s, feld, None) or [])]
+        al = getattr(s, "alignment", None)
+        if al is not None:
+            pts += [(p[0], p[1]) for p in al.points]
+        c = getattr(s, "center", None)
+        if c is not None:
+            r = max(getattr(s, "width", 0) or 0,
+                    getattr(s, "length", 0) or 0) / 2 or 0.5
+            pts += [(c[0] - r, c[1] - r), (c[0] + r, c[1] + r)]
+        if not pts:
+            continue
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        boxen.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxen
+
+
 def location_in_mesh(spec: CaseSpec, terrain_sample) -> tuple[float, float, float]:
     """
-    Punkt im Strömungsgebiet: nahe dem Zuflussrand, mittig in y, vertikal
-    zwischen Gelände und Gebietsoberkante. terrain_sample(x, y) -> z oder
-    None wenn kein Gelände definiert ist.
+    Punkt im Strömungsgebiet: bevorzugt nahe dem Zuflussrand, mittig in y,
+    vertikal zwischen Gelände und Gebietsoberkante. terrain_sample(x, y)
+    -> z oder None wenn kein Gelände definiert ist.
+
+    Der Punkt darf in KEINEM Bauwerk stecken: liegt er in einem Körper,
+    hält snappyHexMesh dessen Inneres für das Strömungsgebiet und vernetzt
+    die falsche Seite. Der frühere Festpunkt bei 15 % der Gebietslänge tat
+    genau das, sobald dort ein Einlaufbauwerk stand (Audit F10). Geprüft
+    wird gegen die Grundriss-Hüllen der Bauwerke; der erste freie Kandidat
+    gewinnt, ohne freien Kandidaten bleibt es beim alten Festpunkt.
     """
     x0, y0, x1, y1 = spec.domain.extent
+    rand = spec.mesh.base_cell if spec.mesh else 0.25
+    boxen = _bauwerk_bboxen(spec)
+
+    def frei(px, py) -> bool:
+        return not any(bx0 - rand <= px <= bx1 + rand
+                       and by0 - rand <= py <= by1 + rand
+                       for bx0, by0, bx1, by1 in boxen)
+
+    kandidaten = [(fx, fy)
+                  for fy in (0.5, 0.3, 0.7, 0.15, 0.85)
+                  for fx in (0.15, 0.3, 0.5, 0.7, 0.85)]
     x = x0 + (x1 - x0) * 0.15
     y = (y0 + y1) / 2
+    for fx, fy in kandidaten:
+        px = x0 + (x1 - x0) * fx
+        py = y0 + (y1 - y0) * fy
+        if frei(px, py):
+            x, y = px, py
+            break
     ground = spec.domain.z_min
     if terrain_sample is not None:
         ground = float(terrain_sample(x, y))

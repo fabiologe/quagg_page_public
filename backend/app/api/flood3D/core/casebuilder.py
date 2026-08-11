@@ -821,7 +821,9 @@ def topo_set_dict(spec: CaseSpec) -> str | None:
         k_vec = np.cross(i_vec, j_vec)
         k_norm = np.linalg.norm(k_vec)
         if k_norm > 0:
-            k_vec = k_vec / k_norm * 0.15   # Zonentiefe in Anströmrichtung
+            # Zonentiefe in Anströmrichtung — dieselbe Länge, auf die
+            # _screen_resistance den f-Beiwert normiert (sonst stimmt Δp nicht)
+            k_vec = k_vec / k_norm * _SCREEN_ZONE_TIEFE
         actions += f"""    {{
         name    {s.id}Cells;
         type    cellSet;
@@ -868,6 +870,13 @@ def create_patch_dict(spec: CaseSpec) -> str | None:
 # ζ = β (Stabdicke / lichte Weite)^(4/3) · sin α
 _KIRSCHMER_BETA = {"rechteck": 2.42, "rund": 1.79, "tropfen": 0.76}
 
+# Tiefe der porösen Zelle-Zone in Anströmrichtung. Der Darcy-Forchheimer-
+# Beiwert MUSS auf DIESE Länge normiert sein: Δp = ½ρu²·f·L_Zone — nur mit
+# f = ζ/L_Zone kommt der Kirschmer-Verlust ζ·½ρu² heraus. Vorher wurde auf
+# die STABTIEFE normiert (Vorbelegung 0,06 m) und der Verlust damit um den
+# Faktor L_Zone/bar_depth (2,5× bei Vorbelegung) überschätzt.
+_SCREEN_ZONE_TIEFE = 0.15
+
 
 def _screen_resistance(s) -> tuple[tuple, tuple]:
     """d/f-Vektoren; ohne explizite Vorgabe aus Kirschmer + Stabform."""
@@ -878,7 +887,7 @@ def _screen_resistance(s) -> tuple[tuple, tuple]:
         beta = _KIRSCHMER_BETA.get(s.bar_shape, 2.42)
         zeta = beta * (s.bar_thickness / clear) ** (4 / 3) \
             * math.sin(math.radians(s.approach_angle_deg))
-        f = (zeta / max(s.bar_depth, 1e-3), 0.0, 0.0)
+        f = (zeta / _SCREEN_ZONE_TIEFE, 0.0, 0.0)
     return d, f
 
 
