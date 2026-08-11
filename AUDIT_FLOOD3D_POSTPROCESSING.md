@@ -1,3 +1,6 @@
+> **Historisch** — Stand vor 2026-08-11. Viele Befunde sind inzwischen behoben.
+> Aktueller Stand: `AUDIT_FLOOD3D_DEAD_ENDS.md` · Abarbeitung: `ROADMAP_FLOOD3D_PRODUKTIONSREIFE.md`
+
 # Audit flood3D PostProcessing — 2026-08-05
 
 Anlass: Vor dem ersten echten Lauf wurde die Pipeline geprüft — Ergebnis: der Lauf selbst

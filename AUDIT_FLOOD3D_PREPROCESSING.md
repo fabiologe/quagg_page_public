@@ -1,3 +1,6 @@
+> **Historisch** — Stand vor 2026-08-11. Viele Befunde sind inzwischen behoben.
+> Aktueller Stand: `AUDIT_FLOOD3D_DEAD_ENDS.md` · Abarbeitung: `ROADMAP_FLOOD3D_PRODUKTIONSREIFE.md`
+
 # Audit flood-3D-Preprocessing — Import, Geometriehandling, Modellierung
 
 Stand: 2026-08-05 · Basis: Commit `a1682b4` (Branch-Stand des Audit-Worktrees) ·

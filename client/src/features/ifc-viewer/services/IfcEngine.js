@@ -1732,6 +1732,26 @@ export class IfcEngine {
     }
 
     /**
+     * T1/AP-C: web-ifc-Zugänge für ALLE geladenen Modelle.
+     * web-ifc vergibt Model-IDs in Ladereihenfolge (0, 1, 2, …) — dieselbe
+     * Reihenfolge wie fragments.list. Solange kein Modell entladen wurde,
+     * stimmt das Mapping; nach unloadModel fallen wir defensiv auf Modell 0
+     * zurück (MVP-Absicherung, dokumentierte Einschränkung).
+     */
+    getWebIfcAPIs() {
+        const ifcLoader = this.components.get(OBC.IfcLoader);
+        const fragments = this.components.get(OBC.FragmentsManager);
+        if (!ifcLoader?.webIfc || !fragments.list.size) return [];
+        const models = [...fragments.list.values()];
+        return models.map((model, i) => ({
+            webIfc: ifcLoader.webIfc,
+            modelID: i,
+            fragmentModelId: model.modelId,
+            model,
+        }));
+    }
+
+    /**
      * Hide section-cut visual helpers (gizmo + plane mesh) for an export snapshot.
      * The actual clipping plane stays active — only the visual overlays are hidden.
      * Returns an array of objects to restore via _restoreSectionVisuals().

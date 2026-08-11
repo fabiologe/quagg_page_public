@@ -39,7 +39,56 @@ function importPos(obj) {
 // aufgelösten Randflächen, Fenster und Öffnungslagen als
 // store.aufgeloest — eine Regel, eine Implementierung, im Backend.
 
+// Punkt ans Modellgebiet klemmen (UX-Schicht beim Ziehen/Zeichnen; die
+// GARANTIE bleibt serverseitig: Validierung + build_case-Säuberung).
+// `margin` erlaubt den gewollten Mündungs-Überstand von Rohr-/Grabenachsen.
+function clampDomain(p, margin = 0) {
+  const d = store.spec?.domain
+  if (!d) return p
+  const [x0, y0, x1, y1] = d.extent
+  return [_r2(Math.min(Math.max(p[0], x0 - margin), x1 + margin)),
+    _r2(Math.min(Math.max(p[1], y0 - margin), y1 + margin)),
+    ...p.slice(2)]
+}
+
+// Erlaubter Überstand beim Klemmen: Durchlass-/Grabenachsen DÜRFEN über
+// den Rand stehen (Mündung), alles andere bleibt im Gebiet
+function clampMarge(obj) {
+  return ['culvert', 'graben'].includes(obj?.type)
+    ? Math.max(4 * (store.spec?.mesh?.base_cell ?? 0.25), 1.0) : 0
+}
+
+// Verschiebe-Delta so begrenzen, dass die xy-Hülle des Objekts im Gebiet
+// bleibt. Ein Objekt, das größer als das Gebiet ist (oder schon draußen
+// liegt), wird nicht geklemmt — sonst spränge es beim ersten Zug.
+function _begrenzeDelta(kind, obj, dx, dy) {
+  const d = store.spec?.domain
+  if (!d || kind === 'domain' || kind === 'boundary') return [dx, dy]
+  const pts = []
+  const sammle = (list) => { for (const q of list ?? []) pts.push(q) }
+  sammle(obj.polyline); sammle(obj.polygon); sammle(obj.footprint)
+  sammle(obj.axis); sammle(obj.crest_polyline); sammle(obj.plane_polygon)
+  sammle(obj.alignment?.points); sammle(obj.oberkante); sammle(obj.unterkante)
+  if (obj.point) pts.push(obj.point)
+  if (obj.center) pts.push(obj.center)
+  if (obj.extent?.length === 6) {
+    pts.push([obj.extent[0], obj.extent[1]], [obj.extent[3], obj.extent[4]])
+  }
+  if (!pts.length) return [dx, dy]
+  const marge = clampMarge(obj)
+  const [x0, y0, x1, y1] = d.extent
+  const xs = pts.map((q) => q[0])
+  const ys = pts.map((q) => q[1])
+  const loX = (x0 - marge) - Math.min(...xs)
+  const hiX = (x1 + marge) - Math.max(...xs)
+  const loY = (y0 - marge) - Math.min(...ys)
+  const hiY = (y1 + marge) - Math.max(...ys)
+  return [loX <= hiX ? _r2(Math.min(Math.max(dx, loX), hiX)) : dx,
+    loY <= hiY ? _r2(Math.min(Math.max(dy, loY), hiY)) : dy]
+}
+
 function translateObject(kind, obj, dx, dy, dz = 0) {
+  ;[dx, dy] = _begrenzeDelta(kind, obj, dx, dy)
   const mv = (p) => {
     const q = [_r2(p[0] + dx), _r2(p[1] + dy), ...p.slice(2)]
     if (p.length > 2 && dz) q[2] = _r2(p[2] + dz)
@@ -53,7 +102,16 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
     }
   }
   if (kind === 'gauge') { obj.point = mv(obj.point); return obj }
+  if (kind === 'kante') { obj.polyline = obj.polyline.map(mv); return obj }
   if (kind === 'section') { obj.polyline = obj.polyline.map(mv); return obj }
+  if (kind === 'vorfuellung') {
+    // Ohne diesen Zweig bewegte Shift-Ziehen die Wasserebene nur OPTISCH:
+    // commitObjectDrag schrieb dann ein unverändertes Objekt zurück und
+    // die Vorfüllung sprang an ihren alten Platz (Audit F2)
+    if (obj.polygon) obj.polygon = obj.polygon.map(mv)
+    lift('level')
+    return obj
+  }
   if (kind === 'terrain_op') {
     if (obj.polyline) obj.polyline = obj.polyline.map(mv)
     if (obj.polygon) obj.polygon = obj.polygon.map(mv)   // 2D wie 3D
@@ -103,6 +161,9 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
 function objectZable(kind, obj) {
   if (!obj) return false
   if (kind === 'gauge') return obj.point?.length > 2
+  if (kind === 'kante') return true
+  // Strg-Zug an der Wasserebene stellt den Spiegel (level)
+  if (kind === 'vorfuellung') return typeof obj.level === 'number'
   if (kind === 'structure' || kind === 'refinement'
       || kind === 'domain') return true
   if (kind === 'terrain_op') {
@@ -159,23 +220,40 @@ function _removeAt(list, i, min) {
 }
 
 function handleAccess(kind, obj) {
+  if (!obj) return null
   if (kind === 'vorfuellung') {
-    // Polygon-Griffe wie bei einer Geländeoperation; der Wasserspiegel
-    // ist ein Panel-Wert, kein Zieh-Freiheitsgrad
+    // Polygon-Griffe wie bei einer Geländeoperation; der Strg-Zug stellt
+    // den Wasserspiegel (level) — die Wasserebene in der Szene folgt.
+    // (Der alte Zweig hatte eine eigene write(pts)-Konvention, die zum
+    // Editor-Vertrag write(o, i, p) nie passte — Griffe waren tot.)
+    if (!Array.isArray(obj.polygon) || !obj.polygon.length) return null
     return {
-      points: () => (obj.polygon ?? []).map(([x, y]) => [x, y]),
+      points: obj.polygon.map(([x, y]) => [x, y]),
       closed: true,
-      write: (pts) => store.updateObject(kind, obj.id,
-        { ...obj, polygon: pts.map(([x, y]) => [_r2(x), _r2(y)]) }),
+      zAt: () => obj.level ?? 0,
+      insert: _insert2d('polygon'),
+      remove: (o, i) => _removeAt(o.polygon, i, 3),
+      write: (o, i, p) => { o.polygon[i] = [_r2(p[0]), _r2(p[1])] },
+      writeZ: (o, i, dz) => { o.level = _r2((o.level ?? 0) + dz) },
     }
   }
-  if (!obj) return null
   if (kind === 'gauge') {
     return { points: [obj.point],
       write: (o, i, p) => { o.point = [p[0], p[1], ...o.point.slice(2)] },
       ...(obj.point?.length > 2 ? {
         writeZ: (o, i, dz) => { o.point[2] = _r2(o.point[2] + dz) },
       } : {}) }
+  }
+  if (kind === 'kante') {
+    // Vermessungskante: Höhe je Stützpunkt — wie die Bruchkanten-Operation
+    if (!obj.polyline?.length) return null
+    return { points: obj.polyline.map((q) => [q[0], q[1]]), closed: false,
+      zJePunkt: true,
+      zAt: (i) => obj.polyline[i][2],
+      insert: _insert3d((o) => o.polyline),
+      remove: (o, i) => _removeAt(o.polyline, i, 2),
+      write: (o, i, p) => { o.polyline[i] = [p[0], p[1], o.polyline[i][2]] },
+      writeZ: (o, i, dz) => { o.polyline[i][2] = _r2(o.polyline[i][2] + dz) } }
   }
   if (kind === 'section') {
     return { points: obj.polyline, closed: false,
@@ -212,6 +290,7 @@ function handleAccess(kind, obj) {
       // Rahmen am Gebietsrand: Höhe steckt im Eckpunkt, nicht in einem
       // Höhenfeld — Strg-Zug stellt genau diese eine Ecke
       return { points: obj.polygon.map((q) => [q[0], q[1]]), closed: true,
+        zJePunkt: true,
         zAt: (i) => obj.polygon[i][2],
         insert: _insert3d((o) => o.polygon),
         remove: (o, i) => _removeAt(o.polygon, i, 3),
@@ -221,6 +300,7 @@ function handleAccess(kind, obj) {
     if (obj.type === 'bruchkante' || obj.type === 'boeschung') {
       const feld = obj.type === 'bruchkante' ? 'polyline' : 'oberkante'
       return { points: obj[feld].map((q) => [q[0], q[1]]), closed: false,
+        zJePunkt: true,
         zAt: (i) => obj[feld][i][2],
         insert: _insert3d((o) => o[feld]),
         remove: (o, i) => _removeAt(o[feld], i, 2),
@@ -272,6 +352,7 @@ function handleAccess(kind, obj) {
       return {
         points: obj.alignment.points.map((q) => [q[0], q[1]]),
         closed: false,
+        zJePunkt: true,
         zAt: (i) => obj.alignment.points[i][2] + 0.3,
         insert: _insert3d((o) => o.alignment.points),
         remove: (o, i) => _removeAt(o.alignment.points, i, 2),
@@ -287,6 +368,7 @@ function handleAccess(kind, obj) {
       return {
         points: obj.axis.map((q) => [q[0], q[1]]),
         closed: false,
+        zJePunkt: true,
         zAt: (i) => obj.axis[i][2] + 0.6,
         insert: _insert3d((o) => o.axis),
         remove: (o, i) => _removeAt(o.axis, i, 2),
@@ -298,6 +380,7 @@ function handleAccess(kind, obj) {
       return {
         points: obj.crest_polyline.map((q) => [q[0], q[1]]),
         closed: false,
+        zJePunkt: true,
         zAt: (i) => obj.crest_polyline[i][2] + 0.3,
         insert: _insert3d((o) => o.crest_polyline),
         remove: (o, i) => _removeAt(o.crest_polyline, i, 2),
@@ -311,26 +394,64 @@ function handleAccess(kind, obj) {
     }
     if (obj.type === 'screen') {
       // Alle vier Ecken einzeln greifbar — auch die SOHLKNOTEN. Unter- und
-      // Oberecke liegen im Grundriss exakt übereinander, darum bewegt ein
-      // Grundriss-Zug die ganze Spalte (sonst verdreht sich die Ebene,
-      // Bug „Knoten hängt"); in der Höhe wandert nur die gegriffene Ecke —
-      // so lassen sich Unter- und Oberkante getrennt anpassen.
-      const colOf = (o, i) => o.plane_polygon
-        .map((_p, k) => k)
-        .filter((k) =>
-          Math.abs(o.plane_polygon[k][0] - o.plane_polygon[i][0]) < 1e-6
-          && Math.abs(o.plane_polygon[k][1] - o.plane_polygon[i][1]) < 1e-6)
+      // Oberecke gehören als SPALTE zusammen, darum bewegt ein
+      // Grundriss-Zug beide (sonst verdreht sich die Ebene, Bug „Knoten
+      // hängt"); in der Höhe wandert nur die gegriffene Ecke. Die Spalte
+      // kommt aus der POLYGON-KONVENTION (Punkt i gehört zu Punkt n-1-i,
+      // wie build_screen_bars sie liest) — der frühere xy-Vergleich
+      // versagte, sobald die Ebene einmal geneigt war (Ecken liegen dann
+      // im Grundriss nicht mehr übereinander → Plan-Zug scherte die Ebene).
+      const n = obj.plane_polygon.length
+      const colOf = (o, i) => {
+        const partner = o.plane_polygon.length - 1 - i
+        return partner === i ? [i] : [i, partner]
+      }
+      // Obere Ecken (fürs Kippen): die zwei höchsten Punkte
+      const obenIdx = (o) => o.plane_polygon
+        .map((q, k) => [q[2], k])
+        .sort((a, b) => b[0] - a[0])
+        .slice(0, 2)
+        .map(([, k]) => k)
+      const obenMitte = (o) => {
+        const [a, b] = obenIdx(o)
+        return [(o.plane_polygon[a][0] + o.plane_polygon[b][0]) / 2,
+          (o.plane_polygon[a][1] + o.plane_polygon[b][1]) / 2]
+      }
+      const mitte = obenMitte(obj)
       return {
-        points: obj.plane_polygon.map((q) => [q[0], q[1]]),
+        // 5. Griff auf der Oberkanten-Mitte: Plan-Zug KIPPT die Ebene
+        // (nur die beiden oberen Ecken wandern, die Unterkante bleibt als
+        // Scharnier stehen), Strg-Zug hebt die ganze Oberkante
+        points: [...obj.plane_polygon.map((q) => [q[0], q[1]]), mitte],
         closed: true,
-        zAt: (i) => obj.plane_polygon[i][2] + 0.3,
+        loops: [[...Array(n).keys()]],
+        zJePunkt: true,
+        zPunkte: n,
+        zAt: (i) => (i < n ? obj.plane_polygon[i][2] + 0.3
+          : Math.max(...obj.plane_polygon.map((q) => q[2])) + 0.3),
         write: (o, i, p) => {
-          for (const k of colOf(o, i)) {
-            o.plane_polygon[k] = [p[0], p[1], o.plane_polygon[k][2]]
+          if (i < n) {
+            for (const k of colOf(o, i)) {
+              o.plane_polygon[k] = [p[0], p[1], o.plane_polygon[k][2]]
+            }
+            return
+          }
+          const alt = obenMitte(o)
+          const dx = p[0] - alt[0]
+          const dy = p[1] - alt[1]
+          for (const k of obenIdx(o)) {
+            o.plane_polygon[k] = [_r2(o.plane_polygon[k][0] + dx),
+              _r2(o.plane_polygon[k][1] + dy), o.plane_polygon[k][2]]
           }
         },
         writeZ: (o, i, dz) => {
-          o.plane_polygon[i][2] = _r2(o.plane_polygon[i][2] + dz)
+          if (i < n) {
+            o.plane_polygon[i][2] = _r2(o.plane_polygon[i][2] + dz)
+            return
+          }
+          for (const k of obenIdx(o)) {
+            o.plane_polygon[k][2] = _r2(o.plane_polygon[k][2] + dz)
+          }
         },
       }
     }
@@ -535,5 +656,5 @@ function handleAccess(kind, obj) {
 
 
   return { _r2, transformEdit, importPos, translateObject, objectZable,
-    collectSnapPoints, handleAccess }
+    collectSnapPoints, handleAccess, clampDomain, clampMarge }
 }

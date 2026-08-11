@@ -69,10 +69,46 @@ def test_bohrung_macht_ein_echtes_loch_im_erdkoerper():
     assert gebohrt is not None and gebohrt.is_watertight
 
     r = 0.4 + 0.15
-    # Erdkörper reicht von x = -1 (Überstand) bis zum Bohrende bei x = 14
-    laenge_im_erdreich = 14.0 - (-2 * zelle)
+    # Erdkörper reicht von x = -1 (Überstand) bis zum Bohrende: das INNERE
+    # Achsende (x = 12) bekommt nur 5 cm Epsilon statt des vollen
+    # Überstands — sonst fräste die Bohrung einen offenen Graben über das
+    # Rohrende hinaus ins Simulationsgebiet (B1)
+    laenge_im_erdreich = 12.05 - (-2 * zelle)
     erwartet = np.pi * r ** 2 * laenge_im_erdreich
     assert voll.volume - gebohrt.volume == pytest.approx(erwartet, rel=0.03)
+    # die Bohrung darf nie Material HINZUFÜGEN (B2: invertierter Schnitt)
+    assert gebohrt.volume < voll.volume
+
+
+def test_muendungsende_behaelt_den_vollen_ueberstand():
+    """B1: nur das innere Ende wird geklemmt, die Mündung durchstößt weiter."""
+    spec = _damm_fall(True)
+    s = spec.structures[0]
+    zelle = spec.mesh.base_cell
+    b = bohrkoerper(s, ueberstand=max(4 * zelle, 1.0),
+                    domain=spec.domain, zelle=zelle)
+    # Mündung bei x = -0.5 (außerhalb): voll verlängert auf -2.5
+    assert b.bounds[0][0] == pytest.approx(-2.5, abs=0.02)
+    # inneres Ende bei x = 12: nur 5 cm Epsilon
+    assert b.bounds[1][0] == pytest.approx(12.05, abs=0.02)
+
+
+def test_kaputter_erdkoerper_wird_gemeldet_statt_geschnitten():
+    """B2: nicht wasserdichter Geländekörper → klare Meldung, kein Roulette."""
+    spec = _damm_fall(True)
+    # ein importierter, absichtlich offener Körper (eine einzelne Platte)
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        platte = trimesh.Trimesh(
+            vertices=[(0, 0, 96), (24, 0, 96), (24, 18, 96), (0, 18, 96)],
+            faces=[(0, 1, 2), (0, 2, 3)])
+        stl = f"{td}/koerper.stl"
+        platte.export(stl)
+        spec.terrain.base.koerper = "koerper.stl"
+        hinweise: list[str] = []
+        gelaende_koerper_bauen(_feld(spec), spec, hinweise=hinweise,
+                               base_dir=td)
+        assert any("nicht wasserdicht" in h for h in hinweise)
 
 
 def test_ohne_schalter_bleibt_das_gelaende_die_hoehenflaeche():

@@ -43,16 +43,17 @@ UNITS: dict[Quantity, str] = {
 
 
 class Component(str, Enum):
+    # Nur, was auch erzeugt wird: `porous` (Kraft-Porositätsanteil) und
+    # `min` (Courant) hat nie ein Reader geschrieben — tote Enum-Werte
+    # täuschen einen Vertrag vor, den es nicht gibt (Audit T4)
     X = "x"
     Y = "y"
     Z = "z"
     MAGNITUDE = "magnitude"
     PRESSURE = "pressure"    # Druckanteil einer Kraft/eines Moments
     VISCOUS = "viscous"      # Reibungsanteil
-    POROUS = "porous"
     MEAN = "mean"
     MAX = "max"
-    MIN = "min"
     INITIAL = "initial"      # Anfangsresiduum einer Iteration
     FINAL = "final"
     NONE = ""

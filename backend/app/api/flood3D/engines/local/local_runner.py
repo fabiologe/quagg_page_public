@@ -34,9 +34,12 @@ SAFE_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 # alles seriell — bei 724k Zellen ist das der Unterschied zwischen
 # 9 Stunden und gut einer.
 def _cores() -> int:
-    env = os.environ.get("QUAGG_FOAM_CORES", "").strip()
-    if env.isdigit() and int(env) > 0:
-        return int(env)
+    # EINE Kernzahl-Quelle mit dem Server-Runner (F12-Drift): zuerst
+    # FLOOD3D_CORES wie dort, QUAGG_FOAM_CORES bleibt als Altname gültig
+    for name in ("FLOOD3D_CORES", "QUAGG_FOAM_CORES"):
+        env = os.environ.get(name, "").strip()
+        if env.isdigit() and int(env) > 0:
+            return max(1, min(int(env), os.cpu_count() or 1))
     return max(1, min(os.cpu_count() or 1, 8))
 
 
@@ -349,10 +352,21 @@ def main() -> int:
                      "extrahiert — Bauwerke/Netz fehlen im Viewer")
 
         ypr = _y_plus_range(case)
-        run_foam_step(case,
-                      "postProcess -noFunctionObjects -func writeCellCentres -time 0",
-                      "log.writeCellCentres")
-        conv = convert_case_fields(spec, case, job)
+        # Wie im Server-Runner geschützt (F12-Drift): scheitert die
+        # Feldkonvertierung, stirbt NICHT der ganze Lauf nach Stunden
+        # Rechenzeit — die Zeitreihen und Nachweise bleiben nutzbar, nur
+        # die 3D-Felder fehlen (und das steht im Manifest)
+        conv = {}
+        fields_error = None
+        try:
+            run_foam_step(case,
+                          "postProcess -noFunctionObjects -func writeCellCentres -time 0",
+                          "log.writeCellCentres")
+            conv = convert_case_fields(spec, case, job)
+        except Exception as e:               # noqa: BLE001
+            fields_error = str(e)
+            emit(event="log", text="WARNUNG: 3D-Felder nicht konvertiert — "
+                 + str(e) + " (Zeitreihen und Nachweise bleiben nutzbar)")
         if conv.get("terrain_error"):
             emit(event="log", text="WARNUNG: Geländeschicht nicht erzeugt — "
                  + conv["terrain_error"] + " (Ergebnisse bleiben nutzbar, "
@@ -373,6 +387,13 @@ def main() -> int:
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
                     "missing_sources": missing, "finished": time.time()}
+        if conv.get("terrain_error"):
+            # Muss mit zum Server: die Warnung im Logstrom ist nach dem
+            # Schließen des Fensters weg, und ohne diesen Eintrag stand
+            # man vor einem Lauf ohne Gelände und ohne Erklärung
+            manifest["terrain_error"] = conv["terrain_error"]
+        if fields_error:
+            manifest["fields_error"] = fields_error
         if ypr:
             manifest["y_plus_range"] = [round(ypr[0], 2), round(ypr[1], 2)]
         # Selbsttest: Wasservolumen im Visualisierungsgitter vs. Solver

@@ -257,11 +257,12 @@ export function fehlendeBausteine(spec, kind) {
 // Felder, die leer bleiben dürfen und dann eine Vorbelegung bedeuten. Sie
 // fallen als `null` aus dem JSON heraus und wären im Panel gar nicht
 // sichtbar — man könnte sie also nie setzen.
-export const OPTIONAL_ZAHLEN = {
-  // Erdkörper-Maße am Gelände (früher die Pseudo-Operation
-  // „Berechnungskörper") — leer heißt Vorbelegung
-  terrain: ['erdkoerper_unterkante', 'erdkoerper_ueberstand'],
-}
+// Die Erdkörper-Maße am Gelände (erdkoerper_unterkante/-ueberstand) werden
+// NICHT mehr angeboten: die Vorbelegung des Fallaufbaus genügt, und die
+// Felder verwirrten im Panel („Sohle des Erdkörpers"?). Altfälle mit
+// gesetztem Wert zeigen das Feld weiterhin (es ist dann nicht null) und
+// behalten ihre Beschriftung in TYP_LABELS.
+export const OPTIONAL_ZAHLEN = {}
 
 export function widgetFor(key, v, typ) {
   if (REFERENZ_QUELLEN[typ]?.[key]) return 'referenz'

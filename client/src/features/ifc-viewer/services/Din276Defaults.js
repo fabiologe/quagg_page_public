@@ -1,10 +1,12 @@
 /**
  * DIN 276-1:2018 — Kostengruppen-Baum + Standard-Mappings IFC → KG.
  *
- * Wir bilden KG-300 (Baukonstruktion) und KG-400 (technische Anlagen) ab —
- * die beiden Hauptebenen, die aus BIM-Geometrie sinnvoll ableitbar sind.
- * Andere Hauptgruppen (KG-200 Herrichten, KG-500 Außenanlagen, KG-600
- * Ausstattung, KG-700 Baunebenkosten) erfordern Eingaben außerhalb des Modells.
+ * Wir bilden KG-300 (Baukonstruktion), KG-400 (technische Anlagen) und seit
+ * Sprint T1 KG-500 (Außenanlagen/Freiflächen — Tiefbau: Erdbau, Oberbau,
+ * Entwässerung, Vegetation) ab; IFC 4.3 liefert die passenden Klassen
+ * (IfcEarthworks*, IfcCourse, IfcKerb, IfcPavement, IfcGeographicElement).
+ * KG-200 Herrichten, KG-600 Ausstattung und KG-700 Baunebenkosten erfordern
+ * weiterhin Eingaben außerhalb des Modells.
  *
  * Tiefe: zweistellig (z.B. 320, 330) reicht für die Kostenschätzung in LP 2-3.
  * Dreistellige Untergruppen (322, 333, …) sind optional für LP 5-6, werden hier
@@ -53,6 +55,29 @@ export const KG_TREE = Object.freeze([
             { code: '460', label: 'Förderanlagen' },
         ],
     },
+    {
+        code: '500', label: 'Außenanlagen und Freiflächen',
+        children: [
+            { code: '510', label: 'Erdbau', children: [
+                { code: '511', label: 'Geländebearbeitung (Abtrag/Auftrag)' },
+                { code: '512', label: 'Bodenverbesserung' },
+            ]},
+            { code: '520', label: 'Gründung, Unterbau (Außenanlagen)' },
+            { code: '530', label: 'Oberbau, Deckschichten', children: [
+                { code: '531', label: 'Wege' },
+                { code: '532', label: 'Straßen' },
+                { code: '533', label: 'Plätze, Höfe' },
+            ]},
+            { code: '540', label: 'Baukonstruktionen in Außenanlagen' },
+            { code: '550', label: 'Technische Anlagen in Außenanlagen', children: [
+                { code: '551', label: 'Abwasseranlagen (außen)' },
+                { code: '552', label: 'Wasseranlagen (außen)' },
+            ]},
+            { code: '560', label: 'Ausstattung in Außenanlagen' },
+            { code: '570', label: 'Vegetationsflächen' },
+            { code: '590', label: 'Sonstige Außenanlagen' },
+        ],
+    },
 ]);
 
 /**
@@ -90,6 +115,13 @@ export const KG_DEFAULT_COLORS = Object.freeze({
     '440': '#fbc02d', // Elektro — gelb
     '450': '#7b1fa2', // Kommunikation — lila
     '460': '#455a64', // Förder — anthrazit
+    // KG 500 — Außenanlagen (Sprint T1)
+    '510': '#8d6e63', // Erdbau — erdbraun
+    '530': '#616161', // Oberbau/Deckschichten — asphaltgrau
+    '531': '#757575', // Wege
+    '550': '#e64a19', // TA außen — orange
+    '551': '#bf360c', // Abwasser außen
+    '570': '#558b2f', // Vegetation — grün
 });
 
 /**
@@ -204,6 +236,39 @@ export const KG_DEFAULT_RULES = Object.freeze([
     { id: 'kg-pump',               enabled: true, priority: 10,
       name: 'Pumpe → KG 411',
       condition: { category: 'IFCPUMP' }, kgCode: '411' },
+
+    // ── KG 500 — Außenanlagen / Tiefbau (Sprint T1, IFC-4.3-Klassen) ───────
+    { id: 'kg-earthworks-cut',     enabled: true, priority: 10,
+      name: 'Aushub → KG 510 (Erdbau)',
+      condition: { category: 'IFCEARTHWORKSCUT' }, kgCode: '510' },
+    { id: 'kg-earthworks-fill',    enabled: true, priority: 10,
+      name: 'Verfüllung/Damm → KG 510 (Erdbau)',
+      condition: { category: 'IFCEARTHWORKSFILL' }, kgCode: '510' },
+    { id: 'kg-earthworks-element', enabled: true, priority: 10,
+      name: 'Erdbauwerk → KG 510',
+      condition: { category: 'IFCEARTHWORKSELEMENT' }, kgCode: '510' },
+    { id: 'kg-course',             enabled: true, priority: 10,
+      name: 'Oberbau-Schicht (Course) → KG 530',
+      condition: { category: 'IFCCOURSE' }, kgCode: '530' },
+    { id: 'kg-pavement',           enabled: true, priority: 10,
+      name: 'Belag/Fahrbahn → KG 531',
+      condition: { category: 'IFCPAVEMENT' }, kgCode: '531' },
+    { id: 'kg-kerb',               enabled: true, priority: 10,
+      name: 'Bordstein → KG 530',
+      condition: { category: 'IFCKERB' }, kgCode: '530' },
+    { id: 'kg-geographic',         enabled: true, priority: 5,
+      name: 'Gelände → KG 570 (Vegetation/Freifläche)',
+      condition: { category: 'IFCGEOGRAPHICELEMENT' }, kgCode: '570' },
+
+    // Tiefbau-Projekt-Alternative: Leitungen/Schächte als AUSSENANLAGE (551)
+    // statt Gebäudetechnik (411). Bewusst deaktiviert — der Nutzer entscheidet
+    // je Projekt (priority 30 schlägt dann die 411-Defaults).
+    { id: 'kg-pipe-aussen',        enabled: false, priority: 30,
+      name: 'Tiefbau: PipeSegment → KG 551 (Außenanlagen)',
+      condition: { category: 'IFCPIPESEGMENT' }, kgCode: '551' },
+    { id: 'kg-chamber-aussen',     enabled: false, priority: 30,
+      name: 'Tiefbau: Schächte → KG 551 (Außenanlagen)',
+      condition: { category: 'IFCDISTRIBUTIONCHAMBERELEMENT' }, kgCode: '551' },
 ]);
 
 /**

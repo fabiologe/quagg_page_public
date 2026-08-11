@@ -1,9 +1,18 @@
 import { jsPDF } from 'jspdf';
 import * as THREE from 'three';
-import { drawVectorPlan }              from './IfcVectorPlotter.js';
+import { drawVectorPlan, computeSectionContour } from './IfcVectorPlotter.js';
 import { extractConcaveOutlines }      from './IfcShapeOutlines.js';
+import { vectorContentToDxf }          from './DxfExporter.js';
+import { DEFAULT_LINE_STYLES }         from './DefaultLineStyles.js';
 import { simplifyOutlines }            from './PolygonSimplify.js';
 import { styleToLegacy }               from './VectorStyleEngine.js';
+import { TERRAIN_CATEGORIES_DEFAULT } from './TerrainMesh.js';
+import { createGeometryResolver }      from './geometry/GeometryResolver.js';
+import { computeSlopeHatch }           from './SlopeHatch.js';
+import { computeContourLines }         from './ContourLines.js';
+import { extractAxisPolylines, formatGefaelle, AXIS_CATEGORIES_DEFAULT } from './AxisAnnotations.js';
+import { renderLabelTemplate }         from './LabelTemplate.js';
+import { FRAGMENTS_DATA_CONFIG }       from './IfcDataConfig.js';
 
 /** Rebuild a THREE.OrthographicCamera from a serialized plot frustum. */
 function _cameraFromFrustum(f) {
@@ -79,6 +88,265 @@ function _drawTitleBlock(doc, dw, dh, titleBlock, logo) {
         doc.setFontSize(8); doc.setTextColor(0);
         doc.text(`Rev. ${titleBlock.index}`, M + dw * 0.65 + 1.5, ty + 37);
     }
+}
+
+/**
+ * T2: Gemeinsame Vektor-Inhalts-Sammlung für PDF- UND DXF-Export.
+ * Kamera-unabhängig — alles in Welt-Koordinaten.
+ */
+export async function collectVectorContent({
+    viewDir = 'top', rules = [], fragmentsManager = null, cutPlane = null,
+    labelTemplateFor = null, categoryGroups = null, fragmentsList = null,
+    scaleRatio = null, slopeHatch = null, contours = null, axisLabels = null,
+    ifcData = null, styleMap = null,
+} = {}) {
+    // ── Per-element concave outlines (BBox fallback per element on failure) ─
+    let outlines = [];
+    if (categoryGroups && fragmentsList) {
+        try {
+            outlines = await extractConcaveOutlines(categoryGroups, fragmentsList, {
+                viewDir, rules, fragmentsManager, cutPlane,
+                labelTemplateFor: labelTemplateFor ?? (() => ''),
+            });
+        } catch (e) {
+            console.error('[PdfExporter] outlines pipeline crashed', e);
+        }
+
+        // Ramer-Douglas-Peucker simplification — removes triangle-zigzag.
+        // Tolerance scales with the plot scale: at 1:100 a 2 cm world tolerance
+        // collapses to 0.2 mm on paper (invisible). At 1:1000 we can be coarser.
+        if (outlines.length && scaleRatio) {
+            const epsilon = Math.max(0.005, scaleRatio * 0.0002); // metres
+            outlines = simplifyOutlines(outlines, epsilon);
+        }
+    }
+
+    // ── Sprint T1/G: Gelände-Auswertungen — über den GeometryResolver, damit
+    // auch geschlossene Erdkörper-VOLUMENKÖRPER (IfcCivilElement) eine
+    // Oberfläche liefern (Repräsentations-Mismatch, solid→surface).
+    let slopeSegments = null;
+    let contourLevels = null;
+    if ((slopeHatch?.enabled || contours?.enabled) && categoryGroups && fragmentsList) {
+        try {
+            const terrainCats = slopeHatch?.categories?.length
+                ? slopeHatch.categories
+                : TERRAIN_CATEGORIES_DEFAULT;
+            const resolver = createGeometryResolver({ categoryGroups, fragmentsList, fragmentsManager });
+            const surf = await resolver.forCategory(terrainCats).getForm('surface', {
+                // Böschungs-Oberkanten nicht auf Zellrasterbreite verschmieren
+                cell: (slopeHatch?.enabled && scaleRatio)
+                    ? Math.max(0.25, (((slopeHatch.tickSpacingMm ?? 3) / 1000) * scaleRatio) / 2)
+                    : null,
+            });
+            if (surf.warnings?.length) console.warn('[GeometryResolver]', surf.warnings);
+            const { positions, triCount } = surf.data ?? { positions: new Float64Array(0), triCount: 0 };
+            if (triCount) {
+                if (slopeHatch?.enabled && scaleRatio) {
+                    slopeSegments = computeSlopeHatch(positions, triCount, {
+                        minSlopeDeg: slopeHatch.minSlopeDeg ?? 20,
+                        // Strichabstand: Papier-mm × Maßstab → Weltmeter
+                        tickSpacingWorld: ((slopeHatch.tickSpacingMm ?? 3) / 1000) * scaleRatio,
+                        // Striche unter 0,8 mm Papier sind nur Rauschen
+                        minTickLenWorld: 0.0008 * scaleRatio,
+                    }).segments;
+                }
+                if (contours?.enabled) {
+                    contourLevels = computeContourLines(positions, triCount, {
+                        interval: contours.interval ?? 0.5,
+                        majorEvery: contours.majorEvery ?? 5,
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('[PdfExporter] Gelände-Auswertung fehlgeschlagen', e);
+        }
+    }
+
+    // ── Sprint T1/AP-C: Haltungsbeschriftung entlang der Achse ──────────────
+    let axisItems = null;
+    if (axisLabels?.enabled) {
+        try {
+            axisItems = await _buildAxisLabelItems({
+                apis: axisLabels.apis?.length ? axisLabels.apis : (ifcData ? [ifcData] : []),
+                coordOffsets: axisLabels.coordOffsets ?? null,
+                categories: axisLabels.categories?.length ? axisLabels.categories : AXIS_CATEGORIES_DEFAULT,
+                fragmentsManager, labelTemplateFor, styleMap,
+            });
+        } catch (e) {
+            console.error('[PdfExporter] Achs-Beschriftung fehlgeschlagen', e);
+        }
+    }
+
+    return { outlines, slopeSegments, contourLevels, axisItems };
+}
+
+/**
+ * T2: Vektor-Plan als DXF R12 (Rohkoordinaten E/N — fällt lagerichtig ins CAD).
+ * Nimmt dieselben Optionen wie exportVectorPlanPDF, braucht aber keine Kamera.
+ */
+export async function exportVectorPlanDXF(opts = {}) {
+    const {
+        titleBlock = {}, scene = null, cutPlane = null,
+        styleMap = null, scaleRatio = 100,
+        coordOffset = { x: 0, z: 0 }, flipNorth = false,
+    } = opts;
+
+    const content = await collectVectorContent({ ...opts, viewDir: 'top' });
+
+    // Schnittkontur (szenenweit) — im PDF macht das der Plotter, hier direkt
+    let sectionSegments = null;
+    if (scene && cutPlane) {
+        try { sectionSegments = computeSectionContour(scene, cutPlane); } catch { /* */ }
+    }
+
+    const styleFor = (category) =>
+        styleMap?.[category]
+        ?? styleToLegacy(DEFAULT_LINE_STYLES[category] ?? DEFAULT_LINE_STYLES.default);
+
+    const dxfText = vectorContentToDxf(
+        { ...content, sectionSegments, styleFor },
+        { offset: coordOffset, flipNorth, scaleRatio },
+    );
+
+    const safeName = (titleBlock.projekt || 'lageplan').replace(/[^\w\-]/g, '-');
+    const blob = new Blob([dxfText], { type: 'application/dxf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeName}.dxf`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ── T1/AP-C: Achs-Beschriftungs-Daten (Extraktion + Label-Rendering) ────────
+
+function _axScalar(v) {
+    if (v == null) return null;
+    if (typeof v === 'object' && 'value' in v) return v.value;
+    return typeof v === 'object' ? null : v;
+}
+
+const _AX_ATTR_KEYS = ['Name', 'Description', 'GlobalId', 'Tag', 'ObjectType', 'PredefinedType'];
+
+/** OBC-getData-Items → Map<localId, {attributes, psets}> (Muster IfcShapeOutlines). */
+function _axParseBatch(raw) {
+    const out = new Map();
+    const items = Object.values(raw ?? {})[0] ?? [];
+    for (const item of items) {
+        const localId = _axScalar(item._localId ?? item.localId ?? item.expressID);
+        if (localId == null) continue;
+        const attributes = {};
+        for (const k of _AX_ATTR_KEYS) {
+            const v = _axScalar(item?.[k]);
+            if (v != null) attributes[k] = v;
+        }
+        const psets = {};
+        for (const rel of (item?.IsDefinedBy ?? [])) {
+            const psetName = _axScalar(rel?.Name);
+            if (!psetName) continue;
+            const props = {};
+            for (const p of (rel?.HasProperties ?? [])) {
+                const propName = _axScalar(p?.Name);
+                const v = _axScalar(p?.NominalValue) ?? _axScalar(p?.Value);
+                if (propName) props[propName] = v;
+            }
+            psets[psetName] = props;
+        }
+        out.set(localId, { attributes, psets });
+    }
+    return out;
+}
+
+/**
+ * Achs-Polylinien + gerenderte Labels für alle Modelle/Kategorien.
+ * Annahme (dokumentiert): fragments-localId ≙ web-ifc-expressID — bei Miss
+ * bleibt das Label auf Geometrie-Werte (laenge/gefaelle) beschränkt.
+ */
+async function _buildAxisLabelItems({ apis, coordOffsets, categories, fragmentsManager, labelTemplateFor, styleMap }) {
+    const items = [];
+    for (const api of (apis ?? [])) {
+        if (!api?.webIfc) continue;
+        const modelKey = api.fragmentModelId ?? null;
+        const off = modelKey != null ? (coordOffsets?.[modelKey] ?? null) : null;
+
+        let products = [];
+        try {
+            products = extractAxisPolylines(api.webIfc, api.modelID, { categories, coordOffset: off });
+        } catch { continue; }
+        if (!products.length) continue;
+
+        // je Kategorie: Template auflösen + EIN Batch-Pset-Fetch
+        const byCat = new Map();
+        for (const p of products) {
+            (byCat.get(p.category) ?? byCat.set(p.category, []).get(p.category)).push(p);
+        }
+        for (const [cat, prods] of byCat) {
+            const tpl = labelTemplateFor?.(cat, modelKey) ?? '';
+            if (!tpl) continue;
+
+            let dataById = new Map();
+            if (fragmentsManager && modelKey != null) {
+                try {
+                    const raw = await fragmentsManager.getData(
+                        { [modelKey]: prods.map(p => p.expressId) }, FRAGMENTS_DATA_CONFIG);
+                    dataById = _axParseBatch(raw);
+                } catch { /* Label ohne Pset-Anteile */ }
+            }
+
+            const fontMm = Number(styleMap?.[cat]?.labelFontSize) > 0 ? Number(styleMap[cat].labelFontSize) : 2.0;
+            for (const p of prods) {
+                const d = dataById.get(p.expressId) ?? { attributes: {}, psets: {} };
+                const label = renderLabelTemplate(tpl, {
+                    category: cat,
+                    localId: p.expressId,
+                    attributes: {
+                        ...d.attributes,
+                        laenge: p.laenge,
+                        gefaelle: formatGefaelle(p.gefaelle),
+                    },
+                    psets: d.psets,
+                });
+                if (!label) continue;
+                items.push({
+                    polyline: p.polyline,
+                    label: Array.isArray(label) ? label.join(' · ') : label,
+                    fontMm,
+                });
+            }
+        }
+    }
+    return items;
+}
+
+/**
+ * T1/E5: Diagonales Status-Wasserzeichen („VORABZUG", „WIP", …).
+ * GState-Opacity wenn verfügbar, sonst hellgrauer Text als Fallback.
+ */
+function _drawWatermark(doc, text, M, dw, dh) {
+    const label = String(text).toUpperCase();
+    const angle = Math.atan2(dh, dw) * 180 / Math.PI;
+    // Zielbreite ~70 % der Diagonale; grobe Glyphenbreite ≈ 0,55 × Fontgröße
+    const diag = Math.hypot(dw, dh);
+    const fontMm = Math.min(60, (diag * 0.7) / (label.length * 0.55));
+    doc.setFontSize(fontMm / 0.3528);
+
+    let usedGState = false;
+    try {
+        if (typeof doc.saveGraphicsState === 'function' && typeof doc.GState === 'function') {
+            doc.saveGraphicsState();
+            doc.setGState(new doc.GState({ opacity: 0.12 }));
+            doc.setTextColor(120, 120, 120);
+            usedGState = true;
+        }
+    } catch { /* Fallback unten */ }
+    if (!usedGState) doc.setTextColor(225, 225, 225);
+
+    doc.text(label, M + dw / 2, M + dh / 2, { align: 'center', angle });
+
+    if (usedGState) {
+        try { doc.restoreGraphicsState(); } catch { /* */ }
+    }
+    doc.setTextColor(0, 0, 0);
 }
 
 /**
@@ -198,30 +466,23 @@ export async function exportVectorPlanPDF({
     labelTemplateFor = null,                            // (category) => 'tpl string'   — high-level
     labelOpts        = null,                            // { fontSize?, minElementSize? }
     ifcGridAxes      = null,                            // [{name, start:{x,z}, end:{x,z}}] — DIN axes
+    // ── Sprint T1: Tiefbau-Lageplan ─────────────────────────────────────────
+    slopeHatch       = null,                            // { enabled, categories?, minSlopeDeg?, tickSpacingMm? }
+    contours         = null,                            // { enabled, interval?, majorEvery? }
+    utmGrid          = null,                            // { offset:{x,z}, flipNorth?, spacing? }
+    northAngle       = 0,                               // Nordpfeil-Verdrehung in Grad
+    watermark        = null,                            // Text (z. B. 'VORABZUG') oder null
+    axisLabels       = null,                            // { enabled, categories?, apis?, coordOffsets? }
 }) {
     const camera  = plotFrustum ? _cameraFromFrustum(plotFrustum) : null;
     const viewDir = plotFrustum?.viewDir ?? 'top';
 
-    // ── Per-element concave outlines (BBox fallback per element on failure) ─
-    let outlines = [];
-    if (categoryGroups && fragmentsList) {
-        try {
-            outlines = await extractConcaveOutlines(categoryGroups, fragmentsList, {
-                viewDir, rules, fragmentsManager, cutPlane,
-                labelTemplateFor: labelTemplateFor ?? (() => ''),
-            });
-        } catch (e) {
-            console.error('[PdfExporter] outlines pipeline crashed', e);
-        }
+    const { outlines, slopeSegments, contourLevels, axisItems } = await collectVectorContent({
+        viewDir, rules, fragmentsManager, cutPlane, labelTemplateFor,
+        categoryGroups, fragmentsList, scaleRatio,
+        slopeHatch, contours, axisLabels, ifcData, styleMap,
+    });
 
-        // Ramer-Douglas-Peucker simplification — removes triangle-zigzag.
-        // Tolerance scales with the plot scale: at 1:100 a 2 cm world tolerance
-        // collapses to 0.2 mm on paper (invisible). At 1:1000 we can be coarser.
-        if (outlines.length && scaleRatio) {
-            const epsilon = Math.max(0.005, scaleRatio * 0.0002); // metres
-            outlines = simplifyOutlines(outlines, epsilon);
-        }
-    }
     const [baseW, baseH] = PAPER_SIZES[format] ?? PAPER_SIZES.A3;
     const [pw, ph] = orientation === 'landscape' ? [baseH, baseW] : [baseW, baseH];
 
@@ -237,6 +498,9 @@ export async function exportVectorPlanPDF({
         doc.rect(M, M, dw, dh, 'F');
     }
 
+    // ── T1/E5: Status-Wasserzeichen (unter der Vektorik, über dem Raster) ───
+    if (watermark) _drawWatermark(doc, watermark, M, dw, dh);
+
     // ── Vector lines (await — extractFootprintSegments is async) ─────
     if (camera) {
         await drawVectorPlan(doc, camera, scene, cutPlane, ifcData, M, dw, dh, {
@@ -245,6 +509,10 @@ export async function exportVectorPlanPDF({
             annotations, measurements,
             showLabels, labelOpts,
             ifcGridAxes,
+            slopeHatch: slopeSegments,
+            contours: contourLevels,
+            utmGrid, northAngle,
+            axisLabels: axisItems,
         });
     }
 

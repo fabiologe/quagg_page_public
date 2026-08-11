@@ -45,7 +45,6 @@ export const usePreStore = defineStore('flood3d-pre', {
     meshPreview: null,    // Ergebnis des Vernetzungsprobelaufs
     meshPreviewLoading: false,
     meshPreviewStale: false,   // Vorschaunetz gehört nicht mehr zum Fall
-    startedRun: null,     // { run_id } des zuletzt gestarteten Laufs
     // Bearbeitungsverlauf: Snapshots der GESAMTEN spec (JSON-Strings).
     // Jede Mutation läuft durch update/add/removeObject — damit ist die
     // Historie zwangsläufig vollständig (keine Feld-für-Feld-Falle).
@@ -78,7 +77,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     // mit eigener Farbe, eigener Lebensdauer und eigenem Ort. `error`
     // wurde an 17 Stellen gesetzt, an vier angezeigt, in der Phase
     // „Ergebnis" nirgends: Fehler waren dort unsichtbar.
-    // [{ id, text, art: 'erfolg'|'hinweis'|'fehler' }]
+    // [{ id, text, art: 'erfolg'|'hinweis'|'warnung'|'fehler' }]
     meldungen: [],
   }),
 
@@ -132,8 +131,11 @@ export const usePreStore = defineStore('flood3d-pre', {
       if (!text) return
       const id = (this._meldungsNr = (this._meldungsNr ?? 0) + 1)
       this.meldungen.push({ id, text, art })
-      // Fehler bleiben; alles andere räumt sich selbst weg
-      if (art !== 'fehler') {
+      // Fehler UND Warnungen bleiben stehen, bis sie weggeklickt werden —
+      // eine Warnung, die nach zehn Sekunden verschwindet, hat der
+      // Bearbeiter unter Umständen nie gesehen (Audit F3). Nur Erfolg und
+      // Hinweise räumen sich selbst weg.
+      if (art !== 'fehler' && art !== 'warnung') {
         setTimeout(() => this.meldungWeg(id), art === 'erfolg' ? 4000 : 10000)
       }
       // `error` bleibt vorerst als zweiter Kanal bestehen, damit ältere
@@ -272,18 +274,6 @@ export const usePreStore = defineStore('flood3d-pre', {
         (id) => flood3dApi.caseAnschluss(id), 'Anschluss fehlgeschlagen')
     },
 
-    // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
-    // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
-    // Handgezeichnetes als CAD-Objekt aufnehmen — die Skizze ist ein
-    // Import aus der Hand; die Zuordnung bleibt danach änderbar
-    async skizzeZeichnen(payload) {
-      const meldungen = await this.serverMutation(
-        (id) => flood3dApi.skizzeHinzufuegen(id, payload),
-        'Skizze fehlgeschlagen')
-      this.ladeImporte()
-      return meldungen
-    },
-
     // Pinsel-Patches auf die Sculpt-Ebene des Geländes. KEIN globaler
     // Undo-Eintrag: der Spec-Snapshot kann die Delta-Datei nicht
     // zurückdrehen — Rückgängig ist das inverse Patch (editor/sculpt.js)
@@ -293,6 +283,8 @@ export const usePreStore = defineStore('flood3d-pre', {
         'Formen fehlgeschlagen', { undo: false })
     },
 
+    // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
+    // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
     async importNeuAbleiten(importId, rollen = null) {
       const meldungen = await this.serverMutation(
         (id) => flood3dApi.importReapply(id, importId, rollen),
@@ -326,8 +318,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       return true
     },
 
-    // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
-    // Auswertung oder Anschluss — keine fachliche Festlegung.
     async ladeRezepte() {
       if (this.rezepte.length) return
       try {
@@ -357,6 +347,8 @@ export const usePreStore = defineStore('flood3d-pre', {
         'Kanten verknüpfen fehlgeschlagen')
     },
 
+    // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
+    // Auswertung oder Anschluss — keine fachliche Festlegung.
     async kurAnwenden(fix) {
       if (!fix) return ''
       const meldungen = await this.serverMutation(
@@ -401,6 +393,10 @@ export const usePreStore = defineStore('flood3d-pre', {
         const s = await flood3dApi.meshPreviewState(this.activeCaseId)
         this.meshPreview = s.preview
         this.meshPreviewStale = s.stale
+        if (s.beschaedigt) {
+          this.melden('Die gespeicherte Netzvorschau ist beschädigt — '
+            + 'bitte neu rechnen.', 'warnung')
+        }
       } catch {
         this.meshPreview = null
         this.meshPreviewStale = false
@@ -430,9 +426,17 @@ export const usePreStore = defineStore('flood3d-pre', {
       } else if (!entwurf) {
         this.terrain = null
       }
-      this.solids = (p.solids ?? []).map((s) => ({
-        patch: s.patch, stl: b64Buffer(s.stl_b64),
-      }))
+      // Nur eine VORHANDENE Liste übernehmen — fehlt sie in der Antwort
+      // (Serverfehler beim Körperbau), bleibt im Entwurf die letzte Szene
+      // stehen statt dass alle Bauwerke verschwinden (gleicher Schutz wie
+      // beim Gelände oben)
+      if (Array.isArray(p.solids)) {
+        this.solids = p.solids.map((s) => ({
+          patch: s.patch, stl: b64Buffer(s.stl_b64),
+        }))
+      } else if (!entwurf) {
+        this.solids = []
+      }
       // Erdkörper: bei sehr großen Rastern lässt der Server ihn weg
       // (koerper_zu_gross) — dann bleibt der letzte Stand stehen, aber als
       // veraltet markiert, sobald sich die Geometrie geändert hat. Braucht
@@ -490,6 +494,12 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     select(kind, id) {
       this.selection = { kind, id }
+    },
+
+    // Auswahl aufheben (Esc, Klick ins Leere) — vorher konnte `selection`
+    // nur durch Löschen/Fallwechsel wieder null werden
+    deselect() {
+      this.selection = null
     },
 
     // Live-Vorschau des Entwurfs: nach jeder Änderung (entprellt) Gelände,
@@ -659,15 +669,20 @@ export const usePreStore = defineStore('flood3d-pre', {
       return obj
     },
 
-    async runMeshPreview() {
+    // `ohneVerfeinerung`: Schnellvorschau ohne die verschachtelte
+    // Verfeinerung — schneller, Zellzahl/Kosten sind eine untere Grenze
+    async runMeshPreview({ ohneVerfeinerung = false } = {}) {
       this.meshPreviewLoading = true
       this.error = ''
       try {
         if (this.dirty) await this.saveCase()
-        this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId)
+        this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId,
+          ohneVerfeinerung ? { ohne_verfeinerung: true } : {})
         this.meshPreviewStale = false
+        return true
       } catch (e) {
         this.melden(`Netzvorschau: ${e.message}`, 'fehler')
+        return false
       } finally {
         this.meshPreviewLoading = false
       }
@@ -683,7 +698,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.error = ''
       try {
         if (this.dirty) await this.saveCase()
-        this.startedRun = await flood3dApi.startRun(this.activeCaseId)
+        await flood3dApi.startRun(this.activeCaseId)
         this.melden('Lauf gestartet', 'erfolg')
         this.activePhase = 'laeufe'          // dem Lauf direkt zuschauen
         await this.loadCaseRuns()
@@ -718,11 +733,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.scheduleDraftPreview()
     },
 
-    // Löschen räumt mit auf: ein Nachweiskriterium auf einem gelöschten
-    // Pegel, eine Flächenverfeinerung auf einem entfernten Bauwerk, ein
-    // Eintrag in der Kraftauswertung — das alles blieb bisher liegen und
-    // wurde danach als Fehler gemeldet, den der Bearbeiter selbst suchen
-    // musste. EIN Undo-Schritt für die ganze Kaskade.
     // Ein eingesetztes Rezept als GANZES löschen — ein Undo-Schritt,
     // Aufräumkaskade je Teil (verwaiste Verfeinerungen/Verweise gehen mit)
     loescheGruppe(gruppe) {
@@ -754,6 +764,11 @@ export const usePreStore = defineStore('flood3d-pre', {
         `Bauwerk „${gruppe}“ gelöscht (${mitglieder.length} Teile)`, 'erfolg')
     },
 
+    // Löschen räumt mit auf: ein Nachweiskriterium auf einem gelöschten
+    // Pegel, eine Flächenverfeinerung auf einem entfernten Bauwerk, ein
+    // Eintrag in der Kraftauswertung — das alles blieb bisher liegen und
+    // wurde danach als Fehler gemeldet, den der Bearbeiter selbst suchen
+    // musste. EIN Undo-Schritt für die ganze Kaskade.
     removeObject(kind, id) {
       if (!this.spec) return []
       const plan = aufraeumplan(this.spec, kind, id)

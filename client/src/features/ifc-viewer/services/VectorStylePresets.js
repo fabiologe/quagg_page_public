@@ -10,8 +10,8 @@
  * cannot overwrite the built-ins.
  */
 
-function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none') {
-    return { color, lineWidth, lineDash, hatchPattern, enabled: true };
+function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none', extra = {}) {
+    return { color, lineWidth, lineDash, hatchPattern, enabled: true, ...extra };
 }
 
 /**
@@ -105,8 +105,44 @@ const ARCHITECT_COLOR_STYLES = {
     IFCFURNITURE:         mk('#a1887f', 0.15, 'solid'),
 };
 
+/**
+ * Tiefbau-Lageplan (Sprint T1): Schächte/Pumpen/Armaturen als Punktsymbole
+ * mit Höhen-Labels, Haltungen mit DN-Beschriftung entlang der Achse,
+ * Gelände-/Straßenbau-Kategorien mit Lageplan-Linienbild.
+ */
+const TIEFBAU_LAGEPLAN_STYLES = {
+    // Netz: Symbole statt projizierter Konturen
+    IFCDISTRIBUTIONCHAMBERELEMENT: mk('#5d4037', 0.30, 'solid', 'none', {
+        symbol: 'schacht', symbolSize: 3.5,
+        labelTemplate: '{Name|Tag}', labelFontSize: 2.2, labelAnchor: 'right',
+    }),
+    IFCPUMP:  mk('#6400c8', 0.30, 'solid', 'none', {
+        symbol: 'pumpe', symbolSize: 3.5, labelTemplate: '{Name}', labelAnchor: 'right',
+    }),
+    IFCVALVE: mk('#6400c8', 0.25, 'solid', 'none', { symbol: 'armatur', symbolSize: 3 }),
+
+    // Haltungen: kräftig + Achs-Beschriftung (AxisAnnotations liest labelTemplate)
+    IFCPIPESEGMENT: mk('#c85000', 0.50, 'solid', 'none', {
+        labelTemplate: '{Name} DN{Pset_PipeSegmentTypeCommon.NominalDiameter|NominalDiameter} · {laenge:m} · {gefaelle}',
+        labelFontSize: 2.0,
+    }),
+    IFCFLOWSEGMENT: mk('#b43c00', 0.45, 'solid', 'none', {
+        labelTemplate: '{Name} · {laenge:m} · {gefaelle}', labelFontSize: 2.0,
+    }),
+
+    // Gelände / Straße
+    IFCGEOGRAPHICELEMENT: mk('#6d4c41', 0.25, 'solid'),
+    IFCEARTHWORKSCUT:     mk('#8d6e63', 0.18, 'solid', 'earth'),
+    IFCEARTHWORKSFILL:    mk('#8d6e63', 0.18, 'solid', 'earth'),
+    IFCEARTHWORKSELEMENT: mk('#8d6e63', 0.18, 'solid', 'earth'),
+    IFCCOURSE:            mk('#9e9d24', 0.18, 'solid'),
+    IFCKERB:              mk('#424242', 0.35, 'solid'),
+    IFCPAVEMENT:          mk('#757575', 0.18, 'solid'),
+};
+
 export const BUILT_IN_PRESETS = [
     { id: 'din',       name: 'DIN 1356-2 (schwarz/weiß)', styles: DIN_STYLES,              builtin: true },
     { id: 'sewer',     name: 'Siedlungswasser / Kanal',   styles: SEWER_STYLES,            builtin: true },
     { id: 'architect', name: 'Architektur (farbig)',      styles: ARCHITECT_COLOR_STYLES,  builtin: true },
+    { id: 'tiefbau',   name: 'Tiefbau-Lageplan',          styles: TIEFBAU_LAGEPLAN_STYLES, builtin: true },
 ];

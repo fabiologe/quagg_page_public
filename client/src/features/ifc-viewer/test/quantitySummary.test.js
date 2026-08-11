@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { summarizeQuantities } from '../services/QuantitySummary'
+import { box as solidBox } from './fixtures/solidFixtures'
 
 function box(w = 1, h = 1, d = 1) {
   return new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(w, h, d))
@@ -44,7 +45,7 @@ describe('summarizeQuantities', () => {
     expect(wall.volume_m3).toBeCloseTo(3.75)
     expect(wall.area_m2).toBeCloseTo(12.5)
     expect(wall.length_m).toBeCloseTo(5)
-    expect(wall.sources).toEqual({ qto: 1, bbox: 0 })
+    expect(wall.sources).toEqual({ qto: 1, mesh: 0, bbox: 0 })
     expect(totals.qtoShare).toBe(1)
   })
 
@@ -58,7 +59,7 @@ describe('summarizeQuantities', () => {
     })
     const wall = byCategory.get('IFCWALL')
     expect(wall.volume_m3).toBeCloseTo(2 + 2) // 2 aus Qto + 2 aus BBox
-    expect(wall.sources).toEqual({ qto: 1, bbox: 1 })
+    expect(wall.sources).toEqual({ qto: 1, mesh: 0, bbox: 1 })
     expect(totals.qtoShare).toBeCloseTo(0.5)
   })
 
@@ -68,6 +69,31 @@ describe('summarizeQuantities', () => {
     })
     expect(byCategory.get('IFCWALL').volume_m3).toBeCloseTo(8)
     expect(byCategory.get('IFCWALL').sources.bbox).toBe(1)
+  })
+
+  it('Sprint G: ohne Qto, aber geschlossenes Mesh → exaktes Mesh-Volumen (source mesh)', async () => {
+    // Modell-Stub mit Fallback-Geometrie: geschlossener 2×3×4-Quader
+    const tris = solidBox(2, 3, 4)
+    const model = {
+      getBoxes: async () => [box(10, 10, 10)], // BBox wäre 1000 m³ — darf nicht zählen
+      getItem: () => ({
+        getGeometry: async () => ({
+          getTriangles: async () => [tris.map(([a, b, c]) => ({
+            a: { x: a[0], y: a[1], z: a[2] },
+            b: { x: b[0], y: b[1], z: b[2] },
+            c: { x: c[0], y: c[1], z: c[2] },
+          }))],
+        }),
+      }),
+    }
+    const { byCategory } = await summarizeQuantities({
+      categoryGroups: [{ name: 'IFCWALL', groupData: { get: async () => new Map([['m1', [1]]]) } }],
+      fragmentsList: new Map([['m1', model]]),
+      fragmentsManager: { getData: async () => ({ m1: [{ _localId: { value: 1 }, IsDefinedBy: [] }] }) },
+    })
+    const wall = byCategory.get('IFCWALL')
+    expect(wall.volume_m3).toBeCloseTo(24, 6)
+    expect(wall.sources).toEqual({ qto: 0, mesh: 1, bbox: 0 })
   })
 
   it('aggregiert nach KG, wenn perElementKg geliefert wird', async () => {

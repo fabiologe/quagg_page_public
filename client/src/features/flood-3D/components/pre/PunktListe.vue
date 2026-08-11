@@ -2,12 +2,12 @@
   <div class="f3d-pl">
     <div class="f3d-pl-kopf">
       <span class="f3d-pl-nr">#</span>
-      <span>x</span><span>y</span><span v-if="dreiD">z</span>
+      <span>{{ achsen[0] }}</span><span>{{ achsen[1] }}</span><span v-if="dreiD">{{ achsen[2] ?? 'z' }}</span>
       <span class="f3d-pl-weg"></span>
     </div>
     <div v-for="(p, i) in punkte" :key="i" class="f3d-pl-zeile"
-         @mouseenter="store.zeigePunkt(p)" @mouseleave="store.zeigePunkt(null)"
-         @focusin="store.zeigePunkt(p)" @focusout="store.zeigePunkt(null)">
+         @mouseenter="zeigen(p)" @mouseleave="zeigen(null)"
+         @focusin="zeigen(p)" @focusout="zeigen(null)">
       <span class="f3d-pl-nr">{{ i + 1 }}</span>
       <input type="number" step="any" class="f3d-num" :value="p[0]"
              @change="setzen(i, 0, $event.target.value)" />
@@ -48,10 +48,21 @@ const props = defineProps({
   // Mindestzahl der Punkte (Linie 2, Polygon 3)
   min: { type: Number, default: 2 },
   geschlossen: { type: Boolean, default: false },
+  // Spaltenkoepfe. Nicht jede Punktliste ist ein Grundriss: die Fenster-
+  // Punkte einer Randbedingung sind (Lage ENTLANG der Kante, Hoehe) — als
+  // "x/y" beschriftet und als Weltkoordinate in die Szene gezeigt, landete
+  // die Fokusmarke im Nirgendwo (Audit F4). `fokus: false` schaltet das
+  // Zeigen ab, wenn die Werte keine Weltkoordinaten sind.
+  achsen: { type: Array, default: () => ['x', 'y', 'z'] },
+  fokus: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:modelValue'])
 
 const store = usePreStore()
+
+function zeigen(p) {
+  if (props.fokus) store.zeigePunkt(p)
+}
 // Wird die Liste ausgeblendet, während der Zeiger auf einer Zeile steht,
 // bliebe der Marker sonst für immer stehen
 onUnmounted(() => store.zeigePunkt(null))

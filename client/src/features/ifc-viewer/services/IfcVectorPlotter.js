@@ -22,6 +22,9 @@ import { drawHatch } from './HatchPatterns.js';
 import { DEFAULT_LINE_STYLES } from './DefaultLineStyles.js';
 import { styleToLegacy } from './VectorStyleEngine.js';
 import { trianglePlaneIntersect, chainSegmentsToPolygons } from './SectionContour.js';
+import { computeUtmCrosses, formatUtmLabel } from './UtmGrid.js';
+import { drawPlanSymbol } from './PlanSymbols.js';
+import { longestSegment, normalizeTextAngle } from './AxisAnnotations.js';
 
 // Pre-computed legacy-shape ({r,g,b,w,dash,…}) form of the built-in defaults.
 // Single source of truth: DEFAULT_LINE_STYLES is authoritative — the plotter
@@ -348,7 +351,22 @@ function _buildPlacementMatrix(placement) {
  * @param {object}                   opts     - { hatch?, scaleBar?, scaleRatio? }
  */
 export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, dh, opts = {}) {
-    const { toX, toY } = makePaperTransform(cam, M, dw, dh);
+    const paper = makePaperTransform(cam, M, dw, dh);
+    const { toX, toY } = paper;
+
+    // ── T1: Gelände-Unterlagen (Höhenlinien + Böschungsschraffur) ───────────
+    // Zuerst gezeichnet, damit Bauwerks-Konturen und Beschriftungen oben liegen.
+    if (opts.contours?.length) {
+        _drawContourLines(doc, opts.contours, toX, toY, M, dw, dh);
+    }
+    if (opts.slopeHatch?.length) {
+        _drawSlopeHatch(doc, opts.slopeHatch, toX, toY, M, dw, dh);
+    }
+
+    // ── T1/E4: UTM-Gitterkreuze (georeferenzierter Lageplan) ────────────────
+    if (opts.utmGrid) {
+        _drawUtmCrosses(doc, opts.utmGrid, paper._bounds, toX, toY, M, dw, dh);
+    }
 
     // ── TYPE 0: Per-element outlines (BBox or concave Triangle-Union) ───────
     if (opts.outlines && opts.outlines.length) {
@@ -406,9 +424,15 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
     }
 
     // ── Element labels (text inside element outlines) ───────────────────────
+    let placedLabels = [];
     if (opts.outlines?.length && opts.showLabels !== false) {
-        _drawElementLabels(doc, opts.outlines, toX, toY, M, dw, dh,
-                           opts.styleMap, opts.styleToLegacy, opts.styleMapPerModel, opts.labelOpts);
+        placedLabels = _drawElementLabels(doc, opts.outlines, toX, toY, M, dw, dh,
+                           opts.styleMap, opts.styleToLegacy, opts.styleMapPerModel, opts.labelOpts) ?? [];
+    }
+
+    // ── T1/AP-C: Haltungsbeschriftung entlang der Achse ─────────────────────
+    if (opts.axisLabels?.length) {
+        _drawAxisLabels(doc, opts.axisLabels, toX, toY, M, dw, dh, placedLabels);
     }
 
     // ── Annotations + Measurements (drawn on top of geometry) ───────────────
@@ -418,8 +442,120 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
     // ── Scale bar + North arrow (drawn last so they sit on top) ─────────────
     if (opts.scaleBar && opts.scaleRatio) {
         _drawScaleBar(doc, M, dw, dh, opts.scaleRatio);
-        _drawNorthArrow(doc, M, dw, dh);
+        _drawNorthArrow(doc, M, dw, dh, opts.northAngle ?? 0);
     }
+}
+
+// ── T1: Böschungsschraffur (SlopeHatch-Segmente in Welt-XZ) ─────────────────
+// Konvention: Oberkante kräftig, Unterkante dünn, Striche fein — alternierend
+// voll/halb hangabwärts (Farbwahl an Vermessungs-Lagepläne angelehnt).
+const SLOPE_STYLES = {
+    oberkante:  { r: 141, g: 110, b: 99,  w: 0.5  },
+    unterkante: { r: 141, g: 110, b: 99,  w: 0.18 },
+    tick:       { r: 51,  g: 105, b: 30,  w: 0.18 },
+    tickHalf:   { r: 51,  g: 105, b: 30,  w: 0.18 },
+};
+
+function _drawSlopeHatch(doc, segments, toX, toY, M, dw, dh) {
+    doc.setLineDashPattern([], 0);
+    // Nach kind gruppiert zeichnen → weniger Stil-Umschaltungen
+    for (const kind of ['unterkante', 'tick', 'tickHalf', 'oberkante']) {
+        const st = SLOPE_STYLES[kind];
+        doc.setDrawColor(st.r, st.g, st.b);
+        doc.setLineWidth(st.w);
+        for (const s of segments) {
+            if (s.kind !== kind) continue;
+            const clipped = _clipLine(toX(s.x1), toY(s.z1), toX(s.x2), toY(s.z2), M, dw, dh);
+            if (clipped) doc.line(clipped.x1, clipped.y1, clipped.x2, clipped.y2);
+        }
+    }
+    doc.setDrawColor(0);
+}
+
+// ── T1: Höhenlinien mit Koten auf den Hauptlinien ───────────────────────────
+function _drawContourLines(doc, levels, toX, toY, M, dw, dh) {
+    doc.setLineDashPattern([], 0);
+    const placed = []; // Koten-AABBs gegen Überlappung
+
+    for (const lvl of levels) {
+        doc.setDrawColor(141, 110, 99);
+        doc.setLineWidth(lvl.major ? 0.35 : 0.13);
+        for (const chain of lvl.polylines) {
+            for (let i = 0; i + 1 < chain.length; i++) {
+                const clipped = _clipLine(
+                    toX(chain[i].x), toY(chain[i].z),
+                    toX(chain[i + 1].x), toY(chain[i + 1].z), M, dw, dh);
+                if (clipped) doc.line(clipped.x1, clipped.y1, clipped.x2, clipped.y2);
+            }
+        }
+    }
+
+    // Koten in einem zweiten Pass, damit sie über allen Linien liegen
+    doc.setFontSize(6.5);
+    for (const lvl of levels) {
+        if (!lvl.major) continue;
+        for (const chain of lvl.polylines) {
+            // längstes Papier-Segment der Kette suchen
+            let best = null, bestLen = 0;
+            for (let i = 0; i + 1 < chain.length; i++) {
+                const x1 = toX(chain[i].x), y1 = toY(chain[i].z);
+                const x2 = toX(chain[i + 1].x), y2 = toY(chain[i + 1].z);
+                const len = Math.hypot(x2 - x1, y2 - y1);
+                if (len > bestLen) { bestLen = len; best = { x1, y1, x2, y2 }; }
+            }
+            if (!best || bestLen < 30) continue; // Kote lohnt erst ab 30 mm Linie
+            const mx = (best.x1 + best.x2) / 2, my = (best.y1 + best.y2) / 2;
+            if (!_inBounds(mx, my, M, dw, dh)) continue;
+            let angle = Math.atan2(best.y2 - best.y1, best.x2 - best.x1) * 180 / Math.PI;
+            if (angle > 90 || angle < -90) angle += 180; // lesbar halten
+            const label = lvl.level.toFixed(2);
+            const bb = { minX: mx - 5, maxX: mx + 5, minY: my - 2, maxY: my + 2 };
+            if (placed.some(p => _aabbOverlap(p, bb))) continue;
+            placed.push(bb);
+            // weißer Halo überdeckt die Linie — wirkt wie eine Linienlücke
+            doc.setTextColor(255, 255, 255);
+            for (const [ox, oy] of [[-0.25, 0], [0.25, 0], [0, -0.25], [0, 0.25]]) {
+                doc.text(label, mx + ox, my + 0.8 + oy, { align: 'center', angle: -angle });
+            }
+            doc.setTextColor(110, 85, 75);
+            doc.text(label, mx, my + 0.8, { align: 'center', angle: -angle });
+        }
+    }
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0);
+}
+
+function _aabbOverlap(a, b) {
+    return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
+}
+
+// ── T1/E4: UTM-Gitterkreuze ─────────────────────────────────────────────────
+function _drawUtmCrosses(doc, utm, bounds, toX, toY, M, dw, dh) {
+    const { crosses } = computeUtmCrosses(bounds, utm.offset ?? { x: 0, z: 0 }, {
+        flipNorth: utm.flipNorth ?? false,
+        spacing: utm.spacing ?? undefined,
+    });
+    if (!crosses.length) return;
+
+    const ARM = 2; // halbe Kreuzlänge in mm (Gesamtkreuz 4 mm)
+    doc.setDrawColor(70, 70, 70);
+    doc.setLineWidth(0.18);
+    doc.setLineDashPattern([], 0);
+    doc.setFontSize(5.5);
+
+    for (const c of crosses) {
+        const px = toX(c.worldX), py = toY(c.worldZ);
+        if (!_inBounds(px, py, M, dw, dh)) continue;
+        doc.line(px - ARM, py, px + ARM, py);
+        doc.line(px, py - ARM, px, py + ARM);
+        if (c.labelled) {
+            doc.setTextColor(90, 90, 90);
+            doc.text(formatUtmLabel('E', c.east), px + ARM + 0.6, py - 0.6);
+            doc.text(formatUtmLabel('N', c.north), px + ARM + 0.6, py + 1.8);
+        }
+    }
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0);
 }
 
 // ── IFC structural grid axes ──────────────────────────────────────────────
@@ -597,22 +733,33 @@ function _drawScaleBar(doc, M, dw, dh, scaleRatio) {
 }
 
 // ── North arrow (top-right of drawing area) ─────────────────────────────────
-function _drawNorthArrow(doc, M, dw, dh) {
+// angleDeg: Verdrehung des Nordpfeils (Plan-Nord ≠ Blatt-Oben), im Uhrzeigersinn
+function _drawNorthArrow(doc, M, dw, dh, angleDeg = 0) {
     const cx = M + dw - 10;
     const cy = M + 12;
     const r  = 7;
+
+    // Punkt um (cx, cy) rotieren (Papier-Y zeigt nach unten → +angle = im UZS)
+    const rad = angleDeg * Math.PI / 180;
+    const cosA = Math.cos(rad), sinA = Math.sin(rad);
+    const rot = (dx, dy) => [cx + dx * cosA - dy * sinA, cy + dx * sinA + dy * cosA];
 
     doc.setDrawColor(0); doc.setLineWidth(0.3);
     doc.circle(cx, cy, r, 'S');
 
     // Solid north triangle (top half, black) + white bottom half (outline)
+    const [nx, ny]   = rot(0, -r * 0.85);
+    const [lx, ly]   = rot(-r * 0.4, 0);
+    const [rx2, ry2] = rot(r * 0.4, 0);
+    const [sx, sy]   = rot(0, r * 0.85);
     doc.setFillColor(0);
-    doc.triangle(cx, cy - r * 0.85, cx - r * 0.4, cy, cx + r * 0.4, cy, 'F');
+    doc.triangle(nx, ny, lx, ly, rx2, ry2, 'F');
     doc.setFillColor(255);
-    doc.triangle(cx, cy + r * 0.85, cx - r * 0.4, cy, cx + r * 0.4, cy, 'FD');
+    doc.triangle(sx, sy, lx, ly, rx2, ry2, 'FD');
 
     doc.setFontSize(7); doc.setTextColor(0);
-    doc.text('N', cx, cy - r - 1.2, { align: 'center' });
+    const [tx, ty] = rot(0, -r - 2.2);
+    doc.text('N', tx, ty + 1, { align: 'center' });
 }
 
 function _inBounds(x, y, M, dw, dh) {
@@ -682,11 +829,17 @@ function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, sty
         return merged;
     };
 
+    // T1/AP-B: Elemente mit Punktsymbol — Kontur + Hatch unterdrücken,
+    // Symbol nach beiden Pässen obendrauf zeichnen (papierfeste Größe).
+    const symbolQueue = [];
+    const hasSymbol = (style) => style.symbol && style.symbol !== 'none';
+
     // First pass: hatch fills (behind the outlines)
     for (const { category, rings, ruleStyle, modelId, aboveCut } of outlines) {
         if (aboveCut) continue; // hidden lines never get hatch fills
         const style = resolve(category, modelId, ruleStyle, false);
         if (style.enabled === false) continue;
+        if (hasSymbol(style)) continue;
 
         const hatchName = style.hatch;
         if (!hatchName || hatchName === 'none' || !rings.length) continue;
@@ -708,6 +861,19 @@ function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, sty
     for (const { category, rings, fallback, ruleStyle, modelId, aboveCut } of outlines) {
         const style = resolve(category, modelId, ruleStyle, aboveCut);
         if (style.enabled === false) continue;
+        if (hasSymbol(style)) {
+            // Papier-Zentrum der Element-BBox als Symbol-Anker vormerken
+            const paperRings = rings.map(rg => rg.map(([u, v]) => [toX(u), toY(v)]));
+            const bbox = _paperBBox(paperRings);
+            if (bbox) {
+                const cx = (bbox.minX + bbox.maxX) / 2;
+                const cy = (bbox.minY + bbox.maxY) / 2;
+                if (_inBounds(cx, cy, M, dw, dh)) {
+                    symbolQueue.push({ name: style.symbol, cx, cy, size: style.symbolSize ?? 3, style });
+                }
+            }
+            continue;
+        }
 
         const r = style.r ?? 80, g = style.g ?? 80, b = style.b ?? 80;
         const baseW = style.w ?? 0.25;
@@ -729,6 +895,12 @@ function _drawCategoryOutlines(doc, outlines, toX, toY, M, dw, dh, styleMap, sty
         }
     }
     doc.setLineDashPattern([], 0);
+
+    // T1/AP-B: Symbole zuletzt — sie liegen über allen Konturen
+    for (const s of symbolQueue) {
+        drawPlanSymbol(doc, s.name, s.cx, s.cy, s.size, { r: s.style.r, g: s.style.g, b: s.style.b });
+    }
+    doc.setDrawColor(0);
 }
 
 // ── Element labels with collision avoidance ─────────────────────────────────
@@ -780,10 +952,13 @@ function _drawElementLabels(doc, outlines, toX, toY, M, dw, dh,
         }
         if (!isFinite(minX)) continue;
         const elW = maxX - minX, elH = maxY - minY;
-        if (elW < minPxSize || elH < minPxSize) continue;
+        // T1/AP-B: Symbol-Elemente (Schacht bei 1:500 = winzig) trotzdem
+        // beschriften — die Mindestgrößen-Prüfung gilt nur für Konturen.
+        const symbolActive = style.symbol && style.symbol !== 'none';
+        if (!symbolActive && (elW < minPxSize || elH < minPxSize)) continue;
 
         const fontMm = Number(style.labelFontSize) > 0 ? Number(style.labelFontSize) : defaultFontMm;
-        const anchor = style.labelAnchor ?? 'center';
+        const anchor = symbolActive ? 'right' : (style.labelAnchor ?? 'center');
         const lineH  = fontMm * 1.1;
         const tw = Math.max(...lines.map(l => charW(fontMm) * l.length));
         const th = lines.length * lineH;
@@ -831,6 +1006,45 @@ function _drawElementLabels(doc, outlines, toX, toY, M, dw, dh,
             doc.text(line, pos.x, ly, { align: 'center', baseline: 'middle' });
         }
         placed.push(chosen.bb);
+    }
+    doc.setTextColor(0, 0, 0);
+    return placed; // T1/AP-C: Achs-Labels prüfen gegen dieselbe Kollisionsliste
+}
+
+// ── T1/AP-C: Text entlang der Leitungsachse ─────────────────────────────────
+// Platzierung am längsten Papier-Segment der Achse, rotiert und 1,2 mm über
+// der Linie; Kollisionsprüfung gegen die bereits gesetzten Element-Labels.
+function _drawAxisLabels(doc, items, toX, toY, M, dw, dh, placed) {
+    for (const it of items) {
+        const seg = longestSegment(it.polyline);
+        if (!seg) continue;
+        const x1 = toX(seg.x1), y1 = toY(seg.z1);
+        const x2 = toX(seg.x2), y2 = toY(seg.z2);
+        const segLen = Math.hypot(x2 - x1, y2 - y1);
+        if (segLen < 12) continue; // Haltung zu kurz fürs Label
+
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        if (!_inBounds(mx, my, M, dw, dh)) continue;
+
+        const angle = normalizeTextAngle(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI);
+        // 1,2 mm senkrecht „über" die Linie (Papier-Y zeigt nach unten)
+        const rad = angle * Math.PI / 180;
+        const lx = mx + Math.sin(rad) * 1.2;
+        const ly = my - Math.cos(rad) * 1.2;
+
+        const fontMm = it.fontMm ?? 2.0;
+        const tw = Math.min(segLen, it.label.length * fontMm * 0.55);
+        const bb = { minX: mx - tw / 2, maxX: mx + tw / 2, minY: my - 2.5, maxY: my + 2.5 };
+        if (placed && _anyOverlap(bb, placed)) continue;
+        placed?.push(bb);
+
+        doc.setFontSize(fontMm / 0.3528);
+        doc.setTextColor(255, 255, 255);
+        for (const [ox, oy] of [[-0.18, 0], [0.18, 0], [0, -0.18], [0, 0.18]]) {
+            doc.text(it.label, lx + ox, ly + oy, { align: 'center', angle: -angle });
+        }
+        doc.setTextColor(0, 0, 0);
+        doc.text(it.label, lx, ly, { align: 'center', angle: -angle });
     }
     doc.setTextColor(0, 0, 0);
 }

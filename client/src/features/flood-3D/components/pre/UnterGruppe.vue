@@ -8,10 +8,15 @@
           {{ ENUM_LABELS[opt] ?? opt }}
         </option>
       </select>
+      <!-- Fenster-Punkte sind (Lage entlang der Kante, Höhe) — keine
+           Weltkoordinaten: eigene Spaltenköpfe, keine Szenen-Fokusmarke -->
       <PunktListe v-else-if="istPunktListe(k, wert[k])"
                   :model-value="wert[k]" :dim="punktDim(k, wert[k], typ)"
                   :min="GESCHLOSSEN.has(k) ? 3 : 2"
                   :geschlossen="GESCHLOSSEN.has(k)"
+                  :achsen="gruppe === 'window' && k === 'points'
+                    ? ['Kante (m)', 'Höhe (m)'] : ['x', 'y', 'z']"
+                  :fokus="!(gruppe === 'window' && k === 'points')"
                   @update:model-value="(v) => setzen(k, v)" />
       <div v-else-if="istZahlenreihe(wert[k])" class="f3d-zahlen">
         <label v-for="(nm, i) in zahlenNamen(k, wert[k].length)" :key="i"

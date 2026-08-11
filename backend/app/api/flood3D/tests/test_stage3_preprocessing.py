@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from ..cli import main as cli_main
@@ -117,6 +118,37 @@ def test_wand_volumen_analytisch():
     assert mesh.volume == pytest.approx(10 * 0.5 * 2.0, rel=1e-6)
 
 
+def test_wand_oberkante_folgt_den_stuetzpunkten():
+    """
+    B3: die Oberkante folgt points[i].z je Stützpunkt — vorher kollabierte
+    der Bau alle z auf max/min, das Ziehen EINER Ecke hob die ganze Wand.
+    """
+    s = cs.StructWall(id="w", type="wall", patch="w",
+                      alignment=cs.Alignment(points=[(0, 0, 98.0),
+                                                     (10, 0, 99.0)]),
+                      height=2.0, thickness=0.5)
+    mesh = build_wall(s)
+    assert check_solid("w", mesh) == []
+    # Fuß: min(z) - height = 96.0; Deckel läuft von 98 auf 99
+    assert mesh.bounds[0][2] == pytest.approx(96.0)
+    assert mesh.bounds[1][2] == pytest.approx(99.0)
+    # Trapez-Längsschnitt: Breite · Länge · mittlere Höhe
+    assert mesh.volume == pytest.approx(0.5 * 10 * (2.0 + 3.0) / 2, rel=1e-6)
+    # Oberkante am ersten Ende bleibt bei 98 m (nicht auf 99 gezogen)
+    ecken_x0 = mesh.vertices[np.isclose(mesh.vertices[:, 0], 0.0)]
+    assert ecken_x0[:, 2].max() == pytest.approx(98.0)
+
+
+def test_wand_doppelte_stuetzpunkte_werden_gefiltert():
+    s = cs.StructWall(id="w", type="wall", patch="w",
+                      alignment=cs.Alignment(points=[(0, 0, 98.0), (0, 0, 98.0),
+                                                     (10, 0, 98.0)]),
+                      height=2.0, thickness=0.5)
+    mesh = build_wall(s)
+    assert check_solid("w", mesh) == []
+    assert mesh.volume == pytest.approx(10 * 0.5 * 2.0, rel=1e-6)
+
+
 def test_pfeiler_volumen_analytisch():
     s = cs.StructPier(id="p", type="pier", patch="p",
                       footprint=[(0, 0), (2, 0), (2, 3), (0, 3)],
@@ -213,7 +245,7 @@ def test_rechen_staebe_vorschau():
 
 
 def test_kirschmer_ableitung():
-    from ..core.casebuilder import _screen_resistance
+    from ..core.casebuilder import _SCREEN_ZONE_TIEFE, _screen_resistance
     s = cs.StructScreen(
         id="r", type="screen", patch="r",
         plane_polygon=[(0, 0, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1)],
@@ -222,7 +254,12 @@ def test_kirschmer_ableitung():
         resistance=cs.ScreenResistance())      # d = f = 0 -> Kirschmer
     _, f = _screen_resistance(s)
     zeta = 2.42 * (0.008 / 0.012) ** (4 / 3)
-    assert f[0] == pytest.approx(zeta / 0.06, rel=1e-6)
+    # f ist auf die ZONENTIEFE normiert, nicht auf die Stabtiefe: der
+    # Solver integriert Δp = ½ρu²·f·L über die Zone — nur f = ζ/L_Zone
+    # liefert den Kirschmer-Verlust ζ·½ρu². Die frühere Normierung auf
+    # bar_depth überschätzte den Verlust um L_Zone/bar_depth (2,5×).
+    assert f[0] == pytest.approx(zeta / _SCREEN_ZONE_TIEFE, rel=1e-6)
+    assert f[0] * _SCREEN_ZONE_TIEFE == pytest.approx(zeta, rel=1e-6)
 
     explizit = cs.StructScreen(
         id="r2", type="screen", patch="r2",
@@ -382,14 +419,16 @@ def test_kepsilon_schreibt_das_epsilon_feld(tmp_path):
     assert "epsilon" in (tmp_path / "system" / "fvSolution").read_text()
 
 
-def test_lts_wird_als_nicht_lauffaehig_gemeldet():
-    from ..core.validate import validate_case
-
+def test_lts_ist_nicht_waehlbar():
+    """
+    LTSInterFoam ist aus dem Schema entfernt (Audit U26): ein Enum-Wert,
+    der nur existierte, um von der Prüfung verboten zu werden, war eine
+    Falle. Er kommt mit Fahrplan-Stufe F zurück — DANN mit localEuler.
+    """
     spec = build_spec_stage3()
-    spec.solver.application = "LTSInterFoam"
-    befunde = [f for f in validate_case(spec, ".")
-               if f["object_id"] == "solver" and f["severity"] == "fehler"]
-    assert befunde and "localEuler" in befunde[0]["message"]
+    with pytest.raises(Exception):
+        spec.solver.application = "LTSInterFoam"
+        cs.CaseSpec.model_validate(spec.model_dump())
 
 
 def test_kraftkriterium_ohne_kraftauswertung_wird_gemeldet():

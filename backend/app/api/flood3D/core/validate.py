@@ -180,15 +180,6 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                    "wenn der Solver sie mitschreibt.",
                    fix=kur("kraftauswertung_ein", patch=s.patch)))
 
-    # LTSInterFoam braucht ein lokales Zeitschema (localEuler) und eine
-    # eigene PIMPLE-Steuerung. Beides ist noch nicht verdrahtet — der Fall
-    # liefe mit Euler durch und rechnete etwas anderes, als draufsteht.
-    if spec.solver.application == "LTSInterFoam":
-        f(_finding("solver", "fehler",
-                   "LTSInterFoam ist noch nicht lauffähig: der Fall wird mit "
-                   "dem Euler-Zeitschema aufgebaut, das lokale Zeitschema "
-                   "(localEuler) fehlt. Bis dahin interFoam wählen."))
-
     # Geländekörper: er ersetzt die Höhenfläche beim Vernetzen. Ist er
     # nicht geschlossen oder deckt er das Gebiet nicht, merkt man das sonst
     # erst an einem zerrissenen Netz.
@@ -371,10 +362,13 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     # ---- Geometrie ------------------------------------------------------
     solids = {}
     try:
-        solids = build_solids(spec, base_dir)
-    except NotImplementedError as e:
-        f(_finding("structures", "fehler", str(e)))
-    except Exception as e:
+        # `ausfaelle` fängt jedes Bauwerk einzeln: der Befund nennt das
+        # betroffene Objekt, und die übrigen Körper werden weiter geprüft
+        ausfaelle: list[dict] = []
+        solids = build_solids(spec, base_dir, ausfaelle=ausfaelle)
+        for a in ausfaelle:
+            f(_finding(a["id"], "fehler", a["meldung"]))
+    except Exception as e:                   # noqa: BLE001
         f(_finding("structures", "fehler", f"Bauwerk nicht erzeugbar: {e}"))
 
     struct_types = {s.patch: s.type for s in spec.structures}
@@ -539,8 +533,14 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"{v:.2f} m³. Beim Fallbau wird der gemeinsame "
                            f"Teil {patch_zu_id.get(b, b)} abgezogen "
                            "(gleiche Berandung, sauberere Zellen)."))
-        except Exception:                    # noqa: BLE001
-            pass
+        except Exception as e:               # noqa: BLE001
+            # Die Durchdringungsprüfung selbst ist gescheitert — das darf
+            # nicht LAUTLOS passieren: beim Fallbau würde trotzdem
+            # entflochten, nur eben ungeprüft (Audit F9)
+            f(_finding("structures", "hinweis",
+                       "Durchdringungsprüfung nicht möglich "
+                       f"({type(e).__name__}) — ob sich Körper überlappen, "
+                       "ist ungeprüft; der Fallbau entflechtet trotzdem."))
 
     # ---- Bearbeitungen --------------------------------------------------
     for st in spec.structures:
@@ -1105,12 +1105,64 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            "groß — die Randbedingung wirkt unmittelbar auf "
                            "die Umströmung zurück."))
 
+    # ---- Lage im Modellgebiet -------------------------------------------
+    # Punkte außerhalb des Gebiets erreichen sonst den Solver: ein Rechen
+    # außerhalb erzeugt eine leere Porositätszone (interFoam bricht ab),
+    # eine Vorfüllung außerhalb kippt den inside/outside-Test von
+    # surfaceToCell. Regel und Kur messen mit DERSELBEN Funktion
+    # (`gebietslage`), damit die Kur den Befund auch wirklich beseitigt.
+    if spec.domain is not None:
+        from .anschluss import gebietslage
+        for lage in gebietslage(spec):
+            if lage["voll"]:
+                f(_finding(lage["id"], "fehler",
+                           f"{lage['art']} liegt vollständig außerhalb des "
+                           "Modellgebiets — bitte löschen oder verschieben. "
+                           "Außerhalb liegende Geometrie wird nicht an den "
+                           "Solver übergeben."))
+            elif lage["klippbar"]:
+                f(_finding(lage["id"], "warnung",
+                           f"{lage['art']} ragt zu {lage['anteil']:.0%} über "
+                           "das Modellgebiet hinaus",
+                           fix=kur("ins_gebiet")))
+            else:
+                f(_finding(lage["id"], "warnung",
+                           f"{lage['art']} ragt zu {lage['anteil']:.0%} über "
+                           "das Modellgebiet hinaus — kappen würde die Form "
+                           "verändern, bitte verschieben oder verkleinern"))
+
     for s in spec.structures:
         if s.type == "screen":
+            # leere d/f sind KEIN Fehler: genau dann leitet der Fallaufbau
+            # die Beiwerte automatisch nach Kirschmer aus Stabform,
+            # Stabteilung und Anströmwinkel ab (_screen_resistance). Der
+            # frühere fehler-Befund widersprach dem eigenen Fallaufbau.
             if not any(s.resistance.d) and not any(s.resistance.f):
+                from .casebuilder import _screen_resistance
+                try:
+                    _, f_auto = _screen_resistance(s)
+                    f(_finding(s.id, "hinweis",
+                               "Widerstandsbeiwerte nicht gesetzt — sie "
+                               "werden automatisch nach Kirschmer abgeleitet "
+                               f"(f = {f_auto[0]:.1f} 1/m aus Stabform "
+                               f"„{s.bar_shape}“, Teilung "
+                               f"{s.bar_spacing * 1000:.0f} mm, Anströmwinkel "
+                               f"{s.approach_angle_deg:g}°)"))
+                except Exception as e:       # noqa: BLE001
+                    f(_finding(s.id, "hinweis",
+                               "Kirschmer-Ableitung nicht berechenbar "
+                               f"({type(e).__name__}) — mit welchen "
+                               "Widerstandsbeiwerten der Rechen gerechnet "
+                               "wird, ist damit unklar."))
+            # der wirklich kaputte Fall: lichte Weite ≤ 0 — die
+            # Kirschmer-Formel entartet (bisher versteckte das der
+            # 1e-4-Boden in _screen_resistance)
+            if s.bar_spacing <= s.bar_thickness:
                 f(_finding(s.id, "fehler",
-                           "Rechen ohne Widerstandsbeiwerte (d und f sind null) "
-                           "— er wäre hydraulisch nicht vorhanden"))
+                           f"Stabteilung ({s.bar_spacing * 1000:.0f} mm) ist "
+                           "nicht größer als die Stabdicke "
+                           f"({s.bar_thickness * 1000:.0f} mm) — die lichte "
+                           "Weite wäre null, der Rechen dicht"))
             if s.resistance.blockage_ratio == 0:
                 f(_finding(s.id, "hinweis",
                            "Rechen ohne angesetzten Verlegungsgrad — für den "

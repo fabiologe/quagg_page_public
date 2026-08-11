@@ -153,9 +153,16 @@
              class="f3d-klapper" :open="field.key === 'profile'">
       <summary>{{ field.label }}</summary>
       <div class="f3d-prop">
+        <p v-if="field.key === 'resistance'" class="f3d-muted f3d-small">
+          So wirkt der Rechen auf die Strömung: er bekommt kein eigenes
+          Netz-Bauteil, sondern eine poröse Widerstandszone (0,15 m tief).
+          Der Verlust wird automatisch nach Kirschmer aus Stabform,
+          Stabteilung und Anströmwinkel abgeleitet — hier ist nur der
+          Verlegungsgrad anzusetzen.
+        </p>
         <UnterGruppe v-model="draft[field.key]" :labels="labelsFuer(field.key)"
                      :typ="draft.type" :gruppe="field.key"
-                     :verbergen="VERBERGEN[field.key] ?? []" />
+                     :verbergen="verbergenFuer(field.key)" />
       </div>
     </details>
 
@@ -175,10 +182,13 @@
           <option value="rechteck">Rechteck</option>
           <option value="kreis">Kreis (Rohrmündung)</option>
           <option value="trapez">Trapez (Gerinnequerschnitt)</option>
-          <option value="polygon">Polygon (frei zeichnen)</option>
-          <option value="ei">Eiprofil</option>
-          <option value="maul">Maulprofil</option>
-          <option value="tropfen">Tropfenprofil</option>
+          <option value="polygon">Polygon (Ecken ziehen)</option>
+          <!-- Ei/Maul/Tropfen sind POLYGON-VORLAGEN: sie setzen eine
+               passende Eckenliste ein und werden danach als Polygon
+               geführt — keine eigenen Fensterformen (Audit U3) -->
+          <option value="ei">Polygon-Vorlage: Eiprofil</option>
+          <option value="maul">Polygon-Vorlage: Maulprofil</option>
+          <option value="tropfen">Polygon-Vorlage: Tropfenprofil</option>
           <option v-for="ch in channels" :key="ch.id" :value="'follow:' + ch.id">
             an Gerinne „{{ ch.id }}“ gekoppelt
           </option>
@@ -363,6 +373,21 @@ const fields = computed(() => {
 
 function labelsFuer(key) {
   return { ...FIELD_LABELS, ...(GRUPPEN_LABELS[key] ?? {}) }
+}
+
+// Rechen-Widerstand: d/f-Vektoren nur zeigen, wenn sie WIRKLICH gesetzt
+// sind — der Normalfall ist die automatische Kirschmer-Ableitung, und ein
+// Formular voller Null-Vektoren verwirrte („was zum … ist das?"). `model`
+// hat genau einen Wert und ist keine Entscheidung.
+function verbergenFuer(key) {
+  const basis = VERBERGEN[key] ?? []
+  if (key !== 'resistance') return basis
+  const w = draft.value?.resistance ?? {}
+  const leer = (v) => !Array.isArray(v) || v.every((x) => !x)
+  const versteckt = ['model']
+  if (leer(w.d)) versteckt.push('d')
+  if (leer(w.f)) versteckt.push('f')
+  return [...basis, ...versteckt]
 }
 
 // Leeres Feld heißt „Vorbelegung" — als null übernehmen, nicht als 0
@@ -585,12 +610,6 @@ const ksDraft = computed({
     else delete draft.value.material_ks
   },
 })
-
-// Aussparungen: nur Wand und Becken; neue Öffnung mittig auf der Achse
-// und auf halber Bauteilhöhe, damit sie garantiert im Bauteil liegt
-// Bearbeitungen gelten fuer JEDES Bauwerk, auch importierte
-
-
 
 const zeichnet = computed(() =>
   store.platzierung?.id === draft.value?.id ? store.platzierung.art : null)

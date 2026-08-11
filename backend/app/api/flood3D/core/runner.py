@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 OF_IMAGE = os.environ.get("FLOOD3D_OF_IMAGE", "opencfd/openfoam-run:2406")
@@ -85,6 +86,49 @@ def _pruefe_patches(case: Path, spec) -> None:
           "Patches: " + ", ".join(sorted(vorhanden)))
 
 
+# Welcher Container gerade für welches Arbeitsverzeichnis rechnet — die
+# Namen tragen seit dem Kollisions-Fix einen Zufallsanteil, ohne Registry
+# könnte ein Abbruch-Endpunkt sie nicht finden (Audit H3)
+_container_je_dir: dict[str, str] = {}
+
+
+def laufende_container_stoppen(wurzel: str | Path) -> list[str]:
+    """
+    Alle registrierten Container stoppen, deren Arbeitsverzeichnis unter
+    `wurzel` liegt. Rückgabe: die gestoppten Namen. Der zugehörige
+    `subprocess.run` in run_foam endet dadurch mit Rückgabewert != 0 —
+    der Lauf bricht am aktuellen Schritt ab.
+    """
+    wurzel = str(Path(wurzel).resolve())
+    gestoppt = []
+    for verz, name in list(_container_je_dir.items()):
+        if verz.startswith(wurzel):
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            gestoppt.append(name)
+    return gestoppt
+
+
+def verwaiste_container_entfernen() -> list[str]:
+    """
+    Alle f3d_*-Container abräumen. Gedacht für den API-Start: Läufe leben
+    in Threads DIESES Prozesses — nach einem Neustart wartet auf keinen
+    Container mehr irgendjemand, er rechnet nur noch ins Leere (und
+    blockiert seit dem uuid-Fix zwar keinen Namen mehr, aber Kerne und
+    Platte). Rückgabe: die entfernten Namen, für das Server-Log.
+    """
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "-a", "--filter", "name=f3d_",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=20)
+    except Exception:                          # noqa: BLE001 — kein Docker,
+        return []                              # kein Problem
+    namen = [n for n in out.stdout.split() if n.startswith("f3d_")]
+    for n in namen:
+        subprocess.run(["docker", "rm", "-f", n], capture_output=True)
+    return namen
+
+
 def run_foam(case_dir: str | Path, command: str, log_name: str,
              timeout: int = MESH_TIMEOUT, name_suffix: str = "") -> Path:
     """
@@ -93,22 +137,34 @@ def run_foam(case_dir: str | Path, command: str, log_name: str,
     Beenden der CLI allein den Solver weiterlaufen ließe.
     """
     case_dir = Path(case_dir).resolve()
-    container = f"f3d_{case_dir.name}_{name_suffix or log_name}".replace(".", "_")
+    # Eindeutiger Zusatz je Aufruf: der Verzeichnisname allein ist NICHT
+    # eindeutig — jede Netzvorschau heißt `derived/mesh_preview`, egal zu
+    # welchem Fall. Zwei Vorschauen (Doppelklick, zweiter Fall) kollidierten
+    # sonst am Containernamen („Conflict. The container name … is already
+    # in use") und der zweite Lauf starb mit 422.
+    eindeutig = uuid.uuid4().hex[:8]
+    container = (f"f3d_{case_dir.name}_{name_suffix or log_name}_{eindeutig}"
+                 .replace(".", "_"))
     log_path = case_dir / log_name
     cmd = ["docker", "run", "--rm", "--name", container,
            "-v", f"{case_dir}:/case", "-w", "/case",
            "--entrypoint", "/bin/bash", OF_IMAGE,
            "-c", f"source {OF_BASHRC} && {command}"]
-    with open(log_path, "w") as log:
-        try:
-            proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT,
-                                  timeout=timeout)
-        except subprocess.TimeoutExpired:
-            subprocess.run(["docker", "rm", "-f", container],
-                           capture_output=True)
-            raise FoamError(
-                f"{command.split()[0]} nach {timeout} s abgebrochen — "
-                f"Log: {log_name}")
+    _container_je_dir[str(case_dir)] = container
+    try:
+        with open(log_path, "w") as log:
+            try:
+                proc = subprocess.run(cmd, stdout=log,
+                                      stderr=subprocess.STDOUT,
+                                      timeout=timeout)
+            except subprocess.TimeoutExpired:
+                subprocess.run(["docker", "rm", "-f", container],
+                               capture_output=True)
+                raise FoamError(
+                    f"{command.split()[0]} nach {timeout} s abgebrochen — "
+                    f"Log: {log_name}")
+    finally:
+        _container_je_dir.pop(str(case_dir), None)
     if proc.returncode != 0:
         tail = "\n".join(log_path.read_text(errors="replace").splitlines()[-15:])
         raise FoamError(f"{command.split()[0]} fehlgeschlagen "
@@ -316,8 +372,25 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
             run_foam(case_dir,
                      f"mpirun --allow-run-as-root -np {CORES} {app} -parallel",
                      f"log.{app}", timeout=SOLVE_TIMEOUT, name_suffix="solve")
-            run_foam(case_dir, "reconstructPar -newTimes",
-                     "log.reconstructPar", name_suffix="rp")
+            try:
+                run_foam(case_dir, "reconstructPar -newTimes",
+                         "log.reconstructPar", name_suffix="rp")
+            except FoamError as e:
+                # Dieselbe Übersetzung wie im Local Companion (F12-Drift):
+                # „No times selected" heißt, der Solver hat keinen einzigen
+                # Zeitschritt geschrieben — meist zu kurze end_time oder
+                # sofortige Divergenz. Der rohe Foam-Fehler half niemandem.
+                log_rp = (case_dir / "log.reconstructPar")
+                if (log_rp.is_file()
+                        and "No times selected"
+                        in log_rp.read_text(errors="replace")):
+                    raise FoamError(
+                        "Der Solver hat keinen einzigen Zeitschritt "
+                        "geschrieben (reconstructPar: No times selected) — "
+                        "meist ist die Simulationsdauer kürzer als das "
+                        "Schreibintervall oder der Lauf ist sofort "
+                        "divergiert. Log des Solvers prüfen.")
+                raise e
             import shutil
             for p in case_dir.glob("processor*"):
                 shutil.rmtree(p, ignore_errors=True)
@@ -369,11 +442,28 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
                               {**manifest, "status": "completed"})
         render_run(result, df, spec, run_root)
 
+        dauer = time.time() - t0
         _write_manifest(run_root, status="completed", finished=time.time(),
-                        duration_s=round(time.time() - t0, 1))
+                        duration_s=round(dauer, 1),
+                        # IST-Kosten (Audit U18/Spez. 4.4): bisher gab es
+                        # nur die Schätzung VOR dem Lauf — das Manifest
+                        # trägt jetzt, was der Lauf wirklich gekostet hat
+                        cost_eur=round(dauer / 3600.0 * CORES
+                                       * CORE_PRICE_EUR_H, 2))
     except Exception as e:
-        _write_manifest(run_root, status="failed", error=str(e),
-                        finished=time.time(),
-                        duration_s=round(time.time() - t0, 1))
+        # Ein vom Nutzer abgebrochener Lauf ist kein Fehler: der Abbruch-
+        # Endpunkt legt die Marke, das Killen des Containers lässt den
+        # laufenden Schritt mit FoamError enden — hier wird daraus der
+        # ehrliche Status (Audit H3)
+        if (run_root / "ABBRUCH").exists():
+            (run_root / "ABBRUCH").unlink(missing_ok=True)
+            _write_manifest(run_root, status="abgebrochen",
+                            error="Vom Nutzer abgebrochen",
+                            finished=time.time(),
+                            duration_s=round(time.time() - t0, 1))
+        else:
+            _write_manifest(run_root, status="failed", error=str(e),
+                            finished=time.time(),
+                            duration_s=round(time.time() - t0, 1))
         raise
     return json.loads((run_root / "manifest.json").read_text())

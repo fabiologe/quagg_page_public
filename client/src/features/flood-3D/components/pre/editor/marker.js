@@ -7,8 +7,20 @@ import * as THREE from 'three'
 
 export function erzeugeMarker({ store, groups, selectable, holeScene,
   clearGroup, terrainZ }) {
+// Eigene Einträge in `selectable` beim Neuaufbau wieder AUSTRAGEN: die
+// Marker-Ebene wird auch für sich allein neu gebaut (Spec-Watcher) — ohne
+// Austragen sammelten sich verwaiste Meshes an alten Positionen an, die
+// der Raycaster weiter traf („Phantom-Picks").
+function merken(mesh) {
+  mesh.userData.ebene = 'marker'
+  selectable.push(mesh)
+}
+
 function buildMarkers() {
   clearGroup('markers')
+  for (let i = selectable.length - 1; i >= 0; i--) {
+    if (selectable[i].userData?.ebene === 'marker') selectable.splice(i, 1)
+  }
   groups.markers = new THREE.Group()
   const spec = store.spec
   if (!spec) return
@@ -32,7 +44,7 @@ function buildMarkers() {
       kante.position.set(cx, cy, (spec.domain.z_min + spec.domain.z_max) / 2)
       kante.userData = { kind: 'domain', id: 'domain' }
       groups.markers.add(kante)
-      selectable.push(kante)
+      merken(kante)
     }
   }
 
@@ -50,7 +62,7 @@ function buildMarkers() {
     pick.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)
     pick.userData = { kind: 'refinement', id: r.id }
     groups.markers.add(pick)
-    selectable.push(pick)
+    merken(pick)
   }
 
   // Geländekanten aus der Vermessung: mit IHRER Höhe zeichnen, nicht auf
@@ -84,7 +96,7 @@ function buildMarkers() {
           v[i].clone().sub(v[i - 1]).normalize())
         ziel.userData = { kind: 'terrain_op', id: op.id }
         groups.markers.add(ziel)
-        selectable.push(ziel)
+        merken(ziel)
       }
     }
     // Kein Füllband zwischen Ober- und Unterkante mehr: Stützpunkt i der
@@ -92,6 +104,35 @@ function buildMarkers() {
     // (unterschiedliche Punktzahl, gegenläufige Richtung aus dem DXF), das
     // Band verhedderte sich zu einer sinnlosen gelben Fläche. Die Böschung
     // ist ohnehin im Geländeraster zu sehen — die Kanten reichen als Marke.
+  }
+
+  // Vermessungskanten (spec.terrain.kanten): mit ihrer Höhe gezeichnet —
+  // der Formen-Pinsel „Bruchkante" zieht das Gelände an GENAU diese Linien
+  // heran, also müssen sie sichtbar und greifbar sein (seit dem Ende des
+  // Zeichnen-Werkzeugs entstehen sie auch über die Objektbaum-Vorlage).
+  for (const k of spec.terrain?.kanten ?? []) {
+    const pts = k.polyline ?? []
+    if (pts.length < 2) continue
+    const v = pts.map((q) => new THREE.Vector3(q[0], q[1], q[2] ?? 0))
+    const linie = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(v),
+      new THREE.LineBasicMaterial({ color: 0xffa94d }))
+    linie.userData = { kind: 'kante', id: k.id }
+    groups.markers.add(linie)
+    for (let i = 1; i < v.length; i++) {
+      const mitte = v[i - 1].clone().lerp(v[i], 0.5)
+      const laenge = v[i - 1].distanceTo(v[i])
+      if (laenge < 1e-6) continue
+      const ziel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, laenge, 6),
+        new THREE.MeshBasicMaterial({ visible: false }))
+      ziel.position.copy(mitte)
+      ziel.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+        v[i].clone().sub(v[i - 1]).normalize())
+      ziel.userData = { kind: 'kante', id: k.id }
+      groups.markers.add(ziel)
+      merken(ziel)
+    }
   }
 
   // Pegelpunkte
@@ -102,7 +143,7 @@ function buildMarkers() {
     m.position.set(g.point[0], g.point[1], z + 0.4)
     m.userData = { kind: 'gauge', id: g.id }
     groups.markers.add(m)
-    selectable.push(m)
+    merken(m)
     const stab = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2),
       new THREE.MeshBasicMaterial({ color: 0xd55181 }))
     stab.rotation.x = Math.PI / 2
@@ -110,7 +151,9 @@ function buildMarkers() {
     groups.markers.add(stab)
   }
 
-  // Querschnittslinien
+  // Querschnittslinien — mit unsichtbaren Zylinder-Klickzielen je Segment
+  // (die dünne Linie selbst war fürs Anklicken nie in `selectable`, obwohl
+  // Griffe und Verschieben voll unterstützt sind; Audit U5)
   for (const sec of spec.evaluation?.sections ?? []) {
     const pts = sec.polyline.map(([x, y]) =>
       new THREE.Vector3(x, y, terrainZ(x, y) + 0.6))
@@ -119,6 +162,93 @@ function buildMarkers() {
       new THREE.LineBasicMaterial({ color: 0x199e70, linewidth: 2 }))
     line.userData = { kind: 'section', id: sec.id }
     groups.markers.add(line)
+    for (let i = 1; i < pts.length; i++) {
+      const mitte = pts[i - 1].clone().lerp(pts[i], 0.5)
+      const laenge = pts[i - 1].distanceTo(pts[i])
+      if (laenge < 1e-6) continue
+      const ziel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, laenge, 6),
+        new THREE.MeshBasicMaterial({ visible: false }))
+      ziel.position.copy(mitte)
+      ziel.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+        pts[i].clone().sub(pts[i - 1]).normalize())
+      ziel.userData = { kind: 'section', id: sec.id }
+      groups.markers.add(ziel)
+      merken(ziel)
+    }
+  }
+
+  // Rechen: der Solver bekommt KEINE Stäbe, sondern eine poröse
+  // Widerstandszone — 0,15 m tief in Anströmrichtung ab der Rechenebene
+  // (casebuilder.topo_set_dict/fv_options, Kirschmer-Verlust). Genau diese
+  // Zone wird hier gezeichnet, damit sichtbar ist, was wirklich gerechnet
+  // wird (Fabios Frage Testrunde R2: „wie bekommt der Solver das?").
+  const ZONEN_TIEFE = 0.15
+  for (const s of spec.structures ?? []) {
+    if (s.type !== 'screen' || (s.plane_polygon?.length ?? 0) < 4) continue
+    const p = s.plane_polygon.map((q) => new THREE.Vector3(q[0], q[1], q[2]))
+    // Normale wie im Fallaufbau: i = p1-p0, j = p[n-1]-p0, k = i x j
+    const i = p[1].clone().sub(p[0])
+    const j = p[p.length - 1].clone().sub(p[0])
+    const n = i.clone().cross(j)
+    if (n.lengthSq() < 1e-12) continue
+    n.normalize().multiplyScalar(ZONEN_TIEFE)
+    const hinten = p.map((v) => v.clone().add(n))
+    const eck = [...p, ...hinten]
+    const nP = p.length
+    const faces = []
+    // Vorder-/Rückseite (Fächer) + Mantel
+    for (let k = 1; k < nP - 1; k++) {
+      faces.push(0, k, k + 1, nP, nP + k + 1, nP + k)
+    }
+    for (let k = 0; k < nP; k++) {
+      const a = k
+      const b = (k + 1) % nP
+      faces.push(a, b, nP + b, a, nP + b, nP + a)
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setFromPoints(eck)
+    geo.setIndex(faces)
+    geo.computeVertexNormals()
+    const zone = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xd9a326, transparent: true, opacity: 0.18,
+      depthWrite: false, side: THREE.DoubleSide }))
+    zone.renderOrder = 1
+    zone.userData = { kind: 'structure', id: s.id }
+    groups.markers.add(zone)
+    merken(zone)
+    const rand = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo, 30),
+      new THREE.LineBasicMaterial({ color: 0xd9a326, transparent: true,
+        opacity: 0.6 }))
+    groups.markers.add(rand)
+  }
+
+  // Vorfüllungen (Anfangszustand): transparente Wasserebene auf z = level,
+  // im Polygon. Vorher war der Startwasserstand in der Szene UNSICHTBAR —
+  // Höhe und Lage standen nur als Zahlen im Panel.
+  for (const v of spec.solver?.vorfuellungen ?? []) {
+    if (!Array.isArray(v.polygon) || v.polygon.length < 3) continue
+    const shape = new THREE.Shape()
+    v.polygon.forEach(([x, y], k) => (k ? shape.lineTo(x, y)
+      : shape.moveTo(x, y)))
+    shape.closePath()
+    const wasser = new THREE.Mesh(
+      new THREE.ShapeGeometry(shape),
+      new THREE.MeshBasicMaterial({ color: 0x2f7fd0, transparent: true,
+        opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }))
+    wasser.position.z = v.level ?? 0
+    wasser.renderOrder = 2
+    wasser.userData = { kind: 'vorfuellung', id: v.id }
+    groups.markers.add(wasser)
+    merken(wasser)
+    const rand = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(
+        v.polygon.map(([x, y]) => new THREE.Vector3(x, y, 0))),
+      new THREE.LineBasicMaterial({ color: 0x7fc4ff, transparent: true,
+        opacity: 0.9 }))
+    rand.position.z = v.level ?? 0
+    groups.markers.add(rand)
   }
 
   // Gesetzte Bearbeitungen sichtbar machen: Aussparungen als Ring bzw.
@@ -155,7 +285,7 @@ function buildMarkers() {
         marke.renderOrder = 3
         marke.userData = { kind: 'structure', id: st.id }
         groups.markers.add(marke)
-        selectable.push(marke)
+        merken(marke)
         // Der sichtbare Ring ist nur wenige Zentimeter breit — als Ziel
         // für Maus und Strahl viel zu dünn. Deshalb eine unsichtbare
         // Vollfläche darüber, die dieselbe Lage hat.
@@ -170,7 +300,7 @@ function buildMarkers() {
         ziel.userData = { kind: 'structure', id: st.id,
           editId: op.id, editIdx: (st.edits ?? []).indexOf(op) }
         groups.markers.add(ziel)
-        selectable.push(ziel)
+        merken(ziel)
       } else if (op.type === 'schnitt' && op.achse === 'z') {
         const d = spec.domain
         if (!d) continue
@@ -222,7 +352,7 @@ function buildMarkers() {
         plane.rotation.set(...fg.rot)
         plane.userData = { kind: 'boundary', id: b.id }
         groups.markers.add(plane)
-        selectable.push(plane)
+        merken(plane)
       }
       // Formfenster als 2D-Shape in (Kante, Höhe), auf die Fläche gedreht
       const mkFaceShape = (shape2d, opacity) => {
@@ -245,7 +375,7 @@ function buildMarkers() {
             side: THREE.DoubleSide }))
         mesh.userData = { kind: 'boundary', id: b.id }
         groups.markers.add(mesh)
-        selectable.push(mesh)
+        merken(mesh)
       }
       const srvWin = store.aufgeloest?.fenster?.[b.id]
       const win = srvWin && face !== 'z_max'

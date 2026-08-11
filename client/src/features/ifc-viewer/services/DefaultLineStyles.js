@@ -25,9 +25,12 @@ export const HATCH_PATTERNS_OPTIONS = ['none','concrete','steel','masonry','wood
 
 // labelTemplate defaults to '' (off). Users opt in per-category in the editor.
 // IFCSPACE is the one exception below — rooms almost always have a Name worth showing.
-function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none', labelTemplate = '', labelFontSize = 2.2, labelAnchor = 'center') {
+// symbol (T1): 'none' | 'schacht' | 'pumpe' | 'einlauf' | 'hydrant' | 'armatur'
+//   — ersetzt die Element-Kontur durch ein papierfestes Punktsymbol (symbolSize mm).
+function mk(color, lineWidth, lineDash = 'solid', hatchPattern = 'none', labelTemplate = '', labelFontSize = 2.2, labelAnchor = 'center', symbol = 'none', symbolSize = 3) {
     return { color, lineWidth, lineDash, hatchPattern,
              labelTemplate, labelFontSize, labelAnchor,
+             symbol, symbolSize,
              enabled: true };
 }
 
@@ -77,9 +80,21 @@ export const DEFAULT_LINE_STYLES = {
     IFCSPACE:             mk('#a0a0a0', 0.12, 'dotted', 'none', '{Name|LongName}', 2.6),
     IFCBUILDINGELEMENTPROXY: mk('#969696', 0.20, 'solid'),
 
+    // ── Tiefbau / Infrastruktur (Sprint T1, IFC 4.3) ────────────────────────
+    IFCGEOGRAPHICELEMENT: mk('#6d4c41', 0.25, 'solid'),           // Gelände
+    IFCEARTHWORKSCUT:     mk('#8d6e63', 0.18, 'solid', 'earth'),  // Aushub
+    IFCEARTHWORKSFILL:    mk('#8d6e63', 0.18, 'solid', 'earth'),  // Verfüllung/Damm
+    IFCEARTHWORKSELEMENT: mk('#8d6e63', 0.18, 'solid', 'earth'),
+    IFCCOURSE:            mk('#9e9d24', 0.18, 'solid'),           // Oberbau-Schichten
+    IFCKERB:              mk('#424242', 0.35, 'solid'),           // Bordstein — kräftige Doppelkante
+    IFCPAVEMENT:          mk('#757575', 0.18, 'solid'),           // Fahrbahn/Belag
+
     // Fallback for unknown categories
     default:              mk('#646464', 0.18, 'solid'),
 };
+
+/** Auswahlliste für den Stil-Editor (T1: Punktsymbole). */
+export const SYMBOL_OPTIONS = ['none', 'schacht', 'pumpe', 'einlauf', 'hydrant', 'armatur'];
 
 /** Produce a deep clone of the defaults — used as initial state in the store. */
 export function cloneDefaults() {

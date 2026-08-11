@@ -229,18 +229,30 @@ def overfall_cd_rows(df: pd.DataFrame, spec: CaseSpec, run_id: str) -> list[dict
     Zeitpunkte mit nennenswerter Überströmung (h > 2 cm, Q > 0).
     """
     rows: list[dict] = []
-    for tg in spec.evaluation.targets:
-        if tg.kind != "overfall_cd":
-            continue
+    # Wehr/Querschnitt/Pegel-Tripel: aus den Kriterien — und, von der
+    # Target-Kopplung gelöst (Audit U12, Plan-Befund L2), zusätzlich für
+    # jedes NICHT abgedeckte Wehr, sofern der Fall genau EINEN Querschnitt
+    # und EINEN Pegel hat (dann ist die Zuordnung eindeutig; bei mehreren
+    # bleibt sie eine fachliche Entscheidung über ein Kriterium).
+    paare = [(tg.weir, tg.section, tg.gauge)
+             for tg in spec.evaluation.targets if tg.kind == "overfall_cd"]
+    abgedeckt = {w for w, _, _ in paare}
+    if (len(spec.evaluation.sections) == 1
+            and len(spec.evaluation.gauges) == 1):
+        for s in spec.structures:
+            if s.type == "weir" and s.id not in abgedeckt:
+                paare.append((s.id, spec.evaluation.sections[0].id,
+                              spec.evaluation.gauges[0].id))
+    for weir_id, section_id, gauge_id in paare:
         weir = next((s for s in spec.structures
-                     if s.id == tg.weir and s.type == "weir"), None)
+                     if s.id == weir_id and s.type == "weir"), None)
         if weir is None:
             continue
         crest = float(np.mean([p[2] for p in weir.crest_polyline]))
         pts = np.asarray([(p[0], p[1]) for p in weir.crest_polyline], float)
         b = float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum())
-        tq, q = get_series(df, Quantity.DISCHARGE, tg.section)
-        tl, lv = get_series(df, Quantity.LEVEL, tg.gauge)
+        tq, q = get_series(df, Quantity.DISCHARGE, section_id)
+        tl, lv = get_series(df, Quantity.LEVEL, gauge_id)
         if len(tq) < 2 or len(tl) < 2 or b <= 0:
             continue
         grid = np.union1d(tq, tl)
@@ -251,7 +263,7 @@ def overfall_cd_rows(df: pd.DataFrame, spec: CaseSpec, run_id: str) -> list[dict
         for t, v in zip(grid[ok], cd):
             rows.append({"run_id": run_id, "time": float(t),
                          "quantity": Quantity.OVERFALL_CD.value,
-                         "location_id": tg.weir, "component": "",
+                         "location_id": weir_id, "component": "",
                          "value": float(v), "unit": UNITS[Quantity.OVERFALL_CD],
                          "source": "abgeleitet/ueberfall"})
     return rows

@@ -20,6 +20,24 @@ import { repo } from '../services/RepoFacade.js';
 
 export const ISO_STATUS = Object.freeze(['WIP', 'Shared', 'Published', 'Archived']);
 
+/**
+ * T1/E5: Wasserzeichen-Text für den Planexport aus dem Dokument-Status.
+ * Published = freigegeben → kein Wasserzeichen; unbekanntes Modell → VORABZUG
+ * (konservativ: was nicht im Register steht, ist nicht freigegeben).
+ * Reine Funktion — testbar ohne Store.
+ */
+export function resolveWatermarkText(dokumente, sha256) {
+    if (!sha256) return null;
+    const doc = (dokumente ?? []).find(d => d.sha256 === sha256);
+    const status = doc?.status ?? 'WIP';
+    switch (status) {
+        case 'Published': return null;
+        case 'Shared':    return 'ZUR PRÜFUNG';
+        case 'Archived':  return 'ARCHIVIERT';
+        default:          return 'VORABZUG';
+    }
+}
+
 const KEY_PROJECTS  = 'cde-projects';
 const KEY_ACTIVE    = 'cde-active-project';
 const KEY_BEARBEITER = 'cde-bearbeiter';

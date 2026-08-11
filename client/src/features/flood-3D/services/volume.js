@@ -1,7 +1,6 @@
 // Parser für das F3DV-Binärformat (backend core/fields.py):
 //   b"F3DV" | uint32 Headerlänge | Header-JSON | Rohdaten (LE float32)
 // plus Abruf von Zeitpunktliste und Szenengeometrie.
-import { flood3dApi } from './api'
 
 const BASE = '/FastAPI/flood3d'
 
@@ -24,10 +23,12 @@ export async function fetchGeometry(runId) {
   const data = await res.json()
   return {
     grid: data.grid,
-    terrain: {
+    // null, wenn der Nachlauf die Geländeschicht nicht erzeugen konnte —
+    // Bauwerke und Netzoberfläche gibt es trotzdem
+    terrain: data.terrain ? {
       dims: data.terrain.dims,              // [ny, nx]
       z: new Float32Array(b64ToBuffer(data.terrain.z_b64)),
-    },
+    } : null,
     // Eingabe-Geometrie (Bauwerks-STLs des Falls) und die tatsächlich
     // vernetzte Solver-Oberfläche je Patch (Zellfacetten!)
     solids: (data.solids ?? []).map((s) => ({
@@ -61,4 +62,3 @@ export async function fetchVolume(runId, time, fields = null) {
   return out
 }
 
-export { flood3dApi }

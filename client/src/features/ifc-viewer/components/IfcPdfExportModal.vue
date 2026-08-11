@@ -229,7 +229,15 @@
 
           <!-- Schriftfeld -->
           <div class="settings-group">
-            <div class="group-label">Schriftfeld</div>
+            <div class="group-label">
+              Schriftfeld
+              <button
+                v-if="cde.activeProject"
+                class="autofill-btn"
+                @click="fillFromProject"
+                title="Projekt-Nr., Bezeichnung, Bauherr und Bearbeiter aus den Projekt-Stammdaten übernehmen"
+              >⤵ Aus Projekt</button>
+            </div>
             <div class="fields-grid">
               <label>Projektname</label>
               <input v-model="form.projekt"      class="field-input" placeholder="Projektname" />
@@ -302,6 +310,46 @@
                 <input type="checkbox" v-model="vectorIfcGrids" />
                 <span>IFC-Achsenraster</span>
               </label>
+
+              <!-- Sprint T1: Tiefbau-Lageplan -->
+              <label class="vector-subtoggle">
+                <input type="checkbox" v-model="vectorSlopeHatch" />
+                <span>Böschungsschraffur (Gelände)</span>
+              </label>
+              <div v-if="vectorSlopeHatch" class="vector-subrow">
+                <label>ab <input type="number" min="5" max="80" v-model.number="slopeMinAngle" class="num-input" />°</label>
+                <label>Abstand <input type="number" min="1" max="10" step="0.5" v-model.number="slopeTickSpacingMm" class="num-input" /> mm</label>
+              </div>
+              <label class="vector-subtoggle">
+                <input type="checkbox" v-model="vectorContours" />
+                <span>Höhenlinien</span>
+              </label>
+              <div v-if="vectorContours" class="vector-subrow">
+                <label>Intervall
+                  <select v-model.number="contourInterval" class="num-select">
+                    <option :value="0.1">0,10 m</option>
+                    <option :value="0.25">0,25 m</option>
+                    <option :value="0.5">0,50 m</option>
+                    <option :value="1">1,00 m</option>
+                  </select>
+                </label>
+              </div>
+              <label class="vector-subtoggle">
+                <input type="checkbox" v-model="vectorUtmGrid" />
+                <span>UTM-Koordinatenkreuze</span>
+              </label>
+              <label class="vector-subtoggle">
+                <input type="checkbox" v-model="vectorAxisLabels" />
+                <span>Haltungsbeschriftung (DN/Länge/Gefälle an der Achse)</span>
+              </label>
+              <div v-if="vectorScaleBar" class="vector-subrow">
+                <label>Nordpfeil-Drehung <input type="number" min="-180" max="180" v-model.number="northAngle" class="num-input" />°</label>
+              </div>
+              <div class="vector-subrow">
+                <label>Wasserzeichen
+                  <input type="text" v-model="watermarkText" class="text-input" :placeholder="autoWatermark || '— keins —'" />
+                </label>
+              </div>
             </div>
 
             <div v-if="vectorMode" class="vector-style-btn-row">
@@ -324,6 +372,40 @@
             @close="showStyleEditor = false"
           />
 
+          <!-- T2: Tiefbau-Profile + CAD-Austausch -->
+          <div class="settings-group">
+            <div class="group-label">Tiefbau-Profile &amp; CAD</div>
+            <div class="profile-btn-col">
+              <button class="profile-btn" :disabled="profileBusy" @click="doExportDxf"
+                      title="Lageplan als DXF R12 in Rohkoordinaten — zur Weiterbearbeitung in CAD/GIS">
+                {{ profileBusy === 'dxf' ? '⏳ DXF…' : '📐 Lageplan als DXF' }}
+              </button>
+              <button class="profile-btn" :disabled="profileBusy" @click="doExportLaengsschnitt"
+                      title="Kanal-Längsschnitt (Bandschnitt) aus Haltungsachsen + Gelände">
+                {{ profileBusy === 'ls' ? '⏳ Längsschnitt…' : '📉 Kanal-Längsschnitt (PDF)' }}
+              </button>
+              <button class="profile-btn" :disabled="profileBusy" @click="doExportQuerprofile"
+                      title="Querprofile in Stations-Serie">
+                {{ profileBusy === 'qp' ? '⏳ Querprofile…' : '📊 Querprofile (PDF)' }}
+              </button>
+            </div>
+            <div class="vector-subrow">
+              <label>H-Maßstab
+                <select v-model.number="lsScaleV" class="num-select">
+                  <option :value="100">1:100</option>
+                  <option :value="200">1:200</option>
+                </select>
+              </label>
+              <label>Querprofil alle
+                <select v-model.number="qpInterval" class="num-select">
+                  <option :value="10">10 m</option>
+                  <option :value="25">25 m</option>
+                  <option :value="50">50 m</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
           <!-- Export -->
           <button class="export-btn" :disabled="!snapshot" @click="doExport">
             {{ snapshot ? (vectorMode ? '📏 Als Vektor-PDF exportieren' : '📄 Als PDF exportieren') : '⚠ Kein Modell geladen' }}
@@ -339,9 +421,12 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import * as THREE from 'three';
 import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
-import { exportPlanPDF, exportVectorPlanPDF } from '../services/IfcPdfExporter.js';
+import { exportPlanPDF, exportVectorPlanPDF, exportVectorPlanDXF } from '../services/IfcPdfExporter.js';
+import { buildLaengsschnittFromModel } from '../services/LaengsschnittBuilder.js';
+import { exportLaengsschnittPDF, exportQuerprofilePDF } from '../services/LaengsschnittPdf.js';
 import { LAYER_STYLES } from '../services/LayerStyleManager.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useCdeStore, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import IfcVectorStyleEditor from './IfcVectorStyleEditor.vue';
 import { useViewerApi } from '../composables/viewerApi.js';
@@ -351,7 +436,25 @@ const ifc = useIfcStore();
 // Engine-Accessoren kommen per provide/inject aus IfcViewer.vue (siehe
 // composables/viewerApi.js) — ersetzt die früheren ~27 Funktions-Props.
 const api = useViewerApi();
+const cde = useCdeStore();
 const emit = defineEmits(['close']);
+
+// ── T1/E5: Wasserzeichen aus dem ISO-19650-Status des geladenen Modells ─────
+const autoWatermark = computed(() => {
+  const sha = api.getLoadedModelSha?.() ?? null;
+  return resolveWatermarkText(cde.dokumente, sha) ?? '';
+});
+
+/** T1/E5: Schriftfeld aus den Projekt-Stammdaten befüllen. */
+function fillFromProject() {
+  const p = cde.activeProject;
+  if (!p) return;
+  form.projekt      = [p.nummer, p.name].filter(Boolean).join(' — ');
+  form.auftraggeber = p.bauherr ?? form.auftraggeber;
+  form.bearbeiter   = cde.bearbeiter || form.bearbeiter;
+  form.nummer       = p.nummer ?? form.nummer;
+  if (p.lph) form.index = `${form.index || 'A'} · ${p.lph}`.slice(0, 24);
+}
 
 const LS_KEY      = 'ifc-pdf-export-form';
 const LS_LOGO_KEY = 'ifc-pdf-export-logo';
@@ -789,6 +892,10 @@ watch(form, val => {
   try { localStorage.setItem(LS_KEY, JSON.stringify({ ...val })); } catch { /* quota */ }
 }, { deep: true });
 
+// T1/E5: Erstbefüllung aus den Projekt-Stammdaten, solange noch kein
+// gespeichertes Formular existiert (gespeicherte Eingaben gewinnen immer).
+if (!Object.keys(saved).length && cde.activeProject) fillFromProject();
+
 const paperAspect = computed(() => {
   const [w, h] = PAPER_SIZES[form.format] ?? [297, 420];
   return form.orientation === 'landscape' ? `${h} / ${w}` : `${w} / ${h}`;
@@ -1028,6 +1135,17 @@ const vectorMeasurements  = ref(true);   // include distance measurements
 const vectorLabels        = ref(true);   // render element labels per category-template
 const vectorIfcGrids      = ref(false);  // include IFC axes overlay in the PDF plot
 
+// ── Sprint T1: Tiefbau-Lageplan ─────────────────────────────────────────────
+const vectorSlopeHatch    = ref(false);  // Böschungsschraffur aus Gelände-Kategorien
+const slopeMinAngle       = ref(20);     // ab dieser Neigung (°) gilt eine Fläche als Böschung
+const slopeTickSpacingMm  = ref(3);      // Strichabstand auf dem Papier
+const vectorContours      = ref(false);  // Höhenlinien
+const contourInterval     = ref(0.5);    // Höhenstufen-Abstand in m
+const vectorUtmGrid       = ref(false);  // UTM-Gitterkreuze (georeferenzierte Modelle)
+const vectorAxisLabels    = ref(true);   // Haltungsbeschriftung entlang der Achse
+const northAngle          = ref(0);      // Nordpfeil-Verdrehung in Grad
+const watermarkText       = ref('');     // '' = automatisch aus Dokument-Status
+
 const showStyleEditor = ref(false);
 // Category names available in the editor — read from getCategoryGroups()
 const _currentCategoryNames = computed(() => {
@@ -1094,6 +1212,105 @@ function _formatDim(m) {
   return `${m.toFixed(1)} m`;
 }
 
+/** Koordinations-Offset des ersten Modells (UTM-Kreuze: Welt → Rohkoordinate). */
+function _firstCoordOffset() {
+  const offsets = api.getAllCoordOffsets?.() ?? {};
+  const first = Object.values(offsets)[0];
+  return first ? { x: first.x, z: first.z } : { x: 0, z: 0 };
+}
+
+// ── Sprint T2: DXF + Längsschnitt + Querprofile ─────────────────────────────
+const profileBusy = ref(null); // null | 'dxf' | 'ls' | 'qp'
+const lsScaleV    = ref(100);
+const qpInterval  = ref(25);
+
+async function doExportDxf() {
+  profileBusy.value = 'dxf';
+  try {
+    await exportVectorPlanDXF({
+      titleBlock:       { ...form },
+      scene:            api.getScene?.() ?? null,
+      cutPlane:         api.getSectionCutPlane?.() ?? null,
+      ifcData:          api.getWebIfcAPI?.() ?? null,
+      categoryGroups:   api.getCategoryGroups?.() ?? null,
+      fragmentsList:    api.getFragmentsList?.() ?? null,
+      fragmentsManager: api.getFragmentsManager?.() ?? null,
+      styleMap:         ifc.resolvedVectorStyleMap,
+      rules:            ifc.vectorRules ?? [],
+      labelTemplateFor: (cat) => ifc.vectorStyles?.[cat]?.labelTemplate ?? '',
+      scaleRatio:       activeScale.value ?? 100,
+      coordOffset:      _firstCoordOffset(),
+      slopeHatch:       vectorSlopeHatch.value
+        ? { enabled: true, minSlopeDeg: slopeMinAngle.value, tickSpacingMm: slopeTickSpacingMm.value }
+        : null,
+      contours:         vectorContours.value ? { enabled: true, interval: contourInterval.value } : null,
+      axisLabels:       vectorAxisLabels.value
+        ? { enabled: true, apis: api.getWebIfcAPIs?.() ?? null, coordOffsets: api.getAllCoordOffsets?.() ?? null }
+        : null,
+    });
+  } catch (err) {
+    console.error('DXF export error:', err);
+    alert('DXF-Export fehlgeschlagen.');
+  } finally {
+    profileBusy.value = null;
+  }
+}
+
+async function _buildLsData() {
+  return buildLaengsschnittFromModel({
+    apis:             api.getWebIfcAPIs?.() ?? [],
+    coordOffsets:     api.getAllCoordOffsets?.() ?? {},
+    categoryGroups:   api.getCategoryGroups?.() ?? null,
+    fragmentsList:    api.getFragmentsList?.() ?? null,
+    fragmentsManager: api.getFragmentsManager?.() ?? null,
+  });
+}
+
+async function doExportLaengsschnitt() {
+  profileBusy.value = 'ls';
+  try {
+    const built = await _buildLsData();
+    if (!built) { alert('Keine Haltungsachsen im Modell gefunden (IFCPIPESEGMENT/IFCFLOWSEGMENT mit Axis-Repräsentation).'); return; }
+    exportLaengsschnittPDF({
+      data: built.data,
+      titleBlock: { ...form },
+      logo: logoDataUrl.value,
+      format: form.format,
+      scaleV: lsScaleV.value,
+      heightOffsetY: built.heightOffsetY,
+    });
+  } catch (err) {
+    console.error('Längsschnitt export error:', err);
+    alert('Längsschnitt-Export fehlgeschlagen.');
+  } finally {
+    profileBusy.value = null;
+  }
+}
+
+async function doExportQuerprofile() {
+  profileBusy.value = 'qp';
+  try {
+    const built = await _buildLsData();
+    if (!built) { alert('Keine Haltungsachsen im Modell gefunden.'); return; }
+    if (!built.sampler) { alert('Kein Gelände im Modell — Querprofile brauchen eine Gelände-Kategorie (IfcGeographicElement/Earthworks).'); return; }
+    exportQuerprofilePDF({
+      data: built.data,
+      sampler: built.sampler,
+      titleBlock: { ...form },
+      logo: logoDataUrl.value,
+      format: form.format,
+      interval: qpInterval.value,
+      scale: lsScaleV.value,
+      heightOffsetY: built.heightOffsetY,
+    });
+  } catch (err) {
+    console.error('Querprofil export error:', err);
+    alert('Querprofil-Export fehlgeschlagen.');
+  } finally {
+    profileBusy.value = null;
+  }
+}
+
 async function doExport() {
   const dims = dimensions.value.map(d => ({ ...d }));
   if (vectorMode.value) {
@@ -1137,6 +1354,25 @@ async function doExport() {
       hatch:          vectorHatch.value,
       scaleBar:       vectorScaleBar.value,
       ifcGridAxes:    vectorIfcGrids.value ? (api.getIfcGridAxes?.() ?? null) : null,
+      // ── Sprint T1: Tiefbau-Lageplan ──
+      slopeHatch:     vectorSlopeHatch.value
+        ? { enabled: true, minSlopeDeg: slopeMinAngle.value, tickSpacingMm: slopeTickSpacingMm.value }
+        : null,
+      contours:       vectorContours.value
+        ? { enabled: true, interval: contourInterval.value }
+        : null,
+      utmGrid:        vectorUtmGrid.value
+        ? { offset: _firstCoordOffset(), flipNorth: false }
+        : null,
+      northAngle:     northAngle.value || 0,
+      watermark:      (watermarkText.value.trim() || autoWatermark.value) || null,
+      axisLabels:     vectorAxisLabels.value
+        ? {
+            enabled: true,
+            apis: api.getWebIfcAPIs?.() ?? null,
+            coordOffsets: api.getAllCoordOffsets?.() ?? null,
+          }
+        : null,
     });
   } else {
     exportPlanPDF({
@@ -1428,6 +1664,43 @@ async function doExport() {
   cursor: pointer; color: #90a4ae; font-size: 0.72rem;
 }
 .vector-subtoggle input[type="checkbox"] { accent-color: #66bb6a; }
+
+/* Sprint T1: Untereinstellungen (Böschung/Höhenlinien/UTM/Wasserzeichen) */
+.vector-subrow {
+  display: flex; align-items: center; gap: 0.7rem;
+  padding-left: 1.5rem;
+  font-size: 0.7rem; color: #78909c;
+}
+.vector-subrow label { display: flex; align-items: center; gap: 0.3rem; }
+.num-input {
+  width: 3.2rem;
+  border: 1px solid #cfd8dc; border-radius: 4px;
+  padding: 0.1rem 0.25rem; font-size: 0.72rem;
+  text-align: right;
+}
+.num-select, .text-input {
+  border: 1px solid #cfd8dc; border-radius: 4px;
+  padding: 0.1rem 0.25rem; font-size: 0.72rem;
+}
+.text-input { flex: 1; min-width: 7rem; }
+
+.autofill-btn {
+  margin-left: 0.5rem;
+  background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32;
+  border-radius: 4px; padding: 0.1rem 0.45rem;
+  font-size: 0.64rem; cursor: pointer; text-transform: none; letter-spacing: 0;
+}
+.autofill-btn:hover { background: #c8e6c9; }
+
+/* Sprint T2: Profil-/CAD-Buttons */
+.profile-btn-col { display: flex; flex-direction: column; gap: 0.3rem; }
+.profile-btn {
+  background: #eceff1; border: 1px solid #b0bec5; color: #37474f;
+  border-radius: 5px; padding: 0.35rem 0.6rem;
+  font-size: 0.75rem; cursor: pointer; text-align: left;
+}
+.profile-btn:hover:not(:disabled) { background: #cfd8dc; }
+.profile-btn:disabled { opacity: 0.5; cursor: default; }
 .vector-hint { font-size: 0.62rem; color: #37474f; margin-top: 0.2rem; line-height: 1.4; }
 
 .vector-style-btn-row { margin-top: 0.4rem; }

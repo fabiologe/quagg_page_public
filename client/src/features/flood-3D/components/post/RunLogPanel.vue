@@ -4,6 +4,12 @@
       <header class="f3d-card-head">
         <h3>{{ entry.runId }}</h3>
         <span class="f3d-chip" :class="`status-${entry.status}`">{{ entry.status }}</span>
+        <button v-if="isActive(entry.status)" class="f3d-btn f3d-btn-s"
+                :disabled="abbrechend === entry.runId"
+                title="Container des aktuellen Schritts stoppen — der Lauf endet mit Status „abgebrochen“"
+                @click="abbrechen(entry.runId)">
+          ✕ Lauf abbrechen
+        </button>
       </header>
 
       <dl v-if="entry.manifest" class="f3d-stats">
@@ -56,10 +62,43 @@ function manifestRows(m) {
     }
   }
   if (m.duration_s != null) rows.push(['Dauer', `${fmt(m.duration_s / 60)} min`])
+  if (m.cost_eur != null) rows.push(['Ist-Kosten', `${fmt(m.cost_eur)} €`])
   if (m.missing_sources?.length) {
     rows.push(['Fehlende Quellen', m.missing_sources.join(', '), 'bad'])
   }
+  // Stumme Manifest-Kanäle sichtbar machen (Audit H1/H2): diese Einträge
+  // wurden geschrieben, aber nie angezeigt — man stand „vor einem Lauf
+  // ohne Gelände und ohne Erklärung"
+  if (m.terrain_error) {
+    rows.push(['Geländeschicht', `fehlt — ${m.terrain_error}`, 'bad'])
+  }
+  if (m.fields_error) {
+    rows.push(['3D-Felder', `nicht konvertiert — ${m.fields_error}`, 'bad'])
+  }
+  if (m.viz_volume_error_rel_max != null) {
+    const pct = (m.viz_volume_error_rel_max * 100).toFixed(1)
+    rows.push(['Viz-Volumen-Selbsttest',
+      `max. ${pct} % Abweichung zum Solver-Volumen`,
+      m.viz_volume_error_rel_max > 0.05 ? 'bad' : 'good'])
+  }
   return rows
+}
+
+// Abbruch (Audit H3): Marke + Container-Kill serverseitig; das Manifest
+// endet mit status=abgebrochen statt failed
+const abbrechend = ref(null)
+
+async function abbrechen(runId) {
+  abbrechend.value = runId
+  try {
+    await flood3dApi.abortRun(runId)
+  } catch (e) {
+    entries.value = entries.value.map((x) =>
+      (x.runId === runId ? { ...x, log: `Abbruch: ${e.message}\n${x.log}` } : x))
+  } finally {
+    abbrechend.value = null
+    load()
+  }
 }
 
 async function load() {

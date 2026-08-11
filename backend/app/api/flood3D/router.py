@@ -13,12 +13,14 @@ from __future__ import annotations
 import asyncio
 
 import base64
+import hashlib
 import json
 import os
 import re
 import shutil
 import time
 from functools import lru_cache
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -86,6 +88,43 @@ def _series_payload(df: pd.DataFrame, quantity: str, location_id: str,
 
 # --------------------------------------------------------------------------
 
+@router.on_event("startup")
+async def _docker_waechter():
+    """
+    Verwaiste f3d_*-Container beim Start abräumen: Läufe leben in Threads
+    dieses Prozesses — nach einem Neustart wartet auf keinen Container mehr
+    jemand, er rechnet nur ins Leere und frisst Kerne. Genau so entstand
+    der Vorfall vom 2026-08-11 (Vorschau-Container überlebte den Restart
+    und blockierte den Containernamen).
+    """
+    from .core.runner import verwaiste_container_entfernen
+
+    entfernt = await asyncio.to_thread(verwaiste_container_entfernen)
+    if entfernt:
+        print(f"flood3d: {len(entfernt)} verwaiste OpenFOAM-Container "
+              f"entfernt ({', '.join(entfernt)})")
+
+
+@router.get("/verifikation")
+async def verifikation():
+    """
+    Ergebnisse der physikalischen Verifikationsläufe (Spez. Kap. 13):
+    Referenzfälle gegen analytische Formeln, geschrieben von
+    tests/test_verifikation.py (FLOOD3D_VERIFIKATION=1). Der Client zeigt
+    sie in der Phase „Simulation" — damit sichtbar ist, WANN zuletzt
+    belegt wurde, dass die Pipeline richtige Zahlen liefert.
+    """
+    verz = Path(__file__).resolve().parent / "data" / "verifikation"
+    out = []
+    if verz.is_dir():
+        for p in sorted(verz.glob("*.json")):
+            try:
+                out.append(json.loads(p.read_text()))
+            except Exception:                # noqa: BLE001
+                out.append({"fall": p.stem, "beschaedigt": True})
+    return out
+
+
 @router.get("/health")
 async def health():
     root = runs_root()
@@ -95,7 +134,7 @@ async def health():
 
 # "lokal" = auf der Nutzer-Maschine reserviert/gerechnet — der Server kann
 # den Fortschritt nicht sehen, darum weder pollen noch als hängend markieren
-_TERMINAL_STATUS = {"completed", "failed", "lokal"}
+_TERMINAL_STATUS = {"completed", "failed", "lokal", "abgebrochen"}
 
 
 def _run_size_mb(d: Path) -> float:
@@ -133,9 +172,15 @@ async def list_runs():
         manifest = read_manifest(paths) or {}
         targets = (result or {}).get("targets", [])
         status = (result or {}).get("status", manifest.get("status", "unbekannt"))
+        # Companion-Reservierung, deren Import nie kam: nach 7 Tagen als
+        # verfallen kennzeichnen — der Löschknopf existiert (Audit H5)
+        verfallen = (status == "lokal"
+                     and (time.time() - float(manifest.get("created", 0)))
+                     > 7 * 86400)
         out.append({
             "run_id": d.name,
             "status": status,
+            "verfallen": verfallen,
             "stale": _run_stale(d, status),
             "size_mb": _run_size_mb(d),
             "title": manifest.get("title", ""),
@@ -248,9 +293,13 @@ async def run_geometry(run_id: str):
     paths = _paths(run_id)
     index = vol_fields.read_index(paths.root)
     terrain = vol_fields.read_geometry(paths.root)
-    if index is None or terrain is None:
+    if index is None:
         raise HTTPException(status_code=404,
                             detail="Für diesen Lauf liegt keine Szenengeometrie vor.")
+    # Fehlt nur das Gelände (der Nachlauf auf der Nutzer-Maschine meldet
+    # das als Warnung und liefert den Rest), bleiben Bauwerke und
+    # Netzoberfläche trotzdem sehenswert — ein 404 machte aus einer
+    # fehlenden Schicht einen leeren Viewer.
 
     solids = []
     tri_dir = paths.root / "case" / "constant" / "triSurface"
@@ -273,7 +322,7 @@ async def run_geometry(run_id: str):
 
     return {
         "grid": index["grid"],
-        "terrain": {
+        "terrain": None if terrain is None else {
             "dims": list(terrain.shape),          # (ny, nx)
             "dtype": "f32",
             "z_b64": base64.b64encode(
@@ -301,7 +350,11 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
     try:
         info = json.loads(p.read_text())
     except Exception:
-        return {"vorhanden": False, "stale": False, "preview": None}
+        # Eine BESCHÄDIGTE Vorschaudatei ist etwas anderes als „nie
+        # gerechnet" — als vorhanden-aber-kaputt melden, damit der Nutzer
+        # weiß, dass er neu rechnen muss (Audit F5)
+        return {"vorhanden": True, "beschaedigt": True, "stale": True,
+                "preview": None}
     # Altfall-Fallback: Vorschauen vor 2026-08-05 tragen keinen netz_hash
     if info.get("netz_hash"):
         stale = info["netz_hash"] != spec.netz_hash()
@@ -328,6 +381,15 @@ async def case_terrain_solid_stl(case_id: str):
     if spec.terrain is None or spec.domain is None:
         raise HTTPException(status_code=404, detail="Fall ohne Gelände.")
     feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+    # Derselbe Deckel wie bei der Editor-Vorschau (Audit H4): der Bau des
+    # Erdkörpers macht Boolesche Abzüge — bei sehr großen Rastern liefe
+    # dieser unverlinkte Prüfer-Export sonst minutenlang im Request
+    if feld.z.size > _KOERPER_VORSCHAU_KNOTEN:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Höhenraster hat {feld.z.size} Knoten — über dem "
+                   f"Deckel ({_KOERPER_VORSCHAU_KNOTEN}). Für den Export "
+                   "die Rasterweite vergröbern.")
     try:
         koerper = gelaende_koerper_bauen(feld, spec, hinweise=[], base_dir=d)
     except Exception as e:
@@ -615,29 +677,6 @@ async def case_import_reapply(case_id: str, import_id: str,
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
-@router.post("/cases/{case_id}/skizze")
-async def case_skizze(case_id: str, payload: dict = Body(...)):
-    """
-    Handgezeichnetes als CAD-Objekt aufnehmen — die Skizze ist ein Import
-    aus der Hand: Kandidat + Zuordnung in `imports/skizze/`, dann derselbe
-    Ableitungsweg wie beim Dateiimport. payload: {kind: polyline|polygon|
-    kreis, rolle, punkte?|kreis?, name?}.
-    """
-    from .core.importer import skizze_hinzufuegen
-
-    def wirken(spec, d):
-        info = skizze_hinzufuegen(
-            spec, d,
-            kind=str(payload.get("kind") or "polyline"),
-            rolle=str(payload.get("rolle") or "ignorieren"),
-            punkte=payload.get("punkte"),
-            kreis=payload.get("kreis"),
-            name=str(payload.get("name") or ""))
-        return info["report"]
-
-    return _mutation(case_id, wirken, "Skizze fehlgeschlagen")
-
-
 @router.delete("/cases/{case_id}/derived")
 async def case_derived_leeren(case_id: str):
     """
@@ -645,11 +684,9 @@ async def case_derived_leeren(case_id: str):
     danach stellt ein Reapply (je Import) alles bitidentisch wieder her.
     Quellen (case.yaml, imports/) bleiben unberührt.
     """
-    import shutil
-
     d = _case_dir(case_id)
     entfernt = []
-    for pfad in (d / "derived", d / "_mesh_preview"):
+    for pfad in (d / "derived",):
         if pfad.exists():
             shutil.rmtree(pfad)
             entfernt.append(pfad.name)
@@ -944,7 +981,32 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
                           and getattr(s, "durchstoesst_gelaende", False)]}
 
 
-def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
+# Entwurfs-Körper-Cache: Bauteile, die weder vom Gelände abhängen (keine
+# gelaende-Bearbeitung, wirkung=bauteil) noch klassifiziert werden müssen,
+# sind allein durch ihre eigene Spezifikation + das Gebiet bestimmt — ihr
+# STL kann über Draft-Zyklen wiederverwendet werden. Bewusst NUR für den
+# Entwurf: der gespeicherte Stand wird immer voll gebaut.
+_DRAFT_SOLIDS: "OrderedDict[str, tuple[str, str | None]]" = OrderedDict()
+_DRAFT_SOLIDS_MAX = 512
+
+
+def _draft_solid_schluessel(s, spec: CaseSpec) -> str | None:
+    """Cache-Schlüssel eines Bauwerks — None, wenn nicht cachebar."""
+    if getattr(s, "wirkung", "bauteil") != "bauteil":
+        return None                  # auto/aushub: Lage-Klassifikation nötig
+    if any(e.type == "gelaende" for e in (getattr(s, "edits", None) or [])):
+        return None                  # Sockel/Kappen hängt am Gelände
+    if s.type == "imported":
+        return None                  # hängt an einer STL-Datei, deren
+                                     # Inhalt ein Reapply still austauscht
+    blob = json.dumps(
+        [s.model_dump(mode="json"),
+         spec.domain.model_dump(mode="json") if spec.domain else None],
+        sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
     """
     DIE eine Geometrie-Antwort: Gelände, Bauwerkskörper, Erdkörper, Prüfung
     — plus die serverseitig aufgelösten Regeln (Randflächen, wirksame
@@ -974,13 +1036,55 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
                             f"({type(e).__name__}: {e}) — die Szene ist "
                             "unvollständig.")})
     try:
-        for patch, mesh in sorted(
-                build_solids(spec, d, include_screens=True,
-                             hinweise=[]).items()):
-            out["solids"].append({
-                "patch": patch,
-                "stl_b64": base64.b64encode(
-                    mesh.export(file_type="stl")).decode()})
+        # build_solids fängt seit dem B4-Fix jedes Bauwerk einzeln ab und
+        # meldet Ausfälle über `hinweise` — EIN kaputtes Bauwerk lässt die
+        # anderen nicht mehr aus der Szene verschwinden. Das äußere try
+        # bleibt als letzter Fangzaun (z. B. Geländeaufbau).
+        ausfaelle: list[dict] = []
+        # Entwurfsvorschau OHNE Entflechtung (hinweise=None überspringt die
+        # Booleschen Verschnitte über alle Körperpaare) und MIT Körper-
+        # Cache: beim Ziehen einer Wand ändert sich genau EIN Bauwerk —
+        # alle anderen kommen aus dem Cache statt neu gebaut zu werden
+        # (Fabios Befund Testrunde R2: „jede Verschiebung dauert lange").
+        # Der GESPEICHERTE Stand (PUT/GET) wird weiter voll gebaut und
+        # entflochten gezeigt.
+        fertig: dict[str, str] = {}          # patch -> stl_b64
+        schluessel_je_patch: dict[str, str] = {}
+        bau_spec = spec
+        if entwurf:
+            zu_bauen = []
+            for s in spec.structures:
+                key = _draft_solid_schluessel(s, spec)
+                if key is not None:
+                    treffer = _DRAFT_SOLIDS.get(key)
+                    if treffer is not None:
+                        _DRAFT_SOLIDS.move_to_end(key)
+                        if treffer[1] is not None:
+                            fertig[treffer[0]] = treffer[1]
+                        continue
+                    schluessel_je_patch[s.patch] = key
+                zu_bauen.append(s)
+            bau_spec = spec.model_copy(update={"structures": zu_bauen})
+        for patch, mesh in build_solids(
+                bau_spec, d, include_screens=True,
+                hinweise=None if entwurf else [],
+                ausfaelle=ausfaelle).items():
+            fertig[patch] = base64.b64encode(
+                mesh.export(file_type="stl")).decode()
+        # Cache füllen — auch „kein Körper" (Aushub) ist ein Ergebnis
+        for s in (bau_spec.structures if entwurf else []):
+            key = schluessel_je_patch.get(s.patch)
+            if key is None:
+                continue
+            _DRAFT_SOLIDS[key] = (s.patch, fertig.get(s.patch))
+            while len(_DRAFT_SOLIDS) > _DRAFT_SOLIDS_MAX:
+                _DRAFT_SOLIDS.popitem(last=False)
+        for patch in sorted(fertig):
+            out["solids"].append({"patch": patch, "stl_b64": fertig[patch]})
+        for a in ausfaelle:
+            out["validation"].append({
+                "object_id": a["id"], "severity": "warnung",
+                "message": a["meldung"]})
     except Exception as e:
         out["validation"].append({
             "object_id": "vorschau", "severity": "warnung",
@@ -1074,7 +1178,7 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
                                 "message": f"Entwurf nicht lesbar: {e}"}],
                 "spec_ungueltig": True, "solids": [], "terrain": None,
                 "terrain_solid": None, "netz_stale": False}
-    return _geometrie_payload(spec, d)
+    return _geometrie_payload(spec, d, entwurf=True)
 
 
 @router.get("/cases/{case_id}/geometry")
@@ -1117,21 +1221,50 @@ async def case_profile(case_id: str, payload: dict = Body(...)):
 # --------------------------------------------------------------------------
 
 _active_runs: dict[str, object] = {}
+# Fälle, für die gerade eine Netzvorschau rechnet (Doppelstart-Sperre)
+_laufende_previews: set[str] = set()
 
 
 @router.post("/cases/{case_id}/mesh-preview")
-async def case_mesh_preview(case_id: str):
+async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
     """
     Billiger Vernetzungsprobelauf (Spez. Kap. 6.1): Zellenzahl,
     checkMesh-Kennwerte, Laufzeit- und Kostenschätzung. Läuft synchron im
     Threadpool — für Vorschau-Netze im Minutenbereich ausreichend.
-    """
-    import tempfile
 
+    `ohne_verfeinerung`: Schnellvorschau ohne die verschachtelte
+    Verfeinerung (Boxen und Flächenstufen) — deutlich schneller, Zellzahl
+    und Kosten sind dann eine UNTERE Grenze. Das Ergebnis wird als solches
+    gekennzeichnet.
+    """
     from .core.casebuilder import build_case
     from .core.runner import FoamError, mesh_preview
 
     spec, d = _load_case(case_id)
+    ohne_verfeinerung = bool((payload or {}).get("ohne_verfeinerung"))
+
+    # Doppelstart-Sperre: ein zweiter Klick löschte sonst das
+    # Arbeitsverzeichnis des noch LAUFENDEN ersten Versuchs (rmtree unten)
+    # — dessen Container schrieb dann ins Leere, und der zweite starb an
+    # der Container-Namenskollision. Ein Fall rechnet immer nur EINE
+    # Vorschau zugleich.
+    if case_id in _laufende_previews:
+        raise HTTPException(
+            status_code=409,
+            detail="Für diesen Fall läuft bereits eine Netzvorschau — "
+                   "bitte warten, bis sie fertig ist (blockMesh + "
+                   "snappyHexMesh brauchen einige Minuten).")
+
+    # Dasselbe Tor wie vor POST /runs: Fehler-Befunde starten keinen
+    # minutenlangen Vernetzungslauf, der erst im Container stirbt — dieser
+    # Endpunkt war der einzige lauf-artige ohne Prüfung.
+    fehler = [b for b in validate_case(spec, d)
+              if b.get("severity") == "fehler"]
+    if fehler:
+        raise HTTPException(
+            status_code=422,
+            detail="Der Fall hat Fehler-Befunde: "
+                   + " | ".join(b["message"] for b in fehler[:5]))
 
     def work():
         # Nicht unter /tmp (Snap-Docker-Falle) — Vorschau neben den Fall,
@@ -1140,14 +1273,27 @@ async def case_mesh_preview(case_id: str):
         import shutil
         if preview_dir.exists():
             shutil.rmtree(preview_dir)
-        alt = d / "_mesh_preview"          # Ablage vor P2 aufraeumen
-        if alt.exists():
-            shutil.rmtree(alt)
-        info = build_case(spec, preview_dir, d)
+        bau_spec = spec
+        if ohne_verfeinerung:
+            bau_spec = spec.model_copy(deep=True)
+            bau_spec.mesh.refinements = []
+        info = build_case(bau_spec, preview_dir, d)
         if info["problems"]:
             raise FoamError("Geometrieprobleme: " + "; ".join(info["problems"]))
-        return mesh_preview(spec, preview_dir)
+        ergebnis = mesh_preview(bau_spec, preview_dir)
+        if ohne_verfeinerung:
+            # Kennzeichnen und die Hashes des ECHTEN Falls eintragen: die
+            # Schnellvorschau gilt für diesen Stand, ist aber gröber — das
+            # sagt das Flag, nicht ein fälschliches „veraltet"
+            ergebnis["ohne_verfeinerung"] = True
+            ergebnis["case_hash"] = spec.case_hash()
+            ergebnis["netz_hash"] = spec.netz_hash()
+            import json as _json
+            (preview_dir / "mesh_preview.json").write_text(
+                _json.dumps(ergebnis, indent=2, ensure_ascii=False))
+        return ergebnis
 
+    _laufende_previews.add(case_id)
     try:
         return await asyncio.to_thread(work)
     except (FoamError, RuntimeError) as e:
@@ -1155,6 +1301,8 @@ async def case_mesh_preview(case_id: str):
         # Randbedingung ohne einzige Fläche ist ein Modellfehler, kein
         # Serverfehler — der Nutzer soll den Text lesen, keine 500 sehen
         raise HTTPException(status_code=422, detail=str(e))
+    finally:
+        _laufende_previews.discard(case_id)
 
 
 @router.post("/cases/{case_id}/bundle")
@@ -1262,22 +1410,9 @@ _IMPORT_TOP = {"manifest.json", "result.json", "normalized.parquet"}
 _IMPORT_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
-@router.post("/runs/{run_id}/import")
-async def import_run(run_id: str, request: Request):
-    """Artefakte eines lokalen Companion-Laufs in die Laufablage übernehmen."""
-    import io
-    import zipfile
-
-    root = runs_root().resolve()
-    run_root = (root / run_id).resolve()
-    if run_root.parent != root or not run_root.is_dir():
-        raise HTTPException(status_code=404,
-                            detail="Lauf nicht reserviert — zuerst das "
-                                   "Bundle über /bundle holen")
-    data = await request.body()
-    return _import_entpacken(run_root, run_id, data)
-
-
+# Der ungestückelte Import-Zwilling (POST /runs/{id}/import) ist entfernt
+# (Audit H4): der Client lädt seit jeher ausschließlich über /import-chunk —
+# ein 400-MB-Body scheiterte an jeder Proxy-Grenze.
 def _import_entpacken(run_root: Path, run_id: str, data: bytes) -> dict:
     import io
     import zipfile
@@ -1380,8 +1515,14 @@ async def start_run(payload: dict = Body(...)):
     def work():
         try:
             run_pipeline(spec, case_dir, run_root, run_id)
-        except Exception:
-            pass    # Fehlerzustand steht im Manifest
+        except Exception as e:                   # noqa: BLE001
+            # Der Fehlerzustand steht NORMALERWEISE im Manifest — aber
+            # wenn das Manifest-Schreiben selbst scheitert (Platte voll),
+            # verschwände der Lauf sonst spurlos in `status: building`.
+            # Deshalb zusätzlich ins Server-Log (Audit F8).
+            print(f"flood3d: Lauf {run_id} abgebrochen "
+                  f"({type(e).__name__}: {e}) — Details im Manifest, "
+                  "sofern es sich schreiben ließ", flush=True)
         finally:
             _active_runs.pop(run_id, None)
 
@@ -1389,6 +1530,43 @@ async def start_run(payload: dict = Body(...)):
     _active_runs[run_id] = t
     t.start()
     return {"run_id": run_id, "status": "building"}
+
+
+@router.post("/runs/{run_id}/abort")
+async def abort_run(run_id: str):
+    """
+    Laufenden Serverlauf abbrechen (Audit H3): Marke setzen, Container des
+    aktuellen Schritts killen — der Lauf-Thread endet am FoamError und
+    schreibt status=abgebrochen statt failed. Ohne diesen Endpunkt war ein
+    hängender Lauf nur per SSH totbar.
+    """
+    from .core.runner import laufende_container_stoppen
+
+    root = runs_root().resolve()
+    run_root = (root / run_id).resolve()
+    if run_root.parent != root or not run_root.is_dir():
+        raise HTTPException(status_code=404, detail="Lauf unbekannt")
+    manifest_pfad = run_root / "manifest.json"
+    status = ""
+    if manifest_pfad.is_file():
+        try:
+            status = json.loads(manifest_pfad.read_text()).get("status", "")
+        except Exception:                    # noqa: BLE001
+            status = ""
+    if status in _TERMINAL_STATUS:
+        raise HTTPException(status_code=409,
+                            detail=f"Lauf ist bereits beendet ({status})")
+    (run_root / "ABBRUCH").touch()
+    gestoppt = await asyncio.to_thread(laufende_container_stoppen, run_root)
+    if not gestoppt and run_id not in _active_runs:
+        # kein Container, kein Thread: der Lauf ist verwaist (z. B. nach
+        # einem API-Neustart) — Status direkt ehrlich machen
+        (run_root / "ABBRUCH").unlink(missing_ok=True)
+        m = json.loads(manifest_pfad.read_text()) if manifest_pfad.is_file() else {}
+        m.update({"status": "abgebrochen", "error": "Vom Nutzer abgebrochen "
+                  "(Lauf war verwaist)", "finished": time.time()})
+        manifest_pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+    return {"run_id": run_id, "gestoppte_container": len(gestoppt)}
 
 
 @router.get("/runs/{run_id}/log")

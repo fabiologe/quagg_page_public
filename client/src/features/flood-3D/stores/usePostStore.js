@@ -49,9 +49,6 @@ export const usePostStore = defineStore('flood3d-post', {
       if (!state.caseFilter) return state.runs
       return state.runs.filter((r) => r.run_id.startsWith(`${state.caseFilter}_r`))
     },
-    selectedRuns(state) {
-      return state.runs.filter((r) => state.selectedRunIds.includes(r.run_id))
-    },
     runDash(state) {
       return (runId) => {
         const i = state.selectedRunIds.indexOf(runId)

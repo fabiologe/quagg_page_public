@@ -66,8 +66,6 @@ export const flood3dApi = {
   listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
   importMeshUrl: (caseId, importId, candId) =>
     `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
-  skizzeHinzufuegen: (caseId, payload) =>
-    sendJson(`/cases/${caseId}/skizze`, 'POST', payload),
   sculpt: (caseId, patches) =>
     sendJson(`/cases/${caseId}/sculpt`, 'POST', { patches }),
   importReapply: (caseId, importId, rollen = null) =>
@@ -76,7 +74,8 @@ export const flood3dApi = {
   caseProfile: (caseId, polyline, samples = 200) =>
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),
-  meshPreview: (caseId) => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', {}),
+  meshPreview: (caseId, opts = {}) =>
+    sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts),
   caseMeshSurface: (caseId) => getJson(`/cases/${caseId}/mesh-surface`),
   startRun: (caseId) => sendJson('/runs', 'POST', { case_id: caseId }),
   caseBundle: async (caseId) => {
@@ -114,16 +113,14 @@ export const flood3dApi = {
 
   // Läufe (PostViewer)
   listRuns: () => getJson('/runs'),
+  verifikation: () => getJson('/verifikation'),
   deleteRun: (runId) => sendJson(`/runs/${runId}`, 'DELETE'),
+  abortRun: (runId) => sendJson(`/runs/${runId}/abort`, 'POST', {}),
   runDetail: (runId) => getJson(`/runs/${runId}`),
   result: (runId) => getJson(`/runs/${runId}/result`),
   extremes: (runId) => getJson(`/runs/${runId}/extremes`),
   balance: (runId) => getJson(`/runs/${runId}/balance`),
-  inventory: (runId) => getJson(`/runs/${runId}/inventory`),
-  series: (runId, quantity, component = '', locationId = null) => {
-    const params = { quantity, component }
-    if (locationId != null) params.location_id = locationId
-    return getJson(`/runs/${runId}/series`, params)
-  },
+  series: (runId, quantity, component = '') =>
+    getJson(`/runs/${runId}/series`, { quantity, component }),
   figureUrl: (runId, filename) => `${BASE}/runs/${runId}/figures/${filename}`,
 }

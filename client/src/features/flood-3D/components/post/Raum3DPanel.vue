@@ -286,8 +286,11 @@ import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/C
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction'
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
-import { fetchGeometry, fetchTimesteps } from '../../services/volume'
-import { getVolume } from '../../composables/useFieldCache'
+// Geometrie/Zeitschritte über den GEMEINSAMEN Feld-Cache (Audit H6):
+// der Direktweg über services/volume lud beim Tabwechsel Grundriss↔Raum
+// alles doppelt
+import { getGeometry, getTimesteps, getVolume }
+  from '../../composables/useFieldCache'
 import { glaetteFeldCached } from '../../utils/glaettung'
 import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
 import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
@@ -312,7 +315,17 @@ const availableFieldKeys = ref(['umag', 'alpha', 'p_rgh'])
 const FIELD_OPTIONS = computed(() =>
   ALL_FIELDS.filter((f) => availableFieldKeys.value.includes(f.needs)))
 const LEGEND_GRADIENT = 'linear-gradient(90deg,#440154,#414487,#2a788e,#22a884,#7ad151,#fde725)'
-const VIEWS_KEY = 'flood3d-camera-views'
+// Kamerastellungen JE FALL (Audit F11): laufübergreifend innerhalb eines
+// Projekts sinnvoll (Variantenbilder deckungsgleich), aber die Stellungen
+// eines ANDEREN Projekts liegen in fremden Weltkoordinaten und sind dort
+// unbrauchbar. Alte global gespeicherte Stellungen werden einmalig als
+// Rückfall gelesen.
+const VIEWS_KEY_ALT = 'flood3d-camera-views'
+
+function viewsKey() {
+  const caseId = (activeRunId.value ?? '').replace(/_r\d+$/, '')
+  return caseId ? `flood3d-camera-views:${caseId}` : VIEWS_KEY_ALT
+}
 const G = 9.81
 
 const viewport = ref(null)
@@ -538,6 +551,7 @@ function setImageScalars(image, name, values, numberOfComponents = 1) {
 }
 
 function buildTerrain(geo) {
+  if (!geo.terrain) return          // Schicht fehlt — Rest bleibt nutzbar
   const [ny, nx] = geo.terrain.dims
   const { origin, spacing } = geo.grid
   terrainInfo = { z: geo.terrain.z, nx, ny }
@@ -1149,12 +1163,14 @@ async function onPointerUp(e) {
 
 function loadViews() {
   try {
-    savedViews.value = JSON.parse(localStorage.getItem(VIEWS_KEY) ?? '[]')
+    savedViews.value = JSON.parse(
+      localStorage.getItem(viewsKey())
+      ?? localStorage.getItem(VIEWS_KEY_ALT) ?? '[]')
   } catch { savedViews.value = [] }
 }
 
 function persistViews() {
-  localStorage.setItem(VIEWS_KEY, JSON.stringify(savedViews.value))
+  localStorage.setItem(viewsKey(), JSON.stringify(savedViews.value))
 }
 
 function saveCurrentView() {
@@ -1286,8 +1302,8 @@ async function loadRun() {
   error.value = ''
   try {
     const [index, geo] = await Promise.all([
-      fetchTimesteps(activeRunId.value),
-      fetchGeometry(activeRunId.value),
+      getTimesteps(activeRunId.value),
+      getGeometry(activeRunId.value),
     ])
     grid = index.grid
     gridLabel.value = grid.spacing.map((s) => Number(s.toPrecision(3))).join(' × ') + ' m'
@@ -1341,7 +1357,7 @@ onMounted(() => {
 watch(() => store.selectedRunIds, (ids) => {
   if (!ids.includes(activeRunId.value)) activeRunId.value = ids[0] ?? null
 }, { deep: true })
-watch(activeRunId, loadRun)
+watch(activeRunId, () => { loadRun(); loadViews() })
 watch([timeIdx, activeFieldKey, layers, sliceAxis, sliceIdx, sliceCount,
   colorLock, colorMin, colorMax, arrowScale, arrowStride, arrowsOnSlice,
   isoValue, slCount, slHeightIdx, slThick, slSeedAll, realistisch,

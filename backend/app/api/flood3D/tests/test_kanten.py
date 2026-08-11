@@ -174,3 +174,69 @@ def test_kanten_ohne_gelaende_stuerzen_nicht_ab(tmp_path):
                                 terrain_from_lines=False)
     assert spec.terrain is None
     assert any("kein Gelände" in r for r in out["report"]), out["report"]
+
+
+# ---- naechste_hoehe: der scipy-freie Rückfall ----------------------------
+# Das Rechen-Image auf der Nutzer-Maschine trägt nur die Kernpakete; der
+# Core reist im Bundle dorthin. Als terrain.py scipy bekam, verlor jeder
+# lokale Lauf still seine Geländeschicht (ModuleNotFoundError, gefangen
+# und nur in den Logstrom geschrieben).
+
+def test_naechste_hoehe_rueckfall_entspricht_scipy(monkeypatch):
+    import builtins
+
+    import numpy as np
+
+    from ..core.terrain import naechste_hoehe
+
+    rng = np.random.default_rng(7)
+    z = rng.uniform(90, 110, (24, 31))
+    bekannt = rng.random((24, 31)) > 0.6
+    bekannt[0, 0] = True                      # mindestens ein Anker
+
+    mit_scipy = naechste_hoehe(z, bekannt)
+
+    echt = builtins.__import__
+
+    def ohne_scipy(name, *a, **kw):
+        if name.startswith("scipy"):
+            raise ModuleNotFoundError(name)
+        return echt(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", ohne_scipy)
+    ohne = naechste_hoehe(z, bekannt)
+
+    # Bekannte Knoten exakt, freie plausibel: beide Wege füllen aus den
+    # Nachbarn — die Metrik ist verschieden (Meter vs. Gitterschritte),
+    # die Werte bleiben im Wertebereich der bekannten Höhen
+    assert np.array_equal(mit_scipy[bekannt], z[bekannt])
+    assert np.array_equal(ohne[bekannt], z[bekannt])
+    assert not np.isnan(ohne).any()
+    assert ohne.min() >= z[bekannt].min() - 1e-9
+    assert ohne.max() <= z[bekannt].max() + 1e-9
+
+
+def test_laplace_fuellen_laeuft_ohne_scipy(monkeypatch):
+    import builtins
+
+    import numpy as np
+
+    from ..core.terrain import laplace_fuellen
+
+    echt = builtins.__import__
+
+    def ohne_scipy(name, *a, **kw):
+        if name.startswith("scipy"):
+            raise ModuleNotFoundError(name)
+        return echt(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", ohne_scipy)
+
+    z = np.zeros((20, 20))
+    fest = np.zeros((20, 20), dtype=bool)
+    fest[:, 0], fest[:, -1] = True, True
+    z[:, 0], z[:, -1] = 100.0, 96.0
+    aus = laplace_fuellen(z, fest)
+    # Laplace zwischen zwei parallelen Rändern ist die Gerade
+    mitte = aus[10, 9]
+    assert abs(mitte - (100.0 - 4.0 * 9 / 19)) < 0.2

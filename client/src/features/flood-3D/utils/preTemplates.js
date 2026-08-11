@@ -114,6 +114,15 @@ export const TEMPLATES = {
       profile: { kind: 'trapez', width: 1.5, height: 1.2, side_slope: 1.5 },
       wall_thickness: 0.0, wirkung: 'auto' },
   },
+  // Vermessungskanten von Hand anlegen (das Zeichnen-Werkzeug im Editor
+  // ist entfernt — neue Linien entstehen hier und werden dann per Griffen
+  // gezogen). Der Formen-Pinsel „Bruchkante" zieht das Gelände an GENAU
+  // diese Kanten heran.
+  kante: {
+    Vermessungskante: { id: 'kante',
+      polyline: [[10, 10, 96.0], [30, 10, 95.6]], rolle: 'frei',
+      breite: 1.0 },
+  },
   refinement: {
     Verfeinerungsbox: { id: 'box', type: 'box',
       extent: [10, 10, 93.0, 20, 20, 97.0], level: 2 },

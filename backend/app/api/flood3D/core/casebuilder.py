@@ -821,7 +821,9 @@ def topo_set_dict(spec: CaseSpec) -> str | None:
         k_vec = np.cross(i_vec, j_vec)
         k_norm = np.linalg.norm(k_vec)
         if k_norm > 0:
-            k_vec = k_vec / k_norm * 0.15   # Zonentiefe in Anströmrichtung
+            # Zonentiefe in Anströmrichtung — dieselbe Länge, auf die
+            # _screen_resistance den f-Beiwert normiert (sonst stimmt Δp nicht)
+            k_vec = k_vec / k_norm * _SCREEN_ZONE_TIEFE
         actions += f"""    {{
         name    {s.id}Cells;
         type    cellSet;
@@ -868,6 +870,13 @@ def create_patch_dict(spec: CaseSpec) -> str | None:
 # ζ = β (Stabdicke / lichte Weite)^(4/3) · sin α
 _KIRSCHMER_BETA = {"rechteck": 2.42, "rund": 1.79, "tropfen": 0.76}
 
+# Tiefe der porösen Zelle-Zone in Anströmrichtung. Der Darcy-Forchheimer-
+# Beiwert MUSS auf DIESE Länge normiert sein: Δp = ½ρu²·f·L_Zone — nur mit
+# f = ζ/L_Zone kommt der Kirschmer-Verlust ζ·½ρu² heraus. Vorher wurde auf
+# die STABTIEFE normiert (Vorbelegung 0,06 m) und der Verlust damit um den
+# Faktor L_Zone/bar_depth (2,5× bei Vorbelegung) überschätzt.
+_SCREEN_ZONE_TIEFE = 0.15
+
 
 def _screen_resistance(s) -> tuple[tuple, tuple]:
     """d/f-Vektoren; ohne explizite Vorgabe aus Kirschmer + Stabform."""
@@ -878,7 +887,7 @@ def _screen_resistance(s) -> tuple[tuple, tuple]:
         beta = _KIRSCHMER_BETA.get(s.bar_shape, 2.42)
         zeta = beta * (s.bar_thickness / clear) ** (4 / 3) \
             * math.sin(math.radians(s.approach_angle_deg))
-        f = (zeta / max(s.bar_depth, 1e-3), 0.0, 0.0)
+        f = (zeta / _SCREEN_ZONE_TIEFE, 0.0, 0.0)
     return d, f
 
 
@@ -1164,6 +1173,62 @@ blockMesh > log.blockMesh 2>&1 || {{ echo "blockMesh fehlgeschlagen"; exit 1; }}
 # Gesamtaufbau
 # --------------------------------------------------------------------------
 
+def _gebiet_sichern(spec: CaseSpec) -> tuple[CaseSpec, list[str]]:
+    """
+    Letzte Verteidigungslinie vor dem Solver: Geometrie außerhalb des
+    Modellgebiets darf ihn nie erreichen (ein Rechen außerhalb erzeugt eine
+    leere Porositätszone, an der interFoam stirbt; eine Vorfüllung außerhalb
+    kippt den inside/outside-Test von surfaceToCell). Die Prüfung meldet das
+    vorher — aber Punkte kommen auch aus Import, Rezepten und von Hand
+    editierten case.yaml, deshalb wird hier NOCHMAL gemessen (mit derselben
+    Funktion `gebietslage`) und auf einer Kopie gearbeitet: der gespeicherte
+    Fall bleibt unangetastet, der Bearbeiter behält seinen Stand.
+    """
+    from .anschluss import _flaeche_kappen, _gebiet_box, gebietslage
+
+    meldungen: list[str] = []
+    lagen = gebietslage(spec)
+    if not lagen:
+        return spec, meldungen
+    voll = {l["id"] for l in lagen if l["voll"]}
+    teil = {l["id"] for l in lagen if not l["voll"]}
+    spec = spec.model_copy(deep=True)
+
+    if voll & {s.id for s in spec.structures}:
+        rest = []
+        for s in spec.structures:
+            if s.id in voll:
+                meldungen.append(
+                    f"Bauwerk „{s.id}“ liegt vollständig außerhalb des "
+                    "Modellgebiets — nicht an den Solver übergeben")
+            else:
+                rest.append(s)
+        spec.structures = rest
+
+    if spec.solver is not None and spec.solver.vorfuellungen:
+        gebiet = _gebiet_box(spec)
+        rest = []
+        for v in spec.solver.vorfuellungen:
+            if v.id in voll:
+                meldungen.append(
+                    f"Vorfüllung „{v.id}“ liegt vollständig außerhalb des "
+                    "Modellgebiets — für den Anfangszustand übergangen")
+                continue
+            if v.id in teil:
+                neu = _flaeche_kappen(v.polygon, gebiet)
+                if neu is None:
+                    meldungen.append(
+                        f"Vorfüllung „{v.id}“ ließ sich nicht auf das Gebiet "
+                        "beschneiden — für den Anfangszustand übergangen")
+                    continue
+                v.polygon = neu
+                meldungen.append(f"Vorfüllung „{v.id}“ für den Anfangszustand "
+                                 "auf das Gebiet beschnitten")
+            rest.append(v)
+        spec.solver.vorfuellungen = rest
+    return spec, meldungen
+
+
 def build_case(spec: CaseSpec, out_dir: str | Path,
                base_dir: str | Path = ".") -> dict:
     if spec.domain is None or spec.mesh is None:
@@ -1176,6 +1241,13 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
     (out / "0").mkdir(exist_ok=True)
 
     problems: list[str] = []
+
+    # Die Hashes MÜSSEN vom unveränderten Spec kommen: die Netzvorschau
+    # vergleicht sie mit dem gespeicherten Fall — hashte man die gesäuberte
+    # Kopie, gälte die Vorschau nach jedem Säubern für immer als veraltet.
+    orig = spec
+    spec, gesaeubert = _gebiet_sichern(spec)
+    problems += gesaeubert
 
     # Gelände und Bauwerke (maßgebliche Geometrie entsteht hier, Spez. Kap. 3)
     terrain = None
@@ -1195,7 +1267,26 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
     # Wasserberandung, aber keine doppelt belegten Flächen für snappy) —
     # was dabei passiert ist, steht als Notiz im Ergebnis.
     notizen: list[str] = []
-    solids = build_solids(spec, base_dir, hinweise=notizen)
+    # Ausfälle einzelner Bauwerke sind hier PROBLEME, keine Notizen: ein
+    # Netz ohne das Bauwerk sähe nach einem vollständigen Fall aus
+    ausfaelle: list[dict] = []
+    solids = build_solids(spec, base_dir, hinweise=notizen,
+                          ausfaelle=ausfaelle)
+    problems += [a["meldung"] for a in ausfaelle]
+    # Importierte Körper tragen ihre Lage im STL — `gebietslage` sieht sie
+    # nicht. Am gebauten Körper nachgemessen: was in der Draufsicht ganz
+    # außerhalb liegt, bekommt der Vernetzer nicht.
+    x0, y0, x1, y1 = spec.domain.extent
+    for name in sorted(solids):
+        grenzen = solids[name].bounds
+        if grenzen is None:
+            continue
+        if (grenzen[1][0] < x0 or grenzen[0][0] > x1
+                or grenzen[1][1] < y0 or grenzen[0][1] > y1):
+            problems.append(f"Körper „{name}“ liegt vollständig außerhalb "
+                            "des Modellgebiets — nicht an den Vernetzer "
+                            "übergeben")
+            del solids[name]
     problems += export_solids(solids, out / "constant" / "triSurface")
 
     # system/
@@ -1267,9 +1358,9 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
 
     return {
         "case_dir": str(out),
-        "case_hash": spec.case_hash(),
+        "case_hash": orig.case_hash(),
         # getrennt, weil die Netzvorschau nur hierauf reagieren darf
-        "netz_hash": spec.netz_hash(),
+        "netz_hash": orig.netz_hash(),
         "terrain": terrain is not None,
         "solids": sorted(solids),
         "screens": [s.id for s in spec.structures if s.type == "screen"],

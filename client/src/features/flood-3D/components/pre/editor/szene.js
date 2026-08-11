@@ -1,11 +1,11 @@
 // Szenenaufbau des Editors (aus Editor3D.vue geschnitten): Gelände als
-// Höhenfeld oder Erdkörper, Bauwerkskörper aus der Server-Vorschau,
-// Solverblick. Szene über Getter — der Editor belegt sie erst beim Mount.
+// Höhenfeld oder Erdkörper, Bauwerkskörper aus der Server-Vorschau.
+// Szene über Getter — der Editor belegt sie erst beim Mount.
 import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 
 export function erzeugeSzene({ store, groups, selectable, holeScene,
-  solverView, drahtgitter, solverHint }) {
+  solverHint }) {
 const SOLID_COLORS = [0x3987e5, 0xd95926, 0x199e70, 0xc98500, 0xd55181,
   0x9085e9, 0xe66767]
 function terrainZ(x, y) {
@@ -70,19 +70,12 @@ function buildTerrain() {
   // mehr die Wahrheit: der Vernetzer bekommt einen Volumenkörper, der
   // Hohlräume haben kann. Dann wird auch genau der gezeigt.
   if (store.terrainSolid) { buildTerrainSolid(); return }
-  // Anzeige normalerweise in der Auflösung des Höhenrasters. Im
-  // „Solverblick" wird stattdessen auf die BASISZELLE abgetastet und flach
-  // schattiert — das ist die Auflösung, mit der der Vernetzer arbeitet.
-  // Die glatte Rasterdarstellung verspricht sonst eine Genauigkeit, die
-  // das Rechennetz gar nicht hat.
-  const cell = store.spec?.mesh?.base_cell
-  const grob = solverView.value && cell > 0
-  const step = grob ? cell : t.resolution
-  const [rny, rnx] = t.dims
-  const breite = (rnx - 1) * t.resolution
-  const hoehe = (rny - 1) * t.resolution
-  const nx = grob ? Math.max(2, Math.round(breite / step) + 1) : rnx
-  const ny = grob ? Math.max(2, Math.round(hoehe / step) + 1) : rny
+  // Anzeige in der Auflösung des Höhenrasters. Der frühere „Solverblick"
+  // (Abtastung auf die Basiszelle) ist entfernt — das ECHTE Netz zeigt
+  // seit der Netzvorschau der „Netz"-Knopf (Fabios Befund: zwei Ansichten
+  // für dieselbe Frage).
+  const step = t.resolution
+  const [ny, nx] = t.dims
   const geo = new THREE.BufferGeometry()
   const pos = new Float32Array(nx * ny * 3)
   const col = new Float32Array(nx * ny * 3)
@@ -107,7 +100,7 @@ function buildTerrain() {
       const k = j * nx + i
       const x = t.x0 + i * step
       const y = t.y0 + j * step
-      const z = grob ? terrainZ(x, y) : t.z[k]
+      const z = t.z[k]
       pos[k * 3] = x
       pos[k * 3 + 1] = y
       pos[k * 3 + 2] = z
@@ -126,28 +119,12 @@ function buildTerrain() {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
   geo.setIndex(idx)
   geo.computeVertexNormals()
-  // Drahtgitter statt Schummerung: die Schattierung glättet optisch, was
-  // im Raster steht — Stufen und Knicke verschwinden im Farbverlauf.
-  // Das Gitter zeigt jede Rasterzelle einzeln, und man sieht sofort, wie
-  // fein das Gelände wirklich aufgelöst ist.
-  const mesh = new THREE.Mesh(geo, drahtgitter.value
-    ? new THREE.MeshBasicMaterial({ vertexColors: true, wireframe: true })
-    : new THREE.MeshLambertMaterial({
-      vertexColors: true, side: THREE.DoubleSide, flatShading: grob }))
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide }))
   groups.terrain = new THREE.Group()
   groups.terrain.add(mesh)
   holeScene().add(groups.terrain)
-  if (grob) {
-    const tiefste = feinsteZelle()
-    solverHint.value = `Solverblick: Gelände auf die Basiszelle `
-      + `${cell.toFixed(3).replace('.', ',')} m abgetastet (Anzeige sonst `
-      + `${t.resolution.toFixed(3).replace('.', ',')} m Raster)`
-      + (tiefste < cell ? ` · in den Verfeinerungsboxen rechnet der Solver `
-        + `bis ${tiefste.toFixed(3).replace('.', ',')} m fein` : '')
-      + ' · das FERTIGE Netz zeigt „Netz" nach der Netzvorschau'
-  } else {
-    solverHint.value = ''
-  }
+  solverHint.value = ''
 }
 
 // Geländekörper: Oberseite in Geländefarben, Schnitt- und Seitenflächen in
@@ -198,19 +175,15 @@ function buildTerrainSolid() {
     + (ts.bohrungen?.length ? ` · durchbohrt von ${ts.bohrungen.join(', ')}` : '')
 }
 
-// feinste Zelle im Modell (Basiszelle durch die höchste Verfeinerungsstufe)
-function feinsteZelle() {
-  const cell = store.spec?.mesh?.base_cell ?? 0
-  let stufe = 0
-  for (const r of store.spec?.mesh?.refinements ?? []) {
-    stufe = Math.max(stufe, r.level ?? 0)
-  }
-  return cell / 2 ** stufe
-}
 
 function buildSolids() {
   clearGroup('solids')
-  selectable.length = 0
+  // Nur die EIGENEN Einträge austragen — `selectable.length = 0` löschte
+  // auch die der Marker-Ebene, die danach beim Standalone-Neuaufbau der
+  // Marker doppelt (und verwaist) wieder auftauchten
+  for (let i = selectable.length - 1; i >= 0; i--) {
+    if (selectable[i].userData?.ebene === 'solids') selectable.splice(i, 1)
+  }
   groups.solids = new THREE.Group()
   const loader = new STLLoader()
   store.solids.forEach((s, i) => {
@@ -221,7 +194,8 @@ function buildSolids() {
       shininess: 24, transparent: true, opacity: 0.95 })
     const mesh = new THREE.Mesh(geo, mat)
     const struct = store.spec?.structures?.find((x) => x.patch === s.patch)
-    mesh.userData = { kind: 'structure', id: struct?.id ?? s.patch }
+    mesh.userData = { kind: 'structure', id: struct?.id ?? s.patch,
+      ebene: 'solids' }
     groups.solids.add(mesh)
     selectable.push(mesh)
   })
@@ -230,5 +204,5 @@ function buildSolids() {
 
 
   return { terrainZ, clearGroup, buildTerrain, buildTerrainSolid,
-    feinsteZelle, buildSolids }
+    buildSolids }
 }

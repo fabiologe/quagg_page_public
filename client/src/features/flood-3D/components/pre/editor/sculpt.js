@@ -140,10 +140,17 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     cursorGrp.visible = true
   }
 
-  // ---- Bruchkanten (spec.terrain.kanten) --------------------------------
+  // ---- Bruchkanten -------------------------------------------------------
+  // Der Pinsel fängt BEIDE Sorten: Vermessungskanten (terrain.kanten) UND
+  // Bruchkanten-Operationen (terrain.operations, type bruchkante) — im
+  // Objektbaum legt man Bruchkanten unter „Geländeoperationen" an, und
+  // genau die fing der Pinsel bisher nicht (kein grüner Ring, kein Zug).
 
   function kanten() {
-    return store.spec?.terrain?.kanten ?? []
+    const vermessung = store.spec?.terrain?.kanten ?? []
+    const ops = (store.spec?.terrain?.operations ?? [])
+      .filter((o) => o.type === 'bruchkante' && o.polyline?.length >= 2)
+    return [...vermessung, ...ops]
   }
 
   // Fußpunkt auf einer Polylinie: Abstand + interpolierte Kanten-Höhe
@@ -221,12 +228,19 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
             + z[ju * nx + i] + z[jo * nx + i]) / 4
           dz = (mittel - z[k]) * 0.45 * staerke.value * w
         } else if (modus.value === 'kante') {
-          // ans Höhenprofil der Kante heranziehen — Gewicht nach Abstand
-          // zur LINIE, nicht zum Cursor (so entsteht ein sauberes Band)
+          // Das Gelände wird im Pinselbereich AUF die Kantenhöhe GESETZT
+          // (Abstand zur LINIE, nicht zum Cursor — so entsteht ein
+          // sauberes Band). Nur am Rand des Bandes federt ein Übergang.
+          // Vorher stand hier eine gedämpfte Relaxation (·0,5·Stärke·cos²),
+          // deren Gewicht zum Rand auf 0 fiel — die Zellen erreichten die
+          // Kantenhöhe nie, es sah aus wie „Absenken um die Kante".
+          // Setzen ist idempotent: der zweite Tick derselben Stelle ändert
+          // nichts mehr, strich.dz und Undo bleiben damit exakt.
           const f = fussAufKante(fangKante.kante, x, y)
           if (!f || f.d >= r) continue
-          const wl = gewicht(f.d, r)
-          dz = (f.z - z[k]) * 0.5 * staerke.value * wl
+          const kern = r * 0.7
+          const wl = f.d <= kern ? 1 : gewicht(f.d - kern, r - kern)
+          dz = (f.z - z[k]) * wl
         }
         if (dz === 0) continue
         z[k] += dz
@@ -376,5 +390,5 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
 
   return { modus, radius, staerke, form, striche,
     aktivieren, deaktivieren, strichStart, strichZieh, strichEnde,
-    strichZurueck, laeuft: () => strich !== null }
+    strichZurueck }
 }

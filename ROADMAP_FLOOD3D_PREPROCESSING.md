@@ -1,3 +1,5 @@
+> **Historisch** — abgelöst durch `ROADMAP_FLOOD3D_PRODUKTIONSREIFE.md` (2026-08-11).
+
 # flood-3D Preprocessing — Sanierungs-Roadmap
 
 Stand: 2026-08-05 · Basis: `AUDIT_FLOOD3D_PREPROCESSING.md` (gleicher Branch) ·
