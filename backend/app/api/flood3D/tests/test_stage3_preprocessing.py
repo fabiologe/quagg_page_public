@@ -6,6 +6,7 @@ inhaltlich, und der Namenskontrakt casebuilder <-> extract.
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -358,6 +359,39 @@ def test_randbedingungen_inhaltlich(built_case):
     fv = (out / "constant/fvOptions").read_text()
     # Verlegungsgrad 0.3 -> Faktor 1/0.49: f_x = 120/0.49
     assert f"{120 / 0.49:.6g}"[:6] in fv.replace("(", " ")
+
+
+def test_vorfuellung_outsidepoint_liegt_in_einer_zelle(tmp_path):
+    """
+    `outsidePoints` von surfaceToCell MUSS in einer Zelle liegen. Der
+    Punkt lag früher diagonal AUSSERHALB des Gebiets — damit starb jeder
+    Fall mit Vorfüllung in setFields („is not inside any cell",
+    2026-08-11 an Rentrisch_BetaTest06). Der zweite Anlauf scheiterte am
+    Gelände: im Gebiet, aber im Erdreich. Geprüft wird deshalb gegen
+    ALLE drei Schranken — Gelände, Füllstände, Gebietsdeckel.
+    """
+    from ..core.terrain import TerrainField
+
+    spec = build_spec_stage3()
+    spec.solver.vorfuellungen = [cs.Vorfuellung(
+        id="vf", type="vorfuellung",
+        polygon=[(9, 3), (15, 3), (15, 9), (9, 9)], level=95.4)]
+    out = tmp_path / "fall"
+    info = build_case(spec, out, tmp_path)
+
+    text = (out / "system" / "setFieldsDict").read_text()
+    roh = re.search(r"outsidePoints \(\(([^)]*)\)\)", text).group(1)
+    px, py, pz = (float(v) for v in roh.split())
+
+    x0, y0, x1, y1 = spec.domain.extent
+    assert x0 < px < x1 and y0 < py < y1, "Punkt außerhalb des Gebiets"
+    assert pz < spec.domain.z_max, "Punkt über dem Gebietsdeckel"
+    feld = TerrainField.from_spec(spec.terrain, spec.domain, tmp_path)
+    assert pz > float(feld.sample(px, py)), "Punkt steckt im Erdreich"
+    assert pz > 95.4, "Punkt liegt im Füllprisma"
+    # und er ist der Saatpunkt des Vernetzers (dort ist garantiert eine Zelle)
+    lx, ly, _ = info["location_in_mesh"]
+    assert (px, py) == pytest.approx((lx, ly))
 
 
 def test_location_in_mesh_liegt_im_stroemungsraum(built_case):

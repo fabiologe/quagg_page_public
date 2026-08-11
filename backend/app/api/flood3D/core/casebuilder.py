@@ -427,7 +427,8 @@ relaxationFactors
 }"""
 
 
-def set_fields_dict(spec: CaseSpec, out: Path | None = None) -> str | None:
+def set_fields_dict(spec: CaseSpec, out: Path | None = None,
+                    location=None, terrain=None) -> str | None:
     """
     Anfangszustand: global `initial_level` (boxToCell), darüber je
     Vorfüllung ein Teilbereich mit EIGENEM Spiegel — das Polygon wird als
@@ -438,6 +439,39 @@ def set_fields_dict(spec: CaseSpec, out: Path | None = None) -> str | None:
     if spec.solver.initial_level is None and not vorf:
         return None
     x0, y0, x1, y1 = spec.domain.extent
+    # `outsidePoints` markiert für surfaceToCell das AUSSEN des Prismas —
+    # OpenFOAM verlangt dafür einen Punkt, der IN EINER ZELLE liegt. Der
+    # frühere Punkt lag 0,5 m diagonal ausserhalb des Gebiets und damit in
+    # gar keiner Zelle: JEDER Fall mit Vorfüllung starb in setFields mit
+    # „outsidePoint … is not inside any cell" (2026-08-11 an
+    # Rentrisch_BetaTest06 aufgetreten; die Wörterbuch-Tests konnten das
+    # nicht sehen, weil sie den Text prüfen, nicht den Lauf).
+    # Jetzt: der Punkt des Strömungsgebiets (locationInMesh — seit R1 auch
+    # garantiert frei von Bauwerken) auf halber Höhe zwischen dem höchsten
+    # Füllstand und dem Gebietsdeckel: im Netz und über allen Prismen.
+    # Der Punkt muss über DREI Dingen liegen: über dem Gelände (sonst
+    # steckt er im Erdreich und es gibt dort keine Zelle — genau daran
+    # scheiterte der erste Reparaturversuch), über allen Füllprismen und
+    # unter dem Gebietsdeckel. Genommen wird deshalb der Saatpunkt von
+    # snappyHexMesh selbst — dort MUSS eine Zelle sein, sonst hätte der
+    # Vernetzer gar nicht gearbeitet —, angehoben, falls Wasser darüber
+    # steht.
+    hoch = [float(v.level) for v in vorf]
+    if spec.solver.initial_level is not None:
+        hoch.append(float(spec.solver.initial_level))
+    oberkante = max(hoch) if hoch else spec.domain.z_min
+    px, py = ((location[0], location[1]) if location is not None
+              else ((x0 + x1) / 2.0, (y0 + y1) / 2.0))
+    z_boden = spec.domain.z_min
+    if terrain is not None:
+        try:
+            z_boden = float(terrain.sample(px, py))
+        except Exception:                    # noqa: BLE001
+            pass
+    untergrenze = max(z_boden, oberkante)
+    z_aussen = (untergrenze + spec.domain.z_max) / 2.0
+    if location is not None and location[2] > untergrenze:
+        z_aussen = max(z_aussen, float(location[2]))
     regionen = []
     if spec.solver.initial_level is not None:
         regionen.append(f"""    boxToCell
@@ -459,8 +493,7 @@ def set_fields_dict(spec: CaseSpec, out: Path | None = None) -> str | None:
             ziel = out / "constant" / "triSurface" / name
             ziel.parent.mkdir(parents=True, exist_ok=True)
             prisma.export(ziel)
-        # outsidePoint sicher außerhalb des Prismas: über dem Deckel
-        aussen = vec((x0 - 0.5, y0 - 0.5, spec.domain.z_max + 0.5))
+        aussen = vec((px, py, z_aussen))
         regionen.append(f"""    surfaceToCell
     {{
         file "constant/triSurface/{name}";
@@ -1310,7 +1343,7 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
         "decomposeParDict",
         "numberOfSubdomains 4;\n\nmethod          scotch;", location="system"))
 
-    sf = set_fields_dict(spec, out)
+    sf = set_fields_dict(spec, out, location=loc, terrain=terrain)
     if sf:
         (out / "system" / "setFieldsDict").write_text(sf)
     ts = topo_set_dict(spec)
