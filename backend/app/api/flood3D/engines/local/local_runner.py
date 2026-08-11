@@ -204,6 +204,19 @@ def _setze_start(case: Path, wert: str) -> None:
     cd.write_text(re.sub(r"startFrom\s+\w+;", f"startFrom       {wert};", txt))
 
 
+def _setze_stopp(case: Path, wert: str = "endTime") -> None:
+    """
+    stopAt zurückstellen. Die PAUSE schreibt `stopAt writeNow` in die
+    controlDict (der Solver schreibt den laufenden Zeitschritt und hält
+    an). Ohne dieses Zurückstellen läse der fortgesetzte Lauf genau das
+    wieder und hielte SOFORT wieder an — die Wiederaufnahme käme keinen
+    Zeitschritt weit.
+    """
+    cd = case / "system" / "controlDict"
+    txt = cd.read_text(errors="replace")
+    cd.write_text(re.sub(r"stopAt\s+\w+;", f"stopAt          {wert};", txt))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--job", required=True)
@@ -254,6 +267,7 @@ def main() -> int:
             emit(event="log", text=f"Lauf {run_id} wird bei t = {t0} s "
                                    "fortgesetzt (Netz bleibt stehen)")
             _setze_start(case, "latestTime")
+            _setze_stopp(case, "endTime")
         else:
             emit(event="log", text=f"Fall entpackt, Lauf {run_id} "
                                    f"({spec.meta.title or spec.meta.id})")
