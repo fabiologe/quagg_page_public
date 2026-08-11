@@ -230,3 +230,50 @@ def test_bundle_nimmt_alle_datei_referenzen_mit(client, tmp_path):
     assert r.status_code == 200
     namen = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert "sculpt.npz" in namen, namen[:20]
+
+
+# --------------------------------------------------------------------------
+# Kernzahl auf der Nutzer-Maschine
+# --------------------------------------------------------------------------
+
+def _lade_runner():
+    """local_runner.py laeuft normalerweise IM Container (Importpfad
+    ..engines.local.local_runner existiert aber auch hier)."""
+    from ..engines.local import local_runner
+    return local_runner
+
+
+def test_lokale_kernzahl_ohne_deckel(monkeypatch):
+    """
+    Die Maschine gehoert dem Nutzer: ein 16-Kerner soll 16 Kerne rechnen.
+    Frueher wurde auf 8 gedeckelt (Entscheidung 2026-08-11 aufgehoben).
+    """
+    r = _lade_runner()
+    monkeypatch.delenv("FLOOD3D_CORES", raising=False)
+    monkeypatch.delenv("QUAGG_FOAM_CORES", raising=False)
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 16)
+    assert r._cores() == 16
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 64)
+    assert r._cores() == 64
+
+
+def test_lokale_kernzahl_vorgabe_schlaegt_automatik(monkeypatch):
+    r = _lade_runner()
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 16)
+    monkeypatch.setenv("FLOOD3D_CORES", "4")
+    assert r._cores() == 4
+    monkeypatch.delenv("FLOOD3D_CORES")
+    monkeypatch.setenv("QUAGG_FOAM_CORES", "12")   # Altname
+    assert r._cores() == 12
+    monkeypatch.setenv("QUAGG_FOAM_CORES", "quatsch")
+    assert r._cores() == 16                        # faellt auf die Automatik
+
+
+def test_server_bleibt_gedeckelt():
+    """
+    Gegenprobe: der SERVER teilt sich die Maschine mit allem anderen und
+    darf sie nicht fuellen — die Aufhebung gilt nur lokal.
+    """
+    import os as _os
+    from ..core import runner
+    assert runner.CORES <= (_os.cpu_count() or 1)

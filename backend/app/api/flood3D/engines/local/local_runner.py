@@ -34,13 +34,24 @@ SAFE_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 # alles seriell — bei 724k Zellen ist das der Unterschied zwischen
 # 9 Stunden und gut einer.
 def _cores() -> int:
-    # EINE Kernzahl-Quelle mit dem Server-Runner (F12-Drift): zuerst
-    # FLOOD3D_CORES wie dort, QUAGG_FOAM_CORES bleibt als Altname gültig
+    """Kernzahl fuer den lokalen Lauf — bewusst OHNE Obergrenze.
+
+    Die Maschine gehoert dem Nutzer: ein 16-Kerner soll 16 Kerne rechnen
+    (Entscheidung 2026-08-11, vorher bei 8 gedeckelt). Der Server-Runner
+    (core/runner.py) deckelt weiterhin auf os.cpu_count() — die Maschine
+    dort ist geteilt; das ist kein Drift, sondern der Unterschied.
+
+    Namen wie beim Server: FLOOD3D_CORES, Altname QUAGG_FOAM_CORES. Eine
+    Vorgabe ueber der Kernzahl ist erlaubt (mpirun laeuft mit
+    --oversubscribe), bringt aber praktisch nie etwas.
+    """
     for name in ("FLOOD3D_CORES", "QUAGG_FOAM_CORES"):
         env = os.environ.get(name, "").strip()
         if env.isdigit() and int(env) > 0:
-            return max(1, min(int(env), os.cpu_count() or 1))
-    return max(1, min(os.cpu_count() or 1, 8))
+            return int(env)
+    # os.cpu_count() zaehlt logische CPUs (Hyperthreads mit). Passend zu
+    # --use-hwthread-cpus im mpirun-Aufruf.
+    return max(1, os.cpu_count() or 1)
 
 
 def emit(**ev) -> None:
@@ -168,6 +179,28 @@ def run_foam_step(case: Path, command: str, log_name: str,
 MPI = ("mpirun --allow-run-as-root --use-hwthread-cpus --oversubscribe")
 
 
+def _shm_pruefen(cores: int) -> None:
+    """
+    Docker gibt einem Container ohne --shm-size nur 64 MB /dev/shm. OpenMPI
+    legt dort seine Rang-Puffer ab; bei vielen Raengen reicht das nicht und
+    mpirun stirbt mit einer Meldung, die niemand mit Docker in Verbindung
+    bringt. Der Companion setzt das ab v1.5.1 — aeltere Installationen
+    sollen wenigstens im Log erfahren, woran es lag.
+    """
+    if cores <= 8:
+        return
+    try:
+        st = os.statvfs("/dev/shm")
+    except OSError:
+        return
+    mb = st.f_blocks * st.f_frsize / 1024 ** 2
+    if mb < 256:
+        emit(event="log",
+             text=f"Hinweis: /dev/shm hat nur {mb:.0f} MB — bei {cores} "
+                  "Kernen kann mpirun daran scheitern. Companion auf "
+                  "v1.5.1 aktualisieren (setzt --shm-size=2g).")
+
+
 def _decompose_dict(case: Path, cores: int) -> None:
     (case / "system" / "decomposeParDict").write_text(
         "FoamFile{version 2.0;format ascii;class dictionary;"
@@ -234,6 +267,7 @@ def main() -> int:
         # Zwischenergebnissen im Job-Ordner, wird NICHT neu vernetzt —
         # sonst wäre nach einem Absturz die gesamte Rechenzeit verloren.
         cores = _cores()
+        _shm_pruefen(cores)
         case = job / "case"
         fortsetzen = args.resume and _letzte_zeit(case) is not None
         if not fortsetzen:

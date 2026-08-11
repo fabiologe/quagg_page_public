@@ -15,8 +15,16 @@ steht in der Spezifikation, offene Punkte im Fahrplan.
 ## Rechnen (OpenFOAM im Docker)
 
 - Image: `opencfd/openfoam-run:2406` (Env `FLOOD3D_OF_IMAGE`).
-- Kerne: `FLOOD3D_CORES` (Default 4, gedeckelt auf CPU-Zahl) — gilt für Server
-  UND Local Companion (dort ist `QUAGG_FOAM_CORES` der Altname).
+- Kerne **Server**: `FLOOD3D_CORES` (Default 4, gedeckelt auf die CPU-Zahl) —
+  die Maschine ist geteilt, sie darf nicht vollgelaufen werden.
+- Kerne **lokal** (Companion): **alle Kerne der Nutzer-Maschine, kein Deckel**
+  (seit 2026-08-11; vorher 8). Vorgabe möglich über `FLOOD3D_CORES` bzw. den
+  Altnamen `QUAGG_FOAM_CORES` — die reicht der Companion ab v1.5.1 als `-e`
+  in den Container (`docker run` vererbt seine Umgebung sonst nicht). Kein
+  RAM-Limit: der Container läuft ohne `--memory`; unter Docker Desktop
+  (Windows/Mac) begrenzt allein die VM-Zuteilung in dessen Einstellungen.
+  Ab v1.5.1 setzt der Companion außerdem `--shm-size=2g`, sonst scheitert
+  mpirun bei vielen Rängen an den 64 MB `/dev/shm` der Docker-Voreinstellung.
 - Timeouts: Vernetzung 20 min (`FLOOD3D_MESH_TIMEOUT`), Solver 2 h
   (`FLOOD3D_SOLVE_TIMEOUT`).
 - Kostensatz: `FLOOD3D_CORE_PRICE` (Default 0,05 €/Kern-h) — Schätzung vor dem

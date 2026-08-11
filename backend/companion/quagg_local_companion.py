@@ -284,14 +284,21 @@ def run_job(job: Job) -> None:
         # kennt FLOOD3D_CORES (Altname QUAGG_FOAM_CORES), `docker run`
         # vererbt die Umgebung des Daemons aber NICHT — die dokumentierte
         # Einstellmöglichkeit war lokal deshalb wirkungslos.
-        umgebung = []
+        docker_optionen = []
         for name in ("FLOOD3D_CORES", "QUAGG_FOAM_CORES"):
             wert = os.environ.get(name, "").strip()
             if wert:
-                umgebung += ["-e", f"{name}={wert}"]
+                docker_optionen += ["-e", f"{name}={wert}"]
+        # Gemeinsamer Speicher: Docker gibt einem Container nur 64 MB
+        # /dev/shm. OpenMPI legt seine Rang-zu-Rang-Puffer dort ab — bei
+        # vielen Kernen (seit 2026-08-11 alle der Maschine) reicht das
+        # nicht, der Lauf stirbt beim Start. LISFLOOD rechnet einprozessig
+        # und braucht es nicht.
+        if job.engine.startswith("openfoam"):
+            docker_optionen += ["--shm-size=2g"]
         proc = subprocess.Popen(
             ["docker", "run", "--rm", "--name", job.container,
-             *umgebung, *mount, image, *args],
+             *docker_optionen, *mount, image, *args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace")
         for line in proc.stdout:
