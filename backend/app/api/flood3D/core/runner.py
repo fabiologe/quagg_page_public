@@ -110,23 +110,34 @@ def laufende_container_stoppen(wurzel: str | Path) -> list[str]:
 
 def verwaiste_container_entfernen() -> list[str]:
     """
-    Alle f3d_*-Container abräumen. Gedacht für den API-Start: Läufe leben
-    in Threads DIESES Prozesses — nach einem Neustart wartet auf keinen
-    Container mehr irgendjemand, er rechnet nur noch ins Leere (und
-    blockiert seit dem uuid-Fix zwar keinen Namen mehr, aber Kerne und
-    Platte). Rückgabe: die entfernten Namen, für das Server-Log.
+    VERWAISTE f3d_*-Container abräumen (API-Start): entfernt wird nur, was
+    keinen lebenden Erzeuger-Prozess mehr hat (Label quagg.pid). API-Läufe
+    sterben mit dem API-Prozess — ihre Container rechnen nach einem
+    Neustart ins Leere. Ein PARALLEL laufender Verifikationslauf (pytest,
+    eigener Prozess) bleibt dagegen unangetastet — der Wächter hat am
+    2026-08-11 genau so einen erschossen. Rückgabe: entfernte Namen.
     """
     try:
         out = subprocess.run(
             ["docker", "ps", "-a", "--filter", "name=f3d_",
-             "--format", "{{.Names}}"],
+             "--format", '{{.Names}}\t{{.Label "quagg.pid"}}'],
             capture_output=True, text=True, timeout=20)
     except Exception:                          # noqa: BLE001 — kein Docker,
         return []                              # kein Problem
-    namen = [n for n in out.stdout.split() if n.startswith("f3d_")]
-    for n in namen:
-        subprocess.run(["docker", "rm", "-f", n], capture_output=True)
-    return namen
+    entfernt = []
+    for zeile in out.stdout.splitlines():
+        teile = zeile.split("\t")
+        name = teile[0].strip()
+        pid = teile[1].strip() if len(teile) > 1 else ""
+        if not name.startswith("f3d_"):
+            continue
+        # lebender Erzeuger (z. B. pytest-Verifikation) -> in Ruhe lassen;
+        # Container ohne Label stammen von vor dem Fix und sind verwaist
+        if pid.isdigit() and Path(f"/proc/{pid}").exists():
+            continue
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        entfernt.append(name)
+    return entfernt
 
 
 def run_foam(case_dir: str | Path, command: str, log_name: str,
@@ -147,6 +158,11 @@ def run_foam(case_dir: str | Path, command: str, log_name: str,
                  .replace(".", "_"))
     log_path = case_dir / log_name
     cmd = ["docker", "run", "--rm", "--name", container,
+           # PID des Erzeugers als Label: der Start-Wächter räumt nur
+           # Container, deren Erzeuger-Prozess tot ist — sonst erschießt
+           # ein API-Neustart einen parallel laufenden pytest-
+           # Verifikationslauf (2026-08-11 real passiert)
+           "--label", f"quagg.pid={os.getpid()}",
            "-v", f"{case_dir}:/case", "-w", "/case",
            "--entrypoint", "/bin/bash", OF_IMAGE,
            "-c", f"source {OF_BASHRC} && {command}"]
