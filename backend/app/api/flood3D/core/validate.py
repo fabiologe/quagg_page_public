@@ -377,7 +377,12 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     patch_zu_id = {s.patch: s.id for s in spec.structures}
     for patch, mesh in solids.items():
         for problem in check_solid(patch, mesh):
-            f(_finding(patch, "fehler", problem))
+            # Der Dichtheits-Befund bekommt seine Kur: „Heilen" anhängen.
+            # Bis zum split(repair=False)-Fix konnte die Regel gar nicht
+            # anschlagen — deshalb gab es hier nie einen Knopf.
+            fix = (kur("heilen_anhaengen", patch=patch)
+                   if "nicht wasserdicht" in problem else None)
+            f(_finding(patch, "fehler", problem, fix=fix))
         if terrain is not None and len(mesh.vertices):
             lo, hi = mesh.bounds
             xs = np.clip([lo[0], hi[0]], *_xr(spec))

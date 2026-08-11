@@ -316,3 +316,43 @@ def test_spalt_unter_dem_koerper_wird_gemeldet():
             break
     msgs = [x["message"] for x in validate_case(spec)]
     assert any("klafft" in m for m in msgs), msgs
+
+
+# ---- Heilen: Regel UND Kur (2026-08-11) ----------------------------------
+
+def test_loechriger_koerper_wird_gemeldet_und_geheilt(tmp_path):
+    """
+    Die Dichtheitsregel konnte nie anschlagen: `split()` repariert in
+    trimesh stillschweigend, geprüft wurde der reparierte Zustand. Jetzt
+    meldet sie — und die Kur „Heilen" beseitigt den Befund wirklich.
+    """
+    import trimesh
+
+    from ..core.kur import anwenden
+    from ..core.solids import apply_edits, check_solid
+
+    box = trimesh.creation.box((2, 2, 2))
+    loechrig = trimesh.Trimesh(vertices=box.vertices, faces=box.faces[2:])
+    assert not loechrig.is_watertight
+
+    befunde = check_solid("imp", loechrig)
+    assert befunde and "nicht wasserdicht" in befunde[0]
+
+    st = cs.StructImported(id="imp", type="imported", patch="imp",
+                           source="x.stl")
+    spec = cs.CaseSpec(
+        meta=cs.Meta(id="t", title="t"),
+        domain=cs.Domain(extent=(0, 0, 10, 10), z_min=0, z_max=5),
+        mesh=cs.Mesh(base_cell=0.5), structures=[st],
+        solver=cs.Solver(application="interFoam", end_time=1.0))
+    meldung = anwenden(spec, "heilen_anhaengen", {"patch": "imp"})
+    assert "Heilen" in meldung
+    assert [e.type for e in spec.structures[0].edits] == ["heilen"]
+
+    geheilt = apply_edits(loechrig.copy(), spec.structures[0])
+    assert geheilt.is_watertight, "Kur gelaufen, Körper immer noch offen"
+    assert geheilt.volume == pytest.approx(8.0, rel=1e-6)
+    assert check_solid("imp", geheilt) == []
+
+    # zweimal anwenden ändert nichts (die Kur meldet das ehrlich)
+    assert "bereits" in anwenden(spec, "heilen_anhaengen", {"patch": "imp"})

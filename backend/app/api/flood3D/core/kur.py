@@ -23,6 +23,7 @@ KUR_LABELS = {
     "box_ans_fenster": "Verfeinerungsbox ans Fenster",
     "box_auf_spiegel": "Box bis zum Wasserspiegel ziehen",
     "gelaende_einbinden": "In das Gelände einbinden",
+    "heilen_anhaengen": "Körper heilen (Löcher schließen)",
     "kraftauswertung_ein": "Kraftauswertung einschalten",
     "anschluesse_herstellen": "Anschlüsse herstellen",
     "ins_gebiet": "In das Gebiet einpassen",
@@ -172,6 +173,31 @@ def _gelaende_einbinden(spec: CaseSpec, args: dict, base_dir=None) -> str:
             "geführt und die Übertiefe gekappt")
 
 
+def _heilen_anhaengen(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    """
+    Bearbeitung „Heilen" an einen löchrigen Körper hängen: Löcher füllen,
+    Normalen richten. Fachlich unkritisch — es entsteht keine neue Form,
+    es wird nur geschlossen, was der Vernetzer sonst als offen ansieht
+    (und dann stillschweigend falsch rechnet).
+    """
+    from .casespec import EditHeilen
+
+    st = next((s for s in spec.structures if s.patch == args["patch"]), None)
+    if st is None:
+        return f"Bauwerk mit Patch „{args['patch']}“ gibt es nicht mehr"
+    if any(e.type == "heilen" for e in (st.edits or [])):
+        return f"„{st.id}“ hat bereits eine Heilen-Bearbeitung"
+    ids = {e.id for e in st.edits}
+    neu = "heilen"
+    n = 2
+    while neu in ids:
+        neu = f"heilen_{n}"
+        n += 1
+    st.edits.append(EditHeilen(id=neu, herkunft="kur"))
+    return (f"Bearbeitung „Heilen“ an „{st.id}“ angehängt — Löcher werden "
+            "geschlossen und die Normalen gerichtet")
+
+
 def _kraftauswertung_ein(spec: CaseSpec, args: dict, base_dir=None) -> str:
     patch = args["patch"]
     if patch in spec.evaluation.force_patches:
@@ -308,6 +334,7 @@ _KUREN = {
     "box_ans_fenster": _box_ans_fenster,
     "box_auf_spiegel": _box_auf_spiegel,
     "gelaende_einbinden": _gelaende_einbinden,
+    "heilen_anhaengen": _heilen_anhaengen,
     "kraftauswertung_ein": _kraftauswertung_ein,
     "gebiet_hoehe_anpassen": _gebiet_hoehe_anpassen,
     "anschluesse_herstellen": _anschluesse,

@@ -1344,12 +1344,18 @@ def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
 def check_solid(name: str, mesh: trimesh.Trimesh) -> list[str]:
     """Invarianten in wasserbaulicher Sprache (Spez. Kap. 7 und 13)."""
     problems = []
-    bodies = mesh.split(only_watertight=False)
+    # `split()` REPARIERT stillschweigend (füllt Löcher, ergänzt Flächen) —
+    # geprüft wurde dadurch der reparierte Zustand, und die wichtigste
+    # Regel des Kapitels konnte nie anschlagen: ein löchriger Import galt
+    # als in Ordnung. Deshalb `repair=False` und die Dichtheit zusätzlich
+    # am Gesamtkörper messen.
+    if not mesh.is_watertight:
+        problems.append(f"{name}: Körper ist nicht wasserdicht — der "
+                        "Vernetzer würde stillschweigend falsch rechnen. "
+                        "Abhilfe: Bearbeitung „Heilen“ anhängen.")
+    bodies = mesh.split(only_watertight=False, repair=False)
     for i, body in enumerate(bodies if len(bodies) else [mesh]):
-        if not body.is_watertight:
-            problems.append(f"{name}: Teilkörper {i + 1} ist nicht wasserdicht "
-                            "— der Vernetzer würde stillschweigend falsch rechnen")
-        elif body.volume <= 0:
+        if body.is_watertight and body.volume <= 0:
             problems.append(f"{name}: Teilkörper {i + 1} hat kein positives "
                             "Volumen (degenerierte Geometrie)")
     if not len(mesh.faces):
