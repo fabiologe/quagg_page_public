@@ -102,7 +102,7 @@ kein UI-Text verspricht mehr etwas, das es nicht gibt.
 
 ---
 
-## R3 — Stumme Kanäle anschließen ✅ (erledigt 2026-08-11, Commit a495814 — offen: H6-Teil-2 WSP-Nachbau; Entscheidung „Vernetzung serverseitig parallelisieren" weiter bei Fabio)
+## R3 — Stumme Kanäle anschließen ✅ (erledigt 2026-08-11, Commit a495814 — Entscheidung „Vernetzung serverseitig parallelisieren" weiter bei Fabio)
 
 Fehler, die heute schon ERZEUGT, aber nie ANGEZEIGT werden — der Nutzer steht
 sonst „vor einem Lauf ohne Gelände und ohne Erklärung".
@@ -122,9 +122,10 @@ sonst „vor einem Lauf ohne Gelände und ohne Erklärung".
       „Verbesserung" in diesem Fahrplan.*
 - [x] H5 Companion-Reservierungen: Läufe mit `status: lokal` älter als 7 Tage in
       der Laufliste als „verfallen" markieren (Löschknopf existiert schon).
-- [x] H6 Raum3D auf den gemeinsamen Feld-Cache umstellen (Doppel-Downloads weg) —
-      **Teil 2 offen:** der doppelte WSP-Rekonstruktions-Nachbau in Raum3D ist noch
-      nicht auf `planFields` zurückgeführt (eigener Punkt, risikoreichere Chirurgie).
+- [x] H6 Raum3D auf den gemeinsamen Feld-Cache umstellen (Doppel-Downloads weg);
+      **Teil 2 erledigt (nachgezogen):** Punktabfrage liest `planFieldsCached` —
+      Froude war vorher aus der Oberflächen- statt der tiefengemittelten
+      Geschwindigkeit, Punktabfrage und Karte widersprachen sich.
 - [x] F11 Kamera-Speicher je FALL schlüsseln (`flood3d-camera-views:<case>`).
 - [x] **NEU aus Testrunde R2:** Entwurfsvorschau-Latenz („jede Verschiebung
       dauert lange"): jeder Draft baut ALLE Körper serverseitig neu. Die
