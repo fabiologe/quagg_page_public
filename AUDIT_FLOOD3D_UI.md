@@ -1,3 +1,6 @@
+> **Historisch** — Stand vor 2026-08-11. Viele Befunde sind inzwischen behoben.
+> Aktueller Stand: `AUDIT_FLOOD3D_DEAD_ENDS.md` · Abarbeitung: `ROADMAP_FLOOD3D_PRODUKTIONSREIFE.md`
+
 
 ---
 
