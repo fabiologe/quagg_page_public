@@ -953,7 +953,7 @@ def _koerper_vorschau(spec: CaseSpec, feld, d: Path, out: dict) -> dict | None:
                           and getattr(s, "durchstoesst_gelaende", False)]}
 
 
-def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
+def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
     """
     DIE eine Geometrie-Antwort: Gelände, Bauwerkskörper, Erdkörper, Prüfung
     — plus die serverseitig aufgelösten Regeln (Randflächen, wirksame
@@ -988,9 +988,16 @@ def _geometrie_payload(spec: CaseSpec, d: Path) -> dict:
         # anderen nicht mehr aus der Szene verschwinden. Das äußere try
         # bleibt als letzter Fangzaun (z. B. Geländeaufbau).
         ausfaelle: list[dict] = []
+        # Entwurfsvorschau OHNE Entflechtung (hinweise=None überspringt die
+        # Booleschen Verschnitte über alle Körperpaare): sie machte jede
+        # Zieh-Rückmeldung träge, und während des Ziehens dürfen sich
+        # Körper ruhig sichtbar durchdringen — der GESPEICHERTE Stand
+        # (PUT/GET) wird weiter entflochten gezeigt (Fabios Befund
+        # Testrunde R2: „jede Verschiebung dauert echt lange").
         for patch, mesh in sorted(
                 build_solids(spec, d, include_screens=True,
-                             hinweise=[], ausfaelle=ausfaelle).items()):
+                             hinweise=None if entwurf else [],
+                             ausfaelle=ausfaelle).items()):
             out["solids"].append({
                 "patch": patch,
                 "stl_b64": base64.b64encode(
@@ -1092,7 +1099,7 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
                                 "message": f"Entwurf nicht lesbar: {e}"}],
                 "spec_ungueltig": True, "solids": [], "terrain": None,
                 "terrain_solid": None, "netz_stale": False}
-    return _geometrie_payload(spec, d)
+    return _geometrie_payload(spec, d, entwurf=True)
 
 
 @router.get("/cases/{case_id}/geometry")

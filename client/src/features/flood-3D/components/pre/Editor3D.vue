@@ -30,14 +30,6 @@
               title="Koordinatentreue Draufsicht" @click="toggleTopView">
         Draufsicht
       </button>
-      <button class="f3d-tool" :class="{ active: solverView }"
-              :disabled="!!store.terrainSolid"
-              :title="store.terrainSolid
-                ? 'Nicht nötig: der Fall zeigt bereits den Geländekörper, den der Vernetzer bekommt'
-                : 'Gelände auf die Basiszelle abgetastet — so grob sieht es der Vernetzer'"
-              @click="solverView = !solverView">
-        Solverblick
-      </button>
       <button class="f3d-tool" :class="{ active: meshView }"
               title="Vernetzte Oberfläche der Netzvorschau (Solver-Zellen)"
               @click="toggleMeshView">
@@ -197,7 +189,6 @@ const meshView = ref(false)
 const meshHint = ref('')
 // Angebot „Netzvorschau jetzt rechnen?" in der Netz-Ansicht (E6)
 const meshAngebot = ref(false)
-const solverView = ref(false)     // Gelände in Solver-Auflösung zeigen
 const solverHint = ref('')
 const clipActive = ref(false)
 const clipAxis = ref('x')
@@ -237,9 +228,9 @@ let highlighted = null
 
 // Szenenaufbau — geschnitten nach editor/szene.js
 const { terrainZ, clearGroup, buildTerrain, buildTerrainSolid,
-  feinsteZelle, buildSolids } = erzeugeSzene({
+  buildSolids } = erzeugeSzene({
   store, groups, selectable, holeScene: () => scene,
-  solverView, solverHint })
+  solverHint })
 
 // Gelände formen (Pinsel) — geschnitten nach editor/sculpt.js
 const sculpt = erzeugeSculpt({
@@ -1116,7 +1107,6 @@ async function meshRechnen(ohne) {
   }
 }
 
-watch(solverView, () => buildTerrain())
 
 watch(meshView, (on) => {
   if (!on) {
@@ -1366,13 +1356,15 @@ onMounted(() => {
     }
   })
 
-  let lastWheelAnchor = 0
+  // Drehpunkt NUR am ANFANG einer Zoom-Geste verankern. Vorher wurde alle
+  // 150 ms mitten im Scrollen neu geankert — das Ziel sprang während des
+  // Zooms und die Kamera zitterte (Fabios Befund Testrunde R2).
+  let letztesRad = 0
   renderer.domElement.addEventListener('wheel', () => {
     const now = performance.now()
-    if (now - lastWheelAnchor > 150 && !topView.value) {
-      lastWheelAnchor = now
-      anchorPivotToViewCenter()
-    }
+    const gestenStart = now - letztesRad > 400
+    letztesRad = now
+    if (gestenStart && !topView.value) anchorPivotToViewCenter()
   }, { passive: true })
 
   renderer.domElement.addEventListener('pointerup', (e) => {
@@ -1580,9 +1572,6 @@ function rebuild() {
 
 watch(() => store.sculptAktiv, (an) => {
   if (an) {
-    // Formen arbeitet auf dem feinen Höhenraster — Solverblick wäre die
-    // grobe Abtastung, dort stimmen die Vertexindizes nicht
-    if (solverView.value) solverView.value = false
     if (!sculpt.aktivieren()) { store.sculptAktiv = false; return }
   } else {
     sculpt.deaktivieren()

@@ -140,10 +140,17 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     cursorGrp.visible = true
   }
 
-  // ---- Bruchkanten (spec.terrain.kanten) --------------------------------
+  // ---- Bruchkanten -------------------------------------------------------
+  // Der Pinsel fängt BEIDE Sorten: Vermessungskanten (terrain.kanten) UND
+  // Bruchkanten-Operationen (terrain.operations, type bruchkante) — im
+  // Objektbaum legt man Bruchkanten unter „Geländeoperationen" an, und
+  // genau die fing der Pinsel bisher nicht (kein grüner Ring, kein Zug).
 
   function kanten() {
-    return store.spec?.terrain?.kanten ?? []
+    const vermessung = store.spec?.terrain?.kanten ?? []
+    const ops = (store.spec?.terrain?.operations ?? [])
+      .filter((o) => o.type === 'bruchkante' && o.polyline?.length >= 2)
+    return [...vermessung, ...ops]
   }
 
   // Fußpunkt auf einer Polylinie: Abstand + interpolierte Kanten-Höhe

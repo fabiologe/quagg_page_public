@@ -178,6 +178,52 @@ function buildMarkers() {
     }
   }
 
+  // Rechen: der Solver bekommt KEINE Stäbe, sondern eine poröse
+  // Widerstandszone — 0,15 m tief in Anströmrichtung ab der Rechenebene
+  // (casebuilder.topo_set_dict/fv_options, Kirschmer-Verlust). Genau diese
+  // Zone wird hier gezeichnet, damit sichtbar ist, was wirklich gerechnet
+  // wird (Fabios Frage Testrunde R2: „wie bekommt der Solver das?").
+  const ZONEN_TIEFE = 0.15
+  for (const s of spec.structures ?? []) {
+    if (s.type !== 'screen' || (s.plane_polygon?.length ?? 0) < 4) continue
+    const p = s.plane_polygon.map((q) => new THREE.Vector3(q[0], q[1], q[2]))
+    // Normale wie im Fallaufbau: i = p1-p0, j = p[n-1]-p0, k = i x j
+    const i = p[1].clone().sub(p[0])
+    const j = p[p.length - 1].clone().sub(p[0])
+    const n = i.clone().cross(j)
+    if (n.lengthSq() < 1e-12) continue
+    n.normalize().multiplyScalar(ZONEN_TIEFE)
+    const hinten = p.map((v) => v.clone().add(n))
+    const eck = [...p, ...hinten]
+    const nP = p.length
+    const faces = []
+    // Vorder-/Rückseite (Fächer) + Mantel
+    for (let k = 1; k < nP - 1; k++) {
+      faces.push(0, k, k + 1, nP, nP + k + 1, nP + k)
+    }
+    for (let k = 0; k < nP; k++) {
+      const a = k
+      const b = (k + 1) % nP
+      faces.push(a, b, nP + b, a, nP + b, nP + a)
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setFromPoints(eck)
+    geo.setIndex(faces)
+    geo.computeVertexNormals()
+    const zone = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xd9a326, transparent: true, opacity: 0.18,
+      depthWrite: false, side: THREE.DoubleSide }))
+    zone.renderOrder = 1
+    zone.userData = { kind: 'structure', id: s.id }
+    groups.markers.add(zone)
+    merken(zone)
+    const rand = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo, 30),
+      new THREE.LineBasicMaterial({ color: 0xd9a326, transparent: true,
+        opacity: 0.6 }))
+    groups.markers.add(rand)
+  }
+
   // Vorfüllungen (Anfangszustand): transparente Wasserebene auf z = level,
   // im Polygon. Vorher war der Startwasserstand in der Szene UNSICHTBAR —
   // Höhe und Lage standen nur als Zahlen im Panel.
