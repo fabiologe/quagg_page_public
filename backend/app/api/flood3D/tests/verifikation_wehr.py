@@ -79,20 +79,37 @@ def referenz_spec() -> cs.CaseSpec:
                                          gauge="pegel_ow")]))
 
 
-def verifikation_rechnen(arbeitsdir: Path,
-                         ziel_json: Path) -> dict:
+def verifikation_rechnen(ziel_json: Path) -> dict:
     """
     Referenzfall komplett rechnen und bewerten. Schreibt das Ergebnis als
     JSON (für GET /verifikation + Client-Karte) und gibt es zurück.
+
+    Fall UND Lauf landen in den normalen Ablagen (data/cases, data/runs):
+    der Verifikationslauf ist damit im Werkzeug ANWÄHLBAR wie jedes
+    Projekt — C_d-Kurve, 3D-Felder und Überfallstrahl lassen sich im
+    PostViewer ansehen (Fabios Wunsch). Es wird immer nur der NEUESTE
+    Verifikationslauf behalten.
     """
+    import shutil
+
     import pandas as pd
 
     from ..core.runner import run_pipeline
+    from ..router import cases_root, runs_root
 
     spec = referenz_spec()
-    run_root = arbeitsdir / "verifikation_wehr"
+    # Fall in die normale Fallablage (Projektliste)
+    fall_dir = cases_root() / "verifikation-wehr"
+    fall_dir.mkdir(parents=True, exist_ok=True)
+    spec.to_yaml(fall_dir / "case.yaml")
+    # alten Verifikationslauf ersetzen — es zählt der neueste Beleg
+    runs_root().mkdir(parents=True, exist_ok=True)
+    for alt in runs_root().glob("verifikation-wehr_r*"):
+        shutil.rmtree(alt, ignore_errors=True)
+    run_id = "verifikation-wehr_r001"
+    run_root = runs_root() / run_id
     t0 = time.time()
-    manifest = run_pipeline(spec, arbeitsdir, run_root, "verifikation_wehr")
+    manifest = run_pipeline(spec, fall_dir, run_root, run_id)
 
     df = pd.read_parquet(run_root / "normalized.parquet")
     cd = df[(df["quantity"] == "overfall_cd")
@@ -118,6 +135,7 @@ def verifikation_rechnen(arbeitsdir: Path,
 
     ergebnis = {
         "fall": "wehr_ueberfall",
+        "run_id": run_id,
         "titel": "Wehrüberfall (breitkronig) gegen die Überfallformel",
         "geprueft": time.strftime("%Y-%m-%d %H:%M"),
         "dauer_s": round(time.time() - t0, 1),

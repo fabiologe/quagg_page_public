@@ -25,16 +25,11 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_wehr_ueberfall_gegen_ueberfallformel():
-    # NICHT tmp_path: das liegt unter /tmp, und Snap-Docker mountet
-    # /tmp-Pfade leer in den Container (die dokumentierte Falle) — der
-    # Arbeitsordner liegt deshalb neben den Verifikationsergebnissen
+    # Fall und Lauf landen in den NORMALEN Ablagen (data/cases, data/runs)
+    # — nicht unter /tmp (Snap-Docker mountet /tmp-Pfade leer in den
+    # Container, die dokumentierte Falle) und im Werkzeug anwählbar
     daten = Path(__file__).resolve().parents[1] / "data" / "verifikation"
-    arbeit = daten / "_arbeit"
-    if arbeit.exists():
-        import shutil
-        shutil.rmtree(arbeit)
-    arbeit.mkdir(parents=True, exist_ok=True)
-    ergebnis = verifikation_rechnen(arbeit, daten / "wehr_ueberfall.json")
+    ergebnis = verifikation_rechnen(daten / "wehr_ueberfall.json")
     assert ergebnis["bestanden"], (
         f"C_d = {ergebnis['cd_sim']} außerhalb {ergebnis['band']} "
         f"({ergebnis['band_art']})")
