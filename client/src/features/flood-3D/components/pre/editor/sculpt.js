@@ -383,5 +383,5 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
 
   return { modus, radius, staerke, form, striche,
     aktivieren, deaktivieren, strichStart, strichZieh, strichEnde,
-    strichZurueck, laeuft: () => strich !== null }
+    strichZurueck }
 }

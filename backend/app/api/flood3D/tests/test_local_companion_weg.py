@@ -102,10 +102,19 @@ def _artifacts_zip(run_id: str, extra: dict | None = None) -> bytes:
     return buf.getvalue()
 
 
+def _import(c, run_id, data):
+    """Der EINE Import-Weg: gestückelt (hier: ein einziges Stück). Den
+    ungestückelten Zwilling POST /runs/{id}/import gibt es nicht mehr
+    (Audit H4) — die Sicherheitsprüfungen laufen über _import_entpacken
+    und gelten unverändert."""
+    return c.post(f"/runs/{run_id}/import-chunk",
+                  params={"index": 0, "last": True}, content=data)
+
+
 def test_import_uebernimmt_artefakte(client):
     c, runs = client
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
-    res = c.post(f"/runs/{run_id}/import", content=_artifacts_zip(run_id))
+    res = _import(c, run_id, _artifacts_zip(run_id))
     assert res.status_code == 200
     assert (runs / run_id / "result.json").exists()
     assert (runs / run_id / "figures" / "f1.png").read_bytes() == b"png"
@@ -122,7 +131,7 @@ def test_import_uebernimmt_artefakte(client):
 
 def test_import_ohne_reservierung(client):
     c, _ = client
-    res = c.post("/runs/demo_r999/import", content=_artifacts_zip("demo_r999"))
+    res = _import(c, "demo_r999", _artifacts_zip("demo_r999"))
     assert res.status_code == 404
 
 
@@ -131,14 +140,14 @@ def test_import_lehnt_fremde_case_dateien_ab(client):
     c, _ = client
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
     boese = _artifacts_zip(run_id, {"case/system/controlDict": b"x"})
-    assert c.post(f"/runs/{run_id}/import", content=boese).status_code == 422
+    assert _import(c, run_id, boese).status_code == 422
 
 
 def test_import_zip_slip_abgewehrt(client):
     c, _ = client
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
     boese = _artifacts_zip(run_id, {"../../boese.txt": b"x"})
-    res = c.post(f"/runs/{run_id}/import", content=boese)
+    res = _import(c, run_id, boese)
     assert res.status_code == 422
 
 
@@ -146,14 +155,14 @@ def test_import_fremde_dateien_abgewehrt(client):
     c, _ = client
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
     fremd = _artifacts_zip(run_id, {"case/evil.sh": b"x"})
-    res = c.post(f"/runs/{run_id}/import", content=fremd)
+    res = _import(c, run_id, fremd)
     assert res.status_code == 422
 
 
 def test_import_falsche_run_id_in_result(client):
     c, _ = client
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
-    res = c.post(f"/runs/{run_id}/import", content=_artifacts_zip("andere_r007"))
+    res = _import(c, run_id, _artifacts_zip("andere_r007"))
     assert res.status_code == 422
 
 
@@ -169,8 +178,7 @@ def test_geometry_ohne_gelaendeschicht_liefert_die_bauwerke(client):
 
     c, runs = client
     run_id = c.post("/cases/demo/bundle").headers["X-F3D-Run-Id"]
-    assert c.post(f"/runs/{run_id}/import",
-                  content=_artifacts_zip(run_id)).status_code == 200
+    assert _import(c, run_id, _artifacts_zip(run_id)).status_code == 200
     fdir = runs / run_id / "fields"
     assert not (fdir / "geometry.npz").exists(), "Testannahme: Schicht fehlt"
     (fdir / "index.json").write_text(_json.dumps({

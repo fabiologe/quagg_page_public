@@ -1,7 +1,6 @@
 // Parser für das F3DV-Binärformat (backend core/fields.py):
 //   b"F3DV" | uint32 Headerlänge | Header-JSON | Rohdaten (LE float32)
 // plus Abruf von Zeitpunktliste und Szenengeometrie.
-import { flood3dApi } from './api'
 
 const BASE = '/FastAPI/flood3d'
 
@@ -63,4 +62,3 @@ export async function fetchVolume(runId, time, fields = null) {
   return out
 }
 
-export { flood3dApi }

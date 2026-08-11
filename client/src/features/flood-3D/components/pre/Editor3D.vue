@@ -145,6 +145,7 @@
 
     <div class="f3d-editor3d-hint f3d-muted f3d-small">
       <template v-if="!auswahlAktiv">Auswahl aus — Klicks und Züge steuern nur die Kamera</template>
+      <template v-else-if="mode === 'stanzen'">Auf den Körper zeigen · Mausrad ändert das Maß · Klick stanzt · Esc bricht ab</template>
       <template v-else-if="mode === 'select'">Klick wählt · Klick ins Leere oder Esc wählt ab · Ecken ziehbar (Raster-/Punktfang, Alt = frei) · Bohrung/Öffnung am Marker über den Körper ziehen · Entf löscht Ecke oder Bearbeitung · Strg+D dupliziert · Shift/Strg+Ziehen verschiebt · Strg = Z erzwingen · Doppelklick zentriert</template>
       <span v-if="coords" class="f3d-coords">{{ coords }}</span>
     </div>
@@ -428,7 +429,7 @@ let rebuildPending = false     // Szenen-Rebuild bis Drag-Ende aufschieben
 
 // Objektzugriff (Griffe, Verschieben, Fangpunkte) — geschnitten nach
 // editor/objektZugriff.js; hier nur noch die Anbindung
-const { _r2, transformEdit, importPos, translateObject, objectZable,
+const { _r2, translateObject, objectZable,
   collectSnapPoints, handleAccess, clampDomain, clampMarge } =
   erzeugeObjektZugriff({ store, holeGroups: () => groups })
 
@@ -1885,25 +1886,5 @@ onBeforeUnmount(() => {
   height: 18px;
   background: var(--f3d-border);
   margin: 0 3px;
-}
-.f3d-chooser {
-  position: absolute;
-  /* unter dem Netz-/Solverhinweis (top: 48) — beide lagen exakt
-     uebereinander und verdeckten sich */
-  top: 84px;
-  left: 10px;
-  z-index: 6;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-  background: rgba(10, 16, 31, 0.9);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--f3d-accent);
-  border-radius: 10px;
-  padding: 8px 10px;
-  max-width: 520px;
-  box-shadow: var(--f3d-glow);
-  animation: f3d-in 0.2s ease both;
 }
 </style>

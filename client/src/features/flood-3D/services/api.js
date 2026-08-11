@@ -66,8 +66,6 @@ export const flood3dApi = {
   listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
   importMeshUrl: (caseId, importId, candId) =>
     `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
-  skizzeHinzufuegen: (caseId, payload) =>
-    sendJson(`/cases/${caseId}/skizze`, 'POST', payload),
   sculpt: (caseId, patches) =>
     sendJson(`/cases/${caseId}/sculpt`, 'POST', { patches }),
   importReapply: (caseId, importId, rollen = null) =>
@@ -120,11 +118,7 @@ export const flood3dApi = {
   result: (runId) => getJson(`/runs/${runId}/result`),
   extremes: (runId) => getJson(`/runs/${runId}/extremes`),
   balance: (runId) => getJson(`/runs/${runId}/balance`),
-  inventory: (runId) => getJson(`/runs/${runId}/inventory`),
-  series: (runId, quantity, component = '', locationId = null) => {
-    const params = { quantity, component }
-    if (locationId != null) params.location_id = locationId
-    return getJson(`/runs/${runId}/series`, params)
-  },
+  series: (runId, quantity, component = '') =>
+    getJson(`/runs/${runId}/series`, { quantity, component }),
   figureUrl: (runId, filename) => `${BASE}/runs/${runId}/figures/${filename}`,
 }

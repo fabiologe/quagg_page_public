@@ -1013,7 +1013,11 @@ class Vorfuellung(_Objekt):
 
 
 class Solver(_Model):
-    application: Literal["interFoam", "LTSInterFoam"] = "interFoam"
+    # LTSInterFoam ist BEWUSST nicht wählbar: das lokale Zeitschema
+    # (localEuler) und die eigene PIMPLE-Steuerung sind nicht verdrahtet —
+    # ein Enum-Wert, der nur existiert, um von der Prüfung verboten zu
+    # werden, wäre eine Falle (Audit U26). Kommt mit Fahrplan-Stufe F wieder.
+    application: Literal["interFoam"] = "interFoam"
     end_time: float
     max_co: float = 0.5
     max_alpha_co: float = 0.3

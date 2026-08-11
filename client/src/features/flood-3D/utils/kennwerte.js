@@ -470,6 +470,3 @@ export function einordnen(schluessel, wert) {
   return k.stufen[k.stufen.length - 1]
 }
 
-export function kennwert(schluessel) {
-  return KENNWERTE[schluessel] ?? null
-}

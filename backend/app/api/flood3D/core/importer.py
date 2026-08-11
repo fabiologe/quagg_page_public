@@ -37,9 +37,6 @@ LINIEN_OBJEKT_ROLLEN = {"gerinne", "wand", "damm", "stutzen",
                         "planum", "becken", "verfeinerung", "koerper",
                         "vorfuellung"}
 
-# fester Container fuer Handgezeichnetes: eine "Datei" je Fall
-SKIZZE_ID = "skizze"
-
 SAFE_FILENAME = re.compile(r"^[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9. _()+-]*$")
 
 # Abgeleitete Dateien (gerasterte TINs, transformierte STL-Kopien,
@@ -1206,59 +1203,6 @@ def _linien_objekt(spec, case_dir: Path, role: str, arr: np.ndarray,
                     max(xs), max(ys), r2(zmin + 3.0)),
             level=2))] if ziel is not None else None
     return None
-
-
-def skizze_hinzufuegen(spec, case_dir: Path, kind: str, rolle: str,
-                       punkte=None, kreis=None, name: str = "") -> dict:
-    """
-    Handgezeichnetes als CAD-Objekt ablegen — die Skizze IST ein Import
-    aus der Hand: Kandidat + Zuordnung im festen Container `skizze`,
-    danach derselbe Ableitungsweg wie bei einer DXF-Datei. Die Zuordnung
-    bleibt änderbar, die Linie geht nie verloren.
-    """
-    imp_dir = case_dir / "imports" / SKIZZE_ID
-    imp_dir.mkdir(parents=True, exist_ok=True)
-    mpfad = imp_dir / "manifest.json"
-    manifest = (json.loads(mpfad.read_text()) if mpfad.is_file()
-                else {"import_id": SKIZZE_ID, "filename": "Handskizze",
-                      "created": time.time(), "candidates": []})
-    cid = f"k{len(manifest['candidates'])}"
-    label = re.sub(r"[^A-Za-z0-9_ -]", "_",
-                   name or f"{rolle}_{len(manifest['candidates']) + 1}")[:40]
-    if kind == "kreis":
-        assert kreis, "Kreis ohne Daten"
-        (imp_dir / f"{cid}.kreis.json").write_text(json.dumps(kreis))
-        cand = {"id": cid, "name": label, "kind": "kreis",
-                "role_guess": rolle,
-                "stats": {"durchmesser": round(2 * float(kreis["radius"]), 3),
-                          "mitte": [round(float(v), 3)
-                                    for v in kreis["mitte"]]}}
-    else:
-        pts = [[round(float(p[0]), 3), round(float(p[1]), 3),
-                round(float(p[2]), 3) if len(p) > 2 else 0.0]
-               for p in (punkte or [])]
-        if kind == "polygon" and len(pts) >= 3 and pts[0] != pts[-1]:
-            pts = pts + [pts[0]]            # Ringe schliessen (Zuordnungen
-        (imp_dir / f"{cid}.json").write_text(json.dumps(pts))
-        arr = np.asarray(pts, dtype=float)
-        cand = {"id": cid, "name": label, "kind": "polyline",
-                "role_guess": rolle,
-                "stats": {"n_points": len(pts),
-                          "length": round(float(np.linalg.norm(
-                              np.diff(arr[:, :2], axis=0), axis=1).sum()), 2),
-                          "hoehen": False}}
-    manifest["candidates"].append(cand)
-    mpfad.write_text(json.dumps(manifest, ensure_ascii=False, indent=1))
-
-    apfad = imp_dir / "anwendung.json"
-    anwendung = (json.loads(apfad.read_text()) if apfad.is_file()
-                 else {"decisions": [], "unit_factor": 1.0, "offset": None,
-                       "derive_domain": False, "terrain_from_lines": False,
-                       "rotation_deg": 0.0})
-    anwendung["decisions"].append({"candidate": cid, "role": rolle})
-    apfad.write_text(json.dumps(anwendung, ensure_ascii=False, indent=1))
-
-    return import_neu_ableiten(spec, case_dir, SKIZZE_ID)
 
 
 def import_objekte_entfernen(spec, import_id: str) -> int:

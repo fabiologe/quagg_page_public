@@ -42,9 +42,3 @@ def read_manifest(paths: RunPaths) -> dict | None:
         with open(paths.manifest, encoding="utf-8") as f:
             return json.load(f)
     return None
-
-
-def write_manifest(paths: RunPaths, manifest: dict) -> None:
-    paths.root.mkdir(parents=True, exist_ok=True)
-    with open(paths.manifest, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)

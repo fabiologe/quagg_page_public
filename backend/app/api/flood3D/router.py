@@ -353,6 +353,15 @@ async def case_terrain_solid_stl(case_id: str):
     if spec.terrain is None or spec.domain is None:
         raise HTTPException(status_code=404, detail="Fall ohne Gelände.")
     feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+    # Derselbe Deckel wie bei der Editor-Vorschau (Audit H4): der Bau des
+    # Erdkörpers macht Boolesche Abzüge — bei sehr großen Rastern liefe
+    # dieser unverlinkte Prüfer-Export sonst minutenlang im Request
+    if feld.z.size > _KOERPER_VORSCHAU_KNOTEN:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Höhenraster hat {feld.z.size} Knoten — über dem "
+                   f"Deckel ({_KOERPER_VORSCHAU_KNOTEN}). Für den Export "
+                   "die Rasterweite vergröbern.")
     try:
         koerper = gelaende_koerper_bauen(feld, spec, hinweise=[], base_dir=d)
     except Exception as e:
@@ -640,29 +649,6 @@ async def case_import_reapply(case_id: str, import_id: str,
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
-@router.post("/cases/{case_id}/skizze")
-async def case_skizze(case_id: str, payload: dict = Body(...)):
-    """
-    Handgezeichnetes als CAD-Objekt aufnehmen — die Skizze ist ein Import
-    aus der Hand: Kandidat + Zuordnung in `imports/skizze/`, dann derselbe
-    Ableitungsweg wie beim Dateiimport. payload: {kind: polyline|polygon|
-    kreis, rolle, punkte?|kreis?, name?}.
-    """
-    from .core.importer import skizze_hinzufuegen
-
-    def wirken(spec, d):
-        info = skizze_hinzufuegen(
-            spec, d,
-            kind=str(payload.get("kind") or "polyline"),
-            rolle=str(payload.get("rolle") or "ignorieren"),
-            punkte=payload.get("punkte"),
-            kreis=payload.get("kreis"),
-            name=str(payload.get("name") or ""))
-        return info["report"]
-
-    return _mutation(case_id, wirken, "Skizze fehlgeschlagen")
-
-
 @router.delete("/cases/{case_id}/derived")
 async def case_derived_leeren(case_id: str):
     """
@@ -670,11 +656,9 @@ async def case_derived_leeren(case_id: str):
     danach stellt ein Reapply (je Import) alles bitidentisch wieder her.
     Quellen (case.yaml, imports/) bleiben unberührt.
     """
-    import shutil
-
     d = _case_dir(case_id)
     entfernt = []
-    for pfad in (d / "derived", d / "_mesh_preview"):
+    for pfad in (d / "derived",):
         if pfad.exists():
             shutil.rmtree(pfad)
             entfernt.append(pfad.name)
@@ -1167,8 +1151,6 @@ async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
     und Kosten sind dann eine UNTERE Grenze. Das Ergebnis wird als solches
     gekennzeichnet.
     """
-    import tempfile
-
     from .core.casebuilder import build_case
     from .core.runner import FoamError, mesh_preview
 
@@ -1205,9 +1187,6 @@ async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
         import shutil
         if preview_dir.exists():
             shutil.rmtree(preview_dir)
-        alt = d / "_mesh_preview"          # Ablage vor P2 aufraeumen
-        if alt.exists():
-            shutil.rmtree(alt)
         bau_spec = spec
         if ohne_verfeinerung:
             bau_spec = spec.model_copy(deep=True)
@@ -1345,22 +1324,9 @@ _IMPORT_TOP = {"manifest.json", "result.json", "normalized.parquet"}
 _IMPORT_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
-@router.post("/runs/{run_id}/import")
-async def import_run(run_id: str, request: Request):
-    """Artefakte eines lokalen Companion-Laufs in die Laufablage übernehmen."""
-    import io
-    import zipfile
-
-    root = runs_root().resolve()
-    run_root = (root / run_id).resolve()
-    if run_root.parent != root or not run_root.is_dir():
-        raise HTTPException(status_code=404,
-                            detail="Lauf nicht reserviert — zuerst das "
-                                   "Bundle über /bundle holen")
-    data = await request.body()
-    return _import_entpacken(run_root, run_id, data)
-
-
+# Der ungestückelte Import-Zwilling (POST /runs/{id}/import) ist entfernt
+# (Audit H4): der Client lädt seit jeher ausschließlich über /import-chunk —
+# ein 400-MB-Body scheiterte an jeder Proxy-Grenze.
 def _import_entpacken(run_root: Path, run_id: str, data: bytes) -> dict:
     import io
     import zipfile

@@ -182,10 +182,13 @@
           <option value="rechteck">Rechteck</option>
           <option value="kreis">Kreis (Rohrmündung)</option>
           <option value="trapez">Trapez (Gerinnequerschnitt)</option>
-          <option value="polygon">Polygon (frei zeichnen)</option>
-          <option value="ei">Eiprofil</option>
-          <option value="maul">Maulprofil</option>
-          <option value="tropfen">Tropfenprofil</option>
+          <option value="polygon">Polygon (Ecken ziehen)</option>
+          <!-- Ei/Maul/Tropfen sind POLYGON-VORLAGEN: sie setzen eine
+               passende Eckenliste ein und werden danach als Polygon
+               geführt — keine eigenen Fensterformen (Audit U3) -->
+          <option value="ei">Polygon-Vorlage: Eiprofil</option>
+          <option value="maul">Polygon-Vorlage: Maulprofil</option>
+          <option value="tropfen">Polygon-Vorlage: Tropfenprofil</option>
           <option v-for="ch in channels" :key="ch.id" :value="'follow:' + ch.id">
             an Gerinne „{{ ch.id }}“ gekoppelt
           </option>
@@ -607,12 +610,6 @@ const ksDraft = computed({
     else delete draft.value.material_ks
   },
 })
-
-// Aussparungen: nur Wand und Becken; neue Öffnung mittig auf der Achse
-// und auf halber Bauteilhöhe, damit sie garantiert im Bauteil liegt
-// Bearbeitungen gelten fuer JEDES Bauwerk, auch importierte
-
-
 
 const zeichnet = computed(() =>
   store.platzierung?.id === draft.value?.id ? store.platzierung.art : null)

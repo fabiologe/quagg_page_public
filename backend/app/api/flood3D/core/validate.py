@@ -180,15 +180,6 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                    "wenn der Solver sie mitschreibt.",
                    fix=kur("kraftauswertung_ein", patch=s.patch)))
 
-    # LTSInterFoam braucht ein lokales Zeitschema (localEuler) und eine
-    # eigene PIMPLE-Steuerung. Beides ist noch nicht verdrahtet — der Fall
-    # liefe mit Euler durch und rechnete etwas anderes, als draufsteht.
-    if spec.solver.application == "LTSInterFoam":
-        f(_finding("solver", "fehler",
-                   "LTSInterFoam ist noch nicht lauffähig: der Fall wird mit "
-                   "dem Euler-Zeitschema aufgebaut, das lokale Zeitschema "
-                   "(localEuler) fehlt. Bis dahin interFoam wählen."))
-
     # Geländekörper: er ersetzt die Höhenfläche beim Vernetzen. Ist er
     # nicht geschlossen oder deckt er das Gebiet nicht, merkt man das sonst
     # erst an einem zerrissenen Netz.
@@ -377,9 +368,7 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
         solids = build_solids(spec, base_dir, ausfaelle=ausfaelle)
         for a in ausfaelle:
             f(_finding(a["id"], "fehler", a["meldung"]))
-    except NotImplementedError as e:
-        f(_finding("structures", "fehler", str(e)))
-    except Exception as e:
+    except Exception as e:                   # noqa: BLE001
         f(_finding("structures", "fehler", f"Bauwerk nicht erzeugbar: {e}"))
 
     struct_types = {s.patch: s.type for s in spec.structures}

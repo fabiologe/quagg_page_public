@@ -12,6 +12,10 @@ herunterladbar und dienen als Testfälle für den DXF-/STL-Import:
   problemfall.dxf         Absichtlich fies: Millimeter, Landeskoordinaten
                           (UTM32), ein roher 3DSOLID ohne CONVTOMESH.
 
+ACHTUNG: `boeschungskanten.dxf` im selben Zielordner ist HANDGEPFLEGT und
+wird von diesem Skript NICHT erzeugt — beim Aufräumen des Ordners nicht
+löschen (der Import-Dialog bietet sie als viertes Beispiel an).
+
 Aufruf:  venv/bin/python app/api/flood3D/engines/local/make_beispiele.py
 """
 from __future__ import annotations

@@ -45,7 +45,6 @@ export const usePreStore = defineStore('flood3d-pre', {
     meshPreview: null,    // Ergebnis des Vernetzungsprobelaufs
     meshPreviewLoading: false,
     meshPreviewStale: false,   // Vorschaunetz gehört nicht mehr zum Fall
-    startedRun: null,     // { run_id } des zuletzt gestarteten Laufs
     // Bearbeitungsverlauf: Snapshots der GESAMTEN spec (JSON-Strings).
     // Jede Mutation läuft durch update/add/removeObject — damit ist die
     // Historie zwangsläufig vollständig (keine Feld-für-Feld-Falle).
@@ -275,18 +274,6 @@ export const usePreStore = defineStore('flood3d-pre', {
         (id) => flood3dApi.caseAnschluss(id), 'Anschluss fehlgeschlagen')
     },
 
-    // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
-    // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
-    // Handgezeichnetes als CAD-Objekt aufnehmen — die Skizze ist ein
-    // Import aus der Hand; die Zuordnung bleibt danach änderbar
-    async skizzeZeichnen(payload) {
-      const meldungen = await this.serverMutation(
-        (id) => flood3dApi.skizzeHinzufuegen(id, payload),
-        'Skizze fehlgeschlagen')
-      this.ladeImporte()
-      return meldungen
-    },
-
     // Pinsel-Patches auf die Sculpt-Ebene des Geländes. KEIN globaler
     // Undo-Eintrag: der Spec-Snapshot kann die Delta-Datei nicht
     // zurückdrehen — Rückgängig ist das inverse Patch (editor/sculpt.js)
@@ -296,6 +283,8 @@ export const usePreStore = defineStore('flood3d-pre', {
         'Formen fehlgeschlagen', { undo: false })
     },
 
+    // Einen Import mit seiner gespeicherten Anwendung neu ableiten —
+    // ersetzt alle Objekte dieses Imports (idempotent), baut derived/ neu
     async importNeuAbleiten(importId, rollen = null) {
       const meldungen = await this.serverMutation(
         (id) => flood3dApi.importReapply(id, importId, rollen),
@@ -329,8 +318,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       return true
     },
 
-    // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
-    // Auswertung oder Anschluss — keine fachliche Festlegung.
     async ladeRezepte() {
       if (this.rezepte.length) return
       try {
@@ -360,6 +347,8 @@ export const usePreStore = defineStore('flood3d-pre', {
         'Kanten verknüpfen fehlgeschlagen')
     },
 
+    // Die Kur zu einem Prüfbefund ausführen. Sie richtet nur Netz,
+    // Auswertung oder Anschluss — keine fachliche Festlegung.
     async kurAnwenden(fix) {
       if (!fix) return ''
       const meldungen = await this.serverMutation(
@@ -709,7 +698,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.error = ''
       try {
         if (this.dirty) await this.saveCase()
-        this.startedRun = await flood3dApi.startRun(this.activeCaseId)
+        await flood3dApi.startRun(this.activeCaseId)
         this.melden('Lauf gestartet', 'erfolg')
         this.activePhase = 'laeufe'          // dem Lauf direkt zuschauen
         await this.loadCaseRuns()
@@ -744,11 +733,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.scheduleDraftPreview()
     },
 
-    // Löschen räumt mit auf: ein Nachweiskriterium auf einem gelöschten
-    // Pegel, eine Flächenverfeinerung auf einem entfernten Bauwerk, ein
-    // Eintrag in der Kraftauswertung — das alles blieb bisher liegen und
-    // wurde danach als Fehler gemeldet, den der Bearbeiter selbst suchen
-    // musste. EIN Undo-Schritt für die ganze Kaskade.
     // Ein eingesetztes Rezept als GANZES löschen — ein Undo-Schritt,
     // Aufräumkaskade je Teil (verwaiste Verfeinerungen/Verweise gehen mit)
     loescheGruppe(gruppe) {
@@ -780,6 +764,11 @@ export const usePreStore = defineStore('flood3d-pre', {
         `Bauwerk „${gruppe}“ gelöscht (${mitglieder.length} Teile)`, 'erfolg')
     },
 
+    // Löschen räumt mit auf: ein Nachweiskriterium auf einem gelöschten
+    // Pegel, eine Flächenverfeinerung auf einem entfernten Bauwerk, ein
+    // Eintrag in der Kraftauswertung — das alles blieb bisher liegen und
+    // wurde danach als Fehler gemeldet, den der Bearbeiter selbst suchen
+    // musste. EIN Undo-Schritt für die ganze Kaskade.
     removeObject(kind, id) {
       if (!this.spec) return []
       const plan = aufraeumplan(this.spec, kind, id)

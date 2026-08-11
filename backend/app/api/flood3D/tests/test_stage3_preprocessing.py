@@ -419,14 +419,16 @@ def test_kepsilon_schreibt_das_epsilon_feld(tmp_path):
     assert "epsilon" in (tmp_path / "system" / "fvSolution").read_text()
 
 
-def test_lts_wird_als_nicht_lauffaehig_gemeldet():
-    from ..core.validate import validate_case
-
+def test_lts_ist_nicht_waehlbar():
+    """
+    LTSInterFoam ist aus dem Schema entfernt (Audit U26): ein Enum-Wert,
+    der nur existierte, um von der Prüfung verboten zu werden, war eine
+    Falle. Er kommt mit Fahrplan-Stufe F zurück — DANN mit localEuler.
+    """
     spec = build_spec_stage3()
-    spec.solver.application = "LTSInterFoam"
-    befunde = [f for f in validate_case(spec, ".")
-               if f["object_id"] == "solver" and f["severity"] == "fehler"]
-    assert befunde and "localEuler" in befunde[0]["message"]
+    with pytest.raises(Exception):
+        spec.solver.application = "LTSInterFoam"
+        cs.CaseSpec.model_validate(spec.model_dump())
 
 
 def test_kraftkriterium_ohne_kraftauswertung_wird_gemeldet():
