@@ -11,49 +11,49 @@ zeigen auf das Audit-Log.
 
 ---
 
-## R0 — Fundament sichern (zuerst, klein)
+## R0 — Fundament sichern ✅ (erledigt 2026-08-11, Commits a099950/429bf2b)
 
 Nichts davon ist Code-Arbeit im Feature — es macht alle weiteren Runden gefahrlos.
 
-- [ ] **Committen.** Testing-Runde 1 + Audit-Fixes (inkl. Container-Fix F0) als
+- [x] **Committen.** Testing-Runde 1 + Audit-Fixes (inkl. Container-Fix F0) als
       Commit(s) auf `flood3d-versionskontrolle`; danach Merge-Stand mit master klären.
       *Größtes Einzelrisiko im ganzen Projekt (§0 des Audits).*
-- [ ] Audit-Worktree-Leichen löschen (`.claude/worktrees/flood3d-*`), verwaiste
+- [x] Audit-Worktree-Leichen löschen (`.claude/worktrees/flood3d-*`), verwaiste
       `test_gpu_backend.pyc` entfernen.
-- [ ] `data/`-Hygiene: verwaiste Laufordner (nur `manifest.json`) löschen;
+- [x] `data/`-Hygiene: verwaiste Laufordner (nur `manifest.json`) löschen;
       Altfälle `BetaTest01/02` einmal öffnen+speichern (migriert das Layout) oder
       nach `data/archiv/` verschieben. Backup-Frage notieren (151 MB, nicht in git).
-- [ ] Alte Audit-MDs (`AUDIT_FLOOD3D_{PREPROCESSING,POSTPROCESSING,UI}.md`):
+- [x] Alte Audit-MDs (`AUDIT_FLOOD3D_{PREPROCESSING,POSTPROCESSING,UI}.md`):
       erledigte Befunde abhaken oder Kopfvermerk „historisch, Stand < 2026-08-11".
-- [ ] Docker-Wächter: beim API-Start verwaiste `f3d_*`-Container aufräumen
+- [x] Docker-Wächter: beim API-Start verwaiste `f3d_*`-Container aufräumen
       (heutiger Vorfall F0 — ein Neustart mitten im Lauf hinterlässt sonst Leichen).
 
 **Fertig wenn:** `git status` sauber, ein Branch-Stand, keine Worktrees, data/ aufgeräumt.
 
 ---
 
-## R1 — Rechenfehler und stille Falschaussagen (Korrektheit)
+## R1 — Rechenfehler und stille Falschaussagen ✅ (erledigt 2026-08-11, Commit 02c1341 — Fabios Testrunde offen)
 
 Alles, was heute FALSCHE Zahlen oder falsches Verhalten liefert.
 
-- [ ] **F1 Kirschmer-Faktor** *(wichtigster Punkt des Fahrplans)*: Zonentiefe als
+- [x] **F1 Kirschmer-Faktor** *(wichtigster Punkt des Fahrplans)*: Zonentiefe als
       EINE Konstante, `f = ζ/Zonentiefe` statt `ζ/bar_depth`; Test, der Δp gegen die
       Kirschmer-Formel prüft. Bestehende Fälle mit Rechen danach neu bewerten.
-- [ ] **Folgefehler der Testing-Runde 1** in einem Aufwasch:
+- [x] **Folgefehler der Testing-Runde 1** in einem Aufwasch:
       F2 Vorfüllung-Verschieben (translateObject-Zweig), U1 `kante`-Optgroup-Label,
       U5 Querschnitte anklickbar machen (merken), U6 objectZable für vorfuellung.
-- [ ] F3 Meldungsart `warnung` als eigene Stufe halten (kein 10-s-Autoclear),
+- [x] F3 Meldungsart `warnung` als eigene Stufe halten (kein 10-s-Autoclear),
       State-Kommentar korrigieren.
-- [ ] F4 Fenster-Punktliste: Spalten als „Kante/Höhe" beschriften, Hover-Fokusmarke
+- [x] F4 Fenster-Punktliste: Spalten als „Kante/Höhe" beschriften, Hover-Fokusmarke
       für window.points deaktivieren oder korrekt auf die Randfläche projizieren.
-- [ ] F5 Kaputte `mesh_preview.json` als „beschädigt — neu rechnen" melden statt
+- [x] F5 Kaputte `mesh_preview.json` als „beschädigt — neu rechnen" melden statt
       als „nie gerechnet".
-- [ ] F6 `localClippingEnabled`-Reset in `koerperBeschneiden(null)`.
-- [ ] F10 `location_in_mesh`: prüfen, ob der Punkt in einem Bauwerks-Körper liegt;
+- [x] F6 `localClippingEnabled`-Reset in `koerperBeschneiden(null)`.
+- [x] F10 `location_in_mesh`: prüfen, ob der Punkt in einem Bauwerks-Körper liegt;
       wenn ja, Ausweichpunkt suchen (sonst vernetzt snappy die falsche Seite).
-- [ ] F8 Manifest-Schreiben im Lauf-Thread: bei Fehlschlag wenigstens
+- [x] F8 Manifest-Schreiben im Lauf-Thread: bei Fehlschlag wenigstens
       Server-Log-Eintrag statt `pass` (Platte-voll-Fall).
-- [ ] F9 Stumme Fehlerpfade entschärfen: Import zählt übersprungene Entitäten und
+- [x] F9 Stumme Fehlerpfade entschärfen: Import zählt übersprungene Entitäten und
       meldet sie im Report; validate-Ausnahmen (Durchdringung, _screen_resistance)
       werden als `hinweis` sichtbar statt verschluckt.
 
