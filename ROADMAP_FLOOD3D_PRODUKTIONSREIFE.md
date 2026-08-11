@@ -62,32 +62,32 @@ sind in deiner Testrunde nicht mehr reproduzierbar.
 
 ---
 
-## R2 — Leichen raus, Beschriftungen ehrlich (Ballast)
+## R2 — Leichen raus, Beschriftungen ehrlich ✅ (erledigt 2026-08-11, Commit ac2ebd9 — Conventions-Felder bewusst behalten, siehe Audit-T4-Vermerk; GET /health behalten für die R5-Betriebsnotiz)
 
 Nichts Neues — nur weg damit oder ehrlich benennen. Reduziert die Fläche, die
 alle späteren Runden testen müssen.
 
-- [ ] **T1 Skizzen-Weg komplett entfernen**: `POST /cases/{id}/skizze`,
+- [x] **T1 Skizzen-Weg komplett entfernen**: `POST /cases/{id}/skizze`,
       `store.skizzeZeichnen`, `api.skizzeHinzufuegen`, zugehörige Tests
       (`test_skizze.py` prüfen: Backend-Logik ggf. behalten, wenn der Import sie
       nutzt — sonst mit raus).
-- [ ] T2–T6: `store.write_manifest`, totes `except NotImplementedError`,
+- [x] T2–T6: `store.write_manifest`, totes `except NotImplementedError`,
       `Component.POROUS/MIN`, ungenutzte Conventions-/Meta-Felder (ACHTUNG:
       gehen in `case_hash` ein — Entfernen invalidiert Hashes → beim Entfernen
       Netz-Hash-Migrationstest), Client-Leichen (inventory, kennwert, selectedRuns,
       startedRun, …), verwaiste Kommentare, `.f3d-chooser`-CSS.
-- [ ] T7 `make_demo_runs.py`: löschen oder nach `tests/` als Fixture-Generator.
-- [ ] T8 `make_beispiele.py`: `boeschungskanten.dxf` mit erzeugen oder im Skript
+- [x] T7 `make_demo_runs.py`: löschen oder nach `tests/` als Fixture-Generator.
+- [x] T8 `make_beispiele.py`: `boeschungskanten.dxf` mit erzeugen oder im Skript
       dokumentieren, dass sie handgepflegt ist.
-- [ ] T9 `_mesh_preview`-Altlastcode entfernen (nach R0-Migration der Altfälle).
-- [ ] U2 „Polygon (frei zeichnen)" → „Polygon (Ecken ziehen)"; U3 Ei/Maul/Tropfen
+- [x] T9 `_mesh_preview`-Altlastcode entfernen (nach R0-Migration der Altfälle).
+- [x] U2 „Polygon (frei zeichnen)" → „Polygon (Ecken ziehen)"; U3 Ei/Maul/Tropfen
       als „Polygon-Vorlage (…)"" beschriften — ODER ganz raus (Empfehlung: beschriften).
-- [ ] U26 `LTSInterFoam` aus dem Schema-Enum entfernen (existiert nur, um verboten
+- [x] U26 `LTSInterFoam` aus dem Schema-Enum entfernen (existiert nur, um verboten
       zu werden). Kommt wieder, wenn Stufe F je gebaut wird.
-- [ ] H4-Teil: `POST /runs/{id}/import` (ungestückelter Zwilling) entfernen;
+- [x] H4-Teil: `POST /runs/{id}/import` (ungestückelter Zwilling) entfernen;
       `GET /health` entweder vom Monitoring nutzen oder raus;
       `terrain-solid.stl` bekommt den 120k-Deckel der Vorschau.
-- [ ] T11: dieses Dokument + Dead-End-Log werden die EINZIGEN lebenden
+- [x] T11: dieses Dokument + Dead-End-Log werden die EINZIGEN lebenden
       Statusdokumente; alte Roadmap-/Audit-MDs bekommen Verweis hierher.
 
 **Fertig wenn:** Grep nach den entfernten Namen = 0 Treffer; Suiten grün;
