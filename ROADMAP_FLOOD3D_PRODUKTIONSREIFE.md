@@ -137,27 +137,27 @@ im Lauf-Panel; ein Lauf lässt sich aus der UI abbrechen.
 
 ---
 
-## R4 — Vertrauen: der Nachweis, dass die Zahlen stimmen
+## R4 — Vertrauen ✅ (Code erledigt 2026-08-11, Commit 13d7c89 — VERIFIKATION BESTANDEN: C_d = 0,6443 ± 0,0093 im Band 0,55–0,75; offen nur Fabios N-Testrunden)
 
 Produktionsreife heißt bei einem Nachweiswerkzeug vor allem: belegte Korrektheit.
 Kein neues Feature — Absicherung des Bestands.
 
-- [ ] **U21 EIN physikalischer Referenzfall** (Spez. Kap. 13): Wehrüberfall gegen
+- [x] **U21 EIN physikalischer Referenzfall** (Spez. Kap. 13): Wehrüberfall gegen
       die Überfallformel, klein genug für ~Minuten Rechenzeit; als markierter
       Slow-Test (`pytest -m verifikation`, nicht in der Standard-Suite), Ergebnis
       mit Toleranzband eingefroren. Läuft nach jeder Änderung an
       casebuilder/meshgen/solids von Hand bzw. vor jedem Release.
-- [ ] F7 Kraft nach Druck-/Reibungsanteil im Zeitreihen-Panel wählbar
+- [x] F7 Kraft nach Druck-/Reibungsanteil im Zeitreihen-Panel wählbar
       (Daten liegen längst in `normalized.parquet`).
-- [ ] U12 `overfall_cd`/`energy_head` von der Target-Kopplung lösen: Reihe
+- [x] U12 `overfall_cd`/`energy_head` von der Target-Kopplung lösen: Reihe
       entsteht, sobald ein Wehr + Querschnitt existiert (Diagramm dafür gibt es).
-- [ ] U15-Kern: Panels rechnen mit den FALL-Kriterien statt mit eigenen Literalen
+- [x] U15-Kern: Panels rechnen mit den FALL-Kriterien statt mit eigenen Literalen
       (Verweilzeit 0,3/0,5, y⁺>500, τ 20 N/m² → aus `evaluation.targets` bzw. als
       EINE Konstantendatei). Kein neues Nachweisblatt — nur eine Wahrheit statt zwei.
-- [ ] U18 Kostenmodell: Ist-Kosten (`duration_s × cores × Preis`) ins Manifest und
+- [x] U18 Kostenmodell: Ist-Kosten (`duration_s × cores × Preis`) ins Manifest und
       ins Lauf-Panel; Schätzkonstante an den inzwischen vorhandenen echten Läufen
       nachkalibrieren („wird nach den ersten Läufen kalibriert" einlösen).
-- [ ] **Testrunde-2-Checkliste (N-Befunde)** mit Fabio abarbeiten:
+- [ ] **Testrunde-2-Checkliste (N-Befunde)** mit Fabio abarbeiten (OFFEN — Fabios Part):
       N1 heutige Fixes, N2 echter Snappy-Lauf über den Knopf (beide Varianten),
       N3 Bohrung am echten Fall, N5 alle 6 Rezepte bis zum Lauf, N6 Drehen,
       N10 Fensterformen. N4 (Companion e2e auf deinem Rechner) als eigener Termin.
