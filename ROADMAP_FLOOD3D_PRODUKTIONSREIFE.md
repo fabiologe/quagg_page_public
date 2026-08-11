@@ -102,30 +102,31 @@ kein UI-Text verspricht mehr etwas, das es nicht gibt.
 
 ---
 
-## R3 — Stumme Kanäle anschließen (Betriebssicherheit)
+## R3 — Stumme Kanäle anschließen ✅ (erledigt 2026-08-11, Commit a495814 — offen: H6-Teil-2 WSP-Nachbau; Entscheidung „Vernetzung serverseitig parallelisieren" weiter bei Fabio)
 
 Fehler, die heute schon ERZEUGT, aber nie ANGEZEIGT werden — der Nutzer steht
 sonst „vor einem Lauf ohne Gelände und ohne Erklärung".
 
-- [ ] **H1/H2**: `terrain_error`, `fields_error`, `viz_volume_error_rel_*` im
+- [x] **H1/H2**: `terrain_error`, `fields_error`, `viz_volume_error_rel_*` im
       Lauf-&-Log-Panel anzeigen (Warnkachel). `has_normalized` in der Laufliste
       auswerten oder aus der Antwort entfernen.
-- [ ] **H3 Lauf-Abbruch**: `_active_runs` von Schreib-nur zu nutzbar — ein
+- [x] **H3 Lauf-Abbruch**: `_active_runs` von Schreib-nur zu nutzbar — ein
       „Lauf abbrechen"-Knopf (Container killen, Manifest → `abgebrochen`).
       *Einstufung: Betriebsreife, kein Feature — ohne das ist ein hängender Lauf
       nur per SSH totbar.*
-- [ ] **F12 Runner-Drift** (Minimum): `convert_case_fields` im local_runner
+- [x] **F12 Runner-Drift** (Minimum): `convert_case_fields` im local_runner
       schützen wie im Server; EINE Kernzahl-Quelle (`FLOOD3D_CORES`);
       „No times selected"-Übersetzung auch serverseitig.
       *Optional (Entscheidung Fabio): Vernetzung serverseitig parallelisieren wie
       im Companion — beschleunigt die Netzvorschau spürbar, ist aber die einzige
       „Verbesserung" in diesem Fahrplan.*
-- [ ] H5 Companion-Reservierungen: Läufe mit `status: lokal` älter als 7 Tage in
+- [x] H5 Companion-Reservierungen: Läufe mit `status: lokal` älter als 7 Tage in
       der Laufliste als „verfallen" markieren (Löschknopf existiert schon).
-- [ ] H6 Raum3D auf den gemeinsamen Feld-Cache umstellen (Doppel-Downloads weg);
-      der doppelte WSP-Rekonstruktions-Nachbau wird auf `planFields` zurückgeführt.
-- [ ] F11 Kamera-Speicher je FALL schlüsseln (`flood3d-camera-views:<case>`).
-- [ ] **NEU aus Testrunde R2:** Entwurfsvorschau-Latenz („jede Verschiebung
+- [x] H6 Raum3D auf den gemeinsamen Feld-Cache umstellen (Doppel-Downloads weg) —
+      **Teil 2 offen:** der doppelte WSP-Rekonstruktions-Nachbau in Raum3D ist noch
+      nicht auf `planFields` zurückgeführt (eigener Punkt, risikoreichere Chirurgie).
+- [x] F11 Kamera-Speicher je FALL schlüsseln (`flood3d-camera-views:<case>`).
+- [x] **NEU aus Testrunde R2:** Entwurfsvorschau-Latenz („jede Verschiebung
       dauert lange"): jeder Draft baut ALLE Körper serverseitig neu. Die
       Entflechtung ist im Entwurf schon übersprungen (c25f80b) — weiter
       prüfen: nur die GEÄNDERTE Struktur neu bauen, STL-Cache je Patch,
