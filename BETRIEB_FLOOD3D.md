@@ -12,6 +12,28 @@ steht in der Spezifikation, offene Punkte im Fahrplan.
 | Frontend Prod | quagg-engineering.org ist ein STATISCHER dist-Build — ohne `npm run build` (baut nach `dist_neu`, dann atomarer Tausch) ändert sich dort nichts. Vor dem Build RAM/Platte prüfen. |
 | Health | `GET /FastAPI/flood3d/health` → `{status, runs}` |
 
+## Kosten-Gate (seit 2026-08-12 scharf)
+
+flood-3D steht öffentlich im Netz. Gesperrt sind die drei Endpunkte, die
+Rechenzeit oder Geld kosten — **Lauf starten** (`POST /runs`),
+**Netzvorschau** (vernetzt minutenlang) und **Bundle** (baut den Fall
+serverseitig). Lesen, Ansehen und Bearbeiten bleiben offen.
+
+- Passwort: `FLOOD3D_LAUNCH_PASSWORD` in `backend/.env`, ersatzweise
+  `FLOOD2D_LAUNCH_PASSWORD` (gleiches Publikum, gleiche Rechnung).
+- **Ohne konfiguriertes Passwort wird gesperrt, nicht geöffnet** (503). Ein
+  vergessener Eintrag darf nicht zum offenen Scheunentor werden.
+- `FLOOD3D_GATE_OFF=1` hebt es ausdrücklich auf (Tests, Entwicklung);
+  `tests/conftest.py` setzt das für die Suite.
+- Übergabe: Kopfzeile `X-Launch-Password` (alle Endpunkte) oder Feld
+  `launchPassword` im Rumpf (wie flood-2D). Der Client fragt **einmal je
+  Browser-Sitzung**, legt es in `sessionStorage` und vergisst es bei 403.
+- Unterschied zu flood-2D: dort steht eine Kopie des Passworts **im
+  Client-Bundle** und ist für jeden Besucher lesbar. Bei flood-3D entscheidet
+  allein der Server.
+- Nach dem Ändern des Passworts: `pm2 restart quagg-api` (die .env wird beim
+  Start gelesen) — ein Client-Neubau ist NICHT nötig.
+
 ## Rechnen (OpenFOAM im Docker)
 
 - Image **Server**: `opencfd/openfoam-run:2406` (Env `FLOOD3D_OF_IMAGE`).

@@ -785,7 +785,12 @@ const runDryCheck = async () => {
 // RunPod ist scharf geschaltet (begrenztes Guthaben) — vor jedem RunPod-Lauf muss
 // das Passwort stimmen, sonst wird NICHT versendet. Einmal pro Browser-Tab merken,
 // damit nicht bei jedem Klick neu getippt werden muss.
-const RUNPOD_LAUNCH_PASSWORD = 'Dannyistcool';
+//
+// Das Passwort steht hier BEWUSST NICHT mehr im Quelltext: es landete beim Bauen
+// im ausgelieferten Bundle (Flood2DMain-*.js) und war damit für jeden Besucher
+// lesbar — das Gate schützte die Rechnung nur gegen Versehen (gefunden
+// 2026-08-12 beim Scharfschalten von flood-3D). Geprüft wird ausschliesslich
+// serverseitig (flood2D/router.py); hier wird nur abgefragt und durchgereicht.
 let runpodLaunchPassword = sessionStorage.getItem('flood2d-runpod-pw') || '';
 
 // ── GIS-Export: Summenraster als georeferenzierte GeoTIFFs (QGIS-ready) ──────
@@ -1024,15 +1029,19 @@ watch(() => simStore.solverMode, (m) => {
 }, { immediate: true });
 
 const confirmRunpodPassword = () => {
-    if (runpodLaunchPassword === RUNPOD_LAUNCH_PASSWORD) return true;
+    if (runpodLaunchPassword) return true;          // schon eingegeben — Server prüft
     const entered = prompt('RunPod-Lauf: Passwort eingeben (Kosten-Gate, begrenztes Guthaben).');
-    if (entered !== RUNPOD_LAUNCH_PASSWORD) {
-        if (entered) alert('Falsches Passwort — Lauf nicht gestartet.');
-        return false;
-    }
-    runpodLaunchPassword = entered;
-    sessionStorage.setItem('flood2d-runpod-pw', entered);
+    if (!entered || !entered.trim()) return false;  // Abbruch: nichts versenden
+    runpodLaunchPassword = entered.trim();
+    sessionStorage.setItem('flood2d-runpod-pw', runpodLaunchPassword);
     return true;
+};
+
+// Falsches Passwort erkennt erst der Server (403). Dann vergessen, sonst
+// hängt der Tab bis zum Neuladen an der falschen Eingabe fest.
+const vergissRunpodPasswort = () => {
+    runpodLaunchPassword = '';
+    sessionStorage.removeItem('flood2d-runpod-pw');
 };
 
 // Geschätzte Ergebnisdatenmenge eines Remote-Laufs: 6 float32-Kanäle pro Frame
@@ -1217,6 +1226,12 @@ const startPreparation = async () => {
 
     } catch (e) {
         console.error(e);
+        // Falsches Passwort: der Server weist mit 403 ab. Merken bringt nichts —
+        // vergessen, damit der naechste Versuch wieder fragt statt stumm zu scheitern.
+        if (/403|Passwort/i.test(e.message || '')) {
+            vergissRunpodPasswort();
+            appendLog('🔒 Passwort abgelehnt — beim naechsten Start wird neu gefragt.');
+        }
         appendLog(`[ERROR] Data Prep failed: ${e.message}`);
         simStore.setStatus('ERROR');
         isRunning.value = false;
