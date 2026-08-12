@@ -660,8 +660,11 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"{label} {min_dim:g} m wird von der lokalen "
                            f"Zellgröße {local_cell(flaeche, mitte):g} m nicht aufgelöst "
                            "— Verfeinerungsstufe erhöhen oder Abmessung prüfen",
+                           # struktur mitgeben: bei einem Aushub soll die
+                           # Kur einen Quader um DIESES Bauwerk anlegen
+                           # statt das ganze Gelände zu verfeinern
                            fix=kur("verfeinerung_erhoehen", patch=flaeche,
-                                   mass=min_dim)))
+                                   mass=min_dim, struktur=s.id)))
 
         # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
         # (ein z je x/y) und hat keinen Tunnel — was darunter liegt, räumt

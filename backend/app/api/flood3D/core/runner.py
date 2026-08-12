@@ -32,9 +32,33 @@ CORE_PRICE_EUR_H = float(os.environ.get("FLOOD3D_CORE_PRICE", "0.05"))
 POD_PRICE_EUR_H = float(os.environ.get("FLOOD3D_POD_CORE_PRICE", "0.033"))
 CORES = max(1, min(int(os.environ.get("FLOOD3D_CORES", "4")),
                    os.cpu_count() or 1))
-# interFoam-Durchsatz je Kern — kalibriert am Lauf demo-stufe3_r001:
-# 2032 Schritte x 117.596 Zellen in 2386 s => ~100k Aktualisierungen/Kern-s
-CELL_UPDATES_PER_CORE_S = 100_000.0
+# interFoam-Durchsatz je Kern. Erst am kleinen Lauf demo-stufe3_r001
+# geeicht (117.596 Zellen => ~100k Aktualisierungen/Kern-s) — an einem
+# ECHTEN Fall gemessen ist das um ein Vielfaches zu optimistisch:
+# Rentrisch_BetaTest06, 943.370 Zellen (2026-08-12)
+#   Server,  4 Kerne: 5,66 s je Zeitschritt => 42.000 /Kern-s
+#   RunPod, 16 vCPU:  4,51 s je Zeitschritt => 13.000 /Kern-s
+# Grosse Netze fallen also deutlich ab (Speicherbandbreite, Austausch
+# zwischen den Raengen). 20.000 ist der vorsichtige Mittelwert; lieber zu
+# lang geschaetzt als jemanden in einen 47-Stunden-Lauf laufen lassen.
+CELL_UPDATES_PER_CORE_S = float(
+    os.environ.get("FLOOD3D_CELL_UPDATES_PER_CORE_S", "100000"))
+# Der Durchsatz ist keine Konstante: er faellt mit der Netzgroesse
+# (Speicherbandbreite, Austausch zwischen den Raengen). Zwei Messpunkte auf
+# DERSELBEN Maschine:
+#   demo-stufe3_r001      117.596 Zellen -> 100.000 /Kern-s
+#   Rentrisch_BetaTest06  943.370 Zellen ->  42.000 /Kern-s
+# Das ist ein Potenzgesetz mit Exponent ln(100/42)/ln(943/118) = 0,42.
+GROSSNETZ_ABFALL = 0.42
+REFERENZ_ZELLEN = 117_596.0
+
+
+def durchsatz_je_kern(cells: int) -> float:
+    """Zellaktualisierungen je Kern und Sekunde fuer ein Netz dieser Groesse."""
+    if cells <= 0:
+        return CELL_UPDATES_PER_CORE_S
+    wert = CELL_UPDATES_PER_CORE_S * (cells / REFERENZ_ZELLEN) ** -GROSSNETZ_ABFALL
+    return max(8_000.0, min(CELL_UPDATES_PER_CORE_S, wert))
 # Signalgeschwindigkeit fürs Zeitschritt-Kriterium, ebenfalls aus r001
 # rückgerechnet (realer mittlerer dt 2.95e-3 s bei alphaCo 0.3, Zelle 6.25 cm)
 SIGNAL_SPEED_M_S = 6.0
@@ -231,7 +255,7 @@ def estimate_run(spec, cells: int, cores: int = CORES,
     finest = spec.mesh.base_cell / 2 ** max_level
     dt = spec.solver.max_alpha_co * finest / SIGNAL_SPEED_M_S
     steps = spec.solver.end_time / max(dt, 1e-6)
-    core_seconds = cells * steps / CELL_UPDATES_PER_CORE_S
+    core_seconds = cells * steps / durchsatz_je_kern(cells)
     wall_h = core_seconds / cores / 3600.0
     return {
         "cells": cells,

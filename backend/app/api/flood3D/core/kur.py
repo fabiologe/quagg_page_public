@@ -75,6 +75,14 @@ def _verfeinerung_erhoehen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     Zellgröße am Bauwerk so weit halbieren, bis die kleinste Abmessung
     aufgelöst ist. Vier Zellen über die Dicke sind die Faustregel, mit der
     auch die Prüfung arbeitet.
+
+    ÖRTLICH, nicht global: Ein Aushub hat keine eigene Fläche — seine
+    Wandungen gehören zur Geländefläche. Die Flächenverfeinerung würde
+    deshalb den GESAMTEN Boden verfeinern. Genau das ist im Fall
+    Rentrisch_BetaTest06 passiert: Stufe 3 fürs ganze Gelände, 943.370
+    Zellen, 47 h Rechenzeit — für eine enge Stelle am Becken. Deshalb legt
+    die Kur dort einen Verfeinerungsquader um das Bauwerk an; das Gelände
+    bleibt grob (2026-08-12).
     """
     patch = args["patch"]
     mass = float(args["mass"])
@@ -82,7 +90,55 @@ def _verfeinerung_erhoehen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     stufe = 0
     while mass < 4 * zelle / 2 ** stufe and stufe < 5:
         stufe += 1
-    return _refine_surface(spec, patch, max(stufe, 1))
+    stufe = max(stufe, 1)
+    struktur = args.get("struktur")
+    if patch == "terrain" and struktur:
+        box = _box_um_bauwerk(spec, struktur, stufe)
+        if box:
+            return box
+    return _refine_surface(spec, patch, stufe)
+
+
+def _box_um_bauwerk(spec: CaseSpec, struktur_id: str, stufe: int) -> str | None:
+    """Verfeinerungsquader um EIN Bauwerk (Grundriss + zwei Zellen Rand)."""
+    from .casespec import RefineBox
+    from .meshgen import _bauwerk_bboxen
+
+    treffer = None
+    for s, box in zip(spec.structures, _bauwerk_bboxen(spec)):
+        if s.id == struktur_id:
+            treffer = box
+            break
+    if treffer is None:
+        return None
+    rand = 2 * spec.mesh.base_cell
+    x0, y0, x1, y1 = treffer
+    ext = (max(x0 - rand, spec.domain.extent[0]),
+           max(y0 - rand, spec.domain.extent[1]),
+           spec.domain.z_min,
+           min(x1 + rand, spec.domain.extent[2]),
+           min(y1 + rand, spec.domain.extent[3]),
+           spec.domain.z_max)
+    if ext[3] - ext[0] <= 0 or ext[4] - ext[1] <= 0:
+        return None
+    neue_id = f"fein_{struktur_id}"
+    for r in spec.mesh.refinements:
+        if r.id == neue_id and r.type == "box":
+            if r.level >= stufe:
+                return (f"Der Verfeinerungsquader um „{struktur_id}“ steht "
+                        f"schon auf Stufe {r.level}")
+            alt = r.level
+            r.level = stufe
+            r.extent = list(ext)
+            return (f"Verfeinerungsquader um „{struktur_id}“ von Stufe {alt} "
+                    f"auf {stufe} angehoben (feinste Zelle "
+                    f"{spec.mesh.base_cell / 2 ** stufe:.3f} m)")
+    spec.mesh.refinements.append(
+        RefineBox(id=neue_id, type="box", level=stufe, extent=list(ext),
+                  herkunft="kur"))
+    return (f"Verfeinerungsquader um „{struktur_id}“ angelegt, Stufe {stufe} "
+            f"(feinste Zelle {spec.mesh.base_cell / 2 ** stufe:.3f} m) — "
+            "das Gelände bleibt außerhalb grob")
 
 
 def _box_ans_fenster(spec: CaseSpec, args: dict, base_dir=None) -> str:

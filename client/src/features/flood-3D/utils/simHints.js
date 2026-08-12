@@ -24,7 +24,7 @@ export function dauerText(stunden) {
 
 // --- abgeleitete Größen des Falls ----------------------------------------
 
-export function kennwerte(spec, meshPreview = null) {
+export function kennwerte(spec, meshPreview = null, previewStale = false) {
   const d = spec?.domain
   const m = spec?.mesh
   const s = spec?.solver
@@ -34,24 +34,76 @@ export function kennwerte(spec, meshPreview = null) {
   const tiefe = y1 - y0
   const hoehe = d.z_max - d.z_min
   const flaeche = breite * tiefe
-  const zellen = meshPreview?.cells
-    ?? Math.round((breite / m.base_cell) * (tiefe / m.base_cell)
-                  * (hoehe / m.base_cell) * 0.8)
+
+  // FEINSTE Zelle, nicht die Grundzelle: jede Verfeinerungsstufe halbiert.
+  // Ohne das rechnete der Fall unbemerkt mit 0,025 m, während im Panel
+  // 0,2 m stand (gemeldet 2026-08-12) — und der Zeitschritt hängt an
+  // dieser Zahl, nicht an der Einstellung.
+  const stufen = (m.refinements ?? []).map((r) => r.level ?? 0)
+  const maxStufe = stufen.length ? Math.max(0, ...stufen) : 0
+  const feinsteZelle = m.base_cell / 2 ** maxStufe
+  const feinstesAus = (m.refinements ?? [])
+    .filter((r) => (r.level ?? 0) === maxStufe)
+    .map((r) => (r.type === 'surface' ? (r.target ?? 'Fläche') : (r.id ?? 'Box')))
+
+  // Zellzahl: gemessene Zahl nur, solange das Vorschaunetz zum Fall passt.
+  // Ein stehengebliebener Messwert ist schlimmer als eine Schätzung — er
+  // sieht nach Wahrheit aus und ändert sich nicht, wenn man an der
+  // Grundzelle dreht.
+  const gemessen = meshPreview?.cells != null && !previewStale
+  const grundzellen = (breite / m.base_cell) * (tiefe / m.base_cell)
+                      * (hoehe / m.base_cell) * 0.8
+  // Verfeinerung ist der eigentliche Kostentreiber, und sie fehlte hier
+  // ganz — daher lag die Schätzung 11-fach daneben.
+  //
+  // Modell: snappyHexMesh verfeinert eine SCHALE um die Fläche (rund drei
+  // Zelllagen der feinsten Stufe), Boxen dagegen ihr ganzes Volumen.
+  // Geeicht am gemessenen Netz des Falls Rentrisch_BetaTest06
+  // (Grundzelle 0,2 m, Gelände Stufe 3, zwei Boxen Stufe 2 -> 943.370
+  // Zellen); das Modell trifft das auf wenige Prozent.
+  const SCHALE = 3
+  let zusatz = 0
+  for (const r of m.refinements ?? []) {
+    const lvl = r.level ?? 0
+    if (!lvl) continue
+    const zelle = m.base_cell / 2 ** lvl
+    if (r.type === 'box' && Array.isArray(r.extent) && r.extent.length === 6) {
+      const [bx0, by0, bz0, bx1, by1, bz1] = r.extent
+      const vol = Math.abs((bx1 - bx0) * (by1 - by0) * (bz1 - bz0))
+      zusatz += vol / zelle ** 3
+    } else {
+      // Geländefläche = Grundfläche des Gebiets; Bauwerksflächen sind
+      // dagegen klein, dafür steht eine bescheidene Annahme
+      const flaecheR = r.target === 'terrain' ? breite * tiefe : 5
+      zusatz += (flaecheR / zelle ** 2) * SCHALE
+    }
+  }
+  const zellen = gemessen ? meshPreview.cells
+    : Math.round(grundzellen + zusatz)
   // Zulauf und daraus die erwartete Wassertiefe (wie die Backend-Regel)
   const q = (spec.boundaries ?? [])
     .filter((b) => b.type === 'inflow_constant')
     .reduce((a, b) => a + (b.q ?? 0), 0)
   const wassertiefe = flaeche > 0 ? (q * s.end_time) / flaeche : 0
-  // grobe Laufzeit: kalibriert am Referenzlauf (117.596 Zellen, 6 s -> 40 min
-  // auf 1 Kern), skaliert mit Zellen und Zeitschritten
+  // Zeitschritt aus der FEINSTEN Zelle und der eingestellten Courant-Grenze
+  // (vorher: Grundzelle und eine feste 0,3 — dadurch war der Schritt 6-fach
+  // zu groß). 6 m/s ist eine grobe Annahme für die maßgebliche
+  // Geschwindigkeit; sie steckt in derselben Faustformel wie im Backend.
   const kerne = 8
-  const dt = 0.3 * m.base_cell / 6.0
-  const schritte = s.end_time / Math.max(dt, 1e-6)
-  const stunden = (zellen * schritte * 1.1e-7) / kerne
+  const dt = Math.min(s.max_co ?? 0.5, s.max_alpha_co ?? 0.5) * feinsteZelle / 6.0
+  const schritte = s.end_time / Math.max(dt, 1e-9)
+  // Durchsatz wie im Backend (core/runner.py durchsatz_je_kern) — beide
+  // Schätzungen müssen dieselbe Größe messen, sonst widersprechen sich
+  // Panel und Netzvorschau. Zwei Messpunkte auf derselben Maschine:
+  // 117.596 Zellen -> 100.000 /Kern-s, 943.370 -> 42.000. Das ist ein
+  // Potenzgesetz mit Exponent 0,42.
+  const durchsatz = Math.max(8000, Math.min(100000,
+    100000 * (zellen / 117596) ** -0.42))
+  const stunden = (zellen * schritte) / durchsatz / kerne / 3600
   const ausgaben = s.write_interval_fields > 0
     ? Math.floor(s.end_time / s.write_interval_fields) + 1 : 0
   return { breite, tiefe, hoehe, flaeche, zellen, q, wassertiefe,
-    stunden, ausgaben, dt }
+    stunden, ausgaben, dt, feinsteZelle, maxStufe, feinstesAus, gemessen }
 }
 
 // --- Grenzen je Feld ------------------------------------------------------
@@ -76,8 +128,8 @@ export function begrenzen(pfad, wert) {
 // --- Einordnung je Feld ---------------------------------------------------
 // { text, level } — level: '' | 'warn' | 'bad'
 
-export function hinweis(pfad, spec, meshPreview = null) {
-  const k = kennwerte(spec, meshPreview)
+export function hinweis(pfad, spec, meshPreview = null, previewStale = false) {
+  const k = kennwerte(spec, meshPreview, previewStale)
   if (!k) return null
   const s = spec.solver
   const d = spec.domain
@@ -176,8 +228,19 @@ export function hinweis(pfad, spec, meshPreview = null) {
     }
 
     case 'mesh.base_cell': {
-      const zellenText = `${int(k.zellen)} Zellen, geschätzt `
+      const herkunft = k.gemessen ? 'gemessen' : 'geschätzt'
+      const zellenText = `${int(k.zellen)} Zellen (${herkunft}), `
         + `${dauerText(k.stunden)} auf 8 Kernen.`
+      // Die feinste Zelle ist die Zahl, die wirklich zählt — sie bestimmt
+      // Zeitschritt und Auflösung. Ohne diesen Satz rechnete der Fall
+      // unbemerkt achtmal feiner als eingestellt.
+      if (k.maxStufe > 0) {
+        const wo = k.feinstesAus.slice(0, 2).join(', ')
+        return { text: `${zellenText} ACHTUNG: durch Verfeinerung (Stufe `
+          + `${k.maxStufe}: ${wo}) rechnet der Solver mit `
+          + `${f2(k.feinsteZelle)} m — das ist die maßgebliche Zellgröße, `
+          + 'nicht die eingestellte.', level: 'warn' }
+      }
       if (k.wassertiefe > 0 && k.wassertiefe < 2 * spec.mesh.base_cell) {
         const noetig = k.wassertiefe / 2
         return { text: `${zellenText} Für die erwarteten `
