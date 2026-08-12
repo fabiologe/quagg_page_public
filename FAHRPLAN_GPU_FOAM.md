@@ -84,6 +84,12 @@ GPU-Dringlichkeit.
   Override) bewusst nicht eingeplant.
 
 ### Parkliste (bewusst NICHT)
+- **DirectML** (Frage 2026-08-12): trägt interFoam nicht — kein FP64
+  ([hartes Limit](https://github.com/microsoft/DirectML/issues/430)), keine
+  Sparse-Operatoren, keine eigenen Kernel; es ist eine ML-Operator-API über
+  DX12, kein Rechen-Backend. Ihr `/dev/dxg`-Weg erklärt aber, warum ML auf
+  der 6700 XT unter WSL läuft, während ROCm sie ignoriert. Denkbarer
+  späterer Nutzen: gelernte Vorschau-Modelle (FP16, Komfort, kein Nachweis).
 - FluidX3D-Integration (Lizenz + Physik)
 - NeoFOAM/NeoN (GPU-Neuentwicklung des OpenFOAM-Kerns; 2026 noch Prototyp —
   jährlich neu bewerten)
