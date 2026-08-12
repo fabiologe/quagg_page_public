@@ -368,7 +368,16 @@ def run_foam_step(case: Path, command: str, log_name: str,
                                f"{kern or text[-500:]}")
 
 
-MPI = ("mpirun --allow-run-as-root --use-hwthread-cpus --oversubscribe")
+# Bindung JE KERN, nicht je Hardware-Thread. Mit --use-hwthread-cpus landeten
+# 6 Raenge auf den Threads 0-5 — auf einem Ryzen unter WSL2 sind das die
+# Thread-PAARE von nur drei physischen Kernen. Je zwei Raenge teilten sich
+# einen Kern, und weil OpenMPI beim Warten aktiv pollt, verbrannte der
+# wartende Rang die Zyklen seines rechnenden Nachbarn: 2 s Simulation in
+# 3,4 h statt Minuten, CPU-Last 45 % = Spinnen (gefunden 2026-08-12 auf
+# Fabios Ryzen 5 2600). --map-by core setzt einen Rang je physischen Kern;
+# --oversubscribe erlaubt weiterhin bewusste Handvorgaben darueber hinaus.
+MPI = ("mpirun --allow-run-as-root --map-by core --bind-to core "
+       "--oversubscribe")
 
 
 def _shm_pruefen(cores: int) -> None:
@@ -488,6 +497,11 @@ def main() -> int:
                 "nebenher. Wenn der Lauf zu swappen beginnt, bricht das "
                 "Tempo um Groessenordnungen ein (Docker Desktop -> "
                 "Settings -> Resources)."))
+        if (maschine.get("kerne_sichtbar") or 0) > cores:
+            emit(event="log", text=(
+                f"SMT erkannt ({maschine.get('kerne_sichtbar')} Threads, "
+                f"{cores} Kerne) — je Rang wird ein physischer Kern "
+                "gebunden."))
         if maschine.get("job_fs_warnung"):
             emit(event="log", text=(
                 f"WARNUNG: Der Job-Ordner liegt auf einer "

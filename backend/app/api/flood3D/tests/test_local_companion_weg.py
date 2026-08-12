@@ -389,3 +389,15 @@ def test_unlesbare_topologie_faellt_auf_logische_zaehlung(tmp_path, monkeypatch)
     monkeypatch.setattr(r.os, "cpu_count", lambda: 8)
     assert r.erlaubte_kerne(cpu_max=tmp_path / "a", quota=tmp_path / "b",
                             periode=tmp_path / "c") == 8
+
+
+def test_mpi_bindet_je_kern_nicht_je_hyperthread():
+    """
+    Mit --use-hwthread-cpus landeten 6 Raenge auf den Thread-PAAREN von nur
+    drei Ryzen-Kernen; OpenMPIs aktives Warten verbrannte dabei die Zyklen
+    des jeweils rechnenden Nachbarn (2 s Simulation in 3,4 h, 2026-08-12).
+    """
+    r = _lade_runner()
+    assert "--map-by core" in r.MPI and "--bind-to core" in r.MPI
+    assert "--use-hwthread-cpus" not in r.MPI
+    assert "--oversubscribe" in r.MPI     # Handvorgaben bleiben moeglich
