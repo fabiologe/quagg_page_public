@@ -43,16 +43,49 @@ describe('Kosten-Gate', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('vergisst ein falsches Passwort und fragt beim naechsten Mal neu', async () => {
+  it('fragt bei 403 neu und wiederholt den Aufruf selbst', async () => {
     const prompt = vi.fn().mockReturnValueOnce('falsch').mockReturnValueOnce('richtig')
     vi.stubGlobal('prompt', prompt)
-    vi.spyOn(globalThis, 'fetch')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(antwort(false, { detail: 'Falsches oder fehlendes Passwort — nichts gestartet.' }, 403))
       .mockResolvedValueOnce(antwort(true, { run_id: 'demo_r001' }))
 
+    const ergebnis = await flood3dApi.startRun('demo')
+
+    expect(ergebnis).toEqual({ run_id: 'demo_r001' })
+    expect(prompt).toHaveBeenCalledTimes(2)          // vorab + nach dem 403
+    expect(fetchSpy.mock.calls[0][1].headers['X-Launch-Password']).toBe('falsch')
+    expect(fetchSpy.mock.calls[1][1].headers['X-Launch-Password']).toBe('richtig')
+  })
+
+  it('gibt auf, wenn die zweite Eingabe abgebrochen wird', async () => {
+    vi.stubGlobal('prompt', vi.fn().mockReturnValueOnce('falsch').mockReturnValueOnce(null))
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValue(antwort(false, { detail: 'Falsches oder fehlendes Passwort — nichts gestartet.' }, 403))
     await expect(flood3dApi.startRun('demo')).rejects.toThrow('Passwort')
-    await flood3dApi.startRun('demo')
-    expect(prompt).toHaveBeenCalledTimes(2)
+  })
+
+  it('schreibende Aufrufe fragen erst, wenn der Server 403 sagt', async () => {
+    // Fall speichern ist kein teurer Lauf — hier soll NICHT vorab gefragt
+    // werden, sondern erst wenn es noetig ist.
+    const prompt = vi.fn().mockReturnValue('geheim')
+    vi.stubGlobal('prompt', prompt)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(antwort(false, { detail: 'Falsches oder fehlendes Passwort' }, 403))
+      .mockResolvedValueOnce(antwort(true, { ok: true }))
+
+    await flood3dApi.saveCase('demo', { meta: { title: 'x' } })
+
+    expect(prompt).toHaveBeenCalledTimes(1)                     // erst nach dem 403
+    expect(fetchSpy.mock.calls[1][1].headers['X-Launch-Password']).toBe('geheim')
+  })
+
+  it('lesende Aufrufe loesen keine Abfrage aus', async () => {
+    const prompt = vi.fn()
+    vi.stubGlobal('prompt', prompt)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(antwort(true, []))
+    await flood3dApi.listCases()
+    expect(prompt).not.toHaveBeenCalled()
   })
 
   it('haelt Netzvorschau und Bundle ebenso zurueck', async () => {

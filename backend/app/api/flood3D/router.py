@@ -25,7 +25,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
+from fastapi import (APIRouter, Body, Depends, HTTPException, Query, Request,
+                     Response)
+
+from .core.gate import schreib_gate
 from fastapi.responses import FileResponse
 
 from .core import fields as vol_fields
@@ -36,7 +39,10 @@ from .core.store import read_manifest, run_paths
 from .core.terrain import TerrainField
 from .core.validate import validate_case
 
-router = APIRouter()
+# Kosten- und Schreib-Gate an EINER Stelle: jede schreibende Anfrage muss das
+# Passwort tragen (core/gate.py). Am Router statt an 22 Endpunkten — damit ist
+# auch der nächste neue Endpunkt geschützt, ohne dass jemand daran denkt.
+router = APIRouter(dependencies=[Depends(schreib_gate)])
 
 _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_FIG = re.compile(r"^[A-Za-z0-9._-]+\.(png|svg)$")

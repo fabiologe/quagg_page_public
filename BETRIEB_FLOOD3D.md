@@ -14,10 +14,15 @@ steht in der Spezifikation, offene Punkte im Fahrplan.
 
 ## Kosten-Gate (seit 2026-08-12 scharf)
 
-flood-3D steht öffentlich im Netz. Gesperrt sind die drei Endpunkte, die
-Rechenzeit oder Geld kosten — **Lauf starten** (`POST /runs`),
-**Netzvorschau** (vernetzt minutenlang) und **Bundle** (baut den Fall
-serverseitig). Lesen, Ansehen und Bearbeiten bleiben offen.
+flood-3D steht öffentlich im Netz. Gesperrt ist seit 2026-08-12 **jede
+schreibende Anfrage** (POST/PUT/PATCH/DELETE) — Rechnen *und* Ändern:
+Lauf starten, Netzvorschau, Bundle, Fall anlegen/speichern/drehen, Kuren,
+Rezepte, Importe, Löschen, Archivieren. **Lesen bleibt frei**: Ansehen
+kostet nichts, und eine Ergebnisansicht soll ohne Hürde teilbar bleiben.
+
+Die Sperre hängt als Abhängigkeit am **Router**, nicht an 22 einzelnen
+Endpunkten (`core/gate.py::schreib_gate`) — so ist auch der nächste neue
+Endpunkt geschützt, ohne dass jemand daran denken muss.
 
 - Passwort: `FLOOD3D_LAUNCH_PASSWORD` in `backend/.env`, ersatzweise
   `FLOOD2D_LAUNCH_PASSWORD` (gleiches Publikum, gleiche Rechnung).
@@ -26,8 +31,13 @@ serverseitig). Lesen, Ansehen und Bearbeiten bleiben offen.
 - `FLOOD3D_GATE_OFF=1` hebt es ausdrücklich auf (Tests, Entwicklung);
   `tests/conftest.py` setzt das für die Suite.
 - Übergabe: Kopfzeile `X-Launch-Password` (alle Endpunkte) oder Feld
-  `launchPassword` im Rumpf (wie flood-2D). Der Client fragt **einmal je
-  Browser-Sitzung**, legt es in `sessionStorage` und vergisst es bei 403.
+  `launchPassword` im Rumpf (wie flood-2D; der Rumpf wird nur bei kleinem
+  JSON angefasst — Datei-Uploads laufen in 100-MB-Stücken durch dieselbe
+  Abhängigkeit).
+- Der Client fragt **einmal je Browser-Sitzung** (`sessionStorage`): vorab
+  bei den teuren Aktionen, sonst erst wenn der Server 403 sagt — dann wird
+  gefragt und der Aufruf **automatisch wiederholt**. Dadurch scheitert auch
+  ein Aufrufort nicht stumm, der die Kopfzeile nicht selbst setzt.
 - Unterschied zu flood-2D: dort steht eine Kopie des Passworts **im
   Client-Bundle** und ist für jeden Besucher lesbar. Bei flood-3D entscheidet
   allein der Server.

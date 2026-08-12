@@ -28,23 +28,44 @@ export function launchPasswortVergessen() {
   try { sitzungsSpeicher?.removeItem(PW_SCHLUESSEL) } catch { /* egal */ }
 }
 
+function passwortErfragen(text) {
+  const eingabe = globalThis.prompt(text)
+  if (!eingabe || !eingabe.trim()) return false
+  launchPasswort = eingabe.trim()
+  try { sitzungsSpeicher?.setItem(PW_SCHLUESSEL, launchPasswort) } catch { /* egal */ }
+  return true
+}
+
+// Vorab fragen: für die teuren Aktionen (Lauf, Netzvorschau, Bundle) — besser
+// VOR einem minutenlangen Vorgang als danach.
 async function mitGate(aufruf) {
-  if (!launchPasswort) {
-    const eingabe = globalThis.prompt(
-      'Rechenlauf starten — Passwort eingeben.\n\n'
-      + 'Kostenschutz: Läufe binden Server-Kerne bzw. Cloud-Guthaben.')
-    if (!eingabe || !eingabe.trim()) {
-      throw new Error('Abgebrochen — ohne Passwort wird nichts gestartet.')
-    }
-    launchPasswort = eingabe.trim()
-    try { sitzungsSpeicher?.setItem(PW_SCHLUESSEL, launchPasswort) } catch { /* egal */ }
+  if (!launchPasswort
+      && !passwortErfragen('Rechenlauf starten — Passwort eingeben.\n\n'
+                           + 'Kostenschutz: Läufe binden Server-Kerne bzw. Cloud-Guthaben.')) {
+    throw new Error('Abgebrochen — ohne Passwort wird nichts gestartet.')
   }
   try {
     return await aufruf()
   } catch (e) {
-    // Falsches Passwort: merken bringt nichts, beim nächsten Mal neu fragen
     if (e?.status === 403) launchPasswortVergessen()
     throw e
+  }
+}
+
+// Nachträglich fragen: für alles andere Schreibende (Fall anlegen, speichern,
+// Kur, Import …). Erst arbeiten lassen, und nur wenn der Server 403 sagt,
+// einmal nachfragen und den Aufruf wiederholen. So kommt die Abfrage genau
+// dann, wenn sie gebraucht wird — und ein Aufrufort, den ich übersehen habe,
+// scheitert nicht stumm.
+async function mitNachfrage(aufruf) {
+  try {
+    return await aufruf()
+  } catch (e) {
+    if (e?.status !== 403) throw e
+    launchPasswortVergessen()
+    if (!passwortErfragen('Änderung speichern — Passwort eingeben.\n\n'
+                          + 'Schreibschutz: die Seite steht öffentlich im Netz.')) throw e
+    return aufruf()
   }
 }
 
@@ -61,10 +82,20 @@ async function getJson(path, params = null) {
   return res.json()
 }
 
+// Jede schreibende Anfrage laeuft durch mitNachfrage: erst versuchen, bei 403
+// einmal fragen und wiederholen. Damit ist KEIN Aufrufort auf mein Gedaechtnis
+// angewiesen — auch die, die ich hier nicht einzeln angefasst habe.
 async function sendJson(path, method, body, extraKopf = null) {
+  const einmal = () => sendJsonEinmal(path, method, body, extraKopf)
+  return ['GET', 'HEAD', 'OPTIONS'].includes(method) ? einmal() : mitNachfrage(einmal)
+}
+
+async function sendJsonEinmal(path, method, body, extraKopf = null) {
+  // Kopfzeile IMMER mitschicken: das Gate haengt serverseitig am Router, also
+  // an jeder schreibenden Anfrage — nicht nur an den drei teuren.
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(extraKopf || {}) },
+    headers: { 'Content-Type': 'application/json', ...gateKopf(), ...(extraKopf || {}) },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -125,10 +156,10 @@ export const flood3dApi = {
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),
   meshPreview: (caseId, opts = {}) =>
-    mitGate(() => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts, gateKopf())),
+    mitGate(() => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts)),
   caseMeshSurface: (caseId) => getJson(`/cases/${caseId}/mesh-surface`),
   startRun: (caseId) =>
-    mitGate(() => sendJson('/runs', 'POST', { case_id: caseId }, gateKopf())),
+    mitGate(() => sendJson('/runs', 'POST', { case_id: caseId })),
   caseBundle: (caseId) => mitGate(async () => {
     const res = await fetch(`${BASE}/cases/${caseId}/bundle`,
       { method: 'POST', headers: gateKopf() })
@@ -173,9 +204,9 @@ export const flood3dApi = {
   // danach auf der StorageBox, Manifest und Bewertung bleiben lokal.
   // Beides hinter dem Kosten-Gate (Bandbreite, fremde Zugriffe).
   archiviereRun: (runId) =>
-    mitGate(() => sendJson(`/runs/${runId}/archivieren`, 'POST', {}, gateKopf())),
+    mitGate(() => sendJson(`/runs/${runId}/archivieren`, 'POST', {})),
   holeRunZurueck: (runId) =>
-    mitGate(() => sendJson(`/runs/${runId}/wiederherstellen`, 'POST', {}, gateKopf())),
+    mitGate(() => sendJson(`/runs/${runId}/wiederherstellen`, 'POST', {})),
   archivStand: (alterTage = 14) => getJson('/archiv', { alter_tage: alterTage }),
   abortRun: (runId) => sendJson(`/runs/${runId}/abort`, 'POST', {}),
   runDetail: (runId) => getJson(`/runs/${runId}`),
