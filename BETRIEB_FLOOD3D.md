@@ -75,7 +75,14 @@ Endpunkt geschützt, ohne dass jemand daran denken muss.
 - Kerne **lokal** (Companion): **alle Kerne der Nutzer-Maschine, kein Deckel**
   (seit 2026-08-11; vorher 8). Vorgabe möglich über `FLOOD3D_CORES` bzw. den
   Altnamen `QUAGG_FOAM_CORES` — die reicht der Companion ab v1.5.1 als `-e`
-  in den Container (`docker run` vererbt seine Umgebung sonst nicht). Kein
+  in den Container (`docker run` vererbt seine Umgebung sonst nicht).
+  **Verteilung:** Der Companion läuft beim Nutzer als Docker-Image
+  (`fabiologe/quagg-companion`, seit 2026-08-12 als `:1.5.1` und `:latest`
+  auf Docker Hub). Aktualisieren beim Nutzer:
+  `docker pull fabiologe/quagg-companion:latest`, dann den Container neu
+  erzeugen (`docker rm -f quagg-companion` + `docker run …` wie in
+  `backend/companion/Dockerfile` dokumentiert) — ein `restart` genügt NICHT,
+  der nimmt das alte Image. Kein
   RAM-Limit: der Container läuft ohne `--memory`; unter Docker Desktop
   (Windows/Mac) begrenzt allein die VM-Zuteilung in dessen Einstellungen.
   Ab v1.5.1 setzt der Companion außerdem `--shm-size=2g`, sonst scheitert
