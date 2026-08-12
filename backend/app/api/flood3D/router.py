@@ -1580,10 +1580,23 @@ async def start_run(request: Request, payload: dict = Body(...)):
         from .engines.runpod.relay import (RunPodFehler, artefakt_aufraeumen,
                                            lauf_starten)
 
+        def zwischenstand(daten: bytes, ev: dict) -> None:
+            """Teilstand aus S3 in den Lauf einspielen — Ergebnis-3D zeigt
+            damit schon WAEHREND des Cloud-Laufs die fertigen Zeitschritte."""
+            try:
+                _import_entpacken(run_root, run_id, daten)
+                melde(teilstand=True,
+                      teilstand_zeiten=ev.get("zeiten"),
+                      letzte_zeit=ev.get("letzte_zeit"))
+            except Exception as e:       # noqa: BLE001
+                melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
+
         try:
             erg = lauf_starten(spec, case_dir, run_id, run_root, melde,
                                lambda: (run_root / "ABBRUCH").exists(),
-                               cores=payload.get("cores"))
+                               cores=payload.get("cores"),
+                               checkpoint_s=payload.get("checkpoint_s", 600),
+                               zwischenstand_cb=zwischenstand)
             melde(status="importing")
             _import_entpacken(run_root, run_id, erg["artefakte"])
             artefakt_aufraeumen(erg["job_id"])
@@ -1722,6 +1735,10 @@ async def run_log(run_id: str, tail: int = Query(80, le=2000)):
                     f"noch ca. {rest / 60:.0f} min" if isinstance(rest, (int, float)) else "",
                 ) if p]
                 zeilen.append("· " + " · ".join(stueck))
+            elif art == "checkpoint":
+                zeilen.append(f"💾 Zwischenstand: {ev.get('zeiten')} Zeitschritte "
+                              f"bis t = {ev.get('letzte_zeit')} s gesichert — "
+                              "im Ergebnis-3D sichtbar.")
             elif art == "error":
                 zeilen.append("FEHLER: " + str(ev.get("text", "")))
             elif art == "done":

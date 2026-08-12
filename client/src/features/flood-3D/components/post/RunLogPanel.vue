@@ -82,6 +82,16 @@ function manifestRows(m) {
         + 'Docker-Volume umstellen', 'bad'])
     }
   }
+  // Speicherpunkte des Cloud-Laufs: was schon gesichert ist, ist bei
+  // Timeout/Absturz NICHT verloren und im Ergebnis-3D bereits sichtbar
+  if (m.teilstand_zeiten != null) {
+    rows.push(['Zwischenstand',
+      `${m.teilstand_zeiten} Zeitschritte bis t = ${fmt(m.letzte_zeit)} s `
+      + 'gesichert — Raum (3D) zeigt sie schon jetzt', 'good'])
+  }
+  if (m.teilstand_fehler) {
+    rows.push(['Zwischenstand-Fehler', m.teilstand_fehler, 'bad'])
+  }
   if (m.duration_s != null) rows.push(['Dauer', `${fmt(m.duration_s / 60)} min`])
   if (m.cost_eur != null) rows.push(['Ist-Kosten', `${fmt(m.cost_eur)} €`])
   if (m.missing_sources?.length) {

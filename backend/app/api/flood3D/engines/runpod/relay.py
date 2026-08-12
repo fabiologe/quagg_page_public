@@ -107,7 +107,9 @@ def abbrechen(job_id: str) -> None:
 
 # ── Ablauf ──────────────────────────────────────────────────────────────────
 def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
-                 melde, abbruch_gewuenscht, cores: int | None = None) -> dict:
+                 melde, abbruch_gewuenscht, cores: int | None = None,
+                 checkpoint_s: int | None = 600,
+                 zwischenstand_cb=None) -> dict:
     """
     Einen Fall in der Cloud rechnen lassen.
 
@@ -123,10 +125,23 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
         raise RunPodFehler(grund)
 
     melde(status="building")
-    daten = bundle_bauen(spec, case_dir, run_id)
-
     client, bucket, praefix = _r2()
     eingang = f"{praefix}/eingang/{run_id}.zip"
+    # Speicherpunkte: der Laeufer laedt Teilstaende ueber eine vorsignierte
+    # PUT-URL hoch (das Foam-Image hat kein boto3); wir holen sie per Key
+    # und spielen sie in den Lauf ein. Ohne das war ein Timeout bei Stunde 4
+    # von 5 ein Totalverlust, und Ergebnis-3D blieb stundenlang leer.
+    cp_key = f"{praefix}/checkpoints/{run_id}.zip"
+    checkpoint = None
+    if zwischenstand_cb is not None and checkpoint_s:
+        put_url = client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": cp_key,
+                    "ContentType": "application/zip"},
+            ExpiresIn=86400)
+        checkpoint = {"put_url": put_url,
+                      "min_intervall_s": int(checkpoint_s)}
+    daten = bundle_bauen(spec, case_dir, run_id, checkpoint=checkpoint)
     melde(status="uploading", bundle_bytes=len(daten))
     client.put_object(Bucket=bucket, Key=eingang, Body=daten,
                       ContentType="application/zip")
@@ -169,6 +184,13 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                     melde(status="meshing")
                 elif art == "progress":
                     melde(status="solving", letzte_zeit=ev.get("t"))
+                elif art == "checkpoint" and zwischenstand_cb is not None:
+                    try:
+                        roh = client.get_object(Bucket=bucket,
+                                                Key=cp_key)["Body"].read()
+                        zwischenstand_cb(roh, ev)
+                    except Exception as e:   # noqa: BLE001 — Teilstand darf den Lauf nie kippen
+                        melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
                 elif art == "error":
                     fehler = str(ev.get("text"))[:500]
                 elif art == "done":
@@ -195,10 +217,11 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
     finally:
         # Eingang immer wegräumen — R2 kostet je gespeichertem GB, und das
         # Bundle wird nach dem Start nie wieder gebraucht.
-        try:
-            client.delete_object(Bucket=bucket, Key=eingang)
-        except Exception:  # noqa: BLE001 — Aufräumen darf den Lauf nicht kippen
-            pass
+        for key in (eingang, cp_key):
+            try:
+                client.delete_object(Bucket=bucket, Key=key)
+            except Exception:  # noqa: BLE001 — Aufräumen darf den Lauf nicht kippen
+                pass
 
 
 def artefakt_aufraeumen(job_id: str) -> None:

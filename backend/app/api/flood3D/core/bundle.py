@@ -43,8 +43,15 @@ def fehlende_dateien(spec, case_dir: Path) -> list[str]:
     return [n for n in spec.datei_referenzen() if not (Path(case_dir) / n).is_file()]
 
 
-def bundle_bauen(spec, case_dir: Path, run_id: str) -> bytes:
-    """``case.zip`` als Bytes. Wirft ``BundleFehler`` mit lesbarem Grund."""
+def bundle_bauen(spec, case_dir: Path, run_id: str,
+                 checkpoint: dict | None = None) -> bytes:
+    """``case.zip`` als Bytes. Wirft ``BundleFehler`` mit lesbarem Grund.
+
+    ``checkpoint``: Speicherpunkt-Anweisung fuer den Laeufer (vorsignierte
+    PUT-URL + Mindestabstand) — nur der Cloud-Weg setzt sie; der Companion
+    auf der Nutzer-Maschine braucht keine (dort liegen die Daten schon
+    lokal und Pause/Fortsetzen existiert).
+    """
     from .casebuilder import build_case
 
     case_dir = Path(case_dir)
@@ -61,6 +68,9 @@ def bundle_bauen(spec, case_dir: Path, run_id: str) -> bytes:
             raise BundleFehler("Geometrieprobleme: " + "; ".join(info["problems"]))
         (case_out / "case.yaml").write_text((case_dir / "case.yaml").read_text())
         (case_out / "run_id.txt").write_text(run_id)
+        if checkpoint:
+            import json as _json
+            (case_out / "checkpoint.json").write_text(_json.dumps(checkpoint))
 
         for name in referenced:
             ziel = case_out / name

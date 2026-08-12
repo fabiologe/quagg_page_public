@@ -385,8 +385,98 @@ def _runner_uebergabe(eigen: str | None) -> None:
     os.execv(sys.executable, [sys.executable, str(neu)] + sys.argv[1:])
 
 
+class Zwischenstand:
+    """
+    Speicherpunkte fuer Cloud-Laeufe (Frage 2026-08-12): der Cloud-Weg lud
+    das Ergebnis bisher erst GANZ AM ENDE hoch — Timeout oder Absturz bei
+    Stunde 4 von 5 hiess Totalverlust, und im Ergebnis-3D war stundenlang
+    nichts zu sehen.
+
+    Der Server legt beim Start eine ``checkpoint.json`` ins Bundle
+    (vorsignierte PUT-URL + Mindestabstand). Waehrend der Solver rechnet,
+    werden regelmaessig die NEU geschriebenen Zeitschritte rekonstruiert,
+    in die fields/-Ablage konvertiert und als Teilpaket auf S3 geschoben;
+    ein ``checkpoint``-Ereignis sagt dem Server Bescheid, der es einspielt.
+    Alles ueber die Stdlib (urllib) — das Foam-Image hat kein boto3.
+    """
+
+    def __init__(self, job: Path, case: Path, spec):
+        self.job, self.case, self.spec = job, case, spec
+        self.konfig = None
+        self.letzter = 0.0
+        self.laeuft = False
+        self.zeiten_drin = 0
+        p = case / "checkpoint.json"
+        if p.is_file():
+            try:
+                self.konfig = json.loads(p.read_text())
+            except (OSError, json.JSONDecodeError):
+                self.konfig = None
+        if self.konfig:
+            emit(event="log", text=(
+                "Speicherpunkte aktiv: alle "
+                f"{int(self.konfig.get('min_intervall_s', 600))} s wandern "
+                "fertige Zeitschritte nach S3 und ins Ergebnis-3D."))
+
+    def tick(self) -> None:
+        if not self.konfig or self.laeuft:
+            return
+        if time.time() - self.letzter < float(self.konfig.get("min_intervall_s", 600)):
+            return
+        self.laeuft = True
+        try:
+            self._sichern()
+            self.letzter = time.time()
+        finally:
+            self.laeuft = False
+
+    def _konvertieren(self) -> dict:
+        # eigener Haken, damit der Test den schweren Konverter ersetzen kann
+        from flood3D.core.foamfields import convert_case_fields
+        return convert_case_fields(self.spec, self.case, self.job)
+
+    def _sichern(self) -> None:
+        import urllib.request
+
+        # Nur FERTIG geschriebene Zeiten der Prozessoren einsammeln
+        if (self.case / "processor0").is_dir():
+            run_foam_step(self.case, "reconstructPar -newTimes",
+                          "log.checkpointReconstruct")
+        if not (self.case / "0" / "C").exists()                 and not (self.case / "0" / "C.gz").exists():
+            run_foam_step(self.case,
+                          "postProcess -noFunctionObjects -func writeCellCentres -time 0",
+                          "log.writeCellCentres")
+        conv = self._konvertieren()
+        zeiten = conv.get("times") or []
+        if len(zeiten) <= self.zeiten_drin:
+            return                      # nichts Neues — kein Upload
+        paket = self.job / "results" / "teilstand.zip"
+        paket.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(paket, "w", zipfile.ZIP_DEFLATED) as z:
+            d = self.job / "fields"
+            for f in sorted(d.rglob("*")):
+                if f.is_file():
+                    z.write(f, f"fields/{f.relative_to(d)}")
+            for f in sorted(self.case.glob("meshSurface*.stl")):
+                z.write(f, f"case/{f.name}")
+            tri = self.case / "constant" / "triSurface"
+            if tri.is_dir():
+                for f in sorted(tri.glob("*.stl")):
+                    z.write(f, f"case/constant/triSurface/{f.name}")
+        daten = paket.read_bytes()
+        req = urllib.request.Request(self.konfig["put_url"], data=daten,
+                                     method="PUT",
+                                     headers={"Content-Type": "application/zip"})
+        with urllib.request.urlopen(req, timeout=300):
+            pass
+        paket.unlink(missing_ok=True)
+        self.zeiten_drin = len(zeiten)
+        emit(event="checkpoint", zeiten=len(zeiten),
+             letzte_zeit=zeiten[-1], sizeBytes=len(daten))
+
+
 def run_foam_step(case: Path, command: str, log_name: str,
-                  end_time: float | None = None) -> None:
+                  end_time: float | None = None, tick_cb=None) -> None:
     """
     Ein OpenFOAM-Kommando DIREKT (wir sind schon im Foam-Container).
     Beim Solver wird das Log live auf `Time = X` beobachtet und als
@@ -405,6 +495,12 @@ def run_foam_step(case: Path, command: str, log_name: str,
         start = time.time()
         while proc.poll() is None:
             time.sleep(2)
+            if tick_cb is not None:
+                try:
+                    tick_cb()
+                except Exception as e:   # noqa: BLE001 — Zwischenstand darf den Lauf nie kippen
+                    emit(event="log",
+                         text=f"Zwischenstand uebersprungen: {type(e).__name__}: {str(e)[:120]}")
             if not end_time:
                 continue
             try:
@@ -701,9 +797,11 @@ def main() -> int:
             _decompose_dict(case, cores)
             run_foam_step(case, "decomposePar -force", "log.decomposePar")
             emit(event="log", text=f"Rechne auf {cores} Kernen")
+            zs = Zwischenstand(job, case, spec)
             run_foam_step(case,
                           f"{mpi_kommando(cores)} {app_name} -parallel",
-                          f"log.{app_name}", end_time=spec.solver.end_time)
+                          f"log.{app_name}", end_time=spec.solver.end_time,
+                          tick_cb=zs.tick)
             try:
                 run_foam_step(case, "reconstructPar -newTimes",
                               "log.reconstructPar")
@@ -719,7 +817,8 @@ def main() -> int:
                         "oder laenger rechnen.") from None
                 raise
         else:
-            run_foam_step(case, app_name, f"log.{app_name}",
+            zs = Zwischenstand(job, case, spec)
+            run_foam_step(case, app_name, f"log.{app_name}", tick_cb=zs.tick,
                           end_time=spec.solver.end_time)
 
         # ---- Nachlauf: exakt die Server-Kette -----------------------------

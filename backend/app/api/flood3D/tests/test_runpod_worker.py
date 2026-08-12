@@ -208,3 +208,60 @@ def test_worker_braucht_beim_import_weder_runpod_noch_boto3():
     quelle = Path(w.__file__).read_text()
     kopf = quelle.split("# ── Ablage")[0]
     assert "import boto3" not in kopf and "import runpod" not in kopf
+
+
+def test_zwischenstand_packt_felder_und_laedt_hoch(tmp_path, monkeypatch):
+    """
+    Speicherpunkt-Kern: nur NEUE Zeiten loesen einen Upload aus, das Paket
+    enthaelt die fields/-Ablage, und hochgeladen wird per PUT auf die
+    vorsignierte URL (Stdlib — das Foam-Image hat kein boto3).
+    """
+    import io
+    import json as _json
+    import zipfile as _zip
+
+    from ..engines.local import local_runner as lr
+
+    job = tmp_path / "job"; case = tmp_path / "case"
+    (case).mkdir(); (job / "fields").mkdir(parents=True)
+    (case / "checkpoint.json").write_text(_json.dumps(
+        {"put_url": "https://r2.example/signed/cp.zip", "min_intervall_s": 0}))
+    (job / "fields" / "t_0000.npz").write_bytes(b"NPZ0")
+    (job / "fields" / "index.json").write_text("{}")
+
+    hochgeladen = []
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(lr, "run_foam_step", lambda *a, **k: None)
+    monkeypatch.setattr(lr.Zwischenstand, "_konvertieren",
+                        lambda self: {"times": [0.5, 1.0]})
+    import urllib.request as ur
+    monkeypatch.setattr(ur, "urlopen",
+                        lambda req, timeout=0: hochgeladen.append(req) or R())
+
+    zs = lr.Zwischenstand(job, case, spec=object())
+    ereignisse = []
+    monkeypatch.setattr(lr, "emit", lambda **ev: ereignisse.append(ev))
+    zs.tick()
+
+    assert len(hochgeladen) == 1
+    req = hochgeladen[0]
+    assert req.get_method() == "PUT"
+    assert req.full_url == "https://r2.example/signed/cp.zip"
+    with _zip.ZipFile(io.BytesIO(req.data)) as z:
+        assert "fields/t_0000.npz" in z.namelist()
+    cp = [e for e in ereignisse if e.get("event") == "checkpoint"]
+    assert cp and cp[0]["zeiten"] == 2 and cp[0]["letzte_zeit"] == 1.0
+
+    # zweiter Tick ohne neue Zeiten -> KEIN weiterer Upload
+    zs.tick()
+    assert len(hochgeladen) == 1
+
+
+def test_ohne_checkpoint_json_passiert_nichts(tmp_path, monkeypatch):
+    from ..engines.local import local_runner as lr
+    zs = lr.Zwischenstand(tmp_path, tmp_path, spec=object())
+    monkeypatch.setattr(lr, "run_foam_step",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    zs.tick()          # darf nichts tun und nichts werfen
