@@ -52,6 +52,38 @@ def _cores() -> int:
     return erlaubte_kerne()
 
 
+def physische_kerne(topo_wurzel=Path("/sys/devices/system/cpu")) -> int | None:
+    """
+    Physische Kerne unter den CPUs, die dieser Prozess benutzen darf.
+
+    Gemessen 2026-08-12 (Wanduhr, 317k Zellen): 4 Raenge auf 4 Kernen
+    1,85 s je Zeitschritt — 8 Raenge auf denselben 4 Kernen 2,25 s, also
+    22 % LANGSAMER. interFoam ist speicherbandbreiten-begrenzt; Hyperthreads
+    teilen sich Kern UND Bandbreite. Ein Ryzen 5 2600 (6C/12T) faehrt mit
+    der alten Automatik (12 Raenge) deshalb schlechter als mit 6.
+
+    ``None``, wenn die Topologie nicht lesbar ist (dann entscheidet die
+    logische Zaehlung).
+    """
+    try:
+        erlaubt = os.sched_getaffinity(0)
+    except (AttributeError, OSError):
+        erlaubt = None
+    gruppen = set()
+    try:
+        for eintrag in topo_wurzel.glob("cpu[0-9]*"):
+            nr = int(eintrag.name[3:])
+            if erlaubt is not None and nr not in erlaubt:
+                continue
+            geschwister = (eintrag / "topology" / "thread_siblings_list")
+            if not geschwister.is_file():
+                return None
+            gruppen.add(geschwister.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return len(gruppen) or None
+
+
 def erlaubte_kerne(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
                    quota=Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"),
                    periode=Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")) -> int:
@@ -89,6 +121,9 @@ def erlaubte_kerne(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
             kandidaten.append(round(q / p))
     except (OSError, ValueError, ZeroDivisionError):
         pass
+    phys = physische_kerne()
+    if phys:
+        kandidaten.append(phys)
     kandidaten.append(os.cpu_count() or 1)
     return max(1, min(k for k in kandidaten if k and k > 0))
 

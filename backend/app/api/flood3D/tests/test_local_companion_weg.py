@@ -291,6 +291,8 @@ def test_kernzahl_beachtet_das_kontingent_des_containers(tmp_path, monkeypatch):
     r = _lade_runner()
     monkeypatch.setattr(r.os, "cpu_count", lambda: 64)
     monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(64)))
+    # Topologie hier nicht Gegenstand des Tests (eigener Test unten)
+    monkeypatch.setattr(r, "physische_kerne", lambda: None)
 
     # cgroup v2: 16 Kerne von 64
     v2 = tmp_path / "cpu.max"
@@ -354,3 +356,36 @@ def test_maschinenbericht_meldet_kein_problem_auf_ext4(tmp_path, monkeypatch):
     bericht = r.maschinen_bericht(tmp_path, 4)
     assert "job_fs_warnung" not in bericht
     assert bericht["job_fs"] == "ext4"
+
+
+def test_physische_kerne_zaehlen_nicht_die_hyperthreads(tmp_path, monkeypatch):
+    """
+    Gemessen (Wanduhr, 317k Zellen): 8 Raenge auf 4 Kernen sind 22 %
+    LANGSAMER als 4 — interFoam ist bandbreiten-begrenzt, Hyperthreads
+    teilen sich Kern und Bandbreite. Die Automatik nimmt deshalb die
+    physischen Kerne: ein Ryzen 5 2600 (6C/12T) faehrt 6 Raenge, nicht 12.
+    """
+    r = _lade_runner()
+    # Nachgebaute Topologie: 12 logische CPUs, je zwei teilen sich einen Kern
+    for cpu in range(12):
+        d = tmp_path / f"cpu{cpu}" / "topology"
+        d.mkdir(parents=True)
+        a, b = (cpu, cpu + 6) if cpu < 6 else (cpu - 6, cpu)
+        (d / "thread_siblings_list").write_text(f"{a},{b}\n")
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(12)))
+    assert r.physische_kerne(topo_wurzel=tmp_path) == 6
+
+    # Affinitaet auf 4 Threads (2 Kerne) begrenzt -> 2 physische
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: {0, 6, 1, 7})
+    assert r.physische_kerne(topo_wurzel=tmp_path) == 2
+
+
+def test_unlesbare_topologie_faellt_auf_logische_zaehlung(tmp_path, monkeypatch):
+    r = _lade_runner()
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(8)))
+    # kein sysfs-Baum vorhanden -> None, erlaubte_kerne nimmt dann cpu_count
+    assert r.physische_kerne(topo_wurzel=tmp_path / "gibtsnicht") is None
+    monkeypatch.setattr(r, "physische_kerne", lambda: None)
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 8)
+    assert r.erlaubte_kerne(cpu_max=tmp_path / "a", quota=tmp_path / "b",
+                            periode=tmp_path / "c") == 8

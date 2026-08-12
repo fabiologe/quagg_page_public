@@ -16,22 +16,42 @@ verschiedene Kernzahlen hinweg vergleichen lässt.
 
 Skript: `backend/app/api/flood3D/data/_audit/messe.sh`
 
-## Ergebnisse
+## Messfehler der ersten Runde — und die Korrektur
 
-| Rechenort | Ränge | `/dev/shm` | s je Schritt | je Kern | gesamt |
-|---|---:|---:|---:|---:|---:|
-| Server | 1 | 64 MB | 6,11 | 51.919 | 52.000/s |
-| Server | 2 | 64 MB | 3,15 | 50.300 | 101.000/s |
-| Server | 4 | 64 MB | 1,75 | 45.411 | 182.000/s |
-| Server | 4 | 2 GB | 1,72 | 46.043 | 184.000/s |
-| Server | 8 | 64 MB | 1,02 | 38.771 | 310.000/s |
-| Server | 8 | 2 GB | 1,04 | 37.991 | 304.000/s |
-| **Cloud (RunPod)** | 4 | – | 1,41 | **56.251** | 225.000/s |
-| **Cloud (RunPod)** | 16 | – | 0,48 | **41.160** | **658.000/s** |
-| **Nutzer-Maschine** | 12 | ? | 4,16 | **6.361** | 76.000/s |
+Die erste Fassung dieser Tabelle las `ExecutionTime` aus dem Solverlog. Das
+ist die **CPU-Zeit des Master-Prozesses**, nicht die Wanduhr: Teilen sich
+8 Ränge 4 Kerne, bekommt jeder Prozess nur einen halben Kern — seine CPU-Zeit
+läuft langsamer als die Uhr, und die Messung sieht **schneller** aus, als sie
+ist. Alle Zeilen mit mehr Rängen als Kernen waren dadurch Artefakte
+(scheinbar 5,9-fache Beschleunigung bei 8 Rängen auf 4 Kernen). Der
+Prüfstand liest seit der Korrektur `ClockTime`.
 
-Die Zeile „Nutzer-Maschine" ist aus der gemeldeten Restzeit zurückgerechnet
-(38,5 h für 60 s bei einem Zeitschritt von 0,0018 s), nicht direkt gemessen.
+## Ergebnisse (Wanduhr, korrigiert)
+
+Server = 4 physische Kerne ohne SMT (Topologie geprüft).
+
+| Rechenort | Ränge | s je Schritt | je Kern | Beschleunigung |
+|---|---:|---:|---:|---:|
+| Server | 1 | 6,03 | 52.638 | 1,00 |
+| Server | 2 | 3,29 | 48.229 | 1,83 |
+| Server | 4 | 1,85 | 42.820 | 3,26 |
+| Server | **8** | **2,25** | 17.632 | **2,68 — LANGSAMER als 4** |
+| Server | **12** | **2,23** | 11.868 | **2,70 — LANGSAMER als 4** |
+| Cloud (RunPod) | 4 | 1,41 | 56.251 | (16 vCPU zugeteilt) |
+| Cloud (RunPod) | 16 | 0,48 | 41.160 | skaliert sauber |
+| Nutzer-Maschine | 12 | 4,16 | 6.361 | (zurückgerechnet, 6C/12T!) |
+
+**Kernbefund:** Mehr Ränge als physische Kerne machen den Lauf LANGSAMER —
+8 Ränge auf 4 Kernen kosten 22 % gegenüber 4 Rängen. interFoam ist
+speicherbandbreiten-begrenzt; Hyperthreads teilen sich Kern und Bandbreite.
+Die Cloud skaliert bis 16 sauber, weil dort 16 vCPU wirklich zugeteilt sind.
+
+**Folge für die Nutzer-Maschine (Ryzen 5 2600, 6C/12T):** Die alte Automatik
+nahm 12 Ränge — nach dieser Messung kontraproduktiv. Der Läufer zählt seit
+2026-08-12 die **physischen Kerne** (sysfs-Topologie, auf die erlaubten CPUs
+eingeschränkt) und fährt dort 6. `/dev/shm` bleibt unschuldig — bei 12 und
+16 Rängen messen 64 MB und 2 GB gleich (Verhältnisse sind vom Messfehler
+nicht betroffen).
 
 ## Was damit ausgeschlossen ist
 
@@ -74,7 +94,7 @@ sind Stellschrauben in der Umgebung:
 
 | Stellschraube | Wirkung | wo |
 |---|---|---|
-| **Ränge = physische Kerne** statt Threads (Ryzen 5 2600: **6** statt 12) | Bei speicherbandbreiten-begrenzten Rechnungen bringt SMT oft nichts und kostet Verwaltung | `FLOOD3D_CORES=6` in der Companion-Umgebung |
+| **Ränge = physische Kerne** statt Threads (Ryzen 5 2600: **6** statt 12) | GEMESSEN: 8 Ränge auf 4 Kernen sind 22 % langsamer als 4 | macht die Automatik seit 2026-08-12 selbst (sysfs-Topologie); `FLOOD3D_CORES` übersteuert |
 | **Job-Ordner ins Docker-Volume** | Kann ein Vielfaches ausmachen (s. u.) | Companion, Sibling-Modus mit `quagg-flood3d-data` |
 | **Feldausgabe 0,1 s → 1,0 s** | zehnmal weniger Schreibvorgänge (601 → 61) | Fall, „3D-Felder schreiben alle" |
 | **Docker-Desktop: CPUs und RAM hochziehen** | Voreinstellung gibt der VM oft nur die Hälfte | Docker Desktop → Settings → Resources |
