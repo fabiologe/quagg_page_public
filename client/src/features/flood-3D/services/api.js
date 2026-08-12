@@ -150,17 +150,19 @@ export const flood3dApi = {
     sendJson(`/cases/${caseId}/rezept`, 'POST', { rezept, args }),
   meshPreviewState: (caseId) => getJson(`/cases/${caseId}/mesh-preview`),
   caseGeometry: (caseId) => getJson(`/cases/${caseId}/geometry`),
-  importAnalyze: async (caseId, file) => {
+  importAnalyze: (caseId, file) => mitNachfrage(async () => {
     const res = await fetch(
       `${BASE}/cases/${caseId}/import?filename=${encodeURIComponent(file.name)}`,
-      { method: 'POST', body: file })
+      { method: 'POST', headers: gateKopf(), body: file })
     if (!res.ok) {
       let detail = res.statusText
       try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-      throw new Error(detail)
+      const err = new Error(detail)
+      err.status = res.status
+      throw err
     }
     return res.json()
-  },
+  }),
   importApply: (caseId, importId, payload) =>
     sendJson(`/cases/${caseId}/import/${importId}/apply`, 'POST', payload),
   listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
@@ -195,7 +197,10 @@ export const flood3dApi = {
   }),
   // Grosse Ergebnisse stückweise übertragen — ein 400-MB-Body scheitert
   // an jeder Proxy-Grenze (nginx: 200 MB).
-  importRunChunked: async (runId, blob, onProgress = null) => {
+  // mitNachfrage: der Import ist ein POST und braucht seit dem Schreibschutz
+  // die Passwort-Kopfzeile — ohne sie blieb ein fertig gerechneter lokaler
+  // Lauf beim Zurückgeben mit 403 stehen (2026-08-12, cloudtest_r005).
+  importRunChunked: (runId, blob, onProgress = null) => mitNachfrage(async () => {
     const CHUNK = 24 * 1024 * 1024
     const teile = Math.max(1, Math.ceil(blob.size / CHUNK))
     for (let i = 0; i < teile; i++) {
@@ -203,18 +208,21 @@ export const flood3dApi = {
       const last = i === teile - 1
       const res = await fetch(
         `${BASE}/runs/${runId}/import-chunk?index=${i}&last=${last}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' },
+        { method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream', ...gateKopf() },
           body: stueck })
       if (!res.ok) {
         let detail = res.statusText
         try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-        throw new Error(`Teil ${i + 1}/${teile}: ${detail}`)
+        const err = new Error(`Teil ${i + 1}/${teile}: ${detail}`)
+        err.status = res.status
+        throw err
       }
       if (onProgress) onProgress((i + 1) / teile)
       if (last) return res.json()
     }
     return null
-  },
+  }),
   runLog: (runId, tail = 80) => getJson(`/runs/${runId}/log`, { tail }),
 
   // Läufe (PostViewer)
