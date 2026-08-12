@@ -169,6 +169,14 @@ export const flood3dApi = {
   listRuns: () => getJson('/runs'),
   verifikation: () => getJson('/verifikation'),
   deleteRun: (runId) => sendJson(`/runs/${runId}`, 'DELETE'),
+  // Auslagern/Zurückholen: Läufe sind der Plattenfresser; das Schwere liegt
+  // danach auf der StorageBox, Manifest und Bewertung bleiben lokal.
+  // Beides hinter dem Kosten-Gate (Bandbreite, fremde Zugriffe).
+  archiviereRun: (runId) =>
+    mitGate(() => sendJson(`/runs/${runId}/archivieren`, 'POST', {}, gateKopf())),
+  holeRunZurueck: (runId) =>
+    mitGate(() => sendJson(`/runs/${runId}/wiederherstellen`, 'POST', {}, gateKopf())),
+  archivStand: (alterTage = 14) => getJson('/archiv', { alter_tage: alterTage }),
   abortRun: (runId) => sendJson(`/runs/${runId}/abort`, 'POST', {}),
   runDetail: (runId) => getJson(`/runs/${runId}`),
   result: (runId) => getJson(`/runs/${runId}/result`),

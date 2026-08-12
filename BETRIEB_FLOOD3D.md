@@ -119,6 +119,31 @@ lokalen Lauf.
   mit Geländeraster ist größer), dann Relay im Backend (Bundle → R2 → `/run` →
   `/stream` → Import) und die dritte Option im Rechenort-Feld.
 
+## Läufe auslagern (StorageBox)
+
+Läufe sind der einzige Teil, der unbegrenzt wächst (100–200 MB je Lauf);
+Fälle sind zusammen 19 MB und bleiben lokal.
+
+- Ziel: **`/mnt/storagebox/flood3d-runs/<run_id>/`** (CIFS-Automount, 1 TB,
+  `FLOOD3D_ARCHIV_ROOT` übersteuert den Pfad).
+- Lokal bleiben `manifest.json`, `result.json` und die Marke
+  `archiviert.json` — Liste, Zustand und Bewertung funktionieren damit ohne
+  Netz. Felder, Abbildungen, Fallordner und `normalized.parquet` wandern.
+- Knöpfe in der Laufliste: **📦 auslagern**, **📥 zurückholen**; Chip
+  „archiviert". `GET /archiv` zeigt Stand und Kandidaten (Vorgabe: fertig und
+  älter als 14 Tage), bewegt aber nichts. Beide Aktionen liegen hinter dem
+  Kosten-Gate.
+- **Erst kopieren, gegenprüfen (Dateizahl UND Bytes), dann lokal löschen.**
+  Bricht die Übertragung ab, bleibt der Lauf lokal unangetastet — dafür gibt
+  es einen eigenen Test.
+- **Nicht auf der Freigabe RECHNEN.** Gemessen 2026-08-12: 147 MB/s bei großen
+  Dateien, aber viele kleine sind 30× langsamer als lokal (200 Dateien 0,83 s
+  statt 0,028 s) — ein OpenFOAM-Lauf schreibt zehntausende. Dazu ist sie
+  `soft` eingehängt: Netzstörung = E/A-Fehler statt Warten, eine Stunde
+  Rechenzeit wäre weg.
+- Echter Durchlauf 2026-08-12 (`Rentrisch_BetaTest06_r002`, 110 MB):
+  auslagern 1,9 s, zurückholen 0,9 s, Inhalt byteidentisch.
+
 ## Bekannte Deckel (bewusst)
 
 | Deckel | Wert | Wo |

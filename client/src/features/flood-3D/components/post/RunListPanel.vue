@@ -40,6 +40,11 @@
                 title="Lauf ohne normalisierte Zeitreihen — Diagramme und Nachweise bleiben leer">
             ohne Auswertung
           </span>
+          <span v-if="run.archiviert" class="f3d-chip status-stale"
+                :title="`Auf die StorageBox ausgelagert (${fmtSize((run.archiv_bytes || 0) / 1e6)}) — `
+                        + 'Bewertung ist da, 3D-Felder und Abbildungen werden beim Öffnen zurückgeholt'">
+            archiviert
+          </span>
           <span v-if="run.n_targets" class="f3d-run-targets">
             <span class="ok">✓ {{ run.n_erfuellt }}</span>
             <span v-if="run.n_nicht_erfuellt" class="fail">✗ {{ run.n_nicht_erfuellt }}</span>
@@ -47,6 +52,14 @@
           <span v-if="run.size_mb != null" class="f3d-run-size">{{ fmtSize(run.size_mb) }}</span>
         </span>
       </span>
+      <button v-if="!run.archiviert && TERMINAL_ARCHIV.includes(run.status)"
+              class="f3d-run-del" :disabled="archivBusy === run.run_id"
+              title="Auf die StorageBox auslagern — macht Platz auf der Serverplatte, Lauf bleibt in der Liste"
+              @click.prevent.stop="archivieren(run)">{{ archivBusy === run.run_id ? '…' : '📦' }}</button>
+      <button v-else-if="run.archiviert" class="f3d-run-del"
+              :disabled="archivBusy === run.run_id"
+              title="Aus dem Archiv zurückholen (3D-Felder und Abbildungen)"
+              @click.prevent.stop="zurueckholen(run)">{{ archivBusy === run.run_id ? '…' : '📥' }}</button>
       <button class="f3d-run-del" title="Lauf samt Feldern löschen"
               @click.prevent.stop="confirmDelete(run)">🗑</button>
     </label>
@@ -62,12 +75,16 @@
 // Laufauswahl des aktiven Projekts (caseFilter im Store); solange ein Lauf
 // in einem Zwischenzustand ist (building, meshing, solving, …), wird die
 // Liste automatisch aktualisiert.
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { flood3dApi } from '../../services/api'
 import { usePostStore } from '../../stores/usePostStore'
 
 const store = usePostStore()
 
 const TERMINAL = ['completed', 'failed', 'unbekannt']
+// Auslagern erst, wenn nichts mehr rechnet oder auf einen Import wartet —
+// dieselbe Liste wie serverseitig in core/archiv.py ARCHIVIERBAR
+const TERMINAL_ARCHIV = ['completed', 'teilergebnis', 'abgebrochen', 'failed']
 // hängende Läufe (stale) nicht weiter pollen — sonst pollt die Liste ewig
 const hasActive = computed(() =>
   store.visibleRuns.some((r) => !TERMINAL.includes(r.status) && !r.stale))
@@ -82,6 +99,35 @@ async function confirmDelete(run) {
     await store.removeRun(run.run_id)
   } catch (e) {
     store.runsError = e.message
+  }
+}
+
+// Auslagern / Zurückholen. Beides dauert Sekunden (147 MB/s über CIFS), aber
+// der Knopf muss währenddessen gesperrt sein — ein zweiter Klick würde den
+// laufenden Kopiervorgang durchkreuzen.
+const archivBusy = ref(null)
+
+async function archivieren(run) {
+  archivBusy.value = run.run_id
+  try {
+    await flood3dApi.archiviereRun(run.run_id)
+    await store.loadRuns()
+  } catch (e) {
+    store.runsError = e.message
+  } finally {
+    archivBusy.value = null
+  }
+}
+
+async function zurueckholen(run) {
+  archivBusy.value = run.run_id
+  try {
+    await flood3dApi.holeRunZurueck(run.run_id)
+    await store.loadRuns()
+  } catch (e) {
+    store.runsError = e.message
+  } finally {
+    archivBusy.value = null
   }
 }
 

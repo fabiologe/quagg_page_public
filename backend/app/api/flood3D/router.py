@@ -178,10 +178,16 @@ async def list_runs():
         verfallen = (status == "lokal"
                      and (time.time() - float(manifest.get("created", 0)))
                      > 7 * 86400)
+        from .core.archiv import marke_lesen
+        marke = marke_lesen(d)
         out.append({
             "run_id": d.name,
             "status": status,
             "verfallen": verfallen,
+            # Ausgelagert auf die StorageBox: Manifest und Bewertung liegen
+            # weiter lokal, Felder/Abbildungen holt der Server auf Anforderung
+            "archiviert": marke is not None,
+            "archiv_bytes": (marke or {}).get("bytes"),
             "stale": _run_stale(d, status),
             "size_mb": _run_size_mb(d),
             "title": manifest.get("title", ""),
@@ -203,6 +209,84 @@ async def delete_run(run_id: str):
         raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
     shutil.rmtree(target)
     return {"deleted": run_id}
+
+
+@router.post("/runs/{run_id}/archivieren")
+async def run_archivieren(run_id: str, request: Request):
+    """
+    Fertigen Lauf auf die StorageBox auslagern (Spez.: Platte ist der Deckel).
+
+    Kosten-Gate davor: Ein Fremder soll weder Bandbreite verbrennen noch
+    Läufe verschieben.
+    """
+    from .core.archiv import ArchivFehler, archivieren
+    from .core.gate import pruefe_kosten_gate
+
+    pruefe_kosten_gate(request)
+    paths = _paths(run_id)
+    result = _result(paths)
+    manifest = read_manifest(paths) or {}
+    status = (result or {}).get("status", manifest.get("status", "unbekannt"))
+    root = runs_root().resolve()
+    ziel = (root / run_id).resolve()
+    if ziel.parent != root or not ziel.is_dir():
+        raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+    try:
+        marke = archivieren(ziel, status)
+    except ArchivFehler as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"run_id": run_id, "archiviert": True, **marke}
+
+
+@router.post("/runs/{run_id}/wiederherstellen")
+async def run_wiederherstellen(run_id: str, request: Request):
+    """Ausgelagerten Lauf zurückholen — nötig für 3D-Felder und Abbildungen."""
+    from .core.archiv import ArchivFehler, wiederherstellen
+    from .core.gate import pruefe_kosten_gate
+
+    pruefe_kosten_gate(request)
+    root = runs_root().resolve()
+    ziel = (root / run_id).resolve()
+    if ziel.parent != root or not ziel.is_dir():
+        raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+    try:
+        return wiederherstellen(ziel)
+    except ArchivFehler as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.get("/archiv")
+async def archiv_stand(alter_tage: float = Query(14.0)):
+    """
+    Was liegt im Archiv, was könnte hin? (Anzeige, ohne etwas zu bewegen.)
+    """
+    from .core.archiv import (archiv_bereit, archiv_wurzel, ist_archiviert,
+                              kandidaten, marke_lesen)
+
+    root = runs_root()
+    bereit, grund = archiv_bereit()
+
+    def _status(d):
+        paths = run_paths(root, d.name)
+        result = _result(paths)
+        return (result or {}).get("status",
+                                  (read_manifest(paths) or {}).get("status", ""))
+
+    archiviert, frei_gemacht = [], 0
+    if root.is_dir():
+        for d in sorted(root.iterdir()):
+            if d.is_dir() and ist_archiviert(d):
+                marke = marke_lesen(d) or {}
+                archiviert.append({"run_id": d.name, "bytes": marke.get("bytes", 0),
+                                   "archiviert_am": marke.get("archiviert_am")})
+                frei_gemacht += marke.get("bytes", 0)
+    offen = []
+    if root.is_dir() and bereit:
+        offen = [{"run_id": d.name, "status": st, "bytes": b}
+                 for d, st, b in kandidaten(root, alter_tage, _status)]
+    return {"wurzel": str(archiv_wurzel()), "bereit": bereit, "grund": grund,
+            "archiviert": archiviert, "frei_gemacht_bytes": frei_gemacht,
+            "kandidaten": offen, "alter_tage": alter_tage}
 
 
 @router.get("/runs/{run_id}")
