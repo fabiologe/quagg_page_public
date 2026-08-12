@@ -596,7 +596,11 @@ def main() -> int:
                 "nebenher. Wenn der Lauf zu swappen beginnt, bricht das "
                 "Tempo um Groessenordnungen ein (Docker Desktop -> "
                 "Settings -> Resources)."))
-        if (maschine.get("kerne_sichtbar") or 0) > cores:
+        if container_scheibe():
+            emit(event="log", text=(
+                f"Container-Scheibe erkannt — alle {cores} gebuchten "
+                "Threads rechnen (keine Kern-Bindung)."))
+        elif (maschine.get("kerne_sichtbar") or 0) > cores:
             emit(event="log", text=(
                 f"SMT erkannt ({maschine.get('kerne_sichtbar')} Threads, "
                 f"{cores} Kerne) — je Rang wird ein physischer Kern "
