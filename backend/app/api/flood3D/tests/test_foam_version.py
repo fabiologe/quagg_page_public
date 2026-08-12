@@ -68,3 +68,18 @@ def test_local_image_baut_auf_derselben_ausgabe_auf():
     basis = re.search(r"^FROM\s+(\S+)", docker.read_text(), re.M)
     assert basis, "Dockerfile ohne FROM"
     assert basis.group(1).rsplit(":", 1)[-1] == FOAM_API_ERWARTET
+
+
+def test_runpod_image_haengt_am_selben_rechen_image():
+    """
+    Dritter Rechenort, gleiche Ausgabe: der RunPod-Worker baut auf dem
+    Local-Image auf (das wiederum auf opencfd/openfoam-run:2406). Wer
+    ihn abhaengt, umgeht die Gleichheitspruefung oben.
+    """
+    docker = (Path(__file__).resolve().parents[1]
+              / "engines" / "runpod" / "Dockerfile")
+    basis = re.search(r"^FROM\s+(\S+)", docker.read_text(), re.M)
+    assert basis, "Dockerfile ohne FROM"
+    assert basis.group(1).startswith("fabiologe/quagg-foam-local"), (
+        f"RunPod-Worker baut auf {basis.group(1)} statt auf dem Local-Image — "
+        "dann kann die OpenFOAM-Ausgabe in der Cloud abweichen.")
