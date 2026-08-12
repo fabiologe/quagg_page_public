@@ -141,6 +141,22 @@ lokalen Lauf.
 - **Rauchtest 2026-08-12 bestanden**: Job angenommen (3,8 s Anlauf, warmer
   Worker), Worker-Log kam im Strom an, absichtlich kaputtes `case.zip` führte
   zu sauberen `error`-Events und Exit 1.
+- **Bekannte Grenze:** Ein `pm2 restart` während eines laufenden Cloud-Laufs
+  tötet den begleitenden Relay-Thread — der RunPod-Job rechnet (und kostet)
+  weiter, das Manifest bleibt auf `solving`, und die R2-Aufräumung entfällt.
+  Bis es eine Wiederanknüpfung beim Start gibt: vor Neustarts laufende
+  Cloud-Läufe prüfen (`GET /runs`), im Zweifel den Job in der RunPod-Konsole
+  abbrechen und Reste unter `flood3d/eingang/` löschen.
+- **Speicherpunkte gelten auch LOKAL** (seit 2026-08-12 abends): das Bundle
+  trägt die S3-Anweisung immer, der Läufer lädt Teilstände hoch, und der
+  Browser stößt beim checkpoint-Ereignis `POST /runs/{id}/teilstand` an —
+  der Server spielt sie ein. Grenze: schließt der Nutzer den Browser, lädt
+  der Läufer zwar weiter nach S3 hoch, aber niemand stößt den Import an
+  (gleiches Verhalten wie beim End-Import des lokalen Wegs).
+- **Speicherpunkte (seit 2026-08-12):** Cloud-Läufe sichern alle 10 min
+  (`checkpoint_s` im Startaufruf übersteuert) die fertigen Zeitschritte nach
+  S3; der Server spielt sie sofort ein — Raum (3D) zeigt sie WÄHREND des
+  Laufs, und bei Timeout/Absturz bleibt alles bis zum letzten Punkt erhalten.
 - **Falle für den Relay:** RunPod meldet auch bei einem gescheiterten Handler
   `status: COMPLETED` — der Fehler steht nur im Feld `error` der
   `/status`-Antwort. Der Relay darf einen Lauf also NICHT am Status als

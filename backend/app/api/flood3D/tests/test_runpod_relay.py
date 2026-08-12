@@ -198,3 +198,73 @@ def test_ohne_callback_keine_speicherpunkte(welt, monkeypatch):
     relay.lauf_starten(object(), welt["case_dir"], "demo_r001",
                        welt["run_root"], lambda **f: None, lambda: False)
     assert bundle_args["checkpoint"] is None
+
+
+def test_teilstand_endpunkt_spielt_lokalen_speicherpunkt_ein(tmp_path, monkeypatch):
+    """
+    Lokaler Weg (Wunsch 2026-08-12): der Laeufer laedt nach S3 hoch, der
+    BROWSER stoesst /runs/{id}/teilstand an (beim Cloud-Lauf macht das der
+    Relay). Der Endpunkt holt das Paket, spielt es ein und schreibt die
+    Teilstand-Marken ins Manifest.
+    """
+    import io
+    import json as _json
+    import zipfile as _zip
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from .. import router as router_mod
+
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    monkeypatch.setenv("FLOOD3D_CASES_ROOT", str(tmp_path / "cases"))
+    run_root = tmp_path / "runs" / "demo_r001"
+    run_root.mkdir(parents=True)
+    (run_root / "manifest.json").write_text(_json.dumps({"status": "lokal"}))
+
+    buf = io.BytesIO()
+    with _zip.ZipFile(buf, "w") as z:
+        z.writestr("fields/t_0000.npz", b"NPZ")
+        z.writestr("fields/index.json", "{}")
+    r2 = FakeR2()
+    r2.objekte["flood3d/checkpoints/demo_r001.zip"] = buf.getvalue()
+    monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
+
+    app = FastAPI(); app.include_router(router_mod.router)
+    client = TestClient(app)
+    res = client.post("/runs/demo_r001/teilstand",
+                      json={"zeiten": 2, "letzte_zeit": 0.5})
+    assert res.status_code == 200
+    assert (run_root / "fields" / "t_0000.npz").read_bytes() == b"NPZ"
+    m = _json.loads((run_root / "manifest.json").read_text())
+    assert m["teilstand"] is True and m["teilstand_zeiten"] == 2
+    assert m["status"] == "lokal"          # der Zustand bleibt beim Lauf
+
+    # ohne hinterlegtes Objekt: 404 mit Klartext
+    r2.objekte.clear()
+    assert client.post("/runs/demo_r001/teilstand", json={}).status_code == 404
+
+
+def test_bundle_traegt_checkpoint_wenn_r2_da(tmp_path, monkeypatch):
+    """Auch der Companion-Weg bekommt die Speicherpunkt-Anweisung mit."""
+    import io
+    import zipfile as _zip
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from .. import router as router_mod
+    from .synthetic_case import build_spec_stage3
+
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    monkeypatch.setenv("FLOOD3D_CASES_ROOT", str(tmp_path / "cases"))
+    (tmp_path / "cases" / "demo").mkdir(parents=True)
+    build_spec_stage3().to_yaml(tmp_path / "cases" / "demo" / "case.yaml")
+    monkeypatch.setattr(relay, "_r2", lambda: (FakeR2(), "flood-3d", "flood3d"))
+
+    app = FastAPI(); app.include_router(router_mod.router)
+    client = TestClient(app)
+    res = client.post("/cases/demo/bundle")
+    assert res.status_code == 200
+    namen = _zip.ZipFile(io.BytesIO(res.content)).namelist()
+    assert "checkpoint.json" in namen

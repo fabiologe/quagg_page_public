@@ -223,6 +223,11 @@ export const flood3dApi = {
     }
     return null
   }),
+  // Teilstand eines lokalen Laufs vom S3 in den Lauf einspielen —
+  // aufgerufen, wenn der Companion-Strom ein checkpoint-Ereignis meldet
+  teilstandAbholen: (runId, ev = {}) =>
+    sendJson(`/runs/${runId}/teilstand`, 'POST',
+      { zeiten: ev.zeiten, letzte_zeit: ev.letzte_zeit }),
   runLog: (runId, tail = 80) => getJson(`/runs/${runId}/log`, { tail }),
 
   // Läufe (PostViewer)

@@ -96,6 +96,12 @@ export async function runLocally(caseId, onEvent, resumeJob = null) {
     const { status, stream } = await sres.json()
     for (const { output: ev } of stream ?? []) {
       onEvent(ev)
+      // Speicherpunkt: der Laeufer hat einen Teilstand nach S3 geladen —
+      // der Server soll ihn einspielen (Ergebnis-3D zeigt ihn dann sofort).
+      // Beiwerk: ein Fehler hier darf den Lauf nicht stoeren.
+      if (ev.event === 'checkpoint' && runId) {
+        flood3dApi.teilstandAbholen(runId, ev).catch(() => {})
+      }
       if (ev.event === 'done') {
         artifactsUrl = ev.artifactsUrl
         // Bei Wiederaufnahme kennt der Browser die Server-Laufnummer nicht —

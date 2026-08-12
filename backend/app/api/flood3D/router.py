@@ -1424,11 +1424,30 @@ async def case_bundle(case_id: str, request: Request):
     run_id = f"{case_id}_r{n:03d}"
     run_root = root / run_id
 
+    # Speicherpunkte auch fuer den LOKALEN Weg (Wunsch 2026-08-12): der
+    # Laeufer laedt Teilstaende auf S3 hoch, der Browser stoesst beim
+    # checkpoint-Ereignis /runs/{id}/teilstand an, der Server spielt sie
+    # ein — Ergebnis-3D zeigt den Lauf, waehrend die Nutzer-Maschine noch
+    # rechnet, und ein Absturz kostet nur noch Minuten. Ohne R2-Zugang
+    # laeuft alles wie bisher (Speicherpunkte sind Beiwerk).
+    checkpoint = None
+    try:
+        from .engines.runpod.relay import _r2
+        client, bucket, praefix = _r2()
+        put_url = client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": f"{praefix}/checkpoints/{run_id}.zip",
+                    "ContentType": "application/zip"},
+            ExpiresIn=7 * 86400)   # lokale Laeufe pausieren/ruhen auch mal tagelang
+        checkpoint = {"put_url": put_url, "min_intervall_s": 600}
+    except Exception:  # noqa: BLE001 — kein R2 = keine Speicherpunkte, kein Drama
+        checkpoint = None
+
     # Gebaut wird in core/bundle.py — dasselbe Paket geht an den Companion
     # UND an den RunPod-Worker; zwei Kopien wären zwei Gelegenheiten,
     # verschieden zu altern.
     try:
-        data = bundle_bauen(spec, d, run_id)
+        data = bundle_bauen(spec, d, run_id, checkpoint=checkpoint)
     except BundleFehler as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -1517,6 +1536,14 @@ async def import_run_chunk(run_id: str, request: Request,
         ergebnis = _import_entpacken(run_root, run_id, teil.read_bytes())
     finally:
         teil.unlink(missing_ok=True)
+    # Speicherpunkt-Rest auf S3 abraeumen — das Endergebnis ist da
+    try:
+        from .engines.runpod.relay import _r2
+        client, bucket, praefix = _r2()
+        client.delete_object(Bucket=bucket,
+                             Key=f"{praefix}/checkpoints/{run_id}.zip")
+    except Exception:  # noqa: BLE001 — Aufraeumen ist Beiwerk
+        pass
     return ergebnis
 
 
@@ -1692,6 +1719,48 @@ async def abort_run(run_id: str):
                   "(Lauf war verwaist)", "finished": time.time()})
         manifest_pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
     return {"run_id": run_id, "gestoppte_container": len(gestoppt)}
+
+
+@router.post("/runs/{run_id}/teilstand")
+async def run_teilstand(run_id: str, payload: dict | None = Body(None)):
+    """
+    Teilstand eines LOKALEN Laufs vom S3 abholen und einspielen.
+
+    Der Laeufer auf der Nutzer-Maschine laedt seine Speicherpunkte selbst
+    nach S3 (checkpoint.json im Bundle); der Browser hoert das
+    checkpoint-Ereignis und ruft diesen Endpunkt — beim Cloud-Lauf macht
+    dasselbe der Relay-Thread. Schreibend, also automatisch hinter dem Gate.
+    """
+    from .engines.runpod.relay import RunPodFehler, _r2
+
+    root = runs_root().resolve()
+    run_root = (root / run_id).resolve()
+    if run_root.parent != root or not run_root.is_dir():
+        raise HTTPException(status_code=404, detail="Lauf nicht reserviert")
+    try:
+        client, bucket, praefix = _r2()
+    except RunPodFehler as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    key = f"{praefix}/checkpoints/{run_id}.zip"
+    try:
+        daten = client.get_object(Bucket=bucket, Key=key)["Body"].read()
+    except Exception:  # noqa: BLE001 — kein Objekt = noch kein Teilstand
+        raise HTTPException(status_code=404,
+                            detail="Kein Teilstand hinterlegt (noch keiner "
+                                   "hochgeladen oder schon eingespielt und geloescht)")
+    _import_entpacken(run_root, run_id, daten)
+    pfad = run_root / "manifest.json"
+    m = {}
+    if pfad.is_file():
+        try:
+            m = json.loads(pfad.read_text())
+        except Exception:  # noqa: BLE001
+            m = {}
+    m.update({"teilstand": True,
+              "teilstand_zeiten": (payload or {}).get("zeiten"),
+              "letzte_zeit": (payload or {}).get("letzte_zeit")})
+    pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+    return {"run_id": run_id, "teilstand_zeiten": m.get("teilstand_zeiten")}
 
 
 @router.get("/runs/{run_id}/log")
