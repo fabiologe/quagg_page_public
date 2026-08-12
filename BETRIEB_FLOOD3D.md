@@ -124,10 +124,22 @@ lokalen Lauf.
   `status: COMPLETED` — der Fehler steht nur im Feld `error` der
   `/status`-Antwort. Der Relay darf einen Lauf also NICHT am Status als
   erfolgreich verbuchen, sondern nur an einem `done`-Event mit `artifactsUrl`.
-- Noch offen: S3-Umgebungsvariablen am Endpunkt hinterlegen (der Worker meldet
-  sonst „Ablage: inline" und kann nur Fälle < 8 MB annehmen — ein echtes Bundle
-  mit Geländeraster ist größer), dann Relay im Backend (Bundle → R2 → `/run` →
-  `/stream` → Import) und die dritte Option im Rechenort-Feld.
+- S3-Werte am Endpunkt hinterlegt (2026-08-12) — der Worker meldet „Ablage: S3".
+- Relay (`engines/runpod/relay.py`) und Rechenort „RunPod (Cloud)" im
+  Simulations-Panel sind gebaut: `POST /runs` mit `{"ort": "runpod"}`.
+  Der Server packt das Bundle (dasselbe wie für den Companion, `core/bundle.py`),
+  legt es in R2 ab, verfolgt den Job und übergibt `artifacts.zip` dem
+  vorhandenen Import — die Ergebnisphase merkt keinen Unterschied.
+- **Erster echter Cloud-Lauf 2026-08-12 — zwei Funde:**
+  1. `/stream` liefert je Abfrage **nur die NEUEN** Ereignisse, nicht den
+     ganzen Strom. Ein Index-Zeiger darauf verschluckt fast alles.
+  2. `os.cpu_count()` meldet im Container die Kerne der **Maschine**, nicht
+     das Kontingent — mpirun startete viel mehr Ränge als Kerne zugeteilt
+     sind. `local_runner.erlaubte_kerne()` fragt jetzt zusätzlich
+     `sched_getaffinity` und die cgroup-Quote ab und nimmt das Kleinste.
+  3. Der Lauf endete an `executionTimeout exceeded` — **das Execution
+     Timeout am Endpunkt steht noch auf der Voreinstellung.** Ohne
+     Abschalten (bzw. ≥ 4 h) stirbt jeder CFD-Lauf mittendrin.
 
 ## Läufe auslagern (StorageBox)
 

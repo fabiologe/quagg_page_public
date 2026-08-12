@@ -49,9 +49,48 @@ def _cores() -> int:
         env = os.environ.get(name, "").strip()
         if env.isdigit() and int(env) > 0:
             return int(env)
-    # os.cpu_count() zaehlt logische CPUs (Hyperthreads mit). Passend zu
-    # --use-hwthread-cpus im mpirun-Aufruf.
-    return max(1, os.cpu_count() or 1)
+    return erlaubte_kerne()
+
+
+def erlaubte_kerne(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
+                   quota=Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"),
+                   periode=Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")) -> int:
+    """
+    Kerne, die dieser Prozess WIRKLICH bekommt.
+
+    ``os.cpu_count()`` meldet die CPUs der MASCHINE, nicht die des
+    Containers: In einem Cloud-Container mit 16 zugeteilten vCPUs auf einem
+    64-Kern-Knoten kaeme 64 heraus, mpirun startete 64 Raenge auf 16 Kernen
+    und der Lauf wuerde langsamer statt schneller (gefunden 2026-08-12 am
+    ersten RunPod-Lauf). Deshalb zusaetzlich:
+
+    * ``sched_getaffinity`` — greift bei ``--cpuset-cpus``
+    * cgroup v2 ``cpu.max`` bzw. v1 ``cfs_quota/period`` — greift bei
+      ``--cpus`` und bei RunPod/Kubernetes-Kontingenten
+
+    Die kleinste dieser Zahlen gewinnt. Auf einer freien Maschine (Fabios
+    Rechner) aendert das nichts: dort ist nichts begrenzt.
+    """
+    kandidaten = []
+    try:
+        kandidaten.append(len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        pass
+    try:
+        roh = Path(cpu_max).read_text().split()
+        if len(roh) == 2 and roh[0] != "max":
+            kandidaten.append(round(int(roh[0]) / int(roh[1])))
+    except (OSError, ValueError, ZeroDivisionError):
+        pass
+    try:
+        q = int(Path(quota).read_text())
+        p = int(Path(periode).read_text())
+        if q > 0 and p > 0:
+            kandidaten.append(round(q / p))
+    except (OSError, ValueError, ZeroDivisionError):
+        pass
+    kandidaten.append(os.cpu_count() or 1)
+    return max(1, min(k for k in kandidaten if k and k > 0))
 
 
 def emit(**ev) -> None:

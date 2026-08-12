@@ -176,7 +176,14 @@
             <option value="local" :disabled="!companion?.foamSupported">
               Lokal (dieser PC, Docker)
             </option>
+            <option value="runpod">RunPod (Cloud, kostenpflichtig)</option>
           </select>
+          <p v-if="rechenort === 'runpod'" class="f3d-muted f3d-small">
+            Der Fall wird als Paket in die Cloud geschickt und dort auf allen
+            Kernen des Workers gerechnet. Der Server begleitet den Lauf und
+            übernimmt das Ergebnis automatisch — Browser darf zu sein.
+            <strong>Kostenpflichtig nach Laufzeit.</strong>
+          </p>
           <p v-if="companion?.foamSupported" class="f3d-muted f3d-small">
             ✓ Local Companion v{{ companion.version }} erkannt
             {{ companion.docker?.available ? '· Docker läuft' : '· Docker NICHT erreichbar!' }}
@@ -387,6 +394,18 @@ async function starteLokal(resumeJob = null) {
 async function startClicked() {
   if (rechenort.value === 'server') {
     store.startRun()
+    return
+  }
+  if (rechenort.value === 'runpod') {
+    // Cloud kostet echtes Geld, deshalb eine bewusste Bestätigung mehr —
+    // das Kosten-Passwort fragt der API-Client zusätzlich ab.
+    const ok = window.confirm(
+      'Lauf in der Cloud rechnen (RunPod)?\n\n'
+      + 'Der Server packt den Fall, schickt ihn zum Rechnen und holt das '
+      + 'Ergebnis zurück — du kannst die Seite dabei verlassen.\n'
+      + 'Es entstehen Kosten nach Laufzeit.')
+    if (!ok) return
+    await store.startRun('runpod')
     return
   }
   await starteLokal(null)

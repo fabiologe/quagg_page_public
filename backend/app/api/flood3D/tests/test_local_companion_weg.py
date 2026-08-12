@@ -251,15 +251,17 @@ def test_lokale_kernzahl_ohne_deckel(monkeypatch):
     r = _lade_runner()
     monkeypatch.delenv("FLOOD3D_CORES", raising=False)
     monkeypatch.delenv("QUAGG_FOAM_CORES", raising=False)
-    monkeypatch.setattr(r.os, "cpu_count", lambda: 16)
+    # was die Maschine hergibt, ermittelt erlaubte_kerne (eigener Test) —
+    # hier geht es nur darum, dass NICHTS mehr gedeckelt wird
+    monkeypatch.setattr(r, "erlaubte_kerne", lambda: 16)
     assert r._cores() == 16
-    monkeypatch.setattr(r.os, "cpu_count", lambda: 64)
+    monkeypatch.setattr(r, "erlaubte_kerne", lambda: 64)
     assert r._cores() == 64
 
 
 def test_lokale_kernzahl_vorgabe_schlaegt_automatik(monkeypatch):
     r = _lade_runner()
-    monkeypatch.setattr(r.os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(r, "erlaubte_kerne", lambda: 16)
     monkeypatch.setenv("FLOOD3D_CORES", "4")
     assert r._cores() == 4
     monkeypatch.delenv("FLOOD3D_CORES")
@@ -277,3 +279,38 @@ def test_server_bleibt_gedeckelt():
     import os as _os
     from ..core import runner
     assert runner.CORES <= (_os.cpu_count() or 1)
+
+
+def test_kernzahl_beachtet_das_kontingent_des_containers(tmp_path, monkeypatch):
+    """
+    os.cpu_count() meldet die Kerne der MASCHINE, nicht die des Containers.
+    In der Cloud (16 zugeteilte vCPUs auf einem grossen Knoten) startete
+    mpirun sonst weit mehr Raenge als Kerne da sind — der Lauf wird dadurch
+    langsamer statt schneller (2026-08-12 am ersten RunPod-Lauf gesehen).
+    """
+    r = _lade_runner()
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 64)
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(64)))
+
+    # cgroup v2: 16 Kerne von 64
+    v2 = tmp_path / "cpu.max"
+    v2.write_text("1600000 100000\n")
+    assert r.erlaubte_kerne(cpu_max=v2, quota=tmp_path / "x", periode=tmp_path / "y") == 16
+
+    # cgroup v1: 8 Kerne
+    q, p = tmp_path / "quota", tmp_path / "periode"
+    q.write_text("800000"); p.write_text("100000")
+    assert r.erlaubte_kerne(cpu_max=tmp_path / "fehlt", quota=q, periode=p) == 8
+
+    # ohne Begrenzung ("max") bleibt es bei der Maschine
+    v2.write_text("max 100000\n")
+    assert r.erlaubte_kerne(cpu_max=v2, quota=tmp_path / "x", periode=tmp_path / "y") == 64
+
+
+def test_cpuset_begrenzung_wird_beachtet(tmp_path, monkeypatch):
+    """--cpuset-cpus schlaegt sich in sched_getaffinity nieder."""
+    r = _lade_runner()
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 64)
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: {0, 1, 2, 3})
+    assert r.erlaubte_kerne(cpu_max=tmp_path / "a", quota=tmp_path / "b",
+                            periode=tmp_path / "c") == 4

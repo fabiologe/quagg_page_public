@@ -1409,11 +1409,7 @@ async def case_bundle(case_id: str, request: Request):
     Nutzer-Maschine rechnet, /runs/{run_id}/import bringt die Artefakte
     zurück — die Ergebnis-Phase merkt keinen Unterschied zum Serverlauf.
     """
-    import io
-    import tempfile
-    import zipfile
-
-    from .core.casebuilder import build_case
+    from .core.bundle import BundleFehler, bundle_bauen
     from .core.gate import pruefe_kosten_gate
 
     # Kosten-Gate: baut den Fall serverseitig und reserviert eine run_id
@@ -1428,64 +1424,13 @@ async def case_bundle(case_id: str, request: Request):
     run_id = f"{case_id}_r{n:03d}"
     run_root = root / run_id
 
-    # Datendateien, auf die die casespec RELATIV verweist, müssen mit ins
-    # Bundle — der Nachlauf auf der Nutzer-Maschine liest sie erneut (das
-    # Geländeraster z. B. für write_geometry). Fehlen sie, liefe die
-    # Simulation durch und scheiterte erst danach: teuer und ärgerlich.
-    # Deshalb VOR dem Fallbau prüfen und sofort abbrechen.
-    import shutil as _sh
-    referenced = spec.datei_referenzen()
-    fehlend = [n for n in referenced if not (d / n).is_file()]
-    if fehlend:
-        raise HTTPException(
-            status_code=422,
-            detail="Für den lokalen Lauf fehlen Datendateien neben dem "
-                   f"Fall: {', '.join(fehlend)}")
-
-    with tempfile.TemporaryDirectory() as td:
-        case_out = Path(td) / "case"
-        info = build_case(spec, case_out, d)
-        if info["problems"]:
-            raise HTTPException(status_code=422,
-                                detail="Geometrieprobleme: "
-                                       + "; ".join(info["problems"]))
-        (case_out / "case.yaml").write_text((d / "case.yaml").read_text())
-        (case_out / "run_id.txt").write_text(run_id)
-
-        for name in referenced:
-            ziel = case_out / name
-            ziel.parent.mkdir(parents=True, exist_ok=True)
-            _sh.copy2(d / name, ziel)
-
-        # Den Core DIESES Servers mitgeben. Das Image auf der Nutzer-
-        # Maschine hat eine eingebackene Kopie, die beliebig alt sein darf;
-        # der Runner zieht die mitgelieferte vor. Ohne das scheitert jeder
-        # lokale Lauf, sobald die Spezifikation ein neues Feld bekommt
-        # ("Extra inputs are not permitted"), bis der Nutzer neu zieht.
-        hier = Path(__file__).parent
-        rt = case_out / "quagg_runtime" / "flood3D"
-        rt.mkdir(parents=True)
-        _sh.copy2(hier / "__init__.py", rt / "__init__.py")
-        # den GANZEN Core-Baum, nicht nur die obersten Module: core/extract
-        # ist ein Unterpaket, und ohne das bricht der Nachlauf im Container
-        # mit ModuleNotFoundError ab
-        _sh.copytree(hier / "core", rt / "core",
-                     ignore=_sh.ignore_patterns("__pycache__", "*.pyc"))
-        # Auch der RUNNER reist mit: die Image-Kopie übergibt an diese
-        # Bundle-Kopie (local_runner._runner_uebergabe) — sonst fehlt dem
-        # eingebackenen Skript jeder neue Pipeline-Schritt, bis der Nutzer
-        # sein Image neu zieht (2026-08-06: surfaceFeatureExtract fehlte,
-        # snappy fand keine .eMesh-Kanten)
-        eng = rt / "engines" / "local"
-        eng.mkdir(parents=True)
-        _sh.copy2(hier / "engines" / "local" / "local_runner.py",
-                  eng / "local_runner.py")
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in sorted(case_out.rglob("*")):
-                if f.is_file():
-                    z.write(f, str(f.relative_to(case_out)))
-        data = buf.getvalue()
+    # Gebaut wird in core/bundle.py — dasselbe Paket geht an den Companion
+    # UND an den RunPod-Worker; zwei Kopien wären zwei Gelegenheiten,
+    # verschieden zu altern.
+    try:
+        data = bundle_bauen(spec, d, run_id)
+    except BundleFehler as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     # run_id erst NACH erfolgreichem Bau reservieren
     run_root.mkdir()
@@ -1588,6 +1533,10 @@ async def start_run(request: Request, payload: dict = Body(...)):
     pruefe_kosten_gate(request, payload)
 
     case_id = payload.get("case_id", "")
+    ort = (payload.get("ort") or "server").strip()
+    if ort not in ("server", "runpod"):
+        raise HTTPException(status_code=422,
+                            detail=f"Unbekannter Rechenort {ort!r}")
     spec, case_dir = _load_case(case_id)
 
     # Tor vor dem Lauf: Fehler-Befunde starten keinen bezahlten Lauf, der
@@ -1608,9 +1557,53 @@ async def start_run(request: Request, payload: dict = Body(...)):
     run_id = f"{case_id}_r{n:03d}"
     run_root = root / run_id
 
+    def melde(**felder):
+        """Manifest fortschreiben (der Cloud-Weg hat keinen run_pipeline)."""
+        pfad = run_root / "manifest.json"
+        m = {}
+        if pfad.is_file():
+            try:
+                m = json.loads(pfad.read_text())
+            except Exception:                    # noqa: BLE001
+                m = {}
+        m.update(felder)
+        pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+
+    def work_runpod():
+        """
+        Cloud-Lauf: Bundle → R2 → Job → Ereignisstrom → vorhandener Import.
+
+        Nach dem Import sieht der Lauf aus wie jeder andere — das Manifest
+        aus dem Archiv (mit foam, checkMesh, Kosten) bleibt maßgeblich, wir
+        setzen nur den Endzustand darüber.
+        """
+        from .engines.runpod.relay import (RunPodFehler, artefakt_aufraeumen,
+                                           lauf_starten)
+
+        try:
+            erg = lauf_starten(spec, case_dir, run_id, run_root, melde,
+                               lambda: (run_root / "ABBRUCH").exists())
+            melde(status="importing")
+            _import_entpacken(run_root, run_id, erg["artefakte"])
+            artefakt_aufraeumen(erg["job_id"])
+            melde(status="completed", finished=time.time(),
+                  duration_s=erg["dauer_s"], runpod_job=erg["job_id"])
+        except RunPodFehler as e:
+            abgebrochen = "abgebrochen" in str(e).lower()
+            melde(status="abgebrochen" if abgebrochen else "failed",
+                  error=str(e)[:500], finished=time.time())
+        except Exception as e:                   # noqa: BLE001
+            melde(status="failed", error=f"{type(e).__name__}: {e}"[:500],
+                  finished=time.time())
+        finally:
+            (run_root / "ABBRUCH").unlink(missing_ok=True)
+
     def work():
         try:
-            run_pipeline(spec, case_dir, run_root, run_id)
+            if ort == "runpod":
+                work_runpod()
+            else:
+                run_pipeline(spec, case_dir, run_root, run_id)
         except Exception as e:                   # noqa: BLE001
             # Der Fehlerzustand steht NORMALERWEISE im Manifest — aber
             # wenn das Manifest-Schreiben selbst scheitert (Platte voll),
@@ -1622,10 +1615,18 @@ async def start_run(request: Request, payload: dict = Body(...)):
         finally:
             _active_runs.pop(run_id, None)
 
+    if ort == "runpod":
+        # Der Cloud-Weg schreibt sein Manifest selbst — Ordner und erster
+        # Zustand müssen VOR dem Thread stehen, sonst zeigt die Liste einen
+        # Lauf ohne alles.
+        run_root.mkdir(parents=True, exist_ok=True)
+        melde(status="building", origin="runpod", ort="runpod",
+              title=spec.meta.title, created=time.time())
+
     t = threading.Thread(target=work, name=f"flood3d-{run_id}", daemon=True)
     _active_runs[run_id] = t
     t.start()
-    return {"run_id": run_id, "status": "building"}
+    return {"run_id": run_id, "status": "building", "ort": ort}
 
 
 @router.post("/runs/{run_id}/abort")
