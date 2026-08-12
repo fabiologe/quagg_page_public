@@ -127,6 +127,51 @@ def _dateisystem(pfad: Path) -> tuple[str, str]:
     return treffer[1], LANGSAME_FS.get(treffer[1], "")
 
 
+def _bench_platte(ordner: Path) -> dict:
+    """
+    Schreibtempo DORT, wo der Lauf schreibt — in zwei Mustern:
+    eine grosse Datei (Felder) und viele kleine (Logs, Prozessordateien,
+    Zeitschritte). Auf einer Docker-Desktop-Bruecke bricht vor allem das
+    zweite Muster ein; genau das ist das OpenFOAM-Lastbild.
+    """
+    import shutil
+    mess = ordner / "_bench"
+    mess.mkdir(parents=True, exist_ok=True)
+    out: dict = {}
+    try:
+        block = b"\0" * (1024 * 1024)
+        t0 = time.time()
+        with open(mess / "gross.bin", "wb") as f:
+            for _ in range(64):
+                f.write(block)
+            f.flush()
+            os.fsync(f.fileno())
+        out["platte_mb_s"] = round(64 / max(time.time() - t0, 1e-9))
+        t0 = time.time()
+        for i in range(300):
+            (mess / f"k_{i}.txt").write_text("x")
+        out["platte_dateien_s"] = round(300 / max(time.time() - t0, 1e-9))
+    except OSError as e:
+        out["platte_fehler"] = str(e)[:120]
+    finally:
+        shutil.rmtree(mess, ignore_errors=True)
+    return out
+
+
+def _bench_cpu() -> int:
+    """
+    Ein-Kern-Rechenwert (dimensionslos): dieselbe Python-Schleife im selben
+    Image — als RELATIVER Vergleich zwischen Maschinen brauchbar, mehr nicht.
+    Referenz: unser Server misst hier ~9 (kalibriert 2026-08-12).
+    """
+    t0 = time.time()
+    x = 0.0
+    for i in range(2_000_000):
+        x += i * 1e-9
+        x *= 0.9999999
+    return round(2.0 / max(time.time() - t0, 1e-9))
+
+
 def maschinen_bericht(job: Path, cores: int) -> dict:
     """
     Womit hier gerechnet wird — und ob etwas davon bremst.
@@ -149,10 +194,20 @@ def maschinen_bericht(job: Path, cores: int) -> dict:
         bericht["shm_mb"] = round(st.f_blocks * st.f_frsize / 1024 ** 2)
     except OSError:
         pass
+    try:
+        for zeile in Path("/proc/meminfo").read_text().splitlines():
+            if zeile.startswith("SwapTotal:"):
+                bericht["swap_gb"] = round(int(zeile.split()[1]) / 1024 ** 2, 1)
+            elif zeile.startswith("SwapFree:"):
+                bericht["swap_frei_gb"] = round(int(zeile.split()[1]) / 1024 ** 2, 1)
+    except (OSError, ValueError, IndexError):
+        pass
     typ, warnung = _dateisystem(job)
     bericht["job_fs"] = typ
     if warnung:
         bericht["job_fs_warnung"] = warnung
+    bericht.update(_bench_platte(job))
+    bericht["cpu_wert"] = _bench_cpu()
     try:
         bericht["kern"] = os.uname().release
     except AttributeError:
@@ -376,6 +431,28 @@ def main() -> int:
             f"sichtbaren CPUs · {maschine.get('ram_gb', '?')} GB RAM "
             f"({maschine.get('ram_frei_gb', '?')} GB frei) · Job-Ordner auf "
             f"{maschine.get('job_fs', '?')}"))
+        # Referenzwerte: unser Server (2026-08-12). Der Vergleich macht aus
+        # nackten Zahlen eine Diagnose, die der Nutzer selbst lesen kann.
+        emit(event="log", text=(
+            f"Selbsttest: Platte {maschine.get('platte_mb_s', '?')} MB/s "
+            f"(Server ~570) · kleine Dateien "
+            f"{maschine.get('platte_dateien_s', '?')}/s (Server ~9600) · "
+            f"CPU-Wert {maschine.get('cpu_wert', '?')} (Server ~9)"))
+        if (maschine.get("platte_dateien_s") or 99999) < 1000:
+            emit(event="log", text=(
+                "WARNUNG: Der Job-Ordner schreibt kleine Dateien sehr "
+                "langsam — typisch fuer einen Bind-Mount ueber die "
+                "Docker-Desktop-Bruecke. OpenFOAM schreibt staendig; das "
+                "kann den Lauf um ein Vielfaches verlangsamen. Abhilfe: "
+                "Companion mit Docker-Volume (QUAGG_SIBLING_VOLUME_OPENFOAM) "
+                "betreiben."))
+        if (maschine.get("ram_frei_gb") or 99) < 2:
+            emit(event="log", text=(
+                f"WARNUNG: Nur {maschine.get('ram_frei_gb')} GB RAM frei — "
+                "die Docker-VM ist zu knapp bemessen oder es laeuft zu viel "
+                "nebenher. Wenn der Lauf zu swappen beginnt, bricht das "
+                "Tempo um Groessenordnungen ein (Docker Desktop -> "
+                "Settings -> Resources)."))
         if maschine.get("job_fs_warnung"):
             emit(event="log", text=(
                 f"WARNUNG: Der Job-Ordner liegt auf einer "
