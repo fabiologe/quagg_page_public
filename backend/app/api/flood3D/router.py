@@ -1227,7 +1227,8 @@ _laufende_previews: set[str] = set()
 
 
 @router.post("/cases/{case_id}/mesh-preview")
-async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
+async def case_mesh_preview(case_id: str, request: Request,
+                            payload: dict | None = Body(None)):
     """
     Billiger Vernetzungsprobelauf (Spez. Kap. 6.1): Zellenzahl,
     checkMesh-Kennwerte, Laufzeit- und Kostenschätzung. Läuft synchron im
@@ -1239,7 +1240,11 @@ async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
     gekennzeichnet.
     """
     from .core.casebuilder import build_case
+    from .core.gate import pruefe_kosten_gate
     from .core.runner import FoamError, mesh_preview
+
+    # Kosten-Gate: die Vorschau vernetzt wirklich (Minuten Serverzeit)
+    pruefe_kosten_gate(request, payload)
 
     spec, d = _load_case(case_id)
     ohne_verfeinerung = bool((payload or {}).get("ohne_verfeinerung"))
@@ -1307,7 +1312,7 @@ async def case_mesh_preview(case_id: str, payload: dict | None = Body(None)):
 
 
 @router.post("/cases/{case_id}/bundle")
-async def case_bundle(case_id: str):
+async def case_bundle(case_id: str, request: Request):
     """
     Fall für den Local Companion paketieren: serverseitig gebauter Fall
     (system/constant/0/Allrun) + case.yaml + reservierte run_id. Die
@@ -1319,6 +1324,10 @@ async def case_bundle(case_id: str):
     import zipfile
 
     from .core.casebuilder import build_case
+    from .core.gate import pruefe_kosten_gate
+
+    # Kosten-Gate: baut den Fall serverseitig und reserviert eine run_id
+    pruefe_kosten_gate(request)
 
     spec, d = _load_case(case_id)
     root = runs_root()
@@ -1477,11 +1486,16 @@ async def import_run_chunk(run_id: str, request: Request,
 
 
 @router.post("/runs")
-async def start_run(payload: dict = Body(...)):
+async def start_run(request: Request, payload: dict = Body(...)):
     """Lauf starten (Spez. Kap. 9); die Pipeline läuft im Hintergrund."""
     import threading
 
+    from .core.gate import pruefe_kosten_gate
     from .core.runner import run_pipeline
+
+    # Kosten-Gate VOR allem anderen: ein Lauf bindet Server-Kerne (und ueber
+    # RunPod echtes Geld). Oeffentliche API — Oberflaeche umgehen zaehlt nicht.
+    pruefe_kosten_gate(request, payload)
 
     case_id = payload.get("case_id", "")
     spec, case_dir = _load_case(case_id)

@@ -2,21 +2,69 @@
 // vite-Proxy '/FastAPI' und in Prod über nginx — keine Extra-Konfiguration.
 const BASE = '/FastAPI/flood3d'
 
+// ── Kosten-Gate ─────────────────────────────────────────────────────────────
+// flood-3D steht öffentlich im Netz; jeder Lauf kostet Server-Kerne oder (über
+// RunPod) echtes Geld. Der Server sperrt deshalb Lauf, Netzvorschau und Bundle
+// ohne Passwort (core/gate.py). Hier wird es EINMAL pro Browser-Sitzung
+// erfragt und mitgeschickt — bewusst NICHT im Quelltext hinterlegt wie bei
+// flood-2D, wo jeder Besucher es aus dem Bundle lesen kann. Der Client kennt
+// das richtige Passwort nie; er reicht nur durch, was eingegeben wurde.
+const PW_SCHLUESSEL = 'flood3d-launch-pw'
+// Defensiv: in privaten Fenstern und bei gesperrtem Speicher wirft schon der
+// Zugriff auf sessionStorage — das darf das Modul nicht am Laden hindern.
+const sitzungsSpeicher = (() => {
+  try { return globalThis.sessionStorage ?? null } catch { return null }
+})()
+let launchPasswort = (() => {
+  try { return sitzungsSpeicher?.getItem(PW_SCHLUESSEL) || '' } catch { return '' }
+})()
+
+function gateKopf() {
+  return launchPasswort ? { 'X-Launch-Password': launchPasswort } : {}
+}
+
+export function launchPasswortVergessen() {
+  launchPasswort = ''
+  try { sitzungsSpeicher?.removeItem(PW_SCHLUESSEL) } catch { /* egal */ }
+}
+
+async function mitGate(aufruf) {
+  if (!launchPasswort) {
+    const eingabe = globalThis.prompt(
+      'Rechenlauf starten — Passwort eingeben.\n\n'
+      + 'Kostenschutz: Läufe binden Server-Kerne bzw. Cloud-Guthaben.')
+    if (!eingabe || !eingabe.trim()) {
+      throw new Error('Abgebrochen — ohne Passwort wird nichts gestartet.')
+    }
+    launchPasswort = eingabe.trim()
+    try { sitzungsSpeicher?.setItem(PW_SCHLUESSEL, launchPasswort) } catch { /* egal */ }
+  }
+  try {
+    return await aufruf()
+  } catch (e) {
+    // Falsches Passwort: merken bringt nichts, beim nächsten Mal neu fragen
+    if (e?.status === 403) launchPasswortVergessen()
+    throw e
+  }
+}
+
 async function getJson(path, params = null) {
   const qs = params ? `?${new URLSearchParams(params)}` : ''
   const res = await fetch(`${BASE}${path}${qs}`)
   if (!res.ok) {
     let detail = res.statusText
     try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-    throw new Error(`flood3d ${path}: ${detail}`)
+    const err = new Error(`flood3d ${path}: ${detail}`)
+    err.status = res.status
+    throw err
   }
   return res.json()
 }
 
-async function sendJson(path, method, body) {
+async function sendJson(path, method, body, extraKopf = null) {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(extraKopf || {}) },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -25,7 +73,9 @@ async function sendJson(path, method, body) {
       const data = await res.json()
       detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
     } catch { /* leer */ }
-    throw new Error(detail)
+    const err = new Error(detail)
+    err.status = res.status
+    throw err
   }
   return res.json()
 }
@@ -75,18 +125,22 @@ export const flood3dApi = {
     sendJson(`/cases/${caseId}/profile`, 'POST', { polyline, samples }),
   casePreview: (caseId, spec) => sendJson(`/cases/${caseId}/preview`, 'POST', spec),
   meshPreview: (caseId, opts = {}) =>
-    sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts),
+    mitGate(() => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts, gateKopf())),
   caseMeshSurface: (caseId) => getJson(`/cases/${caseId}/mesh-surface`),
-  startRun: (caseId) => sendJson('/runs', 'POST', { case_id: caseId }),
-  caseBundle: async (caseId) => {
-    const res = await fetch(`${BASE}/cases/${caseId}/bundle`, { method: 'POST' })
+  startRun: (caseId) =>
+    mitGate(() => sendJson('/runs', 'POST', { case_id: caseId }, gateKopf())),
+  caseBundle: (caseId) => mitGate(async () => {
+    const res = await fetch(`${BASE}/cases/${caseId}/bundle`,
+      { method: 'POST', headers: gateKopf() })
     if (!res.ok) {
       let detail = res.statusText
       try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-      throw new Error(detail)
+      const err = new Error(detail)
+      err.status = res.status
+      throw err
     }
     return { runId: res.headers.get('X-F3D-Run-Id'), blob: await res.blob() }
-  },
+  }),
   // Grosse Ergebnisse stückweise übertragen — ein 400-MB-Body scheitert
   // an jeder Proxy-Grenze (nginx: 200 MB).
   importRunChunked: async (runId, blob, onProgress = null) => {
