@@ -75,12 +75,27 @@ lokalen Lauf.
   | **Execution Timeout** | **aus bzw. ≥ 4 h** | Voreinstellung (Minuten) würde jeden CFD-Lauf abschneiden — der wichtigste Schalter |
   | Env Vars | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX=flood3d` | Werte aus `backend/.env.r2.flood3d` (eigener R2-Bucket, Entscheidung 2026-08-12) |
 
-- Danach in `backend/.env`: `FLOOD3D_RUNPOD_ENDPOINT_ID=<neue ID>` (**eigener
-  Name** — `RUNPOD_ENDPOINT_ID` gehört flood-2D) und ein API-Schlüssel, der
-  auch für diesen Endpunkt gilt: der vorhandene ist endpunkt-gebunden
-  (Verwaltungs-APIs antworten 403/401).
-- Noch offen: Relay im Backend (Bundle → R2 → `/run` → `/stream` → Import),
-  dritte Option im Rechenort-Feld.
+- In `backend/.env` (angelegt 2026-08-12): `FLOOD3D_POD_ENDPOINT=6nu16dktu7oejc`
+  und `FLOOD3D_POD_API_KEY=rpa_…` — **eigene Namen**, `RUNPOD_ENDPOINT_ID`/
+  `RUNPOD_API_KEY` gehören flood-2D. Die Schlüssel sind endpunkt-gebunden: der
+  2D-Schlüssel bekommt am 3D-Endpunkt 403 und umgekehrt. Keine Leerzeichen um
+  das `=` — sonst heißt die Variable `FLOOD3D_POD_API_KEY ` und wird nie gefunden.
+- R2-Bucket: **`flood-3d`** (eigener Bucket, Zugangsdaten in
+  `backend/.env.r2.flood3d`, nicht versioniert). Access Key ID + Secret gibt es
+  NUR beim Anlegen des Tokens zu sehen: R2 → *Manage R2 API Tokens* → *Create
+  API Token* → Object Read & Write, auf `flood-3d` beschränkt. Der dort ebenfalls
+  angezeigte „Token value" ist der Cloudflare-API-Token und für S3 unbrauchbar.
+- **Rauchtest 2026-08-12 bestanden**: Job angenommen (3,8 s Anlauf, warmer
+  Worker), Worker-Log kam im Strom an, absichtlich kaputtes `case.zip` führte
+  zu sauberen `error`-Events und Exit 1.
+- **Falle für den Relay:** RunPod meldet auch bei einem gescheiterten Handler
+  `status: COMPLETED` — der Fehler steht nur im Feld `error` der
+  `/status`-Antwort. Der Relay darf einen Lauf also NICHT am Status als
+  erfolgreich verbuchen, sondern nur an einem `done`-Event mit `artifactsUrl`.
+- Noch offen: S3-Umgebungsvariablen am Endpunkt hinterlegen (der Worker meldet
+  sonst „Ablage: inline" und kann nur Fälle < 8 MB annehmen — ein echtes Bundle
+  mit Geländeraster ist größer), dann Relay im Backend (Bundle → R2 → `/run` →
+  `/stream` → Import) und die dritte Option im Rechenort-Feld.
 
 ## Bekannte Deckel (bewusst)
 
