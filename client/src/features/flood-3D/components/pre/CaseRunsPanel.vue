@@ -15,6 +15,10 @@
         <div class="f3d-runrow-main">
           <span class="f3d-runrow-id">{{ run.run_id }}</span>
           <span class="f3d-chip" :class="`status-${run.status}`">{{ run.status }}</span>
+          <span v-if="istLive(run)" class="f3d-muted f3d-small">
+            💻 t = {{ lokal.laufend.letzteZeit ?? '…' }} s
+            ({{ Math.round((lokal.fortschritt ?? 0) * 100) }} %)
+          </span>
           <span v-if="run.verfallen" class="f3d-chip"
                 title="Companion-Reservierung ohne Ergebnis seit über 7 Tagen — kann gelöscht werden">
             verfallen
@@ -51,9 +55,13 @@
 // in einer globalen Liste suchen zu müssen.
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
+import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePostStore } from '../../stores/usePostStore'
 
 const store = usePreStore()
+const lokal = useLocalRunStore()
+const istLive = (run) => run.status === 'lokal'
+  && lokal.laufend?.runId === run.run_id
 const postStore = usePostStore()
 
 // in die Phase Ergebnis springen, mit genau diesem Lauf im Fokus
@@ -65,7 +73,9 @@ function openResult(runId, tab) {
 
 const ACTIVE = ['building', 'meshing', 'solving', 'extracting', 'converting_fields']
 const hasActive = computed(() =>
-  store.caseRuns.some((r) => ACTIVE.includes(r.status)))
+  store.caseRuns.some((r) => ACTIVE.includes(r.status))
+  // Teilstand-Importe des lokal gefahrenen Laufs sollen sichtbar nachladen
+  || lokal.laeuft)
 
 let pollTimer = null
 watch(hasActive, (active) => {

@@ -400,8 +400,13 @@ class Zwischenstand:
     Alles ueber die Stdlib (urllib) — das Foam-Image hat kein boto3.
     """
 
-    def __init__(self, job: Path, case: Path, spec):
+    def __init__(self, job: Path, case: Path, spec, run_id: str | None = None):
         self.job, self.case, self.spec = job, case, spec
+        # Die Laufnummer reist in jedem checkpoint-Ereignis mit: nach einem
+        # Wiederanknuepfen (Seiten-Reload) kennt der Browser sie sonst erst
+        # ab dem done-Ereignis — und koennte bis dahin keine Teilstaende
+        # beim Server anstossen.
+        self.run_id = run_id
         self.konfig = None
         self.letzter = 0.0
         self.laeuft = False
@@ -472,7 +477,8 @@ class Zwischenstand:
         paket.unlink(missing_ok=True)
         self.zeiten_drin = len(zeiten)
         emit(event="checkpoint", zeiten=len(zeiten),
-             letzte_zeit=zeiten[-1], sizeBytes=len(daten))
+             letzte_zeit=zeiten[-1], sizeBytes=len(daten),
+             run_id=self.run_id)
 
 
 def run_foam_step(case: Path, command: str, log_name: str,
@@ -797,7 +803,7 @@ def main() -> int:
             _decompose_dict(case, cores)
             run_foam_step(case, "decomposePar -force", "log.decomposePar")
             emit(event="log", text=f"Rechne auf {cores} Kernen")
-            zs = Zwischenstand(job, case, spec)
+            zs = Zwischenstand(job, case, spec, run_id)
             run_foam_step(case,
                           f"{mpi_kommando(cores)} {app_name} -parallel",
                           f"log.{app_name}", end_time=spec.solver.end_time,
@@ -817,7 +823,7 @@ def main() -> int:
                         "oder laenger rechnen.") from None
                 raise
         else:
-            zs = Zwischenstand(job, case, spec)
+            zs = Zwischenstand(job, case, spec, run_id)
             run_foam_step(case, app_name, f"log.{app_name}", tick_cb=zs.tick,
                           end_time=spec.solver.end_time)
 

@@ -51,6 +51,21 @@ export async function unterbrocheneLaeufe() {
   }
 }
 
+// Live-Status eines Companion-Jobs — null heisst: Job nicht (mehr) im
+// Speicher des Companion (Neustart) oder Companion nicht erreichbar.
+// /runs liest dagegen das PLATTEN-Manifest, das waehrend des Rechnens
+// veraltet ist — fuer "laeuft der noch?" ist NUR dieser Endpunkt verlaesslich.
+export async function jobStatus(jobId) {
+  try {
+    const res = await fetch(`${COMPANION_BASE}/v2/flood3d/status/${jobId}`,
+      { signal: AbortSignal.timeout(2500) })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
 export async function pauseLocalRun(jobId) {
   const res = await fetch(`${COMPANION_BASE}/v2/flood3d/pause/${jobId}`,
     { method: 'POST' })
@@ -86,7 +101,18 @@ export async function runLocally(caseId, onEvent, resumeJob = null) {
   if (!res.ok) throw new Error((await res.json()).error ?? `Companion: HTTP ${res.status}`)
   const { id: jobId } = await res.json()
   onEvent({ event: 'job', jobId })
+  return verfolgen(jobId, onEvent, { runId })
+}
 
+
+// Ereignisschleife + Artefakt-Import — fuer den Frischstart UND fuers
+// Wiederanknuepfen nach einem Seiten-Reload: der Companion rechnet
+// unabhaengig vom Browser weiter, diese Schleife uebernimmt seinen Strom.
+// runId ist beim Anknuepfen zunaechst unbekannt und kommt aus den
+// checkpoint-/done-Ereignissen (der Runner meldet sie mit).
+// ACHTUNG: der Companion-Stream ist KONSUMIEREND (drain) — es darf immer
+// nur genau eine dieser Schleifen je Job laufen (Wache im Store).
+export async function verfolgen(jobId, onEvent, { runId = null } = {}) {
   // Ereignisse einsammeln, bis der Runner fertig oder gescheitert ist
   let artifactsUrl = null
   let wackler = 0
@@ -113,8 +139,9 @@ export async function runLocally(caseId, onEvent, resumeJob = null) {
       // Speicherpunkt: der Laeufer hat einen Teilstand nach S3 geladen —
       // der Server soll ihn einspielen (Ergebnis-3D zeigt ihn dann sofort).
       // Beiwerk: ein Fehler hier darf den Lauf nicht stoeren.
-      if (ev.event === 'checkpoint' && runId) {
-        flood3dApi.teilstandAbholen(runId, ev).catch(() => {})
+      if (ev.event === 'checkpoint') {
+        if (!runId && ev.run_id) runId = ev.run_id   // nach Wiederanknuepfen
+        if (runId) flood3dApi.teilstandAbholen(runId, ev).catch(() => {})
       }
       if (ev.event === 'done') {
         artifactsUrl = ev.artifactsUrl
@@ -132,7 +159,15 @@ export async function runLocally(caseId, onEvent, resumeJob = null) {
   }
   if (!artifactsUrl) throw new Error('Lauf beendet, aber keine Artefakte gemeldet')
   if (!runId) throw new Error('Lauf beendet, aber ohne Laufnummer — Import nicht möglich')
+  await importiereArtefakte(artifactsUrl, runId, onEvent)
+  return runId
+}
 
+
+// Fertige Artefakte vom Companion holen und zum Server uebertragen —
+// separat, damit ein Nachzuegler-Import (Job fertig, Browser war weg)
+// denselben Weg gehen kann.
+export async function importiereArtefakte(artifactsUrl, runId, onEvent) {
   onEvent({ event: 'log', text: 'Lade Artefakte und übertrage sie zum Server …' })
   const art = await fetch(`${COMPANION_BASE}${artifactsUrl}`)
   if (!art.ok) throw new Error(`Artefakte nicht abrufbar: HTTP ${art.status}`)
@@ -143,5 +178,4 @@ export async function runLocally(caseId, onEvent, resumeJob = null) {
     if (f < 1) onEvent({ event: 'progress', phase: 'upload', fraction: f })
   })
   onEvent({ event: 'log', text: `Lauf ${runId} übernommen — Ergebnis-Phase ist bereit.` })
-  return runId
 }

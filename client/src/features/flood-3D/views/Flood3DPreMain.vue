@@ -31,6 +31,16 @@
         </nav>
 
         <div class="f3d-header-actions">
+          <!-- Der lokale Lauf ist phasenunabhaengig sichtbar — vorher
+               verschwand er mit dem Simulations-Panel und wirkte abgebrochen -->
+          <button v-if="lokal.laeuft" class="f3d-chip status-lokal f3d-btn-plain"
+                  title="Lokaler Lauf auf diesem PC — Details in der Phase Simulation"
+                  @click="store.activePhase = 'simulation'">
+            💻 lokaler Lauf<template v-if="lokal.laufend.letzteZeit != null">:
+              t = {{ lokal.laufend.letzteZeit.toFixed(2) }} s</template>
+            <template v-if="lokal.fortschritt != null">
+              ({{ Math.round(lokal.fortschritt * 100) }} %)</template>
+          </button>
           <button class="f3d-btn" :disabled="!store.canUndo"
                   title="Rückgängig (Strg+Z)" @click="store.undoEdit()">↶</button>
           <button class="f3d-btn" :disabled="!store.canRedo"
@@ -102,16 +112,19 @@ import PropertyPanel from '../components/pre/PropertyPanel.vue'
 import SectionView from '../components/pre/SectionView.vue'
 import SimulationPanel from '../components/pre/SimulationPanel.vue'
 import ValidationPanel from '../components/pre/ValidationPanel.vue'
+import { useLocalRunStore } from '../stores/useLocalRunStore'
 
 const store = usePreStore()
 const postStore = usePostStore()
+const lokal = useLocalRunStore()
 const route = useRoute()
 usePreventPageZoom()
 
 const ACTIVE_STATES = ['building', 'meshing', 'solving', 'extracting',
   'converting_fields']
 const activeRunCount = computed(() =>
-  store.caseRuns.filter((r) => ACTIVE_STATES.includes(r.status)).length)
+  store.caseRuns.filter((r) => ACTIVE_STATES.includes(r.status)).length
+  + (lokal.laeuft ? 1 : 0))
 
 // Strg+Z / Strg+Shift+Z / Strg+Y — nicht beim Tippen in Eingabefeldern
 function onHistoryKeys(e) {
@@ -135,6 +148,9 @@ function onHistoryKeys(e) {
 onMounted(async () => {
   await store.loadCases()
   window.addEventListener('keydown', onHistoryKeys)
+  // Laeuft auf dieser Maschine noch ein Companion-Job (Seite neu geladen),
+  // seinen Strom uebernehmen — NICHT awaiten, das laeuft potenziell Stunden.
+  lokal.anknuepfen()
 
   // Deeplink ?runs=<id,id>[&tab=]: Fall aus dem Laufnamen ableiten
   // (<fall>_rNNN), öffnen und direkt in die Phase Ergebnis springen

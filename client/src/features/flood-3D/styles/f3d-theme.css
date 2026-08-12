@@ -276,6 +276,12 @@
   color: var(--f3d-warn);
   border-color: rgba(232, 161, 60, 0.45);
 }
+
+/* Reservierter/laufender Companion-Lauf — Akzent statt neutralem Grau */
+.f3d-chip.status-lokal {
+  color: var(--f3d-accent);
+  border-color: color-mix(in srgb, var(--f3d-accent) 45%, transparent);
+}
 .f3d-chip.status-building::before, .f3d-chip.status-meshing::before,
 .f3d-chip.status-solving::before, .f3d-chip.status-extracting::before,
 .f3d-chip.status-converting_fields::before {

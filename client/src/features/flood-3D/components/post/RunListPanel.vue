@@ -77,17 +77,23 @@
 // Liste automatisch aktualisiert.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { flood3dApi } from '../../services/api'
+import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePostStore } from '../../stores/usePostStore'
 
 const store = usePostStore()
+const lokal = useLocalRunStore()
 
-const TERMINAL = ['completed', 'failed', 'unbekannt']
+// 'lokal' ist aus Server-Sicht terminal (Companion-Reservierung) — sonst
+// pollte die Liste alle 8 s ENDLOS, solange irgendein alter lokaler Lauf
+// existiert. Aktiv ist so ein Lauf nur, wenn DIESER Browser ihn faehrt.
+const TERMINAL = ['completed', 'failed', 'unbekannt', 'lokal']
 // Auslagern erst, wenn nichts mehr rechnet oder auf einen Import wartet —
 // dieselbe Liste wie serverseitig in core/archiv.py ARCHIVIERBAR
 const TERMINAL_ARCHIV = ['completed', 'teilergebnis', 'abgebrochen', 'failed']
 // hängende Läufe (stale) nicht weiter pollen — sonst pollt die Liste ewig
 const hasActive = computed(() =>
-  store.visibleRuns.some((r) => !TERMINAL.includes(r.status) && !r.stale))
+  store.visibleRuns.some((r) => (!TERMINAL.includes(r.status) && !r.stale)
+    || (r.status === 'lokal' && lokal.laufend?.runId === r.run_id)))
 
 const fmtSize = (mb) => (mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`)
 

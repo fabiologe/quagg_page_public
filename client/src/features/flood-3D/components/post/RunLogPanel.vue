@@ -22,11 +22,12 @@
 
       <div class="f3d-log-head">
         <span class="f3d-muted f3d-small">
-          Log: {{ entry.logSource ?? '–' }}
+          Log: {{ lokalLive(entry) ? 'Companion (live)' : (entry.logSource ?? '–') }}
           <template v-if="isActive(entry.status)"> · aktualisiert automatisch</template>
         </span>
       </div>
-      <pre class="f3d-log">{{ entry.log || '(keine Logausgabe)' }}</pre>
+      <pre class="f3d-log">{{ lokalLive(entry) ? lokal.log.join('\n')
+        : (entry.log || '(keine Logausgabe)') }}</pre>
     </article>
     <p v-if="!entries.length" class="f3d-muted">Keinen Lauf ausgewählt.</p>
   </section>
@@ -38,10 +39,24 @@
 // Log des aktuellen Schritts automatisch nachgeladen.
 import { onBeforeUnmount, ref, watchEffect } from 'vue'
 import { flood3dApi } from '../../services/api'
+import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePostStore } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
 
 const store = usePostStore()
+const lokal = useLocalRunStore()
+
+// Der ausgewaehlte 'lokal'-Lauf ist genau der, den DIESER Browser gerade
+// faehrt? Dann kommt das Log live aus dem Store statt vom Server (dort
+// gibt es fuer laufende Companion-Jobs nichts zu lesen). Nach dem
+// Wiederanknuepfen ist die Laufnummer erst ab dem ersten Speicherpunkt
+// bekannt — bis dahin genuegt der Fall-Praefix (<fall>_rNNN).
+function lokalLive(entry) {
+  const l = lokal.laufend
+  return !!l && entry.status === 'lokal'
+    && (l.runId === entry.runId
+        || (!l.runId && l.caseId && entry.runId.startsWith(`${l.caseId}_r`)))
+}
 const entries = ref([])
 let pollTimer = null
 

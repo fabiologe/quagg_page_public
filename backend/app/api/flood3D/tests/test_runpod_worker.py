@@ -240,7 +240,7 @@ def test_zwischenstand_packt_felder_und_laedt_hoch(tmp_path, monkeypatch):
     monkeypatch.setattr(ur, "urlopen",
                         lambda req, timeout=0: hochgeladen.append(req) or R())
 
-    zs = lr.Zwischenstand(job, case, spec=object())
+    zs = lr.Zwischenstand(job, case, spec=object(), run_id="demo_r001")
     ereignisse = []
     monkeypatch.setattr(lr, "emit", lambda **ev: ereignisse.append(ev))
     zs.tick()
@@ -253,6 +253,7 @@ def test_zwischenstand_packt_felder_und_laedt_hoch(tmp_path, monkeypatch):
         assert "fields/t_0000.npz" in z.namelist()
     cp = [e for e in ereignisse if e.get("event") == "checkpoint"]
     assert cp and cp[0]["zeiten"] == 2 and cp[0]["letzte_zeit"] == 1.0
+    assert cp[0]["run_id"] == "demo_r001"   # Browser kennt die Laufnummer nach Reload
 
     # zweiter Tick ohne neue Zeiten -> KEIN weiterer Upload
     zs.tick()

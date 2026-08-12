@@ -171,62 +171,63 @@
         </button>
         <div class="f3d-field">
           <label>Rechenort</label>
-          <select v-model="rechenort" class="f3d-select">
+          <select v-model="lokal.rechenort" class="f3d-select">
             <option value="server">Server</option>
-            <option value="local" :disabled="!companion?.foamSupported">
+            <option value="local" :disabled="!lokal.companion?.foamSupported">
               Lokal (dieser PC, Docker)
             </option>
             <option value="runpod">RunPod (Cloud, kostenpflichtig)</option>
           </select>
-          <p v-if="rechenort === 'runpod'" class="f3d-muted f3d-small">
+          <p v-if="lokal.rechenort === 'runpod'" class="f3d-muted f3d-small">
             Der Fall wird als Paket in die Cloud geschickt und dort auf allen
             Kernen des Workers gerechnet. Der Server begleitet den Lauf und
             übernimmt das Ergebnis automatisch — Browser darf zu sein.
             <strong>Kostenpflichtig nach Laufzeit.</strong>
           </p>
-          <p v-if="companion?.foamSupported" class="f3d-muted f3d-small">
-            ✓ Local Companion v{{ companion.version }} erkannt
-            {{ companion.docker?.available ? '· Docker läuft' : '· Docker NICHT erreichbar!' }}
+          <p v-if="lokal.companion?.foamSupported" class="f3d-muted f3d-small">
+            ✓ Local Companion v{{ lokal.companion.version }} erkannt
+            {{ lokal.companion.docker?.available ? '· Docker läuft' : '· Docker NICHT erreichbar!' }}
             — der Lauf rechnet auf deiner Maschine, das Ergebnis wird
             automatisch übernommen.
           </p>
-          <p v-else-if="companion && !companion.foamSupported" class="f3d-muted f3d-small">
-            Companion gefunden, aber zu alt (v{{ companion.version }}) —
+          <p v-else-if="lokal.companion && !lokal.companion.foamSupported" class="f3d-muted f3d-small">
+            Companion gefunden, aber zu alt (v{{ lokal.companion.version }}) —
             Version 1.3+ nötig für OpenFOAM. Update herunterladen und
             ausführen:
             <a :href="UPDATE_WIN" download>Windows (.bat)</a> ·
             <a :href="UPDATE_MAC" download>macOS/Linux</a>, danach
-            <a href="#" @click.prevent="checkCompanion">erneut suchen</a>.
+            <a href="#" @click.prevent="lokal.companionPruefen(true)">erneut suchen</a>.
           </p>
           <p v-else class="f3d-muted f3d-small">
             Kein Local Companion auf diesem PC gefunden (localhost:8642).
             Einmalig einrichten:
             <a :href="INSTALL_WIN" download>Windows (.bat)</a> ·
             <a :href="INSTALL_MAC" download>macOS/Linux</a>, danach
-            <a href="#" @click.prevent="checkCompanion">erneut suchen</a>.
+            <a href="#" @click.prevent="lokal.companionPruefen(true)">erneut suchen</a>.
           </p>
         </div>
-        <!-- `store.loading` mitsperren: ohne das startete ein Doppelklick
-             zwei Läufe, denn `localRunning` ist beim SERVERlauf immer false -->
+        <!-- `store.loading` sperrt den SERVERlauf-Doppelklick; `lokal.laeuft`
+             kommt aus dem Store und uebersteht damit auch ein Neu-Mounten
+             des Panels (frueher: Doppelstart nach Phasenwechsel) -->
         <button class="f3d-btn f3d-btn-run f3d-cta"
-                :disabled="store.nFehler > 0 || localRunning || store.loading"
+                :disabled="store.nFehler > 0 || lokal.laeuft || store.loading"
                 :title="store.nFehler ? 'Erst Fehler der Prüfung beheben' : ''"
                 @click="startClicked">
-          {{ localRunning ? '⏳ läuft lokal …'
+          {{ lokal.laeuft ? '⏳ läuft lokal …'
             : (store.loading ? '⏳ startet …' : '▶ Simulation starten') }}
         </button>
-        <button v-if="localRunning && localJobId" class="f3d-btn"
-                :disabled="pausing" @click="pauseClicked">
-          {{ pausing ? 'hält an …' : '⏸ Pause (Stand wird gesichert)' }}
+        <button v-if="lokal.laeuft && lokal.laufend.jobId" class="f3d-btn"
+                :disabled="lokal.pausing" @click="lokal.pausieren()">
+          {{ lokal.pausing ? 'hält an …' : '⏸ Pause (Stand wird gesichert)' }}
         </button>
-        <div v-if="!localRunning && offeneLaeufe.length" class="f3d-resume">
+        <div v-if="!lokal.laeuft && lokal.wiederaufnehmbare.length" class="f3d-resume">
           <p class="f3d-muted f3d-small">
             Auf diesem PC liegen unterbrochene Läufe. Fortsetzen rechnet ab
             dem letzten geschriebenen Zeitschritt weiter — das Netz bleibt
             stehen.
           </p>
-          <button v-for="r in offeneLaeufe" :key="r.id" class="f3d-btn f3d-grow"
-                  @click="resumeClicked(r)">
+          <button v-for="r in lokal.wiederaufnehmbare" :key="r.id" class="f3d-btn f3d-grow"
+                  @click="lokal.fortsetzen(r)">
             ▶ {{ r.id }} fortsetzen ({{ Math.round(r.sizeBytes / 1e6) }} MB)
           </button>
         </div>
@@ -234,11 +235,11 @@
           {{ store.nFehler }} Prüfungsfehler blockieren den Start — Details
           in der Phase „Modell".
         </p>
-        <div v-if="localLog.length" class="f3d-locallog">
-          <div v-if="localProgress != null" class="f3d-localbar">
-            <div :style="{ width: `${Math.round(localProgress * 100)}%` }"></div>
+        <div v-if="lokal.log.length" class="f3d-locallog">
+          <div v-if="lokal.fortschritt != null" class="f3d-localbar">
+            <div :style="{ width: `${Math.round(lokal.fortschritt * 100)}%` }"></div>
           </div>
-          <pre>{{ localLog.slice(-14).join('\n') }}</pre>
+          <pre>{{ lokal.log.slice(-14).join('\n') }}</pre>
         </div>
       </article>
       <MeshPreviewCard v-if="store.meshPreview || store.meshPreviewLoading" />
@@ -281,14 +282,17 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { begrenzen, hinweis } from '../../utils/simHints'
 import { REGELWERKE, REGELWERK_IDS, eigeneRegelwerke } from '../../utils/regelwerke'
-import { companionHealth, pauseLocalRun, runLocally,
-  unterbrocheneLaeufe } from '../../services/localCompanion'
 import { flood3dApi } from '../../services/api'
+import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePreStore } from '../../stores/usePreStore'
 import MeshPreviewCard from './MeshPreviewCard.vue'
 import ValidationPanel from './ValidationPanel.vue'
 
 const store = usePreStore()
+// Der lokale Lauf lebt im eigenen Store (App-Lebensdauer): dieses Panel
+// rendert nur noch und ruft Actions — Phasenwechsel zerstoeren den
+// Treiber nicht mehr.
+const lokal = useLocalRunStore()
 const spec = computed(() => store.spec)
 
 // Einordnung unter jedem Eingabefeld: übersetzt den Wert in die Sprache
@@ -313,90 +317,20 @@ const UPDATE_WIN = '/downloads/update-quagg-companion.bat'
 const UPDATE_MAC = '/downloads/update-quagg-companion.command'
 
 const verifikation = ref([])
-const companion = ref(null)
-const rechenort = ref('server')
-const localRunning = ref(false)
-const localLog = ref([])
-const localJobId = ref(null)
-const pausing = ref(false)
-const offeneLaeufe = ref([])
-const localProgress = ref(null)
-
-async function pauseClicked() {
-  pausing.value = true
-  try {
-    await pauseLocalRun(localJobId.value)
-  } catch (e) {
-    store.melden(`Pause: ${e.message}`, 'fehler')
-  } finally {
-    pausing.value = false
-  }
-}
-
-function resumeClicked(r) {
-  starteLokal({ jobId: r.id, runId: null })
-}
-
-async function checkCompanion(autoSelect = true) {
-  companion.value = await companionHealth()
-  offeneLaeufe.value = await unterbrocheneLaeufe()
-  // Nach bewusstem „erneut suchen" direkt auf Lokal stellen — beim
-  // Seitenladen bleibt Server die Vorauswahl
-  if (autoSelect && companion.value?.foamSupported) rechenort.value = 'local'
-}
 
 onMounted(() => {
-  checkCompanion(false)
+  lokal.companionPruefen(false)
   flood3dApi.verifikation()
     .then((v) => { verifikation.value = v })
     .catch(() => { verifikation.value = [] })
 })
 
-const fmtDauer = (s) => (s == null ? '?'
-  : s > 3600 ? `${(s / 3600).toFixed(1)} h`
-    : s > 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`)
-
-async function starteLokal(resumeJob = null) {
-  localRunning.value = true
-  localLog.value = []
-  localProgress.value = null
-  localJobId.value = null
-  try {
-    if (!resumeJob && store.dirty) await store.saveCase()
-    await runLocally(store.activeCaseId, (ev) => {
-      if (ev.event === 'job') {
-        localJobId.value = ev.jobId
-      } else if (ev.event === 'progress' && ev.fraction != null) {
-        localProgress.value = ev.fraction
-        if (ev.time != null) {
-          const rest = ev.eta_s ? ` · noch ca. ${fmtDauer(ev.eta_s)}` : ''
-          localLog.value.push(
-            `t = ${ev.time} s / ${ev.end_time} s `
-            + `(${Math.round(ev.fraction * 100)} %${rest})`)
-        }
-      } else if (ev.text) {
-        localLog.value.push(ev.text)
-      }
-    }, resumeJob)
-    await store.loadCaseRuns()
-    offeneLaeufe.value = await unterbrocheneLaeufe()
-    store.activePhase = 'ergebnis'
-  } catch (e) {
-    store.melden(`Lokaler Lauf: ${e.message}`, 'fehler')
-    localLog.value.push(`FEHLER: ${e.message}`)
-    // nach Abbruch/Absturz kann derselbe Lauf fortgesetzt werden
-    offeneLaeufe.value = await unterbrocheneLaeufe()
-  } finally {
-    localRunning.value = false
-  }
-}
-
 async function startClicked() {
-  if (rechenort.value === 'server') {
+  if (lokal.rechenort === 'server') {
     store.startRun()
     return
   }
-  if (rechenort.value === 'runpod') {
+  if (lokal.rechenort === 'runpod') {
     // Cloud kostet echtes Geld, deshalb eine bewusste Bestätigung mehr —
     // das Kosten-Passwort fragt der API-Client zusätzlich ab.
     const ok = window.confirm(
@@ -408,7 +342,7 @@ async function startClicked() {
     await store.startRun('runpod')
     return
   }
-  await starteLokal(null)
+  await lokal.starten(store.activeCaseId)
 }
 
 const set = (fn) => store.updateSettings(fn)
