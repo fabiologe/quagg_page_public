@@ -1682,14 +1682,52 @@ async def abort_run(run_id: str):
 
 @router.get("/runs/{run_id}/log")
 async def run_log(run_id: str, tail: int = Query(80, le=2000)):
-    """Logausgabe des aktuellen Schritts (Spez. Kap. 9)."""
+    """
+    Logausgabe des aktuellen Schritts (Spez. Kap. 9).
+
+    Beim CLOUD-Lauf gibt es keinen lokalen Fallordner, solange gerechnet
+    wird — die Ausgabe kommt als Ereignisstrom (`log.runpod`). Ohne diesen
+    Rückfall stand das Panel bei RunPod-Läufen auf „keine Logausgabe"
+    (gemeldet 2026-08-12).
+    """
     paths = _paths(run_id)
     case_dir = paths.root / "case"
     logs = sorted(case_dir.glob("log.*"), key=lambda p: p.stat().st_mtime)
-    if not logs:
-        return {"log": "", "source": None}
-    text = logs[-1].read_text(errors="replace").splitlines()[-tail:]
-    return {"log": "\n".join(text), "source": logs[-1].name}
+    if logs:
+        text = logs[-1].read_text(errors="replace").splitlines()[-tail:]
+        return {"log": "\n".join(text), "source": logs[-1].name}
+
+    strom = paths.root / "log.runpod"
+    if strom.is_file():
+        zeilen = []
+        for roh in strom.read_text(errors="replace").splitlines():
+            try:
+                ev = json.loads(roh)
+            except json.JSONDecodeError:
+                zeilen.append(roh)
+                continue
+            art = ev.get("event")
+            if art == "log":
+                zeilen.append(str(ev.get("text", "")))
+            elif art == "progress":
+                t = ev.get("time")
+                phase = ev.get("phase", "")
+                anteil = ev.get("fraction")
+                rest = ev.get("eta_s")
+                stueck = [p for p in (
+                    f"{phase}" if phase else "",
+                    f"t = {t:g} s" if isinstance(t, (int, float)) else "",
+                    f"{anteil * 100:.0f} %" if isinstance(anteil, (int, float)) else "",
+                    f"noch ca. {rest / 60:.0f} min" if isinstance(rest, (int, float)) else "",
+                ) if p]
+                zeilen.append("· " + " · ".join(stueck))
+            elif art == "error":
+                zeilen.append("FEHLER: " + str(ev.get("text", "")))
+            elif art == "done":
+                zeilen.append("Ergebnis übertragen.")
+        return {"log": "\n".join(zeilen[-tail:]), "source": "RunPod"}
+
+    return {"log": "", "source": None}
 
 
 @router.get("/runs/{run_id}/figures/{filename}")

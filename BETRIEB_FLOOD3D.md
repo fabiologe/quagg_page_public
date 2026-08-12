@@ -43,6 +43,15 @@ Endpunkt geschützt, ohne dass jemand daran denken muss.
   allein der Server.
 - Nach dem Ändern des Passworts: `pm2 restart quagg-api` (die .env wird beim
   Start gelesen) — ein Client-Neubau ist NICHT nötig.
+- Gefragt wird beim **Öffnen eines Falls** (vorhersehbarer Moment). Vorher
+  löste die automatische Entwurfsvorschau die Abfrage aus — mitten im
+  Zeichnen, und bei Abbruch blieb ein roter Balken „nichts gestartet"
+  stehen, der neben einem völlig regulär gestarteten Lauf wie ein Leck im
+  Schutz aussah (2026-08-12). Ein Gate-403 der Vorschau ist jetzt ein
+  gelber Hinweis, und gleiche Meldungen stapeln sich nicht mehr.
+- **Prüfung von außen** (jederzeit wiederholbar):
+  `curl -X POST -d '{"case_id":"…"}' https://quagg-engineering.org/FastAPI/flood3d/runs`
+  → 403, mit falschem `X-Launch-Password` ebenfalls 403.
 
 ## Rechnen (OpenFOAM im Docker)
 
@@ -81,7 +90,12 @@ Endpunkt geschützt, ohne dass jemand daran denken muss.
   (nach Neustart wartet auf keinen Container mehr jemand). Von Hand:
   `docker ps -a --filter name=f3d_` / `docker rm -f <name>`.
 - Laufender Serverlauf: Abbrechen über den Knopf im Lauf-&-Log-Panel
-  (Status wird `abgebrochen`).
+  (Status wird `abgebrochen`). Beim Cloud-Lauf geht derselbe Knopf an
+  RunPods `/cancel`.
+- **Log-Panel beim Cloud-Lauf**: Es gibt keinen lokalen Fallordner, solange
+  gerechnet wird — `GET /runs/{id}/log` fällt deshalb auf den Ereignisstrom
+  `log.runpod` zurück und übersetzt ihn lesbar. Ohne das stand dort
+  „keine Logausgabe" (gemeldet 2026-08-12).
 
 ## Rechenort RunPod (im Aufbau)
 

@@ -4,7 +4,7 @@
 // liefern (Spez. Kap. 3). geometryVersion zählt hoch, wenn die 3D-Szene
 // neu vom Server geladen werden muss.
 import { defineStore } from 'pinia'
-import { flood3dApi } from '../services/api'
+import { flood3dApi, launchPasswortSichern } from '../services/api'
 import { b64ToBuffer as b64Buffer } from '../services/volume'
 import { KIND_PATHS } from '../utils/kindPfade'
 import { setzeSchema } from '../utils/feldTypen'
@@ -129,6 +129,10 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Sekunden verschwindet, hat der Bearbeiter unter Umständen nie gesehen.
     melden(text, art = 'hinweis') {
       if (!text) return
+      // Dieselbe Meldung nicht stapeln: die Entwurfsvorschau feuert
+      // entprellt alle 350 ms — ohne das steht nach zwanzig Sekunden
+      // Zeichnen ein Turm identischer roter Zeilen.
+      if (this.meldungen.some((m) => m.text === text)) return
       const id = (this._meldungsNr = (this._meldungsNr ?? 0) + 1)
       this.meldungen.push({ id, text, art })
       // Fehler UND Warnungen bleiben stehen, bis sie weggeklickt werden —
@@ -369,6 +373,11 @@ export const usePreStore = defineStore('flood3d-pre', {
             .catch(() => {})
         }
         this.spec = await flood3dApi.getCase(caseId)
+        // Passwort JETZT erfragen, nicht spaeter: Bearbeiten ist geschuetzt,
+        // und die Entwurfsvorschau feuert gleich im Hintergrund. Ohne das
+        // wird der Bearbeiter mitten im Zeichnen von einer Abfrage
+        // ueberrascht — oder sieht nur eine rote Zeile (2026-08-12).
+        launchPasswortSichern()
         this.activeCaseId = caseId
         this.dirty = false
         this.undoStack = []
@@ -523,6 +532,18 @@ export const usePreStore = defineStore('flood3d-pre', {
         if (seq !== this._draftSeq) return
         this.uebernehmeGeometrie(p, { entwurf: true })
       } catch (e) {
+        if (e?.status === 403) {
+          // Fehlendes Passwort ist kein Vorschaufehler, sondern ein
+          // Hinweis: die automatische Entwurfsvorschau laeuft im
+          // Hintergrund und darf deswegen keinen roten Alarm werfen
+          // (2026-08-12: stand als "nichts gestartet" neben einem
+          // laufenden Lauf und sah aus wie ein Leck im Schutz).
+          this.previewStale = true
+          this.melden('Zum Bearbeiten ist das Passwort nötig — '
+                      + 'die 3D-Szene zeigt bis dahin den letzten Stand.',
+                      'warnung')
+          return
+        }
         // Netzfehler o. Ä. — die Szene zeigt jetzt einen alten Stand, und
         // das muss sichtbar sein statt nur in einer Fehlerzeile zu stehen
         this.previewStale = true

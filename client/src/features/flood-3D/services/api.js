@@ -23,6 +23,25 @@ function gateKopf() {
   return launchPasswort ? { 'X-Launch-Password': launchPasswort } : {}
 }
 
+export function launchPasswortBekannt() {
+  return Boolean(launchPasswort)
+}
+
+/**
+ * Passwort einmal je Sitzung erfragen — zu einem VORHERSEHBAREN Zeitpunkt
+ * (beim Öffnen eines Falls), statt den Bearbeiter mitten im Zeichnen von
+ * einer automatischen Hintergrundanfrage überraschen zu lassen. Gibt
+ * zurück, ob jetzt eins hinterlegt ist.
+ */
+export function launchPasswortSichern() {
+  if (launchPasswort) return true
+  return passwortErfragen(
+    'flood-3D: Passwort eingeben.\n\n'
+    + 'Bearbeiten und Rechnen sind geschützt — die Seite steht öffentlich '
+    + 'im Netz und Läufe kosten Rechenzeit bzw. Cloud-Guthaben.\n'
+    + 'Ansehen geht ohne Passwort.')
+}
+
 export function launchPasswortVergessen() {
   launchPasswort = ''
   try { sitzungsSpeicher?.removeItem(PW_SCHLUESSEL) } catch { /* egal */ }
