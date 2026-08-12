@@ -147,12 +147,15 @@ lokalen Lauf.
   Bis es eine Wiederanknüpfung beim Start gibt: vor Neustarts laufende
   Cloud-Läufe prüfen (`GET /runs`), im Zweifel den Job in der RunPod-Konsole
   abbrechen und Reste unter `flood3d/eingang/` löschen.
-- **Speicherpunkte gelten auch LOKAL** (seit 2026-08-12 abends): das Bundle
-  trägt die S3-Anweisung immer, der Läufer lädt Teilstände hoch, und der
-  Browser stößt beim checkpoint-Ereignis `POST /runs/{id}/teilstand` an —
-  der Server spielt sie ein. Grenze: schließt der Nutzer den Browser, lädt
-  der Läufer zwar weiter nach S3 hoch, aber niemand stößt den Import an
-  (gleiches Verhalten wie beim End-Import des lokalen Wegs).
+- **Speicherpunkte gelten auch LOKAL, und der Browser ist nur noch
+  Zuschauer** (seit 2026-08-12 abends): das Bundle trägt zwei vorsignierte
+  S3-URLs (Teilstände + Endergebnis), der Läufer lädt beides hoch, und ein
+  **Server-Wächter** gleicht alle 2 min (`FLOOD3D_SWEEP_S`) alle Läufe im
+  Zustand `lokal` mit S3 ab — Tab wechseln, in die Ergebnisse gehen, Browser
+  zumachen: der Lauf kommt trotzdem vollständig an. Der Browser-Weg
+  (checkpoint-Ereignis → `POST /runs/{id}/teilstand`) bleibt als schnellster
+  Kanal bestehen; die Antriebsschleife übersteht Hintergrund-Drosselung
+  jetzt auch selbst (150 Wackler Toleranz).
 - **Speicherpunkte (seit 2026-08-12):** Cloud-Läufe sichern alle 10 min
   (`checkpoint_s` im Startaufruf übersteuert) die fertigen Zeitschritte nach
   S3; der Server spielt sie sofort ein — Raum (3D) zeigt sie WÄHREND des

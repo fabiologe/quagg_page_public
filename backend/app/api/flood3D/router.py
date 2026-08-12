@@ -1439,7 +1439,13 @@ async def case_bundle(case_id: str, request: Request):
             Params={"Bucket": bucket, "Key": f"{praefix}/checkpoints/{run_id}.zip",
                     "ContentType": "application/zip"},
             ExpiresIn=7 * 86400)   # lokale Laeufe pausieren/ruhen auch mal tagelang
-        checkpoint = {"put_url": put_url, "min_intervall_s": 600}
+        artifacts_put = client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": f"{praefix}/artifacts/{run_id}.zip",
+                    "ContentType": "application/zip"},
+            ExpiresIn=7 * 86400)
+        checkpoint = {"put_url": put_url, "artifacts_put_url": artifacts_put,
+                      "min_intervall_s": 600}
     except Exception:  # noqa: BLE001 — kein R2 = keine Speicherpunkte, kein Drama
         checkpoint = None
 
@@ -1719,6 +1725,91 @@ async def abort_run(run_id: str):
                   "(Lauf war verwaist)", "finished": time.time()})
         manifest_pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
     return {"run_id": run_id, "gestoppte_container": len(gestoppt)}
+
+
+def teilstaende_einsammeln() -> list[str]:
+    """
+    Laeufe im Zustand „lokal" mit S3 abgleichen — OHNE Browser.
+
+    Der lokale Weg hing am Browser-Faden: Tab-Wechsel drosselte die
+    Antriebsschleife, Navigation toetete sie, und fertig gerechnete Laeufe
+    blieben als „lokal, 0 MB" stehen (gemeldet 2026-08-12). Der Laeufer
+    laedt Teilstaende und Endergebnis nach S3; dieser Waechter holt beides
+    ab, sobald es dort liegt — der Browser ist nur noch Zuschauer.
+    """
+    from .engines.runpod.relay import _r2
+
+    eingesammelt: list[str] = []
+    try:
+        client, bucket, praefix = _r2()
+    except Exception:      # noqa: BLE001 — ohne R2 gibt es nichts einzusammeln
+        return eingesammelt
+    root = runs_root()
+    if not root.is_dir():
+        return eingesammelt
+    for d in sorted(root.iterdir()):
+        mp = d / "manifest.json"
+        if not d.is_dir() or not mp.is_file():
+            continue
+        try:
+            m = json.loads(mp.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if m.get("status") != "lokal":
+            continue
+        if (d / "_upload.zip").exists():
+            continue       # der Browser importiert gerade selbst — nicht dazwischenfunken
+        run_id = d.name
+        akey = f"{praefix}/artifacts/{run_id}.zip"
+        ckey = f"{praefix}/checkpoints/{run_id}.zip"
+        try:
+            daten = client.get_object(Bucket=bucket, Key=akey)["Body"].read()
+            _import_entpacken(d, run_id, daten)
+            for k in (akey, ckey):
+                try:
+                    client.delete_object(Bucket=bucket, Key=k)
+                except Exception:  # noqa: BLE001
+                    pass
+            eingesammelt.append(run_id)
+            print(f"flood3d: Endergebnis von {run_id} aus S3 eingesammelt "
+                  "(ohne Browser)", flush=True)
+            continue
+        except Exception:  # noqa: BLE001 — kein Endergebnis: Teilstand versuchen
+            pass
+        try:
+            antwort = client.get_object(Bucket=bucket, Key=ckey)
+            marke = str(antwort.get("LastModified") or "")
+            if marke and marke == m.get("teilstand_stand"):
+                continue   # schon eingespielt
+            _import_entpacken(d, run_id, antwort["Body"].read())
+            m.update({"teilstand": True, "teilstand_stand": marke,
+                      "teilstand_quelle": "s3-waechter"})
+            mp.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+            eingesammelt.append(run_id)
+        except Exception:  # noqa: BLE001 — auch kein Teilstand: naechster Lauf
+            pass
+    return eingesammelt
+
+
+@router.on_event("startup")
+async def _teilstand_waechter_starten():
+    """Alle 2 Minuten S3 abgleichen (FLOOD3D_SWEEP_S uebersteuert)."""
+    import threading
+
+    takt = int(os.environ.get("FLOOD3D_SWEEP_S", "120"))
+    if takt <= 0:
+        return             # fuer Tests abschaltbar
+
+    def _schleife():
+        while True:
+            time.sleep(takt)
+            try:
+                teilstaende_einsammeln()
+            except Exception:  # noqa: BLE001 — der Waechter darf nie sterben
+                pass
+
+    threading.Thread(target=_schleife, name="flood3d-teilstand",
+                     daemon=True).start()
 
 
 @router.post("/runs/{run_id}/teilstand")

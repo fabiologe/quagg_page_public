@@ -89,10 +89,24 @@ export async function runLocally(caseId, onEvent, resumeJob = null) {
 
   // Ereignisse einsammeln, bis der Runner fertig oder gescheitert ist
   let artifactsUrl = null
+  let wackler = 0
   for (;;) {
     await new Promise((r) => setTimeout(r, 2000))
-    const sres = await fetch(`${COMPANION_BASE}/v2/flood3d/stream/${jobId}`)
-    if (!sres.ok) throw new Error(`Companion-Stream: HTTP ${sres.status}`)
+    // Hintergrund-Tabs drosseln Timer und lassen fetches scheitern — das
+    // darf den Lauf nicht kippen: der Companion rechnet unabhaengig weiter,
+    // und den Import uebernimmt notfalls der Server-Waechter (S3).
+    let sres
+    try {
+      sres = await fetch(`${COMPANION_BASE}/v2/flood3d/stream/${jobId}`)
+    } catch {
+      if (++wackler > 150) throw new Error('Companion nicht mehr erreichbar')
+      continue
+    }
+    if (!sres.ok) {
+      if (++wackler > 150) throw new Error(`Companion-Stream: HTTP ${sres.status}`)
+      continue
+    }
+    wackler = 0
     const { status, stream } = await sres.json()
     for (const { output: ev } of stream ?? []) {
       onEvent(ev)

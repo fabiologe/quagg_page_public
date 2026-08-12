@@ -926,6 +926,27 @@ def main() -> int:
                     z.write(f, f"case/constant/triSurface/{f.name}")
             for f in sorted(case.glob("meshSurface*.stl")):
                 z.write(f, f"case/{f.name}")
+        # Endergebnis ZUSAETZLICH nach S3 (Speicherpunkt-Anweisung im
+        # Bundle): der Server holt es dort auch ab, wenn kein Browser mehr
+        # zuschaut — Tab zu, Rechner rechnet, Ergebnis kommt trotzdem an.
+        cfgp = case / "checkpoint.json"
+        if cfgp.is_file():
+            try:
+                cfg = json.loads(cfgp.read_text())
+                ziel = cfg.get("artifacts_put_url")
+                if ziel:
+                    import urllib.request
+                    req = urllib.request.Request(
+                        ziel, data=art.read_bytes(), method="PUT",
+                        headers={"Content-Type": "application/zip"})
+                    with urllib.request.urlopen(req, timeout=1800):
+                        pass
+                    emit(event="log", text=(
+                        "Endergebnis nach S3 gesichert — der Server holt es "
+                        "auch ohne offenen Browser ab."))
+            except Exception as e:   # noqa: BLE001 — S3 ist Beiwerk zum Companion-Weg
+                emit(event="log", text=(
+                    f"S3-Sicherung uebersprungen: {type(e).__name__}: {str(e)[:120]}"))
         emit(event="done", artifactsFile="artifacts.zip", run_id=run_id,
              sizeBytes=art.stat().st_size)
         return 0

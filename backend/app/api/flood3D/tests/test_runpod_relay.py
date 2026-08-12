@@ -27,7 +27,8 @@ class FakeR2:
         class B:
             def __init__(self, d): self._d = d
             def read(self): return self._d
-        return {"Body": B(self.objekte[Key])}
+        return {"Body": B(self.objekte[Key]),
+                "LastModified": f"stand-{len(self.objekte[Key])}"}
 
     def generate_presigned_url(self, op, Params=None, ExpiresIn=0):  # noqa: N803
         return f"https://r2.example/signed/{Params['Key']}"
@@ -268,3 +269,77 @@ def test_bundle_traegt_checkpoint_wenn_r2_da(tmp_path, monkeypatch):
     assert res.status_code == 200
     namen = _zip.ZipFile(io.BytesIO(res.content)).namelist()
     assert "checkpoint.json" in namen
+
+
+def _lauf_zip(run_id, status="completed"):
+    import io
+    import json as _json
+    import zipfile as _zip
+    buf = io.BytesIO()
+    with _zip.ZipFile(buf, "w") as z:
+        z.writestr("manifest.json", _json.dumps({"status": status,
+                                                 "origin": "companion"}))
+        z.writestr("result.json", _json.dumps({"run_id": run_id, "targets": []}))
+        z.writestr("fields/t_0000.npz", b"NPZ")
+        z.writestr("fields/index.json", "{}")
+    return buf.getvalue()
+
+
+def test_waechter_sammelt_endergebnis_ohne_browser_ein(tmp_path, monkeypatch):
+    """
+    Der lokale Weg hing am Browser-Faden: Navigation toetete die
+    Antriebsschleife, fertige Laeufe blieben als 'lokal, 0 MB' stehen.
+    Der Waechter holt Endergebnis UND Teilstand selbst von S3.
+    """
+    import json as _json
+
+    from .. import router as router_mod
+
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    fertig = tmp_path / "runs" / "demo_r001"
+    fertig.mkdir(parents=True)
+    (fertig / "manifest.json").write_text(_json.dumps(
+        {"status": "lokal", "origin": "companion"}))
+    halb = tmp_path / "runs" / "demo_r002"
+    halb.mkdir()
+    (halb / "manifest.json").write_text(_json.dumps({"status": "lokal"}))
+    laeuft_nicht = tmp_path / "runs" / "demo_r003"
+    laeuft_nicht.mkdir()
+    (laeuft_nicht / "manifest.json").write_text(_json.dumps(
+        {"status": "completed"}))
+
+    r2 = FakeR2()
+    r2.objekte["flood3d/artifacts/demo_r001.zip"] = _lauf_zip("demo_r001")
+    r2.objekte["flood3d/checkpoints/demo_r002.zip"] = _lauf_zip("demo_r002")
+    monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
+
+    eingesammelt = router_mod.teilstaende_einsammeln()
+
+    assert sorted(eingesammelt) == ["demo_r001", "demo_r002"]
+    # Endergebnis: Manifest kommt aus dem Archiv, Status completed, S3 leer
+    m1 = _json.loads((fertig / "manifest.json").read_text())
+    assert m1["status"] == "completed"
+    assert (fertig / "fields" / "t_0000.npz").exists()
+    assert "flood3d/artifacts/demo_r001.zip" in r2.geloescht
+    # Teilstand: Marken gesetzt, Lauf bleibt 'lokal'
+    m2 = _json.loads((halb / "manifest.json").read_text())
+    assert m2["status"] == "lokal" and m2["teilstand"] is True
+    assert m2["teilstand_quelle"] == "s3-waechter"
+    # zweiter Durchlauf ohne neue Objekte: nichts doppelt einspielen
+    assert router_mod.teilstaende_einsammeln() == []
+
+
+def test_waechter_funkt_dem_browser_nicht_dazwischen(tmp_path, monkeypatch):
+    import json as _json
+
+    from .. import router as router_mod
+
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    d = tmp_path / "runs" / "demo_r001"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(_json.dumps({"status": "lokal"}))
+    (d / "_upload.zip").write_bytes(b"halber Upload")
+    r2 = FakeR2()
+    r2.objekte["flood3d/artifacts/demo_r001.zip"] = _lauf_zip("demo_r001")
+    monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
+    assert router_mod.teilstaende_einsammeln() == []
