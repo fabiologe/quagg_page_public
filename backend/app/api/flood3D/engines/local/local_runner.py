@@ -104,6 +104,27 @@ def cgroup_kontingent(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
     return None
 
 
+def container_scheibe() -> bool:
+    """
+    Laeuft dieser Prozess auf einer zugeteilten SCHEIBE einer groesseren
+    Maschine? Zwei Spielarten, beide in freier Wildbahn gesehen
+    (RunPod, 2026-08-12 — die Worker sind nicht einheitlich!):
+
+    * cgroup-Kontingent (cpu.max bzw. cfs_quota)
+    * cpuset-Pinning: Affinitaet umfasst weniger CPUs als der Wirt hat,
+      waehrend cpu.max "max" meldet
+
+    Auf einer Scheibe sind die gebuchten Threads die Waehrung — alle
+    rechnen, keine Physische-Kerne-Reduktion, kein taskset.
+    """
+    if cgroup_kontingent():
+        return True
+    try:
+        return len(os.sched_getaffinity(0)) < (os.cpu_count() or 1)
+    except (AttributeError, OSError):
+        return False
+
+
 def kern_bindung(topo_wurzel=Path("/sys/devices/system/cpu")) -> str:
     """
     Affinitaetsliste fuer taskset: EIN Thread je physischem Kern.
@@ -156,15 +177,22 @@ def erlaubte_kerne(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
     Rechner) aendert das nichts: dort ist nichts begrenzt.
     """
     kontingent = cgroup_kontingent(cpu_max, quota, periode)
-    if kontingent:
-        # Cloud-/Container-Scheibe: die gebuchten Threads sind die Waehrung.
-        # Physische Kerne des WIRTS zaehlen hier nicht — das halbierte auf
-        # RunPod die bezahlte Leistung (16 Threads = 8 Wirtskerne, 2026-08-12).
-        kandidaten = [kontingent, os.cpu_count() or 1]
-        try:
-            kandidaten.append(len(os.sched_getaffinity(0)))
-        except (AttributeError, OSError):
-            pass
+    scheibe = bool(kontingent)
+    afflen = None
+    try:
+        afflen = len(os.sched_getaffinity(0))
+        # cpuset-Pinning: weniger erlaubte CPUs als der Wirt hat — auch das
+        # ist eine Scheibe, selbst wenn cpu.max "max" sagt (RunPod-Worker
+        # sind nicht einheitlich; beide Spielarten am 2026-08-12 gesehen)
+        if afflen < (os.cpu_count() or 1):
+            scheibe = True
+    except (AttributeError, OSError):
+        pass
+    if scheibe:
+        # Die gebuchten Threads sind die Waehrung. Physische Kerne des
+        # WIRTS zaehlen hier nicht — das halbierte die bezahlte Leistung
+        # (16 Threads = 8 Wirtskerne).
+        kandidaten = [k for k in (kontingent, afflen, os.cpu_count() or 1) if k]
         return max(1, min(kandidaten))
     kandidaten = []
     try:
@@ -444,7 +472,7 @@ def mpi_kommando(cores: int) -> str:
     auf: wer bewusst ueberbucht, bekommt alle Threads.
     """
     vorsatz = ""
-    if cgroup_kontingent() is None:
+    if not container_scheibe():
         liste = kern_bindung()
         if liste and cores <= len(liste.split(",")):
             vorsatz = f"taskset -c {liste} "

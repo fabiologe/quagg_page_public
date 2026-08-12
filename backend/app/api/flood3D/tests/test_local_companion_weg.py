@@ -414,19 +414,32 @@ def test_mpi_platzierung_je_welt(tmp_path, monkeypatch):
     # bewusste Ueberbuchung hebt die Einschraenkung auf
     assert not r.mpi_kommando(12).startswith("taskset")
 
-    # Cloud: Kontingent vorhanden -> kein taskset
+    # Cloud, Spielart 1: Kontingent vorhanden -> kein taskset
     monkeypatch.setattr(r, "cgroup_kontingent", lambda *a, **k: 16)
+    assert not r.mpi_kommando(16).startswith("taskset")
+
+    # Cloud, Spielart 2 (RunPod r004): cpuset-Pinning OHNE Kontingent —
+    # Affinitaet 16 von 192 -> ebenfalls Scheibe, kein taskset
+    monkeypatch.setattr(r, "cgroup_kontingent", lambda *a, **k: None)
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 192)
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(16)))
     assert not r.mpi_kommando(16).startswith("taskset")
 
 
 def test_cloud_scheibe_rechnet_alle_gebuchten_threads(tmp_path, monkeypatch):
     """RunPod: 16 gebuchte Threads = Geschwister von 8 Wirtskernen. Die
-    Physische-Kerne-Zaehlung darf die bezahlte Leistung nicht halbieren."""
+    Physische-Kerne-Zaehlung darf die bezahlte Leistung nicht halbieren —
+    egal ob die Scheibe per Kontingent ODER per cpuset erzwungen wird."""
     r = _lade_runner()
     monkeypatch.setattr(r.os, "cpu_count", lambda: 192)
     monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(16)))
     monkeypatch.setattr(r, "physische_kerne", lambda *a, **k: 8)
+    # Spielart 1: cgroup-Kontingent
     v2 = tmp_path / "cpu.max"; v2.write_text("1600000 100000\n")
+    assert r.erlaubte_kerne(cpu_max=v2, quota=tmp_path / "x",
+                            periode=tmp_path / "y") == 16
+    # Spielart 2: nur cpuset (cpu.max sagt "max") — RunPod r004, 2026-08-12
+    v2.write_text("max 100000\n")
     assert r.erlaubte_kerne(cpu_max=v2, quota=tmp_path / "x",
                             periode=tmp_path / "y") == 16
 
