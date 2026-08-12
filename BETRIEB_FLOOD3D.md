@@ -51,6 +51,37 @@ steht in der Spezifikation, offene Punkte im Fahrplan.
 - Laufender Serverlauf: Abbrechen über den Knopf im Lauf-&-Log-Panel
   (Status wird `abgebrochen`).
 
+## Rechenort RunPod (im Aufbau)
+
+Dritter Rechenort neben Server und Nutzer-Maschine. Der Worker ist die
+Klammer um denselben `local_runner.py`: `case.zip` rein (Bundle), Ereignisse
+als NDJSON raus, `artifacts.zip` nach R2, Server importiert wie bei einem
+lokalen Lauf.
+
+- Image: **`fabiologe/quagg-foam-runpod:2406`** (Docker Hub, 454 MB komprimiert),
+  gebaut aus `engines/runpod/Dockerfile` `FROM fabiologe/quagg-foam-local`.
+  Neu bauen aus `backend/app/api/`:
+  `docker build -f flood3D/engines/runpod/Dockerfile -t fabiologe/quagg-foam-runpod:2406 .`
+- **Endpunkt-Einstellungen** (RunPod-Konsole → Serverless → New Endpoint → CPU):
+
+  | Feld | Wert | Warum |
+  |---|---|---|
+  | Container Image | `fabiologe/quagg-foam-runpod:2406` | fester Tag, nicht `latest` |
+  | Instance | CPU, compute-optimized, **16 vCPU** | interFoam skaliert über mpirun; der Läufer nimmt ohne Vorgabe alle Kerne |
+  | Container Disk | **≥ 30 GB** | Netz + alle Zeitschritte eines Laufs |
+  | Min Workers | **0** | Flex: keine Kosten im Leerlauf |
+  | Max Workers | 1 (später mehr) | ein Lauf zur Zeit reicht zum Einfahren |
+  | Idle Timeout | 5 s | Worker soll nach dem Lauf sofort abfallen |
+  | **Execution Timeout** | **aus bzw. ≥ 4 h** | Voreinstellung (Minuten) würde jeden CFD-Lauf abschneiden — der wichtigste Schalter |
+  | Env Vars | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX=flood3d` | Werte aus `backend/.env.r2.flood3d` (eigener R2-Bucket, Entscheidung 2026-08-12) |
+
+- Danach in `backend/.env`: `FLOOD3D_RUNPOD_ENDPOINT_ID=<neue ID>` (**eigener
+  Name** — `RUNPOD_ENDPOINT_ID` gehört flood-2D) und ein API-Schlüssel, der
+  auch für diesen Endpunkt gilt: der vorhandene ist endpunkt-gebunden
+  (Verwaltungs-APIs antworten 403/401).
+- Noch offen: Relay im Backend (Bundle → R2 → `/run` → `/stream` → Import),
+  dritte Option im Rechenort-Feld.
+
 ## Bekannte Deckel (bewusst)
 
 | Deckel | Wert | Wo |
