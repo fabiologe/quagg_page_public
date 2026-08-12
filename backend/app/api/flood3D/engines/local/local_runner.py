@@ -97,6 +97,69 @@ def emit(**ev) -> None:
     print(json.dumps(ev), flush=True)
 
 
+# Dateisysteme, die ueber eine Virtualisierungsbruecke laufen. OpenFOAM
+# schreibt permanent (Logs, Prozessorordner, Zeitschritte) — auf diesen
+# Bruecken kostet das ein Vielfaches. Genau daran scheitert ein sonst
+# gesunder Rechner (Audit Rechenorte, 2026-08-12).
+LANGSAME_FS = {
+    "9p": "Docker-Desktop-Bruecke (WSL1/Hyper-V)",
+    "drvfs": "Windows-Laufwerk ueber WSL",
+    "virtiofs": "Docker-Desktop-Bruecke (macOS/Windows)",
+    "cifs": "Netzlaufwerk",
+    "nfs": "Netzlaufwerk",
+    "fuse.grpcfuse": "Docker-Desktop-Bruecke (osxfs/gRPC-FUSE)",
+}
+
+
+def _dateisystem(pfad: Path) -> tuple[str, str]:
+    """(Typ, Klartext) des Dateisystems, auf dem `pfad` liegt."""
+    try:
+        eintraege = []
+        for zeile in Path("/proc/mounts").read_text().splitlines():
+            teile = zeile.split()
+            if len(teile) >= 3:
+                eintraege.append((teile[1], teile[2]))
+    except OSError:
+        return "?", ""
+    ziel = str(pfad.resolve())
+    treffer = max((e for e in eintraege if ziel.startswith(e[0])),
+                  key=lambda e: len(e[0]), default=("", "?"))
+    return treffer[1], LANGSAME_FS.get(treffer[1], "")
+
+
+def maschinen_bericht(job: Path, cores: int) -> dict:
+    """
+    Womit hier gerechnet wird — und ob etwas davon bremst.
+
+    Ohne diese Angaben laesst sich ein langsamer Lauf auf einer fremden
+    Maschine nur raten: Kerne, Speicher, gemeinsamer Speicher und vor allem
+    das Dateisystem des Job-Ordners entscheiden ueber die Laufzeit.
+    """
+    bericht: dict = {"kerne_benutzt": cores, "kerne_sichtbar": os.cpu_count()}
+    try:
+        for zeile in Path("/proc/meminfo").read_text().splitlines():
+            if zeile.startswith("MemTotal:"):
+                bericht["ram_gb"] = round(int(zeile.split()[1]) / 1024 ** 2, 1)
+            elif zeile.startswith("MemAvailable:"):
+                bericht["ram_frei_gb"] = round(int(zeile.split()[1]) / 1024 ** 2, 1)
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        st = os.statvfs("/dev/shm")
+        bericht["shm_mb"] = round(st.f_blocks * st.f_frsize / 1024 ** 2)
+    except OSError:
+        pass
+    typ, warnung = _dateisystem(job)
+    bericht["job_fs"] = typ
+    if warnung:
+        bericht["job_fs_warnung"] = warnung
+    try:
+        bericht["kern"] = os.uname().release
+    except AttributeError:
+        pass
+    return bericht
+
+
 def unpack_case(job: Path) -> Path:
     src = job / "inputs" / "case.zip"
     case = job / "case"
@@ -307,6 +370,18 @@ def main() -> int:
         # sonst wäre nach einem Absturz die gesamte Rechenzeit verloren.
         cores = _cores()
         _shm_pruefen(cores)
+        maschine = maschinen_bericht(job, cores)
+        emit(event="log", text=(
+            f"Maschine: {cores} Raenge von {maschine.get('kerne_sichtbar')} "
+            f"sichtbaren CPUs · {maschine.get('ram_gb', '?')} GB RAM "
+            f"({maschine.get('ram_frei_gb', '?')} GB frei) · Job-Ordner auf "
+            f"{maschine.get('job_fs', '?')}"))
+        if maschine.get("job_fs_warnung"):
+            emit(event="log", text=(
+                f"WARNUNG: Der Job-Ordner liegt auf einer "
+                f"{maschine['job_fs_warnung']}. OpenFOAM schreibt dort "
+                "staendig — das kann den Lauf um ein Vielfaches verlangsamen. "
+                "Abhilfe: Companion auf ein Docker-Volume umstellen."))
         case = job / "case"
         fortsetzen = args.resume and _letzte_zeit(case) is not None
         if not fortsetzen:
@@ -480,7 +555,7 @@ def main() -> int:
                     "foam": foam_v, "foam_hinweis": foam_hinweis,
                     # Womit gerechnet wurde, gehoert in den Nachweis - und
                     # die Ist-Kosten eines Cloud-Laufs haengen daran
-                    "cores": cores,
+                    "cores": cores, "maschine": maschine,
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
                     "missing_sources": missing, "finished": time.time()}

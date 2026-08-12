@@ -68,6 +68,20 @@ function manifestRows(m) {
       m.foam_hinweis ? 'bad' : 'good'])
   }
   if (m.foam_hinweis) rows.push(['Ausgabe abweichend', m.foam_hinweis, 'bad'])
+  // Womit gerechnet wurde: bei Läufen auf fremden Maschinen ist das der
+  // Unterschied zwischen Diagnose und Raten (Audit Rechenorte)
+  if (m.maschine) {
+    const ma = m.maschine
+    rows.push(['Maschine',
+      `${ma.kerne_benutzt} Ränge von ${ma.kerne_sichtbar ?? '?'} CPUs · `
+      + `${ma.ram_gb ?? '?'} GB RAM · Job-Ordner auf ${ma.job_fs ?? '?'}`,
+      ma.job_fs_warnung ? 'bad' : ''])
+    if (ma.job_fs_warnung) {
+      rows.push(['Dateisystem bremst',
+        `${ma.job_fs_warnung} — OpenFOAM schreibt ständig; auf ein `
+        + 'Docker-Volume umstellen', 'bad'])
+    }
+  }
   if (m.duration_s != null) rows.push(['Dauer', `${fmt(m.duration_s / 60)} min`])
   if (m.cost_eur != null) rows.push(['Ist-Kosten', `${fmt(m.cost_eur)} €`])
   if (m.missing_sources?.length) {

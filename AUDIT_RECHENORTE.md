@@ -66,6 +66,27 @@ prüfbar:
    kein Absturz. Verstärkt wird es durch dichte Feldausgaben — im Fall standen
    0,1 s, das sind **601 Schreibvorgänge** über den Lauf.
 
+## Stellschrauben lokal — und was das Werkzeug NICHT begrenzt
+
+Eingebaute Grenzen gibt es keine mehr: Der Läufer nimmt seit 2026-08-11 alle
+Kerne, der Container startet ohne `--memory` und ohne `--cpus`. Was bleibt,
+sind Stellschrauben in der Umgebung:
+
+| Stellschraube | Wirkung | wo |
+|---|---|---|
+| **Ränge = physische Kerne** statt Threads (Ryzen 5 2600: **6** statt 12) | Bei speicherbandbreiten-begrenzten Rechnungen bringt SMT oft nichts und kostet Verwaltung | `FLOOD3D_CORES=6` in der Companion-Umgebung |
+| **Job-Ordner ins Docker-Volume** | Kann ein Vielfaches ausmachen (s. u.) | Companion, Sibling-Modus mit `quagg-flood3d-data` |
+| **Feldausgabe 0,1 s → 1,0 s** | zehnmal weniger Schreibvorgänge (601 → 61) | Fall, „3D-Felder schreiben alle" |
+| **Docker-Desktop: CPUs und RAM hochziehen** | Voreinstellung gibt der VM oft nur die Hälfte | Docker Desktop → Settings → Resources |
+| **WSL2 statt Hyper-V** (Windows) | deutlich schnellerer Dateizugriff | Docker Desktop → General |
+| **Virenscanner-Ausnahme** für das Docker-Verzeichnis | Windows scannt sonst jede geschriebene Datei | Windows-Sicherheit |
+
+Der Läufer meldet seit 2026-08-12 selbst, was er vorfindet — Ränge, sichtbare
+CPUs, RAM, `/dev/shm` und **das Dateisystem des Job-Ordners**. Liegt es auf
+einer Virtualisierungsbrücke (`9p`, `drvfs`, `virtiofs`, `grpcfuse`), warnt er
+im Log und im Manifest. Damit beantwortet der nächste Lauf die Frage von
+selbst, statt dass jemand raten muss.
+
 ## Empfehlung je Rechenort
 
 | | wofür | Bemerkung |

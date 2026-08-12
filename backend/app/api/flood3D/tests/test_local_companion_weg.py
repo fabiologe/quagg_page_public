@@ -314,3 +314,43 @@ def test_cpuset_begrenzung_wird_beachtet(tmp_path, monkeypatch):
     monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: {0, 1, 2, 3})
     assert r.erlaubte_kerne(cpu_max=tmp_path / "a", quota=tmp_path / "b",
                             periode=tmp_path / "c") == 4
+
+
+def test_maschinenbericht_erkennt_langsame_dateisysteme(tmp_path, monkeypatch):
+    """
+    Ein Lauf auf einer fremden Maschine ist ohne diese Angaben nicht zu
+    beurteilen — im Audit 2026-08-12 fehlten genau sie. Entscheidend ist das
+    Dateisystem des Job-Ordners: OpenFOAM schreibt staendig, und ueber eine
+    Docker-Desktop-Bruecke kostet das ein Vielfaches.
+    """
+    r = _lade_runner()
+    mounts = tmp_path / "mounts"
+    mounts.write_text("/dev/sda1 / ext4 rw 0 0\n"
+                      "drivers /job drvfs rw 0 0\n")
+    monkeypatch.setattr(r.Path, "read_text", r.Path.read_text)  # unveraendert
+    orig = r._dateisystem
+
+    def _fs(pfad):
+        # /proc/mounts durch die Testdatei ersetzen
+        eintraege = [(z.split()[1], z.split()[2])
+                     for z in mounts.read_text().splitlines()]
+        ziel = str(pfad)
+        treffer = max((e for e in eintraege if ziel.startswith(e[0])),
+                      key=lambda e: len(e[0]), default=("", "?"))
+        return treffer[1], r.LANGSAME_FS.get(treffer[1], "")
+
+    monkeypatch.setattr(r, "_dateisystem", _fs)
+    bericht = r.maschinen_bericht(Path("/job/xyz"), 12)
+    assert bericht["job_fs"] == "drvfs"
+    assert "Windows" in bericht["job_fs_warnung"]
+    assert bericht["kerne_benutzt"] == 12
+    assert "ram_gb" in bericht and bericht["ram_gb"] > 0
+    monkeypatch.setattr(r, "_dateisystem", orig)
+
+
+def test_maschinenbericht_meldet_kein_problem_auf_ext4(tmp_path, monkeypatch):
+    r = _lade_runner()
+    monkeypatch.setattr(r, "_dateisystem", lambda p: ("ext4", ""))
+    bericht = r.maschinen_bericht(tmp_path, 4)
+    assert "job_fs_warnung" not in bericht
+    assert bericht["job_fs"] == "ext4"
