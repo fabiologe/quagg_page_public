@@ -84,6 +84,58 @@ def physische_kerne(topo_wurzel=Path("/sys/devices/system/cpu")) -> int | None:
     return len(gruppen) or None
 
 
+def cgroup_kontingent(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
+                      quota=Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"),
+                      periode=Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")) -> int | None:
+    """CPU-Kontingent des Containers (cgroup v2/v1) oder ``None``."""
+    try:
+        roh = Path(cpu_max).read_text().split()
+        if len(roh) == 2 and roh[0] != "max":
+            return max(1, round(int(roh[0]) / int(roh[1])))
+    except (OSError, ValueError, ZeroDivisionError):
+        pass
+    try:
+        q = int(Path(quota).read_text())
+        p = int(Path(periode).read_text())
+        if q > 0 and p > 0:
+            return max(1, round(q / p))
+    except (OSError, ValueError, ZeroDivisionError):
+        pass
+    return None
+
+
+def kern_bindung(topo_wurzel=Path("/sys/devices/system/cpu")) -> str:
+    """
+    Affinitaetsliste fuer taskset: EIN Thread je physischem Kern.
+
+    Nur fuer Maschinen OHNE Kontingent gedacht (Nutzer-Rechner): dort teilen
+    sich SMT-Geschwister Kern und Speicherbandbreite, und ein spinnender
+    MPI-Rang auf dem Geschwister-Thread frisst die Zyklen des rechnenden.
+    Leerer String = nicht einschraenken.
+    """
+    try:
+        erlaubt = os.sched_getaffinity(0)
+    except (AttributeError, OSError):
+        return ""
+    gruppen: dict = {}
+    try:
+        for eintrag in topo_wurzel.glob("cpu[0-9]*"):
+            nr = int(eintrag.name[3:])
+            if nr not in erlaubt:
+                continue
+            geschwister = eintrag / "topology" / "thread_siblings_list"
+            if not geschwister.is_file():
+                return ""
+            schluessel = geschwister.read_text().strip()
+            if schluessel not in gruppen or nr < gruppen[schluessel]:
+                gruppen[schluessel] = nr
+    except (OSError, ValueError):
+        return ""
+    if not gruppen or len(gruppen) >= len(erlaubt):
+        return ""          # kein SMT sichtbar — nichts einzuschraenken
+    return ",".join(str(n) for n in sorted(gruppen.values()))
+
+
 def erlaubte_kerne(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
                    quota=Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"),
                    periode=Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")) -> int:
@@ -103,23 +155,21 @@ def erlaubte_kerne(cpu_max=Path("/sys/fs/cgroup/cpu.max"),
     Die kleinste dieser Zahlen gewinnt. Auf einer freien Maschine (Fabios
     Rechner) aendert das nichts: dort ist nichts begrenzt.
     """
+    kontingent = cgroup_kontingent(cpu_max, quota, periode)
+    if kontingent:
+        # Cloud-/Container-Scheibe: die gebuchten Threads sind die Waehrung.
+        # Physische Kerne des WIRTS zaehlen hier nicht — das halbierte auf
+        # RunPod die bezahlte Leistung (16 Threads = 8 Wirtskerne, 2026-08-12).
+        kandidaten = [kontingent, os.cpu_count() or 1]
+        try:
+            kandidaten.append(len(os.sched_getaffinity(0)))
+        except (AttributeError, OSError):
+            pass
+        return max(1, min(kandidaten))
     kandidaten = []
     try:
         kandidaten.append(len(os.sched_getaffinity(0)))
     except (AttributeError, OSError):
-        pass
-    try:
-        roh = Path(cpu_max).read_text().split()
-        if len(roh) == 2 and roh[0] != "max":
-            kandidaten.append(round(int(roh[0]) / int(roh[1])))
-    except (OSError, ValueError, ZeroDivisionError):
-        pass
-    try:
-        q = int(Path(quota).read_text())
-        p = int(Path(periode).read_text())
-        if q > 0 and p > 0:
-            kandidaten.append(round(q / p))
-    except (OSError, ValueError, ZeroDivisionError):
         pass
     phys = physische_kerne()
     if phys:
@@ -368,16 +418,37 @@ def run_foam_step(case: Path, command: str, log_name: str,
                                f"{kern or text[-500:]}")
 
 
-# Bindung JE KERN, nicht je Hardware-Thread. Mit --use-hwthread-cpus landeten
-# 6 Raenge auf den Threads 0-5 — auf einem Ryzen unter WSL2 sind das die
-# Thread-PAARE von nur drei physischen Kernen. Je zwei Raenge teilten sich
-# einen Kern, und weil OpenMPI beim Warten aktiv pollt, verbrannte der
-# wartende Rang die Zyklen seines rechnenden Nachbarn: 2 s Simulation in
-# 3,4 h statt Minuten, CPU-Last 45 % = Spinnen (gefunden 2026-08-12 auf
-# Fabios Ryzen 5 2600). --map-by core setzt einen Rang je physischen Kern;
-# --oversubscribe erlaubt weiterhin bewusste Handvorgaben darueber hinaus.
-MPI = ("mpirun --allow-run-as-root --map-by core --bind-to core "
-       "--oversubscribe")
+# ZWEI Welten, EINE Zeile ging schief (2026-08-12, zweimal am selben Tag):
+# * Nutzer-Maschine (Ryzen, SMT): --use-hwthread-cpus setzte 6 Raenge auf die
+#   Thread-PAARE von nur 3 Kernen -> Spin-Thrashing, 30x langsamer.
+# * Cloud-Scheibe (RunPod): --map-by core scheitert in einer cpuset-Teilmenge
+#   komplett ("unable to start"), und die Physische-Kerne-Zaehlung halbiert
+#   dort die BEZAHLTE Leistung (16 gebuchte Threads = Geschwister von 8
+#   Kernen des Wirts).
+# Loesung: die kampferprobten Flags bleiben, die PLATZIERUNG macht taskset —
+# auf SMT-Maschinen ohne Kontingent wird die Affinitaet vorab auf EINEN
+# Thread je physischem Kern eingeschraenkt (kern_bindung()); mpirun bindet
+# dann automatisch je einen Rang je erlaubtem Thread. In der Cloud (Kontingent
+# vorhanden) wird nichts eingeschraenkt: alle gebuchten Threads rechnen.
+MPI = ("mpirun --allow-run-as-root --use-hwthread-cpus --oversubscribe")
+
+
+def mpi_kommando(cores: int) -> str:
+    """
+    mpirun-Aufruf samt Platzierung fuer diese Maschine.
+
+    Ohne Kontingent und mit SMT wird die Affinitaet per taskset auf einen
+    Thread je physischem Kern eingeschraenkt — mpirun verteilt die Raenge
+    dann automatisch auf getrennte Kerne. Eine Handvorgabe ueber die
+    Kernzahl (FLOOD3D_CORES ueber der Kernzahl) hebt die Einschraenkung
+    auf: wer bewusst ueberbucht, bekommt alle Threads.
+    """
+    vorsatz = ""
+    if cgroup_kontingent() is None:
+        liste = kern_bindung()
+        if liste and cores <= len(liste.split(",")):
+            vorsatz = f"taskset -c {liste} "
+    return f"{vorsatz}{MPI} -np {cores}"
 
 
 def _shm_pruefen(cores: int) -> None:
@@ -565,7 +636,7 @@ def main() -> int:
                               "log.decomposePar_mesh")
                 emit(event="log", text=f"Vernetze auf {cores} Kernen")
                 run_foam_step(case,
-                              f"{MPI} -np {cores} "
+                              f"{mpi_kommando(cores)} "
                               "snappyHexMesh -overwrite -parallel",
                               "log.snappyHexMesh")
                 run_foam_step(case, "reconstructParMesh -constant",
@@ -599,7 +670,7 @@ def main() -> int:
             run_foam_step(case, "decomposePar -force", "log.decomposePar")
             emit(event="log", text=f"Rechne auf {cores} Kernen")
             run_foam_step(case,
-                          f"{MPI} -np {cores} {app_name} -parallel",
+                          f"{mpi_kommando(cores)} {app_name} -parallel",
                           f"log.{app_name}", end_time=spec.solver.end_time)
             try:
                 run_foam_step(case, "reconstructPar -newTimes",

@@ -391,13 +391,55 @@ def test_unlesbare_topologie_faellt_auf_logische_zaehlung(tmp_path, monkeypatch)
                             periode=tmp_path / "c") == 8
 
 
-def test_mpi_bindet_je_kern_nicht_je_hyperthread():
+def test_mpi_platzierung_je_welt(tmp_path, monkeypatch):
     """
-    Mit --use-hwthread-cpus landeten 6 Raenge auf den Thread-PAAREN von nur
-    drei Ryzen-Kernen; OpenMPIs aktives Warten verbrannte dabei die Zyklen
-    des jeweils rechnenden Nachbarn (2 s Simulation in 3,4 h, 2026-08-12).
+    Zwei Welten, ein Kommando (2026-08-12, beide am selben Tag gelernt):
+    SMT-Nutzer-Maschine -> taskset auf einen Thread je Kern (sonst
+    Spin-Thrashing, 30x); Cloud-Scheibe mit Kontingent -> KEIN taskset und
+    keine map-by-Bindung (scheitert in cpuset-Teilmengen mit
+    'unable to start'), alle gebuchten Threads rechnen.
     """
     r = _lade_runner()
-    assert "--map-by core" in r.MPI and "--bind-to core" in r.MPI
-    assert "--use-hwthread-cpus" not in r.MPI
-    assert "--oversubscribe" in r.MPI     # Handvorgaben bleiben moeglich
+    # kampferprobte Flags, keine harte Bindung
+    assert "--use-hwthread-cpus" in r.MPI and "--oversubscribe" in r.MPI
+    assert "--map-by" not in r.MPI
+
+    # Nutzer-Maschine: kein Kontingent, SMT -> taskset mit einem Thread je Kern
+    monkeypatch.setattr(r, "cgroup_kontingent", lambda *a, **k: None)
+    monkeypatch.setattr(r, "kern_bindung", lambda *a, **k: "0,2,4,6,8,10")
+    cmd = r.mpi_kommando(6)
+    assert cmd.startswith("taskset -c 0,2,4,6,8,10 ")
+    assert cmd.endswith("-np 6")
+
+    # bewusste Ueberbuchung hebt die Einschraenkung auf
+    assert not r.mpi_kommando(12).startswith("taskset")
+
+    # Cloud: Kontingent vorhanden -> kein taskset
+    monkeypatch.setattr(r, "cgroup_kontingent", lambda *a, **k: 16)
+    assert not r.mpi_kommando(16).startswith("taskset")
+
+
+def test_cloud_scheibe_rechnet_alle_gebuchten_threads(tmp_path, monkeypatch):
+    """RunPod: 16 gebuchte Threads = Geschwister von 8 Wirtskernen. Die
+    Physische-Kerne-Zaehlung darf die bezahlte Leistung nicht halbieren."""
+    r = _lade_runner()
+    monkeypatch.setattr(r.os, "cpu_count", lambda: 192)
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(16)))
+    monkeypatch.setattr(r, "physische_kerne", lambda *a, **k: 8)
+    v2 = tmp_path / "cpu.max"; v2.write_text("1600000 100000\n")
+    assert r.erlaubte_kerne(cpu_max=v2, quota=tmp_path / "x",
+                            periode=tmp_path / "y") == 16
+
+
+def test_kern_bindung_waehlt_einen_thread_je_kern(tmp_path, monkeypatch):
+    r = _lade_runner()
+    for cpu in range(12):
+        d = tmp_path / f"cpu{cpu}" / "topology"; d.mkdir(parents=True)
+        a, b = (cpu, cpu + 6) if cpu < 6 else (cpu - 6, cpu)
+        (d / "thread_siblings_list").write_text(f"{a},{b}\n")
+    monkeypatch.setattr(r.os, "sched_getaffinity", lambda pid: set(range(12)))
+    assert r.kern_bindung(topo_wurzel=tmp_path) == "0,1,2,3,4,5"
+    # ohne SMT (Geschwisterliste = eigener Eintrag) keine Einschraenkung
+    for cpu in range(12):
+        (tmp_path / f"cpu{cpu}" / "topology" / "thread_siblings_list").write_text(f"{cpu}\n")
+    assert r.kern_bindung(topo_wurzel=tmp_path) == ""
