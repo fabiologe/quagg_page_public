@@ -39,19 +39,25 @@ Server = 4 physische Kerne ohne SMT (Topologie geprüft).
 | Server | **12** | **2,23** | 11.868 | **2,70 — LANGSAMER als 4** |
 | Cloud (RunPod) | 4 | 1,41 | 56.251 | (16 vCPU zugeteilt) |
 | Cloud (RunPod) | 16 | 0,48 | 41.160 | skaliert sauber |
-| Nutzer-Maschine | 12 | 4,16 | 6.361 | (zurückgerechnet, 6C/12T!) |
+| Nutzer-Maschine (alt) | 12 | 4,16 | 6.361 | Hyperthread-Bindung: 6 Ränge auf 3 Kernen |
+| **Nutzer-Maschine (Fix)** | **6** | 0,74 | **58.874** | **je Kern 1,4× schneller als der Server** |
 
 **Kernbefund:** Mehr Ränge als physische Kerne machen den Lauf LANGSAMER —
 8 Ränge auf 4 Kernen kosten 22 % gegenüber 4 Rängen. interFoam ist
 speicherbandbreiten-begrenzt; Hyperthreads teilen sich Kern und Bandbreite.
 Die Cloud skaliert bis 16 sauber, weil dort 16 vCPU wirklich zugeteilt sind.
 
-**Folge für die Nutzer-Maschine (Ryzen 5 2600, 6C/12T):** Die alte Automatik
-nahm 12 Ränge — nach dieser Messung kontraproduktiv. Der Läufer zählt seit
-2026-08-12 die **physischen Kerne** (sysfs-Topologie, auf die erlaubten CPUs
-eingeschränkt) und fährt dort 6. `/dev/shm` bleibt unschuldig — bei 12 und
-16 Rängen messen 64 MB und 2 GB gleich (Verhältnisse sind vom Messfehler
-nicht betroffen).
+**Folge für die Nutzer-Maschine (Ryzen 5 2600, 6C/12T):** Zwei Fehler
+stapelten sich. (1) Die alte Automatik nahm 12 Ränge — der Läufer zählt jetzt
+die **physischen Kerne**. (2) Der eigentliche 30×-Bremser war
+`--use-hwthread-cpus`: Es band die 6 Ränge an die Threads 0–5, auf dem Ryzen
+die Thread-**Paare von nur drei Kernen** — und OpenMPIs aktives Warten
+verbrannte dabei die Zyklen des jeweils rechnenden Nachbarn (CPU-Last 45 % =
+Spinnen). Seit `--map-by core --bind-to core` liefert die Maschine
+**58.874 Zellakt./Kern-s** — je Kern 1,4× schneller als unser Server.
+`/dev/shm` bleibt unschuldig; die scheinbare Netz-Explosion des letzten
+Prüflaufs war eine Falländerung (base_cell 0,125 → 0,05 in der UI), keine
+Maschineneigenschaft.
 
 ## Was damit ausgeschlossen ist
 
