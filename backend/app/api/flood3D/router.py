@@ -1582,7 +1582,8 @@ async def start_run(request: Request, payload: dict = Body(...)):
 
         try:
             erg = lauf_starten(spec, case_dir, run_id, run_root, melde,
-                               lambda: (run_root / "ABBRUCH").exists())
+                               lambda: (run_root / "ABBRUCH").exists(),
+                               cores=payload.get("cores"))
             melde(status="importing")
             _import_entpacken(run_root, run_id, erg["artefakte"])
             artefakt_aufraeumen(erg["job_id"])
