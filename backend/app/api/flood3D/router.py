@@ -1586,8 +1586,22 @@ async def start_run(request: Request, payload: dict = Body(...)):
             melde(status="importing")
             _import_entpacken(run_root, run_id, erg["artefakte"])
             artefakt_aufraeumen(erg["job_id"])
+            # Ist-Kosten mit dem RunPod-Satz, nicht mit dem Serversatz:
+            # 0,033 EUR je vCPU-Stunde (Preisliste 2026-08-12).
+            from .core.runner import POD_PRICE_EUR_H
+            # Kernzahl aus dem importierten Manifest: das ist die, mit der
+            # der Worker WIRKLICH gerechnet hat (der Laeufer schreibt sie
+            # mit) — nicht die, die wir vermuten.
+            kerne = int(json.loads((run_root / "manifest.json").read_text())
+                        .get("cores") or 16)
+            # origin/ort NACH dem Import setzen: das Manifest aus dem
+            # Archiv stammt vom Laeufer und sagt "companion" — richtig fuer
+            # die Nutzer-Maschine, falsch fuer die Cloud.
             melde(status="completed", finished=time.time(),
-                  duration_s=erg["dauer_s"], runpod_job=erg["job_id"])
+                  origin="runpod", ort="runpod",
+                  duration_s=erg["dauer_s"], runpod_job=erg["job_id"],
+                  cost_eur=round(erg["dauer_s"] / 3600.0 * kerne
+                                 * POD_PRICE_EUR_H, 2))
         except RunPodFehler as e:
             abgebrochen = "abgebrochen" in str(e).lower()
             melde(status="abgebrochen" if abgebrochen else "failed",

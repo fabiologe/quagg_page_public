@@ -137,9 +137,16 @@ lokalen Lauf.
      das Kontingent — mpirun startete viel mehr Ränge als Kerne zugeteilt
      sind. `local_runner.erlaubte_kerne()` fragt jetzt zusätzlich
      `sched_getaffinity` und die cgroup-Quote ab und nimmt das Kleinste.
-  3. Der Lauf endete an `executionTimeout exceeded` — **das Execution
-     Timeout am Endpunkt steht noch auf der Voreinstellung.** Ohne
-     Abschalten (bzw. ≥ 4 h) stirbt jeder CFD-Lauf mittendrin.
+  3. Der Lauf endete an `executionTimeout exceeded` (Voreinstellung ~600 s)
+     — am Endpunkt steht jetzt 4 h.
+- **Cloud-Lauf läuft (2026-08-12).** `cloudtest_r002` (Kopie der
+  Verifikation, 2 s, 20.896 Zellen) auf 16 vCPU: **175 s, 0,03 €**, Felder,
+  Abbildungen und Bewertung automatisch importiert, R2 danach leer geräumt.
+  Zum Vergleich vor der Kernzahl-Korrektur: 0,33 s simulierte Zeit in 532 s.
+- Kostensatz: `FLOOD3D_POD_CORE_PRICE` (0,033 €/vCPU-h; RunPod berechnet
+  0,036 $ je vCPU-Stunde auf JEDER Stufe — mehr Kerne kosten nicht mehr,
+  solange der Solver sie ausnutzt). Faustregel interFoam: 20–50k Zellen je
+  Kern, darunter frisst der Austausch den Gewinn.
 
 ## Läufe auslagern (StorageBox)
 

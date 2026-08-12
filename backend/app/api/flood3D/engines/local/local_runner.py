@@ -478,6 +478,9 @@ def main() -> int:
             emit(event="log", text=f"WARNUNG: {foam_hinweis}")
         manifest = {"status": "completed", "origin": "companion",
                     "foam": foam_v, "foam_hinweis": foam_hinweis,
+                    # Womit gerechnet wurde, gehoert in den Nachweis - und
+                    # die Ist-Kosten eines Cloud-Laufs haengen daran
+                    "cores": cores,
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
                     "missing_sources": missing, "finished": time.time()}

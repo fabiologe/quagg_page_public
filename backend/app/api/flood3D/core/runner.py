@@ -24,6 +24,12 @@ OF_BASHRC = os.environ.get("FLOOD3D_OF_BASHRC",
 SOLVE_TIMEOUT = int(os.environ.get("FLOOD3D_SOLVE_TIMEOUT", "7200"))
 MESH_TIMEOUT = int(os.environ.get("FLOOD3D_MESH_TIMEOUT", "1200"))
 CORE_PRICE_EUR_H = float(os.environ.get("FLOOD3D_CORE_PRICE", "0.05"))
+# Cloud-Satz aus der RunPod-Preisliste (2026-08-12): jede CPU-Stufe kostet
+# 0,036 $ je vCPU-Stunde — 2, 4, 8, 16 und 32 vCPU liegen exakt auf derselben
+# Geraden. Mehr Kerne kosten also nicht mehr, SOLANGE der Solver sie ausnutzt;
+# teuer wird nur schlechte Skalierung (Faustregel interFoam: 20-50k Zellen je
+# Kern). Umgerechnet mit 0,92 EUR/USD.
+POD_PRICE_EUR_H = float(os.environ.get("FLOOD3D_POD_CORE_PRICE", "0.033"))
 CORES = max(1, min(int(os.environ.get("FLOOD3D_CORES", "4")),
                    os.cpu_count() or 1))
 # interFoam-Durchsatz je Kern — kalibriert am Lauf demo-stufe3_r001:
@@ -214,7 +220,8 @@ def parse_checkmesh(text: str) -> dict:
     return out
 
 
-def estimate_run(spec, cells: int, cores: int = CORES) -> dict:
+def estimate_run(spec, cells: int, cores: int = CORES,
+                 satz: float | None = None) -> dict:
     """
     Laufzeit- und Kostenschätzung (Spez. Kap. 6.1, Netz- und Kostenvorschau).
     Maßgeblich ist das Alpha-Courant-Kriterium auf der feinsten Zellstufe —
@@ -232,7 +239,8 @@ def estimate_run(spec, cells: int, cores: int = CORES) -> dict:
         "dt_estimate_s": dt,
         "steps_estimate": int(steps),
         "wall_time_estimate_h": round(wall_h, 3),
-        "cost_estimate_eur": round(core_seconds / 3600.0 * CORE_PRICE_EUR_H, 2),
+        "cost_estimate_eur": round(core_seconds / 3600.0
+                                   * (CORE_PRICE_EUR_H if satz is None else satz), 2),
         "hinweis": "Schätzung, wird nach den ersten Läufen kalibriert",
     }
 
