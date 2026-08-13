@@ -172,7 +172,9 @@
         <div class="f3d-field">
           <label>Rechenort</label>
           <select v-model="lokal.rechenort" class="f3d-select">
-            <option value="server">Server</option>
+            <!-- Server rechnet keine Laeufe mehr (Entscheidung 2026-08-13):
+                 die Maschine gehoert der Webseite, gerechnet wird lokal
+                 oder in der Cloud -->
             <option value="local" :disabled="!lokal.companion?.foamSupported">
               Lokal (dieser PC, Docker)
             </option>
@@ -326,10 +328,6 @@ onMounted(() => {
 })
 
 async function startClicked() {
-  if (lokal.rechenort === 'server') {
-    store.startRun()
-    return
-  }
   if (lokal.rechenort === 'runpod') {
     // Cloud kostet echtes Geld, deshalb eine bewusste Bestätigung mehr —
     // das Kosten-Passwort fragt der API-Client zusätzlich ab.

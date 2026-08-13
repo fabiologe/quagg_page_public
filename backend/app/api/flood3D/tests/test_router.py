@@ -135,3 +135,10 @@ def test_unbekannter_lauf_und_traversal(client):
     assert client.get("/runs/gibtsnicht").status_code == 404
     assert client.get("/runs/..%2F..%2Fetc/result").status_code in (404, 422)
     assert client.get("/runs/r001/figures/..%2Fresult.json").status_code in (404, 422)
+
+
+def test_server_rechenort_ist_geschichte(client):
+    """Entscheidung 2026-08-13: der Server rechnet keine Laeufe mehr."""
+    r = client.post("/runs", json={"case_id": "demo", "ort": "server"})
+    assert r.status_code == 410
+    assert "Lokal" in r.json()["detail"] and "RunPod" in r.json()["detail"]

@@ -109,7 +109,27 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
     run_id = "verifikation-wehr_r001"
     run_root = runs_root() / run_id
     t0 = time.time()
-    manifest = run_pipeline(spec, fall_dir, run_root, run_id)
+    # Seit Stage B rechnet der Server keine Laeufe mehr — die Verifikation
+    # prueft den ECHTEN Rechenort: RunPod, 16 Threads, ueber denselben
+    # Relay wie ein Nutzerlauf (~0,2 EUR je Durchlauf). Ohne RunPod-Zugang
+    # schlaegt lauf_starten mit klarer Meldung fehl — der Test ist ohnehin
+    # env-gated (FLOOD3D_VERIFIKATION=1).
+    run_root.mkdir(parents=True, exist_ok=True)
+
+    def _melde(**felder):
+        pfad = run_root / "manifest.json"
+        m = json.loads(pfad.read_text()) if pfad.is_file() else {}
+        m.update(felder)
+        pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+
+    _melde(status="building", origin="runpod", title=spec.meta.title,
+           created=time.time())
+    erg = lauf_starten(spec, fall_dir, run_id, run_root, _melde,
+                       lambda: False, cores=16)
+    _import_entpacken(run_root, run_id, erg["artefakte"])
+    _melde(status="completed", finished=time.time(),
+           duration_s=erg["dauer_s"], runpod_job=erg["job_id"])
+    manifest = json.loads((run_root / "manifest.json").read_text())
 
     df = pd.read_parquet(run_root / "normalized.parquet")
     cd = df[(df["quantity"] == "overfall_cd")

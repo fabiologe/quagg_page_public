@@ -22,7 +22,7 @@ const neuerLauf = (teil) => ({ jobId: null, runId: null, caseId: null,
 export const useLocalRunStore = defineStore('flood3d-local-run', {
   state: () => ({
     companion: null,       // /health-Antwort (foamSupported, version, docker) oder null
-    rechenort: 'server',   // 'server' | 'local' | 'runpod' — überlebt Tab-Wechsel
+    rechenort: 'runpod',   // 'local' | 'runpod' — der Server rechnet nicht mehr
     laufend: null,         // neuerLauf() solange der Treiber fährt, sonst null
     log: [],               // Ringpuffer, max LOG_MAX Zeilen
     pausing: false,
@@ -84,6 +84,11 @@ export const useLocalRunStore = defineStore('flood3d-local-run', {
       this.companion = await companionHealth()
       this.offeneLaeufe = await unterbrocheneLaeufe()
       if (autoSelect && this.companion?.foamSupported) this.rechenort = 'local'
+      // Der Server-Rechenort ist Geschichte — Altzustand migrieren:
+      // Companion da -> lokal, sonst Cloud
+      if (this.rechenort === 'server') {
+        this.rechenort = this.companion?.foamSupported ? 'local' : 'runpod'
+      }
     },
 
     async starten(caseId) {
