@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .casespec import CaseSpec
-from .conventions import UNITS, Quantity
+from .conventions import UNITS, Quantity, befund
 from .normalize import get_series
 
 
@@ -476,8 +476,7 @@ def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
     befunde: list[dict] = []
 
     def b(severity, message, **extra):
-        befunde.append({"object_id": "qualitaet", "severity": severity,
-                        "message": message, **extra})
+        befunde.append(befund("qualitaet", severity, message, **extra))
 
     yp = quality.get("y_plus_range") or [None, None]
     if yp[1] is not None and float(yp[1]) > BEFUND_YPLUS_MAX:

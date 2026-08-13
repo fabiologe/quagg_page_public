@@ -10,15 +10,24 @@ wasserbaulicher, nicht numerischer Sprache. Schweregrade:
 
 Die Prüfung meldet Probleme im Editor — nicht erst nach einem bezahlten
 Rechenlauf (Spez. 1.8).
+
+Aufbau: `validate_case` baut EINMAL den gemeinsamen Kontext (`_Kontext`)
+und reicht ihn durch die Registry `_PRUEFUNGEN`. Jede Prüffamilie
+`_pruefe_<name>(spec, ctx)` liefert ihre Befunde als Liste; die Reihenfolge
+der Familien in der Registry ist die historische Reihenfolge der Blöcke —
+sie entscheidet über die Reihenfolge gleichrangiger Befunde (stabile
+Sortierung am Ende) und darf nicht umgestellt werden.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from .casespec import CaseSpec
+from .conventions import befund
 from .kur import kur
 from .meshgen import assign_faces, cell_counts
 from .solids import (build_solids, check_solid, gelaende_mit_aushub,
@@ -38,6 +47,32 @@ def _flaechen_zelle(mesh, patch: str) -> float:
     stufe = max((r.level for r in mesh.refinements
                  if r.type == "surface" and r.target == patch), default=0)
     return mesh.base_cell / 2 ** stufe
+
+
+def _box_stufe(spec: CaseSpec, punkt) -> int:
+    """Höchste Verfeinerungsstufe der Boxen, die den Punkt enthalten."""
+    stufe = 0
+    for r in spec.mesh.refinements:
+        if r.type != "box":
+            continue
+        bx0, by0, bz0, bx1, by1, bz1 = r.extent
+        if (min(bx0, bx1) <= punkt[0] <= max(bx0, bx1)
+                and min(by0, by1) <= punkt[1] <= max(by0, by1)
+                and (len(punkt) < 3
+                     or min(bz0, bz1) <= punkt[2] <= max(bz0, bz1))):
+            stufe = max(stufe, r.level)
+    return stufe
+
+
+def _lokale_zelle(spec: CaseSpec, patch: str, punkt=None) -> float:
+    """
+    Örtliche Zellgröße an einer Fläche: eine Verfeinerungsbox über der
+    Stelle zählt genauso wie eine Flächenverfeinerung.
+    """
+    zelle = _flaechen_zelle(spec.mesh, patch)
+    if punkt is not None:
+        zelle = min(zelle, spec.mesh.base_cell / 2 ** _box_stufe(spec, punkt))
+    return zelle
 
 
 def _erwarteter_spiegel(spec) -> tuple[float, str] | None:
@@ -74,79 +109,89 @@ _QUELL_NAMEN = {"gauge": "Pegelpunkt", "section": "Querschnitt",
                 "patch": "Bauwerk", "box": "Verfeinerungsbox", "weir": "Wehr"}
 
 
-def _verweise_pruefen(spec: CaseSpec, f) -> None:
-    """
-    Jeder Verweis eines Nachweiskriteriums zeigt auf ein existierendes
-    Objekt (Spez. Kap. 7, „Auswertung").
-
-    Diese Regeln standen einmal als harte `model_validator` in casespec und
-    machten den Fall im Zwischenzustand unlesbar — Löschen eines Pegels
-    blockierte Vorschau UND Speichern. Als Prüfregel melden sie dasselbe,
-    lassen den Editor aber arbeiten; gesperrt wird der Lauf.
-
-    `region` (Sohlschubkriterien) und `weir` (Überfallbeiwert) wurden bis
-    dahin von NIEMANDEM geprüft: foamfields überspringt eine unbekannte
-    Region still, das Kriterium bleibt ohne Zahlenwert.
-    """
-    bekannt = {
-        "gauge": {g.id for g in spec.evaluation.gauges},
-        "section": {s.id for s in spec.evaluation.sections},
-        "patch": {s.patch for s in spec.structures},
-        "box": {r.id for r in (spec.mesh.refinements if spec.mesh else [])
-                if r.type == "box"},
-        "weir": {s.id for s in spec.structures if s.type == "weir"},
-    }
-    for t in spec.evaluation.targets:
-        for feld, quelle in _TARGET_VERWEISE.get(t.kind, {}).items():
-            wert = getattr(t, feld, None)
-            if wert is None or wert in bekannt[quelle]:
-                continue
-            f(_finding(t.id, "fehler",
-                       f"Kriterium verweist auf {_QUELL_NAMEN[quelle]} "
-                       f"„{wert}“ — den gibt es im Fall nicht (mehr). Ohne "
-                       "Bezugsobjekt bleibt das Kriterium ohne Zahlenwert.",
-                       fix=kur("verweis_entfernen", art="target", id=t.id)))
-
-
 def _finding(object_id: str, severity: str, message: str,
              fix: dict | None = None) -> dict:
     """
-    Ein Befund. `fix` ist die zugehörige Kur (core/kur.py) — eine benannte
-    Aktion, die das Panel als Knopf anbietet. Nur dort setzen, wo die
-    Reparatur aus dem Befund EINDEUTIG folgt und keine fachliche
-    Festlegung berührt.
+    Ein Befund (Konstruktor: conventions.befund). `fix` ist die zugehörige
+    Kur (core/kur.py) — eine benannte Aktion, die das Panel als Knopf
+    anbietet. Nur dort setzen, wo die Reparatur aus dem Befund EINDEUTIG
+    folgt und keine fachliche Festlegung berührt.
     """
-    b = {"object_id": object_id, "severity": severity, "message": message}
     if fix is not None:
-        b["fix"] = fix
-    return b
+        return befund(object_id, severity, message, fix=fix)
+    return befund(object_id, severity, message)
 
 
-def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
-    base_dir = Path(base_dir)
-    findings: list[dict] = []
-    f = findings.append
-
-    terrain = None
+@dataclass
+class _Kontext:
+    """
+    Gemeinsame Vorberechnungen für die Prüffamilien — EINMAL in
+    `validate_case` gebaut. `solids` und `terrain` sind Zwischenergebnisse
+    früherer Blöcke: `solids` füllt `_pruefe_geometrie` (die Ausfälle sind
+    dort Befunde), spätere Familien (Durchdringungen, Randabstand) lesen es.
+    """
+    base_dir: Path
     # Gewachsene Oberfläche — für die Frage, ob ein Hohlraum noch OFFEN ist,
     # zählt sie und nicht die ausgehobene
-    gewachsen = None
+    gewachsen: TerrainField | None
+    # Alle weiteren Regeln rechnen mit dem AUSGEHOBENEN Gelände: eine
+    # Trennwand im ausgehobenen Schacht gilt sonst als „vollständig unter
+    # dem Gelände und hydraulisch wirkungslos"
+    terrain: TerrainField | None
+    inflows: list
+    outflows: list
+    patch_zu_id: dict
+    solids: dict = field(default_factory=dict)
+
+
+def _kontext_bauen(spec: CaseSpec,
+                   base_dir: Path) -> tuple[_Kontext, list[dict]]:
+    befunde: list[dict] = []
+    gewachsen = terrain = None
     if spec.terrain is not None and spec.domain is not None:
         try:
             gewachsen = TerrainField.from_spec(spec.terrain, spec.domain,
                                                base_dir)
-            # Alle weiteren Regeln rechnen mit dem AUSGEHOBENEN Gelände:
-            # eine Trennwand im ausgehobenen Schacht gilt sonst als
-            # „vollständig unter dem Gelände und hydraulisch wirkungslos"
             terrain = gelaende_mit_aushub(gewachsen, spec)
         except Exception as e:
-            f(_finding("terrain", "fehler", f"Gelände nicht erzeugbar: {e}"))
+            befunde.append(_finding("terrain", "fehler",
+                                    f"Gelände nicht erzeugbar: {e}"))
+    ctx = _Kontext(
+        base_dir=base_dir,
+        gewachsen=gewachsen,
+        terrain=terrain,
+        inflows=[b for b in spec.boundaries
+                 if b.type in ("inflow_hydrograph", "inflow_constant")],
+        outflows=[b for b in spec.boundaries
+                  if b.type.startswith("outflow")],
+        patch_zu_id={s.patch: s.id for s in spec.structures},
+    )
+    return ctx, befunde
+
+
+def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
+    ctx, findings = _kontext_bauen(spec, Path(base_dir))
+    for pruefung in _PRUEFUNGEN:
+        findings.extend(pruefung(spec, ctx))
+    order = {"fehler": 0, "warnung": 1, "hinweis": 2}
+    return sorted(findings, key=lambda x: (order[x["severity"]], x["object_id"]))
+
+
+# ---- Prüffamilien ---------------------------------------------------------
+# Jede Familie: _pruefe_<name>(spec, ctx) -> list[dict]. Lazy-Imports
+# (casebuilder, anschluss, …) bleiben IN den Familien — es gibt echte
+# Importzyklen validate↔casebuilder, ein Modulkopf-Import würde crashen.
+
+def _pruefe_kraftauswertung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Kraftkriterien und Kraftrollen gegen die Kraftauswertung halten."""
+    befunde: list[dict] = []
+    f = befunde.append
 
     # Ein Kraftkriterium ohne eingeschaltete Kraftauswertung liefert keine
     # Zeitreihe — das fällt sonst erst nach dem bezahlten Lauf auf, als
     # „nicht auswertbar" in der Nachweisübersicht.
     # Nur für ein Bauwerk, das es gibt: zeigt das Kriterium ins Leere,
-    # meldet das `_verweise_pruefen`. „Kraftauswertung einschalten" für
+    # meldet das `_pruefe_verweise`. „Kraftauswertung einschalten" für
     # einen Patch, den es nicht gibt, wäre eine Kur, die ihren eigenen
     # Befund nicht beseitigen kann.
     kraftpatches = set(spec.evaluation.force_patches)
@@ -155,7 +200,7 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
         if ziel.kind == "max_force" and ziel.at in bauwerkspatches \
                 and ziel.at not in kraftpatches:
             f(_finding(ziel.id, "fehler",
-                       f"Für \u201e{ziel.at}\u201c ist die Kraftauswertung "
+                       f"Für „{ziel.at}“ ist die Kraftauswertung "
                        "nicht eingeschaltet — das Kriterium bliebe ohne "
                        "Zahlenwert.",
                        fix=kur("kraftauswertung_ein", patch=ziel.at)))
@@ -179,13 +224,20 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                    "dem Lauf nicht nachrüsten — die Kräfte entstehen nur, "
                    "wenn der Solver sie mitschreibt.",
                    fix=kur("kraftauswertung_ein", patch=s.patch)))
+    return befunde
+
+
+def _pruefe_gelaendekoerper(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Geländekörper-Datei und Sculpt-Ebene: vorhanden, lesbar, deckend."""
+    befunde: list[dict] = []
+    f = befunde.append
 
     # Geländekörper: er ersetzt die Höhenfläche beim Vernetzen. Ist er
     # nicht geschlossen oder deckt er das Gebiet nicht, merkt man das sonst
     # erst an einem zerrissenen Netz.
     if spec.terrain is not None and getattr(spec.terrain.base, "koerper", None):
         import trimesh as _tm
-        pfad = base_dir / spec.terrain.base.koerper
+        pfad = ctx.base_dir / spec.terrain.base.koerper
         if not pfad.is_file():
             f(_finding("terrain", "fehler",
                        f"Geländekörper „{spec.terrain.base.koerper}“ liegt "
@@ -220,12 +272,17 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
 
     # ---- Sculpt-Ebene: Datei muss zum Spec-Eintrag existieren ------------
     if spec.terrain is not None and spec.terrain.sculpt:
-        if not (base_dir / spec.terrain.sculpt).exists():
+        if not (ctx.base_dir / spec.terrain.sculpt).exists():
             f(_finding("terrain", "fehler",
                        f"Sculpt-Ebene „{spec.terrain.sculpt}“ fehlt im "
                        "Fallordner — Formungen gehen beim Rechnen verloren."))
+    return befunde
 
-    # ---- Vorfüllungen: Höhe im Gebiet, überm Gelände ---------------------
+
+def _pruefe_vorfuellungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Vorfüllungen: Höhe im Gebiet, überm Gelände."""
+    befunde: list[dict] = []
+    f = befunde.append
     for v in spec.solver.vorfuellungen:
         if spec.domain is not None and not (
                 spec.domain.z_min < v.level <= spec.domain.z_max):
@@ -233,12 +290,11 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                        f"Vorfüllung „{v.id}“: Spiegel {v.level:g} m liegt "
                        f"außerhalb des Gebiets ({spec.domain.z_min:g} … "
                        f"{spec.domain.z_max:g} m)."))
-        elif gewachsen is not None and len(v.polygon) >= 3:
-            import numpy as _np
-            xs = _np.array([p[0] for p in v.polygon])
-            ys = _np.array([p[1] for p in v.polygon])
+        elif ctx.gewachsen is not None and len(v.polygon) >= 3:
+            xs = np.array([p[0] for p in v.polygon])
+            ys = np.array([p[1] for p in v.polygon])
             try:
-                zmin = float(_np.min(gewachsen.sample(xs, ys)))
+                zmin = float(np.min(ctx.gewachsen.sample(xs, ys)))
             except Exception:               # noqa: BLE001
                 zmin = None
             if zmin is not None and v.level <= zmin:
@@ -247,6 +303,14 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"liegt unter dem Gelände im Bereich (tiefster "
                            f"Punkt {zmin:.2f} m) — dort entsteht kein "
                            "Wasser."))
+    return befunde
+
+
+def _pruefe_aushub(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Erdkörper-Schalter und Aushübe (Hohlraum im Erdreich)."""
+    befunde: list[dict] = []
+    f = befunde.append
+    gewachsen = ctx.gewachsen
 
     # ---- Erdkörper-Schalter gegen die Inferenz ---------------------------
     # Regel und Kur messen dieselbe Größe: die Kur stellt den Schalter auf
@@ -267,72 +331,81 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     # Entschieden wird gegen das GEWACHSENE Gelände: gegen das bereits
     # ausgehobene gemessen läge jeder Aushub definitionsgemäß frei
     aushub = [s for s in spec.structures if ist_aushub(s, gewachsen)]
-    if aushub:
-        if spec.terrain is None:
-            f(_finding(aushub[0].id, "fehler",
-                       "Ausgehoben werden kann nur aus einem Gelände — der "
-                       "Fall hat keines. Entweder ein Gelände anlegen oder "
-                       "das Bauwerk auf „Bauteil“ stellen."))
-        for s in aushub:
-            # Verweise auf einen Patch, den es im Netz nicht gibt
-            verweise = []
-            if s.patch in (spec.evaluation.force_patches
-                           if spec.evaluation else []):
-                verweise.append("Kraftauswertung")
-            if any(r.type == "surface" and r.target == s.patch
-                   for r in (spec.mesh.refinements if spec.mesh else [])):
-                verweise.append("Flächenverfeinerung")
-            if spec.mesh is not None and spec.mesh.boundary_layers \
-                    and s.patch in spec.mesh.boundary_layers.patches:
-                verweise.append("Grenzschicht")
-            if verweise:
-                f(_finding(s.id, "fehler",
-                           f"{' und '.join(verweise)} verweist auf den Patch "
-                           f"„{s.patch}“, den es nicht gibt: ein Aushub ist "
-                           "Hohlraum, seine Wandungen gehören zur "
-                           "Geländefläche. Auf „terrain“ verweisen oder das "
-                           "Bauwerk auf „Bauteil“ stellen."))
-        # Geschlossener Hohlraum: der Vernetzer behält nur, was mit dem
-        # locationInMesh-Punkt zusammenhängt — ein rundum verschlossener
-        # Kasten im Erdreich fällt ersatzlos weg. Maßstab ist hier die
-        # GEWACHSENE Oberfläche: gegen das ausgehobene Gelände gemessen
-        # läge jeder Aushub definitionsgemäß frei.
-        # Geprüft wird je VERBUND: sich berührende Aushübe bilden nach dem
-        # Abziehen einen Raum, und reicht einer davon bis an die Oberfläche,
-        # hängt der ganze Raum am Strömungsgebiet.
-        for gruppe in (_aushub_verbund(aushub) if gewachsen is not None else []):
-            lagen = []
-            for s in gruppe:
-                pkte = _plan_punkte(s)
-                deckel = getattr(s, "top_level", None)
-                if deckel is None and s.type == "graben":
-                    deckel = max(p[2] + (s.profile.height or s.profile.width)
-                                 for p in s.axis)
-                if deckel is None or not len(pkte):
-                    continue
-                boden = float(np.min(gewachsen.sample(pkte[:, 0], pkte[:, 1])))
-                lagen.append((s, deckel, boden))
-            if not lagen or any(bo <= de + 1e-6 for _, de, bo in lagen):
-                continue                    # irgendwo offen, alles gut
-            # rundum zu — nur ein Durchlass oder ein Randfenster kann noch
-            # eine Verbindung herstellen
-            angeschlossen = any(
-                c.type == "culvert" and getattr(c, "durchstoesst_gelaende", False)
-                for c in spec.structures)
-            erster, deckel, boden = max(lagen, key=lambda l: l[1])
-            mit = [x.id for x, _, _ in lagen if x.id != erster.id]
-            f(_finding(erster.id, "warnung" if angeschlossen else "fehler",
-                       f"Der Hohlraum liegt vollständig unter dem Gelände "
-                       f"(Oberkante {deckel:.2f} m, Gelände darüber ab "
-                       f"{boden:.2f} m)"
-                       + (f" — zusammen mit {', '.join(mit)}, die im "
-                          "Grundriss daran anschließen" if mit else "")
-                       + ". Der Vernetzer behält nur, was mit dem "
-                       "Strömungsgebiet zusammenhängt — ein rundum "
-                       "verschlossener Hohlraum fällt ersatzlos weg. "
-                       "Abhilfe: bis an die Geländeoberfläche führen oder "
-                       "mit einem Durchlass anschließen („durch das Gelände "
-                       "bohren“)."))
+    if not aushub:
+        return befunde
+    if spec.terrain is None:
+        f(_finding(aushub[0].id, "fehler",
+                   "Ausgehoben werden kann nur aus einem Gelände — der "
+                   "Fall hat keines. Entweder ein Gelände anlegen oder "
+                   "das Bauwerk auf „Bauteil“ stellen."))
+    for s in aushub:
+        # Verweise auf einen Patch, den es im Netz nicht gibt
+        verweise = []
+        if s.patch in (spec.evaluation.force_patches
+                       if spec.evaluation else []):
+            verweise.append("Kraftauswertung")
+        if any(r.type == "surface" and r.target == s.patch
+               for r in (spec.mesh.refinements if spec.mesh else [])):
+            verweise.append("Flächenverfeinerung")
+        if spec.mesh is not None and spec.mesh.boundary_layers \
+                and s.patch in spec.mesh.boundary_layers.patches:
+            verweise.append("Grenzschicht")
+        if verweise:
+            f(_finding(s.id, "fehler",
+                       f"{' und '.join(verweise)} verweist auf den Patch "
+                       f"„{s.patch}“, den es nicht gibt: ein Aushub ist "
+                       "Hohlraum, seine Wandungen gehören zur "
+                       "Geländefläche. Auf „terrain“ verweisen oder das "
+                       "Bauwerk auf „Bauteil“ stellen."))
+    # Geschlossener Hohlraum: der Vernetzer behält nur, was mit dem
+    # locationInMesh-Punkt zusammenhängt — ein rundum verschlossener
+    # Kasten im Erdreich fällt ersatzlos weg. Maßstab ist hier die
+    # GEWACHSENE Oberfläche: gegen das ausgehobene Gelände gemessen
+    # läge jeder Aushub definitionsgemäß frei.
+    # Geprüft wird je VERBUND: sich berührende Aushübe bilden nach dem
+    # Abziehen einen Raum, und reicht einer davon bis an die Oberfläche,
+    # hängt der ganze Raum am Strömungsgebiet.
+    for gruppe in (_aushub_verbund(aushub) if gewachsen is not None else []):
+        lagen = []
+        for s in gruppe:
+            pkte = _plan_punkte(s)
+            deckel = getattr(s, "top_level", None)
+            if deckel is None and s.type == "graben":
+                deckel = max(p[2] + (s.profile.height or s.profile.width)
+                             for p in s.axis)
+            if deckel is None or not len(pkte):
+                continue
+            boden = float(np.min(gewachsen.sample(pkte[:, 0], pkte[:, 1])))
+            lagen.append((s, deckel, boden))
+        if not lagen or any(bo <= de + 1e-6 for _, de, bo in lagen):
+            continue                    # irgendwo offen, alles gut
+        # rundum zu — nur ein Durchlass oder ein Randfenster kann noch
+        # eine Verbindung herstellen
+        angeschlossen = any(
+            c.type == "culvert" and getattr(c, "durchstoesst_gelaende", False)
+            for c in spec.structures)
+        erster, deckel, boden = max(lagen, key=lambda l: l[1])
+        mit = [x.id for x, _, _ in lagen if x.id != erster.id]
+        f(_finding(erster.id, "warnung" if angeschlossen else "fehler",
+                   f"Der Hohlraum liegt vollständig unter dem Gelände "
+                   f"(Oberkante {deckel:.2f} m, Gelände darüber ab "
+                   f"{boden:.2f} m)"
+                   + (f" — zusammen mit {', '.join(mit)}, die im "
+                      "Grundriss daran anschließen" if mit else "")
+                   + ". Der Vernetzer behält nur, was mit dem "
+                   "Strömungsgebiet zusammenhängt — ein rundum "
+                   "verschlossener Hohlraum fällt ersatzlos weg. "
+                   "Abhilfe: bis an die Geländeoberfläche führen oder "
+                   "mit einem Durchlass anschließen („durch das Gelände "
+                   "bohren“)."))
+    return befunde
+
+
+def _pruefe_gebietshoehe(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Passt das Gelände in die Gebietshöhe?"""
+    befunde: list[dict] = []
+    f = befunde.append
+    terrain = ctx.terrain
 
     # Passt das Gelände überhaupt in das Modellgebiet? Ragt es über den
     # Deckel, schneidet die Gebietsgrenze in den Berg und die
@@ -358,14 +431,22 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                        f"Gebietssohle ({spec.domain.z_min:g} m) — der untere "
                        "Teil des Modells fehlt im Rechengebiet.",
                        fix=kur("gebiet_hoehe_anpassen")))
+    return befunde
 
-    # ---- Geometrie ------------------------------------------------------
-    solids = {}
+
+def _pruefe_geometrie(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Bauwerkskörper bauen und prüfen. Füllt als Zwischenergebnis
+    `ctx.solids` — Durchdringungs- und Randabstandsprüfung lesen es.
+    """
+    befunde: list[dict] = []
+    f = befunde.append
+    terrain = ctx.terrain
     try:
         # `ausfaelle` fängt jedes Bauwerk einzeln: der Befund nennt das
         # betroffene Objekt, und die übrigen Körper werden weiter geprüft
         ausfaelle: list[dict] = []
-        solids = build_solids(spec, base_dir, ausfaelle=ausfaelle)
+        ctx.solids = build_solids(spec, ctx.base_dir, ausfaelle=ausfaelle)
         for a in ausfaelle:
             f(_finding(a["id"], "fehler", a["meldung"]))
     except Exception as e:                   # noqa: BLE001
@@ -374,8 +455,7 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     struct_types = {s.patch: s.type for s in spec.structures}
     struct_edits = {s.patch: list(getattr(s, "edits", []) or [])
                     for s in spec.structures}
-    patch_zu_id = {s.patch: s.id for s in spec.structures}
-    for patch, mesh in solids.items():
+    for patch, mesh in ctx.solids.items():
         for problem in check_solid(patch, mesh):
             # Der Dichtheits-Befund bekommt seine Kur: „Heilen" anhängen.
             # Bis zum split(repair=False)-Fix konnte die Regel gar nicht
@@ -424,8 +504,13 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                "Gelände. Das ändert die Strömung nicht, "
                                "kostet aber Dreiecke und schlechte Zellen.",
                                fix=kur("gelaende_einbinden", patch=patch)))
+    return befunde
 
-    # ---- Geländekanten aus der Vermessung --------------------------------
+
+def _pruefe_gelaendekanten(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Geländekanten aus der Vermessung: Bruchkanten und Böschungen."""
+    befunde: list[dict] = []
+    f = befunde.append
     for op in (spec.terrain.operations if spec.terrain else []):
         if op.type == "bruchkante":
             zs = [p[2] for p in op.polyline]
@@ -465,8 +550,13 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                f"Sehr steile Böschung (rund 1:{n:.1f}) — "
                                "prüfen, ob Ober- und Unterkante wirklich "
                                "zusammengehören."))
+    return befunde
 
-    # ---- Neue Bauwerksparameter -----------------------------------------
+
+def _pruefe_bauwerksparameter(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Neue Bauwerksparameter: Anlauf, Sohlgefälle, Rechen-Besonderheiten."""
+    befunde: list[dict] = []
+    f = befunde.append
     for st in spec.structures:
         if st.type == "wall" and abs(getattr(st, "batter_deg", 0.0)) > 45:
             f(_finding(st.id, "warnung",
@@ -487,21 +577,31 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
             f(_finding(st.id, "hinweis",
                        "Material/Rauheit am Rechen bleibt ohne Wirkung — sein "
                        "Widerstand steckt in der porösen Zone."))
+    return befunde
 
-    # ---- Bereich ersetzen: Quelle muss vorhanden sein --------------------
+
+def _pruefe_bereich_ersetzen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Bereich ersetzen: Quelle muss vorhanden sein."""
+    befunde: list[dict] = []
+    f = befunde.append
     for op in (spec.terrain.operations if spec.terrain else []):
         if op.type == "replace_region":
             if not op.source:
                 f(_finding(op.id, "fehler",
                            "Kein Quellraster gewählt — die Operation ersetzt "
                            "sonst nichts."))
-            elif not (base_dir / op.source).is_file():
+            elif not (ctx.base_dir / op.source).is_file():
                 f(_finding(op.id, "fehler",
                            f"Quellraster „{op.source}“ liegt nicht beim Fall "
                            "— über „Geometrie importieren“ als Zusatzraster "
                            "hochladen."))
+    return befunde
 
-    # ---- Drosselablauf: Fenster muss eingestaut sein --------------------
+
+def _pruefe_drosselablauf(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Drosselablauf: q > 0, Fenster muss eingestaut sein."""
+    befunde: list[dict] = []
+    f = befunde.append
     for b in spec.boundaries:
         if b.type != "outflow_constant":
             continue
@@ -522,16 +622,22 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                        f"{spec.solver.initial_level:.2f} m — die Öffnung ist "
                        "nicht eingestaut. Eine Drossel mit vorgegebenem "
                        "Durchfluss zieht dann auch Luft ab."))
+    return befunde
 
-    # ---- Sich durchdringende Körper -------------------------------------
+
+def _pruefe_durchdringungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Sich durchdringende Körper melden (Zwischenergebnis: ctx.solids)."""
+    befunde: list[dict] = []
+    f = befunde.append
+    patch_zu_id = ctx.patch_zu_id
     # Nicht schlimm, aber wissenswert: beim Fallbau wird der gemeinsame
     # Teil dem später genannten Körper abgezogen, damit snappyHexMesh
     # keine doppelt belegten Flächen bekommt. Die Wasserberandung bleibt
     # dabei unverändert — hier steht nur, WAS passieren wird.
-    if len(solids) > 1:
+    if len(ctx.solids) > 1:
         try:
             for a, b, v in ueberschneidungen(
-                    solids, ausnehmen=gewollt_verschnitten(spec)):
+                    ctx.solids, ausnehmen=gewollt_verschnitten(spec)):
                 f(_finding(patch_zu_id.get(b, b), "hinweis",
                            f"{patch_zu_id.get(b, b)} und "
                            f"{patch_zu_id.get(a, a)} durchdringen sich um "
@@ -546,8 +652,13 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                        "Durchdringungsprüfung nicht möglich "
                        f"({type(e).__name__}) — ob sich Körper überlappen, "
                        "ist ungeprüft; der Fallbau entflechtet trotzdem."))
+    return befunde
 
-    # ---- Bearbeitungen --------------------------------------------------
+
+def _pruefe_bearbeitungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Bearbeitungen an Bauwerken: Lagen und Aussparungen."""
+    befunde: list[dict] = []
+    f = befunde.append
     for st in spec.structures:
         for e in getattr(st, "edits", []) or []:
             if e.type == "transform" and e.skalieren <= 0:
@@ -603,169 +714,162 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"Aussparung {e.id} lässt nur {steg:.2f} m Reststeg "
                            f"(Bauteildicke {dicke:g} m) — als durchgehende "
                            "Öffnung modellieren?"))
+    return befunde
 
-    # ---- Vernetzbarkeit -------------------------------------------------
-    if spec.mesh is not None:
-        surface_levels = {r.target: r.level for r in spec.mesh.refinements
-                          if r.type == "surface"}
 
-        def box_level(punkt) -> int:
-            """Höchste Verfeinerungsstufe der Boxen, die den Punkt enthalten."""
-            stufe = 0
-            for r in spec.mesh.refinements:
-                if r.type != "box":
-                    continue
-                bx0, by0, bz0, bx1, by1, bz1 = r.extent
-                if (min(bx0, bx1) <= punkt[0] <= max(bx0, bx1)
-                        and min(by0, by1) <= punkt[1] <= max(by0, by1)
-                        and (len(punkt) < 3
-                             or min(bz0, bz1) <= punkt[2] <= max(bz0, bz1))):
-                    stufe = max(stufe, r.level)
-            return stufe
+def _pruefe_netzaufloesung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Vernetzbarkeit der Bauwerke: kleinste Abmessung und Rohr im Erdreich."""
+    befunde: list[dict] = []
+    f = befunde.append
+    if spec.mesh is None:
+        return befunde
+    gewachsen, terrain = ctx.gewachsen, ctx.terrain
 
-        def local_cell(patch: str, punkt=None) -> float:
-            # Eine Verfeinerungsbox über der Stelle zählt genauso wie eine
-            # Flächenverfeinerung.
-            zelle = _flaechen_zelle(spec.mesh, patch)
-            if punkt is not None:
-                zelle = min(zelle, spec.mesh.base_cell / 2 ** box_level(punkt))
-            return zelle
+    for s in spec.structures:
+        min_dim, label = None, ""
+        if s.type == "wall":
+            min_dim, label = s.thickness, "Wanddicke"
+        elif s.type == "basin":
+            min_dim, label = s.wall_thickness, "Beckenwanddicke"
+        elif s.type == "culvert" and s.profile.diameter:
+            min_dim, label = s.profile.diameter, "Durchlassdurchmesser"
+        elif s.type == "schacht":
+            min_dim, label = s.width, "lichte Schachtweite"
+        elif s.type == "graben":
+            min_dim, label = s.profile.width, "Grabensohlbreite"
+        # Ausgehobene Körper werden nicht als eigene Fläche vernetzt —
+        # aufgelöst werden muss trotzdem der HOHLRAUM, und der liegt in
+        # der Geländefläche
+        if min_dim is not None and ist_aushub(s, gewachsen):
+            label += " (Hohlraum im Gelände)"
+        mitte = None
+        if s.type == "culvert" and s.axis:
+            a = np.asarray(s.axis, dtype=float)
+            mitte = a.mean(axis=0)
+        # Ein Aushub hat keine eigene Fläche: seine Wandungen gehören zur
+        # Geländefläche, dort greift auch die Verfeinerung
+        flaeche = "terrain" if ist_aushub(s, gewachsen) else s.patch
+        if min_dim is not None and min_dim < _lokale_zelle(spec, flaeche, mitte):
+            f(_finding(s.id, "fehler",
+                       f"{label} {min_dim:g} m wird von der lokalen "
+                       f"Zellgröße {_lokale_zelle(spec, flaeche, mitte):g} m nicht aufgelöst "
+                       "— Verfeinerungsstufe erhöhen oder Abmessung prüfen",
+                       # struktur mitgeben: bei einem Aushub soll die
+                       # Kur einen Quader um DIESES Bauwerk anlegen
+                       # statt das ganze Gelände zu verfeinern
+                       fix=kur("verfeinerung_erhoehen", patch=flaeche,
+                               mass=min_dim, struktur=s.id)))
 
+    # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
+    # (ein z je x/y) und hat keinen Tunnel — was darunter liegt, räumt
+    # der Vernetzer weg. Ohne diese Prüfung merkt man das erst, wenn
+    # der Lauf nach Stunden mit "No matching patches" endet.
+    # Bei einem importierten Geländekörper entfällt die Prüfung: dort
+    # KANN ein Hohlraum sein, das weiß nur der Körper selbst.
+    if terrain is not None and not getattr(spec.terrain.base, "koerper", None):
+        gefolgt = {getattr(b.window, "follow", None)
+                   for b in spec.boundaries if getattr(b, "window", None)}
         for s in spec.structures:
-            min_dim, label = None, ""
-            if s.type == "wall":
-                min_dim, label = s.thickness, "Wanddicke"
-            elif s.type == "basin":
-                min_dim, label = s.wall_thickness, "Beckenwanddicke"
-            elif s.type == "culvert" and s.profile.diameter:
-                min_dim, label = s.profile.diameter, "Durchlassdurchmesser"
-            elif s.type == "schacht":
-                min_dim, label = s.width, "lichte Schachtweite"
-            elif s.type == "graben":
-                min_dim, label = s.profile.width, "Grabensohlbreite"
-            # Ausgehobene Körper werden nicht als eigene Fläche vernetzt —
-            # aufgelöst werden muss trotzdem der HOHLRAUM, und der liegt in
-            # der Geländefläche
-            if min_dim is not None and ist_aushub(s, gewachsen):
-                label += " (Hohlraum im Gelände)"
-            mitte = None
-            if s.type == "culvert" and s.axis:
-                a = np.asarray(s.axis, dtype=float)
-                mitte = a.mean(axis=0)
-            # Ein Aushub hat keine eigene Fläche: seine Wandungen gehören zur
-            # Geländefläche, dort greift auch die Verfeinerung
-            flaeche = "terrain" if ist_aushub(s, gewachsen) else s.patch
-            if min_dim is not None and min_dim < local_cell(flaeche, mitte):
-                f(_finding(s.id, "fehler",
-                           f"{label} {min_dim:g} m wird von der lokalen "
-                           f"Zellgröße {local_cell(flaeche, mitte):g} m nicht aufgelöst "
-                           "— Verfeinerungsstufe erhöhen oder Abmessung prüfen",
-                           # struktur mitgeben: bei einem Aushub soll die
-                           # Kur einen Quader um DIESES Bauwerk anlegen
-                           # statt das ganze Gelände zu verfeinern
-                           fix=kur("verfeinerung_erhoehen", patch=flaeche,
-                                   mass=min_dim, struktur=s.id)))
+            if s.type != "culvert" or len(s.axis) < 2:
+                continue
+            a = np.asarray(s.axis, dtype=float)
+            laengen = np.linalg.norm(np.diff(a[:, :2], axis=0), axis=1)
+            if laengen.sum() < 1e-6:
+                continue
+            # entlang der Achse abtasten
+            stuetz = np.linspace(0, 1, 41)
+            strecke = np.concatenate([[0], np.cumsum(laengen)])
+            strecke = strecke / strecke[-1]
+            pkt = np.column_stack([np.interp(stuetz, strecke, a[:, k])
+                                   for k in range(3)])
+            # Maßstab ist die ACHSE: liegt sie unter dem Gelände, ist
+            # mehr als der halbe Querschnitt im Erdreich und der
+            # Vernetzer räumt das Rohrinnere weg
+            gelaende = terrain.sample(pkt[:, 0], pkt[:, 1])
+            verschuettet = gelaende > pkt[:, 2]
+            anteil = float(np.mean(verschuettet))
+            if anteil < 0.15 or getattr(s, "durchstoesst_gelaende", False):
+                continue
+            schwer = "fehler" if s.id in gefolgt else "warnung"
+            f(_finding(s.id, schwer,
+                       f"Die Rohrachse liegt auf {anteil * 100:.0f} % "
+                       "ihrer Länge unter dem Gelände. Ein Höhenfeld "
+                       "kann keinen Tunnel haben — der Vernetzer räumt "
+                       "das Rohrinnere weg, die Mündung bekommt keine "
+                       "einzige Fläche. Abhilfe: am Durchlass "
+                       "„durch das Gelände bohren“ einschalten "
+                       "(das Gelände wird dann als Erdkörper mit "
+                       "ausgeschnittener Bohrung gebaut) oder das "
+                       "Modellgebiet an der Mündungsebene abschneiden.",
+                       fix=kur("durchstoss_ein", struct=s.id)))
+    return befunde
 
-        # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
-        # (ein z je x/y) und hat keinen Tunnel — was darunter liegt, räumt
-        # der Vernetzer weg. Ohne diese Prüfung merkt man das erst, wenn
-        # der Lauf nach Stunden mit "No matching patches" endet.
-        # Bei einem importierten Geländekörper entfällt die Prüfung: dort
-        # KANN ein Hohlraum sein, das weiß nur der Körper selbst.
-        if terrain is not None and not getattr(spec.terrain.base, "koerper", None):
-            gefolgt = {getattr(b.window, "follow", None)
-                       for b in spec.boundaries if getattr(b, "window", None)}
-            for s in spec.structures:
-                if s.type != "culvert" or len(s.axis) < 2:
-                    continue
-                a = np.asarray(s.axis, dtype=float)
-                laengen = np.linalg.norm(np.diff(a[:, :2], axis=0), axis=1)
-                if laengen.sum() < 1e-6:
-                    continue
-                # entlang der Achse abtasten
-                stuetz = np.linspace(0, 1, 41)
-                strecke = np.concatenate([[0], np.cumsum(laengen)])
-                strecke = strecke / strecke[-1]
-                pkt = np.column_stack([np.interp(stuetz, strecke, a[:, k])
-                                       for k in range(3)])
-                # Maßstab ist die ACHSE: liegt sie unter dem Gelände, ist
-                # mehr als der halbe Querschnitt im Erdreich und der
-                # Vernetzer räumt das Rohrinnere weg
-                gelaende = terrain.sample(pkt[:, 0], pkt[:, 1])
-                verschuettet = gelaende > pkt[:, 2]
-                anteil = float(np.mean(verschuettet))
-                if anteil < 0.15 or getattr(s, "durchstoesst_gelaende", False):
-                    continue
-                schwer = "fehler" if s.id in gefolgt else "warnung"
-                f(_finding(s.id, schwer,
-                           f"Die Rohrachse liegt auf {anteil * 100:.0f} % "
-                           "ihrer Länge unter dem Gelände. Ein Höhenfeld "
-                           "kann keinen Tunnel haben — der Vernetzer räumt "
-                           "das Rohrinnere weg, die Mündung bekommt keine "
-                           "einzige Fläche. Abhilfe: am Durchlass "
-                           "\u201edurch das Gelände bohren\u201c einschalten "
-                           "(das Gelände wird dann als Erdkörper mit "
-                           "ausgeschnittener Bohrung gebaut) oder das "
-                           "Modellgebiet an der Mündungsebene abschneiden.",
-                           fix=kur("durchstoss_ein", struct=s.id)))
 
-        if spec.domain is not None:
-            x0, y0, x1, y1 = spec.domain.extent
-            for r in spec.mesh.refinements:
-                if r.type == "surface":
-                    # „terrain" ist ein gültiges Ziel: die Sohle ist die
-                    # Fläche, an der der Sohlschubnachweis hängt.
-                    erlaubt = {s.patch for s in spec.structures} | {"terrain"}
-                    if r.target not in erlaubt:
-                        f(_finding(r.id, "fehler",
-                                   f"Verfeinerung zielt auf unbekanntes "
-                                   f"Bauwerk {r.target}",
-                                   fix=kur("verweis_entfernen",
-                                           art="verfeinerung", id=r.id)))
-                    elif r.target == "terrain" and spec.terrain is None:
-                        f(_finding(r.id, "warnung",
-                                   "Verfeinerung zielt auf das Gelände, der "
-                                   "Fall hat aber keines — sie bleibt "
-                                   "wirkungslos"))
-                    continue
-                bx0, by0, bz0, bx1, by1, bz1 = r.extent
-                if (bx0 < x0 or by0 < y0 or bx1 > x1 or by1 > y1
-                        or bz0 < spec.domain.z_min or bz1 > spec.domain.z_max):
+def _pruefe_verfeinerungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Verfeinerungen, Zellzahl des Hintergrundnetzes, Grenzschichten."""
+    befunde: list[dict] = []
+    f = befunde.append
+    if spec.mesh is None:
+        return befunde
+
+    if spec.domain is not None:
+        x0, y0, x1, y1 = spec.domain.extent
+        for r in spec.mesh.refinements:
+            if r.type == "surface":
+                # „terrain" ist ein gültiges Ziel: die Sohle ist die
+                # Fläche, an der der Sohlschubnachweis hängt.
+                erlaubt = {s.patch for s in spec.structures} | {"terrain"}
+                if r.target not in erlaubt:
                     f(_finding(r.id, "fehler",
-                               "Verfeinerungsbox ragt aus dem Modellgebiet heraus",
-                               fix=kur("anschluesse_herstellen")))
-                level = spec.solver.initial_level
-                if level is not None and not (bz0 <= level <= bz1):
+                               f"Verfeinerung zielt auf unbekanntes "
+                               f"Bauwerk {r.target}",
+                               fix=kur("verweis_entfernen",
+                                       art="verfeinerung", id=r.id)))
+                elif r.target == "terrain" and spec.terrain is None:
                     f(_finding(r.id, "warnung",
-                               "Verfeinerungsbox erfasst den erwarteten Bereich "
-                               f"der freien Oberfläche ({level:g} m) vertikal nicht",
-                               fix=kur("box_auf_spiegel", refinement=r.id)))
+                               "Verfeinerung zielt auf das Gelände, der "
+                               "Fall hat aber keines — sie bleibt "
+                               "wirkungslos"))
+                continue
+            bx0, by0, bz0, bx1, by1, bz1 = r.extent
+            if (bx0 < x0 or by0 < y0 or bx1 > x1 or by1 > y1
+                    or bz0 < spec.domain.z_min or bz1 > spec.domain.z_max):
+                f(_finding(r.id, "fehler",
+                           "Verfeinerungsbox ragt aus dem Modellgebiet heraus",
+                           fix=kur("anschluesse_herstellen")))
+            level = spec.solver.initial_level
+            if level is not None and not (bz0 <= level <= bz1):
+                f(_finding(r.id, "warnung",
+                           "Verfeinerungsbox erfasst den erwarteten Bereich "
+                           f"der freien Oberfläche ({level:g} m) vertikal nicht",
+                           fix=kur("box_auf_spiegel", refinement=r.id)))
 
-            nx, ny, nz = cell_counts(spec)
-            if nx * ny * nz > 4_000_000:
-                f(_finding("mesh", "warnung",
-                           f"Hintergrundnetz hat bereits {nx * ny * nz:,} Zellen "
-                           "— Laufzeit und Kosten prüfen, Basiszelle vergröbern"))
+        nx, ny, nz = cell_counts(spec)
+        if nx * ny * nz > 4_000_000:
+            f(_finding("mesh", "warnung",
+                       f"Hintergrundnetz hat bereits {nx * ny * nz:,} Zellen "
+                       "— Laufzeit und Kosten prüfen, Basiszelle vergröbern"))
 
-        if spec.mesh.boundary_layers:
-            fehlend = (set(spec.mesh.boundary_layers.patches)
-                       - {s.patch for s in spec.structures})
-            for p in sorted(fehlend):
-                f(_finding("mesh", "fehler",
-                           f"Grenzschicht verweist auf unbekanntes Bauwerk {p}",
-                           fix=kur("verweis_entfernen", art="grenzschicht",
-                                   wert=p)))
+    if spec.mesh.boundary_layers:
+        fehlend = (set(spec.mesh.boundary_layers.patches)
+                   - {s.patch for s in spec.structures})
+        for p in sorted(fehlend):
+            f(_finding("mesh", "fehler",
+                       f"Grenzschicht verweist auf unbekanntes Bauwerk {p}",
+                       fix=kur("verweis_entfernen", art="grenzschicht",
+                               wert=p)))
+    return befunde
 
-    # ---- Hydraulik und Randbedingungen ----------------------------------
-    inflows = [b for b in spec.boundaries
-               if b.type in ("inflow_hydrograph", "inflow_constant")]
-    outflows = [b for b in spec.boundaries
-                if b.type.startswith("outflow")]
-    if len(inflows) != 1:
+
+def _pruefe_raender(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Hydraulik und Randbedingungen: Anzahl der Ränder, Q → U am Zulauf."""
+    befunde: list[dict] = []
+    f = befunde.append
+    if len(ctx.inflows) != 1:
         f(_finding("boundaries", "fehler",
                    f"Genau ein Zuflussrand erforderlich, definiert sind "
-                   f"{len(inflows)}"))
-    if not outflows:
+                   f"{len(ctx.inflows)}"))
+    if not ctx.outflows:
         f(_finding("boundaries", "fehler", "Kein Abflussrand definiert"))
 
     # Q → U ausweisen: flowRateInletVelocity verteilt den Volumenstrom
@@ -775,7 +879,7 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
     # oder als Strahl ins Modell schießt (Audit P1-5).
     if spec.domain is not None:
         from .casebuilder import fenster_flaeche
-        for b in inflows:
+        for b in ctx.inflows:
             if b.type != "inflow_constant" or not b.q:
                 continue
             flaeche = fenster_flaeche(spec, b)
@@ -790,6 +894,14 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            + (" Das ist strahlartig schnell — Fenster "
                               "vergrößern oder Zufluss prüfen."
                               if u > 3.0 else "")))
+    return befunde
+
+
+def _pruefe_solver(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Solverzeiten und Auflösbarkeit der Wassertiefe."""
+    befunde: list[dict] = []
+    f = befunde.append
+    terrain = ctx.terrain
 
     # Ohne Ausgabezeitpunkt gibt es hinterher keine Felder, keine
     # Wasseroberfläche und keinen 3D-Viewer — und reconstructPar bricht
@@ -830,171 +942,187 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                        "Sohlschubspannung zu sehen). Abhilfe: feineres "
                        "Netz, längere Simulationsdauer, mehr Zufluss, "
                        "kleineres Gebiet oder ein Anfangswasserspiegel."))
+    return befunde
 
-    # Zu-/Ablauf-Fenster: Lage und Abmessung prüfbar machen
-    if spec.domain is not None:
-        from .casebuilder import (_bc_face, _culvert_end, _follow_channel,
-                                  _follow_culvert, _follow_end, resolve_window)
-        x0, y0, x1, y1 = spec.domain.extent
-        # Zwei Randbedingungen auf derselben Gebietsfläche kann blockMesh
-        # nicht abbilden. Das ist ein BEFUND, kein Absturz — nach einer
-        # Drehung kommt es leicht vor, und die Prüfung ist genau der Ort,
-        # an dem der Nutzer davon erfahren soll.
-        try:
-            assign_faces(spec)
-            flaechen_ok = True
-        except ValueError as e:
-            f(_finding("domain", "fehler", str(e),
-                       fix=kur("anschluesse_herstellen")))
-            flaechen_ok = False
-        for b in spec.boundaries if flaechen_ok else []:
-            w = getattr(b, "window", None)
-            if w is None:
-                continue
-            face = _bc_face(spec, b)
-            if face is None or face == "z_max":
+
+def _pruefe_fenster(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Zu-/Ablauf-Fenster: Lage und Abmessung prüfbar machen."""
+    befunde: list[dict] = []
+    f = befunde.append
+    if spec.domain is None:
+        return befunde
+    # Zwei Randbedingungen auf derselben Gebietsfläche kann blockMesh
+    # nicht abbilden. Das ist ein BEFUND, kein Absturz — nach einer
+    # Drehung kommt es leicht vor, und die Prüfung ist genau der Ort,
+    # an dem der Nutzer davon erfahren soll.
+    try:
+        assign_faces(spec)
+    except ValueError as e:
+        f(_finding("domain", "fehler", str(e),
+                   fix=kur("anschluesse_herstellen")))
+        return befunde
+    for b in spec.boundaries:
+        _fenster_pruefen(spec, b, f)
+    return befunde
+
+
+def _fenster_pruefen(spec: CaseSpec, b, f) -> None:
+    """Ein Zu-/Ablauf-Fenster prüfen (je Randbedingung ein Aufruf)."""
+    from .casebuilder import (_bc_face, _culvert_end, _follow_channel,
+                              _follow_culvert, _follow_end, resolve_window)
+    x0, y0, x1, y1 = spec.domain.extent
+    w = getattr(b, "window", None)
+    if w is None:
+        return
+    face = _bc_face(spec, b)
+    if face is None or face == "z_max":
+        f(_finding(b.id, "fehler",
+                   "Fenster ist nur auf seitlichen Gebietsrändern "
+                   "möglich, nicht auf der Atmosphärenfläche"))
+        return
+    if w.span is not None and w.follow is not None:
+        f(_finding(b.id, "fehler",
+                   "Fenster: entweder span (feste Lage) ODER follow "
+                   "(an Gerinne gekoppelt) angeben, nicht beides"))
+        return
+    if w.follow is None:
+        required = {
+            "rechteck": ("span",),
+            "kreis": ("center", "z_center", "diameter"),
+            "trapez": ("center", "bottom_width", "top_width",
+                       "z_min", "z_max"),
+            "polygon": ("points",),
+        }[w.shape]
+        missing = [k for k in required if getattr(w, k) is None]
+        if w.shape == "polygon" and not missing and len(w.points) < 3:
+            f(_finding(b.id, "fehler",
+                       "Fenster (polygon): mindestens 3 Eckpunkte "
+                       "erforderlich"))
+            return
+        if missing:
+            if w.shape == "rechteck":
                 f(_finding(b.id, "fehler",
-                           "Fenster ist nur auf seitlichen Gebietsrändern "
-                           "möglich, nicht auf der Atmosphärenfläche"))
-                continue
-            if w.span is not None and w.follow is not None:
+                           "Fenster ohne span und ohne follow — "
+                           "Lage fehlt"))
+            else:
                 f(_finding(b.id, "fehler",
-                           "Fenster: entweder span (feste Lage) ODER follow "
-                           "(an Gerinne gekoppelt) angeben, nicht beides"))
-                continue
-            if w.follow is None:
-                required = {
-                    "rechteck": ("span",),
-                    "kreis": ("center", "z_center", "diameter"),
-                    "trapez": ("center", "bottom_width", "top_width",
-                               "z_min", "z_max"),
-                    "polygon": ("points",),
-                }[w.shape]
-                missing = [k for k in required if getattr(w, k) is None]
-                if w.shape == "polygon" and not missing and len(w.points) < 3:
-                    f(_finding(b.id, "fehler",
-                               "Fenster (polygon): mindestens 3 Eckpunkte "
-                               "erforderlich"))
-                    continue
-                if missing:
-                    if w.shape == "rechteck":
-                        f(_finding(b.id, "fehler",
-                                   "Fenster ohne span und ohne follow — "
-                                   "Lage fehlt"))
-                    else:
-                        f(_finding(b.id, "fehler",
-                                   f"Fenster ({w.shape}): "
-                                   f"{', '.join(missing)} fehlt"))
-                    continue
-            if w.follow is not None:
-                ch = _follow_channel(spec, w)
-                cv = _follow_culvert(spec, w)
-                limit = 2 * (spec.mesh.base_cell if spec.mesh else 1.0)
-                if ch is None and cv is None:
-                    f(_finding(b.id, "fehler",
-                               f"Fenster folgt „{w.follow}“ — weder Gerinne "
-                               "(channel_carve) noch Durchlass/Stutzen "
-                               "(culvert) mit dieser id"))
-                    continue
-                if ch is not None:
-                    dist, _pt, _inv = _follow_end(spec, face, ch)
-                    if dist > limit:
-                        f(_finding(b.id, "fehler",
-                                   f"Gerinne „{ch.id}“ endet {dist:g} m vor "
-                                   f"dem Gebietsrand {face} — es muss bis an "
-                                   "die Kante reichen, damit die Öffnung "
-                                   "angeschlossen ist",
-                                   fix=kur("anschluesse_herstellen")))
-                        continue
-                else:
-                    dist, _pt = _culvert_end(spec, face, cv)
-                    if dist > limit:
-                        f(_finding(b.id, "fehler",
-                                   f"Stutzen „{cv.id}“ endet {dist:g} m vor "
-                                   f"dem Gebietsrand {face} — die Rohrachse "
-                                   "muss bis an die Kante reichen, damit die "
-                                   "Mündung angeschlossen ist",
-                                   fix=kur("anschluesse_herstellen")))
-                        continue
-                    if spec.mesh is not None and cv.profile.kind == "circular":
-                        mitte = np.asarray(cv.axis, dtype=float).mean(axis=0)
-                        zelle = local_cell(cv.patch, mitte)
-                        if 2 * zelle <= cv.profile.diameter < 4 * zelle:
-                            f(_finding(b.id, "warnung",
-                                       f"Rohrinneres ({cv.profile.diameter:g} m) "
-                                       f"wird mit weniger als 4 Zellen "
-                                       f"({zelle:g} m) aufgelöst",
-                                       fix=kur("box_ans_fenster",
-                                               boundary=b.id, level=2)))
-            e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
-            r = resolve_window(spec, b)
-            if r is None:
-                continue
-            lo, hi, zlo, zhi = r["lo"], r["hi"], r["zlo"], r["zhi"]
-            if lo < e0 - 1e-6 or hi > e1 + 1e-6:
+                           f"Fenster ({w.shape}): "
+                           f"{', '.join(missing)} fehlt"))
+            return
+    if w.follow is not None:
+        ch = _follow_channel(spec, w)
+        cv = _follow_culvert(spec, w)
+        limit = 2 * (spec.mesh.base_cell if spec.mesh else 1.0)
+        if ch is None and cv is None:
+            f(_finding(b.id, "fehler",
+                       f"Fenster folgt „{w.follow}“ — weder Gerinne "
+                       "(channel_carve) noch Durchlass/Stutzen "
+                       "(culvert) mit dieser id"))
+            return
+        if ch is not None:
+            dist, _pt, _inv = _follow_end(spec, face, ch)
+            if dist > limit:
                 f(_finding(b.id, "fehler",
-                           f"Fenster [{lo:g}, {hi:g}] ragt über den Gebietsrand "
-                           f"{face} hinaus ([{e0:g}, {e1:g}])"))
-            if (zlo is not None
-                    and (zlo < spec.domain.z_min - 1e-6
-                         or (zhi is not None
-                             and zhi > spec.domain.z_max + 1e-6))):
-                f(_finding(b.id, "fehler",
-                           f"Fenster [{zlo:g}, {zhi:g}] liegt außerhalb der "
-                           f"Gebietshöhe [{spec.domain.z_min:g}, "
-                           f"{spec.domain.z_max:g}]",
+                           f"Gerinne „{ch.id}“ endet {dist:g} m vor "
+                           f"dem Gebietsrand {face} — es muss bis an "
+                           "die Kante reichen, damit die Öffnung "
+                           "angeschlossen ist",
                            fix=kur("anschluesse_herstellen")))
-            if spec.mesh is not None:
-                min_dim = hi - lo
-                if zlo is not None and zhi is not None:
-                    min_dim = min(min_dim, zhi - zlo)
-                # Fenstermitte auf der Randfläche — dort zählt die örtliche
-                # Zellgröße, nicht die Basiszelle
-                mitte_e = (lo + hi) / 2
-                mitte_z = ((zlo + zhi) / 2 if zlo is not None and zhi is not None
-                           else (spec.domain.z_min + spec.domain.z_max) / 2)
-                punkt = ((x0 if face == "x_min" else x1, mitte_e, mitte_z)
-                         if face.startswith("x")
-                         else (mitte_e, y0 if face == "y_min" else y1, mitte_z))
-                zelle = local_cell(b.patch, punkt)
-                if min_dim < 2 * zelle:
-                    f(_finding(b.id, "warnung",
-                               f"Fensteröffnung ist {min_dim:g} m klein — "
-                               f"weniger als 2 Zellen ({zelle:g} m örtliche "
-                               "Zellgröße); die Öffnung wird im Netz kaum "
-                               "aufgelöst",
-                               fix=kur("box_ans_fenster", boundary=b.id,
-                                       level=2)))
-            if zlo is not None and zhi is not None and zlo >= zhi:
+                return
+        else:
+            dist, _pt = _culvert_end(spec, face, cv)
+            if dist > limit:
                 f(_finding(b.id, "fehler",
-                           "Fenster-Unterkante liegt über der Oberkante"))
-            # Spez. Kap. 7: der Zuflussrand soll unterhalb der ERWARTETEN
-            # Wasserspiegellage liegen. Erwartet heißt im Betrieb, nicht bei
-            # t = 0 — der Anfangswasserspiegel taugt nicht als Maßstab, sonst
-            # fiele jedes Becken darunter, das leer anläuft. Maßstab ist der
-            # Pegel, den der Fall selbst festlegt: der Unterwasserstand eines
-            # festen Ablaufs, sonst der geprüfte Einstau.
-            # Eine Rohrmündung (Kreisfenster oder an einen Stutzen gekoppelt)
-            # mündet bestimmungsgemäß frei aus und bleibt außen vor.
-            muendung = (r["shape"] == "kreis"
-                        or _follow_culvert(spec, w) is not None)
-            if (b.type in ("inflow_hydrograph", "inflow_constant")
-                    and not muendung and zlo is not None
-                    and _erwarteter_spiegel(spec) is not None
-                    and zlo > _erwarteter_spiegel(spec)[0] + 1e-6):
-                spiegel, herkunft = _erwarteter_spiegel(spec)
-                f(_finding(b.id, "hinweis",
-                           f"Der Zulaufquerschnitt beginnt erst bei "
-                           f"{zlo:.2f} m und liegt damit über der erwarteten "
-                           f"Wasserspiegellage von {spiegel:.2f} m "
-                           f"({herkunft}) — der Zufluss stürzt ein, statt "
-                           "eingestaut zuzuströmen. Bei einem Absturz ist "
-                           "das gewollt."))
+                           f"Stutzen „{cv.id}“ endet {dist:g} m vor "
+                           f"dem Gebietsrand {face} — die Rohrachse "
+                           "muss bis an die Kante reichen, damit die "
+                           "Mündung angeschlossen ist",
+                           fix=kur("anschluesse_herstellen")))
+                return
+            if spec.mesh is not None and cv.profile.kind == "circular":
+                mitte = np.asarray(cv.axis, dtype=float).mean(axis=0)
+                zelle = _lokale_zelle(spec, cv.patch, mitte)
+                if 2 * zelle <= cv.profile.diameter < 4 * zelle:
+                    f(_finding(b.id, "warnung",
+                               f"Rohrinneres ({cv.profile.diameter:g} m) "
+                               f"wird mit weniger als 4 Zellen "
+                               f"({zelle:g} m) aufgelöst",
+                               fix=kur("box_ans_fenster",
+                                       boundary=b.id, level=2)))
+    e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
+    r = resolve_window(spec, b)
+    if r is None:
+        return
+    lo, hi, zlo, zhi = r["lo"], r["hi"], r["zlo"], r["zhi"]
+    if lo < e0 - 1e-6 or hi > e1 + 1e-6:
+        f(_finding(b.id, "fehler",
+                   f"Fenster [{lo:g}, {hi:g}] ragt über den Gebietsrand "
+                   f"{face} hinaus ([{e0:g}, {e1:g}])"))
+    if (zlo is not None
+            and (zlo < spec.domain.z_min - 1e-6
+                 or (zhi is not None
+                     and zhi > spec.domain.z_max + 1e-6))):
+        f(_finding(b.id, "fehler",
+                   f"Fenster [{zlo:g}, {zhi:g}] liegt außerhalb der "
+                   f"Gebietshöhe [{spec.domain.z_min:g}, "
+                   f"{spec.domain.z_max:g}]",
+                   fix=kur("anschluesse_herstellen")))
+    if spec.mesh is not None:
+        min_dim = hi - lo
+        if zlo is not None and zhi is not None:
+            min_dim = min(min_dim, zhi - zlo)
+        # Fenstermitte auf der Randfläche — dort zählt die örtliche
+        # Zellgröße, nicht die Basiszelle
+        mitte_e = (lo + hi) / 2
+        mitte_z = ((zlo + zhi) / 2 if zlo is not None and zhi is not None
+                   else (spec.domain.z_min + spec.domain.z_max) / 2)
+        punkt = ((x0 if face == "x_min" else x1, mitte_e, mitte_z)
+                 if face.startswith("x")
+                 else (mitte_e, y0 if face == "y_min" else y1, mitte_z))
+        zelle = _lokale_zelle(spec, b.patch, punkt)
+        if min_dim < 2 * zelle:
+            f(_finding(b.id, "warnung",
+                       f"Fensteröffnung ist {min_dim:g} m klein — "
+                       f"weniger als 2 Zellen ({zelle:g} m örtliche "
+                       "Zellgröße); die Öffnung wird im Netz kaum "
+                       "aufgelöst",
+                       fix=kur("box_ans_fenster", boundary=b.id,
+                               level=2)))
+    if zlo is not None and zhi is not None and zlo >= zhi:
+        f(_finding(b.id, "fehler",
+                   "Fenster-Unterkante liegt über der Oberkante"))
+    # Spez. Kap. 7: der Zuflussrand soll unterhalb der ERWARTETEN
+    # Wasserspiegellage liegen. Erwartet heißt im Betrieb, nicht bei
+    # t = 0 — der Anfangswasserspiegel taugt nicht als Maßstab, sonst
+    # fiele jedes Becken darunter, das leer anläuft. Maßstab ist der
+    # Pegel, den der Fall selbst festlegt: der Unterwasserstand eines
+    # festen Ablaufs, sonst der geprüfte Einstau.
+    # Eine Rohrmündung (Kreisfenster oder an einen Stutzen gekoppelt)
+    # mündet bestimmungsgemäß frei aus und bleibt außen vor.
+    muendung = (r["shape"] == "kreis"
+                or _follow_culvert(spec, w) is not None)
+    if (b.type in ("inflow_hydrograph", "inflow_constant")
+            and not muendung and zlo is not None
+            and _erwarteter_spiegel(spec) is not None
+            and zlo > _erwarteter_spiegel(spec)[0] + 1e-6):
+        spiegel, herkunft = _erwarteter_spiegel(spec)
+        f(_finding(b.id, "hinweis",
+                   f"Der Zulaufquerschnitt beginnt erst bei "
+                   f"{zlo:.2f} m und liegt damit über der erwarteten "
+                   f"Wasserspiegellage von {spiegel:.2f} m "
+                   f"({herkunft}) — der Zufluss stürzt ein, statt "
+                   "eingestaut zuzuströmen. Bei einem Absturz ist "
+                   "das gewollt."))
 
-    for b in inflows:
+
+def _pruefe_ganglinien(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Zuflussganglinien: Datei, Zeitachse, Lücken, Q → U der Spitze."""
+    befunde: list[dict] = []
+    f = befunde.append
+    for b in ctx.inflows:
         if b.type != "inflow_hydrograph":
             continue
-        csv = base_dir / b.source
+        csv = ctx.base_dir / b.source
         if not csv.exists():
             f(_finding(b.id, "fehler", f"Zuflussganglinie {b.source} nicht gefunden"))
             continue
@@ -1041,79 +1169,92 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                                "eine Spitze in dieser Lücke geht verloren."))
         except Exception as e:
             f(_finding(b.id, "fehler", f"Zuflussganglinie nicht lesbar: {e}"))
+    return befunde
 
-    # Abstand der Bauwerke zu den Zu- und Ablaufrändern. Steht ein Bauwerk am
-    # Rand, wirkt die Randbedingung unmittelbar auf seine Umströmung zurück.
-    # Ausgenommen sind Bauwerke, an die eine Randbedingung bewusst gekoppelt
-    # ist (Rohrmündung im Gebietsrand).
-    if spec.domain is not None and spec.structures:
-        gekoppelt = {getattr(b.window, "follow", None)
-                     for b in spec.boundaries if getattr(b, "window", None)}
-        x0, y0, x1, y1 = spec.domain.extent
-        # Maßstab ist die GERINNEBREITE, wo ein Gerinne im Modell liegt — so
-        # nennt es die Spezifikation. Ohne Gerinne bleibt als Ersatzmaß die
-        # Sperrbreite des Bauwerks quer zur Randfläche.
-        gerinne = [op for op in (spec.terrain.operations if spec.terrain else [])
-                   if op.type == "channel_carve"]
-        gerinnebreite = max(
-            (op.bottom_width + 2 * op.side_slope * op.depth for op in gerinne),
-            default=0.0)
-        # Spez. Kap. 7 nennt fünf Gerinnebreiten stromauf und zehn stromab.
-        # Diese Vorbelegung ist nach Kap. 14.5 projektbezogen festzulegen —
-        # ihre Unterschreitung ist deshalb ein Hinweis. Ein Bauwerk, das dem
-        # Rand näher steht als es selbst breit ist, bleibt eine Warnung.
-        FAKTOR = {"zulauf": 5, "ablauf": 10}
-        for s in spec.structures:
-            if s.id in gekoppelt or s.type == "screen":
-                continue
-            pkte = _plan_punkte(s, solids)
-            if len(pkte) < 2:
-                continue
-            px, py = pkte[:, 0], pkte[:, 1]
-            abstaende = {"x_min": float(px.min() - x0), "x_max": float(x1 - px.max()),
-                         "y_min": float(py.min() - y0), "y_max": float(y1 - py.max())}
-            # Maßstab ist die SPERRBREITE quer zur Randfläche, nicht die
-            # Länge längs: eine Mauer parallel zur Strömung verdrängt nichts,
-            # eine quer stehende schon.
-            quer = {"x_min": float(py.max() - py.min()),
-                    "x_max": float(py.max() - py.min()),
-                    "y_min": float(px.max() - px.min()),
-                    "y_max": float(px.max() - px.min())}
-            for b in inflows + outflows:
-                face = _bc_face(spec, b)
-                if face is None or face == "z_max":
-                    continue
-                d = abstaende.get(face)
-                sperre = quer.get(face, 0.0)
-                if d is None or sperre <= 0:
-                    continue
-                if d >= sperre:
-                    # Der harte Fall ist abgewendet; jetzt gegen die
-                    # Vorbelegung der Spezifikation messen.
-                    rolle = "zulauf" if b in inflows else "ablauf"
-                    mass = gerinnebreite if gerinnebreite > 0 else sperre
-                    masswort = ("Gerinnebreiten" if gerinnebreite > 0
-                                else "Bauwerksbreiten")
-                    richtung = "stromauf" if rolle == "zulauf" else "stromab"
-                    soll = FAKTOR[rolle] * mass
-                    if d < soll:
-                        f(_finding(s.id, "hinweis",
-                                   f"{d:.1f} m bis zum Rand "
-                                   f"„{b.id}“ ({face}). Spez. "
-                                   f"Kap. 7 nennt als Vorbelegung "
-                                   f"{FAKTOR[rolle]} {masswort} {richtung}, "
-                                   f"hier also {soll:.1f} m ({mass:.1f} m je "
-                                   "Breite). Die Vorbelegung ist "
-                                   "projektbezogen festzulegen."))
-                    continue
-                f(_finding(s.id, "warnung",
-                           f"Nur {max(d, 0):.1f} m bis zum Rand "
-                           f"\u201e{b.id}\u201c "
-                           f"({face}), das Bauwerk selbst ist {sperre:.1f} m "
-                           "groß — die Randbedingung wirkt unmittelbar auf "
-                           "die Umströmung zurück."))
 
-    # ---- Lage im Modellgebiet -------------------------------------------
+def _pruefe_randabstand(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Abstand der Bauwerke zu den Zu- und Ablaufrändern."""
+    befunde: list[dict] = []
+    f = befunde.append
+    # Steht ein Bauwerk am Rand, wirkt die Randbedingung unmittelbar auf
+    # seine Umströmung zurück. Ausgenommen sind Bauwerke, an die eine
+    # Randbedingung bewusst gekoppelt ist (Rohrmündung im Gebietsrand).
+    if spec.domain is None or not spec.structures:
+        return befunde
+    from .casebuilder import _bc_face
+    inflows, outflows = ctx.inflows, ctx.outflows
+    gekoppelt = {getattr(b.window, "follow", None)
+                 for b in spec.boundaries if getattr(b, "window", None)}
+    x0, y0, x1, y1 = spec.domain.extent
+    # Maßstab ist die GERINNEBREITE, wo ein Gerinne im Modell liegt — so
+    # nennt es die Spezifikation. Ohne Gerinne bleibt als Ersatzmaß die
+    # Sperrbreite des Bauwerks quer zur Randfläche.
+    gerinne = [op for op in (spec.terrain.operations if spec.terrain else [])
+               if op.type == "channel_carve"]
+    gerinnebreite = max(
+        (op.bottom_width + 2 * op.side_slope * op.depth for op in gerinne),
+        default=0.0)
+    # Spez. Kap. 7 nennt fünf Gerinnebreiten stromauf und zehn stromab.
+    # Diese Vorbelegung ist nach Kap. 14.5 projektbezogen festzulegen —
+    # ihre Unterschreitung ist deshalb ein Hinweis. Ein Bauwerk, das dem
+    # Rand näher steht als es selbst breit ist, bleibt eine Warnung.
+    FAKTOR = {"zulauf": 5, "ablauf": 10}
+    for s in spec.structures:
+        if s.id in gekoppelt or s.type == "screen":
+            continue
+        pkte = _plan_punkte(s, ctx.solids)
+        if len(pkte) < 2:
+            continue
+        px, py = pkte[:, 0], pkte[:, 1]
+        abstaende = {"x_min": float(px.min() - x0), "x_max": float(x1 - px.max()),
+                     "y_min": float(py.min() - y0), "y_max": float(y1 - py.max())}
+        # Maßstab ist die SPERRBREITE quer zur Randfläche, nicht die
+        # Länge längs: eine Mauer parallel zur Strömung verdrängt nichts,
+        # eine quer stehende schon.
+        quer = {"x_min": float(py.max() - py.min()),
+                "x_max": float(py.max() - py.min()),
+                "y_min": float(px.max() - px.min()),
+                "y_max": float(px.max() - px.min())}
+        for b in inflows + outflows:
+            face = _bc_face(spec, b)
+            if face is None or face == "z_max":
+                continue
+            d = abstaende.get(face)
+            sperre = quer.get(face, 0.0)
+            if d is None or sperre <= 0:
+                continue
+            if d >= sperre:
+                # Der harte Fall ist abgewendet; jetzt gegen die
+                # Vorbelegung der Spezifikation messen.
+                rolle = "zulauf" if b in inflows else "ablauf"
+                mass = gerinnebreite if gerinnebreite > 0 else sperre
+                masswort = ("Gerinnebreiten" if gerinnebreite > 0
+                            else "Bauwerksbreiten")
+                richtung = "stromauf" if rolle == "zulauf" else "stromab"
+                soll = FAKTOR[rolle] * mass
+                if d < soll:
+                    f(_finding(s.id, "hinweis",
+                               f"{d:.1f} m bis zum Rand "
+                               f"„{b.id}“ ({face}). Spez. "
+                               f"Kap. 7 nennt als Vorbelegung "
+                               f"{FAKTOR[rolle]} {masswort} {richtung}, "
+                               f"hier also {soll:.1f} m ({mass:.1f} m je "
+                               "Breite). Die Vorbelegung ist "
+                               "projektbezogen festzulegen."))
+                continue
+            f(_finding(s.id, "warnung",
+                       f"Nur {max(d, 0):.1f} m bis zum Rand "
+                       f"„{b.id}“ "
+                       f"({face}), das Bauwerk selbst ist {sperre:.1f} m "
+                       "groß — die Randbedingung wirkt unmittelbar auf "
+                       "die Umströmung zurück."))
+    return befunde
+
+
+def _pruefe_gebietslage(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Lage im Modellgebiet: nichts erreicht den Solver, was draußen liegt."""
+    befunde: list[dict] = []
+    f = befunde.append
     # Punkte außerhalb des Gebiets erreichen sonst den Solver: ein Rechen
     # außerhalb erzeugt eine leere Porositätszone (interFoam bricht ab),
     # eine Vorfüllung außerhalb kippt den inside/outside-Test von
@@ -1138,7 +1279,13 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                            f"{lage['art']} ragt zu {lage['anteil']:.0%} über "
                            "das Modellgebiet hinaus — kappen würde die Form "
                            "verändern, bitte verschieben oder verkleinern"))
+    return befunde
 
+
+def _pruefe_rechen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Rechen: Widerstandsbeiwerte, lichte Weite, Verlegungsgrad."""
+    befunde: list[dict] = []
+    f = befunde.append
     for s in spec.structures:
         if s.type == "screen":
             # leere d/f sind KEIN Fehler: genau dann leitet der Fallaufbau
@@ -1175,15 +1322,28 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
                 f(_finding(s.id, "hinweis",
                            "Rechen ohne angesetzten Verlegungsgrad — für den "
                            "Nachweis ist meist eine Teilverlegung anzusetzen"))
+    return befunde
 
+
+def _pruefe_anfangsspiegel(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Anfangswasserspiegel muss in der Gebietshöhe liegen."""
+    befunde: list[dict] = []
     lvl = spec.solver.initial_level
     if lvl is not None and spec.domain is not None:
         if not (spec.domain.z_min < lvl < spec.domain.z_max):
-            f(_finding("solver", "fehler",
-                       f"Anfangswasserspiegel {lvl:g} m liegt außerhalb des "
-                       "Modellgebiets"))
+            befunde.append(_finding(
+                "solver", "fehler",
+                f"Anfangswasserspiegel {lvl:g} m liegt außerhalb des "
+                "Modellgebiets"))
+    return befunde
 
-    # ---- Auswertung -----------------------------------------------------
+
+def _pruefe_auswertung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Auswertung: Querschnitte, Pegel und Kraftpatches."""
+    befunde: list[dict] = []
+    f = befunde.append
+    terrain = ctx.terrain
+    lvl = spec.solver.initial_level
     if spec.domain is not None:
         x0, y0, x1, y1 = spec.domain.extent
 
@@ -1213,11 +1373,75 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
             f(_finding("evaluation", "fehler",
                        f"Kraftauswertung verweist auf unbekanntes Bauwerk {p}",
                        fix=kur("verweis_entfernen", art="kraftpatch", wert=p)))
+    return befunde
 
-    _verweise_pruefen(spec, f)
 
-    order = {"fehler": 0, "warnung": 1, "hinweis": 2}
-    return sorted(findings, key=lambda x: (order[x["severity"]], x["object_id"]))
+def _pruefe_verweise(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Jeder Verweis eines Nachweiskriteriums zeigt auf ein existierendes
+    Objekt (Spez. Kap. 7, „Auswertung").
+
+    Diese Regeln standen einmal als harte `model_validator` in casespec und
+    machten den Fall im Zwischenzustand unlesbar — Löschen eines Pegels
+    blockierte Vorschau UND Speichern. Als Prüfregel melden sie dasselbe,
+    lassen den Editor aber arbeiten; gesperrt wird der Lauf.
+
+    `region` (Sohlschubkriterien) und `weir` (Überfallbeiwert) wurden bis
+    dahin von NIEMANDEM geprüft: foamfields überspringt eine unbekannte
+    Region still, das Kriterium bleibt ohne Zahlenwert.
+    """
+    befunde: list[dict] = []
+    bekannt = {
+        "gauge": {g.id for g in spec.evaluation.gauges},
+        "section": {s.id for s in spec.evaluation.sections},
+        "patch": {s.patch for s in spec.structures},
+        "box": {r.id for r in (spec.mesh.refinements if spec.mesh else [])
+                if r.type == "box"},
+        "weir": {s.id for s in spec.structures if s.type == "weir"},
+    }
+    for t in spec.evaluation.targets:
+        for feld, quelle in _TARGET_VERWEISE.get(t.kind, {}).items():
+            wert = getattr(t, feld, None)
+            if wert is None or wert in bekannt[quelle]:
+                continue
+            befunde.append(_finding(
+                t.id, "fehler",
+                f"Kriterium verweist auf {_QUELL_NAMEN[quelle]} "
+                f"„{wert}“ — den gibt es im Fall nicht (mehr). Ohne "
+                "Bezugsobjekt bleibt das Kriterium ohne Zahlenwert.",
+                fix=kur("verweis_entfernen", art="target", id=t.id)))
+    return befunde
+
+
+# Reihenfolge = historische Blockreihenfolge in validate_case. Sie ist Teil
+# des Verhaltens: die Schlusssortierung ist stabil, gleichrangige Befunde
+# (gleicher Schweregrad, gleiche object_id) behalten die Einfügereihenfolge.
+_PRUEFUNGEN = [
+    _pruefe_kraftauswertung,
+    _pruefe_gelaendekoerper,
+    _pruefe_vorfuellungen,
+    _pruefe_aushub,
+    _pruefe_gebietshoehe,
+    _pruefe_geometrie,
+    _pruefe_gelaendekanten,
+    _pruefe_bauwerksparameter,
+    _pruefe_bereich_ersetzen,
+    _pruefe_drosselablauf,
+    _pruefe_durchdringungen,
+    _pruefe_bearbeitungen,
+    _pruefe_netzaufloesung,
+    _pruefe_verfeinerungen,
+    _pruefe_raender,
+    _pruefe_solver,
+    _pruefe_fenster,
+    _pruefe_ganglinien,
+    _pruefe_randabstand,
+    _pruefe_gebietslage,
+    _pruefe_rechen,
+    _pruefe_anfangsspiegel,
+    _pruefe_auswertung,
+    _pruefe_verweise,
+]
 
 
 def _aushub_verbund(aushub: list) -> list[list]:

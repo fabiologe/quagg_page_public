@@ -42,6 +42,13 @@ UNITS: dict[Quantity, str] = {
 }
 
 
+def befund(object_id: str, severity: str, message: str, **extra) -> dict:
+    """Einheitliches Befund-Dict (severity: fehler|warnung|hinweis) — EINE
+    Definition statt drei lokaler Kopien in validate/evaluate/meshgen."""
+    return {"object_id": object_id, "severity": severity,
+            "message": message, **extra}
+
+
 class Component(str, Enum):
     # Nur, was auch erzeugt wird: `porous` (Kraft-Porositätsanteil) und
     # `min` (Courant) hat nie ein Reader geschrieben — tote Enum-Werte

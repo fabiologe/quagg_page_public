@@ -63,6 +63,99 @@ def _r2():
     return client, wert("S3_BUCKET"), (wert("S3_PREFIX", "flood3d") or "flood3d").strip("/")
 
 
+# Benannte Transit-Funktionen: Router und laufwerk reden mit S3 NUR über
+# diese Schnittstelle — kein boto3 und kein _r2() mehr außerhalb dieses
+# Moduls. Alle Funktionen rufen _r2() zur LAUFZEIT (kein Client-Caching):
+# die Tests tauschen relay._r2 per Monkeypatch aus, und das muss greifen.
+def r2_bereit() -> bool:
+    """Ist der R2-Transit nutzbar (Zugangsdaten vollständig)? Baut nur den
+    Client — kein Netzaufruf. Die Wächter fragen das EINMAL je Runde,
+    statt an jedem Lauf erneut in den RunPodFehler zu laufen."""
+    try:
+        _r2()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def speicherpunkt_urls(run_id: str, gueltig_s: int = 7 * 86400) -> dict:
+    """
+    Vorsignierte PUT-URLs für den Läufer auf der Nutzer-Maschine (das
+    Foam-Image hat kein boto3): Speicherpunkte auf den checkpoints-Key,
+    das Endergebnis auf den artifacts-Key. Standard-Gültigkeit 7 Tage —
+    lokale Läufe pausieren/ruhen auch mal tagelang.
+    Wirft RunPodFehler, wenn R2 nicht eingerichtet ist.
+    """
+    client, bucket, praefix = _r2()
+    schluessel = r2_keys(praefix, run_id)
+
+    def _put(key: str) -> str:
+        return client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": key,
+                    "ContentType": "application/zip"},
+            ExpiresIn=gueltig_s)
+
+    return {"put_url": _put(schluessel.checkpoint),
+            "artifacts_put_url": _put(schluessel.artefakte),
+            "min_intervall_s": 600}
+
+
+def teilstand_mit_marke_holen(run_id: str,
+                              bekannte_marke: str | None = None
+                              ) -> tuple[bytes, str] | None:
+    """
+    Teilstand (checkpoints-Key) samt LastModified-Marke holen. None, wenn
+    keiner hinterlegt ist ODER die Marke der bekannten entspricht (schon
+    eingespielt — dann wird der Body gar nicht erst heruntergeladen).
+    Wirft RunPodFehler, wenn R2 nicht eingerichtet ist.
+    """
+    client, bucket, praefix = _r2()
+    try:
+        antwort = client.get_object(
+            Bucket=bucket, Key=r2_keys(praefix, run_id).checkpoint)
+    except Exception:  # noqa: BLE001 — kein Objekt = kein Teilstand
+        return None
+    marke = str(antwort.get("LastModified") or "")
+    if marke and marke == bekannte_marke:
+        return None
+    return antwort["Body"].read(), marke
+
+
+def teilstand_holen(run_id: str) -> bytes | None:
+    """Teilstand (checkpoints-Key) holen; None, wenn keiner hinterlegt ist.
+    Wirft RunPodFehler, wenn R2 nicht eingerichtet ist (→ 503 im Router)."""
+    geholt = teilstand_mit_marke_holen(run_id)
+    return None if geholt is None else geholt[0]
+
+
+def endergebnis_holen(run_id: str) -> bytes | None:
+    """Endergebnis (artifacts-Key) holen; None, wenn keins hinterlegt ist.
+    Wirft RunPodFehler, wenn R2 nicht eingerichtet ist."""
+    client, bucket, praefix = _r2()
+    try:
+        return client.get_object(
+            Bucket=bucket,
+            Key=r2_keys(praefix, run_id).artefakte)["Body"].read()
+    except Exception:  # noqa: BLE001 — kein Objekt = kein Endergebnis
+        return None
+
+
+def transit_loeschen(run_id: str) -> None:
+    """Transit-Keys eines Laufs (artifacts + checkpoints) löschen, Fehler
+    schlucken — Aufräumen ist Beiwerk und darf nie einen Import kippen."""
+    try:
+        client, bucket, praefix = _r2()
+    except Exception:  # noqa: BLE001 — ohne R2 gibt es nichts zu löschen
+        return
+    schluessel = r2_keys(praefix, run_id)
+    for key in (schluessel.artefakte, schluessel.checkpoint):
+        try:
+            client.delete_object(Bucket=bucket, Key=key)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 _ENV_DATEI_CACHE: dict = {}
 
 

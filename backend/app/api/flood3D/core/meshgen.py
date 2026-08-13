@@ -13,6 +13,7 @@ import math
 import os
 
 from .casespec import CaseSpec
+from .conventions import befund
 from .foam import foam_file, vec
 
 _FACE_VERTICES: dict[str, str] = {
@@ -416,8 +417,7 @@ def netz_tor(cm: dict, vorschau: dict | None = None) -> list[dict]:
     befunde: list[dict] = []
 
     def b(severity, message, **extra):
-        befunde.append({"object_id": "netz", "severity": severity,
-                        "message": message, **extra})
+        befunde.append(befund("netz", severity, message, **extra))
 
     skew = cm.get("max_skewness")
     if skew is not None and float(skew) > NETZ_SKEW_FEHLER:

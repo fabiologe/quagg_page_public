@@ -294,7 +294,7 @@ def test_waechter_sammelt_endergebnis_ohne_browser_ein(tmp_path, monkeypatch):
     """
     import json as _json
 
-    from .. import router as router_mod
+    from .. import laufwerk
 
     monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
     fertig = tmp_path / "runs" / "demo_r001"
@@ -314,7 +314,7 @@ def test_waechter_sammelt_endergebnis_ohne_browser_ein(tmp_path, monkeypatch):
     r2.objekte["flood3d/checkpoints/demo_r002.zip"] = _lauf_zip("demo_r002")
     monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
 
-    eingesammelt = router_mod.teilstaende_einsammeln()
+    eingesammelt = laufwerk.teilstaende_einsammeln()
 
     assert sorted(eingesammelt) == ["demo_r001", "demo_r002"]
     # Endergebnis: Manifest kommt aus dem Archiv, Status completed, S3 leer
@@ -327,13 +327,13 @@ def test_waechter_sammelt_endergebnis_ohne_browser_ein(tmp_path, monkeypatch):
     assert m2["status"] == "lokal" and m2["teilstand"] is True
     assert m2["teilstand_quelle"] == "s3-waechter"
     # zweiter Durchlauf ohne neue Objekte: nichts doppelt einspielen
-    assert router_mod.teilstaende_einsammeln() == []
+    assert laufwerk.teilstaende_einsammeln() == []
 
 
 def test_waechter_funkt_dem_browser_nicht_dazwischen(tmp_path, monkeypatch):
     import json as _json
 
-    from .. import router as router_mod
+    from .. import laufwerk
 
     monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
     d = tmp_path / "runs" / "demo_r001"
@@ -343,7 +343,7 @@ def test_waechter_funkt_dem_browser_nicht_dazwischen(tmp_path, monkeypatch):
     r2 = FakeR2()
     r2.objekte["flood3d/artifacts/demo_r001.zip"] = _lauf_zip("demo_r001")
     monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
-    assert router_mod.teilstaende_einsammeln() == []
+    assert laufwerk.teilstaende_einsammeln() == []
 
 
 def test_laufzeit_leitplanke_je_job(welt, monkeypatch):
@@ -543,7 +543,7 @@ def test_archiv_waechter_verschiebt_alte_laeufe(tmp_path, monkeypatch):
     import os as _os
     import time as _time
 
-    from .. import router as router_mod
+    from .. import laufwerk
 
     monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
     monkeypatch.setenv("FLOOD3D_ARCHIV_ROOT", str(tmp_path / "box"))
@@ -560,7 +560,7 @@ def test_archiv_waechter_verschiebt_alte_laeufe(tmp_path, monkeypatch):
     jung.mkdir()
     (jung / "manifest.json").write_text(_json.dumps({"status": "completed"}))
 
-    archiviert = router_mod.archiv_waechter()
+    archiviert = laufwerk.archiv_waechter()
 
     assert archiviert == ["alt_r001"]
     assert (tmp_path / "box" / "alt_r001" / "fields" / "t_0000.npz").exists()
