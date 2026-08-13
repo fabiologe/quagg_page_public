@@ -1,12 +1,13 @@
 """
-runner — Ausführung des OpenFOAM-Falls (Spez. Kap. 3, Stufe 5).
+runner — Docker-Werkzeuge des Servers: NETZVORSCHAU und Schätzung.
 
-Lokaler Docker-Runner nach dem LISFLOOD-Muster (flood2D): das ESI-Image
-opencfd/openfoam-run enthält Solver und Utilities ohne Dev-Werkzeuge.
-RunPod dockt später hinter demselben Interface an (run_foam austauschen).
-
-Jeder Schritt schreibt sein Log in den Fallordner, das Laufmanifest
-(Spez. 4.4) wird fortlaufend aktualisiert — der PostViewer pollt es.
+Gerechnet wird seit Stage B (2026-08-13) NICHT mehr hier — Läufe fahren
+über den RunPod-Relay oder den Local Companion, beide mit
+engines/local/local_runner.py. Dieses Modul behält, was der Server
+selbst braucht: run_foam im Docker-Container (Netzvorschau, 2 Ränge),
+checkMesh-Auswertung, Laufzeit-/Kostenschätzung und das Aufräumen
+verwaister f3d_*-Container. local_runner leiht sich von hier
+_pruefe_patches, _y_plus_range und parse_checkmesh.
 """
 from __future__ import annotations
 
@@ -21,17 +22,13 @@ from pathlib import Path
 OF_IMAGE = os.environ.get("FLOOD3D_OF_IMAGE", "opencfd/openfoam-run:2406")
 OF_BASHRC = os.environ.get("FLOOD3D_OF_BASHRC",
                            "/usr/lib/openfoam/openfoam2406/etc/bashrc")
-SOLVE_TIMEOUT = int(os.environ.get("FLOOD3D_SOLVE_TIMEOUT", "7200"))
 MESH_TIMEOUT = int(os.environ.get("FLOOD3D_MESH_TIMEOUT", "1200"))
-CORE_PRICE_EUR_H = float(os.environ.get("FLOOD3D_CORE_PRICE", "0.05"))
 # Cloud-Satz aus der RunPod-Preisliste (2026-08-12): jede CPU-Stufe kostet
 # 0,036 $ je vCPU-Stunde — 2, 4, 8, 16 und 32 vCPU liegen exakt auf derselben
 # Geraden. Mehr Kerne kosten also nicht mehr, SOLANGE der Solver sie ausnutzt;
 # teuer wird nur schlechte Skalierung (Faustregel interFoam: 20-50k Zellen je
 # Kern). Umgerechnet mit 0,92 EUR/USD.
 POD_PRICE_EUR_H = float(os.environ.get("FLOOD3D_POD_CORE_PRICE", "0.033"))
-CORES = max(1, min(int(os.environ.get("FLOOD3D_CORES", "4")),
-                   os.cpu_count() or 1))
 # interFoam-Durchsatz je Kern. Erst am kleinen Lauf demo-stufe3_r001
 # geeicht (117.596 Zellen => ~100k Aktualisierungen/Kern-s) — an einem
 # ECHTEN Fall gemessen ist das um ein Vielfaches zu optimistisch:
@@ -244,7 +241,7 @@ def parse_checkmesh(text: str) -> dict:
     return out
 
 
-def estimate_run(spec, cells: int, cores: int = CORES,
+def estimate_run(spec, cells: int, cores: int = 16,
                  satz: float | None = None) -> dict:
     """
     Laufzeit- und Kostenschätzung (Spez. Kap. 6.1, Netz- und Kostenvorschau).
@@ -264,7 +261,7 @@ def estimate_run(spec, cells: int, cores: int = CORES,
         "steps_estimate": int(steps),
         "wall_time_estimate_h": round(wall_h, 3),
         "cost_estimate_eur": round(core_seconds / 3600.0
-                                   * (CORE_PRICE_EUR_H if satz is None else satz), 2),
+                                   * (POD_PRICE_EUR_H if satz is None else satz), 2),
         "hinweis": "Schätzung, wird nach den ersten Läufen kalibriert",
     }
 
@@ -368,32 +365,6 @@ def mesh_preview(spec, case_dir: str | Path) -> dict:
     return result
 
 
-# --------------------------------------------------------------------------
-# Vollständiger Lauf
-# --------------------------------------------------------------------------
-
-def _write_manifest(run_root: Path, **updates) -> dict:
-    path = run_root / "manifest.json"
-    manifest = json.loads(path.read_text()) if path.exists() else {}
-    manifest.update(updates)
-    run_root.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
-    return manifest
-
-
-def geschriebene_zeiten(case_dir: Path) -> list[float]:
-    """Vom Solver geschriebene Zeitpunkte (ohne den Startordner 0)."""
-    zeiten = []
-    for p in Path(case_dir).iterdir():
-        try:
-            t = float(p.name)
-        except ValueError:
-            continue
-        if p.is_dir() and t > 0:
-            zeiten.append(t)
-    return sorted(zeiten)
-
-
 def _y_plus_range(case_dir: Path) -> list[float] | None:
     """Globale y+-Spanne aus postProcessing/y_plus (Zeilen: t patch min max avg)."""
     out = None
@@ -414,192 +385,3 @@ def _y_plus_range(case_dir: Path) -> list[float] | None:
             out = ([lo, hi] if out is None
                    else [min(out[0], lo), max(out[1], hi)])
     return out
-
-
-def run_pipeline(spec, case_source_dir: Path, run_root: Path,
-                 run_id: str) -> dict:
-    """
-    Kompletter Lauf: Fall bauen -> Netz -> Initialisierung -> interFoam ->
-    Extraktion/Bewertung/Abbildungen -> Felddaten fürs 3D. Das Manifest
-    spiegelt jeden Schritt; Fehler beenden den Lauf mit status=failed.
-    """
-    from .casebuilder import build_case
-    from .evaluate import evaluate_run
-    from .extract import extract_case
-    from .foamfields import convert_case_fields
-    from .normalize import write_normalized
-    from .render import render_run
-
-    case_dir = run_root / "case"
-    t0 = time.time()
-    _write_manifest(run_root, run_id=run_id, status="building",
-                    of_image=OF_IMAGE, started=t0,
-                    case_hash=spec.case_hash(), cores=1)
-    try:
-        info = build_case(spec, case_dir, case_source_dir)
-        if info["problems"]:
-            raise FoamError("Geometrieprobleme: " + "; ".join(info["problems"]))
-
-        _write_manifest(run_root, status="meshing")
-        run_foam(case_dir, "blockMesh", "log.blockMesh", name_suffix="bm")
-        _kanten_ziehen(case_dir, "sfe")
-        # parallel wie im Companion — Server und lokal vernetzen jetzt auf
-        # demselben Weg (beendet auch den F12-Drift „zwei Netze, zwei Wege")
-        _snappy(case_dir)
-        if (case_dir / "system" / "topoSetDict").exists():
-            run_foam(case_dir, "topoSet", "log.topoSet", name_suffix="ts")
-        if (case_dir / "system" / "createPatchDict").exists():
-            # Zu-/Ablauf-Fenster: Restflächen der Randpatches werden Wand
-            run_foam(case_dir, "createPatch -overwrite", "log.createPatch",
-                     name_suffix="cp")
-        _pruefe_patches(case_dir, spec)
-        run_foam(case_dir, "checkMesh", "log.checkMesh", name_suffix="cm")
-        cm = parse_checkmesh((case_dir / "log.checkMesh")
-                             .read_text(errors="replace"))
-        _write_manifest(run_root, checkmesh=cm,
-                        checkmesh_ok=cm.get("checkmesh_ok"))
-        extract_mesh_surface(spec, case_dir)
-        if (case_dir / "system" / "setFieldsDict").exists():
-            run_foam(case_dir, "setFields", "log.setFields", name_suffix="sf")
-
-        _write_manifest(run_root, status="solving", cores=CORES)
-        app = spec.solver.application
-        # Ein abgebrochener oder gescheiterter Solverlauf ist kein Grund,
-        # die schon gerechneten Zeitschritte wegzuwerfen: Felder,
-        # Zeitreihen, Bewertung und Abbildungen entstehen aus dem, was da
-        # ist, und das Ergebnis wird als TEILERGEBNIS gekennzeichnet
-        # (Fabios Befund 2026-08-11: „es sollte alles angezeigt werden,
-        # was schon berechnet wurde").
-        solver_fehler = None
-        try:
-            if CORES > 1:
-                from .foam import foam_file
-                (case_dir / "system" / "decomposeParDict").write_text(foam_file(
-                    "decomposeParDict",
-                    f"numberOfSubdomains {CORES};\n\nmethod          scotch;",
-                    location="system"))
-                run_foam(case_dir, "decomposePar -force", "log.decomposePar",
-                         name_suffix="dp")
-                run_foam(case_dir,
-                         f"mpirun --allow-run-as-root -np {CORES} {app} -parallel",
-                         f"log.{app}", timeout=SOLVE_TIMEOUT, name_suffix="solve")
-                try:
-                    run_foam(case_dir, "reconstructPar -newTimes",
-                             "log.reconstructPar", name_suffix="rp")
-                except FoamError as e:
-                    # Dieselbe Übersetzung wie im Local Companion (F12-Drift):
-                    # „No times selected" heißt, der Solver hat keinen einzigen
-                    # Zeitschritt geschrieben — meist zu kurze end_time oder
-                    # sofortige Divergenz. Der rohe Foam-Fehler half niemandem.
-                    log_rp = (case_dir / "log.reconstructPar")
-                    if (log_rp.is_file()
-                            and "No times selected"
-                            in log_rp.read_text(errors="replace")):
-                        raise FoamError(
-                            "Der Solver hat keinen einzigen Zeitschritt "
-                            "geschrieben (reconstructPar: No times selected) — "
-                            "meist ist die Simulationsdauer kürzer als das "
-                            "Schreibintervall oder der Lauf ist sofort "
-                            "divergiert. Log des Solvers prüfen.")
-                    raise e
-                import shutil
-                for p in case_dir.glob("processor*"):
-                    shutil.rmtree(p, ignore_errors=True)
-            else:
-                run_foam(case_dir, app, f"log.{app}", timeout=SOLVE_TIMEOUT,
-                         name_suffix="solve")
-
-        except FoamError as e:
-            zeiten = geschriebene_zeiten(case_dir)
-            if not zeiten:
-                raise           # nichts gerechnet -> nichts zu zeigen
-            solver_fehler = str(e)
-            print(f"flood3d: {run_id} — Solver beendet ({e}); "
-                  f"{len(zeiten)} geschriebene Zeitschritte werden "
-                  "trotzdem ausgewertet", flush=True)
-            _write_manifest(run_root, teilergebnis=True,
-                            teilergebnis_grund=solver_fehler,
-                            letzte_zeit=zeiten[-1])
-
-        # Felder VOR der Bewertung konvertieren — die Sohlschubspannungs-
-        # y+-Spanne der Wandfunktionen ins Manifest (Qualitätsansicht) —
-        # nach Material/Rauheit der Gültigkeitsnachweis der Wandbehandlung
-        ypr = _y_plus_range(case_dir)
-        if ypr:
-            _write_manifest(run_root,
-                            y_plus_range=[round(ypr[0], 2), round(ypr[1], 2)])
-
-        # Zeitreihen (min_bed_shear-Target) entstehen aus den Feldern.
-        _write_manifest(run_root, status="converting_fields")
-        try:
-            run_foam(case_dir,
-                     "postProcess -noFunctionObjects -func writeCellCentres -time 0",
-                     "log.writeCellCentres", name_suffix="cc")
-            convert_case_fields(spec, case_dir, run_root)
-        except Exception as e:
-            _write_manifest(run_root, fields_error=str(e))
-
-        _write_manifest(run_root, status="extracting")
-        df, missing = extract_case(case_dir, spec, run_id)
-        from .evaluate import overfall_cd_rows
-        from .foamfields import bed_shear_series, energy_head_series
-        import pandas as pd
-        rows = (bed_shear_series(spec, run_root, run_id)
-                + energy_head_series(spec, run_root, run_id))
-        if rows:
-            df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
-        # Überfallbeiwert braucht die Basisreihen (Q, Pegel) aus df
-        cd_rows = overfall_cd_rows(df, spec, run_id)
-        if cd_rows:
-            df = pd.concat([df, pd.DataFrame(cd_rows)], ignore_index=True)
-        write_normalized(df, run_root / "normalized.parquet")
-        # Selbsttest: zeigt das Visualisierungsgitter dasselbe Wasservolumen
-        # wie der Solver? (Audit P3-12 — quantifiziert die Binning-Verluste)
-        from .foamfields import viz_volume_check
-        vol_check = viz_volume_check(run_root, df)
-        if vol_check:
-            _write_manifest(run_root, **vol_check)
-        # Welche OpenFOAM-Ausgabe hat gerechnet? Steht im Log-Kopf und
-        # gehoert in den Nachweis — Server und Nutzer-Maschine muessen
-        # dieselbe fahren (s. core/foam.py).
-        from .foam import foam_abweichung, foam_version_aus_log
-        foam_v = foam_version_aus_log(case_dir)
-        foam_hinweis = foam_abweichung(foam_v)
-        manifest = _write_manifest(run_root, missing_sources=missing,
-                                   foam=foam_v, foam_hinweis=foam_hinweis)
-        # Ergebnis-JSON trägt den Endzustand, nicht den Zwischenschritt
-        endstatus = "teilergebnis" if solver_fehler else "completed"
-        result = evaluate_run(df, spec, run_id,
-                              {**manifest, "status": endstatus})
-        from .evaluate import befunde_ableiten
-        _write_manifest(run_root, befunde=(manifest.get("befunde") or [])
-                        + befunde_ableiten(result.get("quality") or {}, manifest))
-        render_run(result, df, spec, run_root)
-
-        dauer = time.time() - t0
-        # Abgebrochen/gescheitert, aber ausgewertet: der Status sagt das —
-        # die Ergebnisse sind da und im Viewer sichtbar
-        _write_manifest(run_root, status=endstatus, finished=time.time(),
-                        duration_s=round(dauer, 1),
-                        # IST-Kosten (Audit U18/Spez. 4.4): bisher gab es
-                        # nur die Schätzung VOR dem Lauf — das Manifest
-                        # trägt jetzt, was der Lauf wirklich gekostet hat
-                        cost_eur=round(dauer / 3600.0 * CORES
-                                       * CORE_PRICE_EUR_H, 2))
-    except Exception as e:
-        # Ein vom Nutzer abgebrochener Lauf ist kein Fehler: der Abbruch-
-        # Endpunkt legt die Marke, das Killen des Containers lässt den
-        # laufenden Schritt mit FoamError enden — hier wird daraus der
-        # ehrliche Status (Audit H3)
-        if (run_root / "ABBRUCH").exists():
-            (run_root / "ABBRUCH").unlink(missing_ok=True)
-            _write_manifest(run_root, status="abgebrochen",
-                            error="Vom Nutzer abgebrochen",
-                            finished=time.time(),
-                            duration_s=round(time.time() - t0, 1))
-        else:
-            _write_manifest(run_root, status="failed", error=str(e),
-                            finished=time.time(),
-                            duration_s=round(time.time() - t0, 1))
-        raise
-    return json.loads((run_root / "manifest.json").read_text())

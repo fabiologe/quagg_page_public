@@ -992,6 +992,9 @@ def main() -> int:
         # Endergebnis ZUSAETZLICH nach S3 (Speicherpunkt-Anweisung im
         # Bundle): der Server holt es dort auch ab, wenn kein Browser mehr
         # zuschaut — Tab zu, Rechner rechnet, Ergebnis kommt trotzdem an.
+        # NUR der Companion-Weg: artifacts_put_url setzt allein der
+        # /bundle-Endpunkt. Der Cloud-Weg (relay.lauf_starten) schickt nur
+        # put_url — sein Worker laedt artifacts.zip selbst nach S3 hoch.
         cfgp = case / "checkpoint.json"
         if cfgp.is_file():
             try:

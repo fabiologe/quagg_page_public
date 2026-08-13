@@ -31,12 +31,21 @@ from fastapi import (APIRouter, Body, Depends, HTTPException, Query, Request,
 from .gate import schreib_gate
 from fastapi.responses import FileResponse
 
+# VOR den core-Imports: FLOOD3D_*-Werte aus backend/.env in die Umgebung
+# spiegeln. PM2 exportiert die .env nicht, und die core-Module (reisen im
+# Bundle, duerfen env_util nicht importieren) lesen rohes os.environ —
+# teils schon zur Importzeit (meshgen.MESH_RANKS). Ohne den Spiegel wurden
+# diese Werte in Produktion still ignoriert.
+from ..flood2D.env_util import env_spiegeln
+
+env_spiegeln("FLOOD3D_")
+
 from .core import fields as vol_fields
 from .core.casespec import CaseSpec, migriere
 from .core.normalize import get_series, list_series
 from .core.solids import build_solids
 from .core.store import (lauf_reservieren, manifest_schreiben,
-                         read_manifest, run_paths)
+                         r2_keys, read_manifest, run_paths, runs_root)
 from .core.terrain import TerrainField
 from .core.validate import validate_case
 
@@ -49,9 +58,7 @@ _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_FIG = re.compile(r"^[A-Za-z0-9._-]+\.(png|svg)$")
 
 
-def runs_root() -> Path:
-    return Path(os.environ.get("FLOOD3D_RUNS_ROOT",
-                               Path(__file__).parent / "data" / "runs"))
+# runs_root() lebt jetzt als Pfad-Politik in core/store.py
 
 
 def _paths(run_id: str):
@@ -1437,12 +1444,12 @@ async def case_bundle(case_id: str, request: Request):
         client, bucket, praefix = _r2()
         put_url = client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": bucket, "Key": f"{praefix}/checkpoints/{run_id}.zip",
+            Params={"Bucket": bucket, "Key": r2_keys(praefix, run_id).checkpoint,
                     "ContentType": "application/zip"},
             ExpiresIn=7 * 86400)   # lokale Laeufe pausieren/ruhen auch mal tagelang
         artifacts_put = client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": bucket, "Key": f"{praefix}/artifacts/{run_id}.zip",
+            Params={"Bucket": bucket, "Key": r2_keys(praefix, run_id).artefakte,
                     "ContentType": "application/zip"},
             ExpiresIn=7 * 86400)
         checkpoint = {"put_url": put_url, "artifacts_put_url": artifacts_put,
@@ -1548,7 +1555,7 @@ async def import_run_chunk(run_id: str, request: Request,
         from .engines.runpod.relay import _r2
         client, bucket, praefix = _r2()
         client.delete_object(Bucket=bucket,
-                             Key=f"{praefix}/checkpoints/{run_id}.zip")
+                             Key=r2_keys(praefix, run_id).checkpoint)
     except Exception:  # noqa: BLE001 — Aufraeumen ist Beiwerk
         pass
     return ergebnis
@@ -1766,8 +1773,8 @@ def teilstaende_einsammeln() -> list[str]:
         if (d / "_upload.zip").exists():
             continue       # der Browser importiert gerade selbst — nicht dazwischenfunken
         run_id = d.name
-        akey = f"{praefix}/artifacts/{run_id}.zip"
-        ckey = f"{praefix}/checkpoints/{run_id}.zip"
+        akey = r2_keys(praefix, run_id).artefakte
+        ckey = r2_keys(praefix, run_id).checkpoint
         try:
             daten = client.get_object(Bucket=bucket, Key=akey)["Body"].read()
             _import_entpacken(d, run_id, daten)
@@ -1987,7 +1994,7 @@ async def run_teilstand(run_id: str, payload: dict | None = Body(None)):
         client, bucket, praefix = _r2()
     except RunPodFehler as e:
         raise HTTPException(status_code=503, detail=str(e))
-    key = f"{praefix}/checkpoints/{run_id}.zip"
+    key = r2_keys(praefix, run_id).checkpoint
     try:
         daten = client.get_object(Bucket=bucket, Key=key)["Body"].read()
     except Exception:  # noqa: BLE001 — kein Objekt = noch kein Teilstand

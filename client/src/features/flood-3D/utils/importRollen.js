@@ -20,7 +20,7 @@ export const ROLE_LABELS = {
   vorfuellung: 'Vorfüllung (Startwasser)',
   ignorieren: '— ignorieren —',
 }
-export const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
+const MESH_ROLES = ['gelaende', 'gelaende_koerper', 'wand', 'pfeiler',
   'wehr', 'becken', 'bauwerk', 'ignorieren']
 export const MATERIAL_LABELS = {
   stahl: 'Stahl (k_s 0,1 mm)', beton_glatt: 'Beton glatt (0,5 mm)',
@@ -37,7 +37,7 @@ export const SOLID_ROLES = new Set(['wand', 'pfeiler', 'wehr', 'becken',
 // Überfallkante gehören ausdrücklich nicht dazu: sie werden Bauteile.
 export const KANTEN_ROLLEN = new Set(['bruchkante', 'boeschung_ok',
   'boeschung_uk', 'sohle', 'beckenrand', 'krone'])
-export const LINIEN_ROLLEN = [
+const LINIEN_ROLLEN = [
   { titel: 'formt das Gelände',
     rollen: ['bruchkante', 'boeschung_ok', 'boeschung_uk', 'sohle',
       'beckenrand', 'krone', 'gerinne', 'damm', 'planum'] },
@@ -47,16 +47,16 @@ export const LINIEN_ROLLEN = [
   { titel: 'sonstiges',
     rollen: ['querschnitt', 'verfeinerung', 'vorfuellung', 'ignorieren'] },
 ]
-export const RASTER_ROLLEN = [{ titel: 'Höhendaten',
+const RASTER_ROLLEN = [{ titel: 'Höhendaten',
   rollen: ['gelaende', 'zusatzraster', 'ignorieren'] }]
-export const ROHR_ROLLEN = [{ titel: 'Rohrmündung',
+const ROHR_ROLLEN = [{ titel: 'Rohrmündung',
   rollen: ['zulaufrohr', 'ablaufrohr', 'ignorieren'] }]
-export const NETZ_ROLLEN = [
+const NETZ_ROLLEN = [
   { titel: 'Gelände', rollen: ['gelaende', 'gelaende_koerper'] },
   { titel: 'Bauteil', rollen: MESH_ROLES.filter((r) => SOLID_ROLES.has(r)) },
   { titel: 'sonstiges', rollen: ['ignorieren'] },
 ]
-export const NUR_IGNORIEREN = [{ titel: 'sonstiges', rollen: ['ignorieren'] }]
+const NUR_IGNORIEREN = [{ titel: 'sonstiges', rollen: ['ignorieren'] }]
 export const rollenFuerKind = (kind) => (kind === 'polyline' ? LINIEN_ROLLEN
   : kind === 'raster' ? RASTER_ROLLEN
     : kind === 'kreis' ? ROHR_ROLLEN

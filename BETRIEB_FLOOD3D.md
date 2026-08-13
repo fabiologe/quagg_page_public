@@ -70,8 +70,6 @@ Endpunkt geschützt, ohne dass jemand daran denken muss.
   ins Manifest (`foam`), sichtbar im Lauf-&-Log-Panel. Beim Anheben also:
   Dockerfile, `OF_IMAGE`, `FOAM_API_ERWARTET` gemeinsam — und
   Verifikation neu laufen lassen.
-- Kerne **Server**: `FLOOD3D_CORES` (Default 4, gedeckelt auf die CPU-Zahl) —
-  die Maschine ist geteilt, sie darf nicht vollgelaufen werden.
 - Kerne **lokal** (Companion): **alle Kerne der Nutzer-Maschine, kein Deckel**
   (seit 2026-08-11; vorher 8). Vorgabe möglich über `FLOOD3D_CORES` bzw. den
   Altnamen `QUAGG_FOAM_CORES` — die reicht der Companion ab v1.5.1 als `-e`
@@ -87,12 +85,14 @@ Endpunkt geschützt, ohne dass jemand daran denken muss.
   (Windows/Mac) begrenzt allein die VM-Zuteilung in dessen Einstellungen.
   Ab v1.5.1 setzt der Companion außerdem `--shm-size=2g`, sonst scheitert
   mpirun bei vielen Rängen an den 64 MB `/dev/shm` der Docker-Voreinstellung.
-- Timeouts: Vernetzung 20 min (`FLOOD3D_MESH_TIMEOUT`), Solver 2 h
-  (`FLOOD3D_SOLVE_TIMEOUT`).
-- Kostensatz: `FLOOD3D_CORE_PRICE` (Default 0,05 €/Kern-h) — Schätzung vor dem
-  Lauf und Ist-Kosten im Manifest rechnen damit.
-- **Netzvorschau rechnet seriell auf 1 Kern**; nur der Solverlauf nutzt alle
-  Kerne (mpirun). Ein voller Lauf zeigt ~400 % CPU — das ist Absicht.
+- Timeout Netzvorschau: 20 min (`FLOOD3D_MESH_TIMEOUT`); die Solver-Laufzeit
+  deckelt je Cloud-Job `max_laufzeit_s` (RunPod executionTimeout).
+- Kostensatz: `FLOOD3D_POD_CORE_PRICE` (Default 0,033 €/vCPU-h, RunPod-Liste)
+  — Schätzung vor dem Lauf und Ist-Kosten im Manifest rechnen damit.
+  (`FLOOD3D_CORE_PRICE`/`FLOOD3D_SOLVE_TIMEOUT`/Server-`FLOOD3D_CORES` sind
+  mit dem Server-Rechenort entfallen.)
+- **Die Netzvorschau rechnet mit 2 Rängen** (`FLOOD3D_PREVIEW_RANKS`),
+  das Produktionsnetz überall mit 8 festen Rängen (`FLOOD3D_MESH_RANKS`).
 - Verwaiste Container: beim API-Start räumt ein Wächter alle `f3d_*` ab
   (nach Neustart wartet auf keinen Container mehr jemand). Von Hand:
   `docker ps -a --filter name=f3d_` / `docker rm -f <name>`.

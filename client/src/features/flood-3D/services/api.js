@@ -241,7 +241,6 @@ export const flood3dApi = {
     mitGate(() => sendJson(`/runs/${runId}/archivieren`, 'POST', {})),
   holeRunZurueck: (runId) =>
     mitGate(() => sendJson(`/runs/${runId}/wiederherstellen`, 'POST', {})),
-  archivStand: (alterTage = 14) => getJson('/archiv', { alter_tage: alterTage }),
   abortRun: (runId) => sendJson(`/runs/${runId}/abort`, 'POST', {}),
   runDetail: (runId) => getJson(`/runs/${runId}`),
   result: (runId) => getJson(`/runs/${runId}/result`),

@@ -274,11 +274,13 @@ def test_lokale_kernzahl_vorgabe_schlaegt_automatik(monkeypatch):
 def test_server_bleibt_gedeckelt():
     """
     Gegenprobe: der SERVER teilt sich die Maschine mit allem anderen und
-    darf sie nicht fuellen — die Aufhebung gilt nur lokal.
+    darf sie nicht fuellen. Seit dem Ende des Server-Rechenorts (Stage B)
+    ist sein einziger Foam-Einsatz die NETZVORSCHAU — und die bleibt auf
+    hoechstens 2 Raenge gedeckelt (Entscheidung Fabio 2026-08-13:
+    „nur vereinfacht … max. 2 Kerne").
     """
-    import os as _os
-    from ..core import runner
-    assert runner.CORES <= (_os.cpu_count() or 1)
+    from ..core.meshgen import PREVIEW_RANKS
+    assert PREVIEW_RANKS <= 2
 
 
 def test_kernzahl_beachtet_das_kontingent_des_containers(tmp_path, monkeypatch):

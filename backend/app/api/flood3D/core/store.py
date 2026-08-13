@@ -15,6 +15,32 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
+
+
+class R2Keys(NamedTuple):
+    """Transit-Schlüssel eines Laufs im R2 — EINE Definition statt
+    f-Strings in vier Dateien, die die Putzrunde per split() zurückparste."""
+    eingang: str
+    checkpoint: str
+    artefakte: str
+
+
+def r2_keys(praefix: str, run_id: str) -> R2Keys:
+    return R2Keys(eingang=f"{praefix}/eingang/{run_id}.zip",
+                  checkpoint=f"{praefix}/checkpoints/{run_id}.zip",
+                  artefakte=f"{praefix}/artifacts/{run_id}.zip")
+
+
+def runs_root() -> Path:
+    """Wurzel der Lauf-Ablage — Pfad-POLITIK, deshalb hier und nicht im
+    Router. Der Relay (r2-Putzrunde) und die Wächter brauchen sie ohne
+    den Umweg über die Web-Schicht (vorher: echter Import-Zyklus
+    Relay↔Router, nur von Lazy-Imports am Leben gehalten)."""
+    import os
+    return Path(os.environ.get("FLOOD3D_RUNS_ROOT",
+                               Path(__file__).resolve().parent.parent
+                               / "data" / "runs"))
 
 
 @dataclass(frozen=True)

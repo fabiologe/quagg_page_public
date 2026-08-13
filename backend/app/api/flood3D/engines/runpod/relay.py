@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 from ....flood2D.env_util import env
+from ...core.store import r2_keys
 
 BASIS = "https://api.runpod.ai/v2"
 # Wie oft der Ereignisstrom abgefragt wird. Ein CFD-Lauf dauert Minuten bis
@@ -143,12 +144,12 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
 
     melde(status="building")
     client, bucket, praefix = _r2()
-    eingang = f"{praefix}/eingang/{run_id}.zip"
+    eingang = r2_keys(praefix, run_id).eingang
     # Speicherpunkte: der Laeufer laedt Teilstaende ueber eine vorsignierte
     # PUT-URL hoch (das Foam-Image hat kein boto3); wir holen sie per Key
     # und spielen sie in den Lauf ein. Ohne das war ein Timeout bei Stunde 4
     # von 5 ein Totalverlust, und Ergebnis-3D blieb stundenlang leer.
-    cp_key = f"{praefix}/checkpoints/{run_id}.zip"
+    cp_key = r2_keys(praefix, run_id).checkpoint
     checkpoint = None
     if zwischenstand_cb is not None and checkpoint_s:
         put_url = client.generate_presigned_url(
@@ -177,10 +178,24 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
     if not job_id:
         raise RunPodFehler(f"RunPod hat keinen Job angelegt: {job}")
     melde(status="queued", runpod_job=job_id)
+    return _stream_folgen(client, bucket, praefix, run_id, run_root, job_id,
+                          melde, abbruch_gewuenscht, zwischenstand_cb)
 
+
+def _stream_folgen(client, bucket, praefix, run_id, run_root, job_id,
+                   melde, abbruch_gewuenscht, zwischenstand_cb) -> dict:
+    """
+    DER Verfolger: Ereignisstrom lesen, Manifest/Protokoll fortschreiben,
+    am Ende Artefakte laden und die Transit-Keys wegräumen.
+
+    Frisch-Start und Wiederanknüpfen fuhren vorher je eine HANDKOPIE
+    dieser Schleife — die Kopien drifteten (ev["t"] statt ev["time"],
+    fehlender meshing-Zweig), und einer der Drifts war ein Live-Bug.
+    Deshalb: eine Schleife, zwei Aufrufer.
+    """
+    schluessel = r2_keys(praefix, run_id)
     artefakt_url = None
     fehler = None
-    gesehen = 0
     t0 = time.time()
     protokoll = Path(run_root) / "log.runpod"
     try:
@@ -194,9 +209,7 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
             # verschluckt fast alles (2026-08-12 am ersten Cloud-Lauf
             # gesehen: von den Fortschrittsmeldungen kam nur ein Teil an,
             # die Kernzahl-Zeile fehlte ganz).
-            strom = stand.get("stream", [])
-            gesehen += len(strom)
-            for eintrag in strom:
+            for eintrag in stand.get("stream", []):
                 ev = eintrag.get("output", eintrag)
                 if not isinstance(ev, dict):
                     continue
@@ -207,8 +220,9 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                     _progress_melden(melde, ev)
                 elif art == "checkpoint" and zwischenstand_cb is not None:
                     try:
-                        roh = client.get_object(Bucket=bucket,
-                                                Key=cp_key)["Body"].read()
+                        roh = client.get_object(
+                            Bucket=bucket,
+                            Key=schluessel.checkpoint)["Body"].read()
                         zwischenstand_cb(roh, ev)
                     except Exception as e:   # noqa: BLE001 — Teilstand darf den Lauf nie kippen
                         melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
@@ -244,7 +258,7 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
     finally:
         # Eingang immer wegräumen — R2 kostet je gespeichertem GB, und das
         # Bundle wird nach dem Start nie wieder gebraucht.
-        for key in (eingang, cp_key):
+        for key in (schluessel.eingang, schluessel.checkpoint):
             try:
                 client.delete_object(Bucket=bucket, Key=key)
             except Exception:  # noqa: BLE001 — Aufräumen darf den Lauf nicht kippen
@@ -256,12 +270,11 @@ def wiederanknuepfen(run_id: str, run_root: Path, job_id: str,
     """
     Nach einem API-Neustart an einen noch laufenden RunPod-Job wieder
     anknuepfen: der alte Relay-Thread ist tot, der Job rechnet (und kostet)
-    weiter, das Manifest steht auf solving. Gleiches Verfolgen wie in
-    lauf_starten, nur ohne Bundle und ohne Neueinreichung.
+    weiter, das Manifest steht auf solving. Verfolgt wird über DENSELBEN
+    _stream_folgen wie beim Frisch-Start — nur ohne Bundle und ohne
+    Neueinreichung.
     Wirft RunPodFehler("… unbekannt"), wenn RunPod den Job nicht mehr kennt.
     """
-    import time as _time
-
     ok, grund = konfiguriert()
     if not ok:
         raise RunPodFehler(grund)
@@ -275,65 +288,9 @@ def wiederanknuepfen(run_id: str, run_root: Path, job_id: str,
                            f"{str(stand.get('error'))[:200]}")
 
     client, bucket, praefix = _r2()
-    cp_key = f"{praefix}/checkpoints/{run_id}.zip"
     melde(status="solving", wiederangeknuepft=True)
-    artefakt_url = None
-    fehler = None
-    gesehen = 0
-    t0 = _time.time()
-    protokoll = Path(run_root) / "log.runpod"
-    try:
-        while True:
-            if abbruch_gewuenscht():
-                abbrechen(job_id)
-                raise RunPodFehler("Vom Nutzer abgebrochen")
-            stand = _ruf(f"stream/{job_id}", timeout=90)
-            strom = stand.get("stream", [])
-            gesehen += len(strom)
-            for eintrag in strom:
-                ev = eintrag.get("output", eintrag)
-                if not isinstance(ev, dict):
-                    continue
-                with open(protokoll, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
-                art = ev.get("event")
-                if art == "progress":
-                    _progress_melden(melde, ev)
-                elif art == "checkpoint" and zwischenstand_cb is not None:
-                    try:
-                        roh = client.get_object(Bucket=bucket,
-                                                Key=cp_key)["Body"].read()
-                        zwischenstand_cb(roh, ev)
-                    except Exception as e:   # noqa: BLE001
-                        melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
-                elif art == "error":
-                    fehler = str(ev.get("text"))[:500]
-                    extra = {k: ev[k] for k in ("befunde", "netz") if k in ev}
-                    if extra:
-                        melde(**extra)
-                elif art == "done":
-                    artefakt_url = ev.get("artifactsUrl")
-            zustand = stand.get("status")
-            if zustand in ("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"):
-                if not artefakt_url:
-                    ende = _ruf(f"status/{job_id}")
-                    fehler = fehler or str(ende.get("error") or zustand)[:500]
-                break
-            time.sleep(TAKT_S)
-        if not artefakt_url:
-            raise RunPodFehler(f"Cloud-Lauf ohne Ergebnis: {fehler}")
-        melde(status="downloading")
-        import urllib.request as _ur
-        with _ur.urlopen(artefakt_url, timeout=900) as r:
-            artefakte = r.read()
-        return {"artefakte": artefakte, "job_id": job_id,
-                "dauer_s": round(_time.time() - t0, 1)}
-    finally:
-        for key in (f"{praefix}/eingang/{run_id}.zip", cp_key):
-            try:
-                client.delete_object(Bucket=bucket, Key=key)
-            except Exception:  # noqa: BLE001
-                pass
+    return _stream_folgen(client, bucket, praefix, run_id, run_root, job_id,
+                          melde, abbruch_gewuenscht, zwischenstand_cb)
 
 
 def r2_aufraeumen(max_alter_h: float = 24.0) -> list[str]:
@@ -348,7 +305,10 @@ def r2_aufraeumen(max_alter_h: float = 24.0) -> list[str]:
     """
     import datetime as _dt
 
-    from ...router import read_manifest, run_paths, runs_root
+    # aus core/store — NICHT aus dem Router: das war ein echter
+    # Import-Zyklus (Router importiert r2_aufraeumen), den nur die
+    # Lazy-Imports am Leben hielten
+    from ...core.store import read_manifest, run_paths, runs_root
 
     client, bucket, praefix = _r2()
     grenze = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=max_alter_h)

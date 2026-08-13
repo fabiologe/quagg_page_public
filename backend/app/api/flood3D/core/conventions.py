@@ -81,6 +81,28 @@ def section_normal(polyline) -> tuple[float, float, float]:
     return (dy / length, -dx / length, 0.0)
 
 
+# ── Ereignis-Vokabular des Laeufers ─────────────────────────────────────────
+# local_runner.emit() sendet GENAU diese fuenf Arten als NDJSON-Zeilen;
+# jeder Hop (Worker, Companion, Relay, run_log, Client) reicht sie durch
+# statt zu uebersetzen. Feldnamen sind Vertrag — der Drift-Waechter
+# (test_runpod_relay.test_runner_progress_vokabular_ist_das_erwartete)
+# prueft die Runner-Seite per AST. Ein progress-Ereignis traegt ev["time"],
+# NICHT ev["t"]: genau diese Verwechslung liess letzte_zeit jeden frischen
+# Cloud-Lauf lang leer (Bug 2026-08-13).
+#
+#   log         text
+#   progress    phase (meshing|solving|postprocessing), fraction,
+#               time?, end_time?, eta_s?, elapsed_s?
+#   checkpoint  run_id, letzte_zeit  (Teilstand liegt dann im S3)
+#   done        run_id, artifactsFile→artifactsUrl (Worker signiert um),
+#               sizeBytes
+#   error       text, befunde?, netz?  (Netz-Tor-Abbrueche tragen Zahlen)
+#
+# Vom Client ERFUNDENE Arten (localCompanion.js: 'job', synthetische
+# 'log'/'progress') existieren nur im Browser und duerfen nie hierher.
+LAUF_EREIGNISSE = ("log", "progress", "checkpoint", "done", "error")
+
+
 # Aussennormale je Gebietsflaeche. Positiver Durchfluss heisst damit
 # „verlaesst das Gebiet" — ein Zulauf zaehlt negativ.
 FACE_NORMALS = {
