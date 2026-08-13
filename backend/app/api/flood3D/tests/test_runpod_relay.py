@@ -92,7 +92,8 @@ def test_glatter_lauf_liefert_die_artefakte(welt, monkeypatch):
     _antworten(monkeypatch, [
         {"event": "log", "text": "RunPod-Worker: starte OpenFOAM"},
         {"event": "log", "text": "▶ blockMesh"},
-        {"event": "progress", "t": 2.5},
+        {"event": "progress", "phase": "meshing", "fraction": 0.0},
+        {"event": "progress", "phase": "solving", "time": 2.5},
         {"event": "done", "artifactsUrl": "https://r2.example/job-1/artifacts.zip"},
     ])
     _lade(monkeypatch)
@@ -111,7 +112,7 @@ def test_glatter_lauf_liefert_die_artefakte(welt, monkeypatch):
     assert "flood3d/eingang/demo_r001.zip" in welt["r2"].geloescht
     # der Ereignisstrom liegt als Protokoll im Lauf
     zeilen = (welt["run_root"] / "log.runpod").read_text().splitlines()
-    assert len(zeilen) == 4 and json.loads(zeilen[0])["event"] == "log"
+    assert len(zeilen) == 5 and json.loads(zeilen[0])["event"] == "log"
 
 
 def test_completed_ohne_ergebnis_ist_ein_fehler(welt, monkeypatch):
@@ -465,6 +466,76 @@ def test_wiederanknuepfen_unbekannter_job(tmp_path, monkeypatch):
     with pytest.raises(relay.RunPodFehler, match="unbekannt"):
         relay.wiederanknuepfen("demo_r001", tmp_path, "job-weg",
                                lambda **f: None, lambda: False)
+
+
+def test_progress_felder_driften_nicht(tmp_path, monkeypatch, welt):
+    """
+    Drift-Wächter (Bug vom 2026-08-13): der Frisch-Pfad las ev["t"], der
+    Runner sendet time= — letzte_zeit blieb jeden Cloud-Lauf lang None.
+    Hier läuft DASSELBE progress-Ereignis (Feldnamen exakt wie
+    local_runner.emit) durch BEIDE Verfolger; beide müssen letzte_zeit
+    und die Phase liefern.
+    """
+    ev_meshing = {"event": "progress", "phase": "meshing", "fraction": 0.0}
+    ev_solving = {"event": "progress", "phase": "solving", "time": 3.25,
+                  "end_time": 6.5, "eta_s": 10, "elapsed_s": 2,
+                  "fraction": 0.5}
+    done = {"event": "done", "artifactsUrl": "https://r2.example/a.zip"}
+    _lade(monkeypatch)
+
+    # Frisch-Start
+    _antworten(monkeypatch, [ev_meshing, ev_solving, done])
+    frisch = []
+    relay.lauf_starten(object(), welt["case_dir"], "demo_r001",
+                       welt["run_root"], lambda **f: frisch.append(f),
+                       lambda: False)
+    # Wiederanknüpfen
+    antworten = iter([
+        {"status": "IN_PROGRESS"},
+        {"stream": [{"output": ev_meshing}], "status": "IN_PROGRESS"},
+        {"stream": [{"output": ev_solving}], "status": "IN_PROGRESS"},
+        {"stream": [{"output": done}], "status": "COMPLETED"},
+    ])
+    monkeypatch.setattr(relay, "_ruf",
+                        lambda pfad, body=None, timeout=60.0: next(antworten))
+    (tmp_path / "r").mkdir()
+    wieder = []
+    relay.wiederanknuepfen("demo_r001", tmp_path / "r", "job-alt",
+                           lambda **f: wieder.append(f), lambda: False)
+
+    for name, meldungen in (("frisch", frisch), ("wieder", wieder)):
+        assert any(f.get("status") == "meshing" for f in meldungen), name
+        assert any(f.get("letzte_zeit") == 3.25 for f in meldungen), name
+        # meshing-progress (ohne time) darf letzte_zeit nicht auf None setzen
+        assert all("letzte_zeit" not in f or f["letzte_zeit"] is not None
+                   for f in meldungen), name
+
+
+def test_runner_progress_vokabular_ist_das_erwartete():
+    """
+    Gegenseite des Drift-Wächters: local_runner.emit(event="progress", …)
+    muss weiterhin phase= und time= heißen (nicht t=). Geprüft über den
+    AST, nicht über Quelltext-Substrings.
+    """
+    import ast
+    import inspect
+
+    from ..engines.local import local_runner
+
+    baum = ast.parse(inspect.getsource(local_runner))
+    progress_felder = []
+    for knoten in ast.walk(baum):
+        if (isinstance(knoten, ast.Call)
+                and getattr(knoten.func, "id", "") == "emit"
+                and any(k.arg == "event"
+                        and isinstance(k.value, ast.Constant)
+                        and k.value.value == "progress"
+                        for k in knoten.keywords)):
+            progress_felder.append({k.arg for k in knoten.keywords})
+    assert progress_felder, "kein emit(event='progress', …) mehr gefunden?"
+    assert all("phase" in felder for felder in progress_felder)
+    assert any("time" in felder for felder in progress_felder)
+    assert all("t" not in felder for felder in progress_felder)
 
 
 def test_archiv_waechter_verschiebt_alte_laeufe(tmp_path, monkeypatch):

@@ -6,6 +6,7 @@ export const QUANTITY_LABELS = {
   courant: 'Courant-Zahl', timestep: 'Zeitschrittweite',
   continuity: 'Kontinuitätsfehler', bed_shear: 'Sohlschubspannung',
   energy_head: 'Energiehöhe', overfall_cd: 'Überfallbeiwert',
+  tracer: 'Tracer-Konzentration',
 }
 
 export const KIND_LABELS = {
@@ -14,6 +15,8 @@ export const KIND_LABELS = {
   max_bed_shear: 'Sohlensicherung (max. Sohlschub)',
   head_difference: 'Örtliche Verlusthöhe',
   overfall_cd: 'Überfallbeiwert C_d',
+  massenbilanz: 'Massenbilanz', kurzschluss: 'Kurzschluss-Anteil',
+  verweilzeit_min: 'Mindest-Verweilzeit',
 }
 
 export const STAT_LABELS = {

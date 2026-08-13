@@ -208,7 +208,7 @@
             <a href="#" @click.prevent="lokal.companionPruefen(true)">erneut suchen</a>.
           </p>
         </div>
-        <!-- `store.loading` sperrt den SERVERlauf-Doppelklick; `lokal.laeuft`
+        <!-- `store.loading` sperrt den Cloud-Doppelklick; `lokal.laeuft`
              kommt aus dem Store und uebersteht damit auch ein Neu-Mounten
              des Panels (frueher: Doppelstart nach Phasenwechsel) -->
         <button class="f3d-btn f3d-btn-run f3d-cta"

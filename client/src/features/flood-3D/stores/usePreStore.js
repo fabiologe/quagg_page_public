@@ -709,20 +709,18 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
     },
 
-    async startRun(ort = 'server') {
+    async startRun(ort = 'runpod') {
       // `loading` ist hier kein Schönheitsfehler: ohne die Sperre startet
       // ein Doppelklick ZWEI Läufe — und ein Lauf kostet Rechenzeit und
-      // Geld. Der Knopf war bisher nur gegen den LOKALEN Lauf gesperrt,
-      // und `localRunning` ist beim Serverlauf immer false.
+      // Geld.
       if (this.loading) return
       this.loading = true
       this.error = ''
       try {
         if (this.dirty) await this.saveCase()
         await flood3dApi.startRun(this.activeCaseId, ort)
-        this.melden(ort === 'runpod'
-          ? 'Cloud-Lauf gestartet — der Server begleitet ihn, du kannst die Seite verlassen'
-          : 'Lauf gestartet', 'erfolg')
+        this.melden('Cloud-Lauf gestartet — der Server begleitet ihn, '
+          + 'du kannst die Seite verlassen', 'erfolg')
         this.activePhase = 'laeufe'          // dem Lauf direkt zuschauen
         await this.loadCaseRuns()
       } catch (e) {

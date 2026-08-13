@@ -86,11 +86,6 @@ export const useLocalRunStore = defineStore('flood3d-local-run', {
       this.companion = await companionHealth()
       this.offeneLaeufe = await unterbrocheneLaeufe()
       if (autoSelect && this.companion?.foamSupported) this.rechenort = 'local'
-      // Der Server-Rechenort ist Geschichte — Altzustand migrieren:
-      // Companion da -> lokal, sonst Cloud
-      if (this.rechenort === 'server') {
-        this.rechenort = this.companion?.foamSupported ? 'local' : 'runpod'
-      }
     },
 
     async starten(caseId) {

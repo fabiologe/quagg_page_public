@@ -36,6 +36,19 @@ describe('Kosten-Gate', () => {
     }
   })
 
+  it('startet ohne ort-Angabe in der Cloud, nie auf dem toten Server-Rechenort', async () => {
+    // Der Server-Rechenort liefert seit Stage B HTTP 410 — ein Default
+    // 'server' wäre eine stille Falle für jeden Aufrufer ohne Argument.
+    vi.stubGlobal('prompt', vi.fn().mockReturnValue('geheim'))
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValue(antwort(true, { run_id: 'demo_r001' }))
+
+    await flood3dApi.startRun('demo')
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
+    expect(body.ort).toBe('runpod')
+  })
+
   it('startet nichts, wenn die Eingabe abgebrochen wird', async () => {
     vi.stubGlobal('prompt', vi.fn().mockReturnValue(null))
     const fetchSpy = vi.spyOn(globalThis, 'fetch')

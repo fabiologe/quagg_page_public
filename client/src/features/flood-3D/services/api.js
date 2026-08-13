@@ -179,9 +179,9 @@ export const flood3dApi = {
   meshPreview: (caseId, opts = {}) =>
     mitGate(() => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts)),
   caseMeshSurface: (caseId) => getJson(`/cases/${caseId}/mesh-surface`),
-  // ort: 'server' (Serverkerne) oder 'runpod' (Cloud) — der lokale Lauf
-  // geht nicht hierüber, der holt sich ein Bundle
-  startRun: (caseId, ort = 'server') =>
+  // ort: 'runpod' (Cloud) — der Server-Rechenort ist Geschichte (HTTP 410);
+  // der lokale Lauf geht nicht hierüber, der holt sich ein Bundle
+  startRun: (caseId, ort = 'runpod') =>
     mitGate(() => sendJson('/runs', 'POST', { case_id: caseId, ort })),
   caseBundle: (caseId) => mitGate(async () => {
     const res = await fetch(`${BASE}/cases/${caseId}/bundle`,

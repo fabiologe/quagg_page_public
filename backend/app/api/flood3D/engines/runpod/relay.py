@@ -106,6 +106,22 @@ def abbrechen(job_id: str) -> None:
 
 
 # ── Ablauf ──────────────────────────────────────────────────────────────────
+# Runner-Phase → Manifest-Status. Der Runner (local_runner.emit) sendet
+# progress-Ereignisse mit phase= und time= — hier ist die EINE Übersetzung
+# für beide Verfolger (Frisch-Start und Wiederanknüpfen). Vorher waren es
+# zwei Hand-Kopien, und eine las ev["t"] statt ev["time"]: letzte_zeit
+# blieb jeden frischen Cloud-Lauf lang None (gefunden 2026-08-13).
+_PHASE_STATUS = {"meshing": "meshing", "solving": "solving",
+                 "postprocessing": "extracting"}
+
+
+def _progress_melden(melde, ev: dict) -> None:
+    felder = {"status": _PHASE_STATUS.get(ev.get("phase"), "solving")}
+    if ev.get("time") is not None:
+        felder["letzte_zeit"] = ev.get("time")
+    melde(**felder)
+
+
 def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                  melde, abbruch_gewuenscht, cores: int | None = None,
                  checkpoint_s: int | None = 600,
@@ -187,10 +203,8 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                 with open(protokoll, "a", encoding="utf-8") as f:
                     f.write(json.dumps(ev, ensure_ascii=False) + "\n")
                 art = ev.get("event")
-                if art == "log" and "blockMesh" in str(ev.get("text", "")):
-                    melde(status="meshing")
-                elif art == "progress":
-                    melde(status="solving", letzte_zeit=ev.get("t"))
+                if art == "progress":
+                    _progress_melden(melde, ev)
                 elif art == "checkpoint" and zwischenstand_cb is not None:
                     try:
                         roh = client.get_object(Bucket=bucket,
@@ -284,7 +298,7 @@ def wiederanknuepfen(run_id: str, run_root: Path, job_id: str,
                     f.write(json.dumps(ev, ensure_ascii=False) + "\n")
                 art = ev.get("event")
                 if art == "progress":
-                    melde(status="solving", letzte_zeit=ev.get("time"))
+                    _progress_melden(melde, ev)
                 elif art == "checkpoint" and zwischenstand_cb is not None:
                     try:
                         roh = client.get_object(Bucket=bucket,
