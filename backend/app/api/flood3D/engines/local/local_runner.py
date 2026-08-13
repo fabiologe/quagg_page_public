@@ -962,7 +962,10 @@ def main() -> int:
         manifest.setdefault("befunde", []).extend(
             befunde_ableiten(result.get("quality") or {}, manifest))
         render_run(result, df, spec, job)
-        (job / "manifest.json").write_text(json.dumps(manifest))
+        # gleiches Format wie der Server-Schreiber (core/store.py) — der
+        # Container ist der einzige Schreiber hier, ein Lock braucht er nicht
+        (job / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False))
 
         # ---- Artefakte paketieren ----------------------------------------
         art = results / "artifacts.zip"

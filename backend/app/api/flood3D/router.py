@@ -28,19 +28,20 @@ import pandas as pd
 from fastapi import (APIRouter, Body, Depends, HTTPException, Query, Request,
                      Response)
 
-from .core.gate import schreib_gate
+from .gate import schreib_gate
 from fastapi.responses import FileResponse
 
 from .core import fields as vol_fields
 from .core.casespec import CaseSpec, migriere
 from .core.normalize import get_series, list_series
 from .core.solids import build_solids
-from .core.store import read_manifest, run_paths
+from .core.store import (lauf_reservieren, manifest_schreiben,
+                         read_manifest, run_paths)
 from .core.terrain import TerrainField
 from .core.validate import validate_case
 
 # Kosten- und Schreib-Gate an EINER Stelle: jede schreibende Anfrage muss das
-# Passwort tragen (core/gate.py). Am Router statt an 22 Endpunkten — damit ist
+# Passwort tragen (gate.py). Am Router statt an 22 Endpunkten — damit ist
 # auch der nächste neue Endpunkt geschützt, ohne dass jemand daran denkt.
 router = APIRouter(dependencies=[Depends(schreib_gate)])
 
@@ -232,7 +233,7 @@ async def run_archivieren(run_id: str, request: Request):
     Läufe verschieben.
     """
     from .core.archiv import ArchivFehler, archivieren
-    from .core.gate import pruefe_kosten_gate
+    from .gate import pruefe_kosten_gate
 
     pruefe_kosten_gate(request)
     paths = _paths(run_id)
@@ -254,7 +255,7 @@ async def run_archivieren(run_id: str, request: Request):
 async def run_wiederherstellen(run_id: str, request: Request):
     """Ausgelagerten Lauf zurückholen — nötig für 3D-Felder und Abbildungen."""
     from .core.archiv import ArchivFehler, wiederherstellen
-    from .core.gate import pruefe_kosten_gate
+    from .gate import pruefe_kosten_gate
 
     pruefe_kosten_gate(request)
     root = runs_root().resolve()
@@ -1336,7 +1337,7 @@ async def case_mesh_preview(case_id: str, request: Request,
     gekennzeichnet.
     """
     from .core.casebuilder import build_case
-    from .core.gate import pruefe_kosten_gate
+    from .gate import pruefe_kosten_gate
     from .core.runner import FoamError, mesh_preview
 
     # Kosten-Gate: die Vorschau vernetzt wirklich (Minuten Serverzeit)
@@ -1416,19 +1417,13 @@ async def case_bundle(case_id: str, request: Request):
     zurück — die Ergebnis-Phase merkt keinen Unterschied zum Serverlauf.
     """
     from .core.bundle import BundleFehler, bundle_bauen
-    from .core.gate import pruefe_kosten_gate
+    from .gate import pruefe_kosten_gate
 
     # Kosten-Gate: baut den Fall serverseitig und reserviert eine run_id
     pruefe_kosten_gate(request)
 
     spec, d = _load_case(case_id)
-    root = runs_root()
-    root.mkdir(parents=True, exist_ok=True)
-    n = 1
-    while (root / f"{case_id}_r{n:03d}").exists():
-        n += 1
-    run_id = f"{case_id}_r{n:03d}"
-    run_root = root / run_id
+    run_id, run_root = lauf_reservieren(runs_root(), case_id)
 
     # Speicherpunkte auch fuer den LOKALEN Weg (Wunsch 2026-08-12): der
     # Laeufer laedt Teilstaende auf S3 hoch, der Browser stoesst beim
@@ -1461,13 +1456,13 @@ async def case_bundle(case_id: str, request: Request):
     try:
         data = bundle_bauen(spec, d, run_id, checkpoint=checkpoint)
     except BundleFehler as e:
+        # Reservierung zurückgeben — sonst bleibt ein leerer „lokal"-Lauf
+        # in der Liste stehen (genau die Leichen der Putzrunde 2026-08-13)
+        shutil.rmtree(run_root, ignore_errors=True)
         raise HTTPException(status_code=422, detail=str(e))
 
-    # run_id erst NACH erfolgreichem Bau reservieren
-    run_root.mkdir()
-    (run_root / "manifest.json").write_text(json.dumps({
-        "status": "lokal", "origin": "companion",
-        "title": spec.meta.title, "created": time.time()}))
+    manifest_schreiben(run_root, status="lokal", origin="companion",
+                       title=spec.meta.title, created=time.time())
     return Response(content=data, media_type="application/zip",
                     headers={"X-F3D-Run-Id": run_id,
                              "Access-Control-Expose-Headers": "X-F3D-Run-Id"})
@@ -1564,7 +1559,7 @@ async def start_run(request: Request, payload: dict = Body(...)):
     """Lauf starten (Spez. Kap. 9); die Pipeline läuft im Hintergrund."""
     import threading
 
-    from .core.gate import pruefe_kosten_gate
+    from .gate import pruefe_kosten_gate
 
     # Kosten-Gate VOR allem anderen: ein Lauf bindet Server-Kerne (und ueber
     # RunPod echtes Geld). Oeffentliche API — Oberflaeche umgehen zaehlt nicht.
@@ -1596,25 +1591,11 @@ async def start_run(request: Request, payload: dict = Body(...)):
             detail="Der Fall hat Fehler-Befunde: "
                    + " | ".join(b["message"] for b in fehler[:5]))
 
-    root = runs_root()
-    root.mkdir(parents=True, exist_ok=True)
-    n = 1
-    while (root / f"{case_id}_r{n:03d}").exists():
-        n += 1
-    run_id = f"{case_id}_r{n:03d}"
-    run_root = root / run_id
+    run_id, run_root = lauf_reservieren(runs_root(), case_id)
 
     def melde(**felder):
-        """Manifest fortschreiben (der Cloud-Weg hat keinen run_pipeline)."""
-        pfad = run_root / "manifest.json"
-        m = {}
-        if pfad.is_file():
-            try:
-                m = json.loads(pfad.read_text())
-            except Exception:                    # noqa: BLE001
-                m = {}
-        m.update(felder)
-        pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+        """Manifest fortschreiben — gelockt und atomar (core/store)."""
+        manifest_schreiben(run_root, **felder)
 
     def work_runpod():
         """
@@ -1733,10 +1714,9 @@ async def abort_run(run_id: str):
         # kein Container, kein Thread: der Lauf ist verwaist (z. B. nach
         # einem API-Neustart) — Status direkt ehrlich machen
         (run_root / "ABBRUCH").unlink(missing_ok=True)
-        m = json.loads(manifest_pfad.read_text()) if manifest_pfad.is_file() else {}
-        m.update({"status": "abgebrochen", "error": "Vom Nutzer abgebrochen "
-                  "(Lauf war verwaist)", "finished": time.time()})
-        manifest_pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+        manifest_schreiben(run_root, status="abgebrochen",
+                           error="Vom Nutzer abgebrochen (Lauf war verwaist)",
+                           finished=time.time())
     return {"run_id": run_id, "gestoppte_container": len(gestoppt)}
 
 
@@ -1808,9 +1788,12 @@ def teilstaende_einsammeln() -> list[str]:
             if marke and marke == m.get("teilstand_stand"):
                 continue   # schon eingespielt
             _import_entpacken(d, run_id, antwort["Body"].read())
-            m.update({"teilstand": True, "teilstand_stand": marke,
-                      "teilstand_quelle": "s3-waechter"})
-            mp.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+            # status="lokal" ausdruecklich zuruecksetzen: das eingespielte
+            # Archiv bringt ein eigenes Manifest mit — ein TEILSTAND macht
+            # den Lauf aber nicht fertig, er rechnet ja noch
+            manifest_schreiben(d, status="lokal", teilstand=True,
+                               teilstand_stand=marke,
+                               teilstand_quelle="s3-waechter")
             eingesammelt.append(run_id)
         except Exception:  # noqa: BLE001 — auch kein Teilstand: naechster Lauf
             pass
@@ -1889,15 +1872,7 @@ def relays_wiederanknuepfen() -> list[str]:
         run_root = d
 
         def melde(_root=run_root, **felder):
-            pfad = _root / "manifest.json"
-            mm = {}
-            if pfad.is_file():
-                try:
-                    mm = json.loads(pfad.read_text())
-                except Exception:  # noqa: BLE001
-                    mm = {}
-            mm.update(felder)
-            pfad.write_text(json.dumps(mm, indent=2, ensure_ascii=False))
+            manifest_schreiben(_root, **felder)
 
         if not job_id:
             melde(status="failed", finished=time.time(),
@@ -2020,17 +1995,9 @@ async def run_teilstand(run_id: str, payload: dict | None = Body(None)):
                             detail="Kein Teilstand hinterlegt (noch keiner "
                                    "hochgeladen oder schon eingespielt und geloescht)")
     _import_entpacken(run_root, run_id, daten)
-    pfad = run_root / "manifest.json"
-    m = {}
-    if pfad.is_file():
-        try:
-            m = json.loads(pfad.read_text())
-        except Exception:  # noqa: BLE001
-            m = {}
-    m.update({"teilstand": True,
-              "teilstand_zeiten": (payload or {}).get("zeiten"),
-              "letzte_zeit": (payload or {}).get("letzte_zeit")})
-    pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+    m = manifest_schreiben(run_root, teilstand=True,
+                           teilstand_zeiten=(payload or {}).get("zeiten"),
+                           letzte_zeit=(payload or {}).get("letzte_zeit"))
     return {"run_id": run_id, "teilstand_zeiten": m.get("teilstand_zeiten")}
 
 

@@ -21,7 +21,7 @@ Rezepte, Importe, Löschen, Archivieren. **Lesen bleibt frei**: Ansehen
 kostet nichts, und eine Ergebnisansicht soll ohne Hürde teilbar bleiben.
 
 Die Sperre hängt als Abhängigkeit am **Router**, nicht an 22 einzelnen
-Endpunkten (`core/gate.py::schreib_gate`) — so ist auch der nächste neue
+Endpunkten (`flood3D/gate.py::schreib_gate`) — so ist auch der nächste neue
 Endpunkt geschützt, ohne dass jemand daran denken muss.
 
 - Passwort: `FLOOD3D_LAUNCH_PASSWORD` in `backend/.env`, ersatzweise

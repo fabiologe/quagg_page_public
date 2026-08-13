@@ -32,6 +32,34 @@ class BundleFehler(ValueError):
     """Vorhersehbar: fehlende Datendateien oder Geometrieprobleme."""
 
 
+def runtime_baum_kopieren(case_out: Path) -> Path:
+    """
+    Den mitreisenden Code (``quagg_runtime/flood3D``) unter ``case_out``
+    ablegen: ``__init__.py``, der GANZE ``core/``-Baum und der Runner.
+
+    Eigene Funktion, weil der Bundle-Wächter-Test GENAU diesen Baum in
+    einer Container-Simulation importiert — Bundle und Test dürfen nie
+    zwei verschiedene Vorstellungen davon haben, was verschifft wird.
+    Vertrag des Baums: importierbar mit ``flood3D`` als Top-Level und
+    OHNE fastapi/boto3 (der Container hat nur numpy scipy pandas pyarrow
+    matplotlib pyyaml pydantic shapely trimesh).
+    """
+    hier = Path(__file__).resolve().parent.parent          # …/flood3D
+    rt = Path(case_out) / "quagg_runtime" / "flood3D"
+    rt.mkdir(parents=True)
+    shutil.copy2(hier / "__init__.py", rt / "__init__.py")
+    # der GANZE Core-Baum: core/extract ist ein Unterpaket, ohne das
+    # bricht der Nachlauf mit ModuleNotFoundError ab
+    shutil.copytree(hier / "core", rt / "core",
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    # der Runner reist mit (local_runner._runner_uebergabe übernimmt ihn)
+    eng = rt / "engines" / "local"
+    eng.mkdir(parents=True)
+    shutil.copy2(hier / "engines" / "local" / "local_runner.py",
+                 eng / "local_runner.py")
+    return rt
+
+
 def fehlende_dateien(spec, case_dir: Path) -> list[str]:
     """
     Relativ referenzierte Dateien, die neben dem Fall fehlen.
@@ -83,19 +111,7 @@ def bundle_bauen(spec, case_dir: Path, run_id: str,
             ziel.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(case_dir / name, ziel)
 
-        hier = Path(__file__).resolve().parent.parent      # …/flood3D
-        rt = case_out / "quagg_runtime" / "flood3D"
-        rt.mkdir(parents=True)
-        shutil.copy2(hier / "__init__.py", rt / "__init__.py")
-        # der GANZE Core-Baum: core/extract ist ein Unterpaket, ohne das
-        # bricht der Nachlauf mit ModuleNotFoundError ab
-        shutil.copytree(hier / "core", rt / "core",
-                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        # der Runner reist mit (local_runner._runner_uebergabe übernimmt ihn)
-        eng = rt / "engines" / "local"
-        eng.mkdir(parents=True)
-        shutil.copy2(hier / "engines" / "local" / "local_runner.py",
-                     eng / "local_runner.py")
+        runtime_baum_kopieren(case_out)
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

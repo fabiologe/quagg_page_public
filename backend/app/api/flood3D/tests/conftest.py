@@ -1,7 +1,7 @@
 """
 Gemeinsame Testvoraussetzungen.
 
-Das Kosten-Gate (core/gate.py) sperrt Läufe, solange kein Passwort
+Das Kosten-Gate (gate.py) sperrt Läufe, solange kein Passwort
 konfiguriert ist — absichtlich fail-closed, damit ein vergessenes Passwort
 nicht zum offenen Scheunentor wird. Für die Testsuite wird es ausdrücklich
 abgeschaltet; die Gate-Tests selbst schalten es gezielt wieder ein.

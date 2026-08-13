@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ..core import gate
+from .. import gate
 from ..router import router
 from .synthetic_case import build_spec_stage3
 

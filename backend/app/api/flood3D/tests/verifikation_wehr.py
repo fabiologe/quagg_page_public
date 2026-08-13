@@ -94,6 +94,7 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
 
     import pandas as pd
 
+    from ..core.store import manifest_schreiben
     from ..engines.runpod.relay import lauf_starten
     from ..router import _import_entpacken, cases_root, runs_root
 
@@ -117,10 +118,7 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
     run_root.mkdir(parents=True, exist_ok=True)
 
     def _melde(**felder):
-        pfad = run_root / "manifest.json"
-        m = json.loads(pfad.read_text()) if pfad.is_file() else {}
-        m.update(felder)
-        pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
+        manifest_schreiben(run_root, **felder)
 
     _melde(status="building", origin="runpod", title=spec.meta.title,
            created=time.time())
