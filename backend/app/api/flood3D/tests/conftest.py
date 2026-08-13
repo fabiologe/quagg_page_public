@@ -20,6 +20,10 @@ def _gate_aus(monkeypatch):
     # Umgebungswerte gewinnen gegen die .env — relay.konfiguriert() sagt
     # dann sauber "nicht eingerichtet". Relay-Tests patchen konfiguriert
     # selbst und bleiben unberuehrt.
-    monkeypatch.setenv("FLOOD3D_POD_ENDPOINT", "")
-    monkeypatch.setenv("FLOOD3D_POD_API_KEY", "")
+    # Einzige Ausnahme: der ausdruecklich freigeschaltete Verifikationslauf
+    # (FLOOD3D_VERIFIKATION=1 setzt nur ein Mensch von Hand) DARF in die
+    # Cloud — genau dafuer existiert er.
+    if os.environ.get("FLOOD3D_VERIFIKATION") != "1":
+        monkeypatch.setenv("FLOOD3D_POD_ENDPOINT", "")
+        monkeypatch.setenv("FLOOD3D_POD_API_KEY", "")
     yield

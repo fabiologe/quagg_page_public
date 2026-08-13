@@ -254,12 +254,19 @@ Fälle sind zusammen 19 MB und bleiben lokal.
 ## Physikalische Verifikation
 
 - `FLOOD3D_VERIFIKATION=1 venv/bin/python -m pytest app/api/flood3D/tests/test_verifikation.py -q`
-  (im backend/-Ordner; ~1 h auf 4 Kernen). Nach jeder Änderung an
-  casebuilder/meshgen/solids und vor jedem Release/Tag ausführen.
+  (im backend/-Ordner). Rechnet seit Stage B auf dem ECHTEN Rechenort
+  RunPod (16 Threads, ~17 min, ~0,1 €, 2-h-Deckel je Job) — die
+  Kreditkarten-Sperre der Testsuite hat dafür genau eine Ausnahme:
+  `FLOOD3D_VERIFIKATION=1` lässt die Zugangsdaten stehen. Nach jeder
+  Änderung an casebuilder/meshgen/solids und vor jedem Release/Tag
+  ausführen. Nur EINEN Treiber starten (gleiche run_id + gleiche
+  R2-Schlüssel — zwei parallele Treiber zerschießen sich gegenseitig).
 - Ergebnis: Karte „Physikalische Verifikation" in der Phase Simulation;
   der Lauf selbst ist als Projekt `verifikation-wehr` im Werkzeug anwählbar.
-- Referenz: C_d = 0,644 ± 10 % (eingefroren 2026-08-11), zweite Schranke
-  Literaturband 0,50–0,80.
+- Referenz: C_d = 0,644 ± 10 % (eingefroren 2026-08-11, damals Server
+  4 Kerne). Auf RunPod mit dem deterministischen 8-Ränge-Netz bestätigt
+  2026-08-13: identische Netz-Identität (20.896 Zellen · 847b909fb0b3),
+  C_d = 0,6326 — im Band. Zweite Schranke Literaturband 0,50–0,80.
 
 ## Releases
 

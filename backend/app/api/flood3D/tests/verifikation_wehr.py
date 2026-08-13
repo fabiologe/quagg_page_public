@@ -125,7 +125,7 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
     _melde(status="building", origin="runpod", title=spec.meta.title,
            created=time.time())
     erg = lauf_starten(spec, fall_dir, run_id, run_root, _melde,
-                       lambda: False, cores=16)
+                       lambda: False, cores=16, max_laufzeit_s=7200)
     _import_entpacken(run_root, run_id, erg["artefakte"])
     _melde(status="completed", finished=time.time(),
            duration_s=erg["dauer_s"], runpod_job=erg["job_id"])
