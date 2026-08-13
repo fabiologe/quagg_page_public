@@ -94,8 +94,8 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
 
     import pandas as pd
 
-    from ..core.runner import run_pipeline
-    from ..router import cases_root, runs_root
+    from ..engines.runpod.relay import lauf_starten
+    from ..router import _import_entpacken, cases_root, runs_root
 
     spec = referenz_spec()
     # Fall in die normale Fallablage (Projektliste)
