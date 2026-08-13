@@ -14,4 +14,12 @@ import pytest
 @pytest.fixture(autouse=True)
 def _gate_aus(monkeypatch):
     monkeypatch.setenv("FLOOD3D_GATE_OFF", "1")
+    # KREDITKARTEN-SPERRE: seit ort-Default 'runpod' wuerde ein Test, der
+    # POST /runs mit gueltigem Passwort trifft, einen ECHTEN Cloud-Job mit
+    # echten Zugangsdaten starten (env_util liest backend/.env!). Leere
+    # Umgebungswerte gewinnen gegen die .env — relay.konfiguriert() sagt
+    # dann sauber "nicht eingerichtet". Relay-Tests patchen konfiguriert
+    # selbst und bleiben unberuehrt.
+    monkeypatch.setenv("FLOOD3D_POD_ENDPOINT", "")
+    monkeypatch.setenv("FLOOD3D_POD_API_KEY", "")
     yield

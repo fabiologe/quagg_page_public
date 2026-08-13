@@ -823,13 +823,17 @@ def main() -> int:
         # (r007 rechnete 2,5 h auf Schiefe 7,2 — nie wieder). Befunde reisen
         # im error-Ereignis mit, damit der Server sie ins Manifest schreibt.
         if not fortsetzen:
-            from flood3D.core.gate import NetzTorFehler, netz_tor
+            from flood3D.core.meshgen import NetzTorFehler, netz_tor
             vorschau = None
             vp = case / "mesh_preview.json"
             if vp.is_file():
                 try:
                     vorschau = json.loads(vp.read_text())
                 except (OSError, json.JSONDecodeError):
+                    vorschau = None
+                # Eine Vorschau zu einem ANDEREN Netzstand sagt nichts —
+                # nur vergleichen, wenn ihr netz_hash zum Fall passt
+                if vorschau and vorschau.get("netz_hash") != netz_info["netz_hash"]:
                     vorschau = None
             try:
                 netz_befunde = netz_tor(cm, vorschau)

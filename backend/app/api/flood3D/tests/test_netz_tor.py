@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from ..core.evaluate import befunde_ableiten
-from ..core.gate import NetzTorFehler, netz_tor
+from ..core.meshgen import NetzTorFehler, netz_tor
 
 GUT = {"cells": 317375, "points": 400000, "max_non_ortho": 64.5,
        "max_skewness": 3.66, "checkmesh_ok": True}
