@@ -160,73 +160,271 @@ von `env_util` mit flood2D (fasst flood2D an — separater Entscheid).
 
 ---
 
-# Fahrplan (Stufen 0–6, jede einzeln lieferbar, Suite als Tor)
+# Developer-Fahrplan: der Umbau, Pipeline für Pipeline
 
-## Stufe 0 — Sofortfixe *(erledigt in dieser Sitzung)*
-1. **B1:** `relay.py` liest `time` statt `t`; frischer Pfad bekommt den
-   strukturierten `phase`-Zweig (statt blockMesh-Substring-Schnüffeln).
-   Drift-Wächter-Test pinnt die Event-Feldnamen des Runners gegen BEIDE
-   Relay-Leser.
-2. **B2:** `ort`-Defaults auf `'runpod'`; toter Migrationszweig und
-   Stale-Kommentare raus.
-3. `labels.js`: `tracer` + fehlende Target-Kinds.
+Vier Fragen an jede Pipeline: **Was ist ihr Nutzen? Was ist ihr Ziel?
+Was ist zu komplex für den Nutzen? Wie wird konkret umgebaut?**
+Grundregel des ganzen Umbaus: kein Verhalten ändern außer den benannten
+Bugs — die Suiten (607 pytest / 126 vitest) sind das Tor jeder Welle.
 
-## Stufe 1 — Bundle-Vertrag absichern (Z1)
-- `core/gate.py` → `flood3D/gate.py` (neben router.py; einziger
-  Importer ist der Router). `core/` ist danach framework-frei.
-- **Wächter-Test:** Bundle in Temp-Verzeichnis entpacken, `flood3D` als
-  Top-Level, jedes verschiffte Modul im Subprozess importieren (ohne
-  fastapi/boto3). Muss auf heutigem Stand ROT sein (gate.py), grün nach
-  dem Umzug — der Test, der den Container-Crash der Zukunft fängt.
-- `make_beispiele.py` löschen.
+> **Stufe 0 (Sofortfixe) ist ERLEDIGT** — Commit `2c7c680`, 2026-08-13:
+> Relay liest `time` statt `t` (EIN `_progress_melden` für beide
+> Verfolger + 2 Drift-Wächter-Tests), `ort`-Default `'runpod'`,
+> Labels ergänzt.
 
-## Stufe 2 — EIN Manifest-Schreiber (Z2)
-- `core/store.py`: `manifest_schreiben(run_root, **felder)` — fcntl-Lock
-  + tmp-Datei + `os.replace`, einheitliches Format. Alle 7 Stellen
-  umstellen (Container-Seite ohne Lock, nur atomar). Test: 2 Threads ×
-  100 Updates, kein Feld verloren.
-- Laufnummern-Reservierung per atomarem `mkdir` in einem Helfer
-  (ersetzt beide Kopien).
+---
 
-## Stufe 3 — Totcode raus, Relay entwirren (Z3, Z5)
-- `run_pipeline` + tote Äste löschen; tote Env-Vars aus Code und Doku.
-- Relay importiert aus `core.store` statt aus dem Router (Zyklus weg);
-  `runs_root()`-Pfadpolitik zieht nach `core/store.py`.
-- EINE `_stream_folgen(...)`-Funktion für Frisch-Start UND Reattach —
-  löscht die Drift-Quelle von B1 dauerhaft.
-- `r2_keys(run_id)`-Helfer statt f-Strings in 4 Dateien.
+## P1 Modell-Pipeline — Spec → validate → casebuilder → Foam-Fall
 
-## Stufe 4 — Die zwei Monolithen schneiden (Z4 + Router)
-- `validate_case` → Prüffamilien `_pruefe_*(spec)` + Registry-Liste;
-  verhaltensgleich, bestehende Tests als Netz.
-- `router.py` dritteln: HTTP bleibt, `laufwerk.py` bekommt
-  Lauf-Orchestrierung + Wächter-Daemons + `_active_runs`, Pfad-Politik
-  nach `core/store.py`. S3-Zugriffe des Routers hinter Relay-Funktionen.
-- Gemeinsamer Befund-Konstruktor (heute 3 lokale `def b(...)`).
+**Nutzen:** Das ist das Produkt. Ein Ingenieur beschreibt den Fall
+deklarativ (case.yaml), das Werkzeug baut daraus einen reproduzierbaren
+OpenFOAM-Fall. Alles andere existiert nur, damit diese Übersetzung
+läuft.
 
-## Stufe 5 — Client entflechten (Z6, nach dem bewährten Muster)
-Das Extraktionsmuster (`editor/*.js`, `glaettung.js` — beide getestet)
-funktioniert, es ist nur liegengeblieben. Fortsetzen:
-- `Editor3D.vue`: Handles/Clip/Stanz-Vorschau/Pointer nach `editor/*`
-  nachziehen (Ziel < 800 Z.).
-- Zwillinge zusammenlegen: `useRunViewer()` (loadRun/Zeitcursor/Play),
-  `useThreeViewer()`, `useRunPolling()`; Formatter → `labels.js`,
-  Statusliterale → `utils/runStatus.js`, Farbliterale → `SERIES_COLORS`.
-- Leaks: vtk-Dispose beim Unmount, STL-Dispose + `forceContextLoss()`.
-- Toten `store.error`-Kanal entfernen; Fremd-Store-Schreiber durch
-  Actions ersetzen.
-- Testfundament statt Vollabdeckung: `usePreStore`-Tests + Test je
-  neuer Extraktion.
+**Ziel:** Jede Spec-Änderung führt deterministisch zu demselben Fall;
+jede Unstimmigkeit wird VOR dem (bezahlten) Rechnen als Befund gemeldet;
+ein neuer Prüfschritt oder ein neues Bauwerksrezept ist ein
+LOKALER Eingriff, kein Ritt durch eine 1000-Zeilen-Funktion.
 
-## Stufe 6 — Doku ehrlich machen + Dauer-Leitplanken
-- Env-Tabelle in `BETRIEB_FLOOD3D.md` (alle 23 Vars, Lesemechanismus,
-  PM2-Falle); Stale-Stellen fixen.
-- Veraltete Audits (`AUDIT_FLOOD3D_DEAD_ENDS.md`,
-  `TESTRUNDE_FLOOD3D.md`, Prä-Stage-Audits) nach `docs/archiv/`.
-- Dauer-Wächter: Test „kein fastapi/boto3-Import unter `core/`".
+**Zu komplex für den Nutzen:**
+- `validate_case` (`core/validate.py:125`) — 1096 Zeilen, ~40
+  Prüffamilien in einer Funktion. Der Nutzen (Befundliste) braucht
+  keinen Monolithen.
+- `apply_import` (`core/importer.py:1241`) — 500 Zeilen mit 12
+  eingestreuten Lazy-Imports.
+- Die Zyklen validate↔casebuilder und casebuilder↔anschluss, versteckt
+  hinter ~120 funktionslokalen Imports — Komplexität, die nur den
+  eigenen Knoten verwaltet.
 
-## Verifikation je Stufe
-`venv/bin/python -m pytest app/api/flood3D/tests -q` (605+) und
-`npx vitest run` (125+) grün, plus die neuen Wächter-Tests der Stufe.
-Kein Cloud-Start ohne Go (Kostenregel); B1 ist per FakeR2-Test prüfbar,
-der nächste echte RunPod-Lauf zeigt dann erstmals live `letzte_zeit`.
+**Umbau:**
+1. `validate_case` → Prüffamilien `_pruefe_gelaende(spec)`,
+   `_pruefe_raender(spec)`, … die je `list[dict]` (Befunde) liefern,
+   plus EINE Registry-Liste, über die `validate_case` iteriert.
+   Verhaltensgleich; die bestehenden validate-Tests sind das Netz.
+   Danach ist „neue Prüfung" = eine Funktion + ein Listeneintrag.
+2. `apply_import` in benannte Schritte schneiden (Layer-Zuordnung,
+   Terrain-Ersatz, Struktur-Anlage, …), Imports an den Dateikopf.
+3. Richtungsregel festschreiben und durchsetzen: `anschluss` darf
+   `casebuilder` importieren, nie umgekehrt (heute: `casebuilder.py:1220`
+   importiert zurück). Der Wächter-Test aus P3 (Import-Graph) prüft das
+   mit.
+
+---
+
+## P2 Netzvorschau — Server-Docker, 2 Ränge, Kostenschätzung
+
+**Nutzen:** Kostenloses, schnelles Feedback VOR dem bezahlten Lauf:
+ehrliche Zellzahl (echtes snappy, kein Schätzmodell), Geometriefehler
+früh, Kostenschätzung. Fabios Entscheid: Vorschau ist Vorschau — grob,
+2 Ränge, nie Referenz.
+
+**Ziel:** Bleibt wie sie ist. Die Komplexität (eigener Docker-Lauf) ist
+durch den Nutzen GEDECKT — ein Schätzmodell ohne snappy wäre billiger,
+aber unehrlich.
+
+**Zu komplex / Umbau:** Nur eine Ehrlichkeitskorrektur, kein Umbau:
+Die Laufzeitschätzung ist systematisch ~2,3× zu optimistisch (der
+Zeitschritt hängt an der Wasseroberfläche, nicht an der feinsten Zelle
+— Audit Rechenorte). Entweder Faktor aus den echten Läufen kalibrieren
+oder als Spanne labeln („15–40 min"). Eine Zeile Text, keine Mechanik.
+
+---
+
+## P3 Rechen-Pipeline — Bundle → Worker → Events → Relay/Companion → Import
+
+**Nutzen:** Das Herz: EIN Runner-Code rechnet auf zwei Rechenorten
+(RunPod, lokaler Docker), der Server bleibt lastfrei und begleitet nur.
+Der Bundle-Mechanismus macht den Runner unabhängig vom Alter des
+gebackenen Images.
+
+**Ziel:** Ein Runner, EIN Ereignis-Vokabular, EIN Verfolger, EIN
+Manifest-Schreiber — und ein Test, der den Bundle-Vertrag erzwingt,
+statt auf Glück zu bauen.
+
+**Zu komplex für den Nutzen:**
+- **7 Ereignis-Übersetzungen** entlang der Kette (Worker, Companion,
+  Relay frisch, Relay reattach, run_log, localCompanion.js, Store) —
+  plus Client-ERFUNDENE Event-Arten (`job`, synthetische `log`s), die
+  kein Producer je sendet. Der Nutzen (Fortschritt anzeigen) braucht
+  genau EINE Übersetzung am Ende der Kette.
+- `run_pipeline` (`core/runner.py:419`): 187 Zeilen tote
+  Zweit-Implementierung der Pipeline.
+- Der Import-Zyklus Relay↔Router für Symbole, die längst in
+  `core/store.py` liegen.
+
+**Umbau (Reihenfolge = Risiko zuerst):**
+1. **Bundle-Wächter-Test:** Bundle in ein Temp-Verzeichnis entpacken,
+   `flood3D` als Top-Level auf sys.path, jedes verschiffte Modul im
+   Subprozess importieren (fastapi/boto3 nicht installiert). Heute ROT
+   wegen `core/gate.py` → `gate.py` zieht um neben `router.py` (einziger
+   Importer), Test wird grün. Danach fängt er jeden künftigen
+   Container-Crash zur Testzeit.
+2. **EIN `manifest_schreiben(run_root, **felder)`** in `core/store.py`:
+   fcntl-Lock + tmp-Datei + `os.replace`. Ersetzt alle 7 Kopien
+   (`router.py:1607/1891/1745/1793/2023`, `core/runner.py:375`,
+   `local_runner.py:964`; Container-Seite ohne Lock, nur atomar).
+   Test: 2 Threads × 100 Updates, kein Feld verloren.
+   Laufnummern-Vergabe per atomarem `mkdir` (ersetzt die TOCTOU-Kopien
+   `router.py:1598`/`1426`).
+3. **Totcode löschen:** `run_pipeline` + transitiv tote Helfer +
+   die 8 Schein-Env-Vars; `core/runner.py` bleibt als das, was es ist:
+   Netzvorschau-Docker-Runner.
+4. **Zyklus kappen:** Relay importiert `read_manifest`/`run_paths` aus
+   `core.store`; `runs_root()` zieht als Pfad-Politik ebenfalls dorthin.
+   Der Router hört auf, privates `relay._r2()` zu ziehen — R2-Zugriffe
+   des Routers werden 3 kleine Relay-Funktionen.
+5. **EIN Verfolger:** `_stream_folgen(job_id, …)` für Frisch-Start UND
+   Reattach (Stufe 0 hat schon `_progress_melden` geteilt — das ist der
+   Rest desselben Zugs). `r2_keys(run_id)`-Helfer statt f-Strings in
+   4 Dateien.
+6. **Ereignis-Vokabular festschreiben:** die 5 Arten (`log`, `progress`,
+   `checkpoint`, `done`, `error`) mit ihren Feldern als Konstanten/
+   Docstring in `core/conventions.py`; Hops reichen durch statt zu
+   übersetzen; die Client-Kunst-Events bekommen ein `_lokal`-Präfix,
+   damit sichtbar ist, was nie vom Worker kommt.
+
+---
+
+## P4 Ergebnis-Pipeline — extract → parquet → evaluate → Befunde → Panels
+
+**Nutzen:** Aus Foam-Zahlen werden prüfbare Nachweise: Zielwerte
+(erfüllt/nicht erfüllt), Qualitätsbefunde (y⁺, Courant, Viz-Volumen)
+und die 3D-/Grundriss-Ansichten. Das ist das, was der Ingenieur am Ende
+in den Bericht übernimmt.
+
+**Ziel:** Grenzwerte leben an EINER Stelle (Backend); der Client ZEIGT
+Befunde an, statt sie nachzurechnen. Die zwei Ergebnis-Viewer teilen
+sich ihre identische Mechanik.
+
+**Zu komplex für den Nutzen:**
+- Grenzwerte doppelt gepflegt (`grenzwerte.js` vs. `evaluate.py`/
+  `meshgen.py`), obwohl JEDER Befund sein `grenze`-Feld schon mitliefert
+  — der Client ignoriert es und hält eine eigene Tabelle, die
+  `RunLogPanel.vue:127` dann auch noch mit einem nackten 0.05 umgeht.
+- Der 21-Quellen-`deep`-Watch auf die 200-Zeilen-`updateScene()`
+  (`Raum3DPanel.vue:1342`) — jede Checkbox rechnet die volle Pipeline.
+- Die Viewer-Zwillinge: 5 zeichengleiche Blöcke in Grundriss- und
+  Raum-Panel (loadRun, Zeitcursor-Snap, togglePlay, Farbskalen-Lock,
+  gridLabel).
+
+**Umbau:**
+1. Client liest `wert`/`grenze`/`quelle` aus dem Befund und rendert sie
+   (QualityPanel zeigt heute nur severity+message); `grenzwerte.js`
+   schrumpft auf die reinen ANZEIGE-Schwellen, die das Backend nicht
+   kennt; der 0.05-Bypass fliegt.
+2. `useRunViewer()`-Composable: loadRun/Zeitcursor/Play/Skalen-Lock —
+   beide Panels konsumieren es. (Das Muster `glaettung.js` hat
+   vorgemacht, wie man aus dem Panel extrahiert und dabei Tests
+   gewinnt.)
+3. `updateScene()` nach Wirkungsgruppen schneiden: Zeit/Feld →
+   Daten neu; Slice/Iso/Streamlines → Filter neu; Farben → nur LUT.
+   Drei Watches mit expliziten Quellen statt einem deep-Watch.
+
+---
+
+## P5 Lebenszyklus & Storage — Teilstände → Archiv → R2-Putz → Reattach
+
+**Nutzen:** Läufe überleben Browser-, Server- und PC-Neustarts
+(Teilstände, Reattach, Nachzügler); die Platte läuft nicht voll
+(StorageBox-Archiv); R2 kostet nichts im Ruhezustand (Putzrunde).
+Für ein Ein-Mann-Produkt mit bezahlter Cloud ist genau DAS der
+Unterschied zwischen Werkzeug und Bastelei.
+
+**Ziel:** Ein Pfad-Modul, ein Env-Zugang, koordinierte Wächter.
+
+**Zu komplex für den Nutzen:**
+- 9 Pfad-/Schlüssel-Konventionen, davon R2-Keys als f-Strings in 4
+  Dateien, die `r2_aufraeumen` anschließend per `split("/")`
+  ZURÜCKPARST.
+- 3 Env-Lesemechanismen; die 15 per rohem `os.environ` gelesenen
+  Variablen sind unter PM2 aus `backend/.env` nicht setzbar — die Doku
+  verspricht das Gegenteil (stille Fehlkonfiguration).
+- Reattach- und S3-Wächter können denselben Lauf doppelt importieren
+  (kein Terminal-Status-Guard zwischen den Threads).
+
+**Umbau:**
+1. Pfad-Politik komplett nach `core/store.py`: `runs_root()`,
+   `cases_root()`, `derived_dir()`, `r2_keys(run_id)` (liefert
+   eingang/checkpoint/artefakt-Keys als NamedTuple) — `RunPaths` ist
+   das Vorbild und bleibt.
+2. Alle `FLOOD3D_*`-Reads auf `env_util.env()` (liest backend/.env) —
+   Ausnahme Container-Welt (`meshgen`, `local_runner`), die bewusst nur
+   `os.environ` sieht; genau diese Ausnahme wird im Modulkopf benannt.
+   Importzeit-Reads werden Funktionsaufrufe (testbar, PM2-tauglich).
+3. Wächter-Koordination: `_import_entpacken` prüft-und-setzt den
+   Terminal-Status ÜBER das neue gelockte `manifest_schreiben` — damit
+   ist Doppel-Import strukturell weg (der `_upload.zip`-Sentinel
+   entfällt).
+
+---
+
+## P6 Client-Editor — Editor3D, Panels, Stores
+
+**Nutzen:** Der Fall wird GEZEICHNET statt getippt — Bauwerke setzen,
+Ränder ziehen, Aussparungen stanzen. Das ist der Grund, warum das
+Werkzeug benutzbar ist.
+
+**Ziel:** `Editor3D.vue` < 800 Zeilen; die Mechanik lebt in getesteten
+`editor/*.js`-Modulen (das Muster existiert und funktioniert — es ist
+auf halber Strecke stehengeblieben); keine WebGL-Lecks; Laufzustand hat
+EINEN Besitzer.
+
+**Zu komplex für den Nutzen:**
+- 1879-Zeilen-Component neben einem funktionierenden, getesteten
+  Extraktionsmuster (2041 Zeilen `editor/*.js`).
+- Undo als 100 Voll-Spec-Kopien pro Tastendruck-Serie
+  (`usePreStore.js:558`).
+- 3 handgebaute Run-Poller, 5 Formatter, 4× Statusliterale,
+  2 three.js-Bootstraps.
+- `store.error`: 10 Schreiber, 1 Leser — ein toter Parallelkanal zu
+  `melden()`.
+
+**Umbau:**
+1. Extraktion fertigziehen: `buildHandles`/`applyClip`/`rebuild`/
+   Stanz-Vorschau/Pointer-Choreografie nach `editor/*.js`, je Modul ein
+   Test (wie `objektZugriff.test.js`).
+2. Gemeinsame Composables: `useRunPolling()` (3 Kopien),
+   `useThreeViewer()` (2 Bootstraps), Formatter → `utils/labels.js`,
+   Statusliterale → `utils/runStatus.js`, Farbliterale →
+   `SERIES_COLORS`.
+3. Lecks: vtk-Pipeline-Dispose beim Unmount (`_disposeActorList` gibt
+   es schon — nur beim Unmount rufen), STL-Geometrie-Dispose im
+   ImportModal, `renderer.forceContextLoss()` nach jedem
+   `renderer.dispose()`.
+4. `store.error` raus; Fremd-Store-Schreiber (`CaseRunsPanel`,
+   `RunListPanel`, `Flood3DPreMain`) durch Store-Actions ersetzen.
+5. Undo: statt Voll-Kopien die letzten N Patches (alt/neu je Pfad) —
+   erst WENN es drückt; bis dahin reicht Deckel + Trim beim Fallwechsel.
+
+---
+
+## Streichliste — Komplexität ohne Nutzen (ersatzlos löschen)
+
+| Was | Wo | Warum tot |
+|---|---|---|
+| `run_pipeline` + `_write_manifest` + `geschriebene_zeiten` + `durchsatz_je_kern` + Parallel-Zweig | `core/runner.py` (~220 Z.) | null Aufrufer seit HTTP 410 |
+| Schein-Env-Vars `FLOOD3D_CORES`, `FLOOD3D_CORE_PRICE`, `FLOOD3D_SOLVE_TIMEOUT`, … | `core/runner.py:21–45` + `BETRIEB:92` | steuern nur Totcode |
+| `make_beispiele.py` | `engines/local/` (176 Z.) | referenzlos, COPY-exkludiert |
+| `archivStand()` | `services/api.js:244` | nie aufgerufen |
+| 6 tote Exporte | `utils/importRollen.js` | nur intern benutzt |
+| `store.error`-Kanal | `usePreStore` (10 Schreiber) | `melden()` ist der Weg |
+| toter `artifacts_put_url`-Zweig | `local_runner.py:996` | Cloud-Pfad sendet den Key nie |
+| Alt-Audits (`AUDIT_FLOOD3D_DEAD_ENDS`, `TESTRUNDE_FLOOD3D`, Prä-Stage-Audits) | Repo-Wurzel | dokumentieren gefixte Bugs als offen | → `docs/archiv/` |
+
+---
+
+## Umsetzungswellen (Reihenfolge = Risiko vor Schönheit)
+
+| Welle | Inhalt | Aufwand | Definition of Done |
+|---|---|---|---|
+| **W1 Wächter** | P3.1 Bundle-Test + gate-Umzug · P3.2 manifest_schreiben + mkdir-Reservierung | ~1 Sitzung | Bundle-Test war ROT, ist grün; Nebenläufigkeits-Test 2×100 Updates verlustfrei; Suiten grün |
+| **W2 Entwirren** | P3.3 Totcode · P3.4 Zyklus · P3.5 ein Verfolger + r2_keys · P5.1/P5.2 Pfade+Env · Streichliste | ~1 Sitzung | `grep run_pipeline` leer; Relay importiert nichts aus router; alle FLOOD3D_*-Reads über env_util (außer Container-Welt); Suiten grün |
+| **W3 Monolithen** | P1.1 validate-Registry · P1.2 apply_import · P4-Backend (Befund-Konstruktor) · Router dritteln (`laufwerk.py`) | 1–2 Sitzungen | validate_case < 100 Z.; router.py < 900 Z.; kein Endpunkt-Verhalten geändert (Suite beweist es) |
+| **W4 Client** | P6 komplett · P4.1–P4.3 (Befund-Anzeige, useRunViewer, Watch-Gruppen) | 2–3 Sitzungen | Editor3D < 800 Z.; Tab-Wechsel-Zyklus leckt nicht mehr (Heap-Vergleich); je Extraktion ein Test |
+| **W5 Doku** | Env-Tabelle in BETRIEB · Alt-Audits archivieren · P2-Schätzlabel · Ereignis-Vokabular dokumentiert | laufend, je Welle mit | Doku widerspricht dem Code nirgends mehr |
+
+**Tor jeder Welle:** `pytest app/api/flood3D/tests -q` (607+) und
+`npx vitest run` (126+) grün, PLUS der neue Wächter-Test der Welle.
+Kein Cloud-Start ohne Fabios Go (Kostenregel). Nach W2 zeigt der
+nächste echte RunPod-Lauf erstmals live `letzte_zeit` — der sichtbare
+Beweis, dass der Umbau beim Nutzer ankommt.
