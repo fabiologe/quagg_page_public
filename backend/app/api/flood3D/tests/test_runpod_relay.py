@@ -376,3 +376,122 @@ def test_laufzeit_leitplanke_je_job(welt, monkeypatch):
     relay.lauf_starten(object(), welt["case_dir"], "demo_r002",
                        welt["run_root"], lambda **f: None, lambda: False)
     assert "policy" not in auftraege[1]
+
+
+def _fake_liste(r2):
+    """list_objects_v2 fuer FakeR2 nachruesten (LastModified als datetime)."""
+    import datetime as dt
+
+    def list_objects_v2(Bucket, Prefix="", ContinuationToken=None):  # noqa: N803
+        inhalt = [{"Key": k,
+                   "LastModified": r2.zeiten.get(
+                       k, dt.datetime.now(dt.timezone.utc))}
+                  for k in sorted(r2.objekte) if k.startswith(Prefix)]
+        return {"Contents": inhalt, "IsTruncated": False}
+    r2.list_objects_v2 = list_objects_v2
+    r2.zeiten = {}
+    return r2
+
+
+def test_r2_putzrunde_loescht_nur_alte_waisen(tmp_path, monkeypatch):
+    """
+    R2 ist NUR Transit: Waisen (Relay-Tod, gescheiterte Laeufe) fliegen
+    nach Frist raus — Objekte LEBENDER Laeufe und junge Objekte bleiben.
+    """
+    import datetime as dt
+    import json as _json
+
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    (tmp_path / "runs" / "lebend_r001").mkdir(parents=True)
+    (tmp_path / "runs" / "lebend_r001" / "manifest.json").write_text(
+        _json.dumps({"status": "solving", "origin": "runpod"}))
+    (tmp_path / "runs" / "tot_r001").mkdir()
+    (tmp_path / "runs" / "tot_r001" / "manifest.json").write_text(
+        _json.dumps({"status": "failed"}))
+
+    r2 = _fake_liste(FakeR2())
+    alt = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=48)
+    for key in ("flood3d/eingang/lebend_r001.zip",      # lebt -> bleibt
+                "flood3d/eingang/tot_r001.zip",          # tot + alt -> weg
+                "flood3d/checkpoints/geist_r009.zip",    # kein Lauf -> weg
+                "flood3d/j-123/artifacts.zip"):          # Worker-Waise -> weg
+        r2.objekte[key] = b"x"
+        r2.zeiten[key] = alt
+    r2.objekte["flood3d/eingang/frisch_r002.zip"] = b"x"   # jung -> bleibt
+    monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
+
+    weg = relay.r2_aufraeumen(max_alter_h=24)
+
+    assert sorted(weg) == ["flood3d/checkpoints/geist_r009.zip",
+                           "flood3d/eingang/tot_r001.zip",
+                           "flood3d/j-123/artifacts.zip"]
+    assert "flood3d/eingang/lebend_r001.zip" in r2.objekte
+    assert "flood3d/eingang/frisch_r002.zip" in r2.objekte
+
+
+def test_wiederanknuepfen_uebernimmt_laufenden_job(tmp_path, monkeypatch):
+    """API-Neustart: der neue Prozess verfolgt den alten Job zu Ende."""
+    monkeypatch.setattr(relay, "konfiguriert", lambda: (True, ""))
+    monkeypatch.setattr(relay, "TAKT_S", 0.001)
+    r2 = FakeR2()
+    monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
+    antworten = iter([
+        {"status": "IN_PROGRESS"},                                   # status
+        {"stream": [{"output": {"event": "progress", "time": 1.0}}],
+         "status": "IN_PROGRESS"},
+        {"stream": [{"output": {"event": "done",
+                                "artifactsUrl": "https://r2.example/a.zip"}}],
+         "status": "COMPLETED"},
+    ])
+    monkeypatch.setattr(relay, "_ruf",
+                        lambda pfad, body=None, timeout=60.0: next(antworten))
+    _lade(monkeypatch, b"PK-nachher")
+    zustaende = []
+    (tmp_path / "r").mkdir()
+    erg = relay.wiederanknuepfen(
+        "demo_r001", tmp_path / "r", "job-alt",
+        lambda **f: zustaende.append(f), lambda: False)
+    assert erg["artefakte"] == b"PK-nachher"
+    assert any(f.get("wiederangeknuepft") for f in zustaende)
+    # Transit-Keys werden abgeraeumt
+    assert "flood3d/eingang/demo_r001.zip" in r2.geloescht
+
+
+def test_wiederanknuepfen_unbekannter_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(relay, "konfiguriert", lambda: (True, ""))
+    def _kaputt(pfad, body=None, timeout=60.0):
+        raise relay.RunPodFehler("HTTP 404")
+    monkeypatch.setattr(relay, "_ruf", _kaputt)
+    with pytest.raises(relay.RunPodFehler, match="unbekannt"):
+        relay.wiederanknuepfen("demo_r001", tmp_path, "job-weg",
+                               lambda **f: None, lambda: False)
+
+
+def test_archiv_waechter_verschiebt_alte_laeufe(tmp_path, monkeypatch):
+    import json as _json
+    import os as _os
+    import time as _time
+
+    from .. import router as router_mod
+
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    monkeypatch.setenv("FLOOD3D_ARCHIV_ROOT", str(tmp_path / "box"))
+    monkeypatch.setenv("FLOOD3D_ARCHIV_TAGE", "14")
+    alt_lauf = tmp_path / "runs" / "alt_r001"
+    (alt_lauf / "fields").mkdir(parents=True)
+    (alt_lauf / "fields" / "t_0000.npz").write_bytes(b"NPZ")
+    (alt_lauf / "manifest.json").write_text(_json.dumps({"status": "completed"}))
+    (alt_lauf / "result.json").write_text(_json.dumps(
+        {"run_id": "alt_r001", "status": "completed", "targets": []}))
+    frueher = _time.time() - 30 * 86400
+    _os.utime(alt_lauf, (frueher, frueher))
+    jung = tmp_path / "runs" / "jung_r001"
+    jung.mkdir()
+    (jung / "manifest.json").write_text(_json.dumps({"status": "completed"}))
+
+    archiviert = router_mod.archiv_waechter()
+
+    assert archiviert == ["alt_r001"]
+    assert (tmp_path / "box" / "alt_r001" / "fields" / "t_0000.npz").exists()
+    assert (alt_lauf / "archiviert.json").exists()
+    assert not (tmp_path / "box" / "jung_r001").exists()

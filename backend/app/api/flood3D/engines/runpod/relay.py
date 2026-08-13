@@ -237,6 +237,145 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                 pass
 
 
+def wiederanknuepfen(run_id: str, run_root: Path, job_id: str,
+                     melde, abbruch_gewuenscht, zwischenstand_cb=None) -> dict:
+    """
+    Nach einem API-Neustart an einen noch laufenden RunPod-Job wieder
+    anknuepfen: der alte Relay-Thread ist tot, der Job rechnet (und kostet)
+    weiter, das Manifest steht auf solving. Gleiches Verfolgen wie in
+    lauf_starten, nur ohne Bundle und ohne Neueinreichung.
+    Wirft RunPodFehler("… unbekannt"), wenn RunPod den Job nicht mehr kennt.
+    """
+    import time as _time
+
+    ok, grund = konfiguriert()
+    if not ok:
+        raise RunPodFehler(grund)
+    try:
+        stand = _ruf(f"status/{job_id}")
+    except RunPodFehler:
+        raise RunPodFehler(f"RunPod-Job {job_id} unbekannt (API-Neustart, "
+                           "Job verfallen oder geloescht)")
+    if stand.get("status") in ("FAILED", "CANCELLED", "TIMED_OUT"):
+        raise RunPodFehler(f"RunPod-Job endete als {stand.get('status')}: "
+                           f"{str(stand.get('error'))[:200]}")
+
+    client, bucket, praefix = _r2()
+    cp_key = f"{praefix}/checkpoints/{run_id}.zip"
+    melde(status="solving", wiederangeknuepft=True)
+    artefakt_url = None
+    fehler = None
+    gesehen = 0
+    t0 = _time.time()
+    protokoll = Path(run_root) / "log.runpod"
+    try:
+        while True:
+            if abbruch_gewuenscht():
+                abbrechen(job_id)
+                raise RunPodFehler("Vom Nutzer abgebrochen")
+            stand = _ruf(f"stream/{job_id}", timeout=90)
+            strom = stand.get("stream", [])
+            gesehen += len(strom)
+            for eintrag in strom:
+                ev = eintrag.get("output", eintrag)
+                if not isinstance(ev, dict):
+                    continue
+                with open(protokoll, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+                art = ev.get("event")
+                if art == "progress":
+                    melde(status="solving", letzte_zeit=ev.get("time"))
+                elif art == "checkpoint" and zwischenstand_cb is not None:
+                    try:
+                        roh = client.get_object(Bucket=bucket,
+                                                Key=cp_key)["Body"].read()
+                        zwischenstand_cb(roh, ev)
+                    except Exception as e:   # noqa: BLE001
+                        melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
+                elif art == "error":
+                    fehler = str(ev.get("text"))[:500]
+                    extra = {k: ev[k] for k in ("befunde", "netz") if k in ev}
+                    if extra:
+                        melde(**extra)
+                elif art == "done":
+                    artefakt_url = ev.get("artifactsUrl")
+            zustand = stand.get("status")
+            if zustand in ("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"):
+                if not artefakt_url:
+                    ende = _ruf(f"status/{job_id}")
+                    fehler = fehler or str(ende.get("error") or zustand)[:500]
+                break
+            time.sleep(TAKT_S)
+        if not artefakt_url:
+            raise RunPodFehler(f"Cloud-Lauf ohne Ergebnis: {fehler}")
+        melde(status="downloading")
+        import urllib.request as _ur
+        with _ur.urlopen(artefakt_url, timeout=900) as r:
+            artefakte = r.read()
+        return {"artefakte": artefakte, "job_id": job_id,
+                "dauer_s": round(_time.time() - t0, 1)}
+    finally:
+        for key in (f"{praefix}/eingang/{run_id}.zip", cp_key):
+            try:
+                client.delete_object(Bucket=bucket, Key=key)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def r2_aufraeumen(max_alter_h: float = 24.0) -> list[str]:
+    """
+    Verwaiste Transit-Objekte im R2 loeschen — R2 ist NUR Transit
+    (Entscheidung 2026-08-13). Waisen entstehen, wenn ein Relay-Thread
+    stirbt (API-Neustart) oder ein Lauf scheitert: eingang/-Bundles,
+    checkpoints/, artifacts/ sowie die Worker-Ablagen
+    ``{praefix}/{job_id}/artifacts.zip``. Geloescht wird nur, was aelter
+    als ``max_alter_h`` ist UND zu keinem lebenden (nicht-terminalen) Lauf
+    gehoert. Rueckgabe: Liste der geloeschten Keys (fuers Log).
+    """
+    import datetime as _dt
+
+    from ...router import read_manifest, run_paths, runs_root
+
+    client, bucket, praefix = _r2()
+    grenze = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=max_alter_h)
+    lebendig: set[str] = set()
+    root = runs_root()
+    if root.is_dir():
+        for d in root.iterdir():
+            if not d.is_dir():
+                continue
+            m = read_manifest(run_paths(root, d.name)) or {}
+            if m.get("status") not in ("completed", "failed", "abgebrochen",
+                                       "teilergebnis", "unbekannt"):
+                lebendig.add(d.name)
+
+    geloescht: list[str] = []
+    token = None
+    while True:
+        kw = {"Bucket": bucket, "Prefix": f"{praefix}/"}
+        if token:
+            kw["ContinuationToken"] = token
+        antwort = client.list_objects_v2(**kw)
+        for obj in antwort.get("Contents", []):
+            key = obj["Key"]
+            alter_ok = obj.get("LastModified") and obj["LastModified"] < grenze
+            if not alter_ok:
+                continue
+            teile = key[len(praefix) + 1:].split("/")
+            if teile[0] in ("eingang", "checkpoints", "artifacts") and len(teile) == 2:
+                run_id = teile[1].removesuffix(".zip")
+                if run_id in lebendig:
+                    continue
+            # Worker-Ablage {job_id}/artifacts.zip: keine Zuordnung zu einem
+            # Lauf moeglich — nach Ablauf der Frist ist sie eine Waise
+            client.delete_object(Bucket=bucket, Key=key)
+            geloescht.append(key)
+        if not antwort.get("IsTruncated"):
+            break
+        token = antwort.get("NextContinuationToken")
+    return geloescht
+
+
 def artefakt_aufraeumen(job_id: str) -> None:
     """Ergebnisarchiv in R2 löschen, nachdem es importiert ist."""
     try:

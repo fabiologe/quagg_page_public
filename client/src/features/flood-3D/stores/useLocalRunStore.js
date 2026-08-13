@@ -7,8 +7,10 @@
 // an — ein zweiter Treiber auf demselben KONSUMIERENDEN Companion-Stream
 // hätte beiden Ereignisse geklaut (2026-08-12).
 import { defineStore } from 'pinia'
-import { companionHealth, jobStatus, pauseLocalRun, runLocally,
+import { abgeschlosseneCompanionLaeufe, companionHealth, companionLaufManifest,
+  importiereArtefakte, jobStatus, pauseLocalRun, runLocally,
   unterbrocheneLaeufe, verfolgen } from '../services/localCompanion'
+import { flood3dApi } from '../services/api'
 import { usePreStore } from './usePreStore'
 
 const LOG_MAX = 200
@@ -165,6 +167,38 @@ export const useLocalRunStore = defineStore('flood3d-local-run', {
           await this._fahren(() =>
             verfolgen(r.id, (ev) => this._ereignis(ev), { runId: null }))
           return
+        }
+      }
+      await this.nachzuegler()
+    },
+
+    // Nachzuegler-Vollimport: der Companion hat fertig gerechnet, aber der
+    // Browser war beim Ende weg — das Ergebnis liegt auf seiner Platte und
+    // wird jetzt nachgeholt (Riegel: der Server-Status wird nach dem Import
+    // terminal, ein zweiter Durchlauf findet nichts mehr).
+    async nachzuegler() {
+      if (this._nachzuegler_lief) return
+      this._nachzuegler_lief = true
+      const pre = usePreStore()
+      for (const r of await abgeschlosseneCompanionLaeufe()) {
+        const mf = await companionLaufManifest(r.id)
+        const done = (mf?.events ?? []).filter((e) => e.event === 'done').at(-1)
+        if (!done?.artifactsUrl || !done?.run_id) continue
+        const detail = await flood3dApi.runDetail(done.run_id).catch(() => null)
+        if (detail?.status !== 'lokal') continue
+        pre.melden(`Hole fertiges Ergebnis ${done.run_id} vom Companion nach …`,
+          'hinweis')
+        try {
+          await importiereArtefakte(done.artifactsUrl, done.run_id,
+            (ev) => this._ereignis(ev))
+          pre.melden(`Lauf ${done.run_id} nachträglich übernommen — die `
+            + 'Ergebnisse sind da.', 'erfolg')
+          if (pre.activeCaseId
+              && done.run_id.startsWith(`${pre.activeCaseId}_r`)) {
+            await pre.loadCaseRuns()
+          }
+        } catch (e) {
+          pre.melden(`Nachzügler ${done.run_id}: ${e.message}`, 'warnung')
         }
       }
     },

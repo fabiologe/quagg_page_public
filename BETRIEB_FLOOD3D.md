@@ -141,12 +141,20 @@ lokalen Lauf.
 - **Rauchtest 2026-08-12 bestanden**: Job angenommen (3,8 s Anlauf, warmer
   Worker), Worker-Log kam im Strom an, absichtlich kaputtes `case.zip` führte
   zu sauberen `error`-Events und Exit 1.
-- **Bekannte Grenze:** Ein `pm2 restart` während eines laufenden Cloud-Laufs
-  tötet den begleitenden Relay-Thread — der RunPod-Job rechnet (und kostet)
-  weiter, das Manifest bleibt auf `solving`, und die R2-Aufräumung entfällt.
-  Bis es eine Wiederanknüpfung beim Start gibt: vor Neustarts laufende
-  Cloud-Läufe prüfen (`GET /runs`), im Zweifel den Job in der RunPod-Konsole
-  abbrechen und Reste unter `flood3d/eingang/` löschen.
+- **Relay-Wiederanknüpfung (seit 2026-08-13):** Beim API-Start übernimmt
+  der Server alle Cloud-Läufe mit `origin=runpod` und nicht-terminalem
+  Status wieder (Job-ID aus dem Manifest) — `pm2 restart` mitten im
+  Cloud-Lauf ist damit unkritisch. Unbekannter Job → ehrlich `failed`.
+- **R2-Putzrunde** (stündlich, `FLOOD3D_R2_PUTZ_S`): Transit-Waisen
+  (eingang/checkpoints/artifacts + Worker-Ablagen) älter als
+  `FLOOD3D_R2_MAX_ALTER_H=24` und ohne lebenden Lauf werden gelöscht —
+  R2 ist NUR Transit.
+- **Auto-Archiv** (alle `FLOOD3D_ARCHIV_S=21600` s): fertige Läufe älter
+  als `FLOOD3D_ARCHIV_TAGE=14` wandern automatisch auf die StorageBox;
+  StorageBox nicht eingehängt → stiller Durchlauf.
+- **Nachzügler-Import (Client):** War der Browser beim Laufende weg, holt
+  die App beim nächsten Öffnen fertige Companion-Ergebnisse automatisch
+  nach (done-Manifest des Companion + Server-Status `lokal` als Riegel).
 - **Speicherpunkte gelten auch LOKAL, und der Browser ist nur noch
   Zuschauer** (seit 2026-08-12 abends): das Bundle trägt zwei vorsignierte
   S3-URLs (Teilstände + Endergebnis), der Läufer lädt beides hoch, und ein

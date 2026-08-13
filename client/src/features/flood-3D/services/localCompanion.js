@@ -66,6 +66,34 @@ export async function jobStatus(jobId) {
   }
 }
 
+// Abgeschlossene Companion-Jobs (Platten-Manifest): Kandidaten fuer den
+// Nachzuegler-Import — fertig gerechnet, aber der Browser war beim Ende weg.
+export async function abgeschlosseneCompanionLaeufe() {
+  try {
+    const res = await fetch(`${COMPANION_BASE}/runs`,
+      { signal: AbortSignal.timeout(2500) })
+    if (!res.ok) return []
+    const { runs } = await res.json()
+    return (runs ?? []).filter((r) => r.engine === 'openfoam'
+      && r.status === 'COMPLETED')
+  } catch {
+    return []
+  }
+}
+
+// Platten-Manifest eines Companion-Jobs — enthaelt die done-Ereignisse
+// mit artifactsUrl und run_id (der Companion schreibt sie genau dafuer).
+export async function companionLaufManifest(jobId) {
+  try {
+    const res = await fetch(`${COMPANION_BASE}/runs/${jobId}/manifest`,
+      { signal: AbortSignal.timeout(2500) })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
 export async function pauseLocalRun(jobId) {
   const res = await fetch(`${COMPANION_BASE}/v2/flood3d/pause/${jobId}`,
     { method: 'POST' })

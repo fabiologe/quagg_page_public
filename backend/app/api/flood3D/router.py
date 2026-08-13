@@ -1802,6 +1802,136 @@ def teilstaende_einsammeln() -> list[str]:
     return eingesammelt
 
 
+def archiv_waechter() -> list[str]:
+    """
+    Auto-Archiv (Entscheidung 2026-08-13): Ergebnisse liegen primaer auf
+    der Serverplatte, fertige Laeufe wandern nach FLOOD3D_ARCHIV_TAGE
+    automatisch auf die StorageBox — die Knoepfe 📦/📥 existieren, hier
+    kommt nur der Automat dazu. StorageBox nicht eingehaengt -> stiller
+    Durchlauf (naechste Runde versucht es wieder).
+    """
+    from .core.archiv import ArchivFehler, archiv_bereit, archivieren, kandidaten
+
+    bereit, _grund = archiv_bereit()
+    if not bereit:
+        return []
+    root = runs_root()
+    if not root.is_dir():
+        return []
+
+    def status_von(d: Path) -> str:
+        paths = run_paths(root, d.name)
+        result = _result(paths)
+        return (result or {}).get(
+            "status", (read_manifest(paths) or {}).get("status", ""))
+
+    tage = float(os.environ.get("FLOOD3D_ARCHIV_TAGE", "14"))
+    archiviert = []
+    for d, status, _bytes in kandidaten(root, tage, status_von):
+        try:
+            archivieren(d, status)
+            archiviert.append(d.name)
+            print(f"flood3d: Lauf {d.name} automatisch auf die StorageBox "
+                  f"archiviert (aelter als {tage:g} Tage)", flush=True)
+        except ArchivFehler as e:
+            print(f"flood3d: Auto-Archiv {d.name} uebersprungen: {e}",
+                  flush=True)
+    return archiviert
+
+
+def relays_wiederanknuepfen() -> list[str]:
+    """
+    Nach einem API-Neustart: Cloud-Laeufe, deren Relay-Thread mit dem alten
+    Prozess starb, wieder uebernehmen — der RunPod-Job rechnet (und kostet)
+    ja weiter. Job unbekannt -> ehrlich als failed markieren statt ewig
+    `solving` zu zeigen. Das schliesst die Waisen-Quelle, die bisher
+    Handarbeit in der RunPod-Konsole brauchte.
+    """
+    import threading
+
+    from .engines.runpod.relay import (RunPodFehler, artefakt_aufraeumen,
+                                       wiederanknuepfen)
+
+    root = runs_root()
+    if not root.is_dir():
+        return []
+    uebernommen = []
+    for d in sorted(root.iterdir()):
+        mp = d / "manifest.json"
+        if not d.is_dir() or not mp.is_file():
+            continue
+        try:
+            m = json.loads(mp.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if m.get("origin") != "runpod":
+            continue
+        if m.get("status") in ("completed", "failed", "abgebrochen",
+                               "teilergebnis"):
+            continue
+        job_id = m.get("runpod_job")
+        run_id = d.name
+        run_root = d
+
+        def melde(_root=run_root, **felder):
+            pfad = _root / "manifest.json"
+            mm = {}
+            if pfad.is_file():
+                try:
+                    mm = json.loads(pfad.read_text())
+                except Exception:  # noqa: BLE001
+                    mm = {}
+            mm.update(felder)
+            pfad.write_text(json.dumps(mm, indent=2, ensure_ascii=False))
+
+        if not job_id:
+            melde(status="failed", finished=time.time(),
+                  error="API-Neustart vor der Job-Anlage — bitte neu starten")
+            continue
+
+        def _work(run_id=run_id, run_root=run_root, job_id=job_id, melde=melde):
+            def zwischenstand(daten, ev):
+                try:
+                    _import_entpacken(run_root, run_id, daten)
+                    melde(teilstand=True, teilstand_zeiten=ev.get("zeiten"),
+                          letzte_zeit=ev.get("letzte_zeit"))
+                except Exception as e:   # noqa: BLE001
+                    melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
+            try:
+                erg = wiederanknuepfen(
+                    run_id, run_root, job_id, melde,
+                    lambda: (run_root / "ABBRUCH").exists(), zwischenstand)
+                melde(status="importing")
+                _import_entpacken(run_root, run_id, erg["artefakte"])
+                artefakt_aufraeumen(erg["job_id"])
+                melde(status="completed", origin="runpod", ort="runpod",
+                      finished=time.time(), wiederangeknuepft=True)
+            except RunPodFehler as e:
+                ab = "abgebrochen" in str(e).lower()
+                melde(status="abgebrochen" if ab else "failed",
+                      error=str(e)[:500], finished=time.time())
+            except Exception as e:       # noqa: BLE001
+                melde(status="failed", finished=time.time(),
+                      error=f"{type(e).__name__}: {e}"[:500])
+            finally:
+                (run_root / "ABBRUCH").unlink(missing_ok=True)
+
+        threading.Thread(target=_work, daemon=True,
+                         name=f"flood3d-reattach-{run_id}").start()
+        uebernommen.append(run_id)
+        print(f"flood3d: Relay fuer {run_id} wieder angeknuepft "
+              f"(Job {job_id})", flush=True)
+    return uebernommen
+
+
+@router.on_event("startup")
+async def _relays_wiederanknuepfen_starten():
+    try:
+        relays_wiederanknuepfen()
+    except Exception:  # noqa: BLE001 — der Start darf daran nie scheitern
+        pass
+
+
 @router.on_event("startup")
 async def _teilstand_waechter_starten():
     """Alle 2 Minuten S3 abgleichen (FLOOD3D_SWEEP_S uebersteuert)."""
@@ -1811,6 +1941,10 @@ async def _teilstand_waechter_starten():
     if takt <= 0:
         return             # fuer Tests abschaltbar
 
+    archiv_takt = int(os.environ.get("FLOOD3D_ARCHIV_S", "21600"))
+    putz_takt = int(os.environ.get("FLOOD3D_R2_PUTZ_S", "3600"))
+    stand = {"archiv": 0.0, "putz": 0.0}
+
     def _schleife():
         while True:
             time.sleep(takt)
@@ -1818,6 +1952,24 @@ async def _teilstand_waechter_starten():
                 teilstaende_einsammeln()
             except Exception:  # noqa: BLE001 — der Waechter darf nie sterben
                 pass
+            jetzt = time.time()
+            if jetzt - stand["archiv"] >= archiv_takt:
+                stand["archiv"] = jetzt
+                try:
+                    archiv_waechter()
+                except Exception:  # noqa: BLE001
+                    pass
+            if jetzt - stand["putz"] >= putz_takt:
+                stand["putz"] = jetzt
+                try:
+                    from .engines.runpod.relay import r2_aufraeumen
+                    weg = r2_aufraeumen(
+                        float(os.environ.get("FLOOD3D_R2_MAX_ALTER_H", "24")))
+                    if weg:
+                        print(f"flood3d: R2-Putzrunde entfernte {len(weg)} "
+                              f"Waisen: {weg[:5]}", flush=True)
+                except Exception:  # noqa: BLE001
+                    pass
 
     threading.Thread(target=_schleife, name="flood3d-teilstand",
                      daemon=True).start()

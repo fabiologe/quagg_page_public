@@ -15,10 +15,14 @@ vi.mock('../services/localCompanion', () => ({
   pauseLocalRun: vi.fn(),
   runLocally: vi.fn(),
   verfolgen: vi.fn(),
+  abgeschlosseneCompanionLaeufe: vi.fn().mockResolvedValue([]),
+  companionLaufManifest: vi.fn().mockResolvedValue(null),
+  importiereArtefakte: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { companionHealth, jobStatus, runLocally, unterbrocheneLaeufe,
-  verfolgen } from '../services/localCompanion'
+import { abgeschlosseneCompanionLaeufe, companionHealth,
+  companionLaufManifest, importiereArtefakte, jobStatus, runLocally,
+  unterbrocheneLaeufe, verfolgen } from '../services/localCompanion'
 import { useLocalRunStore } from '../stores/useLocalRunStore'
 import { usePreStore } from '../stores/usePreStore'
 
@@ -37,6 +41,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   unterbrocheneLaeufe.mockResolvedValue([])
   companionHealth.mockResolvedValue({ foamSupported: true, version: '1.5.1' })
+  abgeschlosseneCompanionLaeufe.mockResolvedValue([])
+  companionLaufManifest.mockResolvedValue(null)
+  importiereArtefakte.mockResolvedValue(undefined)
 })
 
 /** runLocally/verfolgen so verdrahten, dass der Test Ereignisse einspeisen
@@ -170,5 +177,50 @@ describe('Wiederaufnahme und Anknüpfen', () => {
     expect(verfolgen).not.toHaveBeenCalled()
     expect(lokal.laufend).toBeNull()
     expect(lokal.offeneLaeufe.map((r) => r.id)).toEqual(['local-abc'])
+  })
+})
+
+
+describe('Nachzügler-Vollimport', () => {
+  it('holt ein fertiges Companion-Ergebnis genau einmal nach', async () => {
+    abgeschlosseneCompanionLaeufe.mockResolvedValue([{ id: 'local-fertig' }])
+    companionLaufManifest.mockResolvedValue({ events: [
+      { event: 'done', artifactsUrl: '/dateien/a.zip', run_id: 'demo_r006' },
+    ] })
+    const runDetail = vi.spyOn(
+      (await import('../services/api')).flood3dApi, 'runDetail')
+      .mockResolvedValue({ status: 'lokal' })
+
+    await lokal.anknuepfen()
+    expect(importiereArtefakte).toHaveBeenCalledTimes(1)
+    expect(importiereArtefakte).toHaveBeenCalledWith(
+      '/dateien/a.zip', 'demo_r006', expect.any(Function))
+    expect(pre.melden).toHaveBeenCalledWith(
+      expect.stringContaining('demo_r006'), 'erfolg')
+
+    // zweiter App-Start-Aufruf in derselben Sitzung: kein Doppel-Import
+    await lokal.anknuepfen()
+    expect(importiereArtefakte).toHaveBeenCalledTimes(1)
+    runDetail.mockRestore()
+  })
+
+  it('lässt Läufe in Ruhe, deren Server-Status schon terminal ist', async () => {
+    abgeschlosseneCompanionLaeufe.mockResolvedValue([{ id: 'local-fertig' }])
+    companionLaufManifest.mockResolvedValue({ events: [
+      { event: 'done', artifactsUrl: '/dateien/a.zip', run_id: 'demo_r006' },
+    ] })
+    vi.spyOn((await import('../services/api')).flood3dApi, 'runDetail')
+      .mockResolvedValue({ status: 'completed' })
+    await lokal.anknuepfen()
+    expect(importiereArtefakte).not.toHaveBeenCalled()
+  })
+
+  it('überspringt Jobs ohne done-Manifest', async () => {
+    abgeschlosseneCompanionLaeufe.mockResolvedValue([{ id: 'local-halb' }])
+    companionLaufManifest.mockResolvedValue({ events: [
+      { event: 'frame', file: 'x' },
+    ] })
+    await lokal.anknuepfen()
+    expect(importiereArtefakte).not.toHaveBeenCalled()
   })
 })
