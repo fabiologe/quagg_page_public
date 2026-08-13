@@ -424,3 +424,32 @@ function buildMarkers() {
 
   return { buildMarkers }
 }
+
+// --- Fokus-Marke der Punktliste (aus Editor3D.vue geschnitten) -------------
+// Eigene Gruppe statt eines Eintrags in `markers`: das hängt am Zeiger und
+// darf nicht bei jedem Überfahren die ganze Markerebene neu bauen.
+
+export function baueFokusMarke() {
+  const g = new THREE.Group()
+  const kugel = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffd34d, depthTest: false }))
+  kugel.renderOrder = 999
+  // Lot auf das Gelände: ein Punkt in der Luft ist sonst nicht zu verorten
+  const lot = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+    new THREE.LineBasicMaterial({ color: 0xffd34d, depthTest: false }))
+  lot.renderOrder = 999
+  g.add(kugel, lot)
+  g.visible = false
+  return { g, kugel, lot }
+}
+
+// Größe an das Gebiet hängen, damit die Marke in jedem Maßstab sichtbar
+// ist, ohne das Modell zu verdecken (rein rechenbar)
+export function fokusRadius(extent) {
+  return extent
+    ? Math.max(0.15, Math.min(extent[2] - extent[0], extent[3] - extent[1]) / 120)
+    : 0.3
+}

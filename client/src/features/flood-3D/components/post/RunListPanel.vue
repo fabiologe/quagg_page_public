@@ -34,7 +34,7 @@
                 title="Companion-Reservierung, deren Ergebnis seit über 7 Tagen nicht importiert wurde — kann gelöscht werden">
             verfallen
           </span>
-          <span v-if="['completed', 'teilergebnis'].includes(run.status)
+          <span v-if="MIT_ERGEBNIS.includes(run.status)
                       && run.has_normalized === false"
                 class="f3d-chip status-stale"
                 title="Lauf ohne normalisierte Zeitreihen — Diagramme und Nachweise bleiben leer">
@@ -47,7 +47,7 @@
             ⚠ Qualität
           </span>
           <span v-if="run.archiviert" class="f3d-chip status-stale"
-                :title="`Auf die StorageBox ausgelagert (${fmtSize((run.archiv_bytes || 0) / 1e6)}) — `
+                :title="`Auf die StorageBox ausgelagert (${fmtBytes(run.archiv_bytes || 0)}) — `
                         + 'Bewertung ist da, 3D-Felder und Abbildungen werden beim Öffnen zurückgeholt'">
             archiviert
           </span>
@@ -55,7 +55,7 @@
             <span class="ok">✓ {{ run.n_erfuellt }}</span>
             <span v-if="run.n_nicht_erfuellt" class="fail">✗ {{ run.n_nicht_erfuellt }}</span>
           </span>
-          <span v-if="run.size_mb != null" class="f3d-run-size">{{ fmtSize(run.size_mb) }}</span>
+          <span v-if="run.size_mb != null" class="f3d-run-size">{{ fmtBytes(run.size_mb * 1e6) }}</span>
         </span>
       </span>
       <button v-if="!run.archiviert && TERMINAL_ARCHIV.includes(run.status)"
@@ -81,31 +81,26 @@
 // Laufauswahl des aktiven Projekts (caseFilter im Store); solange ein Lauf
 // in einem Zwischenzustand ist (building, meshing, solving, …), wird die
 // Liste automatisch aktualisiert.
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { flood3dApi } from '../../services/api'
 import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePostStore } from '../../stores/usePostStore'
+import { useRunPolling } from '../../composables/useRunPolling'
+import { MIT_ERGEBNIS, TERMINAL, TERMINAL_ARCHIV } from '../../utils/runStatus'
+import { fmtBytes } from '../../utils/labels'
 
 const store = usePostStore()
 const lokal = useLocalRunStore()
 
-// 'lokal' ist aus Server-Sicht terminal (Companion-Reservierung) — sonst
-// pollte die Liste alle 8 s ENDLOS, solange irgendein alter lokaler Lauf
-// existiert. Aktiv ist so ein Lauf nur, wenn DIESER Browser ihn faehrt.
-const TERMINAL = ['completed', 'failed', 'unbekannt', 'lokal']
-// Auslagern erst, wenn nichts mehr rechnet oder auf einen Import wartet —
-// dieselbe Liste wie serverseitig in core/archiv.py ARCHIVIERBAR
-const TERMINAL_ARCHIV = ['completed', 'teilergebnis', 'abgebrochen', 'failed']
+// Ein 'lokal'-Lauf ist nur aktiv, wenn DIESER Browser ihn fährt;
 // hängende Läufe (stale) nicht weiter pollen — sonst pollt die Liste ewig
 const hasActive = computed(() =>
   store.visibleRuns.some((r) => (!TERMINAL.includes(r.status) && !r.stale)
     || (r.status === 'lokal' && lokal.laufend?.runId === r.run_id)))
 
-const fmtSize = (mb) => (mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`)
-
 async function confirmDelete(run) {
   const ok = window.confirm(
-    `Lauf ${run.run_id} (${fmtSize(run.size_mb ?? 0)}) endgültig löschen?`)
+    `Lauf ${run.run_id} (${fmtBytes((run.size_mb ?? 0) * 1e6)}) endgültig löschen?`)
   if (!ok) return
   try {
     await store.removeRun(run.run_id)
@@ -145,13 +140,7 @@ async function zurueckholen(run) {
 
 const runsNewestFirst = computed(() => [...store.visibleRuns].reverse())
 
-let pollTimer = null
-watch(hasActive, (active) => {
-  clearInterval(pollTimer)
-  if (active) pollTimer = setInterval(() => store.loadRuns(), 8000)
-}, { immediate: true })
-
-onBeforeUnmount(() => clearInterval(pollTimer))
+useRunPolling(hasActive, () => store.loadRuns(), 8000)
 </script>
 
 <style scoped>

@@ -75,7 +75,8 @@
 // Hydraulik allein beantwortet das nicht — man sieht schnelle und langsame
 // Bereiche, aber nicht, wie sie zusammenwirken.
 import { ref, watchEffect } from 'vue'
-import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
+import { usePostStore, SERIES_COLORS, LIMIT_COLOR }
+  from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
 import { flood3dApi } from '../../services/api'
 import { kurzschlussSchwellen } from '../../utils/grenzwerte'
@@ -146,7 +147,7 @@ async function laden() {
         t: s.t, v: s.v,
       }))
       if (tau) {
-        charts.push({ label: 'τ = V/Q', color: '#e66767', dash: [5, 4],
+        charts.push({ label: 'τ = V/Q', color: LIMIT_COLOR, dash: [5, 4],
           width: 1, t: [tau, tau], v: [0, 1] })
       }
 

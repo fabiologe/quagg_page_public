@@ -37,10 +37,13 @@
 // Logansicht (Spez. Kap. 8) + Laufmanifest (Spez. 4.4): OpenFOAM-Version,
 // Netzkennwerte, Kerne, Dauer, Abbruchgrund. Bei laufenden Läufen wird das
 // Log des aktuellen Schritts automatisch nachgeladen.
-import { onBeforeUnmount, ref, watchEffect } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import { flood3dApi } from '../../services/api'
 import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePostStore } from '../../stores/usePostStore'
+import { useRunPolling } from '../../composables/useRunPolling'
+import { AKTIV } from '../../utils/runStatus'
+import { GRENZWERTE } from '../../utils/grenzwerte'
 import { fmt } from '../../utils/labels'
 
 const store = usePostStore()
@@ -58,10 +61,8 @@ function lokalLive(entry) {
         || (!l.runId && l.caseId && entry.runId.startsWith(`${l.caseId}_r`)))
 }
 const entries = ref([])
-let pollTimer = null
 
-const ACTIVE = ['building', 'meshing', 'solving', 'extracting', 'converting_fields']
-const isActive = (s) => ACTIVE.includes(s)
+const isActive = (s) => AKTIV.includes(s)
 
 function manifestRows(m) {
   const rows = []
@@ -125,7 +126,8 @@ function manifestRows(m) {
     const pct = (m.viz_volume_error_rel_max * 100).toFixed(1)
     rows.push(['Viz-Volumen-Selbsttest',
       `max. ${pct} % Abweichung zum Solver-Volumen`,
-      m.viz_volume_error_rel_max > 0.05 ? 'bad' : 'good'])
+      m.viz_volume_error_rel_max > GRENZWERTE.viz_volumen_befund
+        ? 'bad' : 'good'])
   }
   return rows
 }
@@ -161,10 +163,6 @@ async function load() {
       return { runId, status: 'unbekannt', manifest: null, log: e.message }
     }
   }))
-  clearInterval(pollTimer)
-  if (entries.value.some((e) => isActive(e.status))) {
-    pollTimer = setInterval(load, 5000)
-  }
 }
 
 watchEffect(() => {
@@ -172,7 +170,9 @@ watchEffect(() => {
   load()
 })
 
-onBeforeUnmount(() => clearInterval(pollTimer))
+// solange einer der angezeigten Läufe rechnet, Log + Manifest nachladen
+const hasActive = computed(() => entries.value.some((e) => isActive(e.status)))
+useRunPolling(hasActive, load, 5000)
 </script>
 
 <style scoped>

@@ -101,6 +101,7 @@ import { useRoute } from 'vue-router'
 import { usePreStore } from '../stores/usePreStore'
 import { usePostStore, VIEWER_TABS } from '../stores/usePostStore'
 import { usePreventPageZoom } from '../composables/usePreventPageZoom'
+import { AKTIV } from '../utils/runStatus'
 import '../styles/f3d-theme.css'
 import MeldungsLeiste from '../components/common/MeldungsLeiste.vue'
 import CaseRunsPanel from '../components/pre/CaseRunsPanel.vue'
@@ -120,10 +121,8 @@ const lokal = useLocalRunStore()
 const route = useRoute()
 usePreventPageZoom()
 
-const ACTIVE_STATES = ['building', 'meshing', 'solving', 'extracting',
-  'converting_fields']
 const activeRunCount = computed(() =>
-  store.caseRuns.filter((r) => ACTIVE_STATES.includes(r.status)).length
+  store.caseRuns.filter((r) => AKTIV.includes(r.status)).length
   + (lokal.laeuft ? 1 : 0))
 
 // Strg+Z / Strg+Shift+Z / Strg+Y — nicht beim Tippen in Eingabefeldern

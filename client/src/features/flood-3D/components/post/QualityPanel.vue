@@ -24,6 +24,16 @@
             <span class="f3d-finding-icon">{{ b.severity === 'fehler' ? '✗'
               : b.severity === 'warnung' ? '⚠' : 'ⓘ' }}</span>
             {{ b.message }}
+            <!-- Messwert, Grenze und Prüfquelle liefert das Backend mit
+                 (evaluate.befunde_ableiten) — dezent dahinter, damit man
+                 den Abstand zur Grenze sieht statt nur den Satz -->
+            <span v-if="b.wert != null || b.grenze != null || b.quelle"
+                  class="f3d-befund-detail">
+              <template v-if="b.wert != null">{{ fmt(b.wert) }}</template>
+              <template v-if="b.grenze != null">
+                (Grenze {{ fmt(b.grenze) }})</template>
+              <template v-if="b.quelle"> · {{ b.quelle }}</template>
+            </span>
           </li>
         </ul>
       </article>
@@ -193,4 +203,10 @@ watchEffect(async () => {
 }
 .f3d-stat dd.bad { color: var(--f3d-bad); }
 .f3d-stat dd.good { color: var(--f3d-good); }
+.f3d-befund-detail {
+  color: var(--f3d-text-2);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 </style>

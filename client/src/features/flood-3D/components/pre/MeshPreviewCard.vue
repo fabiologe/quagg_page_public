@@ -57,11 +57,10 @@
 // und Absenden: erst wenn das Vorschaunetz in Ordnung ist, lohnt der Lauf.
 import { computed } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
-import { fmt as fmtNum } from '../../utils/labels'
+import { fmt } from '../../utils/labels'
 
 const store = usePreStore()
 const p = computed(() => store.meshPreview)
-const fmt = (v) => fmtNum(v)
 </script>
 
 <style scoped>

@@ -236,6 +236,7 @@ import { usePreStore } from '../../stores/usePreStore'
 import {
   KANTEN_ROLLEN, MATERIALS, ROLE_LABELS, SOLID_ROLES, rollenFuerKind,
 } from '../../utils/importRollen'
+import { fmtFest as fmt } from '../../utils/labels'
 
 const emit = defineEmits(['close'])
 const store = usePreStore()
@@ -270,7 +271,6 @@ const SAMPLES = [
   { file: 'problemfall.dxf', label: 'Problemfall',
     hint: 'Millimeter + Landeskoordinaten + roher 3DSOLID — zeigt die Warnungen' },
 ]
-const fmt = (v) => (v == null ? '–' : Number(v).toFixed(2))
 const spanX = computed(() => (manifest.value?.bbox
   ? manifest.value.bbox[1][0] - manifest.value.bbox[0][0] : 0))
 const spanY = computed(() => (manifest.value?.bbox
@@ -311,7 +311,17 @@ function vorschauWeg() {
   if (!vr) return
   cancelAnimationFrame(vr.raf)
   vr.controls.dispose()
+  // Die per STLLoader geladenen Geometrien und ihre Materialien sind
+  // eigene GPU-Ressourcen — renderer.dispose() kennt sie nicht, sie
+  // leckten bei jedem „andere Datei"/Schließen.
+  for (const mesh of Object.values(vr.meshes)) {
+    mesh.geometry.dispose()
+    mesh.material.dispose()
+  }
   vr.renderer.dispose()
+  // Browser deckeln WebGL-Kontexte auf ~8–16: den Kontext sofort
+  // freigeben, statt auf den Garbage Collector zu warten
+  vr.renderer.forceContextLoss()
   vr.renderer.domElement.remove()
   vr = null
 }

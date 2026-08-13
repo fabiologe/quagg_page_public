@@ -11,12 +11,10 @@ import { abgeschlosseneCompanionLaeufe, companionHealth, companionLaufManifest,
   importiereArtefakte, jobStatus, pauseLocalRun, runLocally,
   unterbrocheneLaeufe, verfolgen } from '../services/localCompanion'
 import { flood3dApi } from '../services/api'
+import { fmtDauer } from '../utils/labels'
 import { usePreStore } from './usePreStore'
 
 const LOG_MAX = 200
-const fmtDauer = (s) => (s == null ? '?'
-  : s > 3600 ? `${(s / 3600).toFixed(1)} h`
-    : s > 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`)
 const neuerLauf = (teil) => ({ jobId: null, runId: null, caseId: null,
   angeknuepft: false, phase: null, fraction: null,
   letzteZeit: null, endZeit: null, etaS: null, ...teil })

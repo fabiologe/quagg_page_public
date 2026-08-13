@@ -155,7 +155,8 @@
 // Froude-Zahl. Alles clientseitig aus den vorhandenen Felddaten berechnet.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import KennwertHilfe from './KennwertHilfe.vue'
-import { usePostStore } from '../../stores/usePostStore'
+import { usePostStore, SERIES_COLORS, LIMIT_COLOR }
+  from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
@@ -164,6 +165,7 @@ import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
 import { isoSegments } from '../../utils/marchingSquares'
 import { einordnen } from '../../utils/kennwerte'
+import { fmtKurz as fmt } from '../../utils/labels'
 import UPlotChart from './UPlotChart.vue'
 
 const G = 9.81
@@ -215,9 +217,6 @@ const skalaFehler = computed(() =>
 watch(lockScale, (an) => {
   if (an) [lockMin.value, lockMax.value] = uebernehmeBereich(autoRange.value)
 })
-
-const fmt = (v) => (v == null || Number.isNaN(v) ? '–'
-  : Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3))
 
 let terrain = null          // { z: Float32Array (ny*nx) }
 let grid = null
@@ -702,18 +701,20 @@ function computeProfile() {
       grenz.push(null)
     }
   }
+  // Linienfarben aus der zentralen Palette (usePostStore) — die Hexwerte
+  // standen hier als Kopie und wären bei einer Palettenänderung gedriftet
   profile.value = {
     pts: profile.value.pts,
     heights: [
-      { label: 'Gelände', t: s, v: ground, color: '#c98500' },
-      { label: 'Wasserspiegel', t: s, v: wsp, color: '#3987e5' },
-      { label: 'Energielinie', t: s, v: energy, color: '#199e70', dash: [6, 4], width: 1.5 },
-      { label: 'Grenztiefe', t: s, v: grenz, color: '#d55181', dash: [2, 3], width: 1 },
+      { label: 'Gelände', t: s, v: ground, color: SERIES_COLORS[3] },
+      { label: 'Wasserspiegel', t: s, v: wsp, color: SERIES_COLORS[0] },
+      { label: 'Energielinie', t: s, v: energy, color: SERIES_COLORS[2], dash: [6, 4], width: 1.5 },
+      { label: 'Grenztiefe', t: s, v: grenz, color: SERIES_COLORS[4], dash: [2, 3], width: 1 },
     ],
     froude: [
-      { label: 'Froude-Zahl', t: s, v: froude, color: '#d55181' },
+      { label: 'Froude-Zahl', t: s, v: froude, color: SERIES_COLORS[4] },
       { label: 'Fr = 1 (kritisch)', t: [0, total], v: [1, 1],
-        color: '#e66767', dash: [4, 4], width: 1 },
+        color: LIMIT_COLOR, dash: [4, 4], width: 1 },
     ],
   }
 }

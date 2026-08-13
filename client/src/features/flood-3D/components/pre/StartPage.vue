@@ -18,7 +18,11 @@
 
       <section class="f3d-start-projects">
         <h2>Projekte</h2>
-        <p v-if="store.error" class="f3d-error">{{ store.error }}</p>
+        <!-- Fehler von loadCases/openCase/createCaseAndOpen laufen über
+             den EINEN Meldungsweg — die Hauptansicht rendert die Leiste
+             erst im Editor, deshalb steht sie hier noch einmal -->
+        <MeldungsLeiste />
+
 
         <button v-for="(c, i) in store.cases" :key="c.id"
                 class="f3d-project" @click="store.openCase(c.id)">
@@ -67,6 +71,7 @@ import { nextTick, onMounted, ref, watch } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import { flood3dApi } from '../../services/api'
 import FlowNetBackground from '../common/FlowNetBackground.vue'
+import MeldungsLeiste from '../common/MeldungsLeiste.vue'
 
 const store = usePreStore()
 const creating = ref(false)
@@ -89,7 +94,7 @@ async function create() {
     await store.createCaseAndOpen(id)
     newId.value = ''
     creating.value = false
-  } catch { /* Fehler steht im Store */ }
+  } catch { /* Fehler steht in der MeldungsLeiste */ }
 }
 
 watch(creating, async (on) => {

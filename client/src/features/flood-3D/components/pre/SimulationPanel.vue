@@ -230,7 +230,7 @@
           </p>
           <button v-for="r in lokal.wiederaufnehmbare" :key="r.id" class="f3d-btn f3d-grow"
                   @click="lokal.fortsetzen(r)">
-            ▶ {{ r.id }} fortsetzen ({{ Math.round(r.sizeBytes / 1e6) }} MB)
+            ▶ {{ r.id }} fortsetzen ({{ fmtBytes(r.sizeBytes) }})
           </button>
         </div>
         <p v-if="store.nFehler" class="f3d-error">
@@ -285,6 +285,7 @@ import { computed, h, onMounted, ref } from 'vue'
 import { begrenzen, hinweis } from '../../utils/simHints'
 import { REGELWERKE, REGELWERK_IDS, eigeneRegelwerke } from '../../utils/regelwerke'
 import { flood3dApi } from '../../services/api'
+import { fmtBytes } from '../../utils/labels'
 import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePreStore } from '../../stores/usePreStore'
 import MeshPreviewCard from './MeshPreviewCard.vue'

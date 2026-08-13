@@ -41,7 +41,6 @@ export const usePreStore = defineStore('flood3d-pre', {
     geometryVersion: 0,
     selection: null,      // { kind, id }
     loading: false,
-    error: '',
     meshPreview: null,    // Ergebnis des Vernetzungsprobelaufs
     meshPreviewLoading: false,
     meshPreviewStale: false,   // Vorschaunetz gehört nicht mehr zum Fall
@@ -142,9 +141,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       if (art !== 'fehler' && art !== 'warnung') {
         setTimeout(() => this.meldungWeg(id), art === 'erfolg' ? 4000 : 10000)
       }
-      // `error` bleibt vorerst als zweiter Kanal bestehen, damit ältere
-      // Anzeigen weiter funktionieren
-      if (art === 'fehler') this.error = text
     },
 
     meldungWeg(id) {
@@ -192,7 +188,6 @@ export const usePreStore = defineStore('flood3d-pre', {
     },
 
     async createCaseAndOpen(caseId) {
-      this.error = ''
       try {
         await flood3dApi.createCase(caseId, caseId)
         await this.loadCases()
@@ -363,7 +358,6 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     async openCase(caseId) {
       this.loading = true
-      this.error = ''
       try {
         // Das Backend-Schema als Feldkunde-Quelle (einmal je Sitzung) —
         // Auswahlwerte kommen damit aus der casespec statt aus Kopien
@@ -486,7 +480,6 @@ export const usePreStore = defineStore('flood3d-pre', {
     },
     async saveCase() {
       this.loading = true
-      this.error = ''
       try {
         const result = await flood3dApi.saveCase(this.activeCaseId, this.spec)
         // PUT liefert die Geometrie gleich mit — kein Nachladen mehr
@@ -564,7 +557,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.spec = JSON.parse(snap)
       if (this.selection && !this.selectedObject) this.selection = null
       this.dirty = true
-      this.error = ''
       this.scheduleDraftPreview()
     },
 
@@ -633,7 +625,6 @@ export const usePreStore = defineStore('flood3d-pre', {
         }
         Object.assign(ziel, rest)
         this.dirty = true
-        this.error = ''
         this.scheduleDraftPreview()
         return
       }
@@ -643,7 +634,6 @@ export const usePreStore = defineStore('flood3d-pre', {
         this.recordUndo()
         list[i] = updated
         this.dirty = true
-        this.error = ''
         this.scheduleDraftPreview()
       }
     },
@@ -694,7 +684,6 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Verfeinerung — schneller, Zellzahl/Kosten sind eine untere Grenze
     async runMeshPreview({ ohneVerfeinerung = false } = {}) {
       this.meshPreviewLoading = true
-      this.error = ''
       try {
         if (this.dirty) await this.saveCase()
         this.meshPreview = await flood3dApi.meshPreview(this.activeCaseId,
@@ -715,7 +704,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       // Geld.
       if (this.loading) return
       this.loading = true
-      this.error = ''
       try {
         if (this.dirty) await this.saveCase()
         await flood3dApi.startRun(this.activeCaseId, ort)
@@ -750,7 +738,6 @@ export const usePreStore = defineStore('flood3d-pre', {
       this.recordUndo()
       mutator(this.spec)
       this.dirty = true
-      this.error = ''
       this.scheduleDraftPreview()
     },
 

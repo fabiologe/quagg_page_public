@@ -29,7 +29,7 @@
           </span>
         </div>
         <div class="f3d-runrow-actions">
-          <button v-if="['completed', 'teilergebnis'].includes(run.status)"
+          <button v-if="MIT_ERGEBNIS.includes(run.status)"
                   class="f3d-btn f3d-btn-primary"
                   @click="openResult(run.run_id, 'nachweis')">
             Ergebnis öffnen
@@ -53,10 +53,12 @@
 // Phase „Läufe": die Rechenläufe DIESES Falls mit Live-Status — nach dem
 // Start landet der Nutzer hier und sieht den Fortschritt, statt den Lauf
 // in einer globalen Liste suchen zu müssen.
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import { useLocalRunStore } from '../../stores/useLocalRunStore'
 import { usePostStore } from '../../stores/usePostStore'
+import { useRunPolling } from '../../composables/useRunPolling'
+import { AKTIV, MIT_ERGEBNIS } from '../../utils/runStatus'
 
 const store = usePreStore()
 const lokal = useLocalRunStore()
@@ -71,20 +73,14 @@ function openResult(runId, tab) {
   store.activePhase = 'ergebnis'
 }
 
-const ACTIVE = ['building', 'meshing', 'solving', 'extracting', 'converting_fields']
 const hasActive = computed(() =>
-  store.caseRuns.some((r) => ACTIVE.includes(r.status))
+  store.caseRuns.some((r) => AKTIV.includes(r.status))
   // Teilstand-Importe des lokal gefahrenen Laufs sollen sichtbar nachladen
   || lokal.laeuft)
 
-let pollTimer = null
-watch(hasActive, (active) => {
-  clearInterval(pollTimer)
-  if (active) pollTimer = setInterval(() => store.loadCaseRuns(), 5000)
-}, { immediate: true })
+useRunPolling(hasActive, () => store.loadCaseRuns(), 5000)
 
 onMounted(() => store.loadCaseRuns())
-onBeforeUnmount(() => clearInterval(pollTimer))
 </script>
 
 <style scoped>

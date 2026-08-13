@@ -44,3 +44,34 @@ export function fmtPercent(ratio) {
   return `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
     .format(ratio * 100)} %`
 }
+
+// Kompakte Zahl für Karten, Legenden und Cursor-Tabellen: 3 signifikante
+// Stellen, ab 1000 ganzzahlig. Bewusst eine ZWEITE Funktion neben fmt():
+// sie formatiert ohne Tausenderpunkte und ohne Exponenten — Grundriss und
+// Raum (3D) zeigten so schon immer an, und das soll sich nicht still
+// ändern (lebte dort als identische lokale Kopie).
+export function fmtKurz(v) {
+  if (v == null || Number.isNaN(v)) return '–'
+  return Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3)
+}
+
+// Feste Nachkommastellen (Import-Dialog: Maße in Metern) — Spaltenwerte
+// vergleichen sich so zeilenweise, anders als bei signifikanten Stellen.
+export function fmtFest(v, stellen = 2) {
+  return v == null ? '–' : Number(v).toFixed(stellen)
+}
+
+// Dateigrößen: unter 1 GB gerundete MB, darüber GB mit einer
+// Nachkommastelle (vorher je eine Kopie in RunListPanel/SimulationPanel)
+export function fmtBytes(bytes) {
+  const mb = (bytes ?? 0) / 1e6
+  return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`
+}
+
+// Dauern menschenlesbar: Sekunden → s / min / h (ETA des lokalen Laufs)
+export function fmtDauer(s) {
+  if (s == null) return '?'
+  if (s > 3600) return `${(s / 3600).toFixed(1)} h`
+  if (s > 60) return `${Math.round(s / 60)} min`
+  return `${Math.round(s)} s`
+}

@@ -32,6 +32,7 @@
 import { computed, ref, watch } from 'vue'
 import { flood3dApi } from '../../services/api'
 import { usePreStore } from '../../stores/usePreStore'
+import { SERIES_COLORS } from '../../stores/usePostStore'
 import UPlotChart from '../post/UPlotChart.vue'
 
 const store = usePreStore()
@@ -62,12 +63,15 @@ async function loadProfile() {
   busy.value = true
   try {
     const p = await flood3dApi.caseProfile(store.activeCaseId, polyline)
-    const out = [{ label: 'Gelände', t: p.s, v: p.ground, color: '#c98500' }]
+    // Farben aus der zentralen Serien-Palette — Gelände und Wasserspiegel
+    // wie im Grundriss-Längsschnitt der Ergebnis-Phase
+    const out = [{ label: 'Gelände', t: p.s, v: p.ground,
+      color: SERIES_COLORS[3] }]
     if (p.initial_level != null) {
       out.push({ label: 'Anfangswasserspiegel',
         t: [p.s[0], p.s[p.s.length - 1]],
         v: [p.initial_level, p.initial_level],
-        color: '#3987e5', dash: [6, 4], width: 1.5 })
+        color: SERIES_COLORS[0], dash: [6, 4], width: 1.5 })
     }
     series.value = out
   } catch (e) {

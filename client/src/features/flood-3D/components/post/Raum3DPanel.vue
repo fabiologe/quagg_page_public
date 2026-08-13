@@ -150,7 +150,7 @@
           Die gewählte Höhe liegt über dem Wasser — gezeichnet wird von der
           Ebene mit den meisten Nasszellen aus.
         </p>
-        <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
+        <div class="f3d-legend" :style="{ background: VIRIDIS_CSS }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(velRange[0]) }} m/s</span>
           <span class="f3d-mono">{{ fmt(velRange[1]) }} m/s</span>
@@ -159,7 +159,7 @@
 
       <div class="f3d-ctl-group">
         <label>Farbskala {{ activeField.label }} <span v-if="activeField.unit !== '—'">in {{ activeField.unit }}</span></label>
-        <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
+        <div class="f3d-legend" :style="{ background: VIRIDIS_CSS }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(shownRange[0]) }}</span>
           <span class="f3d-mono">{{ fmt(shownRange[1]) }}</span>
@@ -186,7 +186,7 @@
           <span>Sohlschubspannung in N/m²</span>
           <KennwertHilfe groesse="bed_shear" :wert="tauRange[1]" />
         </div>
-        <div class="f3d-legend" :style="{ background: LEGEND_GRADIENT }"></div>
+        <div class="f3d-legend" :style="{ background: VIRIDIS_CSS }"></div>
         <div class="f3d-row f3d-legend-labels">
           <span class="f3d-mono">{{ fmt(tauRange[0]) }}</span>
           <span class="f3d-mono">{{ fmt(tauRange[1]) }}</span>
@@ -295,6 +295,8 @@ import { glaetteFeldCached } from '../../utils/glaettung'
 import { ALPHA_NASS, TIEFE_TROCKEN } from '../../utils/anzeigeSchwellen'
 import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
   from '../../utils/farbskala'
+import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
+import { fmtKurz as fmt } from '../../utils/labels'
 
 const store = usePostStore()
 
@@ -314,7 +316,6 @@ const ALL_FIELDS = [
 const availableFieldKeys = ref(['umag', 'alpha', 'p_rgh'])
 const FIELD_OPTIONS = computed(() =>
   ALL_FIELDS.filter((f) => availableFieldKeys.value.includes(f.needs)))
-const LEGEND_GRADIENT = 'linear-gradient(90deg,#440154,#414487,#2a788e,#22a884,#7ad151,#fde725)'
 // Kamerastellungen JE FALL (Audit F11): laufübergreifend innerhalb eines
 // Projekts sinnvoll (Variantenbilder deckungsgleich), aber die Stellungen
 // eines ANDEREN Projekts liegen in fremden Weltkoordinaten und sind dort
@@ -391,9 +392,6 @@ const skalaFehler = computed(() =>
 watch(colorLock, (an) => {
   if (an) [colorMin.value, colorMax.value] = uebernehmeBereich(autoRange.value)
 })
-
-const fmt = (v) => (v == null || Number.isNaN(v) ? '–'
-  : Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(3))
 
 // --- vtk-Szene (außerhalb der Vue-Reaktivität) ----------------------------
 let grw = null
@@ -1218,9 +1216,12 @@ async function exportPng() {
   const gx = canvas.width - gw - 14
   const gy = img.height + 20
   const grad = ctx.createLinearGradient(gx, 0, gx + gw, 0)
-  const stops = [['#440154', 0], ['#414487', 0.2], ['#2a788e', 0.4],
-    ['#22a884', 0.6], ['#7ad151', 0.8], ['#fde725', 1]]
-  for (const [c, o] of stops) grad.addColorStop(o, c)
+  // Stützstellen aus utils/colormap — vorher standen die Hexwerte hier
+  // als zweite Kopie neben viridis()
+  for (const o of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
+    const [r, g, b] = viridis(o).map(Math.round)
+    grad.addColorStop(o, `rgb(${r},${g},${b})`)
+  }
   ctx.fillStyle = grad
   ctx.fillRect(gx, gy, gw, 14)
 
@@ -1238,10 +1239,58 @@ const STRUCT_COLORS = [[0.22, 0.53, 0.9], [0.85, 0.35, 0.15], [0.1, 0.62, 0.44],
 function _disposeActorList(list) {
   for (const a of list) {
     renderer.removeActor(a)
-    a.getMapper()?.getInputData()?.delete?.()
+    const mapper = a.getMapper()
+    mapper?.getInputData()?.delete?.()
+    // der Mapper selbst hielt bisher je Laufwechsel seine GPU-Puffer fest
+    mapper?.delete?.()
     a.delete?.()
   }
   list.length = 0
+}
+
+// Beim Verlassen der Ansicht ALLE vtk-Objekte freigeben. grw.delete()
+// räumt nur RenderWindow/Interactor — die in buildPipelines() erzeugten
+// Actors, Mapper, Filter, Images und Transferfunktionen hielten WebGL-
+// Puffer und Typed Arrays fest: jeder Tab-Wechsel Raum→Grundriss→Raum
+// leckte eine komplette Szene.
+function disposeVtk() {
+  if (!renderer) return
+  _disposeActorList(vtk.structureActors)
+  _disposeActorList(vtk.meshActors)
+  // Ebenenstapel: Mapper je Ebene ist eigen, die Bilddaten (fieldImage)
+  // sind GETEILT und werden unten genau einmal freigegeben
+  for (const a of vtk.sliceExtras) {
+    renderer.removeActor(a)
+    a.getMapper()?.delete?.()
+    a.delete?.()
+  }
+  vtk.sliceExtras.length = 0
+  // Haupt-Actors samt ihrer Mapper
+  const paare = [
+    [vtk.terrainActor, vtk.terrainMapper],
+    [vtk.surfaceActor, vtk.surfaceMapper],
+    [vtk.filmActor, vtk.filmMapper],
+    [vtk.sliceActor, vtk.sliceMapper],
+    [vtk.isoActor, vtk.isoMapper],
+    [vtk.glyphActor, vtk.glyphMapper],
+    [vtk.slActor, vtk.slMapper],
+  ]
+  for (const [actor, mapper] of paare) {
+    renderer.removeActor(actor)
+    mapper?.delete?.()
+    actor?.delete?.()
+  }
+  renderer.removeVolume(vtk.volumeActor)
+  vtk.volumeMapper?.delete?.()
+  vtk.volumeActor?.delete?.()
+  // Filter/Quellen, Bild- und Punktdaten, Transferfunktionen, Picker
+  for (const k of ['mc', 'isoMC', 'slFilter', 'tube', 'arrowSource',
+    'alphaImage', 'fieldImage', 'vectorImage', 'terrainData', 'glyphData',
+    'seedPD', 'filmData', 'opacityFn', 'ctfField', 'ctfTau', 'ctfVel',
+    'picker']) {
+    vtk[k]?.delete?.()
+  }
+  for (const k of Object.keys(vtk)) delete vtk[k]
 }
 
 function buildGeometryActors(geo) {
@@ -1348,7 +1397,11 @@ watch([timeIdx, activeFieldKey, layers, sliceAxis, sliceIdx, sliceCount,
 onBeforeUnmount(() => {
   clearInterval(playTimer)
   resizeObs?.disconnect()
+  disposeVtk()
   grw?.delete()
+  renderer = null
+  renderWindow = null
+  grw = null
 })
 </script>
 
