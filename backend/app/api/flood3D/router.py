@@ -1666,10 +1666,12 @@ async def start_run(request: Request, payload: dict = Body(...)):
                                  * POD_PRICE_EUR_H, 2))
         except RunPodFehler as e:
             abgebrochen = "abgebrochen" in str(e).lower()
-            melde(status="abgebrochen" if abgebrochen else "failed",
+            melde(status="abgebrochen" if abgebrochen
+                  else _endstatus_bei_fehler(run_root),
                   error=str(e)[:500], finished=time.time())
         except Exception as e:                   # noqa: BLE001
-            melde(status="failed", error=f"{type(e).__name__}: {e}"[:500],
+            melde(status=_endstatus_bei_fehler(run_root),
+                  error=f"{type(e).__name__}: {e}"[:500],
                   finished=time.time())
         finally:
             (run_root / "ABBRUCH").unlink(missing_ok=True)
@@ -1736,6 +1738,19 @@ async def abort_run(run_id: str):
                   "(Lauf war verwaist)", "finished": time.time()})
         manifest_pfad.write_text(json.dumps(m, indent=2, ensure_ascii=False))
     return {"run_id": run_id, "gestoppte_container": len(gestoppt)}
+
+
+def _endstatus_bei_fehler(run_root: Path) -> str:
+    """Cloud-Lauf gescheitert: liegen gesicherte Zwischenstaende vor, ist
+    das ein TEILERGEBNIS (ansehbar!), kein Totalausfall — die 4 Zeitschritte
+    des Wiederanknuepfungs-Smokes waren da und trugen trotzdem 'failed'."""
+    try:
+        m = json.loads((run_root / "manifest.json").read_text())
+        if m.get("teilstand"):
+            return "teilergebnis"
+    except Exception:  # noqa: BLE001
+        pass
+    return "failed"
 
 
 def teilstaende_einsammeln() -> list[str]:
@@ -1908,10 +1923,12 @@ def relays_wiederanknuepfen() -> list[str]:
                       finished=time.time(), wiederangeknuepft=True)
             except RunPodFehler as e:
                 ab = "abgebrochen" in str(e).lower()
-                melde(status="abgebrochen" if ab else "failed",
+                melde(status="abgebrochen" if ab
+                      else _endstatus_bei_fehler(run_root),
                       error=str(e)[:500], finished=time.time())
             except Exception as e:       # noqa: BLE001
-                melde(status="failed", finished=time.time(),
+                melde(status=_endstatus_bei_fehler(run_root),
+                      finished=time.time(),
                       error=f"{type(e).__name__}: {e}"[:500])
             finally:
                 (run_root / "ABBRUCH").unlink(missing_ok=True)
