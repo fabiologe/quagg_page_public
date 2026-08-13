@@ -343,3 +343,36 @@ def test_waechter_funkt_dem_browser_nicht_dazwischen(tmp_path, monkeypatch):
     r2.objekte["flood3d/artifacts/demo_r001.zip"] = _lauf_zip("demo_r001")
     monkeypatch.setattr(relay, "_r2", lambda: (r2, "flood-3d", "flood3d"))
     assert router_mod.teilstaende_einsammeln() == []
+
+
+def test_laufzeit_leitplanke_je_job(welt, monkeypatch):
+    """
+    Vorgabe Fabio (2026-08-13): Test-/Beweislaeufe duerfen nie mehr kosten
+    als geplant — die Grenze setzt RunPod selbst durch (policy je Job),
+    nicht ein Skript, das sterben koennte.
+    """
+    monkeypatch.setattr("app.api.flood3D.core.bundle.bundle_bauen",
+                        lambda spec, d, run_id, checkpoint=None: b"PK")
+    auftraege = []
+
+    def _ruf(pfad, body=None, timeout=60.0):
+        if pfad == "run":
+            auftraege.append(body)
+            return {"id": "job-1"}
+        if pfad.startswith("stream/"):
+            return {"stream": [{"output": {"event": "done",
+                "artifactsUrl": "https://r2.example/j/a.zip"}}],
+                "status": "COMPLETED"}
+        return {}
+
+    monkeypatch.setattr(relay, "_ruf", _ruf)
+    _lade(monkeypatch)
+    relay.lauf_starten(object(), welt["case_dir"], "demo_r001",
+                       welt["run_root"], lambda **f: None, lambda: False,
+                       max_laufzeit_s=300)
+    assert auftraege[0]["policy"] == {"executionTimeout": 300000}
+
+    # ohne Vorgabe: KEINE policy — es gilt das Endpunkt-Limit (8 h)
+    relay.lauf_starten(object(), welt["case_dir"], "demo_r002",
+                       welt["run_root"], lambda **f: None, lambda: False)
+    assert "policy" not in auftraege[1]

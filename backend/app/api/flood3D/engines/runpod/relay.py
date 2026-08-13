@@ -109,7 +109,8 @@ def abbrechen(job_id: str) -> None:
 def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                  melde, abbruch_gewuenscht, cores: int | None = None,
                  checkpoint_s: int | None = 600,
-                 zwischenstand_cb=None) -> dict:
+                 zwischenstand_cb=None,
+                 max_laufzeit_s: int | None = None) -> dict:
     """
     Einen Fall in der Cloud rechnen lassen.
 
@@ -149,7 +150,13 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
     eingabe = {"case_zip": {"encoding": "s3", "key": eingang}, "run_id": run_id}
     if cores:
         eingabe["cores"] = int(cores)
-    job = _ruf("run", {"input": eingabe})
+    auftrag: dict = {"input": eingabe}
+    if max_laufzeit_s:
+        # Harte Laufzeit-Leitplanke JE JOB, von RunPod selbst durchgesetzt —
+        # Rauch- und Beweislaeufe koennen damit nie mehr kosten als geplant
+        # (Vorgabe Fabio 2026-08-13: Tests kurz deckeln, nie Stunden).
+        auftrag["policy"] = {"executionTimeout": int(max_laufzeit_s) * 1000}
+    job = _ruf("run", auftrag)
     job_id = job.get("id")
     if not job_id:
         raise RunPodFehler(f"RunPod hat keinen Job angelegt: {job}")

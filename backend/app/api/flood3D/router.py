@@ -1643,7 +1643,8 @@ async def start_run(request: Request, payload: dict = Body(...)):
                                lambda: (run_root / "ABBRUCH").exists(),
                                cores=payload.get("cores"),
                                checkpoint_s=payload.get("checkpoint_s", 600),
-                               zwischenstand_cb=zwischenstand)
+                               zwischenstand_cb=zwischenstand,
+                               max_laufzeit_s=payload.get("max_laufzeit_s"))
             melde(status="importing")
             _import_entpacken(run_root, run_id, erg["artefakte"])
             artefakt_aufraeumen(erg["job_id"])
