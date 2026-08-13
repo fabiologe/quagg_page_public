@@ -462,6 +462,49 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
     return out
 
 
+BEFUND_YPLUS_MAX = 500.0
+BEFUND_COURANT_MAX = 1.5
+BEFUND_VIZ_VOLUMEN = 0.05
+
+
+def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
+    """
+    Qualitaetszahlen in sichtbare Befunde uebersetzen (Schema wie
+    validate._finding). r007 hatte y+ 81.201, Courant 2,24 und 32 %
+    Viz-Volumenfehler — alles im Manifest vergraben, nirgends sichtbar.
+    """
+    befunde: list[dict] = []
+
+    def b(severity, message, **extra):
+        befunde.append({"object_id": "qualitaet", "severity": severity,
+                        "message": message, **extra})
+
+    yp = quality.get("y_plus_range") or [None, None]
+    if yp[1] is not None and float(yp[1]) > BEFUND_YPLUS_MAX:
+        b("warnung", f"y+ bis {float(yp[1]):,.0f} — die Wandfunktion ist "
+                     "dort nicht mehr gültig (gesund: 30–300); Sohlschub "
+                     "an diesen Stellen mit Vorsicht lesen."
+                     .replace(",", "."),
+          wert=float(yp[1]), grenze=BEFUND_YPLUS_MAX, quelle="yplus")
+    co = quality.get("courant_max")
+    if co is not None and float(co) > BEFUND_COURANT_MAX:
+        b("warnung", f"Courant-Spitze {float(co):g} über {BEFUND_COURANT_MAX:g} "
+                     "trotz Zeitschrittbegrenzung — einzelne Zellen laufen "
+                     "heiß (oft ein Netz- oder Randproblem).",
+          wert=float(co), grenze=BEFUND_COURANT_MAX, quelle="courant")
+    viz = manifest.get("viz_volume_error_rel_max")
+    if viz is not None and float(viz) > BEFUND_VIZ_VOLUMEN:
+        b("warnung", f"Viz-Volumen-Selbsttest: {float(viz) * 100:.0f} % "
+                     "Abweichung zum Solver-Volumen — die 3D-Ansicht ist "
+                     "dort gröber als die Rechnung.",
+          wert=float(viz), grenze=BEFUND_VIZ_VOLUMEN, quelle="viz_volume")
+    if quality.get("checkmesh_ok") is False:
+        b("fehler", "checkMesh war durchgefallen — Ergebnis nur mit "
+                    "Vorsicht verwenden (Altlauf vor dem Netz-Tor).",
+          quelle="checkmesh")
+    return befunde
+
+
 def evaluate_run(df: pd.DataFrame, spec: CaseSpec, run_id: str,
                  manifest: dict | None = None) -> dict:
     return {

@@ -294,25 +294,29 @@ def extract_mesh_surface(spec, case_dir: Path) -> bool:
     return find_mesh_surface(case_dir) is not None
 
 
-def _snappy(case_dir: Path) -> None:
+def _snappy(case_dir: Path, ranks: int | None = None) -> None:
     """
-    snappyHexMesh — parallel, wenn mehr als ein Kern konfiguriert ist
-    (Fahrplan-Entscheidung Fabio, R3-Optional): der Vernetzer ist bei
-    feinen Netzen der teuerste Schritt und lief serverseitig bisher
-    seriell, während der Companion längst parallel vernetzte (F12-Drift).
-    Gleiche Schrittfolge wie dort: decomposePar → mpirun snappy -parallel
-    → reconstructParMesh; danach sind die processor*-Ordner überflüssig.
+    snappyHexMesh — parallel mit FESTER Rangzahl und hierarchischer
+    Zerlegung. Das Netz haengt sonst an der Maschine: scotch partitioniert
+    je Rangzahl anders, und mit der Partition aendert sich das parallele
+    snappy-Ergebnis (r007: 16 Raenge -> 60 % weniger Zellen, Schiefe 7,2,
+    checkMesh durchgefallen). Feste Raenge + hierarchical = identisches
+    Netz auf Server, Nutzer-Maschine und RunPod. Der SOLVER dekomponiert
+    danach separat mit den Raengen der Maschine (scotch, unveraendert).
     """
-    if CORES > 1:
-        from .foam import foam_file
-        (case_dir / "system" / "decomposeParDict").write_text(foam_file(
-            "decomposeParDict",
-            f"numberOfSubdomains {CORES};\n\nmethod          scotch;",
-            location="system"))
+    from .meshgen import MESH_RANKS, netz_zerlegung_dict
+
+    ranks = MESH_RANKS if ranks is None else max(1, int(ranks))
+    if ranks > 1:
+        (case_dir / "system" / "decomposeParDict").write_text(
+            netz_zerlegung_dict(ranks))
         run_foam(case_dir, "decomposePar -force -copyZero",
                  "log.decomposePar_mesh", name_suffix="dpm")
+        # --oversubscribe: die festen Raenge duerfen ueber den Kernen der
+        # Maschine liegen (8 auf dem 4-Kern-Server) — Minuten Vernetzung
+        # sind der Preis fuer ein ueberall identisches Netz
         run_foam(case_dir,
-                 f"mpirun --allow-run-as-root -np {CORES} "
+                 f"mpirun --allow-run-as-root --oversubscribe -np {ranks} "
                  "snappyHexMesh -overwrite -parallel",
                  "log.snappyHexMesh", name_suffix="shm")
         run_foam(case_dir, "reconstructParMesh -constant",
@@ -330,7 +334,8 @@ def mesh_preview(spec, case_dir: str | Path) -> dict:
     case_dir = Path(case_dir)
     run_foam(case_dir, "blockMesh", "log.blockMesh", name_suffix="bm")
     _kanten_ziehen(case_dir, "sfe")
-    _snappy(case_dir)
+    from .meshgen import PREVIEW_RANKS
+    _snappy(case_dir, ranks=PREVIEW_RANKS)
     # Fenster ausschneiden wie im echten Lauf. Ohne diesen Schritt kann die
     # Vorschau „in Ordnung" melden, obwohl eine Randbedingung im fertigen
     # Netz keine einzige Fläche hat (Rohr unter Gelände, Fenster im
@@ -349,7 +354,13 @@ def mesh_preview(spec, case_dir: str | Path) -> dict:
     # Nur der zweite darf die Vorschau entwerten — sonst meldet sie sich
     # nach jedem geänderten Grenzwert als veraltet, obwohl kein Netzelement
     # anders ist.
-    result = {**cm, **estimate_run(spec, cm.get("cells", 0)),
+    # Schaetzung auf RunPod-Basis (16 Threads, Cloud-Satz): der Server
+    # rechnet keine Laeufe mehr — die Zahl soll zum echten Rechenort passen.
+    # Lokal variiert je nach Rechner; das sagt der Client dazu.
+    result = {**cm,
+              **estimate_run(spec, cm.get("cells", 0), cores=16,
+                             satz=POD_PRICE_EUR_H),
+              "schaetzung_basis": "RunPod, 16 Threads",
               "case_hash": spec.case_hash(),
               "netz_hash": spec.netz_hash()}
     (case_dir / "mesh_preview.json").write_text(
@@ -560,6 +571,9 @@ def run_pipeline(spec, case_source_dir: Path, run_root: Path,
         endstatus = "teilergebnis" if solver_fehler else "completed"
         result = evaluate_run(df, spec, run_id,
                               {**manifest, "status": endstatus})
+        from .evaluate import befunde_ableiten
+        _write_manifest(run_root, befunde=(manifest.get("befunde") or [])
+                        + befunde_ableiten(result.get("quality") or {}, manifest))
         render_run(result, df, spec, run_root)
 
         dauer = time.time() - t0

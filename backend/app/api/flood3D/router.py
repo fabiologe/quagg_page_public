@@ -194,6 +194,12 @@ async def list_runs():
             # weiter lokal, Felder/Abbildungen holt der Server auf Anforderung
             "archiviert": marke is not None,
             "archiv_bytes": (marke or {}).get("bytes"),
+            # Qualitaets-Befunde als Zaehler fuer den Listen-Chip — die
+            # Zahlen selbst zeigt die Qualitaetsansicht
+            "befunde_fehler": sum(1 for b in (manifest.get("befunde") or [])
+                                  if b.get("severity") == "fehler"),
+            "befunde_warnung": sum(1 for b in (manifest.get("befunde") or [])
+                                   if b.get("severity") == "warnung"),
             "stale": _run_stale(d, status),
             "size_mb": _run_size_mb(d),
             "title": manifest.get("title", ""),
@@ -1559,15 +1565,23 @@ async def start_run(request: Request, payload: dict = Body(...)):
     import threading
 
     from .core.gate import pruefe_kosten_gate
-    from .core.runner import run_pipeline
 
     # Kosten-Gate VOR allem anderen: ein Lauf bindet Server-Kerne (und ueber
     # RunPod echtes Geld). Oeffentliche API — Oberflaeche umgehen zaehlt nicht.
     pruefe_kosten_gate(request, payload)
 
     case_id = payload.get("case_id", "")
-    ort = (payload.get("ort") or "server").strip()
-    if ort not in ("server", "runpod"):
+    ort = (payload.get("ort") or "runpod").strip()
+    if ort == "server":
+        # Entscheidung Fabio 2026-08-13: der Server rechnet keine Laeufe
+        # mehr — er teilt sich die Maschine mit der Webseite. run_pipeline
+        # bleibt als Code (Verifikation/Notfaelle), ist aber ueber die API
+        # nicht mehr erreichbar.
+        raise HTTPException(
+            status_code=410,
+            detail="Der Server-Rechenort entfällt — bitte Lokal (Companion) "
+                   "oder RunPod wählen.")
+    if ort != "runpod":
         raise HTTPException(status_code=422,
                             detail=f"Unbekannter Rechenort {ort!r}")
     spec, case_dir = _load_case(case_id)
@@ -1661,10 +1675,7 @@ async def start_run(request: Request, payload: dict = Body(...)):
 
     def work():
         try:
-            if ort == "runpod":
-                work_runpod()
-            else:
-                run_pipeline(spec, case_dir, run_root, run_id)
+            work_runpod()
         except Exception as e:                   # noqa: BLE001
             # Der Fehlerzustand steht NORMALERWEISE im Manifest — aber
             # wenn das Manifest-Schreiben selbst scheitert (Platte voll),
@@ -1676,13 +1687,12 @@ async def start_run(request: Request, payload: dict = Body(...)):
         finally:
             _active_runs.pop(run_id, None)
 
-    if ort == "runpod":
-        # Der Cloud-Weg schreibt sein Manifest selbst — Ordner und erster
-        # Zustand müssen VOR dem Thread stehen, sonst zeigt die Liste einen
-        # Lauf ohne alles.
-        run_root.mkdir(parents=True, exist_ok=True)
-        melde(status="building", origin="runpod", ort="runpod",
-              title=spec.meta.title, created=time.time())
+    # Der Cloud-Weg schreibt sein Manifest selbst — Ordner und erster
+    # Zustand müssen VOR dem Thread stehen, sonst zeigt die Liste einen
+    # Lauf ohne alles.
+    run_root.mkdir(parents=True, exist_ok=True)
+    melde(status="building", origin="runpod", ort="runpod",
+          title=spec.meta.title, created=time.time())
 
     t = threading.Thread(target=work, name=f"flood3d-{run_id}", daemon=True)
     _active_runs[run_id] = t

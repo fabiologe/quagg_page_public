@@ -10,6 +10,7 @@ Zufluss x_min, erster Abfluss x_max, Atmosphäre z_max.
 from __future__ import annotations
 
 import math
+import os
 
 from .casespec import CaseSpec
 from .foam import foam_file, vec
@@ -41,6 +42,58 @@ def assign_faces(spec: CaseSpec) -> dict[str, tuple[str, str]]:
         if face not in assignment:
             assignment[face] = ("bottom" if face == "z_min" else "farfield", "wall")
     return assignment
+
+
+# ── Deterministische Netz-Zerlegung ─────────────────────────────────────────
+# Das Netz haengt sonst an der Maschine: scotch partitioniert je Rangzahl
+# anders, und mit der Partition aendert sich das parallele snappy-Ergebnis —
+# 4 Raenge bauten 317.375 Zellen, 16 Raenge aus demselben Fall 127.466 mit
+# Schiefe 7,2 und durchgefallenem checkMesh (Benchmark r007, 2026-08-13).
+# Deshalb: Vernetzen IMMER mit fester Rangzahl und method hierarchical
+# (feste Koeffizienten, feste Reihenfolge) — identische Zerlegung auf jeder
+# Maschine, identisches Netz. Der SOLVER dekomponiert danach separat mit
+# den Raengen der jeweiligen Maschine (scotch, unveraendert).
+# Diese Datei reist im Bundle mit — die Konstanten sind damit auf Server,
+# Nutzer-Maschine und RunPod automatisch identisch. Ein Override bricht die
+# Standort-Gleichheit und ist nur fuer Experimente gedacht.
+MESH_RANKS = int(os.environ.get("FLOOD3D_MESH_RANKS", "8"))
+PREVIEW_RANKS = min(2, int(os.environ.get("FLOOD3D_PREVIEW_RANKS", "2")))
+
+
+def drei_faktoren(n: int) -> tuple[int, int, int]:
+    """Deterministische Zerlegung n -> (nx, ny, nz), moeglichst wuerfelig.
+
+    8 -> (2, 2, 2) · 4 -> (2, 2, 1) · 2 -> (2, 1, 1) · 6 -> (3, 2, 1).
+    Immer dieselbe Antwort fuer dasselbe n — darauf baut die Gleichheit der
+    Netze zwischen den Rechenorten.
+    """
+    beste = (n, 1, 1)
+    for a in range(1, int(n ** (1 / 3)) + 2):
+        if n % a:
+            continue
+        rest = n // a
+        for b in range(a, int(rest ** 0.5) + 1):
+            if rest % b:
+                continue
+            c = rest // b
+            if c >= b >= a and (c - a) < (beste[0] - beste[2]):
+                beste = (c, b, a)
+    return beste
+
+
+def netz_zerlegung_dict(ranks: int) -> str:
+    """decomposeParDict fuer die VERNETZUNG — hierarchisch und byte-stabil."""
+    nx, ny, nz = drei_faktoren(max(1, int(ranks)))
+    return foam_file(
+        "decomposeParDict",
+        f"numberOfSubdomains {max(1, int(ranks))};\n\n"
+        "method          hierarchical;\n\n"
+        "hierarchicalCoeffs\n{\n"
+        f"    n           ({nx} {ny} {nz});\n"
+        "    delta       0.001;\n"
+        "    order       xyz;\n"
+        "}",
+        location="system")
 
 
 def cell_counts(spec: CaseSpec) -> tuple[int, int, int]:

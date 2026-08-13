@@ -193,6 +193,12 @@ def lauf_starten(spec, case_dir: Path, run_id: str, run_root: Path,
                         melde(teilstand_fehler=f"{type(e).__name__}: {e}"[:200])
                 elif art == "error":
                     fehler = str(ev.get("text"))[:500]
+                    # Netz-Tor-Abbrueche tragen ihre Befunde im Ereignis —
+                    # ohne diese Zeilen waeren die Zahlen des Abbruchs
+                    # unsichtbar (der Lauf hat ja keine Artefakte)
+                    extra = {k: ev[k] for k in ("befunde", "netz") if k in ev}
+                    if extra:
+                        melde(**extra)
                 elif art == "done":
                     artefakt_url = ev.get("artifactsUrl")
             zustand = stand.get("status")

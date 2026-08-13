@@ -40,6 +40,12 @@
                 title="Lauf ohne normalisierte Zeitreihen — Diagramme und Nachweise bleiben leer">
             ohne Auswertung
           </span>
+          <span v-if="run.befunde_fehler || run.befunde_warnung"
+                class="f3d-chip"
+                :class="run.befunde_fehler ? 'status-failed' : 'status-stale'"
+                :title="`${run.befunde_fehler || 0} Fehler- und ${run.befunde_warnung || 0} Warn-Befunde — Details im Reiter Qualität`">
+            ⚠ Qualität
+          </span>
           <span v-if="run.archiviert" class="f3d-chip status-stale"
                 :title="`Auf die StorageBox ausgelagert (${fmtSize((run.archiv_bytes || 0) / 1e6)}) — `
                         + 'Bewertung ist da, 3D-Felder und Abbildungen werden beim Öffnen zurückgeholt'">

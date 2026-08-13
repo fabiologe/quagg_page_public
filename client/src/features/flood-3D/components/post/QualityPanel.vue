@@ -15,6 +15,17 @@
             <dd :class="stat.cls">{{ stat.value }}</dd>
           </div>
         </dl>
+        <!-- Befunde: Qualitätszahlen als lesbare Aussagen statt vergrabener
+             Manifest-Werte (r007: y+ 81.201, Courant 2,24, 32 % Viz-Fehler
+             — alles unsichtbar). Gleiche Optik wie die Fall-Prüfung. -->
+        <ul v-if="entry.befunde?.length" class="f3d-findings">
+          <li v-for="(b, i) in entry.befunde" :key="i"
+              class="f3d-finding" :class="`sev-${b.severity}`">
+            <span class="f3d-finding-icon">{{ b.severity === 'fehler' ? '✗'
+              : b.severity === 'warnung' ? '⚠' : 'ⓘ' }}</span>
+            {{ b.message }}
+          </li>
+        </ul>
       </article>
     </div>
 
@@ -31,7 +42,8 @@
 // Lauf die unterscheidende Größe und bekommt die Farbe; mean/max bzw.
 // Feldnamen werden über das Strichmuster getrennt.
 import { ref, watchEffect } from 'vue'
-import { VORBELEGUNG } from '../../utils/grenzwerte'
+import { flood3dApi } from '../../services/api'
+import { GRENZWERTE, VORBELEGUNG } from '../../utils/grenzwerte'
 import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
 import KennwertHilfe from './KennwertHilfe.vue'
@@ -41,7 +53,7 @@ const store = usePostStore()
 const entries = ref([])
 const charts = ref([])
 
-function stats(quality) {
+function stats(quality, manifest = null) {
   const mb = quality.mass_balance_error_rel_max
   const res = quality.residual_p_rgh_final ?? quality.residual_p_rgh_initial
   return [
@@ -67,6 +79,20 @@ function stats(quality) {
       cls: quality.checkmesh_ok === false ? 'bad' : '',
     },
     {
+      // r007 hatte Schiefe 7,2 — stand im Manifest, war nirgends sichtbar
+      label: 'Zellschiefe (max.)',
+      value: manifest?.checkmesh?.max_skewness != null
+        ? fmt(manifest.checkmesh.max_skewness) : '–',
+      cls: manifest?.checkmesh?.max_skewness > GRENZWERTE.skewness_max ? 'bad' : '',
+    },
+    {
+      label: 'Netz (Ränge · Methode)',
+      value: manifest?.netz
+        ? `${manifest.netz.ranks_mesh ?? '?'} · ${manifest.netz.methode ?? '?'}`
+        : '–',
+      cls: '',
+    },
+    {
       // Gültigkeit der (rauen) Wandfunktionen: y+ sollte grob 30…300 liegen
       label: 'y⁺ (min … max)',
       hilfe: 'y_plus', roh: quality.y_plus_range?.[1],
@@ -84,7 +110,10 @@ watchEffect(async () => {
   entries.value = await Promise.all(ids.map(async (runId) => {
     try {
       const result = await store.ensureResult(runId)
-      return { runId, stats: stats(result.quality ?? {}) }
+      const detail = await flood3dApi.runDetail(runId).catch(() => null)
+      return { runId,
+        stats: stats(result.quality ?? {}, detail?.manifest ?? null),
+        befunde: detail?.manifest?.befunde ?? [] }
     } catch (e) {
       return { runId, error: e.message }
     }

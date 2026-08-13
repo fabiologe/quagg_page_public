@@ -5,6 +5,14 @@
 // GEWINNT es; sonst gelten die hier benannten Vorbelegungen.
 
 // Vorbelegungen (fachliche Faustwerte; Herkunft je Wert)
+// Feste Netz-/Qualitaetsgrenzen (nicht fallabhaengig): Werte, an denen das
+// Netz-Tor im Laeufer und die Qualitaetsansicht dieselbe Sprache sprechen.
+export const GRENZWERTE = {
+  skewness_max: 4,          // == maxInternalSkewness im snappy-Dict
+  courant_befund: 1.5,      // Spitze ueber der Zeitschrittbegrenzung
+  viz_volumen_befund: 0.05, // Viz-Selbsttest: 5 % Abweichung zum Solver
+}
+
 export const VORBELEGUNG = {
   // Kurzschlusskennzahl t10/τ: unter 0,3 gilt der Durchfluss als
   // Kurzschluss, ab 0,5 als gut durchmischt (ATV/DWA-Praxis)

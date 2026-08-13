@@ -68,6 +68,12 @@ def bundle_bauen(spec, case_dir: Path, run_id: str,
             raise BundleFehler("Geometrieprobleme: " + "; ".join(info["problems"]))
         (case_out / "case.yaml").write_text((case_dir / "case.yaml").read_text())
         (case_out / "run_id.txt").write_text(run_id)
+        # Netzvorschau-Kennzahlen mitgeben: das Netz-Tor im Laeufer warnt,
+        # wenn die gebaute Zellzahl weit von der Vorschau abweicht (nur
+        # Warnung — die Vorschau ist laut Entscheidung nur eine Vorschau)
+        vp = case_dir / "derived" / "mesh_preview" / "mesh_preview.json"
+        if vp.is_file():
+            shutil.copy2(vp, case_out / "mesh_preview.json")
         if checkpoint:
             import json as _json
             (case_out / "checkpoint.json").write_text(_json.dumps(checkpoint))

@@ -563,7 +563,7 @@ def run_foam_step(case: Path, command: str, log_name: str,
 MPI = ("mpirun --allow-run-as-root --use-hwthread-cpus --oversubscribe")
 
 
-def mpi_kommando(cores: int) -> str:
+def mpi_kommando(cores: int, uebersubskription: bool = False) -> str:
     """
     mpirun-Aufruf samt Platzierung fuer diese Maschine.
 
@@ -572,9 +572,14 @@ def mpi_kommando(cores: int) -> str:
     dann automatisch auf getrennte Kerne. Eine Handvorgabe ueber die
     Kernzahl (FLOOD3D_CORES ueber der Kernzahl) hebt die Einschraenkung
     auf: wer bewusst ueberbucht, bekommt alle Threads.
+
+    ``uebersubskription=True`` (Vernetzung mit festen MESH_RANKS): kein
+    taskset — die festen Raenge duerfen ueber den Kernen der Maschine
+    liegen, Minuten Vernetzung sind der Preis fuer ein ueberall
+    identisches Netz.
     """
     vorsatz = ""
-    if not container_scheibe():
+    if not uebersubskription and not container_scheibe():
         liste = kern_bindung()
         if liste and cores <= len(liste.split(",")):
             vorsatz = f"taskset -c {liste} "
@@ -762,15 +767,24 @@ def main() -> int:
                 run_foam_step(case, "surfaceFeatureExtract",
                               "log.surfaceFeatureExtract")
             # snappyHexMesh ist bei feinen Netzen der teuerste Schritt und
-            # laeuft ebenfalls parallel — sonst haengt der Lauf minutenlang
-            # auf einem Kern, waehrend elf danebenstehen.
-            if cores > 1:
-                _decompose_dict(case, cores)
+            # Vernetzt wird mit FESTER Rangzahl und hierarchischer
+            # Zerlegung — NICHT mit den Kernen der Maschine: scotch
+            # partitioniert je Rangzahl anders, und mit der Partition
+            # aendert sich das parallele snappy-Ergebnis (r007: 16 Raenge
+            # -> 60 % weniger Zellen, Schiefe 7,2, checkMesh durchgefallen).
+            # Feste Raenge ueberall = identisches Netz ueberall. Der SOLVER
+            # unten rechnet weiterhin mit allen Kernen der Maschine.
+            from flood3D.core.meshgen import MESH_RANKS, netz_zerlegung_dict
+            if MESH_RANKS > 1:
+                (case / "system" / "decomposeParDict").write_text(
+                    netz_zerlegung_dict(MESH_RANKS))
                 run_foam_step(case, "decomposePar -force -copyZero",
                               "log.decomposePar_mesh")
-                emit(event="log", text=f"Vernetze auf {cores} Kernen")
+                emit(event="log", text=(
+                    f"Vernetze mit {MESH_RANKS} festen Raengen "
+                    "(hierarchisch — ueberall dasselbe Netz)"))
                 run_foam_step(case,
-                              f"{mpi_kommando(cores)} "
+                              f"{mpi_kommando(MESH_RANKS, uebersubskription=True)} "
                               "snappyHexMesh -overwrite -parallel",
                               "log.snappyHexMesh")
                 run_foam_step(case, "reconstructParMesh -constant",
@@ -796,6 +810,38 @@ def main() -> int:
             emit(event="log",
                  text=f"checkMesh: {'OK' if cm.get('checkmesh_ok') else 'mit Befunden'}"
                       f" · {cm.get('cells', '?')} Zellen")
+        # Netz-Identitaet fuer den Standort-Vergleich: zwei Maschinen, die
+        # dasselbe bauen sollen, muessen sich an EINER Zahl messen lassen.
+        from flood3D.core.meshgen import MESH_RANKS as _MR
+        netz_info = {"cells": cm.get("cells"), "points": cm.get("points"),
+                     "ranks_mesh": _MR, "methode": "hierarchical",
+                     "netz_hash": spec.netz_hash()}
+        emit(event="log", text=(
+            f"Netz-Identität: {netz_info['cells']} Zellen · "
+            f"{netz_info['ranks_mesh']} Ränge · {netz_info['netz_hash'][:12]}"))
+        # QUALITAETS-TOR: ein durchgefallenes Netz erreicht den Solver nicht
+        # (r007 rechnete 2,5 h auf Schiefe 7,2 — nie wieder). Befunde reisen
+        # im error-Ereignis mit, damit der Server sie ins Manifest schreibt.
+        if not fortsetzen:
+            from flood3D.core.gate import NetzTorFehler, netz_tor
+            vorschau = None
+            vp = case / "mesh_preview.json"
+            if vp.is_file():
+                try:
+                    vorschau = json.loads(vp.read_text())
+                except (OSError, json.JSONDecodeError):
+                    vorschau = None
+            try:
+                netz_befunde = netz_tor(cm, vorschau)
+            except NetzTorFehler as e:
+                emit(event="error", text=str(e), befunde=e.befunde,
+                     netz=netz_info)
+                return 1
+            if netz_befunde:
+                emit(event="log", text=("Netz-Hinweise: "
+                     + " | ".join(x["message"] for x in netz_befunde)))
+        else:
+            netz_befunde = []
 
         # ---- Rechenlauf ---------------------------------------------------
         app_name = spec.solver.application
@@ -890,6 +936,7 @@ def main() -> int:
                     # Womit gerechnet wurde, gehoert in den Nachweis - und
                     # die Ist-Kosten eines Cloud-Laufs haengen daran
                     "cores": cores, "maschine": maschine,
+                    "netz": netz_info, "befunde": netz_befunde,
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
                     "missing_sources": missing, "finished": time.time()}
@@ -906,7 +953,10 @@ def main() -> int:
         vol_check = viz_volume_check(job, df)
         if vol_check:
             manifest.update(vol_check)
+        from flood3D.core.evaluate import befunde_ableiten
         result = evaluate_run(df, spec, run_id, manifest)
+        manifest.setdefault("befunde", []).extend(
+            befunde_ableiten(result.get("quality") or {}, manifest))
         render_run(result, df, spec, job)
         (job / "manifest.json").write_text(json.dumps(manifest))
 
