@@ -131,3 +131,29 @@ selbst, statt dass jemand raten muss.
   Zellzahl, änderte den Zeitschritt aber nur um 12 % (0,0016 → 0,0018 s). Die
   Laufzeitschätzung leitet ihn bisher aus der feinsten Zelle ab und liegt
   deshalb noch rund 2,3-fach zu optimistisch — offener Punkt.
+
+
+## Nachtrag 2026-08-13: Netz-Determinismus hergestellt und BEWIESEN
+
+Der Benchmark r007 zeigte: scotch-Zerlegung ändert sich mit der Rangzahl,
+und mit der Partition ändert sich das parallele snappy-Ergebnis (16 Ränge:
+127.466 statt 317.375 Zellen, Schiefe 7,2, checkMesh durchgefallen — und
+der Solver rechnete 2,5 h kommentarlos darauf).
+
+Seitdem: Vernetzen überall mit festen `MESH_RANKS=8` und
+`method hierarchical` (feste Koeffizienten, order xyz); der Solver
+dekomponiert separat mit den Rängen der Maschine. Qualitäts-Tor VOR dem
+Solver (Schiefe > 4, failed_checks, fehlendes „Mesh OK" → Abbruch mit
+Befunden), Qualitätszahlen als sichtbare Befunde am Lauf.
+
+**Beweis (Kurzläufe mit 300-s-Deckel, nach der Netz-Identität abgebrochen):**
+
+| Lauf | Worker | Zellen | Ränge | netz_hash |
+|---|---|---:|---:|---|
+| cloudtest_r009/r010 (1. Anlauf) | 2 verschiedene | 38.390 | 8 | 5e81eecad1df |
+| cloudtest_r015 | frisch | 38.390 | 8 | 5e81eecad1df |
+| cloudtest_r016 | frisch | 38.390 | 8 | 5e81eecad1df |
+
+Vier Vernetzungen, mehrere Worker, ein Ergebnis — Zellzahl und Hash
+identisch. Lokal gebaut == RunPod gebaut ist damit eine Eigenschaft des
+Systems, kein Zufall mehr.
