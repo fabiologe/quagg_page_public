@@ -428,3 +428,17 @@ EINEN Besitzer.
 Kein Cloud-Start ohne Fabios Go (Kostenregel). Nach W2 zeigt der
 nächste echte RunPod-Lauf erstmals live `letzte_zeit` — der sichtbare
 Beweis, dass der Umbau beim Nutzer ankommt.
+
+---
+
+## Nachtrag 2026-08-13 (Post-Processing-Paket): bewusst offen
+
+- **Grundriss und Bohrung:** Die 2D-Karten (GrundrissPanel) rechnen
+  weiter mit einem Boden je Rasterspalte — ein Rohr unterm Damm ist dort
+  nicht darstellbar. Nur die Raum-Ansicht zeigt den Erdkörper.
+- **depth/surface IN der Bohrung:** Innerhalb einer Aussparung ist der
+  „Boden" der Planfelder heute die Dammoberkante — Wassertiefe/Spiegel
+  sind dort falsch. Braucht ein zweites Höhenfeld (Deckenhöhe) und einen
+  planFields-Umbau — eigener Entscheid.
+- **21-Quellen-deep-watch (P4.3):** bleibt; die Stromlinien-Memoisierung
+  nimmt ihm den teuersten Zahn.

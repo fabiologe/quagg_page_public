@@ -101,6 +101,47 @@ def test_timesteps_und_geometrie(client):
     assert 94.0 < terrain.min() < 95.0
 
 
+def test_geometrie_liefert_erdkoerper_nur_wenn_geschlossen(client):
+    """
+    Das Gelände im Ergebnis-3D soll das sein, was an den Solver ging:
+    terrain.stl wird als `terrain_solid` mitgeliefert, wenn sie ein
+    GESCHLOSSENER Erdkörper ist (Bohrungen!), und bleibt weg, wenn dort
+    nur die offene Höhenfläche liegt (dann gilt das Höhenfeld). Der
+    Entscheid fällt am Artefakt des Laufs — importierte Läufe haben
+    keine case.yaml.
+    """
+    import base64
+
+    import trimesh
+
+    tri = _runs_wurzel(client) / "r001" / "case" / "constant" / "triSurface"
+    tri.mkdir(parents=True, exist_ok=True)
+    ziel = tri / "terrain.stl"
+
+    # offene Fläche (ein Dreieck) -> kein terrain_solid
+    trimesh.Trimesh(vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+                    faces=[[0, 1, 2]]).export(ziel)
+    geo = client.get("/runs/r001/geometry").json()
+    assert geo["terrain_solid"] is None
+
+    # geschlossener Körper -> terrain_solid kommt mit (Cache folgt der
+    # mtime, deshalb reicht das Überschreiben der Datei)
+    import os
+    import time as _time
+    trimesh.creation.box(extents=(2.0, 2.0, 1.0)).export(ziel)
+    os.utime(ziel, (_time.time() + 5, _time.time() + 5))
+    geo = client.get("/runs/r001/geometry").json()
+    roh = base64.b64decode(geo["terrain_solid"])
+    wieder = trimesh.load(trimesh.util.wrap_as_stream(roh), file_type="stl")
+    assert wieder.is_watertight and wieder.volume == pytest.approx(4.0)
+    ziel.unlink()
+
+
+def _runs_wurzel(client):
+    from ..core.store import runs_root
+    return runs_root()
+
+
 def test_volume_binaerpaket(client):
     r = client.get("/runs/r001/volume", params={"time": 0.47, "fields": "alpha"})
     assert r.status_code == 200

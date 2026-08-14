@@ -391,11 +391,34 @@ async def run_timesteps(run_id: str):
     return index
 
 
+@lru_cache(maxsize=32)
+def _terrain_solid_b64(pfad: str, mtime: float) -> str | None:
+    """
+    terrain.stl des Laufs als base64 — aber NUR, wenn sie ein
+    geschlossener ERDKÖRPER ist (Bohrungen/Aushübe enthalten!). Der
+    Höhenflächen-Export ohne Erdkörper ist eine offene Fläche und bringt
+    gegenüber dem Höhenfeld nichts. Entschieden wird am Artefakt des
+    Laufs selbst (wasserdicht?), nicht an der Fall-Spec: importierte
+    Läufe tragen keine case.yaml, und die Spec im Fallordner kann seit
+    dem Lauf weitergeändert sein. mtime im Schlüssel: Import/Archiv-
+    Rückholung tauscht die Datei, der Cache folgt.
+    """
+    import trimesh
+    try:
+        m = trimesh.load(pfad, force="mesh")
+        if not bool(m.is_watertight):
+            return None
+    except Exception:  # noqa: BLE001 — kaputtes STL heisst nur: Hoehenfeld
+        return None
+    return base64.b64encode(Path(pfad).read_bytes()).decode()
+
+
 @router.get("/runs/{run_id}/geometry")
 async def run_geometry(run_id: str):
     """
     Statische Szenengeometrie, einmal je Lauf (Spez. Kap. 9):
-    Gelände-Höhenfeld, Eingabe-Bauwerke (triSurface-STLs des Falls) und —
+    Gelände (als Erdkörper MIT Aussparungen, wenn der Lauf einen hat,
+    sonst Höhenfeld), Eingabe-Bauwerke (triSurface-STLs des Falls) und —
     falls extrahiert — die tatsächlich vernetzte Solver-Oberfläche je Patch.
     """
     from .core.meshsurface import mesh_surface_patches
@@ -412,8 +435,12 @@ async def run_geometry(run_id: str):
     # fehlenden Schicht einen leeren Viewer.
 
     solids = []
+    terrain_solid = None
     tri_dir = paths.root / "case" / "constant" / "triSurface"
     if tri_dir.is_dir():
+        t = tri_dir / "terrain.stl"
+        if t.is_file():
+            terrain_solid = _terrain_solid_b64(str(t), t.stat().st_mtime)
         for stl in sorted(tri_dir.glob("*.stl")):
             if stl.stem == "terrain":
                 continue
@@ -439,6 +466,9 @@ async def run_geometry(run_id: str):
                 terrain.astype("<f4").tobytes()).decode(),
         },
         "solids": solids,
+        # der Erdkörper, der WIRKLICH an den Solver ging (inkl. Bohrungen) —
+        # None bei Läufen ohne Erdkörper: dann gilt das Höhenfeld
+        "terrain_solid": terrain_solid,
         "mesh_patches": mesh_patches,
     }
 

@@ -106,7 +106,7 @@
         </div>
         <div class="f3d-row">
           <span class="f3d-lbl">Ausdünnung</span>
-          <input type="range" min="2" max="8" step="1" v-model.number="arrowStride" />
+          <input type="range" min="1" max="8" step="1" v-model.number="arrowStride" />
           <span class="f3d-mono">jede {{ arrowStride }}. Zelle</span>
         </div>
         <label class="f3d-check">
@@ -129,7 +129,9 @@
         <label>Stromlinien</label>
         <div class="f3d-row">
           <span class="f3d-lbl">Anzahl</span>
-          <input type="range" min="20" max="1500" step="20" v-model.number="slCount" />
+          <!-- lazy: erst beim Loslassen neu verfolgen — beim Ziehen feuerte
+               sonst jeder Rastpunkt einen kompletten Retrace -->
+          <input type="range" min="20" max="1500" step="20" v-model.lazy.number="slCount" />
           <span class="f3d-mono">{{ slCount }}</span>
         </div>
         <div class="f3d-row">
@@ -267,7 +269,7 @@ import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData'
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray'
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData'
 import vtkImageMarchingCubes from '@kitware/vtk.js/Filters/General/ImageMarchingCubes'
-import vtkImageStreamline from '@kitware/vtk.js/Filters/General/ImageStreamline'
+import { verfolgeStromlinien } from '../../utils/stromlinien'
 import vtkTubeFilter from '@kitware/vtk.js/Filters/General/TubeFilter'
 import { VaryRadius } from '@kitware/vtk.js/Filters/General/TubeFilter/Constants'
 import vtkArrowSource from '@kitware/vtk.js/Filters/Sources/ArrowSource'
@@ -345,7 +347,9 @@ const sliceAxis = ref('k')
 const sliceIdx = ref(0)
 const sliceCount = ref(1)      // Ebenenstapel entlang der Achse (Spez. Kap. 8)
 const arrowScale = ref(3)
-const arrowStride = ref(3)
+// Standard 1 = EIN Pfeil je Rasterzelle (Entscheid 2026-08-13); der alte
+// Slider begann bei 2 — mehr als ein Pfeil je 8 Zellen war unmöglich
+const arrowStride = ref(1)
 const arrowsOnSlice = ref(false)
 const isoValue = ref(0.5)
 const slCount = ref(300)
@@ -486,11 +490,8 @@ function buildPipelines() {
   vtk.glyphActor.getProperty().setAmbient(0.45)
   vtk.glyphActor.getProperty().setDiffuse(0.7)
 
-  // Stromlinien
-  vtk.vectorImage = vtkImageData.newInstance()
-  vtk.seedPD = vtkPolyData.newInstance()
-  vtk.slFilter = vtkImageStreamline.newInstance({ integrationStep: 0.3,
-    maximumNumberOfSteps: 600 })
+  // Stromlinien — integriert wird in utils/stromlinien.js (eigener RK2 auf
+  // den Float32Arrays; vtkImageStreamline brauchte ~10 s je Anzeige, s. dort)
   // Der Radius wird beim Zeichnen aus der Modellgröße gesetzt (s. u.) — ein
   // fester Wert ergibt im 10-m-Becken Schläuche und im 200-m-Modell Fäden.
   // 4 Seiten reichen: bei zwei Pixel Strichstärke sieht niemand ein
@@ -550,7 +551,19 @@ function buildTerrain(geo) {
   if (!geo.terrain) return          // Schicht fehlt — Rest bleibt nutzbar
   const [ny, nx] = geo.terrain.dims
   const { origin, spacing } = geo.grid
+  // Das Höhenfeld bleibt IMMER die Grundlage der Punktabfrage/Grundriss-
+  // Felder — gerendert wird aber der Erdkörper, wenn der Lauf einen hat:
+  // ein Raster mit einem z je x/y kann keine Bohrung zeigen, der
+  // Solver-Körper (terrain_solid) enthält sie zwingend.
   terrainInfo = { z: geo.terrain.z, nx, ny }
+  if (geo.terrainSolid) {
+    const reader = vtkSTLReader.newInstance()
+    reader.parseAsArrayBuffer(geo.terrainSolid)
+    vtk.terrainMapper.setInputData(reader.getOutputData())
+    return
+  }
+  // Lauf ohne Erdkörper (auch nach Laufwechsel): zurück aufs Höhenfeld
+  vtk.terrainMapper.setInputData(vtk.terrainData)
   const pts = new Float32Array(nx * ny * 3)
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
@@ -755,85 +768,101 @@ function updateIso() {
   vtk.isoActor.getProperty().setColor(...rgb)
 }
 
+// Fertig verfolgte Linien je (Lauf, Zeit, Seed-Einstellung) — die Regler
+// des 21-Quellen-Watches (Farbskala, Pfeile, Präsentation, Dicke …)
+// lösen updateScene aus, aber ein Retrace kostet dank dieses Gedächtnisses
+// nichts mehr. Klein halten: 8 Einträge ≈ wenige hundert KB.
+const _slMemo = new Map()
+const _SL_MEMO_MAX = 8
+
 function updateStreamlines(alpha, U, umag) {
-  const { dims } = grid
+  const { dims, origin, spacing } = grid
   const [nx, ny] = [dims[0], dims[1]]
-  const n = umag.length
-  // Vektorfeld interleaved, Luft = 0 (Integration endet an der Wasseroberfläche).
-  // vtkImageStreamline liest über getPointData().getVectors(), nicht Scalars!
-  const inter = new Float32Array(n * 3)
-  for (let i = 0; i < n; i++) {
-    const wet = alpha[i] >= ALPHA_NASS
-    inter[i * 3] = wet ? U.data[i] : 0
-    inter[i * 3 + 1] = wet ? U.data[n + i] : 0
-    inter[i * 3 + 2] = wet ? U.data[2 * n + i] : 0
-  }
-  const { origin, spacing } = grid
-  vtk.vectorImage.setDimensions(dims[0], dims[1], dims[2])
-  vtk.vectorImage.setSpacing(...spacing)
-  vtk.vectorImage.setOrigin(origin[0] + spacing[0] / 2, origin[1] + spacing[1] / 2,
-    origin[2] + spacing[2] / 2)
-  vtk.vectorImage.getPointData().setVectors(
-    vtkDataArray.newInstance({ name: 'velocity', values: inter, numberOfComponents: 3 }))
-  vtk.vectorImage.modified()
 
-  // Startpunkte: deterministisch verteilte Nasszellen auf der Starthöhe.
-  // Liegt die gewählte Höhe über dem Wasser, gäbe es KEINE Startpunkte und
-  // damit gar keine Stromlinien — statt einer leeren Szene wird dann die
-  // Ebene mit den meisten Nasszellen genommen.
-  const nass = (k) => {
-    const out = []
-    for (let j = 0; j < ny; j++) {
-      for (let i = 0; i < nx; i++) {
-        const idx = (k * ny + j) * nx + i
-        if (alpha[idx] >= ALPHA_NASS && umag[idx] > 1e-3) out.push([i, j, k])
+  const memoKey = `${activeRunId.value}|${times.value[timeIdx.value]}|`
+    + `${slCount.value}|${slSeedAll.value ? 'alle' : slHeightIdx.value}`
+  let lines = _slMemo.get(memoKey)
+  if (!lines) {
+    // Startpunkte: stratifiziert über die Nasszellen (jede q-te Kandidatin)
+    // statt Zufall mit Zurücklegen — keine doppelt bezahlten Duplikate,
+    // gleichmäßige Abdeckung, deterministisch.
+    const nass = (k) => {
+      const out = []
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          const idx = (k * ny + j) * nx + i
+          if (alpha[idx] >= ALPHA_NASS && umag[idx] > 1e-3) out.push([i, j, k])
+        }
       }
+      return out
     }
-    return out
-  }
-  let k = Math.min(slHeightIdx.value, dims[2] - 1)
-  let candidates = []
-  slHeightAuto.value = false
-  if (slSeedAll.value) {
-    // Startpunkte aus dem GANZEN Wasserkörper. Eine einzelne Höhenebene
-    // trifft in flachem Wasser oft nur eine Handvoll Zellen — dann standen
-    // hier zwei einsame Fäden in einer leeren Szene.
-    for (let kk = 0; kk < dims[2]; kk++) candidates.push(...nass(kk))
-  } else {
-    candidates = nass(k)
-    if (!candidates.length) {
-      let best = -1
+    let k = Math.min(slHeightIdx.value, dims[2] - 1)
+    let candidates = []
+    slHeightAuto.value = false
+    if (slSeedAll.value) {
+      // Startpunkte aus dem GANZEN Wasserkörper. Eine einzelne Höhenebene
+      // trifft in flachem Wasser oft nur eine Handvoll Zellen — dann standen
+      // hier zwei einsame Fäden in einer leeren Szene.
+      // (Schleife statt push(...): der Spread warf ab ~100k Kandidaten
+      // einen RangeError — Maximum call stack size exceeded.)
       for (let kk = 0; kk < dims[2]; kk++) {
-        const c = nass(kk)
-        if (c.length > best) { best = c.length; k = kk; candidates = c }
+        for (const c of nass(kk)) candidates.push(c)
       }
-      slHeightAuto.value = candidates.length > 0
+    } else {
+      candidates = nass(k)
+      if (!candidates.length) {
+        let best = -1
+        for (let kk = 0; kk < dims[2]; kk++) {
+          const c = nass(kk)
+          if (c.length > best) { best = c.length; k = kk; candidates = c }
+        }
+        slHeightAuto.value = candidates.length > 0
+      }
+    }
+    const count = Math.min(slCount.value, candidates.length)
+    const seeds = new Float32Array(count * 3)
+    const quant = candidates.length / Math.max(1, count)
+    for (let m = 0; m < count; m++) {
+      const [i, j, kk] = candidates[Math.floor(m * quant)]
+      const c = cellCenter(i, j, kk)
+      seeds[m * 3] = c[0]; seeds[m * 3 + 1] = c[1]; seeds[m * 3 + 2] = c[2]
+    }
+
+    const erg = verfolgeStromlinien({
+      u: U.data, alpha, dims, spacing, origin, seeds,
+      alphaNass: ALPHA_NASS })
+
+    // Polylinien als vtkPolyData: [nPunkte, i0, i1, …] je Linie
+    const nLinien = erg.offsets.length - 1
+    const nPunkte = erg.punkte.length / 3
+    const zellen = new Uint32Array(nPunkte + nLinien)
+    let z = 0
+    for (let m = 0; m < nLinien; m++) {
+      const von = erg.offsets[m]
+      const bis = erg.offsets[m + 1]
+      zellen[z++] = bis - von
+      for (let p = von; p < bis; p++) zellen[z++] = p
+    }
+    lines = vtkPolyData.newInstance()
+    lines.getPoints().setData(erg.punkte, 3)
+    lines.getLines().setData(zellen)
+    // Geschwindigkeit schon auf die LINIE legen: davon lebt sowohl die
+    // Einfärbung als auch der mitwachsende Radius (langsam = dünn).
+    const scal = new Float32Array(nPunkte)
+    for (let i = 0; i < nPunkte; i++) {
+      scal[i] = sampleLinear(umag, erg.punkte[i * 3], erg.punkte[i * 3 + 1],
+        erg.punkte[i * 3 + 2])
+    }
+    lines.getPointData().setScalars(
+      vtkDataArray.newInstance({ name: 'mag', values: scal, numberOfComponents: 1 }))
+
+    _slMemo.set(memoKey, lines)
+    if (_slMemo.size > _SL_MEMO_MAX) {
+      const aeltester = _slMemo.keys().next().value
+      _slMemo.get(aeltester)?.delete?.()
+      _slMemo.delete(aeltester)
     }
   }
-  let s = 42
-  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296)
-  const seeds = []
-  const count = Math.min(slCount.value, candidates.length)
-  for (let m = 0; m < count; m++) {
-    const [i, j, kk] = candidates[Math.floor(rnd() * candidates.length)]
-    seeds.push(...cellCenter(i, j, kk))
-  }
-  vtk.seedPD.getPoints().setData(Float32Array.from(seeds), 3)
-  vtk.seedPD.modified()
-
-  vtk.slFilter.setInputData(vtk.vectorImage, 0)
-  vtk.slFilter.setInputData(vtk.seedPD, 1)
-  const lines = vtk.slFilter.getOutputData()
-  // Geschwindigkeit schon auf die LINIE legen: davon lebt sowohl die
-  // Einfärbung als auch der mitwachsende Radius (langsam = dünn).
-  const lp = lines.getPoints().getData()
-  const scal = new Float32Array(lp.length / 3)
-  for (let i = 0; i < scal.length; i++) {
-    scal[i] = sampleLinear(umag, lp[i * 3], lp[i * 3 + 1], lp[i * 3 + 2])
-  }
-  lines.getPointData().setScalars(
-    vtkDataArray.newInstance({ name: 'mag', values: scal, numberOfComponents: 1 }))
-  lines.modified()
 
   // Strichstärke aus der Modellgröße: klassische CFD-Darstellung liegt bei
   // etwa 1 ‰ der Gebietsdiagonale, nicht bei einem festen Meterwert.
@@ -1284,9 +1313,12 @@ function disposeVtk() {
   vtk.volumeMapper?.delete?.()
   vtk.volumeActor?.delete?.()
   // Filter/Quellen, Bild- und Punktdaten, Transferfunktionen, Picker
-  for (const k of ['mc', 'isoMC', 'slFilter', 'tube', 'arrowSource',
-    'alphaImage', 'fieldImage', 'vectorImage', 'terrainData', 'glyphData',
-    'seedPD', 'filmData', 'opacityFn', 'ctfField', 'ctfTau', 'ctfVel',
+  // Stromlinien-Gedächtnis mitsamt seiner PolyDatas leeren
+  for (const pd of _slMemo.values()) pd?.delete?.()
+  _slMemo.clear()
+  for (const k of ['mc', 'isoMC', 'tube', 'arrowSource',
+    'alphaImage', 'fieldImage', 'terrainData', 'glyphData',
+    'filmData', 'opacityFn', 'ctfField', 'ctfTau', 'ctfVel',
     'picker']) {
     vtk[k]?.delete?.()
   }

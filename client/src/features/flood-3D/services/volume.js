@@ -29,6 +29,9 @@ export async function fetchGeometry(runId) {
       dims: data.terrain.dims,              // [ny, nx]
       z: new Float32Array(b64ToBuffer(data.terrain.z_b64)),
     } : null,
+    // Der Erdkörper, der WIRKLICH an den Solver ging (inkl. Bohrungen) —
+    // null bei Läufen ohne Erdkörper: dann gilt das Höhenfeld oben
+    terrainSolid: data.terrain_solid ? b64ToBuffer(data.terrain_solid) : null,
     // Eingabe-Geometrie (Bauwerks-STLs des Falls) und die tatsächlich
     // vernetzte Solver-Oberfläche je Patch (Zellfacetten!)
     solids: (data.solids ?? []).map((s) => ({
