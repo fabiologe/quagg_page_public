@@ -8,31 +8,63 @@
         </select>
       </div>
 
+      <!-- Tiefenbild (Säulenwerte) oder eine einzelne z-Schicht des
+           3D-Felds — nur letztere macht z. B. eine Rohr-Bohrung im Damm
+           sichtbar, die unter trockenem Gelände liegt. -->
+      <div class="f3d-ctl-group">
+        <label>Ansicht</label>
+        <div class="f3d-row">
+          <button class="f3d-btn f3d-grow" :class="{ 'f3d-btn-primary': !ebenenModus }"
+                  @click="modus = 'tiefe'">Tiefenbild</button>
+          <button class="f3d-btn f3d-grow" :class="{ 'f3d-btn-primary': ebenenModus }"
+                  @click="modus = 'ebene'">z-Ebene</button>
+        </div>
+        <div class="f3d-row" v-if="ebenenModus">
+          <span class="f3d-lbl">Schicht</span>
+          <input type="range" min="0" :max="Math.max(nzMax, 0)" v-model.number="ebeneK"
+                 title="z-Schicht wählen" aria-label="z-Schicht" />
+        </div>
+        <span v-if="ebenenModus" class="f3d-mono">{{ ebeneLabel }}</span>
+        <p v-if="ebenenModus" class="f3d-muted f3d-small">
+          Zeigt genau diese Schicht: nasse Zellen (α ≥ {{ ALPHA_NASS }})
+          farbig, Luft lässt das Gelände durchscheinen, grau = Erdreich
+          oder keine Solverzelle.
+        </p>
+      </div>
+
       <div class="f3d-ctl-group">
         <label>Raster</label>
         <select v-model="raster" class="f3d-select">
-          <option value="depth">Wassertiefe</option>
-          <option value="umag">Geschwindigkeit (Oberfläche)</option>
-          <option value="umagM">Geschwindigkeit (tiefengemittelt)</option>
-          <option value="froude">Froude-Zahl</option>
-          <option value="tau" :disabled="!hasTau">Sohlschubspannung</option>
+          <option value="depth" :disabled="ebenenModus">Wassertiefe</option>
+          <option value="umag">Geschwindigkeit ({{ ebenenModus ? 'Schicht' : 'Oberfläche' }})</option>
+          <option value="umagM" :disabled="ebenenModus">Geschwindigkeit (tiefengemittelt)</option>
+          <option value="froude" :disabled="ebenenModus">Froude-Zahl</option>
+          <option value="tau" :disabled="!hasTau || ebenenModus">Sohlschubspannung</option>
           <option value="none">kein Raster</option>
         </select>
-        <label class="f3d-check">
-          <input type="checkbox" v-model="showContours" />
-          Wasserspiegel-Höhenlinien
-        </label>
-        <div class="f3d-row" v-if="showContours">
-          <span class="f3d-lbl">Intervall</span>
-          <input type="number" step="0.05" min="0.01" v-model.number="contourInterval"
-                 class="f3d-num" />
-          <span class="f3d-lbl">m</span>
-        </div>
+        <!-- Höhenlinien/Fr-Linie/Umhüllende sind Säulen-Auswertungen —
+             auf einer einzelnen z-Schicht wären sie irreführend -->
+        <template v-if="!ebenenModus">
+          <label class="f3d-check">
+            <input type="checkbox" v-model="showContours" />
+            Wasserspiegel-Höhenlinien
+          </label>
+          <div class="f3d-row" v-if="showContours">
+            <span class="f3d-lbl">Intervall</span>
+            <input type="number" step="0.05" min="0.01" v-model.number="contourInterval"
+                   class="f3d-num" />
+            <span class="f3d-lbl">m</span>
+          </div>
+        </template>
         <label class="f3d-check">
           <input type="checkbox" v-model="showArrows" />
           Geschwindigkeitspfeile
         </label>
-        <label class="f3d-check" v-if="raster !== 'none'">
+        <label class="f3d-check">
+          <input type="checkbox" v-model="showObjekte" />
+          Auswerte-Objekte (Pegel, Schnitte, Ränder)
+        </label>
+        <label class="f3d-check" v-if="raster !== 'none' && !ebenenModus">
           <input type="checkbox" v-model="umhuellend" @change="huelleUmschalten" />
           Umhüllende (Maximum über die Laufzeit)
         </label>
@@ -40,11 +72,11 @@
            class="f3d-muted f3d-small">
           Umhüllende wird gebildet … {{ Math.round(huellenFortschritt * 100) }} %
         </p>
-        <label class="f3d-check" v-if="raster === 'froude'">
+        <label class="f3d-check" v-if="raster === 'froude' && !ebenenModus">
           <input type="checkbox" v-model="showFroudeLine" />
           Grenzlinie Fr = 1 (strömend / schießend)
         </label>
-        <p class="f3d-muted f3d-small">
+        <p v-if="!ebenenModus" class="f3d-muted f3d-small">
           Dargestellt ab {{ TIEFE_TROCKEN * 1000 }} mm Wassertiefe;
           bis {{ TIEFE_BENETZT * 100 }} cm als helle Benetzung,
           darüber greift das Farbraster.
@@ -56,7 +88,7 @@
 
       <div class="f3d-ctl-group" v-if="raster !== 'none'">
         <div class="f3d-gruppenkopf">
-          <span>Farbskala {{ RASTER_LABELS[raster] }}</span>
+          <span>Farbskala {{ rasterLabel }}</span>
           <KennwertHilfe :groesse="HILFE_SCHLUESSEL[raster]"
                          :wert="shownRange[1]" />
         </div>
@@ -159,7 +191,11 @@ import { usePostStore, SERIES_COLORS, LIMIT_COLOR }
   from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
-import { TIEFE_TROCKEN, TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
+import { flood3dApi } from '../../services/api'
+import { fensterSpanne, randFace, randTyp, wertBei }
+  from '../../utils/randbilanz'
+import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT }
+  from '../../utils/anzeigeSchwellen'
 import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
   from '../../utils/farbskala'
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
@@ -179,6 +215,9 @@ const RASTER_UNITS = { depth: 'm', umag: 'm/s', umagM: 'm/s', froude: '—',
 const HILFE_SCHLUESSEL = { depth: 'depth', umag: 'umag', umagM: 'umag',
   froude: 'froude', tau: 'bed_shear' }
 
+// Felder, die es nur als Säulenwert gibt — im z-Ebenen-Modus gesperrt
+const SAEULEN_FELDER = ['depth', 'umagM', 'froude', 'tau']
+
 const store = usePostStore()
 const canvasHost = ref(null)
 const canvas = ref(null)
@@ -187,6 +226,10 @@ const times = ref([])
 const timeIdx = ref(0)
 const playing = ref(false)
 const raster = ref('depth')
+const modus = ref('tiefe')          // 'tiefe' (Säulenbild) | 'ebene' (z-Schicht)
+const ebeneK = ref(0)               // gewählte z-Schicht im Ebenen-Modus
+const nzMax = ref(0)                // oberste Schicht (nz − 1) des Laufs
+const showObjekte = ref(true)       // Pegel/Querschnitte/Ränder einzeichnen
 const showContours = ref(true)
 const contourInterval = ref(0.1)
 const showArrows = ref(false)
@@ -207,6 +250,15 @@ const zeitLaedt = ref(false)
 const error = ref('')
 const gridLabel = ref('')
 
+const ebenenModus = computed(() => modus.value === 'ebene')
+const rasterLabel = computed(() => (ebenenModus.value && raster.value === 'umag'
+  ? 'Geschwindigkeit (Schicht)' : RASTER_LABELS[raster.value]))
+// nzMax mitlesen: das Label muss nach dem Laden des Gitters neu entstehen
+const ebeneLabel = computed(() => {
+  if (nzMax.value < 0 || !grid) return ''
+  const z = grid.origin[2] + (ebeneK.value + 0.5) * grid.spacing[2]
+  return `k = ${ebeneK.value} · z = ${z.toFixed(2)} m`
+})
 const shownRange = computed(() => wirksamerBereich(
   lockScale.value, lockMin.value, lockMax.value, autoRange.value))
 const skalaFehler = computed(() =>
@@ -221,6 +273,9 @@ watch(lockScale, (an) => {
 let terrain = null          // { z: Float32Array (ny*nx) }
 let grid = null
 let pf = null               // abgeleitete Grundrissfelder
+let vol3d = null            // zuletzt geladenes 3D-Volumen (fuer den Ebenen-Modus)
+let spec = null             // Fall-Spezifikation (Pegel/Schnitte/Raender, G2)
+let randSerien = null       // patch -> discharge-Zeitreihe { t, v } (G3)
 let huelle = null           // Maximum je Rasterfeld ueber ALLE Zeitpunkte
 const umhuellend = ref(false)
 const huellenFortschritt = ref(0)
@@ -234,6 +289,31 @@ function feldListe() {
   return hasTau.value ? ['alpha', 'U', 'bed_shear'] : ['alpha', 'U']
 }
 
+// Fall-Spezifikation und Rand-Durchflüsse einmal je Lauf (BilanzPanel-
+// Muster), als Promise gecacht — der Tabwechsel lädt sonst alles erneut.
+const _specCache = new Map()
+function ladeSpec(runId) {
+  if (!_specCache.has(runId)) {
+    _specCache.set(runId, (async () => {
+      const detail = await flood3dApi.runDetail(runId)
+      const caseId = detail?.manifest?.case_id ?? runId.replace(/_r\d+$/, '')
+      return flood3dApi.getCase(caseId)
+    })().catch(() => null))     // alter Lauf ohne Fall: keine Overlays
+  }
+  return _specCache.get(runId)
+}
+
+// Rand-Durchflüsse über den Serien-Cache des Stores (wie Zeitreihen-Tab)
+function ladeRandSerien(runId) {
+  return store.ensureSeries(runId, 'discharge')
+    .then((serien) => {
+      const m = {}
+      for (const s of serien ?? []) m[s.location_id] = s
+      return m
+    })
+    .catch(() => ({}))          // keine Reihen: nur die G2-Striche
+}
+
 async function loadRun() {
   if (!activeRunId.value) return
   loading.value = true
@@ -245,6 +325,19 @@ async function loadRun() {
     gridLabel.value = grid.spacing.map((s) => Number(s.toPrecision(3))).join(' × ') + ' m'
     hasTau.value = index.fields.includes('bed_shear')
     if (raster.value === 'tau' && !hasTau.value) raster.value = 'depth'
+    nzMax.value = grid.dims[2] - 1
+    if (ebeneK.value > nzMax.value) ebeneK.value = nzMax.value
+    // Auswerte-Objekte (G2) und Rand-Durchflüsse (G3) nebenherladen —
+    // die Karte wartet nicht darauf, die Overlays kommen per draw() nach
+    spec = null
+    randSerien = null
+    const runId = activeRunId.value
+    Promise.all([ladeSpec(runId), ladeRandSerien(runId)]).then(([s, r]) => {
+      if (runId !== activeRunId.value) return
+      spec = s
+      randSerien = r
+      if (pf) draw()
+    })
     terrain = geo.terrain
     times.value = index.timesteps.map((e) => e.time)
     if (timeIdx.value >= times.value.length) timeIdx.value = 0
@@ -310,6 +403,7 @@ async function update() {
       feldListe())
     if (seq !== requestSeq) return
     store.currentTime = vol.time
+    vol3d = vol
     pf = planFieldsCached(vol, terrain?.z)
     draw()
     if (profile.value) computeProfile()
@@ -365,6 +459,38 @@ function rasterValues() {
   return null
 }
 
+// Eine einzelne z-Schicht des 3D-Felds, je Säule klassifiziert:
+// 0 = Luft (Gelände scheint durch), 1 = nass (Feldwert), 2 = keine
+// Solverzelle (NaN im Raster: Erdreich/Bauwerk — gedeckt grau). Genau
+// diese Unterscheidung macht eine Rohr-Bohrung im Damm sichtbar.
+function schichtFelder() {
+  const { nx, ny } = pf
+  const alpha = vol3d.fields.alpha.data
+  const U = vol3d.fields.U?.data
+  const n = alpha.length
+  const k = Math.min(Math.max(ebeneK.value, 0), nzMax.value)
+  const wert = new Float32Array(nx * ny).fill(NaN)
+  const ux = new Float32Array(nx * ny)
+  const uy = new Float32Array(nx * ny)
+  const klasse = new Uint8Array(nx * ny)
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const col = j * nx + i
+      const idx = (k * ny + j) * nx + i
+      const a = alpha[idx]
+      if (!Number.isFinite(a)) { klasse[col] = 2; continue }
+      if (a < ALPHA_NASS) continue
+      klasse[col] = 1
+      if (U) {
+        ux[col] = U[idx]
+        uy[col] = U[n + idx]
+        wert[col] = Math.hypot(U[idx], U[n + idx], U[2 * n + idx])
+      }
+    }
+  }
+  return { k, wert, ux, uy, klasse }
+}
+
 function draw() {
   if (!pf || !canvas.value) return
   const L = layout()
@@ -392,14 +518,22 @@ function draw() {
   }
   const zSpan = Math.max(zMax - zMin, 0.01)
 
-  const values = rasterValues()
+  // Ebenen-Modus: Werte der gewählten z-Schicht statt der Säulenfelder
+  const ebene = ebenenModus.value && vol3d ? schichtFelder() : null
+  const values = ebene
+    ? (raster.value === 'none' ? null : ebene.wert)
+    : rasterValues()
   let lo = Infinity
   let hi = -Infinity
   if (values) {
     for (let c = 0; c < values.length; c++) {
       const v = values[c]
-      if (raster.value !== 'tau' && !(maskeTiefe()[c] > TIEFE_BENETZT)) continue
-      if (raster.value === 'tau' && !(v > 1e-9)) continue
+      if (ebene) {
+        if (ebene.klasse[c] !== 1 || !Number.isFinite(v)) continue
+      } else {
+        if (raster.value !== 'tau' && !(maskeTiefe()[c] > TIEFE_BENETZT)) continue
+        if (raster.value === 'tau' && !(v > 1e-9)) continue
+      }
       if (v < lo) lo = v
       if (v > hi) hi = v
     }
@@ -418,26 +552,44 @@ function draw() {
       let r = 34 * shade + 14
       let g = 44 * shade + 18
       let b = 66 * shade + 30
-      const tiefe = maskeTiefe()[col]
-      const wet = tiefe > TIEFE_BENETZT
-      // Benetzung: Wasser ist da, aber zu flach fuer belastbare Rasterwerte
-      // — vorher blieben solche Saeulen unsichtbar ("trocken")
-      const benetzt = !wet && tiefe > TIEFE_TROCKEN
-      const show = values && (raster.value === 'tau' ? values[col] > 1e-9 : wet)
-      if (show) {
-        const [vr, vg, vb] = viridis((values[col] - rLo) / span)
-        const a = 0.85
-        r = r * (1 - a) + vr * a
-        g = g * (1 - a) + vg * a
-        b = b * (1 - a) + vb * a
-      } else if (wet && raster.value === 'none') {
-        r = 30; g = 70; b = 140
-      } else if (benetzt && raster.value !== 'tau') {
-        // heller Blauton ueber der Gelaendeschummerung
-        const a = 0.45
-        r = r * (1 - a) + 120 * a
-        g = g * (1 - a) + 170 * a
-        b = b * (1 - a) + 215 * a
+      if (ebene) {
+        // z-Schicht: nass → Feldwert, Luft → Schummerung, NaN → grau
+        const kl = ebene.klasse[col]
+        if (kl === 2) {
+          r = 58; g = 62; b = 68        // Erdreich / keine Solverzelle
+        } else if (kl === 1) {
+          if (values && Number.isFinite(values[col])) {
+            const [vr, vg, vb] = viridis((values[col] - rLo) / span)
+            const a = 0.85
+            r = r * (1 - a) + vr * a
+            g = g * (1 - a) + vg * a
+            b = b * (1 - a) + vb * a
+          } else {
+            r = 30; g = 70; b = 140     // nass ohne Raster ('kein Raster')
+          }
+        }
+      } else {
+        const tiefe = maskeTiefe()[col]
+        const wet = tiefe > TIEFE_BENETZT
+        // Benetzung: Wasser ist da, aber zu flach fuer belastbare Rasterwerte
+        // — vorher blieben solche Saeulen unsichtbar ("trocken")
+        const benetzt = !wet && tiefe > TIEFE_TROCKEN
+        const show = values && (raster.value === 'tau' ? values[col] > 1e-9 : wet)
+        if (show) {
+          const [vr, vg, vb] = viridis((values[col] - rLo) / span)
+          const a = 0.85
+          r = r * (1 - a) + vr * a
+          g = g * (1 - a) + vg * a
+          b = b * (1 - a) + vb * a
+        } else if (wet && raster.value === 'none') {
+          r = 30; g = 70; b = 140
+        } else if (benetzt && raster.value !== 'tau') {
+          // heller Blauton ueber der Gelaendeschummerung
+          const a = 0.45
+          r = r * (1 - a) + 120 * a
+          g = g * (1 - a) + 170 * a
+          b = b * (1 - a) + 215 * a
+        }
       }
       data.data[p] = r
       data.data[p + 1] = g
@@ -449,8 +601,9 @@ function draw() {
   ctx.imageSmoothingEnabled = true
   ctx.drawImage(img, PAD, PAD, L.worldW * L.scale, L.worldH * L.scale)
 
-  // Wasserspiegel-Höhenlinien
-  if (showContours.value) {
+  // Wasserspiegel-Höhenlinien (nur im Tiefenbild — auf einer z-Schicht
+  // gibt es keinen Wasserspiegel)
+  if (showContours.value && !ebene) {
     const surf = new Float32Array(pf.surface)
     for (let c = 0; c < surf.length; c++) {
       if (!(pf.depth[c] > TIEFE_BENETZT)) surf[c] = NaN
@@ -481,7 +634,7 @@ function draw() {
 
   // Grenzlinie Fr = 1: trennt stroemenden von schiessendem Abfluss. Im
   // Wasserbau die Linie, an der man den Wechselsprung ablesen kann.
-  if (raster.value === 'froude' && showFroudeLine.value) {
+  if (raster.value === 'froude' && showFroudeLine.value && !ebene) {
     const fr = rasterValues()
     if (fr) {
       const feld = new Float32Array(fr.length)
@@ -506,10 +659,19 @@ function draw() {
     }
   }
 
-  // Geschwindigkeitspfeile
+  // Geschwindigkeitspfeile — im Ebenen-Modus aus ux/uy der Schicht,
+  // sonst aus der Oberflächengeschwindigkeit der Säule
   if (showArrows.value) {
+    const aUx = ebene ? ebene.ux : pf.ux
+    const aUy = ebene ? ebene.uy : pf.uy
+    const nass = (col) => (ebene ? ebene.klasse[col] === 1
+      : pf.depth[col] > TIEFE_BENETZT)
+    const mag = (col) => (ebene
+      ? Math.hypot(aUx[col], aUy[col]) : pf.umag[col])
     let uMax = 0
-    for (const u of pf.umag) uMax = Math.max(uMax, u)
+    for (let c = 0; c < aUx.length; c++) {
+      if (nass(c)) uMax = Math.max(uMax, mag(c))
+    }
     const stridePx = 26
     const stride = Math.max(1, Math.round(stridePx / (pf.spacing[0] * L.scale)))
     ctx.strokeStyle = 'rgba(255,255,255,0.9)'
@@ -518,9 +680,9 @@ function draw() {
     for (let j = 0; j < ny; j += stride) {
       for (let i = 0; i < nx; i += stride) {
         const col = j * nx + i
-        if (!(pf.depth[col] > TIEFE_BENETZT) || pf.umag[col] < 1e-4) continue
-        const len = (6 + 16 * (pf.umag[col] / (uMax || 1)))
-        const ang = Math.atan2(-pf.uy[col], pf.ux[col])   // Canvas-y invertiert
+        if (!nass(col) || mag(col) < 1e-4) continue
+        const len = (6 + 16 * (mag(col) / (uMax || 1)))
+        const ang = Math.atan2(-aUy[col], aUx[col])   // Canvas-y invertiert
         const [cx, cy] = worldToCanvas(L,
           pf.origin[0] + (i + 0.5) * pf.spacing[0],
           pf.origin[1] + (j + 0.5) * pf.spacing[1])
@@ -582,6 +744,140 @@ function draw() {
   ctx.restore()
   ctx.textAlign = 'center'
   ctx.fillText('x in m', L.w / 2, L.h - 4)
+
+  // Auswerte-Objekte (G2) + Rand-Durchflüsse (G3) zuoberst
+  if (showObjekte.value && spec) zeichneObjekte(ctx, L)
+}
+
+// --- Auswerte-Objekte und Rand-Durchflüsse (G2/G3) ------------------------
+
+// Zufluss grün, Ablauf orange — aus der zentralen Palette, damit die
+// Farben zu den Zeitreihen-Diagrammen passen
+const FARBE_ZU = SERIES_COLORS[2]
+const FARBE_AB = SERIES_COLORS[1]
+
+// Kleiner Pfeil mit Spitze bei (x + dx·len/2, y + dy·len/2)
+function zeichnePfeil(ctx, x, y, dx, dy, len, farbe) {
+  ctx.strokeStyle = farbe
+  ctx.fillStyle = farbe
+  ctx.lineWidth = 2
+  const x1 = x + dx * len / 2
+  const y1 = y + dy * len / 2
+  ctx.beginPath()
+  ctx.moveTo(x - dx * len / 2, y - dy * len / 2)
+  ctx.lineTo(x1, y1)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(x1, y1)
+  ctx.lineTo(x1 - dx * 5 - dy * 3.2, y1 - dy * 5 + dx * 3.2)
+  ctx.lineTo(x1 - dx * 5 + dy * 3.2, y1 - dy * 5 - dx * 3.2)
+  ctx.fill()
+}
+
+// Pegel (Punkt + Name), Querschnitte (Linie + Name) und Rand-Fenster
+// (Strich auf der Gebietskante; mit Q(t)-Pfeil, wenn der Lauf die
+// discharge-Reihe des Patches mitschreibt). Weltkoordinaten laufen durch
+// DIESELBE Transformation wie alle anderen Overlays (worldToCanvas).
+function zeichneObjekte(ctx, L) {
+  ctx.font = '10px system-ui'
+
+  // Pegelpunkte
+  for (const g of spec.evaluation?.gauges ?? []) {
+    if (!g?.point) continue
+    const [cx, cy] = worldToCanvas(L, g.point[0], g.point[1])
+    ctx.fillStyle = SERIES_COLORS[0]
+    ctx.strokeStyle = 'rgba(10,16,31,0.9)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.textAlign = 'left'
+    ctx.fillText(g.id ?? '', cx + 7, cy - 5)
+  }
+
+  // Querschnitte
+  for (const s of spec.evaluation?.sections ?? []) {
+    const pl = s?.polyline
+    if (!pl?.length) continue
+    ctx.strokeStyle = SERIES_COLORS[4]
+    ctx.fillStyle = SERIES_COLORS[4]
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([6, 4])
+    ctx.beginPath()
+    pl.forEach(([x, y], idx) => {
+      const [cx, cy] = worldToCanvas(L, x, y)
+      idx ? ctx.lineTo(cx, cy) : ctx.moveTo(cx, cy)
+    })
+    ctx.stroke()
+    ctx.setLineDash([])
+    const [lx, ly] = worldToCanvas(L, pl[0][0], pl[0][1])
+    ctx.textAlign = 'left'
+    ctx.fillText(s.id ?? '', lx + 5, ly - 5)
+  }
+
+  // Rand-Fenster auf der Gebietskante (z_max/atmosphere zeichnet niemand)
+  const zeit = store.currentTime ?? times.value[timeIdx.value]
+  for (const b of spec.boundaries ?? []) {
+    const typ = randTyp(b)
+    if (!typ) continue
+    const face = randFace(b)
+    if (!face || face === 'z_max') continue
+    const x0 = pf.origin[0]
+    const x1 = x0 + L.worldW
+    const y0 = pf.origin[1]
+    const y1 = y0 + L.worldH
+    let p0
+    let p1
+    let normal          // zeigt in Weltkoordinaten INS Gebiet
+    if (face === 'x_min' || face === 'x_max') {
+      const [a, bb] = fensterSpanne(b.window, y0, y1)
+      const x = face === 'x_min' ? x0 : x1
+      p0 = [x, Math.max(a, y0)]
+      p1 = [x, Math.min(bb, y1)]
+      normal = face === 'x_min' ? [1, 0] : [-1, 0]
+    } else {
+      const [a, bb] = fensterSpanne(b.window, x0, x1)
+      const y = face === 'y_min' ? y0 : y1
+      p0 = [Math.max(a, x0), y]
+      p1 = [Math.min(bb, x1), y]
+      normal = face === 'y_min' ? [0, 1] : [0, -1]
+    }
+    const farbe = typ === 'zu' ? FARBE_ZU : FARBE_AB
+    const [c0x, c0y] = worldToCanvas(L, p0[0], p0[1])
+    const [c1x, c1y] = worldToCanvas(L, p1[0], p1[1])
+    ctx.strokeStyle = farbe
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(c0x, c0y)
+    ctx.lineTo(c1x, c1y)
+    ctx.stroke()
+
+    // G3: Q am Zeitcursor. patchflow-Vorzeichen: positiv = Wasser
+    // verlässt das Gebiet → Pfeil nach außen, sonst nach innen.
+    const mx = (c0x + c1x) / 2
+    const my = (c0y + c1y) / 2
+    const ndx = normal[0]
+    const ndy = -normal[1]          // Canvas-y invertiert
+    const serie = randSerien?.[b.patch]
+    const q = serie ? wertBei(serie.t, serie.v, zeit) : null
+    let text = b.patch ?? b.id ?? ''
+    if (q != null) {
+      const raus = q > 0
+      zeichnePfeil(ctx, mx + ndx * 14, my + ndy * 14,
+        raus ? -ndx : ndx, raus ? -ndy : ndy, 16, farbe)
+      text += ` · Q = ${fmt(Math.abs(q))} m³/s`
+    }
+    ctx.fillStyle = farbe
+    if (ndx !== 0) {
+      ctx.textAlign = ndx > 0 ? 'left' : 'right'
+      ctx.fillText(text, mx + ndx * 26, my + 3)
+    } else {
+      ctx.textAlign = 'center'
+      ctx.fillText(text, mx, my + ndy * 26 + 3)
+    }
+  }
+  ctx.textAlign = 'center'
 }
 
 // --- Interaktion ----------------------------------------------------------
@@ -625,6 +921,24 @@ function onMove(e) {
     const st = einordnen('bed_shear', pf.tau[col])
     rows.push(['Sohlschubspannung', `${fmt(pf.tau[col])} N/m²`
       + (st && pf.depth[col] > TIEFE_BENETZT ? ` — ${st.text.split('.')[0]}` : '')])
+  }
+  // Ebenen-Modus: die Sonde nennt zusätzlich Schicht und Schichtwert
+  if (ebenenModus.value && vol3d && grid) {
+    const k = Math.min(Math.max(ebeneK.value, 0), nzMax.value)
+    const idx = (k * pf.ny + j) * pf.nx + i
+    const alpha = vol3d.fields.alpha.data
+    const z = grid.origin[2] + (k + 0.5) * grid.spacing[2]
+    rows.push(['Schicht', `k = ${k} · z = ${z.toFixed(2)} m`])
+    if (!Number.isFinite(alpha[idx])) {
+      rows.push(['Schichtzustand', 'Erdreich / keine Solverzelle'])
+    } else if (alpha[idx] >= ALPHA_NASS) {
+      const U = vol3d.fields.U?.data
+      const n = alpha.length
+      rows.push(['|U| Schicht', U
+        ? `${fmt(Math.hypot(U[idx], U[n + idx], U[2 * n + idx]))} m/s` : '–'])
+    } else {
+      rows.push(['Schichtzustand', 'Luft'])
+    }
   }
   hover.value = rows
 }
@@ -743,7 +1057,15 @@ watch(() => store.selectedRunIds, (ids) => {
 watch(activeRunId, loadRun)
 watch(timeIdx, update)
 watch([raster, showContours, contourInterval, showArrows, lockScale,
-  lockMin, lockMax, umhuellend, showFroudeLine], () => draw())
+  lockMin, lockMax, umhuellend, showFroudeLine, modus, ebeneK,
+  showObjekte], () => draw())
+// Säulenfelder gibt es auf einer z-Schicht nicht — beim Umschalten auf
+// die Schicht-Geschwindigkeit ausweichen (die Auswahl ist dort gesperrt)
+watch(modus, (m) => {
+  if (m === 'ebene' && SAEULEN_FELDER.includes(raster.value)) {
+    raster.value = 'umag'
+  }
+})
 // Laufwechsel verwirft die Umhüllende — sie gehört zu genau einem Lauf
 watch(activeRunId, () => { huelle = null; umhuellend.value = false
   huellenFortschritt.value = 0 })

@@ -76,6 +76,7 @@
         <label class="f3d-check"><input type="checkbox" v-model="layers.arrows" /> Vektorpfeile</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.iso" /> Isofläche der Feldgröße</label>
         <label class="f3d-check"><input type="checkbox" v-model="layers.streamlines" /> Stromlinien</label>
+        <label class="f3d-check"><input type="checkbox" v-model="layers.randbilanz" /> Randbilanz (Q an Zu-/Abläufen)</label>
       </div>
 
       <div class="f3d-ctl-group" v-if="layers.slice">
@@ -233,7 +234,22 @@
 
     <div class="f3d-raum-main">
       <div ref="viewport" class="f3d-viewport"
-           @pointerdown="onPointerDown" @pointerup="onPointerUp"></div>
+           @pointerdown="onPointerDown" @pointerup="onPointerUp">
+        <!-- Randbilanz-Labels: HTML-Overlay über dem vtk-Canvas, Anker im
+             Raum über die Kamera projiziert (kein Treffer für die Maus —
+             die Kamerabedienung läuft ungestört darunter weiter) -->
+        <div v-if="layers.randbilanz" class="f3d-randlabels" aria-hidden="true">
+          <div v-for="l in randLabels" :key="l.patch"
+               class="f3d-randlabel"
+               :style="{ left: l.x + 'px', top: l.y + 'px',
+                         borderColor: l.farbe, color: l.farbe }">
+            <strong>{{ l.patch }}</strong>
+            <span v-if="l.qText">{{ l.qText }}</span>
+            <span v-if="l.vText">{{ l.vText }}</span>
+            <span v-if="!l.qText" class="f3d-randlabel-leer">keine Q-Reihe</span>
+          </div>
+        </div>
+      </div>
       <div class="f3d-timebar" v-if="times.length">
         <button class="f3d-btn" :title="playing ? 'Abspielen anhalten' : 'Zeitschritte abspielen'"
                 :aria-label="playing ? 'Anhalten' : 'Abspielen'"
@@ -247,6 +263,13 @@
           t = {{ fmt(zeitLaedt ? times[timeIdx] : store.currentTime) }} s
           <template v-if="zeitLaedt"> … lädt</template>
         </span>
+      </div>
+      <!-- Bilanz bis zum Zeitcursor: was kam herein, was ging hinaus,
+           was liegt an Speicheränderung dazwischen -->
+      <div v-if="layers.randbilanz && bilanzSumme" class="f3d-bilanzzeile f3d-mono">
+        Σ Zufluss {{ fmt(bilanzSumme.zu) }} m³ ·
+        Σ Abfluss {{ fmt(bilanzSumme.ab) }} m³ ·
+        ΔSpeicher {{ bilanzSumme.dS == null ? '–' : fmt(bilanzSumme.dS) }} m³
       </div>
     </div>
   </section>
@@ -287,13 +310,16 @@ import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransf
 import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/ColorMaps'
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction'
 import KennwertHilfe from './KennwertHilfe.vue'
-import { usePostStore } from '../../stores/usePostStore'
+import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 // Geometrie/Zeitschritte über den GEMEINSAMEN Feld-Cache (Audit H6):
 // der Direktweg über services/volume lud beim Tabwechsel Grundriss↔Raum
 // alles doppelt
 import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { glaetteFeldCached } from '../../utils/glaettung'
+import { flood3dApi } from '../../services/api'
+import { fensterMittelpunkt, kumuliere, randTyp, wertBei }
+  from '../../utils/randbilanz'
 import { ALPHA_NASS, TIEFE_TROCKEN } from '../../utils/anzeigeSchwellen'
 import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
   from '../../utils/farbskala'
@@ -338,7 +364,7 @@ const hilfeSchluessel = computed(() => activeFieldKey.value)
 const layers = ref({
   terrain: true, terrainShear: true, surface: true, body: false, film: false,
   slice: false, arrows: false, iso: false, streamlines: false,
-  structures: true, meshSurface: false,
+  structures: true, meshSurface: false, randbilanz: true,
 })
 // Isoflächen-Grenze der Wasseroberfläche — Vorgabe ALPHA_NASS, per Regler
 // verstellbar (kleiner = mehr Wasser sichtbar, auch Gischt/Teilfüllung)
@@ -410,6 +436,15 @@ let terrainInfo = null            // { z: Float32Array, nx, ny } für die Punkta
 let currentVol = null
 let downPos = null
 const vtk = {}
+// Randbilanz (V1): Welt-Anker + Q/V-Reihen je Zu-/Ablauf-Patch, dazu die
+// Volumenreihe des Laufs für die ΔSpeicher-Zeile. Die Bildschirmpositionen
+// entstehen aus der Kamera-Projektion (randLabels ist der reaktive Teil).
+let patchZentren = {}             // patch -> Bounds-Mittelpunkt des Solver-Patches
+let randDaten = null              // [{ patch, typ, anker, serie: {t, v, V} }]
+let balanceVol = null             // { t, v } aus /balance
+let kameraSub = null              // onModified-Subscription der Kamera
+const randLabels = ref([])
+const bilanzSumme = ref(null)
 // Skip-Guards: welche Daten zuletzt in die vtk-Images geschrieben wurden.
 // Ein Layer-Toggle löste vorher die komplette Kette neu aus — Glättung,
 // Maske, Marching Cubes —, obwohl sich die Daten gar nicht geändert hatten.
@@ -1073,6 +1108,9 @@ async function updateScene() {
       isoValue.value = Number(((lo + hi) / 2).toPrecision(3))
     }
     renderWindow.render()
+    // Q/V-Werte hängen am Zeitcursor, die Positionen an der Kamera —
+    // nach jedem Szenen-Update beides nachziehen
+    aktualisiereRandbilanz()
 
     // Beim Abspielen den Folgeschritt schon in den Cache holen — der
     // Frame-Takt lässt dafür Luft, der Wechsel kommt dann ohne Laden
@@ -1341,9 +1379,17 @@ function buildGeometryActors(geo) {
     renderer.addActor(actor)
     vtk.structureActors.push(actor)
   })
+  patchZentren = {}
   for (const s of geo.meshPatches) {
     const reader = vtkSTLReader.newInstance()
     reader.parseAsArrayBuffer(s.stl)
+    // Bounds-Mittelpunkt als Welt-Anker der Randbilanz-Labels — der
+    // Solver-Patch sitzt exakt dort, wo das Wasser wirklich ein-/austritt
+    const b = reader.getOutputData().getBounds()
+    if (s.patch && Number.isFinite(b[0])) {
+      patchZentren[s.patch] = [(b[0] + b[1]) / 2, (b[2] + b[3]) / 2,
+        (b[4] + b[5]) / 2]
+    }
     const mapper = vtkMapper.newInstance({ scalarVisibility: false })
     mapper.setInputData(reader.getOutputData())
     const actor = vtkActor.newInstance()
@@ -1357,6 +1403,92 @@ function buildGeometryActors(geo) {
     renderer.addActor(actor)
     vtk.meshActors.push(actor)
   }
+}
+
+// --- Randbilanz-Labels (V1) -----------------------------------------------
+
+// Fall-Spezifikation einmal je Lauf, als Promise gecacht (BilanzPanel-
+// Muster) — die Randliste ändert sich innerhalb eines Laufs nie.
+const _specCache = new Map()
+function ladeSpec(runId) {
+  if (!_specCache.has(runId)) {
+    _specCache.set(runId, (async () => {
+      const detail = await flood3dApi.runDetail(runId)
+      const caseId = detail?.manifest?.case_id ?? runId.replace(/_r\d+$/, '')
+      return flood3dApi.getCase(caseId)
+    })().catch(() => null))     // alter Lauf ohne Fall: keine Labels
+  }
+  return _specCache.get(runId)
+}
+
+function baueRandDaten(spec, serien) {
+  const out = []
+  for (const b of spec?.boundaries ?? []) {
+    const typ = randTyp(b)
+    if (!typ) continue          // atmosphere u. Ä. gehören nicht in die Bilanz
+    const reihe = serien?.[b.patch]
+    out.push({
+      patch: b.patch ?? b.id ?? '?',
+      typ,
+      // Solver-Patch, wenn vorhanden; sonst rechnerisch aus dem Randfenster
+      anker: patchZentren[b.patch] ?? fensterMittelpunkt(b, grid),
+      serie: reihe
+        ? { t: reihe.t, v: reihe.v, V: kumuliere(reihe.t, reihe.v) }
+        : null,
+    })
+  }
+  return out
+}
+
+// Q und ∫Q·dt am Zeitcursor auswerten und die Welt-Anker über die Kamera
+// auf den Bildschirm projizieren. Läuft bei Zeitwechsel, Kamerabewegung
+// und Layer-Umschaltung — ein paar Ränder, also billig.
+function aktualisiereRandbilanz() {
+  if (!layers.value.randbilanz || !randDaten?.length || !renderer
+      || !viewport.value) {
+    randLabels.value = []
+    bilanzSumme.value = null
+    return
+  }
+  const zeit = store.currentTime ?? times.value[timeIdx.value] ?? 0
+  const w = viewport.value.clientWidth
+  const h = viewport.value.clientHeight
+  if (!w || !h) { randLabels.value = []; return }
+  const out = []
+  let zu = 0
+  let ab = 0
+  for (const e of randDaten) {
+    let qText = ''
+    let vText = ''
+    if (e.serie) {
+      const q = wertBei(e.serie.t, e.serie.v, zeit) ?? 0
+      const V = wertBei(e.serie.t, e.serie.V, zeit) ?? 0
+      // patchflow-Vorzeichen: positiv = Wasser verlässt das Gebiet
+      qText = `${q <= 0 ? '→ rein' : '← raus'} ${fmt(Math.abs(q))} m³/s`
+      vText = `Σ ${fmt(Math.abs(V))} m³`
+      if (e.typ === 'zu') zu += -V
+      else ab += V
+    }
+    if (!e.anker) continue
+    const nd = renderer.worldToNormalizedDisplay(
+      e.anker[0], e.anker[1], e.anker[2], w / h)
+    // hinter der Kamera oder klar außerhalb des Bilds: kein Label
+    if (nd[2] < 0 || nd[2] > 1
+        || nd[0] < -0.05 || nd[0] > 1.05
+        || nd[1] < -0.05 || nd[1] > 1.05) continue
+    out.push({ patch: e.patch, typ: e.typ, qText, vText,
+      // Farbe aus der zentralen Palette: Zufluss grün, Ablauf orange —
+      // dieselbe Zuordnung wie die G2-Striche im Grundriss
+      farbe: e.typ === 'zu' ? SERIES_COLORS[2] : SERIES_COLORS[1],
+      x: Math.round(nd[0] * w), y: Math.round((1 - nd[1]) * h) })
+  }
+  randLabels.value = out
+  let dS = null
+  if (balanceVol?.t?.length) {
+    dS = (wertBei(balanceVol.t, balanceVol.v, zeit) ?? balanceVol.v[0])
+      - balanceVol.v[0]
+  }
+  bilanzSumme.value = { zu, ab, dS }
 }
 
 async function loadRun() {
@@ -1384,6 +1516,25 @@ async function loadRun() {
     slHeightIdx.value = Math.min(slHeightIdx.value, grid.dims[2] - 1)
     buildTerrain(geo)
     buildGeometryActors(geo)
+    // Randbilanz nebenherladen — die Szene wartet nicht darauf, die
+    // Labels kommen nach, sobald Spezifikation und Reihen da sind
+    randDaten = null
+    balanceVol = null
+    randLabels.value = []
+    bilanzSumme.value = null
+    const runId = activeRunId.value
+    Promise.all([
+      ladeSpec(runId),
+      store.ensureSeries(runId, 'discharge').catch(() => []),
+      store.ensureBalance(runId).catch(() => null),
+    ]).then(([spec, serien, bal]) => {
+      if (runId !== activeRunId.value) return
+      const m = {}
+      for (const r of serien ?? []) m[r.location_id] = r
+      randDaten = baueRandDaten(spec, m)
+      balanceVol = bal?.volume ?? null
+      aktualisiereRandbilanz()
+    })
     await updateScene()
   } catch (e) {
     error.value = e.message
@@ -1408,8 +1559,12 @@ onMounted(() => {
   renderer = grw.getRenderer()
   renderWindow = grw.getRenderWindow()
   buildPipelines()
+  // Kamerabewegung schiebt die Randbilanz-Labels mit (Subscription wird
+  // beim Unmount gelöst — sonst hält der Callback das Panel fest)
+  kameraSub = renderer.getActiveCamera()
+    .onModified(() => aktualisiereRandbilanz())
   grw.resize()
-  resizeObs = new ResizeObserver(() => grw.resize())
+  resizeObs = new ResizeObserver(() => { grw.resize(); aktualisiereRandbilanz() })
   resizeObs.observe(viewport.value)
   loadViews()
   activeRunId.value = store.selectedRunIds[0] ?? null
@@ -1429,6 +1584,8 @@ watch([timeIdx, activeFieldKey, layers, sliceAxis, sliceIdx, sliceCount,
 onBeforeUnmount(() => {
   clearInterval(playTimer)
   resizeObs?.disconnect()
+  kameraSub?.unsubscribe()
+  kameraSub = null
   disposeVtk()
   grw?.delete()
   renderer = null
@@ -1557,7 +1714,43 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   overflow: hidden;
   min-height: 300px;
+  /* Anker für die absolut positionierten Randbilanz-Labels */
   position: relative;
+}
+/* Overlay über dem vtk-Canvas: fängt keine Zeigerereignisse, die
+   Kamerabedienung läuft ungestört darunter weiter */
+.f3d-randlabels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+}
+.f3d-randlabel {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 8px;
+  border: 1px solid;              /* Farbe kommt inline aus der Palette */
+  border-radius: 6px;
+  background: rgba(10, 16, 31, 0.82);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.f3d-randlabel strong { font-size: 0.7rem; }
+.f3d-randlabel-leer { color: var(--f3d-text-2); font-style: italic; }
+.f3d-bilanzzeile {
+  flex-shrink: 0;
+  text-align: center;
+  background: var(--f3d-surface);
+  border: 1px solid var(--f3d-border);
+  border-radius: 8px;
+  padding: 5px 12px;
 }
 .f3d-timebar {
   display: flex;
