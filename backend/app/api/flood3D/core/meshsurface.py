@@ -10,25 +10,48 @@ Solver-Netz-Ansicht rendern kann.
 """
 from __future__ import annotations
 
-import re
 import struct
 from pathlib import Path
 
 import numpy as np
 
-_VERTEX_RE = re.compile(r"vertex\s+(\S+)\s+(\S+)\s+(\S+)")
-
 
 def parse_multi_solid_stl(path: str | Path) -> dict[str, np.ndarray]:
-    """ASCII-STL mit mehreren solid-Blöcken -> je Patch Dreiecke (n, 3, 3)."""
-    text = Path(path).read_text(errors="replace")
+    """
+    ASCII-STL mit mehreren solid-Blöcken -> je Patch Dreiecke (n, 3, 3).
+
+    ZEILENWEISE, nicht am Stück: die Dateien werden bis 96 MB groß
+    (Rentrisch_BetaTest06_r004 mit 1,5 Mio vertex-Zeilen). Die alte
+    Fassung hielt gleichzeitig den ganzen Text, eine Blockkopie UND die
+    1,5 Mio Zahlen-Tripel als Python-Objekte — gemessen 595 MB Spitze für
+    ein Ergebnis von 26 MB, im Serverprozess mit 1 GiB Deckel und ohne
+    Passwortschutz (GET). Die Zahlen landen jetzt direkt in einem
+    kompakten float-Puffer: 4 Byte je Wert statt eines str-Objekts.
+    """
+    from array import array
+
+    puffer: dict[str, array] = {}
+    werte: array | None = None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for zeile in f:
+            zeile = zeile.strip()
+            if zeile.startswith("vertex"):
+                if werte is not None:
+                    _, x, y, z = zeile.split(maxsplit=3)
+                    werte.extend((float(x), float(y), float(z)))
+            elif zeile.startswith("solid"):
+                teile = zeile.split(maxsplit=1)
+                name = teile[1].strip() if len(teile) > 1 else "solid"
+                werte = puffer.setdefault(name, array("f"))
+            elif zeile.startswith("endsolid"):
+                werte = None
+
     out: dict[str, np.ndarray] = {}
-    for m in re.finditer(r"solid\s+(\S+)(.*?)endsolid", text, re.S):
-        name, block = m.group(1), m.group(2)
-        coords = np.array(_VERTEX_RE.findall(block), dtype=np.float32)
-        if len(coords) < 3:
-            continue
-        out[name] = coords[: len(coords) // 3 * 3].reshape(-1, 3, 3)
+    for name, w in puffer.items():
+        n = len(w) // 9              # 3 Ecken je Dreieck, 3 Zahlen je Ecke
+        if n:
+            out[name] = np.frombuffer(w, dtype=np.float32,
+                                      count=n * 9).reshape(-1, 3, 3)
     return out
 
 

@@ -42,7 +42,6 @@ env_spiegeln("FLOOD3D_")
 
 from .core import fields as vol_fields
 from .core.casespec import CaseSpec, migriere
-from .core.normalize import get_series
 from .core.solids import build_solids
 from .core.store import (lauf_reservieren, manifest_schreiben,
                          read_manifest, run_paths, runs_root)
@@ -90,21 +89,17 @@ def _result(paths) -> dict | None:
 # OOM-Killer erschiessen lassen, waehrend Fabio nur die Ergebnisse ansehen
 # wollte. Parquet ist spaltenweise und filtert schon beim LESEN: fuer eine
 # Zeitreihe kommen damit 480 Zeilen und 0,06 MB statt 906 MB an (0,23 s).
-@lru_cache(maxsize=8)
-def _reihen_gelesen(path_str: str, mtime_ns: int,
-                    quantities: tuple[str, ...]) -> pd.DataFrame:
-    return pd.read_parquet(path_str,
-                           filters=[("quantity", "in", list(quantities))])
-
-
-def _reihen(paths, quantities: tuple[str, ...]) -> pd.DataFrame:
-    """Nur die gebrauchten Groessen aus der Zwischendatei."""
-    if not paths.normalized.exists():
-        raise HTTPException(status_code=404,
-                            detail="Für diesen Lauf liegt keine Zwischendatei vor.")
-    return _reihen_gelesen(str(paths.normalized),
-                           paths.normalized.stat().st_mtime_ns,
-                           tuple(sorted(quantities)))
+#
+# NACHGEMESSEN (2026-08-15, zweiter Anlauf): die erste Kur sprang zu kurz.
+# `read_parquet(filters=…)` liefert zwar nur die gewuenschte Groesse — aber
+# `residual` IST 3 Mio Zeilen (367 MB), und im Cache lagen bis zu acht
+# davon: drei harmlose Abfragen brachten den Prozess auf 1,35 GB. Der
+# Dataset-Scanner der Bilanz las ausserdem 16 Stapel voraus (925 MB
+# Spitze). Deshalb jetzt EIN Weg fuer alle Zeitreihen:
+#   ParquetFile.iter_batches  (ein Stapel, kein Vorauslesen)
+#   -> je Reihe nur (t, v) als float-Arrays  (die STRINGS sind das Schwere)
+#   -> ausduennen auf Diagrammgroesse
+#   -> und nur DIESES kleine Ergebnis wird gemerkt (KB statt MB).
 
 
 # Fuer die Bilanz-/Konvergenzansicht: mehr Punkte als das Diagramm breit
@@ -135,40 +130,40 @@ def _ausduennen(t, v, komponente: str):
     return tb[:, -1], vb[:, -1]        # letzter Wert je Fenster
 
 
-def _bilanz_lesen(paths) -> dict[tuple[str, str, str], dict]:
-    """Gemerkt je Lauf: das Auslesen kostet bei langen Läufen Sekunden, das
-    Ergebnis ist nach dem Ausdünnen aber klein (< 1 MB) — Tabwechsel sollen
-    nicht jedes Mal 7,6 Mio Zeilen durchpflügen."""
+def _reihen_verdichtet(paths, quantities: tuple[str, ...]) -> dict:
+    """Ausgeduennte Zeitreihen eines Laufs, gemerkt (klein)."""
     if not paths.normalized.exists():
         raise HTTPException(status_code=404,
                             detail="Für diesen Lauf liegt keine Zwischendatei vor.")
-    return _bilanz_gelesen(str(paths.normalized),
-                           paths.normalized.stat().st_mtime_ns)
+    return _reihen_gelesen(str(paths.normalized),
+                           paths.normalized.stat().st_mtime_ns,
+                           tuple(sorted(quantities)))
 
 
-@lru_cache(maxsize=4)
-def _bilanz_gelesen(pfad: str, mtime_ns: int) -> dict[tuple[str, str, str], dict]:
+@lru_cache(maxsize=6)
+def _reihen_gelesen(pfad: str, mtime_ns: int, quantities: tuple[str, ...]
+                    ) -> dict[tuple[str, str, str], dict]:
     """
-    Bilanz- und Konvergenzreihen stapelweise einsammeln.
+    Zeitreihen stapelweise einsammeln, je Reihe nur (t, v) behalten und auf
+    Diagrammgroesse eindampfen.
 
-    Der Trick gegen den Speicher: die STRING-Spalten machen die Zwischen-
-    datei schwer (7,6 Mio Zeilen = 906 MB als DataFrame), die Zahlen selbst
-    sind harmlos. Also wird stapelweise gelesen und je Reihe nur (t, v) als
-    float-Arrays behalten — rund 120 MB statt 906 MB, und nichts davon
-    ueberlebt die Anfrage.
+    ``iter_batches`` statt ``dataset.to_batches``: der Dataset-Scanner liest
+    16 Stapel voraus und stand damit bei 925 MB, obwohl die Schleife
+    stapelweise aussah (gemessen 2026-08-15). ParquetFile liest genau einen.
     """
     import numpy as np
-    import pyarrow.dataset as ds
+    import pyarrow.parquet as pq
 
-    gewuenscht = ["volume", "continuity", "courant", "timestep", "residual"]
     roh: dict[tuple[str, str, str], dict] = {}
-    daten = ds.dataset(pfad, format="parquet")
-    for stapel in daten.to_batches(
+    datei = pq.ParquetFile(pfad)
+    for stapel in datei.iter_batches(
             columns=["quantity", "location_id", "component", "time",
                      "value", "unit"],
-            filter=ds.field("quantity").isin(gewuenscht),
-            batch_size=200_000):
+            batch_size=100_000):
         teil = stapel.to_pandas()
+        teil = teil[teil["quantity"].isin(quantities)]
+        if teil.empty:
+            continue
         for schluessel, gruppe in teil.groupby(
                 ["quantity", "location_id", "component"], sort=False):
             eintrag = roh.setdefault(schluessel, {"t": [], "v": [], "unit": ""})
@@ -225,23 +220,6 @@ def _inventar_gelesen(pfad: str, mtime_ns: int) -> list[dict]:
     gesamt = pd.concat(teile).groupby(level=[0, 1, 2], sort=True).agg(
         n=("n", "sum"), t_min=("t_min", "min"), t_max=("t_max", "max"))
     return gesamt.reset_index().to_dict(orient="records")
-
-
-def _series_payload(df: pd.DataFrame, quantity: str, location_id: str,
-                    component: str) -> dict:
-    """
-    Eine Zeitreihe als Nutzlast. ``df`` darf (und sollte) vorgefiltert sein —
-    jede Maske hier laeuft ueber die ganze uebergebene Tabelle, und die hat
-    bei laengeren Laeufen Millionen Zeilen.
-    """
-    sel = df[(df["quantity"] == quantity) & (df["location_id"] == location_id)]
-    unit = sel["unit"].iloc[0] if len(sel) else ""
-    # get_series auf der bereits verkleinerten Auswahl statt auf df: der
-    # zweite Vollscan war reine Verschwendung
-    t, v = get_series(sel, quantity, location_id, component)
-    return {"quantity": quantity, "location_id": location_id,
-            "component": component, "unit": unit,
-            "t": t.tolist(), "v": v.tolist()}
 
 
 # --------------------------------------------------------------------------
@@ -503,12 +481,11 @@ async def run_series(run_id: str,
     dabei der GESAMTE Server, bis hin zu /health (2026-08-15 real erlebt).
     """
     def arbeit():
-        teil = _reihen(_paths(run_id), (quantity,))   # nur diese Groesse
-        locs = ([location_id] if location_id is not None
-                else sorted(teil["location_id"].unique()))
-        series = [_series_payload(teil, quantity, loc, component)
-                  for loc in locs]
-        return {"run_id": run_id, "series": [s for s in series if s["t"]]}
+        reihen = _reihen_verdichtet(_paths(run_id), (quantity,))
+        passend = [r for (menge, ort, komp), r in sorted(reihen.items())
+                   if menge == quantity and komp == component
+                   and (location_id is None or ort == location_id)]
+        return {"run_id": run_id, "series": [r for r in passend if r["t"]]}
     return await asyncio.to_thread(arbeit)
 
 
@@ -517,7 +494,9 @@ async def run_balance(run_id: str):
     """Bilanz- und Konvergenzreihen für die Qualitätsansicht (Spez. Kap. 8).
     Im Thread, aus demselben Grund wie /series."""
     def arbeit():
-        reihen = _bilanz_lesen(_paths(run_id))
+        reihen = _reihen_verdichtet(
+            _paths(run_id), ("volume", "continuity", "courant",
+                             "timestep", "residual"))
 
         def hol(menge, ort, komponente=""):
             return reihen.get((menge, ort, komponente)) \
@@ -547,7 +526,9 @@ async def run_timesteps(run_id: str):
     return index
 
 
-@lru_cache(maxsize=32)
+# 4 statt 32 Plaetze: je Eintrag 4,1 MB base64 — 32 waeren
+# 133 MB, die nie wieder freigegeben werden
+@lru_cache(maxsize=4)
 def _terrain_solid_b64(pfad: str, mtime: float) -> str | None:
     """
     terrain.stl des Laufs als base64 — aber NUR, wenn sie ein

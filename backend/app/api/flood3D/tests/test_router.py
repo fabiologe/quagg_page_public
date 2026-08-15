@@ -95,14 +95,25 @@ def test_lange_reihen_sprengen_den_speicher_nicht():
 
     from .. import router as router_mod
 
-    quelle = inspect.getsource(router_mod)
-    # (1) kein Volllader mehr — gelesen wird spalten-/zeilengefiltert
+    # NUR Code pruefen, keine Kommentare — die erklaeren ja genau die
+    # Muster, die hier verboten sind
+    quelle = "\n".join(z for z in inspect.getsource(router_mod).splitlines()
+                       if not z.lstrip().startswith("#"))
+    # (1) kein Volllader mehr
     assert "_read_parquet_cached" not in quelle
-    assert "filters=[(\"quantity\"" in quelle
-    # (2) die schweren Auswertungen blockieren nicht die Ereignisschleife
+    assert "read_parquet(" not in quelle
+    # (2) stapelweise OHNE Vorauslese: der Dataset-Scanner
+    #     (ds.dataset(...).to_batches) holt 16 Stapel im Voraus und stand
+    #     damit bei 925 MB, obwohl die Schleife stapelweise aussah
+    assert "iter_batches" in quelle
+    assert ".to_batches(" not in quelle
+    # (3) die schweren Auswertungen blockieren nicht die Ereignisschleife
     for endpunkt in ("run_series", "run_balance", "run_inventory"):
         rumpf = inspect.getsource(getattr(router_mod, endpunkt))
         assert "asyncio.to_thread" in rumpf, endpunkt
+    # (4) gemerkt werden nur AUSGEDUENNTE Ergebnisse, nie ganze Tabellen:
+    #     acht zwischengespeicherte DataFrames waren 2,9 GB
+    assert "_ausduennen" in inspect.getsource(router_mod._reihen_gelesen)
 
 
 def test_ausduennen_behaelt_die_spitze():
