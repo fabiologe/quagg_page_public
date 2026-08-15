@@ -27,6 +27,16 @@ export const usePreStore = defineStore('flood3d-pre', {
     activeCaseId: null,
     spec: null,
     dirty: false,
+    // Stand-Stempel des Falls, wie ihn der Server ZULETZT zurückgegeben
+    // hat (Speichern, Stand laden). Der Client kann ihn nicht selbst
+    // ausrechnen — er hängt auch an Dateien (Raster, Sculpt-Delta), die
+    // nicht in der spec stehen. null = unbekannt (z. B. direkt nach dem
+    // Öffnen), dann bleibt der Vergleich in der Stände-Liste neutral.
+    caseHash: null,
+    // Geometrie-Stände dieses Falls: [{ id, name, erstellt, case_hash,
+    // groesse_mb, quelle }] — siehe die Aktionen weiter unten
+    staende: [],
+    staendeLoading: false,
     validation: [],
     terrain: null,        // { x0, y0, resolution, dims, z: Float32Array }
     // Serverseitig aufgelöste Regeln aus der Geometrie-Antwort:
@@ -374,14 +384,22 @@ export const usePreStore = defineStore('flood3d-pre', {
         launchPasswortSichern()
         this.activeCaseId = caseId
         this.dirty = false
+        // Der Stempel kommt vom Server (Speichern/Stand laden); ein
+        // reines GET liefert ihn nicht — also erst einmal unbekannt.
+        this.caseHash = null
+        this.staende = []
         this.undoStack = []
         this.redoStack = []
         this.activePhase = 'modell'
         this.loadCaseRuns()
         this.selection = null
-        this.ladeMeshPreviewStand()
         this.ladeImporte()
-        await Promise.all([this.refreshGeometry(), this.ladeRaster()])
+        // Der Netzstand wird MITGEWARTET (früher nebenher): sonst kann
+        // seine Antwort erst nach dem Öffnen landen und eine inzwischen
+        // gesetzte „veraltet"-Marke wieder überschreiben — genau das
+        // passiert beim Laden eines Geometrie-Stands.
+        await Promise.all([this.refreshGeometry(), this.ladeRaster(),
+          this.ladeMeshPreviewStand()])
       } catch (e) {
         this.melden(e.message, 'fehler')
       } finally {
@@ -484,6 +502,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         const result = await flood3dApi.saveCase(this.activeCaseId, this.spec)
         // PUT liefert die Geometrie gleich mit — kein Nachladen mehr
         this.uebernehmeGeometrie(result)
+        if (result.case_hash) this.caseHash = result.case_hash
         this.dirty = false
         return true
       } catch (e) {
@@ -728,6 +747,137 @@ export const usePreStore = defineStore('flood3d-pre', {
           .reverse()
       } catch (e) {
         this.melden(e.message, 'fehler')
+      }
+    },
+
+    // -- Geometrie-Stände ---------------------------------------------------
+    // Ein Stand ist serverseitig eine benannte VOLLKOPIE der Fallgeometrie
+    // (case.yaml + sculpt.npz + derived/ + imports/). Der Undo-Stapel
+    // reicht dafür nicht: er kennt nur die spec, nicht die Dateien daneben.
+    // Zusätzlich sichert jeder Lauf seine Geometrie mit — „die Geometrie
+    // DIESES Laufs" lässt sich damit nachträglich als Stand übernehmen.
+
+    async ladeStaende() {
+      if (!this.activeCaseId) { this.staende = []; return }
+      this.staendeLoading = true
+      try {
+        const res = await flood3dApi.staende(this.activeCaseId)
+        this.staende = res.staende ?? []
+      } catch (e) {
+        // Leise scheitern: ohne Stände arbeitet der Fall weiter — die
+        // Liste bleibt leer, der Grund steht in der Meldungsleiste.
+        this.staende = []
+        this.melden(`Geometrie-Stände: ${e.message}`, 'fehler')
+      } finally {
+        this.staendeLoading = false
+      }
+    },
+
+    async standSichern(name) {
+      const bezeichnung = String(name ?? '').trim()
+      if (!this.activeCaseId || !bezeichnung) return false
+      // Der Server kopiert, was auf der PLATTE liegt — ein ungespeicherter
+      // Entwurf wäre im Stand nicht enthalten. Der Server ist die Wahrheit.
+      if (this.dirty && !(await this.saveCase())) return false
+      this.staendeLoading = true
+      try {
+        const res = await flood3dApi.standAnlegen(this.activeCaseId,
+          bezeichnung)
+        await this.ladeStaende()
+        this.melden(`Stand „${res?.stand?.name ?? bezeichnung}" gesichert`,
+          'erfolg')
+        return true
+      } catch (e) {
+        this.melden(`Stand sichern: ${e.message}`, 'fehler')
+        return false
+      } finally {
+        this.staendeLoading = false
+      }
+    },
+
+    // Einen Stand zur Arbeitsgeometrie machen. Ersetzt den Fall auf der
+    // Platte — der Server sichert den bisherigen Zustand vorher selbst
+    // als automatischen Stand (`auto_stand`).
+    async standLaden(standId) {
+      const caseId = this.activeCaseId
+      if (!caseId || !standId) return false
+      const name = this.staende.find((s) => s.id === standId)?.name ?? standId
+      // (a) ungespeicherter Entwurf ginge beim Tausch ersatzlos verloren
+      if (this.dirty && !(await this.saveCase())) return false
+      this.staendeLoading = true
+      try {
+        // (b) tauschen lassen
+        const res = await flood3dApi.standLaden(caseId, standId)
+        // (c) Der Fall ist danach ein anderer: Spec, Gelände, Bauwerke,
+        // Importe, Raster und Prüfung komplett neu einlesen — genau das
+        // ist openCase, deshalb hier ein Aufruf statt einer Kopie.
+        await this.openCase(caseId)
+        this.caseHash = res?.case_hash ?? null
+        // (d) Verlauf leeren. Die Snapshots im Undo-Stapel gehören zum
+        // ALTEN Stand: sie verweisen auf Importe, Raster und Sculpt-Deltas,
+        // die es nach dem Tausch nicht mehr gibt. Ein Rückgängig danach
+        // schriebe eine spec zurück, zu der die Dateien fehlen — der Fall
+        // wäre kaputt, ohne dass es jemand merkt. (openCase leert die
+        // Stapel bereits; hier steht es ausdrücklich, weil die Zusage an
+        // DIESEM Ablauf hängt und nicht an fremdem Code.)
+        this.undoStack = []
+        this.redoStack = []
+        // (e) Das Vorschaunetz wandert NICHT mit dem Stand — es gehört
+        // zur vorherigen Geometrie und ist damit veraltet.
+        this.meshPreviewStale = true
+        await this.ladeStaende()      // der automatische Stand ist neu dabei
+        // (f) Meldung — der Zusatz nur, wenn wirklich gesichert wurde
+        this.melden(`Stand „${name}" geladen`
+          + (res?.auto_stand
+            ? ' — der vorherige Zustand wurde automatisch gesichert' : ''),
+          'erfolg')
+        return true
+      } catch (e) {
+        this.melden(`Stand laden: ${e.message}`, 'fehler')
+        return false
+      } finally {
+        this.staendeLoading = false
+      }
+    },
+
+    async standLoeschen(standId) {
+      if (!this.activeCaseId || !standId) return false
+      const name = this.staende.find((s) => s.id === standId)?.name ?? standId
+      this.staendeLoading = true
+      try {
+        await flood3dApi.standLoeschen(this.activeCaseId, standId)
+        await this.ladeStaende()
+        this.melden(`Stand „${name}" gelöscht`, 'erfolg')
+        return true
+      } catch (e) {
+        this.melden(`Stand löschen: ${e.message}`, 'fehler')
+        return false
+      } finally {
+        this.staendeLoading = false
+      }
+    },
+
+    // Die mit einem Lauf gesicherte Geometrie als Stand übernehmen.
+    // Altläufe haben keine — der Server antwortet dann mit 409 und einem
+    // Text, der genau das erklärt; der wird durchgereicht statt verschluckt.
+    async laufGeometrieUebernehmen(runId) {
+      if (!runId) return false
+      this.staendeLoading = true
+      try {
+        const res = await flood3dApi.laufGeometrieAlsStand(runId)
+        // Der Lauf kann zu einem anderen Fall gehören — die Liste nur
+        // nachladen, wenn der Stand im offenen Fall gelandet ist
+        if (!res?.case_id || res.case_id === this.activeCaseId) {
+          await this.ladeStaende()
+        }
+        this.melden(`Geometrie aus ${runId} als Stand gesichert — `
+          + 'im Stände-Panel ladbar', 'erfolg')
+        return true
+      } catch (e) {
+        this.melden(`Geometrie aus ${runId}: ${e.message}`, 'fehler')
+        return false
+      } finally {
+        this.staendeLoading = false
       }
     },
 

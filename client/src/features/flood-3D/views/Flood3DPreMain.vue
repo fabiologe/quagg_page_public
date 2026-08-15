@@ -13,6 +13,11 @@
           <h1>{{ store.spec?.meta?.title || store.activeCaseId }}</h1>
           <span class="f3d-muted f3d-small">{{ store.activeCaseId }}</span>
           <span v-if="store.dirty" class="f3d-chip">ungespeichert</span>
+          <!-- Sichern muss dort erreichbar sein, wo die Änderung passiert
+               (Modell), nicht nur in der Phase, wo die Liste steht -->
+          <button class="f3d-btn f3d-small" :disabled="store.staendeLoading"
+                  title="Die aktuelle Geometrie als benannten Stand sichern"
+                  @click="standSichern">💾 Stand sichern</button>
         </div>
 
         <!-- Workflow-Phasen: der Fall wandert von links nach rechts -->
@@ -84,9 +89,11 @@
       <!-- Phase: Ergebnis (integrierter Nachweis-Viewer, auf den Fall gefiltert) -->
       <ErgebnisPhase v-else-if="store.activePhase === 'ergebnis'" />
 
-      <!-- Phase: Läufe -->
+      <!-- Phase: Läufe — darunter die Geometrie-Stände: der Lauf und die
+           Geometrie, mit der er gerechnet wurde, gehören zusammen -->
       <main v-else class="f3d-content">
         <CaseRunsPanel />
+        <StaendePanel />
       </main>
     </template>
   </div>
@@ -112,6 +119,7 @@ import ObjectTreePanel from '../components/pre/ObjectTreePanel.vue'
 import PropertyPanel from '../components/pre/PropertyPanel.vue'
 import SectionView from '../components/pre/SectionView.vue'
 import SimulationPanel from '../components/pre/SimulationPanel.vue'
+import StaendePanel from '../components/pre/StaendePanel.vue'
 import ValidationPanel from '../components/pre/ValidationPanel.vue'
 import { useLocalRunStore } from '../stores/useLocalRunStore'
 
@@ -124,6 +132,23 @@ usePreventPageZoom()
 const activeRunCount = computed(() =>
   store.caseRuns.filter((r) => AKTIV.includes(r.status)).length
   + (lokal.laeuft ? 1 : 0))
+
+// Geometrie-Stand aus der Kopfleiste sichern: der Name wird gefragt,
+// bevor irgendetwas passiert — ein namenloser Stand ist in einer Woche
+// nicht mehr zuzuordnen.
+function standSichern() {
+  // Der globale Strg+Z-Handler hängt am window und darf hinter dem
+  // Dialog nicht am Modell arbeiten
+  store.dialogOffen = true
+  let name = null
+  try {
+    name = window.prompt('Name für den Geometrie-Stand:',
+      `Stand ${new Date().toLocaleDateString('de-DE')}`)
+  } finally {
+    store.dialogOffen = false
+  }
+  if (name && name.trim()) store.standSichern(name)
+}
 
 // Strg+Z / Strg+Shift+Z / Strg+Y — nicht beim Tippen in Eingabefeldern
 function onHistoryKeys(e) {

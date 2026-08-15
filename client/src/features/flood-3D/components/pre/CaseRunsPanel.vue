@@ -29,6 +29,15 @@
           </span>
         </div>
         <div class="f3d-runrow-actions">
+          <!-- Die Geometrie, mit der DIESER Lauf gerechnet wurde, als
+               Stand übernehmen — der Weg zurück zu „so sah es damals aus" -->
+          <button class="f3d-btn" :disabled="!run.spec_gesichert || store.staendeLoading"
+                  :title="run.spec_gesichert
+                    ? 'Die Geometrie dieses Laufs als Geometrie-Stand sichern'
+                    : 'Dieser Lauf stammt aus der Zeit vor den Ständen — seine Geometrie wurde nicht gesichert'"
+                  @click="store.laufGeometrieUebernehmen(run.run_id)">
+            Geometrie als Stand
+          </button>
           <button v-if="MIT_ERGEBNIS.includes(run.status)"
                   class="f3d-btn f3d-btn-primary"
                   @click="openResult(run.run_id, 'nachweis')">
@@ -90,17 +99,9 @@ onMounted(() => store.loadCaseRuns())
   flex-direction: column;
   gap: 12px;
 }
-.f3d-runrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 4px;
-  border-bottom: 1px solid var(--f3d-border);
-}
-.f3d-runrow:last-child { border-bottom: none; }
-.f3d-runrow-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.f3d-runrow-id { color: var(--f3d-text); font-weight: 600; font-size: 0.85rem; }
+/* .f3d-runrow* steht global in f3d-theme.css — die Zeile teilt sich das
+   Aussehen mit der Stände-Liste. Hier bleibt nur, was diese Liste allein
+   hat. */
 .f3d-runrow-targets { display: flex; gap: 6px; font-size: 0.76rem; }
 .f3d-runrow-targets .ok { color: var(--f3d-good); }
 .f3d-runrow-targets .fail { color: var(--f3d-bad); }

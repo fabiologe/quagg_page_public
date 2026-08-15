@@ -442,6 +442,22 @@
 .f3d-select-s { width: 60px; }
 .f3d-cta { padding: 10px; font-size: 0.9rem; }
 
+/* Listenzeile in einer Karte (Läufe, Geometrie-Stände): links die Sache
+   samt Marken, rechts ihre Knöpfe. Stand vorher nur SCOPED in
+   CaseRunsPanel — eine zweite Liste hätte die Regeln kopieren müssen. */
+.f3d-runrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--f3d-border);
+}
+.f3d-runrow:last-child { border-bottom: none; }
+.f3d-runrow-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.f3d-runrow-id { color: var(--f3d-text); font-weight: 600; font-size: 0.85rem; }
+.f3d-runrow-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
 .f3d-muted { color: var(--f3d-text-2); }
 .f3d-small { font-size: 0.72rem; }
 /* „muted + small" ist im ganzen Modul das Muster der ERKLÄRTEXTE (65×:

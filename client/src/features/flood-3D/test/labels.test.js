@@ -2,7 +2,8 @@
 // formatieren wie die früheren lokalen Kopien in Grundriss/Raum (3D) —
 // die Anzeige der Panels darf sich durch den Umzug nicht ändern.
 import { describe, expect, it } from 'vitest'
-import { fmt, fmtBytes, fmtDauer, fmtFest, fmtKurz } from '../utils/labels'
+import { fmt, fmtBytes, fmtDauer, fmtFest, fmtKurz,
+  fmtZeitpunkt } from '../utils/labels'
 
 describe('fmtKurz (Karten/Legenden, ehem. lokale Kopien)', () => {
   it('3 signifikante Stellen unter 1000', () => {
@@ -48,6 +49,19 @@ describe('fmtDauer (ETA des lokalen Laufs, ehem. useLocalRunStore)', () => {
     expect(fmtDauer(120)).toBe('2 min')
     expect(fmtDauer(5400)).toBe('1.5 h')
     expect(fmtDauer(null)).toBe('?')
+  })
+})
+
+describe('fmtZeitpunkt (Geometrie-Stände, Epoch-SEKUNDEN)', () => {
+  it('rechnet Sekunden — nicht Millisekunden — in ein Datum um', () => {
+    // 1 770 000 000 s liegt 2026, 1 770 000 000 ms dagegen 1970
+    expect(fmtZeitpunkt(1_770_000_000)).toContain('26')
+    expect(fmtZeitpunkt(1_770_000_000)).toMatch(/\d{1,2}[.:]\d{2}/)
+  })
+  it('ohne Zeitstempel ein Strich statt „1.1.1970"', () => {
+    expect(fmtZeitpunkt(null)).toBe('–')
+    expect(fmtZeitpunkt(undefined)).toBe('–')
+    expect(fmtZeitpunkt('kaputt')).toBe('–')
   })
 })
 

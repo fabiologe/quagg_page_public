@@ -179,6 +179,24 @@ export const flood3dApi = {
   meshPreview: (caseId, opts = {}) =>
     mitGate(() => sendJson(`/cases/${caseId}/mesh-preview`, 'POST', opts)),
   caseMeshSurface: (caseId) => getJson(`/cases/${caseId}/mesh-surface`),
+
+  // Geometrie-Stände: benannte Vollkopien der Fallgeometrie (case.yaml +
+  // sculpt.npz + derived/ + imports/). Damit lässt sich ein Wehr
+  // verschieben, rechnen — und danach zum alten Stand zurückkehren.
+  // Alles Schreibende hängt am Kosten-Gate: ein Stand kopiert Dateien
+  // (Platte) und das Laden ERSETZT die Arbeitsgeometrie.
+  staende: (caseId) => getJson(`/cases/${caseId}/staende`),
+  standAnlegen: (caseId, name) =>
+    mitGate(() => sendJson(`/cases/${caseId}/staende`, 'POST', { name })),
+  standLaden: (caseId, standId) =>
+    mitGate(() => sendJson(`/cases/${caseId}/staende/${standId}/laden`,
+      'POST', {})),
+  standLoeschen: (caseId, standId) =>
+    mitGate(() => sendJson(`/cases/${caseId}/staende/${standId}`, 'DELETE')),
+  // Die mit einem Lauf gesicherte Geometrie als Stand übernehmen —
+  // Altläufe (vor den Ständen) haben keine, der Server antwortet 409.
+  laufGeometrieAlsStand: (runId) =>
+    mitGate(() => sendJson(`/runs/${runId}/geometrie-als-stand`, 'POST', {})),
   // ort: 'runpod' (Cloud) — der Server-Rechenort ist Geschichte (HTTP 410);
   // der lokale Lauf geht nicht hierüber, der holt sich ein Bundle
   startRun: (caseId, ort = 'runpod') =>

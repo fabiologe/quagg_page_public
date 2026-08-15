@@ -68,6 +68,16 @@ export function fmtBytes(bytes) {
   return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`
 }
 
+// Zeitpunkte aus Epoch-SEKUNDEN (so liefert die API sie, nicht in
+// Millisekunden) — kurzes deutsches Datum mit Uhrzeit für Listenzeilen.
+export function fmtZeitpunkt(epochSekunden) {
+  if (epochSekunden == null || !Number.isFinite(Number(epochSekunden))) {
+    return '–'
+  }
+  return new Date(Number(epochSekunden) * 1000)
+    .toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
+}
+
 // Dauern menschenlesbar: Sekunden → s / min / h (ETA des lokalen Laufs)
 export function fmtDauer(s) {
   if (s == null) return '?'
