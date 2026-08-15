@@ -1,0 +1,255 @@
+===============================================================================
+ TESTLISTE flood-3D  ·  alle Entwicklungen vom 13.-15.08.2026
+ Stand: Commit 8b3b61e  ·  632 pytest / 231 vitest gruen (automatisch)
+===============================================================================
+
+WO TESTEN
+  Dev-Server (Port 3000) -- dort ist ALLES drin.
+  quagg-engineering.org hat den Stand vom 13.08. (Welle 4). Die vier
+  neuesten Client-Pakete (Post, Grundriss+, Durchlass, Staende) sind dort
+  NICHT sichtbar. Produktions-Build auf Zuruf.
+  Das Backend auf dem Server ist komplett aktuell (neu gestartet).
+
+WIE DIESE LISTE BENUTZEN
+  [ ] = anklicken/ausprobieren.  "!" = hier wurde etwas Riskantes geaendert,
+  bitte genauer hinsehen.  Die Erwartung steht jeweils dahinter.
+
+WICHTIG VORWEG
+  Faelle mit Durchlass bekommen ein NEUES Netz (Bohrgeometrie geaendert).
+  Die Netzvorschau meldet sich einmalig als veraltet -- das ist richtig.
+
+
+===============================================================================
+ 1  PRE / MODELL  --  Durchlass eingraben          (Paket c8e349e, 15.08.)
+===============================================================================
+Geaendert: die Rate-Automatik ist geloescht, du bestimmst die Masse selbst.
+
+[ ] Modell > Objektbaum > Durchlass anklicken > Eigenschaften rechts
+    Neu sichtbar: "Wandstaerke (m)" und "Fraes-Ueberstand (m)".
+    Erwartung: Wandstaerke steht auf 0,15 (wie frueher fest im Code),
+    Fraes-Ueberstand auf 0,5.
+
+[ ] ! Fraes-Ueberstand aendern (z.B. 0,2 / 1,5) und Editor ansehen
+    Erwartung: der Tunnel im Erdkoerper wird kuerzer/laenger, an BEIDEN
+    Achsenden gleich. Frueher entschied das der Abstand zur Gebietskante --
+    und lag bei deinem Rentrich-Fall genau falsch herum.
+
+[ ] Wandstaerke aendern (z.B. 0,08 fuer DN800)
+    Erwartung: Bohrloch wird enger (Licht + 2x Wand - 4 cm Einbindung).
+
+[ ] Achse mit KNICK zeichnen (3+ Punkte) und Erdkoerper ansehen
+    Erwartung: keine Erdkeile im Tunnel, kein Loch in der Rohrwand.
+    (Vorher stumpf gestossene Segmente -- das war nie getestet.)
+
+[ ] Rohrmund absichtlich im Damm enden lassen > Pruefliste rechts
+    Erwartung: Warnung "Rohrmund liegt im Erdreich" MIT Zahlen und dem
+    Hinweis, den Fraes-Ueberstand zu erhoehen. Danach Ueberstand erhoehen
+    -> Warnung verschwindet.
+
+[ ] Import > DXF mit Kreis > Kandidatenliste
+    Erwartung: beim Kreis steht jetzt "aus Kreisradius ..." dabei.
+    Hintergrund: BetaTest08 hat dadurch Durchmesser 1,6 m statt DN800.
+[ ] Rentrich_BetaTest08 oeffnen > Durchlass > Durchmesser pruefen
+    Wenn DN800 gemeint war: auf 0,8 stellen. Erwartung: Warnung
+    "ungewoehnliche Nennweite" verschwindet.
+
+[ ] Durchlass kleiner als 2 Zellen machen > Pruefliste
+    Erwartung: Aufloesungs-Warnung -- jetzt AUCH bei Rechteck- und
+    Maulprofil (vorher nur Kreis).
+
+
+===============================================================================
+ 2  PRE / MODELL  --  Geometrie-Staende            (Pakete 3cbe32c/8b3b61e)
+===============================================================================
+Das ist dein Szenario "Wehr verschieben, Lauf, zurueck".
+
+[ ] Kopfleiste oben: Knopf "Stand sichern" (in jeder Phase sichtbar)
+    Namen eingeben -> Erwartung: Erfolgsmeldung.
+
+[ ] Phase "Laeufe" > Panel "Geometrie-Staende"
+    Erwartung: Zeile mit Name, Datum, Hash-Chip, Herkunft, Groesse.
+    Eine Groesse um 1 MB ist normal (die Netzvorschau ist bewusst nicht drin).
+
+[ ] ! DER HAUPTTEST:
+    1. Stand "Ausgangslage" sichern
+    2. Wehr verschieben, speichern
+    3. Stand "Wehr verschoben" sichern
+    4. "Ausgangslage" laden (Rueckfrage bestaetigen)
+    Erwartung: Wehr steht zurueck; es erscheint zusaetzlich ein
+    Auto-Stand "vor Laden von Ausgangslage"; die Netzvorschau gilt als
+    veraltet; Rueckgaengig (Strg+Z) ist danach LEER -- das ist Absicht
+    (die alten Undo-Schritte zeigen auf Dateien, die es nicht mehr gibt).
+
+[ ] Auch mit PINSEL testen: Gelaende formen, Stand sichern, weiterformen,
+    Stand laden. Erwartung: die alte Pinselform ist zurueck.
+    (Genau dafuer wird der ganze Ordner kopiert und nicht nur case.yaml.)
+
+[ ] Stand loeschen (Rueckfrage) -- Erwartung: Zeile weg, Fall unveraendert.
+
+[ ] Phase "Laeufe" > an einer Laufzeile "Geometrie als Stand"
+    Erwartung: bei ALTEN Laeufen ausgegraut mit Erklaerung im Tooltip
+    (die haben ihre Geometrie nie gesichert).
+    Bei einem NEUEN Lauf (ab heute): Stand erscheint in der Liste.
+
+[ ] Laden, waehrend ungespeicherte Aenderungen offen sind
+    Erwartung: wird vorher automatisch gespeichert, nichts geht verloren.
+
+
+===============================================================================
+ 3  NETZVORSCHAU
+===============================================================================
+[ ] Simulation > Netzvorschau rechnen
+    Erwartung: laeuft wie gewohnt (2 Kerne), Zellzahl + Kostenschaetzung.
+    Schaetzung ist bekanntermassen ~2,3x zu optimistisch (offener Punkt).
+
+[ ] Nach dem Laden eines Standes: Vorschau ist als veraltet markiert.
+
+
+===============================================================================
+ 4  RECHNEN  --  Lauf lokal / RunPod
+===============================================================================
+[ ] ! Cloud-Lauf starten > Lauf-Panel beobachten
+    Erwartung: die SIMULATIONSZEIT laeuft sichtbar mit (t = ... s).
+    Das war der Live-Bug: bei frischen Cloud-Laeufen stand die Zeit
+    IMMER auf leer, weil das falsche Feld gelesen wurde.
+
+[ ] Lokalen Lauf (Companion) starten
+    Erwartung: unveraendert; Speicherpunkte kommen an.
+
+[ ] Nach dem Start: Laufordner traegt jetzt seine Geometrie
+    (im Laufe-Panel spaeter sichtbar durch "Geometrie als Stand" aktiv).
+
+[ ] Browser-Tab schliessen waehrend eines Laufs, spaeter zurueckkommen
+    Erwartung: Ergebnis ist trotzdem da (S3-Waechter/Nachzuegler).
+
+
+===============================================================================
+ 5  ERGEBNIS  --  3D-Raumansicht                   (Paket 6eb5b75 + 2aab524)
+===============================================================================
+[ ] ! Ergebnis > 3D > Ebene "Gelaende"
+    Erwartung: bei Faellen MIT Erdkoerper siehst du jetzt den echten
+    Solver-Koerper -- das Rohr ist DURCHGAENGIG, nicht mehr verstopft.
+    Bei Faellen ohne Erdkoerper: wie bisher die Hoehenflaeche.
+
+[ ] Ebene "Vektorpfeile" > Regler "Ausduennung"
+    Erwartung: steht auf 1 = ein Pfeil je Rasterzelle (Minimum war 2,
+    also frueher hoechstens ein Pfeil je 8 Zellen).
+
+[ ] ! Ebene "Stromlinien" einschalten
+    Erwartung: erscheinen SOFORT (unter 1 s statt ~10 s).
+[ ] Danach Farbskala fixieren / Praesentation / Pfeilregler bewegen
+    Erwartung: die Stromlinien werden NICHT neu gerechnet (kein Ruckeln).
+[ ] Regler "Anzahl" ziehen
+    Erwartung: rechnet erst beim Loslassen.
+[ ] Regler "Staerke" ziehen
+    Erwartung: nur die Dicke aendert sich, keine Neuberechnung.
+
+[ ] ! Ebene "Randbilanz (Q an Zu-/Ablaeufen)"
+    Erwartung: Schilder an Zulauf/Ablauf mit aktuellem Q und kumuliertem
+    Volumen; unter der Zeitleiste eine Zeile Zufluss/Abfluss/Speicher.
+    Kamera drehen -> die Schilder bleiben an ihren Raendern kleben.
+    Bei Alt-Laeufen ohne Durchfluss-Reihen steht "keine Q-Reihe".
+
+[ ] ! Tab-Wechsel 3D -> Grundriss -> 3D, mehrmals
+    Erwartung: bleibt fluessig, kein Einbrechen der Bildrate
+    (dort war ein Speicherleck -- jeder Wechsel hat GPU-Speicher verloren).
+
+[ ] Punktabfrage, Zeitleiste/Abspielen, PNG exportieren
+    Erwartung: unveraendert.
+
+
+===============================================================================
+ 6  ERGEBNIS  --  Grundriss                        (Paket 2aab524)
+===============================================================================
+[ ] ! Gruppe "Ansicht" > Umschalter "Tiefenbild" / "z-Ebene"
+    Auf "z-Ebene" schalten, Regler "Schicht" durchziehen.
+    Erwartung: du siehst je Hoehe eine Schnittebene; Erdreich gedeckt
+    grau, Wasser eingefaerbt. Auf Bohrungshoehe ist im Damm Wasser --
+    so wird das Rohr auch im Grundriss sichtbar.
+[ ] Im z-Ebenen-Modus: Saeulen-Felder (Wassertiefe, Froude, tiefengem.
+    Geschwindigkeit, Sohlschub) sind ausgegraut. Erwartung: Absicht.
+[ ] Cursor ueber die Karte: Anzeige nennt Schicht und Hoehe.
+[ ] Zurueck auf "Tiefenbild": Hoehenlinien, Fr=1-Linie, Umhuellende gehen
+    wieder.
+
+[ ] ! Schalter "Auswerte-Objekte (Pegel, Schnitte, Raender)"
+    Erwartung: Pegel als Punkt, Querschnitte als Linie, Rand-Fenster als
+    farbiger Strich an der Gebietskante -- alle beschriftet. An Raendern
+    mit Messreihe zusaetzlich Pfeil + "Q = ... m3/s" zum Zeitcursor.
+    Pfeilrichtung kommt aus dem VORZEICHEN der Messung: ein
+    rueckstroemender Ablauf zeigt ehrlich nach innen.
+
+[ ] Laengsschnitt (2 Punkte klicken) und Zeitleiste: unveraendert.
+
+
+===============================================================================
+ 7  ERGEBNIS  --  Qualitaet, Bilanz, Laufliste     (Welle 4, 13.08.)
+===============================================================================
+[ ] Ergebnis > Qualitaet
+    Erwartung: je Befund stehen jetzt WERT, GRENZE und QUELLE dabei
+    (vorher nur der Text) -- z.B. y+ bis 8.935 gegen Grenze 500.
+
+[ ] Laufliste: Chip "Qualitaet" bei Laeufen mit Befunden.
+[ ] Lauf-&-Log-Panel: Hinweis zum Viz-Volumen erscheint wie gehabt.
+
+[ ] Bilanz- und Verweilzeit-Panel: Zahlen und Farben unveraendert.
+
+
+===============================================================================
+ 8  REGRESSIONEN AUS DEM GROSSEN UMBAU  (Wellen 1-4, 13.08.)
+===============================================================================
+Hier wurde viel Code VERSCHOBEN. Nichts sollte sich anders verhalten --
+genau das bitte stichprobenartig gegenpruefen.
+
+[ ] ! EDITOR (der groesste Umbau: 800 Zeilen ausgelagert)
+    [ ] Objekt anklicken, verschieben, Greifpunkte ziehen
+    [ ] Punkt einfuegen ("+"-Griff) und loeschen
+    [ ] Bauwerk drehen (Drehgriff)
+    [ ] Rand/BC-Fenster verschieben
+    [ ] Bohrung/Oeffnung/Zuschnitt in die Szene stanzen
+    [ ] Freischneiden / Schnittebene
+    [ ] Gelaende-Pinsel (heben/senken/glaetten) inkl. Rueckgaengig
+    [ ] Netzansicht ein/aus
+    [ ] Kamera: Draufsicht, Zoom, Zuruecksetzen
+    Erwartung ueberall: exakt wie vorher.
+
+[ ] Startseite: Fehler beim Oeffnen eines Falls wird angezeigt
+    (der alte, tote Fehlerkanal wurde entfernt -- Meldungen laufen jetzt
+    ueber die normale Meldungsleiste).
+
+[ ] Dateigroessen in der Laufliste
+    Erwartung: ueber 1 GB steht jetzt "1.5 GB" statt "1500 MB".
+    (einzige bewusste Anzeigeaenderung)
+
+[ ] Laufliste/Lauf-Panel aktualisieren sich waehrend eines Laufs von
+    selbst (das Nachladen wurde vereinheitlicht).
+
+[ ] Import-Dialog: STL-Vorschau mehrmals oeffnen/schliessen
+    Erwartung: bleibt fluessig (auch dort war ein Leck).
+
+
+===============================================================================
+ 9  BEKANNTE GRENZEN (kein Fehler, bewusst offen)
+===============================================================================
+ -  Grundriss: die Karten rechnen weiter mit EINEM Boden je Rasterspalte.
+    Wassertiefe/Wasserspiegel INNERHALB einer Bohrung sind dort falsch
+    (der "Boden" ist dann die Dammoberkante). Der z-Ebenen-Modus umgeht
+    das, weil er die Schicht direkt zeigt.
+ -  Laufzeitschaetzung ~2,3x zu optimistisch.
+ -  Durchlass durch eine WAND: die Wand wird nicht automatisch
+    aufgebohrt -- Oeffnung weiterhin von Hand stanzen.
+ -  Maulprofil: Achshoehe bedeutet dort die Sohle (bei Kreis/Rechteck die
+    Mitte) -- Umstellung waere eine Migration, bewusst nicht gemacht.
+ -  Alte Laeufe koennen ihre Geometrie nicht liefern (erst ab heute).
+
+
+===============================================================================
+ 10  WAS BEI DIR OFFEN IST
+===============================================================================
+[ ] RunPod-Konsole: Retries auf 0 setzen (sonst startet RunPod
+    gescheiterte Jobs von selbst neu und es kostet doppelt).
+[ ] Rentrich_BetaTest08: Durchmesser 1,6 m -- war DN800 (0,8) gemeint?
+[ ] Sagen, wenn die Produktions-Seite neu gebaut werden soll.
+[ ] Verifikationslauf nach den Geometrie-Aenderungen (~17 min, ~0,1 EUR)
+    -- laut Betriebsregel faellig, auf dein Go.
+===============================================================================
