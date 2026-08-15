@@ -579,7 +579,13 @@ def build_screen_bars(struct) -> trimesh.Trimesh:
     return trimesh.util.concatenate(bars)
 
 
-_CULVERT_WALL = 0.15   # Wandstärke des Rohrkörpers in m
+# Die Rohrwand bindet 2 cm ins Erdreich ein: der Bohrkörper ist um dieses
+# Maß KLEINER als die Rohraußenkontur, damit Bohr- und Rohrfläche sich
+# KREUZEN statt deckungsgleich aufeinanderzuliegen — koplanare triSurfaces
+# mit snappy-Level 1 vs. 2 waren die Netzkiller-Konstellation.
+# (Die Wandstärke selbst ist kein Festwert mehr: sie steht als
+# `wandstaerke` am Profil, Default in der Spec.)
+_EINBINDUNG = 0.02
 
 
 def _achsen_transform(vec: np.ndarray) -> np.ndarray:
@@ -619,10 +625,31 @@ def _maulprofil(width: float, height: float) -> shapely.Polygon:
     return shapely.Polygon(pkte)
 
 
+def _knick_radien(profile) -> tuple[float, float]:
+    """
+    Innen-/Außenradius der Kugelschale, die einen Achsknick dicht macht.
+    Innen der Umkreis des LICHTEN Querschnitts (die Schale darf nicht in
+    den Wasserweg ragen), außen eine Wandstärke mehr. Beim Kreis ist das
+    exakt der Rohrquerschnitt; bei Rechteck und Maul füllt die Schale den
+    Keil an der Außenecke, wo er am weitesten klafft.
+    """
+    wand = profile.wandstaerke
+    if profile.kind == "circular":
+        r_i = profile.diameter / 2
+    elif profile.kind == "rectangular":
+        r_i = math.hypot(profile.width / 2, profile.height / 2)
+    else:                                        # arch: Achsdatum = Sohle
+        pkte = np.asarray(_maulprofil(profile.width, profile.height)
+                          .exterior.coords)
+        r_i = float(np.linalg.norm(pkte, axis=1).max())
+    return r_i, r_i + wand
+
+
 def build_culvert(struct) -> trimesh.Trimesh:
     axis = np.asarray(struct.axis, dtype=float)
     if len(axis) < 2:
         raise ValueError(f"Durchlass {struct.id}: Achse braucht mindestens 2 Punkte")
+    wand = struct.profile.wandstaerke
     segments = []
     for a, b in zip(axis[:-1], axis[1:]):
         vec = b - a
@@ -631,13 +658,14 @@ def build_culvert(struct) -> trimesh.Trimesh:
             continue
         if struct.profile.kind == "circular":
             r = struct.profile.diameter / 2
-            seg = annulus(r_min=r, r_max=r + _CULVERT_WALL, height=length,
+            seg = annulus(r_min=r, r_max=r + wand, height=length,
                           sections=48)
         elif struct.profile.kind == "rectangular":
-            seg = _rect_shell(struct.profile.width, struct.profile.height, length)
+            seg = _rect_shell(struct.profile.width, struct.profile.height,
+                              length, wand)
         else:                                    # arch = Maulprofil
             innen = _maulprofil(struct.profile.width, struct.profile.height)
-            ring = innen.buffer(_CULVERT_WALL, join_style=2).difference(innen)
+            ring = innen.buffer(wand, join_style=2).difference(innen)
             seg = extrude_polygon(ring, height=length)
             seg.apply_translation([0, 0, -length / 2])
         # Querschnitt liegt um den Ursprung in der x-y-Ebene — auf die Achse
@@ -645,6 +673,18 @@ def build_culvert(struct) -> trimesh.Trimesh:
         seg.apply_transform(_achsen_transform(vec))
         seg.apply_translation((a + b) / 2)
         segments.append(seg)
+    # Knick dicht: die Segmente stoßen stumpf — am Außenbogen jedes
+    # INNEREN Achspunkts klafft ein offener Keil zwischen den Endkappen.
+    # Eine Kugelschale um den Knickpunkt füllt ihn, ohne den lichten
+    # Querschnitt zu verbauen.
+    if len(axis) >= 3:
+        r_i, r_a = _knick_radien(struct.profile)
+        for p in axis[1:-1]:
+            schale = trimesh.boolean.difference(
+                [trimesh.creation.icosphere(subdivisions=2, radius=r_a),
+                 trimesh.creation.icosphere(subdivisions=2, radius=r_i)])
+            schale.apply_translation(p)
+            segments.append(schale)
     return trimesh.util.concatenate(segments)
 
 
@@ -779,34 +819,25 @@ def build_graben(struct) -> trimesh.Trimesh:
     return _schale(aussen, innen, f"Graben {struct.id}")
 
 
-def bohrkoerper(struct, ueberstand: float, domain=None,
-                zelle: float = 0.25) -> trimesh.Trimesh | None:
+def bohrkoerper(struct) -> trimesh.Trimesh | None:
     """
-    Der Raum, den ein Durchlass im Erdreich BRAUCHT: Rohraußenkontur, an
-    den Enden verlängert. Genau dieser Körper wird aus dem Geländekörper
-    herausgeschnitten, damit die Leitung wirklich durchsteht statt vom
-    Vernetzer zugeschüttet zu werden.
+    Der Raum, den ein Durchlass im Erdreich BRAUCHT: Rohraußenkontur minus
+    Einbindung (`_EINBINDUNG`), an BEIDEN Achsenden um `bohr_ueberstand`
+    des Durchlasses verlängert. Genau dieser Körper wird aus dem
+    Geländekörper herausgeschnitten, damit die Leitung wirklich durchsteht
+    statt vom Vernetzer zugeschüttet zu werden.
 
-    Wie weit ein Ende verlängert wird, hängt von seiner Lage ab: an einer
-    MÜNDUNG (Ende außerhalb des Gebiets oder nahe einer Gebietsfläche)
-    der volle `ueberstand` — der Schnitt muss die Böschungs-/Gebietsfläche
-    sicher durchstoßen. Ein Ende MITTEN IM GEBIET bekommt nur ein kleines
-    Epsilon gegen deckungsgleiche Flächen: der volle Überstand fräste
-    sonst einen offenen Graben über das Rohrende hinaus ins
-    Simulationsgebiet.
+    Der Überstand ist ein REGLER am Durchlass — früher riet der Kern aus
+    dem Abstand zur Gebietskante, ob ein Ende „Mündung" (voller Überstand)
+    oder „innen" (5 cm) ist; die Raterei ist gelöscht.
     """
     axis = np.asarray(struct.axis, dtype=float)
     if len(axis) < 2:
         return None
-
-    def end_ueberstand(p) -> float:
-        if domain is None:
-            return ueberstand
-        x0, y0, x1, y1 = domain.extent
-        rand = 2 * zelle
-        muendung = (p[0] <= x0 + rand or p[0] >= x1 - rand
-                    or p[1] <= y0 + rand or p[1] >= y1 - rand)
-        return ueberstand if muendung else 0.05
+    ueberstand = float(getattr(struct, "bohr_ueberstand", 0.5))
+    # Bohr-Außenmaß = Licht + 2·Wand − 2·Einbindung; nie kleiner als das
+    # Licht (eine Wandstärke unter 2 cm wäre sonst eine SCHRUMPF-Bohrung)
+    wand = max(struct.profile.wandstaerke - _EINBINDUNG, 0.0)
 
     # Enden in Achsrichtung verlängern — ein Schnitt genau auf der
     # Geländeoberfläche oder der Gebietsfläche wäre deckungsgleich
@@ -815,9 +846,9 @@ def bohrkoerper(struct, ueberstand: float, domain=None,
     v0 = a0 - a1
     v1 = e0 - e1
     if np.linalg.norm(v0) > 1e-9:
-        axis[0] = a0 + end_ueberstand(a0) * v0 / np.linalg.norm(v0)
+        axis[0] = a0 + ueberstand * v0 / np.linalg.norm(v0)
     if np.linalg.norm(v1) > 1e-9:
-        axis[-1] = e0 + end_ueberstand(e0) * v1 / np.linalg.norm(v1)
+        axis[-1] = e0 + ueberstand * v1 / np.linalg.norm(v1)
 
     teile = []
     for a, b in zip(axis[:-1], axis[1:]):
@@ -826,17 +857,17 @@ def bohrkoerper(struct, ueberstand: float, domain=None,
         if length < 1e-9:
             continue
         if struct.profile.kind == "circular":
-            r = struct.profile.diameter / 2 + _CULVERT_WALL
+            r = struct.profile.diameter / 2 + wand
             seg = trimesh.creation.cylinder(radius=r, height=length,
                                             sections=48)
         elif struct.profile.kind == "rectangular":
-            seg = trimesh.creation.box((struct.profile.width + 2 * _CULVERT_WALL,
-                                        struct.profile.height + 2 * _CULVERT_WALL,
+            seg = trimesh.creation.box((struct.profile.width + 2 * wand,
+                                        struct.profile.height + 2 * wand,
                                         length))
         else:                                    # arch = Maulprofil
             aussen = _maulprofil(struct.profile.width,
                                  struct.profile.height).buffer(
-                                     _CULVERT_WALL, join_style=2)
+                                     wand, join_style=2)
             seg = extrude_polygon(aussen, height=length)
             seg.apply_translation([0, 0, -length / 2])
         seg.apply_transform(_achsen_transform(vec))
@@ -849,6 +880,16 @@ def bohrkoerper(struct, ueberstand: float, domain=None,
         teile.append(seg)
     if not teile:
         return None
+    # Knick dicht: stumpf gestoßene Segmente lassen am Außenbogen jedes
+    # INNEREN Achspunkts einen Keil Erdreich stehen — eine Kugel mit dem
+    # Bohr-Außenradius (Umkreis des Bohrquerschnitts) füllt ihn.
+    if len(axis) >= 3:
+        r_knick = _knick_radien(struct.profile)[0] + wand
+        for p in axis[1:-1]:
+            kugel = trimesh.creation.icosphere(subdivisions=2,
+                                               radius=r_knick)
+            kugel.apply_translation(p)
+            teile.append(kugel)
     if len(teile) == 1:
         return teile[0]
     return trimesh.boolean.union(teile)
@@ -1122,8 +1163,7 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
                     "Aushübe können nicht ausgeschnitten werden")
             return koerper
     for s in rohre:
-        bohrung = bohrkoerper(s, ueberstand=max(4 * zelle, 1.0),
-                              domain=spec.domain, zelle=zelle)
+        bohrung = bohrkoerper(s)
         if bohrung is None:
             if hinweise is not None:
                 hinweise.append(f"Durchlass {s.id}: Profil lässt sich nicht "
@@ -1154,9 +1194,9 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
 
 
 
-def _rect_shell(width: float, height: float, length: float) -> trimesh.Trimesh:
+def _rect_shell(width: float, height: float, length: float,
+                t: float) -> trimesh.Trimesh:
     """Vier Wandplatten um den lichten Querschnitt, jede für sich geschlossen."""
-    t = _CULVERT_WALL
     w2, h2 = width / 2, height / 2
     plates = [
         trimesh.creation.box((width + 2 * t, t, length),

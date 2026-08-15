@@ -135,6 +135,16 @@
                   <template v-else-if="c.kind === 'polyline'">
                     {{ c.stats.n_points }} Punkte
                   </template>
+                  <!-- Herkunft der Nennweite zeigen: aus dem CAD-Kreis wird
+                       ⌀ = 2 · Radius — wer hier 1,60 m statt DN800 liest,
+                       sieht sofort, dass schon der Kreis ein Durchmesser war -->
+                  <template v-else-if="c.kind === 'kreis'">
+                    ⌀ {{ fmt(c.stats.durchmesser * unitFactor) }} m
+                    <div class="f3d-muted f3d-small">
+                      aus Kreisradius
+                      {{ fmt((c.stats.durchmesser / 2) * unitFactor) }} m
+                    </div>
+                  </template>
                   <template v-else>{{ c.stats.n_solids }} Körper</template>
                 </td>
                 <td class="f3d-num-cell">

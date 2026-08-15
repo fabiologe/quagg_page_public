@@ -577,6 +577,72 @@ def _pruefe_bauwerksparameter(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             f(_finding(st.id, "hinweis",
                        "Material/Rauheit am Rechen bleibt ohne Wirkung — sein "
                        "Widerstand steckt in der porösen Zone."))
+        if st.type == "culvert":
+            befunde.extend(_pruefe_durchlass(st, spec, ctx))
+    return befunde
+
+
+def _pruefe_durchlass(st, spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """Durchlass: plausible Nennweite, freier Rohrmund am Bohrende."""
+    befunde: list[dict] = []
+    f = befunde.append
+
+    # Ungewöhnliche Nennweite — der Klassiker ist ein Import, bei dem
+    # Kreisradius und Durchmesser verwechselt wurden: aus DN800 wird 1,60 m.
+    # Beim Kreis deshalb schon ab 1,5 m warnen; Rechteck-/Maulprofile bis
+    # 2 m sind gängige Rahmendurchlässe.
+    pr = st.profile
+    masse = ([pr.diameter] if pr.kind == "circular"
+             else [pr.width, pr.height])
+    gross = 1.5 if pr.kind == "circular" else 2.0
+    for mass in masse:
+        if mass is not None and (mass > gross or mass < 0.2):
+            f(_finding(st.id, "warnung",
+                       f"Nennweite {mass:g} m ist für einen Durchlass "
+                       "ungewöhnlich — aus einem Import übernommen? "
+                       "(Kreisradius vs. Durchmesser prüfen)"))
+            break
+
+    # Rohrmund im Erdreich: die Bohrung endet bohr_ueberstand hinter dem
+    # Achsende — liegt das Gelände dort noch über dem Rohrscheitel, steckt
+    # die Mündung im Erdreich und bekommt keine freie Fläche.
+    # Gemessen am AUSGEHOBENEN Gelände (ctx.terrain): ein Schacht vor der
+    # Mündung legt sie frei.
+    if (not getattr(st, "durchstoesst_gelaende", False)
+            or ctx.terrain is None or len(st.axis) < 2):
+        return befunde
+    a = np.asarray(st.axis, dtype=float)
+    for ende, nachbar in ((a[0], a[1]), (a[-1], a[-2])):
+        v = ende - nachbar
+        n = float(np.linalg.norm(v))
+        if n < 1e-9:
+            continue
+        mund = ende + v / n * st.bohr_ueberstand
+        # Ein Bohrende AUSSERHALB des Gebiets liegt jenseits des
+        # Erdkörpers — dort gibt es kein Erdreich, in dem der Mund
+        # stecken könnte (die Abtastung klemmte sonst auf den Rand und
+        # meldete jede Mündung am Gebietsrand als begraben).
+        if spec.domain is not None:
+            x0, y0, x1, y1 = spec.domain.extent
+            if not (x0 <= mund[0] <= x1 and y0 <= mund[1] <= y1):
+                continue
+        # Achsdatum: Kreis und Rechteck werden um die ACHSE zentriert
+        # gebaut, das Maulprofil ab der Achse nach OBEN — dort ist die
+        # Achse die Sohle und der Scheitel liegt bei Sohle + height.
+        if pr.kind == "circular":
+            scheitel = mund[2] + pr.diameter / 2
+        elif pr.kind == "rectangular":
+            scheitel = mund[2] + pr.height / 2
+        else:
+            scheitel = mund[2] + pr.height
+        gelaende = float(ctx.terrain.sample(mund[0], mund[1]))
+        if gelaende > scheitel + 1e-6:
+            f(_finding(st.id, "warnung",
+                       f"Rohrmund liegt im Erdreich: am Bohrende "
+                       f"({mund[0]:.1f}, {mund[1]:.1f}) steht das Gelände "
+                       f"{gelaende - scheitel:.2f} m über dem Rohrscheitel "
+                       f"({gelaende:.2f} m gegen {scheitel:.2f} m) — "
+                       "Fräs-Überstand erhöhen oder Achse verlängern."))
     return befunde
 
 
@@ -731,8 +797,12 @@ def _pruefe_netzaufloesung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             min_dim, label = s.thickness, "Wanddicke"
         elif s.type == "basin":
             min_dim, label = s.wall_thickness, "Beckenwanddicke"
-        elif s.type == "culvert" and s.profile.diameter:
-            min_dim, label = s.profile.diameter, "Durchlassdurchmesser"
+        elif s.type == "culvert":
+            if s.profile.diameter:
+                min_dim, label = s.profile.diameter, "Durchlassdurchmesser"
+            elif s.profile.width and s.profile.height:
+                min_dim = min(s.profile.width, s.profile.height)
+                label = "lichte Durchlassweite"
         elif s.type == "schacht":
             min_dim, label = s.width, "lichte Schachtweite"
         elif s.type == "graben":
@@ -749,16 +819,29 @@ def _pruefe_netzaufloesung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
         # Ein Aushub hat keine eigene Fläche: seine Wandungen gehören zur
         # Geländefläche, dort greift auch die Verfeinerung
         flaeche = "terrain" if ist_aushub(s, gewachsen) else s.patch
-        if min_dim is not None and min_dim < _lokale_zelle(spec, flaeche, mitte):
+        # Ein Durchlass-Querschnitt braucht mindestens ZWEI Zellen (wie
+        # die Aussparungs-Prüfung) — mit einer einzigen Zelle über die
+        # lichte Weite bleibt vom Rohrinneren nichts Durchströmbares
+        schwelle = 2 if s.type == "culvert" else 1
+        if min_dim is not None and min_dim < schwelle * _lokale_zelle(
+                spec, flaeche, mitte):
+            zusatz = {}
+            if s.type == "culvert" and getattr(s, "durchstoesst_gelaende",
+                                               False):
+                # Die Tunnelwand der Bohrung liegt im terrain-Patch —
+                # verfeinert werden muss BEIDES, sonst löst nur die
+                # Rohrschale auf und der Erdkörper zerdrückt den Tunnel
+                zusatz = {"auch": "terrain"}
             f(_finding(s.id, "fehler",
                        f"{label} {min_dim:g} m wird von der lokalen "
-                       f"Zellgröße {_lokale_zelle(spec, flaeche, mitte):g} m nicht aufgelöst "
-                       "— Verfeinerungsstufe erhöhen oder Abmessung prüfen",
+                       f"Zellgröße {_lokale_zelle(spec, flaeche, mitte):g} m "
+                       "nicht aufgelöst — Verfeinerungsstufe erhöhen oder "
+                       "Abmessung prüfen",
                        # struktur mitgeben: bei einem Aushub soll die
                        # Kur einen Quader um DIESES Bauwerk anlegen
                        # statt das ganze Gelände zu verfeinern
                        fix=kur("verfeinerung_erhoehen", patch=flaeche,
-                               mass=min_dim, struktur=s.id)))
+                               mass=min_dim, struktur=s.id, **zusatz)))
 
     # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
     # (ein z je x/y) und hat keinen Tunnel — was darunter liegt, räumt

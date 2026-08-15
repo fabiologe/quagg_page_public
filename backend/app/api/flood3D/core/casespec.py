@@ -625,6 +625,10 @@ class CulvertProfile(_Model):
     diameter: float | None = None
     width: float | None = None
     height: float | None = None
+    # Wandstärke des Rohrkörpers — früher ein Festwert im Kern (0,15 m für
+    # alles vom DN300 bis zum Maulprofil). Jetzt ein Regler am Profil; der
+    # Default entspricht dem alten Festwert.
+    wandstaerke: float = Field(default=0.15, gt=0.0, le=0.5)
 
     @model_validator(mode="after")
     def _dims(self):
@@ -648,6 +652,11 @@ class StructCulvert(_Objekt):
     # Rohrbohrung ausgeschnitten: erst dann steht die Leitung wirklich
     # durch. Kostet Rechenzeit beim Fallaufbau, deshalb nicht die Regel.
     durchstoesst_gelaende: bool = False
+    # Wie weit über JEDES Achsende hinaus durchs Erdreich gebohrt wird.
+    # Früher riet der Kern aus dem Abstand zur Gebietskante, ob ein Ende
+    # „Mündung" (voller Überstand) oder „innen" (5 cm) ist — die Raterei
+    # ist gelöscht, der Wert ist ein Regler am Durchlass.
+    bohr_ueberstand: float = Field(default=0.5, ge=0.0, le=10.0)
     # Wofür der Stutzen da ist. Der Zeichnungslayer weiß es („Einlauf",
     # „Auslauf", „Drossel"), und ohne dieses Feld ging es beim Import
     # verloren: aus beiden Kreisen wurde derselbe Stutzen. Dieselbe
@@ -1183,6 +1192,14 @@ def migriere(daten: dict) -> dict:
             al = st.get("alignment")
             if isinstance(al, dict) and al.get("kind") == "spline":
                 al["kind"] = "polyline"
+            # Bohr-Überstand EXPLIZIT in alte Fälle schreiben: die alte
+            # Enden-Heuristik (Gebietskante → voller Überstand, sonst 5 cm)
+            # ist gelöscht — der neue Regler soll im Fall SICHTBAR stehen,
+            # nicht still als Schema-Default wirken.
+            if (st.get("type") == "culvert"
+                    and st.get("durchstoesst_gelaende")
+                    and st.get("bohr_ueberstand") is None):
+                st["bohr_ueberstand"] = 0.5
     terrain = daten.get("terrain")
     if isinstance(terrain, dict):
         ops = terrain.get("operations")

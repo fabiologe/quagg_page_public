@@ -172,8 +172,9 @@ def _mund_toleranz(spec: CaseSpec) -> float:
     """
     Erlaubter Überstand einer Rohr-/Grabenachse über den Gebietsrand: der
     Mündungs-Überstand ist GEWOLLT (`stutzen_anschliessen` legt Enden
-    bewusst hinter die Fläche, `bohrkoerper` verlängert um bis zu
-    max(4·Zelle, 1 m)). Erst was darüber hinausragt, ist ein Befund.
+    bewusst hinter die Fläche, der Import setzt Stutzenenden bis zu einem
+    Durchmesser vor die Mündung). Erst was darüber hinausragt, ist ein
+    Befund.
     """
     zelle = spec.mesh.base_cell if spec.mesh else 0.25
     return max(4 * zelle, 1.0) + zelle

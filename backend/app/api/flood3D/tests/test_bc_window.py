@@ -276,7 +276,10 @@ def test_stutzen_ueber_gelaende_ohne_befund():
     # gilt für Stutzen bestimmungsgemäß nicht
     spec = _spec_mit_stutzen()
     assert not _messages(spec, "zulauf")
-    assert not _messages(spec, "stutzen_1")
+    # Ø 2,5 m löst die (gewollte) Nennweiten-Warnung aus — hier geht es
+    # nur um die „hängt in der Luft"-Regel, die schweigen muss
+    assert not [m for m in _messages(spec, "stutzen_1")
+                if "ungewöhnlich" not in m]
 
 
 def test_stutzen_endet_vor_dem_rand():

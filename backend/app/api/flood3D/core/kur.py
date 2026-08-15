@@ -96,7 +96,17 @@ def _verfeinerung_erhoehen(spec: CaseSpec, args: dict, base_dir=None) -> str:
         box = _box_um_bauwerk(spec, struktur, stufe)
         if box:
             return box
-    return _refine_surface(spec, patch, stufe)
+    meldung = _refine_surface(spec, patch, stufe)
+    # Zweite Fläche in EINEM Zug: die Tunnelwand einer Rohrbohrung liegt
+    # im terrain-Patch — der Befund am Durchlass ist erst beseitigt, wenn
+    # Rohrschale UND Erdkörper gleich fein aufgelöst sind. Fürs Gelände
+    # wieder ÖRTLICH (Quader ums Bauwerk), nie die ganze Sohle.
+    auch = args.get("auch")
+    if auch and auch != patch:
+        zusatz = (_box_um_bauwerk(spec, struktur, stufe)
+                  if auch == "terrain" and struktur else None)
+        meldung += "; " + (zusatz or _refine_surface(spec, auch, stufe))
+    return meldung
 
 
 def _box_um_bauwerk(spec: CaseSpec, struktur_id: str, stufe: int) -> str | None:

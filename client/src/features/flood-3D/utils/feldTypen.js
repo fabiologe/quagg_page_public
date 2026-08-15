@@ -351,6 +351,9 @@ export const FIELD_LABELS = {
   wall_thickness: 'Wanddicke (m)',
   axis: 'Achse (z = Sohlhöhe je Punkt)', profile: 'Profil',
   durchstoesst_gelaende: 'Durch das Gelände bohren (Rohr steckt im Damm)',
+  wandstaerke: 'Wandstärke (m)',
+  bohr_ueberstand: 'Fräs-Überstand (m) — so weit wird über jedes Achsende '
+    + 'hinaus durchs Erdreich gebohrt',
   plane_polygon: 'Rechenebene', bar_spacing: 'Stabteilung (m)',
   bar_thickness: 'Stabdicke (m)',
   resistance: 'Widerstand',
@@ -414,7 +417,7 @@ export const NICHT_NEGATIV = new Set([
   'depth', 'height', 'thickness', 'radius', 'diameter', 'width',
   'crest_width', 'wall_height', 'wall_thickness', 'einbindetiefe',
   'side_slope', 'base_cell', 'resolution', 'n_layers', 'expansion_ratio',
-  'q', 'strength', 'falloff',
+  'q', 'strength', 'falloff', 'wandstaerke', 'bohr_ueberstand',
 ])
 
 /** Untergrenze für ein Zahlenfeld — null, wenn es keine gibt. */

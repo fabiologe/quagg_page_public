@@ -35,6 +35,11 @@ def _mit_stutzen() -> cs.CaseSpec:
     ablauf = next(b for b in spec.boundaries if b.id == "ablauf")
     ablauf.face = "x_min"
     ablauf.window = cs.BcWindow(shape="rechteck", follow="dn800")
+    # DN800 bei 0,5-m-Basiszelle: die Prüfung verlangt (zu Recht) zwei
+    # Zellen über den Querschnitt — verfeinert, damit dieser gewollte
+    # Befund die Anschluss-Aussagen hier nicht überlagert
+    spec.mesh.refinements.append(cs.RefineSurface(
+        id="fein_dn800", type="surface", target="dn800", level=1))
     return spec
 
 
