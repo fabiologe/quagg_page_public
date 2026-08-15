@@ -30,6 +30,8 @@ from .engines.runpod import relay
 _active_runs: dict[str, object] = {}
 # Fälle, für die gerade eine Netzvorschau rechnet (Doppelstart-Sperre)
 _laufende_previews: set[str] = set()
+# Läuft die Sweep-Schleife schon? (Startup-Hooks dürfen mehrfach feuern)
+_waechter_laeuft = False
 
 
 # ── Geometrie des Laufs konservieren ────────────────────────────────────────
@@ -404,9 +406,17 @@ def teilstand_waechter_starten() -> None:
     groesseren Takten Auto-Archiv (FLOOD3D_ARCHIV_S) und R2-Putzrunde
     (FLOOD3D_R2_PUTZ_S, Altersgrenze FLOOD3D_R2_MAX_ALTER_H).
     """
+    global _waechter_laeuft
     takt = int(os.environ.get("FLOOD3D_SWEEP_S", "120"))
     if takt <= 0:
         return             # fuer Tests abschaltbar
+    if _waechter_laeuft:
+        # Am 2026-08-15 liefen ZWEI Threads namens flood3d-teilstand im
+        # selben Prozess: doppelte S3-Runden, doppelte Importversuche auf
+        # denselben Laeufen. Einmal ist genug — und der Start ist damit
+        # gefahrlos wiederholbar.
+        return
+    _waechter_laeuft = True
 
     archiv_takt = int(os.environ.get("FLOOD3D_ARCHIV_S", "21600"))
     putz_takt = int(os.environ.get("FLOOD3D_R2_PUTZ_S", "3600"))

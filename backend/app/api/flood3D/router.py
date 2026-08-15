@@ -42,7 +42,7 @@ env_spiegeln("FLOOD3D_")
 
 from .core import fields as vol_fields
 from .core.casespec import CaseSpec, migriere
-from .core.normalize import get_series, list_series
+from .core.normalize import get_series
 from .core.solids import build_solids
 from .core.store import (lauf_reservieren, manifest_schreiben,
                          read_manifest, run_paths, runs_root)
@@ -82,24 +82,163 @@ def _result(paths) -> dict | None:
     return None
 
 
-@lru_cache(maxsize=16)
-def _read_parquet_cached(path_str: str, mtime_ns: int) -> pd.DataFrame:
-    return pd.read_parquet(path_str)
+# Die Zwischendatei wird NIE mehr im Ganzen gelesen.
+#
+# Rentrich_BetaTest08_r004 hat 7,6 Mio Zeilen: 77 MB auf der Platte, aber
+# 906 MB als DataFrame. pm2 laeuft in einer Cgroup mit 1 GiB (MemoryMax) —
+# ein einziger solcher Lauf hat den Server am 2026-08-15 reihenweise vom
+# OOM-Killer erschiessen lassen, waehrend Fabio nur die Ergebnisse ansehen
+# wollte. Parquet ist spaltenweise und filtert schon beim LESEN: fuer eine
+# Zeitreihe kommen damit 480 Zeilen und 0,06 MB statt 906 MB an (0,23 s).
+@lru_cache(maxsize=8)
+def _reihen_gelesen(path_str: str, mtime_ns: int,
+                    quantities: tuple[str, ...]) -> pd.DataFrame:
+    return pd.read_parquet(path_str,
+                           filters=[("quantity", "in", list(quantities))])
 
 
-def _normalized(paths) -> pd.DataFrame:
+def _reihen(paths, quantities: tuple[str, ...]) -> pd.DataFrame:
+    """Nur die gebrauchten Groessen aus der Zwischendatei."""
     if not paths.normalized.exists():
         raise HTTPException(status_code=404,
                             detail="Für diesen Lauf liegt keine Zwischendatei vor.")
-    return _read_parquet_cached(str(paths.normalized),
-                                paths.normalized.stat().st_mtime_ns)
+    return _reihen_gelesen(str(paths.normalized),
+                           paths.normalized.stat().st_mtime_ns,
+                           tuple(sorted(quantities)))
+
+
+# Fuer die Bilanz-/Konvergenzansicht: mehr Punkte als das Diagramm breit
+# ist, kann niemand sehen — und 760.881 Solverschritte (so viele hat
+# Rentrich_BetaTest08_r004) sind weder uebertragbar noch zeichenbar.
+_BILANZ_MAX_PUNKTE = 4000
+
+
+def _ausduennen(t, v, komponente: str):
+    """
+    Auf hoechstens _BILANZ_MAX_PUNKTE eindampfen. Maximum-Reihen (Courant!)
+    werden je Fenster als MAXIMUM zusammengefasst, nicht abgetastet — sonst
+    verschwindet genau die Spitze, wegen der man hinsieht.
+    """
+    import numpy as np
+
+    n = len(t)
+    if n <= _BILANZ_MAX_PUNKTE:
+        return t, v
+    fenster = int(np.ceil(n / _BILANZ_MAX_PUNKTE))
+    rest = n - (n % fenster)
+    tb = t[:rest].reshape(-1, fenster)
+    vb = v[:rest].reshape(-1, fenster)
+    if komponente == "max":
+        stelle = vb.argmax(axis=1)
+        zeile = np.arange(len(stelle))
+        return tb[zeile, stelle], vb[zeile, stelle]
+    return tb[:, -1], vb[:, -1]        # letzter Wert je Fenster
+
+
+def _bilanz_lesen(paths) -> dict[tuple[str, str, str], dict]:
+    """Gemerkt je Lauf: das Auslesen kostet bei langen Läufen Sekunden, das
+    Ergebnis ist nach dem Ausdünnen aber klein (< 1 MB) — Tabwechsel sollen
+    nicht jedes Mal 7,6 Mio Zeilen durchpflügen."""
+    if not paths.normalized.exists():
+        raise HTTPException(status_code=404,
+                            detail="Für diesen Lauf liegt keine Zwischendatei vor.")
+    return _bilanz_gelesen(str(paths.normalized),
+                           paths.normalized.stat().st_mtime_ns)
+
+
+@lru_cache(maxsize=4)
+def _bilanz_gelesen(pfad: str, mtime_ns: int) -> dict[tuple[str, str, str], dict]:
+    """
+    Bilanz- und Konvergenzreihen stapelweise einsammeln.
+
+    Der Trick gegen den Speicher: die STRING-Spalten machen die Zwischen-
+    datei schwer (7,6 Mio Zeilen = 906 MB als DataFrame), die Zahlen selbst
+    sind harmlos. Also wird stapelweise gelesen und je Reihe nur (t, v) als
+    float-Arrays behalten — rund 120 MB statt 906 MB, und nichts davon
+    ueberlebt die Anfrage.
+    """
+    import numpy as np
+    import pyarrow.dataset as ds
+
+    gewuenscht = ["volume", "continuity", "courant", "timestep", "residual"]
+    roh: dict[tuple[str, str, str], dict] = {}
+    daten = ds.dataset(pfad, format="parquet")
+    for stapel in daten.to_batches(
+            columns=["quantity", "location_id", "component", "time",
+                     "value", "unit"],
+            filter=ds.field("quantity").isin(gewuenscht),
+            batch_size=200_000):
+        teil = stapel.to_pandas()
+        for schluessel, gruppe in teil.groupby(
+                ["quantity", "location_id", "component"], sort=False):
+            eintrag = roh.setdefault(schluessel, {"t": [], "v": [], "unit": ""})
+            eintrag["t"].append(gruppe["time"].to_numpy(float))
+            eintrag["v"].append(gruppe["value"].to_numpy(float))
+            if not eintrag["unit"] and len(gruppe):
+                eintrag["unit"] = str(gruppe["unit"].iloc[0])
+
+    fertig = {}
+    for (menge, ort, komponente), eintrag in roh.items():
+        t = np.concatenate(eintrag["t"])
+        v = np.concatenate(eintrag["v"])
+        ordnung = np.argsort(t, kind="stable")
+        t, v = _ausduennen(t[ordnung], v[ordnung], komponente)
+        fertig[(menge, ort, komponente)] = {
+            "quantity": menge, "location_id": ort, "component": komponente,
+            "unit": eintrag["unit"], "t": t.tolist(), "v": v.tolist()}
+    return fertig
+
+
+def _leere_reihe(menge: str, ort: str, komponente: str) -> dict:
+    return {"quantity": menge, "location_id": ort, "component": komponente,
+            "unit": "", "t": [], "v": []}
+
+
+def _inventar(paths) -> list[dict]:
+    if not paths.normalized.exists():
+        raise HTTPException(status_code=404,
+                            detail="Für diesen Lauf liegt keine Zwischendatei vor.")
+    return _inventar_gelesen(str(paths.normalized),
+                             paths.normalized.stat().st_mtime_ns)
+
+
+@lru_cache(maxsize=4)
+def _inventar_gelesen(pfad: str, mtime_ns: int) -> list[dict]:
+    """
+    Inventar aller Zeitreihen — stapelweise, damit auch eine 7,6-Mio-Zeilen-
+    Datei in den Speicher passt: je Stapel gruppieren und die Teilergebnisse
+    zusammenfuehren (nie mehr als ein Stapel gleichzeitig im RAM).
+    """
+    import pyarrow.parquet as pq
+
+    teile = []
+    datei = pq.ParquetFile(pfad)
+    for stapel in datei.iter_batches(
+            columns=["quantity", "location_id", "component", "time"],
+            batch_size=200_000):
+        teile.append(stapel.to_pandas()
+                     .groupby(["quantity", "location_id", "component"],
+                              sort=False)["time"]
+                     .agg(n="size", t_min="min", t_max="max"))
+    if not teile:
+        return []
+    gesamt = pd.concat(teile).groupby(level=[0, 1, 2], sort=True).agg(
+        n=("n", "sum"), t_min=("t_min", "min"), t_max=("t_max", "max"))
+    return gesamt.reset_index().to_dict(orient="records")
 
 
 def _series_payload(df: pd.DataFrame, quantity: str, location_id: str,
                     component: str) -> dict:
-    t, v = get_series(df, quantity, location_id, component)
+    """
+    Eine Zeitreihe als Nutzlast. ``df`` darf (und sollte) vorgefiltert sein —
+    jede Maske hier laeuft ueber die ganze uebergebene Tabelle, und die hat
+    bei laengeren Laeufen Millionen Zeilen.
+    """
     sel = df[(df["quantity"] == quantity) & (df["location_id"] == location_id)]
     unit = sel["unit"].iloc[0] if len(sel) else ""
+    # get_series auf der bereits verkleinerten Auswahl statt auf df: der
+    # zweite Vollscan war reine Verschwendung
+    t, v = get_series(sel, quantity, location_id, component)
     return {"quantity": quantity, "location_id": location_id,
             "component": component, "unit": unit,
             "t": t.tolist(), "v": v.tolist()}
@@ -347,8 +486,7 @@ async def run_extremes(run_id: str):
 
 @router.get("/runs/{run_id}/inventory")
 async def run_inventory(run_id: str):
-    df = _normalized(_paths(run_id))
-    return list_series(df).to_dict(orient="records")
+    return await asyncio.to_thread(lambda: _inventar(_paths(run_id)))
 
 
 @router.get("/runs/{run_id}/series")
@@ -356,33 +494,46 @@ async def run_series(run_id: str,
                      quantity: str = Query(...),
                      location_id: str | None = Query(None),
                      component: str = Query("")):
-    """Zeitreihen auf nativer Zeitachse. Ohne location_id alle Orte der Größe."""
-    df = _normalized(_paths(run_id))
-    if location_id is not None:
-        locs = [location_id]
-    else:
-        locs = sorted(df.loc[df["quantity"] == quantity, "location_id"].unique())
-    series = [_series_payload(df, quantity, loc, component) for loc in locs]
-    return {"run_id": run_id, "series": [s for s in series if s["t"]]}
+    """
+    Zeitreihen auf nativer Zeitachse. Ohne location_id alle Orte der Größe.
+
+    Läuft im Thread und filtert EINMAL nach der Größe: bei 7,6 Mio Zeilen
+    (Rentrich_BetaTest08_r004) kostete jeder Ort vorher zwei Vollscans über
+    die ganze Tabelle — und weil das im Ereignis-Schleifen-Faden lief, stand
+    dabei der GESAMTE Server, bis hin zu /health (2026-08-15 real erlebt).
+    """
+    def arbeit():
+        teil = _reihen(_paths(run_id), (quantity,))   # nur diese Groesse
+        locs = ([location_id] if location_id is not None
+                else sorted(teil["location_id"].unique()))
+        series = [_series_payload(teil, quantity, loc, component)
+                  for loc in locs]
+        return {"run_id": run_id, "series": [s for s in series if s["t"]]}
+    return await asyncio.to_thread(arbeit)
 
 
 @router.get("/runs/{run_id}/balance")
 async def run_balance(run_id: str):
-    """Bilanz- und Konvergenzreihen für die Qualitätsansicht (Spez. Kap. 8)."""
-    df = _normalized(_paths(run_id))
-    payload = {
-        "run_id": run_id,
-        "volume": _series_payload(df, "volume", "domain", ""),
-        "continuity": _series_payload(df, "continuity", "solver", ""),
-        "courant_mean": _series_payload(df, "courant", "solver", "mean"),
-        "courant_max": _series_payload(df, "courant", "solver", "max"),
-        "timestep": _series_payload(df, "timestep", "solver", ""),
-        "residuals": [],
-    }
-    res = df[df["quantity"] == "residual"]
-    for (field, comp), _ in res.groupby(["location_id", "component"]):
-        payload["residuals"].append(_series_payload(df, "residual", field, comp))
-    return payload
+    """Bilanz- und Konvergenzreihen für die Qualitätsansicht (Spez. Kap. 8).
+    Im Thread, aus demselben Grund wie /series."""
+    def arbeit():
+        reihen = _bilanz_lesen(_paths(run_id))
+
+        def hol(menge, ort, komponente=""):
+            return reihen.get((menge, ort, komponente)) \
+                or _leere_reihe(menge, ort, komponente)
+
+        return {
+            "run_id": run_id,
+            "volume": hol("volume", "domain"),
+            "continuity": hol("continuity", "solver"),
+            "courant_mean": hol("courant", "solver", "mean"),
+            "courant_max": hol("courant", "solver", "max"),
+            "timestep": hol("timestep", "solver"),
+            "residuals": [r for (menge, _, _), r in sorted(reihen.items())
+                          if menge == "residual"],
+        }
+    return await asyncio.to_thread(arbeit)
 
 
 @router.get("/runs/{run_id}/timesteps")

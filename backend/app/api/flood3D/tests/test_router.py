@@ -83,6 +83,48 @@ def test_balance(client):
     assert any(r["location_id"] == "p_rgh" for r in b["residuals"])
 
 
+def test_lange_reihen_sprengen_den_speicher_nicht():
+    """
+    Am 2026-08-15 hat ein Lauf mit 7,6 Mio Zeitreihen-Zeilen (760.881
+    Solverschritte) den Server reihenweise vom OOM-Killer erschiessen
+    lassen: die Zwischendatei wurde IM GANZEN als DataFrame geladen
+    (77 MB Datei -> 906 MB RAM), und pm2 hat 1 GiB. Diese Zusicherungen
+    halten die beiden Kuren fest.
+    """
+    import inspect
+
+    from .. import router as router_mod
+
+    quelle = inspect.getsource(router_mod)
+    # (1) kein Volllader mehr — gelesen wird spalten-/zeilengefiltert
+    assert "_read_parquet_cached" not in quelle
+    assert "filters=[(\"quantity\"" in quelle
+    # (2) die schweren Auswertungen blockieren nicht die Ereignisschleife
+    for endpunkt in ("run_series", "run_balance", "run_inventory"):
+        rumpf = inspect.getsource(getattr(router_mod, endpunkt))
+        assert "asyncio.to_thread" in rumpf, endpunkt
+
+
+def test_ausduennen_behaelt_die_spitze():
+    """Maximum-Reihen (Courant!) werden je Fenster als MAXIMUM
+    zusammengefasst — eine reine Abtastung wuerde genau die Spitze
+    verlieren, wegen der man hinschaut."""
+    import numpy as np
+
+    from ..router import _BILANZ_MAX_PUNKTE, _ausduennen
+
+    n = _BILANZ_MAX_PUNKTE * 3
+    t = np.arange(n, dtype=float)
+    v = np.zeros(n)
+    v[7] = 42.0                       # die eine Spitze, mitten im ersten Fenster
+    tm, vm = _ausduennen(t, v, "max")
+    assert len(tm) <= _BILANZ_MAX_PUNKTE
+    assert vm.max() == 42.0 and tm[vm.argmax()] == 7.0
+    # andere Reihen: letzter Wert je Fenster, Laenge gedeckelt
+    tl, vl = _ausduennen(t, v, "")
+    assert len(tl) <= _BILANZ_MAX_PUNKTE and tl[-1] == t[len(t) - len(t) % 3 - 1]
+
+
 def test_figure_auslieferung(client):
     r = client.get("/runs/r001/figures/wasserspiegel.png")
     assert r.status_code == 200
