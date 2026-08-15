@@ -32,6 +32,29 @@ _active_runs: dict[str, object] = {}
 _laufende_previews: set[str] = set()
 
 
+# ── Geometrie des Laufs konservieren ────────────────────────────────────────
+def geometrie_sichern(spec, case_dir: Path, run_root: Path) -> None:
+    """
+    Beim Start: die Spezifikation samt Datendateien in ``run_root/spec``
+    ablegen und die Hashes ins Manifest schreiben.
+
+    Damit beantwortet jeder Lauf die Frage „wie sah der Fall damals aus?"
+    selbst — der Fallordner ist längst weitergewandert, und aus dem
+    Ergebnisarchiv kommt nur .stl zurück. Die Hashes standen bisher allein
+    in result.json und fehlten deshalb genau dort, wo man sie am ehesten
+    braucht: bei gescheiterten Läufen.
+    """
+    from .core.bundle import spec_sichern
+
+    try:
+        spec_sichern(spec, case_dir, run_root / "spec")
+    except Exception as e:   # noqa: BLE001 — Sichern darf nie einen Lauf verhindern
+        print(f"flood3d: Geometrie von {run_root.name} nicht gesichert: {e}",
+              flush=True)
+    manifest_schreiben(run_root, case_hash=spec.case_hash(),
+                       netz_hash=spec.netz_hash(), case_id=spec.meta.id)
+
+
 # ── Artefakt-Import ─────────────────────────────────────────────────────────
 _IMPORT_TOP = {"manifest.json", "result.json", "normalized.parquet"}
 _IMPORT_MEMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
@@ -62,12 +85,21 @@ def _import_entpacken(run_root: Path, run_id: str, data: bytes) -> dict:
         if not ok:
             raise HTTPException(status_code=422,
                                 detail=f"Unerlaubter Archivpfad: {m!r}")
+    # Das Archiv bringt sein eigenes manifest.json mit und überschreibt
+    # unseres im Ganzen — die beim Start gesetzte Geometrie-Herkunft muss
+    # das überleben, sonst weiß ein importierter Lauf am Ende nicht mehr,
+    # aus welchem Fallstand er stammt.
+    vorher = read_manifest(run_paths(run_root.parent, run_root.name)) or {}
+    bewahren = {k: vorher[k] for k in ("case_hash", "netz_hash")
+                if vorher.get(k)}
     for m in z.namelist():
         if m.endswith("/"):
             continue
         target = run_root / m
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(z.read(m))
+    if bewahren:
+        manifest_schreiben(run_root, **bewahren)
     # Konsistenz: die Artefakte müssen zum reservierten Lauf gehören
     result_path = run_root / "result.json"
     if result_path.exists():

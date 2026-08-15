@@ -216,7 +216,12 @@ async def list_runs():
             "stale": _run_stale(d, status),
             "size_mb": _run_size_mb(d),
             "title": manifest.get("title", ""),
-            "case_hash": (result or {}).get("case_hash"),
+            # Manifest zuerst: es trägt den Hash seit dem START, das Ergebnis
+            # erst am Ende — gescheiterte Läufe hatten sonst gar keinen
+            "case_hash": manifest.get("case_hash") or (result or {}).get("case_hash"),
+            # Liegt die Geometrie dieses Laufs gesichert daneben? Nur dann
+            # lässt sie sich als Stand zurückholen (Altläufe: nein)
+            "spec_gesichert": (paths.root / "spec" / "case.yaml").is_file(),
             "n_targets": len(targets),
             "n_erfuellt": sum(1 for t in targets if t.get("result") == "erfuellt"),
             "n_nicht_erfuellt": sum(1 for t in targets if t.get("result") == "nicht_erfuellt"),
@@ -710,6 +715,81 @@ async def put_case(case_id: str, payload: dict = Body(...)):
     # stecken in der Geometrie-Antwort.
     return {"ok": True, "case_hash": spec.case_hash(),
             **_geometrie_payload(spec, d)}
+
+
+# ── Geometrie-Stände ────────────────────────────────────────────────────────
+# Benannte Speicherstände der Fallgeometrie. Der Arbeitsfall bleibt EINER
+# (kein Verzweigen): Stände sind flache Kopien, zwischen denen man springt —
+# und weil jedes Laden vorher automatisch sichert, ist der Sprung umkehrbar.
+
+@router.get("/cases/{case_id}/staende")
+async def list_staende(case_id: str):
+    from .core.staende import staende_liste
+    return {"staende": staende_liste(_case_dir(case_id))}
+
+
+@router.post("/cases/{case_id}/staende")
+async def create_stand(case_id: str, payload: dict = Body(...)):
+    from .core.staende import StandFehler, stand_anlegen
+    d = _case_dir(case_id)
+    try:
+        return {"stand": stand_anlegen(d, payload.get("name", ""))}
+    except StandFehler as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/cases/{case_id}/staende/{stand_id}/laden")
+async def load_stand(case_id: str, stand_id: str):
+    from .core.staende import StandFehler, stand_laden
+    d = _case_dir(case_id)
+    try:
+        erg = stand_laden(d, stand_id)
+    except StandFehler as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    # Gegenprobe: der eingespielte Stand muss lesbar sein — sonst stünde
+    # der Nutzer vor einem Fall, den der Editor nicht mehr öffnen kann
+    spec, _ = _load_case(case_id)
+    return {"ok": True, "case_hash": spec.case_hash(),
+            "auto_stand": erg["auto_stand"]}
+
+
+@router.delete("/cases/{case_id}/staende/{stand_id}")
+async def delete_stand(case_id: str, stand_id: str):
+    from .core.staende import StandFehler, stand_loeschen
+    try:
+        stand_loeschen(_case_dir(case_id), stand_id)
+    except StandFehler as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"ok": True}
+
+
+@router.post("/runs/{run_id}/geometrie-als-stand")
+async def run_geometrie_als_stand(run_id: str):
+    """
+    Die Geometrie, mit der DIESER Lauf gerechnet wurde, als Stand in seinen
+    Fall zurückholen. Damit ist der Weg „Wehr verschoben, Lauf gemacht,
+    zurück zum alten Stand" geschlossen, ohne den Fall vorher von Hand
+    kopiert zu haben.
+    """
+    from .core.staende import StandFehler, stand_anlegen
+
+    paths = _paths(run_id)
+    spec_dir = paths.root / "spec"
+    if not (spec_dir / "case.yaml").is_file():
+        raise HTTPException(
+            status_code=409,
+            detail="Dieser Lauf stammt aus der Zeit vor den Ständen — seine "
+                   "Geometrie wurde nicht gesichert und lässt sich nicht "
+                   "wiederherstellen.")
+    case_id = (read_manifest(paths) or {}).get("case_id") \
+        or re.sub(r"_r\d+$", "", run_id)
+    d = _case_dir(case_id)
+    try:
+        stand = stand_anlegen(d, f"aus Lauf {run_id}", quelle=f"lauf:{run_id}",
+                              ueberlagern=spec_dir)
+    except StandFehler as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"case_id": case_id, "stand": stand}
 
 
 @router.post("/cases/{case_id}/import")
@@ -1488,6 +1568,7 @@ async def case_bundle(case_id: str, request: Request):
 
     manifest_schreiben(run_root, status="lokal", origin="companion",
                        title=spec.meta.title, created=time.time())
+    laufwerk.geometrie_sichern(spec, d, run_root)
     return Response(content=data, media_type="application/zip",
                     headers={"X-F3D-Run-Id": run_id,
                              "Access-Control-Expose-Headers": "X-F3D-Run-Id"})
@@ -1569,6 +1650,9 @@ async def start_run(request: Request, payload: dict = Body(...)):
                    + " | ".join(b["message"] for b in fehler[:5]))
 
     run_id, run_root = lauf_reservieren(runs_root(), case_id)
+    # Geometrie von JETZT konservieren, bevor irgendetwas rechnet — der
+    # Fallordner wandert weiter, der Lauf soll seinen Stand behalten
+    laufwerk.geometrie_sichern(spec, case_dir, run_root)
 
     # Orchestrierung (Bundle → R2 → Job → Ereignisstrom → Import) fährt
     # das Laufwerk im Hintergrund-Thread — der Endpunkt ist nur noch

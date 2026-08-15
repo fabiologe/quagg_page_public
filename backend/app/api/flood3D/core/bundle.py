@@ -71,6 +71,31 @@ def fehlende_dateien(spec, case_dir: Path) -> list[str]:
     return [n for n in spec.datei_referenzen() if not (Path(case_dir) / n).is_file()]
 
 
+def spec_sichern(spec, case_dir: Path, ziel: Path) -> list[str]:
+    """
+    ``case.yaml`` + alle referenzierten Datendateien nach ``ziel`` legen —
+    die Geometrie EINES Laufs, konserviert.
+
+    Ohne das trug ein Lauf nur seine .stl-Artefakte: „so sah der Fall
+    damals aus" ließ sich nachträglich nicht mehr beantworten (die
+    Import-Weiche lässt aus dem Ergebnisarchiv nur .stl durch), und ein
+    gescheiterter Lauf hatte nicht einmal einen case_hash. Es sind
+    dieselben Dateien, die das Bundle ohnehin einpackt — unter 1 MB.
+    Rückgabe: die gesicherten Namen (relativ), fürs Protokoll.
+    """
+    case_dir, ziel = Path(case_dir), Path(ziel)
+    ziel.mkdir(parents=True, exist_ok=True)
+    gesichert: list[str] = []
+    for name in ["case.yaml", *spec.datei_referenzen()]:
+        quelle = case_dir / name
+        if not quelle.is_file():
+            continue
+        (ziel / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(quelle, ziel / name)
+        gesichert.append(name)
+    return gesichert
+
+
 def bundle_bauen(spec, case_dir: Path, run_id: str,
                  checkpoint: dict | None = None) -> bytes:
     """``case.zip`` als Bytes. Wirft ``BundleFehler`` mit lesbarem Grund.

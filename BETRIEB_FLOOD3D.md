@@ -240,11 +240,34 @@ Fälle sind zusammen 19 MB und bleiben lokal.
   dass ALTE case.yaml nicht mehr laden (deshalb bleiben die toten
   Conventions-/Meta-Felder drin, siehe Audit-T4-Vermerk).
 
+## Geometrie-Stände (seit 2026-08-13)
+
+- Ein Stand ist eine benannte VOLLKOPIE des Fallordners unter
+  `cases/<id>/staende/<stempel>_<name>/` — ohne `derived/mesh_preview/`
+  (MB-schwere Ableitung) und ohne die Stände selbst. Gemessen an
+  Rentrich_Beta07: 43 MB Fall → **0,69 MB Stand in 0,4 s**.
+- Warum Vollkopie und nicht nur die Spec: `sculpt.npz` (Pinsel) wird bei
+  jedem Strich unter demselben Namen überschrieben, gedrehte Raster
+  tragen einen Stempel aus der Gittergeometrie, nicht aus dem Inhalt.
+  Ein Spec-Schnappschuss zeigt nach dem Zurückholen auf fremde Daten.
+- **Laden sichert immer vorher automatisch** („vor Laden von X",
+  Quelle `auto`, die letzten 5 bleiben) — der Sprung ist umkehrbar.
+  Dabei fliegt `derived/mesh_preview/` weg: die Vorschau gehörte zur
+  ersetzten Geometrie.
+- Wiederherstellen ohne Werkzeug: `cp -r staende/<id>/* .` im Fallordner
+  (stand.json ignorieren).
+- **Jeder Lauf sichert seine Geometrie** nach `runs/<id>/spec/`
+  (case.yaml + Datenreferenzen, < 1 MB) und trägt `case_hash`/`netz_hash`
+  ab dem START im Manifest (vorher nur im Ergebnis → gescheiterte Läufe
+  hatten keine). Daraus macht „Geometrie als Stand" einen Stand im Fall.
+  Läufe von vor diesem Datum haben kein `spec/` — der Knopf bleibt dort
+  aus (HTTP 409 mit Erklärung).
+
 ## Daten & Backup
 
 - `backend/app/api/flood3D/data/` ist NICHT in git (~150 MB): `cases/`
-  (Quellen: case.yaml + imports/), `runs/` (Ergebnisse), `archiv/`
-  (BetaTest01/02, altes Layout), `verifikation/` (Referenz-Ergebnisse).
+  (Quellen: case.yaml + imports/ + staende/), `runs/` (Ergebnisse),
+  `archiv/` (BetaTest01/02, altes Layout), `verifikation/`.
 - **Backup-Minimum**: je Fall `case.yaml` + `imports/` sichern — alles unter
   `derived/` ist reproduzierbar (Reapply), Läufe sind neu rechenbar.
   Einfachster Weg: `tar czf flood3d-cases-$(date +%F).tgz -C backend/app/api/flood3D/data cases`
