@@ -292,6 +292,88 @@ export function widgetFor(key, v, typ) {
 // vorgesehen, wird aber nirgends ausgewertet)
 export const VERBERGEN = { window: ['shape', 'follow'], alignment: ['kind'] }
 
+// --- Pflichtfelder je Profilart -------------------------------------------
+// Die Untergruppe blendet leere Felder aus („ein Kreisprofil zeigt keine
+// Rechteckmaße"). Für die ANZEIGE richtig, beim Umschalten der Art aber
+// fatal: `width`/`height` stehen auf null, also erschienen ihre
+// Eingabefelder nie — man konnte ein Rechteckprofil auswählen, aber nicht
+// bemaßen, und das Speichern scheiterte am Modell („rectangular-Profil
+// braucht width und height"). Gemeldet 2026-08-16 aus der Testrunde.
+//
+// Sichtbar ist deshalb, was die GEWÄHLTE ART braucht — nicht, was gerade
+// einen Wert hat. Die Listen spiegeln die Modelle CulvertProfile und
+// GrabenProfil (core/casespec.py); Reihenfolge = Anzeigereihenfolge.
+export const PFLICHTFELDER = {
+  culvert: {
+    profile: {
+      circular: ['kind', 'diameter', 'wandstaerke'],
+      rectangular: ['kind', 'width', 'height', 'wandstaerke'],
+      arch: ['kind', 'width', 'height', 'wandstaerke'],
+    },
+  },
+  graben: {
+    profile: {
+      rechteck: ['kind', 'width', 'height'],
+      trapez: ['kind', 'width', 'height', 'side_slope'],
+      kreis: ['kind', 'width'],          // width = Durchmesser
+      maul: ['kind', 'width', 'height'],
+    },
+  },
+}
+
+/** Die Tabelle für (Objekttyp, Untergruppe) — oder null. */
+export function pflichtTabelle(gruppe, typ) {
+  return PFLICHTFELDER[typ]?.[gruppe] ?? null
+}
+
+/**
+ * Welche Felder eine Untergruppe zeigt.
+ *
+ * Mit Tabelle: die Pflichtfelder der gewählten Art, dazu alles andere, was
+ * gesetzt ist (Altfälle mit Zusatzangaben verlieren nichts).
+ * Ohne Tabelle: wie bisher — alles, was nicht leer ist.
+ */
+export function felderFuer(gruppe, typ, wert, verbergen = []) {
+  const w = wert ?? {}
+  const gesetzt = Object.keys(w)
+    .filter((k) => w[k] !== null && w[k] !== undefined)
+  const tabelle = pflichtTabelle(gruppe, typ)
+  const pflicht = tabelle?.[w.kind]
+  const liste = pflicht
+    ? [...pflicht, ...gesetzt.filter((k) => !pflicht.includes(k))]
+    : gesetzt
+  return liste.filter((k) => !verbergen.includes(k))
+}
+
+// Felder, die eine ZAHL sind, auch wenn sie gerade auf null stehen. Ohne
+// diese Liste greift in der Untergruppe die typeof-Kette daneben
+// (`typeof null === 'object'`), das Maß bekäme ein Textfeld, und die
+// Eingabe landete als Zeichenkette in der Spezifikation.
+// Abgeleitet statt gepflegt: alle Pflichtfelder außer der Art selbst sind
+// Maße. `kind` fängt ohnehin der Auswahlkasten vorher ab.
+export const ZAHLENFELDER = new Set(
+  Object.values(PFLICHTFELDER)
+    .flatMap((proGruppe) => Object.values(proGruppe))
+    .flatMap((proArt) => Object.values(proArt).flat())
+    .filter((k) => k !== 'kind'))
+
+/**
+ * Beim Wechsel der Art: Maße, die zur NEUEN Art nicht gehören, leeren.
+ * Sonst hängt ein Durchmesser an einem Rechteckprofil und behauptet etwas,
+ * das für diese Art gar nicht gilt.
+ */
+export function artGewechselt(gruppe, typ, wert, neueArt) {
+  const tabelle = pflichtTabelle(gruppe, typ)
+  const neu = { ...wert, kind: neueArt }
+  if (!tabelle) return neu
+  const bleibt = new Set(tabelle[neueArt] ?? [])
+  const alleMasse = new Set(Object.values(tabelle).flat())
+  for (const k of alleMasse) {
+    if (k !== 'kind' && !bleibt.has(k) && k in neu) neu[k] = null
+  }
+  return neu
+}
+
 // Beschriftungen, die nur für einen Objekttyp gelten — `level` ist bei der
 // Verfeinerungsbox eine Stufe, bei einer Geländeoperation eine Höhe
 // Beschriftungen, die nur für EINEN Objekttyp gelten. Sie stehen hier und

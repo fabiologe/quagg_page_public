@@ -27,8 +27,11 @@
                  @change="setzeIndex(k, i, $event.target.value)" />
         </label>
       </div>
-      <input v-else-if="typeof wert[k] === 'number'" type="number" step="any"
-             class="f3d-num f3d-grow" :value="wert[k]"
+      <!-- ZAHLENFELDER auch bei null: ein noch nicht gesetztes Maß muss
+           ein Zahlenfeld sein, sonst kann man es nie eingeben -->
+      <input v-else-if="typeof wert[k] === 'number' || ZAHLENFELDER.has(k)"
+             type="number" step="any" class="f3d-num f3d-grow"
+             :value="wert[k] ?? ''" :placeholder="wert[k] == null ? 'nötig' : ''"
              @change="setzen(k, zahl($event.target.value))" />
       <input v-else-if="typeof wert[k] === 'boolean'" type="checkbox"
              :checked="wert[k]" @change="setzen(k, $event.target.checked)" />
@@ -49,8 +52,8 @@
 import { computed } from 'vue'
 import PunktListe from './PunktListe.vue'
 import {
-  ENUM_LABELS, GESCHLOSSEN, enumFor, istPunktListe, istZahlenreihe,
-  punktDim, zahlenNamen,
+  ENUM_LABELS, GESCHLOSSEN, ZAHLENFELDER, artGewechselt, enumFor, felderFuer,
+  istPunktListe, istZahlenreihe, punktDim, zahlenNamen,
 } from '../../utils/feldTypen'
 
 const props = defineProps({
@@ -67,14 +70,21 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const wert = computed(() => props.modelValue ?? {})
-// leere Angaben ausblenden: ein Kreisprofil zeigt keine Rechteckmaße
-const schluessel = computed(() => Object.keys(wert.value)
-  .filter((k) => wert.value[k] !== null && wert.value[k] !== undefined
-    && !props.verbergen.includes(k)))
+// Sichtbar ist, was die gewählte ART braucht — und sonst alles, was
+// gesetzt ist. Vorher galt nur die zweite Hälfte: ein frisch auf
+// „Rechteck" gestelltes Profil hatte keine Felder für Breite und Höhe.
+const schluessel = computed(() =>
+  felderFuer(props.gruppe, props.typ, wert.value, props.verbergen))
 
 const zahl = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 
 function setzen(k, v) {
+  // Der Artwechsel räumt die Maße der alten Art weg (feldTypen.js)
+  if (k === 'kind') {
+    emit('update:modelValue', artGewechselt(props.gruppe, props.typ,
+      wert.value, v))
+    return
+  }
   emit('update:modelValue', { ...wert.value, [k]: v })
 }
 

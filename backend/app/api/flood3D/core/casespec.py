@@ -630,12 +630,17 @@ class CulvertProfile(_Model):
     # Default entspricht dem alten Festwert.
     wandstaerke: float = Field(default=0.15, gt=0.0, le=0.5)
 
+    # Die Texte stehen bewusst in der Sprache des Panels: sie landen ueber
+    # router._lesbar() unveraendert in der Meldungsleiste des Nutzers.
+    _ART = {"circular": "Das Kreisprofil", "rectangular": "Das Rechteckprofil",
+            "arch": "Das Maulprofil"}
+
     @model_validator(mode="after")
     def _dims(self):
         if self.kind == "circular" and self.diameter is None:
-            raise ValueError("Kreisprofil braucht diameter")
+            raise ValueError("Das Kreisprofil braucht einen Durchmesser.")
         if self.kind in ("rectangular", "arch") and (self.width is None or self.height is None):
-            raise ValueError(f"{self.kind}-Profil braucht width und height")
+            raise ValueError(f"{self._ART[self.kind]} braucht Breite und Höhe.")
         return self
 
 
@@ -837,7 +842,8 @@ class GrabenProfil(_Model):
     @model_validator(mode="after")
     def _dims(self):
         if self.kind != "kreis" and self.height is None:
-            raise ValueError(f"{self.kind}-Profil braucht height")
+            raise ValueError(f"Das {self.kind.capitalize()}profil braucht "
+                             "eine Höhe über der Sohle.")
         return self
 
 

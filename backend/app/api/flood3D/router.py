@@ -782,6 +782,68 @@ def _load_case(case_id: str) -> tuple[CaseSpec, Path]:
                             detail=f"Fall {case_id} nicht lesbar: {e}")
 
 
+# Wegweiser fuer die Fundstelle eines Modellfehlers. Pydantic nennt sie als
+# Pfad ("structures.0.culvert.profile") — der ist praezise und fuer den
+# Nutzer unlesbar.
+_ORT_WORTE = {
+    "structures": "Bauwerk", "boundaries": "Randbedingung",
+    "evaluation": "Auswertung", "gauges": "Pegel", "sections": "Querschnitt",
+    "targets": "Kriterium", "solver": "Simulation", "mesh": "Netz",
+    "domain": "Modellgebiet", "terrain": "Gelaende", "operations": "Gelaendeform",
+    "edits": "Bearbeitung", "profile": "Profil", "resistance": "Widerstand",
+    "alignment": "Achse", "meta": "Fallangaben", "vorfuellungen": "Vorfuellung",
+    "culvert": "Durchlass", "weir": "Wehr", "wall": "Wand", "pier": "Pfeiler",
+    "graben": "Graben", "schacht": "Schacht", "kammer": "Kammer",
+    "screen": "Rechen", "imported": "Importkoerper",
+}
+
+
+def _lesbar(e: Exception) -> str:
+    """
+    Einen Modellfehler in einen Satz uebersetzen, den man lesen kann.
+
+    Pydantic liefert roh etwa
+
+        1 validation error for CaseSpec
+        structures.0.culvert.profile
+          Value error, arch-Profil braucht width und height
+          [type=value_error, input_value={'kind': 'arch', ...}, input_type=dict]
+          For further information visit https://errors.pydantic.dev/2.12/...
+
+    Genau das stand bisher als „Speichern fehlgeschlagen" in der
+    Meldungsleiste (2026-08-16 aus der Testrunde). Der Nutzer braucht die
+    Fundstelle und den Grund — nicht den Eingabewert, den er selbst gerade
+    eingetippt hat, und keine Verweis-URL auf die Bibliothek.
+    """
+    hole = getattr(e, "errors", None)
+    if not callable(hole):
+        return str(e)
+    try:
+        fehler = hole()
+    except Exception:
+        return str(e)
+
+    zeilen: list[str] = []
+    for f in fehler:
+        worte = []
+        for teil in f.get("loc", ()):
+            if isinstance(teil, int):
+                # Listenindex an das vorige Wort haengen: „Bauwerk 1"
+                if worte:
+                    worte[-1] = f"{worte[-1]} {teil + 1}"
+                continue
+            worte.append(_ORT_WORTE.get(teil, str(teil)))
+        grund = str(f.get("msg", "")).removeprefix("Value error, ")
+        satz = f"{' / '.join(worte)}: {grund}" if worte else grund
+        if satz not in zeilen:          # Union-Zweige melden dasselbe mehrfach
+            zeilen.append(satz)
+    if not zeilen:
+        return str(e)
+    if len(zeilen) > 5:
+        zeilen = zeilen[:5] + [f"… und {len(fehler) - 5} weitere"]
+    return " · ".join(zeilen)
+
+
 def _new_case_template(case_id: str, title: str) -> CaseSpec:
     from .core import casespec as cs
     return CaseSpec(
@@ -845,7 +907,7 @@ async def put_case(case_id: str, payload: dict = Body(...)):
     try:
         spec = CaseSpec.model_validate(migriere(payload))
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=_lesbar(e))
     spec.to_yaml(d / "case.yaml")
     # Geometrie gleich mitliefern: das Speichern war bisher 4 Roundtrips
     # (PUT + 3 Geometrie-GETs) — jetzt einer. `validation`/`netz_stale`
@@ -1086,8 +1148,9 @@ async def case_import_apply(case_id: str, import_id: str,
     try:
         spec = CaseSpec.model_validate(spec.model_dump(mode="json"))
     except Exception as e:
-        raise HTTPException(status_code=422,
-                            detail=f"Import ergäbe einen ungültigen Fall: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Import ergäbe einen ungültigen Fall — {_lesbar(e)}")
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, "report": info["report"],
             "spec": spec.model_dump(mode="json", exclude_none=True),
@@ -1113,7 +1176,7 @@ def _mutation(case_id: str, wirken, fehlertext: str) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"{fehlertext}: {e}")
+        raise HTTPException(status_code=422, detail=f"{fehlertext}: {_lesbar(e)}")
     nachher = spec.model_dump(mode="json", exclude_none=True)
     geaendert = nachher != vorher
     if geaendert:
@@ -1532,7 +1595,7 @@ async def case_preview(case_id: str, payload: dict = Body(...)):
         # als veraltet markiert. `PUT` behält seine 422 — eine unlesbare
         # Datei wird nicht geschrieben.
         return {"validation": [{"object_id": "case", "severity": "fehler",
-                                "message": f"Entwurf nicht lesbar: {e}"}],
+                                "message": f"Entwurf nicht lesbar — {_lesbar(e)}"}],
                 "spec_ungueltig": True, "solids": [], "terrain": None,
                 "terrain_solid": None, "netz_stale": False}
     return _geometrie_payload(spec, d, entwurf=True)
