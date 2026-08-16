@@ -20,6 +20,7 @@ Sonderwerte der Spalte location_id für Größen ohne Ortsbezug:
 from __future__ import annotations
 
 import math
+import os
 import re
 from pathlib import Path
 
@@ -286,32 +287,157 @@ _LOG_DT = re.compile(r"^deltaT = ([\d.eE+-]+)")
 _LOG_CONT = re.compile(r"continuity errors : .*cumulative = ([\d.eE+-]+)")
 
 
+# Wie viele Punkte je Diagnose-Reihe hoechstens uebrig bleiben. 20.000 sind
+# fuer jede Fehlersuche mehr als genug (bei 240 s Simulationszeit ein Punkt
+# alle 12 ms) und kosten rund 1 MB — die ungefilterte Fassung erzeugte an
+# einem echten Lauf 4,6 Mio Punkte und 77 MB.
+DIAG_PUNKTE = int(os.environ.get("FLOOD3D_DIAG_PUNKTE", "20000"))
+
+# Wie zwei benachbarte Fenster einer Reihe verschmelzen. Die Wahl ist keine
+# Geschmacksfrage: sie entscheidet, ob die BEWERTUNG exakt bleibt.
+#   courant/max  -> max   (die Spitze ist der Befund; max(max) = max)
+#   courant/mean -> mean  (Mittel gleich breiter Fenster = Gesamtmittel)
+#   timestep     -> min   (ein dt-Einbruch ist die Signatur, die man sucht)
+#   continuity   -> last  (kumulativer Fehler; der letzte Wert zaehlt)
+_VERSCHMELZEN = {
+    (Quantity.COURANT, Component.MAX): "max",
+    (Quantity.COURANT, Component.MEAN): "mean",
+    (Quantity.TIMESTEP, Component.NONE): "min",
+    (Quantity.CONTINUITY, Component.NONE): "last",
+}
+
+
+class _Verdichter:
+    """
+    Haelt hoechstens ``2*ziel`` Punkte einer Reihe, jeder Punkt fasst genau
+    ``breite`` Zeitschritte zusammen. Laeuft der Puffer voll, verschmelzen
+    je zwei Nachbarn und die Fensterbreite verdoppelt sich.
+
+    Warum die Fenster GLEICH breit sein muessen: sonst mischt ein Mittelwert
+    Fenster verschiedener Laenge, und `evaluate` (das ungewichtet mittelt)
+    bekaeme einen anderen Wert als vorher. Deshalb sammelt ein offenes
+    Fenster erst seine ``breite`` Schritte, bevor es in den Puffer geht —
+    zusammengefasst wird nie Halbfertiges mit Fertigem.
+
+    Damit bleiben exakt erhalten: Maximum (Courant-Spitze = Befundschwelle),
+    Minimum (dt-Einbruch) und letzter Wert (kumulativer Kontinuitaetsfehler).
+    Der Mittelwert stimmt bis auf das letzte, womoeglich angebrochene
+    Fenster — also besser als ein Promille.
+    """
+
+    def __init__(self, ziel: int, art: str):
+        self.ziel = max(1, ziel)
+        self.art = art
+        self.breite = 1
+        self.t: list[float] = []
+        self.v: list[float] = []
+        self._n = 0                 # Zeitschritte im offenen Fenster
+        self._t = 0.0
+        self._summe = 0.0
+        self._wert: float | None = None
+
+    def dazu(self, t: float, wert: float) -> None:
+        self._t = t
+        self._n += 1
+        if self.art == "mean":
+            self._summe += wert
+        elif self._wert is None or self.art == "last":
+            self._wert = wert
+        elif self.art == "max":
+            if wert > self._wert:
+                self._wert = wert
+        elif wert < self._wert:     # "min"
+            self._wert = wert
+        if self._n >= self.breite:
+            self._fenster_schliessen()
+
+    def fertig(self) -> None:
+        """Das angebrochene Fenster am Ende des Logs noch mitnehmen."""
+        if self._n:
+            self._fenster_schliessen()
+
+    def _fenster_schliessen(self) -> None:
+        wert = (self._summe / self._n) if self.art == "mean" else self._wert
+        self.t.append(self._t)
+        self.v.append(float(wert))
+        self._n, self._summe, self._wert = 0, 0.0, None
+        if len(self.t) >= 2 * self.ziel:
+            self._halbieren()
+            self.breite *= 2
+
+    def _halbieren(self) -> None:
+        t_neu, v_neu = [], []
+        for i in range(0, len(self.t) - 1, 2):
+            a, b = self.v[i], self.v[i + 1]
+            if self.art == "max":
+                wert = a if a > b else b
+            elif self.art == "min":
+                wert = a if a < b else b
+            elif self.art == "mean":
+                wert = (a + b) / 2.0        # gleich breite Fenster: exakt
+            else:                           # "last"
+                wert = b
+            t_neu.append(self.t[i + 1])
+            v_neu.append(wert)
+        if len(self.t) % 2:                 # ungerader Rest bleibt stehen
+            t_neu.append(self.t[-1])
+            v_neu.append(self.v[-1])
+        self.t, self.v = t_neu, v_neu
+
+
 def read_log(log_path: Path, run_id: str) -> list[dict]:
     """
     Reihenfolge im interFoam-Log je Zeitschritt: Courant und deltaT stehen
     VOR der "Time = t"-Zeile und gehören zu diesem t (Puffer, Flush bei
     Time-Zeile). Die Kontinuitätsfehler stehen NACH der Time-Zeile und
     gehören zum zuletzt gesehenen t.
+
+    Gelesen wird ZEILENWEISE und die Diagnose-Reihen werden dabei auf
+    DIAG_PUNKTE eingedampft: ein Log mit 760.881 Zeitschritten ist mehrere
+    hundert MB Text und ergab 4,6 Mio Zeilen — beides hat niemand je
+    angesehen, und beides hat den Server umgebracht (2026-08-15).
     """
-    rows: list[dict] = []
+    verdichter: dict[tuple, _Verdichter] = {}
+
+    def merke(t: float, quantity: Quantity, loc: str, comp: Component,
+              wert: float) -> None:
+        schluessel = (quantity, loc, comp)
+        v = verdichter.get(schluessel)
+        if v is None:
+            art = _VERSCHMELZEN.get((quantity, comp), "last")
+            v = verdichter[schluessel] = _Verdichter(DIAG_PUNKTE, art)
+        v.dazu(t, wert)
+
     pending: list[tuple[Quantity, str, Component, float]] = []
     current_t: float | None = None
     src = log_path.name
-    for line in log_path.read_text(errors="replace").splitlines():
-        if m := _LOG_CO.match(line):
-            pending.append((Quantity.COURANT, "solver", Component.MEAN, float(m.group(1))))
-            pending.append((Quantity.COURANT, "solver", Component.MAX, float(m.group(2))))
-        elif m := _LOG_DT.match(line):
-            pending.append((Quantity.TIMESTEP, "solver", Component.NONE, float(m.group(1))))
-        elif m := _LOG_CONT.search(line):
-            if current_t is not None:
-                rows.append(_row(run_id, current_t, Quantity.CONTINUITY,
-                                 "solver", Component.NONE, float(m.group(1)), src))
-        elif m := _LOG_TIME.match(line):
-            current_t = float(m.group(1))
-            rows.extend(_row(run_id, current_t, q, loc, c, v, src)
-                        for q, loc, c, v in pending)
-            pending = []
+    with open(log_path, encoding="utf-8", errors="replace") as _f:
+        for line in _f:
+            if m := _LOG_CO.match(line):
+                pending.append((Quantity.COURANT, "solver", Component.MEAN,
+                                float(m.group(1))))
+                pending.append((Quantity.COURANT, "solver", Component.MAX,
+                                float(m.group(2))))
+            elif m := _LOG_DT.match(line):
+                pending.append((Quantity.TIMESTEP, "solver", Component.NONE,
+                                float(m.group(1))))
+            elif m := _LOG_CONT.search(line):
+                if current_t is not None:
+                    merke(current_t, Quantity.CONTINUITY, "solver",
+                          Component.NONE, float(m.group(1)))
+            elif m := _LOG_TIME.match(line):
+                current_t = float(m.group(1))
+                for q, loc, c, v in pending:
+                    merke(current_t, q, loc, c, v)
+                pending = []
+
+    # erst jetzt Zeilen bauen — und zwar nur noch die verdichteten
+    rows: list[dict] = []
+    for (quantity, loc, comp), v in verdichter.items():
+        v.fertig()
+        rows.extend(_row(run_id, t, quantity, loc, comp, wert, src)
+                    for t, wert in zip(v.t, v.v))
+    rows.sort(key=lambda r: r["time"])
     return rows
 
 

@@ -221,6 +221,28 @@ Fälle sind zusammen 19 MB und bleiben lokal.
 - Echter Durchlauf 2026-08-12 (`Rentrisch_BetaTest06_r002`, 110 MB):
   auslagern 1,9 s, zurückholen 0,9 s, Inhalt byteidentisch.
 
+## Speicher und Datenmenge (2026-08-15 hart gelernt)
+
+- **Prozessgrenzen** stehen in `/etc/systemd/system/pm2-root.service.d/override.conf`
+  (gilt fuer ALLE pm2-Dienste zusammen): `MemoryHigh=3G` (weich, drosselt),
+  `MemoryMax=4G` (hart). Aendern + `systemctl daemon-reload` wirkt SOFORT,
+  ohne die Dienste neu zu starten. Vorher stand dort 1 GiB — ein einziger
+  langer Lauf hat den API-Prozess reihenweise vom OOM-Killer erschiessen
+  lassen, waehrend nur die Ergebnisse angesehen wurden.
+- **Ebenfalls in der Datei** (aelter, bewusst pruefen wenn es klemmt):
+  `CPUQuota=50%` = eine HALBE CPU fuer alle pm2-Dienste, und
+  `LimitNOFILE=100` = nur 100 offene Dateien.
+- **Zwischendatei je Lauf** (`normalized.parquet`): Solver-Diagnostik wird
+  seit 2026-08-15 beim Extrahieren verdichtet — `FLOOD3D_DIAG_PUNKTE`
+  (Vorgabe 20.000) Punkte je Reihe, mit Maximum/Minimum/Endwert exakt
+  erhalten; `solverInfo` schreibt im Serien-Takt statt jeden Zeitschritt.
+  Aus 77 MB werden damit 1,5-3 MB. ALTE Laeufe behalten ihre grossen
+  Dateien — die Endpunkte lesen sie stapelweise und ausgeduennt.
+- **Regel fuer neuen Code in der API:** nie eine ganze Datei laden.
+  Stroemend oder stapelweise lesen (`iter_batches`, zeilenweise), schwere
+  Auswertungen in `asyncio.to_thread`, und Caches nur mit ausgeduennten
+  Ergebnissen. Zwei Tests wachen darueber (`test_router.py`).
+
 ## Bekannte Deckel (bewusst)
 
 | Deckel | Wert | Wo |

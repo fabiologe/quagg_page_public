@@ -281,6 +281,8 @@ functions
         writeControl    runTime;
         writeInterval   0.1;
         log             no;
+        executeControl  runTime;
+        executeInterval 0.1;
     }
     y_plus
     {

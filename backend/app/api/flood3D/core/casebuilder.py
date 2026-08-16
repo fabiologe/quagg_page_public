@@ -62,6 +62,20 @@ def _momentbezug(spec: CaseSpec, base_dir, koerper=None) -> dict:
     return out
 
 
+def _solver_info_takt(spec: CaseSpec) -> str:
+    """
+    solverInfo schreibt bei JEDER Ausführung eine Zeile — und ohne
+    ``executeControl`` führt OpenFOAM ein Funktionsobjekt jeden Zeitschritt
+    aus. Bei Rentrich_BetaTest08_r004 (760.881 Zeitschritte) waren das
+    3,0 Mio Zeilen Residuen allein, 40 % der ganzen Zwischendatei — für
+    eine Größe, von der die Bewertung nur den LETZTEN Wert liest und das
+    Diagramm ein paar hundert Punkte zeigt. Mit demselben Takt wie alle
+    anderen Reihen entstehen sie gar nicht erst.
+    """
+    return (f"        executeControl  runTime;\n"
+            f"        executeInterval {spec.solver.write_interval_series:g};\n")
+
+
 def _fo_series_controls(spec: CaseSpec) -> str:
     return (f"        writeControl    runTime;\n"
             f"        writeInterval   {spec.solver.write_interval_series:g};\n"
@@ -274,7 +288,7 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         type            solverInfo;
         libs            (utilityFunctionObjects);
         fields          (p_rgh U alpha.water);
-{ctl}    }}
+{ctl}{_solver_info_takt(spec)}    }}
     y_plus
     {{
         type            yPlus;
