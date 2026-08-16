@@ -191,6 +191,7 @@ import { usePostStore, SERIES_COLORS, LIMIT_COLOR }
   from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
+import { PAD, useRasterCanvas } from '../../composables/useRasterCanvas'
 import { flood3dApi } from '../../services/api'
 import { fensterSpanne, randFace, randTyp, wertBei }
   from '../../utils/randbilanz'
@@ -199,6 +200,8 @@ import { ALPHA_NASS, TIEFE_TROCKEN, TIEFE_BENETZT }
 import { bereichUngueltig, uebernehmeBereich, wirksamerBereich }
   from '../../utils/farbskala'
 import { viridis, VIRIDIS_CSS } from '../../utils/colormap'
+import { gelaendeFarbe, gelaendeSchummerung, mische }
+  from '../../utils/rasterBild'
 import { isoSegments } from '../../utils/marchingSquares'
 import { einordnen } from '../../utils/kennwerte'
 import { fmtKurz as fmt } from '../../utils/labels'
@@ -281,7 +284,6 @@ const umhuellend = ref(false)
 const huellenFortschritt = ref(0)
 let playTimer = null
 let requestSeq = 0
-let resizeObs = null
 
 // Der Grundriss braucht genau diese Felder — p, p_rgh, k, ω, νt, T
 // wurden vorher bei jedem Zeitschritt mitgeladen und nie angefasst
@@ -423,24 +425,11 @@ async function update() {
 
 // --- Zeichnen -------------------------------------------------------------
 
-const PAD = 34   // Rand für Achsenbeschriftung
-
-function layout() {
-  const host = canvasHost.value
-  const [nx, ny] = [pf.nx, pf.ny]
-  const worldW = nx * pf.spacing[0]
-  const worldH = ny * pf.spacing[1]
-  const availW = host.clientWidth - PAD * 2
-  const availH = Math.max(host.clientHeight, 380) - PAD * 2
-  const scale = Math.min(availW / worldW, availH / worldH)
-  return { nx, ny, worldW, worldH, scale,
-    w: worldW * scale + PAD * 2, h: worldH * scale + PAD * 2 }
-}
-
-function worldToCanvas(L, x, y) {
-  return [PAD + (x - pf.origin[0]) * L.scale,
-    PAD + (pf.origin[1] + L.worldH - y) * L.scale]
-}
+// Zuschnitt, Koordinatenrechnung, DPR-Setup und ResizeObserver liegen in
+// useRasterCanvas — sie hängen nur an den Rastermaßen (pf), nicht an
+// diesem Panel, und werden von der zweiten Rasterkarte mitbenutzt.
+const { worldToCanvas, canvasToWorld, flaecheVorbereiten } =
+  useRasterCanvas({ host: canvasHost, canvas, masse: () => pf, zeichne: draw })
 
 // Welche Tiefe entscheidet, ob eine Zelle „nass" ist? Bei der Umhüllenden
 // die größte je aufgetretene — sonst bliebe die Karte am Zeitpunkt t = 0
@@ -493,17 +482,7 @@ function schichtFelder() {
 
 function draw() {
   if (!pf || !canvas.value) return
-  const L = layout()
-  const dpr = window.devicePixelRatio || 1
-  const cv = canvas.value
-  cv.width = L.w * dpr
-  cv.height = L.h * dpr
-  cv.style.width = `${L.w}px`
-  cv.style.height = `${L.h}px`
-  const ctx = cv.getContext('2d')
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.fillStyle = '#0a101f'
-  ctx.fillRect(0, 0, L.w, L.h)
+  const { L, ctx } = flaecheVorbereiten()
 
   const { nx, ny } = L
   const img = new OffscreenCanvas(nx, ny)
@@ -511,12 +490,7 @@ function draw() {
   const data = ictx.createImageData(nx, ny)
 
   // Gelände-Basis (blaugraue Schummerung nach Höhe)
-  let zMin = Infinity
-  let zMax = -Infinity
-  if (terrain) {
-    for (const z of terrain.z) { zMin = Math.min(zMin, z); zMax = Math.max(zMax, z) }
-  }
-  const zSpan = Math.max(zMax - zMin, 0.01)
+  const { shade } = gelaendeSchummerung(terrain?.z, nx * ny)
 
   // Ebenen-Modus: Werte der gewählten z-Schicht statt der Säulenfelder
   const ebene = ebenenModus.value && vol3d ? schichtFelder() : null
@@ -548,10 +522,7 @@ function draw() {
     for (let i = 0; i < nx; i++) {
       const col = j * nx + i
       const p = ((ny - 1 - j) * nx + i) * 4
-      const shade = terrain ? 0.35 + 0.5 * ((terrain.z[col] - zMin) / zSpan) : 0.5
-      let r = 34 * shade + 14
-      let g = 44 * shade + 18
-      let b = 66 * shade + 30
+      let [r, g, b] = gelaendeFarbe(shade[col])
       if (ebene) {
         // z-Schicht: nass → Feldwert, Luft → Schummerung, NaN → grau
         const kl = ebene.klasse[col]
@@ -559,11 +530,9 @@ function draw() {
           r = 58; g = 62; b = 68        // Erdreich / keine Solverzelle
         } else if (kl === 1) {
           if (values && Number.isFinite(values[col])) {
-            const [vr, vg, vb] = viridis((values[col] - rLo) / span)
-            const a = 0.85
-            r = r * (1 - a) + vr * a
-            g = g * (1 - a) + vg * a
-            b = b * (1 - a) + vb * a
+            const [mr, mg, mb] = mische([r, g, b],
+              viridis((values[col] - rLo) / span), 0.85)
+            r = mr; g = mg; b = mb
           } else {
             r = 30; g = 70; b = 140     // nass ohne Raster ('kein Raster')
           }
@@ -576,19 +545,15 @@ function draw() {
         const benetzt = !wet && tiefe > TIEFE_TROCKEN
         const show = values && (raster.value === 'tau' ? values[col] > 1e-9 : wet)
         if (show) {
-          const [vr, vg, vb] = viridis((values[col] - rLo) / span)
-          const a = 0.85
-          r = r * (1 - a) + vr * a
-          g = g * (1 - a) + vg * a
-          b = b * (1 - a) + vb * a
+          const [mr, mg, mb] = mische([r, g, b],
+            viridis((values[col] - rLo) / span), 0.85)
+          r = mr; g = mg; b = mb
         } else if (wet && raster.value === 'none') {
           r = 30; g = 70; b = 140
         } else if (benetzt && raster.value !== 'tau') {
           // heller Blauton ueber der Gelaendeschummerung
-          const a = 0.45
-          r = r * (1 - a) + 120 * a
-          g = g * (1 - a) + 170 * a
-          b = b * (1 - a) + 215 * a
+          const [mr, mg, mb] = mische([r, g, b], [120, 170, 215], 0.45)
+          r = mr; g = mg; b = mb
         }
       }
       data.data[p] = r
@@ -882,19 +847,6 @@ function zeichneObjekte(ctx, L) {
 
 // --- Interaktion ----------------------------------------------------------
 
-function canvasToWorld(e) {
-  if (!pf) return null
-  const L = layout()
-  const rect = canvas.value.getBoundingClientRect()
-  const px = e.clientX - rect.left
-  const py = e.clientY - rect.top
-  const x = pf.origin[0] + (px - PAD) / L.scale
-  const y = pf.origin[1] + L.worldH - (py - PAD) / L.scale
-  if (x < pf.origin[0] || y < pf.origin[1]
-      || x > pf.origin[0] + L.worldW || y > pf.origin[1] + L.worldH) return null
-  return [x, y]
-}
-
 function onMove(e) {
   const w = canvasToWorld(e)
   if (!w || !pf) { hover.value = null; return }
@@ -1047,8 +999,6 @@ function togglePlay() {
 onMounted(() => {
   activeRunId.value = store.selectedRunIds[0] ?? null
   loadRun()
-  resizeObs = new ResizeObserver(() => { if (pf) draw() })
-  resizeObs.observe(canvasHost.value)
 })
 
 watch(() => store.selectedRunIds, (ids) => {
@@ -1072,7 +1022,6 @@ watch(activeRunId, () => { huelle = null; umhuellend.value = false
 
 onBeforeUnmount(() => {
   clearInterval(playTimer)
-  resizeObs?.disconnect()
 })
 </script>
 
