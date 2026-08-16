@@ -58,6 +58,61 @@ describe('translateObject mit Gebiets-Klemme', () => {
   })
 })
 
+describe('Ein Bauwerk nimmt seine Bearbeitungen mit', () => {
+  // Gemeldet 2026-08-16: nach dem Verschieben über die Knoten saßen
+  // Bohrung, Öffnung und Zuschnitt noch an der alten Stelle — sie
+  // „passten nicht mehr drauf".
+  function wandMitEdits() {
+    return {
+      type: 'wall',
+      alignment: { points: [[8, 9, 98], [14, 9, 98]] },
+      edits: [
+        // Weltkoordinate: blieb stehen
+        { id: 'a1', type: 'aussparung', shape: 'kreis', point: [10, 9],
+          z: 95.5, diameter: 0.6 },
+        // entlang der Achse: wandert schon immer von selbst mit
+        { id: 'a2', type: 'aussparung', shape: 'kreis', station: 2.0,
+          z: 96.0, diameter: 0.4 },
+        { id: 's1', type: 'schnitt', achse: 'x', position: 12, behalten: 'unter' },
+        { id: 's2', type: 'schnitt', achse: 'z', position: 99, behalten: 'unter' },
+        { id: 'g1', type: 'auf_gebiet', rand: 0.2 },
+      ],
+    }
+  }
+
+  it('verschiebt Punkt-Aussparungen und achsgleiche Schnitte mit', () => {
+    const { translateObject } = zugriff()
+    const w = wandMitEdits()
+    translateObject('structure', w, 3, 1)
+    const [a1, a2, s1, s2, g1] = w.edits
+
+    expect(a1.point).toEqual([13, 10])          // mitgewandert
+    expect(a2.station).toBe(2.0)                // relativ: unverändert
+    expect(a2.point).toBeUndefined()
+    expect(s1.position).toBeCloseTo(15)         // x-Schnitt folgt dx
+    expect(s2.position).toBeCloseTo(99)         // z-Schnitt bleibt: kein dz
+    expect(g1.rand).toBe(0.2)                   // relativ zum Gebiet
+  })
+
+  it('hebt Aussparungshöhe und z-Schnitt beim Höhenzug', () => {
+    const { translateObject } = zugriff()
+    const w = wandMitEdits()
+    translateObject('structure', w, 0, 0, 1.5)
+    const [a1, a2, s1, s2] = w.edits
+
+    expect(a1.z).toBeCloseTo(97)
+    expect(a2.z).toBeCloseTo(97.5)              // Station bleibt, Höhe steigt
+    expect(s1.position).toBeCloseTo(12)         // x-Schnitt: kein dx
+    expect(s2.position).toBeCloseTo(100.5)
+  })
+
+  it('kommt ohne Bearbeitungen klar', () => {
+    const { translateObject } = zugriff()
+    const w = { type: 'wall', alignment: { points: [[8, 9, 98], [14, 9, 98]] } }
+    expect(() => translateObject('structure', w, 2, 0)).not.toThrow()
+  })
+})
+
 describe('Rechen (screen)', () => {
   const polygon = () => [[6, 8, 94], [6, 10, 94], [6, 10, 96], [6, 8, 96]]
 

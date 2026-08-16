@@ -166,6 +166,9 @@ export const flood3dApi = {
   importApply: (caseId, importId, payload) =>
     sendJson(`/cases/${caseId}/import/${importId}/apply`, 'POST', payload),
   listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
+  // Einzelnes Kandidaten-Netz als STL. Der Endpunkt bleibt (er ist der
+  // einzige Weg, einen Kandidaten VOR dem Übernehmen anzusehen); der
+  // Aufrufer im Import-Dialog ist 2026-08-16 entfallen.
   importMeshUrl: (caseId, importId, candId) =>
     `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
   sculpt: (caseId, patches) =>

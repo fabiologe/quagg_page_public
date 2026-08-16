@@ -87,6 +87,36 @@ function _begrenzeDelta(kind, obj, dx, dy) {
     loY <= hiY ? _r2(Math.min(Math.max(dy, loY), hiY)) : dy]
 }
 
+/**
+ * Bearbeitungen eines Bauwerks mitbewegen.
+ *
+ * Gemeldet 2026-08-16: nach dem Verschieben eines Bauwerks über seine
+ * Knoten saßen Bohrung, Öffnung und Zuschnitt noch an der alten Stelle —
+ * sie „passten nicht mehr drauf". Grund: eine Aussparung liegt entweder
+ * über `station` (Abstand entlang der Achse — die wandert von selbst mit)
+ * oder über `point` in Weltkoordinaten. Nur Letztere blieb stehen, ebenso
+ * die feste `position` eines Schnitts.
+ *
+ * Mitbewegen statt Zurücksetzen: die Öffnung gehört zum Bauwerk, sie ist
+ * gezeichnete Arbeit. Ein Schnitt wandert nur in SEINER Achse — ein
+ * waagerechter Kappschnitt („alles über 100,50 m weg") darf beim
+ * Verschieben in x nicht mitrutschen.
+ */
+function verschiebeEdits(obj, dx, dy, dz, mv) {
+  const delta = { x: dx, y: dy, z: dz }
+  for (const e of obj.edits ?? []) {
+    if (e.type === 'aussparung') {
+      if (Array.isArray(e.point)) e.point = mv(e.point)
+      if (dz && typeof e.z === 'number') e.z = _r2(e.z + dz)
+    } else if (e.type === 'schnitt' && typeof e.position === 'number') {
+      const d = delta[e.achse ?? 'z'] ?? 0
+      if (d) e.position = _r2(e.position + d)
+    }
+    // `auf_gebiet` ist relativ zum Gebiet, `transform` IST die Lage eines
+    // Importkörpers (weiter oben behandelt) — beide bleiben unberührt.
+  }
+}
+
 function translateObject(kind, obj, dx, dy, dz = 0) {
   ;[dx, dy] = _begrenzeDelta(kind, obj, dx, dy)
   const mv = (p) => {
@@ -137,6 +167,7 @@ function translateObject(kind, obj, dx, dy, dz = 0) {
     if (obj.crest_polyline) obj.crest_polyline = obj.crest_polyline.map(mv)
     if (obj.center) obj.center = mv(obj.center)
     lift('invert_level', 'base_level', 'top_level')
+    verschiebeEdits(obj, dx, dy, dz, mv)
     return obj
   }
   if (kind === 'domain') {

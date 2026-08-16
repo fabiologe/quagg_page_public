@@ -97,13 +97,13 @@
           </p>
         </div>
 
-        <!-- Klassifizieren mit Augen: die Kandidaten-Netze als 3D-Vorschau.
-             Die Zeile unter dem Mauszeiger leuchtet auf — man sieht, WAS
-             man zuordnet, statt Layernamen zu raten. -->
-        <div v-if="hatMeshKandidaten" ref="vorschauHost"
-             class="f3d-imp-vorschau"
-             title="Kandidaten-Vorschau — Zeile in der Tabelle überfahren hebt den Körper hervor; Ziehen dreht"></div>
-
+        <!-- Hier stand eine 3D-Vorschau der Kandidaten. Sie ist raus
+             (Testrunde 2026-08-16): Sie belegte fest 220 px in einem
+             88-vh-Dialog, sodass von der Kandidatentabelle auf einem
+             Laptop eine Zeile übrig blieb — und genau die Tabelle ist das
+             Werkzeug dieses Dialogs. Dazu kam, dass offene CAD-Flächen
+             darin je nach Blickwinkel verschwanden (einseitiges Material)
+             und ein eigener WebGL-Kontext aufzuräumen war. -->
         <div class="f3d-imp-table-wrap">
           <table class="f3d-table f3d-imp-table">
             <thead>
@@ -118,8 +118,7 @@
                    ganze Dialog brach beim Rendern ab, sobald eine Datei
                    analysiert war. -->
               <template v-for="c in manifest.candidates" :key="c.id">
-              <tr :class="{ skip: pick[c.id]?.role === 'ignorieren' }"
-                  @mouseenter="hebeHervor(c.id)" @mouseleave="hebeHervor(null)">
+              <tr :class="{ skip: pick[c.id]?.role === 'ignorieren' }">
                 <td>
                   <div class="f3d-imp-name">{{ c.name }}</div>
                   <div class="f3d-muted f3d-small">{{ KIND[c.kind] ?? c.kind }}</div>
@@ -238,9 +237,6 @@
 // DEKLARIERT, was was ist. Die Rollen-Vorschläge kommen aus der Heuristik
 // des Analyzers — der Nutzer bestätigt oder korrigiert.
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { flood3dApi } from '../../services/api'
 import { usePreStore } from '../../stores/usePreStore'
 import {
@@ -306,100 +302,11 @@ const nAktiv = computed(() => Object.values(pick)
 const rolesFor = (c) => rollenFuerKind(c.kind)
 const usesName = (id) => SOLID_ROLES.has(pick[id]?.role)
 
-// --- Kandidaten-Vorschau (three.js im Dialog) -----------------------------
-// Bewusst klein: eine Szene, alle Mesh-Kandidaten grau, der Kandidat der
-// überfahrenen Tabellenzeile farbig. Linien/Raster haben (noch) kein Netz.
-const vorschauHost = ref(null)
-const hatMeshKandidaten = computed(() =>
-  (manifest.value?.candidates ?? []).some((c) => c.kind === 'mesh'))
-let vr = null   // { renderer, scene, camera, controls, meshes: {id: mesh}, raf }
-
-const VORSCHAU_GRAU = 0x5a6478
-const VORSCHAU_AKZENT = 0xd9a326
-
-function vorschauWeg() {
-  if (!vr) return
-  cancelAnimationFrame(vr.raf)
-  vr.controls.dispose()
-  // Die per STLLoader geladenen Geometrien und ihre Materialien sind
-  // eigene GPU-Ressourcen — renderer.dispose() kennt sie nicht, sie
-  // leckten bei jedem „andere Datei"/Schließen.
-  for (const mesh of Object.values(vr.meshes)) {
-    mesh.geometry.dispose()
-    mesh.material.dispose()
-  }
-  vr.renderer.dispose()
-  // Browser deckeln WebGL-Kontexte auf ~8–16: den Kontext sofort
-  // freigeben, statt auf den Garbage Collector zu warten
-  vr.renderer.forceContextLoss()
-  vr.renderer.domElement.remove()
-  vr = null
-}
-
-async function vorschauBauen() {
-  vorschauWeg()
-  const host = vorschauHost.value
-  const m = manifest.value
-  if (!host || !m) return
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  renderer.setSize(host.clientWidth || 560, 220)
-  host.appendChild(renderer.domElement)
-  const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(
-    45, (host.clientWidth || 560) / 220, 0.01, 1e6)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.75))
-  const sonne = new THREE.DirectionalLight(0xffffff, 0.8)
-  sonne.position.set(1, 2, 3)
-  scene.add(sonne)
-
-  const loader = new STLLoader()
-  const meshes = {}
-  const box = new THREE.Box3()
-  await Promise.all((m.candidates ?? [])
-    .filter((c) => c.kind === 'mesh')
-    .map(async (c) => {
-      try {
-        const geo = await loader.loadAsync(
-          flood3dApi.importMeshUrl(store.activeCaseId, m.import_id, c.id))
-        geo.computeVertexNormals()
-        const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-          color: VORSCHAU_GRAU, transparent: true, opacity: 0.92 }))
-        meshes[c.id] = mesh
-        scene.add(mesh)
-        box.expandByObject(mesh)
-      } catch { /* Kandidat ohne Netz — Tabelle sagt es ohnehin */ }
-    }))
-  if (!Object.keys(meshes).length) { renderer.domElement.remove(); return }
-
-  const mitte = box.getCenter(new THREE.Vector3())
-  const spann = box.getSize(new THREE.Vector3()).length() || 1
-  camera.up.set(0, 0, 1)
-  camera.position.set(mitte.x + spann * 0.7, mitte.y - spann * 0.7,
-    mitte.z + spann * 0.5)
-  camera.lookAt(mitte)
-  const controls = new OrbitControls(camera, renderer.domElement)
-  controls.target.copy(mitte)
-  controls.update()
-
-  vr = { renderer, scene, camera, controls, meshes, raf: 0 }
-  const malen = () => {
-    if (!vr) return
-    vr.raf = requestAnimationFrame(malen)
-    vr.renderer.render(vr.scene, vr.camera)
-  }
-  malen()
-}
-
-function hebeHervor(candId) {
-  if (!vr) return
-  for (const [id, mesh] of Object.entries(vr.meshes)) {
-    mesh.material.color.setHex(id === candId ? VORSCHAU_AKZENT : VORSCHAU_GRAU)
-    mesh.material.opacity = candId && id !== candId ? 0.35 : 0.92
-  }
-}
-
-watch(manifest, () => nextTick(vorschauBauen))
-onBeforeUnmount(vorschauWeg)
+// Hier stand die Kandidaten-Vorschau (eigene three.js-Szene im Dialog).
+// Entfernt 2026-08-16: sie nahm der Kandidatentabelle den Platz, den diese
+// als eigentliches Werkzeug des Dialogs braucht. Wer sehen will, was in
+// der Datei steckt, importiert und schaut im Editor — dort steht die Szene
+// ohnehin, in voller Größe und mit beidseitigem Material.
 
 // --- modaler Dialog: Escape, Fokus, und die Szene dahinter ruhigstellen
 const dialog = ref(null)
@@ -443,7 +350,7 @@ onBeforeUnmount(() => {
   fokusVorher?.focus?.()
 })
 
-function close() { vorschauWeg(); emit('close') }
+function close() { emit('close') }
 
 function suggestOffset() {
   const s = manifest.value?.offset_suggest ?? manifest.value?.bbox?.[0]
@@ -576,7 +483,11 @@ async function apply() {
 }
 .f3d-imp-offset { display: flex; gap: 6px; align-items: center; }
 .f3d-imp-offset .f3d-num { width: 100px; }
-.f3d-imp-table-wrap { overflow: auto; flex: 1; }
+/* Die Tabelle ist das Werkzeug dieses Dialogs — sie bekommt den ganzen
+   Platz, der nach Kopf, Ablagefeld und Fußzeile bleibt. `min-height: 0`
+   steht ausdrücklich da: ohne das kann ein Flex-Kind nicht unter seine
+   Inhaltshöhe schrumpfen, und der eigene Bildlauf greift nie. */
+.f3d-imp-table-wrap { overflow: auto; flex: 1 1 auto; min-height: 0; }
 .f3d-imp-table td { vertical-align: top; }
 .f3d-imp-table tr.skip { opacity: 0.45; }
 .f3d-imp-name { color: var(--f3d-text); font-weight: 600; }
@@ -592,11 +503,4 @@ async function apply() {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .f3d-imp-actions { display: flex; gap: 8px; }
-.f3d-imp-vorschau {
-  min-height: 220px;
-  border: 1px solid var(--f3d-border);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 8px;
-}
 </style>

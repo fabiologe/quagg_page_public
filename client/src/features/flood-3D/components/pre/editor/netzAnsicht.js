@@ -11,14 +11,29 @@ import { b64ToBuffer } from '../../../services/volume'
 // Hinweistext zur geladenen Netzvorschau (rein rechenbar)
 export function netzHinweis({ stale, ohneVerfeinerung }) {
   if (stale) {
-    return '⚠ Dieses Netz gehört zu einem älteren Stand des '
-      + 'Falls — es zeigt NICHT die aktuelle Geometrie.'
+    return '⚠ Für diesen Stand der Geometrie gibt es noch kein Netz. '
+      + 'Das gespeicherte gehört zu einem älteren Stand und wird deshalb '
+      + 'nicht angezeigt — hier neu rechnen.'
   }
   if (ohneVerfeinerung) {
     return '⚡ Schnellvorschau ohne Verfeinerung — Zellzahl und '
       + 'Kosten sind eine untere Grenze.'
   }
   return ''
+}
+
+/**
+ * Darf dieses Netz als GEOMETRIE auftreten?
+ *
+ * Gemeldet 2026-08-16: nach einer Geometrieänderung erschien beim Klick
+ * auf „Netzvorschau rechnen" zuerst das alte Netz, das dann vom neuen
+ * überschrieben wurde. Das Ende stimmte, der Anfang nicht — die
+ * Netzansicht blendet die echte Geometrie aus und setzt das Netz an ihre
+ * Stelle. Ein Netz zu einer geänderten Geometrie darf diesen Platz nicht
+ * bekommen; ein Hinweis darüber genügt dafür nicht.
+ */
+export function netzZeigen({ stale }) {
+  return !stale
 }
 
 export function erzeugeNetzAnsicht({ store, groups, holeScene, clearGroup,
@@ -31,6 +46,19 @@ export function erzeugeNetzAnsicht({ store, groups, holeScene, clearGroup,
     if (!meshView.value) return
     try {
       const data = await flood3dApi.caseMeshSurface(store.activeCaseId)
+      const hinweis = netzHinweis({ stale: data.stale,
+        ohneVerfeinerung: store.meshPreview?.ohne_verfeinerung })
+      if (hinweis) {
+        meshHint.value = hinweis
+        meshAngebot.value = true
+      }
+      if (!netzZeigen(data)) {
+        // Veraltetes Netz: die echte Geometrie bleibt stehen. Sonst stünde
+        // an ihrer Stelle ein Netz von gestern, und der Hinweis darüber
+        // wäre das Einzige, was davor warnt.
+        meshView.value = false
+        return
+      }
       const loader = new STLLoader()
       groups.mesh = new THREE.Group()
       for (const p of data.patches) {
@@ -44,12 +72,6 @@ export function erzeugeNetzAnsicht({ store, groups, holeScene, clearGroup,
         groups.mesh.add(solid, wire)
       }
       holeScene().add(groups.mesh)
-      const hinweis = netzHinweis({ stale: data.stale,
-        ohneVerfeinerung: store.meshPreview?.ohne_verfeinerung })
-      if (hinweis) {
-        meshHint.value = hinweis
-        meshAngebot.value = true
-      }
       // Vorschaugeometrie ausblenden — das Netz IST jetzt die Geometrie
       if (groups.terrain) groups.terrain.visible = false
       if (groups.solids) groups.solids.visible = false
@@ -70,15 +92,18 @@ export function erzeugeNetzAnsicht({ store, groups, holeScene, clearGroup,
   // die verschachtelte Verfeinerung (schneller, gröber).
   async function meshRechnen(ohne) {
     meshAngebot.value = false
+    // Während gerechnet wird, steht die ECHTE Geometrie im Bild — vorher
+    // blieb ein womöglich veraltetes Netz minutenlang stehen und sah aus
+    // wie das Ergebnis der laufenden Rechnung. Gelände und Körper stellt
+    // der Editor beim Ausschalten selbst wieder sichtbar (watch auf
+    // meshView in Editor3D.vue).
+    meshView.value = false
+    clearGroup('mesh')
     meshHint.value = (ohne
       ? '⚡ Schnellvorschau (ohne Verfeinerung) läuft'
       : '▦ Netzvorschau läuft')
       + ' — blockMesh + snappyHexMesh brauchen einige Minuten …'
     const ok = await store.runMeshPreview({ ohneVerfeinerung: ohne })
-    if (meshView.value) {
-      meshView.value = false
-      clearGroup('mesh')
-    }
     if (ok) {
       await toggleMeshView()
     } else {
