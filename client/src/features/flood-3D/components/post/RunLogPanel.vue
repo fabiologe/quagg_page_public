@@ -109,6 +109,16 @@ function manifestRows(m) {
     rows.push(['Zwischenstand-Fehler', m.teilstand_fehler, 'bad'])
   }
   if (m.duration_s != null) rows.push(['Dauer', `${fmt(m.duration_s / 60)} min`])
+  // Warum der Lauf endete. Ohne diese Zeile sieht ein planmäßig früh
+  // beendeter Leerlauf aus wie ein abgeschnittener — die Zeitachse hört
+  // in beiden Fällen vor der eingestellten Dauer auf.
+  if (m.ende_grund === 'leerlauf') {
+    rows.push(['Ende', `Leerlauf erreicht bei t = ${fmt(m.ende_zeit)} s — `
+      + 'vor der Obergrenze, weil nichts mehr abgelaufen ist', 'good'])
+    if (m.ende_text) rows.push(['Abbruchkriterium', m.ende_text])
+  } else if (m.ende_grund === 'zeit') {
+    rows.push(['Ende', `Rechenzeit ${fmt(m.ende_zeit)} s abgelaufen`])
+  }
   if (m.cost_eur != null) rows.push(['Ist-Kosten', `${fmt(m.cost_eur)} €`])
   if (m.missing_sources?.length) {
     rows.push(['Fehlende Quellen', m.missing_sources.join(', '), 'bad'])

@@ -56,13 +56,62 @@
           <h3>Simulation</h3>
           <span class="f3d-muted f3d-small">was gerechnet wird</span>
         </header>
+        <!-- Ein Leerlauf endet nicht zu einer bekannten Zeit, sondern in
+             einem Zustand. Deshalb steht die Frage „woran endet der Lauf?"
+             VOR der Dauer — sie ändert deren Bedeutung von Vorgabe zu
+             Obergrenze. -->
         <div class="f3d-field">
-          <label>Simulationsdauer (s)</label>
+          <label>Ende des Laufs</label>
+          <select class="f3d-select" :value="spec.solver.abbruch ? 'leerlauf' : 'zeit'"
+                  @change="abbruchArt($event.target.value)">
+            <option value="zeit">Feste Zeit</option>
+            <option value="leerlauf">Leerlauf: bis nichts mehr abläuft</option>
+          </select>
+          <p v-if="spec.solver.abbruch" class="f3d-muted f3d-small">
+            Der Lauf beobachtet sein eigenes Restvolumen und endet, sobald
+            sich über ein Zeitfenster nichts mehr bewegt — Restpfützen, die
+            nicht ablaufen können, halten ihn also nicht künstlich am Leben.
+            Braucht Wasser zum Start (Anfangswasserspiegel oder Vorfüllung).
+          </p>
+        </div>
+        <div class="f3d-field">
+          <label>{{ spec.solver.abbruch ? 'Obergrenze (s)' : 'Simulationsdauer (s)' }}</label>
           <input type="number" step="any" min="1" class="f3d-num"
                  :value="spec.solver.end_time"
                  @change="setNum('solver.end_time', $event)" />
           <Hinweis pfad="solver.end_time" />
         </div>
+        <template v-if="spec.solver.abbruch">
+          <div class="f3d-field">
+            <label>Erwartete Dauer (s)</label>
+            <input type="number" step="any" min="1" class="f3d-num"
+                   :value="spec.solver.abbruch.erwartete_dauer_s ?? ''"
+                   placeholder="leer = Obergrenze"
+                   @change="setNumOrNull('solver.abbruch.erwartete_dauer_s', $event)" />
+            <Hinweis pfad="solver.abbruch.erwartete_dauer_s" />
+          </div>
+          <div class="f3d-field">
+            <label>Beobachtungsfenster (s)</label>
+            <input type="number" step="any" min="1" class="f3d-num"
+                   :value="spec.solver.abbruch.fenster_s"
+                   @change="setNum('solver.abbruch.fenster_s', $event)" />
+            <Hinweis pfad="solver.abbruch.fenster_s" />
+          </div>
+          <div class="f3d-field">
+            <label>Stagnationsschwelle (% des Startvolumens)</label>
+            <input type="number" step="0.1" min="0.01" max="100" class="f3d-num"
+                   :value="alsProzent(spec.solver.abbruch.schwelle)"
+                   @change="setProzent('solver.abbruch.schwelle', $event)" />
+            <Hinweis pfad="solver.abbruch.schwelle" />
+          </div>
+          <div class="f3d-field">
+            <label>Anlaufsperre (% Abfall vor der Messung)</label>
+            <input type="number" step="1" min="0" max="99" class="f3d-num"
+                   :value="alsProzent(spec.solver.abbruch.mindest_abfall)"
+                   @change="setProzent('solver.abbruch.mindest_abfall', $event)" />
+            <Hinweis pfad="solver.abbruch.mindest_abfall" />
+          </div>
+        </template>
         <div class="f3d-field">
           <label>Anfangswasserspiegel (m NHN)</label>
           <input type="number" step="0.05" class="f3d-num"
@@ -282,7 +331,9 @@
 // Undo-Schritt und aktualisiert die Live-Vorschau (Gebiet/Gelände wirken
 // sofort sichtbar in der Modell-Phase).
 import { computed, h, onMounted, ref } from 'vue'
-import { begrenzen, hinweis } from '../../utils/simHints'
+import {
+  ABBRUCH_VORGABE, alsProzent, ausProzent, begrenzen, hinweis,
+} from '../../utils/simHints'
 import { REGELWERKE, REGELWERK_IDS, eigeneRegelwerke } from '../../utils/regelwerke'
 import { flood3dApi } from '../../services/api'
 import { fmtBytes } from '../../utils/labels'
@@ -405,7 +456,29 @@ function setNumOrNull(path, e) {
   store.updateSettings((s) => {
     let o = s
     for (const k of keys.slice(0, -1)) o = o[k]
-    o[keys[keys.length - 1]] = raw === '' ? null : Number(raw)
+    o[keys[keys.length - 1]] = raw === '' ? null : begrenzen(path, Number(raw))
+  })
+}
+
+// Anteile werden in Prozent bedient und als Anteil gespeichert (1 % -> 0,01).
+// Die Umrechnung liegt in simHints, damit ein Test sie festhalten kann.
+function setProzent(path, e) {
+  const v = begrenzen(path, ausProzent(e.target.value))
+  e.target.value = String(alsProzent(v))
+  const keys = path.split('.')
+  store.updateSettings((s) => {
+    let o = s
+    for (const k of keys.slice(0, -1)) o = o[k]
+    o[keys[keys.length - 1]] = v
+  })
+}
+
+// Umschalten zwischen fester Zeit und Leerlauf. `null` heißt „wie bisher":
+// das Backend legt ohne `abbruch` keinerlei Wächter an, der Fall rechnet
+// also exakt wie vorher.
+function abbruchArt(art) {
+  set((s) => {
+    s.solver.abbruch = art === 'leerlauf' ? { ...ABBRUCH_VORGABE } : null
   })
 }
 

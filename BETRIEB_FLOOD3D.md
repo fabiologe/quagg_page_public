@@ -221,6 +221,58 @@ Fälle sind zusammen 19 MB und bleiben lokal.
 - Echter Durchlauf 2026-08-12 (`Rentrisch_BetaTest06_r002`, 110 MB):
   auslagern 1,9 s, zurückholen 0,9 s, Inhalt byteidentisch.
 
+## Leerlauf-Fall (seit 2026-08-16)
+
+Ein Leerlauf endet nicht zu einer bekannten Zeit, sondern in einem
+Zustand. Dafuer gibt es `solver.abbruch` (optional — fehlt es, laeuft
+alles wie bisher bis `end_time`):
+
+```yaml
+solver:
+  end_time: 3600          # ab jetzt: OBERGRENZE, grosszuegig setzen
+  initial_level: 96.20    # Startwasserspiegel (oder Vorfuellungen)
+  abbruch:
+    art: stagnation
+    fenster_s: 30         # Beobachtungsfenster
+    schwelle: 0.01        # zulaessige Volumen-SPANNE im Fenster (1 % von V_start)
+    mindest_abfall: 0.05  # Anlaufsperre: erst 5 % muessen abgelaufen sein
+    erwartete_dauer_s: 600  # NUR fuer Schaetzung/Budget — bitte setzen!
+```
+
+- Gemessen wird die **Spanne** des Restvolumens im Fenster, nicht die
+  Differenz der Endpunkte: eine schwappende Restwelle liefert sonst
+  zufaellig gleiche Endwerte und der Lauf endet mitten in der Bewegung.
+- Die **Anlaufsperre** ist keine Feinheit: vor dem Anspringen des
+  Auslasses steht das Wasser still — ohne sie endet der Lauf bei t = 0.
+- Der Waechter sitzt im Runner (`engines/local/local_runner.py`,
+  `LeerlaufWaechter`) und schreibt `stopAt writeNow` in die controlDict —
+  derselbe weiche Hebel wie die Pause, kein Kill. Gilt damit identisch
+  auf der Nutzer-Maschine und in der Cloud (beide fahren diesen Runner).
+- **`erwartete_dauer_s` bitte immer setzen.** Ausgabegitter und
+  Kostenschaetzung rechnen sonst mit der Obergrenze und vergroebern das
+  Feldgitter unnoetig — genau dort, wo die Laubkarten Aufloesung brauchen.
+- Das Manifest sagt hinterher, warum der Lauf endete: `ende_grund`
+  (`leerlauf`/`zeit`), `ende_zeit`, `ende_text`.
+
+### Laubkarten: ein Leerlauf-/Schwall-Paar aufsetzen
+
+1. **Gleiches Netz** fuer beide Laeufe — der Verschnitt der Karten geht
+   zellweise. Kontrolle: gleicher `netz_hash` in beiden Manifesten (die
+   Laufauswahl im Laubkarten-Reiter filtert danach).
+2. **Leerlauf**: Anfangswasser (`initial_level` oder Vorfuellungen),
+   kein Dauerzufluss, `abbruch` wie oben.
+3. **Schwall**: Zufluss ueber `BcInflowHydrograph` (CSV-Ganglinie).
+4. **Feldausgabe fein genug** — die Laubkarten verfolgen Laub auf der
+   Wasseroberflaeche, deshalb zaehlt nicht die Zahl der Ausgaben, sondern
+   das Advektions-CFL: `write_interval_fields ≤ 0,5 · dx / u_max`
+   (dx = `mesh.base_cell`). Gemessen an Rentrich_BetaTest08: 0,5 m Zelle
+   und 0,5 m/s Oberflaechengeschwindigkeit ergeben bei 1 s Ausgabe ein
+   CFL von rund 1 — ein Tracer springt dann je Ausgabe ueber eine ganze
+   Zelle, und genau die Rezirkulationen, in denen sich Laub sammelt,
+   fehlen in den Daten. Das Laubkarten-Panel misst das nach und sagt es.
+5. Sohlschubspannung liegt flaechig nur auf dem `terrain`-Patch vor —
+   Bauwerksflaechen bleiben auf Karte B leer.
+
 ## Speicher und Datenmenge (2026-08-15 hart gelernt)
 
 - **Prozessgrenzen** stehen in `/etc/systemd/system/pm2-root.service.d/override.conf`

@@ -177,3 +177,73 @@ def test_warnung_wenn_das_fenster_kaum_messpunkte_hat(tmp_path):
     spec = _voller_fall(fenster_s=0.1)               # = ein Messpunkt
     befunde = validate_case(spec, tmp_path)
     assert any("Messpunkt" in b["message"] for b in befunde)
+
+
+# ── Der Waechter im Runner ──────────────────────────────────────────────────
+
+def _waechter_fall(tmp_path, volumen, dt=1.0):
+    """Ein Fall auf der Platte, wie ihn der Solver hinterlaesst: controlDict
+    zum Umschreiben und die laufend geschriebene Volumenreihe."""
+    (tmp_path / "system").mkdir()
+    (tmp_path / "system" / "controlDict").write_text(
+        "application     interFoam;\nstopAt           endTime;\n"
+        "endTime         600;\nrunTimeModifiable yes;\n")
+    ordner = tmp_path / "postProcessing" / "water_volume" / "0"
+    ordner.mkdir(parents=True)
+    ordner.joinpath("volFieldValue.dat").write_text(
+        "# Time \t volIntegrate(alpha.water)\n"
+        + "".join(f"{i * dt:g}\t{v:g}\n" for i, v in enumerate(volumen)))
+
+
+def _waechter(case, spec):
+    import sys
+    from pathlib import Path
+    # Im Container ist `flood3D` oberste Ebene (Bundle-Vertrag) — hier muss
+    # der Pfad dafuer erst gesetzt werden.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from ..engines.local.local_runner import LeerlaufWaechter
+    w = LeerlaufWaechter(case, spec, min_intervall_s=0.0)
+    return w
+
+
+def test_waechter_haelt_den_solver_weich_an(tmp_path):
+    """
+    Der Hebel ist `stopAt writeNow` in der controlDict, nicht ein Kill:
+    der Solver schreibt den laufenden Zeitschritt zu Ende und haelt sauber
+    an — sonst waere der letzte Speicherpunkt halb geschrieben.
+    """
+    _waechter_fall(tmp_path, [100 - 10 * i for i in range(10)] + [2.0] * 40)
+    spec = _voller_fall(fenster_s=10.0)
+    w = _waechter(tmp_path, spec)
+
+    w.tick()
+
+    assert w.grund and "Leerlauf beendet" in w.grund
+    assert w.ende_zeit == 49.0
+    assert "stopAt          writeNow;" in (
+        tmp_path / "system" / "controlDict").read_text()
+
+
+def test_waechter_ohne_kriterium_fasst_nichts_an(tmp_path):
+    """Ohne `abbruch` rechnet der Fall exakt wie bisher — auch dann, wenn
+    die Volumenreihe laengst stagniert."""
+    _waechter_fall(tmp_path, [100 - 10 * i for i in range(10)] + [2.0] * 40)
+    spec = _voller_fall()
+    spec.solver.abbruch = None
+    w = _waechter(tmp_path, spec)
+
+    w.tick()
+
+    assert w.aktiv is False and w.grund is None
+    assert "stopAt           endTime;" in (
+        tmp_path / "system" / "controlDict").read_text()
+
+
+def test_waechter_laesst_einen_laufenden_ablauf_in_ruhe(tmp_path):
+    _waechter_fall(tmp_path, [100 - 2 * i for i in range(40)])
+    w = _waechter(tmp_path, _voller_fall(fenster_s=10.0))
+
+    w.tick()
+
+    assert w.grund is None
+    assert "writeNow" not in (tmp_path / "system" / "controlDict").read_text()

@@ -1004,8 +1004,12 @@ def main() -> int:
                     "missing_sources": missing, "finished": time.time(),
                     # Warum endete der Lauf? Ohne diese Angabe sieht ein
                     # planmaessig frueh beendeter Leerlauf aus wie einer,
-                    # der abgeschnitten wurde.
-                    "ende_grund": ("leerlauf" if lw.grund else "zeit"),
+                    # der abgeschnitten wurde. Nur bei aktivem Kriterium
+                    # gesetzt: ohne Waechter gibt es nichts zu entscheiden,
+                    # und eine Zeile "endete zur eingestellten Zeit" waere
+                    # in jedem normalen Lauf blosses Rauschen.
+                    "ende_grund": (None if not lw.aktiv
+                                   else ("leerlauf" if lw.grund else "zeit")),
                     "ende_zeit": (lw.ende_zeit if lw.grund
                                   else spec.solver.end_time),
                     "ende_text": lw.grund}

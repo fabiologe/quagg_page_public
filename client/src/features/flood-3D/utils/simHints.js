@@ -80,18 +80,25 @@ export function kennwerte(spec, meshPreview = null, previewStale = false) {
   }
   const zellen = gemessen ? meshPreview.cells
     : Math.round(grundzellen + zusatz)
+  // Wie lange der Lauf VORAUSSICHTLICH rechnet — dieselbe Regel wie
+  // core/foamfields.py::schaetzdauer. Beim Leerlauf ist `end_time` nur die
+  // Obergrenze; mit ihr zu schätzen hieße, für eine großzügige Reserve
+  // Rechenzeit, Datenmenge und Kosten um Größenordnungen zu hoch
+  // anzugeben.
+  const dauer = s.abbruch?.erwartete_dauer_s ?? s.end_time
+
   // Zulauf und daraus die erwartete Wassertiefe (wie die Backend-Regel)
   const q = (spec.boundaries ?? [])
     .filter((b) => b.type === 'inflow_constant')
     .reduce((a, b) => a + (b.q ?? 0), 0)
-  const wassertiefe = flaeche > 0 ? (q * s.end_time) / flaeche : 0
+  const wassertiefe = flaeche > 0 ? (q * dauer) / flaeche : 0
   // Zeitschritt aus der FEINSTEN Zelle und der eingestellten Courant-Grenze
   // (vorher: Grundzelle und eine feste 0,3 — dadurch war der Schritt 6-fach
   // zu groß). 6 m/s ist eine grobe Annahme für die maßgebliche
   // Geschwindigkeit; sie steckt in derselben Faustformel wie im Backend.
   const kerne = 8
   const dt = Math.min(s.max_co ?? 0.5, s.max_alpha_co ?? 0.5) * feinsteZelle / 6.0
-  const schritte = s.end_time / Math.max(dt, 1e-9)
+  const schritte = dauer / Math.max(dt, 1e-9)
   // Durchsatz wie im Backend (core/runner.py durchsatz_je_kern) — beide
   // Schätzungen müssen dieselbe Größe messen, sonst widersprechen sich
   // Panel und Netzvorschau. Zwei Messpunkte auf derselben Maschine:
@@ -101,9 +108,10 @@ export function kennwerte(spec, meshPreview = null, previewStale = false) {
     100000 * (zellen / 117596) ** -0.42))
   const stunden = (zellen * schritte) / durchsatz / kerne / 3600
   const ausgaben = s.write_interval_fields > 0
-    ? Math.floor(s.end_time / s.write_interval_fields) + 1 : 0
+    ? Math.floor(dauer / s.write_interval_fields) + 1 : 0
   return { breite, tiefe, hoehe, flaeche, zellen, q, wassertiefe,
-    stunden, ausgaben, dt, feinsteZelle, maxStufe, feinstesAus, gemessen }
+    stunden, ausgaben, dt, dauer, feinsteZelle, maxStufe, feinstesAus,
+    gemessen }
 }
 
 // --- Grenzen je Feld ------------------------------------------------------
@@ -117,6 +125,13 @@ export const GRENZEN = {
   'solver.write_interval_series': [0.001, 100000],
   'mesh.base_cell': [0.01, 50],
   'terrain.base.resolution': [0.01, 50],
+  // Leerlauf: die Grenzen sind dieselben wie im Backend-Modell
+  // (core/casespec.py::Abbruch) — sonst kassiert der Server eine Eingabe,
+  // die das Formular gerade noch zugelassen hat.
+  'solver.abbruch.fenster_s': [0.1, 100000],
+  'solver.abbruch.schwelle': [0.0001, 1],
+  'solver.abbruch.mindest_abfall': [0, 0.99],
+  'solver.abbruch.erwartete_dauer_s': [0.1, 100000],
 }
 
 export function begrenzen(pfad, wert) {
@@ -124,6 +139,25 @@ export function begrenzen(pfad, wert) {
   if (!g || !isFinite(wert)) return wert
   return Math.min(Math.max(wert, g[0]), g[1])
 }
+
+// Anteile werden als Prozent BEDIENT und als Anteil GESPEICHERT. Die
+// Umrechnung steht hier und nicht im Panel, damit ein Test sie festhält:
+// „1 %" im Formular muss beim Solver als 0,01 ankommen, sonst wäre die
+// Stagnationsschwelle hundertfach zu groß und jeder Leerlauf sofort fertig.
+export const alsProzent = (anteil) => Math.round((anteil ?? 0) * 1000) / 10
+export const ausProzent = (prozent) => Number(prozent) / 100
+
+// Vorbelegung beim Umschalten auf „Leerlauf". Muss den Vorgabewerten von
+// core/casespec.py::Abbruch entsprechen — sonst rechnet ein im Formular
+// angelegter Fall mit einem anderen Kriterium als derselbe Fall aus der
+// YAML. Ein Test vergleicht beide Quellen.
+export const ABBRUCH_VORGABE = Object.freeze({
+  art: 'stagnation',
+  fenster_s: 30.0,
+  schwelle: 0.01,
+  mindest_abfall: 0.05,
+  erwartete_dauer_s: null,
+})
 
 // --- Einordnung je Feld ---------------------------------------------------
 // { text, level } — level: '' | 'warn' | 'bad'
@@ -138,9 +172,92 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false) {
     case 'solver.end_time': {
       const t = `Geschätzt ${dauerText(k.stunden)} Rechenzeit auf 8 Kernen `
         + `(${int(k.zellen)} Zellen).`
+      if (s.abbruch) {
+        // Beim Leerlauf ist das die REISSLEINE, nicht die Dauer: der Lauf
+        // endet früher, sobald nichts mehr abläuft. Geschätzt wird deshalb
+        // die erwartete Dauer — und dazugesagt, worauf sich die Zahl
+        // bezieht, sonst liest man sie als Versprechen.
+        const bezug = s.abbruch.erwartete_dauer_s
+          ? `für die erwartete Dauer von ${f2(k.dauer)} s`
+          : 'für die volle Obergrenze — erwartete Dauer eintragen, dann '
+            + 'wird die Schätzung ehrlich'
+        return { text: `Obergrenze: so lange rechnet der Lauf HÖCHSTENS. `
+          + `Normalerweise endet er früher, sobald nichts mehr abläuft. `
+          + `${t} Gerechnet ${bezug}.`,
+        level: s.abbruch.erwartete_dauer_s ? '' : 'warn' }
+      }
       if (k.stunden > 12) {
         return { text: `${t} Das ist viel — Gebietshöhe und Basiszelle prüfen.`,
           level: 'warn' }
+      }
+      return { text: t, level: '' }
+    }
+
+    // --- Leerlauf (solver.abbruch) ------------------------------------
+    // Der Lauf endet an einem ZUSTAND statt an der Uhr. Jede der drei
+    // Stellschrauben kann ihn falsch beenden, deshalb sagt jeder Hinweis,
+    // WAS bei einem falschen Wert passiert.
+
+    case 'solver.abbruch.fenster_s': {
+      const punkte = s.abbruch.fenster_s / Math.max(s.write_interval_series, 1e-9)
+      const t = `Über dieses Fenster wird gemessen, ob sich das Restvolumen `
+        + `noch bewegt — hier ${int(punkte)} Messwerte `
+        + `(Zeitreihen alle ${f2(s.write_interval_series)} s).`
+      // Dieselbe Bedingung wie die Backend-Prüfung (_pruefe_leerlauf):
+      // beide messen die Zahl der Messpunkte im Fenster, sonst warnt eine
+      // Seite und die andere nicht.
+      if (s.abbruch.fenster_s < 2 * s.write_interval_series) {
+        return { text: `${t} Das ist kaum mehr als ein Punkt — die `
+          + 'Stagnation wäre Zufall. Fenster vergrößern oder Zeitreihen '
+          + 'dichter schreiben.', level: 'warn' }
+      }
+      return { text: `${t} Kurze Fenster beenden den Lauf früher, sehen `
+        + 'aber ein langsames Nachlaufen nicht mehr als Bewegung.',
+      level: '' }
+    }
+
+    case 'solver.abbruch.schwelle': {
+      const p = f2(s.abbruch.schwelle * 100)
+      const t = `Bewegt sich das Restvolumen über das Fenster um weniger `
+        + `als ${p} % des Startvolumens, gilt der Lauf als fertig.`
+      if (s.abbruch.schwelle >= 0.05) {
+        return { text: `${t} So großzügig endet der Lauf womöglich, während `
+          + 'noch spürbar Wasser abläuft.', level: 'warn' }
+      }
+      if (s.abbruch.schwelle <= 0.001) {
+        return { text: `${t} So streng läuft er bis zur Obergrenze weiter, `
+          + 'sobald der Messwert auch nur leicht zappelt.', level: 'warn' }
+      }
+      return { text: t, level: '' }
+    }
+
+    case 'solver.abbruch.mindest_abfall': {
+      const t = `Stagnation zählt erst, nachdem `
+        + `${f2(s.abbruch.mindest_abfall * 100)} % des Startvolumens `
+        + 'abgelaufen sind.'
+      if (s.abbruch.mindest_abfall <= 0) {
+        return { text: `${t} Ohne diese Anlaufsperre endet der Lauf bei `
+          + 't ≈ 0: vor dem Anspringen des Auslasses steht das Wasser '
+          + 'still, und Stillstand sieht aus wie Stagnation.',
+        level: 'bad' }
+      }
+      return { text: `${t} Sie verhindert, dass der Stillstand VOR dem `
+        + 'Anlaufen als „fertig" gelesen wird.', level: '' }
+    }
+
+    case 'solver.abbruch.erwartete_dauer_s': {
+      if (!s.abbruch.erwartete_dauer_s) {
+        return { text: 'Ohne Angabe schätzen Kosten, Datenmenge und '
+          + 'Feldauflösung mit der Obergrenze — und das Ausgabegitter wird '
+          + 'gröber, als der Fall es bräuchte.', level: 'warn' }
+      }
+      const t = `Grundlage für Kosten-, Datenmengen- und Gitterschätzung: `
+        + `${dauerText(k.stunden)} Rechenzeit, ${k.ausgaben} Feldausgaben. `
+        + 'Auf die Abbruchentscheidung hat der Wert keinen Einfluss.'
+      if (s.abbruch.erwartete_dauer_s > s.end_time) {
+        return { text: `${t} Größer als die Obergrenze — der Lauf würde `
+          + 'abgeschnitten, bevor das Kriterium greifen kann.',
+        level: 'warn' }
       }
       return { text: t, level: '' }
     }
@@ -188,9 +305,15 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false) {
     }
 
     case 'solver.write_interval_fields': {
-      if (s.write_interval_fields > s.end_time) {
-        return { text: 'Größer als die Simulationsdauer — es entstünde kein '
-          + 'einziger Ausgabezeitpunkt, der Lauf bräche am Ende ab.',
+      // Verglichen wird mit der ERWARTETEN Dauer: beim Leerlauf endet der
+      // Lauf vor der Obergrenze, ein Intervall dazwischen liefert also
+      // trotz großzügiger Obergrenze keinen einzigen Zeitpunkt.
+      if (s.write_interval_fields > k.dauer) {
+        return { text: s.abbruch
+          ? 'Größer als die erwartete Laufdauer — bis zum Leerlauf entstünde '
+            + 'kein einziger Ausgabezeitpunkt.'
+          : 'Größer als die Simulationsdauer — es entstünde kein '
+            + 'einziger Ausgabezeitpunkt, der Lauf bräche am Ende ab.',
         level: 'bad' }
       }
       const mb = (k.zellen * 9 * 4) / 1e6
@@ -209,10 +332,17 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false) {
     }
 
     case 'solver.write_interval_series': {
-      const n = Math.floor(s.end_time / Math.max(s.write_interval_series, 1e-9))
-      return { text: `${int(n)} Messwerte je Pegel und Querschnitt. `
-        + 'Zeitreihen sind billig — dichter abtasten kostet kaum etwas.',
-      level: n < 20 ? 'warn' : '' }
+      const n = Math.floor(k.dauer / Math.max(s.write_interval_series, 1e-9))
+      const t = `${int(n)} Messwerte je Pegel und Querschnitt. `
+        + 'Zeitreihen sind billig — dichter abtasten kostet kaum etwas.'
+      if (s.abbruch) {
+        // Beim Leerlauf hängt an dieser Zahl die Abbruchentscheidung: das
+        // Beobachtungsfenster wird aus genau diesen Messwerten gebildet.
+        return { text: `${t} Beim Leerlauf ist das zugleich die Auflösung, `
+          + 'mit der die Stagnation erkannt wird.',
+        level: n < 20 ? 'warn' : '' }
+      }
+      return { text: t, level: n < 20 ? 'warn' : '' }
     }
 
     case 'domain.z': {
