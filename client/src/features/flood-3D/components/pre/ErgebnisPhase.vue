@@ -17,6 +17,7 @@
       <QualityPanel v-else-if="post.activeTab === 'qualitaet'" />
       <TimeSeriesPanel v-else-if="post.activeTab === 'zeitreihen'" />
       <GrundrissPanel v-else-if="post.activeTab === 'grundriss'" />
+      <LaubkartenPanel v-else-if="post.activeTab === 'laubkarten'" />
       <Raum3DPanel v-else-if="post.activeTab === 'raum'" />
       <ExtremesTable v-else-if="post.activeTab === 'extremwerte'" />
       <FiguresPanel v-else-if="post.activeTab === 'abbildungen'" />
@@ -35,6 +36,7 @@ import { usePreStore } from '../../stores/usePreStore'
 import ExtremesTable from '../post/ExtremesTable.vue'
 import FiguresPanel from '../post/FiguresPanel.vue'
 import GrundrissPanel from '../post/GrundrissPanel.vue'
+import LaubkartenPanel from '../post/LaubkartenPanel.vue'
 import BilanzPanel from '../post/BilanzPanel.vue'
 import VerweilzeitPanel from '../post/VerweilzeitPanel.vue'
 import BauwerkePanel from '../post/BauwerkePanel.vue'
@@ -63,6 +65,7 @@ onMounted(() => {
    die Bedingung dafuer, dass das overflow-y ihrer Bedienspalten
    ueberhaupt greift; ohne das waechst die Spalte einfach weiter. */
 .f3d-ergebnis > .f3d-plan,
+.f3d-ergebnis > .f3d-laub,
 .f3d-ergebnis > .f3d-raum {
   flex: 1 1 0;
   min-height: 0;

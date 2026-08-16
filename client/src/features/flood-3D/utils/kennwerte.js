@@ -458,6 +458,40 @@ export const KENNWERTE = {
       + 'Zellen den ganzen Lauf aus. Meist lohnt es, genau dort das Netz zu '
       + 'entschärfen statt überall zu vergröbern.',
   },
+
+  laub_kritisch: {
+    label: 'Kritische Fläche (Laubkarten)',
+    einheit: '% der Fläche',
+    was: 'Der Verschnitt zweier Läufe: wo sich beim Leerlaufen schwimmendes '
+      + 'Laub sammelt UND der Spülschwall die Sohle nicht ausreichend '
+      + 'belastet. Aus dem Leerlauf kommt die Ablagerung (Oberflächentracer '
+      + 'auf dem Wasserspiegel), aus dem Schwall die Spülwirkung '
+      + '(Sohlschubspannung über τ_krit).',
+    stufen: [
+      { bis: 2, text: 'unauffällig — die Spülung erreicht praktisch alles, '
+        + 'was sich ablagert.', cls: 'ok' },
+      { bis: 10, text: 'einzelne Nester. Meist Ecken hinter Einbauten; '
+        + 'oft genügt eine örtliche Änderung der Anströmung.', cls: 'warn' },
+      { bis: Infinity, text: 'zusammenhängende Bereiche werden nicht '
+        + 'freigespült. Hier ist die Beckenform selbst der Grund — '
+        + 'Spülvolumen erhöhen wirkt erfahrungsgemäß weniger als die '
+        + 'Sohlneigung oder die Lage der Spülkippe zu ändern.', cls: 'bad' },
+    ],
+    faustformel: 'Für die Klasse „tote Fläche" zählt nicht τ, sondern die '
+      + 'Benetzung: dorthin kommt der Schwall gar nicht erst. Solche '
+      + 'Flächen ändern sich durch ein höheres τ_krit nicht — sie sind ein '
+      + 'geometrisches Ergebnis, kein Schwellenwertthema.',
+    achtung: 'Die Karten sind eine RELATIV-Aussage zwischen Varianten, kein '
+      + 'Nachweis. Vier Grenzen, die man beim Ablesen kennen muss: '
+      + '(1) Einwegkopplung — das Laub folgt der Strömung, verändert sie '
+      + 'aber nicht; ein Rechen aus verkeiltem Laub entsteht im Modell nie. '
+      + '(2) Masse und Auftrieb bleiben unberücksichtigt: gerechnet wird '
+      + 'ein masseloser Oberflächentracer, die Spülwirkung fällt damit eher '
+      + 'zu GÜNSTIG aus. (3) Schwimmendes Laub gilt nur bei kurzer '
+      + 'Standzeit — durchnässtes Laub sinkt ab und folgt der Sohle statt '
+      + 'der Oberfläche. (4) τ liegt heute nur auf dem Gelände-Patch '
+      + 'flächig vor; Bauwerksflächen bleiben in Karte B leer.',
+  },
 }
 
 // Erste Stufe, deren Obergrenze der Wert nicht überschreitet

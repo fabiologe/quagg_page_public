@@ -22,6 +22,7 @@ export const VIEWER_TABS = [
   { id: 'qualitaet', label: 'Qualität' },
   { id: 'zeitreihen', label: 'Zeitreihen' },
   { id: 'grundriss', label: 'Grundriss & Schnitt' },
+  { id: 'laubkarten', label: 'Laubkarten' },
   { id: 'raum', label: 'Raum (3D)' },
   { id: 'extremwerte', label: 'Extremwerte' },
   { id: 'abbildungen', label: 'Abbildungen' },

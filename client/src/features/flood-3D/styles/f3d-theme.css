@@ -27,6 +27,15 @@
   --f3d-good: #2dd4a0;
   --f3d-bad: #ff6b6b;
   --f3d-warn: #e8a13c;
+  /* Laubkarten, Karte C: vier DISKRETE Klassen. Bewusst keine Farbskala —
+     der Verschnitt ist eine Einteilung, kein Zahlenwert, und eine
+     Verlaufsskala würde eine Zwischenstufe suggerieren, die es nicht gibt.
+     „tote Fläche" ist absichtlich unbunt: sie ist kein schlimmeres Rot,
+     sondern eine andere Art von Befund (der Schwall kommt dort nie an). */
+  --f3d-klasse-unkritisch: #2dd4a0;
+  --f3d-klasse-beobachten: #e8a13c;
+  --f3d-klasse-kritisch: #ff6b6b;
+  --f3d-klasse-tot: #8fa0c2;
   --f3d-radius: 10px;
   --f3d-glow: 0 0 0 1px rgba(77, 159, 255, 0.28), 0 6px 24px rgba(37, 99, 235, 0.18);
 }

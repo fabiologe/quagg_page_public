@@ -24,6 +24,14 @@ export const VORBELEGUNG = {
   // Massenbilanz: Speicheränderungs-Restfehler relativ zum Zufluss
   bilanz_warn: 0.02,
   bilanz_schlecht: 0.05,
+  // τ_krit der Laubkarten: Sohlschubspannung, ab der eine Spülung als
+  // wirksam gilt. 2 N/m² ist die obere Kante des Selbstreinigungsbands,
+  // das die Regelwerke für Rinnen mit 1 bis 2 N/m² angeben (siehe
+  // KENNWERTE.bed_shear) — bewusst die vorsichtige Kante des Bandes.
+  tau_krit: 2.0,
+  // Ab welchem Konzentrationsfaktor eine Zelle als „viel Ablagerung" gilt.
+  // 1 = Gleichverteilung, also ist 2 die doppelte mittlere Belegung.
+  laub_schwelle: 2.0,
 }
 
 // Grenzwert aus den Fall-Kriterien eines Ergebnisses ziehen — `kind` wie
@@ -44,6 +52,15 @@ export function kurzschlussSchwellen(result) {
     schlecht: limit ?? VORBELEGUNG.kurzschluss_schlecht,
     gut: Math.max(limit ?? 0, VORBELEGUNG.kurzschluss_gut),
   }
+}
+
+// τ_krit der Laubkarten. Hat der Fall ein Selbstreinigungs-Kriterium
+// (min_bed_shear, limit_min), ist DAS die maßgebende Zahl — sonst stünde
+// im Panel ein Faustwert neben einem Nachweis, der etwas anderes fordert.
+export function tauKritVorgabe(result) {
+  return { wert: ausKriterium(result, 'min_bed_shear', 'limit_min')
+    ?? VORBELEGUNG.tau_krit,
+  ausFall: ausKriterium(result, 'min_bed_shear', 'limit_min') != null }
 }
 
 // Massenbilanz-Schwellen: massenbilanz-Kriterium (limit_max) gewinnt.

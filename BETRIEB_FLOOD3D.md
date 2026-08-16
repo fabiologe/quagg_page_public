@@ -270,8 +270,27 @@ solver:
    CFL von rund 1 — ein Tracer springt dann je Ausgabe ueber eine ganze
    Zelle, und genau die Rezirkulationen, in denen sich Laub sammelt,
    fehlen in den Daten. Das Laubkarten-Panel misst das nach und sagt es.
-5. Sohlschubspannung liegt flaechig nur auf dem `terrain`-Patch vor —
+5. **Gleiches Ausgaberaster.** Der gleiche `netz_hash` genuegt NICHT: das
+   Viz-Gitter folgt einem Datenbudget und haengt damit an Laufdauer und
+   `write_interval_fields`. Zwei Laeufe auf demselben Netz koennen
+   verschieden fein ausgegeben sein — dann meint dieselbe Zellnummer in
+   beiden einen anderen Ort. Das Panel prueft das nach dem Laden und
+   verweigert den Verschnitt mit Begruendung.
+6. Sohlschubspannung liegt flaechig nur auf dem `terrain`-Patch vor —
    Bauwerksflaechen bleiben auf Karte B leer.
+
+**Beim Ablesen von Karte A** (zwei Eigenschaften des Verfahrens, die
+regelmaessig fuer Fehler gehalten werden):
+
+- Das Laub liegt auf dem **Konvergenzsaum**, nicht im Tiefpunkt. Wo die
+  Oberflaechengeschwindigkeit gegen null geht, bleibt ein Tracer stehen —
+  er wandert nicht weiter bis zur tiefsten Stelle. Am Testfall gemessen:
+  Saum 3,2…3,8-fache Belegung, Mitte der Senke 1,0…1,4.
+- Laub in **Restpfuetzen** zaehlt mit. Die Strandungsregel greift nur auf
+  trockenfallendem Boden; Wasser, das nicht ablaeuft, haelt seine Tracer
+  in Bewegung. Am Laufende werden sie dort eingefroren, wo sie schwimmen,
+  und getrennt ausgewiesen („in Restpfuetzen"). Ohne das blieben
+  ausgerechnet die Senken leer.
 
 ## Speicher und Datenmenge (2026-08-15 hart gelernt)
 

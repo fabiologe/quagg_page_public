@@ -336,6 +336,11 @@ async def list_runs():
             # Manifest zuerst: es trägt den Hash seit dem START, das Ergebnis
             # erst am Ende — gescheiterte Läufe hatten sonst gar keinen
             "case_hash": manifest.get("case_hash") or (result or {}).get("case_hash"),
+            # Netz-Identitaet: zwei Laeufe sind nur dann Zelle fuer Zelle
+            # vergleichbar, wenn sie auf DEMSELBEN Netz gerechnet wurden.
+            # Die Laubkarten verschneiden zwei Laeufe und brauchen das,
+            # um unpassende Paare gar nicht erst anzubieten.
+            "netz_hash": (manifest.get("netz") or {}).get("netz_hash"),
             # Liegt die Geometrie dieses Laufs gesichert daneben? Nur dann
             # lässt sie sich als Stand zurückholen (Altläufe: nein)
             "spec_gesichert": (paths.root / "spec" / "case.yaml").is_file(),

@@ -85,6 +85,27 @@ export function spuelSchritt(agg, tau, nass, dt) {
 }
 
 /**
+ * Zeitgewichte der Schreibzeitpunkte (Trapezregel): halbe Nachbarabstände,
+ * an den Enden nur die halbe Seite.
+ *
+ * Klingt nach Kleinkram, ist aber die Stelle, an der eine Belastungsdauer
+ * still falsch wird: mit „dt = Abstand zum Vorgänger" zählt der erste
+ * Zeitpunkt gar nicht und der letzte doppelt, und die Summe der Gewichte
+ * ist nicht mehr die Ereignisdauer. Für einen Schwall, dessen Spitze am
+ * Anfang liegt, ist das genau der falsche Fehler.
+ */
+export function zeitGewichte(zeiten) {
+  const n = zeiten.length
+  const w = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const vor = i > 0 ? zeiten[i] - zeiten[i - 1] : 0
+    const nach = i < n - 1 ? zeiten[i + 1] - zeiten[i] : 0
+    w[i] = (vor + nach) / 2 || vor || nach
+  }
+  return w
+}
+
+/**
  * Karte B für EIN τ_krit auswerten — das ist der Aufruf hinter dem Regler.
  * Rückgabe je Zelle: Spitzenbelastung, Überschreitungsdauer, Spülintegral
  * (Pa·s) und ob die Zelle überhaupt benetzt war.

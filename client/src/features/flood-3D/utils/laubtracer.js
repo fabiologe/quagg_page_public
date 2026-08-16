@@ -36,7 +36,8 @@ export function saeeTracer({ tiefe, nx, ny, origin, spacing, anzahl,
   const y = new Float32Array(n)
   const lebt = new Uint8Array(n)
   if (!kandidaten.length) {
-    return { x, y, lebt, n: 0, gestrandet: 0, draussen: 0, ausgesaet: 0 }
+    return { x, y, lebt, n: 0, gestrandet: 0, restwasser: 0, draussen: 0,
+      ausgesaet: 0 }
   }
   let s = startwert >>> 0
   const zufall = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296)
@@ -50,7 +51,8 @@ export function saeeTracer({ tiefe, nx, ny, origin, spacing, anzahl,
     y[m] = origin[1] + (j + zufall()) * spacing[1]
     lebt[m] = 1
   }
-  return { x, y, lebt, n, gestrandet: 0, draussen: 0, ausgesaet: n }
+  return { x, y, lebt, n, gestrandet: 0, restwasser: 0, draussen: 0,
+    ausgesaet: n }
 }
 
 /** Bilineare Abtastung eines Spaltenfeldes; NaN-Nachbarn werden übersprungen. */
@@ -140,6 +142,29 @@ function _misch(a, b, w) {
 }
 
 /**
+ * Lauf abschließen: was am Ende noch treibt, liegt in einer RESTPFÜTZE.
+ *
+ * Diese Funktion ist der Ertrag eines Tests, der zunächst „keine
+ * Ablagerung in der Senke" meldete — und damit recht hatte: die
+ * Strandungsregel greift nur auf trockenfallendem Boden. Wasser, das nicht
+ * abläuft, hält seine Tracer bis zum Schluss in Bewegung, und die
+ * Ablagerungskarte zählt nur eingefrorene. Ausgerechnet die Senken, in
+ * denen sich Laub sammelt, wären so leer geblieben.
+ *
+ * Fachlich sind das zwei verschiedene Befunde — Laub auf trockenem Boden
+ * gegen Laub auf einer stehenden Pfütze —, deshalb werden sie getrennt
+ * gezählt und im Panel getrennt genannt. Für die Karte zählen beide.
+ */
+export function abschliessen(zustand) {
+  for (let m = 0; m < zustand.n; m++) {
+    if (!zustand.lebt[m]) continue
+    zustand.lebt[m] = 0
+    zustand.restwasser++
+  }
+  return zustand
+}
+
+/**
  * Endpositionen auf das Auswerteraster akkumulieren und auf die
  * Gleichverteilung normieren: 1 = so viel Laub wie im Mittel, 3 = dreifache
  * Konzentration. Der Faktor ist die Aussage, nicht die absolute Anzahl.
@@ -176,10 +201,15 @@ export function ablagerungskarte(zustand, { nx, ny, origin, spacing,
 export function tracerBilanz(zustand) {
   let treibend = 0
   for (let m = 0; m < zustand.n; m++) if (zustand.lebt[m]) treibend++
-  const summe = treibend + zustand.gestrandet + zustand.draussen
+  const rest = zustand.restwasser ?? 0
+  const summe = treibend + zustand.gestrandet + rest + zustand.draussen
   return {
     ausgesaet: zustand.ausgesaet, treibend,
-    gestrandet: zustand.gestrandet, draussen: zustand.draussen,
+    gestrandet: zustand.gestrandet, restwasser: rest,
+    draussen: zustand.draussen,
+    // Was auf der Karte liegt: trockengefallenes UND in Pfützen
+    // schwimmendes Laub
+    abgelagert: zustand.gestrandet + rest,
     stimmt: summe === zustand.ausgesaet,
   }
 }
