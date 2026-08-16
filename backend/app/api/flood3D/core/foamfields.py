@@ -173,6 +173,23 @@ def _time_dirs(case_dir: Path) -> list[tuple[float, Path]]:
 MIN_VIZ_Z_LAYERS = 40
 
 
+def schaetzdauer(spec) -> float:
+    """
+    Die Dauer, mit der GESCHAETZT wird (Ausgabebudget, Laufzeit, Kosten).
+
+    Ein Leerlauf bekommt eine grosszuegige `end_time` als blosse Obergrenze
+    und endet in Wahrheit viel frueher. Rechnet man das Budget aus dieser
+    Obergrenze, wird das Ausgabegitter unnoetig vergroebert — ausgerechnet
+    dort, wo die Laubkarten Aufloesung brauchen. Ist eine erwartete Dauer
+    angegeben, gilt die; sonst bleibt alles wie bisher.
+    """
+    a = getattr(spec.solver, "abbruch", None)
+    erwartet = getattr(a, "erwartete_dauer_s", None) if a is not None else None
+    if erwartet and erwartet > 0:
+        return min(float(erwartet), float(spec.solver.end_time))
+    return float(spec.solver.end_time)
+
+
 def viz_grid_for(spec) -> VolumeGrid:
     x0, y0, x1, y1 = spec.domain.extent
     zr = spec.domain.z_max - spec.domain.z_min
@@ -190,7 +207,7 @@ def viz_grid_for(spec) -> VolumeGrid:
     # das Gitter sein darf, ohne das Gesamtbudget zu sprengen.
     n_zeit = 1
     if spec.solver.write_interval_fields > 0:
-        n_zeit = max(1, int(spec.solver.end_time
+        n_zeit = max(1, int(schaetzdauer(spec)
                             / spec.solver.write_interval_fields) + 1)
     max_zellen = min(MAX_VIZ_CELLS,
                      max(20_000, int(MAX_VIZ_BYTES

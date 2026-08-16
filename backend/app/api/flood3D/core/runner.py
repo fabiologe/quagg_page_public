@@ -251,7 +251,8 @@ def estimate_run(spec, cells: int, cores: int = 16,
     max_level = max([r.level for r in spec.mesh.refinements] + [0])
     finest = spec.mesh.base_cell / 2 ** max_level
     dt = spec.solver.max_alpha_co * finest / SIGNAL_SPEED_M_S
-    steps = spec.solver.end_time / max(dt, 1e-6)
+    from .foamfields import schaetzdauer
+    steps = schaetzdauer(spec) / max(dt, 1e-6)
     core_seconds = cells * steps / durchsatz_je_kern(cells)
     wall_h = core_seconds / cores / 3600.0
     return {

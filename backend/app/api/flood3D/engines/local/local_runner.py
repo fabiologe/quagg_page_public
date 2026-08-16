@@ -481,6 +481,56 @@ class Zwischenstand:
              run_id=self.run_id)
 
 
+class LeerlaufWaechter:
+    """
+    Beendet einen Leerlauf, sobald nichts mehr ablaeuft.
+
+    Haengt im selben 2-Sekunden-Rueckruf wie der Zwischenstand und liest
+    die Volumenreihe, die das Funktionsobjekt `water_volume` ohnehin
+    fortlaufend in den Fall schreibt. Ist das Kriterium erfuellt, wird
+    `stopAt writeNow` in die controlDict geschrieben (runTimeModifiable
+    ist an): der Solver schreibt den laufenden Zeitschritt zu Ende und
+    haelt sauber an — derselbe weiche Hebel wie bei der Pause, kein Kill.
+
+    Bewusst hier und nicht als OpenFOAM-`runTimeControl`: so gilt derselbe
+    Code auf der Nutzer-Maschine wie in der Cloud (beide fahren diesen
+    Runner), und die Entscheidung ist ohne Solver testbar.
+    """
+
+    def __init__(self, case: Path, spec, min_intervall_s: float = 5.0):
+        from flood3D.core.leerlauf import Kriterium
+
+        a = getattr(spec.solver, "abbruch", None)
+        self.case = case
+        self.aktiv = a is not None
+        self.kriterium = (Kriterium(fenster_s=a.fenster_s, schwelle=a.schwelle,
+                                    mindest_abfall=a.mindest_abfall)
+                          if a is not None else None)
+        self.min_intervall_s = min_intervall_s
+        self.letzter = 0.0
+        self.grund: str | None = None
+        self.ende_zeit: float | None = None
+
+    def tick(self) -> None:
+        if not self.aktiv or self.grund is not None:
+            return
+        jetzt = time.time()
+        if jetzt - self.letzter < self.min_intervall_s:
+            return
+        self.letzter = jetzt
+
+        from flood3D.core.leerlauf import stagnation_erreicht, volumenreihe_lesen
+
+        zeiten, volumen = volumenreihe_lesen(self.case)
+        fertig, grund = stagnation_erreicht(zeiten, volumen, self.kriterium)
+        if not fertig:
+            return
+        self.grund = grund
+        self.ende_zeit = zeiten[-1] if zeiten else None
+        _setze_stopp(self.case, "writeNow")
+        emit(event="log", text=grund)
+
+
 def run_foam_step(case: Path, command: str, log_name: str,
                   end_time: float | None = None, tick_cb=None) -> None:
     """
@@ -854,10 +904,11 @@ def main() -> int:
             run_foam_step(case, "decomposePar -force", "log.decomposePar")
             emit(event="log", text=f"Rechne auf {cores} Kernen")
             zs = Zwischenstand(job, case, spec, run_id)
+            lw = LeerlaufWaechter(case, spec)
             run_foam_step(case,
                           f"{mpi_kommando(cores)} {app_name} -parallel",
                           f"log.{app_name}", end_time=spec.solver.end_time,
-                          tick_cb=zs.tick)
+                          tick_cb=lambda: (zs.tick(), lw.tick()))
             try:
                 run_foam_step(case, "reconstructPar -newTimes",
                               "log.reconstructPar")
@@ -874,8 +925,15 @@ def main() -> int:
                 raise
         else:
             zs = Zwischenstand(job, case, spec, run_id)
-            run_foam_step(case, app_name, f"log.{app_name}", tick_cb=zs.tick,
+            lw = LeerlaufWaechter(case, spec)
+            run_foam_step(case, app_name, f"log.{app_name}",
+                          tick_cb=lambda: (zs.tick(), lw.tick()),
                           end_time=spec.solver.end_time)
+
+        if lw.grund:
+            # Sonst stoppt eine Wiederaufnahme sofort wieder — genau die
+            # Falle, die es bei der Pause schon einmal gab.
+            _setze_stopp(case, "endTime")
 
         # ---- Nachlauf: exakt die Server-Kette -----------------------------
         emit(event="progress", phase="postprocessing", fraction=1.0)
@@ -943,7 +1001,14 @@ def main() -> int:
                     "netz": netz_info, "befunde": netz_befunde,
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
-                    "missing_sources": missing, "finished": time.time()}
+                    "missing_sources": missing, "finished": time.time(),
+                    # Warum endete der Lauf? Ohne diese Angabe sieht ein
+                    # planmaessig frueh beendeter Leerlauf aus wie einer,
+                    # der abgeschnitten wurde.
+                    "ende_grund": ("leerlauf" if lw.grund else "zeit"),
+                    "ende_zeit": (lw.ende_zeit if lw.grund
+                                  else spec.solver.end_time),
+                    "ende_text": lw.grund}
         if conv.get("terrain_error"):
             # Muss mit zum Server: die Warnung im Logstrom ist nach dem
             # Schließen des Fensters weg, und ohne diesen Eintrag stand

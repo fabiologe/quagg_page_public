@@ -1021,6 +1021,38 @@ class Vorfuellung(_Objekt):
     level: float                  # Wasserspiegel im Bereich (m NHN)
 
 
+class Abbruch(_Model):
+    """
+    Wann ein Lauf VOR `end_time` endet — für den Leerlauf-Fall.
+
+    Ein Leerlauf endet nicht zu einer bekannten Zeit, sondern in einem
+    Zustand: das Becken ist leer, oder es stehen nur noch Restpfützen, die
+    nicht mehr ablaufen. Gemessen wird das als STAGNATION des Restvolumens
+
+        |V(t) − V(t − fenster_s)|  <  schwelle · V_start
+
+    weil das beide Enden desselben Vorgangs fängt — und weil ein tropfender
+    Auslass den Lauf so nicht künstlich am Leben hält.
+
+    `mindest_abfall` ist die Anlaufsperre: am Anfang steht das Wasser still,
+    bevor der Auslass anspringt — ohne diese Sperre endet der Lauf bei t≈0.
+    Stagnation zählt deshalb erst, NACHDEM das Volumen einmal um diesen
+    Anteil gefallen ist.
+
+    `end_time` bleibt in jedem Fall die harte Obergrenze: das Kriterium kann
+    einen Lauf nur früher beenden, nie verlängern.
+    """
+    art: Literal["stagnation"] = "stagnation"
+    fenster_s: float = Field(30.0, gt=0)
+    schwelle: float = Field(0.01, gt=0, le=1)        # Anteil von V_start
+    mindest_abfall: float = Field(0.05, ge=0, lt=1)  # Anlaufsperre
+    # NUR für die Schätzung (Feldbudget, Laufzeit/Kosten): wie lange der
+    # Lauf voraussichtlich wirklich dauert. Ohne diese Angabe rechnet die
+    # Schätzung mit `end_time` — und vergröbert bei großzügiger Obergrenze
+    # das Ausgabegitter unnötig, genau dort, wo die Laubkarten es brauchen.
+    erwartete_dauer_s: float | None = Field(None, gt=0)
+
+
 class Solver(_Model):
     # LTSInterFoam ist BEWUSST nicht wählbar: das lokale Zeitschema
     # (localEuler) und die eigene PIMPLE-Steuerung sind nicht verdrahtet —
@@ -1037,6 +1069,9 @@ class Solver(_Model):
     # Teilbereiche mit eigenem Startwasserspiegel (Becken vorgefüllt
     # starten) — wirken NACH initial_level
     vorfuellungen: list[Vorfuellung] = []
+    # Vorzeitiges Ende (Leerlauf). Fehlt es, läuft alles wie bisher bis
+    # `end_time`.
+    abbruch: Abbruch | None = None
 
 
 # --------------------------------------------------------------------------

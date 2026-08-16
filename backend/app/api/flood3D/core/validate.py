@@ -1421,6 +1421,53 @@ def _pruefe_anfangsspiegel(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     return befunde
 
 
+def _pruefe_leerlauf(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Ein Leerlauf endet an einem Zustand statt an der Uhr — dafuer muss der
+    Zustand ueberhaupt erreichbar sein.
+    """
+    befunde: list[dict] = []
+    a = spec.solver.abbruch
+    if a is None:
+        return befunde
+
+    if spec.solver.initial_level is None and not spec.solver.vorfuellungen:
+        befunde.append(_finding(
+            "solver", "fehler",
+            "Der Lauf soll enden, wenn nichts mehr ablaeuft — es startet "
+            "aber kein Wasser im Gebiet. Anfangswasserspiegel setzen oder "
+            "einen Bereich vorfuellen.",
+            fix="Anfangswasserspiegel oder Vorfuellung angeben"))
+
+    zufluss = sum(float(getattr(b, "q", 0.0) or 0.0)
+                  for b in spec.boundaries
+                  if getattr(b, "type", "") == "inflow_constant")
+    if zufluss > 0:
+        befunde.append(_finding(
+            "solver", "warnung",
+            f"Dauerhafter Zufluss von {zufluss:g} m3/s: das Becken wird nie "
+            "leer und die Stagnation tritt fruehestens ein, wenn sich Zu- "
+            "und Ablauf die Waage halten. Der Lauf endet sonst an der "
+            f"Obergrenze {spec.solver.end_time:g} s."))
+
+    if a.fenster_s < 2 * spec.solver.write_interval_series:
+        befunde.append(_finding(
+            "solver", "warnung",
+            f"Das Beobachtungsfenster ({a.fenster_s:g} s) umfasst kaum mehr "
+            f"als einen Messpunkt (Reihen-Schreibintervall "
+            f"{spec.solver.write_interval_series:g} s) — die Stagnation "
+            "waere dann Zufall.",
+            fix="Fenster vergroessern oder Reihen haeufiger schreiben"))
+
+    if a.erwartete_dauer_s and a.erwartete_dauer_s > spec.solver.end_time:
+        befunde.append(_finding(
+            "solver", "warnung",
+            f"Die erwartete Dauer ({a.erwartete_dauer_s:g} s) liegt ueber "
+            f"der Obergrenze ({spec.solver.end_time:g} s) — der Lauf wird "
+            "abgeschnitten, bevor das Kriterium greifen kann."))
+    return befunde
+
+
 def _pruefe_auswertung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     """Auswertung: Querschnitte, Pegel und Kraftpatches."""
     befunde: list[dict] = []
@@ -1522,6 +1569,7 @@ _PRUEFUNGEN = [
     _pruefe_gebietslage,
     _pruefe_rechen,
     _pruefe_anfangsspiegel,
+    _pruefe_leerlauf,
     _pruefe_auswertung,
     _pruefe_verweise,
 ]
