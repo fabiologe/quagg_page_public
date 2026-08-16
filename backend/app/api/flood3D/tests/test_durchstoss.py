@@ -6,6 +6,8 @@ ausgeschnittener Bohrung.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 import trimesh
@@ -16,6 +18,35 @@ from ..core.solids import bohrkoerper, gelaende_koerper_bauen
 from ..core.terrain import TerrainField
 from ..core.validate import validate_case
 from .synthetic_case import build_spec_stage3
+
+
+# Punkt-in-Körper per Strahlzählung (Möller-Trumbore). trimesh.contains
+# braucht `rtree`, das hier nicht installiert ist — und fünf Strahlen mit
+# Mehrheitsentscheid sind gegen Kanten- und Eckentreffer robuster als der
+# eine Strahl, den trimesh benutzt.
+_STRAHLEN = np.array([(0.37, 0.21, 0.91), (0.91, -0.33, 0.25),
+                      (-0.19, 0.88, 0.44), (0.55, 0.61, -0.57),
+                      (-0.71, -0.42, 0.57)])
+
+
+def _im_koerper(mesh: trimesh.Trimesh, punkt) -> bool:
+    V = mesh.vertices[mesh.faces]
+    e1, e2 = V[:, 1] - V[:, 0], V[:, 2] - V[:, 0]
+    s = np.asarray(punkt, dtype=float) - V[:, 0]
+    treffer = 0
+    for d in _STRAHLEN:
+        h = np.cross(d, e2)
+        a = np.einsum("ij,ij->i", e1, h)
+        gut = np.abs(a) > 1e-12
+        f = np.zeros_like(a)
+        f[gut] = 1.0 / a[gut]
+        u = f * np.einsum("ij,ij->i", s, h)
+        q = np.cross(s, e1)
+        v = f * np.einsum("j,ij->i", d, q)
+        t = f * np.einsum("ij,ij->i", e2, q)
+        schnitte = gut & (u >= 0) & (u <= 1) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
+        treffer += int(schnitte.sum()) % 2
+    return treffer >= 3
 
 
 def _damm_fall(bohren: bool) -> cs.CaseSpec:
@@ -313,24 +344,84 @@ def test_knickachse_bohrt_einen_dichten_koerper():
     assert knick.volume > stumpf.volume, "der Keil am Knick ist gefüllt"
 
 
-def test_knickachse_dichtet_auch_den_rohrkoerper():
-    """Am Knick des Rohrkörpers sitzt eine Kugelschale (Kugelmuffe)."""
+def test_knickachse_laesst_den_wasserweg_offen():
+    """
+    DER Test am Knick: der lichte Querschnitt bleibt frei.
+
+    Vorgeschichte (Testrunde 2026-08-16, gemeldet als „innen sieht das Rohr
+    nicht mehr durchgängig aus"). Nachgemessen an einem DN800 mit
+    90°-Knick waren 0,3 bis 0,5 m hinter dem Knick rund die HÄLFTE des
+    lichten Querschnitts zu — aus zwei Gründen:
+
+      * die Ringsegmente stießen stumpf, der Wandring des einen Schenkels
+        ragte quer durch den lichten Raum des anderen;
+      * die Kugelschale am Knick hatte ihren Hohlraum vom KNICKPUNKT aus
+        gemessen — der lichte Kanal ist aber keine Kugel.
+
+    Der alte Test prüfte die Bauweise (vier lose Teile) statt der Zusage.
+    Deshalb ist er hier nicht angepasst, sondern ersetzt: geprüft wird,
+    dass man durch das Rohr hindurchsieht.
+    """
     from ..core.solids import build_culvert
 
+    knick = (6.0, 0.0, 95.0)
     cv = cs.StructCulvert(
         id="k", type="culvert", patch="k",
-        axis=[(0, 0, 95.0), (6, 0, 95.0), (10, 4, 95.0)],
+        axis=[(0, 0, 95.0), knick, (10, 4, 95.0)],
         profile=cs.CulvertProfile(kind="circular", diameter=0.8))
     m = build_culvert(cv)
-    # zwei Wandsegmente + die Kugelschale am inneren Achspunkt (die Schale
-    # zerfällt beim Aufteilen in ihre Außen- und Innenfläche: 2 Teile)
-    assert len(m.split(only_watertight=False)) == 4
-    # eine gerade 2-Punkt-Achse bleibt unverändert ohne Schale
+
+    assert m.is_watertight, "Rohrkörper muss ein Volumen sein"
+    assert len(m.split(only_watertight=False)) == 1, "EIN zusammenhängender Körper"
+
+    # Der Wasserweg des ZWEITEN Schenkels, dicht hinter dem Knick — dort
+    # saß das Material. Achsrichtung (4,4)/|…| ab dem Knickpunkt.
+    richtung = np.array([4.0, 4.0, 0.0]) / math.hypot(4.0, 4.0)
+    quer = np.array([richtung[1], -richtung[0], 0.0])
+    hoch = np.array([0.0, 0.0, 1.0])
+    r = 0.4 * 0.9                       # knapp innerhalb des lichten Radius
+    proben = []
+    for s in (0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90, 1.50):
+        for a in np.linspace(0, 2 * math.pi, 12, endpoint=False):
+            proben.append(np.asarray(knick) + s * richtung
+                          + r * math.cos(a) * quer + r * math.sin(a) * hoch)
+
+    verbaut = [p for p in proben if _im_koerper(m, p)]
+    assert not verbaut, (
+        f"{len(verbaut)} von {len(proben)} Punkten im lichten Querschnitt "
+        f"sind verbaut, erster bei {verbaut[0] if verbaut else None}")
+
+    # eine gerade 2-Punkt-Achse bleibt ein einfaches Rohr
     cv2 = cs.StructCulvert(
         id="g", type="culvert", patch="g",
         axis=[(0, 0, 95.0), (6, 0, 95.0)],
         profile=cs.CulvertProfile(kind="circular", diameter=0.8))
-    assert len(build_culvert(cv2).split(only_watertight=False)) == 1
+    gerade = build_culvert(cv2)
+    assert gerade.is_watertight
+    assert not _im_koerper(gerade, np.array([3.0, 0.0, 95.0])), \
+        "die Rohrachse liegt im Wasserweg, nicht in der Wand"
+
+
+def test_knick_verbaut_auch_rechteck_und_maul_nicht():
+    """Dieselbe Zusage für die eckigen Profile — dort liegt der lichte
+    Raum nicht rotationssymmetrisch um die Achse."""
+    from ..core.solids import build_culvert
+
+    knick = (6.0, 0.0, 95.0)
+    for profil in (cs.CulvertProfile(kind="rectangular", width=1.2, height=0.9),
+                   cs.CulvertProfile(kind="arch", width=1.2, height=1.0)):
+        cv = cs.StructCulvert(id="k", type="culvert", patch="k",
+                              axis=[(0, 0, 95.0), knick, (10, 4, 95.0)],
+                              profile=profil)
+        m = build_culvert(cv)
+        assert m.is_watertight, profil.kind
+        # auf der Achse (beim Maulprofil liegt sie auf der Sohle, deshalb
+        # ein Stück darüber) hinter dem Knick
+        hoch = 0.0 if profil.kind == "rectangular" else 0.35
+        richtung = np.array([4.0, 4.0, 0.0]) / math.hypot(4.0, 4.0)
+        for s in (0.1, 0.3, 0.5, 0.9):
+            p = np.asarray(knick) + s * richtung + np.array([0, 0, hoch])
+            assert not _im_koerper(m, p), f"{profil.kind} bei s = {s} m verbaut"
 
 
 def test_rohrmund_im_erdreich_wird_gewarnt():

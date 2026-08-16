@@ -11,8 +11,9 @@ Konstruktionsprinzipien:
               Extrusion von Unterkante bis Oberkante. Oberkante = max z der
               Stützpunkte, Unterkante = min z - height (Einbindung).
     Becken    Sohlplatte + umlaufende Wand als zwei geschlossene Körper.
-    Durchlass Ringquerschnitt je Achssegment (Kreis: annulus, Rechteck:
-              vier Wandplatten) — je Segment wasserdicht.
+    Durchlass Außenkontur MINUS lichtem Raum, beide als Vollkörper über
+              alle Achssegmente. So bleibt der Wasserweg auch am Knick
+              offen (siehe build_culvert).
     Pfeiler   Extrusion des Grundrisspolygons.
     Import    STL unverändert, mit Einfügepunkt und Drehung um z.
     Wehr      folgt nach dem ersten abgeschlossenen Nachweis (Spez. 6.3).
@@ -29,7 +30,7 @@ import numpy as np
 import shapely
 import shapely.affinity
 import trimesh
-from trimesh.creation import annulus, extrude_polygon
+from trimesh.creation import extrude_polygon
 
 from .casespec import CaseSpec
 
@@ -625,13 +626,66 @@ def _maulprofil(width: float, height: float) -> shapely.Polygon:
     return shapely.Polygon(pkte)
 
 
+def _profil_koerper(profile, laenge: float, aufmass: float) -> trimesh.Trimesh:
+    """
+    VOLLkörper des Querschnitts über `laenge`, ringsum um `aufmass`
+    aufgeweitet. `aufmass = 0` ergibt den lichten Raum, `aufmass = wand`
+    die Rohraußenkontur.
+
+    Bewusst voll statt als Ring: aus zwei Vollkörpern (außen minus lichter
+    Raum) entsteht ein Rohr, dessen Wasserweg am Knick per Konstruktion
+    offen ist. Aus zusammengesetzten Ringen entsteht das nicht — siehe
+    `build_culvert`.
+    """
+    if profile.kind == "circular":
+        return trimesh.creation.cylinder(radius=profile.diameter / 2 + aufmass,
+                                         height=laenge, sections=48)
+    if profile.kind == "rectangular":
+        return trimesh.creation.box((profile.width + 2 * aufmass,
+                                     profile.height + 2 * aufmass, laenge))
+    # arch = Maulprofil; Achsdatum ist die Sohle, das Aufmaß geht ringsum
+    poly = _maulprofil(profile.width, profile.height)
+    if aufmass > 0:
+        poly = poly.buffer(aufmass, join_style=2)
+    m = extrude_polygon(poly, height=laenge)
+    m.apply_translation([0, 0, -laenge / 2])
+    return m
+
+
+def _profil_segmente(profile, axis, aufmass: float,
+                     ueberlaenge: float = 0.0) -> list[trimesh.Trimesh]:
+    """
+    Die Vollkörper aller Achssegmente, auf die Achse gelegt.
+
+    `ueberlaenge` verlängert JEDES Segment an beiden Enden. Für den lichten
+    Raum ist das nötig: ohne den Überstand wären die Endflächen von außen
+    und innen deckungsgleich, und die Boolesche Differenz erzeugt dort
+    Flächen ohne Dicke.
+    """
+    teile = []
+    for a, b in zip(axis[:-1], axis[1:]):
+        vec = b - a
+        laenge = float(np.linalg.norm(vec))
+        if laenge < 1e-9:
+            continue
+        seg = _profil_koerper(profile, laenge + 2 * ueberlaenge, aufmass)
+        seg.apply_transform(_achsen_transform(vec))
+        seg.apply_translation((a + b) / 2)
+        # Ein Segment mit negativem Volumen hat gekippte Normalen — als
+        # Subtrahend einer Booleschen Operation FÜGT es Material hinzu
+        if seg.volume < 0:
+            seg.invert()
+        teile.append(seg)
+    return teile
+
+
 def _knick_radien(profile) -> tuple[float, float]:
     """
-    Innen-/Außenradius der Kugelschale, die einen Achsknick dicht macht.
-    Innen der Umkreis des LICHTEN Querschnitts (die Schale darf nicht in
-    den Wasserweg ragen), außen eine Wandstärke mehr. Beim Kreis ist das
-    exakt der Rohrquerschnitt; bei Rechteck und Maul füllt die Schale den
-    Keil an der Außenecke, wo er am weitesten klafft.
+    Innen-/Außenradius am Achsknick: innen der Umkreis des LICHTEN
+    Querschnitts, außen eine Wandstärke mehr. Beim Kreis ist das exakt der
+    Rohrquerschnitt; bei Rechteck und Maul weitet sich der lichte Raum am
+    Knick auf diesen Umkreis auf — der Wasserweg wird dort also größer,
+    nie kleiner.
     """
     wand = profile.wandstaerke
     if profile.kind == "circular":
@@ -645,47 +699,59 @@ def _knick_radien(profile) -> tuple[float, float]:
     return r_i, r_i + wand
 
 
+# Überstand des lichten Raums über die Rohrenden hinaus. Nur so viel, dass
+# die Endflächen nicht deckungsgleich sind — die Leitung wird dadurch nicht
+# messbar kürzer.
+_LICHT_UEBERSTAND = 1e-3
+
+
 def build_culvert(struct) -> trimesh.Trimesh:
+    """
+    Rohrkörper eines Durchlasses: Außenkontur MINUS lichtem Raum.
+
+    Die Reihenfolge ist der ganze Punkt. Vorher wurden Ringquerschnitte je
+    Segment zusammengesetzt und der Knick mit einer Kugelschale gefüllt.
+    Beides verbaute den Wasserweg:
+
+      * Die Ringe stießen stumpf aneinander — der Wandring des einen
+        Schenkels ragte quer durch den lichten Raum des anderen.
+      * Die Kugelschale hatte zwar einen Hohlraum vom lichten Radius, aber
+        gemessen VOM KNICKPUNKT aus. Der lichte Kanal ist keine Kugel; auf
+        der Rohrachse saß deshalb Material.
+
+    Gemessen an einem DN800 mit 90°-Knick waren 0,3 bis 0,5 m hinter dem
+    Knick rund die Hälfte des lichten Querschnitts zu (Testrunde
+    2026-08-16). Jetzt wird der lichte Raum in EINEM Zug abgezogen: der
+    Durchgang ist per Konstruktion offen, und die Gehrung an den Knicken
+    fällt als Nebenprodukt ab.
+    """
     axis = np.asarray(struct.axis, dtype=float)
     if len(axis) < 2:
         raise ValueError(f"Durchlass {struct.id}: Achse braucht mindestens 2 Punkte")
     wand = struct.profile.wandstaerke
-    segments = []
-    for a, b in zip(axis[:-1], axis[1:]):
-        vec = b - a
-        length = float(np.linalg.norm(vec))
-        if length < 1e-9:
-            continue
-        if struct.profile.kind == "circular":
-            r = struct.profile.diameter / 2
-            seg = annulus(r_min=r, r_max=r + wand, height=length,
-                          sections=48)
-        elif struct.profile.kind == "rectangular":
-            seg = _rect_shell(struct.profile.width, struct.profile.height,
-                              length, wand)
-        else:                                    # arch = Maulprofil
-            innen = _maulprofil(struct.profile.width, struct.profile.height)
-            ring = innen.buffer(wand, join_style=2).difference(innen)
-            seg = extrude_polygon(ring, height=length)
-            seg.apply_translation([0, 0, -length / 2])
-        # Querschnitt liegt um den Ursprung in der x-y-Ebene — auf die Achse
-        # legen, mit +y nach oben (sonst kippt das Profil um die Achse)
-        seg.apply_transform(_achsen_transform(vec))
-        seg.apply_translation((a + b) / 2)
-        segments.append(seg)
-    # Knick dicht: die Segmente stoßen stumpf — am Außenbogen jedes
-    # INNEREN Achspunkts klafft ein offener Keil zwischen den Endkappen.
-    # Eine Kugelschale um den Knickpunkt füllt ihn, ohne den lichten
-    # Querschnitt zu verbauen.
+
+    aussen = _profil_segmente(struct.profile, axis, wand)
+    innen = _profil_segmente(struct.profile, axis, 0.0,
+                             ueberlaenge=_LICHT_UEBERSTAND)
+    if not aussen:
+        raise ValueError(f"Durchlass {struct.id}: Achse ohne Länge")
+
+    # Am Knick zwei Kugeln statt einer Schale: die äußere füllt den Keil,
+    # den die gestoßenen Segmente außen offen lassen, die innere rundet den
+    # Wasserweg zur Rohrleitungs-Krümmung. Ihre Differenz ist genau die
+    # alte Kugelschale — nur wird sie jetzt zusammen mit dem lichten Raum
+    # verrechnet und kann ihn deshalb nicht mehr zubauen.
     if len(axis) >= 3:
         r_i, r_a = _knick_radien(struct.profile)
         for p in axis[1:-1]:
-            schale = trimesh.boolean.difference(
-                [trimesh.creation.icosphere(subdivisions=2, radius=r_a),
-                 trimesh.creation.icosphere(subdivisions=2, radius=r_i)])
-            schale.apply_translation(p)
-            segments.append(schale)
-    return trimesh.util.concatenate(segments)
+            for radius, ziel in ((r_a, aussen), (r_i, innen)):
+                kugel = trimesh.creation.icosphere(subdivisions=2, radius=radius)
+                kugel.apply_translation(p)
+                ziel.append(kugel)
+
+    voll = aussen[0] if len(aussen) == 1 else trimesh.boolean.union(aussen)
+    hohl = innen[0] if len(innen) == 1 else trimesh.boolean.union(innen)
+    return trimesh.boolean.difference([voll, hohl])
 
 
 # --------------------------------------------------------------------------
@@ -850,34 +916,7 @@ def bohrkoerper(struct) -> trimesh.Trimesh | None:
     if np.linalg.norm(v1) > 1e-9:
         axis[-1] = e0 + ueberstand * v1 / np.linalg.norm(v1)
 
-    teile = []
-    for a, b in zip(axis[:-1], axis[1:]):
-        vec = b - a
-        length = float(np.linalg.norm(vec))
-        if length < 1e-9:
-            continue
-        if struct.profile.kind == "circular":
-            r = struct.profile.diameter / 2 + wand
-            seg = trimesh.creation.cylinder(radius=r, height=length,
-                                            sections=48)
-        elif struct.profile.kind == "rectangular":
-            seg = trimesh.creation.box((struct.profile.width + 2 * wand,
-                                        struct.profile.height + 2 * wand,
-                                        length))
-        else:                                    # arch = Maulprofil
-            aussen = _maulprofil(struct.profile.width,
-                                 struct.profile.height).buffer(
-                                     wand, join_style=2)
-            seg = extrude_polygon(aussen, height=length)
-            seg.apply_translation([0, 0, -length / 2])
-        seg.apply_transform(_achsen_transform(vec))
-        seg.apply_translation((a + b) / 2)
-        # Ein Segment mit negativem Volumen hat gekippte Normalen — als
-        # Subtrahend einer Booleschen Operation FÜGT es Material hinzu,
-        # statt zu bohren (das „negativ ins Gelände geschnittene Rohr")
-        if seg.volume < 0:
-            seg.invert()
-        teile.append(seg)
+    teile = _profil_segmente(struct.profile, axis, wand)
     if not teile:
         return None
     # Knick dicht: stumpf gestoßene Segmente lassen am Außenbogen jedes
@@ -1192,27 +1231,6 @@ def gelaende_koerper_bauen(field, spec: CaseSpec, hinweise: list | None = None,
                                 f"Gelände fehlgeschlagen ({fehler})")
     return koerper
 
-
-
-def _rect_shell(width: float, height: float, length: float,
-                t: float) -> trimesh.Trimesh:
-    """Vier Wandplatten um den lichten Querschnitt, jede für sich geschlossen."""
-    w2, h2 = width / 2, height / 2
-    plates = [
-        trimesh.creation.box((width + 2 * t, t, length),
-                             trimesh.transformations.translation_matrix(
-                                 [0, h2 + t / 2, 0])),
-        trimesh.creation.box((width + 2 * t, t, length),
-                             trimesh.transformations.translation_matrix(
-                                 [0, -h2 - t / 2, 0])),
-        trimesh.creation.box((t, height, length),
-                             trimesh.transformations.translation_matrix(
-                                 [w2 + t / 2, 0, 0])),
-        trimesh.creation.box((t, height, length),
-                             trimesh.transformations.translation_matrix(
-                                 [-w2 - t / 2, 0, 0])),
-    ]
-    return trimesh.util.concatenate(plates)
 
 
 def build_imported(struct, base_dir: Path) -> trimesh.Trimesh:
