@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 import {
   KLASSE, erzeugeTauStufen, flaechenanteile, klassenFeld,
   neueSpuelAggregation, neueTrockenfall, spuelAuswerten, spuelSchritt,
-  trockenfallAuswerten, trockenfallSchritt, zeitGewichte,
+  jeBenetzt, trockenfallAuswerten, trockenfallSchritt, zeitGewichte,
 } from '../utils/laubkarten'
 import {
   ablagerungskarte, abschliessen, advehiere, saeeTracer, tracerBilanz,
@@ -53,7 +53,7 @@ function leerlaufDurchrechnen() {
   let vorher = null
   for (const t of zeiten) {
     const f = leerlaufSchritt(t)
-    trockenfallSchritt(tf, f.tiefe, t, H_NASS)
+    trockenfallSchritt(tf, f.tiefe, t)
     if (vorher === null) {
       zustand = saeeTracer({ ...GEO, tiefe: f.tiefe, anzahl: 4000 })
     } else {
@@ -64,11 +64,10 @@ function leerlaufDurchrechnen() {
   // Was jetzt noch treibt, liegt in einer Restpfütze — und gehört auf die
   // Karte, sonst bleibt ausgerechnet die Senke leer
   abschliessen(zustand)
-  const trocken = trockenfallAuswerten(tf)
-  const gueltig = new Uint8Array(NX * NY)
-  for (let c = 0; c < gueltig.length; c++) {
-    gueltig[c] = Number.isFinite(trocken[c]) ? 1 : 0
-  }
+  const trocken = trockenfallAuswerten(tf, H_NASS)
+  // Bezugsflaeche aus der feinsten Stufe — unabhaengig davon, was der
+  // Nass-Regler gerade sagt (siehe laubkarten.test.js)
+  const gueltig = jeBenetzt(tf)
   const { karte } = ablagerungskarte(zustand, { ...GEO, gueltig })
   return { zustand, trocken, gueltig, ablagerung: karte }
 }

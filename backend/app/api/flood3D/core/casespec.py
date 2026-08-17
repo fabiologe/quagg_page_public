@@ -1188,11 +1188,42 @@ Target = Annotated[
 ]
 
 
+class LaubkartenParameter(_Model):
+    """
+    Die Schwellen, mit denen die Laubkarten ausgewertet werden.
+
+    Sie gehören in den Fall, weil sie die AUSSAGE sind: „3 % kritische
+    Fläche" ist ohne die Ablagerungsschwelle keine Angabe, sondern eine
+    Zahl. Gespeichert wandern sie mit Geometrie-Ständen und stehen im
+    Bericht.
+
+    τ_krit steht bewusst NICHT hier — es hat schon ein Zuhause, das
+    Nachweiskriterium `min_bed_shear` (limit_min). Zwei Speicherorte für
+    dieselbe Zahl wären eine Doppelquelle.
+
+    Gerechnet werden die Karten im Browser; der Server hält die Werte nur
+    fest. Deshalb ist das auch KEIN Nachweiskriterium: die Prüfung liefe
+    hier nie, und die Nachweisübersicht würde eine behaupten.
+    """
+    # Konzentrationsfaktor, ab dem eine Zelle als „viel Laub" gilt
+    # (1 = mittlere Belegung)
+    ablagerung_ab: float = Field(2.0, gt=0)
+    # Spülintegral, ab dem die Spülwirkung als ausreichend gilt (N·s/m²);
+    # 0 = jede Überschreitung von τ_krit genügt
+    spuel_min: float = Field(0.0, ge=0)
+    # Wassertiefe, ab der eine Fläche als nass gilt (m) — die Setzung
+    # hinter „trockengefallen"
+    nass_tiefe: float = Field(0.01, gt=0, le=1.0)
+
+
 class Evaluation(_Model):
     sections: list[Section] = []
     gauges: list[Gauge] = []
     force_patches: list[str] = []
     targets: list[Target] = []
+    # Auswerte-Schwellen der Laubkarten; ohne Angabe gelten die
+    # Vorbelegungen des Panels.
+    laubkarten: LaubkartenParameter | None = None
     # Verweilzeit: ein mitgerechneter Markierungsstoff tritt ab t = 0 mit dem
     # Zufluss ein; seine Durchbruchskurve am Ablauf beantwortet die Frage,
     # die man einem Becken wirklich stellt — wie lange bleibt das Wasser,

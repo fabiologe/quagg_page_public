@@ -143,34 +143,107 @@ export function spuelAuswerten(agg, tauKrit) {
 // ── Trockenfallzeit (Begleitfeld zu Karte A) ────────────────────────────────
 
 /**
+ * Wassertiefen-Stufen für die Trockenfallzeit, logarithmisch von 1 mm bis
+ * 0,5 m. „Trockengefallen" ist keine Naturkonstante, sondern eine Setzung:
+ * ein Millimeterfilm trocknet von selbst weg, eine 3-cm-Lache nicht.
+ */
+export function erzeugeTiefenStufen(anzahl = 10) {
+  const lo = 0.001
+  const hi = 0.5
+  const stufen = new Float64Array(anzahl)
+  for (let k = 0; k < anzahl; k++) {
+    stufen[k] = lo * (hi / lo) ** (k / (anzahl - 1))
+  }
+  return stufen
+}
+
+/**
  * Je Rasterspalte der LETZTE Zeitpunkt, zu dem noch Wasser stand. Spät
  * trockenfallende Bereiche und Restpfützen sind die geometrisch zwingenden
  * Sammelstellen — sie sollen unabhängig vom Tracerergebnis sichtbar sein
  * (Spez. 3.3).
+ *
+ * Gespeichert wird nicht EIN Zeitpunkt je Zelle, sondern einer JE
+ * TIEFENSTUFE — derselbe Kniff wie bei der τ-Überschreitungskurve. Damit
+ * wird die Nass-Schwelle zum Regler: er wählt nur noch eine Spalte aus,
+ * statt eine erneute Auswertung über alle Zeitschritte zu erzwingen.
  */
-export function neueTrockenfall(nZellen) {
-  return { nZellen, tLetzt: new Float32Array(nZellen).fill(NaN),
+export function neueTrockenfall(nZellen, stufen = erzeugeTiefenStufen()) {
+  return { nZellen, stufen,
+           tLetzt: new Float32Array(nZellen * stufen.length).fill(NaN),
            t0: NaN, tEnde: NaN }
 }
 
-export function trockenfallSchritt(tf, tiefe, zeit, hNass) {
+export function trockenfallSchritt(tf, tiefe, zeit) {
   if (!Number.isFinite(tf.t0)) tf.t0 = zeit
   tf.tEnde = zeit
+  const k = tf.stufen.length
   for (let col = 0; col < tf.nZellen; col++) {
-    if (tiefe[col] >= hNass) tf.tLetzt[col] = zeit
+    const h = tiefe[col]
+    // Die Stufen sind aufsteigend: bei der ersten, die nicht mehr erreicht
+    // wird, ist Schluss. Trockene Zellen brechen sofort ab.
+    for (let i = 0; i < k && h >= tf.stufen[i]; i++) {
+      tf.tLetzt[col * k + i] = zeit
+    }
   }
 }
 
-/** Auf 0…1 normiert: 1 = fällt zuletzt trocken. NaN = war nie nass. */
-export function trockenfallAuswerten(tf) {
-  const spanne = tf.tEnde - tf.t0
+/**
+ * Trockenfallzeit für EINE Nass-Schwelle: Sekunden seit Laufbeginn, zu
+ * denen zuletzt Wasser über `hNass` stand. NaN = war nie so nass.
+ *
+ * Absolute Sekunden statt der früheren 0…1-Normierung: die versteckte,
+ * dass „1" beim Beispiellauf 240 s heißt. Die Farbskala liest sich in
+ * Sekunden von selbst richtig.
+ */
+export function trockenfallAuswerten(tf, hNass) {
+  const k = tf.stufen.length
+  // die größte Stufe, die die gewünschte Schwelle nicht überschreitet
+  let idx = 0
+  while (idx + 1 < k && tf.stufen[idx + 1] <= hNass) idx++
   const out = new Float32Array(tf.nZellen).fill(NaN)
   for (let col = 0; col < tf.nZellen; col++) {
-    const t = tf.tLetzt[col]
-    if (!Number.isFinite(t)) continue
-    out[col] = spanne > 0 ? (t - tf.t0) / spanne : 1
+    const t = tf.tLetzt[col * k + idx]
+    if (Number.isFinite(t)) out[col] = t - tf.t0
   }
   return out
+}
+
+/**
+ * Wo war überhaupt je Wasser? Bezugsfläche für die Flächenanteile.
+ *
+ * Bewusst aus der FEINSTEN Stufe und damit unabhängig vom Regler — sonst
+ * sprängen die Prozentangaben in Karte C, sobald jemand an der
+ * Nass-Schwelle für Karte A′ dreht.
+ */
+export function jeBenetzt(tf) {
+  const k = tf.stufen.length
+  const out = new Uint8Array(tf.nZellen)
+  for (let col = 0; col < tf.nZellen; col++) {
+    out[col] = Number.isFinite(tf.tLetzt[col * k]) ? 1 : 0
+  }
+  return out
+}
+
+// ── Welche Stellschraube wirkt auf welche Karte ─────────────────────────────
+//
+// Vorher standen alle Regler immer da, egal welche Karte gezeigt wurde: auf
+// A und A′ bewirkte kein einziger etwas Sichtbares, und auf B stand die
+// Ablagerungsschwelle direkt unter τ_krit, als gehöre sie dazu. Ein
+// Bedienelement, das nichts tut, ist schlimmer als keins — es behauptet
+// eine Wirkung.
+
+export const REGLER_JE_KARTE = {
+  A: ['ablagerung'],           // Schwelle dämpft, was Karte C aussortiert
+  T: ['nass'],                 // ab welcher Tiefe gilt eine Fläche als nass
+  B: ['tau'],
+  Bt: ['tau'],
+  C: ['tau', 'ablagerung', 'spuel'],
+}
+
+/** Die Regler, die auf die gezeigte Karte wirken — in fester Reihenfolge. */
+export function reglerFuer(karte) {
+  return REGLER_JE_KARTE[karte] ?? []
 }
 
 // ── Karte C: Verschnitt ─────────────────────────────────────────────────────
@@ -225,4 +298,60 @@ export function flaechenanteile(klassen, zellflaeche, gueltig = null) {
     flaeche: n * zellflaeche,
     anteil: gesamt > 0 ? n / gesamt : 0,
   }))
+}
+
+// ── Bildunterschrift für den Export ─────────────────────────────────────────
+
+/** Beschriftung der Karten, an EINER Stelle (Panel und Export lesen sie). */
+export const KARTEN_NAME = {
+  A: 'Karte A — Ablagerung',
+  T: 'Karte A′ — Trockenfallzeit',
+  B: 'Karte B — Spülintegral',
+  Bt: 'Karte B′ — Überschreitungsdauer',
+  C: 'Karte C — Verschnitt',
+}
+
+/**
+ * Die Zeilen, die in ein exportiertes Bild eingebrannt werden.
+ *
+ * Ohne sie ist eine Laubkarte im Bericht nicht nachvollziehbar: die
+ * Schwellen SIND die Aussage. „3 % kritische Fläche" ohne τ_krit und
+ * Ablagerungsschwelle ist keine Angabe, sondern eine Zahl.
+ *
+ * Genannt wird nur, was auf die gezeigte Karte auch wirkt (`reglerFuer`) —
+ * ein τ_krit unter Karte A′ wäre eine falsche Fährte.
+ *
+ * @returns {string[]} zwei bis drei Zeilen, fertig zum Zeichnen
+ */
+export function bildunterschrift({ karte, leerlauf, schwall, tauKrit,
+  tauHerkunft, aSchwelle, iMin, nassTiefe, anteile = [], bilanz = null,
+  datum = '' }) {
+  const z = (v, n = 2) => Number(v).toLocaleString('de-DE',
+    { maximumFractionDigits: n })
+  const wirkt = new Set(reglerFuer(karte))
+
+  const kopf = [KARTEN_NAME[karte] ?? karte,
+    `Leerlauf ${leerlauf}`, `Schwall ${schwall}`]
+  if (datum) kopf.push(datum)
+
+  const werte = []
+  if (wirkt.has('tau')) {
+    werte.push(`τ_krit ${z(tauKrit)} N/m²${tauHerkunft ? ` (${tauHerkunft})` : ''}`)
+  }
+  if (wirkt.has('ablagerung')) werte.push(`Ablagerung ab Faktor ${z(aSchwelle)}`)
+  if (wirkt.has('spuel')) werte.push(`Spülintegral ≥ ${z(iMin)} N·s/m²`)
+  if (wirkt.has('nass')) werte.push(`nass ab ${z(nassTiefe * 1000, 0)} mm`)
+
+  const zeilen = [kopf.join(' · ')]
+  if (werte.length) zeilen.push(werte.join(' · '))
+  if (karte === 'C' && anteile.length) {
+    zeilen.push(anteile
+      .map((a) => `${a.text} ${z(a.anteil * 100, 1)} %`).join(' · '))
+  }
+  if (bilanz) {
+    zeilen.push(`Laub: ${bilanz.gestrandet} trockengefallen · `
+      + `${bilanz.restwasser} in Restpfützen · ${bilanz.draussen} hinaus`
+      + (bilanz.stimmt ? '' : ' — BILANZ GEHT NICHT AUF'))
+  }
+  return zeilen
 }

@@ -10,6 +10,12 @@
         </button>
       </nav>
 
+      <!-- KeepAlive NUR für die Laubkarten: dort steckt eine Rechnung über
+           hunderte Zeitschritte im Panel, und ein Reiterwechsel warf sie
+           samt aller Reglerstellungen weg. Bewusst NICHT für Raum (3D) —
+           das hält vtk.js-Ressourcen, und dort gab es schon einmal ein
+           GPU-Leck; am Leben zu halten wäre die falsche Bequemlichkeit. -->
+      <KeepAlive :include="['LaubkartenPanel']">
       <TargetsPanel v-if="post.activeTab === 'nachweis'" />
       <BilanzPanel v-else-if="post.activeTab === 'bilanz'" />
       <VerweilzeitPanel v-else-if="post.activeTab === 'verweilzeit'" />
@@ -22,6 +28,7 @@
       <ExtremesTable v-else-if="post.activeTab === 'extremwerte'" />
       <FiguresPanel v-else-if="post.activeTab === 'abbildungen'" />
       <RunLogPanel v-else-if="post.activeTab === 'lauf'" />
+      </KeepAlive>
     </main>
   </div>
 </template>

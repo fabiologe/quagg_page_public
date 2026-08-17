@@ -32,6 +32,10 @@ export const VORBELEGUNG = {
   // Ab welchem Konzentrationsfaktor eine Zelle als „viel Ablagerung" gilt.
   // 1 = Gleichverteilung, also ist 2 die doppelte mittlere Belegung.
   laub_schwelle: 2.0,
+  // Wassertiefe, ab der eine Fläche als nass gilt (Karte A′). Entspricht
+  // TIEFE_BENETZT der Ergebnisdarstellung — darunter ist der Wert vom
+  // Darstellungsraster dominiert.
+  laub_nass_tiefe: 0.01,
 }
 
 // Grenzwert aus den Fall-Kriterien eines Ergebnisses ziehen — `kind` wie

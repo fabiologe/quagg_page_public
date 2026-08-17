@@ -65,7 +65,9 @@
             <option value="C">C — Verschnitt (Klassen)</option>
           </select>
         </div>
-        <div class="f3d-field">
+        <!-- Gezeigt wird nur, was auf DIESE Karte wirkt. Ein Regler, der
+             nichts tut, ist schlimmer als keiner — er behauptet Wirkung. -->
+        <div v-if="zeigt('tau')" class="f3d-field">
           <label>
             τ_krit = {{ fmt(tauKrit) }} N/m²
             <KennwertHilfe groesse="bed_shear" :wert="tauKrit" />
@@ -76,15 +78,27 @@
             {{ tauHerkunft }}
           </p>
         </div>
-        <div class="f3d-field">
+        <div v-if="zeigt('nass')" class="f3d-field">
+          <label>Nass ab {{ fmt(nassTiefe * 1000, 0) }} mm Wassertiefe</label>
+          <input type="range" min="0" max="100" step="1"
+                 :value="nassReglerPos" @input="nassAusRegler($event)" />
+          <p class="f3d-muted f3d-small">
+            „Trockengefallen" ist eine Setzung, keine Naturkonstante: ein
+            Millimeterfilm trocknet von selbst weg, eine 3-cm-Lache nicht.
+            Die Karte zeigt, wann hier zuletzt so viel Wasser stand.
+          </p>
+        </div>
+        <div v-if="zeigt('ablagerung')" class="f3d-field">
           <label>Ablagerung ab Faktor {{ fmt(aSchwelle) }}</label>
           <input type="range" min="1" max="8" step="0.25" v-model.number="aSchwelle" />
           <p class="f3d-muted f3d-small">
             1 = mittlere Belegung. {{ fmt(aSchwelle) }} heißt
-            {{ fmt(aSchwelle) }}-fache Laubmenge gegenüber dem Mittel.
+            {{ fmt(aSchwelle) }}-fache Laubmenge gegenüber dem Mittel.<template
+              v-if="karte === 'A'"> Alles darunter wird gedämpft gezeichnet —
+              das ist genau, was Karte C aussortiert.</template>
           </p>
         </div>
-        <div class="f3d-field">
+        <div v-if="zeigt('spuel')" class="f3d-field">
           <label>Spülintegral mindestens (N·s/m²)</label>
           <input type="number" class="f3d-num" step="0.5" min="0"
                  v-model.number="iMin" />
@@ -93,6 +107,18 @@
             verlangen, dass die Belastung auch lange genug anliegt.
           </p>
         </div>
+
+        <div class="f3d-laub-knoepfe">
+          <button class="f3d-btn" :disabled="!vorgabeGeaendert || sichert"
+                  title="Schwellen in den Fall schreiben — sie wandern dann mit Geometrie-Ständen und stehen im Bericht"
+                  @click="alsVorgabeSichern">
+            {{ sichert ? 'sichert …' : 'Als Fallvorgabe sichern' }}
+          </button>
+          <button class="f3d-btn" @click="exportPng">PNG exportieren</button>
+        </div>
+        <p v-if="vorgabeMeldung" class="f3d-muted f3d-small">
+          {{ vorgabeMeldung }}
+        </p>
       </article>
 
       <article v-if="erg" class="f3d-card">
@@ -198,10 +224,12 @@ import { paarKandidaten, paarStufe, rasterVergleich, unterschiedText }
   from '../../utils/laubpaar'
 import { flood3dApi } from '../../services/api'
 import {
-  KLASSE, erzeugeTauStufen, flaechenanteile, klassenFeld,
-  neueSpuelAggregation, neueTrockenfall, spuelAuswerten, spuelSchritt,
-  trockenfallAuswerten, trockenfallSchritt, zeitGewichte,
+  KARTEN_NAME, KLASSE, bildunterschrift, erzeugeTauStufen, flaechenanteile,
+  jeBenetzt, klassenFeld, neueSpuelAggregation, neueTrockenfall, reglerFuer,
+  spuelAuswerten, spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
+  zeitGewichte,
 } from '../../utils/laubkarten'
+import { usePreStore } from '../../stores/usePreStore'
 import {
   ablagerungskarte, abschliessen, abtastGuete, advehiere, saeeTracer,
   tracerBilanz,
@@ -209,7 +237,12 @@ import {
 import { VORBELEGUNG, tauKritVorgabe } from '../../utils/grenzwerte'
 import { fmtKurz as fmt } from '../../utils/labels'
 
+// `include` von KeepAlive greift auf den Komponentennamen zu — nicht auf
+// den aus dem Dateinamen abgeleiteten hoffen (ErgebnisPhase.vue).
+defineOptions({ name: 'LaubkartenPanel' })
+
 const store = usePostStore()
+const pre = usePreStore()
 const canvasHost = ref(null)
 const canvas = ref(null)
 
@@ -218,8 +251,14 @@ const schwallId = ref('')
 const karte = ref('C')
 const tauKrit = ref(VORBELEGUNG.tau_krit)
 const tauAusFall = ref(false)
-const aSchwelle = ref(VORBELEGUNG.laub_schwelle)
-const iMin = ref(0)
+
+// Die drei Schwellen ohne eigenes Zuhause im Fall — Vorbelegung aus
+// `evaluation.laubkarten`, sonst die benannten Faustwerte. (τ_krit steht
+// NICHT hier: es kommt aus dem Kriterium `min_bed_shear`, siehe unten.)
+const gespeichert = () => pre.spec?.evaluation?.laubkarten ?? {}
+const aSchwelle = ref(gespeichert().ablagerung_ab ?? VORBELEGUNG.laub_schwelle)
+const iMin = ref(gespeichert().spuel_min ?? 0)
+const nassTiefe = ref(gespeichert().nass_tiefe ?? VORBELEGUNG.laub_nass_tiefe)
 const rechnend = ref(false)
 const fortschritt = ref(0)
 const phase = ref('')
@@ -324,7 +363,7 @@ async function rechnen() {
       const vol = await getVolume(leerlaufId.value, zeitenL[i], ['alpha', 'U'])
       if (meins !== lauf) return
       const pf = planFieldsCached(vol, terrainZ)
-      trockenfallSchritt(tf, pf.depth, zeitenL[i], TIEFE_BENETZT)
+      trockenfallSchritt(tf, pf.depth, zeitenL[i])
 
       let summe = 0
       for (let c = 0; c < pf.depth.length; c++) summe += pf.depth[c]
@@ -397,17 +436,15 @@ async function rechnen() {
     }
 
     // --- Auswertung -----------------------------------------------------
-    const trocken = trockenfallAuswerten(tf)
-    // Bezugsfläche: was im Leerlauf je nass war. Das ganze Modellgebiet
-    // wäre der falsche Nenner — Böschungen und Vorland gehören nicht dazu.
-    const gueltig = new Uint8Array(nx * ny)
-    for (let c = 0; c < gueltig.length; c++) {
-      gueltig[c] = Number.isFinite(trocken[c]) ? 1 : 0
-    }
+    // Bezugsfläche: was im Leerlauf JE nass war (feinste Tiefenstufe). Das
+    // ganze Modellgebiet wäre der falsche Nenner — Böschungen und Vorland
+    // gehören nicht dazu. Bewusst unabhängig von der Nass-Schwelle: sonst
+    // sprängen die Flächenanteile in Karte C, sobald jemand an A′ dreht.
+    const gueltig = jeBenetzt(tf)
     const { karte: ablagerung } = ablagerungskarte(zustand,
       { ...geometrie, gueltig })
 
-    daten = { ...geometrie, terrainZ, ablagerung, trocken, agg, gueltig,
+    daten = { ...geometrie, terrainZ, ablagerung, tf, agg, gueltig,
       zellflaeche }
     erg.value = {
       bilanz: tracerBilanz(zustand),
@@ -441,6 +478,16 @@ const spuel = computed(() => {
   if (!erg.value || !daten) return null
   return spuelAuswerten(daten.agg, tauKrit.value)
 })
+
+// Karte A′: die Nass-Schwelle wählt nur eine Spalte der Stufenkurve aus —
+// deshalb reagiert der Regler ohne Neurechnen (utils/laubkarten.js).
+const trocken = computed(() => {
+  if (!erg.value || !daten) return null
+  return trockenfallAuswerten(daten.tf, nassTiefe.value)
+})
+
+// Welche Regler wirken auf die gezeigte Karte?
+const zeigt = (name) => reglerFuer(karte.value).includes(name)
 
 const klassen = computed(() => {
   if (!spuel.value) return null
@@ -477,23 +524,75 @@ const tauHerkunft = computed(() => (tauAusFall.value
     + 'Selbstreinigungsbands für Rinnen). Ein Kriterium im Fall würde sie '
     + 'ersetzen.'))
 
-const KARTEN = {
-  A: ['Karte A — Ablagerung', 'Konzentrationsfaktor der gestrandeten '
-    + 'Tracer: 1 = mittlere Belegung, 3 = dreifache. Wo das Laub liegen '
-    + 'bleibt, wenn das Becken leerläuft.'],
-  T: ['Karte A′ — Trockenfallzeit', 'Wann eine Stelle zuletzt Wasser trug '
-    + '(0 = früh, 1 = zuletzt). Spät trockenfallende Bereiche sind die '
-    + 'geometrisch zwingenden Sammelstellen — unabhängig vom Tracerbild.'],
-  B: ['Karte B — Spülintegral', 'Aufsummierte Überschreitung von τ_krit '
-    + 'über die Zeit (N·s/m²). Nicht nur ob, sondern wie lange und wie '
-    + 'kräftig gespült wurde.'],
-  Bt: ['Karte B′ — Überschreitungsdauer', 'Wie lange τ über τ_krit lag (s).'],
-  C: ['Karte C — Verschnitt', 'Die Planungsaussage: viel Ablagerung und zu '
-    + 'wenig Spülung. „Tote Fläche" erreicht der Schwall gar nicht erst — '
-    + 'daran ändert kein τ_krit etwas.'],
+// Die Nass-Schwelle ebenfalls logarithmisch: zwischen 1 mm Film und 30 cm
+// Lache liegen mehr als zwei Größenordnungen, und die interessante Frage
+// steht im unteren Drittel.
+const NASS_MIN = 0.001
+const NASS_MAX = 0.3
+const nassReglerPos = computed(() => Math.round(100
+  * Math.log(nassTiefe.value / NASS_MIN) / Math.log(NASS_MAX / NASS_MIN)))
+function nassAusRegler(e) {
+  const p = Number(e.target.value) / 100
+  nassTiefe.value = Number((NASS_MIN * (NASS_MAX / NASS_MIN) ** p)
+    .toPrecision(2))
 }
-const kartenTitel = computed(() => KARTEN[karte.value][0])
-const kartenText = computed(() => KARTEN[karte.value][1])
+
+// --- Schwellen als Fallvorgabe -------------------------------------------
+// τ_krit steht bewusst NICHT dabei: es hat schon ein Zuhause, das
+// Fall-Kriterium „min_bed_shear". Zwei Speicherorte für dieselbe Zahl
+// wären genau die Doppelquelle, die anderswo schon Ärger gemacht hat.
+
+const sichert = ref(false)
+const vorgabeMeldung = ref('')
+
+const vorgabeGeaendert = computed(() => {
+  const g = pre.spec?.evaluation?.laubkarten
+  return !g || g.ablagerung_ab !== aSchwelle.value
+    || g.spuel_min !== iMin.value || g.nass_tiefe !== nassTiefe.value
+})
+
+async function alsVorgabeSichern() {
+  if (!pre.spec) {
+    vorgabeMeldung.value = 'Kein Fall geöffnet — Schwellen bleiben in der Sitzung.'
+    return
+  }
+  sichert.value = true
+  vorgabeMeldung.value = ''
+  try {
+    pre.updateSettings((s) => {
+      s.evaluation = s.evaluation ?? {}
+      s.evaluation.laubkarten = {
+        ablagerung_ab: aSchwelle.value,
+        spuel_min: iMin.value,
+        nass_tiefe: nassTiefe.value,
+      }
+    })
+    const ok = await pre.saveCase()
+    vorgabeMeldung.value = ok
+      ? 'Im Fall gesichert — die Schwellen wandern mit Geometrie-Ständen.'
+      : 'Speichern fehlgeschlagen; die Meldungsleiste nennt den Grund.'
+  } finally {
+    sichert.value = false
+  }
+}
+
+// Die Namen stehen in utils/laubkarten.js (KARTEN_NAME) — Panel und
+// Bildexport lesen dieselbe Tabelle. Hier nur die Erklärtexte.
+const KARTEN_TEXT = {
+  A: 'Konzentrationsfaktor der gestrandeten Tracer: 1 = mittlere Belegung, '
+    + '3 = dreifache. Wo das Laub liegen bleibt, wenn das Becken leerläuft.',
+  T: 'Sekunden seit Laufbeginn, zu denen hier zuletzt Wasser über der '
+    + 'eingestellten Tiefe stand. Spät trockenfallende Bereiche sind die '
+    + 'geometrisch zwingenden Sammelstellen — unabhängig vom Tracerbild.',
+  B: 'Aufsummierte Überschreitung von τ_krit über die Zeit (N·s/m²). Nicht '
+    + 'nur ob, sondern wie lange und wie kräftig gespült wurde.',
+  Bt: 'Wie lange τ über τ_krit lag (s).',
+  C: 'Die Planungsaussage: viel Ablagerung und zu wenig Spülung. „Tote '
+    + 'Fläche" erreicht der Schwall gar nicht erst — daran ändert kein '
+    + 'τ_krit etwas.',
+}
+const kartenTitel = computed(() => KARTEN_NAME[karte.value] ?? karte.value)
+const kartenText = computed(() => KARTEN_TEXT[karte.value] ?? '')
 
 // Die Datenlage-Ampel: das Modul rechnet selbst aus, ob seine Aussage
 // trägt — und sagt es hin, statt eine hübsche Karte ohne Deckung zu zeigen.
@@ -552,7 +651,7 @@ const KLASSEN_RGB = [[45, 212, 160], [232, 161, 60], [255, 107, 107],
 function kartenWerte() {
   const s = spuel.value
   if (karte.value === 'A') return daten.ablagerung
-  if (karte.value === 'T') return daten.trocken
+  if (karte.value === 'T') return trocken.value
   if (karte.value === 'B') return s.iSpuel
   if (karte.value === 'Bt') return s.tExceed
   return null
@@ -594,8 +693,13 @@ function zeichne() {
         if (werte) {
           const v = werte[col]
           if (Number.isFinite(v) && v > 0) {
+            // Karte A: was unter der Ablagerungsschwelle liegt, wird
+            // gedämpft — damit sieht man auf A selbst, was Karte C als
+            // „viel Laub" nimmt, statt es raten zu müssen.
+            const deckung = (karte.value === 'A' && v < aSchwelle.value)
+              ? 0.3 : 0.85
             const [mr, mg, mb] = mische([r, g, b],
-              viridis((v - lo) / spanne), 0.85)
+              viridis((v - lo) / spanne), deckung)
             r = mr; g = mg; b = mb
           } else {
             // im Bezugsgebiet, aber ohne Wert: schwach blau, damit die
@@ -632,7 +736,52 @@ function zeichne() {
   }
 }
 
-watch([karte, spuel, klassen], () => zeichne())
+watch([karte, spuel, klassen, trocken, aSchwelle], () => zeichne())
+
+// --- Bildexport -----------------------------------------------------------
+// Ohne die eingebrannten Parameter ist eine Laubkarte im Bericht nicht
+// nachvollziehbar: die Schwellen SIND die Aussage. Muster wie
+// Raum3DPanel::exportPng — Bild plus Fußleiste.
+
+function exportPng() {
+  const quelle = canvas.value
+  if (!quelle || !daten) return
+  const zeilen = bildunterschrift({
+    karte: karte.value,
+    leerlauf: leerlaufId.value,
+    schwall: schwallId.value,
+    tauKrit: tauKrit.value,
+    tauHerkunft: tauAusFall.value ? 'Fall-Kriterium' : 'Vorbelegung',
+    aSchwelle: aSchwelle.value,
+    iMin: iMin.value,
+    nassTiefe: nassTiefe.value,
+    anteile: anteile.value,
+    bilanz: erg.value?.bilanz ?? null,
+    datum: new Date().toLocaleDateString('de-DE'),
+  })
+
+  const zeilenhoehe = 18
+  const rand = 12
+  const leiste = zeilen.length * zeilenhoehe + 2 * rand
+  const ziel = document.createElement('canvas')
+  ziel.width = quelle.width
+  ziel.height = quelle.height + leiste
+  const ctx = ziel.getContext('2d')
+  ctx.fillStyle = '#0a101f'
+  ctx.fillRect(0, 0, ziel.width, ziel.height)
+  ctx.drawImage(quelle, 0, 0)
+  ctx.fillStyle = '#e9eefb'
+  ctx.font = '13px system-ui, sans-serif'
+  ctx.textAlign = 'left'
+  zeilen.forEach((z, i) => {
+    ctx.fillText(z, rand, quelle.height + rand + (i + 1) * zeilenhoehe - 4)
+  })
+
+  const a = document.createElement('a')
+  a.download = `${leerlaufId.value}_x_${schwallId.value}_karte${karte.value}.png`
+  a.href = ziel.toDataURL('image/png')
+  a.click()
+}
 </script>
 
 <style scoped>
@@ -744,4 +893,6 @@ watch([karte, spuel, klassen], () => zeichne())
   color: var(--f3d-text-2);
 }
 .f3d-unterschiede li { padding: 1px 0; overflow-wrap: anywhere; }
+.f3d-laub-knoepfe { display: flex; gap: 8px; flex-wrap: wrap; }
+.f3d-laub-knoepfe .f3d-btn { flex: 1 1 auto; }
 </style>

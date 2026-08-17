@@ -5,9 +5,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  KLASSE, erzeugeTauStufen, flaechenanteile, klassenFeld,
-  neueSpuelAggregation, neueTrockenfall, spuelAuswerten, spuelSchritt,
-  trockenfallAuswerten, trockenfallSchritt,
+  KARTEN_NAME, KLASSE, bildunterschrift, erzeugeTauStufen, flaechenanteile,
+  jeBenetzt, klassenFeld, neueSpuelAggregation, neueTrockenfall, reglerFuer,
+  spuelAuswerten, spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
 } from '../utils/laubkarten'
 import {
   abtastGuete, ablagerungskarte, advehiere, saeeTracer, tracerBilanz,
@@ -60,16 +60,108 @@ describe('Karte B — Überschreitungskurve', () => {
 })
 
 describe('Trockenfallzeit', () => {
-  it('merkt sich den letzten nassen Zeitpunkt und normiert ihn', () => {
+  it('merkt sich den letzten nassen Zeitpunkt in Sekunden', () => {
     const tf = neueTrockenfall(3)
     //                     früh trocken | spät trocken | nie nass
-    trockenfallSchritt(tf, new Float32Array([0.5, 0.5, 0]), 0, 0.01)
-    trockenfallSchritt(tf, new Float32Array([0.0, 0.5, 0]), 10, 0.01)
-    trockenfallSchritt(tf, new Float32Array([0.0, 0.0, 0]), 20, 0.01)
-    const t = trockenfallAuswerten(tf)
+    trockenfallSchritt(tf, new Float32Array([0.5, 0.5, 0]), 0)
+    trockenfallSchritt(tf, new Float32Array([0.0, 0.5, 0]), 10)
+    trockenfallSchritt(tf, new Float32Array([0.0, 0.0, 0]), 20)
+    const t = trockenfallAuswerten(tf, 0.01)
+    // Sekunden seit Laufbeginn statt 0…1: die Normierung versteckte, dass
+    // „1" beim Beispiellauf 240 s heisst
     expect(t[0]).toBeCloseTo(0, 6)
-    expect(t[1]).toBeCloseTo(0.5, 6)
+    expect(t[1]).toBeCloseTo(10, 6)
     expect(Number.isNaN(t[2])).toBe(true)
+  })
+
+  it('macht die Nass-Schwelle zum Regler', () => {
+    // Eine Zelle traegt bis t = 5 s drei Zentimeter, danach nur noch einen
+    // Millimeterfilm bis t = 9 s. Je nachdem, was man „nass" nennt, faellt
+    // sie zu zwei verschiedenen Zeitpunkten trocken — genau das soll der
+    // Regler zeigen, ohne dass etwas neu gerechnet wird.
+    const tf = neueTrockenfall(1)
+    trockenfallSchritt(tf, new Float32Array([0.03]), 0)
+    trockenfallSchritt(tf, new Float32Array([0.03]), 5)
+    trockenfallSchritt(tf, new Float32Array([0.0015]), 9)
+    trockenfallSchritt(tf, new Float32Array([0.0]), 12)
+
+    expect(trockenfallAuswerten(tf, 0.02)[0]).toBeCloseTo(5, 6)
+    expect(trockenfallAuswerten(tf, 0.001)[0]).toBeCloseTo(9, 6)
+  })
+
+  it('haelt die Bezugsflaeche vom Regler fern', () => {
+    // Sonst spraengen die Flaechenanteile in Karte C, sobald jemand an der
+    // Nass-Schwelle fuer Karte A' dreht.
+    const tf = neueTrockenfall(3)
+    trockenfallSchritt(tf, new Float32Array([0.03, 0.002, 0]), 0)
+    trockenfallSchritt(tf, new Float32Array([0.0, 0.0, 0]), 5)
+
+    const g = jeBenetzt(tf)
+    expect([...g]).toEqual([1, 1, 0])       // der Millimeterfilm zaehlt mit
+    // und zwar unabhaengig davon, was der Regler gerade sagt
+    expect(Number.isNaN(trockenfallAuswerten(tf, 0.02)[1])).toBe(true)
+    expect([...jeBenetzt(tf)]).toEqual([1, 1, 0])
+  })
+})
+
+describe('Regler je Karte', () => {
+  it('nennt nur, was auf die gezeigte Karte wirkt', () => {
+    // Ein Bedienelement, das nichts tut, ist schlimmer als keines — es
+    // behauptet eine Wirkung.
+    expect(reglerFuer('A')).toEqual(['ablagerung'])
+    expect(reglerFuer('T')).toEqual(['nass'])
+    expect(reglerFuer('B')).toEqual(['tau'])
+    expect(reglerFuer('Bt')).toEqual(['tau'])
+    expect(reglerFuer('C')).toEqual(['tau', 'ablagerung', 'spuel'])
+    expect(reglerFuer('gibtsnicht')).toEqual([])
+  })
+
+  it('deckt jede Karte ab', () => {
+    for (const k of Object.keys(KARTEN_NAME)) {
+      expect(reglerFuer(k).length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('Bildunterschrift', () => {
+  const basis = {
+    leerlauf: 'becken_r006', schwall: 'becken_r007',
+    tauKrit: 2, tauHerkunft: 'Vorbelegung', aSchwelle: 2.5, iMin: 0,
+    nassTiefe: 0.01, datum: '17.08.2026',
+  }
+
+  it('nennt Laufpaar, Karte und Datum', () => {
+    const z = bildunterschrift({ ...basis, karte: 'C' })
+    expect(z[0]).toMatch(/Karte C/)
+    expect(z[0]).toMatch(/becken_r006/)
+    expect(z[0]).toMatch(/becken_r007/)
+    expect(z[0]).toMatch(/17\.08\.2026/)
+  })
+
+  it('nennt nur Schwellen, die auf DIESE Karte wirken', () => {
+    // Ein τ_krit unter Karte A' waere eine falsche Faehrte
+    const a = bildunterschrift({ ...basis, karte: 'T' }).join(' ')
+    expect(a).toMatch(/nass ab 10 mm/)
+    expect(a).not.toMatch(/τ_krit/)
+
+    const b = bildunterschrift({ ...basis, karte: 'B' }).join(' ')
+    expect(b).toMatch(/τ_krit/)
+    expect(b).not.toMatch(/Ablagerung ab/)
+  })
+
+  it('haengt bei Karte C die Flaechenanteile an', () => {
+    const z = bildunterschrift({ ...basis, karte: 'C',
+      anteile: [{ text: 'kritisch', anteil: 0.031 }] }).join(' ')
+    expect(z).toMatch(/kritisch 3,1 %/)
+  })
+
+  it('meldet eine Bilanz, die nicht aufgeht', () => {
+    const gut = bildunterschrift({ ...basis, karte: 'A',
+      bilanz: { gestrandet: 10, restwasser: 2, draussen: 1, stimmt: true } })
+    expect(gut.join(' ')).not.toMatch(/NICHT AUF/)
+    const schlecht = bildunterschrift({ ...basis, karte: 'A',
+      bilanz: { gestrandet: 10, restwasser: 2, draussen: 1, stimmt: false } })
+    expect(schlecht.join(' ')).toMatch(/BILANZ GEHT NICHT AUF/)
   })
 })
 
