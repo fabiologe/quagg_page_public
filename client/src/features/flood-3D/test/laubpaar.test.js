@@ -10,7 +10,9 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { netzKurz, paarKandidaten, rasterVergleich } from '../utils/laubpaar'
+import {
+  netzKurz, paarKandidaten, paarStufe, rasterVergleich, unterschiedText,
+} from '../utils/laubpaar'
 import { VORBELEGUNG, tauKritVorgabe } from '../utils/grenzwerte'
 
 const WURZEL = new URL('..', import.meta.url).pathname
@@ -27,30 +29,88 @@ describe('Laufpaare', () => {
     lauf('becken_r005', null),
   ]
 
-  it('lässt nur fertige Läufe auf demselben Netz zu', () => {
-    const k = paarKandidaten(runs, 'becken_r001')
-    const passend = k.filter((x) => x.passt).map((x) => x.run_id)
-    expect(passend).toEqual(['becken_r002'])
-    // der Lauf selbst ist kein Partner
-    expect(k.some((x) => x.run_id === 'becken_r001')).toBe(false)
-    // gescheiterte Läufe erscheinen gar nicht
-    expect(k.some((x) => x.run_id === 'becken_r004')).toBe(false)
+  it('bietet jeden fertigen Lauf an — auch auf anderem Netz', () => {
+    // Bis 2026-08-17 wurde hier nach netz_hash ausgegraut. Die Kennung war
+    // zu streng (sie umfasste die Zuflussmenge), und ein Leerlauf-/
+    // Schwall-Paar unterscheidet sich per Definition genau darin. Wer ein
+    // Paar auswählen will, soll es auswählen können — beurteilt wird
+    // danach, mit Begründung.
+    const k = paarKandidaten(runs, 'becken_r001').map((x) => x.run_id)
+    expect(k).toEqual(['becken_r002', 'becken_r003', 'becken_r005'])
+    // der Lauf selbst ist kein Partner, gescheiterte auch nicht
+    expect(k).not.toContain('becken_r001')
+    expect(k).not.toContain('becken_r004')
   })
 
-  it('lässt einen Altlauf ohne Netzangabe nicht stillschweigend durch', () => {
-    // Sonst verschneidet jemand zwei Altläufe und erfährt nie, dass sie
-    // auf verschiedenen Netzen gerechnet wurden.
-    const alt = paarKandidaten(runs, 'becken_r001')
-      .find((x) => x.run_id === 'becken_r005')
-    expect(alt.passt).toBe(false)
-    expect(alt.unbekannt).toBe(true)
-  })
-
-  it('kommt ohne Referenzlauf klar', () => {
-    expect(paarKandidaten(runs, '').every((x) => !x.passt)).toBe(true)
+  it('kommt ohne Referenzlauf und ohne Liste klar', () => {
+    expect(paarKandidaten(runs, '').length).toBe(4)
     expect(paarKandidaten(undefined, 'x')).toEqual([])
     expect(netzKurz(null)).toBe('–')
     expect(netzKurz('0123456789abcdef')).toBe('0123456789ab')
+  })
+})
+
+describe('Ampel für ein Laufpaar', () => {
+  const antwort = (extra = {}) => ({
+    raster: { gleich: true, grund: '' },
+    netz: { gleich: false },
+    geometrie: { stand: 'gleich' },
+    unterschiede: [],
+    stufe: 'gelb',
+    ...extra,
+  })
+
+  it('grün bei gleichem Netz', () => {
+    const a = paarStufe(antwort({ netz: { gleich: true }, stufe: 'gruen' }))
+    expect(a.stufe).toBe('gruen')
+    expect(a.rechenbar).toBe(true)
+  })
+
+  it('gelb ist der NORMALFALL eines Leerlauf-/Schwall-Paars', () => {
+    const a = paarStufe(antwort())
+    expect(a.stufe).toBe('gelb')
+    expect(a.rechenbar).toBe(true)
+    // Der Text muss das als gewollt benennen — sonst liest man Gelb als
+    // Fehler und sucht einen, den es nicht gibt.
+    expect(a.text).toMatch(/Normalfall/)
+    expect(a.titel).toMatch(/Randbedingungen/)
+  })
+
+  it('nennt einen Altlauf ohne gesicherte Geometrie beim Namen', () => {
+    const a = paarStufe(antwort({ geometrie: { stand: 'unbekannt' } }))
+    expect(a.stufe).toBe('gelb')
+    expect(a.rechenbar).toBe(true)
+    expect(a.text).toMatch(/nicht mitgesichert/)
+  })
+
+  it('warnt bei verschiedener Geometrie — sperrt aber nicht', () => {
+    // Genau das Sperren war der Fehler von vorher.
+    const a = paarStufe(antwort({ geometrie: { stand: 'verschieden' },
+      stufe: 'rot' }))
+    expect(a.stufe).toBe('rot')
+    expect(a.rechenbar).toBe(true)
+    expect(a.text).toMatch(/zwei verschiedene Bauwerke/)
+  })
+
+  it('sperrt genau dann, wenn sich die Karten nicht decken', () => {
+    const a = paarStufe(antwort({
+      raster: { gleich: false, grund: 'Verschieden große Ausgaberaster.' },
+      stufe: 'rot' }))
+    expect(a.stufe).toBe('rot')
+    expect(a.rechenbar).toBe(false)
+    expect(a.text).toMatch(/Ausgaberaster/)
+  })
+
+  it('ist vor der Auswahl still', () => {
+    const a = paarStufe(null)
+    expect(a.stufe).toBe('')
+    expect(a.rechenbar).toBe(false)
+  })
+
+  it('macht aus einer Fundstelle einen lesbaren Satz', () => {
+    expect(unterschiedText({ pfad: 'boundaries[0].q', a: 0, b: 0.8 }))
+      .toBe('boundaries[0].q: 0 → 0.8')
+    expect(unterschiedText({ pfad: 'x', a: null, b: 1 })).toBe('x: – → 1')
   })
 })
 

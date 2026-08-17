@@ -1,51 +1,97 @@
-// Welche zwei Läufe darf man überhaupt verschneiden?
+// Welche zwei Läufe darf man verschneiden — und was sagt man dazu?
 //
-// Karte C legt eine Ablagerungskarte aus dem LEERLAUF über eine
-// Spülkarte aus dem SCHWALL — Zelle auf Zelle. Das ergibt nur dann eine
-// Aussage, wenn beide dieselbe Rasterebene meinen. Zwei Hürden dabei,
-// und die zweite ist die unangenehmere:
+// Karte C legt eine Ablagerungskarte aus dem LEERLAUF über eine Spülkarte
+// aus dem SCHWALL, Zelle auf Zelle.
 //
-//  1. Gleiches NETZ. Der `netz_hash` ist die Identität der Vernetzung;
-//     unterscheidet er sich, liegt schon das Gelände woanders.
-//  2. Gleiches AUSGABERASTER. Das Viz-Gitter wird aus einem Datenbudget
-//     abgeleitet und hängt damit an Laufdauer und Schreibintervall — zwei
-//     Läufe auf demselben Netz können trotzdem verschieden fein
-//     ausgegeben worden sein. Dann sind `col`-Indizes nicht dieselben
-//     Orte, und ein Verschnitt wäre stiller Unsinn.
+// Bis 2026-08-17 entschied das EINE Kennung: gleicher `netz_hash` oder
+// nichts. Die war zu streng — sie umfasste die Randbedingungen samt
+// Zuflussmenge, und ein Leerlauf unterscheidet sich von einem Schwall per
+// Definition genau darin. Das Kriterium schloss also aus, wofür es gebaut
+// war (gemessen an Rentrich_BetaTest08 r006/r007: gleiches Netz, 29.010
+// Zellen, identisches Ausgaberaster, einziger Unterschied q = 0,0 gegen
+// 0,8 m³/s).
 //
-// Deshalb prüft das Panel beides: (1) beim Anbieten der Paare, (2) nach
-// dem Laden der beiden Gitter, bevor gerechnet wird.
+// Jetzt beantwortet der Server `/runs/vergleich` drei getrennte Fragen —
+// deckt sich das Raster (hart), dasselbe Netz, dasselbe Bauwerk — und
+// nennt die Unterschiede im Klartext. Hier steht nur noch, wie daraus ein
+// Satz für die Bedienung wird.
 
 /**
- * Läufe, die als Partner zu `referenz` in Frage kommen: fertig gerechnet,
- * nicht der Lauf selbst, und auf demselben Netz.
+ * Läufe, die als Partner in Frage kommen: fertig gerechnet und nicht der
+ * Lauf selbst.
  *
- * Läufe ohne `netz_hash` (vor 2026-08-16 gerechnet) werden NICHT
- * stillschweigend zugelassen — sonst verschneidet jemand zwei Altläufe und
- * erfährt es nie. Sie erscheinen mit `unbekannt: true`, damit das Panel
- * den Grund nennen kann.
+ * Bewusst OHNE Kennungsfilter. Ob ein Paar zusammenpasst, beantwortet der
+ * Vergleich nach der Auswahl — vorher etwas auszugrauen hieße, den Nutzer
+ * mit einer Zahl auszusperren, die er weder sieht noch ändern kann.
  */
 export function paarKandidaten(runs, referenzId) {
-  const referenz = (runs ?? []).find((r) => r.run_id === referenzId)
-  const hash = referenz?.netz_hash ?? null
   return (runs ?? [])
     .filter((r) => r.run_id !== referenzId && r.status === 'completed')
-    .map((r) => ({
-      run_id: r.run_id,
-      netz_hash: r.netz_hash ?? null,
-      unbekannt: !r.netz_hash || !hash,
-      passt: !!hash && !!r.netz_hash && r.netz_hash === hash,
-    }))
+    .map((r) => ({ run_id: r.run_id, netz_hash: r.netz_hash ?? null }))
 }
 
 /** Kurzform eines Netz-Hashes für die Anzeige (wie im Laufprotokoll). */
 export const netzKurz = (h) => (h ? String(h).slice(0, 12) : '–')
 
+/** Menschenlesbare Fundstelle aus einem Vergleichspfad. */
+export function unterschiedText(u) {
+  const wert = (v) => (v === null || v === undefined ? '–' : String(v))
+  return `${u.pfad}: ${wert(u.a)} → ${wert(u.b)}`
+}
+
+/**
+ * Aus der Serverantwort die Ampel für die Bedienung.
+ *
+ * `rechenbar` hängt allein am Raster — eine rote Ampel warnt, sperrt aber
+ * nicht. Genau das Sperren war der Fehler von vorher.
+ *
+ * @returns {{stufe: string, titel: string, text: string, rechenbar: boolean}}
+ */
+export function paarStufe(v) {
+  if (!v) {
+    return { stufe: '', titel: '', text: '', rechenbar: false }
+  }
+  if (!v.raster?.gleich) {
+    return { stufe: 'rot', rechenbar: false,
+      titel: 'Die Karten decken sich nicht',
+      text: v.raster?.grund || 'Die Ausgaberaster passen nicht zusammen.' }
+  }
+  if (v.stufe === 'gruen') {
+    return { stufe: 'gruen', rechenbar: true,
+      titel: 'Gleiches Netz',
+      text: 'Beide Läufe wurden auf derselben Vernetzung gerechnet — die '
+        + 'Karten liegen Zelle auf Zelle übereinander.' }
+  }
+  if (v.geometrie?.stand === 'verschieden') {
+    return { stufe: 'rot', rechenbar: true,
+      titel: 'Verschiedene Bauwerke',
+      text: 'Die Geometrie der beiden Läufe unterscheidet sich. Das '
+        + 'Ausgaberaster passt zwar, der Verschnitt vergleicht dann aber '
+        + 'zwei verschiedene Bauwerke — als Variantenvergleich brauchbar, '
+        + 'als Planungsaussage nicht.' }
+  }
+  if (v.geometrie?.stand === 'unbekannt') {
+    return { stufe: 'gelb', rechenbar: true,
+      titel: 'Geometrie nicht prüfbar',
+      text: 'Mindestens einer der beiden Läufe hat seine Geometrie nicht '
+        + 'mitgesichert (Läufe vor dem 15.08.). Ob es dasselbe Bauwerk '
+        + 'ist, lässt sich hier nicht feststellen — das Ausgaberaster '
+        + 'passt.' }
+  }
+  return { stufe: 'gelb', rechenbar: true,
+    titel: 'Gleiches Bauwerk, andere Randbedingungen',
+    text: 'Bei einem Leerlauf-/Schwall-Paar ist das der Normalfall: die '
+      + 'beiden unterscheiden sich gerade im Zufluss und im Wasserstand.' }
+}
+
 /**
  * Passen die AUSGABERASTER zweier Läufe Zelle auf Zelle zusammen?
- * Verglichen wird nur die Grundrissebene (nx, ny, Ursprung, Zellgröße) —
- * die Höhenschichtung darf sich unterscheiden, sie geht in die Karten
- * nicht ein.
+ *
+ * Die ENTSCHEIDUNG trifft der Server (`/runs/vergleich`); das hier ist die
+ * Zusicherung nach dem Laden der beiden Gitter. Zwei Regeln an zwei Orten
+ * wären genau die Falle, die diesen Umbau ausgelöst hat — deshalb steht
+ * hier bewusst keine zweite Meinung, sondern nur ein Riegel gegen eine
+ * veraltete Antwort.
  *
  * @returns {{passt: boolean, grund: string}}
  */

@@ -1283,17 +1283,39 @@ def migriere(daten: dict) -> dict:
     return daten
 
 
-# Teile des Falls, die das NETZ bestimmen: Gebiet und Basiszelle
+# Teile des Falls, die die GEOMETRIE bestimmen: Gebiet und Basiszelle
 # (blockMesh), Gelände und Bauwerke (snappyHexMesh), Verfeinerungen und
-# Grenzschichten, und die Randbedingungen — deren Fenster schneiden über
-# topoSet/createPatch die Flächen zu.
+# Grenzschichten.
 #
 # Bewusst NICHT dabei: meta, solver, evaluation. Ein geänderter Grenzwert,
 # eine andere Simulationsdauer oder ein verschobener Pegel ändern kein
 # einziges Netzelement. Über den GESAMTEN Fall gehasht entwerteten sie
 # trotzdem die Vorschau — die Meldung „Vorschaunetz gehört zu einem älteren
 # Stand" stand deshalb nach fast jeder Eingabe.
-NETZ_TEILE = ("domain", "terrain", "structures", "mesh", "boundaries")
+GEOMETRIE_TEILE = ("domain", "terrain", "structures", "mesh")
+
+# … plus die Randbedingungen für das NETZ: ihre Fenster schneiden über
+# topoSet/createPatch Flächen zu.
+NETZ_TEILE = GEOMETRIE_TEILE + ("boundaries",)
+
+# Von einer Randbedingung sieht der Vernetzer NUR diese Felder.
+#
+# Vorher steckte der ganze Rand im Netz-Hash — samt `q`, `level` und
+# CSV-Ganglinie. Gemessen an zwei echten Läufen (Rentrich_BetaTest08 r006
+# und r007, beide 29.010 Zellen, identisches Ausgaberaster): ihr einziger
+# Unterschied im gesamten Fall war die Zuflussmenge 0,0 gegen 0,8 m³/s —
+# und trotzdem galten sie als verschiedene Netze.
+#
+# Das traf ausgerechnet den Fall, für den die Kennung gebraucht wird: ein
+# Leerlauf und ein Spülschwall unterscheiden sich per Definition in genau
+# diesen Werten (Laubkarten, 2026-08-17).
+#
+# `type` bleibt drin: ohne gesetztes `face` leitet meshgen._assign_faces
+# aus der Art die Randfläche ab. Aus demselben Grund wird die Liste NICHT
+# sortiert — dort entscheidet „erster Zufluss / erster Abfluss", also die
+# Reihenfolge. `id` ist draußen: sie benennt nur eine topoSet-Zellmenge,
+# keine Zelle.
+NETZ_RAND_FELDER = ("patch", "face", "window", "type")
 
 
 class CaseSpec(_Model):
@@ -1362,10 +1384,29 @@ class CaseSpec(_Model):
         blob = json.dumps(self.model_dump(mode="json"), sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
+    def geometrie_hash(self) -> str:
+        """
+        Hash über das BAUWERK: Gebiet, Gelände, Bauteile, Netzsteuerung —
+        ohne Randbedingungen.
+
+        Beantwortet die Frage „ist das dasselbe Bauwerk?", die beim
+        Verschneiden zweier Läufe zählt (Laubkarten). Zwei Läufe desselben
+        Bauwerks mit verschiedenen Zu- und Abflüssen haben denselben
+        Geometrie-Hash und verschiedene Fall-Hashes — genau so soll es sein.
+        """
+        daten = self.model_dump(mode="json")
+        teil = {k: daten.get(k) for k in GEOMETRIE_TEILE}
+        return hashlib.sha256(
+            json.dumps(teil, sort_keys=True).encode()).hexdigest()[:16]
+
     def netz_hash(self) -> str:
         """Hash über alles, was die Vernetzung bestimmt — und sonst nichts."""
         daten = self.model_dump(mode="json")
-        teil = {k: daten.get(k) for k in NETZ_TEILE}
+        teil = {k: daten.get(k) for k in GEOMETRIE_TEILE}
+        # Von den Rändern nur, was der Vernetzer sieht (NETZ_RAND_FELDER):
+        # eine geänderte Zuflussmenge ist kein anderes Netz.
+        teil["boundaries"] = [{f: b.get(f) for f in NETZ_RAND_FELDER}
+                              for b in (daten.get("boundaries") or [])]
         blob = json.dumps(teil, sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 

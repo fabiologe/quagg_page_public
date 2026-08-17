@@ -253,6 +253,10 @@ export const flood3dApi = {
 
   // Läufe (PostViewer)
   listRuns: () => getJson('/runs'),
+  // Worin unterscheiden sich zwei Läufe, und darf man ihre Karten
+  // übereinanderlegen? (Laubkarten-Paarung)
+  laufVergleich: (a, b) =>
+    getJson(`/runs/vergleich?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   verifikation: () => getJson('/verifikation'),
   deleteRun: (runId) => sendJson(`/runs/${runId}`, 'DELETE'),
   // Auslagern/Zurückholen: Läufe sind der Plattenfresser; das Schwere liegt

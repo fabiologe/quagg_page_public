@@ -16,20 +16,32 @@
           <label>Spülschwall (Spülwirkung)</label>
           <select class="f3d-select" v-model="schwallId" :disabled="!leerlaufId">
             <option value="">– wählen –</option>
-            <option v-for="k in kandidaten" :key="k.run_id" :value="k.run_id"
-                    :disabled="!k.passt">
-              {{ k.run_id }}{{ k.passt ? '' : (k.unbekannt
-                ? ' (Netz unbekannt)' : ' (anderes Netz)') }}
+            <option v-for="k in kandidaten" :key="k.run_id" :value="k.run_id">
+              {{ k.run_id }}
             </option>
           </select>
-          <p class="f3d-muted f3d-small">
-            Nur Läufe auf demselben Netz sind wählbar
-            (Netz {{ netzKurz(netzHash) }}) — sonst liegen die Karten nicht
-            Zelle auf Zelle übereinander.
+        </div>
+
+        <!-- Die Ampel ersetzt die frühere Sperre: sie sagt, WAS an einem
+             Paar anders ist, statt es wortlos auszugrauen. -->
+        <div v-if="ampel.stufe" class="f3d-ampel-karte" :class="ampel.stufe">
+          <strong>{{ ampel.titel }}</strong>
+          <p>{{ ampel.text }}</p>
+          <ul v-if="unterschiede.length" class="f3d-unterschiede">
+            <li v-for="u in unterschiede" :key="u.pfad">{{ unterschiedText(u) }}</li>
+          </ul>
+          <p v-if="mehrUnterschiede" class="f3d-muted f3d-small">
+            … und weitere.
           </p>
         </div>
+        <p v-else-if="vergleichLaeuft" class="f3d-muted f3d-small">
+          prüfe das Paar …
+        </p>
+
         <button class="f3d-btn f3d-btn-run"
-                :disabled="!leerlaufId || !schwallId || rechnend"
+                :disabled="!leerlaufId || !schwallId || rechnend
+                  || !ampel.rechenbar"
+                :title="ampel.rechenbar ? '' : ampel.text"
                 @click="rechnen">
           {{ rechnend ? 'rechnet …' : 'Karten rechnen' }}
         </button>
@@ -182,7 +194,9 @@ import { PAD, useRasterCanvas } from '../../composables/useRasterCanvas'
 import { TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
 import { viridis } from '../../utils/colormap'
 import { gelaendeFarbe, gelaendeSchummerung, mische } from '../../utils/rasterBild'
-import { netzKurz, paarKandidaten, rasterVergleich } from '../../utils/laubpaar'
+import { paarKandidaten, paarStufe, rasterVergleich, unterschiedText }
+  from '../../utils/laubpaar'
+import { flood3dApi } from '../../services/api'
 import {
   KLASSE, erzeugeTauStufen, flaechenanteile, klassenFeld,
   neueSpuelAggregation, neueTrockenfall, spuelAuswerten, spuelSchritt,
@@ -219,23 +233,48 @@ let lauf = 0                // Wächter gegen ein spät zurückkehrendes Rechnen
 
 const fertigeLaeufe = computed(() =>
   store.visibleRuns.filter((r) => r.status === 'completed'))
-const netzHash = computed(() =>
-  fertigeLaeufe.value.find((r) => r.run_id === leerlaufId.value)?.netz_hash)
 const kandidaten = computed(() =>
   paarKandidaten(fertigeLaeufe.value, leerlaufId.value))
 
-// Ein Wechsel des Leerlaufs macht das Paar ungültig — sonst stünde das
-// alte Bild neben der neuen Auswahl
-watch(leerlaufId, () => {
-  const k = kandidaten.value.find((x) => x.run_id === schwallId.value)
-  if (!k?.passt) schwallId.value = ''
+// --- Paarung: der Server beurteilt, das Panel sagt es an ------------------
+// Der Vergleich ist billig (Index + gesicherter Stand) und läuft VOR dem
+// teuren Rechnen — vorher erfuhr man erst nach Minuten, dass zwei Läufe
+// nicht zusammenpassen.
+const vergleich = ref(null)
+const vergleichLaeuft = ref(false)
+const UNTERSCHIEDE_SICHTBAR = 6
+
+const ampel = computed(() => paarStufe(vergleich.value))
+const unterschiede = computed(() =>
+  (vergleich.value?.unterschiede ?? []).slice(0, UNTERSCHIEDE_SICHTBAR))
+const mehrUnterschiede = computed(() =>
+  (vergleich.value?.unterschiede ?? []).length > UNTERSCHIEDE_SICHTBAR)
+
+let vergleichLauf = 0
+
+watch([leerlaufId, schwallId], async ([a, b]) => {
+  // Jede Änderung der Auswahl macht Bild und Urteil ungültig — sonst
+  // stünde beides neben einem Paar, zu dem es nicht gehört.
   erg.value = null
   daten = null
   phase.value = ''
-  // Ohne dieses Leeren stünde die alte Karte neben der neuen Auswahl —
-  // und sähe aus, als gehörte sie dazu.
+  vergleich.value = null
   const cv = canvas.value
   if (cv) cv.getContext('2d').clearRect(0, 0, cv.width, cv.height)
+  if (!a || !b) return
+
+  const meins = ++vergleichLauf
+  vergleichLaeuft.value = true
+  try {
+    const v = await flood3dApi.laufVergleich(a, b)
+    if (meins === vergleichLauf) vergleich.value = v
+  } catch (e) {
+    if (meins === vergleichLauf) {
+      fehler.value = `Paarung nicht prüfbar: ${e.message}`
+    }
+  } finally {
+    if (meins === vergleichLauf) vergleichLaeuft.value = false
+  }
 })
 
 // --- Rechnen --------------------------------------------------------------
@@ -681,4 +720,28 @@ watch([karte, spuel, klassen], () => zeichne())
 .f3d-hint-warn { color: var(--f3d-warn); }
 .f3d-hint-bad { color: var(--f3d-bad); }
 .f3d-laub-fuss { flex: none; }
+/* Die Ampel steht zwischen Auswahl und Knopf — dort, wo die Entscheidung
+   fällt. Der farbige Balken links trägt die Stufe, der Text die Aussage;
+   Farbe allein wäre für Rot-Grün-Schwäche keine Information. */
+.f3d-ampel-karte {
+  border-left: 3px solid var(--f3d-border);
+  padding: 6px 0 6px 10px;
+  margin-bottom: 10px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.f3d-ampel-karte strong { color: var(--f3d-text); }
+.f3d-ampel-karte p { margin: 3px 0 0; color: var(--f3d-text-hilfe); }
+.f3d-ampel-karte.gruen { border-left-color: var(--f3d-good); }
+.f3d-ampel-karte.gelb { border-left-color: var(--f3d-warn); }
+.f3d-ampel-karte.rot { border-left-color: var(--f3d-bad); }
+.f3d-unterschiede {
+  list-style: none;
+  margin: 5px 0 0;
+  padding: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--f3d-text-2);
+}
+.f3d-unterschiede li { padding: 1px 0; overflow-wrap: anywhere; }
 </style>

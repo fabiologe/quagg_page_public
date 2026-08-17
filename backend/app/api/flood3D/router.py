@@ -41,7 +41,7 @@ from ..flood2D.env_util import env_spiegeln
 env_spiegeln("FLOOD3D_")
 
 from .core import fields as vol_fields
-from .core.casespec import CaseSpec, migriere
+from .core.casespec import GEOMETRIE_TEILE, CaseSpec, migriere
 from .core.solids import build_solids
 from .core.store import (lauf_reservieren, manifest_schreiben,
                          read_manifest, run_paths, runs_root)
@@ -336,10 +336,12 @@ async def list_runs():
             # Manifest zuerst: es trägt den Hash seit dem START, das Ergebnis
             # erst am Ende — gescheiterte Läufe hatten sonst gar keinen
             "case_hash": manifest.get("case_hash") or (result or {}).get("case_hash"),
-            # Netz-Identitaet: zwei Laeufe sind nur dann Zelle fuer Zelle
-            # vergleichbar, wenn sie auf DEMSELBEN Netz gerechnet wurden.
-            # Die Laubkarten verschneiden zwei Laeufe und brauchen das,
-            # um unpassende Paare gar nicht erst anzubieten.
+            # Netz-Identitaet aus dem Manifest — zur Anzeige. Fuer die
+            # Paarung zweier Laeufe ist sie NICHT massgeblich: dort
+            # rechnet /runs/vergleich die Kennung aus dem gesicherten
+            # Stand neu, weil die hier gespeicherten Werte aus der alten,
+            # zu strengen Rechnung stammen (vor 2026-08-17 steckte die
+            # Zuflussmenge mit im Netz-Hash).
             "netz_hash": (manifest.get("netz") or {}).get("netz_hash"),
             # Liegt die Geometrie dieses Laufs gesichert daneben? Nur dann
             # lässt sie sich als Stand zurückholen (Altläufe: nein)
@@ -439,6 +441,85 @@ async def archiv_stand(alter_tage: float = Query(14.0)):
     return {"wurzel": str(archiv_wurzel()), "bereit": bereit, "grund": grund,
             "archiviert": archiviert, "frei_gemacht_bytes": frei_gemacht,
             "kandidaten": offen, "alter_tage": alter_tage}
+
+
+# WICHTIG: vor "/runs/{run_id}" — sonst verschluckt der Platzhalter den
+# Pfad und "vergleich" käme als Laufkennung an.
+@router.get("/runs/vergleich")
+async def runs_vergleich(a: str = Query(...), b: str = Query(...)):
+    """
+    Worin unterscheiden sich zwei Läufe — und darf man ihre Karten
+    übereinanderlegen?
+
+    Gebaut für die Laubkarten, die zwei Läufe Zelle für Zelle verschneiden.
+    Vorher entschied das ein einziger Netz-Hash, und der war zu streng: er
+    umfasste die Randbedingungen vollständig, also auch die Zuflussmenge.
+    Damit fiel ausgerechnet das Paar durch, für das die Prüfung da ist —
+    ein Leerlauf und ein Spülschwall unterscheiden sich per Definition im
+    Zufluss (gemessen an Rentrich_BetaTest08 r006/r007: gleiches Netz,
+    29.010 Zellen, identisches Ausgaberaster, einziger Unterschied
+    q = 0,0 gegen 0,8 m³/s).
+
+    Jetzt getrennt beantwortet:
+      `raster`     deckt sich das Ausgabegitter? — die einzige HARTE
+                   Bedingung, und die einzige, die `rechenbar` bestimmt
+      `netz`       dieselbe Vernetzung?
+      `geometrie`  dasselbe Bauwerk? (`unbekannt` bei Läufen ohne
+                   gesicherten Stand)
+      `unterschiede` die Fundstellen im Klartext, damit aus „ungleich"
+                   eine Aussage wird
+    """
+    from .core.vergleich import paar_stufe, raster_gleich, spec_unterschiede
+
+    def stand(run_id: str) -> tuple[dict, dict | None, CaseSpec | None]:
+        paths = _paths(run_id)
+        index = vol_fields.read_index(paths.root)
+        manifest = read_manifest(paths) or {}
+        yaml = paths.root / "spec" / "case.yaml"
+        spec = None
+        if yaml.is_file():
+            try:
+                spec = CaseSpec.from_yaml(yaml)
+            except Exception:      # noqa: BLE001 — unlesbar = wie nicht da
+                spec = None
+        return manifest, index, spec
+
+    ma, ia, sa = stand(a)
+    mb, ib, sb = stand(b)
+
+    raster = raster_gleich((ia or {}).get("grid"), (ib or {}).get("grid"))
+
+    # Die Kennungen aus dem GESICHERTEN STAND nachrechnen, nicht aus dem
+    # Manifest lesen: die dort gespeicherten Werte stammen aus der alten,
+    # zu strengen Rechnung. Nur so wirkt die Korrektur rückwirkend.
+    netz_a = sa.netz_hash() if sa else (ma.get("netz") or {}).get("netz_hash")
+    netz_b = sb.netz_hash() if sb else (mb.get("netz") or {}).get("netz_hash")
+    netz_gleich = bool(netz_a and netz_b and netz_a == netz_b)
+
+    if sa is None or sb is None:
+        geometrie = "unbekannt"
+        unterschiede: list[dict] = []
+    elif sa.geometrie_hash() == sb.geometrie_hash():
+        geometrie = "gleich"
+        unterschiede = spec_unterschiede(
+            sa.model_dump(mode="json").get("boundaries"),
+            sb.model_dump(mode="json").get("boundaries"), "boundaries")
+    else:
+        geometrie = "verschieden"
+        unterschiede = spec_unterschiede(
+            {k: sa.model_dump(mode="json").get(k) for k in GEOMETRIE_TEILE},
+            {k: sb.model_dump(mode="json").get(k) for k in GEOMETRIE_TEILE})
+
+    return {"a": a, "b": b,
+            "raster": raster,
+            "netz": {"gleich": netz_gleich, "a": netz_a, "b": netz_b},
+            "geometrie": {"stand": geometrie},
+            "unterschiede": unterschiede,
+            "stufe": paar_stufe(raster["gleich"], netz_gleich, geometrie),
+            # Rechnen darf man, sobald sich die Karten decken. Eine rote
+            # Ampel warnt dann, sperrt aber nicht — sonst säße man wieder
+            # fest wie vorher am Netz-Hash.
+            "rechenbar": raster["gleich"]}
 
 
 @router.get("/runs/{run_id}")
@@ -637,12 +718,17 @@ def _preview_stand(spec: CaseSpec, d: Path) -> dict:
         # weiß, dass er neu rechnen muss (Audit F5)
         return {"vorhanden": True, "beschaedigt": True, "stale": True,
                 "preview": None}
-    # Altfall-Fallback: Vorschauen vor 2026-08-05 tragen keinen netz_hash
-    if info.get("netz_hash"):
-        stale = info["netz_hash"] != spec.netz_hash()
-    else:
-        stale = info.get("case_hash") != spec.case_hash()
-    return {"vorhanden": True, "preview": info, "stale": stale}
+    # Zwei Wege, gültig zu sein — es genügt EINER:
+    #   * der Netz-Hash passt: am Netz hat sich nichts geändert;
+    #   * der Fall-Hash passt: am Fall hat sich ÜBERHAUPT nichts geändert.
+    # Der zweite Weg ist der Rückfall für Altvorschauen (vor 2026-08-05
+    # ohne netz_hash) UND für die Neuberechnung des Netz-Hashes vom
+    # 2026-08-17: sonst hätte jede vorhandene Vorschau einmalig als
+    # veraltet gegolten, und seit dem 16.08. zeigt der Editor ein
+    # veraltetes Netz gar nicht mehr an.
+    passt = ((info.get("netz_hash") and info["netz_hash"] == spec.netz_hash())
+             or (info.get("case_hash") and info["case_hash"] == spec.case_hash()))
+    return {"vorhanden": True, "preview": info, "stale": not passt}
 
 
 @router.get("/cases/{case_id}/mesh-preview")
