@@ -16,7 +16,7 @@ from .synthetic_case import build_spec_stage3
 def test_schwellen_ueberleben_die_yaml_runde(tmp_path):
     spec = build_spec_stage3()
     spec.evaluation.laubkarten = LaubkartenParameter(
-        ablagerung_ab=2.5, spuel_min=1.5, nass_tiefe=0.003)
+        ablagerung_ab=2.5, spuel_min=1.5, nass_tiefe=0.003, ruhe_v=0.15)
     pfad = tmp_path / "case.yaml"
     spec.to_yaml(pfad)
 
@@ -25,6 +25,7 @@ def test_schwellen_ueberleben_die_yaml_runde(tmp_path):
     assert zurueck.evaluation.laubkarten.ablagerung_ab == 2.5
     assert zurueck.evaluation.laubkarten.spuel_min == 1.5
     assert zurueck.evaluation.laubkarten.nass_tiefe == 0.003
+    assert zurueck.evaluation.laubkarten.ruhe_v == 0.15
 
 
 def test_ohne_angabe_bleibt_es_bei_null(tmp_path):
@@ -39,7 +40,8 @@ def test_ohne_angabe_bleibt_es_bei_null(tmp_path):
 
 def test_unsinnige_werte_kommen_nicht_durch():
     for kw in (dict(ablagerung_ab=0), dict(spuel_min=-1),
-               dict(nass_tiefe=0), dict(nass_tiefe=5.0)):
+               dict(nass_tiefe=0), dict(nass_tiefe=5.0),
+               dict(ruhe_v=0), dict(ruhe_v=50.0)):
         with pytest.raises(Exception):
             LaubkartenParameter(**kw)
 

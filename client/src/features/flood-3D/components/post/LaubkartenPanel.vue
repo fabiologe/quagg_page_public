@@ -60,6 +60,7 @@
           <select class="f3d-select" v-model="karte">
             <option value="A">A — Ablagerung (Laub)</option>
             <option value="T">A′ — Trockenfallzeit</option>
+            <option value="R">R — Ruhezonen (Absetzneigung)</option>
             <option value="B">B — Spülwirkung (Integral)</option>
             <option value="Bt">B′ — Überschreitungsdauer</option>
             <option value="C">C — Verschnitt (Klassen)</option>
@@ -130,6 +131,19 @@
             Die Karte zeigt, wann hier zuletzt so viel Wasser stand.
           </p>
         </div>
+        <div v-if="zeigt('ruhe')" class="f3d-field">
+          <label>
+            ruhig unter {{ fmt(vRuhe) }} m/s
+            <KennwertHilfe groesse="umag" :wert="vRuhe" />
+          </label>
+          <input type="range" min="0" max="100" step="1"
+                 :value="ruheReglerPos" @input="ruheAusRegler($event)" />
+          <p class="f3d-muted f3d-small">
+            Unter 0,3 m/s gilt ein Gerinne als Ablagerungsbereich. Die Karte
+            zeigt, wie viel Prozent der nassen Zeit es hier so ruhig war —
+            ein Zeitanteil, keine Wahrscheinlichkeit.
+          </p>
+        </div>
         <div v-if="zeigt('ablagerung')" class="f3d-field">
           <label>Ablagerung ab Faktor {{ fmt(aSchwelle) }}</label>
           <input type="range" min="1" max="8" step="0.25" v-model.number="aSchwelle" />
@@ -156,7 +170,12 @@
                   @click="alsVorgabeSichern">
             {{ sichert ? 'sichert …' : 'Als Fallvorgabe sichern' }}
           </button>
-          <button class="f3d-btn" @click="exportPng">PNG exportieren</button>
+          <button class="f3d-btn" @click="exportPng">PNG herunterladen</button>
+          <button class="f3d-btn" :disabled="uebernimmt"
+                  title="Alle fünf Karten mit ihren Schwellen beim Leerlauf-Lauf ablegen — sie erscheinen dann im Reiter „Abbildungen“"
+                  @click="inBerichtAufnehmen">
+            {{ uebernimmt ? 'legt ab …' : 'In den Bericht aufnehmen' }}
+          </button>
         </div>
         <p v-if="vorgabeMeldung" class="f3d-muted f3d-small">
           {{ vorgabeMeldung }}
@@ -253,7 +272,7 @@
 // Was das Modul NICHT kann, steht sichtbar am Ergebnis (KennwertHilfe
 // „laub_kritisch") — Einwegkopplung, masseloser Tracer, nur kurze
 // Standzeiten, τ nur auf dem Geländepatch.
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
 import { getGeometry, getTimesteps, getVolume, planFieldsCached }
@@ -267,10 +286,10 @@ import { paarKandidaten, paarStufe, rasterVergleich, unterschiedText }
 import { flood3dApi } from '../../services/api'
 import {
   KARTEN_EINHEIT, KARTEN_HILFE, KARTEN_NAME, KLASSE, bildunterschrift,
-  erzeugeTauStufen, flaechenanteile,
-  jeBenetzt, klassenFeld, neueSpuelAggregation, neueTrockenfall, reglerFuer,
-  spuelAuswerten, spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
-  zeitGewichte,
+  erzeugeTauStufen, flaechenanteile, jeBenetzt, klassenFeld,
+  neueRuheAggregation, neueSpuelAggregation, neueTrockenfall, reglerFuer,
+  ruheAuswerten, ruheSchritt, spuelAuswerten, spuelSchritt,
+  trockenfallAuswerten, trockenfallSchritt, zeitGewichte,
 } from '../../utils/laubkarten'
 import { usePreStore } from '../../stores/usePreStore'
 import {
@@ -302,6 +321,7 @@ const gespeichert = () => pre.spec?.evaluation?.laubkarten ?? {}
 const aSchwelle = ref(gespeichert().ablagerung_ab ?? VORBELEGUNG.laub_schwelle)
 const iMin = ref(gespeichert().spuel_min ?? 0)
 const nassTiefe = ref(gespeichert().nass_tiefe ?? VORBELEGUNG.laub_nass_tiefe)
+const vRuhe = ref(gespeichert().ruhe_v ?? VORBELEGUNG.laub_v_ruhe)
 const rechnend = ref(false)
 const fortschritt = ref(0)
 const phase = ref('')
@@ -395,6 +415,10 @@ async function rechnen() {
     // --- Leerlauf: Trockenfall und Tracerbahnen -------------------------
     phase.value = 'Leerlauf: Laub verfolgen …'
     const tf = neueTrockenfall(nx * ny)
+    // Karte R laeuft im selben Durchgang mit: umagM liefert planFields
+    // ohnehin, es kostet also keinen zusaetzlichen Ladevorgang.
+    const ruheAgg = neueRuheAggregation(nx * ny)
+    const gewichteL = zeitGewichte(zeitenL)
     let zustand = null
     let vorher = null
     let cflMax = { median: 0, p90: 0, cfl: 0, cflP90: 0 }
@@ -407,6 +431,11 @@ async function rechnen() {
       if (meins !== lauf) return
       const pf = planFieldsCached(vol, terrainZ)
       trockenfallSchritt(tf, pf.depth, zeitenL[i])
+      const nassL = new Uint8Array(nx * ny)
+      for (let c = 0; c < nassL.length; c++) {
+        nassL[c] = pf.depth[c] > TIEFE_BENETZT ? 1 : 0
+      }
+      ruheSchritt(ruheAgg, pf.umagM, nassL, gewichteL[i])
 
       let summe = 0
       for (let c = 0; c < pf.depth.length; c++) summe += pf.depth[c]
@@ -487,8 +516,8 @@ async function rechnen() {
     const { karte: ablagerung } = ablagerungskarte(zustand,
       { ...geometrie, gueltig })
 
-    daten = { ...geometrie, terrainZ, ablagerung, tf, agg, gueltig,
-      zellflaeche }
+    daten = { ...geometrie, terrainZ, ablagerung, tf, agg, ruhe: ruheAgg,
+      gueltig, zellflaeche }
     erg.value = {
       bilanz: tracerBilanz(zustand),
       cfl: cflMax,
@@ -527,6 +556,13 @@ const spuel = computed(() => {
 const trocken = computed(() => {
   if (!erg.value || !daten) return null
   return trockenfallAuswerten(daten.tf, nassTiefe.value)
+})
+
+// Karte R: derselbe Kniff wie bei tau — der Regler waehlt aus der
+// Stufenkurve, statt eine neue Auswertung zu erzwingen.
+const ruhe = computed(() => {
+  if (!erg.value || !daten?.ruhe) return null
+  return ruheAuswerten(daten.ruhe, vRuhe.value)
 })
 
 // Welche Regler wirken auf die gezeigte Karte?
@@ -580,6 +616,15 @@ function nassAusRegler(e) {
     .toPrecision(2))
 }
 
+const V_MIN = 0.01
+const V_MAX = 2.0
+const ruheReglerPos = computed(() => Math.round(100
+  * Math.log(vRuhe.value / V_MIN) / Math.log(V_MAX / V_MIN)))
+function ruheAusRegler(e) {
+  const p = Number(e.target.value) / 100
+  vRuhe.value = Number((V_MIN * (V_MAX / V_MIN) ** p).toPrecision(2))
+}
+
 // --- Schwellen als Fallvorgabe -------------------------------------------
 // τ_krit steht bewusst NICHT dabei: es hat schon ein Zuhause, das
 // Fall-Kriterium „min_bed_shear". Zwei Speicherorte für dieselbe Zahl
@@ -592,6 +637,7 @@ const vorgabeGeaendert = computed(() => {
   const g = pre.spec?.evaluation?.laubkarten
   return !g || g.ablagerung_ab !== aSchwelle.value
     || g.spuel_min !== iMin.value || g.nass_tiefe !== nassTiefe.value
+    || g.ruhe_v !== vRuhe.value
 })
 
 async function alsVorgabeSichern() {
@@ -608,6 +654,7 @@ async function alsVorgabeSichern() {
         ablagerung_ab: aSchwelle.value,
         spuel_min: iMin.value,
         nass_tiefe: nassTiefe.value,
+        ruhe_v: vRuhe.value,
       }
     })
     const ok = await pre.saveCase()
@@ -627,6 +674,10 @@ const KARTEN_TEXT = {
   T: 'Sekunden seit Laufbeginn, zu denen hier zuletzt Wasser über der '
     + 'eingestellten Tiefe stand. Spät trockenfallende Bereiche sind die '
     + 'geometrisch zwingenden Sammelstellen — unabhängig vom Tracerbild.',
+  R: 'Anteil der nassen Zeit, in der es hier ruhiger war als die '
+    + 'eingestellte Schwelle. Die Gegenprobe zu Karte A — ohne Bahnen '
+    + 'gerechnet und deshalb unabhängig vom Advektions-CFL, dafür für '
+    + 'ABGESUNKENES statt schwimmendes Laub.',
   B: 'Aufsummierte Überschreitung von τ_krit über die Zeit (N·s/m²). Nicht '
     + 'nur ob, sondern wie lange und wie kräftig gespült wurde.',
   Bt: 'Wie lange τ über τ_krit lag (s).',
@@ -647,6 +698,7 @@ const FARBE_OHNE_WERT = _rgb(mische(gelaendeFarbe(0.5), [60, 90, 140], 0.35))
 const OHNE_WERT = {
   A: 'kein Laub liegen geblieben',
   T: 'nie über der eingestellten Nass-Schwelle',
+  R: 'nie ruhiger als die Schwelle',
   B: 'τ_krit nie überschritten',
   Bt: 'τ_krit nie überschritten',
   C: 'unkritisch',
@@ -714,6 +766,7 @@ function kartenWerte() {
   const s = spuel.value
   if (karte.value === 'A') return daten.ablagerung
   if (karte.value === 'T') return trocken.value
+  if (karte.value === 'R') return ruhe.value
   if (karte.value === 'B') return s.iSpuel
   if (karte.value === 'Bt') return s.tExceed
   return null
@@ -812,18 +865,22 @@ function zeichne() {
   }
 }
 
-watch([karte, spuel, klassen, trocken, aSchwelle], () => zeichne())
+watch([karte, spuel, klassen, trocken, ruhe, aSchwelle], () => zeichne())
 
 // --- Bildexport -----------------------------------------------------------
 // Ohne die eingebrannten Parameter ist eine Laubkarte im Bericht nicht
 // nachvollziehbar: die Schwellen SIND die Aussage. Muster wie
 // Raum3DPanel::exportPng — Bild plus Fußleiste.
 
-function exportPng() {
+/**
+ * Das fertige Bild EINER Karte samt Fußleiste. Getrennt vom Herunterladen,
+ * weil dasselbe Bild auch in den Bericht wandert — zwei Wege, ein Bild.
+ */
+function karteAlsBild(welche = karte.value) {
   const quelle = canvas.value
-  if (!quelle || !daten) return
+  if (!quelle || !daten) return null
   const zeilen = bildunterschrift({
-    karte: karte.value,
+    karte: welche,
     leerlauf: leerlaufId.value,
     schwall: schwallId.value,
     tauKrit: tauKrit.value,
@@ -831,6 +888,7 @@ function exportPng() {
     aSchwelle: aSchwelle.value,
     iMin: iMin.value,
     nassTiefe: nassTiefe.value,
+    vRuhe: vRuhe.value,
     anteile: anteile.value,
     bilanz: erg.value?.bilanz ?? null,
     datum: new Date().toLocaleDateString('de-DE'),
@@ -882,10 +940,58 @@ function exportPng() {
     ctx.fillText(`${fmt(lo)} bis ${fmt(hi)} ${einheit}`.trim(), bx, by + 26)
   }
 
+  return { dataUrl: ziel.toDataURL('image/png'), zeilen }
+}
+
+function exportPng() {
+  const bild = karteAlsBild()
+  if (!bild) return
   const a = document.createElement('a')
   a.download = `${leerlaufId.value}_x_${schwallId.value}_karte${karte.value}.png`
-  a.href = ziel.toDataURL('image/png')
+  a.href = bild.dataUrl
   a.click()
+}
+
+// --- In den Bericht aufnehmen --------------------------------------------
+// Der Download allein verknüpft nichts: das Bild lag im Downloads-Ordner
+// und niemand konnte später sagen, zu welchem Lauf und welchen Schwellen
+// es gehörte. Abgelegt wird beim LEERLAUF-Lauf (er trägt die Ablagerung);
+// das Laufpaar steht in der Bildunterschrift.
+
+const uebernimmt = ref(false)
+
+async function inBerichtAufnehmen() {
+  if (!daten || !leerlaufId.value) return
+  uebernimmt.value = true
+  vorgabeMeldung.value = ''
+  const vorher = karte.value
+  try {
+    let n = 0
+    for (const welche of Object.keys(KARTEN_NAME)) {
+      // Die Karte muss GEZEICHNET sein, bevor sie ins Bild kann — der
+      // Canvas trägt immer nur die gerade gezeigte.
+      karte.value = welche
+      await nextTick()
+      zeichne()
+      const bild = karteAlsBild(welche)
+      if (!bild) continue
+      await flood3dApi.abbildungAblegen(leerlaufId.value, {
+        id: `laubkarte_${welche}`,
+        caption: bild.zeilen.join(' · '),
+        png_b64: bild.dataUrl,
+      })
+      n++
+    }
+    vorgabeMeldung.value = `${n} Karten beim Lauf ${leerlaufId.value} `
+      + 'abgelegt — im Reiter „Abbildungen" sichtbar.'
+  } catch (e) {
+    vorgabeMeldung.value = `Übernahme fehlgeschlagen: ${e.message}`
+  } finally {
+    karte.value = vorher
+    await nextTick()
+    zeichne()
+    uebernimmt.value = false
+  }
 }
 </script>
 

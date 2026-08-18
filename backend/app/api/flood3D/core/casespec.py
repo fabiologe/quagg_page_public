@@ -1214,6 +1214,10 @@ class LaubkartenParameter(_Model):
     # Wassertiefe, ab der eine Fläche als nass gilt (m) — die Setzung
     # hinter „trockengefallen"
     nass_tiefe: float = Field(0.01, gt=0, le=1.0)
+    # Fließgeschwindigkeit, unter der eine Stelle als „ruhig" gilt (m/s) —
+    # die Schwelle der Ruhezonen-Karte. 0,3 ist die gebräuchliche
+    # Ablagerungsgrenze für Gerinne.
+    ruhe_v: float = Field(0.3, gt=0, le=10.0)
 
 
 class Evaluation(_Model):

@@ -13,7 +13,13 @@
             {{ fig.caption }}
             <span class="f3d-figure-links">
               <a :href="pngUrl(entry.runId, fig)" target="_blank" rel="noopener">PNG</a>
-              <a :href="svgUrl(entry.runId, fig)" target="_blank" rel="noopener">SVG</a>
+              <!-- Im Browser gerechnete Karten haben kein SVG: sie
+                   entstehen auf einem Canvas, nicht in matplotlib. -->
+              <a v-if="fig.quelle !== 'client'" :href="svgUrl(entry.runId, fig)"
+                 target="_blank" rel="noopener">SVG</a>
+              <button v-if="fig.quelle === 'client'" class="f3d-figure-weg"
+                      type="button" title="Abbildung aus dem Bericht entfernen"
+                      @click="entfernen(entry.runId, fig.id)">entfernen</button>
             </span>
           </figcaption>
         </figure>
@@ -35,14 +41,28 @@ const store = usePostStore()
 const entries = ref([])
 
 const pngUrl = (runId, fig) => flood3dApi.figureUrl(runId, `${fig.id}.png`)
+const stand = ref(0)          // erzwingt ein Neuladen nach dem Entfernen
+
+async function entfernen(runId, figId) {
+  if (!globalThis.confirm(`Abbildung „${figId}" aus dem Bericht entfernen?`)) {
+    return
+  }
+  await flood3dApi.abbildungLoeschen(runId, figId)
+  stand.value++
+}
 const svgUrl = (runId, fig) => flood3dApi.figureUrl(runId, `${fig.id}.svg`)
 
 watchEffect(async () => {
   const ids = [...store.selectedRunIds]
+  void stand.value                       // nach dem Entfernen neu laden
   entries.value = await Promise.all(ids.map(async (runId) => {
     try {
-      const result = await store.ensureResult(runId)
-      return { runId, figures: result.figures ?? [] }
+      // Serverseitig gerenderte UND im Browser gerechnete zusammen: die
+      // Laubkarten entstehen im Client und liegen deshalb in einer
+      // eigenen Datei neben result.json (die wird beim Auswerten neu
+      // geschrieben).
+      const a = await flood3dApi.abbildungen(runId)
+      return { runId, figures: [...(a.figures ?? []), ...(a.client ?? [])] }
     } catch (e) {
       // Fehler NICHT zu „keine Abbildungen" machen — ein 500er sah
       // vorher aus wie ein Lauf ohne Bilder
@@ -77,4 +97,15 @@ watchEffect(async () => {
 }
 .f3d-figure-links { display: flex; gap: 8px; }
 .f3d-figure-links a { color: var(--f3d-accent); text-decoration: none; }
+/* Entfernen sieht aus wie die Links daneben, ist aber ein Knopf — es
+   ändert etwas, statt nur zu öffnen. */
+.f3d-figure-weg {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--f3d-text-2);
+  cursor: pointer;
+}
+.f3d-figure-weg:hover { color: var(--f3d-bad); }
 </style>

@@ -579,6 +579,44 @@ export const KENNWERTE = {
       + 'deshalb in kleinen Sprüngen — das ist die Auflösung, kein Fehler.',
   },
 
+  laub_ruhezone: {
+    label: 'Ruhezonen-Anteil (Karte R)',
+    einheit: '% der Zeit',
+    was: 'Wie viel Prozent der Zeit, in der diese Stelle nass war, die '
+      + 'tiefengemittelte Fließgeschwindigkeit unter der eingestellten '
+      + 'Schwelle lag. Die Gegenprobe zu Karte A: dort wird SCHWIMMENDES '
+      + 'Laub auf Bahnen verfolgt, hier zählt nur, wo es ruhig genug ist, '
+      + 'dass durchnässtes Laub und Schwebstoff liegen bleiben.',
+    stufen: [
+      { bis: 20, text: 'überwiegend in Bewegung — hier setzt sich wenig ab.',
+        cls: 'ok' },
+      { bis: 60, text: 'zeitweise ruhig. Was sich hier absetzt, wird bei '
+        + 'höherem Durchfluss wieder mitgenommen.', cls: 'ok' },
+      { bis: 85, text: 'überwiegend ruhig — Ablagerungsbereich.',
+        cls: 'warn' },
+      { bis: Infinity, text: 'praktisch dauernd ruhig. Totzone: was hier '
+        + 'ankommt, bleibt.', cls: 'bad' },
+    ],
+    faustformel: 'Als Schwelle ist 0,3 m/s gebräuchlich — darunter gilt ein '
+      + 'Gerinne als Ablagerungsbereich, darüber als selbstreinigend (siehe '
+      + 'Fließgeschwindigkeit). Der Wert ist ein Regler, weil er von Korn '
+      + 'und Stoff abhängt.',
+    achtung: 'Das ist ausdrücklich KEINE Wahrscheinlichkeit, sondern ein '
+      + 'ZEITANTEIL: der Anteil der benetzten Zeit, in dem die Bedingung '
+      + 'zum Absetzen erfüllt war. Für eine echte Absetzwahrscheinlichkeit '
+      + 'fehlen Korngröße, Sinkgeschwindigkeit, Feststoffkonzentration und '
+      + 'das Wiederaufwirbeln — das Modell führt keinen Feststoff mit. '
+      + 'Zweitens ist die maßgebende Größe für Sedimentation streng '
+      + 'genommen die Sohlschubspannung, nicht die tiefengemittelte '
+      + 'Geschwindigkeit; letztere ist der anschauliche und im Regelwerk '
+      + 'verankerte Ersatz. Drittens: die Karte gilt für den LAUF, aus dem '
+      + 'sie stammt. Aus einem Leerlauf gerechnet zeigt sie die '
+      + 'geometrisch bedingten Ruhezonen während des Ablaufens — nicht den '
+      + 'Dauerbetrieb, in dem sich in Wirklichkeit das meiste absetzt. '
+      + 'Ihr Vorteil gegenüber Karte A: sie braucht keine Bahnen und hängt '
+      + 'deshalb NICHT am Advektions-CFL.',
+  },
+
   laub_kritisch: {
     label: 'Kritische Fläche (Laubkarten)',
     einheit: '% der Fläche',

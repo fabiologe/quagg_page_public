@@ -259,6 +259,14 @@ export const flood3dApi = {
     getJson(`/runs/vergleich?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   verifikation: () => getJson('/verifikation'),
   deleteRun: (runId) => sendJson(`/runs/${runId}`, 'DELETE'),
+  // Berichtsabbildungen eines Laufs: die serverseitig gerenderten UND die
+  // im Browser gerechneten (Laubkarten).
+  abbildungen: (runId) => getJson(`/runs/${runId}/abbildungen`),
+  abbildungAblegen: (runId, payload) =>
+    sendJson(`/runs/${runId}/abbildungen`, 'POST', payload),
+  abbildungLoeschen: (runId, figId) =>
+    sendJson(`/runs/${runId}/abbildungen/${encodeURIComponent(figId)}`,
+      'DELETE'),
   // Auslagern/Zurückholen: Läufe sind der Plattenfresser; das Schwere liegt
   // danach auf der StorageBox, Manifest und Bewertung bleiben lokal.
   // Beides hinter dem Kosten-Gate (Bandbreite, fremde Zugriffe).

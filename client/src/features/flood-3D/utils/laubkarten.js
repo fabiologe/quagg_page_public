@@ -140,6 +140,87 @@ export function spuelAuswerten(agg, tauKrit) {
            dauer: agg.dauer }
 }
 
+// ── Karte R: Ruhezonen (Absetzneigung) ──────────────────────────────────────
+//
+// Die Gegenprobe zum Tracer. Karte A verfolgt SCHWIMMENDES Laub auf
+// Bahnen — das ist genau die Rechnung, die an der Abtastung hängt
+// (Advektions-CFL). Durchnässtes Laub sinkt dagegen ab und bleibt liegen,
+// wo es ruhig genug ist; dafür genügt eine Statistik je Zelle. Diese
+// Karte ist damit EULERSCH: keine Bahnen, kein CFL-Problem, und sie
+// bleibt auch dann belastbar, wenn die Felder für den Tracer zu grob
+// geschrieben wurden.
+//
+// Aufbau wie bei τ, damit auch diese Schwelle live regelbar ist.
+
+/** Geschwindigkeitsstufen, logarithmisch von 5 mm/s bis 2 m/s. */
+export function erzeugeTempoStufen(anzahl = 16) {
+  const lo = 0.005
+  const hi = 2.0
+  const stufen = new Float64Array(anzahl)
+  for (let k = 0; k < anzahl; k++) {
+    stufen[k] = lo * (hi / lo) ** (k / (anzahl - 1))
+  }
+  return stufen
+}
+
+export function neueRuheAggregation(nZellen, stufen = erzeugeTempoStufen()) {
+  const k = stufen.length
+  return {
+    stufen,
+    nZellen,
+    hist: new Float64Array(nZellen * (k + 1)),      // Zeit je Tempostufe
+    histV: new Float64Array(nZellen * (k + 1)),     // v-gewichtete Zeit
+    nassZeit: new Float64Array(nZellen),            // Nenner: nur benetzte Zeit
+  }
+}
+
+/**
+ * Einen Zeitschritt einrechnen. Gezählt wird nur, solange die Zelle NASS
+ * ist — eine trockene Zelle hat die Geschwindigkeit 0, und ohne diese
+ * Maske wäre jede Trockenfläche die ruhigste Zone der Karte.
+ */
+export function ruheSchritt(agg, tempo, nass, dt) {
+  if (!(dt > 0)) return
+  const k = agg.stufen.length
+  for (let col = 0; col < agg.nZellen; col++) {
+    if (!nass[col]) continue
+    agg.nassZeit[col] += dt
+    const v = tempo[col]
+    if (!Number.isFinite(v)) continue
+    let idx = 0
+    while (idx < k && agg.stufen[idx] < v) idx++
+    const platz = col * (k + 1) + idx
+    agg.hist[platz] += dt
+    agg.histV[platz] += v * dt
+  }
+}
+
+/**
+ * Anteil der benetzten Zeit, in der es ruhiger als `vKrit` war — in
+ * PROZENT, damit die Legende unmissverständlich ist.
+ *
+ * Das ist ausdrücklich KEINE Wahrscheinlichkeit: dafür fehlen Korngröße,
+ * Sinkgeschwindigkeit und das Wiederaufwirbeln. Es ist der Zeitanteil, in
+ * dem die Bedingung zum Absetzen erfüllt war.
+ */
+export function ruheAuswerten(agg, vKrit) {
+  const k = agg.stufen.length
+  const anteil = new Float32Array(agg.nZellen).fill(NaN)
+  for (let col = 0; col < agg.nZellen; col++) {
+    const gesamt = agg.nassZeit[col]
+    if (!(gesamt > 0)) continue          // nie nass — keine Aussage
+    const basis = col * (k + 1)
+    let ruhig = 0
+    for (let i = 0; i <= k; i++) {
+      const zeit = agg.hist[basis + i]
+      if (zeit <= 0) continue
+      if (agg.histV[basis + i] / zeit < vKrit) ruhig += zeit
+    }
+    anteil[col] = (ruhig / gesamt) * 100
+  }
+  return anteil
+}
+
 // ── Trockenfallzeit (Begleitfeld zu Karte A) ────────────────────────────────
 
 /**
@@ -236,6 +317,7 @@ export function jeBenetzt(tf) {
 export const REGLER_JE_KARTE = {
   A: ['ablagerung'],           // Schwelle dämpft, was Karte C aussortiert
   T: ['nass'],                 // ab welcher Tiefe gilt eine Fläche als nass
+  R: ['ruhe'],                 // ab welchem Tempo gilt es als ruhig
   B: ['tau'],
   Bt: ['tau'],
   C: ['tau', 'ablagerung', 'spuel'],
@@ -307,7 +389,7 @@ export function flaechenanteile(klassen, zellflaeche, gueltig = null) {
  * sie zeigt Klassen statt Zahlen.
  */
 export const KARTEN_EINHEIT = {
-  A: '', T: 's', B: 'N·s/m²', Bt: 's', C: '',
+  A: '', T: 's', R: '% der Zeit', B: 'N·s/m²', Bt: 's', C: '',
 }
 
 /**
@@ -320,6 +402,7 @@ export const KARTEN_EINHEIT = {
 export const KARTEN_HILFE = {
   A: 'laub_ablagerung',
   T: 'laub_trockenfall',
+  R: 'laub_ruhezone',
   B: 'laub_spuelintegral',
   Bt: 'laub_ueberschreitung',
   C: 'laub_kritisch',
@@ -329,6 +412,7 @@ export const KARTEN_HILFE = {
 export const KARTEN_NAME = {
   A: 'Karte A — Ablagerung',
   T: 'Karte A′ — Trockenfallzeit',
+  R: 'Karte R — Ruhezonen',
   B: 'Karte B — Spülintegral',
   Bt: 'Karte B′ — Überschreitungsdauer',
   C: 'Karte C — Verschnitt',
@@ -347,8 +431,8 @@ export const KARTEN_NAME = {
  * @returns {string[]} zwei bis drei Zeilen, fertig zum Zeichnen
  */
 export function bildunterschrift({ karte, leerlauf, schwall, tauKrit,
-  tauHerkunft, aSchwelle, iMin, nassTiefe, anteile = [], bilanz = null,
-  datum = '' }) {
+  tauHerkunft, aSchwelle, iMin, nassTiefe, vRuhe, anteile = [],
+  bilanz = null, datum = '' }) {
   const z = (v, n = 2) => Number(v).toLocaleString('de-DE',
     { maximumFractionDigits: n })
   const wirkt = new Set(reglerFuer(karte))
@@ -364,6 +448,7 @@ export function bildunterschrift({ karte, leerlauf, schwall, tauKrit,
   if (wirkt.has('ablagerung')) werte.push(`Ablagerung ab Faktor ${z(aSchwelle)}`)
   if (wirkt.has('spuel')) werte.push(`Spülintegral ≥ ${z(iMin)} N·s/m²`)
   if (wirkt.has('nass')) werte.push(`nass ab ${z(nassTiefe * 1000, 0)} mm`)
+  if (wirkt.has('ruhe')) werte.push(`ruhig unter ${z(vRuhe)} m/s`)
 
   const zeilen = [kopf.join(' · ')]
   if (werte.length) zeilen.push(werte.join(' · '))

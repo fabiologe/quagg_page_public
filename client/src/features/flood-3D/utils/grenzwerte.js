@@ -36,6 +36,10 @@ export const VORBELEGUNG = {
   // TIEFE_BENETZT der Ergebnisdarstellung — darunter ist der Wert vom
   // Darstellungsraster dominiert.
   laub_nass_tiefe: 0.01,
+  // Fließgeschwindigkeit, unter der eine Stelle als „ruhig" gilt
+  // (Karte R). 0,3 m/s ist die gebräuchliche Ablagerungsgrenze für
+  // Gerinne — siehe KENNWERTE.umag.
+  laub_v_ruhe: 0.3,
 }
 
 // Grenzwert aus den Fall-Kriterien eines Ergebnisses ziehen — `kind` wie

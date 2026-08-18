@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest'
 import {
   KARTEN_EINHEIT, KARTEN_HILFE, KARTEN_NAME, KLASSE, bildunterschrift,
   erzeugeTauStufen, flaechenanteile, jeBenetzt, klassenFeld,
-  neueSpuelAggregation, neueTrockenfall, reglerFuer, spuelAuswerten,
-  spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
+  neueRuheAggregation, neueSpuelAggregation, neueTrockenfall, reglerFuer,
+  ruheAuswerten, ruheSchritt, spuelAuswerten, spuelSchritt,
+  trockenfallAuswerten, trockenfallSchritt,
 } from '../utils/laubkarten'
 import { KENNWERTE, einordnen } from '../utils/kennwerte'
 import {
@@ -310,5 +311,55 @@ describe('Erklärung und Legende je Karte', () => {
     // „nie überschritten" ist ein eigener Befund, keine kleine Zahl
     expect(einordnen('laub_ueberschreitung', 0).cls).toBe('bad')
     expect(einordnen('laub_ueberschreitung', 120).cls).toBe('ok')
+  })
+})
+
+describe('Karte R — Ruhezonen', () => {
+  it('zählt den Zeitanteil unter der Schwelle', () => {
+    // EINE Zelle: 3 s schnell (1 m/s), 7 s langsam (0,1 m/s)
+    const agg = neueRuheAggregation(1)
+    ruheSchritt(agg, new Float32Array([1.0]), new Uint8Array([1]), 3)
+    ruheSchritt(agg, new Float32Array([0.1]), new Uint8Array([1]), 7)
+
+    expect(ruheAuswerten(agg, 0.3)[0]).toBeCloseTo(70, 0)   // 7 von 10 s
+    expect(ruheAuswerten(agg, 2.0)[0]).toBeCloseTo(100, 0)  // alles „ruhig"
+    expect(ruheAuswerten(agg, 0.05)[0]).toBeCloseTo(0, 0)   // nichts
+  })
+
+  it('zählt nur benetzte Zeit — sonst wäre jede Trockenfläche die ruhigste', () => {
+    // Zelle 0: 5 s nass und langsam. Zelle 1: 5 s TROCKEN (v = 0).
+    const agg = neueRuheAggregation(2)
+    ruheSchritt(agg, new Float32Array([0.1, 0]), new Uint8Array([1, 0]), 5)
+    const r = ruheAuswerten(agg, 0.3)
+
+    expect(r[0]).toBeCloseTo(100, 0)
+    // die trockene Zelle bekommt KEINEN Wert, nicht etwa 100 %
+    expect(Number.isNaN(r[1])).toBe(true)
+  })
+
+  it('reagiert auf den Regler ohne neu zu aggregieren', () => {
+    const agg = neueRuheAggregation(1)
+    for (const v of [0.05, 0.2, 0.5, 1.5]) {
+      ruheSchritt(agg, new Float32Array([v]), new Uint8Array([1]), 1)
+    }
+    const streng = ruheAuswerten(agg, 0.1)[0]
+    const mittel = ruheAuswerten(agg, 0.3)[0]
+    const weit = ruheAuswerten(agg, 2.0)[0]
+    expect(streng).toBeLessThan(mittel)
+    expect(mittel).toBeLessThan(weit)
+    expect(weit).toBeCloseTo(100, 0)
+  })
+
+  it('ist als eigene Karte mit eigener Erklärung geführt', () => {
+    // Sie sagt etwas ANDERES als Karte A: abgesunkenes statt schwimmendes
+    // Laub, eulersch statt auf Bahnen.
+    expect(KARTEN_NAME.R).toMatch(/Ruhezonen/)
+    expect(KARTEN_EINHEIT.R).toBe('% der Zeit')
+    expect(reglerFuer('R')).toEqual(['ruhe'])
+    const e = KENNWERTE[KARTEN_HILFE.R]
+    // Der Punkt, an dem man sie sonst überinterpretiert
+    expect(e.achtung).toMatch(/KEINE Wahrscheinlichkeit/)
+    // und ihr eigentlicher Vorteil gegenüber Karte A
+    expect(e.achtung).toMatch(/Advektions-CFL/)
   })
 })

@@ -2088,6 +2088,99 @@ async def run_log(run_id: str, tail: int = Query(80, le=2000)):
     return {"log": "", "source": None}
 
 
+# Abbildungen, die der CLIENT gerechnet hat (Laubkarten). Sie liegen neben
+# den serverseitig gerenderten, aber in einer EIGENEN Datei: `result.json`
+# wird bei jedem Auswerten neu geschrieben — ein Eintrag darin wäre nach
+# dem nächsten Ergebnis-Import spurlos weg.
+_CLIENT_FIGUREN = "client_figuren.json"
+_FIG_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _client_figuren(paths) -> list[dict]:
+    f = paths.figures_dir / _CLIENT_FIGUREN
+    if not f.is_file():
+        return []
+    try:
+        daten = json.loads(f.read_text())
+        return daten if isinstance(daten, list) else []
+    except Exception:      # noqa: BLE001 — kaputte Liste heisst: keine
+        return []
+
+
+@router.get("/runs/{run_id}/abbildungen")
+async def run_abbildungen(run_id: str):
+    """
+    Alle Berichtsabbildungen eines Laufs: die serverseitig gerenderten aus
+    dem Ergebnis UND die im Browser gerechneten (Laubkarten).
+    """
+    paths = _paths(run_id)
+    result = _result(paths) or {}
+    return {"figures": list(result.get("figures") or []),
+            "client": _client_figuren(paths)}
+
+
+@router.post("/runs/{run_id}/abbildungen")
+async def run_abbildung_ablegen(run_id: str, payload: dict = Body(...)):
+    """
+    Eine im Browser gerechnete Abbildung beim Lauf ablegen.
+
+    Gebraucht für die Laubkarten: die rechnet der Client, und bis dahin
+    war der PNG-Knopf ein reiner Download — das Bild landete im
+    Downloads-Ordner und war mit nichts verknüpft. Jetzt gehört es zum
+    Lauf und erscheint im Reiter „Abbildungen".
+
+    Erwartet `{id, caption, png_b64}`. Gleiche `id` überschreibt — sonst
+    sammelten sich bei jedem Reglerzug neue Karten an.
+    """
+    paths = _paths(run_id)
+    fig_id = str(payload.get("id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", fig_id):
+        raise HTTPException(status_code=422,
+                            detail=f"Ungültige Abbildungskennung: {fig_id}")
+    roh = payload.get("png_b64") or ""
+    if "," in roh[:64]:                       # data:image/png;base64,…
+        roh = roh.split(",", 1)[1]
+    try:
+        png = base64.b64decode(roh, validate=True)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Kein lesbares PNG.")
+    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(status_code=422, detail="Das ist kein PNG.")
+    if len(png) > _FIG_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Abbildung zu gross ({len(png) // 1024} kB, erlaubt "
+                   f"{_FIG_MAX_BYTES // 1024} kB).")
+
+    paths.figures_dir.mkdir(parents=True, exist_ok=True)
+    (paths.figures_dir / f"{fig_id}.png").write_bytes(png)
+
+    liste = [f for f in _client_figuren(paths) if f.get("id") != fig_id]
+    liste.append({"id": fig_id,
+                  "caption": str(payload.get("caption") or fig_id),
+                  "quelle": "client",
+                  "erstellt": time.time()})
+    (paths.figures_dir / _CLIENT_FIGUREN).write_text(
+        json.dumps(liste, indent=2, ensure_ascii=False))
+    return {"ok": True, "id": fig_id, "anzahl": len(liste)}
+
+
+@router.delete("/runs/{run_id}/abbildungen/{fig_id}")
+async def run_abbildung_loeschen(run_id: str, fig_id: str):
+    """Eine im Browser abgelegte Abbildung wieder entfernen."""
+    paths = _paths(run_id)
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", fig_id):
+        raise HTTPException(status_code=422, detail="Ungültige Kennung.")
+    liste = _client_figuren(paths)
+    if not any(f.get("id") == fig_id for f in liste):
+        raise HTTPException(status_code=404, detail="Abbildung nicht gefunden.")
+    (paths.figures_dir / f"{fig_id}.png").unlink(missing_ok=True)
+    (paths.figures_dir / _CLIENT_FIGUREN).write_text(json.dumps(
+        [f for f in liste if f.get("id") != fig_id], indent=2,
+        ensure_ascii=False))
+    return {"deleted": fig_id}
+
+
 @router.get("/runs/{run_id}/figures/{filename}")
 async def run_figure(run_id: str, filename: str):
     paths = _paths(run_id)
