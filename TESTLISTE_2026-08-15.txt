@@ -1,14 +1,30 @@
 ===============================================================================
- TESTLISTE flood-3D  ·  alle Entwicklungen vom 13.-15.08.2026
- Stand: Commit 8b3b61e  ·  632 pytest / 231 vitest gruen (automatisch)
+ TESTLISTE flood-3D  ·  alle Entwicklungen vom 13.-17.08.2026
+ Stand: Commit 773af58  ·  717 pytest / 329 vitest gruen (automatisch)
+ Teil A (1-8):   13.-15.08. -- von dir durchgearbeitet, Befunde markiert
+ Teil B (9-12):  16.08.     -- Speicher, Leerlauf, Laubkarten
+ Teil C (13-16): 17.08.     -- deine Befunde aus Teil A, behoben
+ Teil D (17-21): 17.08.     -- Laubkarten bedienbar, Rauigkeit, Belag
 ===============================================================================
 
 WO TESTEN
   Dev-Server (Port 3000) -- dort ist ALLES drin.
-  quagg-engineering.org hat den Stand vom 13.08. (Welle 4). Die vier
-  neuesten Client-Pakete (Post, Grundriss+, Durchlass, Staende) sind dort
-  NICHT sichtbar. Produktions-Build auf Zuruf.
-  Das Backend auf dem Server ist komplett aktuell (neu gestartet).
+  quagg-engineering.org hat den Stand vom 13.08. (Welle 4). Alles aus
+  Teil A ab dem 14.08. sowie die Teile B, C und D sind dort NICHT
+  sichtbar.
+  Produktions-Build auf Zuruf.
+  Das Backend auf dem Server ist komplett aktuell (zuletzt neu gestartet
+  am 17.08. mit der Belagskarte).
+
+REIHENFOLGE, WENN DIE ZEIT KNAPP IST
+  1. Abschnitt 16 + 11 + 17-19 -- die Laubkarten am Stueck: Paarung,
+     Karten, Regler, Legenden, Karte R. Dein Paar r006/r007 steht bereit.
+  2. Abschnitt 20 (Rauigkeit) -- betrifft JEDE tau-Zahl, die du schon hast
+  3. Abschnitt 9 + 12 -- dort wurde an Dingen geschraubt, die IMMER laufen
+  4. Abschnitte 13-15 -- Nachpruefen deiner eigenen Befunde
+  5. Abschnitt 21 (Belag) -- neu und noch NIE durch einen Solverlauf
+     gegangen; der letzte Punkt dort ist der wichtigste
+  6. Abschnitt 10 (Leerlauf) -- stoert nichts, solange es aus ist
 
 WIE DIESE LISTE BENUTZEN
   [ ] = anklicken/ausprobieren.  "!" = hier wurde etwas Riskantes geaendert,
@@ -23,54 +39,66 @@ WICHTIG VORWEG
  1  PRE / MODELL  --  Durchlass eingraben          (Paket c8e349e, 15.08.)
 ===============================================================================
 Geaendert: die Rate-Automatik ist geloescht, du bestimmst die Masse selbst.
+** ImportModal.vue nicht vollständig Scrollbar immer nur eine Zeile lesbar; KandidatVorschau wenn man von oben drauf sieht verschwindet der Körper? Eigentlich unnötiges Feature raus damit; 
 
-[ ] Modell > Objektbaum > Durchlass anklicken > Eigenschaften rechts
+[+] Modell > Objektbaum > Durchlass anklicken > Eigenschaften rechts
     Neu sichtbar: "Wandstaerke (m)" und "Fraes-Ueberstand (m)".
     Erwartung: Wandstaerke steht auf 0,15 (wie frueher fest im Code),
     Fraes-Ueberstand auf 0,5.
 
-[ ] ! Fraes-Ueberstand aendern (z.B. 0,2 / 1,5) und Editor ansehen
+[+] ! Fraes-Ueberstand aendern (z.B. 0,2 / 1,5) und Editor ansehen
     Erwartung: der Tunnel im Erdkoerper wird kuerzer/laenger, an BEIDEN
     Achsenden gleich. Frueher entschied das der Abstand zur Gebietskante --
     und lag bei deinem Rentrich-Fall genau falsch herum.
 
-[ ] Wandstaerke aendern (z.B. 0,08 fuer DN800)
+[+ ] Wandstaerke aendern (z.B. 0,08 fuer DN800)
     Erwartung: Bohrloch wird enger (Licht + 2x Wand - 4 cm Einbindung).
-
-[ ] Achse mit KNICK zeichnen (3+ Punkte) und Erdkoerper ansehen
+*** ich habe eine Achse mit Knick gezeichnet es sieht aber innerhalb des Rohrs so aus als wäre das 
+Rohr nichtmehr Durchgängig wie wird das gehandhabt ? Momentan wird der Knick ja richtig gefüllt so dass es vollen
+Aussen korrekt aussieht innen aber zu halt ist ( es wird ja irgendwie ein Ikosaeder oder Kugel genommen die 
+müsste dann noch mit der Rohr innenwand beschnitten werden ? )
+[?] Achse mit KNICK zeichnen (3+ Punkte) und Erdkoerper ansehen
     Erwartung: keine Erdkeile im Tunnel, kein Loch in der Rohrwand.
     (Vorher stumpf gestossene Segmente -- das war nie getestet.)
 
-[ ] Rohrmund absichtlich im Damm enden lassen > Pruefliste rechts
+[+ ] Rohrmund absichtlich im Damm enden lassen > Pruefliste rechts
     Erwartung: Warnung "Rohrmund liegt im Erdreich" MIT Zahlen und dem
     Hinweis, den Fraes-Ueberstand zu erhoehen. Danach Ueberstand erhoehen
     -> Warnung verschwindet.
 
-[ ] Import > DXF mit Kreis > Kandidatenliste
+[+ ] Import > DXF mit Kreis > Kandidatenliste
     Erwartung: beim Kreis steht jetzt "aus Kreisradius ..." dabei.
     Hintergrund: BetaTest08 hat dadurch Durchmesser 1,6 m statt DN800.
-[ ] Rentrich_BetaTest08 oeffnen > Durchlass > Durchmesser pruefen
+[+ ] Rentrich_BetaTest08 oeffnen > Durchlass > Durchmesser pruefen
     Wenn DN800 gemeint war: auf 0,8 stellen. Erwartung: Warnung
     "ungewoehnliche Nennweite" verschwindet.
 
-[ ] Durchlass kleiner als 2 Zellen machen > Pruefliste
+[+ ] Durchlass kleiner als 2 Zellen machen > Pruefliste
     Erwartung: Aufloesungs-Warnung -- jetzt AUCH bei Rechteck- und
     Maulprofil (vorher nur Kreis).
+** Recht und Maul erstellung geht garnicht ... keine Reaction beim Auswählen nichts eingebbar (man bräuchte ja genauere Geometry infos dann 
+länge breit ; Voute oder wie man das nennt beim Maul); Punkte hinzufüge macht keinen Sinn ??
 
 
 ===============================================================================
  2  PRE / MODELL  --  Geometrie-Staende            (Pakete 3cbe32c/8b3b61e)
 ===============================================================================
 Das ist dein Szenario "Wehr verschieben, Lauf, zurueck".
+** Fehlermeldung kam Speichern fehlgeschlagen: 1 validation error for CaseSpec structures.0.culvert.profile Value error, 
+arch-Profil braucht width und height [type=value_error, 
+input_value={'kind': 'arch', 'diamete...: 1, 'wandstaerke': 0.1}, input_type=dict] 
+For further information visit https://errors.pydantic.dev/2.12/v/value_error
+ -- schonmal gut das das kam aber sollte halt besser für den User lesbar sein ? --- aber richtig das der fehler kam 
 
-[ ] Kopfleiste oben: Knopf "Stand sichern" (in jeder Phase sichtbar)
+[ +] Kopfleiste oben: Knopf "Stand sichern" (in jeder Phase sichtbar)
     Namen eingeben -> Erwartung: Erfolgsmeldung.
-
-[ ] Phase "Laeufe" > Panel "Geometrie-Staende"
+Topp das Funktioniert aber sollte nicht nur unter läufe sein sondern auch neben dem Speicher Button als dropdown liste aller Geometrie 
+Speicherungen
+[+ ] Phase "Laeufe" > Panel "Geometrie-Staende"
     Erwartung: Zeile mit Name, Datum, Hash-Chip, Herkunft, Groesse.
     Eine Groesse um 1 MB ist normal (die Netzvorschau ist bewusst nicht drin).
 
-[ ] ! DER HAUPTTEST:
+[+ ] ! DER HAUPTTEST:
     1. Stand "Ausgangslage" sichern
     2. Wehr verschieben, speichern
     3. Stand "Wehr verschoben" sichern
@@ -98,6 +126,9 @@ Das ist dein Szenario "Wehr verschieben, Lauf, zurueck".
 ===============================================================================
  3  NETZVORSCHAU
 ===============================================================================
+** Verhalten : Falls es schon eine Netzvorschau gibt wird die unabhängig vom Stand der Geometrie geladen !
+ fehlende Prüfung ob Netzvorschau mit aktuellem Stand übereinstimmt 
+
 [ ] Simulation > Netzvorschau rechnen
     Erwartung: laeuft wie gewohnt (2 Kerne), Zellzahl + Kostenschaetzung.
     Schaetzung ist bekanntermassen ~2,3x zu optimistisch (offener Punkt).
@@ -108,90 +139,91 @@ Das ist dein Szenario "Wehr verschieben, Lauf, zurueck".
 ===============================================================================
  4  RECHNEN  --  Lauf lokal / RunPod
 ===============================================================================
-[ ] ! Cloud-Lauf starten > Lauf-Panel beobachten
+** 
+[+] ! Cloud-Lauf starten > Lauf-Panel beobachten
     Erwartung: die SIMULATIONSZEIT laeuft sichtbar mit (t = ... s).
     Das war der Live-Bug: bei frischen Cloud-Laeufen stand die Zeit
     IMMER auf leer, weil das falsche Feld gelesen wurde.
 
-[ ] Lokalen Lauf (Companion) starten
+[+] Lokalen Lauf (Companion) starten
     Erwartung: unveraendert; Speicherpunkte kommen an.
 
-[ ] Nach dem Start: Laufordner traegt jetzt seine Geometrie
+[+] Nach dem Start: Laufordner traegt jetzt seine Geometrie
     (im Laufe-Panel spaeter sichtbar durch "Geometrie als Stand" aktiv).
 
-[ ] Browser-Tab schliessen waehrend eines Laufs, spaeter zurueckkommen
+[+] Browser-Tab schliessen waehrend eines Laufs, spaeter zurueckkommen
     Erwartung: Ergebnis ist trotzdem da (S3-Waechter/Nachzuegler).
 
 
 ===============================================================================
  5  ERGEBNIS  --  3D-Raumansicht                   (Paket 6eb5b75 + 2aab524)
 ===============================================================================
-[ ] ! Ergebnis > 3D > Ebene "Gelaende"
+[+] ! Ergebnis > 3D > Ebene "Gelaende"
     Erwartung: bei Faellen MIT Erdkoerper siehst du jetzt den echten
     Solver-Koerper -- das Rohr ist DURCHGAENGIG, nicht mehr verstopft.
     Bei Faellen ohne Erdkoerper: wie bisher die Hoehenflaeche.
 
-[ ] Ebene "Vektorpfeile" > Regler "Ausduennung"
+[ +] Ebene "Vektorpfeile" > Regler "Ausduennung"
     Erwartung: steht auf 1 = ein Pfeil je Rasterzelle (Minimum war 2,
     also frueher hoechstens ein Pfeil je 8 Zellen).
 
-[ ] ! Ebene "Stromlinien" einschalten
+[+ ] ! Ebene "Stromlinien" einschalten
     Erwartung: erscheinen SOFORT (unter 1 s statt ~10 s).
-[ ] Danach Farbskala fixieren / Praesentation / Pfeilregler bewegen
+[ +] Danach Farbskala fixieren / Praesentation / Pfeilregler bewegen
     Erwartung: die Stromlinien werden NICHT neu gerechnet (kein Ruckeln).
-[ ] Regler "Anzahl" ziehen
+[+ ] Regler "Anzahl" ziehen
     Erwartung: rechnet erst beim Loslassen.
-[ ] Regler "Staerke" ziehen
+[ +] Regler "Staerke" ziehen
     Erwartung: nur die Dicke aendert sich, keine Neuberechnung.
 
-[ ] ! Ebene "Randbilanz (Q an Zu-/Ablaeufen)"
+[+ ] ! Ebene "Randbilanz (Q an Zu-/Ablaeufen)"
     Erwartung: Schilder an Zulauf/Ablauf mit aktuellem Q und kumuliertem
     Volumen; unter der Zeitleiste eine Zeile Zufluss/Abfluss/Speicher.
     Kamera drehen -> die Schilder bleiben an ihren Raendern kleben.
     Bei Alt-Laeufen ohne Durchfluss-Reihen steht "keine Q-Reihe".
 
-[ ] ! Tab-Wechsel 3D -> Grundriss -> 3D, mehrmals
+[+ ] ! Tab-Wechsel 3D -> Grundriss -> 3D, mehrmals
     Erwartung: bleibt fluessig, kein Einbrechen der Bildrate
     (dort war ein Speicherleck -- jeder Wechsel hat GPU-Speicher verloren).
 
-[ ] Punktabfrage, Zeitleiste/Abspielen, PNG exportieren
+[+ ] Punktabfrage, Zeitleiste/Abspielen, PNG exportieren
     Erwartung: unveraendert.
 
 
 ===============================================================================
  6  ERGEBNIS  --  Grundriss                        (Paket 2aab524)
 ===============================================================================
-[ ] ! Gruppe "Ansicht" > Umschalter "Tiefenbild" / "z-Ebene"
+[+ ] ! Gruppe "Ansicht" > Umschalter "Tiefenbild" / "z-Ebene"
     Auf "z-Ebene" schalten, Regler "Schicht" durchziehen.
     Erwartung: du siehst je Hoehe eine Schnittebene; Erdreich gedeckt
     grau, Wasser eingefaerbt. Auf Bohrungshoehe ist im Damm Wasser --
     so wird das Rohr auch im Grundriss sichtbar.
-[ ] Im z-Ebenen-Modus: Saeulen-Felder (Wassertiefe, Froude, tiefengem.
+[+ ] Im z-Ebenen-Modus: Saeulen-Felder (Wassertiefe, Froude, tiefengem.
     Geschwindigkeit, Sohlschub) sind ausgegraut. Erwartung: Absicht.
-[ ] Cursor ueber die Karte: Anzeige nennt Schicht und Hoehe.
-[ ] Zurueck auf "Tiefenbild": Hoehenlinien, Fr=1-Linie, Umhuellende gehen
+[+ ] Cursor ueber die Karte: Anzeige nennt Schicht und Hoehe.
+[ +] Zurueck auf "Tiefenbild": Hoehenlinien, Fr=1-Linie, Umhuellende gehen
     wieder.
 
-[ ] ! Schalter "Auswerte-Objekte (Pegel, Schnitte, Raender)"
+[+ ] ! Schalter "Auswerte-Objekte (Pegel, Schnitte, Raender)"
     Erwartung: Pegel als Punkt, Querschnitte als Linie, Rand-Fenster als
     farbiger Strich an der Gebietskante -- alle beschriftet. An Raendern
     mit Messreihe zusaetzlich Pfeil + "Q = ... m3/s" zum Zeitcursor.
     Pfeilrichtung kommt aus dem VORZEICHEN der Messung: ein
     rueckstroemender Ablauf zeigt ehrlich nach innen.
 
-[ ] Laengsschnitt (2 Punkte klicken) und Zeitleiste: unveraendert.
+[+ ] Laengsschnitt (2 Punkte klicken) und Zeitleiste: unveraendert.
 
 
 ===============================================================================
  7  ERGEBNIS  --  Qualitaet, Bilanz, Laufliste     (Welle 4, 13.08.)
 ===============================================================================
-[ ] Ergebnis > Qualitaet
+[+ ] Ergebnis > Qualitaet
     Erwartung: je Befund stehen jetzt WERT, GRENZE und QUELLE dabei
     (vorher nur der Text) -- z.B. y+ bis 8.935 gegen Grenze 500.
 
-[ ] Laufliste: Chip "Qualitaet" bei Laeufen mit Befunden.
-[ ] Lauf-&-Log-Panel: Hinweis zum Viz-Volumen erscheint wie gehabt.
-
+[+ ] Laufliste: Chip "Qualitaet" bei Laeufen mit Befunden.
+[+ ] Lauf-&-Log-Panel: Hinweis zum Viz-Volumen erscheint wie gehabt.
+***kann ich noch nicht Testen verweilzeiten kommen bei B 
 [ ] Bilanz- und Verweilzeit-Panel: Zahlen und Farben unveraendert.
 
 
@@ -202,34 +234,719 @@ Hier wurde viel Code VERSCHOBEN. Nichts sollte sich anders verhalten --
 genau das bitte stichprobenartig gegenpruefen.
 
 [ ] ! EDITOR (der groesste Umbau: 800 Zeilen ausgelagert)
-    [ ] Objekt anklicken, verschieben, Greifpunkte ziehen
-    [ ] Punkt einfuegen ("+"-Griff) und loeschen
-    [ ] Bauwerk drehen (Drehgriff)
-    [ ] Rand/BC-Fenster verschieben
-    [ ] Bohrung/Oeffnung/Zuschnitt in die Szene stanzen
-    [ ] Freischneiden / Schnittebene
-    [ ] Gelaende-Pinsel (heben/senken/glaetten) inkl. Rueckgaengig
-    [ ] Netzansicht ein/aus
-    [ ] Kamera: Draufsicht, Zoom, Zuruecksetzen
+    [ +] Objekt anklicken, verschieben, Greifpunkte ziehen
+    *** Bug gefunden wenn man ein Bauwerk verschiebt über seine Knoten sollen Bohr,
+    Öffnung Zuschnitt etc zurück gesetzt werden die passen ja dann nichtmehr drauf
+    [+ ] Punkt einfuegen ("+"-Griff) und loeschen 
+    [+ ] Bauwerk drehen (Drehgriff)
+    [+ ] Rand/BC-Fenster verschieben
+    [ +] Bohrung/Oeffnung/Zuschnitt in die Szene stanzen
+    [+ ] Freischneiden / Schnittebene
+    [+] Gelaende-Pinsel (heben/senken/glaetten) inkl. Rueckgaengig
+    [+ ] Netzansicht ein/aus
+    [+ ] Kamera: Draufsicht, Zoom, Zuruecksetzen
     Erwartung ueberall: exakt wie vorher.
 
-[ ] Startseite: Fehler beim Oeffnen eines Falls wird angezeigt
+[ +] Startseite: Fehler beim Oeffnen eines Falls wird angezeigt
     (der alte, tote Fehlerkanal wurde entfernt -- Meldungen laufen jetzt
     ueber die normale Meldungsleiste).
 
-[ ] Dateigroessen in der Laufliste
+[ +] Dateigroessen in der Laufliste
     Erwartung: ueber 1 GB steht jetzt "1.5 GB" statt "1500 MB".
     (einzige bewusste Anzeigeaenderung)
 
-[ ] Laufliste/Lauf-Panel aktualisieren sich waehrend eines Laufs von
+[+ ] Laufliste/Lauf-Panel aktualisieren sich waehrend eines Laufs von
     selbst (das Nachladen wurde vereinheitlicht).
-
-[ ] Import-Dialog: STL-Vorschau mehrmals oeffnen/schliessen
+** vorschau zeigt wenn man den Orbit drum beweg irgendwann kein objekt an ? 
+[+ ] Import-Dialog: STL-Vorschau mehrmals oeffnen/schliessen
     Erwartung: bleibt fluessig (auch dort war ein Leck).
 
 
+###############################################################################
+#                                                                             #
+#   TEIL B  --  Entwicklungen vom 16.08.2026                                  #
+#                                                                             #
+#   Drei Themen: (9) der Server-Absturz beim Ansehen langer Laeufe,           #
+#   (10) der Leerlauf-Fall, (11) die Laubkarten, (12) Regressionen.           #
+#   Wenn die Zeit knapp wird: 9 und 12 zuerst -- dort wurde an Dingen         #
+#   geschraubt, die IMMER laufen. 10 und 11 sind neu und stoeren nichts,      #
+#   solange man sie nicht einschaltet.                                        #
+#                                                                             #
+###############################################################################
+
+
 ===============================================================================
- 9  BEKANNTE GRENZEN (kein Fehler, bewusst offen)
+ 9  SPEICHER  --  der Absturz beim Ansehen langer Laeufe   (f9966ba/90ea651/9a051d4)
+===============================================================================
+Vorgeschichte: Rentrich_BetaTest08_r004 hat 760.881 Zeitschritte gerechnet
+und daraus 7,6 Mio Zeilen Zeitreihen geschrieben (77-MB-Zwischendatei,
+906 MB im Speicher). Beim blossen ANSEHEN des Laufs hat der OOM-Killer den
+Serverprozess reihenweise erschossen. Behoben an drei Stellen: die API
+liest die Datei nicht mehr am Stueck, die Diagnostik entsteht gar nicht
+erst so gross, und die Prozessgrenze steht auf 4 GB statt 1 GB.
+
+WICHTIG: die Verdichtung wirkt nur fuer NEUE Laeufe. Bestehende Laeufe
+tragen ihre dicke Datei weiter -- sie sind der eigentliche Test fuer den
+ersten Punkt.
+
+[ ] ! Rentrich_BetaTest08_r004 (oder einen anderen LANGEN Lauf) oeffnen,
+    Ergebnis > Zeitreihen, alle Groessen durchklicken
+    Erwartung: laedt zuegig, Server bleibt oben. Frueher: Ladebalken,
+    dann war die Seite weg.
+    Gegenprobe nebenbei im Terminal:  sudo pm2 list
+    Erwartung: Spalte "mem" von quagg-api bleibt klar unter 1 GB und
+    faellt danach wieder. Ein Absturz waere daran zu erkennen, dass die
+    Neustart-Spalte (der Zaehler zwischen "uptime" und "status")
+    hochzaehlt.
+
+[ ] Ergebnis > Bilanz beim selben langen Lauf
+    Erwartung: Zahlen erscheinen, kein Aussetzer. (Bilanz und Zeitreihen
+    lesen jetzt durch DIESELBE Leseroutine -- vorher zwei verschiedene,
+    von denen eine 925 MB auf einmal geholt hat.)
+
+[ ] Zeitreihen eines NEUEN Laufs (nach heute gerechnet) ansehen
+    Erwartung: Courant, Zeitschrittweite, Kontinuitaet und Residuen sind
+    da -- aber als ein paar hundert Punkte statt Millionen. Die SPITZEN
+    muessen erhalten sein: wenn der Solver einen Courant-Ausreisser hatte,
+    steht er weiterhin im Bild und in der Qualitaets-Bewertung.
+    Das ist die Bedingung, die du gestellt hast: keine Einschraenkung bei
+    Fehlersuche und Anzeige. Falls dir irgendwo eine Zahl fehlt, die du
+    vorher gesehen hast -- bitte melden, das waere ein Fehler.
+
+[ ] Import einer grossen STL-Datei (Mehrkoerper)
+    Erwartung: geht wie bisher, nur sparsamer (595 MB -> 117 MB gemessen).
+    Aufpassen bei: Koerpernamen, Anzahl gefundener Teilkoerper, Vorschau.
+
+
+===============================================================================
+ 10  PRE / SIMULATION  --  Leerlauf-Fall           (cddcb1f + 4b8c566, NEU)
+===============================================================================
+Neu: ein Lauf kann enden, WENN NICHTS MEHR ABLAEUFT, statt zu einer festen
+Zeit. Gemessen wird die Bewegung des Restvolumens. Das ist die Grundlage
+fuer Karte A der Laubkarten (Abschnitt 11).
+
+[ ] Simulation > Karte "Simulation" > neues Feld "Ende des Laufs"
+    Erwartung: steht auf "Feste Zeit". Alles darunter genau wie bisher.
+    -> Wenn hier irgendetwas anders aussieht als gestern: Fehler.
+
+[ ] ! Auf "Leerlauf: bis nichts mehr ablaeuft" umschalten
+    Erwartung: die Beschriftung "Simulationsdauer" wird zu "OBERGRENZE",
+    und darunter erscheinen vier Felder:
+      - Erwartete Dauer (s)          (leer erlaubt)
+      - Beobachtungsfenster (s)      Vorgabe 30
+      - Stagnationsschwelle (%)      Vorgabe 1
+      - Anlaufsperre (%)             Vorgabe 5
+    Unter dem Umschalter steht eine Erklaerung in einem Satz.
+
+[ ] Obergrenze gross setzen (z.B. 36000 = 10 h) OHNE erwartete Dauer
+    Erwartung: der Hinweis unter dem Feld wird GELB und sagt, dass die
+    Schaetzung sonst mit der vollen Obergrenze rechnet.
+[ ] Jetzt "Erwartete Dauer" auf z.B. 120 setzen
+    Erwartung: der Hinweis wird wieder neutral, und die geschaetzte
+    Rechenzeit faellt von Tagen auf Minuten. Auch "3D-Felder schreiben
+    alle (s)" und "Zeitreihen schreiben alle (s)" rechnen ab jetzt mit
+    120 s statt 36000 s (Anzahl Ausgaben / Messwerte).
+    Hintergrund: ohne das haette die grosszuegige Obergrenze das
+    Ausgabegitter vergroebert -- ausgerechnet dort, wo die Laubkarten
+    Aufloesung brauchen.
+
+[ ] Anlaufsperre auf 0 stellen
+    Erwartung: der Hinweis wird ROT und erklaert, dass der Lauf dann bei
+    t ~ 0 endet (vor dem Anspringen des Auslasses steht das Wasser still,
+    und Stillstand sieht aus wie Stagnation).
+
+[ ] Beobachtungsfenster kleiner als 2x "Zeitreihen schreiben alle"
+    setzen (z.B. Fenster 1 s bei 1 s Schreibintervall)
+    Erwartung: gelber Hinweis "kaum mehr als ein Punkt". Dieselbe Warnung
+    muss auch in der Pruefliste (Phase Modell) stehen -- beide Seiten
+    messen bewusst dieselbe Groesse.
+
+[ ] ! Pruefliste mit eingeschaltetem Leerlauf, aber OHNE Anfangswasser
+    (Anfangswasserspiegel leer, keine Vorfuellung)
+    Erwartung: FEHLER "es startet kein Wasser im Gebiet" -- der Start ist
+    blockiert. Das ist richtig: es gibt nichts zu entleeren.
+
+[ ] Pruefliste mit Leerlauf UND einem Dauerzufluss
+    Erwartung: WARNUNG "wird nie leer" mit dem Hinweis, dass der Lauf
+    sonst bis zur Obergrenze rechnet. Nicht blockierend.
+
+[ ] Einen kurzen Leerlauf wirklich rechnen (lokal, kleiner Fall)
+    Vorschlag: Becken mit Anfangswasserspiegel, ein Ablauf, kein Zufluss,
+    Obergrenze grosszuegig, erwartete Dauer geschaetzt.
+    Erwartung im Log: eine Zeile "Leerlauf beendet bei t = ... s" mit
+    Restvolumen und Prozentangabe. Der Lauf haelt SAUBER an (letzter
+    Speicherpunkt vollstaendig), er wird nicht abgeschossen.
+
+[ ] Danach: Ergebnis > Lauf & Log > Manifest-Tabelle
+    Erwartung: neue Zeile "Ende" -- gruen, "Leerlauf erreicht bei
+    t = ... s", darunter "Abbruchkriterium" mit dem vollen Satz.
+    Bei einem NORMALEN Lauf (feste Zeit) darf diese Zeile NICHT
+    erscheinen -- dort gab es nichts zu entscheiden.
+
+[ ] Einen pausierten Leerlauf fortsetzen
+    Erwartung: er rechnet weiter und haelt nicht sofort wieder an.
+    (Der Waechter stellt "stopAt" zurueck -- genau diese Falle gab es
+    bei der Pause schon einmal.)
+
+
+===============================================================================
+ 11  ERGEBNIS  --  Laubkarten          (ce3cbf1 + 37ca3e6 + a05743f, NEU)
+===============================================================================
+Neuer Reiter in der Ergebnis-Phase. Er verschneidet ZWEI Laeufe:
+  Karte A   wo sammelt sich schwimmendes Laub beim LEERLAUFEN
+  Karte B   wo belastet ein SPUELSCHWALL die Sohle genug
+  Karte C   der Verschnitt -- die eigentliche Planungsaussage
+
+SO ARBEITET DAS MODUL (damit die Erwartungen unten Sinn ergeben):
+
+  Leerlauf: 20.000 unsichtbare Punkte werden auf der Anfangswasserflaeche
+  ausgesaet und mit der OBERFLAECHENgeschwindigkeit mitgeschoben -- frisches
+  Laub schwimmt, die Sohle ist ihm egal. Faellt die Wassertiefe unter 2 cm,
+  wird ein Punkt eingefroren und bleibt liegen; das IST die Ablagerung. Was
+  am Ende noch treibt, liegt in einer Restpfuetze und wird dort eingefroren.
+  Gezaehlt wird je Rasterzelle, normiert auf Gleichverteilung: 1 = mittlere
+  Laubmenge, 3 = dreifach. Ein Faktor, keine Kilogramm.
+
+  Schwall: je Zelle wird eine UEBERSCHREITUNGSKURVE gesammelt -- wie lange
+  lag die Sohlschubspannung ueber 0,5 / 1 / 2 / ... N/m2, auf 24 Stufen.
+  Daraus folgt fuer JEDES tau_krit sofort Dauer und Spuelintegral. Deshalb
+  reagiert der Regler ohne Nachrechnen.
+
+  Verschnitt: viel Laub + zu wenig Spuelung = kritisch. Wo der Schwall gar
+  nicht ankommt = tote Flaeche; daran aendert kein tau_krit etwas.
+
+DEIN PAAR STEHT: Rentrich_BetaTest08_r006 (Leerlauf, Zufluss 0) und _r007
+(Schwall, Zufluss 0,8). Gleiches Netz, 29.010 Zellen beide, gleiches
+Ausgaberaster. Der Server meldet dafuer "gruen".
+
+[ ] Ergebnis > Reiter "Laubkarten" (zwischen "Grundriss" und "Raum")
+    Erwartung: linke Spalte mit Laufauswahl, rechts eine leere Flaeche
+    mit Erklaertext. Kein Absturz, keine leere weisse Seite.
+
+[ ] ! Auswahlfeld "Spuelschwall" oeffnen
+    Erwartung: NICHTS ist ausgegraut. Jeder fertige Lauf ist waehlbar.
+    (Bis 17.08. wurde hier nach Netzkennung gesperrt -- die war zu streng
+    und schloss ausgerechnet dein Leerlauf-/Schwall-Paar aus.)
+
+[ ] ! Beide Laeufe waehlen -> AMPEL erscheint zwischen Auswahl und Knopf
+    Erwartung r006 + r007: gruen, "Gleiches Netz".
+    Erwartung r005 + r007: rot, "Verschiedene Bauwerke" -- und darunter
+    die Fundstellen im Klartext (Durchlass 1,6 -> 0,8 m, Achse verschoben,
+    2 -> 4 Verfeinerungen). "Karten rechnen" bleibt trotzdem bedienbar:
+    die Ampel warnt, sie sperrt nicht.
+    Erwartung r004 + r007: gelb, "Geometrie nicht pruefbar" (der Lauf hat
+    seinen Stand nicht mitgesichert).
+    Gesperrt wird NUR, wenn sich die Ausgaberaster nicht decken -- dann
+    steht der Grund dabei.
+
+[ ] Auswahl wechseln
+    Erwartung: Ampel UND eine bereits gerechnete Karte verschwinden
+    sofort -- beides darf nicht neben einem Paar stehen, zu dem es nicht
+    gehoert.
+
+[ ] ! "Karten rechnen" mit r006 + r007
+    Erwartung: Fortschrittsbalken, Zwischentexte ("Leerlauf: Laub
+    verfolgen", "Spuelschwall: Belastung sammeln"), am Ende eine Karte.
+    Beide Laeufe werden einmal komplett durchgegangen (241 + 601
+    Zeitpunkte) -- das dauert.
+
+[ ] ! Regler "tau_krit" ziehen
+    Erwartung: die Karte reagiert SOFORT, ohne Nachladen und ohne
+    Neurechnen. Genau dafuer wird Karte B als Ueberschreitungskurve
+    gesammelt statt fuer einen festen Schwellwert.
+    Darunter steht, WOHER der Wert kommt: Fall-Kriterium (min_bed_shear)
+    oder Vorbelegung 2,0 N/m2.
+
+[ ] Regler "Ablagerung ab Faktor" ziehen
+    Erwartung: die Flaechenanteile links verschieben sich sofort.
+
+[ ] Kartenumschalter A / A' / B / B' / C durchgehen
+    A  = Ablagerung (Konzentrationsfaktor, 1 = mittlere Belegung)
+    A' = Trockenfallzeit (wann lag hier zuletzt Wasser)
+    B  = Spuelintegral      B' = Ueberschreitungsdauer
+    C  = vier Klassen in vier Farben
+    Erwartung: unter der Karte steht jeweils ein Satz, was sie zeigt.
+
+[ ] Klassenlegende links
+    Erwartung: vier Zeilen mit Farbe, Name, Prozent und m2. Darunter der
+    Satz, dass sich die Prozente auf die im Leerlauf benetzte Flaeche
+    beziehen -- nicht auf das ganze Modellgebiet.
+
+[ ] ! Kennzahlen-Zeile unter der Karte
+    "Laub am Ende": trockengefallen / in Restpfuetzen / hinausgetrieben.
+    Erwartung: die drei Zahlen plus "treibend" ergeben zusammen die
+    ausgesaete Menge. Steht dort "Bilanz geht nicht auf!", ist die Karte
+    nicht verwertbar -- bitte melden.
+
+[ ] ! Datenlage-Ampel (Textzeilen unter den Kennzahlen)
+    Das ist NICHT die Paarungs-Ampel oben, sondern die zweite Frage: traegt
+    die Datenlage die Aussage? Erwartung bei r006/r007: mindestens eine
+    Warnung. Typisch:
+      - "Advektions-CFL ueber 1" -- die Felder sind zu selten geschrieben,
+        ein Laubpunkt springt je Ausgabe ueber eine ganze Rasterzelle.
+        Dann steht dabei, wie oft stattdessen zu schreiben waere. r006
+        schreibt alle 1,0 s bei 0,5 m Zellen; das wird knapp.
+      - "nur X % des Anfangsvolumens abgelaufen" (kein echter Leerlauf)
+    Das ist der Sinn der Sache: das Modul sagt selbst, wenn es seine Frage
+    nicht belastbar beantworten kann. Eine Warnung hier ist KEIN Fehler.
+
+[ ] Karte A ansehen und gegen den Verstand pruefen
+    Erwartung: das Laub liegt am KONVERGENZSAUM einer Senke, nicht im
+    Tiefpunkt -- wo die Oberflaechengeschwindigkeit gegen null geht,
+    bleibt ein Punkt stehen. Am Testfall gemessen: Saum 3,2-3,8-fach,
+    Mitte 1,0-1,4. Sieht aus wie ein Fehler, ist keiner.
+
+[ ] Karte C: eine Zelle mit "tote Flaeche" suchen, dann tau_krit ganz
+    nach links und ganz nach rechts ziehen
+    Erwartung: die tote Flaeche aendert sich NICHT. Sie ist ein
+    geometrisches Ergebnis (der Schwall kommt dort nie an), kein
+    Schwellenwertthema. Aendert sie sich doch -- bitte melden.
+
+[ ] Fragezeichen neben "Flaechen" (Erklaerkarte)
+    Erwartung: die vier Verfahrensgrenzen stehen dort im Klartext --
+    Einwegkopplung, masseloser Tracer, nur kurze Standzeiten, tau nur
+    auf dem Gelaende-Patch. Text muss LESBAR sein (heller Text auf
+    dunklem Grund), auch wenn die Karte ueber der Seite schwebt.
+
+[ ] Fenster schmaler/breiter ziehen
+    Erwartung: die Karte skaliert mit, bleibt scharf (kein Matsch auf
+    HiDPI), Achsenbeschriftung bleibt stehen.
+
+
+===============================================================================
+ 12  REGRESSIONEN AUS TEIL B
+===============================================================================
+Hier wurde an bestehenden Dingen geschraubt -- das sind die Stellen, an
+denen etwas kaputtgehen kann, ohne dass es jemand sucht.
+
+[ ] ! GRUNDRISS unveraendert?  (01de703 hat ~150 Zeilen Canvas-Mechanik
+    aus GrundrissPanel herausgezogen, damit die Laubkarten dieselbe
+    benutzen statt einer Kopie.)
+    [ ] Karte laedt, Farben und Schummerung sehen aus wie gestern
+    [ ] Fenster skalieren: Karte passt sich an, bleibt scharf
+    [ ] Punktabfrage trifft die richtige Stelle (Zahlen plausibel)
+    [ ] Laengsschnitt setzen: die Linie liegt dort, wo geklickt wurde
+    [ ] z-Ebenen-Modus und Umhuellende gehen weiter
+    Erwartung ueberall: exakt wie vorher. Wenn die Karte verrutscht ist
+    oder die Punktabfrage danebengreift -- genau dann hat der Umbau
+    etwas verschoben.
+
+[ ] Simulation-Formular bei einem NORMALEN Fall (ohne Leerlauf)
+    Erwartung: alle Hinweistexte wie gestern, keine neuen Warnungen.
+
+[ ] Laufliste
+    Erwartung: unveraendert. (Sie traegt jetzt zusaetzlich die
+    Netz-Kennung mit; massgeblich fuer die Paarung ist sie NICHT mehr --
+    dort wird aus dem gesicherten Stand neu gerechnet.)
+
+[ ] Ergebnis > Qualitaet bei einem NEUEN Lauf
+    Erwartung: die Befunde stehen wie gewohnt da -- die verdichteten
+    Diagnose-Reihen duerfen die Bewertung nicht veraendert haben
+    (Maximum, Mittel und Endstand bleiben exakt gleich).
+
+[ ] Ein Cloud-Lauf und ein Companion-Lauf, beide bis zum Ergebnis
+    Erwartung: unveraendert. Im Manifest steht bei beiden keine
+    "Ende"-Zeile, solange kein Leerlauf eingeschaltet war.
+
+
+###############################################################################
+#                                                                             #
+#   TEIL C  --  deine Befunde aus Teil A, behoben (17.08.2026)                #
+#                                                                             #
+#   Fuenf Fehler mit gefundener Ursache plus die Paarung der Laubkarten.      #
+#   Das ist Nachpruefen, nicht Neutesten: bei jedem Punkt steht, WAS jetzt    #
+#   anders ist als bei deinem Durchgang.                                      #
+#                                                                             #
+###############################################################################
+
+
+===============================================================================
+ 13  PRE / MODELL  --  Profilmasse und Fehlermeldungen        (df54352)
+===============================================================================
+Dein Befund: "Rechteck und Maul Erstellung geht garnicht ... keine Reaktion
+beim Auswaehlen, nichts eingebbar" -- und getrennt davon die rohe
+Pydantic-Meldung beim Speichern. Das war EIN Fehler an zwei Enden: die
+Untergruppe blendet leere Felder aus, also erschienen Breite und Hoehe nach
+dem Umschalten der Profilart nie, und das Speichern scheiterte dann am
+Modell.
+
+[ ] ! Durchlass > Eigenschaften > Profil > Art auf "rectangular" stellen
+    Erwartung: Breite und Hoehe erscheinen SOFORT als Zahlenfelder mit dem
+    Platzhalter "noetig"; der Durchmesser verschwindet. Werte eintragen,
+    speichern -> geht durch.
+
+[ ] Auf "arch" (Maul) und zurueck auf "circular" schalten
+    Erwartung: die Felder wechseln mit. Beim Zurueckschalten sind Breite
+    und Hoehe geleert -- ein Durchmesser darf nicht an einem Rechteck
+    haengenbleiben und etwas behaupten, das dort nicht gilt.
+
+[ ] Dieselbe Probe am GRABEN (Profil kreis -> trapez)
+    Erwartung: Hoehe und Boeschungsneigung erscheinen. Dieselbe Falle war
+    dort auch drin, nur noch niemandem begegnet.
+
+[ ] ! Speichern absichtlich scheitern lassen (Art umstellen, Mass leer)
+    Erwartung in der Meldungsleiste EIN Satz, etwa:
+      Bauwerk 6 / Durchlass / Profil: Das Maulprofil braucht Breite und Hoehe.
+    NICHT mehr: "1 validation error for CaseSpec structures.0.culvert...
+    [type=value_error, input_value={...}] For further information visit
+    https://errors.pydantic.dev/..."
+    Dieselbe Meldung muss auch im Pruefbereich rechts stehen, wenn der
+    Entwurf nicht lesbar ist.
+
+
+===============================================================================
+ 14  PRE / MODELL  --  Der Knick im Durchlass                 (f24225c)
+===============================================================================
+Dein Befund war richtig und die Sache schlimmer als vermutet: nachgemessen
+waren 0,3 bis 0,5 m hinter dem Knick rund 50 % des lichten Querschnitts
+verbaut. Zwei Ursachen, nicht eine -- die Ringsegmente stiessen stumpf
+aneinander (der Wandring des einen Schenkels ragte durch den lichten Raum
+des anderen), UND die Kugelschale mass ihren Hohlraum vom Knickpunkt aus,
+obwohl der lichte Kanal keine Kugel ist.
+
+Deine Idee war, die Kugel zu beschneiden. Gebaut ist die Umkehrung: erst
+die Aussenkontur als Vollkoerper ueber alle Segmente, dann den lichten Raum
+in EINEM Zug abziehen. Der Durchgang ist damit per Konstruktion offen.
+
+[ ] ! Achse mit KNICK zeichnen (3+ Punkte), Erdkoerper und Netzansicht
+    Erwartung: das Rohr ist innen durchgaengig -- von einem Rohrmund zum
+    anderen ist Luft. Aussen weiterhin sauber gefuellt, keine Erdkeile.
+
+[ ] Dasselbe mit Rechteck- und Maulprofil
+    Erwartung: ebenso offen. (Beim Maul weitet sich der lichte Raum am
+    Knick etwas auf -- er wird groesser, nie kleiner.)
+
+[ ] Zwei Knicke hintereinander (4 Punkte)
+    Erwartung: unveraendert offen.
+
+[ ] Einen Fall mit geknicktem Durchlass vernetzen lassen
+    Erwartung: laeuft durch, checkMesh in Ordnung. Der Rohrkoerper ist
+    jetzt ein echtes Volumen (vorher ein Haufen sich ueberlappender
+    Roehren -- das Volumen war dadurch 10 % zu gross).
+
+
+===============================================================================
+ 15  PRE  --  Import-Dialog, verschobene Bauwerke, altes Netz  (e2963f3)
+===============================================================================
+
+[ ] ! Import-Dialog mit einer DXF/STL mit VIELEN Kandidaten
+    Erwartung: die 3D-Vorschau ist WEG, die Kandidatentabelle bekommt den
+    Platz und zeigt mehrere Zeilen mit eigenem Bildlauf. (Die Vorschau
+    belegte fest 220 px in einem 88-vh-Dialog -- daher die eine Zeile.)
+    Was du damit verlierst: du siehst die Koerper erst nach dem Import im
+    Editor. Sag Bescheid, wenn dir das doch fehlt.
+
+[ ] ! Bauwerk mit Aussparung ueber seine Knoten verschieben
+    Erwartung: die Aussparung wandert MIT und sitzt weiter an ihrer Stelle
+    am Bauteil. (Du hattest Zuruecksetzen vorgeschlagen -- mitbewegen
+    erhaelt deine gezeichnete Arbeit.)
+[ ] Dasselbe mit einem Zuschnitt (Schnittebene)
+    Erwartung: ein x-Schnitt folgt einer Verschiebung in x, ein
+    waagerechter Kappschnitt ("alles ueber 100,50 m weg") folgt NUR einem
+    Hoehenzug -- nicht einer Verschiebung in x oder y.
+[ ] Bauwerk mit Aussparung in der HOEHE ziehen (Strg)
+    Erwartung: die Aussparungshoehe steigt mit.
+
+[ ] ! Geometrie aendern, dann Netzansicht einschalten
+    Erwartung: das alte Netz wird GAR NICHT mehr gezeigt. Die echte
+    Geometrie bleibt stehen, darueber steht "Fuer diesen Stand der
+    Geometrie gibt es noch kein Netz ... hier neu rechnen" samt Knoepfen.
+    Das war dein Befund: erst erschien das alte, dann das richtige.
+[ ] Aus dieser Ansicht heraus "Netzvorschau rechnen"
+    Erwartung: waehrend der Rechnung steht die GEOMETRIE im Bild, nicht
+    das alte Netz. Danach erscheint das neue.
+
+
+===============================================================================
+ 16  LAUBKARTEN  --  die Paarung                              (a05743f)
+===============================================================================
+Dein Befund: "zu stringentes Mass -- identische Geometrie, nur andere
+Zulaufbedingungen, und keine Moeglichkeit das zu aendern."
+
+Nachgemessen: r006 und r007 unterscheiden sich im GANZEN Fall in genau
+einer Zahl -- Zufluss 0,0 gegen 0,8 m3/s. Der Netz-Hash umfasste die
+Randbedingungen vollstaendig, also auch diesen Wert. Damit schloss das
+Kriterium systematisch das Paar aus, fuer das es gebaut war: ein Leerlauf
+und ein Schwall unterscheiden sich per Definition genau darin.
+
+[ ] ! Zwei Laeufe waehlen, deren Zufluss sich unterscheidet
+    Erwartung: gruene Ampel "Gleiches Netz". Die Zuflussmenge ist kein
+    anderes Netz mehr.
+
+[ ] Ein Paar mit wirklich anderer Geometrie waehlen (z.B. r005 + r007)
+    Erwartung: rote Ampel "Verschiedene Bauwerke" MIT den Fundstellen im
+    Klartext -- und "Karten rechnen" bleibt bedienbar. Warnen, nicht
+    sperren.
+
+[ ] ! Zufluss eines Falls aendern und die Netzvorschau ansehen
+    Erwartung: die Vorschau gilt WEITERHIN. Eine geaenderte Zuflussmenge
+    entwertet kein Netz mehr. (Eine geaenderte Zellgroesse, ein
+    verschobenes Bauwerk oder ein anderes Randfenster schon.)
+
+[ ] Gegenprobe: vorhandene Netzvorschauen nach dem Update
+    Erwartung: ein Fall, an dem du seit seiner Vorschau NICHTS geaendert
+    hast, gilt weiterhin als aktuell. (Dafuer zaehlt jetzt Netz-Hash ODER
+    Fall-Hash -- ohne diesen Rueckfall waere nach dem Update jede
+    Vorschau einmalig ungueltig gewesen.)
+
+
+###############################################################################
+#                                                                             #
+#   TEIL D  --  neu seit dem 17.08.2026 (nachmittags/abends)                  #
+#                                                                             #
+#   Vier Themen: (17-19) die Laubkarten sind bedienbar und erklaeren sich,    #
+#   (20) das Werkzeug sagt, ob eine Rauheit ueberhaupt wirken kann,           #
+#   (21) das Gelaende kann verschiedene Belaege tragen.                       #
+#                                                                             #
+#   Abschnitt 21 ist der einzige, der NOCH NIE durch einen Solverlauf         #
+#   gegangen ist -- Netz ja, interFoam nein. Steht dort ausdruecklich.        #
+#                                                                             #
+###############################################################################
+
+
+===============================================================================
+ 17  LAUBKARTEN  --  Regler und Speicherung                    (10b31f2)
+===============================================================================
+Vorher standen ALLE Regler immer da, egal welche Karte gezeigt wurde. Auf
+A und A' bewirkte kein einziger etwas Sichtbares. Und beim Reiterwechsel
+war alles weg -- Reglerstellungen UND die Rechnung ueber 842 Zeitpunkte.
+
+[ ] ! Karte umschalten und dabei die Reglerleiste beobachten
+    Erwartung: es steht nur da, was auf DIESE Karte wirkt.
+      A  -> Ablagerung ab Faktor
+      A' -> Nass ab ... mm
+      B  -> tau_krit          B' -> tau_krit
+      C  -> alle drei (tau_krit, Ablagerung, Spuelintegral)
+
+[ ] ! Karte A' und den Regler "Nass ab ... mm" ziehen
+    Erwartung: die Karte reagiert SOFORT, ohne Neurechnen. Die Achse steht
+    jetzt in SEKUNDEN (vorher 0...1 -- das versteckte, dass "1" bei r006
+    240 s heisst).
+    Hintergrund: "trockengefallen" ist eine Setzung, keine Naturkonstante.
+    Ein Millimeterfilm trocknet von selbst weg, eine 3-cm-Lache nicht.
+
+[ ] ! Waehrend du am Nass-Regler ziehst: die Flaechenanteile in Karte C
+    Erwartung: sie aendern sich NICHT. Die Bezugsflaeche kommt aus der
+    feinsten Tiefenstufe und ist bewusst reglerunabhaengig -- sonst
+    spraengen die Prozente im Bericht, sobald jemand an A' dreht.
+
+[ ] Karte A und den Regler "Ablagerung ab Faktor" ziehen
+    Erwartung: alles unter der Schwelle wird GEDAEMPFT gezeichnet. Damit
+    siehst du auf A selbst, was Karte C als "viel Laub" nimmt.
+
+[ ] ! Reiter wechseln (z.B. auf Grundriss) und zurueck
+    Erwartung: Karte und Reglerstellungen stehen noch. Nur die Laubkarten
+    ueberleben so -- Raum (3D) wird weiterhin abgeraeumt (vtk.js haelt
+    GPU-Speicher, dort gab es schon ein Leck).
+
+[ ] "Als Fallvorgabe sichern", dann die Seite neu laden
+    Erwartung: Ablagerungsschwelle, Spuelintegral und Nass-Schwelle sind
+    wieder da. Sie stehen jetzt im Fall (evaluation.laubkarten) und
+    wandern mit Geometrie-Staenden.
+    NICHT dabei: tau_krit. Das hat schon ein Zuhause im Kriterium
+    min_bed_shear -- zwei Speicherorte fuer dieselbe Zahl waeren eine
+    Doppelquelle.
+
+[ ] Netzvorschau vorher/nachher pruefen
+    Erwartung: das Sichern einer Auswerteschwelle entwertet KEINE
+    Netzvorschau (evaluation steckt in keiner der beiden Kennungen).
+
+
+===============================================================================
+ 18  LAUBKARTEN  --  Legenden und Verfahrensgrenzen            (ef66d11)
+===============================================================================
+Die Karten zeigten einen Farbverlauf ohne jede Angabe, welcher Wert welche
+Farbe ist.
+
+[ ] ! Neben dem Kartenumschalter: Farbbalken mit Min und Max
+    Erwartung: die Zahlen am Balken sind DIESELBEN, die das Bild benutzt
+    (eine Quelle). Einheit dabei: A ohne, A' in s, B in N*s/m2, B' in s.
+
+[ ] Die zwei Farben, die KEIN Wert sind
+    Erwartung: darunter zwei Legendenzeilen --
+      "im Becken, aber ohne Wert" (je Karte anders begruendet)
+      "ausserhalb der Bezugsflaeche -- im Leerlauf nie nass"
+    Ohne sie liest man graue Flaechen als "Null" statt als "gehoert nicht
+    dazu".
+
+[ ] ! Fragezeichen neben "Farbskala" -- bei JEDER Karte einzeln
+    Erwartung: jede Karte hat ihre EIGENE Erklaerung mit eigenen Grenzen.
+    Stichproben, was dort stehen muss:
+      A   masselos, Einwegkopplung (ein Rechen aus verkeiltem Laub
+          entsteht nie -- die Karte unterschaetzt reale Nester eher),
+          gleichverteilte Aussaat, kein Wind
+      A'  auf das Schreibintervall quantisiert; die Nass-Schwelle kann
+          unter die Vertikalaufloesung rutschen; keine Verdunstung, keine
+          Versickerung -- eine Restpfuetze steht im Modell ewig
+      B   tau_krit stammt aus der Sediment-Literatur, NICHT aus
+          Laubversuchen
+      B'  die Stufe, in die tau_krit faellt, ist unscharf
+    Wenn eine dieser Aussagen fehlt oder falsch klingt -- bitte melden.
+
+[ ] PNG exportieren und das Bild ansehen
+    Erwartung: Fusszeile mit Laufpaar, Karte, Schwellen, Datum UND einem
+    Farbschluessel rechts. Ohne den sieht man im Bericht, WO etwas ist,
+    aber nicht WAS.
+
+
+===============================================================================
+ 19  LAUBKARTEN  --  Karte R und "In den Bericht aufnehmen"    (b5c56a2)
+===============================================================================
+Deine Frage war: kann man das Absetzen nicht aus der Fliessgeschwindigkeit
+ableiten? Ja -- und die Karte hat einen Vorteil, der ueber die
+urspruengliche Idee hinausgeht: sie ist EULERSCH, braucht keine Bahnen und
+haengt deshalb NICHT am Advektions-CFL. Genau der Schwaeche, an der Karte
+A leidet.
+
+[ ] ! Karte "R -- Ruhezonen (Absetzneigung)" waehlen
+    Erwartung: Anteil der NASSEN Zeit in Prozent, in der es hier ruhiger
+    war als die Schwelle. Regler "ruhig unter ... m/s", Vorbelegung
+    0,3 m/s (die gebraeuchliche Ablagerungsgrenze).
+
+[ ] Den Regler ziehen
+    Erwartung: reagiert sofort; strenger = weniger Flaeche.
+
+[ ] ! Eine Stelle suchen, die im Leerlauf nie nass war
+    Erwartung: sie hat KEINEN Wert -- nicht 100 %. Eine trockene Zelle hat
+    die Geschwindigkeit 0; ohne die Maske waere jede Trockenflaeche die
+    ruhigste Zone der Karte. (Das hat ein Test gefunden.)
+
+[ ] Fragezeichen bei Karte R
+    Erwartung: dort steht ausdruecklich, dass das KEINE Wahrscheinlichkeit
+    ist, sondern ein Zeitanteil -- fuer eine echte Absetzwahrscheinlichkeit
+    fehlen Korngroesse, Sinkgeschwindigkeit und das Wiederaufwirbeln.
+    Ebenso: massgebend waere streng genommen die Sohlschubspannung, und
+    aus einem Leerlauf gerechnet zeigt sie die Ruhezonen WAEHREND des
+    Ablaufens, nicht den Dauerbetrieb.
+
+[ ] ! "In den Bericht aufnehmen"
+    Erwartung: alle fuenf Karten werden beim LEERLAUF-Lauf abgelegt, jede
+    mit ihren Schwellen in der Bildunterschrift. Das Panel schaltet dabei
+    kurz durch alle Karten -- das ist Absicht, der Canvas traegt immer nur
+    die gezeigte.
+
+[ ] Danach: Ergebnis > Abbildungen
+    Erwartung: die fuenf Laubkarten stehen neben den serverseitig
+    gerenderten Diagrammen. Bei ihnen gibt es KEIN SVG (sie entstehen auf
+    einem Canvas, nicht in matplotlib), dafuer einen "entfernen"-Knopf.
+
+[ ] ! Danach den Lauf neu auswerten lassen (Ergebnis-Import wiederholen)
+    Erwartung: die Laubkarten sind NOCH DA. Sie liegen in einer eigenen
+    Datei neben result.json -- die wird bei jedem Auswerten neu
+    geschrieben, ein Eintrag darin waere spurlos weg.
+
+
+===============================================================================
+ 20  PRE  --  Rauigkeit: wirkt sie ueberhaupt?                 (cbf5e04)
+===============================================================================
+Auf deine Frage, inwieweit Rauigkeit beruecksichtigt wird: sie IST
+verdrahtet (Materialkatalog -> nutkRoughWallFunction je Patch). Was
+fehlte, war die Bedingung, unter der diese Wandfunktion ueberhaupt gilt --
+k_s muss IN die wandnaechste Zelle passen.
+
+[ ] ! Rentrich_BetaTest08 oeffnen > Pruefliste
+    Erwartung: ein HINWEIS zum Gelaende, sinngemaess
+      "Rauheit k_s = 0.03 m gegen 0.125 m Zellhoehe an der Wand (24 %).
+       Die Wandfunktion verteilt die Rauheit INNERHALB dieser Zelle;
+       belastbar ist sie bis rund 0.025 m."
+    Der Durchlass (Beton glatt) darf NICHT auftauchen.
+
+[ ] ! Die Verfeinerung eine Stufe erhoehen
+    Erwartung: der Befund wird DEUTLICHER, nicht schwaecher. Das ist die
+    unerwartete Richtung: ein feineres Netz macht die Rauheitsangabe
+    schlechter. Ab "k_s groesser als die halbe Zelle" wird aus dem
+    Hinweis eine WARNUNG.
+
+[ ] Grenzschichten am Gelaende einschalten (mesh.boundary_layers)
+    Erwartung: der Befund schlaegt auch bei grober Basiszelle an, und der
+    Text nennt die Grenzschichten als Ursache. Sie verkleinern die
+    wandnahe Zelle um rund Faktor 5.
+
+[ ] Material auf "Beton glatt" stellen
+    Erwartung: still. 0,0005 m passt in jede hier vorkommende Zelle.
+
+[ ] Hinweis "Wandaufloesung" (einmal je Fall)
+    Erwartung: nennt die y+-Groessenordnung (bei 0,125 m Zellen rund
+    900 bis 9.000) gegen den Gueltigkeitsbereich 30 bis 300. Das ist KEIN
+    Fehlbedienen -- es heisst, dass tau ein Vergleich zwischen Varianten
+    DESSELBEN Netzes ist und kein Messwert.
+
+[ ] Ergebnis > Sohlschubspannung > Fragezeichen
+    Erwartung: dieselbe Begruendung steht dort, damit man eine tau-Zahl
+    richtig liest.
+
+[ ] Einen Fall mit Leerlauf OHNE Anfangswasser speichern (Pruefliste)
+    Erwartung: der Fehler kommt wie bisher -- und der Pruefbereich
+    STUERZT NICHT AB. (Nebenbefund: drei Befunde trugen eine Kur als
+    Freitext statt als Aktion; der Aufrufer liest dort .get("aktion").)
+
+
+===============================================================================
+ 21  PRE / MODELL  --  Belag malen              (9044029/88b11aa/773af58)
+===============================================================================
+Deine Frage: wie sagt man OpenFOAM, dass eine Wand Beton ist? Als ZAHL in
+Metern (aequivalente Sandrauheit k_s), und zwar JE PATCH, nicht je Zelle.
+Bauwerke hatten das laengst; das Gelaende war EIN Patch mit EINER Rauheit.
+
+Jetzt wird aus jeder gemalten Flaeche ein eigener Netz-Patch:
+  topoSet patchToFace terrain -> subset searchableSurfaceToFace
+  createPatch -> terrain_belag<N>,  0/nut -> dessen k_s
+
+EHRLICH VORWEG: die Netzkette ist im OpenFOAM-Container gegengeprueft
+(2667 Gelaendeflaechen -> 1428 + 1239 = 2667, keine doppelt, keine
+verloren). Ein SOLVERLAUF damit ist noch nie gefahren. Was offen ist:
+ob interFoam mit den zusaetzlichen Wandpatches durchlaeuft und ob die
+tau-Karte danach vollstaendig ist. Genau dafuer der letzte Punkt unten.
+
+[ ] Modell > Gelaende > Eigenschaften > "🎨 Belag malen"
+    Erwartung: oben erscheint eine Leiste mit Materialien, Radius,
+    Kreis/Quadrat und einem Radiergummi; das Gelaende faerbt sich ein.
+
+[ ] ! Malen
+    Erwartung: harter Rand, keine weiche Kante. Eine Rauheit kennt kein
+    Dazwischen -- eine Flaeche ist Beton oder Rasen. Die Aufloesung ist
+    die Rasterzelle des Gelaendes.
+
+[ ] Zweimal ueber dieselbe Stelle mit verschiedenen Materialien
+    Erwartung: der zweite Strich UEBERSCHREIBT (gesetzt, nicht addiert).
+
+[ ] Radiergummi ("⌫ ohne")
+    Erwartung: die Flaeche faellt auf das Grundmaterial des Gelaendes
+    zurueck.
+
+[ ] ! Materialbibliothek (Tabelle unter dem Gelaende-Material)
+    [ ] Farbe, Name und k_s aendern
+    [ ] "+ Material" -- eine neue Kennung erscheint
+    [ ] Spalte "n": das Manning-n zur Sandrauheit (Beton 0,002 -> 0,014)
+    [ ] Spalte "Flaeche": Anteil an der Gelaendeflaeche
+    [ ] "Liste sichern", Seite neu laden -> die Aenderungen sind da
+    Erwartung: die Liste laesst sich OHNE Pinselstrich speichern.
+
+[ ] ! Ein Material entfernen, das noch gemalt ist
+    Erwartung: Rueckfrage MIT der Prozentzahl. Danach steht im Panel eine
+    gelbe Warnung "Gemalt, aber nicht in der Liste: Kennung N" -- der
+    Fallaufbau baut dafuer keinen Patch, die Flaeche behaelt still das
+    Grundmaterial.
+
+[ ] Gebiet oder Gelaendeaufloesung aendern
+    Erwartung: die Karte wird umgetastet, aber NEAREST -- es darf keine
+    Kennung entstehen, die niemand gemalt hat (zwischen 1 und 3 laege
+    interpoliert 2).
+
+[ ] ! DER OFFENE PUNKT: einen Fall mit zwei Belaegen wirklich rechnen
+    (lokal, klein, grobe Zellen)
+    Erwartung: interFoam laeuft durch; danach im Grundriss die
+    Sohlschubspannung ansehen -- sie muss auf der GANZEN Gelaendeflaeche
+    liegen, nicht nur auf einem Teil.
+    Hintergrund: die tau-Karte las die Wandflaechen frueher NAMENTLICH vom
+    Patch "terrain". Deckt die Belagskarte alles ab, verschwindet der --
+    Karte B waere leer gewesen, ohne dass ein Fehler auftaucht. Das ist
+    umgebaut (die Patches kommen jetzt aus dem NETZ), aber nur am Netz
+    geprueft, nicht am Lauf.
+
+
+===============================================================================
+ 22  BEKANNTE GRENZEN (kein Fehler, bewusst offen)
 ===============================================================================
  -  Grundriss: die Karten rechnen weiter mit EINEM Boden je Rasterspalte.
     Wassertiefe/Wasserspiegel INNERHALB einer Bohrung sind dort falsch
@@ -240,16 +957,92 @@ genau das bitte stichprobenartig gegenpruefen.
     aufgebohrt -- Oeffnung weiterhin von Hand stanzen.
  -  Maulprofil: Achshoehe bedeutet dort die Sohle (bei Kreis/Rechteck die
     Mitte) -- Umstellung waere eine Migration, bewusst nicht gemacht.
- -  Alte Laeufe koennen ihre Geometrie nicht liefern (erst ab heute).
+ -  Alte Laeufe koennen ihre Geometrie nicht liefern (erst ab dem 15.08.).
+
+ aus Teil B (16.08.):
+ -  Die Diagnose-Verdichtung gilt nur fuer NEUE Laeufe. Bestehende Laeufe
+    behalten ihre grosse Zwischendatei; sie werden nur noch sparsam
+    GELESEN. Ein Werkzeug zum nachtraeglichen Verdichten waere machbar,
+    ist aber nicht gebaut.
+ -  Laubkarten, vier Grenzen des Verfahrens (stehen auch in der
+    Erklaerkarte am Ergebnis):
+      * Einwegkopplung -- Laub folgt der Stroemung, veraendert sie nicht.
+        Ein Rechen aus verkeiltem Laub entsteht im Modell nie.
+      * masseloser Oberflaechentracer -- die Spuelwirkung faellt dadurch
+        eher zu GUENSTIG aus.
+      * gilt nur fuer kurze Standzeiten: durchnaesstes Laub sinkt ab und
+        folgt der Sohle statt der Oberflaeche.
+      * tau liegt flaechig nur auf dem Gelaende-Patch vor --
+        Bauwerksflaechen bleiben auf Karte B leer.
+ -  Laubkarten, zwei Eigenschaften, die wie Fehler AUSSEHEN und keine
+    sind (beide am Testfall gemessen und dokumentiert):
+      * Das Laub liegt auf dem KONVERGENZSAUM einer Senke, nicht in
+        deren Tiefpunkt. Wo die Oberflaechengeschwindigkeit gegen null
+        geht, bleibt ein Tracer stehen. Gemessen: Saum 3,2-3,8-fache
+        Belegung, Mitte 1,0-1,4.
+      * Laub in Restpfuetzen zaehlt mit und wird getrennt ausgewiesen.
+        Ohne das blieben ausgerechnet die Senken leer -- die
+        Strandungsregel greift nur auf trockenfallendem Boden.
+ -  Gleiche Netz-Kennung genuegt NICHT als Paarungsbedingung: das
+    Ausgaberaster haengt zusaetzlich an Laufdauer und Schreibintervall.
+    Seit 17.08. wird beides VOR dem Rechnen geprueft und als Ampel
+    angezeigt; hart gesperrt wird nur ein unpassendes Raster.
+ -  Die Netz-Kennung im Manifest eines Laufs stammt aus der alten, zu
+    strengen Rechnung. Fuer die Paarung wird sie aus dem gesicherten
+    Stand neu gerechnet; bei Laeufen ohne gesicherten Stand (16 von 20)
+    bleibt die Geometrie ungeprueft.
+ -  Leerlauf: das Kriterium sieht nur das GESAMTvolumen. Zwei getrennte
+    Becken, von denen eines laengst leer ist und das andere noch
+    ablaeuft, werden nicht unterschieden.
+
+ aus Teil D (17.08. nachmittags):
+ -  Die Wandfunktion arbeitet bei diesen Zellgroessen GRUNDSAETZLICH
+    ausserhalb ihres Gueltigkeitsbereichs (y+ 10^3 bis 10^4 statt
+    30 bis 300). Das ist die normale Folge grober Vernetzung und kein
+    Fehler -- aber tau ist damit ein Vergleich zwischen Varianten
+    DESSELBEN Netzes und kein Messwert; ueber verschiedene Zellgroessen
+    hinweg ist es nicht vergleichbar. Dasselbe gilt fuer Karte B.
+ -  Die Belagskarte ist am NETZ gegengeprueft, aber noch nie durch einen
+    interFoam-Lauf gegangen. Offen: laeuft der Solver mit den
+    zusaetzlichen Wandpatches durch, und ist die tau-Karte danach
+    vollstaendig?
+ -  Belaege sind so fein wie die Rasterzelle des Gelaendes -- der
+    Patchrand kann ohnehin nur an Zellkanten liegen. Ein Belag kleiner
+    als eine Zelle ist im Netz nicht darstellbar.
+ -  Karte R gilt fuer den LAUF, aus dem sie stammt. Aus einem Leerlauf
+    gerechnet zeigt sie die Ruhezonen waehrend des Ablaufens -- nicht den
+    Dauerbetrieb, in dem sich in Wirklichkeit das meiste absetzt. Dafuer
+    fehlt ein Beschickungslauf (siehe unten).
+ -  Karte R ist ein ZEITANTEIL, keine Absetzwahrscheinlichkeit: Korngroesse,
+    Sinkgeschwindigkeit und Wiederaufwirbeln kennt das Modell nicht.
 
 
 ===============================================================================
- 10  WAS BEI DIR OFFEN IST
+ 23  WAS BEI DIR OFFEN IST
 ===============================================================================
 [ ] RunPod-Konsole: Retries auf 0 setzen (sonst startet RunPod
     gescheiterte Jobs von selbst neu und es kostet doppelt).
 [ ] Rentrich_BetaTest08: Durchmesser 1,6 m -- war DN800 (0,8) gemeint?
 [ ] Sagen, wenn die Produktions-Seite neu gebaut werden soll.
+    (Teil B ist dort komplett NICHT drin.)
 [ ] Verifikationslauf nach den Geometrie-Aenderungen (~17 min, ~0,1 EUR)
     -- laut Betriebsregel faellig, auf dein Go.
+[ ] Entscheiden, ob die Prozessgrenzen zusaetzlich CPUQuota=50% bekommen
+    sollen (steht in pm2-root.service.d/override.conf, aktuell nur
+    Speicher: MemoryHigh=3G / MemoryMax=4G).
+[ ] Wenn die Laubkarten wirklich etwas aussagen sollen: EIN Leerlauf und
+    EIN Schwall auf demselben Netz, mit derselben Feldausgabe. Rezept in
+    BETRIEB_FLOOD3D.md unter "Laubkarten: ein Leerlauf-/Schwall-Paar
+    aufsetzen" -- die entscheidende Zahl dort ist
+    write_interval_fields <= 0,5 * dx / u_max.
+[ ] Einen kleinen Fall mit zwei Belaegen wirklich rechnen (Abschnitt 21,
+    letzter Punkt). Das ist die einzige noch offene Zusicherung der
+    Belagskarte.
+[ ] Entscheiden, ob der BESCHICKUNGSLAUF gebaut wird -- der fehlt fuer die
+    eigentliche Absetz-Aussage von Karte R. Vorgesehen waeren: Ganglinie
+    im Editor eintippen (die flood-2D-Komponente ist gesichtet und
+    portierbar), Abbruch "eingeschwungen" als Umkehrung des Leerlaufs,
+    drittes Laufauswahlfeld in den Laubkarten. Dein r007 ist uebrigens
+    KEIN eingeschwungener Lauf, sondern eine Fuellphase: am Ende gehen
+    noch 45 % des Zuflusses in den Speicher.
 ===============================================================================
