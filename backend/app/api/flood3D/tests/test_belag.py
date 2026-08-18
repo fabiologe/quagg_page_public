@@ -308,3 +308,27 @@ def test_gemalte_kennung_ohne_material_wird_gemeldet(client):
     assert res.status_code == 200
     text = json.dumps(res.json(), ensure_ascii=False)
     assert "7" in text and "Materialliste" in text
+
+
+def test_die_materialliste_laesst_sich_ohne_strich_speichern(client):
+    """
+    Eine geaenderte Rauheit oder ein umbenanntes Material muss man
+    festhalten koennen, ohne dafuer malen zu muessen.
+    """
+    c, d = client
+    res = c.post("/cases/demo/belag-malen", json={
+        "striche": [],
+        "belaege": [{"id": 1, "name": "Sohlbeton", "ks": 0.0015,
+                     "farbe": "#334455"}]})
+    assert res.status_code == 200, res.text
+
+    from ..core.casespec import CaseSpec
+    karte = CaseSpec.from_yaml(d / "case.yaml").terrain.belagskarte
+    assert karte.belaege[0].name == "Sohlbeton"
+    assert karte.belaege[0].ks == 0.0015
+
+
+def test_ganz_ohne_angaben_ist_ein_fehler(client):
+    c, _ = client
+    res = c.post("/cases/demo/belag-malen", json={"striche": []})
+    assert res.status_code == 422

@@ -67,6 +67,7 @@
       Patch. Nebeneffekt: die Sohlschubspannung liegt danach getrennt je
       Materialregion vor.
     </p>
+    <BelagBibliothek v-if="draft.type === 'terrain' && store.belagAktiv" />
     <p v-if="hilfe && draft.type === 'terrain'" class="f3d-muted f3d-small">
       Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
       schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr
@@ -323,6 +324,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { usePreStore } from '../../stores/usePreStore'
 import PunktListe from './PunktListe.vue'
 import UnterGruppe from './UnterGruppe.vue'
+import BelagBibliothek from './BelagBibliothek.vue'
 import EditListe from './EditListe.vue'
 import {
   AUSHUB_TYPEN, FIELD_LABELS, GESCHLOSSEN, GRUPPEN_LABELS,

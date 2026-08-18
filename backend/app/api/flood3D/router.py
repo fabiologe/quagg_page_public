@@ -1337,12 +1337,17 @@ async def case_belag_malen(case_id: str, payload: dict = Body(...)):
         if spec.terrain is None or spec.domain is None:
             raise ValueError("Fall ohne Gelände oder Gebiet — nichts zu malen.")
         striche = payload.get("striche") or []
-        if not striche:
-            raise ValueError("Keine Pinselstriche übergeben.")
+        belaege = payload.get("belaege")
+        if not striche and belaege is None:
+            raise ValueError("Weder Pinselstriche noch Materialliste "
+                             "übergeben.")
 
         x0, y0, res, _nx, _ny = gitter_masse(spec.terrain, spec.domain)
         ids = karte_lesen(spec.terrain, spec.domain, d)
-        n = striche_anwenden(ids, striche)
+        # Ohne Strich wird nur die Bibliothek gespeichert — eine geänderte
+        # Rauheit oder ein umbenanntes Material muss man festhalten
+        # können, ohne dafür malen zu müssen.
+        n = striche_anwenden(ids, striche) if striche else 0
 
         quelle = "belagskarte.asc"
         karte_schreiben(ids, x0, y0, res, Path(d) / quelle)
@@ -1351,7 +1356,6 @@ async def case_belag_malen(case_id: str, payload: dict = Body(...)):
         # Bibliothek wird im Panel gepflegt und muss mit der Karte
         # zusammen gespeichert werden, sonst zeigt eine Kennung auf ein
         # Material, das der Fall nicht kennt.
-        belaege = payload.get("belaege")
         if spec.terrain.belagskarte is None or belaege is not None:
             spec.terrain.belagskarte = _cs.Belagskarte(
                 source=quelle,
@@ -1365,7 +1369,8 @@ async def case_belag_malen(case_id: str, payload: dict = Body(...)):
         bekannt = {b.id for b in spec.terrain.belagskarte.belaege}
         gemalt = {int(v) for v in _np.unique(ids) if int(v) > 0}
         verwaist = sorted(gemalt - bekannt)
-        meldung = f"Belag gemalt: {n} Zellen."
+        meldung = (f"Belag gemalt: {n} Zellen." if striche
+                   else "Materialliste gespeichert.")
         if verwaist:
             meldung += (" Achtung: Kennung "
                         + ", ".join(str(v) for v in verwaist)
