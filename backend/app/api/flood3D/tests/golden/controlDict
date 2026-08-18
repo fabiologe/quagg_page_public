@@ -129,7 +129,7 @@ functions
     {
         type            wallShearStress;
         libs            (fieldFunctionObjects);
-        patches         (terrain wand_becken becken_1 dl_1 pfeiler_1);
+        patches         (terrain "terrain_belag.*" wand_becken becken_1 dl_1 pfeiler_1);
         // jeden Zeitschritt RECHNEN (sonst laesen die Auswertungen unten
         // ein veraltetes Feld), aber nur zu den Ausgabezeitpunkten SCHREIBEN
         executeControl  timeStep;

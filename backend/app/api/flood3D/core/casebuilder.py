@@ -175,8 +175,13 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
     if spec.terrain is not None:
         # Sohlschubspannung auf Gelände- und Bauwerksflächen (Spez. Kap. 2);
         # geschrieben zu den Feld-Ausgabezeitpunkten, gelesen von foamfields.
-        patches = " ".join(["terrain"] + [s.patch for s in spec.structures
-                                          if s.type != "screen"])
+        # Auch die Belag-Patches: sonst faellt genau die Flaeche aus der
+        # tau-Auswertung, die einen eigenen Belag bekommen hat. Die
+        # Musterform deckt sie mit ab, ohne dass die Kartendatei hier
+        # gelesen werden muesste.
+        patches = " ".join(['terrain', '"terrain_belag.*"']
+                           + [s.patch for s in spec.structures
+                              if s.type != "screen"])
         out += f"""    wall_shear
     {{
         type            wallShearStress;
@@ -842,10 +847,57 @@ def _windowed_bcs(spec: CaseSpec) -> list:
     return [b for b in spec.boundaries if _window_active(spec, b)]
 
 
-def topo_set_dict(spec: CaseSpec) -> str | None:
+def belag_patch(b) -> str:
+    """Patchname eines Belags — aus der Kennung, nicht aus dem Namen.
+
+    Der Name ist frei gewählt („Rasen 2", „Beton (alt)") und taugt nicht
+    als OpenFOAM-Wort. Die Kennung ist eindeutig und stabil."""
+    return f"terrain_belag{b.id}"
+
+
+def _belaege(spec: CaseSpec, base_dir: Path | None) -> list:
+    """
+    Die Beläge, die wirklich eine Fläche im Gebiet haben — mit ihrem
+    Suchkörper. Leere Einträge (gemalt, dann übermalt) fallen heraus:
+    ein Patch ohne Flächen bricht createPatch ab.
+    """
+    if spec.terrain is None or spec.terrain.belagskarte is None:
+        return []
+    if base_dir is None or spec.domain is None:
+        return []
+    from .belag import belag_koerper, belag_polygone, lade_belagskarte
+
+    karte = spec.terrain.belagskarte
+    pfad = Path(base_dir) / karte.source
+    if not pfad.is_file():
+        return []
+    try:
+        ids, x0, y0, zelle = lade_belagskarte(pfad)
+    except Exception:      # noqa: BLE001 — kaputte Karte heisst: kein Belag
+        return []
+    flaechen = belag_polygone(ids, x0, y0, zelle)
+
+    # Prisma von unter der Gebietssohle bis darüber: die Geländeflächen
+    # liegen irgendwo dazwischen, auch an steilen Böschungen
+    z_lo = spec.domain.z_min - 1.0
+    z_hi = spec.domain.z_max + 1.0
+    aus = []
+    for b in karte.belaege:
+        flaeche = flaechen.get(b.id)
+        if flaeche is None:
+            continue
+        koerper = belag_koerper(flaeche, z_lo, z_hi)
+        if koerper is not None:
+            aus.append((b, koerper))
+    return aus
+
+
+def topo_set_dict(spec: CaseSpec,
+                  base_dir: Path | None = None) -> str | None:
     screens = [s for s in spec.structures if s.type == "screen"]
     windows = _windowed_bcs(spec)
-    if not screens and not windows:
+    belaege = _belaege(spec, base_dir)
+    if not screens and not windows and not belaege:
         return None
     actions = ""
     # Fenster: Flächen des Randpatches AUSSERHALB des Fensters sammeln —
@@ -889,13 +941,38 @@ def topo_set_dict(spec: CaseSpec) -> str | None:
         set     {s.id}Cells;
     }}
 """
+    # Beläge: erst alle Geländeflächen sammeln, dann auf die unter dem
+    # Suchkörper einschränken. An OpenFOAM v2406 gegengeprüft — 400
+    # Bodenflächen, nach dem Subset exakt die 160 unter dem Prisma.
+    for b, _ in belaege:
+        actions += f"""    {{
+        name    belag{b.id}Faces;
+        type    faceSet;
+        action  new;
+        source  patchToFace;
+        patch   terrain;
+    }}
+    {{
+        name    belag{b.id}Faces;
+        type    faceSet;
+        action  subset;
+        source  searchableSurfaceToFace;
+        surface triSurfaceMesh;
+        file    "belag{b.id}.stl";
+    }}
+"""
     return foam_file("topoSetDict", f"actions\n(\n{actions});", location="system")
 
 
-def create_patch_dict(spec: CaseSpec) -> str | None:
-    """Restfläche jedes Fenster-Randpatches wird zur Wand randwand_<id>."""
+def create_patch_dict(spec: CaseSpec,
+                      base_dir: Path | None = None) -> str | None:
+    """
+    Restfläche jedes Fenster-Randpatches wird zur Wand randwand_<id>;
+    jeder Belag bekommt seinen eigenen Wandpatch aus dem Gelände.
+    """
     windows = _windowed_bcs(spec)
-    if not windows:
+    belaege = _belaege(spec, base_dir)
+    if not windows and not belaege:
         return None
     patches = ""
     for b in windows:
@@ -907,6 +984,17 @@ def create_patch_dict(spec: CaseSpec) -> str | None:
         }}
         constructFrom   set;
         set             {b.id}WinOut;
+    }}
+"""
+    for b, _ in belaege:
+        patches += f"""    {{
+        name            {belag_patch(b)};
+        patchInfo
+        {{
+            type            wall;
+        }}
+        constructFrom   set;
+        set             belag{b.id}Faces;
     }}
 """
     body = f"pointSync       false;\n\npatches\n(\n{patches});"
@@ -1134,6 +1222,12 @@ def initial_fields(spec: CaseSpec, base_dir: Path) -> dict[str, str]:
                 or MATERIAL_KS.get(spec.terrain.material or ""))
         if t_ks:
             nut_f["terrain"] = _rough_nut(t_ks)
+        # Beläge: jeder bekommt seinen eigenen Patch (topoSet/createPatch)
+        # und darauf seine eigene Rauheit. Das ist der einzige Weg, auf dem
+        # das Gelände örtlich verschiedene Materialien tragen kann — in
+        # OpenFOAM ist Ks eine Zahl JE PATCH, nicht je Zelle.
+        for b, _ in _belaege(spec, base_dir):
+            nut_f[belag_patch(b)] = _rough_nut(b.ks)
 
     felder = {
         "U": _field_file("U", "[0 1 -1 0 0 0 0]", "uniform (0 0 0)", u, wall_u),
@@ -1310,6 +1404,10 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
             gebohrt.export(out / "constant" / "triSurface" / "terrain.stl")
         else:
             terrain.to_stl(out / "constant" / "triSurface" / "terrain.stl")
+        # Suchkörper der Beläge: topoSet schneidet damit die
+        # Geländeflächen je Belag heraus (core/belag.py).
+        for b, koerper in _belaege(spec, base_dir):
+            koerper.export(out / "constant" / "triSurface" / f"belag{b.id}.stl")
     # Sich durchdringende Körper werden hier entflochten (gleiche
     # Wasserberandung, aber keine doppelt belegten Flächen für snappy) —
     # was dabei passiert ist, steht als Notiz im Ergebnis.
@@ -1360,10 +1458,10 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
     sf = set_fields_dict(spec, out, location=loc, terrain=terrain)
     if sf:
         (out / "system" / "setFieldsDict").write_text(sf)
-    ts = topo_set_dict(spec)
+    ts = topo_set_dict(spec, base_dir)
     if ts:
         (out / "system" / "topoSetDict").write_text(ts)
-    cp = create_patch_dict(spec)
+    cp = create_patch_dict(spec, base_dir)
     if cp:
         (out / "system" / "createPatchDict").write_text(cp)
     fv = fv_options(spec)

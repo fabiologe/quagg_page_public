@@ -408,8 +408,42 @@ Material = Literal["stahl", "beton_glatt", "beton", "mauerwerk", "holz",
                    "erde", "steinschuettung"]
 
 
+class Belag(_Model):
+    """
+    Ein Oberflächenbelag der Geländekarte.
+
+    `ks` ist die äquivalente Sandrauheit in METERN — das ist die Größe,
+    die OpenFOAM kennt; einen Materialnamen gibt es dort nicht. Zur
+    Brücke in die 2D-Welt: Manning-n ≈ ks^(1/6)/26 (Strickler), also
+    0,002 m Beton ≈ 0,014 und 0,03 m Erde ≈ 0,021.
+    """
+    id: int = Field(ge=1, le=99)      # Kennung im Raster
+    name: str
+    ks: float = Field(gt=0.0, le=1.0)
+    farbe: str = "#888888"            # nur für die Anzeige
+
+
+class Belagskarte(_Model):
+    """
+    Welcher Belag wo auf dem Gelände liegt.
+
+    Gespeichert als Raster mit Belag-Kennungen (ESRI-ASCII, wie das
+    Höhenraster) — das ist die Form, die zum Pinsel passt. Beim
+    Fallaufbau wird daraus je Belag ein eigener NETZ-PATCH mit eigener
+    Rauheit (core/belag.py): in OpenFOAM hängt die Rauheit an der
+    Wandfläche und wird je Patch als eine Zahl geschrieben, nicht je
+    Zelle.
+    """
+    source: str                       # Raster mit Kennungen
+    belaege: list[Belag] = []
+
+
 class Terrain(_Model):
     base: TerrainBase
+    # Oberflächenbeläge: betonierte Sohle, Rasenböschung, Schotter — je
+    # Belag ein eigener Patch mit eigenem k_s. Ohne Angabe gilt
+    # `material`/`material_ks` für das ganze Gelände.
+    belagskarte: Belagskarte | None = None
     # Was in der Zeichnung steht (mit Rolle) — getrennt von dem, was daraus
     # für das Gelände folgt
     kanten: list[Vermessungskante] = []

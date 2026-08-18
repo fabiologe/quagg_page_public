@@ -104,6 +104,38 @@ _PATCH_VALUE_RE = re.compile(
     r"nonuniform\s+List<(scalar|vector)>\s*\n(\d+)\s*\n\()")
 
 
+def _gelaende_patches(case_dir: Path) -> list[str]:
+    """
+    Alle Patches, die zum Gelaende gehoeren — `terrain` und die
+    Belag-Patches, die createPatch daraus geschnitten hat.
+
+    Gelesen wird die Patchliste des NETZES, nicht der Fall: nur dort steht,
+    was wirklich entstanden ist (ein leerer Belag faellt heraus, und ein
+    vollstaendig ueberdecktes `terrain` ist weg).
+    """
+    grenze = case_dir / "constant" / "polyMesh" / "boundary"
+    if not grenze.is_file():
+        return ["terrain"]
+    try:
+        text = grenze.read_text(errors="replace")
+    except OSError:
+        return ["terrain"]
+    namen = re.findall(r"^\s{4}(terrain(?:_belag\d+)?)\s*$", text,
+                       flags=re.MULTILINE)
+    # Reihenfolge stabil halten und Doppelte raus
+    return list(dict.fromkeys(namen)) or ["terrain"]
+
+
+def _patches_verketten(pfad: Path, patches: list[str]) -> np.ndarray | None:
+    """Werte mehrerer Patches hintereinander — in der Reihenfolge von
+    `patches`, damit Zentren und Werte zueinander passen."""
+    teile = [w for w in (parse_patch_values(pfad, p) for p in patches)
+             if w is not None and len(w)]
+    if not teile:
+        return None
+    return np.concatenate(teile, axis=0)
+
+
 def parse_patch_values(path: str | Path, patch: str) -> np.ndarray | None:
     """
     Randwerte eines Patches aus dem boundaryField einer ASCII-Felddatei —
@@ -264,7 +296,13 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
                    # WO das frische Wasser laeuft und welche Ecken es nie
                    # erreicht (totes Volumen)
                    ("T", "T", nan)]
-    face_centres = parse_patch_values(case_dir / "0" / "C", "terrain")
+    # Die Sohlschubspannung kommt von den GELAENDE-Patches. Traegt der Fall
+    # eine Belagskarte, ist das nicht mehr nur `terrain`: createPatch hat
+    # daraus terrain_belag1, terrain_belag2 … gemacht, und deckt die Karte
+    # das ganze Gebiet ab, verschwindet `terrain` sogar ganz. Wer nur nach
+    # dem einen Namen sucht, bekaeme dann eine LEERE tau-Karte.
+    gelaende_patches = _gelaende_patches(case_dir)
+    face_centres = _patches_verketten(case_dir / "0" / "C", gelaende_patches)
     written = []
     written_fields: set[str] = set()
     has_shear = False
@@ -280,7 +318,7 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
         ws = d / "wallShearStress"
         if foam_exists(ws) and face_centres is not None \
                 and face_centres.ndim == 2:
-            tau_vec = parse_patch_values(ws, "terrain")
+            tau_vec = _patches_verketten(ws, gelaende_patches)
             if tau_vec is not None and tau_vec.ndim == 2 \
                     and len(tau_vec) == len(face_centres):
                 tau = np.linalg.norm(tau_vec, axis=1)

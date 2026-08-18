@@ -1459,6 +1459,12 @@ def _pruefe_rauheit(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
               or MATERIAL_KS.get(spec.terrain.material or ""))
         if ks:
             kandidaten.append(("terrain", None, float(ks)))
+        # Beläge liegen AUF dem Gelände und bekommen eigene Patches — ihre
+        # Rauheit darf nicht durchrutschen, nur weil sie in der Karte
+        # statt am Gelände steht.
+        if spec.terrain.belagskarte is not None:
+            for b in spec.terrain.belagskarte.belaege:
+                kandidaten.append((f"belag:{b.name}", None, float(b.ks)))
 
     bl = spec.mesh.boundary_layers
     for obj_id, struct, ks in kandidaten:
