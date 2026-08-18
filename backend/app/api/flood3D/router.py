@@ -1290,6 +1290,93 @@ async def case_sculpt(case_id: str, payload: dict = Body(...)):
     return _mutation(case_id, wirken, "Formen fehlgeschlagen")
 
 
+@router.get("/cases/{case_id}/belagskarte")
+async def case_belagskarte(case_id: str):
+    """
+    Die Belagskarte als Rohraster — Kennung je Gitterzelle, auf DEMSELBEN
+    Gitter wie das Gelände.
+
+    Gemalt wird auf dem Geländegitter, weil Kennungen keine Interpolation
+    vertragen: zwischen 1 und 3 läge sonst 2, ein Belag, den niemand
+    gemalt hat.
+    """
+    from .core.belag import gitter_masse, karte_lesen
+
+    spec, d = _load_case(case_id)
+    if spec.terrain is None or spec.domain is None:
+        raise HTTPException(status_code=422,
+                            detail="Fall ohne Gelände oder Gebiet.")
+    x0, y0, res, nx, ny = gitter_masse(spec.terrain, spec.domain)
+    ids = karte_lesen(spec.terrain, spec.domain, d)
+    karte = spec.terrain.belagskarte
+    return {
+        "dims": [ny, nx], "x0": x0, "y0": y0, "resolution": res,
+        "ids_b64": base64.b64encode(
+            ids.astype("<i2").tobytes()).decode(),
+        "belaege": [b.model_dump() for b in (karte.belaege if karte else [])],
+    }
+
+
+@router.post("/cases/{case_id}/belag-malen")
+async def case_belag_malen(case_id: str, payload: dict = Body(...)):
+    """
+    Pinselstriche auf die Belagskarte — Gitterindizes plus Maske, wie beim
+    Gelände-Pinsel (core/sculpt.py). Der Server ist die Wahrheit; der
+    Client malt nur die Vorschau.
+
+    Gesetzt wird, nicht addiert: eine Kennung ist eine Zuordnung, keine
+    Menge. Kennung 0 heißt „kein Belag" und ist damit der Radiergummi.
+    """
+    def wirken(spec, d):
+        import numpy as _np
+
+        from .core import casespec as _cs
+        from .core.belag import (gitter_masse, karte_lesen, karte_schreiben,
+                                 striche_anwenden)
+
+        if spec.terrain is None or spec.domain is None:
+            raise ValueError("Fall ohne Gelände oder Gebiet — nichts zu malen.")
+        striche = payload.get("striche") or []
+        if not striche:
+            raise ValueError("Keine Pinselstriche übergeben.")
+
+        x0, y0, res, _nx, _ny = gitter_masse(spec.terrain, spec.domain)
+        ids = karte_lesen(spec.terrain, spec.domain, d)
+        n = striche_anwenden(ids, striche)
+
+        quelle = "belagskarte.asc"
+        karte_schreiben(ids, x0, y0, res, Path(d) / quelle)
+
+        # Belagsliste aus dem Aufruf übernehmen, wenn eine kam — die
+        # Bibliothek wird im Panel gepflegt und muss mit der Karte
+        # zusammen gespeichert werden, sonst zeigt eine Kennung auf ein
+        # Material, das der Fall nicht kennt.
+        belaege = payload.get("belaege")
+        if spec.terrain.belagskarte is None or belaege is not None:
+            spec.terrain.belagskarte = _cs.Belagskarte(
+                source=quelle,
+                belaege=[_cs.Belag(**b) for b in (belaege or [])])
+        else:
+            spec.terrain.belagskarte.source = quelle
+
+        # Kennungen ohne Belag in der Bibliothek wären stumme Löcher:
+        # topoSet baut dafür keinen Patch, die Fläche behielte still das
+        # Grundmaterial. Lieber jetzt melden.
+        bekannt = {b.id for b in spec.terrain.belagskarte.belaege}
+        gemalt = {int(v) for v in _np.unique(ids) if int(v) > 0}
+        verwaist = sorted(gemalt - bekannt)
+        meldung = f"Belag gemalt: {n} Zellen."
+        if verwaist:
+            meldung += (" Achtung: Kennung "
+                        + ", ".join(str(v) for v in verwaist)
+                        + " ist gemalt, steht aber nicht in der "
+                          "Materialliste — diese Flächen behalten das "
+                          "Grundmaterial des Geländes.")
+        return meldung
+
+    return _mutation(case_id, wirken, "Malen fehlgeschlagen")
+
+
 @router.post("/cases/{case_id}/rotate")
 async def case_rotate(case_id: str, payload: dict = Body(...)):
     """

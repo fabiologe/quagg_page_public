@@ -53,7 +53,20 @@
               @click="store.sculptAktiv = !store.sculptAktiv">
         {{ store.sculptAktiv ? '✓ Formen beenden' : '🖌 Gelände formen' }}
       </button>
+      <button class="f3d-btn"
+              :class="{ 'f3d-btn-primary': store.belagAktiv }"
+              title="Oberflächenbeläge auf das Gelände malen — betonierte Sohle, Rasenböschung, Schotter. Jeder Belag bekommt beim Fallaufbau seinen eigenen Netz-Patch mit eigener Rauheit."
+              @click="store.belagAktiv = !store.belagAktiv">
+        {{ store.belagAktiv ? '✓ Belag beenden' : '🎨 Belag malen' }}
+      </button>
     </div>
+    <p v-if="hilfe && draft.type === 'terrain'" class="f3d-muted f3d-small">
+      Ohne Belagskarte gilt das Material oben für das ganze Gelände. Mit
+      ihr trägt jede gemalte Fläche ihre eigene Rauheit — in OpenFOAM ist
+      das eine Zahl je Wandpatch, deshalb wird aus jedem Belag ein eigener
+      Patch. Nebeneffekt: die Sohlschubspannung liegt danach getrennt je
+      Materialregion vor.
+    </p>
     <p v-if="hilfe && draft.type === 'terrain'" class="f3d-muted f3d-small">
       Normalerweise ist das Gelände eine offene Höhenfläche — der Vernetzer
       schneidet daran ab. Sobald etwas DURCH das Erdreich gehen soll (Rohr

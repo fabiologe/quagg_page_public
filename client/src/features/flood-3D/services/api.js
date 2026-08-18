@@ -173,6 +173,12 @@ export const flood3dApi = {
     `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
   sculpt: (caseId, patches) =>
     sendJson(`/cases/${caseId}/sculpt`, 'POST', { patches }),
+  // Belagskarte: welcher Oberflächenbelag wo auf dem Gelände liegt.
+  // Gemalt wird auf dem GELÄNDEGITTER — Kennungen vertragen keine
+  // Interpolation.
+  belagskarte: (caseId) => getJson(`/cases/${caseId}/belagskarte`),
+  belagMalen: (caseId, striche, belaege) =>
+    sendJson(`/cases/${caseId}/belag-malen`, 'POST', { striche, belaege }),
   importReapply: (caseId, importId, rollen = null) =>
     sendJson(`/cases/${caseId}/import/${importId}/reapply`, 'POST',
       rollen ? { rollen } : {}),

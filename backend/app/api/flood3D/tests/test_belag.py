@@ -209,3 +209,102 @@ def test_gelaende_patches_werden_aus_dem_NETZ_gelesen(tmp_path):
 def test_ohne_netz_bleibt_es_beim_gelaende(tmp_path):
     from ..core.foamfields import _gelaende_patches
     assert _gelaende_patches(tmp_path) == ["terrain"]
+
+
+# ── Pinsel-Endpunkte ────────────────────────────────────────────────────────
+
+import base64            # noqa: E402
+import json              # noqa: E402
+
+import pytest            # noqa: E402
+from fastapi import FastAPI          # noqa: E402
+from fastapi.testclient import TestClient    # noqa: E402
+
+from ..router import router          # noqa: E402
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOOD3D_CASES_ROOT", str(tmp_path / "cases"))
+    monkeypatch.setenv("FLOOD3D_RUNS_ROOT", str(tmp_path / "runs"))
+    d = tmp_path / "cases" / "demo"
+    d.mkdir(parents=True)
+    build_spec_stage3().to_yaml(d / "case.yaml")
+    app = FastAPI()
+    app.include_router(router)
+    return TestClient(app), d
+
+
+def _malen(c, i0=0, j0=0, breite=4, hoehe=3, belag=1, belaege=None):
+    return c.post("/cases/demo/belag-malen", json={
+        "striche": [{"i0": i0, "j0": j0, "belag": belag,
+                     "maske": [[True] * breite for _ in range(hoehe)]}],
+        "belaege": belaege if belaege is not None else
+        [{"id": 1, "name": "Beton", "ks": 0.002},
+         {"id": 2, "name": "Rasen", "ks": 0.03}]})
+
+
+def test_leere_karte_hat_die_masse_des_gelaendes(client):
+    c, _ = client
+    k = c.get("/cases/demo/belagskarte").json()
+
+    ny, nx = k["dims"]
+    ids = np.frombuffer(base64.b64decode(k["ids_b64"]), dtype="<i2")
+    assert len(ids) == ny * nx
+    assert int(ids.max()) == 0            # noch nichts gemalt
+    assert k["resolution"] > 0
+
+
+def test_ein_strich_landet_in_der_karte_und_im_fall(client):
+    c, d = client
+    res = _malen(c)
+    assert res.status_code == 200, res.text
+
+    # Raster geschrieben …
+    assert (d / "belagskarte.asc").is_file()
+    k = c.get("/cases/demo/belagskarte").json()
+    ny, nx = k["dims"]
+    ids = np.frombuffer(base64.b64decode(k["ids_b64"]),
+                        dtype="<i2").reshape(ny, nx)
+    assert int((ids == 1).sum()) == 12         # 4 x 3
+    # … und im Fall verankert, samt Materialliste
+    from ..core.casespec import CaseSpec
+    gespeichert = CaseSpec.from_yaml(d / "case.yaml")
+    assert gespeichert.terrain.belagskarte.source == "belagskarte.asc"
+    assert [b.name for b in gespeichert.terrain.belagskarte.belaege] \
+        == ["Beton", "Rasen"]
+
+
+def test_kennung_null_ist_der_radiergummi(client):
+    c, _ = client
+    _malen(c, belag=1)
+    _malen(c, breite=2, hoehe=3, belag=0)          # linke Haelfte weg
+
+    k = c.get("/cases/demo/belagskarte").json()
+    ny, nx = k["dims"]
+    ids = np.frombuffer(base64.b64decode(k["ids_b64"]),
+                        dtype="<i2").reshape(ny, nx)
+    assert int((ids == 1).sum()) == 6              # 12 - 6
+    assert int(ids[0, 0]) == 0
+
+
+def test_ein_strich_ausserhalb_des_rasters_wird_abgewiesen(client):
+    c, _ = client
+    res = c.post("/cases/demo/belag-malen", json={
+        "striche": [{"i0": 10_000, "j0": 0, "belag": 1,
+                     "maske": [[True]]}], "belaege": []})
+    assert res.status_code == 422
+    assert "außerhalb" in res.json()["detail"]
+
+
+def test_gemalte_kennung_ohne_material_wird_gemeldet(client):
+    """
+    Sonst ein stummes Loch: topoSet baut fuer eine unbekannte Kennung
+    keinen Patch, die Flaeche behielte still das Grundmaterial.
+    """
+    c, _ = client
+    res = _malen(c, belag=7, belaege=[{"id": 1, "name": "Beton", "ks": 0.002}])
+
+    assert res.status_code == 200
+    text = json.dumps(res.json(), ensure_ascii=False)
+    assert "7" in text and "Materialliste" in text

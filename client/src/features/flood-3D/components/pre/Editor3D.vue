@@ -42,6 +42,44 @@
       </button>
     </div>
 
+    <!-- Belag malen: welcher Oberflächenbelag wo liegt. Die Kennung
+         entscheidet über die Rauheit, mit der der Solver rechnet — in
+         OpenFOAM ist das eine Zahl je WANDPATCH, deshalb wird aus jedem
+         Belag beim Fallaufbau ein eigener Patch. -->
+    <div v-if="store.belagAktiv" class="f3d-clipbar f3d-sculptbar">
+      <button v-for="b in store.belaege" :key="b.id" class="f3d-tool"
+              :class="{ active: belagPinsel.aktiv.value === b.id }"
+              :style="{ borderColor: b.farbe }"
+              :title="`${b.name} — k_s = ${b.ks} m (Manning-n ≈ ${manningVon(b.ks)})`"
+              @click="belagPinsel.aktiv.value = b.id">
+        <span class="f3d-belag-punkt" :style="{ background: b.farbe }"></span>
+        {{ b.name }}
+      </button>
+      <button class="f3d-tool"
+              :class="{ active: belagPinsel.aktiv.value === 0 }"
+              title="Radiergummi — die Fläche behält das Grundmaterial des Geländes"
+              @click="belagPinsel.aktiv.value = 0">⌫ ohne</button>
+      <span class="f3d-toolbar-sep"></span>
+      <label class="f3d-small">Ø
+        <input type="range" min="0.5" max="25" step="0.5"
+               v-model.number="belagPinsel.radius.value" />
+        <span class="f3d-mono">{{ belagPinsel.radius.value.toFixed(1) }} m</span>
+      </label>
+      <button class="f3d-tool"
+              :class="{ active: belagPinsel.form.value === 'quadrat' }"
+              title="Pinselform: Kreis oder Quadrat"
+              @click="belagPinsel.form.value =
+                belagPinsel.form.value === 'kreis' ? 'quadrat' : 'kreis'">
+        {{ belagPinsel.form.value === 'kreis' ? '◯' : '▢' }}
+      </button>
+      <button class="f3d-tool" title="Belag malen beenden"
+              @click="store.belagAktiv = false">✓ Fertig</button>
+      <span class="f3d-muted f3d-small">
+        {{ belagPinsel.sendet.value ? 'speichert …'
+          : 'Der Rand ist hart — eine Rauheit kennt kein Dazwischen.' }}
+      </span>
+    </div>
+
     <div v-if="store.sculptAktiv" class="f3d-clipbar f3d-sculptbar">
       <button v-for="m in SCULPT_MODI" :key="m.id" class="f3d-tool"
               :class="{ active: sculpt.modus.value === m.id }" :title="m.hint"
@@ -159,6 +197,7 @@ import { erzeugeObjektZugriff } from './editor/objektZugriff'
 import { erzeugeRotGizmo } from './editor/rotGizmo'
 import { erzeugeSzene } from './editor/szene'
 import { erzeugeSculpt } from './editor/sculpt'
+import { erzeugeBelagPinsel } from './editor/belagPinsel'
 import { erzeugeMarker, baueFokusMarke, fokusRadius } from './editor/marker'
 import { erzeugeAchsen } from './editor/achsen'
 import { erzeugePick } from './editor/pick'
@@ -237,6 +276,18 @@ const { terrainZ, clearGroup, buildTerrain, buildTerrainSolid,
 
 // Gelände formen (Pinsel) — geschnitten nach editor/sculpt.js
 const sculpt = erzeugeSculpt({
+  store, groups, holeScene: () => scene, holeCamera: () => camera,
+  holeRenderer: () => renderer, holeControls: () => controls,
+  melden: (m, art) => store.melden(m, art) })
+
+// Manning-n aus der Sandrauheit (Strickler: n = k_s^(1/6)/26) — nur als
+// Brücke zur 2D-Welt in der Beschriftung. Gerechnet wird mit k_s.
+const manningVon = (ks) => (ks > 0 ? (ks ** (1 / 6) / 26).toFixed(3) : '–')
+
+// Belag malen (Oberflächenrauheit) — editor/belagPinsel.js. Eigener
+// Pinsel, weil eine KENNUNG gemalt wird und keine Höhe: gesetzt statt
+// addiert, harter Rand, Kennung 0 als Radiergummi.
+const belagPinsel = erzeugeBelagPinsel({
   store, groups, holeScene: () => scene, holeCamera: () => camera,
   holeRenderer: () => renderer, holeControls: () => controls,
   melden: (m, art) => store.melden(m, art) })
@@ -515,6 +566,10 @@ onMounted(() => {
 
   renderer.domElement.addEventListener('pointerdown', (e) => {
     downPos = [e.clientX, e.clientY]
+    if (store.belagAktiv) {
+      if (e.button === 0) belagPinsel.strichStart(e)
+      return
+    }
     if (store.sculptAktiv) {
       if (e.button === 0) sculpt.strichStart(e)
       return
@@ -588,6 +643,11 @@ onMounted(() => {
   }, { passive: true })
 
   renderer.domElement.addEventListener('pointerup', (e) => {
+    if (store.belagAktiv) {
+      belagPinsel.strichEnde(e)
+      downPos = null
+      return
+    }
     if (store.sculptAktiv) {
       sculpt.strichEnde()
       downPos = null
@@ -638,6 +698,10 @@ onMounted(() => {
   renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
   renderer.domElement.addEventListener('pointermove', (e) => {
     lastMove = e                      // für Entf (Ecke unterm Cursor löschen)
+    if (store.belagAktiv) {
+      belagPinsel.strichZieh(e)
+      return
+    }
     if (store.sculptAktiv) {
       sculpt.strichZieh(e)
       return
@@ -792,6 +856,23 @@ watch(() => store.sculptAktiv, (an) => {
   } else {
     sculpt.deaktivieren()
   }
+})
+
+// Die beiden Pinsel schliessen sich aus: sie greifen auf dieselbe
+// Zeigerkette und dasselbe Gelaendenetz zu.
+watch(() => store.belagAktiv, async (an) => {
+  if (an) {
+    store.sculptAktiv = false
+    if (!(await belagPinsel.einschalten())) { store.belagAktiv = false }
+  } else {
+    belagPinsel.ausschalten()
+  }
+})
+
+// Nach einem Rebuild ist das Gelaendenetz neu — die Einfaerbung muss
+// erneut aufgetragen werden, sonst steht der Pinsel auf grauem Grund.
+watch(() => store.geometryVersion, () => {
+  if (store.belagAktiv) belagPinsel.einfaerben()
 })
 
 watch(() => store.geometryVersion, rebuild)
@@ -997,6 +1078,17 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   top: 92px;
   z-index: 6;
+}
+/* Farbtupfer im Belagsknopf: die Zuordnung Farbe -> Material muss beim
+   Malen sichtbar sein, ohne dass man den Namen lesen muss. */
+.f3d-belag-punkt {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: baseline;
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 .f3d-select-s { width: 56px; }
 .f3d-mono {

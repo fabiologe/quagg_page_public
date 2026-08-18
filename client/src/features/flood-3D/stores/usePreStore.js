@@ -10,6 +10,18 @@ import { KIND_PATHS } from '../utils/kindPfade'
 import { setzeSchema } from '../utils/feldTypen'
 import { aufraeumplan } from '../utils/aufraeumen'
 
+// Vorbelegung der Materialbibliothek — dieselben Sandrauheiten wie der
+// Katalog im Fallaufbau (casebuilder.MATERIAL_KS). k_s ist die Größe, die
+// OpenFOAM kennt; das Manning-n daneben ist nur die Brücke in die
+// 2D-Welt (n ≈ k_s^(1/6)/26 nach Strickler).
+const BELAG_VORLAGE = () => [
+  { id: 1, name: 'Beton glatt', ks: 0.0005, farbe: '#9fb3c8' },
+  { id: 2, name: 'Beton', ks: 0.002, farbe: '#8695a3' },
+  { id: 3, name: 'Mauerwerk', ks: 0.005, farbe: '#a1887f' },
+  { id: 4, name: 'Erde / Rasen', ks: 0.03, farbe: '#7cb342' },
+  { id: 5, name: 'Steinschüttung', ks: 0.1, farbe: '#bcaaa4' },
+]
+
 
 
 export { KIND_PATHS } from '../utils/kindPfade'
@@ -54,6 +66,9 @@ export const usePreStore = defineStore('flood3d-pre', {
     meshPreview: null,    // Ergebnis des Vernetzungsprobelaufs
     meshPreviewLoading: false,
     meshPreviewStale: false,   // Vorschaunetz gehört nicht mehr zum Fall
+    belag: null,          // { dims, x0, y0, resolution, ids } der Belagskarte
+    belaege: [],          // Materialbibliothek des Falls
+    belagAktiv: false,    // Belag-Pinsel eingeschaltet?
     // Bearbeitungsverlauf: Snapshots der GESAMTEN spec (JSON-Strings).
     // Jede Mutation läuft durch update/add/removeObject — damit ist die
     // Historie zwangsläufig vollständig (keine Feld-für-Feld-Falle).
@@ -290,6 +305,39 @@ export const usePreStore = defineStore('flood3d-pre', {
       return this.serverMutation(
         (id) => flood3dApi.sculpt(id, patches),
         'Formen fehlgeschlagen', { undo: false })
+    },
+
+    // --- Belagskarte (Oberflächenbeläge des Geländes) -------------------
+    // Der Server ist die Wahrheit: der Client malt die Vorschau und
+    // schickt Striche in Gitterindizes. Zurück kommt das ganze Raster.
+
+    async ladeBelagskarte() {
+      if (!this.activeCaseId) return null
+      try {
+        const k = await flood3dApi.belagskarte(this.activeCaseId)
+        const roh = Uint8Array.from(atob(k.ids_b64), (c) => c.charCodeAt(0))
+        this.belag = {
+          dims: k.dims, x0: k.x0, y0: k.y0, resolution: k.resolution,
+          ids: new Int16Array(roh.buffer, roh.byteOffset,
+                              roh.byteLength / 2),
+        }
+        // Ohne Bibliothek gäbe es nichts zu malen — die Vorbelegung ist
+        // der Katalog aus dem Backend (MATERIAL_KS), in derselben
+        // Reihenfolge wie dort.
+        this.belaege = k.belaege?.length ? k.belaege : BELAG_VORLAGE()
+        return this.belag
+      } catch {
+        this.belag = null
+        return null
+      }
+    },
+
+    async belagMalen(striche) {
+      const meldungen = await this.serverMutation(
+        (id) => flood3dApi.belagMalen(id, striche, this.belaege),
+        'Malen fehlgeschlagen', { undo: false })
+      await this.ladeBelagskarte()
+      return meldungen
     },
 
     // Einen Import mit seiner gespeicherten Anwendung neu ableiten —

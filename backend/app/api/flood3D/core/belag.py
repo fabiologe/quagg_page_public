@@ -130,3 +130,97 @@ def belag_koerper(flaeche, z_min: float, z_max: float) -> trimesh.Trimesh | None
     # Getrennte Flecken desselben Belags bleiben EIN Suchkörper: sie
     # bekommen auch einen gemeinsamen Patch.
     return trimesh.util.concatenate(teile)
+
+
+# ── Die Karte als Arbeitsraster (Pinsel) ────────────────────────────────────
+#
+# Gemalt wird auf DEMSELBEN Gitter wie das Gelände — sonst müsste jeder
+# Strich zwischen zwei Rastern umgerechnet werden, und die Kennungen
+# vertragen keine Interpolation. Der Server ist die Wahrheit: der Client
+# schickt Striche in Gitterindizes, hier werden sie gesetzt und
+# geschrieben (dasselbe Muster wie core/sculpt.py).
+
+MAX_STRICH_ZELLEN = 4_000_000
+
+
+def gitter_masse(terrain, domain) -> tuple[float, float, float, int, int]:
+    """Das eine Geländegitter — identisch zu TerrainField.from_spec."""
+    x0, y0, x1, y1 = domain.extent
+    res = terrain.base.resolution
+    nx = int(round((x1 - x0) / res)) + 1
+    ny = int(round((y1 - y0) / res)) + 1
+    return x0, y0, res, nx, ny
+
+
+def karte_lesen(terrain, domain, base_dir: Path) -> np.ndarray:
+    """
+    Die Belagskarte auf dem AKTUELLEN Gitter — oder eine leere.
+
+    Passt das gespeicherte Raster nicht mehr (Gebiet oder Auflösung
+    geändert), wird NEAREST umgetastet, nicht bilinear: zwischen Kennung
+    1 und 3 läge sonst 2, ein Belag, den niemand gemalt hat.
+    """
+    x0, y0, res, nx, ny = gitter_masse(terrain, domain)
+    leer = np.zeros((ny, nx), dtype=np.int32)
+    karte = getattr(terrain, "belagskarte", None)
+    if karte is None:
+        return leer
+    pfad = Path(base_dir) / karte.source
+    if not pfad.is_file():
+        return leer
+    try:
+        ids, qx0, qy0, qres = lade_belagskarte(pfad)
+    except Exception:      # noqa: BLE001 — kaputte Karte: wie keine
+        return leer
+    if ids.shape == (ny, nx) and abs(qres - res) < 1e-9 \
+            and abs(qx0 - x0) < 1e-9 and abs(qy0 - y0) < 1e-9:
+        return ids
+    qny, qnx = ids.shape
+    jj, ii = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+    si = np.clip(np.round((x0 + ii * res - qx0) / qres).astype(int), 0, qnx - 1)
+    sj = np.clip(np.round((y0 + jj * res - qy0) / qres).astype(int), 0, qny - 1)
+    return ids[sj, si].astype(np.int32)
+
+
+def karte_schreiben(ids: np.ndarray, x0: float, y0: float, res: float,
+                    pfad: Path) -> None:
+    """Als ESRI-ASCII — dasselbe Format wie das Höhenraster."""
+    ny, nx = ids.shape
+    zeilen = [f"ncols {nx}", f"nrows {ny}", f"xllcorner {x0:.6f}",
+              f"yllcorner {y0:.6f}", f"cellsize {res:.6f}",
+              "NODATA_value 0"]
+    # ESRI zählt von oben nach unten
+    for j in range(ny - 1, -1, -1):
+        zeilen.append(" ".join(str(int(v)) for v in ids[j]))
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_text("\n".join(zeilen) + "\n")
+
+
+def striche_anwenden(ids: np.ndarray, striche: list[dict]) -> int:
+    """
+    Pinselstriche setzen: je Strich ein Rechteck aus Gitterindizes mit
+    einer Maske. Rückgabe: Zahl der geänderten Zellen.
+
+    Gesetzt wird, nicht addiert — eine Kennung ist eine Zuordnung, keine
+    Menge. Kennung 0 heißt „kein Belag" und ist damit der Radiergummi.
+    """
+    ny, nx = ids.shape
+    geaendert = 0
+    for s in striche:
+        i0, j0 = int(s.get("i0", -1)), int(s.get("j0", -1))
+        maske = np.asarray(s.get("maske"), dtype=bool)
+        if maske.ndim != 2 or maske.size == 0:
+            raise ValueError("Strich ohne Maske.")
+        pj, pi = maske.shape
+        if i0 < 0 or j0 < 0 or i0 + pi > nx or j0 + pj > ny:
+            raise ValueError(f"Strich ({i0},{j0})+({pi}×{pj}) liegt außerhalb "
+                             f"des Geländerasters ({nx}×{ny}).")
+        geaendert += int(maske.sum())
+        if geaendert > MAX_STRICH_ZELLEN:
+            raise ValueError("Zu viele Zellen in einem Aufruf.")
+        kennung = int(s.get("belag", 0))
+        if not 0 <= kennung <= 99:
+            raise ValueError(f"Unzulässige Belagskennung: {kennung}")
+        feld = ids[j0:j0 + pj, i0:i0 + pi]
+        feld[maske] = kennung
+    return geaendert
