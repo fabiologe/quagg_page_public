@@ -459,6 +459,126 @@ export const KENNWERTE = {
       + 'entschärfen statt überall zu vergröbern.',
   },
 
+  laub_ablagerung: {
+    label: 'Laub-Ablagerung (Karte A)',
+    einheit: '—',
+    was: 'Konzentrationsfaktor: wie viel Laub hier liegen bleibt, gemessen '
+      + 'an der mittleren Belegung der benetzten Fläche. 1 = Durchschnitt, '
+      + '3 = dreifach. Ermittelt aus 20.000 masselosen Punkten, die auf der '
+      + 'Anfangswasserfläche ausgesät, mit der OBERFLÄCHENgeschwindigkeit '
+      + 'mitgeschoben und dort eingefroren werden, wo die Wassertiefe unter '
+      + 'die Strandungstiefe fällt oder der Lauf endet.',
+    stufen: [
+      { bis: 0.5, text: 'praktisch laubfrei — hier wird ausgeräumt, nicht '
+        + 'abgelagert.', cls: 'ok' },
+      { bis: 1.5, text: 'wie im Mittel. Keine Auffälligkeit.', cls: 'ok' },
+      { bis: 3, text: 'erhöhte Ansammlung. Typisch für Konvergenzsäume und '
+        + 'Strömungsschatten.', cls: 'warn' },
+      { bis: Infinity, text: 'Nest. Hier sammelt sich ein Vielfaches der '
+        + 'mittleren Menge — die Stellen, um die es geht.', cls: 'bad' },
+    ],
+    faustformel: 'Der Faktor ist eine VERTEILUNG, keine Menge. Doppelt so '
+      + 'viel Laub im Becken ändert die Karte nicht — sie sagt, WOHIN es '
+      + 'geht, nicht WIE VIEL. Ebenso ändert eine höhere Tracerzahl nur das '
+      + 'Rauschen, nicht das Bild.',
+    achtung: 'Fünf Vereinfachungen, die man beim Ablesen kennen muss. '
+      + '(1) Der Tracer ist MASSELOS und kollisionsfrei: er sinkt nicht ab, '
+      + 'verkeilt sich nicht und staut sich nicht auf. Durchnässtes Laub '
+      + 'sinkt in Wirklichkeit — die Karte gilt für kurze Standzeiten. '
+      + '(2) EINWEGKOPPLUNG: das Laub folgt der Strömung, verändert sie '
+      + 'aber nicht. Ein Rechen aus verkeiltem Laub entsteht im Modell nie '
+      + '— und damit fehlt auch der Rückstau, der in Wirklichkeit weiteres '
+      + 'Laub einsammelt. Die Karte unterschätzt reale Nester eher. '
+      + '(3) Die Aussaat ist GLEICHVERTEILT über die Anfangswasserfläche. '
+      + 'Kommt das Laub in Wirklichkeit mit dem Zufluss oder von einer '
+      + 'Uferseite, verschiebt sich das Bild. Die Karte beantwortet: „wenn '
+      + 'Laub überall gleich schwömme, wo sammelte es sich?" '
+      + '(4) Kein Wind, keine Wellen, kein Anhaften an Wänden. '
+      + '(5) Es zählt die Oberflächengeschwindigkeit der obersten nassen '
+      + 'Rasterzelle — auf die Zellgröße quantisiert. Wie gut die Bahnen '
+      + 'überhaupt aufgelöst sind, sagt die Datenlage-Ampel (Advektions-CFL).',
+  },
+
+  laub_trockenfall: {
+    label: 'Trockenfallzeit (Karte A′)',
+    einheit: 's',
+    was: 'Sekunden seit Laufbeginn, zu denen hier zuletzt Wasser über der '
+      + 'eingestellten Nass-Schwelle stand. Spät trockenfallende Bereiche '
+      + 'sind die geometrisch zwingenden Sammelstellen — unabhängig davon, '
+      + 'was der Tracer sagt.',
+    stufen: [
+      { bis: Infinity, text: 'Je größer der Wert, desto später fällt die '
+        + 'Stelle trocken. Der höchste Wert des Laufs markiert die '
+        + 'Restpfützen: was dort schwimmt, bleibt dort liegen.', cls: 'ok' },
+    ],
+    faustformel: '„Trockengefallen" ist eine Setzung, keine Naturkonstante '
+      + '— deshalb der Regler. Ein Millimeterfilm trocknet von selbst weg, '
+      + 'eine 3-cm-Lache nicht.',
+    achtung: 'Der Wert ist auf das Feld-Schreibintervall QUANTISIERT: bei '
+      + '1 s Ausgabe gibt es keine feinere Aussage als 1 s. Weiter unten '
+      + 'liegt eine härtere Grenze: die Wassertiefe entsteht als '
+      + 'Säulenintegral über das Ausgaberaster, dessen Vertikalzellen '
+      + 'mehrere Zentimeter hoch sein können — eine Nass-Schwelle weit '
+      + 'darunter misst dann eher das Darstellungsraster als das Wasser. '
+      + 'Außerdem kennt der Solver weder VERDUNSTUNG noch VERSICKERUNG: '
+      + 'eine Restpfütze steht im Modell ewig, in Wirklichkeit ist sie '
+      + 'nach Stunden bis Tagen weg. Und wie der ganze Grundriss rechnet '
+      + 'auch diese Karte mit EINEM Boden je Rasterspalte — unter einer '
+      + 'Rohrbohrung oder einer Brücke ist die Aussage falsch.',
+  },
+
+  laub_spuelintegral: {
+    label: 'Spülintegral (Karte B)',
+    einheit: 'N·s/m²',
+    was: 'Aufsummierte Überschreitung von τ_krit über die Zeit: '
+      + '∫(τ−τ_krit)⁺dt. Nicht nur OB die Sohle kräftig genug belastet '
+      + 'wurde, sondern wie lange und wie stark zugleich.',
+    stufen: [
+      { bis: 0, text: 'τ_krit wurde nie erreicht — hier spült der Schwall '
+        + 'nicht.', cls: 'bad' },
+      { bis: Infinity, text: 'Für den absoluten Wert gibt es keine '
+        + 'belastbare Skala. Er taugt als VERGLEICH: zwischen Stellen im '
+        + 'selben Lauf und zwischen Varianten desselben Bauwerks.',
+      cls: 'ok' },
+    ],
+    faustformel: 'Das Integral wiegt Dauer und Stärke gleich: ein kurzer '
+      + 'kräftiger Stoß und eine lange schwache Belastung können denselben '
+      + 'Wert ergeben, obwohl sie verschieden wirken. Karte B′ trennt '
+      + 'beides — dort steht die reine Dauer.',
+    achtung: 'Die größte Unsicherheit steckt in τ_krit selbst: die '
+      + 'gebräuchlichen Werte stammen aus der Sediment- und '
+      + 'Selbstreinigungsliteratur (Feinsediment, Sand), NICHT aus '
+      + 'Laubversuchen. Nasses Laub hat eine ganz andere Angriffsfläche und '
+      + 'ein anderes Gewicht als ein Sandkorn — die Schwelle ist ein '
+      + 'Anhaltswert, kein Nachweis. Dazu: τ folgt aus einer Wandfunktion '
+      + 'und hängt an der eingestellten Rauheit und der Zellgröße; es liegt '
+      + 'flächig nur auf dem Gelände-Patch vor, Bauwerksflächen bleiben '
+      + 'leer. Zellen, die im Schwall trocken sind, werden ausmaskiert — '
+      + 'sonst entstünden an den Schwallrändern systematisch zu niedrige '
+      + 'Werte.',
+  },
+
+  laub_ueberschreitung: {
+    label: 'Überschreitungsdauer (Karte B′)',
+    einheit: 's',
+    was: 'Wie lange die Sohlschubspannung über τ_krit lag. Die reine '
+      + 'Dauer, ohne die Stärke — die steckt in Karte B.',
+    stufen: [
+      { bis: 0, text: 'nie überschritten. Diese Stelle erreicht der Schwall '
+        + 'nicht mit genug Kraft.', cls: 'bad' },
+      { bis: 10, text: 'kurzer Stoß. Ob das reicht, hängt daran, wie fest '
+        + 'das Laub liegt.', cls: 'warn' },
+      { bis: 60, text: 'anhaltende Belastung.', cls: 'ok' },
+      { bis: Infinity, text: 'lange Belastung — hier wird zuverlässig '
+        + 'ausgeräumt.', cls: 'ok' },
+    ],
+    achtung: 'Die Dauer wird aus einem Stufenraster von 24 logarithmischen '
+      + 'τ-Stufen abgelesen. Für Stufen deutlich über oder unter τ_krit ist '
+      + 'das exakt; unscharf ist genau die eine Stufe, in die τ_krit '
+      + 'hineinfällt. Beim Ziehen des Reglers verschiebt sich der Wert '
+      + 'deshalb in kleinen Sprüngen — das ist die Auflösung, kein Fehler.',
+  },
+
   laub_kritisch: {
     label: 'Kritische Fläche (Laubkarten)',
     einheit: '% der Fläche',

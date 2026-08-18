@@ -5,10 +5,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  KARTEN_NAME, KLASSE, bildunterschrift, erzeugeTauStufen, flaechenanteile,
-  jeBenetzt, klassenFeld, neueSpuelAggregation, neueTrockenfall, reglerFuer,
-  spuelAuswerten, spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
+  KARTEN_EINHEIT, KARTEN_HILFE, KARTEN_NAME, KLASSE, bildunterschrift,
+  erzeugeTauStufen, flaechenanteile, jeBenetzt, klassenFeld,
+  neueSpuelAggregation, neueTrockenfall, reglerFuer, spuelAuswerten,
+  spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
 } from '../utils/laubkarten'
+import { KENNWERTE, einordnen } from '../utils/kennwerte'
 import {
   abtastGuete, ablagerungskarte, advehiere, saeeTracer, tracerBilanz,
 } from '../utils/laubtracer'
@@ -247,5 +249,66 @@ describe('Karte A — Oberflächentracer', () => {
     expect(abtastGuete(ux, uy, 1, [1, 1]).cfl).toBeCloseTo(0.5, 6)
     // dasselbe Feld, aber grob gespeichert -> CFL 2, also unbrauchbar
     expect(abtastGuete(ux, uy, 4, [1, 1]).cfl).toBeCloseTo(2, 6)
+  })
+})
+
+describe('Erklärung und Legende je Karte', () => {
+  const KARTEN = Object.keys(KARTEN_NAME)
+
+  it('führt jede Karte auf einen vorhandenen Kennwert', () => {
+    // Ein umbenannter Schlüssel liesse das Fragezeichen leer, ohne Fehler
+    for (const k of KARTEN) {
+      expect(KARTEN_HILFE[k], k).toBeTruthy()
+      expect(KENNWERTE[KARTEN_HILFE[k]], `${k} -> ${KARTEN_HILFE[k]}`)
+        .toBeTruthy()
+    }
+  })
+
+  it('kennt zu jeder Karte eine Einheit für die Farbskala', () => {
+    for (const k of KARTEN) expect(KARTEN_EINHEIT[k], k).toBeDefined()
+    expect(KARTEN_EINHEIT.T).toBe('s')
+    expect(KARTEN_EINHEIT.B).toBe('N·s/m²')
+    expect(KARTEN_EINHEIT.A).toBe('')        // ein Faktor hat keine Einheit
+  })
+
+  it('nennt zu JEDER Karte ihre Vereinfachungen', () => {
+    // Die Frage, die dahintersteht: „wie ist das mit der Realität
+    // einzuordnen?" Jede Karte hat eigene Grenzen — ein gemeinsamer Text
+    // für alle fünf verschwiege gerade die Unterschiede.
+    for (const k of KARTEN) {
+      const e = KENNWERTE[KARTEN_HILFE[k]]
+      expect(e.was.length, `${k}: was`).toBeGreaterThan(80)
+      expect(e.achtung, `${k}: achtung fehlt`).toBeTruthy()
+      expect(e.achtung.length, `${k}: achtung zu knapp`).toBeGreaterThan(120)
+    }
+  })
+
+  it('benennt die entscheidenden Schwächen ausdrücklich', () => {
+    // Nicht irgendein Text — diese vier Punkte sind die, an denen die
+    // Karten mit der Wirklichkeit auseinandergehen.
+    expect(KENNWERTE.laub_ablagerung.achtung).toMatch(/MASSELOS/)
+    expect(KENNWERTE.laub_ablagerung.achtung).toMatch(/EINWEGKOPPLUNG/)
+    // τ_krit stammt nicht aus Laubversuchen — die groesste fachliche Luecke
+    expect(KENNWERTE.laub_spuelintegral.achtung).toMatch(/NICHT aus\s+Laubversuchen|nicht aus\s+Laubversuchen/i)
+    // im Modell verdunstet nichts
+    expect(KENNWERTE.laub_trockenfall.achtung).toMatch(/VERDUNSTUNG/)
+  })
+
+  it('hält die Stufen aufsteigend — sonst ordnet einordnen() falsch ein', () => {
+    for (const k of KARTEN) {
+      const stufen = KENNWERTE[KARTEN_HILFE[k]].stufen
+      for (let i = 1; i < stufen.length; i++) {
+        expect(stufen[i].bis, `${k} Stufe ${i}`)
+          .toBeGreaterThan(stufen[i - 1].bis)
+      }
+    }
+  })
+
+  it('ordnet Werte in die richtige Stufe ein', () => {
+    expect(einordnen('laub_ablagerung', 0.2).cls).toBe('ok')     // laubfrei
+    expect(einordnen('laub_ablagerung', 5).cls).toBe('bad')      // Nest
+    // „nie überschritten" ist ein eigener Befund, keine kleine Zahl
+    expect(einordnen('laub_ueberschreitung', 0).cls).toBe('bad')
+    expect(einordnen('laub_ueberschreitung', 120).cls).toBe('ok')
   })
 })

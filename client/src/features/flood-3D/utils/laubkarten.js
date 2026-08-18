@@ -302,6 +302,29 @@ export function flaechenanteile(klassen, zellflaeche, gueltig = null) {
 
 // ── Bildunterschrift für den Export ─────────────────────────────────────────
 
+/**
+ * Einheit der Kartenwerte — für die Farbskalen-Legende. Karte C hat keine,
+ * sie zeigt Klassen statt Zahlen.
+ */
+export const KARTEN_EINHEIT = {
+  A: '', T: 's', B: 'N·s/m²', Bt: 's', C: '',
+}
+
+/**
+ * Welcher KENNWERTE-Eintrag erklärt diese Karte? Jede Karte hat eigene
+ * Vereinfachungen: der Tracer ist masselos (A), die Zeit auf das
+ * Schreibintervall quantisiert (A′), τ_krit stammt aus der
+ * Sedimentliteratur und nicht aus Laubversuchen (B/B′). Ein gemeinsamer
+ * Text für alle fünf verschwiege genau diese Unterschiede.
+ */
+export const KARTEN_HILFE = {
+  A: 'laub_ablagerung',
+  T: 'laub_trockenfall',
+  B: 'laub_spuelintegral',
+  Bt: 'laub_ueberschreitung',
+  C: 'laub_kritisch',
+}
+
 /** Beschriftung der Karten, an EINER Stelle (Panel und Export lesen sie). */
 export const KARTEN_NAME = {
   A: 'Karte A — Ablagerung',

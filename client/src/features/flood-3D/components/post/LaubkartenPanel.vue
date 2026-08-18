@@ -65,6 +65,48 @@
             <option value="C">C — Verschnitt (Klassen)</option>
           </select>
         </div>
+
+        <!-- Was ist hier eigentlich eingefärbt, und in welchem Bereich?
+             Jede Karte hat eigene Vereinfachungen — deshalb ein eigenes
+             Fragezeichen je Karte, kein gemeinsamer Text für alle fünf. -->
+        <div class="f3d-field">
+          <label>
+            Farbskala
+            <KennwertHilfe :groesse="KARTEN_HILFE[karte]" :wert="wertebereich.hi" />
+          </label>
+          <template v-if="karte !== 'C'">
+            <div class="f3d-legend" :style="{ background: VIRIDIS_CSS }"></div>
+            <div class="f3d-legend-labels">
+              <span class="f3d-mono">{{ fmt(wertebereich.lo) }}</span>
+              <span class="f3d-mono">
+                {{ fmt(wertebereich.hi) }} {{ wertebereich.einheit }}
+              </span>
+            </div>
+          </template>
+          <ul class="f3d-legende">
+            <template v-if="karte === 'C'">
+              <li v-for="a in anteile" :key="a.klasse">
+                <span class="f3d-swatch" :class="`kl-${a.klasse}`"></span>
+                <span class="f3d-legende-text">{{ a.text }}</span>
+              </li>
+            </template>
+            <!-- Die zwei Farben, die KEIN Wert sind. Ohne sie liest man
+                 graue Flächen als „Null" statt als „gehört nicht dazu". -->
+            <li>
+              <span class="f3d-swatch" :style="{ background: FARBE_OHNE_WERT }"></span>
+              <span class="f3d-legende-text">
+                im Becken, aber ohne Wert ({{ ohneWertText }})
+              </span>
+            </li>
+            <li>
+              <span class="f3d-swatch" :style="{ background: FARBE_AUSSEN }"></span>
+              <span class="f3d-legende-text">
+                außerhalb der Bezugsfläche — im Leerlauf nie nass, nur
+                Geländeschummerung
+              </span>
+            </li>
+          </ul>
+        </div>
         <!-- Gezeigt wird nur, was auf DIESE Karte wirkt. Ein Regler, der
              nichts tut, ist schlimmer als keiner — er behauptet Wirkung. -->
         <div v-if="zeigt('tau')" class="f3d-field">
@@ -218,13 +260,14 @@ import { getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { PAD, useRasterCanvas } from '../../composables/useRasterCanvas'
 import { TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
-import { viridis } from '../../utils/colormap'
+import { VIRIDIS_CSS, viridis } from '../../utils/colormap'
 import { gelaendeFarbe, gelaendeSchummerung, mische } from '../../utils/rasterBild'
 import { paarKandidaten, paarStufe, rasterVergleich, unterschiedText }
   from '../../utils/laubpaar'
 import { flood3dApi } from '../../services/api'
 import {
-  KARTEN_NAME, KLASSE, bildunterschrift, erzeugeTauStufen, flaechenanteile,
+  KARTEN_EINHEIT, KARTEN_HILFE, KARTEN_NAME, KLASSE, bildunterschrift,
+  erzeugeTauStufen, flaechenanteile,
   jeBenetzt, klassenFeld, neueSpuelAggregation, neueTrockenfall, reglerFuer,
   spuelAuswerten, spuelSchritt, trockenfallAuswerten, trockenfallSchritt,
   zeitGewichte,
@@ -591,6 +634,25 @@ const KARTEN_TEXT = {
     + 'Fläche" erreicht der Schwall gar nicht erst — daran ändert kein '
     + 'τ_krit etwas.',
 }
+// Die beiden Sonderfarben der Legende entstehen aus DENSELBEN Funktionen
+// wie das Bild (gelaendeFarbe/mische, siehe zeichne()) — bei mittlerer
+// Schummerung. Feste Hexwerte daneben wären beim ersten Farbwechsel falsch,
+// ohne dass es jemand merkt.
+const _rgb = (f) => `rgb(${f.map((v) => Math.round(v)).join(',')})`
+const FARBE_AUSSEN = _rgb(gelaendeFarbe(0.5))
+const FARBE_OHNE_WERT = _rgb(mische(gelaendeFarbe(0.5), [60, 90, 140], 0.35))
+
+// Was bedeutet „im Bezugsgebiet, aber nicht eingefärbt"? Je Karte etwas
+// anderes — und genau das liest man sonst falsch als „Null".
+const OHNE_WERT = {
+  A: 'kein Laub liegen geblieben',
+  T: 'nie über der eingestellten Nass-Schwelle',
+  B: 'τ_krit nie überschritten',
+  Bt: 'τ_krit nie überschritten',
+  C: 'unkritisch',
+}
+const ohneWertText = computed(() => OHNE_WERT[karte.value] ?? 'Wert 0')
+
 const kartenTitel = computed(() => KARTEN_NAME[karte.value] ?? karte.value)
 const kartenText = computed(() => KARTEN_TEXT[karte.value] ?? '')
 
@@ -657,6 +719,28 @@ function kartenWerte() {
   return null
 }
 
+/**
+ * Wertebereich der gezeigten Karte, aus DEM Bezugsgebiet.
+ *
+ * Bewusst ein computed und nicht eine lokale Variable in `zeichne()`: die
+ * Legende neben der Karte muss dieselben Grenzen nennen, die das Bild
+ * benutzt. Zwei getrennte Rechnungen waren die naheliegende Falle.
+ */
+const wertebereich = computed(() => {
+  const einheit = KARTEN_EINHEIT[karte.value] ?? ''
+  if (!erg.value || !daten) return { lo: 0, hi: 1, einheit }
+  const werte = kartenWerte()
+  if (!werte) return { lo: 0, hi: 1, einheit }
+  let hi = -Infinity
+  for (let c = 0; c < werte.length; c++) {
+    if (daten.gueltig[c] && Number.isFinite(werte[c]) && werte[c] > hi) {
+      hi = werte[c]
+    }
+  }
+  if (!Number.isFinite(hi) || hi <= 0) hi = 1
+  return { lo: 0, hi, einheit }
+})
+
 function zeichne() {
   if (!daten || !canvas.value || !canvasHost.value) return
   const { L, ctx } = flaecheVorbereiten()
@@ -671,17 +755,9 @@ function zeichne() {
 
   const werte = kartenWerte()
   const kl = klassen.value
-  let lo = 0
-  let hi = 1
-  if (werte) {
-    hi = -Infinity
-    for (let c = 0; c < werte.length; c++) {
-      if (daten.gueltig[c] && Number.isFinite(werte[c]) && werte[c] > hi) {
-        hi = werte[c]
-      }
-    }
-    if (!Number.isFinite(hi) || hi <= 0) hi = 1
-  }
+  // Bereich aus DERSELBEN Quelle wie die Legende — sonst zeigt der Balken
+  // daneben andere Zahlen als das Bild.
+  const { lo, hi } = wertebereich.value
   const spanne = Math.max(hi - lo, 1e-9)
 
   for (let j = 0; j < ny; j++) {
@@ -762,7 +838,8 @@ function exportPng() {
 
   const zeilenhoehe = 18
   const rand = 12
-  const leiste = zeilen.length * zeilenhoehe + 2 * rand
+  // mindestens so hoch, dass der Farbschluessel rechts hineinpasst
+  const leiste = Math.max(zeilen.length * zeilenhoehe, 34) + 2 * rand
   const ziel = document.createElement('canvas')
   ziel.width = quelle.width
   ziel.height = quelle.height + leiste
@@ -776,6 +853,34 @@ function exportPng() {
   zeilen.forEach((z, i) => {
     ctx.fillText(z, rand, quelle.height + rand + (i + 1) * zeilenhoehe - 4)
   })
+
+  // Ohne Farbschlüssel ist das Bild im Bericht nicht lesbar: man sieht,
+  // WO etwas ist, aber nicht WAS. Rechts in der Fußleiste, wie im
+  // 3D-Export.
+  const bw = Math.min(200, ziel.width / 3)
+  const bx = ziel.width - bw - rand
+  const by = quelle.height + rand + 2
+  if (karte.value === 'C') {
+    const breite = bw / KLASSEN_RGB.length
+    KLASSEN_RGB.forEach((rgb, i) => {
+      ctx.fillStyle = `rgb(${rgb.join(',')})`
+      ctx.fillRect(bx + i * breite, by, breite, 12)
+    })
+    ctx.fillStyle = '#8fa0c2'
+    ctx.font = '11px system-ui, sans-serif'
+    ctx.fillText('unkritisch … tote Fläche', bx, by + 26)
+  } else {
+    const grad = ctx.createLinearGradient(bx, 0, bx + bw, 0)
+    for (const o of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
+      grad.addColorStop(o, `rgb(${viridis(o).map(Math.round).join(',')})`)
+    }
+    ctx.fillStyle = grad
+    ctx.fillRect(bx, by, bw, 12)
+    ctx.fillStyle = '#8fa0c2'
+    ctx.font = '11px system-ui, sans-serif'
+    const { lo, hi, einheit } = wertebereich.value
+    ctx.fillText(`${fmt(lo)} bis ${fmt(hi)} ${einheit}`.trim(), bx, by + 26)
+  }
 
   const a = document.createElement('a')
   a.download = `${leerlaufId.value}_x_${schwallId.value}_karte${karte.value}.png`
@@ -893,6 +998,14 @@ function exportPng() {
   color: var(--f3d-text-2);
 }
 .f3d-unterschiede li { padding: 1px 0; overflow-wrap: anywhere; }
+.f3d-legend { height: 12px; border-radius: 4px; }
+.f3d-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--f3d-text-2);
+}
+.f3d-mono { font-variant-numeric: tabular-nums; }
 .f3d-laub-knoepfe { display: flex; gap: 8px; flex-wrap: wrap; }
 .f3d-laub-knoepfe .f3d-btn { flex: 1 1 auto; }
 </style>
