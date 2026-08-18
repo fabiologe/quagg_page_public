@@ -40,10 +40,19 @@ export const KENNWERTE = {
       + '50 mm Schotter ab etwa 40 N/m².',
     achtung: 'OpenFOAM gibt die Wandschubspannung KINEMATISCH aus (m²/s², '
       + 'also τ/ρ). Hier ist bereits mit der Dichte multipliziert — 1,2 N/m² '
-      + 'ist ein Rinnenwert, 1,2 m²/s² wären 1200 N/m² und damit absurd. Und: '
-      + 'der Wert hängt an der eingestellten Wandrauheit und der Zellgröße; '
-      + 'als Vergleich zwischen Varianten belastbar, nicht auf zwei '
-      + 'Nachkommastellen.',
+      + 'ist ein Rinnenwert, 1,2 m²/s² wären 1200 N/m² und damit absurd. '
+      + 'Wichtiger noch: τ entsteht nicht aus einer aufgelösten '
+      + 'Grenzschicht, sondern aus einer WANDFUNKTION, und die hat zwei '
+      + 'Bedingungen. (1) Sie gilt für y⁺ zwischen 30 und 300; bei '
+      + 'Zellgrößen im Dezimeterbereich liegt y⁺ eher bei 10³ bis 10⁴, sie '
+      + 'arbeitet also im Extrapolationsbereich. (2) Die eingestellte '
+      + 'Rauheit k_s muss IN die wandnächste Zelle passen (Faustwert '
+      + 'k_s < 0,2·Δy) — bei 0,03 m Erdrauheit heißt das Zellen über '
+      + '0,15 m. Wird feiner vernetzt oder kommen Grenzschichten dazu, '
+      + 'verschlechtert sich das, nicht umgekehrt. Die Prüfliste meldet '
+      + 'beides vor dem Lauf. Deshalb ist τ ein belastbarer VERGLEICH '
+      + 'zwischen Varianten desselben Netzes und kein Messwert; über '
+      + 'verschiedene Zellgrößen hinweg ist es nicht vergleichbar.',
   },
 
   umag: {
@@ -550,10 +559,13 @@ export const KENNWERTE = {
       + 'Selbstreinigungsliteratur (Feinsediment, Sand), NICHT aus '
       + 'Laubversuchen. Nasses Laub hat eine ganz andere Angriffsfläche und '
       + 'ein anderes Gewicht als ein Sandkorn — die Schwelle ist ein '
-      + 'Anhaltswert, kein Nachweis. Dazu: τ folgt aus einer Wandfunktion '
-      + 'und hängt an der eingestellten Rauheit und der Zellgröße; es liegt '
-      + 'flächig nur auf dem Gelände-Patch vor, Bauwerksflächen bleiben '
-      + 'leer. Zellen, die im Schwall trocken sind, werden ausmaskiert — '
+      + 'Anhaltswert, kein Nachweis. Dazu kommt, woher τ stammt: aus einer '
+      + 'Wandfunktion, die y⁺ 30…300 und eine Rauheit kleiner als die '
+      + 'wandnahe Zelle voraussetzt — bei diesen Netzen ist beides nicht '
+      + 'erfüllt (Erklärung bei „Sohlschubspannung τ", Prüfliste vor dem '
+      + 'Lauf). Die Karte vergleicht deshalb Stellen und Varianten, sie '
+      + 'misst nicht. τ liegt außerdem flächig nur auf dem Gelände-Patch '
+      + 'vor, Bauwerksflächen bleiben leer. Zellen, die im Schwall trocken sind, werden ausmaskiert — '
       + 'sonst entstünden an den Schwallrändern systematisch zu niedrige '
       + 'Werte.',
   },

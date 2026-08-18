@@ -1365,6 +1365,164 @@ def _pruefe_gebietslage(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     return befunde
 
 
+# Verhältnis Rauheit zu wandnaher Zellhöhe, ab dem die Wandfunktion ihren
+# Gültigkeitsbereich verlässt. `nutkRoughWallFunction` verteilt die
+# Rauheit INNERHALB der wandnächsten Zelle; passt sie dort nicht hinein,
+# rechnet der Solver etwas anderes als angegeben. 0,2 ist die
+# gebräuchliche Grenze, ab 0,5 ragt die Rauheit über die halbe Zelle.
+KS_ZELLE_WARN = 0.2
+KS_ZELLE_GROB = 0.5
+
+# Was snappyHexMesh als wandnächste Schicht baut: meshgen schreibt
+# `relativeSizes true` mit `finalLayerThickness 0.3`, die erste Schicht ist
+# also 0,3·Δ / r^(n−1) der lokalen Zellgröße.
+_LAYER_FINAL = 0.3
+
+
+def _feinste_zelle_am_patch(spec: CaseSpec, struct, ctx: _Kontext) -> float:
+    """
+    Zellhöhe an der Wand dieses Patches — Basiszelle, halbiert je
+    Verfeinerungsstufe, die ihn betrifft, und noch einmal gestaucht, wenn
+    Grenzschichten auf ihm liegen.
+
+    Maßgeblich ist die FEINSTE Zelle am Patch, nicht die eingestellte
+    Basiszelle: die Rauheit muss dort hineinpassen, wo das Netz am
+    dichtesten ist. Genau diese Richtung ist die unerwartete — ein
+    feineres Netz macht die Rauheitsangabe schlechter, nicht besser.
+    """
+    mesh = spec.mesh
+    grund = float(mesh.base_cell)
+    patch = getattr(struct, "patch", None) if struct is not None else "terrain"
+    stufe = 0
+
+    # Hüllbox des Bauwerks; das Gelände liegt überall und nimmt jede Box mit
+    huelle = None
+    if struct is not None:
+        pkte = _plan_punkte(struct, ctx.solids)
+        if len(pkte):
+            huelle = (float(pkte[:, 0].min()), float(pkte[:, 1].min()),
+                      float(pkte[:, 0].max()), float(pkte[:, 1].max()))
+
+    for r in mesh.refinements or []:
+        lvl = int(getattr(r, "level", 0) or 0)
+        if not lvl:
+            continue
+        if getattr(r, "type", "") == "surface":
+            if getattr(r, "target", None) == patch:
+                stufe = max(stufe, lvl)
+            continue
+        ext = getattr(r, "extent", None)
+        if not ext or len(ext) < 6:
+            continue
+        if huelle is None:            # Gelände: jede Box zählt
+            stufe = max(stufe, lvl)
+            continue
+        x0, y0, x1, y1 = huelle
+        # Überschneiden sich Box und Hüllbox im Grundriss?
+        if not (ext[3] < x0 or ext[0] > x1 or ext[4] < y0 or ext[1] > y1):
+            stufe = max(stufe, lvl)
+
+    zelle = grund / (2 ** stufe)
+    bl = mesh.boundary_layers
+    if bl and patch in (bl.patches or []):
+        r = max(float(bl.expansion_ratio), 1.0)
+        zelle *= _LAYER_FINAL / (r ** max(bl.n_layers - 1, 0))
+    return zelle
+
+
+def _pruefe_rauheit(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Passt die angegebene Rauheit überhaupt in die wandnahe Zelle?
+
+    Die Materialwahl schreibt eine `nutkRoughWallFunction` mit der
+    äquivalenten Sandrauheit k_s auf den Patch (casebuilder.MATERIAL_KS).
+    Die Wandfunktion setzt aber voraus, dass k_s klein gegen die
+    wandnächste Zelle ist — sonst steht im Fall eine Rauheit, die der
+    Solver so nicht umsetzen kann. Geprüft wurde das bis 2026-08-17 nicht,
+    und man sah es dem Ergebnis nicht an.
+    """
+    if spec.mesh is None or not spec.mesh.base_cell:
+        return []
+    from .casebuilder import MATERIAL_KS
+
+    befunde: list[dict] = []
+    kandidaten: list[tuple[str, object, float]] = []
+    for st in spec.structures:
+        if st.type == "screen":     # keine eigene Netzfläche, siehe _pruefe_rechen
+            continue
+        ks = (getattr(st, "material_ks", None)
+              or MATERIAL_KS.get(getattr(st, "material", None) or ""))
+        if ks:
+            kandidaten.append((st.id, st, float(ks)))
+    if spec.terrain is not None:
+        ks = (spec.terrain.material_ks
+              or MATERIAL_KS.get(spec.terrain.material or ""))
+        if ks:
+            kandidaten.append(("terrain", None, float(ks)))
+
+    bl = spec.mesh.boundary_layers
+    for obj_id, struct, ks in kandidaten:
+        zelle = _feinste_zelle_am_patch(spec, struct, ctx)
+        if zelle <= 0:
+            continue
+        anteil = ks / zelle
+        if anteil <= KS_ZELLE_WARN:
+            continue
+
+        patch = getattr(struct, "patch", "terrain") if struct is not None \
+            else "terrain"
+        zulaessig = KS_ZELLE_WARN * zelle
+        kern = (f"Rauheit k_s = {ks:g} m gegen {zelle:.3g} m Zellhöhe an der "
+                f"Wand ({anteil:.0%} davon). Die Wandfunktion verteilt die "
+                f"Rauheit INNERHALB dieser Zelle; belastbar ist sie bis rund "
+                f"{zulaessig:.3g} m.")
+        if anteil > KS_ZELLE_GROB:
+            kern += (" Hier ist k_s größer als die halbe Zelle — der Solver "
+                     "rechnet dann etwas anderes als angegeben.")
+        wege = ("Entweder gröber vernetzen oder ein Material wählen, das zur "
+                "Auflösung passt — welches richtig ist, entscheidet der Fall.")
+        if bl and patch in (bl.patches or []):
+            wege += (f" Achtung: die {bl.n_layers} Grenzschichten auf diesem "
+                     "Patch VERKLEINERN die wandnahe Zelle und verschärfen "
+                     "das Verhältnis.")
+        # Zwischen 0,2 und 0,5 rechnet die Wandfunktion noch etwas
+        # Sinnvolles, nur ungenauer — das ist ein HINWEIS. Als Warnung
+        # gesetzt schlug er bei jedem der drei Bauwerksrezepte sofort an,
+        # und ein Befund, der immer dasteht, wird nicht mehr gelesen.
+        stufe = "warnung" if anteil > KS_ZELLE_GROB else "hinweis"
+        befunde.append(_finding(obj_id, stufe, f"{kern} {wege}"))
+
+    # Die Lage insgesamt, EINMAL je Fall: mit welchem y+ die Wandfunktion
+    # hier überhaupt arbeitet. Kein Fehlbedienen, sondern die normale Folge
+    # grober Vernetzung — aber es entscheidet, wie eine τ-Zahl zu lesen
+    # ist, und stand bisher nirgends.
+    if kandidaten:
+        feinste = min(_feinste_zelle_am_patch(spec, st, ctx)
+                      for _, st, _ in kandidaten)
+        # y+ = (Δy/2)·u_τ/ν mit u_τ ≈ 0,05·U (Reibungsbeiwert-Faustformel)
+        # und ν = 1e-6 m²/s. Angegeben als Spanne für 0,3 bis 3 m/s —
+        # eine einzelne Zahl wäre Scheingenauigkeit.
+        y_lo = (feinste / 2) * 0.05 * 0.3 / 1e-6
+        y_hi = (feinste / 2) * 0.05 * 3.0 / 1e-6
+        if y_hi > 500:
+            # Tausenderpunkt NUR auf den Zahlen — ein .replace() auf dem
+            # ganzen Satz zerlegt die Satzkommas mit.
+            def _tsd(x: float) -> str:
+                return f"{x:,.0f}".replace(",", ".")
+
+            befunde.append(_finding(
+                "mesh", "hinweis",
+                f"Wandauflösung: bei {feinste:.3g} m Zellhöhe liegt y+ je "
+                f"nach Geschwindigkeit etwa zwischen {_tsd(y_lo)} und "
+                f"{_tsd(y_hi)}. Die Wandfunktion gilt für 30 bis 300 — sie "
+                "arbeitet hier also im Extrapolationsbereich. Das ist bei "
+                "dieser Zellgröße normal und kein Fehler; es heißt aber, "
+                "dass die Sohlschubspannung ein belastbarer VERGLEICH "
+                "zwischen Varianten ist und kein Messwert."))
+
+    return befunde
+
+
 def _pruefe_rechen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     """Rechen: Widerstandsbeiwerte, lichte Weite, Verlegungsgrad."""
     befunde: list[dict] = []
@@ -1436,8 +1594,7 @@ def _pruefe_leerlauf(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             "solver", "fehler",
             "Der Lauf soll enden, wenn nichts mehr ablaeuft — es startet "
             "aber kein Wasser im Gebiet. Anfangswasserspiegel setzen oder "
-            "einen Bereich vorfuellen.",
-            fix="Anfangswasserspiegel oder Vorfuellung angeben"))
+            "einen Bereich vorfuellen."))
 
     zufluss = sum(float(getattr(b, "q", 0.0) or 0.0)
                   for b in spec.boundaries
@@ -1456,8 +1613,8 @@ def _pruefe_leerlauf(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             f"Das Beobachtungsfenster ({a.fenster_s:g} s) umfasst kaum mehr "
             f"als einen Messpunkt (Reihen-Schreibintervall "
             f"{spec.solver.write_interval_series:g} s) — die Stagnation "
-            "waere dann Zufall.",
-            fix="Fenster vergroessern oder Reihen haeufiger schreiben"))
+            "waere dann Zufall. Fenster vergroessern oder Reihen "
+            "haeufiger schreiben."))
 
     if a.erwartete_dauer_s and a.erwartete_dauer_s > spec.solver.end_time:
         befunde.append(_finding(
@@ -1568,6 +1725,7 @@ _PRUEFUNGEN = [
     _pruefe_randabstand,
     _pruefe_gebietslage,
     _pruefe_rechen,
+    _pruefe_rauheit,
     _pruefe_anfangsspiegel,
     _pruefe_leerlauf,
     _pruefe_auswertung,
