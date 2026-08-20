@@ -10,6 +10,7 @@ import {
   pumpIsDimensioned,
   nodesAreOutfalls,
   resolveStepDraw,
+  resolveStepHighlight,
   TUTORIAL_AREA_POINTS,
   TUTORIAL_OUTFALL_NODES,
 } from '../tutorial/tutorialExercise.js';
@@ -183,9 +184,24 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
 
   const anchors = collectAnchors(path.resolve(__dirname, '..'));
 
+  // `highlight` darf eine Funktion des Zustands sein — also gegen BEIDE
+  // Zustaende aufloesen (alle Fenster zu / alle offen) und vereinigen. Sonst
+  // bliebe der Ersatz-Anker, den es nur bei geschlossenem Fenster gibt,
+  // ungeprueft: genau der Fall, der den Fehler ausmachte.
+  const ZU = storeWith({ ui: {}, rain: {} });
+  const AUF = storeWith({
+    ui: { showKostraModal: true, showPreprocessingModal: true, showElementModal: true, demImportPanelOpen: true },
+    rain: {},
+  });
   const stepsWithHighlight = [...EXERCISE_STEPS, ...TOUR_STEPS]
     .filter(s => s.highlight)
-    .flatMap(s => (Array.isArray(s.highlight) ? s.highlight : [s.highlight]).map(h => [s.id, h]));
+    .flatMap((s) => {
+      const anker = new Set([
+        ...(resolveStepHighlight(s, ZU) || []),
+        ...(resolveStepHighlight(s, AUF) || []),
+      ]);
+      return Array.from(anker, h => [s.id, h]);
+    });
 
   it('findet ueberhaupt Anker im Quellcode', () => {
     expect(anchors.size).toBeGreaterThan(0);
@@ -193,6 +209,44 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
 
   it.each(stepsWithHighlight)('Schritt "%s" hebt vorhandenen Anker "%s" hervor', (_id, anchor) => {
     expect(anchors.has(anchor)).toBe(true);
+  });
+});
+
+describe('resolveStepHighlight', () => {
+  const auf = (ui) => storeWith({ ui, rain: {} });
+
+  it('liefert immer eine Liste — auch fuer einen einzelnen Anker', () => {
+    expect(resolveStepHighlight({ highlight: 'sidebar' }, auf({}))).toEqual(['sidebar']);
+    expect(resolveStepHighlight({ highlight: ['a', 'b'] }, auf({}))).toEqual(['a', 'b']);
+  });
+
+  it('ohne highlight, mit leerem Ergebnis oder ohne Schritt: null', () => {
+    expect(resolveStepHighlight({}, auf({}))).toBeNull();
+    expect(resolveStepHighlight(null, auf({}))).toBeNull();
+    expect(resolveStepHighlight({ highlight: () => null }, auf({}))).toBeNull();
+    expect(resolveStepHighlight({ highlight: [] }, auf({}))).toBeNull();
+    expect(resolveStepHighlight({ highlight: [null, 42, ''] }, auf({}))).toBeNull();
+  });
+
+  it('ein kaputtes Ziel blockiert die Uebung nicht', () => {
+    const kaputt = { highlight: () => { throw new Error('bumm'); } };
+    expect(resolveStepHighlight(kaputt, auf({}))).toBeNull();
+  });
+
+  // Der eigentliche Fehler: beide Schritte pruefen den Endzustand und sind
+  // deshalb bewusst OHNE `requires` gebaut — sie ueberleben also das
+  // Schliessen ihres Fensters. Frueher zeigten sie danach auf einen Knopf,
+  // den es nicht mehr gab, und useHighlight gab nach fuenf Versuchen auf.
+  it('der KOSTRA-Schritt zeigt bei geschlossenem Fenster auf den Weg zurueck', () => {
+    const step = EXERCISE_STEPS.find(s => s.id === 'ex-rain-uebernehmen');
+    expect(resolveStepHighlight(step, auf({ showKostraModal: true }))).toEqual(['kostra-uebernehmen']);
+    expect(resolveStepHighlight(step, auf({ showKostraModal: false }))).toEqual(['kostra-oeffnen']);
+  });
+
+  it('der Auslass-Schritt zeigt bei geschlossenem Fenster auf den Weg zurueck', () => {
+    const step = EXERCISE_STEPS.find(s => s.id === 'ex-outfalls-uebernehmen');
+    expect(resolveStepHighlight(step, auf({ showPreprocessingModal: true }))).toEqual(['preprocessing-uebernehmen']);
+    expect(resolveStepHighlight(step, auf({ showPreprocessingModal: false }))).toEqual(['daten-bearbeiten']);
   });
 });
 
@@ -535,10 +589,22 @@ describe('Regen: Fuehrung durch das KOSTRA-Fenster', () => {
 
   it('das Abrufen ist erledigt, sobald ein Ergebnis vorliegt', () => {
     const check = stepById('ex-rain-abrufen').check;
-    expect(check(storeWith({ ui: { kostraResultReady: false }, rain: {} }))).toBe(false);
-    expect(check(storeWith({ ui: { kostraResultReady: true }, rain: {} }))).toBe(true);
+    expect(check(storeWith({ ui: {}, rain: { kostraData: null } }))).toBe(false);
+    expect(check(storeWith({ ui: {}, rain: { kostraData: { 5: { RN_001A: 200 } } } }))).toBe(true);
     // ...oder wenn der Nutzer schon durchgeklickt und uebernommen hat
     expect(check(storeWith({ ui: {}, rain: { method: 'kostra', intensity: 120 } }))).toBe(true);
+  });
+
+  // Regressionsschutz: frueher stand hier ein eigenes Flag (ui.kostraResultReady),
+  // das der Abruf setzte und niemand zuruecksetzte. Das Fenster haengt an v-if,
+  // beim Schliessen starb sein lokales `result` — das Flag blieb stehen. Folge:
+  // beim Wiederoeffnen uebersprang die Ratte das Abrufen und leuchtete auf einen
+  // [Uebernehmen]-Knopf, den es nicht gab. `rain.kostraData` ueberlebt das
+  // Schliessen absichtlich (es IST das Ergebnis), deshalb bleibt der Schritt
+  // erledigt — und 1b sorgt dafuer, dass das Leuchten trotzdem stimmt.
+  it('das Abrufen bleibt erledigt, wenn der Nutzer das Fenster schliesst', () => {
+    const nachAbruf = { ui: { showKostraModal: false }, rain: { kostraData: { 5: {} } } };
+    expect(stepById('ex-rain-abrufen').check(storeWith(nachAbruf))).toBe(true);
   });
 
   it('uebernommen ist der Regen erst mit Methode UND Wert', () => {
@@ -618,7 +684,7 @@ describe('Fortschritts-Signale des Maskottchens sind vollstaendig', () => {
     ['store.ui.showElementModal', 'Flaeche erstellen'],
     ['store.ui.showPreprocessingModal', 'Datenbearbeitung'],
     ['store.ui.showKostraModal', 'KOSTRA-Fenster'],
-    ['store.ui.kostraResultReady', 'KOSTRA-Ergebnis'],
+    ['store.rain.kostraData', 'KOSTRA-Ergebnis'],
     ['store.ui.demImportPanelOpen', 'DGM-Rueckfrage'],
     ['store.rain.method', 'Regen-Methode'],
     ['store.rain.intensity', 'Regen-Wert'],

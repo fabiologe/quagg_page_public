@@ -1,5 +1,6 @@
 import { watch, onUnmounted } from 'vue';
 import { useTutorialGuide } from './useTutorialGuide.js';
+import { resolveStepHighlight } from './tutorialExercise.js';
 import './tutorial.css';
 
 const HIGHLIGHT_CLASS = 'sv-tutorial-highlight';
@@ -8,8 +9,14 @@ const HIGHLIGHT_CLASS = 'sv-tutorial-highlight';
  * Hebt das UI-Element des aktiven Tutorial-Steps hervor (Terminal-Glow).
  * Ziel-Elemente tragen ein data-tutorial="<anker>"-Attribut — mehr müssen
  * Komponenten vom Tutorial nicht wissen. In einem setup()-Kontext aufrufen.
+ *
+ * @param {object} store Der isybau-Store. Nötig, weil `highlight` eine
+ *        Funktion des Zustands sein darf (siehe resolveStepHighlight): der
+ *        Watcher unten liest den Store IM Getter, Vue verfolgt die Zugriffe,
+ *        und das Leuchten wandert mit, wenn der Nutzer mitten im Schritt
+ *        ein Fenster schließt.
  */
-export function useHighlight() {
+export function useHighlight(store) {
   const { activeStep } = useTutorialGuide();
   let currentEls = [];
   let retryTimers = [];
@@ -35,18 +42,18 @@ export function useHighlight() {
     }
   }
 
-  // highlight darf ein einzelner Anker ODER ein Array sein (z.B. wenn ein
-  // Step zwei gleichwertige Wege zeigt, wie "XML importieren" vs. "Neu starten").
-  function apply(anchorOrAnchors) {
-    const anchors = Array.isArray(anchorOrAnchors) ? anchorOrAnchors : [anchorOrAnchors];
-    anchors.forEach((a) => applyOne(a));
-  }
-
+  // resolveStepHighlight liefert IMMER eine Liste (oder null) — ein Step darf
+  // auch zwei gleichwertige Wege zeigen, wie "XML importieren" vs. "Neu starten".
+  // Der Getter liest den Store nur dort, wo ein Schritt es wirklich tut: bei
+  // festen Ankern hängt er allein am activeStep, bei einer highlight-Funktion
+  // zusätzlich an genau den Feldern, die sie anfasst (z.B. ui.showKostraModal).
+  // Vue verfolgt das von selbst — es braucht also weder `deep` noch eine
+  // Signalliste, und unbeteiligte Store-Schreibvorgänge lösen nichts aus.
   watch(
-    () => activeStep.value?.highlight,
-    (anchor) => {
+    () => resolveStepHighlight(activeStep.value, store),
+    (anchors) => {
       clear();
-      if (anchor) apply(anchor);
+      anchors?.forEach((a) => applyOne(a));
     },
     { immediate: true, flush: 'post' }
   );

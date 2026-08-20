@@ -104,9 +104,6 @@ import { ref, watch } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 
 import { CRS_OPTIONS, transformToWGS84, fetchKostraData } from '../../utils/KostraService.js';
-// EIN Store-Zugriff auf Setup-Ebene statt zwei in Funktionsrümpfen: fetchData
-// setzt die Tutorial-Flagge (kostraResultReady) oberhalb der Stelle, an der
-// die innere Deklaration stand — das hätte eine temporale Todeszone erzeugt.
 const store = useIsybauStore();
 
 const props = defineProps({
@@ -152,9 +149,6 @@ const fetchData = async () => {
   isFetching.value = true;
   error.value = null;
   result.value = null;
-  // Fuer das Tutorial sichtbar machen, ob schon Daten da sind — es lotst
-  // danach zum "Uebernehmen"-Knopf, den es ohne Ergebnis gar nicht gibt.
-  store.ui.kostraResultReady = false;
 
   try {
     const wgs84 = transformToWGS84(manualCoords.value.x, manualCoords.value.y, selectedCRS.value);
@@ -162,7 +156,6 @@ const fetchData = async () => {
     if (wgs84) {
       const data = await fetchKostraData(wgs84[1], wgs84[0]);
       if (data) {
-        store.ui.kostraResultReady = true;
         result.value = {
           ...data,
           location: { lat: wgs84[1], lon: wgs84[0] }

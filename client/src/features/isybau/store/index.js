@@ -41,7 +41,13 @@ export const useIsybauStore = defineStore('isybau-module', {
             duration: 4, // Hours
             intensity: 0,
             modelRainId: null, // ID of selected model rain
-            returnPeriod: 1 // Years (T)
+            returnPeriod: 1, // Years (T)
+            // Rohtabelle eines KOSTRA-Abrufs (Dauerstufe -> Wiederkehrzeiten).
+            // Wird von updateKostraData() gesetzt, von ModelRainModal gelesen
+            // und im projectSnapshot mitgeführt — bewusst hier deklariert statt
+            // erst beim ersten Abruf zu entstehen: "noch kein Abruf" ist ein
+            // Zustand, den man ablesen können muss.
+            kostraData: null
         },
         // UI State for Modals
         // Sichtbarkeit ALLER Modals lebt hier — Komponenten togglen nur Flags,
@@ -67,10 +73,6 @@ export const useIsybauStore = defineStore('isybau-module', {
             // Besitzer ist Sidebar.vue; hier, weil auch das Tutorial darauf
             // reagieren muss (es lotst zum "Importieren"-Knopf, sobald er da ist).
             demImportPanelOpen: false,
-            // Liegt im KOSTRA-Fenster schon ein Abrufergebnis vor? Besitzer ist
-            // KostraModal.vue; hier, weil das Tutorial zum "Uebernehmen"-Knopf
-            // lotst, den es ohne Ergebnis gar nicht gibt.
-            kostraResultReady: false,
             preprocessingFocusId: null, // Element, das das Preprocessing beim Öffnen vorselektiert
             preprocessingFocusType: null, // 'node' | 'edge' | 'area' — nötig, da Haltungs- und Schacht-IDs in ISYBAU-Daten kollidieren können
             elementModal: { mode: 'node', data: {} }, // Kontext fürs Erstellen-Modal

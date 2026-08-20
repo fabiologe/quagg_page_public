@@ -6,8 +6,11 @@
 //   id        eindeutiger Name (Debug/Tests)
 //   mood      Key aus moods.js (happy | sad | asking | surprised | rain)
 //   message   String ODER Funktion (store) => String für dynamische Texte
-//   highlight optional: data-tutorial-Anker (String ODER Array mehrerer
-//             Anker), der/die hervorgehoben werden
+//   highlight optional: data-tutorial-Anker, der/die hervorgehoben werden —
+//             String, Array mehrerer Anker ODER `(store) => String|Array|null`
+//             fuer Ziele, die vom Zustand abhaengen (z.B. "der Uebernehmen-
+//             Knopf, solange das Fenster offen ist — sonst der Knopf, der es
+//             wieder oeffnet"). Aufgeloest von resolveStepHighlight().
 //   once      optional (nur reaktiv): Step feuert nur einmal pro Sitzung
 //   info      optional: Key aus tutorialInfo.js — zeigt [Mehr dazu]-Button
 //             mit Lernkarte fuer Studenten

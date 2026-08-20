@@ -89,13 +89,15 @@ const GIF_DELAY_MS = 1000; // kurze Schrecksekunde, bevor Schuss-GIF + Knall kom
 const guide = useTutorialGuide();
 const { activeStep, infoOpen, exerciseActive, exerciseDone } = guide;
 
+const store = useIsybauStore();
+
 // Store-Beobachtung (reaktive Trigger) und Element-Highlighting leben in
-// eigenen Modulen — hier nur einmal angeschlossen.
+// eigenen Modulen — hier nur einmal angeschlossen. useHighlight bekommt den
+// Store, weil Anker vom Zustand abhängen dürfen (siehe resolveStepHighlight).
 useTutorialTriggers();
-useHighlight();
+useHighlight(store);
 
 // ── Interaktive Übung ───────────────────────────────────────────────────────
-const store = useIsybauStore();
 const loadingNetwork = ref(false);
 const showHint = ref(false);
 
@@ -142,9 +144,11 @@ const fortschrittsSignale = () => [
     store.ui.showElementModal,
     store.ui.showPreprocessingModal,
     store.ui.showKostraModal,
-    store.ui.kostraResultReady,
     // Regen und Berechnung
     store.rain.method, store.rain.intensity,
+    // Nur als Boolean: die Rohtabelle ist gross, interessant ist "liegt ein
+    // Abruf vor" (siehe ex-rain-abrufen).
+    !!store.rain.kostraData,
     store.simulation.status,
     store.simulation.error,
     store.simulation.preSolveWarnings.length,

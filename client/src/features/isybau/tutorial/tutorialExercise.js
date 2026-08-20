@@ -511,7 +511,11 @@ export const EXERCISE_STEPS = [
     {
         id: 'ex-outfalls-uebernehmen',
         mood: 'asking',
-        highlight: 'preprocessing-uebernehmen',
+        // Der Schritt ueberlebt das Schliessen des Fensters (siehe unten) —
+        // der Knopf darin nicht. Also zeigt die Ratte dann auf den Weg zurueck.
+        highlight: (store) => (store?.ui?.showPreprocessingModal
+            ? 'preprocessing-uebernehmen'
+            : 'daten-bearbeiten'),
         task: 'Mach AL1_RBB und AL2_RRB zu Auslaufbauwerken.',
         message:
             'Und nicht vergessen: "Uebernehmen" druecken. Bis dahin sind deine Aenderungen nur vorgemerkt '
@@ -545,13 +549,20 @@ export const EXERCISE_STEPS = [
         requires: (store) => store?.ui?.showKostraModal === true,
         optional: true,
         // Ergebnis da ODER schon uebernommen: wer schnell klickt, wird nicht
-        // hinterher noch nach einem [Weiter] gefragt.
-        check: (store) => store?.ui?.kostraResultReady === true || kostraRainApplied(store),
+        // hinterher noch nach einem [Weiter] gefragt. Gefragt wird nach
+        // `rain.kostraData` — der Rohtabelle, die der Abruf ohnehin in den
+        // Store legt. Ein eigenes Tutorial-Flag daneben (frueher
+        // `ui.kostraResultReady`) waere eine zweite Buchfuehrung ueber
+        // dieselbe Tatsache, und die lief auseinander: das Fenster haengt an
+        // v-if, sein lokales `result` starb beim Schliessen, das Flag blieb.
+        check: (store) => !!store?.rain?.kostraData || kostraRainApplied(store),
     },
     {
         id: 'ex-rain-uebernehmen',
         mood: 'asking',
-        highlight: 'kostra-uebernehmen',
+        // Wie bei den Auslaessen: ohne offenes Fenster gibt es keinen
+        // "Uebernehmen"-Knopf — dann zeigt die Ratte auf den Weg dorthin.
+        highlight: (store) => (store?.ui?.showKostraModal ? 'kostra-uebernehmen' : 'kostra-oeffnen'),
         task: 'Uebernimm einen KOSTRA-Regen.',
         message:
             'Da sind sie. Such dir eine Zeile aus — fuer eine normale Bemessung nimmt man gern 5 Minuten '
@@ -655,6 +666,33 @@ export function resolveStepDraw(step, store) {
         return gueltig.length >= 2 ? gueltig : null;
     } catch {
         return null;
+    }
+}
+
+/**
+ * Anker eines Schrittes aufloesen, die der Viewer hervorheben soll.
+ *
+ * Wie `message`, `focus` und `draw` darf auch `highlight` eine Funktion des
+ * Stores sein. Das ist kein Luxus, sondern noetig: Schritte, die den
+ * Endzustand pruefen (und deshalb bewusst OHNE `requires` gebaut sind),
+ * ueberleben das Schliessen ihres Fensters — der Anker darin aber nicht.
+ * Fest verdrahtet zeigte die Ratte dann auf einen Knopf, den es nicht gab,
+ * und `useHighlight` gab nach fuenf Versuchen still auf.
+ *
+ * Immer als Liste zurueck, damit der Aufrufer nur einen Fall kennen muss.
+ *
+ * @returns {string[]|null}
+ */
+export function resolveStepHighlight(step, store) {
+    const h = step?.highlight;
+    if (!h) return null;
+    try {
+        const anker = typeof h === 'function' ? h(store) : h;
+        if (!anker) return null;
+        const liste = (Array.isArray(anker) ? anker : [anker]).filter(a => typeof a === 'string' && a);
+        return liste.length ? liste : null;
+    } catch {
+        return null; // Ein kaputtes Ziel darf die Uebung nie blockieren.
     }
 }
 
