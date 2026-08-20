@@ -24,16 +24,16 @@
 // nebeneinander waeren nur doppelt gepflegter Text gewesen.
 //
 // Uebrig bleibt bewusst nur die Begruessung mit zwei Moeglichkeiten:
-// Tutorial starten oder die Ratte wegschicken.
-export const TOUR_STEPS = [
-  {
-    id: 'welcome',
-    mood: 'happy',
-    message:
-      'Guten Tag Kanaltaucher! Ich bin deine Kanalratte. Wenn du magst, zeig ich dir, '
-      + 'wie man hier ein Kanalnetz durchrechnet — ein Uebungsnetz bring ich mit.',
-  },
-];
+// Tutorial starten oder die Ratte wegschicken. Deshalb ein EINZELNER Schritt
+// und keine Liste: die Sprechblase rendert in diesem Modus gar kein [Weiter],
+// eine Reihenfolge zum Durchblaettern gibt es also nicht.
+export const WELCOME_STEP = {
+  id: 'welcome',
+  mood: 'happy',
+  message:
+    'Guten Tag Kanaltaucher! Ich bin deine Kanalratte. Wenn du magst, zeig ich dir, '
+    + 'wie man hier ein Kanalnetz durchrechnet — ein Uebungsnetz bring ich mit.',
+};
 
 // ── Exit-Rückfrage & Kill-Sequenz ────────────────────────────────────────────
 // „Tour beenden" führt erst zu dieser Rückfrage; [Nein] spielt die

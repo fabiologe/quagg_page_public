@@ -100,14 +100,11 @@ export function makeSnapshot(store) {
 
 // ── Wiederverwendbare Prüfungen (rein, ohne Vue/Pinia) ───────────────────────
 
-/** Mindestens eine Fläche mehr als beim Start. */
-export const hasNewArea = (store, snap) =>
-    toArray(store?.areas).length > (snap?.areaCount ?? 0);
-
 /**
  * Steht der "Flaeche erstellen"-Dialog offen? Das ist das Signal, dass der
  * Nutzer den Umriss fertig gezeichnet hat — die Flaeche selbst entsteht erst
- * beim Speichern, `hasNewArea` wuerde hier also noch nichts melden.
+ * beim Speichern, eine reine Zaehlung der Flaechen wuerde hier also noch
+ * nichts melden.
  */
 export const areaModalOpen = (store) =>
     store?.ui?.showElementModal === true && store?.ui?.elementModal?.mode === 'area';
@@ -168,14 +165,6 @@ export const allAreasHaveSlope = (store) => {
     const areas = toArray(store?.areas);
     if (!areas.length) return false;
     return areas.every(a => [1, 2, 3, 4, 5].includes(Number(a?.slope)));
-};
-
-/** Der genannte Knoten ist als Pumpe dimensioniert (Förderleistung gesetzt). */
-export const pumpIsDimensioned = (store, _snap, nodeId = 'Pumpwerk') => {
-    const n = getNode(store, nodeId);
-    if (!n) return false;
-    const rate = num(n.pumpRate) ?? num(n.bauwerkData?.pumpRate);
-    return rate != null && rate > 0;
 };
 
 /** Alle genannten Knoten sind Auslaufbauwerke (Bauwerkstyp 5). */

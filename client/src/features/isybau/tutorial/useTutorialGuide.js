@@ -1,13 +1,15 @@
 import { ref } from 'vue';
-import { TOUR_STEPS, REACTIVE_STEPS, EXIT_CONFIRM_STEP, KILL_STEPS } from './tutorialSteps.js';
+import { WELCOME_STEP, REACTIVE_STEPS, EXIT_CONFIRM_STEP, KILL_STEPS } from './tutorialSteps.js';
 import { EXERCISE_STEPS, isStepComplete, makeSnapshot } from './tutorialExercise.js';
 
 // Module-level (singleton) state: any component or store watcher can import
 // this composable and call trigger(name) — the mascot reacts wherever it's
 // mounted, without prop-drilling a "current step" through the view tree.
 const activeStep = ref(null); // { ...step, message: <resolved string>, isTour, kind? }
+// „Die Tour“ ist seit dem Umbau nur noch die Begrüßung. Das Flag bleibt
+// trotzdem gebraucht: es hält reaktive Kommentare zurück, solange das Angebot
+// „Tutorial starten“ steht (siehe trigger()).
 const tourActive = ref(false);
-const tourIndex = ref(0);
 const killed = ref(false); // Ratte wurde „erschossen" — Ruhe bis zum nächsten Seitenladen
 const infoOpen = ref(false); // „Mehr dazu"-Lernkarte sichtbar?
 // ── Übungs-Modus (interaktive Werkstatt, siehe tutorialExercise.js) ──────────
@@ -35,17 +37,11 @@ function toggleInfo() {
   infoOpen.value = !infoOpen.value;
 }
 
-function showTourStep() {
-  const step = TOUR_STEPS[tourIndex.value];
-  setActiveStep({ ...step, message: resolveMessage(step), isTour: true });
-}
-
 function startTour() {
   if (killed.value) return; // erschossen bleibt erschossen (bis Reload/Reset)
   clearTimeout(killTimer);
   tourActive.value = true;
-  tourIndex.value = 0;
-  showTourStep();
+  setActiveStep({ ...WELCOME_STEP, message: resolveMessage(WELCOME_STEP), isTour: true });
 }
 
 function finishTour() {
@@ -53,15 +49,10 @@ function finishTour() {
   setActiveStep(null);
 }
 
+// [Weiter] gibt es nur im Übungs-Modus — die Begrüßung bietet ausschließlich
+// „Tutorial starten“ und „Tour beenden“ an.
 function next() {
-  if (exerciseActive.value) { nextExercise(); return; }
-  if (!tourActive.value) return;
-  if (tourIndex.value + 1 >= TOUR_STEPS.length) {
-    finishTour();
-    return;
-  }
-  tourIndex.value += 1;
-  showTourStep();
+  if (exerciseActive.value) nextExercise();
 }
 
 // ── Übungs-Modus ────────────────────────────────────────────────────────────
@@ -236,7 +227,6 @@ function resetGuideState() {
   activeStep.value = null;
   infoOpen.value = false;
   tourActive.value = false;
-  tourIndex.value = 0;
   exerciseActive.value = false;
   exerciseIndex.value = 0;
   exerciseDone.value = false;

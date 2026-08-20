@@ -4,10 +4,8 @@ import {
   EXERCISE_STEPS,
   makeSnapshot,
   isStepComplete,
-  hasNewArea,
   allAreasHaveRunoffCoeff,
   allAreasHaveSlope,
-  pumpIsDimensioned,
   nodesAreOutfalls,
   resolveStepDraw,
   resolveStepHighlight,
@@ -16,7 +14,7 @@ import {
 } from '../tutorial/tutorialExercise.js';
 import { loadTutorialNetwork } from '../tutorial/loadTutorialNetwork.js';
 import { loadTutorialDgm } from '../tutorial/loadTutorialDgm.js';
-import { TOUR_STEPS } from '../tutorial/tutorialSteps.js';
+import { WELCOME_STEP } from '../tutorial/tutorialSteps.js';
 import { TUTORIAL_INFO } from '../tutorial/tutorialInfo.js';
 import fs from 'fs';
 import path from 'path';
@@ -47,16 +45,6 @@ describe('Übungs-Schritte: Struktur', () => {
   });
 });
 
-describe('hasNewArea', () => {
-  it('erkennt eine neu gezeichnete Flaeche', () => {
-    const store = storeWith({ areas: [{ id: 'A' }] });
-    const snap = makeSnapshot(store);
-    expect(hasNewArea(store, snap)).toBe(false);
-    store.areas.push({ id: 'B' });
-    expect(hasNewArea(store, snap)).toBe(true);
-  });
-});
-
 describe('allAreasHaveRunoffCoeff', () => {
   it('ist erst erfuellt, wenn JEDE Flaeche einen Beiwert hat', () => {
     // Ausgangslage der Beispiel-XML: Abflussbeiwert fehlt komplett (=0).
@@ -82,26 +70,6 @@ describe('allAreasHaveSlope', () => {
     expect(allAreasHaveSlope(storeWith({ areas: [{ slope: 3 }, { slope: 2 }] }))).toBe(true);
     expect(allAreasHaveSlope(storeWith({ areas: [{ slope: 3 }, { slope: null }] }))).toBe(false);
     expect(allAreasHaveSlope(storeWith({ areas: [{ slope: 7 }] }))).toBe(false);
-  });
-});
-
-describe('pumpIsDimensioned', () => {
-  it('verlangt eine gesetzte Foerderleistung am Pumpwerk', () => {
-    const store = storeWith({ nodes: new Map([['Pumpwerk', { id: 'Pumpwerk', bauwerkstyp: 6 }]]) });
-    expect(pumpIsDimensioned(store)).toBe(false);
-    store.nodes.get('Pumpwerk').pumpRate = 12;
-    expect(pumpIsDimensioned(store)).toBe(true);
-  });
-
-  it('akzeptiert die Leistung auch aus bauwerkData', () => {
-    const store = storeWith({
-      nodes: new Map([['Pumpwerk', { id: 'Pumpwerk', bauwerkData: { pumpRate: 5 } }]]),
-    });
-    expect(pumpIsDimensioned(store)).toBe(true);
-  });
-
-  it('ist nicht erfuellt, wenn der Knoten fehlt', () => {
-    expect(pumpIsDimensioned(storeWith())).toBe(false);
   });
 });
 
@@ -193,7 +161,7 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
     ui: { showKostraModal: true, showPreprocessingModal: true, showElementModal: true, demImportPanelOpen: true },
     rain: {},
   });
-  const stepsWithHighlight = [...EXERCISE_STEPS, ...TOUR_STEPS]
+  const stepsWithHighlight = [...EXERCISE_STEPS, WELCOME_STEP]
     .filter(s => s.highlight)
     .flatMap((s) => {
       const anker = new Set([
@@ -333,7 +301,7 @@ describe('info-Schluessel zeigen auf vorhandene Lernkarten', () => {
   // Gleiche stille Fehlerklasse wie bei den Highlight-Ankern: ein Tippfehler
   // oder ein erfundener Key oeffnet eine LEERE "Mehr dazu"-Karte, ohne dass
   // irgendwo ein Fehler auftaucht.
-  const steps = [...EXERCISE_STEPS, ...TOUR_STEPS].filter(s => s.info);
+  const steps = [...EXERCISE_STEPS, WELCOME_STEP].filter(s => s.info);
 
   it.each(steps.map(s => [s.id, s.info]))(
     'Schritt "%s" verweist auf existierende Lernkarte "%s"',

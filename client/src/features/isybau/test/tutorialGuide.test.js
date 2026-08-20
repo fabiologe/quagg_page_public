@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useTutorialGuide } from '../tutorial/useTutorialGuide.js';
-import { TOUR_STEPS, REACTIVE_STEPS, KILL_STEPS, EXIT_CONFIRM_STEP } from '../tutorial/tutorialSteps.js';
+import { WELCOME_STEP, REACTIVE_STEPS, KILL_STEPS, EXIT_CONFIRM_STEP } from '../tutorial/tutorialSteps.js';
 import { EXERCISE_STEPS } from '../tutorial/tutorialExercise.js';
 
 // Minimaler Store-Ersatz für message-Funktionen
@@ -27,16 +27,19 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
     expect(guide.activeStep.value.isTour).toBe(true);
   });
 
-  it('next() läuft die Tour in Reihenfolge durch und beendet sie am Ende', () => {
+  // Die Begrüßung ist EIN Schritt, keine Folge: die Sprechblase bietet dort
+  // ausschließlich [Tutorial starten] und [Tour beenden] an, kein [Weiter].
+  // next() gehört dem Übungs-Modus und darf hier nichts umwerfen.
+  it('next() lässt die Begrüßung stehen', () => {
     guide.startTour();
-    const seen = [guide.activeStep.value.id];
-    for (let i = 1; i < TOUR_STEPS.length; i++) {
-      guide.next();
-      seen.push(guide.activeStep.value.id);
-    }
-    expect(seen).toEqual(TOUR_STEPS.map((s) => s.id));
+    guide.next();
+    expect(guide.activeStep.value.id).toBe('welcome');
+    expect(guide.tourActive.value).toBe(true);
+  });
 
-    guide.next(); // letzter Step → Tour zu Ende
+  it('die Begrüßung endet über dismiss()', () => {
+    guide.startTour();
+    guide.dismiss();
     expect(guide.tourActive.value).toBe(false);
     expect(guide.activeStep.value).toBeNull();
   });
@@ -154,7 +157,7 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
 
   it('alle Steps referenzieren nur existierende Moods', async () => {
     const { RAT_MOODS } = await import('../tutorial/moods.js');
-    const allSteps = [...TOUR_STEPS, ...Object.values(REACTIVE_STEPS), ...KILL_STEPS, EXIT_CONFIRM_STEP];
+    const allSteps = [WELCOME_STEP, ...Object.values(REACTIVE_STEPS), ...KILL_STEPS, EXIT_CONFIRM_STEP];
     for (const step of allSteps) {
       expect(RAT_MOODS[step.mood], `Mood "${step.mood}" von Step "${step.id}"`).toBeDefined();
     }
@@ -192,7 +195,7 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
     const { TUTORIAL_INFO } = await import('../tutorial/tutorialInfo.js');
     const validTypes = ['p', 'formula', 'ref'];
 
-    const allSteps = [...TOUR_STEPS, ...Object.values(REACTIVE_STEPS)];
+    const allSteps = [WELCOME_STEP, ...Object.values(REACTIVE_STEPS)];
     for (const step of allSteps) {
       if (!step.info) continue;
       expect(TUTORIAL_INFO[step.info], `info-Key "${step.info}" von Step "${step.id}"`).toBeDefined();

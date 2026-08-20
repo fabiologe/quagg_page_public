@@ -75,26 +75,6 @@ export const TUTORIAL_INFO = {
     ],
   },
 
-  'pumpwerk-dimensionierung': {
-    title: 'PUMPWERK AUSLEGEN',
-    blocks: [
-      {
-        type: 'p',
-        text: 'Ein Pumpwerk braucht man, wo das Wasser nicht mehr von allein bergab läuft. Die Frage ist immer dieselbe: Wie viel muss die Pumpe pro Sekunde wegschaffen, damit nichts überläuft?',
-      },
-      { type: 'formula', text: '5 l/s ≈ ein Eimer Wasser pro Sekunde' },
-      {
-        type: 'p',
-        text: 'Die Förderleistung muss mindestens den Zufluss aufnehmen, der im Bemessungsregen ankommt. Zu klein gewählt staut sich das Wasser im Schacht auf und tritt irgendwann oben aus. Zu groß gewählt schaltet die Pumpe ständig ein und aus — das verschleißt sie und kostet Strom.',
-      },
-      {
-        type: 'p',
-        text: 'Neben der Menge zählt die Förderhöhe: der Höhenunterschied, den das Wasser überwinden muss, plus die Reibungsverluste in der Druckleitung. Beides zusammen ergibt den Betriebspunkt der Pumpe.',
-      },
-      { type: 'ref', text: 'DWA-A 134 — Planung und Bau von Abwasserpumpanlagen' },
-    ],
-  },
-
   auslaufbauwerk: {
     title: 'AUSLAUFBAUWERK',
     blocks: [
