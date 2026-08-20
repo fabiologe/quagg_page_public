@@ -886,17 +886,17 @@ watch(() => props.selectedElement, (val) => {
 input[type="checkbox"] { accent-color: var(--isy-pixel-green, #219653); }
 
 .link-hint-box {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    background: var(--isy-pixel-info-soft);
+    border: 1px solid var(--isy-pixel-info-soft-border);
     border-radius: 4px;
     padding: 0.5rem;
     margin-bottom: 8px;
     font-size: 0.78rem;
-    color: #1e40af;
+    color: var(--isy-pixel-info-soft-text);
 }
 
 .surcharge-badge {
-    background: #fff8e1;
+    background: var(--isy-pixel-warning-soft);
     border-color: #f9a825;
     color: #b26a00;
     animation: none;

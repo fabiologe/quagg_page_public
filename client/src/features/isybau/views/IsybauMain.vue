@@ -307,7 +307,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .view-switcher button.result3d-tab {
     border-color: var(--isy-pixel-warning, #f39c12);
-    color: #7d4e00;
+    color: var(--isy-pixel-warning-soft-text);
 }
 .view-switcher button.result3d-tab.active {
     background: var(--isy-pixel-warning, #f39c12);
@@ -427,17 +427,17 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .nav-btn-result3d {
   border-color: var(--isy-pixel-warning, #f39c12);
-  color: #7d4e00;
+  color: var(--isy-pixel-warning-soft-text);
 }
 .nav-btn-result3d:hover {
-  background: #fff8eb;
+  background: var(--isy-pixel-warning-soft);
   border-color: var(--isy-pixel-warning-hover, #e67e22);
   box-shadow: var(--isy-btn-shadow), 0 0 9px rgba(243,156,18,0.5);
 }
 .nav-btn-result3d.active {
-  background: #fff3cd;
+  background: var(--isy-pixel-warning-soft);
   border-color: var(--isy-pixel-warning, #f39c12);
-  color: #7d4e00;
+  color: var(--isy-pixel-warning-soft-text);
   box-shadow: var(--isy-btn-shadow), 0 0 8px rgba(243,156,18,0.4);
 }
 

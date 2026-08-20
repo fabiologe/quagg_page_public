@@ -481,7 +481,7 @@ const applyResult = () => {
 
 .devil-btn:hover {
     transform: scale(1.1);
-    background: #fff5f5; /* Light red tint */
+    background: var(--isy-pixel-danger-soft); /* Light red tint */
     box-shadow: 0 0 5px rgba(227, 6, 19, 0.4);
 }
 

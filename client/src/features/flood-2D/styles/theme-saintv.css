@@ -51,6 +51,13 @@
     --scroll-thumb-hover: var(--sv-violet);
     --scroll-track:       var(--sv-bg-2);
     --scroll-thumb-glow:  var(--sv-glow-violet);
+
+    /* Spinner-Pfeile der Zahlenfelder — gleiche Bauart, gleicher Grund: die
+       Regel unten gilt global. Die Pfeilform steckt als Maske im SVG (Farbe
+       darin egal), gefärbt wird über --spinner-color. Ein Feature setzt also
+       nur eine Farbe um, nicht das ganze Bild. */
+    --spinner-color:  var(--sv-violet);
+    --spinner-arrows: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='14' viewBox='0 0 8 14'><path d='M4 0 8 5H0z' fill='%23000'/><path d='M4 14 0 9h8z' fill='%23000'/></svg>");
 }
 
 /* ── Scrollbars (global) ──────────────────────────────────────────────────────
@@ -193,7 +200,15 @@ input[type="number"]::-webkit-inner-spin-button {
     margin: 0 0 0 4px;
     cursor: pointer;
     opacity: 0;
-    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='14' viewBox='0 0 8 14'><path d='M4 0 8 5H0z' fill='%238B5CF6'/><path d='M4 14 0 9h8z' fill='%238B5CF6'/></svg>") center / 8px 14px no-repeat;
+    /* Farbe kommt aus --spinner-color, NICHT aus dem SVG: die Pfeile werden
+       als Maske gelegt und die Fläche darunter eingefärbt. Vorher steckte
+       %238B5CF6 (= --sv-violet) im data-URI — ein Feature hätte zum Umfärben
+       das ganze SVG kopieren müssen. So genügt ein Farb-Token.
+       -webkit-mask reicht: ::-webkit-inner-spin-button gibt es ohnehin nur in
+       Chromium/WebKit, in Firefox ist der Spinner oben ausgeblendet. */
+    background: var(--spinner-color);
+    -webkit-mask: var(--spinner-arrows) center / 8px 14px no-repeat;
+    mask: var(--spinner-arrows) center / 8px 14px no-repeat;
     transition: opacity 0.15s ease;
 }
 input[type="number"]:hover::-webkit-inner-spin-button,

@@ -317,10 +317,10 @@ function formatDate(iso) {
 
 .pm-error {
   padding: 0.65rem 1.1rem;
-  background: #fff5f5;
-  border-top: 1px solid #fca5a5;
+  background: var(--isy-pixel-danger-soft);
+  border-top: 1px solid var(--isy-pixel-danger-soft-border);
   font-size: 0.85rem;
-  color: #b91c1c;
+  color: var(--isy-pixel-danger-soft-text);
   flex-shrink: 0;
 }
 
@@ -331,10 +331,10 @@ function formatDate(iso) {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 1.1rem;
-  background: #fff5f5;
-  border-top: 1px solid #fca5a5;
+  background: var(--isy-pixel-danger-soft);
+  border-top: 1px solid var(--isy-pixel-danger-soft-border);
   font-size: 0.88rem;
-  color: #b91c1c;
+  color: var(--isy-pixel-danger-soft-text);
   flex-shrink: 0;
 }
 
@@ -377,7 +377,7 @@ function formatDate(iso) {
 
 .btn-delete {
   background: none;
-  border: 1px solid #fca5a5;
+  border: 1px solid var(--isy-pixel-danger-soft-border);
   color: #dc2626;
   border-radius: 5px;
   padding: 0.35rem 0.5rem;
@@ -386,7 +386,7 @@ function formatDate(iso) {
   cursor: pointer;
   transition: background 0.12s;
 }
-.btn-delete:hover { background: #fee2e2; }
+.btn-delete:hover { background: var(--isy-pixel-danger-soft); }
 
 .btn-cancel {
   background: none;

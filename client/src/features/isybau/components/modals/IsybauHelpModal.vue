@@ -312,13 +312,13 @@ Wehr1    S1     S2    TRANSVERSE  1.20      1.84</div>
                 <p style="font-weight:600;margin-bottom:0.75rem">Produktionsreife (Stand V.1.03)</p>
                 <table class="tech-table">
                     <tr><th>Modul</th><th>Status</th><th>Hinweis</th></tr>
-                    <tr><td>ISYBAU-Import</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>Alle gängigen ISYBAU-Strukturen</td></tr>
-                    <tr><td>SWMM-Solver</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>SWMM 5.1, WebAssembly</td></tr>
-                    <tr><td>2D-Editor</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>—</td></tr>
-                    <tr><td>Ergebnistabellen</td><td><span class="tag" style="background:#dcfce7;color:#166534">✓ Stabil</span></td><td>—</td></tr>
-                    <tr><td>3D-Ansicht (Geometrie)</td><td><span class="tag" style="background:#fef9c3;color:#713f12">⚠ Beta</span></td><td>Profil-Extrusion, Sonderbauwerke</td></tr>
-                    <tr><td>3D Ergebnis-Overlay</td><td><span class="tag" style="background:#fef9c3;color:#713f12">⚠ Beta</span></td><td>Farben, Wasserstand-Marker</td></tr>
-                    <tr><td>Sonderbauwerke (Modell)</td><td><span class="tag" style="background:#fef9c3;color:#713f12">⚠ Beta</span></td><td>Pumpen, Wehre — grundlegend funktionsfähig</td></tr>
+                    <tr><td>ISYBAU-Import</td><td><span class="tag" style="background:var(--isy-pixel-success-soft);color:var(--isy-pixel-success-soft-text)">✓ Stabil</span></td><td>Alle gängigen ISYBAU-Strukturen</td></tr>
+                    <tr><td>SWMM-Solver</td><td><span class="tag" style="background:var(--isy-pixel-success-soft);color:var(--isy-pixel-success-soft-text)">✓ Stabil</span></td><td>SWMM 5.1, WebAssembly</td></tr>
+                    <tr><td>2D-Editor</td><td><span class="tag" style="background:var(--isy-pixel-success-soft);color:var(--isy-pixel-success-soft-text)">✓ Stabil</span></td><td>—</td></tr>
+                    <tr><td>Ergebnistabellen</td><td><span class="tag" style="background:var(--isy-pixel-success-soft);color:var(--isy-pixel-success-soft-text)">✓ Stabil</span></td><td>—</td></tr>
+                    <tr><td>3D-Ansicht (Geometrie)</td><td><span class="tag" style="background:var(--isy-pixel-warning-soft);color:var(--isy-pixel-warning-soft-text)">⚠ Beta</span></td><td>Profil-Extrusion, Sonderbauwerke</td></tr>
+                    <tr><td>3D Ergebnis-Overlay</td><td><span class="tag" style="background:var(--isy-pixel-warning-soft);color:var(--isy-pixel-warning-soft-text)">⚠ Beta</span></td><td>Farben, Wasserstand-Marker</td></tr>
+                    <tr><td>Sonderbauwerke (Modell)</td><td><span class="tag" style="background:var(--isy-pixel-warning-soft);color:var(--isy-pixel-warning-soft-text)">⚠ Beta</span></td><td>Pumpen, Wehre — grundlegend funktionsfähig</td></tr>
                 </table>
             </div>
           </div>
@@ -506,15 +506,15 @@ const activeTab = ref('general');
 }
 
 .warning-block {
-    background: #fff5f5;
+    background: var(--isy-pixel-danger-soft);
     padding: 1.5rem;
     border-radius: 8px;
-    border: 1px solid #fecaca;
-    color: #991b1b;
+    border: 1px solid var(--isy-pixel-danger-soft-border);
+    color: var(--isy-pixel-danger-soft-text);
 }
 
-.warning-block p { color: #991b1b; font-weight: 600; }
-.warning-block li { color: #7f1d1d; }
+.warning-block p { color: var(--isy-pixel-danger-soft-text); font-weight: 600; }
+.warning-block li { color: var(--isy-pixel-danger-soft-text); }
 
 .tech-table {
     width: 100%;
@@ -543,7 +543,7 @@ const activeTab = ref('general');
     font-size: 0.8em;
     font-weight: 600;
 }
-.q-warn { background-color: #fee2e2; color: #991b1b; }
+.q-warn { background-color: var(--isy-pixel-danger-soft); color: var(--isy-pixel-danger-soft-text); }
 
 .code-block {
     background: #1e1e1e;

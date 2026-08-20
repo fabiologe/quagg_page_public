@@ -94,6 +94,22 @@
     /* Lesbares Grün bzw. Bernstein für TEXT — siehe Dunkel-Block. */
     --isy-pixel-green-text:    #0d6b35;
     --isy-pixel-info-accent:   #8a5a00;
+
+    /* Weiche Statusflächen — Hell.
+       Getönte Fläche + dunkler Text derselben Familie, für Meldungskästen,
+       Badges und Tabellenzeilen. Siehe Block „Statusflächen" weiter unten. */
+    --isy-pixel-danger-soft:         #fee2e2;
+    --isy-pixel-danger-soft-text:    #991b1b;
+    --isy-pixel-danger-soft-border:  #fca5a5;
+    --isy-pixel-warning-soft:        #fef3c7;
+    --isy-pixel-warning-soft-text:   #92590a;
+    --isy-pixel-warning-soft-border: #fed7aa;
+    --isy-pixel-success-soft:        #dcfce7;
+    --isy-pixel-success-soft-text:   #166534;
+    --isy-pixel-success-soft-border: #86efac;
+    --isy-pixel-info-soft:           #eff6ff;
+    --isy-pixel-info-soft-text:      #1e40af;
+    --isy-pixel-info-soft-border:    #bfdbfe;
 }
 
 /* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
@@ -121,7 +137,44 @@
        Zielwert: mindestens 4,5:1 (WCAG AA) in BEIDEN Modi. */
     --isy-pixel-green-text:    #18a34a;
     --isy-pixel-info-accent:   #f9ca24;
+
+    /* Weiche Statusflächen — Dunkel.
+       Umgekehrt aufgebaut als im Hell-Modus: dort helle Tönung + dunkler
+       Text, hier dunkle Tönung + heller Text. Eine feste Farbe kann das
+       nicht leisten — genau daran waren die Meldungskästen bisher blind:
+       sie trugen ihre hellen Tönungen unverändert in den Dunkelmodus.
+       Als rgba auf den Untergrund gelegt, damit sie auf --isy-pixel-bg
+       (Navy) und --isy-pixel-bg-deep gleichermaßen sitzen. */
+    --isy-pixel-danger-soft:         rgba(231, 76, 60, 0.18);
+    --isy-pixel-danger-soft-text:    #fca5a5;
+    --isy-pixel-danger-soft-border:  rgba(231, 76, 60, 0.45);
+    --isy-pixel-warning-soft:        rgba(243, 156, 18, 0.18);
+    --isy-pixel-warning-soft-text:   #fcd34d;
+    --isy-pixel-warning-soft-border: rgba(243, 156, 18, 0.45);
+    --isy-pixel-success-soft:        rgba(46, 204, 113, 0.16);
+    --isy-pixel-success-soft-text:   #86efac;
+    --isy-pixel-success-soft-border: rgba(46, 204, 113, 0.45);
+    --isy-pixel-info-soft:           rgba(52, 152, 219, 0.18);
+    --isy-pixel-info-soft-text:      #93c5fd;
+    --isy-pixel-info-soft-border:    rgba(52, 152, 219, 0.45);
 }
+
+/* ── Statusflächen ────────────────────────────────────────────────────────────
+ * Vier Familien (Gefahr, Warnung, Erfolg, Hinweis) mit je drei Rollen:
+ *   --isy-pixel-<familie>-soft         Fläche
+ *   --isy-pixel-<familie>-soft-text    Text darauf
+ *   --isy-pixel-<familie>-soft-border  Rand
+ *
+ * Warum es die überhaupt braucht: für den Begriff „rot = Fehler" standen im
+ * Modul 21 verschiedene Farbwerte in 52 Zeilen, für „bernstein = Warnung"
+ * 20 Werte in 41 Zeilen. Jede Meldung erfand ihren eigenen Ton, und keiner
+ * davon machte den Hell/Dunkel-Wechsel mit.
+ *
+ * Nicht zu verwechseln mit --isy-pixel-danger/-warning/-info: das sind die
+ * KRÄFTIGEN Töne für Knöpfe und Ränder, modusunabhängig konstant. Die -soft-
+ * Familie ist die zurückhaltende Variante für Flächen, auf denen Text steht,
+ * und die MUSS den Modus wechseln (siehe Kommentar im Dunkel-Block).
+ */
 
 /* ── Scrollbars ───────────────────────────────────────────────────────────────
  * Die Regel selbst steht global in flood-2D/styles/theme-saintv.css (per
@@ -159,6 +212,15 @@
     --scroll-thumb-hover: var(--isy-pixel-green-hover);
     --scroll-track:       var(--isy-pixel-bg-alt);
     --scroll-thumb-glow:  var(--isy-pixel-text-glow);
+
+    /* Spinner-Pfeile der Zahlenfelder (Regel ebenfalls global, s.o.).
+       BEWUSST ein modus-KONSTANTER Grünton, anders als die Scrollbars: die
+       Eingabefelder bekommen im Modul keine Theme-Fläche, sind also in beiden
+       Modi browser-weiß. --isy-pixel-green-text würde im Dunkelmodus auf
+       #18a34a wechseln — hellgrün auf Weiß, und bei 0.65 Deckkraft erst
+       recht nicht mehr zu erkennen. --isy-pixel-green-glow (#128040) steht
+       dagegen in beiden Modi gut auf Weiß. */
+    --spinner-color: var(--isy-pixel-green-glow);
 }
 
 .isybau-main {

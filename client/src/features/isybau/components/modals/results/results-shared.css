@@ -231,7 +231,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .rain-method-badge {
     display: inline-block;
     font-size: 0.68rem;
-    background: #dbeafe;
+    background: var(--isy-pixel-info-soft);
     color: #1d4ed8;
     border-radius: 4px;
     padding: 0.1rem 0.4rem;
@@ -266,7 +266,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     font-size: 0.82rem;
 }
 .area-ok   { background: #f0fdf4; border: 1px solid #bbf7d0; }
-.area-warn { background: #fff7ed; border: 1px solid #fed7aa; }
+.area-warn { background: var(--isy-pixel-warning-soft); border: 1px solid var(--isy-pixel-warning-soft-border); }
 .area-badge-label { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .area-badge-val   { font-weight: 700; color: #15803d; }
 .area-warn .area-badge-val { color: #c2410c; }
@@ -275,13 +275,13 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 /* Knoten→Link-Verweis: Pumpe/Wehr/Drossel/Schieber sind SWMM-Links, das reale
    Ergebnis liegt an der Haltung, nicht am Bauwerksknoten. */
 .link-hint {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    background: var(--isy-pixel-info-soft);
+    border: 1px solid var(--isy-pixel-info-soft-border);
     border-radius: 6px;
     padding: 0.6rem 0.85rem;
     margin-bottom: 1rem;
     font-size: 0.82rem;
-    color: #1e40af;
+    color: var(--isy-pixel-info-soft-text);
 }
 .link-hint-btn {
     background: #1d4ed8;
@@ -308,14 +308,14 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .data-table th, .data-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a); }
 .data-table th { background: #f9fafb; font-weight: 600; color: #4b5563; position: sticky; top: 0; z-index: 1; cursor: pointer; }
 .data-table tr:hover { background: #f8fafc; }
-.row-warning { background: #fff7ed; }
-.row-danger { background: #fef2f2; }
+.row-warning { background: var(--isy-pixel-warning-soft); }
+.row-danger { background: var(--isy-pixel-danger-soft); }
 
 /* Badges */
 .badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-.badge-red { background: #fee2e2; color: #b91c1c; }
+.badge-red { background: var(--isy-pixel-danger-soft); color: var(--isy-pixel-danger-soft-text); }
 .badge-orange { background: #ffedd5; color: #c2410c; }
-.badge-yellow { background: #fef3c7; color: #b45309; }
+.badge-yellow { background: var(--isy-pixel-warning-soft); color: var(--isy-pixel-warning-soft-text); }
 .badge-green { background: #d1fae5; color: #047857; }
 
 /* Toolbar */

@@ -349,14 +349,14 @@ const downloadResults = () => {
 }
 .secondary-btn:hover { background: var(--isy-pixel-text-dim, #4a4a4a); border-color: var(--isy-pixel-border-hover, #65625c); }
 
-.error-msg { color: #b91c1c; margin-top: 0.5rem; font-size: 0.82rem; }
+.error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: 0.5rem; font-size: 0.82rem; }
 .error-link {
     display: block;
     margin-top: 0.3rem;
     background: none;
     border: none;
     padding: 0;
-    color: #b91c1c;
+    color: var(--isy-pixel-danger-soft-text);
     font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
     line-height: 1.6;
@@ -366,7 +366,7 @@ const downloadResults = () => {
 .error-link:hover { color: #7f1616; }
 .warning-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
 .warning-msg {
-    color: #92590a;
+    color: var(--isy-pixel-warning-soft-text);
     background: #fef6e7;
     border-left: 3px solid #e0a020;
     border-radius: 4px;
@@ -379,7 +379,7 @@ const downloadResults = () => {
     background: none;
     border: none;
     padding: 0;
-    color: #92590a;
+    color: var(--isy-pixel-warning-soft-text);
     font-family: var(--isy-pixel-font);
     font-size: 0.42rem;
     line-height: 1.6;
