@@ -89,6 +89,13 @@ client/src/features/ifc-viewer/services/ifc-4.3.json
 # Lokale IFC-Testdaten (Kunden-Modelle, Norm-PDFs) — nie versionieren.
 client/testdata-local/
 client/src/features/flood-2D/test/dgm1_large.xyz
+# isybau: echtes Projektnetz (212 KB) und der zugehoerige Ergebnis-Export
+# (2,3 MB). Kein Test braucht die XML; resultsExport.test.js nutzt die JSON
+# nur als optionale Referenz und ueberspringt sich selbst, wenn sie fehlt.
+# Arbeitsstaende eines echten Falls gehoeren in die Datensicherung, nicht in
+# die Historie (gleiche Begruendung wie bei den flood-3D-Falldaten unten).
+client/src/features/isybau/test/9161_IGBWEST_Hydraulik.xml
+client/src/features/isybau/test/simulation_results_*.json
 client_backup_20251116.tar.gz
 client/public/results.zip
 # Backend — Inhalte ignorieren (nicht das Verzeichnis selbst), damit gezielte

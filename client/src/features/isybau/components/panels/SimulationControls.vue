@@ -23,7 +23,7 @@
     </div>
 
     <!-- Compact Stats -->
-    <div class="control-box stats-compact">
+    <div class="control-box stats-compact" data-tutorial="netz-stats">
          <div class="stats-row">
             <span class="stat-item"><strong>{{ store.nodes.size }}</strong><span class="stat-label">Knoten</span></span>
             <span class="divider">•</span>
@@ -45,7 +45,7 @@
                     <img class="ic" src="/saintv1d/icons/Weather-Umbrella--Streamline-Pixel.svg" />
                     Modellregen
                 </button>
-                <button class="secondary-btn" @click="store.ui.showKostraModal = true">
+                <button class="secondary-btn" data-tutorial="kostra-oeffnen" @click="store.ui.showKostraModal = true">
                     <img class="ic" src="/saintv1d/icons/Map-Navigation-Compass-Direction--Streamline-Pixel.svg" />
                     KOSTRA
                 </button>
@@ -54,11 +54,14 @@
             <!-- Rain Status & Chart -->
             <div class="rain-status">
                 <div v-if="store.rain.activeModelRain" class="rain-info">
-                    <strong>Modellregen:</strong> {{ store.rain.activeModelRain.type }}
-                    ({{ store.rain.activeModelRain.series.length }} Stützstellen)
+                    <span class="rain-label"><strong>Modellregen:</strong> {{ store.rain.activeModelRain.type }}</span>
+                    <button class="rain-clear plain-btn" type="button" title="Regen entfernen"
+                            aria-label="Regen entfernen" @click="store.clearRain()">x</button>
                 </div>
                 <div v-else-if="store.rain.intensity > 0" class="rain-info">
-                    <strong>KOSTRA:</strong> {{ store.rain.intensity }} l/(s·ha)
+                    <span class="rain-label"><strong>KOSTRA:</strong> {{ store.rain.intensity }} l/(s·ha)</span>
+                    <button class="rain-clear plain-btn" type="button" title="Regen entfernen"
+                            aria-label="Regen entfernen" @click="store.clearRain()">x</button>
                 </div>
                 <div v-else class="rain-info rain-info-empty">
                     Kein Regen konfiguriert — Modellregen oder KOSTRA wählen.
@@ -70,18 +73,18 @@
                 <Bar :data="miniChartData" :options="miniChartOptions" />
             </div>
 
-            <button class="secondary-btn full" @click="store.ui.showPreprocessingModal = true">
+            <button class="secondary-btn full" data-tutorial="daten-bearbeiten" @click="store.ui.showPreprocessingModal = true">
                 <img class="ic" src="/saintv1d/icons/Interface-Essential-Setting-Slide--Streamline-Pixel.svg" />
                 Daten bearbeiten
             </button>
 
-            <button class="secondary-btn full" @click="store.ui.showValidationModal = true">
+            <button class="secondary-btn full" data-tutorial="abfluss-validieren" @click="store.ui.showValidationModal = true">
                 <img class="ic" src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" />
                 Abfluss validieren
             </button>
         </div>
 
-        <div class="control-group">
+        <div class="control-group" data-tutorial="sim-dauer">
             <label>Simulationsdauer (h)</label>
             <div class="input-with-action">
                 <input type="number" v-model.number="store.rain.duration" min="1" max="48" step="1">
@@ -141,6 +144,8 @@
 <script setup>
 import { computed } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
+import { buildResultsExport } from '../../utils/resultsExport.js';
+import { Bauwerkstyp, getEffectiveBauwerkstyp } from '../../utils/mappings.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 
@@ -222,9 +227,21 @@ const downloadInput = () => {
 };
 
 const downloadResults = () => {
-    if (store.simulation.results) {
-        downloadFile(`simulation_results_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(store.simulation.results, null, 2));
-    }
+    if (!store.simulation.results) return;
+    // Angereichert exportieren: SWMM-Ergebnisse PLUS die Eingangsdaten, aus denen
+    // sie entstanden sind. Ohne die Quellflächen ist z.B. nicht erkennbar, dass
+    // "FK001.1" und "FK001.1_2" die zwei Hälften EINER Fläche sind (siehe
+    // utils/resultsExport.js).
+    const payload = buildResultsExport({
+        results: store.simulation.results,
+        areas: store.areaArray ?? store.areas,
+        nodes: store.nodes,
+        edges: store.edges,
+        metadata: store.metadata,
+        rain: store.rain,
+        bauwerkLabel: (n) => Bauwerkstyp[getEffectiveBauwerkstyp(n)] ?? null,
+    });
+    downloadFile(`simulation_results_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(payload, null, 2));
 };
 </script>
 
@@ -408,6 +425,55 @@ const downloadResults = () => {
 .rain-info-empty {
     color: #8a8a9e;
     font-style: italic;
+}
+
+/* "x" zum Regen-Entfernen. Traegt `.plain-btn`, damit die globale
+   Pixel-Button-Regel (Bevel + Schlagschatten) hier NICHT greift — der Knopf
+   sitzt inline in einer Textzeile, eine erhabene 3D-Fassung wuerde die Zeile
+   sprengen. Pixel-Optik kommt stattdessen aus der Pixel-Schrift und der
+   quadratischen Grundflaeche. */
+.rain-info {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* Der Text darf schrumpfen, das "x" nicht — sonst wandert es bei langen
+   Regennamen aus der Zeile. Frueher stand hier `float: right`, was genau das
+   nicht garantiert. */
+.rain-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rain-clear {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    background: transparent;
+    border: 2px solid transparent;
+    color: var(--isy-pixel-green-bright, #18a34a);
+    font-family: var(--isy-pixel-font);
+    font-size: 0.5rem;
+    line-height: 1;
+    cursor: pointer;
+    /* Kanten hart lassen — ein weichgezeichnetes x passt nicht zum Rest. */
+    image-rendering: pixelated;
+}
+
+.rain-clear:hover {
+    border-color: var(--isy-pixel-green-bright, #18a34a);
+    color: var(--isy-pixel-green-hover, #27ae60);
+}
+
+.rain-clear:active {
+    /* Eingedrueckt: Kante nach innen versetzt statt Farbwechsel — dieselbe
+       Sprache wie die grossen Pixel-Buttons, nur eine Nummer kleiner. */
+    transform: translate(1px, 1px);
 }
 
 .results-actions {

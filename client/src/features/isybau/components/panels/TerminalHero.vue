@@ -139,14 +139,14 @@ onUnmounted(() => { running = false; });
   color: var(--isy-pixel-green-glow, #128040);
   white-space: pre-wrap;
   word-break: break-all;
-  text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+  text-shadow: var(--isy-pixel-text-glow, none);
   min-height: 1em;
 }
 
 /* Command line: brighter */
 .t-line.cmd {
   color: var(--isy-pixel-green-bright, #18a34a);
-  text-shadow: 0 0 12px rgba(0, 255, 101, 0.9);
+  text-shadow: var(--isy-pixel-text-glow, none);
 }
 
 /* [OK] status: slightly dimmer green */

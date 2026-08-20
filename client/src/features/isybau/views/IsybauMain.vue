@@ -4,7 +4,7 @@
         <!-- Pass Props to SimulationControls if needed, or rely on Store -->
         <SimulationControls />
         
-        <div class="sidebar-nav">
+        <div class="sidebar-nav" data-tutorial="ansicht-nav">
           <h3>Ansicht</h3>
           <button 
             @click="viewMode = '2d'" 
@@ -54,7 +54,6 @@
                 @create-edge="({ from, to }) => store.openElementModal('edge', { metaFromId: from, metaToId: to })"
                 @create-node="handleCreateNode"
                 @split-edge="handleSplitEdge"
-                :focusTarget="store.editor.focusTargetId"
             />
         </div>
 
@@ -83,7 +82,6 @@
                 :hydraulics="new Map(Object.entries(store.simulation.results?.edges || {}))"
                 :nodeResults="new Map(Object.entries(store.simulation.results?.nodes || {}))"
                 :runoffDetails="store.simulation.results?.subcatchments ? Object.values(store.simulation.results.subcatchments) : []"
-                :focusTarget="store.editor.focusTargetId"
                 :origin-anchor="store.metadata.originAnchor"
                 @show-details="handleShowDetails"
             />
@@ -189,9 +187,12 @@ const handleSplitEdge = (payload) => {
     store.editor.mode = 'select';
 };
 
-// „Ergebnisse anzeigen" aus dem Viewer-Popup: Element fokussieren + Modal öffnen
-const handleShowDetails = (element) => {
-    store.flashFocus(element?.id || element);
+// „Ergebnisse anzeigen" aus dem Viewer-Popup: nur das Modal öffnen.
+// Bewusst OHNE Kamerasprung — das Element ist ja bereits angeklickt und damit
+// sichtbar, und das Modal legt sich ohnehin darüber. Vorher wurde hier
+// flashFocus() aufgerufen; die Karte stand nach dem Schließen des Modals
+// unbemerkt woanders.
+const handleShowDetails = () => {
     store.ui.showResultsModal = true;
 };
 

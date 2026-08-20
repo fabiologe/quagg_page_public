@@ -1,18 +1,39 @@
 /* Globale Highlight-Klasse fürs Tutorial — gesetzt von useHighlight.js auf
-   Elemente mit passendem data-tutorial-Anker. Terminal-grüner Puls-Glow. */
+   Elemente mit passendem data-tutorial-Anker.
+   Bewusst NUR outline + box-shadow: beides ist positionsunabhängig und
+   funktioniert daher auf JEDEM Anker. Ein Pseudo-Element-Ring bräuchte
+   `position: relative` und würde z.B. die absolut positionierte
+   .editor-toolbox aus ihrer Verankerung reißen. */
 .sv-tutorial-highlight {
-  outline: 2px solid var(--isy-pixel-green-glow, #128040) !important;
-  outline-offset: 2px;
+  /* Pixel-Ecken-Maske für die Dauer der Hervorhebung abschalten.
+     theme.css legt auf JEDEN Button (und Sidebar.vue zusätzlich auf
+     .file-btn/.folder-btn) ein `clip-path`. Das schneidet alles weg, was
+     ausserhalb der Button-Form gezeichnet wird — also exakt Outline UND
+     box-shadow. Ergebnis war: die <div>-Anker (Karte, Seitenleiste,
+     Statistik …) leuchteten, jeder BUTTON aber nicht.
+     Die 6px-Eckstufen fallen unter dem hellen Ring ohnehin nicht auf. */
+  clip-path: none !important;
+  outline: 3px solid var(--isy-tutorial-glow, #1fdc63) !important;
+  outline-offset: 3px;
   border-radius: 4px;
-  animation: sv-tutorial-pulse 1.4s ease-in-out infinite;
+  /* Wirkt nur auf positionierte Elemente — für statische schadlos. */
+  z-index: 50;
+  animation: sv-tutorial-pulse 1.2s ease-in-out infinite;
 }
 
+/* Zwei Schatten gleichzeitig: ein harter Ring, der nach außen aufgeht (die
+   eigentliche "Schau hier"-Bewegung), und ein weicher Glow, der mitatmet.
+   Deutlich kräftiger als die frühere 2px-Outline mit dezentem Puls. */
 @keyframes sv-tutorial-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(0, 232, 85, 0.55);
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 60%, transparent),
+      0 0 18px 4px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 55%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(0, 232, 85, 0);
+    box-shadow:
+      0 0 0 14px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 0%, transparent),
+      0 0 36px 12px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 85%, transparent);
   }
 }

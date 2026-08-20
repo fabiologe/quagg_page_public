@@ -30,7 +30,7 @@ const props = defineProps({
   isOpen: Boolean,
   initialWidth: { type: String, default: '800px' },
   initialHeight: { type: String, default: '600px' },
-  initialTop: { type: String, default: '100px' },
+  initialTop: { type: String, default: '100px' }, // Pixelwert oder 'center'
   initialLeft: { type: String, default: 'center' } // 'center' or value
 });
 
@@ -62,7 +62,16 @@ watch(() => props.isOpen, (val) => {
         } else {
             x.value = parseInt(props.initialLeft) || 0;
         }
-        y.value = parseInt(props.initialTop) || 50;
+        // 'center' auch fuer die Senkrechte (symmetrisch zu initialLeft):
+        // bei initialHeight="auto" ist die echte Hoehe hier noch unbekannt,
+        // resolveSize liefert dann 600 als Annahme — das genuegt, um den
+        // Dialog aus der unteren rechten Ecke zu holen, wo die Tutorial-Ratte
+        // sitzt.
+        if (props.initialTop === 'center') {
+            y.value = Math.max(0, window.innerHeight / 2 - height.value / 2);
+        } else {
+            y.value = parseInt(props.initialTop) || 50;
+        }
     }
 }, { immediate: true });
 

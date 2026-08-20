@@ -224,6 +224,24 @@
             </g>
           </template>
         </g>
+
+        <!-- Fokus-Ring: neon-grüne Pixel-Umkreisung des hervorgehobenen
+             Elements (Tutorial-SmartZoomer + "Auf Karte zeigen").
+             Ganz zuletzt gezeichnet, damit er über Flächen/Kanten/Knoten
+             liegt; pointer-events aus, damit er Klicks nicht abfängt. -->
+        <circle
+          v-if="focusRing"
+          class="focus-ring"
+          :cx="focusRing.cx"
+          :cy="focusRing.cy"
+          :r="focusRing.r"
+          :stroke-width="focusRing.strokeWidth"
+          :stroke-dasharray="focusRing.dash"
+          fill="none"
+          shape-rendering="crispEdges"
+        />
+
+        <DrawHintOverlay :bounds="bounds" :scale="scale" />
       </g>
     </svg>
 
@@ -313,11 +331,17 @@ import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
 import { useEzgLayer } from '../../composables/useEzgLayer.js';
+import { useElementFocus } from '../../composables/useElementFocus.js';
+import DrawHintOverlay from './DrawHintOverlay.vue';
+import { resolveSpotlightTarget, centerTransform, scaleForRadius } from '../../utils/spotlightTarget.js';
 import { useContourGpuLayer } from './useContourGpuLayer.js';
 import { computeViewportWorldBounds } from '../../utils/geoBounds.js';
 import { closestPointOnSegment, dist } from '../../utils/geometry2d.js';
 
 const ezgLayer = useEzgLayer();
+// Singleton-Fokus (siehe composables/useElementFocus.js) — bewusst direkt
+// konsumiert statt per Prop durchgereicht, analog zu useEzgLayer.
+const elementFocus = useElementFocus();
 // Blockierender Ladezustand: Luftbild ODER Höhenlinien laden noch für den
 // aktuellen Bereich — "preladen" heißt hier bewusst warten, bis BEIDES fertig
 // ist, statt mit einem halb sichtbaren Hintergrund weiterarbeiten zu lassen.
@@ -388,10 +412,6 @@ const props = defineProps({
       type: Boolean,
       default: false
   },
-  focusTarget: {
-      type: String,
-      default: null
-  },
   // "Neu starten": Startort-Anker (lokale Meter im gewählten CRS), an dem
   // die Karte zentriert startet, solange noch kein Knoten existiert.
   originAnchor: {
@@ -411,73 +431,120 @@ const gridSize = ref(1); // 1 = 1x1m, 10 = 10x10m, 0 = Off
 
 const getNode = (id) => props.nodes.get(id);
 
-// Watch focusTarget to auto-zoom
-watch(() => props.focusTarget, (newId) => {
-    if(!newId) return;
-    
-    // Find the element
-    let targetX, targetY;
-    
-    // Try Node
-    const node = props.nodes.get(newId);
-    if (node) {
-        targetX = node.x;
-        targetY = node.y;
-        
-        // Also select it
-        selectElement(node, 'node'); 
-    } else {
-        // Try Edge
-        // Try Area
-        // (Implementation for edge center / area centroid could be added here if needed)
-        // For 'Quick Win', supporting Nodes is the main request from the user (Schächte)
+// ── Element-Fokus (Kamera + Ring) ────────────────────────────────────────────
+// Ersetzt den alten focusTarget-Watcher, der die Kamera falsch berechnete (der
+// scale-Faktor fehlte), nur Knoten kannte und beim Fokussieren den
+// modusabhängigen Klick-Pfad feuerte — im Löschmodus flog der Knoten dadurch
+// raus. Geometrie/Mathematik liegen jetzt getestet in utils/spotlightTarget.js.
+
+// Weltkoordinaten + Radius des hervorgehobenen Elements (für den Ring).
+const focusGeometry = ref(null);
+
+let focusAnim = null; // laufender Tween — Abbruch-Handle
+
+function stopFocusAnimation() {
+    if (focusAnim != null) {
+        cancelAnimationFrame(focusAnim);
+        focusAnim = null;
     }
-    
-    if (Number.isFinite(targetX)) {
-        // Zoom to it
-        // We want (targetX - bounds.minX) to be at center
-        const bx = targetX - bounds.value.minX;
-        const by = bounds.value.maxY - targetY; // Invert Y as per SVG logic
-        
-        // Target Scale
-        const targetScale = 25; // Zoom in level
-        
-        // Calc translate needed
-        // center = (bx + tx) * scale NOT quite. transform is translate(cx+tx...)
-        
-        // Simplified view reset:
-        // desired view center = bx, by
-        // center of viewport = bounds.cx, bounds.cy (approx)
-        
-        // Let's rely on standard pan logic:
-        // We want the point (bx, by) to appear at the center of the SVG viewbox
-        
+}
+
+// Nach jedem Kameraschritt müssen die GPU-Layer (Höhenlinien, EZG-Luftbild)
+// nachgezogen werden — sonst schwimmen sie sichtbar hinter der Karte her.
+function syncCameraDependents() {
+    contourGpu.updateCamera(bounds.value, translateX.value, translateY.value, scale.value);
+}
+
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+function animateCameraTo(targetScale, targetTx, targetTy, duration = 420) {
+    stopFocusAnimation();
+    const fromScale = scale.value;
+    const fromTx = translateX.value;
+    const fromTy = translateY.value;
+    const start = performance.now();
+
+    const step = (now) => {
+        const t = Math.min(1, (now - start) / duration);
+        const k = easeInOutCubic(t);
+        scale.value = fromScale + (targetScale - fromScale) * k;
+        translateX.value = fromTx + (targetTx - fromTx) * k;
+        translateY.value = fromTy + (targetTy - fromTy) * k;
+        syncCameraDependents();
+        focusAnim = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    focusAnim = requestAnimationFrame(step);
+}
+
+// Editor und Ergebnis-Ansicht sind zwei INSTANZEN dieser Komponente; die
+// Editor-Instanz bleibt per v-show gemountet, während die Ergebnis-Ansicht
+// läuft. Ohne diese Prüfung würden beide auf denselben Singleton-Fokus
+// reagieren und die versteckte Karte im Hintergrund mitspringen.
+function isViewerVisible() {
+    return !!container.value && container.value.offsetParent !== null;
+}
+
+watch(() => elementFocus.activeFocus.value, (focus) => {
+    if (!focus) {
+        focusGeometry.value = null;
+        return;
+    }
+    if (!isViewerVisible()) return;
+    // Während eines laufenden Viewer-Picks (ElementInfo/Preprocessing
+    // "Im Viewer wählen") hat die Nutzerauswahl Vorrang.
+    if (['pickNodeRef', 'pickEdgeRef'].includes(props.interactionMode)) return;
+
+    const target = resolveSpotlightTarget(focus, {
+        nodes: props.nodes,
+        edges: props.edges,
+        areas: props.areas,
+    });
+    if (!target) return;
+
+    focusGeometry.value = target;
+
+    // Auswahl DIREKT setzen — bewusst nicht über selectElement(), das den
+    // modusabhängigen Klick-Pfad auslösen würde (siehe Kopf des Blocks).
+    if (focus.select) {
+        const el = focus.type === 'node' ? props.nodes.get(focus.id)
+            : focus.type === 'edge' ? props.edges.get(focus.id)
+            : (props.areas || []).find(a => String(a.id) === focus.id);
+        if (el) selectedElement.value = el;
+    }
+
+    const viewSpan = Math.max(bounds.value.width, bounds.value.height);
+    const targetScale = scaleForRadius(target.radius, viewSpan) ?? scale.value;
+    const { translateX: tx, translateY: ty } = centerTransform(target, bounds.value, targetScale);
+
+    if (focus.animate === false) {
+        stopFocusAnimation();
         scale.value = targetScale;
-        
-        // Current center of viewbox (50, 50 mostly)
-        const cx = bounds.value.centerX; // This is the rotation center too
-        const cy = bounds.value.centerY;
-        
-        // We want (bx, by) to be at (cx, cy) after transform?
-        // SVG viewbox is 0 0 W H. 
-        // We display it in full div.
-        
-        // TranslateX/Y are applied before scale in the transform string?
-        // transformString: translate(cx + tx, cy + ty) scale(s) translate(-cx, -cy)
-        
-        // This effectively scales around (cx, cy) then moves by (tx, ty).
-        // So the point at (cx, cy) in world space stays at (cx, cy) + (tx, ty) * 1 ? No.
-        
-        // Let's just solve for tx, ty such that point P(bx, by) is at center of screen.
-        // Actually, let's just approximate for now or logic it out.
-        // If tx=0, ty=0, the point (cx, cy) is at the center of the viewport.
-        // We want (bx, by) to be at the center.
-        // So we need to shift the world so (bx, by) is at (cx, cy).
-        // delta = (cx - bx), (cy - by)
-        
-        translateX.value = (cx - bx);
-        translateY.value = (cy - by);
+        translateX.value = tx;
+        translateY.value = ty;
+        syncCameraDependents();
+    } else {
+        animateCameraTo(targetScale, tx, ty);
     }
+});
+
+onBeforeUnmount(stopFocusAnimation);
+
+// Ring-Geometrie in lokalen SVG-Koordinaten. Strichstärke und Abstand werden
+// gegen scale normiert (/ scale), damit der Ring bei jedem Zoom gleich dick
+// und gleich weit außen sitzt — sonst wäre er herausgezoomt ein fetter Klecks
+// und hereingezoomt ein unsichtbarer Haarstrich.
+const focusRing = computed(() => {
+    const g = focusGeometry.value;
+    if (!g) return null;
+    const s = scale.value || 1;
+    const gap = 6 / s;                       // Abstand Element -> Ring
+    return {
+        cx: g.x - bounds.value.minX,
+        cy: bounds.value.maxY - g.y,
+        r: g.radius + gap,
+        strokeWidth: 2.5 / s,
+        dash: `${5 / s} ${4 / s}`,           // gestrichelt = Pixel-Optik
+    };
 });
 
 // Scroll/Touch inputs might need more robust handling but this suffices for mouse
@@ -1645,7 +1712,7 @@ svg {
   border: 1px solid var(--isy-pixel-green-glow, #128040);
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
   color: var(--isy-pixel-green-glow, #128040);
-  text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+  text-shadow: var(--isy-pixel-text-glow, none);
   padding: 4px 10px;
   border-radius: 4px;
   font-family: var(--isy-pixel-font);
@@ -1675,6 +1742,21 @@ svg {
 }
 
 /* Box-Select: Aktionsleiste */
+/* Fokus-Ring — neon-grün, pixelig, pulsierend. Gleiche Farbfamilie wie die
+   DOM-Hervorhebung des Tutorials (.sv-tutorial-highlight in tutorial.css),
+   damit "die Ratte meint dieses Element hier" überall gleich aussieht.
+   Als SVG-Element kann er die Theme-Tokens direkt nutzen. */
+.focus-ring {
+  stroke: var(--isy-tutorial-glow, #1fdc63);
+  pointer-events: none;
+  animation: focus-ring-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes focus-ring-pulse {
+  0%, 100% { stroke-opacity: 1; }
+  50%      { stroke-opacity: 0.35; }
+}
+
 .multi-select-bar {
   position: absolute;
   bottom: 20px;

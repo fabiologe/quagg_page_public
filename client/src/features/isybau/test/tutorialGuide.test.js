@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useTutorialGuide } from '../tutorial/useTutorialGuide.js';
 import { TOUR_STEPS, REACTIVE_STEPS, KILL_STEPS, EXIT_CONFIRM_STEP } from '../tutorial/tutorialSteps.js';
+import { EXERCISE_STEPS } from '../tutorial/tutorialExercise.js';
 
 // Minimaler Store-Ersatz für message-Funktionen
 const fakeStore = {
@@ -40,29 +41,7 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
     expect(guide.activeStep.value).toBeNull();
   });
 
-  it('advanceOn: passender Trigger schaltet weiter, fremde Trigger nicht', () => {
-    guide.startTour();
-    guide.next(); // → xml-import (advanceOn: 'xml-imported')
-    expect(guide.activeStep.value.id).toBe('xml-import');
 
-    guide.trigger('simulation-success', fakeStore); // falsches Signal
-    expect(guide.activeStep.value.id).toBe('xml-import');
-
-    guide.trigger('xml-imported', fakeStore);
-    expect(guide.activeStep.value.id).toBe('editor');
-  });
-
-  it('advanceOn als Array: JEDER der gelisteten Trigger schaltet weiter (Netz-Start-Gabelung)', () => {
-    guide.startTour();
-    guide.next(); // → xml-import (advanceOn: ['xml-imported', 'location-set'])
-    expect(guide.activeStep.value.id).toBe('xml-import');
-
-    guide.trigger('simulation-success', fakeStore); // falsches Signal
-    expect(guide.activeStep.value.id).toBe('xml-import');
-
-    guide.trigger('location-set', fakeStore); // "Neu starten"-Pfad statt XML-Import
-    expect(guide.activeStep.value.id).toBe('editor');
-  });
 
   it('während der Tour werden KEINE reaktiven Steps angezeigt', () => {
     guide.startTour();
@@ -182,7 +161,12 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
   });
 
   it('toggleInfo() öffnet die Lernkarte; Step-Wechsel schließt sie', () => {
-    guide.startTour(); // welcome hat info
+    // Die Begrüßung trägt seit dem Entfall der alten Führung keine Lernkarte
+    // mehr — geprüft wird daher an reaktiven Steps, die eine haben.
+    guide.startTour();
+    guide.dismiss(); // Begrüßung weg → reaktiver Modus
+
+    guide.trigger('simulation-error', fakeStore); // hat info: 'fehlerdiagnose'
     expect(guide.infoOpen.value).toBe(false);
 
     guide.toggleInfo();
@@ -190,16 +174,7 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
     guide.toggleInfo();
     expect(guide.infoOpen.value).toBe(false);
 
-    guide.toggleInfo();
-    guide.next(); // Step-Wechsel → Karte zu
-    expect(guide.infoOpen.value).toBe(false);
-
-    guide.toggleInfo();
-    guide.dismiss(); // Tour-Ende → Karte zu
-    expect(guide.infoOpen.value).toBe(false);
-
-    // reaktiver Step mit info: öffnen, nächster Trigger schließt
-    guide.trigger('simulation-error', fakeStore);
+    // Step-Wechsel schließt eine offene Karte automatisch
     guide.toggleInfo();
     expect(guide.infoOpen.value).toBe(true);
     guide.trigger('simulation-running', fakeStore);
@@ -231,5 +206,68 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
         expect(block.text, `text-Block in "${key}"`).toBeTruthy();
       }
     }
+  });
+});
+
+describe('Übungs-Modus: Voraussetzungen (requires)', () => {
+  // Ein Schritt mit unerfüllter Voraussetzung darf nicht angezeigt werden —
+  // sonst lotst die Ratte zu einem Knopf, den es gerade nicht gibt.
+  const exerciseStore = (over = {}) => ({
+    areas: [],
+    nodes: new Map(),
+    edges: new Map(),
+    ui: { demImportPanelOpen: false },
+    terrain: null,
+    ...over,
+  });
+
+  // Bis zum gesuchten Schritt vorspulen (nur [Weiter], keine Zustandsprüfung).
+  const walkTo = (guide, id) => {
+    for (let i = 0; i < EXERCISE_STEPS.length + 1; i++) {
+      if (guide.activeStep.value?.id === id) return;
+      guide.next();
+    }
+    throw new Error(`Schritt "${id}" nicht erreicht`);
+  };
+
+  let guide;
+  beforeEach(() => {
+    guide = useTutorialGuide();
+    guide.resetGuideState();
+  });
+
+  it('überspringt beide DGM-Zusatzschritte, wenn das Angebot ausgeschlagen wird', () => {
+    guide.startExercise(exerciseStore());
+    walkTo(guide, 'ex-tour-dgm');
+    guide.next();
+    expect(guide.activeStep.value.id).toBe('ex-tour-projekte');
+  });
+
+  it('zeigt den Importieren-Schritt, sobald die Rückfrage offen steht', () => {
+    const store = exerciseStore();
+    guide.startExercise(store);
+    walkTo(guide, 'ex-tour-dgm');
+    store.ui.demImportPanelOpen = true; // Nutzer hat "DGM laden" gedrückt
+    guide.next();
+    expect(guide.activeStep.value.id).toBe('ex-tour-dgm-import');
+  });
+
+  it('überspringt die Bestätigung, wenn der Import abgebrochen wurde', () => {
+    const store = exerciseStore();
+    guide.startExercise(store);
+    walkTo(guide, 'ex-tour-dgm');
+    store.ui.demImportPanelOpen = true;
+    guide.next();                                  // -> ex-tour-dgm-import
+    store.ui.demImportPanelOpen = false;           // "Abbrechen", kein Gelände
+    guide.next();
+    expect(guide.activeStep.value.id).toBe('ex-tour-projekte');
+  });
+
+  it('optionale Schritte erhöhen die Aufgabenzahl nicht', () => {
+    guide.startExercise(exerciseStore());
+    walkTo(guide, 'ex-tour-dgm');
+    expect(guide.activeStep.value.taskNumber).toBeNull();
+    const echteAufgaben = EXERCISE_STEPS.filter(s => typeof s.check === 'function' && !s.optional);
+    expect(guide.activeStep.value.taskCount).toBe(echteAufgaben.length);
   });
 });

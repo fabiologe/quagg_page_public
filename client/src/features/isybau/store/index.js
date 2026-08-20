@@ -5,6 +5,8 @@ import { Area } from '../core/domain/Area.js';
 import { validateNetwork } from '../utils/preSolveValidation.js';
 import { detectCRS } from '../utils/KostraService.js';
 import { clipNewArea, snapPoint, hasSelfIntersection } from '../utils/areaClipping.js';
+import { syncBauwerkstypFromType } from '../utils/mappings.js';
+import { useElementFocus } from '../composables/useElementFocus.js';
 
 // Feste Snap-Toleranz in Weltmetern (bewusst NICHT zoomabhängig in Pixeln —
 // siehe areaClipping.js snapPoint()-Doku).
@@ -31,7 +33,6 @@ export const useIsybauStore = defineStore('isybau-module', {
             selectedType: null, // 'node', 'edge', 'area'
             edgeStartNode: null,
             drawingPoints: [], // Temporary points for Area creation
-            focusTargetId: null, // kurzzeitiges Highlight-/Scroll-Ziel in den Viewern
             pickCallback: null // siehe startPickRef()/resolvePickRef() — Ziel-Formular für den Viewer-Picker
         },
         // Phase 2: Rain / Simulation Configuration
@@ -57,6 +58,19 @@ export const useIsybauStore = defineStore('isybau-module', {
             showElementModal: false,
             showEzgCrsModal: false, // EZG-Karte: Koordinatensystem-Bestätigung
             showNewProjectLocationModal: false, // "Neu starten": Standortwahl vor dem ersten Klick
+            // Roher DGM-Text, den ein anderer Teil der App zum Import anbietet
+            // (aktuell: das Tutorial, siehe tutorial/loadTutorialDgm.js).
+            // Sidebar.vue konsumiert und leert ihn wieder — der Terrain-Worker
+            // lebt dort, damit es nur EINEN DGM-Importweg gibt.
+            pendingDemImportText: null,
+            // Steht die Auflösungs-Rückfrage des DGM-Imports gerade offen?
+            // Besitzer ist Sidebar.vue; hier, weil auch das Tutorial darauf
+            // reagieren muss (es lotst zum "Importieren"-Knopf, sobald er da ist).
+            demImportPanelOpen: false,
+            // Liegt im KOSTRA-Fenster schon ein Abrufergebnis vor? Besitzer ist
+            // KostraModal.vue; hier, weil das Tutorial zum "Uebernehmen"-Knopf
+            // lotst, den es ohne Ergebnis gar nicht gibt.
+            kostraResultReady: false,
             preprocessingFocusId: null, // Element, das das Preprocessing beim Öffnen vorselektiert
             preprocessingFocusType: null, // 'node' | 'edge' | 'area' — nötig, da Haltungs- und Schacht-IDs in ISYBAU-Daten kollidieren können
             elementModal: { mode: 'node', data: {} }, // Kontext fürs Erstellen-Modal
@@ -128,6 +142,22 @@ export const useIsybauStore = defineStore('isybau-module', {
         updateKostraData(data) {
             this.rain.method = 'kostra';
             this.rain.kostraData = data;
+        },
+
+        /**
+         * Regen wieder abwählen ("x" neben der Regen-Anzeige).
+         *
+         * Räumt BEIDE Wege ab, nicht nur den gerade angezeigten: die Anzeige
+         * zeigt per v-else nur einen von beiden, ein zurückgebliebener
+         * KOSTRA-Wert würde nach dem Löschen eines Modellregens also
+         * unvermittelt auftauchen. `kostraData` bleibt bewusst liegen — das
+         * sind die abgerufenen Rohdaten des Standorts, kein Bemessungsregen.
+         */
+        clearRain() {
+            this.rain.method = 'model';
+            this.rain.modelRainId = null;
+            this.rain.activeModelRain = null;
+            this.rain.intensity = 0;
         },
 
         setRainIntensity(val) {
@@ -206,6 +236,8 @@ export const useIsybauStore = defineStore('isybau-module', {
             // Fallback: Wenn keine Flächen-Polygone vorhanden sind, aber hydraulische
             // Einzugsgebiete (<Einzugsgebiet>), diese als Flächen ohne Geometrie übernehmen.
             // Nur als Fallback, sonst würde dieselbe Fläche doppelt in den Abfluss eingehen.
+            // (Die Schmutzfracht-/EW-Daten aus <Einzugsgebiet> werden davon unabhängig
+            // weiter unten auf gleichnamige Flächen gemerged — auch bei Polygonen.)
             const rawCatchments = (parsedData.hydraulics && parsedData.hydraulics.catchments) || [];
             if (rawAreas.length === 0 && rawCatchments.length > 0) {
                 rawAreas = rawCatchments.map(c => ({
@@ -410,12 +442,15 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.metadata.originAnchor = { x, y, label };
         },
 
-        /** Element in den Viewern kurz hervorheben/anfahren (z.B. aus Tabellenzeile). */
-        flashFocus(id) {
-            this.editor.focusTargetId = id;
-            // Watcher triggern nur auf Wertwechsel — nach kurzer Zeit zurücksetzen,
-            // damit derselbe Klick erneut funktioniert.
-            setTimeout(() => { this.editor.focusTargetId = null; }, 500);
+        /**
+         * Element in den Viewern kurz hervorheben/anfahren (z.B. aus Tabellenzeile).
+         *
+         * Delegiert an das Fokus-Composable (composables/useElementFocus.js).
+         * `type` ist wichtig: In ISYBAU teilen sich Haltung und Zulaufknoten oft
+         * dieselbe ID — ohne Typ landet der Fokus auf dem falschen Element.
+         */
+        flashFocus(id, type = 'node') {
+            useElementFocus().focusElement({ type, id });
         },
 
         /** Dark/Light umschalten (Sidebar-Button unten links) — persistiert in localStorage. */
@@ -792,6 +827,11 @@ export const useIsybauStore = defineStore('isybau-module', {
                 // (isManhole=false erzwingt canOverflow=false) liegt im Node-Modell.
                 const { isManhole, canOverflow, ...rest } = props;
                 Object.assign(node, rest);
+                // Typ-Dropdowns schreiben nur `type` — `bauwerkstyp` muss
+                // mitgezogen werden, sonst bliebe z.B. eine auf "Wehr"
+                // umgestellte Pumpe in SWMM weiterhin eine Pumpe
+                // (getEffectiveBauwerkstyp bevorzugt `bauwerkstyp`).
+                if ('type' in rest) syncBauwerkstypFromType(node);
                 if ((isManhole !== undefined || canOverflow !== undefined) && node.applyOverflowState) {
                     node.applyOverflowState({
                         isManhole: isManhole !== undefined ? isManhole : node.isManhole,
@@ -904,6 +944,8 @@ export const useIsybauStore = defineStore('isybau-module', {
                     if (node) {
                         // Merge props back
                         Object.assign(node, updatedNode);
+                        // s. updateNode(): type/bauwerkstyp synchron halten
+                        if ('type' in updatedNode) syncBauwerkstypFromType(node);
                         // Überstau-Kopplung re-normalisieren (Bulk-Edit setzt teils nur canOverflow)
                         if (node.applyOverflowState) node.applyOverflowState();
                     }

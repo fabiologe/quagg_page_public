@@ -45,15 +45,15 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.55rem 0.6rem;
-  border-bottom: 1px solid rgba(0, 232, 85, 0.35);
+  border-bottom: 1px solid color-mix(in srgb, var(--isy-pixel-green-glow, #128040) 35%, transparent);
 }
 
 .info-title {
   font-family: var(--isy-pixel-font);
   font-size: 0.48rem;
   line-height: 1.5;
-  color: var(--isy-pixel-green-bright, #18a34a);
-  text-shadow: 0 0 10px rgba(0, 255, 101, 0.8);
+  color: var(--isy-pixel-green-text, #0d6b35);
+  text-shadow: var(--isy-pixel-text-glow, none);
 }
 
 .info-close {
@@ -62,48 +62,55 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   cursor: pointer;
   font-family: var(--isy-pixel-font);
   font-size: 0.42rem;
-  color: var(--isy-pixel-green-active, #00994d);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   padding: 0;
   flex-shrink: 0;
 }
 
 .info-close:hover {
-  color: var(--isy-pixel-green-bright, #18a34a);
+  color: var(--isy-pixel-green-text, #0d6b35);
 }
 
 .info-body {
   overflow-y: auto;
   padding: 0.6rem 0.7rem 0.7rem;
   scrollbar-width: thin;
-  scrollbar-color: var(--isy-pixel-green-active, #00994d) var(--isy-pixel-bg, #040647);
+  scrollbar-color: var(--isy-pixel-green-glow, #128040) var(--isy-pixel-bg, #eeeae1);
 }
 
-/* Längere Absätze in Share Tech Mono — deutlich lesbarer als Press Start 2P. */
+/* Längere Absätze in Share Tech Mono — deutlich lesbarer als Press Start 2P.
+   Farbe MUSS der neutrale Text-Token sein, nicht die Grün-Familie: hier steht
+   der eigentliche Lernstoff, und der wird gelesen, nicht angeschaut. Vorher
+   hing hier ein hartcodiertes #9df5c0 (Blassmint aus der Navy-Ära) — auf dem
+   beigen Hellmodus-Untergrund ein Kontrast von rund 1:1, also unlesbar. */
 .info-p {
   margin: 0 0 0.6rem;
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.72rem;
   line-height: 1.55;
-  color: #9df5c0;
+  color: var(--isy-pixel-text, #030430);
 }
 
 .info-formula {
   margin: 0 0 0.6rem;
   padding: 0.45rem 0.6rem;
-  border: 1px dashed rgba(0, 232, 85, 0.5);
-  background: rgba(0, 232, 85, 0.06);
+  border: 1px dashed color-mix(in srgb, var(--isy-pixel-green-glow, #128040) 50%, transparent);
+  background: color-mix(in srgb, var(--isy-pixel-green-glow, #128040) 8%, transparent);
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.8rem;
-  color: var(--isy-pixel-green-bright, #18a34a);
-  text-shadow: 0 0 8px rgba(0, 255, 101, 0.6);
+  color: var(--isy-pixel-green-text, #0d6b35);
+  text-shadow: var(--isy-pixel-text-glow, none);
   text-align: center;
   white-space: pre-wrap;
 }
 
+/* Quellenangabe ("> DWA-A 118"). Ebenfalls Fliesstext, nur kleiner — und je
+   kleiner die Schrift, desto mehr Kontrast braucht sie. Grün reichte hier
+   nicht (rund 3:1 auf Beige bei 0.62rem). */
 .info-ref {
   margin: 0 0 0.4rem;
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.62rem;
-  color: var(--isy-pixel-green-active, #00994d);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
 }
 </style>

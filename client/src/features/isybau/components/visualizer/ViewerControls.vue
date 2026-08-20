@@ -1,5 +1,5 @@
 <template>
-  <div class="controls" @wheel.stop>
+  <div class="controls" data-tutorial="viewer-controls" @wheel.stop>
     <div class="mode-toggle">
       <button
         @click="$emit('set-mode', 'pan')"

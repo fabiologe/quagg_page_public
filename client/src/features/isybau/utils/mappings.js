@@ -164,6 +164,53 @@ export const getEffectiveBauwerkstyp = (node) => {
     return isNaN(t) ? null : t;
 };
 
+/**
+ * Knoten → UI-Dropdown-Wert ('Standard' | 'Bauwerk' | Integer 1..14).
+ *
+ * Hintergrund: Ein importierter Bauwerksknoten trägt den konkreten Typ in
+ * `bauwerkstyp` (z.B. 6 = Pumpe), während `type` nur das generische
+ * "Bauwerk" enthält (siehe xmlParser.js parseNode). Die Typ-Dropdowns binden
+ * aber an `type`. Ohne diese Auflösung erscheint jedes importierte Bauwerk —
+ * Pumpe, Wehr, Drossel, Becken … — als "Bauwerk (Allgemein)".
+ *
+ * Einzige Quelle für ElementInfo.vue und PreprocessingModal.vue, damit die
+ * beiden Editoren nicht (wie zuvor) je eine eigene Kopie dieser Logik pflegen
+ * und dabei auseinanderlaufen.
+ */
+export const resolveNodeUiType = (node) => {
+    if (!node) return 'Standard';
+    const t = node.type;
+    if (t === 'Schacht' || t === 'Standard') return 'Standard';
+    if (node.bauwerkstyp != null) return node.bauwerkstyp;
+    if (typeof t === 'number') return t;
+    if (t === 'Bauwerk' || t === 'Anschlusspunkt') return 'Bauwerk';
+    return 'Standard';
+};
+
+/**
+ * Gegenstück zum Schreiben: hält `type` und `bauwerkstyp` synchron.
+ *
+ * Ohne das divergieren die beiden Felder still: Die Dropdowns schreiben nur
+ * `type`, `getEffectiveBauwerkstyp()` bevorzugt aber `bauwerkstyp` — ein
+ * importierter Pumpen-Knoten (bauwerkstyp 6), den man im UI auf "Wehr" (7)
+ * umstellt, wäre in SWMM weiterhin eine Pumpe. Wird zentral in den
+ * Store-Schreibpfaden aufgerufen, damit jedes UI davon profitiert.
+ *
+ * @param {object} target Knoten oder Update-Payload (wird in-place ergänzt)
+ */
+export const syncBauwerkstypFromType = (target) => {
+    if (!target || !('type' in target)) return target;
+    const t = target.type;
+    const asInt = typeof t === 'number' ? t : parseInt(t);
+    if (!isNaN(asInt) && Bauwerkstyp[asInt]) {
+        target.bauwerkstyp = asInt;
+    } else if (t === 'Standard' || t === 'Schacht' || t === 'Bauwerk') {
+        // Generischer/normaler Knoten: kein konkreter Bauwerkstyp mehr.
+        target.bauwerkstyp = null;
+    }
+    return target;
+};
+
 // Entwässerungsart (ISYBAU <Entwaesserungsart>, Werte KM/KR/KS) — Farbkennung
 // nach Kanaltyp. Steht laut Schema sowohl an Kanten (Haltungen) als auch an
 // Knoten (Schächte) direkt an der AbwassertechnischeAnlage. Single Source of

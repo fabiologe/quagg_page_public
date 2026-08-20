@@ -360,7 +360,7 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
-import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, lossCoeffHint, Neigungsklasse } from '../../utils/mappings.js';
+import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, resolveNodeUiType, lossCoeffHint, Neigungsklasse } from '../../utils/mappings.js';
 import { depthFromCoverAndZ } from '../../utils/heightCoupling.js';
 import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
 import PumpCurvePreview from '../common/PumpCurvePreview.vue';
@@ -402,7 +402,7 @@ const relatedLinkId = computed(() => {
 const emit = defineEmits(['close', 'save', 'show-details']);
 
 // --- Verschiebbarkeit ---
-// Das Popover hängt per CSS an bottom/right fest. Beim ersten Ziehen wechseln
+// Das Popover hängt per CSS mittig im Viewer. Beim ersten Ziehen wechseln
 // wir auf explizite left/top-Koordinaten (relativ zum .isybau-viewer-Container,
 // dem einzigen positionierten Vorfahren) und lassen die Position danach über
 // Elementwechsel hinweg bestehen (wie ein frei schwebendes Werkzeugfenster).
@@ -413,7 +413,13 @@ let dragStartX = 0, dragStartY = 0, dragBaseLeft = 0, dragBaseTop = 0;
 
 const dragStyle = computed(() => {
     if (!dragPos.value) return {};
-    return { left: `${dragPos.value.left}px`, top: `${dragPos.value.top}px`, right: 'auto', bottom: 'auto' };
+    // transform zuruecksetzen: die Default-Position ist ueber
+    // translate(-50%,-50%) zentriert, beim Ziehen zaehlen aber die echten
+    // left/top-Pixel — sonst saesse das Panel um die halbe Groesse versetzt.
+    return {
+        left: `${dragPos.value.left}px`, top: `${dragPos.value.top}px`,
+        right: 'auto', bottom: 'auto', transform: 'none',
+    };
 });
 
 const startDrag = (e) => {
@@ -498,10 +504,11 @@ function initLocalData(el) {
         if (data.coverZ === undefined) data.coverZ = data.z + (data.depth || 0);
         if (data.isManhole === undefined) data.isManhole = true;
         if (data.canOverflow === undefined) data.canOverflow = data.isManhole !== false;
-        if (!data.type || data.type === 'Schacht') data.type = 'Standard';
-        
-        // Map integer types to 'Standard'/'Bauwerk' string if needed for select fallback
-        // But our select supports ints.
+        // Importierte Bauwerke tragen den konkreten Typ in `bauwerkstyp`, das
+        // Dropdown bindet aber an `type` — ohne diese Auflösung stand dort für
+        // JEDES importierte Bauwerk "Bauwerk (Allgemein)" statt Pumpe/Wehr/…
+        // (gemeinsame Logik mit PreprocessingModal, siehe mappings.js).
+        data.type = resolveNodeUiType(el);
     }
     else if (elementType.value === 'area') {
         // Legacy/ungültige Werte (z.B. alter Prozent-Rohwert) nicht als Klasse vorspiegeln
@@ -650,10 +657,15 @@ watch(() => props.selectedElement, (val) => {
 </script>
 
 <style scoped>
+/* Mittig statt unten rechts: dort sitzt die Tutorial-Ratte (fixed, bottom:5px,
+   right:~1rem) — das Panel erschien exakt hinter ihr. Verschieben bleibt
+   moeglich, dann uebernehmen left/top aus dragStyle (inkl. transform:none,
+   sonst zoege die Zentrier-Verschiebung um die halbe Panelbreite mit). */
 .info-window {
   position: absolute;
-  bottom: 1rem;
-  right: 1rem;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   width: 320px;
   max-height: 70vh;
   background: var(--isy-pixel-bg-deep, #06093a);

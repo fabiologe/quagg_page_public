@@ -7,10 +7,41 @@
         <div v-if="bubbleVisible && activeStep" class="speech-bubble">
           <button class="bubble-close" @click="guide.dismiss()">[x]</button>
           <div class="bubble-text">{{ typedText }}<span class="cursor">_</span></div>
+
+          <!-- Übungs-Modus: Aufgabe + Fortschritt statt reinem Fließtext -->
+          <div v-if="activeStep.kind === 'exercise' && activeStep.task" class="bubble-task">
+            <span class="task-state">{{ exerciseDone ? '[x]' : '[ ]' }}</span>
+            <span class="task-text">{{ activeStep.task }}</span>
+          </div>
+          <div v-if="activeStep.kind === 'exercise' && showHint" class="bubble-hint">
+            {{ activeStep.hint }}
+          </div>
+
+          <!-- Begruessung: bewusst nur zwei Wege — mitmachen oder wegschicken.
+               [Weiter]/[Mehr dazu] sind entfallen, seit die alte mehrstufige
+               Fuehrung durch das interaktive Tutorial ersetzt wurde. -->
           <div v-if="activeStep.isTour" class="bubble-actions">
+            <button class="bubble-btn bubble-btn-start" :disabled="loadingNetwork" @click="beginExercise()">
+              {{ loadingNetwork ? '[Lade Netz...]' : '[Tutorial starten]' }}
+            </button>
+            <button class="bubble-btn bubble-btn-dim" @click="guide.skipTour()">[Tour beenden]</button>
+          </div>
+          <div v-else-if="activeStep.kind === 'exercise'" class="bubble-actions">
+            <span v-if="activeStep.taskNumber" class="exercise-progress">
+              Aufgabe {{ activeStep.taskNumber }}/{{ activeStep.taskCount }}
+            </span>
+            <button
+              v-if="activeStep.action"
+              class="bubble-btn bubble-btn-start"
+              :disabled="actionRunning"
+              @click="runStepAction()"
+            >
+              {{ actionRunning ? '[Laedt...]' : `[${activeStep.action.label}]` }}
+            </button>
             <button class="bubble-btn" @click="guide.next()">[Weiter]</button>
             <button v-if="activeStep.info" class="bubble-btn bubble-btn-info" @click="guide.toggleInfo()">[Mehr dazu]</button>
-            <button class="bubble-btn bubble-btn-dim" @click="guide.skipTour()">[Tour beenden]</button>
+            <button v-if="activeStep.hint" class="bubble-btn bubble-btn-info" @click="showHint = !showHint">[Tipp]</button>
+            <button class="bubble-btn bubble-btn-dim" @click="guide.finishExercise()">[Beenden]</button>
           </div>
           <div v-else-if="activeStep.kind === 'confirm'" class="bubble-actions">
             <button class="bubble-btn" @click="guide.confirmYes()">[Ja]</button>
@@ -44,6 +75,11 @@ import { useTutorialGuide } from './useTutorialGuide.js';
 import TutorialInfoCard from './TutorialInfoCard.vue';
 import { useTutorialTriggers } from './useTutorialTriggers.js';
 import { useHighlight } from './useHighlight.js';
+import { useIsybauStore } from '../store/index.js';
+import { loadTutorialNetwork } from './loadTutorialNetwork.js';
+import { resolveStepFocus, resolveStepDraw } from './tutorialExercise.js';
+import { useElementFocus } from '../composables/useElementFocus.js';
+import { useDrawingHint } from '../composables/useDrawingHint.js';
 
 const CHAR_DELAY_MS = 32;
 const BUBBLE_DELAY_MS = 450; // let the mascot rise in before the bubble types
@@ -51,12 +87,131 @@ const STARTUP_DELAY_MS = 5000; // Ratte taucht 5s nach Seitenladen auf
 const GIF_DELAY_MS = 1000; // kurze Schrecksekunde, bevor Schuss-GIF + Knall kommen
 
 const guide = useTutorialGuide();
-const { activeStep, infoOpen } = guide;
+const { activeStep, infoOpen, exerciseActive, exerciseDone } = guide;
 
 // Store-Beobachtung (reaktive Trigger) und Element-Highlighting leben in
 // eigenen Modulen — hier nur einmal angeschlossen.
 useTutorialTriggers();
 useHighlight();
+
+// ── Interaktive Übung ───────────────────────────────────────────────────────
+const store = useIsybauStore();
+const loadingNetwork = ref(false);
+const showHint = ref(false);
+
+/**
+ * „Tutorial starten": Übungsnetz laden und die Werkstatt eröffnen.
+ * Erst laden, dann Übung starten — der Ausgangszustand wird beim Start
+ * eingefroren und muss das bereits geladene Netz enthalten.
+ */
+async function beginExercise() {
+    if (loadingNetwork.value) return;
+    loadingNetwork.value = true;
+    try {
+        const res = await loadTutorialNetwork(store);
+        if (!res.ok) {
+            store.ui.importWarnings = [...(store.ui.importWarnings || []), res.error];
+            return;
+        }
+        guide.startExercise(store);
+    } finally {
+        loadingNetwork.value = false;
+    }
+}
+
+/**
+ * Signale, an denen die Übung ihren Fortschritt erkennt.
+ *
+ * Zwei Gruppen: Änderungen am NETZ und Änderungen an der OBERFLÄCHE.
+ * Für das Netz genügt `undoStack.length` als Sammelmelder — jede mutierende
+ * Store-Aktion ruft saveHistory(). Ohne den würde z.B. ein geänderter
+ * Abflussbeiwert gar nicht auffallen, weil `areas.length` dabei gleich bleibt.
+ * Die UI-Flags dagegen laufen NICHT über die History und müssen einzeln hier
+ * stehen — fehlt eine, bleibt der zugehörige Schritt stumm hängen.
+ *
+ * `terrain` bewusst nur als Boolean: das Raster ist gross, und interessant
+ * ist allein "liegt eins vor".
+ */
+const fortschrittsSignale = () => [
+    // Netz
+    store.areas.length, store.nodes.size, store.edges.size,
+    store.history.undoStack.length,
+    !!store.terrain,
+    // Oberfläche: Dialoge, die einen Schritt weiterschalten
+    store.ui.demImportPanelOpen,
+    store.ui.showElementModal,
+    store.ui.showPreprocessingModal,
+    store.ui.showKostraModal,
+    store.ui.kostraResultReady,
+    // Regen und Berechnung
+    store.rain.method, store.rain.intensity,
+    store.simulation.status,
+    store.simulation.error,
+    store.simulation.preSolveWarnings.length,
+];
+
+watch(
+    () => (exerciseActive.value ? fortschrittsSignale() : null),
+    () => { if (exerciseActive.value) guide.evaluateExercise(store); },
+    { deep: true }
+);
+
+// Tipp gehört zum Schritt — bei jedem Wechsel wieder einklappen.
+watch(activeStep, () => { showHint.value = false; actionRunning.value = false; });
+
+// ── Angebot der Ratte ausführen (z.B. "DGM laden") ──────────────────────────
+const actionRunning = ref(false);
+
+async function runStepAction() {
+    const action = activeStep.value?.action;
+    if (!action || actionRunning.value) return;
+    actionRunning.value = true;
+    try {
+        const res = await action.run(store);
+        // Fehler sichtbar melden statt still scheitern zu lassen — sonst
+        // klickt der Nutzer und nichts passiert.
+        if (res && res.ok === false) {
+            store.ui.importWarnings = [...(store.ui.importWarnings || []), res.error];
+        }
+    } catch (e) {
+        store.ui.importWarnings = [...(store.ui.importWarnings || []), `Aktion fehlgeschlagen: ${e?.message || e}`];
+    } finally {
+        actionRunning.value = false;
+    }
+}
+
+// ── SmartZoomer: Viewer auf das besprochene Element ziehen ───────────────────
+// 'sticky', damit die Markierung stehen bleibt, solange die Ratte darüber
+// spricht. select:false, weil das ElementInfo-Panel sonst die Sprechblase
+// verdeckt — der Ring allein zeigt schon, worum es geht.
+const { focusElement, clearFocus } = useElementFocus();
+const { showDrawingHint, clearDrawingHint } = useDrawingHint();
+
+watch(activeStep, (step) => {
+    if (!step || step.kind !== 'exercise') {
+        clearFocus();
+        clearDrawingHint();
+        return;
+    }
+
+    // Zeichen-Vorschau: Umriss vormalen UND die Kamera dorthin fahren. Ohne
+    // die Fahrt nuetzte der schoenste Umriss nichts — das Uebungsgebiet ist
+    // rund 40 m gross in einem Netz von 350 x 550 m, herausgezoomt also ein
+    // Fleck von wenigen Pixeln.
+    const umriss = resolveStepDraw(step, store);
+    if (umriss) {
+        showDrawingHint(umriss);
+        focusElement({ type: 'points', points: umriss }, { mode: 'sticky', select: false });
+        return;
+    }
+    clearDrawingHint();
+
+    const target = resolveStepFocus(step, store);
+    if (target) focusElement(target, { mode: 'sticky', select: false });
+    else clearFocus();
+});
+
+onUnmounted(() => { clearFocus(); clearDrawingHint(); });
 
 const lottieEl = ref(null);
 const bubbleVisible = ref(false);
@@ -371,7 +526,7 @@ onUnmounted(() => {
   font-size: 0.5rem;
   line-height: 1.7;
   color: var(--isy-pixel-green-glow, #128040);
-  text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+  text-shadow: var(--isy-pixel-text-glow, none);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -408,7 +563,42 @@ onUnmounted(() => {
   display: flex;
   gap: 0.6rem;
   margin-top: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
+
+/* ── Übungs-Modus ────────────────────────────────────────────────────────── */
+.bubble-task {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--isy-pixel-border, #4a4844);
+  font-family: var(--isy-pixel-font);
+  font-size: 0.44rem;
+  line-height: 1.6;
+}
+.task-state { color: var(--isy-pixel-green-bright, #18a34a); }
+.task-text { color: var(--isy-pixel-text-dim, #4a4a4a); }
+
+.bubble-hint {
+  margin-top: 0.4rem;
+  font-family: var(--isy-pixel-font);
+  font-size: 0.4rem;
+  line-height: 1.7;
+  color: var(--isy-pixel-border-hover, #65625c);
+}
+
+.exercise-progress {
+  font-family: var(--isy-pixel-font);
+  font-size: 0.4rem;
+  color: var(--isy-pixel-border-hover, #65625c);
+  margin-right: 0.15rem;
+}
+
+.bubble-btn-start { color: var(--isy-pixel-green-text, #0d6b35); }
+.bubble-btn:disabled { opacity: 0.5; cursor: default; }
 
 .bubble-btn {
   background: none;
@@ -417,22 +607,28 @@ onUnmounted(() => {
   padding: 0;
   font-family: var(--isy-pixel-font);
   font-size: 0.44rem;
-  color: var(--isy-pixel-green-bright, #18a34a);
-  text-shadow: 0 0 8px rgba(0, 255, 101, 0.7);
+  color: var(--isy-pixel-green-text, #0d6b35);
+  text-shadow: var(--isy-pixel-text-glow, none);
 }
 
 .bubble-btn:hover {
   color: var(--isy-pixel-text, #fff);
 }
 
+/* Untergeordnete Aktion ("[Beenden]") — zurueckhaltend, aber lesbar.
+   Vorher --isy-pixel-green-active (#00994d): auf Beige nur rund 3:1. */
 .bubble-btn-dim {
-  color: var(--isy-pixel-green-active, #00994d);
+  color: var(--isy-pixel-text-dim, #4a4a4a);
   text-shadow: none;
 }
 
+/* "[Mehr dazu]" / "[Tipp]" — Bernstein als Lern-Akzent, aber ueber den Token,
+   der im Hellmodus auf ein dunkles Bernstein wechselt. Das hartcodierte
+   #f9ca24 stand auf beigem Grund bei rund 1,3:1 und war schlicht nicht zu
+   lesen (vom Nutzer gemeldet); der Schimmer drumherum verwischte den Rest. */
 .bubble-btn-info {
-  color: #f9ca24;
-  text-shadow: 0 0 8px rgba(249, 202, 36, 0.6);
+  color: var(--isy-pixel-info-accent, #8a5a00);
+  text-shadow: var(--isy-pixel-text-glow, none);
 }
 
 .bubble-btn-info:hover {

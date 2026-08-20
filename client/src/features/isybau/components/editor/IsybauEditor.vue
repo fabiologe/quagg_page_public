@@ -1,5 +1,5 @@
 <template>
-  <div class="isybau-map-container">
+  <div class="isybau-map-container" data-tutorial="viewer-map">
     <EditorToolbox />
     
     <IsybauViewer 
@@ -18,7 +18,6 @@
         :show-grid="true"
         :interactionMode="store.editor.mode"
         :enablePopover="['view', 'select', 'editProperties', 'pickNodeRef', 'pickEdgeRef'].includes(store.editor.mode)"
-        :focusTarget="focusTarget"
         :origin-anchor="store.metadata.originAnchor"
         @select-node="handleNodeSelect"
         @select-edge="handleEdgeSelect"
@@ -57,7 +56,6 @@ import { computed, onMounted, onUnmounted } from 'vue';
 const store = useIsybauStore();
 
 const props = defineProps({
-    focusTarget: String
 });
 
 const isDrawMode = computed(() => ['addNode', 'addEdge', 'addArea', 'splitEdge'].includes(store.editor.mode));
@@ -281,7 +279,7 @@ const handleMapDblClick = () => {
     border: 1px solid var(--isy-pixel-green-glow, #128040);
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
     color: var(--isy-pixel-green-glow, #128040);
-    text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+    text-shadow: var(--isy-pixel-text-glow, none);
     padding: 0.5rem 1rem;
     border-radius: 4px;
     font-family: var(--isy-pixel-font);

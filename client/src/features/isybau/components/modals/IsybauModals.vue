@@ -23,7 +23,7 @@
     :hydraulics="{ catchments: [], areas: store.areaArray }"
     @close="store.ui.showPreprocessingModal = false"
     @apply="store.applyPreprocessing"
-    @select-element="({ id }) => store.flashFocus(id)"
+    @select-element="handleLocateFromPreprocessing"
   />
 
   <RunoffValidationModal
@@ -98,6 +98,7 @@
 import { ref, computed } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { computeRunoffValidation } from '../../utils/runoffValidation.js';
+import { useElementFocus } from '../../composables/useElementFocus.js';
 
 import KostraModal from './KostraModal.vue';
 import ModelRainModal from './ModelRainModal.vue';
@@ -113,6 +114,19 @@ import NewProjectLocationModal from './NewProjectLocationModal.vue';
 import { useEzgLayer } from '../../composables/useEzgLayer.js';
 
 const store = useIsybauStore();
+const { focusElement } = useElementFocus();
+
+/**
+ * „Auf Karte zeigen" aus der Preprocessing-Tabelle.
+ *
+ * Schließt das Modal — sonst verdeckt es genau die Karte, auf die gerade
+ * gesprungen wird (so war es bisher, weshalb der Button wirkungslos schien).
+ * Der Weg zurück in die Tabelle bleibt über „Bearbeiten (Tabelle)" bestehen.
+ */
+function handleLocateFromPreprocessing({ id, type }) {
+    store.ui.showPreprocessingModal = false;
+    focusElement({ type, id });
+}
 
 const emit = defineEmits(['project-loaded']);
 

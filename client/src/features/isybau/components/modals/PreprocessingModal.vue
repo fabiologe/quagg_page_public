@@ -12,7 +12,7 @@
         </div>
 
         <div class="modal-body">
-          <div class="tabs">
+          <div class="tabs" data-tutorial="preprocessing-tabs">
             <button 
               v-for="tab in tabs" 
               :key="tab.id"
@@ -94,7 +94,7 @@
 
                     <!-- Nodes/Structures Bulk Edit -->
                     <template v-if="activeTab === 'nodes' || activeTab === 'structures'">
-                         <div class="bulk-field">
+                         <div class="bulk-field" data-tutorial="preprocessing-typ">
                             <label>Typ ändern:</label>
                             <select v-model="bulkForm.nodeType" class="bulk-select">
                                 <option value="">- Unverändert -</option>
@@ -170,7 +170,7 @@
                   <!-- Filter Row -->
                   <tr class="filter-row">
                       <th class="col-checkbox sticky-left-1"></th>
-                      <th class="col-id sticky-left-2"><input v-model="filters.id" placeholder="Suche..." class="filter-input"></th>
+                      <th class="col-id sticky-left-2" data-tutorial="preprocessing-suche"><input v-model="filters.id" placeholder="Suche..." class="filter-input"></th>
                       <th></th>
                       <th></th>
                       <th></th>
@@ -193,7 +193,7 @@
                     <td class="col-id sticky-left-2">
                         <div class="id-cell">
                             {{ node.id }}
-                            <button class="locate-btn" @click.stop="locate(node.id)" title="Auf Karte zeigen">
+                            <button class="locate-btn" @click.stop="locate(node.id, 'node')" title="Auf Karte zeigen">
                                 <img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" />
                             </button>
                         </div>
@@ -253,7 +253,7 @@
                     <td class="col-id sticky-left-2">
                         <div class="id-cell">
                             {{ node.id }}
-                            <button class="locate-btn" @click.stop="locate(node.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
+                            <button class="locate-btn" @click.stop="locate(node.id, 'node')" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                         </div>
                     </td>
                     <td>
@@ -565,7 +565,7 @@
                     <td class="col-id sticky-left-2">
                         <div class="id-cell">
                             {{ edge.id }}
-                            <button class="locate-btn" @click.stop="locate(edge.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
+                            <button class="locate-btn" @click.stop="locate(edge.id, 'edge')" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                         </div>
                     </td>
                     <td class="small-text">{{ edge.fromNodeId }} -> {{ edge.toNodeId }}</td>
@@ -626,7 +626,7 @@
                         <td class="col-id sticky-left-2">
                             <div class="id-cell">
                                 {{ area.id }}
-                                <button class="locate-btn" @click.stop="locate(area.id)" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
+                                <button class="locate-btn" @click.stop="locate(area.id, 'area')" title="Auf Karte zeigen"><img src="/saintv1d/icons/Interface-Essential-Map--Streamline-Pixel.svg" alt="Karte" class="locate-icon" /></button>
                             </div>
                         </td>
                         <td>{{ area.size.toFixed(4) }}</td>
@@ -696,7 +696,7 @@
           <button class="export-btn" @click="exportXlsx" title="Alle Tabs als Excel-Datei exportieren">
             ⬇ XLSX Export
           </button>
-          <button class="primary-btn" @click="apply">Übernehmen</button>
+          <button class="primary-btn" data-tutorial="preprocessing-uebernehmen" @click="apply">Übernehmen</button>
         </div>
   </DraggableModal>
 </template>
@@ -707,7 +707,7 @@ import { ref, watch, computed, nextTick } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import CurveTableEditor from '../common/CurveTableEditor.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
-import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
+import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, resolveNodeUiType, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
 import { checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints } from '../../utils/preSolveValidation.js';
 import { depthFromCoverAndZ, coverZFromZAndDepth } from '../../utils/heightCoupling.js';
 import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
@@ -841,8 +841,12 @@ const toggleSelectAll = (e, list) => {
     }
 };
 
-const locate = (id) => {
-    emit('select-element', { id: id, type: 'any' }); // 'any' for viewer to figure out, or specific
+// Typ MUSS mitgegeben werden: In ISYBAU teilen sich Haltung und Zulaufknoten
+// oft dieselbe ID (siehe focusElement() unten) — ohne Typ landet der Fokus auf
+// dem falschen Element. Früher ging hier 'any' raus und der Empfänger warf den
+// Wert ohnehin weg, weshalb "Auf Karte zeigen" für Haltungen/Flächen nie ging.
+const locate = (id, type) => {
+    emit('select-element', { id, type });
 };
 
 // Wehr-Kronenform-Presets: siehe utils/mappings.js (WeirCrestPresets) — gemeinsam
@@ -1107,19 +1111,9 @@ watch(() => props.isOpen, (newVal) => {
     
     // Init Nodes
     nodes.value = Array.from(props.network.nodes.values()).map(n => {
-      // Effektiven Typ auflösen: 'Schacht'→'Standard', Bauwerk mit bauwerkstyp→Integer, sonst 'Standard'
-      let type;
-      if (n.type === 'Schacht' || n.type === 'Standard') {
-        type = 'Standard';
-      } else if (n.bauwerkstyp != null) {
-        type = n.bauwerkstyp; // Integer aus XML → Dropdown-Wert
-      } else if (typeof n.type === 'number') {
-        type = n.type;
-      } else if (n.type === 'Bauwerk' || n.type === 'Anschlusspunkt') {
-        type = 'Bauwerk';
-      } else {
-        type = 'Standard';
-      }
+      // Effektiven Typ auflösen: 'Schacht'→'Standard', Bauwerk mit bauwerkstyp→Integer,
+      // sonst 'Standard'. Gemeinsame Logik mit ElementInfo.vue (mappings.js).
+      const type = resolveNodeUiType(n);
 
       const bd = n.bauwerkData ?? {};
       return {

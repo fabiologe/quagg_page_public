@@ -8,70 +8,27 @@
 //   message   String ODER Funktion (store) => String für dynamische Texte
 //   highlight optional: data-tutorial-Anker (String ODER Array mehrerer
 //             Anker), der/die hervorgehoben werden
-//   advanceOn optional (nur Tour): Trigger-Name ODER Array mehrerer
-//             gleichwertiger Trigger-Namen, die den Step automatisch
-//             weiterschalten ([Weiter] bleibt als Alternative sichtbar)
 //   once      optional (nur reaktiv): Step feuert nur einmal pro Sitzung
 //   info      optional: Key aus tutorialInfo.js — zeigt [Mehr dazu]-Button
 //             mit Lernkarte fuer Studenten
 
 // ── Geführte Tour (erster Besuch, der Reihe nach) ────────────────────────────
+// ── Einstiegspunkt ──────────────────────────────────────────────────────────
+// Frueher lag hier eine siebenschrittige Fuehrung durch die Oberflaeche
+// (Import -> Editor -> Regen -> Berechnung -> Ergebnisse). Die ist entfallen:
+// Das interaktive Tutorial (tutorialExercise.js) erklaert dieselben Dinge
+// gruendlicher UND laesst den Nutzer dabei selbst arbeiten. Zwei Fuehrungen
+// nebeneinander waeren nur doppelt gepflegter Text gewesen.
+//
+// Uebrig bleibt bewusst nur die Begruessung mit zwei Moeglichkeiten:
+// Tutorial starten oder die Ratte wegschicken.
 export const TOUR_STEPS = [
   {
     id: 'welcome',
     mood: 'happy',
-    info: 'swmm-ueberblick',
     message:
-      'Guten Tag Kanaltaucher! Ich bin deine Kanalratte und zeig dir, wie du hier ein Kanalnetz durchrechnest.',
-  },
-  {
-    id: 'xml-import',
-    mood: 'asking',
-    info: 'isybau-xml',
-    highlight: ['xml-import', 'neu-starten'],
-    advanceOn: ['xml-imported', 'location-set'],
-    message:
-      'Hast du schon ein Netz, das du durchrechnen willst? Dann lad es links als ISYBAU-XML hoch. Fangen wir lieber neu an, klick auf "Neu starten" — dann waehlen wir zusammen einen Standort, und Luftbild samt Hoehenlinien legen sich gleich passend unter dein neues Netz.',
-  },
-  {
-    id: 'editor',
-    mood: 'happy',
-    info: 'netzmodell',
-    highlight: 'editor-toolbox',
-    message:
-      'Mit der Werkzeugleiste oben bearbeitest du das Netz: Schaechte setzen, Haltungen ziehen, Flaechen zeichnen, teilen und loeschen.',
-  },
-  {
-    id: 'rain',
-    mood: 'rain',
-    info: 'bemessungsregen',
-    highlight: 'rain-config',
-    advanceOn: 'rain-configured',
-    message:
-      'Jetzt der Regen: Waehl links einen Modellregen oder hol dir echte KOSTRA-Daten fuer deine Koordinaten.',
-  },
-  {
-    id: 'simulation',
-    mood: 'asking',
-    info: 'dynamic-wave',
-    highlight: 'run-simulation',
-    advanceOn: 'simulation-success',
-    message:
-      'Alles bereit — starte die Berechnung! Der SWMM-Solver rechnet direkt hier im Browser.',
-  },
-  {
-    id: 'results',
-    mood: 'happy',
-    info: 'ergebnisse-lesen',
-    highlight: 'view-results',
-    message:
-      'Geschafft! Die Ergebnisse findest du oben: als Karte, in 3D oder als Bericht mit allen Tabellen.',
-  },
-  {
-    id: 'farewell',
-    mood: 'happy',
-    message:
-      'Das wars von mir. Ich bleib in der Naehe und meld mich, wenn was passiert. Viel Erfolg, Kanaltaucher!',
+      'Guten Tag Kanaltaucher! Ich bin deine Kanalratte. Wenn du magst, zeig ich dir, '
+      + 'wie man hier ein Kanalnetz durchrechnet — ein Uebungsnetz bring ich mit.',
   },
 ];
 

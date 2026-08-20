@@ -41,7 +41,7 @@
               <span class="label">Ausgewählt:</span>
               <span class="value">{{ selectedValue }} l/(s·ha)</span>
             </div>
-            <button class="apply-btn" @click="applyResult">Übernehmen</button>
+            <button class="apply-btn" data-tutorial="kostra-uebernehmen" @click="applyResult">Übernehmen</button>
           </div>
 
           <details class="data-details">
@@ -90,7 +90,7 @@
 
       <div class="modal-footer">
         <button class="secondary-btn" @click="close">Abbrechen</button>
-        <button class="primary-btn" @click="fetchData" :disabled="!selectedCRS || isFetching">
+        <button class="primary-btn" data-tutorial="kostra-abrufen" @click="fetchData" :disabled="!selectedCRS || isFetching">
           {{ isFetching ? 'Lade...' : 'Daten abrufen' }}
         </button>
       </div>
@@ -102,7 +102,12 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
+
 import { CRS_OPTIONS, transformToWGS84, fetchKostraData } from '../../utils/KostraService.js';
+// EIN Store-Zugriff auf Setup-Ebene statt zwei in Funktionsrümpfen: fetchData
+// setzt die Tutorial-Flagge (kostraResultReady) oberhalb der Stelle, an der
+// die innere Deklaration stand — das hätte eine temporale Todeszone erzeugt.
+const store = useIsybauStore();
 
 const props = defineProps({
   isOpen: Boolean,
@@ -147,6 +152,9 @@ const fetchData = async () => {
   isFetching.value = true;
   error.value = null;
   result.value = null;
+  // Fuer das Tutorial sichtbar machen, ob schon Daten da sind — es lotst
+  // danach zum "Uebernehmen"-Knopf, den es ohne Ergebnis gar nicht gibt.
+  store.ui.kostraResultReady = false;
 
   try {
     const wgs84 = transformToWGS84(manualCoords.value.x, manualCoords.value.y, selectedCRS.value);
@@ -154,12 +162,11 @@ const fetchData = async () => {
     if (wgs84) {
       const data = await fetchKostraData(wgs84[1], wgs84[0]);
       if (data) {
+        store.ui.kostraResultReady = true;
         result.value = {
           ...data,
           location: { lat: wgs84[1], lon: wgs84[0] }
         };
-        // Explicitly update store
-        const store = useIsybauStore();
         if (data.raw) {
             store.updateKostraData(data.raw);
         }
@@ -230,7 +237,6 @@ const applyResult = () => {
     const key = selectedCoords.value.key;
     
     // Update Store directly to trigger watchers
-    const store = useIsybauStore();
     // Directly update state to avoid HMR issues with missing actions
     store.rain.intensity = parseFloat(selectedValue.value);
     store.rain.method = 'kostra';

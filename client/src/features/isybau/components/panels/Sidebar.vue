@@ -1,5 +1,5 @@
 <template>
-  <div class="sidebar" :style="{ width: width + 'px' }">
+  <div class="sidebar" data-tutorial="sidebar" :style="{ width: width + 'px' }">
 
     <!-- Header -->
     <div class="sidebar-header">
@@ -42,6 +42,7 @@
       <label
         for="dem-upload"
         class="file-btn"
+        data-tutorial="dgm-import"
         :class="{ disabled: store.ui.showNewProjectLocationModal }"
         :title="store.ui.showNewProjectLocationModal ? 'Erst Standort bestätigen oder Neu starten abbrechen' : 'XYZ/TXT-Punktwolke oder ESRI-ASCII-Grid (.asc)'"
       >
@@ -61,7 +62,7 @@
       />
 
       <!-- DGM-Auflösung wählen (nur bei irregulärer Punktwolke) -->
-      <div v-if="showDemImportPanel && demAnalysis" class="dem-import-panel">
+      <div v-if="store.ui.demImportPanelOpen && demAnalysis" class="dem-import-panel">
         <div class="dem-import-title">DGM-Auflösung</div>
         <div class="dem-import-badge">
           {{ demAnalysis.isRegular ? 'Reguläres Gitter' : 'Irreguläre Punktwolke' }}
@@ -78,12 +79,12 @@
         </div>
         <div class="dem-import-actions">
           <button class="folder-btn" @click="cancelDemImport">Abbrechen</button>
-          <button class="folder-btn dem-go" @click="startDemBuild">Importieren</button>
+          <button class="folder-btn dem-go" data-tutorial="dgm-importieren" @click="startDemBuild">Importieren</button>
         </div>
       </div>
 
       <!-- Projekte -->
-      <button class="folder-btn" @click="$emit('open-project-manager')">
+      <button class="folder-btn" data-tutorial="projekte" @click="$emit('open-project-manager')">
         <img class="px-icon" src="/saintv1d/icons/Content-Files-Folder-Open--Streamline-Pixel.svg" />
         <span>Projekte</span>
       </button>
@@ -98,7 +99,7 @@
       </p>
 
       <!-- XML Export (nur mit geladenem Netz) -->
-      <button v-if="hasData" class="folder-btn" @click="handleXmlExport">
+      <button v-if="hasData" class="folder-btn" data-tutorial="xml-export" @click="handleXmlExport">
         <img class="px-icon" src="/saintv1d/icons/Interface-Essential-Clound-Download--Streamline-Pixel.svg" />
         <span>XML exportieren</span>
       </button>
@@ -119,6 +120,7 @@
     <button
       class="theme-toggle"
       type="button"
+      data-tutorial="theme-toggle"
       :title="store.ui.darkMode ? 'Zu Light Mode wechseln' : 'Zu Dark Mode wechseln'"
       @click="store.toggleDarkMode()"
     >
@@ -129,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { parseIsybauXML } from '../../utils/xmlParser.js';
 import { buildIsybauXML } from '../../utils/xmlExporter.js';
@@ -207,7 +209,8 @@ const handleXmlExport = () => {
 const demImporting = ref(false);
 const demLoadingLabel = ref('');
 const demProgress = ref(null);
-const showDemImportPanel = ref(false);
+// Sichtbarkeit der Auflösungs-Rückfrage liegt im Store (store.ui.demImportPanelOpen),
+// nicht lokal: das Tutorial muss mitbekommen, wann der "Importieren"-Knopf da ist.
 const demAnalysis = ref(null);
 const demCellsize = ref(1);
 let demWorker = null;
@@ -229,7 +232,7 @@ function ensureDemWorker() {
         startDemBuild(); // ESRI-Grid oder reguläre Punktwolke — keine Rückfrage nötig
       } else {
         demImporting.value = false;
-        showDemImportPanel.value = true;
+        store.ui.demImportPanelOpen = true;
       }
     } else if (data.type === 'built') {
       store.importTerrain(data.terrain);
@@ -237,14 +240,14 @@ function ensureDemWorker() {
       teardownDemWorker();
     } else if (data.type === 'error') {
       demImporting.value = false;
-      showDemImportPanel.value = false;
+      store.ui.demImportPanelOpen = false;
       teardownDemWorker();
       alert('DGM-Import fehlgeschlagen: ' + data.message);
     }
   };
   demWorker.onerror = (e) => {
     demImporting.value = false;
-    showDemImportPanel.value = false;
+    store.ui.demImportPanelOpen = false;
     teardownDemWorker();
     alert('DGM-Import-Worker-Fehler: ' + (e.message || e));
   };
@@ -256,7 +259,7 @@ function teardownDemWorker() {
 }
 
 function startDemBuild() {
-  showDemImportPanel.value = false;
+  store.ui.demImportPanelOpen = false;
   demImporting.value = true;
   demProgress.value = null;
   demLoadingLabel.value = 'Rasterung…';
@@ -268,27 +271,37 @@ function startDemBuild() {
 }
 
 function cancelDemImport() {
-  showDemImportPanel.value = false;
+  store.ui.demImportPanelOpen = false;
   demAnalysis.value = null;
   teardownDemWorker();
+}
+
+/**
+ * Einstieg in den DGM-Import ab dem rohen Dateitext.
+ *
+ * Herausgelöst, damit die per Hand gewählte Datei UND das vom Tutorial
+ * angebotene Übungs-DGM (store.ui.pendingDemImportText) exakt denselben Weg
+ * nehmen — inklusive Auflösungs-Rückfrage, Fortschritt und Fehlerbehandlung.
+ */
+function startDemAnalysis(text) {
+  teardownDemWorker(); // evtl. hängenden Vorlauf verwerfen
+  demImporting.value = true;
+  demProgress.value = null;
+  demLoadingLabel.value = 'Analysiere Höhendaten…';
+  store.ui.demImportPanelOpen = false;
+  demAnalysis.value = null;
+  ensureDemWorker().postMessage({ type: 'analyze', text });
 }
 
 const handleDemUpload = async (event) => {
   if (store.ui.showNewProjectLocationModal) { event.target.value = ''; return; }
   const file = event.target.files[0];
   if (!file) return;
-  teardownDemWorker(); // evtl. hängenden Vorlauf verwerfen
   demImporting.value = true;
-  demProgress.value = null;
   demLoadingLabel.value = 'Datei lesen…';
-  showDemImportPanel.value = false;
-  demAnalysis.value = null;
 
   const reader = new FileReader();
-  reader.onload = (e) => {
-    demLoadingLabel.value = 'Analysiere Höhendaten…';
-    ensureDemWorker().postMessage({ type: 'analyze', text: e.target.result });
-  };
+  reader.onload = (e) => startDemAnalysis(e.target.result);
   reader.onerror = () => {
     demImporting.value = false;
     alert('DGM-Datei konnte nicht gelesen werden.');
@@ -296,6 +309,14 @@ const handleDemUpload = async (event) => {
   reader.readAsText(file);
   event.target.value = '';
 };
+
+// Vom Tutorial angebotenes Übungs-DGM: Text entgegennehmen, Ablage sofort
+// leeren (damit ein erneutes Angebot wieder auslöst) und normal importieren.
+watch(() => store.ui.pendingDemImportText, (text) => {
+  if (!text) return;
+  store.ui.pendingDemImportText = null;
+  startDemAnalysis(text);
+});
 
 onBeforeUnmount(() => teardownDemWorker());
 </script>

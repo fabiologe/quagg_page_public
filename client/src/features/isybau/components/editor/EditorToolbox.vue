@@ -225,7 +225,7 @@ const hint = computed(() => {
     border: 1px solid var(--isy-pixel-green-glow, #128040);
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
     color: var(--isy-pixel-green-glow, #128040);
-    text-shadow: 0 0 8px rgba(0, 232, 85, 0.7);
+    text-shadow: var(--isy-pixel-text-glow, none);
     padding: 4px 10px;
     border-radius: 4px;
     font-family: var(--isy-pixel-font);

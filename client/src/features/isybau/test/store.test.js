@@ -310,3 +310,45 @@ describe('IsybauStore', () => {
         });
     });
 });
+
+describe('clearRain (Regen wieder abwaehlen)', () => {
+    let store;
+    beforeEach(() => {
+        setActivePinia(createPinia());
+        store = useIsybauStore();
+    });
+
+    it('entfernt einen gesetzten Modellregen', () => {
+        store.setRainModel({ id: 'euler2', type: 'euler2', series: [1, 2, 3] });
+        expect(store.rain.activeModelRain).not.toBeNull();
+        store.clearRain();
+        expect(store.rain.activeModelRain).toBeNull();
+        expect(store.rain.modelRainId).toBeNull();
+    });
+
+    it('raeumt AUCH den KOSTRA-Wert ab, nicht nur den angezeigten Weg', () => {
+        // Die Anzeige zeigt per v-else nur einen von beiden. Bliebe der
+        // KOSTRA-Wert stehen, tauchte er nach dem Loeschen eines Modellregens
+        // unvermittelt auf — der Nutzer haette scheinbar nichts geloescht.
+        store.rain.intensity = 137;
+        store.rain.method = 'kostra';
+        store.setRainModel({ id: 'euler2', type: 'euler2', series: [1] });
+        store.clearRain();
+        expect(store.rain.intensity).toBe(0);
+        expect(store.rain.activeModelRain).toBeNull();
+    });
+
+    it('laesst die abgerufenen KOSTRA-Rohdaten stehen', () => {
+        // Das sind die Standortdaten des DWD, kein Bemessungsregen — sie
+        // erneut abzurufen waere ein unnoetiger Netzzugriff.
+        store.updateKostraData({ raw: 'DWD-Tabelle' });
+        store.clearRain();
+        expect(store.rain.kostraData).toEqual({ raw: 'DWD-Tabelle' });
+    });
+
+    it('setzt die Methode auf den Ausgangswert zurueck', () => {
+        store.rain.method = 'kostra';
+        store.clearRain();
+        expect(store.rain.method).toBe('model');
+    });
+});

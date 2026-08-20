@@ -1,5 +1,5 @@
 <template>
-  <DraggableModal :is-open="isOpen" initial-width="400px" initial-height="auto" initial-left="center" initial-top="100">
+  <DraggableModal :is-open="isOpen" initial-width="400px" initial-height="auto" initial-left="center" initial-top="center">
       <header class="modal-header">
         <h3>{{ title }}</h3>
         <button class="close-btn" @click="$emit('close')">×</button>
@@ -131,7 +131,7 @@
                <label>Größe (ha)</label>
                <input v-model.number="formData.size" type="number" step="0.0001" class="form-input" required />
              </div>
-             <div class="form-group">
+             <div class="form-group" data-tutorial="area-befestigung">
                <label>Befestigung (0.0 - 1.0)</label>
                <input v-model.number="formData.runoffCoeff" type="number" step="0.01" min="0" max="1" class="form-input" required />
              </div>
@@ -143,7 +143,7 @@
                    </option>
                </select>
              </div>
-             <div class="form-group">
+             <div class="form-group" data-tutorial="area-auslass">
                <label>Auslass</label>
                <div class="outlet-radio-group">
                    <label class="radio-label"><input type="radio" value="node" v-model="outletType"> Knoten</label>

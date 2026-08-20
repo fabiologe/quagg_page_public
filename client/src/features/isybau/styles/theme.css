@@ -48,6 +48,12 @@
     --isy-pixel-info:           #3498db;
     --isy-pixel-info-hover:     #2980b9;
     --isy-pixel-font: 'Press Start 2P', monospace;
+    /* Aufmerksamkeitsfarbe des Tutorials (Highlight-Ring, Fokus-Ring im
+       Viewer). BEWUSST eigener Token und heller als die Grün-Familie oben:
+       die wurde für LESBARKEIT von Text auf hellem Beige abgedunkelt — ein
+       Ring ist aber kein Text, der soll knallen. Sonst würde die nächste
+       Lesbarkeits-Runde ihn versehentlich mit abdunkeln. */
+    --isy-tutorial-glow: #1fdc63;
     /* Pixel-Button-Form (Nutzer-Wunsch): gestufte "Pixel-Rundung" statt
        glattem border-radius (2-Stufen-Treppe, 3px je Stufe, 6px Ecken-
        Einzug) + harter, unscharfer "Pixel-Schatten" (0 Blur/Spread, reiner
@@ -83,6 +89,11 @@
     --isy-pixel-accent-soft:   #4a4844;
     --isy-pixel-text-dim:      #4a4a4a;
     --isy-pixel-text:          #030430;
+    /* Kein Neon-Schimmer auf Beige — siehe Kommentar am Dunkel-Block. */
+    --isy-pixel-text-glow:     none;
+    /* Lesbares Grün bzw. Bernstein für TEXT — siehe Dunkel-Block. */
+    --isy-pixel-green-text:    #0d6b35;
+    --isy-pixel-info-accent:   #8a5a00;
 }
 
 /* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
@@ -94,6 +105,22 @@
     --isy-pixel-accent-soft:   #65625c;
     --isy-pixel-text-dim:      #b0b0ac;
     --isy-pixel-text:          #fff;
+    /* Neon-Schimmer um Text. Im Dunkelmodus trägt er die Terminal-Optik; im
+       Hellmodus ist er schädlich und deshalb `none`: ein grüner Schein um
+       dunklen Text auf hellem Beige wäscht die Buchstabenkanten aus, statt
+       sie leuchten zu lassen. Als Token, weil die Regel an neun Stellen im
+       Modul hing (Sprechblase, Lernkarte, Terminal-Kopf, Werkzeugkasten,
+       Editor, Viewer) und sonst bei jeder Lesbarkeits-Runde neu auffällt. */
+    --isy-pixel-text-glow:     0 0 8px rgba(0, 255, 101, 0.7);
+    /* TEXTFARBEN, die den Modus wechseln MÜSSEN.
+       Die Grün-Familie oben ist bewusst konstant (eine Marke, zwei Modi) — für
+       Flächen und Ränder geht das auf, für Text nicht: auf Beige braucht es
+       einen DUNKLEN, auf Navy einen HELLEN Ton. Eine feste Farbe scheitert
+       zwangsläufig an einem der beiden Untergründe. Genau daran war
+       "[Mehr dazu]" unlesbar (#f9ca24 auf #eeeae1 ≈ 1,3:1).
+       Zielwert: mindestens 4,5:1 (WCAG AA) in BEIDEN Modi. */
+    --isy-pixel-green-text:    #18a34a;
+    --isy-pixel-info-accent:   #f9ca24;
 }
 
 .isybau-main {
@@ -169,6 +196,18 @@
  * Icon-Buttons ohne sichtbare Fläche, ein Bevel-Rahmen um ein einzelnes "×"
  * sähe falsch aus.
  *
+ * .sv-tutorial-highlight ist ebenfalls ausgenommen: Diese Regel gewinnt mit
+ * Spezifität 0-5-2 + !important gegen die Highlight-Klasse (0-1-0) und würde
+ * dem hervorgehobenen Button sowohl die Pixel-Maske (schneidet Outline und
+ * Glow weg) als auch den box-shadow (überschreibt den Puls) aufzwingen.
+ * Ergebnis war: <div>-Anker leuchteten, Buttons nicht.
+ *
+ * `.plain-btn` ist die allgemeine Ausnahme: ein Knopf, der bewusst KEINE
+ * Pixel-Button-Fassung tragen soll, weil er inline in einer Textzeile sitzt
+ * (z.B. das "x" zum Regen-Entfernen). Vorher wurde die Liste fuer jeden
+ * Einzelfall um eine weitere Klasse verlaengert — mit `.plain-btn` reicht
+ * kuenftig die Klasse am Knopf, ohne diese Datei anzufassen.
+ *
  * ZWEI Selektor-Pfade, nicht nur einer: `html[data-theme] button` hängt an
  * einem JS-gesetzten Attribut (IsybauMain.vue-Watcher) — falls das aus
  * irgendeinem Grund nicht/verzögert greift, würde SONST GAR NICHTS matchen.
@@ -178,8 +217,8 @@
  * — nur Teleport-Modals brauchen weiterhin den html[data-theme]-Pfad. Beide
  * zusammen als Redundanz, damit ein einzelner Mechanismus nicht die ganze
  * Regel lahmlegt. */
-.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast),
-html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast) {
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight),
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight) {
     clip-path: var(--isy-pixel-clip-corner) !important;
     border-width: 2px !important;
     border-style: solid !important;
@@ -187,20 +226,20 @@ html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.c
     box-shadow: var(--isy-pixel-btn-shadow) !important;
     transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s !important;
 }
-.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):hover,
-html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):hover {
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):hover,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):hover {
     box-shadow: var(--isy-pixel-btn-shadow-hover) !important;
     transform: translateY(-1px);
 }
-.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):active,
-.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast).active,
-html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):active,
-html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast).active {
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):active,
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight).active,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):active,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight).active {
     border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) !important;
     box-shadow: var(--isy-pixel-btn-shadow-active) !important;
     transform: translateY(0);
 }
-.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):disabled,
-html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):disabled {
+.isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):disabled,
+html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):disabled {
     transform: none;
 }

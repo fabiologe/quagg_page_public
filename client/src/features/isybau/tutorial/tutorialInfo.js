@@ -11,6 +11,108 @@
 // Fließtext in 'Share Tech Mono' (Umlaute ok).
 
 export const TUTORIAL_INFO = {
+
+  // ── Lernstoff zu den interaktiven Uebungen (tutorialExercise.js) ──────────
+  befestigungsgrad: {
+    title: 'ABFLUSSBEIWERT',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Nicht jeder Tropfen, der auf eine Fläche fällt, kommt im Kanal an. Ein Teil versickert, verdunstet oder bleibt in Pfützen und Mulden liegen. Der Abflussbeiwert ψ (psi) sagt, welcher Anteil tatsächlich abfließt.',
+      },
+      { type: 'formula', text: 'Q = ψ · i · A     ψ = 0 (alles versickert) … 1 (alles fließt ab)' },
+      {
+        type: 'p',
+        text: 'Entscheidend ist der Befestigungsgrad: Dach und Asphalt lassen fast alles ablaufen (ψ ≈ 0,9), Pflaster mit Fugen weniger (ψ ≈ 0,6), Rasen schluckt fast alles (ψ ≈ 0,1). Auch die Neigung spielt hinein — steiler heißt weniger Zeit zum Versickern.',
+      },
+      {
+        type: 'p',
+        text: 'Im SWMM-Modell wird ψ als "%Imperv" (undurchlässiger Anteil) übergeben. Ein zu hoher Wert lässt das Netz überlastet aussehen, ein zu niedriger verharmlost den Starkregen — deshalb lohnt sich hier Sorgfalt.',
+      },
+      { type: 'ref', text: 'DWA-A 118 — Hydraulische Bemessung von Entwässerungssystemen' },
+    ],
+  },
+
+  flaechenanschluss: {
+    title: 'FLAECHENANSCHLUSS',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Eine Fläche muss wissen, wohin ihr Wasser läuft — sonst regnet es ins Nichts und die Fläche bleibt in der Berechnung wirkungslos. Zwei Wege gibt es: an einen einzelnen Schacht oder an eine ganze Haltung.',
+      },
+      {
+        type: 'p',
+        text: 'Beim Anschluss an einen Schacht landet alles an genau diesem Punkt. Das passt, wenn ein Hof oder ein Dach über eine Leitung in einen bestimmten Schacht entwässert.',
+      },
+      {
+        type: 'p',
+        text: 'Beim Anschluss an eine Haltung wird die Fläche automatisch 50/50 auf deren Zulauf- und Ablaufknoten aufgeteilt. Das ist die ehrlichere Annahme für ein Grundstück, das entlang der ganzen Leitung liegt: das Wasser sickert überall ein, nicht nur an einem Punkt.',
+      },
+      {
+        type: 'p',
+        text: 'Deshalb tauchen solche Flächen im SWMM-Modell als zwei Teilgebiete auf (z.B. FK001.1 und FK001.2) — das sind keine Doppelungen, sondern die beiden Hälften desselben Anschlusses.',
+      },
+      { type: 'ref', text: 'DWA-A 118 — Hydraulische Bemessung von Entwässerungssystemen' },
+    ],
+  },
+
+  neigungsklasse: {
+    title: 'NEIGUNGSKLASSE',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Die Neigung einer Fläche bestimmt, wie schnell das Wasser den Anschlusspunkt erreicht. Flaches Gelände hält das Wasser zurück, steiles beschleunigt es — der Scheitel der Abflusswelle wird dadurch früher und höher.',
+      },
+      {
+        type: 'p',
+        text: 'ISYBAU fasst das in fünf Klassen: 1 = bis 1 %, 2 = 1–4 %, 3 = 4–10 %, 4 = 10–15 %, 5 = über 15 %. Das Tool rechnet daraus einen repräsentativen Prozentwert für SWMM.',
+      },
+      {
+        type: 'p',
+        text: 'Ist ein Geländemodell (DGM) geladen, lässt sich die Neigung aus den Höhendaten der Fläche schätzen — der Vorschlags-Knopf neben dem Feld macht genau das. Ohne DGM hilft nur der Blick ins Gelände oder auf die Höhenlinien.',
+      },
+      { type: 'ref', text: 'BFR Abwasser — ISYBAU-XML, Flächendaten (Neigungsklasse)' },
+    ],
+  },
+
+  'pumpwerk-dimensionierung': {
+    title: 'PUMPWERK AUSLEGEN',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Ein Pumpwerk braucht man, wo das Wasser nicht mehr von allein bergab läuft. Die Frage ist immer dieselbe: Wie viel muss die Pumpe pro Sekunde wegschaffen, damit nichts überläuft?',
+      },
+      { type: 'formula', text: '5 l/s ≈ ein Eimer Wasser pro Sekunde' },
+      {
+        type: 'p',
+        text: 'Die Förderleistung muss mindestens den Zufluss aufnehmen, der im Bemessungsregen ankommt. Zu klein gewählt staut sich das Wasser im Schacht auf und tritt irgendwann oben aus. Zu groß gewählt schaltet die Pumpe ständig ein und aus — das verschleißt sie und kostet Strom.',
+      },
+      {
+        type: 'p',
+        text: 'Neben der Menge zählt die Förderhöhe: der Höhenunterschied, den das Wasser überwinden muss, plus die Reibungsverluste in der Druckleitung. Beides zusammen ergibt den Betriebspunkt der Pumpe.',
+      },
+      { type: 'ref', text: 'DWA-A 134 — Planung und Bau von Abwasserpumpanlagen' },
+    ],
+  },
+
+  auslaufbauwerk: {
+    title: 'AUSLAUFBAUWERK',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Irgendwo muss das Wasser das Netz verlassen — in ein Gewässer, in einen Sammler oder zur Kläranlage. Dieser Punkt heißt Auslaufbauwerk (im SWMM: Outfall) und ist der einzige Ort, an dem die Rechnung Wasser aus dem System entlässt.',
+      },
+      {
+        type: 'p',
+        text: 'Solange ein solcher Punkt fehlt, hat das Modell keinen definierten Ausgang: das Wasser staut sich bis zur Geländeoberkante zurück und die Ergebnisse sehen dramatischer aus, als sie sind.',
+      },
+      {
+        type: 'p',
+        text: 'Am Auslass gilt eine Randbedingung — meist freier Auslauf, bei Gewässern auch ein fester Wasserstand. Steht das Gewässer hoch, drückt es zurück ins Netz; genau dafür braucht man die Dynamic-Wave-Rechnung, die Rückstau abbilden kann.',
+      },
+      { type: 'ref', text: 'EPA SWMM 5 Reference Manual, Vol. II — Outfall Boundary Conditions' },
+    ],
+  },
   'swmm-ueberblick': {
     title: 'SWMM & KANALNETZ-SIMULATION',
     blocks: [
