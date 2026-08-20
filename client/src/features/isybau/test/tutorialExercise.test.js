@@ -674,23 +674,7 @@ describe('Abschluss: Berechnung starten und uebergeben', () => {
   });
 });
 
-describe('Fortschritts-Signale des Maskottchens sind vollstaendig', () => {
-  // Beobachtet der Watcher ein Feld nicht, bleibt der zugehoerige Schritt
-  // stumm haengen — im UI sieht das aus wie ein kaputter check.
-  const mascot = fs.readFileSync(path.resolve(__dirname, '../tutorial/TutorialMascot.vue'), 'utf-8');
-  const signale = mascot.slice(mascot.indexOf('const fortschrittsSignale'), mascot.indexOf('watch(\n    () => (exerciseActive'));
-
-  it.each([
-    ['store.ui.showElementModal', 'Flaeche erstellen'],
-    ['store.ui.showPreprocessingModal', 'Datenbearbeitung'],
-    ['store.ui.showKostraModal', 'KOSTRA-Fenster'],
-    ['store.rain.kostraData', 'KOSTRA-Ergebnis'],
-    ['store.ui.demImportPanelOpen', 'DGM-Rueckfrage'],
-    ['store.rain.method', 'Regen-Methode'],
-    ['store.rain.intensity', 'Regen-Wert'],
-    ['store.simulation.status', 'Berechnungs-Status'],
-    ['store.history.undoStack.length', 'Netzaenderungen (Sammelmelder)'],
-  ])('beobachtet %s (%s)', (feld) => {
-    expect(signale).toContain(feld);
-  });
-});
+// Der Waechter ueber den Fortschritts-Signalen steht jetzt in
+// test/fortschrittsSignale.test.js. Hier las er die .vue-Datei als Zeichenkette
+// und verglich sie mit neun von Hand gepflegten Feldnamen — er mass also etwas
+// anderes als das, was bricht, und deckte nur einen Teil ab.

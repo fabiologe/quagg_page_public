@@ -78,6 +78,7 @@ import { useHighlight } from './useHighlight.js';
 import { useIsybauStore } from '../store/index.js';
 import { loadTutorialNetwork } from './loadTutorialNetwork.js';
 import { resolveStepFocus, resolveStepDraw } from './tutorialExercise.js';
+import { leseFortschrittsSignale } from './fortschrittsSignale.js';
 import { useElementFocus } from '../composables/useElementFocus.js';
 import { useDrawingHint } from '../composables/useDrawingHint.js';
 
@@ -121,41 +122,11 @@ async function beginExercise() {
     }
 }
 
-/**
- * Signale, an denen die Übung ihren Fortschritt erkennt.
- *
- * Zwei Gruppen: Änderungen am NETZ und Änderungen an der OBERFLÄCHE.
- * Für das Netz genügt `undoStack.length` als Sammelmelder — jede mutierende
- * Store-Aktion ruft saveHistory(). Ohne den würde z.B. ein geänderter
- * Abflussbeiwert gar nicht auffallen, weil `areas.length` dabei gleich bleibt.
- * Die UI-Flags dagegen laufen NICHT über die History und müssen einzeln hier
- * stehen — fehlt eine, bleibt der zugehörige Schritt stumm hängen.
- *
- * `terrain` bewusst nur als Boolean: das Raster ist gross, und interessant
- * ist allein "liegt eins vor".
- */
-const fortschrittsSignale = () => [
-    // Netz
-    store.areas.length, store.nodes.size, store.edges.size,
-    store.history.undoStack.length,
-    !!store.terrain,
-    // Oberfläche: Dialoge, die einen Schritt weiterschalten
-    store.ui.demImportPanelOpen,
-    store.ui.showElementModal,
-    store.ui.showPreprocessingModal,
-    store.ui.showKostraModal,
-    // Regen und Berechnung
-    store.rain.method, store.rain.intensity,
-    // Nur als Boolean: die Rohtabelle ist gross, interessant ist "liegt ein
-    // Abruf vor" (siehe ex-rain-abrufen).
-    !!store.rain.kostraData,
-    store.simulation.status,
-    store.simulation.error,
-    store.simulation.preSolveWarnings.length,
-];
-
+// Woran die Übung ihren Fortschritt erkennt, steht in fortschrittsSignale.js —
+// dort auch die Begründung für die schmale Liste. Getestet wird sie gegen die
+// Prüfungen der Schritte in test/fortschrittsSignale.test.js.
 watch(
-    () => (exerciseActive.value ? fortschrittsSignale() : null),
+    () => (exerciseActive.value ? leseFortschrittsSignale(store) : null),
     () => { if (exerciseActive.value) guide.evaluateExercise(store); },
     { deep: true }
 );
