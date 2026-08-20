@@ -558,11 +558,10 @@ const activeTab = ref('general');
     overflow-y: auto;
 }
 
-/* Custom Scrollbar */
-.help-content::-webkit-scrollbar { width: 8px; }
-.help-content::-webkit-scrollbar-track { background: #f1f1f1; }
-.help-content::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-.help-content::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+/* Scrollbar bewusst ohne eigene Regel: die globale in theme-saintv.css liest
+   --scroll-*, die isybau/styles/theme.css auf Grün setzt. Hier stand vorher
+   hartcodiertes Hellgrau (#f1f1f1/#cbd5e1) aus der Zeit vor dem Theme — es
+   ueberstimmte das Theme und blieb grau. */
 
 .info-grid {
   display: grid;

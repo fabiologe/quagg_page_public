@@ -74,8 +74,9 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
 .info-body {
   overflow-y: auto;
   padding: 0.6rem 0.7rem 0.7rem;
-  scrollbar-width: thin;
-  scrollbar-color: var(--isy-pixel-green-glow, #128040) var(--isy-pixel-bg, #eeeae1);
+  /* Scrollbar: keine eigene Regel — die globale in theme-saintv.css liest
+     --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Vorher stand
+     hier ein fester Grünton, der den Moduswechsel nicht mitmachte. */
 }
 
 /* Längere Absätze in Share Tech Mono — deutlich lesbarer als Press Start 2P.

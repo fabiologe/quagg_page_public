@@ -123,6 +123,44 @@
     --isy-pixel-info-accent:   #f9ca24;
 }
 
+/* ── Scrollbars ───────────────────────────────────────────────────────────────
+ * Die Regel selbst steht global in flood-2D/styles/theme-saintv.css (per
+ * main.js in JEDEM Feature geladen) und liest --scroll-*. Vorbelegt ist sie
+ * dort mit SaintV-Violett — daher trug isybau lila Scrollbars, obwohl sonst
+ * alles grün ist. Hier werden nur die vier Tokens umgesetzt, die Regel wird
+ * nicht kopiert.
+ *
+ * Die Werte zeigen auf --isy-pixel-*-Tokens, die den Hell/Dunkel-Wechsel
+ * schon können: --isy-pixel-green-text ist in beiden Modi der lesbare Grünton
+ * (dunkel auf Beige, hell auf Navy) — genau die Textfarbe, an die der Nutzer
+ * die Scrollbars koppeln wollte. --isy-pixel-text-glow ist im Hellmodus
+ * bereits `none` (kein Neon auf Beige) und im Dunkelmodus der Terminal-
+ * Schimmer; als box-shadow ist dieselbe Syntax gültig. Deshalb genügt EIN
+ * Block statt zweier je Modus.
+ *
+ * Warum :has(.isybau-main) und nicht :root[data-theme] wie der Rest der
+ * Datei: `data-theme` auf <html> setzt auch der PDF-Editor. Die --isy-*-
+ * Tokens dürfen dort ruhig mitdefiniert sein, sie liest niemand — --scroll-*
+ * dagegen ist ein GETEILTER Name, und Grün würde in fremde Features
+ * auslaufen, sobald diese Datei einmal geladen wurde. `:has` bindet die
+ * Übersteuerung stattdessen daran, dass isybau wirklich im DOM steht, und
+ * braucht dafür keinen zweiten Lebenszyklus im JS. Auf :root (nicht auf
+ * .isybau-main), damit auch Teleport-Modals erreicht werden, die aus dem
+ * Teilbaum herausspringen.
+ *
+ * Einzelne Komponenten definieren hier NICHTS mehr eigenes. Vier taten es
+ * früher (Hilfe-Modal, Datenbearbeitung, Element-Formular, Lernkarte) — zwei
+ * davon mit hartcodiertem Hellgrau aus der Zeit vor dem Theme, die dadurch
+ * grau blieben, egal was das Theme sagte. Wer eine Ausnahme braucht: die
+ * Tokens am Element umsetzen, nicht die Regel kopieren.
+ */
+:root:has(.isybau-main) {
+    --scroll-thumb:       var(--isy-pixel-green-text);
+    --scroll-thumb-hover: var(--isy-pixel-green-hover);
+    --scroll-track:       var(--isy-pixel-bg-alt);
+    --scroll-thumb-glow:  var(--isy-pixel-text-glow);
+}
+
 .isybau-main {
     /* Retro-Beige (Nutzer-Wunsch): warme, gedeckte Grundtöne statt kühlem
        Weiß/Lavendel. Akzent/Text-Dim waren ursprünglich lila — auf Nutzer-

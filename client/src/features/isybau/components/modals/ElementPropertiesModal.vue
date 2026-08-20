@@ -387,13 +387,10 @@ const save = () => {
   overflow-y: auto;
   max-height: calc(90vh - 56px);
   background: var(--isy-pixel-bg-deep, #06093a);
-  scrollbar-width: thin;
-  scrollbar-color: var(--isy-pixel-border, #4a4844) var(--isy-pixel-bg, #040647);
+  /* Scrollbar: keine eigene Regel — die globale in theme-saintv.css liest
+     --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Hier stand
+     vorher die graue Rand-Familie, die nicht zur Textfarbe passte. */
 }
-.modal-body::-webkit-scrollbar { width: 6px; }
-.modal-body::-webkit-scrollbar-track { background: var(--isy-pixel-bg, #040647); }
-.modal-body::-webkit-scrollbar-thumb { background: var(--isy-pixel-border, #4a4844); border-radius: 3px; }
-.modal-body::-webkit-scrollbar-thumb:hover { background: var(--isy-pixel-border-hover, #65625c); }
 .outlet-radio-group { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
 .radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; color: var(--isy-pixel-text-dim, #4a4a4a); }
 .hint { font-size: 0.78rem; color: var(--isy-pixel-border-hover, #65625c); margin-top: 0.2rem; }

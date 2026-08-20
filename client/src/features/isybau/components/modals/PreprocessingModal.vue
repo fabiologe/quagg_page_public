@@ -1431,17 +1431,15 @@ const apply = () => {
     flex-direction: column;
 }
 
-.table-wrapper { 
+.table-wrapper {
     flex: 1; /* Grow to fill */
-    overflow-y: auto; 
-    position: relative; 
-    scrollbar-width: thin;
-    scrollbar-color: #bbb #f1f1f1;
+    overflow-y: auto;
+    position: relative;
+    /* Scrollbar: keine eigene Regel — die globale in theme-saintv.css liest
+       --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Hier stand
+       vorher hartcodiertes Hellgrau (#bbb/#f1f1f1) aus der Zeit vor dem
+       Theme, das die Themefarbe ueberstimmte. */
 }
-.table-wrapper::-webkit-scrollbar { width: 8px; height: 8px; }
-.table-wrapper::-webkit-scrollbar-track { background: #f1f1f1; }
-.table-wrapper::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
-.table-wrapper::-webkit-scrollbar-thumb:hover { background: #999; }
 
 .data-table { width: 100%; border-collapse: separate; font-size: 0.9rem; border-spacing: 0; }
 .data-table th { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); position: sticky; top: 0; z-index: 10; padding: 0.5rem; border-bottom: 2px solid #ddd; text-align: left; }
