@@ -249,7 +249,7 @@ function formatDate(iso) {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #888;
+  color: var(--isy-pixel-text-dim);
   flex-shrink: 0;
 }
 
@@ -298,7 +298,7 @@ function formatDate(iso) {
 
 .pm-item-meta {
   font-size: var(--isy-fs-sm);
-  color: #888;
+  color: var(--isy-pixel-text-dim);
 }
 
 .pm-item-actions {
@@ -310,7 +310,7 @@ function formatDate(iso) {
 .pm-empty {
   padding: var(--isy-space-7);
   text-align: center;
-  color: #aaa;
+  color: var(--isy-pixel-text-dim);
   font-size: var(--isy-fs-lg);
   font-style: italic;
 }

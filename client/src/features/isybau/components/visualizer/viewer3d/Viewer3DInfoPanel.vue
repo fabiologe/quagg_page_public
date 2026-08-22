@@ -349,7 +349,7 @@ const edgeUtilClass = computed(() => {
   font-family: var(--isy-pixel-font);
 }
 .close-btn {
-  background: none; border: none; color: #a0aec0;
+  background: none; border: none; color: var(--isy-pixel-text-dim);
   font-size: var(--isy-fs-xl); cursor: pointer; line-height: 1; padding: 0;
 }
 .close-btn:hover { color: var(--isy-pixel-text); }
@@ -365,7 +365,7 @@ const edgeUtilClass = computed(() => {
   font-size: var(--isy-fs-md);
 }
 .info-row:last-child { border-bottom: none; }
-.lbl { color: #718096; }
+.lbl { color: var(--isy-pixel-text-dim); }
 .val { color: #e2e8f0; font-weight: 600; text-align: right; }
 
 .type-badge {
@@ -392,7 +392,7 @@ const edgeUtilClass = computed(() => {
   font-size: var(--isy-fs-pixel-md);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #4a5568;
+  color: var(--isy-pixel-text-dim);
   font-family: monospace;
 }
 

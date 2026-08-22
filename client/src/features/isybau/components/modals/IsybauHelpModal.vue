@@ -479,7 +479,7 @@ const activeTab = ref('general');
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: -0.02em;
-  color: #1e293b;
+  color: var(--isy-pixel-text);
   border-bottom: 2px solid var(--isy-pixel-divider);
   padding-bottom: var(--isy-space-3);
 }
@@ -489,12 +489,12 @@ const activeTab = ref('general');
   margin-bottom: var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
-  color: #475569;
+  color: var(--isy-pixel-text-dim);
 }
 
 .content-section p, .content-section li {
   line-height: 1.6;
-  color: #475569;
+  color: var(--isy-pixel-text-dim);
   font-size: var(--isy-fs-lg);
 }
 
@@ -533,7 +533,7 @@ const activeTab = ref('general');
 .tech-table th {
     background: #f1f5f9;
     font-weight: 600;
-    color: #475569;
+    color: var(--isy-pixel-text-dim);
 }
 
 .tag {
@@ -576,14 +576,14 @@ const activeTab = ref('general');
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-4);
   font-size: var(--isy-fs-lg);
-  color: #475569;
+  color: var(--isy-pixel-text-dim);
   line-height: 1.5;
 }
 
 .info-card-title {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
-  color: #1e293b;
+  color: var(--isy-pixel-text);
   margin-bottom: var(--isy-space-2);
 }
 
@@ -604,7 +604,7 @@ const activeTab = ref('general');
 .workflow-list li {
   margin-bottom: var(--isy-space-4);
   line-height: 1.6;
-  color: #475569;
+  color: var(--isy-pixel-text-dim);
 }
 
 </style>

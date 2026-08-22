@@ -474,7 +474,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border: none;
     font-size: var(--isy-fs-lg);
     cursor: pointer;
-    color: #7f8c8d;
+    color: var(--isy-pixel-text-dim);
 }
 
 .toast-body ul {

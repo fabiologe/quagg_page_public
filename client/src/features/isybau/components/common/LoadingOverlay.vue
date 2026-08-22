@@ -89,7 +89,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
   transition: width 0.15s ease;
 }
 .lo-percent {
-  color: var(--sv-text-dim, #90a4ae);
+  color: var(--sv-text-dim, var(--isy-pixel-text-dim));
   font-size: var(--isy-fs-sm);
   font-variant-numeric: tabular-nums;
 }

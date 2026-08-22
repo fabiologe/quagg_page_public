@@ -423,7 +423,7 @@ const downloadResults = () => {
 }
 
 .rain-info-empty {
-    color: #8a8a9e;
+    color: var(--isy-pixel-text-dim);
     font-style: italic;
 }
 

@@ -1827,7 +1827,7 @@ svg {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #999;
+  color: var(--isy-pixel-text-dim);
 }
 
 /* Transitions */

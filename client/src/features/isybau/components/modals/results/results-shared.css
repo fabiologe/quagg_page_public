@@ -36,7 +36,7 @@
     background: none;
     border: none;
     font-size: var(--isy-fs-xl);
-    color: #6b7280;
+    color: var(--isy-pixel-text-dim);
     cursor: pointer;
     width: 32px;
     height: 32px;
@@ -116,9 +116,9 @@
     border: 1px solid var(--isy-pixel-divider);
     text-align: center;
 }
-.kpi-card .label { color: #888; font-size: var(--isy-fs-lg); margin-bottom: var(--isy-space-2); }
-.kpi-card .value { font-size: var(--isy-fs-xl); font-weight: 700; color: #333; }
-.kpi-card .kpi-sub { font-size: var(--isy-fs-sm); color: #aaa; margin-top: var(--isy-space-1); }
+.kpi-card .label { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-lg); margin-bottom: var(--isy-space-2); }
+.kpi-card .value { font-size: var(--isy-fs-xl); font-weight: 700; color: var(--isy-pixel-text); }
+.kpi-card .kpi-sub { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); margin-top: var(--isy-space-1); }
 .kpi-danger .value { color: var(--isy-pixel-green); }
 .kpi-warning .value { color: #f59e0b; }
 .kpi-success .value { color: #10b981; }
@@ -144,11 +144,11 @@
 .simple-table .highlight-row td { background: #fdfdfd; font-weight: bold; border-top: 2px solid var(--isy-pixel-divider); padding-top: var(--isy-space-2); }
 
 /* Bilanz-Tabelle */
-.bilanz-table th { text-align: left; color: #888; font-size: var(--isy-fs-sm); padding: var(--isy-space-1) 0; border-bottom: 2px solid var(--isy-pixel-divider); }
+.bilanz-table th { text-align: left; color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-sm); padding: var(--isy-space-1) 0; border-bottom: 2px solid var(--isy-pixel-divider); }
 .bilanz-table .bilanz-header th:not(:first-child) { text-align: right; }
 .bilanz-table .val-right { text-align: right; font-variant-numeric: tabular-nums; }
-.bilanz-note { font-size: var(--isy-fs-sm); color: #aaa; margin-left: var(--isy-space-2); }
-.bilanz-footnote { font-size: var(--isy-fs-sm); color: #aaa; margin: var(--isy-space-3) 0 0; font-style: italic; }
+.bilanz-note { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); margin-left: var(--isy-space-2); }
+.bilanz-footnote { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); margin: var(--isy-space-3) 0 0; font-style: italic; }
 
 /* Outfall-Scroll — begrenzt Höhe bei vielen Auslässen, scrollt intern */
 .outfall-scroll {
@@ -248,7 +248,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     flex-direction: column;
     align-items: flex-end;
 }
-.rain-kpi span { font-size: var(--isy-fs-sm); color: #9ca3af; text-transform: uppercase; letter-spacing: 0.03em; }
+.rain-kpi span { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
 .rain-kpi strong { font-size: var(--isy-fs-lg); color: #1e3a5f; }
 .rain-chart-box {
     height: 180px;
@@ -267,10 +267,10 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 }
 .area-ok   { background: var(--isy-pixel-success-soft); border: 1px solid var(--isy-pixel-success-soft-border); }
 .area-warn { background: var(--isy-pixel-warning-soft); border: 1px solid var(--isy-pixel-warning-soft-border); }
-.area-badge-label { color: #6b7280; font-size: var(--isy-fs-sm); text-transform: uppercase; letter-spacing: 0.04em; }
+.area-badge-label { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-sm); text-transform: uppercase; letter-spacing: 0.04em; }
 .area-badge-val   { font-weight: 700; color: #15803d; }
 .area-warn .area-badge-val { color: #c2410c; }
-.area-badge-sub   { color: #9ca3af; font-size: var(--isy-fs-sm); margin-left: auto; }
+.area-badge-sub   { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-sm); margin-left: auto; }
 
 /* Knoten→Link-Verweis: Pumpe/Wehr/Drossel/Schieber sind SWMM-Links, das reale
    Ergebnis liegt an der Haltung, nicht am Bauwerksknoten. */
@@ -298,7 +298,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 
 /* Hinweis statt leerer Zelle: SWMM liefert für Pumpen/Wehre/Drosseln strukturell
    weniger Link-Flow-Spalten als für normale Haltungen (Conduits). */
-.na-hint { color: #9ca3af; font-style: italic; font-size: var(--isy-fs-md); cursor: help; }
+.na-hint { color: var(--isy-pixel-text-dim); font-style: italic; font-size: var(--isy-fs-md); cursor: help; }
 .clickable-row { cursor: pointer; }
 .clickable-row:hover td { background-color: #f1f8ff !important; }
 
@@ -306,7 +306,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .table-scroll { flex: 1; overflow-y: auto; background: white; border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); }
 .data-table { width: 100%; border-collapse: collapse; font-size: var(--isy-fs-lg); }
 .data-table th, .data-table td { padding: var(--isy-space-3) var(--isy-space-4); text-align: left; border-bottom: 1px solid var(--isy-pixel-text-dim); }
-.data-table th { background: #f9fafb; font-weight: 600; color: #4b5563; position: sticky; top: 0; z-index: var(--isy-z-sticky); cursor: pointer; }
+.data-table th { background: #f9fafb; font-weight: 600; color: var(--isy-pixel-text-dim); position: sticky; top: 0; z-index: var(--isy-z-sticky); cursor: pointer; }
 .data-table tr:hover { background: #f8fafc; }
 .row-warning { background: var(--isy-pixel-warning-soft); }
 .row-danger { background: var(--isy-pixel-danger-soft); }
@@ -401,11 +401,11 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .score-label { font-size: var(--isy-fs-pixel-md); text-transform: uppercase; }
 .health-text { flex: 1; }
 .health-text h3 { margin: 0 0 var(--isy-space-1) 0; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-sm); }
-.health-text p { margin: 0; color: #666; font-size: var(--isy-fs-lg); }
+.health-text p { margin: 0; color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-lg); }
 .health-metrics { display: flex; gap: 1.5rem; border-left: 1px solid var(--isy-pixel-divider); padding-left: var(--isy-space-6); }
 .metric { display: flex; flex-direction: column; }
-.metric span { font-size: var(--isy-fs-sm); color: #888; text-transform: uppercase; }
-.metric strong { font-size: var(--isy-fs-lg); color: #333; }
+.metric span { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); text-transform: uppercase; }
+.metric strong { font-size: var(--isy-fs-lg); color: var(--isy-pixel-text); }
 
 .health-excellent .score-circle { background: #10b981; }
 .health-excellent h3 { color: var(--isy-pixel-green); }
