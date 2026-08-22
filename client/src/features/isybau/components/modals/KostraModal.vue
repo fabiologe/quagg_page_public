@@ -262,7 +262,7 @@ const applyResult = () => {
 
 .modal-content {
   background: white;
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 500px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -303,7 +303,7 @@ const applyResult = () => {
   background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
   border: 1px solid var(--isy-pixel-text-dim);
   padding: var(--isy-space-4);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   margin-top: var(--isy-space-4);
 }
 
@@ -331,7 +331,7 @@ const applyResult = () => {
   background: #fde8e8;
   color: var(--isy-pixel-danger-hover);
   padding: var(--isy-space-4);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   margin-top: var(--isy-space-4);
 }
 
@@ -340,7 +340,7 @@ const applyResult = () => {
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
@@ -355,7 +355,7 @@ const applyResult = () => {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
@@ -375,7 +375,7 @@ const applyResult = () => {
 .data-details {
   margin: var(--isy-space-4) 0;
   border: 1px solid var(--isy-pixel-text-dim);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   background: white;
 }
 
@@ -417,7 +417,7 @@ const applyResult = () => {
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
@@ -459,7 +459,7 @@ const applyResult = () => {
 .input-wrapper input {
     padding: var(--isy-space-2);
     border: 1px solid var(--isy-pixel-text-dim);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     width: 120px;
 }
 
@@ -467,7 +467,7 @@ const applyResult = () => {
     background: white;
     color: #E30613;
     border: 2px solid #E30613; /* FCK Red Border */
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     width: 36px;
     height: 36px;
     font-size: var(--isy-fs-xl); /* Slightly larger for the Ogre */

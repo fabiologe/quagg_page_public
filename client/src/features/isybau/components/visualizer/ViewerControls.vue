@@ -123,7 +123,7 @@ const contourTitle = computed(() => {
   left: 1rem;
   background: var(--isy-pixel-bg);
   padding: var(--isy-space-2);
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
   border: 1px solid var(--isy-pixel-border);
   z-index: 10;
@@ -140,7 +140,7 @@ const contourTitle = computed(() => {
 .controls button {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   width: 32px;
   height: 32px;
   cursor: pointer;

@@ -78,13 +78,13 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
 .lo-bar {
   width: 220px;
   height: 8px;
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   background: rgba(139, 92, 246, 0.18);
   overflow: hidden;
 }
 .lo-bar-fill {
   height: 100%;
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   background: linear-gradient(90deg, var(--sv-violet, #4fc3f7), var(--sv-lime, #00bcd4));
   transition: width 0.15s ease;
 }

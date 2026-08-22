@@ -263,7 +263,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     z-index: 100;
     background: var(--isy-bg-alt);
     padding: var(--isy-space-1);
-    border-radius: 8px;
+    border-radius: var(--isy-radius-lg);
     box-shadow: 0 4px 16px rgba(4,6,71,0.35);
     display: flex;
     gap: 0.25rem;
@@ -274,7 +274,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
-    border-radius: 5px;
+    border-radius: var(--isy-radius-sm);
     clip-path: var(--isy-pixel-clip-corner);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
@@ -390,7 +390,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
   border-width: 2px;
   border-style: solid;
   border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   clip-path: var(--isy-pixel-clip-corner);
   text-align: left;
   cursor: pointer;
@@ -450,7 +450,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     background: var(--isy-toast-bg);
     border-left: 5px solid var(--isy-pixel-warning); /* Warning Orange */
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-4);
     z-index: 2000;
     font-size: var(--isy-fs-lg);

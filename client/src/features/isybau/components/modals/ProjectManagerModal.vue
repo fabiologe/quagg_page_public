@@ -183,7 +183,7 @@ function formatDate(iso) {
 
 .pm-modal {
   background: var(--isy-pixel-text);
-  border-radius: 10px;
+  border-radius: var(--isy-radius-lg);
   width: 520px;
   max-height: 80vh;
   display: flex;
@@ -234,7 +234,7 @@ function formatDate(iso) {
   flex: 1;
   padding: var(--isy-space-2) var(--isy-space-3);
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   font-size: var(--isy-fs-lg);
 }
 .pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border); box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
@@ -259,7 +259,7 @@ function formatDate(iso) {
   font-size: var(--isy-fs-sm);
   font-weight: 700;
   padding: var(--isy-space-1) var(--isy-space-2);
-  border-radius: 10px;
+  border-radius: var(--isy-radius-lg);
 }
 
 .pm-list {
@@ -348,7 +348,7 @@ function formatDate(iso) {
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
@@ -366,7 +366,7 @@ function formatDate(iso) {
   background: var(--isy-pixel-content-bg);
   color: var(--isy-pixel-border);
   border: 1px solid var(--isy-pixel-text-dim);
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   padding: var(--isy-space-1) var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
@@ -379,7 +379,7 @@ function formatDate(iso) {
   background: none;
   border: 1px solid var(--isy-pixel-danger-soft-border);
   color: #dc2626;
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   padding: var(--isy-space-1) var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
@@ -391,7 +391,7 @@ function formatDate(iso) {
 .btn-cancel {
   background: none;
   border: 1px solid var(--isy-pixel-text-dim);
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   padding: var(--isy-space-1) var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);

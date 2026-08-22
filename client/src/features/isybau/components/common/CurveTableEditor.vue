@@ -90,7 +90,7 @@ const removeRow = (i) => {
   box-sizing: border-box;
   padding: var(--isy-space-1) var(--isy-space-1);
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   background: var(--isy-pixel-bg-alt);
   color: var(--isy-pixel-text);
   font-size: var(--isy-fs-md);
@@ -107,7 +107,7 @@ const removeRow = (i) => {
 }
 .row-remove-btn:disabled { color: var(--isy-pixel-text-dim); cursor: not-allowed; }
 .row-add-btn {
-  margin-top: var(--isy-space-1); background: none; border: 1px dashed var(--isy-pixel-border); border-radius: 4px;
+  margin-top: var(--isy-space-1); background: none; border: 1px dashed var(--isy-pixel-border); border-radius: var(--isy-radius-sm);
   color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: var(--isy-space-1) var(--isy-space-2); cursor: pointer;
   transition: background 0.15s;
 }

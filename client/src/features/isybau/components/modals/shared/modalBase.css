@@ -55,7 +55,7 @@
   border-style: solid;
   border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
   color: var(--isy-pixel-text-dim);
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   clip-path: var(--isy-pixel-clip-corner);
   padding: var(--isy-space-2) var(--isy-space-3);
   cursor: pointer;
@@ -80,6 +80,6 @@
   width: 100%;
   padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   font-size: var(--isy-fs-lg);
 }

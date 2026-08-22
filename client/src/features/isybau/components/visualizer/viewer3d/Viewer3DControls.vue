@@ -110,7 +110,7 @@ const terrainToggleTitle = computed(() => {
   gap: 0.4rem;
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green);
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2);
   z-index: 10;
   min-width: 130px;
@@ -119,7 +119,7 @@ const terrainToggleTitle = computed(() => {
 .ctrl-btn {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   color: var(--isy-pixel-green);
   font-size: var(--isy-fs-lg);
   width: 32px;
@@ -188,7 +188,7 @@ const terrainToggleTitle = computed(() => {
   margin-top: var(--isy-space-1);
   padding: var(--isy-space-2) var(--isy-space-2);
   background: rgba(0,0,0,0.3);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   border: 1px solid rgba(255,255,255,0.08);
 }
 .legend-title {

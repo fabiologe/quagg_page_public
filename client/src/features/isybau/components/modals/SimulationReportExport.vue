@@ -741,7 +741,7 @@ async function exportPDF() {
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);
   border: none;
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   cursor: pointer;
   font-size: var(--isy-fs-sm);
   font-weight: 600;

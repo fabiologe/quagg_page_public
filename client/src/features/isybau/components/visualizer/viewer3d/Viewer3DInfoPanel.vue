@@ -328,7 +328,7 @@ const edgeUtilClass = computed(() => {
   width: 280px;
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 10px;
+  border-radius: var(--isy-radius-lg);
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   overflow: hidden;
   z-index: 20;
@@ -371,7 +371,7 @@ const edgeUtilClass = computed(() => {
 .type-badge {
   margin: var(--isy-space-2) 0 var(--isy-space-2);
   padding: var(--isy-space-1) var(--isy-space-2);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   font-size: var(--isy-fs-sm);
   font-weight: 700;
   display: inline-block;
@@ -401,7 +401,7 @@ const edgeUtilClass = computed(() => {
   padding: var(--isy-space-1) var(--isy-space-2);
   background: rgba(37,99,235,0.15);
   border: 1px solid #2563eb;
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-info-soft-border);
 }

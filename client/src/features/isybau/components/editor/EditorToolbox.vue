@@ -150,7 +150,7 @@ const hint = computed(() => {
     transform: translateX(-50%);
     background: var(--isy-pixel-bg);
     padding: var(--isy-space-1);
-    border-radius: 8px;
+    border-radius: var(--isy-radius-lg);
     box-shadow: 0 4px 16px rgba(4,6,71,0.4);
     border: 1px solid var(--isy-pixel-border);
     display: flex;
@@ -168,7 +168,7 @@ const hint = computed(() => {
     height: 36px;
     border: 1px solid var(--isy-pixel-border);
     background: transparent;
-    border-radius: 5px;
+    border-radius: var(--isy-radius-sm);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -227,7 +227,7 @@ const hint = computed(() => {
     color: var(--isy-pixel-green-glow);
     text-shadow: var(--isy-pixel-text-glow);
     padding: var(--isy-space-1) var(--isy-space-2);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     white-space: nowrap;

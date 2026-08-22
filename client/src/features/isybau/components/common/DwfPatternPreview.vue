@@ -102,7 +102,7 @@ const chartOptions = {
 .dwf-pattern-preview {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-3);
   margin-top: var(--isy-space-2);
 }

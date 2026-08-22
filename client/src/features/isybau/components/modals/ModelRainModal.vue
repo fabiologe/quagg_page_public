@@ -301,7 +301,7 @@ const apply = () => {
 .table-scroll {
   overflow: auto;
   border: 1px solid var(--isy-pixel-text-dim);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
 }
 
 .kostra-table {
@@ -357,7 +357,7 @@ const apply = () => {
   width: 100%;
   padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
 }
 
 .radio-group {
@@ -381,7 +381,7 @@ const apply = () => {
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
@@ -396,7 +396,7 @@ const apply = () => {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);

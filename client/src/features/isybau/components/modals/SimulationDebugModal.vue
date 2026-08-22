@@ -93,7 +93,7 @@ const copyToClipboard = async (text) => {
 
 .modal-content {
   background: white;
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 1000px;
   height: 85vh;
@@ -153,14 +153,14 @@ const copyToClipboard = async (text) => {
     cursor: pointer;
     background: var(--isy-pixel-content-bg);
     border: 1px solid var(--isy-pixel-text-dim);
-    border-radius: 3px;
+    border-radius: var(--isy-radius-sm);
 }
 
 .code-view {
   flex: 1;
   background: var(--isy-pixel-content-bg);
   padding: var(--isy-space-4);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   overflow: auto;
   font-family: monospace;
   font-size: var(--isy-fs-md);

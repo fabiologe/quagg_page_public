@@ -669,7 +669,7 @@ watch(() => props.selectedElement, (val) => {
   width: 320px;
   max-height: 70vh;
   background: var(--isy-pixel-bg-deep);
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   box-shadow: 0 4px 25px rgba(4,6,71,0.4);
   display: flex;
   flex-direction: column;
@@ -746,7 +746,7 @@ watch(() => props.selectedElement, (val) => {
     width: 100%;
     padding: var(--isy-space-1);
     border: 1px solid var(--isy-pixel-border);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     background: var(--isy-pixel-bg-alt);
     color: var(--isy-pixel-text);
     font-size: var(--isy-fs-lg);
@@ -793,7 +793,7 @@ watch(() => props.selectedElement, (val) => {
     color: var(--isy-pixel-text);
     border: 1px solid var(--isy-pixel-border);
     padding: var(--isy-space-2) var(--isy-space-2);
-    border-radius: 6px;
+    border-radius: var(--isy-radius-md);
     cursor: pointer;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
@@ -818,7 +818,7 @@ watch(() => props.selectedElement, (val) => {
     border: 1px solid var(--isy-pixel-border);
     color: var(--isy-pixel-text-dim);
     padding: var(--isy-space-2) var(--isy-space-2);
-    border-radius: 6px;
+    border-radius: var(--isy-radius-md);
     cursor: pointer;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
@@ -839,7 +839,7 @@ watch(() => props.selectedElement, (val) => {
     background: #f0f7ff;
     border: 1px solid #cce5ff;
     padding: var(--isy-space-2);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     margin-bottom: var(--isy-space-3);
 }
 
@@ -857,7 +857,7 @@ watch(() => props.selectedElement, (val) => {
     border: 1px solid #ef5350;
     color: #c62828;
     padding: var(--isy-space-1);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     font-weight: bold;
     text-align: center;
     margin-bottom: var(--isy-space-2);
@@ -888,7 +888,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .link-hint-box {
     background: var(--isy-pixel-info-soft);
     border: 1px solid var(--isy-pixel-info-soft-border);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-2);
     margin-bottom: var(--isy-space-2);
     font-size: var(--isy-fs-sm);

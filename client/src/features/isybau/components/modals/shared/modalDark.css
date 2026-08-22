@@ -21,7 +21,7 @@
 .form-input, .form-select {
   padding: var(--isy-space-2) var(--isy-space-2);
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   background: var(--isy-pixel-bg-alt);
   color: var(--isy-pixel-text);
   font-size: var(--isy-fs-lg);
@@ -47,7 +47,7 @@
   border-style: solid;
   border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
   padding: var(--isy-space-2) var(--isy-space-4);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   clip-path: var(--isy-pixel-clip-corner);
   cursor: pointer;
   font-weight: 700;
@@ -67,7 +67,7 @@
   border-style: solid;
   border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
   padding: var(--isy-space-2) var(--isy-space-4);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   clip-path: var(--isy-pixel-clip-corner);
   cursor: pointer;
   font-family: var(--isy-pixel-font);

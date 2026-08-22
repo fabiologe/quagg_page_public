@@ -115,7 +115,7 @@ const sortedData = computed(() => {
 
 .modal-content {
   background: white;
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 1000px;
   max-height: 90vh;
@@ -148,7 +148,7 @@ const sortedData = computed(() => {
   margin-bottom: var(--isy-space-4);
   padding: var(--isy-space-2);
   background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
 }
 
 .table-container {
@@ -193,7 +193,7 @@ th:hover {
   width: 40px;
   height: 20px;
   background-color: #ccc;
-  border-radius: 20px;
+  border-radius: 999px;
   position: relative;
   margin-right: var(--isy-space-2);
   transition: 0.3s;
@@ -227,7 +227,7 @@ input:checked + .slider::before {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);

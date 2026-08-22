@@ -281,7 +281,7 @@ const handleMapDblClick = () => {
     color: var(--isy-pixel-green-glow);
     text-shadow: var(--isy-pixel-text-glow);
     padding: var(--isy-space-2) var(--isy-space-4);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     text-align: center;
@@ -302,7 +302,7 @@ const handleMapDblClick = () => {
     color: var(--isy-pixel-green);
     border: 1px solid var(--isy-pixel-border);
     padding: var(--isy-space-3) var(--isy-space-6);
-    border-radius: 20px;
+    border-radius: 999px;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
     cursor: pointer;

@@ -431,7 +431,7 @@ const activeTab = ref('general');
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   cursor: pointer;
   color: var(--isy-pixel-border);
   font-weight: 500;
@@ -501,14 +501,14 @@ const activeTab = ref('general');
 .audit-block {
     background: #f8fafc;
     padding: var(--isy-space-6);
-    border-radius: 8px;
+    border-radius: var(--isy-radius-lg);
     border: 1px solid #e2e8f0;
 }
 
 .warning-block {
     background: var(--isy-pixel-danger-soft);
     padding: var(--isy-space-6);
-    border-radius: 8px;
+    border-radius: var(--isy-radius-lg);
     border: 1px solid var(--isy-pixel-danger-soft-border);
     color: var(--isy-pixel-danger-soft-text);
 }
@@ -539,7 +539,7 @@ const activeTab = ref('general');
 .tag {
     display: inline-block;
     padding: var(--isy-space-1) var(--isy-space-2);
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     font-size: var(--isy-fs-md);
     font-weight: 600;
 }
@@ -549,7 +549,7 @@ const activeTab = ref('general');
     background: #1e1e1e;
     color: #d4d4d4;
     padding: var(--isy-space-4);
-    border-radius: 6px;
+    border-radius: var(--isy-radius-md);
     font-family: monospace;
     font-size: var(--isy-fs-md);
     white-space: pre-wrap;
@@ -573,7 +573,7 @@ const activeTab = ref('general');
 .info-card {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-4);
   font-size: var(--isy-fs-lg);
   color: #475569;

@@ -254,7 +254,7 @@ const downloadResults = () => {
 .control-box {
   background: white;
   padding: var(--isy-space-4);
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   border: 1px solid var(--isy-pixel-text-dim);
 }
 .control-box h3 {
@@ -325,7 +325,7 @@ const downloadResults = () => {
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-green);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--isy-radius-md);
   cursor: pointer;
   margin-top: var(--isy-space-2);
   font-family: var(--isy-pixel-font);
@@ -339,7 +339,7 @@ const downloadResults = () => {
     padding: var(--isy-space-2);
     background: transparent;
     border: 1px solid var(--isy-pixel-border);
-    border-radius: 6px;
+    border-radius: var(--isy-radius-md);
     cursor: pointer;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
@@ -369,7 +369,7 @@ const downloadResults = () => {
     color: var(--isy-pixel-warning-soft-text);
     background: #fef6e7;
     border-left: 3px solid #e0a020;
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-1) var(--isy-space-2);
     font-size: var(--isy-fs-sm);
 }
@@ -388,7 +388,7 @@ const downloadResults = () => {
 }
 .warning-link:hover { color: #6b4107; }
 .success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
-.input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border); }
+.input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
 .button-row { display: flex; gap: 0.5rem; margin-bottom: var(--isy-space-2); }
 .secondary-btn.full { margin-top: var(--isy-space-2); width: 100%; }
@@ -409,7 +409,7 @@ const downloadResults = () => {
     margin: var(--isy-space-2) 0;
     border: 1px solid #eee;
     background: #fcfcfc;
-    border-radius: 4px;
+    border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-1);
 }
 .rain-status {
@@ -418,7 +418,7 @@ const downloadResults = () => {
     margin-bottom: var(--isy-space-2);
     padding: var(--isy-space-1) var(--isy-space-2);
     background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
-    border-radius: 6px;
+    border-radius: var(--isy-radius-md);
     border-left: 3px solid var(--isy-pixel-border-hover);
 }
 
@@ -490,7 +490,7 @@ const downloadResults = () => {
     background: var(--isy-pixel-border);
     color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--isy-radius-md);
     cursor: pointer;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
@@ -507,7 +507,7 @@ const downloadResults = () => {
     height: 5px;
     background: var(--isy-pixel-text-dim);
     margin-top: var(--isy-space-1);
-    border-radius: 3px;
+    border-radius: var(--isy-radius-sm);
     overflow: hidden;
 }
 .progress-bar-fill {

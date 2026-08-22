@@ -1656,7 +1656,7 @@ svg {
   right: 1rem;
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2) var(--isy-space-3);
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
   z-index: 10;
@@ -1714,7 +1714,7 @@ svg {
   color: var(--isy-pixel-green-glow);
   text-shadow: var(--isy-pixel-text-glow);
   padding: var(--isy-space-1) var(--isy-space-2);
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   white-space: nowrap;
@@ -1767,7 +1767,7 @@ svg {
   gap: 0.75rem;
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
-  border-radius: 8px;
+  border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2) var(--isy-space-4);
   z-index: 1001;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
@@ -1782,7 +1782,7 @@ svg {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
-  border-radius: 5px;
+  border-radius: var(--isy-radius-sm);
   padding: var(--isy-space-2) var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);

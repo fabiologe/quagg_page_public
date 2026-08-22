@@ -15,7 +15,7 @@
   clip-path: none !important;
   outline: 3px solid var(--isy-tutorial-glow) !important;
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: var(--isy-radius-sm);
   /* Wirkt nur auf positionierte Elemente — für statische schadlos. */
   z-index: 50;
   animation: sv-tutorial-pulse 1.2s ease-in-out infinite;
