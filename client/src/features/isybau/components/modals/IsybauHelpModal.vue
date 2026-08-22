@@ -1,5 +1,5 @@
 <template>
-  <DraggableModal 
+  <DraggableModal name="Bedienungsanleitung" 
     :is-open="isOpen" 
     initial-width="1000px" 
     initial-height="800px"

@@ -1,6 +1,6 @@
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-content">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-label="Regenberechnung prüfen">
       <div class="modal-header">
         <h3>Regenberechnung Validierung</h3>
         <button class="close-btn" @click="$emit('close')">&times;</button>

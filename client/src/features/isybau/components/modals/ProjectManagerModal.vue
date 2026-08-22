@@ -1,7 +1,7 @@
 <template>
   <Transition name="modal-fade">
     <div v-if="isOpen" class="pm-backdrop" @click.self="$emit('close')">
-      <div class="pm-modal">
+      <div class="pm-modal" role="dialog" aria-modal="true" aria-label="Projekte">
 
         <!-- Header -->
         <div class="pm-header">

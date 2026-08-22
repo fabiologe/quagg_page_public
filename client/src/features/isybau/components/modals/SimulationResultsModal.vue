@@ -1,5 +1,5 @@
 <template>
-  <DraggableModal
+  <DraggableModal name="Simulationsergebnisse"
     :isOpen="isOpen"
     @close="close"
     initialWidth="1000"

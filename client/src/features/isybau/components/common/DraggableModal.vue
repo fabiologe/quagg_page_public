@@ -4,6 +4,9 @@
       <div 
         ref="modalRef"
         class="draggable-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="name || undefined"
         :style="modalStyle"
         @mousedown="startDrag"
       >
@@ -28,6 +31,10 @@ import { ref, computed, watch, onUnmounted } from 'vue';
 
 const props = defineProps({
   isOpen: Boolean,
+  /* Name des Dialogs fuer Vorleseprogramme. Ohne ihn kuendigt der Browser nur
+     "Dialog" an - bei sechs Modals, die diese Huelle teilen, waere das sechsmal
+     derselbe nichtssagende Satz. */
+  name: { type: String, default: '' },
   initialWidth: { type: String, default: '800px' },
   initialHeight: { type: String, default: '600px' },
   initialTop: { type: String, default: '100px' }, // Pixelwert oder 'center'

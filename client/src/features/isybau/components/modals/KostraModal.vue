@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="isOpen" class="modal-overlay" @click.self="close">
-      <div class="modal-content">
+      <div class="modal-content" role="dialog" aria-modal="true" aria-label="KOSTRA-DWD Regendaten">
       <div class="modal-header">
         <h3>KOSTRA-DWD Regendaten</h3>
         <button title="Schließen" aria-label="Schließen" class="close-btn" @click="close">×</button>

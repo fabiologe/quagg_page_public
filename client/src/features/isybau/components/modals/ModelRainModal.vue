@@ -1,5 +1,5 @@
 <template>
-  <DraggableModal :is-open="isOpen" initial-width="800px" initial-height="600px" initial-left="center" initial-top="100">
+  <DraggableModal name="Modellregen erstellen" :is-open="isOpen" initial-width="800px" initial-height="600px" initial-left="center" initial-top="100">
       <div class="modal-header">
         <h3>Modellregen erstellen</h3>
         <button title="Schließen" aria-label="Schließen" class="close-btn" @click="close">×</button>

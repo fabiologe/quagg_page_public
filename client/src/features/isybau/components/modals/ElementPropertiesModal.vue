@@ -1,5 +1,5 @@
 <template>
-  <DraggableModal :is-open="isOpen" initial-width="400px" initial-height="auto" initial-left="center" initial-top="center">
+  <DraggableModal name="Element bearbeiten" :is-open="isOpen" initial-width="400px" initial-height="auto" initial-left="center" initial-top="center">
       <header class="modal-header">
         <h3>{{ title }}</h3>
         <button title="Schließen" aria-label="Schließen" class="close-btn" @click="$emit('close')">×</button>

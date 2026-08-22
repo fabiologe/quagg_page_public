@@ -1,5 +1,5 @@
 <template>
-  <DraggableModal :is-open="isOpen" initial-width="1100px" initial-height="85vh" initial-left="center" initial-top="50">
+  <DraggableModal name="Daten bearbeiten" :is-open="isOpen" initial-width="1100px" initial-height="85vh" initial-left="center" initial-top="50">
       <!-- Old modal-content inner structure preserved but styles adapted -->
         <div class="modal-header">
           <div class="header-left">
