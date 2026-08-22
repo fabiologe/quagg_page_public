@@ -1,0 +1,33 @@
+#!/bin/sh
+# Waechter fuer das Token-System von client/src/features/isybau.
+#
+# Prueft NUR die vorgemerkten Dateien, nicht den ganzen Baum - ein Commit an
+# einem anderen Feature soll nicht an isybau haengenbleiben.
+#
+# Aktivieren:   git config core.hooksPath .githooks
+# Umgehen:      git commit --no-verify   (fuer den einen Notfall, nicht als Gewohnheit)
+
+dateien=$(git diff --cached --name-only --diff-filter=ACM \
+          | grep -E '^client/src/features/isybau/.*\.(vue|css)$' || true)
+[ -z "$dateien" ] && exit 0
+
+if [ ! -x client/node_modules/.bin/stylelint ]; then
+    echo "pre-commit: stylelint fehlt." >&2
+    echo "  npm --prefix client install -D stylelint postcss-html" >&2
+    exit 1
+fi
+
+# Pfade relativ zu client/, weil dort die Konfiguration liegt.
+rel=$(echo "$dateien" | sed 's|^client/||')
+# shellcheck disable=SC2086
+(cd client && ./node_modules/.bin/stylelint $rel) || {
+    echo "" >&2
+    echo "pre-commit: rohe Werte statt Tokens. Siehe client/.stylelintrc.json." >&2
+    echo "  Farben     -> var(--isy-pixel-*)   in styles/theme.css" >&2
+    echo "  Schrift    -> var(--isy-fs-*)      6 Stufen" >&2
+    echo "  Abstaende  -> var(--isy-space-1..7) Vielfache von 4" >&2
+    echo "  Radien     -> var(--isy-radius-*)  3 Stufen" >&2
+    echo "  z-index    -> var(--isy-z-*)       5 Ebenen, Staffelung per calc()" >&2
+    exit 1
+}
+exit 0

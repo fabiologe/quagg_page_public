@@ -308,8 +308,8 @@ Wehr1    S1     S2    TRANSVERSE  1.20      1.84</div>
                     <li>❌ <strong>Große Netze (&gt; 2000 Elemente):</strong> 3D-Darstellung ohne LOD/Culling — Performance-Einbußen möglich.</li>
                 </ul>
             </div>
-            <div class="audit-block" style="margin-top:1.5rem">
-                <p style="font-weight:600;margin-bottom:0.75rem">Produktionsreife (Stand V.1.03)</p>
+            <div class="audit-block" style="margin-top:var(--isy-space-6)">
+                <p style="font-weight:600;margin-bottom:var(--isy-space-3)">Produktionsreife (Stand V.1.03)</p>
                 <table class="tech-table">
                     <tr><th>Modul</th><th>Status</th><th>Hinweis</th></tr>
                     <tr><td>ISYBAU-Import</td><td><span class="tag" style="background:var(--isy-pixel-success-soft);color:var(--isy-pixel-success-soft-text)">✓ Stabil</span></td><td>Alle gängigen ISYBAU-Strukturen</td></tr>

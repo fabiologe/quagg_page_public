@@ -1,0 +1,25 @@
+# Waechter fuer das Token-System von client/src/features/isybau.
+# Laeuft nur an, wenn dort etwas angefasst wurde.
+name: isybau Token-Waechter
+
+on:
+  push:
+    paths: ['client/src/features/isybau/**']
+  pull_request:
+    paths: ['client/src/features/isybau/**']
+
+jobs:
+  stylelint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npx stylelint "src/features/isybau/**/*.{vue,css}"

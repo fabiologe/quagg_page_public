@@ -60,7 +60,7 @@
       class="grid-toggle-btn contour-toggle-btn"
       :title="contourTitle"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c47f3d" stroke-width="2" stroke-linecap="round"><path d="M2 12c2-3 4 3 6 0s4 3 6 0 4 3 6 0" /><path d="M2 18c2-3 4 3 6 0s4 3 6 0 4 3 6 0" /></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12c2-3 4 3 6 0s4 3 6 0 4 3 6 0" /><path d="M2 18c2-3 4 3 6 0s4 3 6 0 4 3 6 0" /></svg>
       <span class="grid-label contour-label">{{ ezgLayer.contourInterval.value === 0 ? 'Aus' : ezgLayer.contourInterval.value + 'm' }}</span>
     </button>
     <button
@@ -223,7 +223,7 @@ const contourTitle = computed(() => {
 }
 
 .contour-label {
-  color: #c47f3d;
+  color: var(--isy-pixel-warning-hover);
 }
 
 .ezg-reload-btn.loading {

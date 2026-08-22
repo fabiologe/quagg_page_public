@@ -345,11 +345,11 @@
           <button v-if="!readonly" @click="save" class="primary-btn full-width">
             <img class="ic" src="/saintv1d/icons/Interface-Essential-Floppy-Disk--Streamline-Pixel.svg" /> Speichern
           </button>
-          <button @click="store.openPreprocessingFor(selectedElement.id, elementType)" class="secondary-btn full-width" style="margin-top:0.5rem"
+          <button @click="store.openPreprocessingFor(selectedElement.id, elementType)" class="secondary-btn full-width" style="margin-top:var(--isy-space-2)"
                   title="Öffnet 'Daten bearbeiten' mit diesem Element vorselektiert">
             <img class="ic" src="/saintv1d/icons/Interface-Essential-Setting-Slide--Streamline-Pixel.svg" /> Bearbeiten (Tabelle)
           </button>
-          <button @click="$emit('show-details', selectedElement)" class="secondary-btn full-width" style="margin-top:0.5rem">
+          <button @click="$emit('show-details', selectedElement)" class="secondary-btn full-width" style="margin-top:var(--isy-space-2)">
             <img class="ic" src="/saintv1d/icons/Interface-Essential-Expand-3--Streamline-Pixel.svg" /> Ergebnisse
           </button>
       </div>

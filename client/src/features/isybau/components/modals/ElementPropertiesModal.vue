@@ -32,7 +32,7 @@
               </select>
             </div>
             
-            <div class="form-group checkbox-group" style="margin-bottom: 1rem;">
+            <div class="form-group checkbox-group" style="margin-bottom: var(--isy-space-4);">
                 <label class="checkbox-label">
                     <input type="checkbox" v-model="formData.isManhole">
                     Ist ein Schachtbauwerk

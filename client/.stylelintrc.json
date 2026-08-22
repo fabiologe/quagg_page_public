@@ -1,0 +1,91 @@
+{
+  "//": [
+    "Waechter fuer das Token-System von src/features/isybau.",
+    "",
+    "Warum nur isybau: dort ist die Konsolidierung gelaufen. Die uebrigen",
+    "Features (flood-2D, flood-3D, ifc-viewer, pdfeditor) haben ihre eigenen",
+    "Themes und wuerden sofort rot leuchten, ohne dass jemand das beauftragt",
+    "haette. Wer sie nachzieht, nimmt sie hier auf.",
+    "",
+    "Ausgenommen ist styles/theme.css - dort GEHOEREN die Farbwerte hin.",
+    "",
+    "Die Liste unter 'Restschuld' weiter unten nennt die Dateien, in denen noch",
+    "rohe Farben stehen. Sie ist ein Ratschenmechanismus: neue rohe Farben in",
+    "sauberen Dateien fallen sofort auf, die Altlast bleibt sichtbar und darf",
+    "nur schrumpfen. Wer eine Datei aufraeumt, streicht sie hier."
+  ],
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["src/features/isybau/**/*.vue"],
+      "customSyntax": "postcss-html"
+    },
+    {
+      "files": ["src/features/isybau/**/*.{vue,css}"],
+      "rules": {
+        "color-no-hex": true,
+        "declaration-property-value-allowed-list": {
+          "font-size": ["/^var\\(--isy-fs-(pixel-)?(sm|md|lg|xl)\\)$/"],
+          "z-index": [
+            "/^var\\(--isy-z-(base|sticky|panel|modal|top)\\)$/",
+            "/^calc\\(var\\(--isy-z-(base|sticky|panel|modal|top)\\) \\+ [0-9]+\\)$/"
+          ],
+          "/^(padding|margin)/": [
+            "/^((var\\(--isy-space-[1-7]\\)|calc\\(-1 \\* var\\(--isy-space-[1-7]\\)\\)|0|auto|inherit)(\\s+|$))+$/",
+            "/^clamp\\(/"
+          ],
+          "/^border-.*radius$|^border-radius$/": [
+            "/^((var\\(--isy-radius-(sm|md|lg)\\)|0|50%|999px)(\\s+|$))+$/",
+            "/^var\\(--sv-radius/"
+          ]
+        }
+      }
+    },
+    {
+      "//": "Ausnahme: hier stehen die Token-Definitionen selbst.",
+      "files": ["src/features/isybau/styles/theme.css"],
+      "rules": { "color-no-hex": null }
+    },
+    {
+      "//": [
+        "TYPKODIERUNG - dauerhafte Ausnahme, keine Schuld.",
+        "Diese Farben BEDEUTEN etwas: Bauwerkstyp, Kanalart, Ergebnisklasse,",
+        "Legendeneintrag. Sie duerfen dem Theme nicht folgen, sonst dunkelt die",
+        "naechste Lesbarkeitsrunde das Becken-Teal mit ab und die Legende stimmt",
+        "nicht mehr. Sie gehoeren in eine eigene, dokumentierte Typ-Palette",
+        "(Phase 3) - dann wird diese Liste durch eine Regel ersetzt, die genau",
+        "diese Palette verlangt."
+      ],
+      "files": [
+        "src/features/isybau/components/visualizer/viewer3d/Viewer3DControls.vue",
+        "src/features/isybau/components/visualizer/viewer3d/Viewer3DInfoPanel.vue",
+        "src/features/isybau/components/visualizer/IsybauViewer.vue"
+      ],
+      "rules": { "color-no-hex": null }
+    },
+    {
+      "//": [
+        "RESTSCHULD an rohen Oberflaechenfarben, Stand dieses Commits.",
+        "Ratschenmechanismus: neue rohe Farben in sauberen Dateien fallen sofort",
+        "auf, diese Altlast bleibt sichtbar. Die Liste darf nur schrumpfen.",
+        "Wer eine Datei aufraeumt, streicht sie hier."
+      ],
+      "files": [
+        "src/features/isybau/components/modals/results/results-shared.css",
+        "src/features/isybau/components/visualizer/ElementInfo.vue",
+        "src/features/isybau/components/modals/PreprocessingModal.vue",
+        "src/features/isybau/components/modals/IsybauHelpModal.vue",
+        "src/features/isybau/components/modals/KostraModal.vue",
+        "src/features/isybau/components/modals/ProjectManagerModal.vue",
+        "src/features/isybau/components/modals/RunoffValidationModal.vue",
+        "src/features/isybau/components/panels/SimulationControls.vue",
+        "src/features/isybau/components/panels/TerminalHero.vue",
+        "src/features/isybau/components/common/LoadingOverlay.vue",
+        "src/features/isybau/components/common/PumpCurvePreview.vue",
+        "src/features/isybau/components/common/DwfPatternPreview.vue",
+        "src/features/isybau/components/editor/IsybauEditor.vue"
+      ],
+      "rules": { "color-no-hex": null }
+    }
+  ]
+}

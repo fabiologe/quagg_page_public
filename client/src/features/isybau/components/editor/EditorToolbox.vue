@@ -47,7 +47,7 @@
         <span style="font-weight: 900; font-family: 'Press Start 2P', monospace; font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-green);">m²</span>
       </button>
 
-      <div class="separator-v" style="margin: 0 4px; border-left: 1px solid var(--isy-pixel-border);"></div>
+      <div class="separator-v" style="margin: 0 var(--isy-space-1); border-left: 1px solid var(--isy-pixel-border);"></div>
 
       <button
         class="tool-btn"
