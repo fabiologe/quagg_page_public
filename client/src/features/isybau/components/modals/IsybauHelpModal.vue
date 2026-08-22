@@ -432,7 +432,7 @@ const activeTab = ref('general');
   border: none;
   border-left: 3px solid transparent;
   border-radius: var(--isy-radius-md);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   color: var(--isy-pixel-border);
   font-weight: 500;
   font-size: var(--isy-fs-lg);

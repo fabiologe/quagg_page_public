@@ -170,7 +170,7 @@ th, td {
 th {
   background: var(--isy-pixel-content-bg);
   font-weight: 600;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   user-select: none;
 }
 
@@ -182,7 +182,7 @@ th:hover {
 .toggle-switch {
   display: flex;
   align-items: center;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
 }
 
 .toggle-switch input {
@@ -232,7 +232,7 @@ input:checked + .slider::before {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .secondary-btn:hover { background: var(--isy-pixel-content-bg); }

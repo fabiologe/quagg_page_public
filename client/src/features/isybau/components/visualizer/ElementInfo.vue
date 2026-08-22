@@ -690,11 +690,11 @@ watch(() => props.selectedElement, (val) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  cursor: grab;
+  cursor: var(--isy-cursor-pan);
 }
 
 .info-window.dragging .info-header {
-  cursor: grabbing;
+  cursor: var(--isy-cursor-pan);
 }
 
 .info-header h3 {
@@ -711,7 +711,7 @@ watch(() => props.selectedElement, (val) => {
   border: none;
   font-size: var(--isy-fs-xl);
   color: var(--isy-pixel-border-hover);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   line-height: 1;
   transition: color 0.2s;
 }
@@ -755,7 +755,7 @@ watch(() => props.selectedElement, (val) => {
     transition: border-color 0.15s;
 }
 .full-input:focus, .full-select:focus { border-color: var(--isy-pixel-green); }
-.full-input:disabled, .full-select:disabled { opacity: 0.4; cursor: not-allowed; }
+.full-input:disabled, .full-select:disabled { opacity: 0.4; cursor: var(--isy-cursor-gesperrt); }
 
 .flex-row {
     display: flex;
@@ -794,7 +794,7 @@ watch(() => props.selectedElement, (val) => {
     border: 1px solid var(--isy-pixel-border);
     padding: var(--isy-space-2) var(--isy-space-2);
     border-radius: var(--isy-radius-md);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
     display: flex;
@@ -819,7 +819,7 @@ watch(() => props.selectedElement, (val) => {
     color: var(--isy-pixel-text-dim);
     padding: var(--isy-space-2) var(--isy-space-2);
     border-radius: var(--isy-radius-md);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
     transition: background 0.15s;
@@ -867,9 +867,9 @@ watch(() => props.selectedElement, (val) => {
 
 .input-with-pick { display: flex; align-items: center; gap: var(--isy-space-1); }
 .input-with-pick .full-input { flex: 1; }
-.pick-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; flex-shrink: 0; }
+.pick-btn { border: none; background: none; cursor: var(--isy-cursor-hand); opacity: 0.5; padding: 0; line-height: 0; flex-shrink: 0; }
 .pick-btn:hover { opacity: 1; transform: scale(1.1); }
-.pick-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+.pick-btn:disabled { opacity: 0.2; cursor: var(--isy-cursor-gesperrt); }
 .pick-btn:disabled:hover { transform: none; }
 .pick-icon { width: 16px; height: 16px; display: block; }
 

@@ -37,7 +37,7 @@
     border: none;
     font-size: var(--isy-fs-xl);
     color: var(--isy-pixel-content-text-dim);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -73,7 +73,7 @@
     color: var(--isy-pixel-text-dim);
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-2) var(--isy-space-3);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     transition: background 0.15s, color 0.15s;
 }
 
@@ -291,7 +291,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     padding: var(--isy-space-1) var(--isy-space-2);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     margin: 0 var(--isy-space-1);
 }
 .link-hint-btn:hover { background: var(--isy-pixel-info-hover); }
@@ -299,14 +299,14 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 /* Hinweis statt leerer Zelle: SWMM liefert für Pumpen/Wehre/Drosseln strukturell
    weniger Link-Flow-Spalten als für normale Haltungen (Conduits). */
 .na-hint { color: var(--isy-pixel-content-text-dim); font-style: italic; font-size: var(--isy-fs-md); cursor: help; }
-.clickable-row { cursor: pointer; }
+.clickable-row { cursor: var(--isy-cursor-hand); }
 .clickable-row:hover td { background-color: var(--isy-pixel-content-hover) !important; }
 
 /* Tables */
 .table-scroll { flex: 1; overflow-y: auto; background: var(--isy-pixel-content-bg); border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); }
 .data-table { width: 100%; border-collapse: collapse; font-size: var(--isy-fs-lg); }
 .data-table th, .data-table td { padding: var(--isy-space-3) var(--isy-space-4); text-align: left; border-bottom: 1px solid var(--isy-pixel-text-dim); }
-.data-table th { background: var(--isy-pixel-content-raised); font-weight: 600; color: var(--isy-pixel-content-text-dim); position: sticky; top: 0; z-index: var(--isy-z-sticky); cursor: pointer; }
+.data-table th { background: var(--isy-pixel-content-raised); font-weight: 600; color: var(--isy-pixel-content-text-dim); position: sticky; top: 0; z-index: var(--isy-z-sticky); cursor: var(--isy-cursor-hand); }
 .data-table tr:hover { background: var(--isy-pixel-content-hover); }
 .row-warning { background: var(--isy-pixel-warning-soft); }
 .row-danger { background: var(--isy-pixel-danger-soft); }
@@ -329,7 +329,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-border);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
 }
 
 /* Overlays */
@@ -364,7 +364,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     border: none;
     font-size: var(--isy-fs-xl);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     color: var(--isy-pixel-border);
     transition: color 0.2s;
     padding: 0 var(--isy-space-1);
@@ -373,7 +373,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .detail-body { padding: var(--isy-space-6); flex: 1; overflow-y: auto; }
 .engineer-inspector { display: grid; grid-template-columns: 1fr 1fr; gap: var(--isy-space-7); margin-bottom: var(--isy-space-7); background: var(--isy-pixel-info-soft); padding: var(--isy-space-4); border-radius: var(--isy-radius-md); border: 1px solid var(--isy-pixel-info-soft-border);}
 .text-red { color: #dc2626; font-weight: bold; }
-.btn-icon { background: none; border: 1px solid var(--isy-pixel-text-dim); padding: var(--isy-space-1) var(--isy-space-2); border-radius: var(--isy-radius-sm); cursor: pointer; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-sm); color: var(--isy-pixel-border); }
+.btn-icon { background: none; border: 1px solid var(--isy-pixel-text-dim); padding: var(--isy-space-1) var(--isy-space-2); border-radius: var(--isy-radius-sm); cursor: var(--isy-cursor-hand); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-sm); color: var(--isy-pixel-border); }
 .btn-icon:hover { background: var(--isy-pixel-content-hover); }
 
 .mb-4 { margin-bottom: var(--isy-space-4); }

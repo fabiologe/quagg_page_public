@@ -345,11 +345,11 @@ const applyResult = () => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.15s;
 }
 .primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: not-allowed; }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: var(--isy-cursor-gesperrt); }
 
 .secondary-btn {
   background: transparent;
@@ -360,7 +360,7 @@ const applyResult = () => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .secondary-btn:hover { background: var(--isy-pixel-content-bg); }
@@ -381,7 +381,7 @@ const applyResult = () => {
 
 .data-details summary {
   padding: var(--isy-space-2);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   background: var(--isy-pixel-content-bg);
   font-weight: 500;
 }
@@ -422,7 +422,7 @@ const applyResult = () => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   width: auto;
   margin-top: 0;
   transition: background 0.15s;
@@ -430,7 +430,7 @@ const applyResult = () => {
 .apply-btn:hover { background: var(--isy-pixel-border); }
 
 .clickable-cell {
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.2s;
 }
 
@@ -471,7 +471,7 @@ const applyResult = () => {
     width: 36px;
     height: 36px;
     font-size: var(--isy-fs-xl); /* Slightly larger for the Ogre */
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     display: flex;
     align-items: center;
     justify-content: center;

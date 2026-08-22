@@ -131,7 +131,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.15s;
 }
 .primary-btn:hover { background: var(--isy-pixel-border); }
@@ -145,7 +145,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .secondary-btn:hover { background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright); }

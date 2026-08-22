@@ -166,6 +166,30 @@
     --isy-pixel-content-selected: #d9d2c0;  /* gewählte Zeile           */
     --isy-pixel-content-sunken:   #cdc4ae;  /* Rinne, Vertiefung        */
 
+    /* ── Zeiger ──────────────────────────────────────────────────────────────
+       Eigene Cursor im Pixel-Stil des Moduls, 21x21-Raster auf 45px, wie
+       cursor-pan.svg es vorgemacht hat.
+
+       Zwei Gruende, warum sie hier als Token stehen und nicht verstreut:
+
+       Erstens war nur EINER von ihnen eigen. 86 Fundstellen sagten schlicht
+       "pointer", 11 "not-allowed", 7 "default" - das Modul sah an fünf Stellen
+       nach sich selbst aus und an rund 120 nach dem Betriebssystem.
+
+       Zweitens hatte der eine eigene Cursor einen Fehler: reines Schwarz auf
+       einem Viewer, der im Dunkelmodus #0d1117 ist. 1,1:1 - unsichtbar. Alle
+       fünf tragen jetzt eine helle Kontur, damit dieselbe Datei auf beiden
+       Untergründen funktioniert (17,5:1 hell, 18,9:1 dunkel). Genau so machen
+       es die Cursor jedes Betriebssystems.
+
+       Der zweite Wert je Zeile ist der Hotspot in Pixeln, der dritte der
+       Rückfall für Browser ohne SVG-Cursor. */
+    --isy-cursor-zeiger:   url('/saintv1d/icons/cursor-zeiger.svg')    0  0, default;
+    --isy-cursor-hand:     url('/saintv1d/icons/cursor-hand.svg')     11  0, pointer;
+    --isy-cursor-gesperrt: url('/saintv1d/icons/cursor-gesperrt.svg') 21 21, not-allowed;
+    --isy-cursor-text:     url('/saintv1d/icons/cursor-text.svg')     13 21, text;
+    --isy-cursor-pan:      url('/saintv1d/icons/cursor-pan.svg')      21 21, move;
+
     --isy-pixel-font: 'Press Start 2P', monospace;
     /* Aufmerksamkeitsfarbe des Tutorials (Highlight-Ring, Fokus-Ring im
        Viewer). BEWUSST eigener Token und heller als die Grün-Familie oben:
@@ -504,4 +528,24 @@ html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.c
 .isybau-main button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):disabled,
 html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.close-toast):not(.plain-btn):not(.sv-tutorial-highlight):disabled {
     transform: none;
+}
+
+/* ── Zeiger im ganzen Modul ───────────────────────────────────────────────────
+ * Der Grundzeiger muss an der Dokumentwurzel haengen, sonst bleibt es beim
+ * Betriebssystem-Pfeil und die eigenen Cursor wirken wie Ausreisser statt wie
+ * ein Satz. Teleport-Modals springen aus .isybau-main heraus und wuerden von
+ * einer Regel an .isybau-main nicht erreicht.
+ *
+ * :has(.isybau-main) statt html[data-theme], weil data-theme auch der
+ * PDF-Editor setzt - derselbe Grund und derselbe Mechanismus wie beim
+ * Scrollbar-Block weiter unten.
+ *
+ * Eingabefelder brauchen den I-Balken, sonst zeigt der Pfeil auf Text, in den
+ * man schreiben kann. */
+:root:has(.isybau-main) {
+    cursor: var(--isy-cursor-zeiger);
+}
+.isybau-main input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+.isybau-main textarea {
+    cursor: var(--isy-cursor-text);
 }

@@ -59,7 +59,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
 .info-close {
   background: none;
   border: none;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-text-dim);

@@ -273,7 +273,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     padding: var(--isy-space-2) var(--isy-space-4);
     border: 1px solid transparent;
     background: transparent;
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     border-radius: var(--isy-radius-sm);
     clip-path: var(--isy-pixel-clip-corner);
     font-family: var(--isy-pixel-font);
@@ -393,7 +393,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
   border-radius: var(--isy-radius-md);
   clip-path: var(--isy-pixel-clip-corner);
   text-align: left;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   line-height: 1.6;
@@ -473,7 +473,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     background: none;
     border: none;
     font-size: var(--isy-fs-lg);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     color: var(--isy-pixel-text-dim);
 }
 

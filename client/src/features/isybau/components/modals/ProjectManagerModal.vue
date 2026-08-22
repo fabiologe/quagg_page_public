@@ -217,7 +217,7 @@ function formatDate(iso) {
   font-size: var(--isy-fs-xl);
   line-height: 1;
   color: var(--isy-pixel-border-hover);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
 }
 .close-btn:hover { color: var(--isy-pixel-text); }
 
@@ -352,7 +352,7 @@ function formatDate(iso) {
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   white-space: nowrap;
   transition: background 0.15s;
   display: flex;
@@ -360,7 +360,7 @@ function formatDate(iso) {
   gap: var(--isy-space-2);
 }
 .btn-primary:hover:not(:disabled) { background: var(--isy-pixel-border); }
-.btn-primary:disabled { opacity: 0.45; cursor: default; }
+.btn-primary:disabled { opacity: 0.45; cursor: var(--isy-cursor-zeiger); }
 
 .btn-load {
   background: var(--isy-pixel-content-bg);
@@ -370,7 +370,7 @@ function formatDate(iso) {
   padding: var(--isy-space-1) var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .btn-load:hover { background: var(--isy-pixel-text-dim); color: var(--isy-pixel-bg); }
@@ -383,7 +383,7 @@ function formatDate(iso) {
   padding: var(--isy-space-1) var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .btn-delete:hover { background: var(--isy-pixel-danger-soft); }
@@ -396,7 +396,7 @@ function formatDate(iso) {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-border);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
 }
 .btn-cancel:hover { background: var(--isy-pixel-content-bg); }
 

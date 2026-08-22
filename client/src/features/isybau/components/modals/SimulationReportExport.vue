@@ -742,7 +742,7 @@ async function exportPDF() {
   color: var(--isy-pixel-text);
   border: none;
   border-radius: var(--isy-radius-sm);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   font-size: var(--isy-fs-sm);
   font-weight: 600;
   font-family: var(--isy-pixel-font);
@@ -750,7 +750,7 @@ async function exportPDF() {
   transition: background 0.15s, opacity 0.15s;
 }
 .pdf-export-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
-.pdf-export-btn:disabled { opacity: 0.5; cursor: default; }
+.pdf-export-btn:disabled { opacity: 0.5; cursor: var(--isy-cursor-zeiger); }
 .pdf-icon {
   width: 18px;
   height: 18px;

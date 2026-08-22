@@ -263,7 +263,7 @@ watch(() => props.isOpen, (open) => {
   border: none;
   border-bottom: 2px solid transparent;
   padding: var(--isy-space-2) var(--isy-space-1);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   color: var(--isy-pixel-border-hover);
   font-size: var(--isy-fs-md);
   font-weight: 500;
@@ -332,11 +332,11 @@ watch(() => props.isOpen, (open) => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.15s;
 }
 .primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: not-allowed; }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: var(--isy-cursor-gesperrt); }
 
 .secondary-btn {
   background: transparent;
@@ -347,9 +347,9 @@ watch(() => props.isOpen, (open) => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .secondary-btn:hover:not(:disabled) { background: var(--isy-pixel-content-bg); }
-.secondary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.secondary-btn:disabled { opacity: 0.5; cursor: var(--isy-cursor-gesperrt); }
 </style>

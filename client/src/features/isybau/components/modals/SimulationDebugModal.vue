@@ -150,7 +150,7 @@ const copyToClipboard = async (text) => {
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-border);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     background: var(--isy-pixel-content-bg);
     border: 1px solid var(--isy-pixel-text-dim);
     border-radius: var(--isy-radius-sm);

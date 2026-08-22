@@ -351,7 +351,7 @@ const edgeUtilClass = computed(() => {
 }
 .close-btn {
   background: none; border: none; color: var(--isy-pixel-text-dim);
-  font-size: var(--isy-fs-xl); cursor: pointer; line-height: 1; padding: 0;
+  font-size: var(--isy-fs-xl); cursor: var(--isy-cursor-hand); line-height: 1; padding: 0;
 }
 .close-btn:hover { color: var(--isy-pixel-text); }
 

@@ -305,7 +305,7 @@ const handleMapDblClick = () => {
     border-radius: 999px;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     box-shadow: var(--isy-elev-2);
     transition: transform 0.2s, background 0.2s;
 }

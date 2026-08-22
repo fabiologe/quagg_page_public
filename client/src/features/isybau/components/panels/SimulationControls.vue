@@ -326,21 +326,21 @@ const downloadResults = () => {
   color: var(--isy-pixel-green);
   border: none;
   border-radius: var(--isy-radius-md);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   margin-top: var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   transition: background 0.15s;
 }
 .primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: default; }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: var(--isy-cursor-zeiger); }
 .secondary-btn {
     flex: 1;
     padding: var(--isy-space-2);
     background: transparent;
     border: 1px solid var(--isy-pixel-border);
     border-radius: var(--isy-radius-md);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     text-align: center;
@@ -361,7 +361,7 @@ const downloadResults = () => {
     font-size: var(--isy-fs-pixel-sm);
     line-height: 1.6;
     text-decoration: underline;
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
 }
 .error-link:hover { color: #7f1616; }
 .warning-list { margin-top: var(--isy-space-2); display: flex; flex-direction: column; gap: var(--isy-space-1); }
@@ -384,7 +384,7 @@ const downloadResults = () => {
     font-size: var(--isy-fs-pixel-sm);
     line-height: 1.6;
     text-decoration: underline;
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
 }
 .warning-link:hover { color: #6b4107; }
 .success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
@@ -460,7 +460,7 @@ const downloadResults = () => {
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     /* Kanten hart lassen — ein weichgezeichnetes x passt nicht zum Rest. */
     image-rendering: pixelated;
 }
@@ -491,7 +491,7 @@ const downloadResults = () => {
     color: white;
     border: none;
     border-radius: var(--isy-radius-md);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     text-align: left;

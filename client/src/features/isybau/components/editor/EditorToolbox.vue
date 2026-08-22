@@ -169,7 +169,7 @@ const hint = computed(() => {
     border: 1px solid var(--isy-pixel-border);
     background: transparent;
     border-radius: var(--isy-radius-sm);
-    cursor: pointer;
+    cursor: var(--isy-cursor-hand);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -195,7 +195,7 @@ const hint = computed(() => {
 }
 .tool-btn:disabled {
     opacity: 0.3;
-    cursor: not-allowed;
+    cursor: var(--isy-cursor-gesperrt);
 }
 
 .separator-h {

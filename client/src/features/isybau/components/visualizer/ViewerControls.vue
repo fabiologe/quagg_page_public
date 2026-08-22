@@ -143,7 +143,7 @@ const contourTitle = computed(() => {
   border-radius: var(--isy-radius-sm);
   width: 32px;
   height: 32px;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -258,7 +258,7 @@ const contourTitle = computed(() => {
 
 .size-control input[type="range"] {
   width: 70px;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   accent-color: var(--isy-pixel-border);
 }
 

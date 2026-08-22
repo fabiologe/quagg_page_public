@@ -164,7 +164,7 @@ const remove = () => {
 <style scoped>
 .modal-header {
   padding: var(--isy-space-3) var(--isy-space-4);
-  cursor: move;
+  cursor: var(--isy-cursor-pan);
   flex-shrink: 0;
   background: var(--isy-pixel-bg);
 }

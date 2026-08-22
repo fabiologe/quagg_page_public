@@ -378,7 +378,7 @@ onBeforeUnmount(() => teardownDemWorker());
   border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
   border-radius: var(--isy-radius-md);
   clip-path: var(--isy-pixel-clip-corner);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   box-shadow: var(--isy-btn-shadow);
   transition: background 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s;
   user-select: none;
@@ -396,7 +396,7 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .file-btn.disabled {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: var(--isy-cursor-gesperrt);
   pointer-events: none;
 }
 
@@ -416,7 +416,7 @@ onBeforeUnmount(() => teardownDemWorker());
   clip-path: var(--isy-pixel-clip-corner);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   box-shadow: var(--isy-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s;
   box-sizing: border-box;
@@ -512,7 +512,7 @@ onBeforeUnmount(() => teardownDemWorker());
   clip-path: var(--isy-pixel-clip-corner);
   color: var(--isy-text-dim);
   font-size: var(--isy-fs-sm);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   box-shadow: var(--isy-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
@@ -563,7 +563,7 @@ onBeforeUnmount(() => teardownDemWorker());
   background: var(--isy-btn-bg);
   border: 1px solid var(--isy-border);
   border-radius: 50%;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   display: flex;
   align-items: center;
   justify-content: center;

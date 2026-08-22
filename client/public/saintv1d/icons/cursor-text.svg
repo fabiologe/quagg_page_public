@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" id="cursor-text" height="45" width="45">
+  <desc>
+    Pixel-Cursor "text" (I-Balken), 21x21-Raster wie cursor-pan.svg.
+    Schwarze Fuellung mit heller Kontur, damit er auf hellem UND dunklem
+    Untergrund sichtbar bleibt - reines Schwarz hat auf dem Dunkelmodus-Viewer
+    (#0d1117) nur 1,1:1 Kontrast.
+    Hotspot: Zelle 6,10 = 12 21 in CSS.
+  </desc>
+  <title>cursor-text</title>
+  <g>
+    <path d="M1.52 0.00h7.62v1.52h-7.62Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 0.00h7.62v1.52h-7.62Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M1.52 1.52h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 1.52h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 1.52h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 1.52h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M1.52 3.05h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 3.05h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M13.71 3.05h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M4.57 4.57h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M12.19 4.57h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M6.10 6.10h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 6.10h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 7.62h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 7.62h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 9.14h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 9.14h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 10.67h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 10.67h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 12.19h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 12.19h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 13.71h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 13.71h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 15.24h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 15.24h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 16.76h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 16.76h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 18.29h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 18.29h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 19.81h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 19.81h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M6.10 21.33h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 21.33h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M4.57 22.86h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M12.19 22.86h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M1.52 24.38h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 24.38h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M13.71 24.38h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M1.52 25.90h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 25.90h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 25.90h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 25.90h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M1.52 27.43h7.62v1.52h-7.62Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 27.43h7.62v1.52h-7.62Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 1.52h4.57v1.52h-4.57Z" fill="#000000" stroke-width="1"></path>
+    <path d="M12.19 1.52h4.57v1.52h-4.57Z" fill="#000000" stroke-width="1"></path>
+    <path d="M6.10 3.05h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M12.19 3.05h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M7.62 4.57h4.57v1.52h-4.57Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 6.10h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 7.62h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 9.14h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 10.67h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 12.19h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 13.71h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 15.24h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 16.76h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 18.29h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 19.81h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M9.14 21.33h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M7.62 22.86h4.57v1.52h-4.57Z" fill="#000000" stroke-width="1"></path>
+    <path d="M6.10 24.38h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M12.19 24.38h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M3.05 25.90h4.57v1.52h-4.57Z" fill="#000000" stroke-width="1"></path>
+    <path d="M12.19 25.90h4.57v1.52h-4.57Z" fill="#000000" stroke-width="1"></path>
+  </g>
+</svg>

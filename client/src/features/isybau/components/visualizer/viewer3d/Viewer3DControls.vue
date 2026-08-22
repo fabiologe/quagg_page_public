@@ -124,7 +124,7 @@ const terrainToggleTitle = computed(() => {
   font-size: var(--isy-fs-lg);
   width: 32px;
   height: 32px;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,7 +143,7 @@ const terrainToggleTitle = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--isy-space-2);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
 }
@@ -172,7 +172,7 @@ const terrainToggleTitle = computed(() => {
 .ctrl-zscale input[type=range] {
   width: 100%;
   accent-color: var(--isy-pixel-green);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
 }
 
 .result-toggle .toggle-label { color: var(--isy-pixel-warning-alt); }

@@ -522,7 +522,7 @@ onUnmounted(() => {
   right: 0.35rem;
   background: none;
   border: none;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-green-active);
@@ -573,12 +573,12 @@ onUnmounted(() => {
 }
 
 .bubble-btn-start { color: var(--isy-pixel-green-text); }
-.bubble-btn:disabled { opacity: 0.5; cursor: default; }
+.bubble-btn:disabled { opacity: 0.5; cursor: var(--isy-cursor-zeiger); }
 
 .bubble-btn {
   background: none;
   border: none;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   padding: 0;
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);

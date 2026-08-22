@@ -102,13 +102,13 @@ const removeRow = (i) => {
   box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
 }
 .row-remove-btn {
-  background: none; border: none; color: var(--isy-pixel-danger); cursor: pointer;
+  background: none; border: none; color: var(--isy-pixel-danger); cursor: var(--isy-cursor-hand);
   font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: 0 var(--isy-space-1);
 }
-.row-remove-btn:disabled { color: var(--isy-pixel-text-dim); cursor: not-allowed; }
+.row-remove-btn:disabled { color: var(--isy-pixel-text-dim); cursor: var(--isy-cursor-gesperrt); }
 .row-add-btn {
   margin-top: var(--isy-space-1); background: none; border: 1px dashed var(--isy-pixel-border); border-radius: var(--isy-radius-sm);
-  color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: var(--isy-space-1) var(--isy-space-2); cursor: pointer;
+  color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: var(--isy-space-1) var(--isy-space-2); cursor: var(--isy-cursor-hand);
   transition: background 0.15s;
 }
 .row-add-btn:hover { background: var(--isy-pixel-content-bg); }

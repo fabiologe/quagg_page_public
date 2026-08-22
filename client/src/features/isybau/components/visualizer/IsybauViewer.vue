@@ -164,7 +164,7 @@
                 />
                 
                 <!-- Dimensionless nodes as X mark -->
-                <g v-else @click.stop="selectElement(node, 'node', $event)" style="cursor: pointer;">
+                <g v-else @click.stop="selectElement(node, 'node', $event)" style="cursor: var(--isy-cursor-hand);">
                   <!-- Invisible circle for hit area -->
                   <circle
                     :cx="node.x - bounds.minX"
@@ -1484,7 +1484,7 @@ watch(() => props.nodes.size, (n, old) => {
   border: 1px solid var(--isy-pixel-divider);
   overflow: hidden;
   position: relative;
-  cursor: default;
+  cursor: var(--isy-cursor-zeiger);
   user-select: none; /* Prevent text selection during pan */
   touch-action: none; /* Pinch/Pan selbst übernehmen statt Browser-Seiten-Zoom */
 }
@@ -1495,15 +1495,15 @@ watch(() => props.nodes.size, (n, old) => {
      als Cursor deutlicher sichtbar (Nutzer-Feedback: "mehr pixelig"). Hotspot
      22,22 = Mitte (symmetrisches 4-Wege-Move-Symbol). grab bleibt als Fallback
      für Browser ohne SVG-Cursor-Unterstützung. */
-  cursor: url('/saintv1d/icons/cursor-pan.svg') 22 22, grab;
+  cursor: var(--isy-cursor-pan);
 }
 
 .isybau-viewer.mode-pan:active {
-  cursor: url('/saintv1d/icons/cursor-pan.svg') 22 22, grabbing;
+  cursor: var(--isy-cursor-pan);
 }
 
 .isybau-viewer.mode-select {
-  cursor: default;
+  cursor: var(--isy-cursor-zeiger);
 }
 
 svg {
@@ -1525,7 +1525,7 @@ svg {
   stroke: rgba(52, 152, 219, 0.5);
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: fill 0.2s;
 }
 
@@ -1536,7 +1536,7 @@ svg {
   stroke: var(--isy-pixel-bg);
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
-  cursor: grab;
+  cursor: var(--isy-cursor-pan);
 }
 .area-vertex-handle:hover {
   fill: var(--isy-pixel-text);
@@ -1587,7 +1587,7 @@ svg {
   stroke-width: 2px; 
   vector-effect: non-scaling-stroke; 
   transition: stroke 0.2s, stroke-width 0.2s;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   fill: none;
 }
 
@@ -1610,7 +1610,7 @@ svg {
 .node-circle {
   fill: var(--isy-pixel-text);
   transition: fill 0.2s, r 0.2s;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
 }
 
 .node-circle:hover {
@@ -1789,7 +1789,7 @@ svg {
   padding: var(--isy-space-2) var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.15s, color 0.15s;
 }
 .msb-btn:hover { background: var(--isy-pixel-border); color: var(--isy-pixel-text); }
@@ -1799,7 +1799,7 @@ svg {
 .node-label {
   fill: var(--isy-pixel-text);
   pointer-events: all;
-  cursor: grab;
+  cursor: var(--isy-cursor-pan);
   /* Weißer Halo statt text-shadow (wirkt in SVG praktisch nicht) — bleibt
      auch über Luftbildern lesbar, ohne ein eigenes <rect> pro Label zu
      brauchen. Gleiches Muster wie ifc-viewer/IfcPdfExportModal.vue. */
@@ -1812,7 +1812,7 @@ svg {
 }
 
 .node-label.dragging {
-  cursor: grabbing;
+  cursor: var(--isy-cursor-pan);
   font-weight: bold;
   opacity: 1;
 }

@@ -27,7 +27,7 @@
   border: none;
   font-size: var(--isy-fs-xl);
   line-height: 1;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   color: var(--isy-pixel-border-hover);
   transition: color 0.2s;
   padding: 0 var(--isy-space-2);
@@ -58,7 +58,7 @@
   border-radius: var(--isy-radius-sm);
   clip-path: var(--isy-pixel-clip-corner);
   padding: var(--isy-space-2) var(--isy-space-3);
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   box-shadow: var(--isy-pixel-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }

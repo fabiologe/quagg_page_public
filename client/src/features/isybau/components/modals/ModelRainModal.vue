@@ -244,7 +244,7 @@ const apply = () => {
 /* Cleaned up styles */
 .modal-header {
   padding: var(--isy-space-4);
-  cursor: move;
+  cursor: var(--isy-cursor-pan);
 }
 
 .modal-header h3 {
@@ -327,7 +327,7 @@ const apply = () => {
 }
 
 .clickable-col, .clickable-cell {
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
 }
 
 .clickable-col:hover, .clickable-cell:hover {
@@ -386,11 +386,11 @@ const apply = () => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.15s;
 }
 .primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: default; }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: var(--isy-cursor-zeiger); }
 
 .secondary-btn {
   background: transparent;
@@ -401,7 +401,7 @@ const apply = () => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: var(--isy-cursor-hand);
   transition: background 0.12s;
 }
 .secondary-btn:hover { background: var(--isy-pixel-content-bg); }
