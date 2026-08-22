@@ -150,10 +150,10 @@ import { DIAGRAMM } from '../../../utils/typPalette.js';
 import { Line, safeGet, formatTime, edgeTypeLabel, getRatioClass, chartOptions } from './resultsShared.js';
 
 const props = defineProps({
-  edges: Map,
-  edgeResults: Map,
-  systemStats: Object,
-  timeSeries: Array,
+  edges: { type: Map,    default: () => new Map() },
+  edgeResults: { type: Map,    default: () => new Map() },
+  systemStats: { type: Object, default: () => ({}) },
+  timeSeries: { type: Array,  default: () => [] },
   // Sprungziel aus dem Knoten→Link-Verweis (Schächte-Tab, Pumpe/Wehr/.../Bauwerk)
   focusEdgeId: { type: String, default: null },
 });

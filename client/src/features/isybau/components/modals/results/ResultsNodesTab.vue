@@ -117,12 +117,11 @@ import { Line, safeGet, formatTime, fmtVol, structureTypeLabel, chartOptions } f
 import { classifyPreview, LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
 const props = defineProps({
-  nodes: Map,
-  edges: Map,
-  nodeResults: Map,
-  systemStats: Object,
-  timeSeries: Array,
-});
+  nodes: { type: Map,    default: () => new Map() },
+  edges: { type: Map,    default: () => new Map() },
+  nodeResults: { type: Map,    default: () => new Map() },
+  systemStats: { type: Object, default: () => ({}) },
+  timeSeries: { type: Array,  default: () => [] },});
 
 const emit = defineEmits(['focus-edge']);
 

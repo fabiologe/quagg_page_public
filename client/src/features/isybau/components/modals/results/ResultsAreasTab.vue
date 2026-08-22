@@ -70,10 +70,9 @@ import { Line, formatTime, chartOptions } from './resultsShared.js';
 
 const props = defineProps({
   areas: [Map, Array],
-  areaResults: Map,
-  systemStats: Object,
-  timeSeries: Array,
-});
+  areaResults: { type: Map,    default: () => new Map() },
+  systemStats: { type: Object, default: () => ({}) },
+  timeSeries: { type: Array,  default: () => [] },});
 
 const selectedAreaId = ref(null);
 const areaChartData = ref(null);

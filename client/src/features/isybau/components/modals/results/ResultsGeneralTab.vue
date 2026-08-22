@@ -257,7 +257,12 @@ import { computed } from 'vue';
 import { Bar, formatVolume, getContinuityClass } from './resultsShared.js';
 
 const props = defineProps({
-  systemStats: Object,
+  /* default statt blossem Object: die Vorlage liest systemStats.analysisOptions
+     an vier Stellen. Das ?. dort sichert analysisOptions ab, nicht systemStats
+     selbst - ohne Vorgabewert wuerde ein fehlendes Prop die Vorlage abstuerzen
+     lassen. Heute reichen alle Eltern "|| {}" hinein, es haelt also zufaellig;
+     der Vorgabewert macht daraus eine Zusicherung. */
+  systemStats: { type: Object, default: () => ({}) },
   rain: Object, // store.rain — enthält activeModelRain.series, method, intensity, duration
   totalCatchmentAreaHa: { type: Number, default: 0 },
 });
