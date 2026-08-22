@@ -194,6 +194,23 @@
     --isy-elev-3: 0 4px 20px rgba(0,0,0,0.20);   /* Blur 13–20 — 15 */
     --isy-elev-4: 0 8px 32px rgba(0,0,0,0.30);   /* Blur >20   —  7 */
 
+
+    /* ── Feine Trennlinie ──
+       Fuer Tabellenzeilen, Listentrenner, Kartenkanten: alles, was gliedern
+       soll, ohne aufzufallen. Bewusst KEIN Ersatz fuer --isy-pixel-border -
+       der ist die kraeftige Fassung (2px Bevel um Knoepfe, Panelkanten), diese
+       hier die zurueckhaltende.
+
+       Warum es das Token ueberhaupt gibt: 20 Raender im Modul waren fast weiss
+       (#eee, #f5f5f5, #e2e8f0, L* > 80). Auf --isy-pixel-border gezogen waeren
+       aus unsichtbaren Tabellenlinien schwarze Balken geworden. Es fehlte eine
+       Stufe, nicht die Disziplin.
+
+       Als rgba auf den Untergrund gelegt statt als fester Ton, damit dieselbe
+       Linie auf --isy-pixel-bg, --isy-pixel-bg-alt und --isy-pixel-content-bg
+       gleichermassen sitzt. */
+    --isy-pixel-divider: rgba(0,0,0,0.12);
+
 }
 
 /* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
@@ -247,6 +264,10 @@
     --isy-elev-2: 0 4px 12px rgba(4,6,71,0.40);
     --isy-elev-3: 0 4px 20px rgba(4,6,71,0.50);
     --isy-elev-4: 0 8px 32px rgba(0,0,0,0.55);
+
+
+    /* ── Feine Trennlinie — Dunkel (siehe Hell-Block) ── */
+    --isy-pixel-divider: rgba(255,255,255,0.14);
 
 }
 

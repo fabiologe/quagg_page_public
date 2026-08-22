@@ -1478,7 +1478,7 @@ watch(() => props.nodes.size, (n, old) => {
   width: 100%;
   height: 100%;
   background: #f8f9fa;
-  border: 1px solid #ddd;
+  border: 1px solid var(--isy-pixel-divider);
   overflow: hidden;
   position: relative;
   cursor: default;

@@ -407,7 +407,7 @@ const downloadResults = () => {
 .mini-chart-container {
     height: 80px;
     margin: var(--isy-space-2) 0;
-    border: 1px solid #eee;
+    border: 1px solid var(--isy-pixel-divider);
     background: #fcfcfc;
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-1);

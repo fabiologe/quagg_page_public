@@ -226,14 +226,14 @@ function formatDate(iso) {
   display: flex;
   gap: 0.5rem;
   padding: var(--isy-space-3) var(--isy-space-4);
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--isy-pixel-divider);
   flex-shrink: 0;
 }
 
 .pm-name-input {
   flex: 1;
   padding: var(--isy-space-2) var(--isy-space-3);
-  border: 1px solid #ddd;
+  border: 1px solid var(--isy-pixel-divider);
   border-radius: var(--isy-radius-md);
   font-size: var(--isy-fs-lg);
 }
@@ -274,7 +274,7 @@ function formatDate(iso) {
   align-items: center;
   justify-content: space-between;
   padding: var(--isy-space-2) var(--isy-space-4);
-  border-bottom: 1px solid #f4f4f4;
+  border-bottom: 1px solid var(--isy-pixel-divider);
   gap: 1rem;
   transition: background 0.12s;
 }

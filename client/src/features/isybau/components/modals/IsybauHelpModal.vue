@@ -403,7 +403,7 @@ const activeTab = ref('general');
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  border-right: 1px solid #e2e8f0;
+  border-right: 1px solid var(--isy-pixel-divider);
   flex-shrink: 0;
 }
 
@@ -480,7 +480,7 @@ const activeTab = ref('general');
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: -0.02em;
   color: #1e293b;
-  border-bottom: 2px solid #f1f5f9;
+  border-bottom: 2px solid var(--isy-pixel-divider);
   padding-bottom: var(--isy-space-3);
 }
 
@@ -502,7 +502,7 @@ const activeTab = ref('general');
     background: #f8fafc;
     padding: var(--isy-space-6);
     border-radius: var(--isy-radius-lg);
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--isy-pixel-divider);
 }
 
 .warning-block {
@@ -525,7 +525,7 @@ const activeTab = ref('general');
 }
 
 .tech-table th, .tech-table td {
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--isy-pixel-divider);
     padding: var(--isy-space-3);
     text-align: left;
 }
@@ -572,7 +572,7 @@ const activeTab = ref('general');
 
 .info-card {
   background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--isy-pixel-divider);
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-4);
   font-size: var(--isy-fs-lg);

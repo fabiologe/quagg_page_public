@@ -836,8 +836,8 @@ watch(() => props.selectedElement, (val) => {
 
 /* Result Styles */
 .result-box {
-    background: #f0f7ff;
-    border: 1px solid #cce5ff;
+    background: var(--isy-pixel-info-soft);
+    border: 1px solid var(--isy-pixel-info-soft-border);
     padding: var(--isy-space-2);
     border-radius: var(--isy-radius-sm);
     margin-bottom: var(--isy-space-3);
