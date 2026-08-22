@@ -224,7 +224,7 @@ watch(() => props.isOpen, (open) => {
 }
 
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
 }
 
 .modal-header h3 {
@@ -237,24 +237,24 @@ watch(() => props.isOpen, (open) => {
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: var(--isy-space-6);
 }
 
 .description {
   color: var(--isy-pixel-border);
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--isy-space-6);
   font-size: var(--isy-fs-lg);
 }
 
 .description.small {
   font-size: var(--isy-fs-md);
-  margin-bottom: 1rem;
+  margin-bottom: var(--isy-space-4);
 }
 
 .mode-tabs {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: var(--isy-space-5);
   border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
 
@@ -262,7 +262,7 @@ watch(() => props.isOpen, (open) => {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 0.5rem 0.25rem;
+  padding: var(--isy-space-2) var(--isy-space-1);
   cursor: pointer;
   color: var(--isy-pixel-border-hover);
   font-size: var(--isy-fs-md);
@@ -278,12 +278,12 @@ watch(() => props.isOpen, (open) => {
 .search-row {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: var(--isy-space-4);
 }
 
 .search-row input {
   flex: 1;
-  padding: 0.5rem;
+  padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   font-size: var(--isy-fs-lg);
@@ -294,8 +294,8 @@ watch(() => props.isOpen, (open) => {
   background: var(--isy-pixel-border);
   color: var(--isy-pixel-green-bright);
   border-radius: 4px;
-  padding: 0.5rem;
-  margin: 0 0 1rem;
+  padding: var(--isy-space-2);
+  margin: 0 0 var(--isy-space-4);
 }
 
 .manual-coords-group {
@@ -312,11 +312,11 @@ watch(() => props.isOpen, (open) => {
 .input-wrapper label {
   font-size: var(--isy-fs-md);
   color: var(--isy-pixel-border);
-  margin-bottom: 0.2rem;
+  margin-bottom: var(--isy-space-1);
 }
 
 .input-wrapper input {
-  padding: 0.5rem;
+  padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   width: 100%;
@@ -328,7 +328,7 @@ watch(() => props.isOpen, (open) => {
   color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -343,7 +343,7 @@ watch(() => props.isOpen, (open) => {
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;

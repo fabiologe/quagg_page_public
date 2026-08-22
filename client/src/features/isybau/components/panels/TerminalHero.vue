@@ -124,7 +124,7 @@ onUnmounted(() => { running = false; });
 /* ── Text area ── */
 .terminal-inner {
   flex: 1;
-  padding: 1rem 0.85rem 0.75rem;
+  padding: var(--isy-space-4) var(--isy-space-3) var(--isy-space-3);
   display: flex;
   flex-direction: column;
   gap: 0.55rem;

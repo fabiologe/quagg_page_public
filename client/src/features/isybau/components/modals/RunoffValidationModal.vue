@@ -125,7 +125,7 @@ const sortedData = computed(() => {
 }
 
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   background: var(--isy-pixel-bg);
 }
 
@@ -139,14 +139,14 @@ const sortedData = computed(() => {
 }
 
 .modal-body {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   overflow-y: auto;
   flex: 1;
 }
 
 .controls {
-  margin-bottom: 1rem;
-  padding: 0.5rem;
+  margin-bottom: var(--isy-space-4);
+  padding: var(--isy-space-2);
   background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
   border-radius: 4px;
 }
@@ -162,7 +162,7 @@ table {
 }
 
 th, td {
-  padding: 0.75rem;
+  padding: var(--isy-space-3);
   text-align: left;
   border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
@@ -195,7 +195,7 @@ th:hover {
   background-color: #ccc;
   border-radius: 20px;
   position: relative;
-  margin-right: 10px;
+  margin-right: var(--isy-space-2);
   transition: 0.3s;
 }
 
@@ -228,7 +228,7 @@ input:checked + .slider::before {
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;

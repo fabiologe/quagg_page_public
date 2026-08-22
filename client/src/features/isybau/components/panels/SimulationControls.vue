@@ -253,29 +253,29 @@ const downloadResults = () => {
 }
 .control-box {
   background: white;
-  padding: 1rem;
+  padding: var(--isy-space-4);
   border-radius: 8px;
   border: 1px solid var(--isy-pixel-text-dim);
 }
 .control-box h3 {
     margin-top: 0;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--isy-space-3);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--isy-pixel-border);
     border-bottom: 2px solid var(--isy-pixel-text-dim);
-    padding-bottom: 0.5rem;
+    padding-bottom: var(--isy-space-2);
 }
 
 .control-group + .control-group {
-    margin-top: 1.1rem;
+    margin-top: var(--isy-space-4);
 }
 
 .control-group > label {
     display: block;
-    margin-bottom: 0.4rem;
+    margin-bottom: var(--isy-space-2);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     letter-spacing: 0.05em;
@@ -284,7 +284,7 @@ const downloadResults = () => {
 
 /* Compact Stats */
 .stats-compact {
-    padding: 0.6rem 1rem;
+    padding: var(--isy-space-2) var(--isy-space-4);
     text-align: center;
     background: var(--isy-pixel-bg);
 }
@@ -313,7 +313,7 @@ const downloadResults = () => {
 
 
 /* Meta Info */
-.meta-item { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
+.meta-item { display: flex; flex-direction: column; margin-bottom: var(--isy-space-2); }
 .meta-row { display: flex; justify-content: space-between; gap: 0.5rem; }
 .label { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); font-weight: 700; }
 .value { font-size: var(--isy-fs-lg); color: var(--isy-pixel-border); overflow: hidden; text-overflow: ellipsis; }
@@ -321,13 +321,13 @@ const downloadResults = () => {
 /* Buttons & Inputs */
 .primary-btn {
   width: 100%;
-  padding: 0.75rem;
+  padding: var(--isy-space-3);
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-green);
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  margin-top: 0.5rem;
+  margin-top: var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   transition: background 0.15s;
@@ -336,7 +336,7 @@ const downloadResults = () => {
 .primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: default; }
 .secondary-btn {
     flex: 1;
-    padding: 0.5rem;
+    padding: var(--isy-space-2);
     background: transparent;
     border: 1px solid var(--isy-pixel-border);
     border-radius: 6px;
@@ -349,10 +349,10 @@ const downloadResults = () => {
 }
 .secondary-btn:hover { background: var(--isy-pixel-text-dim); border-color: var(--isy-pixel-border-hover); }
 
-.error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: 0.5rem; font-size: var(--isy-fs-md); }
+.error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: var(--isy-space-2); font-size: var(--isy-fs-md); }
 .error-link {
     display: block;
-    margin-top: 0.3rem;
+    margin-top: var(--isy-space-1);
     background: none;
     border: none;
     padding: 0;
@@ -364,18 +364,18 @@ const downloadResults = () => {
     cursor: pointer;
 }
 .error-link:hover { color: #7f1616; }
-.warning-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.warning-list { margin-top: var(--isy-space-2); display: flex; flex-direction: column; gap: 0.3rem; }
 .warning-msg {
     color: var(--isy-pixel-warning-soft-text);
     background: #fef6e7;
     border-left: 3px solid #e0a020;
     border-radius: 4px;
-    padding: 0.35rem 0.5rem;
+    padding: var(--isy-space-1) var(--isy-space-2);
     font-size: var(--isy-fs-sm);
 }
 .warning-link {
     display: block;
-    margin-top: 0.2rem;
+    margin-top: var(--isy-space-1);
     background: none;
     border: none;
     padding: 0;
@@ -387,11 +387,11 @@ const downloadResults = () => {
     cursor: pointer;
 }
 .warning-link:hover { color: #6b4107; }
-.success-msg { color: var(--isy-pixel-border); margin-top: 0.5rem; font-weight: 700; font-size: var(--isy-fs-md); }
-.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid var(--isy-pixel-text-dim); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border); }
+.success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
+.input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
-.button-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
-.secondary-btn.full { margin-top: 0.4rem; width: 100%; }
+.button-row { display: flex; gap: 0.5rem; margin-bottom: var(--isy-space-2); }
+.secondary-btn.full { margin-top: var(--isy-space-2); width: 100%; }
 
 /* Pixel art icons — gefärbt wie das Raster (var(--isy-pixel-green)) */
 .ic {
@@ -406,17 +406,17 @@ const downloadResults = () => {
 /* Rain Chart */
 .mini-chart-container {
     height: 80px;
-    margin: 0.5rem 0;
+    margin: var(--isy-space-2) 0;
     border: 1px solid #eee;
     background: #fcfcfc;
     border-radius: 4px;
-    padding: 2px;
+    padding: var(--isy-space-1);
 }
 .rain-status {
     font-size: var(--isy-fs-sm);
     color: var(--isy-pixel-border);
-    margin-bottom: 0.5rem;
-    padding: 0.35rem 0.5rem;
+    margin-bottom: var(--isy-space-2);
+    padding: var(--isy-space-1) var(--isy-space-2);
     background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
     border-radius: 6px;
     border-left: 3px solid var(--isy-pixel-border-hover);
@@ -477,16 +477,16 @@ const downloadResults = () => {
 }
 
 .results-actions {
-    margin-top: 1rem;
+    margin-top: var(--isy-space-4);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     border-top: 2px solid var(--isy-pixel-text-dim);
-    padding-top: 1rem;
+    padding-top: var(--isy-space-4);
 }
 .action-btn {
     width: 100%;
-    padding: 0.65rem 0.75rem;
+    padding: var(--isy-space-3) var(--isy-space-3);
     background: var(--isy-pixel-border);
     color: white;
     border: none;
@@ -506,7 +506,7 @@ const downloadResults = () => {
     width: 100%;
     height: 5px;
     background: var(--isy-pixel-text-dim);
-    margin-top: 4px;
+    margin-top: var(--isy-space-1);
     border-radius: 3px;
     overflow: hidden;
 }
@@ -529,7 +529,7 @@ const downloadResults = () => {
 .spinner {
     display: inline-block;
     animation: spin 2s linear infinite;
-    margin-right: 5px;
+    margin-right: var(--isy-space-1);
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 .ic.spin { animation: spin 1s linear infinite; }

@@ -44,7 +44,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.55rem 0.6rem;
+  padding: var(--isy-space-2) var(--isy-space-2);
   border-bottom: 1px solid color-mix(in srgb, var(--isy-pixel-green-glow) 35%, transparent);
 }
 
@@ -73,7 +73,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
 
 .info-body {
   overflow-y: auto;
-  padding: 0.6rem 0.7rem 0.7rem;
+  padding: var(--isy-space-2) var(--isy-space-3) var(--isy-space-3);
   /* Scrollbar: keine eigene Regel — die globale in theme-saintv.css liest
      --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Vorher stand
      hier ein fester Grünton, der den Moduswechsel nicht mitmachte. */
@@ -85,7 +85,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
    hing hier ein hartcodiertes #9df5c0 (Blassmint aus der Navy-Ära) — auf dem
    beigen Hellmodus-Untergrund ein Kontrast von rund 1:1, also unlesbar. */
 .info-p {
-  margin: 0 0 0.6rem;
+  margin: 0 0 var(--isy-space-2);
   font-family: 'Share Tech Mono', monospace;
   font-size: var(--isy-fs-sm);
   line-height: 1.55;
@@ -93,8 +93,8 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
 }
 
 .info-formula {
-  margin: 0 0 0.6rem;
-  padding: 0.45rem 0.6rem;
+  margin: 0 0 var(--isy-space-2);
+  padding: var(--isy-space-2) var(--isy-space-2);
   border: 1px dashed color-mix(in srgb, var(--isy-pixel-green-glow) 50%, transparent);
   background: color-mix(in srgb, var(--isy-pixel-green-glow) 8%, transparent);
   font-family: 'Share Tech Mono', monospace;
@@ -109,7 +109,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
    kleiner die Schrift, desto mehr Kontrast braucht sie. Grün reichte hier
    nicht (rund 3:1 auf Beige bei 0.62rem). */
 .info-ref {
-  margin: 0 0 0.4rem;
+  margin: 0 0 var(--isy-space-2);
   font-family: 'Share Tech Mono', monospace;
   font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-text-dim);

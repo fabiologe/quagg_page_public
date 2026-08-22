@@ -685,7 +685,7 @@ watch(() => props.selectedElement, (val) => {
 
 .info-header {
   background: var(--isy-pixel-bg);
-  padding: 0.65rem 1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   border-bottom: 2px solid var(--isy-pixel-border);
   display: flex;
   justify-content: space-between;
@@ -718,7 +718,7 @@ watch(() => props.selectedElement, (val) => {
 .close-btn:hover { color: var(--isy-pixel-green); }
 
 .info-content {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   overflow-y: auto;
   flex: 1;
 }
@@ -726,25 +726,25 @@ watch(() => props.selectedElement, (val) => {
 .info-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--isy-space-2);
     font-size: var(--isy-fs-lg);
     color: var(--isy-pixel-text-dim);
 }
 
 .info-group {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--isy-space-3);
 }
 
 .info-group label {
     display: block;
     font-size: var(--isy-fs-md);
     color: var(--isy-pixel-text-dim);
-    margin-bottom: 2px;
+    margin-bottom: var(--isy-space-1);
 }
 
 .full-input, .full-select {
     width: 100%;
-    padding: 6px;
+    padding: var(--isy-space-1);
     border: 1px solid var(--isy-pixel-border);
     border-radius: 4px;
     background: var(--isy-pixel-bg-alt);
@@ -783,7 +783,7 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .info-footer {
-    padding: 1rem;
+    padding: var(--isy-space-4);
     border-top: 1px solid var(--isy-pixel-border);
     background: var(--isy-pixel-bg);
 }
@@ -792,7 +792,7 @@ watch(() => props.selectedElement, (val) => {
     background: var(--isy-pixel-bg);
     color: var(--isy-pixel-text);
     border: 1px solid var(--isy-pixel-border);
-    padding: 10px 8px;
+    padding: var(--isy-space-2) var(--isy-space-2);
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
@@ -817,7 +817,7 @@ watch(() => props.selectedElement, (val) => {
     background: transparent;
     border: 1px solid var(--isy-pixel-border);
     color: var(--isy-pixel-text-dim);
-    padding: 10px 8px;
+    padding: var(--isy-space-2) var(--isy-space-2);
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
@@ -838,16 +838,16 @@ watch(() => props.selectedElement, (val) => {
 .result-box {
     background: #f0f7ff;
     border: 1px solid #cce5ff;
-    padding: 8px;
+    padding: var(--isy-space-2);
     border-radius: 4px;
-    margin-bottom: 12px;
+    margin-bottom: var(--isy-space-3);
 }
 
 .result-header {
     font-size: var(--isy-fs-md);
     font-weight: bold;
     color: #004085;
-    margin-bottom: 6px;
+    margin-bottom: var(--isy-space-1);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -856,11 +856,11 @@ watch(() => props.selectedElement, (val) => {
     background: #ffebee;
     border: 1px solid #ef5350;
     color: #c62828;
-    padding: 6px;
+    padding: var(--isy-space-1);
     border-radius: 4px;
     font-weight: bold;
     text-align: center;
-    margin-bottom: 8px;
+    margin-bottom: var(--isy-space-2);
     font-size: var(--isy-fs-lg);
     animation: pulse 2s infinite;
 }
@@ -876,12 +876,12 @@ watch(() => props.selectedElement, (val) => {
 .hint-text {
     font-size: var(--isy-fs-sm);
     color: var(--isy-pixel-border-hover);
-    margin: -4px 0 8px 0;
+    margin: calc(-1 * var(--isy-space-1)) 0 var(--isy-space-2) 0;
 }
 
 /* War bisher in dieser Datei genutzt (Fläche-Anzeige), aber nie definiert —
    Regel 1:1 aus ElementPropertiesModal.vue/SchmutzfrachtDialog.vue übernommen. */
-.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: 0.35rem 0; }
+.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: var(--isy-space-1) 0; }
 
 input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 
@@ -889,8 +889,8 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
     background: var(--isy-pixel-info-soft);
     border: 1px solid var(--isy-pixel-info-soft-border);
     border-radius: 4px;
-    padding: 0.5rem;
-    margin-bottom: 8px;
+    padding: var(--isy-space-2);
+    margin-bottom: var(--isy-space-2);
     font-size: var(--isy-fs-sm);
     color: var(--isy-pixel-info-soft-text);
 }
@@ -909,7 +909,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 }
 
 .compact {
-    margin-bottom: 2px;
+    margin-bottom: var(--isy-space-1);
 }
 
 .text-red {

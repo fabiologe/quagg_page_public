@@ -243,7 +243,7 @@ const apply = () => {
 <style scoped>
 /* Cleaned up styles */
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   cursor: move;
 }
 
@@ -258,7 +258,7 @@ const apply = () => {
 
 .modal-body {
   flex: 1;
-  padding: 1.5rem;
+  padding: var(--isy-space-6);
   display: flex;
   gap: 2rem;
   overflow: hidden;
@@ -292,7 +292,7 @@ const apply = () => {
 }
 
 .table-wrapper h4 {
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 var(--isy-space-2) 0;
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-border-hover);
@@ -311,7 +311,7 @@ const apply = () => {
 }
 
 .kostra-table th, .kostra-table td {
-  padding: 0.3rem 0.5rem;
+  padding: var(--isy-space-1) var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
   text-align: right;
   white-space: nowrap;
@@ -350,12 +350,12 @@ const apply = () => {
 }
 
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--isy-space-6);
 }
 
 .form-group input, .form-group select {
   width: 100%;
-  padding: 0.5rem;
+  padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
 }
@@ -382,7 +382,7 @@ const apply = () => {
   color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -397,7 +397,7 @@ const apply = () => {
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;

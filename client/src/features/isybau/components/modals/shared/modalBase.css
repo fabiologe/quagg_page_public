@@ -30,14 +30,14 @@
   cursor: pointer;
   color: var(--isy-pixel-border-hover);
   transition: color 0.2s;
-  padding: 0 0.5rem;
+  padding: 0 var(--isy-space-2);
 }
 .close-btn:hover {
   color: var(--isy-pixel-green-bright);
 }
 
 .modal-footer {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   border-top: 1px solid var(--isy-pixel-text-dim);
   display: flex;
   justify-content: flex-end;
@@ -57,7 +57,7 @@
   color: var(--isy-pixel-text-dim);
   border-radius: 5px;
   clip-path: var(--isy-pixel-clip-corner);
-  padding: 0.45rem 0.75rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   cursor: pointer;
   box-shadow: var(--isy-pixel-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
@@ -69,16 +69,16 @@
 /* "Plain"-Formgruppe: natives <select>, Block-Layout (Gegenstück zur
    "Dark"-Variante in modalDark.css, die ein anderes, flex-column-Layout
    für dunkle Formulare nutzt). */
-.form-group { margin-bottom: 1rem; }
+.form-group { margin-bottom: var(--isy-space-4); }
 .form-group label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--isy-space-2);
   font-weight: 500;
   color: var(--isy-pixel-border);
 }
 .form-group select {
   width: 100%;
-  padding: 0.5rem;
+  padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   font-size: var(--isy-fs-lg);

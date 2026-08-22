@@ -122,7 +122,7 @@ const contourTitle = computed(() => {
   bottom: 1rem;
   left: 1rem;
   background: var(--isy-pixel-bg);
-  padding: 0.4rem;
+  padding: var(--isy-space-2);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
   border: 1px solid var(--isy-pixel-border);
@@ -171,7 +171,7 @@ const contourTitle = computed(() => {
 .grid-control {
   display: flex;
   align-items: center;
-  padding: 0 0.25rem;
+  padding: 0 var(--isy-space-1);
 }
 
 .grid-toggle-btn {
@@ -179,7 +179,7 @@ const contourTitle = computed(() => {
   align-items: center;
   gap: 4px;
   width: auto !important;
-  padding: 0 8px !important;
+  padding: 0 var(--isy-space-2) !important;
   min-width: 52px;
 }
 
@@ -195,7 +195,7 @@ const contourTitle = computed(() => {
   align-items: center;
   gap: 4px;
   width: auto !important;
-  padding: 0 8px !important;
+  padding: 0 var(--isy-space-2) !important;
 }
 
 .ezg-toggle-btn.active {
@@ -245,7 +245,7 @@ const contourTitle = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0 0.25rem;
+  padding: 0 var(--isy-space-1);
 }
 
 .size-label {

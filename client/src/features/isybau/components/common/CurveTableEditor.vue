@@ -78,17 +78,17 @@ const removeRow = (i) => {
 </script>
 
 <style scoped>
-.curve-table-editor { margin: 0.25rem 0; }
+.curve-table-editor { margin: var(--isy-space-1) 0; }
 .curve-table { width: 100%; border-collapse: collapse; font-size: var(--isy-fs-sm); }
-.curve-table th { text-align: left; padding: 2px 4px; color: var(--isy-pixel-border); font-weight: 700; }
-.curve-table td { padding: 2px 4px; }
+.curve-table th { text-align: left; padding: var(--isy-space-1) var(--isy-space-1); color: var(--isy-pixel-border); font-weight: 700; }
+.curve-table td { padding: var(--isy-space-1) var(--isy-space-1); }
 /* Scoped Style greift nicht auf die Parent-Modal-Regel für .small-input durch
    (Vue-Scoping) — daher hier vollständig eigenständig im selben (dunklen) Look
    wie PreprocessingModal.vue .small-input, statt nacktem Browser-Input daneben. */
 .curve-table .small-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 3px 4px;
+  padding: var(--isy-space-1) var(--isy-space-1);
   border: 1px solid var(--isy-pixel-border);
   border-radius: 4px;
   background: var(--isy-pixel-bg-alt);
@@ -103,12 +103,12 @@ const removeRow = (i) => {
 }
 .row-remove-btn {
   background: none; border: none; color: var(--isy-pixel-danger); cursor: pointer;
-  font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: 0 4px;
+  font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: 0 var(--isy-space-1);
 }
 .row-remove-btn:disabled { color: var(--isy-pixel-text-dim); cursor: not-allowed; }
 .row-add-btn {
-  margin-top: 4px; background: none; border: 1px dashed var(--isy-pixel-border); border-radius: 4px;
-  color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: 4px 8px; cursor: pointer;
+  margin-top: var(--isy-space-1); background: none; border: 1px dashed var(--isy-pixel-border); border-radius: 4px;
+  color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: var(--isy-space-1) var(--isy-space-2); cursor: pointer;
   transition: background 0.15s;
 }
 .row-add-btn:hover { background: var(--isy-pixel-content-bg); }

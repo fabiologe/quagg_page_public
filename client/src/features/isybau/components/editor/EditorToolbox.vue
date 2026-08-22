@@ -149,7 +149,7 @@ const hint = computed(() => {
     left: 50%;
     transform: translateX(-50%);
     background: var(--isy-pixel-bg);
-    padding: 0.35rem;
+    padding: var(--isy-space-1);
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(4,6,71,0.4);
     border: 1px solid var(--isy-pixel-border);
@@ -226,7 +226,7 @@ const hint = computed(() => {
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
     color: var(--isy-pixel-green-glow);
     text-shadow: var(--isy-pixel-text-glow);
-    padding: 4px 10px;
+    padding: var(--isy-space-1) var(--isy-space-2);
     border-radius: 4px;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);

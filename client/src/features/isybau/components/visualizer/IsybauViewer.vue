@@ -1657,7 +1657,7 @@ svg {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
   border-radius: 8px;
-  padding: 0.5rem 0.7rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
   z-index: 10;
   display: flex;
@@ -1671,7 +1671,7 @@ svg {
   color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-bottom: 0.15rem;
+  margin-bottom: var(--isy-space-1);
 }
 .entw-legend-item {
   display: flex;
@@ -1693,8 +1693,8 @@ svg {
 /* Cursor-Koordinatenanzeige — direkt unter der Kanaltyp-Legende, gleiches
    Panel, eigener abgesetzter Block. */
 .entw-legend-coords {
-  margin-top: 0.3rem;
-  padding-top: 0.35rem;
+  margin-top: var(--isy-space-1);
+  padding-top: var(--isy-space-1);
   border-top: 1px solid rgba(148, 139, 225, 0.3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
@@ -1713,7 +1713,7 @@ svg {
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
   color: var(--isy-pixel-green-glow);
   text-shadow: var(--isy-pixel-text-glow);
-  padding: 4px 10px;
+  padding: var(--isy-space-1) var(--isy-space-2);
   border-radius: 4px;
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
@@ -1768,7 +1768,7 @@ svg {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
   border-radius: 8px;
-  padding: 0.5rem 0.9rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   z-index: 1001;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
 }
@@ -1783,7 +1783,7 @@ svg {
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
   border-radius: 5px;
-  padding: 0.4rem 0.7rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   cursor: pointer;

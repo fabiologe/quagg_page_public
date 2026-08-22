@@ -111,7 +111,7 @@ const terrainToggleTitle = computed(() => {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green);
   border-radius: 8px;
-  padding: 0.6rem;
+  padding: var(--isy-space-2);
   z-index: 10;
   min-width: 130px;
 }
@@ -136,7 +136,7 @@ const terrainToggleTitle = computed(() => {
 .ctrl-divider {
   height: 1px;
   background: rgba(255,255,255,0.1);
-  margin: 0.2rem 0;
+  margin: var(--isy-space-1) 0;
 }
 
 .ctrl-toggle {
@@ -179,14 +179,14 @@ const terrainToggleTitle = computed(() => {
 .result-dot { border-color: var(--isy-pixel-warning-alt) !important; }
 .ctrl-toggle input:checked + .result-dot { background: var(--isy-pixel-warning-alt) !important; }
 
-.water-toggle { padding-left: 0.6rem; }
+.water-toggle { padding-left: var(--isy-space-2); }
 .water-toggle .toggle-label { color: var(--isy-pixel-info); font-size: var(--isy-fs-sm); }
 .water-dot { border-color: var(--isy-pixel-info) !important; }
 .ctrl-toggle input:checked + .water-dot { background: var(--isy-pixel-info) !important; }
 
 .result-legend {
-  margin-top: 0.2rem;
-  padding: 0.5rem 0.4rem;
+  margin-top: var(--isy-space-1);
+  padding: var(--isy-space-2) var(--isy-space-2);
   background: rgba(0,0,0,0.3);
   border-radius: 4px;
   border: 1px solid rgba(255,255,255,0.08);
@@ -196,15 +196,15 @@ const terrainToggleTitle = computed(() => {
   color: var(--isy-pixel-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 0.4rem;
+  margin-bottom: var(--isy-space-2);
   font-family: var(--isy-pixel-font);
 }
 .legend-sep {
   font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-text-dim);
-  margin: 0.3rem 0 0.2rem;
+  margin: var(--isy-space-1) 0 var(--isy-space-1);
   border-top: 1px solid rgba(255,255,255,0.06);
-  padding-top: 0.25rem;
+  padding-top: var(--isy-space-1);
 }
 .legend-row {
   display: flex;
@@ -212,7 +212,7 @@ const terrainToggleTitle = computed(() => {
   gap: 0.4rem;
   font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
-  padding: 0.1rem 0;
+  padding: var(--isy-space-1) 0;
 }
 .dot {
   width: 9px;

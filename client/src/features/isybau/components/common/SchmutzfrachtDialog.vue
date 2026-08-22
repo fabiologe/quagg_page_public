@@ -163,7 +163,7 @@ const remove = () => {
 <style scoped src="../modals/shared/modalDark.css"></style>
 <style scoped>
 .modal-header {
-  padding: 0.65rem 1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   cursor: move;
   flex-shrink: 0;
   background: var(--isy-pixel-bg);
@@ -177,11 +177,11 @@ const remove = () => {
   text-transform: uppercase;
 }
 .modal-body {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   overflow-y: auto;
   max-height: calc(90vh - 56px);
   background: var(--isy-pixel-bg-deep);
 }
-.hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: 0.2rem; }
-.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: 0.35rem 0; }
+.hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: var(--isy-space-1); }
+.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: var(--isy-space-1) 0; }
 </style>

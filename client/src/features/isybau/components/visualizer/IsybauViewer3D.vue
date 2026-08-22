@@ -313,6 +313,6 @@ onBeforeUnmount(() => {
   font-size: var(--isy-fs-lg);
   font-family: var(--isy-pixel-font);
   text-align: center;
-  padding: 2rem;
+  padding: var(--isy-space-7);
 }
 </style>

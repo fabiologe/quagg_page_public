@@ -94,7 +94,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
 }
 
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
 }
 
 .modal-header h3 {
@@ -107,12 +107,12 @@ const confirm = () => emit('confirm', selectedCRS.value);
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: var(--isy-space-6);
 }
 
 .description {
   color: var(--isy-pixel-border);
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--isy-space-6);
   font-size: var(--isy-fs-lg);
 }
 
@@ -127,7 +127,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -141,7 +141,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;

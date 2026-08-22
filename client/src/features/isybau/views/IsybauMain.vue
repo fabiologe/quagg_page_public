@@ -262,7 +262,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     transform: translateX(-50%);
     z-index: 100;
     background: var(--isy-bg-alt);
-    padding: 0.25rem;
+    padding: var(--isy-space-1);
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(4,6,71,0.35);
     display: flex;
@@ -270,7 +270,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 
 .view-switcher button {
-    padding: 0.55rem 0.9rem;
+    padding: var(--isy-space-2) var(--isy-space-4);
     border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
@@ -316,7 +316,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 
 .help-btn {
-    margin-left: 0.25rem;
+    margin-left: var(--isy-space-1);
     background: var(--isy-bg-alt) !important;
     border-width: 2px !important;
     border-style: solid !important;
@@ -325,7 +325,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.35rem 0.5rem !important;
+    padding: var(--isy-space-1) var(--isy-space-2) !important;
     clip-path: var(--isy-pixel-clip-corner);
     box-shadow: var(--isy-btn-shadow);
     transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
@@ -367,12 +367,12 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 
 .sidebar-nav {
-  margin-top: 1.5rem;
+  margin-top: var(--isy-space-6);
   border-top: 1px solid var(--isy-border);
-  padding-top: 1rem;
+  padding-top: var(--isy-space-4);
 }
 .sidebar-nav h3 {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -384,8 +384,8 @@ watch(() => store.ui.importWarnings, (msgs) => {
 .nav-btn {
   display: block;
   width: 100%;
-  padding: 0.8rem 0.75rem;
-  margin-bottom: 0.5rem;
+  padding: var(--isy-space-3) var(--isy-space-3);
+  margin-bottom: var(--isy-space-2);
   background: var(--isy-btn-bg);
   border-width: 2px;
   border-style: solid;
@@ -451,7 +451,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border-left: 5px solid var(--isy-pixel-warning); /* Warning Orange */
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     border-radius: 4px;
-    padding: 1rem;
+    padding: var(--isy-space-4);
     z-index: 2000;
     font-size: var(--isy-fs-lg);
     color: var(--isy-toast-text);
@@ -461,12 +461,12 @@ watch(() => store.ui.importWarnings, (msgs) => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--isy-space-2);
 }
 
 .warning-icon {
     font-size: var(--isy-fs-lg);
-    margin-right: 0.5rem;
+    margin-right: var(--isy-space-2);
 }
 
 .close-toast {
@@ -479,13 +479,13 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .toast-body ul {
     margin: 0;
-    padding-left: 1.2rem;
+    padding-left: var(--isy-space-5);
     max-height: 200px;
     overflow-y: auto;
 }
 
 .toast-body li {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--isy-space-1);
     color: var(--isy-pixel-danger-hover); /* Dark Red for errors/msgs */
 }
 

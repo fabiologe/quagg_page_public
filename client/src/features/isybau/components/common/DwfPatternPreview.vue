@@ -103,11 +103,11 @@ const chartOptions = {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
   border-radius: 6px;
-  padding: 0.6rem 0.75rem;
-  margin-top: 0.5rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
+  margin-top: var(--isy-space-2);
 }
 .dpp-title {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green);
@@ -128,7 +128,7 @@ const chartOptions = {
   height: 140px;
 }
 .dpp-meta {
-  margin-top: 0.4rem;
+  margin-top: var(--isy-space-2);
   display: flex;
   flex-direction: column;
   gap: 0.2rem;

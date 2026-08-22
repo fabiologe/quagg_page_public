@@ -458,7 +458,7 @@ onUnmounted(() => {
 /* ── Terminal-style speech bubble ── */
 .speech-bubble {
   position: relative;
-  margin-bottom: 3.5rem;
+  margin-bottom: var(--isy-space-7);
   margin-right: clamp(-2.5rem, -2.857vw, -0.95rem);
   top: -25px;
   left: clamp(15px, 2.857vw, 40px);
@@ -466,7 +466,7 @@ onUnmounted(() => {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green-glow);
   border-radius: 4px;
-  padding: 0.65rem 1.75rem 0.65rem 0.75rem;
+  padding: var(--isy-space-3) var(--isy-space-6) var(--isy-space-3) var(--isy-space-3);
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
   pointer-events: auto;
 }
@@ -537,7 +537,7 @@ onUnmounted(() => {
 .bubble-actions {
   display: flex;
   gap: 0.6rem;
-  margin-top: 0.55rem;
+  margin-top: var(--isy-space-2);
   flex-wrap: wrap;
   align-items: center;
 }
@@ -547,8 +547,8 @@ onUnmounted(() => {
   display: flex;
   gap: 0.4rem;
   align-items: baseline;
-  margin-top: 0.5rem;
-  padding-top: 0.45rem;
+  margin-top: var(--isy-space-2);
+  padding-top: var(--isy-space-2);
   border-top: 1px solid var(--isy-pixel-border);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
@@ -558,7 +558,7 @@ onUnmounted(() => {
 .task-text { color: var(--isy-pixel-text-dim); }
 
 .bubble-hint {
-  margin-top: 0.4rem;
+  margin-top: var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   line-height: 1.7;
@@ -569,7 +569,7 @@ onUnmounted(() => {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-border-hover);
-  margin-right: 0.15rem;
+  margin-right: var(--isy-space-1);
 }
 
 .bubble-btn-start { color: var(--isy-pixel-green-text); }

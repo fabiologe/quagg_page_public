@@ -196,7 +196,7 @@ function formatDate(iso) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   border-bottom: 2px solid var(--isy-pixel-border);
   background: var(--isy-pixel-bg);
   flex-shrink: 0;
@@ -225,14 +225,14 @@ function formatDate(iso) {
 .pm-save-bar {
   display: flex;
   gap: 0.5rem;
-  padding: 0.8rem 1.1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   border-bottom: 1px solid #eee;
   flex-shrink: 0;
 }
 
 .pm-name-input {
   flex: 1;
-  padding: 0.45rem 0.7rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   border: 1px solid #ddd;
   border-radius: 6px;
   font-size: var(--isy-fs-lg);
@@ -244,7 +244,7 @@ function formatDate(iso) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.55rem 1.1rem 0.3rem;
+  padding: var(--isy-space-2) var(--isy-space-4) var(--isy-space-1);
   font-size: var(--isy-fs-sm);
   font-weight: 600;
   text-transform: uppercase;
@@ -258,14 +258,14 @@ function formatDate(iso) {
   color: var(--isy-pixel-bg);
   font-size: var(--isy-fs-sm);
   font-weight: 700;
-  padding: 0.1rem 0.45rem;
+  padding: var(--isy-space-1) var(--isy-space-2);
   border-radius: 10px;
 }
 
 .pm-list {
   overflow-y: auto;
   flex: 1;
-  padding: 0.3rem 0;
+  padding: var(--isy-space-1) 0;
   scrollbar-width: thin;
 }
 
@@ -273,7 +273,7 @@ function formatDate(iso) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.6rem 1.1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   border-bottom: 1px solid #f4f4f4;
   gap: 1rem;
   transition: background 0.12s;
@@ -308,7 +308,7 @@ function formatDate(iso) {
 }
 
 .pm-empty {
-  padding: 2rem;
+  padding: var(--isy-space-7);
   text-align: center;
   color: #aaa;
   font-size: var(--isy-fs-lg);
@@ -316,7 +316,7 @@ function formatDate(iso) {
 }
 
 .pm-error {
-  padding: 0.65rem 1.1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   background: var(--isy-pixel-danger-soft);
   border-top: 1px solid var(--isy-pixel-danger-soft-border);
   font-size: var(--isy-fs-md);
@@ -330,7 +330,7 @@ function formatDate(iso) {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.65rem 1.1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   background: var(--isy-pixel-danger-soft);
   border-top: 1px solid var(--isy-pixel-danger-soft-border);
   font-size: var(--isy-fs-lg);
@@ -349,7 +349,7 @@ function formatDate(iso) {
   color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
-  padding: 0.5rem 0.9rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   cursor: pointer;
@@ -367,7 +367,7 @@ function formatDate(iso) {
   color: var(--isy-pixel-border);
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 5px;
-  padding: 0.35rem 0.7rem;
+  padding: var(--isy-space-1) var(--isy-space-3);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   cursor: pointer;
@@ -380,7 +380,7 @@ function formatDate(iso) {
   border: 1px solid var(--isy-pixel-danger-soft-border);
   color: #dc2626;
   border-radius: 5px;
-  padding: 0.35rem 0.5rem;
+  padding: var(--isy-space-1) var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   cursor: pointer;
@@ -392,7 +392,7 @@ function formatDate(iso) {
   background: none;
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 5px;
-  padding: 0.35rem 0.6rem;
+  padding: var(--isy-space-1) var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-border);

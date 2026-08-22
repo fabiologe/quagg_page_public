@@ -103,7 +103,7 @@ const copyToClipboard = async (text) => {
 }
 
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   background: var(--isy-pixel-bg);
 }
 
@@ -121,13 +121,13 @@ const copyToClipboard = async (text) => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 1rem;
+  padding: var(--isy-space-4);
 }
 
 .tabs {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--isy-space-2);
   border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
 
@@ -142,11 +142,11 @@ const copyToClipboard = async (text) => {
 .actions-bar {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--isy-space-2);
 }
 
 .copy-btn {
-    padding: 0.35rem 0.5rem;
+    padding: var(--isy-space-1) var(--isy-space-2);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-border);
@@ -159,7 +159,7 @@ const copyToClipboard = async (text) => {
 .code-view {
   flex: 1;
   background: var(--isy-pixel-content-bg);
-  padding: 1rem;
+  padding: var(--isy-space-4);
   border-radius: 4px;
   overflow: auto;
   font-family: monospace;

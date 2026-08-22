@@ -377,7 +377,7 @@ const activeTab = ref('general');
 }
 
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   background: var(--isy-pixel-bg);
 }
 
@@ -399,7 +399,7 @@ const activeTab = ref('general');
 .help-sidebar {
   width: 240px;
   background: #f8fafc;
-  padding: 1rem;
+  padding: var(--isy-space-4);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -419,15 +419,15 @@ const activeTab = ref('general');
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--isy-pixel-border-hover);
-    margin-bottom: 0.4rem;
-    padding-left: 0.5rem;
+    margin-bottom: var(--isy-space-2);
+    padding-left: var(--isy-space-2);
 }
 
 /* Vertikale Sidebar-Nav — bewusst kein boxed Pixel-Button (siehe Design Schema
    unten): text-align:left + volle Breite passen nicht zu einer Button-Reihe. */
 .tab-btn {
   text-align: left;
-  padding: 0.75rem 1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
@@ -467,7 +467,7 @@ const activeTab = ref('general');
 
 .help-content {
   flex: 1;
-  padding: 2.5rem;
+  padding: var(--isy-space-7);
   overflow-y: auto;
   background: white;
 }
@@ -475,18 +475,18 @@ const activeTab = ref('general');
 /* Typography & Content Styling */
 .content-section h4 {
   margin-top: 0;
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--isy-space-6);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: -0.02em;
   color: #1e293b;
   border-bottom: 2px solid #f1f5f9;
-  padding-bottom: 0.75rem;
+  padding-bottom: var(--isy-space-3);
 }
 
 .content-section h5 {
-  margin-top: 2rem;
-  margin-bottom: 1rem;
+  margin-top: var(--isy-space-7);
+  margin-bottom: var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   color: #475569;
@@ -500,14 +500,14 @@ const activeTab = ref('general');
 
 .audit-block {
     background: #f8fafc;
-    padding: 1.5rem;
+    padding: var(--isy-space-6);
     border-radius: 8px;
     border: 1px solid #e2e8f0;
 }
 
 .warning-block {
     background: var(--isy-pixel-danger-soft);
-    padding: 1.5rem;
+    padding: var(--isy-space-6);
     border-radius: 8px;
     border: 1px solid var(--isy-pixel-danger-soft-border);
     color: var(--isy-pixel-danger-soft-text);
@@ -519,14 +519,14 @@ const activeTab = ref('general');
 .tech-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: var(--isy-space-4);
     background: white;
     font-size: var(--isy-fs-lg);
 }
 
 .tech-table th, .tech-table td {
     border: 1px solid #e2e8f0;
-    padding: 0.75rem;
+    padding: var(--isy-space-3);
     text-align: left;
 }
 
@@ -538,7 +538,7 @@ const activeTab = ref('general');
 
 .tag {
     display: inline-block;
-    padding: 0.15rem 0.4rem;
+    padding: var(--isy-space-1) var(--isy-space-2);
     border-radius: 4px;
     font-size: var(--isy-fs-md);
     font-weight: 600;
@@ -548,12 +548,12 @@ const activeTab = ref('general');
 .code-block {
     background: #1e1e1e;
     color: #d4d4d4;
-    padding: 1rem;
+    padding: var(--isy-space-4);
     border-radius: 6px;
     font-family: monospace;
     font-size: var(--isy-fs-md);
     white-space: pre-wrap;
-    margin: 1rem 0;
+    margin: var(--isy-space-4) 0;
     max-height: 300px;
     overflow-y: auto;
 }
@@ -567,14 +567,14 @@ const activeTab = ref('general');
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  margin: 1rem 0;
+  margin: var(--isy-space-4) 0;
 }
 
 .info-card {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 1rem;
+  padding: var(--isy-space-4);
   font-size: var(--isy-fs-lg);
   color: #475569;
   line-height: 1.5;
@@ -584,7 +584,7 @@ const activeTab = ref('general');
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: #1e293b;
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--isy-space-2);
 }
 
 .color-dot {
@@ -592,17 +592,17 @@ const activeTab = ref('general');
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  margin-right: 0.4rem;
+  margin-right: var(--isy-space-2);
   vertical-align: middle;
   flex-shrink: 0;
 }
 
 .workflow-list {
-  padding-left: 1.5rem;
+  padding-left: var(--isy-space-6);
 }
 
 .workflow-list li {
-  margin-bottom: 1rem;
+  margin-bottom: var(--isy-space-4);
   line-height: 1.6;
   color: #475569;
 }

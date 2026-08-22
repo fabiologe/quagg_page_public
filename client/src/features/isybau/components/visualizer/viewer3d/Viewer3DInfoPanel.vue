@@ -336,7 +336,7 @@ const edgeUtilClass = computed(() => {
 }
 
 .info-header {
-  padding: 0.75rem 1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -354,13 +354,13 @@ const edgeUtilClass = computed(() => {
 }
 .close-btn:hover { color: var(--isy-pixel-text); }
 
-.info-body { padding: 0.75rem 1rem; }
+.info-body { padding: var(--isy-space-3) var(--isy-space-4); }
 
 .info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.3rem 0;
+  padding: var(--isy-space-1) 0;
   border-bottom: 1px solid rgba(255,255,255,0.05);
   font-size: var(--isy-fs-md);
 }
@@ -369,8 +369,8 @@ const edgeUtilClass = computed(() => {
 .val { color: #e2e8f0; font-weight: 600; text-align: right; }
 
 .type-badge {
-  margin: 0.4rem 0 0.6rem;
-  padding: 0.25rem 0.6rem;
+  margin: var(--isy-space-2) 0 var(--isy-space-2);
+  padding: var(--isy-space-1) var(--isy-space-2);
   border-radius: 4px;
   font-size: var(--isy-fs-sm);
   font-weight: 700;
@@ -386,8 +386,8 @@ const edgeUtilClass = computed(() => {
 .slide-up-enter-from, .slide-up-leave-to { transform: translateY(12px); opacity: 0; }
 
 .result-header {
-  margin: 0.6rem 0 0.3rem;
-  padding: 0.2rem 0;
+  margin: var(--isy-space-2) 0 var(--isy-space-1);
+  padding: var(--isy-space-1) 0;
   border-top: 1px solid rgba(255,255,255,0.1);
   font-size: var(--isy-fs-pixel-md);
   text-transform: uppercase;
@@ -397,8 +397,8 @@ const edgeUtilClass = computed(() => {
 }
 
 .link-hint {
-  margin-top: 0.4rem;
-  padding: 0.35rem 0.5rem;
+  margin-top: var(--isy-space-2);
+  padding: var(--isy-space-1) var(--isy-space-2);
   background: rgba(37,99,235,0.15);
   border: 1px solid #2563eb;
   border-radius: 4px;

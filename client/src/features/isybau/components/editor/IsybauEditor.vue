@@ -280,7 +280,7 @@ const handleMapDblClick = () => {
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
     color: var(--isy-pixel-green-glow);
     text-shadow: var(--isy-pixel-text-glow);
-    padding: 0.5rem 1rem;
+    padding: var(--isy-space-2) var(--isy-space-4);
     border-radius: 4px;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
@@ -290,7 +290,7 @@ const handleMapDblClick = () => {
 
 .drawing-tooltip small {
     display: block;
-    margin-top: 0.35rem;
+    margin-top: var(--isy-space-1);
     font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-green-active);
     text-shadow: none;
@@ -301,7 +301,7 @@ const handleMapDblClick = () => {
     background: var(--isy-pixel-bg);
     color: var(--isy-pixel-green);
     border: 1px solid var(--isy-pixel-border);
-    padding: 0.85rem 1.5rem;
+    padding: var(--isy-space-3) var(--isy-space-6);
     border-radius: 20px;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-md);

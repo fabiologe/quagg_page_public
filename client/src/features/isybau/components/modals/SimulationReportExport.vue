@@ -737,7 +737,7 @@ async function exportPDF() {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.35rem 0.75rem;
+  padding: var(--isy-space-1) var(--isy-space-3);
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);
   border: none;

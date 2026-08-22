@@ -368,7 +368,7 @@ const save = () => {
 <style scoped>
 /* Cleaned up styles */
 .modal-header {
-  padding: 0.65rem 1rem;
+  padding: var(--isy-space-3) var(--isy-space-4);
   cursor: move;
   flex-shrink: 0;
   background: var(--isy-pixel-bg);
@@ -383,7 +383,7 @@ const save = () => {
   text-transform: uppercase;
 }
 .modal-body {
-  padding: 1rem;
+  padding: var(--isy-space-4);
   overflow-y: auto;
   max-height: calc(90vh - 56px);
   background: var(--isy-pixel-bg-deep);
@@ -391,11 +391,11 @@ const save = () => {
      --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Hier stand
      vorher die graue Rand-Familie, die nicht zur Textfarbe passte. */
 }
-.outlet-radio-group { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
+.outlet-radio-group { display: flex; gap: 1rem; margin-bottom: var(--isy-space-2); }
 .radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: var(--isy-fs-lg); cursor: pointer; color: var(--isy-pixel-text-dim); }
-.hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: 0.2rem; }
+.hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: var(--isy-space-1); }
 .checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-md); display: flex; align-items: center; gap: 0.4rem; }
-.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: 0.35rem 0; }
+.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: var(--isy-space-1) 0; }
 
 /* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
 input[type="checkbox"],

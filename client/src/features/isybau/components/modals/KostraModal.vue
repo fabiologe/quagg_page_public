@@ -271,7 +271,7 @@ const applyResult = () => {
 }
 
 .modal-header {
-  padding: 1rem;
+  padding: var(--isy-space-4);
 }
 
 .modal-header h3 {
@@ -284,31 +284,31 @@ const applyResult = () => {
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: var(--isy-space-6);
 }
 
 .description {
   color: var(--isy-pixel-border);
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--isy-space-6);
   font-size: var(--isy-fs-lg);
 }
 
 .reference-info {
   font-size: var(--isy-fs-md);
   color: var(--isy-pixel-text-dim);
-  margin-bottom: 1rem;
+  margin-bottom: var(--isy-space-4);
 }
 
 .result-box {
   background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
   border: 1px solid var(--isy-pixel-text-dim);
-  padding: 1rem;
+  padding: var(--isy-space-4);
   border-radius: 4px;
-  margin-top: 1rem;
+  margin-top: var(--isy-space-4);
 }
 
 .result-box h4 {
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 var(--isy-space-2) 0;
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-info-hover);
@@ -318,7 +318,7 @@ const applyResult = () => {
   font-size: var(--isy-fs-lg);
   font-weight: bold;
   color: var(--isy-pixel-green-bright);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--isy-space-2);
 }
 
 .source {
@@ -330,9 +330,9 @@ const applyResult = () => {
 .error-box {
   background: #fde8e8;
   color: var(--isy-pixel-danger-hover);
-  padding: 1rem;
+  padding: var(--isy-space-4);
   border-radius: 4px;
-  margin-top: 1rem;
+  margin-top: var(--isy-space-4);
 }
 
 
@@ -341,7 +341,7 @@ const applyResult = () => {
   color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -356,7 +356,7 @@ const applyResult = () => {
   border: 1px solid var(--isy-pixel-border);
   color: var(--isy-pixel-text-dim);
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -369,18 +369,18 @@ const applyResult = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: var(--isy-space-4);
 }
 
 .data-details {
-  margin: 1rem 0;
+  margin: var(--isy-space-4) 0;
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   background: white;
 }
 
 .data-details summary {
-  padding: 0.5rem;
+  padding: var(--isy-space-2);
   cursor: pointer;
   background: var(--isy-pixel-content-bg);
   font-weight: 500;
@@ -388,7 +388,7 @@ const applyResult = () => {
 
 .table-container {
   overflow-x: auto;
-  padding: 0.5rem;
+  padding: var(--isy-space-2);
 }
 
 .kostra-table {
@@ -398,7 +398,7 @@ const applyResult = () => {
 }
 
 .kostra-table th, .kostra-table td {
-  padding: 0.4rem;
+  padding: var(--isy-space-2);
   border: 1px solid var(--isy-pixel-text-dim);
   text-align: right;
 }
@@ -418,7 +418,7 @@ const applyResult = () => {
   color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
-  padding: 0.55rem 1rem;
+  padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
@@ -442,7 +442,7 @@ const applyResult = () => {
     display: flex;
     gap: 0.5rem;
     align-items: flex-end;
-    margin-bottom: 1rem;
+    margin-bottom: var(--isy-space-4);
 }
 
 .input-wrapper {
@@ -453,11 +453,11 @@ const applyResult = () => {
 .input-wrapper label {
     font-size: var(--isy-fs-md);
     color: var(--isy-pixel-border);
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--isy-space-1);
 }
 
 .input-wrapper input {
-    padding: 0.5rem;
+    padding: var(--isy-space-2);
     border: 1px solid var(--isy-pixel-text-dim);
     border-radius: 4px;
     width: 120px;
@@ -476,7 +476,7 @@ const applyResult = () => {
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
-    margin-bottom: 1px;
+    margin-bottom: var(--isy-space-1);
 }
 
 .devil-btn:hover {

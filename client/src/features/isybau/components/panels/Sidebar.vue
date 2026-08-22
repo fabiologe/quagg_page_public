@@ -338,7 +338,7 @@ onBeforeUnmount(() => teardownDemWorker());
 /* ── Header ─────────────────────────────── */
 .sidebar-header {
   background: var(--isy-header-bg);
-  padding: 0.5rem 0.75rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   border-bottom: 2px solid var(--isy-accent);
   flex-shrink: 0;
   display: flex;
@@ -358,7 +358,7 @@ onBeforeUnmount(() => teardownDemWorker());
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  padding: 0.75rem 0.75rem 0.6rem;
+  padding: var(--isy-space-3) var(--isy-space-3) var(--isy-space-2);
   border-bottom: 1px solid var(--isy-border);
   flex-shrink: 0;
 }
@@ -370,7 +370,7 @@ onBeforeUnmount(() => teardownDemWorker());
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.55rem 0.75rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   background: var(--isy-accent);
   color: var(--isy-pixel-green-bright);
   border-width: 2px;
@@ -406,7 +406,7 @@ onBeforeUnmount(() => teardownDemWorker());
   align-items: center;
   gap: 0.65rem;
   width: 100%;
-  padding: 0.6rem 0.75rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   background: var(--isy-accent);
   color: var(--isy-pixel-green-bright);
   border-width: 2px;
@@ -466,7 +466,7 @@ onBeforeUnmount(() => teardownDemWorker());
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  padding: 0.6rem 0.65rem;
+  padding: var(--isy-space-2) var(--isy-space-3);
   background: var(--isy-bg-alt);
   border: 1px solid var(--isy-border);
   border-radius: 7px;
@@ -490,7 +490,7 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .dem-import-row input {
   width: 5.5rem;
-  padding: 0.2rem 0.35rem;
+  padding: var(--isy-space-1) var(--isy-space-1);
   border: 1px solid var(--isy-border);
   border-radius: 4px;
   background: var(--isy-btn-bg);
@@ -503,7 +503,7 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .dem-import-quick button {
   flex: 1;
-  padding: 0.3rem 0.4rem;
+  padding: var(--isy-space-1) var(--isy-space-2);
   background: var(--isy-btn-bg);
   border-width: 2px;
   border-style: solid;
@@ -538,8 +538,8 @@ onBeforeUnmount(() => teardownDemWorker());
 .anchor-badge {
   font-size: var(--isy-fs-sm);
   color: var(--isy-text-dim);
-  margin: -0.1rem 0 0;
-  padding: 0 0.1rem;
+  margin: calc(-1 * var(--isy-space-1)) 0 0;
+  padding: 0 var(--isy-space-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -549,7 +549,7 @@ onBeforeUnmount(() => teardownDemWorker());
 .actions {
   flex: 1;
   overflow-y: auto;
-  padding: 0.75rem;
+  padding: var(--isy-space-3);
 }
 
 /* ── Dark/Light Umschalter (unten links) ──── */
@@ -559,7 +559,7 @@ onBeforeUnmount(() => teardownDemWorker());
   left: 0.65rem;
   width: 34px;
   height: 34px;
-  padding: 4px;
+  padding: var(--isy-space-1);
   background: var(--isy-btn-bg);
   border: 1px solid var(--isy-border);
   border-radius: 50%;
