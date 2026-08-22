@@ -109,7 +109,7 @@ const chartOptions = {
 .dpp-title {
   margin: 0 0 0.5rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -121,7 +121,7 @@ const chartOptions = {
   font-family: inherit;
   text-transform: none;
   letter-spacing: normal;
-  font-size: 0.62rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-border-hover);
 }
 .dpp-chart-container {
@@ -132,7 +132,7 @@ const chartOptions = {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
 }
 .dpp-hint {

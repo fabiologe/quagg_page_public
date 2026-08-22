@@ -171,7 +171,7 @@ const remove = () => {
 .modal-header h3 {
   margin: 0;
   font-family: var(--isy-pixel-font);
-  font-size: 0.58rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -182,6 +182,6 @@ const remove = () => {
   max-height: calc(90vh - 56px);
   background: var(--isy-pixel-bg-deep);
 }
-.hint { font-size: 0.78rem; color: var(--isy-pixel-border-hover); margin-top: 0.2rem; }
+.hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: 0.2rem; }
 .value-display { color: var(--isy-pixel-green); font-weight: 600; padding: 0.35rem 0; }
 </style>

@@ -79,7 +79,7 @@ const removeRow = (i) => {
 
 <style scoped>
 .curve-table-editor { margin: 0.25rem 0; }
-.curve-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.curve-table { width: 100%; border-collapse: collapse; font-size: var(--isy-fs-sm); }
 .curve-table th { text-align: left; padding: 2px 4px; color: var(--isy-pixel-border); font-weight: 700; }
 .curve-table td { padding: 2px 4px; }
 /* Scoped Style greift nicht auf die Parent-Modal-Regel für .small-input durch
@@ -93,7 +93,7 @@ const removeRow = (i) => {
   border-radius: 4px;
   background: var(--isy-pixel-bg-alt);
   color: var(--isy-pixel-text);
-  font-size: 0.82rem;
+  font-size: var(--isy-fs-md);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .curve-table .small-input:focus {
@@ -103,12 +103,12 @@ const removeRow = (i) => {
 }
 .row-remove-btn {
   background: none; border: none; color: var(--isy-pixel-danger); cursor: pointer;
-  font-family: var(--isy-pixel-font); font-size: 0.55rem; padding: 0 4px;
+  font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: 0 4px;
 }
 .row-remove-btn:disabled { color: var(--isy-pixel-text-dim); cursor: not-allowed; }
 .row-add-btn {
   margin-top: 4px; background: none; border: 1px dashed var(--isy-pixel-border); border-radius: 4px;
-  color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: 0.5rem; padding: 4px 8px; cursor: pointer;
+  color: var(--isy-pixel-border); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); padding: 4px 8px; cursor: pointer;
   transition: background 0.15s;
 }
 .row-add-btn:hover { background: var(--isy-pixel-content-bg); }

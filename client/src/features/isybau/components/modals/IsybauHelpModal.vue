@@ -383,7 +383,7 @@ const activeTab = ref('general');
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -415,7 +415,7 @@ const activeTab = ref('general');
 
 .group-title {
     font-family: var(--isy-pixel-font);
-    font-size: 0.42rem;
+    font-size: var(--isy-fs-pixel-sm);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--isy-pixel-border-hover);
@@ -435,7 +435,7 @@ const activeTab = ref('general');
   cursor: pointer;
   color: var(--isy-pixel-border);
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: var(--isy-fs-lg);
   transition: all 0.2s;
 }
 
@@ -477,7 +477,7 @@ const activeTab = ref('general');
   margin-top: 0;
   margin-bottom: 1.5rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: -0.02em;
   color: #1e293b;
   border-bottom: 2px solid #f1f5f9;
@@ -488,14 +488,14 @@ const activeTab = ref('general');
   margin-top: 2rem;
   margin-bottom: 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   color: #475569;
 }
 
 .content-section p, .content-section li {
   line-height: 1.6;
   color: #475569;
-  font-size: 1rem;
+  font-size: var(--isy-fs-lg);
 }
 
 .audit-block {
@@ -521,7 +521,7 @@ const activeTab = ref('general');
     border-collapse: collapse;
     margin-top: 1rem;
     background: white;
-    font-size: 0.9rem;
+    font-size: var(--isy-fs-lg);
 }
 
 .tech-table th, .tech-table td {
@@ -540,7 +540,7 @@ const activeTab = ref('general');
     display: inline-block;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
-    font-size: 0.8em;
+    font-size: var(--isy-fs-md);
     font-weight: 600;
 }
 .q-warn { background-color: var(--isy-pixel-danger-soft); color: var(--isy-pixel-danger-soft-text); }
@@ -551,7 +551,7 @@ const activeTab = ref('general');
     padding: 1rem;
     border-radius: 6px;
     font-family: monospace;
-    font-size: 0.85rem;
+    font-size: var(--isy-fs-md);
     white-space: pre-wrap;
     margin: 1rem 0;
     max-height: 300px;
@@ -575,14 +575,14 @@ const activeTab = ref('general');
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 1rem;
-  font-size: 0.9rem;
+  font-size: var(--isy-fs-lg);
   color: #475569;
   line-height: 1.5;
 }
 
 .info-card-title {
   font-family: var(--isy-pixel-font);
-  font-size: 0.44rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: #1e293b;
   margin-bottom: 0.5rem;
 }

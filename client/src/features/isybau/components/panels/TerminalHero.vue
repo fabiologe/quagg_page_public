@@ -134,7 +134,7 @@ onUnmounted(() => { running = false; });
 /* ── Lines ── */
 .t-line {
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   line-height: 1.7;
   color: var(--isy-pixel-green-glow);
   white-space: pre-wrap;

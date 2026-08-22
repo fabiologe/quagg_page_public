@@ -131,7 +131,7 @@ const sortedData = computed(() => {
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -158,7 +158,7 @@ const sortedData = computed(() => {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: var(--isy-fs-lg);
 }
 
 th, td {
@@ -230,7 +230,7 @@ input:checked + .slider::before {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;

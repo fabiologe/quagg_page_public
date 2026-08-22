@@ -17,14 +17,14 @@
  */
 
 .form-group { margin-bottom: 1rem; display: flex; flex-direction: column; }
-.form-group label { font-size: 0.75rem; color: var(--isy-pixel-text-dim); margin-bottom: 3px; }
+.form-group label { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); margin-bottom: 3px; }
 .form-input, .form-select {
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--isy-pixel-border);
   border-radius: 5px;
   background: var(--isy-pixel-bg-alt);
   color: var(--isy-pixel-text);
-  font-size: 0.88rem;
+  font-size: var(--isy-fs-lg);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -52,7 +52,7 @@
   cursor: pointer;
   font-weight: 700;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   box-shadow: var(--isy-pixel-btn-shadow);
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
@@ -71,7 +71,7 @@
   clip-path: var(--isy-pixel-clip-corner);
   cursor: pointer;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   box-shadow: var(--isy-pixel-btn-shadow);
   transition: background 0.12s, box-shadow 0.15s, transform 0.1s;

@@ -261,7 +261,7 @@ const downloadResults = () => {
     margin-top: 0;
     margin-bottom: 0.75rem;
     font-family: var(--isy-pixel-font);
-    font-size: 0.5rem;
+    font-size: var(--isy-fs-pixel-md);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--isy-pixel-border);
@@ -277,7 +277,7 @@ const downloadResults = () => {
     display: block;
     margin-bottom: 0.4rem;
     font-family: var(--isy-pixel-font);
-    font-size: 0.44rem;
+    font-size: var(--isy-fs-pixel-sm);
     letter-spacing: 0.05em;
     color: var(--isy-pixel-border);
 }
@@ -293,7 +293,7 @@ const downloadResults = () => {
     justify-content: center;
     gap: 0.8rem;
     font-family: var(--isy-pixel-font);
-    font-size: 0.42rem;
+    font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-text-dim);
     align-items: center;
 }
@@ -305,7 +305,7 @@ const downloadResults = () => {
 }
 .stat-item strong {
     color: var(--isy-pixel-text);
-    font-size: 0.58rem;
+    font-size: var(--isy-fs-pixel-md);
 }
 .divider {
     color: var(--isy-pixel-border);
@@ -315,8 +315,8 @@ const downloadResults = () => {
 /* Meta Info */
 .meta-item { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
 .meta-row { display: flex; justify-content: space-between; gap: 0.5rem; }
-.label { font-size: 0.75rem; color: var(--isy-pixel-border); font-weight: 700; }
-.value { font-size: 0.88rem; color: var(--isy-pixel-border); overflow: hidden; text-overflow: ellipsis; }
+.label { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); font-weight: 700; }
+.value { font-size: var(--isy-fs-lg); color: var(--isy-pixel-border); overflow: hidden; text-overflow: ellipsis; }
 
 /* Buttons & Inputs */
 .primary-btn {
@@ -329,7 +329,7 @@ const downloadResults = () => {
   cursor: pointer;
   margin-top: 0.5rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.54rem;
+  font-size: var(--isy-fs-pixel-md);
   transition: background 0.15s;
 }
 .primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
@@ -342,14 +342,14 @@ const downloadResults = () => {
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
-    font-size: 0.46rem;
+    font-size: var(--isy-fs-pixel-sm);
     text-align: center;
     color: var(--isy-pixel-text-dim);
     transition: background 0.12s, border-color 0.12s;
 }
 .secondary-btn:hover { background: var(--isy-pixel-text-dim); border-color: var(--isy-pixel-border-hover); }
 
-.error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: 0.5rem; font-size: 0.82rem; }
+.error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: 0.5rem; font-size: var(--isy-fs-md); }
 .error-link {
     display: block;
     margin-top: 0.3rem;
@@ -358,7 +358,7 @@ const downloadResults = () => {
     padding: 0;
     color: var(--isy-pixel-danger-soft-text);
     font-family: var(--isy-pixel-font);
-    font-size: 0.44rem;
+    font-size: var(--isy-fs-pixel-sm);
     line-height: 1.6;
     text-decoration: underline;
     cursor: pointer;
@@ -371,7 +371,7 @@ const downloadResults = () => {
     border-left: 3px solid #e0a020;
     border-radius: 4px;
     padding: 0.35rem 0.5rem;
-    font-size: 0.78rem;
+    font-size: var(--isy-fs-sm);
 }
 .warning-link {
     display: block;
@@ -381,13 +381,13 @@ const downloadResults = () => {
     padding: 0;
     color: var(--isy-pixel-warning-soft-text);
     font-family: var(--isy-pixel-font);
-    font-size: 0.42rem;
+    font-size: var(--isy-fs-pixel-sm);
     line-height: 1.6;
     text-decoration: underline;
     cursor: pointer;
 }
 .warning-link:hover { color: #6b4107; }
-.success-msg { color: var(--isy-pixel-border); margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
+.success-msg { color: var(--isy-pixel-border); margin-top: 0.5rem; font-weight: 700; font-size: var(--isy-fs-md); }
 .input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid var(--isy-pixel-text-dim); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
 .button-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
@@ -413,7 +413,7 @@ const downloadResults = () => {
     padding: 2px;
 }
 .rain-status {
-    font-size: 0.78rem;
+    font-size: var(--isy-fs-sm);
     color: var(--isy-pixel-border);
     margin-bottom: 0.5rem;
     padding: 0.35rem 0.5rem;
@@ -458,7 +458,7 @@ const downloadResults = () => {
     border: 2px solid transparent;
     color: var(--isy-pixel-green-bright);
     font-family: var(--isy-pixel-font);
-    font-size: 0.5rem;
+    font-size: var(--isy-fs-pixel-md);
     line-height: 1;
     cursor: pointer;
     /* Kanten hart lassen — ein weichgezeichnetes x passt nicht zum Rest. */
@@ -493,7 +493,7 @@ const downloadResults = () => {
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
-    font-size: 0.46rem;
+    font-size: var(--isy-fs-pixel-sm);
     text-align: left;
     display: flex;
     align-items: center;

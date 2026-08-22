@@ -44,7 +44,7 @@
         @click="setMode('addArea')"
         title="Fläche zeichnen"
       >
-        <span style="font-weight: 900; font-family: 'Press Start 2P', monospace; font-size: 0.6rem; color: var(--isy-pixel-green);">m²</span>
+        <span style="font-weight: 900; font-family: 'Press Start 2P', monospace; font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-green);">m²</span>
       </button>
 
       <div class="separator-v" style="margin: 0 4px; border-left: 1px solid var(--isy-pixel-border);"></div>
@@ -229,7 +229,7 @@ const hint = computed(() => {
     padding: 4px 10px;
     border-radius: 4px;
     font-family: var(--isy-pixel-font);
-    font-size: 0.42rem;
+    font-size: var(--isy-fs-pixel-sm);
     white-space: nowrap;
     pointer-events: none;
 }

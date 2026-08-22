@@ -69,7 +69,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
 .lo-label {
   color: var(--sv-text-lime, #e8eaf0);
   font-family: var(--sv-font, 'Inter', 'Segoe UI', sans-serif);
-  font-size: 0.95rem;
+  font-size: var(--isy-fs-lg);
   font-weight: 600;
   text-align: center;
   text-shadow: var(--sv-glow-lime, none);
@@ -90,7 +90,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
 }
 .lo-percent {
   color: var(--sv-text-dim, #90a4ae);
-  font-size: 0.78rem;
+  font-size: var(--isy-fs-sm);
   font-variant-numeric: tabular-nums;
 }
 

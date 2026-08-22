@@ -205,7 +205,7 @@ function formatDate(iso) {
 .pm-header h3 {
   margin: 0;
   font-family: var(--isy-pixel-font);
-  font-size: 0.55rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--isy-pixel-text-dim);
@@ -214,7 +214,7 @@ function formatDate(iso) {
 .close-btn {
   background: none;
   border: none;
-  font-size: 1.3rem;
+  font-size: var(--isy-fs-xl);
   line-height: 1;
   color: var(--isy-pixel-border-hover);
   cursor: pointer;
@@ -235,7 +235,7 @@ function formatDate(iso) {
   padding: 0.45rem 0.7rem;
   border: 1px solid #ddd;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: var(--isy-fs-lg);
 }
 .pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border); box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
 
@@ -245,7 +245,7 @@ function formatDate(iso) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.55rem 1.1rem 0.3rem;
-  font-size: 0.78rem;
+  font-size: var(--isy-fs-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -256,7 +256,7 @@ function formatDate(iso) {
 .pm-count {
   background: var(--isy-pixel-text-dim);
   color: var(--isy-pixel-bg);
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   font-weight: 700;
   padding: 0.1rem 0.45rem;
   border-radius: 10px;
@@ -288,7 +288,7 @@ function formatDate(iso) {
 }
 
 .pm-item-name {
-  font-size: 0.92rem;
+  font-size: var(--isy-fs-lg);
   font-weight: 700;
   color: var(--isy-pixel-border);
   white-space: nowrap;
@@ -297,7 +297,7 @@ function formatDate(iso) {
 }
 
 .pm-item-meta {
-  font-size: 0.75rem;
+  font-size: var(--isy-fs-sm);
   color: #888;
 }
 
@@ -311,7 +311,7 @@ function formatDate(iso) {
   padding: 2rem;
   text-align: center;
   color: #aaa;
-  font-size: 0.88rem;
+  font-size: var(--isy-fs-lg);
   font-style: italic;
 }
 
@@ -319,7 +319,7 @@ function formatDate(iso) {
   padding: 0.65rem 1.1rem;
   background: var(--isy-pixel-danger-soft);
   border-top: 1px solid var(--isy-pixel-danger-soft-border);
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
   color: var(--isy-pixel-danger-soft-text);
   flex-shrink: 0;
 }
@@ -333,7 +333,7 @@ function formatDate(iso) {
   padding: 0.65rem 1.1rem;
   background: var(--isy-pixel-danger-soft);
   border-top: 1px solid var(--isy-pixel-danger-soft-border);
-  font-size: 0.88rem;
+  font-size: var(--isy-fs-lg);
   color: var(--isy-pixel-danger-soft-text);
   flex-shrink: 0;
 }
@@ -351,7 +351,7 @@ function formatDate(iso) {
   border-radius: 6px;
   padding: 0.5rem 0.9rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
@@ -369,7 +369,7 @@ function formatDate(iso) {
   border-radius: 5px;
   padding: 0.35rem 0.7rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.46rem;
+  font-size: var(--isy-fs-pixel-sm);
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -382,7 +382,7 @@ function formatDate(iso) {
   border-radius: 5px;
   padding: 0.35rem 0.5rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.46rem;
+  font-size: var(--isy-fs-pixel-sm);
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -394,7 +394,7 @@ function formatDate(iso) {
   border-radius: 5px;
   padding: 0.35rem 0.6rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.46rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-border);
   cursor: pointer;
 }

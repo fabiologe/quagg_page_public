@@ -347,7 +347,7 @@ onBeforeUnmount(() => teardownDemWorker());
 
 .sidebar-logo-text {
   font-family: var(--isy-pixel-font);
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-green);
   line-height: 1;
   letter-spacing: 0.02em;
@@ -415,7 +415,7 @@ onBeforeUnmount(() => teardownDemWorker());
   border-radius: 7px;
   clip-path: var(--isy-pixel-clip-corner);
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   cursor: pointer;
   box-shadow: var(--isy-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s;
@@ -450,11 +450,11 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .btn-label {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   line-height: 1.4;
 }
 .file-name {
-  font-size: 0.7rem;
+  font-size: var(--isy-fs-sm);
   opacity: 0.65;
   white-space: nowrap;
   overflow: hidden;
@@ -473,11 +473,11 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .dem-import-title {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-text);
 }
 .dem-import-badge {
-  font-size: 0.7rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-text-dim);
 }
 .dem-import-row {
@@ -485,7 +485,7 @@ onBeforeUnmount(() => teardownDemWorker());
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-text);
 }
 .dem-import-row input {
@@ -511,7 +511,7 @@ onBeforeUnmount(() => teardownDemWorker());
   border-radius: 5px;
   clip-path: var(--isy-pixel-clip-corner);
   color: var(--isy-text-dim);
-  font-size: 0.65rem;
+  font-size: var(--isy-fs-sm);
   cursor: pointer;
   box-shadow: var(--isy-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
@@ -531,12 +531,12 @@ onBeforeUnmount(() => teardownDemWorker());
   display: flex;
   gap: 0.4rem;
 }
-.dem-import-actions .folder-btn { font-size: 0.5rem; }
+.dem-import-actions .folder-btn { font-size: var(--isy-fs-pixel-md); }
 .dem-import-actions .dem-go { background: var(--isy-pixel-green); color: var(--isy-pixel-border); }
 .dem-import-actions .dem-go:hover { background: var(--isy-pixel-green-hover); }
 
 .anchor-badge {
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-text-dim);
   margin: -0.1rem 0 0;
   padding: 0 0.1rem;

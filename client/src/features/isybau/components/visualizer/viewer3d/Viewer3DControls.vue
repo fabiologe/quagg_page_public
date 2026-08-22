@@ -121,7 +121,7 @@ const terrainToggleTitle = computed(() => {
   border: 1px solid var(--isy-pixel-border);
   border-radius: 4px;
   color: var(--isy-pixel-green);
-  font-size: 1.2rem;
+  font-size: var(--isy-fs-lg);
   width: 32px;
   height: 32px;
   cursor: pointer;
@@ -144,7 +144,7 @@ const terrainToggleTitle = computed(() => {
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
 }
 .ctrl-toggle input { display: none; }
@@ -165,7 +165,7 @@ const terrainToggleTitle = computed(() => {
   gap: 0.25rem;
 }
 .zscale-label {
-  font-size: 0.7rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
   font-family: monospace;
 }
@@ -180,7 +180,7 @@ const terrainToggleTitle = computed(() => {
 .ctrl-toggle input:checked + .result-dot { background: var(--isy-pixel-warning-alt) !important; }
 
 .water-toggle { padding-left: 0.6rem; }
-.water-toggle .toggle-label { color: var(--isy-pixel-info); font-size: 0.7rem; }
+.water-toggle .toggle-label { color: var(--isy-pixel-info); font-size: var(--isy-fs-sm); }
 .water-dot { border-color: var(--isy-pixel-info) !important; }
 .ctrl-toggle input:checked + .water-dot { background: var(--isy-pixel-info) !important; }
 
@@ -192,7 +192,7 @@ const terrainToggleTitle = computed(() => {
   border: 1px solid rgba(255,255,255,0.08);
 }
 .legend-title {
-  font-size: 0.44rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -200,7 +200,7 @@ const terrainToggleTitle = computed(() => {
   font-family: var(--isy-pixel-font);
 }
 .legend-sep {
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-text-dim);
   margin: 0.3rem 0 0.2rem;
   border-top: 1px solid rgba(255,255,255,0.06);
@@ -210,7 +210,7 @@ const terrainToggleTitle = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.66rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
   padding: 0.1rem 0;
 }

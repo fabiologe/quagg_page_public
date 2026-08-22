@@ -99,7 +99,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -113,11 +113,11 @@ const confirm = () => emit('confirm', selectedCRS.value);
 .description {
   color: var(--isy-pixel-border);
   margin-bottom: 1.5rem;
-  font-size: 0.95rem;
+  font-size: var(--isy-fs-lg);
 }
 
 .guess-hint {
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
   color: var(--isy-pixel-text-dim);
   margin: 0;
 }
@@ -129,7 +129,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
@@ -143,7 +143,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;

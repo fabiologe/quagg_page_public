@@ -743,7 +743,7 @@ async function exportPDF() {
   border: none;
   border-radius: 5px;
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   font-weight: 600;
   font-family: var(--isy-pixel-font);
   letter-spacing: 0.04em;

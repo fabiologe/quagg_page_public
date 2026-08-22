@@ -276,7 +276,7 @@ const applyResult = () => {
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -290,11 +290,11 @@ const applyResult = () => {
 .description {
   color: var(--isy-pixel-border);
   margin-bottom: 1.5rem;
-  font-size: 0.95rem;
+  font-size: var(--isy-fs-lg);
 }
 
 .reference-info {
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
   color: var(--isy-pixel-text-dim);
   margin-bottom: 1rem;
 }
@@ -310,19 +310,19 @@ const applyResult = () => {
 .result-box h4 {
   margin: 0 0 0.5rem 0;
   font-family: var(--isy-pixel-font);
-  font-size: 0.48rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-info-hover);
 }
 
 .result-value {
-  font-size: 1.2rem;
+  font-size: var(--isy-fs-lg);
   font-weight: bold;
   color: var(--isy-pixel-green-bright);
   margin-bottom: 0.5rem;
 }
 
 .source {
-  font-size: 0.8rem;
+  font-size: var(--isy-fs-md);
   color: var(--isy-pixel-border);
   margin: 0;
 }
@@ -343,7 +343,7 @@ const applyResult = () => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
@@ -358,7 +358,7 @@ const applyResult = () => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
@@ -394,7 +394,7 @@ const applyResult = () => {
 .kostra-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
 }
 
 .kostra-table th, .kostra-table td {
@@ -420,7 +420,7 @@ const applyResult = () => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   width: auto;
@@ -451,7 +451,7 @@ const applyResult = () => {
 }
 
 .input-wrapper label {
-    font-size: 0.8rem;
+    font-size: var(--isy-fs-md);
     color: var(--isy-pixel-border);
     margin-bottom: 0.2rem;
 }
@@ -470,7 +470,7 @@ const applyResult = () => {
     border-radius: 4px;
     width: 36px;
     height: 36px;
-    font-size: 1.4rem; /* Slightly larger for the Ogre */
+    font-size: var(--isy-fs-xl); /* Slightly larger for the Ogre */
     cursor: pointer;
     display: flex;
     align-items: center;

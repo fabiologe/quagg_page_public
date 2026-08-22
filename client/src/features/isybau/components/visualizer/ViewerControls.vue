@@ -185,7 +185,7 @@ const contourTitle = computed(() => {
 
 .grid-label {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green);
 }
 
@@ -214,7 +214,7 @@ const contourTitle = computed(() => {
 
 .ezg-label {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-text-dim);
 }
 
@@ -253,8 +253,8 @@ const contourTitle = computed(() => {
   font-weight: 700;
   line-height: 1;
 }
-.size-label.sm { font-size: 0.75rem; }
-.size-label.lg { font-size: 1.1rem; }
+.size-label.sm { font-size: var(--isy-fs-sm); }
+.size-label.lg { font-size: var(--isy-fs-lg); }
 
 .size-control input[type="range"] {
   width: 70px;

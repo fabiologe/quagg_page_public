@@ -277,7 +277,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border-radius: 5px;
     clip-path: var(--isy-pixel-clip-corner);
     font-family: var(--isy-pixel-font);
-    font-size: 0.46rem;
+    font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-border);
     transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s, border-color 0.15s;
 }
@@ -374,7 +374,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 .sidebar-nav h3 {
   margin: 0 0 0.75rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--isy-text);
@@ -395,7 +395,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
   text-align: left;
   cursor: pointer;
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   line-height: 1.6;
   color: var(--isy-text);
   box-shadow: var(--isy-btn-shadow);
@@ -453,7 +453,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border-radius: 4px;
     padding: 1rem;
     z-index: 2000;
-    font-size: 0.9rem;
+    font-size: var(--isy-fs-lg);
     color: var(--isy-toast-text);
 }
 
@@ -465,14 +465,14 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 
 .warning-icon {
-    font-size: 1.2rem;
+    font-size: var(--isy-fs-lg);
     margin-right: 0.5rem;
 }
 
 .close-toast {
     background: none;
     border: none;
-    font-size: 1.2rem;
+    font-size: var(--isy-fs-lg);
     cursor: pointer;
     color: #7f8c8d;
 }

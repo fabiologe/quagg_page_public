@@ -498,7 +498,7 @@ onUnmounted(() => {
 
 .bubble-text {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   line-height: 1.7;
   color: var(--isy-pixel-green-glow);
   text-shadow: var(--isy-pixel-text-glow);
@@ -524,7 +524,7 @@ onUnmounted(() => {
   border: none;
   cursor: pointer;
   font-family: var(--isy-pixel-font);
-  font-size: 0.42rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-green-active);
   padding: 0;
 }
@@ -551,7 +551,7 @@ onUnmounted(() => {
   padding-top: 0.45rem;
   border-top: 1px solid var(--isy-pixel-border);
   font-family: var(--isy-pixel-font);
-  font-size: 0.44rem;
+  font-size: var(--isy-fs-pixel-sm);
   line-height: 1.6;
 }
 .task-state { color: var(--isy-pixel-green-bright); }
@@ -560,14 +560,14 @@ onUnmounted(() => {
 .bubble-hint {
   margin-top: 0.4rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.4rem;
+  font-size: var(--isy-fs-pixel-sm);
   line-height: 1.7;
   color: var(--isy-pixel-border-hover);
 }
 
 .exercise-progress {
   font-family: var(--isy-pixel-font);
-  font-size: 0.4rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-border-hover);
   margin-right: 0.15rem;
 }
@@ -581,7 +581,7 @@ onUnmounted(() => {
   cursor: pointer;
   padding: 0;
   font-family: var(--isy-pixel-font);
-  font-size: 0.44rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-green-text);
   text-shadow: var(--isy-pixel-text-glow);
 }

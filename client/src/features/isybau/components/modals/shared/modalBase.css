@@ -25,7 +25,7 @@
 .close-btn {
   background: none;
   border: none;
-  font-size: 1.5rem;
+  font-size: var(--isy-fs-xl);
   line-height: 1;
   cursor: pointer;
   color: var(--isy-pixel-border-hover);
@@ -48,7 +48,7 @@
    (strukturell anderes UI-Element, bleibt dort bewusst lokal). */
 .tab-btn {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   background: transparent;
   border-width: 2px;
@@ -81,5 +81,5 @@
   padding: 0.5rem;
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
-  font-size: 1rem;
+  font-size: var(--isy-fs-lg);
 }

@@ -249,7 +249,7 @@ const apply = () => {
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -294,7 +294,7 @@ const apply = () => {
 .table-wrapper h4 {
   margin: 0 0 0.5rem 0;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-border-hover);
 }
 
@@ -307,7 +307,7 @@ const apply = () => {
 .kostra-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: var(--isy-fs-md);
 }
 
 .kostra-table th, .kostra-table td {
@@ -372,7 +372,7 @@ const apply = () => {
 }
 
 .hint {
-  font-size: 0.8rem;
+  font-size: var(--isy-fs-md);
   color: var(--isy-pixel-danger);
 }
 
@@ -384,7 +384,7 @@ const apply = () => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
@@ -399,7 +399,7 @@ const apply = () => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;

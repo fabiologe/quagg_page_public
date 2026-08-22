@@ -109,7 +109,7 @@ const copyToClipboard = async (text) => {
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -148,7 +148,7 @@ const copyToClipboard = async (text) => {
 .copy-btn {
     padding: 0.35rem 0.5rem;
     font-family: var(--isy-pixel-font);
-    font-size: 0.44rem;
+    font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-border);
     cursor: pointer;
     background: var(--isy-pixel-content-bg);
@@ -163,7 +163,7 @@ const copyToClipboard = async (text) => {
   border-radius: 4px;
   overflow: auto;
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
   white-space: pre-wrap;
   border: 1px solid var(--isy-pixel-text-dim);
   margin: 0;

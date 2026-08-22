@@ -700,7 +700,7 @@ watch(() => props.selectedElement, (val) => {
 .info-header h3 {
   margin: 0;
   font-family: var(--isy-pixel-font);
-  font-size: 0.58rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -709,7 +709,7 @@ watch(() => props.selectedElement, (val) => {
 .close-btn {
   background: none;
   border: none;
-  font-size: 1.5rem;
+  font-size: var(--isy-fs-xl);
   color: var(--isy-pixel-border-hover);
   cursor: pointer;
   line-height: 1;
@@ -727,7 +727,7 @@ watch(() => props.selectedElement, (val) => {
     display: flex;
     justify-content: space-between;
     margin-bottom: 0.5rem;
-    font-size: 0.9rem;
+    font-size: var(--isy-fs-lg);
     color: var(--isy-pixel-text-dim);
 }
 
@@ -737,7 +737,7 @@ watch(() => props.selectedElement, (val) => {
 
 .info-group label {
     display: block;
-    font-size: 0.8rem;
+    font-size: var(--isy-fs-md);
     color: var(--isy-pixel-text-dim);
     margin-bottom: 2px;
 }
@@ -749,7 +749,7 @@ watch(() => props.selectedElement, (val) => {
     border-radius: 4px;
     background: var(--isy-pixel-bg-alt);
     color: var(--isy-pixel-text);
-    font-size: 0.9rem;
+    font-size: var(--isy-fs-lg);
     box-sizing: border-box;
     outline: none;
     transition: border-color 0.15s;
@@ -778,7 +778,7 @@ watch(() => props.selectedElement, (val) => {
 
 .checkbox-row label {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: var(--isy-fs-lg);
     color: var(--isy-pixel-text-dim);
 }
 
@@ -796,7 +796,7 @@ watch(() => props.selectedElement, (val) => {
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
-    font-size: 0.48rem;
+    font-size: var(--isy-fs-pixel-md);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -821,7 +821,7 @@ watch(() => props.selectedElement, (val) => {
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
-    font-size: 0.48rem;
+    font-size: var(--isy-fs-pixel-md);
     transition: background 0.15s;
 }
 
@@ -844,7 +844,7 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .result-header {
-    font-size: 0.8rem;
+    font-size: var(--isy-fs-md);
     font-weight: bold;
     color: #004085;
     margin-bottom: 6px;
@@ -861,7 +861,7 @@ watch(() => props.selectedElement, (val) => {
     font-weight: bold;
     text-align: center;
     margin-bottom: 8px;
-    font-size: 0.9rem;
+    font-size: var(--isy-fs-lg);
     animation: pulse 2s infinite;
 }
 
@@ -874,7 +874,7 @@ watch(() => props.selectedElement, (val) => {
 .pick-icon { width: 16px; height: 16px; display: block; }
 
 .hint-text {
-    font-size: 0.75rem;
+    font-size: var(--isy-fs-sm);
     color: var(--isy-pixel-border-hover);
     margin: -4px 0 8px 0;
 }
@@ -891,7 +891,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
     border-radius: 4px;
     padding: 0.5rem;
     margin-bottom: 8px;
-    font-size: 0.78rem;
+    font-size: var(--isy-fs-sm);
     color: var(--isy-pixel-info-soft-text);
 }
 
@@ -903,7 +903,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 }
 
 .sub-text {
-    font-size: 0.75rem;
+    font-size: var(--isy-fs-sm);
     font-weight: normal;
     color: #d32f2f;
 }

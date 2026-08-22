@@ -1571,7 +1571,7 @@ svg {
 }
 
 .flow-label {
-  font-size: 12px;
+  font-size: var(--isy-fs-sm);
   fill: var(--isy-pixel-info-hover);
   font-weight: bold;
   pointer-events: none;
@@ -1667,7 +1667,7 @@ svg {
 }
 .entw-legend-title {
   font-family: var(--isy-pixel-font);
-  font-size: 0.5rem;
+  font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1678,7 +1678,7 @@ svg {
   align-items: center;
   gap: 0.4rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.4rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-text-dim);
   line-height: 1.4;
 }
@@ -1697,7 +1697,7 @@ svg {
   padding-top: 0.35rem;
   border-top: 1px solid rgba(148, 139, 225, 0.3);
   font-family: var(--isy-pixel-font);
-  font-size: 0.4rem;
+  font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-border-hover);
   line-height: 1.6;
 }
@@ -1716,7 +1716,7 @@ svg {
   padding: 4px 10px;
   border-radius: 4px;
   font-family: var(--isy-pixel-font);
-  font-size: 0.42rem;
+  font-size: var(--isy-fs-pixel-sm);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -1775,7 +1775,7 @@ svg {
 .msb-count {
   color: var(--isy-pixel-green);
   font-family: var(--isy-pixel-font);
-  font-size: 0.55rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.05em;
 }
 .msb-btn {
@@ -1785,7 +1785,7 @@ svg {
   border-radius: 5px;
   padding: 0.4rem 0.7rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.46rem;
+  font-size: var(--isy-fs-pixel-sm);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }

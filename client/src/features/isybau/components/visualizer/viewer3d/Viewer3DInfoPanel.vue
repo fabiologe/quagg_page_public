@@ -344,13 +344,13 @@ const edgeUtilClass = computed(() => {
 }
 .info-header h3 {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text);
   font-family: var(--isy-pixel-font);
 }
 .close-btn {
   background: none; border: none; color: #a0aec0;
-  font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 0;
+  font-size: var(--isy-fs-xl); cursor: pointer; line-height: 1; padding: 0;
 }
 .close-btn:hover { color: var(--isy-pixel-text); }
 
@@ -362,7 +362,7 @@ const edgeUtilClass = computed(() => {
   align-items: center;
   padding: 0.3rem 0;
   border-bottom: 1px solid rgba(255,255,255,0.05);
-  font-size: 0.82rem;
+  font-size: var(--isy-fs-md);
 }
 .info-row:last-child { border-bottom: none; }
 .lbl { color: #718096; }
@@ -372,7 +372,7 @@ const edgeUtilClass = computed(() => {
   margin: 0.4rem 0 0.6rem;
   padding: 0.25rem 0.6rem;
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   font-weight: 700;
   display: inline-block;
 }
@@ -389,7 +389,7 @@ const edgeUtilClass = computed(() => {
   margin: 0.6rem 0 0.3rem;
   padding: 0.2rem 0;
   border-top: 1px solid rgba(255,255,255,0.1);
-  font-size: 0.62rem;
+  font-size: var(--isy-fs-pixel-md);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #4a5568;
@@ -402,7 +402,7 @@ const edgeUtilClass = computed(() => {
   background: rgba(37,99,235,0.15);
   border: 1px solid #2563eb;
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-info-soft-border);
 }
 

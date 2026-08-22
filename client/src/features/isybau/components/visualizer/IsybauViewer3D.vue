@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   color: #4a5568;
-  font-size: 0.9rem;
+  font-size: var(--isy-fs-lg);
   font-family: var(--isy-pixel-font);
   text-align: center;
   padding: 2rem;

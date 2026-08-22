@@ -229,7 +229,7 @@ watch(() => props.isOpen, (open) => {
 
 .modal-header h3 {
   font-family: var(--isy-pixel-font);
-  font-size: 0.6rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
@@ -243,11 +243,11 @@ watch(() => props.isOpen, (open) => {
 .description {
   color: var(--isy-pixel-border);
   margin-bottom: 1.5rem;
-  font-size: 0.95rem;
+  font-size: var(--isy-fs-lg);
 }
 
 .description.small {
-  font-size: 0.82rem;
+  font-size: var(--isy-fs-md);
   margin-bottom: 1rem;
 }
 
@@ -265,7 +265,7 @@ watch(() => props.isOpen, (open) => {
   padding: 0.5rem 0.25rem;
   cursor: pointer;
   color: var(--isy-pixel-border-hover);
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
   font-weight: 500;
   transition: color 0.15s, border-color 0.15s;
 }
@@ -286,11 +286,11 @@ watch(() => props.isOpen, (open) => {
   padding: 0.5rem;
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
-  font-size: 1rem;
+  font-size: var(--isy-fs-lg);
 }
 
 .found-place {
-  font-size: 0.85rem;
+  font-size: var(--isy-fs-md);
   background: var(--isy-pixel-border);
   color: var(--isy-pixel-green-bright);
   border-radius: 4px;
@@ -310,7 +310,7 @@ watch(() => props.isOpen, (open) => {
 }
 
 .input-wrapper label {
-  font-size: 0.8rem;
+  font-size: var(--isy-fs-md);
   color: var(--isy-pixel-border);
   margin-bottom: 0.2rem;
 }
@@ -330,7 +330,7 @@ watch(() => props.isOpen, (open) => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.15s;
@@ -345,7 +345,7 @@ watch(() => props.isOpen, (open) => {
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
-  font-size: 0.52rem;
+  font-size: var(--isy-fs-pixel-md);
   letter-spacing: 0.06em;
   cursor: pointer;
   transition: background 0.12s;
