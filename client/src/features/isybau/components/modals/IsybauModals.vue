@@ -95,8 +95,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
+import { obersteOffene } from '../../utils/modalEscape.js';
 import { computeRunoffValidation } from '../../utils/runoffValidation.js';
 import { useElementFocus } from '../../composables/useElementFocus.js';
 
@@ -114,6 +115,41 @@ import NewProjectLocationModal from './NewProjectLocationModal.vue';
 import { useEzgLayer } from '../../composables/useEzgLayer.js';
 
 const store = useIsybauStore();
+
+/**
+ * Escape schliesst das oberste offene Modal.
+ *
+ * Vorher reagierte KEINES der 13 Modals auf Escape - der einzige Ausweg war
+ * ein "x"-Knopf, der bis vor Kurzem nicht einmal eine Beschriftung trug, und
+ * nur 6 der 13 schliessen bei einem Klick auf die Verdunkelung.
+ *
+ * Escape erlaubt dabei nichts Neues: es tut genau das, was der x-Knopf schon
+ * tut. Auch der verwirft ohne Rueckfrage.
+ *
+ * EIN Listener hier statt dreizehn in den Modals - dieser Wirt kennt alle
+ * Sichtbarkeits-Flags ohnehin.
+ *
+ * Die Reihenfolge bestimmt, welches Modal zuerst weicht. Oben stehen die, die
+ * UEBER anderen erscheinen koennen: Bestaetigungen und Auswahldialoge. Je
+ * Tastendruck weicht genau eines.
+ *
+ * Einfangphase + stopImmediatePropagation, weil IsybauEditor.vue einen eigenen
+ * Escape-Handler auf window hat, der jedes aktive Werkzeug abbricht. Ohne das
+ * wuerde ein Tastendruck bei offenem Modal UND aktivem Werkzeug beides tun.
+ */
+// Reihenfolge und Auswahl stehen in utils/modalEscape.js, damit sie ohne
+// Rendern von elf Modals geprueft werden koennen (test/modalEscape.test.js).
+
+const aufEscape = (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  const flag = obersteOffene(store.ui);
+  if (!flag) return;
+  store.ui[flag] = false;
+  e.stopImmediatePropagation();
+};
+
+onMounted(() => window.addEventListener('keydown', aufEscape, true));
+onBeforeUnmount(() => window.removeEventListener('keydown', aufEscape, true));
 const { focusElement } = useElementFocus();
 
 /**
