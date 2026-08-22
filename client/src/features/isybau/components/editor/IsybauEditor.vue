@@ -269,7 +269,7 @@ const handleMapDblClick = () => {
     align-items: center;
     gap: 1rem;
     pointer-events: none; /* Let clicks pass through, but re-enable for button */
-    z-index: 100;
+    z-index: var(--isy-z-panel);
 }
 
 /* Gleicher Terminal-Sprechblasen-Stil wie tutorial/TutorialMascot.vue

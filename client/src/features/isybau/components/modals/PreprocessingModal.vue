@@ -1442,15 +1442,15 @@ const apply = () => {
 }
 
 .data-table { width: 100%; border-collapse: separate; font-size: var(--isy-fs-lg); border-spacing: 0; }
-.data-table th { background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright); position: sticky; top: 0; z-index: 10; padding: var(--isy-space-2); border-bottom: 2px solid #ddd; text-align: left; }
+.data-table th { background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright); position: sticky; top: 0; z-index: var(--isy-z-sticky); padding: var(--isy-space-2); border-bottom: 2px solid #ddd; text-align: left; }
 .data-table td { padding: var(--isy-space-2); border-bottom: 1px solid var(--isy-pixel-text-dim); background: white; }
 
 /* Sticky Columns */
-.sticky-left-1 { position: sticky; left: 0; z-index: 21; background: var(--isy-pixel-text); width: 30px; border-right: 1px solid #eee; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
-.sticky-left-2 { position: sticky; left: 30px; z-index: 20; background: var(--isy-pixel-text); min-width: 80px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
+.sticky-left-1 { position: sticky; left: 0; z-index: calc(var(--isy-z-sticky) + 2); background: var(--isy-pixel-text); width: 30px; border-right: 1px solid #eee; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
+.sticky-left-2 { position: sticky; left: 30px; z-index: calc(var(--isy-z-sticky) + 1); background: var(--isy-pixel-text); min-width: 80px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
 
-.data-table th.sticky-left-1 { z-index: 31 !important; background: #f8f9fa !important; }
-.data-table th.sticky-left-2 { z-index: 30 !important; background: #f8f9fa !important; }
+.data-table th.sticky-left-1 { z-index: calc(var(--isy-z-sticky) + 4) !important; background: #f8f9fa !important; }
+.data-table th.sticky-left-2 { z-index: calc(var(--isy-z-sticky) + 3) !important; background: #f8f9fa !important; }
 
 .sortable { cursor: pointer; user-select: none; }
 .sortable:hover { background: #eee; }
@@ -1539,7 +1539,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .pick-icon { width: 16px; height: 16px; display: block; }
 
 /* Undo & Bulk */
-.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--isy-pixel-bg); border: 1px solid var(--isy-pixel-border); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-5); border-radius: 999px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(4,6,71,0.4); z-index: 1000; }
+.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--isy-pixel-bg); border: 1px solid var(--isy-pixel-border); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-5); border-radius: 999px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(4,6,71,0.4); z-index: var(--isy-z-modal); }
 .undo-toast.info { background: var(--isy-pixel-border); }
 .undo-action-btn {
   background: transparent; border: 1px solid var(--isy-pixel-border-hover); color: var(--isy-pixel-green);
@@ -1557,7 +1557,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 /* Bulk Edit Modal — eigenständiges PopUp, daher komplettes eigenes
    Lila/Limetten-Pixel-Header wie das Hauptmodal, statt der alten weißen
    Bootstrap-Karte ohne Header/Close-Button. */
-.bulk-edit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(4,6,71,0.55); z-index: 500; display: flex; justify-content: center; align-items: center; }
+.bulk-edit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(4,6,71,0.55); z-index: var(--isy-z-panel); display: flex; justify-content: center; align-items: center; }
 .bulk-edit-modal { background: var(--isy-pixel-text); border: 1px solid var(--isy-pixel-border); border-radius: var(--isy-radius-lg); width: 400px; box-shadow: 0 4px 25px rgba(4,6,71,0.35); overflow: hidden; }
 .bulk-edit-header {
   display: flex; justify-content: space-between; align-items: center;

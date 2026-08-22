@@ -40,7 +40,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
 .lo-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100000;
+  z-index: calc(var(--isy-z-top) + 3);
   display: flex;
   align-items: center;
   justify-content: center;

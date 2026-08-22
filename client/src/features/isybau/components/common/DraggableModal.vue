@@ -214,7 +214,7 @@ onUnmounted(() => {
 
 <style scoped>
 .draggable-modal-overlay {
-    position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2000;
+    position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: var(--isy-z-modal);
 }
 .draggable-modal {
     background: white;
@@ -228,7 +228,7 @@ onUnmounted(() => {
 }
 
 /* Resizers */
-.resizer { position: absolute; z-index: 100; }
+.resizer { position: absolute; z-index: var(--isy-z-panel); }
 .resizer.right { top: 0; right: 0; width: 5px; height: 100%; cursor: ew-resize; }
 .resizer.bottom { bottom: 0; left: 0; width: 100%; height: 5px; cursor: ns-resize; }
 .resizer.bottom-right { bottom: 0; right: 0; width: 15px; height: 15px; cursor: se-resize; }

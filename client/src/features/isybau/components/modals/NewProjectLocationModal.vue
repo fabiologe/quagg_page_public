@@ -209,7 +209,7 @@ watch(() => props.isOpen, (open) => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: var(--isy-z-modal);
   backdrop-filter: blur(2px);
 }
 

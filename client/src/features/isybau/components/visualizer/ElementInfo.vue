@@ -673,7 +673,7 @@ watch(() => props.selectedElement, (val) => {
   box-shadow: 0 4px 25px rgba(4,6,71,0.4);
   display: flex;
   flex-direction: column;
-  z-index: 500;
+  z-index: var(--isy-z-panel);
   overflow: hidden;
   border: 1px solid var(--isy-pixel-border);
 }

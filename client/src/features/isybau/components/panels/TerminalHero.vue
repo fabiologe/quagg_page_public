@@ -198,7 +198,7 @@ onUnmounted(() => { running = false; });
     rgba(0, 0, 0, 0.18) 4px
   );
   pointer-events: none;
-  z-index: 2;
+  z-index: var(--isy-z-base);
 }
 
 /* ── Vignette ── */
@@ -211,6 +211,6 @@ onUnmounted(() => { running = false; });
     rgba(0, 0, 0, 0.55) 100%
   );
   pointer-events: none;
-  z-index: 3;
+  z-index: calc(var(--isy-z-base) + 1);
 }
 </style>

@@ -155,7 +155,7 @@ const hint = computed(() => {
     border: 1px solid var(--isy-pixel-border);
     display: flex;
     gap: 0.5rem;
-    z-index: 1000;
+    z-index: var(--isy-z-modal);
 }
 
 .tools-group {

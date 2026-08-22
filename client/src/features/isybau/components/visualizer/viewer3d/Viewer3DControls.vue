@@ -112,7 +112,7 @@ const terrainToggleTitle = computed(() => {
   border: 1px solid var(--isy-pixel-green);
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2);
-  z-index: 10;
+  z-index: var(--isy-z-sticky);
   min-width: 130px;
 }
 

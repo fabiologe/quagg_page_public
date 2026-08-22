@@ -1513,7 +1513,7 @@ svg {
      Höhenlinien liegen, siehe .contour-gpu-host unten (Klicks bleiben
      unverändert bei der SVG, der Kontur-Canvas hat pointer-events:none). */
   position: relative;
-  z-index: 1;
+  z-index: var(--isy-z-base);
 }
 
 /* Areas */
@@ -1659,7 +1659,7 @@ svg {
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2) var(--isy-space-3);
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
-  z-index: 10;
+  z-index: var(--isy-z-sticky);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1707,7 +1707,7 @@ svg {
    .tool-hint in EditorToolbox.vue / .drawing-tooltip in IsybauEditor.vue). */
 .contour-hover-tooltip {
   position: fixed;
-  z-index: 20;
+  z-index: calc(var(--isy-z-sticky) + 1);
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green-glow);
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
@@ -1738,7 +1738,7 @@ svg {
   border: 1.5px dashed var(--isy-pixel-green);
   background: rgba(46, 204, 113, 0.08);
   pointer-events: none;
-  z-index: 50;
+  z-index: var(--isy-z-panel);
 }
 
 /* Box-Select: Aktionsleiste */
@@ -1769,7 +1769,7 @@ svg {
   border: 1px solid var(--isy-pixel-border);
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2) var(--isy-space-4);
-  z-index: 1001;
+  z-index: var(--isy-z-modal);
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
 }
 .msb-count {

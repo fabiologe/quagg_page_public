@@ -178,7 +178,7 @@ function formatDate(iso) {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9000;
+  z-index: var(--isy-z-modal);
 }
 
 .pm-modal {

@@ -569,7 +569,7 @@ onBeforeUnmount(() => teardownDemWorker());
   justify-content: center;
   box-shadow: var(--isy-btn-shadow);
   transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
-  z-index: 5;
+  z-index: var(--isy-z-panel);
 }
 .theme-toggle:hover {
   border-color: var(--isy-accent);

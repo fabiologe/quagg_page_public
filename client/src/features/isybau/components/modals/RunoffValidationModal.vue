@@ -110,7 +110,7 @@ const sortedData = computed(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 2000;
+  z-index: var(--isy-z-modal);
 }
 
 .modal-content {

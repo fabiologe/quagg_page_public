@@ -416,7 +416,7 @@ onUnmounted(() => {
   position: fixed;
   right: clamp(0.75rem, 1.4vw, 1.25rem);
   bottom: 5px;
-  z-index: 1500;
+  z-index: var(--isy-z-top);
   display: flex;
   align-items: flex-end;
   gap: 0.75rem;
@@ -493,7 +493,7 @@ onUnmounted(() => {
   border-left: 0.4rem solid transparent;
   border-right: 0.4rem solid transparent;
   border-top: 0.4rem solid var(--isy-pixel-bg);
-  z-index: 1;
+  z-index: var(--isy-z-base);
 }
 
 .bubble-text {

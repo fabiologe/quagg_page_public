@@ -306,7 +306,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .table-scroll { flex: 1; overflow-y: auto; background: white; border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); }
 .data-table { width: 100%; border-collapse: collapse; font-size: var(--isy-fs-lg); }
 .data-table th, .data-table td { padding: var(--isy-space-3) var(--isy-space-4); text-align: left; border-bottom: 1px solid var(--isy-pixel-text-dim); }
-.data-table th { background: #f9fafb; font-weight: 600; color: #4b5563; position: sticky; top: 0; z-index: 1; cursor: pointer; }
+.data-table th { background: #f9fafb; font-weight: 600; color: #4b5563; position: sticky; top: 0; z-index: var(--isy-z-sticky); cursor: pointer; }
 .data-table tr:hover { background: #f8fafc; }
 .row-warning { background: var(--isy-pixel-warning-soft); }
 .row-danger { background: var(--isy-pixel-danger-soft); }
@@ -336,7 +336,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .detail-overlay {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(255,255,255,0.95);
-    z-index: 20;
+    z-index: var(--isy-z-panel);
     padding: var(--isy-space-7);
     display: flex;
     justify-content: center;

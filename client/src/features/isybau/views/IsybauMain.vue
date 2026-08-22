@@ -260,7 +260,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     top: 1rem;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 100;
+    z-index: var(--isy-z-panel);
     background: var(--isy-bg-alt);
     padding: var(--isy-space-1);
     border-radius: var(--isy-radius-lg);
@@ -452,7 +452,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-4);
-    z-index: 2000;
+    z-index: calc(var(--isy-z-top) + 1);
     font-size: var(--isy-fs-lg);
     color: var(--isy-toast-text);
 }
@@ -506,7 +506,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     width: 100%; 
     height: 100%;
     pointer-events: none;
-    z-index: 9999;
+    z-index: calc(var(--isy-z-top) + 2);
     background: rgba(0,0,0,0.1); /* Slight dim */
 }
 .rain-overlay img { 
