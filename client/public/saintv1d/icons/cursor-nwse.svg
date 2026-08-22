@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" id="cursor-nwse" height="45" width="45">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" id="cursor-nwse" height="23" width="23">
   <desc>
     Pixel-Cursor "nwse" (diagonaler Doppelpfeil, oben-links nach unten-rechts), 21x21-Raster wie cursor-pan.svg.
     Schwarze Fuellung mit heller Kontur, damit er auf hellem UND dunklem
     Untergrund sichtbar bleibt - reines Schwarz hat auf dem Dunkelmodus-Viewer
     (#0d1117) nur 1,1:1 Kontrast.
-    Hotspot: Zelle 10,10 = 21 21 in CSS.
+    Hotspot: Zelle 10,10 = 11 11 in CSS.
   </desc>
   <title>cursor-nwse</title>
   <g>

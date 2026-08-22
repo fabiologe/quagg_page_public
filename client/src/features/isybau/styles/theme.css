@@ -167,7 +167,7 @@
     --isy-pixel-content-sunken:   #cdc4ae;  /* Rinne, Vertiefung        */
 
     /* ── Zeiger ──────────────────────────────────────────────────────────────
-       Eigene Cursor im Pixel-Stil des Moduls, 21x21-Raster auf 45px, wie
+       Eigene Cursor im Pixel-Stil des Moduls, 21x21-Raster auf 23px, wie
        cursor-pan.svg es vorgemacht hat.
 
        Zwei Gruende, warum sie hier als Token stehen und nicht verstreut:
@@ -183,21 +183,27 @@
        es die Cursor jedes Betriebssystems.
 
        Der zweite Wert je Zeile ist der Hotspot in Pixeln, der dritte der
-       Rückfall für Browser ohne SVG-Cursor. */
-    --isy-cursor-zeiger:   url('/saintv1d/icons/cursor-zeiger.svg')    0  0, default;
-    --isy-cursor-hand:     url('/saintv1d/icons/cursor-hand.svg')     11  0, pointer;
-    --isy-cursor-gesperrt: url('/saintv1d/icons/cursor-gesperrt.svg') 21 21, not-allowed;
-    --isy-cursor-text:     url('/saintv1d/icons/cursor-text.svg')     13 21, text;
-    --isy-cursor-pan:      url('/saintv1d/icons/cursor-pan.svg')      21 21, move;
+       Rückfall für Browser ohne SVG-Cursor.
+
+       23px, nicht 45. Die erste Fassung war 45px gross ("mehr pixelig") - das
+       liegt aber ueber der Grenze, ab der manche Browser einen SVG-Cursor
+       stillschweigend verwerfen und auf die Systemform zurueckfallen. Bei 23px
+       ist eine Rasterzelle 1,1px statt 2,1px: die Formen bleiben, die grobe
+       Pixelkoernung verliert sich. Das ist der Preis und war so gewuenscht. */
+    --isy-cursor-zeiger:   url('/saintv1d/icons/cursor-zeiger.svg')    0 0, default;
+    --isy-cursor-hand:     url('/saintv1d/icons/cursor-hand.svg')     5 0, pointer;
+    --isy-cursor-gesperrt: url('/saintv1d/icons/cursor-gesperrt.svg') 11 11, not-allowed;
+    --isy-cursor-text:     url('/saintv1d/icons/cursor-text.svg')     7 11, text;
+    --isy-cursor-pan:      url('/saintv1d/icons/cursor-pan.svg')      11 11, move;
 
     /* Groessenaenderung. Vier Formen decken sechs Richtungen ab - die beiden
        Diagonalen sind je fuer zwei Ecken zustaendig, weil ein Doppelpfeil in
        beide Richtungen zeigt. Senkrecht und waagerecht sind die Arme des
        4-Wege-Pfeils, damit der Stil derselbe ist statt nur aehnlich. */
-    --isy-cursor-ns:   url('/saintv1d/icons/cursor-ns.svg')   21 21, ns-resize;
-    --isy-cursor-ew:   url('/saintv1d/icons/cursor-ew.svg')   21 21, ew-resize;
-    --isy-cursor-nwse: url('/saintv1d/icons/cursor-nwse.svg') 21 21, nwse-resize;
-    --isy-cursor-nesw: url('/saintv1d/icons/cursor-nesw.svg') 21 21, nesw-resize;
+    --isy-cursor-ns:   url('/saintv1d/icons/cursor-ns.svg')   11 11, ns-resize;
+    --isy-cursor-ew:   url('/saintv1d/icons/cursor-ew.svg')   11 11, ew-resize;
+    --isy-cursor-nwse: url('/saintv1d/icons/cursor-nwse.svg') 11 11, nwse-resize;
+    --isy-cursor-nesw: url('/saintv1d/icons/cursor-nesw.svg') 11 11, nesw-resize;
 
     --isy-pixel-font: 'Press Start 2P', monospace;
     /* Aufmerksamkeitsfarbe des Tutorials (Highlight-Ring, Fokus-Ring im
@@ -562,13 +568,34 @@ html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.c
  * Scrollbar-Block weiter unten.
  *
  * Eingabefelder brauchen den I-Balken, sonst zeigt der Pfeil auf Text, in den
- * man schreiben kann. */
+ * man schreiben kann - und zwar auf BEIDEN Selektorpfaden. Die erste Fassung
+ * hatte nur .isybau-main; die Datenmaske haengt aber per <Teleport> an <body>
+ * und wurde davon gar nicht erreicht. Genau dort ist es aufgefallen. */
 :root:has(.isybau-main) {
     cursor: var(--isy-cursor-zeiger);
 }
 .isybau-main input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
-.isybau-main textarea {
+.isybau-main textarea,
+html[data-theme] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+html[data-theme] textarea {
     cursor: var(--isy-cursor-text);
+}
+
+/* Bedienelemente, die man ANKLICKT statt in sie hineinzuschreiben. Der Browser
+   gibt ihnen von sich aus den Systempfeil - dieselbe Ursache wie bei <button>
+   und <select> weiter unten. Ein Label zaehlt nur dann dazu, wenn es ein
+   Kontrollkaestchen oder einen Auswahlknopf UMSCHLIESST: dann klickt man es
+   mit. Ein Label ueber einem Textfeld ist dagegen blosse Beschriftung. */
+.isybau-main input[type="checkbox"], .isybau-main input[type="radio"],
+.isybau-main input[type="file"], .isybau-main input[type="range"],
+.isybau-main label:has(input[type="checkbox"]), .isybau-main label:has(input[type="radio"]),
+html[data-theme] input[type="checkbox"], html[data-theme] input[type="radio"],
+html[data-theme] input[type="file"], html[data-theme] input[type="range"],
+html[data-theme] label:has(input[type="checkbox"]), html[data-theme] label:has(input[type="radio"]) {
+    cursor: var(--isy-cursor-hand);
+}
+.isybau-main input:disabled, html[data-theme] input:disabled {
+    cursor: var(--isy-cursor-gesperrt);
 }
 
 /**
@@ -675,3 +702,24 @@ html[data-theme] button:disabled, html[data-theme] select:disabled {
     cursor: var(--isy-cursor-gesperrt);
 }
 
+/* Anklickbare Elemente, die KEIN Formularelement sind.
+ *
+ * CSS kann einen Vue-@click nicht sehen - ein sortierbarer Spaltenkopf oder
+ * eine waehlbare Tabellenzelle ist im Markup ein schlichtes <th>/<td>. Sie
+ * brauchen die Klasse, sonst zeigt der Pfeil auf etwas, das auf einen Klick
+ * wartet.
+ *
+ * .sortable trugen bisher nur die Koepfe in PreprocessingModal, und die Regel
+ * stand dort in einem scoped-Block - RunoffValidationModal (9 Koepfe) und
+ * ResultsEdgesTab (6) hatten dieselbe Funktion ohne Klasse und ohne Zeiger.
+ * Waehlbare Zellen brauchen hier nichts: KostraModal und ModelRainModal haben
+ * dafuer laengst .clickable-cell und .clickable-col mit eigenem Zeiger.
+ *
+ * Verdunkelungsflaechen von Modals bekommen das BEWUSST nicht: dort schliesst
+ * ein Klick zwar, aber die Flaeche ist kein Bedienelement. Der Pfeil ist die
+ * richtige Auskunft. */
+.isybau-main .sortable,
+html[data-theme] .sortable {
+    cursor: var(--isy-cursor-hand);
+    user-select: none;
+}

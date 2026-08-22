@@ -37,13 +37,13 @@
         <table class="data-table sticky-header">
             <thead>
                 <tr>
-                    <th @click="sortKey='id'">ID</th>
+                    <th class="sortable" @click="sortKey='id'">ID</th>
                     <th>Typ</th>
-                    <th @click="sortKey='maxFlow'" title="Max. Durchfluss (Betrag)">Max. Durchfluss (l/s)</th>
-                    <th @click="sortKey='capacity'">Kapazität (l/s)</th>
-                    <th @click="sortKey='ratio'" title="Max. Auslastungsgrad">Max. Q/Qvoll</th>
-                    <th @click="sortKey='depth'" title="Max. Füllungsgrad">Max. h/hvoll</th>
-                    <th @click="sortKey='maxVelocity'" title="Max. Fließgeschwindigkeit (Betrag)">Max. v (m/s)</th>
+                    <th class="sortable" @click="sortKey='maxFlow'" title="Max. Durchfluss (Betrag)">Max. Durchfluss (l/s)</th>
+                    <th class="sortable" @click="sortKey='capacity'">Kapazität (l/s)</th>
+                    <th class="sortable" @click="sortKey='ratio'" title="Max. Auslastungsgrad">Max. Q/Qvoll</th>
+                    <th class="sortable" @click="sortKey='depth'" title="Max. Füllungsgrad">Max. h/hvoll</th>
+                    <th class="sortable" @click="sortKey='maxVelocity'" title="Max. Fließgeschwindigkeit (Betrag)">Max. v (m/s)</th>
                     <th>t_max</th>
                     <th>Status</th>
                     <th>Aktion</th>

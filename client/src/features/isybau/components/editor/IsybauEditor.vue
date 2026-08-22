@@ -248,15 +248,15 @@ const handleMapDblClick = () => {
 }
 
 .cursor-edge {
-    cursor: url('data:image/svg+xml;utf8,<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="8" stroke="%232980b9" stroke-width="2" fill="rgba(255,255,255,0.2)"/><path d="M16 4V28M4 16H28" stroke="%232980b9" stroke-width="2"/></svg>') 16 16, crosshair !important;
+    cursor: url('data:image/svg+xml;utf8,<svg width="16" height="16" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="8" stroke="%232980b9" stroke-width="2" fill="rgba(255,255,255,0.2)"/><path d="M16 4V28M4 16H28" stroke="%232980b9" stroke-width="2"/></svg>') 8 8, crosshair !important;
 }
 
 .cursor-delete {
-    cursor: url('data:image/svg+xml;utf8,<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 6L6 18" stroke="%23e74c3c" stroke-width="4" stroke-linecap="round"/><path d="M6 6L18 18" stroke="%23e74c3c" stroke-width="4" stroke-linecap="round"/></svg>') 12 12, auto !important;
+    cursor: url('data:image/svg+xml;utf8,<svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 6L6 18" stroke="%23e74c3c" stroke-width="4" stroke-linecap="round"/><path d="M6 6L18 18" stroke="%23e74c3c" stroke-width="4" stroke-linecap="round"/></svg>') 6 6, auto !important;
 }
 
 .cursor-split {
-    cursor: url('data:image/svg+xml;utf8,<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 12L18 12" stroke="%23e67e22" stroke-width="3" stroke-dasharray="2 2" stroke-linecap="round"/><circle cx="12" cy="12" r="4" fill="%23d35400" stroke="white" stroke-width="2"/></svg>') 12 12, crosshair !important;
+    cursor: url('data:image/svg+xml;utf8,<svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 12L18 12" stroke="%23e67e22" stroke-width="3" stroke-dasharray="2 2" stroke-linecap="round"/><circle cx="12" cy="12" r="4" fill="%23d35400" stroke="white" stroke-width="2"/></svg>') 6 6, crosshair !important;
 }
 
 .drawing-controls {

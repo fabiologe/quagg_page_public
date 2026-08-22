@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" id="cursor-hand" height="45" width="45">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" id="cursor-hand" height="23" width="23">
   <desc>
     Pixel-Cursor "hand" (Zeigehand, massiv), 21x21-Raster wie cursor-pan.svg.
     Schwarze Fuellung mit heller Kontur, damit er auf hellem UND dunklem
     Untergrund sichtbar bleibt - reines Schwarz hat auf dem Dunkelmodus-Viewer
     (#0d1117) nur 1,1:1 Kontrast.
-    Hotspot: Zelle 5,0 = 10 0 in CSS.
+    Hotspot: Zelle 5,0 = 5 0 in CSS.
   </desc>
   <title>cursor-hand</title>
   <g>

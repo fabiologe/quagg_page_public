@@ -19,15 +19,15 @@
           <table>
             <thead>
               <tr>
-                <th @click="sortBy('nodeId')">Schacht {{ sortKey === 'nodeId' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('areaId')">Fläche {{ sortKey === 'areaId' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('areaSize')">Größe (ha) {{ sortKey === 'areaSize' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('flowLength')">Geometrie-Länge (m) {{ sortKey === 'flowLength' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('slope')">Neigung {{ sortKey === 'slope' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('tc')">Fließzeit (min) {{ sortKey === 'tc' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('maxFlow')">Max. Volumenstrom (l/s) {{ sortKey === 'maxFlow' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('totalVolume')">Volumen (m³) {{ sortKey === 'totalVolume' ? (sortAsc ? '▲' : '▼') : '' }}</th>
-                <th @click="sortBy('emptyTime')">Leerlaufzeit (min) {{ sortKey === 'emptyTime' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('nodeId')">Schacht {{ sortKey === 'nodeId' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('areaId')">Fläche {{ sortKey === 'areaId' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('areaSize')">Größe (ha) {{ sortKey === 'areaSize' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('flowLength')">Geometrie-Länge (m) {{ sortKey === 'flowLength' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('slope')">Neigung {{ sortKey === 'slope' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('tc')">Fließzeit (min) {{ sortKey === 'tc' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('maxFlow')">Max. Volumenstrom (l/s) {{ sortKey === 'maxFlow' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('totalVolume')">Volumen (m³) {{ sortKey === 'totalVolume' ? (sortAsc ? '▲' : '▼') : '' }}</th>
+                <th class="sortable" @click="sortBy('emptyTime')">Leerlaufzeit (min) {{ sortKey === 'emptyTime' ? (sortAsc ? '▲' : '▼') : '' }}</th>
               </tr>
             </thead>
             <tbody>
