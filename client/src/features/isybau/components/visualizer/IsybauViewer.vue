@@ -77,7 +77,7 @@
              <polyline
                 :points="getPolygonPoints(drawingPoints)"
                 fill="none"
-                stroke="#e74c3c"
+                stroke="var(--isy-pixel-danger)"
                 stroke-width="2"
                 stroke-dasharray="5, 5"
                 vector-effect="non-scaling-stroke"
@@ -89,7 +89,7 @@
                 :cy="bounds.maxY - p.y"
                 :r="0.5 / scale"
                 stroke="none"
-                fill="#e74c3c"
+                fill="var(--isy-pixel-danger)"
                 vector-effect="non-scaling-stroke"
              />
         </g>
@@ -180,7 +180,7 @@
                     :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     class="node-x"
                     :class="{ 'selected': selectedElement?.id === node.id, 'multi-selected': multiSelectedSet.has(node.id) }"
-                    :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
+                    :style="{ stroke: getNodeColor(node.id) || 'var(--isy-pixel-text)' }"
                     vector-effect="non-scaling-stroke"
                   />
                   <line
@@ -190,7 +190,7 @@
                     :y2="(bounds.maxY - node.y) + ((1.0 * baseUnit * arrowSizeMultiplier) / scale)"
                     class="node-x"
                     :class="{ 'selected': selectedElement?.id === node.id, 'multi-selected': multiSelectedSet.has(node.id) }"
-                    :style="{ stroke: getNodeColor(node.id) || '#2c3e50' }"
+                    :style="{ stroke: getNodeColor(node.id) || 'var(--isy-pixel-text)' }"
                     vector-effect="non-scaling-stroke"
                   />
                 </g>
@@ -327,6 +327,7 @@
 <script setup>
 import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../utils/mappings.js';
+import { auslastungsFarbe, BAUWERK, KNOTEN_ZUSTAND } from '../../utils/typPalette.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
@@ -1135,8 +1136,11 @@ const getEdgeColor = (id) => {
     const res = props.hydraulics.get(id);
     const util = res.utilization || 0;
 
-    if (util > 90) return '#e74c3c'; // Red (>90%)
-    if (util >= 75) return '#f39c12'; // Orange (>75%)
+    // Vier Klassen, dieselben wie in der 3D-Ansicht und in deren Legende.
+    // Vorher gab es hier nur zwei (> 90 und >= 75) — eine zu 60 % ausgelastete
+    // Haltung sah aus wie eine leere. Solange Ergebnisse anliegen, uebersteuert
+    // die Auslastung die Entwaesserungsart-Faerbung vollstaendig, wie in 3D.
+    return auslastungsFarbe(util);
   }
 
   // Kein Auslastungs-Override aktiv: Entwässerungsart (KM/KR/KS) ist die
@@ -1148,7 +1152,7 @@ const getEdgeColor = (id) => {
 // Pumpe/Wehr/Drossel/Schieber sind in Realität/ISYBAU ein KNOTEN-Element (auch
 // wenn SWMM sie intern als Haltung/Link führt) — einheitlich graubeige, damit
 // ein Blick "Sonderbauwerk" signalisiert statt die Haltung optisch zu verbiegen.
-const SONDERBAUWERK_COLOR = '#65625c';
+const SONDERBAUWERK_COLOR = BAUWERK;
 
 const getNodeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
@@ -1163,15 +1167,14 @@ const getNodeColor = (id) => {
     const res = edge && props.hydraulics ? props.hydraulics.get(edge.id) : null;
     if (res) {
       const util = res.utilization || 0;
-      if (util > 90) return '#e74c3c';
-      if (util >= 75) return '#f39c12';
+      return auslastungsFarbe(util);
     }
     return SONDERBAUWERK_COLOR;
   }
 
   if (props.nodeResults && props.nodeResults.has(id)) {
     const res = props.nodeResults.get(id);
-    if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return '#e74c3c'; // Red
+    if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return KNOTEN_ZUSTAND.ueberstau;
   }
 
   // Kein Ergebnis-Override aktiv: Entwässerungsart (KM/KR/KS) ist die
@@ -1477,7 +1480,7 @@ watch(() => props.nodes.size, (n, old) => {
 .isybau-viewer {
   width: 100%;
   height: 100%;
-  background: #f8f9fa;
+  background: var(--isy-viewer-bg);
   border: 1px solid var(--isy-pixel-divider);
   overflow: hidden;
   position: relative;
@@ -1580,7 +1583,7 @@ svg {
 
 /* Edges */
 .edge-line {
-  stroke: #666;
+  stroke: var(--isy-pixel-text-dim);
   stroke-width: 2px; 
   vector-effect: non-scaling-stroke; 
   transition: stroke 0.2s, stroke-width 0.2s;
@@ -1589,7 +1592,7 @@ svg {
 }
 
 .edge-line:hover {
-  stroke: #42b983;
+  stroke: var(--isy-pixel-green-hover);
   stroke-width: 4px;
 }
 
@@ -1599,19 +1602,19 @@ svg {
 }
 
 .edge-arrow {
-  fill: #666;
+  fill: var(--isy-pixel-text-dim);
   pointer-events: none;
 }
 
 /* Nodes */
 .node-circle {
-  fill: #2c3e50;
+  fill: var(--isy-pixel-text);
   transition: fill 0.2s, r 0.2s;
   cursor: pointer;
 }
 
 .node-circle:hover {
-  fill: #42b983;
+  fill: var(--isy-pixel-green-hover);
 }
 
 .node-circle.selected {
@@ -1794,7 +1797,7 @@ svg {
 .msb-btn.msb-danger:hover { background: var(--isy-pixel-danger); color: var(--isy-pixel-text); }
 
 .node-label {
-  fill: #2c3e50;
+  fill: var(--isy-pixel-text);
   pointer-events: all;
   cursor: grab;
   /* Weißer Halo statt text-shadow (wirkt in SVG praktisch nicht) — bleibt

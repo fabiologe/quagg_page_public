@@ -59,14 +59,13 @@
       <transition name="legend-fade">
         <div v-if="showResults" class="result-legend">
           <div class="legend-title">Legende</div>
-          <div class="legend-row"><span class="dot" style="background:#c0392b" />Überstau / Einstau</div>
-          <div class="legend-row"><span class="dot" style="background:#e67e22" />Druckabfluss</div>
-          <div class="legend-row"><span class="dot" style="background:#3498db;opacity:0.75" />Wasserstand</div>
+          <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.ueberstau }" />Überstau / Einstau</div>
+          <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.druckabfluss }" />Druckabfluss</div>
+          <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.wasserstand, opacity: 0.75 }" />Wasserstand</div>
           <div class="legend-sep">Haltungen</div>
-          <div class="legend-row"><span class="dot" style="background:#c0392b" />&gt; 90% Kapazität</div>
-          <div class="legend-row"><span class="dot" style="background:#e67e22" />&gt; 75% Kapazität</div>
-          <div class="legend-row"><span class="dot" style="background:#f1c40f" />&gt; 50% Kapazität</div>
-          <div class="legend-row"><span class="dot" style="background:#2980b9" />≤ 50% Kapazität</div>
+          <div class="legend-row" v-for="stufe in AUSLASTUNG_STUFEN" :key="stufe.text">
+            <span class="dot" :style="{ background: stufe.farbe }" />{{ stufe.text }}
+          </div>
         </div>
       </transition>
     </template>
@@ -75,6 +74,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import { AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND } from '../../../utils/typPalette.js';
 
 const props = defineProps({
   showNodes:      { type: Boolean, default: true  },

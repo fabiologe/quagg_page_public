@@ -20,6 +20,7 @@
  * Damping) keine kontinuierliche Physik, die einen Dauerloop braucht.
  */
 import * as THREE from 'three';
+import { zahl, HOEHENLINIE } from '../../utils/typPalette.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -29,11 +30,11 @@ import { distanceToSegment } from '../../utils/geometry2d.js';
 // Zweifarbiger "Halo"-Look: dicke violette Außenlinie + dünnere giftgrüne
 // Innenlinie obendrauf — bleibt auch auf dunklem/kontrastarmem Luftbild gut
 // erkennbar (Nutzer-Feedback: einfarbig+dünn war "sieht man echt schlecht").
-// Farben lehnen sich an --sv-violet (#8B5CF6) aus dem App-Theme an.
+// Farben aus utils/typPalette.js (HOEHENLINIE) - Datenfarben, kein Theme.
 const OUTER_WIDTH_PX = 5;
-const OUTER_COLOR = 0x8b5cf6; // Violett
+const OUTER_COLOR = zahl(HOEHENLINIE.aussen);
 const INNER_WIDTH_PX = 2;
-const INNER_COLOR = 0xadff2f; // Giftgrün
+const INNER_COLOR = zahl(HOEHENLINIE.innen);
 
 export function useContourGpuLayer() {
     let renderer = null;

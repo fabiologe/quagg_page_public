@@ -65,6 +65,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import { DIAGRAMM } from '../../../utils/typPalette.js';
 import { Line, formatTime, chartOptions } from './resultsShared.js';
 
 const props = defineProps({
@@ -161,7 +162,7 @@ const updateChart = (id) => {
             {
                 // Abfluss aus der .out-Zeitreihe; Einheit hängt von FLOW_UNITS ab
                 label: 'Abfluss (L/s)',
-                borderColor: '#8b5cf6',
+                borderColor: DIAGRAMM.flaechenabfluss,
                 backgroundColor: 'rgba(139, 92, 246, 0.2)',
                 data: props.timeSeries.map(step => step.subcatchments[id]?.runoff * (props.systemStats?.analysisOptions?.flowUnits === 'LPS' ? 1 : 1000) || 0),
                 fill: true

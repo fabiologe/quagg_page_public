@@ -112,6 +112,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import { DIAGRAMM } from '../../../utils/typPalette.js';
 import { Line, safeGet, formatTime, fmtVol, structureTypeLabel, chartOptions } from './resultsShared.js';
 import { classifyPreview, LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
@@ -207,7 +208,7 @@ const updateChart = (id) => {
     const datasets = [
         {
             label: 'Tiefe (m)',
-            borderColor: '#6366f1',
+            borderColor: DIAGRAMM.tiefe,
             backgroundColor: 'rgba(99, 102, 241, 0.2)',
             data: props.timeSeries.map(step => step.nodes[id]?.depth || 0),
             fill: true,
@@ -215,7 +216,7 @@ const updateChart = (id) => {
         },
         {
             label: 'Zufluss (L/s)',
-            borderColor: '#10b981',
+            borderColor: DIAGRAMM.zufluss,
             data: props.timeSeries.map(step => step.nodes[id]?.inflow || 0),
             yAxisID: 'y1'
         }
@@ -228,7 +229,7 @@ const updateChart = (id) => {
     if (hasVolume) {
         datasets.push({
             label: 'Volumen (m³)',
-            borderColor: '#f59e0b', // amber
+            borderColor: DIAGRAMM.volumen, // amber
             backgroundColor: 'rgba(245, 158, 11, 0.2)',
             data: props.timeSeries.map(step => step.nodes[id]?.vol || 0),
             fill: true,
@@ -240,7 +241,7 @@ const updateChart = (id) => {
         if (vmax > 0) {
             datasets.push({
                 label: 'Vmax (möglich)',
-                borderColor: '#f59e0b',
+                borderColor: DIAGRAMM.volumen,
                 borderDash: [5, 5],
                 borderWidth: 1,
                 pointRadius: 0,
@@ -254,7 +255,7 @@ const updateChart = (id) => {
     if (maxPhysicalDepth > 0) {
         datasets.push({
             label: 'Deckelhöhe',
-            borderColor: '#ef4444',
+            borderColor: DIAGRAMM.deckelhoehe,
             borderDash: [5, 5],
             borderWidth: 1,
             pointRadius: 0,

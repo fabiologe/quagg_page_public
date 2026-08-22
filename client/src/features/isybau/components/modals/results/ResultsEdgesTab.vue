@@ -146,6 +146,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { DIAGRAMM } from '../../../utils/typPalette.js';
 import { Line, safeGet, formatTime, edgeTypeLabel, getRatioClass, chartOptions } from './resultsShared.js';
 
 const props = defineProps({
@@ -226,14 +227,14 @@ const updateChart = (id) => {
         datasets: [
             {
                 label: 'Abfluss (L/s)',
-                borderColor: '#3b82f6',
+                borderColor: DIAGRAMM.abfluss,
                 backgroundColor: 'rgba(59, 130, 246, 0.2)',
                 data: props.timeSeries.map(step => step.edges[id]?.q || 0),
                 fill: true
             },
             {
                 label: 'Kapazität (L/s)',
-                borderColor: '#94a3b8',
+                borderColor: DIAGRAMM.kapazitaet,
                 borderDash: [5, 5],
                 data: props.timeSeries.map(() => safeGet(props.edgeResults, id)?.capacity || 0)
             }

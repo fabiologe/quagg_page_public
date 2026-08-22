@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { LINK_BAUWERKSTYPEN, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../../utils/mappings.js';
+import { zahl, AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, BAUWERK, DATENQUALITAET, AUSWAHL, AUSWAHL_GLUT, FLAECHE } from '../../../utils/typPalette.js';
 
 const NETWORK_GROUP = '__network__';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -206,30 +207,29 @@ export function useSceneBuilder() {
   let _selectedMesh = null;
 
   const mats = {
-    // Geometry / type materials
-    fictive    : new THREE.MeshStandardMaterial({ color: 0xe74c3c, roughness: 0.5 }),
-    outfall    : new THREE.MeshStandardMaterial({ color: 0x2ecc71, roughness: 0.5 }),
-    noGeo      : new THREE.MeshStandardMaterial({ color: 0x7f8c8d, roughness: 0.8 }),
-    pumpwerk   : new THREE.MeshStandardMaterial({ color: 0xe67e22, roughness: 0.5 }),
-    becken     : new THREE.MeshStandardMaterial({ color: 0x1abc9c, roughness: 0.6 }),
-    // Pumpe/Wehr/Drossel/Schieber (Bauwerkstyp 6/7/8/9): in Realität/ISYBAU ein
-    // KNOTEN-Element (auch wenn SWMM sie intern als Link führt) — einheitlich
-    // hell lila, damit ein Blick "Sonderbauwerk" signalisiert statt vier
-    // unterschiedliche Farben je Subtyp zu erfordern.
-    sonderbauwerk: new THREE.MeshStandardMaterial({ color: 0xc9a0dc, roughness: 0.45, side: THREE.DoubleSide }),
+    // Datenqualität — KEIN Bauwerkstyp, sondern eine Aussage über den Datensatz.
+    fictive    : new THREE.MeshStandardMaterial({ color: zahl(DATENQUALITAET.fiktiv), roughness: 0.5 }),
+    noGeo      : new THREE.MeshStandardMaterial({ color: zahl(DATENQUALITAET.ohneGeometrie), roughness: 0.8 }),
+    // EIN Material für alle Bauwerkstypen. Vorher hatte jeder Typ seinen
+    // eigenen Ton — Pumpwerk orange, Becken türkis, Auslass grün,
+    // Sonderbauwerk hellviolett. Das kollidierte zweimal in DIESER Szene:
+    // Orange war zugleich "> 75 % ausgelastet" (utilMed), Grün zugleich
+    // "ausgewählt" (selected). Der Typ geht nicht verloren, er steckt in der
+    // Geometrie: Kegel = Auslass, Zylinder = Pumpwerk, Quader = Becken.
+    bauwerk    : new THREE.MeshStandardMaterial({ color: zahl(BAUWERK), roughness: 0.5, side: THREE.DoubleSide }),
     // depthWrite:false — transparente, koplanare Flächen dürfen den Tiefenpuffer
     // nicht beschreiben, sonst z-fighten sie gegeneinander und gegen den Boden (Flackern).
-    area       : new THREE.MeshBasicMaterial({ color: 0x2980b9, side: THREE.DoubleSide, transparent: true, opacity: 0.25, depthWrite: false }),
+    area       : new THREE.MeshBasicMaterial({ color: zahl(FLAECHE), side: THREE.DoubleSide, transparent: true, opacity: 0.25, depthWrite: false }),
     ground     : new THREE.MeshStandardMaterial({ color: 0x1a2035, roughness: 1.0 }),
-    selected   : new THREE.MeshStandardMaterial({ color: 0x2ecc71, emissive: 0x1a7a40, roughness: 0.3 }),
+    selected   : new THREE.MeshStandardMaterial({ color: zahl(AUSWAHL), emissive: zahl(AUSWAHL_GLUT), roughness: 0.3 }),
     // Result overlay materials
-    resOverflow : new THREE.MeshStandardMaterial({ color: 0xc0392b, emissive: 0x6b0000, roughness: 0.4 }),
-    resSurcharge: new THREE.MeshStandardMaterial({ color: 0xe67e22, emissive: 0x4a2000, roughness: 0.4 }),
-    utilHigh   : new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.4, side: THREE.DoubleSide }),
-    utilMed    : new THREE.MeshStandardMaterial({ color: 0xe67e22, roughness: 0.4, side: THREE.DoubleSide }),
-    utilLow    : new THREE.MeshStandardMaterial({ color: 0xf1c40f, roughness: 0.4, side: THREE.DoubleSide }),
-    utilOk     : new THREE.MeshStandardMaterial({ color: 0x2980b9, roughness: 0.5, side: THREE.DoubleSide }),
-    waterLevel : new THREE.MeshStandardMaterial({ color: 0x3498db, transparent: true, opacity: 0.75, roughness: 0.2, emissive: 0x0a2d4a }),
+    resOverflow : new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.ueberstau), emissive: 0x6b0000, roughness: 0.4 }),
+    resSurcharge: new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.druckabfluss), emissive: 0x4a2000, roughness: 0.4 }),
+    utilHigh   : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[0].farbe), roughness: 0.4, side: THREE.DoubleSide }),
+    utilMed    : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[1].farbe), roughness: 0.4, side: THREE.DoubleSide }),
+    utilLow    : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[2].farbe), roughness: 0.4, side: THREE.DoubleSide }),
+    utilOk     : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[3].farbe), roughness: 0.5, side: THREE.DoubleSide }),
+    waterLevel : new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.wasserstand), transparent: true, opacity: 0.75, roughness: 0.2, emissive: 0x0a2d4a }),
     // Entwässerungsart (ISYBAU KM/KR/KS) — Standard-Einfärbung an Haltungen
     // (ersetzt die bisherige Profilform-Farbe circle/rect/trapez/maul) und an
     // normalen Schächten (ersetzt "manhole"). Sonderbauwerke/Auslauf/Speicher/
@@ -255,7 +255,7 @@ export function useSceneBuilder() {
   // Zweck). Materialien sind Singletons in mats — einmal umgeschaltet, bleibt
   // der Zustand über künftige buildScene()-Rebuilds hinweg erhalten (kein Reset).
   const WIREFRAME_MATERIAL_KEYS = [
-    'fictive', 'outfall', 'noGeo', 'pumpwerk', 'becken', 'sonderbauwerk',
+    'fictive', 'noGeo', 'bauwerk',
     'resOverflow', 'resSurcharge', 'utilHigh', 'utilMed', 'utilLow', 'utilOk',
     'entwKM', 'entwKR', 'entwKS', 'entwDefault'
   ];
@@ -358,27 +358,27 @@ export function useSceneBuilder() {
 
       // ── Auslass / Outfall (bwType=5 or string 'Auslass') ───────────
       } else if (bwType === 5 || node.type === 'Auslass') {
-        mesh = new THREE.Mesh(new THREE.ConeGeometry(r, height, 12), mats.outfall);
+        mesh = new THREE.Mesh(new THREE.ConeGeometry(r, height, 12), mats.bauwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
 
       // ── Pumpwerk (1) ─────────────────────────────────────────────────
       } else if (bwType === 1) {
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.pumpwerk);
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.bauwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
         const ring = new THREE.Mesh(
           new THREE.TorusGeometry(r * 0.55, r * 0.12, 8, 16),
-          mats.pumpwerk
+          mats.bauwerk
         );
         ring.position.set(x, topY + r * 0.12, nz);
         group.add(ring);
 
       // ── Pumpe (6) — Sonderbauwerk-Knoten (hell lila) ────────────────
       } else if (bwType === 6) {
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.sonderbauwerk);
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 16), mats.bauwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
         const ring = new THREE.Mesh(
           new THREE.TorusGeometry(r * 0.55, r * 0.12, 8, 16),
-          mats.sonderbauwerk
+          mats.bauwerk
         );
         ring.position.set(x, topY + r * 0.12, nz);
         group.add(ring);
@@ -390,19 +390,19 @@ export function useSceneBuilder() {
         const laenge = node.wehrWidth || node.bauwerkData?.wehrLaenge || 1;
         mesh = new THREE.Mesh(
           new THREE.BoxGeometry(laenge, height, 0.25),
-          mats.sonderbauwerk
+          mats.bauwerk
         );
         mesh.position.set(x, bottomY + height / 2, nz);
 
       // ── Becken / Speicher / Kläranlage / Versickerung / Zisterne ────
       } else if ([2, 3, 4, 12, 13].includes(bwType)) {
         const side = r * 2;
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(side, height, side), mats.becken);
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(side, height, side), mats.bauwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
 
       // ── Drossel (8) / Schieber (9) — Sonderbauwerk-Knoten (hell lila) ─
       } else if (bwType === 8 || bwType === 9) {
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 6), mats.sonderbauwerk);
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, height, 6), mats.bauwerk);
         mesh.position.set(x, bottomY + height / 2, nz);
 
       // ── Standard Schacht mit Diameter ──────────────────────────────

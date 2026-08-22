@@ -1,6 +1,6 @@
 <template>
   <Transition name="slide-up">
-    <div v-if="element" class="info-panel">
+    <div v-if="element" class="info-panel" :style="resFarben">
       <div class="info-header" :style="{ background: headerGradient }">
         <h3>{{ title }}</h3>
         <button class="close-btn" @click="$emit('close')">×</button>
@@ -227,6 +227,11 @@
 
 <script setup>
 import { computed } from 'vue';
+import { BAUWERK, FLAECHE, DATENQUALITAET, AUSLASTUNG_STUFEN } from '../../../utils/typPalette.js';
+const BAUWERK_DUNKEL = 'var(--isy-pixel-border)';
+const resFarben = Object.fromEntries(
+  AUSLASTUNG_STUFEN.map((st, i) => [`--res-${i + 1}`, st.farbe]),
+);
 import { getNodeBwType } from './useSceneBuilder.js';
 import { LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
@@ -273,28 +278,23 @@ const title = computed(() => {
   return TITLES[bwType.value] ?? 'Schacht (3D)';
 });
 
-// Pumpe/Wehr/Drossel/Schieber (6/7/8/9): einheitliches Graubeige, da sie in
-// Realität/ISYBAU ein Knotenelement sind — ein Blick soll "Sonderbauwerk"
-// signalisieren statt vier unterschiedliche Farben je Subtyp zu erfordern.
-const SONDERBAUWERK_GRADIENT = 'linear-gradient(135deg,#4a4844,#65625c)';
-const HEADER_GRADIENTS = {
-  1: 'linear-gradient(135deg,#b45309,#d97706)',   // Pumpwerk orange
-  6: SONDERBAUWERK_GRADIENT,
-  2: 'linear-gradient(135deg,#0f766e,#14b8a6)',   // Becken teal
-  3: 'linear-gradient(135deg,#0f766e,#14b8a6)',
-  4: 'linear-gradient(135deg,#0f766e,#14b8a6)',
-  12:'linear-gradient(135deg,#0f766e,#14b8a6)',
-  13:'linear-gradient(135deg,#0f766e,#14b8a6)',
-  5: 'linear-gradient(135deg,#065f46,#059669)',   // Auslass green
-  7: SONDERBAUWERK_GRADIENT,
-  8: SONDERBAUWERK_GRADIENT,
-  9: SONDERBAUWERK_GRADIENT,
-};
+// Bauwerke tragen KEINE Typfarbe mehr (Nutzer-Entscheidung, siehe
+// utils/typPalette.js). Vorher hatte jeder Typ seinen eigenen Verlauf —
+// Pumpwerk orange, Becken teal, Auslass gruen, alles uebrige graubeige. In der
+// 3D-Szene kollidierte das zweimal: Orange war dort zugleich "> 75 %
+// ausgelastet", Gruen zugleich "ausgewaehlt".
+//
+// Der Typ geht nicht verloren: er steht als Text im Kopf dieses Panels, und in
+// der 3D-Szene hat jeder Typ eine eigene Geometrie (Kegel = Auslass,
+// Zylinder = Pumpwerk, Quader = Becken).
+const BAUWERK_GRADIENT = `linear-gradient(135deg,${BAUWERK_DUNKEL},${BAUWERK})`;
+
 const headerGradient = computed(() => {
-  if (isEdge.value)  return 'linear-gradient(135deg,#1e3a5f,#2563eb)';
-  if (isArea.value)  return 'linear-gradient(135deg,#1e3a5f,#2980b9)';
-  if (props.element?.status === 2) return 'linear-gradient(135deg,#7f1d1d,#ef4444)'; // fictive red
-  return HEADER_GRADIENTS[bwType.value] ?? 'linear-gradient(135deg,#040647,#4a4844)';
+  if (isEdge.value)  return `linear-gradient(135deg,${BAUWERK_DUNKEL},${FLAECHE})`;
+  if (isArea.value)  return `linear-gradient(135deg,${BAUWERK_DUNKEL},${FLAECHE})`;
+  // Fiktivpunkt ist Datenqualitaet, kein Bauwerkstyp - behaelt seine Farbe.
+  if (props.element?.status === 2) return `linear-gradient(135deg,${BAUWERK_DUNKEL},${DATENQUALITAET.fiktiv})`;
+  return BAUWERK_GRADIENT;
 });
 
 const PROFILE_NAMES = {
@@ -314,10 +314,11 @@ const edgeUtil = computed(() => {
 });
 const edgeUtilClass = computed(() => {
   const u = edgeUtil.value;
-  if (u > 90) return 'res-bad';
-  if (u > 75) return 'res-warn';
-  if (u > 50) return 'res-yellow';
-  return 'res-ok';
+  // Schwellen NICHT hier: AUSLASTUNG_STUFEN in utils/typPalette.js ist die
+  // einzige Quelle. Diese Funktion hatte dieselben drei Schwellen ein VIERTES
+  // Mal stehen - neben 3D-Szene, 2D-Viewer und Legende.
+  const i = AUSLASTUNG_STUFEN.findIndex((st) => (u ?? 0) > st.ueber);
+  return ['res-bad', 'res-warn', 'res-yellow', 'res-ok'][i];
 });
 </script>
 
@@ -366,7 +367,7 @@ const edgeUtilClass = computed(() => {
 }
 .info-row:last-child { border-bottom: none; }
 .lbl { color: var(--isy-pixel-text-dim); }
-.val { color: #e2e8f0; font-weight: 600; text-align: right; }
+.val { color: var(--isy-pixel-text); font-weight: 600; text-align: right; }
 
 .type-badge {
   margin: var(--isy-space-2) 0 var(--isy-space-2);
@@ -376,11 +377,14 @@ const edgeUtilClass = computed(() => {
   font-weight: 700;
   display: inline-block;
 }
-.type-badge.pumpwerk { background: rgba(217,119,6,0.2);  color: #fbbf24; border: 1px solid #d97706; }
-.type-badge.sonderbauwerk { background: rgba(101,98,92,0.25); color: #d8d5cf; border: 1px solid var(--isy-pixel-accent-soft); }
-.type-badge.becken   { background: rgba(20,184,166,0.2); color: #5eead4; border: 1px solid #14b8a6; }
-.type-badge.outfall  { background: rgba(5,150,105,0.2);  color: #6ee7b7; border: 1px solid #059669; }
-.type-badge.fictive  { background: rgba(239,68,68,0.2);  color: var(--isy-pixel-danger-soft-border); border: 1px solid #ef4444; }
+/* EIN Aussehen fuer alle Bauwerkstypen. Der Typ steht als Symbol und Wort im
+   Abzeichen selbst ("▭ Becken / Speicher"), die Farbe war Doppelung - und
+   kollidierte in der 3D-Szene mit den Auslastungsklassen. */
+.type-badge.pumpwerk,
+.type-badge.sonderbauwerk,
+.type-badge.becken,
+.type-badge.outfall { background: var(--isy-pixel-accent-soft); color: var(--isy-pixel-content-text); border: 1px solid var(--isy-pixel-border); }
+.type-badge.fictive  { background: rgba(239,68,68,0.2);  color: var(--isy-pixel-danger-soft-border); border: 1px solid var(--isy-pixel-danger); }
 
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.25s ease; }
 .slide-up-enter-from, .slide-up-leave-to { transform: translateY(12px); opacity: 0; }
@@ -399,15 +403,18 @@ const edgeUtilClass = computed(() => {
 .link-hint {
   margin-top: var(--isy-space-2);
   padding: var(--isy-space-1) var(--isy-space-2);
-  background: rgba(37,99,235,0.15);
-  border: 1px solid #2563eb;
+  background: var(--isy-pixel-info-soft);
+  border: 1px solid var(--isy-pixel-info-soft-border);
   border-radius: var(--isy-radius-sm);
   font-size: var(--isy-fs-sm);
-  color: var(--isy-pixel-info-soft-border);
+  color: var(--isy-pixel-info-soft-text);
 }
 
-.res-bad    { color: #fc8181; }
-.res-warn   { color: #fbd38d; }
-.res-yellow { color: #faf089; }
-.res-ok     { color: #68d391; }
+/* Werte kommen aus utils/typPalette.js, gesetzt als CSS-Variablen am
+   Panel-Wurzelelement (siehe :style dort). CSS kann kein JS importieren; so
+   bleibt die Palette trotzdem die einzige Quelle. */
+.res-bad    { color: var(--res-1); }
+.res-warn   { color: var(--res-2); }
+.res-yellow { color: var(--res-3); }
+.res-ok     { color: var(--res-4); }
 </style>

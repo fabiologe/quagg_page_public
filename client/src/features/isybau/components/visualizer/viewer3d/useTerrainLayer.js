@@ -28,6 +28,7 @@
  * bewusst eine ortsfeste WELT-Richtung gebraucht).
  */
 import * as THREE from 'three';
+import { zahl, GELAENDE } from '../../../utils/typPalette.js';
 import { flippedIndex } from '../../../utils/gridIndex.js';
 
 const terrainVertexShader = `
@@ -162,9 +163,9 @@ export function useTerrainLayer() {
             uniforms: {
                 uMinZ: { value: Number.isFinite(terrain.minZ) ? terrain.minZ : 0 },
                 uMaxZ: { value: Number.isFinite(terrain.maxZ) ? terrain.maxZ : 1 },
-                uColorLow: { value: new THREE.Color(0x2d5f3f) },  // dunkelgrün (Aue/Talgrund)
-                uColorMid: { value: new THREE.Color(0x8b7355) },  // erdbraun (Hang)
-                uColorHigh: { value: new THREE.Color(0xe8ddc8) }, // heller Stein (Kuppe)
+                uColorLow: { value: new THREE.Color(zahl(GELAENDE.tief)) },  // dunkelgrün (Aue/Talgrund)
+                uColorMid: { value: new THREE.Color(zahl(GELAENDE.mitte)) },  // erdbraun (Hang)
+                uColorHigh: { value: new THREE.Color(zahl(GELAENDE.hoch)) }, // heller Stein (Kuppe)
                 uLightDir: { value: new THREE.Vector3(-0.4, 0.75, 0.35).normalize() },
                 // 0.4 -> 0.6: Nutzer-Feedback "zu starke Schatten" — Flächen, die vom
                 // fixen uLightDir wegzeigen (steile Böschungen/Grabenflanken), fielen

@@ -17,15 +17,21 @@
   "rules": {},
   "overrides": [
     {
-      "files": ["src/features/isybau/**/*.vue"],
+      "files": [
+        "src/features/isybau/**/*.vue"
+      ],
       "customSyntax": "postcss-html"
     },
     {
-      "files": ["src/features/isybau/**/*.{vue,css}"],
+      "files": [
+        "src/features/isybau/**/*.{vue,css}"
+      ],
       "rules": {
         "color-no-hex": true,
         "declaration-property-value-allowed-list": {
-          "font-size": ["/^var\\(--isy-fs-(pixel-)?(sm|md|lg|xl)\\)$/"],
+          "font-size": [
+            "/^var\\(--isy-fs-(pixel-)?(sm|md|lg|xl)\\)$/"
+          ],
           "z-index": [
             "/^var\\(--isy-z-(base|sticky|panel|modal|top)\\)$/",
             "/^calc\\(var\\(--isy-z-(base|sticky|panel|modal|top)\\) \\+ [0-9]+\\)$/"
@@ -43,33 +49,21 @@
     },
     {
       "//": "Ausnahme: hier stehen die Token-Definitionen selbst.",
-      "files": ["src/features/isybau/styles/theme.css"],
-      "rules": { "color-no-hex": null }
-    },
-    {
-      "//": [
-        "TYPKODIERUNG - dauerhafte Ausnahme, keine Schuld.",
-        "Diese Farben BEDEUTEN etwas: Bauwerkstyp, Kanalart, Ergebnisklasse,",
-        "Legendeneintrag. Sie duerfen dem Theme nicht folgen, sonst dunkelt die",
-        "naechste Lesbarkeitsrunde das Becken-Teal mit ab und die Legende stimmt",
-        "nicht mehr. Sie gehoeren in eine eigene, dokumentierte Typ-Palette",
-        "(Phase 3) - dann wird diese Liste durch eine Regel ersetzt, die genau",
-        "diese Palette verlangt."
-      ],
       "files": [
-        "src/features/isybau/components/visualizer/viewer3d/Viewer3DControls.vue",
-        "src/features/isybau/components/visualizer/viewer3d/Viewer3DInfoPanel.vue",
-        "src/features/isybau/components/visualizer/IsybauViewer.vue"
+        "src/features/isybau/styles/theme.css"
       ],
-      "rules": { "color-no-hex": null }
+      "rules": {
+        "color-no-hex": null
+      }
     },
     {
       "//": [
-        "RESTSCHULD an rohen Oberflaechenfarben. Stand: 7 Dateien, 39 Werte",
-        "(vorher 13 Dateien, 102 Werte - sechs sind ganz sauber geworden).",
+        "RESTSCHULD an rohen Oberflaechenfarben.",
         "Ratschenmechanismus: neue rohe Farben in sauberen Dateien fallen sofort",
         "auf, diese Altlast bleibt sichtbar. Die Liste darf nur schrumpfen.",
-        "Wer eine Datei aufraeumt, streicht sie hier."
+        "Wer eine Datei aufraeumt, streicht sie hier.",
+        "Die frueher hier stehende Ausnahme fuer TYPKODIERUNG ist entfallen -",
+        "seit utils/typPalette.js existiert, stehen dort keine rohen Farben mehr."
       ],
       "files": [
         "src/features/isybau/components/modals/results/results-shared.css",
@@ -80,7 +74,9 @@
         "src/features/isybau/components/modals/KostraModal.vue",
         "src/features/isybau/components/common/LoadingOverlay.vue"
       ],
-      "rules": { "color-no-hex": null }
+      "rules": {
+        "color-no-hex": null
+      }
     }
   ]
 }
