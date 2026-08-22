@@ -79,7 +79,7 @@ const hint = computed(() => {
 .draw-hint { pointer-events: none; }
 
 .draw-hint-fill {
-  fill: color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 14%, transparent);
+  fill: color-mix(in srgb, var(--isy-tutorial-glow) 14%, transparent);
   stroke: none;
 }
 
@@ -89,7 +89,7 @@ const hint = computed(() => {
    gezeichnet). Danach eine Ruhepause, in der der fertige Umriss steht —
    ohne die wirkt es hektisch statt erklärend. */
 .draw-hint-trace {
-  stroke: var(--isy-tutorial-glow, #1fdc63);
+  stroke: var(--isy-tutorial-glow);
   stroke-linejoin: round;
   stroke-linecap: round;
   stroke-dasharray: 100;
@@ -102,12 +102,12 @@ const hint = computed(() => {
 }
 
 .draw-hint-dot {
-  fill: var(--isy-pixel-bg, #eeeae1);
-  stroke: var(--isy-tutorial-glow, #1fdc63);
+  fill: var(--isy-pixel-bg);
+  stroke: var(--isy-tutorial-glow);
 }
 
 .draw-hint-num {
-  fill: var(--isy-pixel-text, #030430);
+  fill: var(--isy-pixel-text);
   font-family: var(--isy-pixel-font);
   pointer-events: none;
 }

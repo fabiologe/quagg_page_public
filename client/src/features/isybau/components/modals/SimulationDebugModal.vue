@@ -104,7 +104,7 @@ const copyToClipboard = async (text) => {
 
 .modal-header {
   padding: 1rem;
-  background: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-bg);
 }
 
 .modal-header h3 {
@@ -113,7 +113,7 @@ const copyToClipboard = async (text) => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -128,7 +128,7 @@ const copyToClipboard = async (text) => {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
 
 .tab-content {
@@ -149,23 +149,23 @@ const copyToClipboard = async (text) => {
     padding: 0.35rem 0.5rem;
     font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
-    color: var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-border);
     cursor: pointer;
-    background: var(--isy-pixel-content-bg, #f3f2fb);
-    border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+    background: var(--isy-pixel-content-bg);
+    border: 1px solid var(--isy-pixel-text-dim);
     border-radius: 3px;
 }
 
 .code-view {
   flex: 1;
-  background: var(--isy-pixel-content-bg, #f3f2fb);
+  background: var(--isy-pixel-content-bg);
   padding: 1rem;
   border-radius: 4px;
   overflow: auto;
   font-family: monospace;
   font-size: 0.85rem;
   white-space: pre-wrap;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   margin: 0;
 }
 

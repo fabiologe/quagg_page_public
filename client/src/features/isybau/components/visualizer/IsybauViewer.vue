@@ -1529,14 +1529,14 @@ svg {
 /* Flächen-Eckpunkt-Handles (C2 Vertex-Editing) — nur bei ausgewählter Fläche
    sichtbar, Ziehen verschiebt, Rechtsklick löscht. */
 .area-vertex-handle {
-  fill: var(--isy-pixel-green, #219653);
-  stroke: var(--isy-pixel-bg, #040647);
+  fill: var(--isy-pixel-green);
+  stroke: var(--isy-pixel-bg);
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
   cursor: grab;
 }
 .area-vertex-handle:hover {
-  fill: var(--isy-pixel-text, #fff);
+  fill: var(--isy-pixel-text);
 }
 
 .isybau-viewer.mode-addEdge {
@@ -1545,8 +1545,8 @@ svg {
 
 /* When confirming a node in addEdge mode, give strong green feedback */
 .isybau-viewer.mode-addEdge .node-circle:hover {
-  fill: var(--isy-pixel-green, #219653) !important;
-  stroke: var(--isy-pixel-green, #219653);
+  fill: var(--isy-pixel-green) !important;
+  stroke: var(--isy-pixel-green);
   stroke-width: 2px;
   cursor: cell; /* Often distinct from crosshair */
 }
@@ -1557,13 +1557,13 @@ svg {
 
 .area-polygon.selected {
   fill: rgba(231, 76, 60, 0.3);
-  stroke: var(--isy-pixel-danger, #e74c3c);
+  stroke: var(--isy-pixel-danger);
   stroke-width: 2px;
 }
 
 /* Flow Paths */
 .flow-line {
-  stroke: var(--isy-pixel-info, #3498db);
+  stroke: var(--isy-pixel-info);
   stroke-width: 1.5px;
   stroke-dasharray: 5, 5;
   opacity: 0.8;
@@ -1572,7 +1572,7 @@ svg {
 
 .flow-label {
   font-size: 12px;
-  fill: var(--isy-pixel-info-hover, #2980b9);
+  fill: var(--isy-pixel-info-hover);
   font-weight: bold;
   pointer-events: none;
   text-shadow: 0px 0px 2px white;
@@ -1594,7 +1594,7 @@ svg {
 }
 
 .edge-line.selected {
-  stroke: var(--isy-pixel-danger, #e74c3c);
+  stroke: var(--isy-pixel-danger);
   stroke-width: 4px;
 }
 
@@ -1615,7 +1615,7 @@ svg {
 }
 
 .node-circle.selected {
-  fill: var(--isy-pixel-danger, #e74c3c);
+  fill: var(--isy-pixel-danger);
   stroke: white;
   stroke-width: 0.1;
 }
@@ -1627,22 +1627,22 @@ svg {
 }
 
 .node-x.selected {
-  stroke: var(--isy-pixel-danger, #e74c3c) !important;
+  stroke: var(--isy-pixel-danger) !important;
   stroke-width: 3px;
 }
 
 /* Box-Select: markierte Elemente */
 .edge-line.multi-selected {
-  stroke: var(--isy-pixel-border-hover, #65625c) !important;
+  stroke: var(--isy-pixel-border-hover) !important;
   stroke-width: 5px;
 }
 .node-circle.multi-selected {
-  fill: var(--isy-pixel-border-hover, #65625c) !important;
-  stroke: var(--isy-pixel-border, #4a4844);
+  fill: var(--isy-pixel-border-hover) !important;
+  stroke: var(--isy-pixel-border);
   stroke-width: 0.15;
 }
 .node-x.multi-selected {
-  stroke: var(--isy-pixel-border-hover, #65625c) !important;
+  stroke: var(--isy-pixel-border-hover) !important;
   stroke-width: 3px;
 }
 
@@ -1654,8 +1654,8 @@ svg {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-border);
   border-radius: 8px;
   padding: 0.5rem 0.7rem;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
@@ -1668,7 +1668,7 @@ svg {
 .entw-legend-title {
   font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin-bottom: 0.15rem;
@@ -1679,7 +1679,7 @@ svg {
   gap: 0.4rem;
   font-family: var(--isy-pixel-font);
   font-size: 0.4rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   line-height: 1.4;
 }
 .entw-dot {
@@ -1698,7 +1698,7 @@ svg {
   border-top: 1px solid rgba(148, 139, 225, 0.3);
   font-family: var(--isy-pixel-font);
   font-size: 0.4rem;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
   line-height: 1.6;
 }
 
@@ -1708,11 +1708,11 @@ svg {
 .contour-hover-tooltip {
   position: fixed;
   z-index: 20;
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-green-glow, #128040);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-green-glow);
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
-  color: var(--isy-pixel-green-glow, #128040);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-green-glow);
+  text-shadow: var(--isy-pixel-text-glow);
   padding: 4px 10px;
   border-radius: 4px;
   font-family: var(--isy-pixel-font);
@@ -1735,7 +1735,7 @@ svg {
 /* Box-Select: Auswahlrechteck */
 .box-select-rect {
   position: absolute;
-  border: 1.5px dashed var(--isy-pixel-green, #219653);
+  border: 1.5px dashed var(--isy-pixel-green);
   background: rgba(46, 204, 113, 0.08);
   pointer-events: none;
   z-index: 50;
@@ -1747,7 +1747,7 @@ svg {
    damit "die Ratte meint dieses Element hier" überall gleich aussieht.
    Als SVG-Element kann er die Theme-Tokens direkt nutzen. */
 .focus-ring {
-  stroke: var(--isy-tutorial-glow, #1fdc63);
+  stroke: var(--isy-tutorial-glow);
   pointer-events: none;
   animation: focus-ring-pulse 1.4s ease-in-out infinite;
 }
@@ -1765,23 +1765,23 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-border);
   border-radius: 8px;
   padding: 0.5rem 0.9rem;
   z-index: 1001;
   box-shadow: 0 4px 16px rgba(4,6,71,0.4);
 }
 .msb-count {
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   font-family: var(--isy-pixel-font);
   font-size: 0.55rem;
   letter-spacing: 0.05em;
 }
 .msb-btn {
   background: transparent;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-border);
+  color: var(--isy-pixel-text-dim);
   border-radius: 5px;
   padding: 0.4rem 0.7rem;
   font-family: var(--isy-pixel-font);
@@ -1789,9 +1789,9 @@ svg {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.msb-btn:hover { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-text, #fff); }
-.msb-btn.msb-danger { border-color: var(--isy-pixel-danger, #e74c3c); color: var(--isy-pixel-danger, #e74c3c); }
-.msb-btn.msb-danger:hover { background: var(--isy-pixel-danger, #e74c3c); color: var(--isy-pixel-text, #fff); }
+.msb-btn:hover { background: var(--isy-pixel-border); color: var(--isy-pixel-text); }
+.msb-btn.msb-danger { border-color: var(--isy-pixel-danger); color: var(--isy-pixel-danger); }
+.msb-btn.msb-danger:hover { background: var(--isy-pixel-danger); color: var(--isy-pixel-text); }
 
 .node-label {
   fill: #2c3e50;
@@ -1815,7 +1815,7 @@ svg {
 }
 
 .label-guide-line {
-  stroke: var(--isy-pixel-warning, #f39c12); /* Orange */
+  stroke: var(--isy-pixel-warning); /* Orange */
   stroke-width: 1px;
   stroke-dasharray: 4, 4;
   opacity: 0.7;

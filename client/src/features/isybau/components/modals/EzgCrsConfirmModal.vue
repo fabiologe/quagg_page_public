@@ -103,7 +103,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -111,20 +111,20 @@ const confirm = () => emit('confirm', selectedCRS.value);
 }
 
 .description {
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
 
 .guess-hint {
   font-size: 0.85rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   margin: 0;
 }
 
 .primary-btn {
-  background: var(--isy-pixel-bg, #040647);
-  color: var(--isy-pixel-text, #fff);
+  background: var(--isy-pixel-bg);
+  color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
@@ -134,12 +134,12 @@ const confirm = () => emit('confirm', selectedCRS.value);
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover { background: var(--isy-pixel-border, #4a4844); }
+.primary-btn:hover { background: var(--isy-pixel-border); }
 
 .secondary-btn {
   background: transparent;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-border);
+  color: var(--isy-pixel-text-dim);
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
@@ -148,5 +148,5 @@ const confirm = () => emit('confirm', selectedCRS.value);
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); }
+.secondary-btn:hover { background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright); }
 </style>

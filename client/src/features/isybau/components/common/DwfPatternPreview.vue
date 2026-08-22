@@ -100,8 +100,8 @@ const chartOptions = {
 
 <style scoped>
 .dwf-pattern-preview {
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-border);
   border-radius: 6px;
   padding: 0.6rem 0.75rem;
   margin-top: 0.5rem;
@@ -110,7 +110,7 @@ const chartOptions = {
   margin: 0 0 0.5rem;
   font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   display: flex;
@@ -122,7 +122,7 @@ const chartOptions = {
   text-transform: none;
   letter-spacing: normal;
   font-size: 0.62rem;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
 }
 .dpp-chart-container {
   height: 140px;
@@ -133,7 +133,7 @@ const chartOptions = {
   flex-direction: column;
   gap: 0.2rem;
   font-size: 0.72rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 .dpp-hint {
   color: #e0a020;

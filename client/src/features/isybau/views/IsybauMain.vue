@@ -284,35 +284,35 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .view-switcher button:hover {
     background: var(--isy-accent);
-    color: var(--isy-pixel-green-bright, #18a34a);
+    color: var(--isy-pixel-green-bright);
     border-width: 2px;
-    border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e);
+    border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
     box-shadow: var(--isy-btn-shadow-hover);
     transform: translateY(-1px);
 }
 
 .view-switcher button.active {
     background: var(--isy-accent);
-    color: var(--isy-pixel-green-bright, #18a34a);
+    color: var(--isy-pixel-green-bright);
     border-width: 2px;
-    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+    border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark);
     box-shadow: var(--isy-btn-shadow-active);
 }
 .view-switcher button.active:active,
 .view-switcher button:active {
     transform: translateY(0);
-    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+    border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark);
     box-shadow: var(--isy-btn-shadow-active);
 }
 
 .view-switcher button.result3d-tab {
-    border-color: var(--isy-pixel-warning, #f39c12);
+    border-color: var(--isy-pixel-warning);
     color: var(--isy-pixel-warning-soft-text);
 }
 .view-switcher button.result3d-tab.active {
-    background: var(--isy-pixel-warning, #f39c12);
-    color: var(--isy-pixel-text, #fff);
-    border-color: var(--isy-pixel-warning, #f39c12);
+    background: var(--isy-pixel-warning);
+    color: var(--isy-pixel-text);
+    border-color: var(--isy-pixel-warning);
 }
 
 .help-btn {
@@ -320,7 +320,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     background: var(--isy-bg-alt) !important;
     border-width: 2px !important;
     border-style: solid !important;
-    border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) !important;
+    border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) !important;
     color: var(--isy-accent-hover) !important;
     display: flex;
     align-items: center;
@@ -333,13 +333,13 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .help-btn:hover {
     background: var(--isy-accent) !important;
-    color: var(--isy-pixel-green-bright, #18a34a) !important;
+    color: var(--isy-pixel-green-bright) !important;
     box-shadow: var(--isy-btn-shadow-hover);
     transform: translateY(-1px);
 }
 .help-btn:active {
     transform: translateY(0);
-    border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) !important;
+    border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) !important;
     box-shadow: var(--isy-btn-shadow-active);
 }
 
@@ -389,7 +389,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
   background: var(--isy-btn-bg);
   border-width: 2px;
   border-style: solid;
-  border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e);
+  border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
   border-radius: 6px;
   clip-path: var(--isy-pixel-clip-corner);
   text-align: left;
@@ -410,14 +410,14 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .nav-btn:active {
   transform: translateY(0);
-  border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
+  border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark);
   box-shadow: var(--isy-btn-shadow-active);
 }
 
 .nav-btn.active {
   background: var(--isy-accent);
-  border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b);
-  color: var(--isy-pixel-green-bright, #18a34a);
+  border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark);
+  color: var(--isy-pixel-green-bright);
   font-weight: 600;
   box-shadow: var(--isy-btn-shadow-hover);
 }
@@ -426,17 +426,17 @@ watch(() => store.ui.importWarnings, (msgs) => {
 }
 
 .nav-btn-result3d {
-  border-color: var(--isy-pixel-warning, #f39c12);
+  border-color: var(--isy-pixel-warning);
   color: var(--isy-pixel-warning-soft-text);
 }
 .nav-btn-result3d:hover {
   background: var(--isy-pixel-warning-soft);
-  border-color: var(--isy-pixel-warning-hover, #e67e22);
+  border-color: var(--isy-pixel-warning-hover);
   box-shadow: var(--isy-btn-shadow), 0 0 9px rgba(243,156,18,0.5);
 }
 .nav-btn-result3d.active {
   background: var(--isy-pixel-warning-soft);
-  border-color: var(--isy-pixel-warning, #f39c12);
+  border-color: var(--isy-pixel-warning);
   color: var(--isy-pixel-warning-soft-text);
   box-shadow: var(--isy-btn-shadow), 0 0 8px rgba(243,156,18,0.4);
 }
@@ -448,7 +448,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     right: 20px;
     width: 400px;
     background: var(--isy-toast-bg);
-    border-left: 5px solid var(--isy-pixel-warning, #f39c12); /* Warning Orange */
+    border-left: 5px solid var(--isy-pixel-warning); /* Warning Orange */
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     border-radius: 4px;
     padding: 1rem;
@@ -486,7 +486,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
 
 .toast-body li {
     margin-bottom: 0.25rem;
-    color: var(--isy-pixel-danger-hover, #c0392b); /* Dark Red for errors/msgs */
+    color: var(--isy-pixel-danger-hover); /* Dark Red for errors/msgs */
 }
 
 .slide-up-enter-active, .slide-up-leave-active {

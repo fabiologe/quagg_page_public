@@ -108,8 +108,8 @@ const terrainToggleTitle = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-green, #219653);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-green);
   border-radius: 8px;
   padding: 0.6rem;
   z-index: 10;
@@ -118,9 +118,9 @@ const terrainToggleTitle = computed(() => {
 
 .ctrl-btn {
   background: transparent;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  border: 1px solid var(--isy-pixel-border);
   border-radius: 4px;
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   font-size: 1.2rem;
   width: 32px;
   height: 32px;
@@ -131,7 +131,7 @@ const terrainToggleTitle = computed(() => {
   align-self: flex-start;
   transition: background 0.15s;
 }
-.ctrl-btn:hover { background: var(--isy-pixel-border, #4a4844); }
+.ctrl-btn:hover { background: var(--isy-pixel-border); }
 
 .ctrl-divider {
   height: 1px;
@@ -145,19 +145,19 @@ const terrainToggleTitle = computed(() => {
   gap: 0.5rem;
   cursor: pointer;
   font-size: 0.75rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 .ctrl-toggle input { display: none; }
 .toggle-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: var(--isy-pixel-bg-alt, #0a0d5c);
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  background: var(--isy-pixel-bg-alt);
+  border: 1px solid var(--isy-pixel-border);
   flex-shrink: 0;
   transition: background 0.15s;
 }
-.ctrl-toggle input:checked + .toggle-dot { background: var(--isy-pixel-green, #219653); }
-.ctrl-toggle:hover .toggle-label { color: var(--isy-pixel-text, #fff); }
+.ctrl-toggle input:checked + .toggle-dot { background: var(--isy-pixel-green); }
+.ctrl-toggle:hover .toggle-label { color: var(--isy-pixel-text); }
 
 .ctrl-zscale {
   display: flex;
@@ -166,23 +166,23 @@ const terrainToggleTitle = computed(() => {
 }
 .zscale-label {
   font-size: 0.7rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   font-family: monospace;
 }
 .ctrl-zscale input[type=range] {
   width: 100%;
-  accent-color: var(--isy-pixel-green, #219653);
+  accent-color: var(--isy-pixel-green);
   cursor: pointer;
 }
 
-.result-toggle .toggle-label { color: var(--isy-pixel-warning-alt, #f1c40f); }
-.result-dot { border-color: var(--isy-pixel-warning-alt, #f1c40f) !important; }
-.ctrl-toggle input:checked + .result-dot { background: var(--isy-pixel-warning-alt, #f1c40f) !important; }
+.result-toggle .toggle-label { color: var(--isy-pixel-warning-alt); }
+.result-dot { border-color: var(--isy-pixel-warning-alt) !important; }
+.ctrl-toggle input:checked + .result-dot { background: var(--isy-pixel-warning-alt) !important; }
 
 .water-toggle { padding-left: 0.6rem; }
-.water-toggle .toggle-label { color: var(--isy-pixel-info, #3498db); font-size: 0.7rem; }
-.water-dot { border-color: var(--isy-pixel-info, #3498db) !important; }
-.ctrl-toggle input:checked + .water-dot { background: var(--isy-pixel-info, #3498db) !important; }
+.water-toggle .toggle-label { color: var(--isy-pixel-info); font-size: 0.7rem; }
+.water-dot { border-color: var(--isy-pixel-info) !important; }
+.ctrl-toggle input:checked + .water-dot { background: var(--isy-pixel-info) !important; }
 
 .result-legend {
   margin-top: 0.2rem;
@@ -193,7 +193,7 @@ const terrainToggleTitle = computed(() => {
 }
 .legend-title {
   font-size: 0.44rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.4rem;
@@ -201,7 +201,7 @@ const terrainToggleTitle = computed(() => {
 }
 .legend-sep {
   font-size: 0.6rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   margin: 0.3rem 0 0.2rem;
   border-top: 1px solid rgba(255,255,255,0.06);
   padding-top: 0.25rem;
@@ -211,7 +211,7 @@ const terrainToggleTitle = computed(() => {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.66rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   padding: 0.1rem 0;
 }
 .dot {

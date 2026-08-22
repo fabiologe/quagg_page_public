@@ -233,7 +233,7 @@ watch(() => props.isOpen, (open) => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -241,7 +241,7 @@ watch(() => props.isOpen, (open) => {
 }
 
 .description {
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
 }
@@ -255,7 +255,7 @@ watch(() => props.isOpen, (open) => {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
 
 .mode-tab {
@@ -264,15 +264,15 @@ watch(() => props.isOpen, (open) => {
   border-bottom: 2px solid transparent;
   padding: 0.5rem 0.25rem;
   cursor: pointer;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
   font-size: 0.85rem;
   font-weight: 500;
   transition: color 0.15s, border-color 0.15s;
 }
 
 .mode-tab.active {
-  color: var(--isy-pixel-green, #219653);
-  border-bottom-color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
+  border-bottom-color: var(--isy-pixel-green);
 }
 
 .search-row {
@@ -284,15 +284,15 @@ watch(() => props.isOpen, (open) => {
 .search-row input {
   flex: 1;
   padding: 0.5rem;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   font-size: 1rem;
 }
 
 .found-place {
   font-size: 0.85rem;
-  background: var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-green-bright, #18a34a);
+  background: var(--isy-pixel-border);
+  color: var(--isy-pixel-green-bright);
   border-radius: 4px;
   padding: 0.5rem;
   margin: 0 0 1rem;
@@ -311,21 +311,21 @@ watch(() => props.isOpen, (open) => {
 
 .input-wrapper label {
   font-size: 0.8rem;
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
   margin-bottom: 0.2rem;
 }
 
 .input-wrapper input {
   padding: 0.5rem;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   width: 100%;
   box-sizing: border-box;
 }
 
 .primary-btn {
-  background: var(--isy-pixel-bg, #040647);
-  color: var(--isy-pixel-text, #fff);
+  background: var(--isy-pixel-bg);
+  color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
@@ -335,13 +335,13 @@ watch(() => props.isOpen, (open) => {
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: not-allowed; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: not-allowed; }
 
 .secondary-btn {
   background: transparent;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-border);
+  color: var(--isy-pixel-text-dim);
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
@@ -350,6 +350,6 @@ watch(() => props.isOpen, (open) => {
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover:not(:disabled) { background: var(--isy-pixel-content-bg, #f3f2fb); }
+.secondary-btn:hover:not(:disabled) { background: var(--isy-pixel-content-bg); }
 .secondary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

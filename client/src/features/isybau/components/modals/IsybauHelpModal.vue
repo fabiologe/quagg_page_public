@@ -372,13 +372,13 @@ const activeTab = ref('general');
   flex-direction: column;
   height: 100%;
   font-family: 'Inter', sans-serif;
-  color: var(--isy-pixel-bg, #040647);
-  background: var(--isy-pixel-text, #fff);
+  color: var(--isy-pixel-bg);
+  background: var(--isy-pixel-text);
 }
 
 .modal-header {
   padding: 1rem;
-  background: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-bg);
 }
 
 .modal-header h3 {
@@ -387,7 +387,7 @@ const activeTab = ref('general');
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -418,7 +418,7 @@ const activeTab = ref('general');
     font-size: 0.42rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--isy-pixel-border-hover, #65625c);
+    color: var(--isy-pixel-border-hover);
     margin-bottom: 0.4rem;
     padding-left: 0.5rem;
 }
@@ -433,15 +433,15 @@ const activeTab = ref('general');
   border-left: 3px solid transparent;
   border-radius: 6px;
   cursor: pointer;
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
   font-weight: 500;
   font-size: 0.9rem;
   transition: all 0.2s;
 }
 
 .tutorial-btn {
-  color: var(--isy-pixel-green-active, #00994d);
-  border-left-color: var(--isy-pixel-green-glow, #128040);
+  color: var(--isy-pixel-green-active);
+  border-left-color: var(--isy-pixel-green-glow);
 }
 .tutorial-btn:hover {
   background: rgba(0, 232, 85, 0.08);
@@ -449,20 +449,20 @@ const activeTab = ref('general');
 }
 
 .tab-btn:hover {
-  background: var(--isy-pixel-content-bg, #f3f2fb);
-  color: var(--isy-pixel-green, #219653);
+  background: var(--isy-pixel-content-bg);
+  color: var(--isy-pixel-green);
 }
 
 .tab-btn.active {
-  background: var(--isy-pixel-content-bg, #f3f2fb);
-  color: var(--isy-pixel-green, #219653);
-  border-left-color: var(--isy-pixel-green, #219653);
+  background: var(--isy-pixel-content-bg);
+  color: var(--isy-pixel-green);
+  border-left-color: var(--isy-pixel-green);
   font-weight: 700;
 }
 
 .tab-btn.tech-btn.active {
-    color: var(--isy-pixel-green, #219653);
-    border-left-color: var(--isy-pixel-border-hover, #65625c);
+    color: var(--isy-pixel-green);
+    border-left-color: var(--isy-pixel-border-hover);
 }
 
 .help-content {

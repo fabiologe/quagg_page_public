@@ -253,7 +253,7 @@ const apply = () => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -295,12 +295,12 @@ const apply = () => {
   margin: 0 0 0.5rem 0;
   font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
 }
 
 .table-scroll {
   overflow: auto;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
 }
 
@@ -312,13 +312,13 @@ const apply = () => {
 
 .kostra-table th, .kostra-table td {
   padding: 0.3rem 0.5rem;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   text-align: right;
   white-space: nowrap;
 }
 
 .kostra-table th {
-  background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
+  background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
   font-weight: 600;
   text-align: center;
   position: sticky;
@@ -331,22 +331,22 @@ const apply = () => {
 }
 
 .clickable-col:hover, .clickable-cell:hover {
-  background-color: var(--isy-pixel-content-bg, #f3f2fb);
+  background-color: var(--isy-pixel-content-bg);
 }
 
 .active-col {
-  background-color: var(--isy-pixel-content-bg, #f3f2fb) !important;
-  border-left: 3px solid var(--isy-pixel-border, #4a4844);
-  border-right: 3px solid var(--isy-pixel-border, #4a4844);
+  background-color: var(--isy-pixel-content-bg) !important;
+  border-left: 3px solid var(--isy-pixel-border);
+  border-right: 3px solid var(--isy-pixel-border);
 }
 
 .kostra-table th.active-col {
-  border-top: 2px solid var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-border, #4a4844);
+  border-top: 2px solid var(--isy-pixel-border);
+  color: var(--isy-pixel-border);
 }
 
 .kostra-table tr:last-child td.active-col {
-  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
+  border-bottom: 2px solid var(--isy-pixel-border);
 }
 
 .form-group {
@@ -356,7 +356,7 @@ const apply = () => {
 .form-group input, .form-group select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
 }
 
@@ -373,13 +373,13 @@ const apply = () => {
 
 .hint {
   font-size: 0.8rem;
-  color: var(--isy-pixel-danger, #e74c3c);
+  color: var(--isy-pixel-danger);
 }
 
 
 .primary-btn {
-  background: var(--isy-pixel-bg, #040647);
-  color: var(--isy-pixel-text, #fff);
+  background: var(--isy-pixel-bg);
+  color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
   padding: 0.55rem 1rem;
@@ -389,13 +389,13 @@ const apply = () => {
   cursor: pointer;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: default; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: default; }
 
 .secondary-btn {
   background: transparent;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-border);
+  color: var(--isy-pixel-text-dim);
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
@@ -404,11 +404,11 @@ const apply = () => {
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
+.secondary-btn:hover { background: var(--isy-pixel-content-bg); }
 
 /* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--isy-pixel-green, #219653);
+  accent-color: var(--isy-pixel-green);
 }
 </style>

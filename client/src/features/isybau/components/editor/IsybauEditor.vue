@@ -275,11 +275,11 @@ const handleMapDblClick = () => {
 /* Gleicher Terminal-Sprechblasen-Stil wie tutorial/TutorialMascot.vue
    (.speech-bubble/.bubble-text) — grün-glühender Rahmen statt lila UI-Chrome. */
 .drawing-tooltip {
-    background: var(--isy-pixel-bg, #040647);
-    border: 1px solid var(--isy-pixel-green-glow, #128040);
+    background: var(--isy-pixel-bg);
+    border: 1px solid var(--isy-pixel-green-glow);
     box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
-    color: var(--isy-pixel-green-glow, #128040);
-    text-shadow: var(--isy-pixel-text-glow, none);
+    color: var(--isy-pixel-green-glow);
+    text-shadow: var(--isy-pixel-text-glow);
     padding: 0.5rem 1rem;
     border-radius: 4px;
     font-family: var(--isy-pixel-font);
@@ -292,15 +292,15 @@ const handleMapDblClick = () => {
     display: block;
     margin-top: 0.35rem;
     font-size: 0.36rem;
-    color: var(--isy-pixel-green-active, #00994d);
+    color: var(--isy-pixel-green-active);
     text-shadow: none;
 }
 
 .finish-btn {
     pointer-events: auto;
-    background: var(--isy-pixel-bg, #040647);
-    color: var(--isy-pixel-green, #219653);
-    border: 1px solid var(--isy-pixel-border, #4a4844);
+    background: var(--isy-pixel-bg);
+    color: var(--isy-pixel-green);
+    border: 1px solid var(--isy-pixel-border);
     padding: 0.85rem 1.5rem;
     border-radius: 20px;
     font-family: var(--isy-pixel-font);
@@ -311,8 +311,8 @@ const handleMapDblClick = () => {
 }
 
 .finish-btn:hover {
-    background: var(--isy-pixel-border, #4a4844);
-    color: var(--isy-pixel-text, #fff);
+    background: var(--isy-pixel-border);
+    color: var(--isy-pixel-text);
     transform: scale(1.05);
 }
 </style>

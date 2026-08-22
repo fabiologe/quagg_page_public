@@ -668,14 +668,14 @@ watch(() => props.selectedElement, (val) => {
   transform: translate(-50%, -50%);
   width: 320px;
   max-height: 70vh;
-  background: var(--isy-pixel-bg-deep, #06093a);
+  background: var(--isy-pixel-bg-deep);
   border-radius: 8px;
   box-shadow: 0 4px 25px rgba(4,6,71,0.4);
   display: flex;
   flex-direction: column;
   z-index: 500;
   overflow: hidden;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  border: 1px solid var(--isy-pixel-border);
 }
 
 .info-window.dragging {
@@ -684,9 +684,9 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .info-header {
-  background: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-bg);
   padding: 0.65rem 1rem;
-  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
+  border-bottom: 2px solid var(--isy-pixel-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -701,7 +701,7 @@ watch(() => props.selectedElement, (val) => {
   margin: 0;
   font-family: var(--isy-pixel-font);
   font-size: 0.58rem;
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -710,12 +710,12 @@ watch(() => props.selectedElement, (val) => {
   background: none;
   border: none;
   font-size: 1.5rem;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
   cursor: pointer;
   line-height: 1;
   transition: color 0.2s;
 }
-.close-btn:hover { color: var(--isy-pixel-green, #219653); }
+.close-btn:hover { color: var(--isy-pixel-green); }
 
 .info-content {
   padding: 1rem;
@@ -728,7 +728,7 @@ watch(() => props.selectedElement, (val) => {
     justify-content: space-between;
     margin-bottom: 0.5rem;
     font-size: 0.9rem;
-    color: var(--isy-pixel-text-dim, #4a4a4a);
+    color: var(--isy-pixel-text-dim);
 }
 
 .info-group {
@@ -738,23 +738,23 @@ watch(() => props.selectedElement, (val) => {
 .info-group label {
     display: block;
     font-size: 0.8rem;
-    color: var(--isy-pixel-text-dim, #4a4a4a);
+    color: var(--isy-pixel-text-dim);
     margin-bottom: 2px;
 }
 
 .full-input, .full-select {
     width: 100%;
     padding: 6px;
-    border: 1px solid var(--isy-pixel-border, #4a4844);
+    border: 1px solid var(--isy-pixel-border);
     border-radius: 4px;
-    background: var(--isy-pixel-bg-alt, #0a0d5c);
-    color: var(--isy-pixel-text, #fff);
+    background: var(--isy-pixel-bg-alt);
+    color: var(--isy-pixel-text);
     font-size: 0.9rem;
     box-sizing: border-box;
     outline: none;
     transition: border-color 0.15s;
 }
-.full-input:focus, .full-select:focus { border-color: var(--isy-pixel-green, #219653); }
+.full-input:focus, .full-select:focus { border-color: var(--isy-pixel-green); }
 .full-input:disabled, .full-select:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .flex-row {
@@ -779,19 +779,19 @@ watch(() => props.selectedElement, (val) => {
 .checkbox-row label {
     margin: 0;
     font-size: 0.9rem;
-    color: var(--isy-pixel-text-dim, #4a4a4a);
+    color: var(--isy-pixel-text-dim);
 }
 
 .info-footer {
     padding: 1rem;
-    border-top: 1px solid var(--isy-pixel-border, #4a4844);
-    background: var(--isy-pixel-bg, #040647);
+    border-top: 1px solid var(--isy-pixel-border);
+    background: var(--isy-pixel-bg);
 }
 
 .primary-btn {
-    background: var(--isy-pixel-bg, #040647);
-    color: var(--isy-pixel-text, #fff);
-    border: 1px solid var(--isy-pixel-border, #4a4844);
+    background: var(--isy-pixel-bg);
+    color: var(--isy-pixel-text);
+    border: 1px solid var(--isy-pixel-border);
     padding: 10px 8px;
     border-radius: 6px;
     cursor: pointer;
@@ -803,7 +803,7 @@ watch(() => props.selectedElement, (val) => {
     gap: 0.4rem;
     transition: background 0.15s;
 }
-.primary-btn:hover { background: var(--isy-pixel-border, #4a4844); }
+.primary-btn:hover { background: var(--isy-pixel-border); }
 
 .ic {
     width: 14px;
@@ -815,8 +815,8 @@ watch(() => props.selectedElement, (val) => {
 
 .secondary-btn {
     background: transparent;
-    border: 1px solid var(--isy-pixel-border, #4a4844);
-    color: var(--isy-pixel-text-dim, #4a4a4a);
+    border: 1px solid var(--isy-pixel-border);
+    color: var(--isy-pixel-text-dim);
     padding: 10px 8px;
     border-radius: 6px;
     cursor: pointer;
@@ -826,8 +826,8 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .secondary-btn:hover {
-    background: var(--isy-pixel-border, #4a4844);
-    color: var(--isy-pixel-text, #fff);
+    background: var(--isy-pixel-border);
+    color: var(--isy-pixel-text);
 }
 
 .full-width {
@@ -875,15 +875,15 @@ watch(() => props.selectedElement, (val) => {
 
 .hint-text {
     font-size: 0.75rem;
-    color: var(--isy-pixel-border-hover, #65625c);
+    color: var(--isy-pixel-border-hover);
     margin: -4px 0 8px 0;
 }
 
 /* War bisher in dieser Datei genutzt (Fläche-Anzeige), aber nie definiert —
    Regel 1:1 aus ElementPropertiesModal.vue/SchmutzfrachtDialog.vue übernommen. */
-.value-display { color: var(--isy-pixel-green, #219653); font-weight: 600; padding: 0.35rem 0; }
+.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: 0.35rem 0; }
 
-input[type="checkbox"] { accent-color: var(--isy-pixel-green, #219653); }
+input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 
 .link-hint-box {
     background: var(--isy-pixel-info-soft);

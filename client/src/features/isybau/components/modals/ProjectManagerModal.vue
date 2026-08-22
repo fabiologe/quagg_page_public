@@ -182,7 +182,7 @@ function formatDate(iso) {
 }
 
 .pm-modal {
-  background: var(--isy-pixel-text, #fff);
+  background: var(--isy-pixel-text);
   border-radius: 10px;
   width: 520px;
   max-height: 80vh;
@@ -197,8 +197,8 @@ function formatDate(iso) {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1.1rem;
-  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
-  background: var(--isy-pixel-bg, #040647);
+  border-bottom: 2px solid var(--isy-pixel-border);
+  background: var(--isy-pixel-bg);
   flex-shrink: 0;
 }
 
@@ -208,7 +208,7 @@ function formatDate(iso) {
   font-size: 0.55rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .close-btn {
@@ -216,10 +216,10 @@ function formatDate(iso) {
   border: none;
   font-size: 1.3rem;
   line-height: 1;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
   cursor: pointer;
 }
-.close-btn:hover { color: var(--isy-pixel-text, #fff); }
+.close-btn:hover { color: var(--isy-pixel-text); }
 
 /* Save bar */
 .pm-save-bar {
@@ -237,7 +237,7 @@ function formatDate(iso) {
   border-radius: 6px;
   font-size: 0.9rem;
 }
-.pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border, #4a4844); box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
+.pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border); box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
 
 /* List */
 .pm-list-header {
@@ -254,8 +254,8 @@ function formatDate(iso) {
 }
 
 .pm-count {
-  background: var(--isy-pixel-text-dim, #4a4a4a);
-  color: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-text-dim);
+  color: var(--isy-pixel-bg);
   font-size: 0.72rem;
   font-weight: 700;
   padding: 0.1rem 0.45rem;
@@ -278,7 +278,7 @@ function formatDate(iso) {
   gap: 1rem;
   transition: background 0.12s;
 }
-.pm-item:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
+.pm-item:hover { background: var(--isy-pixel-content-bg); }
 
 .pm-item-info {
   display: flex;
@@ -290,7 +290,7 @@ function formatDate(iso) {
 .pm-item-name {
   font-size: 0.92rem;
   font-weight: 700;
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -345,8 +345,8 @@ function formatDate(iso) {
 
 /* Buttons */
 .btn-primary {
-  background: var(--isy-pixel-bg, #040647);
-  color: var(--isy-pixel-text, #fff);
+  background: var(--isy-pixel-bg);
+  color: var(--isy-pixel-text);
   border: none;
   border-radius: 6px;
   padding: 0.5rem 0.9rem;
@@ -359,13 +359,13 @@ function formatDate(iso) {
   align-items: center;
   gap: 0.4rem;
 }
-.btn-primary:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
+.btn-primary:hover:not(:disabled) { background: var(--isy-pixel-border); }
 .btn-primary:disabled { opacity: 0.45; cursor: default; }
 
 .btn-load {
-  background: var(--isy-pixel-content-bg, #f3f2fb);
-  color: var(--isy-pixel-border, #4a4844);
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  background: var(--isy-pixel-content-bg);
+  color: var(--isy-pixel-border);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 5px;
   padding: 0.35rem 0.7rem;
   font-family: var(--isy-pixel-font);
@@ -373,7 +373,7 @@ function formatDate(iso) {
   cursor: pointer;
   transition: background 0.12s;
 }
-.btn-load:hover { background: var(--isy-pixel-text-dim, #4a4a4a); color: var(--isy-pixel-bg, #040647); }
+.btn-load:hover { background: var(--isy-pixel-text-dim); color: var(--isy-pixel-bg); }
 
 .btn-delete {
   background: none;
@@ -390,15 +390,15 @@ function formatDate(iso) {
 
 .btn-cancel {
   background: none;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 5px;
   padding: 0.35rem 0.6rem;
   font-family: var(--isy-pixel-font);
   font-size: 0.46rem;
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
   cursor: pointer;
 }
-.btn-cancel:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
+.btn-cancel:hover { background: var(--isy-pixel-content-bg); }
 
 /* Icons */
 .ic {

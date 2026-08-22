@@ -13,7 +13,7 @@
      Statistik …) leuchteten, jeder BUTTON aber nicht.
      Die 6px-Eckstufen fallen unter dem hellen Ring ohnehin nicht auf. */
   clip-path: none !important;
-  outline: 3px solid var(--isy-tutorial-glow, #1fdc63) !important;
+  outline: 3px solid var(--isy-tutorial-glow) !important;
   outline-offset: 3px;
   border-radius: 4px;
   /* Wirkt nur auf positionierte Elemente — für statische schadlos. */
@@ -28,12 +28,12 @@
   0%,
   100% {
     box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 60%, transparent),
-      0 0 18px 4px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 55%, transparent);
+      0 0 0 3px color-mix(in srgb, var(--isy-tutorial-glow) 60%, transparent),
+      0 0 18px 4px color-mix(in srgb, var(--isy-tutorial-glow) 55%, transparent);
   }
   50% {
     box-shadow:
-      0 0 0 14px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 0%, transparent),
-      0 0 36px 12px color-mix(in srgb, var(--isy-tutorial-glow, #1fdc63) 85%, transparent);
+      0 0 0 14px color-mix(in srgb, var(--isy-tutorial-glow) 0%, transparent),
+      0 0 36px 12px color-mix(in srgb, var(--isy-tutorial-glow) 85%, transparent);
   }
 }

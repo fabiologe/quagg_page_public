@@ -114,7 +114,7 @@ onUnmounted(() => { running = false; });
   position: relative;
   flex: 1;
   min-height: 0;
-  background: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-bg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -136,22 +136,22 @@ onUnmounted(() => { running = false; });
   font-family: var(--isy-pixel-font);
   font-size: 0.52rem;
   line-height: 1.7;
-  color: var(--isy-pixel-green-glow, #128040);
+  color: var(--isy-pixel-green-glow);
   white-space: pre-wrap;
   word-break: break-all;
-  text-shadow: var(--isy-pixel-text-glow, none);
+  text-shadow: var(--isy-pixel-text-glow);
   min-height: 1em;
 }
 
 /* Command line: brighter */
 .t-line.cmd {
-  color: var(--isy-pixel-green-bright, #18a34a);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-green-bright);
+  text-shadow: var(--isy-pixel-text-glow);
 }
 
 /* [OK] status: slightly dimmer green */
 .t-line.ok {
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   text-shadow: 0 0 6px rgba(46, 204, 113, 0.5);
 }
 
@@ -170,15 +170,15 @@ onUnmounted(() => { running = false; });
 /* Progress dots */
 .t-line.dots {
   letter-spacing: 0.35em;
-  color: var(--isy-pixel-green-active, #00994d);
+  color: var(--isy-pixel-green-active);
 }
 
 /* ── Cursor ── */
 .cursor {
   display: inline-block;
   animation: blink 0.85s step-start infinite;
-  color: var(--isy-pixel-green-bright, #18a34a);
-  text-shadow: 0 0 10px var(--isy-pixel-green-bright, #18a34a);
+  color: var(--isy-pixel-green-bright);
+  text-shadow: 0 0 10px var(--isy-pixel-green-bright);
 }
 
 @keyframes blink {

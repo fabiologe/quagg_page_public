@@ -326,8 +326,8 @@ const edgeUtilClass = computed(() => {
   position: absolute;
   top: 1rem; right: 1rem;
   width: 280px;
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-border, #4a4844);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-border);
   border-radius: 10px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   overflow: hidden;
@@ -345,14 +345,14 @@ const edgeUtilClass = computed(() => {
 .info-header h3 {
   margin: 0;
   font-size: 0.75rem;
-  color: var(--isy-pixel-text, #fff);
+  color: var(--isy-pixel-text);
   font-family: var(--isy-pixel-font);
 }
 .close-btn {
   background: none; border: none; color: #a0aec0;
   font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 0;
 }
-.close-btn:hover { color: var(--isy-pixel-text, #fff); }
+.close-btn:hover { color: var(--isy-pixel-text); }
 
 .info-body { padding: 0.75rem 1rem; }
 
@@ -377,7 +377,7 @@ const edgeUtilClass = computed(() => {
   display: inline-block;
 }
 .type-badge.pumpwerk { background: rgba(217,119,6,0.2);  color: #fbbf24; border: 1px solid #d97706; }
-.type-badge.sonderbauwerk { background: rgba(101,98,92,0.25); color: #d8d5cf; border: 1px solid var(--isy-pixel-accent-soft, #65625c); }
+.type-badge.sonderbauwerk { background: rgba(101,98,92,0.25); color: #d8d5cf; border: 1px solid var(--isy-pixel-accent-soft); }
 .type-badge.becken   { background: rgba(20,184,166,0.2); color: #5eead4; border: 1px solid #14b8a6; }
 .type-badge.outfall  { background: rgba(5,150,105,0.2);  color: #6ee7b7; border: 1px solid #059669; }
 .type-badge.fictive  { background: rgba(239,68,68,0.2);  color: var(--isy-pixel-danger-soft-border); border: 1px solid #ef4444; }

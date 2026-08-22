@@ -32,8 +32,8 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   max-height: min(430px, 55vh);
   display: flex;
   flex-direction: column;
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-green-glow, #128040);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-green-glow);
   border-radius: 4px;
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
   pointer-events: auto;
@@ -45,15 +45,15 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.55rem 0.6rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--isy-pixel-green-glow, #128040) 35%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--isy-pixel-green-glow) 35%, transparent);
 }
 
 .info-title {
   font-family: var(--isy-pixel-font);
   font-size: 0.48rem;
   line-height: 1.5;
-  color: var(--isy-pixel-green-text, #0d6b35);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-green-text);
+  text-shadow: var(--isy-pixel-text-glow);
 }
 
 .info-close {
@@ -62,13 +62,13 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   cursor: pointer;
   font-family: var(--isy-pixel-font);
   font-size: 0.42rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   padding: 0;
   flex-shrink: 0;
 }
 
 .info-close:hover {
-  color: var(--isy-pixel-green-text, #0d6b35);
+  color: var(--isy-pixel-green-text);
 }
 
 .info-body {
@@ -89,18 +89,18 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.72rem;
   line-height: 1.55;
-  color: var(--isy-pixel-text, #030430);
+  color: var(--isy-pixel-text);
 }
 
 .info-formula {
   margin: 0 0 0.6rem;
   padding: 0.45rem 0.6rem;
-  border: 1px dashed color-mix(in srgb, var(--isy-pixel-green-glow, #128040) 50%, transparent);
-  background: color-mix(in srgb, var(--isy-pixel-green-glow, #128040) 8%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--isy-pixel-green-glow) 50%, transparent);
+  background: color-mix(in srgb, var(--isy-pixel-green-glow) 8%, transparent);
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.8rem;
-  color: var(--isy-pixel-green-text, #0d6b35);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-green-text);
+  text-shadow: var(--isy-pixel-text-glow);
   text-align: center;
   white-space: pre-wrap;
 }
@@ -112,6 +112,6 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   margin: 0 0 0.4rem;
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.62rem;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 </style>

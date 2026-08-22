@@ -126,7 +126,7 @@ const sortedData = computed(() => {
 
 .modal-header {
   padding: 1rem;
-  background: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-bg);
 }
 
 .modal-header h3 {
@@ -135,7 +135,7 @@ const sortedData = computed(() => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -147,7 +147,7 @@ const sortedData = computed(() => {
 .controls {
   margin-bottom: 1rem;
   padding: 0.5rem;
-  background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
+  background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
   border-radius: 4px;
 }
 
@@ -164,11 +164,11 @@ table {
 th, td {
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
 
 th {
-  background: var(--isy-pixel-content-bg, #f3f2fb);
+  background: var(--isy-pixel-content-bg);
   font-weight: 600;
   cursor: pointer;
   user-select: none;
@@ -212,7 +212,7 @@ th:hover {
 }
 
 input:checked + .slider {
-  background-color: var(--isy-pixel-green, #219653);
+  background-color: var(--isy-pixel-green);
 }
 
 input:checked + .slider::before {
@@ -225,8 +225,8 @@ input:checked + .slider::before {
 
 .secondary-btn {
   background: transparent;
-  border: 1px solid var(--isy-pixel-border, #4a4844);
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-border);
+  color: var(--isy-pixel-text-dim);
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-family: var(--isy-pixel-font);
@@ -235,5 +235,5 @@ input:checked + .slider::before {
   cursor: pointer;
   transition: background 0.12s;
 }
-.secondary-btn:hover { background: var(--isy-pixel-content-bg, #f3f2fb); }
+.secondary-btn:hover { background: var(--isy-pixel-content-bg); }
 </style>

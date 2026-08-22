@@ -255,7 +255,7 @@ const downloadResults = () => {
   background: white;
   padding: 1rem;
   border-radius: 8px;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
 }
 .control-box h3 {
     margin-top: 0;
@@ -264,8 +264,8 @@ const downloadResults = () => {
     font-size: 0.5rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--isy-pixel-border, #4a4844);
-    border-bottom: 2px solid var(--isy-pixel-text-dim, #4a4a4a);
+    color: var(--isy-pixel-border);
+    border-bottom: 2px solid var(--isy-pixel-text-dim);
     padding-bottom: 0.5rem;
 }
 
@@ -279,14 +279,14 @@ const downloadResults = () => {
     font-family: var(--isy-pixel-font);
     font-size: 0.44rem;
     letter-spacing: 0.05em;
-    color: var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-border);
 }
 
 /* Compact Stats */
 .stats-compact {
     padding: 0.6rem 1rem;
     text-align: center;
-    background: var(--isy-pixel-bg, #040647);
+    background: var(--isy-pixel-bg);
 }
 .stats-row {
     display: flex;
@@ -294,7 +294,7 @@ const downloadResults = () => {
     gap: 0.8rem;
     font-family: var(--isy-pixel-font);
     font-size: 0.42rem;
-    color: var(--isy-pixel-text-dim, #4a4a4a);
+    color: var(--isy-pixel-text-dim);
     align-items: center;
 }
 .stat-item {
@@ -304,26 +304,26 @@ const downloadResults = () => {
     gap: 0.35rem;
 }
 .stat-item strong {
-    color: var(--isy-pixel-text, #fff);
+    color: var(--isy-pixel-text);
     font-size: 0.58rem;
 }
 .divider {
-    color: var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-border);
 }
 
 
 /* Meta Info */
 .meta-item { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
 .meta-row { display: flex; justify-content: space-between; gap: 0.5rem; }
-.label { font-size: 0.75rem; color: var(--isy-pixel-border, #4a4844); font-weight: 700; }
-.value { font-size: 0.88rem; color: var(--isy-pixel-border, #4a4844); overflow: hidden; text-overflow: ellipsis; }
+.label { font-size: 0.75rem; color: var(--isy-pixel-border); font-weight: 700; }
+.value { font-size: 0.88rem; color: var(--isy-pixel-border); overflow: hidden; text-overflow: ellipsis; }
 
 /* Buttons & Inputs */
 .primary-btn {
   width: 100%;
   padding: 0.75rem;
-  background: var(--isy-pixel-bg, #040647);
-  color: var(--isy-pixel-green, #219653);
+  background: var(--isy-pixel-bg);
+  color: var(--isy-pixel-green);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -332,22 +332,22 @@ const downloadResults = () => {
   font-size: 0.54rem;
   transition: background 0.15s;
 }
-.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
-.primary-btn:disabled { background: var(--isy-pixel-text-dim, #4a4a4a); cursor: default; }
+.primary-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
+.primary-btn:disabled { background: var(--isy-pixel-text-dim); cursor: default; }
 .secondary-btn {
     flex: 1;
     padding: 0.5rem;
     background: transparent;
-    border: 1px solid var(--isy-pixel-border, #4a4844);
+    border: 1px solid var(--isy-pixel-border);
     border-radius: 6px;
     cursor: pointer;
     font-family: var(--isy-pixel-font);
     font-size: 0.46rem;
     text-align: center;
-    color: var(--isy-pixel-text-dim, #4a4a4a);
+    color: var(--isy-pixel-text-dim);
     transition: background 0.12s, border-color 0.12s;
 }
-.secondary-btn:hover { background: var(--isy-pixel-text-dim, #4a4a4a); border-color: var(--isy-pixel-border-hover, #65625c); }
+.secondary-btn:hover { background: var(--isy-pixel-text-dim); border-color: var(--isy-pixel-border-hover); }
 
 .error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: 0.5rem; font-size: 0.82rem; }
 .error-link {
@@ -387,13 +387,13 @@ const downloadResults = () => {
     cursor: pointer;
 }
 .warning-link:hover { color: #6b4107; }
-.success-msg { color: var(--isy-pixel-border, #4a4844); margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
-.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid var(--isy-pixel-text-dim, #4a4a4a); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border, #4a4844); }
-.input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border, #4a4844); }
+.success-msg { color: var(--isy-pixel-border); margin-top: 0.5rem; font-weight: 700; font-size: 0.85rem; }
+.input-with-action input { width: 100%; padding: 0.5rem; border: 1px solid var(--isy-pixel-text-dim); border-radius: 6px; box-sizing: border-box; color: var(--isy-pixel-border); }
+.input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
 .button-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
 .secondary-btn.full { margin-top: 0.4rem; width: 100%; }
 
-/* Pixel art icons — gefärbt wie das Raster (var(--isy-pixel-green, #219653)) */
+/* Pixel art icons — gefärbt wie das Raster (var(--isy-pixel-green)) */
 .ic {
     width: 16px;
     height: 16px;
@@ -414,12 +414,12 @@ const downloadResults = () => {
 }
 .rain-status {
     font-size: 0.78rem;
-    color: var(--isy-pixel-border, #4a4844);
+    color: var(--isy-pixel-border);
     margin-bottom: 0.5rem;
     padding: 0.35rem 0.5rem;
-    background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a);
+    background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright);
     border-radius: 6px;
-    border-left: 3px solid var(--isy-pixel-border-hover, #65625c);
+    border-left: 3px solid var(--isy-pixel-border-hover);
 }
 
 .rain-info-empty {
@@ -456,7 +456,7 @@ const downloadResults = () => {
     padding: 0;
     background: transparent;
     border: 2px solid transparent;
-    color: var(--isy-pixel-green-bright, #18a34a);
+    color: var(--isy-pixel-green-bright);
     font-family: var(--isy-pixel-font);
     font-size: 0.5rem;
     line-height: 1;
@@ -466,8 +466,8 @@ const downloadResults = () => {
 }
 
 .rain-clear:hover {
-    border-color: var(--isy-pixel-green-bright, #18a34a);
-    color: var(--isy-pixel-green-hover, #27ae60);
+    border-color: var(--isy-pixel-green-bright);
+    color: var(--isy-pixel-green-hover);
 }
 
 .rain-clear:active {
@@ -481,13 +481,13 @@ const downloadResults = () => {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border-top: 2px solid var(--isy-pixel-text-dim, #4a4a4a);
+    border-top: 2px solid var(--isy-pixel-text-dim);
     padding-top: 1rem;
 }
 .action-btn {
     width: 100%;
     padding: 0.65rem 0.75rem;
-    background: var(--isy-pixel-border, #4a4844);
+    background: var(--isy-pixel-border);
     color: white;
     border: none;
     border-radius: 6px;
@@ -500,12 +500,12 @@ const downloadResults = () => {
     gap: 0.5rem;
     transition: background 0.15s;
 }
-.action-btn:hover { background: var(--isy-pixel-bg, #040647); }
+.action-btn:hover { background: var(--isy-pixel-bg); }
 
 .progress-bar-container {
     width: 100%;
     height: 5px;
-    background: var(--isy-pixel-text-dim, #4a4a4a);
+    background: var(--isy-pixel-text-dim);
     margin-top: 4px;
     border-radius: 3px;
     overflow: hidden;
@@ -514,10 +514,10 @@ const downloadResults = () => {
     height: 100%;
     background: repeating-linear-gradient(
         45deg,
-        var(--isy-pixel-border, #4a4844),
-        var(--isy-pixel-border, #4a4844) 10px,
-        var(--isy-pixel-border-hover, #65625c) 10px,
-        var(--isy-pixel-border-hover, #65625c) 20px
+        var(--isy-pixel-border),
+        var(--isy-pixel-border) 10px,
+        var(--isy-pixel-border-hover) 10px,
+        var(--isy-pixel-border-hover) 20px
     );
     width: 100%;
     animation: progress-slide 1s linear infinite;

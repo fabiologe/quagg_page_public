@@ -16,7 +16,7 @@
  */
 
 .modal-header {
-  border-bottom: 2px solid var(--isy-pixel-border, #4a4844);
+  border-bottom: 2px solid var(--isy-pixel-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -28,17 +28,17 @@
   font-size: 1.5rem;
   line-height: 1;
   cursor: pointer;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
   transition: color 0.2s;
   padding: 0 0.5rem;
 }
 .close-btn:hover {
-  color: var(--isy-pixel-green-bright, #18a34a);
+  color: var(--isy-pixel-green-bright);
 }
 
 .modal-footer {
   padding: 1rem;
-  border-top: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border-top: 1px solid var(--isy-pixel-text-dim);
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
@@ -53,8 +53,8 @@
   background: transparent;
   border-width: 2px;
   border-style: solid;
-  border-color: var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e);
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
+  color: var(--isy-pixel-text-dim);
   border-radius: 5px;
   clip-path: var(--isy-pixel-clip-corner);
   padding: 0.45rem 0.75rem;
@@ -62,9 +62,9 @@
   box-shadow: var(--isy-pixel-btn-shadow);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
-.tab-btn:hover { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); box-shadow: var(--isy-pixel-btn-shadow-hover); transform: translateY(-1px); }
-.tab-btn.active { background: var(--isy-pixel-border, #4a4844); color: var(--isy-pixel-green-bright, #18a34a); border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b); }
-.tab-btn:active { transform: translateY(0); border-color: var(--isy-pixel-bevel-dark, #1e1d1b) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-light, #9d988e) var(--isy-pixel-bevel-dark, #1e1d1b); box-shadow: var(--isy-pixel-btn-shadow-active); }
+.tab-btn:hover { background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright); box-shadow: var(--isy-pixel-btn-shadow-hover); transform: translateY(-1px); }
+.tab-btn.active { background: var(--isy-pixel-border); color: var(--isy-pixel-green-bright); border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark); }
+.tab-btn:active { transform: translateY(0); border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark); box-shadow: var(--isy-pixel-btn-shadow-active); }
 
 /* "Plain"-Formgruppe: natives <select>, Block-Layout (Gegenstück zur
    "Dark"-Variante in modalDark.css, die ein anderes, flex-column-Layout
@@ -74,12 +74,12 @@
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: var(--isy-pixel-border, #4a4844);
+  color: var(--isy-pixel-border);
 }
 .form-group select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid var(--isy-pixel-text-dim, #4a4a4a);
+  border: 1px solid var(--isy-pixel-text-dim);
   border-radius: 4px;
   font-size: 1rem;
 }

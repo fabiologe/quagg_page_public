@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   position: relative;
-  background: var(--isy-viewer-bg, #0d1117);
+  background: var(--isy-viewer-bg);
   overflow: hidden;
 }
 

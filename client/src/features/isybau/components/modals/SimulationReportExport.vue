@@ -738,8 +738,8 @@ async function exportPDF() {
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 0.75rem;
-  background: var(--isy-pixel-bg, #040647);
-  color: var(--isy-pixel-text, #fff);
+  background: var(--isy-pixel-bg);
+  color: var(--isy-pixel-text);
   border: none;
   border-radius: 5px;
   cursor: pointer;
@@ -749,7 +749,7 @@ async function exportPDF() {
   letter-spacing: 0.04em;
   transition: background 0.15s, opacity 0.15s;
 }
-.pdf-export-btn:hover:not(:disabled) { background: var(--isy-pixel-border, #4a4844); }
+.pdf-export-btn:hover:not(:disabled) { background: var(--isy-pixel-border); }
 .pdf-export-btn:disabled { opacity: 0.5; cursor: default; }
 .pdf-icon {
   width: 18px;

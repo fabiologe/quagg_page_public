@@ -463,8 +463,8 @@ onUnmounted(() => {
   top: -25px;
   left: clamp(15px, 2.857vw, 40px);
   max-width: min(240px, 45vw);
-  background: var(--isy-pixel-bg, #040647);
-  border: 1px solid var(--isy-pixel-green-glow, #128040);
+  background: var(--isy-pixel-bg);
+  border: 1px solid var(--isy-pixel-green-glow);
   border-radius: 4px;
   padding: 0.65rem 1.75rem 0.65rem 0.75rem;
   box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
@@ -480,7 +480,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 0.5rem solid transparent;
   border-right: 0.5rem solid transparent;
-  border-top: 0.5rem solid var(--isy-pixel-green-glow, #128040);
+  border-top: 0.5rem solid var(--isy-pixel-green-glow);
 }
 
 .speech-bubble::before {
@@ -492,7 +492,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 0.4rem solid transparent;
   border-right: 0.4rem solid transparent;
-  border-top: 0.4rem solid var(--isy-pixel-bg, #040647);
+  border-top: 0.4rem solid var(--isy-pixel-bg);
   z-index: 1;
 }
 
@@ -500,8 +500,8 @@ onUnmounted(() => {
   font-family: var(--isy-pixel-font);
   font-size: 0.5rem;
   line-height: 1.7;
-  color: var(--isy-pixel-green-glow, #128040);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-green-glow);
+  text-shadow: var(--isy-pixel-text-glow);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -525,12 +525,12 @@ onUnmounted(() => {
   cursor: pointer;
   font-family: var(--isy-pixel-font);
   font-size: 0.42rem;
-  color: var(--isy-pixel-green-active, #00994d);
+  color: var(--isy-pixel-green-active);
   padding: 0;
 }
 
 .bubble-close:hover {
-  color: var(--isy-pixel-green-bright, #18a34a);
+  color: var(--isy-pixel-green-bright);
 }
 
 /* ── Tour buttons ── */
@@ -549,30 +549,30 @@ onUnmounted(() => {
   align-items: baseline;
   margin-top: 0.5rem;
   padding-top: 0.45rem;
-  border-top: 1px solid var(--isy-pixel-border, #4a4844);
+  border-top: 1px solid var(--isy-pixel-border);
   font-family: var(--isy-pixel-font);
   font-size: 0.44rem;
   line-height: 1.6;
 }
-.task-state { color: var(--isy-pixel-green-bright, #18a34a); }
-.task-text { color: var(--isy-pixel-text-dim, #4a4a4a); }
+.task-state { color: var(--isy-pixel-green-bright); }
+.task-text { color: var(--isy-pixel-text-dim); }
 
 .bubble-hint {
   margin-top: 0.4rem;
   font-family: var(--isy-pixel-font);
   font-size: 0.4rem;
   line-height: 1.7;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
 }
 
 .exercise-progress {
   font-family: var(--isy-pixel-font);
   font-size: 0.4rem;
-  color: var(--isy-pixel-border-hover, #65625c);
+  color: var(--isy-pixel-border-hover);
   margin-right: 0.15rem;
 }
 
-.bubble-btn-start { color: var(--isy-pixel-green-text, #0d6b35); }
+.bubble-btn-start { color: var(--isy-pixel-green-text); }
 .bubble-btn:disabled { opacity: 0.5; cursor: default; }
 
 .bubble-btn {
@@ -582,18 +582,18 @@ onUnmounted(() => {
   padding: 0;
   font-family: var(--isy-pixel-font);
   font-size: 0.44rem;
-  color: var(--isy-pixel-green-text, #0d6b35);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-green-text);
+  text-shadow: var(--isy-pixel-text-glow);
 }
 
 .bubble-btn:hover {
-  color: var(--isy-pixel-text, #fff);
+  color: var(--isy-pixel-text);
 }
 
 /* Untergeordnete Aktion ("[Beenden]") — zurueckhaltend, aber lesbar.
    Vorher --isy-pixel-green-active (#00994d): auf Beige nur rund 3:1. */
 .bubble-btn-dim {
-  color: var(--isy-pixel-text-dim, #4a4a4a);
+  color: var(--isy-pixel-text-dim);
   text-shadow: none;
 }
 
@@ -602,12 +602,12 @@ onUnmounted(() => {
    #f9ca24 stand auf beigem Grund bei rund 1,3:1 und war schlicht nicht zu
    lesen (vom Nutzer gemeldet); der Schimmer drumherum verwischte den Rest. */
 .bubble-btn-info {
-  color: var(--isy-pixel-info-accent, #8a5a00);
-  text-shadow: var(--isy-pixel-text-glow, none);
+  color: var(--isy-pixel-info-accent);
+  text-shadow: var(--isy-pixel-text-glow);
 }
 
 .bubble-btn-info:hover {
-  color: var(--isy-pixel-text, #fff);
+  color: var(--isy-pixel-text);
 }
 
 /* Lernkarte schwebt über Bubble + Ratte, rechtsbündig am Container.

@@ -371,14 +371,14 @@ const save = () => {
   padding: 0.65rem 1rem;
   cursor: move;
   flex-shrink: 0;
-  background: var(--isy-pixel-bg, #040647);
+  background: var(--isy-pixel-bg);
 }
 
 .modal-header h3 {
   margin: 0;
   font-family: var(--isy-pixel-font);
   font-size: 0.58rem;
-  color: var(--isy-pixel-green, #219653);
+  color: var(--isy-pixel-green);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -386,20 +386,20 @@ const save = () => {
   padding: 1rem;
   overflow-y: auto;
   max-height: calc(90vh - 56px);
-  background: var(--isy-pixel-bg-deep, #06093a);
+  background: var(--isy-pixel-bg-deep);
   /* Scrollbar: keine eigene Regel — die globale in theme-saintv.css liest
      --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Hier stand
      vorher die graue Rand-Familie, die nicht zur Textfarbe passte. */
 }
 .outlet-radio-group { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
-.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; color: var(--isy-pixel-text-dim, #4a4a4a); }
-.hint { font-size: 0.78rem; color: var(--isy-pixel-border-hover, #65625c); margin-top: 0.2rem; }
-.checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim, #4a4a4a); font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
-.value-display { color: var(--isy-pixel-green, #219653); font-weight: 600; padding: 0.35rem 0; }
+.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; cursor: pointer; color: var(--isy-pixel-text-dim); }
+.hint { font-size: 0.78rem; color: var(--isy-pixel-border-hover); margin-top: 0.2rem; }
+.checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim); font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
+.value-display { color: var(--isy-pixel-green); font-weight: 600; padding: 0.35rem 0; }
 
 /* Häkchen/Radios im SaintV-Grün statt Browser-Blau */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--isy-pixel-green, #219653);
+  accent-color: var(--isy-pixel-green);
 }
 </style>
