@@ -98,10 +98,13 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { useIsybauStore } from '../../store/index.js';
 import { vFokus } from '../../composables/vFokus.js';
 import axios from 'axios';
 import proj4 from 'proj4';
 import { CRS_OPTIONS } from '../../utils/KostraService.js';
+
+const store = useIsybauStore();
 
 const props = defineProps({
   isOpen: Boolean
@@ -137,11 +140,11 @@ async function searchAddress() {
       foundPlace.value = { label: result.display_name, lat, lon };
       selectedCRS.value = defaultCrsForLon(lon);
     } else {
-      alert('Adresse nicht gefunden');
+      store.melde('Adresse nicht gefunden', 'hinweis');
     }
   } catch (e) {
     console.error('Search failed:', e);
-    alert('Fehler bei der Suche');
+    store.melde('Fehler bei der Suche', 'fehler');
   } finally {
     isSearching.value = false;
   }

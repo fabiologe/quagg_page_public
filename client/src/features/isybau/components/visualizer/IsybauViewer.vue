@@ -580,10 +580,8 @@ const handleMapClick = (e) => {
     // Only trigger if not panning/dragging
     if (isDragging.value) return;
     
-    console.log("IsybauViewer: Click Detected");
     const coords = getEventCoords(e.clientX, e.clientY);
     if(coords) {
-         console.log("IsybauViewer: Emitting map-click", coords);
          emit('map-click', coords);
     }
 };

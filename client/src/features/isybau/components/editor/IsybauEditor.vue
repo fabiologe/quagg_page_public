@@ -91,7 +91,6 @@ const handleNodeSelect = (element) => {
         } else {
             if (store.editor.edgeStartNode !== element.id) {
                 // Emit Request to Parent (IsybauMain)
-                console.log("IsybauEditor: Finishing Edge, emitting create-edge");
                 emit('create-edge', {
                     from: store.editor.edgeStartNode,
                     to: element.id
@@ -106,7 +105,6 @@ const handleNodeSelect = (element) => {
 
     store.editor.selectedId = element.id;
     store.editor.selectedType = 'node';
-    console.log("Selected Node", element.id);
 };
 
 const handleEdgeSelect = (payload) => {
@@ -125,7 +123,6 @@ const handleEdgeSelect = (payload) => {
     }
     
     if (store.editor.mode === 'splitEdge') {
-        console.log("IsybauEditor: Splitting Edge", element.id, "at", mapCoords);
         emit('split-edge', { edgeId: element.id, coords: mapCoords });
         return;
     }
@@ -183,7 +180,6 @@ const handleElementUpdate = ({ element, key, value }) => {
 };
 
 const handleElementSave = ({ id, type, data }) => {
-    console.log("IsybauEditor: Save Element", id, type, data);
     if (type === 'node') {
         store.updateNode(id, data);
     } else if (type === 'edge') {
@@ -207,7 +203,6 @@ const calculatePolygonArea = (points) => {
 };
 
 const handleMapClick = ({ x, y }) => {
-    console.log("IsybauEditor: Map Click Received", x, y, "Mode:", store.editor.mode);
     if (store.editor.mode === 'addNode') {
         emit('create-node', { x, y });
     } else if (store.editor.mode === 'addArea') {

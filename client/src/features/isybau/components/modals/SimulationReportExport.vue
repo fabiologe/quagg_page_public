@@ -12,10 +12,13 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import { useIsybauStore } from '../../store/index.js';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { resolveSubcatchmentSize } from '../../utils/subcatchmentSize.js';
 import { summarizeOutfallCatchments } from '../../utils/outfallCatchments.js';
+
+const store = useIsybauStore();
 
 const props = defineProps({
   nodes:               { type: Map,    default: () => new Map() },
@@ -725,7 +728,7 @@ async function exportPDF() {
 
   } catch (err) {
     console.error('[PDF Export]', err);
-    alert('Fehler beim PDF-Export:\n' + err.message);
+    store.melde('Fehler beim PDF-Export:\n' + err.message, 'fehler');
   } finally {
     exporting.value = false;
   }

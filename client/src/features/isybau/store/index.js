@@ -52,6 +52,7 @@ export const useIsybauStore = defineStore('isybau-module', {
         // UI State for Modals
         // Sichtbarkeit ALLER Modals lebt hier — Komponenten togglen nur Flags,
         // die Verdrahtung übernimmt components/modals/IsybauModals.vue.
+        _meldungsZaehler: 0,
         ui: {
             showKostraModal: false,
             showRainModal: false,
@@ -68,6 +69,13 @@ export const useIsybauStore = defineStore('isybau-module', {
             // (aktuell: das Tutorial, siehe tutorial/loadTutorialDgm.js).
             // Sidebar.vue konsumiert und leert ihn wieder — der Terrain-Worker
             // lebt dort, damit es nur EINEN DGM-Importweg gibt.
+            /* Meldungen an den Nutzer. Ersetzt neun alert()-Aufrufe: ein
+               Browser-Alert blockiert den Vorgang, ignoriert das Theme und
+               sieht nach Fehlfunktion aus - ausgerechnet beim XML-Import, dem
+               Haupteingang der Anwendung.
+               Drei Stufen, weil die neun genau drei Sorten waren: sieben
+               Fehler, ein Hinweis mit Liste, eine Erfolgsmeldung. */
+            meldungen: [],
             pendingDemImportText: null,
             // Steht die Auflösungs-Rückfrage des DGM-Imports gerade offen?
             // Besitzer ist Sidebar.vue; hier, weil auch das Tutorial darauf
@@ -135,6 +143,27 @@ export const useIsybauStore = defineStore('isybau-module', {
     },
 
     actions: {
+        /**
+         * Meldung anzeigen. art: 'fehler' | 'hinweis' | 'erfolg'.
+         *
+         * Erfolgsmeldungen verschwinden von selbst - sie bestaetigen nur, was
+         * ohnehin passiert ist. Fehler und Hinweise BLEIBEN stehen, bis der
+         * Nutzer sie schliesst: wer gerade woanders hinsieht, soll einen
+         * fehlgeschlagenen Import nicht verpassen.
+         */
+        melde(text, art = 'fehler', dauerMs = null) {
+            const id = ++this._meldungsZaehler;
+            this.ui.meldungen.push({ id, art, text: String(text) });
+            const zeit = dauerMs ?? (art === 'erfolg' ? 4000 : null);
+            if (zeit) setTimeout(() => this.meldungSchliessen(id), zeit);
+            return id;
+        },
+
+        meldungSchliessen(id) {
+            const i = this.ui.meldungen.findIndex((m) => m.id === id);
+            if (i >= 0) this.ui.meldungen.splice(i, 1);
+        },
+
         setRainModel(model) {
             this.rain.method = 'model';
             this.rain.modelRainId = model.id;
@@ -652,7 +681,6 @@ export const useIsybauStore = defineStore('isybau-module', {
             // Payload: { fromId, toId, properties }
             const { fromId, toId, properties = {} } = payload;
 
-            console.log("Store: addEdge called", fromId, toId, properties);
 
             const id = properties.id || `E_${Date.now()}`;
 
@@ -680,7 +708,6 @@ export const useIsybauStore = defineStore('isybau-module', {
             // Force Reactivity for Maps (Pinia/Vue 3 sometimes needs this for getters to trigger)
             this.edges = new Map(this.edges);
 
-            console.log("Store: Edge created", edge);
             return edge;
         },
 

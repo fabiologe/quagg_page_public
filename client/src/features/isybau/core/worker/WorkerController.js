@@ -43,7 +43,6 @@ export class WorkerController {
             console.error("Worker Error:", message);
             this.failCurrentTask(new Error(message));
         } else if (command === 'INIT_SUCCESS') {
-            console.log("Worker initialized successfully");
         }
     }
 

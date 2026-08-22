@@ -171,7 +171,7 @@ const handleFileUpload = async (event) => {
     store.loadParsedData(parsed);
   } catch (e) {
     console.error('Parse Error', e);
-    alert('Fehler beim Lesen der XML: ' + e.message);
+    store.melde('Fehler beim Lesen der XML: ' + e.message, 'fehler');
   } finally {
     // Gleiche Datei erneut wählbar machen
     event.target.value = '';
@@ -187,7 +187,7 @@ const handleXmlExport = () => {
   });
 
   if (warnings.length) {
-    alert('Export mit Hinweisen:\n\n' + warnings.join('\n'));
+    store.melde('Export mit Hinweisen:\n\n' + warnings.join('\n'), 'hinweis');
   }
 
   const base = (store.metadata.fileName || 'kanalnetz').replace(/\.xml$/i, '');
@@ -242,14 +242,14 @@ function ensureDemWorker() {
       demImporting.value = false;
       store.ui.demImportPanelOpen = false;
       teardownDemWorker();
-      alert('DGM-Import fehlgeschlagen: ' + data.message);
+      store.melde('DGM-Import fehlgeschlagen: ' + data.message, 'fehler');
     }
   };
   demWorker.onerror = (e) => {
     demImporting.value = false;
     store.ui.demImportPanelOpen = false;
     teardownDemWorker();
-    alert('DGM-Import-Worker-Fehler: ' + (e.message || e));
+    store.melde('DGM-Import-Worker-Fehler: ' + (e.message || e), 'fehler');
   };
   return demWorker;
 }
@@ -304,7 +304,7 @@ const handleDemUpload = async (event) => {
   reader.onload = (e) => startDemAnalysis(e.target.result);
   reader.onerror = () => {
     demImporting.value = false;
-    alert('DGM-Datei konnte nicht gelesen werden.');
+    store.melde('DGM-Datei konnte nicht gelesen werden.', 'fehler');
   };
   reader.readAsText(file);
   event.target.value = '';

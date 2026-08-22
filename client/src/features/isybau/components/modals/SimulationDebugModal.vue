@@ -44,6 +44,9 @@
 
 <script setup>
 import { ref } from 'vue';
+import { useIsybauStore } from '../../store/index.js';
+
+const store = useIsybauStore();
 
 const props = defineProps({
   isOpen: Boolean,
@@ -68,7 +71,7 @@ const close = () => {
 const copyToClipboard = async (text) => {
     try {
         await navigator.clipboard.writeText(text);
-        alert("In die Zwischenablage kopiert!");
+        store.melde('In die Zwischenablage kopiert.', 'erfolg');
     } catch (err) {
         console.error("Copy failed", err);
     }
