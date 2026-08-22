@@ -114,7 +114,7 @@ const sortedData = computed(() => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--isy-pixel-content-bg);
   border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 1000px;
@@ -205,7 +205,7 @@ th:hover {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background-color: white;
+  background-color: var(--isy-pixel-content-bg);
   top: 2px;
   left: 2px;
   transition: 0.3s;

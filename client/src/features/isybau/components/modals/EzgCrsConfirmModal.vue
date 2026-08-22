@@ -84,7 +84,7 @@ const confirm = () => emit('confirm', selectedCRS.value);
 }
 
 .modal-content {
-  background: white;
+  background: var(--isy-pixel-content-bg);
   border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 460px;

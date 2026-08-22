@@ -398,7 +398,7 @@ const activeTab = ref('general');
 
 .help-sidebar {
   width: 240px;
-  background: #f8fafc;
+  background: var(--isy-pixel-content-raised);
   padding: var(--isy-space-4);
   display: flex;
   flex-direction: column;
@@ -469,7 +469,7 @@ const activeTab = ref('general');
   flex: 1;
   padding: var(--isy-space-7);
   overflow-y: auto;
-  background: white;
+  background: var(--isy-pixel-content-bg);
 }
 
 /* Typography & Content Styling */
@@ -499,7 +499,7 @@ const activeTab = ref('general');
 }
 
 .audit-block {
-    background: #f8fafc;
+    background: var(--isy-pixel-content-raised);
     padding: var(--isy-space-6);
     border-radius: var(--isy-radius-lg);
     border: 1px solid var(--isy-pixel-divider);
@@ -520,7 +520,7 @@ const activeTab = ref('general');
     width: 100%;
     border-collapse: collapse;
     margin-top: var(--isy-space-4);
-    background: white;
+    background: var(--isy-pixel-content-bg);
     font-size: var(--isy-fs-lg);
 }
 
@@ -571,7 +571,7 @@ const activeTab = ref('general');
 }
 
 .info-card {
-  background: #f8fafc;
+  background: var(--isy-pixel-content-raised);
   border: 1px solid var(--isy-pixel-divider);
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-4);

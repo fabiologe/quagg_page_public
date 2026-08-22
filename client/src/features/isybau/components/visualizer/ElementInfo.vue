@@ -853,9 +853,9 @@ watch(() => props.selectedElement, (val) => {
 }
 
 .flood-badge {
-    background: #ffebee;
+    background: var(--isy-pixel-danger-soft);
     border: 1px solid #ef5350;
-    color: #c62828;
+    color: var(--isy-pixel-danger-soft-text);
     padding: var(--isy-space-1);
     border-radius: var(--isy-radius-sm);
     font-weight: bold;

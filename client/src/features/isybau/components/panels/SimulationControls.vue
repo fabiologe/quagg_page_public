@@ -252,7 +252,7 @@ const downloadResults = () => {
     gap: 1rem;
 }
 .control-box {
-  background: white;
+  background: var(--isy-pixel-content-bg);
   padding: var(--isy-space-4);
   border-radius: var(--isy-radius-lg);
   border: 1px solid var(--isy-pixel-text-dim);
@@ -367,7 +367,7 @@ const downloadResults = () => {
 .warning-list { margin-top: var(--isy-space-2); display: flex; flex-direction: column; gap: 0.3rem; }
 .warning-msg {
     color: var(--isy-pixel-warning-soft-text);
-    background: #fef6e7;
+    background: var(--isy-pixel-warning-soft);
     border-left: 3px solid #e0a020;
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-1) var(--isy-space-2);
@@ -408,7 +408,7 @@ const downloadResults = () => {
     height: 80px;
     margin: var(--isy-space-2) 0;
     border: 1px solid var(--isy-pixel-divider);
-    background: #fcfcfc;
+    background: var(--isy-pixel-content-bg);
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-1);
 }

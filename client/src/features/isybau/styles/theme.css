@@ -150,15 +150,21 @@
        (L* 99,2), Tabellenkopf #f9fafb (L* 98,2), Hover #f8fafc (L* 98,2).
        Das ist keine Ordnung, das ist Zufall mit vier Namen. Wer die Stufen
        hier enger zieht, stellt genau das wieder her.
-         Blatt      L* 99   (weiß, kommt aus der Datei)
-         raised     L* 95
-         hover      L* 92
-         selected   L* 88
-         sunken     L* 85                                                  */
-    --isy-pixel-content-raised:   #f3efe6;  /* Tabellenkopf, Kartenkopf */
-    --isy-pixel-content-hover:    #ece7da;  /* Zeile unter dem Zeiger   */
-    --isy-pixel-content-selected: #e2dbc9;  /* gewählte Zeile           */
-    --isy-pixel-content-sunken:   #d8d1bf;  /* Rinne, Vertiefung        */
+         Blatt      L* 95,5  (--isy-pixel-content-bg)
+         raised     L* 91,4
+         hover      L* 88,2
+         selected   L* 84,3
+         sunken     L* 79,3
+       Kontrast darauf: --isy-pixel-content-text 17,6:1 bis 11,4:1,
+       --isy-pixel-content-text-dim 7,9:1 bis 5,1:1 - beide auf jeder Sprosse
+       über WCAG AA.
+
+       Die Werte liegen nah an --isy-pixel-bg-alt und -bg-deep, sind aber NICHT
+       dasselbe: jene wechseln im Dunkelmodus auf Navy, diese bleiben Papier. */
+    --isy-pixel-content-raised:   #ebe6da;  /* Tabellenkopf, Kartenkopf */
+    --isy-pixel-content-hover:    #e3ddcd;  /* Zeile unter dem Zeiger   */
+    --isy-pixel-content-selected: #d9d2c0;  /* gewählte Zeile           */
+    --isy-pixel-content-sunken:   #cdc4ae;  /* Rinne, Vertiefung        */
 
     --isy-pixel-font: 'Press Start 2P', monospace;
     /* Aufmerksamkeitsfarbe des Tutorials (Highlight-Ring, Fokus-Ring im
@@ -259,7 +265,10 @@
     --isy-pixel-bg:            #040647;
     --isy-pixel-bg-alt:        #0a0d5c;
     --isy-pixel-bg-deep:       #06093a;
-    --isy-pixel-content-bg:    #f3f2fb;
+    /* Dasselbe Papier wie im Hellmodus. Vorher #f3f2fb - ein kühles Weiß,
+       das gegen die warme Inhalts-Leiter darüber stand. Beide Werte liegen bei
+       L* 95,5; der Unterschied ist der Farbstich, nicht die Helligkeit. */
+    --isy-pixel-content-bg:    #f5f2ea;
     --isy-pixel-accent-soft:   #65625c;
     --isy-pixel-text-dim:      #b0b0ac;
     --isy-pixel-text:          #fff;

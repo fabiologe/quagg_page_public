@@ -261,7 +261,7 @@ const applyResult = () => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--isy-pixel-content-bg);
   border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 500px;
@@ -328,8 +328,8 @@ const applyResult = () => {
 }
 
 .error-box {
-  background: #fde8e8;
-  color: var(--isy-pixel-danger-hover);
+  background: var(--isy-pixel-danger-soft);
+  color: var(--isy-pixel-danger-soft-text);
   padding: var(--isy-space-4);
   border-radius: var(--isy-radius-sm);
   margin-top: var(--isy-space-4);
@@ -376,7 +376,7 @@ const applyResult = () => {
   margin: var(--isy-space-4) 0;
   border: 1px solid var(--isy-pixel-text-dim);
   border-radius: var(--isy-radius-sm);
-  background: white;
+  background: var(--isy-pixel-content-bg);
 }
 
 .data-details summary {
@@ -464,7 +464,7 @@ const applyResult = () => {
 }
 
 .devil-btn {
-    background: white;
+    background: var(--isy-pixel-content-bg);
     color: #E30613;
     border: 2px solid #E30613; /* FCK Red Border */
     border-radius: var(--isy-radius-sm);

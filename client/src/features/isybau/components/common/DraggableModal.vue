@@ -217,7 +217,7 @@ onUnmounted(() => {
     position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: var(--isy-z-modal);
 }
 .draggable-modal {
-    background: white;
+    background: var(--isy-pixel-content-bg);
     border-radius: var(--isy-radius-lg);
     box-shadow: var(--isy-elev-3);
     border: 1px solid rgba(0,0,0,0.1);
