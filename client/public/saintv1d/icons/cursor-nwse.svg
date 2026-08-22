@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" id="cursor-nwse" height="45" width="45">
+  <desc>
+    Pixel-Cursor "nwse" (diagonaler Doppelpfeil, oben-links nach unten-rechts), 21x21-Raster wie cursor-pan.svg.
+    Schwarze Fuellung mit heller Kontur, damit er auf hellem UND dunklem
+    Untergrund sichtbar bleibt - reines Schwarz hat auf dem Dunkelmodus-Viewer
+    (#0d1117) nur 1,1:1 Kontrast.
+    Hotspot: Zelle 10,10 = 21 21 in CSS.
+  </desc>
+  <title>cursor-nwse</title>
+  <g>
+    <path d="M3.05 3.05h12.19v1.52h-12.19Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 4.57h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M13.71 4.57h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 6.10h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M12.19 6.10h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 7.62h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 7.62h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 9.14h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 9.14h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 10.67h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M7.62 10.67h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M12.19 10.67h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 12.19h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M6.10 12.19h6.10v1.52h-6.10Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M13.71 12.19h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M3.05 13.71h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M10.67 13.71h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M15.24 13.71h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M12.19 15.24h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 15.24h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M13.71 16.76h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M18.29 16.76h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M24.38 16.76h4.57v1.52h-4.57Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M15.24 18.29h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M19.81 18.29h6.10v1.52h-6.10Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M27.43 18.29h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 19.81h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M21.33 19.81h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M27.43 19.81h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M18.29 21.33h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M27.43 21.33h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M18.29 22.86h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M27.43 22.86h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 24.38h3.05v1.52h-3.05Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M27.43 24.38h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 25.90h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M27.43 25.90h1.52v1.52h-1.52Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M16.76 27.43h12.19v1.52h-12.19Z" fill="#ffffff" stroke-width="1"></path>
+    <path d="M4.57 4.57h9.14v1.52h-9.14Z" fill="#000000" stroke-width="1"></path>
+    <path d="M4.57 6.10h7.62v1.52h-7.62Z" fill="#000000" stroke-width="1"></path>
+    <path d="M4.57 7.62h6.10v1.52h-6.10Z" fill="#000000" stroke-width="1"></path>
+    <path d="M4.57 9.14h6.10v1.52h-6.10Z" fill="#000000" stroke-width="1"></path>
+    <path d="M4.57 10.67h3.05v1.52h-3.05Z" fill="#000000" stroke-width="1"></path>
+    <path d="M10.67 10.67h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M4.57 12.19h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M12.19 12.19h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M13.71 13.71h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M15.24 15.24h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M16.76 16.76h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M18.29 18.29h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M25.90 18.29h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M19.81 19.81h1.52v1.52h-1.52Z" fill="#000000" stroke-width="1"></path>
+    <path d="M24.38 19.81h3.05v1.52h-3.05Z" fill="#000000" stroke-width="1"></path>
+    <path d="M21.33 21.33h6.10v1.52h-6.10Z" fill="#000000" stroke-width="1"></path>
+    <path d="M21.33 22.86h6.10v1.52h-6.10Z" fill="#000000" stroke-width="1"></path>
+    <path d="M19.81 24.38h7.62v1.52h-7.62Z" fill="#000000" stroke-width="1"></path>
+    <path d="M18.29 25.90h9.14v1.52h-9.14Z" fill="#000000" stroke-width="1"></path>
+  </g>
+</svg>

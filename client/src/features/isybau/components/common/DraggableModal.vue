@@ -236,13 +236,13 @@ onUnmounted(() => {
 
 /* Resizers */
 .resizer { position: absolute; z-index: var(--isy-z-panel); }
-.resizer.right { top: 0; right: 0; width: 5px; height: 100%; cursor: ew-resize; }
-.resizer.bottom { bottom: 0; left: 0; width: 100%; height: 5px; cursor: ns-resize; }
-.resizer.bottom-right { bottom: 0; right: 0; width: 15px; height: 15px; cursor: se-resize; }
+.resizer.right { top: 0; right: 0; width: 5px; height: 100%; cursor: var(--isy-cursor-ew); }
+.resizer.bottom { bottom: 0; left: 0; width: 100%; height: 5px; cursor: var(--isy-cursor-ns); }
+.resizer.bottom-right { bottom: 0; right: 0; width: 15px; height: 15px; cursor: var(--isy-cursor-nwse); }
 /* Adding others for completeness */
-.resizer.top-left { top: 0; left: 0; width: 10px; height: 10px; cursor: nw-resize; }
-.resizer.top-right { top: 0; right: 0; width: 10px; height: 10px; cursor: ne-resize; }
-.resizer.bottom-left { bottom: 0; left: 0; width: 10px; height: 10px; cursor: sw-resize; }
+.resizer.top-left { top: 0; left: 0; width: 10px; height: 10px; cursor: var(--isy-cursor-nwse); }
+.resizer.top-right { top: 0; right: 0; width: 10px; height: 10px; cursor: var(--isy-cursor-nesw); }
+.resizer.bottom-left { bottom: 0; left: 0; width: 10px; height: 10px; cursor: var(--isy-cursor-nesw); }
 
 
 .modal-content-wrapper {

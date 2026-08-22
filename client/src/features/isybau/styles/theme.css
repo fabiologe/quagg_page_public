@@ -190,6 +190,15 @@
     --isy-cursor-text:     url('/saintv1d/icons/cursor-text.svg')     13 21, text;
     --isy-cursor-pan:      url('/saintv1d/icons/cursor-pan.svg')      21 21, move;
 
+    /* Groessenaenderung. Vier Formen decken sechs Richtungen ab - die beiden
+       Diagonalen sind je fuer zwei Ecken zustaendig, weil ein Doppelpfeil in
+       beide Richtungen zeigt. Senkrecht und waagerecht sind die Arme des
+       4-Wege-Pfeils, damit der Stil derselbe ist statt nur aehnlich. */
+    --isy-cursor-ns:   url('/saintv1d/icons/cursor-ns.svg')   21 21, ns-resize;
+    --isy-cursor-ew:   url('/saintv1d/icons/cursor-ew.svg')   21 21, ew-resize;
+    --isy-cursor-nwse: url('/saintv1d/icons/cursor-nwse.svg') 21 21, nwse-resize;
+    --isy-cursor-nesw: url('/saintv1d/icons/cursor-nesw.svg') 21 21, nesw-resize;
+
     --isy-pixel-font: 'Press Start 2P', monospace;
     /* Aufmerksamkeitsfarbe des Tutorials (Highlight-Ring, Fokus-Ring im
        Viewer). BEWUSST eigener Token und heller als die Grün-Familie oben:
@@ -648,3 +657,21 @@ html[data-theme] select {
     background-position: right var(--isy-space-2) center !important;
     padding-right: var(--isy-space-6) !important;
 }
+
+/* Formularelemente erben den Zeiger NICHT. Browser setzen ihnen im eigenen
+ * Standard-Stylesheet einen Cursor, und der schlaegt die Vererbung von :root -
+ * deshalb sprang der Zeiger ueber einem Auswahlfeld oder Knopf zurueck auf die
+ * Systemform, obwohl ringsum der eigene stand. Sie brauchen die Regel
+ * ausdruecklich.
+ *
+ * Zwei Selektorpfade wie bei der Button-Form weiter oben: .isybau-main deckt
+ * den Regelfall, html[data-theme] die Teleport-Modals. */
+.isybau-main button, .isybau-main select, .isybau-main summary, .isybau-main [role="button"],
+html[data-theme] button, html[data-theme] select, html[data-theme] summary, html[data-theme] [role="button"] {
+    cursor: var(--isy-cursor-hand);
+}
+.isybau-main button:disabled, .isybau-main select:disabled,
+html[data-theme] button:disabled, html[data-theme] select:disabled {
+    cursor: var(--isy-cursor-gesperrt);
+}
+
