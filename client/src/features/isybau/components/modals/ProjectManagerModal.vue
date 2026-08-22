@@ -239,7 +239,7 @@ function formatDate(iso) {
   border-radius: var(--isy-radius-md);
   font-size: var(--isy-fs-lg);
 }
-.pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border); box-shadow: 0 0 0 2px rgba(89,68,145,0.15); }
+.pm-name-input:focus { outline: none; border-color: var(--isy-pixel-border); }
 
 /* List */
 .pm-list-header {

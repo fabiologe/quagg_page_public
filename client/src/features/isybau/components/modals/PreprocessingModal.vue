@@ -1505,9 +1505,10 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .sf-btn:hover { border-color: var(--isy-pixel-green); box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2); }
 .small-input:focus, .medium-input:focus, .filter-input:focus,
 .small-select:focus, .medium-select:focus, .weir-preset-select:focus {
+  /* Fokusring liegt zentral in theme.css und INNEN - ein aeusserer
+     wuerde von clip-path weggeschnitten. */
   outline: none;
   border-color: var(--isy-pixel-green);
-  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
 }
 .small-input:disabled, .medium-input:disabled, .filter-input:disabled,
 .small-select:disabled, .medium-select:disabled, .weir-preset-select:disabled {
@@ -1570,7 +1571,9 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .bulk-select:focus, .bulk-input:focus {
-  outline: none; border-color: var(--isy-pixel-green); box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
+  /* Fokusring liegt zentral in theme.css und INNEN - ein aeusserer
+     wuerde von clip-path weggeschnitten. */
+  outline: none; border-color: var(--isy-pixel-green);
 }
 .bulk-buttons { display: flex; gap: var(--isy-space-4); justify-content: flex-end; padding: 0 var(--isy-space-6) var(--isy-space-6); }
 .bulk-divider { border: none; border-top: 1px solid var(--isy-pixel-text-dim); margin: var(--isy-space-1) 0; }

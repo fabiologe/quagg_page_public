@@ -282,6 +282,14 @@
        gleichermassen sitzt. */
     --isy-pixel-divider: rgba(0,0,0,0.12);
 
+
+    /* Gestufter Pixel-Pfeil fuer Auswahlfelder. Als Daten-URI, weil ein
+       <select> keinen Platz fuer ein Pseudo-Element hat und der native Pfeil
+       sich nicht gestalten laesst - er wird per appearance:none abgeschaltet
+       und hierdurch ersetzt. Je Modus eine Fassung, damit er dieselbe Farbe
+       traegt wie der Text daneben. */
+    --isy-pixel-select-pfeil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='%23030430'%3E%3Crect x='0' y='0' width='10' height='2'/%3E%3Crect x='1' y='2' width='8' height='2'/%3E%3Crect x='2' y='4' width='6' height='2'/%3E%3Crect x='3' y='6' width='4' height='2'/%3E%3Crect x='4' y='8' width='2' height='2'/%3E%3C/svg%3E");
+
 }
 
 /* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
@@ -342,6 +350,10 @@
 
     /* ── Feine Trennlinie — Dunkel (siehe Hell-Block) ── */
     --isy-pixel-divider: rgba(255,255,255,0.14);
+
+
+    /* Pixel-Pfeil - Dunkel (siehe Hell-Block). */
+    --isy-pixel-select-pfeil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='%23ffffff'%3E%3Crect x='0' y='0' width='10' height='2'/%3E%3Crect x='1' y='2' width='8' height='2'/%3E%3Crect x='2' y='4' width='6' height='2'/%3E%3Crect x='3' y='6' width='4' height='2'/%3E%3Crect x='4' y='8' width='2' height='2'/%3E%3C/svg%3E");
 
 }
 
@@ -548,4 +560,91 @@ html[data-theme] button:not(.close-btn):not(.icon-btn):not(.theme-toggle):not(.c
 .isybau-main input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
 .isybau-main textarea {
     cursor: var(--isy-cursor-text);
+}
+
+/**
+ * Universelles Pixel-Aussehen fuer Eingabe- und Auswahlfelder.
+ *
+ * Dieselbe Lage wie bei den Knoepfen vor ihrer globalen Regel: 180 Felder,
+ * gestylt von rund 15 verstreuten Klassen (.small-input, .filter-input,
+ * .form-input, .bulk-input, .medium-select, .weir-preset-select ...), und
+ * keine gemeinsame Quelle. Wer das Aussehen aendern wollte, musste alle
+ * finden. Deshalb hier EINE Regel statt fuenfzehn Einzeledits - genau die
+ * Begruendung, die schon fuer die Buttons galt.
+ *
+ * EINGEDRUECKT statt erhaben. Die Knoepfe tragen die helle Kante oben/links
+ * ("steht hervor"). Ein Eingabefeld ist das Gegenteil - eine Vertiefung, in
+ * die man hineinschreibt. Dieselbe Bevel-Logik, Seiten vertauscht. Genau so
+ * unterscheidet Windows 95 Knopf und Textfeld, und daher kommt die Optik.
+ *
+ * Die Flaeche ist --isy-pixel-content-bg (Papier) mit
+ * --isy-pixel-content-text: beide sind in HELL wie DUNKEL gleich. Das ist
+ * Absicht - ein Feld liegt auch auf dunklen Modal-Flaechen und dunklen
+ * Tabellenkoepfen, und ein helles Feld auf dunklem Grund ist genau das
+ * Signal "hier kann getippt werden". Kontrast 17,6:1 in beiden Modi.
+ *
+ * Der Fokusring liegt INNEN. clip-path schneidet alles weg, was ausserhalb
+ * der Pixelform gezeichnet wird - ein aeusserer box-shadow waere unsichtbar.
+ * Dieselbe Falle hat schon einmal die Tutorial-Hervorhebung an Buttons
+ * verschluckt (siehe .sv-tutorial-highlight oben).
+ *
+ * Ausgenommen bleiben Kontrollkaestchen, Auswahlknoepfe, Schieberegler,
+ * Farbwaehler und Dateiwaehler: das sind eigene Bedienelemente mit eigener
+ * Form, keine Textfelder.
+ */
+.isybau-main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight),
+.isybau-main select,
+.isybau-main textarea,
+html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight),
+html[data-theme] select,
+html[data-theme] textarea {
+    clip-path: var(--isy-pixel-clip-corner) !important;
+    border-width: 2px !important;
+    border-style: solid !important;
+    border-color: var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light)
+                  var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark) !important;
+    border-radius: 0 !important;
+    /* Flaeche und Textfarbe OHNE !important - nur als Vorgabe fuer Felder, die
+       keine eigene Klasse haben. Genau wie bei den Buttons wird nur die FORM
+       erzwungen: wer einem Feld bewusst eine andere Farbe gibt, behaelt sie.
+       Die Werte sind dieselben, die die 15 vorhandenen Feldklassen ohnehin
+       setzen - dadurch sehen Felder MIT und OHNE Klasse gleich aus, und dieser
+       Block aendert keine einzige Farbe im Modul, nur die Form. */
+    background-color: var(--isy-pixel-bg-alt);
+    color: var(--isy-pixel-text);
+    font-family: inherit;
+    transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.isybau-main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight):focus,
+.isybau-main select:focus,
+.isybau-main textarea:focus,
+html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight):focus,
+html[data-theme] select:focus,
+html[data-theme] textarea:focus {
+    outline: none !important;
+    box-shadow: inset 0 0 0 2px var(--isy-pixel-green) !important;
+}
+
+.isybau-main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight):disabled,
+.isybau-main select:disabled,
+.isybau-main textarea:disabled,
+html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight):disabled,
+html[data-theme] select:disabled,
+html[data-theme] textarea:disabled {
+    background-color: var(--isy-pixel-content-sunken);
+    color: var(--isy-pixel-content-text-dim);
+    cursor: var(--isy-cursor-gesperrt) !important;
+}
+
+/* Auswahlfelder: nativen Pfeil abschalten, Pixel-Pfeil setzen. Der Platz
+   rechts muss reichen, sonst laeuft der Text unter den Pfeil. */
+.isybau-main select,
+html[data-theme] select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background-image: var(--isy-pixel-select-pfeil) !important;
+    background-repeat: no-repeat !important;
+    background-position: right var(--isy-space-2) center !important;
+    padding-right: var(--isy-space-6) !important;
 }

@@ -99,9 +99,10 @@ const removeRow = (i) => {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .curve-table .small-input:focus {
+  /* Fokusring liegt zentral in theme.css und INNEN - ein aeusserer
+     wuerde von clip-path weggeschnitten. */
   outline: none;
   border-color: var(--isy-pixel-green);
-  box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
 }
 .row-remove-btn {
   background: none; border: none; color: var(--isy-pixel-danger); cursor: var(--isy-cursor-hand);
