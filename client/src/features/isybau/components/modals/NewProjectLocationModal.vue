@@ -29,14 +29,15 @@
           <!-- Modus 1: Adresssuche (Nominatim, wie BaseMap.vue) -->
           <div v-if="mode === 'search'">
             <div class="search-row">
-              <input
+              <input v-fokus
                 v-model="searchQuery"
                 type="text"
                 placeholder="Adresse oder Ort suchen…"
                 :disabled="isSearching"
                 @keyup.enter="searchAddress"
               />
-              <button class="secondary-btn" @click="searchAddress" :disabled="isSearching || !searchQuery">
+              <button class="secondary-btn" @click="searchAddress" :disabled="isSearching || !searchQuery"
+          :title="!searchQuery ? 'Zuerst einen Ort oder eine Adresse eingeben' : ''">
                 {{ isSearching ? '…' : 'Suchen' }}
               </button>
             </div>
@@ -85,7 +86,10 @@
 
         <div class="modal-footer">
           <button class="secondary-btn" @click="close">Abbrechen</button>
-          <button class="primary-btn" @click="confirm" :disabled="!canConfirm">Bestätigen &amp; Loslegen</button>
+          <button class="primary-btn" @click="confirm" :disabled="!canConfirm"
+            :title="canConfirm ? '' : (mode === 'search'
+              ? 'Zuerst einen Ort suchen und aus der Trefferliste waehlen'
+              : 'Zuerst beide Koordinaten eingeben')">Bestätigen &amp; Loslegen</button>
         </div>
       </div>
     </div>
@@ -94,6 +98,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import axios from 'axios';
 import proj4 from 'proj4';
 import { CRS_OPTIONS } from '../../utils/KostraService.js';

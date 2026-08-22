@@ -10,7 +10,7 @@
 
           <div class="form-group">
             <label>Gebietsname</label>
-            <input v-model="localData.gebietsname" type="text" class="form-input" placeholder="optional" />
+            <input v-fokus v-model="localData.gebietsname" type="text" class="form-input" placeholder="optional" />
           </div>
 
           <div class="form-group">
@@ -74,6 +74,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from './DraggableModal.vue';
 import DwfPatternPreview from './DwfPatternPreview.vue';
 

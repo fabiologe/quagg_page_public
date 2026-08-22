@@ -11,7 +11,7 @@
           <!-- Common: ID -->
           <div class="form-group">
             <label>ID / Name</label>
-            <input
+            <input v-fokus
               v-model="formData.id"
               type="text"
               class="form-input"
@@ -181,6 +181,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from '../common/DraggableModal.vue';
 import { MaterialRoughness, getRoughness, Bauwerkstyp, Neigungsklasse } from '../../utils/mappings.js';
 

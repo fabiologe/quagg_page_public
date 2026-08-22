@@ -14,7 +14,7 @@
 
         <div class="form-group">
           <label>Koordinatensystem (CRS):</label>
-          <select v-model="selectedCRS">
+          <select v-fokus v-model="selectedCRS">
             <option v-for="opt in crsOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </option>
@@ -90,7 +90,8 @@
 
       <div class="modal-footer">
         <button class="secondary-btn" @click="close">Abbrechen</button>
-        <button class="primary-btn" data-tutorial="kostra-abrufen" @click="fetchData" :disabled="!selectedCRS || isFetching">
+        <button class="primary-btn" data-tutorial="kostra-abrufen" @click="fetchData" :disabled="!selectedCRS || isFetching"
+          :title="!selectedCRS ? 'Zuerst ein Koordinatensystem waehlen' : ''">
           {{ isFetching ? 'Lade...' : 'Daten abrufen' }}
         </button>
       </div>
@@ -101,6 +102,7 @@
 
 <script setup>
 import { ref, watch } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import { useIsybauStore } from '../../store/index.js';
 
 import { CRS_OPTIONS, transformToWGS84, fetchKostraData } from '../../utils/KostraService.js';

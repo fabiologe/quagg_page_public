@@ -16,7 +16,7 @@
 
           <div class="form-group">
             <label>Koordinatensystem (CRS):</label>
-            <select v-model="selectedCRS">
+            <select v-fokus v-model="selectedCRS">
               <option v-for="opt in crsOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>
@@ -39,6 +39,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import { CRS_OPTIONS } from '../../utils/KostraService.js';
 
 const props = defineProps({

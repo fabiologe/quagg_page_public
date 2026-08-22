@@ -24,7 +24,7 @@
           <div class="form-row">
             <div class="form-group">
               <label>Dauer (min):</label>
-              <input type="number" v-model.number="duration" step="5" min="5">
+              <input v-fokus type="number" v-model.number="duration" step="5" min="5">
             </div>
             <div class="form-group">
               <label>Intervall (min):</label>
@@ -106,6 +106,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from '../common/DraggableModal.vue';
 import { useIsybauStore } from '../../store/index.js';
 import { calculateBlockRain, calculateEulerType2 } from '../../utils/RainModelService.js';

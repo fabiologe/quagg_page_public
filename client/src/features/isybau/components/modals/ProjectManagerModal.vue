@@ -11,14 +11,15 @@
 
         <!-- Save current -->
         <div class="pm-save-bar">
-          <input
+          <input v-fokus
             v-model="newName"
             class="pm-name-input"
             placeholder="Projektname …"
             maxlength="80"
             @keyup.enter="save"
           />
-          <button class="btn-primary" :disabled="!newName.trim() || saving" @click="save">
+          <button class="btn-primary" :disabled="!newName.trim() || saving"
+          :title="!newName.trim() ? 'Zuerst einen Projektnamen eingeben' : ''" @click="save">
             <img v-if="!saving" class="ic" src="/saintv1d/icons/Interface-Essential-Floppy-Disk--Streamline-Pixel.svg" />
             <span v-if="saving">⏳</span>
             <span>{{ saving ? 'Speichern...' : 'Speichern' }}</span>
@@ -87,6 +88,7 @@
 
 <script setup>
 import { ref, watch } from 'vue';
+import { vFokus } from '../../composables/vFokus.js';
 import { listProjects, saveProject, loadProject, deleteProject } from '../../services/ProjectService.js';
 
 const props = defineProps({
