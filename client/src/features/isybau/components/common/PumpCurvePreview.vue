@@ -103,6 +103,6 @@ const chartOptions = {
   color: var(--isy-pixel-text-dim);
 }
 .pcp-estimated {
-  color: #e0a020;
+  color: var(--isy-pixel-warning-hover);
 }
 </style>

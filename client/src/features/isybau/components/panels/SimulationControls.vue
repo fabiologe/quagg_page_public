@@ -294,7 +294,7 @@ const downloadResults = () => {
     gap: 0.8rem;
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
-    color: var(--isy-pixel-text-dim);
+    color: var(--isy-pixel-content-text-dim);
     align-items: center;
 }
 .stat-item {

@@ -1449,20 +1449,20 @@ const apply = () => {
 .sticky-left-1 { position: sticky; left: 0; z-index: calc(var(--isy-z-sticky) + 2); background: var(--isy-pixel-text); width: 30px; border-right: 1px solid var(--isy-pixel-divider); box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
 .sticky-left-2 { position: sticky; left: 30px; z-index: calc(var(--isy-z-sticky) + 1); background: var(--isy-pixel-text); min-width: 80px; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
 
-.data-table th.sticky-left-1 { z-index: calc(var(--isy-z-sticky) + 4) !important; background: #f8f9fa !important; }
-.data-table th.sticky-left-2 { z-index: calc(var(--isy-z-sticky) + 3) !important; background: #f8f9fa !important; }
+.data-table th.sticky-left-1 { z-index: calc(var(--isy-z-sticky) + 4) !important; background: var(--isy-pixel-content-raised) !important; }
+.data-table th.sticky-left-2 { z-index: calc(var(--isy-z-sticky) + 3) !important; background: var(--isy-pixel-content-raised) !important; }
 
 .sortable { cursor: pointer; user-select: none; }
-.sortable:hover { background: #eee; }
+.sortable:hover { background: var(--isy-pixel-content-hover); }
 
-.clickable-row:hover td { background-color: #f1f8ff !important; }
-.clickable-row.selected td { background-color: #e3f2fd !important; }
+.clickable-row:hover td { background-color: var(--isy-pixel-content-hover) !important; }
+.clickable-row.selected td { background-color: var(--isy-pixel-content-selected) !important; }
 
 /* Fokus-Sprung aus ElementInfo: Zeile kurz aufblinken lassen */
 .row-flash td { animation: row-flash-anim 2.5s ease-out; }
 @keyframes row-flash-anim {
     0%   { background-color: var(--isy-pixel-border-hover) !important; }
-    100% { background-color: #e3f2fd; }
+    100% { background-color: var(--isy-pixel-content-selected); }
 }
 
 /* Bauwerke: Parameter-Zellen (input-group/-col, hint-text, checkbox-label waren
@@ -1470,7 +1470,7 @@ const apply = () => {
    inkonsistenter wirken als der Rest der Tabelle). */
 .input-group-col { display: grid; grid-template-columns: repeat(2, minmax(90px, 1fr)); gap: 0.4rem 0.6rem; align-items: end; }
 .input-group { display: flex; flex-direction: column; gap: 2px; }
-.hint-text { font-size: var(--isy-fs-sm); color: #7f7d99; white-space: nowrap; }
+.hint-text { font-size: var(--isy-fs-sm); color: var(--isy-pixel-content-text-dim); white-space: nowrap; }
 .checkbox-label { display: flex; align-items: center; gap: 0.35rem; font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); white-space: nowrap; }
 
 /* Klassifizierungs-Badge (welche SWMM-Sektion bekommt dieser Knoten?) */

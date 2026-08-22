@@ -378,7 +378,7 @@ function formatDate(iso) {
 .btn-delete {
   background: none;
   border: 1px solid var(--isy-pixel-danger-soft-border);
-  color: #dc2626;
+  color: var(--isy-pixel-danger);
   border-radius: var(--isy-radius-sm);
   padding: var(--isy-space-1) var(--isy-space-2);
   font-family: var(--isy-pixel-font);

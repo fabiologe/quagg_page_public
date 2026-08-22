@@ -404,13 +404,13 @@ const applyResult = () => {
 }
 
 .kostra-table th {
-  background: #f1f2f6;
+  background: var(--isy-pixel-content-raised);
   font-weight: 600;
   text-align: center;
 }
 
 .kostra-table tr:nth-child(even) {
-  background: #fcfcfc;
+  background: var(--isy-pixel-content-raised);
 }
 
 .apply-btn {

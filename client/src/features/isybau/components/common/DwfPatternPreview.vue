@@ -136,6 +136,6 @@ const chartOptions = {
   color: var(--isy-pixel-text-dim);
 }
 .dpp-hint {
-  color: #e0a020;
+  color: var(--isy-pixel-warning-hover);
 }
 </style>

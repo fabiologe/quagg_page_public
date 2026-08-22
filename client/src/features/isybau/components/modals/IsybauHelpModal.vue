@@ -387,7 +387,7 @@ const activeTab = ref('general');
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim);
+  color: var(--isy-pixel-content-text-dim);
 }
 
 .modal-body {
@@ -479,7 +479,7 @@ const activeTab = ref('general');
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
   letter-spacing: -0.02em;
-  color: var(--isy-pixel-text);
+  color: var(--isy-pixel-content-text);
   border-bottom: 2px solid var(--isy-pixel-divider);
   padding-bottom: var(--isy-space-3);
 }
@@ -489,12 +489,12 @@ const activeTab = ref('general');
   margin-bottom: var(--isy-space-4);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-md);
-  color: var(--isy-pixel-text-dim);
+  color: var(--isy-pixel-content-text-dim);
 }
 
 .content-section p, .content-section li {
   line-height: 1.6;
-  color: var(--isy-pixel-text-dim);
+  color: var(--isy-pixel-content-text-dim);
   font-size: var(--isy-fs-lg);
 }
 
@@ -531,9 +531,9 @@ const activeTab = ref('general');
 }
 
 .tech-table th {
-    background: #f1f5f9;
+    background: var(--isy-pixel-content-raised);
     font-weight: 600;
-    color: var(--isy-pixel-text-dim);
+    color: var(--isy-pixel-content-text-dim);
 }
 
 .tag {
@@ -576,14 +576,14 @@ const activeTab = ref('general');
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-4);
   font-size: var(--isy-fs-lg);
-  color: var(--isy-pixel-text-dim);
+  color: var(--isy-pixel-content-text-dim);
   line-height: 1.5;
 }
 
 .info-card-title {
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
-  color: var(--isy-pixel-text);
+  color: var(--isy-pixel-content-text);
   margin-bottom: var(--isy-space-2);
 }
 

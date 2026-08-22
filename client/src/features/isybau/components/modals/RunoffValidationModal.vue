@@ -175,7 +175,7 @@ th {
 }
 
 th:hover {
-  background: #e9ecef;
+  background: var(--isy-pixel-content-hover);
 }
 
 /* Toggle Switch */
@@ -192,7 +192,7 @@ th:hover {
 .slider {
   width: 40px;
   height: 20px;
-  background-color: #ccc;
+  background-color: var(--isy-pixel-content-sunken);
   border-radius: 999px;
   position: relative;
   margin-right: var(--isy-space-2);

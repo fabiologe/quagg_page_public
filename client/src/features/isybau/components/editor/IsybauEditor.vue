@@ -238,7 +238,7 @@ const handleMapDblClick = () => {
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #eef2f5;
+    background: var(--isy-viewer-bg);
     position: relative;
     overflow: hidden;
 }

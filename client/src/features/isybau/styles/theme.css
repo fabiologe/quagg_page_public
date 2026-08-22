@@ -119,6 +119,47 @@
     --isy-pixel-warning-alt:    #f1c40f;
     --isy-pixel-info:           #3498db;
     --isy-pixel-info-hover:     #2980b9;
+    /* ── Inhaltsflächen ──────────────────────────────────────────────────────
+       Ein Teil des Moduls sind keine Theme-Flächen, sondern helle BLÄTTER:
+       Ergebnistabellen, Hilfetexte, Berichtskarten. Sie sind in BEIDEN Modi
+       hell - genau wie --isy-pixel-content-bg, das im Dunkelmodus #f3f2fb ist
+       und nicht etwa navy. Das ist Absicht: eine Tabelle mit tausend Zahlen
+       liest sich auf Papierweiß besser.
+
+       Daraus folgt, was hier steht: Text auf so einem Blatt darf den Modus
+       NICHT mitmachen. --isy-pixel-text-dim wird im Dunkelmodus #b0b0ac -
+       hellgrau auf Weiß, etwa 1,9:1. Genau daran ist die erste Fassung der
+       Textumstellung gescheitert.
+
+       Deshalb sind alle fünf konstant. Die Werte sind exakt die Hell-Modus-
+       Werte ihrer Theme-Geschwister, damit sich im Hellmodus nichts ändert. */
+    --isy-pixel-content-text:     #030430;  /* = --isy-pixel-text (hell)     */
+    --isy-pixel-content-text-dim: #4a4a4a;  /* = --isy-pixel-text-dim (hell) */
+
+    /* Die drei Zustände einer Zeile auf so einem Blatt. Sie fehlten, und
+       deshalb fielen im Modul acht verschiedene Flächen auf ein einziges
+       Token zusammen: Grundfläche, Tabellenkopf, Zeile unter dem Zeiger,
+       gewählte Zeile, Balkenrinne. Danach wäre die Ergebnistabelle ein
+       flaches Blatt gewesen.
+
+       Warm abgestuft statt kühl: die Altwerte waren Blaugrau (#f8fafc,
+       #f1f8ff) aus einer fremden Palette und standen quer zum Retro-Beige.
+
+       Mit SICHTBAREM Abstand gestaffelt, drei bis vier L*-Punkte je Stufe.
+       Die Altwerte lagen einen Punkt auseinander - Grundfläche #fdfdfd
+       (L* 99,2), Tabellenkopf #f9fafb (L* 98,2), Hover #f8fafc (L* 98,2).
+       Das ist keine Ordnung, das ist Zufall mit vier Namen. Wer die Stufen
+       hier enger zieht, stellt genau das wieder her.
+         Blatt      L* 99   (weiß, kommt aus der Datei)
+         raised     L* 95
+         hover      L* 92
+         selected   L* 88
+         sunken     L* 85                                                  */
+    --isy-pixel-content-raised:   #f3efe6;  /* Tabellenkopf, Kartenkopf */
+    --isy-pixel-content-hover:    #ece7da;  /* Zeile unter dem Zeiger   */
+    --isy-pixel-content-selected: #e2dbc9;  /* gewählte Zeile           */
+    --isy-pixel-content-sunken:   #d8d1bf;  /* Rinne, Vertiefung        */
+
     --isy-pixel-font: 'Press Start 2P', monospace;
     /* Aufmerksamkeitsfarbe des Tutorials (Highlight-Ring, Fokus-Ring im
        Viewer). BEWUSST eigener Token und heller als die Grün-Familie oben:
