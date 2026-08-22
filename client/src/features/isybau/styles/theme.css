@@ -20,6 +20,78 @@
  * beiden Hintergründen.
  */
 
+/**
+ * ── Nicht-Farb-Tokens ───────────────────────────────────────────────────────
+ * Abstände, Schriftgrößen, Radien und z-index. Abgeleitet aus einer Zählung
+ * des Moduls (452 Abstands-, 230 Schrift-, 128 Radius-, 39 z-index-Dekla-
+ * rationen), nicht aus einer Vorlage: das Token ist jeweils der meistgenutzte
+ * Wert seiner Gruppe.
+ *
+ * Auf :root und nicht auf .isybau-main — dieselbe Begründung wie unten für die
+ * --isy-pixel-*-Familie: mehrere Modals springen per <Teleport to="body"> aus
+ * dem .isybau-main-Teilbaum heraus, und Custom Properties vererben sich nicht
+ * über Teleport-Grenzen.
+ */
+:root {
+    /* ── Abstände ──────────────────────────────────────────────────────────
+       Sieben Stufen, ausschließlich Vielfache von 4px bei 16px-Grundschrift.
+       In rem, damit sie mitwachsen, wenn jemand die Browser-Schriftgröße
+       hochsetzt — 336 der 452 Fundstellen im Modul machen das ohnehin schon
+       so, die übrigen 116 (px) werden dabei mitgezogen.
+
+       Mehr als sieben Stufen bringen messbar nichts: die abweichenden
+       Altwerte (6,4 / 9,6 / 5,6 / 8,8px) liegen ZWISCHEN den Rasterpunkten,
+       nicht jenseits davon. Gegen dieses Problem hilft kein zusätzlicher
+       Rasterpunkt, nur das Raster selbst. */
+    --isy-space-1: 0.25rem;   /*  4px — 30 Fundstellen liegen heute exakt hier */
+    --isy-space-2: 0.5rem;    /*  8px — 76 */
+    --isy-space-3: 0.75rem;   /* 12px — 37 */
+    --isy-space-4: 1rem;      /* 16px — 81, häufigster Wert des ganzen Moduls */
+    --isy-space-5: 1.25rem;   /* 20px —  3 */
+    --isy-space-6: 1.5rem;    /* 24px — 27 */
+    --isy-space-7: 2rem;      /* 32px —  6 */
+
+    /* ── Schriftgrößen ─────────────────────────────────────────────────────
+       Sechs Stufen für ZWEI Populationen. Die Messung trennt sie sauber: 98
+       Regelblöcke im Modul setzen zusätzlich --isy-pixel-font (Spanne
+       6,4–14,4px, Median 8px), 131 tun es nicht (5,8–24px, Median 12,8px).
+       'Press Start 2P' baut sehr breit und wird deshalb systematisch kleiner
+       gesetzt — eine gemeinsame Skala über beide hinweg wäre eine
+       Scheinordnung.
+
+       Deshalb steht die Population im Namen: wer Pixelschrift setzt, wählt
+       aus den zwei --isy-fs-pixel-*; wer normalen Text setzt, aus den vier
+       übrigen. Niemand steht je vor sechs Optionen. */
+    --isy-fs-pixel-sm: 0.4375rem;  /*  7px  Beschriftung, Pixelschrift */
+    --isy-fs-pixel-md: 0.5rem;     /*  8px  Normalfall, Pixelschrift   */
+    --isy-fs-sm:       0.75rem;    /* 12px  klein, Systemschrift       */
+    --isy-fs-md:       0.8125rem;  /* 13px  Normalfall, Systemschrift  */
+    --isy-fs-lg:       0.9375rem;  /* 15px  hervorgehoben              */
+    --isy-fs-xl:       1.5rem;     /* 24px  Überschrift                */
+
+    /* ── Radien ────────────────────────────────────────────────────────────
+       In px, nicht in rem: ein 4px-Radius soll ein 4px-Radius bleiben, auch
+       wenn jemand größere Schrift eingestellt hat. Drei Stufen statt zwei,
+       weil 4/6 nur 62% der Fälle still ablegen, 4/6/8 dagegen 79%.
+       Kreise (50%) und Pillenformen (999px) sind KEINE Stufe dieser Skala —
+       dort ist der Wert die halbe Höhe, nicht eine Rundung. */
+    --isy-radius-sm: 4px;   /* 47 */
+    --isy-radius-md: 6px;   /* 33 */
+    --isy-radius-lg: 8px;   /* 22 */
+
+    /* ── z-index ───────────────────────────────────────────────────────────
+       Fünf benannte Ebenen, Abstand 10x je Stufe. Wer INNERHALB einer Ebene
+       staffeln muss (Tabellen-Ecke über Kopfzeile über klebender Spalte),
+       rechnet: calc(var(--isy-z-sticky) + 1). Nicht: die nächsthöhere Ebene
+       nehmen — genau so sind die Altwerte 9000 / 9999 / 100000 entstanden,
+       jeder eine Reparatur, die die vorige überbieten musste. */
+    --isy-z-base:    1;      /* Geschwister im selben Kasten (Canvas-Lagen)   */
+    --isy-z-sticky:  10;     /* klebende Kopfzeilen/Spalten, Viewer-Overlays  */
+    --isy-z-panel:   100;    /* schwebende Paneele, Werkzeugkasten, Greifer   */
+    --isy-z-modal:   1000;   /* Modals samt ihrer Verdunkelung                */
+    --isy-z-top:     2000;   /* Toast, Ladeschleier, Tutorial-Maskottchen     */
+}
+
 :root {
     /* Pixel-Theme Akzent/Semantik — modusunabhängig konstant. Border/Border-
        Hover waren ursprünglich lila (--isy-pixel-border), auf Nutzer-Wunsch
@@ -110,6 +182,18 @@
     --isy-pixel-info-soft:           #eff6ff;
     --isy-pixel-info-soft-text:      #1e40af;
     --isy-pixel-info-soft-border:    #bfdbfe;
+
+    /* ── Elevation ──
+       Vier Stufen, gestaffelt nach Blur-Radius. Muss in die MODUS-Blöcke und
+       nicht auf :root: die Altwerte im Modul sind im Dunkelmodus navy
+       (rgba(4,6,71,·)), im Hellmodus schwarz — dieselbe Trennung, die
+       --isy-btn-shadow schon hat. Fokusringe (0 0 0 2px …) und Innenschein
+       (inset …) sind KEINE Elevation und bleiben, wo sie stehen. */
+    --isy-elev-1: 0 2px  5px rgba(0,0,0,0.05);   /* Blur ≤5px  — 12 Altfälle */
+    --isy-elev-2: 0 4px 12px rgba(0,0,0,0.15);   /* Blur 6–12  —  3 */
+    --isy-elev-3: 0 4px 20px rgba(0,0,0,0.20);   /* Blur 13–20 — 15 */
+    --isy-elev-4: 0 8px 32px rgba(0,0,0,0.30);   /* Blur >20   —  7 */
+
 }
 
 /* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
@@ -157,6 +241,13 @@
     --isy-pixel-info-soft:           rgba(52, 152, 219, 0.18);
     --isy-pixel-info-soft-text:      #93c5fd;
     --isy-pixel-info-soft-border:    rgba(52, 152, 219, 0.45);
+
+    /* ── Elevation — Dunkel (navy statt schwarz, siehe Hell-Block) ── */
+    --isy-elev-1: 0 2px  5px rgba(4,6,71,0.35);
+    --isy-elev-2: 0 4px 12px rgba(4,6,71,0.40);
+    --isy-elev-3: 0 4px 20px rgba(4,6,71,0.50);
+    --isy-elev-4: 0 8px 32px rgba(0,0,0,0.55);
+
 }
 
 /* ── Statusflächen ────────────────────────────────────────────────────────────
