@@ -2,7 +2,7 @@
   <DraggableModal :is-open="isOpen" initial-width="400px" initial-height="auto" initial-left="center" initial-top="center">
       <header class="modal-header">
         <h3>{{ title }}</h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button title="Schließen" aria-label="Schließen" class="close-btn" @click="$emit('close')">×</button>
       </header>
  
       <div class="modal-body">

@@ -6,7 +6,7 @@
         <!-- Header -->
         <div class="pm-header">
           <h3>Projekte</h3>
-          <button class="close-btn" @click="$emit('close')">×</button>
+          <button title="Schließen" aria-label="Schließen" class="close-btn" @click="$emit('close')">×</button>
         </div>
 
         <!-- Save current -->

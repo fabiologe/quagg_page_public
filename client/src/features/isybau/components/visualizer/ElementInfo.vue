@@ -12,7 +12,7 @@
     >
       <div class="info-header" @mousedown="startDrag">
         <h3>{{ typeLabel }} {{ readonly ? 'Ergebnisse' : 'Bearbeiten' }}</h3>
-        <button @click="$emit('close')" class="close-btn" @mousedown.stop>·×</button>
+        <button title="Schließen" aria-label="Schließen" @click="$emit('close')" class="close-btn" @mousedown.stop>·×</button>
       </div>
       
       <div class="info-content">

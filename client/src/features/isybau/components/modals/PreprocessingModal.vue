@@ -7,7 +7,7 @@
           </div>
           
           <div class="header-actions">
-              <button class="close-btn" @click="close">×</button>
+              <button title="Schließen" aria-label="Schließen" class="close-btn" @click="close">×</button>
           </div>
         </div>
 
@@ -28,7 +28,7 @@
               <div v-if="undoState.show" class="undo-toast" :class="undoState.type">
                   <span>{{ undoState.message }}</span>
                   <button v-if="undoState.action" @click="performUndo" class="undo-action-btn">Rückgängig</button>
-                  <button @click="dismissUndo" class="close-toast">×</button>
+                  <button title="Meldung schließen" aria-label="Meldung schließen" @click="dismissUndo" class="close-toast">×</button>
               </div>
           </Transition>
 
@@ -50,7 +50,7 @@
               <div class="bulk-edit-modal">
                 <div class="bulk-edit-header">
                     <h4>Massenbearbeitung ({{ selectedIds.length }} Elemente)</h4>
-                    <button class="close-btn" @click="showBulkEdit = false">×</button>
+                    <button title="Schließen" aria-label="Schließen" class="close-btn" @click="showBulkEdit = false">×</button>
                 </div>
 
                 <div class="bulk-controls">

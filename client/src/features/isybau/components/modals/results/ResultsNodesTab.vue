@@ -64,7 +64,7 @@
         <div class="detail-card">
             <div class="detail-header">
                 <h3>{{ structureTypeLabel(selectedNodeResult?.bwType, selectedNodeResult?.type) }} {{ selectedNodeId }}</h3>
-                <button @click="selectedNodeId = null" class="detail-close-btn">✕</button>
+                <button title="Detailansicht schließen" aria-label="Detailansicht schließen" @click="selectedNodeId = null" class="detail-close-btn">✕</button>
             </div>
             <div class="detail-body">
                 <div v-if="relatedLinkId(selectedNodeResult)" class="link-hint">

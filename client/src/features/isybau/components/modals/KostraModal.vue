@@ -4,7 +4,7 @@
       <div class="modal-content">
       <div class="modal-header">
         <h3>KOSTRA-DWD Regendaten</h3>
-        <button class="close-btn" @click="close">×</button>
+        <button title="Schließen" aria-label="Schließen" class="close-btn" @click="close">×</button>
       </div>
       
       <div class="modal-body">

@@ -8,7 +8,7 @@
     <div class="help-container">
       <div class="modal-header">
         <h3>ℹ️ SaintV – 1D · Bedienungsanleitung & System-Audit V.1.03</h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button title="Schließen" aria-label="Schließen" class="close-btn" @click="$emit('close')">×</button>
       </div>
       
       <div class="modal-body">

@@ -53,7 +53,7 @@
         <div class="detail-card">
             <div class="detail-header">
                 <h3>Fläche {{ selectedAreaId }}</h3>
-                <button @click="selectedAreaId = null" class="detail-close-btn">✕</button>
+                <button title="Detailansicht schließen" aria-label="Detailansicht schließen" @click="selectedAreaId = null" class="detail-close-btn">✕</button>
             </div>
             <div class="detail-body">
                  <Line v-if="areaChartData" :data="areaChartData" :options="chartOptions" />

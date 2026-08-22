@@ -88,7 +88,7 @@
         <div class="detail-card">
             <div class="detail-header">
                 <h3>Haltung {{ selectedEdgeId }}</h3>
-                <button @click="selectedEdgeId = null" class="detail-close-btn">✕</button>
+                <button title="Detailansicht schließen" aria-label="Detailansicht schließen" @click="selectedEdgeId = null" class="detail-close-btn">✕</button>
             </div>
             <div class="detail-body">
                  <div class="engineer-inspector">

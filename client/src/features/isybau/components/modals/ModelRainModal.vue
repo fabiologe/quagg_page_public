@@ -2,7 +2,7 @@
   <DraggableModal :is-open="isOpen" initial-width="800px" initial-height="600px" initial-left="center" initial-top="100">
       <div class="modal-header">
         <h3>Modellregen erstellen</h3>
-        <button class="close-btn" @click="close">×</button>
+        <button title="Schließen" aria-label="Schließen" class="close-btn" @click="close">×</button>
       </div>
       
       <div class="modal-body">

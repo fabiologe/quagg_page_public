@@ -100,7 +100,7 @@
             <div class="toast-header">
                 <span class="warning-icon">⚠️</span>
                 <strong>Datenvalidierung: Standardwerte verwendet</strong>
-                <button class="close-toast" @click="warningToast.show = false">×</button>
+                <button title="Meldung schließen" aria-label="Meldung schließen" class="close-toast" @click="warningToast.show = false">×</button>
             </div>
             <div class="toast-body">
                 <p>Es wurden Annahmen getroffen, da Daten fehlten:</p>

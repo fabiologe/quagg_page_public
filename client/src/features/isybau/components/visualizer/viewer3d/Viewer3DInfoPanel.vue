@@ -3,7 +3,7 @@
     <div v-if="element" class="info-panel" :style="resFarben">
       <div class="info-header" :style="{ background: headerGradient }">
         <h3>{{ title }}</h3>
-        <button class="close-btn" @click="$emit('close')">×</button>
+        <button title="Schließen" aria-label="Schließen" class="close-btn" @click="$emit('close')">×</button>
       </div>
       <div class="info-body">
         <div class="info-row">
