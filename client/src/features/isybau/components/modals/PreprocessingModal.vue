@@ -157,8 +157,10 @@
                 <thead>
                   <tr>
                     <th class="col-checkbox sticky-left-1"><input type="checkbox" @change="toggleSelectAll($event, filteredNodes)"></th>
-                    <th class="col-id sticky-left-2 sortable" @click="sortBy('id')">
-                        ID <span v-if="sortKey==='id'">{{ sortOrder===1 ? '▲' : '▼' }}</span>
+                    <th class="col-id sticky-left-2 sortable" data-tutorial="preprocessing-suche" @click="sortBy('id')">
+                        <span class="th-titel">ID <span v-if="sortKey==='id'">{{ sortOrder===1 ? '▲' : '▼' }}</span></span>
+                        <input v-model="filters.id" placeholder="Suchen …" class="filter-input"
+                               aria-label="Knoten nach ID durchsuchen" @click.stop>
                     </th>
                     <th class="sortable" @click="sortBy('type')">Typ</th>
                     <th>Zufluss (l/s)</th>
@@ -166,17 +168,6 @@
                     <th>Tiefe (m)</th>
                     <th>Sohle (m)</th>
                     <th>Druckdicht</th>
-                  </tr>
-                  <!-- Filter Row -->
-                  <tr class="filter-row">
-                      <th class="col-checkbox sticky-left-1"></th>
-                      <th class="col-id sticky-left-2" data-tutorial="preprocessing-suche"><input v-model="filters.id" placeholder="Suche..." class="filter-input"></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -230,7 +221,11 @@
                 <thead>
                   <tr>
                     <th class="col-checkbox sticky-left-1"><input type="checkbox" @change="toggleSelectAll($event, filteredStructures)"></th>
-                    <th class="col-id sticky-left-2 sortable" @click="sortBy('id')">ID</th>
+                    <th class="col-id sticky-left-2 sortable" @click="sortBy('id')">
+                        <span class="th-titel">ID <span v-if="sortKey==='id'">{{ sortOrder===1 ? '▲' : '▼' }}</span></span>
+                        <input v-model="filters.id" placeholder="Suchen …" class="filter-input"
+                               aria-label="Haltungen nach ID durchsuchen" @click.stop>
+                    </th>
                     <th class="sortable" @click="sortBy('type')">Typ</th>
                     <th>Parameter</th>
                     <th>Deckel (m)</th>
@@ -522,7 +517,11 @@
                     <th class="col-checkbox sticky-left-1"><input type="checkbox" @change="toggleSelectAll($event, filteredEdges)"></th>
                     <th class="col-id sticky-left-2 sortable" @click="sortBy('id')">ID</th>
                     <th>Von -> Nach</th>
-                    <th class="sortable" @click="sortBy('material')">Material</th>
+                    <th class="sortable" @click="sortBy('material')">
+                        <span class="th-titel">Material <span v-if="sortKey==='material'">{{ sortOrder===1 ? '▲' : '▼' }}</span></span>
+                        <input v-model="filters.material" placeholder="Filtern …" class="filter-input"
+                               aria-label="Haltungen nach Material filtern" @click.stop>
+                    </th>
                     <th>Rauheit</th>
                     <th>Profil</th>
                     <th class="sortable" @click="sortBy('length')">Länge</th>
@@ -533,22 +532,6 @@
                     <th>Z2</th>
                     <th title="Tiefe des Rohranschlusses unter Deckel (Von-Knoten)">T1 (m)</th>
                     <th title="Tiefe des Rohranschlusses unter Deckel (Nach-Knoten)">T2 (m)</th>
-                  </tr>
-                   <tr class="filter-row">
-                      <th class="col-checkbox sticky-left-1"></th>
-                      <th class="col-id sticky-left-2"><input v-model="filters.id" placeholder="Filter..." class="filter-input"></th>
-                      <th></th>
-                      <th><input v-model="filters.material" placeholder="Filter..." class="filter-input"></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
-                      <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1451,6 +1434,17 @@ const apply = () => {
 
 .data-table th.sticky-left-1 { z-index: calc(var(--isy-z-sticky) + 4) !important; background: var(--isy-pixel-content-raised) !important; }
 .data-table th.sticky-left-2 { z-index: calc(var(--isy-z-sticky) + 3) !important; background: var(--isy-pixel-content-raised) !important; }
+
+/* Kopfzelle mit Suchfeld: Titel oben, Feld darunter.
+   Vorher stand dafuer eine ZWEITE Kopfzeile im <thead>. Die klebte wegen
+   `.data-table th { position: sticky; top: 0 }` an derselben Stelle wie die
+   erste und legte sich beim Scrollen darueber - deshalb blieb der Kopf nicht
+   sauber stehen. Mit einer Kopfzeile klebt er wie vorgesehen.
+   Der Titel bleibt der Sortiergriff; das Feld faengt seinen Klick mit
+   @click.stop ab, sonst sortierte jeder Klick ins Suchfeld die Tabelle um. */
+.data-table th:has(.filter-input) { vertical-align: top; }
+.th-titel { display: block; margin-bottom: var(--isy-space-1); white-space: nowrap; }
+.data-table th .filter-input { font-weight: 400; }
 
 .sortable { cursor: var(--isy-cursor-hand); user-select: none; }
 .sortable:hover { background: var(--isy-pixel-content-hover); }
