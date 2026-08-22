@@ -112,7 +112,7 @@
                              Typwechsel bearbeitbar — im Regelfall verdeckt). -->
                         <div class="bulk-field" v-if="parseInt(bulkForm.nodeType) === 7 || selectedTypes.has(7)">
                             <label>Wehrhöhe (m):</label>
-                            <input type="number" v-model.number="bulkForm.weirHeight" step="0.01" class="bulk-input">
+                            <input aria-label="Wehrhöhe für alle gewählten Bauwerke" type="number" v-model.number="bulkForm.weirHeight" step="0.01" class="bulk-input">
                         </div>
                          <div class="bulk-field" v-if="[1, 6].includes(parseInt(bulkForm.nodeType)) || selectedTypes.has(1) || selectedTypes.has(6)">
                             <label>Förderleistung (l/s):</label>
@@ -205,16 +205,16 @@
                       </select>
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                      <input :aria-label="`Zufluss in l/s für ${node.id}`" type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }" title="Sohle muss tiefer als Deckel liegen">
+                      <input :aria-label="`Deckelhöhe in m für ${node.id}`" type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.depth" step="0.01" class="small-input" @click.stop @change="onDepthChange(node)">
+                      <input :aria-label="`Tiefe in m für ${node.id}`" type="number" v-model.number="node.depth" step="0.01" class="small-input" @click.stop @change="onDepthChange(node)">
                     </td>
                     <td>
-                      <input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
+                      <input :aria-label="`Sohlhöhe in m für ${node.id}`" type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td class="text-center">
                       <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
@@ -275,19 +275,19 @@
                       <!-- 1, 6: Pumps (Pumpwerk / Pumpe) -->
                        <div v-if="[1, 6].includes(node.type)" class="input-group-col">
                         <div class="input-group">
-                             <input type="number" v-model.number="node.pumpRate" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Förderstrom der Pumpe für ${node.id}`" type="number" v-model.number="node.pumpRate" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Förderleistung (l/s)</span>
                         </div>
                         <div class="input-group">
-                             <input type="number" v-model.number="node.pumpHead" step="0.1" class="small-input" @click.stop title="Förderhöhe für die Q-H-Kennlinie">
+                             <input :aria-label="`Förderhöhe der Pumpe für ${node.id}`" type="number" v-model.number="node.pumpHead" step="0.1" class="small-input" @click.stop title="Förderhöhe für die Q-H-Kennlinie">
                              <span class="hint-text">Förderhöhe (m)</span>
                         </div>
                         <div class="input-group">
-                             <input type="number" v-model.number="node.onDepth" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Einschaltwasserstand für ${node.id}`" type="number" v-model.number="node.onDepth" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Einschalt (m)</span>
                         </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.offDepth" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Ausschaltwasserstand für ${node.id}`" type="number" v-model.number="node.offDepth" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Ausschalt (m)</span>
                         </div>
                       </div>
@@ -295,15 +295,15 @@
                        <!-- 2, 3, 4, 12, 13: Storage/Basins (Becken, Klaeranlage, etc) -->
                        <div v-if="[2, 3, 4, 12, 13].includes(node.type)" class="input-group-col">
                         <div class="input-group">
-                             <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
+                             <input :aria-label="`Volumen in m³ für ${node.id}`" type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
                              <span class="hint-text">Volumen (m³)</span>
                         </div>
                         <div class="input-group">
-                              <input type="number" v-model.number="node.maxDepth" step="0.1" class="small-input" @click.stop>
+                              <input :aria-label="`Maximaler Wasserstand für ${node.id}`" type="number" v-model.number="node.maxDepth" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Max. Tiefe (m)</span>
                         </div>
                         <div class="input-group">
-                              <input type="number" v-model.number="node.initDepth" step="0.1" class="small-input" @click.stop>
+                              <input :aria-label="`Anfangswasserstand für ${node.id}`" type="number" v-model.number="node.initDepth" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Start-Tiefe (m)</span>
                         </div>
                         <div class="input-group">
@@ -317,7 +317,7 @@
                              <span class="hint-text">Form</span>
                         </div>
                         <div class="input-group">
-                             <input type="number" v-model.number="node.evapFactor" step="0.05" min="0" max="1" class="small-input" @click.stop title="Anteil der potentiellen Verdunstung, der auf die Speicherfläche angesetzt wird">
+                             <input :aria-label="`Verdunstungsfaktor für ${node.id}`" type="number" v-model.number="node.evapFactor" step="0.05" min="0" max="1" class="small-input" @click.stop title="Anteil der potentiellen Verdunstung, der auf die Speicherfläche angesetzt wird">
                              <span class="hint-text">Verdunstung (0-1)</span>
                         </div>
                         <div v-if="node.storageShape === 'TABULAR'" class="input-group-col">
@@ -333,11 +333,11 @@
                        <!-- 7: Weir (Überlauf) -->
                        <div v-if="node.type === 7" class="input-group-col">
                         <div class="input-group">
-                             <input type="number" v-model.number="node.weirHeight" step="0.01" class="small-input" @click.stop>
+                             <input :aria-label="`Wehrhöhe für ${node.id}`" type="number" v-model.number="node.weirHeight" step="0.01" class="small-input" @click.stop>
                              <span class="hint-text">Wehrhöhe (m)</span>
                         </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.wehrWidth" step="0.01" class="small-input" @click.stop>
+                             <input :aria-label="`Wehrbreite für ${node.id}`" type="number" v-model.number="node.wehrWidth" step="0.01" class="small-input" @click.stop>
                              <span class="hint-text">Breite (m)</span>
                         </div>
                         <div class="input-group">
@@ -362,7 +362,7 @@
                              <span class="hint-text">Kronenform</span>
                         </div>
                         <div class="input-group">
-                             <input type="number" v-model.number="node.dischargeCoeff" step="0.01" class="small-input" @click.stop>
+                             <input :aria-label="`Abflussbeiwert für ${node.id}`" type="number" v-model.number="node.dischargeCoeff" step="0.01" class="small-input" @click.stop>
                              <span class="hint-text">Beiwert Cw</span>
                         </div>
                       </div>
@@ -370,7 +370,7 @@
                        <!-- 8: Orifice/Throttle (Drossel) -->
                        <div v-if="node.type === 8" class="input-group-col">
                         <div class="input-group">
-                             <input type="number" v-model.number="node.maxOutflow" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Maximaler Abfluss für ${node.id}`" type="number" v-model.number="node.maxOutflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Max. Abfluss (l/s)</span>
                         </div>
                         <div class="input-group">
@@ -391,11 +391,11 @@
                         <!-- 9: Gate (Schieber) -->
                        <div v-if="node.type === 9" class="input-group-col">
                          <div class="input-group">
-                             <input type="number" v-model.number="node.initialOpening" step="0.1" max="1" class="small-input" @click.stop>
+                             <input :aria-label="`Anfangsöffnung des Schiebers für ${node.id}`" type="number" v-model.number="node.initialOpening" step="0.1" max="1" class="small-input" @click.stop>
                              <span class="hint-text">Öffnung (0-1)</span>
                         </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.gateWidth" step="0.05" class="small-input" @click.stop>
+                             <input :aria-label="`Schieberbreite für ${node.id}`" type="number" v-model.number="node.gateWidth" step="0.05" class="small-input" @click.stop>
                              <span class="hint-text">Schieberbreite (m)</span>
                         </div>
                         <div class="input-group">
@@ -416,11 +416,11 @@
                        <!-- 14: Inlet (Einlaufbauwerk) + 10, 11 Misc -->
                        <div v-if="[10, 11, 14].includes(node.type)" class="input-group-col">
                         <div class="input-group">
-                          <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                          <input :aria-label="`Zufluss in l/s für ${node.id}`" type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                           <span class="hint-text">Zufluss (l/s)</span>
                         </div>
                         <div class="input-group">
-                          <input type="number" v-model.number="node.lossCoeff" step="0.1" min="0" class="small-input" @click.stop :title="lossCoeffHint(node.type)">
+                          <input :aria-label="`Verlustbeiwert für ${node.id}`" type="number" v-model.number="node.lossCoeff" step="0.1" min="0" class="small-input" @click.stop :title="lossCoeffHint(node.type)">
                           <span class="hint-text">Verlustbeiwert (Eintritt)</span>
                         </div>
                       </div>
@@ -447,7 +447,7 @@
                           <span class="hint-text">Divider-Typ</span>
                         </div>
                         <div class="input-group" v-if="node.dividerType === 'CUTOFF'">
-                          <input type="number" v-model.number="node.dividerCutoffFlow" step="0.1" min="0" class="small-input" @click.stop>
+                          <input :aria-label="`Trennabfluss für ${node.id}`" type="number" v-model.number="node.dividerCutoffFlow" step="0.1" min="0" class="small-input" @click.stop>
                           <span class="hint-text">Abflussgrenze (l/s)</span>
                         </div>
                       </div>
@@ -461,15 +461,15 @@
                              </select>
                         </div>
                         <div class="input-group">
-                             <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
+                             <input :aria-label="`Volumen in m³ für ${node.id}`" type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
                              <span class="hint-text">Volumen (m³)</span>
                          </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Zufluss in l/s für ${node.id}`" type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Zufluss (l/s)</span>
                          </div>
                          <div class="input-group" v-if="node.outflowType === 'throttled'">
-                             <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Abfluss in l/s für ${node.id}`" type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Max. Abfluss (l/s)</span>
                          </div>
                       </div>
@@ -477,15 +477,15 @@
                       <!-- Generic Bauwerk -->
                       <div v-if="node.type === 'Bauwerk'" class="input-group-col">
                          <div class="input-group">
-                             <input type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
+                             <input :aria-label="`Volumen in m³ für ${node.id}`" type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
                              <span class="hint-text">Volumen (m³)</span>
                          </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Zufluss in l/s für ${node.id}`" type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Zufluss (l/s)</span>
                          </div>
                          <div class="input-group">
-                             <input type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
+                             <input :aria-label="`Abfluss in l/s für ${node.id}`" type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Abfluss (l/s)</span>
                          </div>
                          <div class="input-group">
@@ -501,8 +501,8 @@
                          </div>
                       </div>
                     </td>
-                    <td><input type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }"></td>
-                    <td><input type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }"></td>
+                    <td><input :aria-label="`Deckelhöhe in m für ${node.id}`" type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }"></td>
+                    <td><input :aria-label="`Sohlhöhe in m für ${node.id}`" type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }"></td>
                     <td class="text-center">
                       <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
@@ -576,7 +576,7 @@
                       </select>
                     </td>
                     <td>
-                      <input type="number" v-model.number="edge.roughness" class="small-input" @click.stop>
+                      <input :aria-label="`Rauheit für ${edge.id}`" type="number" v-model.number="edge.roughness" class="small-input" @click.stop>
                     </td>
                     <td>
                       <select v-model.number="edge.profile.type" @change="onProfileChange(edge)" class="small-select" @click.stop>
@@ -588,13 +588,13 @@
                         <span :class="{ 'text-red': calculateSlope(edge) < 0 }">{{ calculateSlope(edge) }}</span>
                     </td>
                     <td>
-                        <input type="number" v-model.number="edge.profile.height" class="small-input" @click.stop :class="{ 'invalid': edge.profile.height <= 0 }">
+                        <input :aria-label="`Profilhöhe in mm für ${edge.id}`" type="number" v-model.number="edge.profile.height" class="small-input" @click.stop :class="{ 'invalid': edge.profile.height <= 0 }">
                     </td>
                     <td>
-                        <input type="number" v-model.number="edge.profile.width" class="small-input" :disabled="edge.profile.type === 0" @click.stop :class="{ 'invalid': edge.profile.type !== 0 && edge.profile.width <= 0 }">
+                        <input :aria-label="`Profilbreite in mm für ${edge.id}`" type="number" v-model.number="edge.profile.width" class="small-input" :disabled="edge.profile.type === 0" @click.stop :class="{ 'invalid': edge.profile.type !== 0 && edge.profile.width <= 0 }">
                     </td>
-                    <td><input type="number" v-model.number="edge.z1" step="0.01" class="small-input" @click.stop></td>
-                    <td><input type="number" v-model.number="edge.z2" step="0.01" class="small-input" @click.stop></td>
+                    <td><input :aria-label="`Sohlhöhe am Anfang in m für ${edge.id}`" type="number" v-model.number="edge.z1" step="0.01" class="small-input" @click.stop></td>
+                    <td><input :aria-label="`Sohlhöhe am Ende in m für ${edge.id}`" type="number" v-model.number="edge.z2" step="0.01" class="small-input" @click.stop></td>
                     <td class="small-text" :title="`Deckel ${edge.fromNodeId}: ${nodeCoverZ(edge.fromNodeId)?.toFixed(2) ?? '-'} m`">{{ depthBelowCover(edge.fromNodeId, edge.z1)?.toFixed(2) ?? '-' }}</td>
                     <td class="small-text" :title="`Deckel ${edge.toNodeId}: ${nodeCoverZ(edge.toNodeId)?.toFixed(2) ?? '-'} m`">{{ depthBelowCover(edge.toNodeId, edge.z2)?.toFixed(2) ?? '-' }}</td>
                   </tr>
@@ -631,7 +631,7 @@
                         </td>
                         <td>{{ area.size.toFixed(4) }}</td>
                         <td>
-                            <input type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
+                            <input :aria-label="`Versiegelungsgrad für ${area.id}`" type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
                         </td>
                         <td>
                              <select v-model.number="area.function" class="medium-select" @click.stop>

@@ -15,6 +15,7 @@
               type="number"
               step="0.01"
               class="small-input"
+              :aria-label="`${xLabel}, Zeile ${i + 1}`"
               :value="pt[xKey]"
               @input="updatePoint(i, xKey, $event.target.value)"
               @click.stop
@@ -25,6 +26,7 @@
               type="number"
               step="0.01"
               class="small-input"
+              :aria-label="`${yLabel}, Zeile ${i + 1}`"
               :value="pt[yKey]"
               @input="updatePoint(i, yKey, $event.target.value)"
               @click.stop
