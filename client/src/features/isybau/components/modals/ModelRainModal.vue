@@ -260,7 +260,7 @@ const apply = () => {
   flex: 1;
   padding: var(--isy-space-6);
   display: flex;
-  gap: 2rem;
+  gap: var(--isy-space-7);
   overflow: hidden;
 }
 
@@ -276,7 +276,7 @@ const apply = () => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--isy-space-4);
 }
 
 .chart-container {
@@ -363,12 +363,12 @@ const apply = () => {
 .radio-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
 }
 
 .form-row {
   display: flex;
-  gap: 1rem;
+  gap: var(--isy-space-4);
 }
 
 .hint {

@@ -249,7 +249,7 @@ const downloadResults = () => {
 .sidebar-content {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--isy-space-4);
 }
 .control-box {
   background: var(--isy-pixel-content-bg);
@@ -291,7 +291,7 @@ const downloadResults = () => {
 .stats-row {
     display: flex;
     justify-content: center;
-    gap: 0.8rem;
+    gap: var(--isy-space-3);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-content-text-dim);
@@ -301,7 +301,7 @@ const downloadResults = () => {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--isy-space-1);
 }
 .stat-item strong {
     color: var(--isy-pixel-text);
@@ -314,7 +314,7 @@ const downloadResults = () => {
 
 /* Meta Info */
 .meta-item { display: flex; flex-direction: column; margin-bottom: var(--isy-space-2); }
-.meta-row { display: flex; justify-content: space-between; gap: 0.5rem; }
+.meta-row { display: flex; justify-content: space-between; gap: var(--isy-space-2); }
 .label { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); font-weight: 700; }
 .value { font-size: var(--isy-fs-lg); color: var(--isy-pixel-border); overflow: hidden; text-overflow: ellipsis; }
 
@@ -364,7 +364,7 @@ const downloadResults = () => {
     cursor: pointer;
 }
 .error-link:hover { color: #7f1616; }
-.warning-list { margin-top: var(--isy-space-2); display: flex; flex-direction: column; gap: 0.3rem; }
+.warning-list { margin-top: var(--isy-space-2); display: flex; flex-direction: column; gap: var(--isy-space-1); }
 .warning-msg {
     color: var(--isy-pixel-warning-soft-text);
     background: var(--isy-pixel-warning-soft);
@@ -390,7 +390,7 @@ const downloadResults = () => {
 .success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
 .input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
-.button-row { display: flex; gap: 0.5rem; margin-bottom: var(--isy-space-2); }
+.button-row { display: flex; gap: var(--isy-space-2); margin-bottom: var(--isy-space-2); }
 .secondary-btn.full { margin-top: var(--isy-space-2); width: 100%; }
 
 /* Pixel art icons — gefärbt wie das Raster (var(--isy-pixel-green)) */
@@ -435,7 +435,7 @@ const downloadResults = () => {
 .rain-info {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--isy-space-2);
 }
 
 /* Der Text darf schrumpfen, das "x" nicht — sonst wandert es bei langen
@@ -480,7 +480,7 @@ const downloadResults = () => {
     margin-top: var(--isy-space-4);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
     border-top: 2px solid var(--isy-pixel-text-dim);
     padding-top: var(--isy-space-4);
 }
@@ -497,7 +497,7 @@ const downloadResults = () => {
     text-align: left;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
     transition: background 0.15s;
 }
 .action-btn:hover { background: var(--isy-pixel-bg); }

@@ -440,7 +440,7 @@ const applyResult = () => {
 
 .reference-input-group {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
     align-items: flex-end;
     margin-bottom: var(--isy-space-4);
 }

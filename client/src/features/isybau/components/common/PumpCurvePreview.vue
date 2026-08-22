@@ -98,7 +98,7 @@ const chartOptions = {
   margin-top: var(--isy-space-2);
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--isy-space-1);
   font-size: var(--isy-fs-sm);
   color: var(--isy-pixel-text-dim);
 }

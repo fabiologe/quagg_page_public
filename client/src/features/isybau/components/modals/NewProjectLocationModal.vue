@@ -253,7 +253,7 @@ watch(() => props.isOpen, (open) => {
 
 .mode-tabs {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   margin-bottom: var(--isy-space-5);
   border-bottom: 1px solid var(--isy-pixel-text-dim);
 }
@@ -277,7 +277,7 @@ watch(() => props.isOpen, (open) => {
 
 .search-row {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   margin-bottom: var(--isy-space-4);
 }
 
@@ -300,7 +300,7 @@ watch(() => props.isOpen, (open) => {
 
 .manual-coords-group {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--isy-space-3);
 }
 
 .input-wrapper {

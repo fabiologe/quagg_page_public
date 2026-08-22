@@ -267,7 +267,7 @@ const handleMapDblClick = () => {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
+    gap: var(--isy-space-4);
     pointer-events: none; /* Let clicks pass through, but re-enable for button */
     z-index: var(--isy-z-panel);
 }

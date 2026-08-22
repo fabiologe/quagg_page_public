@@ -19,7 +19,7 @@
 .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--isy-space-3);
 }
 
 .modal-header h2 {
@@ -58,7 +58,7 @@
    jetzt zu einer zusammengeführt). */
 .tabs-nav {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
     padding: var(--isy-space-2) var(--isy-space-3);
     background: var(--isy-pixel-bg);
     border-bottom: 2px solid var(--isy-pixel-border);
@@ -104,7 +104,7 @@
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
+    gap: var(--isy-space-4);
     margin-bottom: var(--isy-space-7);
 }
 
@@ -126,7 +126,7 @@
 .grid-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
+    gap: var(--isy-space-6);
 }
 
 .panel {
@@ -201,12 +201,12 @@
     justify-content: space-between;
     margin-bottom: var(--isy-space-3);
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--isy-space-3);
 }
 .rain-title {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--isy-space-2);
 }
 .rain-icon {
     width: 22px;
@@ -240,7 +240,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 }
 .rain-meta {
     display: flex;
-    gap: 1.25rem;
+    gap: var(--isy-space-5);
     flex-wrap: wrap;
 }
 .rain-kpi {
@@ -259,7 +259,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .area-badge {
     display: flex;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
     padding: var(--isy-space-2) var(--isy-space-3);
     border-radius: var(--isy-radius-md);
     margin-bottom: var(--isy-space-3);
@@ -325,7 +325,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .filters label {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--isy-space-1);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     color: var(--isy-pixel-border);
@@ -371,7 +371,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 }
 .detail-close-btn:hover { color: var(--isy-pixel-green); }
 .detail-body { padding: var(--isy-space-6); flex: 1; overflow-y: auto; }
-.engineer-inspector { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: var(--isy-space-7); background: var(--isy-pixel-info-soft); padding: var(--isy-space-4); border-radius: var(--isy-radius-md); border: 1px solid var(--isy-pixel-info-soft-border);}
+.engineer-inspector { display: grid; grid-template-columns: 1fr 1fr; gap: var(--isy-space-7); margin-bottom: var(--isy-space-7); background: var(--isy-pixel-info-soft); padding: var(--isy-space-4); border-radius: var(--isy-radius-md); border: 1px solid var(--isy-pixel-info-soft-border);}
 .text-red { color: #dc2626; font-weight: bold; }
 .btn-icon { background: none; border: 1px solid var(--isy-pixel-text-dim); padding: var(--isy-space-1) var(--isy-space-2); border-radius: var(--isy-radius-sm); cursor: pointer; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-sm); color: var(--isy-pixel-border); }
 .btn-icon:hover { background: var(--isy-pixel-content-hover); }
@@ -384,7 +384,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .health-header {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: var(--isy-space-6);
     padding: var(--isy-space-6);
     background: var(--isy-pixel-content-bg);
     border-radius: var(--isy-radius-lg);
@@ -402,7 +402,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
 .health-text { flex: 1; }
 .health-text h3 { margin: 0 0 var(--isy-space-1) 0; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-sm); }
 .health-text p { margin: 0; color: var(--isy-pixel-content-text-dim); font-size: var(--isy-fs-lg); }
-.health-metrics { display: flex; gap: 1.5rem; border-left: 1px solid var(--isy-pixel-divider); padding-left: var(--isy-space-6); }
+.health-metrics { display: flex; gap: var(--isy-space-6); border-left: 1px solid var(--isy-pixel-divider); padding-left: var(--isy-space-6); }
 .metric { display: flex; flex-direction: column; }
 .metric span { font-size: var(--isy-fs-sm); color: var(--isy-pixel-content-text-dim); text-transform: uppercase; }
 .metric strong { font-size: var(--isy-fs-lg); color: var(--isy-pixel-content-text); }

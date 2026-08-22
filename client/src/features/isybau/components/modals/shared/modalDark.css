@@ -34,7 +34,7 @@
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   margin-top: var(--isy-space-4);
   border-top: 1px solid var(--isy-pixel-border);
   padding-top: var(--isy-space-3);

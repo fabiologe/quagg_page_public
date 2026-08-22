@@ -391,10 +391,10 @@ const save = () => {
      --scroll-*, die isybau/styles/theme.css auf Gruen setzt. Hier stand
      vorher die graue Rand-Familie, die nicht zur Textfarbe passte. */
 }
-.outlet-radio-group { display: flex; gap: 1rem; margin-bottom: var(--isy-space-2); }
-.radio-label { display: flex; align-items: center; gap: 0.3rem; font-size: var(--isy-fs-lg); cursor: pointer; color: var(--isy-pixel-text-dim); }
+.outlet-radio-group { display: flex; gap: var(--isy-space-4); margin-bottom: var(--isy-space-2); }
+.radio-label { display: flex; align-items: center; gap: var(--isy-space-1); font-size: var(--isy-fs-lg); cursor: pointer; color: var(--isy-pixel-text-dim); }
 .hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: var(--isy-space-1); }
-.checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-md); display: flex; align-items: center; gap: 0.4rem; }
+.checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-md); display: flex; align-items: center; gap: var(--isy-space-2); }
 .value-display { color: var(--isy-pixel-green); font-weight: 600; padding: var(--isy-space-1) 0; }
 
 /* Häkchen/Radios im SaintV-Grün statt Browser-Blau */

@@ -154,13 +154,13 @@ const hint = computed(() => {
     box-shadow: var(--isy-elev-3);
     border: 1px solid var(--isy-pixel-border);
     display: flex;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
     z-index: var(--isy-z-modal);
 }
 
 .tools-group {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--isy-space-1);
 }
 
 .tool-btn {

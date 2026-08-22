@@ -419,7 +419,7 @@ onUnmounted(() => {
   z-index: var(--isy-z-top);
   display: flex;
   align-items: flex-end;
-  gap: 0.75rem;
+  gap: var(--isy-space-3);
   max-width: calc(100vw - 1.5rem);
   pointer-events: none;
 }
@@ -536,7 +536,7 @@ onUnmounted(() => {
 /* ── Tour buttons ── */
 .bubble-actions {
   display: flex;
-  gap: 0.6rem;
+  gap: var(--isy-space-2);
   margin-top: var(--isy-space-2);
   flex-wrap: wrap;
   align-items: center;
@@ -545,7 +545,7 @@ onUnmounted(() => {
 /* ── Übungs-Modus ────────────────────────────────────────────────────────── */
 .bubble-task {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
   align-items: baseline;
   margin-top: var(--isy-space-2);
   padding-top: var(--isy-space-2);

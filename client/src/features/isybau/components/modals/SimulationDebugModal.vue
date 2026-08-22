@@ -126,7 +126,7 @@ const copyToClipboard = async (text) => {
 
 .tabs {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   margin-bottom: var(--isy-space-2);
   border-bottom: 1px solid var(--isy-pixel-text-dim);
 }

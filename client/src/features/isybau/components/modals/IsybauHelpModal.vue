@@ -402,7 +402,7 @@ const activeTab = ref('general');
   padding: var(--isy-space-4);
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--isy-space-6);
   border-right: 1px solid var(--isy-pixel-divider);
   flex-shrink: 0;
 }
@@ -410,7 +410,7 @@ const activeTab = ref('general');
 .sidebar-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
 }
 
 .group-title {
@@ -566,7 +566,7 @@ const activeTab = ref('general');
 .info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: var(--isy-space-4);
   margin: var(--isy-space-4) 0;
 }
 

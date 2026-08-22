@@ -224,7 +224,7 @@ function formatDate(iso) {
 /* Save bar */
 .pm-save-bar {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   padding: var(--isy-space-3) var(--isy-space-4);
   border-bottom: 1px solid var(--isy-pixel-divider);
   flex-shrink: 0;
@@ -243,7 +243,7 @@ function formatDate(iso) {
 .pm-list-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   padding: var(--isy-space-2) var(--isy-space-4) var(--isy-space-1);
   font-size: var(--isy-fs-sm);
   font-weight: 600;
@@ -275,7 +275,7 @@ function formatDate(iso) {
   justify-content: space-between;
   padding: var(--isy-space-2) var(--isy-space-4);
   border-bottom: 1px solid var(--isy-pixel-divider);
-  gap: 1rem;
+  gap: var(--isy-space-4);
   transition: background 0.12s;
 }
 .pm-item:hover { background: var(--isy-pixel-content-bg); }
@@ -283,7 +283,7 @@ function formatDate(iso) {
 .pm-item-info {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--isy-space-1);
   min-width: 0;
 }
 
@@ -303,7 +303,7 @@ function formatDate(iso) {
 
 .pm-item-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
   flex-shrink: 0;
 }
 
@@ -329,7 +329,7 @@ function formatDate(iso) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--isy-space-4);
   padding: var(--isy-space-3) var(--isy-space-4);
   background: var(--isy-pixel-danger-soft);
   border-top: 1px solid var(--isy-pixel-danger-soft-border);
@@ -340,7 +340,7 @@ function formatDate(iso) {
 
 .pm-confirm-btns {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
 }
 
 /* Buttons */
@@ -357,7 +357,7 @@ function formatDate(iso) {
   transition: background 0.15s;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
 }
 .btn-primary:hover:not(:disabled) { background: var(--isy-pixel-border); }
 .btn-primary:disabled { opacity: 0.45; cursor: default; }

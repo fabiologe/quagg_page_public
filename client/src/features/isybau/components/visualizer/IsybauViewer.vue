@@ -1665,7 +1665,7 @@ svg {
   z-index: var(--isy-z-sticky);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--isy-space-1);
   pointer-events: none;
 }
 .entw-legend-title {
@@ -1679,7 +1679,7 @@ svg {
 .entw-legend-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
   font-family: var(--isy-pixel-font);
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-text-dim);
@@ -1767,7 +1767,7 @@ svg {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--isy-space-3);
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
   border-radius: var(--isy-radius-lg);

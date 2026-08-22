@@ -43,7 +43,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   padding: var(--isy-space-2) var(--isy-space-2);
   border-bottom: 1px solid color-mix(in srgb, var(--isy-pixel-green-glow) 35%, transparent);
 }

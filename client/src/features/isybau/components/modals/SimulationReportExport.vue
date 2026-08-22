@@ -736,7 +736,7 @@ async function exportPDF() {
 .pdf-export-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
   padding: var(--isy-space-1) var(--isy-space-3);
   background: var(--isy-pixel-bg);
   color: var(--isy-pixel-text);

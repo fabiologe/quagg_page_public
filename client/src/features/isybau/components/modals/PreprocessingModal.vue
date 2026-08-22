@@ -1416,8 +1416,8 @@ const apply = () => {
 <style scoped>
 /* Cleaned up styles for DraggableModal */
 .modal-header { padding: var(--isy-space-3) var(--isy-space-4); background: var(--isy-pixel-bg); cursor: move; }
-.header-left { display: flex; gap: 1rem; align-items: center; }
-.bulk-btns { display: flex; gap: 0.5rem; }
+.header-left { display: flex; gap: var(--isy-space-4); align-items: center; }
+.bulk-btns { display: flex; gap: var(--isy-space-2); }
 .bulk-btn-link { background: none; border: none; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-border); cursor: pointer; text-decoration: underline; padding: 0 var(--isy-space-1); }
 .bulk-btn-link.text-red { color: var(--isy-pixel-danger); }
 .ic-del { width: 13px; height: 13px; image-rendering: pixelated; filter: invert(35%) sepia(90%) saturate(700%) hue-rotate(330deg) brightness(90%); vertical-align: middle; }
@@ -1468,10 +1468,10 @@ const apply = () => {
 /* Bauwerke: Parameter-Zellen (input-group/-col, hint-text, checkbox-label waren
    bisher komplett unstyled — Ergänzung, damit die neuen Phase-2-Felder nicht noch
    inkonsistenter wirken als der Rest der Tabelle). */
-.input-group-col { display: grid; grid-template-columns: repeat(2, minmax(90px, 1fr)); gap: 0.4rem 0.6rem; align-items: end; }
-.input-group { display: flex; flex-direction: column; gap: 2px; }
+.input-group-col { display: grid; grid-template-columns: repeat(2, minmax(90px, 1fr)); gap: var(--isy-space-2) var(--isy-space-2); align-items: end; }
+.input-group { display: flex; flex-direction: column; gap: var(--isy-space-1); }
 .hint-text { font-size: var(--isy-fs-sm); color: var(--isy-pixel-content-text-dim); white-space: nowrap; }
-.checkbox-label { display: flex; align-items: center; gap: 0.35rem; font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); white-space: nowrap; }
+.checkbox-label { display: flex; align-items: center; gap: var(--isy-space-1); font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); white-space: nowrap; }
 
 /* Klassifizierungs-Badge (welche SWMM-Sektion bekommt dieser Knoten?) */
 .classify-badge { display: block; margin-top: var(--isy-space-1); font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); font-family: monospace; }
@@ -1520,13 +1520,13 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
   opacity: 0.4;
   cursor: not-allowed;
 }
-.split-cell { display: flex; gap: 5px; align-items: center; }
+.split-cell { display: flex; gap: var(--isy-space-1); align-items: center; }
 .invalid { border-color: var(--isy-pixel-danger) !important; background: rgba(231, 76, 60, 0.25) !important; }
 .text-red { color: var(--isy-pixel-danger); font-weight: bold; }
 .error-badge { font-size: var(--isy-fs-sm); color: var(--isy-pixel-text); background: var(--isy-pixel-danger); padding: var(--isy-space-1) var(--isy-space-1); border-radius: var(--isy-radius-sm); }
 
 /* Locate Button */
-.id-cell { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.id-cell { display: flex; align-items: center; justify-content: space-between; gap: var(--isy-space-1); }
 .locate-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; }
 .locate-btn:hover { opacity: 1; transform: scale(1.1); }
 .locate-icon { width: 16px; height: 16px; display: block; }
@@ -1539,7 +1539,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .pick-icon { width: 16px; height: 16px; display: block; }
 
 /* Undo & Bulk */
-.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--isy-pixel-bg); border: 1px solid var(--isy-pixel-border); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-5); border-radius: 999px; display: flex; gap: 10px; align-items: center; box-shadow: var(--isy-elev-2); z-index: var(--isy-z-modal); }
+.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--isy-pixel-bg); border: 1px solid var(--isy-pixel-border); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-5); border-radius: 999px; display: flex; gap: var(--isy-space-2); align-items: center; box-shadow: var(--isy-elev-2); z-index: var(--isy-z-modal); }
 .undo-toast.info { background: var(--isy-pixel-border); }
 .undo-action-btn {
   background: transparent; border: 1px solid var(--isy-pixel-border-hover); color: var(--isy-pixel-green);
@@ -1567,9 +1567,9 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
   margin: 0; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-green); letter-spacing: 0.06em; text-transform: uppercase;
 }
-.bulk-controls { display: flex; flex-direction: column; gap: 1rem; margin: var(--isy-space-6) 0; padding: 0 var(--isy-space-6); }
-.bulk-field { display: flex; flex-direction: column; gap: 5px; }
-.bulk-field-row { display: flex; gap: 1rem; }
+.bulk-controls { display: flex; flex-direction: column; gap: var(--isy-space-4); margin: var(--isy-space-6) 0; padding: 0 var(--isy-space-6); }
+.bulk-field { display: flex; flex-direction: column; gap: var(--isy-space-1); }
+.bulk-field-row { display: flex; gap: var(--isy-space-4); }
 .bulk-select, .bulk-input {
   padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-border); border-radius: var(--isy-radius-sm); width: 100%;
   box-sizing: border-box; background: var(--isy-pixel-bg-alt); color: var(--isy-pixel-text);
@@ -1578,7 +1578,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .bulk-select:focus, .bulk-input:focus {
   outline: none; border-color: var(--isy-pixel-green); box-shadow: 0 0 0 2px rgba(46, 204, 113, 0.2);
 }
-.bulk-buttons { display: flex; gap: 1rem; justify-content: flex-end; padding: 0 var(--isy-space-6) var(--isy-space-6); }
+.bulk-buttons { display: flex; gap: var(--isy-space-4); justify-content: flex-end; padding: 0 var(--isy-space-6) var(--isy-space-6); }
 .bulk-divider { border: none; border-top: 1px solid var(--isy-pixel-text-dim); margin: var(--isy-space-1) 0; }
 .bulk-hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); font-style: italic; }
 
@@ -1588,11 +1588,11 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .danger-btn { background: var(--isy-pixel-danger); color: white; border: none; padding: var(--isy-space-2) var(--isy-space-4); border-radius: var(--isy-radius-sm); cursor: pointer; }
 
 /* Tabs */
-.tabs { display: flex; gap: 5px; border-bottom: 2px solid var(--isy-pixel-border); padding-bottom: var(--isy-space-1); background: var(--isy-pixel-bg); padding: var(--isy-space-2) var(--isy-space-3); }
+.tabs { display: flex; gap: var(--isy-space-1); border-bottom: 2px solid var(--isy-pixel-border); padding-bottom: var(--isy-space-1); background: var(--isy-pixel-bg); padding: var(--isy-space-2) var(--isy-space-3); }
 .tab-btn { background: transparent; border: 1px solid var(--isy-pixel-border); padding: var(--isy-space-1) var(--isy-space-3); cursor: pointer; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-text-dim); border-radius: var(--isy-radius-sm); letter-spacing: 0.05em; }
 .tab-btn.active { background: var(--isy-pixel-border); color: var(--isy-pixel-text); border-color: var(--isy-pixel-border-hover); }
 
-.header-actions { display: flex; gap: 0.5rem; }
+.header-actions { display: flex; gap: var(--isy-space-2); }
 .icon-btn { background: none; border: none; font-size: var(--isy-fs-lg); cursor: pointer; }
 
 .modal-header h3 {

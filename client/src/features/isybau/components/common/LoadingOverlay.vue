@@ -51,7 +51,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: var(--isy-space-3);
   padding: var(--isy-space-6) var(--isy-space-7);
   border-radius: var(--sv-radius, 16px);
   background: var(--sv-surface, rgba(20, 24, 40, 0.92));

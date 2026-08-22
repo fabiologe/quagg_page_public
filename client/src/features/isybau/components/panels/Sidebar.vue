@@ -357,7 +357,7 @@ onBeforeUnmount(() => teardownDemWorker());
 .upload-section {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: var(--isy-space-2);
   padding: var(--isy-space-3) var(--isy-space-3) var(--isy-space-2);
   border-bottom: 1px solid var(--isy-border);
   flex-shrink: 0;
@@ -369,7 +369,7 @@ onBeforeUnmount(() => teardownDemWorker());
 .file-btn {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--isy-space-3);
   padding: var(--isy-space-2) var(--isy-space-3);
   background: var(--isy-accent);
   color: var(--isy-pixel-green-bright);
@@ -404,7 +404,7 @@ onBeforeUnmount(() => teardownDemWorker());
 .folder-btn {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--isy-space-3);
   width: 100%;
   padding: var(--isy-space-2) var(--isy-space-3);
   background: var(--isy-accent);
@@ -445,7 +445,7 @@ onBeforeUnmount(() => teardownDemWorker());
 .btn-text {
   display: flex;
   flex-direction: column;
-  gap: 0.08rem;
+  gap: var(--isy-space-1);
   min-width: 0;
 }
 .btn-label {
@@ -465,7 +465,7 @@ onBeforeUnmount(() => teardownDemWorker());
 .dem-import-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: var(--isy-space-2);
   padding: var(--isy-space-2) var(--isy-space-3);
   background: var(--isy-bg-alt);
   border: 1px solid var(--isy-border);
@@ -484,7 +484,7 @@ onBeforeUnmount(() => teardownDemWorker());
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--isy-space-2);
   font-size: var(--isy-fs-sm);
   color: var(--isy-text);
 }
@@ -498,7 +498,7 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .dem-import-quick {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--isy-space-1);
   flex-wrap: wrap;
 }
 .dem-import-quick button {
@@ -529,7 +529,7 @@ onBeforeUnmount(() => teardownDemWorker());
 }
 .dem-import-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--isy-space-2);
 }
 .dem-import-actions .folder-btn { font-size: var(--isy-fs-pixel-md); }
 .dem-import-actions .dem-go { background: var(--isy-pixel-green); color: var(--isy-pixel-border); }

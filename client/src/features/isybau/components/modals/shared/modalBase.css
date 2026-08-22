@@ -41,7 +41,7 @@
   border-top: 1px solid var(--isy-pixel-text-dim);
   display: flex;
   justify-content: flex-end;
-  gap: 1rem;
+  gap: var(--isy-space-4);
 }
 
 /* Chip/Pillen-Tab — NICHT die Sidebar-Nav-Tab-Variante aus IsybauHelpModal.vue

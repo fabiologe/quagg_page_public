@@ -759,7 +759,7 @@ watch(() => props.selectedElement, (val) => {
 
 .flex-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
 }
 
 .half {
@@ -769,7 +769,7 @@ watch(() => props.selectedElement, (val) => {
 .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--isy-space-2);
 }
 
 .checkbox-row input {
@@ -800,7 +800,7 @@ watch(() => props.selectedElement, (val) => {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.4rem;
+    gap: var(--isy-space-2);
     transition: background 0.15s;
 }
 .primary-btn:hover { background: var(--isy-pixel-border); }
@@ -865,7 +865,7 @@ watch(() => props.selectedElement, (val) => {
     animation: pulse 2s infinite;
 }
 
-.input-with-pick { display: flex; align-items: center; gap: 6px; }
+.input-with-pick { display: flex; align-items: center; gap: var(--isy-space-1); }
 .input-with-pick .full-input { flex: 1; }
 .pick-btn { border: none; background: none; cursor: pointer; opacity: 0.5; padding: 0; line-height: 0; flex-shrink: 0; }
 .pick-btn:hover { opacity: 1; transform: scale(1.1); }

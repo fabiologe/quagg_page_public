@@ -266,7 +266,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     border-radius: var(--isy-radius-lg);
     box-shadow: var(--isy-elev-3);
     display: flex;
-    gap: 0.25rem;
+    gap: var(--isy-space-1);
 }
 
 .view-switcher button {

@@ -127,7 +127,7 @@ onUnmounted(() => { running = false; });
   padding: var(--isy-space-4) var(--isy-space-3) var(--isy-space-3);
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: var(--isy-space-2);
   overflow: hidden;
 }
 

@@ -36,13 +36,13 @@
             "/^var\\(--isy-z-(base|sticky|panel|modal|top)\\)$/",
             "/^calc\\(var\\(--isy-z-(base|sticky|panel|modal|top)\\) \\+ [0-9]+\\)$/"
           ],
-          "/^(padding|margin)/": [
-            "/^((var\\(--isy-space-[1-7]\\)|calc\\(-1 \\* var\\(--isy-space-[1-7]\\)\\)|0|auto|inherit)(\\s+|$))+$/",
-            "/^clamp\\(/"
-          ],
           "/^border-.*radius$|^border-radius$/": [
             "/^((var\\(--isy-radius-(sm|md|lg)\\)|0|50%|999px)(\\s+|$))+$/",
             "/^var\\(--sv-radius/"
+          ],
+          "/^(padding|margin|gap$|row-gap|column-gap|grid-gap|grid-row-gap|grid-column-gap)/": [
+            "/^((var\\(--isy-space-[1-7]\\)|calc\\(-1 \\* var\\(--isy-space-[1-7]\\)\\)|0|auto|inherit)(\\s+|$))+$/",
+            "/^clamp\\(/"
           ]
         }
       }
