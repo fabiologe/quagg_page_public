@@ -264,7 +264,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     background: var(--isy-bg-alt);
     padding: var(--isy-space-1);
     border-radius: var(--isy-radius-lg);
-    box-shadow: 0 4px 16px rgba(4,6,71,0.35);
+    box-shadow: var(--isy-elev-3);
     display: flex;
     gap: 0.25rem;
 }
@@ -449,7 +449,7 @@ watch(() => store.ui.importWarnings, (msgs) => {
     width: 400px;
     background: var(--isy-toast-bg);
     border-left: 5px solid var(--isy-pixel-warning); /* Warning Orange */
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    box-shadow: var(--isy-elev-3);
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-4);
     z-index: calc(var(--isy-z-top) + 1);

@@ -1539,7 +1539,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .pick-icon { width: 16px; height: 16px; display: block; }
 
 /* Undo & Bulk */
-.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--isy-pixel-bg); border: 1px solid var(--isy-pixel-border); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-5); border-radius: 999px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 10px rgba(4,6,71,0.4); z-index: var(--isy-z-modal); }
+.undo-toast { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--isy-pixel-bg); border: 1px solid var(--isy-pixel-border); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-5); border-radius: 999px; display: flex; gap: 10px; align-items: center; box-shadow: var(--isy-elev-2); z-index: var(--isy-z-modal); }
 .undo-toast.info { background: var(--isy-pixel-border); }
 .undo-action-btn {
   background: transparent; border: 1px solid var(--isy-pixel-border-hover); color: var(--isy-pixel-green);
@@ -1558,7 +1558,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
    Lila/Limetten-Pixel-Header wie das Hauptmodal, statt der alten weißen
    Bootstrap-Karte ohne Header/Close-Button. */
 .bulk-edit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(4,6,71,0.55); z-index: var(--isy-z-panel); display: flex; justify-content: center; align-items: center; }
-.bulk-edit-modal { background: var(--isy-pixel-text); border: 1px solid var(--isy-pixel-border); border-radius: var(--isy-radius-lg); width: 400px; box-shadow: 0 4px 25px rgba(4,6,71,0.35); overflow: hidden; }
+.bulk-edit-modal { background: var(--isy-pixel-text); border: 1px solid var(--isy-pixel-border); border-radius: var(--isy-radius-lg); width: 400px; box-shadow: var(--isy-elev-3); overflow: hidden; }
 .bulk-edit-header {
   display: flex; justify-content: space-between; align-items: center;
   background: var(--isy-pixel-bg); padding: var(--isy-space-3) var(--isy-space-4); border-bottom: 2px solid var(--isy-pixel-border);

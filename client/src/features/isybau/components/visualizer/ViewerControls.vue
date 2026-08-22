@@ -124,7 +124,7 @@ const contourTitle = computed(() => {
   background: var(--isy-pixel-bg);
   padding: var(--isy-space-2);
   border-radius: var(--isy-radius-lg);
-  box-shadow: 0 4px 16px rgba(4,6,71,0.4);
+  box-shadow: var(--isy-elev-3);
   border: 1px solid var(--isy-pixel-border);
   z-index: var(--isy-z-sticky);
   display: flex;

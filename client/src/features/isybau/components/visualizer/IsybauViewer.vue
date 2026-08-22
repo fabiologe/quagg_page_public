@@ -1658,7 +1658,7 @@ svg {
   border: 1px solid var(--isy-pixel-border);
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2) var(--isy-space-3);
-  box-shadow: 0 4px 16px rgba(4,6,71,0.4);
+  box-shadow: var(--isy-elev-3);
   z-index: var(--isy-z-sticky);
   display: flex;
   flex-direction: column;
@@ -1710,7 +1710,7 @@ svg {
   z-index: calc(var(--isy-z-sticky) + 1);
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green-glow);
-  box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+  box-shadow: var(--isy-elev-3), inset 0 0 20px rgba(0, 255, 80, 0.05);
   color: var(--isy-pixel-green-glow);
   text-shadow: var(--isy-pixel-text-glow);
   padding: var(--isy-space-1) var(--isy-space-2);
@@ -1770,7 +1770,7 @@ svg {
   border-radius: var(--isy-radius-lg);
   padding: var(--isy-space-2) var(--isy-space-4);
   z-index: var(--isy-z-modal);
-  box-shadow: 0 4px 16px rgba(4,6,71,0.4);
+  box-shadow: var(--isy-elev-3);
 }
 .msb-count {
   color: var(--isy-pixel-green);

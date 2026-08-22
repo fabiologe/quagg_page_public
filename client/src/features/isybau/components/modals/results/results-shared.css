@@ -112,7 +112,7 @@
     background: white;
     padding: var(--isy-space-6);
     border-radius: var(--isy-radius-lg);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: var(--isy-elev-1);
     border: 1px solid #f0f0f0;
     text-align: center;
 }
@@ -345,7 +345,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     background: white;
     width: 100%;
     max-width: 800px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    box-shadow: var(--isy-elev-3);
     border-radius: var(--isy-radius-lg);
     border: 1px solid var(--isy-pixel-text-dim);
     display: flex; 
@@ -389,7 +389,7 @@ h3 .emoji-icon { width: 12px; height: 12px; }
     background: white;
     border-radius: var(--isy-radius-lg);
     margin-bottom: var(--isy-space-6);
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    box-shadow: var(--isy-elev-1);
     border: 1px solid var(--isy-pixel-text-dim);
 }
 .score-circle {

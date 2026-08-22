@@ -56,7 +56,7 @@ const clampedPercent = computed(() => Math.max(0, Math.min(100, Math.round(props
   border-radius: var(--sv-radius, 16px);
   background: var(--sv-surface, rgba(20, 24, 40, 0.92));
   border: 1px solid var(--sv-border, rgba(255, 255, 255, 0.12));
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5), var(--sv-glow-violet, none);
+  box-shadow: var(--isy-elev-4), var(--sv-glow-violet, none);
   min-width: 260px;
 }
 .lo-anim {

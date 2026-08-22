@@ -329,7 +329,7 @@ const edgeUtilClass = computed(() => {
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-border);
   border-radius: var(--isy-radius-lg);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  box-shadow: var(--isy-elev-4);
   overflow: hidden;
   z-index: var(--isy-z-sticky);
   backdrop-filter: blur(8px);

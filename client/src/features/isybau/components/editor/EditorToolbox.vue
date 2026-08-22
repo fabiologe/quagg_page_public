@@ -151,7 +151,7 @@ const hint = computed(() => {
     background: var(--isy-pixel-bg);
     padding: var(--isy-space-1);
     border-radius: var(--isy-radius-lg);
-    box-shadow: 0 4px 16px rgba(4,6,71,0.4);
+    box-shadow: var(--isy-elev-3);
     border: 1px solid var(--isy-pixel-border);
     display: flex;
     gap: 0.5rem;
@@ -223,7 +223,7 @@ const hint = computed(() => {
     transform: translateX(-50%);
     background: var(--isy-pixel-bg);
     border: 1px solid var(--isy-pixel-green-glow);
-    box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+    box-shadow: var(--isy-elev-3), inset 0 0 20px rgba(0, 255, 80, 0.05);
     color: var(--isy-pixel-green-glow);
     text-shadow: var(--isy-pixel-text-glow);
     padding: var(--isy-space-1) var(--isy-space-2);

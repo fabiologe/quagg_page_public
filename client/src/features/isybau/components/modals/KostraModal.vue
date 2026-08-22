@@ -265,7 +265,7 @@ const applyResult = () => {
   border-radius: var(--isy-radius-lg);
   width: 90%;
   max-width: 500px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  box-shadow: var(--isy-elev-3);
   display: flex;
   flex-direction: column;
 }

@@ -219,7 +219,7 @@ onUnmounted(() => {
 .draggable-modal {
     background: white;
     border-radius: var(--isy-radius-lg);
-    box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+    box-shadow: var(--isy-elev-3);
     border: 1px solid rgba(0,0,0,0.1);
     display: flex;
     flex-direction: column;

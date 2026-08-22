@@ -188,7 +188,7 @@ function formatDate(iso) {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--isy-elev-4);
   overflow: hidden;
 }
 

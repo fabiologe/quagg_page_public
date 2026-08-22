@@ -467,7 +467,7 @@ onUnmounted(() => {
   border: 1px solid var(--isy-pixel-green-glow);
   border-radius: var(--isy-radius-sm);
   padding: var(--isy-space-3) var(--isy-space-6) var(--isy-space-3) var(--isy-space-3);
-  box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+  box-shadow: var(--isy-elev-3), inset 0 0 20px rgba(0, 255, 80, 0.05);
   pointer-events: auto;
 }
 

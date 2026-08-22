@@ -670,7 +670,7 @@ watch(() => props.selectedElement, (val) => {
   max-height: 70vh;
   background: var(--isy-pixel-bg-deep);
   border-radius: var(--isy-radius-lg);
-  box-shadow: 0 4px 25px rgba(4,6,71,0.4);
+  box-shadow: var(--isy-elev-3);
   display: flex;
   flex-direction: column;
   z-index: var(--isy-z-panel);
@@ -680,7 +680,7 @@ watch(() => props.selectedElement, (val) => {
 
 .info-window.dragging {
   user-select: none;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+  box-shadow: var(--isy-elev-4);
 }
 
 .info-header {

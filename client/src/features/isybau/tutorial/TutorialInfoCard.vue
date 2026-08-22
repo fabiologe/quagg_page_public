@@ -35,7 +35,7 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green-glow);
   border-radius: var(--isy-radius-sm);
-  box-shadow: 0 4px 16px rgba(4, 6, 71, 0.5), inset 0 0 20px rgba(0, 255, 80, 0.05);
+  box-shadow: var(--isy-elev-3), inset 0 0 20px rgba(0, 255, 80, 0.05);
   pointer-events: auto;
 }
 

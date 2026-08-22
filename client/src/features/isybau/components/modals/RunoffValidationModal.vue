@@ -121,7 +121,7 @@ const sortedData = computed(() => {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: var(--isy-elev-2);
 }
 
 .modal-header {
