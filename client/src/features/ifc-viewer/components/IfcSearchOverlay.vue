@@ -121,8 +121,8 @@ function close() { emit('close'); }
 .search-box {
   width: 520px;
   max-width: 90vw;
-  background: #1a1e2e;
-  border: 1px solid rgba(255,255,255,0.12);
+  background: var(--cde-surface-alt);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(0,0,0,0.6);
   overflow: hidden;
@@ -135,35 +135,35 @@ function close() { emit('close'); }
   align-items: center;
   gap: 0.4rem;
   padding: 0.6rem 0.8rem;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid var(--cde-tint);
 }
-.search-icon  { color: #78909c; }
+.search-icon  { color: var(--cde-text-mute); }
 .search-input {
   flex: 1;
   background: transparent;
   border: none;
   outline: none;
-  color: #cfd8dc;
+  color: var(--cde-text);
   font-size: 0.95rem;
 }
 .search-close {
-  background: none; border: none; color: #78909c;
+  background: none; border: none; color: var(--cde-text-mute);
   font-size: 1.1rem; cursor: pointer; padding: 0 0.2rem;
 }
-.search-close:hover { color: #ef5350; }
+.search-close:hover { color: var(--cde-danger); }
 
 .search-meta {
   padding: 0.3rem 0.8rem;
   font-size: 0.68rem;
-  color: #546e7a;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: var(--cde-text-dimmer);
+  border-bottom: 1px solid var(--cde-tint-weak);
 }
 
 .search-results {
   max-height: 360px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  scrollbar-color: var(--cde-tint-max) transparent;
 }
 
 .result-row {
@@ -174,19 +174,19 @@ function close() { emit('close'); }
   align-items: center;
   cursor: pointer;
   font-size: 0.78rem;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--cde-tint-weak);
 }
 .result-row:hover,
 .result-row.active { background: rgba(33,150,243,0.15); }
 
-.result-cat  { color: #90caf9; font-weight: 600; font-size: 0.7rem; }
-.result-name { color: #cfd8dc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-cat  { color: var(--cde-accent-soft); font-weight: 600; font-size: 0.7rem; }
+.result-name { color: var(--cde-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-id   {
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   font-family: monospace;
   font-size: 0.7rem;
   text-align: right;
 }
 
-.no-results { padding: 2rem; text-align: center; color: #546e7a; font-size: 0.8rem; }
+.no-results { padding: 2rem; text-align: center; color: var(--cde-text-dimmer); font-size: 0.8rem; }
 </style>

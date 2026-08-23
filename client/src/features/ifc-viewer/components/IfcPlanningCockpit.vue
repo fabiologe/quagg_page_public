@@ -1,23 +1,11 @@
 <template>
-  <DraggableModal
-    :isOpen="true"
-    initialWidth="540px"
-    initialHeight="640px"
-    initialTop="80px"
-    initialLeft="calc(50% - 270px)"
-    @close="emit('close')"
-  >
+  <!-- Sprint P/AP-12: Der frühere `chrome`-Zweig ist entfallen. Er hätte die
+       Komponente wahlweise in ein schwebendes DraggableModal gehüllt — ein Weg,
+       den seit Sprint U kein Aufrufer mehr nahm (alle setzten `chrome=false`),
+       dessen Vorgabewert aber auf `true` stand. Das Chrome liefert jetzt
+       ausschließlich CdePanel in der Leiste. -->
+  <div class="rail-fill">
     <div class="cockpit">
-      <!-- Header -->
-      <div class="ck-header">
-        <div class="ck-title">
-          <span class="ck-icon">📊</span>
-          <span>Planungs-Cockpit</span>
-          <span class="ck-phase">LP 2–4</span>
-        </div>
-        <button class="ck-close" @click="emit('close')" title="Schließen">&times;</button>
-      </div>
-
       <!-- Tabs (Karten 1-3 + später 4) -->
       <div class="ck-tabs">
         <button
@@ -92,12 +80,11 @@
         />
       </div>
     </div>
-  </DraggableModal>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import IfcAreaSchedule from './IfcAreaSchedule.vue';
 import IfcKgEditor     from './IfcKgEditor.vue';
 import IfcVolumeTab    from './IfcVolumeTab.vue';
@@ -117,7 +104,8 @@ import { useViewerApi } from '../composables/viewerApi.js';
 
 // Engine-Accessoren per provide/inject aus IfcViewer.vue statt Funktions-Props.
 const api = useViewerApi();
-const emit = defineEmits(['close']);
+// Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
+// Leiste kennt und den Panel-Store führt.
 
 const tabs = [
   { id: 'areas',    icon: '📐', label: 'Flächen',       disabled: false },
@@ -380,40 +368,23 @@ watch(activeTab, (t) => {
 </script>
 
 <style scoped>
+/* Sprint U: In der Panel-Leiste füllt die Komponente das Panel-Body */
+.rail-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
 .cockpit {
   display: flex; flex-direction: column;
   height: 100%;
   background: linear-gradient(180deg, #1a2a35 0%, #0d1820 100%);
-  color: #cfd8dc;
+  color: var(--cde-text);
 }
-.ck-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.55rem 0.7rem;
-  background: rgba(255,255,255,0.05);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  cursor: move;
-}
-.ck-title { display: flex; align-items: center; gap: 0.45rem; font-weight: 600; font-size: 0.95rem; }
-.ck-icon { font-size: 1.1rem; }
-.ck-phase {
-  font-size: 0.65rem; color: #a5d6a7;
-  background: rgba(102,187,106,0.18);
-  padding: 0.08rem 0.45rem; border-radius: 8px;
-  margin-left: 0.4rem;
-}
-.ck-close {
-  width: 1.8rem; height: 1.8rem;
-  background: transparent; color: #b0bec5; border: 1px solid transparent;
-  font-size: 1.2rem; cursor: pointer; border-radius: 4px;
-}
-.ck-close:hover { background: rgba(244,67,54,0.2); color: #ff8a80; }
+/* Das CSS des entfallenen Modal-Kopfes ist mit ihm weggefallen (Sprint P/AP-12). */
 
 .ck-tabs {
   display: flex;
   gap: 0.25rem;
   padding: 0.4rem 0.55rem 0;
-  background: rgba(255,255,255,0.02);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: var(--cde-tint-weak);
+  border-bottom: 1px solid var(--cde-tint-weak);
 }
 .ck-tab {
   display: flex; align-items: center; gap: 0.3rem;
@@ -421,21 +392,21 @@ watch(activeTab, (t) => {
   background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
-  color: #90a4ae; font-size: 0.78rem;
+  color: var(--cde-text-dim); font-size: 0.78rem;
   cursor: pointer; border-radius: 5px 5px 0 0;
   transition: background 0.1s, color 0.1s;
 }
-.ck-tab:hover:not(.disabled):not(.active) { background: rgba(255,255,255,0.06); color: #cfd8dc; }
+.ck-tab:hover:not(.disabled):not(.active) { background: var(--cde-tint-weak); color: var(--cde-text); }
 .ck-tab.active {
-  background: rgba(255,255,255,0.06);
-  color: #4fc3f7;
+  background: var(--cde-tint-weak);
+  color: var(--cde-accent);
   border-color: rgba(79,195,247,0.3);
-  border-bottom-color: rgba(255,255,255,0.06);
+  border-bottom-color: var(--cde-tint-weak);
 }
 .ck-tab.disabled { opacity: 0.4; cursor: not-allowed; }
 .tab-icon { font-size: 0.95rem; }
 .tab-soon {
-  font-size: 0.55rem; color: #ffb74d;
+  font-size: 0.55rem; color: var(--cde-warn);
   background: rgba(255,183,77,0.15);
   padding: 0.05rem 0.3rem; border-radius: 7px;
   margin-left: 0.2rem;
@@ -446,7 +417,7 @@ watch(activeTab, (t) => {
   padding: 0.7rem;
 }
 
-.placeholder { color: #90a4ae; text-align: center; padding: 2rem 0.5rem; }
+.placeholder { color: var(--cde-text-dim); text-align: center; padding: 2rem 0.5rem; }
 .placeholder p { margin: 0.2rem 0; }
-.placeholder .hint { font-size: 0.75rem; color: #607d8b; font-style: italic; }
+.placeholder .hint { font-size: 0.75rem; color: var(--cde-text-faint); font-style: italic; }
 </style>

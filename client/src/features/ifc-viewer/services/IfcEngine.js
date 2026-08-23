@@ -747,12 +747,59 @@ export class IfcEngine {
         return model.getSpatialStructure();
     }
 
-    async setStoreyVisible(localId, visible) {
+    /**
+     * Alle Element-localIds einer Ebene (Sprint U, AP-U5).
+     *
+     * `hider.set` auf den Geschoss-Knoten allein blendet dessen Inhalt nicht
+     * zuverlässig aus — die Elemente hängen als Nachfahren darunter. Der
+     * Baumlauf sammelt sie (Muster wie Din277Classifier._buildStoreyIndex)
+     * und merkt sich das Ergebnis je Modell/Ebene.
+     */
+    async getStoreyElements(modelId, storeyLocalId) {
+        if (!this._storeyElementCache) this._storeyElementCache = new Map();
+        const key = `${modelId}|${storeyLocalId}`;
+        if (this._storeyElementCache.has(key)) return this._storeyElementCache.get(key);
+
         const fragments = this.components.get(OBC.FragmentsManager);
-        const model     = [...fragments.list.values()][0];
+        const model = fragments.list.get(modelId) ?? [...fragments.list.values()][0];
+        if (!model) return [];
+
+        let tree = null;
+        try { tree = await model.getSpatialStructure(); } catch { return []; }
+
+        const ids = [];
+        const sammle = (node) => {
+            if (!node) return;
+            if (node.localId != null) ids.push(node.localId);
+            for (const c of (node.children ?? [])) sammle(c);
+        };
+        const suche = (node) => {
+            if (!node) return false;
+            if (node.localId === storeyLocalId) { sammle(node); return true; }
+            for (const c of (node.children ?? [])) {
+                if (suche(c)) return true;
+            }
+            return false;
+        };
+        suche(tree);
+
+        this._storeyElementCache.set(key, ids);
+        return ids;
+    }
+
+    /**
+     * Sichtbarkeit einer Ebene schalten.
+     * `modelId` ist seit Sprint U durchgereicht — vorher griff die Funktion
+     * hart auf das ERSTE Modell zu und ignorierte alle weiteren.
+     */
+    async setStoreyVisible(localId, visible, modelId = null) {
+        const fragments = this.components.get(OBC.FragmentsManager);
+        const model = (modelId != null ? fragments.list.get(modelId) : null)
+                   ?? [...fragments.list.values()][0];
         if (!model) return;
+        const ids = await this.getStoreyElements(model.modelId, localId);
         const hider = this.components.get(OBC.Hider);
-        await hider.set(visible, { [model.modelId]: [localId] });
+        await hider.set(visible, { [model.modelId]: ids.length ? ids : [localId] });
     }
 
     /**
@@ -993,6 +1040,27 @@ export class IfcEngine {
      * Add an annotation at the world-point under (clientX, clientY).
      * Returns the new annotation { id, position, text, color, labelOffset, idx } or null if no hit.
      */
+    /**
+     * Annotation an einem bekannten WELT-Punkt anlegen (Sprint U): das
+     * Kontextmenü am gewählten Bauteil kennt dessen Mittelpunkt bereits und
+     * braucht keinen Bildschirm-Treffer.
+     */
+    addAnnotationAt(position, text, color = '#e91e63') {
+        if (!Array.isArray(position) || position.length < 3) return null;
+        if (!this._annotations) this._annotations = [];
+        const ann = {
+            id:   Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            position: [position[0], position[1], position[2]],
+            text: (text ?? '').trim(),
+            color,
+            labelOffset: [40, -60],
+            idx:  this._annotations.length + 1,
+        };
+        this._annotations.push(ann);
+        if (this._annotationGroup) this._drawAnnotationMarker(ann);
+        return ann;
+    }
+
     async addAnnotation(clientX, clientY, text, color = '#e91e63') {
         const pt = await this._probeWorldPoint(clientX, clientY);
         if (!pt) return null;

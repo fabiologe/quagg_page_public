@@ -277,95 +277,95 @@ function fmt(n) {
 </script>
 
 <style scoped>
-.kg-editor { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: #cfd8dc; }
+.kg-editor { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
 
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.35rem 0.4rem;
-  background: rgba(255,255,255,0.04);
+  background: var(--cde-tint-weak);
   border-radius: 5px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--cde-tint);
 }
-.card-title { font-weight: 600; font-size: 0.84rem; color: #eceff1; }
+.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
 .card-actions { display: flex; gap: 0.2rem; }
 .card-btn {
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: #cfd8dc;
+  background: var(--cde-tint);
+  border: 1px solid var(--cde-tint-strong);
+  color: var(--cde-text);
   width: 1.6rem; height: 1.6rem;
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
-.card-btn:hover:not(:disabled) { background: rgba(255,255,255,0.14); }
-.card-btn.active { background: rgba(52,152,219,0.3); color: #4fc3f7; border-color: rgba(52,152,219,0.55); }
+.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
+.card-btn.active { background: rgba(52,152,219,0.3); color: var(--cde-accent); border-color: rgba(52,152,219,0.55); }
 .card-btn:disabled { opacity: 0.5; cursor: default; }
 
-.state-msg { color: #90a4ae; font-style: italic; padding: 1rem 0.5rem; text-align: center; }
+.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 1rem 0.5rem; text-align: center; }
 
 .kg-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
 .kg-total-card {
   padding: 0.45rem 0.55rem;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint);
   border-left-width: 3px;
   border-radius: 4px;
 }
 .kg-total-code { font-weight: 700; font-size: 0.95rem; letter-spacing: 0.05em; }
-.kg-total-label { font-size: 0.7rem; color: #b0bec5; margin-top: 0.1rem; }
-.kg-total-stats { font-size: 0.7rem; color: #90a4ae; margin-top: 0.3rem; display: flex; gap: 0.3rem; }
+.kg-total-label { font-size: 0.7rem; color: var(--cde-text-soft); margin-top: 0.1rem; }
+.kg-total-stats { font-size: 0.7rem; color: var(--cde-text-dim); margin-top: 0.3rem; display: flex; gap: 0.3rem; }
 
-.kg-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.06); }
+.kg-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid var(--cde-tint-weak); }
 .kg-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
 .kg-table th {
   position: sticky; top: 0; z-index: 1;
   background: rgba(15,30,40,0.95);
-  color: #b0bec5;
+  color: var(--cde-text-soft);
   padding: 0.35rem 0.5rem;
   text-align: left;
   font-weight: 500;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid var(--cde-tint-strong);
 }
 .kg-table th.col-count, .kg-table th.col-vol { text-align: right; }
 .kg-table td {
   padding: 0.28rem 0.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--cde-tint-weak);
 }
 .col-color { width: 1.4rem; }
-.col-code { width: 2.6rem; font-weight: 600; color: #eceff1; }
-.col-label { color: #cfd8dc; }
+.col-code { width: 2.6rem; font-weight: 600; color: var(--cde-text-bright); }
+.col-label { color: var(--cde-text); }
 .col-count, .col-vol { text-align: right; font-variant-numeric: tabular-nums; }
 
 .swatch {
   display: inline-block; width: 0.9rem; height: 0.9rem;
-  border-radius: 2px; border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 2px; border: 1px solid var(--cde-tint-max);
 }
 .swatch-unassigned { background: transparent; border-style: dashed; border-color: #ff8a65; }
 
 /* B5: Aufklappen + KG-Zuweisung */
 .expand-btn {
-  background: none; border: none; color: #90a4ae; cursor: pointer;
+  background: none; border: none; color: var(--cde-text-dim); cursor: pointer;
   font-size: 0.7rem; padding: 0 0.25rem 0 0;
   transition: transform 0.12s;
   display: inline-block;
 }
 .expand-btn.open { transform: rotate(90deg); }
-.expand-btn:hover { color: #4fc3f7; }
+.expand-btn:hover { color: var(--cde-accent); }
 
 .kg-detail-row td { padding: 0.2rem 0.4rem 0.4rem 1.6rem; background: rgba(0,0,0,0.18); }
 .el-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 220px; overflow-y: auto; }
 .el-row { display: flex; align-items: center; gap: 0.4rem; }
 .el-zoom {
   flex: 1; text-align: left;
-  background: none; border: none; color: #b0bec5; cursor: pointer;
+  background: none; border: none; color: var(--cde-text-soft); cursor: pointer;
   font-size: 0.72rem; padding: 0.15rem 0.2rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.el-zoom:hover { color: #4fc3f7; }
+.el-zoom:hover { color: var(--cde-accent); }
 .el-kg-select {
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #cfd8dc;
+  background: var(--cde-tint);
+  border: 1px solid var(--cde-tint-max);
+  color: var(--cde-text);
   border-radius: 3px;
   font-size: 0.7rem;
   padding: 0.1rem 0.2rem;
@@ -373,12 +373,12 @@ function fmt(n) {
 }
 .el-kg-select:disabled { opacity: 0.4; cursor: not-allowed; }
 .el-override-badge { color: #ffd54f; font-size: 0.7rem; }
-.el-more { color: #78909c; font-size: 0.68rem; font-style: italic; padding: 0.2rem; }
+.el-more { color: var(--cde-text-mute); font-size: 0.68rem; font-style: italic; padding: 0.2rem; }
 
 .kg-row { cursor: pointer; transition: background 0.08s; }
 .kg-row:hover { background: rgba(52,152,219,0.15); }
-.kg-row.is-root td { background: rgba(255,255,255,0.04); font-weight: 600; color: #eceff1; }
+.kg-row.is-root td { background: var(--cde-tint-weak); font-weight: 600; color: var(--cde-text-bright); }
 .kg-row.is-root td.col-label { font-size: 0.78rem; }
 .kg-row.unassigned td { color: #ff8a65; font-style: italic; }
-.kg-row.unassigned small { color: #90a4ae; font-style: normal; font-size: 0.65rem; margin-left: 0.3rem; }
+.kg-row.unassigned small { color: var(--cde-text-dim); font-style: normal; font-size: 0.65rem; margin-left: 0.3rem; }
 </style>

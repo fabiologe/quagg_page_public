@@ -73,13 +73,13 @@ function _formatDate(ts) {
 .sv-panel {
   width: 100%;
   display: flex; flex-direction: column;
-  background: rgb(18, 20, 30);
+  background: var(--cde-surface);
 }
 .sv-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.55rem 0.75rem;
   background: rgba(30,35,50,0.95);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 .sv-title { font-size: 0.78rem; font-weight: 600; color: #ffd54f; }
@@ -96,12 +96,12 @@ function _formatDate(ts) {
 
 .sv-body {
   flex: 1; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
+  scrollbar-width: thin; scrollbar-color: var(--cde-tint-max) transparent;
 }
 
 .sv-empty {
   padding: 1.2rem 0.8rem;
-  color: #546e7a; font-size: 0.72rem; text-align: center;
+  color: var(--cde-text-dimmer); font-size: 0.72rem; text-align: center;
   line-height: 1.6;
 }
 .sv-empty small { color: #37474f; font-size: 0.65rem; }
@@ -111,24 +111,24 @@ function _formatDate(ts) {
   grid-template-columns: 1fr auto auto;
   gap: 0.4rem; align-items: center;
   padding: 0.4rem 0.7rem;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--cde-tint-weak);
   cursor: pointer; transition: background 0.12s;
 }
 .sv-row:hover { background: rgba(255,213,79,0.08); }
 .sv-name {
-  font-size: 0.78rem; color: #cfd8dc;
+  font-size: 0.78rem; color: var(--cde-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sv-meta {
-  font-size: 0.62rem; color: #607d8b;
+  font-size: 0.62rem; color: var(--cde-text-faint);
   font-variant-numeric: tabular-nums;
 }
 .sv-actions { display: flex; gap: 0.15rem; }
 .sv-act {
-  background: none; border: none; color: #78909c;
+  background: none; border: none; color: var(--cde-text-mute);
   font-size: 0.75rem; padding: 0.15rem 0.3rem; cursor: pointer;
   border-radius: 3px; transition: background 0.12s, color 0.12s;
 }
-.sv-act:hover { background: rgba(255,255,255,0.06); color: #cfd8dc; }
-.sv-act--danger:hover { color: #ef5350; }
+.sv-act:hover { background: var(--cde-tint-weak); color: var(--cde-text); }
+.sv-act--danger:hover { color: var(--cde-danger); }
 </style>

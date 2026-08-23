@@ -112,16 +112,16 @@ watch(items, () => persist(), { deep: true });
 </script>
 
 <style scoped>
-.psch-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: #cfd8dc; }
+.psch-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
 
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.35rem 0.4rem;
-  background: rgba(255,255,255,0.04);
+  background: var(--cde-tint-weak);
   border-radius: 5px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--cde-tint);
 }
-.card-title { font-weight: 600; font-size: 0.84rem; color: #eceff1; }
+.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
 .card-btn {
   background: rgba(255,193,7,0.18);
   border: 1px solid rgba(255,193,7,0.45);
@@ -136,9 +136,9 @@ watch(items, () => persist(), { deep: true });
 
 .info-row {
   font-size: 0.7rem;
-  color: #90a4ae;
+  color: var(--cde-text-dim);
   padding: 0.5rem 0.45rem;
-  background: rgba(255,255,255,0.025);
+  background: var(--cde-tint-weak);
   border-radius: 4px;
   line-height: 1.4;
 }
@@ -153,16 +153,16 @@ watch(items, () => persist(), { deep: true });
 }
 .total-cell.prim { background: rgba(255,193,7,0.18); border-color: rgba(255,193,7,0.5); }
 .total-label { font-size: 0.62rem; color: #ffe082; letter-spacing: 0.04em; text-transform: uppercase; }
-.total-value { font-size: 1rem; color: #eceff1; font-weight: 600; }
+.total-value { font-size: 1rem; color: var(--cde-text-bright); font-weight: 600; }
 
 .psch-list { display: flex; flex-direction: column; gap: 0.3rem; max-height: 350px; overflow-y: auto; }
 .empty-state {
-  color: #90a4ae; font-style: italic;
+  color: var(--cde-text-dim); font-style: italic;
   padding: 1.5rem 0.5rem;
   text-align: center;
-  background: rgba(255,255,255,0.02);
+  background: var(--cde-tint-weak);
   border-radius: 4px;
-  border: 1px dashed rgba(255,255,255,0.1);
+  border: 1px dashed var(--cde-tint-strong);
 }
 
 .psch-row {
@@ -170,16 +170,16 @@ watch(items, () => persist(), { deep: true });
   gap: 0.3rem;
   align-items: center;
   padding: 0.25rem 0.3rem;
-  background: rgba(255,255,255,0.03);
+  background: var(--cde-tint-weak);
   border-radius: 4px;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--cde-tint-weak);
 }
 .psch-code, .psch-title, .psch-amount {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint);
   border-radius: 3px;
   padding: 0.2rem 0.35rem;
-  color: #eceff1;
+  color: var(--cde-text-bright);
   font-size: 0.75rem;
   font-family: inherit;
 }
@@ -188,13 +188,13 @@ watch(items, () => persist(), { deep: true });
 .psch-code:focus, .psch-title:focus, .psch-amount:focus {
   outline: none;
   border-color: rgba(255,193,7,0.5);
-  background: rgba(255,255,255,0.07);
+  background: var(--cde-tint);
 }
 
 .psch-del {
   background: transparent;
   border: 1px solid transparent;
-  color: #607d8b;
+  color: var(--cde-text-faint);
   cursor: pointer;
   font-size: 1rem;
   border-radius: 3px;

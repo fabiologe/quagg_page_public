@@ -1,0 +1,111 @@
+/**
+ * CDE Design-Tokens (Sprint U).
+ *
+ * WARUM AUF :root — nicht auf `.cde-view`:
+ * Mehrere Panels des Viewers rendern über `<Teleport to="body">` (PDF-Export,
+ * Planungs-Cockpit, Such- und Hilfe-Overlay). CSS-Custom-Properties vererben
+ * sich NICHT über diese Grenze hinweg — lägen die Tokens auf dem Shell-Element,
+ * wären teleportierte Panels farblos/unlesbar. Dieselbe Falle ist im Haus schon
+ * zweimal zugeschnappt (isybau, flood-3D); die Lösung ist dort dokumentiert in
+ * `features/isybau/styles/theme.css`.
+ *
+ * Die Werte sind KEINE Neuerfindung: sie sind die gewachsene De-facto-Palette
+ * des Viewers (Material Blue Grey), nur benannt. Dadurch ändert die Umstellung
+ * das Aussehen nicht — sie macht es nur änderbar.
+ *
+ * Aufbau:
+ *   1. Rollen-unabhängige Marken-/Semantikfarben
+ *   2. Oberflächen- und Textrollen (hier dunkel; ein späterer
+ *      `:root[data-theme="light"]`-Block überschreibt NUR diese Rollen)
+ *   3. Form, Abstände, Typografie, Layout-Maße
+ */
+
+:root {
+    /* ── 1. Semantik / Akzente ─────────────────────────────────────────── */
+    --cde-accent:          #4fc3f7;
+    --cde-accent-soft:     #90caf9;
+    --cde-accent-fill:     rgba(52, 152, 219, 0.18);
+    --cde-accent-fill-hi:  rgba(52, 152, 219, 0.30);
+    --cde-accent-line:     rgba(52, 152, 219, 0.55);
+
+    --cde-danger:          #ef5350;
+    --cde-danger-soft:     #ef9a9a;
+    --cde-danger-fill:     rgba(239, 83, 80, 0.15);
+
+    --cde-success:         #a5d6a7;
+    --cde-success-strong:  #81c784;
+
+    --cde-warn:            #ffb74d;
+    --cde-warn-soft:       #ffcc80;
+
+    /* Leitfarbe für Issues/Notizen (Pin-Default) */
+    --cde-issue:           #e91e63;
+    --cde-issue-soft:      #f48fb1;
+
+    /* Fachfarben Tiefbau (Gelände/Böschung/Höhenlinien im UI) */
+    --cde-terrain:         #8d6e63;
+    --cde-terrain-soft:    #a1887f;
+
+    /* ── 2. Oberflächen + Text (Rollen — Theme-tauschbar) ──────────────── */
+    --cde-bg-deep:         #1a1d29;   /* App-Shell hinter allem      */
+    --cde-bg:              #202433;   /* Panel-/Sektionsfläche       */
+    --cde-bg-alt:          #232738;   /* Leisten, Panel-Kopf         */
+    --cde-surface:         #12141e;   /* dunkle Panels über 3D       */
+    --cde-surface-alt:     #1a1e2e;   /* Overlays (Suche, Palette)   */
+    --cde-surface-raised:  rgba(30, 35, 50, 0.95);
+    --cde-scrim:           rgba(0, 0, 0, 0.5);
+
+    --cde-text:            #cfd8dc;   /* Standardtext                */
+    --cde-text-bright:     #eceff1;   /* Überschriften, Werte        */
+    --cde-text-soft:       #b0bec5;   /* ruhiger Fließtext           */
+    --cde-text-dim:        #90a4ae;   /* Sekundär, Einheiten         */
+    --cde-text-mute:       #78909c;   /* Icon-Grundton, inaktiv      */
+    --cde-text-faint:      #607d8b;   /* Hinweise, Fußnoten          */
+    --cde-text-dimmer:     #546e7a;   /* Meta, Zeitstempel           */
+    --cde-text-invert:     #ffffff;
+
+    /* Weiß-Tonleiter: der Viewer benutzte 9 verschiedene Alphawerte
+       (0.04–0.15) ohne System — hier auf vier Stufen gebracht. */
+    --cde-tint-weak:       rgba(255, 255, 255, 0.05);
+    --cde-tint:            rgba(255, 255, 255, 0.08);
+    --cde-tint-strong:     rgba(255, 255, 255, 0.12);
+    --cde-tint-max:        rgba(255, 255, 255, 0.15);
+
+    /* Semantische Aliase — neuer Code benutzt diese, nicht die Stufen */
+    --cde-line:            var(--cde-tint);
+    --cde-line-soft:       var(--cde-tint-weak);
+    --cde-line-strong:     var(--cde-tint-max);
+    --cde-fill:            var(--cde-tint-weak);
+    --cde-fill-hover:      var(--cde-tint-strong);
+    --cde-fill-active:     var(--cde-tint-max);
+
+    /* ── 3. Form, Abstände, Typografie, Layout ─────────────────────────── */
+    --cde-radius-sm:       4px;
+    --cde-radius:          6px;
+    --cde-radius-lg:       10px;
+
+    --cde-shadow-sm:       0 2px 8px rgba(0, 0, 0, 0.25);
+    --cde-shadow:          0 8px 24px rgba(0, 0, 0, 0.35);
+
+    --cde-gap-xs:          0.25rem;
+    --cde-gap-sm:          0.4rem;
+    --cde-gap:             0.6rem;
+    --cde-gap-lg:          1rem;
+
+    --cde-font-xs:         0.66rem;
+    --cde-font-sm:         0.72rem;
+    --cde-font-md:         0.78rem;
+    --cde-font-lg:         0.9rem;
+
+    /* Panel-Rails (Sprint U, AP-U2) */
+    --cde-rail-width:      320px;
+    --cde-rail-min:        240px;
+    --cde-rail-max:        560px;
+    --cde-bar-height:      2.6rem;
+
+    /* Z-Ebenen — eine Skala statt verstreuter Zahlen */
+    --cde-z-hud:           22;
+    --cde-z-panel:         30;
+    --cde-z-dialog:        2000;
+    --cde-z-palette:       2200;
+}

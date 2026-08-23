@@ -1,26 +1,11 @@
 <template>
-  <DraggableModal
-    :isOpen="true"
-    initialWidth="300px"
-    initialHeight="580px"
-    initialTop="80px"
-    initialLeft="calc(50% - 680px)"
-    @close="emit('close')"
-  >
+  <!-- Sprint P/AP-12: Der frühere `chrome`-Zweig ist entfallen. Er hätte die
+       Komponente wahlweise in ein schwebendes DraggableModal gehüllt — ein Weg,
+       den seit Sprint U kein Aufrufer mehr nahm (alle setzten `chrome=false`),
+       dessen Vorgabewert aber auf `true` stand. Das Chrome liefert jetzt
+       ausschließlich CdePanel in der Leiste. -->
+  <div class="rail-fill">
     <div class="spatial-window">
-
-      <!-- Header -->
-      <div class="sw-header">
-        <div class="sw-title">
-          <span class="sw-icon">🌳</span>
-          <span>Gebäudestruktur</span>
-        </div>
-        <div class="sw-actions">
-          <button class="sw-btn" title="Alle aufklappen"   @click="expandAll">⊞</button>
-          <button class="sw-btn" title="Alle zuklappen"    @click="collapseAll">⊟</button>
-          <button class="sw-btn close" @click="emit('close')">&times;</button>
-        </div>
-      </div>
 
       <!-- Search -->
       <div class="sw-search">
@@ -57,16 +42,16 @@
       </div>
 
     </div>
-  </DraggableModal>
+  </div>
 </template>
 
 <script setup>
 import { ref } from 'vue';
-import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import IfcSpatialTree from './IfcSpatialTree.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 
-const emit = defineEmits(['close']);
+// Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
+// Leiste kennt und den Panel-Store führt.
 const ifc  = useIfcStore();
 
 const filterText = ref('');
@@ -82,9 +67,16 @@ async function onZoomTo({ localId }) {
 
 function expandAll()   { bodyRef.value?.querySelectorAll('.caret[data-open="false"]').forEach(el => el.click()); }
 function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true"]').forEach(el => el.click()); }
+
+// Sprint P/AP-12: Die beiden Knöpfe saßen im entfallenen Modal-Kopf. Sie
+// wandern in den `head-actions`-Slot von CdePanel — dessen ersten Nutzer.
+defineExpose({ expandAll, collapseAll });
 </script>
 
 <style scoped>
+/* Sprint U: In der Panel-Leiste füllt die Komponente das Panel-Body */
+.rail-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
 .spatial-window {
   display: flex;
   flex-direction: column;
@@ -93,48 +85,7 @@ function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true
   background: rgba(14, 16, 26, 0.98);
 }
 
-/* ── Header ── */
-.sw-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.7rem 0.9rem;
-  background: #1a1e2e;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  flex-shrink: 0;
-  cursor: grab;
-  user-select: none;
-}
-.sw-header:active { cursor: grabbing; }
-
-.sw-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: #90caf9;
-}
-.sw-icon { font-size: 1rem; }
-
-.sw-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-}
-.sw-btn {
-  background: none;
-  border: none;
-  color: #78909c;
-  font-size: 1rem;
-  cursor: pointer;
-  padding: 0.2rem 0.35rem;
-  border-radius: 4px;
-  line-height: 1;
-  transition: background 0.12s, color 0.12s;
-}
-.sw-btn:hover         { background: rgba(255,255,255,0.08); color: #cfd8dc; }
-.sw-btn.close:hover   { color: #ef5350; }
+/* Das CSS des entfallenen Modal-Kopfes ist mit ihm weggefallen (Sprint P/AP-12). */
 
 /* ── Search ── */
 .sw-search {
@@ -142,7 +93,7 @@ function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true
   align-items: center;
   gap: 0.4rem;
   padding: 0.45rem 0.75rem;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid var(--cde-tint-weak);
   background: rgba(20,22,35,0.6);
   flex-shrink: 0;
 }
@@ -152,17 +103,17 @@ function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true
   background: none;
   border: none;
   outline: none;
-  color: #cfd8dc;
+  color: var(--cde-text);
   font-size: 0.78rem;
-  caret-color: #4fc3f7;
+  caret-color: var(--cde-accent);
 }
 .search-input::placeholder { color: #37474f; }
 .search-clear {
   background: none; border: none; cursor: pointer;
-  color: #546e7a; font-size: 0.7rem; padding: 0; line-height: 1;
+  color: var(--cde-text-dimmer); font-size: 0.7rem; padding: 0; line-height: 1;
   transition: color 0.12s;
 }
-.search-clear:hover { color: #ef5350; }
+.search-clear:hover { color: var(--cde-danger); }
 
 /* ── Body ── */
 .sw-body {
@@ -170,7 +121,7 @@ function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.12) transparent;
+  scrollbar-color: var(--cde-tint-strong) transparent;
 }
 
 /* ── Empty state ── */
@@ -195,7 +146,7 @@ function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true
 .sw-footer {
   flex-shrink: 0;
   padding: 0.35rem 0.9rem;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid var(--cde-tint-weak);
   background: rgba(20,22,35,0.5);
 }
 .footer-info {

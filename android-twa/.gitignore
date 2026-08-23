@@ -1,0 +1,9 @@
+# Signatur-Geheimnisse NIE ins Repo (Remote-Push = Key-Leak).
+# Der Keystore muss trotzdem GESICHERT werden: geht er verloren, lassen
+# sich künftige APK-Versionen nicht mehr über die alte installieren.
+quagg-pdf.keystore
+keystore-passwort.txt
+node_modules/
+build/
+app/build/
+.gradle/

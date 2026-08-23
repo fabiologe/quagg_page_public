@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "postcss-html": "^1.8.1",
+    "stylelint": "^17.14.1"
+  }
+}

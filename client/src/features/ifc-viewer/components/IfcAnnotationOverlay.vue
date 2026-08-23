@@ -34,51 +34,29 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed } from 'vue';
+import { useScreenProjection } from '../composables/useScreenProjection.js';
 
 const props = defineProps({
   annotations:     { type: Array,    default: () => [] }, // [{id, position, text, color, labelOffset, idx}]
   projectToScreen: { type: Function, default: null },     // (worldPos[3]) => {x, y}|null
   canvasEl:        { type: HTMLElement, default: null },
+  getCamera:       { type: Function, default: null },
 });
 
 const emit = defineEmits(['offset-changed']);
-
-const canvasSize = ref({ w: 0, h: 0 });
-const _tick      = ref(0); // increments every animation frame to force re-projection
-let _rafId       = null;
-let _resizeObs   = null;
 
 const _draggingId = ref(null);
 let _dragStartOff = null;
 let _dragStartMouse = null;
 
-// Re-project every animation frame so bubbles follow camera movements
-function _loop() {
-  _tick.value++;
-  _rafId = requestAnimationFrame(_loop);
-}
-
-function _updateSize() {
-  const el = props.canvasEl;
-  if (!el) return;
-  const r = el.getBoundingClientRect();
-  canvasSize.value = { w: r.width, h: r.height };
-}
-
-onMounted(() => {
-  _loop();
-  _updateSize();
-  if (props.canvasEl && typeof ResizeObserver !== 'undefined') {
-    _resizeObs = new ResizeObserver(_updateSize);
-    _resizeObs.observe(props.canvasEl);
-  }
+// Sprint U/AP-U4: Reprojektion nur bei bewegter Kamera oder geänderter
+// Canvas-Größe — vorher lief hier eine blinde 60-Hz-Schleife, auch im Stillstand.
+const { tick: _tick, groesse } = useScreenProjection({
+  getCamera: () => props.getCamera?.() ?? null,
+  getCanvas: () => props.canvasEl ?? null,
 });
-
-onBeforeUnmount(() => {
-  if (_rafId) cancelAnimationFrame(_rafId);
-  _resizeObs?.disconnect();
-});
+const canvasSize = computed(() => ({ w: groesse.value.w, h: groesse.value.h }));
 
 // For each annotation, compute pin pos in screen-space + label pos (pin + offset)
 const projected = computed(() => {
@@ -146,7 +124,7 @@ function onMouseUp() {
   position: absolute;
   display: flex; align-items: center; gap: 0.4rem;
   background: rgba(255,255,255,0.97);
-  border: 2px solid #e91e63;
+  border: 2px solid var(--cde-issue);
   border-radius: 8px;
   padding: 0.35rem 0.55rem 0.35rem 0.4rem;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);

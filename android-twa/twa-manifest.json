@@ -1,0 +1,55 @@
+{
+  "packageId": "org.quaggengineering.pdf",
+  "host": "quagg-engineering.org",
+  "name": "Quagg PDF",
+  "launcherName": "Quagg PDF",
+  "display": "standalone",
+  "themeColor": "#0f766e",
+  "themeColorDark": "#17191c",
+  "navigationColor": "#0f766e",
+  "navigationColorDark": "#17191c",
+  "navigationDividerColor": "#0f766e",
+  "navigationDividerColorDark": "#17191c",
+  "backgroundColor": "#e9e7e2",
+  "enableNotifications": false,
+  "startUrl": "/pdf-editor",
+  "iconUrl": "https://quagg-engineering.org/icons/pdf-editor/icon-512.png",
+  "maskableIconUrl": "https://quagg-engineering.org/icons/pdf-editor/icon-512-maskable.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./quagg-pdf.keystore",
+    "alias": "quaggpdf"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://quagg-engineering.org/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://quagg-engineering.org/pdf-editor",
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "shareTarget": {
+    "action": "/pdf-editor/teilen",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "pdf",
+          "accept": ["application/pdf"]
+        }
+      ]
+    }
+  }
+}

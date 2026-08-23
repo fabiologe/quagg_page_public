@@ -99,7 +99,7 @@ onUnmounted(_stop);
   display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
   padding: 1.5rem 2.5rem 2rem;
   background: rgba(30, 35, 50, 0.85);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--cde-tint);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0,0,0,0.6);
   min-width: 420px;
@@ -113,27 +113,27 @@ onUnmounted(_stop);
   user-select: none; pointer-events: none;
 }
 .load-title {
-  font-size: 0.95rem; font-weight: 600; color: #cfd8dc;
+  font-size: 0.95rem; font-weight: 600; color: var(--cde-text);
   letter-spacing: 0.02em;
 }
 .load-sub {
-  font-size: 0.78rem; color: #90a4ae; min-height: 2.4em;
+  font-size: 0.78rem; color: var(--cde-text-dim); min-height: 2.4em;
   text-align: center; line-height: 1.4;
   font-style: italic;
 }
 .load-bar {
   width: 100%; height: 4px;
-  background: rgba(255,255,255,0.08);
+  background: var(--cde-tint);
   border-radius: 2px; overflow: hidden;
 }
 .load-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #42a5f5, #90caf9);
+  background: linear-gradient(90deg, #42a5f5, var(--cde-accent-soft));
   border-radius: 2px;
   transition: width 0.4s ease-out;
 }
 .load-meta {
-  font-size: 0.7rem; color: #546e7a;
+  font-size: 0.7rem; color: var(--cde-text-dimmer);
   font-variant-numeric: tabular-nums;
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }

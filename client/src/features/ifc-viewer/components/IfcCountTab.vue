@@ -131,28 +131,28 @@ function pct(n, total) {
 </script>
 
 <style scoped>
-.cnt-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: #cfd8dc; }
+.cnt-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
 
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.35rem 0.4rem;
-  background: rgba(255,255,255,0.04);
+  background: var(--cde-tint-weak);
   border-radius: 5px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--cde-tint);
 }
-.card-title { font-weight: 600; font-size: 0.84rem; color: #eceff1; }
+.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
 .card-btn {
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: #cfd8dc;
+  background: var(--cde-tint);
+  border: 1px solid var(--cde-tint-strong);
+  color: var(--cde-text);
   width: 1.6rem; height: 1.6rem;
   border-radius: 4px;
   cursor: pointer;
 }
-.card-btn:hover:not(:disabled) { background: rgba(255,255,255,0.14); }
+.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
 .card-btn:disabled { opacity: 0.5; cursor: default; }
 
-.state-msg { color: #90a4ae; font-style: italic; padding: 1rem 0.5rem; text-align: center; }
+.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 1rem 0.5rem; text-align: center; }
 
 .totals-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
 .total-cell {
@@ -163,46 +163,46 @@ function pct(n, total) {
   text-align: center;
 }
 .total-cell.prim { background: rgba(33,150,243,0.18); border-color: rgba(33,150,243,0.5); }
-.total-label { font-size: 0.62rem; color: #90caf9; letter-spacing: 0.04em; text-transform: uppercase; }
-.total-value { font-size: 0.92rem; color: #eceff1; font-weight: 600; }
+.total-label { font-size: 0.62rem; color: var(--cde-accent-soft); letter-spacing: 0.04em; text-transform: uppercase; }
+.total-value { font-size: 0.92rem; color: var(--cde-text-bright); font-weight: 600; }
 
 .filter-row { padding: 0 0.1rem; }
 .filter-check {
   display: flex; align-items: center; gap: 0.4rem;
-  font-size: 0.72rem; color: #b0bec5; cursor: pointer;
+  font-size: 0.72rem; color: var(--cde-text-soft); cursor: pointer;
 }
-.filter-check input { accent-color: #4fc3f7; }
+.filter-check input { accent-color: var(--cde-accent); }
 
-.cnt-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.06); }
+.cnt-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid var(--cde-tint-weak); }
 .cnt-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; font-variant-numeric: tabular-nums; }
 .cnt-table th {
   position: sticky; top: 0; z-index: 1;
   background: rgba(15,30,40,0.95);
-  color: #b0bec5;
+  color: var(--cde-text-soft);
   padding: 0.35rem 0.5rem;
   text-align: right;
   font-weight: 500;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid var(--cde-tint-strong);
   user-select: none;
 }
 .cnt-table th.col-cat { text-align: left; }
-.cnt-table th:hover { color: #4fc3f7; }
-.sort-arrow { font-size: 0.65rem; color: #4fc3f7; margin-left: 0.2rem; }
+.cnt-table th:hover { color: var(--cde-accent); }
+.sort-arrow { font-size: 0.65rem; color: var(--cde-accent); margin-left: 0.2rem; }
 
 .cnt-table td {
   padding: 0.3rem 0.5rem;
   text-align: right;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--cde-tint-weak);
 }
-.cnt-table td.col-cat { text-align: left; color: #eceff1; }
-.col-count { font-weight: 600; color: #90caf9; }
-.col-share { color: #607d8b; }
+.cnt-table td.col-cat { text-align: left; color: var(--cde-text-bright); }
+.col-count { font-weight: 600; color: var(--cde-accent-soft); }
+.col-share { color: var(--cde-text-faint); }
 
 .cnt-row { cursor: pointer; transition: background 0.08s; }
 .cnt-row:hover { background: rgba(52,152,219,0.15); }
-.cnt-row.is-billed td.col-cat { color: #90caf9; font-weight: 600; }
-.cnt-row.empty { color: #90a4ae; font-style: italic; }
+.cnt-row.is-billed td.col-cat { color: var(--cde-accent-soft); font-weight: 600; }
+.cnt-row.empty { color: var(--cde-text-dim); font-style: italic; }
 .cnt-row.empty td { text-align: center; }
 
 .cat-badge { font-size: 0.7rem; margin-left: 0.25rem; }

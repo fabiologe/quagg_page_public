@@ -2,7 +2,7 @@
   <div class="cde-view">
     <!-- ── Projekt-Leiste (Managen) ── -->
     <div class="cde-bar">
-      <span class="cde-brand">🗂 CDE</span>
+      <span class="cde-brand"><CdeIcon name="cde" :size="17" /> CDE</span>
 
       <select class="cde-project-select" :value="cde.activeProjectId ?? ''" @change="onProjectChange">
         <option value="">— kein Projekt —</option>
@@ -11,26 +11,57 @@
         </option>
       </select>
 
-      <button class="cde-btn" @click="onNewProject" title="Neues Projekt anlegen">＋ Projekt</button>
+      <button class="cde-btn" @click="onNewProject" title="Neues Projekt anlegen">
+        <CdeIcon name="add" :size="14" /> Projekt
+      </button>
       <button
         class="cde-btn"
         :disabled="!cde.activeProject"
         :class="{ active: showStammdaten }"
         @click="showStammdaten = !showStammdaten; showRegister = false"
         title="Projekt-Stammdaten"
-      >⚙ Stammdaten</button>
+      ><CdeIcon name="stammdaten" :size="14" /> Stammdaten</button>
       <button
         class="cde-btn"
         :disabled="!cde.activeProject"
         :class="{ active: showRegister }"
         @click="showRegister = !showRegister; showStammdaten = false"
         title="Dokument-Register (ISO-19650-Status)"
-      >📚 Dokumente <small v-if="cde.dokumente.length">({{ cde.dokumente.length }})</small></button>
+      ><CdeIcon name="documents" :size="14" /> Dokumente <small v-if="cde.dokumente.length">({{ cde.dokumente.length }})</small></button>
+
+      <span class="cde-sep" />
+
+      <!-- Ansichts-Umschalter (Sprint P): 3D-Modell ↔ gezeichneter Lageplan.
+           Datenquelle ist der Modus-Katalog, damit Umschalter, Befehlspalette
+           und Hilfe-Overlay nicht auseinanderlaufen. -->
+      <div class="cde-ansicht-schalter">
+        <button
+          v-for="m in ansichtsModi"
+          :key="m.id"
+          class="cde-ansicht-btn"
+          :class="{ active: ansicht.modus === m.id }"
+          :disabled="!modusMoeglich(m.id)"
+          :title="modusTitel(m)"
+          @click="ansicht.setzeModus(m.id)"
+        ><CdeIcon :name="m.icon" :size="13" /> {{ m.kurz }}</button>
+      </div>
+
+      <span class="cde-sep" />
+
+      <!-- Panel-Umschalter (Sprint U): eine Quelle — die Panel-Registry -->
+      <button
+        v-for="p in panels.defs"
+        :key="p.id"
+        class="cde-btn ghost"
+        :class="{ active: panels.isOpen(p.id) }"
+        :title="`${p.titel} ein-/ausblenden`"
+        @click="panels.toggle(p.id)"
+      ><CdeIcon :name="p.icon" :size="14" /></button>
 
       <span class="cde-spacer" />
 
       <label class="cde-bearbeiter" title="Bearbeiter-Name — Autor für Issues, Kommentare und Statuswechsel">
-        👤
+        <CdeIcon name="user" :size="14" />
         <input
           type="text"
           :value="cde.bearbeiter"
@@ -110,47 +141,206 @@
       </table>
     </div>
 
-    <!-- ── Viewer ── -->
-    <div class="cde-viewer-host">
-      <IfcViewer
-        ref="viewerRef"
-        standalone
-        :propertiesOpen="showProps"
-        @close="onClose"
-        @open-properties="showProps = true"
-        @model-loaded="showSpatialTree = true"
-      />
-      <IfcSemanticWindow
-        v-if="showProps"
-        @close="showProps = false"
-      />
-      <IfcSpatialWindow
-        v-if="showSpatialTree"
-        @close="showSpatialTree = false"
-      />
+    <!-- ── Arbeitsfläche: Leiste | Viewer | Leiste ──
+         Panels docken an und verkleinern den Viewer, statt ihn zu verdecken —
+         am Modell abzulesende Geometrie bleibt sichtbar (Sprint U). -->
+    <div class="cde-workspace">
+      <CdePanel
+        v-if="panels.aktivLinks"
+        :titel="panels.aktivLinks.titel"
+        :icon="panels.aktivLinks.icon"
+        seite="left"
+        :breite="panels.breiten[panels.aktivLinks.id]"
+        @close="panels.close(panels.aktivLinks.id)"
+        @resize="(w) => panels.setBreite(panels.aktivLinks.id, w)"
+      >
+        <!-- Erster Nutzer des head-actions-Slots: die beiden Baum-Knöpfe, die
+             früher im Modal-Kopf der Struktur saßen (Sprint P/AP-12). -->
+        <template v-if="panels.isOpen('struktur')" #head-actions>
+          <button class="cp-head-btn" title="Alle aufklappen" @click="strukturRef?.expandAll()">
+            <CdeIcon name="chevron-down" :size="13" />
+          </button>
+          <button class="cp-head-btn" title="Alle zuklappen" @click="strukturRef?.collapseAll()">
+            <CdeIcon name="chevron-right" :size="13" />
+          </button>
+        </template>
+        <IfcSpatialWindow v-if="panels.isOpen('struktur')" ref="strukturRef" />
+      </CdePanel>
+
+      <div class="cde-viewer-host">
+        <!-- Der 3D-Viewer bleibt IMMER im Baum und wird nur unsichtbar
+             geschaltet. Zwei Gründe, beide teuer erkauft:
+             (1) `onBeforeUnmount` gibt die Engine frei und entwertet den
+                 viewerApi, an dem sämtliche Panels hängen;
+             (2) `display:none` setzt die Canvas-Größe auf 0 — der Renderer
+                 schreibt daraufhin einen 0x0-Puffer und liefert beim
+                 Zurückschalten ein schwarzes Bild.
+             Deshalb `visibility`, nicht `v-if` und nicht `v-show`. -->
+        <div class="host-lage" :class="{ verborgen: ansicht.modus !== '3d' }">
+          <IfcViewer
+            ref="viewerRef"
+            standalone
+            :propertiesOpen="panels.isOpen('eigenschaften')"
+            @close="onClose"
+            @open-properties="panels.open('eigenschaften')"
+            @model-loaded="onModelLoaded"
+          />
+        </div>
+
+        <div v-if="ansicht.modus === 'lageplan'" class="host-lage">
+          <IfcPlanCanvas
+            ref="planRef"
+            :optionen="planOptionen"
+            :titleBlock="planSchriftfeld"
+          />
+        </div>
+      </div>
+
+      <CdePanel
+        v-if="panels.aktivRechts"
+        :titel="panels.aktivRechts.titel"
+        :icon="panels.aktivRechts.icon"
+        seite="right"
+        :breite="panels.breiten[panels.aktivRechts.id]"
+        @close="panels.close(panels.aktivRechts.id)"
+        @resize="(w) => panels.setBreite(panels.aktivRechts.id, w)"
+      >
+        <IfcSemanticWindow  v-if="panels.isOpen('eigenschaften')" />
+        <IfcPlanningCockpit v-else-if="panels.isOpen('cockpit')" />
+        <IfcAnnotations
+          v-else-if="panels.isOpen('issues')"
+          :annotationActive="annotationActive"
+          :zoomToPoint="zoomToIssue"
+          :applyViewpoint="(vp) => viewerRef?.applyViewpoint(vp)"
+          :captureViewpoint="() => viewerRef?.captureViewpoint() ?? null"
+          @toggle-mode="onToggleIssueMode"
+        />
+      </CdePanel>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import IfcViewer from '../components/IfcViewer.vue';
+import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
 import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
 import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
+import IfcPlanningCockpit from '../components/IfcPlanningCockpit.vue';
+import IfcAnnotations from '../components/IfcAnnotations.vue';
+import CdeIcon from '../components/ui/CdeIcon.vue';
+import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS } from '../stores/useCdeStore.js';
+import { usePanels } from '../stores/usePanels.js';
+import { useAnsicht } from '../stores/useAnsicht.js';
+import { useIfcStore } from '../stores/useIfcStore.js';
+import { usePaletteCommands } from '../stores/useCommands.js';
+import { modusListe, istVerfuegbar } from '../services/ViewModes.js';
+// Design-Tokens — landen bewusst auf :root (teleportierte Panels erben sonst nichts)
+import '../styles/theme.css';
 
 const router = useRouter();
 const cde = useCdeStore();
+const panels = usePanels();
+const ansicht = useAnsicht();
+const ifc = useIfcStore();
+const cmds = usePaletteCommands();
 
 const viewerRef = ref(null);
-const showProps = ref(false);
-const showSpatialTree = ref(false);
+const planRef = ref(null);
+const strukturRef = ref(null);
 const showStammdaten = ref(false);
 const showRegister = ref(false);
 
+// ── Ansichts-Umschaltung (Sprint P, AP-8) ────────────────────────────────────
+
+const ansichtsModi = modusListe();
+
+function modusMoeglich(id) { return istVerfuegbar(id, ansicht.stand); }
+function modusTitel(m) {
+  return modusMoeglich(m.id)
+    ? `${m.titel} (Taste ${m.taste})`
+    : `${m.titel} — erst mit geladenem Modell verfügbar`;
+}
+
+// Der Modellstand entscheidet, welche Modi bedienbar sind. Ohne Modell wäre
+// der Lageplan ein weißes Blatt — also sperren statt hineinlaufen lassen.
+watch(() => ifc.modelList?.length ?? 0, (n) => {
+  ansicht.setzeStand({ hatModell: n > 0 });
+  if (!n) ansicht.setzeModus('3d');
+}, { immediate: true });
+
+/**
+ * Zeichenoptionen des Plans. Vorläufig die Standardausstattung — sobald das
+ * Plan-Panel steht (AP-9), kommen sie von dort. Die Stile stammen aus dem
+ * IFC-Store, damit Bildschirm und Export dieselbe Farbtabelle benutzen.
+ */
+const planOptionen = computed(() => ({
+  styleMap:         ifc.resolvedVectorStyleMap,
+  rules:            ifc.vectorRules ?? [],
+  labelTemplateFor: (cat) => ifc.vectorStyles?.[cat]?.labelTemplate ?? '',
+  annotations:      ifc.annotations ?? [],
+  scaleBar:         true,
+  showLabels:       true,
+  footprints:       true,
+}));
+
+const planSchriftfeld = computed(() => ({
+  projekt:      [cde.activeProject?.nummer, cde.activeProject?.name].filter(Boolean).join(' '),
+  auftraggeber: cde.activeProject?.bauherr ?? '',
+  bearbeiter:   cde.bearbeiter ?? '',
+  massstab:     `1:${ansicht.massstab}`,
+}));
+
+// Tasten 1/2/3 sind frei — der Viewer belegt M V N H I T R ? Esc und Strg+K/F.
+function onKeyDown(e) {
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const treffer = ansichtsModi.find(m => m.taste === e.key);
+  if (treffer) { e.preventDefault(); ansicht.setzeModus(treffer.id); }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown);
+  // Der Modus ist ein Belang der Schale, nicht des Viewers — er wird hier
+  // angemeldet und erscheint dadurch automatisch in Palette und Hilfe.
+  cmds.register('ansicht', ansichtsModi.map(m => ({
+    id: `ansicht.${m.id}`,
+    titel: `Ansicht: ${m.titel}`,
+    icon: m.icon,
+    gruppe: 'Ansicht',
+    key: m.taste,
+    verfuegbar: () => istVerfuegbar(m.id, ansicht.stand),
+    run: () => ansicht.setzeModus(m.id),
+  })));
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown);
+  cmds.unregister('ansicht');
+});
+
 const sortedDokumente = computed(() =>
   [...cde.dokumente].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)));
+
+/** Beim ersten geladenen Modell die Struktur-Leiste anbieten. */
+function onModelLoaded() {
+  if (!panels.aktivLinks) panels.open('struktur');
+}
+
+/** Issue-Pin im 3D anfahren (Panel liegt außerhalb des Viewers). */
+function zoomToIssue(position) {
+  viewerRef.value?.zoomToPoint?.(position);
+}
+
+/** Pin-Setz-Modus des Viewers vom Issues-Panel aus schalten. */
+const annotationActive = ref(false);
+function onToggleIssueMode() {
+  viewerRef.value?.toggleAnnotationMode?.();
+  annotationActive.value = viewerRef.value?.isAnnotationActive?.() ?? false;
+}
 
 function onClose() {
   router.push('/tools');
@@ -210,24 +400,24 @@ function fmtDate(ts) {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: #1a1d29;
+  background: var(--cde-bg-deep);
 }
 
 /* ── Projekt-Leiste ── */
 .cde-bar {
   display: flex; align-items: center; gap: 0.5rem;
   padding: 0.4rem 0.8rem;
-  background: #232738;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: var(--cde-bg-alt);
+  border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
-.cde-brand { color: #eceff1; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.02em; }
+.cde-brand { color: var(--cde-text-bright); font-weight: 700; font-size: 0.9rem; letter-spacing: 0.02em; }
 .cde-spacer { flex: 1; }
 
 .cde-project-select {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #eceff1;
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-max);
+  color: var(--cde-text-bright);
   border-radius: 5px;
   padding: 0.25rem 0.4rem;
   font-size: 0.78rem;
@@ -235,9 +425,9 @@ function fmtDate(ts) {
 }
 
 .cde-btn {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #cfd8dc;
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-max);
+  color: var(--cde-text);
   border-radius: 5px;
   padding: 0.25rem 0.55rem;
   font-size: 0.75rem;
@@ -245,20 +435,20 @@ function fmtDate(ts) {
   white-space: nowrap;
 }
 .cde-btn:hover:not(:disabled) { background: rgba(52,152,219,0.2); color: #fff; }
-.cde-btn.active { background: rgba(52,152,219,0.3); border-color: rgba(52,152,219,0.6); color: #90caf9; }
+.cde-btn.active { background: rgba(52,152,219,0.3); border-color: rgba(52,152,219,0.6); color: var(--cde-accent-soft); }
 .cde-btn:disabled { opacity: 0.4; cursor: default; }
-.cde-btn.danger:hover { background: rgba(239,83,80,0.2); color: #ef9a9a; border-color: rgba(239,83,80,0.5); }
+.cde-btn.danger:hover { background: rgba(239,83,80,0.2); color: var(--cde-danger-soft); border-color: rgba(239,83,80,0.5); }
 .cde-btn.sm { padding: 0.1rem 0.35rem; font-size: 0.7rem; }
-.cde-btn small { color: #90a4ae; }
+.cde-btn small { color: var(--cde-text-dim); }
 
 .cde-bearbeiter {
   display: flex; align-items: center; gap: 0.3rem;
-  color: #90a4ae; font-size: 0.8rem;
+  color: var(--cde-text-dim); font-size: 0.8rem;
 }
 .cde-bearbeiter input {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #eceff1;
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-max);
+  color: var(--cde-text-bright);
   border-radius: 5px;
   padding: 0.22rem 0.4rem;
   font-size: 0.75rem;
@@ -267,8 +457,8 @@ function fmtDate(ts) {
 
 /* ── Panels (Stammdaten / Register) ── */
 .cde-panel {
-  background: #202433;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: var(--cde-bg);
+  border-bottom: 1px solid var(--cde-tint);
   padding: 0.6rem 0.8rem;
   flex-shrink: 0;
   max-height: 40vh;
@@ -281,13 +471,13 @@ function fmtDate(ts) {
 }
 .cde-panel-grid label {
   display: flex; flex-direction: column; gap: 0.15rem;
-  color: #90a4ae; font-size: 0.68rem;
+  color: var(--cde-text-dim); font-size: 0.68rem;
 }
 .cde-panel-grid label.wide { grid-column: span 2; }
 .cde-panel-grid input, .cde-panel-grid select {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #eceff1;
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-max);
+  color: var(--cde-text-bright);
   border-radius: 4px;
   padding: 0.25rem 0.4rem;
   font-size: 0.76rem;
@@ -296,19 +486,19 @@ function fmtDate(ts) {
   display: flex; justify-content: space-between; align-items: center;
   margin-top: 0.5rem;
 }
-.cde-hint { color: #607d8b; font-size: 0.66rem; font-style: italic; }
-.cde-empty { color: #90a4ae; font-size: 0.75rem; padding: 0.4rem; }
+.cde-hint { color: var(--cde-text-faint); font-size: 0.66rem; font-style: italic; }
+.cde-empty { color: var(--cde-text-dim); font-size: 0.75rem; padding: 0.4rem; }
 
 /* ── Dokument-Register ── */
-.cde-doc-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; color: #cfd8dc; }
+.cde-doc-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; color: var(--cde-text); }
 .cde-doc-table th {
-  text-align: left; color: #90a4ae; font-weight: 500;
+  text-align: left; color: var(--cde-text-dim); font-weight: 500;
   padding: 0.25rem 0.4rem;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid var(--cde-tint-strong);
 }
-.cde-doc-table td { padding: 0.25rem 0.4rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
-.doc-name { color: #eceff1; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.doc-rev, .doc-size, .doc-date { font-variant-numeric: tabular-nums; color: #90a4ae; }
+.cde-doc-table td { padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--cde-tint-weak); }
+.doc-name { color: var(--cde-text-bright); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-rev, .doc-size, .doc-date { font-variant-numeric: tabular-nums; color: var(--cde-text-dim); }
 .doc-actions { display: flex; gap: 0.25rem; }
 
 .doc-status {
@@ -318,15 +508,69 @@ function fmtDate(ts) {
   border: 1px solid;
   background: rgba(0,0,0,0.2);
 }
-.doc-status.iso-wip       { color: #ffcc80; border-color: rgba(255,183,77,0.5); }
-.doc-status.iso-shared    { color: #90caf9; border-color: rgba(66,165,245,0.5); }
-.doc-status.iso-published { color: #a5d6a7; border-color: rgba(129,199,132,0.5); }
-.doc-status.iso-archived  { color: #90a4ae; border-color: rgba(255,255,255,0.2); }
+.doc-status.iso-wip       { color: var(--cde-warn-soft); border-color: rgba(255,183,77,0.5); }
+.doc-status.iso-shared    { color: var(--cde-accent-soft); border-color: rgba(66,165,245,0.5); }
+.doc-status.iso-published { color: var(--cde-success); border-color: rgba(129,199,132,0.5); }
+.doc-status.iso-archived  { color: var(--cde-text-dim); border-color: rgba(255,255,255,0.2); }
 
 /* ── Viewer-Host ── */
+.cde-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
 .cde-viewer-host {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }
+
+/* Beide Ansichten liegen deckungsgleich im selben Stapel. Der 3D-Viewer wird
+   nur unsichtbar geschaltet, damit seine Canvas ihre Größe behält — mit
+   `display:none` käme er schwarz zurück (siehe Kommentar im Template). */
+.cp-head-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  background: none; border: none; border-radius: var(--cde-radius-sm);
+  color: var(--cde-text-mute); cursor: pointer;
+}
+.cp-head-btn:hover { background: var(--cde-fill-hover); color: var(--cde-accent); }
+
+.host-lage { position: absolute; inset: 0; }
+.host-lage.verborgen { visibility: hidden; pointer-events: none; }
+
+.cde-ansicht-schalter {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--cde-fill);
+  border: 1px solid var(--cde-line);
+  border-radius: var(--cde-radius);
+}
+.cde-ansicht-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  background: none; border: none;
+  border-radius: var(--cde-radius-sm);
+  color: var(--cde-text-dim);
+  font-size: var(--cde-font-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cde-ansicht-btn:hover:not(:disabled) { background: var(--cde-fill-hover); color: var(--cde-text); }
+.cde-ansicht-btn.active {
+  background: var(--cde-accent-fill-hi);
+  color: var(--cde-accent);
+}
+.cde-ansicht-btn:disabled { opacity: 0.4; cursor: default; }
+
+.cde-sep {
+  width: 1px; height: 1.3rem;
+  background: var(--cde-line-strong);
+  margin: 0 0.15rem;
+}
+.cde-btn.ghost { padding: 0.25rem 0.4rem; }
 </style>

@@ -111,6 +111,14 @@ const router = createRouter({
       meta: { layout: 'public' }
     },
     {
+      // Standalone-PDF-Editor: eigener Tab ohne App-Chrome (Muster /cde).
+      // :docId? erlaubt Deeplinks auf ein in IndexedDB liegendes Dokument.
+      path: '/pdf-editor/:docId?',
+      name: 'pdf-editor',
+      component: () => import('@/features/pdfeditor/views/PdfEditorView.vue'),
+      meta: { layout: 'empty' }
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/features/auth/LoginView.vue'),

@@ -148,7 +148,7 @@ async function confirmAdd() {
   height: 100%;
   background: rgba(20, 22, 30, 0.96);
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid var(--cde-tint-strong);
   overflow: hidden;
 }
 
@@ -158,40 +158,40 @@ async function confirmAdd() {
   gap: 0.6rem;
   padding: 0.55rem 0.75rem;
   background: rgba(52, 152, 219, 0.2);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 
 .back-btn {
   background: none;
   border: none;
-  color: #90caf9;
+  color: var(--cde-accent-soft);
   font-size: 0.72rem;
   cursor: pointer;
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
   transition: background 0.15s;
 }
-.back-btn:hover { background: rgba(255,255,255,0.08); }
+.back-btn:hover { background: var(--cde-tint); }
 
 .browser-title {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #90caf9;
+  color: var(--cde-accent-soft);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .browser-search {
   padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 
 .search-input {
   width: 100%;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: var(--cde-tint);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 6px;
   color: #e0e0e0;
   font-size: 0.75rem;
@@ -200,22 +200,22 @@ async function confirmAdd() {
   box-sizing: border-box;
 }
 .search-input:focus { border-color: rgba(52,152,219,0.6); }
-.search-input::placeholder { color: #546e7a; }
+.search-input::placeholder { color: var(--cde-text-dimmer); }
 
 .pset-section {
   flex: 1;
   overflow-y: auto;
   padding: 0.25rem 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  scrollbar-color: var(--cde-tint-max) transparent;
 }
-.has-top-section { border-top: 1px solid rgba(255,255,255,0.07); }
+.has-top-section { border-top: 1px solid var(--cde-tint); }
 
 .section-label {
   padding: 0.3rem 0.75rem 0.2rem;
   font-size: 0.65rem;
   font-weight: 700;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -223,16 +223,16 @@ async function confirmAdd() {
 .no-results {
   padding: 0.5rem 0.75rem;
   font-size: 0.72rem;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
 }
 
 .pset-item {
   padding: 0.4rem 0.75rem;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--cde-tint-weak);
   transition: background 0.15s;
 }
-.pset-item:hover { background: rgba(255,255,255,0.05); }
+.pset-item:hover { background: var(--cde-tint-weak); }
 .pset-item.selected { background: rgba(52,152,219,0.15); }
 
 .pset-item-top {
@@ -245,18 +245,18 @@ async function confirmAdd() {
 .pset-name {
   font-size: 0.72rem;
   font-weight: 600;
-  color: #cfd8dc;
+  color: var(--cde-text);
 }
 
 .pset-count {
   font-size: 0.62rem;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   flex-shrink: 0;
 }
 
 .pset-desc {
   font-size: 0.65rem;
-  color: #78909c;
+  color: var(--cde-text-mute);
   margin-top: 0.1rem;
 }
 
@@ -275,19 +275,19 @@ async function confirmAdd() {
   max-height: 55%;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.12) transparent;
+  scrollbar-color: var(--cde-tint-strong) transparent;
 }
 
 .preview-header {
   padding: 0.45rem 0.75rem;
   background: rgba(52,152,219,0.12);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid var(--cde-tint);
 }
 
 .preview-name {
   font-size: 0.72rem;
   font-weight: 700;
-  color: #90caf9;
+  color: var(--cde-accent-soft);
 }
 
 .preview-props {
@@ -303,20 +303,20 @@ async function confirmAdd() {
 
 .preview-prop-label {
   font-size: 0.65rem;
-  color: #78909c;
+  color: var(--cde-text-mute);
   display: flex;
   justify-content: space-between;
 }
 
 .prop-type {
   font-size: 0.58rem;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   font-style: italic;
 }
 
 .preview-prop-input {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 4px;
   color: #e0e0e0;
   font-size: 0.72rem;
@@ -332,21 +332,21 @@ async function confirmAdd() {
   display: flex;
   gap: 0.5rem;
   padding: 0.5rem 0.6rem;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid var(--cde-tint-weak);
 }
 
 .cancel-btn {
   flex: 1;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 6px;
-  color: #90a4ae;
+  color: var(--cde-text-dim);
   font-size: 0.72rem;
   padding: 0.4rem;
   cursor: pointer;
   transition: background 0.15s;
 }
-.cancel-btn:hover { background: rgba(255,255,255,0.1); }
+.cancel-btn:hover { background: var(--cde-tint-strong); }
 
 .add-btn {
   flex: 2;

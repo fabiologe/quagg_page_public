@@ -21,7 +21,10 @@ import * as THREE from 'three';
 import { drawHatch } from './HatchPatterns.js';
 import { DEFAULT_LINE_STYLES } from './DefaultLineStyles.js';
 import { styleToLegacy } from './VectorStyleEngine.js';
-import { trianglePlaneIntersect, chainSegmentsToPolygons } from './SectionContour.js';
+// chainSegmentsToPolygons wird hier nicht mehr gebraucht: das Verketten der
+// Schnittsegmente zu Schraffur-Polygonen ist Beschaffung und liegt seit AP-1
+// in collectVectorContent.
+import { trianglePlaneIntersect } from './SectionContour.js';
 import { computeUtmCrosses, formatUtmLabel } from './UtmGrid.js';
 import { drawPlanSymbol } from './PlanSymbols.js';
 import { longestSegment, normalizeTextAngle } from './AxisAnnotations.js';
@@ -43,35 +46,68 @@ const SECTION_CONTOUR_STYLE = { r: 0, g: 0, b: 0, w: 0.5 };
 // ── Coordinate transform ──────────────────────────────────────────────────────
 
 /**
- * Build a world→paper transform from the current orthographic camera frustum.
- * The camera looks down -Y, so its left/right spans world X and top/bottom spans world Z.
+ * Welt → Papier für die Draufsicht.
  *
- * @param {THREE.OrthographicCamera} cam
- * @param {number} M   - margin in mm
- * @param {number} dw  - drawing area width in mm
- * @param {number} dh  - drawing area height in mm
+ * Nimmt entweder eine THREE.OrthographicCamera oder — bevorzugt — das
+ * Plot-Frustum-POJO aus `IfcCamera.getLastPlotFrustum()`:
+ *   { left, right, top, bottom, position:[x,y,z]|{x,y,z}, viewDir, … }
+ * Der POJO-Weg hält THREE aus dem Transform-Pfad heraus, sodass sowohl der
+ * Bildschirmplan als auch die Tests ohne Szene auskommen.
+ *
+ * NORD-KONVENTION — die Falle dieses Moduls:
+ * Die Draufsicht-Kamera steht mit `up = (0,0,-1)` über dem Modell. Ihre lokale
+ * +Y-Achse zeigt damit auf Welt-−Z. Folge: **wachsendes Welt-Z läuft auf dem
+ * Papier nach UNTEN, Papier-Oben ist Welt-−Z.** Das deckt sich mit dem
+ * DXF-Export, der Nord als `N = −z` schreibt (DxfExporter.js:119). Wer der
+ * Intuition „+Z ist Norden, also oben" folgt und hier spiegelt, bekommt einen
+ * seitenverkehrten Plan. `test/paperTransform.test.js` hält das fest.
+ *
+ * @param {object} cam - Ortho-Kamera oder Plot-Frustum
+ * @param {number} M   - Rand in mm
+ * @param {number} dw  - Zeichenbreite in mm
+ * @param {number} dh  - Zeichenhöhe in mm
+ * @returns {object|null} null, wenn die Blickrichtung nicht abbildbar ist
  */
-function makePaperTransform(cam, M, dw, dh) {
-    // cam.left/right/top/bottom are CAMERA-LOCAL coords. For the top-down ortho
-    // camera built by getScaleSnapshot (up=(0,0,-1), looking down -Y), the world
-    // bounds of the visible plane are:
-    //   worldX_range = cam.position.x + [cam.left, cam.right]
-    //   worldZ_range = cam.position.z - [cam.top, cam.bottom]   (negated: up=-Z)
-    // and "camera top" (+halfH) corresponds to SMALLER world Z (which is paper top → low pixel Y).
-    const z   = cam.zoom || 1;
-    const wW  = (cam.right - cam.left) / z;
-    const wH  = (cam.top   - cam.bottom) / z;
+export function makePaperTransform(cam, M, dw, dh) {
+    // front/side liefern eine vertikale Welt-Y-Achse, der Plotter füttert aber
+    // durchweg z-Werte. Das war noch nie richtig — statt still falsch zu
+    // zeichnen, sagen wir es und zeichnen nichts.
+    const viewDir = cam?.viewDir ?? 'top';
+    if (viewDir !== 'top') {
+        console.warn(`[VectorPlotter] Blickrichtung '${viewDir}' hat keine Papier-Abbildung — nur 'top' ist ein Lageplan.`);
+        return null;
+    }
 
-    const wXmin = cam.position.x + cam.left   / z;
-    const wXmax = cam.position.x + cam.right  / z;
-    const wZmin = cam.position.z - cam.top    / z;  // paper-top edge
-    const wZmax = cam.position.z - cam.bottom / z;  // paper-bottom edge
+    const z    = cam.zoom || 1;
+    const posX = cam.position?.x ?? cam.position?.[0] ?? 0;
+    const posZ = cam.position?.z ?? cam.position?.[2] ?? 0;
+
+    const wXmin = posX + cam.left   / z;
+    const wXmax = posX + cam.right  / z;
+    const wZmin = posZ - cam.top    / z;  // Blattoberkante
+    const wZmax = posZ - cam.bottom / z;  // Blattunterkante
 
     return {
         toX: (wx) => (wx - wXmin) / (wXmax - wXmin) * dw + M,
         toY: (wz) => (wz - wZmin) / (wZmax - wZmin) * dh + M,
-        // Expose bounds for any caller that needs them (and for debug)
-        _bounds: { wXmin, wXmax, wZmin, wZmax, wW, wH },
+        _bounds: { wXmin, wXmax, wZmin, wZmax, wW: wXmax - wXmin, wH: wZmax - wZmin },
+    };
+}
+
+/**
+ * Papier → Welt, die exakte Umkehrung von `makePaperTransform`.
+ *
+ * Steht bewusst direkt daneben: Bemaßung und Pan im Bildschirmplan brauchen den
+ * Rückweg, und zwei getrennt gepflegte Abbildungen laufen garantiert
+ * auseinander. Der Rundlauf ist in `test/paperTransform.test.js` festgehalten.
+ */
+export function makeWorldTransform(cam, M, dw, dh) {
+    const paper = makePaperTransform(cam, M, dw, dh);
+    if (!paper) return null;
+    const { wXmin, wXmax, wZmin, wZmax } = paper._bounds;
+    return {
+        zuX: (px) => (px - M) / dw * (wXmax - wXmin) + wXmin,
+        zuZ: (py) => (py - M) / dh * (wZmax - wZmin) + wZmin,
     };
 }
 
@@ -340,18 +376,31 @@ function _buildPlacementMatrix(placement) {
 /**
  * Draw all vector lines into an open jsPDF document.
  *
- * @param {jsPDF}                   doc       - Active jsPDF doc (already has raster bg or blank)
- * @param {THREE.OrthographicCamera} cam      - Current orthographic camera
- * @param {THREE.Scene}              scene    - Three.js scene (for section contour)
- * @param {THREE.Plane|null}         cutPlane - Active clip plane (null = skip contour)
- * @param {object|null}              ifcData  - { webIfc, modelID, model? } or null
- * @param {number}                   M        - Margin in mm
- * @param {number}                   dw       - Drawing width in mm
- * @param {number}                   dh       - Drawing height in mm
- * @param {object}                   opts     - { hatch?, scaleBar?, scaleRatio? }
+ * Sprint P/AP-1: Diese Funktion BESCHAFFT nichts mehr — sie zeichnet nur noch.
+ * Schnittkontur, Schraffur-Polygone und FootPrint-Kurven wurden früher hier
+ * mitten im Zeichnen aus Szene und web-ifc geholt (was die Funktion asynchron
+ * machte und sie an THREE und web-ifc kettete). Beides kommt jetzt fertig über
+ * `opts` herein und wird von `collectVectorContent` gesammelt — genau so, wie
+ * es der DXF-Pfad schon immer von Hand gemacht hat.
+ *
+ * Der Gewinn: Dieselbe Zeichenroutine bedient jsPDF UND den Bildschirm-Canvas,
+ * ohne Szene, ohne WASM, ohne await — und das Sammeln ist zwischenspeicherbar.
+ *
+ * `doc` ist bewusst nur die jsPDF-TEILMENGE (setDrawColor/setFillColor/
+ * setTextColor/setLineWidth/setLineDashPattern/setFontSize + line/circle/rect/
+ * triangle/text). Wer diese elf Methoden anbietet, kann hier hineingereicht
+ * werden — siehe `services/CanvasDoc.js`.
+ *
+ * @param {object} doc  - jsPDF oder ein Adapter mit derselben Teilmenge
+ * @param {object} cam  - Orthografische Kamera bzw. Plot-Frustum
+ * @param {number} M    - Rand in mm
+ * @param {number} dw   - Zeichenbreite in mm
+ * @param {number} dh   - Zeichenhöhe in mm
+ * @param {object} opts - Inhalte + Schalter (siehe collectVectorContent)
  */
-export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, dh, opts = {}) {
+export function drawVectorPlan(doc, cam, M, dw, dh, opts = {}) {
     const paper = makePaperTransform(cam, M, dw, dh);
+    if (!paper) return;                     // Blickrichtung ohne Papier-Abbildung
     const { toX, toY } = paper;
 
     // ── T1: Gelände-Unterlagen (Höhenlinien + Böschungsschraffur) ───────────
@@ -375,17 +424,16 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
     }
 
     // ── TYPE 1: Section contour + closed-polygon hatching ──────────────────
-    if (cutPlane) {
-        const contourSegs = computeSectionContour(scene, cutPlane);
-
-        if (opts.hatch && contourSegs.length) {
-            const polys = chainSegmentsToPolygons(contourSegs);
-            _drawHatchPolygons(doc, polys, toX, toY, M, dw, dh);
-        }
-
+    // Die Schraffur-Polygone kommen fertig verkettet herein — sie werden nur
+    // gefüllt, wenn der Nutzer Schraffur angefordert hat (das Verketten selbst
+    // ist nicht gratis und gehört deshalb ins Sammeln, nicht ins Zeichnen).
+    if (opts.hatchPolygons?.length) {
+        _drawHatchPolygons(doc, opts.hatchPolygons, toX, toY, M, dw, dh);
+    }
+    if (opts.sectionSegments?.length) {
         doc.setDrawColor(SECTION_CONTOUR_STYLE.r, SECTION_CONTOUR_STYLE.g, SECTION_CONTOUR_STYLE.b);
         doc.setLineWidth(SECTION_CONTOUR_STYLE.w);
-        for (const s of contourSegs) {
+        for (const s of opts.sectionSegments) {
             const px1 = toX(s.x1), py1 = toY(s.z1);
             const px2 = toX(s.x2), py2 = toY(s.z2);
             if (_inBounds(px1, py1, M, dw, dh) || _inBounds(px2, py2, M, dw, dh)) {
@@ -395,11 +443,8 @@ export async function drawVectorPlan(doc, cam, scene, cutPlane, ifcData, M, dw, 
     }
 
     // ── TYPE 2: IFC 2D FootPrint / Axis + BBox fallback ─────────────────────
-    if (ifcData?.webIfc != null) {
-        const products = await extractFootprintSegments(
-            ifcData.webIfc, ifcData.modelID, ifcData.model ?? null
-        );
-        for (const { segments, category, hasBbox } of products) {
+    if (opts.footprintProducts?.length) {
+        for (const { segments, category, hasBbox } of opts.footprintProducts) {
             const style = _builtinLegacyFor(category);
             doc.setDrawColor(style.r, style.g, style.b);
             // BBox-derived rects render thinner + dashed to differentiate from real footprints

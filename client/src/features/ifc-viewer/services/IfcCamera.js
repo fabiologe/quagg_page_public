@@ -459,7 +459,11 @@ export class IfcCamera {
             ortho.position.set(target.x + 10000, target.y, target.z);
             ortho.up.set(0, 1, 0);
         } else {
-            // top view: Z points "north" on paper
+            // Draufsicht. ACHTUNG, hier stand jahrelang „Z points north on
+            // paper" — das ist falsch herum: up = (0,0,-1) heißt, die lokale
+            // +Y-Achse der Kamera zeigt auf Welt-−Z. Auf dem Papier ist OBEN
+            // also Welt-−Z, wachsendes Z läuft nach unten. Dieselbe Konvention
+            // wie im DXF (N = −z). Festgehalten in test/paperTransform.test.js.
             ortho.position.set(target.x, target.y + 10000, target.z);
             ortho.up.set(0, 0, -1);
         }

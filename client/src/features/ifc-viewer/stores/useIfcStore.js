@@ -443,8 +443,8 @@ export const useIfcStore = defineStore('ifc-viewer', () => {
     await _psetHandler(psetName, props);
   }
 
-  async function setStoreyVisible(localId, visible) {
-    await _storeyHandler?.(localId, visible);
+  async function setStoreyVisible(localId, visible, modelId = null) {
+    await _storeyHandler?.(localId, visible, modelId);
   }
 
   // Ausstehende Debounce-Writes anstoßen, wenn der Tab schließt oder in den

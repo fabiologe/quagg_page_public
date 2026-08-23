@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "org.quaggengineering.pdf",
+    "sha256_cert_fingerprints": ["55:3A:27:B9:67:2E:35:48:DB:BB:C0:E8:CE:56:DB:10:6A:DB:47:94:17:8B:5B:F0:E3:4D:D2:E0:F2:BC:D1:CF"]
+  }
+}]

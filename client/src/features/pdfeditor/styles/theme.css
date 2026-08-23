@@ -1,0 +1,155 @@
+/**
+ * PDF-Editor-Theme — alle Tokens mit --pdf-Präfix auf :root.
+ *
+ * WARUM :root UND NICHT der Feature-Container: Teleport-Modals hängen unter
+ * <body> und erben Container-Variablen nicht (zweimal schiefgegangen: isybau,
+ * flood-3D). Der Präfix verhindert Kollisionen mit den global importierten
+ * --sv-*-Tokens aus theme-saintv.css.
+ *
+ * Umschaltung: PdfEditorView spiegelt den Modus auf <html data-theme="dark">
+ * und räumt ihn beim Unmount wieder ab (Muster IsybauMain.vue).
+ * Hell ist der Default und liegt deshalb auf dem nackten :root.
+ */
+
+:root {
+    /* Flächen */
+    --pdf-bg: #e9e7e2;              /* Arbeitsfläche hinter den Seiten */
+    --pdf-flaeche: #f8f7f4;         /* Toolbar, Panels, Dialoge */
+    --pdf-flaeche-2: #eeece7;       /* eingesenkte Flächen, Hover */
+    --pdf-flaeche-3: #e2dfd9;       /* aktive Flächen, gedrückte Buttons */
+    --pdf-seite: #ffffff;           /* die PDF-Seite selbst */
+
+    /* Text */
+    --pdf-text: #22262b;
+    --pdf-text-dim: #6d757e;
+    --pdf-text-invers: #f8f7f4;
+
+    /* Linien & Tiefe */
+    --pdf-rand: #d6d3cc;
+    --pdf-rand-stark: #b9b5ac;
+    --pdf-schatten: 0 1px 3px rgba(25, 28, 32, 0.10), 0 4px 16px rgba(25, 28, 32, 0.08);
+    --pdf-schatten-seite: 0 1px 2px rgba(25, 28, 32, 0.16), 0 6px 20px rgba(25, 28, 32, 0.10);
+
+    /* Akzent (Petrol — ruhig, technisch) */
+    --pdf-akzent: #0f766e;
+    --pdf-akzent-hover: #0d655e;
+    --pdf-akzent-weich: rgba(15, 118, 110, 0.12);
+    --pdf-akzent-kontrast: #ffffff;
+
+    /* Semantik */
+    --pdf-warn: #b45309;
+    --pdf-fehler: #b91c1c;
+    --pdf-ok: #15803d;
+
+    /* Scrollbars — Grün aus der Akzentfamilie (Petrol → Grün gedreht) */
+    --pdf-scroll: #2f9e6f;
+    --pdf-scroll-hover: #1d7d55;
+
+    /* Form & Schrift */
+    --pdf-radius: 10px;
+    --pdf-radius-klein: 6px;
+    --pdf-schrift: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --pdf-schrift-mono: 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+}
+
+:root[data-theme='dark'] {
+    --pdf-bg: #17191c;
+    --pdf-flaeche: #212429;
+    --pdf-flaeche-2: #2a2e34;
+    --pdf-flaeche-3: #343a41;
+    --pdf-seite: #ffffff;           /* Seiten bleiben Papier */
+
+    --pdf-text: #e7e9ec;
+    --pdf-text-dim: #99a1ab;
+    --pdf-text-invers: #17191c;
+
+    --pdf-rand: #383d44;
+    --pdf-rand-stark: #4b525b;
+    --pdf-schatten: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.35);
+    --pdf-schatten-seite: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4);
+
+    --pdf-akzent: #2bb3a3;
+    --pdf-akzent-hover: #3cc7b7;
+    --pdf-akzent-weich: rgba(43, 179, 163, 0.16);
+    --pdf-akzent-kontrast: #0b2622;
+
+    --pdf-warn: #d97706;
+    --pdf-fehler: #ef4444;
+    --pdf-ok: #22c55e;
+
+    --pdf-scroll: #37b083;
+    --pdf-scroll-hover: #4fd0a0;
+}
+
+/* ── Grundfläche des Editors ────────────────────────────────────────────── */
+
+.pdfed-root {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--pdf-bg);
+    color: var(--pdf-text);
+    font-family: var(--pdf-schrift);
+    font-size: 14px;
+    line-height: 1.45;
+    overflow: hidden;
+    /* Windows: Press-and-hold-Kontextmenü & Textauswahl auf der Oberfläche aus */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* Grüne, schmale Scrollbars NUR im Editor — die globalen *-Regeln aus
+   theme-saintv.css würden sonst Neon-Scrollbars hineinbluten.
+   Die Dialog-Hintergründe stehen mit in der Liste, weil sie per Teleport
+   unter <body> hängen und damit NICHT unter .pdfed-root liegen. */
+/* Scrollbars: NICHT selbst stylen — theme-saintv.css (global via main.js)
+   bringt die Regeln für Firefox UND WebKit mit und liest vier Tokens.
+   Chromium ab 121 ignoriert ohnehin jede ::-webkit-scrollbar-Regel, sobald
+   irgendwo scrollbar-color gesetzt ist (und die globale *-Regel setzt es) —
+   ein Eigenbau bliebe dort wirkungslos und die Balken SaintV-violett.
+
+   `:has(.pdfed-root)` statt :root, weil --scroll-* ein GETEILTER Name ist:
+   so gilt Grün nur, solange der Editor wirklich im DOM steht (Muster aus
+   isybau/styles/theme.css). Auf :root und nicht am Container, damit auch
+   die Teleport-Dialoge erreicht werden. */
+:root:has(.pdfed-root) {
+    --scroll-thumb:       var(--pdf-scroll);
+    --scroll-thumb-hover: var(--pdf-scroll-hover);
+    --scroll-track:       transparent;
+    --scroll-thumb-glow:  none;
+}
+
+/* ── Gemeinsame Bausteine ───────────────────────────────────────────────── */
+
+.pdfed-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;             /* Fingerziel ≥ 40 px (Tablet!) */
+    min-width: 40px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--pdf-radius-klein);
+    background: transparent;
+    color: var(--pdf-text);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.pdfed-btn:hover { background: var(--pdf-flaeche-2); }
+.pdfed-btn:active { background: var(--pdf-flaeche-3); }
+.pdfed-btn.ist-aktiv {
+    background: var(--pdf-akzent-weich);
+    color: var(--pdf-akzent);
+}
+.pdfed-btn.ist-primaer {
+    background: var(--pdf-akzent);
+    color: var(--pdf-akzent-kontrast);
+}
+.pdfed-btn.ist-primaer:hover { background: var(--pdf-akzent-hover); }
+.pdfed-btn:disabled { opacity: 0.45; cursor: default; }
+.pdfed-btn:disabled:hover { background: transparent; }

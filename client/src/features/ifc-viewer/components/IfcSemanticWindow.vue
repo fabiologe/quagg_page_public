@@ -1,18 +1,11 @@
 <template>
-  <DraggableModal
-    :isOpen="true"
-    initialWidth="320px"
-    initialHeight="600px"
-    initialTop="80px"
-    initialLeft="calc(50% + 520px)"
-    @close="emit('close')"
-  >
+  <!-- Sprint P/AP-12: Der frühere `chrome`-Zweig ist entfallen. Er hätte die
+       Komponente wahlweise in ein schwebendes DraggableModal gehüllt — ein Weg,
+       den seit Sprint U kein Aufrufer mehr nahm (alle setzten `chrome=false`),
+       dessen Vorgabewert aber auf `true` stand. Das Chrome liefert jetzt
+       ausschließlich CdePanel in der Leiste. -->
+  <div class="rail-fill">
     <div class="props-window">
-      <div class="props-header viewer-header">
-        <span class="props-title">📋 IFC Eigenschaften</span>
-        <button class="hdr-close" @click="emit('close')">&times;</button>
-      </div>
-
       <div class="props-body">
         <!-- Kein Element gewählt -->
         <div v-if="!ifc.selectedElement" class="empty-state">
@@ -45,16 +38,16 @@
         </template>
       </div>
     </div>
-  </DraggableModal>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue';
-import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import IfcSidebar from './IfcSidebar.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 
-const emit = defineEmits(['close']);
+// Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
+// Leiste kennt und den Panel-Store führt.
 const ifc  = useIfcStore();
 const isCopying = ref(false);
 
@@ -125,6 +118,9 @@ async function copyAsBridge() {
 </script>
 
 <style scoped>
+/* Sprint U: In der Panel-Leiste füllt die Komponente das Panel-Body */
+.rail-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
 .props-window {
   display: flex;
   flex-direction: column;
@@ -132,36 +128,7 @@ async function copyAsBridge() {
   height: 100%;
 }
 
-.props-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.7rem 1rem;
-  background: #1e2530;
-  color: #90caf9;
-  flex-shrink: 0;
-  cursor: grab;
-  user-select: none;
-}
-.props-header:active { cursor: grabbing; }
-
-.props-title {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.hdr-close {
-  background: none;
-  border: none;
-  color: #90a4ae;
-  font-size: 1.3rem;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0 0.2rem;
-  border-radius: 4px;
-  transition: color 0.15s;
-}
-.hdr-close:hover { color: #ef5350; }
+/* Das CSS des entfallenen Modal-Kopfes ist mit ihm weggefallen (Sprint P/AP-12). */
 
 .props-body {
   flex: 1;
@@ -189,7 +156,7 @@ async function copyAsBridge() {
   background: rgba(231, 76, 60, 0.2);
   border: 1px solid rgba(231, 76, 60, 0.4);
   border-radius: 4px;
-  color: #ef9a9a;
+  color: var(--cde-danger-soft);
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
@@ -213,7 +180,7 @@ async function copyAsBridge() {
 
 .empty-text {
   font-size: 0.8rem;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   text-align: center;
 }
 </style>

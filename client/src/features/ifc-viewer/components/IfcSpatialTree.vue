@@ -160,10 +160,10 @@ const TreeNode = defineComponent({
   max-height: 480px;
   display: flex;
   flex-direction: column;
-  background: rgb(18, 20, 30);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: var(--cde-surface);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;
 }
 
@@ -191,29 +191,29 @@ const TreeNode = defineComponent({
   align-items: center;
   padding: 0.55rem 0.75rem;
   background: rgba(30,35,50,0.95);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 
 .panel-title {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #90caf9;
+  color: var(--cde-accent-soft);
 }
 
 .hdr-close {
-  background: none; border: none; color: #78909c;
+  background: none; border: none; color: var(--cde-text-mute);
   font-size: 1.1rem; cursor: pointer; padding: 0 0.2rem;
   line-height: 1; border-radius: 4px; transition: color 0.15s;
 }
-.hdr-close:hover { color: #ef5350; }
+.hdr-close:hover { color: var(--cde-danger); }
 
 .panel-body {
   overflow-y: auto;
   flex: 1;
   padding: 0.3rem 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  scrollbar-color: var(--cde-tint-max) transparent;
 }
 </style>
 
@@ -232,12 +232,12 @@ const TreeNode = defineComponent({
   transition: background 0.1s;
   user-select: none;
 }
-.node-row:hover { background: rgba(255,255,255,0.06); }
-.node-row.is-storey { color: #90caf9; }
+.node-row:hover { background: var(--cde-tint-weak); }
+.node-row.is-storey { color: var(--cde-accent-soft); }
 
 .caret {
   font-size: 0.7rem;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   width: 12px;
   flex-shrink: 0;
   text-align: center;
@@ -256,13 +256,13 @@ const TreeNode = defineComponent({
 }
 .node-label {
   font-size: 0.74rem;
-  color: #b0bec5;
+  color: var(--cde-text-soft);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.node-row.is-storey .node-label { color: #90caf9; font-weight: 500; }
+.node-row.is-storey .node-label { color: var(--cde-accent-soft); font-weight: 500; }
 .node-label:hover { color: #e3f2fd; text-decoration: underline; }
 
 .vis-btn {
@@ -272,7 +272,7 @@ const TreeNode = defineComponent({
   flex-shrink: 0;
 }
 .node-row:hover .vis-btn { opacity: 1; }
-.vis-btn.hidden { opacity: 1; color: #ef5350; }
+.vis-btn.hidden { opacity: 1; color: var(--cde-danger); }
 .vis-btn:hover { transform: scale(1.2); }
 
 .children { }

@@ -75,98 +75,28 @@
         </div>
 
         <!-- Kamera-Toolbox (links) -->
+        <!-- Werkzeugleiste — datengetrieben aus `toolbarItems` (Sprint U):
+             eine Quelle für Icon, Beschriftung, Tastenkürzel und Aktion. -->
         <div class="toolbox">
-          <button class="tool-btn" @click="engine?.zoomToFit()" title="Zoom to Fit">🔍<small>Fit</small></button>
-          <button class="tool-btn" @click="engine?.viewTop()"   title="Draufsicht">⬇️<small>Oben</small></button>
-          <button class="tool-btn" @click="engine?.viewFront()" title="Vorderansicht">🔲<small>Vorne</small></button>
-          <button class="tool-btn" @click="engine?.viewSide()"  title="Seitenansicht">◻️<small>Seite</small></button>
-          <button class="tool-btn" @click="engine?.resetView()" title="Reset">🏠<small>Reset</small></button>
-
-          <div class="tool-divider"></div>
-
-          <!-- Layer-Panel Toggle -->
-          <button
-            class="tool-btn"
-            :class="{ active: showLayerPanel }"
-            @click="showLayerPanel = !showLayerPanel"
-            title="Ebenen / Kategorien"
-          >🎛️<small>Layer</small></button>
-
-          <!-- Section Cut -->
-          <button
-            class="tool-btn"
-            :class="{ active: sectionActive }"
-            @click="toggleSectionCut"
-            title="Horizontaler Schnitt"
-          >✂️<small>Schnitt</small></button>
-
-          <!-- Coord mode toggle -->
-          <button
-            class="tool-btn"
-            :class="{ active: coordMode === 'ifc' }"
-            @click="coordMode = coordMode === 'viewer' ? 'ifc' : 'viewer'"
-            title="Koordinaten umschalten (Viewer ↔ IFC)"
-          >📍<small>{{ coordMode === 'ifc' ? 'IFC' : 'Viewer' }}</small></button>
-
-          <div class="tool-divider"></div>
-
-          <!-- PDF Export -->
-          <button
-            class="tool-btn"
-            :class="{ active: showPdfExport }"
-            @click="showPdfExport = !showPdfExport"
-            title="Als PDF exportieren"
-          >📄<small>Export</small></button>
-
-          <!-- Planning Cockpit -->
-          <button
-            class="tool-btn"
-            :class="{ active: showPlanningCockpit }"
-            @click="showPlanningCockpit = !showPlanningCockpit"
-            title="Planungs-Cockpit (Flächen, Kostengruppen, BIM-Qualität)"
-          >📊<small>Planung</small></button>
-
-          <div class="tool-divider"></div>
-
-          <!-- T1.3: Measurement -->
-          <button
-            class="tool-btn"
-            :class="{ active: measureActive }"
-            @click="toggleMeasure"
-            title="Strecke messen"
-          >📏<small>Messen</small></button>
-
-          <!-- T2.2: Saved Views -->
-          <button
-            class="tool-btn"
-            :class="{ active: showSavedViews }"
-            @click="onToggleViews"
-            title="Gespeicherte Ansichten [V]"
-          >📌<small>Views</small></button>
-
-          <!-- T2.4: Annotations -->
-          <button
-            class="tool-btn"
-            :class="{ active: showAnnotations || annotationActive }"
-            @click="onToggleNotes"
-            title="Notizen [N]"
-          >💬<small>Notizen</small></button>
-
-          <div class="tool-divider"></div>
-
-          <!-- Help / Shortcuts -->
-          <button
-            class="tool-btn"
-            :class="{ active: showShortcuts }"
-            @click="showShortcuts = !showShortcuts"
-            title="Tastenkürzel anzeigen [?]"
-          >⌨<small>Hilfe</small></button>
+          <template v-for="(t, i) in toolbarItems" :key="t.id ?? `div-${i}`">
+            <div v-if="t.divider" class="tool-divider"></div>
+            <button
+              v-else
+              class="tool-btn"
+              :class="{ active: t.active }"
+              :title="t.key ? `${t.title} [${t.key}]` : t.title"
+              @click="t.action()"
+            >
+              <CdeIcon :name="t.icon" :size="17" />
+              <small>{{ t.label }}</small>
+            </button>
+          </template>
         </div>
 
         <!-- B3: Section-Cut Bar — centered, with snap + mode + position readout -->
         <Transition name="section-slide">
           <div v-if="showSectionBar" class="section-bar">
-            <span class="section-label">✂️</span>
+            <span class="section-label"><CdeIcon name="section" :size="15" /></span>
 
             <!-- SC-1: Snap-to-axis buttons -->
             <div class="section-snaps">
@@ -218,26 +148,22 @@
           <span v-if="coordMode === 'ifc'"><b>Z</b> {{ coords.oz }}&thinsp;m</span>
         </div>
 
-        <!-- Element-Indikator (wenn Properties-Fenster geschlossen) -->
-        <Transition name="sidebar-slide">
-          <div v-if="ifc.selectedElement && !propertiesOpen" class="sel-badge" @click="emit('open-properties')">
-            <span class="sel-type">{{ ifc.selectedElement.type }}</span>
-            <span class="sel-name">{{ ifc.selectedElement.name || '—' }}</span>
-            <span class="sel-hint">Eigenschaften öffnen ↗</span>
-          </div>
-        </Transition>
-
-        <!-- Selection actions (hide/isolate) — show only when an element is selected -->
-        <Transition name="sidebar-slide">
-          <div v-if="ifc.selectedElement" class="sel-actions">
-            <button class="sel-action-btn" title="Auswahl ausblenden" @click="onHideSelected">
-              <span>👁‍🗨</span><small>Verstecken</small>
-            </button>
-            <button class="sel-action-btn" title="Nur Auswahl zeigen" @click="onIsolateSelected">
-              <span>⊡</span><small>Isolieren</small>
-            </button>
-          </div>
-        </Transition>
+        <!-- Sprint U/AP-U4: Werte und Aktionen am Objekt statt in Bildschirmecken.
+             Auswahl-Knöpfe und Messliste sind ins HUD gewandert. -->
+        <CdeHudLayer
+          :measurements="measurements"
+          :element="ifc.selectedElement"
+          :elementAnker="selectionAnchor"
+          :projectToScreen="(p) => engine?.projectToScreen(p)"
+          :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
+          :getCanvas="() => canvasRef"
+          @delete-measurement="deleteMeasurement"
+          @zoom="onZoomSelected"
+          @hide="onHideSelected"
+          @isolate="onIsolateSelected"
+          @properties="emit('open-properties')"
+          @new-issue="onIssueFromSelection"
+        />
 
         <!-- Show-all button — visible whenever any category is currently hidden -->
         <Transition name="sidebar-slide">
@@ -247,25 +173,23 @@
             title="Alle wieder einblenden"
             @click="onShowAll"
           >
-            👁 Alle zeigen
+            <CdeIcon name="visible" :size="14" /> Alle zeigen
           </button>
         </Transition>
 
-        <!-- T1.3: Measurement toast + list -->
+        <!-- Mess-Hinweis (die Werte selbst stehen als Pillen an der Strecke) -->
         <Transition name="fade">
-          <div v-if="measureToast" class="measure-toast">📏 {{ measureToast.text }}</div>
+          <div v-if="measureToast" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ measureToast.text }}</div>
         </Transition>
         <Transition name="fade">
-          <div v-if="measureActive && measurements.length" class="measure-list">
-            <div class="measure-list-header">
-              Messungen ({{ measurements.length }})
-              <button class="ml-clear-btn" @click="clearMeasurements" title="Zurücksetzen">✕</button>
-            </div>
-            <div v-for="(m, i) in measurements" :key="i" class="measure-item">
-              <span class="ml-idx">#{{ i + 1 }}</span>
-              <span class="ml-val">{{ _formatDist(m.dist) }}</span>
-            </div>
-          </div>
+          <button
+            v-if="measurements.length"
+            class="measure-clear"
+            title="Alle Messungen entfernen"
+            @click="clearMeasurements"
+          >
+            <CdeIcon name="delete" :size="13" /> {{ measurements.length }} Messung{{ measurements.length === 1 ? '' : 'en' }}
+          </button>
         </Transition>
 
         <!-- Layer-Panel (floating) -->
@@ -284,33 +208,24 @@
         <!-- T1.5: Storey-Quick-Nav (floating left) — shifts right when LayerPanel is open -->
         <IfcStoreyNav
           v-if="showStoreyNav"
+          ref="storeyNavRef"
           :storeys="storeyList"
           :style="{ left: showLayerPanel && categoryList.length ? '320px' : '70px' }"
           @goto="onGotoStorey"
+          @set-visible="onStoreyVisible"
         />
 
         <!-- T2.2: Saved Views (floating right, toggleable) -->
         <Transition name="panel-slide">
           <div v-if="showSavedViews" class="saved-views-wrap">
             <IfcSavedViews
-              :captureView="() => engine?.captureView()"
-              :applyView="(s) => engine?.applyView(s)"
+              :captureView="erfasseViewpoint"
+              :applyView="anwendenViewpoint"
             />
           </div>
         </Transition>
 
-        <!-- T2.4: Annotations (floating right, below Saved Views or alone) -->
-        <Transition name="panel-slide">
-          <div v-if="showAnnotations" class="annotations-wrap">
-            <IfcAnnotations
-              :annotationActive="annotationActive"
-              :zoomToPoint="zoomToAnnotation"
-              :applyViewpoint="(vp) => engine?.applyView(vp)"
-              :captureViewpoint="() => engine?.captureView() ?? null"
-              @toggle-mode="toggleAnnotationMode"
-            />
-          </div>
-        </Transition>
+        <!-- Issues-Panel lebt seit Sprint U in der rechten Leiste (CdeView) -->
 
         <!-- T2.4: Speech-bubble overlay (always rendered when there are annotations) -->
         <IfcAnnotationOverlay
@@ -318,6 +233,7 @@
           :annotations="ifc.annotations"
           :projectToScreen="(p) => engine?.projectToScreen(p)"
           :canvasEl="canvasRef"
+          :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
           @offset-changed="onAnnotationOffsetChanged"
         />
 
@@ -331,15 +247,15 @@
         />
       </Teleport>
 
-      <Teleport to="body">
-        <IfcPlanningCockpit
-          v-if="showPlanningCockpit"
-          @close="showPlanningCockpit = false"
-        />
-      </Teleport>
+      <!-- Planungs-Cockpit lebt seit Sprint U in der rechten Leiste (CdeView) -->
+
+      <CdeCommandPalette
+        :open="showPalette"
+        :nurElemente="paletteNurElemente"
+        @close="showPalette = false"
+      />
 
       <Teleport to="body">
-        <IfcSearchOverlay    :open="showSearch"    @close="showSearch = false" />
         <IfcShortcutsOverlay :open="showShortcuts" @close="showShortcuts = false" />
       </Teleport>
     </div>
@@ -347,24 +263,28 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
 import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import { IfcEngine }            from '../services/IfcEngine.js';
 import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
+import { usePanels } from '../stores/usePanels.js';
+import { useAnsicht } from '../stores/useAnsicht.js';
+import { usePaletteCommands } from '../stores/useCommands.js';
 import IfcLayerPanel      from './IfcLayerPanel.vue';
+import CdeIcon            from './ui/CdeIcon.vue';
+import CdeCommandPalette  from './ui/CdeCommandPalette.vue';
+import CdeHudLayer        from './CdeHudLayer.vue';
 import IfcPdfExportModal  from './IfcPdfExportModal.vue';
-import IfcPlanningCockpit from './IfcPlanningCockpit.vue';
-import IfcSearchOverlay   from './IfcSearchOverlay.vue';
 import IfcLoadOverlay     from './IfcLoadOverlay.vue';
 import IfcShortcutsOverlay from './IfcShortcutsOverlay.vue';
 import IfcStoreyNav        from './IfcStoreyNav.vue';
 import IfcSavedViews       from './IfcSavedViews.vue';
-import IfcAnnotations      from './IfcAnnotations.vue';
 import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
+import '../styles/theme.css';
 import { computeModelIdentity } from '../services/ModelIdentity.js';
 import { repo } from '../services/RepoFacade.js';
 
@@ -372,6 +292,9 @@ import { repo } from '../services/RepoFacade.js';
 const emit = defineEmits(['close', 'open-properties', 'model-loaded']);
 const ifc  = useIfcStore();
 const cde  = useCdeStore();
+const panels = usePanels();
+const ansicht = useAnsicht();
+const cmds = usePaletteCommands();
 
 defineProps({
   propertiesOpen: { type: Boolean, default: false },
@@ -393,7 +316,6 @@ const categoryList   = ref([]); // [{name, count, visible}]
 const storeyList     = ref([]); // [{modelId, localId, name, elevation, box}]
 const showStoreyNav  = ref(true);
 const showSavedViews = ref(false);
-const showAnnotations    = ref(false);
 const annotationActive   = ref(false);
 
 // Section cut — sectionActive = clip plane exists; showSectionBar = UI bar visible
@@ -404,10 +326,9 @@ const sectionPosition = ref(null); // { x, y, z } from engine
 
 // PDF export
 const showPdfExport = ref(false);
-const showSearch    = ref(false);
+const showPalette   = ref(false);
+const paletteNurElemente = ref(false);
 const showShortcuts = ref(false);
-// Planning cockpit (DIN 277 areas, DIN 276 KG, BIM quality)
-const showPlanningCockpit = ref(false);
 
 // T1.3: Measurement
 const measureActive    = ref(false);
@@ -430,6 +351,88 @@ let _mouseDownAt = null;
 let _hoverTimer  = null;
 let _lastMouse   = null;
 let _selection   = null;  // IfcSelectionHandler — übernimmt Click/Hover/Marquee
+
+// ── AP-U4: Anker der Auswahl für das Kontextmenü am Objekt ─────────────────
+// Der Bildschirmpunkt wird im HUD projiziert; hier wird nur der WELT-Punkt
+// (BBox-Zentrum) nachgeführt, wenn sich die Auswahl ändert.
+const selectionAnchor = ref(null);
+watch(() => ifc.selectedElement, async (el) => {
+  if (!el || !engine.value) { selectionAnchor.value = null; return; }
+  try {
+    const boxes = await engine.value.getBoxes([el.localId]);
+    const box = boxes?.[0];
+    selectionAnchor.value = (box && !box.isEmpty())
+      ? [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2]
+      : null;
+  } catch { selectionAnchor.value = null; }
+});
+
+/**
+ * Einzelne Messung entfernen (früher ging nur „alle zurücksetzen").
+ * Die Strecken zeichnet seit AP-U4 das HUD im Bildschirmraum; die 3D-Marker
+ * der Engine werden deshalb verworfen, damit nichts doppelt stehen bleibt.
+ */
+function deleteMeasurement(i) {
+  measurements.value = measurements.value.filter((_, idx) => idx !== i);
+  engine.value?.clearMeasurements?.();
+}
+
+function onZoomSelected() {
+  const el = ifc.selectedElement;
+  if (el) engine.value?.zoomToElement(el.modelId, el.localId);
+}
+
+/** Issue direkt am gewählten Bauteil anlegen (Pin sitzt auf dem Anker). */
+function onIssueFromSelection() {
+  const anker = selectionAnchor.value;
+  if (!anker) return;
+  const text = prompt('Issue am gewählten Bauteil — Beschreibung:', '');
+  if (text === null) return;
+  const lastColor = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
+  const ann = engine.value?.addAnnotationAt?.(anker, text, lastColor);
+  if (!ann) return;
+  ann.viewpoint = erfasseViewpoint();
+  ann.author = cde.bearbeiter || '';
+  ann.createdAt = Date.now();
+  ifc.pushAnnotation(ann);
+  panels.open('issues');
+}
+
+// ── Werkzeugleiste (Sprint U) ───────────────────────────────────────────────
+// Eine Quelle für Icon, Beschriftung, Tastenkürzel und Aktion — der Tooltip
+// nennt das Kürzel jetzt automatisch (früher nur bei 3 von 14 Knöpfen), und
+// die Liste ist zugleich der Einspeisepunkt für die Befehls-Palette (AP-U3).
+const toolbarItems = computed(() => [
+  { id: 'fit',    icon: 'fit',         label: 'Fit',    title: 'Alles einpassen',   action: () => engine.value?.zoomToFit() },
+  { id: 'top',    icon: 'view-top',    label: 'Oben',   title: 'Draufsicht',        action: () => engine.value?.viewTop() },
+  { id: 'front',  icon: 'view-front',  label: 'Vorne',  title: 'Vorderansicht',     action: () => engine.value?.viewFront() },
+  { id: 'side',   icon: 'view-side',   label: 'Seite',  title: 'Seitenansicht',     action: () => engine.value?.viewSide() },
+  { id: 'reset',  icon: 'view-reset',  label: 'Reset',  title: 'Ansicht zurücksetzen', action: () => engine.value?.resetView() },
+  { divider: true },
+  { id: 'layers', icon: 'layers',  label: 'Layer',   title: 'Ebenen / Kategorien',
+    active: showLayerPanel.value, action: () => { showLayerPanel.value = !showLayerPanel.value; } },
+  { id: 'section', icon: 'section', label: 'Schnitt', title: 'Horizontaler Schnitt', key: 'T/R',
+    active: sectionActive.value, action: () => toggleSectionCut() },
+  { id: 'coords', icon: 'coords', label: coordMode.value === 'ifc' ? 'IFC' : 'Viewer',
+    title: 'Koordinaten umschalten (Viewer ↔ IFC)',
+    active: coordMode.value === 'ifc',
+    action: () => { coordMode.value = coordMode.value === 'viewer' ? 'ifc' : 'viewer'; } },
+  { divider: true },
+  { id: 'export', icon: 'export', label: 'Export', title: 'Plan exportieren (PDF/DXF/Profile)',
+    active: showPdfExport.value, action: () => { showPdfExport.value = !showPdfExport.value; } },
+  { id: 'cockpit', icon: 'cockpit', label: 'Planung', title: 'Planungs-Cockpit (Flächen, Kosten, Qualität)',
+    active: panels.isOpen('cockpit'), action: () => panels.toggle('cockpit') },
+  { divider: true },
+  { id: 'measure', icon: 'measure', label: 'Messen', title: 'Strecke messen', key: 'M',
+    active: measureActive.value, action: () => toggleMeasure() },
+  { id: 'views', icon: 'views', label: 'Views', title: 'Gespeicherte Ansichten', key: 'V',
+    active: showSavedViews.value, action: () => onToggleViews() },
+  { id: 'issues', icon: 'issues', label: 'Issues', title: 'Issues / Notizen', key: 'N',
+    active: panels.isOpen('issues') || annotationActive.value, action: () => onToggleNotes() },
+  { divider: true },
+  { id: 'help', icon: 'help', label: 'Hilfe', title: 'Tastenkürzel anzeigen', key: '?',
+    active: showShortcuts.value, action: () => { showShortcuts.value = !showShortcuts.value; } },
+]);
 
 // ── viewerApi — Engine-Accessoren für teleportierte Kinder ──────────────────
 // (PDF-Export, Planungs-Cockpit, Vector-Style-Editor) via provide/inject statt
@@ -494,7 +497,7 @@ onMounted(async () => {
   _selection.attach();
   _selection.onPick(result => {
     ifc.setElement(result);
-    emit('open-properties');
+    panels.open('eigenschaften');
   });
   _selection.onClickEmpty(() => ifc.clearElement());
   _selection.onHover(pos => {
@@ -526,8 +529,8 @@ onMounted(async () => {
     }
   });
 
-  ifc.registerSpatialHandler(async (localId, visible) => {
-    await engine.value?.setStoreyVisible(localId, visible);
+  ifc.registerSpatialHandler(async (localId, visible, modelId = null) => {
+    await engine.value?.setStoreyVisible(localId, visible, modelId);
   });
 
   // T1.1: zoom-to-element / zoom-to-category — modelId defaults to first loaded model
@@ -551,9 +554,36 @@ onMounted(async () => {
 
   // B4: lokale Modell-Ablage für den Leerzustand einlesen
   _refreshRecentModels();
+
+  // Sprint U: Werkzeuge + Panels als Befehle anmelden (Palette, Hilfe, Tooltips)
+  cmds.register('viewer', [
+    ...toolbarItems.value
+      .filter(t => !t.divider)
+      .map(t => ({
+        id: `tool.${t.id}`, titel: t.title, icon: t.icon,
+        gruppe: 'Werkzeug', key: t.key, run: t.action,
+      })),
+    ...panels.defs.map(p => ({
+      id: `panel.${p.id}`, titel: `${p.titel} ein-/ausblenden`, icon: p.icon,
+      gruppe: 'Panel', run: () => panels.toggle(p.id),
+    })),
+    { id: 'sel.hide', titel: 'Auswahl ausblenden', icon: 'hidden', gruppe: 'Auswahl', key: 'H',
+      verfuegbar: () => !!ifc.selectedElement, run: () => onHideSelected() },
+    { id: 'sel.isolate', titel: 'Auswahl isolieren', icon: 'isolate', gruppe: 'Auswahl', key: 'I',
+      verfuegbar: () => !!ifc.selectedElement, run: () => onIsolateSelected() },
+    { id: 'sel.showall', titel: 'Alles wieder einblenden', icon: 'visible', gruppe: 'Auswahl', key: 'Shift+A',
+      run: () => onShowAll() },
+    { id: 'lvl.alle', titel: 'Ebenen: alle zeigen', icon: 'layers', gruppe: 'Ebenen',
+      verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('alle') },
+    { id: 'lvl.solo', titel: 'Ebenen: nur die gewählte (Solo)', icon: 'layers', gruppe: 'Ebenen',
+      verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('solo') },
+    { id: 'lvl.bis', titel: 'Ebenen: bis zur gewählten', icon: 'layers', gruppe: 'Ebenen',
+      verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('bis') },
+  ]);
 });
 
 onBeforeUnmount(() => {
+  cmds.unregister('viewer');
   document.removeEventListener('keydown', onKeyDown);
   if (canvasRef.value) {
     canvasRef.value.removeEventListener('mousedown',  onMouseDown);
@@ -680,7 +710,34 @@ async function deleteRecent(row) {
 async function openBySha(sha256) {
   await openRecent({ key: `model:${sha256}` });
 }
-defineExpose({ openBySha });
+/**
+ * Gespeicherte Ansicht / Issue-Viewpoint (Sprint P, AP-8).
+ *
+ * Die Engine bekommt bewusst KEINEN Oberflächenzustand — sie kennt Kamera,
+ * Sichtbarkeit und Schnitt. Der Ansichtsmodus (3D oder Lageplan mit Maßstab
+ * und Blattlage) wird hier darübergelegt. Fehlt das Feld, weil die Ansicht vor
+ * Sprint P gespeichert wurde, sorgt `normalisiereModus` im Store für '3d' —
+ * eine Migration ist deshalb nicht nötig.
+ */
+function erfasseViewpoint() {
+  const v = engine.value?.captureView();
+  if (!v) return null;
+  return { ...v, ansicht: ansicht.serialisieren() };
+}
+
+async function anwendenViewpoint(vp) {
+  await engine.value?.applyView(vp);
+  ansicht.anwenden(vp?.ansicht);
+}
+
+defineExpose({
+  openBySha,
+  zoomToPoint: zoomToAnnotation,
+  applyViewpoint: anwendenViewpoint,
+  captureViewpoint: erfasseViewpoint,
+  toggleAnnotationMode: () => toggleAnnotationMode(),
+  isAnnotationActive: () => annotationActive.value,
+});
 
 function fmtBytes(n) {
   if (!Number.isFinite(n) || n <= 0) return '';
@@ -793,9 +850,17 @@ function resetSection() {
 // SC-3: Keyboard shortcuts for section cut
 function onKeyDown(e) {
   // Cmd/Ctrl+F → open search overlay
+  // Strg+K = Befehls-Palette, Strg+F = dieselbe Liste, nur Elemente
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    paletteNurElemente.value = false;
+    showPalette.value = true;
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
     e.preventDefault();
-    showSearch.value = true;
+    paletteNurElemente.value = true;
+    showPalette.value = true;
     return;
   }
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -812,7 +877,7 @@ function onKeyDown(e) {
   if (e.key === 'v' || e.key === 'V') { e.preventDefault(); showSavedViews.value = !showSavedViews.value; return; }
 
   // T2.4: N toggles Notes panel, Esc exits annotation placement mode
-  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); showAnnotations.value = !showAnnotations.value; return; }
+  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); panels.toggle('issues'); return; }
   if (e.key === 'Escape' && annotationActive.value) { toggleAnnotationMode(); return; }
 
   // T1.2: H = hide selected, I = isolate selected, Shift+A = show all
@@ -912,7 +977,7 @@ function _formatDist(m) {
 
 // ── T2.4: Annotations ────────────────────────────────────────────────────────
 function onToggleViews() { showSavedViews.value  = !showSavedViews.value; }
-function onToggleNotes() { showAnnotations.value = !showAnnotations.value; }
+function onToggleNotes() { panels.toggle('issues'); }
 
 function toggleAnnotationMode() {
   if (annotationActive.value) {
@@ -935,7 +1000,7 @@ async function _onAnnotationClick(e) {
   if (ann) {
     // Issue-Felder: Viewpoint (Kamera + Sichtbarkeit + Schnitt) für „so sah
     // ich es"-Wiederherstellung, Autor aus der CDE-Bearbeiter-Identität.
-    ann.viewpoint = engine.value?.captureView() ?? null;
+    ann.viewpoint = erfasseViewpoint();
     ann.author    = cde.bearbeiter || '';
     ann.createdAt = Date.now();
     ifc.pushAnnotation(ann);
@@ -1035,33 +1100,33 @@ async function onMouseUp(e) {
   transform: translate(-50%, -50%);
   min-width: 320px; max-width: 420px;
   background: rgba(15, 30, 40, 0.92);
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 8px;
   padding: 0.9rem 1rem;
   z-index: 5;
   display: flex; flex-direction: column; gap: 0.4rem;
 }
-.recent-title { color: #eceff1; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.2rem; }
+.recent-title { color: var(--cde-text-bright); font-weight: 600; font-size: 0.95rem; margin-bottom: 0.2rem; }
 .recent-item { display: flex; align-items: stretch; gap: 0.3rem; }
 .recent-open {
   flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--cde-tint-weak);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 5px;
   padding: 0.45rem 0.6rem;
   cursor: pointer;
-  color: #cfd8dc;
+  color: var(--cde-text);
   transition: background 0.1s;
 }
 .recent-open:hover { background: rgba(52,152,219,0.25); color: #fff; }
 .recent-name { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-info { font-size: 0.7rem; color: #90a4ae; flex-shrink: 0; }
+.recent-info { font-size: 0.7rem; color: var(--cde-text-dim); flex-shrink: 0; }
 .recent-del {
-  background: none; border: none; color: #90a4ae; cursor: pointer;
+  background: none; border: none; color: var(--cde-text-dim); cursor: pointer;
   font-size: 0.8rem; padding: 0 0.3rem;
 }
 .recent-del:hover { color: #ff8a65; }
-.recent-hint { font-size: 0.68rem; color: #78909c; font-style: italic; margin-top: 0.2rem; }
+.recent-hint { font-size: 0.68rem; color: var(--cde-text-mute); font-style: italic; margin-top: 0.2rem; }
 
 /* ── Header ── */
 .viewer-header {
@@ -1085,7 +1150,7 @@ async function onMouseUp(e) {
   font-size: 1.15rem; cursor: pointer; padding: 0.2rem 0.45rem;
   border-radius: 4px; transition: background 0.15s;
 }
-.hdr-btn:hover { background: rgba(255,255,255,0.1); }
+.hdr-btn:hover { background: var(--cde-tint-strong); }
 .hdr-close:hover { color: #e74c3c; background: rgba(231,76,60,0.12); }
 
 /* ── Body ── */
@@ -1093,7 +1158,7 @@ async function onMouseUp(e) {
 
 .canvas-root {
   position: absolute; inset: 0; background: #f0f0f0; z-index: 10;
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,0,0,0.55)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='white' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='2' fill='white'/%3E%3Ccircle cx='18' cy='18' r='2' fill='none' stroke='rgba(0,0,0,0.5)' stroke-width='1'/%3E%3C/svg%3E") 18 18, crosshair;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,0,0,0.55)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='white' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='2' fill='white'/%3E%3Ccircle cx='18' cy='18' r='2' fill='none' stroke='var(--cde-scrim)' stroke-width='1'/%3E%3C/svg%3E") 18 18, crosshair;
 }
 .canvas-root.measure-cursor {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect x='2' y='2' width='32' height='32' fill='none' stroke='rgba(0,0,0,0.6)' stroke-width='3'/%3E%3Crect x='2' y='2' width='32' height='32' fill='none' stroke='%23ffeb3b' stroke-width='1.5'/%3E%3Cline x1='18' y1='6' x2='18' y2='30' stroke='%23ffeb3b' stroke-width='2'/%3E%3Cline x1='6' y1='18' x2='30' y2='18' stroke='%23ffeb3b' stroke-width='2'/%3E%3C/svg%3E") 18 18, crosshair;
@@ -1141,29 +1206,29 @@ async function onMouseUp(e) {
   display: flex; flex-direction: column; gap: 0.3rem;
   background: rgba(22,24,34,0.97); padding: 0.45rem; border-radius: 10px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.45);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--cde-tint);
   /* Cap height + scroll so growing button list doesn't escape the viewport */
   max-height: calc(100% - 7rem);
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.18) transparent;
+  scrollbar-color: var(--cde-tint-max) transparent;
 }
 .toolbox::-webkit-scrollbar { width: 4px; }
-.toolbox::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
+.toolbox::-webkit-scrollbar-thumb { background: var(--cde-tint-max); border-radius: 2px; }
 .tool-btn {
   display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 1px; width: 50px; height: 46px;
-  border: none; border-radius: 7px; background: rgba(255,255,255,0.08);
-  color: #e0e0e0; cursor: pointer; font-size: 1.1rem;
-  transition: background 0.15s, transform 0.12s;
+  justify-content: center; gap: 3px; width: 50px; height: 46px;
+  border: none; border-radius: 7px; background: var(--cde-tint);
+  color: var(--cde-text); cursor: pointer;
+  transition: background 0.15s, transform 0.12s, color 0.15s;
 }
-.tool-btn small { font-size: 0.57rem; opacity: 0.7; font-weight: 500; }
-.tool-btn:hover { background: rgba(255,255,255,0.18); color: #fff; transform: scale(1.05); }
-.tool-btn:active { transform: scale(0.94); background: rgba(52,152,219,0.35); }
-.tool-btn.active { background: rgba(52,152,219,0.35); color: #4fc3f7; }
+.tool-btn small { font-size: 0.57rem; opacity: 0.75; font-weight: 500; line-height: 1; }
+.tool-btn:hover { background: var(--cde-tint-max); color: var(--cde-text-invert); transform: scale(1.05); }
+.tool-btn:active { transform: scale(0.94); background: var(--cde-accent-fill-hi); }
+.tool-btn.active { background: var(--cde-accent-fill-hi); color: var(--cde-accent); }
 
 .tool-divider {
-  height: 1px; background: rgba(255,255,255,0.12); margin: 0.2rem 0.3rem;
+  height: 1px; background: var(--cde-tint-strong); margin: 0.2rem 0.3rem;
 }
 
 /* ── B3: Section cut bar — centered bottom ── */
@@ -1177,35 +1242,36 @@ async function onMouseUp(e) {
   box-shadow: 0 4px 16px rgba(0,0,0,0.45);
   white-space: nowrap;
 }
-.section-label { font-size: 0.9rem; }
-.section-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 0.1rem; }
+.section-label {
+  display: flex; align-items: center; font-size: 0.9rem; }
+.section-sep { width: 1px; height: 18px; background: var(--cde-tint-strong); margin: 0 0.1rem; }
 .section-snaps { display: flex; gap: 0.25rem; }
 .snap-btn {
-  padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);
-  background: rgba(255,255,255,0.07); color: #90a4ae; font-size: 0.72rem; font-weight: 700;
+  padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid var(--cde-tint-max);
+  background: var(--cde-tint); color: var(--cde-text-dim); font-size: 0.72rem; font-weight: 700;
   cursor: pointer; transition: background 0.12s, color 0.12s;
   line-height: 1.4;
 }
-.snap-btn:hover { background: rgba(255,255,255,0.15); color: #cfd8dc; }
-.snap-btn--danger:hover { background: rgba(239,83,80,0.18); color: #ef5350; border-color: rgba(239,83,80,0.4); }
+.snap-btn:hover { background: var(--cde-tint-max); color: var(--cde-text); }
+.snap-btn--danger:hover { background: rgba(239,83,80,0.18); color: var(--cde-danger); border-color: rgba(239,83,80,0.4); }
 .section-modes { display: flex; gap: 0.25rem; }
 .mode-btn {
-  padding: 0.22rem 0.6rem; border-radius: 5px; border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.06); color: #90a4ae; font-size: 0.73rem;
+  padding: 0.22rem 0.6rem; border-radius: 5px; border: 1px solid var(--cde-tint-strong);
+  background: var(--cde-tint-weak); color: var(--cde-text-dim); font-size: 0.73rem;
   cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
-.mode-btn:hover  { background: rgba(255,255,255,0.12); color: #cfd8dc; }
-.mode-btn.active { background: rgba(52,152,219,0.3); color: #4fc3f7; border-color: rgba(52,152,219,0.55); }
+.mode-btn:hover  { background: var(--cde-tint-strong); color: var(--cde-text); }
+.mode-btn.active { background: rgba(52,152,219,0.3); color: var(--cde-accent); border-color: rgba(52,152,219,0.55); }
 .section-pos {
-  font-family: 'Roboto Mono', monospace; font-size: 0.7rem; color: #4fc3f7;
+  font-family: 'Roboto Mono', monospace; font-size: 0.7rem; color: var(--cde-accent);
   padding: 0 0.2rem;
 }
 .section-close {
-  background: none; border: none; color: #546e7a; font-size: 1rem;
+  background: none; border: none; color: var(--cde-text-dimmer); font-size: 1rem;
   cursor: pointer; padding: 0 0.1rem; line-height: 1; transition: color 0.15s;
 }
-.section-close:hover { color: #ef5350; }
+.section-close:hover { color: var(--cde-danger); }
 
 /* ── B1: Coordinate display — centered bottom ── */
 .coord-bar {
@@ -1214,14 +1280,14 @@ async function onMouseUp(e) {
   z-index: 20;
   display: flex; align-items: center; gap: 0.9rem; background: rgba(22,24,34,0.97);
   padding: 0.35rem 0.7rem; border-radius: 6px;
-  font-family: 'Roboto Mono', monospace; font-size: 0.72rem; color: #b0bec5;
-  border: 1px solid rgba(255,255,255,0.08);
+  font-family: 'Roboto Mono', monospace; font-size: 0.72rem; color: var(--cde-text-soft);
+  border: 1px solid var(--cde-tint);
   pointer-events: none; white-space: nowrap;
 }
-.coord-bar b { color: #4fc3f7; margin-right: 2px; }
+.coord-bar b { color: var(--cde-accent); margin-right: 2px; }
 .coord-mode-badge {
-  font-size: 0.6rem; font-weight: 700; color: #546e7a;
-  background: rgba(255,255,255,0.06); border-radius: 3px;
+  font-size: 0.6rem; font-weight: 700; color: var(--cde-text-dimmer);
+  background: var(--cde-tint-weak); border-radius: 3px;
   padding: 0.05rem 0.3rem; letter-spacing: 0.05em;
 }
 
@@ -1234,51 +1300,21 @@ async function onMouseUp(e) {
   display: flex; align-items: center; gap: 0.3rem;
   background: rgba(52,152,219,0.15); border: 1px solid rgba(52,152,219,0.35);
   border-radius: 4px; padding: 0.2rem 0.5rem;
-  font-size: 0.78rem; color: #90caf9; max-width: 200px;
+  font-size: 0.78rem; color: var(--cde-accent-soft); max-width: 200px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tag-close {
   background: none; border: none; cursor: pointer;
-  color: #546e7a; font-size: 0.7rem; padding: 0; line-height: 1;
+  color: var(--cde-text-dimmer); font-size: 0.7rem; padding: 0; line-height: 1;
   flex-shrink: 0; transition: color 0.12s;
 }
-.tag-close:hover { color: #ef5350; }
+.tag-close:hover { color: var(--cde-danger); }
 
 /* ── B1: Selection badge — bottom right (no longer overlaps centered coord-bar) ── */
-.sel-badge {
-  position: absolute; bottom: 1rem; right: 1rem; z-index: 20;
-  display: flex; flex-direction: column; gap: 0.1rem;
-  background: rgba(16,18,28,0.97); border: 1px solid rgba(52,152,219,0.4);
-  border-radius: 8px; padding: 0.45rem 0.7rem; cursor: pointer;
-  transition: border-color 0.15s;
-}
-.sel-badge:hover { border-color: rgba(52,152,219,0.9); }
-.sel-type { font-size: 0.58rem; color: #546e7a; font-family: monospace; }
-.sel-name { font-size: 0.75rem; color: #cfd8dc; font-weight: 600; }
-.sel-hint { font-size: 0.58rem; color: #3498db; margin-top: 0.1rem; }
 
 /* Selection-action toolbar (Hide / Isolate) */
-.sel-actions {
-  position: absolute; bottom: 1rem; right: 13rem; z-index: 20;
-  display: flex; gap: 0.3rem;
-}
-.sel-action-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 0.05rem;
-  background: rgba(16,18,28,0.97);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  color: #cfd8dc; cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
-  min-width: 64px;
-}
 .sel-action-btn > span { font-size: 1rem; }
-.sel-action-btn > small { font-size: 0.58rem; color: #90a4ae; letter-spacing: 0.02em; }
-.sel-action-btn:hover {
-  background: rgba(33,150,243,0.18);
-  border-color: rgba(52,152,219,0.6);
-  transform: translateY(-1px);
-}
+.sel-action-btn > small { font-size: 0.58rem; color: var(--cde-text-dim); letter-spacing: 0.02em; }
 
 /* Persistent "Alle zeigen" button when anything is hidden */
 .show-all-btn {
@@ -1287,7 +1323,7 @@ async function onMouseUp(e) {
   border: 1px solid rgba(102,187,106,0.5);
   border-radius: 6px;
   padding: 0.4rem 0.9rem;
-  color: #a5d6a7;
+  color: var(--cde-success);
   font-size: 0.78rem; font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, transform 0.1s;
@@ -1296,49 +1332,37 @@ async function onMouseUp(e) {
 .show-all-btn:hover { background: rgba(102,187,106,0.28); transform: translate(-50%, -1px); }
 
 /* T1.3: Measurement UI */
+.measure-clear {
+  position: absolute; bottom: 3.2rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  background: var(--cde-surface-raised);
+  border: 1px solid var(--cde-line-strong);
+  border-radius: 999px;
+  color: var(--cde-text-dim);
+  font-size: var(--cde-font-xs);
+  cursor: pointer;
+  z-index: 21;
+}
+.measure-clear:hover { color: var(--cde-danger); border-color: var(--cde-danger); }
+
 .measure-toast {
+  display: flex; align-items: center; gap: 0.35rem;
   position: absolute; top: 5.5rem; left: 50%; transform: translateX(-50%); z-index: 22;
   background: rgba(255,235,59,0.92); color: #1a1a1a;
   padding: 0.4rem 0.9rem; border-radius: 6px;
   font-size: 0.8rem; font-weight: 600;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
-.measure-list {
-  position: absolute; top: 5.5rem; right: 1rem; z-index: 22;
-  width: 180px;
-  background: rgba(16,18,28,0.97);
-  border: 1px solid rgba(255,235,59,0.4);
-  border-radius: 8px;
-  padding: 0.4rem 0.5rem;
-}
-.measure-list-header {
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 0.65rem; font-weight: 700; color: #ffeb3b;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,235,59,0.18);
-  margin-bottom: 0.3rem;
-}
-.ml-clear-btn {
-  background: none; border: none; color: #78909c;
-  font-size: 0.9rem; cursor: pointer; padding: 0 0.2rem; line-height: 1;
-}
-.ml-clear-btn:hover { color: #ef5350; }
-.measure-item {
-  display: flex; justify-content: space-between; gap: 0.5rem;
-  font-size: 0.75rem; color: #cfd8dc;
-  padding: 0.18rem 0.1rem;
-}
-.ml-idx { color: #78909c; font-family: monospace; font-size: 0.7rem; }
-.ml-val { font-weight: 600; color: #fff59d; font-variant-numeric: tabular-nums; }
 
 /* T2.2: Saved Views floating panel — right edge, above coord-bar */
 .saved-views-wrap {
   position: absolute; right: 1rem; top: 5rem; z-index: 25;
   width: 280px; max-height: 480px;
-  background: rgb(18, 20, 30);
+  background: var(--cde-surface);
   border: 1px solid rgba(255,213,79,0.25);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;
   display: flex; flex-direction: column;
 }
@@ -1347,10 +1371,10 @@ async function onMouseUp(e) {
 .annotations-wrap {
   position: absolute; right: 1rem; top: 5rem; z-index: 25;
   width: 320px; max-height: 500px;
-  background: rgb(18, 20, 30);
+  background: var(--cde-surface);
   border: 1px solid rgba(233,30,99,0.3);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;
   display: flex; flex-direction: column;
 }

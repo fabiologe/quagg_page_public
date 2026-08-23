@@ -137,10 +137,10 @@ function categoryIcon(name) {
   max-height: 420px;
   display: flex;
   flex-direction: column;
-  background: rgb(18, 20, 30);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: var(--cde-surface);
+  border: 1px solid var(--cde-tint-strong);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;
 }
 
@@ -150,32 +150,32 @@ function categoryIcon(name) {
   align-items: center;
   padding: 0.55rem 0.75rem;
   background: rgba(30,35,50,0.95);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 
 .panel-title {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #90caf9;
+  color: var(--cde-accent-soft);
 }
 
 .header-right { display: flex; gap: 0.2rem; align-items: center; }
 
 .hdr-btn {
-  background: none; border: none; color: #78909c;
+  background: none; border: none; color: var(--cde-text-mute);
   font-size: 0.9rem; cursor: pointer; padding: 0.15rem 0.3rem;
   border-radius: 4px; line-height: 1; transition: color 0.15s;
 }
-.hdr-btn:hover { color: #cfd8dc; }
-.hdr-btn.close:hover { color: #ef5350; }
+.hdr-btn:hover { color: var(--cde-text); }
+.hdr-btn.close:hover { color: var(--cde-danger); }
 
 .panel-body {
   overflow-y: auto;
   flex: 1;
   padding: 0.3rem 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  scrollbar-color: var(--cde-tint-max) transparent;
 }
 
 .layer-row {
@@ -186,7 +186,7 @@ function categoryIcon(name) {
   transition: background 0.12s;
   cursor: default;
 }
-.layer-row:hover { background: rgba(255,255,255,0.05); }
+.layer-row:hover { background: var(--cde-tint-weak); }
 .layer-row.hidden { opacity: 0.45; }
 
 .eye-btn {
@@ -208,17 +208,17 @@ function categoryIcon(name) {
 .cat-name {
   flex: 1;
   font-size: 0.75rem;
-  color: #cfd8dc;
+  color: var(--cde-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.cat-name:hover { color: #90caf9; text-decoration: underline; }
+.cat-name:hover { color: var(--cde-accent-soft); text-decoration: underline; }
 
 .cat-count {
   font-size: 0.65rem;
-  color: #546e7a;
+  color: var(--cde-text-dimmer);
   font-family: monospace;
   flex-shrink: 0;
 }
