@@ -276,7 +276,7 @@
              </template>
 
             <div class="info-group checkbox-row">
-                <input type="checkbox" id="isManhole" v-model="localData.isManhole">
+                <input type="checkbox" id="isManhole" :checked="localData.isManhole !== false" @change="setzeDeckel($event.target.checked)">
                 <label for="isManhole">Schacht an Oberfläche (Deckel vorhanden)</label>
             </div>
             <div class="info-group checkbox-row">
@@ -361,6 +361,9 @@
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, resolveNodeUiType, lossCoeffHint, Neigungsklasse } from '../../utils/mappings.js';
+// EINE Regel für die Überstau-Kopplung — geteilt mit dem Node-Modell und
+// PreprocessingModal.vue.
+import { normalizeOverflowState } from '../../core/domain/Node.js';
 import { depthFromCoverAndZ } from '../../utils/heightCoupling.js';
 import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
 import PumpCurvePreview from '../common/PumpCurvePreview.vue';
@@ -621,6 +624,22 @@ const suggestSlope = () => {
     } else {
         console.warn('Neigung aus DGM: keine gültigen Höhendaten innerhalb der Fläche gefunden.');
     }
+};
+
+/**
+ * Deckel-Haken umlegen — über dieselbe Regel wie das Node-Modell und das
+ * Preprocessing-Fenster (normalizeOverflowState in core/domain/Node.js).
+ *
+ * Vorher hing hier ein blankes v-model: nahm man den Deckel weg, wurde der
+ * Überstau-Haken zwar gesperrt, behielt aber sichtbar seinen alten Wert und
+ * wurde erst beim Speichern still zurückgesetzt. Jetzt zeigt das Formular
+ * sofort den Zustand, den der Store auch herstellt.
+ */
+const setzeDeckel = (hatDeckel) => {
+    Object.assign(localData.value, normalizeOverflowState({
+        isManhole: hatDeckel,
+        canOverflow: localData.value.canOverflow,
+    }));
 };
 
 const save = () => {

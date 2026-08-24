@@ -1,6 +1,25 @@
 /**
  * Domain Model for a Node (Knoten/Schacht) in the sewer network.
  */
+/**
+ * Die Überstau-Kopplung als reine Funktion — dieselbe Regel, die
+ * Node.applyOverflowState() anwendet, nur ohne Instanz.
+ *
+ * Ein Knoten ohne Deckel (isManhole=false, z.B. unterirdisch/virtuell,
+ * ISYBAU-Status 2) kann nicht überstauen. Formulare, die auf einfachen
+ * Objekten arbeiten (die Tabellenzeilen in PreprocessingModal), müssen
+ * dieselbe Regel schon BEIM TIPPEN anwenden — sonst zeigt die Oberfläche
+ * einen Zustand, den der Store beim Speichern still wieder einkassiert.
+ * Genau daran ist der Druckdicht-Haken einmal gescheitert.
+ *
+ * @param {{isManhole?: boolean, canOverflow?: boolean}} zustand
+ * @returns {{isManhole: boolean, canOverflow: boolean}}
+ */
+export function normalizeOverflowState({ isManhole, canOverflow } = {}) {
+    const hatDeckel = isManhole !== false;
+    return { isManhole: hatDeckel, canOverflow: hatDeckel ? (canOverflow !== false) : false };
+}
+
 export class Node {
     constructor(options = {}) {
         const { id, x, y, z, type = "Schacht", depth = 2.0, coverZ = null, isManhole = true, status = 0, diameter = 0 } = options;
@@ -172,8 +191,7 @@ export class Node {
      * Zustand erzeugen.
      */
     applyOverflowState({ isManhole = this.isManhole, canOverflow = this.canOverflow } = {}) {
-        this.isManhole = isManhole !== false;
-        this.canOverflow = this.isManhole ? (canOverflow !== false) : false;
+        Object.assign(this, normalizeOverflowState({ isManhole, canOverflow }));
     }
 
     /**
