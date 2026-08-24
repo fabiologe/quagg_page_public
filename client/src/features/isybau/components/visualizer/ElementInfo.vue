@@ -275,16 +275,12 @@
                  </div>
              </template>
 
+            <!-- EIN Schalter, wie in der Datenbearbeitung. Das zweite
+                 Modellfeld (isManhole, aus ISYBAU-Status 2) führt
+                 setzeDruckdicht mit — siehe dort. -->
             <div class="info-group checkbox-row">
-                <input type="checkbox" id="isManhole" :checked="localData.isManhole !== false" @change="setzeDeckel($event.target.checked)">
-                <label for="isManhole">Schacht an Oberfläche (Deckel vorhanden)</label>
-            </div>
-            <div class="info-group checkbox-row">
-                <input type="checkbox" id="canOverflow" v-model="localData.canOverflow" :disabled="localData.isManhole === false">
-                <label for="canOverflow">Kann überstauen (Deckel offen)</label>
-            </div>
-            <div v-if="localData.isManhole === false" class="hint-text">
-                Unterirdischer/virtueller Knoten (z.B. Status 2): Überstau ist nicht möglich.
+                <input type="checkbox" id="druckdicht" :checked="localData.canOverflow === false" @change="setzeDruckdicht($event.target.checked)">
+                <label for="druckdicht">Druckdicht (kein Überstau)</label>
             </div>
         </template>
 
@@ -627,18 +623,19 @@ const suggestSlope = () => {
 };
 
 /**
- * Deckel-Haken umlegen — über dieselbe Regel wie das Node-Modell und das
- * Preprocessing-Fenster (normalizeOverflowState in core/domain/Node.js).
+ * „Druckdicht" umlegen — derselbe einzige Schalter wie in
+ * PreprocessingModal.vue, über dieselbe Regel (normalizeOverflowState in
+ * core/domain/Node.js).
  *
- * Vorher hing hier ein blankes v-model: nahm man den Deckel weg, wurde der
- * Überstau-Haken zwar gesperrt, behielt aber sichtbar seinen alten Wert und
- * wurde erst beim Speichern still zurückgesetzt. Jetzt zeigt das Formular
- * sofort den Zustand, den der Store auch herstellt.
+ * Abwählen heißt „soll überstauen können", und das setzt einen Deckel voraus:
+ * isManhole wird mitgeführt. Unbedenklich, weil das Flag keine andere Wirkung
+ * hat — der ISYBAU-Export schreibt `status`, der SwmmBuilder nutzt es nur als
+ * Überstau-Sperre.
  */
-const setzeDeckel = (hatDeckel) => {
+const setzeDruckdicht = (druckdicht) => {
     Object.assign(localData.value, normalizeOverflowState({
-        isManhole: hatDeckel,
-        canOverflow: localData.value.canOverflow,
+        isManhole: druckdicht ? localData.value.isManhole : true,
+        canOverflow: !druckdicht,
     }));
 };
 

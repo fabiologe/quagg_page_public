@@ -122,18 +122,6 @@
                         <div class="bulk-divider"></div>
 
                         <div class="bulk-field">
-                            <label>Schacht an Oberfläche:</label>
-                            <select v-model="bulkForm.isManhole" class="bulk-select">
-                                <option :value="null">- Unverändert -</option>
-                                <option :value="true">Ja – Deckel vorhanden</option>
-                                <option :value="false">Nein – unterirdisch/virtuell</option>
-                            </select>
-                            <span class="bulk-hint" v-if="bulkForm.isManhole === false">
-                                ⚠ Ohne Deckel kein Überstau — „druckdicht" wird mitgesetzt.
-                            </span>
-                        </div>
-
-                        <div class="bulk-field">
                             <label>Deckel druckdicht:</label>
                             <select v-model="bulkForm.canOverflow" class="bulk-select">
                                 <option :value="null">- Unverändert -</option>
@@ -179,7 +167,6 @@
                     <th>Deckel (m)</th>
                     <th>Tiefe (m)</th>
                     <th>Sohle (m)</th>
-                    <th title="Schacht an Oberfläche — ohne Deckel ist kein Überstau möglich">Deckel vorh.</th>
                     <th>Druckdicht</th>
                   </tr>
                 </thead>
@@ -221,10 +208,7 @@
                       <input :aria-label="`Sohlhöhe in m für ${node.id}`" type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td class="text-center">
-                      <input type="checkbox" :checked="node.isManhole !== false" title="Schacht an Oberfläche (Deckel vorhanden). Ohne Deckel ist kein Überstau möglich." @change="setzeDeckel(node, $event.target.checked)" @click.stop>
-                    </td>
-                    <td class="text-center">
-                      <input type="checkbox" :checked="node.canOverflow === false" :disabled="druckdichtGesperrt(node)" :title="druckdichtTitel(node)" @change="node.canOverflow = !$event.target.checked" @click.stop>
+                      <input type="checkbox" :checked="node.canOverflow === false" title="Angehakt = druckdicht (kein Überstau)" @change="setzeDruckdicht(node, $event.target.checked)" @click.stop>
                     </td>
                   </tr>
                 </tbody>
@@ -246,7 +230,6 @@
                     <th>Parameter</th>
                     <th>Deckel (m)</th>
                     <th>Sohle (m)</th>
-                    <th title="Schacht an Oberfläche — ohne Deckel ist kein Überstau möglich">Deckel vorh.</th>
                     <th>Druckdicht</th>
                     <th>Validierung</th>
                   </tr>
@@ -516,10 +499,7 @@
                     <td><input :aria-label="`Deckelhöhe in m für ${node.id}`" type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }"></td>
                     <td><input :aria-label="`Sohlhöhe in m für ${node.id}`" type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }"></td>
                     <td class="text-center">
-                      <input type="checkbox" :checked="node.isManhole !== false" title="Schacht an Oberfläche (Deckel vorhanden). Ohne Deckel ist kein Überstau möglich." @change="setzeDeckel(node, $event.target.checked)" @click.stop>
-                    </td>
-                    <td class="text-center">
-                      <input type="checkbox" :checked="node.canOverflow === false" :disabled="druckdichtGesperrt(node)" :title="druckdichtTitel(node)" @change="node.canOverflow = !$event.target.checked" @click.stop>
+                      <input type="checkbox" :checked="node.canOverflow === false" title="Angehakt = druckdicht (kein Überstau)" @change="setzeDruckdicht(node, $event.target.checked)" @click.stop>
                     </td>
                     <td>
                         <span v-for="msg in structureWarnings(node)" :key="msg" class="error-badge" style="display:block; margin-bottom:var(--isy-space-1);">{{ msg }}</span>
@@ -810,27 +790,31 @@ const sortList = (list) => {
 };
 
 /**
- * „Druckdicht" ist an einem Knoten OHNE Deckel keine Wahl, sondern eine Folge:
- * Node.applyOverflowState() erzwingt canOverflow=false, sobald isManhole false
- * ist (unterirdisch/virtuell, z.B. ISYBAU-Status 2). Vorher stand der Haken
- * hier trotzdem frei bedienbar — das Umstellen wurde beim „Übernehmen"
- * stillschweigend verworfen und der Solver rechnete weiter versiegelt.
- * Dasselbe Muster wie in ElementInfo.vue: sperren und den Grund nennen.
+ * „Druckdicht" umlegen — der EINZIGE Schalter, den der Nutzer hier sieht.
+ *
+ * Dahinter liegen zwei Modellfelder: `canOverflow` und `isManhole` (letzteres
+ * kommt aus ISYBAU-Status 2 = fiktiver Knoten). Die Kopplung im Modell lautet:
+ * ohne Deckel kein Überstau. Wer „druckdicht" ABWÄHLT, sagt damit „dieser
+ * Knoten soll überstauen können" — und das setzt einen Deckel voraus. Also
+ * wird isManhole mitgeführt, statt den Nutzer mit dem Unterschied zu behelligen.
+ *
+ * Das ist unbedenklich: isManhole hat KEINE andere Wirkung. Der ISYBAU-Export
+ * schreibt `status` (der Knoten bleibt also Status 2), und der SwmmBuilder
+ * nutzt das Flag ausschließlich als Überstau-Sperre.
+ *
+ * Vorher stand der Haken an solchen Knoten zwar frei bedienbar da, wurde beim
+ * „Übernehmen" aber stillschweigend zurückgesetzt — der Solver rechnete
+ * weiter versiegelt.
+ *
+ * Läuft über dieselbe Regel wie das Node-Modell und ElementInfo.vue
+ * (normalizeOverflowState in core/domain/Node.js).
  */
-const druckdichtGesperrt = (node) => node?.isManhole === false;
-
-/**
- * Deckel-Haken umlegen. Läuft über dieselbe Regel wie das Node-Modell
- * (normalizeOverflowState), damit die Zeile sofort den Zustand zeigt, den der
- * Store beim „Übernehmen" auch wirklich herstellt: ohne Deckel kein Überstau.
- * Gegenstück zu „Schacht an Oberfläche (Deckel vorhanden)" in ElementInfo.vue.
- */
-const setzeDeckel = (node, hatDeckel) => {
-    Object.assign(node, normalizeOverflowState({ isManhole: hatDeckel, canOverflow: node.canOverflow }));
+const setzeDruckdicht = (node, druckdicht) => {
+    Object.assign(node, normalizeOverflowState({
+        isManhole: druckdicht ? node.isManhole : true,
+        canOverflow: !druckdicht,
+    }));
 };
-const druckdichtTitel = (node) => druckdichtGesperrt(node)
-    ? 'Unterirdischer/virtueller Knoten (z.B. ISYBAU-Status 2): kein Deckel, Überstau nicht möglich. Umschalten im Element-Panel über „Schacht an Oberfläche (Deckel vorhanden)".'
-    : 'Angehakt = druckdicht (kein Überstau)';
 
 const processedNodes = computed(() => sortList(filterList(nodes.value)));
 const filteredNodes = computed(() => processedNodes.value.filter(n => n.type === 'Standard'));
@@ -1031,7 +1015,7 @@ const onZChange = (node) => {
 
 
 // === Bulk Edit ===
-const emptyBulkForm = () => ({ material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, pumpRate: null, runoffCoeff: null, canOverflow: null, isManhole: null });
+const emptyBulkForm = () => ({ material: '', nodeType: '', profileType: null, profileHeight: null, profileWidth: null, profileSlope: null, weirHeight: null, pumpRate: null, runoffCoeff: null, canOverflow: null });
 const bulkForm = ref(emptyBulkForm());
 
 const openBulkEdit = () => {
@@ -1041,7 +1025,6 @@ const openBulkEdit = () => {
 
 const applyBulkEdit = () => {
     let updateCount = 0;
-    let uebersprungen = 0;
     if (activeTab.value === 'edges') {
         edges.value.forEach(e => {
             if (selectedIds.value.includes(e.id)) {
@@ -1078,27 +1061,11 @@ const applyBulkEdit = () => {
                 changed = true;
             }
 
-            // Deckel vor druckdicht — der Lesbarkeit wegen, nicht aus Zwang:
-            // Das Ergebnis ist reihenfolgeunabhaengig, weil setzeDeckel ueber
-            // normalizeOverflowState neu normalisiert UND der Zweig darunter
-            // deckellose Knoten ohnehin ueberspringt. Bei "kein Deckel" +
-            // "ueberlauffaehig" in einem Rutsch gewinnt so oder so der Deckel
-            // (per Test festgehalten).
-            if (bulkForm.value.isManhole !== null) {
-                setzeDeckel(n, bulkForm.value.isManhole);
-                changed = true;
-            }
-
             if (bulkForm.value.canOverflow !== null) {
-                // Deckellose Knoten koennen nicht ueberstauen (s. druckdichtGesperrt).
-                // Frueher wurde hier zugewiesen und beim Uebernehmen still
-                // wieder verworfen — jetzt zaehlen sie sichtbar als uebersprungen.
-                if (druckdichtGesperrt(n)) {
-                    uebersprungen++;
-                } else {
-                    n.canOverflow = bulkForm.value.canOverflow;
-                    changed = true;
-                }
+                // bulkForm.canOverflow ist „darf überstauen" — der Schalter im
+                // Formular heißt umgekehrt „druckdicht".
+                setzeDruckdicht(n, bulkForm.value.canOverflow === false);
+                changed = true;
             }
 
             if (changed) updateCount++;
@@ -1118,10 +1085,7 @@ const applyBulkEdit = () => {
     selectedIds.value = [];
     
     // Warn/Info User
-    const nachsatz = uebersprungen
-        ? ` ${uebersprungen} ohne Deckel übersprungen (kein Überstau möglich).`
-        : '';
-    triggerUndo(`${updateCount} Elemente aktualisiert.${nachsatz} "Übernehmen" zum Speichern klicken!`, null, 'info');
+    triggerUndo(`${updateCount} Elemente aktualisiert. "Übernehmen" zum Speichern klicken!`, null, 'info');
 };
 
 const deleteSelected = () => {
