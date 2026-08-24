@@ -208,7 +208,7 @@
                       <input :aria-label="`Sohlhöhe in m für ${node.id}`" type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }" title="Sohle muss tiefer als Deckel liegen">
                     </td>
                     <td class="text-center">
-                      <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
+                      <input type="checkbox" :checked="node.canOverflow === false" :disabled="druckdichtGesperrt(node)" :title="druckdichtTitel(node)" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
                   </tr>
                 </tbody>
@@ -499,7 +499,7 @@
                     <td><input :aria-label="`Deckelhöhe in m für ${node.id}`" type="number" v-model.number="node.coverZ" step="0.01" class="small-input" @click.stop @change="onCoverZChange(node)" :class="{ 'invalid': node.coverZ <= node.z }"></td>
                     <td><input :aria-label="`Sohlhöhe in m für ${node.id}`" type="number" v-model.number="node.z" step="0.01" class="small-input" @click.stop @change="onZChange(node)" :class="{ 'invalid': node.z >= node.coverZ }"></td>
                     <td class="text-center">
-                      <input type="checkbox" :checked="node.canOverflow === false" @change="node.canOverflow = !$event.target.checked" @click.stop>
+                      <input type="checkbox" :checked="node.canOverflow === false" :disabled="druckdichtGesperrt(node)" :title="druckdichtTitel(node)" @change="node.canOverflow = !$event.target.checked" @click.stop>
                     </td>
                     <td>
                         <span v-for="msg in structureWarnings(node)" :key="msg" class="error-badge" style="display:block; margin-bottom:var(--isy-space-1);">{{ msg }}</span>
@@ -786,6 +786,19 @@ const sortList = (list) => {
     });
 };
 
+/**
+ * „Druckdicht" ist an einem Knoten OHNE Deckel keine Wahl, sondern eine Folge:
+ * Node.applyOverflowState() erzwingt canOverflow=false, sobald isManhole false
+ * ist (unterirdisch/virtuell, z.B. ISYBAU-Status 2). Vorher stand der Haken
+ * hier trotzdem frei bedienbar — das Umstellen wurde beim „Übernehmen"
+ * stillschweigend verworfen und der Solver rechnete weiter versiegelt.
+ * Dasselbe Muster wie in ElementInfo.vue: sperren und den Grund nennen.
+ */
+const druckdichtGesperrt = (node) => node?.isManhole === false;
+const druckdichtTitel = (node) => druckdichtGesperrt(node)
+    ? 'Unterirdischer/virtueller Knoten (z.B. ISYBAU-Status 2): kein Deckel, Überstau nicht möglich. Umschalten im Element-Panel über „Schacht an Oberfläche (Deckel vorhanden)".'
+    : 'Angehakt = druckdicht (kein Überstau)';
+
 const processedNodes = computed(() => sortList(filterList(nodes.value)));
 const filteredNodes = computed(() => processedNodes.value.filter(n => n.type === 'Standard'));
 const filteredStructures = computed(() => processedNodes.value.filter(n => n.type !== 'Standard'));
@@ -995,6 +1008,7 @@ const openBulkEdit = () => {
 
 const applyBulkEdit = () => {
     let updateCount = 0;
+    let uebersprungen = 0;
     if (activeTab.value === 'edges') {
         edges.value.forEach(e => {
             if (selectedIds.value.includes(e.id)) {
@@ -1032,8 +1046,15 @@ const applyBulkEdit = () => {
             }
 
             if (bulkForm.value.canOverflow !== null) {
-                n.canOverflow = bulkForm.value.canOverflow;
-                changed = true;
+                // Deckellose Knoten koennen nicht ueberstauen (s. druckdichtGesperrt).
+                // Frueher wurde hier zugewiesen und beim Uebernehmen still
+                // wieder verworfen — jetzt zaehlen sie sichtbar als uebersprungen.
+                if (druckdichtGesperrt(n)) {
+                    uebersprungen++;
+                } else {
+                    n.canOverflow = bulkForm.value.canOverflow;
+                    changed = true;
+                }
             }
 
             if (changed) updateCount++;
@@ -1053,7 +1074,10 @@ const applyBulkEdit = () => {
     selectedIds.value = [];
     
     // Warn/Info User
-    triggerUndo(`${updateCount} Elemente aktualisiert. "Übernehmen" zum Speichern klicken!`, null, 'info');
+    const nachsatz = uebersprungen
+        ? ` ${uebersprungen} ohne Deckel übersprungen (kein Überstau möglich).`
+        : '';
+    triggerUndo(`${updateCount} Elemente aktualisiert.${nachsatz} "Übernehmen" zum Speichern klicken!`, null, 'info');
 };
 
 const deleteSelected = () => {
