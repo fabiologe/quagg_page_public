@@ -132,3 +132,32 @@ describe('…und das Fenster sagt es dem Nutzer, statt still zu verwerfen', () =
         expect(haken.F.attributes('title')).toMatch(/kein Deckel|Überstau nicht möglich/);
     });
 });
+
+describe('Der echte Weg durch die Komponente: klicken und Übernehmen', () => {
+    /* Die Tests oben bilden die Tabellenzeile nach. Dieser hier klickt wirklich
+       im gerenderten Fenster und liest, was „Übernehmen" nach draußen gibt —
+       damit die Nachbildung nicht unbemerkt von der Komponente abweichen kann. */
+    it('der Haken am normalen Schacht landet im apply-Ereignis', async () => {
+        setActivePinia(createPinia());
+        const nodes = new Map();
+        nodes.set('N', new Node({ id: 'N', type: 'Schacht', x: 0, y: 0, z: 10, depth: 2 }));
+        const w = mount(PreprocessingModal, {
+            props: { isOpen: true, network: { nodes, edges: new Map() },
+                     hydraulics: { catchments: [], areas: [] } },
+            global: { stubs: { Teleport: true, DraggableModal: { template: '<div><slot/></div>' } } },
+        });
+        await w.vm.$nextTick();
+
+        const zeile = w.find('tr[data-row-id="N"]');
+        const boxen = zeile.findAll('input[type="checkbox"]');
+        const druckdicht = boxen[boxen.length - 1];
+        expect(druckdicht.element.checked, 'startet nicht druckdicht').toBe(false);
+
+        await druckdicht.setValue(true);          // Nutzer hakt „Druckdicht" an
+        await w.find('[data-tutorial="preprocessing-uebernehmen"]').trigger('click');
+
+        const nutzlast = w.emitted('apply')?.[0]?.[0];
+        expect(nutzlast, 'kein apply-Ereignis').toBeTruthy();
+        expect(nutzlast.nodes.find(n => n.id === 'N').canOverflow).toBe(false);
+    });
+});
