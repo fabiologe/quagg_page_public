@@ -702,6 +702,98 @@ html[data-theme] button:disabled, html[data-theme] select:disabled {
     cursor: var(--isy-cursor-gesperrt);
 }
 
+/* Die AUFGEKLAPPTE Liste eines Auswahlfeldes.
+ *
+ * Der Zeiger aus der Regel darueber endet an der Kante des Feldes. Was ein
+ * Klick aufklappt, zeichnet der Browser naemlich selbst - ausserhalb der
+ * Seite, in einem eigenen Fenster. Im echten Fenster nachgemessen: bei
+ * geoeffnetem Feld ist eine <option> 0x0 Pixel gross, und
+ * document.elementFromPoint() findet an ihrer Stelle nichts. Kein CSS des
+ * Dokuments erreicht sie. Deshalb sprang der Zeiger ueber der offenen Liste
+ * zurueck auf die Systemform - und die Liste selbst sah aus wie das
+ * Betriebssystem statt wie das Modul.
+ *
+ * appearance: base-select holt die Liste IN die Seite: die <option> werden zu
+ * echten Elementen im Dokument (oberste Ebene, am Feld verankert). Damit gilt
+ * fuer sie dasselbe Stylesheet wie fuer alles andere - Zeiger, Flaeche,
+ * Kanten. Weil die Liste dann sichtbar dem Modul gehoert, wird sie hier auch
+ * eingekleidet; die Papier-Familie ist dieselbe wie in den Tabellen, und die
+ * ist in HELL wie DUNKEL gleich (siehe --isy-pixel-content-bg oben).
+ *
+ * Der ganze Block steht in @supports, weil das bisher nur Chromium-Browser
+ * koennen (Chrome/Edge ab 135). Wo nicht, ueberspringt der Browser ihn und
+ * es bleibt beim heutigen Zustand: die Regeln davor stehen unveraendert. Der
+ * Rueckfall ist also der Ist-Stand, kein schlechterer.
+ */
+@supports (appearance: base-select) {
+    /* EIN Selektorpfad statt der zwei von oben: html:has(.isybau-main) trifft
+       auch die Felder in den <Teleport>-Modals (die haengen an <body>, aber
+       .isybau-main steckt im selben Dokument) - und eben NUR dann, wenn das
+       Modul auch laeuft. Derselbe Trick und derselbe Grund wie beim Zeiger
+       auf der Wurzel weiter oben: html[data-theme] setzt auch der PDF-Editor,
+       und dessen Auswahlfelder gehen dieses Stylesheet nichts an. */
+    html:has(.isybau-main) select,
+    html:has(.isybau-main) select::picker(select) {
+        appearance: base-select !important;
+    }
+
+    /* Der Pfeil bleibt der eigene aus der Regel oben (background-image).
+       base-select setzt von sich aus noch einen zweiten in den Knopf. */
+    html:has(.isybau-main) select::picker-icon {
+        display: none;
+    }
+
+    /* Die Liste ist mindestens so breit wie ihr Feld (anchor-size), darf fuer
+       lange Eintraege aber darueber hinauswachsen. Umgekehrt misst base-select
+       den ZUGEKLAPPTEN Knopf nur noch am gewaehlten Eintrag statt am
+       laengsten - die Felder werden dadurch schmaler und je nach Wert
+       unterschiedlich breit. Nachgemessen im Reiter "Haltungen": Material
+       97 -> 49/57 px, Profil 215 -> 90 px. Das ist gewollt so gelassen: die
+       Tabelle gewinnt dadurch Platz fuer Spalten, und der Unterschied
+       zwischen zwei Werten derselben Spalte liegt bei wenigen Pixeln. */
+    html:has(.isybau-main) select::picker(select) {
+        min-width: anchor-size(width);
+        max-height: min(50vh, 320px);
+        overflow-y: auto;
+        padding: 0;
+        background: var(--isy-pixel-content-bg);
+        color: var(--isy-pixel-content-text);
+        font-family: inherit;
+        /* Erhaben, nicht eingedrueckt: eine aufgeklappte Liste liegt UEBER der
+           Seite. Deshalb die Bevel-Richtung der Knoepfe (hell oben/links) und
+           der Pixel-Schatten - nicht die der Felder. */
+        border: 2px solid;
+        border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark)
+                      var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
+        border-radius: 0;
+        box-shadow: var(--isy-pixel-btn-shadow);
+    }
+
+    html:has(.isybau-main) select option {
+        cursor: var(--isy-cursor-hand);
+        padding: var(--isy-space-1) var(--isy-space-2);
+        background: transparent;
+        color: var(--isy-pixel-content-text);
+    }
+    html:has(.isybau-main) select option:hover {
+        background: var(--isy-pixel-content-hover);
+    }
+    /* Der gewaehlte Eintrag traegt die Zeilenfarbe der Tabellen. Das Haekchen,
+       das base-select ihm zusaetzlich voranstellt, faellt weg - es sass als
+       einziges Zeichen vor dem Text und haette jede Zeile eingerueckt. */
+    html:has(.isybau-main) select option:checked {
+        background: var(--isy-pixel-content-selected);
+        font-weight: 700;
+    }
+    html:has(.isybau-main) select option::checkmark {
+        display: none;
+    }
+    html:has(.isybau-main) select option:disabled {
+        color: var(--isy-pixel-content-text-dim);
+        cursor: var(--isy-cursor-gesperrt);
+    }
+}
+
 /* Anklickbare Elemente, die KEIN Formularelement sind.
  *
  * CSS kann einen Vue-@click nicht sehen - ein sortierbarer Spaltenkopf oder

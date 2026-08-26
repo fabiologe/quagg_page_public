@@ -94,3 +94,37 @@ describe('Inline-Knoepfe entkommen der globalen Pixel-Button-Fassung', () => {
     for (const k of knoepfe) expect(k).toContain('plain-btn');
   });
 });
+
+describe('Die aufgeklappte Auswahlliste gehoert dem Modul, nicht dem System', () => {
+  // Hintergrund: der eigene Zeiger endete an der Kante des Feldes. Die Liste,
+  // die ein Klick aufklappt, zeichnet der Browser sonst ausserhalb der Seite —
+  // im echten Fenster nachgemessen ist eine <option> dann 0x0 Pixel gross und
+  // elementFromPoint() findet an ihrer Stelle nichts. appearance: base-select
+  // holt sie ins Dokument; erst dadurch greift ueberhaupt eine Regel auf sie.
+
+  const block = themeCss.slice(themeCss.indexOf('@supports (appearance: base-select)'));
+
+  it('das Auswahlfeld UND seine Liste werden umgestellt', () => {
+    // Nur eines von beiden genuegt nicht: ohne base-select am <select> laesst
+    // der Browser den Picker gar nicht erst in die Seite.
+    expect(block).toMatch(/select,\s*\n\s*html:has\(\.isybau-main\) select::picker\(select\)\s*\{[^}]*appearance:\s*base-select/s);
+  });
+
+  it('die Eintraege tragen den Zeiger des Moduls', () => {
+    // Das ist der eigentliche Zweck der Uebung.
+    expect(block).toMatch(/select option\s*\{[^}]*cursor:\s*var\(--isy-cursor-hand\)/s);
+  });
+
+  it('die Liste faerbt sich ueber Tokens, nicht ueber Hex-Literale', () => {
+    // Gleiche Fehlerklasse wie oben: eine harte Farbe waere in genau einem
+    // der beiden Modi unlesbar.
+    const farbwerte = block.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
+    expect(farbwerte, `harte Farben in der Auswahlliste: ${farbwerte.join(', ')}`).toHaveLength(0);
+  });
+
+  it('steht in @supports — Browser ohne base-select behalten den Ist-Stand', () => {
+    // Firefox und Safari koennen es (noch) nicht. Ohne die Abfrage waere
+    // appearance dort ungueltig und die Felder verloeren ihre Pixel-Form.
+    expect(themeCss).toContain('@supports (appearance: base-select) {');
+  });
+});
