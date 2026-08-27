@@ -89,16 +89,30 @@ describe('resolveStepFocus — Tutorial-Ziele', () => {
       .toEqual({ type: 'node', id: 'Pumpwerk' });
   });
 
+  // Diese beiden Faelle liefen frueher gegen den echten Schritt 'ex-slope'.
+  // Der zeigt nicht mehr auf die Karte, sondern auf die Tabellenspalte in
+  // "Daten bearbeiten" — damit hat gerade KEIN Schritt ein dynamisches
+  // Fokus-Ziel. Die Faehigkeit bleibt (TutorialMascot.vue ruft
+  // resolveStepFocus fuer jeden Schritt auf), deshalb wird sie hier weiter
+  // geprueft, nur mit einem eigenen Schritt-Attrappen-Objekt.
+  const naechsteFlaecheOhneNeigung = (store) =>
+    (store?.areas ?? []).find(a => ![1, 2, 3, 4, 5].includes(Number(a?.slope))) || null;
+  const schrittMitDynamischemZiel = {
+    id: 'attrappe-dynamisch',
+    focus: (store) => {
+      const a = naechsteFlaecheOhneNeigung(store);
+      return a ? { type: 'area', id: a.id } : null;
+    },
+  };
+
   it('loest ein dynamisches Ziel gegen den Store auf', () => {
     const s = { areas: [{ id: 'F1', slope: 3 }, { id: 'F2', slope: null }] };
-    const step = EXERCISE_STEPS.find(x => x.id === 'ex-slope');
-    expect(resolveStepFocus(step, s)).toEqual({ type: 'area', id: 'F2' });
+    expect(resolveStepFocus(schrittMitDynamischemZiel, s)).toEqual({ type: 'area', id: 'F2' });
   });
 
   it('liefert null, wenn es gerade nichts zu zeigen gibt', () => {
     const s = { areas: [{ id: 'F1', slope: 3 }] }; // alle vollstaendig
-    const step = EXERCISE_STEPS.find(x => x.id === 'ex-slope');
-    expect(resolveStepFocus(step, s)).toBeNull();
+    expect(resolveStepFocus(schrittMitDynamischemZiel, s)).toBeNull();
   });
 
   it('ohne focus-Feld: null', () => {

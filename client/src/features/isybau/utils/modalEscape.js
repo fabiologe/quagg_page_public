@@ -17,7 +17,6 @@ export const ESC_REIHENFOLGE = [
   'showDebugModal',
   'showProjectManager',
   'showHelpModal',
-  'showValidationModal',
   'showResultsModal',
   'showRainModal',
   'showKostraModal',

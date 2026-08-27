@@ -184,7 +184,11 @@ function formatDate(iso) {
 }
 
 .pm-modal {
-  background: var(--isy-pixel-text);
+  /* Flaeche, nicht Textfarbe: --isy-pixel-text ist im Hellmodus fast schwarz
+     und im Dunkelmodus weiss — das Fenster kippte also mit dem Modus, waehrend
+     seine Beschriftungen (text-dim) beide Male dagegen anliefen: 2,2:1 in
+     beiden Modi. */
+  background: var(--isy-pixel-bg-alt);
   border-radius: var(--isy-radius-lg);
   width: 520px;
   max-height: 80vh;
@@ -280,7 +284,9 @@ function formatDate(iso) {
   gap: var(--isy-space-4);
   transition: background 0.12s;
 }
-.pm-item:hover { background: var(--isy-pixel-content-bg); }
+/* Modus-Flaeche wie das Fenster selbst — Papier waere im Dunkelmodus fast
+   weiss und der Text darauf unlesbar. */
+.pm-item:hover { background: var(--isy-pixel-bg); }
 
 .pm-item-info {
   display: flex;

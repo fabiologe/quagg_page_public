@@ -9,6 +9,15 @@
         <p v-if="block.type === 'p'" class="info-p">{{ block.text }}</p>
         <div v-else-if="block.type === 'formula'" class="info-formula">{{ block.text }}</div>
         <div v-else-if="block.type === 'ref'" class="info-ref">&gt; {{ block.text }}</div>
+        <!-- Verweis nach draussen. rel="noopener noreferrer", weil target="_blank"
+             der fremden Seite sonst window.opener in die Hand gibt. -->
+        <a
+          v-else-if="block.type === 'link'"
+          class="info-link"
+          :href="block.href"
+          target="_blank"
+          rel="noopener noreferrer"
+        >&gt; {{ block.text }} ↗</a>
       </template>
     </div>
   </div>
@@ -113,5 +122,20 @@ const info = computed(() => TUTORIAL_INFO[activeStep.value?.info] || null);
   font-family: 'Share Tech Mono', monospace;
   font-size: var(--isy-fs-pixel-md);
   color: var(--isy-pixel-text-dim);
+}
+
+/* Wie ein Quellenverweis, nur anklickbar — deshalb der lesbare Gruenton
+   (modusabhaengig, siehe theme.css) statt der gedimmten Textfarbe. */
+.info-link {
+  display: block;
+  margin: 0 0 var(--isy-space-2);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--isy-fs-pixel-md);
+  color: var(--isy-pixel-green-text);
+  text-decoration: underline;
+  cursor: var(--isy-cursor-hand);
+}
+.info-link:hover {
+  color: var(--isy-pixel-green-glow);
 }
 </style>

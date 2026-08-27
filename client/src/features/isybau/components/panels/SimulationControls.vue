@@ -78,10 +78,34 @@
                 Daten bearbeiten
             </button>
 
-            <button class="secondary-btn full" data-tutorial="abfluss-validieren" @click="store.ui.showValidationModal = true">
+            <button class="secondary-btn full" data-tutorial="abfluss-validieren" @click="openPedantPopup">
                 <img class="ic" src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" />
                 Abfluss validieren
             </button>
+
+            <!-- Der Gag lebt davon, dass der Knopf eine Pruefung verspricht und
+                 stattdessen zurueckfragt. Vorher sass hier ein Fenster mit einer
+                 Handrechnung (Q = ψ·i·A je Flaeche); die hat nie geprueft, was
+                 die Beschriftung ankuendigt, und ist entfallen. -->
+            <Transition name="pedant-pop">
+              <div v-if="showPedant" class="pedant-popup">
+                <div class="pedant-header">
+                  <img class="pedant-ic" src="/saintv1d/icons/Interface-Essential-Information-Circle-2--Streamline-Pixel.svg" alt="" />
+                  <span>Validierung</span>
+                  <button class="pedant-close plain-btn" title="Schließen" aria-label="Schließen" @click="closePedantPopup">×</button>
+                </div>
+                <p class="pedant-msg">
+                  Schau dir die .inp und .rpt Dateien an, du Pedant.
+                </p>
+                <p class="pedant-msg pedant-hint">
+                  Nach der Berechnung liegen sie unten in dieser Leiste:
+                  „Debug (.inp / .rpt)" zeigt beide im Fenster, „Input (.inp)"
+                  laedt die Eingabedatei herunter. Die .inp ist das, was der
+                  Rechner wirklich zu sehen bekommt — jede Zahl aus deinem Netz
+                  steht da als Zeile drin.
+                </p>
+              </div>
+            </Transition>
         </div>
 
         <div class="control-group" data-tutorial="sim-dauer">
@@ -142,7 +166,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { buildResultsExport } from '../../utils/resultsExport.js';
 import { Bauwerkstyp, getEffectiveBauwerkstyp } from '../../utils/mappings.js';
@@ -165,6 +189,39 @@ const preSolveWarnings = computed(() => store.simulation.preSolveWarnings);
 const jumpToInvalidElement = () => {
     store.openPreprocessingFor(store.simulation.invalidElementId, store.simulation.invalidElementType);
 };
+
+// „Abfluss validieren": Popup samt Pixel-Melodie. Die Datei wird bewusst ERST
+// beim Klick geholt (5 MB) — vorgeladen haette sie jeden Aufruf des Moduls
+// verteuert, obwohl der Knopf ein Osterei ist.
+const PEDANT_MELODIE = '/saintv1d/yoshiyuki_tatsuya-pixel-melody-430745.mp3';
+const showPedant = ref(false);
+let pedantAudio = null;
+
+const stopPedantAudio = () => {
+    if (!pedantAudio) return;
+    pedantAudio.pause();
+    pedantAudio.currentTime = 0;
+    pedantAudio = null;
+};
+
+const openPedantPopup = () => {
+    showPedant.value = true;
+    stopPedantAudio();
+    pedantAudio = new Audio(PEDANT_MELODIE);
+    pedantAudio.volume = 0.6;
+    // Ohne Nutzergeste verweigern Browser das Abspielen — hier ist eine da
+    // (der Klick), der catch faengt nur die Faelle mit stummgeschaltetem Tab.
+    pedantAudio.play().catch(() => {});
+};
+
+const closePedantPopup = () => {
+    showPedant.value = false;
+    stopPedantAudio();
+};
+
+// Ohne das spielt die Melodie weiter, wenn man das Modul verlaesst, ohne das
+// Popup zu schliessen — die alte Fassung hatte genau diese Luecke.
+onBeforeUnmount(stopPedantAudio);
 
 // Chart Logic
 const miniChartData = computed(() => {
@@ -294,7 +351,9 @@ const downloadResults = () => {
     gap: var(--isy-space-3);
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
-    color: var(--isy-pixel-content-text-dim);
+    /* Diese Zeile steht auf --isy-pixel-bg (im Dunkelmodus Navy), nicht auf
+       Papier — also das Modus-Token. Umgekehrt war es 2,1:1. */
+    color: var(--isy-pixel-text-dim);
     align-items: center;
 }
 .stat-item {
@@ -308,7 +367,8 @@ const downloadResults = () => {
     font-size: var(--isy-fs-pixel-md);
 }
 .divider {
-    color: var(--isy-pixel-border);
+    /* wie .stats-row: Navy-Untergrund im Dunkelmodus */
+    color: var(--isy-pixel-text-dim);
 }
 
 
@@ -344,10 +404,16 @@ const downloadResults = () => {
     font-family: var(--isy-pixel-font);
     font-size: var(--isy-fs-pixel-sm);
     text-align: center;
-    color: var(--isy-pixel-text-dim);
+    /* Die Knopfflaeche ist Papier (--isy-pixel-content-bg, in beiden Modi
+       hell) — also die Papier-Textfarbe. Mit dem Modus-Token stand hier im
+       Dunkelmodus Hellgrau auf Papier: 1,9:1. */
+    color: var(--isy-pixel-content-text-dim);
     transition: background 0.12s, border-color 0.12s;
 }
-.secondary-btn:hover { background: var(--isy-pixel-text-dim); border-color: var(--isy-pixel-border-hover); }
+/* Hover-Flaeche aus der Papier-Familie: --isy-pixel-text-dim ist eine
+   TEXT-Farbe und im Dunkelmodus hellgrau — der Knopf verschwand beim
+   Ueberfahren hinter seiner eigenen Schriftfarbe. */
+.secondary-btn:hover { background: var(--isy-pixel-content-hover); border-color: var(--isy-pixel-border-hover); }
 
 .error-msg { color: var(--isy-pixel-danger-soft-text); margin-top: var(--isy-space-2); font-size: var(--isy-fs-md); }
 .error-link {
@@ -363,7 +429,7 @@ const downloadResults = () => {
     text-decoration: underline;
     cursor: var(--isy-cursor-hand);
 }
-.error-link:hover { color: #7f1616; }
+.error-link:hover { color: var(--isy-pixel-text); }
 .warning-list { margin-top: var(--isy-space-2); display: flex; flex-direction: column; gap: var(--isy-space-1); }
 .warning-msg {
     color: var(--isy-pixel-warning-soft-text);
@@ -386,7 +452,7 @@ const downloadResults = () => {
     text-decoration: underline;
     cursor: var(--isy-cursor-hand);
 }
-.warning-link:hover { color: #6b4107; }
+.warning-link:hover { color: var(--isy-pixel-text); }
 .success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
 .input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
@@ -423,7 +489,10 @@ const downloadResults = () => {
 }
 
 .rain-info-empty {
-    color: var(--isy-pixel-text-dim);
+    /* Der Regen-Streifen ist eine dunkle Akzentflaeche in BEIDEN Modi. Mit dem
+       Modus-Token stand hier im Hellmodus Dunkelgrau auf Dunkelgrau: 1,03:1 —
+       der Satz war schlicht unsichtbar. */
+    color: var(--isy-pixel-accent-text);
     font-style: italic;
 }
 
@@ -533,5 +602,80 @@ const downloadResults = () => {
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 .ic.spin { animation: spin 1s linear infinite; }
+
+/* „Abfluss validieren"-Popup. Die alte Fassung stand mit festen Farben im
+   Code (#040647, #2ecc71, 'Press Start 2P', rem-Werte) — hier auf die Tokens
+   gelegt, sonst waere sie im Hellmodus dunkelgruen auf dunkelblau. */
+.pedant-popup {
+    position: relative;
+    margin-top: var(--isy-space-2);
+    background: var(--isy-pixel-bg);
+    border: 2px solid var(--isy-pixel-green-glow);
+    border-radius: var(--isy-radius-sm);
+    overflow: hidden;
+    box-shadow: var(--isy-elev-3);
+}
+
+/* Dunkle Akzentflaeche in BEIDEN Modi mit ihrem konstanten hellen Text —
+   auf --isy-pixel-bg-deep stand die Kopfzeile im Hellmodus bei 4,0:1. */
+.pedant-header {
+    display: flex;
+    align-items: center;
+    gap: var(--isy-space-1);
+    padding: var(--isy-space-1) var(--isy-space-2);
+    background: var(--isy-pixel-border);
+    border-bottom: 1px solid var(--isy-pixel-green-glow);
+}
+
+.pedant-header span {
+    flex: 1;
+    font-family: var(--isy-pixel-font);
+    font-size: var(--isy-fs-pixel-md);
+    color: var(--isy-pixel-accent-text);
+}
+
+.pedant-ic {
+    width: 14px;
+    height: 14px;
+    image-rendering: pixelated;
+}
+
+.pedant-close {
+    /* .plain-btn nimmt den Knopf von der globalen Pixel-Fassung aus — dann
+       muss er seine Flaeche selbst abschalten, sonst zeichnet der Browser
+       seinen grauen Standardknopf. */
+    background: none;
+    border: none;
+    color: var(--isy-pixel-accent-text);
+    font-size: var(--isy-fs-lg);
+    line-height: 1;
+    padding: 0;
+    cursor: var(--isy-cursor-hand);
+}
+.pedant-close:hover { color: var(--isy-pixel-green-bright); }
+
+.pedant-msg {
+    margin: 0;
+    padding: var(--isy-space-2);
+    font-family: var(--isy-pixel-font);
+    font-size: var(--isy-fs-pixel-md);
+    color: var(--isy-pixel-green-text);
+    line-height: 1.8;
+}
+
+/* Der Hinweis auf die Dateien ist Fliesstext, keine Pointe — deshalb die
+   normale Schrift und die gedaempfte Textfarbe. */
+.pedant-hint {
+    padding-top: 0;
+    font-family: inherit;
+    font-size: var(--isy-fs-sm);
+    color: var(--isy-pixel-text-dim);
+    line-height: 1.5;
+}
+
+.pedant-pop-enter-active { transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); }
+.pedant-pop-leave-active { transition: all 0.15s ease-in; }
+.pedant-pop-enter-from  { opacity: 0; transform: scale(0.85); }
+.pedant-pop-leave-to    { opacity: 0; transform: scale(0.9); }
 
 </style>

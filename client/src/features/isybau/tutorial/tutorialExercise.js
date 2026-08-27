@@ -310,9 +310,11 @@ export const EXERCISE_STEPS = [
         id: 'ex-tour-xml-export',
         mood: 'happy',
         highlight: 'xml-export',
+        info: 'isybau-xml',
         message:
             '"XML exportieren": der Rueckweg. Dein bearbeitetes Netz wandert wieder als ISYBAU-XML hinaus — '
-            + 'die kannst du weitergeben oder in einem anderen Programm oeffnen.',
+            + 'die kannst du weitergeben oder in einem anderen Programm oeffnen. Was in so einer '
+            + 'Datei steht und wer sich das ausgedacht hat, erklaert [Mehr dazu].',
     },
     {
         id: 'ex-tour-stats',
@@ -402,11 +404,16 @@ export const EXERCISE_STEPS = [
         mood: 'asking',
         info: 'befestigungsgrad',
         highlight: 'area-befestigung',
+        // Der Text nennt das Feld genau so, wie es im Formular steht. Vorher
+        // sagte die Ratte "Befestigungsgrad" — ein Wort, das nirgends auf dem
+        // Bildschirm stand: die Testleserin fand das Feld deshalb nicht.
         message:
-            'Gut gezeichnet! Jetzt fragt dich das Formular nach dem Befestigungsgrad. '
-            + 'Wir haben hier eigentlich nur eine Wiese — nimm 0.2. Das heisst: nur 20 % von dem, '
-            + 'was da runterregnet, laeuft ueberhaupt ab. Der Rest versickert im Boden.',
-        hint: 'Feld "Befestigung (0.0 - 1.0)": 0.2 eintragen.',
+            'Gut gezeichnet! Das Formular fragt jetzt nach dem "Versiegelungsgrad" — das Feld '
+            + 'gleich unter der Groesse. Der Wert sagt, welcher Anteil des Regens von dieser '
+            + 'Flaeche ueberhaupt im Kanal ankommt: 1 waere ein Dach, von dem alles ablaeuft, '
+            + '0 ein Boden, der alles schluckt.\n\n'
+            + 'Wir haben hier Wiese — trag 0.2 ein. Also: 20 % laufen ab, der Rest versickert.',
+        hint: 'Zweites Feld von oben, "Versiegelungsgrad (0.0 - 1.0)": 0.2 eintragen.',
         // Nur sinnvoll, solange der Dialog steht — bricht der Nutzer ab, wird
         // dieser Schritt uebersprungen statt ins Leere zu zeigen.
         requires: areaModalOpen,
@@ -431,20 +438,36 @@ export const EXERCISE_STEPS = [
         // bekaeme seinen Fehler nie zu sehen.
         check: newAreaIsWiredUp,
     },
+    /*
+     * Die beiden folgenden Schritte liefen frueher ueber die Karte: die Ratte
+     * flog zur naechsten unfertigen Flaeche und der Nutzer klickte sie an.
+     * Sie laufen jetzt durch die Tabelle in "Daten bearbeiten" — dort stehen
+     * alle Flaechen untereinander, mit Sammelbearbeitung und dem
+     * DGM-Vorschlag. Deshalb auch kein `focus` mehr: die Kamerafahrt liefe
+     * hinter dem geoeffneten Fenster ab, und der neonfarbene Ring bliebe nach
+     * dem Schliessen an einer Flaeche stehen, um die es laengst nicht mehr geht.
+     */
     {
         id: 'ex-runoff-coeff',
         mood: 'asking',
         info: 'befestigungsgrad',
-        task: 'Gib jeder Flaeche einen Abflussbeiwert.',
+        task: 'Gib jeder Flaeche einen Versiegelungsgrad.',
         message:
-            'Jetzt der Befestigungsgrad. Der Abflussbeiwert sagt, welcher Anteil des Regens wirklich im Kanal landet: '
-            + 'Dach oder Asphalt lassen fast alles ablaufen, Wiese schluckt das meiste weg. '
-            + 'Trag fuer jede Flaeche einen Wert zwischen 0 und 1 ein.',
-        hint: 'Flaeche anklicken -> Abflussbeiwert. Faustwerte: Dach/Asphalt ~0,9, Pflaster ~0,6, Wiese ~0,1.',
-        // Zeigt jeweils auf die naechste Flaeche, der noch ein Beiwert fehlt.
-        focus: (store) => {
-            const a = firstAreaMissingRunoffCoeff(store);
-            return a ? { type: 'area', id: a.id } : null;
+            'Die uebrigen Flaechen im Netz haben noch keinen Wert. Das machst du nicht einzeln '
+            + 'auf der Karte, sondern in der Tabelle: "Daten bearbeiten" oeffnen, Reiter '
+            + '"Flaechen", Spalte "Versiegelungsgrad". Eine Zeile je Flaeche, eine Zahl je Zeile.\n\n'
+            + 'Faustwerte: Dach oder Asphalt 0.9 — Pflaster mit Fugen 0.6 — Schotter 0.4 — '
+            + 'Wiese 0.1. Beispiel: ein Grundstueck, halb Dach und halb Rasen, liegt bei rund 0.5.',
+        hint: 'Daten bearbeiten -> Reiter "Flaechen" -> Spalte "Versiegelungsgrad (0-1)". '
+            + 'Mehrere Zeilen anhaken und "Bearbeiten" setzt den Wert fuer alle auf einmal.',
+        // Wandert mit: solange das Fenster zu ist, leuchtet der Knopf, der es
+        // oeffnet; danach der Reiter bzw. die Spalte selbst (siehe
+        // resolveStepHighlight — der Anker darf vom Zustand abhaengen).
+        highlight: (store) => {
+            if (!store?.ui?.showPreprocessingModal) return 'daten-bearbeiten';
+            return store?.ui?.preprocessingTab === 'areas'
+                ? 'flaechen-versiegelung'
+                : 'preprocessing-tabs';
         },
         check: allAreasHaveRunoffCoeff,
     },
@@ -454,12 +477,19 @@ export const EXERCISE_STEPS = [
         info: 'neigungsklasse',
         task: 'Ergaenze die fehlenden Neigungsklassen.',
         message:
-            'Ein paar Flaechen wissen noch nicht, wie steil sie sind. Die Neigung entscheidet mit, wie schnell das Wasser ankommt. '
-            + 'Wenn ein Gelaendemodell geladen ist, kann ich sie dir vorschlagen — sonst schaetzen wir sie zusammen.',
-        hint: 'Flaeche anklicken -> Neigungsklasse. Mit geladenem DGM hilft der Vorschlags-Button daneben.',
-        focus: (store) => {
-            const a = firstAreaMissingSlope(store);
-            return a ? { type: 'area', id: a.id } : null;
+            'Fehlt noch die Neigung. Sie entscheidet, wie schnell das Wasser unten ankommt: auf '
+            + 'einer ebenen Wiese sickert es in Ruhe weg, am Hang steht es sofort im Kanal.\n\n'
+            + 'Statt eines Winkels gibt ISYBAU fuenf Stufen vor: 1 ist fast eben (bis 1 %), '
+            + '2 leicht geneigt (bis 4 %), 3 eine merkliche Boeschung (bis 10 %), 4 steil '
+            + '(bis 14 %), 5 sehr steil. Dieselbe Tabelle wie eben, Spalte "Neigungsklasse". '
+            + 'Beispiel: unsere Wiese in ebener Ortslage — Klasse 1 oder 2.',
+        hint: 'Daten bearbeiten -> Reiter "Flaechen" -> Spalte "Neigungsklasse". Ist ein '
+            + 'Gelaendemodell geladen, rechnet der Knopf mit dem Hirn daneben die Stufe aus.',
+        highlight: (store) => {
+            if (!store?.ui?.showPreprocessingModal) return 'daten-bearbeiten';
+            return store?.ui?.preprocessingTab === 'areas'
+                ? 'flaechen-neigung'
+                : 'preprocessing-tabs';
         },
         check: allAreasHaveSlope,
     },
@@ -607,16 +637,11 @@ export const EXERCISE_STEPS = [
     },
 ];
 
-/** Erste Flaeche ohne gueltige Neigungsklasse (fuer den dynamischen Fokus). */
-export const firstAreaMissingSlope = (store) =>
-    toArray(store?.areas).find(a => ![1, 2, 3, 4, 5].includes(Number(a?.slope))) || null;
-
-/** Erste Flaeche ohne brauchbaren Abflussbeiwert. */
-export const firstAreaMissingRunoffCoeff = (store) =>
-    toArray(store?.areas).find(a => {
-        const v = num(a?.runoffCoeff);
-        return v == null || v <= 0 || v > 1;
-    }) || null;
+/* Hier standen firstAreaMissingSlope() und firstAreaMissingRunoffCoeff() —
+   sie suchten die naechste unfertige Flaeche fuer die Kamerafahrt der beiden
+   Flaechen-Schritte. Die laufen jetzt durch die Tabelle statt ueber die Karte
+   (siehe dort), damit hatte die Suche keinen Aufrufer mehr. Ob eine Flaeche
+   vollstaendig ist, prueft weiterhin allAreasHaveSlope/-RunoffCoeff oben. */
 
 /**
  * Fokus-Ziel eines Schrittes aufloesen.

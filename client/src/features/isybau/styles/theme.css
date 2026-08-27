@@ -101,6 +101,17 @@
        Akzentfarbe soll überall gleich sein, nicht je nach Modus variieren. */
     --isy-pixel-border:        #4a4844;
     --isy-pixel-border-hover:  #65625c;
+    /* Text auf dieser dunklen Flaeche — sie dient im Modul auch als
+       Akzentflaeche (aktiver Reiter, Regen-Streifen, Ergebnis-Kasten).
+       Bewusst KONSTANT und hell: die Flaeche ist in BEIDEN Modi dunkel, ihr
+       Text braucht deshalb nur einen Wert. Ein Modus-Token stuende in genau
+       einem der beiden Modi dunkel auf dunkel — so geschehen beim aktiven
+       Reiter der Datenmaske (2,2:1 im Hellmodus) und beim Hinweis "Kein Regen
+       konfiguriert" (1,0:1, unsichtbar). Kontrast: 8,9:1 auf #4a4844,
+       7,2:1 auf dem etwas helleren Dunkelmodus-Ton.
+       Und bewusst auf :root, nicht auf .isybau-main: die Datenmaske haengt
+       per <Teleport> an <body>, dort erbt sie von .isybau-main nichts. */
+    --isy-pixel-accent-text:   #f5f2ea;
     /* Grün-Familie ursprünglich neonhell (fürs Auge okay auf dauerhaft
        dunklem Navy) — seit --isy-pixel-bg im Hell-Modus auf Beige wechselt
        (s.o.), war z.B. Modal-Header-Text (Grün auf --isy-pixel-bg) und die

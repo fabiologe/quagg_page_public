@@ -26,13 +26,6 @@
     @select-element="handleLocateFromPreprocessing"
   />
 
-  <RunoffValidationModal
-    v-if="store.ui.showValidationModal"
-    :details="validationDetails"
-    @close="store.ui.showValidationModal = false"
-    @recalculate="({ applyLosses }) => { validationApplyLosses = applyLosses; }"
-  />
-
   <SimulationResultsModal
     v-if="store.ui.showResultsModal"
     :is-open="store.ui.showResultsModal"
@@ -95,16 +88,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { onMounted, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { obersteOffene } from '../../utils/modalEscape.js';
-import { computeRunoffValidation } from '../../utils/runoffValidation.js';
 import { useElementFocus } from '../../composables/useElementFocus.js';
 
 import KostraModal from './KostraModal.vue';
 import ModelRainModal from './ModelRainModal.vue';
 import PreprocessingModal from './PreprocessingModal.vue';
-import RunoffValidationModal from './RunoffValidationModal.vue';
 import SimulationResultsModal from './SimulationResultsModal.vue';
 import SimulationDebugModal from './SimulationDebugModal.vue';
 import IsybauHelpModal from './IsybauHelpModal.vue';
@@ -165,15 +156,6 @@ function handleLocateFromPreprocessing({ id, type }) {
 }
 
 const emit = defineEmits(['project-loaded']);
-
-// --- Auto-Validierung (Fließzeitverfahren) ---
-// Öffnet NUR nach „Übernehmen" im Daten-bearbeiten-Modal (store.applyPreprocessing).
-const validationApplyLosses = ref(false);
-const validationDetails = computed(() => computeRunoffValidation({
-    areas: store.areaArray,
-    rain: store.rain,
-    applyLosses: validationApplyLosses.value
-}));
 
 const handleLoadProject = (data) => {
     store.loadProjectSnapshot(data);

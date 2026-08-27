@@ -45,9 +45,38 @@ describe('Lesbarkeit: Textfarben laufen ueber Tokens, nicht an ihnen vorbei', ()
   // in dem entwickelt wurde, nicht auf — im anderen steht der Text dann auf
   // gleichhellem Grund. Zuletzt: "[Mehr dazu]" (#f9ca24 auf #eeeae1 = 1,3:1)
   // und der Lernkarten-Fliesstext (#9df5c0 auf #eeeae1 = 1,08:1).
-  const surfaces = ['tutorial/TutorialMascot.vue', 'tutorial/TutorialInfoCard.vue'];
+  // Die Regel galt lange nur fuer die zwei Tutorial-Dateien. Ein Kontrast-Sweep
+  // durch das laufende Modul (hell UND dunkel, jede Oberflaeche einmal
+  // geoeffnet) hat dieselbe Fehlerklasse danach in fuenf weiteren Dateien
+  // gefunden — Fliesstext auf 1,0:1 im Hellmodus, Knopfbeschriftungen auf
+  // 1,9:1 im Dunkelmodus. Deshalb gilt sie jetzt fuer JEDE .vue des Moduls.
+  const alleVue = (() => {
+    const wurzel = path.resolve(__dirname, '..');
+    const treffer = [];
+    const lauf = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory()) {
+          if (['node_modules', 'test'].includes(e.name)) continue;
+          lauf(path.join(dir, e.name));
+        } else if (e.name.endsWith('.vue')) {
+          treffer.push(path.relative(wurzel, path.join(dir, e.name)));
+        }
+      }
+    };
+    lauf(wurzel);
+    return treffer.sort();
+  })();
 
-  it.each(surfaces)('%s setzt keine Textfarbe als rohes Hex', (rel) => {
+  // Begruendete Ausnahmen — beide Male eine BEWUSST modusfeste Flaeche, auf der
+  // eine feste Textfarbe genau richtig ist:
+  //   .code-block  dunkles Codefenster (#1e1e1e) mit hellem Text
+  //   .devil-btn   Signalrot des Osterei-Knopfes auf Papier
+  const AUSNAHMEN = new Set([
+    'components/modals/IsybauHelpModal.vue',
+    'components/modals/KostraModal.vue',
+  ]);
+
+  it.each(alleVue.filter(f => !AUSNAHMEN.has(f)))('%s setzt keine Textfarbe als rohes Hex', (rel) => {
     const styles = read(rel).split('<style')[1] || '';
     // color: #abc / #aabbcc — erlaubt ist nur var(...) oder ein Schluesselwort.
     const roh = [...styles.matchAll(/(?<!-)\bcolor:\s*(#[0-9a-fA-F]{3,8})/g)].map(m => m[1]);

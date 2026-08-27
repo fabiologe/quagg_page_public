@@ -137,7 +137,7 @@
                     <!-- Areas Bulk Edit -->
                      <template v-if="activeTab === 'areas'">
                         <div class="bulk-field">
-                            <label>Versiegelungsgrad (0.0 - 1.0):</label>
+                            <label>Versiegelungsgrad ψ (0.0 - 1.0):</label>
                             <input type="number" v-model.number="bulkForm.runoffCoeff" step="0.1" placeholder="Unverändert" class="bulk-input">
                         </div>
                     </template>
@@ -593,9 +593,9 @@
                       <th class="col-checkbox sticky-left-1"><input type="checkbox" @change="toggleSelectAll($event, filteredAreas)"></th>
                       <th class="col-id sticky-left-2">ID</th>
                       <th>Fläche (ha)</th>
-                      <th>Versiegelungsgrad (0-1)</th>
+                      <th data-tutorial="flaechen-versiegelung">Versiegelungsgrad ψ (0-1)</th>
                       <th>Funktion (Horton)</th>
-                      <th>Neigungsklasse</th>
+                      <th data-tutorial="flaechen-neigung">Neigungsklasse</th>
                       <th>Anschluss 1</th>
                       <th>Anschluss 2 / Split (%)</th>
                       <th>Schmutzfracht</th>
@@ -614,7 +614,7 @@
                         </td>
                         <td>{{ area.size.toFixed(4) }}</td>
                         <td>
-                            <input :aria-label="`Versiegelungsgrad für ${area.id}`" type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
+                            <input :aria-label="`Versiegelungsgrad ψ für ${area.id}`" type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
                         </td>
                         <td>
                              <select v-model.number="area.function" class="medium-select" @click.stop>
@@ -714,7 +714,23 @@ const showBulkEdit = ref(false);
 const schmutzfrachtTarget = ref(null);
 const showSchmutzfrachtDialog = ref(false);
 
-const activeTab = ref('nodes');
+/**
+ * Der offene Reiter liegt im Store, nicht in einem lokalen ref.
+ *
+ * Grund: das Tutorial zeigt auf Spalten im Flaechen-Reiter ("Versiegelungsgrad
+ * ψ", "Neigungsklasse"). Sein Leuchten haengt an einem Watcher ueber dem
+ * Store — ein lokales ref sieht der nicht, das Leuchten bliebe also aus, wenn
+ * der Nutzer den Reiter erst nach dem Oeffnen wechselt.
+ *
+ * VERSCHOBEN, nicht gespiegelt: ein Store-Flag NEBEN einem lokalen ref laeuft
+ * auseinander, sobald die Komponente per v-if stirbt (dieselbe Falle gab es im
+ * Modul schon einmal). Alle Lese- und Schreibzugriffe laufen weiter ueber
+ * `activeTab`, die Schreibweise im Rest der Datei bleibt unveraendert.
+ */
+const activeTab = computed({
+    get: () => store.ui.preprocessingTab,
+    set: (tab) => { store.ui.preprocessingTab = tab; },
+});
 const tabs = [
   { id: 'nodes', label: 'Schächte' },
   { id: 'structures', label: 'Bauwerke' },
@@ -1370,7 +1386,7 @@ const exportXlsx = () => {
     XLSX.utils.book_append_sheet(wb, wsEdges, 'Haltungen');
 
     // --- Flächen ---
-    const areaHeaders = ['ID', 'Fläche (ha)', 'Versiegelungsgrad', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)',
+    const areaHeaders = ['ID', 'Fläche (ha)', 'Versiegelungsgrad ψ', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)',
         'Gebietsname', 'Kommentar', 'Einwohnerwerte (E)', 'Einwohnerdichte (E/ha)', 'Wasserverbrauch (l/E·d)', 'Tagesspitzenfaktor', 'Trockenwetterkennung'];
     const areaRows = areas.value.map(a => {
         const sf = a.schmutzfracht;
@@ -1528,7 +1544,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
   border: 1px solid var(--isy-pixel-border);
   border-radius: var(--isy-radius-sm);
   background: var(--isy-pixel-bg-alt);
-  color: var(--isy-pixel-green);
+  color: var(--isy-pixel-green-text);
   width: 28px;
   height: 26px;
   padding: 0;
@@ -1621,7 +1637,8 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 /* Tabs */
 .tabs { display: flex; gap: var(--isy-space-1); border-bottom: 2px solid var(--isy-pixel-border); padding-bottom: var(--isy-space-1); background: var(--isy-pixel-bg); padding: var(--isy-space-2) var(--isy-space-3); }
 .tab-btn { background: transparent; border: 1px solid var(--isy-pixel-border); padding: var(--isy-space-1) var(--isy-space-3); cursor: var(--isy-cursor-hand); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-text-dim); border-radius: var(--isy-radius-sm); letter-spacing: 0.05em; }
-.tab-btn.active { background: var(--isy-pixel-border); color: var(--isy-pixel-text); border-color: var(--isy-pixel-border-hover); }
+/* Dunkle Chip-Flaeche in beiden Modi, deshalb der konstante helle Text. */
+.tab-btn.active { background: var(--isy-pixel-border); color: var(--isy-pixel-accent-text); border-color: var(--isy-pixel-border-hover); }
 
 .header-actions { display: flex; gap: var(--isy-space-2); }
 .icon-btn { background: none; border: none; font-size: var(--isy-fs-lg); cursor: var(--isy-cursor-hand); }
@@ -1655,7 +1672,9 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .secondary-btn {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
-  color: var(--isy-pixel-text-dim);
+  /* Das Fenster ist Papier (DraggableModal.vue) — also die Papier-Textfarbe.
+     Mit dem Modus-Token stand "Abbrechen" im Dunkelmodus bei 1,9:1. */
+  color: var(--isy-pixel-content-text-dim);
   border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);

@@ -15,6 +15,37 @@
     @touchend="onTouchEnd"
     @touchcancel="onTouchEnd"
   >
+    <!-- EZG-Karte: Luftbild-Hintergrund (georeferenziert), in einer EIGENEN SVG.
+         Es lag frueher in der Netz-SVG unten drin — und damit, seit die
+         Netz-SVG einen z-index traegt, ueber den Hoehenlinien: das Luftbild
+         verdeckte sie, sobald es geladen war. Die drei Ebenen sind jetzt
+         getrennt (siehe .ezg-aerial-host unten): Luftbild < Hoehenlinien <
+         Netz. Beide SVGs teilen viewBox und transformString, laufen beim
+         Ziehen und Zoomen also im Gleichschritt.
+
+         aerialImageBounds ist die TATSAECHLICHE Ausdehnung des gelieferten
+         Kachel-Mosaiks (kachel-ausgerichtet), nicht die urspruenglich
+         angefragte Box — sonst wuerde das Bild leicht verzerrt/verschoben
+         sitzen. -->
+    <svg
+      v-if="ezgLayer.aerialImageUrl.value && ezgLayer.aerialImageBounds.value"
+      class="ezg-aerial-host"
+      :viewBox="viewBox"
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+    >
+      <g :transform="transformString">
+        <image
+          :x="ezgLayer.aerialImageBounds.value.minX - bounds.minX"
+          :y="bounds.maxY - ezgLayer.aerialImageBounds.value.maxY"
+          :width="ezgLayer.aerialImageBounds.value.maxX - ezgLayer.aerialImageBounds.value.minX"
+          :height="ezgLayer.aerialImageBounds.value.maxY - ezgLayer.aerialImageBounds.value.minY"
+          :href="ezgLayer.aerialImageUrl.value"
+          preserveAspectRatio="none"
+        />
+      </g>
+    </svg>
+
     <!-- Always render SVG to capture clicks, even if empty -->
     <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
       <defs>
@@ -27,20 +58,8 @@
       
       <g :transform="transformString">
 
-        <!-- EZG-Karte: Luftbild-Hintergrund (georeferenziert, unter allem anderen).
-             aerialImageBounds ist die TATSÄCHLICHE Ausdehnung des gelieferten
-             Kachel-Mosaiks (kachel-ausgerichtet), nicht die ursprünglich
-             angefragte Box — sonst würde das Bild leicht verzerrt/verschoben sitzen. -->
-        <image
-          v-if="ezgLayer.aerialImageUrl.value && ezgLayer.aerialImageBounds.value"
-          :x="ezgLayer.aerialImageBounds.value.minX - bounds.minX"
-          :y="bounds.maxY - ezgLayer.aerialImageBounds.value.maxY"
-          :width="ezgLayer.aerialImageBounds.value.maxX - ezgLayer.aerialImageBounds.value.minX"
-          :height="ezgLayer.aerialImageBounds.value.maxY - ezgLayer.aerialImageBounds.value.minY"
-          :href="ezgLayer.aerialImageUrl.value"
-          preserveAspectRatio="none"
-          style="pointer-events: none;"
-        />
+        <!-- Das Luftbild der EZG-Karte lag frueher hier — es sitzt jetzt in
+             einer eigenen SVG-Ebene UNTER den Hoehenlinien (siehe oben). -->
 
         <!-- Areas (Catchments) -->
         <g class="areas">
@@ -1504,17 +1523,37 @@ watch(() => props.nodes.size, (n, old) => {
   cursor: var(--isy-cursor-zeiger);
 }
 
+/* Die drei Ebenen der Zeichenfläche, von unten nach oben:
+ *
+ *   var(--isy-z-base)        .ezg-aerial-host  — Luftbild
+ *   calc(--isy-z-base + 1)   .contour-gpu-host — Höhenlinien (WebGL)
+ *   calc(--isy-z-base + 2)   svg               — Netz, Beschriftungen
+ *
+ * Zwei Ebenen reichten dafür nicht. Die Netz-SVG braucht eine Position und
+ * einen z-index, sonst läge sie immer hinter dem später im DOM stehenden
+ * .contour-gpu-host (position:absolute) und die Höhenlinien lägen über den
+ * Schächten. Solange das Luftbild MIT in dieser SVG steckte, hob derselbe
+ * z-index es aber ebenfalls über die Höhenlinien — gemeldet als
+ * "Satellitenbild lädt über den Höhenlinien". Deshalb hat es jetzt eine
+ * eigene Ebene ganz unten.
+ *
+ * Alle drei sitzen auf der Canvas-Stufe --isy-z-base und zaehlen von dort
+ * hoch — genau so ist die Zwischenebene im Token-Block von theme.css
+ * vorgesehen (und nur so laesst der stylelint-Waechter sie durch). Klicks landen unverändert bei der Netz-SVG,
+ * beide anderen Ebenen sind pointer-events:none. */
 svg {
   width: 100%;
   height: 100%;
   display: block;
-  /* Ohne position wäre die SVG "nicht positioniert" und würde IMMER hinter
-     .contour-gpu-host (position:absolute, späteres DOM-Geschwister) landen —
-     unabhängig von der DOM-Reihenfolge. Elemente/Labels müssen über den
-     Höhenlinien liegen, siehe .contour-gpu-host unten (Klicks bleiben
-     unverändert bei der SVG, der Kontur-Canvas hat pointer-events:none). */
   position: relative;
+  z-index: calc(var(--isy-z-base) + 2);
+}
+
+svg.ezg-aerial-host {
+  position: absolute;
+  inset: 0;
   z-index: var(--isy-z-base);
+  pointer-events: none;
 }
 
 /* Areas */
@@ -1723,13 +1762,16 @@ svg {
 }
 
 /* EZG-Karte: GPU-Kontur-Canvas — deckt die SVG komplett ab, malt aber nur
-   Linien (WebGLRenderer mit alpha:true), Rest bleibt transparent. */
+   Linien (WebGLRenderer mit alpha:true), Rest bleibt transparent. Mittlere
+   der drei Ebenen (siehe Kommentar bei `svg` oben): über dem Luftbild, unter
+   dem Netz. */
 .contour-gpu-host {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: calc(var(--isy-z-base) + 1);
   pointer-events: none;
 }
 

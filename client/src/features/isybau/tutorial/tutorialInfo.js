@@ -6,6 +6,7 @@
 //   { type: 'p', text }        Absatz
 //   { type: 'formula', text }  Formel-Zeile (hervorgehobene Mono-Box)
 //   { type: 'ref', text }      Quellen-/Normverweis (gedimmt)
+//   { type: 'link', text, href }  anklickbarer Verweis nach draussen (neuer Tab)
 //
 // Titel erscheinen in 'Press Start 2P' (kein ä/ö/ü im Font — ASCII halten!),
 // Fließtext in 'Share Tech Mono' (Umlaute ok).
@@ -14,16 +15,20 @@ export const TUTORIAL_INFO = {
 
   // ── Lernstoff zu den interaktiven Uebungen (tutorialExercise.js) ──────────
   befestigungsgrad: {
-    title: 'ABFLUSSBEIWERT',
+    title: 'VERSIEGELUNGSGRAD',
     blocks: [
       {
         type: 'p',
-        text: 'Nicht jeder Tropfen, der auf eine Fläche fällt, kommt im Kanal an. Ein Teil versickert, verdunstet oder bleibt in Pfützen und Mulden liegen. Der Abflussbeiwert ψ (psi) sagt, welcher Anteil tatsächlich abfließt.',
+        text: 'Nicht jeder Tropfen, der auf eine Fläche fällt, kommt im Kanal an. Ein Teil versickert, verdunstet oder bleibt in Pfützen und Mulden liegen. Der Wert ψ (psi) sagt, welcher Anteil tatsächlich abfließt.',
       },
       { type: 'formula', text: 'Q = ψ · i · A     ψ = 0 (alles versickert) … 1 (alles fließt ab)' },
       {
         type: 'p',
-        text: 'Entscheidend ist der Befestigungsgrad: Dach und Asphalt lassen fast alles ablaufen (ψ ≈ 0,9), Pflaster mit Fugen weniger (ψ ≈ 0,6), Rasen schluckt fast alles (ψ ≈ 0,1). Auch die Neigung spielt hinein — steiler heißt weniger Zeit zum Versickern.',
+        text: 'Zwei Wörter, eine Zahl: Eingetragen wird der Versiegelungsgrad — wie viel der Fläche zugebaut ist. Weil genau dieser Anteil abfließt, rechnet das Modell damit als Abflussbeiwert weiter, und unter diesem Namen taucht der Wert später im Ergebnis und in der ISYBAU-Datei wieder auf.',
+      },
+      {
+        type: 'p',
+        text: 'Dach und Asphalt lassen fast alles ablaufen (ψ ≈ 0,9), Pflaster mit Fugen weniger (ψ ≈ 0,6), Rasen schluckt fast alles (ψ ≈ 0,1). Auch die Neigung spielt hinein — steiler heißt weniger Zeit zum Versickern.',
       },
       {
         type: 'p',
@@ -61,11 +66,15 @@ export const TUTORIAL_INFO = {
     blocks: [
       {
         type: 'p',
-        text: 'Die Neigung einer Fläche bestimmt, wie schnell das Wasser den Anschlusspunkt erreicht. Flaches Gelände hält das Wasser zurück, steiles beschleunigt es — der Scheitel der Abflusswelle wird dadurch früher und höher.',
+        text: 'Gemeint ist das Gefälle des Bodens, auf den der Regen fällt — nicht das der Rohre darunter. Die Neigung bestimmt, wie schnell das Wasser den Anschlusspunkt erreicht: flaches Gelände hält es zurück, steiles beschleunigt es. Der Scheitel der Abflusswelle wird dadurch früher und höher.',
       },
       {
         type: 'p',
-        text: 'ISYBAU fasst das in fünf Klassen: 1 = bis 1 %, 2 = 1–4 %, 3 = 4–10 %, 4 = 10–15 %, 5 = über 15 %. Das Tool rechnet daraus einen repräsentativen Prozentwert für SWMM.',
+        text: 'Statt eines gemessenen Winkels verlangt ISYBAU nur eine von fünf Stufen: 1 = bis 1 % (eben, man sieht das Gefälle nicht), 2 = 1–4 % (leicht geneigt), 3 = 4–10 % (merkliche Böschung), 4 = 10–15 % (steil), 5 = über 15 % (sehr steil). Zur Orientierung: 10 % sind 10 m Höhenunterschied auf 100 m Weg, also etwa eine steile Hofeinfahrt. Das Tool rechnet aus der Stufe einen repräsentativen Prozentwert für SWMM.',
+      },
+      {
+        type: 'p',
+        text: 'Im Zweifel lieber eine Stufe zu flach als zu steil: eine zu steil angesetzte Fläche liefert eine schärfere Spitze, als sie in Wirklichkeit auftritt.',
       },
       {
         type: 'p',
@@ -127,7 +136,17 @@ export const TUTORIAL_INFO = {
         type: 'p',
         text: 'Fehlende Sohlhöhen werden zwischen bekannten Werten interpoliert — im Bericht als Annahme ausgewiesen. Faustregel: je vollständiger die Vermessung, desto belastbarer das Modell.',
       },
+      {
+        type: 'p',
+        text: 'Eine ISYBAU-XML kennt sechs Datenbereiche — Stammdaten, Zustandsdaten (Inspektion), hydraulische Daten, Grundstücksentwässerung, Referenzlisten und Metadaten. Der aktuelle Stand heißt ISYBAU XML-2013; mit der Fassung von 2018 kamen Felder hinzu und rutschten im Schema, weshalb ältere Dateien anders aufgebaut sein können.',
+      },
+      {
+        type: 'p',
+        text: 'Die Stammdaten sind ein Knoten-Kanten-Modell: Schächte als Knoten, Haltungen als Kanten dazwischen, Flächen mit ihrem Anschlusspunkt. Genau diesen Teil liest das Tool ein — und genau diesen Teil schreibt „XML exportieren" wieder heraus. Inspektions- und Zustandsdaten einer eingelesenen Datei bleiben unangetastet.',
+      },
       { type: 'ref', text: 'BFR Abwasser — Arbeitshilfen Abwasser, ISYBAU-XML' },
+      { type: 'link', text: 'Format nachlesen: A-7 ISYBAU-Austauschformate', href: 'https://www.bfr-abwasser.de/html/A7ISYBAU_ATF_XML.html' },
+      { type: 'link', text: 'Beispieldatensätze (XML-2017)', href: 'https://www.bfr-abwasser.de/html/Materialien.1.30.html' },
     ],
   },
 

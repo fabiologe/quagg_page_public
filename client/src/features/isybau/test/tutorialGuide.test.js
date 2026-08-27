@@ -193,7 +193,7 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
 
   it('alle info-Keys existieren in TUTORIAL_INFO und sind wohlgeformt', async () => {
     const { TUTORIAL_INFO } = await import('../tutorial/tutorialInfo.js');
-    const validTypes = ['p', 'formula', 'ref'];
+    const validTypes = ['p', 'formula', 'ref', 'link'];
 
     const allSteps = [WELCOME_STEP, ...Object.values(REACTIVE_STEPS)];
     for (const step of allSteps) {
@@ -207,6 +207,13 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
       for (const block of entry.blocks) {
         expect(validTypes, `type "${block.type}" in "${key}"`).toContain(block.type);
         expect(block.text, `text-Block in "${key}"`).toBeTruthy();
+        // Ein link-Block ohne href rendert einen Verweis, der ins Leere
+        // klickt; ein relativer Pfad landete in der eigenen App statt beim
+        // Regelwerk. Beides faellt hier auf, nicht erst beim Nutzer.
+        if (block.type === 'link') {
+          expect(block.href, `href-Block in "${key}"`).toBeTruthy();
+          expect(block.href, `href in "${key}" zeigt nicht nach draussen`).toMatch(/^https:\/\//);
+        }
       }
     }
   });

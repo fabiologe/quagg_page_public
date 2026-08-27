@@ -282,7 +282,10 @@ const applyResult = () => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-text-dim);
+  /* Steht auf der Papier-Flaeche des Fensters (--isy-pixel-content-bg,
+     in beiden Modi hell) — also die Papier-Textfarbe. Mit dem Modus-Token
+     war es im Dunkelmodus Hellgrau auf Papier: 1,9:1. */
+  color: var(--isy-pixel-content-text-dim);
 }
 
 .modal-body {
@@ -297,7 +300,10 @@ const applyResult = () => {
 
 .reference-info {
   font-size: var(--isy-fs-md);
-  color: var(--isy-pixel-text-dim);
+  /* Steht auf der Papier-Flaeche des Fensters (--isy-pixel-content-bg,
+     in beiden Modi hell) — also die Papier-Textfarbe. Mit dem Modus-Token
+     war es im Dunkelmodus Hellgrau auf Papier: 1,9:1. */
+  color: var(--isy-pixel-content-text-dim);
   margin-bottom: var(--isy-space-4);
 }
 
@@ -356,7 +362,10 @@ const applyResult = () => {
 .secondary-btn {
   background: transparent;
   border: 1px solid var(--isy-pixel-border);
-  color: var(--isy-pixel-text-dim);
+  /* Steht auf der Papier-Flaeche des Fensters (--isy-pixel-content-bg,
+     in beiden Modi hell) — also die Papier-Textfarbe. Mit dem Modus-Token
+     war es im Dunkelmodus Hellgrau auf Papier: 1,9:1. */
+  color: var(--isy-pixel-content-text-dim);
   border-radius: var(--isy-radius-md);
   padding: var(--isy-space-2) var(--isy-space-4);
   font-family: var(--isy-pixel-font);

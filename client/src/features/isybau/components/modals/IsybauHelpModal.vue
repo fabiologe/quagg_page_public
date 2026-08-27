@@ -387,7 +387,9 @@ const activeTab = ref('general');
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--isy-pixel-content-text-dim);
+  /* Steht auf --isy-pixel-bg (im Dunkelmodus Navy), nicht auf Papier —
+     also das Modus-Token. Umgekehrt waren es 2,1:1. */
+  color: var(--isy-pixel-text-dim);
 }
 
 .modal-body {
@@ -445,7 +447,7 @@ const activeTab = ref('general');
 }
 .tutorial-btn:hover {
   background: rgba(0, 232, 85, 0.08);
-  color: #007a3d;
+  color: var(--isy-pixel-green-text);
 }
 
 .tab-btn:hover {

@@ -152,13 +152,20 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
 
   const anchors = collectAnchors(path.resolve(__dirname, '..'));
 
-  // `highlight` darf eine Funktion des Zustands sein — also gegen BEIDE
-  // Zustaende aufloesen (alle Fenster zu / alle offen) und vereinigen. Sonst
-  // bliebe der Ersatz-Anker, den es nur bei geschlossenem Fenster gibt,
-  // ungeprueft: genau der Fall, der den Fehler ausmachte.
+  // `highlight` darf eine Funktion des Zustands sein — also gegen JEDEN
+  // Zustand aufloesen, den eine solche Funktion unterscheidet, und die
+  // Ergebnisse vereinigen. Sonst bliebe der Ersatz-Anker, den es nur in einem
+  // der Zustaende gibt, ungeprueft: genau der Fall, der den Fehler ausmachte.
+  //
+  // Der dritte Zustand ist die Datenmaske mit offenem Flaechen-Reiter — die
+  // beiden Flaechen-Schritte zeigen nur dort auf ihre Tabellenspalte.
   const ZU = storeWith({ ui: {}, rain: {} });
   const AUF = storeWith({
     ui: { showKostraModal: true, showPreprocessingModal: true, showElementModal: true, demImportPanelOpen: true },
+    rain: {},
+  });
+  const FLAECHEN = storeWith({
+    ui: { showPreprocessingModal: true, preprocessingTab: 'areas' },
     rain: {},
   });
   const stepsWithHighlight = [...EXERCISE_STEPS, WELCOME_STEP]
@@ -167,6 +174,7 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
       const anker = new Set([
         ...(resolveStepHighlight(s, ZU) || []),
         ...(resolveStepHighlight(s, AUF) || []),
+        ...(resolveStepHighlight(s, FLAECHEN) || []),
       ]);
       return Array.from(anker, h => [s.id, h]);
     });

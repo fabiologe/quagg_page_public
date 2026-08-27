@@ -157,13 +157,16 @@ onUnmounted(() => { running = false; });
 
 /* Warnings / export */
 .t-line.warn {
-  color: #f9ca24;
+  color: var(--isy-pixel-info-accent);
   text-shadow: 0 0 8px rgba(249, 202, 36, 0.6);
 }
 
 /* Separator */
 .t-line.sep {
-  color: #00662e;
+  /* Modus-Gruenton statt eines festen Dunkelgruen: auf Navy waren es
+     2,6:1, die Trennlinie verschwand im Dunkelmodus fast ganz. Ohne
+     text-shadow bleibt sie trotzdem ruhiger als die Befehlszeile. */
+  color: var(--isy-pixel-green-text);
   text-shadow: none;
 }
 

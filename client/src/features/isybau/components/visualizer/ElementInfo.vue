@@ -292,7 +292,7 @@
             </div>
             
              <div class="info-group">
-                 <label>Versiegelungsgrad (0.0 - 1.0)</label>
+                 <label>Versiegelungsgrad ψ (0.0 - 1.0)</label>
                  <input type="number" v-model.number="localData.runoffCoeff" step="0.05" min="0" max="1" class="full-input">
              </div>
 
@@ -862,7 +862,7 @@ watch(() => props.selectedElement, (val) => {
 .result-header {
     font-size: var(--isy-fs-md);
     font-weight: bold;
-    color: #004085;
+    color: var(--isy-pixel-info-soft-text);
     margin-bottom: var(--isy-space-1);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -870,7 +870,7 @@ watch(() => props.selectedElement, (val) => {
 
 .flood-badge {
     background: var(--isy-pixel-danger-soft);
-    border: 1px solid #ef5350;
+    border: 1px solid var(--isy-pixel-danger);
     color: var(--isy-pixel-danger-soft-text);
     padding: var(--isy-space-1);
     border-radius: var(--isy-radius-sm);
@@ -913,15 +913,15 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 
 .surcharge-badge {
     background: var(--isy-pixel-warning-soft);
-    border-color: #f9a825;
-    color: #b26a00;
+    border-color: var(--isy-pixel-warning);
+    color: var(--isy-pixel-warning-soft-text);
     animation: none;
 }
 
 .sub-text {
     font-size: var(--isy-fs-sm);
     font-weight: normal;
-    color: #d32f2f;
+    color: var(--isy-pixel-danger-soft-text);
 }
 
 .compact {
@@ -929,7 +929,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 }
 
 .text-red {
-    color: #d32f2f;
+    color: var(--isy-pixel-danger-soft-text);
     font-weight: bold;
 }
 

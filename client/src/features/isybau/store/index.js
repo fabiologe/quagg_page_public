@@ -59,7 +59,11 @@ export const useIsybauStore = defineStore('isybau-module', {
             showResultsModal: false,
             showDebugModal: false,
             showPreprocessingModal: false,
-            showValidationModal: false,
+            // Offener Reiter der Datenmaske. Liegt hier statt in
+            // PreprocessingModal.vue, damit das Tutorial sein Leuchten
+            // auf die Spalten des Flaechen-Reiters setzen kann (der
+            // Watcher in tutorial/useHighlight.js sieht nur den Store).
+            preprocessingTab: 'nodes',
             showHelpModal: false,
             showProjectManager: false,
             showElementModal: false,
@@ -566,7 +570,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.ui.showPreprocessingModal = true;
         },
 
-        /** „Übernehmen" im Preprocessing: Daten mergen + Auto-Validierung öffnen. */
+        /** „Übernehmen" im Preprocessing: Daten mergen und Fenster schließen. */
         applyPreprocessing(data) {
             this.updateNetworkData(data);
             this.ui.showPreprocessingModal = false;

@@ -42,7 +42,7 @@
             <span class="val">{{ element.size?.toFixed(4) }} ha</span>
           </div>
           <div class="info-row" v-if="element.runoffCoeff != null">
-            <span class="lbl">Abflussbeiwert</span>
+            <span class="lbl">Versiegelungsgrad ψ</span>
             <span class="val">{{ element.runoffCoeff }}</span>
           </div>
         </template>
