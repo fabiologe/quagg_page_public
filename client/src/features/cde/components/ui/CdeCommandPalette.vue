@@ -65,6 +65,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import CdeIcon from './CdeIcon.vue';
 import { usePaletteCommands, filterCommands } from '../../stores/useCommands.js';
 import { useIfcStore } from '../../stores/useIfcStore.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -74,6 +75,7 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const cmds = usePaletteCommands();
+const api = useViewerApi();
 const ifc = useIfcStore();
 
 const query = ref('');
@@ -150,7 +152,7 @@ function confirm() {
 async function pick(e) {
   close();
   if (e.art === 'cmd') cmds.run(e.id);
-  else if (e.art === 'element') await ifc.zoomToElement(e.el.localId, e.el.modelId);
+  else if (e.art === 'element') await api.zoomToLocalId(e.el.localId, e.el.modelId);
 }
 
 function close() { emit('close'); }

@@ -47,10 +47,12 @@ import { ref, computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import IfcSidebar from './IfcSidebar.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 const ifc  = useIfcStore();
+const api = useViewerApi();
 const isCopying = ref(false);
 
 const BRIDGE_TYPES = ['IFCBEAM', 'IFCSLAB', 'IFCCOLUMN', 'IFCBRIDGE', 'IFCBUILDINGELEMENT', 'IFCMEMBER'];
@@ -64,7 +66,14 @@ async function clearSelection() {
 }
 
 async function onAddPset({ psetName, props }) {
-  await ifc.addPset(psetName, props);
+  // Direkt an die viewerApi statt über einen im Store hinterlegten Rückruf.
+  // Der Store HÄLT den Fehlertext, er vermittelt nicht mehr.
+  try {
+    const aktualisiert = await api.addPsetToElement(psetName, props);
+    if (aktualisiert) ifc.setElement(aktualisiert);
+  } catch (fehler) {
+    ifc.setPsetError(`Fehler: ${fehler.message}`);
+  }
 }
 
 async function copyAsBridge() {
@@ -72,7 +81,7 @@ async function copyAsBridge() {
   if (!el) return;
   isCopying.value = true;
   try {
-    const result = await ifc.getElementBridgeData(el.localId, el.modelId);
+    const result = await api.getElementBox(el.localId, el.modelId);
     if (!result) { alert('Keine Bounding-Box verfügbar. Ist ein Viewer aktiv?'); return; }
 
     const { box, offset } = result;

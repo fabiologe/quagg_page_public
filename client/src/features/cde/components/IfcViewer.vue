@@ -462,6 +462,31 @@ provideViewerApi({
   getMeasurements:      () => measurements.value,
   // Interaktion
   zoomToElement:        (modelId, localId) => engine.value?.zoomToElement(modelId, localId),
+  /**
+   * Wie zoomToElement, aber ohne Modell-Kennung: nimmt das erste geladene.
+   * Für Aufrufer, die nur eine localId haben (Struktur-Baum, Befehlspalette).
+   */
+  zoomToLocalId:        async (localId, modelId = null) => {
+    const mid = modelId ?? engine.value?.getModelList()?.[0]?.modelId;
+    if (mid != null) await engine.value?.zoomToElement(mid, localId);
+  },
+  zoomToCategory:       (name) => engine.value?.zoomToCategory(name),
+  setStoreyVisible:     (localId, visible, modelId = null) =>
+                          engine.value?.setStoreyVisible(localId, visible, modelId),
+  /** Merkmalssatz am gewählten Bauteil anlegen und die Anzeige nachladen. */
+  addPsetToElement:     async (psetName, props) => {
+    await engine.value.addPsetToElement(psetName, props);
+    return engine.value.refreshElement();
+  },
+  /** BBox + Koordinatenversatz eines Bauteils — für die Brücken-Übergabe. */
+  getElementBox:        async (localId, modelId = null) => {
+    if (!engine.value) return null;
+    const mid = modelId ?? engine.value.getModelList()?.[0]?.modelId;
+    if (mid == null) return null;
+    const boxes = await engine.value.getBoxes([localId], mid);
+    if (!boxes?.length) return null;
+    return { box: boxes[0], offset: engine.value.getCoordOffsetForModel(mid), modelId: mid };
+  },
   setElementColors:     (colorMap) => engine.value?.setPerElementColors(colorMap),
   resetElementColors:   () => engine.value?.resetCategoryColors(),
   // Sprint T1: Georeferenz + Dokument-Status für den Planexport
@@ -507,39 +532,6 @@ onMounted(async () => {
   canvasRef.value.addEventListener('mousedown',  onMouseDown);
   canvasRef.value.addEventListener('mouseup',    onMouseUp);
   canvasRef.value.addEventListener('mousemove',  onMouseMoveForTools);
-
-  ifc.registerPsetHandler(async (psetName, props) => {
-    try {
-      await engine.value.addPsetToElement(psetName, props);
-      const refreshed = await engine.value.refreshElement();
-      if (refreshed) ifc.setElement(refreshed);
-    } catch (err) {
-      ifc.setPsetError(`Fehler: ${err.message}`);
-    }
-  });
-
-  ifc.registerSpatialHandler(async (localId, visible, modelId = null) => {
-    await engine.value?.setStoreyVisible(localId, visible, modelId);
-  });
-
-  // T1.1: zoom-to-element / zoom-to-category — modelId defaults to first loaded model
-  ifc.registerZoomHandler(async (localId, modelId) => {
-    const mid = modelId ?? engine.value?.getModelList()?.[0]?.modelId;
-    if (mid != null) await engine.value?.zoomToElement(mid, localId);
-  });
-  ifc.registerZoomCategoryHandler(async (name) => {
-    await engine.value?.zoomToCategory(name);
-  });
-
-  ifc.registerBoxHandler(async (localId, modelId) => {
-    if (!engine.value) return null;
-    const mid = modelId ?? engine.value.getModelList()?.[0]?.modelId;
-    if (mid == null) return null;
-    const boxes = await engine.value.getBoxes([localId], mid);
-    if (!boxes?.length) return null;
-    const offset = engine.value.getCoordOffsetForModel(mid);
-    return { box: boxes[0], offset, modelId: mid };
-  });
 
   // B4: lokale Modell-Ablage für den Leerzustand einlesen
   _refreshRecentModels();

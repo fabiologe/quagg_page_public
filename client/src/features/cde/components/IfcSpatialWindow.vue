@@ -52,20 +52,22 @@ import { ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import IfcSpatialTree from './IfcSpatialTree.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 const ifc  = useIfcStore();
+const api = useViewerApi();
 
 const filterText = ref('');
 const bodyRef    = ref(null);
 
 async function onToggleStorey({ localId, visible }) {
-  await ifc.setStoreyVisible(localId, visible);
+  await api.setStoreyVisible(localId, visible);
 }
 
 async function onZoomTo({ localId }) {
-  await ifc.zoomToElement(localId);
+  await api.zoomToLocalId(localId);
 }
 
 function expandAll()   { bodyRef.value?.querySelectorAll('.caret[data-open="false"]').forEach(el => el.click()); }

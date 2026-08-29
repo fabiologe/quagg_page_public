@@ -184,10 +184,6 @@ export class IfcCamera {
 
     // ── Bewegung / Animation ─────────────────────────────────────────────────
 
-    /** Pan in pixel-deltas (camera-controls wandelt selbst in Weltkoordinaten um). */
-    truck(dx, dy) {
-        this._getWorld()?.camera?.controls?.truck(dx, dy, false);
-    }
 
     /**
      * Kamera auf einen Welt-Punkt richten. Der Punkt wird damit auch zum neuen

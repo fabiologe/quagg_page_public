@@ -3,16 +3,11 @@ import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { IfcCamera } from './IfcCamera.js';
+import { DATA_CONFIG, parseItemData, buildSearchIndex } from './IfcItemData.js';
+import { IfcAnnotations } from './IfcAnnotations.js';
+import { IfcMeasure } from './IfcMeasure.js';
+import { IfcGridAxes } from './IfcGridAxes.js';
 
-const DATA_CONFIG = {
-    attributesDefault: true,
-    relationsDefault: { attributes: false, relations: false },
-    relations: {
-        IsDefinedBy:     { attributes: true, relations: true  },
-        IsTypedBy:       { attributes: true, relations: false },
-        HasAssociations: { attributes: true, relations: false },
-    },
-};
 
 const SELECTION_STYLE = {
     color: new THREE.Color(0.0, 1.0, 0.08),
@@ -85,13 +80,6 @@ export class IfcEngine {
         this._selectedItems  = null;
         this._selectedKey    = null;
         this._hoveredKey     = null;
-        this._measureGroup   = null; // THREE.Group with measurement visuals
-        this._measurePoints  = [];
-        this._measurements   = [];
-        this._hoverMarker    = null;
-        this._firstMarker    = null;
-        this._annotationGroup = null;
-        this._annotations     = [];
         this._hoverInFlight  = false;
         this._canvas         = null;
 
@@ -150,6 +138,14 @@ export class IfcEngine {
             components: this.components,
         });
         this.camera.configure();
+
+        // Annotationen und Messungen: eigene Dienste, gleiches Muster wie die
+        // Kamera. `probePoint` gehoert zum Picking und bleibt hier — beide
+        // brauchen einen Weltpunkt unter dem Zeiger, keiner soll ihn nachbauen.
+        const probePoint = (x, y) => this._probeWorldPoint(x, y);
+        this.gridAxes    = new IfcGridAxes();
+        this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint });
+        this.measure     = new IfcMeasure({     getWorld: () => this._getWorld(), probePoint });
 
         const grids = this.components.get(OBC.Grids);
         this._sceneGrid = grids.create(world);
@@ -227,8 +223,8 @@ export class IfcEngine {
             this.buildCategoryIndex()
                 .then(() => this._applyDefaultCategoryColors(model))
                 .then(() => fragments.core.update(true)),
-            this._loadAlignments(model, world),
-            this._loadGrids(model, world),
+            this.gridAxes.ladeAchsen(model, world),
+            this.gridAxes.ladeRaster(model, world),
         ]);
 
         await this._replayInitialVisibilityToggle();
@@ -909,6 +905,23 @@ export class IfcEngine {
 
     // ── Properties ───────────────────────────────────────────────────────────
 
+    /**
+     * Probe the world position under the cursor using OBC's fragment raycaster
+     * (same path as hoverElement). Returns THREE.Vector3 or null.
+     */
+    async _probeWorldPoint(clientX, clientY) {
+        const world = this._getWorld();
+        if (!world) return null;
+        const fragments = this.components.get(OBC.FragmentsManager);
+        const canvas    = this._canvas ?? world.renderer.three.domElement;
+        const result    = await fragments.raycast({
+            camera: world.camera.three,
+            mouse:  new THREE.Vector2(clientX, clientY),
+            dom:    canvas,
+        });
+        return result?.point ? result.point.clone() : null;
+    }
+
     async refreshElement() {
         if (!this._selectedItems) return null;
         const fragments = this.components.get(OBC.FragmentsManager);
@@ -950,63 +963,33 @@ export class IfcEngine {
 
     // ── Civil geometry ───────────────────────────────────────────────────────
 
-    async _loadAlignments(model, world) {
-        try {
-            const g = await model.getHorizontalAlignments();
-            if (g?.children?.length) world.scene.three.add(g);
-        } catch (_) { /* model has no alignments */ }
-    }
 
-    async _loadGrids(model, world) {
-        try {
-            const g = await model.getGrids();
-            if (g?.children?.length) {
-                g.userData.isIfcGridContainer = true;
-                world.scene.three.add(g);
-                if (!this._ifcGridGroups) this._ifcGridGroups = [];
-                this._ifcGridGroups.push(g);
-            }
-        } catch (_) { /* model has no grids */ }
-    }
 
-    /** Toggle the visibility of all IFC structural grids (the IfcGrid axes). */
-    setIfcGridsVisible(visible) {
-        for (const g of (this._ifcGridGroups ?? [])) g.visible = !!visible;
-    }
 
-    /**
-     * Extract IfcGrid axis lines in world space for the vector PDF plot.
-     * Returns [{ name, start: {x, z}, end: {x, z} }] — top-view (XZ projection).
-     */
-    getIfcGridAxes() {
-        const out = [];
-        const v1 = new THREE.Vector3();
-        const v2 = new THREE.Vector3();
-        for (const g of (this._ifcGridGroups ?? [])) {
-            g.updateWorldMatrix(true, true);
-            g.traverse(obj => {
-                const pos = obj.geometry?.attributes?.position;
-                if (!pos) return;
-                const name = obj.name || obj.userData?.name || '';
-                const isSeg = obj.isLineSegments === true;
-                const isLine = obj.isLine === true || obj.type === 'Line';
-                if (!isSeg && !isLine) return;
-                const step = isSeg ? 2 : 1;
-                for (let i = 0; i + 1 < pos.count; i += step) {
-                    v1.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld);
-                    v2.fromBufferAttribute(pos, i + 1).applyMatrix4(obj.matrixWorld);
-                    out.push({
-                        name,
-                        start: { x: v1.x, z: v1.z },
-                        end:   { x: v2.x, z: v2.z },
-                    });
-                }
-            });
-        }
-        return out;
-    }
 
     // ── Camera ───────────────────────────────────────────────────────────────
+
+    // ── Achsen & Raster (Implementierung in IfcGridAxes.js) ─────────────────
+    setIfcGridsVisible(visible) { return this.gridAxes.setIfcGridsVisible(visible); }
+    getIfcGridAxes()            { return this.gridAxes.getIfcGridAxes(); }
+
+    // ── Annotationen (Implementierung in IfcAnnotations.js) ─────────────────
+    enableAnnotationMode()            { return this.annotations.enableAnnotationMode(); }
+    disableAnnotationMode()           { return this.annotations.disableAnnotationMode(); }
+    addAnnotationAt(pos, text, color) { return this.annotations.addAnnotationAt(pos, text, color); }
+    addAnnotation(x, y, text, color)  { return this.annotations.addAnnotation(x, y, text, color); }
+    updateAnnotation(id, patch)       { return this.annotations.updateAnnotation(id, patch); }
+    removeAnnotation(id)              { return this.annotations.removeAnnotation(id); }
+    clearAnnotations()                { return this.annotations.clearAnnotations(); }
+    setAnnotations(arr)               { return this.annotations.setAnnotations(arr); }
+    getAnnotations()                  { return this.annotations.getAnnotations(); }
+
+    // ── Messungen (Implementierung in IfcMeasure.js) ────────────────────────
+    enableMeasureMode()               { return this.measure.enableMeasureMode(); }
+    disableMeasureMode()              { return this.measure.disableMeasureMode(); }
+    updateMeasureHover(x, y)          { return this.measure.updateMeasureHover(x, y); }
+    addMeasurePoint(x, y)             { return this.measure.addMeasurePoint(x, y); }
+    clearMeasurements()               { return this.measure.clearMeasurements(); }
 
     // ── Camera delegations (Implementierung in IfcCamera.js) ────────────────
     zoomToFit()                       { return this.camera.zoomToFit(); }
@@ -1021,84 +1004,14 @@ export class IfcEngine {
 
     // ── Annotations (markers + text pinned in 3D space) ─────────────────────
 
-    enableAnnotationMode() {
-        if (this._annotationGroup) return;
-        const world = this._getWorld();
-        this._annotationGroup = new THREE.Group();
-        this._annotationGroup.name = 'annotation-overlay';
-        world.scene.three.add(this._annotationGroup);
-        // Existing persisted annotations get redrawn
-        for (const a of (this._annotations ?? [])) this._drawAnnotationMarker(a);
-    }
 
-    disableAnnotationMode() {
-        // Keep _annotations data; just remove visuals
-        if (!this._annotationGroup) return;
-        const world = this._getWorld();
-        this._annotationGroup.traverse(o => {
-            if (o.geometry) o.geometry.dispose();
-            if (o.material) o.material.dispose();
-        });
-        world.scene.three.remove(this._annotationGroup);
-        this._annotationGroup = null;
-    }
 
     /**
      * Add an annotation at the world-point under (clientX, clientY).
      * Returns the new annotation { id, position, text, color, labelOffset, idx } or null if no hit.
      */
-    /**
-     * Annotation an einem bekannten WELT-Punkt anlegen (Sprint U): das
-     * Kontextmenü am gewählten Bauteil kennt dessen Mittelpunkt bereits und
-     * braucht keinen Bildschirm-Treffer.
-     */
-    addAnnotationAt(position, text, color = '#e91e63') {
-        if (!Array.isArray(position) || position.length < 3) return null;
-        if (!this._annotations) this._annotations = [];
-        const ann = {
-            id:   Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            position: [position[0], position[1], position[2]],
-            text: (text ?? '').trim(),
-            color,
-            labelOffset: [40, -60],
-            idx:  this._annotations.length + 1,
-        };
-        this._annotations.push(ann);
-        if (this._annotationGroup) this._drawAnnotationMarker(ann);
-        return ann;
-    }
 
-    async addAnnotation(clientX, clientY, text, color = '#e91e63') {
-        const pt = await this._probeWorldPoint(clientX, clientY);
-        if (!pt) return null;
-        if (!this._annotations) this._annotations = [];
 
-        const ann = {
-            id:   Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            position: [pt.x, pt.y, pt.z],
-            text: (text ?? '').trim(),
-            color,
-            labelOffset: [40, -60], // px offset of speech bubble from the pin in screen-space
-            idx:  this._annotations.length + 1,
-        };
-        this._annotations.push(ann);
-
-        if (this._annotationGroup) this._drawAnnotationMarker(ann);
-        return ann;
-    }
-
-    /** Update an annotation in place. Provide any subset of { text, color, labelOffset, position }. */
-    updateAnnotation(id, patch) {
-        if (!this._annotations) return false;
-        const a = this._annotations.find(x => x.id === id);
-        if (!a) return false;
-        Object.assign(a, patch);
-        if (patch.color !== undefined && this._annotationGroup) {
-            // Redraw to pick up the new color
-            this.setAnnotations(this._annotations);
-        }
-        return true;
-    }
 
     /**
      * Project a 3D world point to 2D screen coordinates {x, y} in CSS pixels
@@ -1119,83 +1032,10 @@ export class IfcEngine {
         };
     }
 
-    removeAnnotation(id) {
-        if (!this._annotations) return;
-        this._annotations = this._annotations.filter(a => a.id !== id);
-        // Renumber
-        this._annotations.forEach((a, i) => { a.idx = i + 1; });
-        // Re-draw all
-        if (this._annotationGroup) {
-            const world = this._getWorld();
-            this._annotationGroup.traverse(o => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material) o.material.dispose();
-            });
-            while (this._annotationGroup.children.length) {
-                this._annotationGroup.remove(this._annotationGroup.children[0]);
-            }
-            for (const a of this._annotations) this._drawAnnotationMarker(a);
-        }
-    }
 
-    clearAnnotations() {
-        this._annotations = [];
-        if (this._annotationGroup) {
-            this._annotationGroup.traverse(o => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material) o.material.dispose();
-            });
-            while (this._annotationGroup.children.length) {
-                this._annotationGroup.remove(this._annotationGroup.children[0]);
-            }
-        }
-    }
 
-    /** Replace the entire annotation list (used when loading from localStorage). */
-    setAnnotations(arr) {
-        this._annotations = (arr ?? []).map((a, i) => ({ ...a, idx: i + 1 }));
-        if (this._annotationGroup) {
-            this._annotationGroup.traverse(o => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material) o.material.dispose();
-            });
-            while (this._annotationGroup.children.length) {
-                this._annotationGroup.remove(this._annotationGroup.children[0]);
-            }
-            for (const a of this._annotations) this._drawAnnotationMarker(a);
-        }
-    }
 
-    getAnnotations() { return [...(this._annotations ?? [])]; }
 
-    _drawAnnotationMarker(ann) {
-        const cam     = this._getWorld().camera.three;
-        const pos     = new THREE.Vector3().fromArray(ann.position);
-        const camDist = cam.position.distanceTo(pos);
-        const r       = Math.max(0.12, camDist / 150);
-
-        // Outer ring for visibility against any background
-        const ringGeo = new THREE.SphereGeometry(r * 1.4, 14, 14);
-        const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.position.copy(pos);
-        ring.renderOrder = 999;
-
-        // Inner pin in the annotation's color
-        const colorHex = ann.color ? new THREE.Color(ann.color).getHex() : 0xe91e63;
-        const pinGeo = new THREE.SphereGeometry(r, 14, 14);
-        const pinMat = new THREE.MeshBasicMaterial({ color: colorHex, depthTest: false });
-        const pin    = new THREE.Mesh(pinGeo, pinMat);
-        pin.position.copy(pos);
-        pin.renderOrder = 1000;
-        pin.userData.annotationId = ann.id;
-        pin.userData.idx          = ann.idx;
-
-        this._annotationGroup.add(ring);
-        this._annotationGroup.add(pin);
-    }
 
     // ── Saved Views (camera + visibility + section cut) ─────────────────────
 
@@ -1263,179 +1103,14 @@ export class IfcEngine {
 
     // ── Measurement (distance between 2 points) ─────────────────────────────
 
-    /**
-     * Enable interactive distance measurement. Each call to addMeasurePoint(x,y)
-     * adds a point; on the 2nd point, a distance is computed and returned.
-     */
-    enableMeasureMode() {
-        if (this._measureGroup) return;
-        const world = this._getWorld();
-        this._measureGroup = new THREE.Group();
-        this._measureGroup.name = 'measurement-overlay';
-        world.scene.three.add(this._measureGroup);
-        this._measurePoints = [];   // Array<THREE.Vector3>
-        this._measurements  = [];   // [{ p1, p2, dist, line, marker1, marker2 }]
-    }
 
-    disableMeasureMode() {
-        if (!this._measureGroup) return;
-        const world = this._getWorld();
-        this._measureGroup.traverse(o => {
-            if (o.geometry) o.geometry.dispose();
-            if (o.material) o.material.dispose();
-        });
-        world.scene.three.remove(this._measureGroup);
-        this._measureGroup  = null;
-        this._measurePoints = [];
-        this._measurements  = [];
-        this._hoverMarker   = null;
-        this._firstMarker   = null;
-    }
 
-    /**
-     * Probe the world position under the cursor using OBC's fragment raycaster
-     * (same path as hoverElement). Returns THREE.Vector3 or null.
-     */
-    async _probeWorldPoint(clientX, clientY) {
-        const world = this._getWorld();
-        if (!world) return null;
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const canvas    = this._canvas ?? world.renderer.three.domElement;
-        const result    = await fragments.raycast({
-            camera: world.camera.three,
-            mouse:  new THREE.Vector2(clientX, clientY),
-            dom:    canvas,
-        });
-        return result?.point ? result.point.clone() : null;
-    }
 
-    /**
-     * Update the live hover-marker so the user sees exactly where the next
-     * measure point would land. Call from a mousemove handler while in measure mode.
-     */
-    async updateMeasureHover(clientX, clientY) {
-        if (!this._measureGroup) return null;
-        const pt = await this._probeWorldPoint(clientX, clientY);
-        if (!pt) {
-            if (this._hoverMarker) this._hoverMarker.visible = false;
-            return null;
-        }
-        if (!this._hoverMarker) {
-            const geo = new THREE.SphereGeometry(0.12, 14, 14);
-            const mat = new THREE.MeshBasicMaterial({
-                color: 0x00e5ff, transparent: true, opacity: 0.7, depthTest: false,
-            });
-            this._hoverMarker = new THREE.Mesh(geo, mat);
-            this._hoverMarker.renderOrder = 1000;
-            this._measureGroup.add(this._hoverMarker);
-        }
-        // Adapt marker size to camera distance so it stays roughly the same on screen
-        const cam     = this._getWorld().camera.three;
-        const camDist = cam.position.distanceTo(pt);
-        const scale   = Math.max(0.3, camDist / 30);
-        this._hoverMarker.scale.setScalar(scale);
-        this._hoverMarker.position.copy(pt);
-        this._hoverMarker.visible = true;
-        return pt;
-    }
 
-    /**
-     * Add a measurement point at screen coords. Uses OBC fragment raycast.
-     * Returns { phase, dist?, p1?, p2? }.
-     */
-    async addMeasurePoint(clientX, clientY) {
-        if (!this._measureGroup) return null;
-        const hit = await this._probeWorldPoint(clientX, clientY);
-        if (!hit) return { phase: 'no-hit' };
 
-        this._measurePoints.push(hit);
 
-        if (this._measurePoints.length < 2) {
-            // First point: prominent pulsing marker
-            this._addMeasureMarker(hit, /* isFirst */ true);
-            return { phase: 'awaiting-second', p1: hit };
-        }
 
-        // Second point: convert the pending "first" marker to a regular one + draw line
-        this._convertFirstMarkerToFinal();
-        this._addMeasureMarker(hit, /* isFirst */ false);
 
-        const [p1, p2] = this._measurePoints;
-        const dist = p1.distanceTo(p2);
-        this._addMeasureLine(p1, p2, dist);
-        this._measurements.push({ p1, p2, dist });
-        this._measurePoints = []; // ready for next measurement
-
-        return { phase: 'complete', dist, p1, p2 };
-    }
-
-    _convertFirstMarkerToFinal() {
-        if (!this._firstMarker) return;
-        this._firstMarker.material.color.setHex(0xffeb3b);
-        this._firstMarker.material.opacity = 1;
-        this._firstMarker.material.transparent = false;
-        this._firstMarker.userData.isFirst = false;
-        this._firstMarker = null;
-    }
-
-    /** Remove all measurements but keep measure mode active. */
-    clearMeasurements() {
-        if (!this._measureGroup) return;
-        while (this._measureGroup.children.length) {
-            const c = this._measureGroup.children.pop();
-            if (c.geometry) c.geometry.dispose();
-            if (c.material) c.material.dispose();
-            this._measureGroup.remove(c);
-        }
-        this._measurements  = [];
-        this._measurePoints = [];
-        this._hoverMarker   = null;
-        this._firstMarker   = null;
-    }
-
-    _addMeasureMarker(point, isFirst = false) {
-        // Camera-relative scale so markers stay visible at any zoom
-        const cam     = this._getWorld().camera.three;
-        const camDist = cam.position.distanceTo(point);
-        const baseR   = Math.max(0.08, camDist / 200);
-
-        const geo = new THREE.SphereGeometry(baseR, 14, 14);
-        const mat = isFirst
-            ? new THREE.MeshBasicMaterial({ color: 0xff4081, depthTest: false }) // pink for first
-            : new THREE.MeshBasicMaterial({ color: 0xffeb3b, depthTest: false }); // yellow for set
-        const sphere = new THREE.Mesh(geo, mat);
-        sphere.position.copy(point);
-        sphere.renderOrder = 999;
-        sphere.userData.isFirst = isFirst;
-        this._measureGroup.add(sphere);
-
-        if (isFirst) {
-            // Add a ring around it for extra prominence
-            const ringGeo = new THREE.RingGeometry(baseR * 1.8, baseR * 2.4, 32);
-            const ringMat = new THREE.MeshBasicMaterial({
-                color: 0xff4081, side: THREE.DoubleSide, transparent: true, opacity: 0.7, depthTest: false,
-            });
-            const ring = new THREE.Mesh(ringGeo, ringMat);
-            ring.position.copy(point);
-            // face the camera
-            ring.lookAt(cam.position);
-            ring.renderOrder = 999;
-            sphere.add(ring);
-            this._firstMarker = sphere;
-        }
-    }
-
-    _addMeasureLine(p1, p2, dist) {
-        const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-        const mat = new THREE.LineBasicMaterial({
-            color: 0xffeb3b, linewidth: 2, depthTest: false,
-        });
-        const line = new THREE.Line(geo, mat);
-        line.renderOrder = 999;
-        this._measureGroup.add(line);
-        // Label is rendered in the DOM by the Vue layer (3D HTML labels are heavy);
-        // engine returns distance, UI shows it as a toast + sidebar list.
-    }
 
     // ── Hide / Isolate / Show all ────────────────────────────────────────────
 
@@ -1641,122 +1316,13 @@ export class IfcEngine {
         return this.camera.fitToModel(model);
     }
 
-    _parseItemData(rawData) {
-        const modelEntries = Object.values(rawData);
-        if (!modelEntries.length || !modelEntries[0].length) return null;
-        const item = modelEntries[0][0];
+    // ── Merkmalsdaten (Implementierung in IfcItemData.js) ───────────────────
+    // Zustandslos und deshalb der erste Schnitt: `parseItemData` fasst kein
+    // einziges `this._…` an, `buildSearchIndex` braucht nur `components`.
+    _parseItemData(rawData)  { return parseItemData(rawData); }
+    async buildSearchIndex() { return buildSearchIndex(this.components); }
 
-        const scalar = (v) => {
-            if (v == null) return null;
-            if (typeof v === 'object' && 'value' in v) return v.value;
-            if (typeof v === 'object') return null;
-            return v;
-        };
 
-        const RESERVED = new Set([
-            '_category', 'GlobalId', 'Name', 'Description',
-            'IsDefinedBy', 'IsTypedBy', 'HasAssociations', 'OwnerHistory',
-        ]);
-
-        const attrs = [];
-        for (const [key, val] of Object.entries(item)) {
-            if (RESERVED.has(key)) continue;
-            const s = scalar(val);
-            if (s != null && s !== '') attrs.push({ name: key, value: String(s) });
-        }
-
-        const psets = [], quantities = [];
-        for (const rel of (item['IsDefinedBy'] ?? [])) {
-            const relName = rel['Name']?.value ?? rel['Name'] ?? '';
-            if (Array.isArray(rel['HasProperties'])) {
-                const props = rel['HasProperties'].map(p => ({
-                    name:  p['Name']?.value ?? p['Name'] ?? '',
-                    value: p['NominalValue']?.value ?? p['Value']?.value ?? '',
-                })).filter(p => p.name);
-                if (props.length || relName) psets.push({ name: String(relName), props });
-            } else if (Array.isArray(rel['HasQuantities'])) {
-                const props = rel['HasQuantities'].map(q => ({
-                    name:  q['Name']?.value ?? q['Name'] ?? '',
-                    value: q['LengthValue']?.value ?? q['AreaValue']?.value
-                        ?? q['VolumeValue']?.value ?? q['CountValue']?.value
-                        ?? q['WeightValue']?.value ?? q['Value']?.value ?? '',
-                })).filter(p => p.name);
-                quantities.push({ name: String(relName), props });
-            }
-        }
-
-        let typeName = null;
-        const typeRels = item['IsTypedBy'];
-        if (Array.isArray(typeRels) && typeRels.length) {
-            typeName = typeRels[0]['Name']?.value ?? typeRels[0]['Name'] ?? null;
-        }
-
-        const materials = [];
-        for (const assoc of (item['HasAssociations'] ?? [])) {
-            const mat = assoc['RelatingMaterial'];
-            if (mat) {
-                const n = mat['Name']?.value ?? mat['Name'] ?? null;
-                if (n) materials.push(String(n));
-            }
-        }
-
-        return {
-            type:           (scalar(item['_category']) ?? '').toUpperCase(),
-            name:           scalar(item['Name'])           ?? '',
-            globalId:       scalar(item['GlobalId'])       ?? '',
-            description:    scalar(item['Description'])    ?? '',
-            predefinedType: scalar(item['PredefinedType']) ?? '',
-            attrs, typeName, psets, quantities, materials,
-        };
-    }
-
-    /**
-     * Build a flat search index of all IFCPRODUCT instances across loaded models.
-     * Each entry: { name, globalId, category, localId, modelId }.
-     * Heavy on big models — call once after loadIfc, cache the result in the store.
-     */
-    async buildSearchIndex() {
-        const ifcLoader = this.components.get(OBC.IfcLoader);
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const webIfc    = ifcLoader?.webIfc;
-        if (!webIfc) return [];
-
-        const entries = [];
-        // IFCPRODUCT-rooted categories that should be queryable
-        const QUERY_TYPES = [
-            'IFCWALL','IFCWALLSTANDARDCASE','IFCSLAB','IFCCOLUMN','IFCBEAM',
-            'IFCDOOR','IFCWINDOW','IFCROOF','IFCFOOTING','IFCSTAIR','IFCSTAIRFLIGHT',
-            'IFCPLATE','IFCMEMBER','IFCSPACE','IFCBUILDINGSTOREY','IFCBUILDING','IFCSITE',
-            'IFCPIPESEGMENT','IFCPIPEFITTING','IFCDUCT','IFCDUCTFITTING',
-            'IFCFLOWSEGMENT','IFCFLOWFITTING','IFCFLOWTERMINAL','IFCAIRTERMINAL',
-            'IFCPUMP','IFCVALVE','IFCFURNITURE','IFCBUILDINGELEMENTPROXY',
-            'IFCRAILING','IFCCURTAINWALL',
-        ];
-
-        for (const model of fragments.list.values()) {
-            const modelId = model.modelId;
-            const wid = 0; // web-ifc model id
-            for (const typeName of QUERY_TYPES) {
-                const typeConst = webIfc[typeName];
-                if (!typeConst) continue;
-                let ids;
-                try { ids = webIfc.GetLineIDsWithType(wid, typeConst); } catch { continue; }
-                for (const localId of ids) {
-                    let p;
-                    try { p = webIfc.GetLine(wid, localId, false); } catch { continue; }
-                    if (!p) continue;
-                    entries.push({
-                        name:     p.Name?.value ?? '',
-                        globalId: p.GlobalId?.value ?? '',
-                        category: typeName,
-                        localId,
-                        modelId,
-                    });
-                }
-            }
-        }
-        return entries;
-    }
 
     /**
      * Return the raw web-ifc API and model ID for vector plot extraction.
@@ -1881,6 +1447,8 @@ export class IfcEngine {
 
     dispose() {
         this.camera?.dispose?.();
+        this.annotations?.disableAnnotationMode?.();
+        this.measure?.disableMeasureMode?.();
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

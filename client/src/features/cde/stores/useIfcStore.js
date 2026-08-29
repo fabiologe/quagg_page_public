@@ -60,6 +60,9 @@ async function _loadWithLegacy(repoKey, legacyLsKey) {
 
 export const useIfcStore = defineStore('cde-modell', () => {
   const selectedElement = ref(null);
+  // Fehlertext beim Anlegen eines Merkmalssatzes. Der Store HAELT ihn nur —
+  // gesetzt wird er vom Aufrufer (Sprint I/Stufe 5: die Komponenten sprechen
+  // die viewerApi direkt an, statt ueber hinterlegte Store-Rueckrufe).
   const psetError       = ref(null);
   const modelLoaded     = ref(false);
 
@@ -70,11 +73,6 @@ export const useIfcStore = defineStore('cde-modell', () => {
   const modelList = ref([]);
 
   // Engine actions registered by IfcViewer
-  let _psetHandler    = null;
-  let _storeyHandler  = null;
-  let _zoomHandler    = null;
-  let _zoomCategoryHandler = null;
-  let _boxHandler     = null; // (localId, modelId) → { box: THREE.Box3, offset: THREE.Vector3 }
   let _searchIndex    = ref([]); // populated on model load — [{name, globalId, category, localId, modelId}]
 
   // T2.2: Saved views (camera + visible cats + section)
@@ -457,44 +455,12 @@ export const useIfcStore = defineStore('cde-modell', () => {
     modelList.value = list;
   }
 
-  function registerPsetHandler(fn) {
-    _psetHandler = fn;
-  }
 
-  function registerSpatialHandler(fn) {
-    _storeyHandler = fn;
-  }
-
-  function registerZoomHandler(fn) { _zoomHandler = fn; }
-  function registerZoomCategoryHandler(fn) { _zoomCategoryHandler = fn; }
-  function registerBoxHandler(fn) { _boxHandler = fn; }
-
-  /**
-   * Get bridge-ready data for a selected IFC element.
-   * Returns { box: THREE.Box3, offset: THREE.Vector3, modelId } or null.
-   */
-  async function getElementBridgeData(localId, modelId) {
-    if (!_boxHandler) return null;
-    return await _boxHandler(localId, modelId);
-  }
   function setSearchIndex(entries) { _searchIndex.value = entries; }
   function getSearchIndex() { return _searchIndex.value; }
 
-  async function zoomToElement(localId, modelId) {
-    await _zoomHandler?.(localId, modelId);
-  }
-  async function zoomToCategory(name) {
-    await _zoomCategoryHandler?.(name);
-  }
 
-  async function addPset(psetName, props) {
-    if (!_psetHandler) { psetError.value = 'Kein Viewer verbunden'; return; }
-    await _psetHandler(psetName, props);
-  }
 
-  async function setStoreyVisible(localId, visible, modelId = null) {
-    await _storeyHandler?.(localId, visible, modelId);
-  }
 
   // Ausstehende Debounce-Writes anstoßen, wenn der Tab schließt oder in den
   // Hintergrund geht. visibilitychange feuert früher und zuverlässiger als
@@ -519,13 +485,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     ready,
     setElement, clearElement, setPsetError,
     setSpatialTree, setModelList,
-    registerPsetHandler, registerSpatialHandler,
-    registerZoomHandler, registerZoomCategoryHandler,
-    registerBoxHandler,
     setSearchIndex, getSearchIndex,
-    addPset, setStoreyVisible,
-    zoomToElement, zoomToCategory,
-    getElementBridgeData,
     // T2.2: Saved Views
     savedViews, saveView, deleteSavedView, renameSavedView,
     // T2.4 → Issues (Annotationen mit Status/Zuständigkeit/Kommentaren/Viewpoint)
