@@ -76,11 +76,28 @@ export const useCdeStore = defineStore('cde', () => {
   }
   const ready = _init();
 
+  /**
+   * Das Dokumentregister — eine Wahrheit, nicht zwei.
+   *
+   * Mit Server-Backend gilt `<Projekt>/CDE/manifest.yaml`. Vorher fuehrte der
+   * Viewer daneben eine eigene Liste in `CDE/_repo/…dokumente.json`: dieselben
+   * Dateien, derselbe Ordner, eigene Revisionszaehlung, eigener Status. Ein im
+   * Cockpit auf "Published" gesetzter Plan trug im Export weiter "VORABZUG".
+   *
+   * Ohne Server-Backend (IndexedDB, Arbeit ohne Netz) bleibt die lokale Liste
+   * das Register — dort gibt es kein Manifest, an dem man sich ausrichten
+   * koennte.
+   */
   async function _loadDokumente() {
+    const vomServer = await projectRepo().dokumente();
+    if (Array.isArray(vomServer)) { dokumente.value = vomServer; return; }
     const stored = await projectRepo().get(KEY_DOKUMENTE);
     dokumente.value = Array.isArray(stored) ? stored : [];
   }
   async function _saveDokumente() {
+    // Mit Server-Backend schreibt das Manifest, nicht der Viewer. Eine zweite
+    // Datei danebenzulegen brachte genau die Doppelfuehrung zurueck.
+    if (repo.remote) return;
     await projectRepo().set(KEY_DOKUMENTE, JSON.parse(JSON.stringify(dokumente.value)));
   }
 
@@ -136,8 +153,23 @@ export const useCdeStore = defineStore('cde', () => {
    * derselben IfcProject-GlobalId sind Revisionen desselben Dokuments —
    * eine neue sha256 unter bekannter GlobalId bekommt die nächste Revision.
    */
+  /**
+   * Ein geladenes Modell im Register fuehren.
+   *
+   * Mit Server-Backend wird NICHT blind ein WIP-Eintrag angelegt: die Datei
+   * ist beim Laden ohnehin schon hochgeladen (`repo.setBlob`), also steht sie
+   * im Manifest. Das Register wird nur neu gelesen — Status und Revision
+   * kommen vom Server. Vorher legte der Viewer hier einen zweiten Eintrag mit
+   * `status: 'WIP'` an, und genau der speiste das Wasserzeichen im Export.
+   */
   async function registerModel({ sha256, name, size = 0, projectGlobalId = null }) {
     if (!activeProjectId.value || !sha256) return null;
+
+    if (repo.remote) {
+      await _loadDokumente();
+      return dokumente.value.find(d => d.sha256 === sha256) ?? null;
+    }
+
     let doc = dokumente.value.find(d => d.sha256 === sha256);
     if (doc) {
       doc.name = name ?? doc.name;
@@ -167,6 +199,21 @@ export const useCdeStore = defineStore('cde', () => {
     if (!ISO_STATUS.includes(status)) return false;
     const doc = dokumente.value.find(d => d.sha256 === sha256);
     if (!doc || doc.status === status) return false;
+
+    // Mit Server-Backend fuehrt das Manifest den Status — und das Cockpit
+    // zeigt denselben. Vorher schrieb der Viewer nur in seine eigene Liste,
+    // und die beiden Ansichten desselben Dokuments zeigten Verschiedenes.
+    if (repo.remote) {
+      try {
+        await projectRepo().setzeStatus(sha256, status);
+        await _loadDokumente();
+        return true;
+      } catch (fehler) {
+        console.warn('cde: status am server', fehler?.message ?? fehler);
+        return false;
+      }
+    }
+
     doc.status = status;
     doc.statusHistorie = doc.statusHistorie ?? [];
     doc.statusHistorie.push({ status, von: bearbeiter.value || '—', am: Date.now() });
@@ -174,9 +221,30 @@ export const useCdeStore = defineStore('cde', () => {
     return true;
   }
 
+  /**
+   * Aus dem Register nehmen.
+   *
+   * Mit Server-Backend raeumt der Server auch die Datei beiseite (nach
+   * `CDE/_geloescht/`, nicht geloescht). Vorher strich der Viewer den Eintrag
+   * nur aus seiner eigenen Liste — Manifest und Datei blieben, und beim
+   * naechsten Oeffnen war das Dokument wieder da.
+   *
+   * @returns {Promise<boolean>} false, wenn der Server abgelehnt hat
+   */
   async function removeDokument(sha256) {
+    if (repo.remote) {
+      try {
+        await projectRepo().entferne(sha256);
+        await _loadDokumente();
+        return true;
+      } catch (fehler) {
+        console.warn('cde: entfernen am server', fehler?.message ?? fehler);
+        return false;
+      }
+    }
     dokumente.value = dokumente.value.filter(d => d.sha256 !== sha256);
     await _saveDokumente();
+    return true;
   }
 
   return {

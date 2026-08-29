@@ -336,6 +336,10 @@ async function projektAusCockpit() {
     } else if (st.name && (projekt.name !== st.name || projekt.bauherr !== (st.bauherr || ''))) {
       await cde.updateProject(projekt.id, { name: st.name, bauherr: st.bauherr || '', lph: st.lph || projekt.lph });
     }
+    // setActiveProject laedt das Dokumentregister mit — bei aktivem
+    // RemoteBackend aus dem Manifest des Projektordners. `register.dokumente`
+    // von oben wird hier bewusst NICHT durchgereicht: es gaebe wieder zwei
+    // Wege zur selben Liste, und genau daran ist sie auseinandergelaufen.
     await cde.setActiveProject(projekt.id);
     const datei = route.query.datei;
     if (datei) await viewerRef.value?.openFromProjectPath?.(String(datei));

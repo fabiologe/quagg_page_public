@@ -177,6 +177,217 @@ export class IndexedDbBackend {
     }
 }
 
+// ── Backend: Remote (Stufe C) — Projekt-Repository im Projektordner ─────────
+//
+// Schlüssel landen als JSON-Dateien in <Projekt>/CDE/_repo/, Modell-Blobs sind
+// die Dateien des CDE-Registers (manifest.yaml). Ein Lesecache hält alle
+// Schlüssel; Schreiben geht sofort an den Server (Fehler nur ins Log — der
+// Viewer darf am Netz nicht hängen bleiben).
+
+const REMOTE_MODEL_PREFIX = 'model:';
+
+/**
+ * Ein Manifest-Eintrag des Servers in der Form, die der Viewer fuehrt.
+ *
+ * Die beiden Register benutzten unterschiedliche Feldnamen (`datei`/`name`,
+ * `groesse`/`size`) und unterschiedliche Zeitformate (ISO-String gegen
+ * ms-Epoche). Hier steht die Uebersetzung EINMAL — frei exportiert, damit sie
+ * ohne Netz pruefbar ist.
+ */
+export function dokumentAusManifest(d) {
+    return {
+        sha256:          d.sha256,
+        name:            d.datei,
+        size:            d.groesse ?? 0,
+        status:          d.status ?? 'WIP',
+        revision:        d.revision ?? 1,
+        art:             d.art ?? 'sonstiges',
+        basisname:       d.basisname ?? null,
+        von:             d.von ?? null,
+        vorhanden:       d.vorhanden !== false,
+        projectGlobalId: d.projekt_global_id ?? null,
+        // Der Viewer rechnet in ms-Epoche (Date.now()), das Manifest schreibt
+        // ISO-Strings. Eine Form gewinnt, sonst sortiert das Register falsch.
+        addedAt:         Date.parse(d.hochgeladen_am) || 0,
+        statusHistorie:  (d.status_historie || []).map(h => ({
+            status: h.status, von: h.von ?? '—', am: Date.parse(h.am) || 0,
+        })),
+    };
+}
+
+export class RemoteBackend {
+    /**
+     * @param {number} projektId  Projektnummer (Ordnername)
+     * @param {object} api        Axios-Instanz (Default: @/services/api, lazy)
+     */
+    constructor(projektId, api = null) {
+        this.projektId = Number(projektId);
+        this._api = api;
+        this._cache = null;      // Map fullKey -> value
+        this._register = null;   // { basis, dokumente }
+    }
+
+    async _client() {
+        if (!this._api) this._api = (await import('@/services/api')).default;
+        return this._api;
+    }
+
+    _kurz(fullKey) {
+        return fullKey.startsWith(PREFIX) ? fullKey.slice(PREFIX.length) : fullKey;
+    }
+
+    async _laden() {
+        if (this._cache) return this._cache;
+        const api = await this._client();
+        const daten = (await api.get(`/projekte/${this.projektId}/cde/repo`)).data || {};
+        this._cache = new Map(Object.entries(daten).map(([k, v]) => [PREFIX + k, v]));
+        return this._cache;
+    }
+
+    async get(fullKey) {
+        try {
+            const c = await this._laden();
+            return c.has(fullKey) ? c.get(fullKey) : null;
+        } catch (e) { console.warn('[CDE remote] get', e?.message ?? e); return null; }
+    }
+    async set(fullKey, value) {
+        try {
+            const c = await this._laden();
+            c.set(fullKey, value);
+            const api = await this._client();
+            await api.put(`/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`, value);
+            return true;
+        } catch (e) { console.warn('[CDE remote] set', e?.message ?? e); return false; }
+    }
+    async delete(fullKey) {
+        try {
+            const c = await this._laden();
+            c.delete(fullKey);
+            const api = await this._client();
+            await api.delete(`/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`);
+            return true;
+        } catch (e) { console.warn('[CDE remote] delete', e?.message ?? e); return false; }
+    }
+    async listKeys(fullPrefix) {
+        try {
+            const c = await this._laden();
+            return [...c.keys()].filter(k => k.startsWith(fullPrefix));
+        } catch { return []; }
+    }
+
+    // ── Blobs = Dateien des CDE-Registers ───────────────────────────────────
+
+    async _registerLaden(frisch = false) {
+        if (this._register && !frisch) return this._register;
+        const api = await this._client();
+        this._register = (await api.get(`/projekte/${this.projektId}/cde`)).data;
+        return this._register;
+    }
+    _shaAus(fullKey) {
+        const kurz = this._kurz(fullKey);
+        const i = kurz.indexOf(REMOTE_MODEL_PREFIX);
+        return i < 0 ? null : kurz.slice(i + REMOTE_MODEL_PREFIX.length);
+    }
+    _zeile(d, scopeKey) {
+        return {
+            key: `${scopeKey}${REMOTE_MODEL_PREFIX}${d.sha256}`,
+            meta: dokumentAusManifest(d),
+            size: d.groesse,
+        };
+    }
+
+    /**
+     * Das Dokumentregister des Projekts, in der Form des Viewers.
+     *
+     * Bis hierher fuehrte der Viewer eine ZWEITE Liste (`_repo/…dokumente.json`)
+     * neben dem Manifest — im selben Ordner, ueber dieselben Dateien, mit
+     * eigener Revisionszaehlung und eigenem Status. Ein im Cockpit auf
+     * "Published" gesetzter Plan trug im Export weiter "VORABZUG".
+     * Bei aktivem RemoteBackend ist das Manifest die Wahrheit.
+     */
+    async dokumente() {
+        const reg = await this._registerLaden(true);
+        return (reg.dokumente || []).map(dokumentAusManifest);
+    }
+
+    /** Status am Server setzen (PUT …/cde/{sha}/status). */
+    async setzeStatus(sha256, status) {
+        const api = await this._client();
+        await api.put(`/projekte/${this.projektId}/cde/${sha256}/status`, { status });
+        this._register = null;
+    }
+
+    /** Eintrag aus dem Register nehmen (DELETE …/cde/{sha}). */
+    async entferne(sha256) {
+        const api = await this._client();
+        await api.delete(`/projekte/${this.projektId}/cde/${sha256}`);
+        this._register = null;
+    }
+    async listBlobs(fullPrefix) {
+        try {
+            const reg = await this._registerLaden(true);
+            const scopeKey = fullPrefix.slice(0, fullPrefix.indexOf(REMOTE_MODEL_PREFIX) >= 0
+                ? fullPrefix.indexOf(REMOTE_MODEL_PREFIX) : fullPrefix.length);
+            return (reg.dokumente || [])
+                .filter(d => d.art === 'modell' && d.vorhanden !== false)
+                .map(d => this._zeile(d, scopeKey))
+                .filter(r => r.key.startsWith(fullPrefix));
+        } catch (e) { console.warn('[CDE remote] listBlobs', e?.message ?? e); return []; }
+    }
+    async getBlob(fullKey) {
+        try {
+            const sha = this._shaAus(fullKey);
+            const reg = await this._registerLaden();
+            const d = (reg.dokumente || []).find(x => x.sha256 === sha);
+            if (!d) return null;
+            const api = await this._client();
+            const antwort = await api.get('/projects/file', { params: { path: `${reg.basis}/${d.pfad}` }, responseType: 'blob' });
+            return { blob: antwort.data, meta: this._zeile(d, '').meta };
+        } catch (e) { console.warn('[CDE remote] getBlob', e?.message ?? e); return null; }
+    }
+    /**
+     * Neues Modell -> Upload ins CDE-Register (WIP); bekanntes (gleiche sha) -> nichts zu tun.
+     *
+     * Der Server weist einen zweiten Upload GLEICHEN NAMENS mit 422 ab, prueft
+     * dabei aber den Namen, nicht die Pruefsumme. Bisher verschwand dieser Fall
+     * in einem console.warn — der Upload scheiterte, das Modell landete
+     * trotzdem im lokalen Register, und die beiden liefen auseinander. Der
+     * Fall wird jetzt durchgereicht, damit der Viewer ihn zeigen kann.
+     */
+    async setBlob(fullKey, blob, meta = {}) {
+        const sha = this._shaAus(fullKey);
+        let reg;
+        try { reg = await this._registerLaden(true); }
+        catch (e) { console.warn('[CDE remote] setBlob/register', e?.message ?? e); return false; }
+        if ((reg.dokumente || []).some(x => x.sha256 === sha)) return true;
+
+        const api = await this._client();
+        const form = new FormData();
+        form.append('datei', blob, meta.name || 'modell.ifc');
+        try {
+            await api.post(`/projekte/${this.projektId}/cde/upload`, form, {
+                // Die IFCPROJECT-GlobalId wandert mit ins Manifest. Sie zaehlt
+                // keine Revisionen (das tut der Dateiname), sagt aber, welche
+                // Dateien dasselbe Ursprungsmodell meinen — Grundlage fuer den
+                // spaeteren Modellvergleich.
+                params: { status: 'WIP', projekt_global_id: meta.projectGlobalId ?? undefined },
+            });
+            this._register = null;
+            return true;
+        } catch (e) {
+            if (e?.response?.status === 422) {
+                const fehler = new Error(e.response.data?.detail || 'Datei gleichen Namens liegt schon im Projekt.');
+                fehler.name = 'CdeUploadAbgelehnt';
+                throw fehler;
+            }
+            console.warn('[CDE remote] setBlob', e?.message ?? e);
+            return false;
+        }
+    }
+    /** Projektdateien werden aus dem Viewer nie gelöscht — Status im Cockpit pflegen. */
+    async deleteBlob() { return false; }
+}
+
 // ── Fassade ─────────────────────────────────────────────────────────────────
 
 export class RepoFacade {
@@ -233,9 +444,48 @@ export class RepoFacade {
         return rows.map(r => ({ ...r, key: r.key.slice(scopePrefixFull.length) }));
     }
 
+    // ── Dokumentregister (nur mit Server-Backend) ───────────────────────────
+    //
+    // Diese drei greifen bewusst NICHT auf den Scope zu: das Register gehoert
+    // dem Projektordner, nicht einem Namensraum darin. Ohne Server-Backend
+    // gibt es kein Register — dann fuehrt der Store seine eigene Liste weiter
+    // (Offline-Fall, IndexedDB).
+
+    /** @returns {Promise<Array|null>} null, wenn kein Server-Register da ist */
+    async dokumente() {
+        return this._backend.dokumente ? this._backend.dokumente() : null;
+    }
+
+    /** @returns {Promise<boolean>} false, wenn das Backend keinen Status kennt */
+    async setzeStatus(sha256, status) {
+        if (!this._backend.setzeStatus) return false;
+        await this._backend.setzeStatus(sha256, status);
+        return true;
+    }
+
+    /** @returns {Promise<boolean>} false, wenn das Backend nichts entfernen kann */
+    async entferne(sha256) {
+        if (!this._backend.entferne) return false;
+        await this._backend.entferne(sha256);
+        return true;
+    }
+
     /** Geschwister-Fassade unter anderem Scope (z. B. pro Projekt). */
     withScope(scope) {
         return new RepoFacade(scope, this._backend);
+    }
+
+    /**
+     * Backend tauschen (Stufe C): VOR der Store-Initialisierung aufrufen —
+     * bereits geladene Stores halten sonst den Stand des alten Backends.
+     */
+    setBackend(backend) {
+        this._backend = backend ?? _defaultBackend();
+    }
+
+    /** true, wenn ein Projekt-Repository auf dem Server aktiv ist. */
+    get remote() {
+        return this._backend instanceof RemoteBackend;
     }
 }
 
@@ -251,7 +501,7 @@ function _defaultBackend() {
 }
 
 /**
- * Globale Default-Instanz. Sobald Projekt-Container existieren (Stufe C),
- * wechseln die meisten Konsumenten auf `repo.withScope(projectId)`.
+ * Globale Default-Instanz. Mit `?projekt=<id>` (Cockpit-Deep-Link) schaltet
+ * CdeView sie per `repo.setBackend(new RemoteBackend(id))` auf den Projektordner.
  */
 export const repo = new RepoFacade();

@@ -55,6 +55,19 @@
         <!-- Full-canvas loading overlay — hides the half-tessellated frames during initial load -->
         <IfcLoadOverlay :visible="loading" />
 
+        <!-- Ablage-Meldung: der Server kann einen Upload ablehnen (Datei
+             gleichen Namens). Das darf nicht in einem console.warn verschwinden
+             — sonst steht das Modell im Viewer, aber nicht im Projekt. -->
+        <Transition name="fade">
+          <div v-if="ablageHinweis" class="ablage-hinweis">
+            <CdeIcon name="warn" :size="14" />
+            <span>{{ ablageHinweis }}</span>
+            <button class="ablage-hinweis-zu" @click="ablageHinweis = null" title="Ausblenden" aria-label="Ausblenden">
+              <CdeIcon name="close" :size="12" />
+            </button>
+          </div>
+        </Transition>
+
         <!-- B4: Zuletzt geöffnete Modelle (lokale Ablage) — nur im Leerzustand -->
         <div v-if="!modelList.length && !loading && recentModels.length" class="recent-panel">
           <div class="recent-title">Zuletzt geöffnete Modelle</div>
@@ -357,6 +370,8 @@ const modelList = ref([]); // [{modelId, name}]
 // Stabile Modell-Identität pro geladenem Modell (B3) + lokale Ablage (B4)
 const _modelIdentity = new Map(); // modelId → { key, sha256, projectGlobalId, name }
 const recentModels = ref([]);     // [{ key, meta, size }] aus repo.listBlobs('model:')
+/** Meldung der Projekt-Ablage (z. B. abgelehnter Upload). null = nichts zu sagen. */
+const ablageHinweis = ref(null);
 
 // Coordinate display mode
 const coordMode = ref('viewer'); // 'viewer' | 'ifc'
@@ -686,6 +701,14 @@ async function _persistModelBlob(bytes, name, identity) {
     }
     await _refreshRecentModels();
   } catch (e) {
+    // Der Server lehnt einen zweiten Upload gleichen Namens mit 422 ab. Das
+    // ist kein technischer Fehler, sondern eine Aussage an den Nutzer — sonst
+    // steht das Modell im Viewer, aber nicht im Projektregister, und die
+    // beiden laufen wieder auseinander.
+    if (e?.name === 'CdeUploadAbgelehnt') {
+      ablageHinweis.value = `Nicht ins Projekt übernommen: ${e.message}`;
+      return;
+    }
     console.warn('[CDE] Lokale Modell-Ablage fehlgeschlagen:', e?.message ?? e);
   }
 }
@@ -1420,6 +1443,31 @@ async function onMouseUp(e) {
   z-index: 21;
 }
 .measure-clear:hover { color: var(--cde-danger); border-color: var(--cde-danger); }
+
+.ablage-hinweis {
+  position: absolute;
+  top: 3.6rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.45rem;
+  max-width: min(90%, 34rem);
+  padding: 0.45rem 0.5rem 0.45rem 0.7rem;
+  background: var(--cde-float);
+  border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
+  border-left: 3px solid var(--cde-warn);
+  border-radius: var(--cde-radius);
+  box-shadow: var(--cde-shadow-float);
+  color: var(--cde-text-bright);
+  font-size: var(--cde-font-sm);
+  z-index: var(--cde-z-hud);
+}
+.ablage-hinweis .cde-icon { color: var(--cde-warn); }
+.ablage-hinweis-zu {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: auto; padding: 0.15rem;
+  background: none; border: none; border-radius: 3px;
+  color: var(--cde-text-mute); cursor: pointer;
+}
+.ablage-hinweis-zu:hover { color: var(--cde-text-bright); }
+.ablage-hinweis-zu .cde-icon { color: inherit; }
 
 .measure-toast {
   display: flex; align-items: center; gap: 0.35rem;
