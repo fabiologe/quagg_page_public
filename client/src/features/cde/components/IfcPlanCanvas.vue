@@ -3,7 +3,7 @@
     <canvas
       ref="cvRef"
       class="plan-canvas"
-      :class="{ greift: greift }"
+      :class="{ greift: greift, misst: messen }"
       @pointerdown="onZeigerAb"
       @pointermove="onZeigerBewegt"
       @pointerup="onZeigerAuf"
@@ -31,6 +31,13 @@
       <span v-if="rechnet" class="hud-status">
         <CdeIcon name="refresh" :size="12" class="dreht" /> Plan wird aufgebaut…
       </span>
+    </div>
+
+    <!-- Bemaßung (AP-10): der Hinweis sitzt am Blattrand, nicht auf dem Blatt —
+         er gehört zur Bedienung, nicht zur Zeichnung. -->
+    <div v-if="messen" class="plan-messhinweis">
+      <CdeIcon name="measure" :size="13" />
+      <span>{{ massPunkt ? 'Zweiten Punkt setzen' : 'Ersten Punkt setzen' }} — Esc beendet</span>
     </div>
 
     <div v-if="ersterAufbau" class="plan-schleier">
@@ -65,13 +72,13 @@ import { useViewerApi } from '../composables/viewerApi.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
-import { drawVectorPlan } from '../services/IfcVectorPlotter.js';
+import { drawVectorPlan, makeWorldTransform } from '../services/IfcVectorPlotter.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import { _drawTitleBlock, _drawWatermark } from '../services/IfcPdfExporter.js';
 import { erstellePlanInhalt } from '../services/PlanContent.js';
 import {
   RAND_MM, massstabSchritt, begrenzeMitte, zentriereAufBounds,
-  passendenMassstab, zoomFuerBlatt,
+  passendenMassstab, zoomFuerBlatt, bildschirmZuMm,
 } from '../services/PlanViewport.js';
 
 const props = defineProps({
@@ -91,6 +98,19 @@ const cvRef = ref(null);
 const rechnet = ref(false);
 const ersterAufbau = ref(false);
 const greift = ref(false);
+/** Bemaßungsmodus (AP-10) — von außen über `messenUmschalten` geschaltet. */
+const messen = ref(false);
+/** Erster gesetzter Punkt, solange die Kette offen ist. */
+const massPunkt = ref(null);
+/**
+ * Das Logo als fertiges Bild.
+ *
+ * `ctx.drawImage` kann mit einer Data-URL nichts anfangen, und Zeichnen ist
+ * hier synchron — die URL muss also vorher aufgelöst sein. Vorher stand im
+ * Exporter zusätzlich die jsPDF-Altform von `addImage`, wodurch am Bildschirm
+ * ohnehin nichts ankam.
+ */
+const logoBild = ref(null);
 
 let inhalt = null;          // PlanContent-Instanz
 let letzterInhalt = null;
@@ -111,7 +131,16 @@ function sammelOptionen() {
     viewDir: 'top',
     slopeHatch: o.slopeHatch ?? null,
     contours: o.contours ?? null,
-    axisLabels: o.axisLabels ?? null,
+    // Die Haltungsbeschriftung liest die Achsen direkt aus web-ifc — dafür
+    // braucht sie die Instanzen und den Koordinaten-Versatz. Beides weiß nur
+    // die Engine, deshalb wird es hier ergänzt und nicht im Store geführt.
+    axisLabels: o.axisLabels
+      ? {
+          ...o.axisLabels,
+          apis:         o.axisLabels.apis         ?? api.getWebIfcAPIs?.()      ?? null,
+          coordOffsets: o.axisLabels.coordOffsets ?? api.getAllCoordOffsets?.() ?? null,
+        }
+      : null,
     hatch: !!o.hatch,
     footprints: o.footprints !== false,
     rules: o.rules ?? [],
@@ -182,17 +211,21 @@ function zeichne() {
       styleToLegacy: o.styleToLegacy ?? styleToLegacy,
       showLabels: o.showLabels !== false,
       labelOpts: o.labelOpts,
-      ifcGridAxes: o.ifcGridAxes ?? api.getIfcGridAxes?.() ?? null,
+      ifcGridAxes: o.ifcGrids ? (o.ifcGridAxes ?? api.getIfcGridAxes?.() ?? null) : null,
       annotations: o.annotations ?? [],
       measurements: o.measurements ?? [],
-      utmGrid: o.utmGrid,
+      dimensions: o.dimensions ?? [],
+      utmGrid: o.utmGrid && {
+        ...o.utmGrid,
+        offset: o.utmGrid.offset ?? Object.values(api.getAllCoordOffsets?.() ?? {})[0] ?? { x: 0, y: 0, z: 0 },
+      },
       northAngle: o.northAngle ?? 0,
       scaleBar: o.scaleBar !== false,
       scaleRatio: ansicht.massstab,
     });
   }
 
-  _drawTitleBlock(doc, dw, dh, props.titleBlock ?? {}, props.logo);
+  _drawTitleBlock(doc, dw, dh, props.titleBlock ?? {}, logoBild.value);
   doc.beende();
 
   // Blattkante — der einzige Strich, den es im PDF nicht gibt: er trennt das
@@ -214,7 +247,42 @@ function baldZeichnen() {
 let zieht = false;
 let zugStart = { x: 0, y: 0, mx: 0, mz: 0 };
 
+/**
+ * Bildschirmpunkt → Weltpunkt (Welt-XZ).
+ *
+ * Der Rückweg zur Zeichnung: Pixel → Papier-mm (über den Blattversatz) →
+ * Welt. `makeWorldTransform` ist genau dafür gebaut und durch
+ * `test/paperTransform.test.js` als exakte Umkehrung abgesichert — deshalb
+ * wird hier nichts nachgerechnet.
+ */
+function zeigerZuWelt(ev) {
+  const cv = cvRef.value;
+  if (!cv) return null;
+  const welt = makeWorldTransform(ansicht.frustum, RAND_MM, ansicht.flaeche.dw, ansicht.flaeche.dh);
+  if (!welt) return null;
+
+  const kasten = cv.getBoundingClientRect();
+  const px = ansicht.pxProMm;
+  const { blattW, blattH } = ansicht.flaeche;
+  const versatz = {
+    x: (bereichPx.w - blattW * px) / 2,
+    y: (bereichPx.h - blattH * px) / 2,
+  };
+  const mm = bildschirmZuMm(ev.clientX - kasten.left, ev.clientY - kasten.top, { pxProMm: px, versatz });
+  return { x: welt.zuX(mm.x), z: welt.zuZ(mm.y) };
+}
+
 function onZeigerAb(ev) {
+  // Im Bemaßungsmodus setzt der Klick Punkte, statt das Blatt zu schwenken.
+  if (messen.value) {
+    const punkt = zeigerZuWelt(ev);
+    if (!punkt) return;
+    if (!massPunkt.value) { massPunkt.value = punkt; return; }
+    ifc.addPlanDimension(massPunkt.value, punkt);
+    massPunkt.value = null;
+    baldZeichnen();
+    return;
+  }
   zieht = true;
   greift.value = true;
   cvRef.value?.setPointerCapture?.(ev.pointerId);
@@ -258,6 +326,16 @@ function massstabSchrittSetzen(richtung) {
   ansicht.setzeMassstab(neu);
 }
 
+/** Bemaßungsmodus schalten. Beim Verlassen fällt ein halb gesetztes Maß weg. */
+function messenUmschalten(an = null) {
+  messen.value = an === null ? !messen.value : !!an;
+  if (!messen.value) massPunkt.value = null;
+}
+
+function onTaste(e) {
+  if (e.key === 'Escape' && messen.value) { messenUmschalten(false); e.stopPropagation(); }
+}
+
 /** Blattlage und Maßstab so setzen, dass das Modell hineinpasst. */
 function passendEinstellen() {
   const b = api.getModelBoundsXZ?.();
@@ -287,12 +365,28 @@ onMounted(async () => {
   // Beim ersten Öffnen auf das Modell einpassen, sonst schaut man auf den
   // Ursprung — der bei georeferenzierten Modellen Kilometer entfernt liegt.
   passendEinstellen();
+  document.addEventListener('keydown', onTaste);
   await inhalteHolen();
 });
+
+/**
+ * Data-URL des Logos zu einem zeichenbaren Bild auflösen.
+ *
+ * `immediate`, weil das Logo beim ersten Zeichnen schon dastehen soll; das
+ * Neuzeichnen stößt der Ladevorgang selbst an.
+ */
+watch(() => props.logo, (url) => {
+  if (!url) { logoBild.value = null; baldZeichnen(); return; }
+  const bild = new Image();
+  bild.onload = () => { logoBild.value = bild; baldZeichnen(); };
+  bild.onerror = () => { logoBild.value = null; };
+  bild.src = url;
+}, { immediate: true });
 
 onBeforeUnmount(() => {
   ro?.disconnect();
   if (rafId) cancelAnimationFrame(rafId);
+  document.removeEventListener('keydown', onTaste);
 });
 
 // Inhalte neu sammeln, wenn sich Maßstab oder Zeichenoptionen ändern.
@@ -301,7 +395,11 @@ watch(() => [ansicht.massstab, JSON.stringify(props.optionen ?? {})], inhalteHol
 // Reines Neuzeichnen: Blattwechsel, Schwenken, Lupe, Schriftfeld.
 watch(() => [
   ansicht.format, ansicht.ausrichtung, ansicht.pxProMm,
-  ansicht.mitte.x, ansicht.mitte.z, JSON.stringify(props.titleBlock ?? {}), props.logo,
+  ansicht.mitte.x, ansicht.mitte.z, JSON.stringify(props.titleBlock ?? {}),
+  // Bemaßung: reines Zeichnen. Sie gehört bewusst NICHT in die
+  // Inhalts-Beobachtung darüber — dort würde jedes gesetzte Maß die teure
+  // Sammlung von Umrissen, Gelände und Achsen neu anwerfen.
+  ifc.planDimensions.length,
 ], baldZeichnen);
 
 // Modellwechsel entwertet alles.
@@ -315,12 +413,32 @@ watch(() => ifc.modelList?.length, () => {
 defineExpose({
   /** Der Export nimmt exakt das Frustum, das gerade auf dem Schirm steht. */
   frustum: () => ansicht.frustum,
+  messenUmschalten,
+  misstGerade: () => messen.value,
   neuAufbauen: (grund = 'alles') => { inhalt?.entwerte(grund); return inhalteHolen(); },
   passendEinstellen,
 });
 </script>
 
 <style scoped>
+.plan-messhinweis {
+  position: absolute;
+  top: 0.6rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--cde-float);
+  border: 1px solid var(--cde-accent-line);
+  border-radius: var(--cde-radius);
+  box-shadow: var(--cde-shadow-float);
+  color: var(--cde-text-bright);
+  font-size: var(--cde-font-sm);
+  pointer-events: none;
+  z-index: var(--cde-z-hud);
+}
+.plan-messhinweis .cde-icon { color: var(--cde-accent); }
+
+.plan-canvas.misst { cursor: crosshair; }
+
 .plan-host {
   position: absolute; inset: 0;
   overflow: hidden;

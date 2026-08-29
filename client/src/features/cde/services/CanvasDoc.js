@@ -159,16 +159,26 @@ export function erstelleCanvasDoc(ctx, { pxProMm, minStrichPx = 1 } = {}) {
         },
 
         // ── Blatt-Primitive (Plankopf, Wasserzeichen) ───────────────────────
+        /**
+         * Bild aufs Blatt. Signatur wie jsPDF in seiner LANGEN Form:
+         * (bild, format, x, y, w, h). Das Format ignoriert der Canvas —
+         * es steht nur da, damit Aufrufer nicht zwei Formen kennen muessen.
+         *
+         * `bild` muss etwas Zeichenbares sein (HTMLImageElement, ImageBitmap,
+         * Canvas). Eine Data-URL kann `drawImage` NICHT — sie muesste erst
+         * geladen werden, und Zeichnen ist hier synchron. Der Aufrufer loest
+         * sie deshalb vorher auf (siehe IfcPlanCanvas).
+         */
         addImage(bild, _format, x, y, w, h) {
             unterbrich();
-            if (!bild) return;
+            if (!bild || typeof bild === 'string') return;
             try {
                 ctx.save();
                 ctx.globalAlpha = deckkraft;
                 ctx.drawImage(bild, s(x), s(y), s(w), s(h));
                 ctx.restore();
             } catch {
-                // Ein noch nicht geladenes Bild darf den Plan nicht abbrechen.
+                // Ein noch nicht fertig geladenes Bild darf den Plan nicht abbrechen.
             }
         },
 

@@ -1,27 +1,16 @@
 <template>
-  <component
-    :is="standalone ? 'div' : DraggableModal"
-    ref="modalRef"
-    :class="standalone ? 'standalone-shell' : null"
-    v-bind="standalone ? {} : {
-      isOpen: true,
-      initialWidth: '1000px',
-      initialHeight: '700px',
-      initialTop: '80px',
-      initialLeft: 'center',
-    }"
-    @close="emit('close')"
-  >
+  <!-- Sprint I/AP-11: Der Viewer war wahlweise in ein geliehenes
+       DraggableModal (aus isyifc) gehuellt — ein Weg, den seit Sprint A
+       niemand mehr nahm: die CdeView, sein einziger Aufrufer, setzt
+       `standalone` fest. Mit dem Zweig faellt der LETZTE feature-fremde
+       Import der CDE. -->
+  <div class="standalone-shell">
     <div class="viewer-wrapper">
 
       <!-- ── Window chrome ── -->
       <div class="viewer-header">
         <span class="header-title"><CdeIcon name="bim" :size="14" /> That Open Engine – IFC Viewer</span>
         <div class="header-controls">
-          <template v-if="!standalone">
-            <button class="hdr-btn" @click="modalRef?.toggleMinimize()" title="Minimieren">_</button>
-            <button class="hdr-btn" @click="modalRef?.toggleMaximize()" title="Vollbild">□</button>
-          </template>
           <button class="hdr-btn hdr-close" @click="emit('close')" title="Schließen" aria-label="Schließen">
             <CdeIcon name="close" :size="13" />
           </button>
@@ -263,14 +252,6 @@
 
       </div>
 
-      <!-- PDF Export Modal — teleported to body to escape z-index stacking context -->
-      <Teleport to="body">
-        <IfcPdfExportModal
-          v-if="showPdfExport"
-          @close="showPdfExport = false"
-        />
-      </Teleport>
-
       <!-- Planungs-Cockpit lebt seit Sprint U in der rechten Leiste (CdeView) -->
 
       <CdeCommandPalette
@@ -283,12 +264,11 @@
         <IfcShortcutsOverlay :open="showShortcuts" @close="showShortcuts = false" />
       </Teleport>
     </div>
-  </component>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
-import DraggableModal from '@/features/isyifc/components/common/DraggableModal.vue';
 import { IfcEngine }            from '../services/IfcEngine.js';
 import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -300,7 +280,6 @@ import IfcLayerPanel      from './IfcLayerPanel.vue';
 import CdeIcon            from './ui/CdeIcon.vue';
 import CdeCommandPalette  from './ui/CdeCommandPalette.vue';
 import CdeHudLayer        from './CdeHudLayer.vue';
-import IfcPdfExportModal  from './IfcPdfExportModal.vue';
 import IfcLoadOverlay     from './IfcLoadOverlay.vue';
 import IfcShortcutsOverlay from './IfcShortcutsOverlay.vue';
 import IfcStoreyNav        from './IfcStoreyNav.vue';
@@ -322,12 +301,9 @@ const cmds = usePaletteCommands();
 
 defineProps({
   propertiesOpen: { type: Boolean, default: false },
-  // true = Vollbild-Seite (Route /cde), false = DraggableModal (ToolsDashboard-Altpfad)
-  standalone:     { type: Boolean, default: false },
 });
 
 // ── refs ────────────────────────────────────────────────────────────────────
-const modalRef    = ref(null);
 const canvasRef   = ref(null);
 
 const engine      = shallowRef(null);
@@ -353,7 +329,6 @@ const sectionMode     = ref('translate'); // 'translate' | 'rotate'
 const sectionPosition = ref(null); // { x, y, z } from engine
 
 // PDF export
-const showPdfExport = ref(false);
 const showPalette   = ref(false);
 const paletteNurElemente = ref(false);
 const showShortcuts = ref(false);
@@ -445,8 +420,10 @@ const toolbarItems = computed(() => [
     active: coordMode.value === 'ifc',
     action: () => { coordMode.value = coordMode.value === 'viewer' ? 'ifc' : 'viewer'; } },
   { divider: true },
-  { id: 'export', icon: 'export', label: 'Export', title: 'Plan exportieren (PDF/DXF/Profile)',
-    active: showPdfExport.value, action: () => { showPdfExport.value = !showPdfExport.value; } },
+  { id: 'plan', icon: 'view-top', label: 'Plan', title: 'Planinhalt und Ausgabe (PDF, DXF, Profile)',
+    active: panels.isOpen('plan'), action: () => panels.toggle('plan') },
+  { id: 'blatt', icon: 'snapshot', label: 'Blatt', title: 'Diese 3D-Ansicht als Bild auf ein Blatt (PDF)',
+    action: () => ansichtAufsBlatt() },
   { id: 'cockpit', icon: 'cockpit', label: 'Planung', title: 'Planungs-Cockpit (Flächen, Kosten, Qualität)',
     active: panels.isOpen('cockpit'), action: () => panels.toggle('cockpit') },
   { divider: true },
@@ -466,23 +443,11 @@ const toolbarItems = computed(() => [
 // Funktions-Props. Closures greifen zur Aufrufzeit auf engine.value zu.
 provideViewerApi({
   // Snapshots & Ansichten
-  getSnapshot:          () => engine.value?.getCanvasSnapshot(3),
-  onViewTop:            () => engine.value?.viewTop(),
-  onViewFront:          () => engine.value?.viewFront(),
-  onViewSide:           () => engine.value?.viewSide(),
   saveRenderState:      () => engine.value?.saveRenderState(),
   restoreRenderState:   (s) => engine.value?.restoreRenderState(s),
   applyLayerStyle:      (style) => applyLayerStyle(style, engine.value),
-  getScaleSnapshot:     (s, dw, dh, dir, px, pz) => engine.value?.getScaleSnapshot(s, dw, dh, dir, 10, px ?? 0, pz ?? 0),
-  truckCamera:          (dx, dy) => engine.value?.truckCamera(dx, dy),
   // Szene / Kamera
-  getCamera:            () => engine.value?._getWorld()?.camera?.three ?? null,
   getScene:             () => engine.value?._getWorld()?.scene?.three ?? null,
-  getPlotFrustum:       () => engine.value?.getLastPlotFrustum(),
-  getMainScene:         () => engine.value?.getMainScene(),
-  getModelCenterY:      () => engine.value?.getModelCenterY() ?? 0,
-  getCameraTarget:      () => engine.value?.getCameraTarget() ?? { x: 0, y: 0, z: 0 },
-  renderToCanvas:       (cv, cam) => engine.value?.renderToCanvas(cv, cam) ?? false,
   // Modelldaten
   getCategoryGroups:    () => engine.value?.getCategoryGroups() ?? [],
   getFragmentsList:     () => engine.value?.getFragmentsList() ?? new Map(),
@@ -494,9 +459,6 @@ provideViewerApi({
   getIfcGridAxes:       () => engine.value?.getIfcGridAxes() ?? [],
   // Schnitt & Overlays
   getSectionCutPlane:   () => engine.value?.getSectionCutPlane(),
-  getClippingPlanes:    () => engine.value?.getClippingPlanes() ?? [],
-  withSectionVisualsHidden: (fn) => engine.value?.withSectionVisualsHidden(fn),
-  getOverviewSnapshot:  (w, h) => engine.value?.getOverviewSnapshot(w, h),
   getMeasurements:      () => measurements.value,
   // Interaktion
   zoomToElement:        (modelId, localId) => engine.value?.zoomToElement(modelId, localId),
@@ -786,6 +748,19 @@ defineExpose({
   captureViewpoint: erfasseViewpoint,
   toggleAnnotationMode: () => toggleAnnotationMode(),
   /**
+   * Messungen und Modell-Kennung fuer die CdeView.
+   *
+   * Sie liegen auch in der `viewerApi`, aber die ist fuer Kinder gedacht, die
+   * IM Viewer haengen. Die CdeView ist sein Elternteil und kommt ueber die
+   * Komponentenreferenz heran — kein zweiter Weg zur selben Sache, sondern
+   * die passende Richtung.
+   */
+  messungen: () => measurements.value,
+  geladeneModellSha: () => {
+    const first = engine.value?.getModelList()?.[0];
+    return first ? (_modelIdentity.get(first.modelId)?.sha256 ?? null) : null;
+  },
+  /**
    * Der Pin-Modus wird als REF herausgegeben, nicht als Momentaufnahme.
    *
    * Vorher stand hier `isAnnotationActive: () => annotationActive.value` — eine
@@ -861,6 +836,37 @@ async function _onModelLoaded() {
   }
 
   emit('model-loaded');
+}
+
+/**
+ * Die aktuelle 3D-Ansicht als Bild auf ein Blatt.
+ *
+ * Der schlichte Rasterweg — ein Schnappschuss mit Schriftfeld, fuer Berichte
+ * und Besprechungen. Der massstaebliche Plan ist der Lageplan-Modus; dort
+ * liegen Vektorausgabe, Bemassung und die Tiefbau-Pakete.
+ *
+ * Vorher steckte das im PDF-Export-Modal, zusammen mit einem zweiten
+ * three.js-Renderer, einer 150-ms-Vorschauschleife und einer Uebersichtskarte —
+ * alles nur, damit man ein starres Standbild ausrichten konnte.
+ */
+async function ansichtAufsBlatt() {
+  const bild = engine.value?.getCanvasSnapshot?.(3);
+  if (!bild) return;
+  const { exportPlanPDF } = await import('../services/IfcPdfExporter.js');
+  const p = cde.activeProject;
+  exportPlanPDF({
+    snapshot: bild,
+    format: ansicht.format,
+    orientation: ansicht.ausrichtung,
+    titleBlock: {
+      projekt:      [p?.nummer, p?.name].filter(Boolean).join(' '),
+      auftraggeber: p?.bauherr ?? '',
+      bearbeiter:   cde.bearbeiter ?? '',
+      datum:        new Date().toLocaleDateString('de-DE'),
+      massstab:     'ohne Maßstab',
+    },
+    logo: null,
+  });
 }
 
 // ── Section cuts ─────────────────────────────────────────────────────────────

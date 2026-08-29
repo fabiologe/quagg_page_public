@@ -24,6 +24,17 @@ import { describe, expect, it } from 'vitest';
 const WURZEL = new URL('..', import.meta.url).pathname;
 const THEME = join(WURZEL, 'styles/theme.css');
 
+/** Alle Quelldateien des Features — .vue UND .js, ohne Tests. */
+function alleQuellen(dir = WURZEL, treffer = []) {
+  for (const name of readdirSync(dir)) {
+    if (name === 'test' || name === 'node_modules') continue;
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) alleQuellen(p, treffer);
+    else if (/\.(vue|js)$/.test(name)) treffer.push(p);
+  }
+  return treffer;
+}
+
 function vueDateien(dir = WURZEL, treffer = []) {
   for (const name of readdirSync(dir)) {
     if (name === 'test' || name === 'node_modules') continue;
@@ -175,5 +186,41 @@ describe('Zustand des Pin-Modus', () => {
     const viewer = readFileSync(join(WURZEL, 'components/IfcViewer.vue'), 'utf8');
     const expose = viewer.slice(viewer.indexOf('defineExpose({'));
     expect(expose.slice(0, expose.indexOf('});'))).toMatch(/^\s*annotationActive,\s*$/m);
+  });
+});
+
+
+describe('Das PDF-Modal ist aufgelöst (Sprint I, AP-11)', () => {
+  it('hinterlässt keinen Fremdimport in der CDE', () => {
+    // Es war der letzte Nutzer von `DraggableModal` aus isyifc — zusammen mit
+    // dem `standalone`-Zweig des Viewers, den seit Sprint A niemand mehr nahm
+    // (die CdeView, sein einziger Aufrufer, setzte die Prop fest). Damit ist
+    // das Feature import-seitig geschlossen; isyifc bleibt unangetastet.
+    const fremd = [];
+    for (const datei of vueDateien(WURZEL)) {
+      for (const m of readFileSync(datei, 'utf8').matchAll(/from '(@\/features\/[^']+)'/g)) {
+        if (!m[1].startsWith('@/features/cde/')) fremd.push(`${datei.replace(WURZEL, '')}: ${m[1]}`);
+      }
+    }
+    expect(fremd).toEqual([]);
+  });
+
+  it('lässt keine toten viewerApi-Schlüssel zurück', () => {
+    // Sechzehn Schlüssel hatten nur das Modal als Nutzer, vier waren schon
+    // vorher tot. Was bleibt, muss auch jemand rufen.
+    const viewer = readFileSync(join(WURZEL, 'components/IfcViewer.vue'), 'utf8');
+    const block = viewer.slice(viewer.indexOf('provideViewerApi({'));
+    const schluessel = [...block.slice(0, block.indexOf('\n});'))
+      .matchAll(/^ {2}([a-zA-Z_][a-zA-Z0-9_]*):/gm)].map((m) => m[1]);
+    expect(schluessel.length).toBeGreaterThan(10);   // Schutz gegen Leerlauf
+
+    // ALLE Quellen, nicht nur .vue: die Konsumenten sitzen zur Hälfte in
+    // Composables und Diensten (PlanContent, usePlanExport).
+    const quellen = alleQuellen(WURZEL)
+      .filter((f) => !f.endsWith('IfcViewer.vue'))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    const ungenutzt = schluessel.filter((k) => !new RegExp(`\\b${k}\\b`).test(quellen));
+    expect(ungenutzt).toEqual([]);
   });
 });

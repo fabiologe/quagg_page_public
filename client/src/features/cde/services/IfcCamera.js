@@ -21,8 +21,6 @@ export class IfcCamera {
         this._getWorld     = getWorld;
         this._getBounds    = getBounds;
         this._components   = components;
-        this._lastPlotFrustum = null;
-        this._auxRT        = null;
 
         // Zoom-Limits, die wir nach jedem fitToBox restoren (siehe _enforceZoomLimits).
         this._minDistance  = 0.01;
@@ -385,206 +383,10 @@ export class IfcCamera {
 
     // ── Snapshot-Rendering (PDF export) ──────────────────────────────────────
 
-    /**
-     * Rendert die Live-Szene durch eine beliebige Kamera in ein 2D-Canvas.
-     * Reuse-Pattern (Render-Target), damit der Overview-Tab des PDF-Modals bei
-     * 30 fps nicht den GPU-Speicher flutet.
-     *
-     * Hidden-Helpers (TC-Gizmo + Section-Plane-Mesh) müssen vom Aufrufer
-     * versteckt werden (Engine.withSectionVisualsHidden umschließt diesen Call).
-     */
-    renderToCanvas(canvas2d, camera, { onBeforeRender, onAfterRender } = {}) {
-        const world = this._getWorld();
-        if (!world || !canvas2d || !camera) return false;
-        const renderer = world.renderer.three;
-        const scene    = world.scene.three;
-        const w = canvas2d.width;
-        const h = canvas2d.height;
-        if (!w || !h) return false;
 
-        if (!this._auxRT || this._auxRT.width !== w || this._auxRT.height !== h) {
-            if (this._auxRT) this._auxRT.dispose();
-            this._auxRT = new THREE.WebGLRenderTarget(w, h, {
-                minFilter: THREE.LinearFilter,
-                magFilter: THREE.LinearFilter,
-                format:    THREE.RGBAFormat,
-            });
-        }
-        const rt = this._auxRT;
 
-        onBeforeRender?.();
-        renderer.setRenderTarget(rt);
-        renderer.render(scene, camera);
-        renderer.setRenderTarget(null);
-        onAfterRender?.();
 
-        const pixels = new Uint8ClampedArray(w * h * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
 
-        const ctx = canvas2d.getContext('2d');
-        const imageData = ctx.createImageData(w, h);
-        const stride = w * 4;
-        for (let y = 0; y < h; y++) {
-            const src = (h - 1 - y) * stride;
-            imageData.data.set(pixels.subarray(src, src + stride), y * stride);
-        }
-        ctx.putImageData(imageData, 0, 0);
-        return true;
-    }
-
-    /**
-     * Off-screen ortho render in ein RenderTarget mit Papier-Aspect.
-     * Shared zwischen getScaleSnapshot und getOverviewSnapshot.
-     *
-     * `onBeforeRender` / `onAfterRender` werden um den eigentlichen renderer.render()
-     * Aufruf gelegt — dort kann die Engine z. B. Section-Visuals ausblenden.
-     */
-    _renderOrthoOffscreen(target, halfW, halfH, viewDir, rtW, rtH, hooks = {}) {
-        const world    = this._getWorld();
-        const renderer = world.renderer.three;
-        const scene    = world.scene.three;
-        const mainCam  = world.camera.three;
-
-        const rt = new THREE.WebGLRenderTarget(rtW, rtH, {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
-            format:    THREE.RGBAFormat,
-        });
-
-        const ortho = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, -100000, 100000);
-        if (viewDir === 'front') {
-            ortho.position.set(target.x, target.y, target.z + 10000);
-            ortho.up.set(0, 1, 0);
-        } else if (viewDir === 'side') {
-            ortho.position.set(target.x + 10000, target.y, target.z);
-            ortho.up.set(0, 1, 0);
-        } else {
-            // Draufsicht. ACHTUNG, hier stand jahrelang „Z points north on
-            // paper" — das ist falsch herum: up = (0,0,-1) heißt, die lokale
-            // +Y-Achse der Kamera zeigt auf Welt-−Z. Auf dem Papier ist OBEN
-            // also Welt-−Z, wachsendes Z läuft nach unten. Dieselbe Konvention
-            // wie im DXF (N = −z). Festgehalten in test/paperTransform.test.js.
-            ortho.position.set(target.x, target.y + 10000, target.z);
-            ortho.up.set(0, 0, -1);
-        }
-        ortho.lookAt(target.x, target.y, target.z);
-        ortho.updateProjectionMatrix();
-
-        hooks.onBeforeRender?.();
-        renderer.setRenderTarget(rt);
-        renderer.render(scene, ortho);
-        renderer.setRenderTarget(null);
-        hooks.onAfterRender?.();
-
-        const pixels = new Uint8ClampedArray(rtW * rtH * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, rtW, rtH, pixels);
-        rt.dispose();
-
-        const out = document.createElement('canvas');
-        out.width = rtW; out.height = rtH;
-        const ctx = out.getContext('2d');
-        for (let y = 0; y < rtH; y++) {
-            const row = new Uint8ClampedArray(pixels.buffer, (rtH - 1 - y) * rtW * 4, rtW * 4);
-            ctx.putImageData(new ImageData(row, rtW, 1), 0, y);
-        }
-
-        renderer.render(scene, mainCam);
-        return { dataUrl: out.toDataURL('image/png', 0.92), ortho };
-    }
-
-    /**
-     * Maßstabs-genauer Ortho-Snapshot (PDF-Export Plot-Bereich).
-     * `hooks.onBeforeRender/onAfterRender` für Section-Visual-Hide.
-     */
-    getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir = 'top', pxPerMm = 10, panX = 0, panZ = 0, hooks = {}) {
-        const world = this._getWorld();
-        if (!world) return null;
-
-        const halfW = (drawWidthMm  / 1000 * scaleRatio) / 2;
-        const halfH = (drawHeightMm / 1000 * scaleRatio) / 2;
-        const rtW   = Math.round(drawWidthMm  * pxPerMm);
-        const rtH   = Math.round(drawHeightMm * pxPerMm);
-
-        const target = new THREE.Vector3();
-        world.camera.controls.getTarget(target);
-        target.x += panX;
-        target.z += panZ;
-
-        const { dataUrl, ortho } = this._renderOrthoOffscreen(target, halfW, halfH, viewDir, rtW, rtH, hooks);
-
-        this._lastPlotFrustum = {
-            left:     ortho.left,
-            right:    ortho.right,
-            top:      ortho.top,
-            bottom:   ortho.bottom,
-            position: ortho.position.toArray(),
-            target:   [target.x, target.y, target.z],
-            up:       ortho.up.toArray(),
-            viewDir,
-            scaleRatio,
-            drawWidthMm,
-            drawHeightMm,
-        };
-
-        return dataUrl;
-    }
-
-    /**
-     * Top-Down Übersichts-Snapshot für die PDF-Modal-Thumbnail.
-     *   getOverviewSnapshot(w, h)          — fit-all (Modell-Bbox + 10 % Padding)
-     *   getOverviewSnapshot(w, h, bounds)  — explizite XZ-Extent (Wheel-Zoom)
-     */
-    getOverviewSnapshot(widthPx = 240, heightPx = 160, viewBounds = null, hooks = {}) {
-        const world = this._getWorld();
-        if (!world) return null;
-        const modelBounds = this._getBounds();
-        if (!modelBounds) return null;
-
-        const canvasAspect = widthPx / heightPx;
-        let halfW, halfH, target;
-
-        if (viewBounds) {
-            const reqW = viewBounds.maxX - viewBounds.minX;
-            const reqD = viewBounds.maxZ - viewBounds.minZ;
-            const reqAspect = reqW / reqD;
-            if (reqAspect > canvasAspect) {
-                halfW = reqW / 2;
-                halfH = halfW / canvasAspect;
-            } else {
-                halfH = reqD / 2;
-                halfW = halfH * canvasAspect;
-            }
-            target = new THREE.Vector3(
-                (viewBounds.minX + viewBounds.maxX) / 2,
-                modelBounds.center.y,
-                (viewBounds.minZ + viewBounds.maxZ) / 2,
-            );
-        } else {
-            const pad = 1.10;
-            const worldW = modelBounds.size.x * pad;
-            const worldD = modelBounds.size.z * pad;
-            const worldAspect = worldW / worldD;
-            if (worldAspect > canvasAspect) {
-                halfW = worldW / 2;
-                halfH = halfW / canvasAspect;
-            } else {
-                halfH = worldD / 2;
-                halfW = halfH * canvasAspect;
-            }
-            target = modelBounds.center.clone();
-        }
-
-        const { dataUrl } = this._renderOrthoOffscreen(target, halfW, halfH, 'top', widthPx, heightPx, hooks);
-        return {
-            dataUrl,
-            bounds: {
-                minX: target.x - halfW, maxX: target.x + halfW,
-                minZ: target.z - halfH, maxZ: target.z + halfH,
-            },
-        };
-    }
-
-    getLastPlotFrustum() { return this._lastPlotFrustum ?? null; }
 
     // ── Zoom-Limit Enforcement (Bug-Fix) ─────────────────────────────────────
 
@@ -652,14 +454,10 @@ export class IfcCamera {
     }
 
     /**
-     * Gibt den Offscreen-Puffer frei.
-     *
-     * Bisher griff `IfcEngine.dispose()` dafuer auf `camera._auxRT` zu — ein
-     * privates Feld dieses Dienstes. Der Hausvertrag sagt: der Besitzer ruft
-     * Methoden, keine Unterstrich-Felder.
+     * Aufraeumen. Der Offscreen-Puffer, den es hier zu befreien gab, ist mit
+     * dem PDF-Modal entfallen (Sprint I/AP-11); die Methode bleibt als
+     * Anlaufstelle des Besitzers — IfcEngine.dispose() ruft sie.
      */
-    dispose() {
-        if (this._auxRT) { this._auxRT.dispose(); this._auxRT = null; }
-    }
+    dispose() {}
 
 }

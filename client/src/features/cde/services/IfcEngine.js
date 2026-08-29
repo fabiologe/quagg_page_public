@@ -1014,7 +1014,6 @@ export class IfcEngine {
     viewFront()                       { return this.camera.viewFront(); }
     viewSide()                        { return this.camera.viewSide(); }
     resetView()                       { return this.camera.resetView(); }
-    truckCamera(dx, dy)               { return this.camera.truck(dx, dy); }
     lookAtPoint(x, y, z, distance=5)  { return this.camera.lookAtPoint(x, y, z, distance); }
     orbitAroundPoint(p)               { return this.camera.orbitAroundPoint(p); }
     orbitAroundMeasurePoint(p)        { return this.camera.orbitAroundMeasurePoint(p); }
@@ -1615,73 +1614,11 @@ export class IfcEngine {
         return { center, size, maxDim: Math.max(size.x, size.y, size.z), box };
     }
 
-    /**
-     * Live access to the main Three.js scene — used by an auxiliary renderer
-     * (e.g. the PDF modal's overview viewport) to render the same world from
-     * a different camera. Returns null if the engine has not been set up yet.
-     */
-    getMainScene() {
-        return this._getWorld()?.scene?.three ?? null;
-    }
 
-    /** Y of the model bounding-box centre — anchor for top-down ortho cameras. */
-    getModelCenterY() {
-        return this._getModelBounds()?.center?.y ?? 0;
-    }
 
-    /**
-     * Current camera-controls target in world coordinates. The PDF modal's
-     * overview needs this so it can express its `panOffset` relative to the
-     * real controls target — `getScaleSnapshot` then renders centred on
-     * `controls.target + panOffset`, which only lines up with the overview
-     * rectangle when we share the same reference point.
-     */
-    getCameraTarget() {
-        return this.camera.getTarget();
-    }
 
-    /**
-     * Current section-cut clipping planes (so auxiliary renderers can apply the
-     * same clipping). Empty array when no section cut is active.
-     */
-    getClippingPlanes() {
-        const world = this._getWorld();
-        return world?.renderer?.three?.clippingPlanes ?? [];
-    }
 
-    /**
-     * Synchronously execute `renderFn` with the section-cut helpers (gizmo +
-     * plane mesh) temporarily hidden. Used by the overview viewport so its
-     * Top-Down render isn't cluttered by 3D widgets that only make sense from
-     * the main camera.
-     */
-    withSectionVisualsHidden(renderFn) {
-        const hidden = this._hideSectionVisuals();
-        try { renderFn(); }
-        finally { this._restoreSectionVisuals(hidden); }
-    }
 
-    /**
-     * Render the live scene through `camera` into the pixel buffer of the
-     * given 2D canvas. Used by the PDF modal's overview viewport.
-     *
-     * Why not a second WebGLRenderer? Each renderer creates its own GL context,
-     * and OBC's Fragment instance buffers are uploaded only to whichever
-     * context first rendered them — so a second context shows no IFC geometry.
-     * Reusing the main renderer guarantees identical output to what the user
-     * sees in the main viewport.
-     *
-     * @param {HTMLCanvasElement} canvas2d  destination canvas (any 2D context)
-     * @param {THREE.Camera}      camera     ortho/perspective camera
-     * @returns {boolean} success
-     */
-    renderToCanvas(canvas2d, camera) {
-        let hidden;
-        return this.camera.renderToCanvas(canvas2d, camera, {
-            onBeforeRender: () => { hidden = this._hideSectionVisuals(); },
-            onAfterRender:  () => { this._restoreSectionVisuals(hidden); },
-        });
-    }
 
     /**
      * Public XZ bounds for the overview thumbnail and re-centering logic.
@@ -1939,59 +1876,8 @@ export class IfcEngine {
      * @param {'top'|'front'|'side'} viewDir
      * @param {number} pxPerMm       - render resolution (default 10 → 10 px/mm ≈ 254 dpi)
      */
-    /**
-     * Off-screen ortho render into a paper-aspect canvas. Shared by
-     * `getScaleSnapshot` (paper-scale plot) and `getOverviewSnapshot`
-     * (fit-all mini-map). Returns { dataUrl, ortho } so callers can persist
-     * the frustum if they need it.
-     *
-     * @param {THREE.Vector3} target  ortho camera look-at point (world metres)
-     * @param {number} halfW          half-extent in world metres (X for top/side, X for front)
-     * @param {number} halfH          half-extent in world metres (Z for top, Y for front/side)
-     * @param {string} viewDir        'top' | 'front' | 'side'
-     * @param {number} rtW            render-target width  in pixels
-     * @param {number} rtH            render-target height in pixels
-     */
-    getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir = 'top', pxPerMm = 10, panX = 0, panZ = 0) {
-        let hidden;
-        return this.camera.getScaleSnapshot(scaleRatio, drawWidthMm, drawHeightMm, viewDir, pxPerMm, panX, panZ, {
-            onBeforeRender: () => { hidden = this._hideSectionVisuals(); },
-            onAfterRender:  () => { this._restoreSectionVisuals(hidden); },
-        });
-    }
 
-    /**
-     * Top-down snapshot used by the modal's overview thumbnail.
-     *
-     *   getOverviewSnapshot(w, h)          — fit-all (model bbox + 10% padding)
-     *   getOverviewSnapshot(w, h, bounds)  — explicit XZ extent (for wheel-zoom)
-     *
-     * The returned image's pixel dimensions match (widthPx, heightPx); the
-     * world bounds it covers are returned in `bounds` so the caller can map
-     * world coordinates onto canvas pixels for the viewport rectangle.
-     *
-     * Renders the live scene each call, so layer toggles / section cuts /
-     * style changes are reflected at the next refresh.
-     *
-     * @param {number} widthPx
-     * @param {number} heightPx
-     * @param {object|null} viewBounds  optional { minX, maxX, minZ, maxZ }
-     * @returns {{ dataUrl: string, bounds: {minX, maxX, minZ, maxZ} } | null}
-     */
-    getOverviewSnapshot(widthPx = 240, heightPx = 160, viewBounds = null) {
-        let hidden;
-        return this.camera.getOverviewSnapshot(widthPx, heightPx, viewBounds, {
-            onBeforeRender: () => { hidden = this._hideSectionVisuals(); },
-            onAfterRender:  () => { this._restoreSectionVisuals(hidden); },
-        });
-    }
 
-    /**
-     * Return the frustum + camera pose used in the most recent getScaleSnapshot() call.
-     * The vector plotter rebuilds an OrthographicCamera from this so its world→paper
-     * transforms match the exact rendered snapshot.
-     */
-    getLastPlotFrustum() { return this.camera.getLastPlotFrustum(); }
 
     dispose() {
         this.camera?.dispose?.();

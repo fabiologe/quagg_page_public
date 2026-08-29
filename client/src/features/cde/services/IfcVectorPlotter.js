@@ -483,6 +483,7 @@ export function drawVectorPlan(doc, cam, M, dw, dh, opts = {}) {
     // ── Annotations + Measurements (drawn on top of geometry) ───────────────
     if (opts.annotations?.length) _drawAnnotations(doc, opts.annotations, toX, toY, M, dw, dh);
     if (opts.measurements?.length) _drawMeasurements(doc, opts.measurements, toX, toY, M, dw, dh);
+    if (opts.dimensions?.length) _drawDimensions(doc, opts.dimensions, toX, toY, M, dw, dh);
 
     // ── Scale bar + North arrow (drawn last so they sit on top) ─────────────
     if (opts.scaleBar && opts.scaleRatio) {
@@ -668,6 +669,72 @@ function _drawAnnotations(doc, annotations, toX, toY, M, dw, dh) {
     doc.setTextColor(0, 0, 0);
     doc.setFillColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
+}
+
+// ── Bemaßung (im Plan gesetzt, in WELTKOORDINATEN gehalten) ─────────────────
+/**
+ * Maßketten zeichnen.
+ *
+ * Der Unterschied zu `_drawMeasurements` ist nicht das Aussehen, sondern die
+ * Herkunft: Messstrecken kommen aus dem 3D-Modell, Maßketten setzt der Nutzer
+ * im Plan. Beide liegen in Welt-XZ — und genau das ist der Punkt.
+ *
+ * Vorher verankerte der Exporter die Bemaßung in PROZENT der Zeichenfläche.
+ * Die Maße überlebten damit jeden Schwenk und jeden Maßstabswechsel und
+ * standen danach an einer anderen Stelle des Modells — die Zahl daneben stimmte
+ * trotzdem noch, weil sie mitgespeichert war. Ein Maß, das am falschen Ort das
+ * Richtige behauptet, ist schlimmer als keines.
+ *
+ * Gezeichnet wird die klassische Maßkette: Maßlinie mit Schrägstrichen an den
+ * Enden, Maßhilfslinien senkrecht dazu, Zahl mittig darüber.
+ */
+function _drawDimensions(doc, dimensions, toX, toY, M, dw, dh) {
+    doc.setDrawColor(20, 20, 20);
+    doc.setFillColor(20, 20, 20);
+    doc.setLineWidth(0.25);
+
+    for (const d of dimensions) {
+        if (!d?.p1 || !d?.p2) continue;
+        const px1 = toX(d.p1.x), py1 = toY(d.p1.z);
+        const px2 = toX(d.p2.x), py2 = toY(d.p2.z);
+        if (!_inBounds(px1, py1, M, dw, dh) && !_inBounds(px2, py2, M, dw, dh)) continue;
+
+        const winkel = Math.atan2(py2 - py1, px2 - px1);
+        const grad = winkel * 180 / Math.PI;
+        // Einheitsvektor quer zur Maßlinie — trägt die Hilfslinien.
+        const qx = -Math.sin(winkel), qy = Math.cos(winkel);
+        const UEBERSTAND = 1.2;   // mm, wie weit die Hilfslinie übersteht
+        const SCHRAEG = 1.1;      // mm, halbe Länge der Endschrägen
+
+        doc.line(px1, py1, px2, py2);
+        // Maßhilfslinien
+        doc.line(px1 - qx * UEBERSTAND, py1 - qy * UEBERSTAND, px1 + qx * UEBERSTAND, py1 + qy * UEBERSTAND);
+        doc.line(px2 - qx * UEBERSTAND, py2 - qy * UEBERSTAND, px2 + qx * UEBERSTAND, py2 + qy * UEBERSTAND);
+        // Endschrägen (45° zur Maßlinie) — das Bauzeichnungs-Zeichen für „Maß"
+        const sx = Math.cos(winkel + Math.PI / 4) * SCHRAEG;
+        const sy = Math.sin(winkel + Math.PI / 4) * SCHRAEG;
+        doc.line(px1 - sx, py1 - sy, px1 + sx, py1 + sy);
+        doc.line(px2 - sx, py2 - sy, px2 + sx, py2 + sy);
+
+        const mx = (px1 + px2) / 2;
+        const my = (py1 + py2) / 2;
+        const text = d.dist < 1  ? `${(d.dist * 1000).toFixed(0)} mm`
+                   : d.dist < 10 ? `${d.dist.toFixed(2)} m`
+                   :               `${d.dist.toFixed(2)} m`;
+
+        // Weißer Halo, damit die Zahl auch über Linienwerk lesbar bleibt —
+        // dasselbe Mittel wie bei der Bauteilbeschriftung.
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        for (const [ox, oy] of [[-0.3, 0], [0.3, 0], [0, -0.3], [0, 0.3]]) {
+            doc.text(text, mx + ox, my - 1.4 + oy, { align: 'center', angle: -grad });
+        }
+        doc.setTextColor(20, 20, 20);
+        doc.text(text, mx, my - 1.4, { align: 'center', angle: -grad });
+    }
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+    doc.setFillColor(0, 0, 0);
 }
 
 // ── Measurements (3D 2-point distances → 2D paper) ──────────────────────────

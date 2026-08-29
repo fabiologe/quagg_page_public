@@ -18,7 +18,7 @@ describe('usePanels', () => {
   it('kennt die Panel-Definitionen und startet geschlossen', async () => {
     const p = usePanels()
     await p.bereit
-    expect(p.defs.map(d => d.id)).toEqual(['eigenschaften', 'struktur', 'cockpit', 'issues'])
+    expect(p.defs.map(d => d.id)).toEqual(['eigenschaften', 'struktur', 'cockpit', 'issues', 'plan'])
     expect(p.aktivLinks).toBeNull()
     expect(p.aktivRechts).toBeNull()
   })

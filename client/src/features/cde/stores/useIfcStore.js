@@ -25,6 +25,7 @@ function _debounce(fn, ms) {
 // migriert. Die alten `ifc-viewer-*`-localStorage-Keys werden einmalig
 // übernommen und danach gelöscht.
 const REPO_SAVED_VIEWS   = 'saved-views';
+const REPO_DIMENSIONS    = 'plan-dimensions';
 const REPO_VECTOR_STYLES = 'vector-styles';
 const REPO_VECTOR_RULES  = 'vector-rules';
 const REPO_STYLES_MODEL  = 'vector-styles-by-model';
@@ -94,6 +95,51 @@ export const useIfcStore = defineStore('cde-modell', () => {
   function renameSavedView(id, newName) {
     const v = savedViews.value.find(x => x.id === id);
     if (v) { v.name = newName.trim(); _persistSavedViews(); }
+  }
+
+  // ── Bemaßung im Lageplan (Sprint I, AP-10) ───────────────────────────────
+  //
+  // In WELTKOORDINATEN (Welt-XZ), nicht in Prozent der Zeichenfläche. Die alte
+  // Prozent-Verankerung im Exporter überlebte jeden Schwenk und jeden
+  // Maßstabswechsel: das Maß stand danach an einer anderen Stelle des Modells
+  // und behauptete dort weiter seinen alten Wert. Ein Maß, das am falschen Ort
+  // das Richtige sagt, ist schlimmer als keines.
+  //
+  // Persistenzmuster wie savedViews: entprellt über die RepoFacade, damit das
+  // Setzen mehrerer Maße nicht in ebenso viele Schreibvorgänge läuft.
+  const planDimensions = ref([]);
+  const _persistDimensions = _debounce(() => {
+    repo.set(REPO_DIMENSIONS, JSON.parse(JSON.stringify(planDimensions.value)));
+  }, 250);
+
+  /**
+   * Maßkette anlegen.
+   * @param {{x:number,z:number}} p1 Weltpunkt
+   * @param {{x:number,z:number}} p2 Weltpunkt
+   */
+  function addPlanDimension(p1, p2) {
+    if (!p1 || !p2) return null;
+    const dist = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+    // Ein Doppelklick erzeugt sonst ein Maß der Länge 0, das man kaum
+    // wieder anklicken kann, um es loszuwerden.
+    if (!(dist > 1e-4)) return null;
+    const eintrag = {
+      id: 'dim-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      p1: { x: p1.x, z: p1.z }, p2: { x: p2.x, z: p2.z }, dist,
+    };
+    planDimensions.value.push(eintrag);
+    _persistDimensions();
+    return eintrag;
+  }
+
+  function removePlanDimension(id) {
+    planDimensions.value = planDimensions.value.filter(d => d.id !== id);
+    _persistDimensions();
+  }
+
+  function clearPlanDimensions() {
+    planDimensions.value = [];
+    _persistDimensions();
   }
 
   // T2.4 → Issues: Annotationen sind vollwertige Projekt-Issues (BCF-nah):
@@ -367,12 +413,14 @@ export const useIfcStore = defineStore('cde-modell', () => {
   // Refs starten mit Defaults und werden asynchron gefüllt — alle Konsumenten
   // sind reaktiv. `ready` erlaubt Aufrufern, auf den Ladevorgang zu warten.
   async function _initPersistence() {
-    const [views, styles, rules, byModel, presets] = await Promise.all([
+    const [views, styles, rules, byModel, presets, dims] = await Promise.all([
       _loadWithLegacy(REPO_SAVED_VIEWS,   LEGACY_KEYS[REPO_SAVED_VIEWS]),
       _loadWithLegacy(REPO_VECTOR_STYLES, LEGACY_KEYS[REPO_VECTOR_STYLES]),
       _loadWithLegacy(REPO_VECTOR_RULES,  LEGACY_KEYS[REPO_VECTOR_RULES]),
       _loadWithLegacy(REPO_STYLES_MODEL,  LEGACY_KEYS[REPO_STYLES_MODEL]),
       _loadWithLegacy(REPO_PRESETS,       LEGACY_KEYS[REPO_PRESETS]),
+      // Kein Legacy-Weg: die Bemaßung gab es vorher nur flüchtig im Modal.
+      repo.get(REPO_DIMENSIONS),
     ]);
     if (Array.isArray(views)) savedViews.value = views;
     if (styles && typeof styles === 'object') {
@@ -383,6 +431,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     if (Array.isArray(rules)) vectorRules.value = rules;
     if (byModel && typeof byModel === 'object') vectorStylesByModel.value = byModel;
     if (Array.isArray(presets)) userPresets.value = presets;
+    if (Array.isArray(dims)) planDimensions.value = dims;
   }
   const ready = _initPersistence();
 
@@ -480,6 +529,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     // T2.2: Saved Views
     savedViews, saveView, deleteSavedView, renameSavedView,
     // T2.4 → Issues (Annotationen mit Status/Zuständigkeit/Kommentaren/Viewpoint)
+    planDimensions, addPlanDimension, removePlanDimension, clearPlanDimensions,
     annotations, loadAnnotationsForModel, pushAnnotation, removeAnnotation,
     updateAnnotationText, updateAnnotationColor, updateAnnotationOffset,
     updateAnnotation, addAnnotationComment,

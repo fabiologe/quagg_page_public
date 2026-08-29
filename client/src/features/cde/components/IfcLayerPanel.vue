@@ -15,6 +15,23 @@
       </div>
     </div>
 
+    <!-- Darstellung des Modells. Sass bis Sprint I im PDF-Export-Modal, wo
+         sie nur der Rastervorschau diente. Sie gehoert hierher: was am Modell
+         zu sehen ist, wird in diesem Panel verwaltet. -->
+    <div class="stil-zeile">
+      <span class="stil-titel">Darstellung</span>
+      <button
+        v-for="st in LAYER_STYLES_LISTE"
+        :key="st.id"
+        class="stil-knopf"
+        :class="{ aktiv: aktiverStil === st.id }"
+        :title="st.id === 'plan' ? 'Weisser Grund, gedeckte Farben — wie auf dem Blatt' : 'Modellfarben wie geladen'"
+        @click="stilWaehlen(st.id)"
+      >
+        <CdeIcon :name="st.icon" :size="12" /> {{ st.label }}
+      </button>
+    </div>
+
     <div class="panel-body">
       <div
         v-for="cat in sortedCategories"
@@ -66,12 +83,38 @@
 <script setup>
 import { computed, ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
+import { LAYER_STYLES } from '../services/LayerStyleManager.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
   hasIfcGrids: { type: Boolean, default: false },
 });
 const emit = defineEmits(['toggle', 'close', 'zoom', 'toggle-ifc-grids']);
+
+const api = useViewerApi();
+const LAYER_STYLES_LISTE = Object.values(LAYER_STYLES);
+const aktiverStil = ref('realistic');
+
+/**
+ * Darstellung umschalten.
+ *
+ * Vor dem ersten Wechsel wird der Renderzustand gesichert, damit „Realistisch"
+ * wirklich zurueckfuehrt und nicht nur die Planfarben mit anderen Planfarben
+ * ueberschreibt.
+ */
+let _gesicherterZustand = null;
+async function stilWaehlen(id) {
+  const stil = LAYER_STYLES[id];
+  if (!stil || aktiverStil.value === id) return;
+  if (!_gesicherterZustand) _gesicherterZustand = await api.saveRenderState?.();
+  if (id === 'realistic' && _gesicherterZustand) {
+    await api.restoreRenderState?.(_gesicherterZustand);
+  } else {
+    await api.applyLayerStyle?.(stil);
+  }
+  aktiverStil.value = id;
+}
 
 const ifcGridsVisible = ref(true);
 function onToggleIfcGrids() {
@@ -184,6 +227,32 @@ function categoryIcon(name) {
 }
 .hdr-btn:hover { color: var(--cde-text); }
 .hdr-btn.close:hover { color: var(--cde-danger); }
+
+.stil-zeile {
+  display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--cde-line-soft);
+}
+.stil-titel {
+  font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--cde-text-faint); margin-right: 0.15rem;
+}
+.stil-knopf {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.16rem 0.4rem;
+  background: var(--cde-fill);
+  border: 1px solid var(--cde-line);
+  border-radius: var(--cde-radius-sm);
+  color: var(--cde-text-dim);
+  font: inherit; font-size: 0.68rem; cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.stil-knopf:hover { background: var(--cde-fill-hover); color: var(--cde-text); }
+.stil-knopf.aktiv {
+  background: var(--cde-accent-fill-hi);
+  border-color: var(--cde-accent-line);
+  color: var(--cde-accent);
+}
 
 .panel-body {
   overflow-y: auto;

@@ -183,7 +183,6 @@
         <div class="host-lage" :class="{ verborgen: ansicht.modus !== '3d' }">
           <IfcViewer
             ref="viewerRef"
-            standalone
             :propertiesOpen="panels.isOpen('eigenschaften')"
             @close="onClose"
             @open-properties="panels.open('eigenschaften')"
@@ -196,7 +195,30 @@
             ref="planRef"
             :optionen="planOptionen"
             :titleBlock="planSchriftfeld"
+            :logo="plan.logo"
           />
+          <!-- Werkzeuge des Lageplans. Bewusst hier und nicht im Panel: sie
+               wirken auf die Zeichenfläche und sollen erreichbar sein, auch
+               wenn die Leiste zugeklappt ist. -->
+          <div class="plan-werkzeuge">
+            <button
+              class="plan-wz"
+              :class="{ aktiv: misstImPlan }"
+              title="Bemaßen — zwei Punkte im Plan anklicken [Esc beendet]"
+              @click="bemassungUmschalten"
+            >
+              <CdeIcon name="measure" :size="14" />
+            </button>
+            <button
+              v-if="ifc.planDimensions.length"
+              class="plan-wz"
+              :title="`Alle ${ifc.planDimensions.length} Maße entfernen`"
+              @click="ifc.clearPlanDimensions()"
+            >
+              <CdeIcon name="delete" :size="14" />
+              <span class="plan-wz-zahl">{{ ifc.planDimensions.length }}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -211,6 +233,7 @@
       >
         <IfcSemanticWindow  v-if="panels.isOpen('eigenschaften')" />
         <IfcPlanningCockpit v-else-if="panels.isOpen('cockpit')" />
+        <IfcPlanPanel v-else-if="panels.isOpen('plan')" @stile-oeffnen="stilEditorOffen = true" />
         <IfcAnnotations
           v-else-if="panels.isOpen('issues')"
           :annotationActive="annotationActive"
@@ -221,6 +244,8 @@
         />
       </CdePanel>
     </div>
+
+    <IfcVectorStyleEditor v-if="stilEditorOffen" @close="stilEditorOffen = false" />
   </div>
 </template>
 
@@ -232,10 +257,13 @@ import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
 import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
 import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
 import IfcPlanningCockpit from '../components/IfcPlanningCockpit.vue';
+import IfcPlanPanel from '../components/IfcPlanPanel.vue';
+import IfcVectorStyleEditor from '../components/IfcVectorStyleEditor.vue';
 import IfcAnnotations from '../components/IfcAnnotations.vue';
 import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
-import { useCdeStore, ISO_STATUS } from '../stores/useCdeStore.js';
+import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
+import { usePlan } from '../stores/usePlan.js';
 import { repo, RemoteBackend } from '../services/RepoFacade.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
@@ -259,12 +287,15 @@ const cde = useCdeStore();
 const panels = usePanels();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
+const plan = usePlan();
 const cmds = usePaletteCommands();
 
 const viewerRef = ref(null);
 const planRef = ref(null);
 const strukturRef = ref(null);
 const showStammdaten = ref(false);
+/** Linienstil-Editor. Sein einziger Einhängepunkt war bisher das PDF-Modal. */
+const stilEditorOffen = ref(false);
 const showRegister = ref(false);
 
 // ── Ansichts-Umschaltung (Sprint P, AP-8) ────────────────────────────────────
@@ -290,22 +321,61 @@ watch(() => ifc.modelList?.length ?? 0, (n) => {
  * Plan-Panel steht (AP-9), kommen sie von dort. Die Stile stammen aus dem
  * IFC-Store, damit Bildschirm und Export dieselbe Farbtabelle benutzen.
  */
-const planOptionen = computed(() => ({
-  styleMap:         ifc.resolvedVectorStyleMap,
-  rules:            ifc.vectorRules ?? [],
-  labelTemplateFor: (cat) => ifc.vectorStyles?.[cat]?.labelTemplate ?? '',
-  annotations:      ifc.annotations ?? [],
-  scaleBar:         true,
-  showLabels:       true,
-  footprints:       true,
-}));
+/**
+ * Zeichenoptionen des Plans.
+ *
+ * Kamen bis Sprint I als feste Standardausstattung von hier — zehn Optionen,
+ * die `IfcPlanCanvas` längst durchreicht, waren am Bildschirm damit still aus
+ * (Böschungsschraffur, Höhenlinien, UTM-Kreuze, Haltungsbeschriftung …).
+ * Jetzt bedient sie das Plan-Panel über `usePlan`.
+ */
+const planOptionen = computed(() => {
+  const o = plan.optionen;
+  return {
+    // Was der Store weiß. Die Engine-Teile (web-ifc-Instanzen für die
+    // Haltungsbeschriftung, Koordinaten-Versatz für die UTM-Kreuze, das
+    // Achsenraster) ergänzt IfcPlanCanvas — nur der hat die viewerApi.
+    ...plan.zeichenOptionen,
+    ifcGrids:         o.ifcGrids,
+    styleMap:         ifc.resolvedVectorStyleMap,
+    styleMapPerModel: ifc.vectorStylesByModel ?? null,
+    rules:            ifc.vectorRules ?? [],
+    labelTemplateFor: (cat) => ifc.vectorStyles?.[cat]?.labelTemplate ?? '',
+    annotations:      o.annotations ? (ifc.annotations ?? []) : [],
+    dimensions:       o.dimensions ? ifc.planDimensions : [],
+    measurements:     o.measurements ? (viewerRef.value?.messungen?.() ?? []) : [],
+    watermark:        planWasserzeichen.value,
+  };
+});
 
+/** Handeintrag schlägt den ISO-19650-Status des Dokuments. */
+const planWasserzeichen = computed(() => {
+  const eigen = (plan.optionen.watermarkText ?? '').trim();
+  if (eigen) return eigen;
+  const sha = viewerRef.value?.geladeneModellSha?.();
+  return (sha ? resolveWatermarkText(cde.dokumente, sha) : null) || null;
+});
+
+/**
+ * Schriftfeld. Der Nutzer pflegt es im Panel; leer gelassene Felder fallen
+ * auf die Projektakte zurück, damit ein frisches Projekt sofort ein
+ * brauchbares Blatt liefert.
+ */
 const planSchriftfeld = computed(() => ({
-  projekt:      [cde.activeProject?.nummer, cde.activeProject?.name].filter(Boolean).join(' '),
-  auftraggeber: cde.activeProject?.bauherr ?? '',
-  bearbeiter:   cde.bearbeiter ?? '',
+  ...plan.schriftfeld,
+  projekt:      plan.schriftfeld.projekt
+                || [cde.activeProject?.nummer, cde.activeProject?.name].filter(Boolean).join(' '),
+  auftraggeber: plan.schriftfeld.auftraggeber || (cde.activeProject?.bauherr ?? ''),
+  bearbeiter:   plan.schriftfeld.bearbeiter   || (cde.bearbeiter ?? ''),
   massstab:     `1:${ansicht.massstab}`,
 }));
+
+// ── Bemaßung im Plan (AP-10) ───────────────────────────────────────────────
+const misstImPlan = ref(false);
+function bemassungUmschalten() {
+  planRef.value?.messenUmschalten?.();
+  misstImPlan.value = planRef.value?.misstGerade?.() ?? false;
+}
 
 // Tasten 1/2/3 sind frei — der Viewer belegt M V N H I T R ? Esc und Strg+K/F.
 function onKeyDown(e) {
@@ -448,6 +518,32 @@ function fmtDate(ts) {
 </script>
 
 <style scoped>
+/* Werkzeuge am Lageplan — schweben über der Zeichenfläche, links oben. */
+.plan-werkzeuge {
+  position: absolute;
+  top: 0.6rem; left: 0.6rem;
+  display: flex; gap: 0.25rem;
+  z-index: var(--cde-z-hud);
+}
+.plan-wz {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.32rem 0.42rem;
+  background: var(--cde-float);
+  border: 1px solid var(--cde-line-strong);
+  border-radius: var(--cde-radius-sm);
+  box-shadow: var(--cde-shadow-float);
+  color: var(--cde-text-soft);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.plan-wz:hover { background: var(--cde-fill-hover); color: var(--cde-text-bright); }
+.plan-wz.aktiv {
+  background: var(--cde-accent-fill-hi);
+  border-color: var(--cde-accent-line);
+  color: var(--cde-accent);
+}
+.plan-wz-zahl { font-size: 0.66rem; font-variant-numeric: tabular-nums; }
+
 .cde-view {
   position: fixed;
   inset: 0;

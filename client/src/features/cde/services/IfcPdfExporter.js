@@ -43,6 +43,18 @@ const TB = 40;  // title block height mm
 // Sprint P: exportiert, damit der Bildschirmplan denselben Plankopf zeichnet
 // wie das PDF. Vorher war er in der Export-Vorschau als HTML/CSS nachgebaut —
 // und wich an mehreren Stellen ab (die Rev.-Spalte saß in einer anderen Zelle).
+/**
+ * Bildformat fuer jsPDF aus einer Data-URL ablesen.
+ *
+ * Bei einem HTMLImageElement ist das Argument fuer jsPDF ohnehin nur ein
+ * Hinweis — der Adapter des Bildschirmplans ignoriert es ganz.
+ */
+function _bildFormat(logo) {
+    if (typeof logo !== 'string') return 'PNG';
+    const m = /^data:image\/([a-z+]+)/i.exec(logo);
+    return m ? m[1].toUpperCase().replace('JPG', 'JPEG') : 'PNG';
+}
+
 export function _drawTitleBlock(doc, dw, dh, titleBlock, logo) {
     // Outer border around drawing + title block
     doc.setLineWidth(0.7);
@@ -70,7 +82,14 @@ export function _drawTitleBlock(doc, dw, dh, titleBlock, logo) {
     const logoX = M + dw * 0.82;
     const logoW = dw * 0.18;
     if (logo) {
-        doc.addImage(logo, logoX + 2, ty + 2, logoW - 4, TB - 4, '', 'FAST');
+        // LANGE Signatur: (bild, format, x, y, w, h).
+        //
+        // Hier stand die jsPDF-Altform ohne Format-Argument. jsPDF erkennt die
+        // und schiebt die Argumente selbst zurecht — der CanvasDoc-Adapter des
+        // Bildschirmplans nicht: dort landete `x` im Format, und die Hoehe war
+        // der leere String. Ergebnis NaN, gefangen vom stillen catch in
+        // CanvasDoc. Das Logo fehlte am Bildschirm, im PDF stand es.
+        doc.addImage(logo, _bildFormat(logo), logoX + 2, ty + 2, logoW - 4, TB - 4);
     } else {
         doc.setFontSize(6); doc.setTextColor(130); doc.text('Firma', logoX + 1.5, ty + 4);
         doc.setFontSize(9); doc.setTextColor(0);   doc.text(titleBlock.firma ?? '', logoX + 1.5, ty + 11, { maxWidth: logoW - 3 });
@@ -448,53 +467,6 @@ export function _drawWatermark(doc, text, M, dw, dh) {
     doc.setTextColor(0, 0, 0);
 }
 
-/**
- * Draw dimensions on the PDF.
- * @param {jsPDF}  doc
- * @param {{p1:{x,y}, p2:{x,y}, distInMeters:number}[]} dims  - p1/p2 in % (0..100) of drawing area
- * @param {number} ax, ay   - top-left of drawing area in mm
- * @param {number} aw, ah   - drawing area width/height in mm
- */
-function _drawDimensions(doc, dims, ax, ay, aw, ah) {
-    const fmt = (m) => m < 1 ? `${(m * 1000).toFixed(0)} mm`
-                              : m < 10 ? `${m.toFixed(2)} m`
-                              : `${m.toFixed(1)} m`;
-    doc.setDrawColor(213, 0, 0);
-    doc.setFillColor(213, 0, 0);
-    doc.setLineWidth(0.25);
-
-    for (const d of dims) {
-        const x1 = ax + (d.p1.x / 100) * aw;
-        const y1 = ay + (d.p1.y / 100) * ah;
-        const x2 = ax + (d.p2.x / 100) * aw;
-        const y2 = ay + (d.p2.y / 100) * ah;
-
-        // Line + endpoint dots
-        doc.line(x1, y1, x2, y2);
-        doc.circle(x1, y1, 0.6, 'F');
-        doc.circle(x2, y2, 0.6, 'F');
-
-        // Label centred between endpoints, slightly above
-        const mx = (x1 + x2) / 2;
-        const my = (y1 + y2) / 2;
-        const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-        const txt = fmt(d.distInMeters);
-
-        // White halo behind text so it reads against any background
-        doc.setFontSize(9);
-        doc.setTextColor(255, 255, 255);
-        for (const [ox, oy] of [[-0.3, 0], [0.3, 0], [0, -0.3], [0, 0.3]]) {
-            doc.text(txt, mx + ox, my - 1.5 + oy, { align: 'center', angle: -angle });
-        }
-        doc.setTextColor(213, 0, 0);
-        doc.text(txt, mx, my - 1.5, { align: 'center', angle: -angle });
-    }
-
-    // Restore defaults
-    doc.setTextColor(0, 0, 0);
-    doc.setDrawColor(0);
-    doc.setFillColor(0);
-}
 
 /**
  * Export the current plan as a PDF.
@@ -505,7 +477,14 @@ function _drawDimensions(doc, dims, ax, ay, aw, ah) {
  * @param {object}      opts.titleBlock - Schriftfeld field values
  * @param {string|null} opts.logo       - base64 image for the logo cell (optional)
  */
-export function exportPlanPDF({ snapshot, format, orientation, titleBlock, logo, dimensions = [] }) {
+/**
+ * Rasterweg: die 3D-Ansicht als Bild aufs Blatt.
+ *
+ * Bewusst schlicht — ein Schnappschuss mit Schriftfeld, fuer Berichte und
+ * Besprechungen. Der masstaebliche Plan ist der Vektorweg
+ * (`exportVectorPlanPDF`), dort liegt auch die Bemassung.
+ */
+export function exportPlanPDF({ snapshot, format, orientation, titleBlock, logo }) {
     const [baseW, baseH] = PAPER_SIZES[format] ?? PAPER_SIZES.A3;
     const [pw, ph] = orientation === 'landscape' ? [baseH, baseW] : [baseW, baseH];
 
@@ -522,7 +501,6 @@ export function exportPlanPDF({ snapshot, format, orientation, titleBlock, logo,
     }
 
     // ── Dimensions overlay (drawn on top of snapshot) ─────────────────
-    if (dimensions.length) _drawDimensions(doc, dimensions, M, M, dw, dh);
 
     // ── Border + title block ──────────────────────────────────────────
     _drawTitleBlock(doc, dw, dh, titleBlock, logo);
@@ -608,7 +586,7 @@ export async function exportVectorPlanPDF({
         drawVectorPlan(doc, plotFrustum, M, dw, dh, {
             scaleBar, scaleRatio,
             outlines, styleMap, styleMapPerModel, styleToLegacy,
-            annotations, measurements,
+            annotations, measurements, dimensions,
             showLabels, labelOpts,
             ifcGridAxes,
             slopeHatch: slopeSegments,
@@ -618,9 +596,6 @@ export async function exportVectorPlanPDF({
             sectionSegments, hatchPolygons, footprintProducts,
         });
     }
-
-    // ── Dimensions overlay ───────────────────────────────────────────
-    if (dimensions.length) _drawDimensions(doc, dimensions, M, M, dw, dh);
 
     // ── Border + title block ─────────────────────────────────────────
     _drawTitleBlock(doc, dw, dh, titleBlock, logo);
