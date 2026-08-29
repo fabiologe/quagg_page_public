@@ -1,7 +1,7 @@
 /**
  * CanvasAnnotDoc — Bildschirm-Backend des Annotations-Adapters.
  *
- * Das Muster stammt aus ifc-viewer/services/CanvasDoc.js: skaliert wird JE
+ * Das Muster stammt aus cde/services/CanvasDoc.js: skaliert wird JE
  * KOORDINATE (Seitenpunkte → Pixel), NICHT über ctx.scale() — sonst würden
  * auch Linienbreiten mitskaliert und die Haarlinien-Klemme griffe nicht.
  *
@@ -13,11 +13,16 @@
  *   textMitHalo(x,y,text,stil)    Label mit Weiß-Halo (Messwerte)
  *   text(x,y,text,stil)           linksbündige Zeile, (x,y) = obere linke Ecke
  *   messeTextBreite(text,pt)      Zeilenbreite in Punkten (backend-eigen)
+ *   bild(x,y,b,h,bildKey,stil)    eingefügtes Bild in die Box (x,y,b,h);
+ *                                 die Quelle löst jedes Backend selbst auf
  * Stil: { farbe, deckkraft, blend: 'normal'|'multiply', breitePt, haloFarbe, groessePt, winkel }
  * Alle Koordinaten/Breiten in Seitenpunkten.
+ *
+ * `holeBild(bildKey)` liefert ein drawImage-taugliches Bitmap oder null —
+ * dann zeichnet das Backend einen Platzhalterrahmen (Bild lädt noch).
  */
 
-export function erstelleCanvasAnnotDoc(ctx, { skala, minStrichPx = 0.75 } = {}) {
+export function erstelleCanvasAnnotDoc(ctx, { skala, minStrichPx = 0.75, holeBild = null } = {}) {
     const s = (pt) => pt * skala;
 
     function _stil(stil = {}) {
@@ -98,6 +103,24 @@ export function erstelleCanvasAnnotDoc(ctx, { skala, minStrichPx = 0.75 } = {}) 
         messeTextBreite(text, groessePt) {
             ctx.font = `${s(groessePt)}px Helvetica, Arial, sans-serif`;
             return ctx.measureText(text).width / skala;
+        },
+
+        bild(x, y, b, h, bildKey, stil = {}) {
+            const quelle = holeBild?.(bildKey) ?? null;
+            if (quelle) {
+                _stil(stil);
+                try { ctx.drawImage(quelle, s(x), s(y), s(b), s(h)); }
+                catch { /* z. B. bereits geschlossenes Bitmap — nächster Redraw lädt nach */ }
+                _zuruecksetzen();
+                return;
+            }
+            // Platzhalter, bis das Bild dekodiert ist: leichter gestrichelter Rahmen.
+            ctx.save();
+            ctx.strokeStyle = '#9aa1a9';
+            ctx.lineWidth = Math.max(s(0.8), minStrichPx);
+            ctx.setLineDash([s(4), s(3)]);
+            ctx.strokeRect(s(x), s(y), s(b), s(h));
+            ctx.restore();
         },
 
         textMitHalo(x, y, text, stil = {}) {

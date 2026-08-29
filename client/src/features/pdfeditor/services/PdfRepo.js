@@ -1,6 +1,6 @@
 /**
  * PdfRepo — Persistenz-Fassade des PDF-Editors (Kopie des RepoFacade-Musters
- * aus ifc-viewer/services/RepoFacade.js, eigener Namensraum).
+ * aus cde/services/RepoFacade.js, eigener Namensraum).
  *
  * Backend heute: IndexedDB (JSON + Blobs), Fallback localStorage (nur JSON).
  * Backend später: RemoteBackend über die quagg-API — die Fassade ist der

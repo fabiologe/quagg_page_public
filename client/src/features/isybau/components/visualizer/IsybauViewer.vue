@@ -1842,7 +1842,7 @@ svg.ezg-aerial-host {
   cursor: var(--isy-cursor-pan);
   /* Weißer Halo statt text-shadow (wirkt in SVG praktisch nicht) — bleibt
      auch über Luftbildern lesbar, ohne ein eigenes <rect> pro Label zu
-     brauchen. Gleiches Muster wie ifc-viewer/IfcPdfExportModal.vue. */
+     brauchen. Gleiches Muster wie cde/IfcPdfExportModal.vue. */
   paint-order: stroke;
   stroke: rgba(255,255,255,0.85);
   stroke-width: 3px;

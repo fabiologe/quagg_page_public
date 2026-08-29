@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { entscheide } from './guard'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -101,7 +102,7 @@ const router = createRouter({
     {
       path: '/cde',
       name: 'cde',
-      component: () => import('@/features/ifc-viewer/views/CdeView.vue'),
+      component: () => import('@/features/cde/views/CdeView.vue'),
       meta: { layout: 'empty' }
     },
     {
@@ -119,6 +120,14 @@ const router = createRouter({
       meta: { layout: 'empty' }
     },
     {
+      // Standalone-Mail-Client: eigener Vollbild-Tab ohne App-Chrome (Muster
+      // /pdf-editor), aber auth-geschützt wie /office. Keine PWA.
+      path: '/mail',
+      name: 'mail',
+      component: () => import('@/features/mailclient/views/MailClientView.vue'),
+      meta: { layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/features/auth/LoginView.vue'),
@@ -128,55 +137,79 @@ const router = createRouter({
       path: '/intern',
       name: 'intern',
       component: () => import('@/views/intern/InternDashboardView.vue'),
-      meta: { layout: 'intern', requiresAuth: true, role: 'INTERNAL' }
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'WERKSTUDENT' }
     },
     {
       path: '/client',
       name: 'client',
       component: () => import('@/views/client/ClientProjectsView.vue'),
-      meta: { layout: 'client', requiresAuth: true, role: 'CLIENT' }
+      meta: { layout: 'client', requiresAuth: true, minRole: 'EXTERN' }
     },
     {
       path: '/intern/library',
       name: 'library',
       component: () => import('@/views/intern/LibraryView.vue'),
-      meta: { layout: 'intern', requiresAuth: true, role: 'INTERNAL' }
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'WERKSTUDENT' }
     },
     {
       path: '/intern/library/view/:id',
       name: 'document-view',
       component: () => import('@/views/intern/DocumentView.vue'),
-      meta: { layout: 'empty', requiresAuth: true, role: 'INTERNAL' }
+      meta: { layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }
     },
     {
+      // Alte Triage-Inbox — vom Mail-Client (/mail, Ordner „Nicht zugewiesen") abgelöst
       path: '/intern/inbox',
-      name: 'intern-inbox',
-      component: () => import('@/views/intern/EmailTriageInbox.vue'),
-      meta: { layout: 'intern', requiresAuth: true, role: 'INTERNAL' }
+      redirect: '/mail'
     },
     {
       path: '/intern/projects',
       name: 'intern-projects',
       component: () => import('@/views/intern/ProjectsView.vue'),
-      meta: { layout: 'intern', requiresAuth: true, role: 'INTERNAL' }
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'WERKSTUDENT' }
     },
     {
+      path: '/office',
+      name: 'office',
+      component: () => import('@/features/projects/views/OfficeView.vue'),
+      meta: { layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }
+    },
+    {
+      path: '/intern/projects/:id(\\d+)',
+      name: 'intern-projekt-akte',
+      component: () => import('@/features/projects/views/ProjektAkteView.vue'),
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'WERKSTUDENT' }
+    },
+    {
+      // Altes Kommunikations-Dashboard (Mock-Daten) — abgelöst durch /mail
       path: '/intern/communication',
-      name: 'communication-dashboard',
-      component: () => import('@/views/intern/CommunicationDashboard.vue'),
-      meta: { layout: 'intern', requiresAuth: true, role: 'INTERNAL' }
+      redirect: '/mail'
     },
     {
-      path: '/projects/:id',
-      name: 'project-detail',
-      component: () => import('@/views/shared/ProjectDetailView.vue'),
-      meta: { requiresAuth: true }
+      path: '/intern/pedant',
+      name: 'intern-pedant',
+      component: () => import('@/features/kleiner-pedant/views/PedantView.vue'),
+      // Buchhaltung: nur ADMIN (das Backend-Gate ist der Türsteher, hier nur Kosmetik)
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'ADMIN' }
     },
     {
-      path: '/hybrid-workspace',
-      name: 'hybrid-workspace',
-      component: () => import('@/features/projects/ProjectWorkspace.vue'),
-      meta: { layout: 'intern', requiresAuth: true }
+      path: '/intern/kalender',
+      name: 'intern-kalender',
+      component: () => import('@/features/kalender/views/KalenderView.vue'),
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'WERKSTUDENT' }
+    },
+    {
+      path: '/intern/nutzer',
+      name: 'intern-nutzer',
+      component: () => import('@/features/nutzer/views/NutzerView.vue'),
+      meta: { layout: 'intern', requiresAuth: true, minRole: 'ADMIN' }
+    },
+    {
+      // Eigenes Konto (Passwort ändern) — für jede Rolle, auch EXTERN
+      path: '/konto',
+      name: 'konto',
+      component: () => import('@/features/auth/views/KontoView.vue'),
+      meta: { requiresAuth: true, minRole: 'EXTERN' }
     },
     {
       path: '/:pathMatch(.*)*',
@@ -186,24 +219,12 @@ const router = createRouter({
   ]
 })
 
-// Navigation Guards
+// Navigation Guard — Logik in ./guard.js (rein, getestet)
 router.beforeEach((to, from, next) => {
   try {
-    const authStore = useAuthStore()
-
-    // Prüfe ob Route Auth benötigt
-    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-      next({ name: 'login', query: { redirect: to.fullPath } })
-      return
-    }
-
-    // Prüfe ob spezifische Rolle benötigt wird
-    if (to.meta.role && authStore.user?.role !== to.meta.role) {
-      next({ name: 'home' })
-      return
-    }
-
-    next()
+    const ziel = entscheide(to, useAuthStore())
+    if (ziel) next(ziel)
+    else next()
   } catch (error) {
     console.error('Router guard error:', error)
     next()

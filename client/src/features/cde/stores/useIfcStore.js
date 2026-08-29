@@ -57,7 +57,7 @@ async function _loadWithLegacy(repoKey, legacyLsKey) {
   } catch { return null; }
 }
 
-export const useIfcStore = defineStore('ifc-viewer', () => {
+export const useIfcStore = defineStore('cde-modell', () => {
   const selectedElement = ref(null);
   const psetError       = ref(null);
   const modelLoaded     = ref(false);

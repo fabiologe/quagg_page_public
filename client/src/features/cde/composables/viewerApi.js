@@ -11,7 +11,7 @@
  */
 import { inject, provide } from 'vue';
 
-const VIEWER_API_KEY = Symbol('ifc-viewer-api');
+const VIEWER_API_KEY = Symbol('cde-viewer-api');
 
 /**
  * Zusätzlich zum provide/inject-Weg wird die API modulweit gemerkt.
