@@ -16,7 +16,7 @@
           :disabled="t.disabled"
           @click="activeTab = t.id"
         >
-          <span class="tab-icon">{{ t.icon }}</span>
+          <CdeIcon class="tab-icon" :name="t.icon" :size="15" />
           <span class="tab-label">{{ t.label }}</span>
           <span v-if="t.disabled" class="tab-soon">bald</span>
         </button>
@@ -86,6 +86,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import IfcAreaSchedule from './IfcAreaSchedule.vue';
+import CdeIcon from './ui/CdeIcon.vue';
 import IfcKgEditor     from './IfcKgEditor.vue';
 import IfcVolumeTab    from './IfcVolumeTab.vue';
 import IfcCountTab     from './IfcCountTab.vue';
@@ -107,14 +108,17 @@ const api = useViewerApi();
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 
+// `icon` ist der SEMANTISCHE Name aus CdeIcon — derselbe, den die Kachel in
+// ihrem Kopf führt. Reiter und Kachelkopf können dadurch nicht auseinander
+// laufen; früher stand hier ein Emoji, dort ein anderes.
 const tabs = [
-  { id: 'areas',    icon: '📐', label: 'Flächen',       disabled: false },
-  { id: 'kg',       icon: '🏷️', label: 'Kostengruppen', disabled: false },
-  { id: 'volume',   icon: '📦', label: 'Volumen',       disabled: false },
-  { id: 'count',    icon: '🔢', label: 'Stück',         disabled: false },
-  { id: 'kosten',   icon: '💶', label: 'Kosten',        disabled: false },
-  { id: 'pauschal', icon: '💰', label: 'Pauschal',      disabled: false },
-  { id: 'quality',  icon: '✅', label: 'BIM-Qualität',  disabled: false },
+  { id: 'areas',    icon: 'areas',    label: 'Flächen',       disabled: false },
+  { id: 'kg',       icon: 'kg',       label: 'Kostengruppen', disabled: false },
+  { id: 'volume',   icon: 'volume',   label: 'Volumen',       disabled: false },
+  { id: 'count',    icon: 'count',    label: 'Stück',         disabled: false },
+  { id: 'kosten',   icon: 'kosten',   label: 'Kosten',        disabled: false },
+  { id: 'pauschal', icon: 'pauschal', label: 'Pauschal',      disabled: false },
+  { id: 'quality',  icon: 'quality',  label: 'BIM-Qualität',  disabled: false },
 ];
 const activeTab = ref('areas');
 
@@ -374,7 +378,7 @@ watch(activeTab, (t) => {
 .cockpit {
   display: flex; flex-direction: column;
   height: 100%;
-  background: linear-gradient(180deg, #1a2a35 0%, #0d1820 100%);
+  background: linear-gradient(180deg, var(--cde-float-deep) 0%, var(--cde-float-deeper) 100%);
   color: var(--cde-text);
 }
 /* Das CSS des entfallenen Modal-Kopfes ist mit ihm weggefallen (Sprint P/AP-12). */
@@ -400,14 +404,16 @@ watch(activeTab, (t) => {
 .ck-tab.active {
   background: var(--cde-tint-weak);
   color: var(--cde-accent);
-  border-color: rgba(79,195,247,0.3);
+  border-color: color-mix(in srgb, var(--cde-accent) 30%, transparent);
   border-bottom-color: var(--cde-tint-weak);
 }
 .ck-tab.disabled { opacity: 0.4; cursor: not-allowed; }
-.tab-icon { font-size: 0.95rem; }
+/* Das Reiter-Icon ist jetzt ein SVG, keine Schriftglyphe — es folgt der
+   Textfarbe des Reiters und braucht deshalb keine eigene Größe mehr. */
+.tab-icon { flex-shrink: 0; }
 .tab-soon {
   font-size: 0.55rem; color: var(--cde-warn);
-  background: rgba(255,183,77,0.15);
+  background: color-mix(in srgb, var(--cde-warn) 15%, transparent);
   padding: 0.05rem 0.3rem; border-radius: 7px;
   margin-left: 0.2rem;
 }

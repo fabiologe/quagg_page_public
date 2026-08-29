@@ -9,7 +9,7 @@
       <div class="props-body">
         <!-- Kein Element gewählt -->
         <div v-if="!ifc.selectedElement" class="empty-state">
-          <div class="empty-icon">🖱️</div>
+          <CdeIcon class="empty-icon" name="pointer" :size="30" />
           <div class="empty-text">Element im Viewer anklicken</div>
         </div>
 
@@ -25,7 +25,8 @@
               title="Bounding-Box als Bridge-JSON in Zwischenablage kopieren"
               @click="copyAsBridge"
             >
-              {{ isCopying ? '⏳' : '🌉' }} Als Brücke kopieren
+              <CdeIcon :name="isCopying ? 'busy' : 'copy'" :class="{ 'is-busy': isCopying }" :size="12" />
+              Als Brücke kopieren
             </button>
           </div>
 
@@ -43,6 +44,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import CdeIcon from './ui/CdeIcon.vue';
 import IfcSidebar from './IfcSidebar.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 
@@ -108,7 +110,7 @@ async function copyAsBridge() {
     };
 
     await navigator.clipboard.writeText(JSON.stringify(json, null, 2));
-    alert(`🌉 Brückendaten kopiert!\nAchse: ${json.axis.p1.x.toFixed(0)} / ${json.axis.p1.y.toFixed(0)} → ${json.axis.p2.x.toFixed(0)} / ${json.axis.p2.y.toFixed(0)}\nz_sohle: ${json.z.sohle} m | deck: ${json.z.deck} m\n\nIn Flood-2D → BridgeTool → "📋 Aus IFC" einfügen.`);
+    alert(`Brückendaten kopiert!\nAchse: ${json.axis.p1.x.toFixed(0)} / ${json.axis.p1.y.toFixed(0)} → ${json.axis.p2.x.toFixed(0)} / ${json.axis.p2.y.toFixed(0)}\nz_sohle: ${json.z.sohle} m | deck: ${json.z.deck} m\n\nIn Flood-2D beim Brücken-Werkzeug einfügen.`);
   } catch (err) {
     alert(`Fehler: ${err.message}`);
   } finally {
@@ -142,20 +144,21 @@ async function copyAsBridge() {
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.75rem;
-  background: rgba(231, 76, 60, 0.12);
-  border-bottom: 1px solid rgba(231, 76, 60, 0.25);
+  background: color-mix(in srgb, var(--cde-danger) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--cde-danger) 25%, transparent);
   flex-shrink: 0;
 }
 .bridge-hint {
   flex: 1;
   font-size: 0.68rem;
-  color: #e57373;
+  color: var(--cde-danger-soft);
 }
 .bridge-copy-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
   padding: 0.25rem 0.6rem;
-  background: rgba(231, 76, 60, 0.2);
-  border: 1px solid rgba(231, 76, 60, 0.4);
-  border-radius: 4px;
+  background: var(--cde-danger-fill);
+  border: 1px solid color-mix(in srgb, var(--cde-danger) 40%, transparent);
+  border-radius: var(--cde-radius-sm);
   color: var(--cde-danger-soft);
   font-size: 0.72rem;
   font-weight: 600;
@@ -163,8 +166,9 @@ async function copyAsBridge() {
   transition: background 0.15s;
   white-space: nowrap;
 }
-.bridge-copy-btn:hover:not(:disabled) { background: rgba(231, 76, 60, 0.4); }
+.bridge-copy-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--cde-danger) 34%, transparent); }
 .bridge-copy-btn:disabled { opacity: 0.5; cursor: wait; }
+.bridge-copy-btn .is-busy { animation: cde-spin 0.9s linear infinite; }
 
 .empty-state {
   flex: 1;
@@ -173,10 +177,10 @@ async function copyAsBridge() {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  background: rgba(20, 22, 30, 0.95);
+  background: var(--cde-float-deep);
 }
 
-.empty-icon { font-size: 2rem; opacity: 0.4; }
+.empty-icon { color: var(--cde-text-dimmer); opacity: 0.7; }
 
 .empty-text {
   font-size: 0.8rem;

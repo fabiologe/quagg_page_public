@@ -1,45 +1,43 @@
 <template>
-  <div class="area-schedule">
-    <div class="card-header">
-      <span class="card-title">📐 Flächenbilanz DIN 277-1</span>
-      <button class="card-btn" :disabled="loading" @click="$emit('refresh')" title="Neu berechnen">
-        {{ loading ? '⏳' : '↻' }}
-      </button>
-    </div>
+  <div class="area-schedule cde-card">
+    <CdeCardHeader icon="areas" titel="Flächenbilanz DIN 277-1">
+      <CdeIconButton icon="refresh" titel="Neu berechnen" :busy="loading" @click="$emit('refresh')" />
+    </CdeCardHeader>
 
-    <div v-if="loading" class="state-msg">Berechne…</div>
-    <div v-else-if="!result || !result.spaces.length" class="state-msg">
+    <div v-if="loading" class="cde-state-msg">Berechne…</div>
+    <div v-else-if="!result || !result.spaces.length" class="cde-state-msg">
+      <CdeIcon name="areas" :size="22" />
       Kein IFCSPACE im Modell — keine Flächenbilanz möglich.
     </div>
 
     <template v-else>
       <!-- Gesamt-Summe oben -->
-      <div class="totals-bar">
-        <div class="total-cell">
-          <div class="total-label">BGF</div>
-          <div class="total-value">{{ fmt(result.totals.BGF) }} m²</div>
+      <div class="cde-totals">
+        <div class="cde-total-cell">
+          <div class="cde-total-label">BGF</div>
+          <div class="cde-total-value">{{ fmt(result.totals.BGF) }} m²</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">NGF</div>
-          <div class="total-value">{{ fmt(result.totals.NGF) }} m²</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">NGF</div>
+          <div class="cde-total-value">{{ fmt(result.totals.NGF) }} m²</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">NUF gesamt</div>
-          <div class="total-value">{{ fmt(result.totals.NUF_total) }} m²</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">NUF gesamt</div>
+          <div class="cde-total-value">{{ fmt(result.totals.NUF_total) }} m²</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">VF</div>
-          <div class="total-value">{{ fmt(result.totals.VF) }} m²</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">VF</div>
+          <div class="cde-total-value">{{ fmt(result.totals.VF) }} m²</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">TF</div>
-          <div class="total-value">{{ fmt(result.totals.TF) }} m²</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">TF</div>
+          <div class="cde-total-value">{{ fmt(result.totals.TF) }} m²</div>
         </div>
       </div>
 
       <!-- Geschosse × Klassen -->
-      <div class="schedule-table-wrap">
-        <table class="schedule-table">
+      <div class="cde-table-wrap">
+        <table class="cde-table">
           <thead>
             <tr>
               <th class="col-storey">Geschoss</th>
@@ -93,6 +91,9 @@
 <script setup>
 import { computed } from 'vue';
 import { DIN277_CLASSES } from '../services/Din277Classifier.js';
+import CdeIcon from './ui/CdeIcon.vue';
+import CdeCardHeader from './ui/CdeCardHeader.vue';
+import CdeIconButton from './ui/CdeIconButton.vue';
 
 const props = defineProps({
   result:  { type: Object, default: null },   // { spaces, byStorey, totals }
@@ -136,91 +137,47 @@ function fmt(v) {
 </script>
 
 <style scoped>
+/* Bausteine: styles/theme.css. Hier nur das Eigene der Flächenbilanz. */
 .area-schedule {
-  display: flex; flex-direction: column; gap: 0.55rem;
+  --card-accent: var(--cde-success-strong);
+  /* Fünf Kennwerte nebeneinander statt der drei üblichen. */
+  --cols: 5;
+  --table-max-h: none;
   font-size: 0.78rem;
   color: var(--cde-text);
 }
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.35rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 5px;
-  border: 1px solid var(--cde-tint);
-}
-.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
-.card-btn {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-strong);
-  color: var(--cde-text);
-  width: 1.6rem; height: 1.6rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
-.card-btn:disabled { opacity: 0.5; cursor: default; }
 
-.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 0.8rem 0.4rem; text-align: center; }
+.cde-total-value { font-size: 0.84rem; }
 
-.totals-bar {
-  display: grid; grid-template-columns: repeat(5, 1fr);
-  gap: 0.3rem;
-}
-.total-cell {
-  background: rgba(102,187,106,0.1);
-  border: 1px solid rgba(102,187,106,0.25);
-  border-radius: 4px;
-  padding: 0.32rem 0.4rem;
-  text-align: center;
-}
-.total-label { font-size: 0.62rem; color: var(--cde-success); letter-spacing: 0.04em; text-transform: uppercase; }
-.total-value { font-size: 0.84rem; color: var(--cde-text-bright); font-weight: 600; }
+/* Nullwerte treten zurück, damit die belegten Zellen die Bilanz tragen. */
+.cde-table td.zero { color: var(--cde-text-dimmer); }
+.col-bgf { font-weight: 600; color: var(--card-accent); }
+.cde-table td:first-child { font-weight: 500; }
 
-.schedule-table-wrap {
-  overflow-x: auto;
-  border-radius: 4px;
-  border: 1px solid var(--cde-tint-weak);
+.spaces-section { display: flex; flex-direction: column; gap: var(--cde-gap-xs); }
+.section-title {
+  font-size: 0.7rem; color: var(--cde-text-dim);
+  text-transform: uppercase; letter-spacing: 0.07em;
 }
-.schedule-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
-.schedule-table th {
-  background: var(--cde-tint-weak);
-  color: var(--cde-text-soft);
-  padding: 0.32rem 0.45rem;
-  text-align: right;
-  font-weight: 500;
-  border-bottom: 1px solid var(--cde-tint);
-}
-.schedule-table th:first-child { text-align: left; }
-.schedule-table td {
-  padding: 0.28rem 0.45rem;
-  text-align: right;
-  border-bottom: 1px solid var(--cde-tint-weak);
-}
-.schedule-table td:first-child { text-align: left; color: var(--cde-text-bright); font-weight: 500; }
-.schedule-table td.zero { color: #455a64; }
-.col-bgf { font-weight: 600; color: var(--cde-success) !important; }
-
-.spaces-section { display: flex; flex-direction: column; gap: 0.25rem; }
-.section-title { font-size: 0.7rem; color: var(--cde-text-dim); text-transform: uppercase; letter-spacing: 0.07em; }
 .spaces-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.15rem; }
 .space-row {
   display: grid; grid-template-columns: 1fr 4rem 5rem;
-  gap: 0.4rem; align-items: center;
+  gap: var(--cde-gap-sm); align-items: center;
   padding: 0.25rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 4px;
+  background: var(--cde-fill);
+  border-radius: var(--cde-radius-sm);
   cursor: pointer;
-  transition: background 0.08s;
+  transition: background 0.1s;
 }
-.space-row:hover { background: rgba(52,152,219,0.15); }
+.space-row:hover { background: color-mix(in srgb, var(--card-accent) 16%, transparent); }
 .space-row.override { border-left: 2px solid var(--cde-warn); }
 .space-name { font-size: 0.75rem; color: var(--cde-text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .space-class {
   font-size: 0.7rem; padding: 0.1rem 0.25rem;
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-strong);
+  background: var(--cde-fill-hover);
+  border: 1px solid var(--cde-line-strong);
   border-radius: 3px; color: var(--cde-text);
   cursor: pointer;
 }
-.space-area { font-size: 0.74rem; color: var(--cde-success); text-align: right; }
+.space-area { font-size: 0.74rem; color: var(--card-accent); text-align: right; }
 </style>

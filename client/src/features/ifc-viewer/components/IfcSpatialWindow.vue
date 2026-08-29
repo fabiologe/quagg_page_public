@@ -9,20 +9,22 @@
 
       <!-- Search -->
       <div class="sw-search">
-        <span class="search-icon">🔍</span>
+        <CdeIcon class="search-icon" name="search" :size="13" />
         <input
           v-model="filterText"
           class="search-input"
           placeholder="Filtern…"
           spellcheck="false"
         />
-        <button v-if="filterText" class="search-clear" @click="filterText = ''">✕</button>
+        <button v-if="filterText" class="search-clear" @click="filterText = ''" title="Filter leeren" aria-label="Filter leeren">
+          <CdeIcon name="close" :size="12" />
+        </button>
       </div>
 
       <!-- Tree content -->
       <div class="sw-body" ref="bodyRef">
         <div v-if="!ifc.spatialTree" class="empty-state">
-          <div class="empty-icon">🏗️</div>
+          <CdeIcon class="empty-icon" name="bim" :size="30" />
           <div class="empty-text">IFC-Modell laden um die<br>Gebäudestruktur anzuzeigen</div>
         </div>
 
@@ -47,6 +49,7 @@
 
 <script setup>
 import { ref } from 'vue';
+import CdeIcon from './ui/CdeIcon.vue';
 import IfcSpatialTree from './IfcSpatialTree.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 
@@ -82,7 +85,7 @@ defineExpose({ expandAll, collapseAll });
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: rgba(14, 16, 26, 0.98);
+  background: var(--cde-float-deeper);
 }
 
 /* Das CSS des entfallenen Modal-Kopfes ist mit ihm weggefallen (Sprint P/AP-12). */
@@ -94,10 +97,10 @@ defineExpose({ expandAll, collapseAll });
   gap: 0.4rem;
   padding: 0.45rem 0.75rem;
   border-bottom: 1px solid var(--cde-tint-weak);
-  background: rgba(20,22,35,0.6);
+  background: var(--cde-float-deep);
   flex-shrink: 0;
 }
-.search-icon { font-size: 0.78rem; opacity: 0.5; }
+.search-icon { color: var(--cde-text-mute); flex-shrink: 0; }
 .search-input {
   flex: 1;
   background: none;
@@ -107,10 +110,11 @@ defineExpose({ expandAll, collapseAll });
   font-size: 0.78rem;
   caret-color: var(--cde-accent);
 }
-.search-input::placeholder { color: #37474f; }
+.search-input::placeholder { color: var(--cde-text-dimmer); }
 .search-clear {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
-  color: var(--cde-text-dimmer); font-size: 0.7rem; padding: 0; line-height: 1;
+  color: var(--cde-text-dimmer); padding: 0;
   transition: color 0.12s;
 }
 .search-clear:hover { color: var(--cde-danger); }
@@ -134,10 +138,10 @@ defineExpose({ expandAll, collapseAll });
   gap: 0.8rem;
   padding: 3rem 1rem;
 }
-.empty-icon { font-size: 2.5rem; opacity: 0.3; }
+.empty-icon { color: var(--cde-text-dimmer); opacity: 0.6; }
 .empty-text {
   font-size: 0.78rem;
-  color: #37474f;
+  color: var(--cde-text-dimmer);
   text-align: center;
   line-height: 1.5;
 }
@@ -147,10 +151,10 @@ defineExpose({ expandAll, collapseAll });
   flex-shrink: 0;
   padding: 0.35rem 0.9rem;
   border-top: 1px solid var(--cde-tint-weak);
-  background: rgba(20,22,35,0.5);
+  background: var(--cde-float-deep);
 }
 .footer-info {
   font-size: 0.65rem;
-  color: #37474f;
+  color: var(--cde-text-dimmer);
 }
 </style>

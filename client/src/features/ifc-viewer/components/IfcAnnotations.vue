@@ -1,7 +1,10 @@
 <template>
   <div class="ann-panel">
     <div class="ann-header">
-      <span class="ann-title">💬 Issues <small v-if="ifc.annotations.length">({{ openCount }} offen)</small></span>
+      <span class="ann-title">
+        <CdeIcon name="issues" :size="15" />
+        Issues <small v-if="ifc.annotations.length">({{ openCount }} offen)</small>
+      </span>
       <div class="ann-header-actions">
         <button
           class="ann-mode-btn"
@@ -9,16 +12,17 @@
           @click="$emit('toggle-mode')"
           :title="annotationActive ? 'Pin-Modus beenden' : 'Issue anlegen — klick aufs Modell'"
         >
-          {{ annotationActive ? '✓ Aktiv' : '＋ Neu' }}
+          <CdeIcon :name="annotationActive ? 'check' : 'add'" :size="12" />
+          {{ annotationActive ? 'Aktiv' : 'Neu' }}
         </button>
         <button
           v-if="ifc.annotations.length"
           class="ann-export-btn"
           @click="onBcfExport"
           title="Als BCF 3.0 exportieren (.bcfzip) — für BIMcollab, Solibri, Revit…"
-        >BCF⬇</button>
+        ><CdeIcon name="download" :size="12" /> BCF</button>
         <label class="ann-import-btn" title="BCF importieren (.bcfzip)">
-          BCF⬆
+          <CdeIcon name="upload" :size="12" /> BCF
           <input type="file" accept=".bcf,.bcfzip,application/zip" @change="onBcfImport" class="sr-only" />
         </label>
         <button
@@ -26,9 +30,10 @@
           class="ann-export-btn"
           @click="onExport"
           title="Als JSON exportieren"
-        >⬇</button>
+          aria-label="Als JSON exportieren"
+        ><CdeIcon name="download" :size="12" /></button>
         <label class="ann-import-btn" title="JSON importieren">
-          ⬆
+          <CdeIcon name="upload" :size="12" />
           <input type="file" accept="application/json,.json" @change="onImport" class="sr-only" />
         </label>
         <button
@@ -36,7 +41,8 @@
           class="ann-clear-btn"
           @click="onClearAll"
           title="Alle löschen"
-        >🗑</button>
+          aria-label="Alle Issues löschen"
+        ><CdeIcon name="delete" :size="12" /></button>
       </div>
     </div>
 
@@ -116,12 +122,13 @@
                 class="ann-vp-btn"
                 @click="props.applyViewpoint?.(a.viewpoint)"
                 title="Gespeicherte Ansicht (Kamera/Sichtbarkeit/Schnitt) wiederherstellen"
-              >📷 Ansicht</button>
+              ><CdeIcon name="snapshot" :size="11" /> Ansicht</button>
               <button
                 class="ann-vp-btn dim"
                 @click="onUpdateViewpoint(a)"
                 title="Aktuelle Ansicht als Viewpoint speichern"
-              >⟳</button>
+                aria-label="Aktuelle Ansicht als Viewpoint speichern"
+              ><CdeIcon name="refresh" :size="11" /></button>
             </span>
           </div>
 
@@ -139,12 +146,15 @@
                 placeholder="Kommentar…"
                 @keydown.enter="submitComment(a)"
               />
-              <button class="ann-comment-send" @click="submitComment(a)">➤</button>
+              <button class="ann-comment-send" @click="submitComment(a)" title="Kommentar senden" aria-label="Kommentar senden">
+                <CdeIcon name="send" :size="13" />
+              </button>
             </div>
           </div>
           <div class="ann-row-footer">
             <button class="ann-link-btn" @click="toggleComment(a.id)">
-              💬 {{ a.comments.length || '' }} {{ commentOpen.has(a.id) ? 'schließen' : 'Kommentar' }}
+              <CdeIcon name="issues" :size="11" />
+              {{ a.comments.length || '' }} {{ commentOpen.has(a.id) ? 'schließen' : 'Kommentar' }}
             </button>
             <div class="ann-color-picker">
               <button
@@ -159,7 +169,9 @@
           </div>
         </div>
 
-        <button class="ann-del" @click="onDelete(a)" title="Löschen">✕</button>
+        <button class="ann-del" @click="onDelete(a)" title="Löschen" aria-label="Issue löschen">
+          <CdeIcon name="close" :size="12" />
+        </button>
       </div>
     </div>
   </div>
@@ -168,6 +180,7 @@
 <script setup>
 import { ref, computed, reactive } from 'vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import CdeIcon from './ui/CdeIcon.vue';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { exportBcf, importBcf } from '../services/BcfService.js';
 
@@ -336,33 +349,38 @@ function _download(blob, name) {
 .ann-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.55rem 0.75rem;
-  background: rgba(30, 35, 50, 0.95);
+  background: var(--cde-surface-raised);
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
-.ann-title { font-size: 0.78rem; font-weight: 600; color: var(--cde-issue-soft); }
+.ann-title {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.78rem; font-weight: 600; color: var(--cde-issue-soft);
+}
 .ann-title small { color: var(--cde-text-dim); font-weight: 400; }
 .ann-header-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .ann-mode-btn {
-  background: rgba(233,30,99,0.15);
-  border: 1px solid rgba(233,30,99,0.4);
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  background: color-mix(in srgb, var(--cde-issue) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cde-issue) 40%, transparent);
   color: var(--cde-issue-soft);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   font-size: 0.7rem; cursor: pointer;
   transition: background 0.15s;
 }
-.ann-mode-btn:hover  { background: rgba(233,30,99,0.25); }
+.ann-mode-btn:hover  { background: color-mix(in srgb, var(--cde-issue) 25%, transparent); }
 .ann-mode-btn.active {
-  background: var(--cde-issue); color: #fff;
+  background: var(--cde-issue); color: var(--cde-text-invert);
   border-color: var(--cde-issue);
 }
 .ann-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: 1px solid var(--cde-tint-strong);
   color: var(--cde-text-mute); padding: 0.2rem 0.4rem;
   border-radius: 4px; cursor: pointer; font-size: 0.7rem;
 }
-.ann-clear-btn:hover { background: rgba(239,83,80,0.15); color: var(--cde-danger); border-color: rgba(239,83,80,0.4); }
+.ann-clear-btn:hover { background: var(--cde-danger-fill); color: var(--cde-danger); border-color: color-mix(in srgb, var(--cde-danger) 40%, transparent); }
 
 .ann-filter-row {
   display: flex; gap: 0.25rem;
@@ -378,7 +396,7 @@ function _download(blob, name) {
   font-size: 0.66rem; cursor: pointer;
 }
 .ann-filter-chip small { color: var(--cde-text-faint); }
-.ann-filter-chip.active { background: rgba(233,30,99,0.2); color: var(--cde-issue-soft); border-color: rgba(233,30,99,0.45); }
+.ann-filter-chip.active { background: color-mix(in srgb, var(--cde-issue) 20%, transparent); color: var(--cde-issue-soft); border-color: color-mix(in srgb, var(--cde-issue) 45%, transparent); }
 
 .ann-body {
   flex: 1; overflow-y: auto;
@@ -390,7 +408,7 @@ function _download(blob, name) {
   color: var(--cde-text-dimmer); font-size: 0.72rem; text-align: center;
   line-height: 1.6;
 }
-.ann-empty small { color: #37474f; font-size: 0.65rem; }
+.ann-empty small { color: var(--cde-text-dimmer); font-size: 0.65rem; }
 
 .ann-row {
   display: grid;
@@ -404,7 +422,7 @@ function _download(blob, name) {
   display: inline-flex; justify-content: center; align-items: center;
   width: 26px; height: 26px;
   border-radius: 50%;
-  background: var(--cde-issue); color: #fff;
+  background: var(--cde-issue); color: var(--cde-text-invert);
   font-size: 0.7rem; font-weight: 700; font-variant-numeric: tabular-nums;
   cursor: pointer; flex-shrink: 0;
   transition: transform 0.1s;
@@ -423,7 +441,7 @@ function _download(blob, name) {
   min-height: 36px;
   width: 100%; box-sizing: border-box;
 }
-.ann-text:focus { outline: none; border-color: rgba(233,30,99,0.4); }
+.ann-text:focus { outline: none; border-color: color-mix(in srgb, var(--cde-issue) 40%, transparent); }
 
 .ann-meta-grid {
   display: grid;
@@ -438,11 +456,11 @@ function _download(blob, name) {
   font-size: 0.68rem;
   padding: 0.15rem 0.3rem;
 }
-.ann-status.st-open        { color: var(--cde-danger-soft); border-color: rgba(239,83,80,0.35); }
-.ann-status.st-in-progress { color: var(--cde-warn-soft); border-color: rgba(255,183,77,0.35); }
-.ann-status.st-closed      { color: var(--cde-success); border-color: rgba(129,199,132,0.35); }
+.ann-status.st-open        { color: var(--cde-danger-soft); border-color: color-mix(in srgb, var(--cde-danger) 35%, transparent); }
+.ann-status.st-in-progress { color: var(--cde-warn-soft); border-color: color-mix(in srgb, var(--cde-warn) 35%, transparent); }
+.ann-status.st-closed      { color: var(--cde-success); border-color: color-mix(in srgb, var(--cde-success-strong) 35%, transparent); }
 .ann-due { color-scheme: dark; }
-.ann-due.overdue { color: var(--cde-danger); border-color: rgba(239,83,80,0.6); }
+.ann-due.overdue { color: var(--cde-danger); border-color: color-mix(in srgb, var(--cde-danger) 60%, transparent); }
 
 .ann-info-line {
   display: flex; align-items: center; gap: 0.3rem;
@@ -450,15 +468,16 @@ function _download(blob, name) {
 }
 .ann-vp-actions { margin-left: auto; display: flex; gap: 0.2rem; }
 .ann-vp-btn {
-  background: rgba(52,152,219,0.12);
-  border: 1px solid rgba(52,152,219,0.35);
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  background: var(--cde-accent-fill);
+  border: 1px solid var(--cde-accent-line);
   color: var(--cde-accent-soft);
-  padding: 0.08rem 0.35rem;
+  padding: 0.1rem 0.35rem;
   border-radius: 3px;
   font-size: 0.62rem; cursor: pointer;
 }
-.ann-vp-btn:hover { background: rgba(52,152,219,0.25); }
-.ann-vp-btn.dim { background: none; border-color: var(--cde-tint-strong); color: var(--cde-text-mute); }
+.ann-vp-btn:hover { background: var(--cde-accent-fill-hi); }
+.ann-vp-btn.dim { background: none; border-color: var(--cde-line-strong); color: var(--cde-text-mute); }
 
 .ann-comments {
   display: flex; flex-direction: column; gap: 0.2rem;
@@ -480,13 +499,18 @@ function _download(blob, name) {
   padding: 0.2rem 0.35rem;
 }
 .ann-comment-send {
-  background: rgba(233,30,99,0.2); border: 1px solid rgba(233,30,99,0.4);
-  color: var(--cde-issue-soft); border-radius: 4px; cursor: pointer; font-size: 0.7rem;
-  padding: 0 0.4rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--cde-issue) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cde-issue) 40%, transparent);
+  color: var(--cde-issue-soft);
+  border-radius: var(--cde-radius-sm); cursor: pointer;
+  padding: 0 0.45rem;
 }
+.ann-comment-send:hover { background: color-mix(in srgb, var(--cde-issue) 34%, transparent); }
 
 .ann-row-footer { display: flex; justify-content: space-between; align-items: center; }
 .ann-link-btn {
+  display: inline-flex; align-items: center; gap: 0.25rem;
   background: none; border: none; color: var(--cde-text-mute);
   font-size: 0.64rem; cursor: pointer; padding: 0;
 }
@@ -503,13 +527,15 @@ function _download(blob, name) {
 }
 .ann-color-swatch:hover { transform: scale(1.2); }
 .ann-color-swatch.active {
-  border-color: #fff;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.35);
+  border-color: var(--cde-text-invert);
+  box-shadow: 0 0 0 1px var(--cde-tint-max);
 }
 
 .ann-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  align-self: flex-start;
   background: none; border: none; color: var(--cde-text-mute);
-  font-size: 0.9rem; cursor: pointer; padding: 0 0.3rem; line-height: 1;
+  cursor: pointer; padding: 0.15rem 0.25rem; border-radius: 3px;
 }
 .ann-del:hover { color: var(--cde-danger); }
 
@@ -521,7 +547,11 @@ function _download(blob, name) {
   display: inline-flex; align-items: center;
 }
 .ann-export-btn:hover,
-.ann-import-btn:hover { background: var(--cde-tint-weak); color: var(--cde-text); }
+.ann-import-btn:hover { background: var(--cde-fill); color: var(--cde-text); }
+
+/* Icon + Kürzel stehen nebeneinander in einer Zeile. */
+.ann-export-btn,
+.ann-import-btn { gap: 0.25rem; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;

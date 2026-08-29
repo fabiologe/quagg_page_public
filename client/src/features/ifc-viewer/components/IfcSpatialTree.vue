@@ -1,8 +1,10 @@
 <template>
   <div class="tree-panel" :class="{ 'tree-panel--bare': bare }">
     <div v-if="!bare" class="panel-header">
-      <span class="panel-title">🌳 Gebäudestruktur</span>
-      <button class="hdr-close" @click="emit('close')">&times;</button>
+      <span class="panel-title"><CdeIcon name="tree" :size="14" /> Gebäudestruktur</span>
+      <button class="hdr-close" @click="emit('close')" title="Schließen" aria-label="Schließen">
+        <CdeIcon name="close" :size="14" />
+      </button>
     </div>
 
     <div class="panel-body">
@@ -20,6 +22,7 @@
 
 <script setup>
 import { defineComponent, h, ref, computed, provide, inject } from 'vue';
+import CdeIcon from './ui/CdeIcon.vue';
 
 const props = defineProps({
   tree:   { type: Object,  default: null  },
@@ -76,13 +79,19 @@ const TreeNode = defineComponent({
 
     const STOREY_TYPES = new Set(['IFCBUILDINGSTOREY', 'IFCBUILDING', 'IFCSITE', 'IFCSPACE']);
 
+    /**
+     * Symbolname der Raumhierarchie-Stufe.
+     *
+     * Reihenfolge ist wichtig: 'IFCBUILDINGSTOREY' enthält auch 'BUILDING' —
+     * die Geschoss-Prüfung muss deshalb VOR der Gebäude-Prüfung stehen.
+     */
     function icon(category) {
       const c = (category ?? '').toUpperCase();
-      if (c.includes('SITE'))     return '🌍';
-      if (c.includes('BUILDING')) return '🏢';
-      if (c.includes('STOREY'))   return '🏠';
-      if (c.includes('SPACE'))    return '🟦';
-      return '📦';
+      if (c.includes('STOREY'))   return 'storey';
+      if (c.includes('SITE'))     return 'site';
+      if (c.includes('BUILDING')) return 'building';
+      if (c.includes('SPACE'))    return 'space';
+      return 'element';
     }
 
     // A5: show element name if available, fall back to category
@@ -112,10 +121,11 @@ const TreeNode = defineComponent({
         }, [
           hasChildren
             // A2: data-open attribute so expandAll/collapseAll can query it
-            ? h('span', { class: 'caret', 'data-open': String(isOpen), onClick: toggleExpand }, isOpen ? '▾' : '▸')
+            ? h('span', { class: 'caret', 'data-open': String(isOpen), onClick: toggleExpand },
+                [h(CdeIcon, { name: isOpen ? 'chevron-down' : 'chevron-right', size: 12 })])
             : h('span', { class: 'leaf-dot' }, '·'),
 
-          h('span', { class: 'node-icon' }, icon(node.category)),
+          h('span', { class: 'node-icon' }, [h(CdeIcon, { name: icon(node.category), size: 13 })]),
           h('span', {
             class: 'node-label',
             title: node.localId != null ? `${label(node)} — Klick zum Zoomen` : label(node),
@@ -127,7 +137,7 @@ const TreeNode = defineComponent({
                 class: ['vis-btn', { hidden: !visible.value }],
                 title: visible.value ? 'Ausblenden' : 'Einblenden',
                 onClick: toggleVisibility,
-              }, visible.value ? '👁' : '🚫')
+              }, [h(CdeIcon, { name: visible.value ? 'visible' : 'hidden', size: 12 })])
             : null,
         ]),
 
@@ -181,7 +191,7 @@ const TreeNode = defineComponent({
 .tree-empty {
   padding: 2rem;
   text-align: center;
-  color: #37474f;
+  color: var(--cde-text-dimmer);
   font-size: 0.8rem;
 }
 
@@ -190,21 +200,23 @@ const TreeNode = defineComponent({
   justify-content: space-between;
   align-items: center;
   padding: 0.55rem 0.75rem;
-  background: rgba(30,35,50,0.95);
+  background: var(--cde-float);
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 
 .panel-title {
+  display: flex; align-items: center; gap: 0.35rem;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--cde-accent-soft);
 }
 
 .hdr-close {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--cde-text-mute);
-  font-size: 1.1rem; cursor: pointer; padding: 0 0.2rem;
-  line-height: 1; border-radius: 4px; transition: color 0.15s;
+  cursor: pointer; padding: 0.15rem;
+  border-radius: var(--cde-radius-sm); transition: color 0.15s;
 }
 .hdr-close:hover { color: var(--cde-danger); }
 
@@ -236,23 +248,23 @@ const TreeNode = defineComponent({
 .node-row.is-storey { color: var(--cde-accent-soft); }
 
 .caret {
-  font-size: 0.7rem;
+  display: inline-flex; align-items: center; justify-content: center;
   color: var(--cde-text-dimmer);
   width: 12px;
   flex-shrink: 0;
   text-align: center;
 }
 .leaf-dot {
-  color: #37474f;
+  color: var(--cde-text-dimmer);
   width: 12px;
   flex-shrink: 0;
   text-align: center;
 }
 .node-icon {
-  font-size: 0.78rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--cde-text-mute);
   flex-shrink: 0;
   width: 16px;
-  text-align: center;
 }
 .node-label {
   font-size: 0.74rem;
@@ -263,17 +275,18 @@ const TreeNode = defineComponent({
   text-overflow: ellipsis;
 }
 .node-row.is-storey .node-label { color: var(--cde-accent-soft); font-weight: 500; }
-.node-label:hover { color: #e3f2fd; text-decoration: underline; }
+.node-label:hover { color: var(--cde-text-bright); text-decoration: underline; }
 
 .vis-btn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
-  font-size: 0.72rem; padding: 0; line-height: 1;
-  opacity: 0; transition: opacity 0.15s, transform 0.12s;
+  color: var(--cde-text-mute); padding: 0;
+  opacity: 0; transition: opacity 0.15s, transform 0.12s, color 0.12s;
   flex-shrink: 0;
 }
 .node-row:hover .vis-btn { opacity: 1; }
 .vis-btn.hidden { opacity: 1; color: var(--cde-danger); }
-.vis-btn:hover { transform: scale(1.2); }
+.vis-btn:hover { transform: scale(1.15); color: var(--cde-text-bright); }
 
 .children { }
 </style>

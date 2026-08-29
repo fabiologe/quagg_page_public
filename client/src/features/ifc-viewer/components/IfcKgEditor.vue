@@ -1,22 +1,18 @@
 <template>
-  <div class="kg-editor">
-    <div class="card-header">
-      <span class="card-title">📦 Kostengruppen DIN 276-1</span>
-      <div class="card-actions">
-        <button class="card-btn" :disabled="loading" @click="$emit('refresh')" title="Neu berechnen">
-          {{ loading ? '⏳' : '↻' }}
-        </button>
-        <button
-          class="card-btn"
-          :class="{ active: kgColorMode }"
-          @click="$emit('toggle-color-mode')"
-          title="3D-Ansicht in KG-Farben anzeigen"
-        >🎨</button>
-      </div>
-    </div>
+  <div class="kg-editor cde-card">
+    <CdeCardHeader icon="kg" titel="Kostengruppen DIN 276-1">
+      <CdeIconButton icon="refresh" titel="Neu berechnen" :busy="loading" @click="$emit('refresh')" />
+      <CdeIconButton
+        icon="style"
+        titel="3D-Ansicht in KG-Farben anzeigen"
+        :aktiv="kgColorMode"
+        @click="$emit('toggle-color-mode')"
+      />
+    </CdeCardHeader>
 
-    <div v-if="loading" class="state-msg">Klassifiziere…</div>
-    <div v-else-if="!result || !result.byKg.size" class="state-msg">
+    <div v-if="loading" class="cde-state-msg">Klassifiziere…</div>
+    <div v-else-if="!result || !result.byKg.size" class="cde-state-msg">
+      <CdeIcon name="kg" :size="22" />
       Keine Klassifikations-Treffer — Standard-Regeln erkennen IFCWALL, IFCSLAB, IFCROOF, IFCPIPESEGMENT u.a. Eventuell sind die Kategorien im Modell anders benannt.
     </div>
 
@@ -35,8 +31,8 @@
       </div>
 
       <!-- Tabelle pro Untergruppe -->
-      <div class="kg-table-wrap">
-        <table class="kg-table">
+      <div class="cde-table-wrap">
+        <table class="cde-table">
           <thead>
             <tr>
               <th class="col-color"></th>
@@ -51,7 +47,7 @@
                  (die IDE-Regel vue/no-v-for-template-key ist Vue-2-Erbe) -->
             <template v-for="entry in tableRows" :key="entry.code">
               <tr
-                class="kg-row"
+                class="kg-row klickbar"
                 :class="{ 'is-root': entry.isRoot }"
                 @click="$emit('select-kg', entry.code)"
               >
@@ -65,7 +61,7 @@
                     :class="{ open: expanded.has(entry.code) }"
                     @click.stop="toggleExpand(entry.code)"
                     title="Elemente anzeigen / KG zuweisen"
-                  >▸</button>
+                  ><CdeIcon name="chevron-right" :size="12" /></button>
                   {{ entry.code }}
                 </td>
                 <td class="col-label">{{ entry.label }}</td>
@@ -95,7 +91,7 @@
                           {{ opt.code }} {{ opt.shortLabel }}
                         </option>
                       </select>
-                      <span v-if="overrides?.has(el.globalId)" class="el-override-badge" title="Manueller Override">✎</span>
+                      <CdeIcon v-if="overrides?.has(el.globalId)" class="el-override-badge" name="edit" :size="11" />
                     </div>
                     <div v-if="elementsFor(entry.code).length > MAX_ELEMENTS_SHOWN" class="el-more">
                       … {{ elementsFor(entry.code).length - MAX_ELEMENTS_SHOWN }} weitere Elemente
@@ -115,7 +111,7 @@
                     :class="{ open: expanded.has('__unassigned') }"
                     @click.stop="toggleExpand('__unassigned')"
                     title="Elemente anzeigen / KG zuweisen"
-                  >▸</button>
+                  ><CdeIcon name="chevron-right" :size="12" /></button>
                   —
                 </td>
                 <td class="col-label">
@@ -166,6 +162,9 @@
 <script setup>
 import { computed, reactive } from 'vue';
 import { KG_TREE, KG_LOOKUP, kgColor } from '../services/Din276Defaults.js';
+import CdeIcon from './ui/CdeIcon.vue';
+import CdeCardHeader from './ui/CdeCardHeader.vue';
+import CdeIconButton from './ui/CdeIconButton.vue';
 
 const props = defineProps({
   result:       { type: Object,  default: null },  // { byKg, unassigned, perElement }
@@ -277,94 +276,70 @@ function fmt(n) {
 </script>
 
 <style scoped>
-.kg-editor { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
-
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.35rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 5px;
-  border: 1px solid var(--cde-tint);
-}
-.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
-.card-actions { display: flex; gap: 0.2rem; }
-.card-btn {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-strong);
+/* Bausteine: styles/theme.css. Hier nur das Eigene des KG-Editors. */
+.kg-editor {
+  --card-accent: var(--cde-accent);
+  --table-max-h: 380px;
+  font-size: 0.78rem;
   color: var(--cde-text);
-  width: 1.6rem; height: 1.6rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
 }
-.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
-.card-btn.active { background: rgba(52,152,219,0.3); color: var(--cde-accent); border-color: rgba(52,152,219,0.55); }
-.card-btn:disabled { opacity: 0.5; cursor: default; }
 
-.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 1rem 0.5rem; text-align: center; }
-
-.kg-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+/* Summenkarten der Hauptgruppen — die Randfarbe kommt aus DIN276Defaults. */
+.kg-totals { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cde-gap-sm); }
 .kg-total-card {
   padding: 0.45rem 0.55rem;
-  background: var(--cde-tint-weak);
-  border: 1px solid var(--cde-tint);
+  background: var(--cde-fill);
+  border: 1px solid var(--cde-line);
   border-left-width: 3px;
-  border-radius: 4px;
+  border-radius: var(--cde-radius-sm);
 }
 .kg-total-code { font-weight: 700; font-size: 0.95rem; letter-spacing: 0.05em; }
 .kg-total-label { font-size: 0.7rem; color: var(--cde-text-soft); margin-top: 0.1rem; }
-.kg-total-stats { font-size: 0.7rem; color: var(--cde-text-dim); margin-top: 0.3rem; display: flex; gap: 0.3rem; }
+.kg-total-stats { display: flex; gap: 0.3rem; margin-top: 0.3rem; font-size: 0.7rem; color: var(--cde-text-dim); }
 
-.kg-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid var(--cde-tint-weak); }
-.kg-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
-.kg-table th {
-  position: sticky; top: 0; z-index: 1;
-  background: rgba(15,30,40,0.95);
-  color: var(--cde-text-soft);
-  padding: 0.35rem 0.5rem;
-  text-align: left;
-  font-weight: 500;
-  border-bottom: 1px solid var(--cde-tint-strong);
+/* Diese Tabelle ist eine Gliederung, keine Zahlenkolonne: links ausgerichtet,
+   nur die beiden Mengenspalten stehen rechts. */
+.cde-table th,
+.cde-table td { text-align: left; }
+.cde-table th.col-count, .cde-table th.col-vol,
+.cde-table td.col-count, .cde-table td.col-vol {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
-.kg-table th.col-count, .kg-table th.col-vol { text-align: right; }
-.kg-table td {
-  padding: 0.28rem 0.5rem;
-  border-bottom: 1px solid var(--cde-tint-weak);
-}
+
 .col-color { width: 1.4rem; }
-.col-code { width: 2.6rem; font-weight: 600; color: var(--cde-text-bright); }
+.col-code  { width: 2.6rem; font-weight: 600; color: var(--cde-text-bright); }
 .col-label { color: var(--cde-text); }
-.col-count, .col-vol { text-align: right; font-variant-numeric: tabular-nums; }
 
 .swatch {
   display: inline-block; width: 0.9rem; height: 0.9rem;
-  border-radius: 2px; border: 1px solid var(--cde-tint-max);
+  border-radius: 2px; border: 1px solid var(--cde-line-strong);
 }
-.swatch-unassigned { background: transparent; border-style: dashed; border-color: #ff8a65; }
+.swatch-unassigned { background: transparent; border-style: dashed; border-color: var(--cde-warn); }
 
 /* B5: Aufklappen + KG-Zuweisung */
 .expand-btn {
-  background: none; border: none; color: var(--cde-text-dim); cursor: pointer;
-  font-size: 0.7rem; padding: 0 0.25rem 0 0;
-  transition: transform 0.12s;
-  display: inline-block;
+  display: inline-flex; align-items: center;
+  background: none; border: none; padding: 0 0.2rem 0 0;
+  color: var(--cde-text-dim); cursor: pointer;
+  transition: transform 0.12s, color 0.12s;
 }
 .expand-btn.open { transform: rotate(90deg); }
-.expand-btn:hover { color: var(--cde-accent); }
+.expand-btn:hover { color: var(--card-accent); }
 
-.kg-detail-row td { padding: 0.2rem 0.4rem 0.4rem 1.6rem; background: rgba(0,0,0,0.18); }
+.kg-detail-row td { padding: 0.2rem 0.4rem 0.4rem 1.6rem; background: var(--cde-bg-deep); }
 .el-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 220px; overflow-y: auto; }
-.el-row { display: flex; align-items: center; gap: 0.4rem; }
+.el-row { display: flex; align-items: center; gap: var(--cde-gap-sm); }
 .el-zoom {
   flex: 1; text-align: left;
   background: none; border: none; color: var(--cde-text-soft); cursor: pointer;
   font-size: 0.72rem; padding: 0.15rem 0.2rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.el-zoom:hover { color: var(--cde-accent); }
+.el-zoom:hover { color: var(--card-accent); }
 .el-kg-select {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-max);
+  background: var(--cde-fill-hover);
+  border: 1px solid var(--cde-line-strong);
   color: var(--cde-text);
   border-radius: 3px;
   font-size: 0.7rem;
@@ -372,13 +347,12 @@ function fmt(n) {
   max-width: 165px;
 }
 .el-kg-select:disabled { opacity: 0.4; cursor: not-allowed; }
-.el-override-badge { color: #ffd54f; font-size: 0.7rem; }
+/* Handzuweisung sticht heraus — sie überstimmt die Regeln. */
+.el-override-badge { color: var(--cde-warn); }
 .el-more { color: var(--cde-text-mute); font-size: 0.68rem; font-style: italic; padding: 0.2rem; }
 
-.kg-row { cursor: pointer; transition: background 0.08s; }
-.kg-row:hover { background: rgba(52,152,219,0.15); }
-.kg-row.is-root td { background: var(--cde-tint-weak); font-weight: 600; color: var(--cde-text-bright); }
+.kg-row.is-root td { background: var(--cde-fill); font-weight: 600; color: var(--cde-text-bright); }
 .kg-row.is-root td.col-label { font-size: 0.78rem; }
-.kg-row.unassigned td { color: #ff8a65; font-style: italic; }
+.kg-row.unassigned td { color: var(--cde-warn); font-style: italic; }
 .kg-row.unassigned small { color: var(--cde-text-dim); font-style: normal; font-size: 0.65rem; margin-left: 0.3rem; }
 </style>

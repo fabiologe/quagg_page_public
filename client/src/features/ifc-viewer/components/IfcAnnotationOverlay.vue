@@ -123,13 +123,13 @@ function onMouseUp() {
 .ann-bubble {
   position: absolute;
   display: flex; align-items: center; gap: 0.4rem;
-  background: rgba(255,255,255,0.97);
+  background: color-mix(in srgb, var(--cde-text-invert) 97%, transparent);
   border: 2px solid var(--cde-issue);
   border-radius: 8px;
   padding: 0.35rem 0.55rem 0.35rem 0.4rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  box-shadow: var(--cde-shadow-float);
   font-size: 0.72rem;
-  color: #1a1a1a;
+  color: var(--cde-hinweis-text);
   max-width: 220px;
   pointer-events: auto;
   cursor: grab;
@@ -143,7 +143,7 @@ function onMouseUp() {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px;
   border-radius: 50%;
-  color: #fff; font-weight: 700; font-size: 0.62rem;
+  color: var(--cde-text-invert); font-weight: 700; font-size: 0.62rem;
   flex-shrink: 0;
 }
 .ann-bubble-text {

@@ -1,31 +1,29 @@
 <template>
-  <div class="cnt-tab">
-    <div class="card-header">
-      <span class="card-title">🔢 Stück-Übersicht (Stk)</span>
-      <button class="card-btn" :disabled="loading" @click="$emit('refresh')" title="Neu berechnen">
-        {{ loading ? '⏳' : '↻' }}
-      </button>
-    </div>
+  <div class="cnt-tab cde-card">
+    <CdeCardHeader icon="count" titel="Stück-Übersicht (Stk)">
+      <CdeIconButton icon="refresh" titel="Neu berechnen" :busy="loading" @click="$emit('refresh')" />
+    </CdeCardHeader>
 
-    <div v-if="loading" class="state-msg">Berechne…</div>
-    <div v-else-if="!result || !result.byCategory.size" class="state-msg">
+    <div v-if="loading" class="cde-state-msg">Berechne…</div>
+    <div v-else-if="!result || !result.byCategory.size" class="cde-state-msg">
+      <CdeIcon name="count" :size="22" />
       Kein Modell geladen.
     </div>
 
     <template v-else>
       <!-- Summe oben -->
-      <div class="totals-bar">
-        <div class="total-cell prim">
-          <div class="total-label">Σ Stück</div>
-          <div class="total-value">{{ result.totals.count }}</div>
+      <div class="cde-totals">
+        <div class="cde-total-cell prim">
+          <div class="cde-total-label">Σ Stück</div>
+          <div class="cde-total-value">{{ result.totals.count }}</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">davon abrechenbar</div>
-          <div class="total-value">{{ billedTotal }}</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">davon abrechenbar</div>
+          <div class="cde-total-value">{{ billedTotal }}</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">Kategorien</div>
-          <div class="total-value">{{ result.byCategory.size }}</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">Kategorien</div>
+          <div class="cde-total-value">{{ result.byCategory.size }}</div>
         </div>
       </div>
 
@@ -38,17 +36,17 @@
       </div>
 
       <!-- Tabelle -->
-      <div class="cnt-table-wrap">
-        <table class="cnt-table">
+      <div class="cde-table-wrap">
+        <table class="cde-table">
           <thead>
             <tr>
-              <th class="col-cat" @click="setSort('name')">
+              <th class="col-cat sortable" @click="setSort('name')">
                 Kategorie
-                <span v-if="sortKey === 'name'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'name'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
-              <th class="col-count" @click="setSort('count')">
+              <th class="col-count sortable" @click="setSort('count')">
                 Anzahl
-                <span v-if="sortKey === 'count'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'count'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
               <th class="col-share">% v. ges.</th>
             </tr>
@@ -57,18 +55,18 @@
             <tr
               v-for="row in sortedRows"
               :key="row.category"
-              class="cnt-row"
+              class="klickbar"
               :class="{ 'is-billed': isBilled(row.category) }"
               @click="$emit('select-category', row.category)"
             >
               <td class="col-cat">
                 <span class="cat-name">{{ row.category.replace(/^IFC/, '') }}</span>
-                <span v-if="isBilled(row.category)" class="cat-badge" title="Typischerweise pro Stück abgerechnet">⚡</span>
+                <CdeIcon v-if="isBilled(row.category)" class="cat-badge" name="billed" :size="11" />
               </td>
               <td class="col-count">{{ row.count }}</td>
               <td class="col-share">{{ pct(row.count, result.totals.count) }}</td>
             </tr>
-            <tr v-if="!sortedRows.length" class="cnt-row empty">
+            <tr v-if="!sortedRows.length" class="leer">
               <td colspan="3">Keine Kategorien passen zum Filter.</td>
             </tr>
           </tbody>
@@ -81,6 +79,9 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { PIECE_BILLED_CATEGORIES } from '../services/QuantitySummary.js';
+import CdeIcon from './ui/CdeIcon.vue';
+import CdeCardHeader from './ui/CdeCardHeader.vue';
+import CdeIconButton from './ui/CdeIconButton.vue';
 
 const props = defineProps({
   result:  { type: Object,  default: null },
@@ -131,79 +132,21 @@ function pct(n, total) {
 </script>
 
 <style scoped>
-.cnt-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
-
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.35rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 5px;
-  border: 1px solid var(--cde-tint);
-}
-.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
-.card-btn {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-strong);
-  color: var(--cde-text);
-  width: 1.6rem; height: 1.6rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
-.card-btn:disabled { opacity: 0.5; cursor: default; }
-
-.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 1rem 0.5rem; text-align: center; }
-
-.totals-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
-.total-cell {
-  background: rgba(33,150,243,0.1);
-  border: 1px solid rgba(33,150,243,0.28);
-  border-radius: 4px;
-  padding: 0.35rem 0.45rem;
-  text-align: center;
-}
-.total-cell.prim { background: rgba(33,150,243,0.18); border-color: rgba(33,150,243,0.5); }
-.total-label { font-size: 0.62rem; color: var(--cde-accent-soft); letter-spacing: 0.04em; text-transform: uppercase; }
-.total-value { font-size: 0.92rem; color: var(--cde-text-bright); font-weight: 600; }
+/* Bausteine (Kopf, Summen, Tabelle) stehen in styles/theme.css —
+   hier bleibt nur, was diese Kachel wirklich von den anderen unterscheidet. */
+.cnt-tab { --card-accent: var(--cde-accent); font-size: 0.78rem; color: var(--cde-text); }
 
 .filter-row { padding: 0 0.1rem; }
 .filter-check {
   display: flex; align-items: center; gap: 0.4rem;
-  font-size: 0.72rem; color: var(--cde-text-soft); cursor: pointer;
+  font-size: var(--cde-font-sm); color: var(--cde-text-soft); cursor: pointer;
 }
-.filter-check input { accent-color: var(--cde-accent); }
+.filter-check input { accent-color: var(--card-accent); }
 
-.cnt-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid var(--cde-tint-weak); }
-.cnt-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; font-variant-numeric: tabular-nums; }
-.cnt-table th {
-  position: sticky; top: 0; z-index: 1;
-  background: rgba(15,30,40,0.95);
-  color: var(--cde-text-soft);
-  padding: 0.35rem 0.5rem;
-  text-align: right;
-  font-weight: 500;
-  cursor: pointer;
-  border-bottom: 1px solid var(--cde-tint-strong);
-  user-select: none;
-}
-.cnt-table th.col-cat { text-align: left; }
-.cnt-table th:hover { color: var(--cde-accent); }
-.sort-arrow { font-size: 0.65rem; color: var(--cde-accent); margin-left: 0.2rem; }
-
-.cnt-table td {
-  padding: 0.3rem 0.5rem;
-  text-align: right;
-  border-bottom: 1px solid var(--cde-tint-weak);
-}
-.cnt-table td.col-cat { text-align: left; color: var(--cde-text-bright); }
 .col-count { font-weight: 600; color: var(--cde-accent-soft); }
-.col-share { color: var(--cde-text-faint); }
+.col-share { color: var(--cde-text-dim); }
 
-.cnt-row { cursor: pointer; transition: background 0.08s; }
-.cnt-row:hover { background: rgba(52,152,219,0.15); }
-.cnt-row.is-billed td.col-cat { color: var(--cde-accent-soft); font-weight: 600; }
-.cnt-row.empty { color: var(--cde-text-dim); font-style: italic; }
-.cnt-row.empty td { text-align: center; }
+tr.is-billed td.col-cat { color: var(--cde-accent-soft); font-weight: 600; }
 
-.cat-badge { font-size: 0.7rem; margin-left: 0.25rem; }
+.cat-badge { display: inline-block; margin-left: 0.25rem; color: var(--card-accent); vertical-align: -1px; }
 </style>

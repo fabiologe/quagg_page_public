@@ -16,13 +16,15 @@
 
       <!-- ── Window chrome ── -->
       <div class="viewer-header">
-        <span class="header-title">🏗️ That Open Engine – IFC Viewer</span>
+        <span class="header-title"><CdeIcon name="bim" :size="14" /> That Open Engine – IFC Viewer</span>
         <div class="header-controls">
           <template v-if="!standalone">
             <button class="hdr-btn" @click="modalRef?.toggleMinimize()" title="Minimieren">_</button>
             <button class="hdr-btn" @click="modalRef?.toggleMaximize()" title="Vollbild">□</button>
           </template>
-          <button class="hdr-btn hdr-close" @click="emit('close')" title="Schließen">&times;</button>
+          <button class="hdr-btn hdr-close" @click="emit('close')" title="Schließen" aria-label="Schließen">
+            <CdeIcon name="close" :size="13" />
+          </button>
         </div>
       </div>
 
@@ -35,12 +37,12 @@
           <div class="top-bar-left">
             <label class="action-btn primary">
               <input type="file" accept=".ifc" @change="onFileUpload" class="sr-only" />
-              📁 IFC laden
+              <CdeIcon name="documents" :size="13" /> IFC laden
             </label>
 
             <label v-if="modelList.length" class="action-btn secondary">
               <input type="file" accept=".ifc" @change="onFileUploadAdd" class="sr-only" />
-              ➕ Hinzufügen
+              <CdeIcon name="add" :size="13" /> Hinzufügen
             </label>
 
           </div>
@@ -61,7 +63,9 @@
               <span class="recent-name">{{ r.meta?.name ?? r.key }}</span>
               <span class="recent-info">{{ fmtBytes(r.size) }} · {{ fmtDate(r.meta?.savedAt) }}</span>
             </button>
-            <button class="recent-del" @click="deleteRecent(r)" title="Aus lokalem Speicher entfernen">✕</button>
+            <button class="recent-del" @click="deleteRecent(r)" title="Aus lokalem Speicher entfernen" aria-label="Aus lokalem Speicher entfernen">
+              <CdeIcon name="close" :size="12" />
+            </button>
           </div>
           <div class="recent-hint">Im Browser gespeichert — ohne Netzverbindung verfügbar.</div>
         </div>
@@ -70,7 +74,9 @@
         <div v-if="modelList.length" class="model-tag-row">
           <span v-for="m in modelList" :key="m.modelId" class="model-tag">
             {{ m.name }}
-            <button class="tag-close" @click="removeModel(m.modelId)" title="Entfernen">✕</button>
+            <button class="tag-close" @click="removeModel(m.modelId)" title="Entfernen" aria-label="Modell entfernen">
+              <CdeIcon name="close" :size="11" />
+            </button>
           </span>
         </div>
 
@@ -131,9 +137,14 @@
             <div class="section-sep"></div>
 
             <!-- SC-4: Reset position to model center -->
-            <button class="snap-btn" title="Zur Modellmitte zurücksetzen" @click="resetSection">↺</button>
-            <!-- Hide bar only (plane stays active; click ✂️ again to fully remove) -->
-            <button class="section-close" @click="hideSection" title="Werkzeug ausblenden [Esc]">✕</button>
+            <button class="snap-btn" title="Zur Modellmitte zurücksetzen" aria-label="Zur Modellmitte zurücksetzen" @click="resetSection">
+              <CdeIcon name="refresh" :size="12" />
+            </button>
+            <!-- Blendet nur die Leiste aus; die Schnittebene bleibt aktiv.
+                 Erst der Schnitt-Knopf in der Werkzeugleiste entfernt sie ganz. -->
+            <button class="section-close" @click="hideSection" title="Werkzeug ausblenden [Esc]" aria-label="Schnitt-Werkzeugleiste ausblenden">
+              <CdeIcon name="close" :size="12" />
+            </button>
           </div>
         </Transition>
 
@@ -711,6 +722,19 @@ async function openBySha(sha256) {
   await openRecent({ key: `model:${sha256}` });
 }
 /**
+ * Modell aus dem Projektordner laden (Projekt-Cockpit, Stufe 6): der Pfad ist
+ * relativ zu 1_Projekte; die Datei kommt über /projects/file mit Bearer-Token.
+ */
+async function openFromProjectPath(pfad) {
+  // Beim Deep-Link ist die Engine oft noch im Aufbau — kurz warten statt scheitern.
+  for (let i = 0; i < 60 && !engine.value; i += 1) await new Promise((r) => setTimeout(r, 250));
+  if (!engine.value) throw new Error('viewer-engine nicht bereit');
+  const { default: api } = await import('@/services/api');
+  const antwort = await api.get('/projects/file', { params: { path: pfad }, responseType: 'arraybuffer' });
+  const name = String(pfad).split('/').pop() || 'modell.ifc';
+  await _loadBuffer(antwort.data, name);
+}
+/**
  * Gespeicherte Ansicht / Issue-Viewpoint (Sprint P, AP-8).
  *
  * Die Engine bekommt bewusst KEINEN Oberflächenzustand — sie kennt Kamera,
@@ -732,11 +756,23 @@ async function anwendenViewpoint(vp) {
 
 defineExpose({
   openBySha,
+  openFromProjectPath,
   zoomToPoint: zoomToAnnotation,
   applyViewpoint: anwendenViewpoint,
   captureViewpoint: erfasseViewpoint,
   toggleAnnotationMode: () => toggleAnnotationMode(),
-  isAnnotationActive: () => annotationActive.value,
+  /**
+   * Der Pin-Modus wird als REF herausgegeben, nicht als Momentaufnahme.
+   *
+   * Vorher stand hier `isAnnotationActive: () => annotationActive.value` — eine
+   * Funktion, die nur beim Aufruf las. Die CdeView führte daneben eine eigene
+   * Kopie und aktualisierte sie ausschließlich beim Klick auf den Panel-Knopf.
+   * Endete der Modus anders (Esc, oder automatisch nach dem Setzen eines Pins),
+   * blieb die Kopie auf „Aktiv" stehen und der Knopf log.
+   * Vue entpackt Refs im expose-Proxy, `viewerRef.annotationActive` ist also
+   * ein Boolean — und wird in einem computed richtig nachverfolgt.
+   */
+  annotationActive,
 });
 
 function fmtBytes(n) {
@@ -1089,7 +1125,7 @@ async function onMouseUp(e) {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--cde-papier);
 }
 .standalone-shell .viewer-header { cursor: default; }
 
@@ -1099,7 +1135,7 @@ async function onMouseUp(e) {
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   min-width: 320px; max-width: 420px;
-  background: rgba(15, 30, 40, 0.92);
+  background: var(--cde-float-deep);
   border: 1px solid var(--cde-tint-strong);
   border-radius: 8px;
   padding: 0.9rem 1rem;
@@ -1118,14 +1154,14 @@ async function onMouseUp(e) {
   color: var(--cde-text);
   transition: background 0.1s;
 }
-.recent-open:hover { background: rgba(52,152,219,0.25); color: #fff; }
+.recent-open:hover { background: var(--cde-accent-fill-hi); color: var(--cde-text-bright); }
 .recent-name { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-info { font-size: 0.7rem; color: var(--cde-text-dim); flex-shrink: 0; }
 .recent-del {
   background: none; border: none; color: var(--cde-text-dim); cursor: pointer;
   font-size: 0.8rem; padding: 0 0.3rem;
 }
-.recent-del:hover { color: #ff8a65; }
+.recent-del:hover { color: var(--cde-danger-soft); }
 .recent-hint { font-size: 0.68rem; color: var(--cde-text-mute); font-style: italic; margin-top: 0.2rem; }
 
 /* ── Header ── */
@@ -1134,8 +1170,9 @@ async function onMouseUp(e) {
   justify-content: space-between;
   align-items: center;
   padding: 0.7rem 1rem;
-  background: #2c3e50;
-  color: #fff;
+  background: var(--cde-bg-alt);
+  color: var(--cde-text-bright);
+  border-bottom: 1px solid var(--cde-line);
   user-select: none;
   cursor: grab;
   flex-shrink: 0;
@@ -1146,18 +1183,18 @@ async function onMouseUp(e) {
 .header-controls { display: flex; gap: 0.4rem; }
 
 .hdr-btn {
-  background: none; border: none; color: #ecf0f1;
+  background: none; border: none; color: var(--cde-text-bright);
   font-size: 1.15rem; cursor: pointer; padding: 0.2rem 0.45rem;
   border-radius: 4px; transition: background 0.15s;
 }
 .hdr-btn:hover { background: var(--cde-tint-strong); }
-.hdr-close:hover { color: #e74c3c; background: rgba(231,76,60,0.12); }
+.hdr-close:hover { color: var(--cde-danger); background: color-mix(in srgb, var(--cde-danger) 12%, transparent); }
 
 /* ── Body ── */
 .viewer-body { position: relative; flex: 1; overflow: hidden; }
 
 .canvas-root {
-  position: absolute; inset: 0; background: #f0f0f0; z-index: 10;
+  position: absolute; inset: 0; background: var(--cde-bg-deep); z-index: 10;
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,0,0,0.55)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='white' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='2' fill='white'/%3E%3Ccircle cx='18' cy='18' r='2' fill='none' stroke='var(--cde-scrim)' stroke-width='1'/%3E%3C/svg%3E") 18 18, crosshair;
 }
 .canvas-root.measure-cursor {
@@ -1168,8 +1205,8 @@ async function onMouseUp(e) {
 .top-bar {
   position: absolute; top: 1rem; left: 1rem; right: 1rem; z-index: 20;
   display: flex; justify-content: space-between; align-items: center;
-  background: #fff; padding: 0.65rem 1.25rem;
-  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  background: var(--cde-float); padding: 0.65rem 1.25rem;
+  border-radius: 8px; box-shadow: var(--cde-shadow-sm);
 }
 .top-bar-left { display: flex; gap: 0.75rem; align-items: center; }
 
@@ -1184,19 +1221,25 @@ async function onMouseUp(e) {
   transition: background 0.15s, transform 0.15s;
   display: inline-flex; align-items: center; gap: 0.4rem;
 }
-.action-btn.primary { background: var(--primary, #3498db); color: #fff; }
-.action-btn.primary:hover { background: #2980b9; transform: translateY(-1px); }
-.action-btn.secondary { background: #e2e8f0; color: #2c3e50; }
-.action-btn.secondary:hover { background: #cbd5e1; }
+.action-btn.primary { background: var(--cde-accent); color: var(--cde-bg-deep); }
+.action-btn.primary:hover { background: var(--cde-accent); transform: translateY(-1px); }
+/* Vorher hellgrau (#e2e8f0) auf dunkler Leiste — der einzige helle Knopf
+   der ganzen Oberfläche. Jetzt eine ruhige Zweitstufe neben dem Akzent. */
+.action-btn.secondary {
+  background: var(--cde-fill-hover);
+  border: 1px solid var(--cde-line-strong);
+  color: var(--cde-text);
+}
+.action-btn.secondary:hover { background: var(--cde-fill-active); color: var(--cde-text-bright); }
 
 /* Loading badge */
 .loading-badge {
   display: flex; align-items: center; gap: 0.5rem;
-  color: #e67e22; font-weight: 600; font-size: 0.9rem;
+  color: var(--cde-warn); font-weight: 600; font-size: 0.9rem;
 }
 .spinner {
   width: 15px; height: 15px;
-  border: 2.5px solid rgba(230,126,34,0.3); border-top-color: #e67e22;
+  border: 2.5px solid color-mix(in srgb, var(--cde-warn) 30%, transparent); border-top-color: var(--cde-warn);
   border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 
@@ -1204,8 +1247,8 @@ async function onMouseUp(e) {
 .toolbox {
   position: absolute; bottom: 1rem; left: 1rem; z-index: 20;
   display: flex; flex-direction: column; gap: 0.3rem;
-  background: rgba(22,24,34,0.97); padding: 0.45rem; border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  background: var(--cde-float); padding: 0.45rem; border-radius: 10px;
+  box-shadow: var(--cde-shadow-float);
   border: 1px solid var(--cde-tint);
   /* Cap height + scroll so growing button list doesn't escape the viewport */
   max-height: calc(100% - 7rem);
@@ -1237,9 +1280,9 @@ async function onMouseUp(e) {
   left: 50%; transform: translateX(-50%);
   z-index: 21;
   display: flex; align-items: center; gap: 0.5rem;
-  background: rgba(16,18,30,0.97); border: 1px solid rgba(52,152,219,0.4);
+  background: var(--cde-float-deep); border: 1px solid color-mix(in srgb, var(--cde-accent) 40%, transparent);
   padding: 0.4rem 0.75rem; border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  box-shadow: var(--cde-shadow-float);
   white-space: nowrap;
 }
 .section-label {
@@ -1253,7 +1296,7 @@ async function onMouseUp(e) {
   line-height: 1.4;
 }
 .snap-btn:hover { background: var(--cde-tint-max); color: var(--cde-text); }
-.snap-btn--danger:hover { background: rgba(239,83,80,0.18); color: var(--cde-danger); border-color: rgba(239,83,80,0.4); }
+.snap-btn--danger:hover { background: color-mix(in srgb, var(--cde-danger) 18%, transparent); color: var(--cde-danger); border-color: color-mix(in srgb, var(--cde-danger) 40%, transparent); }
 .section-modes { display: flex; gap: 0.25rem; }
 .mode-btn {
   padding: 0.22rem 0.6rem; border-radius: 5px; border: 1px solid var(--cde-tint-strong);
@@ -1262,7 +1305,7 @@ async function onMouseUp(e) {
   white-space: nowrap;
 }
 .mode-btn:hover  { background: var(--cde-tint-strong); color: var(--cde-text); }
-.mode-btn.active { background: rgba(52,152,219,0.3); color: var(--cde-accent); border-color: rgba(52,152,219,0.55); }
+.mode-btn.active { background: color-mix(in srgb, var(--cde-accent) 30%, transparent); color: var(--cde-accent); border-color: color-mix(in srgb, var(--cde-accent) 55%, transparent); }
 .section-pos {
   font-family: 'Roboto Mono', monospace; font-size: 0.7rem; color: var(--cde-accent);
   padding: 0 0.2rem;
@@ -1278,7 +1321,7 @@ async function onMouseUp(e) {
   position: absolute; bottom: 0.75rem;
   left: 50%; transform: translateX(-50%);
   z-index: 20;
-  display: flex; align-items: center; gap: 0.9rem; background: rgba(22,24,34,0.97);
+  display: flex; align-items: center; gap: 0.9rem; background: var(--cde-float);
   padding: 0.35rem 0.7rem; border-radius: 6px;
   font-family: 'Roboto Mono', monospace; font-size: 0.72rem; color: var(--cde-text-soft);
   border: 1px solid var(--cde-tint);
@@ -1298,7 +1341,7 @@ async function onMouseUp(e) {
 }
 .model-tag {
   display: flex; align-items: center; gap: 0.3rem;
-  background: rgba(52,152,219,0.15); border: 1px solid rgba(52,152,219,0.35);
+  background: color-mix(in srgb, var(--cde-accent) 15%, transparent); border: 1px solid color-mix(in srgb, var(--cde-accent) 35%, transparent);
   border-radius: 4px; padding: 0.2rem 0.5rem;
   font-size: 0.78rem; color: var(--cde-accent-soft); max-width: 200px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1319,17 +1362,17 @@ async function onMouseUp(e) {
 /* Persistent "Alle zeigen" button when anything is hidden */
 .show-all-btn {
   position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 21;
-  background: rgba(102,187,106,0.18);
-  border: 1px solid rgba(102,187,106,0.5);
+  background: color-mix(in srgb, var(--cde-success-strong) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cde-success-strong) 50%, transparent);
   border-radius: 6px;
   padding: 0.4rem 0.9rem;
   color: var(--cde-success);
   font-size: 0.78rem; font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, transform 0.1s;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: var(--cde-shadow-sm);
 }
-.show-all-btn:hover { background: rgba(102,187,106,0.28); transform: translate(-50%, -1px); }
+.show-all-btn:hover { background: color-mix(in srgb, var(--cde-success-strong) 28%, transparent); transform: translate(-50%, -1px); }
 
 /* T1.3: Measurement UI */
 .measure-clear {
@@ -1349,10 +1392,10 @@ async function onMouseUp(e) {
 .measure-toast {
   display: flex; align-items: center; gap: 0.35rem;
   position: absolute; top: 5.5rem; left: 50%; transform: translateX(-50%); z-index: 22;
-  background: rgba(255,235,59,0.92); color: #1a1a1a;
+  background: var(--cde-hinweis); color: var(--cde-hinweis-text);
   padding: 0.4rem 0.9rem; border-radius: 6px;
   font-size: 0.8rem; font-weight: 600;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  box-shadow: var(--cde-shadow-float);
 }
 
 /* T2.2: Saved Views floating panel — right edge, above coord-bar */
@@ -1360,7 +1403,7 @@ async function onMouseUp(e) {
   position: absolute; right: 1rem; top: 5rem; z-index: 25;
   width: 280px; max-height: 480px;
   background: var(--cde-surface);
-  border: 1px solid rgba(255,213,79,0.25);
+  border: 1px solid color-mix(in srgb, var(--cde-amber) 25%, transparent);
   border-radius: 10px;
   box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;
@@ -1372,7 +1415,7 @@ async function onMouseUp(e) {
   position: absolute; right: 1rem; top: 5rem; z-index: 25;
   width: 320px; max-height: 500px;
   background: var(--cde-surface);
-  border: 1px solid rgba(233,30,99,0.3);
+  border: 1px solid color-mix(in srgb, var(--cde-issue) 30%, transparent);
   border-radius: 10px;
   box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;

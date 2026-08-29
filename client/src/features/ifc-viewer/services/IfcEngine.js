@@ -471,7 +471,7 @@ export class IfcEngine {
         this._planePivot = new THREE.Object3D();
         this._planePivot.position.copy(center);
         // PlaneGeometry normal = local +Z. We want world normal = (0,-1,0) (clips y > center.y).
-        // rotation.x = +π/2 → local +Z becomes (0,-1,0) ✓
+        // rotation.x = +π/2 → local +Z becomes (0,-1,0) [geprueft]
         this._planePivot.rotation.x = Math.PI / 2;
         world.scene.three.add(this._planePivot);
 
@@ -1896,7 +1896,7 @@ export class IfcEngine {
      *   halfH = drawHeightMm / 1000 * scaleRatio / 2   (metres)
      *   rtW   = drawWidthMm  * pxPerMm                 (pixels)
      *   rtH   = drawHeightMm * pxPerMm                 (pixels)
-     *   → px/m = pxPerMm * 1000 / scaleRatio  (equal on both axes ✓)
+     *   → px/m = pxPerMm * 1000 / scaleRatio  (auf beiden Achsen gleich)
      *
      * @param {number} scaleRatio    - e.g. 100 for 1:100
      * @param {number} drawWidthMm   - paper drawing area width in mm

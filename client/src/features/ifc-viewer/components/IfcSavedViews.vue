@@ -1,9 +1,9 @@
 <template>
   <div class="sv-panel">
     <div class="sv-header">
-      <span class="sv-title">📌 Gespeicherte Ansichten</span>
+      <span class="sv-title"><CdeIcon name="views" :size="14" /> Gespeicherte Ansichten</span>
       <button class="sv-save-btn" @click="onSaveClick" title="Aktuelle Ansicht speichern">
-        💾 Speichern
+        <CdeIcon name="save" :size="12" /> Speichern
       </button>
     </div>
 
@@ -22,8 +22,12 @@
         <span class="sv-name" :title="v.name">{{ v.name }}</span>
         <span class="sv-meta">{{ _formatDate(v.createdAt) }}</span>
         <div class="sv-actions" @click.stop>
-          <button class="sv-act" title="Umbenennen" @click="onRename(v)">✎</button>
-          <button class="sv-act sv-act--danger" title="Löschen" @click="onDelete(v)">✕</button>
+          <button class="sv-act" title="Umbenennen" aria-label="Umbenennen" @click="onRename(v)">
+            <CdeIcon name="edit" :size="12" />
+          </button>
+          <button class="sv-act sv-act--danger" title="Löschen" aria-label="Ansicht löschen" @click="onDelete(v)">
+            <CdeIcon name="close" :size="12" />
+          </button>
         </div>
       </div>
     </div>
@@ -32,6 +36,7 @@
 
 <script setup>
 import { useIfcStore } from '../stores/useIfcStore.js';
+import CdeIcon from './ui/CdeIcon.vue';
 
 const props = defineProps({
   captureView: { type: Function, default: null }, // () => stateObject | null
@@ -78,21 +83,27 @@ function _formatDate(ts) {
 .sv-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.55rem 0.75rem;
-  background: rgba(30,35,50,0.95);
+  background: var(--cde-float);
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
-.sv-title { font-size: 0.78rem; font-weight: 600; color: #ffd54f; }
+/* Gold gehört zur Bernstein-Familie der Tokens — die Ansichten teilen sie
+   mit Kosten und Pauschalen (vorher ein eigener Handwert var(--cde-amber-soft)). */
+.sv-title {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.78rem; font-weight: 600; color: var(--cde-amber-soft);
+}
 .sv-save-btn {
-  background: rgba(255,213,79,0.15);
-  border: 1px solid rgba(255,213,79,0.4);
-  color: #ffd54f;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: color-mix(in srgb, var(--cde-amber) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cde-amber) 40%, transparent);
+  color: var(--cde-amber-soft);
   padding: 0.2rem 0.5rem;
-  border-radius: 4px;
+  border-radius: var(--cde-radius-sm);
   font-size: 0.7rem; cursor: pointer;
   transition: background 0.15s;
 }
-.sv-save-btn:hover { background: rgba(255,213,79,0.25); }
+.sv-save-btn:hover { background: color-mix(in srgb, var(--cde-amber) 26%, transparent); }
 
 .sv-body {
   flex: 1; overflow-y: auto;
@@ -104,7 +115,7 @@ function _formatDate(ts) {
   color: var(--cde-text-dimmer); font-size: 0.72rem; text-align: center;
   line-height: 1.6;
 }
-.sv-empty small { color: #37474f; font-size: 0.65rem; }
+.sv-empty small { color: var(--cde-text-dimmer); font-size: 0.65rem; }
 
 .sv-row {
   display: grid;
@@ -114,7 +125,7 @@ function _formatDate(ts) {
   border-bottom: 1px solid var(--cde-tint-weak);
   cursor: pointer; transition: background 0.12s;
 }
-.sv-row:hover { background: rgba(255,213,79,0.08); }
+.sv-row:hover { background: color-mix(in srgb, var(--cde-amber) 8%, transparent); }
 .sv-name {
   font-size: 0.78rem; color: var(--cde-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -125,10 +136,11 @@ function _formatDate(ts) {
 }
 .sv-actions { display: flex; gap: 0.15rem; }
 .sv-act {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--cde-text-mute);
-  font-size: 0.75rem; padding: 0.15rem 0.3rem; cursor: pointer;
+  padding: 0.2rem 0.3rem; cursor: pointer;
   border-radius: 3px; transition: background 0.12s, color 0.12s;
 }
-.sv-act:hover { background: var(--cde-tint-weak); color: var(--cde-text); }
+.sv-act:hover { background: var(--cde-fill); color: var(--cde-text); }
 .sv-act--danger:hover { color: var(--cde-danger); }
 </style>

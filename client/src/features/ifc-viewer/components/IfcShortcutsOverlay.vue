@@ -74,14 +74,14 @@ function close() { emit('close'); }
   background: var(--cde-surface-alt);
   border: 1px solid var(--cde-tint-strong);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  box-shadow: var(--cde-shadow-xl);
   display: flex; flex-direction: column;
   overflow: hidden;
 }
 .sc-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.7rem 1rem;
-  background: rgba(30, 35, 50, 0.7);
+  background: var(--cde-float-sheer);
   border-bottom: 1px solid var(--cde-tint);
 }
 .sc-title { font-size: 0.92rem; font-weight: 700; color: var(--cde-accent-soft); }
@@ -120,7 +120,7 @@ kbd {
 .sc-footer {
   padding: 0.55rem 1rem;
   font-size: 0.7rem; color: var(--cde-text-dimmer); text-align: center;
-  background: rgba(30, 35, 50, 0.5);
+  background: var(--cde-float-sheer);
   border-top: 1px solid var(--cde-tint);
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }

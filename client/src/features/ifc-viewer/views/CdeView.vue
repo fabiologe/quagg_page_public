@@ -133,8 +133,12 @@
             </td>
             <td class="doc-date">{{ fmtDate(d.addedAt) }}</td>
             <td class="doc-actions">
-              <button class="cde-btn sm" @click="openDokument(d)" title="Modell öffnen">▶</button>
-              <button class="cde-btn sm danger" @click="cde.removeDokument(d.sha256)" title="Aus Register entfernen">✕</button>
+              <button class="cde-btn sm" @click="openDokument(d)" title="Modell öffnen" aria-label="Modell öffnen">
+                <CdeIcon name="open" :size="12" />
+              </button>
+              <button class="cde-btn sm danger" @click="cde.removeDokument(d.sha256)" title="Aus Register entfernen" aria-label="Aus Register entfernen">
+                <CdeIcon name="close" :size="12" />
+              </button>
             </td>
           </tr>
         </tbody>
@@ -222,7 +226,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import IfcViewer from '../components/IfcViewer.vue';
 import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
 import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
@@ -232,6 +236,7 @@ import IfcAnnotations from '../components/IfcAnnotations.vue';
 import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS } from '../stores/useCdeStore.js';
+import { repo, RemoteBackend } from '../services/RepoFacade.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -241,6 +246,15 @@ import { modusListe, istVerfuegbar } from '../services/ViewModes.js';
 import '../styles/theme.css';
 
 const router = useRouter();
+const route = useRoute();
+// Stufe C: mit ?projekt=<id> lebt das Repository im Projektordner auf dem Server.
+// Muss VOR den Stores passieren — sie lesen beim Anlegen aus dem Backend.
+const cockpitProjektId = Number(route.query.projekt);
+if (Number.isInteger(cockpitProjektId) && cockpitProjektId > 0) {
+  repo.setBackend(new RemoteBackend(cockpitProjektId));
+} else if (repo.remote) {
+  repo.setBackend(null);
+}
 const cde = useCdeStore();
 const panels = usePanels();
 const ansicht = useAnsicht();
@@ -302,8 +316,37 @@ function onKeyDown(e) {
   if (treffer) { e.preventDefault(); ansicht.setzeModus(treffer.id); }
 }
 
+/**
+ * Deep-Link aus dem Projekt-Cockpit: /cde?projekt=<id>&datei=<pfad relativ zu 1_Projekte>.
+ * Stammdaten kommen aus der Projektakte (kein Handeintrag), das CDE-Projekt wird
+ * bei Bedarf angelegt und aktiv gesetzt; eine Datei wird direkt geladen.
+ */
+async function projektAusCockpit() {
+  const id = Number(route.query.projekt);
+  if (!Number.isInteger(id) || id <= 0) return;
+  try {
+    const { default: api } = await import('@/services/api');
+    const register = (await api.get(`/projekte/${id}/cde`)).data;
+    const st = register.stammdaten || {};
+    await cde.ready;
+    let projekt = cde.projects.find((p) => String(p.nummer) === String(id));
+    if (!projekt) {
+      const neuId = await cde.createProject({ nummer: String(id), name: st.name || `Projekt ${id}`, bauherr: st.bauherr || '', lph: st.lph || '' });
+      projekt = cde.projects.find((p) => p.id === neuId);
+    } else if (st.name && (projekt.name !== st.name || projekt.bauherr !== (st.bauherr || ''))) {
+      await cde.updateProject(projekt.id, { name: st.name, bauherr: st.bauherr || '', lph: st.lph || projekt.lph });
+    }
+    await cde.setActiveProject(projekt.id);
+    const datei = route.query.datei;
+    if (datei) await viewerRef.value?.openFromProjectPath?.(String(datei));
+  } catch (fehler) {
+    console.warn('cde: projekt aus cockpit', fehler);
+  }
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
+  projektAusCockpit();
   // Der Modus ist ein Belang der Schale, nicht des Viewers — er wird hier
   // angemeldet und erscheint dadurch automatisch in Palette und Hilfe.
   cmds.register('ansicht', ansichtsModi.map(m => ({
@@ -335,11 +378,17 @@ function zoomToIssue(position) {
   viewerRef.value?.zoomToPoint?.(position);
 }
 
-/** Pin-Setz-Modus des Viewers vom Issues-Panel aus schalten. */
-const annotationActive = ref(false);
+/**
+ * Pin-Setz-Modus des Viewers vom Issues-Panel aus schalten.
+ *
+ * Gelesen wird direkt aus dem Viewer — KEINE eigene Kopie danebenlegen.
+ * Der Modus endet auch ohne diesen Knopf (Esc, oder von selbst, sobald ein Pin
+ * gesetzt ist); eine gespiegelte Variable liefe dann auseinander und der Knopf
+ * zeigte weiter „Aktiv".
+ */
+const annotationActive = computed(() => viewerRef.value?.annotationActive ?? false);
 function onToggleIssueMode() {
   viewerRef.value?.toggleAnnotationMode?.();
-  annotationActive.value = viewerRef.value?.isAnnotationActive?.() ?? false;
 }
 
 function onClose() {
@@ -434,10 +483,10 @@ function fmtDate(ts) {
   cursor: pointer;
   white-space: nowrap;
 }
-.cde-btn:hover:not(:disabled) { background: rgba(52,152,219,0.2); color: #fff; }
-.cde-btn.active { background: rgba(52,152,219,0.3); border-color: rgba(52,152,219,0.6); color: var(--cde-accent-soft); }
+.cde-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--cde-accent) 20%, transparent); color: var(--cde-text-bright); }
+.cde-btn.active { background: color-mix(in srgb, var(--cde-accent) 30%, transparent); border-color: color-mix(in srgb, var(--cde-accent) 60%, transparent); color: var(--cde-accent-soft); }
 .cde-btn:disabled { opacity: 0.4; cursor: default; }
-.cde-btn.danger:hover { background: rgba(239,83,80,0.2); color: var(--cde-danger-soft); border-color: rgba(239,83,80,0.5); }
+.cde-btn.danger:hover { background: color-mix(in srgb, var(--cde-danger) 20%, transparent); color: var(--cde-danger-soft); border-color: color-mix(in srgb, var(--cde-danger) 50%, transparent); }
 .cde-btn.sm { padding: 0.1rem 0.35rem; font-size: 0.7rem; }
 .cde-btn small { color: var(--cde-text-dim); }
 
@@ -506,12 +555,12 @@ function fmtDate(ts) {
   padding: 0.12rem 0.3rem;
   font-size: 0.7rem;
   border: 1px solid;
-  background: rgba(0,0,0,0.2);
+  background: var(--cde-sunken);
 }
-.doc-status.iso-wip       { color: var(--cde-warn-soft); border-color: rgba(255,183,77,0.5); }
-.doc-status.iso-shared    { color: var(--cde-accent-soft); border-color: rgba(66,165,245,0.5); }
-.doc-status.iso-published { color: var(--cde-success); border-color: rgba(129,199,132,0.5); }
-.doc-status.iso-archived  { color: var(--cde-text-dim); border-color: rgba(255,255,255,0.2); }
+.doc-status.iso-wip       { color: var(--cde-warn-soft); border-color: color-mix(in srgb, var(--cde-warn) 50%, transparent); }
+.doc-status.iso-shared    { color: var(--cde-accent-soft); border-color: color-mix(in srgb, var(--cde-accent) 50%, transparent); }
+.doc-status.iso-published { color: var(--cde-success); border-color: color-mix(in srgb, var(--cde-success-strong) 50%, transparent); }
+.doc-status.iso-archived  { color: var(--cde-text-dim); border-color: color-mix(in srgb, var(--cde-text-invert) 20%, transparent); }
 
 /* ── Viewer-Host ── */
 .cde-workspace {

@@ -146,7 +146,7 @@ async function confirmAdd() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(20, 22, 30, 0.96);
+  background: var(--cde-float-deep);
   border-radius: 10px;
   border: 1px solid var(--cde-tint-strong);
   overflow: hidden;
@@ -157,7 +157,7 @@ async function confirmAdd() {
   align-items: center;
   gap: 0.6rem;
   padding: 0.55rem 0.75rem;
-  background: rgba(52, 152, 219, 0.2);
+  background: color-mix(in srgb, var(--cde-accent) 20%, transparent);
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
@@ -193,13 +193,13 @@ async function confirmAdd() {
   background: var(--cde-tint);
   border: 1px solid var(--cde-tint-strong);
   border-radius: 6px;
-  color: #e0e0e0;
+  color: var(--cde-text-bright);
   font-size: 0.75rem;
   padding: 0.35rem 0.6rem;
   outline: none;
   box-sizing: border-box;
 }
-.search-input:focus { border-color: rgba(52,152,219,0.6); }
+.search-input:focus { border-color: color-mix(in srgb, var(--cde-accent) 60%, transparent); }
 .search-input::placeholder { color: var(--cde-text-dimmer); }
 
 .pset-section {
@@ -233,7 +233,7 @@ async function confirmAdd() {
   transition: background 0.15s;
 }
 .pset-item:hover { background: var(--cde-tint-weak); }
-.pset-item.selected { background: rgba(52,152,219,0.15); }
+.pset-item.selected { background: color-mix(in srgb, var(--cde-accent) 15%, transparent); }
 
 .pset-item-top {
   display: flex;
@@ -262,7 +262,7 @@ async function confirmAdd() {
 
 .pset-applies {
   font-size: 0.6rem;
-  color: #80cbc4;
+  color: var(--cde-merkmal-soft);
   margin-top: 0.1rem;
   font-style: italic;
 }
@@ -270,8 +270,8 @@ async function confirmAdd() {
 /* Preview panel at bottom */
 .preview-panel {
   flex-shrink: 0;
-  background: rgba(10, 12, 18, 0.95);
-  border-top: 1px solid rgba(52,152,219,0.3);
+  background: var(--cde-float-deeper);
+  border-top: 1px solid color-mix(in srgb, var(--cde-accent) 30%, transparent);
   max-height: 55%;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -280,7 +280,7 @@ async function confirmAdd() {
 
 .preview-header {
   padding: 0.45rem 0.75rem;
-  background: rgba(52,152,219,0.12);
+  background: color-mix(in srgb, var(--cde-accent) 12%, transparent);
   border-bottom: 1px solid var(--cde-tint);
 }
 
@@ -318,15 +318,15 @@ async function confirmAdd() {
   background: var(--cde-tint-weak);
   border: 1px solid var(--cde-tint-strong);
   border-radius: 4px;
-  color: #e0e0e0;
+  color: var(--cde-text-bright);
   font-size: 0.72rem;
   padding: 0.25rem 0.45rem;
   outline: none;
   width: 100%;
   box-sizing: border-box;
 }
-.preview-prop-input:focus { border-color: rgba(52,152,219,0.5); }
-.preview-prop-input::placeholder { color: #37474f; }
+.preview-prop-input:focus { border-color: color-mix(in srgb, var(--cde-accent) 50%, transparent); }
+.preview-prop-input::placeholder { color: var(--cde-text-dimmer); }
 
 .preview-actions {
   display: flex;
@@ -350,17 +350,17 @@ async function confirmAdd() {
 
 .add-btn {
   flex: 2;
-  background: rgba(52, 152, 219, 0.8);
+  background: color-mix(in srgb, var(--cde-accent) 80%, transparent);
   border: none;
   border-radius: 6px;
-  color: #fff;
+  color: var(--cde-text-invert);
   font-size: 0.72rem;
   font-weight: 600;
   padding: 0.4rem;
   cursor: pointer;
   transition: background 0.15s;
 }
-.add-btn:hover:not(:disabled) { background: rgba(52,152,219,1); }
+.add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--cde-accent) 100%, transparent); }
 .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .preview-slide-enter-active,

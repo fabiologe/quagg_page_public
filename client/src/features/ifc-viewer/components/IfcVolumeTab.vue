@@ -1,31 +1,29 @@
 <template>
-  <div class="vol-tab">
-    <div class="card-header">
-      <span class="card-title">📦 Volumen-Übersicht (m³)</span>
-      <button class="card-btn" :disabled="loading" @click="$emit('refresh')" title="Neu berechnen">
-        {{ loading ? '⏳' : '↻' }}
-      </button>
-    </div>
+  <div class="vol-tab cde-card">
+    <CdeCardHeader icon="volume" titel="Volumen-Übersicht (m³)">
+      <CdeIconButton icon="refresh" titel="Neu berechnen" :busy="loading" @click="$emit('refresh')" />
+    </CdeCardHeader>
 
-    <div v-if="loading" class="state-msg">Berechne…</div>
-    <div v-else-if="!result || !result.byCategory.size" class="state-msg">
+    <div v-if="loading" class="cde-state-msg">Berechne…</div>
+    <div v-else-if="!result || !result.byCategory.size" class="cde-state-msg">
+      <CdeIcon name="volume" :size="22" />
       Keine Geometrie geladen — Volumen werden aus den Bounding-Boxen abgeleitet.
     </div>
 
     <template v-else>
       <!-- Summe oben -->
-      <div class="totals-bar">
-        <div class="total-cell">
-          <div class="total-label">Σ Volumen</div>
-          <div class="total-value">{{ fmt(result.totals.volume_m3) }} m³</div>
+      <div class="cde-totals">
+        <div class="cde-total-cell">
+          <div class="cde-total-label">Σ Volumen</div>
+          <div class="cde-total-value">{{ fmt(result.totals.volume_m3) }} m³</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">Elemente</div>
-          <div class="total-value">{{ result.totals.count }}</div>
+        <div class="cde-total-cell">
+          <div class="cde-total-label">Elemente</div>
+          <div class="cde-total-value">{{ result.totals.count }}</div>
         </div>
-        <div class="total-cell">
-          <div class="total-label">Qto-Quote</div>
-          <div class="total-value" :title="'Anteil der Elemente mit Modell-Quantities (Qto_*) statt BBox-Näherung'">
+        <div class="cde-total-cell">
+          <div class="cde-total-label">Qto-Quote</div>
+          <div class="cde-total-value" :title="'Anteil der Elemente mit Modell-Quantities (Qto_*) statt BBox-Näherung'">
             {{ Math.round((result.totals.qtoShare ?? 0) * 100) }} %
           </div>
         </div>
@@ -40,29 +38,29 @@
       </div>
 
       <!-- Tabelle -->
-      <div class="vol-table-wrap">
-        <table class="vol-table">
+      <div class="cde-table-wrap">
+        <table class="cde-table">
           <thead>
             <tr>
-              <th class="col-cat" @click="setSort('name')">
+              <th class="col-cat sortable" @click="setSort('name')">
                 Kategorie
-                <span v-if="sortKey === 'name'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'name'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
-              <th class="col-count" @click="setSort('count')">
+              <th class="col-count sortable" @click="setSort('count')">
                 Anzahl
-                <span v-if="sortKey === 'count'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'count'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
-              <th class="col-vol" @click="setSort('volume')">
+              <th class="col-vol sortable" @click="setSort('volume')">
                 Σ m³
-                <span v-if="sortKey === 'volume'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'volume'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
-              <th class="col-area" @click="setSort('area')">
+              <th class="col-area sortable" @click="setSort('area')">
                 Σ m²
-                <span v-if="sortKey === 'area'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'area'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
-              <th class="col-len" @click="setSort('length')">
+              <th class="col-len sortable" @click="setSort('length')">
                 Σ m
-                <span v-if="sortKey === 'length'" class="sort-arrow">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+                <CdeIcon v-if="sortKey === 'length'" class="sort-arrow" :name="sortDir === 'asc' ? 'chevron-up' : 'chevron-down'" :size="11" />
               </th>
               <th class="col-src" title="Herkunft: Qto = Modell-Quantities, BBox = Näherung">Quelle</th>
             </tr>
@@ -71,33 +69,36 @@
             <tr
               v-for="row in sortedRows"
               :key="row.category"
-              class="vol-row"
+              class="klickbar"
               :class="{ 'is-billed': isBilled(row.category) }"
               @click="$emit('select-category', row.category)"
             >
               <td class="col-cat">
                 <span class="cat-name">{{ row.category.replace(/^IFC/, '') }}</span>
-                <span v-if="isBilled(row.category)" class="cat-badge" title="Typischerweise nach Volumen abgerechnet">⚡</span>
+                <CdeIcon v-if="isBilled(row.category)" class="cat-badge" name="billed" :size="11" />
               </td>
               <td class="col-count">{{ row.count }}</td>
               <td class="col-vol">{{ fmt(row.volume_m3) }}</td>
               <td class="col-area">{{ fmt(row.area_m2) }}</td>
               <td class="col-len">{{ fmt(row.length_m) }}</td>
               <td class="col-src">
-                <span class="src-badge" :class="srcClass(row)">{{ srcLabel(row) }}</span>
+                <span class="cde-badge" :class="srcClass(row)">{{ srcLabel(row) }}</span>
               </td>
             </tr>
-            <tr v-if="!sortedRows.length" class="vol-row empty">
+            <tr v-if="!sortedRows.length" class="leer">
               <td colspan="6">Keine Kategorien passen zum Filter.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div class="hint-row">
-        ⓘ „Qto" = Mengen aus den Modell-Quantities (Qto_*BaseQuantities) des Autorenwerkzeugs.
-        „BBox" = Näherung aus der BoundingBox — nur für Kennwerte (LP 2-3) geeignet.
-      </div>
+      <p class="cde-hint">
+        <CdeIcon name="info" :size="12" />
+        <span>
+          „Qto" = Mengen aus den Modell-Quantities (Qto_*BaseQuantities) des Autorenwerkzeugs.
+          „BBox" = Näherung aus der BoundingBox — nur für Kennwerte (LP 2-3) geeignet.
+        </span>
+      </p>
     </template>
   </div>
 </template>
@@ -105,6 +106,9 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { VOLUME_BILLED_CATEGORIES } from '../services/QuantitySummary.js';
+import CdeIcon from './ui/CdeIcon.vue';
+import CdeCardHeader from './ui/CdeCardHeader.vue';
+import CdeIconButton from './ui/CdeIconButton.vue';
 
 const props = defineProps({
   result:  { type: Object,  default: null },  // { byCategory: Map, totals }
@@ -138,9 +142,9 @@ function srcLabel(row) {
 }
 function srcClass(row) {
   const q = row.sources?.qto ?? 0, m = row.sources?.mesh ?? 0, b = row.sources?.bbox ?? 0;
-  if ((q || m) && !b) return 'src-qto';
-  if (!q && !m && b) return 'src-bbox';
-  return 'src-mixed';
+  if ((q || m) && !b) return 'ok';
+  if (!q && !m && b) return 'warn';
+  return 'mute';
 }
 
 const sortedRows = computed(() => {
@@ -171,96 +175,22 @@ function fmt(n) {
 </script>
 
 <style scoped>
-.vol-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
-
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.35rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 5px;
-  border: 1px solid var(--cde-tint);
-}
-.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
-.card-btn {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-strong);
-  color: var(--cde-text);
-  width: 1.6rem; height: 1.6rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
-.card-btn:disabled { opacity: 0.5; cursor: default; }
-
-.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 1rem 0.5rem; text-align: center; }
-
-.totals-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
-.total-cell {
-  background: rgba(126, 87, 194, 0.12);
-  border: 1px solid rgba(126, 87, 194, 0.3);
-  border-radius: 4px;
-  padding: 0.35rem 0.45rem;
-  text-align: center;
-}
-.total-label { font-size: 0.62rem; color: #b39ddb; letter-spacing: 0.04em; text-transform: uppercase; }
-.total-value { font-size: 0.92rem; color: var(--cde-text-bright); font-weight: 600; }
+/* Leitfarbe dieser Kachel — Kopf, Summenleiste und Tabelle lesen sie
+   (Definition der Bausteine: styles/theme.css). */
+.vol-tab { --card-accent: var(--cde-violet); font-size: 0.78rem; color: var(--cde-text); }
 
 .filter-row { padding: 0 0.1rem; }
 .filter-check {
   display: flex; align-items: center; gap: 0.4rem;
-  font-size: 0.72rem; color: var(--cde-text-soft); cursor: pointer;
+  font-size: var(--cde-font-sm); color: var(--cde-text-soft); cursor: pointer;
 }
-.filter-check input { accent-color: #b39ddb; }
+.filter-check input { accent-color: var(--card-accent); }
 
-.vol-table-wrap { overflow-y: auto; max-height: 380px; border-radius: 4px; border: 1px solid var(--cde-tint-weak); }
-.vol-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; font-variant-numeric: tabular-nums; }
-.vol-table th {
-  position: sticky; top: 0; z-index: 1;
-  background: rgba(15,30,40,0.95);
-  color: var(--cde-text-soft);
-  padding: 0.35rem 0.5rem;
-  text-align: right;
-  font-weight: 500;
-  cursor: pointer;
-  border-bottom: 1px solid var(--cde-tint-strong);
-  user-select: none;
-}
-.vol-table th.col-cat { text-align: left; }
-.vol-table th:hover { color: var(--cde-accent); }
-.sort-arrow { font-size: 0.65rem; color: var(--cde-accent); margin-left: 0.2rem; }
-
-.vol-table td {
-  padding: 0.3rem 0.5rem;
-  text-align: right;
-  border-bottom: 1px solid var(--cde-tint-weak);
-}
-.vol-table td.col-cat { text-align: left; color: var(--cde-text-bright); }
-.col-vol { font-weight: 600; color: #ce93d8; }
+/* Spaltenbetonung: das Volumen ist der Wert, um den es hier geht. */
+.col-vol { font-weight: 600; color: color-mix(in srgb, var(--card-accent) 75%, var(--cde-text-bright)); }
 .col-area, .col-len { color: var(--cde-text-dim); }
 
-.src-badge {
-  display: inline-block;
-  font-size: 0.62rem;
-  padding: 0.05rem 0.3rem;
-  border-radius: 3px;
-  border: 1px solid transparent;
-}
-.src-qto   { color: var(--cde-success-strong); border-color: rgba(129,199,132,0.4); }
-.src-bbox  { color: var(--cde-warn); border-color: rgba(255,183,77,0.4); }
-.src-mixed { color: var(--cde-text-dim); border-color: var(--cde-tint-max); }
+tr.is-billed td.col-cat { color: var(--card-accent); font-weight: 600; }
 
-.vol-row { cursor: pointer; transition: background 0.08s; }
-.vol-row:hover { background: rgba(52,152,219,0.15); }
-.vol-row.is-billed td.col-cat { color: #b39ddb; font-weight: 600; }
-.vol-row.empty { color: var(--cde-text-dim); font-style: italic; }
-.vol-row.empty td { text-align: center; }
-
-.cat-badge { font-size: 0.7rem; margin-left: 0.25rem; }
-.cat-name { display: inline; }
-
-.hint-row {
-  font-size: 0.62rem; color: var(--cde-text-faint);
-  font-style: italic;
-  padding: 0 0.2rem;
-}
+.cat-badge { display: inline-block; margin-left: 0.25rem; color: var(--card-accent); vertical-align: -1px; }
 </style>

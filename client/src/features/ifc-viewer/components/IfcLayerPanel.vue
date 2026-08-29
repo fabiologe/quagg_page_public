@@ -1,11 +1,17 @@
 <template>
   <div class="layer-panel">
     <div class="panel-header">
-      <span class="panel-title">🎛️ Ebenen</span>
+      <span class="panel-title"><CdeIcon name="layers" :size="14" /> Ebenen</span>
       <div class="header-right">
-        <button class="hdr-btn" @click="toggleAll(true)"  title="Alle anzeigen">👁</button>
-        <button class="hdr-btn" @click="toggleAll(false)" title="Alle ausblenden">🚫</button>
-        <button class="hdr-btn close" @click="emit('close')">&times;</button>
+        <button class="hdr-btn" @click="toggleAll(true)"  title="Alle anzeigen" aria-label="Alle anzeigen">
+          <CdeIcon name="visible" :size="13" />
+        </button>
+        <button class="hdr-btn" @click="toggleAll(false)" title="Alle ausblenden" aria-label="Alle ausblenden">
+          <CdeIcon name="hidden" :size="13" />
+        </button>
+        <button class="hdr-btn close" @click="emit('close')" title="Schließen" aria-label="Schließen">
+          <CdeIcon name="close" :size="13" />
+        </button>
       </div>
     </div>
 
@@ -21,11 +27,10 @@
           :title="cat.visible ? 'Ausblenden' : 'Einblenden'"
           @click="toggle(cat)"
         >
-          <span v-if="cat.visible">👁</span>
-          <span v-else class="eye-off">🚫</span>
+          <CdeIcon :name="cat.visible ? 'visible' : 'hidden'" :class="{ 'eye-off': !cat.visible }" :size="13" />
         </button>
 
-        <span class="cat-icon">{{ categoryIcon(cat.name) }}</span>
+        <CdeIcon class="cat-icon" :name="categoryIcon(cat.name)" :size="13" />
 
         <span
           class="cat-name"
@@ -49,10 +54,9 @@
           :title="ifcGridsVisible ? 'Achsenraster ausblenden' : 'Achsenraster einblenden'"
           @click="onToggleIfcGrids"
         >
-          <span v-if="ifcGridsVisible">👁</span>
-          <span v-else class="eye-off">🚫</span>
+          <CdeIcon :name="ifcGridsVisible ? 'visible' : 'hidden'" :class="{ 'eye-off': !ifcGridsVisible }" :size="13" />
         </button>
-        <span class="cat-icon">📐</span>
+        <CdeIcon class="cat-icon" name="areas" :size="13" />
         <span class="cat-name">IFC-Achsenraster</span>
       </div>
     </div>
@@ -61,6 +65,7 @@
 
 <script setup>
 import { computed, ref } from 'vue';
+import CdeIcon from './ui/CdeIcon.vue';
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
@@ -100,30 +105,38 @@ function formatName(raw) {
     .replace(/\s+/g, ' ');
 }
 
+/**
+ * IFC-Kategorie → semantischer Icon-Name (siehe CdeIcon).
+ *
+ * Bewusst grob gehalten: erkennbare Silhouetten für die häufigen Bauteile,
+ * alles andere fällt auf 'element'. Vorher standen hier Emoji — deren
+ * Darstellung wechselt je Betriebssystem, und sie ließen sich nicht in der
+ * Farbe der Zeile mitführen (ausgeblendete Ebenen sollen verblassen).
+ */
 const ICON_MAP = {
-  IFCWALL:        '🧱', IFCWALLSTANDARDCASE: '🧱', IFCWALLTYPE: '🧱',
-  IFCSLAB:        '⬛', IFCSLABTYPE:        '⬛',
-  IFCCOLUMN:      '🏛️',  IFCCOLUMNTYPE:     '🏛️',
-  IFCBEAM:        '━',  IFCBEAMTYPE:        '━',
-  IFCWINDOW:      '🪟',  IFCWINDOWTYPE:      '🪟',
-  IFCDOOR:        '🚪',  IFCDOORTYPE:        '🚪',
-  IFCPIPESEGMENT: '🔵',  IFCPIPEFITTING:     '🔵',
-  IFCDUCT:        '🟡',  IFCDUCTFITTING:     '🟡',
-  IFCROOF:        '🏠',  IFCROOFTYPE:        '🏠',
-  IFCSTAIR:       '🪜',  IFCSTAIRTYPE:       '🪜',
-  IFCFOOTING:     '⬜',
-  IFCSPACE:       '🟦',  IFCSPACETYPE:       '🟦',
-  IFCFURNITURE:   '🛋️',  IFCFURNITURETYPE:   '🛋️',
-  IFCRAILING:     '🔳',
-  IFCMEMBER:      '▬',  IFCMEMBERTYPE:      '▬',
-  IFCPLATE:       '▭',
-  IFCCURTAINWALL: '🔲',
-  IFCPUMP:        '⚙️',  IFCVALVE:           '⚙️',
-  IFCFLOWTERMINAL:'💧',  IFCFLOWSEGMENT:     '💧', IFCFLOWFITTING: '💧',
+  IFCWALL:         'cat-wall',   IFCWALLSTANDARDCASE: 'cat-wall',   IFCWALLTYPE: 'cat-wall',
+  IFCSLAB:         'cat-slab',   IFCSLABTYPE:         'cat-slab',
+  IFCCOLUMN:       'cat-column', IFCCOLUMNTYPE:       'cat-column',
+  IFCBEAM:         'cat-beam',   IFCBEAMTYPE:         'cat-beam',
+  IFCWINDOW:       'cat-window', IFCWINDOWTYPE:       'cat-window',
+  IFCDOOR:         'cat-door',   IFCDOORTYPE:         'cat-door',
+  IFCPIPESEGMENT:  'cat-pipe',   IFCPIPEFITTING:      'cat-pipe',
+  IFCDUCT:         'cat-duct',   IFCDUCTFITTING:      'cat-duct',
+  IFCROOF:         'cat-roof',   IFCROOFTYPE:         'cat-roof',
+  IFCSTAIR:        'cat-stair',  IFCSTAIRTYPE:        'cat-stair',
+  IFCFOOTING:      'cat-footing',
+  IFCSPACE:        'space',      IFCSPACETYPE:        'space',
+  IFCFURNITURE:    'cat-furniture', IFCFURNITURETYPE: 'cat-furniture',
+  IFCRAILING:      'cat-railing',
+  IFCMEMBER:       'cat-beam',   IFCMEMBERTYPE:       'cat-beam',
+  IFCPLATE:        'cat-slab',
+  IFCCURTAINWALL:  'cat-curtainwall',
+  IFCPUMP:         'cat-equipment', IFCVALVE:         'cat-equipment',
+  IFCFLOWTERMINAL: 'cat-flow',   IFCFLOWSEGMENT:      'cat-flow', IFCFLOWFITTING: 'cat-flow',
 };
 
 function categoryIcon(name) {
-  return ICON_MAP[name] ?? '📦';
+  return ICON_MAP[name] ?? 'element';
 }
 </script>
 
@@ -149,12 +162,13 @@ function categoryIcon(name) {
   justify-content: space-between;
   align-items: center;
   padding: 0.55rem 0.75rem;
-  background: rgba(30,35,50,0.95);
+  background: var(--cde-float);
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
 
 .panel-title {
+  display: flex; align-items: center; gap: 0.35rem;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--cde-accent-soft);
@@ -163,9 +177,10 @@ function categoryIcon(name) {
 .header-right { display: flex; gap: 0.2rem; align-items: center; }
 
 .hdr-btn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--cde-text-mute);
-  font-size: 0.9rem; cursor: pointer; padding: 0.15rem 0.3rem;
-  border-radius: 4px; line-height: 1; transition: color 0.15s;
+  cursor: pointer; padding: 0.2rem 0.3rem;
+  border-radius: var(--cde-radius-sm); transition: color 0.15s;
 }
 .hdr-btn:hover { color: var(--cde-text); }
 .hdr-btn.close:hover { color: var(--cde-danger); }
@@ -190,19 +205,22 @@ function categoryIcon(name) {
 .layer-row.hidden { opacity: 0.45; }
 
 .eye-btn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
-  font-size: 0.82rem; padding: 0; line-height: 1;
-  flex-shrink: 0; width: 20px; text-align: center;
-  transition: transform 0.12s;
+  color: var(--cde-text-soft); padding: 0;
+  flex-shrink: 0; width: 20px;
+  transition: transform 0.12s, color 0.12s;
 }
-.eye-btn:hover { transform: scale(1.2); }
-.eye-off { opacity: 0.5; }
+.eye-btn:hover { transform: scale(1.15); color: var(--cde-text-bright); }
+/* Ausgeblendete Ebene: das durchgestrichene Auge tritt zurück. */
+.eye-off { opacity: 0.55; }
 
+/* Das Kategoriesymbol folgt der Textfarbe der Zeile — ausgeblendete Ebenen
+   verblassen dadurch mitsamt ihrem Icon (Emoji konnten das nicht). */
 .cat-icon {
-  font-size: 0.8rem;
   flex-shrink: 0;
   width: 18px;
-  text-align: center;
+  color: var(--cde-text-mute);
 }
 
 .cat-name {
@@ -226,7 +244,7 @@ function categoryIcon(name) {
 .empty {
   padding: 1.5rem;
   text-align: center;
-  color: #37474f;
+  color: var(--cde-text-dimmer);
   font-size: 0.78rem;
 }
 </style>

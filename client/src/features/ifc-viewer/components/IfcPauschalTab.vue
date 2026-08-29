@@ -1,32 +1,35 @@
 <template>
-  <div class="psch-tab">
-    <div class="card-header">
-      <span class="card-title">💰 Pauschalpositionen (psch)</span>
-      <button class="card-btn" @click="addRow" title="Position hinzufügen">+</button>
-    </div>
+  <div class="psch-tab cde-card">
+    <CdeCardHeader icon="pauschal" titel="Pauschalpositionen (psch)">
+      <CdeIconButton icon="add" titel="Position hinzufügen" @click="addRow" />
+    </CdeCardHeader>
 
-    <div class="info-row">
-      Pauschalpositionen sind keine BIM-Mengen — sie werden hier manuell gepflegt
-      (z.B. Baustelleneinrichtung, Gerüst, Bauzeitenplan).
-      Alle Eingaben werden lokal gespeichert.
-    </div>
+    <p class="cde-hint info-row">
+      <CdeIcon name="info" :size="12" />
+      <span>
+        Pauschalpositionen sind keine BIM-Mengen — sie werden hier manuell gepflegt
+        (z. B. Baustelleneinrichtung, Gerüst, Bauzeitenplan).
+        Alle Eingaben werden lokal gespeichert.
+      </span>
+    </p>
 
     <!-- Summe oben -->
-    <div class="totals-bar">
-      <div class="total-cell prim">
-        <div class="total-label">Σ Pauschalen</div>
-        <div class="total-value">{{ fmtEur(total) }}</div>
+    <div class="cde-totals">
+      <div class="cde-total-cell prim">
+        <div class="cde-total-label">Σ Pauschalen</div>
+        <div class="cde-total-value">{{ fmtEur(total) }}</div>
       </div>
-      <div class="total-cell">
-        <div class="total-label">Positionen</div>
-        <div class="total-value">{{ items.length }}</div>
+      <div class="cde-total-cell">
+        <div class="cde-total-label">Positionen</div>
+        <div class="cde-total-value">{{ items.length }}</div>
       </div>
     </div>
 
     <!-- Liste / Editor -->
     <div class="psch-list">
       <div v-if="!items.length" class="empty-state">
-        Noch keine Pauschalpositionen — auf <strong>+</strong> oben rechts klicken.
+        <CdeIcon name="pauschal" :size="22" />
+        Noch keine Pauschalpositionen — oben rechts auf <CdeIcon name="add" :size="12" /> klicken.
       </div>
 
       <div
@@ -55,7 +58,9 @@
           placeholder="€"
           @change="persist"
         />
-        <button class="psch-del" @click="removeRow(idx)" title="Entfernen">×</button>
+        <button class="psch-del" @click="removeRow(idx)" title="Entfernen" aria-label="Position entfernen">
+          <CdeIcon name="close" :size="13" />
+        </button>
       </div>
     </div>
   </div>
@@ -64,6 +69,9 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { repo } from '../services/RepoFacade.js';
+import CdeIcon from './ui/CdeIcon.vue';
+import CdeCardHeader from './ui/CdeCardHeader.vue';
+import CdeIconButton from './ui/CdeIconButton.vue';
 
 const REPO_KEY = 'pauschal-items';
 
@@ -112,92 +120,77 @@ watch(items, () => persist(), { deep: true });
 </script>
 
 <style scoped>
-.psch-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
-
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.35rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 5px;
-  border: 1px solid var(--cde-tint);
+/* Bausteine: styles/theme.css. Pauschalen teilen die Geld-Leitfarbe der
+   Kostenkachel — sie fließen dort in dieselbe Summe. */
+.psch-tab {
+  --card-accent: var(--cde-amber);
+  --cols: 2;
+  font-size: 0.78rem;
+  color: var(--cde-text);
 }
-.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
-.card-btn {
-  background: rgba(255,193,7,0.18);
-  border: 1px solid rgba(255,193,7,0.45);
-  color: #ffe082;
-  width: 1.6rem; height: 1.6rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 700;
-}
-.card-btn:hover { background: rgba(255,193,7,0.35); }
 
 .info-row {
+  padding: 0.5rem 0.45rem;
+  background: var(--cde-fill);
+  border-radius: var(--cde-radius-sm);
   font-size: 0.7rem;
   color: var(--cde-text-dim);
-  padding: 0.5rem 0.45rem;
-  background: var(--cde-tint-weak);
-  border-radius: 4px;
-  line-height: 1.4;
 }
 
-.totals-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
-.total-cell {
-  background: rgba(255,193,7,0.08);
-  border: 1px solid rgba(255,193,7,0.25);
-  border-radius: 4px;
-  padding: 0.4rem 0.5rem;
-  text-align: center;
-}
-.total-cell.prim { background: rgba(255,193,7,0.18); border-color: rgba(255,193,7,0.5); }
-.total-label { font-size: 0.62rem; color: #ffe082; letter-spacing: 0.04em; text-transform: uppercase; }
-.total-value { font-size: 1rem; color: var(--cde-text-bright); font-weight: 600; }
+.cde-total-value { font-size: 1rem; }
 
 .psch-list { display: flex; flex-direction: column; gap: 0.3rem; max-height: 350px; overflow-y: auto; }
+
 .empty-state {
-  color: var(--cde-text-dim); font-style: italic;
+  display: flex; flex-direction: column; align-items: center; gap: 0.45rem;
   padding: 1.5rem 0.5rem;
   text-align: center;
-  background: var(--cde-tint-weak);
-  border-radius: 4px;
-  border: 1px dashed var(--cde-tint-strong);
+  color: var(--cde-text-dim);
+  background: var(--cde-fill);
+  border: 1px dashed var(--cde-line-strong);
+  border-radius: var(--cde-radius-sm);
 }
+.empty-state .cde-icon { display: inline-block; vertical-align: -2px; color: var(--cde-text-faint); }
 
 .psch-row {
-  display: grid; grid-template-columns: 3rem 1fr 6rem 1.4rem;
+  display: grid; grid-template-columns: 3rem 1fr 6rem 1.6rem;
   gap: 0.3rem;
   align-items: center;
   padding: 0.25rem 0.3rem;
-  background: var(--cde-tint-weak);
-  border-radius: 4px;
-  border: 1px solid var(--cde-tint-weak);
+  background: var(--cde-fill);
+  border: 1px solid var(--cde-line-soft);
+  border-radius: var(--cde-radius-sm);
 }
+
 .psch-code, .psch-title, .psch-amount {
-  background: var(--cde-tint-weak);
-  border: 1px solid var(--cde-tint);
+  background: var(--cde-fill);
+  border: 1px solid var(--cde-line);
   border-radius: 3px;
   padding: 0.2rem 0.35rem;
   color: var(--cde-text-bright);
   font-size: 0.75rem;
   font-family: inherit;
 }
-.psch-code { text-align: center; font-variant-numeric: tabular-nums; color: #ffe082; }
-.psch-amount { text-align: right; font-variant-numeric: tabular-nums; color: #ffe082; }
+.psch-code   { text-align: center; font-variant-numeric: tabular-nums; color: var(--cde-amber-soft); }
+.psch-amount { text-align: right;  font-variant-numeric: tabular-nums; color: var(--cde-amber-soft); }
+
 .psch-code:focus, .psch-title:focus, .psch-amount:focus {
   outline: none;
-  border-color: rgba(255,193,7,0.5);
-  background: var(--cde-tint);
+  border-color: color-mix(in srgb, var(--card-accent) 55%, transparent);
+  background: var(--cde-fill-hover);
 }
 
 .psch-del {
+  display: inline-flex; align-items: center; justify-content: center;
   background: transparent;
   border: 1px solid transparent;
+  border-radius: 3px;
   color: var(--cde-text-faint);
   cursor: pointer;
-  font-size: 1rem;
-  border-radius: 3px;
 }
-.psch-del:hover { background: rgba(244,67,54,0.2); color: #ff8a80; border-color: rgba(244,67,54,0.3); }
+.psch-del:hover {
+  background: var(--cde-danger-fill);
+  border-color: color-mix(in srgb, var(--cde-danger) 35%, transparent);
+  color: var(--cde-danger-soft);
+}
 </style>

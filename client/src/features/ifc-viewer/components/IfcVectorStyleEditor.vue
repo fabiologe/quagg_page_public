@@ -3,7 +3,7 @@
     <div v-if="open" class="vse-overlay" @mousedown.self="emit('close')">
       <div class="vse-modal">
         <div class="vse-header">
-          <span class="vse-title">🎨 Linienstil-Editor</span>
+          <span class="vse-title"><CdeIcon name="style" :size="15" /> Linienstil-Editor</span>
           <div class="vse-tabs">
             <button class="vse-tab" :class="{ active: tab === 'categories' }" @click="tab = 'categories'">Kategorien</button>
             <button class="vse-tab" :class="{ active: tab === 'rules' }"      @click="tab = 'rules'">
@@ -14,7 +14,9 @@
             <button v-if="tab === 'categories'" class="vse-btn vse-btn--ghost" @click="onResetAll" title="Auf Default zurück">
               ↻ Alle zurücksetzen
             </button>
-            <button class="vse-close" @click="emit('close')">✕</button>
+            <button class="vse-close" @click="emit('close')" title="Schließen" aria-label="Schließen">
+              <CdeIcon name="close" :size="14" />
+            </button>
           </div>
         </div>
 
@@ -33,8 +35,8 @@
               <option v-for="p in ifc.userPresets" :key="p.id" :value="p.id">{{ p.name }}</option>
             </optgroup>
           </select>
-          <button class="vse-btn vse-btn--ghost" @click="onSavePreset" title="Aktuelle Stile als Preset speichern">💾 Als Preset…</button>
-          <button v-if="ifc.userPresets.length" class="vse-btn vse-btn--ghost" @click="onDeleteUserPreset">🗑 Eigenes löschen</button>
+          <button class="vse-btn vse-btn--ghost" @click="onSavePreset" title="Aktuelle Stile als Preset speichern"><CdeIcon name="save" :size="12" /> Als Preset…</button>
+          <button v-if="ifc.userPresets.length" class="vse-btn vse-btn--ghost" @click="onDeleteUserPreset"><CdeIcon name="delete" :size="12" /> Eigenes löschen</button>
 
           <span class="vse-sep">|</span>
           <span class="vse-presets-lbl">Wirkt für:</span>
@@ -137,7 +139,7 @@
                       <option value="left">◀</option>
                       <option value="right">▶</option>
                     </select>
-                    <button class="vse-iconbtn" title="Verfügbare Attribute…" @click="openAttrBrowser(row.category)">🔍</button>
+                    <button class="vse-iconbtn" title="Verfügbare Attribute…" @click="openAttrBrowser(row.category)" aria-label="Verfügbare Attribute"><CdeIcon name="search" :size="12" /></button>
                   </div>
                 </td>
                 <td class="col-on">
@@ -195,7 +197,7 @@
                 <input type="number" :value="rule.priority" min="0" max="100" step="1"
                        @change="ifc.updateVectorRule(rule.id, { priority: +$event.target.value })" />
               </label>
-              <button class="vse-iconbtn vse-iconbtn--danger" @click="ifc.deleteVectorRule(rule.id)" title="Löschen">🗑</button>
+              <button class="vse-iconbtn vse-iconbtn--danger" @click="ifc.deleteVectorRule(rule.id)" title="Löschen" aria-label="Regel löschen"><CdeIcon name="delete" :size="12" /></button>
             </div>
             <div class="vse-rule-body">
               <div class="vse-rule-cond">
@@ -255,8 +257,10 @@
           <div v-if="attrBrowser.open" class="vse-attr-overlay" @mousedown.self="attrBrowser.open = false">
             <div class="vse-attr-modal">
               <div class="vse-attr-header">
-                <span class="vse-attr-title">🔍 Attribute · {{ attrBrowser.category }}</span>
-                <button class="vse-close" @click="attrBrowser.open = false">✕</button>
+                <span class="vse-attr-title"><CdeIcon name="search" :size="13" /> Attribute · {{ attrBrowser.category }}</span>
+                <button class="vse-close" @click="attrBrowser.open = false" title="Schließen" aria-label="Schließen">
+                  <CdeIcon name="close" :size="14" />
+                </button>
               </div>
               <div class="vse-attr-info">
                 <span v-if="attrBrowser.loading">Lese {{ attrBrowser.sampleSize }} Beispiele…</span>
@@ -300,6 +304,7 @@
 
 <script setup>
 import { ref, computed, reactive } from 'vue';
+import CdeIcon from './ui/CdeIcon.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { DASH_PATTERNS, HATCH_PATTERNS_OPTIONS, SYMBOL_OPTIONS } from '../services/DefaultLineStyles.js';
 import { probeCategory } from '../services/CategoryAttributeProbe.js';
@@ -539,7 +544,7 @@ function applyBulk() {
 <style scoped>
 .vse-overlay {
   position: fixed; inset: 0; z-index: 240;
-  background: rgba(0,0,0,0.55);
+  background: var(--cde-scrim);
   display: flex; justify-content: center; align-items: center;
 }
 .vse-modal {
@@ -547,29 +552,34 @@ function applyBulk() {
   background: var(--cde-surface-alt);
   border: 1px solid var(--cde-tint-strong);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  box-shadow: var(--cde-shadow-xl);
   display: flex; flex-direction: column;
   overflow: hidden;
 }
 .vse-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.6rem 1rem;
-  background: rgba(30, 35, 50, 0.7);
+  background: var(--cde-float-sheer);
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
-.vse-title { font-size: 0.9rem; font-weight: 700; color: var(--cde-accent-soft); }
+.vse-title {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.9rem; font-weight: 700; color: var(--cde-accent-soft);
+}
 .vse-header-actions { display: flex; gap: 0.4rem; align-items: center; }
 .vse-close {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--cde-text-mute);
-  font-size: 1.2rem; cursor: pointer; padding: 0 0.4rem;
+  cursor: pointer; padding: 0.2rem 0.3rem;
+  border-radius: var(--cde-radius-sm);
 }
 .vse-close:hover { color: var(--cde-danger); }
 
 .vse-toolbar {
   display: flex; align-items: center; gap: 0.6rem;
   padding: 0.5rem 1rem;
-  background: rgba(20, 24, 36, 0.6);
+  background: var(--cde-float-deep);
   border-bottom: 1px solid var(--cde-tint-weak);
   flex-shrink: 0;
 }
@@ -586,14 +596,14 @@ function applyBulk() {
 .vse-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
 .vse-table thead th {
   position: sticky; top: 0;
-  background: rgba(30, 35, 50, 0.95);
+  background: var(--cde-float);
   color: var(--cde-text-dim); font-weight: 600; font-size: 0.7rem;
   text-align: left; padding: 0.45rem 0.5rem;
   border-bottom: 1px solid var(--cde-tint);
 }
 .vse-table tbody tr { border-bottom: 1px solid var(--cde-tint-weak); }
 .vse-table tbody tr:hover { background: var(--cde-tint-weak); }
-.vse-table tbody tr.is-selected { background: rgba(33,150,243,0.08); }
+.vse-table tbody tr.is-selected { background: color-mix(in srgb, var(--cde-accent) 8%, transparent); }
 .vse-table td { padding: 0.35rem 0.5rem; color: var(--cde-text); vertical-align: middle; }
 
 .col-check { width: 36px; }
@@ -628,8 +638,10 @@ function applyBulk() {
 .vse-table input[type="checkbox"] { cursor: pointer; }
 
 .vse-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--cde-text-mute);
-  cursor: pointer; font-size: 0.85rem; padding: 0 0.3rem;
+  cursor: pointer; padding: 0.15rem 0.3rem;
+  border-radius: 3px;
 }
 .vse-iconbtn:hover { color: var(--cde-text); }
 
@@ -638,8 +650,8 @@ function applyBulk() {
 .vse-bulk {
   display: flex; align-items: center; gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: rgba(33,150,243,0.10);
-  border-top: 1px solid rgba(33,150,243,0.3);
+  background: color-mix(in srgb, var(--cde-accent) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--cde-accent) 30%, transparent);
   flex-shrink: 0;
 }
 .vse-bulk-label { font-size: 0.74rem; color: var(--cde-accent-soft); font-weight: 600; }
@@ -652,6 +664,7 @@ function applyBulk() {
 }
 
 .vse-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--cde-tint-strong);
   border-radius: 4px;
@@ -665,11 +678,11 @@ function applyBulk() {
 .vse-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .vse-btn--ghost { background: none; }
 .vse-btn--primary {
-  background: rgba(33,150,243,0.3);
+  background: color-mix(in srgb, var(--cde-accent) 30%, transparent);
   color: var(--cde-accent-soft);
-  border-color: rgba(33,150,243,0.5);
+  border-color: color-mix(in srgb, var(--cde-accent) 50%, transparent);
 }
-.vse-btn--primary:hover { background: rgba(33,150,243,0.45); }
+.vse-btn--primary:hover { background: color-mix(in srgb, var(--cde-accent) 45%, transparent); }
 
 .vse-tabs { display: flex; gap: 0.3rem; margin-left: 1rem; }
 .vse-tab {
@@ -685,12 +698,12 @@ function applyBulk() {
 }
 .vse-tab:hover  { background: var(--cde-tint-weak); color: var(--cde-text); }
 .vse-tab.active {
-  background: rgba(33,150,243,0.25);
-  color: var(--cde-accent-soft); border-color: rgba(33,150,243,0.4);
+  background: color-mix(in srgb, var(--cde-accent) 25%, transparent);
+  color: var(--cde-accent-soft); border-color: color-mix(in srgb, var(--cde-accent) 40%, transparent);
 }
 .vse-tab-badge {
-  background: rgba(33,150,243,0.4);
-  color: #fff;
+  background: color-mix(in srgb, var(--cde-accent) 40%, transparent);
+  color: var(--cde-text-invert);
   font-size: 0.62rem; font-weight: 700;
   border-radius: 8px;
   padding: 0 5px;
@@ -700,8 +713,8 @@ function applyBulk() {
 .vse-presets {
   display: flex; align-items: center; gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: rgba(102,187,106,0.06);
-  border-bottom: 1px solid rgba(102,187,106,0.18);
+  background: color-mix(in srgb, var(--cde-success-strong) 6%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--cde-success-strong) 18%, transparent);
   flex-wrap: wrap;
   flex-shrink: 0;
 }
@@ -713,9 +726,9 @@ function applyBulk() {
   color: var(--cde-text); font-size: 0.74rem;
 }
 
-.vse-override-dot { color: #66bb6a; font-size: 0.7rem; margin-right: 4px; }
-.vse-table tbody tr.is-override { background: rgba(102,187,106,0.05); }
-.vse-table tbody tr.is-override.is-selected { background: rgba(102,187,106,0.13); }
+.vse-override-dot { color: var(--cde-success-strong); font-size: 0.7rem; margin-right: 4px; }
+.vse-table tbody tr.is-override { background: color-mix(in srgb, var(--cde-success-strong) 5%, transparent); }
+.vse-table tbody tr.is-override.is-selected { background: color-mix(in srgb, var(--cde-success-strong) 13%, transparent); }
 
 .vse-rules-wrap {
   flex: 1; overflow-y: auto;
@@ -755,19 +768,19 @@ function applyBulk() {
 .vse-rule-style input[type="color"] { width: 32px; height: 22px; padding: 0; cursor: pointer; }
 .vse-rule-style input[type="number"] { width: 70px; }
 .vse-iconbtn--danger { color: var(--cde-danger-soft); }
-.vse-iconbtn--danger:hover { background: rgba(239,83,80,0.15); color: var(--cde-danger); border-radius: 3px; }
+.vse-iconbtn--danger:hover { background: var(--cde-danger-fill); color: var(--cde-danger); }
 
 /* Attribute browser overlay */
 .vse-attr-overlay {
   position: absolute; inset: 0;
-  background: rgba(0,0,0,0.45);
+  background: var(--cde-scrim);
   display: flex; justify-content: center; align-items: center;
   z-index: 5;
 }
 .vse-attr-modal {
   width: 600px; max-width: 92%; max-height: 80%;
   background: var(--cde-surface-alt);
-  border: 1px solid rgba(102,187,106,0.4);
+  border: 1px solid color-mix(in srgb, var(--cde-success-strong) 40%, transparent);
   border-radius: 10px;
   box-shadow: 0 12px 32px var(--cde-scrim);
   display: flex; flex-direction: column;
@@ -776,15 +789,18 @@ function applyBulk() {
 .vse-attr-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.55rem 0.9rem;
-  background: rgba(102,187,106,0.10);
-  border-bottom: 1px solid rgba(102,187,106,0.3);
+  background: color-mix(in srgb, var(--cde-success-strong) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--cde-success-strong) 30%, transparent);
   flex-shrink: 0;
 }
-.vse-attr-title { font-size: 0.85rem; font-weight: 700; color: var(--cde-success); }
+.vse-attr-title {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.85rem; font-weight: 700; color: var(--cde-success);
+}
 .vse-attr-info {
   padding: 0.4rem 0.9rem;
   font-size: 0.7rem; color: var(--cde-text-mute);
-  background: rgba(20,24,36,0.5);
+  background: var(--cde-float-deep);
   border-bottom: 1px solid var(--cde-tint-weak);
   flex-shrink: 0;
 }
@@ -793,9 +809,9 @@ function applyBulk() {
 }
 .vse-attr-section { margin-bottom: 1rem; }
 .vse-attr-section-title {
-  font-size: 0.72rem; font-weight: 700; color: #ffd54f;
+  font-size: 0.72rem; font-weight: 700; color: var(--cde-amber-soft);
   text-transform: uppercase; letter-spacing: 0.08em;
-  padding-bottom: 0.3rem; border-bottom: 1px solid rgba(255,213,79,0.2);
+  padding-bottom: 0.3rem; border-bottom: 1px solid color-mix(in srgb, var(--cde-amber) 20%, transparent);
   margin-bottom: 0.3rem;
 }
 .vse-attr-row {
@@ -804,10 +820,10 @@ function applyBulk() {
   border-radius: 4px;
   cursor: pointer; transition: background 0.12s;
 }
-.vse-attr-row:hover { background: rgba(102,187,106,0.12); }
+.vse-attr-row:hover { background: color-mix(in srgb, var(--cde-success-strong) 12%, transparent); }
 .vse-attr-token {
   font-family: monospace; font-size: 0.74rem; color: var(--cde-success);
-  background: rgba(102,187,106,0.08);
+  background: color-mix(in srgb, var(--cde-success-strong) 8%, transparent);
   padding: 0.1rem 0.4rem; border-radius: 3px;
 }
 .vse-attr-samples {

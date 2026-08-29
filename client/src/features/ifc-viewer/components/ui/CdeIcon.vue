@@ -39,8 +39,14 @@ import {
   Boxes, FolderOpen, Building2, UserRound, ClipboardList, Settings2,
   // Allgemein
   Plus, X, Check, Trash2, RotateCw, Copy, Share2, Info, TriangleAlert,
-  ChevronRight, ChevronDown, PanelLeft, PanelRight, ListTree, Filter,
-  Undo2, Redo2, CircleHelp,
+  ChevronRight, ChevronDown, ChevronUp, PanelLeft, PanelRight, ListTree, Filter,
+  Undo2, Redo2, CircleHelp, Pencil, SendHorizontal, LoaderCircle, Play,
+  MousePointer2, Image, Zap, CircleX, CircleAlert, Map, PenTool, HardHat,
+  // Bauwerksstruktur (Raumhierarchie)
+  Globe, SquareStack, SquareDashed, Box,
+  // IFC-Kategorien (Ebenen-Liste)
+  BrickWall, Square, Columns3, Minus, Frame, DoorOpen, Cylinder, Wind,
+  House, ChevronsUp, Anchor, Sofa, Fence, Grid2x2, Cog, Droplets,
 } from 'lucide-vue-next';
 
 const ICONS = {
@@ -117,12 +123,57 @@ const ICONS = {
   'warn':         TriangleAlert,
   'chevron-right': ChevronRight,
   'chevron-down': ChevronDown,
+  'chevron-up':   ChevronUp,
   'panel-left':   PanelLeft,
   'panel-right':  PanelRight,
   'tree':         ListTree,
   'filter':       Filter,
   'undo':         Undo2,
   'redo':         Redo2,
+  'edit':         Pencil,
+  'send':         SendHorizontal,
+  'busy':         LoaderCircle,
+  'open':         Play,
+  'pointer':      MousePointer2,
+  'image':        Image,
+  'billed':       Zap,
+  'overview':     Map,
+  'vector':       PenTool,
+  'bim':          HardHat,
+
+  // ── Ampel (IDS-Prüfung, Statuszeilen) ──
+  // Eigene Namen statt farbiger Kreis-Emoji: die Farbe kommt aus der CSS-Klasse,
+  // die FORM trägt die Bedeutung auch ohne Farbe (Barrierefreiheit).
+  'status-error': CircleX,
+  'status-warn':  CircleAlert,
+  'status-ok':    CircleCheck,
+
+  // ── Bauwerksstruktur (IfcSpatialTree) ──
+  'site':         Globe,
+  'building':     Building2,
+  'storey':       SquareStack,
+  'space':        SquareDashed,
+  'element':      Box,
+
+  // ── IFC-Kategorien (IfcLayerPanel) ──
+  // Bewusst grob: eine Handvoll erkennbarer Silhouetten schlägt 40 kaum
+  // unterscheidbare Piktogramme. Unbekanntes fällt auf 'element'.
+  'cat-wall':        BrickWall,
+  'cat-slab':        Square,
+  'cat-column':      Columns3,
+  'cat-beam':        Minus,
+  'cat-window':      Frame,
+  'cat-door':        DoorOpen,
+  'cat-pipe':        Cylinder,
+  'cat-duct':        Wind,
+  'cat-roof':        House,
+  'cat-stair':       ChevronsUp,
+  'cat-footing':     Anchor,
+  'cat-furniture':   Sofa,
+  'cat-railing':     Fence,
+  'cat-curtainwall': Grid2x2,
+  'cat-equipment':   Cog,
+  'cat-flow':        Droplets,
 };
 
 const props = defineProps({
@@ -148,8 +199,14 @@ export const ICON_NAMES = [
   'export', 'dxf', 'excel', 'download', 'upload', 'snapshot', 'save',
   'cde', 'documents', 'project', 'user', 'register', 'stammdaten',
   'add', 'close', 'check', 'delete', 'refresh', 'copy', 'share', 'info', 'warn',
-  'chevron-right', 'chevron-down', 'panel-left', 'panel-right', 'tree', 'filter',
-  'undo', 'redo',
+  'chevron-right', 'chevron-down', 'chevron-up', 'panel-left', 'panel-right', 'tree', 'filter',
+  'undo', 'redo', 'edit', 'send', 'busy', 'open', 'pointer', 'image', 'billed',
+  'overview', 'vector', 'bim',
+  'status-error', 'status-warn', 'status-ok',
+  'site', 'building', 'storey', 'space', 'element',
+  'cat-wall', 'cat-slab', 'cat-column', 'cat-beam', 'cat-window', 'cat-door',
+  'cat-pipe', 'cat-duct', 'cat-roof', 'cat-stair', 'cat-footing',
+  'cat-furniture', 'cat-railing', 'cat-curtainwall', 'cat-equipment', 'cat-flow',
 ];
 </script>
 

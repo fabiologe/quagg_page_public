@@ -13,7 +13,8 @@
 export const LAYER_STYLES = {
     realistic: {
         id:             'realistic',
-        label:          '🎨 Realistisch',
+        label:          'Realistisch',
+        icon:           'style',
         projection:     'Perspective',
         background:     null,
         gridVisible:    true,
@@ -21,7 +22,8 @@ export const LAYER_STYLES = {
     },
     plan: {
         id:             'plan',
-        label:          '📐 Planungslayer',
+        label:          'Planungslayer',
+        icon:           'areas',
         projection:     'Orthographic',
         background:     '#ffffff',
         gridVisible:    false,

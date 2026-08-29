@@ -90,7 +90,7 @@ onUnmounted(_stop);
 <style scoped>
 .load-overlay {
   position: absolute; inset: 0; z-index: 50;
-  background: rgba(14, 16, 24, 0.92);
+  background: var(--cde-float-deeper);
   backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   pointer-events: all;
@@ -98,10 +98,10 @@ onUnmounted(_stop);
 .load-card {
   display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
   padding: 1.5rem 2.5rem 2rem;
-  background: rgba(30, 35, 50, 0.85);
+  background: var(--cde-float);
   border: 1px solid var(--cde-tint);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  box-shadow: var(--cde-shadow-xl);
   min-width: 420px;
   max-width: 500px;
 }
@@ -128,7 +128,7 @@ onUnmounted(_stop);
 }
 .load-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #42a5f5, var(--cde-accent-soft));
+  background: linear-gradient(90deg, var(--cde-accent), var(--cde-accent-soft));
   border-radius: 2px;
   transition: width 0.4s ease-out;
 }

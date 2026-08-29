@@ -11,14 +11,22 @@
 
       <!-- ── Header / drag handle ── -->
       <div class="pdf-header">
-        <span class="pdf-title">📄 PDF Plan Export</span>
+        <span class="pdf-title"><CdeIcon name="export" :size="14" /> PDF Plan Export</span>
 
         <div class="view-presets">
           <span class="presets-label">Ansicht:</span>
-          <button class="preset-btn" :class="{ active: activeView==='top'   }" @click="setView('top')">⬇ Draufsicht</button>
-          <button class="preset-btn" :class="{ active: activeView==='front' }" @click="setView('front')">🔲 Vorne</button>
-          <button class="preset-btn" :class="{ active: activeView==='side'  }" @click="setView('side')">◻ Seite</button>
-          <button class="preset-btn refresh-btn" title="Snapshot aktualisieren" @click="refreshSnapshot">🔄</button>
+          <button class="preset-btn" :class="{ active: activeView==='top'   }" @click="setView('top')">
+            <CdeIcon name="view-top" :size="12" /> Draufsicht
+          </button>
+          <button class="preset-btn" :class="{ active: activeView==='front' }" @click="setView('front')">
+            <CdeIcon name="view-front" :size="12" /> Vorne
+          </button>
+          <button class="preset-btn" :class="{ active: activeView==='side'  }" @click="setView('side')">
+            <CdeIcon name="view-side" :size="12" /> Seite
+          </button>
+          <button class="preset-btn refresh-btn" title="Snapshot aktualisieren" aria-label="Snapshot aktualisieren" @click="refreshSnapshot">
+            <CdeIcon name="refresh" :size="12" />
+          </button>
 
           <span class="presets-sep">|</span>
           <button
@@ -27,16 +35,18 @@
             :disabled="!activeScale"
             :title="activeScale ? 'Bemaßen — 2 Klicks aufs Bild' : 'Bemaßen erst nach Maßstab-Wahl möglich'"
             @click="toggleDimensionMode"
-          >📐 Maße</button>
+          ><CdeIcon name="measure" :size="12" /> Maße</button>
           <button
             v-if="dimensions.length"
             class="preset-btn dim-clear"
             title="Alle Maße entfernen"
             @click="clearDimensions"
-          >✕ {{ dimensions.length }}</button>
+          ><CdeIcon name="close" :size="11" /> {{ dimensions.length }}</button>
         </div>
 
-        <button class="hdr-close" @click="emit('close')">&times;</button>
+        <button class="hdr-close" @click="emit('close')" title="Schließen" aria-label="Schließen">
+          <CdeIcon name="close" :size="14" />
+        </button>
       </div>
 
       <!-- ── Body ── -->
@@ -85,7 +95,8 @@
 
                 <div v-if="snapshot && !dimensionMode" class="pan-hint">↔ ziehen zum Verschieben</div>
                 <div v-if="dimensionMode" class="dim-hint">
-                  📐 {{ dimPending ? '2. Punkt setzen' : '1. Punkt setzen' }} — Esc verlässt
+                  <CdeIcon name="measure" :size="12" />
+                  {{ dimPending ? '2. Punkt setzen' : '1. Punkt setzen' }} — Esc verlässt
                 </div>
               </div>
               <!-- Title block preview -->
@@ -161,7 +172,10 @@
                 class="style-btn"
                 :class="{ active: activeStyleId === s.id }"
                 @click="selectStyle(s.id)"
-              >{{ s.label }}</button>
+              >
+                <CdeIcon v-if="s.icon" :name="s.icon" :size="12" />
+                {{ s.label }}
+              </button>
             </div>
             <div class="style-hint">Wird temporär für Vorschau angewendet</div>
           </div>
@@ -201,7 +215,7 @@
             <!-- Overview mini-map: tightly coupled to scale selection -->
             <div v-if="overviewData" class="overview-pane">
               <div class="overview-label">
-                <span>🗺 Übersicht</span>
+                <span class="overview-title"><CdeIcon name="overview" :size="12" /> Übersicht</span>
                 <span class="overview-hint">{{ overviewHint }}</span>
               </div>
               <div class="overview-canvas-stack" :style="{ width: OVERVIEW_W + 'px', height: OVERVIEW_H + 'px' }">
@@ -267,9 +281,12 @@
               <img v-if="logoDataUrl" :src="logoDataUrl" class="logo-thumb" />
               <label class="logo-upload-btn">
                 <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" @change="onLogoUpload" class="sr-only" />
-                {{ logoDataUrl ? '🔄 Ändern' : '🖼 Logo laden' }}
+                <CdeIcon :name="logoDataUrl ? 'refresh' : 'image'" :size="12" />
+                {{ logoDataUrl ? 'Ändern' : 'Logo laden' }}
               </label>
-              <button v-if="logoDataUrl" class="logo-clear-btn" @click="clearLogo" title="Logo entfernen">✕</button>
+              <button v-if="logoDataUrl" class="logo-clear-btn" @click="clearLogo" title="Logo entfernen" aria-label="Logo entfernen">
+                <CdeIcon name="close" :size="12" />
+              </button>
             </div>
             <div class="logo-hint">Wird im Browser gespeichert</div>
           </div>
@@ -278,7 +295,7 @@
           <div class="settings-group vector-group">
             <label class="vector-toggle">
               <input type="checkbox" v-model="vectorMode" />
-              <span>📏 Vektor-Plot aktivieren</span>
+              <span class="opt-label"><CdeIcon name="vector" :size="12" /> Vektor-Plot aktivieren</span>
             </label>
 
             <div v-if="vectorMode" class="vector-sub-opts">
@@ -354,7 +371,7 @@
 
             <div v-if="vectorMode" class="vector-style-btn-row">
               <button class="vector-style-btn" @click="showStyleEditor = true">
-                🎨 Linienstile bearbeiten
+                <CdeIcon name="style" :size="12" /> Linienstile bearbeiten
               </button>
             </div>
 
@@ -378,15 +395,18 @@
             <div class="profile-btn-col">
               <button class="profile-btn" :disabled="profileBusy" @click="doExportDxf"
                       title="Lageplan als DXF R12 in Rohkoordinaten — zur Weiterbearbeitung in CAD/GIS">
-                {{ profileBusy === 'dxf' ? '⏳ DXF…' : '📐 Lageplan als DXF' }}
+                <CdeIcon :name="profileBusy === 'dxf' ? 'busy' : 'dxf'" :class="{ 'is-busy': profileBusy === 'dxf' }" :size="12" />
+                {{ profileBusy === 'dxf' ? 'DXF…' : 'Lageplan als DXF' }}
               </button>
               <button class="profile-btn" :disabled="profileBusy" @click="doExportLaengsschnitt"
                       title="Kanal-Längsschnitt (Bandschnitt) aus Haltungsachsen + Gelände">
-                {{ profileBusy === 'ls' ? '⏳ Längsschnitt…' : '📉 Kanal-Längsschnitt (PDF)' }}
+                <CdeIcon :name="profileBusy === 'ls' ? 'busy' : 'laengsschnitt'" :class="{ 'is-busy': profileBusy === 'ls' }" :size="12" />
+                {{ profileBusy === 'ls' ? 'Längsschnitt…' : 'Kanal-Längsschnitt (PDF)' }}
               </button>
               <button class="profile-btn" :disabled="profileBusy" @click="doExportQuerprofile"
                       title="Querprofile in Stations-Serie">
-                {{ profileBusy === 'qp' ? '⏳ Querprofile…' : '📊 Querprofile (PDF)' }}
+                <CdeIcon :name="profileBusy === 'qp' ? 'busy' : 'querprofil'" :class="{ 'is-busy': profileBusy === 'qp' }" :size="12" />
+                {{ profileBusy === 'qp' ? 'Querprofile…' : 'Querprofile (PDF)' }}
               </button>
             </div>
             <div class="vector-subrow">
@@ -408,7 +428,8 @@
 
           <!-- Export -->
           <button class="export-btn" :disabled="!snapshot" @click="doExport">
-            {{ snapshot ? (vectorMode ? '📏 Als Vektor-PDF exportieren' : '📄 Als PDF exportieren') : '⚠ Kein Modell geladen' }}
+            <CdeIcon :name="!snapshot ? 'warn' : (vectorMode ? 'vector' : 'export')" :size="13" />
+            {{ snapshot ? (vectorMode ? 'Als Vektor-PDF exportieren' : 'Als PDF exportieren') : 'Kein Modell geladen' }}
           </button>
 
         </div>
@@ -425,6 +446,7 @@ import { exportPlanPDF, exportVectorPlanPDF, exportVectorPlanDXF } from '../serv
 import { buildLaengsschnittFromModel } from '../services/LaengsschnittBuilder.js';
 import { exportLaengsschnittPDF, exportQuerprofilePDF } from '../services/LaengsschnittPdf.js';
 import { LAYER_STYLES } from '../services/LayerStyleManager.js';
+import CdeIcon from './ui/CdeIcon.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useCdeStore, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
@@ -1393,7 +1415,7 @@ async function doExport() {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #0e1018;
+  background: var(--cde-float-deeper);
   overflow: hidden;
 }
 
@@ -1410,22 +1432,27 @@ async function doExport() {
   user-select: none;
 }
 .pdf-header:active { cursor: grabbing; }
-.pdf-title { font-size: 0.9rem; font-weight: 700; color: var(--cde-accent-soft); white-space: nowrap; }
+.pdf-title {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.9rem; font-weight: 700; color: var(--cde-accent-soft); white-space: nowrap;
+}
 
 .view-presets { display: flex; align-items: center; gap: 0.3rem; flex: 1; }
 .presets-label { font-size: 0.7rem; color: var(--cde-text-dimmer); margin-right: 0.2rem; }
 .preset-btn {
-  padding: 0.2rem 0.55rem; border-radius: 4px; border: 1px solid var(--cde-tint-strong);
-  background: var(--cde-tint-weak); color: var(--cde-text-dim); font-size: 0.72rem;
-  cursor: pointer; transition: background 0.12s, color 0.12s;
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.2rem 0.55rem; border-radius: var(--cde-radius-sm);
+  border: 1px solid var(--cde-line-strong);
+  background: var(--cde-fill); color: var(--cde-text-dim); font-size: 0.72rem;
+  cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.preset-btn:hover  { background: var(--cde-tint-strong); color: var(--cde-text); }
-.preset-btn.active { background: rgba(52,152,219,0.28); color: var(--cde-accent); border-color: rgba(52,152,219,0.5); }
-.refresh-btn { font-size: 0.8rem; }
+.preset-btn:hover  { background: var(--cde-fill-hover); color: var(--cde-text); }
+.preset-btn.active { background: var(--cde-accent-fill-hi); color: var(--cde-accent); border-color: var(--cde-accent-line); }
 
 .hdr-close {
-  background: none; border: none; color: var(--cde-text-mute); font-size: 1.3rem;
-  cursor: pointer; padding: 0 0.2rem; line-height: 1; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--cde-text-mute);
+  cursor: pointer; padding: 0.2rem; border-radius: var(--cde-radius-sm);
   transition: color 0.12s; margin-left: auto;
 }
 .hdr-close:hover { color: var(--cde-danger); }
@@ -1443,11 +1470,11 @@ async function doExport() {
   display: flex;
   flex-direction: column;
   padding: 0.75rem;
-  background: #13151f;
+  background: var(--cde-float-deeper);
   border-right: 1px solid var(--cde-tint-weak);
   overflow: hidden;
 }
-.preview-label { font-size: 0.65rem; color: #37474f; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
+.preview-label { font-size: 0.65rem; color: var(--cde-text-dimmer); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
 .preview-scroll { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; }
 .overview-pane {
   margin-top: 0.55rem;
@@ -1461,12 +1488,14 @@ async function doExport() {
   font-size: 0.62rem; color: var(--cde-text-soft); margin-bottom: 0.3rem;
 }
 .overview-hint { font-size: 0.56rem; color: var(--cde-text-faint); font-weight: normal; }
+.overview-title { display: inline-flex; align-items: center; gap: 0.25rem; }
+.opt-label { display: inline-flex; align-items: center; gap: 0.3rem; }
 .overview-canvas-stack {
   position: relative;
   border: 1px solid var(--cde-tint-strong);
   border-radius: 4px;
   overflow: hidden;
-  background: #1c2a35;
+  background: var(--cde-float-deep);
 }
 .overview-3d, .overview-overlay {
   position: absolute; inset: 0;
@@ -1487,7 +1516,7 @@ async function doExport() {
 }
 
 .paper-sheet {
-  background: #fff;
+  background: var(--cde-papier);
   box-shadow: 0 4px 24px var(--cde-scrim);
   display: flex;
   flex-direction: column;
@@ -1502,11 +1531,11 @@ async function doExport() {
 .drawing-area {
   flex: 1;
   overflow: hidden;
-  background: #e8eaf0;
+  background: var(--cde-papier-alt);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--cde-papier-rand);
   position: relative;
   user-select: none;
 }
@@ -1521,15 +1550,15 @@ async function doExport() {
   display: block;
   pointer-events: none;
 }
-.no-snapshot { font-size: 0.6rem; color: #9e9e9e; }
+.no-snapshot { font-size: 0.6rem; color: var(--cde-papier-schwach); }
 .pan-hint {
   position: absolute;
   bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.58rem;
-  color: rgba(0,0,0,0.4);
-  background: rgba(255,255,255,0.6);
+  color: color-mix(in srgb, var(--cde-papier-text) 45%, transparent);
+  background: color-mix(in srgb, var(--cde-text-invert) 60%, transparent);
   padding: 1px 6px;
   border-radius: 3px;
   pointer-events: none;
@@ -1538,14 +1567,15 @@ async function doExport() {
 .dim-hint {
   position: absolute;
   top: 4px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.25rem;
   font-size: 0.7rem; font-weight: 600;
-  color: #1a1a1a;
-  background: rgba(255,235,59,0.92);
+  color: var(--cde-hinweis-text);
+  background: var(--cde-hinweis);
   padding: 3px 10px;
   border-radius: 4px;
   pointer-events: none;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  box-shadow: var(--cde-shadow-sm);
 }
 
 /* SVG overlay with measurements drawn on top of the snapshot */
@@ -1555,22 +1585,22 @@ async function doExport() {
   pointer-events: none;
 }
 .dim-shape line {
-  stroke: #d50000; stroke-width: 0.25;
+  stroke: var(--cde-danger); stroke-width: 0.25;
 }
 .dim-shape circle {
-  fill: #d50000;
+  fill: var(--cde-danger);
 }
 .dim-shape text {
   font-size: 2px;
-  fill: #d50000;
+  fill: var(--cde-danger);
   font-weight: 700;
   paint-order: stroke;
-  stroke: rgba(255,255,255,0.85);
+  stroke: color-mix(in srgb, var(--cde-text-invert) 85%, transparent);
   stroke-width: 0.5;
   stroke-linejoin: round;
 }
 .dim-pending {
-  fill: #ff9800;
+  fill: var(--cde-warn);
   animation: dim-pulse 0.8s ease-in-out infinite;
 }
 @keyframes dim-pulse {
@@ -1579,23 +1609,28 @@ async function doExport() {
 }
 
 .preset-btn.dim-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.preset-btn.dim-clear { background: rgba(213,0,0,0.18); color: var(--cde-danger-soft); border-color: rgba(213,0,0,0.35); }
+.preset-btn.dim-clear { background: var(--cde-danger-fill); color: var(--cde-danger-soft); border-color: color-mix(in srgb, var(--cde-danger) 35%, transparent); }
 .presets-sep { color: var(--cde-tint-max); margin: 0 0.2rem; }
 
 /* ── Title block preview ── */
+/* ── Papier-Nachbildung ──────────────────────────────────────────────────
+   Blattvorschau und Schriftfeld zeigen einen AUSDRUCK. Sie benutzen deshalb
+   die `--cde-papier-*`-Tokens und nicht die Oberflächenrollen: das Blatt
+   bleibt weiß, auch wenn die Oberfläche dunkel ist — sonst zeigte die
+   Vorschau etwas anderes als das erzeugte PDF.                            */
 .tb-preview {
   flex-shrink: 0;
-  background: #fff;
-  border-top: 1.5px solid #555;
+  background: var(--cde-papier);
+  border-top: 1.5px solid var(--cde-papier-linie);
   display: flex;
   flex-direction: column;
   height: 15%;
   min-height: 36px;
 }
-.tb-row { display: flex; flex: 1; border-top: 1px solid #aaa; }
+.tb-row { display: flex; flex: 1; border-top: 1px solid var(--cde-text-dim); }
 .tb-row:first-child { border-top: none; }
 .tb-cell {
-  border-right: 1px solid #aaa;
+  border-right: 1px solid var(--cde-text-dim);
   padding: 0.1rem 0.25rem;
   display: flex;
   flex-direction: column;
@@ -1607,8 +1642,8 @@ async function doExport() {
 .tb-col-25 { flex: 0 0 25%; }
 .tb-col-17 { flex: 0 0 17%; }
 .tb-col-18 { flex: 0 0 18%; }
-.tb-lbl { font-size: 0.42rem; color: #888; line-height: 1; }
-.tb-val { font-size: 0.58rem; color: #111; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-lbl { font-size: 0.42rem; color: var(--cde-papier-schwach); line-height: 1; }
+.tb-val { font-size: 0.58rem; color: var(--cde-papier-text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-logo-cell { align-items: center; justify-content: center; }
 .tb-logo-img { max-width: 80%; max-height: 90%; object-fit: contain; }
 
@@ -1630,13 +1665,14 @@ async function doExport() {
 /* Layer styles */
 .style-btns { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .style-btn {
-  padding: 0.28rem 0.7rem; border-radius: 5px; border: 1px solid var(--cde-tint-strong);
-  background: var(--cde-tint-weak); color: var(--cde-text-dim); font-size: 0.78rem;
-  cursor: pointer; transition: background 0.12s, color 0.12s;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.28rem 0.7rem; border-radius: var(--cde-radius); border: 1px solid var(--cde-line-strong);
+  background: var(--cde-fill); color: var(--cde-text-dim); font-size: 0.78rem;
+  cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.style-btn:hover  { background: var(--cde-tint-strong); color: var(--cde-text); }
-.style-btn.active { background: rgba(52,152,219,0.3); color: var(--cde-accent); border-color: rgba(52,152,219,0.55); }
-.style-hint { font-size: 0.62rem; color: #37474f; margin-top: 0.15rem; }
+.style-btn:hover  { background: var(--cde-fill-hover); color: var(--cde-text); }
+.style-btn.active { background: var(--cde-accent-fill-hi); color: var(--cde-accent); border-color: var(--cde-accent-line); }
+.style-hint { font-size: 0.62rem; color: var(--cde-text-dimmer); margin-top: 0.15rem; }
 
 .scale-btns { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 .scale-btn {
@@ -1645,8 +1681,8 @@ async function doExport() {
   cursor: pointer; transition: background 0.12s, color 0.12s;
 }
 .scale-btn:hover  { background: var(--cde-tint-strong); color: var(--cde-text); }
-.scale-btn.active { background: rgba(102,187,106,0.25); color: var(--cde-success); border-color: rgba(102,187,106,0.5); }
-.scale-hint { font-size: 0.62rem; color: #37474f; margin-top: 0.15rem; }
+.scale-btn.active { background: color-mix(in srgb, var(--cde-success-strong) 25%, transparent); color: var(--cde-success); border-color: color-mix(in srgb, var(--cde-success-strong) 50%, transparent); }
+.scale-hint { font-size: 0.62rem; color: var(--cde-text-dimmer); margin-top: 0.15rem; }
 
 .field-input[readonly] { opacity: 0.55; cursor: default; }
 
@@ -1657,13 +1693,13 @@ async function doExport() {
   margin: 0.4rem 0 0.2rem 1.2rem;
   display: flex; flex-direction: column; gap: 0.2rem;
   padding-left: 0.5rem;
-  border-left: 2px solid rgba(165,214,167,0.25);
+  border-left: 2px solid color-mix(in srgb, var(--cde-success) 25%, transparent);
 }
 .vector-subtoggle {
   display: flex; align-items: center; gap: 0.35rem;
   cursor: pointer; color: var(--cde-text-dim); font-size: 0.72rem;
 }
-.vector-subtoggle input[type="checkbox"] { accent-color: #66bb6a; }
+.vector-subtoggle input[type="checkbox"] { accent-color: var(--cde-success-strong); }
 
 /* Sprint T1: Untereinstellungen (Böschung/Höhenlinien/UTM/Wasserzeichen) */
 .vector-subrow {
@@ -1686,28 +1722,33 @@ async function doExport() {
 
 .autofill-btn {
   margin-left: 0.5rem;
-  background: #e8f5e9; border: 1px solid var(--cde-success); color: #2e7d32;
+  background: color-mix(in srgb, var(--cde-success-strong) 18%, transparent);
+  border: 1px solid var(--cde-success);
+  color: var(--cde-success);
   border-radius: 4px; padding: 0.1rem 0.45rem;
   font-size: 0.64rem; cursor: pointer; text-transform: none; letter-spacing: 0;
 }
-.autofill-btn:hover { background: #c8e6c9; }
+.autofill-btn:hover { background: color-mix(in srgb, var(--cde-success-strong) 30%, transparent); }
 
 /* Sprint T2: Profil-/CAD-Buttons */
 .profile-btn-col { display: flex; flex-direction: column; gap: 0.3rem; }
 .profile-btn {
-  background: var(--cde-text-bright); border: 1px solid var(--cde-text-soft); color: #37474f;
-  border-radius: 5px; padding: 0.35rem 0.6rem;
+  display: flex; align-items: center; gap: 0.35rem;
+  background: var(--cde-text-bright); border: 1px solid var(--cde-text-soft); color: var(--cde-bg-deep);
+  border-radius: var(--cde-radius); padding: 0.35rem 0.6rem;
   font-size: 0.75rem; cursor: pointer; text-align: left;
 }
+.profile-btn .is-busy { animation: cde-spin 0.9s linear infinite; }
 .profile-btn:hover:not(:disabled) { background: var(--cde-text); }
 .profile-btn:disabled { opacity: 0.5; cursor: default; }
-.vector-hint { font-size: 0.62rem; color: #37474f; margin-top: 0.2rem; line-height: 1.4; }
+.vector-hint { font-size: 0.62rem; color: var(--cde-text-dimmer); margin-top: 0.2rem; line-height: 1.4; }
 
 .vector-style-btn-row { margin-top: 0.4rem; }
 .vector-style-btn {
+  display: flex; align-items: center; justify-content: center; gap: 0.3rem;
   width: 100%;
-  background: rgba(33,150,243,0.15);
-  border: 1px solid rgba(33,150,243,0.4);
+  background: var(--cde-accent-fill);
+  border: 1px solid var(--cde-accent-line);
   color: var(--cde-accent-soft);
   padding: 0.4rem 0.6rem;
   border-radius: 5px;
@@ -1715,7 +1756,7 @@ async function doExport() {
   cursor: pointer;
   transition: background 0.12s;
 }
-.vector-style-btn:hover { background: rgba(33,150,243,0.25); }
+.vector-style-btn:hover { background: var(--cde-accent-fill-hi); }
 
 .format-btns { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .fmt-btn {
@@ -1724,7 +1765,7 @@ async function doExport() {
   cursor: pointer; transition: background 0.12s, color 0.12s;
 }
 .fmt-btn:hover  { background: var(--cde-tint-strong); color: var(--cde-text); }
-.fmt-btn.active { background: rgba(52,152,219,0.3); color: var(--cde-accent); border-color: rgba(52,152,219,0.55); }
+.fmt-btn.active { background: color-mix(in srgb, var(--cde-accent) 30%, transparent); color: var(--cde-accent); border-color: color-mix(in srgb, var(--cde-accent) 55%, transparent); }
 
 .orient-btns { display: flex; gap: 0.4rem; }
 .orient-btn {
@@ -1734,7 +1775,7 @@ async function doExport() {
   cursor: pointer; transition: background 0.12s, color 0.12s;
 }
 .orient-btn:hover  { background: var(--cde-tint-strong); }
-.orient-btn.active { background: rgba(52,152,219,0.25); color: var(--cde-accent); border-color: rgba(52,152,219,0.5); }
+.orient-btn.active { background: color-mix(in srgb, var(--cde-accent) 25%, transparent); color: var(--cde-accent); border-color: color-mix(in srgb, var(--cde-accent) 50%, transparent); }
 .orient-icon { display: inline-block; border: 1.5px solid currentColor; flex-shrink: 0; }
 .landscape-icon { width: 16px; height: 11px; }
 .portrait-icon  { width: 11px; height: 16px; }
@@ -1751,33 +1792,42 @@ async function doExport() {
   border: 1px solid var(--cde-tint-strong); background: var(--cde-tint-weak);
   color: var(--cde-text); font-size: 0.78rem; outline: none; transition: border-color 0.15s;
 }
-.field-input:focus { border-color: rgba(52,152,219,0.5); background: var(--cde-tint); }
-.field-input::placeholder { color: #37474f; }
+.field-input:focus { border-color: color-mix(in srgb, var(--cde-accent) 50%, transparent); background: var(--cde-tint); }
+.field-input::placeholder { color: var(--cde-text-dimmer); }
 
 .logo-row { display: flex; align-items: center; gap: 0.5rem; }
-.logo-thumb { height: 32px; max-width: 80px; object-fit: contain; border-radius: 3px; background: #fff; padding: 2px; }
+/* Weiße Unterlage mit Absicht: Firmenlogos sind für den Druck auf Papier
+   gemacht, viele haben dunkle Schrift ohne eigenen Hintergrund. */
+.logo-thumb {
+  height: 32px; max-width: 80px; object-fit: contain;
+  border-radius: 3px; background: var(--cde-papier); padding: 2px;
+}
 .logo-upload-btn {
-  padding: 0.28rem 0.65rem; border-radius: 5px; border: 1px solid var(--cde-tint-strong);
-  background: var(--cde-tint-weak); color: var(--cde-text-dim); font-size: 0.75rem;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.28rem 0.65rem; border-radius: var(--cde-radius); border: 1px solid var(--cde-line-strong);
+  background: var(--cde-fill); color: var(--cde-text-dim); font-size: 0.75rem;
   cursor: pointer; transition: background 0.12s;
 }
-.logo-upload-btn:hover { background: var(--cde-tint-strong); color: var(--cde-text); }
+.logo-upload-btn:hover { background: var(--cde-fill-hover); color: var(--cde-text); }
 .logo-clear-btn {
-  background: none; border: none; color: var(--cde-text-dimmer); font-size: 0.8rem;
-  cursor: pointer; padding: 0.15rem 0.3rem; transition: color 0.12s;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--cde-text-dimmer);
+  cursor: pointer; padding: 0.2rem 0.3rem; transition: color 0.12s;
 }
 .logo-clear-btn:hover { color: var(--cde-danger); }
-.logo-hint { font-size: 0.62rem; color: #37474f; }
+.logo-hint { font-size: 0.62rem; color: var(--cde-text-dimmer); }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
 .export-btn {
+  display: flex; align-items: center; justify-content: center; gap: 0.4rem;
   margin-top: auto; width: 100%; padding: 0.6rem;
-  background: rgba(52,152,219,0.85); color: #fff; border: none; border-radius: 7px;
+  background: color-mix(in srgb, var(--cde-accent) 85%, transparent);
+  color: var(--cde-text-invert); border: none; border-radius: var(--cde-radius-lg);
   font-size: 0.88rem; font-weight: 700; cursor: pointer;
   transition: background 0.15s, transform 0.1s;
 }
-.export-btn:hover:not(:disabled)  { background: rgba(52,152,219,1); transform: translateY(-1px); }
+.export-btn:hover:not(:disabled)  { background: var(--cde-accent); transform: translateY(-1px); }
 .export-btn:active:not(:disabled) { transform: translateY(0); }
-.export-btn:disabled { background: rgba(84,110,122,0.4); color: var(--cde-text-dimmer); cursor: not-allowed; }
+.export-btn:disabled { background: var(--cde-fill-active); color: var(--cde-text-dimmer); cursor: not-allowed; }
 </style>

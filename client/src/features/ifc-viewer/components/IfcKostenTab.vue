@@ -1,24 +1,20 @@
 <template>
-  <div class="k-tab">
-    <div class="card-header">
-      <span class="card-title">💶 Kostenschätzung (DIN 276, Kennwerte)</span>
-      <div class="card-actions">
-        <button class="card-btn" :disabled="loading" @click="$emit('refresh')" title="Neu berechnen">
-          {{ loading ? '⏳' : '↻' }}
-        </button>
-        <button class="card-btn" :disabled="!kosten.rows.length" @click="exportCsv" title="Als CSV exportieren">📄</button>
-        <button class="card-btn" :disabled="!kosten.rows.length" @click="exportXlsx" title="Als Excel exportieren">📊</button>
-      </div>
-    </div>
+  <div class="k-tab cde-card">
+    <CdeCardHeader icon="kosten" titel="Kostenschätzung (DIN 276, Kennwerte)">
+      <CdeIconButton icon="refresh" titel="Neu berechnen" :busy="loading" @click="$emit('refresh')" />
+      <CdeIconButton icon="export" titel="Als CSV exportieren" :disabled="!kosten.rows.length" @click="exportCsv" />
+      <CdeIconButton icon="excel"  titel="Als Excel exportieren" :disabled="!kosten.rows.length" @click="exportXlsx" />
+    </CdeCardHeader>
 
-    <div v-if="loading" class="state-msg">Berechne…</div>
-    <div v-else-if="!kosten.rows.length" class="state-msg">
+    <div v-if="loading" class="cde-state-msg">Berechne…</div>
+    <div v-else-if="!kosten.rows.length" class="cde-state-msg">
+      <CdeIcon name="kosten" :size="22" />
       Keine KG-Klassifikation vorhanden — erst im Tab „Kostengruppen" berechnen.
     </div>
 
     <template v-else>
-      <div class="k-table-wrap">
-        <table class="k-table">
+      <div class="cde-table-wrap">
+        <table class="cde-table">
           <thead>
             <tr>
               <th class="col-kg">KG</th>
@@ -77,10 +73,13 @@
         </table>
       </div>
 
-      <div class="hint-row">
-        ⓘ Spur je Zeile: Menge × Kennwert = Betrag. Kennwerte sind Anhaltswerte
-        (editierbar, werden gespeichert) — Mengenherkunft siehe Volumen-Tab (Qto vs. BBox).
-      </div>
+      <p class="cde-hint">
+        <CdeIcon name="info" :size="12" />
+        <span>
+          Spur je Zeile: Menge × Kennwert = Betrag. Kennwerte sind Anhaltswerte
+          (editierbar, werden gespeichert) — Mengenherkunft siehe Volumen-Tab (Qto vs. BBox).
+        </span>
+      </p>
     </template>
   </div>
 </template>
@@ -89,6 +88,9 @@
 import { computed } from 'vue';
 import { kgColor, kgTitle, KG_LOOKUP } from '../services/Din276Defaults.js';
 import { computeKosten, KENNWERT_EINHEITEN, EINHEIT_LABELS } from '../services/KgKennwerte.js';
+import CdeIcon from './ui/CdeIcon.vue';
+import CdeCardHeader from './ui/CdeCardHeader.vue';
+import CdeIconButton from './ui/CdeIconButton.vue';
 
 const props = defineProps({
   kgResult:      { type: Object,  default: null },  // { byKg } aus KgClassifier
@@ -170,76 +172,57 @@ function _download(blob, name) {
 </script>
 
 <style scoped>
-.k-tab { display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.78rem; color: var(--cde-text); }
-
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.35rem 0.4rem;
-  background: var(--cde-tint-weak);
-  border-radius: 5px;
-  border: 1px solid var(--cde-tint);
-}
-.card-title { font-weight: 600; font-size: 0.84rem; color: var(--cde-text-bright); }
-.card-actions { display: flex; gap: 0.2rem; }
-.card-btn {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-strong);
+/* Bausteine: styles/theme.css. Die Kostenkachel führt Geld — Leitfarbe Bernstein. */
+.k-tab {
+  --card-accent: var(--cde-amber);
+  --table-max-h: 400px;
+  font-size: 0.78rem;
   color: var(--cde-text);
-  width: 1.6rem; height: 1.6rem;
-  border-radius: 4px;
-  cursor: pointer;
 }
-.card-btn:hover:not(:disabled) { background: var(--cde-tint-max); }
-.card-btn:disabled { opacity: 0.5; cursor: default; }
 
-.state-msg { color: var(--cde-text-dim); font-style: italic; padding: 1rem 0.5rem; text-align: center; }
+/* Zwei linksbündige Spalten statt nur der ersten. */
+.cde-table th.col-label,
+.cde-table td.col-label { text-align: left; }
 
-.k-table-wrap { overflow-y: auto; max-height: 400px; border-radius: 4px; border: 1px solid var(--cde-tint-weak); }
-.k-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; font-variant-numeric: tabular-nums; }
-.k-table th {
-  position: sticky; top: 0; z-index: 1;
-  background: rgba(15,30,40,0.95);
-  color: var(--cde-text-soft);
-  padding: 0.35rem 0.45rem;
-  text-align: right;
-  font-weight: 500;
-  border-bottom: 1px solid var(--cde-tint-strong);
+.cde-table td.col-kg { font-weight: 600; white-space: nowrap; }
+.cde-table td.col-label {
+  color: var(--cde-text);
+  max-width: 130px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.k-table th.col-kg, .k-table th.col-label { text-align: left; }
-.k-table td {
-  padding: 0.25rem 0.45rem;
-  text-align: right;
-  border-bottom: 1px solid var(--cde-tint-weak);
-}
-.k-table td.col-kg { text-align: left; font-weight: 600; color: var(--cde-text-bright); white-space: nowrap; }
-.k-table td.col-label { text-align: left; color: var(--cde-text); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .col-betrag { font-weight: 600; color: var(--cde-success); }
+/* Ohne hinterlegten Kennwert ist der Betrag keine Aussage — er tritt zurück. */
 .k-row.no-kw .col-betrag { color: var(--cde-text-mute); }
 
 .swatch {
   display: inline-block; width: 0.7rem; height: 0.7rem;
-  border-radius: 2px; border: 1px solid var(--cde-tint-max);
+  border-radius: 2px; border: 1px solid var(--cde-line-strong);
   margin-right: 0.25rem; vertical-align: -1px;
 }
 
 .k-select, .k-input {
-  background: var(--cde-tint);
-  border: 1px solid var(--cde-tint-max);
+  background: var(--cde-fill-hover);
+  border: 1px solid var(--cde-line-strong);
   color: var(--cde-text);
   border-radius: 3px;
   font-size: 0.72rem;
-  padding: 0.1rem 0.2rem;
+  padding: 0.12rem 0.24rem;
+}
+.k-select:focus-visible, .k-input:focus-visible {
+  outline: none;
+  border-color: var(--card-accent);
 }
 .k-input { width: 4.6rem; text-align: right; }
-.k-input::-webkit-outer-spin-button, .k-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.k-input::-webkit-outer-spin-button,
+.k-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 .k-sum-row td {
   font-weight: 600; color: var(--cde-text-bright);
-  background: var(--cde-tint-weak);
-  border-top: 1px solid var(--cde-tint-strong);
+  background: var(--cde-fill);
+  border-top: 1px solid var(--cde-line-strong);
+  border-bottom: none;
 }
-.k-sum-row.dim td { font-weight: 400; color: var(--cde-text-soft); background: var(--cde-tint-weak); border-top: none; }
+.k-sum-row.dim td { font-weight: 400; color: var(--cde-text-soft); border-top: none; }
 .k-sum-row.total td { color: var(--cde-success); font-size: 0.8rem; }
-
-.hint-row { font-size: 0.62rem; color: var(--cde-text-faint); font-style: italic; padding: 0 0.2rem; }
 </style>
