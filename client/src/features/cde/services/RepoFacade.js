@@ -388,6 +388,116 @@ export class RemoteBackend {
     async deleteBlob() { return false; }
 }
 
+// ── Backend: Buero (projektuebergreifend) ───────────────────────────────────
+
+/**
+ * Die Bueroablage — was fuer ALLE Projekte gilt.
+ *
+ * Plankoepfe, Blattformate, Linienstil-Presets, Symbolsaetze, IDS-Regelwerke
+ * und KG-Kennwerte sind Buerowissen. Bisher lagen sie je Projekt im Repo und
+ * fingen in jedem neuen Projekt bei null an.
+ *
+ * Absichtlich schmaler als `RemoteBackend`: nur Schluessel-Werte, keine Blobs.
+ * Modelle gehoeren zu einem Projekt; eine Bauteilbibliothek mit eigenen
+ * Dateien waere ein eigener Schritt und braucht dann auch ein eigenes
+ * Register — nicht dieses.
+ *
+ * Ohne Netz gibt es keine Bueroablage. Das ist kein Fehler: Bueroeinstellungen
+ * sind nichts, was der Browser eines Einzelnen halten sollte. Die Fassade gibt
+ * dann `null` zurueck, und die Vorrangregel faellt auf den eingebauten
+ * Standard.
+ */
+export class BueroBackend {
+    constructor(api = null) {
+        this._api = api;
+        this._cache = null;
+    }
+
+    async _client() {
+        if (!this._api) this._api = (await import('@/services/api')).default;
+        return this._api;
+    }
+
+    /** Ein Schluessel OHNE Scope — die Bueroablage hat nur eine Ebene. */
+    _kurz(fullKey) {
+        const ohnePrefix = fullKey.startsWith(PREFIX) ? fullKey.slice(PREFIX.length) : fullKey;
+        // Scope abschneiden: 'global:plankopf' -> 'plankopf'. Im Buero gibt es
+        // keine Projekt-Namensraeume, und ein Doppelpunkt im Dateinamen waere
+        // nur Ballast.
+        const i = ohnePrefix.indexOf(':');
+        return i < 0 ? ohnePrefix : ohnePrefix.slice(i + 1);
+    }
+
+    async _laden() {
+        if (this._cache) return this._cache;
+        const api = await this._client();
+        const daten = (await api.get('/buero/cde/repo')).data || {};
+        this._cache = new Map(Object.entries(daten));
+        return this._cache;
+    }
+
+    async get(fullKey) {
+        try {
+            const cache = await this._laden();
+            const v = cache.get(this._kurz(fullKey));
+            return v === undefined ? null : v;
+        } catch (e) { console.warn('[CDE buero] get', e?.message ?? e); return null; }
+    }
+
+    async set(fullKey, value) {
+        const kurz = this._kurz(fullKey);
+        try {
+            const cache = await this._laden();
+            cache.set(kurz, value);
+            const api = await this._client();
+            await api.put(`/buero/cde/repo/${encodeURIComponent(kurz)}`, value);
+            return true;
+        } catch (e) { console.warn('[CDE buero] set', e?.message ?? e); return false; }
+    }
+
+    async delete(fullKey) {
+        const kurz = this._kurz(fullKey);
+        try {
+            const cache = await this._laden();
+            cache.delete(kurz);
+            const api = await this._client();
+            await api.delete(`/buero/cde/repo/${encodeURIComponent(kurz)}`);
+            return true;
+        } catch (e) { console.warn('[CDE buero] delete', e?.message ?? e); return false; }
+    }
+
+    async listKeys(fullPrefix) {
+        try {
+            const cache = await this._laden();
+            const kurz = this._kurz(fullPrefix);
+            return [...cache.keys()].filter(k => k.startsWith(kurz)).map(k => `${PREFIX}buero:${k}`);
+        } catch { return []; }
+    }
+
+    /** Modelle gehoeren zu einem Projekt, nicht ins Buero. */
+    async listBlobs() { return []; }
+    async getBlob() { return null; }
+    async setBlob() { return false; }
+    async deleteBlob() { return false; }
+}
+
+/**
+ * Projekt schlägt Büro schlägt Standard.
+ *
+ * Rein und frei exportiert, damit die Regel prüfbar ist, ohne ein Backend zu
+ * bauen — und damit sie an genau EINER Stelle steht.
+ *
+ * `null` und `undefined` heißen „nicht gesetzt". Ein leeres Array oder ein
+ * leeres Objekt heißen dagegen „bewusst leer" und gewinnen: wer die
+ * Linienstile eines Projekts auf nichts setzt, will nicht die Bürostile
+ * zurückbekommen.
+ */
+export function waehleMitVorrang(projekt, buero, standard = null) {
+    if (projekt !== null && projekt !== undefined) return projekt;
+    if (buero !== null && buero !== undefined) return buero;
+    return standard;
+}
+
 // ── Fassade ─────────────────────────────────────────────────────────────────
 
 export class RepoFacade {
@@ -398,6 +508,8 @@ export class RepoFacade {
     constructor(scope = 'global', backend = null) {
         this.scope = scope;
         this._backend = backend ?? _defaultBackend();
+        /** Geschwister-Fassade auf die Büroablage, oder null. */
+        this._buero = null;
     }
 
     /** @returns {Promise<any|null>} null bei Fehlen oder Fehler */
@@ -472,7 +584,12 @@ export class RepoFacade {
 
     /** Geschwister-Fassade unter anderem Scope (z. B. pro Projekt). */
     withScope(scope) {
-        return new RepoFacade(scope, this._backend);
+        const f = new RepoFacade(scope, this._backend);
+        // Die Büroebene ist KEIN Scope des Projekts — sie liegt daneben. Die
+        // Geschwister-Fassade muss sie trotzdem kennen, sonst verlöre ein
+        // Aufruf im Projekt-Scope den Vorrang-Rückfall.
+        f._buero = this._buero;
+        return f;
     }
 
     /**
@@ -481,6 +598,39 @@ export class RepoFacade {
      */
     setBackend(backend) {
         this._backend = backend ?? _defaultBackend();
+    }
+
+    // ── Büro-Ebene (Sprint I, Stufe 6) ──────────────────────────────────────
+
+    /**
+     * Die projektübergreifende Ablage.
+     *
+     * `null`, solange keine gesetzt ist (Arbeit ohne Netz). Aufrufer prüfen
+     * das nicht selbst — dafür gibt es `mitVorrang`.
+     */
+    get buero() { return this._buero ?? null; }
+
+    setBueroBackend(backend) {
+        this._buero = backend ? new RepoFacade('buero', backend) : null;
+    }
+
+    /**
+     * Ein Wert mit Vorrang: **Projekt schlägt Büro schlägt Standard.**
+     *
+     * Die Regel selbst steht in `waehleMitVorrang` — hier wird nur beschafft.
+     * Das ist die einzige Stelle, an der die drei Ebenen zusammenkommen; ohne
+     * sie fragte jeder Aufrufer selbst nach und käme irgendwann zu einer
+     * anderen Reihenfolge.
+     *
+     * @param {string} key      Schlüssel in beiden Ebenen derselbe
+     * @param {*}      standard eingebaute Vorgabe
+     */
+    async mitVorrang(key, standard = null) {
+        const [projekt, buero] = await Promise.all([
+            this.get(key),
+            this._buero ? this._buero.get(key) : Promise.resolve(null),
+        ]);
+        return waehleMitVorrang(projekt, buero, standard);
     }
 
     /** true, wenn ein Projekt-Repository auf dem Server aktiv ist. */

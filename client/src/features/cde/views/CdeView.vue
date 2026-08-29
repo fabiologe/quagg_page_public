@@ -264,7 +264,7 @@ import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { usePlan } from '../stores/usePlan.js';
-import { repo, RemoteBackend } from '../services/RepoFacade.js';
+import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -283,6 +283,13 @@ if (Number.isInteger(cockpitProjektId) && cockpitProjektId > 0) {
 } else if (repo.remote) {
   repo.setBackend(null);
 }
+
+// Büro-Ebene (Stufe 6): Plankopf-Vorlagen, Linienstil-Presets, Symbolsätze,
+// IDS-Regelwerke und KG-Kennwerte gelten projektübergreifend. Sie liegt NEBEN
+// dem Projekt-Repository, nicht darin — deshalb ein eigenes Backend und kein
+// weiterer Scope. Ohne Netz bleibt sie aus; die Vorrangregel fällt dann auf
+// den eingebauten Standard.
+repo.setBueroBackend(new BueroBackend());
 const cde = useCdeStore();
 const panels = usePanels();
 const ansicht = useAnsicht();

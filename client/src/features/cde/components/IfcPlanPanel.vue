@@ -161,6 +161,28 @@
     <button class="pp-knopf schlicht breit" @click="emit('stile-oeffnen')">
       <CdeIcon name="style" :size="12" /> Linienstile bearbeiten
     </button>
+
+    <!-- Büro-Ebene (Stufe 6): Blattgewohnheiten, Schriftfeld und Logo einmal
+         fürs Büro pflegen statt in jedem Projekt von vorn. -->
+    <CdeCardHeader icon="project" titel="Bürovorgabe" />
+    <p class="cde-hint">
+      <CdeIcon name="info" :size="12" />
+      <span>
+        Projekt schlägt Büro. Solange hier etwas eigenes steht, bleibt die
+        Bürovorgabe unsichtbar.
+      </span>
+    </p>
+    <div class="pp-ausgabe">
+      <button class="pp-knopf" :disabled="!bueroDa || bueroBusy" @click="alsVorgabe">
+        <CdeIcon :name="bueroBusy === 'setzen' ? 'busy' : 'save'" :class="{ 'is-busy': bueroBusy === 'setzen' }" :size="12" />
+        Diesen Stand fürs Büro übernehmen
+      </button>
+      <button class="pp-knopf schlicht" :disabled="bueroBusy" @click="zurueck">
+        <CdeIcon :name="bueroBusy === 'zurueck' ? 'busy' : 'undo'" :class="{ 'is-busy': bueroBusy === 'zurueck' }" :size="12" />
+        Projekteigenes verwerfen
+      </button>
+      <p v-if="bueroMeldung" class="pp-meldung">{{ bueroMeldung }}</p>
+    </div>
   </div>
 </template>
 
@@ -180,6 +202,7 @@ import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
 import { usePlan } from '../stores/usePlan.js';
+import { repo } from '../services/RepoFacade.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useCdeStore, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { BLATT_FORMATE, MASSSTAB_LEITER } from '../services/PlanViewport.js';
@@ -218,6 +241,27 @@ const SCHRIFTFELD = [
 ];
 
 const lsMassstabV = ref(100);
+const bueroBusy = ref(null);
+const bueroMeldung = ref('');
+/** Ohne Netz gibt es keine Büroablage — die Knöpfe bleiben dann aus. */
+const bueroDa = computed(() => !!repo.buero);
+
+async function alsVorgabe() {
+  bueroBusy.value = 'setzen';
+  bueroMeldung.value = '';
+  bueroMeldung.value = await plan.alsBuerovorgabe()
+    ? 'Als Bürovorgabe übernommen — gilt in Projekten ohne eigene Einstellung.'
+    : 'Keine Büroablage erreichbar.';
+  bueroBusy.value = null;
+}
+
+async function zurueck() {
+  bueroBusy.value = 'zurueck';
+  bueroMeldung.value = '';
+  await plan.zurueckAufBuero();
+  bueroMeldung.value = 'Projekteigenes verworfen — es gilt wieder die Bürovorgabe.';
+  bueroBusy.value = null;
+}
 const qpAbstand = ref(25);
 const logoFehler = ref('');
 
@@ -339,6 +383,7 @@ function ausgeben(art) {
 .pp-knopf .is-busy { animation: cde-spin 0.9s linear infinite; }
 
 .pp-fehler { color: var(--cde-danger-soft); font-size: 0.7rem; margin: 0; }
+.pp-meldung { color: var(--cde-text-dim); font-size: 0.68rem; margin: 0; line-height: 1.4; }
 
 .sr-only {
   position: absolute; width: 1px; height: 1px;

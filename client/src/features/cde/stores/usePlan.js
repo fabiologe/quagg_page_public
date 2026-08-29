@@ -132,6 +132,40 @@ export const usePlan = defineStore('cde-plan', () => {
         }
     }
 
+    /**
+     * Den aktuellen Stand als Bürovorgabe hinterlegen.
+     *
+     * Bewusst ein eigener Schritt und kein Nebeneffekt des Speicherns: was
+     * fürs ganze Büro gilt, soll man ausdrücklich sagen. Sonst überschriebe
+     * die Blattlage eines einzelnen Plans die Gewohnheit aller.
+     *
+     * @returns {Promise<boolean>} false, wenn keine Büroablage erreichbar ist
+     */
+    async function alsBuerovorgabe() {
+        if (!repo.buero) return false;
+        await Promise.all([
+            repo.buero.set(REPO_OPTIONEN, { ...optionen.value }),
+            repo.buero.set(REPO_SCHRIFTFELD, { ...schriftfeld.value }),
+            repo.buero.set(REPO_LOGO, logo.value),
+        ]);
+        return true;
+    }
+
+    /**
+     * Projekteigene Werte verwerfen — ab dann gilt wieder die Bürovorgabe.
+     *
+     * Der Gegenzug zur Vorrangregel: solange ein Projektwert steht, ist die
+     * Bürovorgabe unsichtbar. Ohne diesen Weg käme man nie zu ihr zurück.
+     */
+    async function zurueckAufBuero() {
+        await Promise.all([
+            repo.delete(REPO_OPTIONEN),
+            repo.delete(REPO_SCHRIFTFELD),
+            repo.delete(REPO_LOGO),
+        ]);
+        await laden();
+    }
+
     async function sichern() {
         try {
             await Promise.all([
@@ -142,10 +176,20 @@ export const usePlan = defineStore('cde-plan', () => {
         } catch { /* Zeichenoptionen sind kein Grund für einen Fehler */ }
     }
 
+    /**
+     * Laden mit Vorrang: **Projekt schlägt Büro schlägt Vorgabe.**
+     *
+     * Das Firmenlogo und die Blattgewohnheiten gehören dem Büro, nicht dem
+     * Projekt — sie einmal zu pflegen und in jedem Projekt zu haben ist der
+     * ganze Zweck der Büro-Ebene. Wer sie in EINEM Projekt anders will, setzt
+     * sie dort, und der Projektwert gewinnt (siehe `waehleMitVorrang`).
+     */
     async function laden() {
         try {
             const [o, sf, l] = await Promise.all([
-                repo.get(REPO_OPTIONEN), repo.get(REPO_SCHRIFTFELD), repo.get(REPO_LOGO),
+                repo.mitVorrang(REPO_OPTIONEN),
+                repo.mitVorrang(REPO_SCHRIFTFELD),
+                repo.mitVorrang(REPO_LOGO),
             ]);
             // Unbekannte Schlüssel aus älteren Ständen fallen weg, fehlende
             // bekommen die Vorgabe — so überlebt der Stand das Ergänzen einer
@@ -167,6 +211,7 @@ export const usePlan = defineStore('cde-plan', () => {
     return {
         optionen, schriftfeld, logo, zeichenOptionen,
         setzeOption, setzeSchriftfeld, setzeLogo, zuruecksetzen, bereit,
+        alsBuerovorgabe, zurueckAufBuero,
     };
 });
 
