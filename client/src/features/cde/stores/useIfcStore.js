@@ -26,6 +26,7 @@ function _debounce(fn, ms) {
 // übernommen und danach gelöscht.
 const REPO_SAVED_VIEWS   = 'saved-views';
 const REPO_DIMENSIONS    = 'plan-dimensions';
+const REPO_MESSUNGEN     = 'messungen';
 const REPO_VECTOR_STYLES = 'vector-styles';
 const REPO_VECTOR_RULES  = 'vector-rules';
 const REPO_STYLES_MODEL  = 'vector-styles-by-model';
@@ -93,6 +94,33 @@ export const useIfcStore = defineStore('cde-modell', () => {
   function renameSavedView(id, newName) {
     const v = savedViews.value.find(x => x.id === id);
     if (v) { v.name = newName.trim(); _persistSavedViews(); }
+  }
+
+  // ── Messstrecken im 3D (Sprint I, Stufe 5) ───────────────────────────────
+  //
+  // Reine Daten [{p1, p2, dist}]. Lagen als Ref in IfcViewer.vue, obwohl zwei
+  // Konsumenten AUSSERHALB der Komponente sie lesen (HUD und Planexport) und
+  // sie eine Sitzung überleben sollten — taten sie nicht. Muster wie
+  // savedViews: entprellt über die RepoFacade.
+  //
+  // Damit verschwindet zugleich das dritte Messungs-Register: die Engine
+  // führte in `_measurements` eine eigene Liste, die zuletzt niemand las.
+  const messungen = ref([]);
+  const _persistMessungen = _debounce(() => {
+    repo.set(REPO_MESSUNGEN, JSON.parse(JSON.stringify(messungen.value)));
+  }, 250);
+
+  function addMessung(p1, p2, dist) {
+    messungen.value.push({ p1, p2, dist });
+    _persistMessungen();
+  }
+  function removeMessung(index) {
+    messungen.value = messungen.value.filter((_, i) => i !== index);
+    _persistMessungen();
+  }
+  function clearMessungen() {
+    messungen.value = [];
+    _persistMessungen();
   }
 
   // ── Bemaßung im Lageplan (Sprint I, AP-10) ───────────────────────────────
@@ -411,7 +439,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
   // Refs starten mit Defaults und werden asynchron gefüllt — alle Konsumenten
   // sind reaktiv. `ready` erlaubt Aufrufern, auf den Ladevorgang zu warten.
   async function _initPersistence() {
-    const [views, styles, rules, byModel, presets, dims] = await Promise.all([
+    const [views, styles, rules, byModel, presets, dims, mess] = await Promise.all([
       _loadWithLegacy(REPO_SAVED_VIEWS,   LEGACY_KEYS[REPO_SAVED_VIEWS]),
       _loadWithLegacy(REPO_VECTOR_STYLES, LEGACY_KEYS[REPO_VECTOR_STYLES]),
       _loadWithLegacy(REPO_VECTOR_RULES,  LEGACY_KEYS[REPO_VECTOR_RULES]),
@@ -419,6 +447,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
       _loadWithLegacy(REPO_PRESETS,       LEGACY_KEYS[REPO_PRESETS]),
       // Kein Legacy-Weg: die Bemaßung gab es vorher nur flüchtig im Modal.
       repo.get(REPO_DIMENSIONS),
+      repo.get(REPO_MESSUNGEN),
     ]);
     if (Array.isArray(views)) savedViews.value = views;
     if (styles && typeof styles === 'object') {
@@ -430,6 +459,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     if (byModel && typeof byModel === 'object') vectorStylesByModel.value = byModel;
     if (Array.isArray(presets)) userPresets.value = presets;
     if (Array.isArray(dims)) planDimensions.value = dims;
+    if (Array.isArray(mess)) messungen.value = mess;
   }
   const ready = _initPersistence();
 
@@ -490,6 +520,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     savedViews, saveView, deleteSavedView, renameSavedView,
     // T2.4 → Issues (Annotationen mit Status/Zuständigkeit/Kommentaren/Viewpoint)
     planDimensions, addPlanDimension, removePlanDimension, clearPlanDimensions,
+    messungen, addMessung, removeMessung, clearMessungen,
     annotations, loadAnnotationsForModel, pushAnnotation, removeAnnotation,
     updateAnnotationText, updateAnnotationColor, updateAnnotationOffset,
     updateAnnotation, addAnnotationComment,

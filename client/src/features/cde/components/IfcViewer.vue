@@ -19,7 +19,7 @@
 
       <!-- ── Canvas + overlays ── -->
       <div class="viewer-body">
-        <div class="canvas-root" :class="{ 'measure-cursor': measureActive }" ref="canvasRef"></div>
+        <div class="canvas-root" :class="{ 'measure-cursor': messen.aktiv }" ref="canvasRef"></div>
 
         <!-- Toolbar: Datei laden -->
         <div class="top-bar">
@@ -29,7 +29,7 @@
               <CdeIcon name="documents" :size="13" /> IFC laden
             </label>
 
-            <label v-if="modelList.length" class="action-btn secondary">
+            <label v-if="ifc.modelList.length" class="action-btn secondary">
               <input type="file" accept=".ifc" @change="onFileUploadAdd" class="sr-only" />
               <CdeIcon name="add" :size="13" /> Hinzufügen
             </label>
@@ -58,14 +58,14 @@
         </Transition>
 
         <!-- B4: Zuletzt geöffnete Modelle (lokale Ablage) — nur im Leerzustand -->
-        <div v-if="!modelList.length && !loading && recentModels.length" class="recent-panel">
+        <div v-if="!ifc.modelList.length && !loading && recentModels.length" class="recent-panel">
           <div class="recent-title">Zuletzt geöffnete Modelle</div>
           <div v-for="r in recentModels" :key="r.key" class="recent-item">
-            <button class="recent-open" @click="openRecent(r)">
+            <button class="recent-open" @click="ablage.openRecent(r)">
               <span class="recent-name">{{ r.meta?.name ?? r.key }}</span>
               <span class="recent-info">{{ fmtBytes(r.size) }} · {{ fmtDate(r.meta?.savedAt) }}</span>
             </button>
-            <button class="recent-del" @click="deleteRecent(r)" title="Aus lokalem Speicher entfernen" aria-label="Aus lokalem Speicher entfernen">
+            <button class="recent-del" @click="ablage.deleteRecent(r)" title="Aus lokalem Speicher entfernen" aria-label="Aus lokalem Speicher entfernen">
               <CdeIcon name="close" :size="12" />
             </button>
           </div>
@@ -73,8 +73,8 @@
         </div>
 
         <!-- B2: Model tags in separate row below top-bar -->
-        <div v-if="modelList.length" class="model-tag-row">
-          <span v-for="m in modelList" :key="m.modelId" class="model-tag">
+        <div v-if="ifc.modelList.length" class="model-tag-row">
+          <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag">
             {{ m.name }}
             <button class="tag-close" @click="removeModel(m.modelId)" title="Entfernen" aria-label="Modell entfernen">
               <CdeIcon name="close" :size="11" />
@@ -103,14 +103,14 @@
 
         <!-- B3: Section-Cut Bar — centered, with snap + mode + position readout -->
         <Transition name="section-slide">
-          <div v-if="showSectionBar" class="section-bar">
+          <div v-if="schnitt.leisteOffen" class="section-bar">
             <span class="section-label"><CdeIcon name="section" :size="15" /></span>
 
             <!-- SC-1: Snap-to-axis buttons -->
             <div class="section-snaps">
-              <button class="snap-btn" title="Horizontal (Grundriss)" @click="snapSection('horizontal')">H</button>
-              <button class="snap-btn" title="Senkrecht X-Achse"      @click="snapSection('x')">X</button>
-              <button class="snap-btn" title="Senkrecht Z-Achse"      @click="snapSection('z')">Z</button>
+              <button class="snap-btn" title="Horizontal (Grundriss)" @click="schnitt.ausrichten('horizontal')">H</button>
+              <button class="snap-btn" title="Senkrecht X-Achse"      @click="schnitt.ausrichten('x')">X</button>
+              <button class="snap-btn" title="Senkrecht Z-Achse"      @click="schnitt.ausrichten('z')">Z</button>
             </div>
 
             <div class="section-sep"></div>
@@ -119,21 +119,21 @@
             <div class="section-modes">
               <button
                 class="mode-btn"
-                :class="{ active: sectionMode === 'translate' }"
+                :class="{ active: schnitt.modus === 'translate' }"
                 title="Verschieben [T]"
-                @click="setSectionMode('translate')"
+                @click="schnitt.setzeModus('translate')"
               >↕ Verschieben</button>
               <button
                 class="mode-btn"
-                :class="{ active: sectionMode === 'rotate' }"
+                :class="{ active: schnitt.modus === 'rotate' }"
                 title="Drehen [R]"
-                @click="setSectionMode('rotate')"
+                @click="schnitt.setzeModus('rotate')"
               >⟳ Drehen</button>
             </div>
 
             <!-- SC-2: Position readout -->
-            <span v-if="sectionPosition" class="section-pos">
-              Y&thinsp;{{ sectionPosition.y }}&thinsp;m
+            <span v-if="schnitt.position" class="section-pos">
+              Y&thinsp;{{ schnitt.position.y }}&thinsp;m
             </span>
 
             <div class="section-sep"></div>
@@ -164,18 +164,18 @@
         <!-- Sprint U/AP-U4: Werte und Aktionen am Objekt statt in Bildschirmecken.
              Auswahl-Knöpfe und Messliste sind ins HUD gewandert. -->
         <CdeHudLayer
-          :measurements="measurements"
+          :measurements="ifc.messungen"
           :element="ifc.selectedElement"
           :elementAnker="selectionAnchor"
           :projectToScreen="(p) => engine?.projectToScreen(p)"
           :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
           :getCanvas="() => canvasRef"
-          @delete-measurement="deleteMeasurement"
+          @delete-measurement="messen.entferne"
           @zoom="onZoomSelected"
           @hide="onHideSelected"
           @isolate="onIsolateSelected"
           @properties="emit('open-properties')"
-          @new-issue="onIssueFromSelection"
+          @new-issue="issueAmBauteil"
         />
 
         <!-- Show-all button — visible whenever any category is currently hidden -->
@@ -192,16 +192,16 @@
 
         <!-- Mess-Hinweis (die Werte selbst stehen als Pillen an der Strecke) -->
         <Transition name="fade">
-          <div v-if="measureToast" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ measureToast.text }}</div>
+          <div v-if="messen.meldung" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ messen.meldung.text }}</div>
         </Transition>
         <Transition name="fade">
           <button
-            v-if="measurements.length"
+            v-if="ifc.messungen.length"
             class="measure-clear"
             title="Alle Messungen entfernen"
-            @click="clearMeasurements"
+            @click="messen.alleEntfernen"
           >
-            <CdeIcon name="delete" :size="13" /> {{ measurements.length }} Messung{{ measurements.length === 1 ? '' : 'en' }}
+            <CdeIcon name="delete" :size="13" /> {{ ifc.messungen.length }} Messung{{ ifc.messungen.length === 1 ? '' : 'en' }}
           </button>
         </Transition>
 
@@ -247,7 +247,7 @@
           :projectToScreen="(p) => engine?.projectToScreen(p)"
           :canvasEl="canvasRef"
           :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
-          @offset-changed="onAnnotationOffsetChanged"
+          @offset-changed="annotationen.versatzGeaendert"
         />
 
       </div>
@@ -288,9 +288,10 @@ import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
 import '../styles/theme.css';
-import { computeModelIdentity } from '../services/ModelIdentity.js';
-import { repo } from '../services/RepoFacade.js';
-
+import { useModellAblage, fmtBytes, fmtDate } from '../composables/useModellAblage.js';
+import { useSchnitt } from '../composables/useSchnitt.js';
+import { useMessen } from '../composables/useMessen.js';
+import { useAnnotationen } from '../composables/useAnnotationen.js';
 
 const emit = defineEmits(['close', 'open-properties', 'model-loaded']);
 const ifc  = useIfcStore();
@@ -307,7 +308,6 @@ defineProps({
 const canvasRef   = ref(null);
 
 const engine      = shallowRef(null);
-const loading = ref(false);
 const coords      = ref(null);
 
 // Layer panel
@@ -320,13 +320,9 @@ const storeyList     = ref([]); // [{modelId, localId, name, elevation, box}]
 const storeyNavRef   = ref(null);
 const showStoreyNav  = ref(true);
 const showSavedViews = ref(false);
-const annotationActive   = ref(false);
 
-// Section cut — sectionActive = clip plane exists; showSectionBar = UI bar visible
-const sectionActive   = ref(false);
-const showSectionBar  = ref(false);
-const sectionMode     = ref('translate'); // 'translate' | 'rotate'
-const sectionPosition = ref(null); // { x, y, z } from engine
+// ── Schnittebene (Sprint I, Stufe 5) ────────────────────────────────────────
+const schnitt = useSchnitt({ engine });
 
 // PDF export
 const showPalette   = ref(false);
@@ -334,19 +330,27 @@ const paletteNurElemente = ref(false);
 const showShortcuts = ref(false);
 
 // T1.3: Measurement
-const measureActive    = ref(false);
-const measureToast     = ref(null);  // { text, ts }
-const measurements     = ref([]);    // [{ dist }]
-let _measureToastTimer = null;
+// ── Messen (Sprint I, Stufe 5) ──────────────────────────────────────────────
+// `selection` wird als GETTER hereingereicht: der SelectionHandler entsteht
+// erst in onMounted, ein Wert wäre zur Aufrufzeit noch null.
+const messen = useMessen({ engine, ifc, selection: () => _selection });
+
+// ── Issue-Pins (Sprint I, Stufe 5) ──────────────────────────────────────────
+// `annotationActive` bleibt als Ref HIER: die CdeView liest ihn über
+// `defineExpose`, und Vue entpackt Refs im expose-Proxy. Ein Wert im
+// Composable wäre dort nicht nachverfolgbar.
+const annotationActive = ref(false);
+const annotationen = useAnnotationen({
+  engine, ifc, cde,
+  selection: () => _selection,
+  messen,
+  viewpoint: () => erfasseViewpoint(),
+  aktiv: annotationActive,
+});
 
 // Multi-model list
-const modelList = ref([]); // [{modelId, name}]
 
 // Stabile Modell-Identität pro geladenem Modell (B3) + lokale Ablage (B4)
-const _modelIdentity = new Map(); // modelId → { key, sha256, projectGlobalId, name }
-const recentModels = ref([]);     // [{ key, meta, size }] aus repo.listBlobs('model:')
-/** Meldung der Projekt-Ablage (z. B. abgelehnter Upload). null = nichts zu sagen. */
-const ablageHinweis = ref(null);
 
 // Coordinate display mode
 const coordMode = ref('viewer'); // 'viewer' | 'ifc'
@@ -355,6 +359,16 @@ let _mouseDownAt = null;
 let _hoverTimer  = null;
 let _lastMouse   = null;
 let _selection   = null;  // IfcSelectionHandler — übernimmt Click/Hover/Marquee
+
+// ── Modelle laden und ablegen (Sprint I, Stufe 5) ───────────────────────────
+// Dateiladen, IndexedDB-Ablage und „zuletzt geöffnet" lagen hier zwischen
+// Schnitt, Messen und Tastatur. `_onModelLoaded` bleibt in der Schale — es ist
+// die Orchestrierung nach dem Laden und fasst sechs Belange an.
+const ablage = useModellAblage({
+  engine, ifc, cde,
+  onModelLoaded: () => _onModelLoaded(),
+});
+const { loading, recentModels, ablageHinweis } = ablage;
 
 // ── AP-U4: Anker der Auswahl für das Kontextmenü am Objekt ─────────────────
 // Der Bildschirmpunkt wird im HUD projiziert; hier wird nur der WELT-Punkt
@@ -369,14 +383,14 @@ watch(() => ifc.selectedElement, async (el) => {
     : null;
 });
 
-/**
- * Einzelne Messung entfernen (früher ging nur „alle zurücksetzen").
- * Die Strecken zeichnet seit AP-U4 das HUD im Bildschirmraum; die 3D-Marker
- * der Engine werden deshalb verworfen, damit nichts doppelt stehen bleibt.
- */
-function deleteMeasurement(i) {
-  measurements.value = measurements.value.filter((_, idx) => idx !== i);
-  engine.value?.clearMeasurements?.();
+/** Issue direkt am gewählten Bauteil anlegen (Pin sitzt auf dem HUD-Anker). */
+function issueAmBauteil() {
+  const anker = selectionAnchor.value;
+  if (!anker) return;
+  const text = prompt('Issue am gewählten Bauteil — Beschreibung:', '');
+  if (text === null) return;
+  const letzteFarbe = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
+  annotationen.anPunkt(anker, text, letzteFarbe);
 }
 
 function onZoomSelected() {
@@ -384,21 +398,6 @@ function onZoomSelected() {
   if (el) engine.value?.zoomToElement(el.modelId, el.localId);
 }
 
-/** Issue direkt am gewählten Bauteil anlegen (Pin sitzt auf dem Anker). */
-function onIssueFromSelection() {
-  const anker = selectionAnchor.value;
-  if (!anker) return;
-  const text = prompt('Issue am gewählten Bauteil — Beschreibung:', '');
-  if (text === null) return;
-  const lastColor = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
-  const ann = engine.value?.addAnnotationAt?.(anker, text, lastColor);
-  if (!ann) return;
-  ann.viewpoint = erfasseViewpoint();
-  ann.author = cde.bearbeiter || '';
-  ann.createdAt = Date.now();
-  ifc.pushAnnotation(ann);
-  panels.open('issues');
-}
 
 // ── Werkzeugleiste (Sprint U) ───────────────────────────────────────────────
 // Eine Quelle für Icon, Beschriftung, Tastenkürzel und Aktion — der Tooltip
@@ -414,7 +413,7 @@ const toolbarItems = computed(() => [
   { id: 'layers', icon: 'layers',  label: 'Layer',   title: 'Ebenen / Kategorien',
     active: showLayerPanel.value, action: () => { showLayerPanel.value = !showLayerPanel.value; } },
   { id: 'section', icon: 'section', label: 'Schnitt', title: 'Horizontaler Schnitt', key: 'T/R',
-    active: sectionActive.value, action: () => toggleSectionCut() },
+    active: schnitt.aktiv.value, action: () => schnitt.umschalten() },
   { id: 'coords', icon: 'coords', label: coordMode.value === 'ifc' ? 'IFC' : 'Viewer',
     title: 'Koordinaten umschalten (Viewer ↔ IFC)',
     active: coordMode.value === 'ifc',
@@ -428,7 +427,7 @@ const toolbarItems = computed(() => [
     active: panels.isOpen('cockpit'), action: () => panels.toggle('cockpit') },
   { divider: true },
   { id: 'measure', icon: 'measure', label: 'Messen', title: 'Strecke messen', key: 'M',
-    active: measureActive.value, action: () => toggleMeasure() },
+    active: messen.aktiv.value, action: () => messen.umschalten() },
   { id: 'views', icon: 'views', label: 'Views', title: 'Gespeicherte Ansichten', key: 'V',
     active: showSavedViews.value, action: () => onToggleViews() },
   { id: 'issues', icon: 'issues', label: 'Issues', title: 'Issues / Notizen', key: 'N',
@@ -459,7 +458,7 @@ provideViewerApi({
   getIfcGridAxes:       () => engine.value?.getIfcGridAxes() ?? [],
   // Schnitt & Overlays
   getSectionCutPlane:   () => engine.value?.getSectionCutPlane(),
-  getMeasurements:      () => measurements.value,
+  getMeasurements:      () => ifc.messungen,
   // Interaktion
   zoomToElement:        (modelId, localId) => engine.value?.zoomToElement(modelId, localId),
   /**
@@ -492,10 +491,7 @@ provideViewerApi({
   // Sprint T1: Georeferenz + Dokument-Status für den Planexport
   getAllCoordOffsets:   () => engine.value?.getAllCoordOffsets() ?? {},
   getWebIfcAPIs:        () => engine.value?.getWebIfcAPIs() ?? [],
-  getLoadedModelSha:    () => {
-    const first = engine.value?.getModelList()?.[0];
-    return first ? (_modelIdentity.get(first.modelId)?.sha256 ?? null) : null;
-  },
+  getLoadedModelSha:    () => ablage.geladeneModellSha(),
 });
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
@@ -534,7 +530,7 @@ onMounted(async () => {
   canvasRef.value.addEventListener('mousemove',  onMouseMoveForTools);
 
   // B4: lokale Modell-Ablage für den Leerzustand einlesen
-  _refreshRecentModels();
+  ablage.aktualisiereZuletzt();
 
   // Sprint U: Werkzeuge + Panels als Befehle anmelden (Palette, Hilfe, Tooltips)
   cmds.register('viewer', [
@@ -580,139 +576,6 @@ onBeforeUnmount(() => {
 // ── file loading ─────────────────────────────────────────────────────────────
 
 /**
- * Gemeinsamer Lade-Pfad für Datei-Dialog und „Zuletzt geöffnet":
- * Identität (GlobalId/SHA-256) berechnen, Modell laden, UI auffrischen,
- * Blob in die lokale Ablage legen (fire-and-forget).
- */
-async function _loadBuffer(buf, name, { persist = true } = {}) {
-  const bytes = new Uint8Array(buf);
-  const identity = await computeModelIdentity(bytes, name);
-  const model = await engine.value.loadIfc(bytes, name);
-  if (model?.modelId) _modelIdentity.set(model.modelId, { ...identity, name });
-  await _onModelLoaded();
-  if (persist) _persistModelBlob(bytes, name, identity);
-  // M1: bei aktivem Projekt ins Dokument-Register aufnehmen (Status WIP,
-  // Revisionszählung über die IfcProject-GlobalId)
-  if (cde.activeProjectId && identity.sha256) {
-    cde.registerModel({
-      sha256: identity.sha256,
-      name,
-      size: bytes.byteLength,
-      projectGlobalId: identity.projectGlobalId,
-    }).catch(() => { /* Register optional */ });
-  }
-}
-
-async function onFileUpload(e) {
-  const file = e.target.files[0];
-  if (!file || loading.value) return;
-  loading.value = true;
-  try {
-    await _loadBuffer(await file.arrayBuffer(), file.name);
-  } catch (err) {
-    console.error('IFC load error:', err);
-    alert('Fehler beim Laden der IFC-Datei.');
-  } finally {
-    loading.value  = false;
-    e.target.value = '';
-  }
-}
-
-async function onFileUploadAdd(e) {
-  const file = e.target.files[0];
-  if (!file || loading.value) return;
-  loading.value = true;
-  try {
-    await _loadBuffer(await file.arrayBuffer(), file.name);
-  } catch (err) {
-    console.error('IFC add error:', err);
-    alert('Fehler beim Hinzufügen der IFC-Datei.');
-  } finally {
-    loading.value  = false;
-    e.target.value = '';
-  }
-}
-
-// ── Lokale Modell-Ablage (IndexedDB via RepoFacade) ─────────────────────────
-const MAX_RECENT_MODELS = 5;
-
-async function _persistModelBlob(bytes, name, identity) {
-  if (!identity?.sha256) return; // ohne Hash keine stabile Blob-Adresse
-  try {
-    const ok = await repo.setBlob(`model:${identity.sha256}`, new Blob([bytes]), {
-      name,
-      size: bytes.byteLength,
-      savedAt: Date.now(),
-      projectGlobalId: identity.projectGlobalId,
-      key: identity.key,
-    });
-    if (!ok) return; // Backend ohne Blob-Support (localStorage-Fallback)
-    // Ablage deckeln: nur die letzten N Modelle behalten
-    const all = (await repo.listBlobs('model:'))
-      .sort((a, b) => (b.meta?.savedAt ?? 0) - (a.meta?.savedAt ?? 0));
-    for (const row of all.slice(MAX_RECENT_MODELS)) {
-      await repo.deleteBlob(row.key);
-    }
-    await _refreshRecentModels();
-  } catch (e) {
-    // Der Server lehnt einen zweiten Upload gleichen Namens mit 422 ab. Das
-    // ist kein technischer Fehler, sondern eine Aussage an den Nutzer — sonst
-    // steht das Modell im Viewer, aber nicht im Projektregister, und die
-    // beiden laufen wieder auseinander.
-    if (e?.name === 'CdeUploadAbgelehnt') {
-      ablageHinweis.value = `Nicht ins Projekt übernommen: ${e.message}`;
-      return;
-    }
-    console.warn('[CDE] Lokale Modell-Ablage fehlgeschlagen:', e?.message ?? e);
-  }
-}
-
-async function _refreshRecentModels() {
-  recentModels.value = (await repo.listBlobs('model:'))
-    .sort((a, b) => (b.meta?.savedAt ?? 0) - (a.meta?.savedAt ?? 0));
-}
-
-async function openRecent(row) {
-  if (loading.value) return;
-  loading.value = true;
-  try {
-    const stored = await repo.getBlob(row.key);
-    if (!stored?.blob) throw new Error('Blob nicht gefunden');
-    await _loadBuffer(await stored.blob.arrayBuffer(), stored.meta?.name ?? 'model', { persist: false });
-    // savedAt auffrischen, damit die Liste nach letzter Nutzung sortiert bleibt
-    repo.setBlob(row.key, stored.blob, { ...stored.meta, savedAt: Date.now() })
-      .then(() => _refreshRecentModels());
-  } catch (err) {
-    console.error('Recent-model load error:', err);
-    alert('Modell konnte nicht aus dem lokalen Speicher geladen werden.');
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function deleteRecent(row) {
-  await repo.deleteBlob(row.key);
-  await _refreshRecentModels();
-}
-
-/** M2: Modell aus dem Dokument-Register öffnen (CdeView ruft per Template-Ref). */
-async function openBySha(sha256) {
-  await openRecent({ key: `model:${sha256}` });
-}
-/**
- * Modell aus dem Projektordner laden (Projekt-Cockpit, Stufe 6): der Pfad ist
- * relativ zu 1_Projekte; die Datei kommt über /projects/file mit Bearer-Token.
- */
-async function openFromProjectPath(pfad) {
-  // Beim Deep-Link ist die Engine oft noch im Aufbau — kurz warten statt scheitern.
-  for (let i = 0; i < 60 && !engine.value; i += 1) await new Promise((r) => setTimeout(r, 250));
-  if (!engine.value) throw new Error('viewer-engine nicht bereit');
-  const { default: api } = await import('@/services/api');
-  const antwort = await api.get('/projects/file', { params: { path: pfad }, responseType: 'arraybuffer' });
-  const name = String(pfad).split('/').pop() || 'modell.ifc';
-  await _loadBuffer(antwort.data, name);
-}
-/**
  * Gespeicherte Ansicht / Issue-Viewpoint (Sprint P, AP-8).
  *
  * Die Engine bekommt bewusst KEINEN Oberflächenzustand — sie kennt Kamera,
@@ -733,12 +596,12 @@ async function anwendenViewpoint(vp) {
 }
 
 defineExpose({
-  openBySha,
-  openFromProjectPath,
+  openBySha: (sha) => ablage.openBySha(sha),
+  openFromProjectPath: (pfad) => ablage.openFromProjectPath(pfad),
   zoomToPoint: zoomToAnnotation,
   applyViewpoint: anwendenViewpoint,
   captureViewpoint: erfasseViewpoint,
-  toggleAnnotationMode: () => toggleAnnotationMode(),
+  toggleAnnotationMode: () => annotationen.umschalten(),
   /**
    * Messungen und Modell-Kennung fuer die CdeView.
    *
@@ -747,11 +610,8 @@ defineExpose({
    * Komponentenreferenz heran — kein zweiter Weg zur selben Sache, sondern
    * die passende Richtung.
    */
-  messungen: () => measurements.value,
-  geladeneModellSha: () => {
-    const first = engine.value?.getModelList()?.[0];
-    return first ? (_modelIdentity.get(first.modelId)?.sha256 ?? null) : null;
-  },
+  messungen: () => ifc.messungen,
+  geladeneModellSha: () => ablage.geladeneModellSha(),
   /**
    * Der Pin-Modus wird als REF herausgegeben, nicht als Momentaufnahme.
    *
@@ -766,21 +626,10 @@ defineExpose({
   annotationActive,
 });
 
-function fmtBytes(n) {
-  if (!Number.isFinite(n) || n <= 0) return '';
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} kB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-function fmtDate(ts) {
-  if (!ts) return '';
-  return new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
-}
-
 async function removeModel(modelId) {
   await engine.value?.unloadModel(modelId);
-  _modelIdentity.delete(modelId);
-  modelList.value = engine.value.getModelList();
-  ifc.setModelList(modelList.value);
+  ablage.vergiss(modelId);
+  ifc.setModelList(engine.value.getModelList());
   categoryList.value = engine.value.getCategoryList();
   // Update spatial tree for first remaining model
   const tree = await engine.value?.getSpatialTree();
@@ -795,8 +644,7 @@ async function _onModelLoaded() {
   categoryList.value = engine.value.getCategoryList();
 
   // Update multi-model list
-  modelList.value = engine.value.getModelList();
-  ifc.setModelList(modelList.value);
+  ifc.setModelList(engine.value.getModelList());
 
   // Spatial tree → store (IfcSpatialWindow reads from there)
   const tree = await engine.value.getSpatialTree();
@@ -813,19 +661,14 @@ async function _onModelLoaded() {
   // SHA-256) — der Dateiname dient nur noch der Legacy-Übernahme.
   const firstModel = engine.value?.getModelList()?.[0];
   if (firstModel) {
-    const identity = _modelIdentity.get(firstModel.modelId);
+    const identity = ablage.identitaet(firstModel.modelId);
     await ifc.loadAnnotationsForModel(identity?.key ?? firstModel.name, firstModel.name);
     // If annotation mode is on, re-create visuals; otherwise pre-fill engine's data only
     engine.value?.setAnnotations(ifc.annotations);
   }
 
-  // Reset section cut when a new model is loaded
-  if (sectionActive.value) {
-    engine.value.deleteSectionCuts();
-    sectionActive.value  = false;
-    showSectionBar.value = false;
-    sectionPosition.value = null;
-  }
+  // Ein neues Modell entwertet den Schnitt.
+  schnitt.verwerfen();
 
   emit('model-loaded');
 }
@@ -863,60 +706,6 @@ async function ansichtAufsBlatt() {
 
 // ── Section cuts ─────────────────────────────────────────────────────────────
 
-/**
- * Meldet die Rueckmeldung der Schnittebene an.
- *
- * Stand vorher Zeichen fuer Zeichen an zwei Stellen — beim Einschalten des
- * Werkzeugs und beim Anfahren eines Geschosses. Eine Aenderung an der einen
- * haette die andere stillschweigend zurueckgelassen.
- */
-function _schnittRueckmeldungAnmelden() {
-  engine.value?.setSectionChangeCallback(() => {
-    sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-  });
-}
-
-function toggleSectionCut() {
-  if (!sectionActive.value) {
-    // First click: create the clip plane and show the bar
-    const result = engine.value?.createSectionCut();
-    if (!result) return;
-    sectionMode.value     = 'translate';
-    sectionActive.value   = true;
-    showSectionBar.value  = true;
-    sectionPosition.value = engine.value.getSectionPosition();
-    _schnittRueckmeldungAnmelden();
-  } else {
-    // Second click: remove the cut entirely (clean toggle)
-    engine.value?.setSectionChangeCallback(null);
-    engine.value?.deleteSectionCuts();
-    sectionActive.value   = false;
-    showSectionBar.value  = false;
-    sectionPosition.value = null;
-  }
-}
-
-/** Hide the section bar and gizmo — clip plane remains active. */
-function hideSection() {
-  showSectionBar.value = false;
-  engine.value?.setSectionGizmoVisible(false);
-}
-
-function setSectionMode(mode) {
-  sectionMode.value = mode;
-  engine.value?.setSectionMode(mode);
-}
-
-function snapSection(axis) {
-  engine.value?.snapSectionTo(axis);
-  sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-}
-
-function resetSection() {
-  engine.value?.resetSection();
-  sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-}
-
 // SC-3: Keyboard shortcuts for section cut
 function onKeyDown(e) {
   // Cmd/Ctrl+F → open search overlay
@@ -940,15 +729,15 @@ function onKeyDown(e) {
   if (e.key === 'Escape' && showShortcuts.value) { showShortcuts.value = false; return; }
 
   // T1.3: M toggles measure mode, Esc exits it
-  if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMeasure(); return; }
-  if (e.key === 'Escape' && measureActive.value) { toggleMeasure(); return; }
+  if (e.key === 'm' || e.key === 'M') { e.preventDefault(); messen.umschalten(); return; }
+  if (e.key === 'Escape' && messen.aktiv.value) { messen.umschalten(); return; }
 
   // T2.2: V toggles Saved Views panel
   if (e.key === 'v' || e.key === 'V') { e.preventDefault(); showSavedViews.value = !showSavedViews.value; return; }
 
   // T2.4: N toggles Notes panel, Esc exits annotation placement mode
   if (e.key === 'n' || e.key === 'N') { e.preventDefault(); panels.toggle('issues'); return; }
-  if (e.key === 'Escape' && annotationActive.value) { toggleAnnotationMode(); return; }
+  if (e.key === 'Escape' && annotationActive.value) { annotationen.umschalten(); return; }
 
   // T1.2: H = hide selected, I = isolate selected, Shift+A = show all
   if (ifc.selectedElement && (e.key === 'h' || e.key === 'H')) {
@@ -962,10 +751,10 @@ function onKeyDown(e) {
   }
 
   // Section-cut shortcuts (only while section bar is active)
-  if (!sectionActive.value) return;
-  if (e.key === 't' || e.key === 'T') { e.preventDefault(); setSectionMode('translate'); }
-  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); setSectionMode('rotate'); }
-  if (e.key === 'Escape') hideSection();
+  if (!schnitt.aktiv.value) return;
+  if (e.key === 't' || e.key === 'T') { e.preventDefault(); schnitt.setzeModus('translate'); }
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); schnitt.setzeModus('rotate'); }
+  if (e.key === 'Escape') schnitt.leisteAusblenden();
 }
 
 // ── Layer panel ───────────────────────────────────────────────────────────────
@@ -1000,111 +789,23 @@ async function onShowAll() {
 // ── T1.5: Storey navigation ───────────────────────────────────────────────────
 async function onGotoStorey({ modelId, localId, withSection }) {
   const ok = await engine.value?.gotoStorey(modelId, localId, { withSection });
-  if (ok && withSection) {
-    // Sync the section-cut UI state so the bar appears
-    sectionActive.value   = true;
-    showSectionBar.value  = true;
-    sectionMode.value     = 'translate';
-    sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-    _schnittRueckmeldungAnmelden();
-  }
+  // Die Engine hat den Schnitt beim Anfahren selbst gesetzt — die Oberfläche
+  // zieht nach. Vorher stand die Rückmeldungs-Registrierung hier ein zweites
+  // Mal, Zeichen für Zeichen.
+  if (ok && withSection) schnitt.uebernehmeVonEngine();
 }
 
 // ── T1.3: Measurement ────────────────────────────────────────────────────────
-function toggleMeasure() {
-  if (measureActive.value) {
-    engine.value?.disableMeasureMode();
-    measureActive.value = false;
-    measureToast.value  = null;
-    _selection?.setMode('single');
-  } else {
-    engine.value?.enableMeasureMode();
-    measureActive.value = true;
-    _setMeasureToast('Klick auf 1. Punkt');
-    _selection?.setMode('disabled');
-  }
-}
-
-function clearMeasurements() {
-  engine.value?.clearMeasurements();
-  measurements.value = [];
-  _setMeasureToast('Messungen zurückgesetzt');
-}
-
-function _setMeasureToast(text) {
-  measureToast.value = { text, ts: Date.now() };
-  if (_measureToastTimer) clearTimeout(_measureToastTimer);
-  _measureToastTimer = setTimeout(() => { measureToast.value = null; }, 3500);
-}
-
-function _formatDist(m) {
-  if (m < 1)   return `${(m * 1000).toFixed(0)} mm`;
-  if (m < 10)  return `${m.toFixed(3)} m`;
-  return `${m.toFixed(2)} m`;
-}
 
 // ── T2.4: Annotations ────────────────────────────────────────────────────────
 
-/**
- * Der Store fuehrt die Issues, die Engine zeichnet ihre Pins — und folgt ihm.
- *
- * Vorher spiegelte nur EINE von sieben Store-Aenderungen in die Engine
- * (`updateAnnotationOffset`). Loeschen, Farbwechsel, „alle loeschen" und der
- * BCF-Import blieben im 3D-Bild stehen: die Liste im Panel und die Pins im
- * Modell liefen auseinander. Statt jede Operation einzeln nachzuziehen —
- * sieben Stellen, die man beim naechsten Mal wieder vergisst — folgt die
- * Engine hier dem Store.
- *
- * Beobachtet wird bewusst nur, was den PIN bestimmt: Kennung, Ort und Farbe
- * (`idx` leitet die Engine aus der Reihenfolge ab). Text, Status, Frist und
- * Kommentare aendern das 3D-Bild nicht — eine tiefe Beobachtung wuerde beim
- * Tippen im Panel bei jedem Zeichen die Marker neu bauen.
- */
-watch(
-  () => ifc.annotations.map(a => `${a.id}|${a.color ?? ''}|${a.position?.join(',') ?? ''}`).join(';'),
-  () => { engine.value?.setAnnotations(ifc.annotations); },
-);
 
 function onToggleViews() { showSavedViews.value  = !showSavedViews.value; }
 function onToggleNotes() { panels.toggle('issues'); }
 
-function toggleAnnotationMode() {
-  if (annotationActive.value) {
-    annotationActive.value = false;
-    _selection?.setMode('single');
-  } else {
-    if (measureActive.value) toggleMeasure();
-    engine.value?.enableAnnotationMode();
-    annotationActive.value = true;
-    _selection?.setMode('disabled');
-  }
-}
 
-async function _onAnnotationClick(e) {
-  const text = prompt('Issue anlegen — Beschreibung:', '');
-  if (text === null) return;
-  // Re-use the last annotation's color so users can place a series of same-colored pins
-  const lastColor = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
-  const ann = await engine.value?.addAnnotation(e.clientX, e.clientY, text, lastColor);
-  if (ann) {
-    // Issue-Felder: Viewpoint (Kamera + Sichtbarkeit + Schnitt) für „so sah
-    // ich es"-Wiederherstellung, Autor aus der CDE-Bearbeiter-Identität.
-    ann.viewpoint = erfasseViewpoint();
-    ann.author    = cde.bearbeiter || '';
-    ann.createdAt = Date.now();
-    ifc.pushAnnotation(ann);
-  }
-}
 
-function onAnnotationOffsetChanged({ id, offset }) {
-  ifc.updateAnnotationOffset(id, offset);
-  // Reflect in the engine's internal copy so future redraws use the new offset
-  engine.value?.updateAnnotation?.(id, { labelOffset: offset });
-}
 
-function zoomToAnnotation(position) {
-  engine.value?.lookAtPoint(position[0], position[1], position[2], 5);
-}
 
 // ── mouse interaction ─────────────────────────────────────────────────────────
 // Selection + Hover + Marquee laufen über _selection (IfcSelectionHandler).
@@ -1113,18 +814,18 @@ function zoomToAnnotation(position) {
 
 function onMouseMoveForTools(e) {
   // Nur aktiv im Measure-Modus — Live-Hover-Marker für den nächsten Messpunkt.
-  if (!measureActive.value) return;
+  if (!messen.aktiv.value) return;
   if (_hoverTimer) clearTimeout(_hoverTimer);
   _lastMouse = { x: e.clientX, y: e.clientY };
   _hoverTimer = setTimeout(() => {
     const m = _lastMouse;
-    if (m) engine.value?.updateMeasureHover(m.x, m.y);
+    if (m) messen.bewegung(m.x, m.y);
   }, 30);
 }
 
 function onMouseDown(e) {
   if (e.button !== 0) return;
-  if (!(measureActive.value || annotationActive.value)) return;
+  if (!(messen.aktiv.value || annotationActive.value)) return;
   _mouseDownAt = { x: e.clientX, y: e.clientY };
 }
 
@@ -1139,26 +840,9 @@ async function onMouseUp(e) {
 
   if (Math.hypot(dx, dy) > 8) return; // >8 px = Drag, nicht Click
 
-  if (measureActive.value) {
-    const res = await engine.value?.addMeasurePoint(downX, downY);
-    if (!res || res.phase === 'no-hit') {
-      _setMeasureToast('Kein Treffer — bitte auf Bauteil klicken');
-    } else if (res.phase === 'awaiting-second') {
-      _setMeasureToast('Klick auf 2. Punkt');
-    } else if (res.phase === 'complete') {
-      measurements.value.push({
-        dist: res.dist,
-        p1: { x: res.p1.x, y: res.p1.y, z: res.p1.z },
-        p2: { x: res.p2.x, y: res.p2.y, z: res.p2.z },
-      });
-      _setMeasureToast(`Abstand: ${_formatDist(res.dist)} — Klick auf nächste 2 Punkte`);
-    }
-    return;
-  }
+  if (await messen.klick(downX, downY)) return;
 
-  if (annotationActive.value) {
-    await _onAnnotationClick({ clientX: downX, clientY: downY });
-  }
+  if (await annotationen.klick(e)) return;
 }
 
 </script>

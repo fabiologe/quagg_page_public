@@ -102,18 +102,75 @@ describe('Die Engine folgt dem Issue-Store', () => {
   // blieben als Pins im 3D-Bild stehen. Fehlerklasse „gespiegelter Zustand
   // läuft auseinander".
   it('eine Beobachtung statt sieben Einzelspiegelungen', () => {
-    const viewer = lies('components/IfcViewer.vue');
-    expect(viewer).toMatch(/watch\(\s*\n?\s*\(\)\s*=>\s*ifc\.annotations\.map/);
-    expect(viewer).toContain('engine.value?.setAnnotations(ifc.annotations)');
+    // Seit Stufe 5 liegt sie in `composables/useAnnotationen.js`.
+    const ann = lies('composables/useAnnotationen.js');
+    expect(ann).toMatch(/watch\(\s*\n?\s*\(\)\s*=>\s*ifc\.annotations\.map/);
+    expect(ann).toContain('engine.value?.setAnnotations(ifc.annotations)');
+    // Und es bleibt bei EINER: eine zweite Spiegelung wäre der Rückfall.
+    expect(ann.match(/setAnnotations\(/g) ?? []).toHaveLength(1);
   });
 });
 
 describe('Kein doppelter Code für die Schnitt-Rückmeldung', () => {
-  // Gefunden: die Registrierung stand Zeichen für Zeichen an zwei Stellen.
+  // Gefunden: die Registrierung stand Zeichen für Zeichen an zwei Stellen —
+  // beim Einschalten des Werkzeugs und beim Anfahren eines Geschosses.
+  //
+  // Seit Stufe 5 liegt der Schnitt in `composables/useSchnitt.js`; der Viewer
+  // ruft nur noch. Dass dieser Test die Verschiebung bemerkt hat, ist genau
+  // sein Zweck — er prüft eine Eigenschaft, nicht eine Zeile.
   it('wird an einer Stelle angemeldet', () => {
+    const schnitt = lies('composables/useSchnitt.js');
+    expect(schnitt.match(/setSectionChangeCallback\(\(\)\s*=>/g) ?? []).toHaveLength(1);
+    expect(schnitt).toContain('_rueckmeldungAnmelden');
+  });
+
+  it('lässt den Viewer den Schnittzustand nicht mehr selbst schreiben', () => {
+    // Zwei Stellen setzten die vier Refs von außen. Jetzt gibt es dafür
+    // `verwerfen()` und `uebernehmeVonEngine()`.
     const viewer = lies('components/IfcViewer.vue');
-    const direkt = viewer.match(/setSectionChangeCallback\(\(\)\s*=>/g) ?? [];
-    expect(direkt.length).toBe(1);           // nur im Helfer
-    expect(viewer).toContain('_schnittRueckmeldungAnmelden');
+    expect(viewer).not.toMatch(/schnitt\.(aktiv|leisteOffen|modus|position)\.value\s*=/);
+    expect(viewer).toContain('schnitt.verwerfen()');
+    expect(viewer).toContain('schnitt.uebernehmeVonEngine()');
+  });
+});
+
+describe('Tastenkürzel stehen an zwei Stellen', () => {
+  /**
+   * Befund aus Stufe 5, NICHT behoben — bewusst.
+   *
+   * Die Kürzel sind zweimal beschrieben: als `key:` in der Befehls-Registry
+   * (daraus baut `IfcShortcutsOverlay` die Hilfe) und als if-Kette in
+   * `onKeyDown`. Sie zu vereinen scheitert daran, dass die Registry-Werte
+   * BESCHRIFTUNGEN sind, keine Dispatch-Angaben: `key: 'T/R'` hängt am Befehl
+   * „Schnitt umschalten", während T und R im Handler den Schnitt-MODUS setzen.
+   * Würde man T durch die Registry leiten, schaltete es den Schnitt aus.
+   *
+   * Das geradezuziehen heißt, die Bedeutung der Registry zu ändern — eine
+   * eigene Aufgabe. Bis dahin hält dieser Test wenigstens fest, dass jede
+   * Taste, auf die der Viewer reagiert, auch in der Hilfe steht. Sonst gibt es
+   * Kürzel, die niemand findet.
+   */
+  it('jede Taste im Handler ist in der Hilfe dokumentiert', () => {
+    const viewer = lies('components/IfcViewer.vue');
+    const handler = viewer.slice(viewer.indexOf('function onKeyDown'));
+    const block = handler.slice(0, handler.indexOf('\n}\n'));
+
+    const imHandler = new Set(
+      [...block.matchAll(/e\.key === '([^']+)'/g)]
+        .map((m) => m[1])
+        .filter((k) => k.length === 1)          // Escape u. Ä. sind keine Kürzel
+        .map((k) => k.toUpperCase()),
+    );
+    // In der Registry stehen Beschriftungen wie 'T/R' und 'Shift+A'.
+    const dokumentiert = new Set(
+      [...viewer.matchAll(/key: '([^']+)'/g)]
+        .flatMap((m) => m[1].split('/'))
+        .map((k) => k.replace(/^Shift\+/, '').toUpperCase()),
+    );
+    // Strg+K und Strg+F sind Palettenkürzel und stehen dort eigens.
+    for (const frei of ['K', 'F']) imHandler.delete(frei);
+
+    expect(imHandler.size).toBeGreaterThan(4);   // Schutz gegen Leerlauf
+    expect([...imHandler].filter((k) => !dokumentiert.has(k))).toEqual([]);
   });
 });
