@@ -1,12 +1,13 @@
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
-import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { IfcCamera } from './IfcCamera.js';
 import { DATA_CONFIG, parseItemData, buildSearchIndex } from './IfcItemData.js';
 import { IfcAnnotations } from './IfcAnnotations.js';
 import { IfcMeasure } from './IfcMeasure.js';
 import { IfcGridAxes } from './IfcGridAxes.js';
+import { IfcSection } from './IfcSection.js';
+import { IfcStoreys } from './IfcStoreys.js';
 
 
 const SELECTION_STYLE = {
@@ -88,14 +89,6 @@ export class IfcEngine {
         this._categoryGroups = null;
 
         // Section cut gizmo
-        this._clippingPlane         = null; // THREE.Plane — native renderer clipping plane
-        this._sectionRenderHook     = null; // per-frame hook that syncs plane to pivot
-        this._planePivot            = null; // THREE.Object3D — gizmo anchor
-        this._tcHelper              = null; // TransformControls visual helper in scene
-        this._transformControls     = null; // TransformControls instance
-        this._sectionChangeCallback = null; // fired on every pivot change
-        this._onTcMouseDown         = null; // named listener refs for cleanup
-        this._onTcMouseUp           = null;
 
         // Coordinate offsets (IFC-raw ↔ Three.js-world) — per-model for Multi-IFC safety.
         // _coordOffsets: Map<modelId, THREE.Vector3> where offset = IFC-raw - threeJS-world
@@ -144,6 +137,15 @@ export class IfcEngine {
         // brauchen einen Weltpunkt unter dem Zeiger, keiner soll ihn nachbauen.
         const probePoint = (x, y) => this._probeWorldPoint(x, y);
         this.gridAxes    = new IfcGridAxes();
+        this.section     = new IfcSection({
+            getWorld: () => this._getWorld(),
+            getBounds: () => this._getModelBounds(),
+        });
+        this.storeys     = new IfcStoreys({
+            components: this.components,
+            fitToBox: (box, o) => this.camera.fitToBox(box, o),
+            schnitt: this.section,
+        });
         this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint });
         this.measure     = new IfcMeasure({     getWorld: () => this._getWorld(), probePoint });
 
@@ -454,184 +456,18 @@ export class IfcEngine {
 
     // ── Section cuts ─────────────────────────────────────────────────────────
 
-    /**
-     * Create an interactive clipping plane with a TransformControls gizmo.
-     * The gizmo renders directly in the 3D scene — no sliders needed.
-     * Initial orientation: horizontal (plane faces up, clips geometry above pivot).
-     */
-    createSectionCut() {
-        const world  = this._getWorld();
-        const bounds = this._getModelBounds();
-        const center = bounds?.center ?? new THREE.Vector3();
-        const size   = bounds?.size   ?? new THREE.Vector3(100, 100, 100);
-        // 2.2× ensures the plane visually covers the full model footprint with margin
-        const planeSize = Math.max(size.x, size.z) * 2.2;
 
-        // ── Gizmo pivot Object3D ──────────────────────────────────────────
-        this._planePivot = new THREE.Object3D();
-        this._planePivot.position.copy(center);
-        // PlaneGeometry normal = local +Z. We want world normal = (0,-1,0) (clips y > center.y).
-        // rotation.x = +π/2 → local +Z becomes (0,-1,0) [geprueft]
-        this._planePivot.rotation.x = Math.PI / 2;
-        world.scene.three.add(this._planePivot);
 
-        // ── Visual plane mesh (semi-transparent quad) ─────────────────────
-        const planeMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(planeSize, planeSize),
-            new THREE.MeshBasicMaterial({
-                color: 0x2196f3, transparent: true, opacity: 0.07,
-                side: THREE.DoubleSide, depthWrite: false,
-                // polygonOffset pushes the plane slightly toward the camera to avoid
-                // Z-fighting with scene geometry at the same depth during orbit
-                polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-            })
-        );
-        planeMesh.renderOrder = 1;
-        this._planePivot.add(planeMesh);
 
-        // ── Border edge ───────────────────────────────────────────────────
-        const edgeGeo  = new THREE.EdgesGeometry(new THREE.PlaneGeometry(planeSize, planeSize));
-        const edgeLine = new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({
-            color: 0x42a5f5, transparent: true, opacity: 0.55,
-        }));
-        this._planePivot.add(edgeLine);
 
-        // ── Crosshair lines ───────────────────────────────────────────────
-        const h = planeSize / 2;
-        const chPts = new Float32Array([-h,0,0, h,0,0,  0,-h,0, 0,h,0]);
-        const chGeo = new THREE.BufferGeometry();
-        chGeo.setAttribute('position', new THREE.BufferAttribute(chPts, 3));
-        this._planePivot.add(new THREE.LineSegments(chGeo, new THREE.LineBasicMaterial({
-            color: 0x42a5f5, transparent: true, opacity: 0.22,
-        })));
 
-        // ── TransformControls (r163+ API: getHelper()) ────────────────────
-        const tc = new TransformControls(world.camera.three, world.renderer.three.domElement);
-        tc.attach(this._planePivot);
-        tc.setMode('translate');
-        tc.setSpace('world');
-        tc.setSize(1.1);
 
-        const helper = tc.getHelper?.() ?? tc;
-        world.scene.three.add(helper);
-        this._tcHelper = helper;
 
-        // Interlock: disable camera orbit while dragging gizmo
-        // Store as named refs so deleteSectionCuts() can removeEventListener()
-        this._onTcMouseDown = () => { if (world.camera.controls) world.camera.controls.enabled = false; };
-        this._onTcMouseUp   = () => { if (world.camera.controls) world.camera.controls.enabled = true; };
-        tc.addEventListener('mouseDown', this._onTcMouseDown);
-        tc.addEventListener('mouseUp',   this._onTcMouseUp);
 
-        this._transformControls = tc;
 
-        // ── Native Three.js clipping plane ────────────────────────────────
-        this._clippingPlane = new THREE.Plane();
-        world.renderer.three.localClippingEnabled = true;
-        world.renderer.three.clippingPlanes = [this._clippingPlane];
 
-        // Per-frame hook: syncs clipping plane from pivot's world matrix BEFORE each render.
-        // Using onBeforeUpdate (not TC 'change') ensures the plane is applied exactly once per
-        // frame and runs AFTER any OBC component updates that might clear clippingPlanes.
-        this._sectionRenderHook = () => this._updateClippingFromPivot();
-        world.renderer.onBeforeUpdate.add(this._sectionRenderHook);
 
-        return {};
-    }
 
-    /** Set TransformControls mode: 'translate' | 'rotate' */
-    setSectionMode(mode) {
-        this._transformControls?.setMode(mode);
-    }
-
-    /** Recompute native clipping plane from the pivot's current world transform. */
-    _updateClippingFromPivot() {
-        if (!this._clippingPlane || !this._planePivot) return;
-
-        this._planePivot.updateWorldMatrix(true, false);
-
-        // Plane normal = local +Z (PlaneGeometry normal) transformed to world space
-        const normal = new THREE.Vector3(0, 0, 1)
-            .transformDirection(this._planePivot.matrixWorld);
-        const point = new THREE.Vector3()
-            .setFromMatrixPosition(this._planePivot.matrixWorld);
-
-        this._clippingPlane.setFromNormalAndCoplanarPoint(normal, point);
-
-        this._sectionChangeCallback?.();
-    }
-
-    setSectionChangeCallback(fn) { this._sectionChangeCallback = fn; }
-
-    getSectionPosition() {
-        if (!this._planePivot) return null;
-        const p = this._planePivot.position;
-        return { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) };
-    }
-
-    /** Snap section pivot to one of three cardinal orientations. */
-    snapSectionTo(axis) {
-        if (!this._planePivot) return;
-        this._planePivot.rotation.set(0, 0, 0);
-        if      (axis === 'horizontal') this._planePivot.rotation.x = Math.PI / 2;
-        else if (axis === 'x')          this._planePivot.rotation.y = -Math.PI / 2;
-        // axis === 'z': no rotation → local +Z stays world +Z
-        this._planePivot.updateWorldMatrix(true, false);
-        this._updateClippingFromPivot();
-    }
-
-    /** Reset section pivot to model center, horizontal. */
-    resetSection() {
-        if (!this._planePivot) return;
-        const bounds = this._getModelBounds();
-        const center = bounds?.center ?? new THREE.Vector3();
-        this._planePivot.position.copy(center);
-        this._planePivot.rotation.set(Math.PI / 2, 0, 0);
-        this._planePivot.updateWorldMatrix(true, false);
-        this._updateClippingFromPivot();
-    }
-
-    deleteSectionCuts() {
-        const world = this._getWorld();
-
-        if (this._sectionRenderHook) {
-            world.renderer.onBeforeUpdate.remove(this._sectionRenderHook);
-            this._sectionRenderHook = null;
-        }
-
-        if (this._transformControls) {
-            // Remove named listeners before dispose to prevent memory leaks
-            if (this._onTcMouseDown) this._transformControls.removeEventListener('mouseDown', this._onTcMouseDown);
-            if (this._onTcMouseUp)   this._transformControls.removeEventListener('mouseUp',   this._onTcMouseUp);
-            this._onTcMouseDown = null;
-            this._onTcMouseUp   = null;
-            this._transformControls.detach();
-            this._transformControls.dispose();
-            this._transformControls = null;
-        }
-        if (this._tcHelper) {
-            world.scene.three.remove(this._tcHelper);
-            this._tcHelper = null;
-        }
-        if (this._planePivot) {
-            this._planePivot.clear();
-            world.scene.three.remove(this._planePivot);
-            this._planePivot = null;
-        }
-
-        world.renderer.three.clippingPlanes      = [];
-        world.renderer.three.localClippingEnabled = false;
-        this._clippingPlane = null;
-    }
-
-    /** Return the active clipping plane (used by vector plotter for section contour). */
-    getSectionCutPlane() { return this._clippingPlane ?? null; }
-
-    /** Show or hide the TransformControls gizmo without removing the clip plane. */
-    setSectionGizmoVisible(visible) {
-        if (this._tcHelper)          this._tcHelper.visible          = visible;
-        if (this._transformControls) this._transformControls.enabled = visible;
-    }
 
     // ── Render state / Layer styles ──────────────────────────────────────────
 
@@ -740,168 +576,10 @@ export class IfcEngine {
 
     // ── Spatial structure ────────────────────────────────────────────────────
 
-    async getSpatialTree() {
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const model = [...fragments.list.values()][0];
-        if (!model) return null;
-        return model.getSpatialStructure();
-    }
 
-    /**
-     * Alle Element-localIds einer Ebene (Sprint U, AP-U5).
-     *
-     * `hider.set` auf den Geschoss-Knoten allein blendet dessen Inhalt nicht
-     * zuverlässig aus — die Elemente hängen als Nachfahren darunter. Der
-     * Baumlauf sammelt sie (Muster wie Din277Classifier._buildStoreyIndex)
-     * und merkt sich das Ergebnis je Modell/Ebene.
-     */
-    async getStoreyElements(modelId, storeyLocalId) {
-        if (!this._storeyElementCache) this._storeyElementCache = new Map();
-        const key = `${modelId}|${storeyLocalId}`;
-        if (this._storeyElementCache.has(key)) return this._storeyElementCache.get(key);
 
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const model = fragments.list.get(modelId) ?? [...fragments.list.values()][0];
-        if (!model) return [];
 
-        let tree = null;
-        try { tree = await model.getSpatialStructure(); } catch { return []; }
 
-        const ids = [];
-        const sammle = (node) => {
-            if (!node) return;
-            if (node.localId != null) ids.push(node.localId);
-            for (const c of (node.children ?? [])) sammle(c);
-        };
-        const suche = (node) => {
-            if (!node) return false;
-            if (node.localId === storeyLocalId) { sammle(node); return true; }
-            for (const c of (node.children ?? [])) {
-                if (suche(c)) return true;
-            }
-            return false;
-        };
-        suche(tree);
-
-        this._storeyElementCache.set(key, ids);
-        return ids;
-    }
-
-    /**
-     * Sichtbarkeit einer Ebene schalten.
-     * `modelId` ist seit Sprint U durchgereicht — vorher griff die Funktion
-     * hart auf das ERSTE Modell zu und ignorierte alle weiteren.
-     */
-    async setStoreyVisible(localId, visible, modelId = null) {
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const model = (modelId != null ? fragments.list.get(modelId) : null)
-                   ?? [...fragments.list.values()][0];
-        if (!model) return;
-        const ids = await this.getStoreyElements(model.modelId, localId);
-        const hider = this.components.get(OBC.Hider);
-        await hider.set(visible, { [model.modelId]: ids.length ? ids : [localId] });
-    }
-
-    /**
-     * Collect all storeys across loaded models with their elevation (m) and bounding-box.
-     * Returns [] for models without storey structure (e.g. infrastructure).
-     */
-    async getStoreyList() {
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const ifcLoader = this.components.get(OBC.IfcLoader);
-        const webIfc    = ifcLoader?.webIfc;
-        if (!fragments.list.size) return [];
-
-        const storeys = [];
-        for (const model of fragments.list.values()) {
-            let tree;
-            try { tree = await model.getSpatialStructure(); } catch { continue; }
-            if (!tree) continue;
-
-            // Recursively find all IFCBUILDINGSTOREY nodes
-            const found = [];
-            const walk = (node) => {
-                if (!node) return;
-                if ((node.category ?? '').toUpperCase() === 'IFCBUILDINGSTOREY') found.push(node);
-                for (const c of node.children ?? []) walk(c);
-            };
-            walk(tree);
-
-            for (const node of found) {
-                // Elevation from web-ifc raw entity
-                let elevation = null;
-                if (webIfc) {
-                    try {
-                        const ent = webIfc.GetLine(0, node.localId, false);
-                        elevation = ent?.Elevation?.value ?? null;
-                    } catch { /* skip */ }
-                }
-
-                // Collect all descendant localIds for box-union
-                const ids = [];
-                const collect = (n) => {
-                    if (n.localId != null) ids.push(n.localId);
-                    for (const c of n.children ?? []) collect(c);
-                };
-                collect(node);
-
-                let box = null;
-                try {
-                    const boxes = await model.getBoxes(ids);
-                    if (boxes?.length) {
-                        const union = new THREE.Box3();
-                        union.makeEmpty();
-                        for (const b of boxes) if (!b.isEmpty()) union.union(b);
-                        if (!union.isEmpty()) box = union;
-                    }
-                } catch { /* skip */ }
-
-                storeys.push({
-                    modelId:   model.modelId,
-                    localId:   node.localId,
-                    name:      (node.name ?? '').trim() || `Storey ${node.localId}`,
-                    elevation,
-                    box, // THREE.Box3 or null
-                });
-            }
-        }
-
-        // Sort by elevation (lowest first) for natural floor order
-        storeys.sort((a, b) => {
-            const ea = a.elevation ?? -Infinity;
-            const eb = b.elevation ?? -Infinity;
-            return ea - eb;
-        });
-        return storeys;
-    }
-
-    /**
-     * Fit the camera to a storey's bounding box. Optionally place an active
-     * section cut at (storey-floor + sliceOffset) metres for a true plan-view.
-     */
-    async gotoStorey(modelId, localId, { withSection = false, sliceOffset = 1.2 } = {}) {
-        const storeys = await this.getStoreyList();
-        const s = storeys.find(x => x.modelId === modelId && x.localId === localId);
-        if (!s || !s.box) return false;
-
-        await this.camera.fitToBox(s.box, { padding: 0.5 });
-
-        if (withSection) {
-            // Tear down any existing section, then create a horizontal cut at floor + offset
-            this.deleteSectionCuts();
-            this.createSectionCut();
-            if (this._planePivot) {
-                const floorY = s.box.min.y;
-                const center = new THREE.Vector3();
-                s.box.getCenter(center);
-                this._planePivot.position.set(center.x, floorY + sliceOffset, center.z);
-                this._planePivot.rotation.set(Math.PI / 2, 0, 0); // horizontal
-                this._planePivot.updateWorldMatrix(true, false);
-                this._updateClippingFromPivot();
-            }
-        }
-        return true;
-    }
 
     // ── Properties ───────────────────────────────────────────────────────────
 
@@ -968,6 +646,29 @@ export class IfcEngine {
 
 
     // ── Camera ───────────────────────────────────────────────────────────────
+
+    // ── Raumstruktur & Geschosse (Implementierung in IfcStoreys.js) ─────────
+    getSpatialTree()                     { return this.storeys.getSpatialTree(); }
+    getStoreyElements(modelId, localId)  { return this.storeys.getStoreyElements(modelId, localId); }
+    setStoreyVisible(localId, v, mid)    { return this.storeys.setStoreyVisible(localId, v, mid); }
+    getStoreyList()                      { return this.storeys.getStoreyList(); }
+    gotoStorey(modelId, localId, opts)   { return this.storeys.gotoStorey(modelId, localId, opts); }
+
+    // ── Schnittebene (Implementierung in IfcSection.js) ─────────────────────
+    createSectionCut()               { return this.section.createSectionCut(); }
+    setSectionMode(mode)             { return this.section.setSectionMode(mode); }
+    setSectionChangeCallback(fn)     { return this.section.setSectionChangeCallback(fn); }
+    getSectionPosition()             { return this.section.getSectionPosition(); }
+    snapSectionTo(axis)              { return this.section.snapSectionTo(axis); }
+    resetSection()                   { return this.section.resetSection(); }
+    deleteSectionCuts()              { return this.section.deleteSectionCuts(); }
+    getSectionCutPlane()             { return this.section.getSectionCutPlane(); }
+    getSectionState()                { return this.section.getSectionState(); }
+    applySectionState(state)         { return this.section.applySectionState(state); }
+    placeSectionAt(center, y)        { return this.section.placeSectionAt(center, y); }
+    setSectionGizmoVisible(visible)  { return this.section.setSectionGizmoVisible(visible); }
+    _hideSectionVisuals()            { return this.section._hideSectionVisuals(); }
+    _restoreSectionVisuals(hidden)   { return this.section._restoreSectionVisuals(hidden); }
 
     // ── Achsen & Raster (Implementierung in IfcGridAxes.js) ─────────────────
     setIfcGridsVisible(visible) { return this.gridAxes.setIfcGridsVisible(visible); }
@@ -1050,14 +751,7 @@ export class IfcEngine {
         const visibleCategories = (this._categoryGroups ?? [])
             .filter(g => g.visible).map(g => g.name);
 
-        // Section: capture pivot pose if active
-        let section = null;
-        if (this._planePivot) {
-            section = {
-                position: this._planePivot.position.toArray(),
-                rotation: this._planePivot.rotation.toArray().slice(0, 3),
-            };
-        }
+        const section = this.getSectionState();
 
         return {
             camera: cameraState,
@@ -1087,18 +781,8 @@ export class IfcEngine {
             }
         }
 
-        // Section cut
-        if (view.section) {
-            if (!this._planePivot) this.createSectionCut();
-            if (this._planePivot) {
-                this._planePivot.position.fromArray(view.section.position);
-                this._planePivot.rotation.set(...view.section.rotation);
-                this._planePivot.updateWorldMatrix(true, false);
-                this._updateClippingFromPivot();
-            }
-        } else if (this._planePivot) {
-            this.deleteSectionCuts();
-        }
+        // Schnittebene — eine Methode statt Zugriff aufs Feld.
+        this.applySectionState(view.section ?? null);
     }
 
     // ── Measurement (distance between 2 points) ─────────────────────────────
@@ -1357,27 +1041,7 @@ export class IfcEngine {
         }));
     }
 
-    /**
-     * Hide section-cut visual helpers (gizmo + plane mesh) for an export snapshot.
-     * The actual clipping plane stays active — only the visual overlays are hidden.
-     * Returns an array of objects to restore via _restoreSectionVisuals().
-     */
-    _hideSectionVisuals() {
-        const hidden = [];
-        if (this._tcHelper && this._tcHelper.visible) {
-            hidden.push(this._tcHelper);
-            this._tcHelper.visible = false;
-        }
-        if (this._planePivot && this._planePivot.visible) {
-            hidden.push(this._planePivot);
-            this._planePivot.visible = false;
-        }
-        return hidden;
-    }
 
-    _restoreSectionVisuals(hidden) {
-        for (const obj of hidden) obj.visible = true;
-    }
 
     /**
      * Capture the canvas as a base64 PNG data URL.
@@ -1449,6 +1113,7 @@ export class IfcEngine {
         this.camera?.dispose?.();
         this.annotations?.disableAnnotationMode?.();
         this.measure?.disableMeasureMode?.();
+        this.section?.deleteSectionCuts?.();
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

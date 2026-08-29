@@ -33,6 +33,8 @@ const DIENSTE = [
   { datei: 'services/IfcAnnotations.js', feld: 'annotations' },
   { datei: 'services/IfcMeasure.js',     feld: 'measure' },
   { datei: 'services/IfcGridAxes.js',    feld: 'gridAxes' },
+  { datei: 'services/IfcSection.js',     feld: 'section' },
+  { datei: 'services/IfcStoreys.js',     feld: 'storeys' },
 ];
 
 describe('Hausmuster der Dienste', () => {
@@ -101,6 +103,8 @@ describe('Ausgelagerte Belange sind wirklich draußen', () => {
       '_annotationGroup', '_annotations',
       '_measureGroup', '_measurePoints', '_measurements', '_hoverMarker', '_firstMarker',
       '_ifcGridGroups', '_auxRT', '_lastPlotFrustum',
+      '_clippingPlane', '_planePivot', '_transformControls', '_tcHelper',
+      '_sectionRenderHook', '_sectionChangeCallback', '_storeyElementCache',
     ].filter((f) => ENGINE.includes(`this.${f}`));
     expect(verirrt).toEqual([]);
   });
