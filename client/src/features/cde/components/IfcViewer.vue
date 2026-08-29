@@ -325,6 +325,10 @@ const coords      = ref(null);
 const showLayerPanel = ref(false);
 const categoryList   = ref([]); // [{name, count, visible}]
 const storeyList     = ref([]); // [{modelId, localId, name, elevation, box}]
+// Template-Ref auf IfcStoreyNav. In <script setup> muss sie ausdruecklich
+// deklariert werden — fehlte sie, warf jeder der drei Ebenen-Befehle aus der
+// Befehlspalette einen ReferenceError.
+const storeyNavRef   = ref(null);
 const showStoreyNav  = ref(true);
 const showSavedViews = ref(false);
 const annotationActive   = ref(false);
@@ -357,7 +361,6 @@ const recentModels = ref([]);     // [{ key, meta, size }] aus repo.listBlobs('m
 // Coordinate display mode
 const coordMode = ref('viewer'); // 'viewer' | 'ifc'
 
-let _rafId       = null;
 let _mouseDownAt = null;
 let _hoverTimer  = null;
 let _lastMouse   = null;
@@ -369,13 +372,11 @@ let _selection   = null;  // IfcSelectionHandler — übernimmt Click/Hover/Marq
 const selectionAnchor = ref(null);
 watch(() => ifc.selectedElement, async (el) => {
   if (!el || !engine.value) { selectionAnchor.value = null; return; }
-  try {
-    const boxes = await engine.value.getBoxes([el.localId]);
-    const box = boxes?.[0];
-    selectionAnchor.value = (box && !box.isEmpty())
-      ? [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2]
-      : null;
-  } catch { selectionAnchor.value = null; }
+  const boxes = await engine.value.getBoxes([el.localId], el.modelId);
+  const box = boxes?.[0];
+  selectionAnchor.value = (box && !box.isEmpty())
+    ? [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2]
+    : null;
 });
 
 /**
@@ -557,7 +558,7 @@ onMounted(async () => {
     if (!engine.value) return null;
     const mid = modelId ?? engine.value.getModelList()?.[0]?.modelId;
     if (mid == null) return null;
-    const boxes = await engine.value.getBoxes([localId]);
+    const boxes = await engine.value.getBoxes([localId], mid);
     if (!boxes?.length) return null;
     const offset = engine.value.getCoordOffsetForModel(mid);
     return { box: boxes[0], offset, modelId: mid };
@@ -840,6 +841,20 @@ async function _onModelLoaded() {
 }
 
 // ── Section cuts ─────────────────────────────────────────────────────────────
+
+/**
+ * Meldet die Rueckmeldung der Schnittebene an.
+ *
+ * Stand vorher Zeichen fuer Zeichen an zwei Stellen — beim Einschalten des
+ * Werkzeugs und beim Anfahren eines Geschosses. Eine Aenderung an der einen
+ * haette die andere stillschweigend zurueckgelassen.
+ */
+function _schnittRueckmeldungAnmelden() {
+  engine.value?.setSectionChangeCallback(() => {
+    sectionPosition.value = engine.value?.getSectionPosition() ?? null;
+  });
+}
+
 function toggleSectionCut() {
   if (!sectionActive.value) {
     // First click: create the clip plane and show the bar
@@ -849,9 +864,7 @@ function toggleSectionCut() {
     sectionActive.value   = true;
     showSectionBar.value  = true;
     sectionPosition.value = engine.value.getSectionPosition();
-    engine.value.setSectionChangeCallback(() => {
-      sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-    });
+    _schnittRueckmeldungAnmelden();
   } else {
     // Second click: remove the cut entirely (clean toggle)
     engine.value?.setSectionChangeCallback(null);
@@ -972,9 +985,7 @@ async function onGotoStorey({ modelId, localId, withSection }) {
     showSectionBar.value  = true;
     sectionMode.value     = 'translate';
     sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-    engine.value?.setSectionChangeCallback(() => {
-      sectionPosition.value = engine.value?.getSectionPosition() ?? null;
-    });
+    _schnittRueckmeldungAnmelden();
   }
 }
 
@@ -1012,6 +1023,27 @@ function _formatDist(m) {
 }
 
 // ── T2.4: Annotations ────────────────────────────────────────────────────────
+
+/**
+ * Der Store fuehrt die Issues, die Engine zeichnet ihre Pins — und folgt ihm.
+ *
+ * Vorher spiegelte nur EINE von sieben Store-Aenderungen in die Engine
+ * (`updateAnnotationOffset`). Loeschen, Farbwechsel, „alle loeschen" und der
+ * BCF-Import blieben im 3D-Bild stehen: die Liste im Panel und die Pins im
+ * Modell liefen auseinander. Statt jede Operation einzeln nachzuziehen —
+ * sieben Stellen, die man beim naechsten Mal wieder vergisst — folgt die
+ * Engine hier dem Store.
+ *
+ * Beobachtet wird bewusst nur, was den PIN bestimmt: Kennung, Ort und Farbe
+ * (`idx` leitet die Engine aus der Reihenfolge ab). Text, Status, Frist und
+ * Kommentare aendern das 3D-Bild nicht — eine tiefe Beobachtung wuerde beim
+ * Tippen im Panel bei jedem Zeichen die Marker neu bauen.
+ */
+watch(
+  () => ifc.annotations.map(a => `${a.id}|${a.color ?? ''}|${a.position?.join(',') ?? ''}`).join(';'),
+  () => { engine.value?.setAnnotations(ifc.annotations); },
+);
+
 function onToggleViews() { showSavedViews.value  = !showSavedViews.value; }
 function onToggleNotes() { panels.toggle('issues'); }
 

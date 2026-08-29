@@ -650,4 +650,16 @@ export class IfcCamera {
             cam.updateProjectionMatrix();
         }
     }
+
+    /**
+     * Gibt den Offscreen-Puffer frei.
+     *
+     * Bisher griff `IfcEngine.dispose()` dafuer auf `camera._auxRT` zu — ein
+     * privates Feld dieses Dienstes. Der Hausvertrag sagt: der Besitzer ruft
+     * Methoden, keine Unterstrich-Felder.
+     */
+    dispose() {
+        if (this._auxRT) { this._auxRT.dispose(); this._auxRT = null; }
+    }
+
 }

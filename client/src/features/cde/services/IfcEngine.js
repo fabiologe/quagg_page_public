@@ -406,7 +406,11 @@ export class IfcEngine {
         this.camera.orbitAroundSelection(fmodel.modelId, localId).catch(() => { /* */ });
 
         const rawData = await fragments.getData(modelIdMap, DATA_CONFIG);
-        return this._parseItemData(rawData);
+        // modelId und localId gehoeren zur Antwort: ohne sie kann der Aufrufer
+        // das getroffene Bauteil nicht mehr adressieren — weder zum Zoomen noch
+        // fuer seine Bounding-Box. `_parseItemData` bleibt bewusst zustandslos
+        // und kennt sie nicht, deshalb werden sie hier angehaengt.
+        return { ...this._parseItemData(rawData), modelId: fmodel.modelId, localId };
     }
 
     async clearSelection() {
@@ -908,7 +912,11 @@ export class IfcEngine {
     async refreshElement() {
         if (!this._selectedItems) return null;
         const fragments = this.components.get(OBC.FragmentsManager);
-        return this._parseItemData(await fragments.getData(this._selectedItems, DATA_CONFIG));
+        const daten = this._parseItemData(await fragments.getData(this._selectedItems, DATA_CONFIG));
+        // Dieselbe Kennung wie bei pickElement — sonst verliert das Bauteil sie
+        // beim Neuladen der Merkmale wieder.
+        const [modelId, localIds] = Object.entries(this._selectedItems)[0] ?? [];
+        return { ...daten, modelId, localId: localIds?.[0] };
     }
 
     async addPsetToElement(psetName, props) {
@@ -1537,6 +1545,33 @@ export class IfcEngine {
     }
 
     /** Public accessor: per-model offset (Three.js → IFC-raw addition). */
+    /**
+     * Bounding-Boxen einzelner Bauteile.
+     *
+     * Zwei Aufrufer in IfcViewer.vue haben diese Methode seit jeher benutzt —
+     * es gab sie nie. Der Auswahl-Anker fing den Fehler still ab und blieb
+     * `null`, weshalb das Kontextmenue am Bauteil (AP-U4) nie erschien und
+     * „Issue hier anlegen" wirkungslos war; der Box-Handler des Stores fing
+     * ihn gar nicht.
+     *
+     * Die Fragmente fuehren die Boxen je Modell (`model.getBoxes`), hier wird
+     * nur das Modell aufgeloest. Ohne `modelId` gilt das erste geladene.
+     *
+     * @returns {Promise<import('three').Box3[]>} leer, wenn Modell oder
+     *          Geometrie fehlen — nie `null`, damit `?.length` beim Aufrufer
+     *          reicht.
+     */
+    async getBoxes(localIds, modelId = null) {
+        if (!localIds?.length) return [];
+        const fragments = this.components.get(OBC.FragmentsManager);
+        const model = modelId != null
+            ? fragments?.list?.get(modelId)
+            : [...(fragments?.list?.values() ?? [])][0];
+        if (!model) return [];
+        try { return (await model.getBoxes(localIds)) ?? []; }
+        catch { return []; }
+    }
+
     getCoordOffsetForModel(modelId) {
         return this._coordOffsets.get(modelId) ?? null;
     }
@@ -1959,7 +1994,7 @@ export class IfcEngine {
     getLastPlotFrustum() { return this.camera.getLastPlotFrustum(); }
 
     dispose() {
-        if (this.camera?._auxRT) { this.camera._auxRT.dispose(); this.camera._auxRT = null; }
+        this.camera?.dispose?.();
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

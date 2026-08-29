@@ -449,7 +449,6 @@ import { LAYER_STYLES } from '../services/LayerStyleManager.js';
 import CdeIcon from './ui/CdeIcon.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useCdeStore, resolveWatermarkText } from '../stores/useCdeStore.js';
-import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import IfcVectorStyleEditor from './IfcVectorStyleEditor.vue';
 import { useViewerApi } from '../composables/viewerApi.js';
 
@@ -947,30 +946,6 @@ const drawingDims = computed(() => {
   return { dw: W - 20, dh: H - 20 - 40 }; // 2×10mm margin + 40mm title block
 });
 
-/** Crop a base64 PNG to a target aspect ratio (centre crop). */
-function cropToAspect(dataUrl, targetAspect) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const srcAspect = img.width / img.height;
-      let sx = 0, sy = 0, sw = img.width, sh = img.height;
-      if (srcAspect > targetAspect) {
-        // Canvas wider than paper: crop left and right
-        sw = Math.round(img.height * targetAspect);
-        sx = Math.round((img.width - sw) / 2);
-      } else {
-        // Canvas taller than paper: crop top and bottom
-        sh = Math.round(img.width / targetAspect);
-        sy = Math.round((img.height - sh) / 2);
-      }
-      const c = document.createElement('canvas');
-      c.width = sw; c.height = sh;
-      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      resolve(c.toDataURL('image/png', 0.92));
-    };
-    img.src = dataUrl;
-  });
-}
 
 // Map activeView string to engine viewDir parameter
 function _viewDir() {
