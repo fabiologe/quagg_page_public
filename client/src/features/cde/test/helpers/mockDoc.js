@@ -74,6 +74,13 @@ export function erstelleMockDoc() {
         circle: (x, y, r, art) => merken('circle', x, y, r, art),
         rect: (x, y, w, h, art) => merken('rect', x, y, w, h, art),
         triangle: (x1, y1, x2, y2, x3, y3, art) => merken('triangle', x1, y1, x2, y2, x3, y3, art),
+        // Polygonzug aus Deltas — der Rotstift zeichnet damit seinen
+        // Strichumriss als gefüllte Fläche (Sprint I, Stufe 7). Dass ein neues
+        // Primitiv hier eingetragen werden MUSS, ist der Zweck dieser Datei:
+        // sie ist der Vertrag darüber, welche jsPDF-Schnittstelle der Plotter
+        // benutzt — und dieselbe muss der CanvasDoc-Adapter bedienen.
+        lines: (deltas, x, y, skalierung, art, geschlossen) =>
+            merken('lines', deltas, x, y, skalierung, art, geschlossen),
         text: (s, x, y, opts) => merken('text', s, x, y, opts),
 
         // ── Blatt-Primitive (Plankopf/Wasserzeichen, außerhalb drawVectorPlan) ─

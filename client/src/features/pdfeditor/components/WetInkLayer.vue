@@ -25,7 +25,8 @@
  * Abbildung Seite→Viewport ist deshalb je Strich konstant (ursprung, zoom).
  */
 import { ref, watch, onMounted } from 'vue';
-import { strichUmriss } from '../services/InkGeometry';
+import { strichUmriss } from '@/services/tinte/InkGeometry';
+import { vonSeitenPunkt } from '../services/AnsichtRotation';
 
 const props = defineProps({
   breite: { type: Number, required: true },
@@ -94,6 +95,19 @@ function _zeichneRadiererKreis(ctx, dpr) {
   ctx.stroke();
 }
 
+/**
+ * Seitenpunkt → Viewport-px. Bei gedrehter Ansicht liegt der Strich am
+ * Bildschirm quer: erst in die Anzeigebox drehen, dann skalieren/versetzen.
+ * (Der gespeicherte Strich bleibt unrotiert — Export unberührt.)
+ */
+function _zuViewport(x, y) {
+  const { ursprung, zoom, drehung, seiteBreitePt, seiteHoehePt } = kontext;
+  const [lx, ly] = drehung
+    ? vonSeitenPunkt(x, y, drehung, seiteBreitePt, seiteHoehePt)
+    : [x, y];
+  return [ursprung.x + lx * zoom, ursprung.y + ly * zoom];
+}
+
 function _zeichne() {
   rafGeplant = false;
   const ctx = _ctx();
@@ -109,15 +123,14 @@ function _zeichne() {
 
   // Lasso: gestrichelter Linienzug statt gefüllter Tinte.
   if (kontext.tool === 'lasso') {
-    const { ursprung, zoom } = kontext;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.strokeStyle = kontext.farbe;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 5]);
     ctx.beginPath();
-    ctx.moveTo(ursprung.x + punkte[0][0] * zoom, ursprung.y + punkte[0][1] * zoom);
+    ctx.moveTo(..._zuViewport(punkte[0][0], punkte[0][1]));
     for (let i = 1; i < punkte.length; i++) {
-      ctx.lineTo(ursprung.x + punkte[i][0] * zoom, ursprung.y + punkte[i][1] * zoom);
+      ctx.lineTo(..._zuViewport(punkte[i][0], punkte[i][1]));
     }
     ctx.stroke();
     ctx.setLineDash([]);
@@ -137,11 +150,10 @@ function _zeichne() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = kontext.deckkraft ?? 1;
   ctx.fillStyle = kontext.farbe;
-  const { ursprung, zoom } = kontext;
   ctx.beginPath();
-  ctx.moveTo(ursprung.x + umriss[0][0] * zoom, ursprung.y + umriss[0][1] * zoom);
+  ctx.moveTo(..._zuViewport(umriss[0][0], umriss[0][1]));
   for (let i = 1; i < umriss.length; i++) {
-    ctx.lineTo(ursprung.x + umriss[i][0] * zoom, ursprung.y + umriss[i][1] * zoom);
+    ctx.lineTo(..._zuViewport(umriss[i][0], umriss[i][1]));
   }
   ctx.closePath();
   ctx.fill();

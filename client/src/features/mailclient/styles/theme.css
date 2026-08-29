@@ -1,0 +1,278 @@
+/**
+ * Quagg-Mail-Theme — alle Tokens mit --mail-Präfix auf :root.
+ *
+ * WARUM :root UND NICHT der Feature-Container: Teleport-Dialoge hängen unter
+ * <body> und erben Container-Variablen nicht (Muster pdfeditor/styles/theme.css).
+ * Der Präfix verhindert Kollisionen mit den global importierten --sv-*-Tokens
+ * aus theme-saintv.css. Palette = PDF-Editor (Petrol-Akzent), damit die
+ * Werkzeuge später in EINER App wie aus einem Guss wirken.
+ *
+ * Umschaltung: MailClientView spiegelt den Modus auf <html data-theme="dark">
+ * und räumt ihn beim Unmount wieder ab.
+ */
+
+:root {
+    --mail-bg: #e9e7e2;
+    --mail-flaeche: #f8f7f4;
+    --mail-flaeche-2: #eeece7;
+    --mail-flaeche-3: #e2dfd9;
+    --mail-papier: #ffffff;
+
+    --mail-text: #22262b;
+    --mail-text-dim: #6d757e;
+    --mail-text-invers: #f8f7f4;
+
+    --mail-rand: #d6d3cc;
+    --mail-rand-stark: #b9b5ac;
+    --mail-schatten: 0 1px 3px rgba(25, 28, 32, 0.10), 0 4px 16px rgba(25, 28, 32, 0.08);
+    --mail-schatten-stark: 0 2px 6px rgba(25, 28, 32, 0.18), 0 12px 40px rgba(25, 28, 32, 0.18);
+
+    --mail-akzent: #0f766e;
+    --mail-akzent-hover: #0d655e;
+    --mail-akzent-weich: rgba(15, 118, 110, 0.12);
+    --mail-akzent-kontrast: #ffffff;
+
+    --mail-warn: #b45309;
+    --mail-warn-weich: rgba(180, 83, 9, 0.12);
+    --mail-fehler: #b91c1c;
+    --mail-fehler-weich: rgba(185, 28, 28, 0.10);
+    --mail-ok: #15803d;
+    --mail-ok-weich: rgba(21, 128, 61, 0.12);
+
+    --mail-scroll: #2f9e6f;
+    --mail-scroll-hover: #1d7d55;
+
+    --mail-radius: 10px;
+    --mail-radius-klein: 6px;
+    --mail-schrift: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --mail-schrift-mono: 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+
+    --mail-sidebar-breite: 232px;
+    --mail-liste-breite: 380px;
+}
+
+:root[data-theme='dark'] {
+    --mail-bg: #17191c;
+    --mail-flaeche: #212429;
+    --mail-flaeche-2: #2a2e34;
+    --mail-flaeche-3: #343a41;
+    --mail-papier: #1c1f23;
+
+    --mail-text: #e7e9ec;
+    --mail-text-dim: #99a1ab;
+    --mail-text-invers: #17191c;
+
+    --mail-rand: #383d44;
+    --mail-rand-stark: #4b525b;
+    --mail-schatten: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.35);
+    --mail-schatten-stark: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 40px rgba(0, 0, 0, 0.5);
+
+    --mail-akzent: #2bb3a3;
+    --mail-akzent-hover: #3cc7b7;
+    --mail-akzent-weich: rgba(43, 179, 163, 0.16);
+    --mail-akzent-kontrast: #0b2622;
+
+    --mail-warn: #f59e0b;
+    --mail-warn-weich: rgba(245, 158, 11, 0.14);
+    --mail-fehler: #ef4444;
+    --mail-fehler-weich: rgba(239, 68, 68, 0.14);
+    --mail-ok: #22c55e;
+    --mail-ok-weich: rgba(34, 197, 94, 0.14);
+
+    --mail-scroll: #37b083;
+    --mail-scroll-hover: #4fd0a0;
+}
+
+/* ── Grundfläche ────────────────────────────────────────────────────────── */
+
+.mail-root {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--mail-bg);
+    color: var(--mail-text);
+    font-family: var(--mail-schrift);
+    font-size: 14px;
+    line-height: 1.45;
+    overflow: hidden;
+}
+
+.mail-root *,
+.mail-root *::before,
+.mail-root *::after {
+    box-sizing: border-box;
+}
+
+/* Scrollbars: theme-saintv.css (global) liest diese geteilten Tokens.
+   :has(.mail-root) statt :root, damit Grün nur gilt, solange der Client
+   wirklich im DOM steht — und auf :root, damit Teleport-Dialoge es erben. */
+:root:has(.mail-root) {
+    --scroll-thumb:       var(--mail-scroll);
+    --scroll-thumb-hover: var(--mail-scroll-hover);
+    --scroll-track:       transparent;
+    --scroll-thumb-glow:  none;
+}
+
+/* ── Gemeinsame Bausteine ───────────────────────────────────────────────── */
+
+.mail-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 36px;
+    min-width: 36px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--mail-radius-klein);
+    background: transparent;
+    color: var(--mail-text);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    touch-action: manipulation;
+}
+.mail-btn:hover { background: var(--mail-flaeche-2); }
+.mail-btn:active { background: var(--mail-flaeche-3); }
+.mail-btn.ist-aktiv {
+    background: var(--mail-akzent-weich);
+    color: var(--mail-akzent);
+}
+.mail-btn.ist-primaer {
+    background: var(--mail-akzent);
+    color: var(--mail-akzent-kontrast);
+}
+.mail-btn.ist-primaer:hover { background: var(--mail-akzent-hover); }
+.mail-btn.ist-umrandet { border-color: var(--mail-rand-stark); }
+.mail-btn.ist-gefaehrlich { color: var(--mail-fehler); }
+.mail-btn.ist-gefaehrlich:hover { background: var(--mail-fehler-weich); }
+.mail-btn.ist-klein { min-height: 30px; min-width: 30px; padding: 0 8px; font-size: 13px; }
+.mail-btn:disabled { opacity: 0.45; cursor: default; }
+.mail-btn:disabled:hover { background: transparent; }
+.mail-btn.ist-primaer:disabled:hover { background: var(--mail-akzent); }
+
+.mail-eingabe {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--mail-rand);
+    border-radius: var(--mail-radius-klein);
+    background: var(--mail-papier);
+    color: var(--mail-text);
+    font: inherit;
+    outline: none;
+}
+.mail-eingabe:focus { border-color: var(--mail-akzent); box-shadow: 0 0 0 3px var(--mail-akzent-weich); }
+.mail-eingabe::placeholder { color: var(--mail-text-dim); }
+textarea.mail-eingabe { resize: vertical; min-height: 160px; line-height: 1.5; }
+
+.mail-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--mail-flaeche-3);
+    color: var(--mail-text-dim);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 18px;
+    white-space: nowrap;
+}
+.mail-badge.ist-akzent { background: var(--mail-akzent-weich); color: var(--mail-akzent); }
+.mail-badge.ist-warn { background: var(--mail-warn-weich); color: var(--mail-warn); }
+.mail-badge.ist-ok { background: var(--mail-ok-weich); color: var(--mail-ok); }
+
+.mail-hinweis {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border-radius: var(--mail-radius-klein);
+    background: var(--mail-flaeche-2);
+    color: var(--mail-text);
+    font-size: 13px;
+}
+.mail-hinweis.ist-warn { background: var(--mail-warn-weich); color: var(--mail-warn); }
+.mail-hinweis.ist-fehler { background: var(--mail-fehler-weich); color: var(--mail-fehler); }
+.mail-hinweis.ist-ok { background: var(--mail-ok-weich); color: var(--mail-ok); }
+
+.mail-leer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 100%;
+    padding: 32px;
+    color: var(--mail-text-dim);
+    text-align: center;
+}
+.mail-leer strong { color: var(--mail-text); font-weight: 600; }
+
+/* ── Dialoge (Teleport → body, deshalb Tokens auf :root) ────────────────── */
+
+.mail-dialog-hintergrund {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(20, 22, 26, 0.45);
+    font-family: var(--mail-schrift);
+    font-size: 14px;
+    color: var(--mail-text);
+}
+.mail-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    max-height: min(90vh, 760px);
+    border: 1px solid var(--mail-rand);
+    border-radius: var(--mail-radius);
+    background: var(--mail-flaeche);
+    box-shadow: var(--mail-schatten-stark);
+    overflow: hidden;
+}
+.mail-dialog.ist-breit { width: min(760px, 100%); }
+.mail-dialog-kopf {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 12px 12px 16px;
+    border-bottom: 1px solid var(--mail-rand);
+    font-weight: 600;
+}
+.mail-dialog-kopf > span { flex: 1; }
+.mail-dialog-inhalt {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.mail-dialog-fuss {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--mail-rand);
+    background: var(--mail-flaeche-2);
+}
+.mail-feld {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--mail-text-dim);
+}
+.mail-feld > .mail-eingabe { color: var(--mail-text); }
+
+.mail-drehend { animation: mail-drehen 1s linear infinite; }
+@keyframes mail-drehen { to { transform: rotate(360deg); } }

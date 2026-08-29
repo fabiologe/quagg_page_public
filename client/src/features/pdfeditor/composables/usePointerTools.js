@@ -8,12 +8,14 @@
  * Navigation zurück, damit der Stift auf der grauen Arbeitsfläche pannt.
  */
 
-import { erzeugeEingabeRouting } from '../services/EingabeRouting';
-import { trifftStrich, strichInPolygon, punktInPolygon, zerteileStrich } from '../services/InkGeometry';
+import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
+import { trifftStrich, strichInPolygon, punktInPolygon, zerteileStrich } from '@/services/tinte/InkGeometry';
 import { trifftRects } from '../services/TextRects';
 import { textboxMasse, messeTextBreitePt } from '../services/TextboxMasse';
 import { stempelMasse } from '../services/AnnotationPainter';
 import { kantenLinie, abstandZurKante, projiziereAufKante } from '../services/LinealMath';
+import { zuSeitenPunkt } from '../services/AnsichtRotation';
+import { platzierMasse } from '../services/BildImport';
 
 const LINEAL_SNAP_PT = 14;
 
@@ -60,11 +62,20 @@ export function usePointerTools({
         return ev.pressure > 0 ? ev.pressure : 0.5;
     }
 
+    /**
+     * Zeiger → unrotierter Seitenpunkt. DIE eine Umrechnung: erst in die
+     * Anzeigebox (Ursprung = deren obere linke Ecke), dann die
+     * Ansichtsdrehung zurückrechnen. Während eines Strichs ist die
+     * Abbildung konstant (kein Scroll/Zoom) — sie stammt vom Strichbeginn.
+     */
+    function _rohPunkt(treffer, clientX, clientY) {
+        const lx = (clientX - treffer.ursprungClientX) / treffer.zoom;
+        const ly = (clientY - treffer.ursprungClientY) / treffer.zoom;
+        return zuSeitenPunkt(lx, ly, treffer.drehung ?? 0, treffer.breitePt, treffer.hoehePt);
+    }
+
     function _seitenPunkt(treffer, clientX, clientY, linie = null) {
-        // Während eines Strichs ist die Abbildung konstant (kein Scroll/Zoom) —
-        // ursprung/zoom stammen vom Strichbeginn.
-        let xPt = (clientX - treffer.ursprungClientX) / treffer.zoom;
-        let yPt = (clientY - treffer.ursprungClientY) / treffer.zoom;
+        let [xPt, yPt] = _rohPunkt(treffer, clientX, clientY);
         // Lineal-Snap: Punkte auf die Zeichenkante projizieren → die Linie
         // ist schnurgerade im Lineal-Winkel (erst projizieren, dann klemmen).
         if (linie) [xPt, yPt] = projiziereAufKante(xPt, yPt, linie);
@@ -93,8 +104,7 @@ export function usePointerTools({
         const lineal = toolStore.lineal;
         if (lineal && lineal.page === treffer.index) {
             const kante = kantenLinie(lineal);
-            const xPt = (ev.clientX - treffer.ursprungClientX) / treffer.zoom;
-            const yPt = (ev.clientY - treffer.ursprungClientY) / treffer.zoom;
+            const [xPt, yPt] = _rohPunkt(treffer, ev.clientX, ev.clientY);
             if (abstandZurKante(xPt, yPt, kante) < LINEAL_SNAP_PT) linie = kante;
         }
 
@@ -113,6 +123,9 @@ export function usePointerTools({
             echterDruck,
             ursprung: { x: treffer.ursprungX, y: treffer.ursprungY },
             zoom: treffer.zoom,
+            drehung: treffer.drehung ?? 0,
+            seiteBreitePt: treffer.breitePt,
+            seiteHoehePt: treffer.hoehePt,
         });
         const p = _seitenPunkt(treffer, ev.clientX, ev.clientY, linie);
         wetInkRef.value?.punkt(p.x, p.y, _druck(ev));
@@ -168,8 +181,7 @@ export function usePointerTools({
         if (!items?.length) return;
         const radius = toolStore.radierer.radiusPt;
         const punktModus = toolStore.radierer.modus !== 'strich';
-        const xPt = (ev.clientX - treffer.ursprungClientX) / treffer.zoom;
-        const yPt = (ev.clientY - treffer.ursprungClientY) / treffer.zoom;
+        const [xPt, yPt] = _rohPunkt(treffer, ev.clientX, ev.clientY);
 
         const ganzeTreffer = [];
         const zuZerteilen = [];
@@ -195,6 +207,10 @@ export function usePointerTools({
                 const m = stempelMasse(a, messeTextBreitePt);
                 const rect = { x: a.x - m.breite / 2, y: a.y - m.hoehe / 2, w: m.breite, h: m.hoehe };
                 if (trifftRects([rect], xPt, yPt, radius)) ganzeTreffer.push(a.id);
+            } else if (a.type === 'bild') {
+                if (trifftRects([{ x: a.x, y: a.y, w: a.w, h: a.h }], xPt, yPt, radius)) {
+                    ganzeTreffer.push(a.id);
+                }
             }
         }
 
@@ -278,6 +294,9 @@ export function usePointerTools({
             farbe: '#0f766e',
             ursprung: { x: treffer.ursprungX, y: treffer.ursprungY },
             zoom: treffer.zoom,
+            drehung: treffer.drehung ?? 0,
+            seiteBreitePt: treffer.breitePt,
+            seiteHoehePt: treffer.hoehePt,
         });
         const p = _seitenPunkt(treffer, ev.clientX, ev.clientY);
         lasso.punkte.push([p.x, p.y]);
@@ -305,7 +324,7 @@ export function usePointerTools({
         const items = annotStore.proSeite.get(treffer.index) ?? [];
         const ids = items.filter((a) => {
             if (a.type === 'ink') return strichInPolygon(a, punkte);
-            if (a.type === 'signature') {
+            if (a.type === 'signature' || a.type === 'bild') {
                 return punktInPolygon(a.x + a.w / 2, a.y + a.h / 2, punkte);
             }
             if (a.type === 'textbox') {
@@ -320,25 +339,49 @@ export function usePointerTools({
 
     // ── Tipp-Aktionen (Kommentar setzen, Signatur platzieren) ───────────────
 
-    const MESS_WERKZEUGE = new Set(['messenStrecke', 'messenFlaeche', 'kalibrieren']);
+    const MESS_WERKZEUGE = new Set(['messenStrecke', 'messenFlaeche', 'messenVolumen', 'kalibrieren']);
     const FLAECHE_SCHLUSS_RADIUS_PT = 10;
 
     function _messTipp(werkzeug, treffer, xPt, yPt) {
         const kind = werkzeug === 'messenFlaeche' ? 'area'
+            : werkzeug === 'messenVolumen' ? 'volumen'
             : werkzeug === 'kalibrieren' ? 'kalibrieren' : 'distance';
         let m = toolStore.messungInArbeit;
         if (!m || m.page !== treffer.index || m.kind !== kind) {
+            // Volumen (Stufe 17): Tipp in eine bestehende Fläche oder Baugrube
+            // öffnet deren Dialog (Umwandlung erst beim Übernehmen) — statt
+            // ein neues Polygon zu beginnen.
+            if (kind === 'volumen') {
+                const ziel = (annotStore.proSeite.get(treffer.index) ?? [])
+                    .filter(a => a.type === 'measure'
+                        && (a.kind === 'area' || a.kind === 'volumen')
+                        && punktInPolygon(xPt, yPt, a.points))
+                    .sort((a, b) => (b.z ?? 0) - (a.z ?? 0))[0];
+                if (ziel) {
+                    toolStore.volumenAnfrage = {
+                        id: ziel.id, page: treffer.index,
+                        quelle: ziel.kind === 'area' ? 'flaeche' : 'bearbeiten',
+                    };
+                    return;
+                }
+            }
             toolStore.messungInArbeit = { page: treffer.index, kind, points: [[xPt, yPt]] };
             return;
         }
-        if (kind === 'area') {
+        if (kind === 'area' || kind === 'volumen') {
             const [sx, sy] = m.points[0];
             if (m.points.length >= 3
                 && Math.hypot(xPt - sx, yPt - sy) < FLAECHE_SCHLUSS_RADIUS_PT) {
-                annotStore.fuegeHinzu({
-                    type: 'measure', kind: 'area', page: m.page, points: m.points,
+                const annot = annotStore.fuegeHinzu({
+                    type: 'measure', kind, page: m.page, points: m.points,
+                    ...(kind === 'volumen'
+                        ? { ...toolStore.volumenVorgaben, rechenwegAnzeigen: true }
+                        : {}),
                 });
                 toolStore.messungInArbeit = null;
+                if (kind === 'volumen') {
+                    toolStore.volumenAnfrage = { id: annot.id, page: m.page, quelle: 'neu' };
+                }
                 return;
             }
             m.points.push([xPt, yPt]);
@@ -364,11 +407,11 @@ export function usePointerTools({
         const werkzeug = toolStore.aktivesWerkzeug;
         if (werkzeug !== 'kommentar' && werkzeug !== 'signatur'
             && werkzeug !== 'textfeld' && werkzeug !== 'stempel'
+            && werkzeug !== 'bild'
             && !MESS_WERKZEUGE.has(werkzeug)) return;
         const treffer = findeSeite(ev.clientX, ev.clientY);
         if (!treffer) return;
-        const xPt = (ev.clientX - treffer.ursprungClientX) / treffer.zoom;
-        const yPt = (ev.clientY - treffer.ursprungClientY) / treffer.zoom;
+        const [xPt, yPt] = _rohPunkt(treffer, ev.clientX, ev.clientY);
 
         if (MESS_WERKZEUGE.has(werkzeug)) {
             _messTipp(werkzeug, treffer, xPt, yPt);
@@ -388,6 +431,12 @@ export function usePointerTools({
                 ...toolStore.textfeld,
             });
             annotStore.offenesTextfeldId = feld.id;
+            return;
+        }
+
+        if (werkzeug === 'bild') {
+            const vorlage = toolStore.bildZumPlatzieren;
+            if (vorlage) _platziereBild(treffer, xPt, yPt, vorlage);
             return;
         }
 
@@ -445,6 +494,38 @@ export function usePointerTools({
         // Direkt auswählbar zum Verschieben/Skalieren:
         toolStore.waehleWerkzeug('lasso');
         annotStore.setzeAuswahl(treffer.index, [annot.id]);
+    }
+
+    // ── Bild platzieren (Stufe 16) ──────────────────────────────────────────
+
+    /**
+     * Bild zentriert unter dem Punkt (xPt, yPt) anlegen, in die Seite
+     * geklemmt, danach wie die Signatur sofort ausgewählt (Lasso).
+     */
+    function _platziereBild(treffer, xPt, yPt, vorlage) {
+        const { w, h } = platzierMasse(
+            vorlage.natBreite, vorlage.natHoehe, treffer.breitePt, treffer.hoehePt);
+        const annot = annotStore.fuegeHinzu({
+            type: 'bild', page: treffer.index,
+            x: Math.max(0, Math.min(treffer.breitePt - w, xPt - w / 2)),
+            y: Math.max(0, Math.min(treffer.hoehePt - h, yPt - h / 2)),
+            w, h,
+            bildKey: vorlage.bildKey, mime: vorlage.mime,
+            natBreite: vorlage.natBreite, natHoehe: vorlage.natHoehe,
+        });
+        toolStore.bildZumPlatzieren = null;
+        toolStore.waehleWerkzeug('lasso');
+        annotStore.setzeAuswahl(treffer.index, [annot.id]);
+        return annot;
+    }
+
+    /** Für Drag&Drop: direkt an der Drop-Stelle platzieren. null = keine Seite dort. */
+    function platziereBildBei(clientX, clientY, vorlage) {
+        if (!vorlage) return null;
+        const treffer = findeSeite(clientX, clientY);
+        if (!treffer) return null;
+        const [xPt, yPt] = _rohPunkt(treffer, clientX, clientY);
+        return _platziereBild(treffer, xPt, yPt, vorlage);
     }
 
     // ── DOM-Handler (vom Scroller aufgerufen) ───────────────────────────────
@@ -559,6 +640,6 @@ export function usePointerTools({
 
     return {
         onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
-        versteckeRadiererCursor, routing,
+        versteckeRadiererCursor, platziereBildBei, routing,
     };
 }

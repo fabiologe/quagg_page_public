@@ -78,6 +78,10 @@
           @refresh="recomputeIds"
           @select-element="onSelectKgElement"
         />
+        <IfcAenderungenTab
+          v-else-if="activeTab === 'aenderungen'"
+          @geaendert="() => { recomputeKg(); recomputeAreas(); }"
+        />
       </div>
     </div>
   </div>
@@ -87,12 +91,15 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import IfcAreaSchedule from './IfcAreaSchedule.vue';
 import CdeIcon from './ui/CdeIcon.vue';
+import { useAenderungen } from '../stores/useAenderungen.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
 import IfcKgEditor     from './IfcKgEditor.vue';
 import IfcVolumeTab    from './IfcVolumeTab.vue';
 import IfcCountTab     from './IfcCountTab.vue';
 import IfcPauschalTab  from './IfcPauschalTab.vue';
 import IfcKostenTab    from './IfcKostenTab.vue';
 import IfcQualityTab   from './IfcQualityTab.vue';
+import IfcAenderungenTab from './IfcAenderungenTab.vue';
 import { classifyDin277 } from '../services/Din277Classifier.js';
 import { classifyKg }     from '../services/KgClassifier.js';
 import { summarizeQuantities } from '../services/QuantitySummary.js';
@@ -105,6 +112,8 @@ import { useViewerApi } from '../composables/viewerApi.js';
 
 // Engine-Accessoren per provide/inject aus IfcViewer.vue statt Funktions-Props.
 const api = useViewerApi();
+const aenderungen = useAenderungen();
+const cde = useCdeStore();
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 
@@ -119,6 +128,7 @@ const tabs = [
   { id: 'kosten',   icon: 'kosten',   label: 'Kosten',        disabled: false },
   { id: 'pauschal', icon: 'pauschal', label: 'Pauschal',      disabled: false },
   { id: 'quality',  icon: 'quality',  label: 'BIM-Qualität',  disabled: false },
+  { id: 'aenderungen', icon: 'undo',  label: 'Änderungen',    disabled: false },
 ];
 const activeTab = ref('areas');
 
@@ -126,17 +136,19 @@ const activeTab = ref('areas');
 const areaResult  = ref(null);
 const areaLoading = ref(false);
 const storeys     = ref([]);
-const overrides   = ref(new Map());       // GlobalId → classCode
-const REPO_KEY_OVERRIDES = 'din277-overrides';
+// Wie bei den Kostengruppen: der Stand kommt aus dem Änderungsjournal.
+const overrides   = computed(() => aenderungen.din277Stand);
+const REPO_KEY_OVERRIDES = 'din277-overrides';   // Altbestand
 
 async function loadOverrides() {
-  const stored = await repo.get(REPO_KEY_OVERRIDES);
-  if (stored && typeof stored === 'object') {
-    overrides.value = new Map(Object.entries(stored));
+  const alt = await repo.get(REPO_KEY_OVERRIDES);
+  if (alt && typeof alt === 'object' && Object.keys(alt).length) {
+    await aenderungen.bereit;
+    for (const [globalId, classCode] of Object.entries(alt)) {
+      await aenderungen.eintragen({ art: 'din277', globalId, nachher: classCode, wer: 'Übernahme' });
+    }
+    await repo.delete(REPO_KEY_OVERRIDES);
   }
-}
-async function saveOverrides() {
-  await repo.set(REPO_KEY_OVERRIDES, Object.fromEntries(overrides.value));
 }
 
 // ── Card 2: DIN 276 KG-Klassifikation ────────────────────────────────────
@@ -144,22 +156,30 @@ const kgResult     = ref(null);
 const kgLoading    = ref(false);
 const kgColorMode  = ref(false);
 const kgRules      = ref([...KG_DEFAULT_RULES]); // future: user-editable
-const kgOverrides  = ref(new Map()); // GlobalId → kgCode
-const REPO_KEY_KG_OVERRIDES = 'din276-overrides';
+// Die Handzuweisungen kommen seit Stufe 7 aus dem Änderungsjournal — dort
+// steht auch, was VORHER galt, und deshalb lässt sich zurücknehmen. Die Map
+// wird daraus abgeleitet; `KgClassifier` merkt davon nichts.
+const kgOverrides  = computed(() => aenderungen.kgStand);
+const REPO_KEY_KG_OVERRIDES = 'din276-overrides';   // Altbestand, siehe unten
 const REPO_KEY_KG_RULES     = 'din276-rules';
 
 async function loadKgPersisted() {
-  const ovStored = await repo.get(REPO_KEY_KG_OVERRIDES);
-  if (ovStored && typeof ovStored === 'object') {
-    kgOverrides.value = new Map(Object.entries(ovStored));
-  }
   const rulesStored = await repo.get(REPO_KEY_KG_RULES);
   if (Array.isArray(rulesStored) && rulesStored.length) {
     kgRules.value = rulesStored;
   }
-}
-async function saveKgOverrides() {
-  await repo.set(REPO_KEY_KG_OVERRIDES, Object.fromEntries(kgOverrides.value));
+  // Einmalige Übernahme des Altbestands: vor Stufe 7 lagen die Zuweisungen
+  // als flache Map unter einem eigenen Schlüssel, ohne Vorzustand. Sie werden
+  // als Journaleinträge nachgetragen (vorher = null, weil niemand mehr weiß,
+  // was vorher galt) und der alte Schlüssel danach gelöscht.
+  const alt = await repo.get(REPO_KEY_KG_OVERRIDES);
+  if (alt && typeof alt === 'object' && Object.keys(alt).length) {
+    await aenderungen.bereit;
+    for (const [globalId, kgCode] of Object.entries(alt)) {
+      await aenderungen.eintragen({ art: 'kg', globalId, nachher: kgCode, wer: 'Übernahme' });
+    }
+    await repo.delete(REPO_KEY_KG_OVERRIDES);
+  }
 }
 
 async function recomputeKg() {
@@ -220,11 +240,11 @@ function onSelectKgElement(el) {
  */
 async function onOverrideKg({ globalId, kgCode }) {
   if (!globalId) return;
-  const next = new Map(kgOverrides.value);
-  if (kgCode) next.set(globalId, kgCode);
-  else        next.delete(globalId);
-  kgOverrides.value = next;
-  await saveKgOverrides();
+  await aenderungen.eintragen({
+    art: 'kg', globalId, nachher: kgCode || null,
+    wer: cde.bearbeiter || '',
+    modellSha: api.getLoadedModelSha?.() ?? null,
+  });
   await recomputeKg();
 }
 
@@ -344,8 +364,11 @@ function onSelectSpace(space) {
 
 async function onOverrideClass({ globalId, classCode }) {
   if (!globalId) return;
-  overrides.value.set(globalId, classCode);
-  await saveOverrides();
+  await aenderungen.eintragen({
+    art: 'din277', globalId, nachher: classCode || null,
+    wer: cde.bearbeiter || '',
+    modellSha: api.getLoadedModelSha?.() ?? null,
+  });
   recomputeAreas();
 }
 

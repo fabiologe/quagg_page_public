@@ -27,6 +27,7 @@ import { styleToLegacy } from './VectorStyleEngine.js';
 import { trianglePlaneIntersect } from './SectionContour.js';
 import { computeUtmCrosses, formatUtmLabel } from './UtmGrid.js';
 import { drawPlanSymbol } from './PlanSymbols.js';
+import { strichUmriss } from '@/services/tinte/InkGeometry';
 import { longestSegment, normalizeTextAngle } from './AxisAnnotations.js';
 
 // Pre-computed legacy-shape ({r,g,b,w,dash,…}) form of the built-in defaults.
@@ -484,6 +485,10 @@ export function drawVectorPlan(doc, cam, M, dw, dh, opts = {}) {
     if (opts.annotations?.length) _drawAnnotations(doc, opts.annotations, toX, toY, M, dw, dh);
     if (opts.measurements?.length) _drawMeasurements(doc, opts.measurements, toX, toY, M, dw, dh);
     if (opts.dimensions?.length) _drawDimensions(doc, opts.dimensions, toX, toY, M, dw, dh);
+    // Zuletzt: was der Nutzer selbst gesetzt hat, liegt über allem anderen.
+    if (opts.planInhalte?.length) _drawPlanInhalte(doc, opts.planInhalte, toX, toY, M, dw, dh);
+    // Ganz zuoberst: der Rotstift ist eine Anmerkung ZUM Plan, kein Planinhalt.
+    if (opts.rotstift?.length) _drawRotstift(doc, opts.rotstift, toX, toY, M, dw, dh, opts.scaleRatio);
 
     // ── Scale bar + North arrow (drawn last so they sit on top) ─────────────
     if (opts.scaleBar && opts.scaleRatio) {
@@ -669,6 +674,96 @@ function _drawAnnotations(doc, annotations, toX, toY, M, dw, dh) {
     doc.setTextColor(0, 0, 0);
     doc.setFillColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
+}
+
+// ── Rotstift (Freihand-Anmerkungen über dem Plan) ───────────────────────────
+/**
+ * Freihandstriche zeichnen.
+ *
+ * Die Striche liegen in Welt-XZ; ihr Umriss wird von `strichUmriss` aus dem
+ * geteilten Tintenmodul berechnet — derselbe Code, den der PDF-Editor
+ * benutzt, damit ein Strich hier aussieht wie dort.
+ *
+ * Gezeichnet wird der UMRISS als gefüllte Fläche, nicht die Mittellinie als
+ * Strich. Das ist der Unterschied zwischen einem Kugelschreiber und einem
+ * Filzstift, der auf Druck reagiert: perfect-freehand verbreitert und
+ * verjüngt die Kontur entlang des Zugs.
+ *
+ * Der Umriss kommt in Weltkoordinaten heraus und wird punktweise aufs Papier
+ * abgebildet. Das ist teurer als eine Linie, aber der Strich ist das, was der
+ * Nutzer gemalt hat — ihn zu vereinfachen hieße, seine Handschrift zu ändern.
+ */
+function _drawRotstift(doc, striche, toX, toY, M, dw, dh, scaleRatio) {
+    for (const s of striche) {
+        if (!s?.points?.length) continue;
+        const breiteWelt = ((s.breiteMm ?? 0.6) / 1000) * (scaleRatio || 100);
+        const umriss = strichUmriss({ ...s, breitePt: breiteWelt });
+        if (umriss.length < 3) continue;
+
+        const papier = umriss.map(([wx, wz]) => [toX(wx), toY(wz)]);
+        // Ganz außerhalb des Blattes? Dann gar nicht erst zeichnen.
+        if (!papier.some(([px, py]) => _inBounds(px, py, M, dw, dh))) continue;
+
+        const { r, g, b } = _hexZuRgb(s.farbe ?? '#d32f2f');
+        doc.setFillColor(r, g, b);
+        doc.setDrawColor(r, g, b);
+        // jsPDF zeichnet Polygone über lines(): Startpunkt + Deltas.
+        const deltas = [];
+        for (let i = 1; i < papier.length; i++) {
+            deltas.push([papier[i][0] - papier[i - 1][0], papier[i][1] - papier[i - 1][1]]);
+        }
+        doc.lines(deltas, papier[0][0], papier[0][1], [1, 1], 'F', true);
+    }
+    doc.setFillColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+}
+
+/** '#d32f2f' → {r,g,b}. Rotstiftfarben kommen als Hex aus dem Store. */
+function _hexZuRgb(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex));
+    if (!m) return { r: 211, g: 47, b: 47 };
+    const n = parseInt(m[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+// ── Gesetzte Planinhalte (Beschriftung und Symbole) ─────────────────────────
+/**
+ * Was der Nutzer selbst in den Plan gesetzt hat.
+ *
+ * Der Unterschied zur Bauteilbeschriftung (`_drawLabels`) ist die Herkunft:
+ * die wird bei jedem Maßstabswechsel aus dem Modell neu abgeleitet und darf
+ * verschwinden, wenn kein Platz ist. Was hier steht, hat jemand hingesetzt —
+ * es wird nicht weggelassen und nicht verschoben.
+ *
+ * Größen kommen in Papier-Millimetern herein, sind also maßstabsUNabhängig:
+ * eine 2,5-mm-Schrift bleibt 2,5 mm, egal ob 1:100 oder 1:1000. Das ist die
+ * Bauzeichnungs-Konvention und dieselbe wie bei `drawPlanSymbol`.
+ */
+function _drawPlanInhalte(doc, inhalte, toX, toY, M, dw, dh) {
+    for (const e of inhalte) {
+        const px = toX(e.x), py = toY(e.z);
+        if (!_inBounds(px, py, M, dw, dh)) continue;
+
+        if (e.art === 'symbol') {
+            drawPlanSymbol(doc, e.symbol, px, py, e.groesse ?? 3, { r: 0, g: 0, b: 0 });
+            continue;
+        }
+
+        // Weißer Halo, damit die Schrift über Linienwerk lesbar bleibt —
+        // dasselbe Mittel wie bei Bauteilbeschriftung und Bemaßung.
+        const groesse = e.groesse ?? 2.5;
+        doc.setFontSize(groesse * 3.2);       // mm → jsPDF-Punkte, wie _drawLabels
+        const versatz = Math.max(0.25, groesse * 0.12);
+        doc.setTextColor(255, 255, 255);
+        for (const [ox, oy] of [[-versatz, 0], [versatz, 0], [0, -versatz], [0, versatz]]) {
+            doc.text(e.text, px + ox, py + oy, { align: 'center', angle: -(e.winkel ?? 0) });
+        }
+        doc.setTextColor(0, 0, 0);
+        doc.text(e.text, px, py, { align: 'center', angle: -(e.winkel ?? 0) });
+    }
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+    doc.setFillColor(0, 0, 0);
 }
 
 // ── Bemaßung (im Plan gesetzt, in WELTKOORDINATEN gehalten) ─────────────────

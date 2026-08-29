@@ -23,13 +23,14 @@ import {
   FileText, FolderOpen, Upload, Download, Printer, Share2, Save,
   // Navigation / Ansicht
   ZoomIn, ZoomOut, MoveHorizontal, Maximize, ArrowLeft, Hand,
-  SunMoon, X, Check, Plus, Minus, ChevronRight, ChevronDown, MoreHorizontal, AppWindow,
+  X, Check, Plus, Minus, ChevronRight, ChevronDown, MoreHorizontal, AppWindow,
+  RotateCw,
   // Werkzeuge (Stufe 2+)
   Pen, Pencil, PenLine, Highlighter, Eraser, Lasso, MousePointer2, Type,
   TextCursor, MessageSquare, Signature, Ruler, PencilRuler, PenTool, Shapes, Palette, Stamp,
-  RectangleVertical, RectangleHorizontal, Layers, Eye, EyeOff,
+  RectangleVertical, RectangleHorizontal, Layers, Eye, EyeOff, ImagePlus,
   // Messen / Kalibrieren
-  Scaling, Pentagon,
+  Scaling, Pentagon, Cuboid,
   // Verlauf / Aktionen
   Undo2, Redo2, Trash2, Copy, Settings2, Pointer, Fingerprint,
   // Status
@@ -53,7 +54,6 @@ const ICONS = {
   'vollbild':      Maximize,
   'zurueck':       ArrowLeft,
   'hand':          Hand,
-  'thema':         SunMoon,
   'schliessen':    X,
   'ok':            Check,
   'plus':          Plus,
@@ -62,6 +62,7 @@ const ICONS = {
   'chevron-unten': ChevronDown,
   'mehr':          MoreHorizontal,
   'neues-fenster': AppWindow,
+  'drehen-rechts': RotateCw,
 
   // ── Werkzeuge ──
   'stift':         Pen,
@@ -80,10 +81,12 @@ const ICONS = {
   'kommentar':     MessageSquare,
   'signatur':      Signature,
   'stempel':       Stamp,
+  'bild':          ImagePlus,
   'messen':        Ruler,
   'lineal':        PencilRuler,
   'flaeche':       Pentagon,
   'kalibrieren':   Scaling,
+  'volumen':       Cuboid,
   'stift-werkzeug': PenTool,
   'formen':        Shapes,
   'farbe':         Palette,

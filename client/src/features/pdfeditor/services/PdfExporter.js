@@ -15,7 +15,8 @@ import { kalibrierungFuerSeite } from './MeasureMath';
  * @param {ArrayBuffer|Uint8Array} originalBytes
  * @param {Array} items                     alle Annotationen des Dokuments
  * @param {object|null} kalibrierung        docMeta.kalibrierung
- * @param {{kommentarSeite?: boolean}} opts
+ * @param {{kommentarSeite?: boolean, bilder?: Map<string,{bytes:Uint8Array,mime:string}>}} opts
+ *   bilder: Bytes der eingefügten Bilder je bildKey (lädt der Aufrufer aus der Repo)
  * @returns {Promise<Uint8Array>}
  */
 export async function exportiereMitAnnotationen(originalBytes, items, kalibrierung, opts = {}) {
@@ -34,6 +35,9 @@ export async function exportiereMitAnnotationen(originalBytes, items, kalibrieru
 
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const seiten = doc.getPages();
+    // Eingefügte Bilder EINMAL je Key einbetten (embedPng/embedJpg sind
+    // async, der Painter nicht) — die Bytes bringt der Aufrufer mit.
+    const bilder = await _betteBilderEin(doc, items, opts.bilder);
 
     // Annotationen je Seite gruppieren
     const proSeite = new Map();
@@ -47,7 +51,7 @@ export async function exportiereMitAnnotationen(originalBytes, items, kalibrieru
     const alleNotizen = [];   // { seite, nummer, text, erledigt }
 
     for (const [seitenIndex, seitenItems] of proSeite) {
-        const adapter = erstellePdfLibAnnotDoc(seiten[seitenIndex], font);
+        const adapter = erstellePdfLibAnnotDoc(seiten[seitenIndex], font, { bilder });
         zeichneAnnotationen(adapter, seitenItems, {
             ohneTypen: new Set(['note']),
             messKontext: kalibrierungFuerSeite(kalibrierung, seitenIndex),
@@ -108,6 +112,30 @@ function _haengeKommentarSeiteAn(doc, font, notizen) {
         if (zeile) schreibe(zeile, GROESSE, 12);
         y -= 6;
     }
+}
+
+/**
+ * Bilder der `bild`-Annotationen einbetten — je Key genau einmal.
+ * @param {Map<string, {bytes: Uint8Array, mime: string}>|null|undefined} quellen
+ * @returns {Promise<Map<string, import('pdf-lib').PDFImage>>}
+ */
+async function _betteBilderEin(doc, items, quellen) {
+    const bilder = new Map();
+    if (!quellen) return bilder;
+    for (const a of items) {
+        if (a.type !== 'bild' || bilder.has(a.bildKey)) continue;
+        const q = quellen.get(a.bildKey);
+        if (!q?.bytes) { console.warn(`[pdfed] Bild ${a.bildKey} fehlt beim Export — bleibt leer.`); continue; }
+        try {
+            const img = q.mime === 'image/jpeg'
+                ? await doc.embedJpg(q.bytes)
+                : await doc.embedPng(q.bytes);
+            bilder.set(a.bildKey, img);
+        } catch (e) {
+            console.warn(`[pdfed] Bild ${a.bildKey} ließ sich nicht einbetten:`, e);
+        }
+    }
+    return bilder;
 }
 
 /** Uint8Array → Download über einen unsichtbaren Link. */
@@ -173,16 +201,40 @@ export async function teile(bytes, dateiname) {
     }
 }
 
-/** Drucken über einen versteckten iframe. */
+let _druckIframe = null;
+let _druckUrl = null;
+
+/**
+ * Drucken über einen versteckten iframe. Der Rahmen bleibt STEHEN, bis der
+ * nächste Druck ihn ersetzt — NIE auf Timer abräumen: Chrome bricht die
+ * offene Druckvorschau ab, sobald ihre Quelle verschwindet (genau so
+ * „schloss sich der Druckdialog nach einer Weile von selbst").
+ * @returns {Promise<void>} aufgelöst, sobald die Vorschau geladen hat
+ */
 export function drucke(bytes) {
-    const blob = new Blob([bytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = url;
-    iframe.onload = () => {
-        try { iframe.contentWindow?.print(); } catch { /* Viewer blockiert */ }
-        setTimeout(() => { iframe.remove(); URL.revokeObjectURL(url); }, 60000);
-    };
-    document.body.appendChild(iframe);
+    return new Promise((resolve, reject) => {
+        if (_druckIframe) { try { _druckIframe.remove(); } catch { /* */ } _druckIframe = null; }
+        if (_druckUrl) { try { URL.revokeObjectURL(_druckUrl); } catch { /* */ } _druckUrl = null; }
+
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.setAttribute('data-pdfed-druck', '');
+        const timeout = setTimeout(() => {
+            reject(new Error('Die Druckvorschau hat nicht geladen — bitte speichern und aus dem PDF-Viewer drucken.'));
+        }, 15000);
+        iframe.onload = () => {
+            clearTimeout(timeout);
+            resolve();   // der Dialog darf schließen — print() blockiert je nach Browser
+            setTimeout(() => {
+                try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); }
+                catch { /* Viewer blockiert print — die Vorschau bleibt trotzdem offen */ }
+            }, 50);
+        };
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        _druckIframe = iframe;
+        _druckUrl = url;
+    });
 }

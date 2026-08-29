@@ -529,7 +529,7 @@ export function exportPlanPDF({ snapshot, format, orientation, titleBlock, logo 
 export async function exportVectorPlanPDF({
     snapshot, format, orientation, titleBlock, logo,
     plotFrustum,                                       // {left,right,top,bottom,position,target,up,viewDir}
-    scene, cutPlane, ifcData, dimensions = [],
+    scene, cutPlane, ifcData, dimensions = [], planInhalte = [], rotstift = [],
     scaleRatio = null, hatch = false, scaleBar = false,
     categoryGroups   = null,                            // raw groups for category resolution
     fragmentsList    = null,                            // fragments.list (modelId → model)
@@ -586,7 +586,7 @@ export async function exportVectorPlanPDF({
         drawVectorPlan(doc, plotFrustum, M, dw, dh, {
             scaleBar, scaleRatio,
             outlines, styleMap, styleMapPerModel, styleToLegacy,
-            annotations, measurements, dimensions,
+            annotations, measurements, dimensions, planInhalte, rotstift,
             showLabels, labelOpts,
             ifcGridAxes,
             slopeHatch: slopeSegments,

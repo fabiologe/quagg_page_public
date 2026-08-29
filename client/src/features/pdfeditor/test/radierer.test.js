@@ -4,7 +4,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { zerteileStrich } from '../services/InkGeometry'
+import { zerteileStrich } from '@/services/tinte/InkGeometry'
 import { useAnnotStore } from '../stores/useAnnotStore'
 
 // ── Geometrie ────────────────────────────────────────────────────────────────

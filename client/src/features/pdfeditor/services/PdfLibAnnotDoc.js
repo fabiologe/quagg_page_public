@@ -45,8 +45,10 @@ function farbeZuRgb(hex) {
 /**
  * @param {import('pdf-lib').PDFPage} page
  * @param {import('pdf-lib').PDFFont} font
+ * @param {{bilder?: Map<string, import('pdf-lib').PDFImage>|null}} [opts]
+ *   eingebettete Bilder je bildKey (der Exporter bettet EINMAL je Dokument ein)
  */
-export function erstellePdfLibAnnotDoc(page, font) {
+export function erstellePdfLibAnnotDoc(page, font, { bilder = null } = {}) {
     const rot = ((page.getRotation().angle % 360) + 360) % 360;
     let crop;
     try { crop = page.getCropBox(); } catch { crop = page.getMediaBox(); }
@@ -156,6 +158,26 @@ export function erstellePdfLibAnnotDoc(page, font) {
 
         messeTextBreite(text, groessePt) {
             return font.widthOfTextAtSize(_winAnsiSicher(text, font), groessePt);
+        },
+
+        /**
+         * Bild in die Anzeigebox (x, y, b, h). pdf-lib verankert die UNTERE
+         * LINKE Bildecke und dreht gegen den Uhrzeigersinn um diesen Anker:
+         * Anker = Anzeigepunkt (x, y+h) → zuPdf; rotate = /Rotate der Seite
+         * (wie winkelKorrektur beim Text). Breite/Höhe bleiben in ALLEN vier
+         * Fällen b/h — den Achsentausch erledigt die Rotationsmatrix.
+         * Fehlt das Bild (Bytes nicht geladen), bleibt eine Lücke statt
+         * eines Export-Abbruchs.
+         */
+        bild(x, y, b, h, bildKey, stil = {}) {
+            const img = bilder?.get(bildKey);
+            if (!img) return;
+            const [ax, ay] = zuPdf(x, y + h);
+            page.drawImage(img, {
+                x: ax, y: ay, width: b, height: h,
+                rotate: degrees(winkelKorrektur),
+                opacity: stil.deckkraft ?? 1,
+            });
         },
 
         textMitHalo(x, y, text, stil = {}) {

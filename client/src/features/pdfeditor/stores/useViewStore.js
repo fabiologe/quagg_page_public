@@ -10,6 +10,7 @@ import { defineStore } from 'pinia';
 import { ref, shallowRef, computed } from 'vue';
 import { repo } from '../services/PdfRepo';
 import { istInstalliert } from '../services/InstallLogik';
+import { normalisiereDrehung, DREHSCHRITT } from '../services/AnsichtRotation';
 
 export const ZOOM_MIN = 0.25;
 export const ZOOM_MAX = 8;
@@ -18,8 +19,13 @@ export const ZOOM_SCHRITT = 1.2;      // Faktor je Zoom-Klick / Radraste
 export const useViewStore = defineStore('pdfed-view', () => {
     const zoom = ref(1);
     const sichtbareSeiten = ref({ von: 0, bis: 0 });
-    const theme = ref('light');        // 'light' | 'dark'
+    // Der Editor läuft hell. Die Dunkel-Tokens bleiben in theme.css stehen
+    // (kostenlos), ein Umschalter existiert auf Nutzerwunsch aber nicht mehr.
+    const theme = ref('light');
     const gesteAktiv = ref(false);     // Pinch läuft → TextLayer u. Ä. pausieren
+    // Ansichtsdrehung in Grad im Uhrzeigersinn (0/90/180/270). Reine
+    // ANZEIGE-Sache: Annotationen und Export bleiben unrotiert.
+    const drehung = ref(0);
 
     // ── PWA-Installation (Stufe 13) ─────────────────────────────────────────
     // Das abgefangene beforeinstallprompt-Event — sein .prompt() IST der
@@ -33,6 +39,15 @@ export const useViewStore = defineStore('pdfed-view', () => {
         zoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, wert));
     }
 
+    function setzeDrehung(grad) {
+        drehung.value = normalisiereDrehung(grad);
+    }
+
+    /** Ansicht drehen: +1 = nach rechts (im Uhrzeigersinn), -1 = nach links. */
+    function drehe(richtung) {
+        setzeDrehung(drehung.value + richtung * DREHSCHRITT);
+    }
+
     /** Fit-Width: Seitenbreite (Punkte) in die verfügbare Breite (CSS-px) einpassen. */
     function passeBreiteAn(verfuegbareBreitePx, seitenBreitePt) {
         if (seitenBreitePt > 0) setzeZoom(verfuegbareBreitePx / seitenBreitePt);
@@ -40,7 +55,11 @@ export const useViewStore = defineStore('pdfed-view', () => {
 
     async function ladeEinstellungen() {
         const e = await repo.get('einstellungen');
-        if (e?.theme === 'dark' || e?.theme === 'light') theme.value = e.theme;
+        // Ein früher gespeichertes 'dark' wird bewusst IGNORIERT und
+        // aufgeräumt: ohne Umschalter käme man sonst nie wieder heraus.
+        if (e?.theme && e.theme !== 'light') {
+            speichereEinstellung({ theme: 'light' }).catch(() => {});
+        }
         return e ?? {};
     }
 
@@ -49,14 +68,9 @@ export const useViewStore = defineStore('pdfed-view', () => {
         await repo.set('einstellungen', { ...e, ...patch });
     }
 
-    function schalteTheme() {
-        theme.value = theme.value === 'dark' ? 'light' : 'dark';
-        speichereEinstellung({ theme: theme.value });
-    }
-
     return {
-        zoom, zoomProzent, sichtbareSeiten, theme, gesteAktiv,
+        zoom, zoomProzent, sichtbareSeiten, theme, gesteAktiv, drehung,
         installEvent, appInstalliert,
-        setzeZoom, passeBreiteAn, ladeEinstellungen, speichereEinstellung, schalteTheme,
+        setzeZoom, passeBreiteAn, setzeDrehung, drehe, ladeEinstellungen, speichereEinstellung,
     };
 });

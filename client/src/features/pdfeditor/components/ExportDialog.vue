@@ -22,7 +22,8 @@
 
         <p class="pdfed-exp-hinweis">
           Alle Markierungen werden als Vektorgrafik fest in die Seiten
-          gezeichnet; Text und Qualität des Originals bleiben erhalten.
+          gezeichnet, eingefügte Bilder werden eingebettet; Text und
+          Qualität des Originals bleiben erhalten.
         </p>
 
         <p v-if="fehler" class="pdfed-exp-fehler">
@@ -58,6 +59,7 @@ import { useAnnotStore } from '../stores/useAnnotStore';
 import {
   exportiereMitAnnotationen, speichereMitPicker, teile, drucke as druckeBytes,
 } from '../services/PdfExporter';
+import { ladeBildBytes } from '../services/BildAblage';
 
 const emit = defineEmits(['schliessen']);
 const docStore = useDocStore();
@@ -74,11 +76,14 @@ const kannPickern = typeof window.showSaveFilePicker === 'function';
 async function _erzeugeBytes() {
   const original = await docStore.holeOriginalBytes();
   if (!original) throw new Error('Das Original ließ sich nicht aus der Ablage laden.');
+  // Eingefügte Bilder: Bytes aus der Repo holen — der Exporter bleibt Repo-frei.
+  const bildKeys = annotStore.items.filter(a => a.type === 'bild').map(a => a.bildKey);
+  const bilder = bildKeys.length ? await ladeBildBytes(docStore.dokId, bildKeys) : null;
   return exportiereMitAnnotationen(
     original,
     annotStore.items,
     docStore.meta?.kalibrierung ?? null,
-    { kommentarSeite: mitKommentarSeite.value },
+    { kommentarSeite: mitKommentarSeite.value, bilder },
   );
 }
 
@@ -110,8 +115,11 @@ async function teileDatei(bytes) {
   if (ok) emit('schliessen');
 }
 
-function drucke(bytes) {
-  druckeBytes(bytes);
+async function drucke(bytes) {
+  // Wartet, bis die Druckvorschau geladen hat — erst dann schließt der
+  // Dialog; scheitert das Laden, zeigt `starte` die Fehlermeldung an.
+  await druckeBytes(bytes);
+  emit('schliessen');
 }
 </script>
 

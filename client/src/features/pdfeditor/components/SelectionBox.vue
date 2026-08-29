@@ -9,6 +9,20 @@
       preserveAspectRatio="none"
     >
       <g :transform="svgTransform">
+        <!-- Bilder zuerst — sie liegen wie im Painter unter allem -->
+        <template v-for="b in svgBilder" :key="b.id">
+          <image
+            v-if="b.href"
+            :href="b.href"
+            :x="b.x" :y="b.y" :width="b.w" :height="b.h"
+            preserveAspectRatio="none"
+          />
+          <rect
+            v-else
+            :x="b.x" :y="b.y" :width="b.w" :height="b.h"
+            fill="none" stroke="#9aa1a9" stroke-width="0.8" stroke-dasharray="4 3"
+          />
+        </template>
         <path
           v-for="(p, i) in svgPfade"
           :key="i"
@@ -70,7 +84,11 @@
       @pointerup="beende"
       @pointercancel="beende"
     >
-      <div class="pdfed-auswahl-aktionen" @pointerdown.stop>
+      <div
+        class="pdfed-auswahl-aktionen"
+        :style="{ transform: `translateX(-50%) rotate(${-viewStore.drehung}deg)` }"
+        @pointerdown.stop
+      >
         <button class="pdfed-btn pdfed-auswahl-btn" title="Auswahl löschen" @click="annotStore.loescheAuswahl()">
           <PdfIcon name="loeschen" :size="16" />
         </button>
@@ -97,10 +115,14 @@
  * Löschen; bei genau EINER Signatur zusätzlich proportionales Skalieren
  * über den Eckgriff. Commit erst am Zugende als EIN Undo-Schritt.
  */
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import PdfIcon from './PdfIcon.vue';
 import { useAnnotStore } from '../stores/useAnnotStore';
-import { strichUmrissGecacht, strichUmriss, begrenzungsBox } from '../services/InkGeometry';
+import { useViewStore } from '../stores/useViewStore';
+import { useDocStore } from '../stores/useDocStore';
+import { holeBildUrl, ladeBildUrl } from '../services/BildAblage';
+import { drehDelta } from '../services/AnsichtRotation';
+import { strichUmrissGecacht, strichUmriss, begrenzungsBox } from '@/services/tinte/InkGeometry';
 import { SIGNATUR_REFERENZ_BREITE_PT, stempelMasse } from '../services/AnnotationPainter';
 import { textboxMasse, messeTextBreitePt, TEXTBOX_POLSTER_PT, TEXTBOX_ZEILENHOEHE } from '../services/TextboxMasse';
 
@@ -112,12 +134,36 @@ const props = defineProps({
 });
 
 const annotStore = useAnnotStore();
+const viewStore = useViewStore();
+const docStore = useDocStore();
 
 const items = computed(() =>
   annotStore.auswahlItems.filter(a => a.page === props.index));
 
+// ── Bilder in der Auswahl: SVG <image> über Object-URLs der BildAblage ──────
+// Die URLs gehören der Ablage (eine je Blob, Revoke beim Schließen des
+// Dokuments) — die Komponente erzeugt und revoked nie selbst.
+const bildUrls = ref({});
+watch(items, (liste) => {
+  for (const a of liste) {
+    if (a.type !== 'bild' || bildUrls.value[a.bildKey]) continue;
+    const sofort = holeBildUrl(docStore.dokId, a.bildKey);
+    if (sofort) { bildUrls.value = { ...bildUrls.value, [a.bildKey]: sofort }; continue; }
+    ladeBildUrl(docStore.dokId, a.bildKey).then((url) => {
+      if (url) bildUrls.value = { ...bildUrls.value, [a.bildKey]: url };
+    });
+  }
+}, { immediate: true });
+
+const svgBilder = computed(() =>
+  items.value.filter(a => a.type === 'bild').map(a => ({
+    id: a.id, x: a.x, y: a.y, w: a.w, h: a.h,
+    href: bildUrls.value[a.bildKey] ?? null,
+  })));
+
+// Skalieren (proportional über den Eckgriff): genau EINE Signatur oder EIN Bild.
 const kannSkalieren = computed(() =>
-  items.value.length === 1 && items.value[0].type === 'signature');
+  items.value.length === 1 && (items.value[0].type === 'signature' || items.value[0].type === 'bild'));
 
 // ── Geometrie ───────────────────────────────────────────────────────────────
 
@@ -133,7 +179,7 @@ const bbox = computed(() => {
       minY = Math.min(minY, b.minY - rand);
       maxX = Math.max(maxX, b.maxX + rand);
       maxY = Math.max(maxY, b.maxY + rand);
-    } else if (a.type === 'signature') {
+    } else if (a.type === 'signature' || a.type === 'bild') {
       minX = Math.min(minX, a.x);
       minY = Math.min(minY, a.y);
       maxX = Math.max(maxX, a.x + a.w);
@@ -281,12 +327,17 @@ function starteSkalieren(ev) {
 
 function bewege(ev) {
   if (!zug || zug.pointerId !== ev.pointerId) return;
-  const dxPx = ev.clientX - zug.startX;
-  const dyPx = ev.clientY - zug.startY;
+  // Bildschirm-Delta → Seitenraum (bei gedrehter Ansicht verdreht sich
+  // sonst die Zugrichtung, und der Griff zöge quer).
+  const [dxPt, dyPt] = drehDelta(
+    (ev.clientX - zug.startX) / props.zoom,
+    (ev.clientY - zug.startY) / props.zoom,
+    viewStore.drehung,
+  );
   if (zug.art === 'move') {
-    delta.value = { dx: dxPx / props.zoom, dy: dyPx / props.zoom };
+    delta.value = { dx: dxPt, dy: dyPt };
   } else if (bbox.value) {
-    const neueBreite = bbox.value.w + dxPx / props.zoom;
+    const neueBreite = bbox.value.w + dxPt;
     faktor.value = Math.min(5, Math.max(0.2, neueBreite / bbox.value.w));
   }
 }

@@ -51,6 +51,15 @@ export const STEMPEL_FARBEN = [
     '#15803d',  // Grün
 ];
 
+// Baugrubenaushub (Stufe 17): Böschungs-Schnellwahl 1:n und Auflockerungsfaktoren.
+export const NEIGUNGEN = [
+    { n: 0, titel: 'senkrecht' },
+    { n: 1, titel: '1:1' },
+    { n: 2, titel: '1:2' },
+    { n: 3, titel: '1:3' },
+];
+export const AUFLOCKERUNGEN = [1.1, 1.25, 1.4];
+
 export const useToolStore = defineStore('pdfed-tool', () => {
     const viewStore = useViewStore();
 
@@ -58,6 +67,20 @@ export const useToolStore = defineStore('pdfed-tool', () => {
     const eingabemodus = ref('stiftUndFinger');
     // Vom SignatureDialog gewählte Vorlage, die auf den nächsten Tipp wartet:
     const signaturZumPlatzieren = ref(null);
+    // Vom Bildimport gelieferte Vorlage, die auf den nächsten Tipp wartet:
+    // { bildKey, mime, natBreite, natHoehe }. Ein Werkzeugwechsel bricht
+    // das Warten ab — beim Start also ERST waehleWerkzeug('bild'), DANN setzen.
+    const bildZumPlatzieren = ref(null);
+    // Letzter Fehler beim Bildimport (Hinweisbalken zeigt ihn kurz an).
+    const bildFehler = ref('');
+    // Stehende Textauswahl (Werkzeug „Text auswählen"): das TextAuswahlMenue
+    // bietet Kopieren/Markieren an. { page, rects, text, ankerX, ankerY }
+    const textAuswahl = ref(null);
+    // Volumen-Dialog (Stufe 17): { id, page, quelle: 'neu'|'flaeche'|'bearbeiten' }.
+    // Überlebt den Werkzeugwechsel bewusst (wie kalibrierungAnfrage).
+    const volumenAnfrage = ref(null);
+    // Zuletzt übernommene Parameter als Vorgabe fürs nächste Volumen (persistiert).
+    const volumenVorgaben = ref({ tiefeM: 2, neigungN: 1, auflockerung: 1.25, modus: 'sohle' });
     // Laufende Messung/Kalibrierung: { page, kind: 'distance'|'area'|'kalibrieren', points: [[x,y]] }
     const messungInArbeit = ref(null);
     // 2-Punkt-Kalibrierung abgeschlossen → Dialog fragt die reale Länge ab:
@@ -78,6 +101,8 @@ export const useToolStore = defineStore('pdfed-tool', () => {
     function waehleWerkzeug(w) {
         aktivesWerkzeug.value = w;
         if (messungInArbeit.value) messungInArbeit.value = null;
+        if (w !== 'bild' && bildZumPlatzieren.value) bildZumPlatzieren.value = null;
+        if (w !== 'textMarkieren' && textAuswahl.value) textAuswahl.value = null;
     }
 
     function schalteEingabemodus() {
@@ -101,6 +126,7 @@ export const useToolStore = defineStore('pdfed-tool', () => {
         if (einstellungen?.textfeld) textfeld.value = { ...textfeld.value, ...einstellungen.textfeld };
         if (einstellungen?.radierer) radierer.value = { ...radierer.value, ...einstellungen.radierer };
         if (einstellungen?.stempel) stempel.value = { ...stempel.value, ...einstellungen.stempel };
+        if (einstellungen?.volumen) volumenVorgaben.value = { ...volumenVorgaben.value, ...einstellungen.volumen };
         // Farben, die es nach der Palettenkürzung nicht mehr gibt → Schwarz.
         if (!STIFT_FARBEN.includes(stift.value.farbe)) stift.value.farbe = STIFT_FARBEN[0];
     }
@@ -112,6 +138,7 @@ export const useToolStore = defineStore('pdfed-tool', () => {
             textfeld: { ...textfeld.value },
             radierer: { ...radierer.value },
             stempel: { ...stempel.value },
+            volumen: { ...volumenVorgaben.value },
         });
     }
 
@@ -120,7 +147,8 @@ export const useToolStore = defineStore('pdfed-tool', () => {
 
     return {
         aktivesWerkzeug, eingabemodus, stift, textmarker, radierer, textfeld, stempel,
-        istZeichnend, signaturZumPlatzieren, messungInArbeit, kalibrierungAnfrage,
+        istZeichnend, signaturZumPlatzieren, bildZumPlatzieren, bildFehler, textAuswahl, messungInArbeit, kalibrierungAnfrage,
+        volumenAnfrage, volumenVorgaben,
         lineal,
         waehleWerkzeug, schalteEingabemodus, inkOptionen,
         ladeEinstellungen, speichereWerkzeugOptionen,

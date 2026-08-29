@@ -218,6 +218,72 @@
               <CdeIcon name="delete" :size="14" />
               <span class="plan-wz-zahl">{{ ifc.planDimensions.length }}</span>
             </button>
+
+            <span class="plan-wz-trenner"></span>
+
+            <!-- Planinhalte setzen (Stufe 7). Ohne Setzmodus fasst der Zeiger
+                 vorhandene Inhalte an und zieht sie. -->
+            <button
+              class="plan-wz"
+              :class="{ aktiv: planModus === 'text' }"
+              title="Beschriftung setzen — dann in den Plan klicken"
+              @click="planModusSetzen('text')"
+            >
+              <CdeIcon name="edit" :size="14" />
+            </button>
+            <button
+              v-for="sym in PLAN_SYMBOL_NAMES"
+              :key="sym"
+              class="plan-wz"
+              :class="{ aktiv: planModus === sym }"
+              :title="`Symbol setzen: ${SYMBOL_TITEL[sym] ?? sym}`"
+              @click="planModusSetzen(sym)"
+            >
+              <span class="plan-wz-sym">{{ SYMBOL_KURZ[sym] ?? '?' }}</span>
+            </button>
+            <span class="plan-wz-trenner"></span>
+
+            <!-- Rotstift: Freihand-Anmerkung ZUM Plan, kein Planinhalt. -->
+            <button
+              class="plan-wz"
+              :class="{ aktiv: stiftModus === 'stift' }"
+              title="Rotstift — freihand anmerken"
+              @click="stiftSetzen('stift')"
+            >
+              <CdeIcon name="edit" :size="14" :style="{ color: stiftFarbe }" />
+            </button>
+            <button
+              v-for="f in STIFT_FARBEN"
+              :key="f"
+              v-show="stiftModus === 'stift'"
+              class="plan-wz farbe"
+              :class="{ aktiv: stiftFarbe === f }"
+              :style="{ '--farbe': f }"
+              :title="`Stiftfarbe`"
+              @click="stiftSetzen('stift', f)"
+            ></button>
+            <button
+              v-if="rotstift.anzahl"
+              class="plan-wz"
+              :class="{ aktiv: stiftModus === 'radierer' }"
+              :title="`Radieren (${rotstift.anzahl} Striche)`"
+              @click="stiftSetzen('radierer')"
+            >
+              <CdeIcon name="undo" :size="14" />
+            </button>
+
+            <span class="plan-wz-trenner"></span>
+
+            <button
+              v-if="planInhalt.anzahl"
+              class="plan-wz"
+              :class="{ aktiv: planModus === 'loeschen' }"
+              :title="`Planinhalt entfernen (${planInhalt.anzahl} gesetzt)`"
+              @click="planModusSetzen('loeschen')"
+            >
+              <CdeIcon name="close" :size="14" />
+              <span class="plan-wz-zahl">{{ planInhalt.anzahl }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -264,6 +330,9 @@ import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { usePlan } from '../stores/usePlan.js';
+import { usePlanInhalt } from '../stores/usePlanInhalt.js';
+import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
+import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
@@ -295,6 +364,8 @@ const panels = usePanels();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
 const plan = usePlan();
+const planInhalt = usePlanInhalt();
+const rotstift = useRotstift();
 const cmds = usePaletteCommands();
 
 const viewerRef = ref(null);
@@ -350,6 +421,8 @@ const planOptionen = computed(() => {
     labelTemplateFor: (cat) => ifc.vectorStyles?.[cat]?.labelTemplate ?? '',
     annotations:      o.annotations ? (ifc.annotations ?? []) : [],
     dimensions:       o.dimensions ? ifc.planDimensions : [],
+    planInhalte:      planInhalt.inhalte,
+    rotstift:         rotstift.striche,
     measurements:     o.measurements ? (viewerRef.value?.messungen?.() ?? []) : [],
     watermark:        planWasserzeichen.value,
   };
@@ -377,11 +450,51 @@ const planSchriftfeld = computed(() => ({
   massstab:     `1:${ansicht.massstab}`,
 }));
 
+// ── Planinhalte setzen (Stufe 7) ───────────────────────────────────────────
+//
+// Kurzzeichen statt Icons: für Schacht, Pumpe, Einlauf, Hydrant und Armatur
+// gibt es keine lucide-Entsprechung, und ein erfundenes Icon wäre schlechter
+// als das Kürzel, das auch auf dem Blatt steht.
+const SYMBOL_KURZ = {
+  schacht: 'S', pumpe: 'P', einlauf: 'E', hydrant: 'H', armatur: 'A',
+};
+const SYMBOL_TITEL = {
+  schacht: 'Schacht', pumpe: 'Pumpe', einlauf: 'Straßeneinlauf',
+  hydrant: 'Hydrant', armatur: 'Armatur',
+};
+
+// ── Rotstift (Stufe 7) ─────────────────────────────────────────────────────
+const stiftModus = ref(null);
+const stiftFarbe = ref(STIFT_FARBEN[0]);
+function stiftSetzen(m, farbe = null) {
+  // Auf dieselbe Farbe nochmal geklickt schaltet ab; eine neue Farbe schaltet
+  // den Stift an und wechselt nur.
+  const gleicheFarbe = !farbe || farbe === stiftFarbe.value;
+  stiftModus.value = (stiftModus.value === m && gleicheFarbe) ? null : m;
+  if (farbe) stiftFarbe.value = farbe;
+  planRef.value?.setzeStift?.(stiftModus.value, stiftFarbe.value);
+  if (stiftModus.value) { planModus.value = null; misstImPlan.value = false; }
+}
+
+const planModus = ref(null);
+function planModusSetzen(m) {
+  // Nochmal derselbe Knopf schaltet ab — sonst kommt man aus dem Modus nur
+  // über Esc heraus, und das weiß nicht jeder.
+  planModus.value = planModus.value === m ? null : m;
+  planRef.value?.setzeModus?.(planModus.value);
+  if (planModus.value) { misstImPlan.value = false; stiftModus.value = null; }
+}
+
 // ── Bemaßung im Plan (AP-10) ───────────────────────────────────────────────
 const misstImPlan = ref(false);
 function bemassungUmschalten() {
   planRef.value?.messenUmschalten?.();
   misstImPlan.value = planRef.value?.misstGerade?.() ?? false;
+  // Bemaßen und Setzen teilen sich den Klick — nie beide zugleich.
+  if (misstImPlan.value) {
+    planModus.value = null; planRef.value?.setzeModus?.(null);
+    stiftModus.value = null; planRef.value?.setzeStift?.(null);
+  }
 }
 
 // Tasten 1/2/3 sind frei — der Viewer belegt M V N H I T R ? Esc und Strg+K/F.
@@ -550,6 +663,25 @@ function fmtDate(ts) {
   color: var(--cde-accent);
 }
 .plan-wz-zahl { font-size: 0.66rem; font-variant-numeric: tabular-nums; }
+.plan-wz-sym {
+  display: inline-block; width: 14px; text-align: center;
+  font-size: 0.76rem; font-weight: 700; line-height: 1;
+}
+.plan-wz.farbe {
+  width: 1.5rem; padding: 0.32rem 0;
+  justify-content: center;
+}
+.plan-wz.farbe::after {
+  content: ''; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--farbe);
+  box-shadow: 0 0 0 1px var(--cde-line-strong);
+}
+.plan-wz.farbe.aktiv::after { box-shadow: 0 0 0 2px var(--cde-text-bright); }
+
+.plan-wz-trenner {
+  width: 1px; align-self: stretch; margin: 0 0.15rem;
+  background: var(--cde-line-strong);
+}
 
 .cde-view {
   position: fixed;

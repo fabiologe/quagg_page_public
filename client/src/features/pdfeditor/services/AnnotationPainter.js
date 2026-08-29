@@ -9,8 +9,9 @@
  * dann Tinte, dann der Rest — innerhalb der Gruppe nach z.
  */
 
-import { strichUmriss, strichUmrissGecacht } from './InkGeometry';
+import { strichUmriss, strichUmrissGecacht } from '@/services/tinte/InkGeometry';
 import { messwertLabel, labelWinkel, polygonSchwerpunkt } from './MeasureMath';
+import { volumenAusPolygon, versetzePolygon, rechenwegZeilen } from './VolumenMath';
 import { textboxZeilen, TEXTBOX_POLSTER_PT, TEXTBOX_ZEILENHOEHE } from './TextboxMasse';
 
 const MESS_FARBE = '#b91c1c';
@@ -73,9 +74,56 @@ function _zeichneTextHighlight(doc, a) {
  * Messung: Linien/Polygon + Wert-Label mit Weiß-Halo. Der Wert kommt LIVE
  * aus der Kalibrierung (opts.messKontext) — nie aus der Annotation.
  */
+/**
+ * Rechenweg-Block unter dem Volumen-Label: weißer, halbtransparenter Kasten
+ * mit kleinen Textzeilen. Läuft über den Adapter — Bildschirm = Export.
+ */
+function _zeichneRechenweg(doc, sx, sy, zeilen) {
+    if (!zeilen.length) return;
+    const g = 5.5, zh = g * 1.3, polster = 2;
+    let maxBreite = 0;
+    for (const z of zeilen) maxBreite = Math.max(maxBreite, doc.messeTextBreite(z, g));
+    const breite = maxBreite + 2 * polster;
+    const hoehe = zeilen.length * zh + 2 * polster;
+    const x = sx - breite / 2, y = sy + 6;
+    doc.fuelleRechteck(x, y, breite, hoehe, { farbe: '#ffffff', deckkraft: 0.85 });
+    zeilen.forEach((z, i) => {
+        doc.text(x + polster, y + polster + i * zh + (zh - g) / 2, z, { groessePt: g, farbe: '#374151' });
+    });
+}
+
 function _zeichneMeasure(doc, a, opts) {
     const stil = { farbe: MESS_FARBE, breitePt: 0.8 };
     const label = messwertLabel(a, opts?.messKontext ?? null);
+
+    if (a.kind === 'volumen') {
+        // Baugrube (Stufe 17): Sohle wie eine Fläche, dazu die gestrichelte
+        // Gegenkontur (Oberkante bzw. Sohle) mit Böschungskanten, das
+        // Volumen-Label und der Rechenweg — alles live aus der Kalibrierung.
+        doc.fuellePfad(a.points, { farbe: MESS_FARBE, deckkraft: 0.08 });
+        doc.linienzug([...a.points, a.points[0]], stil);
+        for (const [x, y] of a.points) {
+            doc.kreis(x, y, 1.6, { fuellFarbe: MESS_FARBE });
+        }
+        const kal = opts?.messKontext ?? null;
+        const e = kal ? volumenAusPolygon({
+            points: a.points, realProPt: kal.realProPt,
+            tiefeM: a.tiefeM, neigungN: a.neigungN, modus: a.modus,
+        }) : null;
+        if (e && e.b > 0 && !e.schliesstSich) {
+            const gegen = versetzePolygon(a.points, e.modus === 'oberkante' ? -e.bPt : e.bPt);
+            doc.linienzug([...gegen, gegen[0]], { farbe: MESS_FARBE, breitePt: 0.6, dashPt: [3, 2] });
+            for (let i = 0; i < a.points.length; i++) {
+                doc.linienzug([a.points[i], gegen[i]], { farbe: MESS_FARBE, breitePt: 0.4, dashPt: [1, 1.5] });
+            }
+        }
+        const [sx, sy] = polygonSchwerpunkt(a.points);
+        doc.textMitHalo(sx, sy, label, { groessePt: 8, farbe: MESS_FARBE });
+        if (e && a.rechenwegAnzeigen !== false) {
+            _zeichneRechenweg(doc, sx, sy, rechenwegZeilen(e, { auflockerung: a.auflockerung }));
+        }
+        return;
+    }
 
     if (a.kind === 'area') {
         doc.fuellePfad(a.points, { farbe: MESS_FARBE, deckkraft: 0.08 });
@@ -176,6 +224,14 @@ function _zeichneStempel(doc, a) {
     }
 }
 
+/**
+ * Eingefügtes Bild: der Adapter kennt die Quelle (Canvas: Bitmap aus dem
+ * BildCache, Export: eingebettetes PDFImage) — hier nur Geometrie + Key.
+ */
+function _zeichneBild(doc, a) {
+    doc.bild?.(a.x, a.y, a.w, a.h, a.bildKey, { deckkraft: a.deckkraft ?? 1 });
+}
+
 const ZEICHNER = {
     ink: _zeichneInk,
     signature: _zeichneSignatur,
@@ -183,11 +239,15 @@ const ZEICHNER = {
     measure: _zeichneMeasure,
     textbox: _zeichneTextbox,
     stempel: _zeichneStempel,
+    bild: _zeichneBild,
     // 'note' zeichnet am Bildschirm das HTML-Overlay (interaktiver Pin);
     // der Export bekommt einen eigenen Pin-Zeichner in Stufe 6.
 };
 
 function _gruppenRang(a) {
+    // Bilder liegen UNTER allem — ein eingefügter Screenshot muss mit Stift
+    // und Marker annotierbar sein.
+    if (a.type === 'bild') return -1;
     if (a.type === 'textHighlight') return 0;
     if (a.type === 'ink' && a.tool === 'textmarker') return 0;
     if (a.type === 'ink') return 1;

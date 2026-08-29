@@ -142,7 +142,7 @@ describe('Bildsprache', () => {
     const reiter = Object.fromEntries(
       [...cockpit.matchAll(/\{\s*id:\s*'([a-z]+)',\s*icon:\s*'([a-z-]+)'/g)].map((m) => [m[1], m[2]]),
     );
-    expect(Object.keys(reiter).length).toBe(7);
+    expect(Object.keys(reiter).length).toBe(8);
 
     const kachelDatei = {
       areas:    'IfcAreaSchedule.vue',
@@ -152,6 +152,7 @@ describe('Bildsprache', () => {
       kosten:   'IfcKostenTab.vue',
       pauschal: 'IfcPauschalTab.vue',
       quality:  'IfcQualityTab.vue',
+      aenderungen: 'IfcAenderungenTab.vue',
     };
     for (const [id, datei] of Object.entries(kachelDatei)) {
       const src = readFileSync(join(WURZEL, 'components', datei), 'utf8');

@@ -1,0 +1,97 @@
+/**
+ * kleiner Pedant — alle Tokens mit --ped-Präfix auf :root.
+ *
+ * WARUM :root UND NICHT der Feature-Container: Teleport-Modals hängen unter
+ * <body> und erben Container-Variablen nicht (zweimal schiefgegangen: isybau,
+ * flood-3D; Muster übernommen aus pdfeditor/styles/theme.css).
+ *
+ * Hell ist der Default und liegt auf dem nackten :root — Buchhaltung liest man
+ * hell, und das umgebende InternLayout ist hartkodiert hell. Der Dark-Block
+ * folgt trotzdem der Haus-Konvention (:root[data-theme='dark']).
+ */
+
+:root {
+    /* Flächen */
+    --ped-bg: #f4f3f0;              /* Seitengrund des Features */
+    --ped-flaeche: #ffffff;         /* Karten, Formulare, Tabellen */
+    --ped-flaeche-2: #f0efeb;       /* Kopfzeilen, Hover, eingesenkt */
+    --ped-flaeche-3: #e5e3dd;       /* aktive Flächen, gedrückte Knöpfe */
+
+    /* Text */
+    --ped-text: #23272c;
+    --ped-text-dim: #6b7280;
+    --ped-text-invers: #ffffff;
+
+    /* Linien & Tiefe */
+    --ped-rand: #dcd9d2;
+    --ped-rand-stark: #bdb9af;
+    --ped-schatten: 0 1px 3px rgba(25, 28, 32, 0.08), 0 4px 14px rgba(25, 28, 32, 0.06);
+
+    /* Akzent: ruhiges Buchhalter-Grün */
+    --ped-akzent: #1d6f42;
+    --ped-akzent-hover: #185c37;
+    --ped-akzent-weich: rgba(29, 111, 66, 0.12);
+    --ped-akzent-kontrast: #ffffff;
+
+    /* Semantik */
+    --ped-ok: #1d6f42;
+    --ped-warn: #b45309;
+    --ped-warn-weich: rgba(180, 83, 9, 0.10);
+    --ped-fehler: #b3261e;
+    --ped-fehler-weich: rgba(179, 38, 30, 0.10);
+    --ped-schleier: rgba(20, 22, 25, 0.45);
+
+    /* Geld: Zu- und Abfluss */
+    --ped-plus: #1d6f42;
+    --ped-minus: #b3261e;
+
+    /* Zahlen immer dicktengleich — Beträge müssen untereinander fluchten */
+    --ped-mono: 'Cascadia Mono', 'Consolas', 'DejaVu Sans Mono', monospace;
+
+    /* Geld-Sichten-Chart: validierte kategoriale Palette (dataviz-Referenz,
+       Slots aqua/orange/blau — CVD-fest, farbenblind-geprueft, all-pairs).
+       Farbe folgt der ENTITAET: bezahlt=aqua, offen=orange, kommend=blau. */
+    --ped-chart-bezahlt: #1baf7a;
+    --ped-chart-offen: #eb6834;
+    --ped-chart-kommend: #2a78d6;
+}
+
+:root[data-theme='dark'] {
+    --ped-bg: #17191c;
+    --ped-flaeche: #212429;
+    --ped-flaeche-2: #282c32;
+    --ped-flaeche-3: #31363d;
+    --ped-text: #e7e5e0;
+    --ped-text-dim: #9aa1aa;
+    --ped-text-invers: #17191c;
+    --ped-rand: #3a3f46;
+    --ped-rand-stark: #4b515a;
+    --ped-schatten: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+    --ped-akzent: #34a06a;
+    --ped-akzent-hover: #3fb377;
+    --ped-akzent-weich: rgba(52, 160, 106, 0.16);
+    --ped-akzent-kontrast: #0e1210;
+    --ped-ok: #34a06a;
+    --ped-warn: #d98a2b;
+    --ped-warn-weich: rgba(217, 138, 43, 0.14);
+    --ped-fehler: #e2574e;
+    --ped-fehler-weich: rgba(226, 87, 78, 0.14);
+    --ped-schleier: rgba(0, 0, 0, 0.6);
+    --ped-plus: #34a06a;
+    --ped-minus: #e2574e;
+    --ped-chart-bezahlt: #199e70;
+    --ped-chart-offen: #d95926;
+    --ped-chart-kommend: #3987e5;
+}
+
+/* Das global geladene SaintV-Theme färbt Scrollbars und Zahlenfeld-Spinner
+   per *-Regel violett; solange der Pedant im DOM steht, biegen wir dessen
+   Umschalt-Tokens auf unsere Palette um (Muster pdfeditor). */
+:root:has(.pedant-root) {
+    --scroll-thumb: var(--ped-rand-stark);
+    --scroll-thumb-hover: var(--ped-text-dim);
+    --scroll-track: var(--ped-flaeche-2);
+    --scroll-thumb-glow: none;
+    --spinner-color: var(--ped-flaeche-2);
+    --spinner-arrows: var(--ped-text-dim);
+}

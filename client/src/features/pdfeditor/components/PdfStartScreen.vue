@@ -31,9 +31,6 @@
         >
           <PdfIcon name="herunterladen" /> App herunterladen
         </a>
-        <button class="pdfed-btn" title="Hell/Dunkel umschalten" @click="viewStore.schalteTheme()">
-          <PdfIcon name="thema" />
-        </button>
       </div>
     </header>
 

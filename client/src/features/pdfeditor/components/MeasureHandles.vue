@@ -24,6 +24,8 @@
  */
 import { ref, computed } from 'vue';
 import { useAnnotStore } from '../stores/useAnnotStore';
+import { useViewStore } from '../stores/useViewStore';
+import { drehDelta } from '../services/AnsichtRotation';
 
 const props = defineProps({
   index: { type: Number, required: true },
@@ -31,6 +33,16 @@ const props = defineProps({
 });
 
 const annotStore = useAnnotStore();
+const viewStore = useViewStore();
+
+/** Zieh-Delta vom Bildschirm in den Seitenraum (Ansichtsdrehung raus). */
+function _dPt(ev) {
+  return drehDelta(
+    (ev.clientX - zug.startX) / props.zoom,
+    (ev.clientY - zug.startY) / props.zoom,
+    viewStore.drehung,
+  );
+}
 
 const messungen = computed(() =>
   (annotStore.proSeite.get(props.index) ?? []).filter(a => a.type === 'measure'));
@@ -54,12 +66,8 @@ function starteZug(m, i, ev) {
 
 function bewege(ev) {
   if (!zug || zug.pointerId !== ev.pointerId) return;
-  delta.value = {
-    id: zug.messung.id,
-    punktIndex: zug.punktIndex,
-    dx: (ev.clientX - zug.startX) / props.zoom,
-    dy: (ev.clientY - zug.startY) / props.zoom,
-  };
+  const [dx, dy] = _dPt(ev);
+  delta.value = { id: zug.messung.id, punktIndex: zug.punktIndex, dx, dy };
 }
 
 function beende(ev) {

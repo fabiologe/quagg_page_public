@@ -14,6 +14,7 @@ import { oeffnePdf } from '../services/PdfEngine';
 import { haengeLeereSeiteAn } from '../services/BlankPdf';
 import { verwirfDokument } from '../services/SeitenBitmapCache';
 import { vergiss as vergissRenderZeiten } from '../services/RenderProfil';
+import { verwirfDokument as verwirfBilder, loescheBilder } from '../services/BildAblage';
 import { useViewStore } from './useViewStore';
 
 const SCHEMA_VERSION = 1;
@@ -129,6 +130,7 @@ export const useDocStore = defineStore('pdfed-doc', () => {
             tab.ansicht = {
                 zoom: viewStore.zoom,
                 seite: viewStore.sichtbareSeiten.von ?? 0,
+                drehung: viewStore.drehung,
             };
         }
     }
@@ -206,6 +208,12 @@ export const useDocStore = defineStore('pdfed-doc', () => {
                 kalibrierung: { standard: null, jeSeite: {} },
             };
 
+            // Die gemerkte Ansicht MUSS stehen, BEVOR dokId/seiten bekannt
+            // werden: der Scroller reagiert sofort darauf und passt sonst auf
+            // Fit-Width ein — der Wunsch käme zu spät, Zoom und Drehung wären
+            // verloren (Race, gefunden beim Tab-Rückwechsel 2026-08-24).
+            gewuenschteAnsicht.value = tabs.value.find(t => t.dokId === id)?.ansicht ?? null;
+
             dokId.value = id;
             name.value = dokMeta.name;
             meta.value = dokMeta;
@@ -233,8 +241,8 @@ export const useDocStore = defineStore('pdfed-doc', () => {
             });
             await _schreibeIndex();
 
-            // Tab anlegen bzw. aktivieren; eine gemerkte Ansicht holt sich
-            // der Scroller über gewuenschteAnsicht ab.
+            // Tab anlegen bzw. aktivieren (die gemerkte Ansicht wurde oben
+            // schon bereitgelegt — hier wäre sie zu spät).
             let tab = tabs.value.find(t => t.dokId === id);
             if (!tab) {
                 tab = { dokId: id, name: dokMeta.name, ansicht: null };
@@ -242,7 +250,6 @@ export const useDocStore = defineStore('pdfed-doc', () => {
             } else {
                 tab.name = dokMeta.name;
             }
-            gewuenschteAnsicht.value = tab.ansicht;
             await _persistiereTabs();
             return true;
         } catch (e) {
@@ -305,6 +312,8 @@ export const useDocStore = defineStore('pdfed-doc', () => {
     /** Aktives Dokument entladen, OHNE den Ladestatus anzufassen. */
     async function _entlade() {
         const dok = pdfDok.value;
+        // Bild-Bitmaps und Object-URLs des Dokuments freigeben (Stufe 16)
+        if (dokId.value) verwirfBilder(dokId.value);
         pdfDok.value = null;
         dokId.value = null;
         name.value = '';
@@ -352,6 +361,7 @@ export const useDocStore = defineStore('pdfed-doc', () => {
         tabs.value = tabs.value.filter(t => t.dokId !== id);
         await _persistiereTabs();
         await repo.deleteBlob(`doc:${id}:file`);
+        await loescheBilder(id);   // alle Bild-Blobs des Präfixes doc:<id>:bild:
         await repo.delete(`doc:${id}:meta`);
         await repo.delete(`doc:${id}:annotations`);
         await repo.delete(`doc:${id}:handle`);

@@ -2,7 +2,7 @@
 // Die Uhr wird injiziert; kein DOM nötig.
 
 import { describe, expect, it } from 'vitest'
-import { erzeugeEingabeRouting } from '../services/EingabeRouting'
+import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting'
 
 function aufbau({ modus = 'stiftUndFinger', werkzeug = 'stift' } = {}) {
   let zeit = 1000

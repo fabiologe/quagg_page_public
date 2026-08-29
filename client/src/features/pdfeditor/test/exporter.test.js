@@ -43,13 +43,19 @@ const signatur = {
   strichBreitePt: 2.5, farbe: '#1e3a8a', echterDruck: true,
 }
 
+const volumen = {
+  id: 'vol1', type: 'measure', kind: 'volumen', page: 1, z: 7,
+  points: [[20, 20], [120, 20], [120, 100], [20, 100]],
+  tiefeM: 2, neigungN: 1, auflockerung: 1.25, modus: 'sohle', rechenwegAnzeigen: true,
+}
+
 const kalibrierung = { standard: { realProPt: 0.035, einheit: 'm' }, jeSeite: {} }
 
 describe('exportiereMitAnnotationen', () => {
   it('brennt alle Typen ein und bleibt ladbar', async () => {
     const original = await miniPdf()
     const bytes = await exportiereMitAnnotationen(
-      original, [strich, marker, messung, flaeche, notiz, signatur],
+      original, [strich, marker, messung, flaeche, notiz, signatur, volumen],
       kalibrierung, { kommentarSeite: false },
     )
     const ergebnis = await PDFDocument.load(bytes)

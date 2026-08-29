@@ -3,7 +3,7 @@
     <canvas
       ref="cvRef"
       class="plan-canvas"
-      :class="{ greift: greift, misst: messen }"
+      :class="{ greift: greift, misst: messen || setzModus, malt: stiftModus }"
       @pointerdown="onZeigerAb"
       @pointermove="onZeigerBewegt"
       @pointerup="onZeigerAuf"
@@ -39,6 +39,10 @@
       <CdeIcon name="measure" :size="13" />
       <span>{{ massPunkt ? 'Zweiten Punkt setzen' : 'Ersten Punkt setzen' }} — Esc beendet</span>
     </div>
+    <div v-else-if="setzModus" class="plan-messhinweis">
+      <CdeIcon :name="setzModus === 'loeschen' ? 'delete' : setzModus === 'text' ? 'edit' : 'coords'" :size="13" />
+      <span>{{ setzHinweis }} — Esc beendet</span>
+    </div>
 
     <div v-if="ersterAufbau" class="plan-schleier">
       <CdeIcon name="refresh" :size="22" class="dreht" />
@@ -71,6 +75,9 @@ import CdeIcon from './ui/CdeIcon.vue';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { usePlanInhalt } from '../stores/usePlanInhalt.js';
+import { useRotstift, STIFT_FARBEN, STIFT_BREITE_MM, RADIER_RADIUS_MM, mmZuWelt } from '../stores/useRotstift.js';
+import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
 import { drawVectorPlan, makeWorldTransform } from '../services/IfcVectorPlotter.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
@@ -92,6 +99,8 @@ const props = defineProps({
 const api = useViewerApi();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
+const planInhalt = usePlanInhalt();
+const rotstift = useRotstift();
 
 const hostRef = ref(null);
 const cvRef = ref(null);
@@ -112,11 +121,49 @@ const massPunkt = ref(null);
  */
 const logoBild = ref(null);
 
+// ── Planinhalte setzen (Sprint I, Stufe 7) ──────────────────────────────────
+// null = aus · 'text' · ein Symbolname aus PlanSymbols · 'loeschen'
+const setzModus = ref(null);
+/** Gerade gezogener Inhalt, oder null. */
+let ziehtInhalt = null;
+
+// ── Rotstift (Sprint I, Stufe 7) ────────────────────────────────────────────
+// null = aus · 'stift' · 'radierer'
+const stiftModus = ref(null);
+const stiftFarbe = ref(STIFT_FARBEN[0]);
+/** Laufender Strich in Welt-XZ, solange der Zeiger unten ist. */
+const nasserStrich = ref(null);
+
+/**
+ * Stift- und Fingerregeln — geteilt mit dem PDF-Editor.
+ *
+ * Der Surface-Stift gewinnt gegen den Finger, ein zweiter Finger im
+ * Karenzfenster wird zum Schwenken, und nach einem Stiftkontakt bleibt der
+ * Finger kurz gesperrt (die Handballen-Regel). Das ist genau dieselbe
+ * Zustandsmaschine wie über einer PDF-Seite — nur liegt darunter ein Plan.
+ */
+const eingabe = erzeugeEingabeRouting({
+  holeModus: () => 'stiftUndFinger',
+  holeWerkzeug: () => (stiftModus.value === 'radierer' ? 'radierer'
+                     : stiftModus.value === 'stift' ? 'stift' : 'pan'),
+});
+
+/** Radierradius in Weltmetern beim aktuellen Maßstab. */
+function radierRadius() {
+  return mmZuWelt(RADIER_RADIUS_MM, ansicht.massstab);
+}
+
 let inhalt = null;          // PlanContent-Instanz
 let letzterInhalt = null;
 let ro = null;
 let rafId = 0;
 let bereichPx = { w: 0, h: 0 };
+
+const setzHinweis = computed(() => {
+  if (setzModus.value === 'loeschen') return 'Planinhalt anklicken zum Entfernen';
+  if (setzModus.value === 'text') return 'Klicken, wo die Beschriftung stehen soll';
+  return 'Klicken, wo das Symbol stehen soll';
+});
 
 /** Zoomstufe, bei der genau ein Blatt in den Bereich passt (= 100 %). */
 const grundZoom = computed(() =>
@@ -215,6 +262,12 @@ function zeichne() {
       annotations: o.annotations ?? [],
       measurements: o.measurements ?? [],
       dimensions: o.dimensions ?? [],
+      planInhalte: planInhalt.inhalte,
+      // Fertige Striche plus der gerade laufende — sonst sähe man beim Malen
+      // nichts, bis man loslässt.
+      rotstift: nasserStrich.value
+        ? [...rotstift.striche, nasserStrich.value]
+        : rotstift.striche,
       utmGrid: o.utmGrid && {
         ...o.utmGrid,
         offset: o.utmGrid.offset ?? Object.values(api.getAllCoordOffsets?.() ?? {})[0] ?? { x: 0, y: 0, z: 0 },
@@ -272,7 +325,76 @@ function zeigerZuWelt(ev) {
   return { x: welt.zuX(mm.x), z: welt.zuZ(mm.y) };
 }
 
+/**
+ * Was in Weltmetern noch als „getroffen" gilt.
+ *
+ * Sechs Papier-Millimeter, in Weltmeter umgerechnet — was nah heißt, hängt
+ * vom Maßstab ab: bei 1:1000 sind 6 mm sechs Meter, bei 1:50 dreißig
+ * Zentimeter.
+ */
+function trefferRadius() {
+  return (6 / 1000) * ansicht.massstab;
+}
+
 function onZeigerAb(ev) {
+  // ── Rotstift ─────────────────────────────────────────────────────────────
+  if (stiftModus.value) {
+    const antwort = eingabe.pointerDown({
+      id: ev.pointerId, typ: ev.pointerType || 'mouse',
+      button: ev.button, buttons: ev.buttons, x: ev.clientX, y: ev.clientY,
+    });
+    if (antwort.aktion === 'ignorieren') return;
+    if (antwort.aktion !== 'nav') {
+      const punkt = zeigerZuWelt(ev);
+      if (!punkt) return;
+      cvRef.value?.setPointerCapture?.(ev.pointerId);
+      if (antwort.aktion.startsWith('radierer')) {
+        rotstift.radiere(punkt.x, punkt.z, radierRadius(), ansicht.massstab);
+        baldZeichnen();
+        return;
+      }
+      nasserStrich.value = {
+        id: 'nass', rev: 0, tool: 'stift', farbe: stiftFarbe.value,
+        breiteMm: STIFT_BREITE_MM, echterDruck: ev.pointerType === 'pen',
+        points: [[punkt.x, punkt.z, ev.pressure || 0.5]],
+      };
+      return;
+    }
+    // 'nav' → weiter unten schwenken
+  }
+
+  // ── Planinhalte setzen und anfassen ──────────────────────────────────────
+  if (setzModus.value) {
+    const punkt = zeigerZuWelt(ev);
+    if (!punkt) return;
+
+    if (setzModus.value === 'loeschen') {
+      const t = planInhalt.treffer(punkt, trefferRadius());
+      if (t) { planInhalt.entferne(t.id); baldZeichnen(); }
+      return;
+    }
+    if (setzModus.value === 'text') {
+      const text = prompt('Beschriftung:', '');
+      if (text) { planInhalt.addText(punkt, text); baldZeichnen(); }
+      return;
+    }
+    planInhalt.addSymbol(punkt, setzModus.value);
+    baldZeichnen();
+    return;
+  }
+
+  // Ohne Setzmodus: einen vorhandenen Inhalt anfassen und ziehen.
+  const unterZeiger = zeigerZuWelt(ev);
+  if (unterZeiger) {
+    const t = planInhalt.treffer(unterZeiger, trefferRadius());
+    if (t) {
+      ziehtInhalt = t.id;
+      greift.value = true;
+      cvRef.value?.setPointerCapture?.(ev.pointerId);
+      return;
+    }
+  }
+
   // Im Bemaßungsmodus setzt der Klick Punkte, statt das Blatt zu schwenken.
   if (messen.value) {
     const punkt = zeigerZuWelt(ev);
@@ -290,6 +412,27 @@ function onZeigerAb(ev) {
 }
 
 function onZeigerBewegt(ev) {
+  if (stiftModus.value) {
+    const ziel = eingabe.zielVon(ev.pointerId);
+    if (ziel === 'radierer') {
+      const punkt = zeigerZuWelt(ev);
+      if (punkt) { rotstift.radiere(punkt.x, punkt.z, radierRadius(), ansicht.massstab); baldZeichnen(); }
+      return;
+    }
+    if (nasserStrich.value && ziel === 'tinte') {
+      const punkt = zeigerZuWelt(ev);
+      if (punkt) {
+        nasserStrich.value.points.push([punkt.x, punkt.z, ev.pressure || 0.5]);
+        baldZeichnen();
+      }
+      return;
+    }
+  }
+  if (ziehtInhalt) {
+    const punkt = zeigerZuWelt(ev);
+    if (punkt) { planInhalt.verschiebe(ziehtInhalt, punkt); baldZeichnen(); }
+    return;
+  }
   if (!zieht) return;
   // Pixel → Papier-mm → Weltmeter. Der Plan folgt der Hand, also gegenläufig
   // zur Blattmitte.
@@ -305,6 +448,18 @@ function onZeigerBewegt(ev) {
 }
 
 function onZeigerAuf(ev) {
+  if (stiftModus.value) {
+    eingabe.pointerUp({ id: ev.pointerId, typ: ev.pointerType || 'mouse' });
+    if (nasserStrich.value) {
+      rotstift.addStrich(nasserStrich.value.points, {
+        farbe: nasserStrich.value.farbe,
+        echterDruck: nasserStrich.value.echterDruck,
+      });
+      nasserStrich.value = null;
+      baldZeichnen();
+    }
+  }
+  ziehtInhalt = null;
   zieht = false;
   greift.value = false;
   cvRef.value?.releasePointerCapture?.(ev.pointerId);
@@ -333,7 +488,10 @@ function messenUmschalten(an = null) {
 }
 
 function onTaste(e) {
-  if (e.key === 'Escape' && messen.value) { messenUmschalten(false); e.stopPropagation(); }
+  if (e.key !== 'Escape') return;
+  if (stiftModus.value) { stiftModus.value = null; nasserStrich.value = null; e.stopPropagation(); return; }
+  if (setzModus.value) { setzModus.value = null; e.stopPropagation(); return; }
+  if (messen.value) { messenUmschalten(false); e.stopPropagation(); }
 }
 
 /** Blattlage und Maßstab so setzen, dass das Modell hineinpasst. */
@@ -400,6 +558,10 @@ watch(() => [
   // Inhalts-Beobachtung darüber — dort würde jedes gesetzte Maß die teure
   // Sammlung von Umrissen, Gelände und Achsen neu anwerfen.
   ifc.planDimensions.length,
+  // Gesetzte Planinhalte: ebenfalls reines Zeichnen. Die Länge reicht nicht —
+  // Verschieben ändert sie nicht.
+  JSON.stringify(planInhalt.inhalte),
+  rotstift.anzahl,
 ], baldZeichnen);
 
 // Modellwechsel entwertet alles.
@@ -415,6 +577,15 @@ defineExpose({
   frustum: () => ansicht.frustum,
   messenUmschalten,
   misstGerade: () => messen.value,
+  setzeModus: (m) => { setzModus.value = m; if (m) { messenUmschalten(false); stiftModus.value = null; } },
+  aktiverModus: () => setzModus.value,
+  setzeStift: (m, farbe = null) => {
+    stiftModus.value = m;
+    if (farbe) stiftFarbe.value = farbe;
+    if (m) { messenUmschalten(false); setzModus.value = null; }
+    else nasserStrich.value = null;
+  },
+  aktiverStift: () => stiftModus.value,
   neuAufbauen: (grund = 'alles') => { inhalt?.entwerte(grund); return inhalteHolen(); },
   passendEinstellen,
 });
@@ -438,6 +609,7 @@ defineExpose({
 .plan-messhinweis .cde-icon { color: var(--cde-accent); }
 
 .plan-canvas.misst { cursor: crosshair; }
+.plan-canvas.malt { cursor: crosshair; touch-action: none; }
 
 .plan-host {
   position: absolute; inset: 0;

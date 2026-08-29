@@ -2,7 +2,11 @@
   <div
     ref="scrollerEl"
     class="pdfed-scroller"
+    :class="{ 'ist-drop': dropAktiv }"
     tabindex="0"
+    @dragover="aufDragOver"
+    @dragleave="aufDragLeave"
+    @drop="aufDrop"
     @scroll.passive="aufScroll"
     @wheel="gesten.onWheel"
     @pointerdown="aufPointerDown"
@@ -76,6 +80,10 @@ import { useVirtualPages } from '../composables/useVirtualPages';
 import { useViewportGestures } from '../composables/useViewportGestures';
 import { usePointerTools } from '../composables/usePointerTools';
 import { useTextSelection } from '../composables/useTextSelection';
+import { boxMasse, zuSeitenPunkt } from '../services/AnsichtRotation';
+import { bildAusDrop } from '../services/BildImport';
+import { legeBildAb } from '../services/BildAblage';
+import { TAB_DRAG_TYP } from '../services/TabTransfer';
 
 const RAND = 24;      // Abstand Seiten ↔ Viewportkante (CSS-px)
 const LUECKE = 16;    // Abstand zwischen Seiten
@@ -103,18 +111,25 @@ const sichtfenster = computed(() => ({
 
 // ── Layout: Seitenpositionen aus Maßen × Zoom ───────────────────────────────
 
+// `breite`/`hoehe` sind die Maße der ANZEIGEBOX (bei 90°/270° getauscht) —
+// Layout, Virtualisierung und Zoom-Anker rechnen durchgehend damit;
+// `breitePt`/`hoehePt` bleiben die unrotierten Seitenmaße für die Inhalte.
 const layoutSeiten = computed(() => {
   const zoom = viewStore.zoom;
+  const drehung = viewStore.drehung;
   const seiten = docStore.seiten;
-  const maxBreite = seiten.reduce((m, s) => Math.max(m, s.breitePt * zoom), 0);
+  const maxBreite = seiten.reduce(
+    (m, s) => Math.max(m, boxMasse(s.breitePt, s.hoehePt, drehung).breitePt * zoom), 0);
   const breiteHost = Math.max(containerBreite.value, maxBreite + 2 * RAND);
   let y = RAND;
   return seiten.map((s) => {
-    const breite = s.breitePt * zoom;
-    const hoehe = s.hoehePt * zoom;
+    const box = boxMasse(s.breitePt, s.hoehePt, drehung);
+    const breite = box.breitePt * zoom;
+    const hoehe = box.hoehePt * zoom;
     const eintrag = {
       top: y, left: (breiteHost - breite) / 2,
       breite, hoehe, breitePt: s.breitePt, hoehePt: s.hoehePt,
+      boxBreitePt: box.breitePt, boxHoehePt: box.hoehePt,
     };
     y += hoehe + LUECKE;
     return eintrag;
@@ -123,7 +138,9 @@ const layoutSeiten = computed(() => {
 
 const hostBreite = computed(() => {
   const zoom = viewStore.zoom;
-  const maxBreite = docStore.seiten.reduce((m, s) => Math.max(m, s.breitePt * zoom), 0);
+  const drehung = viewStore.drehung;
+  const maxBreite = docStore.seiten.reduce(
+    (m, s) => Math.max(m, boxMasse(s.breitePt, s.hoehePt, drehung).breitePt * zoom), 0);
   return Math.max(containerBreite.value, maxBreite + 2 * RAND);
 });
 
@@ -185,6 +202,10 @@ function findeSeite(clientX, clientY) {
       const ursprungY = s.top - el.scrollTop;
       return {
         index: i, breitePt: s.breitePt, hoehePt: s.hoehePt, zoom: viewStore.zoom,
+        // Ursprung ist die obere linke Ecke der ANZEIGEBOX; die Umrechnung
+        // in Seitenpunkte dreht in usePointerTools zurück.
+        drehung: viewStore.drehung,
+        boxBreitePt: s.boxBreitePt, boxHoehePt: s.boxHoehePt,
         ursprungX, ursprungY,
         ursprungClientX: rect.left + ursprungX,
         ursprungClientY: rect.top + ursprungY,
@@ -217,6 +238,50 @@ function aufPointerMove(ev) { zeigerTools.onPointerMove(ev); }
 function aufPointerUp(ev) { zeigerTools.onPointerUp(ev); }
 function aufPointerCancel(ev) { zeigerTools.onPointerCancel(ev); }
 
+// ── Drag&Drop auf die Seiten (Stufe 16): Bild → direkt platzieren, PDF → Tab ─
+
+const dropAktiv = ref(false);
+
+function _istDateiDrag(ev) {
+  const typen = Array.from(ev.dataTransfer?.types ?? []);
+  // Tab-Drags gehören der Tab-Leiste — hier nicht anfassen.
+  return typen.includes('Files') && !typen.includes(TAB_DRAG_TYP);
+}
+
+function aufDragOver(ev) {
+  if (!_istDateiDrag(ev)) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'copy';
+  dropAktiv.value = true;
+}
+
+function aufDragLeave() { dropAktiv.value = false; }
+
+async function aufDrop(ev) {
+  dropAktiv.value = false;
+  if (!_istDateiDrag(ev)) return;
+  ev.preventDefault();   // sonst navigiert der Browser zur Datei und räumt den Editor ab
+  // Alles SYNCHRON sichern — DataTransfer ist nach dem ersten await leer.
+  const bild = bildAusDrop(ev.dataTransfer);
+  const pdf = bild ? null : Array.from(ev.dataTransfer.files ?? [])
+    .find(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+  const { clientX, clientY } = ev;
+  if (pdf) { await docStore.importiereDatei(pdf); return; }
+  if (!bild || !docStore.dokId) return;
+  let vorlage;
+  try {
+    vorlage = await legeBildAb(docStore.dokId, bild);
+  } catch (e) {
+    toolStore.bildFehler = e?.message || 'Das Bild konnte nicht übernommen werden.';
+    return;
+  }
+  // Zwischen den Seiten losgelassen → auf den nächsten Tipp warten.
+  if (!zeigerTools.platziereBildBei(clientX, clientY, vorlage)) {
+    toolStore.waehleWerkzeug('bild');
+    toolStore.bildZumPlatzieren = vorlage;
+  }
+}
+
 let scrollRafGeplant = false;
 function aufScroll() {
   if (scrollRafGeplant) return;
@@ -244,11 +309,14 @@ watch(() => [docStore.dokId, docStore.seiten.length, containerBreite.value], asy
     // Tab-Wechsel: gemerkten Zoom + oberste Seite wiederherstellen.
     docStore.gewuenschteAnsicht = null;
     viewStore.setzeZoom(ansicht.zoom);
+    viewStore.setzeDrehung(ansicht.drehung ?? 0);
     renderZoom.value = viewStore.zoom;
     await nextTick();   // Layout mit dem restaurierten Zoom steht jetzt
     const s = layoutSeiten.value[ansicht.seite];
     if (scrollerEl.value) scrollerEl.value.scrollTop = s ? Math.max(0, s.top - 12) : 0;
   } else {
+    // Frisch geöffnetes Dokument: ungedreht und auf Seitenbreite.
+    viewStore.setzeDrehung(0);
     viewStore.passeBreiteAn(containerBreite.value - 2 * RAND, docStore.seiten[0].breitePt);
     renderZoom.value = viewStore.zoom;
     if (scrollerEl.value) scrollerEl.value.scrollTop = 0;
@@ -282,9 +350,26 @@ function zoomeSchritt(faktor) {
 }
 
 function passeBreiteAn() {
-  if (docStore.seiten.length) {
-    viewStore.passeBreiteAn(containerBreite.value - 2 * RAND, docStore.seiten[0].breitePt);
-  }
+  if (!docStore.seiten.length) return;
+  // Bei gedrehter Ansicht zählt die BREITE DER ANZEIGEBOX.
+  const s = docStore.seiten[0];
+  const box = boxMasse(s.breitePt, s.hoehePt, viewStore.drehung);
+  viewStore.passeBreiteAn(containerBreite.value - 2 * RAND, box.breitePt);
+}
+
+/**
+ * Ansicht drehen (Toolbar). Danach EINMAL neu einpassen — ein quer
+ * gedrehtes A4 stünde sonst halb außerhalb des Sichtfensters.
+ * Bewusst als Aktion und NICHT als watch auf `drehung`: beim Wiederher-
+ * stellen eines Tabs wird die Drehung ebenfalls gesetzt, dort soll aber
+ * der gemerkte Zoom gelten, nicht Fit-Width.
+ */
+async function dreheAnsicht(richtung) {
+  viewStore.drehe(richtung);
+  if (!docStore.seiten.length) return;
+  await nextTick();
+  passeBreiteAn();
+  renderZoom.value = viewStore.zoom;
 }
 
 /** Lineal ein-/ausblenden: platziert es mittig im Sichtfenster der obersten
@@ -296,15 +381,22 @@ function schalteLineal() {
   if (!s) return;
   const zoom = viewStore.zoom;
   const sichtMitteY = scrollTop.value + containerHoehe.value / 2;
+  // Mitte des sichtbaren Streifens IN DER ANZEIGEBOX, dann zurückdrehen —
+  // so liegt das Lineal auch bei gedrehter Ansicht im Blickfeld.
+  const boxY = Math.max(30, Math.min(s.boxHoehePt - 30, (sichtMitteY - s.top) / zoom));
+  const [px, py] = zuSeitenPunkt(
+    s.boxBreitePt / 2, boxY, viewStore.drehung, s.breitePt, s.hoehePt);
   toolStore.lineal = {
     page: index,
-    x: s.breitePt / 2,
-    y: Math.max(30, Math.min(s.hoehePt - 30, (sichtMitteY - s.top) / zoom)),
-    winkelGrad: 0,
+    x: px,
+    y: py,
+    // Der Winkel lebt im Seitenraum: 0° soll am Bildschirm waagerecht
+    // aussehen, also die Ansichtsdrehung gegenrechnen.
+    winkelGrad: -viewStore.drehung,
   };
 }
 
-defineExpose({ zoomeSchritt, passeBreiteAn, schalteLineal });
+defineExpose({ zoomeSchritt, passeBreiteAn, schalteLineal, dreheAnsicht });
 </script>
 
 <style scoped>
@@ -316,6 +408,10 @@ defineExpose({ zoomeSchritt, passeBreiteAn, schalteLineal });
      Werkzeug-Konfliktregeln (Stufe 2) nicht unterzuordnen. */
   touch-action: none;
   overscroll-behavior: contain;
+}
+.pdfed-scroller.ist-drop {
+  outline: 3px dashed var(--pdf-akzent);
+  outline-offset: -8px;
 }
 .pdfed-host {
   position: relative;

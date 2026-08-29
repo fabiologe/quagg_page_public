@@ -83,4 +83,15 @@ describe('Label', () => {
     // 10000 pt² × (0,035 m/pt)² = 12,25 m²
     expect(messwertLabel(messung, { realProPt: 0.035 })).toBe('12,25 m²')
   })
+
+  it('messwertLabel: Volumen live aus Kalibrierung und Parametern', () => {
+    const messung = {
+      kind: 'volumen', points: [[0, 0], [80, 0], [80, 60], [0, 60]],
+      tiefeM: 2, neigungN: 1, modus: 'sohle',
+    }
+    expect(messwertLabel(messung, { realProPt: 0.1 })).toBe('162,67 m³')
+    expect(messwertLabel(messung, null)).toBe('unkalibriert')
+    // Oberkante zu tief → die Sohle existiert nicht mehr
+    expect(messwertLabel({ ...messung, modus: 'oberkante', tiefeM: 4 }, { realProPt: 0.1 })).toBe('Tiefe zu groß')
+  })
 })

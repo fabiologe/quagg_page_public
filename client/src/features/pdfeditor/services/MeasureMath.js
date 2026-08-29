@@ -12,6 +12,8 @@
  */
 
 /** 1 PDF-Punkt = 1/72 Zoll = 25,4/72 mm Papier. */
+import { volumenAusPolygon, formatVolumen } from './VolumenMath';
+
 export const MM_PRO_PT = 25.4 / 72;
 
 /**
@@ -91,6 +93,15 @@ export function labelWinkel(p0, p1) {
 /** Messwert-Label einer Messung — live aus der Kalibrierung. */
 export function messwertLabel(annot, kal) {
     if (!kal) return 'unkalibriert';
+    if (annot.kind === 'volumen') {
+        // Aushubvolumen (Stufe 17) — Parameter aus der Annotation, Wert live.
+        const e = volumenAusPolygon({
+            points: annot.points, realProPt: kal.realProPt,
+            tiefeM: annot.tiefeM, neigungN: annot.neigungN, modus: annot.modus,
+        });
+        if (!e) return '—';
+        return e.schliesstSich ? 'Tiefe zu groß' : formatVolumen(e.V);
+    }
     if (annot.kind === 'area') {
         const m2 = polygonFlaechePt2(annot.points) * kal.realProPt * kal.realProPt;
         return formatFlaeche(m2);

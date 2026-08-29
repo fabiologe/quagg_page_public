@@ -6,6 +6,16 @@
       width: cssBreite + 'px', height: cssHoehe + 'px',
     }"
   >
+    <!-- Der gesamte Seitenstapel bleibt UNROTIERT (alle Schichten rechnen
+         weiter in Seitenpunkten); nur dieser Rahmen dreht ihn in die
+         Anzeigebox. Zeiger werden in usePointerTools zurückgerechnet. -->
+    <div
+      class="pdfed-seite-inhalt"
+      :style="{
+        width: stapelBreite + 'px', height: stapelHoehe + 'px',
+        transform: inhaltTransformCss || undefined,
+      }"
+    >
     <!-- Bitmap nur für lebendige Seiten — rausgescrollte geben ihren
          Canvas-Speicher frei (Tablet!). CSS streckt die letzte Render-
          Auflösung, bis der scharfe Nachrender kommt. -->
@@ -18,10 +28,10 @@
       ref="kachelEl"
       class="pdfed-kachel"
       :style="{
-        left: kachelInfo.xPt * (cssBreite / breitePt) + 'px',
-        top: kachelInfo.yPt * (cssBreite / breitePt) + 'px',
-        width: kachelInfo.bPt * (cssBreite / breitePt) + 'px',
-        height: kachelInfo.hPt * (cssBreite / breitePt) + 'px',
+        left: kachelInfo.xPt * stapelZoom + 'px',
+        top: kachelInfo.yPt * stapelZoom + 'px',
+        width: kachelInfo.bPt * stapelZoom + 'px',
+        height: kachelInfo.hPt * stapelZoom + 'px',
       }"
     ></canvas>
     <AnnotCanvas
@@ -34,16 +44,17 @@
     <PdfTextLayer
       v-if="lebendig"
       :index="index"
-      :zoom="cssBreite / breitePt"
+      :zoom="stapelZoom"
       :breite-pt="breitePt"
     />
     <PageOverlay
       v-if="lebendig"
       :index="index"
-      :zoom="cssBreite / breitePt"
+      :zoom="stapelZoom"
       :breite-pt="breitePt"
       :hoehe-pt="hoehePt"
     />
+    </div>
     <div v-if="!lebendig" class="pdfed-seite-platzhalter">{{ index + 1 }}</div>
   </div>
 </template>
@@ -57,7 +68,7 @@
  * gedeckelt so, dass die Canvas-Fläche unter ~16 Mio Pixeln bleibt —
  * darüber verweigern mobile Browser das Canvas stillschweigend.
  */
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import AnnotCanvas from './AnnotCanvas.vue';
 import PageOverlay from './PageOverlay.vue';
 import PdfTextLayer from './PdfTextLayer.vue';
@@ -66,6 +77,8 @@ import { RenderingCancelledException, renderScaleFuer } from '../services/PdfEng
 import { istSchwer, merkeRenderZeit, SCHWER_MS } from '../services/RenderProfil';
 import { hole, lege, skalaPasst } from '../services/SeitenBitmapCache';
 import { berechneKachel, kachelDeckt, kachelNoetig } from '../services/SchaerfeKachel';
+import { useViewStore } from '../stores/useViewStore';
+import { inhaltTransform, zuSeitenRect } from '../services/AnsichtRotation';
 
 const props = defineProps({
   index:      { type: Number, required: true },
@@ -81,9 +94,24 @@ const props = defineProps({
 });
 
 const docStore = useDocStore();
+const viewStore = useViewStore();
 const canvasEl = ref(null);
 const kachelEl = ref(null);
 const kachelInfo = ref(null);   // { xPt, yPt, bPt, hPt, skala } | null
+
+// ── Ansichtsdrehung ─────────────────────────────────────────────────────────
+// ACHTUNG: `cssBreite`/`cssHoehe` sind die Maße der ANZEIGEBOX — der Scroller
+// hat den Tausch für Layout und Virtualisierung schon vorgenommen. Hier läuft
+// deshalb die GEGENRICHTUNG: Box → unrotierter Stapel (sonst tauscht man
+// zweimal und quetscht die Seite ins falsche Seitenverhältnis).
+const stapelBreite = computed(() =>
+  viewStore.drehung % 180 === 0 ? props.cssBreite : props.cssHoehe);
+const stapelHoehe = computed(() =>
+  viewStore.drehung % 180 === 0 ? props.cssHoehe : props.cssBreite);
+/** CSS-px je Seitenpunkt — immer am UNROTIERTEN Stapel gemessen. */
+const stapelZoom = computed(() => stapelBreite.value / props.breitePt);
+const inhaltTransformCss = computed(() =>
+  inhaltTransform(viewStore.drehung, stapelBreite.value, stapelHoehe.value));
 
 // ── Render-Pipeline (Stufe 11: CAD-Vektor-Performance) ──────────────────────
 // Leichte Seiten (Text/Scan): EIN direkter Pass, unverändert scharf.
@@ -274,14 +302,18 @@ async function _aktualisiereKachel() {
     return;
   }
 
-  // Sichtfenster (Host-px) → Ausschnitt auf der Seite (Seitenpunkte)
-  const cssZoom = props.cssBreite / props.breitePt;
-  const sicht = {
+  // Sichtfenster (Host-px) → Ausschnitt der ANZEIGEBOX → Seitenpunkte.
+  // Bei gedrehter Ansicht liegt der sichtbare Streifen auf der Seite quer;
+  // zuSeitenRect dreht ihn zurück (bei 90°-Vielfachen exakt).
+  const cssZoom = stapelZoom.value;
+  const inBox = {
     x: (sf.x - props.left) / cssZoom,
     y: (sf.y - props.top) / cssZoom,
-    b: sf.b / cssZoom,
+    w: sf.b / cssZoom,
     h: sf.h / cssZoom,
   };
+  const r = zuSeitenRect(inBox, viewStore.drehung, props.breitePt, props.hoehePt);
+  const sicht = { x: r.x, y: r.y, b: r.w, h: r.h };
   const seite = { breitePt: props.breitePt, hoehePt: props.hoehePt };
   const neu = berechneKachel(sicht, seite, zielSkala);
   if (!neu) return;   // Seite nicht im Blick — bestehende Kachel bleibt
@@ -329,7 +361,7 @@ async function _aktualisiereKachel() {
   }
 }
 
-watch(() => [props.sichtfenster, props.renderZoom, props.lebendig], () => {
+watch(() => [props.sichtfenster, props.renderZoom, props.lebendig, viewStore.drehung], () => {
   if (!props.lebendig) {
     _brichKachelAb();
     kachelNr++;
@@ -363,6 +395,14 @@ onBeforeUnmount(() => {
   border-radius: 2px;
   /* KEIN overflow: hidden — Kommentar-Popover und Auswahl-Aktionen dürfen
      über die Seitenkante ragen. */
+}
+/* Der unrotierte Seitenstapel. Bei gedrehter Ansicht legt ihn der
+   transform (origin 0 0) in die getauschte Anzeigebox darüber. */
+.pdfed-seite-inhalt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
 }
 .pdfed-seite-canvas {
   display: block;

@@ -51,6 +51,18 @@
       :breite-pt="breitePt"
       :hoehe-pt="hoehePt"
     />
+    <!-- Baugruben (Stufe 17): Trefferfläche über dem Volumen-Label öffnet
+         den Dialog — während gezeichnet wird, lässt sie den Stift durch. -->
+    <button
+      v-for="b in volumenBadges"
+      :key="b.id"
+      class="pdfed-volumen-badge"
+      :class="{ 'ist-passiv': toolStore.istZeichnend }"
+      :style="b.stil"
+      title="Aushubvolumen bearbeiten"
+      @pointerdown.stop
+      @click="oeffneVolumen(b.id)"
+    ></button>
     <!-- Laufende Messung: Punkte + gestrichelte Verbindung -->
     <svg
       v-if="laufendeMessung"
@@ -92,7 +104,10 @@ import TextboxEditor from './TextboxEditor.vue';
 import LinealOverlay from './LinealOverlay.vue';
 import { useAnnotStore } from '../stores/useAnnotStore';
 import { useToolStore } from '../stores/useToolStore';
+import { useViewStore } from '../stores/useViewStore';
 import { textboxMasse } from '../services/TextboxMasse';
+import { drehDelta } from '../services/AnsichtRotation';
+import { polygonSchwerpunkt } from '../services/MeasureMath';
 
 const props = defineProps({
   index:    { type: Number, required: true },
@@ -102,6 +117,7 @@ const props = defineProps({
 });
 
 const annotStore = useAnnotStore();
+const viewStore = useViewStore();
 
 const notizen = computed(() =>
   (annotStore.proSeite.get(props.index) ?? [])
@@ -120,6 +136,19 @@ const hatMessungen = computed(() =>
 
 const laufendeMessung = computed(() =>
   toolStore.messungInArbeit?.page === props.index ? toolStore.messungInArbeit : null);
+
+// ── Baugruben: Badge am Schwerpunkt (dort steht das gemalte Label) ────────────
+const volumenBadges = computed(() =>
+  (annotStore.proSeite.get(props.index) ?? [])
+    .filter(a => a.type === 'measure' && a.kind === 'volumen')
+    .map((a) => {
+      const [sx, sy] = polygonSchwerpunkt(a.points);
+      return { id: a.id, stil: { left: sx * props.zoom + 'px', top: sy * props.zoom + 'px' } };
+    }));
+
+function oeffneVolumen(id) {
+  toolStore.volumenAnfrage = { id, page: props.index, quelle: 'bearbeiten' };
+}
 
 // ── Textfelder ───────────────────────────────────────────────────────────────
 
@@ -168,12 +197,16 @@ function beendeTextboxZug(ev) {
   textboxZug = null;
   el.style.transform = '';
   if (bewegt) {
+    // Bildschirm-Delta → Seitenraum: bei gedrehter Ansicht zeigt „rechts"
+    // am Schirm nicht auf +x der Seite.
+    const [dxPt, dyPt] = drehDelta(
+      (ev.clientX - startX) / props.zoom,
+      (ev.clientY - startY) / props.zoom,
+      viewStore.drehung,
+    );
     annotStore.aktualisiere([{
       id: annot.id,
-      patch: {
-        x: annot.x + (ev.clientX - startX) / props.zoom,
-        y: annot.y + (ev.clientY - startY) / props.zoom,
-      },
+      patch: { x: annot.x + dxPt, y: annot.y + dyPt },
     }]);
   } else {
     annotStore.offenesTextfeldId = annot.id;
@@ -200,6 +233,22 @@ function brichTextboxZug(ev) {
   height: 100%;
   pointer-events: none;
 }
+.pdfed-volumen-badge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 44px;
+  min-height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.pdfed-volumen-badge:hover { outline: 1px dashed var(--pdf-akzent); }
+/* Beim Zeichnen darf der Stift über das Label laufen */
+.pdfed-volumen-badge.ist-passiv { pointer-events: none; }
 .pdfed-textbox-treffer {
   position: absolute;
   padding: 0;

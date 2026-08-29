@@ -92,7 +92,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import PdfIcon from './PdfIcon.vue';
 import { useToolStore } from '../stores/useToolStore';
 import { repo } from '../services/PdfRepo';
-import { strichUmriss } from '../services/InkGeometry';
+import { strichUmriss } from '@/services/tinte/InkGeometry';
 import { SIGNATUR_REFERENZ_BREITE_PT } from '../services/AnnotationPainter';
 
 const FARBEN = ['#1e3a8a', '#111827'];

@@ -211,3 +211,37 @@ describe('Deckkraft', () => {
     expect(ctx.nur('fill')[1][1].alpha).toBe(1)
   })
 })
+
+describe('Mock, Adapter und Plotter bedienen dieselbe Schnittstelle', () => {
+  /**
+   * Gefunden beim Rotstift (Sprint I, Stufe 7): der Plotter bekam ein neues
+   * Primitiv (`lines`), der CanvasDoc-Adapter auch — aber das Aufnahmegerät
+   * der Tests nicht. Ergebnis war ein `TypeError` im Test statt einer
+   * Aussage über das Bild.
+   *
+   * Die drei müssen zusammenpassen: `IfcVectorPlotter` ruft, `CanvasDoc`
+   * zeichnet, `mockDoc` zeichnet auf. Fehlt eines, merkt man es entweder gar
+   * nicht (der Bildschirm zeigt weniger als das PDF) oder erst an einer
+   * Fehlermeldung, die nichts erklärt.
+   */
+  it('jedes vom Plotter gerufene doc-Primitiv gibt es in beiden', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const WURZEL = new URL('..', import.meta.url).pathname
+    const lies = (p) => readFileSync(join(WURZEL, p), 'utf8')
+
+    const plotter = lies('services/IfcVectorPlotter.js')
+    const gerufen = new Set(
+      [...plotter.matchAll(/\bdoc\.([a-zA-Z][a-zA-Z0-9_]*)\s*\(/g)].map((m) => m[1]),
+    )
+    expect(gerufen.size).toBeGreaterThan(8)          // Schutz gegen Leerlauf
+    expect(gerufen.has('lines')).toBe(true)
+
+    const adapter = lies('services/CanvasDoc.js')
+    const mock = lies('test/helpers/mockDoc.js')
+    const fehltImAdapter = [...gerufen].filter((n) => !new RegExp(`\\b${n}\\s*[(:]`).test(adapter))
+    const fehltImMock = [...gerufen].filter((n) => !new RegExp(`\\b${n}\\s*[(:]`).test(mock))
+    expect(fehltImAdapter).toEqual([])
+    expect(fehltImMock).toEqual([])
+  })
+})

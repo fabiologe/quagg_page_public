@@ -5,11 +5,14 @@
       <nav class="intern-nav">
         <router-link to="/intern">Dashboard</router-link>
         <router-link to="/intern/projects">Projekte</router-link>
+        <router-link to="/intern/kalender">Kalender</router-link>
         <router-link to="/intern/library">Bibliothek</router-link>
-        <router-link to="/intern/communication">Kommunikation</router-link>
+        <router-link to="/mail">Mail</router-link>
+        <router-link v-if="authStore.istAdmin" to="/intern/pedant">Buchhaltung</router-link>
+        <router-link v-if="authStore.istAdmin" to="/intern/nutzer">Nutzer</router-link>
       </nav>
       <div class="intern-user">
-        <span>{{ user?.name || 'Benutzer' }}</span>
+        <router-link to="/konto" class="intern-konto" :title="`Konto (${rollenLabel})`">{{ authStore.anzeigename || 'Benutzer' }}</router-link>
         <button @click="handleLogout">Abmelden</button>
       </div>
     </header>
@@ -23,14 +26,15 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { ROLLEN_LABEL } from '@/services/rollen'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const user = computed(() => authStore.user)
+const rollenLabel = computed(() => ROLLEN_LABEL[authStore.rolle] || '')
 
-function handleLogout() {
-  authStore.clearAuth()
+async function handleLogout() {
+  await authStore.logout()
   router.push('/login')
 }
 </script>
@@ -74,6 +78,14 @@ function handleLogout() {
   align-items: center;
   gap: 1rem;
 }
+
+.intern-konto {
+  color: white;
+  text-decoration: none;
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+}
+.intern-konto:hover { background-color: rgba(255, 255, 255, 0.1); }
 
 .intern-user button {
   padding: 0.5rem 1rem;

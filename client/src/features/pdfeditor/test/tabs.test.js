@@ -5,6 +5,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { watch } from 'vue'
 
 vi.mock('../services/PdfEngine', () => ({
   oeffnePdf: vi.fn(async () => ({
@@ -60,10 +61,20 @@ describe('Tabs', () => {
     await store.oeffneDokument(a)
     viewStore.setzeZoom(2.5)
     viewStore.sichtbareSeiten = { von: 2, bis: 2 }
+    viewStore.setzeDrehung(90)   // die Ansichtsdrehung gehört mit zum Tab
     await store.wechsleTab(b)
-    expect(store.tabs.find(t => t.dokId === a).ansicht).toEqual({ zoom: 2.5, seite: 2 })
+    expect(store.tabs.find(t => t.dokId === a).ansicht)
+      .toEqual({ zoom: 2.5, seite: 2, drehung: 90 })
+    // Der Scroller hängt an dokId und passt SOFORT ein — die gemerkte
+    // Ansicht muss in genau diesem Moment schon bereitliegen, sonst
+    // gewinnt Fit-Width und Zoom/Drehung sind verloren.
+    let beimUmschalten = 'nicht gesetzt'
+    const stop = watch(() => store.dokId, () => { beimUmschalten = store.gewuenschteAnsicht },
+      { flush: 'sync' })
     await store.wechsleTab(a)
-    expect(store.gewuenschteAnsicht).toEqual({ zoom: 2.5, seite: 2 })
+    stop()
+    expect(beimUmschalten).toEqual({ zoom: 2.5, seite: 2, drehung: 90 })
+    expect(store.gewuenschteAnsicht).toEqual({ zoom: 2.5, seite: 2, drehung: 90 })
   })
 
   it('schliesseTab des aktiven Tabs aktiviert den rechten Nachbarn, sonst den linken', async () => {
@@ -129,5 +140,19 @@ describe('Tabs', () => {
     await store.oeffneDokument(a)
     await store.loescheDokument(a)
     expect(store.tabs).toHaveLength(0)
+  })
+})
+
+describe('loescheDokument (Stufe 16)', () => {
+  it('räumt auch die Bild-Blobs des Dokuments ab — und nur die', async () => {
+    const store = useDocStore()
+    const a = await legeDokAn('Mit Bild')
+    const b = await legeDokAn('Anderes')
+    await repo.setBlob(`doc:${a}:bild:abc`, new Blob([new Uint8Array([1])], { type: 'image/png' }), { mime: 'image/png' })
+    await repo.setBlob(`doc:${b}:bild:xyz`, new Blob([new Uint8Array([2])], { type: 'image/png' }), { mime: 'image/png' })
+    await store.ladeIndex()
+    await store.loescheDokument(a)
+    expect(await repo.getBlob(`doc:${a}:bild:abc`)).toBeNull()
+    expect(await repo.getBlob(`doc:${b}:bild:xyz`)).not.toBeNull()
   })
 })

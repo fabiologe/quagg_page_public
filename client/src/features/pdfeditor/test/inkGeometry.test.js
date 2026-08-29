@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   strichUmriss, strichUmrissGecacht, leereUmrissCache,
   trifftStrich, punktInPolygon, strichInPolygon, begrenzungsBox,
-} from '../services/InkGeometry'
+} from '@/services/tinte/InkGeometry'
 
 function strich(extra = {}) {
   return {

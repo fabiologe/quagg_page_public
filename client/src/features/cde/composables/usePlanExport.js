@@ -13,6 +13,8 @@
 import { ref } from 'vue';
 import { useViewerApi } from './viewerApi.js';
 import { usePlan } from '../stores/usePlan.js';
+import { usePlanInhalt } from '../stores/usePlanInhalt.js';
+import { useRotstift } from '../stores/useRotstift.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useCdeStore, resolveWatermarkText } from '../stores/useCdeStore.js';
@@ -23,6 +25,8 @@ import { exportLaengsschnittPDF, exportQuerprofilePDF } from '../services/Laengs
 export function usePlanExport() {
     const api = useViewerApi();
     const plan = usePlan();
+    const planInhalt = usePlanInhalt();
+    const rotstiftStore = useRotstift();
     const ansicht = useAnsicht();
     const ifc = useIfcStore();
     const cde = useCdeStore();
@@ -107,6 +111,10 @@ export function usePlanExport() {
             annotations:  o.annotations ? (ifc.annotations ?? []) : [],
             measurements: o.measurements ? (api.getMeasurements?.() ?? []) : [],
             dimensions:   o.dimensions ? (ifc.planDimensions ?? []) : [],
+            // Gesetzte Beschriftung und Symbole gehören immer aufs Blatt —
+            // sie sind kein abgeleiteter Inhalt, den man abschalten würde.
+            planInhalte:  planInhalt.inhalte,
+            rotstift:     rotstiftStore.striche,
             ifcGridAxes:  o.ifcGrids ? (api.getIfcGridAxes?.() ?? null) : null,
             watermark:    _wasserzeichen(),
         });

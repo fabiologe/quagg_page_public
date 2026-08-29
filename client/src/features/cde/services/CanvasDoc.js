@@ -124,6 +124,31 @@ export function erstelleCanvasDoc(ctx, { pxProMm, minStrichPx = 1 } = {}) {
             male(art);
         },
 
+        /**
+         * Polygonzug aus Deltas — jsPDFs `lines()`.
+         *
+         * Signatur wie dort: (deltas, startX, startY, skalierung, art,
+         * geschlossen). Der Rotstift zeichnet damit seinen Strichumriss als
+         * gefüllte Fläche; ohne diese Methode käme er im PDF an und am
+         * Bildschirm nicht — genau die Art von Abweichung, die der
+         * CanvasDoc-Adapter verhindern soll.
+         */
+        lines(deltas, x, y, skalierung = [1, 1], art = 'S', geschlossen = false) {
+            unterbrich();
+            if (!deltas?.length) return;
+            const [sx, sy] = skalierung;
+            ctx.beginPath();
+            let cx = x, cy = y;
+            ctx.moveTo(s(cx), s(cy));
+            for (const d of deltas) {
+                cx += d[0] * sx;
+                cy += d[1] * sy;
+                ctx.lineTo(s(cx), s(cy));
+            }
+            if (geschlossen) ctx.closePath();
+            male(art);
+        },
+
         triangle(x1, y1, x2, y2, x3, y3, art = 'S') {
             unterbrich();
             ctx.beginPath();

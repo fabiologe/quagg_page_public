@@ -41,6 +41,7 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import PdfIcon from './PdfIcon.vue';
 import { useAnnotStore } from '../stores/useAnnotStore';
+import { useViewStore } from '../stores/useViewStore';
 
 const props = defineProps({
   notiz:    { type: Object, required: true },
@@ -49,6 +50,7 @@ const props = defineProps({
 });
 
 const annotStore = useAnnotStore();
+const viewStore = useViewStore();
 const textEl = ref(null);
 const text = ref(props.notiz.text ?? '');
 
@@ -71,6 +73,12 @@ const position = computed(() => {
     left: (links ? pinX - BREITE_PX - 20 : pinX + 20) + 'px',
     top: Math.max(4, props.notiz.y * props.zoom - 16) + 'px',
     width: BREITE_PX + 'px',
+    // Bei gedrehter Ansicht dreht der ganze Seitenstapel — die Karte samt
+    // Textfeld dreht hier zurück, damit sie lesbar bleibt (sie hängt am
+    // Pin, ihre Ecke ist der Drehpunkt).
+    ...(viewStore.drehung
+      ? { transform: `rotate(${-viewStore.drehung}deg)`, transformOrigin: '0 0' }
+      : {}),
   };
 });
 

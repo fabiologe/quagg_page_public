@@ -5,11 +5,11 @@
         <h1>Quagg - Kundenbereich</h1>
         <nav class="client-nav">
           <router-link to="/client" class="nav-link">Projekte</router-link>
-          <router-link to="/library" class="nav-link">Bibliothek</router-link>
+          <router-link to="/konto" class="nav-link">Konto</router-link>
         </nav>
       </div>
       <div class="client-user">
-        <span>{{ user?.name || 'Kunde' }}</span>
+        <span>{{ authStore.anzeigename || 'Kunde' }}</span>
         <button @click="handleLogout">Abmelden</button>
       </div>
     </header>
@@ -20,17 +20,14 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const user = computed(() => authStore.user)
-
-function handleLogout() {
-  authStore.clearAuth()
+async function handleLogout() {
+  await authStore.logout()
   router.push('/login')
 }
 </script>

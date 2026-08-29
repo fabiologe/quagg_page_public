@@ -21,7 +21,10 @@
         </g>
       </svg>
 
-      <div class="pdfed-lineal-badge">
+      <div
+        class="pdfed-lineal-badge"
+        :style="{ transform: `translateX(-50%) rotate(${-(lineal.winkelGrad + viewStore.drehung)}deg)` }"
+      >
         {{ winkelText }} · Raster {{ rasterText }}
       </div>
 
@@ -69,9 +72,11 @@
 import { ref, computed } from 'vue';
 import PdfIcon from './PdfIcon.vue';
 import { useToolStore } from '../stores/useToolStore';
+import { useViewStore } from '../stores/useViewStore';
 import { useDocStore } from '../stores/useDocStore';
 import { kalibrierungFuerSeite } from '../services/MeasureMath';
 import { tickSchritt, rasteWinkel } from '../services/LinealMath';
+import { drehDelta, vonSeitenPunkt } from '../services/AnsichtRotation';
 
 const props = defineProps({
   index:    { type: Number, required: true },
@@ -81,6 +86,7 @@ const props = defineProps({
 });
 
 const toolStore = useToolStore();
+const viewStore = useViewStore();
 const docStore = useDocStore();
 const rootEl = ref(null);
 
@@ -132,9 +138,21 @@ const rasterText = computed(() =>
 const zeiger = new Map();   // pointerId → { x, y } (Client-Koordinaten)
 let zug = null;             // { art: 'koerper'|'rotation', start: {...} }
 
+/**
+ * Ankerpunkt in Client-Koordinaten. Der Anker-Container steckt im gedrehten
+ * Seitenstapel — sein Rect IST die Anzeigebox, der Ankerpunkt muss also
+ * erst in die Box gedreht werden.
+ */
 function _ankerClient() {
   const r = rootEl.value.getBoundingClientRect();
-  return { x: r.left + lineal.value.x * props.zoom, y: r.top + lineal.value.y * props.zoom };
+  const [lx, ly] = vonSeitenPunkt(
+    lineal.value.x, lineal.value.y, viewStore.drehung, props.breitePt, props.hoehePt);
+  return { x: r.left + lx * props.zoom, y: r.top + ly * props.zoom };
+}
+
+/** Zieh-Delta (Client-px) → Seitenraum-Delta in Punkten. */
+function _dPt(dxPx, dyPx) {
+  return drehDelta(dxPx / props.zoom, dyPx / props.zoom, viewStore.drehung);
 }
 
 function starteKoerperZug(ev) {
@@ -163,8 +181,9 @@ function bewege(ev) {
     const p = zeiger.get(ev.pointerId);
     // Bildschirm-y wächst nach unten → atan2 liefert direkt den
     // Uhrzeiger-positiven Winkel unserer Konvention.
+    // Der Winkel lebt im SEITENRAUM: die Ansichtsdrehung herausrechnen.
     const grad = (Math.atan2(p.y - anker.y, p.x - anker.x) * 180) / Math.PI;
-    lineal.value.winkelGrad = rasteWinkel(grad);
+    lineal.value.winkelGrad = rasteWinkel(grad - viewStore.drehung);
     return;
   }
 
@@ -178,13 +197,15 @@ function bewege(ev) {
     lineal.value.winkelGrad = rasteWinkel(zug.winkel0 + ((w1 - w0) * 180) / Math.PI);
     const mid0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
     const mid1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
-    lineal.value.x = zug.x0 + (mid1.x - mid0.x) / props.zoom;
-    lineal.value.y = zug.y0 + (mid1.y - mid0.y) / props.zoom;
+    const [dx, dy] = _dPt(mid1.x - mid0.x, mid1.y - mid0.y);
+    lineal.value.x = zug.x0 + dx;
+    lineal.value.y = zug.y0 + dy;
   } else if (start.length === 1) {
     const [id, p0] = start[0];
     const p1 = zeiger.get(id);
-    lineal.value.x = zug.x0 + (p1.x - p0.x) / props.zoom;
-    lineal.value.y = zug.y0 + (p1.y - p0.y) / props.zoom;
+    const [dx, dy] = _dPt(p1.x - p0.x, p1.y - p0.y);
+    lineal.value.x = zug.x0 + dx;
+    lineal.value.y = zug.y0 + dy;
   }
 }
 

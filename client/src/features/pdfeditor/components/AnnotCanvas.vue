@@ -18,6 +18,8 @@ import { renderScaleFuer } from '../services/PdfEngine';
 import { erstelleCanvasAnnotDoc } from '../services/CanvasAnnotDoc';
 import { zeichneAnnotationen } from '../services/AnnotationPainter';
 import { kalibrierungFuerSeite } from '../services/MeasureMath';
+import { hole as holeBildBitmap } from '../services/BildCache';
+import { ladeBildBitmap } from '../services/BildAblage';
 
 const props = defineProps({
   index:      { type: Number, required: true },
@@ -63,12 +65,30 @@ function _zeichne() {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, b, h);
   if (!itemsDerSeite.value.length) return;
-  const doc = erstelleCanvasAnnotDoc(ctx, { skala: skala.value });
+  // Bilder: der Painter ist synchron, das Bitmap muss im Cache liegen.
+  // Fehlt es, zeichnet der Adapter einen Platzhalter und wir laden nach —
+  // jede Seite hängt sich an das geteilte Promise und zeichnet sich selbst
+  // neu (kein Store-Trigger, kein Modul-Emitter).
+  const dokId = docStore.dokId;
+  const fehlende = new Set();
+  const doc = erstelleCanvasAnnotDoc(ctx, {
+    skala: skala.value,
+    holeBild: (key) => {
+      const bm = holeBildBitmap(dokId, key);
+      if (!bm) fehlende.add(key);
+      return bm;
+    },
+  });
   zeichneAnnotationen(doc, itemsDerSeite.value, {
     ohneTypen: OHNE_TYPEN,
     ausgenommen: ausgenommen.value,
     messKontext: messKontext.value,
   });
+  for (const key of fehlende) {
+    ladeBildBitmap(dokId, key).then((bm) => {
+      if (bm && docStore.dokId === dokId) _planeZeichnen();
+    });
+  }
 }
 
 function _planeZeichnen() {
