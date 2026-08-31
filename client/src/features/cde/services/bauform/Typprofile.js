@@ -95,7 +95,11 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         },
     },
     IFCRAIL: { bauform: 'achse+profil', felder: {} },
-    IFCTRACKELEMENT: { bauform: 'achse+profil', felder: {} },
+    // IFCTRACKELEMENT steht bewusst NICHT hier: seine Untertypen sind
+    // BLOCKINGDEVICE, DERAILER, FROG, SLEEPER, SPEEDREGULATOR, VEHICLESTOP —
+    // Geräte AN der Strecke, keine Strecke. Es erbt `koerper` von
+    // IFCBUILTELEMENT. Die Schiene selbst (IFCRAIL) ist dagegen linear.
+
     IFCCABLECARRIERSEGMENT: { bauform: 'achse+profil', felder: {} },
     IFCREINFORCINGBAR: {
         bauform: 'achse+profil',
@@ -140,7 +144,11 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         felder: { dicke: { label: 'Aufbaudicke', einheit: 'm', typ: 'zahl', min: 0.02, max: 3 } },
     },
     IFCPLATE: { bauform: 'flaeche+dicke', felder: {} },
-    IFCFOOTING: { bauform: 'flaeche+dicke', felder: {} },
+    // IFCFOOTING steht bewusst NICHT bei den Flächen: STRIP_FOOTING und
+    // FOOTING_BEAM sind linear, PAD_FOOTING und PILE_CAP sind Klötze — keiner
+    // seiner Untertypen ist eine Region mit Stärke. Es erbt `koerper`. Die
+    // Bodenplatte ist ein IFCSLAB und steht dort richtig.
+
     IFCCOVERING: { bauform: 'flaeche+dicke', felder: {} },
     IFCCURTAINWALL: { bauform: 'flaeche+dicke', felder: {} },
     IFCSHADINGDEVICE: { bauform: 'flaeche+dicke', felder: {} },
@@ -196,6 +204,8 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // ausgemessen. `punkt` braucht keine Form und ist deshalb immer belastbar —
     // `koerper` verlangte ein Volumen, das oft gar nicht modelliert ist.
     IFCDISTRIBUTIONCONTROLELEMENT: { bauform: 'punkt', felder: {} },
+    // BEACON und BUOY — Seezeichen. Sie werden GESETZT, nicht ausgemessen.
+    IFCNAVIGATIONELEMENT: { bauform: 'punkt', felder: {} },
     IFCSIGN: { bauform: 'punkt', felder: {} },
     IFCSIGNAL: { bauform: 'punkt', felder: {} },
     IFCDISTRIBUTIONPORT: { bauform: 'punkt', felder: {} },
@@ -218,7 +228,15 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCEARTHWORKSELEMENT: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSFILL: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSCUT: { bauform: 'hoehenfeld', felder: {} },
-    IFCGEOTECHNICALSTRATUM: { bauform: 'hoehenfeld', felder: {} },
+    // IFCGEOTECHNICALSTRATUM steht bewusst NICHT hier: seine Untertypen sind
+    // SOLID, VOID und WATER — BodenKÖRPER zwischen zwei Flächen, keine
+    // Oberfläche z = f(x,y). Es erbt `koerper` von IFCGEOTECHNICALELEMENT.
+    //
+    // Der Unterschied zum Erdbaukörper darüber ist kein Widerspruch, sondern
+    // die Frage, WORAN man arbeitet: ein Aushub wird als Rasteroperation
+    // geformt (Stufe 10), eine Bodenschicht ist ein Aufschlussergebnis und
+    // wird nicht bearbeitet.
+
 
     // ═══ AUSDRÜCKLICH NICHT DEKLARIERT ══════════════════════════════════════
     /**

@@ -206,3 +206,48 @@ describe('Ältere Schemata: IFC2x3 und IFC4', () => {
         expect(h.luecke.text).toMatch(/2x3|IFC4/);
     });
 });
+
+describe('Die Zuordnung folgt den UNTERTYPEN, nicht dem Klassennamen', () => {
+    /**
+     * Beim Durchgehen des Oberklassenbaums (Fabios „geh mal alle Ober-Elemente
+     * durch") fielen vier Zuordnungen auf, die nach dem NAMEN plausibel
+     * klangen und nach ihrem INHALT falsch waren. Das IFC-Wörterbuch führt die
+     * vorgegebenen Untertypen als eigene Klassennamen — dort steht, was eine
+     * Klasse wirklich umfasst.
+     *
+     * Diese Fehlerklasse ist heimtückisch, weil das Ergebnis nie „kaputt"
+     * aussieht: ein Streifenfundament als Fläche mit Stärke wird angezeigt,
+     * gemessen und gezeichnet wie alles andere — nur die angebotenen
+     * Bearbeitungen passen nicht, und das merkt man erst beim Arbeiten.
+     */
+    const NACH_INHALT = [
+        ['IFCTRACKELEMENT', 'koerper',
+            'BLOCKINGDEVICE DERAILER FROG SLEEPER — Geräte AN der Strecke, keine Strecke'],
+        ['IFCRAIL', 'achse+profil',
+            'BLADE CHECKRAIL RACKRAIL STOCKRAIL — die Schiene selbst ist linear'],
+        ['IFCFOOTING', 'koerper',
+            'STRIP_FOOTING/FOOTING_BEAM linear, PAD_FOOTING/PILE_CAP Klötze — keine Platte'],
+        ['IFCGEOTECHNICALSTRATUM', 'koerper',
+            'SOLID VOID WATER — Bodenkörper zwischen zwei Flächen, keine Oberfläche'],
+        ['IFCNAVIGATIONELEMENT', 'punkt',
+            'BEACON BUOY — Seezeichen werden gesetzt, nicht ausgemessen'],
+        ['IFCPLATE', 'flaeche+dicke',
+            'BASE_PLATE GUSSET_PLATE SHEET WEB_PLATE — echte Bleche'],
+        ['IFCCOLUMN', 'achse+profil',
+            'COLUMN PIERSTEM PILASTER — durchweg linear'],
+        ['IFCCOURSE', 'flaeche+dicke',
+            'ARMOUR BALLASTBED FILTER PROTECTION — Schichten'],
+    ];
+
+    it.each(NACH_INHALT)('%s ist %s (%s)', (typ, soll) => {
+        expect(profilHerkunft(typ, EINGEBAUTE_PROFILE).profil?.bauform).toBe(soll);
+    });
+
+    it('lässt den Erdbaukörper hoehenfeld — dort wird wirklich am Raster gearbeitet', () => {
+        // Kein Widerspruch zum Bodenkörper: die Frage ist, WORAN man arbeitet.
+        // Ein Aushub wird als Rasteroperation geformt (Stufe 10), eine
+        // Bodenschicht ist ein Aufschlussergebnis.
+        expect(profilHerkunft('IFCEARTHWORKSFILL', EINGEBAUTE_PROFILE).profil.bauform).toBe('hoehenfeld');
+        expect(profilHerkunft('IFCEARTHWORKSCUT', EINGEBAUTE_PROFILE).profil.bauform).toBe('hoehenfeld');
+    });
+});
