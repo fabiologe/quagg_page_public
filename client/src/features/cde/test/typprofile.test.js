@@ -167,10 +167,26 @@ describe('Vererbung — die eigentliche Antwort auf „immer neue IFC-Typen"', (
 
     it('erbt auch aus einem Büro-Satz, nicht nur aus dem eingebauten', async () => {
         // Ein Büro, das ein Profil an einer HOHEN Stelle setzt, erweitert das
-        // System damit für alle Nachfahren — ohne neue Programmfassung.
+        // System damit für alle Nachfahren — ohne neue Programmfassung. Das
+        // Beispiel sitzt bewusst dort, wo der eingebaute Satz mit Absicht
+        // schweigt (räumliche Elemente): so zeigt es, dass ein Büro eine
+        // Lücke schliessen kann, die wir offen gelassen haben.
+        expect(profilFuer('IFCBUILDINGSTOREY')).toBe(null);
         const satz = await ladeSatz({
-            mitVorrang: async () => ({ IFCBUILTELEMENT: { bauform: 'koerper', felder: {} } }),
+            mitVorrang: async () => ({ IFCSPATIALSTRUCTUREELEMENT: { bauform: 'flaeche', felder: {} } }),
         });
-        expect(profilFuer('IFCRAILING', satz).bauform).toBe('koerper');
+        expect(profilFuer('IFCBUILDINGSTOREY', satz).bauform).toBe('flaeche');
+        expect(profilFuer('IFCSITE', satz).bauform).toBe('flaeche');
+    });
+
+    it('lässt den SPEZIELLEREN Eintrag gewinnen, auch wenn der allgemeine vom Büro kommt', () => {
+        // Die Vorrangregel der Sätze (Projekt > Büro > eingebaut) gilt JE
+        // SCHLÜSSEL. Über die Vererbung gewinnt danach immer der tiefere Knoten
+        // — sonst könnte ein Büro-Eintrag an `IFCBUILTELEMENT` jede eingebaute
+        // Feinheit darunter platt machen, und ein Bordstein wäre ein Klotz.
+        // Wer `IFCRAILING` überschreiben will, schreibt `IFCRAILING`.
+        const satz = { ...EINGEBAUTE_PROFILE, IFCBUILTELEMENT: { bauform: 'koerper', felder: {} } };
+        expect(profilFuer('IFCRAILING', satz).bauform).toBe('achse+profil');
+        expect(profilFuer('IFCCHIMNEY', satz).bauform).toBe('koerper');   // dort greift er
     });
 });

@@ -237,6 +237,38 @@ export const BEARBEITUNGEN = Object.freeze([
         }),
     },
     {
+        /**
+         * Stärke festlegen — Rolle `dicke`.
+         *
+         * Heißt an der Wand „Wandstärke", an der Platte „Plattenstärke", an der
+         * Tragschicht „Schichtdicke", am Belag „Belagsdicke", am Dach
+         * „Aufbaudicke". Fünf Wörter, ein Katalogeintrag.
+         *
+         * Wie die Querschnittsgröße eine FESTLEGUNG, keine Geometrieänderung:
+         * eine Wand nachträglich zu verdicken hiesse, ihren Körper neu zu
+         * bauen — und das gelieferte Modell gehört dem Planer.
+         */
+        id: 'staerke-setzen',
+        titel: 'Stärke festlegen',
+        icon: 'measure',
+        gruppe: 'parametrik',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        brauchtRolle: 'dicke',
+        art: 'parametrik',
+        nurFestlegung: true,
+        felder: [{
+            name: 'dicke',
+            ausTypprofil: 'dicke',
+            rueckfall: { titel: 'Stärke', einheit: 'm', typ: 'zahl' },
+        }],
+        vorbelegung: (el) => ({ dicke: el?.stand?.dicke ?? null }),
+        anwenden: (el, werte) => ({
+            art: 'parametrik', globalId: el.globalId,
+            nachher: { rolle: 'dicke', wert: werte.dicke },
+        }),
+    },
+    {
         id: 'din277-setzen',
         titel: 'DIN-277-Klasse setzen',
         icon: 'areas',

@@ -35,6 +35,7 @@ export const REPO_KEY = 'typprofile';
  * Unterfassung (siehe `normalisiereKategorie`).
  */
 export const EINGEBAUTE_PROFILE = Object.freeze({
+    // ═══ 1D+ — Achse mit Querschnitt ════════════════════════════════════════
     // An der richtigen HÖHE im Baum: IFCFLOWSEGMENT deckt Rohr, Kanal, Kabel
     // und jeden künftigen Fließabschnitt über die Vererbung mit ab.
     IFCFLOWSEGMENT: {
@@ -63,12 +64,49 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         bauform: 'achse+profil',
         felder: { profilGroesse: { label: 'Profilreihe', typ: 'text' } },
     },
+    IFCCOLUMN: {
+        bauform: 'achse+profil',
+        felder: { profilGroesse: { label: 'Profilreihe', typ: 'text' } },
+    },
     IFCKERB: {
         bauform: 'achse+profil',
         felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm', typ: 'zahl' } },
     },
+    IFCRAILING: {
+        bauform: 'achse+profil',
+        felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm', typ: 'zahl' } },
+    },
+    // Der Pfahl ist ein LINEARES Bauteil, kein Klotz — deshalb steht er hier
+    // und nicht unter der Gründung, von der er erbt.
+    IFCPILE: {
+        bauform: 'achse+profil',
+        felder: {
+            profilGroesse: { label: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
+            sohlhoehe: { label: 'Fußpunkt', einheit: 'm', typ: 'zahl' },
+        },
+    },
+    // Die Bohrung ist eine senkrechte Achse mit Durchmesser — dieselbe Form
+    // wie ein Rohr, nur anders benannt. Genau dafür sind Rollen da.
+    IFCBOREHOLE: {
+        bauform: 'achse+profil',
+        felder: {
+            profilGroesse: { label: 'Bohrdurchmesser', einheit: 'mm', typ: 'zahl', min: 20, max: 3000 },
+            sohlhoehe: { label: 'Endteufe', einheit: 'm', typ: 'zahl' },
+        },
+    },
+    IFCRAIL: { bauform: 'achse+profil', felder: {} },
+    IFCTRACKELEMENT: { bauform: 'achse+profil', felder: {} },
     IFCCABLECARRIERSEGMENT: { bauform: 'achse+profil', felder: {} },
+    IFCREINFORCINGBAR: {
+        bauform: 'achse+profil',
+        felder: { profilGroesse: { label: 'Stabdurchmesser', einheit: 'mm', typ: 'zahl', min: 4, max: 60 } },
+    },
+    IFCTENDON: {
+        bauform: 'achse+profil',
+        felder: { profilGroesse: { label: 'Spanngliedgröße', typ: 'text' } },
+    },
 
+    // ═══ 2D+ — Fläche mit Stärke ════════════════════════════════════════════
     IFCWALL: {
         bauform: 'flaeche+dicke',
         felder: {
@@ -87,11 +125,51 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
             },
         },
     },
+    // Straßenbau: die Schicht IST eine Fläche mit Dicke, und ihre Dicke ist
+    // die Größe, um die es geht.
+    IFCCOURSE: {
+        bauform: 'flaeche+dicke',
+        felder: { dicke: { label: 'Schichtdicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 2 } },
+    },
+    IFCPAVEMENT: {
+        bauform: 'flaeche+dicke',
+        felder: { dicke: { label: 'Belagsdicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 2 } },
+    },
+    IFCROOF: {
+        bauform: 'flaeche+dicke',
+        felder: { dicke: { label: 'Aufbaudicke', einheit: 'm', typ: 'zahl', min: 0.02, max: 3 } },
+    },
     IFCPLATE: { bauform: 'flaeche+dicke', felder: {} },
     IFCFOOTING: { bauform: 'flaeche+dicke', felder: {} },
     IFCCOVERING: { bauform: 'flaeche+dicke', felder: {} },
+    IFCCURTAINWALL: { bauform: 'flaeche+dicke', felder: {} },
+    IFCSHADINGDEVICE: { bauform: 'flaeche+dicke', felder: {} },
+    IFCDOOR: { bauform: 'flaeche+dicke', felder: {} },
+    IFCWINDOW: { bauform: 'flaeche+dicke', felder: {} },
+    IFCREINFORCINGMESH: { bauform: 'flaeche+dicke', felder: {} },
 
+    // ═══ 3D — platziertes Volumen ═══════════════════════════════════════════
+    // DER GRÖSSTE HEBEL im ganzen Satz: EIN Eintrag deckt rund 60 Typen —
+    // Formstücke, Armaturen, Pumpen, Kessel, Auslässe, Abscheider. Sie sind
+    // alle dasselbe: ein Gerät, das irgendwo im Netz sitzt. Der Fließ-ABSCHNITT
+    // ist die Ausnahme, und er steht weiter oben — tiefer im Baum schlägt höher.
+    IFCDISTRIBUTIONFLOWELEMENT: {
+        bauform: 'koerper',
+        felder: { sohlhoehe: { label: 'Bezugshöhe', einheit: 'm', typ: 'zahl' } },
+    },
+    // Formstück, Bogen, Abzweig — im Kanalbau überall, und mit eigener DN.
+    IFCFLOWFITTING: {
+        bauform: 'koerper',
+        felder: {
+            profilGroesse: { label: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
+            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
+        },
+    },
     IFCDISTRIBUTIONCHAMBERELEMENT: {
+        bauform: 'koerper',
+        felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' } },
+    },
+    IFCFLOWTREATMENTDEVICE: {
         bauform: 'koerper',
         felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' } },
     },
@@ -99,15 +177,62 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCVALVE: { bauform: 'koerper', felder: {} },
     IFCTANK: { bauform: 'koerper', felder: {} },
 
+    // Zweiter grosser Hebel: alles Gebaute ist im Zweifel ein Körper. Die
+    // Ausnahmen (Stütze, Geländer, Schicht, Belag, Tür …) stehen oben und
+    // gewinnen, weil sie tiefer im Baum sitzen.
+    IFCBUILTELEMENT: { bauform: 'koerper', felder: {} },
+    // Bauteilkomponenten: Verbindungsmittel, Anbauteile, Dämpfer.
+    IFCELEMENTCOMPONENT: { bauform: 'koerper', felder: {} },
+    // Öffnung, Aussparung, Vorsprung: ein KÖRPER IN EINER ROLLE. Die Rolle
+    // (abziehend/hinzufügend) ist keine Form — die Geometrie bleibt ein
+    // Volumen, nur seine Wirkung ist subtraktiv.
+    IFCFEATUREELEMENT: { bauform: 'koerper', felder: {} },
+    IFCGEOTECHNICALELEMENT: { bauform: 'koerper', felder: {} },
+    IFCFURNISHINGELEMENT: { bauform: 'koerper', felder: {} },
+    IFCTRANSPORTATIONDEVICE: { bauform: 'koerper', felder: {} },
+
+    // ═══ 0D — Ort (+ Drehung) ═══════════════════════════════════════════════
+    // Mess-, Steuer- und Regeltechnik: ein Fühler wird PLATZIERT, nicht
+    // ausgemessen. `punkt` braucht keine Form und ist deshalb immer belastbar —
+    // `koerper` verlangte ein Volumen, das oft gar nicht modelliert ist.
+    IFCDISTRIBUTIONCONTROLELEMENT: { bauform: 'punkt', felder: {} },
+    IFCSIGN: { bauform: 'punkt', felder: {} },
+    IFCSIGNAL: { bauform: 'punkt', felder: {} },
+    IFCDISTRIBUTIONPORT: { bauform: 'punkt', felder: {} },
+    IFCREFERENT: { bauform: 'punkt', felder: {} },
+
+    // ═══ 1D — Kurve ohne Querschnitt ════════════════════════════════════════
     IFCALIGNMENT: { bauform: 'linie', felder: {} },
     IFCLINEARPOSITIONINGELEMENT: { bauform: 'linie', felder: {} },
+    IFCLINEARELEMENT: { bauform: 'linie', felder: {} },
     IFCANNOTATION: { bauform: 'linie', felder: {} },
-    IFCSPACE: { bauform: 'flaeche', felder: {} },
+    IFCGRID: { bauform: 'linie', felder: {} },
 
+    // ═══ 2D — Region ohne Dicke ═════════════════════════════════════════════
+    IFCSPACE: { bauform: 'flaeche', felder: {} },
+    IFCGEOSLICE: { bauform: 'flaeche', felder: {} },
+    IFCSURFACEFEATURE: { bauform: 'flaeche', felder: {} },
+
+    // ═══ 2,5D — Oberfläche z = f(x,y) ═══════════════════════════════════════
     IFCGEOGRAPHICELEMENT: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSELEMENT: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSFILL: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSCUT: { bauform: 'hoehenfeld', felder: {} },
+    IFCGEOTECHNICALSTRATUM: { bauform: 'hoehenfeld', felder: {} },
+
+    // ═══ AUSDRÜCKLICH NICHT DEKLARIERT ══════════════════════════════════════
+    /**
+     * `bauform: null` heisst „hier sagt der Typ NICHTS — frag die Geometrie".
+     * Das ist etwas anderes als ein fehlender Eintrag: es ist eine SPERRE gegen
+     * die Vererbung. Ohne sie erbte der Proxy das `koerper` von
+     * `IFCBUILTELEMENT`, und eine ProVI-Haltung — die nichts weiter ist als ein
+     * Proxy mit dem Namen „Haltung" — wäre damit als Klotz deklariert statt
+     * über ihre Geometrie oder eine Namensregel als Leitung erkannt zu werden.
+     * Genau Fabios Bestandsmodelle hätten das getroffen.
+     */
+    IFCBUILDINGELEMENTPROXY: { bauform: null, felder: {} },
+    /** Ein virtuelles Element hat keine Geometrie — es gibt nichts zu formen. */
+    IFCVIRTUALELEMENT: { bauform: null, felder: {} },
 });
 
 /**
