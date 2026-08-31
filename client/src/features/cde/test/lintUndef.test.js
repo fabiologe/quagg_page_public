@@ -52,5 +52,9 @@ describe('CDE: keine undefinierten Bezeichner', () => {
       }
     }
     expect(befunde).toEqual([])
-  })
+  // eslint über ~130 Dateien braucht mehrere Sekunden; unter der Parallellast
+  // des Gesamtlaufs reichen die voreingestellten 5 s nicht. Ohne diese Grenze
+  // faellt der Waechter sporadisch — und ein flatterhafter Waechter wird
+  // abgeschaltet statt beachtet.
+  }, 60_000)
 })
