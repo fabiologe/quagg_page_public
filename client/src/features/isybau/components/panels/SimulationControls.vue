@@ -41,7 +41,7 @@
         <div class="control-group">
             <label>Regendaten</label>
             <div class="button-row" data-tutorial="rain-config">
-                <button class="secondary-btn" @click="store.ui.showRainModal = true">
+                <button class="secondary-btn" data-tutorial="modellregen-oeffnen" @click="store.ui.showRainModal = true">
                     <img class="ic" src="/saintv1d/icons/Weather-Umbrella--Streamline-Pixel.svg" />
                     Modellregen
                 </button>

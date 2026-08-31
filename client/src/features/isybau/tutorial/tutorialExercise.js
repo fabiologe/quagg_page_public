@@ -150,6 +150,21 @@ export const simulationFinished = (store) =>
 export const kostraRainApplied = (store) =>
     store?.rain?.method === 'kostra' && Number(store?.rain?.intensity) > 0;
 
+/**
+ * Ein Modellregen ist gesetzt — also ein VERLAUF ueber die Zeit, nicht nur
+ * eine Intensitaet.
+ *
+ * Geprueft wird die Reihe selbst, nicht ihre Kenndaten: die Aufgabe nennt
+ * 3 Jahre und 15 Minuten als das, was man hier ueblicherweise nimmt, aber wer
+ * bewusst eine andere Wiederkehrzeit waehlt, hat die Sache trotzdem
+ * verstanden. Ein leerer Verlauf zaehlt nicht — den erzeugt das Fenster, wenn
+ * die KOSTRA-Spalte fehlt.
+ */
+export const modelRainApplied = (store) => {
+    const regen = store?.rain?.activeModelRain;
+    return !!regen && Array.isArray(regen.series) && regen.series.length > 0;
+};
+
 /** Jede Fläche hat einen plausiblen Abflussbeiwert (0 < ψ ≤ 1). */
 export const allAreasHaveRunoffCoeff = (store) => {
     const areas = toArray(store?.areas);
@@ -594,13 +609,35 @@ export const EXERCISE_STEPS = [
         check: kostraRainApplied,
     },
     {
+        id: 'ex-rain-modellregen',
+        mood: 'rain',
+        info: 'bemessungsregen',
+        // Ohne offenes Fenster gibt es keinen "Uebernehmen"-Knopf — dann zeigt
+        // die Ratte auf den Weg dorthin (wie bei KOSTRA und den Auslaessen).
+        highlight: (store) => (store?.ui?.showRainModal
+            ? 'modellregen-uebernehmen'
+            : ['rain-config', 'modellregen-oeffnen']),
+        task: 'Mach aus den KOSTRA-Werten einen Modellregen: 3 Jahre, 15 Minuten.',
+        message:
+            'Der KOSTRA-Wert ist eine einzelne Zahl — so viel kommt im Schnitt runter. Ein echter '
+            + 'Regen faengt aber klein an, wird heftig und klingt wieder aus. Genau diesen Verlauf '
+            + 'braucht der Solver, sonst rechnet er mit Dauerberieselung.\n\n'
+            + 'Mach "Modellregen" auf und nimm "Euler Typ II" — das ist jetzt waehlbar, weil die '
+            + 'KOSTRA-Werte da sind. Dauer 15 Minuten, Wiederkehrzeit 3 Jahre. Dann uebernehmen.',
+        hint: 'Regendaten -> Modellregen -> Euler Typ II -> Dauer 15 -> Wiederkehrzeit "3 Jahre" '
+            + '-> Uebernehmen. Die Vorschau daneben zeigt den Verlauf, den du baust.',
+        // Wie bei KOSTRA bewusst OHNE `requires`: es zaehlt, dass der Regen am
+        // Ende steht — nicht, ob das Fenster gerade offen ist.
+        check: modelRainApplied,
+    },
+    {
         id: 'ex-run',
         mood: 'asking',
         highlight: 'run-simulation',
         task: 'Starte die Berechnung.',
         message:
-            'Das Netz steht, der Regen auch. Jetzt lass rechnen — und dann schauen wir zusammen, '
-            + 'was das Modell dazu sagt.',
+            'Das Netz steht, der Regen hat einen Verlauf. Jetzt lass rechnen — und dann schauen wir '
+            + 'zusammen, was das Modell dazu sagt.',
         hint: 'Das dauert ein paar Sekunden. Der Rechner geht das Netz Zeitschritt fuer Zeitschritt durch.',
         check: simulationFinished,
     },

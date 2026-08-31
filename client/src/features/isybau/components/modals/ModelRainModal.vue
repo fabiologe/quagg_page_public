@@ -89,7 +89,7 @@
 
       <div class="modal-footer">
         <button class="secondary-btn" @click="close">Abbrechen</button>
-        <button class="primary-btn" @click="apply">Übernehmen</button>
+        <button class="primary-btn" data-tutorial="modellregen-uebernehmen" @click="apply">Übernehmen</button>
       </div>
   </DraggableModal>
 </template>

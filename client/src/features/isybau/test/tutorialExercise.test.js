@@ -654,3 +654,46 @@ describe('Abschluss: Berechnung starten und uebergeben', () => {
 // test/fortschrittsSignale.test.js. Hier las er die .vue-Datei als Zeichenkette
 // und verglich sie mit neun von Hand gepflegten Feldnamen — er mass also etwas
 // anderes als das, was bricht, und deckte nur einen Teil ab.
+
+describe('Regen-Abfolge: erst die Statistik, dann der Verlauf', () => {
+  // Der Nutzer hat gemeldet, dass zwischen KOSTRA-Abruf und Berechnung ein
+  // Schritt fehlte: aus den Statistikwerten muss noch ein Modellregen werden.
+  // Ohne den rechnet der Solver mit einer konstanten Intensitaet.
+  const schritt = (id) => EXERCISE_STEPS.find(s => s.id === id);
+  const aufgaben = EXERCISE_STEPS.filter(s => typeof s.check === 'function' && !s.optional);
+
+  it('steht zwischen KOSTRA-Uebernahme und Berechnung', () => {
+    const reihe = EXERCISE_STEPS.map(s => s.id);
+    expect(reihe.indexOf('ex-rain-uebernehmen'))
+      .toBeLessThan(reihe.indexOf('ex-rain-modellregen'));
+    expect(reihe.indexOf('ex-rain-modellregen'))
+      .toBeLessThan(reihe.indexOf('ex-run'));
+  });
+
+  it('zaehlt als Aufgabe 7 von 8, die Berechnung als 8 von 8', () => {
+    expect(aufgaben.map(s => s.id).slice(-2)).toEqual(['ex-rain-modellregen', 'ex-run']);
+    expect(aufgaben).toHaveLength(8);
+  });
+
+  it('nennt Wiederkehrzeit und Dauer, die er meint', () => {
+    const s = schritt('ex-rain-modellregen');
+    expect(s.task).toMatch(/3 Jahre/);
+    expect(s.task).toMatch(/15 Minuten/);
+    expect(s.message).toMatch(/Euler Typ II/);
+  });
+
+  it('gilt erst als erledigt, wenn ein Verlauf im Store steht', () => {
+    const s = schritt('ex-rain-modellregen');
+    expect(s.check({ rain: {} })).toBe(false);
+    // Leere Reihe zaehlt nicht: die entsteht, wenn die KOSTRA-Spalte fehlt.
+    expect(s.check({ rain: { activeModelRain: { type: 'euler2', series: [] } } })).toBe(false);
+    expect(s.check({ rain: { activeModelRain: { type: 'euler2', series: [{ time: 0, intensity: 12 }] } } })).toBe(true);
+  });
+
+  it('zeigt auf den Weg ins Fenster, solange es zu ist', () => {
+    const s = schritt('ex-rain-modellregen');
+    expect(resolveStepHighlight(s, { ui: {} })).toContain('modellregen-oeffnen');
+    expect(resolveStepHighlight(s, { ui: { showRainModal: true } }))
+      .toEqual(['modellregen-uebernehmen']);
+  });
+});
