@@ -9,6 +9,7 @@ import { IfcGridAxes } from './IfcGridAxes.js';
 import { IfcSection } from './IfcSection.js';
 import { IfcStoreys } from './IfcStoreys.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
+import { IfcAutor } from './IfcAutor.js';
 
 
 const SELECTION_STYLE = {
@@ -149,6 +150,8 @@ export class IfcEngine {
         });
         this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint });
         this.measure     = new IfcMeasure({     getWorld: () => this._getWorld(), probePoint });
+        // Stufe 9.2: der einzige Kanal zur Editor-API von @thatopen/fragments.
+        this.autor       = new IfcAutor({ getFragments: () => this.components.get(OBC.FragmentsManager) });
 
         const grids = this.components.get(OBC.Grids);
         this._sceneGrid = grids.create(world);
@@ -670,6 +673,16 @@ export class IfcEngine {
 
 
     // ── Camera ───────────────────────────────────────────────────────────────
+
+    // ── Bearbeiten (Implementierung in IfcAutor.js) ─────────────────────────
+    istBearbeitbar(modelId)             { return this.autor.istBearbeitbar(modelId); }
+    ankerVon(modelId, localIds)         { return this.autor.ankerVon(modelId, localIds); }
+    setzeAnker(modelId, localId, ziel)  { return this.autor.setzeAnker(modelId, localId, ziel); }
+    erzeugeBauteil(modelId, bauteil)    { return this.autor.erzeuge(modelId, bauteil); }
+    loescheBauteil(modelId, localId)    { return this.autor.loesche(modelId, localId); }
+    eigenesModell(modelId)              { return this.autor.eigenesModell(modelId); }
+    modellAlsPuffer(modelId)            { return this.autor.alsPuffer(modelId); }
+    wendeFestlegungenAn(plan, opts)     { return this.autor.wendeAn(plan, opts); }
 
     // ── Raumstruktur & Geschosse (Implementierung in IfcStoreys.js) ─────────
     getSpatialTree()                     { return this.storeys.getSpatialTree(); }

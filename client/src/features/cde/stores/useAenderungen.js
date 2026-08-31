@@ -126,10 +126,30 @@ export function gleichFuer(art, arten = AENDERUNGS_ARTEN) {
  */
 export function standAus(eintraege, art) {
     const stand = new Map();
+    for (const [globalId, { wert }] of standMitEintrag(eintraege, art)) {
+        stand.set(globalId, wert);
+    }
+    return stand;
+}
+
+/**
+ * Derselbe Stand, aber mit dem Eintrag, der ihn erzeugt hat.
+ *
+ * Das Nachspielen braucht mehr als den Wert: es braucht die `basis` des
+ * Schrittes, der zuletzt gewonnen hat — sonst lässt sich nicht prüfen, ob der
+ * Planer dasselbe Bauteil inzwischen auch angefasst hat.
+ *
+ * `standAus` leitet sich hieraus ab, statt die Faltung ein zweites Mal zu
+ * schreiben. Zwei Faltungen nebeneinander wären zwei Wahrheiten, und die
+ * laufen auseinander — genau die Fehlerklasse, gegen die dieses Journal
+ * überhaupt angetreten ist.
+ */
+export function standMitEintrag(eintraege, art) {
+    const stand = new Map();
     for (const e of eintraege) {
         if (e.art !== art || !e.globalId) continue;
         if (e.nachher === null || e.nachher === undefined) stand.delete(e.globalId);
-        else stand.set(e.globalId, e.nachher);
+        else stand.set(e.globalId, { wert: e.nachher, eintrag: e });
     }
     return stand;
 }
