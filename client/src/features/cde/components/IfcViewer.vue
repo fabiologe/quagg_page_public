@@ -208,6 +208,15 @@
           </button>
         </Transition>
 
+        <!-- Stufe 9.3: warum sich dieses Bauteil nicht ziehen lässt. „Geht
+             nicht" ohne Grund ist die schlechteste Rückmeldung — der Nutzer
+             probiert weiter, weil er nicht weiss, ob er etwas falsch macht. -->
+        <Transition name="fade">
+          <div v-if="ziehen.grund.value" class="zieh-hinweis">
+            <CdeIcon name="warn" :size="13" /> {{ ziehen.grund.value }}
+          </div>
+        </Transition>
+
         <!-- Mess-Hinweis (die Werte selbst stehen als Pillen an der Strecke) -->
         <Transition name="fade">
           <div v-if="messen.meldung.value" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ messen.meldung.value.text }}</div>
@@ -312,6 +321,7 @@ import { useMessen } from '../composables/useMessen.js';
 import { useAnnotationen } from '../composables/useAnnotationen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
+import { useZiehen } from '../composables/useZiehen.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { BEARBEITUNGEN, GRUPPEN } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
@@ -367,6 +377,15 @@ const annotationActive = ref(false);
 // Stufe 9.2: bringt beim Laden die Festlegungen aufs Modell und meldet, was
 // nicht durchging. `aenderungen` ist das Journal aus Stufe 7.
 const nachspielen = useNachspielen({ engine, aenderungen: useAenderungen() });
+
+/**
+ * Stufe 9.3: der Griff am Bauteil. Braucht `nachspielen` für den eingefrorenen
+ * Lieferstand und `bearbeitung` für die Bauform — beide sind oben schon da.
+ */
+const ziehen = useZiehen({
+  engine, ifc, cde, aenderungen: useAenderungen(),
+  bearbeitung, nachspielen,
+});
 
 const annotationen = useAnnotationen({
   engine, ifc, cde,
@@ -456,6 +475,8 @@ const toolbarItems = computed(() => [
   { divider: true },
   { id: 'measure', icon: 'measure', label: 'Messen', title: 'Strecke messen', key: 'M',
     active: messen.aktiv.value, action: () => messen.umschalten() },
+  { id: 'ziehen', icon: 'pointer', label: 'Ziehen', title: 'Bauteil verschieben (geführt)', key: 'G',
+    active: ziehen.aktiv.value, action: () => ziehen.umschalten() },
   { id: 'views', icon: 'views', label: 'Views', title: 'Gespeicherte Ansichten', key: 'V',
     active: showSavedViews.value, action: () => onToggleViews() },
   { id: 'issues', icon: 'issues', label: 'Issues', title: 'Issues / Notizen', key: 'N',
@@ -539,11 +560,15 @@ onMounted(async () => {
     // Stufe 9.0: einordnen, damit das Kontextmenü weiß, was hier möglich ist.
     // Der Resolver wird JE AUSWAHL gebaut — er cached je Modell, und ein über
     // den Modellwechsel hinweg behaltener liefert Geometrie des alten Modells.
+    // Der Griff hängt am ALTEN Bauteil — er muss weg, bevor die neue
+    // Einordnung kommt. Sonst zöge man am Griff des vorigen.
+    ziehen.loesen();
     bearbeitung
       .einordne(result, engine.value?.makeGeometryResolver?.())
       .catch(e => console.warn('cde: einordnen', e?.message ?? e));
   });
   _selection.onClickEmpty(() => {
+    ziehen.loesen();
     ifc.clearElement();
     bearbeitung.einordne(null, null);
   });
@@ -790,6 +815,13 @@ function onKeyDown(e) {
   // T1.3: M toggles measure mode, Esc exits it
   if (e.key === 'm' || e.key === 'M') { e.preventDefault(); messen.umschalten(); return; }
   if (e.key === 'Escape' && messen.aktiv.value) { messen.umschalten(); return; }
+
+  // Stufe 9.3: G haengt den Griff an die Auswahl. Der Eintrag in der
+  // Werkzeugleiste traegt `key: 'G'` — stuende die Taste nur DORT, verspraeche
+  // der Tooltip etwas, das nie passiert (die Registry beschriftet, sie bindet
+  // nicht).
+  if (e.key === 'g' || e.key === 'G') { e.preventDefault(); ziehen.umschalten(); return; }
+  if (e.key === 'Escape' && ziehen.aktiv.value) { ziehen.loesen(); return; }
 
   // T2.2: V toggles Saved Views panel
   if (e.key === 'v' || e.key === 'V') { e.preventDefault(); showSavedViews.value = !showSavedViews.value; return; }
@@ -1277,4 +1309,21 @@ async function onMouseUp(e) {
 /* ── Animations ── */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Stufe 9.3 — gleiche Gestalt wie der Ablage-Hinweis, eigene Bedeutung. */
+.zieh-hinweis {
+  position: absolute;
+  top: 9rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.4rem;
+  max-width: min(90%, 34rem);
+  padding: 0.4rem 0.7rem;
+  background: var(--cde-float);
+  border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
+  border-left: 3px solid var(--cde-warn);
+  border-radius: var(--cde-radius);
+  box-shadow: var(--cde-shadow-float);
+  color: var(--cde-text-bright);
+  font-size: var(--cde-font-sm);
+  z-index: var(--cde-z-hud);
+}
 </style>

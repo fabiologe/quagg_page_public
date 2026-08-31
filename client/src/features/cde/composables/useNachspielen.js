@@ -42,6 +42,16 @@ export function betroffeneGlobalIds(eintraege) {
 export function useNachspielen({ engine, aenderungen } = {}) {
     /** Was der letzte Lauf ergeben hat — für die Meldung und den Reiter. */
     const meldung = ref('');
+    /**
+     * Der EINGEFRORENE Lieferstand: globalId → Anker im gelieferten Modell.
+     *
+     * Gelesen beim Laden, VOR jeder Anwendung — und danach unverändert. Das
+     * Ziehen (9.3) braucht ihn als `basis` seiner Einträge: nähme es die
+     * AKTUELLE Lage, wäre `basis` nach dem ersten Zug gleich `nachher`, und der
+     * Drei-Wege-Vergleich vergliche gegen sich selbst. Jeder Konflikt fiele
+     * dann still durch — dieselbe Fehlerklasse wie Versatz-statt-Anker in 9.1.
+     */
+    const lieferstand = ref(new Map());
     const konflikte = ref([]);
     const karte = ref(new Map());        // `${art}|${globalId}` → {zustand, grund}
     const laeuft = ref(false);
@@ -50,6 +60,7 @@ export function useNachspielen({ engine, aenderungen } = {}) {
         meldung.value = '';
         konflikte.value = [];
         karte.value = new Map();
+        lieferstand.value = new Map();
     }
 
     /**
@@ -86,6 +97,8 @@ export function useNachspielen({ engine, aenderungen } = {}) {
                     if (a) anker.set(globalId, a);
                 }
             }
+
+            lieferstand.value = anker;        // ab hier eingefroren
 
             // 3. Planen. Ein nicht gefundenes Bauteil liefert `undefined` —
             //    daraus wird im Vergleich der Zustand „fehlt", nicht ein
@@ -134,10 +147,32 @@ export function useNachspielen({ engine, aenderungen } = {}) {
         }
     }
 
+    /**
+     * Der Anker eines Bauteils im GELIEFERTEN Modell.
+     *
+     * `undefined`, wenn das Bauteil beim Laden nicht gebraucht wurde (das
+     * Journal nannte es nicht) — dann muss der Aufrufer ihn selbst lesen und
+     * einfrieren, BEVOR er etwas verschiebt.
+     */
+    function lieferstandVon(globalId) {
+        return lieferstand.value.get(globalId);
+    }
+
+    /** Einen Anker nachtragen, den das Journal beim Laden noch nicht nannte. */
+    function merkeLieferstand(globalId, anker) {
+        if (!globalId || !anker) return;
+        // NICHT überschreiben: der erste gelesene Wert ist der gelieferte. Ein
+        // zweiter Aufruf nach einer Verschiebung dürfte ihn nicht verrücken.
+        if (!lieferstand.value.has(globalId)) lieferstand.value.set(globalId, anker);
+    }
+
     /** Der Konfliktzustand eines Eintrags — für den Änderungen-Reiter. */
     function zustandVon(eintrag) {
         return karte.value.get(`${eintrag?.art}|${eintrag?.globalId}`) ?? null;
     }
 
-    return { meldung, konflikte, karte, laeuft, nachModellladung, zustandVon, zuruecksetzen };
+    return {
+        meldung, konflikte, karte, laeuft, lieferstand,
+        nachModellladung, zustandVon, zuruecksetzen, lieferstandVon, merkeLieferstand,
+    };
 }
