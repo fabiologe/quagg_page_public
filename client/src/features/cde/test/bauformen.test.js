@@ -62,11 +62,25 @@ const OFFENER_KOERPER = {
 
 const EL = { modelId: 'm1', localId: 42, category: 'IFCPIPESEGMENT' };
 
+/** Ein Rohr führt Achse UND Volumen; eine Trasse nur die Achse. */
+const ROHR = { axis: ECHTE_ACHSE, solid: GESCHLOSSENER_KOERPER };
+const TRASSE = { axis: ECHTE_ACHSE };
+
 describe('Der Katalog der Bauformen', () => {
-    it('kennt genau die sechs Formen — die Liste ist der Vertrag', () => {
-        expect(Object.keys(BAUFORMEN).sort()).toEqual(
-            ['achse+profil', 'flaeche+dicke', 'hoehenfeld', 'koerper', 'netz', 'punkt'],
-        );
+    it('kennt genau die acht Formen — die Liste ist der Vertrag', () => {
+        expect(Object.keys(BAUFORMEN).sort()).toEqual([
+            'achse+profil', 'flaeche', 'flaeche+dicke', 'hoehenfeld',
+            'koerper', 'linie', 'netz', 'punkt',
+        ]);
+    });
+
+    it('führt sie in der Reihenfolge der Dimension — das ist die Systematik', () => {
+        // Nicht Kosmetik: die Reihenfolge IST die Begründung, warum die Liste
+        // geschlossen ist. Es gibt keine neunte Dimension.
+        expect(Object.keys(BAUFORMEN)).toEqual([
+            'punkt', 'linie', 'achse+profil', 'flaeche',
+            'flaeche+dicke', 'hoehenfeld', 'koerper', 'netz',
+        ]);
     });
 
     it('sagt zu jeder Form, welche Repräsentation sie braucht', () => {
@@ -101,11 +115,21 @@ describe('guetegenuegt — die Schranke der Operationen', () => {
 });
 
 describe('bestimme — ohne Typprofil, aus der Geometrie', () => {
-    it('erklärt ein Bauteil mit ECHTER Achs-Repräsentation für linear', async () => {
-        const r = await bestimme(EL, { resolver: resolverAttrappe({ axis: ECHTE_ACHSE }) });
+    it('erklärt ein Bauteil mit echter Achse UND Volumen zum Schwelkörper', async () => {
+        const r = await bestimme(EL, { resolver: resolverAttrappe(ROHR) });
         expect(r.bauform).toBe('achse+profil');
         expect(r.guete).toBe('gemessen');
         expect(r.quelle).toBe('geometrie');
+    });
+
+    it('erklärt eine echte Achse OHNE Volumen zur Linie, nicht zum Rohr', async () => {
+        // Eine Trasse (IfcAlignment) positioniert, sie hat kein Volumen. Die
+        // Unterscheidung ist keine Schätzung über Kantenlängen, sondern die
+        // Frage, ob überhaupt etwas Dreidimensionales da ist.
+        const r = await bestimme({ ...EL, category: 'IFCALIGNMENT' },
+            { resolver: resolverAttrappe(TRASSE) });
+        expect(r.bauform).toBe('linie');
+        expect(r.guete).toBe('gemessen');
     });
 
     it('erklärt ein Bauteil mit SKELETTIERTER Achse NICHT für linear', async () => {
@@ -173,7 +197,7 @@ describe('bestimme — mit Typprofil: die Deklaration gewinnt', () => {
 
     it('verwirft eine erfundene Bauform aus dem Profil und sagt es', async () => {
         const r = await bestimme(EL, {
-            resolver: resolverAttrappe({ axis: ECHTE_ACHSE }),
+            resolver: resolverAttrappe(ROHR),
             typprofil: { bauform: 'bananenform' },
         });
         expect(r.bauform).toBe('achse+profil');       // Rückfall auf die Geometrie
@@ -197,7 +221,7 @@ describe('Die eigentliche Behauptung: neue IFC-Typen brauchen keinen Code', () =
 
     it('ordnet dieselbe erfundene Kategorie auch OHNE Profil ein, wenn die Achse echt ist', async () => {
         const exot = { modelId: 'm1', localId: 7, category: 'IFCHYPERLOOPTUBE' };
-        const r = await bestimme(exot, { resolver: resolverAttrappe({ axis: ECHTE_ACHSE }) });
+        const r = await bestimme(exot, { resolver: resolverAttrappe(ROHR) });
         expect(r.bauform).toBe('achse+profil');
     });
 });

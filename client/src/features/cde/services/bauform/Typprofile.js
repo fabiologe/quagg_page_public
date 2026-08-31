@@ -26,6 +26,7 @@
  */
 
 import { waehleMitVorrang } from '../RepoFacade.js';
+import { ENTITY_META } from '../../data/entity-schema.js';
 
 export const REPO_KEY = 'typprofile';
 
@@ -34,6 +35,16 @@ export const REPO_KEY = 'typprofile';
  * Unterfassung (siehe `normalisiereKategorie`).
  */
 export const EINGEBAUTE_PROFILE = Object.freeze({
+    // An der richtigen HÖHE im Baum: IFCFLOWSEGMENT deckt Rohr, Kanal, Kabel
+    // und jeden künftigen Fließabschnitt über die Vererbung mit ab.
+    IFCFLOWSEGMENT: {
+        bauform: 'achse+profil',
+        felder: {
+            profilGroesse: { label: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
+            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
+        },
+    },
+    // Nur, wo der Typ die Dinge WIRKLICH anders nennt, steht ein eigener Satz.
     IFCPIPESEGMENT: {
         bauform: 'achse+profil',
         felder: {
@@ -42,15 +53,6 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
                 quelle: 'Pset_PipeSegmentTypeCommon.NominalDiameter',
             },
             sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
-        },
-    },
-    IFCDUCTSEGMENT: {
-        bauform: 'achse+profil',
-        felder: {
-            profilGroesse: {
-                label: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 4000,
-                quelle: 'Pset_DuctSegmentTypeCommon.NominalDiameterOrWidth',
-            },
         },
     },
     IFCBEAM: {
@@ -97,6 +99,11 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCVALVE: { bauform: 'koerper', felder: {} },
     IFCTANK: { bauform: 'koerper', felder: {} },
 
+    IFCALIGNMENT: { bauform: 'linie', felder: {} },
+    IFCLINEARPOSITIONINGELEMENT: { bauform: 'linie', felder: {} },
+    IFCANNOTATION: { bauform: 'linie', felder: {} },
+    IFCSPACE: { bauform: 'flaeche', felder: {} },
+
     IFCGEOGRAPHICELEMENT: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSELEMENT: { bauform: 'hoehenfeld', felder: {} },
     IFCEARTHWORKSFILL: { bauform: 'hoehenfeld', felder: {} },
@@ -119,17 +126,48 @@ export function normalisiereKategorie(kategorie) {
 }
 
 /**
+ * Die IFC-Vererbungskette einer Kategorie, vom Typ selbst aufwärts.
+ *
+ * Quelle ist `data/entity-schema.js` — 1.418 IFC-4.3-Klassen, jede mit ihrer
+ * vollen `hierarchy`, erzeugt aus dem buildingSMART-Wörterbuch. Ein Typ, den
+ * der Katalog nicht kennt, hat trotzdem eine Kette.
+ *
+ * @returns {string[]} GROSSSCHRIFT, spezifisch zuerst: ['IFCPIPESEGMENT',
+ *   'IFCFLOWSEGMENT', 'IFCDISTRIBUTIONFLOWELEMENT', …]
+ */
+export function vererbungskette(kategorie) {
+    const norm = normalisiereKategorie(kategorie);
+    const meta = ENTITY_META[String(kategorie).toUpperCase().trim()] ?? ENTITY_META[norm];
+    const kette = meta?.hierarchy ?? [];
+    return kette.map(n => n.toUpperCase()).reverse();
+}
+
+/**
  * Profil für eine Kategorie aus einem Satz holen.
  *
- * Erst der genaue Schlüssel, dann der normierte. Kein Treffer → `null`;
- * die Bauform-Ableitung übernimmt dann (siehe Bauformen.js).
+ * Reihenfolge: genauer Schlüssel → normierter Schlüssel → **IFC-Vererbung**.
+ *
+ * Die Vererbung ist die eigentliche Antwort auf „es gibt immer neue
+ * IFC-Elemente". `IFCPIPESEGMENT` und `IFCDUCTSEGMENT` hängen beide unter
+ * `IfcFlowSegment` — EIN Profil dort deckt beide und jeden künftigen
+ * Fließabschnitt, ohne dass jemand etwas nachträgt. Die Lösung ist nicht eine
+ * längere Tabelle, sondern eine Tabelle an der richtigen HÖHE im Baum.
+ *
+ * Kein Treffer → `null`; dann übernimmt die Bauform-Ableitung (Bauformen.js).
  */
 export function profilFuer(kategorie, satz = EINGEBAUTE_PROFILE) {
     if (!kategorie || !satz) return null;
     const roh = String(kategorie).toUpperCase().trim();
     if (satz[roh]) return satz[roh];
     const norm = normalisiereKategorie(kategorie);
-    return satz[norm] ?? null;
+    if (satz[norm]) return satz[norm];
+
+    // Aufwärts durch die Vererbung — das erste Profil gewinnt. Der erste
+    // Eintrag der Kette ist der Typ selbst und wurde oben schon geprüft.
+    for (const vorfahr of vererbungskette(kategorie)) {
+        if (satz[vorfahr]) return satz[vorfahr];
+    }
+    return null;
 }
 
 /**

@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     EINGEBAUTE_PROFILE, feldAusProfil, ladeSatz, normalisiereKategorie, profilFuer,
+    vererbungskette,
 } from '../services/bauform/Typprofile.js';
 
 describe('normalisiereKategorie', () => {
@@ -123,5 +124,53 @@ describe('feldAusProfil — dasselbe Feld heißt am Rohr anders als am Träger',
 
     it('fällt zurück, wenn es gar kein Profil gibt', () => {
         expect(feldAusProfil('profilGroesse', null, rueckfall)).toEqual(rueckfall);
+    });
+});
+
+
+describe('Vererbung — die eigentliche Antwort auf „immer neue IFC-Typen"', () => {
+    it('liest die IFC-Kette, spezifisch zuerst', () => {
+        const kette = vererbungskette('IFCPIPESEGMENT');
+        expect(kette[0]).toBe('IFCPIPESEGMENT');
+        expect(kette).toContain('IFCFLOWSEGMENT');
+        expect(kette[kette.length - 1]).toBe('IFCROOT');
+    });
+
+    it('DAS ist der Punkt: ein nirgends gelisteter Typ erbt sein Profil', () => {
+        // IFCCABLESEGMENT steht in KEINEM Satz dieser Datei. Es hängt aber
+        // unter IfcFlowSegment — und bekommt dessen Profil. Genau so verhält
+        // sich jeder Typ, den eine künftige IFC-Fassung mitbringt.
+        expect(EINGEBAUTE_PROFILE.IFCCABLESEGMENT).toBeUndefined();
+        expect(profilFuer('IFCCABLESEGMENT').bauform).toBe('achse+profil');
+    });
+
+    it('lässt das eigene Profil über das geerbte gewinnen', () => {
+        // Das Rohr nennt seine Größe „DN", der allgemeine Fließabschnitt
+        // „Nennweite". Der spezifischere Satz muss gewinnen.
+        expect(profilFuer('IFCPIPESEGMENT').felder.profilGroesse.label).toBe('DN');
+        expect(profilFuer('IFCFLOWSEGMENT').felder.profilGroesse.label).toBe('Nennweite');
+        expect(profilFuer('IFCDUCTSEGMENT').felder.profilGroesse.label).toBe('Nennweite');
+    });
+
+    it('ordnet eine Trasse als Linie ein, nicht als Bauteil', () => {
+        expect(profilFuer('IFCALIGNMENT').bauform).toBe('linie');
+    });
+
+    it('erbt auch über die Unterfassung hinweg', () => {
+        expect(profilFuer('IFCWALLSTANDARDCASE').bauform).toBe('flaeche+dicke');
+    });
+
+    it('liefert für einen Typ ausserhalb des IFC-Katalogs null statt zu werfen', () => {
+        expect(vererbungskette('IFCHYPERLOOPTUBE')).toEqual([]);
+        expect(profilFuer('IFCHYPERLOOPTUBE')).toBe(null);
+    });
+
+    it('erbt auch aus einem Büro-Satz, nicht nur aus dem eingebauten', async () => {
+        // Ein Büro, das ein Profil an einer HOHEN Stelle setzt, erweitert das
+        // System damit für alle Nachfahren — ohne neue Programmfassung.
+        const satz = await ladeSatz({
+            mitVorrang: async () => ({ IFCBUILTELEMENT: { bauform: 'koerper', felder: {} } }),
+        });
+        expect(profilFuer('IFCRAILING', satz).bauform).toBe('koerper');
     });
 });

@@ -6,11 +6,39 @@
  * Code in der Größenordnung O(Typen) — und ist immer hinterher.
  *
  * DIE AUFLÖSUNG: Operationen hängen an der BAUFORM. Ein Bauteil ist fürs
- * Bearbeiten nicht „IfcPipeSegment", sondern „Achse mit Profil" — und davon
- * gibt es sechs. Diese Liste ist stabil: IFC-Fassungen fügen Typen hinzu, aber
- * keine siebte Art, wie ein Körper im Raum existieren kann. „Sohlhöhe setzen"
- * hängt an `achse+profil` und bedient damit Rohr, Kanal, Bordstein — und den
- * Typ, den noch niemand gesehen hat.
+ * Bearbeiten nicht „IfcPipeSegment", sondern „Achse mit Profil".
+ *
+ * Die acht Bauformen sind nach der DIMENSION dessen sortiert, was man zeichnet,
+ * mit den „+ Extrusion"-Spielarten:
+ *
+ *     0D    punkt           Ort (+ Drehung)
+ *     1D    linie           Kurve OHNE Querschnitt, 2D oder 3D
+ *     1D+   achse+profil    Kurve MIT Querschnitt (Schwelkörper)
+ *     2D    flaeche         Region OHNE Dicke
+ *     2D+   flaeche+dicke   Region MIT Stärke
+ *     2,5D  hoehenfeld      Oberfläche z = f(x,y)
+ *     3D    koerper         platziertes Volumen
+ *     —     netz            Freiform, Rückfall
+ *
+ * Das ist eine SYSTEMATIK, keine Beispielsammlung — es gibt keine neunte
+ * Dimension. IFC-Fassungen fügen Typen hinzu, aber keine neue Art, wie
+ * Geometrie im Raum existieren kann. „Sohlhöhe setzen" hängt an `achse+profil`
+ * und bedient damit Rohr, Kanal, Bordstein — und den Typ, den noch niemand
+ * gesehen hat.
+ *
+ * `linie` und `flaeche` sind eigenständig, nicht Sonderfälle mit Maß null.
+ * Zwei Belege: IFC selbst führt `IfcAlignment` unter `IfcPositioningElement` —
+ * einem ANDEREN Ast als `IfcElement`; eine Trasse ist etwas, das positioniert,
+ * kein Bauteil mit Volumen. Und die Geländeoperationen brauchen beide als
+ * EINGABE: das Gerinne eine Achse, der Aushub ein Polygon, die Bruchkante eine
+ * 3D-Polylinie. Als eigene Bauformen zeichnet man eine Bruchkante einmal, und
+ * Gelände wie Lageplan benutzen dieselbe.
+ *
+ * BEWUSST KEINE eigenen Bauformen: Öffnung/Abzugskörper (ein `koerper` in einer
+ * ROLLE — Rolle ist keine Form), Gruppe/Aggregat (eine Beziehung), Beschriftung
+ * (Planinhalt aus Stufe 7, lebt auf dem Blatt), und 2D- gegen 3D-Linie (ob
+ * Höhen dranhängen, ist eine EIGENSCHAFT der Linie und verdoppelte sonst jede
+ * Operation).
  *
  * WOHER DIE BAUFORM KOMMT — und warum nicht aus Geometrie-Verhältnissen:
  * Sie wird DEKLARIERT (Typprofil, siehe Typprofile.js), nicht aus Kantenlängen
@@ -33,6 +61,18 @@
 
 /** Die sechs Bauformen. Neue Formen hier ergänzen — sonst nirgends. */
 export const BAUFORMEN = Object.freeze({
+    punkt: {
+        titel: 'Punktobjekt',
+        beschreibung: 'Ort (+ Drehung)',
+        beispiele: 'Baum, Schild, Leuchte, Ausstattung',
+        braucht: null,
+    },
+    linie: {
+        titel: 'Linie',
+        beschreibung: 'Kurve ohne Querschnitt, 2D oder 3D',
+        beispiele: 'Trasse (IfcAlignment), Bruchkante, Grenze, Absteckung',
+        braucht: 'axis',
+    },
     'achse+profil': {
         titel: 'Achse mit Profil',
         beschreibung: 'Querschnitt entlang einer Kurve',
@@ -40,16 +80,19 @@ export const BAUFORMEN = Object.freeze({
         /** Welche Form der Resolver liefern muss, damit die Bauform trägt. */
         braucht: 'axis',
     },
+    flaeche: {
+        titel: 'Fläche',
+        beschreibung: 'Region ohne Dicke',
+        beispiele: 'Baufeld, Flurstück, Aushubpolygon, IfcSpace-Umriss',
+        // Eine Region liefert eine Oberfläche. Eine eigene Form 'polygon' im
+        // Resolver wäre ehrlicher — die kommt, wenn die Zeichenwerkzeuge sie
+        // wirklich brauchen, nicht auf Vorrat.
+        braucht: 'surface',
+    },
     'flaeche+dicke': {
         titel: 'Fläche mit Dicke',
         beschreibung: 'ebene Fläche mit Stärke',
         beispiele: 'Wand, Decke, Platte, Fundament, Belag',
-        braucht: 'solid',
-    },
-    koerper: {
-        titel: 'Körper',
-        beschreibung: 'Volumen an einem Ort',
-        beispiele: 'Schacht, Pumpe, Armatur, Ausrüstung',
         braucht: 'solid',
     },
     hoehenfeld: {
@@ -58,11 +101,11 @@ export const BAUFORMEN = Object.freeze({
         beispiele: 'Gelände, Planum, Aushubsohle',
         braucht: 'surface',
     },
-    punkt: {
-        titel: 'Punktobjekt',
-        beschreibung: 'Ort mit Symbol',
-        beispiele: 'Baum, Schild, Leuchte',
-        braucht: null,
+    koerper: {
+        titel: 'Körper',
+        beschreibung: 'Volumen an einem Ort',
+        beispiele: 'Schacht, Pumpe, Armatur, Ausrüstung',
+        braucht: 'solid',
     },
     netz: {
         titel: 'Freiform',
@@ -156,21 +199,30 @@ export async function bestimme(el, { resolver, typprofil = null } = {}) {
     }
     const achsGuete = _achsGuete(achse);
 
-    // Nur eine ECHTE Achs-Repräsentation begründet ohne Deklaration eine
-    // lineare Bauform. Eine skelettierte Achse bekommt man auch aus einem
-    // Würfel — sie ist Güte-Information, kein Einordnungsgrund.
-    if (achsGuete === 'gemessen') {
-        return { bauform: 'achse+profil', guete: 'gemessen', quelle: 'geometrie', warnungen };
-    }
-
     let geschlossen = false;
+    let hatKoerper = false;
     try {
         const res = await handle.getForm('solid');
         geschlossen = !!res?.data?.closed;
+        hatKoerper = !!res?.data?.triCount;
         if (res?.warnings?.length) warnungen.push(...res.warnings);
     } catch (fehler) {
         warnungen.push(`koerper_fehler:${fehler?.message ?? fehler}`);
     }
+
+    // Nur eine ECHTE Achs-Repräsentation begründet ohne Deklaration eine
+    // lineare Bauform. Eine skelettierte Achse bekommt man auch aus einem
+    // Würfel — sie ist Güte-Information, kein Einordnungsgrund.
+    //
+    // Ob daraus `achse+profil` oder `linie` wird, entscheidet das VOLUMEN:
+    // ein Rohr führt Achse UND Körper, eine Trasse (IfcAlignment) nur die
+    // Achse. Das ist keine Schätzung über Kantenlängen, sondern die Frage,
+    // ob überhaupt etwas Dreidimensionales da ist.
+    if (achsGuete === 'gemessen') {
+        const bauform = hatKoerper ? 'achse+profil' : 'linie';
+        return { bauform, guete: 'gemessen', quelle: 'geometrie', warnungen };
+    }
+
     if (geschlossen) {
         return { bauform: 'koerper', guete: 'gemessen', quelle: 'geometrie', warnungen };
     }
