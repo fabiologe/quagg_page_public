@@ -292,6 +292,9 @@ import { useModellAblage, fmtBytes, fmtDate } from '../composables/useModellAbla
 import { useSchnitt } from '../composables/useSchnitt.js';
 import { useMessen } from '../composables/useMessen.js';
 import { useAnnotationen } from '../composables/useAnnotationen.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { BEARBEITUNGEN, GRUPPEN } from '../services/Bearbeitungen.js';
+import { repo } from '../services/RepoFacade.js';
 
 const emit = defineEmits(['close', 'open-properties', 'model-loaded']);
 const ifc  = useIfcStore();
@@ -299,6 +302,7 @@ const cde  = useCdeStore();
 const panels = usePanels();
 const ansicht = useAnsicht();
 const cmds = usePaletteCommands();
+const bearbeitung = useBearbeitung();
 
 defineProps({
   propertiesOpen: { type: Boolean, default: false },
@@ -508,8 +512,17 @@ onMounted(async () => {
   _selection.onPick(result => {
     ifc.setElement(result);
     panels.open('eigenschaften');
+    // Stufe 9.0: einordnen, damit das Kontextmenü weiß, was hier möglich ist.
+    // Der Resolver wird JE AUSWAHL gebaut — er cached je Modell, und ein über
+    // den Modellwechsel hinweg behaltener liefert Geometrie des alten Modells.
+    bearbeitung
+      .einordne(result, engine.value?.makeGeometryResolver?.())
+      .catch(e => console.warn('cde: einordnen', e?.message ?? e));
   });
-  _selection.onClickEmpty(() => ifc.clearElement());
+  _selection.onClickEmpty(() => {
+    ifc.clearElement();
+    bearbeitung.einordne(null, null);
+  });
   _selection.onHover(pos => {
     coords.value = pos
       ? {
@@ -556,7 +569,20 @@ onMounted(async () => {
       verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('solo') },
     { id: 'lvl.bis', titel: 'Ebenen: bis zur gewählten', icon: 'layers', gruppe: 'Ebenen',
       verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('bis') },
+
+    // Stufe 9.0: der DRITTE Verbraucher des Bearbeitungs-Katalogs. Dieselbe
+    // Liste wie im Kontextmenü — `verfuegbar` spiegelt die Bauform-Prüfung,
+    // damit die Palette nichts anbietet, was das Menü verschweigt.
+    ...BEARBEITUNGEN.map(b => ({
+      id: `bearb.${b.id}`, titel: b.titel, icon: b.icon,
+      gruppe: GRUPPEN[b.gruppe]?.titel ?? 'Bearbeiten',
+      verfuegbar: () => bearbeitung.moeglich.some(m => m.id === b.id),
+      run: () => bearbeitung.starte(b.id),
+    })),
   ]);
+
+  // Büro-/Projektprofile einmal je Sitzung laden (Stufe 6: Vorrangregel).
+  bearbeitung.ladeProfile(repo).catch(e => console.warn('cde: typprofile', e?.message ?? e));
 });
 
 onBeforeUnmount(() => {

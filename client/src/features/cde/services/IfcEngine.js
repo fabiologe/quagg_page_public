@@ -8,6 +8,7 @@ import { IfcMeasure } from './IfcMeasure.js';
 import { IfcGridAxes } from './IfcGridAxes.js';
 import { IfcSection } from './IfcSection.js';
 import { IfcStoreys } from './IfcStoreys.js';
+import { createGeometryResolver } from './geometry/GeometryResolver.js';
 
 
 const SELECTION_STYLE = {
@@ -300,6 +301,29 @@ export class IfcEngine {
      * geometry-processor to build a localId→category map.
      */
     getCategoryGroups() { return this._categoryGroups ?? []; }
+
+    /**
+     * Einen GeometryResolver mit den Zutaten dieser Engine bauen (Stufe 9.0b).
+     *
+     * Bisher stellte sich jede Aufrufstelle den Resolver selbst zusammen
+     * (`IfcPdfExporter.js:216`, `LaengsschnittBuilder.js:53`) und musste dafür
+     * wissen, welche vier Dinge er braucht. Die Bauform-Bestimmung ist die
+     * dritte solche Stelle — ab hier gibt es einen Weg.
+     *
+     * Bewusst eine FABRIK und kein zwischengespeicherter Resolver: der Resolver
+     * hält Caches je Modell, und wer ihn über einen Modellwechsel hinweg
+     * behält, bekommt Geometrie des alten Modells zurück.
+     */
+    makeGeometryResolver() {
+        const fragments = this.components.get(OBC.FragmentsManager);
+        return createGeometryResolver({
+            categoryGroups:   this.getCategoryGroups(),
+            fragmentsList:    fragments?.list ?? null,
+            fragmentsManager: fragments ?? null,
+            webIfcApis:       this.getWebIfcAPIs?.() ?? [],
+            coordOffsets:     this.getAllCoordOffsets?.() ?? {},
+        });
+    }
 
     async setCategoryVisible(category, visible) {
         const group = this._categoryGroups?.find(g => g.name === category);

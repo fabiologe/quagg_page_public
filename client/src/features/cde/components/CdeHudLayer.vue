@@ -47,6 +47,53 @@
           <CdeIcon :name="a.icon" :size="14" />
         </button>
       </div>
+
+      <!-- Bearbeiten am Bauteil (Stufe 9.0). Was hier steht, kommt aus dem
+           Katalog und ist über die Bauform gefiltert — dieselbe Liste, die auch
+           die Befehls-Palette liest. -->
+      <div v-if="bearbeitung.moeglich.length" class="hud-bearb">
+        <div v-if="!bearbeitung.scharf" class="hud-bearb-liste">
+          <button
+            v-for="b in bearbeitung.moeglich"
+            :key="b.id"
+            class="hud-bearb-btn"
+            :title="b.titel"
+            @click="bearbeitung.starte(b.id)"
+          >
+            <CdeIcon :name="b.icon" :size="12" />
+            <span>{{ b.titel }}</span>
+          </button>
+        </div>
+
+        <form v-else class="hud-bearb-form" @submit.prevent="uebernehmen">
+          <label v-for="f in bearbeitung.felder" :key="f.name" class="hud-bearb-feld">
+            <span>{{ f.label || f.titel || f.name }}<template v-if="f.einheit"> [{{ f.einheit }}]</template></span>
+            <select
+              v-if="f.typ === 'auswahl'"
+              :value="bearbeitung.werte[f.name] ?? ''"
+              @change="bearbeitung.setzeWert(f.name, $event.target.value)"
+            >
+              <option v-if="f.leerErlaubt" value="">— nach Regel —</option>
+              <option v-for="o in (f.optionen ?? [])" :key="o.wert" :value="o.wert">{{ o.titel }}</option>
+            </select>
+            <input
+              v-else
+              :type="f.typ === 'zahl' ? 'number' : 'text'"
+              :value="bearbeitung.werte[f.name] ?? ''"
+              step="any"
+              @input="bearbeitung.setzeWert(f.name, f.typ === 'zahl' ? Number($event.target.value) : $event.target.value)"
+            >
+          </label>
+
+          <p v-if="bearbeitung.fehler.length" class="hud-bearb-fehler">{{ bearbeitung.fehler[0] }}</p>
+          <p v-else-if="guetehinweis" class="hud-bearb-hinweis">{{ guetehinweis }}</p>
+
+          <div class="hud-bearb-tasten">
+            <button type="submit" class="hud-bearb-ok" :disabled="!bearbeitung.bereit">Übernehmen</button>
+            <button type="button" class="hud-bearb-ab" @click="bearbeitung.abbrechen()">Abbrechen</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 </template>
@@ -66,6 +113,8 @@
 import { computed, ref, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import { useScreenProjection } from '../composables/useScreenProjection.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
 
 const props = defineProps({
   /** [{ dist, p1:{x,y,z}, p2:{x,y,z} }] */
@@ -82,7 +131,32 @@ const props = defineProps({
 
 const emit = defineEmits([
   'delete-measurement', 'zoom', 'hide', 'isolate', 'properties', 'new-issue',
+  'bearbeitet',
 ]);
+
+/**
+ * Der Bearbeitungs-Store wird hier DIREKT gelesen, nicht über acht weitere
+ * Props durchgereicht (Stufe 9.0). Grund: Liste, scharfe Bearbeitung, Felder,
+ * Werte, Fehler und Bereitschaft gehören zusammen und ändern sich gemeinsam —
+ * sie einzeln durch `IfcViewer` zu fädeln wäre genau die Zeremonie, die den
+ * Viewer vor Stufe 5 auf 1.400 Zeilen gebracht hat. Die Messwerte und das
+ * gewählte Element bleiben Props: die kommen aus der Engine, nicht aus einem Store.
+ */
+const bearbeitung = useBearbeitung();
+const cde = useCdeStore();
+
+/** Warnt, wenn die Bauform nur geschätzt ist — schweigt, wenn sie gemessen ist. */
+const guetehinweis = computed(() => {
+  const e = bearbeitung.einordnung;
+  if (!e || e.guete === 'gemessen') return '';
+  if (e.warnungen?.includes('achse_skelettiert')) return 'Achse aus dem Netz geschätzt — Wert prüfen.';
+  return `Form nur ${e.guete} — Wert prüfen.`;
+});
+
+async function uebernehmen() {
+  const eintrag = await bearbeitung.ausfuehren({ wer: cde.bearbeiter || '' });
+  if (eintrag) emit('bearbeitet', eintrag);
+}
 
 const { tick } = useScreenProjection({
   getCamera: () => props.getCamera?.() ?? null,
@@ -223,4 +297,46 @@ function formatDist(m) {
   transition: background 0.12s, color 0.12s;
 }
 .hud-menu-btn:hover { background: var(--cde-accent-fill-hi); color: var(--cde-accent); }
+
+/* ── Bearbeiten am Bauteil (Stufe 9.0) ───────────────────────────────────── */
+.hud-bearb {
+  border-top: 1px solid var(--cde-line);
+  padding-top: 0.3rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+  min-width: 190px;
+}
+.hud-bearb-liste { display: flex; flex-direction: column; gap: 0.15rem; }
+.hud-bearb-btn {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.22rem 0.35rem;
+  background: transparent; border: 1px solid transparent;
+  border-radius: var(--cde-radius-sm);
+  color: var(--cde-text); cursor: pointer;
+  font-size: var(--cde-font-xs); text-align: left;
+}
+.hud-bearb-btn:hover { background: var(--cde-accent-fill-hi); color: var(--cde-accent); }
+
+.hud-bearb-form { display: flex; flex-direction: column; gap: 0.3rem; }
+.hud-bearb-feld { display: flex; flex-direction: column; gap: 0.12rem; font-size: var(--cde-font-xs); }
+.hud-bearb-feld > span { color: var(--cde-text-dim); }
+.hud-bearb-feld select,
+.hud-bearb-feld input {
+  background: var(--cde-fill); color: var(--cde-text);
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  padding: 0.22rem 0.3rem; font-size: var(--cde-font-xs);
+  /* Aufgeklappte Liste im eigenen Theme halten (nur Chromium ≥ 135) */
+  appearance: base-select;
+}
+.hud-bearb-fehler  { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-danger); }
+.hud-bearb-hinweis { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-warn); }
+
+.hud-bearb-tasten { display: flex; gap: 0.25rem; }
+.hud-bearb-ok, .hud-bearb-ab {
+  flex: 1; padding: 0.24rem 0.3rem;
+  border-radius: var(--cde-radius-sm); cursor: pointer;
+  font-size: var(--cde-font-xs);
+  border: 1px solid var(--cde-line); background: var(--cde-fill); color: var(--cde-text);
+}
+.hud-bearb-ok { border-color: var(--cde-accent-line); color: var(--cde-accent); }
+.hud-bearb-ok:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>
