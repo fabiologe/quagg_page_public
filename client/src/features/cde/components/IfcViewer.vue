@@ -383,8 +383,9 @@ const nachspielen = useNachspielen({ engine, aenderungen: useAenderungen() });
  * Lieferstand und `bearbeitung` für die Bauform — beide sind oben schon da.
  */
 const ziehen = useZiehen({
-  engine, ifc, cde, aenderungen: useAenderungen(),
-  bearbeitung, nachspielen,
+  engine, cde, aenderungen: useAenderungen(), bearbeitung, nachspielen,
+  getAuswahl:   () => ifc.selectedElement,
+  getModellSha: () => ablage.geladeneModellSha?.() ?? null,
 });
 
 const annotationen = useAnnotationen({

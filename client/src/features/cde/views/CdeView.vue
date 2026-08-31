@@ -207,7 +207,14 @@
       <table v-else class="cde-doc-table">
         <thead>
           <tr>
-            <th v-if="cde.aktiverSatz" :title="`Im Modellsatz „${cde.aktiverSatz.name}“`">Satz</th>
+            <!-- Die Spalte steht IMMER, nur ihr Inhalt hängt am Satz.
+                 Eine Zelle per `v-if` aus einer keyed `v-for`-Zeile zu nehmen
+                 ändert die Kinderzahl der Zeile zwischen zwei Durchläufen —
+                 Vues Patch-Lauf verliert dabei seinen Anker und stirbt mit
+                 „Cannot set properties of null (setting '__vnode')". -->
+            <th class="doc-satz" :title="cde.aktiverSatz ? `Im Modellsatz „${cde.aktiverSatz.name}“` : ''">
+              {{ cde.aktiverSatz ? 'Satz' : '' }}
+            </th>
             <th>Dokument</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th>Aufgenommen</th><th></th>
           </tr>
         </thead>
@@ -216,8 +223,9 @@
             <!-- Stufe 11.4: Was liegt im aktiven Modellsatz? Der Haken ist die
                  EINZIGE Stelle, an der sich Varianten unterscheiden — alles
                  andere (Dateien, Register, Status) gehört dem Auftrag. -->
-            <td v-if="cde.aktiverSatz" class="doc-satz">
+            <td class="doc-satz">
               <input
+                v-if="cde.aktiverSatz"
                 type="checkbox"
                 :checked="(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
                 :title="`In „${cde.aktiverSatz.name}“ führen`"

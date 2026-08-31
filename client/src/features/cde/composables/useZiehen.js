@@ -39,7 +39,18 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { darfZiehen, freiheitsgradeFuer, grundOhneZiehen } from '../services/Freiheitsgrade.js';
 import { istNennenswert } from '../services/IfcAutor.js';
 
-export function useZiehen({ engine, ifc, aenderungen, bearbeitung, nachspielen, cde } = {}) {
+/**
+ * @param {object} opts
+ * @param {() => object|null} opts.getAuswahl    das gewählte Bauteil
+ * @param {() => string|null} opts.getModellSha  Kennung des geladenen Modells
+ *
+ * Abhängigkeiten als GETTER-CLOSURES, nicht als Refs oder Stores (Hausvertrag,
+ * siehe IfcCamera). Die erste Fassung nahm `ifc` entgegen und las
+ * `ifc.value.selectedElement` — `ifc` ist im Viewer aber der Pinia-STORE, kein
+ * Ref. `.value` war damit immer undefined, und das Werkzeug meldete ewig
+ * „Erst ein Bauteil wählen". Ein Getter kann man nicht falsch herum anfassen.
+ */
+export function useZiehen({ engine, getAuswahl, getModellSha, aenderungen, bearbeitung, nachspielen, cde } = {}) {
     const aktiv = ref(false);
     /** Warum es gerade nicht geht — für den Hinweis am Bauteil. */
     const grund = ref('');
@@ -111,7 +122,7 @@ export function useZiehen({ engine, ifc, aenderungen, bearbeitung, nachspielen, 
             basis,
             modell: _bauteil.modelId === 'cde-eigenbau' ? 'cde' : 'geliefert',
             wer: cde?.bearbeiter || '',
-            modellSha: ifc?.value?.getLoadedModelSha?.() ?? null,
+            modellSha: getModellSha?.() ?? null,
         });
         // Erst eintragen, dann bewegen: scheitert der Eintrag (gleicher Wert),
         // soll auch nichts am Modell passieren.
@@ -204,7 +215,7 @@ export function useZiehen({ engine, ifc, aenderungen, bearbeitung, nachspielen, 
     /** Umschalten — der Werkzeugknopf. */
     async function umschalten() {
         if (aktiv.value) { loesen(); return false; }
-        const el = ifc?.value?.selectedElement ?? null;
+        const el = getAuswahl?.() ?? null;
         if (!el?.globalId) { grund.value = 'Erst ein Bauteil wählen.'; return false; }
         return anhaengen(
             { modelId: el.modelId, localId: el.localId, globalId: el.globalId },

@@ -75,7 +75,8 @@ function bau(opts = {}) {
     const nachspielen = opts.nachspielen ?? fakeNachspielen();
     const ziehen = useZiehen({
         engine: f.engine,
-        ifc: ref({ selectedElement: BAUTEIL, getLoadedModelSha: () => 'sha1' }),
+        getAuswahl: () => BAUTEIL,
+        getModellSha: () => 'sha1',
         aenderungen, bearbeitung: { einordnung: LINEAR },
         nachspielen, cde: { bearbeiter: 'Fabio' },
     });
@@ -205,5 +206,35 @@ describe('loesen', () => {
         t.ziehen.loesen();
         expect(t.ziehen.aktiv.value).toBe(false);
         expect(t.ziehen.gizmo.value).toBe(null);
+    });
+});
+
+
+describe('Die Abhängigkeiten sind Getter, keine Refs', () => {
+    it('findet die Auswahl über umschalten() — der Fehler, der es unbenutzbar machte', async () => {
+        // Die erste Fassung nahm `ifc` entgegen und las `ifc.value.selectedElement`.
+        // `ifc` ist im Viewer aber der Pinia-STORE, kein Ref — `.value` war
+        // damit immer undefined, und das Werkzeug meldete ewig „Erst ein
+        // Bauteil wählen". Ein Getter kann man nicht falsch herum anfassen.
+        const t = bau();
+        expect(await t.ziehen.umschalten()).toBe(true);
+        expect(t.ziehen.aktiv.value).toBe(true);
+    });
+
+    it('sagt es, wenn wirklich nichts gewählt ist', async () => {
+        const f = fakeEngine();
+        const ziehen = useZiehen({
+            engine: f.engine, getAuswahl: () => null, getModellSha: () => null,
+            aenderungen: useAenderungen(), bearbeitung: { einordnung: LINEAR },
+            nachspielen: fakeNachspielen(), cde: {},
+        });
+        expect(await ziehen.umschalten()).toBe(false);
+        expect(ziehen.grund.value).toMatch(/Bauteil wählen/);
+    });
+
+    it('schreibt die Modell-Kennung aus dem Getter ins Journal', async () => {
+        const t = bau();
+        await ziehe(t, { x: 1.5 });
+        expect(t.aenderungen.eintraege[0].modellSha).toBe('sha1');
     });
 });
