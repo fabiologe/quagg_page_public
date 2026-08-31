@@ -65,7 +65,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import CdeIcon from './CdeIcon.vue';
 import { usePaletteCommands, filterCommands } from '../../stores/useCommands.js';
 import { useIfcStore } from '../../stores/useIfcStore.js';
-import { useViewerApi } from '../composables/viewerApi.js';
+import { useViewerApi } from '../../composables/viewerApi.js';
 
 const props = defineProps({
   open: { type: Boolean, default: false },
