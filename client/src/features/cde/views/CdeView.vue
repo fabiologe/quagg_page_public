@@ -311,11 +311,29 @@
             :optionen="planOptionen"
             :titleBlock="planSchriftfeld"
             :logo="plan.logo"
+            @zeichnen-beendet="zeichenstandAbgleichen"
           />
           <!-- Werkzeuge des Lageplans. Bewusst hier und nicht im Panel: sie
                wirken auf die Zeichenfläche und sollen erreichbar sein, auch
                wenn die Leiste zugeklappt ist. -->
           <div class="plan-werkzeuge">
+            <!-- Erzeugen (Stufe 9.4). Die Liste kommt aus dem Bearbeitungs-
+                 Katalog, gefiltert nach Gruppe — dieselbe Liste, die auch die
+                 Befehls-Palette liest. Ein Werkzeug, das dort fehlt und hier
+                 steht, kann es damit nicht geben. -->
+            <button
+              v-for="z in ZEICHEN_WERKZEUGE"
+              :key="z.id"
+              class="plan-wz"
+              :class="{ aktiv: zeichenWerkzeug === z.id }"
+              :title="`${z.titel} — Punkte in den Plan klicken, Doppelklick schliesst ab [Esc bricht ab]`"
+              @click="zeichenWerkzeugSetzen(z.id)"
+            >
+              <CdeIcon :name="z.icon" :size="14" />
+            </button>
+
+            <span class="plan-wz-trenner"></span>
+
             <button
               class="plan-wz"
               :class="{ aktiv: misstImPlan }"
@@ -454,6 +472,7 @@ import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
+import { ausGruppe } from '../services/Bearbeitungen.js';
 import { abdeckung } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
@@ -630,7 +649,7 @@ function stiftSetzen(m, farbe = null) {
   stiftModus.value = (stiftModus.value === m && gleicheFarbe) ? null : m;
   if (farbe) stiftFarbe.value = farbe;
   planRef.value?.setzeStift?.(stiftModus.value, stiftFarbe.value);
-  if (stiftModus.value) { planModus.value = null; misstImPlan.value = false; }
+  if (stiftModus.value) { planModus.value = null; misstImPlan.value = false; zeichenWerkzeugSetzen(null); }
 }
 
 const planModus = ref(null);
@@ -639,7 +658,37 @@ function planModusSetzen(m) {
   // über Esc heraus, und das weiß nicht jeder.
   planModus.value = planModus.value === m ? null : m;
   planRef.value?.setzeModus?.(planModus.value);
-  if (planModus.value) { misstImPlan.value = false; stiftModus.value = null; }
+  if (planModus.value) { misstImPlan.value = false; stiftModus.value = null; zeichenWerkzeugSetzen(null); }
+}
+
+// ── Zeichnen im Plan (Stufe 9.4) ───────────────────────────────────────────
+/**
+ * Die Zeichenwerkzeuge — abgeleitet aus dem Katalog, nicht hier aufgezählt.
+ *
+ * Erzeugen hat kein Subjekt, deshalb steht es in der WERKZEUGLEISTE und nicht
+ * im Kontextmenü am Bauteil. Genau diese Trennung führt `GRUPPEN[...].einstieg`
+ * im Katalog, und `passende()` hält sich daran.
+ */
+const ZEICHEN_WERKZEUGE = ausGruppe('erzeugen');
+const zeichenWerkzeug = ref(null);
+
+function zeichenWerkzeugSetzen(id) {
+  // Nochmal derselbe Knopf schaltet ab — wie bei Setzmodus und Stift.
+  const ziel = zeichenWerkzeug.value === id ? null : id;
+  const ok = planRef.value?.zeichneMit?.(ziel);
+  zeichenWerkzeug.value = ziel && ok ? ziel : null;
+  if (zeichenWerkzeug.value) {
+    // Zeichnen, Bemaßen, Setzen und Stift teilen sich den Klick — nie zwei
+    // zugleich. Ohne das läge ein gesetzter Punkt zugleich als Symbol im Plan.
+    misstImPlan.value = false;
+    planModus.value = null;
+    stiftModus.value = null;
+  }
+}
+
+/** Wenn der Plan von sich aus aufhört (abgeschlossen, Esc), nachziehen. */
+function zeichenstandAbgleichen() {
+  zeichenWerkzeug.value = planRef.value?.zeichnetGerade?.() ?? null;
 }
 
 // ── Bemaßung im Plan (AP-10) ───────────────────────────────────────────────
@@ -651,6 +700,7 @@ function bemassungUmschalten() {
   if (misstImPlan.value) {
     planModus.value = null; planRef.value?.setzeModus?.(null);
     stiftModus.value = null; planRef.value?.setzeStift?.(null);
+    zeichenWerkzeugSetzen(null);
   }
 }
 

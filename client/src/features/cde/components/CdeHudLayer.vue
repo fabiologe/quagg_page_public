@@ -65,34 +65,17 @@
           </button>
         </div>
 
-        <form v-else class="hud-bearb-form" @submit.prevent="uebernehmen">
-          <label v-for="f in bearbeitung.felder" :key="f.name" class="hud-bearb-feld">
-            <span>{{ f.label || f.titel || f.name }}<template v-if="f.einheit"> [{{ f.einheit }}]</template></span>
-            <select
-              v-if="f.typ === 'auswahl'"
-              :value="bearbeitung.werte[f.name] ?? ''"
-              @change="bearbeitung.setzeWert(f.name, $event.target.value)"
-            >
-              <option v-if="f.leerErlaubt" value="">— nach Regel —</option>
-              <option v-for="o in (f.optionen ?? [])" :key="o.wert" :value="o.wert">{{ o.titel }}</option>
-            </select>
-            <input
-              v-else
-              :type="f.typ === 'zahl' ? 'number' : 'text'"
-              :value="bearbeitung.werte[f.name] ?? ''"
-              step="any"
-              @input="bearbeitung.setzeWert(f.name, f.typ === 'zahl' ? Number($event.target.value) : $event.target.value)"
-            >
-          </label>
-
-          <p v-if="bearbeitung.fehler.length" class="hud-bearb-fehler">{{ bearbeitung.fehler[0] }}</p>
-          <p v-else-if="guetehinweis" class="hud-bearb-hinweis">{{ guetehinweis }}</p>
-
-          <div class="hud-bearb-tasten">
-            <button type="submit" class="hud-bearb-ok" :disabled="!bearbeitung.bereit">Übernehmen</button>
-            <button type="button" class="hud-bearb-ab" @click="bearbeitung.abbrechen()">Abbrechen</button>
-          </div>
-        </form>
+        <CdeBearbeitungForm
+          v-else
+          :felder="bearbeitung.felder"
+          :werte="bearbeitung.werte"
+          :fehler="bearbeitung.fehler"
+          :hinweis="guetehinweis"
+          :bereit="bearbeitung.bereit"
+          @setze-wert="bearbeitung.setzeWert"
+          @uebernehmen="uebernehmen"
+          @abbrechen="bearbeitung.abbrechen()"
+        />
       </div>
     </div>
   </div>
@@ -112,6 +95,7 @@
  */
 import { computed, ref, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
+import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useScreenProjection } from '../composables/useScreenProjection.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
@@ -316,27 +300,4 @@ function formatDist(m) {
 }
 .hud-bearb-btn:hover { background: var(--cde-accent-fill-hi); color: var(--cde-accent); }
 
-.hud-bearb-form { display: flex; flex-direction: column; gap: 0.3rem; }
-.hud-bearb-feld { display: flex; flex-direction: column; gap: 0.12rem; font-size: var(--cde-font-xs); }
-.hud-bearb-feld > span { color: var(--cde-text-dim); }
-.hud-bearb-feld select,
-.hud-bearb-feld input {
-  background: var(--cde-fill); color: var(--cde-text);
-  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
-  padding: 0.22rem 0.3rem; font-size: var(--cde-font-xs);
-  /* Aufgeklappte Liste im eigenen Theme halten (nur Chromium ≥ 135) */
-  appearance: base-select;
-}
-.hud-bearb-fehler  { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-danger); }
-.hud-bearb-hinweis { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-warn); }
-
-.hud-bearb-tasten { display: flex; gap: 0.25rem; }
-.hud-bearb-ok, .hud-bearb-ab {
-  flex: 1; padding: 0.24rem 0.3rem;
-  border-radius: var(--cde-radius-sm); cursor: pointer;
-  font-size: var(--cde-font-xs);
-  border: 1px solid var(--cde-line); background: var(--cde-fill); color: var(--cde-text);
-}
-.hud-bearb-ok { border-color: var(--cde-accent-line); color: var(--cde-accent); }
-.hud-bearb-ok:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

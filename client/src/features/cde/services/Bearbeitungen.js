@@ -31,6 +31,7 @@
  */
 
 import { guetegenuegt } from './bauform/Bauformen.js';
+import { REZEPTE, erzeugtEintrag } from './Bauteilrezepte.js';
 import { feldAusProfil } from './bauform/Typprofile.js';
 import { DIN277_CLASSES } from './Din277Classifier.js';
 import { KG_DEFAULT_RULES } from './Din276Defaults.js';
@@ -66,7 +67,62 @@ function _kgOptionen() {
  *   vorbelegung   (el) => werte
  *   anwenden      (el, werte) => Journaleintrag (MUTIERT NICHT)
  */
+/**
+ * Punkte aus dem Lageplan in Journalform bringen.
+ *
+ * Der Plan liefert `{x, z}` — er kennt keine Höhe, weil man von oben zeichnet.
+ * Das Journal führt `[x, y, z]` mit Y als Höhe (three-Konvention, festgelegt im
+ * Kopf von Bauteilrezepte.js). Die Höhe aus dem Formular wird HIER eingesetzt,
+ * nicht erst im Rezept: dann steht im Journal der wirkliche Raumpunkt, und ein
+ * späterer Zug an einem einzelnen Punkt (Bruchkante mit eigenen Höhen, Stufe
+ * 10) braucht keine zweite Regel, wo die Höhe herkommt.
+ */
+function alsRaumpunkte(punkte, hoehe = 0) {
+    const h = Number(hoehe) || 0;
+    return (punkte ?? []).map((p) => {
+        if (Array.isArray(p)) return [Number(p[0]) || 0, Number.isFinite(p[1]) ? Number(p[1]) : h, Number(p[2]) || 0];
+        return [Number(p?.x) || 0, Number.isFinite(p?.y) ? Number(p.y) : h, Number(p?.z) || 0];
+    });
+}
+
+/**
+ * Aus einem Rezept wird eine Zeichen-Bearbeitung.
+ *
+ * ABGELEITET STATT ABGESCHRIEBEN: Jedes Rezept in `REZEPTE` ist genau eine
+ * Zeichenoperation, und zwei Listen, die dasselbe aufzählen, laufen
+ * auseinander — dieselbe Fehlerklasse wie die zwei Dokumentregister aus
+ * Stufe 3. Wer ein Rezept ergänzt, bekommt seine Bearbeitung mit.
+ *
+ * ERZEUGEN HAT KEIN SUBJEKT. Deshalb ist `el` hier nicht das angeklickte
+ * Bauteil, sondern das GEZEICHNETE: `{ punkte }`. Das ist der Grund, warum
+ * diese Einträge in `GRUPPEN.erzeugen` mit `einstieg: 'werkzeug'` stehen und
+ * `passende()` sie am Bauteil NICHT anbietet.
+ */
+function zeichenBearbeitung(rezept) {
+    return {
+        id: `${rezept.id}-zeichnen`,
+        titel: `${rezept.titel} zeichnen`,
+        icon: rezept.icon,
+        gruppe: 'erzeugen',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        art: 'erzeugt',
+        rezept: rezept.id,
+        mindestPunkte: rezept.mindestPunkte,
+        geschlossen: rezept.geschlossen,
+        felder: rezept.felder.map(f => ({ ...f, rueckfall: { ...f } })),
+        vorbelegung: () => ({ name: '', kategorie: rezept.kategorieVorgabe, hoehe: 0 }),
+        anwenden: (el, werte) => erzeugtEintrag({
+            rezept: rezept.id,
+            kategorie: werte.kategorie,
+            name: werte.name ?? '',
+            parameter: { punkte: alsRaumpunkte(el?.punkte, werte.hoehe) },
+        }),
+    };
+}
+
 export const BEARBEITUNGEN = Object.freeze([
+    ...Object.values(REZEPTE).map(zeichenBearbeitung),
     {
         id: 'kg-setzen',
         titel: 'Kostengruppe setzen',
@@ -123,6 +179,14 @@ export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN } 
     const guete = einordnung?.guete ?? 'unbekannt';
     return katalog.filter((b) => {
         if (gruppe && b.gruppe !== gruppe) return false;
+        // ERZEUGEN HAT KEIN SUBJEKT. Die Trennlinie ist nicht der Elementtyp,
+        // sondern die Frage „woran hängt die Operation?" — Bearbeiten immer an
+        // einem Bauteil (Klick), Erzeugen an nichts (Werkzeugleiste). Ohne
+        // diese Zeile böte das Kontextmenü am Rohr „Linie zeichnen" an, und
+        // das gezeichnete Ergebnis hätte mit dem angeklickten Rohr nichts zu
+        // tun. `einstieg` steht seit 9.0 in GRUPPEN und wird hier endlich
+        // benutzt, statt ein zweites Mal beschrieben zu werden.
+        if (!gruppe && GRUPPEN[b.gruppe]?.einstieg === 'werkzeug') return false;
         if (b.bauform !== '*') {
             if (!bauform || b.bauform !== bauform) return false;
         }

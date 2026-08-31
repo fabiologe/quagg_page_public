@@ -37,6 +37,7 @@
 
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
+import { baueAusBauplan } from './Bauteilrezepte.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
 
@@ -258,25 +259,112 @@ export class IfcAutor {
     }
 
     /**
+     * Das CDE-eigene Modell wegwerfen.
+     *
+     * Wird vor JEDEM Aufbau gerufen — siehe `baueErzeugte`. Ein Modell, das
+     * nicht da ist, ist kein Fehler: der erste Aufbau eines Auftrags findet
+     * nichts vor.
+     */
+    async verwirfEigenesModell(modelId = CDE_MODELL_ID) {
+        const kern = this._getFragments()?.core ?? null;
+        if (!kern?.disposeModel || !this._modell(modelId)) return false;
+        try {
+            await kern.disposeModel(modelId);
+            return true;
+        } catch (fehler) {
+            console.warn('cde: eigenes modell verwerfen', fehler?.message ?? fehler);
+            return false;
+        }
+    }
+
+    /**
+     * Das CDE-eigene Modell aus Bauplänen NEU AUFBAUEN (Stufe 9.4).
+     *
+     * Neu aufbauen, nicht fortschreiben — und das ist die ganze Pointe. Ein
+     * Rohr, das in „Variante Nord" angelegt wurde, darf in „Süd" nicht im Raum
+     * stehen; das CDE-Modell ist aber EINES. Würde es fortgeschrieben, müsste
+     * beim Satzwechsel gezielt gelöscht werden, und jede vergessene Löschung
+     * hinterliesse ein Bauteil, das zu keiner Variante gehört.
+     *
+     * Stattdessen: verwerfen, dann aus dem Journal des aktiven Satzes neu
+     * bauen. Damit entscheidet der Satz allein durch seinen Journalinhalt, was
+     * dasteht — und der Aufbau ist idempotent, dieselbe Eigenschaft, auf der
+     * schon das Nachspielen ruht.
+     *
+     * DIE LEERE LISTE IST EIN FALL, KEIN NICHTSTUN: ein Satz ohne erzeugte
+     * Bauteile muss das Modell LEEREN, sonst blieben die des vorigen Satzes
+     * stehen. Deshalb wird auch dann verworfen.
+     *
+     * @param {Array<{globalId, wert}>} schritte  aus `planeNachspielen`
+     * @returns {Promise<{karte: Map<string, number>, misserfolge: Array}>}
+     *   `karte` ist globalId → localId der frisch gebauten Bauteile. Ohne sie
+     *   fände ein `lage`-Eintrag auf ein erzeugtes Bauteil sein Ziel nicht:
+     *   die localId entsteht erst hier und steht in keiner Zuordnung des
+     *   gelieferten Modells.
+     */
+    async baueErzeugte(schritte, modelId = CDE_MODELL_ID) {
+        const karte = new Map();
+        const misserfolge = [];
+        await this.verwirfEigenesModell(modelId);
+        if (!schritte?.length) return { karte, misserfolge };
+
+        const angelegt = await this.eigenesModell(modelId);
+        if (!angelegt.ok) {
+            return { karte, misserfolge: schritte.map(s => ({ ...s, grund: angelegt.grund })) };
+        }
+
+        for (const schritt of schritte) {
+            // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
+            // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
+            // gemacht — siehe Kopf von Bauteilrezepte.js.
+            const gebaut = baueAusBauplan(schritt.wert ?? {});
+            if (!gebaut.ok) {
+                misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
+                continue;
+            }
+            const r = await this.erzeuge(modelId, {
+                kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
+            });
+            if (r.ok) karte.set(schritt.globalId, r.localId);
+            else misserfolge.push({ ...schritt, grund: r.grund });
+        }
+        return { karte, misserfolge };
+    }
+
+    /**
      * Einen Plan aus `planeNachspielen` anwenden.
      *
      * Gibt zurück, was NICHT ging — still scheitern wäre hier besonders
      * schlimm: der Nutzer sähe ein Modell, das seine Festlegungen scheinbar
      * verloren hat, ohne dass irgendwo stünde, warum.
+     *
+     * REIHENFOLGE: erst erzeugen, dann verschieben. Ein `lage`-Eintrag auf ein
+     * erzeugtes Bauteil braucht dessen localId, und die entsteht erst beim
+     * Bauen. Andersherum liefe die Verschiebung ins Leere und meldete
+     * „keine_localId" für etwas, das eine Zeile später existiert.
      */
     async wendeAn(plan, { globalIdZuLocalId } = {}) {
         const misserfolge = [];
-        for (const schritt of plan?.anzuwenden ?? []) {
+        const schritte = plan?.anzuwenden ?? [];
+
+        const { karte: erzeugte, misserfolge: bauFehler } = await this.baueErzeugte(
+            schritte.filter(s => s.art === 'erzeugt'),
+        );
+        misserfolge.push(...bauFehler);
+
+        for (const schritt of schritte) {
             if (schritt.art !== 'lage') continue;      // weitere Arten folgen
-            const localId = globalIdZuLocalId?.get(schritt.globalId);
+            const ausCde = schritt.modell === 'cde';
+            const localId = ausCde
+                ? erzeugte.get(schritt.globalId)
+                : globalIdZuLocalId?.get(schritt.globalId);
             if (localId === undefined) {
                 misserfolge.push({ ...schritt, grund: 'keine_localId' });
                 continue;
             }
-            const modelId = schritt.modell === 'cde' ? CDE_MODELL_ID : plan.modelId;
-            const r = await this.setzeAnker(modelId, localId, schritt.wert);
+            const r = await this.setzeAnker(ausCde ? CDE_MODELL_ID : plan.modelId, localId, schritt.wert);
             if (!r.ok) misserfolge.push({ ...schritt, grund: r.grund });
         }
-        return { misserfolge };
+        return { misserfolge, erzeugte };
     }
 }

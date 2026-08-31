@@ -489,6 +489,12 @@ export function drawVectorPlan(doc, cam, M, dw, dh, opts = {}) {
     if (opts.planInhalte?.length) _drawPlanInhalte(doc, opts.planInhalte, toX, toY, M, dw, dh);
     // Ganz zuoberst: der Rotstift ist eine Anmerkung ZUM Plan, kein Planinhalt.
     if (opts.rotstift?.length) _drawRotstift(doc, opts.rotstift, toX, toY, M, dw, dh, opts.scaleRatio);
+    // Stufe 9.4: was in der CDE selbst entstanden ist. Der Plan zeichnet es
+    // direkt aus dem Journal — er fasst nie ein Fragment an, und deshalb steht
+    // eine gezeichnete Linie sofort im Plan, ganz gleich ob die Raumansicht
+    // sie schon gebaut hat.
+    if (opts.erzeugte?.length) _drawErzeugte(doc, opts.erzeugte, toX, toY, M, dw, dh);
+    if (opts.zeichenZug) _drawZeichenZug(doc, opts.zeichenZug, toX, toY, M, dw, dh);
 
     // ── Scale bar + North arrow (drawn last so they sit on top) ─────────────
     if (opts.scaleBar && opts.scaleRatio) {
@@ -1286,3 +1292,77 @@ function _anyOverlap(bb, list) {
     return false;
 }
 
+
+// ── Stufe 9.4: in der CDE erzeugte Bauteile ─────────────────────────────────
+
+/**
+ * Selbst erzeugte Bauteile im Lageplan.
+ *
+ * Sie werden ABSICHTLICH anders gezeichnet als Geliefertes: durchgezogen und
+ * kräftig, mit ihrem Namen daran. Sobald erzeugt werden kann, stehen im selben
+ * Plan Dinge, die der Planer verantwortet, und Dinge, die man selbst gesetzt
+ * hat — wer das nicht auf einen Blick unterscheidet, zeigt irgendwann einem
+ * Bauherrn ein Modell und weiss nicht mehr, welcher Teil geliefert war.
+ * (Die vollständige Herkunftsanzeige ist Stufe 9.6; das hier ist ihr Anfang.)
+ *
+ * @param {Array<{punkte, geschlossen, name}>} erzeugte  Punkte in Welt-XZ
+ */
+function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
+    doc.setLineDashPattern([], 0);
+    doc.setLineWidth(0.45);
+    doc.setDrawColor(21, 101, 192);        // ein eigener Ton — nicht Rotstift, nicht Bauteil
+    for (const e of erzeugte) {
+        const papier = (e?.punkte ?? [])
+            .map(p => [toX(p[0] ?? p.x), toY(p[2] ?? p.z)]);
+        if (papier.length < 2) continue;
+        if (!papier.some(([px, py]) => _inBounds(px, py, M, dw, dh))) continue;
+
+        const zug = e.geschlossen ? [...papier, papier[0]] : papier;
+        for (let i = 1; i < zug.length; i++) {
+            doc.line(zug[i - 1][0], zug[i - 1][1], zug[i][0], zug[i][1]);
+        }
+        if (e.name) {
+            doc.setFontSize(7);
+            doc.setTextColor(21, 101, 192);
+            doc.text(String(e.name), papier[0][0] + 1.2, papier[0][1] - 1.2);
+            doc.setTextColor(0, 0, 0);
+        }
+    }
+    doc.setLineWidth(0.2);
+    doc.setDrawColor(0, 0, 0);
+}
+
+/**
+ * Der Zug, der gerade gezeichnet wird — gestrichelt, mit Gummiband zum Zeiger.
+ *
+ * Gestrichelt, weil er noch nichts ist: erst mit dem Abschluss entsteht ein
+ * Journaleintrag. Ein durchgezogener Zug sähe aus wie ein fertiges Bauteil,
+ * und man wüsste beim Loslassen nicht, ob schon etwas festgelegt wurde.
+ */
+function _drawZeichenZug(doc, zug, toX, toY, M, dw, dh) {
+    const punkte = [...(zug?.punkte ?? [])];
+    if (zug?.zeiger) punkte.push(zug.zeiger);
+    const papier = punkte.map(p => [toX(p[0] ?? p.x), toY(p[2] ?? p.z)]);
+    if (!papier.length) return;
+
+    doc.setDrawColor(21, 101, 192);
+    doc.setLineWidth(0.35);
+    doc.setLineDashPattern([1.2, 1.2], 0);
+    for (let i = 1; i < papier.length; i++) {
+        doc.line(papier[i - 1][0], papier[i - 1][1], papier[i][0], papier[i][1]);
+    }
+    if (zug?.geschlossen && papier.length > 2) {
+        doc.line(papier.at(-1)[0], papier.at(-1)[1], papier[0][0], papier[0][1]);
+    }
+    doc.setLineDashPattern([], 0);
+
+    // Die GESETZTEN Punkte als Griffe — der Zeigerpunkt ist keiner.
+    const gesetzt = zug?.zeiger ? papier.slice(0, -1) : papier;
+    doc.setFillColor(21, 101, 192);
+    for (const [px, py] of gesetzt) {
+        if (_inBounds(px, py, M, dw, dh)) doc.circle(px, py, 0.7, 'F');
+    }
+    doc.setFillColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.2);
+}

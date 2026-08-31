@@ -39,6 +39,21 @@ export function betroffeneGlobalIds(eintraege) {
     return ids;
 }
 
+/**
+ * Nennt das Journal überhaupt ein selbst erzeugtes Bauteil?
+ *
+ * Nötig, weil `betroffeneGlobalIds` erzeugte Bauteile mit Absicht auslässt —
+ * sie stehen nicht im gelieferten Modell, und in dessen Zuordnung zu suchen
+ * wäre ein Fehlalarm mit Ansage. Ohne diese zweite Frage bliebe der Ladepfad
+ * aber genau dann stehen, wenn ALLES selbst erzeugt ist: `gesucht` wäre leer,
+ * die Abkürzung griffe, und kein einziges eigenes Bauteil käme in den Raum.
+ */
+export function hatErzeugte(eintraege) {
+    return (eintraege ?? []).some(
+        e => e?.modell === 'cde' && AENDERUNGS_ARTEN[e.art]?.beruehrtModell && e.nachher != null,
+    );
+}
+
 export function useNachspielen({ engine, aenderungen } = {}) {
     /** Was der letzte Lauf ergeben hat — für die Meldung und den Reiter. */
     const meldung = ref('');
@@ -55,6 +70,15 @@ export function useNachspielen({ engine, aenderungen } = {}) {
     const konflikte = ref([]);
     const karte = ref(new Map());        // `${art}|${globalId}` → {zustand, grund}
     const laeuft = ref(false);
+    /**
+     * Standen beim letzten Lauf eigene Bauteile im Raum?
+     *
+     * Der Merker existiert für genau einen Fall: Wechsel von einem Modellsatz
+     * MIT erzeugten Bauteilen auf einen OHNE. Dann gibt es nichts anzuwenden —
+     * aber sehr wohl etwas wegzuräumen. Ohne ihn bliebe die Variante Nord in
+     * der Variante Süd stehen.
+     */
+    const erzeugteStanden = ref(false);
 
     function zuruecksetzen() {
         meldung.value = '';
@@ -76,7 +100,15 @@ export function useNachspielen({ engine, aenderungen } = {}) {
         zuruecksetzen();
         const eintraege = aenderungen?.eintraege ?? [];
         const gesucht = betroffeneGlobalIds(eintraege);
-        if (!gesucht.size || !engine?.value) return { angewandt: 0, konflikte: 0 };
+        // Auch OHNE Bezug ins gelieferte Modell gibt es zu tun: selbst erzeugte
+        // Bauteile müssen aufgebaut werden. Und selbst wenn es GAR NICHTS zu
+        // tun gibt, muss `wendeAn` laufen, sobald zuvor etwas dastand — der
+        // Neuaufbau ist es, der das CDE-Modell beim Satzwechsel LEERT.
+        if (!engine?.value) return { angewandt: 0, konflikte: 0 };
+        if (!gesucht.size && !hatErzeugte(eintraege) && !erzeugteStanden.value) {
+            return { angewandt: 0, konflikte: 0 };
+        }
+        erzeugteStanden.value = hatErzeugte(eintraege);
 
         laeuft.value = true;
         try {

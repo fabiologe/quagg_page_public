@@ -9,7 +9,7 @@
       @pointerup="onZeigerAuf"
       @pointercancel="onZeigerAuf"
       @wheel.prevent="onRad"
-      @dblclick="passendEinstellen"
+      @dblclick="onDoppelklick"
     ></canvas>
 
     <!-- Bildschirmfeste Anzeigen. Maßstabsleiste, Nordpfeil und Wasserzeichen
@@ -39,9 +39,29 @@
       <CdeIcon name="measure" :size="13" />
       <span>{{ massPunkt ? 'Zweiten Punkt setzen' : 'Ersten Punkt setzen' }} — Esc beendet</span>
     </div>
+    <!-- Zeichnen (Stufe 9.4). Der Hinweis oben sagt, wie viele Punkte noch
+         fehlen; das Formular unten hält Bezeichnung, IFC-Typ und Höhe. Beides
+         am Blattrand, nicht auf dem Blatt — es gehört zur Bedienung. -->
+    <div v-else-if="zeichnen.aktiv.value" class="plan-messhinweis">
+      <CdeIcon :name="zeichnen.werkzeug.value?.icon ?? 'add'" :size="13" />
+      <span>{{ zeichnen.hinweis.value }} — Esc bricht ab</span>
+    </div>
     <div v-else-if="setzModus" class="plan-messhinweis">
       <CdeIcon :name="setzModus === 'loeschen' ? 'delete' : setzModus === 'text' ? 'edit' : 'coords'" :size="13" />
       <span>{{ setzHinweis }} — Esc beendet</span>
+    </div>
+
+    <div v-if="zeichnen.aktiv.value" class="plan-zeichenform">
+      <CdeBearbeitungForm
+        :felder="bearbeitung.felder"
+        :werte="bearbeitung.werte"
+        :fehler="zeichenFehler"
+        :bereit="bearbeitung.bereit && zeichnen.genug.value"
+        :ok-text="zeichnen.genug.value ? 'Anlegen' : `Noch ${zeichnen.mindestPunkte.value - zeichnen.punkte.value.length} Punkte`"
+        @setze-wert="bearbeitung.setzeWert"
+        @uebernehmen="zeichnenAbschliessen"
+        @abbrechen="zeichnen.abbrechen()"
+      />
     </div>
 
     <div v-if="ersterAufbau" class="plan-schleier">
@@ -72,11 +92,17 @@
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
+import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { usePlanInhalt } from '../stores/usePlanInhalt.js';
 import { useRotstift, STIFT_FARBEN, STIFT_BREITE_MM, RADIER_RADIUS_MM, mmZuWelt } from '../stores/useRotstift.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
+import { useZeichnen } from '../composables/useZeichnen.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
 import { drawVectorPlan, makeWorldTransform } from '../services/IfcVectorPlotter.js';
@@ -96,11 +122,69 @@ const props = defineProps({
   logo: { type: String, default: null },
 });
 
+const emit = defineEmits(['zeichnen-beendet']);
+
 const api = useViewerApi();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
 const planInhalt = usePlanInhalt();
 const rotstift = useRotstift();
+const bearbeitung = useBearbeitung();
+const aenderungen = useAenderungen();
+const cde = useCdeStore();
+
+/**
+ * Zeichnen (Stufe 9.4).
+ *
+ * Der Zug wird HIER gehalten, weil hier die Weltkoordinaten entstehen
+ * (`zeigerZuWelt`). Was daraus wird — Prüfung, Journaleintrag, Rücknahme —
+ * weiss das Composable, und der Katalog liefert das Formular. Damit gibt es
+ * keinen zweiten Weg, ein Bauteil anzulegen.
+ */
+const zeichnen = useZeichnen({
+  bearbeitung,
+  cde,
+  getModellSha: () => api.getLoadedModelSha?.() ?? null,
+  // Die Raumansicht baut ihr CDE-Modell aus dem Journal neu auf. Der Plan
+  // braucht das nicht — er zeichnet ohnehin direkt aus dem Journal.
+  nachBauen: () => api.baueErzeugteNeu?.(),
+});
+
+/** Prüfmeldungen des Formulars UND des Zuges — der Nutzer sieht eine Liste. */
+const zeichenFehler = computed(() => (zeichnen.grund.value
+  ? [zeichnen.grund.value, ...bearbeitung.fehler]
+  : bearbeitung.fehler));
+
+/**
+ * Die erzeugten Bauteile als Zeichenanweisung.
+ *
+ * Direkt aus dem wirksamen Stand des Journals — nicht aus dem 3D-Modell.
+ * `drawVectorPlan` fasst nie ein Fragment an, und deshalb steht eine
+ * gezeichnete Linie sofort im Plan, auch wenn der Editor sie noch nicht
+ * gebaut hat (oder gar nicht bauen kann).
+ */
+const erzeugtePunkte = computed(() => {
+  const out = [];
+  for (const [, bauplan] of aenderungen.wirksamerStand('erzeugt')) {
+    const punkte = bauplan?.parameter?.punkte;
+    if (!Array.isArray(punkte) || punkte.length < 2) continue;
+    out.push({ punkte, name: bauplan.name, geschlossen: !!rezeptNach(bauplan.rezept)?.geschlossen });
+  }
+  return out;
+});
+
+async function zeichnenAbschliessen() {
+  const eintrag = await zeichnen.abschliessen();
+  if (eintrag) baldZeichnen();
+}
+
+/**
+ * Der Plan beendet das Zeichnen auch von sich aus — nach dem Abschliessen,
+ * über Esc, über Doppelklick. Ohne diese Meldung bliebe der Knopf in der
+ * Werkzeugleiste hervorgehoben, obwohl nichts mehr scharf ist. Genau die Sorte
+ * toter Bindung, die sich für den Nutzer als „das Werkzeug hängt" anfühlt.
+ */
+watch(() => zeichnen.aktiv.value, (an) => { if (!an) emit('zeichnen-beendet'); });
 
 const hostRef = ref(null);
 const cvRef = ref(null);
@@ -263,6 +347,8 @@ function zeichne() {
       measurements: o.measurements ?? [],
       dimensions: o.dimensions ?? [],
       planInhalte: planInhalt.inhalte,
+      erzeugte: erzeugtePunkte.value,
+      zeichenZug: zeichnen.zug.value,
       // Fertige Striche plus der gerade laufende — sonst sähe man beim Malen
       // nichts, bis man loslässt.
       rotstift: nasserStrich.value
@@ -383,6 +469,15 @@ function onZeigerAb(ev) {
     return;
   }
 
+  // Zeichnen (9.4) geht VOR dem Anfassen vorhandener Inhalte: sonst griffe
+  // ein Punkt, der neben einem Symbol liegt, das Symbol — und der Zug bräche
+  // ab, ohne dass jemand wüsste warum.
+  if (zeichnen.aktiv.value) {
+    const punkt = zeigerZuWelt(ev);
+    if (punkt) { zeichnen.setzePunkt(punkt); baldZeichnen(); }
+    return;
+  }
+
   // Ohne Setzmodus: einen vorhandenen Inhalt anfassen und ziehen.
   const unterZeiger = zeigerZuWelt(ev);
   if (unterZeiger) {
@@ -427,6 +522,11 @@ function onZeigerBewegt(ev) {
       }
       return;
     }
+  }
+  if (zeichnen.aktiv.value) {
+    zeichnen.bewegeZeiger(zeigerZuWelt(ev));
+    baldZeichnen();
+    return;
   }
   if (ziehtInhalt) {
     const punkt = zeigerZuWelt(ev);
@@ -488,10 +588,30 @@ function messenUmschalten(an = null) {
 }
 
 function onTaste(e) {
+  // Zeichnen hört auf mehr als Esc: Enter schliesst ab, Rücktaste nimmt den
+  // letzten Punkt zurück. Ohne die Rücktaste müsste man bei einem verklickten
+  // Punkt den ganzen Zug wegwerfen.
+  if (zeichnen.aktiv.value) {
+    if (e.key === 'Escape') { zeichnen.abbrechen(); baldZeichnen(); e.stopPropagation(); return; }
+    if (e.key === 'Enter') { zeichnenAbschliessen(); e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key === 'Backspace') { zeichnen.entferneLetzten(); baldZeichnen(); e.preventDefault(); e.stopPropagation(); return; }
+  }
   if (e.key !== 'Escape') return;
   if (stiftModus.value) { stiftModus.value = null; nasserStrich.value = null; e.stopPropagation(); return; }
   if (setzModus.value) { setzModus.value = null; e.stopPropagation(); return; }
   if (messen.value) { messenUmschalten(false); e.stopPropagation(); }
+}
+
+/**
+ * Doppelklick: im Zeichenmodus schliesst er den Zug ab, sonst passt er ein.
+ *
+ * Der Doppelklick ist die eingeübte Geste zum Beenden eines Polygonzugs — in
+ * jedem CAD. Sie hier NICHT zu belegen hiesse, dass der Nutzer den Zug mit
+ * einem Doppelklick versehentlich wegzoomt.
+ */
+function onDoppelklick() {
+  if (zeichnen.aktiv.value) { zeichnenAbschliessen(); return; }
+  passendEinstellen();
 }
 
 /** Blattlage und Maßstab so setzen, dass das Modell hineinpasst. */
@@ -586,12 +706,36 @@ defineExpose({
     else nasserStrich.value = null;
   },
   aktiverStift: () => stiftModus.value,
+  /** Ein Zeichenwerkzeug scharf schalten (Stufe 9.4) — Id aus dem Katalog. */
+  zeichneMit: (id) => {
+    if (!id) { zeichnen.abbrechen(); baldZeichnen(); return false; }
+    messenUmschalten(false);
+    setzModus.value = null;
+    stiftModus.value = null;
+    const ok = zeichnen.starte(id);
+    baldZeichnen();
+    return ok;
+  },
+  zeichnetGerade: () => zeichnen.werkzeug.value?.id ?? null,
   neuAufbauen: (grund = 'alles') => { inhalt?.entwerte(grund); return inhalteHolen(); },
   passendEinstellen,
 });
 </script>
 
 <style scoped>
+/* Das Zeichenformular sitzt unten links, dem Hinweis oben gegenüber — es soll
+   den Blick auf den laufenden Zug nicht verstellen. */
+.plan-zeichenform {
+  position: absolute;
+  left: 0.6rem; bottom: 0.6rem;
+  min-width: 190px;
+  padding: 0.45rem 0.55rem;
+  background: var(--cde-float);
+  border: 1px solid var(--cde-line);
+  border-radius: var(--cde-radius);
+  box-shadow: var(--cde-shadow);
+}
+
 .plan-messhinweis {
   position: absolute;
   top: 0.6rem; left: 50%; transform: translateX(-50%);

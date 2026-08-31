@@ -22,7 +22,7 @@ import {
 } from '../services/bauform/Bauformregeln.js';
 import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
-import { felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
+import { GRUPPEN, felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
 
 export const useBearbeitung = defineStore('cde-bearbeitung', () => {
@@ -148,7 +148,13 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // Eine Bearbeitung, die zu diesem Bauteil nicht passt, darf auch über
         // die Befehls-Palette nicht scharf werden — sonst umgeht der eine
         // Einstieg die Güteschranke der anderen.
-        if (einordnung.value && !passende(einordnung.value).some(p => p.id === id)) return false;
+        //
+        // ERZEUGEN IST DAVON AUSGENOMMEN, weil es kein Subjekt hat: „Linie
+        // zeichnen" bezieht sich nicht auf das gerade angeklickte Rohr. Ohne
+        // diese Ausnahme wäre das Zeichenwerkzeug immer dann gesperrt, wenn
+        // zufällig etwas ausgewählt ist — und niemand käme darauf, warum.
+        const werkzeug = GRUPPEN[b.gruppe]?.einstieg === 'werkzeug';
+        if (!werkzeug && einordnung.value && !passende(einordnung.value).some(p => p.id === id)) return false;
         scharfId.value = id;
         werte.value = { ...(b.vorbelegung?.(bauteil.value ?? {}) ?? {}) };
         return true;
@@ -170,11 +176,16 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      *   zu tun war (ungültig, oder derselbe Wert wie zuvor — `eintragen` sagt
      *   das selbst und schreibt dann keinen leeren Schritt).
      */
-    async function ausfuehren({ wer = '', modellSha = null } = {}) {
+    async function ausfuehren({ wer = '', modellSha = null, subjekt = null } = {}) {
         const b = scharf.value;
-        if (!b || !bereit.value || !bauteil.value) return null;
+        // ERZEUGEN HAT KEIN SUBJEKT (Stufe 9.4): dort steht das GEZEICHNETE an
+        // der Stelle des angeklickten Bauteils und wird hereingereicht. Keine
+        // Ausnahme in der Mechanik — nur eine andere Herkunft des Subjekts;
+        // Journal, Rücknahme und Nachvollziehbarkeit bleiben dieselben.
+        const gegenstand = subjekt ?? bauteil.value;
+        if (!b || !bereit.value || !gegenstand) return null;
 
-        const beschreibung = b.anwenden(bauteil.value, werte.value);
+        const beschreibung = b.anwenden(gegenstand, werte.value);
         if (!beschreibung?.art) return null;
 
         const aenderungen = useAenderungen();

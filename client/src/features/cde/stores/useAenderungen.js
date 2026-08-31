@@ -220,6 +220,14 @@ export function beschreibeWert(art, wert, basis = null) {
         if (Math.abs(d.dy) > LAENGEN_TOLERANZ) teile.push(`H ${_laenge(d.dy)}`);
         return teile.length ? teile.join(' · ') : 'unverändert';
     }
+    if (art === 'erzeugt') {
+        // Der Rohwert ist ein Bauplan (Rezept, Typ, Parameter). Ihn Feld für
+        // Feld auszuschreiben ergäbe „parameter: [object Object]" — lesbar ist
+        // die Frage, die der Nutzer stellt: was steht da, und wie gross ist es?
+        const punkte = wert?.parameter?.punkte?.length ?? 0;
+        const bezeichnung = wert?.name || wert?.kategorie || wert?.rezept || 'Bauteil';
+        return `${bezeichnung} · ${punkte} ${punkte === 1 ? 'Punkt' : 'Punkte'}`;
+    }
     if (typeof wert === 'object') {
         return Object.entries(wert)
             .map(([k, v]) => `${k}: ${typeof v === 'number' ? v : String(v)}`)

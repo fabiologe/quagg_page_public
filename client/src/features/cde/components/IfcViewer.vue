@@ -374,16 +374,19 @@ const messen = useMessen({ engine, ifc, selection: () => _selection });
 // `defineExpose`, und Vue entpackt Refs im expose-Proxy. Ein Wert im
 // Composable wäre dort nicht nachverfolgbar.
 const annotationActive = ref(false);
+// Das Journal aus Stufe 7 — EIN Bezug, nicht drei Aufrufe. Der Store ist zwar
+// ein Singleton, aber drei Aufrufstellen lesen sich wie drei Dinge.
+const aenderungen = useAenderungen();
 // Stufe 9.2: bringt beim Laden die Festlegungen aufs Modell und meldet, was
-// nicht durchging. `aenderungen` ist das Journal aus Stufe 7.
-const nachspielen = useNachspielen({ engine, aenderungen: useAenderungen() });
+// nicht durchging.
+const nachspielen = useNachspielen({ engine, aenderungen });
 
 /**
  * Stufe 9.3: der Griff am Bauteil. Braucht `nachspielen` für den eingefrorenen
  * Lieferstand und `bearbeitung` für die Bauform — beide sind oben schon da.
  */
 const ziehen = useZiehen({
-  engine, cde, aenderungen: useAenderungen(), bearbeitung, nachspielen,
+  engine, cde, aenderungen, bearbeitung, nachspielen,
   getAuswahl:   () => ifc.selectedElement,
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
 });
@@ -542,6 +545,32 @@ provideViewerApi({
   getAllCoordOffsets:   () => engine.value?.getAllCoordOffsets() ?? {},
   getWebIfcAPIs:        () => engine.value?.getWebIfcAPIs() ?? [],
   getLoadedModelSha:    () => ablage.geladeneModellSha(),
+
+  /**
+   * Das CDE-eigene Modell aus dem Journal NEU aufbauen (Stufe 9.4).
+   *
+   * Gerufen vom Lageplan, sobald dort ein Bauteil entstanden ist. Der Plan
+   * selbst braucht das nicht — er zeichnet direkt aus dem Journal —, aber die
+   * Raumansicht schon: ohne diesen Aufruf stünde ein gerade gezeichnetes Rohr
+   * erst nach dem nächsten Laden im Raum, und es sähe aus, als wäre es
+   * verlorengegangen.
+   *
+   * Aufgebaut wird der ganze Stand, nicht der letzte Schritt — dieselbe
+   * Idempotenz wie beim Nachspielen, und damit auch der Weg, auf dem eine
+   * Rücknahme wirkt.
+   */
+  baueErzeugteNeu: async () => {
+    if (!engine.value?.autor) return null;
+    const plan = { anzuwenden: [] };
+    for (const [globalId, wert] of aenderungen.wirksamerStand('erzeugt')) {
+      plan.anzuwenden.push({ globalId, art: 'erzeugt', modell: 'cde', wert });
+    }
+    const r = await engine.value.autor.baueErzeugte(plan.anzuwenden);
+    if (r.misserfolge.length) {
+      console.warn('[CDE] erzeugte Bauteile', r.misserfolge.map(m => m.grund));
+    }
+    return r;
+  },
 });
 
 // ── lifecycle ────────────────────────────────────────────────────────────────

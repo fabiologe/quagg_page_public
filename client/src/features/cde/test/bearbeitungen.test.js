@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
     BEARBEITUNGEN, GRUPPEN, ausGruppe, felderFuer, nachId, passende, pruefe,
 } from '../services/Bearbeitungen.js';
+import { REZEPTE } from '../services/Bauteilrezepte.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
 
@@ -94,8 +95,22 @@ describe('ausGruppe — der Einstieg über die Werkzeugleiste', () => {
         expect(ausGruppe('merkmale').every(b => b.gruppe === 'merkmale')).toBe(true);
     });
 
-    it('liefert für eine leere Gruppe eine leere Liste, nicht undefined', () => {
-        expect(ausGruppe('erzeugen')).toEqual([]);
+    it('liefert für eine unbekannte Gruppe eine leere Liste, nicht undefined', () => {
+        expect(ausGruppe('gibtsnicht')).toEqual([]);
+    });
+
+    it('führt die Zeichenwerkzeuge — je Rezept eines (Stufe 9.4)', () => {
+        // Abgeleitet aus REZEPTE, nicht daneben aufgezählt: zwei Listen, die
+        // dasselbe meinen, laufen auseinander.
+        expect(ausGruppe('erzeugen').map(b => b.rezept)).toEqual(Object.keys(REZEPTE));
+    });
+
+    it('bietet Erzeugen am BAUTEIL nicht an — es hat kein Subjekt', () => {
+        // Sonst stünde „Linie zeichnen" im Kontextmenü des Rohrs, und das
+        // Gezeichnete hätte mit dem Rohr nichts zu tun.
+        const ids = passende({ bauform: 'achse+profil', guete: 'gemessen' }).map(b => b.id);
+        expect(ids).not.toContain('linie-zeichnen');
+        expect(ids.length).toBeGreaterThan(0);
     });
 });
 
