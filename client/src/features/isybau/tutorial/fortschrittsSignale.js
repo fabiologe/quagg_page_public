@@ -33,6 +33,11 @@ export function leseFortschrittsSignale(store) {
         store.ui.showElementModal,
         store.ui.elementModal.mode,
         store.ui.showPreprocessingModal,
+        // Auswahl und Massenbearbeitung der Datenmaske: der Auslass-Schritt
+        // schaltet weiter, sobald zwei Zeilen angehakt sind.
+        store.ui.preprocessingSelection,
+        store.ui.preprocessingBulkOpen,
+        store.ui.preprocessingDirty,
         store.ui.showKostraModal,
         store.ui.showRainModal,
         // Regen und Berechnung

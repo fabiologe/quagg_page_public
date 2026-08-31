@@ -697,3 +697,46 @@ describe('Regen-Abfolge: erst die Statistik, dann der Verlauf', () => {
       .toEqual(['modellregen-uebernehmen']);
   });
 });
+
+describe('Auslass-Abfolge: der Weg, den es wirklich gibt', () => {
+  // Gemeldet: die Fuehrung stimmte nicht. Sie schickte den Nutzer erst auf
+  // "Bauwerk" und dann in den anderen Reiter, obwohl die Massenbearbeitung den
+  // Typ in EINEM Zug setzt — und sie zeigte auf "Typ aendern", einen Kasten,
+  // den man an dieser Stelle noch gar nicht sehen kann.
+  const schritt = (id) => EXERCISE_STEPS.find(s => s.id === id);
+  const ui = (o) => ({ ui: { showPreprocessingModal: true, ...o } });
+
+  it('sucht im Schacht-Reiter und schaltet weiter, sobald zwei Zeilen angehakt sind', () => {
+    const s = schritt('ex-outfalls-suchen');
+    expect(s.message).toMatch(/Schaechte/);
+    expect(s.check(ui({ preprocessingSelection: 0 }))).toBe(false);
+    expect(s.check(ui({ preprocessingSelection: 1 }))).toBe(false);
+    expect(s.check(ui({ preprocessingSelection: 2 }))).toBe(true);
+  });
+
+  it('nennt den Weg ueber die Massenbearbeitung, nicht den Umweg ueber zwei Reiter', () => {
+    const s = schritt('ex-outfalls-typ');
+    expect(s.message).toMatch(/Bearbeiten/);
+    expect(s.message).toMatch(/Auslaufbauwerk/);
+    expect(s.message).toMatch(/Anwenden/);
+    // Der alte Umweg darf nicht zurueckkommen: der Tipp ist die Handlungs-
+    // kette, und die endet bei "Anwenden" — nicht bei einem Reiterwechsel.
+    // (Im Fliesstext steht "du musst NICHT erst auf Bauwerk ..." — eine
+    // Verneinung, die eine Wortsuche nicht von der Anweisung unterscheiden
+    // koennte. Deshalb haengt der Waechter am Tipp.)
+    expect(s.hint).toMatch(/Auslaufbauwerk/);
+    expect(s.hint).toMatch(/Anwenden/);
+    expect(s.hint).not.toMatch(/Reiter wechseln/i);
+  });
+
+  it('leuchtet dort, wo der Nutzer gerade steht', () => {
+    const s = schritt('ex-outfalls-typ');
+    expect(resolveStepHighlight(s, ui({}))).toEqual(['preprocessing-suche']);
+    expect(resolveStepHighlight(s, ui({ preprocessingSelection: 2 }))).toEqual(['sammel-bearbeiten']);
+    expect(resolveStepHighlight(s, ui({ preprocessingSelection: 2, preprocessingBulkOpen: true })))
+      .toEqual(['preprocessing-typ', 'sammel-anwenden']);
+    // Nach "Anwenden": Auswahl weg, Tabelle vorgemerkt — jetzt "Uebernehmen".
+    expect(resolveStepHighlight(s, ui({ preprocessingDirty: true })))
+      .toEqual(['preprocessing-uebernehmen']);
+  });
+});

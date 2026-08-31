@@ -64,6 +64,15 @@ export const useIsybauStore = defineStore('isybau-module', {
             // auf die Spalten des Flaechen-Reiters setzen kann (der
             // Watcher in tutorial/useHighlight.js sieht nur den Store).
             preprocessingTab: 'nodes',
+            // Wie viele Zeilen der Datenmaske angehakt sind und ob die
+            // Massenbearbeitung offen steht — dieselbe Begruendung wie beim
+            // Reiter: das Tutorial kann nur zeigen, was es sehen kann.
+            preprocessingSelection: 0,
+            preprocessingBulkOpen: false,
+            // Vorgemerkte, noch nicht uebernommene Aenderungen. Daran erkennt
+            // das Tutorial, dass jetzt "Uebernehmen" dran ist — und nicht
+            // wieder das Suchfeld.
+            preprocessingDirty: false,
             showHelpModal: false,
             showProjectManager: false,
             showElementModal: false,

@@ -37,7 +37,7 @@
               <div v-if="selectedIds.length > 0" class="bulk-actions-bar">
                   <span class="bulk-count">{{ selectedIds.length }} ausgewählt</span>
                   <div class="bulk-btns">
-                      <button class="bulk-btn-link" @click="openBulkEdit">✎ Bearbeiten</button>
+                      <button class="bulk-btn-link" data-tutorial="sammel-bearbeiten" @click="openBulkEdit">✎ Bearbeiten</button>
                       <button class="bulk-btn-link text-red" @click="deleteSelected"><img class="ic-del" src="/saintv1d/icons/Interface-Essential-Scisor--Streamline-Pixel.svg" /> Löschen</button>
                       <button class="bulk-btn-link" @click="selectedIds = []">Deselektieren</button>
                   </div>
@@ -123,7 +123,7 @@
                 </div>
 
                 <div class="bulk-buttons">
-                    <button @click="applyBulkEdit" class="primary-btn">Anwenden</button>
+                    <button @click="applyBulkEdit" class="primary-btn" data-tutorial="sammel-anwenden">Anwenden</button>
                     <button @click="showBulkEdit = false" class="secondary-btn">Abbrechen</button>
                 </div>
             </div>
@@ -631,7 +631,7 @@ import { useIsybauStore } from '../../store/index.js';
 // Die Ueberstau-Kopplung als reine Funktion — EINE Regel fuer Modell,
 // ElementInfo und dieses Fenster (siehe core/domain/Node.js).
 import { normalizeOverflowState } from '../../core/domain/Node.js';
-import { ref, watch, computed, nextTick } from 'vue';
+import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import CurveTableEditor from '../common/CurveTableEditor.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
@@ -654,6 +654,7 @@ const store = useIsybauStore();
 
 // === UI State ===
 const showBulkEdit = ref(false);
+
 const schmutzfrachtTarget = ref(null);
 const showSchmutzfrachtDialog = ref(false);
 
@@ -691,11 +692,45 @@ const switchTab = (tab) => {
 const nodes = ref([]);
 const edges = ref([]);
 const areas = ref([]);
+/**
+ * Stehen vorgemerkte Aenderungen im Fenster?
+ *
+ * Wurde bisher nur beim Loeschen gesetzt und von niemandem gelesen. Das
+ * Tutorial braucht die Tatsache: nach "Anwenden" in der Massenbearbeitung ist
+ * "Uebernehmen" der naechste Schritt — zeigte die Ratte dann weiter aufs
+ * Suchfeld, schickte sie den Nutzer an eine Stelle zurueck, die er laengst
+ * hinter sich hatte.
+ *
+ * Bewusst NICHT ueber einen deep-Watcher auf die ganze Tabelle: der liefe bei
+ * jedem Tastendruck in 65 Feldern. Gesetzt wird dort, wo eine Aktion einen
+ * ganzen Satz Zeilen aendert — Loeschen und Sammel-Anwenden.
+ */
 const isDirty = ref(false);
 // Vorgemerkte Löschungen (werden erst mit "Übernehmen" wirksam)
 const deletedIds = ref({ nodes: [], edges: [] });
 
 const selectedIds = ref([]);
+/**
+ * Zwei Dinge, die nur diese Komponente weiss, das Tutorial aber braucht:
+ * wie viele Zeilen angehakt sind und ob die Massenbearbeitung offen steht.
+ * Sein Leuchten haengt an einem Watcher ueber dem Store — ohne diese beiden
+ * Werte kann es "Bearbeiten" und "Anwenden" nicht im richtigen Moment zeigen,
+ * und der Nutzer sucht die Knoepfe selbst (genau die Meldung, die dazu kam).
+ *
+ * Abgeleitet, nicht doppelt gefuehrt: die Wahrheit bleibt `selectedIds` bzw.
+ * `showBulkEdit`, hier laeuft nur eine Kopie mit. Beim Schliessen des Fensters
+ * wird sie zurueckgesetzt (siehe onBeforeUnmount), sonst zeigte sie noch auf
+ * eine Auswahl, die es nicht mehr gibt.
+ */
+watch(selectedIds, (liste) => { store.ui.preprocessingSelection = liste.length; }, { deep: true });
+watch(showBulkEdit, (offen) => { store.ui.preprocessingBulkOpen = offen; });
+watch(isDirty, (offen) => { store.ui.preprocessingDirty = offen; });
+onBeforeUnmount(() => {
+    store.ui.preprocessingSelection = 0;
+    store.ui.preprocessingBulkOpen = false;
+    store.ui.preprocessingDirty = false;
+});
+
 const sortKey = ref('id');
 const sortOrder = ref(1); // 1 = asc, -1 = desc
 const filters = ref({
@@ -1134,6 +1169,7 @@ const applyBulkEdit = () => {
         }
     }
 
+    isDirty.value = true;
     showBulkEdit.value = false;
     selectedIds.value = [];
     

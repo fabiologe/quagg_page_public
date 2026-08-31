@@ -516,7 +516,8 @@ export const EXERCISE_STEPS = [
         message:
             'Zum Schluss die Auslaesse. AL1_RBB und AL2_RRB stehen noch als normale Schaechte im Netz — '
             + 'so weiss der Rechner nicht, wo das Wasser das System ueberhaupt verlaesst. '
-            + 'Zwei Elemente auf einmal aendert man am besten in der Datenbearbeitung. Mach sie auf.',
+            + 'Zwei Elemente auf einmal aendert man am besten in der Datenbearbeitung. Mach sie auf — '
+            + 'der Reiter "Schaechte" ist schon der richtige.',
         hint: '"Daten bearbeiten" in der Kommandoleiste.',
         optional: true,
         check: (store) => store?.ui?.showPreprocessingModal === true,
@@ -526,20 +527,45 @@ export const EXERCISE_STEPS = [
         mood: 'asking',
         highlight: 'preprocessing-suche',
         message:
-            'Im Suchfeld ueber der ID-Spalte "AL" eintippen — dann bleiben nur unsere beiden uebrig. '
-            + 'Beide anhaken, links in der Zeile.',
-        hint: 'Die Suche filtert waehrend des Tippens. Haekchen ganz links in jeder Zeile.',
+            'Du stehst im Reiter "Schaechte" — da sind die beiden noch drin. Tipp ins Suchfeld ueber '
+            + 'der ID-Spalte "AL", dann bleiben genau zwei Zeilen uebrig.\n\n'
+            + 'Hak beide an: das Kaestchen ganz links in der Zeile.',
+        hint: 'Die Suche filtert waehrend des Tippens. Haekchen ganz links, in beiden Zeilen.',
         requires: (store) => store?.ui?.showPreprocessingModal === true,
+        // Weiter, sobald zwei Zeilen angehakt sind — der Nutzer muss nicht
+        // zusaetzlich [Weiter] druecken, wenn er die Sache schon getan hat.
+        optional: true,
+        check: (store) => Number(store?.ui?.preprocessingSelection) >= 2,
     },
     {
         id: 'ex-outfalls-typ',
         mood: 'asking',
         info: 'auslaufbauwerk',
-        highlight: ['preprocessing-typ', 'preprocessing-tabs'],
+        /*
+         * Der Anker wandert mit dem, was gerade auf dem Bildschirm ist:
+         * ohne Auswahl gibt es die Leiste nicht, ohne offene Massenbearbeitung
+         * keinen "Typ aendern"-Kasten. Frueher zeigte dieser Schritt fest auf
+         * "Typ aendern" — ein Kasten, den der Nutzer an dieser Stelle noch gar
+         * nicht sehen konnte.
+         */
+        highlight: (store) => {
+            const ui = store?.ui ?? {};
+            if (ui.preprocessingBulkOpen) return ['preprocessing-typ', 'sammel-anwenden'];
+            if (Number(ui.preprocessingSelection) > 0) return 'sammel-bearbeiten';
+            // Nach "Anwenden" ist die Auswahl weg und die Tabelle vorgemerkt —
+            // dann ist "Uebernehmen" das Naechste. Ohne diesen Fall zeigte die
+            // Ratte an dieser Stelle zurueck aufs Suchfeld, das laengst erledigt war.
+            if (ui.preprocessingDirty) return 'preprocessing-uebernehmen';
+            return 'preprocessing-suche';
+        },
         message:
-            'Jetzt oben bei "Typ aendern" von Schacht auf Bauwerk stellen. Damit wandern die beiden '
-            + 'in den Reiter "Bauwerke" — dort waehlst du fuer beide "Auslaufbauwerk".',
-        hint: 'Typ aendern -> Bauwerk. Danach Reiter wechseln, erneut beide anhaken, Typ -> Auslaufbauwerk.',
+            'Ueber der Tabelle steht jetzt "2 ausgewaehlt". Klick daneben auf "Bearbeiten" — das '
+            + 'Fenster fuer beide auf einmal.\n\n'
+            + 'Dort oben "Typ aendern" auf "Auslaufbauwerk" stellen und "Anwenden" druecken. Das '
+            + 'geht in EINEM Zug: du musst nicht erst auf "Bauwerk" und dann in den anderen Reiter.',
+        hint: '2 ausgewaehlt -> Bearbeiten -> Typ aendern -> Auslaufbauwerk -> Anwenden. '
+            + 'Danach sind die beiden aus dem Schacht-Reiter verschwunden — sie stehen jetzt unter '
+            + '"Bauwerke", und genau das soll so sein.',
         requires: (store) => store?.ui?.showPreprocessingModal === true,
     },
     {
