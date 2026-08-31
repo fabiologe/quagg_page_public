@@ -17,6 +17,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
 import { bestimme } from '../services/bauform/Bauformen.js';
+import { bauformAusRegel, ladeRegeln } from '../services/bauform/Bauformregeln.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
 import { felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
@@ -28,6 +29,13 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     const bauteil = ref(null);
     /** Wirksamer Typprofil-Satz (Projekt schlägt Büro schlägt eingebaut). */
     const profilSatz = ref({ ...EINGEBAUTE_PROFILE });
+    /**
+     * Bauformregeln — sie sagen, was die NAMEN eines Exporteurs bedeuten.
+     *
+     * Nötig, weil manche Software alles als `IFCBUILDINGELEMENTPROXY` ausgibt:
+     * dann sagt der Typ nichts, der Name aber sehr wohl („Haltung", „Schacht").
+     */
+    const regeln = ref([]);
     /** Id der scharfen Bearbeitung, oder null. */
     const scharfId = ref(null);
     /** Formularwerte der scharfen Bearbeitung. */
@@ -35,7 +43,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     /** Läuft gerade eine Einordnung? (Geometrie-Ableitung kann dauern.) */
     const laeuft = ref(false);
 
-    const typprofil = computed(() => profilFuer(bauteil.value?.category, profilSatz.value));
+    const typprofil = computed(() => profilFuer(bauteil.value?.category ?? bauteil.value?.type, profilSatz.value));
     const scharf = computed(() => (scharfId.value ? nachId(scharfId.value) : null));
     const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value) : []));
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
@@ -44,9 +52,27 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     /** Was an diesem Bauteil möglich ist — die Liste fürs Kontextmenü. */
     const moeglich = computed(() => (einordnung.value ? passende(einordnung.value) : []));
 
-    /** Den wirksamen Profilsatz laden. Einmal je Projekt, nicht je Auswahl. */
+    /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
     async function ladeProfile(repo) {
-        profilSatz.value = await ladeSatz(repo);
+        [profilSatz.value, regeln.value] = await Promise.all([ladeSatz(repo), ladeRegeln(repo)]);
+    }
+
+    /**
+     * Der Elementzusammenhang, wie ihn die Regel-Maschine erwartet.
+     *
+     * `parseItemData` liefert `type` (die Kategorie) und `name` flach; die
+     * Regeln sprechen von `category` und `attributes.Name` — die Übersetzung
+     * gehört genau hierher und nicht in die Regel-Maschine, die keine
+     * IFC-Abhängigkeit haben soll.
+     */
+    function _regelKontext(el) {
+        if (!el) return null;
+        return {
+            category: (el.category ?? el.type ?? '').toUpperCase(),
+            attributes: { Name: el.name ?? '', Description: el.description ?? '',
+                          PredefinedType: el.predefinedType ?? '', ...(el.attrs ?? {}) },
+            psets: el.psets ?? {},
+        };
     }
 
     /**
@@ -65,7 +91,8 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         try {
             einordnung.value = await bestimme(el, {
                 resolver,
-                typprofil: profilFuer(el.category, profilSatz.value),
+                typprofil: profilFuer(el.category ?? el.type, profilSatz.value),
+                ausRegel: bauformAusRegel(regeln.value, _regelKontext(el)),
             });
         } finally {
             laeuft.value = false;
@@ -116,7 +143,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     }
 
     return {
-        einordnung, bauteil, profilSatz, scharfId, werte, laeuft,
+        einordnung, bauteil, profilSatz, regeln, scharfId, werte, laeuft,
         typprofil, scharf, felder, fehler, bereit, moeglich,
         ladeProfile, einordne, starte, setzeWert, abbrechen, ausfuehren,
     };

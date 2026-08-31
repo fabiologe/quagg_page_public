@@ -79,8 +79,29 @@ export function freiheitsgradeFuer(einordnung) {
  */
 export function darfZiehen(einordnung) {
     if (!freiheitsgradeFuer(einordnung)) return false;
-    if (einordnung?.bauform === 'achse+profil' && einordnung?.guete !== 'gemessen') return false;
-    return true;
+    if (einordnung?.bauform !== 'achse+profil') return true;
+    if (einordnung?.guete === 'gemessen') return true;
+    // DEKLARIERTE Formen dürfen auch mit geschätzter Achse gezogen werden.
+    //
+    // Die Schranke oben schützt vor einer RATEREI der Maschine: eine
+    // Skelettachse bekommt man auch aus einem Würfel, und sie zur Grundlage
+    // einer Sohlhöhe zu machen wäre geraten. Hat aber ein MENSCH gesagt, dass
+    // das eine Leitung ist (Regel oder Typprofil), ist die Form nicht mehr
+    // geraten — nur die Richtung kommt aus dem Netz. Dann ist Ziehen
+    // vertretbar, solange es dabei steht.
+    //
+    // Ohne diese Ausnahme wäre Fabios ganzer Kanalbestand unbearbeitbar: ProVI
+    // exportiert Haltungen als IFCBUILDINGELEMENTPROXY ohne Achs-Repräsentation.
+    return einordnung?.quelle === 'regel' || einordnung?.quelle === 'typprofil';
+}
+
+/** Ein Hinweis, der stehen bleibt, auch wenn gezogen werden DARF. */
+export function guetehinweisZiehen(einordnung) {
+    if (!darfZiehen(einordnung)) return '';
+    if (einordnung?.bauform === 'achse+profil' && einordnung?.guete !== 'gemessen') {
+        return 'Achse aus dem Netz geschätzt — Richtung prüfen.';
+    }
+    return '';
 }
 
 /**

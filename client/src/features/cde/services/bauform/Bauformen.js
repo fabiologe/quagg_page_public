@@ -159,13 +159,15 @@ function _achsGuete(eintrag) {
  * @param {object} opts
  * @param {object} opts.resolver      GeometryResolver (oder Attrappe im Test)
  * @param {object|null} opts.typprofil  Datensatz aus Typprofile.js, oder null
+ * @param {{bauform, regel}|null} opts.ausRegel  Treffer aus Bauformregeln.js
  * @returns {Promise<{bauform, guete, quelle, warnungen: string[]}>}
- *   quelle: 'typprofil' — deklariert · 'geometrie' — aus vorhandener Form
- *           abgeleitet · 'rueckfall' — nichts ableitbar
+ *   quelle: 'regel' — von einer Büroregel gesetzt (schlägt alles) ·
+ *           'typprofil' — am IFC-Typ deklariert · 'geometrie' — aus vorhandener
+ *           Form abgeleitet · 'rueckfall' — nichts ableitbar
  *   Gibt IMMER eine Bauform zurück; `netz` ist das ehrliche Ergebnis für
  *   „lässt sich nicht einordnen", nicht ein Fehler.
  */
-export async function bestimme(el, { resolver, typprofil = null } = {}) {
+export async function bestimme(el, { resolver, typprofil = null, ausRegel = null } = {}) {
     const warnungen = [];
 
     if (!el || el.localId == null) {
@@ -176,6 +178,17 @@ export async function bestimme(el, { resolver, typprofil = null } = {}) {
     }
 
     const handle = resolver.forElements([el]);
+
+    // ── 0. Eine REGEL schlägt alles. ────────────────────────────────────────
+    // Sie ist die spezifischste Aussage, die es gibt: jemand hat für DIESEN
+    // Exporteur festgehalten, was seine Namen bedeuten. Ein Typprofil spricht
+    // dagegen über einen IFC-Typ im Allgemeinen — und wo der Exporteur alles
+    // `IFCBUILDINGELEMENTPROXY` nennt, sagt der Typ eben nichts.
+    if (ausRegel?.bauform && istBauform(ausRegel.bauform)) {
+        const guete = await _gueteFuer(ausRegel.bauform, handle, warnungen);
+        return { bauform: ausRegel.bauform, guete, quelle: 'regel', warnungen,
+                 regel: ausRegel.regel?.name ?? ausRegel.regel?.id ?? null };
+    }
 
     // ── 1. Deklariert? Dann gilt das — die Geometrie sagt nur, wie gut. ──────
     const deklariert = typprofil?.bauform ?? null;
