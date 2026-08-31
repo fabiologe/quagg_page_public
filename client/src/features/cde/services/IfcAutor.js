@@ -49,10 +49,28 @@ import { baueAusBauplan } from './Bauteilrezepte.js';
  * nacktes Objekt zurück; dann läge dieselbe Größe in zwei Gestalten vor.
  */
 export function ankerAusBox(box) {
+    return huelleAusBox(box)?.anker ?? null;
+}
+
+/**
+ * Anker UND Unterkante einer Hülle.
+ *
+ * Die Unterkante ist die Bezugshöhe, mit der im Tiefbau gearbeitet wird: die
+ * Sohle eines Rohrs, die Sohle eines Schachts. Sie kommt aus der GEOMETRIE und
+ * nicht aus einem Merkmal — genau das, was ein Bauteil ehrlich hergibt, ohne
+ * dass jemand ein Pset gepflegt haben muss. (Bei einem Rohr mit Gefälle ist es
+ * die Sohle am tiefen Ende; das ist eine Näherung und heißt deshalb
+ * „Unterkante der Hülle" und nicht „Sohle".)
+ */
+export function huelleAusBox(box) {
     if (!box || typeof box.getCenter !== 'function') return null;
     if (typeof box.isEmpty === 'function' && box.isEmpty()) return null;
     const m = box.getCenter(new THREE.Vector3());
-    return { x: m.x, y: m.y, z: m.z };
+    return {
+        anker: { x: m.x, y: m.y, z: m.z },
+        unterkante: box.min?.y ?? m.y,
+        oberkante: box.max?.y ?? m.y,
+    };
 }
 
 /** Der Weg von der jetzigen Lage zum Ziel. `null`, wenn eine Seite fehlt. */
@@ -76,6 +94,15 @@ export function istNennenswert(versatz, toleranz = 1e-4) {
 // ── Der Kanal ───────────────────────────────────────────────────────────────
 
 export const CDE_MODELL_ID = 'cde-eigenbau';
+
+/**
+ * Arten, die dieser Kanal auf das Modell bringen kann.
+ *
+ * Bewusst eine Liste und kein `default:`-Zweig: kommt eine Art dazu und
+ * niemand denkt hier daran, fällt sie in `nichtAngewandt` und wird GEMELDET,
+ * statt still zu verschwinden.
+ */
+export const ANWENDBARE_ARTEN = new Set(['lage', 'erzeugt']);
 
 export class IfcAutor {
     /**
@@ -122,6 +149,21 @@ export class IfcAutor {
      * @returns {Promise<Map<number, {x,y,z}>>}
      */
     async ankerVon(modelId, localIds) {
+        const out = new Map();
+        for (const [id, h] of await this.huellenVon(modelId, localIds)) out.set(id, h.anker);
+        return out;
+    }
+
+    /**
+     * Anker, Unter- und Oberkante mehrerer Bauteile — EIN Lesevorgang.
+     *
+     * `ankerVon` leitet sich hieraus ab, statt die Boxen ein zweites Mal zu
+     * holen. Zwei Lesewege auf dieselbe Größe wären zwei Wahrheiten, und
+     * `getBoxes` ist nicht gratis.
+     *
+     * @returns {Promise<Map<number, {anker, unterkante, oberkante}>>}
+     */
+    async huellenVon(modelId, localIds) {
         const modell = this._modell(modelId);
         const ids = [...(localIds ?? [])];
         const out = new Map();
@@ -130,12 +172,12 @@ export class IfcAutor {
         try {
             boxen = await modell.getBoxes(ids);
         } catch (fehler) {
-            console.warn('cde: anker lesen', fehler?.message ?? fehler);
+            console.warn('cde: huellen lesen', fehler?.message ?? fehler);
             return out;
         }
         for (let i = 0; i < ids.length; i++) {
-            const anker = ankerAusBox(boxen?.[i]);
-            if (anker) out.set(ids[i], anker);
+            const h = huelleAusBox(boxen?.[i]);
+            if (h) out.set(ids[i], h);
         }
         return out;
     }
@@ -352,8 +394,16 @@ export class IfcAutor {
         );
         misserfolge.push(...bauFehler);
 
+        // Was diese Datei AUF DAS MODELL bringen kann. Alles andere ist keine
+        // Panne, aber es darf auch nicht als „angewandt" mitgezählt werden —
+        // sonst meldete der Ladevorgang Erfolg für eine Festlegung, die
+        // nirgends zu sehen ist. `parametrik` ist der Regelfall: eine
+        // Querschnittsgröße ist eine FORDERUNG an den Planer (ISO 19650), kein
+        // Eingriff ins Autorenmodell.
+        const nichtAngewandt = schritte.filter(s => !ANWENDBARE_ARTEN.has(s.art));
+
         for (const schritt of schritte) {
-            if (schritt.art !== 'lage') continue;      // weitere Arten folgen
+            if (schritt.art !== 'lage') continue;
             const ausCde = schritt.modell === 'cde';
             const localId = ausCde
                 ? erzeugte.get(schritt.globalId)
@@ -365,6 +415,6 @@ export class IfcAutor {
             const r = await this.setzeAnker(ausCde ? CDE_MODELL_ID : plan.modelId, localId, schritt.wert);
             if (!r.ok) misserfolge.push({ ...schritt, grund: r.grund });
         }
-        return { misserfolge, erzeugte };
+        return { misserfolge, erzeugte, nichtAngewandt };
     }
 }

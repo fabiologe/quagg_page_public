@@ -433,6 +433,7 @@
         <IfcSemanticWindow  v-if="panels.isOpen('eigenschaften')" />
         <IfcPlanningCockpit v-else-if="panels.isOpen('cockpit')" />
         <IfcPlanPanel v-else-if="panels.isOpen('plan')" @stile-oeffnen="stilEditorOffen = true" />
+        <CdeToolbox v-else-if="panels.isOpen('toolbox')" />
         <IfcAnnotations
           v-else-if="panels.isOpen('issues')"
           :annotationActive="annotationActive"
@@ -457,6 +458,7 @@ import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
 import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
 import IfcPlanningCockpit from '../components/IfcPlanningCockpit.vue';
 import IfcPlanPanel from '../components/IfcPlanPanel.vue';
+import CdeToolbox from '../components/CdeToolbox.vue';
 import IfcVectorStyleEditor from '../components/IfcVectorStyleEditor.vue';
 import IfcAnnotations from '../components/IfcAnnotations.vue';
 import CdeIcon from '../components/ui/CdeIcon.vue';

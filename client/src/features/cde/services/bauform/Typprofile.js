@@ -156,18 +156,34 @@ export function vererbungskette(kategorie) {
  * Kein Treffer → `null`; dann übernimmt die Bauform-Ableitung (Bauformen.js).
  */
 export function profilFuer(kategorie, satz = EINGEBAUTE_PROFILE) {
-    if (!kategorie || !satz) return null;
+    return profilHerkunft(kategorie, satz).profil;
+}
+
+/**
+ * Dasselbe, aber es sagt auch, AUF WELCHER HÖHE im Baum es fündig wurde.
+ *
+ * Für die Toolbox (Stufe 9.4b): „woher weiß die CDE, was hier geht?" lässt
+ * sich nur beantworten, wenn die Antwort ihre Herkunft mitbringt. Ein Nutzer,
+ * der sieht, dass sein `IFCCABLESEGMENT` sein Vokabular von `IFCFLOWSEGMENT`
+ * erbt, versteht das System in einem Blick — und weiß beim nächsten
+ * unbekannten Typ selbst, wo er ein Profil hinschreiben müsste.
+ *
+ * @returns {{profil: object|null, ausTyp: string|null, ueberVererbung: boolean}}
+ */
+export function profilHerkunft(kategorie, satz = EINGEBAUTE_PROFILE) {
+    const leer = { profil: null, ausTyp: null, ueberVererbung: false };
+    if (!kategorie || !satz) return leer;
     const roh = String(kategorie).toUpperCase().trim();
-    if (satz[roh]) return satz[roh];
+    if (satz[roh]) return { profil: satz[roh], ausTyp: roh, ueberVererbung: false };
     const norm = normalisiereKategorie(kategorie);
-    if (satz[norm]) return satz[norm];
+    if (satz[norm]) return { profil: satz[norm], ausTyp: norm, ueberVererbung: false };
 
     // Aufwärts durch die Vererbung — das erste Profil gewinnt. Der erste
     // Eintrag der Kette ist der Typ selbst und wurde oben schon geprüft.
     for (const vorfahr of vererbungskette(kategorie)) {
-        if (satz[vorfahr]) return satz[vorfahr];
+        if (satz[vorfahr]) return { profil: satz[vorfahr], ausTyp: vorfahr, ueberVererbung: true };
     }
-    return null;
+    return leer;
 }
 
 /**

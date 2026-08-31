@@ -499,6 +499,29 @@ const toolbarItems = computed(() => [
 // ── viewerApi — Engine-Accessoren für teleportierte Kinder ──────────────────
 // (PDF-Export, Planungs-Cockpit, Vector-Style-Editor) via provide/inject statt
 // Funktions-Props. Closures greifen zur Aufrufzeit auf engine.value zu.
+/**
+ * Auswahl einordnen — mit Anker und Bezugshöhe.
+ *
+ * Die Hülle kommt HIER dazu und nicht im Store: `useBearbeitung` holt sich
+ * nichts selbst (Hausregel — sonst hinge er an der Engine und wäre ohne WebGL
+ * nicht mehr prüfbar). Gebraucht wird sie von jeder Bearbeitung, die eine Lage
+ * verändert: „Bezugshöhe setzen" muss wissen, wo die Unterkante HEUTE liegt,
+ * sonst verschöbe es um den absoluten Wert statt um die Differenz — und ein
+ * Rohr auf Sohlhöhe 12,40 landete auf 12,40 ÜBER seiner jetzigen Lage.
+ */
+async function _einordnenMitHuelle(result) {
+  let angereichert = result;
+  try {
+    const h = (await engine.value?.huellenVon?.(result.modelId, [result.localId]))?.get(result.localId);
+    if (h) angereichert = { ...result, anker: h.anker, bezugshoehe: h.unterkante, oberkante: h.oberkante };
+  } catch (fehler) {
+    // Ohne Hülle wird eingeordnet wie bisher; die lagebezogenen Bearbeitungen
+    // melden dann selbst, dass ihnen der Bezug fehlt.
+    console.warn('cde: huelle lesen', fehler?.message ?? fehler);
+  }
+  return bearbeitung.einordne(angereichert, engine.value?.makeGeometryResolver?.());
+}
+
 provideViewerApi({
   // Snapshots & Ansichten
   saveRenderState:      () => engine.value?.saveRenderState(),
@@ -599,8 +622,7 @@ onMounted(async () => {
     // Der Griff hängt am ALTEN Bauteil — er muss weg, bevor die neue
     // Einordnung kommt. Sonst zöge man am Griff des vorigen.
     ziehen.loesen();
-    bearbeitung
-      .einordne(result, engine.value?.makeGeometryResolver?.())
+    _einordnenMitHuelle(result)
       .catch(e => console.warn('cde: einordnen', e?.message ?? e));
   });
   _selection.onClickEmpty(() => {

@@ -44,6 +44,12 @@ export const GRUPPEN = Object.freeze({
     erzeugen:   { titel: 'Erzeugen',   icon: 'add',           einstieg: 'werkzeug' },
 });
 
+/** Millimetergenau — Baumaße brauchen nicht mehr, und mehr liest sich schlecht. */
+function _rundeM(v) {
+    const z = Number(v);
+    return Number.isFinite(z) ? Math.round(z * 1000) / 1000 : 0;
+}
+
 /** Die Kostengruppen, die die Regelvorgabe kennt — als Auswahl statt Freitext. */
 function _kgOptionen() {
     const codes = new Set();
@@ -139,6 +145,83 @@ export const BEARBEITUNGEN = Object.freeze([
         anwenden: (el, werte) => ({ art: 'kg', globalId: el.globalId, nachher: werte.kg || null }),
     },
     {
+        /**
+         * Bezugshöhe setzen — die erste Bearbeitung, die an der FORM hängt.
+         *
+         * Sie heißt bewusst nicht „Sohlhöhe setzen": WIE der Typ seine
+         * Bezugshöhe nennt, steht im Typprofil, nicht hier. Am Rohr ist es die
+         * „Sohlhöhe", am Bordstein die „Oberkante" — eine Operation, ein
+         * Programmcode, zwei Beschriftungen. Stünde „Sohlhöhe" im Katalog,
+         * bekäme der Bordstein die falsche Beschriftung, und man müsste eine
+         * zweite Operation dafür schreiben. Das ist der Anfang von O(Typen).
+         *
+         * Sie schreibt eine `lage`: gemessen wird am ANKER (Hüllenmitte), wie
+         * überall in diesem Modul. Der Versatz ist die Differenz zwischen der
+         * heutigen und der gewünschten Bezugshöhe; alles andere bleibt stehen.
+         */
+        id: 'bezugshoehe-setzen',
+        titel: 'Bezugshöhe setzen',
+        icon: 'laengsschnitt',
+        gruppe: 'lage',
+        bauform: ['achse+profil', 'koerper'],
+        // Ohne belastbare Form ist eine Höhenfestlegung eine Behauptung.
+        mindestGuete: 'geschaetzt',
+        brauchtRolle: 'sohlhoehe',
+        art: 'lage',
+        felder: [{
+            name: 'hoehe',
+            ausTypprofil: 'sohlhoehe',
+            rueckfall: { titel: 'Bezugshöhe', einheit: 'm', typ: 'zahl' },
+        }],
+        vorbelegung: (el) => ({ hoehe: _rundeM(el?.bezugshoehe ?? el?.anker?.y ?? 0) }),
+        anwenden: (el, werte) => {
+            const anker = el?.anker ?? null;
+            if (!anker) return null;
+            // Der Anker ist die Hüllenmitte, die Bezugshöhe die Unterkante.
+            // Verschoben wird um die DIFFERENZ, nicht auf den Wert — sonst
+            // säße die Mitte auf der Sohle und das Bauteil läge zu hoch.
+            const jetzt = el?.bezugshoehe ?? anker.y;
+            return { art: 'lage', globalId: el.globalId,
+                     nachher: { x: anker.x, y: anker.y + (Number(werte.hoehe) - jetzt), z: anker.z } };
+        },
+    },
+    {
+        /**
+         * Querschnittsgröße festlegen — die erste, die an der ROLLE hängt.
+         *
+         * Sie erscheint an JEDEM Typ, dessen Typprofil `profilGroesse` nennt,
+         * und übernimmt dessen Beschriftung, Einheit und Grenzen: am Rohr
+         * „DN [mm], 50–4000", am Träger „Profilreihe" als Text. Kein Zweig im
+         * Programm kennt einen dieser Typen.
+         *
+         * WAS SIE TUT UND WAS NICHT: Sie schreibt eine Festlegung ins Journal,
+         * sie ändert die Geometrie NICHT. Ein Sweep lässt sich nicht
+         * nachträglich aufweiten, ohne ihn neu zu bauen — und das gelieferte
+         * Modell gehört dem Planer. Nach ISO 19650 ist genau das richtig: die
+         * CDE ändert das Autorenmodell nicht, sie stellt eine FORDERUNG. Die
+         * landet im Änderungsbericht (Stufe 9.5).
+         */
+        id: 'profilgroesse-setzen',
+        titel: 'Querschnittsgröße festlegen',
+        icon: 'measure',
+        gruppe: 'parametrik',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        brauchtRolle: 'profilGroesse',
+        art: 'parametrik',
+        nurFestlegung: true,        // wirkt nicht auf die Geometrie — siehe oben
+        felder: [{
+            name: 'groesse',
+            ausTypprofil: 'profilGroesse',
+            rueckfall: { titel: 'Querschnittsgröße', typ: 'zahl' },
+        }],
+        vorbelegung: (el) => ({ groesse: el?.stand?.profilGroesse ?? null }),
+        anwenden: (el, werte) => ({
+            art: 'parametrik', globalId: el.globalId,
+            nachher: { rolle: 'profilGroesse', wert: werte.groesse },
+        }),
+    },
+    {
         id: 'din277-setzen',
         titel: 'DIN-277-Klasse setzen',
         icon: 'areas',
@@ -174,10 +257,23 @@ export const BEARBEITUNGEN = Object.freeze([
  * @param {string} [opts.gruppe]   nur diese Gruppe
  * @param {Array}  [opts.katalog]  für Tests
  */
-export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN } = {}) {
+export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN, typprofil = null } = {}) {
     const bauform = einordnung?.bauform ?? null;
     const guete = einordnung?.guete ?? 'unbekannt';
     return katalog.filter((b) => {
+        // DIE ROLLE IST DER ZWEITE FILTER — und der eigentlich skalierbare.
+        //
+        // `bauform` fragt: welche FORM hat das Bauteil? Davon gibt es acht.
+        // `brauchtRolle` fragt: kennt dieser TYP diese Größe überhaupt? Davon
+        // gibt es beliebig viele, und die Antwort steht als DATEN im Typprofil,
+        // nicht als Verzweigung hier.
+        //
+        // Beispiel: „Bezugshöhe setzen" braucht die Rolle `sohlhoehe`. Am Rohr
+        // heißt sie „Sohlhöhe", am Bordstein „Oberkante" — dieselbe Operation,
+        // derselbe Programmcode, zwei Beschriftungen. Und ein IFC-Typ, den
+        // niemand vorhergesehen hat, bekommt sie, sobald irgendein Typprofil
+        // über ihm im Vererbungsbaum die Rolle nennt. Ohne Auslieferung.
+        if (b.brauchtRolle && !typprofil?.felder?.[b.brauchtRolle]) return false;
         if (gruppe && b.gruppe !== gruppe) return false;
         // ERZEUGEN HAT KEIN SUBJEKT. Die Trennlinie ist nicht der Elementtyp,
         // sondern die Frage „woran hängt die Operation?" — Bearbeiten immer an
@@ -188,7 +284,12 @@ export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN } 
         // benutzt, statt ein zweites Mal beschrieben zu werden.
         if (!gruppe && GRUPPEN[b.gruppe]?.einstieg === 'werkzeug') return false;
         if (b.bauform !== '*') {
-            if (!bauform || b.bauform !== bauform) return false;
+            // Eine Liste ist erlaubt: „Bezugshöhe setzen" gilt für die Achse
+            // (Rohrsohle) UND für den Körper (Schachtsohle). Das ist keine
+            // Aufweichung der Bauform-Idee — die Operation hängt weiter an der
+            // FORM, nur eben an zweien.
+            const erlaubt = Array.isArray(b.bauform) ? b.bauform : [b.bauform];
+            if (!bauform || !erlaubt.includes(bauform)) return false;
         }
         if (!guetegenuegt(guete, b.mindestGuete ?? 'unbekannt')) return false;
         if (typeof b.gilt === 'function' && !b.gilt(einordnung)) return false;

@@ -146,7 +146,7 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             const localIdKarte = new Map(
                 [...idKarte].map(([globalId, ort]) => [globalId, ort.localId]),
             );
-            const { misserfolge } = await engine.value.wendeFestlegungenAn(plan, {
+            const { misserfolge, nichtAngewandt = [] } = await engine.value.wendeFestlegungenAn(plan, {
                 globalIdZuLocalId: localIdKarte,
             });
 
@@ -160,7 +160,12 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             karte.value = konfliktKarte(alleKonflikte);
             meldung.value = fasseZusammen({
                 ...plan.zusammenfassung,
-                angewandt: plan.zusammenfassung.angewandt - misserfolge.length,
+                // Weder Erfolg noch Panne: eine Festlegung, die das Modell
+                // absichtlich nicht anfasst (Querschnittsgröße als Forderung an
+                // den Planer). Sie mitzuzählen hiesse, Erfolg für etwas zu
+                // melden, das nirgends zu sehen ist.
+                angewandt: plan.zusammenfassung.angewandt - misserfolge.length - nichtAngewandt.length,
+                nurFestlegung: nichtAngewandt.length,
                 konflikte: alleKonflikte.length,
             });
 

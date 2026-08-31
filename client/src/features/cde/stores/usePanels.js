@@ -27,6 +27,7 @@ export const PANEL_DEFS = Object.freeze([
   { id: 'cockpit',       titel: 'Planungs-Cockpit',   icon: 'cockpit', seite: 'right', breite: 540 },
   { id: 'issues',        titel: 'Issues',             icon: 'issues',  seite: 'right', breite: 330 },
   { id: 'plan',          titel: 'Planinhalt',         icon: 'view-top', seite: 'right', breite: 340 },
+  { id: 'toolbox',       titel: 'Toolbox',            icon: 'edit',    seite: 'right', breite: 340 },
 ]);
 
 const MIN_BREITE = 240;

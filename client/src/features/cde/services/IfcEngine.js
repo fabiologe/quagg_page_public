@@ -677,6 +677,7 @@ export class IfcEngine {
     // ── Bearbeiten (Implementierung in IfcAutor.js) ─────────────────────────
     istBearbeitbar(modelId)             { return this.autor.istBearbeitbar(modelId); }
     ankerVon(modelId, localIds)         { return this.autor.ankerVon(modelId, localIds); }
+    huellenVon(modelId, localIds)       { return this.autor.huellenVon(modelId, localIds); }
     setzeAnker(modelId, localId, ziel)  { return this.autor.setzeAnker(modelId, localId, ziel); }
     erzeugeBauteil(modelId, bauteil)    { return this.autor.erzeuge(modelId, bauteil); }
     loescheBauteil(modelId, localId)    { return this.autor.loesche(modelId, localId); }

@@ -99,9 +99,13 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
  * „18 Festlegungen angewandt" allein wäre eine halbe Wahrheit; die zwei, die
  * nicht durchgingen, sind die interessanten.
  */
-export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueberschnitten = 0 } = {}) {
-    if (!angewandt && !konflikte) return '';
+export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueberschnitten = 0,
+                                nurFestlegung = 0 } = {}) {
+    if (!angewandt && !konflikte && !nurFestlegung) return '';
     const teile = [`${angewandt} ${angewandt === 1 ? 'Festlegung' : 'Festlegungen'} angewandt`];
+    // Getrennt genannt, weil es weder Erfolg noch Panne ist: die CDE ändert das
+    // Autorenmodell absichtlich nicht, sie stellt eine Forderung (ISO 19650).
+    if (nurFestlegung) teile.push(`${nurFestlegung} × nur festgehalten (Forderung an den Planer)`);
     if (ueberschnitten) teile.push(`${ueberschnitten} × auch vom Planer geändert`);
     if (fehlend) teile.push(`${fehlend} × Bauteil nicht mehr im Modell`);
     return teile.join(' · ');

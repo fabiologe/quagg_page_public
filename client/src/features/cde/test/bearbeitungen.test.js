@@ -28,7 +28,13 @@ describe('Der Katalog als Vertrag', () => {
             expect(b.titel, b.id).toBeTruthy();
             expect(GRUPPEN[b.gruppe], `${b.id}: gruppe`).toBeTruthy();
             expect(typeof b.anwenden, `${b.id}: anwenden`).toBe('function');
-            expect(b.bauform === '*' || BAUFORMEN[b.bauform], `${b.id}: bauform`).toBeTruthy();
+            // `bauform` darf eine Liste sein — „Bezugshöhe setzen" gilt für
+            // die Achse (Rohrsohle) UND den Körper (Schachtsohle). Jeder
+            // Eintrag der Liste muss aber eine echte Bauform sein, sonst
+            // erschiene die Bearbeitung nie und niemand wüsste warum.
+            const formen = b.bauform === '*' ? [] : (Array.isArray(b.bauform) ? b.bauform : [b.bauform]);
+            expect(b.bauform === '*' || formen.length, `${b.id}: bauform`).toBeTruthy();
+            for (const f of formen) expect(BAUFORMEN[f], `${b.id}: bauform ${f}`).toBeTruthy();
         }
     });
 
