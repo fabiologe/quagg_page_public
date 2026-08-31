@@ -100,10 +100,19 @@ const router = createRouter({
       redirect: (to) => ({ path: '/tools/flood-3d', query: to.query })
     },
     {
+      // CDE: intern. Bis 31.08.2026 lag die Route OHNE Guard und stand zugleich
+      // auf dem oeffentlichen /tools-Dashboard — sie zeigt aber Projektakten,
+      // Dokumentregister, Mengen und Kosten. Ohne Anmeldung lieferte der Server
+      // zwar nur 401, doch die Seite tat so, als koennte sie etwas, und schwieg
+      // dazu. Mit Guard ist die Rollenfrage ueberhaupt erst stellbar
+      // (Kunde / Werkstudent / interner Bearbeiter).
+      // WERKSTUDENT wie /mail und die uebrigen internen Werkzeuge; EXTERN
+      // (Kunden) bleibt vorerst aussen vor — das Kundenportal ist ein eigener
+      // Weg, und Lockern ist leichter als Zurueckziehen.
       path: '/cde',
       name: 'cde',
       component: () => import('@/features/cde/views/CdeView.vue'),
-      meta: { layout: 'empty' }
+      meta: { layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }
     },
     {
       path: '/isyscan',

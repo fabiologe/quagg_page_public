@@ -58,16 +58,12 @@
             </div>
           </div>
 
-          <!-- CDE / IFC Viewer Card -->
-          <div class="tool-card" @click="$router.push('/cde')">
-            <div class="icon">🏗️</div>
-            <div class="content">
-              <h3>CDE – IFC Viewer</h3>
-              <p>IFC-Viewer mit Planexport, Mengen und DIN-276/277-Auswertung.</p>
-              <span class="link-text">Zum Tool &rarr;</span>
-            </div>
-          </div>
-          
+          <!-- CDE entfernt (31.08.2026): sie ist ein INTERNES Werkzeug —
+               Projektakten, Dokumentregister, Mengen, Kosten. Auf dem
+               oeffentlichen Dashboard fuehrte die Karte Besucher auf eine
+               Seite, die ohne Anmeldung nichts konnte. Intern erreichbar
+               bleibt sie ueber die Projekt-Akte (AkteKopf, AkteModelle). -->
+
           <!-- ISYIFC Tool Card (Viewer Only) -->
           <div class="tool-card" @click="$router.push('/tools/isyifc')">
             <div class="icon">👀</div>

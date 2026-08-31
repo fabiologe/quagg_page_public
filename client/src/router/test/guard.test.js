@@ -37,3 +37,36 @@ describe('guard.entscheide', () => {
     expect(entscheide(route({}, 'home'), a)).toBeNull()
   })
 })
+
+/**
+ * Die CDE ist ein internes Werkzeug (31.08.2026).
+ *
+ * Sie lag bis dahin ohne Guard und stand zugleich auf dem oeffentlichen
+ * /tools-Dashboard, obwohl sie Projektakten, Dokumentregister, Mengen und
+ * Kosten zeigt. Ohne Anmeldung antwortete der Server zwar nur mit 401 — aber
+ * die Seite tat so, als koennte sie etwas, und schwieg dazu. Der Guard ist
+ * zugleich die Voraussetzung dafuer, dass Rollen ueberhaupt etwas bewirken.
+ */
+describe('CDE-Route', () => {
+  const cde = (fullPath = '/cde') =>
+    route({ layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }, 'cde', fullPath)
+
+  it('schickt Unangemeldete zum Login und merkt sich das Projekt', () => {
+    // Der Rueckweg muss die Abfrage mitnehmen — sonst landet man nach dem
+    // Login in einer CDE ohne Projekt und sucht es von Hand.
+    expect(entscheide(cde('/cde?projekt=1338'), auth(null)))
+      .toEqual({ name: 'login', query: { redirect: '/cde?projekt=1338' } })
+  })
+
+  it('laesst interne Rollen durch', () => {
+    for (const rolle of ['WERKSTUDENT', 'MITARBEITER', 'ADMIN']) {
+      expect(entscheide(cde(), auth(rolle)), rolle).toBeNull()
+    }
+  })
+
+  it('haelt Kunden vorerst draussen', () => {
+    // Bewusst restriktiv: Lockern ist leichter als Zurueckziehen. Fuer Kunden
+    // gibt es das Portal.
+    expect(entscheide(cde(), auth('EXTERN'))).toEqual({ path: '/client' })
+  })
+})
