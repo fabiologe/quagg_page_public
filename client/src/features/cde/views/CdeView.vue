@@ -159,6 +159,12 @@
         wird als Regel gespeichert und gilt für jede weitere Lieferung aus
         derselben Software.
       </p>
+      <p v-if="bauformAbdeckung.gesamt" class="cde-hint">
+        {{ bauformAbdeckung.mit }} von {{ bauformAbdeckung.gesamt }} benannten Bauteilen
+        zugeordnet<span v-if="bauformAbdeckung.ohne"> — die übrigen
+        {{ bauformAbdeckung.ohne }} werden aus der Geometrie eingeordnet und
+        bleiben sichtbar, messbar und zeichenbar.</span>
+      </p>
       <div v-if="!bauformVorschlaege.length" class="cde-empty">
         Kein Modell geladen, oder keine benannten Bauteile gefunden.
       </div>
@@ -167,9 +173,13 @@
           <tr><th>Kategorie</th><th>Name</th><th>Anzahl</th><th>Bauform</th></tr>
         </thead>
         <tbody>
-          <tr v-for="v in bauformVorschlaege" :key="`${v.category}|${v.name}`">
+          <tr v-for="v in bauformVorschlaege" :key="`${v.category}|${v.name}|${v.art}`">
             <td class="doc-name">{{ v.category.replace(/^IFC/, '') }}</td>
-            <td class="doc-name">{{ v.name }}</td>
+            <td class="doc-name">
+              {{ v.name }}<template v-if="v.art === 'gruppe'"><span class="bf-gruppe"
+                :title="`Fasst ${v.namen.length} Namen zusammen: ${v.namen.slice(0, 6).join(', ')}${v.namen.length > 6 ? ' …' : ''}`"
+              >…</span></template>
+            </td>
             <td class="doc-rev">{{ v.anzahl }}</td>
             <td>
               <select
@@ -436,6 +446,7 @@ import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
+import { abdeckung } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -487,6 +498,18 @@ const showRegister = ref(false);
 const showBauformen = ref(false);
 /** Die Namen des geladenen Modells samt bereits zugeordneter Bauform. */
 const bauformVorschlaege = ref([]);
+/** Wie viel davon zugeordnet ist — damit man weiss, wann man aufhören kann. */
+const bauformAbdeckung = ref({ mit: 0, ohne: 0, gesamt: 0 });
+
+/** Vorschläge und Abdeckung neu berechnen — nach jeder Zuordnung. */
+function frischeVorschlaege() {
+  const index = ifc.getSearchIndex();
+  bauformVorschlaege.value = bearbeitung.vorschlaege(index);
+  bauformAbdeckung.value = abdeckung(
+    (index ?? []).map(e => ({ category: e.category, attributes: { Name: e.name } })),
+    bearbeitung.regeln,
+  );
+}
 
 function oeffneBauformen() {
   showBauformen.value = !showBauformen.value;
@@ -494,12 +517,12 @@ function oeffneBauformen() {
   showRegister.value = false;
   // Frisch berechnen: der Suchindex kommt erst nach dem Laden, und eine
   // Zuordnung ändert die Spalte „Bauform" sofort.
-  if (showBauformen.value) bauformVorschlaege.value = bearbeitung.vorschlaege(ifc.getSearchIndex());
+  if (showBauformen.value) frischeVorschlaege();
 }
 
 async function setzeBauform(v, bauform) {
-  await bearbeitung.ordneZu({ category: v.category, name: v.name, bauform: bauform || null });
-  bauformVorschlaege.value = bearbeitung.vorschlaege(ifc.getSearchIndex());
+  await bearbeitung.ordneZu({ category: v.category, name: v.name, art: v.art, bauform: bauform || null });
+  frischeVorschlaege();
 }
 
 // ── Ansichts-Umschaltung (Sprint P, AP-8) ────────────────────────────────────
@@ -1097,5 +1120,10 @@ function fmtDate(ts) {
   display: flex; align-items: center; gap: 0.5rem;
   border-left: 3px solid var(--cde-accent);
   font-size: var(--cde-font-sm); color: var(--cde-text);
+}
+.bf-gruppe {
+  margin-left: 0.2rem; padding: 0 0.25rem;
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  color: var(--cde-accent); font-size: var(--cde-font-xs); cursor: help;
 }
 </style>

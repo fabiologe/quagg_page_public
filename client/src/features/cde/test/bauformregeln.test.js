@@ -21,7 +21,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-    MITGELIEFERTE_REGELN, bauformAusRegel, ladeRegeln, namensvorschlaege, regelAus,
+    MITGELIEFERTE_REGELN, abdeckung, bauformAusRegel, ladeRegeln, namensstamm,
+    namensvorschlaege, regelAus,
 } from '../services/bauform/Bauformregeln.js';
 import { bestimme } from '../services/bauform/Bauformen.js';
 import { darfZiehen, guetehinweisZiehen } from '../services/Freiheitsgrade.js';
@@ -62,13 +63,77 @@ describe('namensvorschlaege — die Maschine zeigt, was sie findet', () => {
             ctx('Wand', 'IFCWALL'),
         ];
         const v = namensvorschlaege(elemente);
-        expect(v[0]).toEqual({ category: PROXY, name: 'Schacht', anzahl: 19 });
-        expect(v[1]).toEqual({ category: PROXY, name: 'Haltung', anzahl: 18 });
+        expect(v[0]).toMatchObject({ category: PROXY, name: 'Schacht', anzahl: 19, art: 'genau' });
+        expect(v[1]).toMatchObject({ category: PROXY, name: 'Haltung', anzahl: 18, art: 'genau' });
     });
 
     it('übergeht Bauteile ohne Namen, statt einen leeren Vorschlag zu machen', () => {
         expect(namensvorschlaege([{ category: PROXY, attributes: {} }])).toEqual([]);
         expect(namensvorschlaege(null)).toEqual([]);
+    });
+});
+
+describe('Gruppen — die Antwort auf „was, wenn nicht nur Haltung und Schacht?"', () => {
+    it('fasst durchnummerierte Namen zu EINER Gruppe zusammen', () => {
+        // Der Regelfall bei echten Exporten. Ohne Gruppe müsste man achtzehnmal
+        // dasselbe sagen — und die nächste Lieferung hätte zwanzig.
+        const elemente = Array.from({ length: 18 }, (_, i) => ctx(`Haltung ${i + 1}`));
+        const v = namensvorschlaege(elemente);
+        expect(v).toHaveLength(1);
+        expect(v[0]).toMatchObject({ name: 'Haltung', anzahl: 18, art: 'gruppe' });
+        expect(v[0].namen).toHaveLength(18);
+    });
+
+    it('bietet den Einzelnamen NICHT zusätzlich an, wenn er in einer Gruppe steckt', () => {
+        // Sonst könnte man dieselbe Zuordnung zweimal treffen — und die zweite
+        // widerspräche der ersten, ohne dass man sähe warum.
+        const v = namensvorschlaege([ctx('Haltung 1'), ctx('Haltung 2')]);
+        expect(v.map(x => x.name)).toEqual(['Haltung']);
+    });
+
+    it('bildet KEINE Gruppe aus einem einzelnen Namen', () => {
+        const v = namensvorschlaege([ctx('Haltung 1'), ctx('Schacht')]);
+        expect(v.every(x => x.art === 'genau')).toBe(true);
+    });
+
+    it('schneidet nur angehängte Zählnummern ab, keine Typbezeichnung', () => {
+        // „Schacht2000" ist ein Typ, kein zweitausendster Schacht.
+        expect(namensstamm('Haltung 12')).toBe('Haltung');
+        expect(namensstamm('Haltung_12')).toBe('Haltung');
+        expect(namensstamm('Haltung')).toBe(null);
+        expect(namensstamm('DN300')).toBe('DN');   // bewusst: Trenner-los wird geschnitten
+    });
+});
+
+describe('abdeckung — wann darf man aufhören?', () => {
+    it('sagt, wie viel zugeordnet ist', () => {
+        const elemente = [
+            ...Array(18).fill(ctx('Haltung')),
+            ...Array(3).fill(ctx('Irgendwas')),
+        ];
+        expect(abdeckung(elemente, MITGELIEFERTE_REGELN)).toEqual({ mit: 18, ohne: 3, gesamt: 21 });
+    });
+
+    it('zählt ohne Regeln nichts als zugeordnet', () => {
+        expect(abdeckung([ctx('Haltung')], []).mit).toBe(0);
+    });
+});
+
+describe('Gruppen-Regeln', () => {
+    it('fassen mit `contains`, nicht mit `equals`', () => {
+        const r = regelAus({ category: PROXY, name: 'Haltung', bauform: 'achse+profil', art: 'gruppe' });
+        expect(r.condition.operator).toBe('contains');
+        expect(bauformAusRegel([r], ctx('Haltung 17')).bauform).toBe('achse+profil');
+        expect(bauformAusRegel([r], ctx('Schacht 3'))).toBe(null);
+    });
+
+    it('lassen sich von einer exakten Zuordnung ÜBERSTIMMEN', () => {
+        // „Alle Haltungen sind Leitungen, ausser Haltung 7 — die ist ein
+        // Sonderbauwerk." Ohne den Vorrang wäre die Ausnahme nicht sagbar.
+        const gruppe = regelAus({ category: PROXY, name: 'Haltung', bauform: 'achse+profil', art: 'gruppe' });
+        const ausnahme = regelAus({ category: PROXY, name: 'Haltung 7', bauform: 'koerper' });
+        expect(bauformAusRegel([gruppe, ausnahme], ctx('Haltung 7')).bauform).toBe('koerper');
+        expect(bauformAusRegel([gruppe, ausnahme], ctx('Haltung 8')).bauform).toBe('achse+profil');
     });
 });
 
