@@ -57,6 +57,24 @@
           </div>
         </Transition>
 
+        <!-- Stufe 9.2: Ergebnis des Nachspielens. Erscheint NUR, wenn etwas
+             nicht durchging — „18 Festlegungen angewandt" bei jedem Laden
+             wäre Lärm, zwei ungeklärte Konflikte sind eine Nachricht. -->
+        <Transition name="fade">
+          <div v-if="nachspielen.konflikte.value.length" class="nachspiel-hinweis">
+            <CdeIcon name="warn" :size="14" />
+            <span>{{ nachspielen.meldung.value }}</span>
+            <button
+              class="ablage-hinweis-zu"
+              @click="nachspielen.zuruecksetzen()"
+              title="Ausblenden"
+              aria-label="Ausblenden"
+            >
+              <CdeIcon name="close" :size="12" />
+            </button>
+          </div>
+        </Transition>
+
         <!-- B4: Zuletzt geöffnete Modelle (lokale Ablage) — nur im Leerzustand -->
         <div v-if="!ifc.modelList.length && !loading && recentModels.length" class="recent-panel">
           <div class="recent-title">Zuletzt geöffnete Modelle</div>
@@ -293,6 +311,8 @@ import { useSchnitt } from '../composables/useSchnitt.js';
 import { useMessen } from '../composables/useMessen.js';
 import { useAnnotationen } from '../composables/useAnnotationen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useNachspielen } from '../composables/useNachspielen.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
 import { BEARBEITUNGEN, GRUPPEN } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
 
@@ -344,6 +364,10 @@ const messen = useMessen({ engine, ifc, selection: () => _selection });
 // `defineExpose`, und Vue entpackt Refs im expose-Proxy. Ein Wert im
 // Composable wäre dort nicht nachverfolgbar.
 const annotationActive = ref(false);
+// Stufe 9.2: bringt beim Laden die Festlegungen aufs Modell und meldet, was
+// nicht durchging. `aenderungen` ist das Journal aus Stufe 7.
+const nachspielen = useNachspielen({ engine, aenderungen: useAenderungen() });
+
 const annotationen = useAnnotationen({
   engine, ifc, cde,
   selection: () => _selection,
@@ -691,6 +715,15 @@ async function _onModelLoaded() {
     await ifc.loadAnnotationsForModel(identity?.key ?? firstModel.name, firstModel.name);
     // If annotation mode is on, re-create visuals; otherwise pre-fill engine's data only
     engine.value?.setAnnotations(ifc.annotations);
+
+    // Stufe 9.2: Die Festlegungen aus dem Journal auf das frisch geladene
+    // Modell bringen. Ohne diesen Aufruf ist jede Bearbeitung beim Neuladen
+    // weg — das Journal liegt in der RepoFacade, das Modell kommt roh vom
+    // Planer. Bewusst NICHT awaited an einer Stelle, die das Anzeigen
+    // aufhielte: ein Modell ohne Festlegungen ist besser als gar keins.
+    nachspielen.nachModellladung(firstModel.modelId).then(({ konflikte }) => {
+      if (konflikte) console.info('[CDE]', nachspielen.meldung.value);
+    });
   }
 
   // Ein neues Modell entwertet den Schnitt.
@@ -1155,6 +1188,25 @@ async function onMouseUp(e) {
 .ablage-hinweis {
   position: absolute;
   top: 3.6rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.45rem;
+  max-width: min(90%, 34rem);
+  padding: 0.45rem 0.5rem 0.45rem 0.7rem;
+  background: var(--cde-float);
+  border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
+  border-left: 3px solid var(--cde-warn);
+  border-radius: var(--cde-radius);
+  box-shadow: var(--cde-shadow-float);
+  color: var(--cde-text-bright);
+  font-size: var(--cde-font-sm);
+  z-index: var(--cde-z-hud);
+}
+
+/* Stufe 9.2 — gleiche Gestalt wie der Ablage-Hinweis, eigene Bedeutung.
+   Etwas tiefer, damit beide nebeneinander lesbar bleiben, wenn ein Upload und
+   ein Konflikt zusammenfallen. */
+.nachspiel-hinweis {
+  position: absolute;
+  top: 7.2rem; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 0.45rem;
   max-width: min(90%, 34rem);
   padding: 0.45rem 0.5rem 0.45rem 0.7rem;
