@@ -45,6 +45,12 @@
         @click="showRegister = !showRegister; showStammdaten = false"
         title="Dokument-Register (ISO-19650-Status)"
       ><CdeIcon name="documents" :size="14" /> Dokumente <small v-if="cde.dokumente.length">({{ cde.dokumente.length }})</small></button>
+      <button
+        class="cde-btn"
+        :class="{ active: showBauformen }"
+        @click="oeffneBauformen"
+        title="Bauformen zuordnen — was bedeuten die Namen dieses Exporteurs?"
+      ><CdeIcon name="element" :size="14" /> Bauformen</button>
 
       <span class="cde-sep" />
 
@@ -140,6 +146,46 @@
           <CdeIcon name="open" :size="14" /> Zur Akte
         </a>
       </div>
+    </div>
+
+    <!-- ── Bauformen zuordnen (Stufe 9.3a) ──
+         Manche Software gibt alles als IFCBUILDINGELEMENTPROXY aus — dann sagt
+         der Typ nichts, der NAME aber sehr wohl. Hier wird einmal erklärt, was
+         er bedeutet; das gilt danach für jede Datei aus derselben Software.
+         Die Maschine RÄT nicht, sie zeigt nur, was sie gefunden hat. -->
+    <div v-if="showBauformen" class="cde-panel">
+      <p class="cde-hint">
+        Was in diesem Modell wie heisst — und was es bedeutet. Die Zuordnung
+        wird als Regel gespeichert und gilt für jede weitere Lieferung aus
+        derselben Software.
+      </p>
+      <div v-if="!bauformVorschlaege.length" class="cde-empty">
+        Kein Modell geladen, oder keine benannten Bauteile gefunden.
+      </div>
+      <table v-else class="cde-doc-table">
+        <thead>
+          <tr><th>Kategorie</th><th>Name</th><th>Anzahl</th><th>Bauform</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="v in bauformVorschlaege" :key="`${v.category}|${v.name}`">
+            <td class="doc-name">{{ v.category.replace(/^IFC/, '') }}</td>
+            <td class="doc-name">{{ v.name }}</td>
+            <td class="doc-rev">{{ v.anzahl }}</td>
+            <td>
+              <select
+                class="doc-status"
+                :value="v.bauform ?? ''"
+                @change="setzeBauform(v, $event.target.value)"
+              >
+                <option value="">— aus der Geometrie —</option>
+                <option v-for="(b, schluessel) in BAUFORMEN" :key="schluessel" :value="schluessel">
+                  {{ b.titel }}
+                </option>
+              </select>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- ── Dokument-Register ── -->
@@ -388,6 +434,8 @@ import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { AuftragApi } from '../services/AuftragApi.js';
 import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -423,6 +471,7 @@ const migrationsBericht = ref('');
 const panels = usePanels();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
+const bearbeitung = useBearbeitung();
 const plan = usePlan();
 const planInhalt = usePlanInhalt();
 const rotstift = useRotstift();
@@ -435,6 +484,23 @@ const showStammdaten = ref(false);
 /** Linienstil-Editor. Sein einziger Einhängepunkt war bisher das PDF-Modal. */
 const stilEditorOffen = ref(false);
 const showRegister = ref(false);
+const showBauformen = ref(false);
+/** Die Namen des geladenen Modells samt bereits zugeordneter Bauform. */
+const bauformVorschlaege = ref([]);
+
+function oeffneBauformen() {
+  showBauformen.value = !showBauformen.value;
+  showStammdaten.value = false;
+  showRegister.value = false;
+  // Frisch berechnen: der Suchindex kommt erst nach dem Laden, und eine
+  // Zuordnung ändert die Spalte „Bauform" sofort.
+  if (showBauformen.value) bauformVorschlaege.value = bearbeitung.vorschlaege(ifc.getSearchIndex());
+}
+
+async function setzeBauform(v, bauform) {
+  await bearbeitung.ordneZu({ category: v.category, name: v.name, bauform: bauform || null });
+  bauformVorschlaege.value = bearbeitung.vorschlaege(ifc.getSearchIndex());
+}
 
 // ── Ansichts-Umschaltung (Sprint P, AP-8) ────────────────────────────────────
 

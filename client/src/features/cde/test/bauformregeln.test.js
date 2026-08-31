@@ -25,6 +25,11 @@ import {
 } from '../services/bauform/Bauformregeln.js';
 import { bestimme } from '../services/bauform/Bauformen.js';
 import { darfZiehen, guetehinweisZiehen } from '../services/Freiheitsgrade.js';
+import { beforeEach } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+
+beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); });
 
 const PROXY = 'IFCBUILDINGELEMENTPROXY';
 const ctx = (name, category = PROXY) => ({ category, attributes: { Name: name }, psets: {} });
@@ -184,5 +189,71 @@ describe('Der ganze Weg: aus einem Proxy wird eine ziehbare Leitung', () => {
     it('lässt eine ungeklärte Skelettachse weiterhin NICHT ziehen', () => {
         // Die Schranke gilt unverändert, wo niemand etwas erklärt hat.
         expect(darfZiehen({ bauform: 'achse+profil', guete: 'geschaetzt', quelle: 'geometrie' })).toBe(false);
+    });
+});
+
+describe('Zuordnen über den Store — der Weg, auf dem die Regel entsteht', () => {
+    /** Ein Repo-Doppel, das nur merkt, was geschrieben wurde. */
+    function fakeRepo(start = null) {
+        let abgelegt = start;
+        return {
+            mitVorrang: async () => abgelegt,
+            set: async (_k, v) => { abgelegt = v; },
+            gespeichert: () => abgelegt,
+        };
+    }
+
+    it('zeigt die Namen des Modells samt schon zugeordneter Bauform', async () => {
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const v = b.vorschlaege([
+            ...Array(18).fill({ category: PROXY, name: 'Haltung' }),
+            ...Array(19).fill({ category: PROXY, name: 'Schacht' }),
+            { category: PROXY, name: 'Unbekanntes Ding' },
+        ]);
+        expect(v.find(x => x.name === 'Haltung')).toMatchObject({ anzahl: 18, bauform: 'achse+profil' });
+        expect(v.find(x => x.name === 'Schacht')).toMatchObject({ anzahl: 19, bauform: 'koerper' });
+        // Was niemand zugeordnet hat, bleibt LEER — nicht geraten.
+        expect(v.find(x => x.name === 'Unbekanntes Ding').bauform).toBe(null);
+    });
+
+    it('schreibt beim Zuordnen eine Regel, keine Einzelzuweisung', async () => {
+        // Derselbe Exporteur nennt die Dinge in jeder Datei gleich — eine Regel
+        // gilt damit auch für die nächste Lieferung.
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const ziel = fakeRepo();
+        await b.ordneZu({ category: PROXY, name: 'Rohrleitung', bauform: 'achse+profil' }, ziel);
+
+        expect(bauformAusRegel(ziel.gespeichert(), ctx('Rohrleitung')).bauform).toBe('achse+profil');
+    });
+
+    it('ersetzt eine bestehende Zuordnung, statt sie zu stapeln', async () => {
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const ziel = fakeRepo();
+        await b.ordneZu({ category: PROXY, name: 'Haltung', bauform: 'koerper' }, ziel);
+        await b.ordneZu({ category: PROXY, name: 'Haltung', bauform: 'achse+profil' }, ziel);
+
+        const treffend = ziel.gespeichert().filter(r => r.condition?.value === 'Haltung' && r.bauform);
+        expect(treffend).toHaveLength(1);
+        expect(treffend[0].bauform).toBe('achse+profil');
+    });
+
+    it('nimmt eine Zuordnung mit null zurück — dann entscheidet wieder die Geometrie', async () => {
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const ziel = fakeRepo();
+        await b.ordneZu({ category: PROXY, name: 'Haltung', bauform: null }, ziel);
+        expect(bauformAusRegel(ziel.gespeichert(), ctx('Haltung'))).toBe(null);
+    });
+
+    it('überlebt ein Repo, das nicht schreiben kann', async () => {
+        // Ohne Netz soll die Zuordnung wenigstens in dieser Sitzung wirken.
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const kaputt = { mitVorrang: async () => null, set: async () => { throw new Error('kein Netz'); } };
+        await b.ordneZu({ category: PROXY, name: 'Rohr', bauform: 'achse+profil' }, kaputt);
+        expect(bauformAusRegel(b.regeln, ctx('Rohr')).bauform).toBe('achse+profil');
     });
 });

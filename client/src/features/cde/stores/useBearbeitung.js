@@ -17,7 +17,10 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
 import { bestimme } from '../services/bauform/Bauformen.js';
-import { bauformAusRegel, ladeRegeln } from '../services/bauform/Bauformregeln.js';
+import {
+    REPO_KEY as REGEL_KEY, bauformAusRegel, ladeRegeln, namensvorschlaege, regelAus,
+} from '../services/bauform/Bauformregeln.js';
+import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
 import { felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
@@ -53,8 +56,46 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     const moeglich = computed(() => (einordnung.value ? passende(einordnung.value) : []));
 
     /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
-    async function ladeProfile(repo) {
-        [profilSatz.value, regeln.value] = await Promise.all([ladeSatz(repo), ladeRegeln(repo)]);
+    async function ladeProfile(quelle = repo) {
+        [profilSatz.value, regeln.value] = await Promise.all([ladeSatz(quelle), ladeRegeln(quelle)]);
+    }
+
+    // ── Zuordnen: was bedeuten die Namen dieses Exporteurs? ────────────────
+
+    /**
+     * Die Namen, die im geladenen Modell vorkommen — je Kategorie gezählt.
+     *
+     * Damit zeigt die Oberfläche „18 Proxies heissen hier ‚Haltung'", statt den
+     * Nutzer raten zu lassen, wonach er suchen soll. Quelle ist der Suchindex,
+     * der beim Laden ohnehin gebaut wird — kein zweiter Lauf über das Modell.
+     */
+    function vorschlaege(suchindex) {
+        const roh = (suchindex ?? []).map(e => ({ category: e.category, attributes: { Name: e.name } }));
+        return namensvorschlaege(roh).map(v => ({
+            ...v,
+            bauform: bauformAusRegel(regeln.value, { category: v.category, attributes: { Name: v.name }, psets: {} })?.bauform ?? null,
+        }));
+    }
+
+    /**
+     * Einer Namensgruppe eine Bauform zuordnen.
+     *
+     * Schreibt eine REGEL, keine Einzelzuweisung: derselbe Exporteur nennt die
+     * Dinge in jeder Datei gleich, und eine Regel gilt damit auch für die
+     * nächste Lieferung. `bauform: null` nimmt die Zuordnung zurück.
+     */
+    async function ordneZu({ category, name, bauform }, ziel = repo) {
+        const ohneAlte = regeln.value.filter(
+            r => !(r.condition?.category === category && r.condition?.value === name && r.bauform),
+        );
+        const neu = bauform ? [...ohneAlte, regelAus({ category, name, bauform })] : ohneAlte;
+        regeln.value = neu;
+        try {
+            await ziel.set(REGEL_KEY, JSON.parse(JSON.stringify(neu)));
+        } catch (fehler) {
+            console.warn('cde: bauformregel sichern', fehler?.message ?? fehler);
+        }
+        return neu;
     }
 
     /**
@@ -146,5 +187,6 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         einordnung, bauteil, profilSatz, regeln, scharfId, werte, laeuft,
         typprofil, scharf, felder, fehler, bereit, moeglich,
         ladeProfile, einordne, starte, setzeWert, abbrechen, ausfuehren,
+        vorschlaege, ordneZu,
     };
 });
