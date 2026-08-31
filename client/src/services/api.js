@@ -66,6 +66,39 @@ function abmeldenUndZumLogin() {
   }
 }
 
+/**
+ * Die JSON-Vorgabe entfernen, wenn der Rumpf eine FormData ist.
+ *
+ * Diese Instanz setzt `Content-Type: application/json` als Vorgabe (oben).
+ * axios 1.x wertet das in `transformRequest` aus und macht bei JSON-Header aus
+ * einer FormData per `formDataToJSON` ein JSON-Objekt — eine Datei wird darin
+ * zu `{}`. Der Server sieht dann keinen multipart-Rumpf und meldet:
+ *
+ *     { "type": "missing", "loc": ["body","datei"], "msg": "Field required" }
+ *
+ * Genau so ist am 31.08.2026 der IFC-Upload in der Projekt-Akte gescheitert.
+ * Drei Aufrufer waren betroffen (ProjekteApi.cdeHochladen, RepoFacade.setBlob,
+ * PedantApi.belegHochladen), drei andere hatten es je einzeln umschifft, indem
+ * sie den Header selbst setzten — einer davon mit dem Kommentar „Content-Type
+ * bewusst NICHT setzen, Axios erzeugt den Boundary selbst". Das stimmt eben
+ * nur, wenn keine JSON-Vorgabe im Weg steht.
+ *
+ * Deshalb hier zentral und nicht zum vierten Mal an der Aufrufstelle.
+ *
+ * NUR die Vorgabe wird entfernt: wer einen Content-Type ausdrücklich setzt
+ * (`x-www-form-urlencoded` beim Login, `multipart/form-data` im DocReader),
+ * behält ihn. Sonst bräche die Anmeldung.
+ */
+export function entferneJsonVorgabeBeiFormData(config) {
+  if (typeof FormData === 'undefined' || !(config?.data instanceof FormData)) return config
+  const kopf = config.headers
+  const wert = typeof kopf?.get === 'function' ? kopf.get('Content-Type') : kopf?.['Content-Type']
+  if (wert && !String(wert).includes('application/json')) return config   // bewusst gesetzt
+  if (typeof kopf?.delete === 'function') kopf.delete('Content-Type')
+  else if (kopf) delete kopf['Content-Type']
+  return config
+}
+
 // Request Interceptor - Bearer setzen, kurz vor Ablauf proaktiv erneuern
 // (sonst bricht ein langer Multipart-Upload mitten im Ablauf mit 401 ab)
 api.interceptors.request.use(
@@ -85,6 +118,7 @@ api.interceptors.request.use(
     } catch (error) {
       console.warn('Auth store not available:', error)
     }
+    entferneJsonVorgabeBeiFormData(config)
     return config
   },
   (error) => Promise.reject(error)
