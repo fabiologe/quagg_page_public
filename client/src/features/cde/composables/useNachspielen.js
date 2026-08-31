@@ -90,10 +90,11 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             // 3. Planen. Ein nicht gefundenes Bauteil liefert `undefined` —
             //    daraus wird im Vergleich der Zustand „fehlt", nicht ein
             //    stiller Ausfall.
-            const plan = planeNachspielen(eintraege, (globalId, art) => {
-                if (art !== 'lage') return anker.get(globalId);
-                return anker.get(globalId);
-            });
+            const plan = planeNachspielen(
+                aenderungen?.auftragsEintraege ?? [],
+                (globalId) => anker.get(globalId),
+                { standEintraege: aenderungen?.standEintraege ?? [] },
+            );
             plan.modelId = modelId;
 
             // 4. Anwenden.

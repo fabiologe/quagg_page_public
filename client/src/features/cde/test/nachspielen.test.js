@@ -168,3 +168,31 @@ describe('Merkmale bleiben aussen vor', () => {
         expect(p.konflikte).toHaveLength(0);
     });
 });
+
+describe('Ebenen beim Nachspielen (Stufe 11.1)', () => {
+    const AUFTRAG = [{ art: 'lage', globalId: 'H12', basis: GELIEFERT, nachher: GEZOGEN, modell: 'geliefert' }];
+
+    it('spielt eine Auftragskorrektur auch ohne Modellsatz nach', () => {
+        const p = planeNachspielen(AUFTRAG, lieferstandAus(new Map([['H12', GELIEFERT]])));
+        expect(p.anzuwenden).toHaveLength(1);
+    });
+
+    it('lässt den Modellsatz die Auftragskorrektur überschreiben', () => {
+        const satz = [{ art: 'lage', globalId: 'H12', basis: GELIEFERT, nachher: { x: 12, y: 2, z: 5 }, modell: 'geliefert' }];
+        const p = planeNachspielen(AUFTRAG, lieferstandAus(new Map([['H12', GELIEFERT]])),
+            { standEintraege: satz });
+        expect(p.anzuwenden).toHaveLength(1);
+        expect(p.anzuwenden[0].wert).toEqual({ x: 12, y: 2, z: 5 });
+    });
+
+    it('LÖSCHT die Auftragskorrektur NICHT, wenn der Satz zurücknimmt', () => {
+        // Der Fallstrick der Verkettung: `null` im Satzjournal heisst „hier
+        // nichts gesetzt", nicht „auch die Ebene darunter wegwerfen". Sonst
+        // käme die Korrektur beim nächsten Laden nicht mehr aufs Modell.
+        const satz = [{ art: 'lage', globalId: 'H12', basis: GELIEFERT, nachher: null, modell: 'geliefert' }];
+        const p = planeNachspielen(AUFTRAG, lieferstandAus(new Map([['H12', GELIEFERT]])),
+            { standEintraege: satz });
+        expect(p.anzuwenden).toHaveLength(1);
+        expect(p.anzuwenden[0].wert).toEqual(GEZOGEN);
+    });
+});

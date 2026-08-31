@@ -33,22 +33,26 @@
  * Reine Funktionen, ohne Vue, ohne WebGL — die Attrappe reicht ein Map hinein.
  */
 
-import { AENDERUNGS_ARTEN, standMitEintrag, vergleicheMitModell } from '../stores/useAenderungen.js';
+import { AENDERUNGS_ARTEN, standMitEintragEbenen, vergleicheMitModell } from '../stores/useAenderungen.js';
 
 /**
  * Welche Festlegungen lassen sich auf dieses Modell anwenden, und wo hakt es?
  *
- * @param {Array} eintraege        das Journal
+ * @param {Array} eintraege        das AUFTRAGSJOURNAL (gilt in jedem Modellsatz)
  * @param {(globalId: string, art: string) => *} leseLieferstand
  *        Wert im GELIEFERTEN Modell; `undefined` heißt „Bauteil nicht da".
  *        Muss der Stand VOR jeder Anwendung sein — siehe Idempotenz oben.
  * @param {object} [opts]
  * @param {string[]} [opts.arten]  nur diese Arten (Vorgabe: alle modellberührenden)
+ * @param {Array} [opts.standEintraege]  das Journal des aktiven Modellsatzes.
+ *        Wird GETRENNT gefaltet und danach überlagert — verkettet man beide,
+ *        löscht ein `null` im Satz die Auftragskorrektur mit aus dem Plan, und
+ *        sie käme beim Laden nicht mehr aufs Modell (Stufe 11.1).
  * @returns {{anzuwenden: Array, konflikte: Array, zusammenfassung: object}}
  *   anzuwenden: [{ globalId, art, wert, eintrag, modell }]
  *   konflikte:  [{ globalId, art, eintrag, zustand, grund, istWert }]
  */
-export function planeNachspielen(eintraege, leseLieferstand, { arten = null } = {}) {
+export function planeNachspielen(eintraege, leseLieferstand, { arten = null, standEintraege = null } = {}) {
     const anzuwenden = [];
     const konflikte = [];
 
@@ -57,7 +61,7 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null } = 
         .map(([name]) => name);
 
     for (const art of zuPruefen) {
-        for (const [globalId, { wert, eintrag }] of standMitEintrag(eintraege ?? [], art)) {
+        for (const [globalId, { wert, eintrag }] of standMitEintragEbenen(eintraege ?? [], standEintraege, art)) {
             // Erzeugte Bauteile stehen nicht im gelieferten Modell — sie im
             // Lieferstand zu suchen und dann „fehlt" zu melden, wäre ein
             // Fehlalarm mit Ansage.

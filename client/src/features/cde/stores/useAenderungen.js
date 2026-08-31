@@ -133,6 +133,32 @@ export function standAus(eintraege, art) {
 }
 
 /**
+ * Der wirksame Stand aus BEIDEN Ebenen (Stufe 11.1).
+ *
+ * Auftragsjournal: „das Rohr liegt 20 cm tiefer als geliefert" — wahr in jeder
+ * Variante. Standjournal: „hier probiere ich 12,40" — nur in diesem Modellsatz.
+ *
+ * WARUM NICHT EINFACH VERKETTEN: `standAus([...auftrag, ...stand])` sähe
+ * verlockend aus, ist aber falsch. In `standAus` heißt `null` „Eintrag
+ * herausnehmen" — und ein `null` im STANDJOURNAL löschte damit auch die
+ * Auftragskorrektur, die darunter liegt. Wer im Modellsatz eine Festlegung
+ * zurücknimmt, verlöre die Korrektur des Auftrags gleich mit.
+ *
+ * Richtig ist, JEDE EBENE FÜR SICH zu falten und dann schlüsselweise zu
+ * überlagern. Dann heißt `null` im Standjournal nur noch „an dieser Stelle
+ * nichts gesetzt", und der Auftragswert scheint wieder durch. Das ist dieselbe
+ * Form wie `waehleMitVorrang` aus Stufe 6 — Projekt schlägt Büro schlägt
+ * Standard, hier Modellsatz schlägt Auftrag.
+ */
+export function ebenenStand(auftragsEintraege, standEintraege, art) {
+    const wirksam = standAus(auftragsEintraege ?? [], art);
+    for (const [globalId, wert] of standAus(standEintraege ?? [], art)) {
+        wirksam.set(globalId, wert);
+    }
+    return wirksam;
+}
+
+/**
  * Derselbe Stand, aber mit dem Eintrag, der ihn erzeugt hat.
  *
  * Das Nachspielen braucht mehr als den Wert: es braucht die `basis` des
@@ -265,22 +291,79 @@ export function letzterOffener(eintraege) {
     return null;
 }
 
+/**
+ * Wie `ebenenStand`, aber mit dem Eintrag, der den Wert erzeugt hat.
+ *
+ * Das Nachspielen braucht die `basis` des Schrittes, der zuletzt gewonnen hat.
+ * Ohne die Ebenentrennung fiele es auf denselben Fallstrick wie die Anzeige:
+ * ein `null` im Standjournal löschte die Auftragskorrektur mit aus dem Plan,
+ * und sie käme beim nächsten Laden nicht mehr aufs Modell.
+ */
+export function standMitEintragEbenen(auftragsEintraege, standEintraege, art) {
+    const wirksam = standMitEintrag(auftragsEintraege ?? [], art);
+    for (const [globalId, satz] of standMitEintrag(standEintraege ?? [], art)) {
+        wirksam.set(globalId, satz);
+    }
+    return wirksam;
+}
+
 export const useAenderungen = defineStore('cde-aenderungen', () => {
-    /** [{ id, art, globalId, vorher, nachher, wer, wann, modellSha }] */
-    const eintraege = ref([]);
+    /**
+     * ZWEI JOURNALE, nicht eines (Stufe 11.1).
+     *
+     * Bis hierher lag alles unter EINEM Schlüssel im globalen Scope. Bei
+     * aktivem Server-Backend war das schon der richtige Ort — er landet in
+     * `CDE/_repo/global:aenderungen.json` im Auftragsordner. Der Fehler war
+     * nicht der Ort, sondern dass die zweite Ebene fehlte: eine Festlegung im
+     * Modellsatz „Nord" galt auch in „Süd", weil es beide gar nicht gab.
+     */
+    const auftragsEintraege = ref([]);   // gilt in JEDEM Modellsatz
+    const standEintraege    = ref([]);   // nur im aktiven Modellsatz
+    /** Der aktive Modellsatz, oder null — dann gibt es nur die Auftragsebene. */
+    const satzId = ref(null);
+
+    /**
+     * Beide Ebenen in einer Liste — für Anzeige, Verlauf und Nachspielen.
+     *
+     * Die REIHENFOLGE ist bedeutungslos für den wirksamen Stand (den rechnet
+     * `ebenenStand` je Ebene) und bedeutsam für die Anzeige: Auftragsschritte
+     * zuerst, Satzschritte darüber, so wie sie wirken.
+     */
+    const eintraege = computed(() => [...auftragsEintraege.value, ...standEintraege.value]);
+
+    /** In welche Ebene geschrieben wird, solange nichts anderes gesagt wird. */
+    const vorgabeEbene = computed(() => (satzId.value ? 'stand' : 'auftrag'));
+
+    function _liste(ebene) {
+        return ebene === 'auftrag' ? auftragsEintraege : standEintraege;
+    }
+    function _repoFuer(ebene) {
+        return ebene === 'auftrag' || !satzId.value ? repo : repo.withScope(`stand:${satzId.value}`);
+    }
 
     const anzahl = computed(() => eintraege.value.length);
-    /** Gibt es noch etwas zurückzunehmen? Steuert den Knopf. */
-    const kannZurueck = computed(() => letzterOffener(eintraege.value) !== null);
+    /**
+     * Gibt es noch etwas zurückzunehmen?
+     *
+     * Gefragt wird die Ebene, in die geschrieben wird — sonst böte der Knopf
+     * an, eine Auftragskorrektur zurückzunehmen, während man in einer Variante
+     * arbeitet.
+     */
+    const kannZurueck = computed(() => letzterOffener(_liste(vorgabeEbene.value).value) !== null);
     /** Wie viele Bauteile insgesamt berührt sind (nicht wie viele Schritte). */
     const beruehrteBauteile = computed(() => new Set(eintraege.value.map(e => e.globalId)).size);
 
-    const kgStand     = computed(() => standAus(eintraege.value, 'kg'));
-    const din277Stand = computed(() => standAus(eintraege.value, 'din277'));
+    const kgStand     = computed(() => ebenenStand(auftragsEintraege.value, standEintraege.value, 'kg'));
+    const din277Stand = computed(() => ebenenStand(auftragsEintraege.value, standEintraege.value, 'din277'));
 
-    async function _sichern() {
+    /** Der wirksame Stand einer beliebigen Art — für Nachspielen und Anzeige. */
+    function wirksamerStand(art) {
+        return ebenenStand(auftragsEintraege.value, standEintraege.value, art);
+    }
+
+    async function _sichern(ebene) {
         try {
-            await repo.set(REPO_KEY, JSON.parse(JSON.stringify(eintraege.value)));
+            await _repoFuer(ebene).set(REPO_KEY, JSON.parse(JSON.stringify(_liste(ebene).value)));
         } catch (fehler) {
             console.warn('cde: aenderungen sichern', fehler?.message ?? fehler);
         }
@@ -289,20 +372,23 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     /**
      * Eine Änderung eintragen.
      *
-     * `vorher` wird NICHT vom Aufrufer geraten, sondern aus dem eigenen Stand
-     * gelesen — sonst schreibt jeder Aufrufer seine eigene Vorstellung davon
-     * hinein, und das Zurücknehmen führt irgendwohin.
+     * `vorher` wird NICHT vom Aufrufer geraten, sondern aus dem WIRKSAMEN Stand
+     * gelesen — aus beiden Ebenen also, denn das ist der Wert, den der Nutzer
+     * gesehen hat. Sonst schriebe jeder Aufrufer seine eigene Vorstellung davon
+     * hinein, und das Zurücknehmen führte irgendwohin.
      *
+     * @param {'stand'|'auftrag'} [ebene]  Vorgabe: Modellsatz, wenn einer aktiv ist
      * @returns {object|null} der Eintrag, oder null wenn nichts zu tun war
      */
-    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null, basis, modell }) {
+    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null, basis, modell, ebene }) {
         if (!(art in AENDERUNGS_ARTEN) || !globalId) return null;
-        const stand = standAus(eintraege.value, art);
+        const ziel = ebene ?? vorgabeEbene.value;
+        const stand = wirksamerStand(art);
         const vorher = stand.has(globalId) ? stand.get(globalId) : null;
         // Dieselbe Zuweisung noch einmal ist keine Änderung — sonst füllt sich
         // das Journal mit Schritten, die nichts tun, und „zurück" braucht
         // mehrere Klicks für einen sichtbaren Effekt. Der Vergleich kommt aus
-        // der Art: Objektwerte (Versatz, Maße) tragen kein `===`.
+        // der Art: Objektwerte (Anker, Maße) tragen kein `===`.
         if (gleichFuer(art)(vorher, nachher ?? null)) return null;
 
         const eintrag = {
@@ -319,13 +405,13 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             // suchte das Nachspielen sie im gelieferten und fände sie nie.
             eintrag.modell = modell ?? 'geliefert';
         }
-        eintraege.value.push(eintrag);
-        await _sichern();
+        _liste(ziel).value.push(eintrag);
+        await _sichern(ziel);
         return eintrag;
     }
 
     /**
-     * Den letzten noch offenen Schritt zurücknehmen.
+     * Den jüngsten offenen Schritt der ARBEITSEBENE zurücknehmen.
      *
      * Kein Löschen des Eintrags, sondern ein GEGENEINTRAG: die Spur bleibt
      * vollständig. Wer im Register liest, was mit einem Bauteil passiert ist,
@@ -334,12 +420,15 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      *
      * „Offen" heißt: noch nicht zurückgenommen, und selbst keine Rücknahme.
      * Ohne diese Unterscheidung nähme der zweite Klick die RÜCKNAHME zurück
-     * statt den Schritt davor — man käme nie über den ersten hinaus und
-     * pendelte zwischen zwei Ständen. Das ist Wiederholen, nicht
-     * Zurücknehmen, und der Knopf verspricht Letzteres.
+     * statt den Schritt davor — man pendelte zwischen zwei Ständen.
+     *
+     * EBENENTREU (Stufe 11.1): gesucht wird nur in der Ebene, in die auch
+     * geschrieben wird. Sonst nähme „zurück" in einer Variante eine
+     * Auftragskorrektur zurück, die dort gar nicht gemacht wurde.
      */
-    async function zurueck(wer = '') {
-        const letzter = letzterOffener(eintraege.value);
+    async function zurueck(wer = '', { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const letzter = letzterOffener(_liste(ziel).value);
         if (!letzter) return null;
         const eintrag = {
             id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
@@ -354,16 +443,33 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             ...(letzter.modell !== undefined ? { modell: letzter.modell } : {}),
             ruecknahmeVon: letzter.id,
         };
-        eintraege.value.push(eintrag);
-        await _sichern();
+        _liste(ziel).value.push(eintrag);
+        await _sichern(ziel);
         return eintrag;
     }
 
-    /** Alle Änderungen einer Art verwerfen — Journal bleibt, Stand wird leer. */
-    async function verwerfe(art, wer = '') {
-        const stand = standAus(eintraege.value, art);
-        for (const [globalId] of stand) {
-            await eintragen({ art, globalId, nachher: null, wer });
+    /**
+     * Eine Festlegung auf die Auftragsebene heben — der cherry-pick.
+     *
+     * „Das gilt nicht nur hier, das gilt überall." Der Eintrag WANDERT, er wird
+     * nicht kopiert: läge er in beiden Ebenen, überschriebe die Satzfassung die
+     * Auftragsfassung für immer, und ein späteres „gilt doch nur hier" wäre
+     * nicht mehr davon zu unterscheiden.
+     */
+    async function hebeAufAuftragsebene(id, wer = '') {
+        const i = standEintraege.value.findIndex(e => e.id === id);
+        if (i < 0) return null;
+        const [eintrag] = standEintraege.value.splice(i, 1);
+        auftragsEintraege.value.push({ ...eintrag, gehobenVon: wer || undefined });
+        await Promise.all([_sichern('stand'), _sichern('auftrag')]);
+        return eintrag;
+    }
+
+    /** Alle Änderungen einer Art auf der Arbeitsebene verwerfen. */
+    async function verwerfe(art, wer = '', { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        for (const [globalId] of standAus(_liste(ziel).value, art)) {
+            await eintragen({ art, globalId, nachher: null, wer, ebene: ziel });
         }
     }
 
@@ -372,17 +478,49 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         return eintraege.value.filter(e => e.globalId === globalId).slice().reverse();
     }
 
-    async function laden() {
+    /**
+     * Eine Ebene nachladen.
+     *
+     * Zugewiesen wird NUR, wenn wirklich etwas gespeichert war. Ein blindes
+     * `= []` bei leerem Speicher überschriebe Einträge, die zwischen dem Start
+     * des Ladens und seiner Antwort geschrieben wurden — der Store legt sich
+     * beim Anlegen an, und die erste Bearbeitung kann schneller sein als die
+     * RepoFacade. Geleert wird deshalb nur dort, wo es gemeint ist: beim
+     * Satzwechsel.
+     */
+    async function _ladeEbene(ebene) {
         try {
-            const gespeichert = await repo.get(REPO_KEY);
-            if (Array.isArray(gespeichert)) eintraege.value = gespeichert;
-        } catch { /* egal */ }
+            const gespeichert = await _repoFuer(ebene).get(REPO_KEY);
+            if (Array.isArray(gespeichert)) _liste(ebene).value = gespeichert;
+        } catch { /* egal — dann bleibt, was da ist */ }
+    }
+
+    /**
+     * Den aktiven Modellsatz wechseln.
+     *
+     * Lädt DESSEN Journal nach; die Auftragsebene bleibt stehen. Danach ergibt
+     * `wirksamerStand` einen anderen Wert — genau das ist der Variantenwechsel.
+     */
+    async function setzeSatz(id) {
+        satzId.value = id ?? null;
+        // HIER ist das Leeren gemeint: die Einträge des vorigen Satzes dürfen
+        // nicht stehen bleiben, sonst wanderten sie in den neuen mit.
+        standEintraege.value = [];
+        if (!id) return;
+        await _ladeEbene('stand');
+    }
+
+    async function laden() {
+        await _ladeEbene('auftrag');
+        if (satzId.value) await _ladeEbene('stand');
     }
 
     const bereit = laden();
 
     return {
-        eintraege, anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
-        eintragen, zurueck, verwerfe, verlauf, neuLaden: laden,
+        auftragsEintraege, standEintraege, satzId, eintraege, vorgabeEbene,
+        anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
+        wirksamerStand, eintragen, zurueck, hebeAufAuftragsebene, verwerfe,
+        verlauf, setzeSatz, neuLaden: laden,
     };
 });
