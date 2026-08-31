@@ -1676,15 +1676,28 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
    Lila/Limetten-Pixel-Header wie das Hauptmodal, statt der alten weißen
    Bootstrap-Karte ohne Header/Close-Button. */
 .bulk-edit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(4,6,71,0.55); z-index: var(--isy-z-panel); display: flex; justify-content: center; align-items: center; }
-.bulk-edit-modal { background: var(--isy-pixel-text); border: 1px solid var(--isy-pixel-border); border-radius: var(--isy-radius-lg); width: 400px; box-shadow: var(--isy-elev-3); overflow: hidden; }
+/* Papier wie die Tabelle darunter — die Massenbearbeitung aendert schliesslich
+   Tabellendaten. Vorher stand hier `background: var(--isy-pixel-text)`: eine
+   TEXT-Farbe als Flaeche. Im Hellmodus wurde das Fenster damit fast schwarz,
+   waehrend seine Beschriftungen dunkel blieben — gemessen 1,06:1, also
+   unlesbar (vom Nutzer gemeldet). Im Dunkelmodus war es umgekehrt weiss. */
+.bulk-edit-modal { background: var(--isy-pixel-content-bg); border: 1px solid var(--isy-pixel-border); border-radius: var(--isy-radius-lg); width: 400px; box-shadow: var(--isy-elev-3); overflow: hidden; }
 .bulk-edit-header {
   display: flex; justify-content: space-between; align-items: center;
+  /* Modus-Flaeche in der Kopfzeile — genau wie beim grossen Fenster daneben
+     (.modal-header). Damit passt der modusabhaengige Lesegruenton darauf:
+     5,5:1 hell, 5,9:1 dunkel. Auf der konstanten Papierflaeche waeren es im
+     Dunkelmodus 2,6:1 gewesen. */
   background: var(--isy-pixel-bg); padding: var(--isy-space-3) var(--isy-space-4); border-bottom: 2px solid var(--isy-pixel-border);
 }
 .bulk-edit-header h4 {
   margin: 0; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md);
-  color: var(--isy-pixel-green); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--isy-pixel-green-text); letter-spacing: 0.06em; text-transform: uppercase;
 }
+/* Beschriftungen der Felder: Papierflaeche, also Papier-Textfarbe. Ohne die
+   Zeile erben sie, was gerade kommt — und das war der schwarze Text aus der
+   Meldung. */
+.bulk-field > label { color: var(--isy-pixel-content-text); font-size: var(--isy-fs-md); }
 .bulk-controls { display: flex; flex-direction: column; gap: var(--isy-space-4); margin: var(--isy-space-6) 0; padding: 0 var(--isy-space-6); }
 .bulk-field { display: flex; flex-direction: column; gap: var(--isy-space-1); }
 .bulk-field-row { display: flex; gap: var(--isy-space-4); }
@@ -1700,7 +1713,7 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 }
 .bulk-buttons { display: flex; gap: var(--isy-space-4); justify-content: flex-end; padding: 0 var(--isy-space-6) var(--isy-space-6); }
 .bulk-divider { border: none; border-top: 1px solid var(--isy-pixel-text-dim); margin: var(--isy-space-1) 0; }
-.bulk-hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border); font-style: italic; }
+.bulk-hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-content-text-dim); font-style: italic; }
 
 .modal-footer { align-items: center; }
 .export-btn { background: var(--isy-pixel-content-bg); border: 1px solid var(--isy-pixel-green); color: var(--isy-pixel-green); padding: var(--isy-space-2) var(--isy-space-4); border-radius: var(--isy-radius-md); cursor: var(--isy-cursor-hand); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); transition: background 0.15s, color 0.15s; }
