@@ -14,6 +14,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useCdeStore, ISO_STATUS } from '../stores/useCdeStore'
+import { dokumentAusManifest } from '../services/RepoFacade'
 
 beforeEach(() => {
   localStorage.clear()
@@ -148,5 +149,39 @@ describe('Das Dokumentregister gehört dem AUFTRAG', () => {
     expect(doc.status).toBe('Shared')
     expect(doc.statusHistorie.map(h => h.status)).toEqual(['WIP', 'Shared'])
     expect(ISO_STATUS).toContain('Published')
+  })
+})
+
+describe('Die Register-Antwort wird ÜBERSETZT, nicht durchgereicht', () => {
+  /**
+   * Das Manifest schreibt `datei`, `groesse`, `hochgeladen_am`; der Viewer
+   * rechnet mit `name`, `size`, `addedAt` (ms-Epoche). Die Rohantwort
+   * einzusetzen liess die Registertabelle mit leeren Namen und lauter Strichen
+   * dastehen — die Zeilen waren da, nur sagte keine etwas.
+   */
+  const MANIFESTZEILE = {
+    sha256: 'aaa', datei: 'Kanal_R01.ifc', groesse: 4096, art: 'modell',
+    revision: 1, status: 'WIP', von: 'admin',
+    hochgeladen_am: '2026-08-31T11:22:41+00:00', projekt_global_id: null,
+  }
+
+  it('macht aus datei/groesse/hochgeladen_am die Felder der Anzeige', async () => {
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.uebernehmeRegister({ ...REGISTER, dokumente: [MANIFESTZEILE] }, 1337)
+
+    const d = cde.dokumente[0]
+    expect(d.name).toBe('Kanal_R01.ifc')
+    expect(d.size).toBe(4096)
+    expect(d.addedAt).toBe(Date.parse('2026-08-31T11:22:41+00:00'))
+    expect(d.status).toBe('WIP')
+  })
+
+  it('lässt keine Rohfelder stehen, die niemand liest', () => {
+    // Sonst läge dieselbe Angabe in zwei Schreibweisen nebeneinander, und
+    // niemand wüsste, welche gilt.
+    const uebersetzt = dokumentAusManifest(MANIFESTZEILE)
+    expect(uebersetzt.datei).toBeUndefined()
+    expect(uebersetzt.groesse).toBeUndefined()
   })
 })

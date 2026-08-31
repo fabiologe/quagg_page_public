@@ -28,7 +28,7 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { repo } from '../services/RepoFacade.js';
+import { dokumentAusManifest, repo } from '../services/RepoFacade.js';
 
 export const ISO_STATUS = Object.freeze(['WIP', 'Shared', 'Published', 'Archived']);
 
@@ -139,7 +139,16 @@ export const useCdeStore = defineStore('cde', () => {
           bauherr: st.bauherr ?? '', lph: st.lph ?? '' }
       : null;
     saetze.value = Array.isArray(register?.saetze) ? register.saetze : [];
-    if (Array.isArray(register?.dokumente)) dokumente.value = register.dokumente;
+    // ÜBERSETZEN, nicht durchreichen. Das Manifest schreibt `datei`, `groesse`
+    // und `hochgeladen_am`; der Viewer rechnet mit `name`, `size` und `addedAt`
+    // (ms-Epoche). Die Rohantwort einzusetzen liess die Registertabelle mit
+    // leeren Namen und lauter Strichen dastehen — die Zeilen waren da, nur
+    // sagte keine etwas. `dokumentAusManifest` ist die eine Stelle, die beide
+    // Formen kennt; sie zu umgehen heisst, die Übersetzung ein zweites Mal zu
+    // erfinden.
+    if (Array.isArray(register?.dokumente)) {
+      dokumente.value = register.dokumente.map(dokumentAusManifest);
+    }
     // Ein gespeicherter Satz, den es nicht mehr gibt, darf nicht aktiv bleiben.
     if (aktiverSatzId.value && !saetze.value.some(s => s.id === aktiverSatzId.value)) {
       await setzeSatz(null);
