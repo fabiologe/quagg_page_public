@@ -25,12 +25,12 @@
         <div class="top-bar">
           <div class="top-bar-left">
             <label class="action-btn primary">
-              <input type="file" accept=".ifc" @change="onFileUpload" class="sr-only" />
+              <input type="file" accept=".ifc" @change="ablage.onFileUpload" class="sr-only" />
               <CdeIcon name="documents" :size="13" /> IFC laden
             </label>
 
             <label v-if="ifc.modelList.length" class="action-btn secondary">
-              <input type="file" accept=".ifc" @change="onFileUploadAdd" class="sr-only" />
+              <input type="file" accept=".ifc" @change="ablage.onFileUploadAdd" class="sr-only" />
               <CdeIcon name="add" :size="13" /> Hinzufügen
             </label>
 
@@ -157,12 +157,12 @@
             <div class="section-sep"></div>
 
             <!-- SC-4: Reset position to model center -->
-            <button class="snap-btn" title="Zur Modellmitte zurücksetzen" aria-label="Zur Modellmitte zurücksetzen" @click="resetSection">
+            <button class="snap-btn" title="Zur Modellmitte zurücksetzen" aria-label="Zur Modellmitte zurücksetzen" @click="schnitt.zuruecksetzen()">
               <CdeIcon name="refresh" :size="12" />
             </button>
             <!-- Blendet nur die Leiste aus; die Schnittebene bleibt aktiv.
                  Erst der Schnitt-Knopf in der Werkzeugleiste entfernt sie ganz. -->
-            <button class="section-close" @click="hideSection" title="Werkzeug ausblenden [Esc]" aria-label="Schnitt-Werkzeugleiste ausblenden">
+            <button class="section-close" @click="schnitt.leisteAusblenden()" title="Werkzeug ausblenden [Esc]" aria-label="Schnitt-Werkzeugleiste ausblenden">
               <CdeIcon name="close" :size="12" />
             </button>
           </div>
@@ -884,6 +884,22 @@ async function onGotoStorey({ modelId, localId, withSection }) {
   // zieht nach. Vorher stand die Rückmeldungs-Registrierung hier ein zweites
   // Mal, Zeichen für Zeichen.
   if (ok && withSection) schnitt.uebernehmeVonEngine();
+}
+
+/**
+ * Ein Geschoss ein- oder ausblenden.
+ *
+ * Fehlte seit der Composable-Zerlegung (Stufe 5): `IfcStoreyNav` emittierte
+ * `set-visible`, die Engine kann `setStoreyVisible` — nur der Handler
+ * dazwischen war weg. Ergebnis war nicht ein toter Klick, sondern ein
+ * abgebrochener Renderlauf: Vue meldete „Property onStoreyVisible was accessed
+ * during render but is not defined", und danach starb der Patch-Vorgang mit
+ * `Cannot set properties of null`. Dieselbe Klasse wie `zoomToAnnotation`
+ * (aa8efe5) — und dieselbe Blindstelle: der Undef-Wächter prüft das SKRIPT,
+ * nicht die Vorlage.
+ */
+function onStoreyVisible({ modelId, localId, visible }) {
+  engine.value?.setStoreyVisible(localId, visible, modelId);
 }
 
 // ── T1.3: Measurement ────────────────────────────────────────────────────────
