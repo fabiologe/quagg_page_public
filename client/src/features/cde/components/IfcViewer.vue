@@ -624,7 +624,7 @@ async function anwendenViewpoint(vp) {
 defineExpose({
   openBySha: (sha) => ablage.openBySha(sha),
   openFromProjectPath: (pfad) => ablage.openFromProjectPath(pfad),
-  zoomToPoint: zoomToAnnotation,
+  zoomToPoint: (position) => annotationen.zoomeAufPin(position),
   applyViewpoint: anwendenViewpoint,
   captureViewpoint: erfasseViewpoint,
   toggleAnnotationMode: () => annotationen.umschalten(),
