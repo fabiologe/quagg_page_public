@@ -30,12 +30,62 @@ import { repo } from '../services/RepoFacade.js';
 
 const REPO_KEY = 'aenderungen';
 
-/** Was sich ändern lässt. Neue Arten hier ergänzen — sonst nirgends. */
+/**
+ * Toleranz für Längenvergleiche in Metern (0,1 mm).
+ *
+ * Weit unter jedem Baumaß und weit über dem Zahlenrauschen. Sie darf so eng
+ * sein, weil `lage` einen VERSATZ speichert und keine Weltkoordinate: ein
+ * Versatz ist eine kleine Zahl. Eine UTM-Koordinate von 500.000 verlöre beim
+ * Weg durch die Float32-Puffer von three.js rund 3 cm — ein Versatz von 0,4 m
+ * verliert nichts. (Derselbe Grund, aus dem das Haus mit `coordOffsets`
+ * arbeitet: welt = roh − offset.)
+ */
+export const LAENGEN_TOLERANZ = 1e-4;
+
+/** Tiefer Wertevergleich für Objektwerte (Merkmalssätze, Maße). */
+function gleichTief(a, b) {
+    if (Object.is(a, b)) return true;
+    if (a == null || b == null) return false;
+    if (typeof a !== 'object' || typeof b !== 'object') return false;
+    const ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    return ka.every(k => gleichTief(a[k], b[k]));
+}
+
+/** Versatz-Vergleich mit Bautoleranz — {dx, dy, dz} in Metern. */
+function gleichVersatz(a, b) {
+    if (Object.is(a, b)) return true;
+    if (!a || !b) return false;
+    return ['dx', 'dy', 'dz'].every(
+        k => Math.abs((a[k] ?? 0) - (b[k] ?? 0)) <= LAENGEN_TOLERANZ,
+    );
+}
+
+/**
+ * Was sich ändern lässt. Neue Arten hier ergänzen — sonst nirgends.
+ *
+ * `beruehrtModell` markiert die Arten, die Geometrie oder Maße des Modells
+ * verändern. Nur sie brauchen eine `basis` und nehmen am Nachspielen und am
+ * Drei-Wege-Vergleich teil (siehe `vergleicheMitModell`). Merkmale wie die
+ * Kostengruppe leben neben dem Modell und können nicht mit ihm kollidieren.
+ *
+ * `gleich` ist nötig, weil `eintragen` sonst mit `===` vergliche — das trägt
+ * keine Objekte, und das Journal füllte sich mit Schritten, die nichts tun.
+ */
 export const AENDERUNGS_ARTEN = Object.freeze({
-    kg:     { titel: 'Kostengruppe',   icon: 'kg' },
-    din277: { titel: 'DIN-277-Klasse', icon: 'areas' },
-    pset:   { titel: 'Merkmalssatz',   icon: 'info' },
+    kg:         { titel: 'Kostengruppe',   icon: 'kg' },
+    din277:     { titel: 'DIN-277-Klasse', icon: 'areas' },
+    pset:       { titel: 'Merkmalssatz',   icon: 'info',     gleich: gleichTief },
+    lage:       { titel: 'Lage',           icon: 'pointer',  beruehrtModell: true, gleich: gleichVersatz },
+    parametrik: { titel: 'Maß',            icon: 'measure',  beruehrtModell: true, gleich: gleichTief },
+    erzeugt:    { titel: 'Erzeugt',        icon: 'add',      beruehrtModell: true, gleich: gleichTief },
+    geloescht:  { titel: 'Gelöscht',       icon: 'delete',   beruehrtModell: true },
 });
+
+/** Die Vergleichsfunktion einer Art; Rückfall ist Identität. */
+export function gleichFuer(art, arten = AENDERUNGS_ARTEN) {
+    return arten[art]?.gleich ?? Object.is;
+}
 
 /**
  * Den Stand einer Art als Map GlobalId→Wert.
@@ -53,6 +103,85 @@ export function standAus(eintraege, art) {
         else stand.set(e.globalId, e.nachher);
     }
     return stand;
+}
+
+/** Eine Länge in Metern lesbar machen — mm-genau, mit Vorzeichen. */
+function _laenge(m) {
+    const v = Number(m ?? 0);
+    if (!Number.isFinite(v)) return '?';
+    const s = Math.abs(v) < 1 ? `${(v * 1000).toFixed(0)} mm` : `${v.toFixed(3)} m`;
+    return v > 0 ? `+${s}` : s;
+}
+
+/**
+ * Einen Journalwert für die Anzeige beschreiben.
+ *
+ * Nötig, weil `lage` und `parametrik` Objekte tragen — ohne das stünde
+ * `[object Object]` im Änderungen-Reiter.
+ *
+ * BEWUSST OHNE HIMMELSRICHTUNGEN. „0,40 m nach Osten" wäre lesbarer, behauptete
+ * aber eine Georeferenz, die nicht gesichert ist: welche IFC-Achse nach Osten
+ * zeigt, hängt am Autorensystem — genau die Frage, die aus Stufe 0 noch offen
+ * ist (Achskonvention, UTM-Vorzeichen). Bis sie am georeferenzierten
+ * Kanalmodell geklärt ist, heißen die Achsen X, Y und H.
+ */
+export function beschreibeWert(art, wert) {
+    if (wert === null || wert === undefined) return '— (Regel)';
+    if (art === 'lage') {
+        const teile = [];
+        if (Math.abs(wert.dx ?? 0) > LAENGEN_TOLERANZ) teile.push(`X ${_laenge(wert.dx)}`);
+        if (Math.abs(wert.dz ?? 0) > LAENGEN_TOLERANZ) teile.push(`Y ${_laenge(wert.dz)}`);
+        if (Math.abs(wert.dy ?? 0) > LAENGEN_TOLERANZ) teile.push(`H ${_laenge(wert.dy)}`);
+        return teile.length ? teile.join(' · ') : 'unverändert';
+    }
+    if (typeof wert === 'object') {
+        return Object.entries(wert)
+            .map(([k, v]) => `${k}: ${typeof v === 'number' ? v : String(v)}`)
+            .join(' · ') || '—';
+    }
+    return String(wert);
+}
+
+/**
+ * Der Drei-Wege-Vergleich: passt eine Festlegung noch zum geladenen Modell?
+ *
+ * Das ist die Stelle, an der das Git-Bild wörtlich wird. Beim Nachspielen auf
+ * eine NEUE Modellrevision stehen drei Werte nebeneinander:
+ *
+ *     eintrag.basis   was der Planer damals hatte    (Basis-Stand)
+ *     eintrag.nachher was du daraus gemacht hast     (deine Festlegung)
+ *     istWert         was der Planer JETZT hat       (bewegter Upstream)
+ *
+ * Ist der Ist-Wert noch die Basis, hat der Planer nichts angerührt — die
+ * Festlegung greift sauber. Weicht er ab, haben BEIDE geändert, und das kann
+ * kein Programm entscheiden: das ist ein Konflikt für einen Menschen.
+ *
+ * Der Zustand wird ABGELEITET und nie gespeichert. Ein gespeichertes
+ * Konfliktkennzeichen wäre ein zweiter Zustand neben dem Journal und liefe
+ * auseinander; abgeleitet heilt er von selbst, wenn ein Bauteil in einer
+ * späteren Revision zurückkommt.
+ *
+ * @param {object} eintrag
+ * @param {*} istWert  Wert im geladenen Modell; `undefined` = Bauteil fehlt
+ * @returns {{zustand: 'sauber'|'konflikt'|'fehlt', grund: string|null}}
+ */
+export function vergleicheMitModell(eintrag, istWert, arten = AENDERUNGS_ARTEN) {
+    const art = arten[eintrag?.art];
+    // Merkmale leben neben dem Modell — sie können nicht mit ihm kollidieren.
+    if (!art?.beruehrtModell) return { zustand: 'sauber', grund: null };
+
+    if (istWert === undefined) {
+        return { zustand: 'fehlt', grund: 'bauteil_nicht_im_modell' };
+    }
+    // Einträge aus der Zeit vor der `basis` (Stufe 7) lassen sich nicht
+    // dreiwegig prüfen. Sie anzuwenden ist richtiger, als sie stillzulegen —
+    // aber der Grund wird mitgegeben, damit die Anzeige es sagen kann.
+    if (eintrag.basis === undefined) {
+        return { zustand: 'sauber', grund: 'ohne_basis' };
+    }
+    const gleich = gleichFuer(eintrag.art, arten);
+    if (gleich(istWert, eintrag.basis)) return { zustand: 'sauber', grund: null };
+    return { zustand: 'konflikt', grund: 'planer_hat_auch_geaendert' };
 }
 
 /**
@@ -106,20 +235,30 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      *
      * @returns {object|null} der Eintrag, oder null wenn nichts zu tun war
      */
-    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null }) {
+    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null, basis, modell }) {
         if (!(art in AENDERUNGS_ARTEN) || !globalId) return null;
         const stand = standAus(eintraege.value, art);
         const vorher = stand.has(globalId) ? stand.get(globalId) : null;
         // Dieselbe Zuweisung noch einmal ist keine Änderung — sonst füllt sich
         // das Journal mit Schritten, die nichts tun, und „zurück" braucht
-        // mehrere Klicks für einen sichtbaren Effekt.
-        if (vorher === nachher) return null;
+        // mehrere Klicks für einen sichtbaren Effekt. Der Vergleich kommt aus
+        // der Art: Objektwerte (Versatz, Maße) tragen kein `===`.
+        if (gleichFuer(art)(vorher, nachher ?? null)) return null;
 
         const eintrag = {
             id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
             art, globalId, vorher, nachher: nachher ?? null,
             wer, wann: Date.now(), modellSha,
         };
+        // `basis` ist der Wert im GELIEFERTEN Modell — der Bezugspunkt des
+        // Drei-Wege-Vergleichs. Nur Arten, die das Modell berühren, führen ihn;
+        // bei den übrigen wäre er ein Feld ohne Bedeutung.
+        if (AENDERUNGS_ARTEN[art].beruehrtModell) {
+            eintrag.basis = basis;
+            // Erzeugte Bauteile leben im CDE-eigenen Modell. Ohne diese Angabe
+            // suchte das Nachspielen sie im gelieferten und fände sie nie.
+            eintrag.modell = modell ?? 'geliefert';
+        }
         eintraege.value.push(eintrag);
         await _sichern();
         return eintrag;
@@ -147,6 +286,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             art: letzter.art, globalId: letzter.globalId,
             vorher: letzter.nachher, nachher: letzter.vorher,
             wer, wann: Date.now(), modellSha: letzter.modellSha,
+            // Die Rücknahme erbt Bezugspunkt und Modell des Schrittes, den sie
+            // zurücknimmt. Ohne das verlöre der Gegeneintrag seine `basis` und
+            // gälte beim Nachspielen als „ohne Basis" — ausgerechnet der
+            // Eintrag, der am Ende gilt.
+            ...(letzter.basis !== undefined ? { basis: letzter.basis } : {}),
+            ...(letzter.modell !== undefined ? { modell: letzter.modell } : {}),
             ruecknahmeVon: letzter.id,
         };
         eintraege.value.push(eintrag);

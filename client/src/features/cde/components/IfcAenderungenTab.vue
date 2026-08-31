@@ -55,8 +55,8 @@
                 {{ ARTEN[e.art]?.titel ?? e.art }}
               </td>
               <td class="mono kuerzel" :title="e.globalId">{{ kurz(e.globalId) }}</td>
-              <td class="mono">{{ e.vorher ?? '—' }}</td>
-              <td class="mono betont">{{ e.nachher ?? '— (Regel)' }}</td>
+              <td class="mono">{{ e.vorher == null ? '—' : beschreibeWert(e.art, e.vorher) }}</td>
+              <td class="mono betont">{{ beschreibeWert(e.art, e.nachher) }}</td>
               <td>{{ e.wer || '—' }}</td>
             </tr>
           </tbody>
@@ -96,7 +96,7 @@ import { computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
-import { useAenderungen, AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
+import { useAenderungen, AENDERUNGS_ARTEN, beschreibeWert } from '../stores/useAenderungen.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 
 const emit = defineEmits(['geaendert']);
