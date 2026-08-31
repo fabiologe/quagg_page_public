@@ -128,7 +128,12 @@ describe('Kein doppelter Code für die Schnitt-Rückmeldung', () => {
     // Zwei Stellen setzten die vier Refs von außen. Jetzt gibt es dafür
     // `verwerfen()` und `uebernehmeVonEngine()`.
     const viewer = lies('components/IfcViewer.vue');
-    expect(viewer).not.toMatch(/schnitt\.(aktiv|leisteOffen|modus|position)\.value\s*=/);
+    // `=(?!=)` — sonst trifft die Regel auch VERGLEICHE. Genau das ist am
+    // 31.08.2026 passiert: die Vorlage bekam `schnitt.modus.value === 'translate'`
+    // (die Refs brauchen dort .value, siehe refsInVorlagen.test.js), und dieser
+    // Wächter meldete einen Schreibzugriff, den es nie gab. Eine Regel, die
+    // Zuweisung und Vergleich verwechselt, misst nicht das, was sie verspricht.
+    expect(viewer).not.toMatch(/schnitt\.(aktiv|leisteOffen|modus|position)\.value\s*=(?!=)/);
     expect(viewer).toContain('schnitt.verwerfen()');
     expect(viewer).toContain('schnitt.uebernehmeVonEngine()');
   });

@@ -19,7 +19,7 @@
 
       <!-- ── Canvas + overlays ── -->
       <div class="viewer-body">
-        <div class="canvas-root" :class="{ 'measure-cursor': messen.aktiv }" ref="canvasRef"></div>
+        <div class="canvas-root" :class="{ 'measure-cursor': messen.aktiv.value }" ref="canvasRef"></div>
 
         <!-- Toolbar: Datei laden -->
         <div class="top-bar">
@@ -121,7 +121,7 @@
 
         <!-- B3: Section-Cut Bar — centered, with snap + mode + position readout -->
         <Transition name="section-slide">
-          <div v-if="schnitt.leisteOffen" class="section-bar">
+          <div v-if="schnitt.leisteOffen.value" class="section-bar">
             <span class="section-label"><CdeIcon name="section" :size="15" /></span>
 
             <!-- SC-1: Snap-to-axis buttons -->
@@ -137,21 +137,21 @@
             <div class="section-modes">
               <button
                 class="mode-btn"
-                :class="{ active: schnitt.modus === 'translate' }"
+                :class="{ active: schnitt.modus.value === 'translate' }"
                 title="Verschieben [T]"
                 @click="schnitt.setzeModus('translate')"
               >↕ Verschieben</button>
               <button
                 class="mode-btn"
-                :class="{ active: schnitt.modus === 'rotate' }"
+                :class="{ active: schnitt.modus.value === 'rotate' }"
                 title="Drehen [R]"
                 @click="schnitt.setzeModus('rotate')"
               >⟳ Drehen</button>
             </div>
 
             <!-- SC-2: Position readout -->
-            <span v-if="schnitt.position" class="section-pos">
-              Y&thinsp;{{ schnitt.position.y }}&thinsp;m
+            <span v-if="schnitt.position.value" class="section-pos">
+              Y&thinsp;{{ schnitt.position.value.y }}&thinsp;m
             </span>
 
             <div class="section-sep"></div>
@@ -210,7 +210,7 @@
 
         <!-- Mess-Hinweis (die Werte selbst stehen als Pillen an der Strecke) -->
         <Transition name="fade">
-          <div v-if="messen.meldung" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ messen.meldung.text }}</div>
+          <div v-if="messen.meldung.value" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ messen.meldung.value.text }}</div>
         </Transition>
         <Transition name="fade">
           <button
