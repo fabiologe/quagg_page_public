@@ -28,9 +28,11 @@ beforeEach(() => {
     setActivePinia(createPinia());
 });
 
-const OHNE = { dx: 0, dy: 0, dz: 0 };
-const OST_100 = { dx: 1.0, dy: 0, dz: 0 };
-const OST_150 = { dx: 1.5, dy: 0, dz: 0 };
+// `lage` speichert einen ANKER (Mitte der Bauteilhülle), keinen Versatz —
+// beide Seiten des Drei-Wege-Vergleichs müssen dieselbe Größe messen.
+const GELIEFERT = { x: 10, y: 2, z: 5 };      // Lage im gelieferten Modell
+const OST_100   = { x: 11, y: 2, z: 5 };      // 1,00 m weiter
+const OST_150   = { x: 11.5, y: 2, z: 5 };    // 1,50 m weiter
 
 describe('Die Arten', () => {
     it('trennt modellberührende von daneben liegenden', () => {
@@ -50,7 +52,7 @@ describe('Die Arten', () => {
 });
 
 describe('gleichFuer — ohne den trägt das Journal keine Objekte', () => {
-    it('vergleicht Versätze mit Bautoleranz, nicht mit ===', () => {
+    it('vergleicht Anker mit Bautoleranz, nicht mit ===', () => {
         const gleich = gleichFuer('lage');
         expect(gleich({ ...OST_100 }, { ...OST_100 })).toBe(true);
         expect(gleich(OST_100, OST_150)).toBe(false);
@@ -58,8 +60,17 @@ describe('gleichFuer — ohne den trägt das Journal keine Objekte', () => {
 
     it('lässt Zahlenrauschen unter der Toleranz durchgehen', () => {
         const gleich = gleichFuer('lage');
-        expect(gleich({ dx: 1, dy: 0, dz: 0 }, { dx: 1 + LAENGEN_TOLERANZ / 2, dy: 0, dz: 0 })).toBe(true);
-        expect(gleich({ dx: 1, dy: 0, dz: 0 }, { dx: 1 + LAENGEN_TOLERANZ * 10, dy: 0, dz: 0 })).toBe(false);
+        expect(gleich({ x: 1, y: 0, z: 0 }, { x: 1 + LAENGEN_TOLERANZ / 2, y: 0, z: 0 })).toBe(true);
+        expect(gleich({ x: 1, y: 0, z: 0 }, { x: 1 + LAENGEN_TOLERANZ * 10, y: 0, z: 0 })).toBe(false);
+    });
+
+    it('meldet UNGLEICH, wenn eine Seite gar kein Punkt ist', () => {
+        // Der Fehler der ersten Fassung: ein Versatz-Vergleich auf einem Punkt
+        // fand lauter undefined, machte Nullen daraus und meldete IMMER
+        // „gleich" — jeder Konflikt wäre still als sauber durchgegangen.
+        const gleich = gleichFuer('lage');
+        expect(gleich({ dx: 1, dy: 0, dz: 0 }, { x: 99, y: 99, z: 99 })).toBe(false);
+        expect(gleich({}, { x: 0, y: 0, z: 0 })).toBe(false);
     });
 
     it('vergleicht Maße tief', () => {
@@ -76,16 +87,16 @@ describe('gleichFuer — ohne den trägt das Journal keine Objekte', () => {
 describe('Absolute Werte — Entscheidung 1', () => {
     it('trägt beim zweiten Zug den Gesamtversatz, nicht den Zuwachs', async () => {
         const j = useAenderungen();
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: OHNE });
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_150, basis: OHNE });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_150, basis: GELIEFERT });
         expect(j.eintraege).toHaveLength(2);
         expect(standAus(j.eintraege, 'lage').get('H12')).toEqual(OST_150);
     });
 
     it('faltet weiter „letzter gewinnt" — die Stufe-7-Regel bleibt unberührt', async () => {
         const j = useAenderungen();
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_150, basis: OHNE });
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: OHNE });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_150, basis: GELIEFERT });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT });
         // Nicht 2,50 m — der letzte Wert IST das Ergebnis.
         expect(standAus(j.eintraege, 'lage').get('H12')).toEqual(OST_100);
     });
@@ -94,15 +105,15 @@ describe('Absolute Werte — Entscheidung 1', () => {
         // Ohne `gleich` verglich das Journal Objekte mit === und hielte jeden
         // Zug für neu — die Liste füllte sich mit Schritten, die nichts tun.
         const j = useAenderungen();
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: OHNE });
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: { ...OST_100 }, basis: OHNE });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: { ...OST_100 }, basis: GELIEFERT });
         expect(j.eintraege).toHaveLength(1);
     });
 
     it('nimmt einen Zug auf den Ausgangszustand zurück, nicht irgendwohin', async () => {
         const j = useAenderungen();
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: OHNE });
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_150, basis: OHNE });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_150, basis: GELIEFERT });
         await j.zurueck();
         expect(standAus(j.eintraege, 'lage').get('H12')).toEqual(OST_100);
         await j.zurueck();
@@ -113,8 +124,8 @@ describe('Absolute Werte — Entscheidung 1', () => {
 describe('basis — Entscheidung 3', () => {
     it('führt sie bei modellberührenden Arten mit', async () => {
         const j = useAenderungen();
-        const e = await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: OHNE });
-        expect(e.basis).toEqual(OHNE);
+        const e = await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT });
+        expect(e.basis).toEqual(GELIEFERT);
         expect(e.modell).toBe('geliefert');
     });
 
@@ -140,23 +151,23 @@ describe('basis — Entscheidung 3', () => {
         // Sonst gälte ausgerechnet der Eintrag, der am Ende wirkt, als
         // „ohne Basis" und entzöge sich dem Vergleich.
         const j = useAenderungen();
-        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: OHNE, modell: 'geliefert' });
+        await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT, modell: 'geliefert' });
         const gegen = await j.zurueck();
-        expect(gegen.basis).toEqual(OHNE);
+        expect(gegen.basis).toEqual(GELIEFERT);
         expect(gegen.modell).toBe('geliefert');
     });
 });
 
 describe('vergleicheMitModell — der Drei-Wege-Vergleich', () => {
-    const eintrag = { art: 'lage', globalId: 'H12', basis: OHNE, nachher: OST_150 };
+    const eintrag = { art: 'lage', globalId: 'H12', basis: GELIEFERT, nachher: OST_150 };
 
     it('ist sauber, wenn der Planer nichts angerührt hat', () => {
-        expect(vergleicheMitModell(eintrag, OHNE).zustand).toBe('sauber');
+        expect(vergleicheMitModell(eintrag, GELIEFERT).zustand).toBe('sauber');
     });
 
     it('meldet KONFLIKT, wenn der Planer dasselbe Bauteil auch bewegt hat', () => {
         // Beide haben geändert. Das kann kein Programm entscheiden.
-        const r = vergleicheMitModell(eintrag, { dx: 0.2, dy: 0, dz: 0 });
+        const r = vergleicheMitModell(eintrag, { x: 10.2, y: 2, z: 5 });
         expect(r.zustand).toBe('konflikt');
         expect(r.grund).toBe('planer_hat_auch_geaendert');
     });
@@ -174,35 +185,41 @@ describe('vergleicheMitModell — der Drei-Wege-Vergleich', () => {
 
     it('wendet Altbestand ohne basis an, sagt aber warum', () => {
         const alt = { art: 'lage', globalId: 'H12', nachher: OST_150 };
-        const r = vergleicheMitModell(alt, OHNE);
+        const r = vergleicheMitModell(alt, GELIEFERT);
         expect(r.zustand).toBe('sauber');
         expect(r.grund).toBe('ohne_basis');
     });
 
     it('benutzt die Bautoleranz, nicht die Bitgleichheit', () => {
-        const r = vergleicheMitModell(eintrag, { dx: LAENGEN_TOLERANZ / 2, dy: 0, dz: 0 });
+        const r = vergleicheMitModell(eintrag, { ...GELIEFERT, x: GELIEFERT.x + LAENGEN_TOLERANZ / 2 });
         expect(r.zustand).toBe('sauber');
     });
 });
 
 describe('beschreibeWert — der Reiter zeigt keine [object Object]', () => {
-    it('beschreibt einen Versatz mm-genau mit Vorzeichen', () => {
-        expect(beschreibeWert('lage', { dx: 0.4, dy: -0.1, dz: 0 }))
+    it('leitet den Versatz aus Basis und Ziel ab — gespeichert ist der Anker', () => {
+        const basis = { x: 0, y: 0, z: 0 };
+        expect(beschreibeWert('lage', { x: 0.4, y: -0.1, z: 0 }, basis))
             .toBe('X +400 mm · H -100 mm');
     });
 
     it('nennt KEINE Himmelsrichtungen — die Achskonvention ist noch offen', () => {
-        const s = beschreibeWert('lage', { dx: 1.5, dy: 0, dz: 2.25 });
+        const s = beschreibeWert('lage', { x: 1.5, y: 0, z: 2.25 }, { x: 0, y: 0, z: 0 });
         expect(s).toBe('X +1.500 m · Y +2.250 m');
         expect(s).not.toMatch(/Ost|West|Nord|Süd/);
     });
 
     it('verschweigt Achsen unterhalb der Toleranz', () => {
-        expect(beschreibeWert('lage', { dx: 0.4, dy: LAENGEN_TOLERANZ / 2, dz: 0 })).toBe('X +400 mm');
+        expect(beschreibeWert('lage', { x: 0.4, y: LAENGEN_TOLERANZ / 2, z: 0 }, { x: 0, y: 0, z: 0 }))
+            .toBe('X +400 mm');
     });
 
     it('sagt „unverändert" statt einer leeren Zeile', () => {
-        expect(beschreibeWert('lage', { dx: 0, dy: 0, dz: 0 })).toBe('unverändert');
+        expect(beschreibeWert('lage', GELIEFERT, GELIEFERT)).toBe('unverändert');
+    });
+
+    it('zeigt ohne Basis den Anker selbst, statt zu schweigen', () => {
+        expect(beschreibeWert('lage', { x: 10, y: 2, z: 5 })).toBe('Anker 10.00 / 2.00 / 5.00');
     });
 
     it('beschreibt Maße als Feld-Werte-Paare', () => {

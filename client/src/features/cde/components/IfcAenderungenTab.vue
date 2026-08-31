@@ -55,8 +55,8 @@
                 {{ ARTEN[e.art]?.titel ?? e.art }}
               </td>
               <td class="mono kuerzel" :title="e.globalId">{{ kurz(e.globalId) }}</td>
-              <td class="mono">{{ e.vorher == null ? '—' : beschreibeWert(e.art, e.vorher) }}</td>
-              <td class="mono betont">{{ beschreibeWert(e.art, e.nachher) }}</td>
+              <td class="mono">{{ e.vorher == null ? '—' : beschreibeWert(e.art, e.vorher, e.basis) }}</td>
+              <td class="mono betont">{{ beschreibeWert(e.art, e.nachher, e.basis) }}</td>
               <td>{{ e.wer || '—' }}</td>
             </tr>
           </tbody>

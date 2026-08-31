@@ -52,13 +52,42 @@ function gleichTief(a, b) {
     return ka.every(k => gleichTief(a[k], b[k]));
 }
 
-/** Versatz-Vergleich mit Bautoleranz — {dx, dy, dz} in Metern. */
-function gleichVersatz(a, b) {
+/**
+ * Punktvergleich mit Bautoleranz — {x, y, z} in Weltmetern.
+ *
+ * `lage` speichert einen ANKER (die Mitte der Bauteilhülle), keinen Versatz.
+ * Das ist wichtig genug für eine eigene Notiz, weil die erste Fassung es falsch
+ * hatte: Ein Versatz-Vergleich (`dx/dy/dz`) auf einen Punkt angewandt findet
+ * lauter `undefined`, macht daraus Nullen — und meldet IMMER „gleich". Jeder
+ * Konflikt wäre still als sauber durchgegangen, und ausgerechnet die
+ * Schutzvorrichtung hätte Erfolg gemeldet.
+ *
+ * Beide Seiten des Drei-Wege-Vergleichs müssen dieselbe GRÖSSE messen:
+ * `basis` (Lage im gelieferten Modell) und `nachher` (gewünschte Lage) sind
+ * beide Punkte. Der Versatz ist eine Anzeige-Ableitung, kein Speicherformat.
+ *
+ * Weltkoordinaten sind hier klein, nicht UTM-groß: das Haus normiert über
+ * `coordOffsets` (welt = roh − offset). Deshalb darf die Toleranz eng sein.
+ */
+function gleichPunkt(a, b) {
     if (Object.is(a, b)) return true;
     if (!a || !b) return false;
-    return ['dx', 'dy', 'dz'].every(
+    if (typeof a !== 'object' || typeof b !== 'object') return false;
+    // Ein Punkt ohne x/y/z ist kein Punkt — lieber ungleich melden als still
+    // Nullen vergleichen.
+    const hatXYZ = (o) => ['x', 'y', 'z'].some(k => typeof o[k] === 'number');
+    if (!hatXYZ(a) || !hatXYZ(b)) return false;
+    return ['x', 'y', 'z'].every(
         k => Math.abs((a[k] ?? 0) - (b[k] ?? 0)) <= LAENGEN_TOLERANZ,
     );
+}
+
+/** Der Versatz zwischen zwei Ankern — nur für die Anzeige. */
+export function versatzZwischen(basis, ziel) {
+    if (!basis || !ziel) return null;
+    return { dx: (ziel.x ?? 0) - (basis.x ?? 0),
+             dy: (ziel.y ?? 0) - (basis.y ?? 0),
+             dz: (ziel.z ?? 0) - (basis.z ?? 0) };
 }
 
 /**
@@ -76,7 +105,7 @@ export const AENDERUNGS_ARTEN = Object.freeze({
     kg:         { titel: 'Kostengruppe',   icon: 'kg' },
     din277:     { titel: 'DIN-277-Klasse', icon: 'areas' },
     pset:       { titel: 'Merkmalssatz',   icon: 'info',     gleich: gleichTief },
-    lage:       { titel: 'Lage',           icon: 'pointer',  beruehrtModell: true, gleich: gleichVersatz },
+    lage:       { titel: 'Lage',           icon: 'pointer',  beruehrtModell: true, gleich: gleichPunkt },
     parametrik: { titel: 'Maß',            icon: 'measure',  beruehrtModell: true, gleich: gleichTief },
     erzeugt:    { titel: 'Erzeugt',        icon: 'add',      beruehrtModell: true, gleich: gleichTief },
     geloescht:  { titel: 'Gelöscht',       icon: 'delete',   beruehrtModell: true },
@@ -113,6 +142,12 @@ function _laenge(m) {
     return v > 0 ? `+${s}` : s;
 }
 
+/** Einen Anker knapp ausschreiben — für den Fall ohne Basis. */
+function _punkt(p) {
+    if (!p) return '—';
+    return ['x', 'y', 'z'].map(k => (Number(p[k]) || 0).toFixed(2)).join(' / ');
+}
+
 /**
  * Einen Journalwert für die Anzeige beschreiben.
  *
@@ -125,13 +160,18 @@ function _laenge(m) {
  * ist (Achskonvention, UTM-Vorzeichen). Bis sie am georeferenzierten
  * Kanalmodell geklärt ist, heißen die Achsen X, Y und H.
  */
-export function beschreibeWert(art, wert) {
+export function beschreibeWert(art, wert, basis = null) {
     if (wert === null || wert === undefined) return '— (Regel)';
     if (art === 'lage') {
+        // Gespeichert wird der ANKER, angezeigt der VERSATZ dorthin — eine
+        // Weltkoordinate sagt niemandem etwas, „400 mm tiefer" schon. Ohne
+        // Basis (Altbestand) bleibt nur der Anker selbst.
+        const d = versatzZwischen(basis, wert);
+        if (!d) return `Anker ${_punkt(wert)}`;
         const teile = [];
-        if (Math.abs(wert.dx ?? 0) > LAENGEN_TOLERANZ) teile.push(`X ${_laenge(wert.dx)}`);
-        if (Math.abs(wert.dz ?? 0) > LAENGEN_TOLERANZ) teile.push(`Y ${_laenge(wert.dz)}`);
-        if (Math.abs(wert.dy ?? 0) > LAENGEN_TOLERANZ) teile.push(`H ${_laenge(wert.dy)}`);
+        if (Math.abs(d.dx) > LAENGEN_TOLERANZ) teile.push(`X ${_laenge(d.dx)}`);
+        if (Math.abs(d.dz) > LAENGEN_TOLERANZ) teile.push(`Y ${_laenge(d.dz)}`);
+        if (Math.abs(d.dy) > LAENGEN_TOLERANZ) teile.push(`H ${_laenge(d.dy)}`);
         return teile.length ? teile.join(' · ') : 'unverändert';
     }
     if (typeof wert === 'object') {
