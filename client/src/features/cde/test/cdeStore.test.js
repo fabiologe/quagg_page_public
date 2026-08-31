@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
-//
-// CDE-Store (Managen): Projekte, Bearbeiter, Dokument-Register mit
-// ISO-19650-Status, Revisionslogik über die IfcProject-GlobalId.
+/**
+ * CDE-Store — Auftrag, Modellsätze, Dokumentregister (Stufe 11.3).
+ *
+ * Vorher hiessen drei verschiedene Dinge „Projekt": der Auftragsordner auf der
+ * StorageBox und zwei im Client erfundene Sammlungen. Seit Stufe 11 sind sie
+ * getrennt, und diese Datei hält die Trennung fest:
+ *
+ *   Der AUFTRAG kommt vom Server — die CDE legt keinen an.
+ *   Die DOKUMENTE gehören dem Auftrag, nicht dem Satz.
+ *   Ein MODELLSATZ ist eine Auswahl; er besitzt nichts.
+ */
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -12,26 +20,98 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-describe('useCdeStore', () => {
-  it('legt Projekte an, aktiviert sie und persistiert', async () => {
+const REGISTER = {
+  stammdaten: { nummer: '1337', name: 'Genau', bauherr: 'Stadt', lph: 'LPH 3' },
+  saetze: [
+    { id: 's-nord', name: 'Variante Nord', zweck: 'variante', enthaelt: ['aaa'] },
+    { id: 's-sued', name: 'Variante Süd', zweck: 'variante', enthaelt: ['bbb'] },
+  ],
+}
+
+describe('Der Auftrag kommt aus dem Ordner', () => {
+  it('übernimmt Stammdaten und Sätze aus EINER Register-Antwort', async () => {
+    // Zwei Wege zur selben Liste sind genau das, woran Register und
+    // Viewer-Liste in Stufe 3 auseinandergelaufen sind.
     const cde = useCdeStore()
     await cde.ready
-    const id = await cde.createProject({ nummer: 'P9123', name: 'Testprojekt' })
-    expect(cde.activeProjectId).toBe(id)
-    expect(cde.activeProject.nummer).toBe('P9123')
+    await cde.uebernehmeRegister(REGISTER, 1337)
 
-    // Zweite Store-Instanz (frische Pinia) lädt denselben Stand
+    expect(cde.auftrag).toEqual({ id: 1337, nummer: '1337', name: 'Genau', bauherr: 'Stadt', lph: 'LPH 3' })
+    expect(cde.saetze.map(s => s.id)).toEqual(['s-nord', 's-sued'])
+  })
+
+  it('hat ohne Projekt-Id keinen Auftrag — und erfindet keinen', async () => {
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.uebernehmeRegister(REGISTER, null)
+    expect(cde.auftrag).toBe(null)
+  })
+
+  it('bietet gar keinen Weg, einen Auftrag anzulegen', () => {
+    // Ein Auftrag ist ein Ordner auf der StorageBox. Wer hier einen erfände,
+    // bekäme ein Projekt ohne Ordner, ohne Nummer und ohne Bauherrn — und
+    // genau zwei davon standen am Ende in 1337_Genau.
+    const cde = useCdeStore()
+    expect(cde.createProject).toBeUndefined()
+    expect(cde.updateProject).toBeUndefined()
+    expect(cde.deleteProject).toBeUndefined()
+  })
+})
+
+describe('Modellsätze', () => {
+  it('merkt sich den aktiven Satz über das Neuladen hinweg', async () => {
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.uebernehmeRegister(REGISTER, 1337)
+    await cde.setzeSatz('s-nord')
+    expect(cde.aktiverSatz.name).toBe('Variante Nord')
+
     setActivePinia(createPinia())
-    const cde2 = useCdeStore()
-    await cde2.ready
-    expect(cde2.projects).toHaveLength(1)
-    expect(cde2.activeProjectId).toBe(id)
+    const neu = useCdeStore()
+    await neu.ready
+    await neu.uebernehmeRegister(REGISTER, 1337)
+    expect(neu.aktiverSatzId).toBe('s-nord')
+  })
+
+  it('lässt einen Satz fallen, den es nicht mehr gibt', async () => {
+    // Sonst zeigte der Wähler auf etwas Verschwundenes, und alle Ablagen
+    // liefen in einen Scope, den niemand mehr kennt.
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.uebernehmeRegister(REGISTER, 1337)
+    await cde.setzeSatz('s-nord')
+
+    await cde.uebernehmeRegister({ ...REGISTER, saetze: [REGISTER.saetze[1]] }, 1337)
+    expect(cde.aktiverSatzId).toBe(null)
+  })
+
+  it('legt die Satz-Ablage unter einen eigenen Scope', async () => {
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.uebernehmeRegister(REGISTER, 1337)
+
+    expect(cde.satzRepo().scope).toBe('global')      // ohne Satz: Auftragsebene
+    await cde.setzeSatz('s-nord')
+    expect(cde.satzRepo().scope).toBe('stand:s-nord')
+  })
+})
+
+describe('Das Dokumentregister gehört dem AUFTRAG', () => {
+  it('bleibt beim Satzwechsel gleich — Dateien gehören nicht dem Satz', async () => {
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.uebernehmeRegister(REGISTER, 1337)
+    await cde.registerModel({ sha256: 'aaa', name: 'a.ifc' })
+
+    await cde.setzeSatz('s-nord')
+    expect(cde.dokumente).toHaveLength(1)
+    await cde.setzeSatz('s-sued')
+    expect(cde.dokumente).toHaveLength(1)
   })
 
   it('registriert Modelle als WIP mit Revisionszählung je GlobalId', async () => {
     const cde = useCdeStore()
     await cde.ready
-    await cde.createProject({ nummer: 'P1', name: 'Rev-Test' })
     await cde.setBearbeiter('Fabio')
 
     const rev1 = await cde.registerModel({ sha256: 'aaa', name: 'haus_rev1.ifc', size: 100, projectGlobalId: 'GID-X' })
@@ -49,10 +129,16 @@ describe('useCdeStore', () => {
     expect(cde.dokumente).toHaveLength(3)
   })
 
+  it('registriert auch OHNE Auftrag — das Modell liegt dann lokal', async () => {
+    // Vorher hing das an `activeProjectId` und tat ohne Projekt gar nichts.
+    const cde = useCdeStore()
+    await cde.ready
+    expect(await cde.registerModel({ sha256: 'aaa', name: 'a.ifc' })).toBeTruthy()
+  })
+
   it('Statuswechsel schreibt die Audit-Spur, ungültige Status werden abgelehnt', async () => {
     const cde = useCdeStore()
     await cde.ready
-    await cde.createProject({ nummer: 'P2', name: 'Status-Test' })
     await cde.setBearbeiter('Fabio')
     await cde.registerModel({ sha256: 'aaa', name: 'x.ifc' })
 
@@ -62,22 +148,5 @@ describe('useCdeStore', () => {
     expect(doc.status).toBe('Shared')
     expect(doc.statusHistorie.map(h => h.status)).toEqual(['WIP', 'Shared'])
     expect(ISO_STATUS).toContain('Published')
-  })
-
-  it('Register ist projekt-partitioniert; Projekt löschen räumt den Scope', async () => {
-    const cde = useCdeStore()
-    await cde.ready
-    const idA = await cde.createProject({ nummer: 'PA', name: 'A' })
-    await cde.registerModel({ sha256: 'aaa', name: 'a.ifc' })
-    const idB = await cde.createProject({ nummer: 'PB', name: 'B' })
-    expect(cde.dokumente).toHaveLength(0) // B ist leer
-
-    await cde.setActiveProject(idA)
-    expect(cde.dokumente).toHaveLength(1)
-
-    await cde.deleteProject(idA)
-    expect(cde.projects.map(p => p.id)).toEqual([idB])
-    expect(cde.activeProjectId).toBeNull()
-    expect(cde.dokumente).toHaveLength(0)
   })
 })

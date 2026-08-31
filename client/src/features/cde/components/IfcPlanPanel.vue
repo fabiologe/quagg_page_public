@@ -275,7 +275,7 @@ const autoWasserzeichen = computed(() => {
 
 /** Schriftfeld aus der Projektakte füllen — sieben Felder statt vier. */
 function ausProjekt() {
-  const p = cde.activeProject;
+  const p = cde.auftrag;
   plan.setzeSchriftfeld({
     projekt:      [p?.nummer, p?.name].filter(Boolean).join(' '),
     auftraggeber: p?.bauherr ?? '',

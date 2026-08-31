@@ -1,17 +1,29 @@
 /**
- * CDE-Store — Projekt-Verwaltung, Bearbeiter-Identität und Dokument-Register.
+ * CDE-Store — Auftrag, Modellsätze, Bearbeiter und Dokumentregister.
  *
- * Stufe „Managen" (lokal, Standalone): Projekte mit Stammdaten, ein aktives
- * Projekt, der lokale Bearbeiter-Name (Autor für Issues/Kommentare) und pro
- * Projekt ein Dokument-Register der IFC-Modelle mit ISO-19650-Status.
+ * DREI SCHICHTEN, seit Stufe 11 sauber getrennt (vorher hießen alle „Projekt"):
  *
- * Persistenz komplett über die RepoFacade:
- *   global:                'cde-projects', 'cde-active-project', 'cde-bearbeiter'
- *   scope project:<id>:    'dokumente'
+ *   Auftrag       1337_Genau — der Ordner auf der StorageBox. Nummer, Bauherr,
+ *                 LPH. GENAU EINER, und er kommt vom SERVER; die CDE legt
+ *                 keine Aufträge an. Vorher führte der Client eine eigene
+ *                 Projektliste daneben, und in `1337_Genau` standen am Ende
+ *                 zwei erfundene „Projekte" mit derselben Nummer.
+ *   Ablage        alle Container des Auftrags, `CDE/manifest.yaml`. Eine Datei
+ *                 liegt GENAU EINMAL, adressiert über ihre sha256.
+ *   Modellsatz    eine benannte AUSWAHL aus der Ablage („Bestand",
+ *                 „Variante Nord"). Er besitzt nichts — er verweist. Dasselbe
+ *                 Gelände in drei Varianten kostet einmal Platz.
  *
- * Stufe C hebt genau diese Struktur auf den Server: project.id wird dann der
- * StorageBox-Ordnername (z. B. "P9123"), das Register wandert ins manifest.yaml.
- * Statuswechsel werden schon jetzt als Audit-Spur am Dokument mitgeschrieben.
+ * Fabios Bild dafür ist Git: Blobs sind inhaltsadressiert und werden geteilt,
+ * ein Branch ist ein benannter Zeigersatz.
+ *
+ * Persistenz über die RepoFacade:
+ *   Auftragsebene       'cde-bearbeitung', 'aenderungen', 'dokumente' (offline)
+ *   scope stand:<id>    Ansichten, Stile, Issues, Journal des Modellsatzes
+ *
+ * Das Dokumentregister ist bewusst AUFTRAGSEBENE: `RemoteBackend.dokumente()`
+ * liest immer `manifest.yaml` des Projektordners und beachtet den Scope nicht.
+ * Was in Stufe 6 als Merkwürdigkeit notiert war, ist hier genau richtig.
  */
 
 import { defineStore } from 'pinia';
@@ -38,41 +50,50 @@ export function resolveWatermarkText(dokumente, sha256) {
     }
 }
 
-const KEY_PROJECTS  = 'cde-projects';
-const KEY_ACTIVE    = 'cde-active-project';
+// Legacy: die alte Client-Projektliste. Wird nur noch GELESEN — die Migration
+// (Stufe 11.5) macht daraus Modellsätze. Nicht umbenennen, sonst findet sie
+// nichts mehr (dieselbe Lehre wie bei den `ifc-viewer-*`-Schlüsseln, Stufe 1).
+const KEY_PROJECTS_ALT = 'cde-projects';
+const KEY_ACTIVE_ALT   = 'cde-active-project';
+
+const KEY_SATZ       = 'cde-aktiver-satz';
 const KEY_BEARBEITER = 'cde-bearbeiter';
-const KEY_DOKUMENTE = 'dokumente';
+const KEY_DOKUMENTE  = 'dokumente';
 
 export const useCdeStore = defineStore('cde', () => {
-  // [{ id, nummer, name, bauherr, lph, notiz, createdAt }]
-  const projects = ref([]);
-  const activeProjectId = ref(null);
+  /** Der Auftrag — vom SERVER, nicht aus dem Client. {id, nummer, name, bauherr, lph} */
+  const auftrag = ref(null);
+  /** Die Modellsätze des Auftrags — benannte Auswahlen aus der Ablage. */
+  const saetze = ref([]);
+  const aktiverSatzId = ref(null);
   const bearbeiter = ref('');
 
-  // Dokument-Register des aktiven Projekts:
+  // Dokumentregister des AUFTRAGS (nicht des Satzes):
   // [{ sha256, name, size, projectGlobalId, status, revision, addedAt,
   //    statusHistorie: [{status, von, am}] }]
   const dokumente = ref([]);
 
-  const activeProject = computed(() =>
-    projects.value.find(p => p.id === activeProjectId.value) ?? null);
+  const aktiverSatz = computed(() =>
+    saetze.value.find(s => s.id === aktiverSatzId.value) ?? null);
 
-  /** Projekt-partitionierte Facade — 'global' solange kein Projekt aktiv ist. */
-  function projectRepo() {
-    return activeProjectId.value ? repo.withScope(`project:${activeProjectId.value}`) : repo;
+  /**
+   * Die Ablage des aktiven Modellsatzes — Ansichten, Stile, Issues, Journal.
+   *
+   * OHNE Satz die Auftragsebene. Das ist kein Notbehelf: eine Korrektur, die
+   * ohne gewählte Variante gemacht wird, ist für den ganzen Auftrag gemeint.
+   */
+  function satzRepo() {
+    return aktiverSatzId.value ? repo.withScope(`stand:${aktiverSatzId.value}`) : repo;
   }
 
   // ── Laden / Initialisierung ────────────────────────────────────────────
   async function _init() {
-    const [storedProjects, storedActive, storedBearbeiter] = await Promise.all([
-      repo.get(KEY_PROJECTS), repo.get(KEY_ACTIVE), repo.get(KEY_BEARBEITER),
+    const [gespeicherterSatz, gespeicherterBearbeiter] = await Promise.all([
+      repo.get(KEY_SATZ), repo.get(KEY_BEARBEITER),
     ]);
-    if (Array.isArray(storedProjects)) projects.value = storedProjects;
-    if (typeof storedBearbeiter === 'string') bearbeiter.value = storedBearbeiter;
-    if (storedActive && projects.value.some(p => p.id === storedActive)) {
-      activeProjectId.value = storedActive;
-      await _loadDokumente();
-    }
+    if (typeof gespeicherterBearbeiter === 'string') bearbeiter.value = gespeicherterBearbeiter;
+    if (typeof gespeicherterSatz === 'string') aktiverSatzId.value = gespeicherterSatz;
+    await _loadDokumente();
   }
   const ready = _init();
 
@@ -86,59 +107,78 @@ export const useCdeStore = defineStore('cde', () => {
    *
    * Ohne Server-Backend (IndexedDB, Arbeit ohne Netz) bleibt die lokale Liste
    * das Register — dort gibt es kein Manifest, an dem man sich ausrichten
-   * koennte.
+   * koennte. Sie liegt auf der AUFTRAGSEBENE, weil Dokumente dem Auftrag
+   * gehoeren und nicht dem Modellsatz.
    */
   async function _loadDokumente() {
-    const vomServer = await projectRepo().dokumente();
+    const vomServer = await repo.dokumente();
     if (Array.isArray(vomServer)) { dokumente.value = vomServer; return; }
-    const stored = await projectRepo().get(KEY_DOKUMENTE);
+    const stored = await repo.get(KEY_DOKUMENTE);
     dokumente.value = Array.isArray(stored) ? stored : [];
   }
   async function _saveDokumente() {
     // Mit Server-Backend schreibt das Manifest, nicht der Viewer. Eine zweite
     // Datei danebenzulegen brachte genau die Doppelfuehrung zurueck.
     if (repo.remote) return;
-    await projectRepo().set(KEY_DOKUMENTE, JSON.parse(JSON.stringify(dokumente.value)));
+    await repo.set(KEY_DOKUMENTE, JSON.parse(JSON.stringify(dokumente.value)));
   }
 
-  // ── Projekte ────────────────────────────────────────────────────────────
-  async function _saveProjects() {
-    await repo.set(KEY_PROJECTS, JSON.parse(JSON.stringify(projects.value)));
-  }
+  // ── Auftrag und Modellsätze ────────────────────────────────────────────
 
-  async function createProject({ nummer = '', name = '', bauherr = '', lph = '', notiz = '' } = {}) {
-    const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-    projects.value.push({ id, nummer, name, bauherr, lph, notiz, createdAt: Date.now() });
-    await _saveProjects();
-    await setActiveProject(id);
-    return id;
-  }
-
-  async function updateProject(id, patch) {
-    const p = projects.value.find(x => x.id === id);
-    if (!p) return false;
-    Object.assign(p, patch);
-    await _saveProjects();
-    return true;
-  }
-
-  /** Projekt + alle projekt-partitionierten Daten löschen. */
-  async function deleteProject(id) {
-    projects.value = projects.value.filter(p => p.id !== id);
-    await _saveProjects();
-    await repo.withScope(`project:${id}`).clear();
-    if (activeProjectId.value === id) {
-      activeProjectId.value = null;
-      dokumente.value = [];
-      await repo.delete(KEY_ACTIVE);
+  /**
+   * Auftrag und Sätze aus der Register-Antwort des Servers übernehmen.
+   *
+   * EIN Aufruf liefert beides (`GET /projekte/{id}/cde`) — deshalb wird hier
+   * hineingereicht statt selbst geholt: zwei Wege zur selben Liste sind genau
+   * das, woran sie in Stufe 3 auseinandergelaufen ist.
+   */
+  async function uebernehmeRegister(register, projektId) {
+    const st = register?.stammdaten ?? {};
+    auftrag.value = projektId
+      ? { id: projektId, nummer: st.nummer ?? String(projektId), name: st.name ?? `Projekt ${projektId}`,
+          bauherr: st.bauherr ?? '', lph: st.lph ?? '' }
+      : null;
+    saetze.value = Array.isArray(register?.saetze) ? register.saetze : [];
+    if (Array.isArray(register?.dokumente)) dokumente.value = register.dokumente;
+    // Ein gespeicherter Satz, den es nicht mehr gibt, darf nicht aktiv bleiben.
+    if (aktiverSatzId.value && !saetze.value.some(s => s.id === aktiverSatzId.value)) {
+      await setzeSatz(null);
     }
   }
 
-  async function setActiveProject(id) {
-    activeProjectId.value = id;
-    if (id) await repo.set(KEY_ACTIVE, id);
-    else    await repo.delete(KEY_ACTIVE);
-    await _loadDokumente();
+  async function setzeSatz(id) {
+    aktiverSatzId.value = id || null;
+    if (id) await repo.set(KEY_SATZ, id);
+    else    await repo.delete(KEY_SATZ);
+  }
+
+  async function ladeSaetze() {
+    if (!repo.remote || !auftrag.value?.id) return saetze.value;
+    try {
+      saetze.value = await repo.saetzeLesen();
+    } catch (fehler) {
+      console.warn('cde: saetze laden', fehler?.message ?? fehler);
+    }
+    return saetze.value;
+  }
+
+  async function satzAnlegen({ name, zweck = 'variante', enthaelt = [] }) {
+    const satz = await repo.satzAnlegen({ name, zweck, enthaelt });
+    await ladeSaetze();
+    await setzeSatz(satz.id);
+    return satz;
+  }
+
+  async function satzAendern(id, patch) {
+    const satz = await repo.satzAendern(id, patch);
+    await ladeSaetze();
+    return satz;
+  }
+
+  async function satzLoeschen(id) {
+    await repo.satzLoeschen(id);
+    if (aktiverSatzId.value === id) await setzeSatz(null);
+    await ladeSaetze();
   }
 
   async function setBearbeiter(name) {
@@ -149,11 +189,6 @@ export const useCdeStore = defineStore('cde', () => {
   // ── Dokument-Register (ISO 19650 light) ─────────────────────────────────
 
   /**
-   * Modell im Register anlegen bzw. auffrischen. Revisionslogik: Dateien mit
-   * derselben IfcProject-GlobalId sind Revisionen desselben Dokuments —
-   * eine neue sha256 unter bekannter GlobalId bekommt die nächste Revision.
-   */
-  /**
    * Ein geladenes Modell im Register fuehren.
    *
    * Mit Server-Backend wird NICHT blind ein WIP-Eintrag angelegt: die Datei
@@ -163,7 +198,7 @@ export const useCdeStore = defineStore('cde', () => {
    * `status: 'WIP'` an, und genau der speiste das Wasserzeichen im Export.
    */
   async function registerModel({ sha256, name, size = 0, projectGlobalId = null }) {
-    if (!activeProjectId.value || !sha256) return null;
+    if (!sha256) return null;
 
     if (repo.remote) {
       await _loadDokumente();
@@ -205,7 +240,7 @@ export const useCdeStore = defineStore('cde', () => {
     // und die beiden Ansichten desselben Dokuments zeigten Verschiedenes.
     if (repo.remote) {
       try {
-        await projectRepo().setzeStatus(sha256, status);
+        await repo.setzeStatus(sha256, status);
         await _loadDokumente();
         return true;
       } catch (fehler) {
@@ -234,7 +269,7 @@ export const useCdeStore = defineStore('cde', () => {
   async function removeDokument(sha256) {
     if (repo.remote) {
       try {
-        await projectRepo().entferne(sha256);
+        await repo.entferne(sha256);
         await _loadDokumente();
         return true;
       } catch (fehler) {
@@ -249,9 +284,11 @@ export const useCdeStore = defineStore('cde', () => {
 
   return {
     ready,
-    projects, activeProjectId, activeProject, bearbeiter, dokumente,
-    projectRepo,
-    createProject, updateProject, deleteProject, setActiveProject, setBearbeiter,
+    auftrag, saetze, aktiverSatzId, aktiverSatz, bearbeiter, dokumente,
+    satzRepo, uebernehmeRegister, setzeSatz, ladeSaetze,
+    satzAnlegen, satzAendern, satzLoeschen, setBearbeiter,
     registerModel, setDokumentStatus, removeDokument,
+    // Legacy-Lesepfade für die Migration (Stufe 11.5)
+    KEY_PROJECTS_ALT, KEY_ACTIVE_ALT,
   };
 });

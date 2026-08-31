@@ -286,7 +286,7 @@ function onImport(e) {
 async function onBcfExport() {
   try {
     const blob = await exportBcf(ifc.annotations, {
-      projectName: cde.activeProject?.name || 'Projekt',
+      projectName: cde.auftrag?.name || 'Projekt',
       author: cde.bearbeiter || 'quagg-cde',
     });
     _download(blob, `issues-${new Date().toISOString().slice(0, 10)}.bcfzip`);

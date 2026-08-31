@@ -54,7 +54,7 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
         // Bei aktivem Projekt ins Dokumentregister aufnehmen. Mit Server-Backend
         // liest das nur nach — die Datei ist durch `_ablegen` schon hochgeladen
         // und steht im Manifest.
-        if (cde.activeProjectId && identity.sha256) {
+        if (cde.auftrag?.id && identity.sha256) {
             cde.registerModel({
                 sha256: identity.sha256,
                 name,
@@ -67,10 +67,10 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
                 // aus wie „es passiert gar nichts".
                 ablageHinweis.value = `Nicht ins Projektregister aufgenommen: ${fehlerLesbar(fehler).text}`;
             });
-        } else if (!cde.activeProjectId) {
+        } else if (!cde.auftrag?.id) {
             // Kein Fehler, aber auch kein Erfolg: das Modell ist nur lokal.
             // Ohne diesen Satz sucht der Nutzer den Fehler bei sich.
-            ablageHinweis.value = 'Kein Projekt gewaehlt — das Modell liegt nur lokal im Browser.';
+            ablageHinweis.value = 'Kein Auftrag gewaehlt — das Modell liegt nur lokal im Browser.';
         }
     }
 

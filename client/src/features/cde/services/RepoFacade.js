@@ -317,6 +317,37 @@ export class RemoteBackend {
         this._register = null;
     }
 
+    // ── Modellsaetze (Stufe 11) ────────────────────────────────────────
+    // Sie leben im selben Manifest wie die Dokumente und kommen mit
+    // `_registerLaden` ohnehin mit; die Methoden hier sind fuers Schreiben und
+    // fuer das gezielte Nachlesen nach einer Aenderung.
+
+    async saetzeLesen() {
+        const api = await this._client();
+        return (await api.get(`/projekte/${this.projektId}/cde/saetze`)).data;
+    }
+
+    async satzAnlegen({ name, zweck = 'variante', enthaelt = [] }) {
+        const api = await this._client();
+        const antwort = await api.post(`/projekte/${this.projektId}/cde/saetze`, { name, zweck, enthaelt });
+        this._register = null;          // die Register-Antwort fuehrt die Saetze mit
+        return antwort.data;
+    }
+
+    async satzAendern(satzId, patch) {
+        const api = await this._client();
+        const antwort = await api.put(`/projekte/${this.projektId}/cde/saetze/${satzId}`, patch);
+        this._register = null;
+        return antwort.data;
+    }
+
+    async satzLoeschen(satzId) {
+        const api = await this._client();
+        await api.delete(`/projekte/${this.projektId}/cde/saetze/${satzId}`);
+        this._register = null;
+        return true;
+    }
+
     /** Eintrag aus dem Register nehmen (DELETE …/cde/{sha}). */
     async entferne(sha256) {
         const api = await this._client();
@@ -599,6 +630,29 @@ export class RepoFacade {
         if (!this._backend.setzeStatus) return false;
         await this._backend.setzeStatus(sha256, status);
         return true;
+    }
+
+    /**
+     * Modellsaetze — nur das RemoteBackend fuehrt sie.
+     *
+     * Ohne Server gibt es keine Saetze: sie leben im Manifest des
+     * Projektordners. Der Store faellt dann auf „kein Satz" zurueck, und alles
+     * liegt auf der Auftragsebene — das ist der Offline-Fall, nicht ein Fehler.
+     */
+    async saetzeLesen() {
+        return this._backend.saetzeLesen ? this._backend.saetzeLesen() : [];
+    }
+    async satzAnlegen(daten) {
+        if (!this._backend.satzAnlegen) throw new Error('Modellsätze brauchen ein Projekt auf dem Server.');
+        return this._backend.satzAnlegen(daten);
+    }
+    async satzAendern(satzId, patch) {
+        if (!this._backend.satzAendern) throw new Error('Modellsätze brauchen ein Projekt auf dem Server.');
+        return this._backend.satzAendern(satzId, patch);
+    }
+    async satzLoeschen(satzId) {
+        if (!this._backend.satzLoeschen) return false;
+        return this._backend.satzLoeschen(satzId);
     }
 
     /** @returns {Promise<boolean>} false, wenn das Backend nichts entfernen kann */

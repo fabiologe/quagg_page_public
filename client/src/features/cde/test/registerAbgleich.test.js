@@ -208,7 +208,6 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
 
     const cde = useCdeStore();
     await cde.ready;
-    await cde.setActiveProject(await cde.createProject({ nummer: '1338', name: 'Kanal' }));
     expect(cde.dokumente).toEqual([]);
 
     // Der Server bekommt die Datei (so, wie es _persistModelBlob tut) …
@@ -234,7 +233,6 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
 
     const cde = useCdeStore();
     await cde.ready;
-    await cde.setActiveProject(await cde.createProject({ nummer: '1338', name: 'Kanal' }));
     await cde.registerModel({ sha256: 'aaa', name: 'Kanal_R02.ifc' });
 
     const geschrieben = api.put.mock.calls.map((c) => c[0]);
@@ -247,7 +245,6 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
 
     const cde = useCdeStore();
     await cde.ready;
-    await cde.setActiveProject(await cde.createProject({ nummer: '1338', name: 'Kanal' }));
 
     expect(await cde.setDokumentStatus('aaa', 'Shared')).toBe(true);
     expect(api.put).toHaveBeenCalledWith('/projekte/1338/cde/aaa/status', { status: 'Shared' });
@@ -260,7 +257,6 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
 
     const cde = useCdeStore();
     await cde.ready;
-    await cde.setActiveProject(await cde.createProject({ nummer: '1338', name: 'Kanal' }));
 
     expect(await cde.removeDokument('aaa')).toBe(true);
     expect(api.delete).toHaveBeenCalledWith('/projekte/1338/cde/aaa');
@@ -271,7 +267,6 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
     // Offline-Fall: kein Manifest, an dem man sich ausrichten könnte.
     const cde = useCdeStore();
     await cde.ready;
-    await cde.setActiveProject(await cde.createProject({ nummer: 'P1', name: 'Lokal' }));
 
     const doc = await cde.registerModel({ sha256: 'lok', name: 'Haus.ifc' });
     expect(doc?.status).toBe('WIP');

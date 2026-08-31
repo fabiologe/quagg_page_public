@@ -747,7 +747,7 @@ async function ansichtAufsBlatt() {
   const bild = engine.value?.getCanvasSnapshot?.(3);
   if (!bild) return;
   const { exportPlanPDF } = await import('../services/IfcPdfExporter.js');
-  const p = cde.activeProject;
+  const p = cde.auftrag;
   exportPlanPDF({
     snapshot: bild,
     format: ansicht.format,

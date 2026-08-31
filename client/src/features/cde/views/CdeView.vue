@@ -1,29 +1,46 @@
 <template>
   <div class="cde-view">
-    <!-- ── Projekt-Leiste (Managen) ── -->
+    <!-- ── Auftrags- und Satz-Leiste (Managen) ──
+         Der AUFTRAG steht fest (er kommt aus dem Ordner) und ist deshalb Text,
+         kein Wähler. Gewählt wird der MODELLSATZ — die Variante. -->
     <div class="cde-bar">
       <span class="cde-brand"><CdeIcon name="cde" :size="17" /> CDE</span>
 
-      <select class="cde-project-select" :value="cde.activeProjectId ?? ''" @change="onProjectChange">
-        <option value="">— kein Projekt —</option>
-        <option v-for="p in cde.projects" :key="p.id" :value="p.id">
-          {{ p.nummer ? p.nummer + ' — ' : '' }}{{ p.name || '(ohne Namen)' }}
-        </option>
-      </select>
+      <span v-if="cde.auftrag" class="cde-auftrag" :title="`Auftrag ${cde.auftrag.nummer} — kommt aus dem Projektordner`">
+        {{ cde.auftrag.nummer }} · {{ cde.auftrag.name }}
+      </span>
 
-      <button class="cde-btn" @click="onNewProject" title="Neues Projekt anlegen">
-        <CdeIcon name="add" :size="14" /> Projekt
-      </button>
+      <template v-if="cde.auftrag">
+        <select class="cde-project-select" :value="cde.aktiverSatzId ?? ''" @change="onSatzChange"
+                title="Modellsatz — eine benannte Auswahl aus den Modellen des Auftrags">
+          <option value="">— ganzer Auftrag —</option>
+          <option v-for="s in cde.saetze" :key="s.id" :value="s.id">
+            {{ s.name }}<template v-if="s.zweck && s.zweck !== 'variante'"> ({{ s.zweck }})</template>
+          </option>
+        </select>
+
+        <button class="cde-btn" @click="onNeuerSatz" title="Modellsatz anlegen — übernimmt die aktuelle Auswahl">
+          <CdeIcon name="add" :size="14" /> Satz
+        </button>
+        <button class="cde-btn" :disabled="!cde.aktiverSatz" @click="onSatzUmbenennen" title="Modellsatz umbenennen">
+          <CdeIcon name="edit" :size="14" />
+        </button>
+        <button class="cde-btn" :disabled="!cde.aktiverSatz" @click="onSatzLoeschen"
+                title="Modellsatz löschen — die Modelle bleiben">
+          <CdeIcon name="delete" :size="14" />
+        </button>
+      </template>
+
       <button
         class="cde-btn"
-        :disabled="!cde.activeProject"
+        :disabled="!cde.auftrag"
         :class="{ active: showStammdaten }"
         @click="showStammdaten = !showStammdaten; showRegister = false"
-        title="Projekt-Stammdaten"
+        title="Auftrags-Stammdaten"
       ><CdeIcon name="stammdaten" :size="14" /> Stammdaten</button>
       <button
         class="cde-btn"
-        :disabled="!cde.activeProject"
+        :disabled="!cde.auftrag"
         :class="{ active: showRegister }"
         @click="showRegister = !showRegister; showStammdaten = false"
         title="Dokument-Register (ISO-19650-Status)"
@@ -71,52 +88,86 @@
       </label>
     </div>
 
-    <!-- ── Stammdaten-Panel ── -->
-    <div v-if="showStammdaten && cde.activeProject" class="cde-panel">
+    <!-- Bericht der einmaligen Übernahme (Stufe 11.5). Er nennt Alteinträge
+         ohne Datei beim Namen — die dürfen nicht in der Konsole enden. -->
+    <div v-if="migrationsBericht" class="cde-panel cde-migration">
+      <CdeIcon name="info" :size="14" />
+      <span>{{ migrationsBericht }}</span>
+      <button class="cde-btn sm" @click="migrationsBericht = ''" title="Ausblenden" aria-label="Ausblenden">
+        <CdeIcon name="close" :size="12" />
+      </button>
+    </div>
+
+    <!-- ── Auftragswähler ──
+         Ohne `?projekt=` gibt es keinen Auftrag. Vorher stand hier eine
+         Client-Projektliste, in der man sich Projekte ausdenken konnte, die es
+         gar nicht gibt. Jetzt kommen sie aus dem Projektbestand. -->
+    <div v-if="!cde.auftrag" class="cde-panel cde-auftragswahl">
+      <h2>Auftrag wählen</h2>
+      <p class="cde-hint">
+        Die CDE arbeitet im Ordner eines Auftrags: dort liegen die Modelle, das
+        Register und die Festlegungen. Ohne Auftrag lässt sich eine IFC nur
+        ansehen — nichts wird abgelegt.
+      </p>
+      <p v-if="auftragsFehler" class="cde-fehler">{{ auftragsFehler }}</p>
+      <ul v-else-if="auftraege.length" class="cde-auftragsliste">
+        <li v-for="a in auftraege" :key="a.id">
+          <button class="cde-auftrag-knopf" :disabled="!a.ordner" @click="onAuftragWaehlen(a.id)">
+            <span class="nr">{{ a.id }}</span>
+            <span class="nm">{{ a.name || '(ohne Bezeichnung)' }}</span>
+            <small v-if="!a.ordner">kein Projektordner</small>
+          </button>
+        </li>
+      </ul>
+      <p v-else class="cde-hint">Keine Aufträge gefunden.</p>
+    </div>
+
+    <!-- ── Stammdaten-Panel ──
+         NUR ANZEIGE. Nummer, Bezeichnung und Bauherr gehören dem Projekt und
+         werden in der Akte gepflegt; sie hier bearbeitbar zu machen hiesse,
+         dieselbe Angabe an zwei Orten zu führen. Genau daran sind vorher schon
+         Register und Status auseinandergelaufen. -->
+    <div v-if="showStammdaten && cde.auftrag" class="cde-panel">
       <div class="cde-panel-grid">
-        <label>Projekt-Nr.
-          <input type="text" :value="cde.activeProject.nummer" placeholder="z. B. P9123"
-                 @change="updateActive({ nummer: $event.target.value.trim() })" />
-        </label>
-        <label>Bezeichnung
-          <input type="text" :value="cde.activeProject.name"
-                 @change="updateActive({ name: $event.target.value.trim() })" />
-        </label>
-        <label>Bauherr / AG
-          <input type="text" :value="cde.activeProject.bauherr"
-                 @change="updateActive({ bauherr: $event.target.value.trim() })" />
-        </label>
-        <label>Leistungsphase
-          <select :value="cde.activeProject.lph" @change="updateActive({ lph: $event.target.value })">
-            <option value="">—</option>
-            <option v-for="n in 9" :key="n" :value="`LPH ${n}`">LPH {{ n }}</option>
-          </select>
-        </label>
-        <label class="wide">Notiz
-          <input type="text" :value="cde.activeProject.notiz"
-                 @change="updateActive({ notiz: $event.target.value })" />
-        </label>
+        <label>Auftrags-Nr.<input type="text" :value="cde.auftrag.nummer" readonly /></label>
+        <label>Bezeichnung<input type="text" :value="cde.auftrag.name" readonly /></label>
+        <label>Bauherr / AG<input type="text" :value="cde.auftrag.bauherr || '—'" readonly /></label>
+        <label>Leistungsphase<input type="text" :value="cde.auftrag.lph || '—'" readonly /></label>
       </div>
       <div class="cde-panel-footer">
-        <span class="cde-hint">Projekt-Nr. = späterer StorageBox-Ordnername (Stufe C).</span>
-        <button class="cde-btn danger" @click="onDeleteProject">Projekt löschen</button>
+        <span class="cde-hint">Aus dem Projektordner — geändert wird in der Projekt-Akte.</span>
+        <a class="cde-btn" :href="`/intern/projects?projekt=${cde.auftrag.id}`" target="_blank" rel="noopener">
+          <CdeIcon name="open" :size="14" /> Zur Akte
+        </a>
       </div>
     </div>
 
     <!-- ── Dokument-Register ── -->
-    <div v-if="showRegister && cde.activeProject" class="cde-panel">
+    <div v-if="showRegister && cde.auftrag" class="cde-panel">
       <div v-if="!cde.dokumente.length" class="cde-empty">
         Noch keine Modelle registriert — beim Laden einer IFC-Datei mit aktivem
-        Projekt wird sie automatisch als <b>WIP</b> aufgenommen.
+        Auftrag wird sie automatisch als <b>WIP</b> aufgenommen.
       </div>
       <table v-else class="cde-doc-table">
         <thead>
           <tr>
+            <th v-if="cde.aktiverSatz" :title="`Im Modellsatz „${cde.aktiverSatz.name}“`">Satz</th>
             <th>Dokument</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th>Aufgenommen</th><th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="d in sortedDokumente" :key="d.sha256">
+            <!-- Stufe 11.4: Was liegt im aktiven Modellsatz? Der Haken ist die
+                 EINZIGE Stelle, an der sich Varianten unterscheiden — alles
+                 andere (Dateien, Register, Status) gehört dem Auftrag. -->
+            <td v-if="cde.aktiverSatz" class="doc-satz">
+              <input
+                type="checkbox"
+                :checked="(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
+                :title="`In „${cde.aktiverSatz.name}“ führen`"
+                @change="satzUmschalten(d.sha256)"
+              />
+            </td>
             <td class="doc-name" :title="d.sha256">{{ d.name }}</td>
             <td class="doc-rev">{{ d.revision }}</td>
             <td class="doc-size">{{ fmtBytes(d.size) }}</td>
@@ -334,6 +385,9 @@ import { usePlanInhalt } from '../stores/usePlanInhalt.js';
 import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
 import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
+import { AuftragApi } from '../services/AuftragApi.js';
+import { berichtText, migriere } from '../services/SatzMigration.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -360,6 +414,12 @@ if (Number.isInteger(cockpitProjektId) && cockpitProjektId > 0) {
 // den eingebauten Standard.
 repo.setBueroBackend(new BueroBackend());
 const cde = useCdeStore();
+const aenderungen = useAenderungen();
+/** Die Aufträge zur Auswahl — nur gefüllt, wenn `?projekt=` fehlt. */
+const auftraege = ref([]);
+const auftragsFehler = ref('');
+/** Was die einmalige Übernahme alter Client-Projekte ergeben hat (Stufe 11.5). */
+const migrationsBericht = ref('');
 const panels = usePanels();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
@@ -444,8 +504,8 @@ const planWasserzeichen = computed(() => {
 const planSchriftfeld = computed(() => ({
   ...plan.schriftfeld,
   projekt:      plan.schriftfeld.projekt
-                || [cde.activeProject?.nummer, cde.activeProject?.name].filter(Boolean).join(' '),
-  auftraggeber: plan.schriftfeld.auftraggeber || (cde.activeProject?.bauherr ?? ''),
+                || [cde.auftrag?.nummer, cde.auftrag?.name].filter(Boolean).join(' '),
+  auftraggeber: plan.schriftfeld.auftraggeber || (cde.auftrag?.bauherr ?? ''),
   bearbeiter:   plan.schriftfeld.bearbeiter   || (cde.bearbeiter ?? ''),
   massstab:     `1:${ansicht.massstab}`,
 }));
@@ -511,36 +571,62 @@ function onKeyDown(e) {
  * Stammdaten kommen aus der Projektakte (kein Handeintrag), das CDE-Projekt wird
  * bei Bedarf angelegt und aktiv gesetzt; eine Datei wird direkt geladen.
  */
-async function projektAusCockpit() {
+/**
+ * Den Auftrag aus dem Projektordner übernehmen.
+ *
+ * EIN Aufruf liefert Stammdaten, Dokumente UND Modellsätze — sie werden in den
+ * Store hineingereicht, statt dass er sie ein zweites Mal holt. Genau daran
+ * sind Register und Viewer-Liste in Stufe 3 auseinandergelaufen.
+ *
+ * Die CDE legt KEINE Aufträge mehr an. Ein Auftrag ist ein Ordner auf der
+ * StorageBox; wer hier einen erfände, bekäme ein Projekt ohne Ordner, ohne
+ * Nummer und ohne Bauherrn — und genau zwei davon standen am Ende in
+ * `1337_Genau`.
+ */
+async function auftragAusOrdner() {
   const id = Number(route.query.projekt);
-  if (!Number.isInteger(id) || id <= 0) return;
+  if (!Number.isInteger(id) || id <= 0) { auftragsListeLaden(); return; }
   try {
-    const { default: api } = await import('@/services/api');
-    const register = (await api.get(`/projekte/${id}/cde`)).data;
-    const st = register.stammdaten || {};
+    const register = await AuftragApi.register(id);
     await cde.ready;
-    let projekt = cde.projects.find((p) => String(p.nummer) === String(id));
-    if (!projekt) {
-      const neuId = await cde.createProject({ nummer: String(id), name: st.name || `Projekt ${id}`, bauherr: st.bauherr || '', lph: st.lph || '' });
-      projekt = cde.projects.find((p) => p.id === neuId);
-    } else if (st.name && (projekt.name !== st.name || projekt.bauherr !== (st.bauherr || ''))) {
-      await cde.updateProject(projekt.id, { name: st.name, bauherr: st.bauherr || '', lph: st.lph || projekt.lph });
+    await cde.uebernehmeRegister(register, id);
+
+    // Stufe 11.5: die alten Client-Projekte einmalig zu Modellsätzen machen.
+    // Läuft VOR dem Setzen des Satzes, damit ein frisch übernommener gleich
+    // gewählt werden kann. Idempotent — die Marke hält fest, dass es lief.
+    try {
+        const bericht = await migriere({
+            repo, manifest: cde.dokumente,
+            satzAnlegen: (daten) => cde.satzAnlegen(daten),
+        });
+        migrationsBericht.value = berichtText(bericht);
+        if (bericht.angelegt.length) await cde.ladeSaetze();
+    } catch (fehler) {
+        console.warn('cde: satz-migration', fehler);
     }
-    // setActiveProject laedt das Dokumentregister mit — bei aktivem
-    // RemoteBackend aus dem Manifest des Projektordners. `register.dokumente`
-    // von oben wird hier bewusst NICHT durchgereicht: es gaebe wieder zwei
-    // Wege zur selben Liste, und genau daran ist sie auseinandergelaufen.
-    await cde.setActiveProject(projekt.id);
+
+    await aenderungen.setzeSatz(cde.aktiverSatzId);
     const datei = route.query.datei;
     if (datei) await viewerRef.value?.openFromProjectPath?.(String(datei));
   } catch (fehler) {
-    console.warn('cde: projekt aus cockpit', fehler);
+    auftragsFehler.value = 'Der Projektordner ist nicht erreichbar.';
+    console.warn('cde: auftrag aus ordner', fehler);
+  }
+}
+
+/** Ohne `?projekt=` zeigt die CDE die echten Aufträge zur Auswahl. */
+async function auftragsListeLaden() {
+  try {
+    auftraege.value = await AuftragApi.liste();
+  } catch (fehler) {
+    auftragsFehler.value = 'Die Projektliste ist nicht erreichbar — angemeldet?';
+    console.warn('cde: auftragsliste', fehler);
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
-  projektAusCockpit();
+  auftragAusOrdner();
   // Der Modus ist ein Belang der Schale, nicht des Viewers — er wird hier
   // angemeldet und erscheint dadurch automatisch in Palette und Hilfe.
   cmds.register('ansicht', ansichtsModi.map(m => ({
@@ -589,32 +675,78 @@ function onClose() {
   router.push('/tools');
 }
 
-function onProjectChange(e) {
-  cde.setActiveProject(e.target.value || null);
-  showStammdaten.value = false;
+/**
+ * Modellsatz wechseln.
+ *
+ * Der Wechsel lädt DAS JOURNAL des Satzes nach — danach gilt ein anderer
+ * wirksamer Stand. Anschliessend läuft das Nachspielen erneut; genau das ist
+ * der Variantenwechsel, und es braucht dafür keinen eigenen Mechanismus.
+ */
+async function onSatzChange(e) {
+  await cde.setzeSatz(e.target.value || null);
+  await aenderungen.setzeSatz(cde.aktiverSatzId);
   showRegister.value = false;
 }
 
-async function onNewProject() {
-  const nummer = prompt('Projekt-Nummer (StorageBox-Konvention, z. B. P9123):', '');
-  if (nummer === null) return;
-  const name = prompt('Projekt-Bezeichnung:', '');
-  if (name === null) return;
-  await cde.createProject({ nummer: nummer.trim(), name: name.trim() });
-  showStammdaten.value = true;
+/** Einen Modellsatz anlegen — er übernimmt die Auswahl des aktuellen. */
+async function onNeuerSatz() {
+  const name = prompt('Name des Modellsatzes (z. B. „Variante Nord"):', '');
+  if (name === null || !name.trim()) return;
+  try {
+    // Wie `git branch`: der neue Satz startet mit dem, was gerade gilt.
+    await cde.satzAnlegen({ name: name.trim(), enthaelt: cde.aktiverSatz?.enthaelt ?? [] });
+    await aenderungen.setzeSatz(cde.aktiverSatzId);
+  } catch (fehler) {
+    alert(fehler?.response?.data?.detail || fehler?.message || 'Modellsatz konnte nicht angelegt werden.');
+  }
 }
 
-function updateActive(patch) {
-  if (cde.activeProject) cde.updateProject(cde.activeProject.id, patch);
+async function onSatzUmbenennen() {
+  const s = cde.aktiverSatz;
+  if (!s) return;
+  const name = prompt('Neuer Name:', s.name);
+  if (name === null || !name.trim()) return;
+  try { await cde.satzAendern(s.id, { name: name.trim() }); }
+  catch (fehler) { alert(fehler?.response?.data?.detail || 'Umbenennen fehlgeschlagen.'); }
 }
 
-async function onDeleteProject() {
-  const p = cde.activeProject;
-  if (!p) return;
-  if (!confirm(`Projekt „${p.nummer || p.name}" samt Register und Projekt-Daten löschen?\n(IFC-Dateien in der lokalen Ablage bleiben erhalten.)`)) return;
-  await cde.deleteProject(p.id);
-  showStammdaten.value = false;
+/**
+ * Einen Modellsatz löschen.
+ *
+ * Die DATEIEN bleiben — sie gehören dem Auftrag, nicht dem Satz. Das steht
+ * ausdrücklich in der Rückfrage, sonst klingt „löschen" nach mehr, als es ist.
+ */
+async function onSatzLoeschen() {
+  const s = cde.aktiverSatz;
+  if (!s) return;
+  if (!confirm(`Modellsatz „${s.name}" löschen?\nDie Modelle selbst bleiben im Projekt — ein Satz ist nur eine Auswahl.`)) return;
+  await cde.satzLoeschen(s.id);
+  await aenderungen.setzeSatz(cde.aktiverSatzId);
   showRegister.value = false;
+}
+
+/** Ein Modell in den aktiven Satz aufnehmen oder herausnehmen. */
+async function satzUmschalten(sha256) {
+  const s = cde.aktiverSatz;
+  if (!s) return;
+  const drin = (s.enthaelt ?? []).includes(sha256);
+  const neu = drin ? s.enthaelt.filter(x => x !== sha256) : [...(s.enthaelt ?? []), sha256];
+  try {
+    await cde.satzAendern(s.id, { enthaelt: neu });
+  } catch (fehler) {
+    // Der Server lehnt zwei Revisionen desselben Modells ab. Das ist keine
+    // Panne, sondern die Invariante — sie gehört im Klartext gezeigt.
+    alert(fehler?.response?.data?.detail || 'Das geht in diesem Satz nicht.');
+  }
+}
+
+/** Zu einem anderen Auftrag wechseln — über die URL, nicht im laufenden Betrieb. */
+function onAuftragWaehlen(id) {
+  if (!id) return;
+  // `repo.setBackend` läuft beim Aufbau der Ansicht. Es hier im Betrieb zu
+  // tauschen wäre ein zweiter Weg zum selben Zustand — und die Stores haben
+  // bereits gelesen. Deshalb neu laden.
+  window.location.href = `/cde?projekt=${id}`;
 }
 
 function openDokument(d) {
@@ -861,4 +993,43 @@ function fmtDate(ts) {
   margin: 0 0.15rem;
 }
 .cde-btn.ghost { padding: 0.25rem 0.4rem; }
+
+/* ── Auftragswahl und Auftragsanzeige (Stufe 11.3) ──────────────────────── */
+.cde-auftrag {
+  font-size: var(--cde-font-sm);
+  color: var(--cde-text-bright);
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--cde-line);
+  border-radius: var(--cde-radius-sm);
+  background: var(--cde-fill);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26ch;
+}
+.cde-auftragswahl { max-width: 46rem; }
+.cde-auftragswahl h2 {
+  margin: 0 0 0.3rem; font-size: var(--cde-font-md); color: var(--cde-text-bright);
+}
+.cde-fehler { color: var(--cde-danger); font-size: var(--cde-font-sm); margin: 0.4rem 0; }
+.cde-auftragsliste {
+  list-style: none; padding: 0; margin: 0.6rem 0 0;
+  display: flex; flex-direction: column; gap: 0.2rem;
+  max-height: 22rem; overflow-y: auto;
+}
+.cde-auftrag-knopf {
+  width: 100%; display: flex; align-items: baseline; gap: 0.6rem;
+  padding: 0.35rem 0.5rem; text-align: left; cursor: pointer;
+  background: var(--cde-fill); color: var(--cde-text);
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  font-size: var(--cde-font-sm);
+}
+.cde-auftrag-knopf:hover:not(:disabled) { background: var(--cde-accent-fill-hi); color: var(--cde-accent); }
+.cde-auftrag-knopf:disabled { opacity: 0.45; cursor: not-allowed; }
+.cde-auftrag-knopf .nr { font-variant-numeric: tabular-nums; color: var(--cde-text-dim); min-width: 4ch; }
+.cde-auftrag-knopf .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-satz { width: 2.4rem; text-align: center; }
+.doc-satz input { accent-color: var(--cde-accent); cursor: pointer; }
+.cde-migration {
+  display: flex; align-items: center; gap: 0.5rem;
+  border-left: 3px solid var(--cde-accent);
+  font-size: var(--cde-font-sm); color: var(--cde-text);
+}
 </style>
