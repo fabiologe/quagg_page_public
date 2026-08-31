@@ -215,6 +215,12 @@
           <div v-if="ziehen.grund.value" class="zieh-hinweis">
             <CdeIcon name="warn" :size="13" /> {{ ziehen.grund.value }}
           </div>
+          <!-- Einschränkung statt Absage: der Griff ARBEITET, nur zwängt er
+               nicht entlang der Bauteilachse. Das muss dastehen, sonst sieht
+               er genauso aus wie der richtige und schiebt anders. -->
+          <div v-else-if="ziehen.warnung.value" class="zieh-hinweis eingeschraenkt">
+            <CdeIcon name="warn" :size="13" /> {{ ziehen.warnung.value }}
+          </div>
         </Transition>
 
         <!-- Mess-Hinweis (die Werte selbst stehen als Pillen an der Strecke) -->
@@ -1357,6 +1363,7 @@ async function onMouseUp(e) {
 @keyframes fadeDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Stufe 9.3 — gleiche Gestalt wie der Ablage-Hinweis, eigene Bedeutung. */
+.zieh-hinweis.eingeschraenkt { border-color: var(--cde-warn); color: var(--cde-warn); }
 .zieh-hinweis {
   position: absolute;
   top: 9rem; left: 50%; transform: translateX(-50%);

@@ -46,7 +46,11 @@ function fakeWelt() {
     };
 }
 
-function fakeEngine({ anker = GELIEFERT, setzeOk = true } = {}) {
+// Vorgabe-Achse nach OSTEN: dann ist lokal X gleich Welt X, und die Tests, die
+// vom Achssystem gar nicht handeln, rechnen weiter in Weltkoordinaten. Wer die
+// Drehung prüfen will, setzt eine andere Achse — dann ist auch klar, dass er
+// genau sie meint.
+function fakeEngine({ anker = GELIEFERT, setzeOk = true, achse = [[0, 0, 0], [10, 0, 0]] } = {}) {
     const welt = fakeWelt();
     return {
         welt,
@@ -56,6 +60,16 @@ function fakeEngine({ anker = GELIEFERT, setzeOk = true } = {}) {
             setzeAnker: vi.fn(async () => (setzeOk
                 ? { ok: true, versatz: { dx: 1, dy: 0, dz: 0 } }
                 : { ok: false, grund: 'kein_editor' })),
+            // Die Achse kommt aus dem GeometryResolver — nicht aus der
+            // Platzierung: welche lokale Achse „entlang des Rohrs" zeigt,
+            // hängt am Autorensystem.
+            makeGeometryResolver: () => ({
+                forElements: () => ({
+                    getForm: async (form) => (form === 'axis'
+                        ? { perElement: [{ polyline: achse }] }
+                        : { data: null }),
+                }),
+            }),
         }),
     };
 }
@@ -236,5 +250,84 @@ describe('Die Abhängigkeiten sind Getter, keine Refs', () => {
         const t = bau();
         await ziehe(t, { x: 1.5 });
         expect(t.aenderungen.eintraege[0].modellSha).toBe('sha1');
+    });
+});
+
+
+describe('Der Griff steht auf der BAUTEILACHSE, nicht auf den Weltachsen', () => {
+    /**
+     * Der Befund an Fabios erstem echten IFC4-Kanalnetz (31.08.2026).
+     *
+     * `freiheitsgradeFuer` gibt für `achse+profil` X und Y frei und sperrt Z —
+     * gemeint ist „entlang der Achse und in der Höhe, aber nicht seitlich aus
+     * dem Graben". Der Träger wurde aber NIE gedreht, und damit war lokal
+     * gleich Welt: dieselbe Regel bedeutete plötzlich „Ost-West und Höhe, aber
+     * nicht Nord-Süd". Bei einem Netz, das in alle Richtungen läuft, ist das
+     * willkürlich — und es sieht wie Absicht aus.
+     */
+    it('dreht lokal X auf die Achsrichtung', async () => {
+        // Eine Haltung, die nach NORDEN läuft (Welt-Z).
+        const t = bau({ engine: { achse: [[0, 0, 0], [0, 0, 10]] } });
+        await t.ziehen.anhaengen(BAUTEIL, LINEAR);
+        const traeger = t.ziehen.gizmo.value.object.parent;
+
+        const lokalX = new THREE.Vector3(1, 0, 0).applyQuaternion(traeger.quaternion);
+        expect(lokalX.x).toBeCloseTo(0, 6);
+        expect(lokalX.z).toBeCloseTo(1, 6);      // zeigt nach Norden, wie die Haltung
+    });
+
+    it('hält lokal Y auf der WELT-Höhe, nicht auf irgendeiner Senkrechten', async () => {
+        // Sonst zeigte der Höhengriff schräg, und „400 mm tiefer" wäre es nicht.
+        const t = bau({ engine: { achse: [[0, 0, 0], [7, 0, 7]] } });
+        await t.ziehen.anhaengen(BAUTEIL, LINEAR);
+        const traeger = t.ziehen.gizmo.value.object.parent;
+
+        const lokalY = new THREE.Vector3(0, 1, 0).applyQuaternion(traeger.quaternion);
+        expect(lokalY.y).toBeCloseTo(1, 6);
+    });
+
+    it('rechnet den Weg IN DIE WELT zurück', async () => {
+        // Der Kern. Der Pivot bewegt sich im Achssystem: „1,50 m entlang des
+        // Rohrs". Der Journalwert ist ein WELTanker. Ohne Rückrechnung landete
+        // jede Haltung, die nicht zufällig entlang X liegt, falsch — und zwar
+        // nur die schrägen, was wie ein Anzeigefehler aussähe.
+        const t = bau({ engine: { achse: [[0, 0, 0], [0, 0, 10]] } });
+        await ziehe(t, { x: 1.5 });               // 1,5 entlang der ACHSE
+
+        // Achse zeigt nach Norden ⇒ der Weltversatz muss in Z liegen, nicht X.
+        expect(t.aenderungen.eintraege[0].nachher).toEqual({ x: 10, y: 2, z: 6.5 });
+    });
+
+    it('fällt auf Weltachsen zurück und SAGT es, wenn keine Achse da ist', async () => {
+        // Schweigend auf Weltachsen zu wechseln wäre schlimmer als der Fehler:
+        // der Griff sähe gleich aus und zwänge anders.
+        const t = bau({ engine: { achse: [] } });
+        await t.ziehen.anhaengen(BAUTEIL, LINEAR);
+        expect(t.ziehen.gizmo.value.space).toBe('world');
+        expect(t.ziehen.warnung.value).toMatch(/Weltachsen/);
+    });
+
+    it('lässt einen KÖRPER in Weltachsen — dort gibt es keine Vorzugsrichtung', async () => {
+        const t = bau();
+        await t.ziehen.anhaengen(BAUTEIL, { bauform: 'koerper', guete: 'gemessen' });
+        expect(t.ziehen.gizmo.value.space).toBe('world');
+        expect(t.ziehen.warnung.value).toBe('');
+    });
+});
+
+describe('Die Szene bleibt sauber', () => {
+    it('nimmt den TRÄGER wieder heraus, nicht nur den Gizmo-Helfer', async () => {
+        // Die erste Fassung schrieb Träger und Helfer beide in `_helper`, die
+        // zweite Zuweisung gewann, und der Träger blieb bei JEDEM Zug in der
+        // Szene stehen. `scene.remove(_pivot)` half nicht — der Pivot hängt am
+        // Träger, nicht an der Szene. Ein wirkungsloser Aufruf, der aussah wie
+        // Aufräumen.
+        const t = bau();
+        const vorher = t.welt.scene.three.children.length;
+        for (let i = 0; i < 3; i++) {
+            await t.ziehen.anhaengen(BAUTEIL, LINEAR);
+            t.ziehen.loesen();
+        }
+        expect(t.welt.scene.three.children.length).toBe(vorher);
     });
 });
