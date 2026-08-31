@@ -65,3 +65,32 @@ export function aenderungen(ziel, versteckt) {
     }
     return out;
 }
+
+/**
+ * Die Höhe einer Ebene ausschreiben — oder ehrlich sagen, dass es keine gibt.
+ *
+ * `elevation` ist in `IfcStoreys.getStoreyList` ausdrücklich `null`, wenn die
+ * Entität keine Höhe führt; die Sortierung dort fängt das mit `?? -Infinity`
+ * schon ab. In `IfcStoreyNav` stand dagegen `s.elevation.toFixed(2)` — und ein
+ * Tiefbaumodell ohne Geschosse (Kanalplanung: PROJECT → Element → SITE) brachte
+ * damit den GANZEN Renderlauf zum Absturz. Alles, was danach im Protokoll stand
+ * („Cannot set properties of null (setting '__vnode')", „emitsOptions of null",
+ * dutzendfach), war Folgeschaden eines abgebrochenen Patch-Laufs.
+ *
+ * Steht HIER und nicht in der Komponente, damit es ohne Rendern prüfbar ist —
+ * bei einer Zahlformatierung, an der ein ganzer Viewer hängt, ist das den
+ * Umweg wert.
+ *
+ * KEINE NULL ALS ERSATZ: „0,00 m" sähe aus wie eine gemessene Höhe auf
+ * Geländeniveau. Ein Strich sagt, dass es keine gibt.
+ */
+export function hoeheText(elevation) {
+    return Number.isFinite(elevation) ? `${elevation.toFixed(2)} m` : '—';
+}
+
+/** Ebenen von unten nach oben; solche ohne Höhe zuunterst. */
+export function nachHoehe(storeys) {
+    return [...(storeys ?? [])].sort(
+        (a, b) => (a.elevation ?? -Infinity) - (b.elevation ?? -Infinity),
+    );
+}

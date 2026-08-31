@@ -35,9 +35,9 @@
           >
             <CdeIcon :name="istSichtbar(s) ? 'visible' : 'hidden'" :size="13" />
           </button>
-          <button class="sn-goto" :title="`${s.name} · ${s.elevation.toFixed(2)} m`" @click="onClick(s)">
+          <button class="sn-goto" :title="`${s.name} · ${hoeheText(s.elevation)}`" @click="onClick(s)">
             <span class="sn-name">{{ s.name }}</span>
-            <span class="sn-elev">{{ s.elevation.toFixed(2) }} m</span>
+            <span class="sn-elev">{{ hoeheText(s.elevation) }}</span>
           </button>
         </div>
       </div>
@@ -62,7 +62,7 @@
  */
 import { ref, computed, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
-import { sichtbarkeitFuerModus, aenderungen, storeyKey } from '../services/StoreyModes.js';
+import { sichtbarkeitFuerModus, aenderungen, hoeheText, nachHoehe, storeyKey } from '../services/StoreyModes.js';
 
 const props = defineProps({
   storeys: { type: Array, default: () => [] },  // [{modelId, localId, name, elevation, box}]
@@ -84,7 +84,7 @@ const key = storeyKey;
 
 /** Von unten nach oben — Grundlage für „Bis hierhin". */
 const sortiert = computed(() =>
-  [...props.storeys].sort((a, b) => a.elevation - b.elevation));
+  nachHoehe(props.storeys));
 
 function istAktiv(s) {
   return aktiv.value && aktiv.value.localId === s.localId && aktiv.value.modelId === s.modelId;

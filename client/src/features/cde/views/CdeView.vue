@@ -207,11 +207,11 @@
       <table v-else class="cde-doc-table">
         <thead>
           <tr>
-            <!-- Die Spalte steht IMMER, nur ihr Inhalt hängt am Satz.
-                 Eine Zelle per `v-if` aus einer keyed `v-for`-Zeile zu nehmen
-                 ändert die Kinderzahl der Zeile zwischen zwei Durchläufen —
-                 Vues Patch-Lauf verliert dabei seinen Anker und stirbt mit
-                 „Cannot set properties of null (setting '__vnode')". -->
+            <!-- Die Spalte steht IMMER, nur ihr Inhalt hängt am Satz — eine
+                 Zelle per `v-if` aus einer keyed `v-for`-Zeile zu nehmen ändert
+                 die Kinderzahl der Zeile zwischen zwei Durchläufen. Das war
+                 NICHT die Ursache der Renderabstürze (die lag in
+                 IfcStoreyNav), aber es bleibt die stabilere Form. -->
             <th class="doc-satz" :title="cde.aktiverSatz ? `Im Modellsatz „${cde.aktiverSatz.name}“` : ''">
               {{ cde.aktiverSatz ? 'Satz' : '' }}
             </th>
