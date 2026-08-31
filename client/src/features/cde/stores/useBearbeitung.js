@@ -52,8 +52,23 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
     const bereit = computed(() => !!scharf.value && fehler.value.length === 0);
 
-    /** Was an diesem Bauteil möglich ist — die Liste fürs Kontextmenü. */
-    const moeglich = computed(() => (einordnung.value ? passende(einordnung.value) : []));
+    /**
+     * Was an diesem Bauteil möglich ist — die EINE Antwort, aus der alle lesen.
+     *
+     * DAS TYPPROFIL MUSS MIT. Ohne es fällt jede Bearbeitung heraus, die über
+     * `brauchtRolle` an einer typeigenen Größe hängt — also genau die, die das
+     * Typprofil überhaupt erst nützlich machen. Der Fehler war schlimmer als
+     * ein Fehlen: die Toolbox rechnet über `herleite` MIT Profil und zeigte
+     * „Bezugshöhe setzen" an, während `starte()` hier OHNE Profil prüfte und
+     * denselben Knopf ablehnte. Ein Knopf, der da ist und nichts tut.
+     *
+     * Wieder zwei Wege zu derselben Frage. Deshalb steht sie jetzt einmal hier,
+     * und `starte` fragt dieselbe Liste — nicht eine zweite mit denselben
+     * Argumenten, die beim nächsten Argument wieder auseinanderläuft.
+     */
+    const moeglich = computed(() => (einordnung.value
+        ? passende(einordnung.value, { typprofil: typprofil.value })
+        : []));
 
     /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
     async function ladeProfile(quelle = repo) {
@@ -154,7 +169,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // diese Ausnahme wäre das Zeichenwerkzeug immer dann gesperrt, wenn
         // zufällig etwas ausgewählt ist — und niemand käme darauf, warum.
         const werkzeug = GRUPPEN[b.gruppe]?.einstieg === 'werkzeug';
-        if (!werkzeug && einordnung.value && !passende(einordnung.value).some(p => p.id === id)) return false;
+        if (!werkzeug && einordnung.value && !moeglich.value.some(p => p.id === id)) return false;
         scharfId.value = id;
         werte.value = { ...(b.vorbelegung?.(bauteil.value ?? {}) ?? {}) };
         return true;

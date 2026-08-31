@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
+import { herleite } from '../services/Herleitung.js';
 
 beforeEach(() => {
     localStorage.clear();
@@ -188,5 +189,74 @@ describe('ausfuehren — der einzige Weg ins Journal', () => {
         const b = useBearbeitung();
         await b.einordne(ROHR, resolverEchteAchse);
         expect(await b.ausfuehren()).toBe(null);
+    });
+});
+
+describe('Toolbox und Kontextmenü dürfen nicht auseinanderlaufen', () => {
+    /**
+     * Der Fehler, den diese Prüfung festhält, war heute live: der
+     * `brauchtRolle`-Filter braucht das Typprofil, und zwei Aufrufer gaben es
+     * nicht mit. Die Toolbox rechnet über `herleite` MIT Profil und zeigte
+     * „Bezugshöhe setzen"; `starte()` prüfte OHNE Profil und lehnte denselben
+     * Knopf ab. Ein Knopf, der da ist und nichts tut — und im Kontextmenü am
+     * Bauteil fehlte er ganz.
+     *
+     * Zwei Wege zu derselben Frage, wieder. Deshalb kreuzt dieser Test die
+     * beiden Wege GEGENEINANDER, statt jeden für sich zu prüfen: für sich war
+     * jeder richtig.
+     */
+    const ROHR = {
+        modelId: 'm1', localId: 1, globalId: 'H12', category: 'IFCPIPESEGMENT',
+        anker: { x: 0, y: 10.15, z: 0 }, bezugshoehe: 10,
+    };
+
+    /** Ein Resolver, der eine echte Achse und einen Körper vorgibt. */
+    const RESOLVER = {
+        forElements: () => ({
+            getForm: async (form) => (form === 'axis'
+                ? { perElement: [{ polyline: [{ x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }], source: 'axisRep' }] }
+                : { data: { closed: true, triCount: 120 } }),
+        }),
+    };
+
+    it('bietet dieselben Bearbeitungen an wie die Toolbox', async () => {
+        const b = useBearbeitung();
+        await b.einordne(ROHR, RESOLVER);
+
+        const ausToolbox = herleite({
+            el: ROHR, einordnung: b.einordnung, profilSatz: b.profilSatz,
+        }).gruppen.flatMap(g => g.eintraege).map(e => e.id).sort();
+
+        expect(b.moeglich.map(x => x.id).sort()).toEqual(ausToolbox);
+    });
+
+    it('lässt JEDE angebotene Bearbeitung auch scharf schalten', async () => {
+        // Der eigentliche Riegel. Ein Knopf, der erscheint und beim Klick
+        // nichts tut, ist schlimmer als ein fehlender: der Nutzer probiert
+        // weiter, weil er denkt, er macht etwas falsch.
+        const b = useBearbeitung();
+        await b.einordne(ROHR, RESOLVER);
+
+        expect(b.moeglich.length).toBeGreaterThan(2);
+        for (const eintrag of b.moeglich) {
+            expect(b.starte(eintrag.id), `starte('${eintrag.id}')`).toBe(true);
+            b.abbrechen();
+        }
+    });
+
+    it('bietet die rollenabhängigen Bearbeitungen am Rohr wirklich an', async () => {
+        const b = useBearbeitung();
+        await b.einordne(ROHR, RESOLVER);
+        const ids = b.moeglich.map(x => x.id);
+        expect(ids).toContain('bezugshoehe-setzen');
+        expect(ids).toContain('profilgroesse-setzen');
+    });
+
+    it('bietet sie an einem Typ OHNE die Rolle weiterhin nicht an', async () => {
+        // Die Schranke bleibt scharf — der Fehler war das fehlende Profil,
+        // nicht der Filter.
+        const b = useBearbeitung();
+        await b.einordne({ ...ROHR, category: 'IFCBUILDINGELEMENTPROXY' }, RESOLVER);
+        expect(b.moeglich.map(x => x.id)).not.toContain('profilgroesse-setzen');
     });
 });
