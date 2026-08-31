@@ -22,7 +22,7 @@
  */
 
 import { ref } from 'vue';
-import { repo } from '../services/RepoFacade.js';
+import { fehlerLesbar, repo } from '../services/RepoFacade.js';
 import { computeModelIdentity } from '../services/ModelIdentity.js';
 
 /** Wie viele Modelle die lokale Ablage höchstens behält. */
@@ -60,7 +60,17 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
                 name,
                 size: bytes.byteLength,
                 projectGlobalId: identity.projectGlobalId,
-            }).catch(() => { /* Register optional */ });
+            }).catch((fehler) => {
+                // Frueher: `.catch(() => {})` mit dem Vermerk „Register
+                // optional". Es IST nicht optional — wer eine IFC ins Projekt
+                // laedt, will sie im Projekt haben. Ein verschluckter 401 sah
+                // aus wie „es passiert gar nichts".
+                ablageHinweis.value = `Nicht ins Projektregister aufgenommen: ${fehlerLesbar(fehler).text}`;
+            });
+        } else if (!cde.activeProjectId) {
+            // Kein Fehler, aber auch kein Erfolg: das Modell ist nur lokal.
+            // Ohne diesen Satz sucht der Nutzer den Fehler bei sich.
+            ablageHinweis.value = 'Kein Projekt gewaehlt — das Modell liegt nur lokal im Browser.';
         }
     }
 
@@ -106,7 +116,18 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
                 projectGlobalId: identity.projectGlobalId,
                 key: identity.key,
             });
-            if (!ok) return;                // Backend ohne Blob-Unterstützung
+            if (!ok) {
+                // `false` heisst zweierlei: ein Backend ohne Blob-Faehigkeit
+                // (dann ist Schweigen richtig) oder ein gescheiterter
+                // Serverzugriff (dann ist es falsch). Der Grund unterscheidet
+                // die beiden Faelle — nur mit ihm wird gemeldet.
+                const grund = repo.letzterFehler;
+                if (grund) {
+                    ablageHinweis.value = `Nicht in den Projektordner geladen: ${grund.text}`;
+                    repo.fehlerQuittieren();
+                }
+                return;
+            }
             // Ablage deckeln: nur die letzten N behalten.
             const alle = (await repo.listBlobs('model:'))
                 .sort((a, b) => (b.meta?.savedAt ?? 0) - (a.meta?.savedAt ?? 0));

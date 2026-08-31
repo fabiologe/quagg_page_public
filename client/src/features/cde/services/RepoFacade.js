@@ -358,7 +358,16 @@ export class RemoteBackend {
         const sha = this._shaAus(fullKey);
         let reg;
         try { reg = await this._registerLaden(true); }
-        catch (e) { console.warn('[CDE remote] setBlob/register', e?.message ?? e); return false; }
+        catch (e) {
+            // Der GRUND bleibt stehen, nicht nur das Scheitern. Ohne ihn sah
+            // der Nutzer bei fehlender Anmeldung genau nichts: der Fehler
+            // wurde hier zu `false`, `_ablegen` gab bei `false` stumm auf, und
+            // `registerModel` hatte ein leeres catch. Drei Schichten Schweigen
+            // ergeben „es passiert gar nichts".
+            this._letzterFehler = fehlerLesbar(e);
+            console.warn('[CDE remote] setBlob/register', e?.message ?? e);
+            return false;
+        }
         if ((reg.dokumente || []).some(x => x.sha256 === sha)) return true;
 
         const api = await this._client();
@@ -492,6 +501,23 @@ export class BueroBackend {
  * Linienstile eines Projekts auf nichts setzt, will nicht die Bürostile
  * zurückbekommen.
  */
+/**
+ * Einen Netzfehler in einen Satz übersetzen, den man handeln kann.
+ *
+ * 401 ist der häufigste und der einzige, bei dem der Nutzer selbst etwas tun
+ * kann — deshalb steht er zuerst und nennt die Abhilfe.
+ */
+export function fehlerLesbar(e) {
+    const status = e?.response?.status ?? null;
+    if (status === 401 || status === 403) {
+        return { status, text: 'Nicht angemeldet — ohne Sitzung ist der Projektordner nicht erreichbar.' };
+    }
+    if (status === 404) return { status, text: 'Projektordner nicht gefunden.' };
+    if (status === 422) return { status, text: 'Der Server hat die Datei abgelehnt (gleicher Name schon vorhanden?).' };
+    if (status) return { status, text: `Server antwortete mit ${status}.` };
+    return { status: null, text: e?.message ? `Kein Zugriff auf den Projektordner: ${e.message}` : 'Kein Zugriff auf den Projektordner.' };
+}
+
 export function waehleMitVorrang(projekt, buero, standard = null) {
     if (projekt !== null && projekt !== undefined) return projekt;
     if (buero !== null && buero !== undefined) return buero;
@@ -609,6 +635,19 @@ export class RepoFacade {
      * das nicht selbst — dafür gibt es `mitVorrang`.
      */
     get buero() { return this._buero ?? null; }
+
+    /**
+     * Warum der letzte Server-Zugriff scheiterte — oder `null`.
+     *
+     * Die Backends geben `false`/`null` zurück, damit ein Ausfall die Arbeit
+     * nicht abreisst. Der GRUND darf darüber aber nicht verloren gehen: sonst
+     * steht der Nutzer vor einem Knopf, der nichts tut, und niemand sagt ihm,
+     * dass ihm nur die Anmeldung fehlt.
+     */
+    get letzterFehler() { return this._backend?._letzterFehler ?? null; }
+
+    /** Nach dem Anzeigen zurücksetzen — sonst klebt eine alte Meldung. */
+    fehlerQuittieren() { if (this._backend) this._backend._letzterFehler = null; }
 
     setBueroBackend(backend) {
         this._buero = backend ? new RepoFacade('buero', backend) : null;
