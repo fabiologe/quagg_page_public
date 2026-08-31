@@ -14,11 +14,7 @@
 
         <div class="form-group">
           <label>Koordinatensystem (CRS):</label>
-          <select v-fokus v-model="selectedCRS">
-            <option v-for="opt in crsOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
+          <PixelSelect v-fokus v-model="selectedCRS" :options="crsOptions" />
         </div>
 
         <div class="reference-input-group">
@@ -106,6 +102,7 @@ import { vFokus } from '../../composables/vFokus.js';
 import { useIsybauStore } from '../../store/index.js';
 
 import { CRS_OPTIONS, transformToWGS84, fetchKostraData } from '../../utils/KostraService.js';
+import PixelSelect from '../common/PixelSelect.vue';
 const store = useIsybauStore();
 
 const props = defineProps({

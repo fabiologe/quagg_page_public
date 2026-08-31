@@ -133,6 +133,13 @@ const store = useIsybauStore();
 
 const aufEscape = (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
+  // Ein aufgeklapptes Auswahlfeld (components/common/PixelSelect.vue) ist die
+  // oberste Ebene und faengt Escape selbst ab. Ohne diese Zeile schloesse ein
+  // Tastendruck bei offener Liste gleich das ganze Fenster: dieser Listener
+  // haengt seit dem Mounten des Modals an window, der des Feldes erst seit
+  // dem Aufklappen — er kaeme also zuerst dran. `defaultPrevented` hilft
+  // nicht, beide sitzen in der Capture-Phase.
+  if (document.querySelector('.isy-select-liste')) return;
   const flag = obersteOffene(store.ui);
   if (!flag) return;
   store.ui[flag] = false;

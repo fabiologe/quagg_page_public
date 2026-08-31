@@ -125,35 +125,58 @@ describe('Inline-Knoepfe entkommen der globalen Pixel-Button-Fassung', () => {
 });
 
 describe('Die aufgeklappte Auswahlliste gehoert dem Modul, nicht dem System', () => {
-  // Hintergrund: der eigene Zeiger endete an der Kante des Feldes. Die Liste,
-  // die ein Klick aufklappt, zeichnet der Browser sonst ausserhalb der Seite —
-  // im echten Fenster nachgemessen ist eine <option> dann 0x0 Pixel gross und
-  // elementFromPoint() findet an ihrer Stelle nichts. appearance: base-select
-  // holt sie ins Dokument; erst dadurch greift ueberhaupt eine Regel auf sie.
+  // Hintergrund: die Liste eines nativen <select> zeichnet der Browser
+  // ausserhalb der Seite — im echten Fenster nachgemessen ist eine <option>
+  // dann 0x0 Pixel gross und elementFromPoint() findet an ihrer Stelle nichts.
+  // Der erste Versuch war `appearance: base-select`; das kann aber nur
+  // Chromium, und der Nutzer arbeitet in Firefox. Seit 2026-08-31 zeichnet
+  // PixelSelect.vue die Liste selbst.
+  const liste = themeCss.slice(themeCss.indexOf('.isy-select-liste'));
 
-  const block = themeCss.slice(themeCss.indexOf('@supports (appearance: base-select)'));
+  it('das Modul benutzt keine nativen Auswahlfelder mehr', () => {
+    // Ein einzelnes zurueckgerutschtes <select> faellt sonst NICHT auf: in
+    // Chromium sieht es beinahe richtig aus, in Firefox gar nicht.
+    const wurzel = path.resolve(__dirname, '..');
+    const treffer = [];
+    const lauf = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory()) {
+          if (['node_modules', 'test'].includes(e.name)) continue;
+          lauf(path.join(dir, e.name));
+        } else if (e.name.endsWith('.vue')) {
+          const src = fs.readFileSync(path.join(dir, e.name), 'utf-8');
+          // Kommentare raus: PixelSelect.vue ERKLAERT in seinem Kopf, warum es
+          // kein natives <select> mehr gibt — das ist kein Markup.
+          const vorlage = src.split('<script')[0].replace(/<!--[\s\S]*?-->/g, '');
+          if (/<select[\s>]/.test(vorlage)) treffer.push(path.relative(wurzel, path.join(dir, e.name)));
+        }
+      }
+    };
+    lauf(wurzel);
+    expect(treffer, `natives <select> in: ${treffer.join(', ')}`).toEqual([]);
+  });
 
-  it('das Auswahlfeld UND seine Liste werden umgestellt', () => {
-    // Nur eines von beiden genuegt nicht: ohne base-select am <select> laesst
-    // der Browser den Picker gar nicht erst in die Seite.
-    expect(block).toMatch(/select,\s*\n\s*html:has\(\.isybau-main\) select::picker\(select\)\s*\{[^}]*appearance:\s*base-select/s);
+  it('Feld und Liste liegen auf denselben Regeln wie die uebrigen Felder', () => {
+    // .isy-select muss in der Feld-Regel stehen, sonst fehlen ihm Pixel-Ecken,
+    // Bevel und Fokusring — es saehe dann anders aus als jedes Eingabefeld
+    // daneben.
+    expect(themeCss).toMatch(/\.isy-select,?\s*\n[^{]*\{[^}]*clip-path: var\(--isy-pixel-clip-corner\)/s);
+    expect(themeCss).toMatch(/\.isy-select[^{]*\{[^}]*background-image: var\(--isy-pixel-select-pfeil\)/s);
   });
 
   it('die Eintraege tragen den Zeiger des Moduls', () => {
-    // Das ist der eigentliche Zweck der Uebung.
-    expect(block).toMatch(/select option\s*\{[^}]*cursor:\s*var\(--isy-cursor-hand\)/s);
+    // Das ist der eigentliche Zweck der ganzen Uebung.
+    expect(themeCss).toMatch(/\.isy-select-liste__eintrag[^{]*\{[^}]*cursor: var\(--isy-cursor-hand\)/s);
   });
 
   it('die Liste faerbt sich ueber Tokens, nicht ueber Hex-Literale', () => {
-    // Gleiche Fehlerklasse wie oben: eine harte Farbe waere in genau einem
-    // der beiden Modi unlesbar.
-    const farbwerte = block.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
+    const farbwerte = liste.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
     expect(farbwerte, `harte Farben in der Auswahlliste: ${farbwerte.join(', ')}`).toHaveLength(0);
   });
 
-  it('steht in @supports — Browser ohne base-select behalten den Ist-Stand', () => {
-    // Firefox und Safari koennen es (noch) nicht. Ohne die Abfrage waere
-    // appearance dort ungueltig und die Felder verloeren ihre Pixel-Form.
-    expect(themeCss).toContain('@supports (appearance: base-select) {');
+  it('die Liste haengt nicht am Modul-Container, sondern an der Wurzel', () => {
+    // Sie wird per <Teleport> an <body> gehaengt; ein Selektor unter
+    // .isybau-main wuerde sie nicht mehr treffen.
+    expect(themeCss).toContain('html:has(.isybau-main) .isy-select-liste');
   });
 });

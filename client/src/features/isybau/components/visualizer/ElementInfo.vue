@@ -83,10 +83,8 @@
         <template v-if="!readonly && elementType === 'edge'">
              <div class="info-group">
                 <label>Material</label>
-                <select v-model="localData.material" @change="updateRoughness" class="full-select">
-                    <option v-for="(kst, mat) in MaterialRoughness" :key="mat" :value="mat">{{ mat }}</option>
-                    <option v-if="localData.material && !MaterialRoughness[localData.material]" :value="localData.material">{{ localData.material }}</option>
-                </select>
+                <PixelSelect v-model="localData.material" class="full-select" :options="materialOptionen"
+                             @change="updateRoughness" />
              </div>
              
              <div class="info-group">
@@ -96,15 +94,8 @@
 
              <div class="info-group">
                  <label>Profil</label>
-                 <select v-model.number="localData.profile.type" @change="onProfileChange" class="full-select">
-                    <option :value="0">Kreisprofil</option>
-                    <option :value="1">Eiprofil</option>
-                    <option :value="2">Maulprofil</option>
-                    <option :value="3">Rechteck (geschlossen)</option>
-                    <option :value="5">Rechteck (offen)</option>
-                    <option :value="8">Trapezprofil</option>
-                    <option :value="13">Andere</option>
-                 </select>
+                 <PixelSelect v-model="localData.profile.type" class="full-select" :options="PROFIL_OPTIONEN"
+                              @change="onProfileChange" />
              </div>
 
              <div class="flex-row">
@@ -139,13 +130,7 @@
         <template v-else-if="!readonly && elementType === 'node'">
             <div class="info-group">
                 <label>Typ</label>
-                <select v-model="localData.type" class="full-select">
-                    <option value="Standard">Schacht (Standard)</option>
-                    <option value="Bauwerk">Bauwerk (Allgemein)</option>
-                    <option v-for="(label, key) in Bauwerkstyp" :key="key" :value="parseInt(key)">
-                        {{ label }}
-                    </option>
-                </select>
+                <PixelSelect v-model="localData.type" class="full-select" :options="typOptionen" />
             </div>
 
             <div class="flex-row">
@@ -224,11 +209,7 @@
                  </div>
                  <div class="info-group">
                      <label>Form</label>
-                     <select v-model="localData.storageShape" class="full-select">
-                         <option value="PRISMATIC">Prismatisch (konstante Fläche)</option>
-                         <option value="CONICAL">Trichterförmig (linear)</option>
-                         <option value="PYRAMIDAL">Pyramidal (quadratisch)</option>
-                     </select>
+                     <PixelSelect v-model="localData.storageShape" class="full-select" :options="SPEICHERFORM_OPTIONEN" />
                  </div>
              </template>
 
@@ -246,10 +227,9 @@
                  </div>
                  <div class="info-group">
                      <label>Kronenform</label>
-                     <select :value="presetKeyFor(localData.dischargeCoeff)" @change="localData.dischargeCoeff = parseFloat($event.target.value)" class="full-select">
-                         <option value="">— Kronenform wählen —</option>
-                         <option v-for="p in WeirCrestPresets" :key="p.cw" :value="p.cw">{{ p.label }}</option>
-                     </select>
+                     <PixelSelect class="full-select" :model-value="presetKeyFor(localData.dischargeCoeff)"
+                                  :options="KRONENFORM_OPTIONEN"
+                                  @update:model-value="localData.dischargeCoeff = parseFloat($event) || localData.dischargeCoeff" />
                  </div>
                  <div class="info-group">
                      <label>Beiwert Cw</label>
@@ -299,12 +279,8 @@
              <div class="info-group">
                  <label>Neigungsklasse</label>
                  <div class="input-with-pick">
-                     <select v-model.number="localData.slope" class="full-select">
-                         <option :value="null" disabled>– wählen –</option>
-                         <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
-                             {{ key }} - {{ label }}
-                         </option>
-                     </select>
+                     <PixelSelect v-model="localData.slope" class="full-select" :options="NEIGUNG_OPTIONEN"
+                                  placeholder="– wählen –" />
                      <button type="button" class="pick-btn" @click="suggestSlope" :disabled="!store.terrain" :title="store.terrain ? 'Neigung aus DGM ermitteln' : 'Kein DGM geladen'">
                          <img src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" alt="Neigung ermitteln" class="pick-icon" />
                      </button>
@@ -356,7 +332,7 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
-import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, resolveNodeUiType, lossCoeffHint, Neigungsklasse } from '../../utils/mappings.js';
+import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, resolveNodeUiType, lossCoeffHint, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 // EINE Regel für die Überstau-Kopplung — geteilt mit dem Node-Modell und
 // PreprocessingModal.vue.
 import { normalizeOverflowState } from '../../core/domain/Node.js';
@@ -364,11 +340,49 @@ import { depthFromCoverAndZ } from '../../utils/heightCoupling.js';
 import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
 import PumpCurvePreview from '../common/PumpCurvePreview.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
+import PixelSelect from '../common/PixelSelect.vue';
 
 const presetKeyFor = (cw) => {
     const match = WeirCrestPresets.find(p => Math.abs(p.cw - cw) < 0.005);
     return match ? match.cw : '';
 };
+
+/* Eintraege der Auswahlfelder (PixelSelect.vue bekommt sie als Array statt als
+   <option>-Kinder). Reihenfolge und Beschriftungen wie zuvor. */
+const PROFIL_OPTIONEN = [
+    { value: 0, label: 'Kreisprofil' },
+    { value: 1, label: 'Eiprofil' },
+    { value: 2, label: 'Maulprofil' },
+    { value: 3, label: 'Rechteck (geschlossen)' },
+    { value: 5, label: 'Rechteck (offen)' },
+    { value: 8, label: 'Trapezprofil' },
+    { value: 13, label: 'Andere' },
+];
+const SPEICHERFORM_OPTIONEN = [
+    { value: 'PRISMATIC', label: 'Prismatisch (konstante Fläche)' },
+    { value: 'CONICAL', label: 'Trichterförmig (linear)' },
+    { value: 'PYRAMIDAL', label: 'Pyramidal (quadratisch)' },
+];
+const KRONENFORM_OPTIONEN = [
+    { value: '', label: '— Kronenform wählen —' },
+    ...WeirCrestPresets.map(p => ({ value: p.cw, label: p.label })),
+];
+const NEIGUNG_OPTIONEN = optionenAusZuordnung(Neigungsklasse, { mitNummer: true });
+const typOptionen = computed(() => [
+    { value: 'Standard', label: 'Schacht (Standard)' },
+    { value: 'Bauwerk', label: 'Bauwerk (Allgemein)' },
+    ...optionenAusZuordnung(Bauwerkstyp),
+]);
+/* Ein Material, das die Zuordnung nicht kennt (aus fremden XML-Dateien), muss
+   waehlbar bleiben — sonst faellt es beim ersten Anfassen still auf ein
+   anderes. */
+const materialOptionen = computed(() => {
+    const bekannt = optionenAusSchluesseln(MaterialRoughness);
+    const eigen = localData.value?.material;
+    return (eigen && !MaterialRoughness[eigen])
+        ? [...bekannt, { value: eigen, label: eigen }]
+        : bekannt;
+});
 
 // Zeigt die Kennlinien-Vorschau nur, wenn der Knoten wirklich als [PUMPS]-
 // Sonderlink gebaut wird (siehe SwmmBuilder.addLinks()) — Typ 1 "Pumpwerk" kann

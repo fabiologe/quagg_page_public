@@ -23,13 +23,7 @@
           <template v-if="mode === 'node'">
             <div class="form-group">
               <label>Typ</label>
-              <select v-model="formData.type" class="form-select">
-                <option value="Schacht">Schacht (Standard)</option>
-                <option disabled>──────────</option>
-                <option v-for="(label, id) in Bauwerkstyp" :key="id" :value="Number(id)">
-                    {{ label }}
-                </option>
-              </select>
+              <PixelSelect v-model="formData.type" class="form-select" :options="typOptionen" />
             </div>
             
             <div class="form-group checkbox-group" style="margin-bottom: var(--isy-space-4);">
@@ -79,13 +73,7 @@
           <template v-if="mode === 'edge'">
             <div class="form-group">
               <label>Profil-Typ</label>
-              <select v-model="formData.profileType" class="form-select">
-                <option :value="0">Kreisprofil</option>
-                <option :value="1">Ei-Profil</option>
-                <option :value="3">Rechteck (geschl.)</option>
-                <option :value="5">Rechteck (offen)</option>
-                <option :value="8">Trapezprofil</option>
-              </select>
+              <PixelSelect v-model="formData.profileType" class="form-select" :options="PROFIL_OPTIONEN" />
             </div>
             <div class="form-group">
                <label>Höhe (m) / DN (m)</label>
@@ -102,11 +90,8 @@
             </div>
             <div class="form-group">
                 <label>Material</label>
-                <select v-model="formData.material" @change="updateRoughness" class="form-select">
-                    <option v-for="(kst, mat) in MaterialRoughness" :key="mat" :value="mat">
-                        {{ mat }}
-                    </option>
-                </select>
+                <PixelSelect v-model="formData.material" class="form-select" :options="MATERIAL_OPTIONEN"
+                             @change="updateRoughness" />
             </div>
              <div class="form-group">
                <label>Rauheit (ks / n)</label>
@@ -137,11 +122,7 @@
              </div>
              <div class="form-group">
                <label>Neigungsklasse</label>
-               <select v-model.number="formData.slope" class="form-select">
-                   <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
-                       {{ key }} - {{ label }}
-                   </option>
-               </select>
+               <PixelSelect v-model="formData.slope" class="form-select" :options="NEIGUNG_OPTIONEN" />
              </div>
              <div class="form-group" data-tutorial="area-auslass">
                <label>Auslass</label>
@@ -151,22 +132,15 @@
                </div>
                
                <template v-if="outletType === 'node'">
-                   <select v-model="formData.nodeId" class="form-select" required>
-                     <option :value="null" disabled>Knoten wählen...</option>
-                     <option v-for="node in availableNodes" :key="node.id" :value="node.id">
-                       {{ node.id }}
-                     </option>
-                   </select>
+                   <PixelSelect v-model="formData.nodeId" class="form-select" :options="knotenOptionen"
+                                placeholder="Knoten wählen..." />
                </template>
                <template v-else>
-                   <select v-model="outletEdgeId" class="form-select" required>
-                     <option :value="null" disabled>Haltung wählen...</option>
-                     <option v-for="edge in availableEdges" :key="edge.id" :value="edge.id">
-                       {{ edge.id }} ({{ edge.fromNodeId }} → {{ edge.toNodeId }})
-                     </option>
-                   </select>
+                   <PixelSelect v-model="outletEdgeId" class="form-select" :options="haltungOptionen"
+                                placeholder="Haltung wählen..." />
                    <small v-if="formData.nodeId" class="hint">→ Fließt in Startknoten: {{ formData.nodeId }}</small>
                </template>
+               <p v-if="auslassFehlt" class="feld-fehler">Bitte einen Anschluss wählen.</p>
              </div>
           </template>
 
@@ -183,7 +157,8 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from '../common/DraggableModal.vue';
-import { MaterialRoughness, getRoughness, Bauwerkstyp, Neigungsklasse } from '../../utils/mappings.js';
+import PixelSelect from '../common/PixelSelect.vue';
+import { MaterialRoughness, getRoughness, Bauwerkstyp, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -205,6 +180,30 @@ const props = defineProps({
     default: () => []
   }
 });
+
+/* Eintraege der Auswahlfelder. Der Trennstrich zwischen Schacht und den
+   Bauwerkstypen ist ein gesperrter Eintrag — er soll die Liste gliedern, nicht
+   waehlbar sein. */
+const typOptionen = computed(() => [
+    { value: 'Schacht', label: 'Schacht (Standard)' },
+    { value: '__trenner__', label: '──────────', disabled: true },
+    ...optionenAusZuordnung(Bauwerkstyp),
+]);
+const PROFIL_OPTIONEN = [
+    { value: 0, label: 'Kreisprofil' },
+    { value: 1, label: 'Ei-Profil' },
+    { value: 3, label: 'Rechteck (geschl.)' },
+    { value: 5, label: 'Rechteck (offen)' },
+    { value: 8, label: 'Trapezprofil' },
+];
+const MATERIAL_OPTIONEN = optionenAusSchluesseln(MaterialRoughness);
+const NEIGUNG_OPTIONEN = optionenAusZuordnung(Neigungsklasse, { mitNummer: true });
+const knotenOptionen = computed(() =>
+    (props.availableNodes ?? []).map(n => ({ value: n.id, label: n.id })));
+const haltungOptionen = computed(() =>
+    (props.availableEdges ?? []).map(e => ({
+        value: e.id, label: `${e.id} (${e.fromNodeId} → ${e.toNodeId})`,
+    })));
 
 const emit = defineEmits(['close', 'save']);
 
@@ -328,7 +327,26 @@ const generateId = (prefix) => {
     return `${typeStr}_${Math.floor(Date.now() % 10000)}`;
 };
 
+/**
+ * Ohne Anschluss ist eine Flaeche wertlos: ihr Regen landet nirgends.
+ *
+ * Vorher hing das am `required` der beiden <select> — der Browser blockierte
+ * das Absenden. Seit die Felder eigene Bauart sind (PixelSelect.vue), gibt es
+ * dieses Netz nicht mehr, also prueft es das Formular selbst. Der Hinweis
+ * steht im Fenster statt in einer Browser-Sprechblase, die ohnehin nicht zum
+ * Pixel-Aussehen des Moduls passte.
+ */
+const auslassFehlt = ref(false);
+const auslassGewaehlt = () => (outletType.value === 'node'
+    ? !!formData.value.nodeId
+    : !!outletEdgeId.value);
+
 const save = () => {
+    if (props.mode === 'area' && !auslassGewaehlt()) {
+        auslassFehlt.value = true;
+        return;
+    }
+    auslassFehlt.value = false;
     const data = { ...formData.value };
     
     // Fix: Node Depth Calculation
@@ -395,6 +413,14 @@ const save = () => {
 .outlet-radio-group { display: flex; gap: var(--isy-space-4); margin-bottom: var(--isy-space-2); }
 .radio-label { display: flex; align-items: center; gap: var(--isy-space-1); font-size: var(--isy-fs-lg); cursor: var(--isy-cursor-hand); color: var(--isy-pixel-text-dim); }
 .hint { font-size: var(--isy-fs-sm); color: var(--isy-pixel-border-hover); margin-top: var(--isy-space-1); }
+.feld-fehler {
+  margin: var(--isy-space-1) 0 0;
+  font-size: var(--isy-fs-md);
+  color: var(--isy-pixel-danger-soft-text);
+  background: var(--isy-pixel-danger-soft);
+  padding: var(--isy-space-1) var(--isy-space-2);
+  border-radius: var(--isy-radius-sm);
+}
 .checkbox-group .checkbox-label { color: var(--isy-pixel-text-dim); font-size: var(--isy-fs-md); display: flex; align-items: center; gap: var(--isy-space-2); }
 .value-display { color: var(--isy-pixel-green); font-weight: 600; padding: var(--isy-space-1) 0; }
 

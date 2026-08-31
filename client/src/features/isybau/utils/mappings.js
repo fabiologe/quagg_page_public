@@ -394,3 +394,25 @@ export const getRunoffCoeff = (property, func, slopeClass) => {
 
     return 0.5; // Global Default
 };
+
+/**
+ * Zuordnungsobjekte als Optionsliste fuer components/common/PixelSelect.vue.
+ *
+ * Das eigene Auswahlfeld bekommt seine Eintraege als Array statt als
+ * <option>-Kinder — es zeichnet die Liste ja selbst. Damit die Umstellung die
+ * Aufrufstellen nicht mit Object.entries()-Ketten zupflastert, stehen die
+ * beiden immer gleichen Formen hier.
+ *
+ * `mitNummer` gibt die Nummer mit aus ("2 - < 1% bis 4%"): bei Neigungs- und
+ * Flaechenklassen ist die Nummer der Wert, mit dem ISYBAU und der Bericht
+ * arbeiten — sie gehoert sichtbar dazu.
+ */
+export const optionenAusZuordnung = (zuordnung, { mitNummer = false } = {}) =>
+    Object.entries(zuordnung).map(([schluessel, beschriftung]) => ({
+        value: Number(schluessel),
+        label: mitNummer ? `${schluessel} - ${beschriftung}` : String(beschriftung),
+    }));
+
+/** Fuer Zuordnungen, deren SCHLUESSEL der Wert ist (z.B. Material -> Rauheit). */
+export const optionenAusSchluesseln = (zuordnung) =>
+    Object.keys(zuordnung).map(schluessel => ({ value: schluessel, label: schluessel }));

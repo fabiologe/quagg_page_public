@@ -644,7 +644,12 @@ html[data-theme] label:has(input[type="checkbox"]), html[data-theme] label:has(i
 .isybau-main textarea,
 html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight),
 html[data-theme] select,
-html[data-theme] textarea {
+html[data-theme] textarea,
+/* Das eigene Auswahlfeld (components/common/PixelSelect.vue) traegt hier
+   dieselbe Form wie ein <select> — eine Regel, zwei Bauarten, garantiert
+   gleiches Aussehen. */
+.isybau-main .isy-select,
+html[data-theme] .isy-select {
     clip-path: var(--isy-pixel-clip-corner) !important;
     border-width: 2px !important;
     border-style: solid !important;
@@ -668,7 +673,9 @@ html[data-theme] textarea {
 .isybau-main textarea:focus,
 html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight):focus,
 html[data-theme] select:focus,
-html[data-theme] textarea:focus {
+html[data-theme] textarea:focus,
+.isybau-main .isy-select:focus,
+html[data-theme] .isy-select:focus {
     outline: none !important;
     box-shadow: inset 0 0 0 2px var(--isy-pixel-green) !important;
 }
@@ -678,7 +685,9 @@ html[data-theme] textarea:focus {
 .isybau-main textarea:disabled,
 html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.sv-tutorial-highlight):disabled,
 html[data-theme] select:disabled,
-html[data-theme] textarea:disabled {
+html[data-theme] textarea:disabled,
+.isybau-main .isy-select[aria-disabled="true"],
+html[data-theme] .isy-select[aria-disabled="true"] {
     background-color: var(--isy-pixel-content-sunken);
     color: var(--isy-pixel-content-text-dim);
     cursor: var(--isy-cursor-gesperrt) !important;
@@ -687,7 +696,9 @@ html[data-theme] textarea:disabled {
 /* Auswahlfelder: nativen Pfeil abschalten, Pixel-Pfeil setzen. Der Platz
    rechts muss reichen, sonst laeuft der Text unter den Pfeil. */
 .isybau-main select,
-html[data-theme] select {
+html[data-theme] select,
+.isybau-main .isy-select,
+html[data-theme] .isy-select {
     appearance: none !important;
     -webkit-appearance: none !important;
     background-image: var(--isy-pixel-select-pfeil) !important;
@@ -705,104 +716,82 @@ html[data-theme] select {
  * Zwei Selektorpfade wie bei der Button-Form weiter oben: .isybau-main deckt
  * den Regelfall, html[data-theme] die Teleport-Modals. */
 .isybau-main button, .isybau-main select, .isybau-main summary, .isybau-main [role="button"],
-html[data-theme] button, html[data-theme] select, html[data-theme] summary, html[data-theme] [role="button"] {
+.isybau-main .isy-select, .isybau-main .isy-select-liste__eintrag,
+html[data-theme] button, html[data-theme] select, html[data-theme] summary, html[data-theme] [role="button"],
+html[data-theme] .isy-select, html[data-theme] .isy-select-liste__eintrag {
     cursor: var(--isy-cursor-hand);
+}
+.isybau-main .isy-select[aria-disabled="true"],
+.isybau-main .isy-select-liste__eintrag.ist-gesperrt,
+html[data-theme] .isy-select[aria-disabled="true"],
+html[data-theme] .isy-select-liste__eintrag.ist-gesperrt {
+    cursor: var(--isy-cursor-gesperrt);
 }
 .isybau-main button:disabled, .isybau-main select:disabled,
 html[data-theme] button:disabled, html[data-theme] select:disabled {
     cursor: var(--isy-cursor-gesperrt);
 }
 
-/* Die AUFGEKLAPPTE Liste eines Auswahlfeldes.
+/* Die aufgeklappte Liste des eigenen Auswahlfeldes.
  *
- * Der Zeiger aus der Regel darueber endet an der Kante des Feldes. Was ein
- * Klick aufklappt, zeichnet der Browser naemlich selbst - ausserhalb der
- * Seite, in einem eigenen Fenster. Im echten Fenster nachgemessen: bei
- * geoeffnetem Feld ist eine <option> 0x0 Pixel gross, und
- * document.elementFromPoint() findet an ihrer Stelle nichts. Kein CSS des
- * Dokuments erreicht sie. Deshalb sprang der Zeiger ueber der offenen Liste
- * zurueck auf die Systemform - und die Liste selbst sah aus wie das
- * Betriebssystem statt wie das Modul.
+ * Hier stand bis 2026-08-31 ein @supports-Block mit `appearance: base-select`
+ * — der Chromium-Weg, die Liste eines nativen <select> in die Seite zu holen.
+ * Er hat funktioniert, aber nur dort: Firefox (der Browser des Nutzers) und
+ * Safari koennen es nicht, und fuer sie war damit KEINE Liste im Modul
+ * eingekleidet. Deshalb zeichnet PixelSelect.vue die Liste jetzt selbst.
  *
- * appearance: base-select holt die Liste IN die Seite: die <option> werden zu
- * echten Elementen im Dokument (oberste Ebene, am Feld verankert). Damit gilt
- * fuer sie dasselbe Stylesheet wie fuer alles andere - Zeiger, Flaeche,
- * Kanten. Weil die Liste dann sichtbar dem Modul gehoert, wird sie hier auch
- * eingekleidet; die Papier-Familie ist dieselbe wie in den Tabellen, und die
- * ist in HELL wie DUNKEL gleich (siehe --isy-pixel-content-bg oben).
+ * Die Regeln stehen global statt scoped in der Komponente, weil die Liste per
+ * <Teleport> an <body> haengt — ein scoped-Selektor der Komponente wuerde sie
+ * nicht mehr treffen. Aus demselben Grund `html:has(.isybau-main)`: das Modul
+ * hat sein eigenes Aussehen, der PDF-Editor (der ebenfalls data-theme setzt)
+ * geht es nichts an.
  *
- * Der ganze Block steht in @supports, weil das bisher nur Chromium-Browser
- * koennen (Chrome/Edge ab 135). Wo nicht, ueberspringt der Browser ihn und
- * es bleibt beim heutigen Zustand: die Regeln davor stehen unveraendert. Der
- * Rueckfall ist also der Ist-Stand, kein schlechterer.
+ * Papier-Familie wie die Tabellen, und die ist in HELL wie DUNKEL gleich —
+ * eine Liste, die in beiden Modi gleich aussieht, ist hier Absicht.
  */
-@supports (appearance: base-select) {
-    /* EIN Selektorpfad statt der zwei von oben: html:has(.isybau-main) trifft
-       auch die Felder in den <Teleport>-Modals (die haengen an <body>, aber
-       .isybau-main steckt im selben Dokument) - und eben NUR dann, wenn das
-       Modul auch laeuft. Derselbe Trick und derselbe Grund wie beim Zeiger
-       auf der Wurzel weiter oben: html[data-theme] setzt auch der PDF-Editor,
-       und dessen Auswahlfelder gehen dieses Stylesheet nichts an. */
-    html:has(.isybau-main) select,
-    html:has(.isybau-main) select::picker(select) {
-        appearance: base-select !important;
-    }
+html:has(.isybau-main) .isy-select-liste {
+    z-index: var(--isy-z-top);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0;
+    background: var(--isy-pixel-content-bg);
+    color: var(--isy-pixel-content-text);
+    font-family: inherit;
+    font-size: var(--isy-fs-md);
+    /* Erhaben, nicht eingedrueckt: eine aufgeklappte Liste liegt UEBER der
+       Seite. Deshalb die Bevel-Richtung der Knoepfe (hell oben/links) und der
+       Pixel-Schatten — nicht die der Felder. */
+    border: 2px solid;
+    border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark)
+                  var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
+    box-shadow: var(--isy-pixel-btn-shadow);
+}
 
-    /* Der Pfeil bleibt der eigene aus der Regel oben (background-image).
-       base-select setzt von sich aus noch einen zweiten in den Knopf. */
-    html:has(.isybau-main) select::picker-icon {
-        display: none;
-    }
+html:has(.isybau-main) .isy-select-liste__eintrag {
+    padding: var(--isy-space-1) var(--isy-space-2);
+    white-space: nowrap;
+    color: var(--isy-pixel-content-text);
+}
 
-    /* Die Liste ist mindestens so breit wie ihr Feld (anchor-size), darf fuer
-       lange Eintraege aber darueber hinauswachsen. Umgekehrt misst base-select
-       den ZUGEKLAPPTEN Knopf nur noch am gewaehlten Eintrag statt am
-       laengsten - die Felder werden dadurch schmaler und je nach Wert
-       unterschiedlich breit. Nachgemessen im Reiter "Haltungen": Material
-       97 -> 49/57 px, Profil 215 -> 90 px. Das ist gewollt so gelassen: die
-       Tabelle gewinnt dadurch Platz fuer Spalten, und der Unterschied
-       zwischen zwei Werten derselben Spalte liegt bei wenigen Pixeln. */
-    html:has(.isybau-main) select::picker(select) {
-        min-width: anchor-size(width);
-        max-height: min(50vh, 320px);
-        overflow-y: auto;
-        padding: 0;
-        background: var(--isy-pixel-content-bg);
-        color: var(--isy-pixel-content-text);
-        font-family: inherit;
-        /* Erhaben, nicht eingedrueckt: eine aufgeklappte Liste liegt UEBER der
-           Seite. Deshalb die Bevel-Richtung der Knoepfe (hell oben/links) und
-           der Pixel-Schatten - nicht die der Felder. */
-        border: 2px solid;
-        border-color: var(--isy-pixel-bevel-light) var(--isy-pixel-bevel-dark)
-                      var(--isy-pixel-bevel-dark) var(--isy-pixel-bevel-light);
-        border-radius: 0;
-        box-shadow: var(--isy-pixel-btn-shadow);
-    }
+/* Zeiger UND Tastatur fuehren denselben Balken: `.ist-aktiv` setzt die Maus
+   beim Ueberfahren und der Pfeil beim Wandern. Ohne das haette die Tastatur
+   keine sichtbare Marke. */
+html:has(.isybau-main) .isy-select-liste__eintrag.ist-aktiv {
+    background: var(--isy-pixel-content-hover);
+}
 
-    html:has(.isybau-main) select option {
-        cursor: var(--isy-cursor-hand);
-        padding: var(--isy-space-1) var(--isy-space-2);
-        background: transparent;
-        color: var(--isy-pixel-content-text);
-    }
-    html:has(.isybau-main) select option:hover {
-        background: var(--isy-pixel-content-hover);
-    }
-    /* Der gewaehlte Eintrag traegt die Zeilenfarbe der Tabellen. Das Haekchen,
-       das base-select ihm zusaetzlich voranstellt, faellt weg - es sass als
-       einziges Zeichen vor dem Text und haette jede Zeile eingerueckt. */
-    html:has(.isybau-main) select option:checked {
-        background: var(--isy-pixel-content-selected);
-        font-weight: 700;
-    }
-    html:has(.isybau-main) select option::checkmark {
-        display: none;
-    }
-    html:has(.isybau-main) select option:disabled {
-        color: var(--isy-pixel-content-text-dim);
-        cursor: var(--isy-cursor-gesperrt);
-    }
+/* Der gewaehlte Eintrag traegt die Zeilenfarbe der Tabellen. */
+html:has(.isybau-main) .isy-select-liste__eintrag.ist-gewaehlt {
+    background: var(--isy-pixel-content-selected);
+    font-weight: 700;
+}
+html:has(.isybau-main) .isy-select-liste__eintrag.ist-gewaehlt.ist-aktiv {
+    background: var(--isy-pixel-content-sunken);
+}
+
+html:has(.isybau-main) .isy-select-liste__eintrag.ist-gesperrt {
+    color: var(--isy-pixel-content-text-dim);
+    background: transparent;
 }
 
 /* Anklickbare Elemente, die KEIN Formularelement sind.

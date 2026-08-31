@@ -46,11 +46,7 @@
 
             <div class="form-group">
               <label>Koordinatensystem (Ziel):</label>
-              <select v-model="selectedCRS">
-                <option v-for="opt in CRS_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
+              <PixelSelect v-model="selectedCRS" :options="CRS_OPTIONS" />
             </div>
           </div>
 
@@ -64,11 +60,7 @@
 
             <div class="form-group">
               <label>Format der eingegebenen Werte:</label>
-              <select v-model="manualCRS">
-                <option v-for="opt in manualCrsOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
+              <PixelSelect v-model="manualCRS" :options="manualCrsOptions" />
             </div>
 
             <div class="manual-coords-group">
@@ -103,6 +95,7 @@ import { vFokus } from '../../composables/vFokus.js';
 import axios from 'axios';
 import proj4 from 'proj4';
 import { CRS_OPTIONS } from '../../utils/KostraService.js';
+import PixelSelect from '../common/PixelSelect.vue';
 
 const store = useIsybauStore();
 

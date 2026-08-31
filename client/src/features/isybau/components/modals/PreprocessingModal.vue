@@ -58,21 +58,11 @@
                     <template v-if="activeTab === 'edges'">
                         <div class="bulk-field">
                             <label>Material:</label>
-                            <select v-model="bulkForm.material" class="bulk-select">
-                                <option value="">- Unverändert -</option>
-                                <option v-for="(kst, mat) in MaterialRoughness" :key="mat" :value="mat">{{ mat }}</option>
-                            </select>
+                            <PixelSelect v-model="bulkForm.material" class="bulk-select" :options="sammelMaterialOptionen" />
                         </div>
                         <div class="bulk-field">
                             <label>Profiltyp:</label>
-                            <select v-model="bulkForm.profileType" class="bulk-select">
-                                <option :value="null">- Unverändert -</option>
-                                <option :value="0">Kreisprofil</option>
-                                <option :value="1">Eiprofil</option>
-                                <option :value="3">Rechteck</option>
-                                <option :value="8">Trapezprofil</option>
-                                <option :value="13">Andere</option>
-                            </select>
+                            <PixelSelect v-model="bulkForm.profileType" class="bulk-select" :options="sammelProfilOptionen" />
                         </div>
                         
                         <!-- Dynamic Profile Dimensions -->
@@ -96,14 +86,7 @@
                     <template v-if="activeTab === 'nodes' || activeTab === 'structures'">
                          <div class="bulk-field" data-tutorial="preprocessing-typ">
                             <label>Typ ändern:</label>
-                            <select v-model="bulkForm.nodeType" class="bulk-select">
-                                <option value="">- Unverändert -</option>
-                                <option value="Standard">Standard (Schacht)</option>
-                                <option value="Bauwerk">Bauwerk (Allgemein)</option>
-                                <option v-for="(label, key) in Bauwerkstyp" :key="key" :value="parseInt(key)">
-                                  {{ label }}
-                                </option>
-                            </select>
+                            <PixelSelect v-model="bulkForm.nodeType" class="bulk-select" :options="sammelTypOptionen" />
                         </div>
 
                         <!-- Dynamic Node Fields: sichtbar, wenn der gewählte Ziel-Typ ODER
@@ -123,11 +106,7 @@
 
                         <div class="bulk-field">
                             <label>Deckel druckdicht:</label>
-                            <select v-model="bulkForm.canOverflow" class="bulk-select">
-                                <option :value="null">- Unverändert -</option>
-                                <option :value="false">Ja – druckdicht (kein Überlauf)</option>
-                                <option :value="true">Nein – überlauffähig</option>
-                            </select>
+                            <PixelSelect v-model="bulkForm.canOverflow" class="bulk-select" :options="druckdichtOptionen" />
                             <span class="bulk-hint" v-if="bulkForm.canOverflow !== null">
                                 {{ bulkForm.canOverflow === false ? '🔒 Deckel wird auf druckdicht gesetzt' : '🔓 Deckel wird auf überlauffähig gesetzt' }}
                             </span>
@@ -190,10 +169,8 @@
                         </div>
                     </td>
                     <td>
-                      <select v-model="node.type" class="small-select" @click.stop @change="handleTypeChange(node, 'Standard')">
-                        <option value="Standard">Standard</option>
-                        <option value="Bauwerk">Bauwerk</option>
-                      </select>
+                      <PixelSelect v-model="node.type" class="small-select" :options="schachtTypOptionen"
+                                   @click.stop @change="handleTypeChange(node, 'Standard')" />
                     </td>
                     <td>
                       <input :aria-label="`Zufluss in l/s für ${node.id}`" type="number" v-model.number="node.constantInflow" step="0.1" class="small-input" @click.stop>
@@ -252,14 +229,8 @@
                         </div>
                     </td>
                     <td>
-                      <select v-model="node.type" class="small-select" @click.stop @change="handleTypeChange(node, 'Bauwerk')">
-                        <option value="Standard">Schacht</option>
-                        <option value="Bauwerk">Bauwerk (Allgemein)</option>
-                        <option v-for="(label, key) in Bauwerkstyp" :key="key" :value="parseInt(key)">
-                          {{ label }}
-                        </option>
-                        <option value="Divider">Verteiler (Divider)</option>
-                      </select>
+                      <PixelSelect v-model="node.type" class="small-select" :options="bauwerkTypOptionen"
+                                   @click.stop @change="handleTypeChange(node, 'Bauwerk')" />
                       <span class="classify-badge" :title="classificationTitle(node)">
                           → {{ classifyPreview(node).linkSection || classifyPreview(node).section }}
                       </span>
@@ -302,13 +273,9 @@
                              <span class="hint-text">Start-Tiefe (m)</span>
                         </div>
                         <div class="input-group">
-                              <select v-model="node.storageShape" class="small-select" @click.stop
-                                      title="Flächenverlauf über die Tiefe — Gesamtvolumen bleibt erhalten">
-                                  <option value="PRISMATIC">Prismatisch (konstante Fläche)</option>
-                                  <option value="CONICAL">Trichterförmig (linear)</option>
-                                  <option value="PYRAMIDAL">Pyramidal (quadratisch)</option>
-                                  <option value="TABULAR">Tabellarisch (Tiefe/Fläche-Kurve)</option>
-                              </select>
+                              <PixelSelect v-model="node.storageShape" class="small-select" :options="speicherformOptionen"
+                                           @click.stop
+                                           title="Flächenverlauf über die Tiefe — Gesamtvolumen bleibt erhalten" />
                              <span class="hint-text">Form</span>
                         </div>
                         <div class="input-group">
@@ -336,11 +303,8 @@
                              <span class="hint-text">Breite (m)</span>
                         </div>
                         <div class="input-group">
-                              <select v-model="node.weirType" class="small-select" @click.stop title="Wehrform (Kammer-Geometrie)">
-                                  <option value="TRANSVERSE">Frontal (Transverse)</option>
-                                  <option value="SIDEFLOW">Seitlich (Sideflow)</option>
-                                  <option value="V-NOTCH">Dreiecksüberfall (V-Notch)</option>
-                              </select>
+                              <PixelSelect v-model="node.weirType" class="small-select" :options="wehrformOptionen"
+                                           @click.stop title="Wehrform (Kammer-Geometrie)" />
                              <span class="hint-text">Wehrform</span>
                         </div>
                         <div class="input-group">
@@ -350,10 +314,10 @@
                             </label>
                         </div>
                         <div class="input-group" style="grid-column: span 2;">
-                             <select class="weir-preset-select" :value="presetKeyFor(node.dischargeCoeff)" @change="node.dischargeCoeff = parseFloat($event.target.value)" @click.stop title="Überfallbeiwert μ → Cw = (2/3)·μ·√(2g)">
-                                 <option value="">— Kronenform wählen —</option>
-                                 <option v-for="p in weirPresets" :key="p.cw" :value="p.cw">{{ p.label }}</option>
-                             </select>
+                             <PixelSelect class="weir-preset-select" :model-value="presetKeyFor(node.dischargeCoeff)"
+                                          :options="kronenformOptionen"
+                                          @update:model-value="node.dischargeCoeff = parseFloat($event) || node.dischargeCoeff"
+                                          @click.stop title="Überfallbeiwert μ → Cw = (2/3)·μ·√(2g)" />
                              <span class="hint-text">Kronenform</span>
                         </div>
                         <div class="input-group">
@@ -369,10 +333,8 @@
                              <span class="hint-text">Max. Abfluss (l/s)</span>
                         </div>
                         <div class="input-group">
-                              <select v-model="node.orificeType" class="small-select" @click.stop title="Lage der Öffnung im Schacht">
-                                  <option value="BOTTOM">Sohle (Bottom)</option>
-                                  <option value="SIDE">Seitlich (Side)</option>
-                              </select>
+                              <PixelSelect v-model="node.orificeType" class="small-select" :options="oeffnungslageOptionen"
+                                           @click.stop title="Lage der Öffnung im Schacht" />
                              <span class="hint-text">Lage</span>
                         </div>
                         <div class="input-group">
@@ -394,10 +356,8 @@
                              <span class="hint-text">Schieberbreite (m)</span>
                         </div>
                         <div class="input-group">
-                              <select v-model="node.orificeType" class="small-select" @click.stop title="Lage der Öffnung im Schacht">
-                                  <option value="BOTTOM">Sohle (Bottom)</option>
-                                  <option value="SIDE">Seitlich (Side)</option>
-                              </select>
+                              <PixelSelect v-model="node.orificeType" class="small-select" :options="oeffnungslageOptionen"
+                                           @click.stop title="Lage der Öffnung im Schacht" />
                              <span class="hint-text">Lage</span>
                         </div>
                         <div class="input-group">
@@ -423,22 +383,18 @@
                       <!-- Divider: Verteiler -->
                       <div v-if="node.type === 'Divider'" class="input-group-col">
                         <div class="input-group">
-                          <select
-                            :value="effectiveDividerLinkId(node)"
-                            @change="node.dividerLinkId = $event.target.value"
-                            class="small-select" @click.stop
+                          <PixelSelect
+                            class="small-select"
+                            :model-value="effectiveDividerLinkId(node)"
+                            :options="dividerHaltungOptionen(node)"
+                            @update:model-value="node.dividerLinkId = $event"
+                            @click.stop
                             title="Welche ausgehende Haltung wird abgezweigt? Vorbelegt nach höherer Sohlhöhe (Überlauf liegt konventionell höher als die Hauptleitung)"
-                          >
-                            <option value="">— wählen —</option>
-                            <option v-for="e in dividerOutgoingEdges(node)" :key="e.id" :value="e.id">{{ e.id }}</option>
-                          </select>
+                          />
                           <span class="hint-text">Abgezweigte Haltung</span>
                         </div>
                         <div class="input-group">
-                          <select v-model="node.dividerType" class="small-select" @click.stop>
-                            <option value="OVERFLOW">Überlauf (Overflow)</option>
-                            <option value="CUTOFF">Abflussgrenze (Cutoff)</option>
-                          </select>
+                          <PixelSelect v-model="node.dividerType" class="small-select" :options="verteilerartOptionen" @click.stop />
                           <span class="hint-text">Divider-Typ</span>
                         </div>
                         <div class="input-group" v-if="node.dividerType === 'CUTOFF'">
@@ -450,10 +406,7 @@
                       <!-- Type 5 (Auslaufbauwerk) Loose Check -->
                       <div v-if="node.type == 5" class="input-group-col">
                         <div class="input-group">
-                             <select v-model="node.outflowType" class="small-select" @click.stop>
-                                <option value="free">Freier Auslauf</option>
-                                <option value="throttled">Gedrosselt</option>
-                             </select>
+                             <PixelSelect v-model="node.outflowType" class="small-select" :options="auslaufartOptionen" @click.stop />
                         </div>
                         <div class="input-group">
                              <input :aria-label="`Volumen in m³ für ${node.id}`" type="number" v-model.number="node.volume" step="1" class="small-input" @click.stop>
@@ -553,18 +506,15 @@
                     </td>
                     <td class="small-text">{{ edge.fromNodeId }} -> {{ edge.toNodeId }}</td>
                     <td>
-                      <select v-model="edge.material" @change="updateRoughness(edge)" class="small-select" @click.stop>
-                        <option v-for="(kst, mat) in MaterialRoughness" :key="mat" :value="mat">{{ mat }}</option>
-                        <option v-if="edge.material && !MaterialRoughness[edge.material]" :value="edge.material">{{ edge.material }}</option>
-                      </select>
+                      <PixelSelect v-model="edge.material" class="small-select" :options="materialOptionen(edge)"
+                                   @change="updateRoughness(edge)" @click.stop />
                     </td>
                     <td>
                       <input :aria-label="`Rauheit für ${edge.id}`" type="number" v-model.number="edge.roughness" class="small-input" @click.stop>
                     </td>
                     <td>
-                      <select v-model.number="edge.profile.type" @change="onProfileChange(edge)" class="small-select" @click.stop>
-                        <option v-for="(label, key) in Profilart" :key="key" :value="parseInt(key)">{{ label }}</option>
-                      </select>
+                      <PixelSelect v-model="edge.profile.type" class="small-select" :options="profilOptionen"
+                                   @change="onProfileChange(edge)" @click.stop />
                     </td>
                     <td>{{ edge.length.toFixed(2) }}</td>
                     <td>
@@ -617,20 +567,12 @@
                             <input :aria-label="`Versiegelungsgrad ψ für ${area.id}`" type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
                         </td>
                         <td>
-                             <select v-model.number="area.function" class="medium-select" @click.stop>
-                                <option v-for="(label, key) in Flaechenfunktion" :key="key" :value="parseInt(key)">
-                                    {{ key }} - {{ label }}
-                                </option>
-                            </select>
+                             <PixelSelect v-model="area.function" class="medium-select" :options="flaechenfunktionOptionen" @click.stop />
                         </td>
                         <td>
                              <div class="split-cell">
-                                <select v-model.number="area.slope" class="medium-select" @click.stop>
-                                    <option :value="null" disabled>– wählen –</option>
-                                    <option v-for="(label, key) in Neigungsklasse" :key="key" :value="parseInt(key)">
-                                        {{ key }} - {{ label }}
-                                    </option>
-                                </select>
+                                <PixelSelect v-model="area.slope" class="medium-select" :options="neigungsklasseOptionen"
+                                             placeholder="– wählen –" @click.stop />
                                 <button type="button" class="pick-btn" @click.stop="suggestSlope(area)" :disabled="!store.terrain" :title="store.terrain ? 'Neigung aus DGM ermitteln' : 'Kein DGM geladen'">
                                     <img src="/saintv1d/icons/Health-Brain-1--Streamline-Pixel.svg" alt="Neigung ermitteln" class="pick-icon" />
                                 </button>
@@ -693,7 +635,8 @@ import { ref, watch, computed, nextTick } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import CurveTableEditor from '../common/CurveTableEditor.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
-import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, resolveNodeUiType, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults } from '../../utils/mappings.js';
+import PixelSelect from '../common/PixelSelect.vue';
+import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, resolveNodeUiType, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 import { checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints } from '../../utils/preSolveValidation.js';
 import { depthFromCoverAndZ, coverZFromZAndDepth } from '../../utils/heightCoupling.js';
 import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
@@ -886,6 +829,100 @@ const presetKeyFor = (cw) => {
     const match = weirPresets.find(p => Math.abs(p.cw - cw) < 0.005);
     return match ? match.cw : '';
 };
+
+/* === Eintraege der Auswahlfelder ============================================
+ *
+ * PixelSelect.vue bekommt seine Liste als Array statt als <option>-Kinder — es
+ * zeichnet sie ja selbst (siehe dort, warum). Die festen Listen stehen als
+ * Konstanten ausserhalb der Komponente: sie haengen von nichts ab und wuerden
+ * sonst bei jedem Tastendruck in der Tabelle neu gebaut.
+ *
+ * Die Reihenfolge und die Beschriftungen sind 1:1 die der frueheren
+ * <option>-Zeilen — hier wurde umgehaengt, nicht umformuliert.
+ */
+const UNVERAENDERT = '- Unverändert -';
+
+const sammelMaterialOptionen = computed(() => [
+    { value: '', label: UNVERAENDERT },
+    ...optionenAusSchluesseln(MaterialRoughness),
+]);
+const sammelProfilOptionen = [
+    { value: null, label: UNVERAENDERT },
+    { value: 0, label: 'Kreisprofil' },
+    { value: 1, label: 'Eiprofil' },
+    { value: 3, label: 'Rechteck' },
+    { value: 8, label: 'Trapezprofil' },
+    { value: 13, label: 'Andere' },
+];
+const sammelTypOptionen = computed(() => [
+    { value: '', label: UNVERAENDERT },
+    { value: 'Standard', label: 'Standard (Schacht)' },
+    { value: 'Bauwerk', label: 'Bauwerk (Allgemein)' },
+    ...optionenAusZuordnung(Bauwerkstyp),
+]);
+const druckdichtOptionen = [
+    { value: null, label: UNVERAENDERT },
+    { value: false, label: 'Ja – druckdicht (kein Überlauf)' },
+    { value: true, label: 'Nein – überlauffähig' },
+];
+
+const schachtTypOptionen = [
+    { value: 'Standard', label: 'Standard' },
+    { value: 'Bauwerk', label: 'Bauwerk' },
+];
+const bauwerkTypOptionen = computed(() => [
+    { value: 'Standard', label: 'Schacht' },
+    { value: 'Bauwerk', label: 'Bauwerk (Allgemein)' },
+    ...optionenAusZuordnung(Bauwerkstyp),
+    { value: 'Divider', label: 'Verteiler (Divider)' },
+]);
+
+const speicherformOptionen = [
+    { value: 'PRISMATIC', label: 'Prismatisch (konstante Fläche)' },
+    { value: 'CONICAL', label: 'Trichterförmig (linear)' },
+    { value: 'PYRAMIDAL', label: 'Pyramidal (quadratisch)' },
+    { value: 'TABULAR', label: 'Tabellarisch (Tiefe/Fläche-Kurve)' },
+];
+const wehrformOptionen = [
+    { value: 'TRANSVERSE', label: 'Frontal (Transverse)' },
+    { value: 'SIDEFLOW', label: 'Seitlich (Sideflow)' },
+    { value: 'V-NOTCH', label: 'Dreiecksüberfall (V-Notch)' },
+];
+const kronenformOptionen = [
+    { value: '', label: '— Kronenform wählen —' },
+    ...WeirCrestPresets.map(p => ({ value: p.cw, label: p.label })),
+];
+const oeffnungslageOptionen = [
+    { value: 'BOTTOM', label: 'Sohle (Bottom)' },
+    { value: 'SIDE', label: 'Seitlich (Side)' },
+];
+const verteilerartOptionen = [
+    { value: 'OVERFLOW', label: 'Überlauf (Overflow)' },
+    { value: 'CUTOFF', label: 'Abflussgrenze (Cutoff)' },
+];
+const auslaufartOptionen = [
+    { value: 'free', label: 'Freier Auslauf' },
+    { value: 'throttled', label: 'Gedrosselt' },
+];
+
+const profilOptionen = optionenAusZuordnung(Profilart);
+const flaechenfunktionOptionen = optionenAusZuordnung(Flaechenfunktion, { mitNummer: true });
+const neigungsklasseOptionen = optionenAusZuordnung(Neigungsklasse, { mitNummer: true });
+
+/* Zwei Listen haengen an der EINZELNEN Zeile und sind deshalb Funktionen:
+ * Ein Material, das die Zuordnung nicht kennt (kommt aus fremden XML-Dateien),
+ * muss trotzdem waehlbar bleiben — sonst faellt es beim ersten Anfassen der
+ * Zeile still auf einen anderen Wert. */
+const materialOptionen = (edge) => {
+    const bekannt = optionenAusSchluesseln(MaterialRoughness);
+    return (edge.material && !MaterialRoughness[edge.material])
+        ? [...bekannt, { value: edge.material, label: edge.material }]
+        : bekannt;
+};
+const dividerHaltungOptionen = (node) => [
+    { value: '', label: '— wählen —' },
+    ...dividerOutgoingEdges(node).map(e => ({ value: e.id, label: e.id })),
+];
 
 // === Klassifizierungs-Vorschau (welche SWMM-Sektion bekommt dieser Knoten?) ===
 // Zeigt bei Pumpe/Wehr/Drossel/Schieber die KONKRET betroffene Haltungs-ID (die
