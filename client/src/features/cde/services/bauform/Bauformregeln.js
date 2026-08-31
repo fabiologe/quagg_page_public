@@ -53,6 +53,30 @@ export const MITGELIEFERTE_REGELN = Object.freeze([
         bauform: 'achse+profil',
     },
     {
+        /**
+         * `IfcGeographicElement` trägt seine Form im `PredefinedType`, nicht im
+         * Typ: TERRAIN ist ein Höhenfeld, VEGETATION ein Baum. Eine Bauform am
+         * Typprofil wäre für zwei von drei Untertypen falsch — und eine
+         * Deklaration schlägt die Geometrie, wäre also schlimmer als keine.
+         *
+         * Deshalb hier, wo auf Attribute gematcht werden kann. Das ist keine
+         * Ausnahme, sondern der vorgesehene Weg für „der Typ allein reicht
+         * nicht": erst Regel, dann Typprofil, dann Geometrie.
+         */
+        id: 'gelaende-terrain', enabled: true, priority: 40,
+        name: 'IfcGeographicElement mit PredefinedType TERRAIN ist Gelände',
+        condition: { category: 'IFCGEOGRAPHICELEMENT', propertyName: 'PredefinedType',
+                     operator: 'equals', value: 'TERRAIN' },
+        bauform: 'hoehenfeld',
+    },
+    {
+        id: 'gelaende-vegetation', enabled: true, priority: 40,
+        name: 'IfcGeographicElement mit PredefinedType VEGETATION ist ein Standort',
+        condition: { category: 'IFCGEOGRAPHICELEMENT', propertyName: 'PredefinedType',
+                     operator: 'equals', value: 'VEGETATION' },
+        bauform: 'punkt',
+    },
+    {
         id: 'provi-schacht', enabled: true, priority: 50,
         name: 'ProVI: Proxy „Schacht" ist ein Bauwerk',
         condition: { category: 'IFCBUILDINGELEMENTPROXY', propertyName: 'Name',

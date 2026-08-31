@@ -21,6 +21,7 @@ import {
     EINGEBAUTE_PROFILE, imWoerterbuch, normalisiereKategorie, profilHerkunft,
 } from '../services/bauform/Typprofile.js';
 import { herleite } from '../services/Herleitung.js';
+import { MITGELIEFERTE_REGELN, bauformAusRegel } from '../services/bauform/Bauformregeln.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
 const alle = Object.keys(ENTITY_META);
@@ -249,5 +250,65 @@ describe('Die Zuordnung folgt den UNTERTYPEN, nicht dem Klassennamen', () => {
         // Bodenschicht ist ein Aufschlussergebnis.
         expect(profilHerkunft('IFCEARTHWORKSFILL', EINGEBAUTE_PROFILE).profil.bauform).toBe('hoehenfeld');
         expect(profilHerkunft('IFCEARTHWORKSCUT', EINGEBAUTE_PROFILE).profil.bauform).toBe('hoehenfeld');
+    });
+});
+
+describe('Jede spezifische Deklaration muss ihre Begründung mitführen', () => {
+    /**
+     * FABIOS EINWAND, und er trifft: „muss ich jetzt ernsthaft jedes mit dir
+     * durchgehen?" Nein — aber „ich schaue nochmal genauer hin" ist keine Kur,
+     * sondern ein Vorsatz. Der Befund dahinter ist strukturell:
+     *
+     * Die Geometrie kann nur `achse+profil`, `linie`, `koerper` und `netz`
+     * liefern (siehe den Rückfall in Bauformen.js). `flaeche`, `flaeche+dicke`,
+     * `hoehenfeld` und `punkt` kommen AUSSCHLIESSLICH aus einer Deklaration —
+     * dort ist die Deutung eines Klassennamens die einzige Quelle, und eine
+     * Deklaration SCHLÄGT die Geometrie. Eine falsche ist damit schlimmer als
+     * gar keine: sie überstimmt das Einzige, was Beweiskraft hat.
+     *
+     * Genau daher kamen alle drei gefundenen Fehler (IFCTRACKELEMENT,
+     * IFCFOOTING, IFCGEOGRAPHICELEMENT) — nicht aus Flüchtigkeit, sondern
+     * daraus, dass ein plausibler Name für Beleg gehalten wurde.
+     *
+     * Dieser Test kann Richtigkeit nicht beweisen. Er erzwingt aber, dass der
+     * BELEG danebensteht: die vorgegebenen Untertypen, aus denen die Form
+     * folgt. Damit lässt sich jede Zeile in Sekunden nachprüfen, statt sie neu
+     * herleiten zu müssen — und eine unbelegte Vermutung kann niemand mehr
+     * still hinzufügen, ich eingeschlossen.
+     */
+    const SPEZIFISCH = Object.entries(EINGEBAUTE_PROFILE)
+        .filter(([, p]) => p.bauform && p.bauform !== 'koerper');
+
+    it('hat überhaupt spezifische Deklarationen zu prüfen', () => {
+        expect(SPEZIFISCH.length).toBeGreaterThan(30);
+    });
+
+    it.each(SPEZIFISCH)('%s belegt seine Bauform', (typ, profil) => {
+        expect(profil.warum, `${typ}: bauform '${profil.bauform}' ohne Beleg`).toBeTruthy();
+        // Ein Halbsatz ist kein Beleg. Verlangt wird, WORAUS die Form folgt.
+        expect(profil.warum.length, `${typ}: Beleg zu dünn`).toBeGreaterThan(25);
+    });
+
+    it('verlangt für `koerper` KEINEN Beleg — das sagt die Geometrie ohnehin', () => {
+        // Der Rückfall liefert `koerper` für jeden geschlossenen Körper. Eine
+        // solche Deklaration kann nichts kaputt machen, was die Geometrie nicht
+        // ohnehin so gesehen hätte; sie hält nur die Einordnung aufrecht, wenn
+        // der Körper unsauber modelliert ist.
+        const koerper = Object.entries(EINGEBAUTE_PROFILE).filter(([, p]) => p.bauform === 'koerper');
+        expect(koerper.length).toBeGreaterThan(5);
+    });
+
+    it('lässt IFCGEOGRAPHICELEMENT undeklariert — der Typ entscheidet dort nicht', () => {
+        // TERRAIN ist ein Höhenfeld, VEGETATION ein Baum, SOIL_BORING_POINT ein
+        // Aufschlusspunkt. Eine Bauform an der Klasse wäre für zwei von drei
+        // falsch. Der Unterschied liegt im PredefinedType — und der gehört zu
+        // den Regeln, nicht ins Typprofil.
+        expect(EINGEBAUTE_PROFILE.IFCGEOGRAPHICELEMENT.bauform).toBe(null);
+        const regel = (pt) => bauformAusRegel(MITGELIEFERTE_REGELN, {
+            category: 'IFCGEOGRAPHICELEMENT', attributes: { PredefinedType: pt }, psets: {},
+        })?.bauform ?? null;
+        expect(regel('TERRAIN')).toBe('hoehenfeld');
+        expect(regel('VEGETATION')).toBe('punkt');
+        expect(regel('SOIL_BORING_POINT')).toBe(null);   // kein Beleg ⇒ keine Regel
     });
 });

@@ -40,6 +40,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // und jeden künftigen Fließabschnitt über die Vererbung mit ab.
     IFCFLOWSEGMENT: {
         bauform: 'achse+profil',
+        warum: 'Abschnitt ist definitionsgemäss ein Lauf; deckt Rohr, Kanal, Kabel, Förderer',
         felder: {
             profilGroesse: { label: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
             sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
@@ -48,6 +49,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // Nur, wo der Typ die Dinge WIRKLICH anders nennt, steht ein eigener Satz.
     IFCPIPESEGMENT: {
         bauform: 'achse+profil',
+        warum: 'CULVERT FLEXIBLESEGMENT GUTTER RIGIDSEGMENT SPOOL — alles Läufe',
         felder: {
             profilGroesse: {
                 label: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000,
@@ -58,28 +60,34 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     },
     IFCBEAM: {
         bauform: 'achse+profil',
+        warum: 'BEAM EDGEBEAM GIRDER_SEGMENT JOIST LINTEL PURLIN; DIAPHRAGM und HATSTONE fallen heraus',
         felder: { profilGroesse: { label: 'Profilreihe', typ: 'text' } },
     },
     IFCMEMBER: {
         bauform: 'achse+profil',
+        warum: 'ARCH_SEGMENT BRACE CHORD MULLION POST PURLIN RAFTER STRINGER; PLATE fällt heraus',
         felder: { profilGroesse: { label: 'Profilreihe', typ: 'text' } },
     },
     IFCCOLUMN: {
         bauform: 'achse+profil',
+        warum: 'COLUMN PIERSTEM PIERSTEM_SEGMENT PILASTER STANDCOLUMN — durchweg linear',
         felder: { profilGroesse: { label: 'Profilreihe', typ: 'text' } },
     },
     IFCKERB: {
         bauform: 'achse+profil',
+        warum: 'ohne Untertypen; ein Bordstein ist ein Lauf mit Querschnitt',
         felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm', typ: 'zahl' } },
     },
     IFCRAILING: {
         bauform: 'achse+profil',
+        warum: 'BALUSTRADE FENCE GUARDRAIL HANDRAIL — durchweg Läufe',
         felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm', typ: 'zahl' } },
     },
     // Der Pfahl ist ein LINEARES Bauteil, kein Klotz — deshalb steht er hier
     // und nicht unter der Gründung, von der er erbt.
     IFCPILE: {
         bauform: 'achse+profil',
+        warum: 'BORED COHESION DRIVEN FRICTION JETGROUTING SUPPORT — Herstellarten, alle linear',
         felder: {
             profilGroesse: { label: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
             sohlhoehe: { label: 'Fußpunkt', einheit: 'm', typ: 'zahl' },
@@ -89,30 +97,46 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // wie ein Rohr, nur anders benannt. Genau dafür sind Rollen da.
     IFCBOREHOLE: {
         bauform: 'achse+profil',
+        warum: 'ohne Untertypen; eine Bohrung ist eine Achse mit Durchmesser',
         felder: {
             profilGroesse: { label: 'Bohrdurchmesser', einheit: 'mm', typ: 'zahl', min: 20, max: 3000 },
             sohlhoehe: { label: 'Endteufe', einheit: 'm', typ: 'zahl' },
         },
     },
-    IFCRAIL: { bauform: 'achse+profil', felder: {} },
+    IFCRAIL: {
+        bauform: 'achse+profil',
+        warum: 'BLADE CHECKRAIL GUARDRAIL RACKRAIL STOCKRAIL — die Schiene selbst, im Gegensatz zu IFCTRACKELEMENT',
+        felder: {},
+    },
     // IFCTRACKELEMENT steht bewusst NICHT hier: seine Untertypen sind
     // BLOCKINGDEVICE, DERAILER, FROG, SLEEPER, SPEEDREGULATOR, VEHICLESTOP —
     // Geräte AN der Strecke, keine Strecke. Es erbt `koerper` von
     // IFCBUILTELEMENT. Die Schiene selbst (IFCRAIL) ist dagegen linear.
 
-    IFCCABLECARRIERSEGMENT: { bauform: 'achse+profil', felder: {} },
+    IFCCABLECARRIERSEGMENT: {
+
+        bauform: 'achse+profil',
+
+        warum: 'CABLELADDERSEGMENT CABLETRAYSEGMENT CONDUITSEGMENT CATENARYWIRE; CABLEBRACKET und DROPPER fallen heraus',
+
+        felder: {},
+
+    },
     IFCREINFORCINGBAR: {
         bauform: 'achse+profil',
+        warum: 'ANCHORING EDGE LIGATURE MAIN PUNCHING RING SHEAR STUD — Stäbe',
         felder: { profilGroesse: { label: 'Stabdurchmesser', einheit: 'mm', typ: 'zahl', min: 4, max: 60 } },
     },
     IFCTENDON: {
         bauform: 'achse+profil',
+        warum: 'BAR COATED STRAND WIRE — Spannglieder, linear',
         felder: { profilGroesse: { label: 'Spanngliedgröße', typ: 'text' } },
     },
 
     // ═══ 2D+ — Fläche mit Stärke ════════════════════════════════════════════
     IFCWALL: {
         bauform: 'flaeche+dicke',
+        warum: 'ELEMENTEDWALL MOVABLE PARAPET PARTITIONING RETAININGWALL SHEAR SOLIDWALL — Scheiben',
         felder: {
             dicke: {
                 label: 'Wandstärke', einheit: 'm', typ: 'zahl', min: 0.02, max: 3,
@@ -122,6 +146,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     },
     IFCSLAB: {
         bauform: 'flaeche+dicke',
+        warum: 'APPROACH_SLAB BASESLAB FLOOR LANDING PAVING SIDEWALK TRACKSLAB WEARING — Platten',
         felder: {
             dicke: {
                 label: 'Plattenstärke', einheit: 'm', typ: 'zahl', min: 0.02, max: 3,
@@ -133,28 +158,63 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // die Größe, um die es geht.
     IFCCOURSE: {
         bauform: 'flaeche+dicke',
+        warum: 'ARMOUR BALLASTBED CORE FILTER PAVEMENT PROTECTION — Schichten',
         felder: { dicke: { label: 'Schichtdicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 2 } },
     },
     IFCPAVEMENT: {
         bauform: 'flaeche+dicke',
+        warum: 'FLEXIBLE RIGID — Fahrbahnaufbau',
         felder: { dicke: { label: 'Belagsdicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 2 } },
     },
     IFCROOF: {
         bauform: 'flaeche+dicke',
+        warum: 'BARREL_ROOF DOME_ROOF FLAT_ROOF GABLE_ROOF HIP_ROOF … — Dachflächen mit Aufbau',
         felder: { dicke: { label: 'Aufbaudicke', einheit: 'm', typ: 'zahl', min: 0.02, max: 3 } },
     },
-    IFCPLATE: { bauform: 'flaeche+dicke', felder: {} },
+    IFCPLATE: {
+        bauform: 'flaeche+dicke',
+        warum: 'BASE_PLATE COVER_PLATE GUSSET_PLATE SHEET SPLICE_PLATE WEB_PLATE — Bleche',
+        felder: {},
+    },
     // IFCFOOTING steht bewusst NICHT bei den Flächen: STRIP_FOOTING und
     // FOOTING_BEAM sind linear, PAD_FOOTING und PILE_CAP sind Klötze — keiner
     // seiner Untertypen ist eine Region mit Stärke. Es erbt `koerper`. Die
     // Bodenplatte ist ein IFCSLAB und steht dort richtig.
 
-    IFCCOVERING: { bauform: 'flaeche+dicke', felder: {} },
-    IFCCURTAINWALL: { bauform: 'flaeche+dicke', felder: {} },
-    IFCSHADINGDEVICE: { bauform: 'flaeche+dicke', felder: {} },
-    IFCDOOR: { bauform: 'flaeche+dicke', felder: {} },
-    IFCWINDOW: { bauform: 'flaeche+dicke', felder: {} },
-    IFCREINFORCINGMESH: { bauform: 'flaeche+dicke', felder: {} },
+    IFCCOVERING: {
+
+        bauform: 'flaeche+dicke',
+
+        warum: 'CEILING CLADDING FLOORING INSULATION MEMBRANE ROOFING TOPPING; SLEEVING und WRAPPING fallen heraus',
+
+        felder: {},
+
+    },
+    IFCCURTAINWALL: {
+        bauform: 'flaeche+dicke',
+        warum: 'ohne Untertypen; eine Fassade ist eine Fläche mit Aufbau',
+        felder: {},
+    },
+    IFCSHADINGDEVICE: {
+        bauform: 'flaeche+dicke',
+        warum: 'AWNING JALOUSIE SHUTTER — Flächen',
+        felder: {},
+    },
+    IFCDOOR: {
+        bauform: 'flaeche+dicke',
+        warum: 'DOOR GATE TRAPDOOR — Füllungen einer Öffnung; BOOM_BARRIER und TURNSTILE fallen heraus',
+        felder: {},
+    },
+    IFCWINDOW: {
+        bauform: 'flaeche+dicke',
+        warum: 'LIGHTDOME SKYLIGHT WINDOW — Füllungen einer Öffnung',
+        felder: {},
+    },
+    IFCREINFORCINGMESH: {
+        bauform: 'flaeche+dicke',
+        warum: 'ohne Untertypen; eine Matte ist eine Fläche',
+        felder: {},
+    },
 
     // ═══ 3D — platziertes Volumen ═══════════════════════════════════════════
     // DER GRÖSSTE HEBEL im ganzen Satz: EIN Eintrag deckt rund 60 Typen —
@@ -203,31 +263,112 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // Mess-, Steuer- und Regeltechnik: ein Fühler wird PLATZIERT, nicht
     // ausgemessen. `punkt` braucht keine Form und ist deshalb immer belastbar —
     // `koerper` verlangte ein Volumen, das oft gar nicht modelliert ist.
-    IFCDISTRIBUTIONCONTROLELEMENT: { bauform: 'punkt', felder: {} },
+    IFCDISTRIBUTIONCONTROLELEMENT: {
+        bauform: 'punkt',
+        warum: 'Kinder ACTUATOR ALARM CONTROLLER FLOWINSTRUMENT SENSOR — MSR-Geräte werden gesetzt, nicht ausgemessen',
+        felder: {},
+    },
     // BEACON und BUOY — Seezeichen. Sie werden GESETZT, nicht ausgemessen.
-    IFCNAVIGATIONELEMENT: { bauform: 'punkt', felder: {} },
-    IFCSIGN: { bauform: 'punkt', felder: {} },
-    IFCSIGNAL: { bauform: 'punkt', felder: {} },
-    IFCDISTRIBUTIONPORT: { bauform: 'punkt', felder: {} },
-    IFCREFERENT: { bauform: 'punkt', felder: {} },
+    IFCNAVIGATIONELEMENT: {
+        bauform: 'punkt',
+        warum: 'BEACON BUOY — Seezeichen werden gesetzt, nicht ausgemessen',
+        felder: {},
+    },
+    IFCSIGN: {
+        bauform: 'punkt',
+        warum: 'MARKER MIRROR PICTORAL — Marken',
+        felder: {},
+    },
+    IFCSIGNAL: {
+        bauform: 'punkt',
+        warum: 'AUDIO MIXED VISUAL — Signalgeber',
+        felder: {},
+    },
+    IFCDISTRIBUTIONPORT: {
+        bauform: 'punkt',
+        warum: 'CABLE CABLECARRIER DUCT PIPE WIRELESS — Anschlussstellen',
+        felder: {},
+    },
+    IFCREFERENT: {
+        bauform: 'punkt',
+        warum: 'BOUNDARY INTERSECTION KILOPOINT MILEPOINT STATION — Punkte auf einer Achse',
+        felder: {},
+    },
 
     // ═══ 1D — Kurve ohne Querschnitt ════════════════════════════════════════
-    IFCALIGNMENT: { bauform: 'linie', felder: {} },
-    IFCLINEARPOSITIONINGELEMENT: { bauform: 'linie', felder: {} },
-    IFCLINEARELEMENT: { bauform: 'linie', felder: {} },
-    IFCANNOTATION: { bauform: 'linie', felder: {} },
-    IFCGRID: { bauform: 'linie', felder: {} },
+    IFCALIGNMENT: {
+        bauform: 'linie',
+        warum: 'ohne Untertypen; eine Trasse positioniert, sie hat kein Volumen',
+        felder: {},
+    },
+    IFCLINEARPOSITIONINGELEMENT: {
+        bauform: 'linie',
+        warum: 'Oberklasse der Trasse, gleiche Begründung',
+        felder: {},
+    },
+    IFCLINEARELEMENT: {
+        bauform: 'linie',
+        warum: 'definitionsgemäss eine Kurve',
+        felder: {},
+    },
+    IFCANNOTATION: {
+        bauform: 'linie',
+        warum: 'CONTOURLINE DIMENSION ISOBAR ISOLUX LEADER SURVEY; SYMBOL und TEXT sind punktartig und fallen heraus',
+        felder: {},
+    },
+    IFCGRID: {
+        bauform: 'linie',
+        warum: 'IRREGULAR RADIAL RECTANGULAR TRIANGULAR — Achsnetze',
+        felder: {},
+    },
 
     // ═══ 2D — Region ohne Dicke ═════════════════════════════════════════════
-    IFCSPACE: { bauform: 'flaeche', felder: {} },
-    IFCGEOSLICE: { bauform: 'flaeche', felder: {} },
-    IFCSURFACEFEATURE: { bauform: 'flaeche', felder: {} },
+    IFCSPACE: {
+        bauform: 'flaeche',
+        warum: 'BERTH EXTERNAL GFA INTERNAL PARKING — Regionen ohne Dicke',
+        felder: {},
+    },
+    IFCGEOSLICE: {
+        bauform: 'flaeche',
+        warum: 'ohne Untertypen; ein Schnitt durch das Baugrundmodell ist eine Fläche',
+        felder: {},
+    },
+    IFCSURFACEFEATURE: {
+        bauform: 'flaeche',
+        warum: 'HATCHMARKING LINEMARKING NONSKIDSURFACING RUMBLESTRIP — Markierungen AUF einer Fläche',
+        felder: {},
+    },
 
     // ═══ 2,5D — Oberfläche z = f(x,y) ═══════════════════════════════════════
-    IFCGEOGRAPHICELEMENT: { bauform: 'hoehenfeld', felder: {} },
-    IFCEARTHWORKSELEMENT: { bauform: 'hoehenfeld', felder: {} },
-    IFCEARTHWORKSFILL: { bauform: 'hoehenfeld', felder: {} },
-    IFCEARTHWORKSCUT: { bauform: 'hoehenfeld', felder: {} },
+    /**
+     * DER TYP ENTSCHEIDET HIER NICHT — und deshalb sagt er nichts.
+     *
+     * `IfcGeographicElement` hat drei vorgegebene Untertypen, und sie haben
+     * drei verschiedene Formen: TERRAIN ist ein Höhenfeld, VEGETATION ein Baum
+     * (also ein Punkt), SOIL_BORING_POINT ein Aufschlusspunkt. Eine Bauform an
+     * der Klasse wäre für zwei von drei falsch — und weil eine Deklaration die
+     * Geometrie SCHLÄGT, wäre sie schlimmer als keine.
+     *
+     * Der Unterschied liegt im `PredefinedType`, und der ist keine Sache des
+     * Typprofils, sondern der Bauformregeln (die matchen auf Attribute). Zwei
+     * mitgelieferte Regeln erledigen es dort — siehe `MITGELIEFERTE_REGELN`.
+     */
+    IFCGEOGRAPHICELEMENT: { bauform: null, felder: {} },
+    IFCEARTHWORKSELEMENT: {
+        bauform: 'hoehenfeld',
+        warum: 'ohne Untertypen; Erdbau wird als Raster geformt (Stufe 10)',
+        felder: {},
+    },
+    IFCEARTHWORKSFILL: {
+        bauform: 'hoehenfeld',
+        warum: 'BACKFILL EMBANKMENT SLOPEFILL SUBGRADE SUBGRADEBED — Auftrag auf Sollhöhe',
+        felder: {},
+    },
+    IFCEARTHWORKSCUT: {
+        bauform: 'hoehenfeld',
+        warum: 'BASE_EXCAVATION DREDGING EXCAVATION STEPEXCAVATION TOPSOILREMOVAL TRENCH — Abtrag auf Sollhöhe',
+        felder: {},
+    },
     // IFCGEOTECHNICALSTRATUM steht bewusst NICHT hier: seine Untertypen sind
     // SOLID, VOID und WATER — BodenKÖRPER zwischen zwei Flächen, keine
     // Oberfläche z = f(x,y). Es erbt `koerper` von IFCGEOTECHNICALELEMENT.
