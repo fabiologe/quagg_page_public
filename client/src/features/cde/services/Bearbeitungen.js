@@ -164,8 +164,23 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'laengsschnitt',
         gruppe: 'lage',
         bauform: ['achse+profil', 'koerper'],
-        // Ohne belastbare Form ist eine Höhenfestlegung eine Behauptung.
-        mindestGuete: 'geschaetzt',
+        /**
+         * KEINE Güteschranke — und das ist kein Nachlassen, sondern die
+         * Korrektur eines Denkfehlers.
+         *
+         * Die Schranke prüft die Güte der Form, die die BAUFORM braucht: bei
+         * `achse+profil` ist das die Achse. Diese Bearbeitung braucht die
+         * Achse aber gar nicht — sie braucht die HÜLLE, und die liegt immer
+         * vor (aus ihr kommt schon der Anker). Ein Rohr, dessen Achse sich
+         * nicht skelettieren lässt, hat trotzdem eine wohlbestimmte
+         * Unterkante.
+         *
+         * Mit Schranke wäre ausgerechnet an Fabios erstem echten IFC4-Netz
+         * nichts gegangen: dort steht kein einziges 'Axis', nur 'Body'.
+         * Fehlt die Hülle wirklich, gibt `anwenden` `null` zurück — dann
+         * entsteht kein Eintrag, statt einen auf Höhe null zu schreiben.
+         */
+        mindestGuete: 'unbekannt',
         brauchtRolle: 'sohlhoehe',
         art: 'lage',
         felder: [{
