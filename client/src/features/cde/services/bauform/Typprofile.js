@@ -231,9 +231,69 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
      * Genau Fabios Bestandsmodelle hätten das getroffen.
      */
     IFCBUILDINGELEMENTPROXY: { bauform: null, felder: {} },
+    /**
+     * `IfcCivilElement` (IFC4 / 4x1 / 4x2) ist der Sammeltyp des Infrastruktur-
+     * baus: „ein Bauteil des Ingenieurbaus, für das es keinen eigenen Typ
+     * gibt". In 4.3 wurde er ersatzlos gestrichen, taucht aber in jeder
+     * älteren Tiefbau-Lieferung auf — genau in Fabios Lage.
+     *
+     * Er sagt über die Form GENAUSO WENIG wie ein Proxy: darunter steckt mal
+     * ein Bordstein, mal eine Schutzplanke, mal ein Entwässerungsbauwerk.
+     * Deshalb dieselbe Behandlung — `null`, und die Geometrie oder eine
+     * Namensregel entscheidet.
+     */
+    IFCCIVILELEMENT: { bauform: null, felder: {} },
+    /** `IfcProxy` — der Sammeltyp aus IFC2x3. Sagt ebenso wenig. */
+    IFCPROXY: { bauform: null, felder: {} },
     /** Ein virtuelles Element hat keine Geometrie — es gibt nichts zu formen. */
     IFCVIRTUALELEMENT: { bauform: null, felder: {} },
+
+    // ═══ IFC2x3-Sammeltypen, in IFC4 gestrichen ═════════════════════════════
+    // Anders als Proxy und CivilElement sagen sie sehr wohl etwas: es ist ein
+    // Gerät. Ein Körper ist die richtige Antwort.
+    IFCELECTRICALELEMENT: { bauform: 'koerper', felder: {} },
+    IFCEQUIPMENTELEMENT: { bauform: 'koerper', felder: {} },
+    IFCELECTRICDISTRIBUTIONPOINT: { bauform: 'koerper', felder: {} },
 });
+
+/**
+ * Namen, die es in IFC 4.3 nicht mehr gibt — und wie sie dort heissen.
+ *
+ * DER ANLASS: `data/entity-schema.js` ist reines IFC 4.3. Jede Kategorie, die
+ * ein älteres Modell anders schreibt, fällt sonst durch den Rost — sie hat
+ * keine Vererbungskette, bekommt kein Typprofil, und die Toolbox zeigt einem
+ * `IFCCIVILELEMENT` genau nichts. Fabio arbeitet mit Fremdlieferungen; welches
+ * Schema die haben, bestimmt er nicht.
+ *
+ * DIE LISTE IST NICHT GERATEN, SONDERN GEMESSEN: aus den in `web-ifc`
+ * mitgelieferten Schemata IFC2X3, IFC4 und IFC4X3 wurden je die
+ * `IfcProduct`-Nachfahren gezogen und gegen das Wörterbuch gehalten. Ergebnis:
+ * 11 unbekannte Namen aus 2x3 (davon 7 instanzierbar), 5 aus IFC4 (4
+ * instanzierbar). Mehr ist es nicht — die Lücke ist abzählbar, und deshalb
+ * schliesst eine Tabelle sie vollständig statt nur ungefähr.
+ *
+ * Hier stehen nur die UMBENENNUNGEN. Namen, die es in 4.3 gar nicht mehr gibt
+ * (`IfcCivilElement`, `IfcProxy`, `IfcEquipmentElement`), sind keine
+ * Umbenennung — sie bekommen unten im Satz ein eigenes Profil.
+ */
+export const ALTNAMEN = Object.freeze({
+    // IFC4 → IFC4.3: umbenannt.
+    IFCBUILDINGELEMENT:           'IFCBUILTELEMENT',
+    IFCELECTRICDISTRIBUTIONBOARD: 'IFCDISTRIBUTIONBOARD',
+    // Das Suffix-Abschneiden allein ergäbe `IFCOPENING` — das gibt es nicht.
+    IFCOPENINGSTANDARDCASE:       'IFCOPENINGELEMENT',
+    // IFC2x3 → IFC4: umbenannt bzw. zusammengefasst.
+    IFCBUILDINGELEMENTCOMPONENT:  'IFCELEMENTCOMPONENT',
+    IFCEDGEFEATURE:               'IFCFEATUREELEMENTSUBTRACTION',
+    IFCCHAMFEREDGEFEATURE:        'IFCFEATUREELEMENTSUBTRACTION',
+    IFCROUNDEDEDGEFEATURE:        'IFCFEATUREELEMENTSUBTRACTION',
+});
+
+/** Kennt das IFC-4.3-Wörterbuch diesen Namen (nach Normierung)? */
+export function imWoerterbuch(kategorie) {
+    const roh = String(kategorie ?? '').toUpperCase().trim();
+    return !!(ENTITY_META[roh] ?? ENTITY_META[normalisiereKategorie(kategorie)]);
+}
 
 /**
  * Kategorie auf den Profilschlüssel normieren.
@@ -243,11 +303,17 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
  * Unterfassung durch den Rost und bekäme kein Profil, obwohl eines dasteht.
  * Das ist die Fehlerklasse, wegen der Typ-Strings nicht als Hauptweg taugen —
  * hier ist sie eingegrenzt auf EINE Stelle.
+ *
+ * Die Altnamen werden ZUERST geprüft, dann das Suffix geschnitten: bei
+ * `IFCOPENINGSTANDARDCASE` ergäbe die andere Reihenfolge `IFCOPENING`, und
+ * das gibt es in keinem Schema.
  */
 export function normalisiereKategorie(kategorie) {
     if (!kategorie) return '';
     const k = String(kategorie).toUpperCase().trim();
-    return k.replace(/(STANDARDCASE|ELEMENTEDCASE)$/, '');
+    if (ALTNAMEN[k]) return ALTNAMEN[k];
+    const ohneSuffix = k.replace(/(STANDARDCASE|ELEMENTEDCASE)$/, '');
+    return ALTNAMEN[ohneSuffix] ?? ohneSuffix;
 }
 
 /**

@@ -17,7 +17,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ENTITY_META } from '../data/entity-schema.js';
-import { EINGEBAUTE_PROFILE, profilHerkunft } from '../services/bauform/Typprofile.js';
+import {
+    EINGEBAUTE_PROFILE, imWoerterbuch, normalisiereKategorie, profilHerkunft,
+} from '../services/bauform/Typprofile.js';
+import { herleite } from '../services/Herleitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
 const alle = Object.keys(ENTITY_META);
@@ -137,5 +140,69 @@ describe('Räumliche und statische Elemente bleiben bewusst offen', () => {
         for (const t of ['IFCSTRUCTURALCURVEMEMBER', 'IFCSTRUCTURALSURFACEMEMBER', 'IFCSTRUCTURALPOINTACTION']) {
             expect(profilHerkunft(t, EINGEBAUTE_PROFILE).profil?.bauform ?? null, t).toBe(null);
         }
+    });
+});
+
+describe('Ältere Schemata: IFC2x3 und IFC4', () => {
+    /**
+     * `data/entity-schema.js` ist reines IFC 4.3. Jede Kategorie, die ein
+     * älteres Modell anders schreibt, hätte sonst keine Vererbungskette,
+     * bekäme kein Typprofil, und die Toolbox zeigte gar nichts — ohne dass
+     * irgendwo stünde, dass es am Schema liegt.
+     *
+     * Die Liste ist GEMESSEN, nicht geraten: aus den in `web-ifc`
+     * mitgelieferten Schemata wurden die IfcProduct-Nachfahren gezogen und
+     * gegen das Wörterbuch gehalten — 7 instanzierbare Unbekannte aus 2x3,
+     * 4 aus IFC4. Die Lücke ist abzählbar, deshalb schliesst eine Tabelle sie
+     * ganz statt ungefähr.
+     */
+    const UMBENANNT = [
+        ['IFCBUILDINGELEMENT',           'IFCBUILTELEMENT'],
+        ['IFCELECTRICDISTRIBUTIONBOARD', 'IFCDISTRIBUTIONBOARD'],
+        ['IFCOPENINGSTANDARDCASE',       'IFCOPENINGELEMENT'],
+        ['IFCBUILDINGELEMENTCOMPONENT',  'IFCELEMENTCOMPONENT'],
+        ['IFCCHAMFEREDGEFEATURE',        'IFCFEATUREELEMENTSUBTRACTION'],
+    ];
+
+    it.each(UMBENANNT)('%s findet über den Altnamen zu %s', (alt, neu) => {
+        expect(normalisiereKategorie(alt)).toBe(neu);
+        expect(profilHerkunft(alt, EINGEBAUTE_PROFILE).profil?.bauform).toBeTruthy();
+    });
+
+    it('schneidet das Suffix NICHT vor dem Altnamen ab', () => {
+        // Andersherum ergäbe `IFCOPENINGSTANDARDCASE` das Wort `IFCOPENING`,
+        // und das gibt es in keinem Schema.
+        expect(normalisiereKategorie('IFCOPENINGSTANDARDCASE')).toBe('IFCOPENINGELEMENT');
+        expect(normalisiereKategorie('IFCWALLSTANDARDCASE')).toBe('IFCWALL');
+    });
+
+    it('behandelt IFCCIVILELEMENT wie einen Proxy — er sagt über die Form nichts', () => {
+        // Sammeltyp des Ingenieurbaus (IFC4/4x1/4x2), in 4.3 gestrichen, in
+        // jeder älteren Tiefbau-Lieferung drin. Darunter steckt mal ein
+        // Bordstein, mal eine Schutzplanke, mal ein Bauwerk.
+        const h = profilHerkunft('IFCCIVILELEMENT', EINGEBAUTE_PROFILE);
+        expect(h.profil).toBeTruthy();
+        expect(h.profil.bauform).toBe(null);
+    });
+
+    it('gibt den IFC2x3-Sammeltypen eine Form — sie sagen sehr wohl „Gerät"', () => {
+        for (const t of ['IFCELECTRICALELEMENT', 'IFCEQUIPMENTELEMENT', 'IFCELECTRICDISTRIBUTIONPOINT']) {
+            expect(profilHerkunft(t, EINGEBAUTE_PROFILE).profil?.bauform, t).toBe('koerper');
+        }
+    });
+
+    it('sagt bei einem schemafremden Typ, dass es am SCHEMA liegt', () => {
+        // Andere Auskunft als „kein Typprofil": das Modell ist älter oder der
+        // Exporteur erfindet Namen. Beides behebbar, aber verschieden.
+        expect(imWoerterbuch('IFCPIPESEGMENT')).toBe(true);
+        expect(imWoerterbuch('IFCHYPERLOOPTUBE')).toBe(false);
+        const h = herleite({
+            el: { category: 'IFCHYPERLOOPTUBE' },
+            einordnung: { bauform: 'netz', guete: 'unbekannt', quelle: 'rueckfall', warnungen: [] },
+            profilSatz: EINGEBAUTE_PROFILE,
+        });
+        expect(h.imWoerterbuch).toBe(false);
+        expect(h.luecke.stufe).toBe('schema');
+        expect(h.luecke.text).toMatch(/2x3|IFC4/);
     });
 });

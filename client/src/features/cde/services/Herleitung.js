@@ -36,7 +36,7 @@
  */
 
 import { BAUFORMEN } from './bauform/Bauformen.js';
-import { profilHerkunft, vererbungskette } from './bauform/Typprofile.js';
+import { imWoerterbuch, profilHerkunft, vererbungskette } from './bauform/Typprofile.js';
 import { BEARBEITUNGEN, GRUPPEN, felderFuer, passende } from './Bearbeitungen.js';
 
 /** Warum eine Bearbeitung angeboten wird — der Text neben der Gruppe. */
@@ -135,6 +135,10 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
 
     return {
         kategorie: kategorie || null,
+        // Ein Typ, den das IFC-4.3-Wörterbuch nicht kennt, ist etwas anderes
+        // als ein Typ ohne Profil: das Modell ist älter, oder der Exporteur
+        // benutzt einen eigenen Namen. Beides ist behebbar, aber verschieden.
+        imWoerterbuch: kategorie ? imWoerterbuch(kategorie) : false,
         kette,
         profilAus: ausTyp,
         profilUeberVererbung: ueberVererbung,
@@ -162,6 +166,12 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
  */
 function _luecke({ kategorie, profil, bauform, quelle }) {
     if (!kategorie) return null;
+    if (!imWoerterbuch(kategorie)) {
+        return { stufe: 'schema', text: `„${kategorie}" steht nicht im IFC-4.3-Wörterbuch. `
+            + 'Entweder ist das Modell älter (2x3 oder IFC4) und der Typ wurde umbenannt, oder der Exporteur '
+            + 'benutzt einen eigenen Namen. Die Vererbung greift hier nicht — ein Typprofil unter genau diesem '
+            + 'Namen wirkt trotzdem.' };
+    }
     if (!profil && bauform === 'netz') {
         return { stufe: 'form', text: `Für „${kategorie}" gibt es kein Typprofil, und aus der Geometrie `
             + 'liess sich keine Form ableiten. Ein Typprofil auf der Büro-Ebene löst beides — es ist ein Datensatz, keine Programmänderung.' };

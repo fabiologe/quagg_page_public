@@ -60,7 +60,9 @@ describe('Ein Typ, den niemand eingetragen hat, ist trotzdem bedienbar', () => {
     it('sagt bei einem unbekannten Typ, WAS zu tun wäre — und dass es Daten sind', () => {
         // Eine Fehlermeldung wäre falsch: „unbekannter Typ" ist in IFC der
         // Normalfall, und die richtige Reaktion ist fast nie Programmarbeit.
-        const k = h('IFCQUATSCHXYZ', NICHTS);
+        // Ein Geschoss steht im Wörterbuch und hat mit Absicht kein Profil —
+        // damit prüft der Fall die Lücke „Form" und nicht die Schema-Lücke.
+        const k = h('IFCBUILDINGSTOREY', NICHTS);
         expect(k.luecke.stufe).toBe('form');
         expect(k.luecke.text).toMatch(/Typprofil/);
         expect(k.luecke.text).toMatch(/keine Programmänderung/);
@@ -68,8 +70,17 @@ describe('Ein Typ, den niemand eingetragen hat, ist trotzdem bedienbar', () => {
 
     it('meldet die Lücke „Vokabular", wenn nur das Profil fehlt', () => {
         // Die Form steht (aus der Geometrie), nur die typeigenen Größen fehlen.
-        const k = h('IFCQUATSCHXYZ', { bauform: 'koerper', guete: 'gemessen', quelle: 'geometrie', warnungen: [] });
+        const k = h('IFCBUILDINGSTOREY', { bauform: 'koerper', guete: 'gemessen', quelle: 'geometrie', warnungen: [] });
         expect(k.luecke.stufe).toBe('vokabular');
+    });
+
+    it('meldet die SCHEMA-Lücke zuerst — sie ist die andere Frage', () => {
+        // Ein Name, den kein IFC-Schema kennt, hat keine Vererbungskette. Ihm
+        // ein fehlendes Typprofil vorzuwerfen führte in die Irre: auch mit
+        // Profil erbte nichts von ihm.
+        const k = h('IFCQUATSCHXYZ', NICHTS);
+        expect(k.imWoerterbuch).toBe(false);
+        expect(k.luecke.stufe).toBe('schema');
     });
 });
 

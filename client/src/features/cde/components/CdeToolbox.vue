@@ -52,7 +52,10 @@
           <dd v-else class="tb-dim">keins — es gelten nur die allgemeinen Bearbeitungen</dd>
 
           <dt>Vererbung</dt>
-          <dd class="tb-hierarchie">
+          <dd v-if="!herleitung.imWoerterbuch" class="tb-dim">
+            nicht im IFC-4.3-Wörterbuch — die Vererbung greift hier nicht
+          </dd>
+          <dd v-else class="tb-hierarchie">
             <span
               v-for="stufe in herleitung.kette"
               :key="stufe"
