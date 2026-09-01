@@ -99,6 +99,7 @@ import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useScreenProjection } from '../composables/useScreenProjection.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 const props = defineProps({
   /** [{ dist, p1:{x,y,z}, p2:{x,y,z} }] */
@@ -115,7 +116,6 @@ const props = defineProps({
 
 const emit = defineEmits([
   'delete-measurement', 'zoom', 'hide', 'isolate', 'properties', 'new-issue',
-  'bearbeitet',
 ]);
 
 /**
@@ -128,6 +128,7 @@ const emit = defineEmits([
  */
 const bearbeitung = useBearbeitung();
 const cde = useCdeStore();
+const api = useViewerApi();
 
 /** Warnt, wenn die Bauform nur geschätzt ist — schweigt, wenn sie gemessen ist. */
 const guetehinweis = computed(() => {
@@ -137,9 +138,16 @@ const guetehinweis = computed(() => {
   return `Form nur ${e.guete} — Wert prüfen.`;
 });
 
+/**
+ * Übernehmen am Bauteil — eintragen UND anwenden.
+ *
+ * Vorher wurde nur ein `bearbeitet`-Ereignis geworfen, dem niemand zuhörte.
+ * Ein Ereignis ohne Empfänger sieht im Code aus wie eine Verdrahtung und ist
+ * keine — deshalb steht hier jetzt der Aufruf statt des Emits.
+ */
 async function uebernehmen() {
   const eintrag = await bearbeitung.ausfuehren({ wer: cde.bearbeiter || '' });
-  if (eintrag) emit('bearbeitet', eintrag);
+  if (eintrag) await api.wendeEintragAn?.(eintrag);
 }
 
 const { tick } = useScreenProjection({

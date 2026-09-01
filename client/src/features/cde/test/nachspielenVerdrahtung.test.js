@@ -17,6 +17,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { ref } from 'vue';
 import { betroffeneGlobalIds, useNachspielen } from '../composables/useNachspielen.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
+import { anwendungsweg, planFuerEintrag } from '../services/Nachspielen.js';
+import { ANWENDBARE_ARTEN } from '../services/IfcAutor.js';
 
 beforeEach(() => {
     localStorage.clear();
@@ -184,5 +186,65 @@ describe('Ein zweiter Lauf ändert nichts', () => {
 
         expect(zweit).toEqual(erst);
         expect(n.meldung.value).toBe(erstMeldung);
+    });
+});
+
+describe('Ein frisch geschriebener Eintrag wird SOFORT wirksam (12.0b)', () => {
+    /**
+     * Der Fehler, den diese Prüfung festhält: das Formular schrieb ins Journal,
+     * und niemand brachte es ans Modell. Nur DREI Wege taten das überhaupt —
+     * Ziehen (`useZiehen` ruft `setzeAnker` selbst), Laden (`useNachspielen`)
+     * und Zeichnen (`baueErzeugteNeu`). Wer eine Sohlhöhe im Formular eintrug,
+     * sah nichts geschehen; erst nach `F5` sprang das Bauteil.
+     *
+     * Für den Nutzer ist das ununterscheidbar von einem kaputten Knopf — und
+     * genau so wurde es gemeldet („die Bearbeitung funktioniert noch nicht").
+     *
+     * Dazu kam, dass `CdeHudLayer` ein `bearbeitet`-Ereignis warf, dem NIEMAND
+     * zuhörte. Ein Ereignis ohne Empfänger sieht im Code aus wie eine
+     * Verdrahtung und ist keine.
+     */
+    it('macht aus einer Lage-Änderung einen Ein-Schritt-Plan in wendeAn-Form', () => {
+        const eintrag = { art: 'lage', globalId: 'H12', nachher: { x: 1, y: 2, z: 3 } };
+        const plan = planFuerEintrag(eintrag, 'm1');
+
+        expect(plan.modelId).toBe('m1');
+        expect(plan.anzuwenden).toEqual([{
+            globalId: 'H12', art: 'lage', wert: { x: 1, y: 2, z: 3 },
+            eintrag, modell: 'geliefert',
+        }]);
+        expect(plan.konflikte).toEqual([]);   // wendeAn liest es nicht, aber die Form stimmt
+    });
+
+    it('lässt ERZEUGTES niemals einzeln laufen', () => {
+        // `baueErzeugte` verwirft das CDE-Modell und baut nur, was es bekommt.
+        // Ein Ein-Schritt-Plan löschte damit alles ANDERE Erzeugte mit — und
+        // zwar unsichtbar, weil das gerade angelegte Bauteil ja dasteht.
+        const eintrag = { art: 'erzeugt', globalId: 'cde-a', modell: 'cde', nachher: { rezept: 'linie' } };
+        expect(anwendungsweg(eintrag)).toBe('neuaufbau');
+        expect(planFuerEintrag(eintrag, 'm1')).toBe(null);
+    });
+
+    it('erkennt Merkmale als „berührt das Modell nicht"', () => {
+        // Kostengruppe und DIN-277-Klasse leben neben dem Modell. Sie brauchen
+        // keine Anwendung — aber der Aufrufer muss es WISSEN, sonst meldet er
+        // „nicht angewandt" für etwas, das gar nichts anzuwenden hatte.
+        expect(anwendungsweg({ art: 'kg', globalId: 'H12', nachher: '300' })).toBe('nur-festlegung');
+        expect(anwendungsweg({ art: 'din277', globalId: 'H12', nachher: 'NUF' })).toBe('nur-festlegung');
+        expect(planFuerEintrag({ art: 'kg', globalId: 'H12' })).toBe(null);
+    });
+
+    it('schickt parametrik durch — die Absage kommt von wendeAn, nicht von hier', () => {
+        // Zwei verschiedene Fragen mit zwei verschiedenen Besitzern:
+        // „berührt es das Modell?" steht in AENDERUNGS_ARTEN, „kann ich es
+        // anwenden?" in IfcAutor.ANWENDBARE_ARTEN. Sie hier zu vermengen wäre
+        // eine zweite Liste über dieselbe Sache.
+        expect(anwendungsweg({ art: 'parametrik', globalId: 'H12', nachher: {} })).toBe('einzeln');
+        expect(ANWENDBARE_ARTEN.has('parametrik')).toBe(false);
+    });
+
+    it('verträgt einen Eintrag ohne Art, statt zu werfen', () => {
+        expect(anwendungsweg(null)).toBe('nur-festlegung');
+        expect(anwendungsweg({})).toBe('nur-festlegung');
     });
 });

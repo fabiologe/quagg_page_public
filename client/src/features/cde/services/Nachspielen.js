@@ -127,3 +127,59 @@ export function konfliktKarte(konflikte) {
     }
     return karte;
 }
+
+// ── Einen EINZELNEN Eintrag anwenden (Stufe 12.0b) ──────────────────────────
+
+/**
+ * Auf welchem Weg wird ein frisch geschriebener Eintrag wirksam?
+ *
+ * DER ANLASS: Das Formular schrieb ins Journal — und niemand brachte es ans
+ * Modell. Nur drei Wege taten das überhaupt: Ziehen (`useZiehen` ruft
+ * `setzeAnker` selbst), Laden (`useNachspielen`) und Zeichnen
+ * (`baueErzeugteNeu`). Wer eine Sohlhöhe im Formular eintrug, sah nichts
+ * geschehen; erst nach `F5` sprang das Bauteil. Für den Nutzer ist das
+ * ununterscheidbar von „kaputt".
+ *
+ * Diese Funktion trifft die Weiche EINMAL und rein, statt sie in jeder
+ * Oberfläche nachzubauen:
+ *
+ *   'einzeln'        ein Schritt über denselben `wendeAn`, den auch das
+ *                    Nachspielen benutzt — kein zweiter Anwendungsweg.
+ *   'neuaufbau'      das CDE-Modell wird GANZ aus dem Journal neu gebaut.
+ *                    ERZEUGTES DARF NIE EINZELN LAUFEN: `baueErzeugte`
+ *                    verwirft das Modell und baut nur, was man ihm gibt — ein
+ *                    Ein-Schritt-Plan löschte alles andere Erzeugte mit.
+ *   'nur-festlegung' berührt das Modell absichtlich nicht (Querschnittsgröße,
+ *                    Stärke, Kostengruppe). Muss trotzdem GEMELDET werden,
+ *                    sonst sieht richtiges Verhalten aus wie kaputtes.
+ */
+export function anwendungsweg(eintrag) {
+    if (!eintrag?.art) return 'nur-festlegung';
+    if (eintrag.art === 'erzeugt') return 'neuaufbau';
+    return AENDERUNGS_ARTEN[eintrag.art]?.beruehrtModell ? 'einzeln' : 'nur-festlegung';
+}
+
+/**
+ * Ein Eintrag als Plan in der Form, die `IfcAutor.wendeAn` erwartet.
+ *
+ * Damit läuft eine im Formular gesetzte Sohlhöhe über EXAKT denselben Weg wie
+ * eine nachgespielte — inklusive der Meldung, wenn es nicht ging. Ein eigener
+ * „jetzt sofort"-Pfad wäre der zweite Anwendungsweg, und der liefe irgendwann
+ * anders als der erste.
+ *
+ * @returns {object|null} null, wenn dieser Eintrag nicht einzeln anzuwenden ist
+ */
+export function planFuerEintrag(eintrag, modelId = null) {
+    if (anwendungsweg(eintrag) !== 'einzeln') return null;
+    return {
+        modelId,
+        anzuwenden: [{
+            globalId: eintrag.globalId,
+            art: eintrag.art,
+            wert: eintrag.nachher,
+            eintrag,
+            modell: eintrag.modell === 'cde' ? 'cde' : 'geliefert',
+        }],
+        konflikte: [],
+    };
+}

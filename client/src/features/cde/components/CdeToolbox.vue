@@ -86,6 +86,7 @@
       />
 
       <template v-else>
+        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
         <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
           <h4 class="tb-kopf">{{ g.titel }}</h4>
           <p class="tb-warum">{{ g.warum }}</p>
@@ -144,7 +145,7 @@
  * Programm das" darf nicht in einer Vorlage stehen, sonst lässt sie sich nicht
  * prüfen.
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -190,11 +191,34 @@ const festlegungsHinweis = computed(() => (bearbeitung.scharf?.nurFestlegung
   ? 'Wird als Festlegung geführt und geht in den Änderungsbericht — die Geometrie bleibt beim Planer.'
   : ''));
 
+/** Was die letzte Bearbeitung bewirkt hat — der Nutzer muss es SEHEN. */
+const rueckmeldung = ref('');
+
+/**
+ * Übernehmen: eintragen UND anwenden.
+ *
+ * Das Eintragen allein reichte nicht — es schrieb ins Journal, und das Modell
+ * rührte sich erst beim nächsten Laden. Eine gesetzte Sohlhöhe sah damit genau
+ * so aus wie ein kaputter Knopf.
+ *
+ * Und die Rückmeldung gehört dazu: eine Festlegung, die das Autorenmodell
+ * absichtlich NICHT anfasst (Querschnittsgröße, Stärke), sieht ohne sie
+ * ebenfalls aus wie nichts. Richtiges Verhalten darf nicht wie kaputtes
+ * aussehen.
+ */
 async function uebernehmen() {
-  await bearbeitung.ausfuehren({
+  rueckmeldung.value = '';
+  const eintrag = await bearbeitung.ausfuehren({
     wer: cde.bearbeiter || '',
     modellSha: api.getLoadedModelSha?.() ?? null,
   });
+  if (!eintrag) { rueckmeldung.value = 'Nichts zu ändern — der Wert galt schon.'; return; }
+
+  const r = await api.wendeEintragAn?.(eintrag);
+  rueckmeldung.value = !r ? 'Eingetragen.'
+    : r.angewandt ? 'Übernommen.'
+    : r.nurFestlegung ? 'Als Festlegung geführt — die Geometrie bleibt beim Planer.'
+    : `Eingetragen, aber nicht angewandt: ${r.grund ?? 'unbekannt'}`;
 }
 </script>
 
@@ -249,6 +273,12 @@ async function uebernehmen() {
 }
 .tb-luecke  { color: var(--cde-text-dim); }
 .tb-warnung { color: var(--cde-warn); }
+
+.tb-rueckmeldung {
+  margin: 0; padding: 0.3rem 0.4rem;
+  font-size: var(--cde-font-xs); color: var(--cde-accent);
+  background: var(--cde-accent-fill); border-radius: var(--cde-radius-sm);
+}
 
 /* ── Gruppen ───────────────────────────────────────────────────────────── */
 .tb-gruppe { display: flex; flex-direction: column; gap: 0.2rem; }

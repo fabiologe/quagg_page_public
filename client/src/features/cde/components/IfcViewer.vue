@@ -320,6 +320,8 @@ import IfcSavedViews       from './IfcSavedViews.vue';
 import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
+import { anwendungsweg, planFuerEintrag } from '../services/Nachspielen.js';
+import { karteMitEngine } from '../services/GlobalIdKarte.js';
 import '../styles/theme.css';
 import { useModellAblage, fmtBytes, fmtDate } from '../composables/useModellAblage.js';
 import { useSchnitt } from '../composables/useSchnitt.js';
@@ -522,6 +524,25 @@ async function _einordnenMitHuelle(result) {
   return bearbeitung.einordne(angereichert, engine.value?.makeGeometryResolver?.());
 }
 
+/**
+ * Das CDE-eigene Modell aus dem Journal NEU aufbauen (Stufe 9.4).
+ *
+ * Benannte Funktion statt Objektschlüssel, weil `wendeEintragAn` sie
+ * mitbenutzt: ein erzeugtes Bauteil darf NIE einzeln angewandt werden.
+ */
+async function baueErzeugteNeu() {
+    if (!engine.value?.autor) return null;
+    const plan = { anzuwenden: [] };
+    for (const [globalId, wert] of aenderungen.wirksamerStand('erzeugt')) {
+      plan.anzuwenden.push({ globalId, art: 'erzeugt', modell: 'cde', wert });
+    }
+    const r = await engine.value.autor.baueErzeugte(plan.anzuwenden);
+    if (r.misserfolge.length) {
+      console.warn('[CDE] erzeugte Bauteile', r.misserfolge.map(m => m.grund));
+    }
+    return r;
+}
+
 provideViewerApi({
   // Snapshots & Ansichten
   saveRenderState:      () => engine.value?.saveRenderState(),
@@ -588,18 +609,48 @@ provideViewerApi({
    * Idempotenz wie beim Nachspielen, und damit auch der Weg, auf dem eine
    * Rücknahme wirkt.
    */
-  baueErzeugteNeu: async () => {
-    if (!engine.value?.autor) return null;
-    const plan = { anzuwenden: [] };
-    for (const [globalId, wert] of aenderungen.wirksamerStand('erzeugt')) {
-      plan.anzuwenden.push({ globalId, art: 'erzeugt', modell: 'cde', wert });
+  /**
+   * Einen frisch geschriebenen Journaleintrag SOFORT wirksam machen (12.0b).
+   *
+   * Ohne das schrieb das Formular ins Journal, und nichts geschah: nur Ziehen,
+   * Laden und Zeichnen brachten je etwas ans Modell. Wer eine Sohlhöhe eintrug,
+   * sah sein Bauteil erst nach `F5` springen — für den Nutzer ununterscheidbar
+   * von „kaputt".
+   *
+   * Es läuft über DENSELBEN `wendeAn` wie das Nachspielen, nicht über einen
+   * eigenen Sofortpfad: zwei Anwendungswege liefen irgendwann auseinander, und
+   * dann wäre die Frage „warum steht es nach dem Neuladen anders da?" nicht
+   * mehr zu beantworten.
+   *
+   * @returns {Promise<{weg, angewandt, nurFestlegung, grund}>}
+   */
+  wendeEintragAn: async (eintrag) => {
+    const weg = anwendungsweg(eintrag);
+    if (weg === 'neuaufbau') {
+      // Erzeugtes NIE einzeln: `baueErzeugte` verwirft das Modell und baut nur,
+      // was es bekommt — ein Ein-Schritt-Plan löschte alles andere Erzeugte mit.
+      const r = await baueErzeugteNeu();
+      return { weg, angewandt: !r?.misserfolge?.length, nurFestlegung: false,
+               grund: r?.misserfolge?.[0]?.grund ?? null };
     }
-    const r = await engine.value.autor.baueErzeugte(plan.anzuwenden);
-    if (r.misserfolge.length) {
-      console.warn('[CDE] erzeugte Bauteile', r.misserfolge.map(m => m.grund));
-    }
-    return r;
+    if (weg === 'nur-festlegung') return { weg, angewandt: false, nurFestlegung: true, grund: null };
+
+    if (!engine.value || !eintrag?.globalId) return { weg, angewandt: false, nurFestlegung: false, grund: 'keine_engine' };
+    const { karte } = await karteMitEngine(engine.value, new Set([eintrag.globalId]));
+    const ort = karte.get(eintrag.globalId);
+    const plan = planFuerEintrag(eintrag, ort?.modelId ?? null);
+    const { misserfolge, nichtAngewandt = [] } = await engine.value.wendeFestlegungenAn(plan, {
+      globalIdZuLocalId: new Map(ort ? [[eintrag.globalId, ort.localId]] : []),
+    });
+    return {
+      weg,
+      angewandt: !misserfolge.length && !nichtAngewandt.length,
+      nurFestlegung: nichtAngewandt.length > 0,
+      grund: misserfolge[0]?.grund ?? null,
+    };
   },
+
+  baueErzeugteNeu,
 });
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
