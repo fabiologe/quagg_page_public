@@ -515,7 +515,16 @@ async function _einordnenMitHuelle(result) {
   let angereichert = result;
   try {
     const h = (await engine.value?.huellenVon?.(result.modelId, [result.localId]))?.get(result.localId);
-    if (h) angereichert = { ...result, anker: h.anker, bezugshoehe: h.unterkante, oberkante: h.oberkante };
+    if (h) {
+      // Der HÖHENVERSATZ muss mit. Ohne ihn zeigt und verlangt jede
+      // Höhenbearbeitung Three-Koordinaten — das Modell wird beim Laden zum
+      // Ursprung verschoben (`COORDINATE_TO_ORIGIN`), damit die Float32-Puffer
+      // nicht an Gauss-Krüger-Grössenordnungen zerbrechen. Sichtbar wurde es
+      // als „Höhe −17,4 statt 301 m NN".
+      const versatz = engine.value?.getCoordOffsetForModel?.(result.modelId)?.y ?? 0;
+      angereichert = { ...result, anker: h.anker, bezugshoehe: h.unterkante,
+                       oberkante: h.oberkante, hoehenversatz: versatz };
+    }
   } catch (fehler) {
     // Ohne Hülle wird eingeordnet wie bisher; die lagebezogenen Bearbeitungen
     // melden dann selbst, dass ihnen der Bezug fehlt.

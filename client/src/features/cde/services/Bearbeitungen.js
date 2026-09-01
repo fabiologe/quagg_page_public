@@ -32,6 +32,7 @@
 
 import { guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, erzeugtEintrag } from './Bauteilrezepte.js';
+import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { feldAusProfil } from './bauform/Typprofile.js';
 import { DIN277_CLASSES } from './Din277Classifier.js';
 import { KG_DEFAULT_RULES } from './Din276Defaults.js';
@@ -188,7 +189,14 @@ export const BEARBEITUNGEN = Object.freeze([
             ausTypprofil: 'sohlhoehe',
             rueckfall: { titel: 'Bezugshöhe', einheit: 'm', typ: 'zahl' },
         }],
-        vorbelegung: (el) => ({ hoehe: _rundeM(el?.bezugshoehe ?? el?.anker?.y ?? 0) }),
+        // ANGEZEIGT UND EINGEGEBEN WIRD IN WIRKLICHEN HÖHEN (m NN), gerechnet
+        // wird in der Three-Welt. Das Modell wird beim Laden zum Ursprung
+        // verschoben; ohne diese Umrechnung stünde im Feld „−17,4" statt
+        // „301,0", und wer die echte Sohlhöhe einträgt, verschöbe sein Bauteil
+        // um mehrere hundert Meter. Die Umrechnung steht in Hoehenbezug.js.
+        vorbelegung: (el) => ({
+            hoehe: _rundeM(nnAusWelt(el?.bezugshoehe ?? el?.anker?.y ?? 0, el?.hoehenversatz ?? 0)),
+        }),
         anwenden: (el, werte) => {
             const anker = el?.anker ?? null;
             if (!anker) return null;
@@ -196,8 +204,9 @@ export const BEARBEITUNGEN = Object.freeze([
             // Verschoben wird um die DIFFERENZ, nicht auf den Wert — sonst
             // säße die Mitte auf der Sohle und das Bauteil läge zu hoch.
             const jetzt = el?.bezugshoehe ?? anker.y;
+            const ziel = weltAusNn(Number(werte.hoehe), el?.hoehenversatz ?? 0);
             return { art: 'lage', globalId: el.globalId,
-                     nachher: { x: anker.x, y: anker.y + (Number(werte.hoehe) - jetzt), z: anker.z } };
+                     nachher: { x: anker.x, y: anker.y + (ziel - jetzt), z: anker.z } };
         },
     },
     {

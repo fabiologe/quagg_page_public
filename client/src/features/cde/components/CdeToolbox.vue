@@ -153,6 +153,7 @@ import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { herleite } from '../services/Herleitung.js';
 import { ausGruppe } from '../services/Bearbeitungen.js';
+import { hatHoehenbezug } from '../services/Hoehenbezug.js';
 
 const bearbeitung = useBearbeitung();
 const cde = useCdeStore();
@@ -186,10 +187,24 @@ const herleitung = computed(() => herleite({
   profilSatz: bearbeitung.profilSatz,
 }));
 
-/** Was die scharfe Bearbeitung bewirkt — und was nicht. */
-const festlegungsHinweis = computed(() => (bearbeitung.scharf?.nurFestlegung
-  ? 'Wird als Festlegung geführt und geht in den Änderungsbericht — die Geometrie bleibt beim Planer.'
-  : ''));
+/**
+ * Was die scharfe Bearbeitung bewirkt — und was nicht.
+ *
+ * Der Höhenhinweis ist kein Beiwerk: ein Feld „Sohlhöhe [m NN]" behauptet einen
+ * Höhenbezug. Hat das Modell keinen (Versatz 0), ist der Wert eine Zahl über
+ * dem Modellursprung und nicht über NN — das muss dastehen, sonst trägt jemand
+ * eine Planhöhe ein und wundert sich.
+ */
+const festlegungsHinweis = computed(() => {
+  if (bearbeitung.scharf?.nurFestlegung) {
+    return 'Wird als Festlegung geführt und geht in den Änderungsbericht — die Geometrie bleibt beim Planer.';
+  }
+  const brauchtHoehe = bearbeitung.scharf?.brauchtRolle === 'sohlhoehe';
+  if (brauchtHoehe && !hatHoehenbezug(bearbeitung.bauteil?.hoehenversatz)) {
+    return 'Kein Höhenbezug im Modell — der Wert zählt ab Modellursprung, nicht ab NN.';
+  }
+  return '';
+});
 
 /** Was die letzte Bearbeitung bewirkt hat — der Nutzer muss es SEHEN. */
 const rueckmeldung = ref('');

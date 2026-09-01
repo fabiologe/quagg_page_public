@@ -43,7 +43,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         warum: 'Abschnitt ist definitionsgemäss ein Lauf; deckt Rohr, Kanal, Kabel, Förderer',
         felder: {
             profilGroesse: { label: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
-            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
+            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
         },
     },
     // Nur, wo der Typ die Dinge WIRKLICH anders nennt, steht ein eigener Satz.
@@ -55,7 +55,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
                 label: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000,
                 quelle: 'Pset_PipeSegmentTypeCommon.NominalDiameter',
             },
-            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
+            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
         },
     },
     IFCBEAM: {
@@ -76,12 +76,12 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCKERB: {
         bauform: 'achse+profil',
         warum: 'ohne Untertypen; ein Bordstein ist ein Lauf mit Querschnitt',
-        felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm', typ: 'zahl' } },
+        felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm NN', typ: 'zahl' } },
     },
     IFCRAILING: {
         bauform: 'achse+profil',
         warum: 'BALUSTRADE FENCE GUARDRAIL HANDRAIL — durchweg Läufe',
-        felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm', typ: 'zahl' } },
+        felder: { sohlhoehe: { label: 'Oberkante', einheit: 'm NN', typ: 'zahl' } },
     },
     // Der Pfahl ist ein LINEARES Bauteil, kein Klotz — deshalb steht er hier
     // und nicht unter der Gründung, von der er erbt.
@@ -90,7 +90,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         warum: 'BORED COHESION DRIVEN FRICTION JETGROUTING SUPPORT — Herstellarten, alle linear',
         felder: {
             profilGroesse: { label: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
-            sohlhoehe: { label: 'Fußpunkt', einheit: 'm', typ: 'zahl' },
+            sohlhoehe: { label: 'Fußpunkt', einheit: 'm NN', typ: 'zahl' },
         },
     },
     // Die Bohrung ist eine senkrechte Achse mit Durchmesser — dieselbe Form
@@ -100,7 +100,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         warum: 'ohne Untertypen; eine Bohrung ist eine Achse mit Durchmesser',
         felder: {
             profilGroesse: { label: 'Bohrdurchmesser', einheit: 'mm', typ: 'zahl', min: 20, max: 3000 },
-            sohlhoehe: { label: 'Endteufe', einheit: 'm', typ: 'zahl' },
+            sohlhoehe: { label: 'Endteufe', einheit: 'm NN', typ: 'zahl' },
         },
     },
     IFCRAIL: {
@@ -223,23 +223,23 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     // ist die Ausnahme, und er steht weiter oben — tiefer im Baum schlägt höher.
     IFCDISTRIBUTIONFLOWELEMENT: {
         bauform: 'koerper',
-        felder: { sohlhoehe: { label: 'Bezugshöhe', einheit: 'm', typ: 'zahl' } },
+        felder: { sohlhoehe: { label: 'Bezugshöhe', einheit: 'm NN', typ: 'zahl' } },
     },
     // Formstück, Bogen, Abzweig — im Kanalbau überall, und mit eigener DN.
     IFCFLOWFITTING: {
         bauform: 'koerper',
         felder: {
             profilGroesse: { label: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
-            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' },
+            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
         },
     },
     IFCDISTRIBUTIONCHAMBERELEMENT: {
         bauform: 'koerper',
-        felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' } },
+        felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' } },
     },
     IFCFLOWTREATMENTDEVICE: {
         bauform: 'koerper',
-        felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm', typ: 'zahl' } },
+        felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' } },
     },
     IFCPUMP: { bauform: 'koerper', felder: {} },
     IFCVALVE: { bauform: 'koerper', felder: {} },
