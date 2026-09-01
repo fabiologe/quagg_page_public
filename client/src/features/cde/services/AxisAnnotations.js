@@ -17,6 +17,8 @@
  * — bei abweichenden Autorensystemen ist die Höhenachse die erste Verdächtige.
  */
 
+import { typKonstante } from './WebIfcTypen.js';
+
 import * as THREE from 'three';
 
 export const AXIS_CATEGORIES_DEFAULT = ['IFCPIPESEGMENT', 'IFCFLOWSEGMENT'];
@@ -39,8 +41,12 @@ export function extractAxisPolylines(webIfc, modelID, opts = {}) {
     const out = [];
 
     for (const typeName of categories) {
-        const typeConst = webIfc[typeName];
-        if (!typeConst) continue;
+        // ÜBER `typKonstante`, nicht über `webIfc[typeName]`: die Konstanten
+        // sind Modul-Exporte von web-ifc, keine Eigenschaften der IfcAPI-
+        // Instanz. Der direkte Zugriff lieferte immer `undefined`, und diese
+        // Funktion gab seit jeher eine leere Liste zurück — still.
+        const typeConst = typKonstante(webIfc, typeName);
+        if (typeConst === null) continue;
         let ids;
         try { ids = webIfc.GetLineIDsWithType(modelID, typeConst); } catch { continue; }
         if (!ids?.length) continue;

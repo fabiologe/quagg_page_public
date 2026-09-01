@@ -6,6 +6,7 @@ import {
   extractAxisPolylines, polylineLength, polylineGefaellePromille,
   longestSegment, normalizeTextAngle, formatGefaelle,
 } from '../services/AxisAnnotations'
+import { typKonstante } from '../services/WebIfcTypen.js'
 
 // ── Fake-webIfc ─────────────────────────────────────────────────────────────
 
@@ -100,5 +101,56 @@ describe('Geometrie-Helfer', () => {
     expect(formatGefaelle(5.23)).toBe('5,2 ‰')
     expect(formatGefaelle(-3)).toBe('3 ‰')
     expect(formatGefaelle(null)).toBe('')
+  })
+})
+
+describe('Die Typkonstanten liegen am MODUL, nicht an der Instanz (13.1)', () => {
+  /**
+   * Der Fehler: `const typeConst = webIfc[typeName]` griff auf die
+   * `IfcAPI`-INSTANZ. Die Konstanten (`IFCPIPESEGMENT = 3612865200`) sind aber
+   * Modul-Exporte von web-ifc. Der Zugriff lieferte immer `undefined`, die
+   * Schleife übersprang jede Kategorie, und `extractAxisPolylines` gab seit
+   * jeher eine LEERE Liste zurück.
+   *
+   * Still betroffen: `GeometryResolver.getForm('axis')` bekam nie eine echte
+   * Achs-Repräsentation und fiel immer auf `skeletonAxis` zurück — jede Achse
+   * also „geschätzt", auch wo der Planer eine gezeichnet hat. Und die
+   * Haltungsbeschriftung im Lageplan blieb leer.
+   *
+   * WARUM DER TEST DARÜBER ES NICHT SAH: die Attrappe oben TRÄGT die
+   * Konstanten, weil der Testautor sie hingeschrieben hat. Die echte Instanz
+   * trägt sie nicht. Wieder eine Schnittstelle geprüft, die es nicht gibt.
+   */
+  it('löst eine Konstante auf, die die Instanz NICHT kennt', () => {
+    expect(typKonstante({}, 'IFCPIPESEGMENT')).toBeGreaterThan(0)
+    expect(typKonstante(null, 'IFCMAPCONVERSION')).toBeGreaterThan(0)
+  })
+
+  it('lässt die Instanz gewinnen, wenn sie die Konstante doch trägt', () => {
+    // Damit vorhandene Attrappen weiter funktionieren und eine künftige
+    // Bibliotheksfassung, die sie mitliefert, Vorrang hat.
+    expect(typKonstante({ IFCPIPESEGMENT: 42 }, 'IFCPIPESEGMENT')).toBe(42)
+  })
+
+  it('gibt null für einen Typ, den es in keinem Schema gibt', () => {
+    // `null` heißt „kennt diese Fassung nicht" — bei IFCMAPCONVERSION in
+    // einem IFC2x3-Modell ist das der Normalfall, kein Fehler.
+    expect(typKonstante({}, 'IFCGIBTSNICHT')).toBe(null)
+    expect(typKonstante({}, '')).toBe(null)
+  })
+
+  it('liest jetzt auch mit einer Instanz OHNE Konstanten', () => {
+    // Der eigentliche Beweis. Diese Attrappe ist so gebaut, wie
+    // `ifcLoader.webIfc` WIRKLICH aussieht: keine Typkonstanten als
+    // Eigenschaften, und `GetLineIDsWithType` antwortet auf die ECHTE
+    // Konstante aus dem Modul. Mit dem alten Code kam hier eine leere Liste.
+    const produkte = [pipeProduct([ifcPoint(0, 0, 100), ifcPoint(30, 0, 99.85)])]
+    const echteKonstante = typKonstante({}, 'IFCPIPESEGMENT')
+    const wieDieEngine = {
+      GetLineIDsWithType: (mid, type) =>
+        (type === echteKonstante ? produkte.map((_, i) => i + 1) : []),
+      GetLine: (mid, id) => produkte[id - 1],
+    }
+    expect(extractAxisPolylines(wieDieEngine, 0)).toHaveLength(1)
   })
 })
