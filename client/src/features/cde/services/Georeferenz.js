@@ -47,8 +47,6 @@
  * wie `AxisAnnotations.extractAxisPolylines`.
  */
 
-import { typKonstante } from './WebIfcTypen.js';
-
 /** Wert aus der web-ifc-Hülle `{type, value}` holen. `null` bleibt `null`. */
 function _wert(a) {
     if (a === null || a === undefined) return null;
@@ -61,27 +59,16 @@ function _zahl(a, vorgabe = null) {
     return Number.isFinite(v) ? v : vorgabe;
 }
 
-/** Eine Zeile holen, ohne bei kaputten Verweisen alles hinzuwerfen. */
-function _zeile(webIfc, modelID, id) {
-    if (!Number.isFinite(id)) return null;
-    try { return webIfc.GetLine(modelID, id, false); } catch { return null; }
-}
-
-/** Alle Zeilen eines Typs — leer, wenn der Typ im Schema gar nicht existiert. */
-function _alle(webIfc, modelID, typName) {
-    const konst = typKonstante(webIfc, typName);
-    if (konst === null) return [];             // Typ gibt es in dieser Fassung nicht
-    let ids;
-    try { ids = webIfc.GetLineIDsWithType(modelID, konst); } catch { return []; }
-    const out = [];
-    const n = typeof ids?.size === 'function' ? ids.size() : (ids?.length ?? 0);
-    for (let i = 0; i < n; i++) {
-        const id = typeof ids.get === 'function' ? ids.get(i) : ids[i];
-        const z = _zeile(webIfc, modelID, id);
-        if (z) out.push(z);
-    }
-    return out;
-}
+/**
+ * Alles über die QUELLE, nicht über rohe API-Aufrufe.
+ *
+ * Der Unterschied ist nicht Bequemlichkeit: `IfcQuelle` hat einen
+ * Lebendnachweis und löst die Typkonstanten am Modul auf. Beides fehlte, als
+ * diese Datei noch direkt auf `ifcLoader.webIfc` zugriff — einen Handle, der
+ * nie ein Modell offen hatte.
+ */
+const _zeile = (q, id) => q.zeile(id);
+const _alle = (q, typName) => q.alle(typName);
 
 /**
  * Die Vorfaktoren der SI-Präfixe.
@@ -102,10 +89,10 @@ const PRAEFIX = Object.freeze({
  * kann eine `IfcConversionBasedUnit` stehen (Fuß, Zoll) — die trägt ihren
  * Faktor in einer `IfcMeasureWithUnit`, und die lesen wir mit.
  */
-function _laengeneinheit(webIfc, modelID) {
-    for (const za of _alle(webIfc, modelID, 'IFCUNITASSIGNMENT')) {
+function _laengeneinheit(q) {
+    for (const za of _alle(q, 'IFCUNITASSIGNMENT')) {
         for (const ref of za.Units ?? []) {
-            const u = _zeile(webIfc, modelID, _wert(ref));
+            const u = _zeile(q, _wert(ref));
             if (!u || _wert(u.UnitType) !== 'LENGTHUNIT') continue;
 
             // IfcSIUnit
@@ -115,7 +102,7 @@ function _laengeneinheit(webIfc, modelID) {
                          praefix: _wert(u.Prefix) ?? null, quelle: 'IfcSIUnit' };
             }
             // IfcConversionBasedUnit — Fuß, Zoll, …
-            const mwu = _zeile(webIfc, modelID, _wert(u.ConversionFactor));
+            const mwu = _zeile(q, _wert(u.ConversionFactor));
             const faktor = _zahl(mwu?.ValueComponent, null);
             if (faktor !== null) {
                 return { faktor, name: _wert(u.Name) ?? 'unbekannt',
@@ -135,10 +122,10 @@ function _laengeneinheit(webIfc, modelID) {
  * OPTIONAL, und fehlen sie, ist die x-Achse nach Osten gerichtet (Drehung 0).
  * `Scale` fehlt ebenfalls oft; die Norm sagt dann 1,0.
  */
-function _kartenbezug(webIfc, modelID) {
+function _kartenbezug(q) {
     const alle = [
-        ..._alle(webIfc, modelID, 'IFCMAPCONVERSIONSCALED'),
-        ..._alle(webIfc, modelID, 'IFCMAPCONVERSION'),
+        ..._alle(q, 'IFCMAPCONVERSIONSCALED'),
+        ..._alle(q, 'IFCMAPCONVERSION'),
     ];
     if (!alle.length) return null;
     const mc = alle[0];
@@ -161,8 +148,8 @@ function _kartenbezug(webIfc, modelID) {
 }
 
 /** Das Ziel-Bezugssystem, so wie die Datei es NENNT (nicht: wie es stimmt). */
-function _crs(webIfc, modelID, id) {
-    const z = id != null ? _zeile(webIfc, modelID, id) : (_alle(webIfc, modelID, 'IFCPROJECTEDCRS')[0] ?? null);
+function _crs(q, id) {
+    const z = id != null ? _zeile(q, id) : (_alle(q, 'IFCPROJECTEDCRS')[0] ?? null);
     if (!z) return null;
     return {
         name: _wert(z.Name) ?? null,                 // meist 'EPSG:25832'
@@ -176,8 +163,8 @@ function _crs(webIfc, modelID, id) {
 }
 
 /** Einen Punkt aus `IfcCartesianPoint` lesen. */
-function _punkt(webIfc, modelID, id) {
-    const p = _zeile(webIfc, modelID, id);
+function _punkt(q, id) {
+    const p = _zeile(q, id);
     const c = p?.Coordinates;
     if (!Array.isArray(c)) return null;
     return { x: _zahl(c[0], 0), y: _zahl(c[1], 0), z: _zahl(c[2], 0) };
@@ -190,18 +177,18 @@ function _punkt(webIfc, modelID, id) {
  * Es kann mehrere Kontexte geben (Model, Plan) — der 3D-Kontext ist der, auf
  * den sich die Geometrie bezieht.
  */
-function _kontext(webIfc, modelID) {
-    const alle = _alle(webIfc, modelID, 'IFCGEOMETRICREPRESENTATIONCONTEXT');
+function _kontext(q) {
+    const alle = _alle(q, 'IFCGEOMETRICREPRESENTATIONCONTEXT');
     const ctx = alle.find(c => String(_wert(c.ContextType) ?? '').toLowerCase() === 'model') ?? alle[0];
     // Nie `null` für die Nordrichtung: die Norm gibt [0,1] vor, und ein `null`
     // hier zöge sich als Absturz durch jeden Aufrufer.
     if (!ctx) return { weltursprung: null, nordrichtung: { rad: 0, quelle: 'vorgabe' }, genauigkeit: null };
 
-    const wcs = _zeile(webIfc, modelID, _wert(ctx.WorldCoordinateSystem));
-    const ursprung = wcs ? _punkt(webIfc, modelID, _wert(wcs.Location)) : null;
+    const wcs = _zeile(q, _wert(ctx.WorldCoordinateSystem));
+    const ursprung = wcs ? _punkt(q, _wert(wcs.Location)) : null;
 
     // TrueNorth ist eine 2D-Richtung; Vorgabe [0,1] = Nord entlang +y.
-    const tn = _zeile(webIfc, modelID, _wert(ctx.TrueNorth));
+    const tn = _zeile(q, _wert(ctx.TrueNorth));
     const dr = tn?.DirectionRatios;
     const nordrichtung = Array.isArray(dr)
         ? { rad: Math.atan2(_zahl(dr[0], 0), _zahl(dr[1], 1)), quelle: 'TrueNorth' }
@@ -226,8 +213,8 @@ function _kontext(webIfc, modelID) {
  * Grad, Minuten, Sekunden und optional Millionstelsekunden. Vorzeichen trägt
  * die erste Komponente.
  */
-function _standort(webIfc, modelID) {
-    const site = _alle(webIfc, modelID, 'IFCSITE')[0];
+function _standort(q) {
+    const site = _alle(q, 'IFCSITE')[0];
     if (!site) return null;
     const grad = (a) => {
         const c = _wert(a);
@@ -265,23 +252,22 @@ function _stufe({ kartenbezug, crs, weltursprung, standort }) {
 /**
  * Alles lesen, was die Datei über ihre Lage sagt.
  *
- * @param {object} webIfc   rohe web-ifc-API
- * @param {number} modelID
+ * @param {IfcQuelle} q  eine LEBENDE Quelle (siehe IfcQuelle.lebt())
  * @returns {object} Auskunft mit Provenienz an jedem Wert; nie null
  */
-export function leseGeoreferenz(webIfc, modelID) {
+export function leseGeoreferenz(q) {
     const befunde = [];
-    if (!webIfc || !Number.isFinite(modelID)) {
+    if (!q?.lebt?.()) {
         return { kartenbezug: null, crs: null, weltursprung: null, nordrichtung: { rad: 0, quelle: 'vorgabe' },
                  einheit: { faktor: 1, name: 'METRE', quelle: 'angenommen' }, standort: null,
-                 stufe: { wert: 0, text: 'kein Modell' }, befunde: ['kein_modell'] };
+                 stufe: { wert: 0, text: 'keine lebende Quelle' }, befunde: [{ schwere: 'warnung', text: 'Keine lebende IFC-Quelle — nichts zu lesen.' }] };
     }
 
-    const kartenbezug = _kartenbezug(webIfc, modelID);
-    const crs = _crs(webIfc, modelID, kartenbezug?.zielCrsId);
-    const { weltursprung, nordrichtung, genauigkeit } = _kontext(webIfc, modelID);
-    const einheit = _laengeneinheit(webIfc, modelID);
-    const standort = _standort(webIfc, modelID);
+    const kartenbezug = _kartenbezug(q);
+    const crs = _crs(q, kartenbezug?.zielCrsId);
+    const { weltursprung, nordrichtung, genauigkeit } = _kontext(q);
+    const einheit = _laengeneinheit(q);
+    const standort = _standort(q);
 
     if (einheit.quelle === 'angenommen') {
         befunde.push({ schwere: 'hinweis', text: 'Keine Längeneinheit in der Datei — Meter angenommen.' });

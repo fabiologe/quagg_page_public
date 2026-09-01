@@ -26,12 +26,12 @@
  * Instanz trägt sie nicht. Der Test prüft eine Schnittstelle, die es nicht
  * gibt — genau wie bei `getAllCoordOffsets` (Stufe 13.0).
  *
- * Deshalb: die Konstante kommt aus dem MODUL. Die Instanz wird zuerst gefragt,
- * damit vorhandene Attrappen weiter funktionieren und eine künftige
- * Bibliotheksfassung, die sie doch mitliefert, gewinnt.
+ * Deshalb: die Konstante kommt aus dem MODUL — und das Modul wird
+ * HEREINGEREICHT, nicht importiert. Ein statischer `import 'web-ifc'` in
+ * Anwendungscode zöge die Bibliothek in den Auswertungspfad jedes Moduls, das
+ * ihn erbt; `IfcQuelle` lädt sie stattdessen dynamisch, erst wenn wirklich
+ * eine Datei geöffnet wird.
  */
-
-import * as WEBIFC from 'web-ifc';
 
 /**
  * Die Typkonstante zu einem IFC-Klassennamen, oder `null`.
@@ -40,12 +40,14 @@ import * as WEBIFC from 'web-ifc';
  * `IFCMAPCONVERSION` in einem IFC2x3-Modell ist das der Normalfall und kein
  * Fehler.
  */
-export function typKonstante(webIfc, name) {
+export function typKonstante(webIfcModul, name) {
     const k = name?.toUpperCase?.();
     if (!k) return null;
-    // Erst die Instanz (Attrappen, künftige Fassungen), dann das Modul.
-    const ausInstanz = webIfc?.[k];
-    if (Number.isFinite(ausInstanz)) return ausInstanz;
-    const ausModul = WEBIFC[k];
-    return Number.isFinite(ausModul) ? ausModul : null;
+    const konst = webIfcModul?.[k];
+    if (Number.isFinite(konst)) return konst;
+    // CJS-Interop: unter node/vitest kommt das Modul als `{default: {...}}` an.
+    // Dieselbe Falle wie bei `polygon-clipping`, die den vite-Build einmal
+    // gekostet hat — deshalb beide Wege.
+    const ausDefault = webIfcModul?.default?.[k];
+    return Number.isFinite(ausDefault) ? ausDefault : null;
 }

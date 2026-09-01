@@ -24,23 +24,36 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { leseGeoreferenz } from '../services/Georeferenz.js';
+import { IfcQuelle } from '../services/IfcQuelle.js';
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const wurzel = path.resolve(hier, '../../../../');      // client/
 const require = createRequire(import.meta.url);
 
-let WebIFC, api;
-beforeAll(async () => {
-    WebIFC = require('web-ifc');
-    api = new WebIFC.IfcAPI();
-    api.SetWasmPath(path.join(wurzel, 'node_modules/web-ifc/'), true);
-    await api.Init();
-}, 60_000);
-afterAll(() => { try { api?.Dispose?.(); } catch { /* egal */ } });
+let WebIFC;
+const offen = [];
+beforeAll(() => { WebIFC = require('web-ifc'); });
+afterAll(() => { for (const q of offen) q?.schliesse(); });
 
-/** Ein Modell aus IFC-TEXT öffnen — echter Parser, kein nachgebautes Objekt. */
-function ausText(text) {
-    return api.OpenModel(new TextEncoder().encode(text));
+/**
+ * Eine QUELLE aus IFC-Text — echter Parser, echter Handle.
+ *
+ * Bewusst über `IfcQuelle.oeffne`, nicht über eine eigene `IfcAPI`: so prüft
+ * jeder Test nebenbei mit, dass der Handle wirklich lebt. Genau dieser
+ * Nachweis hat gefehlt, als der Leser auf `ifcLoader.webIfc` gebaut war — ein
+ * Handle ohne Modell.
+ */
+async function quelleAusText(text) {
+    const q = await IfcQuelle.oeffne(WebIFC, new TextEncoder().encode(text),
+                                     { wasmPfad: path.join(wurzel, 'node_modules/web-ifc/'), absolut: true });
+    offen.push(q);
+    return q;
+}
+async function quelleAusDatei(pfad) {
+    const q = await IfcQuelle.oeffne(WebIFC, new Uint8Array(fs.readFileSync(pfad)),
+                                     { wasmPfad: path.join(wurzel, 'node_modules/web-ifc/'), absolut: true });
+    offen.push(q);
+    return q;
 }
 
 const KOPF = (schema) => `ISO-10303-21;
@@ -56,7 +69,19 @@ DATA;
 #4= IFCDIRECTION((0.,0.,1.));
 #5= IFCDIRECTION((1.,0.,0.));
 #6= IFCAXIS2PLACEMENT3D(#3,#4,#5);
+#10= IFCPERSON($,'T',$,$,$,$,$,$);
+#11= IFCORGANIZATION($,'Q',$,$,$);
+#12= IFCPERSONANDORGANIZATION(#10,#11,$);
+#13= IFCAPPLICATION(#11,'1','T','T');
+#14= IFCOWNERHISTORY(#12,#13,$,.ADDED.,0,$,$,0);
 `;
+/**
+ * Das IFCPROJECT steht bewusst am Ende, NACH dem Kontext — es verweist auf ihn.
+ * Und es muss da sein: `IfcQuelle.lebt()` prüft darauf, weil jede gültige
+ * IFC-Datei genau eines hat. Eine Fixture ohne Projekt ist keine IFC-Datei,
+ * und der Handle weist sie zu Recht ab.
+ */
+const PROJEKT = (ctx) => `#99= IFCPROJECT('0000000000000000000001',#14,'T',$,$,$,$,(#${ctx}),#2);\n`;
 const FUSS = 'ENDSEC;\nEND-ISO-10303-21;\n';
 
 describe('IFC4 mit vollständiger Georeferenz', () => {
@@ -65,11 +90,10 @@ describe('IFC4 mit vollständiger Georeferenz', () => {
 #7= IFCPROJECTEDCRS('EPSG:25832','UTM Zone 32N','ETRS89',$,'UTM','32N',#1);
 #8= IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.0E-5,#6,$);
 #9= IFCMAPCONVERSION(#8,#7,2577078.,5465569.,12.5,1.0,0.0,1.0);
-` + FUSS;
+` + PROJEKT(8) + FUSS;
 
-    let g, mid;
-    beforeAll(() => { mid = ausText(TEXT); g = leseGeoreferenz(api, mid); });
-    afterAll(() => api.CloseModel(mid));
+    let g;
+    beforeAll(async () => { g = leseGeoreferenz(await quelleAusText(TEXT)); }, 60_000);
 
     it('liest Eastings, Northings und OrthogonalHeight', () => {
         expect(g.kartenbezug.ost).toBe(2577078);
@@ -95,19 +119,17 @@ describe('IFC4 mit vollständiger Georeferenz', () => {
 });
 
 describe('Die Drehung kommt aus XAxisAbscissa/Ordinate', () => {
-    it('rechnet 30° korrekt aus dem Richtungsvektor', () => {
+    it('rechnet 30° korrekt aus dem Richtungsvektor', async () => {
         // Die Norm: theta = atan2(XAxisOrdinate, XAxisAbscissa).
         const c = Math.cos(Math.PI / 6), s = Math.sin(Math.PI / 6);
-        const mid = ausText(KOPF('IFC4') + `
+        const g = leseGeoreferenz(await quelleAusText(KOPF('IFC4') + `
 #7= IFCPROJECTEDCRS('EPSG:25832',$,$,$,$,$,#1);
 #8= IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.0E-5,#6,$);
 #9= IFCMAPCONVERSION(#8,#7,0.,0.,0.,${c},${s},1.0);
-` + FUSS);
-        const g = leseGeoreferenz(api, mid);
+` + PROJEKT(8) + FUSS));
         expect(g.kartenbezug.drehung * 180 / Math.PI).toBeCloseTo(30, 6);
         expect(g.befunde.some(b => /gedreht/.test(b.text))).toBe(true);
-        api.CloseModel(mid);
-    });
+    }, 60_000);
 });
 
 describe('IFC2x3 hat GAR KEINE präzise Georeferenz', () => {
@@ -116,41 +138,40 @@ describe('IFC2x3 hat GAR KEINE präzise Georeferenz', () => {
      * `IfcMapConversion` und `IfcProjectedCRS` gibt es in 2x3 nicht (an den
      * web-ifc-Schemata gemessen). Die Auskunft muss trotzdem gültig sein.
      */
-    it('liefert eine leere, aber brauchbare Auskunft statt zu werfen', () => {
-        const mid = ausText(KOPF('IFC2X3') + `
+    it('liefert eine leere, aber brauchbare Auskunft statt zu werfen', async () => {
+        const g = leseGeoreferenz(await quelleAusText(KOPF('IFC2X3') + `
 #8= IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.0E-5,#6,$);
-` + FUSS);
-        const g = leseGeoreferenz(api, mid);
+` + PROJEKT(8) + FUSS));
         expect(g.kartenbezug).toBe(null);
         expect(g.crs).toBe(null);
         expect(g.stufe.wert).toBe(0);
         expect(g.nordrichtung).toEqual({ rad: 0, quelle: 'vorgabe' });   // nie null
         expect(g.einheit.faktor).toBe(1);
-        api.CloseModel(mid);
-    });
+    }, 60_000);
 });
 
 describe('Einheiten werden GELESEN, nicht angenommen', () => {
-    it('erkennt Millimeter und gibt den Faktor', () => {
+    it('erkennt Millimeter und gibt den Faktor', async () => {
         const text = KOPF('IFC4').replace(
             '#1= IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);',
             '#1= IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.);',
-        ) + FUSS;
-        const g = leseGeoreferenz(api, ausText(text));
+        ) + `#8= IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.0E-5,#6,$);\n` + PROJEKT(8) + FUSS;
+        const g = leseGeoreferenz(await quelleAusText(text));
         expect(g.einheit.faktor).toBe(0.001);
         expect(g.einheit.praefix).toBe('MILLI');
         expect(g.befunde.some(b => /MILLIMETRE/.test(b.text))).toBe(true);
-    });
+    }, 60_000);
 
-    it('sagt es, wenn gar keine Einheit dasteht — statt still Meter zu nehmen', () => {
+    it('sagt es, wenn gar keine Einheit dasteht — statt still Meter zu nehmen', async () => {
         const text = KOPF('IFC4')
             .replace('#1= IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);', '')
-            .replace('#2= IFCUNITASSIGNMENT((#1));', '') + FUSS;
-        const g = leseGeoreferenz(api, ausText(text));
+            .replace('#2= IFCUNITASSIGNMENT((#1));', '')
+            + `#8= IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.0E-5,#6,$);\n` + PROJEKT(8) + FUSS;
+        const g = leseGeoreferenz(await quelleAusText(text));
         expect(g.einheit.faktor).toBe(1);
         expect(g.einheit.quelle).toBe('angenommen');
         expect(g.befunde.some(b => /angenommen/.test(b.text))).toBe(true);
-    });
+    }, 60_000);
 });
 
 describe('An einer ECHTEN Datei aus dem Repo', () => {
@@ -164,15 +185,13 @@ describe('An einer ECHTEN Datei aus dem Repo', () => {
     const datei = path.join(hier, 'BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc');
     const da = fs.existsSync(datei);
 
-    it.skipIf(!da)('liest Einheit und Nordrichtung aus der Datei', () => {
-        const mid = api.OpenModel(new Uint8Array(fs.readFileSync(datei)));
-        const g = leseGeoreferenz(api, mid);
+    it.skipIf(!da)('liest Einheit und Nordrichtung aus der Datei', async () => {
+        const g = leseGeoreferenz(await quelleAusDatei(datei));
 
         expect(g.einheit.faktor).toBe(0.001);          // Millimeter!
         expect(g.einheit.quelle).toBe('IfcSIUnit');
         expect(g.nordrichtung.quelle).toBe('TrueNorth');
         expect(g.kartenbezug).toBe(null);              // keine MapConversion
         expect(g.stufe.wert).toBeLessThan(40);
-        api.CloseModel(mid);
     }, 60_000);
 });

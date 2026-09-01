@@ -10,6 +10,8 @@ import { IfcSection } from './IfcSection.js';
 import { IfcStoreys } from './IfcStoreys.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
 import { IfcAutor } from './IfcAutor.js';
+import { IfcQuelle } from './IfcQuelle.js';
+import { leseGeoreferenz } from './Georeferenz.js';
 
 
 const SELECTION_STYLE = {
@@ -97,6 +99,15 @@ export class IfcEngine {
         // _coordinationOffset: legacy single-model accessor — points to the FIRST loaded
         //   model's offset for backward compat. New code should read _coordOffsets.
         this._coordOffsets       = new Map();
+        /**
+         * Lebende IFC-Lesezugriffe je Modell (Stufe 13.1).
+         *
+         * `ifcLoader.webIfc` hat NIE ein Modell offen — nur `readIfcFile()`
+         * öffnet eines, und das ruft die CDE nirgends. Deshalb bringt die CDE
+         * ihren eigenen Handle mit, geöffnet auf denselben Bytes, die ohnehin
+         * durch `loadIfc` kommen. Preis: das Modell liegt zweimal im Speicher.
+         */
+        this._quellen            = new Map();
         this._coordinationOffset = new THREE.Vector3();
         this._lastHitPoint       = null; // THREE.Vector3 | null
         this._lastHitModelId     = null; // string | null — which model the hover hit
@@ -197,6 +208,22 @@ export class IfcEngine {
         const objPos    = model.object.position;
         const modelOff  = new THREE.Vector3(-objPos.x, -objPos.y, -objPos.z);
         this._coordOffsets.set(model.modelId, modelOff);
+
+        // Eigenen Lesezugriff auf DIESELBEN Bytes öffnen. Dynamisch importiert,
+        // damit web-ifc nicht im Auswertungspfad jedes Moduls landet, das die
+        // Engine erbt — und erst, wenn wirklich eine Datei kommt.
+        try {
+            const WebIFC = await import('web-ifc');
+            const quelle = await IfcQuelle.oeffne(WebIFC, data, {
+                wasmPfad: '/', absolut: true, name: model.modelId,
+            });
+            if (quelle) this._quellen.set(model.modelId, quelle);
+            else console.warn('cde: keine IFC-Quelle für', model.modelId, '— Georeferenz und Achsen bleiben ungelesen');
+        } catch (fehler) {
+            // Ohne Quelle läuft alles wie bisher weiter. Sie ist ein Zugewinn,
+            // keine Voraussetzung — der Viewer darf daran nicht hängen.
+            console.warn('cde: IFC-Quelle', fehler?.message ?? fehler);
+        }
         // Legacy single-model accessor — first model wins
         if (this._coordOffsets.size === 1) this._coordinationOffset.copy(modelOff);
 
@@ -257,6 +284,10 @@ export class IfcEngine {
         } catch (_) { fragments.list.delete(modelId); }
         // Drop the offset entry for this model so it doesn't leak / collide later
         this._coordOffsets.delete(modelId);
+        // Den wasm-Speicher wirklich freigeben — sonst liegt die Datei für
+        // immer im Heap, und sie liegt dort schon ein zweites Mal.
+        this._quellen.get(modelId)?.schliesse();
+        this._quellen.delete(modelId);
         // If the removed model was the legacy primary, repoint to whatever's left
         if (this._coordOffsets.size) this._coordinationOffset.copy([...this._coordOffsets.values()][0]);
         else                          this._coordinationOffset.set(0, 0, 0);
@@ -993,6 +1024,28 @@ export class IfcEngine {
      * Schnittstelle, die es nicht gab. Der Guard in `koordinatenForm.test.js`
      * geht deshalb von der ECHTEN Ausgabe aus.
      */
+    /** Der lebende Lesezugriff auf ein Modell, oder null. */
+    quelleVon(modelId) {
+        const q = this._quellen.get(modelId) ?? null;
+        return q?.lebt() ? q : null;
+    }
+
+    /**
+     * Was die geladenen Dateien über ihre Lage auf der Erde SAGEN (Stufe 13.1).
+     *
+     * Nur über LEBENDE Quellen. Entschieden wird hier nichts — das Auflösen
+     * von Widersprüchen ist Stufe 13.2.
+     */
+    leseGeoreferenzen() {
+        const out = {};
+        for (const [modelId, q] of this._quellen) {
+            if (!q.lebt()) continue;
+            try { out[modelId] = leseGeoreferenz(q); }
+            catch (fehler) { console.warn('cde: georeferenz', fehler?.message ?? fehler); }
+        }
+        return out;
+    }
+
     getAllCoordOffsets() {
         const out = {};
         for (const [mid, off] of this._coordOffsets) out[mid] = { x: off.x, y: off.y, z: off.z };

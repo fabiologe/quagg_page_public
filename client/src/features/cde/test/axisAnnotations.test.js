@@ -6,7 +6,6 @@ import {
   extractAxisPolylines, polylineLength, polylineGefaellePromille,
   longestSegment, normalizeTextAngle, formatGefaelle,
 } from '../services/AxisAnnotations'
-import { typKonstante } from '../services/WebIfcTypen.js'
 
 // ── Fake-webIfc ─────────────────────────────────────────────────────────────
 
@@ -104,41 +103,7 @@ describe('Geometrie-Helfer', () => {
   })
 })
 
-describe('Die Typkonstanten liegen am MODUL, nicht an der Instanz (13.1)', () => {
-  /**
-   * Der Fehler: `const typeConst = webIfc[typeName]` griff auf die
-   * `IfcAPI`-INSTANZ. Die Konstanten (`IFCPIPESEGMENT = 3612865200`) sind aber
-   * Modul-Exporte von web-ifc. Der Zugriff lieferte immer `undefined`, die
-   * Schleife übersprang jede Kategorie, und `extractAxisPolylines` gab seit
-   * jeher eine LEERE Liste zurück.
-   *
-   * Still betroffen: `GeometryResolver.getForm('axis')` bekam nie eine echte
-   * Achs-Repräsentation und fiel immer auf `skeletonAxis` zurück — jede Achse
-   * also „geschätzt", auch wo der Planer eine gezeichnet hat. Und die
-   * Haltungsbeschriftung im Lageplan blieb leer.
-   *
-   * WARUM DER TEST DARÜBER ES NICHT SAH: die Attrappe oben TRÄGT die
-   * Konstanten, weil der Testautor sie hingeschrieben hat. Die echte Instanz
-   * trägt sie nicht. Wieder eine Schnittstelle geprüft, die es nicht gibt.
-   */
-  it('löst eine Konstante auf, die die Instanz NICHT kennt', () => {
-    expect(typKonstante({}, 'IFCPIPESEGMENT')).toBeGreaterThan(0)
-    expect(typKonstante(null, 'IFCMAPCONVERSION')).toBeGreaterThan(0)
-  })
-
-  it('lässt die Instanz gewinnen, wenn sie die Konstante doch trägt', () => {
-    // Damit vorhandene Attrappen weiter funktionieren und eine künftige
-    // Bibliotheksfassung, die sie mitliefert, Vorrang hat.
-    expect(typKonstante({ IFCPIPESEGMENT: 42 }, 'IFCPIPESEGMENT')).toBe(42)
-  })
-
-  it('gibt null für einen Typ, den es in keinem Schema gibt', () => {
-    // `null` heißt „kennt diese Fassung nicht" — bei IFCMAPCONVERSION in
-    // einem IFC2x3-Modell ist das der Normalfall, kein Fehler.
-    expect(typKonstante({}, 'IFCGIBTSNICHT')).toBe(null)
-    expect(typKonstante({}, '')).toBe(null)
-  })
-
+describe('extractAxisPolylines laeuft in der CDE ins Leere (13.1)', () => {
   it('haelt fest, dass extractAxisPolylines in der CDE ins Leere laeuft', () => {
     // Der Befund, ZURUECKGENOMMEN und dokumentiert statt halb repariert.
     //
