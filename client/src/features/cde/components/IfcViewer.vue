@@ -170,13 +170,28 @@
 
         <!-- B1: Koordinatenanzeige — centered bottom -->
         <div v-if="coords" class="coord-bar">
-          <span class="coord-mode-badge">{{ coordMode === 'ifc' ? 'IFC' : 'Viewer' }}</span>
-          <span v-if="coordMode === 'viewer'"><b>X</b> {{ coords.x }}&thinsp;m</span>
-          <span v-if="coordMode === 'viewer'"><b>Y</b> {{ coords.y }}&thinsp;m</span>
-          <span v-if="coordMode === 'viewer'"><b>Z</b> {{ coords.z }}&thinsp;m</span>
-          <span v-if="coordMode === 'ifc'"><b>X</b> {{ coords.ox }}&thinsp;m</span>
-          <span v-if="coordMode === 'ifc'"><b>Y</b> {{ coords.oy }}&thinsp;m</span>
-          <span v-if="coordMode === 'ifc'"><b>Z</b> {{ coords.oz }}&thinsp;m</span>
+          <span class="coord-mode-badge" :title="COORD_MODI[coordMode].titel">{{ COORD_MODI[coordMode].kurz }}</span>
+          <!-- PROJEKT ist die Vorgabe: das ist, was im CAD steht. Die beiden
+               anderen Modi bleiben — für „warum liegt das so?" braucht man sie. -->
+          <template v-if="coordMode === 'projekt' && projektKoords">
+            <span><b>E</b> {{ projektKoords.ost }}&thinsp;m</span>
+            <span><b>N</b> {{ projektKoords.nord }}&thinsp;m</span>
+            <span><b>H</b> {{ projektKoords.hoehe }}&thinsp;m</span>
+            <span v-if="projektKoords.crs" class="coord-crs">{{ projektKoords.crs }}</span>
+          </template>
+          <template v-else-if="coordMode === 'projekt'">
+            <span class="coord-crs">kein Landesbezug — nur Modellkoordinaten</span>
+          </template>
+          <template v-if="coordMode === 'viewer'">
+            <span><b>X</b> {{ coords.x }}&thinsp;m</span>
+            <span><b>Y</b> {{ coords.y }}&thinsp;m</span>
+            <span><b>Z</b> {{ coords.z }}&thinsp;m</span>
+          </template>
+          <template v-if="coordMode === 'ifc'">
+            <span><b>X</b> {{ coords.ox }}&thinsp;m</span>
+            <span><b>Y</b> {{ coords.oy }}&thinsp;m</span>
+            <span><b>Z</b> {{ coords.oz }}&thinsp;m</span>
+          </template>
         </div>
 
         <!-- Sprint U/AP-U4: Werte und Aktionen am Objekt statt in Bildschirmecken.
@@ -320,6 +335,7 @@ import IfcSavedViews       from './IfcSavedViews.vue';
 import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
+import { bestimmeBezug } from '../services/Projektkoordinaten.js';
 import { anwendungsweg, planFuerEintrag } from '../services/Nachspielen.js';
 import { karteMitEngine } from '../services/GlobalIdKarte.js';
 import '../styles/theme.css';
@@ -351,6 +367,45 @@ const canvasRef   = ref(null);
 
 const engine      = shallowRef(null);
 const coords      = ref(null);
+/**
+ * Der aufgelöste Bezug je Modell — Welt → Ost/Nord/Höhe.
+ *
+ * Wird beim Modellwechsel neu bestimmt, nicht bei jedem Zeigen: die Auflösung
+ * liest die Georeferenz und prüft die Rohkoordinaten gegen die
+ * Systembereiche, und das gehört nicht in einen Mousemove.
+ */
+const bezuege = shallowRef({});
+
+/**
+ * Den Projektbezug aller geladenen Modelle neu bestimmen.
+ *
+ * Nach jedem Laden und Entladen. Die Auflösung entscheidet unter anderem, ob
+ * die MapConversion überhaupt gilt — bei Dateien, deren Geometrie schon
+ * Landeskoordinaten trägt, wäre sie eine zweite Verschiebung.
+ */
+function _bezuegeNeuBestimmen() {
+  const geo = engine.value?.leseGeoreferenzen?.() ?? {};
+  const versaetze = engine.value?.getAllCoordOffsets?.() ?? {};
+  const out = {};
+  for (const [modelId, versatz] of Object.entries(versaetze)) {
+    out[modelId] = bestimmeBezug({ georeferenz: geo[modelId] ?? null, versatz });
+  }
+  bezuege.value = out;
+}
+
+/** Der Zeigerpunkt in Landeskoordinaten — oder null, wenn es keinen Bezug gibt. */
+const projektKoords = computed(() => {
+  const welt = coords.value?._welt;
+  if (!welt) return null;
+  const alle = Object.values(bezuege.value);
+  const b = (coords.value._modelId && bezuege.value[coords.value._modelId]) || alle[0];
+  if (!b || (!b.geometrieIstVerortet && !b.mapAngewandt)) return null;
+  const p = b.nachProjekt(welt);
+  return {
+    ost: p.ost.toFixed(3), nord: p.nord.toFixed(3), hoehe: p.hoehe.toFixed(3),
+    crs: b.crs.wirksam,
+  };
+});
 
 // Layer panel
 const showLayerPanel = ref(false);
@@ -412,7 +467,23 @@ const annotationen = useAnnotationen({
 // Stabile Modell-Identität pro geladenem Modell (B3) + lokale Ablage (B4)
 
 // Coordinate display mode
-const coordMode = ref('viewer'); // 'viewer' | 'ifc'
+/**
+ * Die drei Bezugssysteme der Koordinatenleiste.
+ *
+ * `projekt` ist neu und die VORGABE — das ist, was im CAD steht und was Fabio
+ * gemeint hat: „real, so wie es auch in einem CAD wäre". Die beiden anderen
+ * bleiben, weil man sie braucht, um zu verstehen, WARUM etwas so liegt:
+ * `viewer` ist modellzentriert (der Loader schiebt das Modell zum Ursprung,
+ * damit Float32 nicht an Landeskoordinaten zerbricht), `ifc` ist die Rohzahl
+ * aus der Datei.
+ */
+const COORD_MODI = Object.freeze({
+  projekt: { kurz: 'Projekt', titel: 'Landeskoordinaten (Ost/Nord/Höhe)' },
+  viewer:  { kurz: 'Viewer',  titel: 'Three-Welt, modellzentriert' },
+  ifc:     { kurz: 'IFC',     titel: 'Rohkoordinaten aus der Datei' },
+});
+const COORD_REIHE = ['projekt', 'viewer', 'ifc'];
+const coordMode = ref('projekt');
 
 let _mouseDownAt = null;
 let _hoverTimer  = null;
@@ -473,10 +544,13 @@ const toolbarItems = computed(() => [
     active: showLayerPanel.value, action: () => { showLayerPanel.value = !showLayerPanel.value; } },
   { id: 'section', icon: 'section', label: 'Schnitt', title: 'Horizontaler Schnitt', key: 'T/R',
     active: schnitt.aktiv.value, action: () => schnitt.umschalten() },
-  { id: 'coords', icon: 'coords', label: coordMode.value === 'ifc' ? 'IFC' : 'Viewer',
+  { id: 'coords', icon: 'coords', label: COORD_MODI[coordMode.value].kurz,
     title: 'Koordinaten umschalten (Viewer ↔ IFC)',
-    active: coordMode.value === 'ifc',
-    action: () => { coordMode.value = coordMode.value === 'viewer' ? 'ifc' : 'viewer'; } },
+    active: coordMode.value !== 'projekt',
+    action: () => {
+      const i = COORD_REIHE.indexOf(coordMode.value);
+      coordMode.value = COORD_REIHE[(i + 1) % COORD_REIHE.length];
+    } },
   { divider: true },
   { id: 'plan', icon: 'view-top', label: 'Plan', title: 'Planinhalt und Ausgabe (PDF, DXF, Profile)',
     active: panels.isOpen('plan'), action: () => panels.toggle('plan') },
@@ -516,12 +590,13 @@ async function _einordnenMitHuelle(result) {
   try {
     const h = (await engine.value?.huellenVon?.(result.modelId, [result.localId]))?.get(result.localId);
     if (h) {
-      // Der HÖHENVERSATZ muss mit. Ohne ihn zeigt und verlangt jede
-      // Höhenbearbeitung Three-Koordinaten — das Modell wird beim Laden zum
-      // Ursprung verschoben (`COORDINATE_TO_ORIGIN`), damit die Float32-Puffer
-      // nicht an Gauss-Krüger-Grössenordnungen zerbrechen. Sichtbar wurde es
-      // als „Höhe −17,4 statt 301 m NN".
-      const versatz = engine.value?.getCoordOffsetForModel?.(result.modelId)?.y ?? 0;
+      // Der Höhenversatz kommt aus DEMSELBEN aufgelösten Bezug wie die
+      // Koordinatenleiste. Vorher war es der rohe `offset.y` — dieselbe Zahl,
+      // solange keine MapConversion gilt, aber eben eine zweite Rechnung
+      // daneben. Und genau das war Fabios Beobachtung: „die Bearbeitung nimmt
+      // auch die Sachen vom Viewer." Jetzt gibt es nur noch eine Quelle.
+      const bezug = bezuege.value[result.modelId] ?? Object.values(bezuege.value)[0] ?? null;
+      const versatz = bezug ? bezug.nachProjekt({ x: 0, y: 0, z: 0 }).hoehe : 0;
       angereichert = { ...result, anker: h.anker, bezugshoehe: h.unterkante,
                        oberkante: h.oberkante, hoehenversatz: versatz };
     }
@@ -703,6 +778,11 @@ onMounted(async () => {
       ? {
           x: pos.x.toFixed(3), y: pos.y.toFixed(3), z: pos.z.toFixed(3),
           ox: pos.ox.toFixed(3), oy: pos.oy.toFixed(3), oz: pos.oz.toFixed(3),
+          // Die ROHEN Zahlen mit — der Projektbezug rechnet damit weiter, und
+          // aus einem `toFixed`-String zurückzuparsen wäre der Anfang eines
+          // zweiten Wahrheitsstrangs.
+          _welt: { x: pos.x, y: pos.y, z: pos.z },
+          _modelId: pos.modelId ?? null,
         }
       : null;
   });
@@ -841,6 +921,10 @@ async function removeModel(modelId) {
 
 /** Called after every successful loadIfc() to refresh UI state. */
 async function _onModelLoaded() {
+  // Projektbezug ZUERST: er entscheidet, was jede Koordinatenanzeige und jede
+  // Höhenbearbeitung danach zeigt. Einmal je Laden, nicht je Mausbewegung.
+  _bezuegeNeuBestimmen();
+
   // Categories for Layer Panel
   categoryList.value = engine.value.getCategoryList();
 
