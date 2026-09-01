@@ -191,26 +191,49 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      *   zu tun war (ungültig, oder derselbe Wert wie zuvor — `eintragen` sagt
      *   das selbst und schreibt dann keinen leeren Schritt).
      */
+    /**
+     * Warum das letzte `ausfuehren` nichts ergeben hat.
+     *
+     * `ausfuehren` gibt in DREI verschiedenen Fällen `null` zurück, und sie
+     * bedeuten Verschiedenes: die Bearbeitung war nicht bereit, sie konnte
+     * nichts beschreiben (dem Bauteil fehlt der Bezug — etwa die Hülle), oder
+     * der Wert galt schon. Die Oberfläche hat daraus einen Satz gemacht und
+     * damit einen Grund BEHAUPTET, den sie nicht kannte. Ein falscher Grund ist
+     * schlimmer als keiner: er schickt den Nutzer in die falsche Richtung.
+     */
+    const letzterGrund = ref('');
+
     async function ausfuehren({ wer = '', modellSha = null, subjekt = null } = {}) {
+        letzterGrund.value = '';
         const b = scharf.value;
         // ERZEUGEN HAT KEIN SUBJEKT (Stufe 9.4): dort steht das GEZEICHNETE an
         // der Stelle des angeklickten Bauteils und wird hereingereicht. Keine
         // Ausnahme in der Mechanik — nur eine andere Herkunft des Subjekts;
         // Journal, Rücknahme und Nachvollziehbarkeit bleiben dieselben.
         const gegenstand = subjekt ?? bauteil.value;
-        if (!b || !bereit.value || !gegenstand) return null;
+        if (!b || !bereit.value || !gegenstand) {
+            letzterGrund.value = 'Bearbeitung ist nicht bereit.';
+            return null;
+        }
 
         const beschreibung = b.anwenden(gegenstand, werte.value);
-        if (!beschreibung?.art) return null;
+        if (!beschreibung?.art) {
+            // Der häufigste Fall: `bezugshoehe-setzen` gibt null, wenn dem
+            // Bauteil der Anker fehlt (keine Hülle gelesen). Das ist etwas
+            // ganz anderes als „Wert galt schon".
+            letzterGrund.value = 'Dem Bauteil fehlt der Bezug für diese Bearbeitung.';
+            return null;
+        }
 
         const aenderungen = useAenderungen();
         const eintrag = await aenderungen.eintragen({ ...beschreibung, wer, modellSha });
+        if (!eintrag) letzterGrund.value = 'Der Wert galt schon — nichts einzutragen.';
         abbrechen();
         return eintrag;
     }
 
     return {
-        einordnung, bauteil, profilSatz, regeln, scharfId, werte, laeuft,
+        einordnung, bauteil, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
         typprofil, scharf, felder, fehler, bereit, moeglich,
         ladeProfile, einordne, starte, setzeWert, abbrechen, ausfuehren,
         vorschlaege, ordneZu,

@@ -212,7 +212,7 @@ async function uebernehmen() {
     wer: cde.bearbeiter || '',
     modellSha: api.getLoadedModelSha?.() ?? null,
   });
-  if (!eintrag) { rueckmeldung.value = 'Nichts zu ändern — der Wert galt schon.'; return; }
+  if (!eintrag) { rueckmeldung.value = bearbeitung.letzterGrund || 'Nichts eingetragen.'; return; }
 
   const r = await api.wendeEintragAn?.(eintrag);
   rueckmeldung.value = !r ? 'Eingetragen.'

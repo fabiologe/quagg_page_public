@@ -260,3 +260,47 @@ describe('Toolbox und Kontextmenü dürfen nicht auseinanderlaufen', () => {
         expect(b.moeglich.map(x => x.id)).not.toContain('profilgroesse-setzen');
     });
 });
+
+describe('Wenn nichts entsteht, steht der RICHTIGE Grund da', () => {
+    /**
+     * `ausfuehren` gibt in drei Fällen `null`, und sie bedeuten Verschiedenes.
+     * Die erste Fassung der Rückmeldung machte daraus einen Satz („der Wert
+     * galt schon") und BEHAUPTETE damit einen Grund, den sie nicht kannte.
+     * Ein falscher Grund ist schlimmer als keiner — er schickt den Nutzer in
+     * die falsche Richtung, und genau daran hat er dann eine Stunde gesucht.
+     */
+    const OHNE_HUELLE = { modelId: 'm1', localId: 1, globalId: 'H12', category: 'IFCPIPESEGMENT' };
+    const RESOLVER = {
+        forElements: () => ({
+            getForm: async (form) => (form === 'axis'
+                ? { perElement: [{ polyline: [{ x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }], source: 'axisRep' }] }
+                : { data: { closed: true, triCount: 120 } }),
+        }),
+    };
+
+    it('nennt den fehlenden Bezug, statt „Wert galt schon" zu behaupten', async () => {
+        // Ein Bauteil ohne gelesene Hülle hat keinen Anker; `anwenden` gibt
+        // dann null. Das ist ein DATENproblem, kein Eingabeproblem.
+        const b = useBearbeitung();
+        await b.einordne(OHNE_HUELLE, RESOLVER);
+        expect(b.starte('bezugshoehe-setzen')).toBe(true);
+        b.setzeWert('hoehe', 12.4);
+
+        expect(await b.ausfuehren({ wer: 'Fabio' })).toBe(null);
+        expect(b.letzterGrund).toMatch(/fehlt der Bezug/);
+    });
+
+    it('nennt den unveränderten Wert, wenn wirklich nichts zu tun war', async () => {
+        const b = useBearbeitung();
+        await b.einordne({ ...OHNE_HUELLE, anker: { x: 0, y: 10.15, z: 0 }, bezugshoehe: 10 }, RESOLVER);
+        b.starte('bezugshoehe-setzen');
+        b.setzeWert('hoehe', 12.4);
+        expect(await b.ausfuehren({ wer: 'Fabio' })).toBeTruthy();
+
+        // Nochmal derselbe Wert — jetzt gilt er schon.
+        b.starte('bezugshoehe-setzen');
+        b.setzeWert('hoehe', 12.4);
+        expect(await b.ausfuehren({ wer: 'Fabio' })).toBe(null);
+        expect(b.letzterGrund).toMatch(/galt schon/);
+    });
+});
