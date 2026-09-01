@@ -1,55 +1,5 @@
 <template>
   <div class="tb">
-    <!-- GEOREFERENZ (Stufe 13.1). Ganz oben und IMMER sichtbar, weil sie am
-         Modell hängt, nicht an der Auswahl — und weil sie erklärt, worauf sich
-         jede Höhe und jede Koordinate darunter bezieht. Bisher las die CDE
-         davon nichts; das Bezugssystem ruhte auf einem Ladeversatz, den
-         web-ifc aus dem Modellinhalt zurückrechnet. -->
-    <details v-if="georeferenz" class="tb-geo">
-      <summary>
-        Georeferenz
-        <span :class="['tb-stufe', 'tb-stufe--' + (georeferenz.stufe.wert >= 40 ? 'gut' : georeferenz.stufe.wert > 0 ? 'teil' : 'keine')]">
-          {{ georeferenz.stufe.wert }}
-        </span>
-      </summary>
-      <dl class="tb-kette">
-        <dt>Lage</dt>
-        <dd>{{ georeferenz.stufe.text }}</dd>
-
-        <template v-if="georeferenz.crs">
-          <dt>System</dt>
-          <dd>
-            <code>{{ georeferenz.crs.name || 'unbenannt' }}</code>
-            <span class="tb-dim">{{ georeferenz.crs.beschreibung }}</span>
-          </dd>
-        </template>
-
-        <template v-if="georeferenz.kartenbezug">
-          <dt>Ursprung</dt>
-          <dd class="tb-dim">
-            O {{ georeferenz.kartenbezug.ost.toFixed(2) }} ·
-            N {{ georeferenz.kartenbezug.nord.toFixed(2) }} ·
-            H {{ georeferenz.kartenbezug.hoehe.toFixed(2) }}
-          </dd>
-        </template>
-
-        <dt>Nord</dt>
-        <dd class="tb-dim">
-          {{ (georeferenz.nordrichtung.rad * 180 / Math.PI).toFixed(2) }}°
-          ({{ georeferenz.nordrichtung.quelle === 'TrueNorth' ? 'aus der Datei' : 'Vorgabe der Norm' }})
-        </dd>
-
-        <dt>Einheit</dt>
-        <dd class="tb-dim">
-          {{ georeferenz.einheit.name }}<template v-if="georeferenz.einheit.faktor !== 1"> × {{ georeferenz.einheit.faktor }}</template>
-          <span v-if="georeferenz.einheit.quelle === 'angenommen'"> — nicht in der Datei</span>
-        </dd>
-      </dl>
-      <p v-for="(b, i) in georeferenz.befunde" :key="i" class="tb-warnung">
-        <CdeIcon name="warn" :size="12" /> {{ b.text ?? b }}
-      </p>
-    </details>
-
     <!-- OHNE AUSWAHL: was man ohne Subjekt tun kann. Eine leere Toolbox wäre
          die schlechteste Antwort — sie sähe kaputt aus. -->
     <template v-if="!bearbeitung.bauteil">
@@ -231,19 +181,6 @@ const WARNUNG_TEXT = Object.freeze({
   koerper_nicht_geschlossen: 'Das Volumen ist nicht geschlossen — Massen nur näherungsweise.',
 });
 
-/**
- * Die Georeferenz des geladenen Modells.
- *
- * Beim ersten Zeichnen geholt und beim Modellwechsel erneuert — sie ändert
- * sich nicht mit der Auswahl. Bei mehreren Modellen die des ersten; welches
- * „das" Bezugssystem ist, entscheidet heute die Ladereihenfolge (bekannte
- * Schwäche, siehe Koordinaten.js).
- */
-const georeferenz = computed(() => {
-  const alle = api.getGeoreferenzen?.() ?? {};
-  return Object.values(alle)[0] ?? null;
-});
-
 const herleitung = computed(() => herleite({
   el: bearbeitung.bauteil,
   einordnung: bearbeitung.einordnung,
@@ -302,25 +239,6 @@ async function uebernehmen() {
 
 <style scoped>
 .tb { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.2rem 0 0.6rem; }
-
-.tb-geo {
-  border: 1px solid var(--cde-line);
-  border-radius: var(--cde-radius-sm);
-  padding: 0.35rem 0.45rem;
-  background: var(--cde-fill);
-}
-.tb-geo > summary {
-  cursor: pointer; font-size: var(--cde-font-xs);
-  color: var(--cde-text-dim); user-select: none;
-  display: flex; align-items: center; gap: 0.35rem;
-}
-.tb-stufe {
-  margin-left: auto; padding: 0 0.3rem;
-  border-radius: var(--cde-radius-sm); font-weight: 600;
-}
-.tb-stufe--gut   { background: var(--cde-accent-fill-hi); color: var(--cde-success-strong); }
-.tb-stufe--teil  { background: var(--cde-accent-fill-hi); color: var(--cde-warn); }
-.tb-stufe--keine { background: var(--cde-danger-fill); color: var(--cde-danger); }
 
 .tb-titel { display: flex; flex-direction: column; gap: 0.1rem; }
 .tb-titel code { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }

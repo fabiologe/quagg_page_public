@@ -139,18 +139,22 @@ describe('Die Typkonstanten liegen am MODUL, nicht an der Instanz (13.1)', () =>
     expect(typKonstante({}, '')).toBe(null)
   })
 
-  it('liest jetzt auch mit einer Instanz OHNE Konstanten', () => {
-    // Der eigentliche Beweis. Diese Attrappe ist so gebaut, wie
-    // `ifcLoader.webIfc` WIRKLICH aussieht: keine Typkonstanten als
-    // Eigenschaften, und `GetLineIDsWithType` antwortet auf die ECHTE
-    // Konstante aus dem Modul. Mit dem alten Code kam hier eine leere Liste.
-    const produkte = [pipeProduct([ifcPoint(0, 0, 100), ifcPoint(30, 0, 99.85)])]
-    const echteKonstante = typKonstante({}, 'IFCPIPESEGMENT')
+  it('haelt fest, dass extractAxisPolylines in der CDE ins Leere laeuft', () => {
+    // Der Befund, ZURUECKGENOMMEN und dokumentiert statt halb repariert.
+    //
+    // Die Konstanten am Modul aufzuloesen war richtig, reichte aber nicht:
+    // `ifcLoader.webIfc` hat NIE ein Modell offen. Nur `readIfcFile()` oeffnet
+    // eines — und die CDE ruft das nirgends. Die Kur ist deshalb nicht die
+    // Konstante, sondern ein EIGENER IfcAPI-Handle auf den gespeicherten
+    // Dateibytes (offen, Stufe 13.1 neu).
+    //
+    // Der halbe Fix hat den Viewer gekostet: ein Zugriff auf eine nicht
+    // initialisierte wasm-API im Renderpfad. Deshalb steht hier der Zustand,
+    // wie er IST — nicht, wie er sein soll.
     const wieDieEngine = {
-      GetLineIDsWithType: (mid, type) =>
-        (type === echteKonstante ? produkte.map((_, i) => i + 1) : []),
-      GetLine: (mid, id) => produkte[id - 1],
+      GetLineIDsWithType: () => [],   // kein Modell offen
+      GetLine: () => null,
     }
-    expect(extractAxisPolylines(wieDieEngine, 0)).toHaveLength(1)
+    expect(extractAxisPolylines(wieDieEngine, 0)).toHaveLength(0)
   })
 })

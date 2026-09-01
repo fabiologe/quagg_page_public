@@ -17,8 +17,6 @@
  * — bei abweichenden Autorensystemen ist die Höhenachse die erste Verdächtige.
  */
 
-import { typKonstante } from './WebIfcTypen.js';
-
 import * as THREE from 'three';
 
 export const AXIS_CATEGORIES_DEFAULT = ['IFCPIPESEGMENT', 'IFCFLOWSEGMENT'];
@@ -41,12 +39,22 @@ export function extractAxisPolylines(webIfc, modelID, opts = {}) {
     const out = [];
 
     for (const typeName of categories) {
-        // ÜBER `typKonstante`, nicht über `webIfc[typeName]`: die Konstanten
-        // sind Modul-Exporte von web-ifc, keine Eigenschaften der IfcAPI-
-        // Instanz. Der direkte Zugriff lieferte immer `undefined`, und diese
-        // Funktion gab seit jeher eine leere Liste zurück — still.
-        const typeConst = typKonstante(webIfc, typeName);
-        if (typeConst === null) continue;
+        // ACHTUNG, offener Befund (01.09.2026): diese Funktion läuft in der
+        // CDE ins Leere, und zwar aus ZWEI Gründen. Erstens sind die
+        // Typkonstanten Modul-Exporte von web-ifc, keine Eigenschaften der
+        // IfcAPI-INSTANZ — `webIfc[typeName]` ist immer `undefined`.
+        // Zweitens, und schwerwiegender: `ifcLoader.webIfc` hat NIE ein Modell
+        // offen. Nur `IfcLoader.readIfcFile()` öffnet eines (und initialisiert
+        // die Bibliothek überhaupt erst), und die CDE ruft das nirgends —
+        // `load()` geht über `FRAGS.IfcImporter` und fasst `this.webIfc` gar
+        // nicht an.
+        //
+        // Die Kur ist deshalb NICHT die Konstante, sondern ein eigener
+        // IfcAPI-Handle auf den gespeicherten Dateibytes. Bis dahin bleibt es
+        // wie es war — ein Zugriff auf eine nicht initialisierte wasm-API im
+        // Renderpfad hat den Viewer gekostet.
+        const typeConst = webIfc[typeName];
+        if (!typeConst) continue;
         let ids;
         try { ids = webIfc.GetLineIDsWithType(modelID, typeConst); } catch { continue; }
         if (!ids?.length) continue;
