@@ -602,6 +602,8 @@ provideViewerApi({
   resetElementColors:   () => engine.value?.resetCategoryColors(),
   // Sprint T1: Georeferenz + Dokument-Status für den Planexport
   getAllCoordOffsets:   () => engine.value?.getAllCoordOffsets() ?? {},
+  /** Was die Dateien über ihre Lage sagen — je Modell (Stufe 13.1). */
+  getGeoreferenzen:     () => engine.value?.leseGeoreferenzen() ?? {},
   getWebIfcAPIs:        () => engine.value?.getWebIfcAPIs() ?? [],
   getLoadedModelSha:    () => ablage.geladeneModellSha(),
 

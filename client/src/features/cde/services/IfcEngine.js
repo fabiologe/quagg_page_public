@@ -10,6 +10,7 @@ import { IfcSection } from './IfcSection.js';
 import { IfcStoreys } from './IfcStoreys.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
 import { IfcAutor } from './IfcAutor.js';
+import { leseGeoreferenz } from './Georeferenz.js';
 
 
 const SELECTION_STYLE = {
@@ -993,6 +994,22 @@ export class IfcEngine {
      * Schnittstelle, die es nicht gab. Der Guard in `koordinatenForm.test.js`
      * geht deshalb von der ECHTEN Ausgabe aus.
      */
+    /**
+     * Was die geladenen Dateien über ihre Lage auf der Erde SAGEN (Stufe 13.1).
+     *
+     * Je Modell eine Auskunft mit Provenienz. Entschieden wird hier nichts —
+     * das Auflösen von Widersprüchen ist Stufe 13.2. Erst muss überhaupt
+     * gelesen werden, was dasteht; bisher las die CDE davon nichts.
+     */
+    leseGeoreferenzen() {
+        const out = {};
+        for (const { webIfc, modelID, fragmentModelId } of this.getWebIfcAPIs()) {
+            try { out[fragmentModelId] = leseGeoreferenz(webIfc, modelID); }
+            catch (fehler) { console.warn('cde: georeferenz lesen', fehler?.message ?? fehler); }
+        }
+        return out;
+    }
+
     getAllCoordOffsets() {
         const out = {};
         for (const [mid, off] of this._coordOffsets) out[mid] = { x: off.x, y: off.y, z: off.z };
