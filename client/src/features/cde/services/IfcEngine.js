@@ -217,8 +217,12 @@ export class IfcEngine {
             const quelle = await IfcQuelle.oeffne(WebIFC, data, {
                 wasmPfad: '/', absolut: true, name: model.modelId,
             });
-            if (quelle) this._quellen.set(model.modelId, quelle);
-            else console.warn('cde: keine IFC-Quelle für', model.modelId, '— Georeferenz und Achsen bleiben ungelesen');
+            if (quelle) {
+                this._quellen.set(model.modelId, quelle);
+                await this._hoehenversatzMessen(model, quelle, modelOff);
+            } else {
+                console.warn('cde: keine IFC-Quelle für', model.modelId, '— Georeferenz und Achsen bleiben ungelesen');
+            }
         } catch (fehler) {
             // Ohne Quelle läuft alles wie bisher weiter. Sie ist ein Zugewinn,
             // keine Voraussetzung — der Viewer darf daran nicht hängen.
@@ -1024,6 +1028,65 @@ export class IfcEngine {
      * Schnittstelle, die es nicht gab. Der Guard in `koordinatenForm.test.js`
      * geht deshalb von der ECHTEN Ausgabe aus.
      */
+    /**
+     * Den HÖHENVERSATZ messen, statt ihn aus `object.position` zu erraten.
+     *
+     * DER BEFUND: `-model.object.position` liefert x und z richtig, y aber 0 —
+     * obwohl die Geometrie in der Höhe sehr wohl verschoben ist. Zwei
+     * Mechanismen wirken übereinander: `COORDINATE_TO_ORIGIN` (web-ifc) backt
+     * eine Höhenverschiebung in die Scheitelpunkte, `autoCoordinate`
+     * (fragments) setzt die Objektlage aus der MapConversion — und deren
+     * `OrthogonalHeight` ist in beiden ISYBAU-Dateien 0. Nur der zweite
+     * landet in `object.position`.
+     *
+     * Sichtbar wurde es als „E und N stimmen, H ist noch die Three-Koordinate".
+     *
+     * Statt nachzubauen, was die Bibliothek tut — das wäre eine Annahme über
+     * fremden Code —, wird DIESELBE Platzierung zweimal geholt: aus der Datei
+     * und aus den Fragmenten. Die Differenz IST der Versatz. Der Median macht
+     * es unempfindlich gegen einzelne Ausreisser, und die Streuung sagt, ob
+     * man dem Ergebnis trauen darf.
+     */
+    async _hoehenversatzMessen(model, quelle, modelOff) {
+        try {
+            if (typeof model.getPositions !== 'function') return;
+            // Eine Stichprobe genügt — es ist eine Translation, keine Kurve.
+            const ids = quelle.ids('IFCELEMENT', { untertypen: true }).slice(0, 200);
+            if (!ids.length) return;
+
+            const rohZ = quelle.platzierungsHoehen(ids);
+            const welt = await model.getPositions(ids);
+            if (!Array.isArray(welt) || welt.length !== ids.length) return;
+
+            const diffs = [];
+            for (let i = 0; i < ids.length; i++) {
+                const roh = rohZ.get(ids[i]);
+                const y = welt[i]?.y;
+                if (Number.isFinite(roh) && Number.isFinite(y)) diffs.push(roh - y);
+            }
+            if (diffs.length < 3) return;
+
+            diffs.sort((a, b) => a - b);
+            const median = diffs[Math.floor(diffs.length / 2)];
+            const spanne = diffs[diffs.length - 1] - diffs[0];
+
+            // Streuen die Differenzen, ist es keine reine Verschiebung — dann
+            // wird NICHTS gesetzt und gemeldet, statt einen Mittelwert zu
+            // behaupten, der für kein einziges Bauteil stimmt.
+            if (spanne > 0.05) {
+                console.warn(`cde: Höhenversatz uneinheitlich (Spanne ${spanne.toFixed(3)} m) — nicht gesetzt`);
+                return;
+            }
+            if (Math.abs(median - modelOff.y) > 1e-6) {
+                modelOff.y = median;
+                this._coordOffsets.set(model.modelId, modelOff);
+                if (this._coordOffsets.size === 1) this._coordinationOffset.copy(modelOff);
+            }
+        } catch (fehler) {
+            console.warn('cde: Höhenversatz messen', fehler?.message ?? fehler);
+        }
+    }
+
     /** Der lebende Lesezugriff auf ein Modell, oder null. */
     quelleVon(modelId) {
         const q = this._quellen.get(modelId) ?? null;

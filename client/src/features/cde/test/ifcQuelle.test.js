@@ -164,3 +164,40 @@ describe('typKonstante loest am MODUL auf, nicht an der Instanz', () => {
         expect(typKonstante({ default: { IFCWALL: 4242 } }, 'IFCWALL')).toBe(4242);
     });
 });
+
+describe('platzierungsHoehen — die Rohhöhe aus der DATEI', () => {
+    /**
+     * Wozu: Der Ladeversatz aus `-model.object.position` liefert x und z
+     * richtig, y aber 0 — obwohl die Geometrie in der Höhe verschoben ist.
+     * Zwei Mechanismen wirken übereinander (`COORDINATE_TO_ORIGIN` backt die
+     * Höhe in die Scheitelpunkte, `autoCoordinate` setzt die Objektlage aus
+     * der MapConversion mit OrthogonalHeight 0), und nur einer landet dort.
+     *
+     * Statt nachzubauen, was die Bibliothek tut, wird gemessen: dieselbe
+     * Platzierung aus der Datei und aus den Fragmenten, Differenz = Versatz.
+     * Diese Datei liefert die eine Hälfte davon.
+     */
+    const datei = path.join(hier, 'BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc');
+    const da = fs.existsSync(datei);
+
+    it.skipIf(!da)('summiert die Platzierungskette auf', async () => {
+        const q = await ausDatei(datei);
+        const hoehen = q.platzierungsHoehen();
+        expect(hoehen.size).toBeGreaterThan(0);
+        for (const z of hoehen.values()) expect(Number.isFinite(z)).toBe(true);
+    }, 120_000);
+
+    it.skipIf(!da)('liefert nur für die angefragten Bauteile etwas', async () => {
+        const q = await ausDatei(datei);
+        const ids = q.ids('IFCELEMENT', { untertypen: true }).slice(0, 3);
+        const hoehen = q.platzierungsHoehen(ids);
+        expect([...hoehen.keys()].every(id => ids.includes(id))).toBe(true);
+    }, 120_000);
+
+    it('gibt bei totem Handle eine leere Karte, statt zu werfen', async () => {
+        if (!da) return;
+        const q = await IfcQuelle.oeffne(WebIFC, new Uint8Array(fs.readFileSync(datei)), WASM);
+        q.schliesse();
+        expect(q.platzierungsHoehen()).toEqual(new Map());
+    }, 120_000);
+});

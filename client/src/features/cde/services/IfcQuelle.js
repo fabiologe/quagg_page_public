@@ -227,6 +227,49 @@ export class IfcQuelle {
         return this._guidIndex.get(guid) ?? null;
     }
 
+    /**
+     * Die WELTHÖHE der Platzierung je Bauteil, wie sie in der DATEI steht.
+     *
+     * Wozu: Der Ladeversatz der CDE kommt aus `-model.object.position` — und
+     * dessen Y-Anteil ist 0, obwohl die Geometrie sehr wohl in der Höhe
+     * verschoben wurde. `COORDINATE_TO_ORIGIN` backt die Höhenverschiebung in
+     * die Scheitelpunkte, `autoCoordinate` setzt die Objektlage aus der
+     * MapConversion (deren OrthogonalHeight hier 0 ist). Zwei Mechanismen, und
+     * nur einer steht in `object.position`.
+     *
+     * Statt zu raten, was die Bibliothek getan hat, wird gemessen: dieselbe
+     * Platzierung einmal aus der Datei, einmal aus den Fragmenten
+     * (`model.getPositions`), und die Differenz IST der Versatz.
+     *
+     * Die Kette `IfcLocalPlacement.PlacementRelTo` wird dabei aufsummiert —
+     * ein Bauteil hängt über Geschoss, Bauwerk und Gelände am Ursprung.
+     *
+     * @returns {Map<number, number>} ExpressID → Z in Dateikoordinaten
+     */
+    platzierungsHoehen(ids) {
+        const out = new Map();
+        if (!this.lebt()) return out;
+        const tiefeGrenze = 16;                 // gegen zyklische Ketten
+
+        const zVonPlacement = (plcId, tiefe = 0) => {
+            if (!Number.isFinite(plcId) || tiefe > tiefeGrenze) return 0;
+            const lp = this.zeile(plcId);
+            if (!lp) return 0;
+            const ax = this.zeile(lp.RelativePlacement?.value);
+            const pt = ax ? this.zeile(ax.Location?.value) : null;
+            const z = Number(pt?.Coordinates?.[2]?.value ?? 0) || 0;
+            const eltern = lp.PlacementRelTo?.value;
+            return z + (Number.isFinite(eltern) ? zVonPlacement(eltern, tiefe + 1) : 0);
+        };
+
+        for (const id of ids ?? this.ids('IFCELEMENT', { untertypen: true })) {
+            const el = this.zeile(id);
+            const plc = el?.ObjectPlacement?.value;
+            if (Number.isFinite(plc)) out.set(id, zVonPlacement(plc));
+        }
+        return out;
+    }
+
     /** Das Schema der Datei, falls die Bibliothek es hergibt. */
     schema() {
         try { return this._api.GetModelSchema?.(this._modelID) ?? null; } catch { return null; }
