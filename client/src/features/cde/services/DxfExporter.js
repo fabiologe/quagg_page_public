@@ -112,7 +112,15 @@ export class DxfBuilder {
  * @returns {string} DXF-Inhalt
  */
 export function vectorContentToDxf(content, opts = {}) {
-    const off = opts.offset ?? { x: 0, z: 0 };
+    // ECHTE Prüfung statt `?? {x:0,z:0}`. Der Rückfall griff nie, wenn etwas
+    // Falsches ankam: die Engine lieferte lange ein Array `[x,y,z]`, und ein
+    // Array ist truthy — `off.x` war damit `undefined` und JEDE exportierte
+    // Koordinate `NaN`. Ein DXF voller NaN sieht man dem Export nicht an; er
+    // fällt erst im CAD auf, und dort sieht es nach einem CAD-Problem aus.
+    const roh = opts.offset;
+    const off = (Number.isFinite(roh?.x) && Number.isFinite(roh?.z))
+        ? roh
+        : { x: 0, z: 0 };
     const flip = opts.flipNorth ?? false;
     const scale = opts.scaleRatio ?? 100;
     const E = (wx) => wx + off.x;

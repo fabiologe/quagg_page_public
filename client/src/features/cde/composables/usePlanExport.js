@@ -12,6 +12,7 @@
  */
 import { ref } from 'vue';
 import { useViewerApi } from './viewerApi.js';
+import { ersterVersatz } from '../services/Koordinaten.js';
 import { usePlan } from '../stores/usePlan.js';
 import { usePlanInhalt } from '../stores/usePlanInhalt.js';
 import { useRotstift } from '../stores/useRotstift.js';
@@ -37,8 +38,7 @@ export function usePlanExport() {
 
     /** Erster Koordinaten-Versatz — die UTM-Kreuze rechnen darauf. */
     function _ersterVersatz() {
-        const alle = api.getAllCoordOffsets?.() ?? {};
-        return Object.values(alle)[0] ?? { x: 0, y: 0, z: 0 };
+        return ersterVersatz(api.getAllCoordOffsets?.() ?? {});
     }
 
     /** Was aus der Engine kommt und in jeden Aufruf gehört. */

@@ -971,9 +971,31 @@ export class IfcEngine {
     getCoordOffsetForModel(modelId) {
         return this._coordOffsets.get(modelId) ?? null;
     }
+
+    /**
+     * Alle Ladeversätze — als {x, y, z}, DIESELBE Form wie
+     * `getCoordOffsetForModel`.
+     *
+     * Vorher stand hier `off.toArray()`, also `[x, y, z]`. Jeder Verbraucher
+     * greift aber mit `.x`/`.y`/`.z` zu, und ein Array liefert darauf
+     * `undefined` — ohne zu werfen. Zwei Accessoren, zwei Formen, kein Hinweis.
+     *
+     * Was daraus in Produktion wurde:
+     *   DxfExporter          alle Koordinaten NaN (der Rückfall `?? {x:0,z:0}`
+     *                        griff nicht — ein Array ist truthy)
+     *   LaengsschnittBuilder heightOffsetY immer 0; die Achse ist „m NN"
+     *                        beschriftet und zeigt Welt-Y
+     *   UtmGrid              Gitterkreuze beschriften Weltkoordinaten als E/N
+     *   AxisAnnotations      Achs-Polylinien NaN
+     *
+     * Die Tests konnten es nicht sehen, weil sie `{x, z}`-Objekte übergeben —
+     * die Form, die die Engine gar nicht lieferte. Sie prüften eine
+     * Schnittstelle, die es nicht gab. Der Guard in `koordinatenForm.test.js`
+     * geht deshalb von der ECHTEN Ausgabe aus.
+     */
     getAllCoordOffsets() {
         const out = {};
-        for (const [mid, off] of this._coordOffsets) out[mid] = off.toArray();
+        for (const [mid, off] of this._coordOffsets) out[mid] = { x: off.x, y: off.y, z: off.z };
         return out;
     }
 

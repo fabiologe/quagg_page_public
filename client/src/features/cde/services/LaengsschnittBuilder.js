@@ -11,6 +11,7 @@
 import { AXIS_CATEGORIES_DEFAULT, polylineLength, polylineGefaellePromille } from './AxisAnnotations.js';
 import { TERRAIN_CATEGORIES_DEFAULT, makeHeightSampler } from './TerrainMesh.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
+import { hoehenversatzAus } from './Koordinaten.js';
 import { buildLaengsschnitt } from './Laengsschnitt.js';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
 
@@ -152,9 +153,11 @@ export async function buildLaengsschnittFromModel({
     const data = buildLaengsschnitt({ axisItems, manholes, sampler });
     if (!data) return null;
 
-    // Höhen-Offset: roh (m NN) = welt.y + offset.y des ersten Modells
-    const firstOff = Object.values(coordOffsets ?? {})[0];
-    const heightOffsetY = firstOff?.y ?? 0;
+    // Höhen-Offset: roh (m NN) = welt.y + offset.y des ersten Modells.
+    // Über `hoehenversatzAus`, weil dieselbe Rechnung vorher auch in
+    // `usePlanExport` stand — und beide gleich falsch waren, solange die Engine
+    // ein Array lieferte.
+    const heightOffsetY = hoehenversatzAus(coordOffsets);
 
     return { data, sampler, heightOffsetY };
 }
