@@ -273,7 +273,7 @@ und ein Absatz Doku.**
    ```
 2. **30 MB Heap-Timeline getrackt**: `client/src/features/isybau/test/Heap-20260726T143453.heaptimeline`
    — Profiling-Artefakt, gehört nicht ins Repo.
-3. **59 MB `ifc-4.3.json`** (`client/src/features/ifc-viewer/services/`) — falls das ein
+3. **59 MB `ifc-4.3.json`** (`client/src/features/cde/services/`) — falls das ein
    Schema-Download ist, gehört es hinter einen Fetch-Schritt statt in die Versionierung.
 4. **Verirrte Dateien**: `backend/app/api/data/regression_coupling_sgc/` liegt eine Ebene zu hoch
    (gehört unter `flood2D/data/`), dazu `flood2D/data/build_coupling.log`, `backend/scan.log`,
