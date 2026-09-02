@@ -18,9 +18,50 @@
   "overrides": [
     {
       "files": [
-        "src/features/isybau/**/*.vue"
+        "src/features/isybau/**/*.vue",
+        "src/features/kleiner-pedant/**/*.vue",
+        "src/features/projects/**/*.vue"
       ],
       "customSyntax": "postcss-html"
+    },
+    {
+      "//": "Projekt-Cockpit: token-sauber von Anfang an (--prj-* auf :root).",
+      "files": [
+        "src/features/projects/**/*.{vue,css}"
+      ],
+      "rules": {
+        "color-no-hex": true
+      }
+    },
+    {
+      "//": "Ausnahme: die Token-Definitionen des Projekt-Cockpits selbst.",
+      "files": [
+        "src/features/projects/styles/theme.css"
+      ],
+      "rules": {
+        "color-no-hex": null
+      }
+    },
+    {
+      "//": [
+        "kleiner-pedant ist von Anfang an token-sauber (--ped-* auf :root).",
+        "Nur die Farbregel - die isybau-Skalen (space/fs/z) hat er nicht."
+      ],
+      "files": [
+        "src/features/kleiner-pedant/**/*.{vue,css}"
+      ],
+      "rules": {
+        "color-no-hex": true
+      }
+    },
+    {
+      "//": "Ausnahme: die Token-Definitionen des Pedanten selbst.",
+      "files": [
+        "src/features/kleiner-pedant/styles/theme.css"
+      ],
+      "rules": {
+        "color-no-hex": null
+      }
     },
     {
       "files": [

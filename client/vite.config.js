@@ -91,9 +91,14 @@ export default defineConfig({
             ],
           },
         ],
-        // Doppelklick auf eine weitere PDF → neuer TAB im bestehenden
-        // Fenster (passt zum Tab-System) statt eines zweiten Fensters.
-        launch_handler: { client_mode: 'navigate-existing' },
+        // Doppelklick auf eine weitere PDF → neuer TAB im laufenden Fenster.
+        // 'focus-existing' (NICHT 'navigate-existing'!): navigate-existing
+        // lädt das Fenster auf die Start-URL NEU — der offene Editor samt
+        // Tabs wird abgeräumt, was wie „die App schließt sich" aussieht.
+        // focus-existing holt das Fenster nur nach vorn und liefert die
+        // Datei an den laufenden launchQueue-Consumer → neuer Tab, kein
+        // Reload, nichts geht verloren.
+        launch_handler: { client_mode: 'focus-existing' },
         // Android: „Teilen → Quagg PDF" schickt die PDF per POST an den
         // Service Worker (Empfänger in pwa/sw.js, Abholung GeteilteDatei.js).
         share_target: {
