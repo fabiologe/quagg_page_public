@@ -141,3 +141,20 @@ backend/app/api/flood3D/*
 !backend/app/api/flood3D/core/
 !backend/app/api/flood3D/engines/
 !backend/app/api/flood3D/tests/
+# kleiner Pedant — selbstgeschriebene Buchhaltungs-Quelle (GoBD-relevant),
+# komplett versionieren: bei einem Plattenschaden waere sie sonst weg
+# (gleiche Begruendung wie beim Companion oben). Passwoerter liegen NIE im
+# Package, nur in backend/.env — die bleibt ignoriert.
+!backend/app/api/pedant/
+
+# Projekt-Cockpit: erzeugte docx-Vorlagen (werden zur Laufzeit gebaut)
+backend/app/api/projekt/vorlagen/*.docx
+
+# ONLYOFFICE-Geheimnis
+backend/deploy/onlyoffice/.env
+
+# Build-Sicherungen (dist_alt, dist_neu, dist_alt_vor_ui …) gehoeren NIE ins
+# Repo: client/dist_alt_vor_ui lag 303 erzeugte Dateien lang darin (WASM, GLB,
+# MP3) und war der Hauptteil der "ungepushten" Masse. dist/ oben deckt nur den
+# Ordner ohne Suffix ab.
+client/dist_*
