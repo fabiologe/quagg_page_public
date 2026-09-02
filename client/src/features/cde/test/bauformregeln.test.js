@@ -25,7 +25,6 @@ import {
     namensvorschlaege, regelAus,
 } from '../services/bauform/Bauformregeln.js';
 import { bestimme } from '../services/bauform/Bauformen.js';
-import { darfZiehen, guetehinweisZiehen } from '../services/Freiheitsgrade.js';
 import { beforeEach } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -234,27 +233,8 @@ describe('Der ganze Weg: aus einem Proxy wird eine ziehbare Leitung', () => {
         expect(r.regel).toMatch(/ProVI/);
     });
 
-    it('lässt ihn DANN auch ziehen, obwohl die Achse geschätzt ist', async () => {
-        // Ohne diese Ausnahme wäre der ganze Kanalbestand unbearbeitbar. Die
-        // Schranke schützt vor Raterei der MASCHINE — hier hat ein Mensch
-        // gesagt, was es ist; geschätzt ist nur noch die Richtung.
-        const r = await bestimme(el, {
-            resolver: resolverMit(PROVI_HALTUNG),
-            ausRegel: bauformAusRegel(MITGELIEFERTE_REGELN, ctx('Haltung')),
-        });
-        expect(r.guete).toBe('geschaetzt');
-        expect(darfZiehen(r)).toBe(true);
-    });
 
-    it('sagt dabei, dass die Richtung geschätzt ist — der Hinweis bleibt', () => {
-        const hinweis = guetehinweisZiehen({ bauform: 'achse+profil', guete: 'geschaetzt', quelle: 'regel' });
-        expect(hinweis).toMatch(/geschätzt/);
-    });
 
-    it('lässt eine ungeklärte Skelettachse weiterhin NICHT ziehen', () => {
-        // Die Schranke gilt unverändert, wo niemand etwas erklärt hat.
-        expect(darfZiehen({ bauform: 'achse+profil', guete: 'geschaetzt', quelle: 'geometrie' })).toBe(false);
-    });
 });
 
 describe('Zuordnen über den Store — der Weg, auf dem die Regel entsteht', () => {

@@ -1,12 +1,28 @@
 /**
- * AxisAnnotations — Haltungsbeschriftung entlang der Leitungsachse (Sprint T1).
+ * AxisAnnotations — die Achse einer Leitung (Sprint T1, neu gefasst in 14.1).
  *
- * Liest die 'Axis'-Repräsentationen (IFCPOLYLINE) der Leitungs-Kategorien als
- * ZUSAMMENHÄNGENDE Polylinien (im Gegensatz zu extractFootprintSegments, das
- * sofort in Einzelsegmente zerlegt) und liefert je Element:
+ * ZWEI QUELLEN, in dieser Reihenfolge:
+ *
+ *   1. eine echte `Axis`-Repräsentation (IFCPOLYLINE) — der Idealfall
+ *   2. die **Extrusion** des Körpers: `IFCEXTRUDEDAREASOLID` gibt mit
+ *      `Position`, `ExtrudedDirection` und `Depth` exakt eine Strecke, und
+ *      `IFCCIRCLEPROFILEDEF.Radius` gibt exakt den DN
+ *
+ * Der zweite Weg ist nicht der Notnagel, sondern der Regelfall: Fabios beide
+ * echten Netze (51 und 1.025 Bauteile) tragen **null** Axis-Repräsentationen
+ * und ausschliesslich Extrusionen. Ohne ihn kam jede Achse aus der
+ * Skelettierung des Netzes — Güte `geschaetzt`, und damit fiel jede Operation
+ * mit Güteschranke aus. Die Extrusion ist exakt, nicht geschätzt.
+ *
+ * Die Funktion liest über eine **IfcQuelle** (`services/IfcQuelle.js`), nicht
+ * über `ifcLoader.webIfc`. Der alte Handle hatte nie ein Modell offen; das war
+ * der eigentliche Grund, warum hier jahrelang nichts herauskam.
+ *
+ * Sie liefert je Element:
  *   - die Achs-Polylinie in Welt-Koordinaten (Offset-korrigiert!)
  *   - berechnete Pseudo-Attribute: laenge (m), gefaelle (‰, aus den
- *     Achs-Höhen — bei 2D-Achsen null)
+ *     Achs-Höhen — bei 2D-Achsen null), dn (mm, nur aus der Extrusion)
+ *   - `quelle`: 'axisRep' oder 'extrusion' — die Güte hängt daran
  *
  * Der Beschriftungstext entsteht über die normale Label-Template-Pipeline
  * ({Name}, {Pset.Prop}, plus {laenge:m} und {gefaelle}); gezeichnet wird im
@@ -24,47 +40,51 @@ export const AXIS_CATEGORIES_DEFAULT = ['IFCPIPESEGMENT', 'IFCFLOWSEGMENT'];
 /**
  * Achs-Polylinien aller Produkte der gewünschten Kategorien eines Modells.
  *
- * @param {object} webIfc   web-ifc-API (roh)
- * @param {number} modelID  web-ifc-Modell-ID
+ * @param {object} quelle  eine LEBENDE `IfcQuelle` — gebraucht werden nur
+ *        `ids(typ, {untertypen})` und `zeile(id, {tief})`. Eine Attrappe mit
+ *        diesen zwei Methoden genügt (so prüfen die Tests).
  * @param {object} [opts]
  * @param {string[]} [opts.categories]
- * @param {{x,y,z}|null} [opts.coordOffset]  Engine-Offset (roh − offset = Welt
- *                                            ist FALSCH herum: welt = roh − offset;
- *                                            Engine: roh = welt + offset)
- * @returns {Array<{ category, expressId, polyline: Array<{x,y,z}>, laenge, gefaelle }>}
+ * @param {{x,y,z}|null} [opts.coordOffset]  Engine-Offset (welt = roh − offset)
+ * @param {boolean} [opts.untertypen=true]  auch abgeleitete Typen mitnehmen
+ * @returns {Array<{category, expressId, polyline, laenge, gefaelle, dn, quelle}>}
  */
-export function extractAxisPolylines(webIfc, modelID, opts = {}) {
+export function extractAxisPolylines(quelle, opts = {}) {
+    if (typeof quelle?.ids !== 'function' || typeof quelle?.zeile !== 'function') return [];
     const categories = opts.categories?.length ? opts.categories : AXIS_CATEGORIES_DEFAULT;
     const off = opts.coordOffset ?? null;
+    const untertypen = opts.untertypen ?? true;
     const out = [];
+    // Die Kategorienliste enthält Ober- UND Untertypen (`IFCFLOWSEGMENT` und
+    // `IFCPIPESEGMENT`), und mit `untertypen` findet die Oberklasse dieselben
+    // Bauteile noch einmal. Ohne diese Sperre kam jedes Rohr doppelt heraus —
+    // 48 statt 24 — und jede Zählung, Beschriftung und Strangbildung wäre
+    // doppelt gewesen.
+    const gesehen = new Set();
 
     for (const typeName of categories) {
-        // ACHTUNG, offener Befund (01.09.2026): diese Funktion läuft in der
-        // CDE ins Leere, und zwar aus ZWEI Gründen. Erstens sind die
-        // Typkonstanten Modul-Exporte von web-ifc, keine Eigenschaften der
-        // IfcAPI-INSTANZ — `webIfc[typeName]` ist immer `undefined`.
-        // Zweitens, und schwerwiegender: `ifcLoader.webIfc` hat NIE ein Modell
-        // offen. Nur `IfcLoader.readIfcFile()` öffnet eines (und initialisiert
-        // die Bibliothek überhaupt erst), und die CDE ruft das nirgends —
-        // `load()` geht über `FRAGS.IfcImporter` und fasst `this.webIfc` gar
-        // nicht an.
-        //
-        // Die Kur ist deshalb NICHT die Konstante, sondern ein eigener
-        // IfcAPI-Handle auf den gespeicherten Dateibytes. Bis dahin bleibt es
-        // wie es war — ein Zugriff auf eine nicht initialisierte wasm-API im
-        // Renderpfad hat den Viewer gekostet.
-        const typeConst = webIfc[typeName];
-        if (!typeConst) continue;
         let ids;
-        try { ids = webIfc.GetLineIDsWithType(modelID, typeConst); } catch { continue; }
+        try { ids = quelle.ids(typeName, { untertypen }); } catch { continue; }
         if (!ids?.length) continue;
 
         for (const id of ids) {
-            let product;
-            try { product = webIfc.GetLine(modelID, id, true); } catch { continue; }
+            if (gesehen.has(id)) continue;
+            gesehen.add(id);
+            const product = quelle.zeile(id, { tief: true });
             if (!product) continue;
 
-            const pts = _extractAxisPoints(product);
+            // Echte Achse zuerst — sie ist die Aussage des Autors. Erst wenn
+            // es keine gibt, wird sie aus der Extrusion gewonnen.
+            let pts = _extractAxisPoints(product);
+            let herkunft = 'axisRep';
+            let dn = null;
+            if (pts.length < 2) {
+                const aus = _achseAusExtrusion(product);
+                if (!aus) continue;
+                pts = aus.punkte;
+                dn = aus.dn;
+                herkunft = 'extrusion';
+            }
             if (pts.length < 2) continue;
 
             // Fallstrick 7: Rohkoordinate → Three-Welt (welt = roh − offset)
@@ -72,17 +92,110 @@ export function extractAxisPolylines(webIfc, modelID, opts = {}) {
                 ? pts.map(p => ({ x: p.x - off.x, y: p.y - (off.y ?? 0), z: p.z - off.z }))
                 : pts;
 
-            const laenge = polylineLength(polyline);
             out.push({
                 category: typeName,
                 expressId: id,
                 polyline,
-                laenge,
+                laenge: polylineLength(polyline),
                 gefaelle: polylineGefaellePromille(polyline),
+                dn,
+                quelle: herkunft,
             });
         }
     }
     return out;
+}
+
+/**
+ * Die Achse aus der Extrusion — exakt, nicht geschätzt.
+ *
+ * `IFCEXTRUDEDAREASOLID` beschreibt einen Körper als Profil, das entlang einer
+ * Richtung um eine Tiefe gezogen wird. Anfang und Ende dieser Strecke SIND die
+ * Achse:
+ *
+ *     Anfang = Ursprung der `Position`
+ *     Ende   = Ursprung + ExtrudedDirection × Depth   (in der Position gerechnet)
+ *
+ * Beides wird durch die Platzierungskette des Produkts geschoben und erst dann
+ * auf die three-Konvention gemappt (IFC-Z ist die Höhe).
+ *
+ * Der DN fällt nebenbei ab: `IFCCIRCLEPROFILEDEF.Radius × 2`. Auch das ist der
+ * exakte Wert und nicht die Schätzung aus einem Querschnitt durchs Netz.
+ *
+ * @returns {{punkte: Array<{x,y,z}>, dn: number|null}|null}
+ */
+function _achseAusExtrusion(product) {
+    const solid = _ersteExtrusion(product);
+    if (!solid) return null;
+
+    const tiefe = _zahl(solid.Depth);
+    if (!Number.isFinite(tiefe) || Math.abs(tiefe) < 1e-9) return null;
+
+    // Platzierung des Produkts × Lage des Profils im Körper. `_placementMatrix`
+    // erwartet eine Kette; ein blosses Axis2Placement3D wird als deren letztes
+    // Glied hereingereicht.
+    const ges = _placementMatrix(product?.ObjectPlacement)
+        .multiply(_placementMatrix({ RelativePlacement: solid.Position }));
+
+    const r = solid.ExtrudedDirection?.DirectionRatios;
+    const dir = r
+        ? new THREE.Vector3(_zahl(r[0]), _zahl(r[1]), _zahl(r[2]))
+        : new THREE.Vector3(0, 0, 1);
+    if (dir.lengthSq() < 1e-18) return null;
+    dir.normalize();
+
+    const a = new THREE.Vector3(0, 0, 0).applyMatrix4(ges);
+    const b = dir.clone().multiplyScalar(tiefe).applyMatrix4(ges);
+
+    return {
+        // IFC-Raum → three: x bleibt, IFC-Z wird Höhe, IFC-Y wird Tiefe.
+        punkte: [{ x: a.x, y: a.z, z: a.y }, { x: b.x, y: b.z, z: b.y }],
+        dn: _dnAusProfil(solid.SweptArea),
+    };
+}
+
+/** Die erste Extrusion in der Body-Repräsentation — durch Verpackungen hindurch. */
+function _ersteExtrusion(product) {
+    const reps = product?.Representation?.Representations;
+    if (!Array.isArray(reps)) return null;
+    for (const rep of reps) {
+        const gefunden = _extrusionInItems(rep?.Items, 0);
+        if (gefunden) return gefunden;
+    }
+    return null;
+}
+
+function _extrusionInItems(items, tiefe) {
+    if (!Array.isArray(items) || tiefe > 8) return null;
+    for (const item of items) {
+        if (!item) continue;
+        if (item.ExtrudedDirection && item.Depth !== undefined) return item;
+        // IfcMappedItem, IfcBooleanResult, IfcShapeRepresentation — die
+        // üblichen Verpackungen. Der erste Treffer gewinnt: bei einem
+        // Bool'schen Ergebnis ist das der Grundkörper, nicht der Abzug.
+        const weiter = item.MappingSource?.MappedRepresentation?.Items
+            ?? (item.FirstOperand ? [item.FirstOperand] : null)
+            ?? item.Items;
+        const gefunden = _extrusionInItems(weiter, tiefe + 1);
+        if (gefunden) return gefunden;
+    }
+    return null;
+}
+
+/** DN in Millimetern aus dem gezogenen Profil, oder null. */
+function _dnAusProfil(profil) {
+    const r = _zahl(profil?.Radius);
+    if (Number.isFinite(r) && r > 0) return Math.round(r * 2 * 1000);
+    // Rechteck/Trapez: die Breite ist die brauchbarste Einzelzahl.
+    const b = _zahl(profil?.XDim);
+    if (Number.isFinite(b) && b > 0) return Math.round(b * 1000);
+    return null;
+}
+
+/** web-ifc verpackt Zahlen mal als `{value}`, mal roh. */
+function _zahl(v) {
+    const z = Number(typeof v === 'object' ? v?.value : v);
+    return Number.isFinite(z) ? z : NaN;
 }
 
 /** Erste 'Axis'-Repräsentation als geordnete Punktfolge (Welt-Achsen-Konvention). */

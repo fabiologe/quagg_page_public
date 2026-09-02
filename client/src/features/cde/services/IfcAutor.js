@@ -17,9 +17,13 @@
  *   EditUtils.newModel({raw})           ein leeres, eigenes Modell
  *
  * Der Befund aus Sprint U5 — „fragments kennt keine Per-Element-Transformation"
- * — galt der Hider/setColor-Schiene und ist überholt. `addPsetToElement` in
- * `IfcEngine` benutzt `model.editor.edit(...)` im Haus bereits; dieses
- * Aufrufmuster wird hier fortgeführt.
+ * — galt der Hider/setColor-Schiene und ist überholt.
+ *
+ * ACHTUNG, hier stand einmal das Gegenteil: „`addPsetToElement` benutzt
+ * `model.editor.edit(...)`; dieses Aufrufmuster wird hier fortgeführt." Das
+ * Muster war falsch, und weil es hier empfohlen stand, wurde es kopiert. Der
+ * Editor hängt am MANAGER (`fragments.core.editor`), nie am einzelnen Modell —
+ * siehe `_editor()`. Wer `model.editor` schreibt, baut den Fehler nach.
  *
  * ANKER STATT VERSATZ: Die Lage eines Bauteils wird als Mitte seiner Hülle
  * geführt, absolut in Weltkoordinaten. Absolut, weil das Nachspielen
@@ -37,7 +41,7 @@
 
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
-import { baueAusBauplan } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, rezeptNach } from './Bauteilrezepte.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
 
@@ -96,13 +100,27 @@ export function istNennenswert(versatz, toleranz = 1e-4) {
 export const CDE_MODELL_ID = 'cde-eigenbau';
 
 /**
+ * Wo lebt dieses Bauteil — im gelieferten Modell oder im CDE-eigenen?
+ *
+ * Der Journaleintrag braucht die Angabe, sonst sucht das Nachspielen ein
+ * erzeugtes Bauteil im falschen Modell und meldet `keine_localId`. Die
+ * Fallunterscheidung stand bisher als Zeichenkette im (inzwischen
+ * entfernten) Zieh-Werkzeug und fehlte
+ * in den beiden Formular-Aufrufern ganz — ein Vergleich an drei Stellen ist
+ * einer zu viel, und die zwei fehlenden waren der Beweis.
+ */
+export function modellHerkunft(modelId) {
+    return modelId === CDE_MODELL_ID ? 'cde' : 'geliefert';
+}
+
+/**
  * Arten, die dieser Kanal auf das Modell bringen kann.
  *
  * Bewusst eine Liste und kein `default:`-Zweig: kommt eine Art dazu und
  * niemand denkt hier daran, fällt sie in `nichtAngewandt` und wird GEMELDET,
  * statt still zu verschwinden.
  */
-export const ANWENDBARE_ARTEN = new Set(['lage', 'erzeugt']);
+export const ANWENDBARE_ARTEN = new Set(['lage', 'erzeugt', 'geloescht', 'pset']);
 
 export class IfcAutor {
     /**
@@ -110,9 +128,29 @@ export class IfcAutor {
      * @param {() => object|null} opts.getFragments  liefert den FragmentsManager
      *        (OBC). Getter-Closure statt kopiertem Wert — der Manager entsteht
      *        erst mit der Welt.
+     * @param {() => object|null} [opts.getWelt]  liefert die Welt (Szene und
+     *        Kamera). Wird gebraucht, um das CDE-eigene Modell SICHTBAR zu
+     *        machen: `core.load` legt ein Modell an, hängt es aber nicht in die
+     *        Szene — `loadIfc` tut das für geliefertes Material ausdrücklich,
+     *        `eigenesModell` tat es nicht. Erzeugte Bauteile entstanden
+     *        dadurch fehlerfrei und blieben unsichtbar.
      */
-    constructor({ getFragments } = {}) {
+    constructor({ getFragments, getWelt, holeQuellraster } = {}) {
         this._getFragments = getFragments ?? (() => null);
+        this._getWelt = getWelt ?? (() => null);
+        /** Stufe 15: Ableitung für Rezepte mit Bedarf (Gelände-Quellraster). */
+        this._holeQuellraster = holeQuellraster ?? (async () => null);
+        /**
+         * Welche Merkmalssätze DIESER LAUF schon geschrieben hat (Lücke ⑧).
+         *
+         * `schreibeMerkmalssatz` LEGT AN — die Bibliothek kennt kein „ersetze
+         * den Satz gleichen Namens". Ein Satzwechsel spielt den vollen Stand
+         * erneut nach, und ohne dieses Gedächtnis stünde derselbe Satz danach
+         * doppelt am Bauteil. Der Schlüssel trägt die Werte mit: derselbe
+         * Inhalt wird übersprungen, ein GEÄNDERTER wird geschrieben (der alte
+         * Satz bleibt bis zum nächsten Laden sichtbar — gemeldet, nicht still).
+         */
+        this._geschriebeneMerkmale = new Map();
     }
 
     /** Das geladene Modell mit dieser Id, oder null. */
@@ -123,14 +161,51 @@ export class IfcAutor {
     }
 
     /**
-     * Der Editor eines Modells.
+     * Der Editor — er gehört dem MANAGER, nicht dem einzelnen Modell.
+     *
+     * Das war der Fehler, an dem die ganze Bearbeitung hing: hier stand
+     * `this._modell(modelId)?.editor`. Am `FragmentsModel` gibt es diese
+     * Eigenschaft nicht — die Bibliothek führt sie als
+     * `private readonly _editor` und stellt keinen Getter bereit (im gebauten
+     * `index.mjs` nachgesehen, nicht nur in den Typen). `undefined` also,
+     * immer. Damit war `istBearbeitbar` dauerhaft false und JEDE Bearbeitung
+     * endete in `kein_editor`: das Journal füllte sich, das Modell rührte sich
+     * nie. Sichtbar wurde es als „Der Wert galt schon" — denn beim zweiten
+     * Versuch stand der Zielwert schon im Journal, während das Bauteil
+     * unverändert dastand.
+     *
+     * Öffentlich ist `FragmentsModels.editor`, also `fragments.core.editor`.
+     * Dass der Editor für ALLE Modelle einer ist, sieht man seiner Bauart an:
+     * jede seiner Methoden nimmt `modelId` als erstes Argument.
+     *
+     * Das Modell wird trotzdem verlangt — sonst meldete `istBearbeitbar` für
+     * eine erfundene Id wahr, und der Fehler fiele erst zwei Schritte später
+     * auf.
      *
      * Wirft NICHT, sondern gibt null — Bearbeiten ist eine Zusatzfähigkeit, und
      * ein Viewer ohne sie soll anzeigen können, statt abzustürzen. Die Aufrufer
      * melden es nach oben.
      */
     _editor(modelId) {
-        return this._modell(modelId)?.editor ?? null;
+        if (!this._modell(modelId)) return null;
+        return this._getFragments()?.core?.editor ?? null;
+    }
+
+    /**
+     * Das Bild auffrischen, nachdem Geometrie verändert wurde.
+     *
+     * Jede andere Mutation im Haus tut das (`IfcEngine` ruft `core.update(true)`
+     * nach Laden, Färben, Sichtbarkeit) — diese Datei tat es als einzige nicht.
+     * Ohne den Aufruf steht die verschobene Haltung in den Daten, aber nicht
+     * auf dem Schirm, bis irgendetwas anderes ein Neuzeichnen auslöst. Das
+     * sieht genauso aus wie „hat nicht funktioniert".
+     *
+     * ABSICHTLICH NICHT in `erzeuge()`: die wird von `baueErzeugte` in einer
+     * Schleife gerufen, und ein Neuzeichnen je Bauteil kostete bei hundert
+     * Linien hundertmal. Dort steht der Aufruf einmal am Ende.
+     */
+    async _neuZeichnen() {
+        try { await this._getFragments()?.core?.update?.(true); } catch { /* Anzeige, nicht Fachlogik */ }
     }
 
     /** Kann dieses Modell überhaupt bearbeitet werden? */
@@ -211,6 +286,7 @@ export class IfcAutor {
             netze.updateMatrixWorld(true);
             await element.setMeshes(netze);
             await editor.applyChanges(modelId, [element]);
+            await this._neuZeichnen();
             return { ok: true, versatz };
         } catch (fehler) {
             return { ok: false, grund: `editor_fehler: ${fehler?.message ?? fehler}` };
@@ -232,7 +308,22 @@ export class IfcAutor {
         if (this._modell(modelId)) return { ok: true, modelId, neu: false };
         try {
             const puffer = FRAGS.EditUtils.newModel({ raw: true });
-            await kern.load(puffer, { modelId, raw: true });
+            const modell = await kern.load(puffer, { modelId, raw: true });
+            // SICHTBAR MACHEN. Dieselben drei Handgriffe wie in `loadIfc`:
+            // in die Szene hängen, an die Kamera binden (sonst greifen
+            // Sichtbarkeitsprüfung und Detailstufe nicht), und ein Bild
+            // anfordern. Ohne den ersten entsteht das Bauteil fehlerfrei und
+            // ist trotzdem nicht da — der teuerste aller Fälle, weil nichts
+            // auf einen Fehler hindeutet.
+            const welt = this._getWelt();
+            if (modell?.object && welt?.scene?.three) {
+                welt.scene.three.add(modell.object);
+                if (welt.camera?.three && modell.useCamera) modell.useCamera(welt.camera.three);
+            }
+            // Wie geliefertes Material: volle Geometrie unabhängig vom Abstand.
+            // Ohne das entscheidet die Detailstufe, ob eine gezeichnete Linie
+            // zu sehen ist — bei einer Handvoll Bauteilen kostet es nichts.
+            try { await modell?.setLodMode?.(FRAGS.LodMode.ALL_VISIBLE); } catch { /* Anzeige */ }
             return { ok: true, modelId, neu: true };
         } catch (fehler) {
             return { ok: false, grund: `anlegen_fehlgeschlagen: ${fehler?.message ?? fehler}` };
@@ -251,9 +342,23 @@ export class IfcAutor {
         if (!bauteil?.geometrie) return { ok: false, grund: 'ohne_geometrie' };
         try {
             const elemente = await editor.createElements(modelId, [{
+                // DIE FORM STAMMT AUS DER BIBLIOTHEK, nicht aus der Anschauung.
+                // `itemDataToRawItemData` liest `_category` und wirft sonst
+                // „Category is required"; alles ohne führenden Unterstrich wird
+                // zum Attribut. Hier stand `{ category, data: {...} }` — die
+                // Form eines `edit`-Auftrags, nicht die eines neuen Bauteils.
+                // Der Aufruf warf damit JEDES Mal, der try/catch fing es ab,
+                // und Zeichnen ergab nie etwas. Festgehalten in
+                // `test/fragmentsVertrag.test.js`.
+                //
+                // `_guid` ist der Grund, warum ein erzeugtes Bauteil hinterher
+                // auffindbar ist: die CDE vergibt eine eigene GlobalId, und die
+                // landet damit im GUID-Index der Bibliothek — derselbe Weg wie
+                // bei geliefertem Material, kein Sonderfall.
                 attributes: {
-                    category: bauteil.kategorie ?? 'IFCBUILDINGELEMENTPROXY',
-                    data: { Name: { value: bauteil.name ?? '' } },
+                    _category: { value: bauteil.kategorie ?? 'IFCBUILDINGELEMENTPROXY' },
+                    ...(bauteil.globalId ? { _guid: { value: bauteil.globalId } } : {}),
+                    Name: { value: bauteil.name ?? '' },
                 },
                 globalTransform: bauteil.platzierung ?? new THREE.Matrix4(),
                 samples: [{
@@ -280,6 +385,7 @@ export class IfcAutor {
             if (!elemente?.length) return { ok: false, grund: 'bauteil_nicht_gefunden' };
             editor.deleteElements(modelId, elemente);
             await editor.applyChanges(modelId);
+            await this._neuZeichnen();
             return { ok: true };
         } catch (fehler) {
             return { ok: false, grund: `editor_fehler: ${fehler?.message ?? fehler}` };
@@ -309,8 +415,14 @@ export class IfcAutor {
      */
     async verwirfEigenesModell(modelId = CDE_MODELL_ID) {
         const kern = this._getFragments()?.core ?? null;
-        if (!kern?.disposeModel || !this._modell(modelId)) return false;
+        const modell = this._modell(modelId);
+        if (!kern?.disposeModel || !modell) return false;
         try {
+            // Erst aus der Szene nehmen, dann entsorgen — sonst bliebe ein
+            // Objekt in der Szene, dessen Modell es nicht mehr gibt. Dieselbe
+            // Fehlerklasse wie der Szenen-Rest beim Ziehen-Griff (a499dbb).
+            const welt = this._getWelt();
+            if (modell.object && welt?.scene?.three) welt.scene.three.remove(modell.object);
             await kern.disposeModel(modelId);
             return true;
         } catch (fehler) {
@@ -359,18 +471,75 @@ export class IfcAutor {
             // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
             // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
             // gemacht — siehe Kopf von Bauteilrezepte.js.
-            const gebaut = baueAusBauplan(schritt.wert ?? {});
+            const rezept = rezeptNach(schritt.wert?.rezept);
+            const gebaut = rezept?.braucht === 'quellraster'
+                ? await baueMitAbleitung(schritt.wert ?? {}, this._holeQuellraster)
+                : baueAusBauplan(schritt.wert ?? {});
             if (!gebaut.ok) {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
             }
             const r = await this.erzeuge(modelId, {
                 kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
+                // Die im Journal vergebene Kennung mitgeben — dann findet auch
+                // `getLocalIdsByGuids` das erzeugte Bauteil, nicht nur die
+                // Karte aus diesem einen Lauf.
+                globalId: schritt.globalId,
             });
             if (r.ok) karte.set(schritt.globalId, r.localId);
             else misserfolge.push({ ...schritt, grund: r.grund });
         }
+        await this._neuZeichnen();
         return { karte, misserfolge };
+    }
+
+    /**
+     * Einen Merkmalssatz an ein Bauteil schreiben (Lücke ⑧, 2026-09-02).
+     *
+     * HIERHER gezogen aus `IfcEngine.addPsetToElement` — der Autorenkanal ist
+     * die einzige Stelle, die den Editor anfasst, und der Merkmals-Schreiber
+     * war der letzte, der daneben lebte. Er hing außerdem an der AUSWAHL
+     * (`_selectedItems`) und war damit fürs Nachspielen unbrauchbar: nach F5
+     * ist nichts ausgewählt.
+     *
+     * @param {string} modelId
+     * @param {number} localId
+     * @param {string} psetName
+     * @param {Array<{name, value}>} props
+     * @returns {Promise<{ok: boolean, grund?: string}>}
+     */
+    async schreibeMerkmalssatz(modelId, localId, psetName, props = []) {
+        const editor = this._editor(modelId);
+        if (!editor) return { ok: false, grund: 'kein_editor' };
+
+        const schluessel = `${modelId}|${localId}|${psetName}`;
+        const inhalt = JSON.stringify(props);
+        if (this._geschriebeneMerkmale.get(schluessel) === inhalt) {
+            return { ok: true, grund: 'galt_schon' };
+        }
+
+        // Die Auftragsart aus der AUFZÄHLUNG der Bibliothek, nicht als Zahl —
+        // eine handgeschriebene 6 hieß hier einmal „UPDATE_ITEM" und war in
+        // Wirklichkeit `CREATE_RELATION`.
+        const NEUES_OBJEKT = FRAGS.EditRequestType.CREATE_ITEM;
+        const propIds = await editor.edit(modelId, props.map(p => ({
+            type: NEUES_OBJEKT,
+            data: {
+                category: 'IFCPROPERTYSINGLEVALUE',
+                data: { Name: { value: p.name }, NominalValue: { value: p.value ?? '' } },
+            },
+        })));
+        const [psetId] = await editor.edit(modelId, [{
+            type: NEUES_OBJEKT,
+            data: { category: 'IFCPROPERTYSET', data: { Name: { value: psetName } } },
+        }]);
+        // Beziehungen über `relate`, nicht über selbstgebaute Aufträge:
+        // `HasProperties` und `IsDefinedBy` SIND Beziehungen.
+        await editor.relate(modelId, psetId, 'HasProperties', propIds);
+        await editor.relate(modelId, localId, 'IsDefinedBy', [psetId]);
+        await editor.applyChanges(modelId);
+        this._geschriebeneMerkmale.set(schluessel, inhalt);
+        return { ok: true };
     }
 
     /**
@@ -389,10 +558,25 @@ export class IfcAutor {
         const misserfolge = [];
         const schritte = plan?.anzuwenden ?? [];
 
-        const { karte: erzeugte, misserfolge: bauFehler } = await this.baueErzeugte(
-            schritte.filter(s => s.art === 'erzeugt'),
-        );
-        misserfolge.push(...bauFehler);
+        // NUR neu aufbauen, wenn es dabei um Erzeugtes geht.
+        //
+        // `baueErzeugte` ist mit Absicht TOTAL: sie verwirft das CDE-Modell und
+        // baut genau das, was sie bekommt — darauf ruht die Idempotenz des
+        // Nachspielens. Genau deshalb darf sie nicht bei jedem Aufruf laufen:
+        // ein Ein-Schritt-Plan aus `planFuerEintrag` (eine Bezugshöhe etwa)
+        // trägt keinen `erzeugt`-Schritt, und der Neuaufbau räumte dann alles
+        // Gezeichnete aus dem Raum. Wer eine Höhe setzte, verlor seine Linien.
+        //
+        // Die Unterscheidung wird ANGESAGT, nicht erraten: `planeNachspielen`
+        // setzt `vollstaendig`, weil es den ganzen Stand kennt und Erzeugtes
+        // auch dann abräumen muss, wenn nichts mehr übrig ist.
+        const erzeugtSchritte = schritte.filter(s => s.art === 'erzeugt');
+        let erzeugte = new Map();
+        if (plan?.vollstaendig || erzeugtSchritte.length) {
+            const gebaut = await this.baueErzeugte(erzeugtSchritte);
+            erzeugte = gebaut.karte;
+            misserfolge.push(...gebaut.misserfolge);
+        }
 
         // Was diese Datei AUF DAS MODELL bringen kann. Alles andere ist keine
         // Panne, aber es darf auch nicht als „angewandt" mitgezählt werden —
@@ -402,12 +586,47 @@ export class IfcAutor {
         // Eingriff ins Autorenmodell.
         const nichtAngewandt = schritte.filter(s => !ANWENDBARE_ARTEN.has(s.art));
 
+        // GELÖSCHT HEISST AUSGEBLENDET, nicht entfernt (Stufe 14.3).
+        //
+        // Drei Gründe, und der dritte allein genügt:
+        //  1. Das gelieferte Modell gehört dem Planer. „Weg damit" ist eine
+        //     Forderung an ihn, kein Eingriff.
+        //  2. Der Ausgang der CDE ist ein Änderungsbericht, ein DXF oder ein
+        //     `.frag` — nirgends wird die IFC zurückgeschrieben.
+        //  3. `editor.deleteElements` ist NICHT zurücknehmbar. Die Rücknahme
+        //     müsste das Bauteil aus dem Nichts neu bauen; ausgeblendet
+        //     einblenden kann sie dagegen jederzeit.
+        //
+        // Erzeugtes braucht das gar nicht: es fällt beim Neuaufbau einfach aus
+        // dem Stand heraus.
+        const auszublenden = [];
+        const einzublenden = [];
+        for (const schritt of schritte) {
+            if (schritt.art !== 'geloescht' || schritt.modell === 'cde') continue;
+            const localId = globalIdZuLocalId?.get(schritt.globalId);
+            if (localId === undefined) {
+                misserfolge.push({ ...schritt, grund: 'keine_localId' });
+                continue;
+            }
+            // `wert` null heisst „Rücknahme" — dann wieder zeigen.
+            (schritt.wert ? auszublenden : einzublenden)
+                .push({ modelId: plan.modelId, localId });
+        }
+
         for (const schritt of schritte) {
             if (schritt.art !== 'lage') continue;
             const ausCde = schritt.modell === 'cde';
-            const localId = ausCde
-                ? erzeugte.get(schritt.globalId)
-                : globalIdZuLocalId?.get(schritt.globalId);
+            // Erst im Ergebnis DIESES Laufs nachsehen, dann in der Karte.
+            //
+            // Die Karte kennt erzeugte Bauteile inzwischen ebenfalls: sie
+            // tragen ihre CDE-Kennung als `_guid` ins Modell, und
+            // `getLocalIdsByGuids` findet sie damit wie geliefertes Material.
+            // Ohne diesen Rückfall scheiterte eine Höhenfestlegung auf ein
+            // selbst gezeichnetes Bauteil immer — die localId stand nur in der
+            // Karte des Erzeugungslaufs, und der läuft bei einem
+            // Ein-Schritt-Plan gar nicht.
+            const localId = (ausCde ? erzeugte.get(schritt.globalId) : undefined)
+                ?? globalIdZuLocalId?.get(schritt.globalId);
             if (localId === undefined) {
                 misserfolge.push({ ...schritt, grund: 'keine_localId' });
                 continue;
@@ -415,6 +634,32 @@ export class IfcAutor {
             const r = await this.setzeAnker(ausCde ? CDE_MODELL_ID : plan.modelId, localId, schritt.wert);
             if (!r.ok) misserfolge.push({ ...schritt, grund: r.grund });
         }
-        return { misserfolge, erzeugte, nichtAngewandt };
+
+        // MERKMALSSÄTZE (Lücke ⑧). Der Wert ist eine KARTE Name → Felder —
+        // absolute Zielzustände wie überall: jeder Eintrag trägt ALLE von der
+        // CDE gesetzten Sätze dieses Bauteils, die Faltung bleibt „letzter
+        // gewinnt". Eine Rücknahme (wert null) kann das Modell nicht leeren —
+        // die Bibliothek kennt kein Entfernen; der nächste Ladevorgang zeigt
+        // den Stand ohne den Satz. Gemeldet statt angewandt, nie still.
+        for (const schritt of schritte) {
+            if (schritt.art !== 'pset') continue;
+            if (!schritt.wert || typeof schritt.wert !== 'object') {
+                nichtAngewandt.push(schritt);
+                continue;
+            }
+            const ausCde = schritt.modell === 'cde';
+            const localId = (ausCde ? erzeugte.get(schritt.globalId) : undefined)
+                ?? globalIdZuLocalId?.get(schritt.globalId);
+            if (localId === undefined) {
+                misserfolge.push({ ...schritt, grund: 'keine_localId' });
+                continue;
+            }
+            for (const [name, props] of Object.entries(schritt.wert)) {
+                const r = await this.schreibeMerkmalssatz(
+                    ausCde ? CDE_MODELL_ID : plan.modelId, localId, name, props);
+                if (!r.ok) misserfolge.push({ ...schritt, grund: r.grund });
+            }
+        }
+        return { misserfolge, erzeugte, nichtAngewandt, auszublenden, einzublenden };
     }
 }

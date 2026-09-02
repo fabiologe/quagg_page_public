@@ -1,5 +1,8 @@
 <template>
-  <section class="cde-panel" :class="`side-${seite}`" :style="{ width: breite + 'px' }">
+  <!-- Die Breite als CSS-Variable, NICHT als Inline-width: ein Inline-Stil
+       schlüge jede Media Query — genau die Falle, an der das Hochkant-Layout
+       in flood-3D zweimal gescheitert ist (T5). -->
+  <section class="cde-panel" :class="`side-${seite}`" :style="{ '--cp-breite': breite + 'px' }">
     <header class="cp-head">
       <CdeIcon :name="icon" :size="15" />
       <span class="cp-title">{{ titel }}</span>
@@ -59,6 +62,7 @@ function onGripDown(e) {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  width: var(--cp-breite, 330px);
   background: var(--cde-bg);
   color: var(--cde-text);
   font-size: var(--cde-font-md);
@@ -104,4 +108,18 @@ function onGripDown(e) {
 .side-right .cp-grip { left: -2px; }
 .side-left  .cp-grip { right: -2px; }
 .cp-grip:hover { background: var(--cde-accent-fill-hi); }
+
+/* ── T5: Hochkant/schmal — das Panel wird zum Bodenblatt ────────────────────
+   Der Breakpoint 900px gilt PAARWEISE mit CdeView.vue (Media Queries können
+   keine Custom Properties lesen; der Wächter hochkantLayout.test.js hält
+   beide gleich). Das Blatt liegt unter dem Viewer, volle Breite, eigene
+   Rolle fürs Scrollen; der Seitengriff hat quer nichts zu greifen. */
+@media (max-width: 900px) {
+  .cde-panel { width: auto; }
+  .side-left  { border-right: 0; }
+  .side-right { border-left: 0; }
+  .side-left, .side-right { border-top: 1px solid var(--cde-line); }
+  .cp-grip { display: none; }
+  .cp-close { padding: 0.5rem; }        /* Fingerziel im Blattkopf */
+}
 </style>

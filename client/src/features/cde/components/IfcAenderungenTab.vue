@@ -1,165 +1,590 @@
 <template>
   <div class="ae-tab cde-card">
     <CdeCardHeader
-      icon="undo"
-      titel="Änderungen"
+      icon="verlauf"
+      titel="Verlauf"
       :zusatz="ae.anzahl ? `${ae.beruehrteBauteile} Bauteile` : ''"
     >
       <CdeIconButton
+        icon="export"
+        titel="Änderungsbericht als PDF — die Forderung an den Planer (ISO 19650)"
+        :disabled="!ae.anzahl"
+        @click="berichtErzeugen"
+      />
+      <CdeIconButton
         icon="undo"
-        titel="Letzten Schritt zurücknehmen"
+        titel="Letzten Schritt der Sitzung entfernen — ohne Sitzung: neuesten Commit revertieren"
         :disabled="!ae.kannZurueck"
         @click="zurueck"
       />
     </CdeCardHeader>
 
-    <div v-if="!ae.anzahl" class="cde-state-msg">
+    <!-- Mehrbenutzer-Wächter (Lücke ⑥): das Sichern wurde verweigert, weil
+         auf dem Server ein neuerer, FREMDER Stand liegt. Nichts wurde
+         überschrieben — weder die fremde Arbeit noch die eigene; die eigene
+         lebt nur noch lokal, bis neu geladen wird. -->
+    <div v-if="ae.schreibKonflikt" class="ae-schreibkonflikt">
+      <CdeIcon name="warn" :size="14" />
+      <div>
+        <strong>Nicht gesichert:</strong>
+        {{ ae.schreibKonflikt.wer || 'Jemand anderes' }} hat das Journal inzwischen
+        geändert<template v-if="ae.schreibKonflikt.wann"> ({{ relativ(ae.schreibKonflikt.wann) }})</template>.
+        Deine weiteren Schritte bleiben nur lokal — Seite neu laden, dann auf dem
+        aktuellen Stand weiterarbeiten.
+      </div>
+    </div>
+
+    <div v-if="!ae.anzahl && !konflikte.length" class="cde-state-msg">
       <CdeIcon name="undo" :size="22" />
-      Noch nichts geändert. Kostengruppen weist du im Tab „Kostengruppen" zu,
-      DIN-277-Klassen im Tab „Flächen".
+      Noch nichts geändert. Jede Bearbeitung landet hier als Vorgang —
+      wann, wer, was; zurücknehmbar bis zu jedem Punkt.
     </div>
 
     <template v-else>
-      <div class="cde-totals">
-        <div class="cde-total-cell prim">
-          <div class="cde-total-label">Schritte</div>
-          <div class="cde-total-value">{{ ae.anzahl }}</div>
-        </div>
-        <div class="cde-total-cell">
-          <div class="cde-total-label">Bauteile</div>
-          <div class="cde-total-value">{{ ae.beruehrteBauteile }}</div>
-        </div>
-        <div class="cde-total-cell">
-          <div class="cde-total-label">Wirksam</div>
-          <div class="cde-total-value">{{ ae.kgStand.size + ae.din277Stand.size }}</div>
-        </div>
+      <!-- Herkunft auf einen Blick (Stufe 9.6): wer erzeugt, muss trennen
+           können, was geliefert war und was von hier stammt. -->
+      <div class="ae-chips">
+        <span class="ae-chip">{{ ae.vorgaenge.length }} Vorgänge</span>
+        <span class="ae-chip">{{ ae.beruehrteBauteile }} Bauteile</span>
+        <span v-if="eigene" class="ae-chip eigen">{{ eigene }} eigene Bauteile</span>
+        <span v-if="konflikte.length" class="ae-chip konflikt">
+          {{ konflikte.length }} Konflikt{{ konflikte.length === 1 ? '' : 'e' }}
+        </span>
       </div>
 
-      <div class="cde-table-wrap">
-        <table class="cde-table">
-          <thead>
-            <tr>
-              <th>Wann</th>
-              <th>Art</th>
-              <th>Bauteil</th>
-              <th>Von</th>
-              <th>Auf</th>
-              <th>Wer</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="e in neuesteZuerst" :key="e.id" :class="{ ruecknahme: e.ruecknahmeVon }">
-              <td class="mono">{{ zeit(e.wann) }}</td>
-              <td>
-                <CdeIcon :name="ARTEN[e.art]?.icon ?? 'info'" :size="11" />
-                {{ ARTEN[e.art]?.titel ?? e.art }}
-              </td>
-              <td class="mono kuerzel" :title="e.globalId">{{ kurz(e.globalId) }}</td>
-              <td class="mono">{{ e.vorher == null ? '—' : beschreibeWert(e.art, e.vorher, e.basis) }}</td>
-              <td class="mono betont">{{ beschreibeWert(e.art, e.nachher, e.basis) }}</td>
-              <td>{{ e.wer || '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <!-- ── Konfliktklärung (Stufe 9.9): der Modellvergleich mit
+           Entscheidungen. Drei Verben, mehr gibt es nicht. ── -->
+      <section v-if="konflikte.length" class="ae-konflikte">
+        <h4 class="ae-abschnitt">Beim Nachspielen nicht angewandt</h4>
+        <article v-for="k in konflikte" :key="k.eintrag?.id ?? k.globalId" class="ae-kkarte">
+          <header>
+            <CdeIcon name="warn" :size="13" />
+            <strong>{{ kurz(k.globalId) }}</strong>
+            <span>{{ ARTEN[k.art]?.titel ?? k.art }}</span>
+            <em>{{ k.zustand === 'fehlt' ? 'Bauteil nicht mehr im Modell' : (k.grund || k.zustand) }}</em>
+          </header>
+          <p class="ae-kwerte">
+            <span>Deine Festlegung: <strong>{{ beschreibeWert(k.art, k.eintrag?.nachher, k.eintrag?.basis) }}</strong></span>
+            <span v-if="k.istWert !== undefined && k.istWert !== null">
+              Planer jetzt: <strong>{{ beschreibeWert(k.art, k.istWert, k.eintrag?.basis) }}</strong>
+            </span>
+          </p>
+          <div class="ae-kaktionen">
+            <button
+              class="ae-btn"
+              :disabled="k.zustand === 'fehlt'"
+              :title="k.zustand === 'fehlt'
+                ? 'Ohne Bauteil gibt es keinen Planerstand, gegen den die Basis gehoben werden könnte'
+                : 'Die Festlegung gilt weiter — die Basis wird auf den Planerstand gehoben (protokolliert)'"
+              @click="uebernehmen(k)"
+            >Übernehmen</button>
+            <button
+              class="ae-btn"
+              title="Der Planerwert gilt — Gegeneintrag, die Spur bleibt"
+              @click="verwerfen(k)"
+            >Verwerfen</button>
+            <button
+              class="ae-btn"
+              :disabled="!auswahlGlobalId || auswahlGlobalId === k.globalId"
+              :title="auswahlGlobalId
+                ? `Festlegung wandert auf die Auswahl (${kurz(auswahlGlobalId)})`
+                : 'Erst im Modell das Ziel-Bauteil wählen'"
+              @click="uebertragen(k)"
+            >Auf Auswahl übertragen</button>
+          </div>
+        </article>
+      </section>
+
+      <!-- ── Satz-Vergleich (Lücke ⑦ / 9.9): Nord gegen Süd — dieselbe
+           Ableitung wie die Konfliktklärung, nur mit zwei Satzebenen. ── -->
+      <section v-if="andereSaetze.length" class="ae-vergleich">
+        <h4 class="ae-abschnitt">Satz-Vergleich</h4>
+        <div class="ae-vgl-kopf">
+          <span class="ae-vgl-hier" :title="'Der gerade aktive Modellsatz'">
+            {{ cde.aktiverSatz?.name ?? 'Aktueller Stand' }}
+          </span>
+          <span class="ae-vgl-gegen">gegen</span>
+          <select v-model="vergleichSatzId" class="ae-vgl-wahl">
+            <option value="" disabled>Satz wählen …</option>
+            <option v-for="s in andereSaetze" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+          <button class="ae-btn" :disabled="!vergleichSatzId || vergleichLaeuft" @click="vergleiche">
+            {{ vergleichLaeuft ? 'Lädt …' : 'Vergleichen' }}
+          </button>
+        </div>
+        <p v-if="vergleichZeilen && !vergleichZeilen.length" class="ae-vgl-leer">
+          Kein Unterschied — beide Sätze legen dasselbe fest.
+        </p>
+        <ul v-else-if="vergleichZeilen" class="ae-vgl-liste">
+          <li v-for="z in vergleichZeilen" :key="`${z.art}|${z.globalId}`">
+            <span class="ae-vgl-zustand" :class="z.zustand">{{ VGL_TITEL[z.zustand] }}</span>
+            <strong :title="z.globalId">{{ kurz(z.globalId) }}</strong>
+            <span class="ae-vgl-art">{{ ARTEN[z.art]?.titel ?? z.art }}</span>
+            <em class="ae-vgl-werte">
+              <template v-if="z.zustand !== 'nur_dort'">hier {{ beschreibeWert(z.art, z.hier) }}</template>
+              <template v-if="z.zustand === 'verschieden'"> · </template>
+              <template v-if="z.zustand !== 'nur_hier'">dort {{ beschreibeWert(z.art, z.dort) }}</template>
+            </em>
+          </li>
+        </ul>
+      </section>
+
+      <!-- ── Der Versionsverlauf (U3): Commits — Nachricht · wer · wann;
+           die offene Sitzung obenauf als „unversioniert". ── -->
+      <ol class="ae-zeit">
+        <li
+          v-for="v in ae.commitZeitleiste"
+          :key="v.id"
+          class="ae-vorgang"
+          :class="{ ruecknahme: v.typ === 'revert', zurueckgenommen: v.zurueckgenommen,
+                    unversioniert: v.typ === 'sitzung' }"
+        >
+          <span class="ae-punkt" aria-hidden="true"></span>
+          <div class="ae-karte">
+            <header class="ae-kopf" @click="aufgeklappt = aufgeklappt === v.id ? null : v.id">
+              <span class="ae-avatar" :title="v.wer || 'ohne Namen'">{{ initialen(v.wer) }}</span>
+              <div class="ae-titelblock">
+                <strong class="ae-titel">{{ v.titel }}</strong>
+                <small class="ae-meta">
+                  {{ v.wer || '—' }} · {{ v.vorgaenge.length }}
+                  Schritt{{ v.vorgaenge.length === 1 ? '' : 'e' }}
+                  <template v-if="v.zurueckgenommen"> · zurückgenommen</template>
+                </small>
+              </div>
+              <time class="ae-zeitpunkt" :title="absolut(v.wann)">{{ relativ(v.wann) }}</time>
+              <CdeIcon :name="aufgeklappt === v.id ? 'chevron-down' : 'chevron-right'" :size="12" />
+            </header>
+
+            <div class="ae-bauteile">
+              <span v-for="gid in v.bauteile.slice(0, 3)" :key="gid" class="ae-gid mono" :title="gid">
+                {{ kurz(gid) }}
+              </span>
+              <span v-if="v.bauteile.length > 3" class="ae-gid mehr">+{{ v.bauteile.length - 3 }}</span>
+            </div>
+
+            <ul v-if="aufgeklappt === v.id" class="ae-schritte">
+              <template v-for="vg in v.vorgaenge" :key="vg.schluessel">
+                <li v-for="e in vg.zeilen" :key="e.id">
+                  <CdeIcon :name="ARTEN[e.art]?.icon ?? 'info'" :size="11" />
+                  <span class="ae-schritt-art">{{ ARTEN[e.art]?.titel ?? e.art }}</span>
+                  <span class="mono" :title="e.globalId">{{ kurz(e.globalId) }}</span>
+                  <span class="ae-schritt-wert">{{ beschreibeWert(e.art, e.nachher, e.basis) }}</span>
+                </li>
+              </template>
+            </ul>
+
+            <div v-if="v.typ === 'sitzung'" class="ae-aktionen">
+              <button class="ae-btn klein" title="Commit-Dialog öffnen — Nachricht + Schrittliste"
+                @click="bearbeitung.commitDialogOffen = true"
+              ><CdeIcon name="check" :size="11" /> Abschließen …</button>
+            </div>
+            <div v-else-if="v.typ === 'commit' && !v.zurueckgenommen" class="ae-aktionen">
+              <button
+                v-if="istNeuesterOffener(v)"
+                class="ae-btn klein"
+                title="Diesen Commit rückgängig machen — als Revert-Commit, die Spur bleibt"
+                @click="revertiere(v)"
+              ><CdeIcon name="undo" :size="11" /> Rückgängig</button>
+              <button
+                v-else
+                class="ae-btn klein"
+                title="Vom neuesten Commit abwärts bis einschliesslich hier zurücksetzen — je Commit ein Revert"
+                @click="bisHierZurueck(v)"
+              ><CdeIcon name="undo" :size="11" /> Bis hierher zurück</button>
+            </div>
+          </div>
+        </li>
+      </ol>
 
       <p class="cde-hint">
         <CdeIcon name="info" :size="12" />
-        <span>
-          Zurücknehmen fügt einen Gegeneintrag an, statt zu löschen — die Spur
-          bleibt vollständig. „— (Regel)" heißt: keine Handzuweisung mehr, es
-          gilt wieder die automatische Klassifikation.
-        </span>
+        <span>Append-only wie git: Zurücknehmen fügt Gegen-Vorgänge an, statt zu
+          löschen — die Spur bleibt vollständig.</span>
       </p>
-
-      <div class="ae-verwerfen">
-        <button class="ae-btn" @click="verwerfe('kg')" :disabled="!ae.kgStand.size">
-          <CdeIcon name="kg" :size="12" /> Alle KG-Zuweisungen verwerfen
-        </button>
-        <button class="ae-btn" @click="verwerfe('din277')" :disabled="!ae.din277Stand.size">
-          <CdeIcon name="areas" :size="12" /> Alle DIN-277-Zuweisungen verwerfen
-        </button>
-      </div>
     </template>
   </div>
 </template>
 
 <script setup>
 /**
- * Was am Bauteilbestand von Hand geändert wurde (Sprint I, Stufe 7).
+ * Die Zeitleiste der Änderungen (Stufe 9, komplett).
  *
- * Die Liste ist append-only: auch eine Rücknahme steht darin, als
- * Gegeneintrag. Wer nachvollziehen will, warum eine Wand in KG 340 statt 330
- * zählt, soll sehen, dass jemand sie umgehängt hat — und wer.
+ * Aus der Tabelle von Sprint I ist die VERSIONSLISTE geworden: je VORGANG
+ * eine Karte (wann · wer · was), aufklappbar bis auf den einzelnen Schritt,
+ * mit „Bis hierher zurück" als append-only-Reset — und darüber die
+ * KONFLIKTKLÄRUNG (9.9): der Modellvergleich mit den drei Entscheidungen
+ * Übernehmen / Verwerfen / Übertragen. Alles, was das Modell berührt, geht
+ * durch DENSELBEN `wendeEintragAn` wie jede Bearbeitung.
  */
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
 import { useAenderungen, AENDERUNGS_ARTEN, beschreibeWert } from '../stores/useAenderungen.js';
+import { useIfcStore } from '../stores/useIfcStore.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { baueBericht } from '../services/Aenderungsbericht.js';
+import { schreibeBericht } from '../services/AenderungsberichtPdf.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
+import { useViewerApi } from '../composables/viewerApi.js';
+import { repo } from '../services/RepoFacade.js';
+import { flacheAusNutzlast, vergleicheStaende } from '../services/Standvergleich.js';
 
 const emit = defineEmits(['geaendert']);
 
 const ae = useAenderungen();
 const cde = useCdeStore();
+const api = useViewerApi();
+const ifc = useIfcStore();
+const bearbeitung = useBearbeitung();
 const ARTEN = AENDERUNGS_ARTEN;
 
-const neuesteZuerst = computed(() => ae.eintraege.slice().reverse());
+const aufgeklappt = ref(null);
+/** Konflikte des letzten Nachspielens — lokal gespiegelt, damit eine
+ *  Entscheidung die Karte sofort räumt, ohne aufs nächste Laden zu warten. */
+const konflikte = ref(api.getKonflikte?.() ?? []);
+watch(() => ifc.geometrieStand, () => { konflikte.value = api.getKonflikte?.() ?? []; });
 
-/** GlobalIds sind 22 Zeichen — für die Tabelle reichen die letzten sechs. */
+const auswahlGlobalId = computed(() => ifc.selectedElement?.globalId ?? null);
+const eigene = computed(() => ae.wirksamerStand('erzeugt').size);
+
+// ── Satz-Vergleich (Lücke ⑦ / 9.9) ─────────────────────────────────────────
+const VGL_TITEL = { nur_hier: 'nur hier', nur_dort: 'nur dort', verschieden: 'verschieden' };
+const vergleichSatzId = ref('');
+/** null = noch nicht verglichen; [] = verglichen, kein Unterschied. */
+const vergleichZeilen = ref(null);
+const vergleichLaeuft = ref(false);
+const andereSaetze = computed(() =>
+  (cde.saetze ?? []).filter(s => s.id !== cde.aktiverSatzId));
+
+async function vergleiche() {
+  if (!vergleichSatzId.value) return;
+  vergleichLaeuft.value = true;
+  try {
+    // Der fremde Satz wird aus SEINER Ablage gelesen — dieselbe Nutzlast,
+    // die `_uebernimmV2` beim Satzwechsel läse; nur ohne den Wechsel.
+    const roh = await repo.withScope(`stand:${vergleichSatzId.value}`).get('aenderungen');
+    vergleichZeilen.value = vergleicheStaende({
+      auftrag: ae.auftragsEintraege,
+      hier: ae.standEintraege,
+      dort: flacheAusNutzlast(roh),
+    });
+  } catch (fehler) {
+    console.error('cde: satzvergleich', fehler);
+    vergleichZeilen.value = [];
+  } finally {
+    vergleichLaeuft.value = false;
+  }
+}
+
+// Ein veralteter Vergleich ist schlimmer als keiner: jede Journalbewegung
+// und jeder Satzwechsel entwerten das Ergebnis, nicht nur die Auswahl.
+watch(() => [ae.anzahl, cde.aktiverSatzId], () => { vergleichZeilen.value = null; });
+
+/** GlobalIds sind 22 Zeichen — sichtbar sind die letzten sechs. */
 function kurz(globalId) {
   return globalId ? `…${String(globalId).slice(-6)}` : '—';
 }
 
-function zeit(ms) {
+function initialen(wer) {
+  const teile = String(wer ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!teile.length) return '?';
+  return (teile[0][0] + (teile[1]?.[0] ?? '')).toUpperCase();
+}
+
+function absolut(ms) {
+  return ms ? new Date(ms).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+}
+
+/** „vor 5 min" liest sich; das Genaue steht im title. */
+function relativ(ms) {
   if (!ms) return '—';
-  return new Date(ms).toLocaleString('de-DE', {
-    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-  });
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return 'gerade eben';
+  if (s < 3600) return `vor ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `vor ${Math.floor(s / 3600)} Std`;
+  if (s < 7 * 86400) return `vor ${Math.floor(s / 86400)} T`;
+  return new Date(ms).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+/** Alles Modellberührende geht durch DENSELBEN Weg wie jede Bearbeitung. */
+async function anwenden(eintraege) {
+  try {
+    const liste = (Array.isArray(eintraege) ? eintraege : [eintraege]).filter(Boolean);
+    if (liste.length) await api.wendeEintragAn?.(liste.length > 1 ? liste : liste[0]);
+  } catch (fehler) {
+    console.error('cde: anwenden (zeitleiste)', fehler);   // Gesetz 10
+  }
+  emit('geaendert');
 }
 
 async function zurueck() {
-  await ae.zurueck(cde.bearbeiter || '');
-  emit('geaendert');
+  await anwenden(await ae.zurueck(cde.bearbeiter || ''));
 }
 
-async function verwerfe(art) {
-  await ae.verwerfe(art, cde.bearbeiter || '');
-  emit('geaendert');
+/** Ist dieser Commit der neueste, der noch offen ist? Nur er darf einzeln
+ *  revertiert werden — mitten hinein überschriebe spätere Arbeit. */
+function istNeuesterOffener(v) {
+  const erster = ae.commitZeitleiste.find(x => x.typ === 'commit' && !x.zurueckgenommen);
+  return erster?.id === v.id;
+}
+
+async function revertiere(v) {
+  await anwenden(await ae.revertiereCommit(v.id, cde.bearbeiter || ''));
+}
+
+async function bisHierZurueck(v) {
+  await anwenden(await ae.zurueckBisCommit(v.id, cde.bearbeiter || ''));
+}
+
+// ── Die drei Konflikt-Verben (9.9) ──────────────────────────────────────────
+function _raeume(k) {
+  konflikte.value = konflikte.value.filter(x => x !== k);
+}
+
+async function uebernehmen(k) {
+  if (!k.eintrag?.id || k.istWert === undefined) return;
+  await ae.hebeBasisAn(k.eintrag.id, k.istWert, cde.bearbeiter || '');
+  _raeume(k);
+  // Jetzt ist die Basis der Planerstand — der Eintrag ist wieder anwendbar.
+  await anwenden(k.eintrag);
+}
+
+async function verwerfen(k) {
+  if (!k.eintrag?.id) return;
+  const gegen = await ae.verwerfeEinen(k.eintrag.id, cde.bearbeiter || '');
+  _raeume(k);
+  await anwenden(gegen);
+}
+
+async function uebertragen(k) {
+  const ziel = auswahlGlobalId.value;
+  if (!k.eintrag?.id || !ziel) return;
+  const beide = await ae.uebertrageAuf(k.eintrag.id, ziel, {
+    wer: cde.bearbeiter || '',
+    basis: api.lieferstandVon?.(ziel),
+    modell: k.eintrag.modell,
+  });
+  _raeume(k);
+  await anwenden(beide);
+}
+
+/**
+ * Der Änderungsbericht (Stufe 9.5): das Journal als Dokument — der
+ * ISO-19650-Ausgang. Die CDE ändert das Autorenmodell nicht; DIES ist die
+ * Form, in der die Forderung den Planer erreicht.
+ */
+function berichtErzeugen() {
+  const bericht = baueBericht({
+    eintraege: ae.eintraege,
+    zeitleiste: ae.commitZeitleiste,
+    konflikte: konflikte.value,
+    meta: {
+      projekt: cde.auftrag?.name ?? cde.auftrag?.id ?? '',
+      modellSha: api.getLoadedModelSha?.() ?? '',
+    },
+  });
+  const stempel = new Date().toISOString().slice(0, 10);
+  schreibeBericht(bericht).save(`aenderungsbericht-${stempel}.pdf`);
 }
 </script>
 
 <style scoped>
-/* Bausteine: styles/theme.css. Hier nur das Eigene des Journals. */
-.ae-tab {
-  --card-accent: var(--cde-warn);
-  --table-max-h: 340px;
-  font-size: 0.78rem;
+.ae-tab { display: flex; flex-direction: column; gap: 0.6rem; }
+
+/* ── Herkunfts-Chips ── */
+.ae-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.ae-chip {
+  padding: 0.15rem 0.55rem; border-radius: 999px;
+  background: var(--cde-fill); border: 1px solid var(--cde-line);
+  color: var(--cde-text-dim); font-size: var(--cde-font-xs);
+}
+.ae-chip.eigen { border-color: var(--cde-accent-line); color: var(--cde-accent); }
+.ae-chip.konflikt {
+  border-color: color-mix(in srgb, var(--cde-warn) 55%, transparent);
+  color: var(--cde-warn); font-weight: 600;
+}
+
+/* ── Konfliktklärung ── */
+.ae-abschnitt {
+  margin: 0; font-size: var(--cde-font-xs); text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--cde-text-dim);
+}
+.ae-konflikte { display: flex; flex-direction: column; gap: 0.4rem; }
+.ae-kkarte {
+  border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
+  border-radius: var(--cde-radius);
+  background: color-mix(in srgb, var(--cde-warn) 7%, transparent);
+  padding: 0.45rem 0.55rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+/* Satz-Vergleich (Lücke ⑦) */
+.ae-vergleich { padding: 0 0.6rem; }
+.ae-vgl-kopf {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  font-size: var(--cde-font-sm); color: var(--cde-text);
+}
+.ae-vgl-hier { font-weight: 600; color: var(--cde-text-bright); }
+.ae-vgl-gegen { color: var(--cde-text-dim); }
+.ae-vgl-wahl {
+  flex: 1; min-width: 120px;
+  background: var(--cde-fill); color: var(--cde-text);
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  padding: 0.25rem 0.4rem; font-size: var(--cde-font-sm);
+}
+.ae-vgl-leer {
+  margin: 0.45rem 0 0; font-size: var(--cde-font-sm); color: var(--cde-text-dim);
+}
+.ae-vgl-liste {
+  list-style: none; margin: 0.45rem 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.ae-vgl-liste li {
+  display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--cde-tint-weak); border-radius: var(--cde-radius-sm);
+  font-size: var(--cde-font-sm);
+}
+.ae-vgl-zustand {
+  padding: 0.05rem 0.4rem; border-radius: 999px;
+  font-size: var(--cde-font-xs); font-weight: 600;
+  background: var(--cde-fill); color: var(--cde-text-dim);
+}
+.ae-vgl-zustand.verschieden {
+  background: color-mix(in srgb, var(--cde-warn) 16%, transparent);
+  color: var(--cde-warn);
+}
+.ae-vgl-zustand.nur_hier {
+  background: color-mix(in srgb, var(--cde-accent) 14%, transparent);
+  color: var(--cde-accent);
+}
+.ae-vgl-art { color: var(--cde-text-dim); }
+.ae-vgl-werte { color: var(--cde-text); font-style: normal; }
+
+/* Mehrbenutzer-Wächter (Lücke ⑥) — dringlicher als eine Konflikt-Karte:
+   solange er steht, wird NICHTS mehr gesichert. */
+.ae-schreibkonflikt {
+  display: flex; align-items: flex-start; gap: 0.45rem;
+  margin: 0.5rem 0.6rem 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--cde-danger) 55%, transparent);
+  border-radius: var(--cde-radius);
+  background: color-mix(in srgb, var(--cde-danger) 9%, transparent);
+  color: var(--cde-text-bright);
+  font-size: var(--cde-font-sm);
+  line-height: 1.45;
+}
+.ae-schreibkonflikt .cde-icon { color: var(--cde-danger); flex-shrink: 0; margin-top: 0.1rem; }
+.ae-kkarte header {
+  display: flex; align-items: baseline; gap: 0.4rem;
+  color: var(--cde-warn); font-size: var(--cde-font-sm);
+}
+.ae-kkarte header em { color: var(--cde-text-dim); font-style: normal; font-size: var(--cde-font-xs); }
+.ae-kwerte {
+  margin: 0; display: flex; flex-direction: column; gap: 0.1rem;
+  font-size: var(--cde-font-xs); color: var(--cde-text);
+}
+.ae-kaktionen { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+/* ── Die Zeitleiste ── */
+.ae-zeit {
+  list-style: none; margin: 0; padding: 0 0 0 1.1rem;
+  display: flex; flex-direction: column; gap: 0.55rem;
+  position: relative;
+}
+.ae-zeit::before {
+  content: ''; position: absolute; left: 0.32rem; top: 0.6rem; bottom: 0.6rem;
+  width: 2px; background: var(--cde-line);
+}
+.ae-vorgang { position: relative; }
+.ae-punkt {
+  position: absolute; left: -1.1rem; top: 0.75rem;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--cde-accent); border: 2px solid var(--cde-bg);
+  box-shadow: 0 0 0 1px var(--cde-accent);
+}
+.ae-vorgang.ruecknahme .ae-punkt,
+.ae-vorgang.protokoll .ae-punkt {
+  background: var(--cde-bg); box-shadow: 0 0 0 1px var(--cde-line-strong);
+}
+.ae-vorgang.unversioniert .ae-karte {
+  border-color: var(--cde-accent-line);
+  border-style: dashed;
+  background: var(--cde-accent-fill);
+}
+.ae-vorgang.unversioniert .ae-punkt {
+  background: var(--cde-bg); box-shadow: 0 0 0 1px var(--cde-accent);
+}
+.ae-vorgang.zurueckgenommen .ae-karte { opacity: 0.55; }
+.ae-vorgang.zurueckgenommen .ae-titel { text-decoration: line-through; }
+
+.ae-karte {
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius);
+  background: var(--cde-surface);
+  padding: 0.45rem 0.55rem;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.ae-kopf {
+  display: flex; align-items: center; gap: 0.5rem; cursor: pointer;
   color: var(--cde-text);
 }
+.ae-avatar {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cde-accent-fill); color: var(--cde-accent);
+  border: 1px solid var(--cde-accent-line);
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
+}
+.ae-titelblock { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ae-titel {
+  font-size: var(--cde-font-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ae-meta { color: var(--cde-text-dim); font-size: var(--cde-font-xs); }
+.ae-zeitpunkt {
+  flex-shrink: 0; color: var(--cde-text-dim); font-size: var(--cde-font-xs);
+  font-variant-numeric: tabular-nums;
+}
 
-.mono { font-family: ui-monospace, monospace; font-size: 0.72rem; }
-.kuerzel { color: var(--cde-text-dim); }
-.betont { color: var(--card-accent); font-weight: 600; }
+.ae-bauteile { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.ae-gid {
+  padding: 0.05rem 0.4rem; border-radius: var(--cde-radius-sm);
+  background: var(--cde-fill); border: 1px solid var(--cde-line);
+  color: var(--cde-text-dim); font-size: 0.66rem;
+}
+.ae-gid.mehr { border-style: dashed; }
 
-/* Rücknahmen treten zurück — sie sind Buchhaltung, keine Aussage. */
-tr.ruecknahme td { opacity: 0.62; font-style: italic; }
+.ae-schritte {
+  list-style: none; margin: 0; padding: 0.25rem 0 0;
+  border-top: 1px dashed var(--cde-line);
+  display: flex; flex-direction: column; gap: 0.2rem;
+}
+.ae-schritte li {
+  display: flex; align-items: baseline; gap: 0.35rem;
+  font-size: var(--cde-font-xs); color: var(--cde-text);
+}
+.ae-schritt-art { color: var(--cde-text-dim); flex-shrink: 0; }
+.ae-schritt-wert { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.ae-verwerfen { display: flex; flex-direction: column; gap: 0.3rem; }
+.ae-aktionen { display: flex; justify-content: flex-end; }
+
 .ae-btn {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  padding: 0.3rem 0.6rem;
-  background: var(--cde-fill);
-  border: 1px solid var(--cde-line);
-  border-radius: var(--cde-radius-sm);
-  color: var(--cde-text-soft);
-  font: inherit; font-size: 0.73rem; cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.3rem 0.6rem; cursor: pointer;
+  border: 1px solid var(--cde-line-strong); border-radius: var(--cde-radius-sm);
+  background: var(--cde-fill); color: var(--cde-text);
+  font-size: var(--cde-font-xs);
+  touch-action: manipulation;
 }
-.ae-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--card-accent) 16%, transparent);
-  color: var(--cde-text-bright);
-}
+.ae-btn:hover:not(:disabled) { border-color: var(--cde-accent-line); color: var(--cde-accent); }
 .ae-btn:disabled { opacity: 0.45; cursor: default; }
+.ae-btn.klein { padding: 0.2rem 0.5rem; }
+
+.mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; }
+
+/* T1-Regel: Listenzeilen wachsen auf groben Zeigern wirklich. */
+@media (pointer: coarse) {
+  .ae-btn { padding: 0.55rem 0.75rem; }
+  .ae-kopf { padding: 0.2rem 0; }
+}
 </style>

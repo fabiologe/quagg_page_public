@@ -99,4 +99,17 @@ describe('makeWorldTransform', () => {
     expect(w.zuX(M + DW / 2)).toBeCloseTo(200, 9)
     expect(w.zuZ(M + DH / 2)).toBeCloseTo(-80, 9)
   })
+
+  it('der RÜCKWEG (vonX/vonZ, G1) ist die exakte Umkehrung des Hinwegs', () => {
+    // Der Schacht-Griff zeichnet Weltpunkte aufs Blatt — mit derselben
+    // Abbildung wie der Plan. Ein eigener Rechenweg daneben wäre exakt die
+    // Fehlerklasse, die 13.0 beseitigt hat.
+    const w = makeWorldTransform(frustum({ position: [17, 100, -3] }), M, DW, DH)
+    for (const v of [-40, -12.5, 0, 7.25, 33]) {
+      expect(w.vonX(w.zuX(v))).toBeCloseTo(v, 9)
+      expect(w.vonZ(w.zuZ(v))).toBeCloseTo(v, 9)
+      expect(w.zuX(w.vonX(v))).toBeCloseTo(v, 9)
+      expect(w.zuZ(w.vonZ(v))).toBeCloseTo(v, 9)
+    }
+  })
 })

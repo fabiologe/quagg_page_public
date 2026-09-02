@@ -52,9 +52,43 @@ import { AENDERUNGS_ARTEN, standMitEintragEbenen, vergleicheMitModell } from '..
  *   anzuwenden: [{ globalId, art, wert, eintrag, modell }]
  *   konflikte:  [{ globalId, art, eintrag, zustand, grund, istWert }]
  */
-export function planeNachspielen(eintraege, leseLieferstand, { arten = null, standEintraege = null } = {}) {
+/** Ab dieser Bewegung des Bezugsziels wird nachgeführt (m). */
+const BEZUG_TOLERANZ_M = 0.001;
+
+/**
+ * Der zweite Drei-Wege-Vergleich — für den BEZUG eines lage-Eintrags
+ * (Stufe 16, „rohr-an-schacht"). Rein und eingefroren: `leseBezug` liefert
+ * den LIEFERSTAND des Zielknotens, nie den angewandten — deshalb ist das
+ * Nachführen idempotent (zweimal nachgespielt ergibt zweimal denselben
+ * Anker) und die EIGENE Schacht-Verschiebung führt nichts nach (dafür gibt
+ * es den Regler an „Schacht verschieben").
+ *
+ *   Ziel unbewegt → sauber, Wert unverändert
+ *   Ziel bewegt   → Anker um die Zielbewegung NACHGEFÜHRT — kein neuer
+ *                   Eintrag, aber gemeldet (stilles Verhalten ist genau
+ *                   das, wogegen das Journal angetreten ist)
+ *   Ziel fehlt    → der absolute Anker gilt weiter; gemeldet als bezug_fehlt
+ */
+function _bezugsArm(eintrag, wert, leseBezug) {
+    const b = eintrag?.bezug;
+    if (eintrag?.art !== 'lage' || !b?.ziel || !b?.zielBasis || !wert) return { wert };
+    const zielIst = leseBezug?.(b.ziel);
+    if (!zielIst) return { wert, meldung: 'bezug_fehlt' };
+    const dx = zielIst.x - b.zielBasis.x;
+    const dy = zielIst.y - b.zielBasis.y;
+    const dz = zielIst.z - b.zielBasis.z;
+    if (Math.hypot(dx, dy, dz) <= BEZUG_TOLERANZ_M) return { wert };
+    return {
+        wert: { x: wert.x + dx, y: wert.y + dy, z: wert.z + dz },
+        meldung: 'nachgefuehrt',
+    };
+}
+
+export function planeNachspielen(eintraege, leseLieferstand, { arten = null, standEintraege = null, leseBezug = null } = {}) {
     const anzuwenden = [];
     const konflikte = [];
+    let nachgefuehrt = 0;
+    let bezugFehlt = 0;
 
     const zuPruefen = arten ?? Object.entries(AENDERUNGS_ARTEN)
         .filter(([, a]) => a.beruehrtModell)
@@ -74,7 +108,11 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
             const { zustand, grund } = vergleicheMitModell(eintrag, istWert);
 
             if (zustand === 'sauber') {
-                anzuwenden.push({ globalId, art, wert, eintrag, modell: 'geliefert', grund });
+                const arm = _bezugsArm(eintrag, wert, leseBezug);
+                if (arm.meldung === 'nachgefuehrt') nachgefuehrt++;
+                if (arm.meldung === 'bezug_fehlt') bezugFehlt++;
+                anzuwenden.push({ globalId, art, wert: arm.wert, eintrag,
+                                  modell: 'geliefert', grund: arm.meldung ?? grund });
             } else {
                 konflikte.push({ globalId, art, eintrag, zustand, grund, istWert });
             }
@@ -84,11 +122,18 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
     return {
         anzuwenden,
         konflikte,
+        // Dieser Plan kennt den GANZEN Stand. Nur er darf das CDE-Modell neu
+        // aufbauen — auch wenn gar kein `erzeugt` darin steht, denn dann muss
+        // es leer werden. Ein Ein-Schritt-Plan (`planFuerEintrag`) trägt die
+        // Kennzeichnung nicht und lässt Erzeugtes deshalb in Ruhe.
+        vollstaendig: true,
         zusammenfassung: {
             angewandt: anzuwenden.length,
             konflikte: konflikte.length,
             fehlend: konflikte.filter(k => k.zustand === 'fehlt').length,
             ueberschnitten: konflikte.filter(k => k.zustand === 'konflikt').length,
+            nachgefuehrt,
+            bezugFehlt,
         },
     };
 }
@@ -100,7 +145,7 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
  * nicht durchgingen, sind die interessanten.
  */
 export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueberschnitten = 0,
-                                nurFestlegung = 0 } = {}) {
+                                nurFestlegung = 0, nachgefuehrt = 0, bezugFehlt = 0 } = {}) {
     if (!angewandt && !konflikte && !nurFestlegung) return '';
     const teile = [`${angewandt} ${angewandt === 1 ? 'Festlegung' : 'Festlegungen'} angewandt`];
     // Getrennt genannt, weil es weder Erfolg noch Panne ist: die CDE ändert das
@@ -108,6 +153,8 @@ export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueber
     if (nurFestlegung) teile.push(`${nurFestlegung} × nur festgehalten (Forderung an den Planer)`);
     if (ueberschnitten) teile.push(`${ueberschnitten} × auch vom Planer geändert`);
     if (fehlend) teile.push(`${fehlend} × Bauteil nicht mehr im Modell`);
+    if (nachgefuehrt) teile.push(`${nachgefuehrt} × dem Bezug nachgeführt`);
+    if (bezugFehlt) teile.push(`${bezugFehlt} × Bezugsziel nicht mehr im Modell`);
     return teile.join(' · ');
 }
 
@@ -134,7 +181,8 @@ export function konfliktKarte(konflikte) {
  * Auf welchem Weg wird ein frisch geschriebener Eintrag wirksam?
  *
  * DER ANLASS: Das Formular schrieb ins Journal — und niemand brachte es ans
- * Modell. Nur drei Wege taten das überhaupt: Ziehen (`useZiehen` ruft
+ * Modell. Nur drei Wege taten das überhaupt: das (inzwischen entfernte)
+ * Ziehen (rief
  * `setzeAnker` selbst), Laden (`useNachspielen`) und Zeichnen
  * (`baueErzeugteNeu`). Wer eine Sohlhöhe im Formular eintrug, sah nichts
  * geschehen; erst nach `F5` sprang das Bauteil. Für den Nutzer ist das
@@ -176,10 +224,35 @@ export function planFuerEintrag(eintrag, modelId = null) {
         anzuwenden: [{
             globalId: eintrag.globalId,
             art: eintrag.art,
-            wert: eintrag.nachher,
+            wert: zielWert(eintrag),
             eintrag,
             modell: eintrag.modell === 'cde' ? 'cde' : 'geliefert',
         }],
         konflikte: [],
     };
+}
+
+/**
+ * Wohin dieser eine Eintrag das Bauteil bringen soll — JETZT.
+ *
+ * Fast immer `nachher`. Die Ausnahme ist die Rücknahme des ERSTEN Zuges an
+ * einem Bauteil: dort ist `nachher` gleich `null`, weil im Stand vorher nichts
+ * lag. Fürs Nachspielen ist das genau richtig — „nichts im Stand" heisst
+ * „unberührt", und beim nächsten Laden kommt das Bauteil ohnehin dort heraus,
+ * wo der Planer es hingelegt hat.
+ *
+ * Im SOFORT-Pfad ist es das nicht: das Modell liegt schon verschoben im
+ * Speicher, und `setzeAnker(…, null)` weiss nicht, wohin. „Zurück" schrieb
+ * dann den Gegeneintrag und bewegte nichts — bis zum nächsten F5 stand die
+ * Rücknahme im Journal und die Verschiebung im Raum.
+ *
+ * Der Lieferstand steht in `basis`, und genau dorthin gehört das Bauteil.
+ * Die Unterscheidung bleibt HIER, in der Übersetzung eines einzelnen Eintrags
+ * in einen Plan — was ein Journaleintrag bedeutet, ändert sie nicht.
+ */
+function zielWert(eintrag) {
+    if (eintrag.art === 'lage' && eintrag.nachher === null && eintrag.basis) {
+        return eintrag.basis;
+    }
+    return eintrag.nachher;
 }

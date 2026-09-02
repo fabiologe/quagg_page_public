@@ -1,4 +1,7 @@
 import * as OBC from '@thatopen/components';
+import { heightfieldRaster } from './geometry/SurfaceOps.js';
+import { formeNach, massenAus } from './gelaende/Operationen.js';
+import { karteMitEngine } from './GlobalIdKarte.js';
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
 import { IfcCamera } from './IfcCamera.js';
@@ -11,6 +14,18 @@ import { IfcStoreys } from './IfcStoreys.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
 import { IfcAutor } from './IfcAutor.js';
 import { IfcQuelle } from './IfcQuelle.js';
+import { extractAxisPolylines } from './AxisAnnotations.js';
+import { befundeFuer, befundeFuerNetz } from './Befunde.js';
+import { baueNetz, strangAb } from './Netztopologie.js';
+
+/**
+ * Wie viele Bauteile die Höhenmessung auswertet.
+ *
+ * Gesucht ist EINE Verschiebung des ganzen Modells, kein Wert je Bauteil —
+ * mehr Bauteile machen die Antwort nicht genauer, nur das Laden langsamer.
+ * Gemessen: 12 Bauteile kosten 15 ms.
+ */
+const STICHPROBE = 24;
 import { leseGeoreferenz } from './Georeferenz.js';
 
 
@@ -108,6 +123,14 @@ export class IfcEngine {
          * durch `loadIfc` kommen. Preis: das Modell liegt zweimal im Speicher.
          */
         this._quellen            = new Map();
+        /**
+         * Wie der Höhenversatz je Modell zustande kam.
+         *
+         * Sichtbar gemacht, weil er zweimal still danebenlag und Fabio jedes
+         * Mal in die Konsole schauen sollte. Ein Befund, den nur die Konsole
+         * kennt, ist für den Nutzer kein Befund.
+         */
+        this._hoehenBefund       = new Map();
         this._coordinationOffset = new THREE.Vector3();
         this._lastHitPoint       = null; // THREE.Vector3 | null
         this._lastHitModelId     = null; // string | null — which model the hover hit
@@ -162,7 +185,14 @@ export class IfcEngine {
         this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint });
         this.measure     = new IfcMeasure({     getWorld: () => this._getWorld(), probePoint });
         // Stufe 9.2: der einzige Kanal zur Editor-API von @thatopen/fragments.
-        this.autor       = new IfcAutor({ getFragments: () => this.components.get(OBC.FragmentsManager) });
+        this.autor       = new IfcAutor({
+            getFragments: () => this.components.get(OBC.FragmentsManager),
+            getWelt:      () => this._getWorld(),
+            // Stufe 15: das Höhenraster eines GELIEFERTEN Bauteils — für das
+            // Gelände-Rezept. Über den Resolver (dieselbe Ableitung wie die
+            // Analyse), nie aus dem Journal.
+            holeQuellraster: (globalId) => this._quellrasterVon(globalId),
+        });
 
         const grids = this.components.get(OBC.Grids);
         this._sceneGrid = grids.create(world);
@@ -219,7 +249,6 @@ export class IfcEngine {
             });
             if (quelle) {
                 this._quellen.set(model.modelId, quelle);
-                await this._hoehenversatzMessen(model, quelle, modelOff);
             } else {
                 console.warn('cde: keine IFC-Quelle für', model.modelId, '— Georeferenz und Achsen bleiben ungelesen');
             }
@@ -245,6 +274,12 @@ export class IfcEngine {
             await fragments.core.update(true);
             await new Promise(r => requestAnimationFrame(() => r()));
         }
+
+        // ERST JETZT den Höhenversatz messen. Davor ist das Modell noch nicht
+        // tesselliert — der Kommentar direkt darüber sagt es: „if we proceed
+        // too early, model.box is empty … silent no-ops". Genau da stand der
+        // erste Versuch, und er lief still ins Leere.
+        await this._hoehenversatzMessen(model, this._quellen.get(model.modelId), modelOff);
 
         // Now fit camera (box is populated), then bind for LOD/culling at final position
         await this._fitCameraToModel(model, world);
@@ -470,7 +505,16 @@ export class IfcEngine {
         // das getroffene Bauteil nicht mehr adressieren — weder zum Zoomen noch
         // fuer seine Bounding-Box. `_parseItemData` bleibt bewusst zustandslos
         // und kennt sie nicht, deshalb werden sie hier angehaengt.
-        return { ...this._parseItemData(rawData), modelId: fmodel.modelId, localId };
+        const daten = this._parseItemData(rawData);
+        return {
+            ...daten,
+            // Aus dem GUID-Index nachschlagen, wenn die Attribute sie nicht
+            // tragen — siehe `_globalIdVon`. Ohne sie lässt sich das Bauteil
+            // nicht ins Journal eintragen.
+            globalId: daten?.globalId || await this._globalIdVon(fmodel, localId),
+            modelId: fmodel.modelId,
+            localId,
+        };
     }
 
     async clearSelection() {
@@ -667,39 +711,22 @@ export class IfcEngine {
         const fragments = this.components.get(OBC.FragmentsManager);
         const daten = this._parseItemData(await fragments.getData(this._selectedItems, DATA_CONFIG));
         // Dieselbe Kennung wie bei pickElement — sonst verliert das Bauteil sie
-        // beim Neuladen der Merkmale wieder.
+        // beim Neuladen der Merkmale wieder. Das gilt für die GlobalId genauso:
+        // ohne sie fiele das Bauteil nach dem Anlegen eines Merkmalssatzes aus
+        // dem Journal heraus.
         const [modelId, localIds] = Object.entries(this._selectedItems)[0] ?? [];
-        return { ...daten, modelId, localId: localIds?.[0] };
-    }
-
-    async addPsetToElement(psetName, props) {
-        if (!this._selectedItems) throw new Error('Kein Element ausgewählt');
-        const fragments = this.components.get(OBC.FragmentsManager);
-        const [modelId, localIds] = Object.entries(this._selectedItems)[0];
-        if (!localIds?.length) throw new Error('Keine localId gefunden');
-
+        const localId = localIds?.[0];
         const model = [...fragments.list.values()].find(m => m.modelId === modelId);
-        if (!model?.editor) throw new Error('Model oder Editor nicht verfügbar');
-
-        const elementLocalId = localIds[0];
-        const propIds = await model.editor.edit(modelId, props.map(p => ({
-            type: 5,
-            data: {
-                category: 'IFCPROPERTYSINGLEVALUE',
-                data: { Name: { value: p.name }, NominalValue: { value: p.value ?? '' } },
-            },
-        })));
-
-        const [psetId] = await model.editor.edit(modelId, [{
-            type: 5,
-            data: { category: 'IFCPROPERTYSET', data: { Name: { value: psetName } } },
-        }]);
-
-        await model.editor.edit(modelId, [
-            { type: 6, localId: psetId,          data: { data: { HasProperties: propIds } } },
-            { type: 6, localId: elementLocalId,  data: { data: { IsDefinedBy: [psetId] } } },
-        ]);
+        const globalId = daten?.globalId
+            || (model && localId !== undefined ? await this._globalIdVon(model, localId) : '');
+        return { ...daten, globalId, modelId, localId };
     }
+
+    // Der Merkmals-Schreiber lebt seit Lücke ⑧ (2026-09-02) im Autorenkanal:
+    // `IfcAutor.schreibeMerkmalssatz(modelId, localId, name, props)`. Die
+    // alte Fassung hier hing an der AUSWAHL und schrieb am Journal vorbei —
+    // keine Spur, kein Zurück, und nach F5 war der Satz weg. Jetzt läuft der
+    // Weg Eintrag → wendeEintragAn → wendeAn wie bei jeder anderen Änderung.
 
     // ── Civil geometry ───────────────────────────────────────────────────────
 
@@ -718,7 +745,31 @@ export class IfcEngine {
     loescheBauteil(modelId, localId)    { return this.autor.loesche(modelId, localId); }
     eigenesModell(modelId)              { return this.autor.eigenesModell(modelId); }
     modellAlsPuffer(modelId)            { return this.autor.alsPuffer(modelId); }
-    wendeFestlegungenAn(plan, opts)     { return this.autor.wendeAn(plan, opts); }
+    /**
+     * Festlegungen ans Modell bringen — und das Ausblenden gleich mit.
+     *
+     * Das Verstecken ist eine Sache der ANSICHT und gehört deshalb nicht in
+     * den Autoren-Kanal: der fasst die Editor-API an, nicht den Hider. Er sagt
+     * nur, WAS verborgen werden soll.
+     */
+    async wendeFestlegungenAn(plan, opts) {
+        const r = await this.autor.wendeAn(plan, opts);
+        await this._sichtbarkeitSetzen(r.auszublenden, false);
+        await this._sichtbarkeitSetzen(r.einzublenden, true);
+        return r;
+    }
+
+    async _sichtbarkeitSetzen(orte, sichtbar) {
+        if (!orte?.length) return;
+        const karte = {};
+        for (const o of orte) (karte[o.modelId] ??= []).push(o.localId);
+        try {
+            await this.components.get(OBC.Hider).set(sichtbar, karte);
+            await this.components.get(OBC.FragmentsManager).core.update(true);
+        } catch (fehler) {
+            console.warn('cde: sichtbarkeit setzen', fehler?.message ?? fehler);
+        }
+    }
 
     // ── Raumstruktur & Geschosse (Implementierung in IfcStoreys.js) ─────────
     getSpatialTree()                     { return this.storeys.getSpatialTree(); }
@@ -1047,44 +1098,91 @@ export class IfcEngine {
      * es unempfindlich gegen einzelne Ausreisser, und die Streuung sagt, ob
      * man dem Ergebnis trauen darf.
      */
+    /**
+     * Den Höhenversatz eines Modells bestimmen — HÜLLE gegen HÜLLE.
+     *
+     * Der erste Anlauf verglich die IFC-Platzierung mit `model.getPositions()`
+     * und scheiterte, weil das zwei VERSCHIEDENE Punkte sind: `getPositions`
+     * liefert die Mitte eines Bauteils, die Platzierung einen Bezugspunkt des
+     * Autors. Am echten Netz sitzt der bei Schächten auf der Unterkante, bei
+     * Haltungen am oberen Ende — die Differenz streute dadurch um 10,2 m, und
+     * die Messung hat (richtig) nichts gesetzt.
+     *
+     * Eine Hülle beschreibt auf beiden Seiten DENSELBEN Körper. Damit gilt
+     * für eine reine Verschiebung:
+     *
+     *     Versatz = DateiUnterkante − WeltUnterkante
+     *             = DateiOberkante  − WeltOberkante
+     *
+     * Dass beide dasselbe ergeben, ist keine Nebensache, sondern der BEWEIS,
+     * dass überhaupt nur verschoben und nicht skaliert wurde. Stimmen sie
+     * nicht überein, wird nichts gesetzt und der Befund gemeldet — eine
+     * erfundene Höhe wäre schlimmer als gar keine.
+     */
     async _hoehenversatzMessen(model, quelle, modelOff) {
+        const merke = (b) => { this._hoehenBefund.set(model.modelId, b); return b; };
+        if (!quelle?.lebt?.()) return merke({ art: 'ohne-quelle', text: 'keine IFC-Quelle' });
         try {
-            if (typeof model.getPositions !== 'function') return;
-            // Eine Stichprobe genügt — es ist eine Translation, keine Kurve.
-            const ids = quelle.ids('IFCELEMENT', { untertypen: true }).slice(0, 200);
-            if (!ids.length) return;
+            // Eine Stichprobe genügt: gesucht ist EINE Verschiebung, nicht ein
+            // Wert je Bauteil. Die Geometrie auszuwerten kostet, deshalb wenige.
+            const stichprobe = quelle.ids('IFCELEMENT', { untertypen: true }).slice(0, STICHPROBE);
+            if (!stichprobe.length) return merke({ art: 'keine-bauteile', text: 'keine Bauteile in der Datei' });
 
-            const rohZ = quelle.platzierungsHoehen(ids);
-            const welt = await model.getPositions(ids);
-            if (!Array.isArray(welt) || welt.length !== ids.length) return;
+            const datei = quelle.hoehenHuellen(stichprobe);
+            // NUR die Bauteile, für die BEIDE Seiten etwas liefern — sonst
+            // deckten die zwei Hüllen verschiedene Körper ab und die Differenz
+            // wäre die Auswahl, nicht der Versatz.
+            const ids = stichprobe.filter(id => datei.has(id));
+            if (ids.length < 2) return merke({ art: 'keine-geometrie', text: 'Geometrie in der Datei nicht auswertbar' });
 
-            const diffs = [];
-            for (let i = 0; i < ids.length; i++) {
-                const roh = rohZ.get(ids[i]);
-                const y = welt[i]?.y;
-                if (Number.isFinite(roh) && Number.isFinite(y)) diffs.push(roh - y);
+            const welt = await model.getMergedBox(ids);
+            if (!welt || welt.isEmpty?.() || !Number.isFinite(welt.min?.y)) {
+                return merke({ art: 'keine-weltlage', text: 'Weltlage nicht lesbar' });
             }
-            if (diffs.length < 3) return;
 
-            diffs.sort((a, b) => a - b);
-            const median = diffs[Math.floor(diffs.length / 2)];
-            const spanne = diffs[diffs.length - 1] - diffs[0];
+            let dMin = Infinity, dMax = -Infinity;
+            for (const id of ids) {
+                const h = datei.get(id);
+                if (h.min < dMin) dMin = h.min;
+                if (h.max > dMax) dMax = h.max;
+            }
 
-            // Streuen die Differenzen, ist es keine reine Verschiebung — dann
-            // wird NICHTS gesetzt und gemeldet, statt einen Mittelwert zu
-            // behaupten, der für kein einziges Bauteil stimmt.
-            if (spanne > 0.05) {
-                console.warn(`cde: Höhenversatz uneinheitlich (Spanne ${spanne.toFixed(3)} m) — nicht gesetzt`);
-                return;
+            const vonUnten = dMin - welt.min.y;
+            const vonOben  = dMax - welt.max.y;
+            const abweichung = Math.abs(vonUnten - vonOben);
+            if (abweichung > 0.01) {
+                return merke({
+                    art: 'uneinheitlich', spanne: abweichung, unten: vonUnten, oben: vonOben,
+                    text: `Unter- und Oberkante ergeben ${vonUnten.toFixed(2)} m bzw. `
+                        + `${vonOben.toFixed(2)} m — das ist keine reine Verschiebung, nicht gesetzt`,
+                });
             }
-            if (Math.abs(median - modelOff.y) > 1e-6) {
-                modelOff.y = median;
-                this._coordOffsets.set(model.modelId, modelOff);
-                if (this._coordOffsets.size === 1) this._coordinationOffset.copy(modelOff);
-            }
+
+            const versatz = (vonUnten + vonOben) / 2;
+            modelOff.y = versatz;
+            this._coordOffsets.set(model.modelId, modelOff);
+            if (this._coordOffsets.size === 1) this._coordinationOffset.copy(modelOff);
+            // Beide Räume mitgeben. Zeigt die Koordinatenleiste eine Höhe, die
+            // in KEINEN von beiden passt, liegt der Fehler nicht am Versatz —
+            // und das sieht man dann sofort, statt es zu erraten.
+            return merke({
+                art: 'gemessen', wert: versatz, spanne: abweichung, n: ids.length,
+                datei: { min: dMin, max: dMax },
+                welt:  { min: welt.min.y, max: welt.max.y },
+                text: `über ${ids.length} Bauteile, Unter- und Oberkante stimmen auf `
+                    + `${(abweichung * 1000).toFixed(1)} mm überein`,
+            });
         } catch (fehler) {
-            console.warn('cde: Höhenversatz messen', fehler?.message ?? fehler);
+            return merke({ art: 'fehler', text: String(fehler?.message ?? fehler) });
         }
+    }
+
+    /** Wie der Höhenversatz zustande kam — für die Anzeige. */
+    hoehenBefund(modelId) {
+        return this._hoehenBefund.get(modelId) ?? null;
+    }
+    alleHoehenBefunde() {
+        return Object.fromEntries(this._hoehenBefund);
     }
 
     /** Der lebende Lesezugriff auf ein Modell, oder null. */
@@ -1180,6 +1278,30 @@ export class IfcEngine {
     // Zustandslos und deshalb der erste Schnitt: `parseItemData` fasst kein
     // einziges `this._…` an, `buildSearchIndex` braucht nur `components`.
     _parseItemData(rawData)  { return parseItemData(rawData); }
+
+    /**
+     * Die GlobalId eines Bauteils — aus dem GUID-Index, nicht aus den Attributen.
+     *
+     * `parseItemData` liest `item['GlobalId']`, und das ist in Fragments nicht
+     * da: der IfcLoader importiert von Haus aus nur einen schmalen Satz
+     * Attribute (Projekt/Geschoss, Materialien, Merkmalssätze), die GlobalId
+     * gehört nicht dazu. Sie führt die Bibliothek in einem EIGENEN Index,
+     * erreichbar über `getGuidsByLocalIds`.
+     *
+     * Das war nicht folgenlos: `parseItemData` fällt auf `''` zurück, und
+     * `eintragen` verwirft einen Eintrag ohne GlobalId. Jede Bearbeitung endete
+     * damit still — die GlobalId ist der Angelpunkt des ganzen Journals, denn
+     * sie ist das Einzige, was eine Modellrevision überlebt.
+     */
+    async _globalIdVon(model, localId) {
+        try {
+            const [guid] = await model.getGuidsByLocalIds([localId]);
+            return guid ?? '';
+        } catch (fehler) {
+            console.warn('cde: GlobalId lesen', fehler?.message ?? fehler);
+            return '';
+        }
+    }
     async buildSearchIndex() { return buildSearchIndex(this.components); }
 
 
@@ -1188,33 +1310,559 @@ export class IfcEngine {
      * Return the raw web-ifc API and model ID for vector plot extraction.
      * Returns null if no model is loaded.
      */
-    getWebIfcAPI() {
-        const ifcLoader = this.components.get(OBC.IfcLoader);
-        const fragments = this.components.get(OBC.FragmentsManager);
-        if (!ifcLoader?.webIfc || !fragments.list.size) return null;
-        // Return the first model too — used for BBox fallback in the vector plotter
-        const model = [...fragments.list.values()][0] ?? null;
-        return { webIfc: ifcLoader.webIfc, modelID: 0, model };
+    /**
+     * Wie viele Achsen sich aus den geladenen Dateien gewinnen lassen.
+     *
+     * Einmal je Laden, nicht je Bildaufbau — die Extrusionen auszuwerten kostet.
+     * Der Wert entscheidet, ob der Längsschnitt-Modus bedienbar ist; der war
+     * bis Stufe 14.1 DAUERHAFT gesperrt, weil `hatAchsen` nirgends gesetzt
+     * wurde und die Achse ohnehin nie ankam.
+     */
+    /**
+     * Der Journalstand als DATEN (Stufe 17.3): selbst erzeugte Rohre und
+     * Schächte kommen ins Fachmodell, verdeckte Bauteile fliegen heraus.
+     *
+     * Die Engine liest KEIN Journal — die Schichtung zeigt nach unten. Der
+     * Viewer-Hub (`entwerteNach`) rechnet den Stand über `CdeAchsen.js` aus
+     * und reicht ihn hier herein; ohne den Aufruf gilt das nackte Geliefert.
+     * CDE-Kanten tragen im Netz String-Schlüssel `cde:<globalId>` — die
+     * localIds zweier Modelle dürfen kollidieren, GlobalIds nicht.
+     */
+    setzeJournalStand({ kanten = [], knoten = [], verdeckt = new Set() } = {}) {
+        this._cdeKanten = new Map(kanten.map(k => [k.globalId, k]));
+        this._cdeKnoten = new Map(knoten.map(k => [k.globalId, k]));
+        this._verdeckt = verdeckt instanceof Set ? verdeckt : new Set(verdeckt);
+    }
+
+    async leseAchsen() {
+        this._achsen = new Map();
+        this._knoten = new Map();
+        this._merkmale = new Map();
+        let n = 0;
+        for (const api of this.getWebIfcAPIs()) {
+            // In WELTKOORDINATEN, nicht roh: alles andere in der CDE rechnet
+            // in der Three-Welt, und die Umrechnung nach m NN steht an genau
+            // einer Stelle (`Hoehenbezug`). Zwei Höhenwege wären zwei
+            // Wahrheiten — davon hatte dieses Feature genug.
+            const off = this._coordOffsets.get(api.fragmentModelId) ?? null;
+            let achsen = [];
+            try {
+                achsen = extractAxisPolylines(api.quelle, { coordOffset: off });
+            } catch (fehler) {
+                console.warn('cde: achsen lesen', fehler?.message ?? fehler);
+                continue;
+            }
+            const karte = new Map();
+            for (const a of achsen) {
+                const p = a.polyline;
+                // GlobalId und Name GLEICH MIT ans Achsenband (Stufe 17.3):
+                // vorher schlug jeder Konsument (Strang, Anschlüsse, Mengen,
+                // Prüfliste) einzeln bei der Quelle nach — und der
+                // Verdeckt-Filter unten wäre ohne die Kennung gar nicht
+                // möglich.
+                const zeile = api.quelle.zeile(a.expressId) ?? null;
+                karte.set(a.expressId, {
+                    globalId: zeile?.GlobalId?.value ?? null,
+                    name: zeile?.Name?.value ?? '',
+                    kategorie: a.category,
+                    // Anfang und Ende GETRENNT — das ist der ganze Zweck.
+                    // Die Hülle kennt nur eine Bounding-Box und weiß nicht,
+                    // welches Ende oben liegt; damit ist kein Gefälle
+                    // bearbeitbar.
+                    anfang: p[0],
+                    ende: p[p.length - 1],
+                    polyline: p,
+                    laenge: a.laenge,
+                    gefaelle: a.gefaelle,
+                    dn: a.dn,
+                    quelle: a.quelle,
+                });
+            }
+            this._achsen.set(api.fragmentModelId, karte);
+            n += karte.size;
+
+            // DIE KNOTEN gleich mit: die Schächte, an denen die Haltungen
+            // hängen. Ohne sie gibt es keine Topologie — und ohne Topologie
+            // keinen einzigen Netz-Befund. Gelesen wird nur die PLATZIERUNG,
+            // keine Geometrie; das kostet nichts.
+            const knoten = new Map();
+            for (const [id, punkt] of api.quelle.platzierungen(
+                api.quelle.ids('IFCDISTRIBUTIONCHAMBERELEMENT', { untertypen: true }))) {
+                const kZeile = api.quelle.zeile(id) ?? null;
+                knoten.set(id, {
+                    punkt: off
+                        ? { x: punkt.x - off.x, y: punkt.y - (off.y ?? 0), z: punkt.z - off.z }
+                        : punkt,
+                    globalId: kZeile?.GlobalId?.value ?? null,
+                    name: kZeile?.Name?.value ?? '',
+                });
+            }
+            this._knoten.set(api.fragmentModelId, knoten);
+
+            // Die Merkmale gleich mit — ein Durchlauf über die Beziehungen.
+            // Material, Baujahr und Kanalart stehen in Fabios Dateien an jedem
+            // Bauteil und wurden bisher nirgends gelesen.
+            this._merkmale.set(api.fragmentModelId, api.quelle.merkmale());
+        }
+        return n;
     }
 
     /**
-     * T1/AP-C: web-ifc-Zugänge für ALLE geladenen Modelle.
-     * web-ifc vergibt Model-IDs in Ladereihenfolge (0, 1, 2, …) — dieselbe
-     * Reihenfolge wie fragments.list. Solange kein Modell entladen wurde,
-     * stimmt das Mapping; nach unloadModel fallen wir defensiv auf Modell 0
-     * zurück (MVP-Absicherung, dokumentierte Einschränkung).
+     * Das ganze Modell prüfen — die Prüfliste (Stufe 14.4).
+     *
+     * Läuft über die Achsen, die seit dem Laden bereitstehen; es wird nichts
+     * nachgelesen. Rein beratend: kein Befund hält je etwas auf.
+     *
+     * @param {object} opts
+     * @param {(kategorie:string) => object|null} [opts.typprofilFuer]
+     * @param {object} [opts.regelwerk]
+     * @returns {Array<{modelId, localId, globalId, kategorie, name, befunde}>}
+     */
+    pruefeAlles({ typprofilFuer = () => null, umgekehrtFuer = () => false, regelwerk } = {}) {
+        const out = [];
+        for (const [modelId, achsen] of (this._achsen ?? new Map())) {
+            const quelle = this.quelleVon(modelId);
+            // Netz-Befunde zuerst: sie betreffen auch Bauteile OHNE Achse
+            // (einen Schacht ohne Anschluss etwa), die die Schleife darunter
+            // gar nicht besucht.
+            const netzBefunde = befundeFuerNetz(this.netzVon(modelId), regelwerk);
+            for (const [localId, achse] of achsen) {
+                // Verdeckte prüfen nicht mit — ein unsichtbares Bauteil mit
+                // sichtbaren Befunden wäre eine Liste, der niemand traut.
+                if (achse.globalId && this._verdeckt?.has(achse.globalId)) {
+                    netzBefunde.delete(localId);
+                    continue;
+                }
+                const zeile = quelle?.zeile(localId) ?? null;
+                const kategorie = achse.kategorie
+                    ?? (zeile?.constructor?.name ?? '').toUpperCase()
+                    ?? '';
+                const globalId = achse.globalId ?? String(localId);
+                const befunde = befundeFuer({
+                    globalId,
+                    kategorie,
+                    beschreibung: zeile?.Description?.value ?? null,
+                    achse,
+                    umgekehrt: umgekehrtFuer(globalId),
+                    typprofil: typprofilFuer(kategorie),
+                }, regelwerk).concat(netzBefunde.get(localId) ?? []);
+                netzBefunde.delete(localId);
+                if (!befunde.length) continue;
+                out.push({
+                    modelId, localId,
+                    globalId: zeile?.GlobalId?.value ?? null,
+                    kategorie,
+                    name: zeile?.Name?.value ?? '',
+                    befunde,
+                });
+            }
+
+            // Die CDE-KANTEN durch dieselben Regeln — ein selbst gebautes
+            // Rohr mit Gegengefälle verdient denselben Befund wie ein
+            // geliefertes (Stufe 17.3).
+            for (const [gid, k] of this._cdeKanten ?? new Map()) {
+                if (this._verdeckt?.has(gid)) continue;
+                const kantenId = `cde:${gid}`;
+                const befunde = befundeFuer({
+                    globalId: gid,
+                    kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
+                    achse: k,
+                    umgekehrt: umgekehrtFuer(gid),
+                    typprofil: typprofilFuer(k.kategorie ?? 'IFCPIPESEGMENT'),
+                }, regelwerk).concat(netzBefunde.get(kantenId) ?? []);
+                netzBefunde.delete(kantenId);
+                if (!befunde.length) continue;
+                out.push({
+                    modelId, localId: kantenId,
+                    globalId: gid, kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
+                    name: k.name ?? '', befunde,
+                });
+            }
+
+            // Was übrig bleibt, sind Bauteile ohne Achse — die Schächte
+            // (gelieferte über die Quelle, selbst gesetzte über den Stand)
+            // und die CDE-Kanten, deren Befunde die Schleife oben nicht sah.
+            for (const [localId, befunde] of netzBefunde) {
+                if (typeof localId === 'string' && localId.startsWith('cde:')) {
+                    const gid = localId.slice(4);
+                    const meta = this._cdeKnoten?.get(gid) ?? this._cdeKanten?.get(gid) ?? null;
+                    out.push({
+                        modelId, localId,
+                        globalId: gid,
+                        kategorie: meta?.kategorie ?? 'IFCDISTRIBUTIONCHAMBERELEMENT',
+                        name: meta?.name ?? '',
+                        befunde,
+                    });
+                    continue;
+                }
+                const zeile = quelle?.zeile(localId) ?? null;
+                const knotenMeta = this._knoten?.get(modelId)?.get(localId) ?? null;
+                if (knotenMeta?.globalId && this._verdeckt?.has(knotenMeta.globalId)) continue;
+                out.push({
+                    modelId, localId,
+                    globalId: zeile?.GlobalId?.value ?? null,
+                    kategorie: (zeile?.constructor?.name ?? '').toUpperCase(),
+                    name: zeile?.Name?.value ?? '',
+                    befunde,
+                });
+            }
+        }
+
+        // Das Schwerste zuerst — eine Liste, die man von oben abarbeitet.
+        return out.sort((a, b) =>
+            (b.befunde.some(x => x.schwere === 'warnung') ? 1 : 0)
+            - (a.befunde.some(x => x.schwere === 'warnung') ? 1 : 0)
+            || b.befunde.length - a.befunde.length);
+    }
+
+    /**
+     * Das Netz eines Modells — wer hängt an wem (Stufe 14.5).
+     *
+     * Aus der XY-Koinzidenz, nicht aus erklärten IFC-Beziehungen: die gibt es
+     * in den echten Dateien nicht (null Ports, null Connects). Gebaut wird auf
+     * Anfrage, nicht beim Laden — es ist eine Auskunft, kein Zustand.
+     */
+    netzVon(modelId, { toleranz } = {}) {
+        const achsen = this.achsenVon(modelId);
+        const knoten = this._knoten?.get(modelId) ?? new Map();
+        const verdeckt = this._verdeckt ?? new Set();
+
+        const kanten = [];
+        for (const [id, a] of achsen) {
+            // Verdeckte bleiben draussen: ein ausgeblendetes Bauteil, das
+            // weiter verkettet und Befunde trägt, ist ein Geist im Netz.
+            if (a.globalId && verdeckt.has(a.globalId)) continue;
+            kanten.push({ id, anfang: a.anfang, ende: a.ende, dn: a.dn, laenge: a.laenge });
+        }
+        for (const [gid, k] of this._cdeKanten ?? new Map()) {
+            if (verdeckt.has(gid)) continue;
+            kanten.push({ id: `cde:${gid}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge });
+        }
+
+        const knotenListe = [];
+        for (const [id, k] of knoten) {
+            if (k.globalId && verdeckt.has(k.globalId)) continue;
+            knotenListe.push({ id, punkt: k.punkt });
+        }
+        for (const [gid, k] of this._cdeKnoten ?? new Map()) {
+            if (verdeckt.has(gid)) continue;
+            knotenListe.push({ id: `cde:${gid}`, punkt: k.punkt });
+        }
+
+        return baueNetz({ kanten, knoten: knotenListe, toleranz });
+    }
+
+    /**
+     * Der Strang ab diesem Bauteil — die Kette stromab (Stufe 14.6).
+     *
+     * Angereichert um GlobalId und Achse, damit der Katalog rein bleiben kann:
+     * `anwenden(el, werte)` bekommt die fertige Kette am Bauteil und muss
+     * weder Netz noch Engine kennen. Dasselbe Vorgehen wie bei `achse`.
+     *
+     * Die Kette endet am Abzweig — welche Haltung dort gemeint ist, kann nur
+     * ein Mensch entscheiden (siehe `strangAb` in Netztopologie.js).
+     */
+    /**
+     * Alle Schachtknoten eines Modells: GlobalId → Punkt (+Name).
+     *
+     * ZWEI Verbraucher, EIN Mass (Stufe 16): das Anschliessen (nächster
+     * Schacht zum Tipp) und das Nachführen beim Nachspielen (hat der Planer
+     * den Schacht bewegt?). `zielBasis` am Journaleintrag und der
+     * eingefrorene Vergleichswert kommen BEIDE hier heraus — zwei
+     * verschiedene Masse (Knoten vs. Hüllen-Anker) hätten still „bewegt"
+     * gemeldet, wo nur zweierlei gemessen wurde.
+     */
+    schachtPunkteVon(modelId) {
+        const knoten = this._knoten?.get(modelId) ?? new Map();
+        const verdeckt = this._verdeckt ?? new Set();
+        const karte = new Map();
+        for (const [, k] of knoten) {
+            if (!k.globalId || verdeckt.has(k.globalId)) continue;
+            karte.set(k.globalId, { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z, name: k.name ?? '' });
+        }
+        // Selbst gesetzte Schächte sind Anschluss- und Bezugsziele wie
+        // gelieferte — dasselbe Mass, dieselbe Karte.
+        for (const [gid, k] of this._cdeKnoten ?? new Map()) {
+            if (verdeckt.has(gid)) continue;
+            karte.set(gid, { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z, name: k.name ?? '' });
+        }
+        return karte;
+    }
+
+    strangVon(modelId, localId) {
+        const netz = this.netzVon(modelId);
+        if (!netz.kanten.has(localId)) return [];
+        // GlobalId und Name stehen seit 17.3 AN der Achse — ein Weg für
+        // geliefert und cde, keine Quell-Nachschläge mehr.
+        return strangAb(netz, localId).map((id) => {
+            const a = this.achseVon(modelId, id);
+            return {
+                localId: id,
+                globalId: a?.globalId ?? null,
+                name: a?.name ?? '',
+                anfang: a?.anfang ?? null,
+                ende: a?.ende ?? null,
+                laenge: a?.laenge ?? 0,
+                dn: a?.dn ?? null,
+            };
+        }).filter(k => k.globalId && k.anfang && k.ende);
+    }
+
+    /**
+     * Die Anschlüsse eines Bauwerks — welche Haltung mit welchem Ende (14.8).
+     *
+     * Gebraucht fürs Schachtverschieben: die angeschlossenen Haltungen können
+     * sich NICHT starr mitbewegen, denn nur EIN Ende wandert; das andere bleibt
+     * am Nachbarschacht. Das ist eine Formänderung, und darum muss der Aufrufer
+     * wissen, welches Ende gemeint ist.
+     *
+     * Wie überall in dieser Ecke aus der XY-Koinzidenz — es gibt in den echten
+     * Dateien keine erklärten Anschlüsse.
+     */
+    anschluesseVon(modelId, localId) {
+        const netz = this.netzVon(modelId);
+        const knoten = netz.knoten.get(localId);
+        if (!knoten) return [];
+        const eintrag = (kantenId, ende) => {
+            const a = this.achseVon(modelId, kantenId);
+            return a?.globalId ? {
+                localId: kantenId,
+                globalId: a.globalId,
+                name: a.name ?? '',
+                kategorie: a.kategorie ?? 'IFCPIPESEGMENT',
+                // `ende` sagt, welches Ende an DIESEM Bauwerk hängt.
+                ende,
+                anfang: a.anfang, ende_: a.ende, laenge: a.laenge, dn: a.dn,
+            } : null;
+        };
+        return [
+            ...knoten.kantenAb.map(id => eintrag(id, 'anfang')),
+            ...knoten.kantenAn.map(id => eintrag(id, 'ende')),
+        ].filter(Boolean);
+    }
+
+    /**
+     * Alle Schacht-Griffe für den Lageplan (G1) — über ALLE Modelle.
+     *
+     * Dieselben Knoten wie `schachtPunkteVon`, aber mit Modell- und
+     * Herkunftskennung: Gelieferte Schächte bekommen einen Griff
+     * (verschieben = Forderung an den Planer), CDE-eigene NICHT — deren Ort
+     * lebt im `erzeugt`-Bauplan, und eine `lage` darauf würde vom Fachmodell
+     * nie gelesen (17.3: Kanten und Knoten kommen aus den Bauplan-Parametern).
+     * Sie hier trotzdem anzubieten hieße, einen Griff zu zeigen, der nichts
+     * bewegt.
+     */
+    schachtGriffe() {
+        const verdeckt = this._verdeckt ?? new Set();
+        const out = [];
+        for (const [modelId, knoten] of this._knoten ?? new Map()) {
+            for (const [localId, k] of knoten) {
+                if (!k.globalId || verdeckt.has(k.globalId)) continue;
+                out.push({
+                    globalId: k.globalId, name: k.name ?? '', modelId, localId,
+                    punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z },
+                    herkunft: 'geliefert',
+                });
+            }
+        }
+        for (const [gid, k] of this._cdeKnoten ?? new Map()) {
+            if (verdeckt.has(gid)) continue;
+            out.push({
+                globalId: gid, name: k.name ?? '', modelId: null, localId: null,
+                punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z },
+                herkunft: 'cde',
+            });
+        }
+        return out;
+    }
+
+    /** Wo ein GELIEFERTER Schacht wohnt — Modell und localId zur GlobalId. */
+    schachtOrt(globalId) {
+        for (const [modelId, knoten] of this._knoten ?? new Map()) {
+            for (const [localId, k] of knoten) {
+                if (k.globalId === globalId) return { modelId, localId };
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Die Anschlüsse eines Schachts, nach ENDEN sortiert (G1): `nah` ist das
+     * Ende an DIESEM Schacht (es wandert mit), `fern` das andere (es bleibt).
+     * Genau die Form, die die Fanglinien und die Anschluss-Vorschau brauchen —
+     * `anschluesseVon` liefert dieselben Daten, aber der Aufrufer müsste die
+     * Enden selbst auseinanderhalten, und das ist die Sorte Zuordnung, die
+     * irgendwann EIN Aufrufer falsch macht.
+     */
+    schachtAnschluesse(globalId) {
+        const ort = this.schachtOrt(globalId);
+        if (!ort) return [];
+        return this.anschluesseVon(ort.modelId, ort.localId).map(k => ({
+            globalId: k.globalId, name: k.name ?? '', ende: k.ende, dn: k.dn ?? null,
+            nah: k.ende === 'anfang' ? k.anfang : k.ende_,
+            fern: k.ende === 'anfang' ? k.ende_ : k.anfang,
+        }));
+    }
+
+    /**
+     * Die Stammdaten EINES Bauteils, ohne es auszuwählen (Stufe 14.10).
+     *
+     * `pickElement` braucht einen Mausklick und `refreshElement` die aktuelle
+     * Auswahl. Für eine Rahmenauswahl wird beides gebraucht, ohne dass sich
+     * die Auswahl je Bauteil ändern dürfte.
+     */
+    async _elementDaten(modelId, localId) {
+        const fragments = this.components.get(OBC.FragmentsManager);
+        const model = fragments?.list?.get(modelId) ?? null;
+        if (!model) return null;
+        try {
+            const roh = await fragments.getData({ [modelId]: [localId] }, DATA_CONFIG);
+            const daten = this._parseItemData(roh);
+            const globalId = daten?.globalId || await this._globalIdVon(model, localId);
+            return { ...daten, globalId, modelId, localId };
+        } catch (fehler) {
+            console.warn('cde: elementdaten', fehler?.message ?? fehler);
+            return null;
+        }
+    }
+    elementDatenVon(modelId, localId) { return this._elementDaten(modelId, localId); }
+
+    /**
+     * Was für einen Mengenauszug gebraucht wird — je Bauteil eine Zeile.
+     *
+     * GlobalId, Länge, Nennweite und die Merkmale, alles aus dem, was seit dem
+     * Laden bereitsteht. Gerechnet wird hier nichts: das tut `Sanierung.js`,
+     * und zwar rein, damit es sich prüfen lässt.
+     */
+    /**
+     * Das Höhenraster eines GELIEFERTEN Bauteils — für das Gelände-Rezept
+     * und den Erdmassen-Auszug. Über den Resolver (dieselbe Ableitung wie
+     * die Analyse), nie aus dem Journal (Stufe 15).
+     */
+    async _quellrasterVon(globalId) {
+        const karte = await karteMitEngine(this, [globalId]);
+        const treffer = karte.get(globalId);
+        if (!treffer) return null;
+        const res = await this.makeGeometryResolver()
+            ?.forElements([treffer])?.getForm('mesh');
+        const d = res?.data;
+        if (!d?.positions?.length) return null;
+        return heightfieldRaster(d.positions, d.triCount);
+    }
+
+    /**
+     * Erdmassen je geformtem Gelände (Stufe 15): Ausgangsraster gegen das
+     * nach der Operationsliste geformte — Aushub und Auftrag getrennt.
+     * Nichts wird gespeichert; jede Zeile entsteht aus Journal + Ableitung.
+     */
+    async erdmassen(bauplaene = []) {
+        const zeilen = [];
+        for (const b of bauplaene) {
+            if (b?.rezept !== 'gelaende') continue;
+            const quelle = b.parameter?.quelle;
+            const raster = quelle ? await this._quellrasterVon(quelle) : null;
+            if (!raster) {
+                zeilen.push({ name: b.name || quelle || '—', aushub: null, auftrag: null,
+                              grund: 'Quellraster nicht ableitbar' });
+                continue;
+            }
+            const { raster: geformt } = formeNach(raster, b.parameter?.operationen ?? []);
+            const m = massenAus(raster, geformt);
+            zeilen.push({ name: b.name || quelle, aushub: m?.aushub ?? null, auftrag: m?.auftrag ?? null });
+        }
+        return zeilen;
+    }
+
+    mengenGrundlage() {
+        const out = [];
+        const verdeckt = this._verdeckt ?? new Set();
+        for (const [modelId, achsen] of (this._achsen ?? new Map())) {
+            const merkmale = this.merkmaleAlle(modelId);
+            for (const [localId, a] of achsen) {
+                if (!a.globalId || verdeckt.has(a.globalId)) continue;
+                out.push({ globalId: a.globalId, laenge: a.laenge, dn: a.dn,
+                           merkmale: merkmale.get(localId) ?? {} });
+            }
+        }
+        // Selbst gebaute Rohre zählen mit — eine Sanierungsmaßnahme am
+        // NEUEN Rohr gehört in denselben Auszug.
+        for (const [gid, k] of this._cdeKanten ?? new Map()) {
+            if (verdeckt.has(gid)) continue;
+            out.push({ globalId: gid, laenge: k.laenge, dn: k.dn, merkmale: {} });
+        }
+        return out;
+    }
+
+    /** Die Merkmale eines Bauteils aus den Merkmalssätzen der Datei. */
+    merkmaleVon(modelId, localId) {
+        return this._merkmale?.get(modelId)?.get(localId) ?? null;
+    }
+
+    /** Alle Merkmale eines Modells — für Auszüge über viele Bauteile. */
+    merkmaleAlle(modelId) {
+        return this._merkmale?.get(modelId) ?? new Map();
+    }
+
+    /** Die Achsen eines Modells — leer, wenn keine gelesen wurden. */
+    achsenVon(modelId) {
+        return this._achsen?.get(modelId) ?? new Map();
+    }
+
+    /**
+     * Die Achse EINES Bauteils, oder null.
+     *
+     * `localId` und die IFC-ExpressID sind dieselbe Zahl — das ist nicht
+     * angenommen, sondern gemessen: die Höhenbestimmung (Stufe 13.3) vergleicht
+     * `IfcQuelle`-Werte (ExpressID) gegen `model.getBoxes` (localId) und kam
+     * über 24 Bauteile auf 0,0 mm Übereinstimmung.
+     */
+    achseVon(modelId, localId) {
+        if (typeof localId === 'string' && localId.startsWith('cde:')) {
+            const k = this._cdeKanten?.get(localId.slice(4)) ?? null;
+            if (!k) return null;
+            return {
+                globalId: k.globalId, name: k.name, kategorie: k.kategorie,
+                anfang: k.anfang, ende: k.ende, polyline: k.punkte,
+                laenge: k.laenge, dn: k.dn, quelle: 'bauplan',
+            };
+        }
+        return this.achsenVon(modelId).get(localId) ?? null;
+    }
+
+    /** Dasselbe für das ERSTE Modell — siehe `getWebIfcAPIs`. */
+    getWebIfcAPI() {
+        return this.getWebIfcAPIs()[0] ?? null;
+    }
+
+    /**
+     * Lesezugriff auf die IFC-Dateien je geladenem Modell (Stufe 14.1).
+     *
+     * ÜBER DIE LEBENDEN QUELLEN, nicht über `ifcLoader.webIfc`. Der alte Handle
+     * hatte nie ein Modell offen, und `modelID` war schlicht der Schleifenindex
+     * — beides fiel nie auf, weil ohnehin nichts herauskam. Folge war unter
+     * anderem, dass JEDE Achse aus der Skelettierung des Netzes stammte
+     * (Güte `geschaetzt`) und der Längsschnitt dauerhaft gesperrt blieb.
+     *
+     * `quelle` ist der bevorzugte Zugang — sie kennt Untertypen, den
+     * GUID-Index und prüft mit `lebt()` einen echten Lesezugriff. `webIfc` und
+     * `modelID` bleiben daneben für Aufrufer, die roh lesen.
      */
     getWebIfcAPIs() {
-        const ifcLoader = this.components.get(OBC.IfcLoader);
         const fragments = this.components.get(OBC.FragmentsManager);
-        if (!ifcLoader?.webIfc || !fragments.list.size) return [];
-        const models = [...fragments.list.values()];
-        return models.map((model, i) => ({
-            webIfc: ifcLoader.webIfc,
-            modelID: i,
-            fragmentModelId: model.modelId,
-            model,
-        }));
+        if (!fragments?.list?.size) return [];
+        const out = [];
+        for (const model of fragments.list.values()) {
+            const quelle = this.quelleVon(model.modelId);
+            if (!quelle) continue;
+            out.push({
+                quelle,
+                webIfc: quelle.api,
+                modelID: quelle.modelID,
+                fragmentModelId: model.modelId,
+                model,
+            });
+        }
+        return out;
     }
 
 

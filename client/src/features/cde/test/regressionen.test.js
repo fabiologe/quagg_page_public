@@ -167,8 +167,12 @@ describe('Tastenkürzel stehen an zwei Stellen', () => {
         .map((k) => k.toUpperCase()),
     );
     // In der Registry stehen Beschriftungen wie 'T/R' und 'Shift+A'.
+    // Dokumentiert heisst: an einem sichtbaren Ort — in der Leisten-
+    // Registry ODER in der Hilfe-Liste selbst (seit X2 wohnen Views und
+    // Hilfe nicht mehr in der Leiste; ihre Tasten stehen im Overlay).
+    const hilfe = lies('components/IfcShortcutsOverlay.vue');
     const dokumentiert = new Set(
-      [...viewer.matchAll(/key: '([^']+)'/g)]
+      [...viewer.matchAll(/key: '([^']+)'/g), ...hilfe.matchAll(/keys: \['([^']+)'/g)]
         .flatMap((m) => m[1].split('/'))
         .map((k) => k.replace(/^Shift\+/, '').toUpperCase()),
     );

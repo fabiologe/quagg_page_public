@@ -2,7 +2,7 @@
  * useZeichnen — einen Zug im Lageplan setzen und daraus ein Bauteil machen
  * (Stufe 9.4).
  *
- * Hausstil wie `useSchnitt`, `useMessen`, `useZiehen`: Datei und Export
+ * Hausstil wie `useSchnitt`, `useMessen`: Datei und Export
  * englisch, Inhalt deutsch, ein Optionsobjekt hinein, ein flaches Objekt aus
  * Refs und Handlern heraus. Verhalten gehört ins Composable, Zustand in den
  * Store.
@@ -27,10 +27,11 @@
  */
 
 import { computed, ref } from 'vue';
-import { nachId } from '../services/Bearbeitungen.js';
+import { nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { pruefeBauplan } from '../services/Bauteilrezepte.js';
 
-export function useZeichnen({ bearbeitung, cde, getModellSha, nachBauen } = {}) {
+export function useZeichnen({ bearbeitung, cde, getModellSha, nachBauen,
+                              getHoehenversatz } = {}) {
     /** Die scharfe Zeichen-Bearbeitung, oder null. */
     const werkzeug = ref(null);
     /** Gesetzte Punkte in Welt-XZ, in Reihenfolge. */
@@ -67,8 +68,29 @@ export function useZeichnen({ bearbeitung, cde, getModellSha, nachBauen } = {}) 
      */
     function starte(id) {
         const b = nachId(id);
-        if (!b || b.gruppe !== 'erzeugen') { grund.value = 'Kein Zeichenwerkzeug'; return false; }
-        if (!bearbeitung?.starte(id)) { grund.value = 'Werkzeug liess sich nicht starten'; return false; }
+        // NICHT MEHR „nur Erzeugen", sondern „braucht einen Zug".
+        //
+        // „Trasse ändern" ist die erste Bearbeitung, die ein vorhandenes
+        // Bauteil UND einen gezeichneten Zug braucht. Die Eingabeart steht am
+        // Katalogeintrag (`eingabe`), und daran hängt es jetzt — nicht mehr an
+        // der Gruppe. Eine Gruppe sagt, wo etwas ANGEBOTEN wird; womit es
+        // gefüttert wird, ist eine andere Frage.
+        if (!b || !['zug', 'umriss'].includes(eingabeArt(b))) {
+            grund.value = 'Kein Zeichenwerkzeug'; return false;
+        }
+        // Der Höhenversatz gehört schon zur VORBELEGUNG, nicht erst zum
+        // Abschluss: sonst steht im Feld 0 statt der Geländehöhe. Bei einer
+        // Bearbeitung MIT Subjekt bleibt das angeklickte Bauteil stehen — sie
+        // braucht es ja.
+        const brauchtSubjekt = b.gruppe !== 'erzeugen';
+        const bezug = { hoehenversatz: getHoehenversatz?.() ?? 0 };
+        if (!bearbeitung?.starte(id, brauchtSubjekt ? {} : { subjekt: bezug })) {
+            grund.value = 'Werkzeug liess sich nicht starten'; return false;
+        }
+        if (brauchtSubjekt && !bearbeitung?.bauteil) {
+            bearbeitung?.abbrechen?.();
+            grund.value = 'Erst ein Bauteil wählen'; return false;
+        }
         werkzeug.value = b;
         punkte.value = [];
         zeiger.value = null;
@@ -112,14 +134,24 @@ export function useZeichnen({ bearbeitung, cde, getModellSha, nachBauen } = {}) 
         // Derselbe Bauplan, den `ausfuehren` gleich ins Journal legt — hier nur
         // ohne ihn zu schreiben. `anwenden` mutiert nichts, das ist der Vertrag
         // des Katalogs, und darum lässt er sich gefahrlos zweimal fragen.
-        const probe = werkzeug.value.anwenden({ punkte: punkte.value }, bearbeitung.werte);
-        const fehler = pruefeBauplan(probe.nachher);
-        if (fehler.length) { grund.value = fehler.join(' · '); return null; }
+        // ZWEI WEGE, und der Unterschied ist das Subjekt.
+        //
+        // Erzeugen hat keines: das Gezeichnete IST das Bauteil und wird als
+        // Subjekt hereingereicht. „Trasse ändern" hat eines — dort ist der Zug
+        // eine zusätzliche Eingabe am angeklickten Bauteil, kein Ersatz dafür.
+        const amBauteil = werkzeug.value.gruppe !== 'erzeugen';
+        const gezeichnet = { punkte: punkte.value, hoehenversatz: getHoehenversatz?.() ?? 0 };
+
+        if (!amBauteil) {
+            const probe = werkzeug.value.anwenden(gezeichnet, bearbeitung.werte);
+            const fehler = pruefeBauplan(probe?.nachher);
+            if (fehler.length) { grund.value = fehler.join(' · '); return null; }
+        }
 
         const eintrag = await bearbeitung.ausfuehren({
             wer: cde?.bearbeiter || '',
             modellSha: getModellSha?.() ?? null,
-            subjekt: { punkte: punkte.value },
+            ...(amBauteil ? { zug: punkte.value } : { subjekt: gezeichnet }),
         });
         beenden();
         if (eintrag) await nachBauen?.();

@@ -99,22 +99,129 @@
           „BBox" = Näherung aus der BoundingBox — nur für Kennwerte (LP 2-3) geeignet.
         </span>
       </p>
-    </template>
+    
+  <!-- SANIERUNGSMENGEN (Stufe 14.11). Getrennt von den Bauteilmengen darüber,
+       weil sie eine andere Frage beantworten: dort geht es um das Modell, hier
+       um die ENTSCHEIDUNGEN darin. „Dieser Strang bekommt einen Liner" wird
+       erst dann zu etwas, wenn danebensteht, wie viele Meter DN 300 Beton das
+       sind. -->
+  <div class="cde-card">
+    <CdeCardHeader icon="quality" titel="Sanierungsmengen" />
+    <div v-if="!sanierung.zeilen.length" class="cde-state-msg">
+      <CdeIcon name="quality" :size="22" />
+      Noch keine Maßnahme festgelegt. Am Bauteil unter „Maßnahme festlegen",
+      oder für einen ganzen Abschnitt unter „Sanierungsabschnitt festlegen".
+    </div>
+    <div v-else class="cde-table-wrap">
+      <table class="cde-table">
+        <thead>
+          <tr><th>Maßnahme</th><th>DN</th><th>Material</th><th>Anzahl</th><th>Länge</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(z, i) in sanierung.zeilen" :key="i">
+            <td>{{ titelVon(z.massnahme) }}</td>
+            <td class="mono">{{ z.dn ?? '—' }}</td>
+            <td>{{ z.material }}</td>
+            <td class="mono">{{ z.anzahl }}</td>
+            <td class="mono">{{ z.laenge.toFixed(2) }} m</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3"><strong>Summe</strong></td>
+            <td class="mono"><strong>{{ sanierung.summe.anzahl }}</strong></td>
+            <td class="mono"><strong>{{ sanierung.summe.laenge.toFixed(2) }} m</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- ERDMASSEN (Stufe 15). Nichts davon ist gespeichert: jede Zeile
+       entsteht aus dem Journal (Quelle + Operationsliste) und der Ableitung
+       des Quellrasters — Ausgangszustand gegen geformten Zustand, Aushub
+       und Auftrag getrennt. -->
+  <div class="cde-card">
+    <CdeCardHeader icon="terrain" titel="Erdmassen" />
+    <div v-if="!erdmassen.length" class="cde-state-msg">
+      <CdeIcon name="terrain" :size="22" />
+      Noch kein Gelände geformt. Am Gelände unter „Gerinne einschneiden"
+      oder „Planum herstellen" — der Auszug entsteht von selbst.
+    </div>
+    <div v-else class="cde-table-wrap">
+      <table class="cde-table">
+        <thead>
+          <tr><th>Gelände</th><th>Aushub</th><th>Auftrag</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(z, i) in erdmassen" :key="i">
+            <td>{{ z.name }}</td>
+            <td class="mono">{{ z.aushub == null ? (z.grund ?? '—') : `${z.aushub.toFixed(1)} m³` }}</td>
+            <td class="mono">{{ z.auftrag == null ? '—' : `${z.auftrag.toFixed(1)} m³` }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watchEffect } from 'vue';
 import { VOLUME_BILLED_CATEGORIES } from '../services/QuantitySummary.js';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
+import { useAenderungen } from '../stores/useAenderungen.js';
+import { useViewerApi } from '../composables/viewerApi.js';
+import { mengenNachMassnahme, massnahmeNach } from '../services/Sanierung.js';
+
+const aenderungen = useAenderungen();
+const api = useViewerApi();
 
 const props = defineProps({
   result:  { type: Object,  default: null },  // { byCategory: Map, totals }
   loading: { type: Boolean, default: false },
 });
 defineEmits(['refresh', 'select-category']);
+
+/**
+ * Der Mengenauszug je Maßnahme.
+ *
+ * Abgeleitet, nicht gespeichert — wie alles Gerechnete in diesem Feature. Der
+ * Stand kommt aus dem Journal, Länge und Nennweite aus den Achsen, das Material
+ * aus dem Merkmalssatz. Die Rechnung selbst steht rein in `Sanierung.js`.
+ */
+const sanierung = computed(() => {
+  void aenderungen.anzahl;                       // reaktiver Anker aufs Journal
+  const bauteile = api.mengenGrundlage?.() ?? [];
+  return mengenNachMassnahme({
+    bauteile,
+    stand: aenderungen.wirksamerStand('massnahme'),
+    merkmale: new Map(bauteile.map(b => [b.globalId, b.merkmale ?? {}])),
+  });
+});
+
+/**
+ * Erdmassen — asynchron, weil das Quellraster über die Engine abgeleitet
+ * wird. `watchEffect` hängt an der Journalgrösse: jede Formung (und jedes
+ * „zurück") rechnet die Zeilen neu; ein veralteter Lauf wird über die
+ * Laufnummer verworfen, damit langsame Antworten schnelle nicht überholen.
+ */
+const erdmassen = ref([]);
+let _erdmassenLauf = 0;
+watchEffect(async () => {
+    const stand = aenderungen.wirksamerStand('erzeugt');
+    const bauplaene = [...stand.values()].filter(b => b?.rezept === 'gelaende');
+    const lauf = ++_erdmassenLauf;
+    const zeilen = bauplaene.length ? await api.erdmassen?.(bauplaene) ?? [] : [];
+    if (lauf === _erdmassenLauf) erdmassen.value = zeilen;
+});
+
+function titelVon(wert) {
+  return massnahmeNach(wert)?.titel ?? wert;
+}
 
 const sortKey = ref('volume');
 const sortDir = ref('desc');

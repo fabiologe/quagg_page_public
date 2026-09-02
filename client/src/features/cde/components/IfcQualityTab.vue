@@ -82,6 +82,66 @@
       </p>
     </template>
   </div>
+
+  <!-- DIE PRÜFLISTE (Stufe 14.4). Getrennt von der IDS-Prüfung, weil sie eine
+       andere Frage stellt: IDS prüft, ob MERKMALE da sind; hier geht es um
+       die Geometrie — Gefälle, Länge, Nennweite, Profilform.
+
+       Kein Befund hält je etwas auf. Er berät. Deshalb steht hier auch keine
+       Ampel mit „bestanden %": eine Zahl, die einen Anteil behauptet, lädt
+       dazu ein, sie zu erreichen statt hinzusehen. -->
+  <div class="q-tab cde-card">
+    <CdeCardHeader icon="warn" titel="Prüfliste (Geometrie)">
+      <CdeIconButton icon="refresh" titel="Erneut prüfen" @click="$emit('pruefe')" />
+    </CdeCardHeader>
+
+    <div v-if="!befunde.length" class="cde-state-msg">
+      <CdeIcon name="status-ok" :size="22" />
+      Nichts aufgefallen — oder es sind noch keine Achsen gelesen.
+    </div>
+
+    <template v-else>
+      <p class="q-note">
+        {{ warnungen }} Warnungen · {{ hinweise }} Hinweise an {{ befunde.length }} Bauteilen.
+        Grenzwerte kommen aus dem Büro-Regelwerk und halten nichts auf.
+        Ein Klick auf das Bauteil öffnet es in der Toolbox — dort steht die Kur als Knopf.
+      </p>
+      <div class="cde-table-wrap">
+        <table class="cde-table">
+          <thead>
+            <tr><th>Bauteil</th><th>Befund</th><th>Wert</th><th>Kur</th></tr>
+          </thead>
+          <tbody>
+            <template v-for="z in befunde.slice(0, MAX_SHOWN)" :key="z.globalId ?? z.localId">
+              <tr v-for="(b, i) in z.befunde" :key="i" :class="'b--' + b.schwere">
+                <td v-if="i === 0" :rowspan="z.befunde.length">
+                  <button class="b-sprung" :title="z.globalId ?? ''"
+                          @click="$emit('select-element', { modelId: z.modelId, localId: z.localId })">
+                    {{ z.name || z.kategorie.replace(/^IFC/, '') }}
+                  </button>
+                </td>
+                <td>
+                  <CdeIcon :name="b.schwere === 'warnung' ? 'status-warn' : 'info'" :size="11" />
+                  {{ b.text }}
+                </td>
+                <td class="mono">{{ b.wert ?? '—' }}</td>
+                <!-- WAS DIE ZEILE KOSTET. Ein Befund ohne Kur ist kein Mangel
+                     der Liste, sondern eine Auskunft: dafür fehlt das Werkzeug
+                     noch. Deshalb steht dort nicht „—", sondern der Grund. -->
+                <td :class="b.kur ? 'b-kur' : 'b-grenze'">
+                  <template v-if="kurTitel(b)">{{ kurTitel(b) }}</template>
+                  <template v-else>{{ b.grenze ?? b.quelle }}</template>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <p v-if="befunde.length > MAX_SHOWN" class="q-note">
+        … und {{ befunde.length - MAX_SHOWN }} weitere Bauteile.
+      </p>
+    </template>
+  </div>
 </template>
 
 <script setup>
@@ -89,12 +149,25 @@ import { computed, reactive } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
+import { nachId } from '../services/Bearbeitungen.js';
 
 const props = defineProps({
   result:  { type: Object,  default: null },  // { perSpec, summary } aus IdsValidator
   loading: { type: Boolean, default: false },
+  /** Aus `IfcEngine.pruefeAlles` — je Bauteil eine Liste von Befunden. */
+  befunde: { type: Array,   default: () => [] },
 });
-defineEmits(['refresh', 'select-element']);
+defineEmits(['refresh', 'select-element', 'pruefe']);
+
+/** Der Titel der Kur — aus dem Katalog, damit er nur an einer Stelle steht. */
+function kurTitel(befund) {
+  return nachId(befund?.kur?.bearbeitung)?.titel ?? null;
+}
+
+const warnungen = computed(() => props.befunde
+  .reduce((n, z) => n + z.befunde.filter(b => b.schwere === 'warnung').length, 0));
+const hinweise = computed(() => props.befunde
+  .reduce((n, z) => n + z.befunde.filter(b => b.schwere === 'hinweis').length, 0));
 
 const MAX_SHOWN = 30;
 const expanded = reactive(new Set());
@@ -136,6 +209,16 @@ const scoreClass = computed(() => {
 </script>
 
 <style scoped>
+/* Prüfliste: ruhig. Ein Befund berät, er klagt nicht an. */
+.b--warnung td:nth-child(2) { color: var(--cde-text); }
+.b--hinweis td:nth-child(2) { color: var(--cde-text-dim); }
+.b-grenze { color: var(--cde-text-dim); }
+.b-kur { color: var(--cde-accent); }
+.b-sprung {
+  border: 0; background: transparent; cursor: pointer; padding: 0;
+  color: var(--cde-accent); font: inherit; text-align: left;
+}
+.b-sprung:hover { text-decoration: underline; }
 /* Bausteine: styles/theme.css. Hier nur die Prüf-Ampel. */
 .q-tab { --card-accent: var(--cde-success-strong); font-size: 0.78rem; color: var(--cde-text); }
 

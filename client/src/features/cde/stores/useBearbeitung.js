@@ -24,12 +24,26 @@ import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
 import { GRUPPEN, felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
+import { befundeFuer } from '../services/Befunde.js';
 
 export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     /** Einordnung der aktuellen Auswahl: {bauform, guete, quelle, warnungen} */
     const einordnung = ref(null);
     /** Das eingeordnete Bauteil selbst — Kennung, Kategorie, Stand. */
     const bauteil = ref(null);
+    /**
+     * WEITERE Bauteile derselben Auswahl (Stufe 14.10).
+     *
+     * Der Rahmen im Viewer wählt seit jeher mehrere aus und hebt sie hervor —
+     * die Bearbeitung erfuhr davon nur nichts. `bauteil` bleibt das erste und
+     * bestimmt die Einordnung; hier stehen alle, auf die eine als `mehrfach`
+     * gekennzeichnete Bearbeitung zusätzlich angewandt wird.
+     *
+     * Eine LISTE und kein Ersatz für `bauteil`: die Einordnung, die
+     * Vorbelegung und die ganze Herleitung hängen an einem Bauteil, und daran
+     * soll sich nichts ändern, nur weil man fünf angeklickt hat.
+     */
+    const bauteile = ref([]);
     /** Wirksamer Typprofil-Satz (Projekt schlägt Büro schlägt eingebaut). */
     const profilSatz = ref({ ...EINGEBAUTE_PROFILE });
     /**
@@ -46,8 +60,45 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     /** Läuft gerade eine Einordnung? (Geometrie-Ableitung kann dauern.) */
     const laeuft = ref(false);
 
+    /**
+     * DER BEARBEITEN-MODUS. Aus heisst: nichts ändert das Modell. Punkt.
+     *
+     * Bisher war Bearbeiten überall gleichzeitig möglich — ein Knopf in der
+     * Werkzeugleiste, die Taste G, das Kontextmenü am Bauteil, die Toolbox,
+     * die Befehlspalette, die Zeichenwerkzeuge im Lageplan. Sieben Einstiege
+     * ohne gemeinsamen Schalter. Wer das Modell nur ansehen wollte, konnte
+     * mit einem verrutschten Zug eine Festlegung erzeugen, ohne es zu merken.
+     *
+     * Der Modus ist deshalb kein Sichtbarkeits-Kniff, sondern eine SPERRE an
+     * den zwei Engstellen `starte` und `ausfuehren` — plus dem Ziehen, das
+     * als einziges daran vorbeiging (das inzwischen entfernte Ziehen). Ob eine Oberfläche
+     * ihre Knöpfe zusätzlich ausblendet, ist Darstellung; ob etwas passiert,
+     * entscheidet sich hier.
+     *
+     * NICHT GEMERKT ÜBER DAS NEULADEN. Eine Sperre, die ein Neuladen
+     * überdauert, ist keine: der sichere Zustand muss der sein, in den man
+     * ohne Zutun gerät. Einschalten kostet einen Klick.
+     */
+    const modusAn = ref(false);
+
     const typprofil = computed(() => profilFuer(bauteil.value?.category ?? bauteil.value?.type, profilSatz.value));
     const scharf = computed(() => (scharfId.value ? nachId(scharfId.value) : null));
+
+    /**
+     * Was am gewählten Bauteil auffällt.
+     *
+     * ABGELEITET, nie gespeichert — dieselbe Regel wie beim Konflikt. Und sie
+     * halten nichts auf: `bereit` fragt sie nicht, `ausfuehren` prüft sie
+     * nicht. Sie beraten (Fabios Entscheidung).
+     */
+    const befunde = computed(() => befundeFuer({
+        globalId: bauteil.value?.globalId,
+        kategorie: bauteil.value?.category ?? bauteil.value?.type,
+        beschreibung: bauteil.value?.description ?? null,
+        achse: bauteil.value?.achse ?? null,
+        umgekehrt: bauteil.value?.stand?.fliessrichtung === 'umgekehrt',
+        typprofil: typprofil.value,
+    }));
     const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value) : []));
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
     const bereit = computed(() => !!scharf.value && fehler.value.length === 0);
@@ -138,9 +189,12 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * und ein über den Modellwechsel hinweg behaltener Resolver liefert
      * Geometrie des alten Modells.
      */
-    async function einordne(el, resolver) {
+    async function einordne(el, resolver, { weitere = [] } = {}) {
         abbrechen();
-        bauteil.value = el ?? null;
+        bauteil.value = el ? { ...el, stand: _standVon(el.globalId) } : null;
+        bauteile.value = el
+            ? [bauteil.value, ...weitere.map(w => ({ ...w, stand: _standVon(w.globalId) }))]
+            : [];
         if (!el) { einordnung.value = null; return null; }
 
         laeuft.value = true;
@@ -149,6 +203,10 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
                 resolver,
                 typprofil: profilFuer(el.category ?? el.type, profilSatz.value),
                 ausRegel: bauformAusRegel(regeln.value, _regelKontext(el)),
+                // Stufe 15: ein selbst gebautes Bauteil kennt seine Bauform
+                // aus dem Rezept — sonst verlöre ein geformtes Gelände nach
+                // der ersten Formung seine Werkzeuge.
+                ausBauplan: bauteil.value?.stand?.bauplan?.bauform ?? null,
             });
         } finally {
             laeuft.value = false;
@@ -156,8 +214,122 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         return einordnung.value;
     }
 
-    /** Eine Bearbeitung scharf schalten und ihr Formular vorbelegen. */
-    function starte(id) {
+    /**
+     * Was für dieses Bauteil GERADE gilt — aus dem Journal, nicht aus der Datei.
+     *
+     * Die Vorbelegungen im Katalog lesen `el.stand.kg`, `el.stand.din277`,
+     * `el.stand.profilGroesse` und `el.stand.dicke`. Ein `stand` wurde bisher
+     * an KEINER Stelle erzeugt: das Formular zeigte nie den geltenden Wert, und
+     * „Querschnittsgröße festlegen" und „Stärke festlegen" haben kein
+     * `leerErlaubt` — sie standen deshalb ab dem Aufschlagen auf „fehlt", mit
+     * grauem Knopf. Das sah aus wie eine kaputte Bearbeitung und war ein
+     * fehlendes Feld.
+     *
+     * `parametrik` führt `{rolle, wert}` je Bauteil und faltet „letzter
+     * gewinnt" — wer erst DN und dann die Stärke festlegt, verliert das DN.
+     * Hier wird deshalb nur die Rolle übernommen, die auch wirklich gilt; das
+     * Falten selbst ist eine Frage des Journals und gehört nicht hierher.
+     */
+    function _standVon(globalId) {
+        if (!globalId) return {};
+        const ae = useAenderungen();
+        const stand = {
+            kg:     ae.wirksamerStand('kg').get(globalId) ?? null,
+            din277: ae.wirksamerStand('din277').get(globalId) ?? null,
+            // Stufe 15: der wirksame BAUPLAN eines erzeugten Bauteils — die
+            // Gelände-Werkzeuge hängen ihre Operation an die bestehende
+            // Liste an, statt ein zweites geformtes Gelände zu erzeugen.
+            bauplan: ae.wirksamerStand('erzeugt').get(globalId) ?? null,
+        };
+        // `parametrik` faltet seit Stufe 14.2 je ROLLE (siehe `falte` dort) —
+        // der Wert ist eine Karte und lässt sich unverändert übernehmen.
+        // Vorher stand hier ein Notbehelf, der nur die zuletzt gesetzte Rolle
+        // durchreichte, weil das Journal die übrigen ohnehin verloren hatte.
+        const masse = ae.wirksamerStand('parametrik').get(globalId);
+        return masse && typeof masse === 'object' ? { ...stand, ...masse } : stand;
+    }
+
+    /**
+     * Den Modus setzen. Ausschalten entwaffnet, was gerade scharf ist —
+     * ein offenes Formular nach dem Ausschalten wäre ein Knopf, der nichts
+     * tut, und davon hatte dieses Feature schon genug.
+     */
+    /**
+     * Eine Bearbeitung scharf schalten UND gleich vorbelegen — die Kur.
+     *
+     * Wo ein Befund seine Antwort kennt („läuft bergauf" ⇒ umkehren), soll ein
+     * Klick genügen. Die Werte kommen NACH `starte`, weil das die Vorbelegung
+     * setzt; sonst überschriebe sie den Vorschlag sofort wieder.
+     */
+    function starteMitVorschlag(id, vorschlag = {}) {
+        if (!starte(id)) return false;
+        for (const [name, wert] of Object.entries(vorschlag)) setzeWert(name, wert);
+        return true;
+    }
+
+    function modusSetzen(an) {
+        const neu = !!an;
+        if (neu === modusAn.value) return neu;
+        modusAn.value = neu;
+        if (!neu) abbrechen();
+        return neu;
+    }
+    function modusUm() { return modusSetzen(!modusAn.value); }
+
+    /**
+     * Eine Bearbeitung scharf schalten und ihr Formular vorbelegen.
+     *
+     * `subjekt` ist die Ausnahme fürs ERZEUGEN — genau wie bei `ausfuehren`:
+     * dort gibt es kein angeklicktes Bauteil, und die Vorbelegung braucht
+     * trotzdem einen Bezug (den Höhenversatz, damit die Zeichenhöhe in m NN
+     * steht und nicht in Three-Welt-Y). Ohne ihn stünde im Feld 0, und wer
+     * das übernimmt, zeichnet um den ganzen Ladeversatz zu tief.
+     */
+    /**
+     * DER EINE WERKZEUG-SLOT (Teil XI, U1).
+     *
+     * Fabios Befund aus dem Gerätetest: „mehrere Stellen aktivieren
+     * Bearbeitung, aber kein einziger Modus." Vorher hielten 3D
+     * (Messen, Notiz, Schnitt), Lageplan (Stift, Setzen, Bemaßen,
+     * Zeichnen — deren Exklusivität DOPPELT gepflegt, in CdeView UND im
+     * Canvas) und die scharfe Bearbeitung je eigene Zustände; Messen und
+     * Notiz konnten gleichzeitig an sein, weil ihr Ausschluss nur als
+     * Kommentar existierte.
+     *
+     * Jetzt gilt: es gibt genau EIN aktives Werkzeug. Wer eines anschaltet,
+     * BELEGT den Slot und hinterlegt seinen Ausschalter; das nächste
+     * Werkzeug ruft ihn. Exklusivität ist damit eine Eigenschaft des Slots,
+     * nicht eine Vereinbarung zwischen zwölf Settern (Gesetz 7).
+     */
+    /** Der Commit-Dialog (U2) — Viewer öffnet ihn, die CdeView zeigt ihn. */
+    const commitDialogOffen = ref(false);
+
+    const werkzeug = ref(null);
+    let _werkzeugAus = null;
+
+    function belegeWerkzeug(id, ausschalter = null) {
+        if (!id) { gebeWerkzeugFrei(werkzeug.value); return; }
+        if (werkzeug.value && werkzeug.value !== id) {
+            const aus = _werkzeugAus;
+            _werkzeugAus = null;
+            aus?.();                       // der Vorgänger räumt sich selbst
+        }
+        werkzeug.value = id;
+        _werkzeugAus = ausschalter;
+    }
+
+    /** Nur der Besitzer gibt frei — ein Fremder mit falscher Kennung nicht. */
+    function gebeWerkzeugFrei(id) {
+        if (id && werkzeug.value !== id) return;
+        werkzeug.value = null;
+        _werkzeugAus = null;
+    }
+
+    function starte(id, { subjekt = null } = {}) {
+        if (!modusAn.value) {
+            letzterGrund.value = 'Der Bearbeiten-Modus ist aus.';
+            return false;
+        }
         const b = nachId(id);
         if (!b) return false;
         // Eine Bearbeitung, die zu diesem Bauteil nicht passt, darf auch über
@@ -168,10 +340,16 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // zeichnen" bezieht sich nicht auf das gerade angeklickte Rohr. Ohne
         // diese Ausnahme wäre das Zeichenwerkzeug immer dann gesperrt, wenn
         // zufällig etwas ausgewählt ist — und niemand käme darauf, warum.
+        // EIN EIGENES SUBJEKT EBENFALLS (G1): der Schacht-Griff im Lageplan
+        // zieht ein Bauteil, das in 3D gar nicht ausgewählt ist. Die Prüfung
+        // gegen `moeglich` fragt aber die AUSWAHL — sie würde den Griff genau
+        // dann sperren, wenn zufällig ein Rohr angeklickt war. Wer ein Subjekt
+        // hereinreicht, bürgt dafür; `ausfuehren` prüft ohnehin erneut.
         const werkzeug = GRUPPEN[b.gruppe]?.einstieg === 'werkzeug';
-        if (!werkzeug && einordnung.value && !moeglich.value.some(p => p.id === id)) return false;
+        if (!werkzeug && !subjekt && einordnung.value && !moeglich.value.some(p => p.id === id)) return false;
         scharfId.value = id;
-        werte.value = { ...(b.vorbelegung?.(bauteil.value ?? {}) ?? {}) };
+        werte.value = { ...(b.vorbelegung?.(subjekt ?? bauteil.value ?? {}) ?? {}) };
+        belegeWerkzeug(`bearbeitung:${id}`, () => abbrechen());
         return true;
     }
 
@@ -180,8 +358,10 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     }
 
     function abbrechen() {
+        const war = scharfId.value;
         scharfId.value = null;
         werte.value = {};
+        if (war) gebeWerkzeugFrei(`bearbeitung:${war}`);
     }
 
     /**
@@ -203,8 +383,39 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      */
     const letzterGrund = ref('');
 
-    async function ausfuehren({ wer = '', modellSha = null, subjekt = null } = {}) {
+    /**
+     * @param {object} opts
+     * @param {string} [opts.wer]
+     * @param {string} [opts.modellSha]
+     * @param {object} [opts.subjekt]  bei `erzeugen` das Gezeichnete
+     * @param {object} [opts.basis]    der Wert im GELIEFERTEN Modell
+     * @param {'geliefert'|'cde'} [opts.modell]  wo das Bauteil lebt
+     *
+     * `basis` und `modell` kommen von AUSSEN, wie `wer` und `modellSha`. Sie
+     * fehlten bisher ganz, und beides hatte Folgen, die niemand sah:
+     *
+     *   - ohne `basis` ist der Drei-Wege-Vergleich abgeschaltet
+     *     (`vergleicheMitModell` meldet `ohne_basis`) — jede Festlegung aus
+     *     dem Formular ging bei einer neuen Revision still als „sauber"
+     *     durch, und ausgerechnet die Schutzvorrichtung schwieg;
+     *   - ohne `modell` fällt der Eintrag auf `'geliefert'`. Eine Bezugshöhe
+     *     auf ein SELBST erzeugtes Bauteil ist damit dauerhaft unanwendbar:
+     *     `IfcAutor.wendeAn` sucht es in `globalIdZuLocalId` statt unter dem
+     *     Erzeugten und meldet `keine_localId`.
+     *
+     * Das fruehere Ziehen hat beides von Anfang an mitgegeben — es waren zwei Wege zu
+     * derselben Sache, und einer davon war falsch.
+     */
+    async function ausfuehren({ wer = '', modellSha = null, subjekt = null,
+                                basis = undefined, modell = undefined, zug = null } = {}) {
         letzterGrund.value = '';
+        if (!modusAn.value) {
+            // Zweite Sperre, nicht nur die erste: `starte` und `ausfuehren`
+            // sind getrennte Wege, und der Modus kann zwischen beiden
+            // ausgeschaltet werden.
+            letzterGrund.value = 'Der Bearbeiten-Modus ist aus.';
+            return null;
+        }
         const b = scharf.value;
         // ERZEUGEN HAT KEIN SUBJEKT (Stufe 9.4): dort steht das GEZEICHNETE an
         // der Stelle des angeklickten Bauteils und wird hereingereicht. Keine
@@ -216,8 +427,38 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             return null;
         }
 
-        const beschreibung = b.anwenden(gegenstand, werte.value);
-        if (!beschreibung?.art) {
+        // MEHRFACH: dieselbe Bearbeitung auf jedes Bauteil der Auswahl.
+        //
+        // Nur wo der Katalog es ausdrücklich erlaubt. Die Vorgabe ist „eines",
+        // weil es Bearbeitungen gibt, für die eine Massenanwendung Unsinn wäre:
+        // fünf Schächte auf denselben Rechtswert zu schieben legt sie
+        // übereinander, und fünf Haltungen dieselbe Sohlhöhe zu geben ebnet den
+        // Strang ein. Ein stillschweigendes „gilt für alle" wäre der
+        // gefährlichste Vorgabewert, den dieses Feature haben könnte.
+        const gegenstaende = (b.mehrfach && !subjekt && bauteile.value.length > 1)
+            ? bauteile.value
+            : [gegenstand];
+
+        // EINE BEARBEITUNG DARF MEHRERE EINTRÄGE SCHREIBEN (Stufe 14.3).
+        //
+        // „Haltung teilen" ist ein Löschen und zwei Erzeugen. Ein Eintrag hat
+        // trotzdem weiterhin GENAU EIN Subjekt — daran hängen fünfzehn Stellen
+        // im Journal, vom Faltmechanismus bis zum Drei-Wege-Vergleich. Die
+        // Klammer ist ein `vorgang`, kein Bauteil-Array.
+        // `nummer` zählt über die Auswahl hoch — das Umbenennen braucht es,
+        // alle anderen sehen es nicht einmal.
+        const beschreibungen = [];
+        let uebersprungen = 0;
+        for (const [i, g] of gegenstaende.entries()) {
+            // `zug` ist die zweite Eingabeart neben den Formularwerten: ein
+            // gezeichneter Linienzug. Bearbeitungen, die keinen wollen, sehen
+            // ihn nicht einmal — `anwenden` liest nur, was es kennt.
+            const roh = b.anwenden(g, werte.value, { nummer: i, zug: zug ?? [] });
+            const teil = (Array.isArray(roh) ? roh : [roh]).filter(x => x?.art);
+            if (!teil.length) uebersprungen++;
+            beschreibungen.push(...teil);
+        }
+        if (!beschreibungen.length) {
             // Der häufigste Fall: `bezugshoehe-setzen` gibt null, wenn dem
             // Bauteil der Anker fehlt (keine Hülle gelesen). Das ist etwas
             // ganz anderes als „Wert galt schon".
@@ -226,16 +467,48 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         }
 
         const aenderungen = useAenderungen();
-        const eintrag = await aenderungen.eintragen({ ...beschreibung, wer, modellSha });
-        if (!eintrag) letzterGrund.value = 'Der Wert galt schon — nichts einzutragen.';
+        const mehrteilig = beschreibungen.length > 1;
+        // Was nicht ging, wird GEZÄHLT und gemeldet. „Auf 12 von 15 angewandt"
+        // ist eine Auskunft; ein stilles Überspringen wäre eine Behauptung.
+        const uebersprungenText = uebersprungen
+            ? ` — ${uebersprungen} übersprungen (Bezug fehlt)` : '';
+        const vorgang = mehrteilig ? aenderungen.neueVorgangsId() : undefined;
+        const geschrieben = [];
+        for (const beschreibung of beschreibungen) {
+            // Was die Bearbeitung selbst schon sagt, gilt: `erzeugtEintrag`
+            // setzt `modell: 'cde'`, und das darf ein Vorgabewert von aussen
+            // nicht überschreiben.
+            const eintrag = await aenderungen.eintragen({
+                basis, modell, ...beschreibung, wer, modellSha,
+                ...(vorgang ? { vorgang, vorgangTitel: b.titel } : {}),
+                // WAS BEIM SETZEN BEKANNT WAR (Stufe 14.4). Eine Momentaufnahme
+                // der Befunde, nicht ihr laufender Stand — der wird abgeleitet
+                // und ändert sich mit dem Modell. Ohne sie ist später nicht zu
+                // unterscheiden, ob jemand das flache Gefälle in Kauf nahm oder
+                // nichts davon wusste.
+                ...(befunde.value.length ? { befunde: befunde.value } : {}),
+            });
+            if (eintrag) geschrieben.push(eintrag);
+        }
+        if (!geschrieben.length) {
+            letzterGrund.value = beschreibungen[0].globalId
+                ? `Der Wert galt schon — nichts einzutragen.${uebersprungenText}`
+                : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.';
+        } else if (uebersprungen) {
+            letzterGrund.value = `Auf ${geschrieben.length} angewandt${uebersprungenText}.`;
+        }
         abbrechen();
-        return eintrag;
+        // Einteilig bleibt einteilig: der Rückgabewert ist DER Eintrag, nicht
+        // eine Liste mit einem. Sonst müssten alle bisherigen Aufrufer
+        // umgeschrieben werden, obwohl sich für sie nichts geändert hat.
+        return mehrteilig ? geschrieben : (geschrieben[0] ?? null);
     }
 
     return {
-        einordnung, bauteil, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
-        typprofil, scharf, felder, fehler, bereit, moeglich,
-        ladeProfile, einordne, starte, setzeWert, abbrechen, ausfuehren,
+        einordnung, bauteil, bauteile, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
+        typprofil, scharf, felder, fehler, bereit, moeglich, befunde,
+        modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, commitDialogOffen, modusSetzen, modusUm,
+        ladeProfile, einordne, starte, starteMitVorschlag, setzeWert, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
     };
 });

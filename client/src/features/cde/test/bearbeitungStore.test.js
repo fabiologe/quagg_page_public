@@ -20,6 +20,11 @@ import { herleite } from '../services/Herleitung.js';
 beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
+    // Der Bearbeiten-Modus ist mit Absicht AUS, solange ihn niemand
+    // einschaltet — die Sperre soll der Zustand sein, in den man ohne Zutun
+    // gerät. Diese Datei prüft, was IM Modus geschieht; dass ausserhalb nichts
+    // geschieht, prüft `bearbeitenModus.test.js`.
+    useBearbeitung().modusSetzen(true);
 });
 
 const ROHR = { modelId: 'm1', localId: 42, category: 'IFCPIPESEGMENT', globalId: '3xY' };
@@ -90,11 +95,45 @@ describe('moeglich — die Liste fürs Kontextmenü', () => {
 });
 
 describe('starte — die Güteschranke gilt in jedem Einstieg', () => {
-    it('belegt das Formular aus dem Stand des Bauteils vor', async () => {
+    it('belegt das Formular mit dem Wert, der GERADE GILT — aus dem Journal', async () => {
+        // Vorher reichte dieser Test den `stand` selbst herein. Damit prüfte er
+        // eine Schnittstelle, die es nicht gab: `einordne` hat NIE einen Stand
+        // erzeugt, und im Browser stand das Formular deshalb immer leer —
+        // „Querschnittsgröße festlegen" sogar dauerhaft auf „fehlt", weil das
+        // Feld kein `leerErlaubt` hat. Dieselbe Klasse wie die Editor-Attrappe
+        // in `ifcAutor.test.js`: eine selbstgebaute Eingabe kann die eigene
+        // Annahme nicht widerlegen.
+        //
+        // Jetzt kommt der Stand dort her, wo er auch in Wirklichkeit herkommt.
+        const ae = useAenderungen();
+        await ae.eintragen({ art: 'kg', globalId: ROHR.globalId, nachher: '322' });
+
         const b = useBearbeitung();
-        await b.einordne({ ...ROHR, stand: { kg: '322' } }, resolverEchteAchse);
+        await b.einordne({ ...ROHR }, resolverEchteAchse);
         expect(b.starte('kg-setzen')).toBe(true);
         expect(b.werte).toEqual({ kg: '322' });
+    });
+
+    it('belegt eine Festlegung aus ihrer Rolle vor — sonst ist sie sofort ungültig', async () => {
+        const ae = useAenderungen();
+        await ae.eintragen({
+            art: 'parametrik', globalId: ROHR.globalId,
+            nachher: { rolle: 'profilGroesse', wert: 300 },
+        });
+
+        const b = useBearbeitung();
+        await b.einordne({ ...ROHR }, resolverEchteAchse);
+        expect(b.starte('profilgroesse-setzen')).toBe(true);
+        expect(b.werte).toEqual({ groesse: 300 });
+        // Der eigentliche Gewinn: der Knopf ist von Anfang an bedienbar.
+        expect(b.fehler).toEqual([]);
+        expect(b.bereit).toBe(true);
+    });
+
+    it('ohne Journaleintrag bleibt der Stand leer, ohne zu werfen', async () => {
+        const b = useBearbeitung();
+        await b.einordne({ ...ROHR }, resolverEchteAchse);
+        expect(b.bauteil.stand).toEqual({ kg: null, din277: null, bauplan: null });
     });
 
     it('weist eine erfundene Id ab', async () => {

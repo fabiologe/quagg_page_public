@@ -28,6 +28,8 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { useAuthStore } from '@/stores/useAuthStore.js';
+import { pruefeStatuswechsel } from '../services/StatusWorkflow.js';
 import { dokumentAusManifest, repo } from '../services/RepoFacade.js';
 
 export const ISO_STATUS = Object.freeze(['WIP', 'Shared', 'Published', 'Archived']);
@@ -66,7 +68,18 @@ export const useCdeStore = defineStore('cde', () => {
   /** Die Modellsätze des Auftrags — benannte Auswahlen aus der Ablage. */
   const saetze = ref([]);
   const aktiverSatzId = ref(null);
-  const bearbeiter = ref('');
+  /**
+   * Der eingegebene Bearbeiter — leer heisst: der Login-Name gilt.
+   * Fabios Journal von gestern trug überall `wer: ""` — eine Versionsliste
+   * „wann WER was" ist damit wertlos. Deshalb ist `bearbeiter` jetzt eine
+   * beschreibbare Ableitung mit dem Anzeigenamen aus der Anmeldung als
+   * Rückfall; die Eingabe im Kopf überstimmt ihn weiterhin.
+   */
+  const bearbeiterEingabe = ref('');
+  const bearbeiter = computed({
+    get: () => bearbeiterEingabe.value || useAuthStore().anzeigename || '',
+    set: (v) => { bearbeiterEingabe.value = (v ?? '').trim(); },
+  });
 
   // Dokumentregister des AUFTRAGS (nicht des Satzes):
   // [{ sha256, name, size, projectGlobalId, status, revision, addedAt,
@@ -91,7 +104,7 @@ export const useCdeStore = defineStore('cde', () => {
     const [gespeicherterSatz, gespeicherterBearbeiter] = await Promise.all([
       repo.get(KEY_SATZ), repo.get(KEY_BEARBEITER),
     ]);
-    if (typeof gespeicherterBearbeiter === 'string') bearbeiter.value = gespeicherterBearbeiter;
+    if (typeof gespeicherterBearbeiter === 'string') bearbeiterEingabe.value = gespeicherterBearbeiter;
     if (typeof gespeicherterSatz === 'string') aktiverSatzId.value = gespeicherterSatz;
     await _loadDokumente();
   }
@@ -191,8 +204,8 @@ export const useCdeStore = defineStore('cde', () => {
   }
 
   async function setBearbeiter(name) {
-    bearbeiter.value = (name ?? '').trim();
-    await repo.set(KEY_BEARBEITER, bearbeiter.value);
+    bearbeiterEingabe.value = (name ?? '').trim();
+    await repo.set(KEY_BEARBEITER, bearbeiterEingabe.value);
   }
 
   // ── Dokument-Register (ISO 19650 light) ─────────────────────────────────
@@ -238,11 +251,30 @@ export const useCdeStore = defineStore('cde', () => {
     return doc;
   }
 
+  /**
+   * Warum der letzte Statuswechsel abgelehnt wurde (Lücke ④) — für die
+   * Anzeige neben dem Auswahlfeld. Leer, solange alles ging.
+   */
+  const statusGrund = ref('');
+
   /** ISO-19650-Statuswechsel mit Audit-Spur am Dokument. */
   async function setDokumentStatus(sha256, status) {
+    statusGrund.value = '';
     if (!ISO_STATUS.includes(status)) return false;
     const doc = dokumente.value.find(d => d.sha256 === sha256);
     if (!doc || doc.status === status) return false;
+
+    // Der Arbeitsfluss (Lücke ④): vorwärts über die Stufen, zurück mit Rang.
+    // Kosmetik — der Türsteher ist der Server; aber ein Knopf, den der Server
+    // ablehnen wird, gehört hier schon gesperrt und BEGRÜNDET.
+    const pruefung = pruefeStatuswechsel({
+      von: doc.status, nach: status,
+      rolle: useAuthStore().rolle ?? null,
+    });
+    if (!pruefung.ok) {
+      statusGrund.value = pruefung.grund;
+      return false;
+    }
 
     // Mit Server-Backend fuehrt das Manifest den Status — und das Cockpit
     // zeigt denselben. Vorher schrieb der Viewer nur in seine eigene Liste,
@@ -296,7 +328,7 @@ export const useCdeStore = defineStore('cde', () => {
     auftrag, saetze, aktiverSatzId, aktiverSatz, bearbeiter, dokumente,
     satzRepo, uebernehmeRegister, setzeSatz, ladeSaetze,
     satzAnlegen, satzAendern, satzLoeschen, setBearbeiter,
-    registerModel, setDokumentStatus, removeDokument,
+    registerModel, setDokumentStatus, statusGrund, removeDokument,
     // Legacy-Lesepfade für die Migration (Stufe 11.5)
     KEY_PROJECTS_ALT, KEY_ACTIVE_ALT,
   };

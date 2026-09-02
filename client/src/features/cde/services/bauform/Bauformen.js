@@ -147,9 +147,23 @@ export function istBauform(name) {
  * brauchbar zum Anzeigen, aber keine Grundlage, auf der man eine Sohlhöhe
  * festschreibt, ohne es dazuzusagen.
  */
+/**
+ * Wie belastbar ist diese Achse?
+ *
+ * ZWEI Quellen gelten als gemessen: die deklarierte `Axis`-Repräsentation und
+ * die `extrusion`. Die zweite ist keine Näherung — Richtung × Tiefe an der
+ * Platzierung ergibt die Strecke exakt, und an Fabios Netz stimmt sie auf
+ * 0,000 m mit den Sohlhöhen im Merkmalssatz überein (`achseAusExtrusion.test.js`).
+ * Sie ist in der Praxis sogar der Regelfall: seine beiden echten Dateien tragen
+ * NULL Axis-Repräsentationen.
+ *
+ * Alles andere ist Skelettierung aus dem Netz — brauchbar, aber geschätzt.
+ */
+const ACHSE_GEMESSEN = new Set(['axisRep', 'extrusion']);
+
 function _achsGuete(eintrag) {
     if (!eintrag || !eintrag.polyline || eintrag.polyline.length < 2) return null;
-    return eintrag.source === 'axisRep' ? 'gemessen' : 'geschaetzt';
+    return ACHSE_GEMESSEN.has(eintrag.source) ? 'gemessen' : 'geschaetzt';
 }
 
 /**
@@ -167,8 +181,19 @@ function _achsGuete(eintrag) {
  *   Gibt IMMER eine Bauform zurück; `netz` ist das ehrliche Ergebnis für
  *   „lässt sich nicht einordnen", nicht ein Fehler.
  */
-export async function bestimme(el, { resolver, typprofil = null, ausRegel = null } = {}) {
+export async function bestimme(el, { resolver, typprofil = null, ausRegel = null, ausBauplan = null } = {}) {
     const warnungen = [];
+
+    // ── -1. Ein CDE-BAUPLAN schlägt alles — sogar die Regel. ────────────────
+    // Für ein Bauteil, das die CDE selbst gebaut hat, ist die Bauform keine
+    // Ableitung und keine Deklaration von aussen: sie steht im Rezept, aus
+    // dem das Netz entstand. Güte `gemessen`, weil nichts geschätzt wurde —
+    // ohne diesen Schritt fiele ein geformtes Gelände (Kategorie ohne
+    // PredefinedType) auf `netz` zurück, und die Gelände-Werkzeuge
+    // verschwänden nach der ERSTEN Formung. (Stufe 15)
+    if (ausBauplan && istBauform(ausBauplan)) {
+        return { bauform: ausBauplan, guete: 'gemessen', quelle: 'bauplan', warnungen };
+    }
 
     if (!el || el.localId == null) {
         return { bauform: 'netz', guete: 'unbekannt', quelle: 'rueckfall', warnungen: ['kein_element'] };

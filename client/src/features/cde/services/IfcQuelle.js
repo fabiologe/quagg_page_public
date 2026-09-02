@@ -248,24 +248,141 @@ export class IfcQuelle {
      */
     platzierungsHoehen(ids) {
         const out = new Map();
+        for (const [id, p] of this.platzierungen(ids)) out.set(id, p.y);
+        return out;
+    }
+
+    /**
+     * Der Platzierungspunkt je Bauteil, dreidimensional, in DREI-Konvention.
+     *
+     * Gebraucht für die NETZTOPOLOGIE (Stufe 14.5): Rohranfang und Rohrende
+     * liegen in Fabios Dateien exakt auf den Schachtkoordinaten — auf 0,000 m.
+     * Das ist die einzige echte Verkettung, die dort steht: es gibt in keiner
+     * der Dateien einen einzigen `IfcDistributionPort`.
+     *
+     * Die Kette `PlacementRelTo` wird aufsummiert. ROTATIONEN DER ELTERN
+     * BLEIBEN UNBERÜCKSICHTIGT — für die hier vorkommenden Ketten
+     * (Site → Building → Bauteil, alle ohne Drehung) ist das exakt, und der
+     * Vergleich mit den Pset-Sohlhöhen bestätigt es an 524 Bauteilen. Käme
+     * ein gedrehtes Bauwerk vor, wäre die volle Matrix nötig; sie steht in
+     * `AxisAnnotations`.
+     *
+     * @returns {Map<number, {x, y, z}>} y ist die HÖHE (three-Konvention)
+     */
+    platzierungen(ids) {
+        const out = new Map();
         if (!this.lebt()) return out;
         const tiefeGrenze = 16;                 // gegen zyklische Ketten
 
-        const zVonPlacement = (plcId, tiefe = 0) => {
-            if (!Number.isFinite(plcId) || tiefe > tiefeGrenze) return 0;
+        const punktVon = (plcId, tiefe = 0) => {
+            if (!Number.isFinite(plcId) || tiefe > tiefeGrenze) return { x: 0, y: 0, z: 0 };
             const lp = this.zeile(plcId);
-            if (!lp) return 0;
+            if (!lp) return { x: 0, y: 0, z: 0 };
             const ax = this.zeile(lp.RelativePlacement?.value);
-            const pt = ax ? this.zeile(ax.Location?.value) : null;
-            const z = Number(pt?.Coordinates?.[2]?.value ?? 0) || 0;
-            const eltern = lp.PlacementRelTo?.value;
-            return z + (Number.isFinite(eltern) ? zVonPlacement(eltern, tiefe + 1) : 0);
+            const c = ax ? this.zeile(ax.Location?.value)?.Coordinates : null;
+            const z = (i) => Number(c?.[i]?.value ?? 0) || 0;
+            const eltern = punktVon(lp.PlacementRelTo?.value, tiefe + 1);
+            // IFC-Raum → three: X bleibt, IFC-Z ist die Höhe, IFC-Y die Tiefe.
+            return { x: eltern.x + z(0), y: eltern.y + z(2), z: eltern.z + z(1) };
         };
 
         for (const id of ids ?? this.ids('IFCELEMENT', { untertypen: true })) {
             const el = this.zeile(id);
             const plc = el?.ObjectPlacement?.value;
-            if (Number.isFinite(plc)) out.set(id, zVonPlacement(plc));
+            if (Number.isFinite(plc)) out.set(id, punktVon(plc));
+        }
+        return out;
+    }
+
+    /**
+     * Die HÖHENHÜLLE je Bauteil, aus der DATEI, in derselben Achslage wie die
+     * Fragmente (Y ist oben).
+     *
+     * Wozu eine Hülle und nicht die Platzierung: Der Versatz wird bestimmt,
+     * indem dieselbe Größe zweimal gelesen wird — einmal aus der Datei, einmal
+     * aus dem geladenen Modell. `platzierungsHoehen` taugt dafür NICHT, und
+     * das ist gemessen, nicht vermutet:
+     *
+     *   `model.getPositions()` liefert die MITTE eines Bauteils, die
+     *   IFC-Platzierung dagegen einen Bezugspunkt des Autors. Am echten Netz
+     *   (6275_ENQUIER) sitzt er bei 27 Schächten exakt auf der Unterkante und
+     *   bei 24 Haltungen am oberen Ende — die Differenz beider Größen streut
+     *   dadurch um 10,2 m. Genau diese 10,2 m hat die Messung gemeldet und
+     *   deshalb (richtig) nichts gesetzt.
+     *
+     * Eine Hülle hat dieses Problem nicht: `model.getBoxes()` und diese
+     * Methode beschreiben DENSELBEN Körper. Unter- und Oberkante müssen darum
+     * beide denselben Versatz ergeben — das ist die eingebaute Gegenprobe.
+     *
+     * Teuer (die Geometrie wird ausgewertet), deshalb immer nur an einer
+     * Stichprobe aufrufen.
+     *
+     * @returns {Map<number, {min: number, max: number}>} in Dateikoordinaten
+     */
+    hoehenHuellen(ids) {
+        const out = new Map();
+        if (!this.lebt() || !ids?.length) return out;
+        for (const id of ids) {
+            try {
+                const flach = this._api.GetFlatMesh(this._modelID, id);
+                let lo = Infinity, hi = -Infinity;
+                const n = flach.geometries.size();
+                for (let i = 0; i < n; i++) {
+                    const pg = flach.geometries.get(i);
+                    const g = this._api.GetGeometry(this._modelID, pg.geometryExpressID);
+                    const v = this._api.GetVertexArray(g.GetVertexData(), g.GetVertexDataSize());
+                    const m = pg.flatTransformation;
+                    // Scheitelpunkte sind (x,y,z,nx,ny,nz); Y ist die Höhe.
+                    for (let k = 0; k < v.length; k += 6) {
+                        const y = m[1] * v[k] + m[5] * v[k + 1] + m[9] * v[k + 2] + m[13];
+                        if (y < lo) lo = y;
+                        if (y > hi) hi = y;
+                    }
+                    g.delete?.();
+                }
+                if (lo < Infinity) out.set(id, { min: lo, max: hi });
+            } catch { /* ein Bauteil ohne auswertbare Geometrie ist kein Fehler */ }
+        }
+        return out;
+    }
+
+    /**
+     * Die Merkmale aller Bauteile — EIN Durchlauf über die Beziehungen.
+     *
+     * Warum nicht über `getData` je Bauteil: Der IfcLoader importiert nur einen
+     * schmalen Attributsatz, und ein Aufruf je Bauteil wäre bei tausend
+     * Haltungen tausend Aufrufe. `IFCRELDEFINESBYPROPERTIES` steht dagegen
+     * genau einmal je Zuordnung in der Datei; ein Lauf darüber liefert alles.
+     *
+     * In Fabios Netzen hängt an jedem Bauteil ein `QG_ISYBAU_Data` mit acht
+     * Feldern: Objektbezeichnung, Kanalart, Material, Baujahr, Sohlenhoehe,
+     * Deckelhoehe, Profilbreite, Profilhoehe.
+     *
+     * FLACH, ohne Satznamen: die Namen sind innerhalb einer Datei eindeutig,
+     * und ein zweistufiger Zugriff („welcher Satz war das nochmal?") hilft
+     * niemandem. Kollidieren zwei Sätze doch, gewinnt der zuletzt gelesene —
+     * das ist selten und allemal besser als eine Schachtel mehr.
+     *
+     * @returns {Map<number, Record<string, string|number>>}
+     */
+    merkmale() {
+        const out = new Map();
+        if (!this.lebt()) return out;
+        for (const rel of this.alle('IFCRELDEFINESBYPROPERTIES', { tief: true })) {
+            const satz = rel?.RelatingPropertyDefinition;
+            const werte = {};
+            let hatWas = false;
+            for (const pr of satz?.HasProperties ?? []) {
+                const name = pr?.Name?.value;
+                if (!name) continue;
+                werte[name] = pr?.NominalValue?.value ?? null;
+                hatWas = true;
+            }
+            if (!hatWas) continue;
+            for (const o of rel.RelatedObjects ?? []) {
+                if (!Number.isFinite(o?.expressID)) continue;
+                out.set(o.expressID, { ...(out.get(o.expressID) ?? {}), ...werte });
+            }
         }
         return out;
     }

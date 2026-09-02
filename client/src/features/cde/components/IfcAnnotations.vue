@@ -170,7 +170,7 @@
         </div>
 
         <button class="ann-del" @click="onDelete(a)" title="Löschen" aria-label="Issue löschen">
-          <CdeIcon name="close" :size="12" />
+          <CdeIcon name="delete" :size="12" />
         </button>
       </div>
     </div>

@@ -82,8 +82,10 @@
                       <select
                         class="el-kg-select"
                         :value="currentKgFor(el)"
-                        :disabled="!el.globalId"
-                        :title="el.globalId ? 'KG manuell zuweisen (Override)' : 'Keine GlobalId geladen — über Regeln zuordnen'"
+                        :disabled="!el.globalId || !bearbeitung.modusAn"
+                        :title="!bearbeitung.modusAn ? 'Bearbeiten ist aus (E schaltet ein)'
+                          : el.globalId ? 'KG manuell zuweisen (Override)'
+                          : 'Keine GlobalId geladen — über Regeln zuordnen'"
                         @change="onOverrideSelect(el, $event.target.value)"
                       >
                         <option value="">— per Regel —</option>
@@ -135,8 +137,10 @@
                       <select
                         class="el-kg-select"
                         value=""
-                        :disabled="!el.globalId"
-                        :title="el.globalId ? 'KG manuell zuweisen (Override)' : 'Keine GlobalId geladen — über Regeln zuordnen'"
+                        :disabled="!el.globalId || !bearbeitung.modusAn"
+                        :title="!bearbeitung.modusAn ? 'Bearbeiten ist aus (E schaltet ein)'
+                          : el.globalId ? 'KG manuell zuweisen (Override)'
+                          : 'Keine GlobalId geladen — über Regeln zuordnen'"
                         @change="onOverrideSelect(el, $event.target.value)"
                       >
                         <option value="">— zuweisen —</option>
@@ -165,6 +169,7 @@ import { KG_TREE, KG_LOOKUP, kgColor } from '../services/Din276Defaults.js';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
 
 const props = defineProps({
   result:       { type: Object,  default: null },  // { byKg, unassigned, perElement }
@@ -173,6 +178,10 @@ const props = defineProps({
   overrides:    { type: Map,     default: null },  // GlobalId → kgCode (manuelle Zuweisungen)
 });
 const emit = defineEmits(['refresh', 'toggle-color-mode', 'select-kg', 'select-element', 'override-kg']);
+
+// Klassifizieren ist Bearbeiten: ausserhalb des Modus bleiben die Felder
+// gesperrt, statt still nichts zu tun.
+const bearbeitung = useBearbeitung();
 
 // ── B5: Elemente aufklappen + KG manuell zuweisen ──────────────────────────
 const MAX_ELEMENTS_SHOWN = 50;

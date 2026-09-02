@@ -72,6 +72,14 @@ export const useIfcStore = defineStore('cde-modell', () => {
 
   // Loaded model list [{modelId, name}]
   const modelList = ref([]);
+    /**
+     * Zählt hoch, wenn eine ANGEWANDTE Änderung die Geometrie berührt hat
+     * (FormSchreiber-Verdrahtung, Stufe 16). Der Lageplan hängt daran: seine
+     * gesammelten Inhalte (Umrisse, Achsen, Gelände) sind teuer und werden
+     * nur entwertet, wenn sich wirklich Geometrie geändert hat.
+     */
+    const geometrieStand = ref(0);
+    function bumpGeometrieStand() { geometrieStand.value++; }
 
   // Engine actions registered by IfcViewer
   let _searchIndex    = ref([]); // populated on model load — [{name, globalId, category, localId, modelId}]
@@ -512,6 +520,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
 
   return {
     selectedElement, psetError, modelLoaded, spatialTree, modelList,
+    geometrieStand, bumpGeometrieStand,
     ready,
     setElement, clearElement, setPsetError,
     setSpatialTree, setModelList,

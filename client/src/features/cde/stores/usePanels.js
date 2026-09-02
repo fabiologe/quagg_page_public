@@ -26,8 +26,11 @@ export const PANEL_DEFS = Object.freeze([
   { id: 'struktur',      titel: 'Bauwerksstruktur',   icon: 'tree',    seite: 'left',  breite: 300 },
   { id: 'cockpit',       titel: 'Planungs-Cockpit',   icon: 'cockpit', seite: 'right', breite: 540 },
   { id: 'issues',        titel: 'Issues',             icon: 'issues',  seite: 'right', breite: 330 },
-  { id: 'plan',          titel: 'Planinhalt',         icon: 'view-top', seite: 'right', breite: 340 },
+  { id: 'plan',          titel: 'Planinhalt',         icon: 'karte', seite: 'right', breite: 340 },
   { id: 'toolbox',       titel: 'Toolbox',            icon: 'edit',    seite: 'right', breite: 340 },
+  // Teil XII, X1: Der Versionsverlauf ist ERSTKLASSIG — vorher steckte er
+  // als Reiter im Cockpit, wo ihn niemand suchte.
+  { id: 'verlauf',       titel: 'Verlauf',            icon: 'verlauf', seite: 'right', breite: 360 },
 ]);
 
 const MIN_BREITE = 240;

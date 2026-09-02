@@ -109,6 +109,11 @@ export function makeWorldTransform(cam, M, dw, dh) {
     return {
         zuX: (px) => (px - M) / dw * (wXmax - wXmin) + wXmin,
         zuZ: (py) => (py - M) / dh * (wZmax - wZmin) + wZmin,
+        // Der RÜCKWEG (G1, Schacht-Griffe): Weltpunkt → Papier-mm. Exakte
+        // Umkehrung der beiden Abbildungen darüber — der Griff und die
+        // Führungslinien müssen auf demselben Blatt landen wie der Plan.
+        vonX: (wx) => (wx - wXmin) / (wXmax - wXmin) * dw + M,
+        vonZ: (wz) => (wz - wZmin) / (wZmax - wZmin) * dh + M,
     };
 }
 

@@ -51,10 +51,25 @@ describe('Ein Typ, den niemand eingetragen hat, ist trotzdem bedienbar', () => {
     });
 
     it('lässt einen erfundenen Typ nicht abstürzen und erfindet nichts dazu', () => {
+        // GEPRÜFT WIRD DIE EIGENSCHAFT, nicht die Liste: an einem Typ, den
+        // niemand kennt und dessen Geometrie nichts hergibt, gilt genau das,
+        // was von beidem unabhängig ist. Eine Aufzählung bräche hier bei jedem
+        // neuen allgemeinen Werkzeug, ohne dass etwas kaputt wäre.
         const k = h('IFCQUATSCHXYZ', NICHTS);
         expect(k.profilAus).toBe(null);
-        expect(ids(k)).toEqual(['kg-setzen', 'din277-setzen']);   // nur die allgemeinen
         expect(k.kategorie).toBe('IFCQUATSCHXYZ');
+
+        expect(ids(k).length).toBeGreaterThan(0);
+        for (const id of ids(k)) {
+            const b = nachId(id);
+            expect(b.bauform, id).toBe('*');
+            expect(b.brauchtRolle, id).toBeFalsy();
+            expect(b.mindestGuete, id).toBe('unbekannt');
+        }
+        // Ein Anker gegen Leerlauf — und der Gegenbeweis: was eine Rolle
+        // braucht, ist hier NICHT dabei.
+        expect(ids(k)).toContain('kg-setzen');
+        expect(ids(k)).not.toContain('profilgroesse-setzen');
     });
 
     it('sagt bei einem unbekannten Typ, WAS zu tun wäre — und dass es Daten sind', () => {
@@ -101,10 +116,29 @@ describe('Dieselbe Operation, verschiedene Namen — das Vokabular ist DATEN', (
 
 describe('Drei Herkünfte, drei Fragen — mehr gibt es nicht', () => {
     it('trennt „immer", „wegen der Form" und „wegen der Größe"', () => {
+        // GEPRÜFT WIRD DIE EIGENSCHAFT, NICHT DIE LISTE.
+        //
+        // Vorher stand hier die Aufzählung aller Ids — und die brach bei jedem
+        // neuen Werkzeug, ohne dass irgendetwas kaputt war. Ein Test, der bei
+        // jeder Erweiterung rot wird, erzieht dazu, ihn anzupassen statt ihn
+        // zu lesen. Die Zusage lautet: „immer" hängt an nichts, „rolle" hängt
+        // an einer Rolle des Typprofils.
         const k = h('IFCPIPESEGMENT', LINEAR);
-        const nach = Object.fromEntries(k.gruppen.map(g => [g.art, g.eintraege.map(e => e.id)]));
-        expect(nach.immer).toEqual(['kg-setzen', 'din277-setzen']);
-        expect(nach.rolle).toEqual(['bezugshoehe-setzen', 'profilgroesse-setzen']);
+        const nach = Object.fromEntries(k.gruppen.map(g => [g.art, g.eintraege]));
+
+        // Die Einträge der Herleitung sind für die ANZEIGE projiziert und
+        // tragen `brauchtRolle` nicht mehr — geprüft wird deshalb gegen den
+        // Katalog. Genau das ist die Zusage: die Gruppierung folgt dem, was im
+        // Katalog steht, nicht einer zweiten Liste daneben.
+        expect(nach.immer.length).toBeGreaterThan(0);
+        for (const e of nach.immer) expect(nachId(e.id).brauchtRolle, e.id).toBeFalsy();
+
+        expect(nach.rolle.length).toBeGreaterThan(0);
+        for (const e of nach.rolle) expect(nachId(e.id).brauchtRolle, e.id).toBeTruthy();
+
+        // Zwei Anker, damit die Prüfung nicht ins Leere laufen kann.
+        expect(nach.immer.map(e => e.id)).toContain('kg-setzen');
+        expect(nach.rolle.map(e => e.id)).toContain('profilgroesse-setzen');
     });
 
     it('bietet dem Schacht die Bezugshöhe, aber keine Querschnittsgröße', () => {
@@ -175,7 +209,9 @@ describe('Die Bezugshöhe verschiebt um die DIFFERENZ', () => {
     it('führt die Querschnittsgröße als Festlegung, nicht als Geometrieänderung', () => {
         const b = nachId('profilgroesse-setzen');
         expect(b.nurFestlegung).toBe(true);
+        // Der Wert ist eine Karte Rolle → Wert, keine einzelne Zahl: an einem
+        // Bauteil gelten mehrere Masse nebeneinander (Stufe 14.2).
         expect(b.anwenden({ globalId: 'H12' }, { groesse: 300 }))
-            .toEqual({ art: 'parametrik', globalId: 'H12', nachher: { rolle: 'profilGroesse', wert: 300 } });
+            .toEqual({ art: 'parametrik', globalId: 'H12', nachher: { profilGroesse: 300 } });
     });
 });

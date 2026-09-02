@@ -51,7 +51,7 @@
       <!-- Bearbeiten am Bauteil (Stufe 9.0). Was hier steht, kommt aus dem
            Katalog und ist über die Bauform gefiltert — dieselbe Liste, die auch
            die Befehls-Palette liest. -->
-      <div v-if="bearbeitung.moeglich.length" class="hud-bearb">
+      <div v-if="bearbeitung.modusAn && bearbeitung.moeglich.length" class="hud-bearb">
         <div v-if="!bearbeitung.scharf" class="hud-bearb-liste">
           <button
             v-for="b in bearbeitung.moeglich"
@@ -100,6 +100,7 @@ import { useScreenProjection } from '../composables/useScreenProjection.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { modellHerkunft } from '../services/IfcAutor.js';
 
 const props = defineProps({
   /** [{ dist, p1:{x,y,z}, p2:{x,y,z} }] */
@@ -146,8 +147,22 @@ const guetehinweis = computed(() => {
  * keine — deshalb steht hier jetzt der Aufruf statt des Emits.
  */
 async function uebernehmen() {
-  const eintrag = await bearbeitung.ausfuehren({ wer: cde.bearbeiter || '' });
-  if (eintrag) await api.wendeEintragAn?.(eintrag);
+  // Genau dieselben Angaben wie in der Toolbox — inklusive `modellSha`, das
+  // hier bisher fehlte: Einträge aus dem Kontextmenü hatten dadurch keinen
+  // Modellbezug, die aus der Toolbox schon. Zwei Sorten Eintrag für dieselbe
+  // Bearbeitung, je nachdem wo man klickt.
+  try {
+    const el = bearbeitung.bauteil;
+    const eintrag = await bearbeitung.ausfuehren({
+      wer: cde.bearbeiter || '',
+      modellSha: api.getLoadedModelSha?.() ?? null,
+      basis: el?.globalId ? api.lieferstandVon?.(el.globalId) : undefined,
+      modell: el ? modellHerkunft(el.modelId) : undefined,
+    });
+    if (eintrag) await api.wendeEintragAn?.(eintrag);
+  } catch (fehler) {
+    console.error('cde: uebernehmen (HUD)', fehler);   // Gesetz 10
+  }
 }
 
 const { tick } = useScreenProjection({
@@ -308,4 +323,15 @@ function formatDist(m) {
 }
 .hud-bearb-btn:hover { background: var(--cde-accent-fill-hi); color: var(--cde-accent); }
 
+
+/* T1 (Tablet-Pass): Das Kontextmenü schwebt und darf wachsen; nur das
+   Pillen-X bekommt die unsichtbare Trefferfläche — ein echtes Wachsen
+   verschöbe die Messpille um den Knopf herum. */
+.hud-menu-btn, .hud-bearb-btn, .hud-pill-x { touch-action: manipulation; }
+@media (pointer: coarse) {
+  .hud-menu-btn { width: 38px; height: 36px; }
+  .hud-bearb-btn { padding: 0.5rem 0.45rem; }
+  .hud-pill-x { position: relative; }
+  .hud-pill-x::after { content: ''; position: absolute; inset: -10px; }
+}
 </style>

@@ -53,6 +53,7 @@ const groups = computed(() => {
     rows: [
       { label: 'Befehls-Palette öffnen', keys: ['Strg', 'K'] },
       { label: 'Element suchen',         keys: ['Strg', 'F'] },
+      { label: 'Gespeicherte Ansichten', keys: ['V'] },
       { label: 'Diese Hilfe',            keys: ['?'] },
       { label: 'Schließen / Abbrechen',  keys: ['Esc'] },
     ],

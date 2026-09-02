@@ -123,16 +123,23 @@ export function createGeometryResolver({
             axisRepCache.set(key, (async () => {
                 const api = webIfcApis.find(a => a.fragmentModelId === modelId)
                     ?? (webIfcApis.length === 1 ? webIfcApis[0] : null);
-                if (!api?.webIfc) return new Map();
+                // ÜBER DIE QUELLE, nicht über den rohen Handle: der hatte nie
+                // ein Modell offen, und deshalb kam hier nie eine Achse an —
+                // jede Achse stammte aus der Skelettierung, Güte `geschaetzt`.
+                if (!api?.quelle) return new Map();
                 const off = coordOffsets?.[modelId] ?? null;
                 let products = [];
                 try {
-                    products = extractAxisPolylines(api.webIfc, api.modelID, {
+                    products = extractAxisPolylines(api.quelle, {
                         categories: [...categories], coordOffset: off,
                     });
                 } catch { return new Map(); }
+                // Die HERKUNFT mitführen: eine Achse aus der Extrusion ist
+                // ebenso exakt wie eine deklarierte, aber sie ist nicht
+                // dasselbe. Wer später fragt „woher weiss das die CDE",
+                // bekommt die richtige Antwort.
                 const byId = new Map();
-                for (const p of products) byId.set(p.expressId, p.polyline);
+                for (const p of products) byId.set(p.expressId, p);
                 return byId;
             })());
         }
@@ -261,10 +268,18 @@ export function createGeometryResolver({
                     }
                     for (const el of elements) {
                         const rep = repByModel.get(el.modelId)?.get(el.localId);
-                        if (rep?.length >= 2) {
+                        if (rep?.polyline?.length >= 2) {
+                            const ausExtrusion = rep.quelle === 'extrusion';
                             perElement.push({
-                                ...el, polyline: rep,
-                                source: 'axisRep', path: ['src:axisRep', 'axis'], warnings: [],
+                                ...el, polyline: rep.polyline, dn: rep.dn ?? null,
+                                // Beide zählen als GEMESSEN (siehe `_achsGuete`
+                                // in Bauformen.js) — sie sind exakt, im
+                                // Gegensatz zur Skelettierung.
+                                source: ausExtrusion ? 'extrusion' : 'axisRep',
+                                path: ausExtrusion
+                                    ? ['src:extrusion', 'axis']
+                                    : ['src:axisRep', 'axis'],
+                                warnings: [],
                             });
                         } else {
                             meshesNeeded.push(el);

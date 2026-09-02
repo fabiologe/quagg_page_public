@@ -76,10 +76,14 @@ describe('getForm', () => {
 
   it('axis: Axis-Repräsentation gewinnt vor dem Skelett', async () => {
     const { tris } = tube()
-    const fakeWebIfc = {
-      IFCPIPESEGMENT: 9,
-      GetLineIDsWithType: (mid, t) => (t === 9 ? [1] : []),
-      GetLine: () => ({
+    const fakeQuelle = {
+      // DIE FORM DER ECHTEN QUELLE (Stufe 14.1): `ids`/`zeile`, nicht
+      // `GetLineIDsWithType`/`GetLine` mit Typkonstanten als Eigenschaften.
+      // Die alte Attrappe bildete eine Schnittstelle nach, die es nie gab —
+      // der Resolver bekam deshalb im Betrieb nie eine Achse und skelettierte
+      // immer.
+      ids: (typ) => (typ === 'IFCPIPESEGMENT' ? [1] : []),
+      zeile: () => ({
         ObjectPlacement: null,
         Representation: { Representations: [{
           RepresentationIdentifier: { value: 'Axis' },
@@ -92,7 +96,7 @@ describe('getForm', () => {
     }
     const { deps } = stubDeps({
       trisByLocalId: { 1: tris },
-      webIfcApis: [{ webIfc: fakeWebIfc, modelID: 0, fragmentModelId: 'm1' }],
+      webIfcApis: [{ quelle: fakeQuelle, fragmentModelId: 'm1' }],
     })
     const resolver = createGeometryResolver(deps)
     const axis = await resolver.forCategory(['IFCPIPESEGMENT']).getForm('axis')

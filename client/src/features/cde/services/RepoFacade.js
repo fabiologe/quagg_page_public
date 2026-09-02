@@ -250,6 +250,20 @@ export class RemoteBackend {
             return c.has(fullKey) ? c.get(fullKey) : null;
         } catch (e) { console.warn('[CDE remote] get', e?.message ?? e); return null; }
     }
+    /**
+     * Frisch vom Server, nicht aus dem Cache (Lücke ⑥, Mehrbenutzer-Wächter).
+     *
+     * Der Cache wird dabei ERSETZT, nicht ergänzt: jede eigene Schreibung ist
+     * ohnehin sofort per PUT auf dem Server, die frische Antwort enthält sie
+     * also — und dazu alles, was Kollegen inzwischen geschrieben haben.
+     */
+    async getFrisch(fullKey) {
+        try {
+            this._cache = null;
+            const c = await this._laden();
+            return c.has(fullKey) ? c.get(fullKey) : null;
+        } catch (e) { console.warn('[CDE remote] getFrisch', e?.message ?? e); return null; }
+    }
     async set(fullKey, value) {
         try {
             const c = await this._laden();
@@ -571,6 +585,21 @@ export class RepoFacade {
 
     /** @returns {Promise<any|null>} null bei Fehlen oder Fehler */
     async get(key) { return this._backend.get(_key(this.scope, key)); }
+
+    /**
+     * Ein Schlüssel FRISCH vom Backend — am Cache vorbei (Lücke ⑥).
+     *
+     * `RemoteBackend` lädt das Repo einmal und liest danach nur noch aus dem
+     * Speicher: die Schreiblage eines Kollegen würde dort NIE sichtbar. Der
+     * Mehrbenutzer-Wächter im Journal braucht aber genau die. Backends ohne
+     * Cache (localStorage, IndexedDB) fallen auf `get` zurück.
+     */
+    async getFrisch(key) {
+        const b = this._backend;
+        return typeof b.getFrisch === 'function'
+            ? b.getFrisch(_key(this.scope, key))
+            : b.get(_key(this.scope, key));
+    }
 
     /** @returns {Promise<boolean>} false bei Quota/Fehler */
     async set(key, value) { return this._backend.set(_key(this.scope, key), value); }

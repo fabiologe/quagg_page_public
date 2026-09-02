@@ -68,6 +68,18 @@ function fakeElement(localId) {
     };
 }
 
+/**
+ * Attrappe des FragmentsManagers IN DER FORM DER ECHTEN BIBLIOTHEK.
+ *
+ * Der Editor gehört `FragmentsModels` — im Manager also `core.editor`, nicht
+ * `modell.editor`. Die frühere Fassung hatte es andersherum, und weil sie das
+ * Spiegelbild der Wirklichkeit war, blieben diese Tests grün, während im
+ * Browser JEDE Bearbeitung an `kein_editor` scheiterte: das Journal füllte
+ * sich, das Modell rührte sich nie.
+ *
+ * `mitEditor: false` bedeutet jetzt „der Manager hat keinen Editor" — der
+ * Viewer-ohne-Bearbeitung-Fall, den die Datei prüft.
+ */
 function fakeFragments({ modelId = 'm1', boxen = new Map(), mitEditor = true } = {}) {
     const elemente = new Map();
     const editor = {
@@ -81,12 +93,18 @@ function fakeFragments({ modelId = 'm1', boxen = new Map(), mitEditor = true } =
     };
     const modell = {
         modelId,
-        editor: mitEditor ? editor : undefined,
         getBoxes: vi.fn(async (ids) => ids.map(id => boxen.get(id) ?? new THREE.Box3())),
         getBuffer: vi.fn(async () => new ArrayBuffer(8)),
     };
     return {
-        manager: { list: new Map([[modelId, modell]]), core: { load: vi.fn(async () => {}) } },
+        manager: {
+            list: new Map([[modelId, modell]]),
+            core: {
+                editor: mitEditor ? editor : undefined,
+                update: vi.fn(async () => {}),
+                load: vi.fn(async () => {}),
+            },
+        },
         modell, editor, elemente,
     };
 }
@@ -231,5 +249,97 @@ describe('wendeAn — kein Misserfolg verschwindet still', () => {
         const { misserfolge } = await autor.wendeAn(plan, { globalIdZuLocalId: new Map([['H12', 1]]) });
         expect(misserfolge).toHaveLength(0);
         expect(f.elemente.get(1).gruppe.position.x).toBe(2);
+    });
+});
+
+describe('Der Editor gehört dem Manager (Stufe 12.0c)', () => {
+    it('findet ihn unter core.editor, nicht am Modell', async () => {
+        // DER Fehler, der die Bearbeitung monatelang tot liegen liess. Er ist
+        // hier nur so lange fangbar, wie die Attrappe die Form der Bibliothek
+        // hat — `test/fragmentsVertrag.test.js` hält sie dagegen.
+        const f = fakeFragments();
+        expect(f.modell.editor).toBeUndefined();          // wie im echten FragmentsModel
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        expect(autor.istBearbeitbar('m1')).toBe(true);
+    });
+
+    it('meldet ein unbekanntes Modell als nicht bearbeitbar', async () => {
+        // Sonst gälte jede erfundene Id als bearbeitbar, und der Fehler fiele
+        // erst zwei Schritte später auf.
+        const f = fakeFragments();
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        expect(autor.istBearbeitbar('gibtsnicht')).toBe(false);
+        expect((await autor.setzeAnker('gibtsnicht', 1, { x: 0, y: 0, z: 0 })).grund)
+            .toBe('kein_editor');
+    });
+
+    it('meldet „kein_editor", wenn der MANAGER keinen hat', async () => {
+        const f = fakeFragments({ mitEditor: false });
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        expect(autor.istBearbeitbar('m1')).toBe(false);
+    });
+});
+
+describe('Nach einer Änderung wird neu gezeichnet (Stufe 12.0c)', () => {
+    it('setzeAnker frischt das Bild auf', async () => {
+        // Ohne das steht die verschobene Haltung in den Daten, aber nicht auf
+        // dem Schirm — ununterscheidbar von „hat nicht funktioniert".
+        const f = fakeFragments({ boxen: new Map([[1, box([0, 0, 0], [2, 2, 2])]]) });
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        await autor.setzeAnker('m1', 1, { x: 5, y: 1, z: 1 });
+        expect(f.manager.core.update).toHaveBeenCalled();
+    });
+
+    it('löschen ebenso', async () => {
+        const f = fakeFragments();
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        await autor.loesche('m1', 1);
+        expect(f.manager.core.update).toHaveBeenCalled();
+    });
+});
+
+describe('wendeAn räumt das CDE-Modell nicht mehr blind leer (Stufe 12.0c)', () => {
+    /** Ein Autor, der mitschreibt, ob der Neuaufbau lief. */
+    function autorMitZaehler(f) {
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        autor.baueErzeugte = vi.fn(async () => ({ karte: new Map(), misserfolge: [] }));
+        return autor;
+    }
+
+    const einLage = {
+        modelId: 'm1',
+        anzuwenden: [{ art: 'lage', globalId: 'H1', wert: { x: 5, y: 1, z: 1 } }],
+    };
+
+    it('ein Ein-Schritt-Plan baut NICHTS neu auf', async () => {
+        // Der Riss: `baueErzeugte` verwirft das CDE-Modell VOR der Leerprüfung.
+        // Sie unbedingt zu rufen hiess, mit jeder Bezugshöhe alle gezeichneten
+        // Bauteile aus dem Raum zu räumen. Wer eine Höhe setzte, verlor seine
+        // Linien — und niemand konnte den Zusammenhang sehen.
+        const f = fakeFragments({ boxen: new Map([[1, box([0, 0, 0], [2, 2, 2])]]) });
+        const autor = autorMitZaehler(f);
+        await autor.wendeAn(einLage, { globalIdZuLocalId: new Map([['H1', 1]]) });
+        expect(autor.baueErzeugte).not.toHaveBeenCalled();
+    });
+
+    it('ein vollständiger Lauf baut neu auf, auch ohne Erzeugtes', async () => {
+        // Die Gegenrichtung, und sie ist genauso wichtig: nur der Gesamtlauf
+        // kennt den ganzen Stand und muss Erzeugtes auch dann abräumen, wenn
+        // nichts mehr übrig ist.
+        const f = fakeFragments({ boxen: new Map([[1, box([0, 0, 0], [2, 2, 2])]]) });
+        const autor = autorMitZaehler(f);
+        await autor.wendeAn({ ...einLage, vollstaendig: true },
+            { globalIdZuLocalId: new Map([['H1', 1]]) });
+        expect(autor.baueErzeugte).toHaveBeenCalledOnce();
+    });
+
+    it('ein Plan MIT Erzeugtem baut neu auf, auch ohne Kennzeichnung', async () => {
+        const f = fakeFragments();
+        const autor = autorMitZaehler(f);
+        await autor.wendeAn({
+            modelId: 'm1',
+            anzuwenden: [{ art: 'erzeugt', globalId: 'cde-1', modell: 'cde', wert: {} }],
+        });
+        expect(autor.baueErzeugte).toHaveBeenCalledOnce();
     });
 });

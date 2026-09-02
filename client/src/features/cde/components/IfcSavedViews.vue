@@ -26,7 +26,7 @@
             <CdeIcon name="edit" :size="12" />
           </button>
           <button class="sv-act sv-act--danger" title="Löschen" aria-label="Ansicht löschen" @click="onDelete(v)">
-            <CdeIcon name="close" :size="12" />
+            <CdeIcon name="delete" :size="12" />
           </button>
         </div>
       </div>

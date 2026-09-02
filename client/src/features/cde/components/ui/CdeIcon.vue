@@ -40,7 +40,8 @@ import {
   // Allgemein
   Plus, X, Check, Trash2, RotateCw, Copy, Share2, Info, TriangleAlert,
   ChevronRight, ChevronDown, ChevronUp, PanelLeft, PanelRight, ListTree, Filter,
-  Undo2, Redo2, CircleHelp, Pencil, SendHorizontal, LoaderCircle, Play,
+  Undo2, Redo2, CircleHelp, Pencil, SendHorizontal, LoaderCircle, Play, History,
+  Eraser, Type, PencilRuler, Waves, LandPlot,
   MousePointer2, Image, Zap, CircleX, CircleAlert, Map, PenTool, HardHat,
   // Bauwerksstruktur (Raumhierarchie)
   Globe, SquareStack, SquareDashed, Box,
@@ -130,6 +131,19 @@ const ICONS = {
   'filter':       Filter,
   'undo':         Undo2,
   'redo':         Redo2,
+  // Teil XII: der Versionsverlauf — Commits, wie git es zeigt.
+  'verlauf':      History,
+  // X4 — ein Icon, eine Bedeutung: die Kollisionen der Inventur bekommen
+  // eigene Zeichen (Ruler bleibt der Familie „Maß/Messen" vorbehalten,
+  // X nur dem Schliessen, Trash2 dem Entfernen).
+  'radierer':     Eraser,
+  'text':         Type,
+  'karte':        Map,
+  'bemassen':     PencilRuler,
+  'route':        Route,
+  'gerinne':      Waves,
+  'planum':       LandPlot,
+  'schacht':      Cylinder,
   'edit':         Pencil,
   'send':         SendHorizontal,
   'busy':         LoaderCircle,
@@ -200,7 +214,8 @@ export const ICON_NAMES = [
   'cde', 'documents', 'project', 'user', 'register', 'stammdaten',
   'add', 'close', 'check', 'delete', 'refresh', 'copy', 'share', 'info', 'warn',
   'chevron-right', 'chevron-down', 'chevron-up', 'panel-left', 'panel-right', 'tree', 'filter',
-  'undo', 'redo', 'edit', 'send', 'busy', 'open', 'pointer', 'image', 'billed',
+  'undo', 'redo', 'verlauf', 'edit', 'send', 'busy', 'open', 'pointer', 'image', 'billed',
+  'radierer', 'text', 'karte', 'bemassen', 'route', 'gerinne', 'planum', 'schacht',
   'overview', 'vector', 'bim',
   'status-error', 'status-warn', 'status-ok',
   'site', 'building', 'storey', 'space', 'element',

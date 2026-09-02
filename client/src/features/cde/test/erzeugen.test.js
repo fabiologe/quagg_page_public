@@ -89,12 +89,28 @@ describe('Die Rezepte sind rein', () => {
         expect(Math.abs(pos.getZ(0) - pos.getZ(1))).toBeCloseTo(LINIEN_BAND_M, 6);
     });
 
-    it('trianguliert ein Polygon zur Fläche', () => {
-        const quadrat = [[0, 0, 0], [10, 0, 0], [10, 0, 10], [0, 0, 10]];
-        const { ok, geometrie } = baueAusBauplan({ rezept: 'flaeche', parameter: { punkte: quadrat, hoehe: 3 } });
+    it('trianguliert ein Polygon zur Fläche und behält die Höhe der Punkte', () => {
+        // SO SEHEN DIE PUNKTE WIRKLICH AUS. Der frühere Test reichte
+        // `{ punkte, hoehe: 3 }` ein — diese Form entsteht nirgends: die im
+        // Formular eingetragene Höhe backt `alsRaumpunkte` in die Punkte
+        // (y-Anteil), und `parameter` trägt danach nur noch `punkte`. Der Test
+        // prüfte damit einen Weg, den es nicht gibt, und deckte zu, dass jede
+        // gezeichnete Fläche auf Höhe 0 landete.
+        const quadrat = [[0, 3, 0], [10, 3, 0], [10, 3, 10], [0, 3, 10]];
+        const { ok, geometrie } = baueAusBauplan({ rezept: 'flaeche', parameter: { punkte: quadrat } });
         expect(ok).toBe(true);
         expect(geometrie.getIndex().count).toBe(6);      // zwei Dreiecke
-        expect(geometrie.getAttribute('position').getY(0)).toBeCloseTo(3, 6);
+        const pos = geometrie.getAttribute('position');
+        for (let i = 0; i < 4; i++) expect(pos.getY(i)).toBeCloseTo(3, 6);
+    });
+
+    it('eine geneigte Fläche bleibt geneigt', () => {
+        // Die Gegenprobe zur festen Höhe: sie hätte auch das eingeebnet.
+        const rampe = [[0, 0, 0], [10, 0, 0], [10, 2, 10], [0, 2, 10]];
+        const { geometrie } = baueAusBauplan({ rezept: 'flaeche', parameter: { punkte: rampe } });
+        const pos = geometrie.getAttribute('position');
+        expect(pos.getY(0)).toBeCloseTo(0, 6);
+        expect(pos.getY(2)).toBeCloseTo(2, 6);
     });
 
     it('trägt auch einen konkaven Umriss', () => {
@@ -141,7 +157,16 @@ describe('Ein untauglicher Bauplan kommt gar nicht erst ins Journal', () => {
 
 // ── Der Neuaufbau ───────────────────────────────────────────────────────────
 
-/** Eine Attrappe des FragmentsManagers — kein WebGL, kein echtes Modell. */
+/**
+ * Eine Attrappe des FragmentsManagers — kein WebGL, kein echtes Modell.
+ *
+ * IN DER FORM DER ECHTEN BIBLIOTHEK. Vorher hing `editor` am einzelnen Modell
+ * und `core` konnte nur `load`. Genau umgekehrt ist es richtig: der Editor
+ * gehört `FragmentsModels` (also `core`), das Einzelmodell führt ihn nur
+ * privat. Weil die Attrappe das Spiegelbild der Wirklichkeit war, liefen 12
+ * Tests grün, während im Browser jede Bearbeitung an `kein_editor` starb.
+ * `test/fragmentsVertrag.test.js` hält die Form jetzt gegen die Bibliothek.
+ */
 function fakeFragments() {
     const modelle = new Map();
     let naechsteId = 1;
@@ -153,12 +178,32 @@ function fakeFragments() {
         _modelle: modelle,
         list: modelle,
         core: {
+            editor,
+            update: vi.fn(async () => {}),
             load: vi.fn(async (_puffer, { modelId }) => {
-                modelle.set(modelId, { modelId, editor });
+                // `core.load` GIBT DAS MODELL ZURÜCK — daran hängt, dass der
+                // Autor es in die Szene setzen kann.
+                const m = { modelId, object: { name: modelId }, useCamera: vi.fn() };
+                modelle.set(modelId, m);
+                return m;
             }),
             disposeModel: vi.fn(async (modelId) => { modelle.delete(modelId); }),
         },
         _editor: editor,
+    };
+}
+
+/** Eine Welt-Attrappe: nur Szene und Kamera, kein WebGL. */
+function fakeWelt() {
+    const kinder = [];
+    return {
+        kinder,
+        welt: {
+            scene: { three: { add: (o) => kinder.push(o), remove: (o) => {
+                const i = kinder.indexOf(o); if (i >= 0) kinder.splice(i, 1);
+            } } },
+            camera: { three: { istKamera: true } },
+        },
     };
 }
 
@@ -219,15 +264,25 @@ describe('Das CDE-Modell wird AUFGEBAUT, nicht fortgeschrieben', () => {
         expect(misserfolge[0].grund).toMatch(/mindestens 2 Punkte/);
     });
 
-    it('gibt den IFC-Typ des Bauplans an den Editor weiter', async () => {
+    it('gibt Typ, Name und Kennung in der Form weiter, die die Bibliothek liest', async () => {
+        // DIE FORM STAMMT AUS DER BIBLIOTHEK: `itemDataToRawItemData` liest
+        // `_category` und wirft ohne sie „Category is required"; alles ohne
+        // führenden Unterstrich wird zum Attribut. Hier stand einmal
+        // `{ category, data: { Name } }` — die Form eines `edit`-Auftrags. Der
+        // Aufruf warf damit jedes Mal, der try/catch schluckte es, und
+        // Zeichnen ergab nie ein Bauteil. `fragmentsVertrag.test.js` hält die
+        // Form gegen die Typdeklarationen.
         const f = fakeFragments();
         const trasse = { globalId: 'cde-t', art: 'erzeugt', modell: 'cde',
                          wert: { rezept: 'linie', kategorie: 'IFCALIGNMENT', name: 'Achse A',
                                  parameter: { punkte: LINIE } } };
         await autorMit(f).baueErzeugte([trasse]);
         const [, [neu]] = f._editor.createElements.mock.calls[0];
-        expect(neu.attributes.category).toBe('IFCALIGNMENT');
-        expect(neu.attributes.data.Name.value).toBe('Achse A');
+        expect(neu.attributes._category.value).toBe('IFCALIGNMENT');
+        expect(neu.attributes.Name.value).toBe('Achse A');
+        // Die selbst vergebene Kennung geht in den GUID-Index — sonst wäre ein
+        // erzeugtes Bauteil nur über die Karte dieses einen Laufs auffindbar.
+        expect(neu.attributes._guid.value).toBe('cde-t');
     });
 });
 
@@ -273,5 +328,80 @@ describe('Das Nachspielen sucht Erzeugtes nicht im gelieferten Modell', () => {
         expect(plan.konflikte).toEqual([]);
         expect(plan.anzuwenden).toHaveLength(1);
         expect(plan.anzuwenden[0].modell).toBe('cde');
+    });
+});
+
+describe('Erzeugtes muss auch ZU SEHEN sein (Stufe 12.0c)', () => {
+    it('hängt das CDE-Modell in die Szene und bindet es an die Kamera', async () => {
+        // Der teuerste aller Fälle: `core.load` legt ein Modell an, hängt es
+        // aber NICHT in die Szene — `loadIfc` tut das für geliefertes Material
+        // ausdrücklich, `eigenesModell` tat es nicht. Ein gezeichnetes Bauteil
+        // entstand damit fehlerfrei und war trotzdem nicht da. Nichts deutete
+        // auf einen Fehler hin, weil keiner passierte.
+        const f = fakeFragments();
+        const w = fakeWelt();
+        const autor = new IfcAutor({ getFragments: () => f, getWelt: () => w.welt });
+
+        const r = await autor.eigenesModell();
+        expect(r.ok).toBe(true);
+        expect(w.kinder).toHaveLength(1);
+        expect(w.kinder[0].name).toBe('cde-eigenbau');
+        expect(f._modelle.get('cde-eigenbau').useCamera).toHaveBeenCalledWith({ istKamera: true });
+    });
+
+    it('nimmt es beim Verwerfen wieder heraus', async () => {
+        // Sonst bliebe ein Objekt in der Szene, dessen Modell es nicht mehr
+        // gibt — und `baueErzeugte` verwirft vor JEDEM Aufbau.
+        const f = fakeFragments();
+        const w = fakeWelt();
+        const autor = new IfcAutor({ getFragments: () => f, getWelt: () => w.welt });
+
+        await autor.eigenesModell();
+        await autor.verwirfEigenesModell();
+        expect(w.kinder).toHaveLength(0);
+    });
+
+    it('ein Aufbau hinterlässt genau EIN Modell in der Szene, nicht eins je Lauf', async () => {
+        const f = fakeFragments();
+        const w = fakeWelt();
+        const autor = new IfcAutor({ getFragments: () => f, getWelt: () => w.welt });
+
+        await autor.baueErzeugte([schritt('cde-1')]);
+        await autor.baueErzeugte([schritt('cde-1'), schritt('cde-2')]);
+        await autor.baueErzeugte([schritt('cde-1')]);
+        expect(w.kinder).toHaveLength(1);
+    });
+
+    it('läuft auch ohne Welt durch — Bearbeiten ist eine Zusatzfähigkeit', async () => {
+        const f = fakeFragments();
+        const autor = new IfcAutor({ getFragments: () => f });
+        expect((await autor.eigenesModell()).ok).toBe(true);
+    });
+});
+
+describe('Eine Festlegung auf ein SELBST erzeugtes Bauteil (Stufe 12.0c)', () => {
+    it('findet es über die Karte, wenn dieser Lauf nichts erzeugt hat', async () => {
+        // Ein Ein-Schritt-Plan baut nichts neu auf (sonst räumte er alles
+        // Gezeichnete weg). Die localId stand aber nur in der Karte des
+        // Erzeugungslaufs — eine Bezugshöhe auf eine gezeichnete Linie
+        // scheiterte deshalb immer mit `keine_localId`.
+        //
+        // Auffindbar ist sie, weil erzeugte Bauteile ihre CDE-Kennung als
+        // `_guid` ins Modell tragen.
+        const f = fakeFragments();
+        f.list = f._modelle;
+        f._modelle.set('cde-eigenbau', {
+            modelId: 'cde-eigenbau',
+            getBoxes: async () => [new (await import('three')).Box3()],
+        });
+        const autor = autorMit(f);
+        const { misserfolge } = await autor.wendeAn(
+            { modelId: 'm1', anzuwenden: [
+                { art: 'lage', globalId: 'cde-t', modell: 'cde', wert: { x: 1, y: 2, z: 3 } },
+            ] },
+            { globalIdZuLocalId: new Map([['cde-t', 77]]) },
+        );
+        // Es kommt bis zum Editor — kein `keine_localId` mehr.
+        expect(misserfolge.map(m => m.grund)).not.toContain('keine_localId');
     });
 });

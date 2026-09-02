@@ -83,6 +83,14 @@
 
       <span class="cde-spacer" />
 
+      <!-- X2: Hilfe und der Ausgang wohnen in der Kopfzeile — die
+           That-Open-Zeile des Viewers ist entfallen. -->
+      <button class="cde-btn ghost" title="Tastenkürzel anzeigen [?]" @click="hilfeUmschalten">
+        <CdeIcon name="help" :size="14" />
+      </button>
+      <button class="cde-btn ghost" title="CDE verlassen — zurück zu den Tools" @click="router.push('/tools')">
+        <CdeIcon name="open" :size="14" />
+      </button>
       <label class="cde-bearbeiter" title="Bearbeiter-Name — Autor für Issues, Kommentare und Statuswechsel">
         <CdeIcon name="user" :size="14" />
         <input
@@ -236,14 +244,21 @@
             <td class="doc-rev">{{ d.revision }}</td>
             <td class="doc-size">{{ fmtBytes(d.size) }}</td>
             <td>
+              <!-- Lücke ④: das Feld bietet nur ISO-19650-Wege an — Gesperrtes
+                   bleibt sichtbar (grau, Grund im title), und eine Ablehnung
+                   springt zurück statt still stehen zu bleiben. -->
               <select
                 class="doc-status"
                 :class="`iso-${d.status.toLowerCase()}`"
                 :value="d.status"
                 :title="statusTitle(d)"
-                @change="cde.setDokumentStatus(d.sha256, $event.target.value)"
+                @change="statusWechseln(d, $event)"
               >
-                <option v-for="s in ISO_STATUS" :key="s" :value="s">{{ s }}</option>
+                <option
+                  v-for="z in statusZiele(d.status, auth.rolle)"
+                  :key="z.status" :value="z.status"
+                  :disabled="!z.ok" :title="z.grund ?? ''"
+                >{{ z.status }}</option>
               </select>
             </td>
             <td class="doc-date">{{ fmtDate(d.addedAt) }}</td>
@@ -252,12 +267,30 @@
                 <CdeIcon name="open" :size="12" />
               </button>
               <button class="cde-btn sm danger" @click="cde.removeDokument(d.sha256)" title="Aus Register entfernen" aria-label="Aus Register entfernen">
-                <CdeIcon name="close" :size="12" />
+                <CdeIcon name="delete" :size="12" />
               </button>
             </td>
           </tr>
         </tbody>
       </table>
+      <p v-if="statusHinweis" class="doc-status-hinweis">
+        <CdeIcon name="warn" :size="12" /> {{ statusHinweis }}
+      </p>
+      <!-- Übergabepaket (Lücke ⑩): Transmittal aus Shared/Published-Dokumenten
+           mit Begleitschein — der formale ISO-19650-Ausgang. -->
+      <div class="doc-fuss">
+        <button
+          class="cde-btn ghost"
+          :disabled="!uebergabefaehige.length"
+          :title="uebergabefaehige.length
+            ? 'Übergabepaket (ZIP mit Begleitschein) aus Shared/Published-Dokumenten schnüren'
+            : 'Erst ein Dokument auf Shared oder Published setzen — WIP wird nicht übergeben'"
+          @click="transmittalOeffnen"
+        ><CdeIcon name="send" :size="13" /> Übergabepaket…</button>
+        <span v-if="transmittalProtokoll.length" class="doc-fuss-info">
+          {{ transmittalProtokoll.length }} Übergabe{{ transmittalProtokoll.length === 1 ? '' : 'n' }} protokolliert
+        </span>
+      </div>
     </div>
 
     <!-- ── Arbeitsfläche: Leiste | Viewer | Leiste ──
@@ -305,6 +338,13 @@
           />
         </div>
 
+        <!-- Der Längsschnitt-Host (Stufe 17.1). Der Modus stand seit
+             Sprint P im Katalog und war seit 14.1 freigeschaltet — gezeigt
+             hat er bis hier NICHTS: Taste 3 führte auf eine leere Fläche. -->
+        <div v-if="ansicht.modus === 'laengsschnitt'" class="host-lage">
+          <LaengsschnittCanvas />
+        </div>
+
         <div v-if="ansicht.modus === 'lageplan'" class="host-lage">
           <IfcPlanCanvas
             ref="planRef"
@@ -312,25 +352,35 @@
             :titleBlock="planSchriftfeld"
             :logo="plan.logo"
             @zeichnen-beendet="zeichenstandAbgleichen"
+            @werkzeug-beendet="planWerkzeugBeendet"
           />
-          <!-- Werkzeuge des Lageplans. Bewusst hier und nicht im Panel: sie
-               wirken auf die Zeichenfläche und sollen erreichbar sein, auch
-               wenn die Leiste zugeklappt ist. -->
+          <!-- Werkzeuge des Lageplans (X3): VIER GRUPPEN statt einundzwanzig
+               Knöpfen — Zeichnen, Setzen, Stift als Anker mit Popover
+               (das PdfToolbar-Muster), Bemaßen direkt. Die Listen kommen
+               weiter aus dem Katalog; ein Werkzeug, das dort fehlt, kann
+               hier nicht stehen. -->
           <div class="plan-werkzeuge">
-            <!-- Erzeugen (Stufe 9.4). Die Liste kommt aus dem Bearbeitungs-
-                 Katalog, gefiltert nach Gruppe — dieselbe Liste, die auch die
-                 Befehls-Palette liest. Ein Werkzeug, das dort fehlt und hier
-                 steht, kann es damit nicht geben. -->
             <button
-              v-for="z in ZEICHEN_WERKZEUGE"
-              :key="z.id"
               class="plan-wz"
-              :class="{ aktiv: zeichenWerkzeug === z.id }"
-              :title="`${z.titel} — Punkte in den Plan klicken, Doppelklick schliesst ab [Esc bricht ab]`"
-              @click="zeichenWerkzeugSetzen(z.id)"
-            >
-              <CdeIcon :name="z.icon" :size="14" />
-            </button>
+              :class="{ aktiv: zeichenWerkzeug || planPopover === 'zeichnen' }"
+              :disabled="!bearbeitung.modusAn"
+              :title="bearbeitung.modusAn ? 'Zeichnen — Bauteile anlegen und umlegen' : 'Zeichnen — Bearbeiten ist aus (E schaltet ein)'"
+              @click="planPopoverUm('zeichnen')"
+            ><CdeIcon name="add" :size="14" /></button>
+
+            <button
+              class="plan-wz"
+              :class="{ aktiv: planModus || planPopover === 'setzen' }"
+              title="Setzen — Beschriftung und Symbole in den Plan"
+              @click="planPopoverUm('setzen')"
+            ><CdeIcon name="pointer" :size="14" /></button>
+
+            <button
+              class="plan-wz"
+              :class="{ aktiv: stiftModus || planPopover === 'stift' }"
+              title="Rotstift — freihand anmerken und radieren"
+              @click="planPopoverUm('stift')"
+            ><CdeIcon name="edit" :size="14" :style="stiftModus ? { color: stiftFarbe } : null" /></button>
 
             <span class="plan-wz-trenner"></span>
 
@@ -338,10 +388,8 @@
               class="plan-wz"
               :class="{ aktiv: misstImPlan }"
               title="Bemaßen — zwei Punkte im Plan anklicken [Esc beendet]"
-              @click="bemassungUmschalten"
-            >
-              <CdeIcon name="measure" :size="14" />
-            </button>
+              @click="planPopover = null; bemassungUmschalten()"
+            ><CdeIcon name="bemassen" :size="14" /></button>
             <button
               v-if="ifc.planDimensions.length"
               class="plan-wz"
@@ -352,71 +400,85 @@
               <span class="plan-wz-zahl">{{ ifc.planDimensions.length }}</span>
             </button>
 
-            <span class="plan-wz-trenner"></span>
+            <!-- ── Die Popover der drei Gruppen ── -->
+            <div v-if="planPopover === 'zeichnen'" class="plan-popover">
+              <button
+                v-for="z in ZEICHEN_WERKZEUGE"
+                :key="z.id"
+                class="pp-zeile"
+                :class="{ aktiv: zeichenWerkzeug === z.id }"
+                :title="`${z.titel} — Punkte klicken, Doppelklick schliesst ab [Esc bricht ab]`"
+                @click="zeichenWerkzeugSetzen(z.id); planPopover = null"
+              ><CdeIcon :name="z.icon" :size="13" /> {{ z.titel }}</button>
 
-            <!-- Planinhalte setzen (Stufe 7). Ohne Setzmodus fasst der Zeiger
-                 vorhandene Inhalte an und zieht sie. -->
-            <button
-              class="plan-wz"
-              :class="{ aktiv: planModus === 'text' }"
-              title="Beschriftung setzen — dann in den Plan klicken"
-              @click="planModusSetzen('text')"
-            >
-              <CdeIcon name="edit" :size="14" />
-            </button>
-            <button
-              v-for="sym in PLAN_SYMBOL_NAMES"
-              :key="sym"
-              class="plan-wz"
-              :class="{ aktiv: planModus === sym }"
-              :title="`Symbol setzen: ${SYMBOL_TITEL[sym] ?? sym}`"
-              @click="planModusSetzen(sym)"
-            >
-              <span class="plan-wz-sym">{{ SYMBOL_KURZ[sym] ?? '?' }}</span>
-            </button>
-            <span class="plan-wz-trenner"></span>
+              <!-- Bauteilbibliothek (Lücke ⑨): Vorlagen = Rezept + vorbelegte
+                   Werte. Projekt schlägt Büro schlägt eingebauten Satz. -->
+              <div v-if="vorlagen.length" class="pp-trenner">Vorlagen</div>
+              <div v-for="v in vorlagen" :key="v.id" class="pp-vorlage">
+                <button
+                  class="pp-zeile"
+                  :title="`${v.name} — ${v.herkunft === 'eingebaut' ? 'eingebaute Vorlage' : v.herkunft === 'buero' ? 'Büro-Vorlage' : 'Projekt-Vorlage'}`"
+                  @click="vorlageZeichnen(v)"
+                ><CdeIcon :name="v.rezept === 'schacht' ? 'schacht' : v.rezept === 'rohr' ? 'laengsschnitt' : 'route'" :size="13" /> {{ v.name }}</button>
+                <button
+                  v-if="v.herkunft !== 'eingebaut'"
+                  class="pp-vorlage-weg"
+                  :title="`Vorlage löschen (${v.herkunft === 'buero' ? 'Büro' : 'Projekt'})`"
+                  aria-label="Vorlage löschen"
+                  @click="vorlageEntfernen(v)"
+                ><CdeIcon name="delete" :size="11" /></button>
+              </div>
+              <button
+                v-if="bearbeitung.scharf?.rezept"
+                class="pp-zeile pp-sichern"
+                title="Die Werte des scharfen Zeichenwerkzeugs als Vorlage sichern (ohne Bezeichnung und Höhe)"
+                @click="vorlageSichern"
+              ><CdeIcon name="save" :size="13" /> Als Vorlage sichern…</button>
+            </div>
 
-            <!-- Rotstift: Freihand-Anmerkung ZUM Plan, kein Planinhalt. -->
-            <button
-              class="plan-wz"
-              :class="{ aktiv: stiftModus === 'stift' }"
-              title="Rotstift — freihand anmerken"
-              @click="stiftSetzen('stift')"
-            >
-              <CdeIcon name="edit" :size="14" :style="{ color: stiftFarbe }" />
-            </button>
-            <button
-              v-for="f in STIFT_FARBEN"
-              :key="f"
-              v-show="stiftModus === 'stift'"
-              class="plan-wz farbe"
-              :class="{ aktiv: stiftFarbe === f }"
-              :style="{ '--farbe': f }"
-              :title="`Stiftfarbe`"
-              @click="stiftSetzen('stift', f)"
-            ></button>
-            <button
-              v-if="rotstift.anzahl"
-              class="plan-wz"
-              :class="{ aktiv: stiftModus === 'radierer' }"
-              :title="`Radieren (${rotstift.anzahl} Striche)`"
-              @click="stiftSetzen('radierer')"
-            >
-              <CdeIcon name="undo" :size="14" />
-            </button>
+            <div v-if="planPopover === 'setzen'" class="plan-popover">
+              <button class="pp-zeile" :class="{ aktiv: planModus === 'text' }"
+                      @click="planModusSetzen('text'); planPopover = null">
+                <CdeIcon name="text" :size="13" /> Beschriftung setzen
+              </button>
+              <button
+                v-for="sym in PLAN_SYMBOL_NAMES"
+                :key="sym"
+                class="pp-zeile"
+                :class="{ aktiv: planModus === sym }"
+                @click="planModusSetzen(sym); planPopover = null"
+              ><span class="plan-wz-sym">{{ SYMBOL_KURZ[sym] ?? '?' }}</span> {{ SYMBOL_TITEL[sym] ?? sym }}</button>
+              <button
+                v-if="planInhalt.anzahl"
+                class="pp-zeile"
+                :class="{ aktiv: planModus === 'loeschen' }"
+                @click="planModusSetzen('loeschen'); planPopover = null"
+              ><CdeIcon name="delete" :size="13" /> Planinhalt entfernen ({{ planInhalt.anzahl }})</button>
+            </div>
 
-            <span class="plan-wz-trenner"></span>
-
-            <button
-              v-if="planInhalt.anzahl"
-              class="plan-wz"
-              :class="{ aktiv: planModus === 'loeschen' }"
-              :title="`Planinhalt entfernen (${planInhalt.anzahl} gesetzt)`"
-              @click="planModusSetzen('loeschen')"
-            >
-              <CdeIcon name="close" :size="14" />
-              <span class="plan-wz-zahl">{{ planInhalt.anzahl }}</span>
-            </button>
+            <div v-if="planPopover === 'stift'" class="plan-popover">
+              <button class="pp-zeile" :class="{ aktiv: stiftModus === 'stift' }"
+                      @click="stiftSetzen('stift'); planPopover = null">
+                <CdeIcon name="edit" :size="13" :style="{ color: stiftFarbe }" /> Rotstift
+              </button>
+              <div class="pp-farben">
+                <button
+                  v-for="f in STIFT_FARBEN"
+                  :key="f"
+                  class="plan-wz farbe"
+                  :class="{ aktiv: stiftFarbe === f }"
+                  :style="{ '--farbe': f }"
+                  title="Stiftfarbe"
+                  @click="stiftSetzen('stift', f); planPopover = null"
+                ></button>
+              </div>
+              <button
+                v-if="rotstift.anzahl"
+                class="pp-zeile"
+                :class="{ aktiv: stiftModus === 'radierer' }"
+                @click="stiftSetzen('radierer'); planPopover = null"
+              ><CdeIcon name="radierer" :size="13" /> Radieren ({{ rotstift.anzahl }} Striche)</button>
+            </div>
           </div>
         </div>
       </div>
@@ -434,6 +496,7 @@
         <IfcPlanningCockpit v-else-if="panels.isOpen('cockpit')" />
         <IfcPlanPanel v-else-if="panels.isOpen('plan')" @stile-oeffnen="stilEditorOffen = true" />
         <CdeToolbox v-else-if="panels.isOpen('toolbox')" />
+        <IfcAenderungenTab v-else-if="panels.isOpen('verlauf')" />
         <IfcAnnotations
           v-else-if="panels.isOpen('issues')"
           :annotationActive="annotationActive"
@@ -446,14 +509,55 @@
     </div>
 
     <IfcVectorStyleEditor v-if="stilEditorOffen" @close="stilEditorOffen = false" />
+    <!-- U2: Der Commit-Dialog — das Ende jeder Sitzung, egal in welcher
+         Ansicht sie lief. -->
+    <CommitDialog />
+
+    <!-- Übergabepaket (Lücke ⑩): Auswahl → ZIP mit Begleitschein + Protokoll. -->
+    <CdeDialog :offen="transmittalOffen" titel="Übergabepaket schnüren" icon="send"
+               @close="transmittalOffen = false">
+      <p class="tm-satz">
+        Übergeben wird nur <b>Shared</b> oder <b>Published</b> — WIP ist
+        Arbeitsstand, Archived ist aus dem Verkehr. Das Paket enthält die
+        Dateien und einen Begleitschein; die Übergabe wird protokolliert.
+      </p>
+      <label v-for="d in uebergabefaehige" :key="d.sha256" class="tm-zeile">
+        <input type="checkbox" :value="d.sha256" v-model="transmittalWahl" />
+        <span class="tm-name">{{ d.name }}</span>
+        <span class="tm-meta">Rev. {{ d.revision }} · {{ d.status }}</span>
+      </label>
+      <label class="tm-feld">
+        <span>Empfänger</span>
+        <input v-model="transmittalEmpfaenger" type="text" placeholder="z. B. Stadtwerke, Herr M." />
+      </label>
+      <label class="tm-feld">
+        <span>Anmerkung</span>
+        <textarea v-model="transmittalAnmerkung" rows="2" placeholder="optional"></textarea>
+      </label>
+      <p v-if="transmittalMeldung" class="tm-meldung">
+        <CdeIcon name="warn" :size="12" /> {{ transmittalMeldung }}
+      </p>
+      <template #fuss>
+        <button class="cde-btn ghost" @click="transmittalOffen = false">Abbrechen</button>
+        <button class="cde-btn primary" :disabled="!transmittalWahl.length || transmittalLaeuft"
+                @click="transmittalErzeugen">
+          {{ transmittalLaeuft ? 'Packt …' : `Paket erzeugen (${transmittalWahl.length})` }}
+        </button>
+      </template>
+    </CdeDialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useViewerApi } from '../composables/viewerApi.js';
 import IfcViewer from '../components/IfcViewer.vue';
 import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
+import LaengsschnittCanvas from '../components/LaengsschnittCanvas.vue';
+import CommitDialog from '../components/CommitDialog.vue';
+import CdeDialog from '../components/ui/CdeDialog.vue';
+import { REPO_KEY_TRANSMITTALS, UEBERGABEFAEHIG, baueSchein, paketName, protokollEintrag, pruefeAuswahl } from '../services/Transmittal.js';
 import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
 import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
 import IfcPlanningCockpit from '../components/IfcPlanningCockpit.vue';
@@ -461,9 +565,13 @@ import IfcPlanPanel from '../components/IfcPlanPanel.vue';
 import CdeToolbox from '../components/CdeToolbox.vue';
 import IfcVectorStyleEditor from '../components/IfcVectorStyleEditor.vue';
 import IfcAnnotations from '../components/IfcAnnotations.vue';
+import IfcAenderungenTab from '../components/IfcAenderungenTab.vue';
 import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
+import { statusZiele } from '../services/StatusWorkflow.js';
+import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
+import { useAuthStore } from '@/stores/useAuthStore.js';
 import { usePlan } from '../stores/usePlan.js';
 import { usePlanInhalt } from '../stores/usePlanInhalt.js';
 import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
@@ -474,7 +582,7 @@ import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
-import { ausGruppe } from '../services/Bearbeitungen.js';
+import { BEARBEITUNGEN, eingabeArt } from '../services/Bearbeitungen.js';
 import { abdeckung } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
@@ -485,6 +593,11 @@ import { modusListe, istVerfuegbar } from '../services/ViewModes.js';
 import '../styles/theme.css';
 
 const router = useRouter();
+
+/** X2: Hilfe über die viewerApi — die Merkstelle greift auch neben dem Viewer. */
+function hilfeUmschalten() {
+  try { useViewerApi().hilfeUmschalten?.(); } catch { /* Viewer noch nicht da */ }
+}
 const route = useRoute();
 // Stufe C: mit ?projekt=<id> lebt das Repository im Projektordner auf dem Server.
 // Muss VOR den Stores passieren — sie lesen beim Anlegen aus dem Backend.
@@ -502,6 +615,7 @@ if (Number.isInteger(cockpitProjektId) && cockpitProjektId > 0) {
 // den eingebauten Standard.
 repo.setBueroBackend(new BueroBackend());
 const cde = useCdeStore();
+const auth = useAuthStore();
 const aenderungen = useAenderungen();
 /** Die Aufträge zur Auswahl — nur gefüllt, wenn `?projekt=` fehlt. */
 const auftraege = ref([]);
@@ -568,7 +682,10 @@ function modusTitel(m) {
 // Der Modellstand entscheidet, welche Modi bedienbar sind. Ohne Modell wäre
 // der Lageplan ein weißes Blatt — also sperren statt hineinlaufen lassen.
 watch(() => ifc.modelList?.length ?? 0, (n) => {
+  // `hatAchsen` setzt der Viewer, sobald gezählt ist (Stufe 14.1) — hier ist
+  // die Zählung noch nicht gelaufen. Ohne Modell gibt es auch keine Achsen.
   ansicht.setzeStand({ hatModell: n > 0 });
+  if (!n) ansicht.setzeStand({ hatAchsen: false });
   if (!n) ansicht.setzeModus('3d');
 }, { immediate: true });
 
@@ -642,25 +759,46 @@ const SYMBOL_TITEL = {
 };
 
 // ── Rotstift (Stufe 7) ─────────────────────────────────────────────────────
+/**
+ * DIE PLAN-WERKZEUGE HÄNGEN AM EINEN SLOT (Teil XI, U1).
+ *
+ * Vorher pflegten VIER Setter hier und DREI exponierte Setter im Canvas
+ * dieselbe Exklusivität von Hand — die klassische Doppel-Pflege, die
+ * auseinanderläuft. Jetzt: jeder Setter ist ein reiner Schalter, der den
+ * Slot BELEGT und seinen Ausschalter hinterlegt; wer als Nächstes kommt,
+ * räumt den Vorgänger über genau diesen einen Mechanismus.
+ */
 const stiftModus = ref(null);
 const stiftFarbe = ref(STIFT_FARBEN[0]);
+function _stiftAus() {
+  stiftModus.value = null;
+  planRef.value?.setzeStift?.(null, stiftFarbe.value);
+}
 function stiftSetzen(m, farbe = null) {
   // Auf dieselbe Farbe nochmal geklickt schaltet ab; eine neue Farbe schaltet
   // den Stift an und wechselt nur.
   const gleicheFarbe = !farbe || farbe === stiftFarbe.value;
-  stiftModus.value = (stiftModus.value === m && gleicheFarbe) ? null : m;
+  const ziel = (stiftModus.value === m && gleicheFarbe) ? null : m;
   if (farbe) stiftFarbe.value = farbe;
-  planRef.value?.setzeStift?.(stiftModus.value, stiftFarbe.value);
-  if (stiftModus.value) { planModus.value = null; misstImPlan.value = false; zeichenWerkzeugSetzen(null); }
+  stiftModus.value = ziel;
+  planRef.value?.setzeStift?.(ziel, stiftFarbe.value);
+  if (ziel) bearbeitung.belegeWerkzeug('plan:stift', _stiftAus);
+  else bearbeitung.gebeWerkzeugFrei('plan:stift');
 }
 
 const planModus = ref(null);
+function _setzenAus() {
+  planModus.value = null;
+  planRef.value?.setzeModus?.(null);
+}
 function planModusSetzen(m) {
   // Nochmal derselbe Knopf schaltet ab — sonst kommt man aus dem Modus nur
   // über Esc heraus, und das weiß nicht jeder.
-  planModus.value = planModus.value === m ? null : m;
-  planRef.value?.setzeModus?.(planModus.value);
-  if (planModus.value) { misstImPlan.value = false; stiftModus.value = null; zeichenWerkzeugSetzen(null); }
+  const ziel = planModus.value === m ? null : m;
+  planModus.value = ziel;
+  planRef.value?.setzeModus?.(ziel);
+  if (ziel) bearbeitung.belegeWerkzeug('plan:setzen', _setzenAus);
+  else bearbeitung.gebeWerkzeugFrei('plan:setzen');
 }
 
 // ── Zeichnen im Plan (Stufe 9.4) ───────────────────────────────────────────
@@ -671,39 +809,206 @@ function planModusSetzen(m) {
  * im Kontextmenü am Bauteil. Genau diese Trennung führt `GRUPPEN[...].einstieg`
  * im Katalog, und `passende()` hält sich daran.
  */
-const ZEICHEN_WERKZEUGE = ausGruppe('erzeugen');
+/**
+ * Was im Lageplan gezeichnet werden kann.
+ *
+ * Nicht mehr „die Gruppe Erzeugen", sondern „alles, dessen EINGABE ein
+ * gezeichneter Zug ist". „Trasse ändern" gehört zur Gruppe Lage und wird
+ * trotzdem hier bedient — die Gruppe sagt, wo etwas angeboten wird, die
+ * Eingabeart, womit es gefüttert wird.
+ *
+ * Werkzeuge, die ein Bauteil brauchen, erscheinen erst, wenn eines gewählt
+ * ist. Ein Knopf, der nur eine Absage erzeugt, ist ein toter Knopf.
+ */
+const ZEICHEN_WERKZEUGE = computed(() => BEARBEITUNGEN.filter((b) => {
+  if (!['zug', 'umriss'].includes(eingabeArt(b))) return false;
+  return b.gruppe === 'erzeugen' || !!bearbeitung.bauteil;
+}));
 const zeichenWerkzeug = ref(null);
 
+/** X3: welches Gruppen-Popover der Plan-Leiste offen ist. */
+const planPopover = ref(null);
+function planPopoverUm(gruppe) {
+  planPopover.value = planPopover.value === gruppe ? null : gruppe;
+  // Die Bibliothek lädt beim Aufklappen — nicht beim Start: sie hängt am
+  // Repo, und das Backend steht erst nach der Auftragswahl fest.
+  if (planPopover.value === 'zeichnen') vorlagenLaden();
+}
+
+// ── Bauteilbibliothek (Lücke ⑨ / Stufe 9.8) ────────────────────────────────
+const vorlagen = ref([]);
+async function vorlagenLaden() {
+  try { vorlagen.value = await ladeVorlagen(repo); }
+  catch (fehler) { console.warn('cde: vorlagen laden', fehler?.message ?? fehler); }
+}
+
+/**
+ * Eine Vorlage zeichnen: dasselbe Werkzeug wie der rohe Rezept-Knopf, nur
+ * mit VORBELEGTEN Werten — der eigentliche Zweck der Bibliothek: nicht
+ * jedes Mal DN 1000 tippen.
+ */
+function vorlageZeichnen(v) {
+  if (!bearbeitung.modusAn) return;
+  const werkzeugId = `${v.rezept}-zeichnen`;
+  const ok = planRef.value?.zeichneMit?.(werkzeugId);
+  zeichenWerkzeug.value = ok ? werkzeugId : null;
+  if (!ok) return;
+  for (const [feld, wert] of Object.entries(v.vorgaben ?? {})) {
+    bearbeitung.setzeWert(feld, wert);
+  }
+  bearbeitung.belegeWerkzeug('plan:zeichnen', _zeichnenAus);
+  planPopover.value = null;
+}
+
+/**
+ * Die WERTE des scharfen Zeichenwerkzeugs als Vorlage sichern. Bezeichnung
+ * und Höhe bleiben draußen — sie gehören zum einzelnen Bauteil, nicht zur
+ * Vorlage (ein „Schacht DN 1000" hat keine feste Sohlhöhe).
+ */
+async function vorlageSichern() {
+  const scharf = bearbeitung.scharf;
+  if (!scharf?.rezept) return;
+  const name = prompt('Name der Vorlage:', scharf.titel?.replace(' zeichnen', '') ?? '');
+  if (!name?.trim()) return;
+  const vorgaben = {};
+  for (const [feld, wert] of Object.entries(bearbeitung.werte ?? {})) {
+    if (feld === 'name' || feld === 'hoehe') continue;
+    if (['string', 'number', 'boolean'].includes(typeof wert) && wert !== '') vorgaben[feld] = wert;
+  }
+  const ebene = repo.buero && confirm('Für ALLE Projekte sichern (Büro-Ebene)?\n„Abbrechen" sichert nur in diesem Auftrag.')
+    ? 'buero' : 'projekt';
+  const r = await speichereVorlage(repo, { name: name.trim(), rezept: scharf.rezept, vorgaben }, { ebene });
+  if (!r.ok) console.warn('cde: vorlage sichern', r.grund);
+  await vorlagenLaden();
+}
+
+// ── Übergabepakete (Lücke ⑩) ────────────────────────────────────────────────
+const transmittalOffen = ref(false);
+const transmittalWahl = ref([]);
+const transmittalEmpfaenger = ref('');
+const transmittalAnmerkung = ref('');
+const transmittalLaeuft = ref(false);
+const transmittalMeldung = ref('');
+const transmittalProtokoll = ref([]);
+
+const uebergabefaehige = computed(() =>
+  cde.dokumente.filter(d => UEBERGABEFAEHIG.includes(d.status)));
+
+async function transmittalOeffnen() {
+  transmittalMeldung.value = '';
+  transmittalWahl.value = uebergabefaehige.value.map(d => d.sha256);
+  transmittalOffen.value = true;
+  try {
+    const liste = await repo.get(REPO_KEY_TRANSMITTALS);
+    transmittalProtokoll.value = Array.isArray(liste) ? liste : [];
+  } catch { /* Protokoll ist Zusatz, kein Blocker */ }
+}
+
+/**
+ * Das Paket schnüren: Dateien holen, Schein dazulegen, ZIP herunterladen,
+ * Übergabe protokollieren. FEHLENDE Dateien brechen ab und werden benannt —
+ * ein Paket, das still unvollständig ist, wäre schlimmer als keines.
+ */
+async function transmittalErzeugen() {
+  const gewaehlt = uebergabefaehige.value.filter(d => transmittalWahl.value.includes(d.sha256));
+  const pruefung = pruefeAuswahl(gewaehlt);
+  if (!pruefung.ok) { transmittalMeldung.value = pruefung.grund; return; }
+  transmittalLaeuft.value = true;
+  transmittalMeldung.value = '';
+  try {
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    const fehlend = [];
+    for (const d of gewaehlt) {
+      const abgelegt = await repo.getBlob(`model:${d.sha256}`);
+      if (!abgelegt?.blob) { fehlend.push(d.name); continue; }
+      zip.file(d.name, abgelegt.blob);
+    }
+    if (fehlend.length) {
+      transmittalMeldung.value = `Datei nicht in der Ablage: ${fehlend.join(', ')} — Paket nicht erzeugt.`;
+      return;
+    }
+    const wann = Date.now();
+    const schein = baueSchein({
+      auftrag: cde.auftrag, empfaenger: transmittalEmpfaenger.value,
+      anmerkung: transmittalAnmerkung.value, wer: cde.bearbeiter, wann,
+      dokumente: gewaehlt,
+    });
+    zip.file('UEBERGABESCHEIN.txt', schein);
+    const paket = await zip.generateAsync({ type: 'blob' });
+
+    const url = URL.createObjectURL(paket);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = paketName(cde.auftrag, wann);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+    // Protokoll: append-only in der Auftragsablage — das Paket geht raus,
+    // der Nachweis bleibt.
+    const eintrag = protokollEintrag({
+      empfaenger: transmittalEmpfaenger.value, anmerkung: transmittalAnmerkung.value,
+      wer: cde.bearbeiter, wann, dokumente: gewaehlt,
+    });
+    transmittalProtokoll.value = [...transmittalProtokoll.value, eintrag];
+    await repo.set(REPO_KEY_TRANSMITTALS, JSON.parse(JSON.stringify(transmittalProtokoll.value)));
+    transmittalOffen.value = false;
+  } catch (fehler) {
+    console.error('cde: transmittal', fehler);
+    transmittalMeldung.value = `Fehler: ${fehler?.message ?? fehler}`;
+  } finally {
+    transmittalLaeuft.value = false;
+  }
+}
+
+async function vorlageEntfernen(v) {
+  if (v.herkunft === 'eingebaut') return;
+  if (!confirm(`Vorlage „${v.name}" löschen?`)) return;
+  await loescheVorlage(repo, v.id, { ebene: v.herkunft });
+  await vorlagenLaden();
+}
+
+function _zeichnenAus() {
+  zeichenWerkzeug.value = null;
+  planRef.value?.zeichneMit?.(null);
+}
 function zeichenWerkzeugSetzen(id) {
+  // Zeichnen ist Bearbeiten: ohne Modus passiert nichts. `zeichneMit` läuft
+  // ohnehin über `bearbeitung.starte` und würde abgewiesen — der Knopf soll
+  // aber gar nicht erst so tun, als ginge es.
+  if (id && !bearbeitung.modusAn) return;
   // Nochmal derselbe Knopf schaltet ab — wie bei Setzmodus und Stift.
   const ziel = zeichenWerkzeug.value === id ? null : id;
   const ok = planRef.value?.zeichneMit?.(ziel);
   zeichenWerkzeug.value = ziel && ok ? ziel : null;
-  if (zeichenWerkzeug.value) {
-    // Zeichnen, Bemaßen, Setzen und Stift teilen sich den Klick — nie zwei
-    // zugleich. Ohne das läge ein gesetzter Punkt zugleich als Symbol im Plan.
-    misstImPlan.value = false;
-    planModus.value = null;
-    stiftModus.value = null;
-  }
+  if (zeichenWerkzeug.value) bearbeitung.belegeWerkzeug('plan:zeichnen', _zeichnenAus);
+  else bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
 }
 
 /** Wenn der Plan von sich aus aufhört (abgeschlossen, Esc), nachziehen. */
 function zeichenstandAbgleichen() {
   zeichenWerkzeug.value = planRef.value?.zeichnetGerade?.() ?? null;
+  if (!zeichenWerkzeug.value) bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
+}
+
+/** Esc im Canvas hat ein Werkzeug beendet — Spiegel UND Slot nachziehen. */
+function planWerkzeugBeendet(art) {
+  if (art === 'stift') { stiftModus.value = null; bearbeitung.gebeWerkzeugFrei('plan:stift'); }
+  if (art === 'setzen') { planModus.value = null; bearbeitung.gebeWerkzeugFrei('plan:setzen'); }
+  if (art === 'bemassung') { misstImPlan.value = false; bearbeitung.gebeWerkzeugFrei('plan:bemassung'); }
 }
 
 // ── Bemaßung im Plan (AP-10) ───────────────────────────────────────────────
 const misstImPlan = ref(false);
+function _bemassungAus() {
+  misstImPlan.value = false;
+  planRef.value?.messenUmschalten?.(false);
+}
 function bemassungUmschalten() {
   planRef.value?.messenUmschalten?.();
   misstImPlan.value = planRef.value?.misstGerade?.() ?? false;
-  // Bemaßen und Setzen teilen sich den Klick — nie beide zugleich.
-  if (misstImPlan.value) {
-    planModus.value = null; planRef.value?.setzeModus?.(null);
-    stiftModus.value = null; planRef.value?.setzeStift?.(null);
-    zeichenWerkzeugSetzen(null);
-  }
+  if (misstImPlan.value) bearbeitung.belegeWerkzeug('plan:bemassung', _bemassungAus);
+  else bearbeitung.gebeWerkzeugFrei('plan:bemassung');
 }
 
 // Tasten 1/2/3 sind frei — der Viewer belegt M V N H I T R ? Esc und Strg+K/F.
@@ -832,6 +1137,13 @@ function onClose() {
  * der Variantenwechsel, und es braucht dafür keinen eigenen Mechanismus.
  */
 async function onSatzChange(e) {
+  // U2: Bei OFFENER Sitzung ist der Wechsel gesperrt — sonst stapeln sich
+  // Schritte gegen den falschen Satz. Erst abschließen oder verwerfen.
+  if (aenderungen.sitzungSchritte.length) {
+    e.target.value = cde.aktiverSatzId ?? '';
+    bearbeitung.commitDialogOffen = true;
+    return;
+  }
   await cde.setzeSatz(e.target.value || null);
   await aenderungen.setzeSatz(cde.aktiverSatzId);
   showRegister.value = false;
@@ -907,6 +1219,26 @@ function statusTitle(d) {
   return h.map(e => `${e.status} — ${e.von}, ${fmtDate(e.am)}`).join('\n');
 }
 
+/**
+ * Statuswechsel mit sichtbarer Ablehnung (Lücke ④): schlägt der Wechsel fehl
+ * (kein ISO-Weg, Rang fehlt, Server sagt nein), springt das Feld auf den
+ * geltenden Status zurück und der Grund steht kurz daneben — ein Feld, das
+ * still beim gewünschten Wert stehen bliebe, wäre eine Lüge über den Server.
+ */
+async function statusWechseln(d, ev) {
+  const ok = await cde.setDokumentStatus(d.sha256, ev.target.value);
+  if (!ok) {
+    ev.target.value = d.status;
+    if (cde.statusGrund) {
+      statusHinweis.value = cde.statusGrund;
+      clearTimeout(_statusHinweisTimer);
+      _statusHinweisTimer = setTimeout(() => { statusHinweis.value = ''; }, 5000);
+    }
+  }
+}
+const statusHinweis = ref('');
+let _statusHinweisTimer = 0;
+
 function fmtBytes(n) {
   if (!Number.isFinite(n) || n <= 0) return '–';
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} kB`;
@@ -958,6 +1290,67 @@ function fmtDate(ts) {
   box-shadow: 0 0 0 1px var(--cde-line-strong);
 }
 .plan-wz.farbe.aktiv::after { box-shadow: 0 0 0 2px var(--cde-text-bright); }
+
+.plan-popover {
+  position: absolute; left: 0; top: calc(100% + 0.4rem);
+  display: flex; flex-direction: column; gap: 0.15rem;
+  min-width: 15rem;
+  background: var(--cde-float); padding: 0.35rem;
+  border: 1px solid var(--cde-tint); border-radius: 10px;
+  box-shadow: var(--cde-shadow-float);
+}
+/* Übergabepaket (Lücke ⑩) */
+.doc-fuss {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin-top: 0.45rem;
+}
+.doc-fuss-info { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.tm-satz { margin: 0 0 0.5rem; font-size: var(--cde-font-sm); color: var(--cde-text-dim); }
+.tm-zeile {
+  display: flex; align-items: baseline; gap: 0.45rem;
+  padding: 0.25rem 0.1rem; font-size: var(--cde-font-sm); cursor: pointer;
+}
+.tm-name { color: var(--cde-text-bright); }
+.tm-meta { color: var(--cde-text-dim); font-size: var(--cde-font-xs); }
+.tm-feld { display: flex; flex-direction: column; gap: 0.2rem; margin-top: 0.5rem; }
+.tm-feld span { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.tm-feld input, .tm-feld textarea {
+  background: var(--cde-fill); color: var(--cde-text);
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  padding: 0.3rem 0.45rem; font-size: var(--cde-font-sm); font-family: inherit;
+}
+.tm-meldung {
+  display: flex; align-items: center; gap: 0.35rem;
+  margin: 0.5rem 0 0; font-size: var(--cde-font-sm); color: var(--cde-warn);
+}
+
+/* Bauteilbibliothek (Lücke ⑨) */
+.pp-trenner {
+  margin: 0.3rem 0 0.1rem; padding: 0.15rem 0.5rem;
+  font-size: var(--cde-font-xs); color: var(--cde-text-dimmer);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-top: 1px solid var(--cde-tint-weak);
+}
+.pp-vorlage { display: flex; align-items: center; }
+.pp-vorlage .pp-zeile { flex: 1; }
+.pp-vorlage-weg {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--cde-text-mute);
+  padding: 0.2rem 0.35rem; cursor: pointer; border-radius: var(--cde-radius-sm);
+}
+.pp-vorlage-weg:hover { color: var(--cde-danger); background: var(--cde-fill); }
+.pp-sichern { color: var(--cde-text-dim); }
+
+.pp-zeile {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.6rem; cursor: pointer; text-align: left;
+  background: transparent; border: 0; border-radius: 7px;
+  color: var(--cde-text); font-size: var(--cde-font-sm);
+  touch-action: manipulation;
+}
+.pp-zeile:hover { background: var(--cde-tint); }
+.pp-zeile.aktiv { color: var(--cde-accent); }
+.pp-farben { display: flex; gap: 0.3rem; padding: 0.2rem 0.6rem; }
 
 .plan-wz-trenner {
   width: 1px; align-self: stretch; margin: 0 0.15rem;
@@ -1070,6 +1463,11 @@ function fmtDate(ts) {
 .doc-rev, .doc-size, .doc-date { font-variant-numeric: tabular-nums; color: var(--cde-text-dim); }
 .doc-actions { display: flex; gap: 0.25rem; }
 
+.doc-status-hinweis {
+  display: flex; align-items: center; gap: 0.35rem;
+  margin: 0.35rem 0 0; padding: 0.25rem 0.45rem;
+  font-size: var(--cde-font-xs); color: var(--cde-warn);
+}
 .doc-status {
   border-radius: 4px;
   padding: 0.12rem 0.3rem;
@@ -1088,6 +1486,28 @@ function fmtDate(ts) {
   min-height: 0;
   display: flex;
   align-items: stretch;
+}
+
+/* ── T5: Hochkant/schmal — Viewer oben, Panels als Bodenblätter ─────────────
+   Breakpoint 900px paarweise mit CdePanel.vue (siehe dort). Grid statt
+   flex-wrap: die Zeilenhöhen sind damit DETERMINIERT (Viewer = Rest,
+   Blätter = 42dvh), statt vom align-content-Verteilungsalgorithmus
+   abzuhängen. Zwei offene Blätter teilen sich die Zeile; ein einzelnes
+   nimmt über :has() die volle Breite. flood-3D hat das Stapeln nachträglich
+   versucht und wieder ausgebaut (17 Überlappungen) — deshalb ist die
+   Hochkant-Gestalt hier Teil des Layouts, kein Nachtrag. */
+@media (max-width: 900px) {
+  .cde-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .cde-viewer-host { grid-row: 1; grid-column: 1 / -1; }
+  .cde-workspace > .cde-panel { grid-row: 2; height: 42dvh; min-height: 0; }
+  .cde-workspace > .side-left  { grid-column: 1; }
+  .cde-workspace > .side-right { grid-column: 2; }
+  .cde-workspace:not(:has(> .side-right)) > .side-left  { grid-column: 1 / -1; }
+  .cde-workspace:not(:has(> .side-left))  > .side-right { grid-column: 1 / -1; }
 }
 
 .cde-viewer-host {

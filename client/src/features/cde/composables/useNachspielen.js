@@ -132,13 +132,23 @@ export function useNachspielen({ engine, aenderungen } = {}) {
 
             lieferstand.value = anker;        // ab hier eingefroren
 
+            // 2b. Die SCHACHTKNOTEN einfrieren — der Vergleichswert für den
+            //     Bezugs-Arm (Stufe 16). Dasselbe Mass wie `zielBasis` beim
+            //     Setzen (`schachtPunkteVon`); der Hüllen-Anker daneben wäre
+            //     ein anderes Mass und meldete „bewegt", wo nur zweierlei
+            //     gemessen wurde. Auch das VOR jeder Anwendung.
+            const knotenStand = engine.value.schachtPunkteVon?.(modelId) ?? new Map();
+
             // 3. Planen. Ein nicht gefundenes Bauteil liefert `undefined` —
             //    daraus wird im Vergleich der Zustand „fehlt", nicht ein
             //    stiller Ausfall.
             const plan = planeNachspielen(
                 aenderungen?.auftragsEintraege ?? [],
                 (globalId) => anker.get(globalId),
-                { standEintraege: aenderungen?.standEintraege ?? [] },
+                {
+                    standEintraege: aenderungen?.standEintraege ?? [],
+                    leseBezug: (globalId) => knotenStand.get(globalId),
+                },
             );
             plan.modelId = modelId;
 
@@ -158,13 +168,20 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             ];
             konflikte.value = alleKonflikte;
             karte.value = konfliktKarte(alleKonflikte);
+            // Weder Erfolg noch Panne: eine Festlegung, die das Modell
+            // absichtlich nicht anfasst (Querschnittsgröße als Forderung an
+            // den Planer). Sie mitzuzählen hiesse, Erfolg für etwas zu melden,
+            // das nirgends zu sehen ist.
+            //
+            // EINE Zahl, nicht zwei. Die Meldung rechnete `nichtAngewandt`
+            // heraus, der Rückgabewert vier Zeilen tiefer nicht — dieselbe
+            // Ladung meldete auf dem Schirm „0 angewandt" und gab `1` zurück.
+            // Wer den Rückgabewert liest, sah einen Erfolg, den es nicht gab.
+            const angewandt = plan.zusammenfassung.angewandt
+                - misserfolge.length - nichtAngewandt.length;
             meldung.value = fasseZusammen({
                 ...plan.zusammenfassung,
-                // Weder Erfolg noch Panne: eine Festlegung, die das Modell
-                // absichtlich nicht anfasst (Querschnittsgröße als Forderung an
-                // den Planer). Sie mitzuzählen hiesse, Erfolg für etwas zu
-                // melden, das nirgends zu sehen ist.
-                angewandt: plan.zusammenfassung.angewandt - misserfolge.length - nichtAngewandt.length,
+                angewandt,
                 nurFestlegung: nichtAngewandt.length,
                 konflikte: alleKonflikte.length,
             });
@@ -172,7 +189,7 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             if (fehlend.length) {
                 console.info('[CDE] Nachspielen: nicht im Modell gefunden', fehlend);
             }
-            return { angewandt: plan.anzuwenden.length - misserfolge.length, konflikte: alleKonflikte.length };
+            return { angewandt, konflikte: alleKonflikte.length };
         } catch (fehler) {
             // Ein Fehler hier darf das Laden nicht abbrechen — ein Modell ohne
             // Festlegungen ist besser als gar keins. Aber er wird gesagt.

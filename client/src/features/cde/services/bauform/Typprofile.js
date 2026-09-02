@@ -44,6 +44,34 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         felder: {
             profilGroesse: { label: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
             sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
+            // ZWEI ENDEN, nicht eine Höhe (Stufe 14.2).
+            //
+            // Ein Lauf hat einen Anfang und ein Ende, und die Differenz IST
+            // das Gefälle — die tägliche Arbeit im Kanalbau. `sohlhoehe`
+            // daneben bleibt für „das Ganze heben oder senken"; sie kommt aus
+            // der Hülle und weiss nichts über die Richtung.
+            //
+            // Die beiden hier kommen aus der ACHSE. Erst seit die echt ist
+            // (Stufe 14.1), gibt es sie überhaupt.
+            sohlhoeheAnfang: { label: 'Sohle Anfang', einheit: 'm NN', typ: 'zahl' },
+            sohlhoeheEnde:   { label: 'Sohle Ende',   einheit: 'm NN', typ: 'zahl' },
+            // PROFILFORM ALS ROLLE (Stufe 16). Der Querschnitt ist keine
+            // Nennweite: 16 ENQUIER-Rohre tragen `Description='Trapezoid'`
+            // mit Breite/Höhe im Pset und sind als Kreis GESCHRIEBEN. Die
+            // Form festzulegen ist die Kur des Befunds
+            // `profilform_widerspruch` — als Forderung an den Planer
+            // (geliefert = Forderung; der fertige Sweep lässt sich nicht
+            // umformen).
+            profilform: {
+                label: 'Profilform', typ: 'auswahl',
+                optionen: [
+                    { wert: 'kreis',      titel: 'Kreis' },
+                    { wert: 'eiprofil',   titel: 'Eiprofil' },
+                    { wert: 'maulprofil', titel: 'Maulprofil' },
+                    { wert: 'rechteck',   titel: 'Rechteck' },
+                    { wert: 'trapez',     titel: 'Trapez' },
+                ],
+            },
         },
     },
     // Nur, wo der Typ die Dinge WIRKLICH anders nennt, steht ein eigener Satz.
@@ -56,6 +84,9 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
                 quelle: 'Pset_PipeSegmentTypeCommon.NominalDiameter',
             },
             sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
+            // Am Rohr heissen sie so, wie der Kanalbau sie nennt.
+            sohlhoeheAnfang: { label: 'Sohle oben',  einheit: 'm NN', typ: 'zahl' },
+            sohlhoeheEnde:   { label: 'Sohle unten', einheit: 'm NN', typ: 'zahl' },
         },
     },
     IFCBEAM: {
@@ -235,7 +266,16 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     },
     IFCDISTRIBUTIONCHAMBERELEMENT: {
         bauform: 'koerper',
-        felder: { sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' } },
+        warum: 'Schacht, Kammer, Absetzbecken — ein platziertes Volumen',
+        felder: {
+            sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
+            // Die zweite Höhe am Schacht. Sohle und Deckel zusammen ergeben
+            // die Schachttiefe — und die entscheidet über Einstieg,
+            // Absturzbauwerk und Überdeckung der abgehenden Haltung. In
+            // Fabios Dateien stehen beide im Merkmalssatz `QG_ISYBAU_Data`
+            // und meinen dort, anders als am Rohr, wirklich Sohle und Deckel.
+            deckelhoehe: { label: 'Deckelhöhe', einheit: 'm NN', typ: 'zahl' },
+        },
     },
     IFCFLOWTREATMENTDEVICE: {
         bauform: 'koerper',

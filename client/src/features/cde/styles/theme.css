@@ -419,3 +419,15 @@
 }
 
 .cde-hint .cde-icon { flex-shrink: 0; margin-top: 1px; }
+
+/* ── T1: Fingerziele (Tablet-Pass) ───────────────────────────────────────────
+   Der 27-px-Kartenknopf bekommt auf groben Zeigern eine unsichtbare
+   Trefferfläche von ~41 px (Muster flood-3D f3d-theme.css: Pseudo-Element
+   statt Layoutänderung — die Kartenzeile bleibt, wie sie ist).
+   `touch-action: manipulation` nimmt dem Browser die Doppeltipp-Wartezeit. */
+.cde-card-btn { touch-action: manipulation; }
+
+@media (pointer: coarse) {
+    .cde-card-btn { position: relative; }
+    .cde-card-btn::after { content: ''; position: absolute; inset: -7px; }
+}

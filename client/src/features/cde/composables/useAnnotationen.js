@@ -14,7 +14,7 @@
 
 import { watch } from 'vue';
 
-export function useAnnotationen({ engine, ifc, cde, selection, messen, viewpoint, aktiv }) {
+export function useAnnotationen({ engine, ifc, cde, selection, messen, viewpoint, aktiv, slot = null }) {
     /**
      * Die Engine folgt dem Store.
      *
@@ -39,11 +39,15 @@ export function useAnnotationen({ engine, ifc, cde, selection, messen, viewpoint
         if (aktiv.value) {
             aktiv.value = false;
             selection()?.setMode('single');
+            slot?.frei?.('notiz');
         } else {
-            messen.beenden();          // beide teilen sich die Auswahl-Sperre
+            // Die Hand-Kopplung „messen.beenden()" ist dem SLOT gewichen
+            // (U1): Exklusivität gehört dem einen Mechanismus, nicht einer
+            // Vereinbarung zwischen zwei Composables.
             engine.value?.enableAnnotationMode();
             aktiv.value = true;
             selection()?.setMode('disabled');
+            slot?.belege?.('notiz', () => { if (aktiv.value) umschalten(); });
         }
     }
 

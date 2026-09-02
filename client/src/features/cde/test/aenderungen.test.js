@@ -111,18 +111,25 @@ describe('Zurücknehmen', () => {
     expect(ae.kgStand.has('A')).toBe(false);   // zurück zur Regel
   });
 
-  it('löscht nicht, sondern trägt einen Gegeneintrag ein', async () => {
+  it('auf COMMITS löscht es nicht, sondern trägt einen Gegeneintrag ein', async () => {
     // Die Spur bleibt vollständig: wer nachvollzieht, warum eine Wand in
     // KG 340 zählt, soll auch sehen, dass jemand es zurückgenommen hat.
+    // SEIT U2 gilt das für die HISTORIE (Commits); in der offenen Sitzung
+    // ist „zurück" ein Unstage — siehe sitzung.test.js.
     const ae = useAenderungen();
     await ae.bereit;
     const hin = await ae.eintragen({ art: 'kg', globalId: 'A', nachher: '330' });
-    const zurueck = await ae.zurueck('Fabio');
+    await ae.commitSitzung('Test', { wer: 'Fabio' });
+    // `zurueck` gibt seit Stufe 14.3 eine LISTE — ein mehrteiliger Vorgang
+    // wird ganz zurückgenommen. Ein einzelner Schritt ergibt eine Liste mit
+    // einem Eintrag.
+    const [zurueck] = await ae.zurueck('Fabio');
 
     expect(ae.anzahl).toBe(2);
     expect(zurueck.ruecknahmeVon).toBe(hin.id);
     expect(zurueck.vorher).toBe('330');
     expect(zurueck.nachher).toBeNull();
+    expect(zurueck.vorgang).toBeUndefined();   // ohne Vorgang bleibt alles wie zuvor
   });
 
   it('geht über die Rücknahme hinweg zum Schritt davor', async () => {
@@ -146,7 +153,7 @@ describe('Zurücknehmen', () => {
   it('tut nichts, wenn es nichts zurückzunehmen gibt', async () => {
     const ae = useAenderungen();
     await ae.bereit;
-    expect(await ae.zurueck()).toBeNull();
+    expect(await ae.zurueck()).toEqual([]);   // leere LISTE, nicht null
     expect(ae.anzahl).toBe(0);
   });
 });

@@ -110,7 +110,7 @@ describe('Refs aus Composables werden in Vorlagen mit .value angefasst', () => {
         // Gegenprobe zur Erkennung selbst: findet sie die Refs nicht, wäre der
         // Test oben grün, ohne irgendetwas zu messen.
         const messen = refsAus(readFileSync(join(WURZEL, 'composables/useMessen.js'), 'utf8'));
-        expect([...messen].sort()).toEqual(['aktiv', 'meldung']);
+        expect([...messen].sort()).toEqual(['aktiv', 'hinweis', 'meldung']);
 
         const schnitt = refsAus(readFileSync(join(WURZEL, 'composables/useSchnitt.js'), 'utf8'));
         expect([...schnitt].sort()).toEqual(['aktiv', 'leisteOffen', 'modus', 'position']);

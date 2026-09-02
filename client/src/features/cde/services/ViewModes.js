@@ -19,7 +19,7 @@ export const ANSICHTS_MODI = Object.freeze(['3d', 'lageplan', 'laengsschnitt']);
 // Icon-Namen sind die semantischen Namen aus `components/ui/CdeIcon.vue`.
 const BESCHRIFTUNG = Object.freeze({
     '3d':            { titel: 'Modell',       kurz: '3D',      taste: '1', icon: 'cde' },
-    'lageplan':      { titel: 'Lageplan',     kurz: 'Plan',    taste: '2', icon: 'view-top' },
+    'lageplan':      { titel: 'Lageplan',     kurz: 'Plan',    taste: '2', icon: 'karte' },
     'laengsschnitt': { titel: 'Längsschnitt', kurz: 'Schnitt', taste: '3', icon: 'laengsschnitt' },
 });
 

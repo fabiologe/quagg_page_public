@@ -381,13 +381,13 @@ function _axParseBatch(raw) {
 async function _buildAxisLabelItems({ apis, coordOffsets, categories, fragmentsManager, labelTemplateFor, styleMap }) {
     const items = [];
     for (const api of (apis ?? [])) {
-        if (!api?.webIfc) continue;
+        if (!api?.quelle) continue;
         const modelKey = api.fragmentModelId ?? null;
         const off = modelKey != null ? (coordOffsets?.[modelKey] ?? null) : null;
 
         let products = [];
         try {
-            products = extractAxisPolylines(api.webIfc, api.modelID, { categories, coordOffset: off });
+            products = extractAxisPolylines(api.quelle, { categories, coordOffset: off });
         } catch { continue; }
         if (!products.length) continue;
 

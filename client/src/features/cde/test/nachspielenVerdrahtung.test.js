@@ -41,7 +41,15 @@ vi.mock('../services/GlobalIdKarte.js', () => ({
 }));
 
 /** Engine-Attrappe, die das Protokoll ihrer Aufrufe mitschreibt. */
-function fakeEngine({ anker = new Map([[1, GELIEFERT]]), misserfolge = [] } = {}) {
+/**
+ * `nichtAngewandt` gehört zur echten Antwort von `IfcAutor.wendeAn` und fehlte
+ * hier — im ganzen Testordner gab es dafür keinen einzigen Treffer. Der
+ * `nurFestlegung`-Zweig (eine Querschnittsgröße ist eine FORDERUNG an den
+ * Planer, kein Eingriff ins Modell) war damit vollständig ungeprüft, obwohl
+ * `useNachspielen` und `IfcViewer.wendeEintragAn` beide damit rechnen.
+ */
+function fakeEngine({ anker = new Map([[1, GELIEFERT]]), misserfolge = [],
+                      nichtAngewandt = [] } = {}) {
     const protokoll = [];
     return {
         protokoll,
@@ -52,7 +60,7 @@ function fakeEngine({ anker = new Map([[1, GELIEFERT]]), misserfolge = [] } = {}
             }),
             wendeFestlegungenAn: vi.fn(async () => {
                 protokoll.push('wendeAn');
-                return { misserfolge };
+                return { misserfolge, nichtAngewandt };
             }),
         }),
     };
@@ -193,7 +201,7 @@ describe('Ein frisch geschriebener Eintrag wird SOFORT wirksam (12.0b)', () => {
     /**
      * Der Fehler, den diese Prüfung festhält: das Formular schrieb ins Journal,
      * und niemand brachte es ans Modell. Nur DREI Wege taten das überhaupt —
-     * Ziehen (`useZiehen` ruft `setzeAnker` selbst), Laden (`useNachspielen`)
+     * das fruehere Ziehen (rief `setzeAnker` selbst), Laden (`useNachspielen`)
      * und Zeichnen (`baueErzeugteNeu`). Wer eine Sohlhöhe im Formular eintrug,
      * sah nichts geschehen; erst nach `F5` sprang das Bauteil.
      *
@@ -246,5 +254,25 @@ describe('Ein frisch geschriebener Eintrag wird SOFORT wirksam (12.0b)', () => {
     it('verträgt einen Eintrag ohne Art, statt zu werfen', () => {
         expect(anwendungsweg(null)).toBe('nur-festlegung');
         expect(anwendungsweg({})).toBe('nur-festlegung');
+    });
+});
+
+describe('Nicht angewandt ist nicht dasselbe wie fehlgeschlagen', () => {
+    it('was das Modell absichtlich nicht anfasst, zählt nicht als angewandt', async () => {
+        // Eine Querschnittsgröße ist eine FORDERUNG an den Planer, kein
+        // Eingriff — `IfcAutor.wendeAn` gibt sie als `nichtAngewandt` zurück.
+        // Sie als angewandt zu zählen, meldete Erfolg für etwas, das nirgends
+        // zu sehen ist. Die Attrappe kannte das Feld bis eben gar nicht, und
+        // im ganzen Testordner gab es dafür keinen einzigen Treffer.
+        const j = useAenderungen();
+        await j.eintragen({ art: 'lage', globalId: 'H1', nachher: ZIEL, basis: GELIEFERT });
+
+        const f = fakeEngine({ nichtAngewandt: [{ art: 'lage', globalId: 'H1' }] });
+        const n = useNachspielen({ engine: f.engine, aenderungen: j });
+        const r = await n.nachModellladung('m1');
+
+        expect(r.konflikte).toBe(0);
+        expect(r.angewandt).toBe(0);          // NICHT 1 — es ist nichts passiert
+        expect(n.meldung.value).not.toMatch(/fehlgeschlagen/i);
     });
 });

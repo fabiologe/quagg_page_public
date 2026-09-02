@@ -17,10 +17,17 @@ import { ref } from 'vue';
 /** Wie lange eine Rückmeldung stehen bleibt (ms). */
 const MELDUNG_MS = 3500;
 
-export function useMessen({ engine, ifc, selection }) {
+export function useMessen({ engine, ifc, selection, slot = null }) {
     const aktiv = ref(false);
     /** Kurze Rückmeldung am Bildrand: { text, ts } oder null. */
     const meldung = ref(null);
+    /**
+     * Was der nächste Tipp tut — STEHT, solange der Modus an ist (T3).
+     * Die flüchtige Meldung verschwand nach 3,5 s; auf dem Tablet sah der
+     * Modus danach tot aus (kein Hover, kein Esc). Muster: die Statuszeile
+     * aus flood-3D / die Hinweiszeile des PDF-Editors.
+     */
+    const hinweis = ref(null);
     let _meldungTimer = null;
 
     function _melde(text) {
@@ -34,11 +41,16 @@ export function useMessen({ engine, ifc, selection }) {
             engine.value?.disableMeasureMode();
             aktiv.value = false;
             meldung.value = null;
+            hinweis.value = null;
             selection()?.setMode('single');
+            slot?.frei?.('messen');
         } else {
             engine.value?.enableMeasureMode();
             aktiv.value = true;
-            _melde('Klick auf 1. Punkt');
+            hinweis.value = 'Ersten Punkt antippen';
+            // DER EINE SLOT (U1): Messen meldet sich an und hinterlegt den
+            // Ausschalter — das nächste Werkzeug räumt es damit selbst.
+            slot?.belege?.('messen', () => beenden());
             selection()?.setMode('disabled');
         }
     }
@@ -75,16 +87,17 @@ export function useMessen({ engine, ifc, selection }) {
         if (!aktiv.value) return false;
         const res = await engine.value?.addMeasurePoint(x, y);
         if (!res || res.phase === 'no-hit') {
-            _melde('Kein Treffer — bitte auf Bauteil klicken');
+            _melde('Kein Treffer — ein Bauteil antippen');
         } else if (res.phase === 'awaiting-second') {
-            _melde('Klick auf 2. Punkt');
+            hinweis.value = 'Zweiten Punkt antippen';
         } else if (res.phase === 'complete') {
             ifc.addMessung(
                 { x: res.p1.x, y: res.p1.y, z: res.p1.z },
                 { x: res.p2.x, y: res.p2.y, z: res.p2.z },
                 res.dist,
             );
-            _melde(`Abstand: ${formatiereLaenge(res.dist)} — Klick auf nächste 2 Punkte`);
+            hinweis.value = 'Ersten Punkt antippen';
+            _melde(`Abstand: ${formatiereLaenge(res.dist)}`);
         }
         return true;
     }
@@ -94,7 +107,7 @@ export function useMessen({ engine, ifc, selection }) {
         if (aktiv.value) await engine.value?.updateMeasureHover(x, y);
     }
 
-    return { aktiv, meldung, umschalten, beenden, alleEntfernen, entferne, klick, bewegung };
+    return { aktiv, meldung, hinweis, umschalten, beenden, alleEntfernen, entferne, klick, bewegung };
 }
 
 /** Länge in der Einheit, die zur Größenordnung passt. Rein, damit prüfbar. */

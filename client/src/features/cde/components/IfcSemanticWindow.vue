@@ -47,11 +47,17 @@ import { ref, computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import IfcSidebar from './IfcSidebar.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 const ifc  = useIfcStore();
+const aenderungen = useAenderungen();
+const bearbeitung = useBearbeitung();
+const cde = useCdeStore();
 const api = useViewerApi();
 const isCopying = ref(false);
 
@@ -65,13 +71,39 @@ async function clearSelection() {
   ifc.clearElement();
 }
 
+/**
+ * Merkmalssatz anlegen — über die SITZUNG (Lücke ⑧, 2026-09-02).
+ *
+ * Vorher schrieb dieser Handler direkt ins Modell: keine Spur, kein Zurück,
+ * nach F5 weg, und er war der letzte Einstieg, der am Bearbeiten-Modus
+ * vorbeikam. Jetzt: Journaleintrag (Karte Satzname → Felder, ABSOLUTER
+ * Zielzustand — der Eintrag trägt alle bisher gesetzten Sätze mit) und die
+ * Anwendung über denselben `wendeEintragAn` wie jede andere Festlegung.
+ */
 async function onAddPset({ psetName, props }) {
-  // Direkt an die viewerApi statt über einen im Store hinterlegten Rückruf.
-  // Der Store HÄLT den Fehlertext, er vermittelt nicht mehr.
+  const el = ifc.selectedElement;
+  if (!el?.globalId) { ifc.setPsetError('Dem Bauteil fehlt die GlobalId.'); return; }
+  if (!bearbeitung.modusAn) {
+    ifc.setPsetError('Der Bearbeiten-Modus ist aus — erst einschalten (Taste E).');
+    return;
+  }
   try {
-    const aktualisiert = await api.addPsetToElement(psetName, props);
+    const bisher = new Map(aenderungen.wirksamerStand('pset')).get(el.globalId) ?? {};
+    const eintrag = await aenderungen.eintragen({
+      art: 'pset',
+      globalId: el.globalId,
+      nachher: { ...bisher, [psetName]: props },
+      wer: cde.bearbeiter,
+      modellSha: api.getLoadedModelSha?.() ?? null,
+      modell: el.modelId === 'cde-eigenbau' ? 'cde' : 'geliefert',
+    });
+    if (!eintrag) { ifc.setPsetError('Der Satz galt schon — nichts einzutragen.'); return; }
+    ifc.setPsetError('');
+    await api.wendeEintragAn?.(eintrag);
+    const aktualisiert = await api.refreshElement?.();
     if (aktualisiert) ifc.setElement(aktualisiert);
   } catch (fehler) {
+    console.error('cde: pset anlegen', fehler);
     ifc.setPsetError(`Fehler: ${fehler.message}`);
   }
 }

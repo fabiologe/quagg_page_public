@@ -8,15 +8,6 @@
     <div class="viewer-wrapper">
 
       <!-- ── Window chrome ── -->
-      <div class="viewer-header">
-        <span class="header-title"><CdeIcon name="bim" :size="14" /> That Open Engine – IFC Viewer</span>
-        <div class="header-controls">
-          <button class="hdr-btn hdr-close" @click="emit('close')" title="Schließen" aria-label="Schließen">
-            <CdeIcon name="close" :size="13" />
-          </button>
-        </div>
-      </div>
-
       <!-- ── Canvas + overlays ── -->
       <div class="viewer-body">
         <div class="canvas-root" :class="{ 'measure-cursor': messen.aktiv.value }" ref="canvasRef"></div>
@@ -119,6 +110,39 @@
           </template>
         </div>
 
+        <!-- MILLIMETER-WACHE: nicht wegklickbar, solange ein Modell mit
+             Längenfaktor ≠ 1 geladen ist. Laut statt still — die Zahlen der
+             Prüfliste und Mengen stimmen in dieser Einheit nicht. -->
+        <div v-if="einheitsWarnung" class="einheit-banner">
+          <CdeIcon name="warn" :size="14" />
+          <span>
+            Dieses Modell ist in
+            <strong>{{ einheitsWarnung.praefix === 'MILLI' ? 'Millimetern' : `${einheitsWarnung.name} × ${einheitsWarnung.faktor}` }}</strong>
+            geschrieben. Ansehen und Messen in Modelleinheiten gehen; Bearbeitung,
+            Prüfliste und Mengen sind bis zur Einheiten-Umrechnung nicht belastbar.
+          </span>
+        </div>
+
+        <!-- Das Ansicht-Popover (X2) — neben dem Anker, schliesst nach
+             der Wahl; Views und Ebenen bleiben Umschalter. -->
+        <div v-if="ansichtOffen" class="ansicht-popover">
+          <button v-for="e in ANSICHT_EINTRAEGE" :key="e.id" class="ap-eintrag"
+                  :title="e.titel" @click="ansichtWaehle(e)">
+            <CdeIcon :name="e.icon" :size="14" /> {{ e.titel }}
+          </button>
+          <div class="ap-trenner"></div>
+          <button class="ap-eintrag" :class="{ aktiv: showSavedViews }"
+                  title="Gespeicherte Ansichten [V]"
+                  @click="showSavedViews = !showSavedViews; ansichtOffen = false">
+            <CdeIcon name="views" :size="14" /> Gespeicherte Ansichten
+          </button>
+          <button class="ap-eintrag" :class="{ aktiv: showLayerPanel }"
+                  title="Ebenen / Kategorien"
+                  @click="showLayerPanel = !showLayerPanel; ansichtOffen = false">
+            <CdeIcon name="layers" :size="14" /> Ebenen / Kategorien
+          </button>
+        </div>
+
         <!-- B3: Section-Cut Bar — centered, with snap + mode + position readout -->
         <Transition name="section-slide">
           <div v-if="schnitt.leisteOffen.value" class="section-bar">
@@ -168,9 +192,55 @@
           </div>
         </Transition>
 
+        <!-- DER MODUS, SICHTBAR. Ein Modus, den man nicht sieht, ist keiner:
+             man muss ohne Hinsehen wissen, ob ein Klick etwas verändert. Der
+             Rahmen liegt über allem und fängt keine Klicks ab. -->
+        <div v-if="bearbeitung.modusAn" class="bearb-rahmen" aria-hidden="true"></div>
+        <!-- Die SITZUNGS-LEISTE (U2): der Modus zeigt, was er gesammelt
+             hat — und trägt seine beiden Ausgänge. „Abschließen" führt in
+             den Commit-Dialog; das X ist Taste E und tut dasselbe. -->
+        <div v-if="bearbeitung.modusAn" class="bearb-marke">
+          <CdeIcon name="edit" :size="12" />
+          <span>Sitzung</span>
+          <button
+            v-if="aenderungen.sitzungSchritte.length"
+            class="bearb-zahl"
+            title="Versionsverlauf öffnen"
+            @click="panels.open('verlauf')"
+          >
+            {{ aenderungen.sitzungVorgaenge.length }}
+            Schritt{{ aenderungen.sitzungVorgaenge.length === 1 ? '' : 'e' }}
+          </button>
+          <button
+            class="bearb-abschluss"
+            :class="{ gedimmt: !herkunftAn }"
+            title="Herkunft färben: Geändertes orange, selbst Gebautes blau (9.6)"
+            @click="herkunftUmschalten"
+          ><CdeIcon name="style" :size="11" /></button>
+          <button
+            v-if="aenderungen.sitzungSchritte.length"
+            class="bearb-abschluss"
+            title="Sitzung abschließen — Commit mit Nachricht"
+            @click="bearbeitung.commitDialogOffen = true"
+          ><CdeIcon name="check" :size="11" /> Abschließen</button>
+          <button class="bearb-marke-aus" title="Bearbeiten beenden [E]" @click="bearbeitenUmschalten()">
+            <CdeIcon name="close" :size="11" />
+          </button>
+        </div>
+
+        <Transition name="fade">
+          <div v-if="modusMeldung" class="bearb-sperre">
+            <CdeIcon name="warn" :size="13" /> {{ modusMeldung }}
+          </div>
+        </Transition>
+
         <!-- B1: Koordinatenanzeige — centered bottom -->
         <div v-if="coords" class="coord-bar">
-          <span class="coord-mode-badge" :title="COORD_MODI[coordMode].titel">{{ COORD_MODI[coordMode].kurz }}</span>
+          <button
+            class="coord-mode-badge"
+            :title="`${COORD_MODI[coordMode].titel} — Klick wechselt den Bezug`"
+            @click="coordMode = COORD_REIHE[(COORD_REIHE.indexOf(coordMode) + 1) % COORD_REIHE.length]"
+          >{{ COORD_MODI[coordMode].kurz }}</button>
           <!-- PROJEKT ist die Vorgabe: das ist, was im CAD steht. Die beiden
                anderen Modi bleiben — für „warum liegt das so?" braucht man sie. -->
           <template v-if="coordMode === 'projekt' && projektKoords">
@@ -216,6 +286,7 @@
           <button
             v-if="anyHidden"
             class="show-all-btn"
+            :class="{ hochgerueckt: messen.aktiv.value || annotationActive }"
             title="Alle wieder einblenden"
             @click="onShowAll"
           >
@@ -223,22 +294,27 @@
           </button>
         </Transition>
 
-        <!-- Stufe 9.3: warum sich dieses Bauteil nicht ziehen lässt. „Geht
-             nicht" ohne Grund ist die schlechteste Rückmeldung — der Nutzer
-             probiert weiter, weil er nicht weiss, ob er etwas falsch macht. -->
+        <!-- T3: Die Modus-Leiste STEHT, solange ein Tipp-Modus an ist — sie
+             sagt, was der nächste Tipp tut, und trägt den sichtbaren Ausgang
+             (Muster: Statuszeile flood-3D, Fertig-Knopf des Pre-Editors).
+             Auf dem Tablet gibt es weder Hover noch Esc — ohne die Leiste
+             sah ein Modus nach 3,5 s Toast tot aus. -->
         <Transition name="fade">
-          <div v-if="ziehen.grund.value" class="zieh-hinweis">
-            <CdeIcon name="warn" :size="13" /> {{ ziehen.grund.value }}
-          </div>
-          <!-- Einschränkung statt Absage: der Griff ARBEITET, nur zwängt er
-               nicht entlang der Bauteilachse. Das muss dastehen, sonst sieht
-               er genauso aus wie der richtige und schiebt anders. -->
-          <div v-else-if="ziehen.warnung.value" class="zieh-hinweis eingeschraenkt">
-            <CdeIcon name="warn" :size="13" /> {{ ziehen.warnung.value }}
+          <div v-if="messen.aktiv.value || annotationActive" class="modus-leiste">
+            <CdeIcon :name="messen.aktiv.value ? 'measure' : 'issues'" :size="14" />
+            <span>{{ messen.aktiv.value
+              ? (messen.hinweis.value ?? 'Ersten Punkt antippen')
+              : 'Ort für die Notiz antippen' }}</span>
+            <button
+              class="modus-fertig"
+              :title="messen.aktiv.value ? 'Messen beenden [M]' : 'Notiz-Modus beenden'"
+              @click="messen.aktiv.value ? messen.beenden() : annotationen.umschalten()"
+            >
+              <CdeIcon name="check" :size="12" /> Fertig
+            </button>
           </div>
         </Transition>
-
-        <!-- Mess-Hinweis (die Werte selbst stehen als Pillen an der Strecke) -->
+        <!-- Flüchtige Rückmeldung (Messwert, Fehlgriff) — über der Leiste. -->
         <Transition name="fade">
           <div v-if="messen.meldung.value" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ messen.meldung.value.text }}</div>
         </Transition>
@@ -345,8 +421,9 @@ import { useMessen } from '../composables/useMessen.js';
 import { useAnnotationen } from '../composables/useAnnotationen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
-import { useZiehen } from '../composables/useZiehen.js';
-import { useAenderungen } from '../stores/useAenderungen.js';
+import { entwertetGeometrie } from '../services/bauform/FormSchreiber.js';
+import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
+import { useAenderungen, AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
 import { BEARBEITUNGEN, GRUPPEN } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
 
@@ -377,6 +454,18 @@ const coords      = ref(null);
 const bezuege = shallowRef({});
 
 /**
+ * DIE MILLIMETER-WACHE (Audit-Lücke 1, 2026-09-02).
+ *
+ * Die Einheit wird seit 13.1 gelesen und angezeigt — aber sie WIRKTE
+ * nirgends: jede Rechnung nimmt Meter an, und ein mm-Modell (beide
+ * BODEN-Dateien im Projekt!) rechnete still tausendfach falsch. Bis die
+ * durchgängige Normalisierung gebaut ist, gilt: ein Modell mit
+ * Längenfaktor ≠ 1 wird ANGEZEIGT, aber Bearbeitung, Prüfliste und Mengen
+ * stehen unter sichtbarem Vorbehalt — laut statt still.
+ */
+const einheitsWarnung = shallowRef(null);   // { name, praefix, faktor } | null
+
+/**
  * Den Projektbezug aller geladenen Modelle neu bestimmen.
  *
  * Nach jedem Laden und Entladen. Die Auflösung entscheidet unter anderem, ob
@@ -391,6 +480,16 @@ function _bezuegeNeuBestimmen() {
     out[modelId] = bestimmeBezug({ georeferenz: geo[modelId] ?? null, versatz });
   }
   bezuege.value = out;
+
+  // Millimeter-Wache: der erste Faktor ≠ 1 gewinnt die Warnung.
+  einheitsWarnung.value = null;
+  for (const g of Object.values(geo)) {
+    const e = g?.einheit;
+    if (e && Number.isFinite(e.faktor) && Math.abs(e.faktor - 1) > 1e-9) {
+      einheitsWarnung.value = { name: e.name, praefix: e.praefix, faktor: e.faktor };
+      break;
+    }
+  }
 }
 
 /** Der Zeigerpunkt in Landeskoordinaten — oder null, wenn es keinen Bezug gibt. */
@@ -419,7 +518,7 @@ const showStoreyNav  = ref(true);
 const showSavedViews = ref(false);
 
 // ── Schnittebene (Sprint I, Stufe 5) ────────────────────────────────────────
-const schnitt = useSchnitt({ engine });
+const schnitt = useSchnitt({ engine, slot: { belege: bearbeitung.belegeWerkzeug, frei: bearbeitung.gebeWerkzeugFrei } });
 
 // PDF export
 const showPalette   = ref(false);
@@ -430,16 +529,68 @@ const showShortcuts = ref(false);
 // ── Messen (Sprint I, Stufe 5) ──────────────────────────────────────────────
 // `selection` wird als GETTER hereingereicht: der SelectionHandler entsteht
 // erst in onMounted, ein Wert wäre zur Aufrufzeit noch null.
-const messen = useMessen({ engine, ifc, selection: () => _selection });
+const messen = useMessen({ engine, ifc, selection: () => _selection, slot: { belege: bearbeitung.belegeWerkzeug, frei: bearbeitung.gebeWerkzeugFrei } });
 
 // ── Issue-Pins (Sprint I, Stufe 5) ──────────────────────────────────────────
 // `annotationActive` bleibt als Ref HIER: die CdeView liest ihn über
 // `defineExpose`, und Vue entpackt Refs im expose-Proxy. Ein Wert im
 // Composable wäre dort nicht nachverfolgbar.
 const annotationActive = ref(false);
+/** Kurzmeldung des Modus-Knopfs (Sperrgrund) — Gesetz 10, nie stumm. */
+const modusMeldung = ref('');
+
 // Das Journal aus Stufe 7 — EIN Bezug, nicht drei Aufrufe. Der Store ist zwar
 // ein Singleton, aber drei Aufrufstellen lesen sich wie drei Dinge.
 const aenderungen = useAenderungen();
+
+/**
+ * HERKUNFT IM RAUM (9.6, U4): Wer erzeugt, muss trennen können, was
+ * geliefert war und was von hier stammt. Der Schalter färbt jedes Bauteil
+ * mit wirksamer Festlegung (warn-Ton) und jedes selbst gebaute (accent) —
+ * abgeleitet aus dem Journalstand, nie gespeichert; die Farben kommen zur
+ * Laufzeit aus den Tokens.
+ */
+const herkunftAn = ref(false);
+
+async function herkunftFaerben() {
+  if (!engine.value || !herkunftAn.value) return;
+  const stil = getComputedStyle(document.documentElement);
+  const warnHex = stil.getPropertyValue('--cde-warn').trim();
+  const accentHex = stil.getPropertyValue('--cde-accent').trim();
+
+  const eigene = new Set([...aenderungen.wirksamerStand('erzeugt').keys()]);
+  const geaendert = new Set();
+  for (const art of Object.keys(AENDERUNGS_ARTEN)) {
+    if (art === 'erzeugt') continue;
+    for (const [gid, wert] of aenderungen.wirksamerStand(art)) {
+      if (wert !== null && wert !== undefined && !eigene.has(gid)) geaendert.add(gid);
+    }
+  }
+  const { karte } = await karteMitEngine(engine.value, new Set([...geaendert, ...eigene]));
+  const farben = new Map();
+  for (const [gid, ort] of karte) {
+    farben.set(`${ort.modelId}|${ort.localId}`, eigene.has(gid) ? accentHex : warnHex);
+  }
+  await engine.value.resetCategoryColors?.();
+  if (farben.size) await engine.value.setPerElementColors(farben);
+}
+
+async function herkunftUmschalten() {
+  herkunftAn.value = !herkunftAn.value;
+  if (herkunftAn.value) await herkunftFaerben();
+  else await engine.value?.resetCategoryColors?.();
+}
+
+// Nachziehen, wenn sich Journal oder Geometrie rühren; Modus-Aus räumt ab.
+watch(() => [aenderungen.anzahl, ifc.geometrieStand], () => {
+  if (herkunftAn.value) herkunftFaerben().catch(e => console.warn('cde: herkunft', e?.message ?? e));
+});
+watch(() => bearbeitung.modusAn, (an) => {
+  if (!an && herkunftAn.value) {
+    herkunftAn.value = false;
+    engine.value?.resetCategoryColors?.();
+  }
+});
 // Stufe 9.2: bringt beim Laden die Festlegungen aufs Modell und meldet, was
 // nicht durchging.
 const nachspielen = useNachspielen({ engine, aenderungen });
@@ -448,13 +599,8 @@ const nachspielen = useNachspielen({ engine, aenderungen });
  * Stufe 9.3: der Griff am Bauteil. Braucht `nachspielen` für den eingefrorenen
  * Lieferstand und `bearbeitung` für die Bauform — beide sind oben schon da.
  */
-const ziehen = useZiehen({
-  engine, cde, aenderungen, bearbeitung, nachspielen,
-  getAuswahl:   () => ifc.selectedElement,
-  getModellSha: () => ablage.geladeneModellSha?.() ?? null,
-});
-
 const annotationen = useAnnotationen({
+  slot: { belege: bearbeitung.belegeWerkzeug, frei: bearbeitung.gebeWerkzeugFrei },
   engine, ifc, cde,
   selection: () => _selection,
   messen,
@@ -533,43 +679,45 @@ function onZoomSelected() {
 // Eine Quelle für Icon, Beschriftung, Tastenkürzel und Aktion — der Tooltip
 // nennt das Kürzel jetzt automatisch (früher nur bei 3 von 14 Knöpfen), und
 // die Liste ist zugleich der Einspeisepunkt für die Befehls-Palette (AP-U3).
+/** Das Ansicht-Popover (X2): Kamera, Views, Ebenen hinter EINEM Anker. */
+const ansichtOffen = ref(false);
+const ANSICHT_EINTRAEGE = [
+  { id: 'fit',   icon: 'fit',        titel: 'Alles einpassen',        mach: () => engine.value?.zoomToFit() },
+  { id: 'top',   icon: 'view-top',   titel: 'Draufsicht',             mach: () => engine.value?.viewTop() },
+  { id: 'front', icon: 'view-front', titel: 'Vorderansicht',          mach: () => engine.value?.viewFront() },
+  { id: 'side',  icon: 'view-side',  titel: 'Seitenansicht',          mach: () => engine.value?.viewSide() },
+  { id: 'reset', icon: 'view-reset', titel: 'Ansicht zurücksetzen',   mach: () => engine.value?.resetView() },
+];
+function ansichtWaehle(e) {
+  e.mach();
+  ansichtOffen.value = false;
+}
+
+/**
+ * DIE LEISTE IST KURATIERT (Teil XII, X2): fünf Anker statt sechzehn
+ * Knöpfe. Kamera/Views/Ebenen wohnen im Ansicht-Popover; die Panels
+ * (Plan, Planung, Issues) gehören allein der Panel-Leiste in der
+ * Kopfzeile; „Blatt" wohnt bei der übrigen Ausgabe im Plan-Panel; der
+ * Koordinaten-Umschalter IST jetzt die Koordinatenleiste (das Badge sah
+ * schon immer klickbar aus — jetzt stimmt es); Hilfe sitzt in der
+ * Kopfzeile. Tasten (M, E, T/R, V, N, ?, 1–3) gelten unverändert.
+ */
 const toolbarItems = computed(() => [
-  { id: 'fit',    icon: 'fit',         label: 'Fit',    title: 'Alles einpassen',   action: () => engine.value?.zoomToFit() },
-  { id: 'top',    icon: 'view-top',    label: 'Oben',   title: 'Draufsicht',        action: () => engine.value?.viewTop() },
-  { id: 'front',  icon: 'view-front',  label: 'Vorne',  title: 'Vorderansicht',     action: () => engine.value?.viewFront() },
-  { id: 'side',   icon: 'view-side',   label: 'Seite',  title: 'Seitenansicht',     action: () => engine.value?.viewSide() },
-  { id: 'reset',  icon: 'view-reset',  label: 'Reset',  title: 'Ansicht zurücksetzen', action: () => engine.value?.resetView() },
-  { divider: true },
-  { id: 'layers', icon: 'layers',  label: 'Layer',   title: 'Ebenen / Kategorien',
-    active: showLayerPanel.value, action: () => { showLayerPanel.value = !showLayerPanel.value; } },
+  { id: 'ansicht', icon: 'fit', label: 'Ansicht', title: 'Kamera · gespeicherte Ansichten · Ebenen',
+    active: ansichtOffen.value, action: () => { ansichtOffen.value = !ansichtOffen.value; } },
   { id: 'section', icon: 'section', label: 'Schnitt', title: 'Horizontaler Schnitt', key: 'T/R',
     active: schnitt.aktiv.value, action: () => schnitt.umschalten() },
-  { id: 'coords', icon: 'coords', label: COORD_MODI[coordMode.value].kurz,
-    title: 'Koordinaten umschalten (Viewer ↔ IFC)',
-    active: coordMode.value !== 'projekt',
-    action: () => {
-      const i = COORD_REIHE.indexOf(coordMode.value);
-      coordMode.value = COORD_REIHE[(i + 1) % COORD_REIHE.length];
-    } },
-  { divider: true },
-  { id: 'plan', icon: 'view-top', label: 'Plan', title: 'Planinhalt und Ausgabe (PDF, DXF, Profile)',
-    active: panels.isOpen('plan'), action: () => panels.toggle('plan') },
-  { id: 'blatt', icon: 'snapshot', label: 'Blatt', title: 'Diese 3D-Ansicht als Bild auf ein Blatt (PDF)',
-    action: () => ansichtAufsBlatt() },
-  { id: 'cockpit', icon: 'cockpit', label: 'Planung', title: 'Planungs-Cockpit (Flächen, Kosten, Qualität)',
-    active: panels.isOpen('cockpit'), action: () => panels.toggle('cockpit') },
   { divider: true },
   { id: 'measure', icon: 'measure', label: 'Messen', title: 'Strecke messen', key: 'M',
     active: messen.aktiv.value, action: () => messen.umschalten() },
-  { id: 'ziehen', icon: 'pointer', label: 'Ziehen', title: 'Bauteil verschieben (geführt)', key: 'G',
-    active: ziehen.aktiv.value, action: () => ziehen.umschalten() },
-  { id: 'views', icon: 'views', label: 'Views', title: 'Gespeicherte Ansichten', key: 'V',
-    active: showSavedViews.value, action: () => onToggleViews() },
-  { id: 'issues', icon: 'issues', label: 'Issues', title: 'Issues / Notizen', key: 'N',
-    active: panels.isOpen('issues') || annotationActive.value, action: () => onToggleNotes() },
+  { id: 'notiz', icon: 'issues', label: 'Notiz', title: 'Issue-Pin setzen (das Panel sitzt in der Kopfzeile)', key: 'N',
+    active: annotationActive.value, action: () => annotationen.umschalten() },
   { divider: true },
-  { id: 'help', icon: 'help', label: 'Hilfe', title: 'Tastenkürzel anzeigen', key: '?',
-    active: showShortcuts.value, action: () => { showShortcuts.value = !showShortcuts.value; } },
+  { id: 'bearbeiten', icon: 'edit', label: 'Bearbeiten', key: 'E',
+    title: bearbeitung.modusAn
+      ? 'Sitzung abschließen (Commit-Dialog)'
+      : (bearbeitenSperrgrund() ?? 'Bearbeiten einschalten — beginnt eine Sitzung'),
+    active: bearbeitung.modusAn, action: () => bearbeitenUmschalten() },
 ]);
 
 // ── viewerApi — Engine-Accessoren für teleportierte Kinder ──────────────────
@@ -585,7 +733,7 @@ const toolbarItems = computed(() => [
  * sonst verschöbe es um den absoluten Wert statt um die Differenz — und ein
  * Rohr auf Sohlhöhe 12,40 landete auf 12,40 ÜBER seiner jetzigen Lage.
  */
-async function _einordnenMitHuelle(result) {
+async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
   let angereichert = result;
   try {
     const h = (await engine.value?.huellenVon?.(result.modelId, [result.localId]))?.get(result.localId);
@@ -600,12 +748,144 @@ async function _einordnenMitHuelle(result) {
       angereichert = { ...result, anker: h.anker, bezugshoehe: h.unterkante,
                        oberkante: h.oberkante, hoehenversatz: versatz };
     }
+    // DIE ACHSE, falls es eine gibt. Sie kennt Anfang und Ende GETRENNT —
+    // die Hülle kann das nicht, sie ist eine Bounding-Box und weiss nicht,
+    // welches Ende oben liegt. Ohne sie ist kein Gefälle bearbeitbar.
+    // Gelesen wird nichts nach: die Achsen stehen seit dem Laden bereit.
+    const merkmale = engine.value?.merkmaleVon?.(result.modelId, result.localId) ?? null;
+    if (merkmale) angereichert = { ...angereichert, merkmale };
+    const achse = engine.value?.achseVon?.(result.modelId, result.localId) ?? null;
+    if (achse) {
+      // Mit der Achse kommt auch der STRANG — die Kette stromab. Sie steht am
+      // Bauteil, damit der Katalog rein bleibt: eine Bearbeitung, die den
+      // ganzen Strang anfasst, bekommt ihn hereingereicht statt sich die
+      // Engine zu holen.
+      angereichert = {
+        ...angereichert, achse,
+        strang: engine.value?.strangVon?.(result.modelId, result.localId) ?? [],
+        // Die SCHACHTKNOTEN des Modells (Stufe 16): „An Schacht
+        // anschliessen" wählt daraus den nächsten zum Tipp. Am Bauteil,
+        // damit der Katalog rein bleibt — dieselbe Regel wie beim Strang.
+        schachtKnoten: [...(engine.value?.schachtPunkteVon?.(result.modelId) ?? new Map())]
+          .map(([globalId, pk]) => ({ globalId, punkt: { x: pk.x, y: pk.y, z: pk.z }, name: pk.name ?? '' })),
+      };
+    } else {
+      // Kein Lauf, also womöglich ein KNOTEN. Die Anschlüsse gehören ans
+      // Bauteil, damit der Katalog rein bleiben kann — dieselbe Regel wie beim
+      // Strang.
+      const anschluesse = engine.value?.anschluesseVon?.(result.modelId, result.localId) ?? [];
+      if (anschluesse.length) angereichert = { ...angereichert, anschluesse };
+    }
+
+    // DIE LAGE IN PROJEKTKOORDINATEN — und der Weg zurück.
+    //
+    // Wer einen Schacht verschiebt, gibt Rechts- und Hochwert an, nicht
+    // Three-Welt-Koordinaten. Der Rückweg ist eine schlichte Umkehrung des
+    // Ladeversatzes — SOLANGE keine MapConversion gilt. Gälte eine, käme eine
+    // Drehung dazu, und die Umkehrung wäre nicht mehr diese Formel. Deshalb
+    // steht das Kennzeichen dabei, statt still falsch zu rechnen.
+    const bezugFuerLage = bezuege.value[result.modelId] ?? Object.values(bezuege.value)[0] ?? null;
+    const versatz = engine.value?.getCoordOffsetForModel?.(result.modelId) ?? null;
+    if (bezugFuerLage && versatz && angereichert.anker) {
+      angereichert = {
+        ...angereichert,
+        lage: bezugFuerLage.nachProjekt(angereichert.anker),
+        versatz: { x: versatz.x, y: versatz.y, z: versatz.z },
+        lageUmkehrbar: !bezugFuerLage.mapAngewandt,
+      };
+    }
   } catch (fehler) {
     // Ohne Hülle wird eingeordnet wie bisher; die lagebezogenen Bearbeitungen
     // melden dann selbst, dass ihnen der Bezug fehlt.
     console.warn('cde: huelle lesen', fehler?.message ?? fehler);
   }
-  return bearbeitung.einordne(angereichert, engine.value?.makeGeometryResolver?.());
+  return bearbeitung.einordne(angereichert, engine.value?.makeGeometryResolver?.(), { weitere });
+}
+
+/**
+ * Den Bearbeiten-Modus umschalten.
+ *
+ * Beim EINSCHALTEN öffnet die Toolbox mit: sie ist das Zuhause des Editors,
+ * und ein Modus, dessen Werkzeuge man erst suchen muss, ist keiner.
+ */
+/**
+ * WANN man bearbeiten darf (U2) — der Knopf nennt den Grund, nie stumm.
+ * Der Status bekommt hier seine Zähne (Stufe-3-Schuld): ein PUBLISHED- oder
+ * archivierter Stand ist schreibgeschützt.
+ */
+function bearbeitenSperrgrund() {
+  if (!ifc.modelList?.length) return 'Erst ein Modell laden.';
+  if (einheitsWarnung.value) {
+    const e = einheitsWarnung.value;
+    return `Modell in ${e.praefix === 'MILLI' ? 'Millimetern' : `${e.name} × ${e.faktor}`} — `
+      + 'Bearbeitung gesperrt, bis die Einheiten-Umrechnung gebaut ist.';
+  }
+  const sha = ablage.geladeneModellSha?.() ?? null;
+  const dok = sha ? cde.dokumente.find(d => d.sha256 === sha) : null;
+  if (dok && ['Published', 'Archived'].includes(dok.status)) {
+    return `„${dok.name}" ist ${dok.status} — schreibgeschützt. Status im Register ändern.`;
+  }
+  if (nachspielen.laeuft?.value) return 'Festlegungen werden gerade angewandt …';
+  return null;
+}
+
+function bearbeitenUmschalten() {
+  if (!bearbeitung.modusAn) {
+    const grund = bearbeitenSperrgrund();
+    if (grund) {
+      modusMeldung.value = grund;
+      setTimeout(() => { if (modusMeldung.value === grund) modusMeldung.value = ''; }, 4000);
+      return false;
+    }
+    // E an = SITZUNG beginnen (U2). Liegt ein Entwurf vom letzten Mal, wird
+    // er fortgesetzt — die Leiste zeigt seine Schritte sofort.
+    aenderungen.beginneSitzung({ wer: cde.bearbeiter || '' });
+    bearbeitung.modusSetzen(true);
+    panels.open('toolbox');
+    return true;
+  }
+
+  // E aus MIT offenen Schritten führt IMMER in den Commit-Dialog — der
+  // Modus bleibt an, bis dort entschieden ist (Committen/Verwerfen/Weiter).
+  if (aenderungen.sitzungSchritte.length) {
+    bearbeitung.commitDialogOffen = true;
+    return true;
+  }
+  aenderungen.schliesseLeereSitzung();
+  bearbeitung.modusSetzen(false);
+  return false;
+}
+
+/**
+ * Eine Rahmenauswahl einordnen.
+ *
+ * Das ERSTE Bauteil bestimmt die Einordnung und damit, was angeboten wird —
+ * die Herleitung hängt an einem Bauteil, und daran soll sich nichts ändern,
+ * nur weil man fünf angeklickt hat. Die übrigen kommen als Liste dazu; auf sie
+ * wirkt, was der Katalog als `mehrfach` kennzeichnet.
+ *
+ * Die Anreicherung (Hülle, Achse, Lage) läuft nur fürs erste Bauteil: sie
+ * kostet je Bauteil einen Lesezugriff, und für eine Massenauswahl von
+ * hunderten wäre das eine spürbare Pause für Angaben, die kein
+ * Mehrfach-Werkzeug braucht.
+ */
+async function _mehrfachEinordnen(items) {
+  const orte = [];
+  for (const [modelId, localIds] of Object.entries(items ?? {})) {
+    for (const localId of localIds) orte.push({ modelId, localId });
+  }
+  if (!orte.length) return;
+
+  const erst = await engine.value?.elementDatenVon?.(orte[0].modelId, orte[0].localId);
+  if (!erst) return;
+  const weitere = [];
+  for (const o of orte.slice(1)) {
+    const el = await engine.value?.elementDatenVon?.(o.modelId, o.localId);
+    if (el) weitere.push(el);
+  }
+  ifc.setElement(erst);
+  panels.open('toolbox');
+  await _einordnenMitHuelle(erst, { weitere });
 }
 
 /**
@@ -659,11 +939,14 @@ provideViewerApi({
   zoomToCategory:       (name) => engine.value?.zoomToCategory(name),
   setStoreyVisible:     (localId, visible, modelId = null) =>
                           engine.value?.setStoreyVisible(localId, visible, modelId),
-  /** Merkmalssatz am gewählten Bauteil anlegen und die Anzeige nachladen. */
-  addPsetToElement:     async (psetName, props) => {
-    await engine.value.addPsetToElement(psetName, props);
-    return engine.value.refreshElement();
-  },
+  /**
+   * Die Merkmale des gewählten Bauteils neu lesen (Lücke ⑧).
+   *
+   * Der Merkmals-SCHREIBER läuft nicht mehr hier entlang — er ist eine
+   * Journal-Anwendung (`wendeEintragAn` mit art `pset`). Was bleibt, ist das
+   * Nachladen der Anzeige, nachdem die Anwendung durch ist.
+   */
+  refreshElement:       () => engine.value?.refreshElement() ?? null,
   /** BBox + Koordinatenversatz eines Bauteils — für die Brücken-Übergabe. */
   getElementBox:        async (localId, modelId = null) => {
     if (!engine.value) return null;
@@ -685,6 +968,99 @@ provideViewerApi({
    * Handle ohne Modell — und hat damit den Viewer gekostet.
    */
   getGeoreferenzen:     () => engine.value?.leseGeoreferenzen() ?? {},
+  /**
+   * Wie der Höhenversatz je Modell zustande kam (Stufe 13.3).
+   *
+   * Sichtbar, weil er zweimal still danebenlag: einmal, weil `getPositions`
+   * vor der Tessellierung nichts liefert, einmal, weil der Loader-Wert 0 ist
+   * und 0 wie ein gültiges Ergebnis aussieht. Ein Befund, den nur die Konsole
+   * kennt, kostet den Nutzer eine Rückfrage.
+   */
+  getHoehenBefunde:     () => engine.value?.alleHoehenBefunde?.() ?? {},
+  /**
+   * Der Anker eines Bauteils im GELIEFERTEN Modell (Stufe 12.0c).
+   *
+   * Jeder `lage`-Eintrag braucht ihn als `basis` — er ist der Bezugspunkt des
+   * Drei-Wege-Vergleichs. Das Ziehen holte ihn sich von Anfang an, die beiden
+   * Formulare nicht; ihre Einträge gingen deshalb bei einer neuen Revision
+   * still als „sauber" durch, statt einen Konflikt zu melden.
+   */
+  lieferstandVon:       (globalId) => nachspielen.lieferstandVon(globalId),
+  getKonflikte:         () => nachspielen.konflikte.value,
+  // ── Schacht-Griffe im Lageplan (G1) ──────────────────────────────────────
+  getSchachtGriffe:     () => engine.value?.schachtGriffe?.() ?? [],
+  getSchachtAnschluesse: (globalId) => engine.value?.schachtAnschluesse?.(globalId) ?? [],
+  /**
+   * Das SUBJEKT für `schacht-verschieben`, ohne die Auswahl zu ändern.
+   *
+   * Der Griff im Lageplan zieht einen Schacht, den in 3D niemand angeklickt
+   * hat — die Einordnung über `waehleBauteil` würde die Auswahl umwerfen und
+   * die Toolbox aufreißen, mitten im Zug. Gebaut wird hier dasselbe Bauteil-
+   * Objekt wie in `_einordnenMitHuelle`, aus DENSELBEN Quellen (Hülle,
+   * Bezug, Versatz): eine zweite Lage-Rechnung daneben wäre exakt der
+   * Auseinanderläufer, den 13.3 beseitigt hat.
+   */
+  schachtSubjekt: async (globalId) => {
+    const ort = engine.value?.schachtOrt?.(globalId);
+    if (!ort) return null;
+    const h = (await engine.value?.huellenVon?.(ort.modelId, [ort.localId]))?.get(ort.localId);
+    const bezug = bezuege.value[ort.modelId] ?? Object.values(bezuege.value)[0] ?? null;
+    const versatz = engine.value?.getCoordOffsetForModel?.(ort.modelId) ?? null;
+    if (!h?.anker || !bezug || !versatz) return null;
+    return {
+      globalId, modelId: ort.modelId, localId: ort.localId,
+      anker: h.anker,
+      lage: bezug.nachProjekt(h.anker),
+      versatz: { x: versatz.x, y: versatz.y, z: versatz.z },
+      lageUmkehrbar: !bezug.mapAngewandt,
+      anschluesse: engine.value?.anschluesseVon?.(ort.modelId, ort.localId) ?? [],
+    };
+  },
+  ansichtAufsBlatt:     () => ansichtAufsBlatt(),
+  hilfeUmschalten:      () => { showShortcuts.value = !showShortcuts.value; },
+  /** Das ganze Modell prüfen — die Prüfliste (Stufe 14.4). */
+  pruefeAlles:          (opts) => engine.value?.pruefeAlles(opts) ?? [],
+  /** Länge, Nennweite und Merkmale je Bauteil — für den Mengenauszug. */
+  mengenGrundlage:      () => engine.value?.mengenGrundlage() ?? [],
+  erdmassen:            (bauplaene) => engine.value?.erdmassen(bauplaene) ?? Promise.resolve([]),
+  /**
+   * Ein Bauteil ohne Mausklick auswählen — für den Sprung aus der Prüfliste.
+   *
+   * `zoomToElement` hebt es bereits hervor, aber die EINORDNUNG blieb aus:
+   * die Toolbox zeigte weiter das zuletzt angeklickte Bauteil. Aus einer
+   * Arbeitsliste wurde damit eine Leseliste — man sprang hin und musste dann
+   * doch von Hand klicken.
+   */
+  waehleBauteil: async (modelId, localId) => {
+    if (!engine.value) return false;
+    await engine.value.zoomToElement(modelId, localId);
+    const el = await engine.value.refreshElement();
+    if (!el) return false;
+    ifc.setElement(el);
+    panels.open('toolbox');
+    await _einordnenMitHuelle(el);
+    return true;
+  },
+  /**
+   * Den Bearbeiten-Modus umschalten (Stufe 12.0d).
+   *
+   * Über die Fassade, weil die Toolbox in der CdeView hängt und nicht unter
+   * dem Viewer — ein Ereignis quer durch den Baum wäre ein zweiter Weg zu
+   * derselben Handlung.
+   */
+  bearbeitenUmschalten: () => bearbeitenUmschalten(),
+  /**
+   * Der Höhenversatz Welt→NN, wie ihn auch die Koordinatenleiste benutzt.
+   *
+   * Damit rechnet das Zeichnen im Lageplan in m NN statt in Three-Welt-Y —
+   * dieselbe Größe, dasselbe System. Vorher ging der eingetragene Wert direkt
+   * als Welt-Y in die Punkte, und eine auf „305" gezeichnete Linie landete um
+   * den ganzen Ladeversatz zu hoch.
+   */
+  getHoehenversatz:     () => {
+    const b = Object.values(bezuege.value)[0] ?? null;
+    return b ? b.nachProjekt({ x: 0, y: 0, z: 0 }).hoehe : 0;
+  },
   getWebIfcAPIs:        () => engine.value?.getWebIfcAPIs() ?? [],
   getLoadedModelSha:    () => ablage.geladeneModellSha(),
 
@@ -714,9 +1090,80 @@ provideViewerApi({
    * dann wäre die Frage „warum steht es nach dem Neuladen anders da?" nicht
    * mehr zu beantworten.
    *
+   * NIMMT EINEN EINTRAG ODER MEHRERE. Ein mehrteiliger Vorgang („Haltung
+   * teilen" = löschen + zweimal erzeugen) kommt als Liste herein und wird der
+   * Reihe nach angewandt; gemeldet wird das Ergebnis zusammengefasst. Die
+   * Alternative wäre gewesen, das an beiden Aufrufern zu wiederholen — und
+   * zwei Wege zu derselben Sache sind in dieser Kette schon zweimal
+   * auseinandergelaufen.
+   *
    * @returns {Promise<{weg, angewandt, nurFestlegung, grund}>}
    */
-  wendeEintragAn: async (eintrag) => {
+  wendeEintragAn: async (eintragOderListe) => {
+    if (Array.isArray(eintragOderListe)) return wendeVorgangAn(eintragOderListe);
+    const r = await wendeEinenAn(eintragOderListe);
+    await entwerteNach([eintragOderListe?.art]);
+    return r;
+  },
+
+  baueErzeugteNeu,
+});
+
+/** Einen mehrteiligen Vorgang anwenden — der Reihe nach, einmal zusammengefasst. */
+/**
+ * Nach ANGEWANDTEN Änderungen neu ableiten, was dadurch veraltet ist —
+ * die Verdrahtung des FormSchreibers (Stufe 16; gebaut in 14.4, bis hier
+ * von niemandem gerufen). Der Speicher hinter Längsschnitt, Netz, Strang,
+ * Prüfliste und Plan-Beschriftung sind die ACHSEN (`engine.leseAchsen`,
+ * bislang nur beim Laden gelesen — jede Bearbeitung liess sie veralten:
+ * dieselbe Fehlerklasse wie die Prozent-Bemaßung, ein richtiger Wert an
+ * einer alten Stelle). Der Lageplan hängt am `geometrieStand`-Zähler.
+ */
+async function entwerteNach(arten) {
+  if (!entwertetGeometrie(arten)) return;
+  try {
+    const n = await engine.value?.leseAchsen()?.catch?.(() => 0) ?? 0;
+    // Der JOURNALSTAND gleich mit (17.3): selbst erzeugte Rohre und Schächte
+    // kommen ins Fachmodell, Verdecktes fliegt heraus. Die Engine liest kein
+    // Journal — sie bekommt den Stand als Daten; gerechnet wird er rein aus
+    // den Bauplan-Parametern (CdeAchsen.js).
+    const { kanten, knoten } = cdeAchsenAus(aenderungen.wirksamerStand('erzeugt'));
+    engine.value?.setzeJournalStand?.({
+      kanten, knoten,
+      verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+    });
+    ansicht.setzeStand({ hatAchsen: (n + kanten.length) > 0 });
+    ifc.bumpGeometrieStand();
+  } catch (fehler) {
+    // Die ANWENDUNG war zu diesem Zeitpunkt erfolgreich — ein Fehler beim
+    // Nachziehen darf sie nicht rückwirkend wie einen toten Knopf aussehen
+    // lassen (Gesetz 10; genau so gemeldet am 2026-09-02).
+    console.error('cde: entwerteNach', fehler);
+  }
+}
+
+async function wendeVorgangAn(eintraege) {
+  let angewandt = true;
+  let nurFestlegung = false;
+  let grund = null;
+  let neuaufbauGelaufen = false;
+  for (const e of eintraege) {
+    // Der Neuaufbau ist TOTAL — er baut den ganzen Stand. Ihn je
+    // `erzeugt`-Eintrag zu wiederholen wäre dreimal dieselbe Arbeit.
+    if (anwendungsweg(e) === 'neuaufbau') {
+      if (neuaufbauGelaufen) continue;
+      neuaufbauGelaufen = true;
+    }
+    const r = await wendeEinenAn(e);
+    angewandt = angewandt && r.angewandt;
+    nurFestlegung = nurFestlegung || r.nurFestlegung;
+    grund = grund ?? r.grund;
+  }
+  await entwerteNach(eintraege.map(e => e?.art));
+  return { weg: 'vorgang', angewandt, nurFestlegung, grund };
+}
+
+async function wendeEinenAn(eintrag) {
     const weg = anwendungsweg(eintrag);
     if (weg === 'neuaufbau') {
       // Erzeugtes NIE einzeln: `baueErzeugte` verwirft das Modell und baut nur,
@@ -740,10 +1187,7 @@ provideViewerApi({
       nurFestlegung: nichtAngewandt.length > 0,
       grund: misserfolge[0]?.grund ?? null,
     };
-  },
-
-  baueErzeugteNeu,
-});
+}
 
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -762,14 +1206,10 @@ onMounted(async () => {
     // Stufe 9.0: einordnen, damit das Kontextmenü weiß, was hier möglich ist.
     // Der Resolver wird JE AUSWAHL gebaut — er cached je Modell, und ein über
     // den Modellwechsel hinweg behaltener liefert Geometrie des alten Modells.
-    // Der Griff hängt am ALTEN Bauteil — er muss weg, bevor die neue
-    // Einordnung kommt. Sonst zöge man am Griff des vorigen.
-    ziehen.loesen();
     _einordnenMitHuelle(result)
       .catch(e => console.warn('cde: einordnen', e?.message ?? e));
   });
   _selection.onClickEmpty(() => {
-    ziehen.loesen();
     ifc.clearElement();
     bearbeitung.einordne(null, null);
   });
@@ -786,8 +1226,14 @@ onMounted(async () => {
         }
       : null;
   });
-  _selection.onMarqueeSelect(({ count }) => {
-    if (count) console.info(`[Selection] Marquee: ${count} Elemente ausgewählt`);
+  _selection.onMarqueeSelect(({ items, count }) => {
+    if (!count) return;
+    // DER RAHMEN ERREICHT JETZT DIE BEARBEITUNG (Stufe 14.10).
+    //
+    // Er wählte seit jeher mehrere Bauteile aus und hob sie hervor — gesagt
+    // hat er es nur der Konsole. Damit war Mehrfachbearbeitung nicht etwa
+    // schwierig, sondern schlicht nicht verdrahtet.
+    _mehrfachEinordnen(items).catch(e => console.warn('cde: mehrfach', e?.message ?? e));
   });
 
   // Measure-/Annotation-Modi nutzen weiterhin den Vue-Click-Handler — wenn sie
@@ -831,9 +1277,14 @@ onMounted(async () => {
     ...BEARBEITUNGEN.map(b => ({
       id: `bearb.${b.id}`, titel: b.titel, icon: b.icon,
       gruppe: GRUPPEN[b.gruppe]?.titel ?? 'Bearbeiten',
-      verfuegbar: () => bearbeitung.moeglich.some(m => m.id === b.id),
+      // Der Modus zuerst: die Palette darf nichts anbieten, was `starte`
+      // ohnehin abweist. Ein Befehl, der nur eine Absage erzeugt, ist ein
+      // toter Knopf mit Suchfunktion.
+      verfuegbar: () => bearbeitung.modusAn && bearbeitung.moeglich.some(m => m.id === b.id),
       run: () => bearbeitung.starte(b.id),
     })),
+    { id: 'bearb.modus', titel: 'Bearbeiten ein-/ausschalten', icon: 'edit',
+      gruppe: 'Bearbeiten', key: 'E', run: () => bearbeitenUmschalten() },
   ]);
 
   // Büro-/Projektprofile einmal je Sitzung laden (Stufe 6: Vorrangregel).
@@ -925,6 +1376,26 @@ async function _onModelLoaded() {
   // Höhenbearbeitung danach zeigt. Einmal je Laden, nicht je Mausbewegung.
   _bezuegeNeuBestimmen();
 
+  // Rahmen-Nachführung (Lücke ⑤): der Welt-Rahmen ist der Ladeversatz des
+  // ERSTEN Modells (COORDINATE_TO_ORIGIN). Das Journal muss ihn kennen,
+  // BEVOR das Nachspielen unten liest — eine neue Revision kann ein anderes
+  // Bounding-Box-Minimum haben, und dann werden alle gespeicherten Punkte
+  // synchron um das Delta gehoben (useAenderungen/JournalVersatz).
+  {
+    const erstes = engine.value?.getModelList()?.[0];
+    const rahmen = erstes ? engine.value?.getCoordOffsetForModel?.(erstes.modelId) : null;
+    if (rahmen) aenderungen.setzeWeltversatz({ x: rahmen.x, y: rahmen.y, z: rahmen.z });
+  }
+
+  // Die Achsen einmal zählen — davon hängt ab, ob der Längsschnitt bedienbar
+  // ist. `hatAchsen` wurde bis Stufe 14.1 NIRGENDS gesetzt, der Modus war
+  // damit dauerhaft gesperrt, obwohl die Fachrechnung dafür fertig dasteht.
+  // Gesetzt wird hier, weil hier gezählt wird — ein Beobachter anderswo
+  // liefe der Zählung davon. Fehler halten das Laden nicht auf: eine Datei
+  // ohne Leitungen ist kein Fehlerfall, sie hat eben keine Achsen.
+  const achsen = await engine.value.leseAchsen().catch(() => 0);
+  ansicht.setzeStand({ hatAchsen: achsen > 0 });
+
   // Categories for Layer Panel
   categoryList.value = engine.value.getCategoryList();
 
@@ -956,8 +1427,11 @@ async function _onModelLoaded() {
     // weg — das Journal liegt in der RepoFacade, das Modell kommt roh vom
     // Planer. Bewusst NICHT awaited an einer Stelle, die das Anzeigen
     // aufhielte: ein Modell ohne Festlegungen ist besser als gar keins.
-    nachspielen.nachModellladung(firstModel.modelId).then(({ konflikte }) => {
+    nachspielen.nachModellladung(firstModel.modelId).then(async ({ konflikte }) => {
       if (konflikte) console.info('[CDE]', nachspielen.meldung.value);
+      // Die Achsen wurden oben VOR dem Nachspielen gezählt — trug das
+      // Journal Geometrieänderungen, sind sie damit schon veraltet.
+      await entwerteNach(['lage', 'erzeugt']);
     });
   }
 
@@ -1030,8 +1504,8 @@ function onKeyDown(e) {
   // Werkzeugleiste traegt `key: 'G'` — stuende die Taste nur DORT, verspraeche
   // der Tooltip etwas, das nie passiert (die Registry beschriftet, sie bindet
   // nicht).
-  if (e.key === 'g' || e.key === 'G') { e.preventDefault(); ziehen.umschalten(); return; }
-  if (e.key === 'Escape' && ziehen.aktiv.value) { ziehen.loesen(); return; }
+  if (e.key === 'e' || e.key === 'E') { e.preventDefault(); bearbeitenUmschalten(); return; }
+  // Ohne Modus sagt `umschalten` selbst, warum nichts passiert — die Anzeige
 
   // T2.2: V toggles Saved Views panel
   if (e.key === 'v' || e.key === 'V') { e.preventDefault(); showSavedViews.value = !showSavedViews.value; return; }
@@ -1247,6 +1721,54 @@ async function onMouseUp(e) {
 /* ── Body ── */
 .viewer-body { position: relative; flex: 1; overflow: hidden; }
 
+/* Bearbeiten-Modus: Rahmen und Marke. Beide über allem, beide klickdurchlässig
+   bis auf den Beenden-Knopf — ein Modus-Hinweis darf nie im Weg stehen. */
+.bearb-rahmen {
+  position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  border: 2px solid var(--cde-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cde-accent) 35%, transparent);
+}
+.bearb-marke {
+  position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%);
+  z-index: 7; display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.2rem 0.35rem 0.2rem 0.5rem; border-radius: var(--cde-radius-sm);
+  background: var(--cde-accent); color: var(--cde-text-invert);
+  font-size: var(--cde-font-xs); font-weight: 600; letter-spacing: 0.02em;
+}
+.bearb-marke-aus {
+  display: flex; align-items: center; padding: 0.1rem; cursor: pointer;
+  border: 0; border-radius: 3px; background: transparent; color: inherit;
+}
+.bearb-marke-aus:hover { background: var(--cde-scrim); }
+.bearb-zahl {
+  opacity: 0.85; font-weight: 500; cursor: pointer;
+  background: transparent; border: 0; color: inherit; font: inherit;
+  text-decoration: underline dotted; text-underline-offset: 2px;
+  touch-action: manipulation;
+}
+.bearb-zahl:hover { opacity: 1; }
+.bearb-abschluss {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.1rem 0.45rem; cursor: pointer;
+  border: 1px solid var(--cde-scrim); border-radius: 999px;
+  background: var(--cde-scrim); color: inherit;
+  font-size: var(--cde-font-xs); font-weight: 600;
+  touch-action: manipulation;
+}
+.bearb-abschluss:hover { filter: brightness(1.15); }
+.bearb-abschluss.gedimmt { opacity: 0.6; }
+.bearb-sperre {
+  position: absolute; top: 2.6rem; left: 50%; transform: translateX(-50%);
+  z-index: 8; display: flex; align-items: center; gap: 0.4rem;
+  max-width: min(90%, 34rem);
+  padding: 0.35rem 0.65rem;
+  background: var(--cde-float);
+  border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
+  border-left: 3px solid var(--cde-warn);
+  border-radius: var(--cde-radius);
+  color: var(--cde-text); font-size: var(--cde-font-sm);
+}
+
 .canvas-root {
   position: absolute; inset: 0; background: var(--cde-bg-deep); z-index: 10;
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,0,0,0.55)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='white' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='2' fill='white'/%3E%3Ccircle cx='18' cy='18' r='2' fill='none' stroke='var(--cde-scrim)' stroke-width='1'/%3E%3C/svg%3E") 18 18, crosshair;
@@ -1382,6 +1904,41 @@ async function onMouseUp(e) {
   pointer-events: none; white-space: nowrap;
 }
 .coord-bar b { color: var(--cde-accent); margin-right: 2px; }
+.einheit-banner {
+  position: absolute; top: 3.4rem; left: 50%; transform: translateX(-50%);
+  z-index: 25; display: flex; align-items: center; gap: 0.5rem;
+  max-width: min(92%, 44rem);
+  padding: 0.45rem 0.8rem;
+  background: var(--cde-float);
+  border: 1px solid var(--cde-warn);
+  border-left: 4px solid var(--cde-warn);
+  border-radius: var(--cde-radius);
+  color: var(--cde-text); font-size: var(--cde-font-sm);
+  box-shadow: var(--cde-shadow);
+}
+
+.ansicht-popover {
+  position: absolute; bottom: 1rem; left: 4.6rem; z-index: 21;
+  display: flex; flex-direction: column; gap: 0.15rem;
+  background: var(--cde-float); padding: 0.35rem;
+  border: 1px solid var(--cde-tint); border-radius: 10px;
+  box-shadow: var(--cde-shadow-float);
+}
+.ap-eintrag {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.6rem; cursor: pointer; text-align: left;
+  background: transparent; border: 0; border-radius: 7px;
+  color: var(--cde-text); font-size: var(--cde-font-sm);
+  touch-action: manipulation;
+}
+.ap-eintrag:hover { background: var(--cde-tint); }
+.ap-eintrag.aktiv { color: var(--cde-accent); }
+.ap-trenner { height: 1px; background: var(--cde-tint-max); margin: 0.2rem 0.3rem; }
+
+.coord-mode-badge {
+  cursor: pointer; border: 0; font: inherit;
+  touch-action: manipulation;
+}
 .coord-mode-badge {
   font-size: 0.6rem; font-weight: 700; color: var(--cde-text-dimmer);
   background: var(--cde-tint-weak); border-radius: 3px;
@@ -1427,6 +1984,34 @@ async function onMouseUp(e) {
   box-shadow: var(--cde-shadow-sm);
 }
 .show-all-btn:hover { background: color-mix(in srgb, var(--cde-success-strong) 28%, transparent); transform: translate(-50%, -1px); }
+/* T3: Wenn die Modus-Leiste unten mittig steht, staffelt der Knopf nach oben —
+   dieselbe Stelle für zwei Dinge wäre auf dem Finger ein Lotteriespiel. */
+.show-all-btn.hochgerueckt { bottom: 5.4rem; }
+
+/* T3: Die Modus-Leiste — unten mittig, wie die Statuszeile in flood-3D. */
+.modus-leiste {
+  position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
+  z-index: 21; display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.7rem;
+  background: var(--cde-surface-raised);
+  border: 1px solid var(--cde-accent-line);
+  border-radius: 999px;
+  color: var(--cde-text);
+  font-size: var(--cde-font-sm);
+  box-shadow: var(--cde-shadow);
+  white-space: nowrap;
+}
+.modus-fertig {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.25rem 0.6rem; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--cde-success-strong) 50%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cde-success-strong) 18%, transparent);
+  color: var(--cde-success);
+  font-size: var(--cde-font-xs); font-weight: 600;
+  touch-action: manipulation;
+}
+.modus-fertig:hover { background: color-mix(in srgb, var(--cde-success-strong) 28%, transparent); }
 
 /* T1.3: Measurement UI */
 .measure-clear {
@@ -1536,21 +2121,26 @@ async function onMouseUp(e) {
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Stufe 9.3 — gleiche Gestalt wie der Ablage-Hinweis, eigene Bedeutung. */
-.zieh-hinweis.eingeschraenkt { border-color: var(--cde-warn); color: var(--cde-warn); }
-.zieh-hinweis {
-  position: absolute;
-  top: 9rem; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 0.4rem;
-  max-width: min(90%, 34rem);
-  padding: 0.4rem 0.7rem;
-  background: var(--cde-float);
-  border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
-  border-left: 3px solid var(--cde-warn);
-  border-radius: var(--cde-radius);
-  box-shadow: var(--cde-shadow-float);
-  color: var(--cde-text-bright);
-  font-size: var(--cde-font-sm);
-  z-index: var(--cde-z-hud);
+
+/* ── T1: Fingerziele (Tablet-Pass) ──────────────────────────────────────────
+   Der 3D-Canvas gehört der Kamera: ohne `touch-action: none` wischt der
+   Finger die SEITE statt der Szene — camera-controls verhindert das nicht
+   selbst. Kleine Knöpfe: schwebende Leisten wachsen auf groben Zeigern
+   WIRKLICH (sie verschieben nichts), einzelne Zeichen-Knöpfe bekommen die
+   unsichtbare Trefferfläche (Muster flood-3D f3d-theme.css — Pseudo-Element
+   statt Layoutänderung). `.measure-clear` ist selbst absolut positioniert
+   und trägt damit schon einen Bezug fürs Pseudo-Element — ihm `position:
+   relative` zu geben, risse es aus seiner Verankerung. */
+.canvas-root { touch-action: none; }
+.tool-btn, .snap-btn, .mode-btn, .section-close, .sel-action-btn,
+.show-all-btn, .measure-clear, .bearb-marke-aus { touch-action: manipulation; }
+@media (pointer: coarse) {
+  .snap-btn, .mode-btn { padding: 0.55rem 0.75rem; }
+  .modus-fertig { padding: 0.5rem 0.8rem; }
+  .section-close, .bearb-marke-aus { position: relative; }
+  .bearb-marke-aus::after { content: ''; position: absolute; inset: -10px; }
+  .section-close::after, .measure-clear::after {
+    content: ''; position: absolute; inset: -9px;
+  }
 }
 </style>

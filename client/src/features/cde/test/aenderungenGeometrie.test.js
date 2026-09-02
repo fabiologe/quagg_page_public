@@ -152,7 +152,7 @@ describe('basis — Entscheidung 3', () => {
         // „ohne Basis" und entzöge sich dem Vergleich.
         const j = useAenderungen();
         await j.eintragen({ art: 'lage', globalId: 'H12', nachher: OST_100, basis: GELIEFERT, modell: 'geliefert' });
-        const gegen = await j.zurueck();
+        const [gegen] = await j.zurueck();
         expect(gegen.basis).toEqual(GELIEFERT);
         expect(gegen.modell).toBe('geliefert');
     });

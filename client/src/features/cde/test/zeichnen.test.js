@@ -30,16 +30,22 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
+    // Der Bearbeiten-Modus ist mit Absicht AUS, solange ihn niemand
+    // einschaltet — die Sperre soll der Zustand sein, in den man ohne Zutun
+    // gerät. Diese Datei prüft, was IM Modus geschieht; dass ausserhalb nichts
+    // geschieht, prüft `bearbeitenModus.test.js`.
+    useBearbeitung().modusSetzen(true);
 });
 
 const ZUG = [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 10 }];
 
-function bau({ nachBauen = null } = {}) {
+function bau({ nachBauen = null, hoehenversatz = 0 } = {}) {
     const bearbeitung = useBearbeitung();
     const aenderungen = useAenderungen();
     const zeichnen = useZeichnen({
         bearbeitung, cde: { bearbeiter: 'Fabio' },
         getModellSha: () => 'sha1', nachBauen,
+        getHoehenversatz: () => hoehenversatz,
     });
     return { bearbeitung, aenderungen, zeichnen };
 }
@@ -68,6 +74,7 @@ describe('Ein Zug — ein Eintrag', () => {
     });
 
     it('legt die Punkte als Raumpunkte ab — Y ist die Höhe', async () => {
+        // Ohne Höhenversatz sind m NN und Welt-Y dasselbe.
         const t = bau();
         t.zeichnen.starte('linie-zeichnen');
         t.bearbeitung.setzeWert('hoehe', 12.4);
@@ -77,6 +84,31 @@ describe('Ein Zug — ein Eintrag', () => {
         expect(t.aenderungen.eintraege[0].nachher.parameter.punkte).toEqual([
             [0, 12.4, 0], [10, 12.4, 0], [10, 12.4, 10],
         ]);
+    });
+
+    it('die eingetragene Höhe ist eine Höhe über NN, kein Welt-Y', async () => {
+        // Die Zahl im Formular ging bisher DIREKT als Three-Welt-Y in die
+        // Punkte, während „Bezugshöhe setzen" zwei Katalogeinträge weiter in
+        // m NN rechnet. An Fabios Netz (Versatz 318,9 m) landete eine auf 305
+        // gezeichnete Linie damit um genau diesen Betrag zu hoch — dieselbe
+        // Größe in zwei Systemen, im selben Katalog.
+        const t = bau({ hoehenversatz: 318.9 });
+        t.zeichnen.starte('linie-zeichnen');
+        t.bearbeitung.setzeWert('hoehe', 305);
+        for (const p of ZUG) t.zeichnen.setzePunkt(p);
+        await t.zeichnen.abschliessen();
+
+        const punkte = t.aenderungen.eintraege[0].nachher.parameter.punkte;
+        for (const p of punkte) expect(p[1]).toBeCloseTo(305 - 318.9, 6);
+    });
+
+    it('das Formular ist mit der NN-Höhe des Modellursprungs vorbelegt', async () => {
+        // Sonst stünde dort 0 und der Nutzer zeichnete versehentlich 318 m
+        // unter Gelände.
+        const t = bau({ hoehenversatz: 318.9 });
+        t.zeichnen.starte('linie-zeichnen');
+        expect(t.bearbeitung.werte.hoehe).toBeCloseTo(318.9, 3);
+        expect(t.bearbeitung.felder.find(f => f.name === 'hoehe').einheit).toBe('m NN');
     });
 
     it('legt keine Geometrie ins Journal', async () => {

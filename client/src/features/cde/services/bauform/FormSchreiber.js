@@ -59,6 +59,11 @@ const TABELLE = Object.freeze({
     kg:     ['lageplan'],
     din277: ['lageplan'],
     pset:   ['lageplan'],
+    // Der Plan beschriftet mit dem Namen — eine Umbenennung ändert das Bild.
+    bezeichnung: ['lageplan'],
+    // Eine Maßnahme färbt den Plan und geht in die Mengen — der Auszug je
+    // Maßnahme rechnet aus Länge und Nennweite.
+    massnahme: ['lageplan', 'mengen'],
 });
 
 /**
@@ -81,6 +86,21 @@ export function veraltetDurch(arten) {
     const out = new Set();
     for (const art of arten ?? []) for (const v of veraltet(art)) out.add(v);
     return [...out];
+}
+
+/** Verbraucher, deren Veralten heisst: die GEOMETRIE hat sich geändert. */
+const GEOMETRIE_VERBRAUCHER = Object.freeze(
+    ['laengsschnitt', 'hoehenlinien', 'querprofile', 'boeschung']);
+
+/**
+ * Entwertet dieser Stapel die abgeleitete GEOMETRIE (Achsen, Netz, Strang,
+ * Prüfliste, Plan-Inhalte)? — Die Frage hinter der Verdrahtung (Stufe 16):
+ * `lage`, `parametrik`, `erzeugt`, `geloescht` ⇒ ja; eine Kostengruppe oder
+ * ein Name färbt und beschriftet nur. Ohne diese Trennung läse jeder
+ * KG-Klick die Achsen neu — mit ihr keiner zu wenig.
+ */
+export function entwertetGeometrie(arten) {
+    return veraltetDurch(arten).some(v => GEOMETRIE_VERBRAUCHER.includes(v));
 }
 
 /**

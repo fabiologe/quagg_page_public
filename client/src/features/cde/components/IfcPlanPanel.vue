@@ -113,7 +113,7 @@
         {{ plan.logo ? 'Ändern' : 'Logo laden' }}
       </label>
       <button v-if="plan.logo" class="pp-knopf schlicht" @click="plan.setzeLogo(null)" title="Logo entfernen">
-        <CdeIcon name="close" :size="12" />
+        <CdeIcon name="delete" :size="12" />
       </button>
       <span v-if="logoFehler" class="pp-fehler">{{ logoFehler }}</span>
     </div>
@@ -124,6 +124,13 @@
       <button class="pp-knopf voll" :disabled="!bereit || busy" @click="ausgeben('pdf')">
         <CdeIcon :name="busy === 'pdf' ? 'busy' : 'vector'" :class="{ 'is-busy': busy === 'pdf' }" :size="13" />
         Als Vektor-PDF
+      </button>
+      <!-- X2: „Blatt" wohnt bei der übrigen Ausgabe — vorher ein Toolbar-
+           Knopf ohne erkennbaren Unterschied zum Vektor-PDF daneben. -->
+      <button class="pp-knopf" :disabled="!bereit || busy" title="Rasterbild der aktuellen 3D-Ansicht auf ein Blatt"
+              @click="api.ansichtAufsBlatt?.()">
+        <CdeIcon name="snapshot" :size="13" />
+        3D-Ansicht aufs Blatt (Bild)
       </button>
       <button class="pp-knopf" :disabled="!bereit || busy" @click="ausgeben('dxf')">
         <CdeIcon :name="busy === 'dxf' ? 'busy' : 'dxf'" :class="{ 'is-busy': busy === 'dxf' }" :size="13" />

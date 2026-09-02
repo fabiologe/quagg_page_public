@@ -82,9 +82,27 @@ function _upfaces(positions, triCount) {
 // ── 'heightfield' ───────────────────────────────────────────────────────────
 
 function _heightfield(positions, triCount, cellOpt, warnings) {
+    const raster = heightfieldRaster(positions, triCount, cellOpt, warnings);
+    if (!raster) return { positions: new Float64Array(0), triCount: 0 };
+    return dreieckeAusRaster(raster);
+}
+
+/**
+ * Stufe 15 (10.1): das Höhenraster SELBST herausreichen — zweiter Ausgang,
+ * kein zweiter Rechenweg. Die Geländeoperationen arbeiten auf diesem Raster
+ * und geben es über `dreieckeAusRaster` in die Szene zurück; beide Seiten
+ * benutzen exakt die Abtastung und Triangulation, die `deriveSurface` schon
+ * immer benutzt hat.
+ *
+ * @returns {{x0,z0,maxX,maxZ,cell,nx,nz,heights:Float64Array}|null}
+ *  `maxX`/`maxZ` gehören zum BEZUG: die Randknoten wurden leicht nach innen
+ *  abgetastet (siehe unten) — wer die Knotenlage reproduzieren will, braucht
+ *  die Klemme, nicht nur x0+ix·cell.
+ */
+export function heightfieldRaster(positions, triCount, cellOpt = null, warnings = []) {
     const sampler = makeHeightSampler(positions, triCount);
     const b = sampler.bounds;
-    if (!b) return { positions: new Float64Array(0), triCount: 0 };
+    if (!b) return null;
 
     const spanX = Math.max(b.maxX - b.minX, 1e-6);
     const spanZ = Math.max(b.maxZ - b.minZ, 1e-6);
@@ -114,11 +132,27 @@ function _heightfield(positions, triCount, cellOpt, warnings) {
         }
     }
 
-    // Re-Triangulation: je Zelle 2 Dreiecke (Diagonale entlang geringerer
-    // Höhendifferenz — vermeidet Grat-Artefakte), 3 gültige Ecken → 1 Dreieck
+    return { x0: b.minX, z0: b.minZ, maxX: b.maxX, maxZ: b.maxZ, cell, nx, nz, heights };
+}
+
+/** Die Knotenlage eines Rasters — MIT der Randklemme der Abtastung. */
+export function rasterKnoten(raster, ix, iz) {
+    return {
+        x: Math.min(raster.maxX - 1e-9, raster.x0 + ix * raster.cell),
+        z: Math.min(raster.maxZ - 1e-9, raster.z0 + iz * raster.cell),
+    };
+}
+
+/**
+ * Raster → Dreiecke. Je Zelle 2 Dreiecke (Diagonale entlang geringerer
+ * Höhendifferenz — vermeidet Grat-Artefakte), 3 gültige Ecken → 1 Dreieck,
+ * NaN-Knoten reissen Löcher statt auf Höhe null zu fallen.
+ */
+export function dreieckeAusRaster(raster) {
+    const { nx, nz, heights } = raster;
     const tris = [];
-    const X = (ix) => Math.min(b.maxX - 1e-9, b.minX + ix * cell);
-    const Z = (iz) => Math.min(b.maxZ - 1e-9, b.minZ + iz * cell);
+    const X = (ix) => rasterKnoten(raster, ix, 0).x;
+    const Z = (iz) => rasterKnoten(raster, 0, iz).z;
     for (let ix = 0; ix + 1 < nx; ix++) {
         for (let iz = 0; iz + 1 < nz; iz++) {
             const y00 = heights[ix * nz + iz];

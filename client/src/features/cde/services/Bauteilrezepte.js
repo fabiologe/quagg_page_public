@@ -36,6 +36,8 @@
  */
 
 import * as THREE from 'three';
+import { formeNach } from './gelaende/Operationen.js';
+import { dreieckeAusRaster } from './geometry/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
 
 /**
@@ -120,14 +122,23 @@ function bandGeometrie(punkte, breite = LINIEN_BAND_M) {
  * Die Höhe kommt aus dem Feld `hoehe`, nicht aus den Punkten: im Lageplan
  * klickt man in XZ, die Höhe ist eine Angabe.
  */
-function flaechenGeometrie(punkte, hoehe = 0) {
+function flaechenGeometrie(punkte) {
     if (punkte.length < 3) return null;
+    // Trianguliert wird im GRUNDRISS (x/z) — die Höhe darf die Zerlegung nicht
+    // beeinflussen, sonst zerfällt eine geneigte Fläche anders als dieselbe
+    // waagerecht.
     const umriss = punkte.map(p => new THREE.Vector2(p[0], p[2]));
     const dreiecke = THREE.ShapeUtils.triangulateShape(umriss, []);
     if (!dreiecke.length) return null;
 
+    // JEDER PUNKT BEHÄLT SEINE HÖHE. Hier stand eine feste `hoehe`, die der
+    // Aufrufer immer als 0 übergab — die im Formular eingetragene Höhe steckt
+    // längst in den Punkten (`alsRaumpunkte` backt sie in y). Eine auf 305 m
+    // gezeichnete Fläche landete dadurch auf 0. Im Lageplan fiel es nicht auf,
+    // weil der direkt aus dem Journal zeichnet und die Geometrie gar nicht
+    // ansieht.
     const ecken = [];
-    for (const p of umriss) ecken.push(p.x, hoehe, p.y);
+    for (const p of punkte) ecken.push(p[0], p[1], p[2]);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(ecken, 3));
     g.setIndex(dreiecke.flat());
@@ -153,11 +164,129 @@ function flaechenGeometrie(punkte, hoehe = 0) {
  *   felder               wie im Bearbeitungs-Katalog
  *   baue(parameter)      → BufferGeometry | null. REIN: keine Engine, kein Vue.
  */
+/**
+ * Ein Rohr: Kreisquerschnitt entlang der Achse.
+ *
+ * Warum ein eigenes Rezept und nicht das Band der `linie`: Eine geteilte
+ * Haltung besteht aus zwei HALTUNGEN, nicht aus zwei flachen Streifen. Wer im
+ * Kanalbau zwei Bänder im Raum liegen sieht, hat kein Modell, sondern eine
+ * Skizze — und die Bauform wäre `linie` statt `achse+profil`, womit auch alle
+ * Werkzeuge dieser Form ausfielen.
+ *
+ * Die Richtung an jedem Stützpunkt wird zwischen den anliegenden Abschnitten
+ * gemittelt, damit die Ringe an Knicken nicht aufklaffen — dasselbe Vorgehen
+ * wie beim Band. Der Ring liegt in der Ebene senkrecht zur Richtung.
+ *
+ * PARAMETRISCH GEDACHT: Was hier ein Netz wird, kennt die Bibliothek auch als
+ * `editor.createCircleExtrusion({radius[], axes})`. Das Journal speichert
+ * ohnehin nur PUNKTE und DN — der Umstieg auf die parametrische Form ändert
+ * dann nichts am Journal, nur an dieser Funktion.
+ */
+function rohrGeometrie(punkte, dnMm = 300, seiten = 12) {
+    if (punkte.length < 2) return null;
+    const r = (Number(dnMm) || 300) / 2000;          // mm Durchmesser → m Radius
+    if (!(r > 0)) return null;
+
+    const ecken = [];
+    const indizes = [];
+    const OBEN = new THREE.Vector3(0, 1, 0);
+
+    for (let i = 0; i < punkte.length; i++) {
+        const hier = alsVec3(punkte[i]);
+        const vor = i > 0 ? alsVec3(punkte[i - 1]) : null;
+        const nach = i < punkte.length - 1 ? alsVec3(punkte[i + 1]) : null;
+        const richtung = new THREE.Vector3();
+        if (vor) richtung.add(hier.clone().sub(vor).normalize());
+        if (nach) richtung.add(nach.clone().sub(hier).normalize());
+        if (richtung.lengthSq() < 1e-12) richtung.set(1, 0, 0);
+        richtung.normalize();
+
+        // Ein Rahmen senkrecht zur Achse. Läuft die Achse fast senkrecht,
+        // taugt „oben" nicht als Bezug — dann wird die X-Achse genommen.
+        const bezug = Math.abs(richtung.dot(OBEN)) > 0.99
+            ? new THREE.Vector3(1, 0, 0)
+            : OBEN;
+        const u = new THREE.Vector3().crossVectors(bezug, richtung).normalize();
+        const v = new THREE.Vector3().crossVectors(richtung, u).normalize();
+
+        for (let k = 0; k < seiten; k++) {
+            const w = (k / seiten) * Math.PI * 2;
+            ecken.push(
+                hier.x + (u.x * Math.cos(w) + v.x * Math.sin(w)) * r,
+                hier.y + (u.y * Math.cos(w) + v.y * Math.sin(w)) * r,
+                hier.z + (u.z * Math.cos(w) + v.z * Math.sin(w)) * r,
+            );
+        }
+    }
+
+    for (let i = 0; i < punkte.length - 1; i++) {
+        for (let k = 0; k < seiten; k++) {
+            const a = i * seiten + k;
+            const b = i * seiten + ((k + 1) % seiten);
+            const c = a + seiten;
+            const d = b + seiten;
+            indizes.push(a, c, b, b, c, d);
+        }
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(ecken, 3));
+    g.setIndex(indizes);
+    g.computeVertexNormals();
+    return g;
+}
+
+/** Nicht-indizierte Dreiecksliste (Welt) → BufferGeometry mit Normalen. */
+function dreiecksGeometrie(positions) {
+    if (!positions?.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(positions), 3));
+    geo.computeVertexNormals();
+    return geo;
+}
+
+/**
+ * Rahmenwechsel (Lücke ⑤): jedes Rezept deklariert, wie seine Parameter in
+ * einen neuen Ladeversatz gehoben werden — WELCHE Felder Punkte sind, weiss
+ * nur das Rezept selbst. Ein Rezept ohne `verschiebe` fällt im Wächtertest
+ * (`journalVersatz.test.js`), nicht erst an einer verschobenen Revision.
+ */
+function _verschiebePunktliste(parameter, delta) {
+    const punkte = parameter?.punkte;
+    if (!Array.isArray(punkte)) return parameter;
+    return {
+        ...parameter,
+        punkte: punkte.map(p => (Array.isArray(p) && p.length >= 3
+            ? [p[0] + delta.x, p[1] + delta.y, p[2] + delta.z]
+            : p)),
+    };
+}
+
+/** Gelände: Achse/Umriss sind Grundriss-{x,z}; Sohlen/Höhen sind m NN und
+ *  hängen NICHT am Rahmen — sie bleiben stehen. */
+function _verschiebeGelaende(parameter, delta) {
+    const ops = parameter?.operationen;
+    if (!Array.isArray(ops)) return parameter;
+    const punktXZ = (p) => (p && Number.isFinite(p.x) && Number.isFinite(p.z)
+        ? { ...p, x: p.x + delta.x, z: p.z + delta.z } : p);
+    return {
+        ...parameter,
+        operationen: ops.map(op => ({
+            ...op,
+            parameter: {
+                ...op.parameter,
+                ...(Array.isArray(op.parameter?.achse) ? { achse: op.parameter.achse.map(punktXZ) } : {}),
+                ...(Array.isArray(op.parameter?.umriss) ? { umriss: op.parameter.umriss.map(punktXZ) } : {}),
+            },
+        })),
+    };
+}
+
 export const REZEPTE = Object.freeze({
     linie: {
         id: 'linie',
         titel: 'Linie',
-        icon: 'measure',
+        icon: 'route',
         bauform: 'linie',
         kategorieVorgabe: 'IFCANNOTATION',
         mindestPunkte: 2,
@@ -167,6 +296,7 @@ export const REZEPTE = Object.freeze({
             { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
             { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
         ],
+        verschiebe: _verschiebePunktliste,
         baue: (parameter) => bandGeometrie(punkteAus(parameter)),
     },
     flaeche: {
@@ -182,7 +312,75 @@ export const REZEPTE = Object.freeze({
             { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
             { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
         ],
-        baue: (parameter) => flaechenGeometrie(punkteAus(parameter), Number(parameter?.hoehe) || 0),
+        verschiebe: _verschiebePunktliste,
+        baue: (parameter) => flaechenGeometrie(punkteAus(parameter)),
+    },
+    gelaende: {
+        id: 'gelaende',
+        titel: 'Geformtes Gelände',
+        icon: 'terrain',
+        bauform: 'hoehenfeld',
+        kategorieVorgabe: 'IFCGEOGRAPHICELEMENT',
+        mindestPunkte: 0,
+        geschlossen: false,
+        felder: [],
+        /**
+         * Dieses Rezept BRAUCHT etwas, das kein Parameter sein darf: das
+         * Höhenraster des GELIEFERTEN Geländes. Es ins Journal zu legen wäre
+         * Gesetz-5-Bruch (Gerechnetes gespeichert — und veraltet still mit
+         * der nächsten Revision). Deshalb deklariert das Rezept seinen
+         * Bedarf, und `baueErzeugte` reicht die Ableitung herein — die
+         * Parameter bleiben rein deklarativ: Quelle + Operationsliste.
+         */
+        verschiebe: _verschiebeGelaende,
+        braucht: 'quellraster',
+        baue: null,
+        baueMit: (parameter, quellraster) => {
+            const { raster, warnungen } = formeNach(quellraster, parameter?.operationen ?? []);
+            const { positions } = dreieckeAusRaster(raster);
+            const geo = dreiecksGeometrie(positions);
+            return { geometrie: geo, warnungen };
+        },
+    },
+    rohr: {
+        id: 'rohr',
+        titel: 'Rohr',
+        icon: 'laengsschnitt',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCPIPESEGMENT',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
+            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
+            { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, vorgabe: 300 },
+        ],
+        verschiebe: _verschiebePunktliste,
+        baue: (parameter) => rohrGeometrie(punkteAus(parameter), parameter?.dn),
+    },
+    schacht: {
+        id: 'schacht',
+        titel: 'Schacht',
+        icon: 'schacht',
+        bauform: 'koerper',
+        kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+        // ZWEI Punkte: Sohle und Deckel. Ein Schacht ist geometrisch ein
+        // senkrechtes Rohr — deshalb braucht er keine eigene Routine, nur
+        // eine andere Achse. Die Tiefe ist der Abstand der beiden Punkte,
+        // nicht ein drittes Feld daneben: zwei Wege zu derselben Grösse
+        // liefen auseinander.
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
+            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
+            { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl',
+              min: 300, max: 4000, vorgabe: 1000 },
+        ],
+        verschiebe: _verschiebePunktliste,
+        baue: (parameter) => rohrGeometrie(punkteAus(parameter), parameter?.dn, 16),
     },
 });
 
@@ -228,6 +426,33 @@ export function baueAusBauplan(bauplan) {
     return {
         ok: true,
         geometrie,
+        kategorie: (bauplan.kategorie ?? r.kategorieVorgabe).toUpperCase(),
+        name: bauplan.name ?? '',
+    };
+}
+
+/**
+ * Wie `baueAusBauplan`, aber für Rezepte mit deklariertem Bedarf: die
+ * Ableitung kommt als Getter-Closure herein (Hausvertrag). Dieselbe
+ * Rückgabeform — der Aufrufer in `baueErzeugte` behandelt beide gleich.
+ */
+export async function baueMitAbleitung(bauplan, holeQuellraster) {
+    const fehler = pruefeBauplan(bauplan);
+    if (fehler.length) return { ok: false, fehler };
+    const r = rezeptNach(bauplan.rezept);
+    const quelle = bauplan.parameter?.quelle;
+    if (!quelle) return { ok: false, fehler: [`${r.titel}: keine Quelle angegeben`] };
+    if (!(bauplan.parameter?.operationen?.length)) {
+        return { ok: false, fehler: [`${r.titel}: keine Operationen`] };
+    }
+    const raster = await holeQuellraster?.(quelle);
+    if (!raster) return { ok: false, fehler: [`${r.titel}: Quellraster zu „${quelle}" nicht ableitbar`] };
+    const { geometrie, warnungen } = r.baueMit(bauplan.parameter, raster);
+    if (!geometrie) return { ok: false, fehler: [`${r.titel}: Geometrie liess sich nicht bauen`] };
+    return {
+        ok: true,
+        geometrie,
+        warnungen,
         kategorie: (bauplan.kategorie ?? r.kategorieVorgabe).toUpperCase(),
         name: bauplan.name ?? '',
     };

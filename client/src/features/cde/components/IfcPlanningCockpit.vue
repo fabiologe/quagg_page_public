@@ -75,13 +75,13 @@
           v-else-if="activeTab === 'quality'"
           :result="idsResult"
           :loading="idsLoading"
+          :befunde="befunde"
           @refresh="recomputeIds"
+          @pruefe="pruefeGeometrie"
           @select-element="onSelectKgElement"
         />
-        <IfcAenderungenTab
-          v-else-if="activeTab === 'aenderungen'"
-          @geaendert="() => { recomputeKg(); recomputeAreas(); }"
-        />
+<!-- Der Änderungen-Reiter ist zum PANEL „Verlauf" geworden (Teil XII, X1):
+     ein Ort für die Versionskontrolle, nicht zwei. -->
       </div>
     </div>
   </div>
@@ -99,7 +99,6 @@ import IfcCountTab     from './IfcCountTab.vue';
 import IfcPauschalTab  from './IfcPauschalTab.vue';
 import IfcKostenTab    from './IfcKostenTab.vue';
 import IfcQualityTab   from './IfcQualityTab.vue';
-import IfcAenderungenTab from './IfcAenderungenTab.vue';
 import { classifyDin277 } from '../services/Din277Classifier.js';
 import { classifyKg }     from '../services/KgClassifier.js';
 import { summarizeQuantities } from '../services/QuantitySummary.js';
@@ -109,11 +108,30 @@ import { IDS_DEFAULT_SPECS } from '../services/IdsDefaults.js';
 import { mergeKennwerte } from '../services/KgKennwerte.js';
 import { repo } from '../services/RepoFacade.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { profilFuer } from '../services/bauform/Typprofile.js';
 
 // Engine-Accessoren per provide/inject aus IfcViewer.vue statt Funktions-Props.
 const api = useViewerApi();
 const aenderungen = useAenderungen();
 const cde = useCdeStore();
+const bearbeitung = useBearbeitung();
+
+/**
+ * Die Prüfliste über das ganze Modell (Stufe 14.4).
+ *
+ * Auf Knopfdruck, nicht laufend: die Befunde werden abgeleitet, und über
+ * hunderte Bauteile ist das nichts, was bei jedem Bildaufbau laufen soll.
+ */
+const befunde = ref([]);
+function pruefeGeometrie() {
+  const masse = aenderungen.wirksamerStand('parametrik');
+  befunde.value = api.pruefeAlles?.({
+    typprofilFuer: (kategorie) => profilFuer(kategorie, bearbeitung.profilSatz),
+    // Eine korrigierte Fliessrichtung gilt auch für die Prüfliste.
+    umgekehrtFuer: (globalId) => masse.get(globalId)?.fliessrichtung === 'umgekehrt',
+  }) ?? [];
+}
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 
@@ -128,7 +146,6 @@ const tabs = [
   { id: 'kosten',   icon: 'kosten',   label: 'Kosten',        disabled: false },
   { id: 'pauschal', icon: 'pauschal', label: 'Pauschal',      disabled: false },
   { id: 'quality',  icon: 'quality',  label: 'BIM-Qualität',  disabled: false },
-  { id: 'aenderungen', icon: 'undo',  label: 'Änderungen',    disabled: false },
 ];
 const activeTab = ref('areas');
 
@@ -230,7 +247,10 @@ function onSelectKg(kgCode) {
 }
 
 function onSelectKgElement(el) {
-  api.zoomToElement?.(el.modelId, el.localId);
+  // Auswählen, nicht nur hinschauen: erst damit zeigt die Toolbox das Bauteil
+  // samt seinen Befunden und der Kur dazu.
+  if (api.waehleBauteil) api.waehleBauteil(el.modelId, el.localId);
+  else api.zoomToElement?.(el.modelId, el.localId);
 }
 
 /**
@@ -239,7 +259,10 @@ function onSelectKgElement(el) {
  * und rechnet sofort neu, damit Tabelle + Farbmodus den Stand zeigen.
  */
 async function onOverrideKg({ globalId, kgCode }) {
-  if (!globalId) return;
+  // AUCH HIER die Sperre, nicht nur am Auswahlfeld. Eine Sperre, die nur in
+  // der Darstellung sitzt, ist keine — sie fällt beim nächsten Umbau der
+  // Tabelle weg, und niemand merkt es.
+  if (!globalId || !bearbeitung.modusAn) return;
   await aenderungen.eintragen({
     art: 'kg', globalId, nachher: kgCode || null,
     wer: cde.bearbeiter || '',
@@ -363,7 +386,10 @@ function onSelectSpace(space) {
 }
 
 async function onOverrideClass({ globalId, classCode }) {
-  if (!globalId) return;
+  // AUCH HIER die Sperre, nicht nur am Auswahlfeld. Eine Sperre, die nur in
+  // der Darstellung sitzt, ist keine — sie fällt beim nächsten Umbau der
+  // Tabelle weg, und niemand merkt es.
+  if (!globalId || !bearbeitung.modusAn) return;
   await aenderungen.eintragen({
     art: 'din277', globalId, nachher: classCode || null,
     wer: cde.bearbeiter || '',

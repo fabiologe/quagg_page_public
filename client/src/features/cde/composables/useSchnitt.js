@@ -14,7 +14,7 @@
 
 import { ref } from 'vue';
 
-export function useSchnitt({ engine }) {
+export function useSchnitt({ engine, slot = null }) {
     /** Ist eine Schnittebene angelegt? */
     const aktiv = ref(false);
     /** Ist die Bedienleiste sichtbar? (Die Ebene kann aktiv sein, die Leiste weg.) */
@@ -43,11 +43,13 @@ export function useSchnitt({ engine }) {
             modus.value = 'translate';
             aktiv.value = true;
             leisteOffen.value = true;
+            slot?.belege?.('schnitt', () => { if (aktiv.value) umschalten(); });
             position.value = engine.value.getSectionPosition();
             _rueckmeldungAnmelden();
         } else {
             engine.value?.setSectionChangeCallback(null);
             engine.value?.deleteSectionCuts();
+            slot?.frei?.('schnitt');
             aktiv.value = false;
             leisteOffen.value = false;
             position.value = null;

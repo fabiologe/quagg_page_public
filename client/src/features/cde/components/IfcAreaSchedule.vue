@@ -76,6 +76,8 @@
               class="space-class"
               :value="s.classCode"
               @click.stop
+              :disabled="!bearbeitung.modusAn"
+              :title="bearbeitung.modusAn ? 'DIN-277-Klasse setzen' : 'Bearbeiten ist aus (E schaltet ein)'"
               @change="$emit('override-class', { globalId: s.globalId, classCode: $event.target.value })"
             >
               <option v-for="c in classOptions" :key="c.code" :value="c.code">{{ c.code }}</option>
@@ -94,6 +96,7 @@ import { DIN277_CLASSES } from '../services/Din277Classifier.js';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
 
 const props = defineProps({
   result:  { type: Object, default: null },   // { spaces, byStorey, totals }
@@ -101,6 +104,9 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 });
 defineEmits(['refresh', 'select-space', 'override-class']);
+
+// Klassifizieren ist Bearbeiten — siehe IfcKgEditor.
+const bearbeitung = useBearbeitung();
 
 const classOptions = Object.values(DIN277_CLASSES);
 

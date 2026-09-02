@@ -8,8 +8,10 @@
  *                       EINEM Repo-Schlüssel abgelegt. Wer zuweist, überschreibt;
  *                       was vorher galt, ist weg.
  *   DIN-277-Klasse    — dasselbe Muster in `IfcAreaSchedule`.
- *   Merkmalssatz      — `addPsetToElement` schreibt direkt ins IFC-Modell.
- *                       Keine Spur, kein Zurück.
+ *   Merkmalssatz      — schrieb bis Lücke ⑧ (2026-09-02) am Journal vorbei
+ *                       direkt ins IFC-Modell. Keine Spur, kein Zurück.
+ *                       Jetzt: Eintrag hier, Anwendung über
+ *                       `IfcAutor.schreibeMerkmalssatz`.
  *
  * Hier liegt stattdessen eine **append-only Liste**: jede Änderung merkt sich,
  * was vorher galt. Zurücknehmen heißt dann nicht „raten", sondern den letzten
@@ -27,6 +29,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { repo } from '../services/RepoFacade.js';
+import { deltaZwischen, nennenswert, verschiebeEintrag } from '../services/JournalVersatz.js';
 
 const REPO_KEY = 'aenderungen';
 
@@ -50,6 +53,20 @@ function gleichTief(a, b) {
     const ka = Object.keys(a), kb = Object.keys(b);
     if (ka.length !== kb.length) return false;
     return ka.every(k => gleichTief(a[k], b[k]));
+}
+
+/**
+ * Ein Parametrik-Wert als Karte Rolle → Wert.
+ *
+ * Verträgt die alte Form `{rolle, wert}` aus Journalen, die vor Stufe 14.2
+ * entstanden sind. Ohne diese Übersetzung verlöre ein bestehendes Journal
+ * seine Masse — und zwar still, weil `{rolle:'x', wert:1}` als Karte gelesen
+ * zwei sinnlose Schlüssel ergäbe.
+ */
+function _alsMasskarte(v) {
+    if (!v || typeof v !== 'object') return {};
+    if (typeof v.rolle === 'string') return { [v.rolle]: v.wert ?? null };
+    return v;
 }
 
 /**
@@ -104,11 +121,50 @@ export function versatzZwischen(basis, ziel) {
 export const AENDERUNGS_ARTEN = Object.freeze({
     kg:         { titel: 'Kostengruppe',   icon: 'kg' },
     din277:     { titel: 'DIN-277-Klasse', icon: 'areas' },
-    pset:       { titel: 'Merkmalssatz',   icon: 'info',     gleich: gleichTief },
+    /**
+     * Merkmalssätze BERÜHREN das Modell (Lücke ⑧): der Wert ist eine Karte
+     * Satzname → Felder, und jeder Eintrag trägt ALLE von der CDE gesetzten
+     * Sätze des Bauteils — absoluter Zielzustand, Vorgabefaltung „letzter
+     * gewinnt", exakte Rücknahme. Ein `falte`-Merge wie bei `parametrik`
+     * täte hier das Falsche: die Rücknahme eines neu eingeführten Satzes
+     * bliebe in der Vereinigung stehen.
+     */
+    pset:       { titel: 'Merkmalssatz',   icon: 'info',     beruehrtModell: true, gleich: gleichTief },
     lage:       { titel: 'Lage',           icon: 'pointer',  beruehrtModell: true, gleich: gleichPunkt },
-    parametrik: { titel: 'Maß',            icon: 'measure',  beruehrtModell: true, gleich: gleichTief },
+    /**
+     * Masse — MEHRERE je Bauteil, deshalb eine eigene Faltung.
+     *
+     * Der Wert ist eine Karte Rolle → Wert (`{profilGroesse: 300}`), keine
+     * einzelne Zahl: an einer Haltung gelten Nennweite, Sohle oben und Sohle
+     * unten NEBENEINANDER. Ohne `falte` überschrieb jede Festlegung alle
+     * übrigen, und niemand sah es — der Wert stand ja da, nur eben der
+     * zuletzt gesetzte allein.
+     *
+     * Alte Einträge der Form `{rolle, wert}` werden beim Falten übersetzt;
+     * ein Journal von gestern bleibt lesbar.
+     */
+    parametrik: {
+        titel: 'Maß', icon: 'measure', beruehrtModell: true, gleich: gleichTief,
+        falte: (vorher, nachher) => ({ ..._alsMasskarte(vorher), ..._alsMasskarte(nachher) }),
+    },
     erzeugt:    { titel: 'Erzeugt',        icon: 'add',      beruehrtModell: true, gleich: gleichTief },
     geloescht:  { titel: 'Gelöscht',       icon: 'delete',   beruehrtModell: true },
+    /**
+     * Bezeichnung — der Name des Bauteils.
+     *
+     * Eine eigene Art und kein Merkmalssatz: `Name` ist in IFC ein ATTRIBUT,
+     * kein Pset-Eintrag, und der Änderungsbericht soll „Bezeichnung" sagen und
+     * nicht „Merkmalssatz". Sie berührt das Modell nicht — der Plan zeigt sie
+     * allerdings an, deshalb steht sie im FormSchreiber unter `lageplan`.
+     */
+    bezeichnung: { titel: 'Bezeichnung',   icon: 'info' },
+    /**
+     * Sanierungsmaßnahme — eine Entscheidung, kein Messwert.
+     *
+     * Wie `kg` und `din277` eine Einordnung mit geschlossenem Vokabular; sie
+     * berührt das Modell nicht, färbt aber den Plan.
+     */
+    massnahme:   { titel: 'Maßnahme',      icon: 'quality' },
 });
 
 /** Die Vergleichsfunktion einer Art; Rückfall ist Identität. */
@@ -171,11 +227,18 @@ export function ebenenStand(auftragsEintraege, standEintraege, art) {
  * überhaupt angetreten ist.
  */
 export function standMitEintrag(eintraege, art) {
+    const falte = AENDERUNGS_ARTEN[art]?.falte ?? null;
     const stand = new Map();
     for (const e of eintraege) {
         if (e.art !== art || !e.globalId) continue;
-        if (e.nachher === null || e.nachher === undefined) stand.delete(e.globalId);
-        else stand.set(e.globalId, { wert: e.nachher, eintrag: e });
+        if (e.nachher === null || e.nachher === undefined) { stand.delete(e.globalId); continue; }
+        // „Letzter gewinnt" ist die Vorgabe und bleibt es. Eine Art darf eine
+        // eigene Faltung mitbringen — `parametrik` braucht sie, weil an einem
+        // Bauteil MEHRERE Masse nebeneinander gelten: wer erst die Nennweite
+        // und dann die Stärke festlegte, verlor die Nennweite.
+        const vorher = stand.get(e.globalId)?.wert;
+        const wert = falte ? falte(vorher, e.nachher) : e.nachher;
+        stand.set(e.globalId, { wert, eintrag: e });
     }
     return stand;
 }
@@ -327,6 +390,34 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      */
     const auftragsEintraege = ref([]);   // gilt in JEDEM Modellsatz
     const standEintraege    = ref([]);   // nur im aktiven Modellsatz
+
+    /**
+     * DAS COMMIT-MODELL (Teil XI, U2 — „wie git").
+     *
+     * Die flachen Listen oben bleiben die QUELLE für Faltung, Drei-Wege
+     * und Nachspielen (die fünfzehn Invarianten ruhen dort). Darüber liegt
+     * die Struktur, die der Nutzer sieht: COMMITS (abgeschlossene
+     * Sitzungen mit Nachricht) und DIE OFFENE SITZUNG (das Staging —
+     * ihre Schritte wirken sofort, sind aber noch unversioniert und
+     * dürfen als Entwurf wieder entfernt werden, ohne Gegeneintrag:
+     * git verwirft eine Arbeitskopie auch, ohne sie zu committen).
+     *
+     * Persistiert wird Format v2: { version: 2, commits, sitzung } je
+     * Ebene. Ein v1-Journal (rohes Array) wird beim Laden VERWORFEN und
+     * im Log vermerkt — Fabios Entscheidung vom 2026-09-02: die
+     * Test-Historie beginnt frisch.
+     */
+    const commitsJe = { auftrag: ref([]), stand: ref([]) };
+    const sitzungJe = { auftrag: ref(null), stand: ref(null) };
+    const commits = computed(() => [...commitsJe.auftrag.value, ...commitsJe.stand.value]);
+    const sitzung = computed(() => sitzungJe[vorgabeEbene.value].value);
+    const sitzungOffen = computed(() => !!sitzung.value);
+    const sitzungSchritte = computed(() => {
+        const s = sitzung.value;
+        if (!s) return [];
+        const ids = new Set(s.schrittIds);
+        return _liste(vorgabeEbene.value).value.filter(e => ids.has(e.id));
+    });
     /** Der aktive Modellsatz, oder null — dann gibt es nur die Auftragsebene. */
     const satzId = ref(null);
 
@@ -347,6 +438,70 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     }
     function _repoFuer(ebene) {
         return ebene === 'auftrag' || !satzId.value ? repo : repo.withScope(`stand:${satzId.value}`);
+    }
+
+    // ── Mehrbenutzer-Wächter (Lücke ⑥, 2026-09-02) ──────────────────────────
+    // Zwei Leute im selben Auftrag, und der Zweite überschreibt still die
+    // Commits des Ersten — das war der Stand. Minimaler Schutz: jede
+    // Nutzlast trägt einen `schreibstand` {zaehler, marke, wer, wann}; vor
+    // dem Sichern wird der Serverstand FRISCH gelesen, und liegt dort ein
+    // höherer Zähler mit fremder Marke, wird NICHT geschrieben — die fremde
+    // Arbeit bleibt, die eigene bleibt lokal, und der Konflikt steht sichtbar
+    // im Verlauf. Kein Verschmelzen, keine Raterei: neu laden entscheidet.
+    // (GET+PUT sind nicht atomar — das fängt den Alltagsfall „Kollege hat
+    // vorhin gearbeitet", nicht den exakt gleichzeitigen Klick.)
+    const SCHREIBMARKE = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const _schreibstaende = { auftrag: 0, stand: 0 };
+    /** {ebene, wer, wann} | null — gesetzt, sobald ein Sichern verweigert wurde. */
+    const schreibKonflikt = ref(null);
+
+    // ── Rahmen-Nachführung (Lücke ⑤ / Stufe 13.4, 2026-09-02) ────────────────
+    // Alle Punktwerte des Journals sind Weltkoordinaten, und die Welt hängt am
+    // Ladeversatz des ERSTEN Modells (COORDINATE_TO_ORIGIN = Bounding-Box-
+    // Minimum). Eine neue Revision kann das Minimum verschieben — dann läge
+    // jeder Anker daneben und der Drei-Wege-Vergleich meldete flächendeckend
+    // Konflikte. Deshalb trägt jede Nutzlast den Rahmen (`versatzMerker`);
+    // beim Laden mit anderem Rahmen werden die Punktfelder um das Delta
+    // gehoben (JournalVersatz.js) und neu gesichert. Der Viewer meldet den
+    // Rahmen über `setzeWeltversatz`, BEVOR das Nachspielen läuft.
+    let _weltVersatz = null;
+    const _versatzMerkerJe = { auftrag: null, stand: null };
+
+    function _gleicheVersatzAb(ebene) {
+        if (!_weltVersatz) return;
+        const merker = _versatzMerkerJe[ebene];
+        const liste = _liste(ebene).value;
+        if (!merker) {
+            // Alteinträge ohne Rahmen: NICHT raten — melden, und ab jetzt den
+            // Rahmen mitschreiben (die nächste Sicherung stempelt ihn).
+            if (liste.length) {
+                console.warn('[CDE] Journal ohne Rahmen-Versatz — Anker können bei '
+                    + 'einer neuen Revision daneben liegen (Lücke ⑤); der Rahmen wird '
+                    + 'ab jetzt mitgeführt.');
+            }
+            _versatzMerkerJe[ebene] = { ..._weltVersatz };
+            return;
+        }
+        const delta = deltaZwischen(merker, _weltVersatz);
+        if (!nennenswert(delta)) { _versatzMerkerJe[ebene] = { ..._weltVersatz }; return; }
+        _liste(ebene).value = liste.map(e => verschiebeEintrag(e, delta));
+        _versatzMerkerJe[ebene] = { ..._weltVersatz };
+        console.info(`[CDE] Journal dem neuen Ladeversatz nachgeführt `
+            + `(Δ ${delta.x.toFixed(3)}/${delta.y.toFixed(3)}/${delta.z.toFixed(3)} m, `
+            + `${liste.length} Einträge, Ebene ${ebene})`);
+        _sichern(ebene);
+    }
+
+    /**
+     * Der Viewer meldet den Welt-Rahmen (Ladeversatz des ersten Modells).
+     * SYNCHRON verschoben — das Nachspielen liest `eintraege` direkt danach;
+     * die Neusicherung läuft im Hintergrund.
+     */
+    function setzeWeltversatz(v) {
+        if (!v || ![v.x, v.y, v.z].every(Number.isFinite)) return;
+        _weltVersatz = { x: v.x, y: v.y, z: v.z };
+        _gleicheVersatzAb('auftrag');
+        _gleicheVersatzAb('stand');
     }
 
     const anzahl = computed(() => eintraege.value.length);
@@ -371,10 +526,94 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
 
     async function _sichern(ebene) {
         try {
-            await _repoFuer(ebene).set(REPO_KEY, JSON.parse(JSON.stringify(_liste(ebene).value)));
+            // MEHRBENUTZER-WÄCHTER (Lücke ⑥): erst nachsehen, ob auf dem
+            // Server inzwischen ein FREMDER Stand liegt. Wenn ja, wird die
+            // fremde Arbeit nicht überschrieben — die eigene bleibt im
+            // Speicher, der Konflikt wird angezeigt, und Neuladen führt
+            // zusammen. Ein v1/leerer Stand trägt keinen `schreibstand` und
+            // kann deshalb nichts sperren.
+            const ablage = _repoFuer(ebene);
+            const fremd = (await ablage.getFrisch?.(REPO_KEY)) ?? null;
+            const fs = fremd?.schreibstand;
+            if (fs && fs.marke !== SCHREIBMARKE && (fs.zaehler ?? 0) > _schreibstaende[ebene]) {
+                schreibKonflikt.value = { ebene, wer: fs.wer ?? '', wann: fs.wann ?? null };
+                console.error('cde: Journal NICHT gesichert — auf dem Server liegt ein neuerer Stand',
+                    schreibKonflikt.value);
+                return;
+            }
+
+            // Format v2: die Schritte leben IN ihren Commits bzw. der
+            // offenen Sitzung — die flache Liste ist daraus rekonstruierbar
+            // und wird nicht doppelt gespeichert.
+            const liste = _liste(ebene).value;
+            const je = new Map(liste.map(e => [e.id, e]));
+            const nutzlast = {
+                version: 2,
+                commits: commitsJe[ebene].value.map(c => ({
+                    ...c, schrittIds: undefined,
+                    schritte: c.schrittIds.map(id => je.get(id)).filter(Boolean),
+                })),
+                sitzung: sitzungJe[ebene].value
+                    ? {
+                        begonnen: sitzungJe[ebene].value.begonnen,
+                        wer: sitzungJe[ebene].value.wer,
+                        schritte: sitzungJe[ebene].value.schrittIds
+                            .map(id => je.get(id)).filter(Boolean),
+                    }
+                    : null,
+                schreibstand: {
+                    zaehler: _schreibstaende[ebene] + 1,
+                    marke: SCHREIBMARKE,
+                    wer: sitzungJe[ebene].value?.wer
+                        || commitsJe[ebene].value.at(-1)?.wer || '',
+                    wann: Date.now(),
+                },
+                // Der Rahmen, unter dem diese Punkte geschrieben wurden
+                // (Lücke ⑤) — ohne Modell noch unbekannt, dann fehlt er ehrlich.
+                ...(_versatzMerkerJe[ebene] ? { versatzMerker: _versatzMerkerJe[ebene] } : {}),
+            };
+            const ok = await ablage.set(REPO_KEY, JSON.parse(JSON.stringify(nutzlast)));
+            if (ok !== false) _schreibstaende[ebene] += 1;
         } catch (fehler) {
             console.warn('cde: aenderungen sichern', fehler?.message ?? fehler);
         }
+    }
+
+    /** Nutzlast v2 in die drei Zustände auspacken. */
+    function _uebernimmV2(ebene, roh) {
+        const flach = [];
+        const commits = [];
+        for (const c of roh.commits ?? []) {
+            const schritte = Array.isArray(c.schritte) ? c.schritte : [];
+            flach.push(...schritte);
+            commits.push({
+                id: c.id, nachricht: c.nachricht ?? '', wer: c.wer ?? '',
+                wann: c.wann ?? 0, modellSha: c.modellSha ?? null,
+                schrittIds: schritte.map(e => e.id),
+            });
+        }
+        let sitzung = null;
+        if (roh.sitzung) {
+            const schritte = Array.isArray(roh.sitzung.schritte) ? roh.sitzung.schritte : [];
+            flach.push(...schritte);
+            sitzung = {
+                begonnen: roh.sitzung.begonnen ?? Date.now(),
+                wer: roh.sitzung.wer ?? '',
+                schrittIds: schritte.map(e => e.id),
+            };
+        }
+        _liste(ebene).value = flach;
+        commitsJe[ebene].value = commits;
+        sitzungJe[ebene].value = sitzung;
+        // Der Mehrbenutzer-Wächter merkt sich, welchen Serverstand wir
+        // ZULETZT GESEHEN haben — jede spätere fremde Schreibung zählt höher.
+        _schreibstaende[ebene] = roh.schreibstand?.zaehler ?? 0;
+        if (schreibKonflikt.value?.ebene === ebene) schreibKonflikt.value = null;
+        // Rahmen-Nachführung (Lücke ⑤): unter welchem Ladeversatz wurden diese
+        // Punkte geschrieben? Ist der aktuelle Rahmen schon bekannt (Satz-
+        // Wechsel nach dem Laden), wird sofort abgeglichen.
+        _versatzMerkerJe[ebene] = roh.versatzMerker ?? null;
+        if (_weltVersatz) _gleicheVersatzAb(ebene);
     }
 
     /**
@@ -388,7 +627,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * @param {'stand'|'auftrag'} [ebene]  Vorgabe: Modellsatz, wenn einer aktiv ist
      * @returns {object|null} der Eintrag, oder null wenn nichts zu tun war
      */
-    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null, basis, modell, ebene }) {
+    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null,
+                               basis, modell, ebene, vorgang, vorgangTitel, befunde }) {
         if (!(art in AENDERUNGS_ARTEN) || !globalId) return null;
         const ziel = ebene ?? vorgabeEbene.value;
         const stand = wirksamerStand(art);
@@ -399,10 +639,23 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // der Art: Objektwerte (Anker, Maße) tragen kein `===`.
         if (gleichFuer(art)(vorher, nachher ?? null)) return null;
 
+        // Jeder Schritt gehört zu einer SITZUNG (U2). Wer ohne offene
+        // schreibt (Tests, System-Übernahmen), eröffnet implizit eine —
+        // committet wird sie wie jede andere.
+        if (!sitzungJe[ziel].value) {
+            sitzungJe[ziel].value = { begonnen: Date.now(), wer, schrittIds: [] };
+        }
+
         const eintrag = {
             id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
             art, globalId, vorher, nachher: nachher ?? null,
             wer, wann: Date.now(), modellSha,
+            // Ein VORGANG bindet mehrere Einträge zusammen, ohne die Invariante
+            // „ein Eintrag, ein Bauteil" anzutasten — an der hängen fünfzehn
+            // Stellen. Rein additiv: ohne ihn verhält sich alles wie zuvor.
+            ...(vorgang ? { vorgang, vorgangTitel } : {}),
+            // Momentaufnahme, kein laufender Stand — siehe `useBearbeitung`.
+            ...(befunde?.length ? { befunde } : {}),
         };
         // `basis` ist der Wert im GELIEFERTEN Modell — der Bezugspunkt des
         // Drei-Wege-Vergleichs. Nur Arten, die das Modell berühren, führen ihn;
@@ -414,6 +667,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             eintrag.modell = modell ?? 'geliefert';
         }
         _liste(ziel).value.push(eintrag);
+        sitzungJe[ziel].value.schrittIds.push(eintrag.id);
         await _sichern(ziel);
         return eintrag;
     }
@@ -436,24 +690,488 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      */
     async function zurueck(wer = '', { ebene } = {}) {
         const ziel = ebene ?? vorgabeEbene.value;
-        const letzter = letzterOffener(_liste(ziel).value);
-        if (!letzter) return null;
-        const eintrag = {
-            id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-            art: letzter.art, globalId: letzter.globalId,
-            vorher: letzter.nachher, nachher: letzter.vorher,
-            wer, wann: Date.now(), modellSha: letzter.modellSha,
-            // Die Rücknahme erbt Bezugspunkt und Modell des Schrittes, den sie
-            // zurücknimmt. Ohne das verlöre der Gegeneintrag seine `basis` und
-            // gälte beim Nachspielen als „ohne Basis" — ausgerechnet der
-            // Eintrag, der am Ende gilt.
-            ...(letzter.basis !== undefined ? { basis: letzter.basis } : {}),
-            ...(letzter.modell !== undefined ? { modell: letzter.modell } : {}),
-            ruecknahmeVon: letzter.id,
+
+        // WÄHREND einer offenen Sitzung heisst „zurück": den letzten Vorgang
+        // aus dem ENTWURF nehmen (Unstage) — kein Gegeneintrag, die Historie
+        // beginnt erst mit dem Commit (U2).
+        const s = sitzungJe[ziel].value;
+        if (s?.schrittIds.length) {
+            const liste = _liste(ziel).value;
+            const letzterId = s.schrittIds[s.schrittIds.length - 1];
+            const letzterE = liste.find(e => e.id === letzterId);
+            if (letzterE) {
+                return entferneSitzungsVorgang(letzterE.vorgang ?? letzterE.id, { ebene: ziel });
+            }
+        }
+
+        const liste = _liste(ziel).value;
+        const letzter = letzterOffener(liste);
+        if (!letzter) return [];
+
+        // EIN VORGANG WIRD GANZ ZURÜCKGENOMMEN (Stufe 14.3).
+        //
+        // „Haltung teilen" sind drei Einträge — einer gelöscht, zwei erzeugt.
+        // Nur den letzten zurückzunehmen liesse zwei halbe Hälften und eine
+        // verschwundene Haltung stehen: ein Zustand, den niemand gemeint hat
+        // und der sich per Hand kaum wieder auflösen lässt.
+        //
+        // Ohne `vorgang` bleibt alles wie bisher — genau ein Schritt.
+        const zurueckgenommen = new Set(liste.map(e => e.ruecknahmeVon).filter(Boolean));
+        const betroffen = letzter.vorgang
+            ? liste.filter(e => e.vorgang === letzter.vorgang
+                && !e.ruecknahmeVon && !zurueckgenommen.has(e.id))
+            : [letzter];
+
+        // Die Gegeneinträge bilden ihrerseits EINEN Vorgang. Ohne das nähme der
+        // nächste Klick die Rücknahme stückweise zurück.
+        const gegenVorgang = betroffen.length > 1 ? _neueVorgangsId() : undefined;
+        const geschrieben = [];
+        // Rückwärts: der zuletzt gemachte Schritt wird zuerst rückgängig.
+        for (const q of [...betroffen].reverse()) {
+            const eintrag = {
+                id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                art: q.art, globalId: q.globalId,
+                vorher: q.nachher, nachher: q.vorher,
+                wer, wann: Date.now(), modellSha: q.modellSha,
+                // Die Rücknahme erbt Bezugspunkt und Modell des Schrittes, den
+                // sie zurücknimmt. Ohne das verlöre der Gegeneintrag seine
+                // `basis` und gälte beim Nachspielen als „ohne Basis" —
+                // ausgerechnet der Eintrag, der am Ende gilt.
+                ...(q.basis !== undefined ? { basis: q.basis } : {}),
+                ...(q.modell !== undefined ? { modell: q.modell } : {}),
+                ...(gegenVorgang ? { vorgang: gegenVorgang,
+                                     vorgangTitel: `${q.vorgangTitel ?? 'Vorgang'} zurückgenommen` } : {}),
+                ruecknahmeVon: q.id,
+            };
+            liste.push(eintrag);
+            geschrieben.push(eintrag);
+        }
+        // Auf Commits ist die Rücknahme selbst ein COMMIT — „Revert: …",
+        // wie bei git (U2).
+        await _commitAus(ziel, geschrieben,
+            `Revert: ${letzter.vorgangTitel ?? AENDERUNGS_ARTEN[letzter.art]?.titel ?? letzter.art}`,
+            wer);
+        return geschrieben;
+    }
+
+    /**
+     * Die ZEITLEISTE: das Journal als Vorgangs-Liste, neueste zuerst
+     * (Stufe 9, git-artig). Jeder Vorgang trägt Titel, wer, wann, seine
+     * Einträge, die berührten Bauteile — und ob er ZURÜCKGENOMMEN ist
+     * (alle seine Einträge haben Gegeneinträge). Rücknahmen selbst sind
+     * eigene Vorgänge mit `ruecknahme: true`; nichts wird versteckt,
+     * die Spur bleibt vollständig (append-only).
+     */
+    const vorgaenge = computed(() => {
+        const liste = eintraege.value;
+        const zurueckgenommen = new Set(liste.map(e => e.ruecknahmeVon).filter(Boolean));
+        const karte = new Map();
+        const reihenfolge = [];
+        for (const e of liste) {
+            const schluessel = e.vorgang ?? e.id;
+            let v = karte.get(schluessel);
+            if (!v) {
+                v = {
+                    schluessel,
+                    titel: e.vorgangTitel
+                        ?? AENDERUNGS_ARTEN[e.art]?.titel ?? e.art,
+                    wer: e.wer ?? '',
+                    wann: e.wann ?? 0,
+                    ruecknahme: !!e.ruecknahmeVon,
+                    basisHebung: !!e.basisGehoben,
+                    zeilen: [],
+                };
+                karte.set(schluessel, v);
+                reihenfolge.push(v);
+            }
+            v.zeilen.push(e);
+            if ((e.wann ?? 0) > v.wann) v.wann = e.wann;
+        }
+        for (const v of reihenfolge) {
+            v.zurueckgenommen = !v.ruecknahme
+                && v.zeilen.every(z => zurueckgenommen.has(z.id));
+            v.bauteile = [...new Set(v.zeilen.map(z => z.globalId))];
+            v.arten = [...new Set(v.zeilen.map(z => z.art))];
+        }
+        return reihenfolge.reverse();
+    });
+
+    /**
+     * BIS VOR einen Vorgang zurücksetzen — das git-reset dieser Zeitleiste,
+     * nur append-only: es entstehen Gegen-Vorgänge, vom neuesten offenen
+     * abwärts bis einschliesslich des genannten. Kein Sprung MITTEN hinein:
+     * ein Gegen-Eintrag ist immer der neueste und überschriebe sonst
+     * spätere Arbeit am selben Bauteil — deshalb gibt es nur „bis hierher",
+     * nie „nur diesen mittendrin".
+     *
+     * @returns {Array} alle Gegen-Einträge (für die Anwendung am Modell)
+     */
+    async function zurueckBis(schluessel, wer = '', { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const geschrieben = [];
+        for (let schutz = 0; schutz < 200; schutz++) {
+            const liste = _liste(ziel).value;
+            const zurueckgenommen = new Set(liste.map(e => e.ruecknahmeVon).filter(Boolean));
+            const offenImZiel = liste.some(e =>
+                (e.vorgang ?? e.id) === schluessel
+                && !e.ruecknahmeVon && !zurueckgenommen.has(e.id));
+            if (!offenImZiel) break;
+            const schritt = await zurueck(wer, { ebene: ziel });
+            if (!schritt.length) break;         // nichts mehr offen — fertig
+            geschrieben.push(...schritt);
+        }
+        return geschrieben;
+    }
+
+    /**
+     * KONFLIKT-ENTSCHEIDUNG „Übernehmen": die Festlegung gilt weiter, gegen
+     * den NEUEN Planerstand — `basis` wird auf den Ist-Wert gehoben.
+     *
+     * Das ist die EINZIGE Stelle im Modul, an der ein Journaleintrag
+     * nachträglich geändert wird (Landmine aus Teil II, dort dokumentiert).
+     * Deshalb wird sie protokolliert: ein eigener Eintrag hält fest, dass
+     * die Basis gehoben wurde — sonst verlöre die Spur genau den Schritt,
+     * der am meisten erklärt.
+     */
+    async function hebeBasisAn(eintragId, istWert, wer = '') {
+        for (const ebene of ['auftrag', 'stand']) {
+            const liste = _liste(ebene).value;
+            const q = liste.find(e => e.id === eintragId);
+            if (!q) continue;
+            q.basis = istWert;
+            const protokoll = {
+                id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                art: q.art, globalId: q.globalId,
+                vorher: q.nachher, nachher: q.nachher,
+                basis: istWert,
+                wer, wann: Date.now(), modellSha: q.modellSha,
+                basisGehoben: q.id,
+                vorgangTitel: 'Basis auf Planerstand gehoben (Konflikt übernommen)',
+            };
+            liste.push(protokoll);
+            await _commitAus(ebene, [protokoll],
+                'Konflikt übernommen — Basis auf Planerstand gehoben', wer);
+            return protokoll;
+        }
+        return null;
+    }
+
+    /**
+     * KONFLIKT-ENTSCHEIDUNG „Verwerfen": der Planerwert gilt — ein
+     * Gegeneintrag zu GENAU diesem Eintrag, auch mitten in der Historie.
+     * (Für Konflikte ist das sicher: der Eintrag ist ohnehin nicht
+     * anwendbar, spätere Arbeit auf dem Bauteil gibt es nicht.)
+     */
+    async function verwerfeEinen(eintragId, wer = '') {
+        for (const ebene of ['auftrag', 'stand']) {
+            const liste = _liste(ebene).value;
+            const q = liste.find(e => e.id === eintragId);
+            if (!q) continue;
+            const gegen = {
+                id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                art: q.art, globalId: q.globalId,
+                vorher: q.nachher, nachher: q.vorher ?? null,
+                wer, wann: Date.now(), modellSha: q.modellSha,
+                ...(q.basis !== undefined ? { basis: q.basis } : {}),
+                ...(q.modell !== undefined ? { modell: q.modell } : {}),
+                ruecknahmeVon: q.id,
+                vorgangTitel: 'Nach Konflikt verworfen — der Planerwert gilt',
+            };
+            liste.push(gegen);
+            await _commitAus(ebene, [gegen],
+                'Konflikt verworfen — der Planerwert gilt', wer);
+            return gegen;
+        }
+        return null;
+    }
+
+    /**
+     * KONFLIKT-ENTSCHEIDUNG „Übertragen auf …": die Festlegung wandert auf
+     * ein anderes Bauteil (die Haltung wurde geteilt, der Nachfolger heisst
+     * anders). Ein neuer Eintrag dort + der Gegeneintrag hier, als EIN
+     * Vorgang geklammert.
+     */
+    async function uebertrageAuf(eintragId, zielGlobalId, { wer = '', basis, modell } = {}) {
+        const q = eintraege.value.find(e => e.id === eintragId);
+        if (!q || !zielGlobalId || zielGlobalId === q.globalId) return [];
+        const vorgang = _neueVorgangsId();
+        const titel = 'Vom Konflikt übertragen';
+        const neu = await eintragen({
+            art: q.art, globalId: zielGlobalId, nachher: q.nachher,
+            wer, modellSha: q.modellSha,
+            basis, modell: modell ?? q.modell,
+            vorgang, vorgangTitel: titel,
+        });
+        const gegen = await verwerfeEinen(q.id, wer);
+        if (gegen) { gegen.vorgang = vorgang; gegen.vorgangTitel = titel; }
+        const beide = [neu, gegen].filter(Boolean);
+        await _commitAus(vorgabeEbene.value, beide,
+            `Konflikt übertragen auf ${zielGlobalId}`, wer);
+        return beide;
+    }
+
+    /**
+     * DIE ZEITLEISTE AUF COMMIT-EBENE (U3) — was der Nutzer als
+     * Versionsverlauf sieht: oben die offene Sitzung (unversioniert),
+     * darunter die Commits, neueste zuerst. `zurueckgenommen` gilt einem
+     * Commit, wenn JEDER seiner Schritte einen Gegeneintrag in einem
+     * späteren Revert-Commit hat.
+     */
+    const commitZeitleiste = computed(() => {
+        const ebene = vorgabeEbene.value;
+        const liste = _liste(ebene).value;
+        const je = new Map(liste.map(e => [e.id, e]));
+        const revertiert = new Set(liste.map(e => e.ruecknahmeVon).filter(Boolean));
+
+        const zeile = (e) => ({ ...e });
+        const eintraegeVon = (ids) => ids.map(id => je.get(id)).filter(Boolean);
+        const alsVorgaenge = (schritte) => {
+            const gruppen = new Map();
+            for (const e of schritte) {
+                const schluessel = e.vorgang ?? e.id;
+                let v = gruppen.get(schluessel);
+                if (!v) {
+                    v = { schluessel,
+                          titel: e.vorgangTitel ?? (AENDERUNGS_ARTEN[e.art]?.titel ?? e.art),
+                          zeilen: [] };
+                    gruppen.set(schluessel, v);
+                }
+                v.zeilen.push(zeile(e));
+            }
+            return [...gruppen.values()];
         };
-        _liste(ziel).value.push(eintrag);
+
+        const out = [];
+        const s = sitzungJe[ebene].value;
+        if (s?.schrittIds.length) {
+            const schritte = eintraegeVon(s.schrittIds);
+            out.push({
+                typ: 'sitzung', id: 'sitzung',
+                titel: 'Offene Sitzung — unversioniert',
+                wer: s.wer ?? '', wann: schritte.at(-1)?.wann ?? s.begonnen,
+                vorgaenge: alsVorgaenge(schritte),
+                bauteile: [...new Set(schritte.map(e => e.globalId))],
+                arten: [...new Set(schritte.map(e => e.art))],
+            });
+        }
+        for (const c of [...commitsJe[ebene].value].reverse()) {
+            const schritte = eintraegeVon(c.schrittIds);
+            const revert = schritte.length > 0 && schritte.every(e => e.ruecknahmeVon);
+            out.push({
+                typ: revert ? 'revert' : 'commit',
+                id: c.id, titel: c.nachricht, wer: c.wer, wann: c.wann,
+                vorgaenge: alsVorgaenge(schritte),
+                bauteile: [...new Set(schritte.map(e => e.globalId))],
+                arten: [...new Set(schritte.map(e => e.art))],
+                zurueckgenommen: !revert && schritte.length > 0
+                    && schritte.every(e => revertiert.has(e.id)),
+            });
+        }
+        return out;
+    });
+
+    /**
+     * EINEN Commit rückgängig machen — als EIN Revert-Commit (U3).
+     *
+     * Alle noch offenen Schritte des Commits bekommen Gegeneinträge,
+     * rückwärts; zusammen werden sie „Revert: <nachricht>". Angeboten wird
+     * das nur für den NEUESTEN offenen Commit — ein Revert mitten in der
+     * Historie überschriebe spätere Arbeit am selben Bauteil (der
+     * Gegeneintrag ist immer der neueste). `zurueckBisCommit` hangelt sich
+     * deshalb vom neuesten abwärts.
+     */
+    async function revertiereCommit(commitId, wer = '', { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const c = commitsJe[ziel].value.find(x => x.id === commitId);
+        if (!c) return [];
+        const liste = _liste(ziel).value;
+        const revertiert = new Set(liste.map(e => e.ruecknahmeVon).filter(Boolean));
+        const offen = c.schrittIds
+            .map(id => liste.find(e => e.id === id))
+            .filter(e => e && !e.ruecknahmeVon && !revertiert.has(e.id));
+        if (!offen.length) return [];
+
+        const gegenVorgang = _neueVorgangsId();
+        const geschrieben = [];
+        for (const q of [...offen].reverse()) {
+            const eintrag = {
+                id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                art: q.art, globalId: q.globalId,
+                vorher: q.nachher, nachher: q.vorher ?? null,
+                wer, wann: Date.now(), modellSha: q.modellSha,
+                ...(q.basis !== undefined ? { basis: q.basis } : {}),
+                ...(q.modell !== undefined ? { modell: q.modell } : {}),
+                vorgang: gegenVorgang,
+                vorgangTitel: `Revert: ${c.nachricht}`,
+                ruecknahmeVon: q.id,
+            };
+            liste.push(eintrag);
+            geschrieben.push(eintrag);
+        }
+        await _commitAus(ziel, geschrieben, `Revert: ${c.nachricht}`, wer);
+        return geschrieben;
+    }
+
+    /**
+     * Bis VOR einen Commit zurücksetzen — vom neuesten offenen abwärts bis
+     * einschliesslich des genannten, je Commit EIN Revert.
+     */
+    async function zurueckBisCommit(commitId, wer = '', { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const alle = commitsJe[ziel].value;
+        const zielIndex = alle.findIndex(c => c.id === commitId);
+        if (zielIndex < 0) return [];
+        const geschrieben = [];
+        for (let i = alle.length - 1; i >= zielIndex; i--) {
+            geschrieben.push(...await revertiereCommit(alle[i].id, wer, { ebene: ziel }));
+        }
+        return geschrieben;
+    }
+
+    // ── Die Sitzung (U2): beginnen, stapeln, entfernen, committen ──────────
+
+    function beginneSitzung({ wer = '', ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        if (!sitzungJe[ziel].value) {
+            sitzungJe[ziel].value = { begonnen: Date.now(), wer, schrittIds: [] };
+        }
+        return sitzungJe[ziel].value;
+    }
+
+    /** Die Schritte der offenen Sitzung als VORGÄNGE — für Leiste und Dialog. */
+    const sitzungVorgaenge = computed(() => {
+        const gruppen = new Map();
+        for (const e of sitzungSchritte.value) {
+            const schluessel = e.vorgang ?? e.id;
+            let v = gruppen.get(schluessel);
+            if (!v) {
+                v = { schluessel, titel: e.vorgangTitel ?? (AENDERUNGS_ARTEN[e.art]?.titel ?? e.art),
+                      wann: e.wann ?? 0, zeilen: [] };
+                gruppen.set(schluessel, v);
+            }
+            v.zeilen.push(e);
+        }
+        for (const v of gruppen.values()) {
+            v.bauteile = [...new Set(v.zeilen.map(z => z.globalId))];
+        }
+        return [...gruppen.values()];
+    });
+
+    /**
+     * Vorschlag für die Commit-Nachricht — aus den Vorgängen, nicht aus den
+     * Rohzeilen: „Sohlhöhen setzen (2×) · Haltung geteilt" sagt, was geschah.
+     */
+    function nachrichtVorschlag() {
+        const zaehler = new Map();
+        for (const v of sitzungVorgaenge.value) {
+            zaehler.set(v.titel, (zaehler.get(v.titel) ?? 0) + 1);
+        }
+        return [...zaehler]
+            .map(([titel, n]) => (n > 1 ? `${titel} (${n}×)` : titel))
+            .join(' · ');
+    }
+
+    /**
+     * EINEN Vorgang aus der offenen Sitzung entfernen — das Unstaging.
+     *
+     * ANDERS als `zurueck` auf Commits: die Sitzung ist ein ENTWURF, ihre
+     * Schritte verschwinden wirklich (git verwirft eine Arbeitskopie auch,
+     * ohne sie zu committen). Zurück kommen SYNTHETISCHE Gegen-Einträge —
+     * nur für die Anwendung am Modell, nie für die Historie.
+     */
+    async function entferneSitzungsVorgang(schluessel, { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const s = sitzungJe[ziel].value;
+        if (!s) return [];
+        const liste = _liste(ziel).value;
+        const raus = liste.filter(e =>
+            s.schrittIds.includes(e.id) && (e.vorgang ?? e.id) === schluessel);
+        if (!raus.length) return [];
+        const rausIds = new Set(raus.map(e => e.id));
+        _liste(ziel).value = liste.filter(e => !rausIds.has(e.id));
+        s.schrittIds = s.schrittIds.filter(id => !rausIds.has(id));
         await _sichern(ziel);
-        return eintrag;
+        // Rückwärts, wie beim echten Zurücknehmen — der letzte Schritt zuerst.
+        return [...raus].reverse().map(q => ({
+            art: q.art, globalId: q.globalId,
+            vorher: q.nachher, nachher: q.vorher ?? null,
+            ...(q.basis !== undefined ? { basis: q.basis } : {}),
+            ...(q.modell !== undefined ? { modell: q.modell } : {}),
+            synthetisch: true,
+        }));
+    }
+
+    /** Die ganze Sitzung verwerfen — alle Vorgänge, ein Aufruf. */
+    async function verwerfeSitzung({ ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const gegen = [];
+        // Vom NEUESTEN Vorgang abwärts — dieselbe Ordnung wie beim Zurücknehmen.
+        const vorgaengeRueckwaerts = [...sitzungVorgaenge.value].reverse();
+        for (const v of vorgaengeRueckwaerts) {
+            gegen.push(...await entferneSitzungsVorgang(v.schluessel, { ebene: ziel }));
+        }
+        sitzungJe[ziel].value = null;
+        await _sichern(ziel);
+        return gegen;
+    }
+
+    /**
+     * Die Sitzung wird ein COMMIT — der Moment, für den alles hier gebaut
+     * ist. Die Schritte bleiben, wo sie sind (die Faltung ändert sich um
+     * NICHTS); nur ihre Zugehörigkeit wandert vom Entwurf in die Historie.
+     */
+    async function commitSitzung(nachricht, { wer = '', modellSha = null, ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const s = sitzungJe[ziel].value;
+        if (!s || !s.schrittIds.length) { sitzungJe[ziel].value = null; return null; }
+        const commit = {
+            id: 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+            nachricht: (nachricht ?? '').trim() || nachrichtVorschlag() || 'Bearbeitung',
+            wer: wer || s.wer || '',
+            wann: Date.now(),
+            modellSha,
+            schrittIds: [...s.schrittIds],
+        };
+        commitsJe[ziel].value.push(commit);
+        sitzungJe[ziel].value = null;
+        await _sichern(ziel);
+        return commit;
+    }
+
+    /** Leere Sitzung still schliessen (Modus aus ohne einen Schritt). */
+    function schliesseLeereSitzung({ ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        if (sitzungJe[ziel].value && !sitzungJe[ziel].value.schrittIds.length) {
+            sitzungJe[ziel].value = null;
+        }
+    }
+
+    /**
+     * Einträge, die NICHT aus der Hand des Nutzers kommen (Rücknahmen,
+     * Konflikt-Entscheidungen), werden ihr EIGENER Commit — auch mitten in
+     * einer offenen Sitzung: die Ids werden aus ihr herausgelöst, der
+     * Commit steht für sich. Ohne das mischte sich eine
+     * Konflikt-Entscheidung in die Arbeit des Nutzers.
+     */
+    async function _commitAus(ziel, eintraege, nachricht, wer = '') {
+        const ids = (eintraege ?? []).filter(Boolean).map(e => e.id);
+        if (!ids.length) return null;
+        const s = sitzungJe[ziel].value;
+        if (s) s.schrittIds = s.schrittIds.filter(id => !ids.includes(id));
+        const commit = {
+            id: 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+            nachricht, wer, wann: Date.now(),
+            modellSha: eintraege.find(e => e?.modellSha)?.modellSha ?? null,
+            schrittIds: ids,
+        };
+        commitsJe[ziel].value.push(commit);
+        await _sichern(ziel);
+        return commit;
+    }
+
+    /** Eine Kennung für einen mehrteiligen Vorgang. */
+    function _neueVorgangsId() {
+        return 'vg-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     }
 
     /**
@@ -474,11 +1192,21 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     }
 
     /** Alle Änderungen einer Art auf der Arbeitsebene verwerfen. */
+    /**
+     * @returns {Promise<object[]>} die geschriebenen Gegeneinträge
+     *
+     * Sie WERDEN zurückgegeben, weil der Aufrufer sie ans Modell bringen muss.
+     * Vorher gab die Funktion nichts heraus, und „verwerfen" blieb bis zum
+     * Neuladen ohne sichtbare Wirkung — dieselbe Lücke wie bei `zurueck`.
+     */
     async function verwerfe(art, wer = '', { ebene } = {}) {
         const ziel = ebene ?? vorgabeEbene.value;
+        const geschrieben = [];
         for (const [globalId] of standAus(_liste(ziel).value, art)) {
-            await eintragen({ art, globalId, nachher: null, wer, ebene: ziel });
+            const e = await eintragen({ art, globalId, nachher: null, wer, ebene: ziel });
+            if (e) geschrieben.push(e);
         }
+        return geschrieben;
     }
 
     /** Die Schritte zu einem Bauteil, neueste zuerst — für die Anzeige. */
@@ -499,7 +1227,14 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     async function _ladeEbene(ebene) {
         try {
             const gespeichert = await _repoFuer(ebene).get(REPO_KEY);
-            if (Array.isArray(gespeichert)) _liste(ebene).value = gespeichert;
+            if (gespeichert?.version === 2) {
+                _uebernimmV2(ebene, gespeichert);
+            } else if (Array.isArray(gespeichert) && gespeichert.length) {
+                // v1: das flache Vor-Commit-Journal. Entscheidung 2026-09-02:
+                // VERWERFEN, nie stillschweigend — die Zeitleiste beginnt
+                // frisch, und das Log sagt, was fiel.
+                console.info(`[CDE] v1-Journal verworfen (${gespeichert.length} Einträge) — Umstieg auf das Commit-Format`);
+            }
         } catch { /* egal — dann bleibt, was da ist */ }
     }
 
@@ -514,6 +1249,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // HIER ist das Leeren gemeint: die Einträge des vorigen Satzes dürfen
         // nicht stehen bleiben, sonst wanderten sie in den neuen mit.
         standEintraege.value = [];
+        commitsJe.stand.value = [];
+        sitzungJe.stand.value = null;
         if (!id) return;
         await _ladeEbene('stand');
     }
@@ -526,9 +1263,15 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     const bereit = laden();
 
     return {
+        neueVorgangsId: _neueVorgangsId,
         auftragsEintraege, standEintraege, satzId, eintraege, vorgabeEbene,
         anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
-        wirksamerStand, eintragen, zurueck, hebeAufAuftragsebene, verwerfe,
+        wirksamerStand, eintragen, zurueck, zurueckBis, verwerfeEinen, hebeBasisAn, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
+        commits, sitzung, sitzungOffen, sitzungSchritte, sitzungVorgaenge,
+        beginneSitzung, entferneSitzungsVorgang, verwerfeSitzung, commitSitzung,
+        commitZeitleiste, revertiereCommit, zurueckBisCommit,
+        schliesseLeereSitzung, nachrichtVorschlag,
         verlauf, setzeSatz, neuLaden: laden,
+        schreibKonflikt, setzeWeltversatz,
     };
 });
