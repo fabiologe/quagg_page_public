@@ -4,6 +4,16 @@
 // und Fenster kommen AUFGELÖST vom Server (store.aufgeloest) — hier wird
 // nur noch gezeichnet.
 import * as THREE from 'three'
+import { zonenTiefe } from '../../../utils/widerstand'
+
+// Widerstandszonen nach Art einfärben — man muss im Bild erkennen, ob
+// dieser Kasten ein Rechen oder ein Buschstreifen ist.
+const ZONEN_FARBE = {
+  rechen: 0xd9a326,          // orange, wie bisher
+  steinschuettung: 0x9a8f80, // steingrau
+  bewuchs: 0x4f9a4f,         // grün
+  manuell: 0xb06fd0,         // violett — „hier steht eine Zahl von Hand"
+}
 
 export function erzeugeMarker({ store, groups, selectable, holeScene,
   clearGroup, terrainZ }) {
@@ -178,12 +188,16 @@ function buildMarkers() {
     }
   }
 
-  // Rechen: der Solver bekommt KEINE Stäbe, sondern eine poröse
-  // Widerstandszone — 0,15 m tief in Anströmrichtung ab der Rechenebene
-  // (casebuilder.topo_set_dict/fv_options, Kirschmer-Verlust). Genau diese
-  // Zone wird hier gezeichnet, damit sichtbar ist, was wirklich gerechnet
-  // wird (Fabios Frage Testrunde R2: „wie bekommt der Solver das?").
-  const ZONEN_TIEFE = 0.15
+  // Widerstandszonen: der Solver bekommt KEINE Stäbe, Steine oder Äste,
+  // sondern eine Zellzone mit einer Darcy-Forchheimer-Quelle darauf
+  // (casebuilder.topo_set_dict/fv_options). Genau diese Zone wird hier
+  // gezeichnet, damit sichtbar ist, was wirklich gerechnet wird (Fabios
+  // Frage Testrunde R2: „wie bekommt der Solver das?").
+  //
+  // Die Tiefe kommt aus dem Fall, nicht aus einer Konstanten hier: bei
+  // einer Steinschüttung ist sie die Dicke des Bauwerks und kann Meter
+  // betragen. Eine fest gezeichnete 0,15-m-Scheibe zeigte dann etwas
+  // anderes als gerechnet wird — der schlimmste Fall für eine Vorschau.
   for (const s of spec.structures ?? []) {
     if (s.type !== 'screen' || (s.plane_polygon?.length ?? 0) < 4) continue
     const p = s.plane_polygon.map((q) => new THREE.Vector3(q[0], q[1], q[2]))
@@ -192,7 +206,9 @@ function buildMarkers() {
     const j = p[p.length - 1].clone().sub(p[0])
     const n = i.clone().cross(j)
     if (n.lengthSq() < 1e-12) continue
-    n.normalize().multiplyScalar(ZONEN_TIEFE)
+    n.normalize().multiplyScalar(zonenTiefe(s))
+    const farbe = ZONEN_FARBE[s.resistance?.kind ?? 'rechen']
+      ?? ZONEN_FARBE.rechen
     const hinten = p.map((v) => v.clone().add(n))
     const eck = [...p, ...hinten]
     const nP = p.length
@@ -211,7 +227,7 @@ function buildMarkers() {
     geo.setIndex(faces)
     geo.computeVertexNormals()
     const zone = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: 0xd9a326, transparent: true, opacity: 0.18,
+      color: farbe, transparent: true, opacity: 0.18,
       depthWrite: false, side: THREE.DoubleSide }))
     zone.renderOrder = 1
     zone.userData = { kind: 'structure', id: s.id }
@@ -219,7 +235,7 @@ function buildMarkers() {
     merken(zone)
     const rand = new THREE.LineSegments(
       new THREE.EdgesGeometry(geo, 30),
-      new THREE.LineBasicMaterial({ color: 0xd9a326, transparent: true,
+      new THREE.LineBasicMaterial({ color: farbe, transparent: true,
         opacity: 0.6 }))
     groups.markers.add(rand)
   }

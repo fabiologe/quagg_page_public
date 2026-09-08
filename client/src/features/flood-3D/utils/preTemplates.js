@@ -1,5 +1,6 @@
 // Vorlagen für "Neu anlegen" im Objektbaum (Katalog Spez. 6.2/6.3) und
 // deutsche Typbezeichner. Die IDs werden beim Einfügen durchnummeriert.
+import { ZELLEN_QUER, zoneAnsNetz, zonenKasten } from './widerstand'
 
 export const TYPE_LABELS = {
   vorfuellung: 'Vorfüllung (Startwasser)',
@@ -10,7 +11,7 @@ export const TYPE_LABELS = {
   replace_region: 'Bereich ersetzen', set_level: 'Absoluthöhe',
   bruchkante: 'Bruchkante', boeschung: 'Böschung (OK/UK)',
   aussenkante: 'Außenkante (Gebietsrand)',
-  wall: 'Wand', screen: 'Rechen', culvert: 'Durchlass', weir: 'Wehr',
+  wall: 'Wand', screen: 'Widerstandszone', culvert: 'Durchlass', weir: 'Wehr',
   pier: 'Pfeiler', basin: 'Becken', imported: 'Importkörper',
   schacht: 'Schacht', kammer: 'Kammer', graben: 'Graben/Stauraumkanal',
   box: 'Box', surface: 'Fläche',
@@ -71,13 +72,34 @@ export const TEMPLATES = {
     Durchlass: { id: 'durchlass', type: 'culvert', patch: 'durchlass',
       axis: [[8, 12, 94.2], [16, 12, 94.0]],
       profile: { kind: 'circular', diameter: 1.0 } },
+    // --- Widerstandszonen -------------------------------------------
+    // Alle drei sind DASSELBE Bauwerk (type 'screen'): eine Zellzone mit
+    // einer Darcy-Forchheimer-Quelle darauf, ohne Bauteil im Netz. Sie
+    // stehen trotzdem einzeln im Katalog — „Steinschüttung" findet man,
+    // „Rechen mit anderer Art" nicht. Die Fläche ist die ANSTRÖMSEITE,
+    // die Zone wächst von ihr aus nach hinten (zonen_tiefe).
     Rechen: { id: 'rechen', type: 'screen', patch: 'rechen',
       plane_polygon: [[10, 10, 94.0], [10, 13, 94.0], [10, 13, 96.5], [10, 10, 96.5]],
+      zonen_tiefe: 0.15,
       bar_spacing: 0.02, bar_thickness: 0.008, bar_depth: 0.06,
       bar_shape: 'rechteck', approach_angle_deg: 75,
       // d/f leer lassen -> Widerstand wird aus Stabform nach Kirschmer abgeleitet
-      resistance: { model: 'darcy_forchheimer', d: [0, 0, 0], f: [0, 0, 0],
-        blockage_ratio: 0.3 } },
+      resistance: { model: 'darcy_forchheimer', kind: 'rechen',
+        d: [0, 0, 0], f: [0, 0, 0], blockage_ratio: 0.3 } },
+    Steinschüttung: { id: 'schuettung', type: 'screen', patch: 'schuettung',
+      plane_polygon: [[10, 10, 94.0], [10, 14, 94.0], [10, 14, 95.5], [10, 10, 95.5]],
+      // hier ein echtes Bauwerksmaß: die Dicke der Schüttung
+      zonen_tiefe: 0.6, bar_shape: 'rechteck', approach_angle_deg: 90,
+      resistance: { model: 'darcy_forchheimer', kind: 'steinschuettung',
+        d: [0, 0, 0], f: [0, 0, 0], blockage_ratio: 0,
+        korngroesse: 0.1, porositaet: 0.4 } },
+    'Bewuchs (Busch/Röhricht)': { id: 'bewuchs', type: 'screen',
+      patch: 'bewuchs',
+      plane_polygon: [[10, 10, 94.0], [10, 16, 94.0], [10, 16, 96.0], [10, 10, 96.0]],
+      zonen_tiefe: 3.0, bar_shape: 'rechteck', approach_angle_deg: 90,
+      resistance: { model: 'darcy_forchheimer', kind: 'bewuchs',
+        d: [0, 0, 0], f: [0, 0, 0], blockage_ratio: 0,
+        flaechendichte: 3.0, cw: 1.2 } },
     'Wehr (Trapez)': { id: 'wehr', type: 'weir', patch: 'wehr',
       crest_polyline: [[10, 10, 96.0], [16, 10, 96.0]],
       crest_width: 0.6, slope_upstream: 2.0, slope_downstream: 2.0,
@@ -216,6 +238,9 @@ const DUENNSTES = {
   // Beim Aushub ist die lichte Weite maßgeblich (das Wasser muss hindurch),
   // beim Bauteil die Wandstärke — `noetigeVerfeinerung` entscheidet danach
   schacht: 'width', kammer: 'wall_thickness', graben: 'width',
+  // Bei einer Widerstandszone ist die Tiefe das kritische Mass: sie steht
+  // quer zur Stroemung und muss ueber mindestens zwei Zellen gehen.
+  screen: 'zonen_tiefe',
 }
 
 function punktlisten(obj) {
@@ -310,7 +335,44 @@ export function vorlageAnpassen(obj, spec, gelaendeZ) {
       obj[k] = r2(boden + (obj[k] - REF_GELAENDE))
     }
   }
+
+  // Eine Rechenzone, die dünner als zwei Zellen wäre, wird gleich hier
+  // vertieft statt später im Netz aufgelöst — der Verlust bleibt dabei
+  // gleich (widerstand.zoneAnsNetz erklärt, warum das nur beim Rechen geht).
+  const tiefer = zoneAnsNetz(obj, spec?.mesh?.base_cell)
+  if (tiefer) obj.zonen_tiefe = tiefer.zonen_tiefe
   return obj
+}
+
+
+/**
+ * Verfeinerungsbox um eine Widerstandszone.
+ *
+ * Beim Rechen wird sie NICHT gebraucht — dort ist die Zonentiefe eine
+ * Rechengröße und wird stattdessen vergrößert (widerstand.zoneAnsNetz).
+ * Bei Steinschüttung und Bewuchs ist die Tiefe ein echtes Maß; wenn sie
+ * nicht über zwei Zellen geht, muss das Netz feiner werden.
+ */
+function zonenVerfeinerung(obj, spec, zelle, tiefe) {
+  if ((obj.resistance?.kind ?? 'rechen') === 'rechen') return null
+  let stufe = 0
+  while (tiefe < ZELLEN_QUER * (zelle / 2 ** stufe) && stufe < 3) stufe += 1
+  if (!stufe) return null
+  const kasten = zonenKasten(obj, zelle)
+  if (!kasten) return null
+  const ids = new Set((spec.mesh.refinements ?? []).map((r) => r.id))
+  let id = `fein_${obj.patch}`
+  let n = 2
+  while (ids.has(id)) { id = `fein_${obj.patch}_${n}`; n += 1 }
+  return {
+    refinement: { id, type: 'box', extent: kasten.map((v) => Number(v.toFixed(2))),
+      level: stufe },
+    text: `Die Zone ist ${tiefe.toFixed(2).replace('.', ',')} m tief, die `
+      + `Basiszelle ${String(zelle).replace('.', ',')} m — Verfeinerungsbox `
+      + `Stufe ${stufe} ergänzt. Über zu wenige Zellen käme nur ein Teil `
+      + 'des Widerstands an; ihre Dicke ist hier ein echtes Maß und darf '
+      + 'nicht einfach vergrößert werden.',
+  }
 }
 
 
@@ -328,6 +390,11 @@ export function noetigeVerfeinerung(obj, spec) {
   if (!zelle || !feld) return null
   const mass = obj[feld] ?? obj.profile?.width ?? obj.profile?.diameter
   if (!(mass > 0)) return null
+  // Eine Widerstandszone hat keine Fläche im Netz — eine
+  // Flächenverfeinerung auf ihren Patch ginge ins Leere. Verfeinert wird
+  // der RAUM, in dem sie liegt.
+  if (obj.type === 'screen') return zonenVerfeinerung(obj, spec, zelle, mass)
+
   // Ein Aushub hat keine eigene Fläche — seine Wandungen gehören nach dem
   // Ausschneiden zur Geländefläche, dort greift auch die Verfeinerung.
   // Beim Einfügen steht ein neues Bauwerk immer AUF dem Gelände, `auto`

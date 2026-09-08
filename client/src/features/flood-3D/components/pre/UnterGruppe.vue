@@ -5,7 +5,7 @@
       <select v-if="enumFor(k, gruppe, typ)" class="f3d-select f3d-select-s"
               :value="wert[k]" @change="setzen(k, $event.target.value)">
         <option v-for="opt in enumFor(k, gruppe, typ)" :key="opt" :value="opt">
-          {{ ENUM_LABELS[opt] ?? opt }}
+          {{ enumLabel(k, opt) }}
         </option>
       </select>
       <!-- Fenster-Punkte sind (Lage entlang der Kante, Höhe) — keine
@@ -31,7 +31,7 @@
            ein Zahlenfeld sein, sonst kann man es nie eingeben -->
       <input v-else-if="typeof wert[k] === 'number' || ZAHLENFELDER.has(k)"
              type="number" step="any" class="f3d-num f3d-grow"
-             :value="wert[k] ?? ''" :placeholder="wert[k] == null ? 'nötig' : ''"
+             :value="wert[k] ?? ''" :placeholder="platzhalter(k)"
              @change="setzen(k, zahl($event.target.value))" />
       <input v-else-if="typeof wert[k] === 'boolean'" type="checkbox"
              :checked="wert[k]" @change="setzen(k, $event.target.checked)" />
@@ -52,8 +52,8 @@
 import { computed } from 'vue'
 import PunktListe from './PunktListe.vue'
 import {
-  ENUM_LABELS, GESCHLOSSEN, ZAHLENFELDER, artGewechselt, enumFor, felderFuer,
-  istPunktListe, istZahlenreihe, punktDim, zahlenNamen,
+  GESCHLOSSEN, GRUPPEN_OPTIONAL, ZAHLENFELDER, artGewechselt, enumFor,
+  enumLabel, felderFuer, istPunktListe, istZahlenreihe, punktDim, zahlenNamen,
 } from '../../utils/feldTypen'
 
 const props = defineProps({
@@ -77,6 +77,13 @@ const schluessel = computed(() =>
   felderFuer(props.gruppe, props.typ, wert.value, props.verbergen))
 
 const zahl = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+
+// „nötig" nur dort, wo es stimmt: manche Felder haben eine Vorbelegung im
+// Fallaufbau und dürfen leer bleiben.
+function platzhalter(k) {
+  if (wert.value[k] != null) return ''
+  return GRUPPEN_OPTIONAL[props.gruppe]?.has(k) ? 'Vorbelegung' : 'nötig'
+}
 
 function setzen(k, v) {
   // Der Artwechsel räumt die Maße der alten Art weg (feldTypen.js)

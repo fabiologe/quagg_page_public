@@ -166,6 +166,7 @@ import { KIND_PATHS, usePreStore } from '../../stores/usePreStore'
 import {
   TYPE_LABELS, TEMPLATES, vorlageAnpassen, noetigeVerfeinerung,
 } from '../../utils/preTemplates'
+import { zonenName } from '../../utils/widerstand'
 import {
   REFERENZ_QUELLEN, fehlendeBausteine, referenzListe,
 } from '../../utils/feldTypen'
@@ -439,7 +440,10 @@ const abschnitte = computed(() => {
 
 
 function typeLabel(item) {
-  return TYPE_LABELS[item.type ?? item.kind] ?? item.type ?? item.kind ?? ''
+  // Eine Widerstandszone heißt nach ihrer ART — „Rechen" und „Bewuchs"
+  // sind im Baum unterscheidbar, „Widerstandszone" zweimal nicht.
+  return zonenName(item) ?? TYPE_LABELS[item.type ?? item.kind]
+    ?? item.type ?? item.kind ?? ''
 }
 
 function statusClass(id) {

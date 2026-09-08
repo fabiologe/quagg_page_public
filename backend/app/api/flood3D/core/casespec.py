@@ -629,21 +629,84 @@ class StructWall(_Objekt):
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
 
 
+# Was eine Widerstandszone IST. Der Rechen war der erste Fall, aber nicht
+# der einzige: eine Steinschüttung, ein dichter Busch und ein Stabrechen
+# sind für die Strömung dasselbe — ein durchströmter Körper, der Impuls
+# aus dem Wasser nimmt. Sie unterscheiden sich nur darin, WORAUS der
+# Widerstand folgt und ob er eine Richtung hat.
+ZonenArt = Literal["rechen", "steinschuettung", "bewuchs", "manuell"]
+
+
 class ScreenResistance(_Model):
+    """
+    Der Widerstand einer Zone. `model` ist das OpenFOAM-Modell (davon gibt
+    es genau eines), `kind` die fachliche Art — sie bestimmt, aus welchen
+    Feldern der Fallaufbau d und f ableitet (casebuilder._screen_widerstand).
+
+    Explizit gesetzte d/f haben immer Vorrang; das ist der Weg für einen
+    gemessenen oder aus dem Regelwerk übernommenen Beiwert.
+    """
     model: Literal["darcy_forchheimer"] = "darcy_forchheimer"
-    d: Vec3 = (0.0, 0.0, 0.0)
-    f: Vec3 = (0.0, 0.0, 0.0)
+    kind: ZonenArt = "rechen"
+    d: Vec3 = (0.0, 0.0, 0.0)     # zäher Anteil (1/m²)
+    f: Vec3 = (0.0, 0.0, 0.0)     # Trägheitsanteil (1/m)
     blockage_ratio: float = 0.0   # angesetzter Verlegungsgrad
+
+    # Steinschüttung (Ergun): Korngröße und Porenanteil des Haufwerks
+    korngroesse: float | None = None    # d_p, mittlerer Korndurchmesser (m)
+    porositaet: float | None = None     # ε, Porenanteil (0…1)
+
+    # Bewuchs (Forchheimer): angeströmte Fläche je Volumen und Beiwert
+    flaechendichte: float | None = None  # a = n·D (1/m), n Stämme/m², D Ø
+    cw: float | None = None              # Widerstandsbeiwert der Stämme
+
+    @model_validator(mode="after")
+    def _felder_zur_art(self):
+        if self.kind == "steinschuettung":
+            if not self.korngroesse or self.korngroesse <= 0:
+                raise ValueError(
+                    "Die Steinschüttung braucht eine Korngröße in Metern.")
+            if self.porositaet is None or not 0.05 < self.porositaet < 0.95:
+                raise ValueError(
+                    "Der Porenanteil der Steinschüttung muss zwischen 0,05 "
+                    "und 0,95 liegen (üblich 0,35 bis 0,45).")
+        if self.kind == "bewuchs":
+            if not self.flaechendichte or self.flaechendichte <= 0:
+                raise ValueError(
+                    "Der Bewuchs braucht eine angeströmte Fläche je Volumen "
+                    "(a = Stämme je m² × Stammdurchmesser, in 1/m).")
+        if not 0.0 <= self.blockage_ratio < 1.0:
+            raise ValueError(
+                "Der Verlegungsgrad muss zwischen 0 und 1 liegen.")
+        return self
 
 
 class StructScreen(_Objekt):
+    """
+    Eine WIDERSTANDSZONE — im Regelfall ein Rechen, mit `resistance.kind`
+    aber auch eine Steinschüttung oder ein Bewuchsfeld.
+
+    Sie bekommt bewusst KEIN Bauteil im Netz: die Stäbe (bzw. Steine,
+    Stämme) werden nicht aufgelöst. Aus `plane_polygon` und `zonen_tiefe`
+    wird ein Kasten, daraus eine cellZone (topoSet), und darauf legt der
+    Fallaufbau eine Darcy-Forchheimer-Quelle (constant/fvOptions).
+
+    Die Ebene ist die ANSTRÖMSEITE, die Zone wächst von ihr aus nach
+    hinten — bei einer Steinschüttung ist `zonen_tiefe` damit schlicht die
+    Bauwerksdicke, beim Rechen eine Rechengröße (Vorbelegung 0,15 m).
+    """
     id: str
     type: Literal["screen"]
     patch: str
     plane_polygon: list[Point3]
-    bar_spacing: float            # lichte Stabteilung (Achsabstand)
-    bar_thickness: float
-    bar_depth: float = 0.06       # Stabtiefe in Anströmrichtung
+    # Tiefe der Zone in Anströmrichtung (m). None = Vorbelegung im
+    # Fallaufbau (_SCREEN_ZONE_TIEFE). Bei einer Steinschüttung oder einem
+    # Buschstreifen ist das ein echtes Maß und muss gesetzt werden.
+    zonen_tiefe: float | None = None
+    # Stabmaße — nur für kind == "rechen"; bei den anderen Arten leer.
+    bar_spacing: float | None = None   # lichte Stabteilung (Achsabstand)
+    bar_thickness: float | None = None
+    bar_depth: float | None = 0.06     # Stabtiefe in Anströmrichtung
     # Stabform nach Kirschmer: bestimmt den Formbeiwert der Verlustableitung
     bar_shape: Literal["rechteck", "rund", "tropfen"] = "rechteck"
     approach_angle_deg: float = 90.0
@@ -652,6 +715,16 @@ class StructScreen(_Objekt):
     edits: list[Edit] = []      # Aussparungen, Schnitte, Transformationen
     material: Material | None = None
     material_ks: float | None = None  # eigene Sandrauheit (m), überschreibt material
+
+    @model_validator(mode="after")
+    def _masse_zur_art(self):
+        if self.resistance.kind == "rechen":
+            if not self.bar_spacing or not self.bar_thickness:
+                raise ValueError(
+                    "Der Rechen braucht Stabteilung und Stabdicke.")
+        if self.zonen_tiefe is not None and self.zonen_tiefe <= 0:
+            raise ValueError("Die Tiefe der Zone muss größer als null sein.")
+        return self
 
 
 class CulvertProfile(_Model):

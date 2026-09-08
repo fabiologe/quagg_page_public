@@ -1382,7 +1382,12 @@ def build_solids(spec: CaseSpec, base_dir: str | Path = ".",
             if ist_aushub(s, terrain):
                 continue
             if s.type == "screen":
-                if include_screens:
+                # Stabkörper gibt es nur beim Rechen. Eine Steinschüttung
+                # oder ein Buschstreifen hat keine Stäbe — dort zeigt der
+                # Editor den Zonenkasten (client marker.js), und ein
+                # erfundenes Stabgitter würde etwas behaupten, das nicht
+                # gerechnet wird.
+                if include_screens and s.resistance.kind == "rechen":
                     out[s.patch] = build_screen_bars(s)
                 continue
             out[s.patch] = koerper_von(s, base_dir, spec.domain, terrain)

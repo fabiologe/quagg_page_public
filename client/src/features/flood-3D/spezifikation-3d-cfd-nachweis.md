@@ -516,7 +516,7 @@ Alle Werkzeuge arbeiten auf dem Höhenfeld und erzeugen einen Eintrag im Operati
 |---|---|---|
 | Wand | Polylinie oder Spline, Höhe konstant oder je Stützpunkt, Dicke, optional Neigung | Sweep entlang der Achse, unten in das Gelände eingebunden |
 | Durchlass | Achspolylinie, Profiltyp aus Kreis, Rechteck oder Maulprofil, Abmessungen, Sohlhöhen an beiden Enden | Rohrkörper als Hohlraum im Gelände |
-| Rechen | Polygon der Rechenebene im Raum, Stabteilung, Stabdicke, Anströmwinkel, Verlegungsgrad | Fläche als Begrenzung einer porösen Zone, Stäbe werden nicht aufgelöst |
+| Widerstandszone (Rechen, Steinschüttung, Bewuchs) | Polygon der Anströmfläche im Raum, Tiefe der Zone, Verlegungsgrad; je Art: Stabteilung/Stabdicke/Anströmwinkel (Rechen), Korngröße und Porenanteil (Steinschüttung), angeströmte Fläche je Volumen und c_w (Bewuchs) | Fläche und Tiefe spannen eine Zellzone auf, darauf eine Darcy-Forchheimer-Quelle; Stäbe, Steine und Äste werden nicht aufgelöst |
 | Wehr | Kronenpolylinie, Kronenhöhe, Kronenbreite, Neigung Ober und Unterwasserseite | Sweep mit Wehrquerschnitt |
 | Pfeiler und Widerlager | Grundrisspolygon, Fuß und Kopfhöhe, optional Anlauf | Extrusion |
 | Becken | Grundrisspolygon, Sohlhöhe, Sohlgefälle, Wandhöhe, Wanddicke | Zusammengesetzter Körper aus Sohle und umlaufender Wand |

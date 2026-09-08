@@ -2,7 +2,8 @@
   <section class="f3d-props f3d-card" v-if="draft">
     <header class="f3d-card-head">
       <h3>{{ draft.id }}</h3>
-      <span class="f3d-muted f3d-small">{{ TYPE_LABELS[draft.type ?? draft.kind] ?? '' }}</span>
+      <span class="f3d-muted f3d-small">{{ zonenName(draft)
+        ?? TYPE_LABELS[draft.type ?? draft.kind] ?? '' }}</span>
       <button class="f3d-jsonschalter" :class="{ aktiv: hilfe }"
               :title="hilfe ? 'Erklärtexte ausblenden'
                 : 'Erklärtexte zu diesem Objekttyp einblenden'"
@@ -167,16 +168,33 @@
              class="f3d-klapper" :open="field.key === 'profile'">
       <summary>{{ field.label }}</summary>
       <div class="f3d-prop">
-        <p v-if="field.key === 'resistance'" class="f3d-muted f3d-small">
-          So wirkt der Rechen auf die Strömung: er bekommt kein eigenes
-          Netz-Bauteil, sondern eine poröse Widerstandszone (0,15 m tief).
-          Der Verlust wird automatisch nach Kirschmer aus Stabform,
-          Stabteilung und Anströmwinkel abgeleitet — hier ist nur der
-          Verlegungsgrad anzusetzen.
-        </p>
-        <UnterGruppe v-model="draft[field.key]" :labels="labelsFuer(field.key)"
+        <template v-if="field.key === 'resistance'">
+          <p class="f3d-muted f3d-small">
+            Die Zone bekommt kein eigenes Netz-Bauteil: weder Stäbe noch
+            Steine noch Äste werden aufgelöst. Aus der Anströmfläche und
+            der Zonentiefe wird ein Kasten aus Zellen, und der bremst.
+          </p>
+          <select class="f3d-select f3d-select-s" :value="''"
+                  @change="vorlageWaehlen($event.target.value)">
+            <option value="">— Vorlage übernehmen —</option>
+            <optgroup v-for="g in vorlagenGruppen" :key="g.art"
+                      :label="ART_NAME[g.art]">
+              <option v-for="v in g.eintraege" :key="v.id" :value="v.id">
+                {{ v.name }}
+              </option>
+            </optgroup>
+          </select>
+          <p v-if="zonenHinweis" class="f3d-muted f3d-small">
+            {{ zonenHinweis }}
+          </p>
+        </template>
+        <UnterGruppe :model-value="draft[field.key]"
+                     :labels="labelsFuer(field.key)"
                      :typ="draft.type" :gruppe="field.key"
-                     :verbergen="verbergenFuer(field.key)" />
+                     :verbergen="verbergenFuer(field.key)"
+                     @update:model-value="(v) => gruppeGesetzt(field.key, v)" />
+        <p v-if="field.key === 'resistance' && zonenVorschau"
+           class="f3d-hint f3d-hint-zone">{{ zonenVorschau }}</p>
       </div>
     </details>
 
@@ -333,6 +351,14 @@ import {
   referenzListe, widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
+import {
+  ART_NAME, ZONEN_ARTEN, ZONEN_VORLAGEN, beiwerte, fugenweite,
+  verlustbeiwert, vorlageAnwenden, zonenArtGewechselt, zonenName, zonenTiefe,
+} from '../../utils/widerstand'
+
+// Maße, die es nur am Rechen gibt
+const STAB_FELDER = new Set(['bar_spacing', 'bar_thickness', 'bar_depth',
+  'bar_shape', 'approach_angle_deg'])
 import { MATERIALS, MATERIAL_LABELS } from '../../utils/importRollen'
 
 const store = usePreStore()
@@ -364,6 +390,10 @@ const fields = computed(() => {
     // eines Imports zum freien Textfeld zu machen
     .filter(([k]) => !['id', 'type', 'kind', 'material',
       'material_ks', 'herkunft', 'import_ref'].includes(k))
+    // Stabmaße gehören zum Rechen. An einer Steinschüttung stünde dort
+    // eine Stabform, die niemand rechnet — und die Zahl bliebe im Fall.
+    .filter(([k]) => !(typ === 'screen' && STAB_FELDER.has(k)
+      && (draft.value.resistance?.kind ?? 'rechen') !== 'rechen'))
     // Nicht gesetzte Felder ohne eigene Maske weglassen: sie erzeugten
     // bisher eine leere JSON-Textarea neben dem Bedienelement, das sie
     // eigentlich setzt (etwa `window` neben dem Fenster-Auswahlkasten)
@@ -412,10 +442,82 @@ function verbergenFuer(key) {
   const w = draft.value?.resistance ?? {}
   const leer = (v) => !Array.isArray(v) || v.every((x) => !x)
   const versteckt = ['model']
-  if (leer(w.d)) versteckt.push('d')
-  if (leer(w.f)) versteckt.push('f')
+  // Bei „manuell" SIND d/f die Eingabe — dort müssen sie auch dann
+  // sichtbar sein, wenn sie noch auf null stehen.
+  if (w.kind !== 'manuell') {
+    if (leer(w.d)) versteckt.push('d')
+    if (leer(w.f)) versteckt.push('f')
+  }
   return [...basis, ...versteckt]
 }
+
+// Untergruppe geändert. Der Sonderfall ist der Artwechsel: die Untergruppe
+// räumt nur ihre EIGENEN Felder auf, die Stabmaße liegen aber eine Ebene
+// höher am Bauwerk. Ohne diesen Schritt bliebe eine Stabteilung an einer
+// Steinschüttung stehen — unsichtbar, aber gespeichert.
+function gruppeGesetzt(key, wert) {
+  if (key === 'resistance'
+      && wert?.kind !== draft.value?.resistance?.kind) {
+    draft.value = { ...zonenArtGewechselt(draft.value, wert.kind),
+      resistance: wert }
+    return
+  }
+  draft.value[key] = wert
+}
+
+const vorlagenGruppen = computed(() => ZONEN_ARTEN
+  .map((art) => ({ art,
+    eintraege: ZONEN_VORLAGEN.filter((v) => v.art === art) }))
+  .filter((g) => g.eintraege.length))
+
+function vorlageWaehlen(id) {
+  const v = ZONEN_VORLAGEN.find((x) => x.id === id)
+  if (v) draft.value = vorlageAnwenden(draft.value, v)
+}
+
+// Woraus der Beiwert kommt und was dabei herauskommt — die Zahl, die
+// sonst erst nach dem Speichern in der Prüfliste steht.
+const zonenVorschau = computed(() => {
+  if (draft.value?.type !== 'screen') return ''
+  const b = beiwerte(draft.value)
+  if (!b) return ''
+  const xi = verlustbeiwert(draft.value)
+  const t = zonenTiefe(draft.value)
+  const teile = [`${b.quelle} → f = ${b.f.toFixed(1)} 1/m`]
+  if (b.d) teile.push(`d = ${b.d.toExponential(1)} 1/m²`)
+  teile.push(`Verlust über ${t.toFixed(2).replace('.', ',')} m: `
+    + `ξ ≈ ${xi.toFixed(xi < 10 ? 1 : 0)} · ½ρu²`)
+  teile.push(b.isotrop ? 'wirkt in alle Richtungen'
+    : 'wirkt nur senkrecht zur Fläche')
+  const fuge = fugenweite(draft.value.resistance?.korngroesse,
+    draft.value.resistance?.porositaet)
+  if (fuge) teile.push(`Fugen rund ${(fuge * 100).toFixed(1)
+    .replace('.', ',')} cm`)
+  return `${teile.join(' · ')}.`
+})
+
+const zonenHinweis = computed(() => {
+  const art = draft.value?.resistance?.kind ?? 'rechen'
+  if (art === 'rechen') {
+    return 'Der Verlust folgt nach Kirschmer aus Stabform, Stabteilung und '
+      + 'Anströmwinkel. Die Zonentiefe ist dabei nur eine Rechengröße — sie '
+      + 'ändert den Verlust nicht, nur seine Verteilung.'
+  }
+  if (art === 'steinschuettung') {
+    return 'Der Widerstand folgt nach Ergun aus Korngröße und Porenanteil. '
+      + 'Hier ist die Zonentiefe ein echtes Maß: die Dicke der Schüttung. '
+      + 'Das Modell bremst, verdrängt aber kein Wasser — für die '
+      + 'Anströmung taugt es, für ein Speichervolumen nicht.'
+  }
+  if (art === 'bewuchs') {
+    return 'Der Widerstand folgt aus der angeströmten Fläche je Volumen '
+      + '(Stämme je m² × Durchmesser). Die Zonentiefe ist die Tiefe des '
+      + 'Bestands in Fließrichtung. Biegen und Verlegen sind nicht drin — '
+      + 'der Bewuchs steht steif.'
+  }
+  return 'd (zäh, 1/m²) und f (Trägheit, 1/m) werden unverändert '
+    + 'übernommen. Sie gelten je Meter Zonentiefe.'
+})
 
 // Leeres Feld heißt „Vorbelegung" — als null übernehmen, nicht als 0
 function setzeOptional(key, wert) {
@@ -883,6 +985,14 @@ function remove() {
 </script>
 
 <style scoped>
+.f3d-hint-zone {
+  margin: 5px 0 0;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--f3d-text-2);
+  border-left: 2px solid var(--f3d-accent, var(--f3d-border));
+  padding-left: 6px;
+}
 .f3d-klapper {
   border: 1px solid var(--f3d-border);
   border-radius: 8px;

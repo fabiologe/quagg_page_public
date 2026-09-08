@@ -922,7 +922,7 @@ def topo_set_dict(spec: CaseSpec,
         if k_norm > 0:
             # Zonentiefe in Anströmrichtung — dieselbe Länge, auf die
             # _screen_resistance den f-Beiwert normiert (sonst stimmt Δp nicht)
-            k_vec = k_vec / k_norm * _SCREEN_ZONE_TIEFE
+            k_vec = k_vec / k_norm * _zonen_tiefe(s)
         actions += f"""    {{
         name    {s.id}Cells;
         type    cellSet;
@@ -1005,25 +1005,82 @@ def create_patch_dict(spec: CaseSpec,
 # ζ = β (Stabdicke / lichte Weite)^(4/3) · sin α
 _KIRSCHMER_BETA = {"rechteck": 2.42, "rund": 1.79, "tropfen": 0.76}
 
-# Tiefe der porösen Zelle-Zone in Anströmrichtung. Der Darcy-Forchheimer-
-# Beiwert MUSS auf DIESE Länge normiert sein: Δp = ½ρu²·f·L_Zone — nur mit
-# f = ζ/L_Zone kommt der Kirschmer-Verlust ζ·½ρu² heraus. Vorher wurde auf
-# die STABTIEFE normiert (Vorbelegung 0,06 m) und der Verlust damit um den
-# Faktor L_Zone/bar_depth (2,5× bei Vorbelegung) überschätzt.
+# Tiefe der porösen Zellzone in Anströmrichtung, wenn der Fall keine
+# angibt. Der Darcy-Forchheimer-Beiwert des RECHENS muss auf DIESE Länge
+# normiert sein: Δp = ½ρu²·f·L_Zone — nur mit f = ζ/L_Zone kommt der
+# Kirschmer-Verlust ζ·½ρu² heraus. Vorher wurde auf die STABTIEFE
+# normiert (Vorbelegung 0,06 m) und der Verlust damit um den Faktor
+# L_Zone/bar_depth (2,5× bei Vorbelegung) überschätzt.
 _SCREEN_ZONE_TIEFE = 0.15
+
+# Vorbelegung des Stamm-Widerstandsbeiwerts bei Bewuchs. 1,2 ist der
+# übliche Ansatz für zylindrische Halme/Stämme im Bereich Re 10³…10⁵
+# (Lindner, DVWK-M 220) — Kreiszylinder liegen bei 1,0…1,2.
+_BEWUCHS_CW = 1.2
+
+
+def _zonen_tiefe(s) -> float:
+    """Tiefe der Widerstandszone in Anströmrichtung (m)."""
+    return float(s.zonen_tiefe or _SCREEN_ZONE_TIEFE)
 
 
 def _screen_resistance(s) -> tuple[tuple, tuple]:
-    """d/f-Vektoren; ohne explizite Vorgabe aus Kirschmer + Stabform."""
+    """
+    Die Darcy-Forchheimer-Beiwerte einer Widerstandszone.
+
+    OpenFOAM rechnet S = −(μ·d + ½ρ|u|·f)·u je Volumen; über die Zonentiefe
+    L folgt daraus Δp = (μ·d + ½ρ|u|·f)·|u|·L. Genau daran hängt der
+    Unterschied zwischen den Arten, und er ist der Grund, warum hier nicht
+    eine Formel für alle steht:
+
+      * Der RECHEN ist ein Flächenverlust. ζ gilt für die Ebene, nicht für
+        eine Länge — er muss auf die Zonentiefe verteilt werden (f = ζ/L),
+        sonst hängt der Verlust an einer Netzgröße. Und er wirkt nur
+        SENKRECHT zur Rechenebene; längs der Ebene steht nichts im Weg.
+      * Steinschüttung und Bewuchs sind Volumenwiderstände. Ihre Beiwerte
+        sind schon „je Meter" und dürfen NICHT durch L geteilt werden —
+        ein doppelt so dicker Steinwall bremst doppelt so stark, und genau
+        das kommt so heraus. Sie wirken in alle Richtungen gleich.
+
+    Explizit gesetzte d/f haben immer Vorrang.
+    """
     d = tuple(s.resistance.d)
     f = tuple(s.resistance.f)
-    if not any(d) and not any(f):
-        clear = max(s.bar_spacing - s.bar_thickness, 1e-4)
-        beta = _KIRSCHMER_BETA.get(s.bar_shape, 2.42)
-        zeta = beta * (s.bar_thickness / clear) ** (4 / 3) \
-            * math.sin(math.radians(s.approach_angle_deg))
-        f = (zeta / _SCREEN_ZONE_TIEFE, 0.0, 0.0)
-    return d, f
+    if any(d) or any(f):
+        return d, f
+
+    art = s.resistance.kind
+    if art == "steinschuettung":
+        # Ergun (Haufwerk): Δp/L = 150·μ(1−ε)²/(ε³d_p²)·u
+        #                        + 1,75·ρ(1−ε)/(ε³d_p)·u²
+        # Der zweite Term ist ½ρ·f·u², also f = 2·1,75·(1−ε)/(ε³d_p).
+        eps = float(s.resistance.porositaet)
+        dp = float(s.resistance.korngroesse)
+        rest = 1.0 - eps
+        d_val = 150.0 * rest ** 2 / (eps ** 3 * dp ** 2)
+        f_val = 3.5 * rest / (eps ** 3 * dp)
+        return (d_val, d_val, d_val), (f_val, f_val, f_val)
+
+    if art == "bewuchs":
+        # Formwiderstand durchströmter Halme/Stämme: F/V = ½ρ·c_w·a·u²,
+        # mit a = angeströmte Fläche je Volumen (Stämme/m² × Durchmesser).
+        # Der zähe Anteil ist gegen den Formwiderstand bedeutungslos.
+        a = float(s.resistance.flaechendichte)
+        cw = float(s.resistance.cw or _BEWUCHS_CW)
+        f_val = cw * a
+        return d, (f_val, f_val, f_val)
+
+    if art == "manuell":
+        # Nichts abzuleiten — wer „manuell" wählt und nichts einträgt,
+        # bekommt eine wirkungslose Zone. Das meldet die Prüfung.
+        return d, f
+
+    # Rechen (Vorbelegung): Kirschmer, gerichtet
+    clear = max((s.bar_spacing or 0.0) - (s.bar_thickness or 0.0), 1e-4)
+    beta = _KIRSCHMER_BETA.get(s.bar_shape, 2.42)
+    zeta = beta * ((s.bar_thickness or 0.0) / clear) ** (4 / 3) \
+        * math.sin(math.radians(s.approach_angle_deg))
+    return d, (zeta / _zonen_tiefe(s), 0.0, 0.0)
 
 
 def fv_options(spec: CaseSpec) -> str | None:

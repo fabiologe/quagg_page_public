@@ -310,7 +310,8 @@ def gebietslage(spec: CaseSpec) -> list[dict]:
             art = "Durchlass" if s.type == "culvert" else "Graben"
             merken(s.id, art, _anteil_linie(s.axis, gebiet_mund), True)
         elif s.type == "screen":
-            merken(s.id, "Rechen",
+            art = {"steinschuettung": "Steinschüttung", "bewuchs": "Bewuchs"}
+            merken(s.id, art.get(s.resistance.kind, "Rechen"),
                    _anteil_flaeche(s.plane_polygon, gebiet), False)
         elif s.type in ("basin", "kammer"):
             art = "Becken" if s.type == "basin" else "Kammer"

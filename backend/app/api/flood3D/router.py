@@ -880,7 +880,7 @@ _ORT_WORTE = {
     "alignment": "Achse", "meta": "Fallangaben", "vorfuellungen": "Vorfuellung",
     "culvert": "Durchlass", "weir": "Wehr", "wall": "Wand", "pier": "Pfeiler",
     "graben": "Graben", "schacht": "Schacht", "kammer": "Kammer",
-    "screen": "Rechen", "imported": "Importkoerper",
+    "screen": "Widerstandszone", "imported": "Importkoerper",
 }
 
 
@@ -1741,16 +1741,25 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
             "message": (f"Randflächen/Fenster-Marker unvollständig "
                         f"({type(e).__name__}: {e}).")})
 
-    # Rechen: im Editor stehen Stäbe, im Netz existiert keine Stabgeometrie
-    # — gerechnet wird eine poröse Widerstandszone (Kirschmer). Ohne diesen
-    # Hinweis sah die Szene nach mehr Modell aus, als der Solver bekommt.
+    # Widerstandszonen: im Editor steht ein Kasten (beim Rechen zusätzlich
+    # Stäbe), im Netz existiert keine dieser Geometrien — gerechnet wird
+    # eine Zellzone mit einer Darcy-Forchheimer-Quelle. Ohne diesen Hinweis
+    # sah die Szene nach mehr Modell aus, als der Solver bekommt.
+    _ZONEN_WORT = {"rechen": "Ein Rechen", "steinschuettung":
+                   "Eine Steinschüttung", "bewuchs": "Ein Bewuchsfeld",
+                   "manuell": "Eine Widerstandszone"}
     for s in spec.structures:
         if s.type == "screen":
+            from .core.casebuilder import _zonen_tiefe
+            art = s.resistance.kind
+            wort = _ZONEN_WORT.get(art, "Eine Widerstandszone")
+            tiefe = f"{_zonen_tiefe(s):.2f}".replace(".", ",")
             out["validation"].append({
                 "object_id": s.id, "severity": "hinweis",
-                "message": ("Rechen wird als poröse Widerstandszone gerechnet "
-                            "(Kirschmer-Verlust, 0,15 m Zonentiefe) — die "
-                            "Stäbe in der Szene sind reine Darstellung.")})
+                "message": (f"{wort} wird als Widerstandszone gerechnet "
+                            f"({tiefe} m tief) — weder Stäbe noch Steine "
+                            "noch Äste stehen im Netz; was man in der Szene "
+                            "sieht, ist Darstellung.")})
     return out
 
 

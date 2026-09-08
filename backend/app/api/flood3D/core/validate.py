@@ -569,14 +569,15 @@ def _pruefe_bauwerksparameter(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                        "ungewöhnlich steil — Wert je LÄNGE, nicht in Prozent."))
         if st.type == "screen" and getattr(st, "edits", None):
             f(_finding(st.id, "hinweis",
-                       "Bearbeitungen an einem Rechen bleiben ohne Wirkung — "
-                       "er wird nicht als Körper vernetzt, sondern als poröse "
-                       "Zone gerechnet."))
+                       "Bearbeitungen an einer Widerstandszone bleiben ohne "
+                       "Wirkung — sie wird nicht als Körper vernetzt, sondern "
+                       "als Zellzone mit einer Widerstandsquelle gerechnet."))
         if st.type == "screen" and (getattr(st, "material", None)
                                     or getattr(st, "material_ks", None)):
             f(_finding(st.id, "hinweis",
-                       "Material/Rauheit am Rechen bleibt ohne Wirkung — sein "
-                       "Widerstand steckt in der porösen Zone."))
+                       "Material/Rauheit an einer Widerstandszone bleibt ohne "
+                       "Wirkung — sie hat keine Wandfläche im Netz; ihr "
+                       "Widerstand steckt in d und f."))
         if st.type == "culvert":
             befunde.extend(_pruefe_durchlass(st, spec, ctx))
     return befunde
@@ -908,6 +909,17 @@ def _pruefe_verfeinerungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                                f"Bauwerk {r.target}",
                                fix=kur("verweis_entfernen",
                                        art="verfeinerung", id=r.id)))
+                elif any(x.patch == r.target and x.type == "screen"
+                         for x in spec.structures):
+                    # Eine Widerstandszone hat keine Fläche im Netz —
+                    # snappy findet nichts zu verfeinern, und niemand
+                    # merkt es. Was sie braucht, ist eine BOX.
+                    f(_finding(r.id, "warnung",
+                               "Flächenverfeinerung zielt auf eine "
+                               "Widerstandszone — die hat keine Fläche im "
+                               "Netz, die Verfeinerung bleibt wirkungslos. "
+                               "Für die Zone braucht es eine "
+                               "Verfeinerungsbox um sie herum."))
                 elif r.target == "terrain" and spec.terrain is None:
                     f(_finding(r.id, "warnung",
                                "Verfeinerung zielt auf das Gelände, der "
@@ -1529,46 +1541,179 @@ def _pruefe_rauheit(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     return befunde
 
 
+# Wieviel vom angesetzten Verlust eine Widerstandszone WIRKLICH aufbaut,
+# in Abhängigkeit von der Zahl der Zellen quer durch sie hindurch.
+#
+# Die Quelle sitzt im Zellmittelpunkt, der Druck wird an den Flächen
+# aufgebaut — über wenige Zellen kommt deshalb weniger an als angesetzt.
+# Gemessen an einem 1D-Kastenfall (interFoam v2406, Steinschüttung
+# d_p 0,1 m / ε 0,4, u = 1 m/s, Zone 0,2 m), gegen den Ergun-Wert von
+# 32 829 Pa:
+#
+#     2 Zellen quer  20 656 Pa   63 %
+#     4 Zellen quer  27 240 Pa   83 %
+#     8 Zellen quer  30 364 Pa   92 %
+#    16 Zellen quer  31 843 Pa   97 %
+#
+# Das ist erster Ordnung: der Fehlbetrag halbiert sich mit jeder
+# Verfeinerung, rund 0,75/n. Die Formel ist eine ANPASSUNG an diese
+# Messreihe, kein Gesetz — sie soll die Größenordnung nennen, damit
+# niemand einen Verlust in den Bericht schreibt, der so nie gerechnet
+# wurde.
+ZONE_ZELLEN_GUT = 4.0
+
+
+def zone_wirksam(n_quer: float) -> float:
+    """Anteil des angesetzten Verlusts, der bei n Zellen quer ankommt."""
+    if n_quer <= 0:
+        return 0.0
+    return max(0.0, min(1.0, 1.0 - 0.75 / n_quer))
+
+
+def _widerstand_klartext(s) -> str:
+    """Woraus der Beiwert dieser Zone kommt — in einem Halbsatz."""
+    w = s.resistance
+    if w.kind == "steinschuettung":
+        return (f"Ergun aus Korngröße {w.korngroesse * 1000:.0f} mm und "
+                f"Porenanteil {w.porositaet:.2f}")
+    if w.kind == "bewuchs":
+        return (f"Formwiderstand aus {w.flaechendichte:g} 1/m angeströmter "
+                f"Fläche je Volumen, c_w {w.cw or 1.2:g}")
+    return (f"Kirschmer aus Stabform „{s.bar_shape}“, Teilung "
+            f"{(s.bar_spacing or 0) * 1000:.0f} mm, Anströmwinkel "
+            f"{s.approach_angle_deg:g}°")
+
+
 def _pruefe_rechen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
-    """Rechen: Widerstandsbeiwerte, lichte Weite, Verlegungsgrad."""
+    """
+    Widerstandszonen: Beiwerte, Maße zur gewählten Art, Auflösung.
+
+    Der Rechen ist nur ein Fall davon — eine Steinschüttung und ein
+    Bewuchsfeld laufen durch dieselbe Zone und brauchen dieselben Fragen
+    beantwortet: kommt ein Beiwert heraus, passt die Zone ins Netz, und
+    was ist an dem Ersatzmodell nicht enthalten.
+    """
+    from .casebuilder import _screen_resistance, _zonen_tiefe
+
     befunde: list[dict] = []
     f = befunde.append
     for s in spec.structures:
-        if s.type == "screen":
-            # leere d/f sind KEIN Fehler: genau dann leitet der Fallaufbau
-            # die Beiwerte automatisch nach Kirschmer aus Stabform,
-            # Stabteilung und Anströmwinkel ab (_screen_resistance). Der
-            # frühere fehler-Befund widersprach dem eigenen Fallaufbau.
-            if not any(s.resistance.d) and not any(s.resistance.f):
-                from .casebuilder import _screen_resistance
+        if s.type != "screen":
+            continue
+        art = s.resistance.kind
+        tiefe = _zonen_tiefe(s)
+
+        # leere d/f sind KEIN Fehler: genau dann leitet der Fallaufbau die
+        # Beiwerte aus den Maßen der gewählten Art ab. Der frühere
+        # fehler-Befund widersprach dem eigenen Fallaufbau.
+        if not any(s.resistance.d) and not any(s.resistance.f):
+            if art == "manuell":
+                f(_finding(s.id, "warnung",
+                           "Widerstand „manuell“, aber weder d noch f "
+                           "gesetzt — die Zone steht im Netz und bremst "
+                           "nichts. Eine Art wählen oder Beiwerte eintragen."))
+            else:
                 try:
-                    _, f_auto = _screen_resistance(s)
+                    d_auto, f_auto = _screen_resistance(s)
+                    teil = f"f = {f_auto[0]:.1f} 1/m"
+                    if any(d_auto):
+                        teil += f", d = {d_auto[0]:.0f} 1/m²"
                     f(_finding(s.id, "hinweis",
                                "Widerstandsbeiwerte nicht gesetzt — sie "
-                               "werden automatisch nach Kirschmer abgeleitet "
-                               f"(f = {f_auto[0]:.1f} 1/m aus Stabform "
-                               f"„{s.bar_shape}“, Teilung "
-                               f"{s.bar_spacing * 1000:.0f} mm, Anströmwinkel "
-                               f"{s.approach_angle_deg:g}°)"))
+                               "werden abgeleitet aus "
+                               f"{_widerstand_klartext(s)} ({teil})"))
                 except Exception as e:       # noqa: BLE001
                     f(_finding(s.id, "hinweis",
-                               "Kirschmer-Ableitung nicht berechenbar "
-                               f"({type(e).__name__}) — mit welchen "
-                               "Widerstandsbeiwerten der Rechen gerechnet "
-                               "wird, ist damit unklar."))
+                               "Die Ableitung des Widerstands ist nicht "
+                               f"berechenbar ({type(e).__name__}) — mit "
+                               "welchen Beiwerten die Zone gerechnet wird, "
+                               "ist damit unklar."))
+
+        if art == "rechen":
             # der wirklich kaputte Fall: lichte Weite ≤ 0 — die
             # Kirschmer-Formel entartet (bisher versteckte das der
             # 1e-4-Boden in _screen_resistance)
-            if s.bar_spacing <= s.bar_thickness:
+            if (s.bar_spacing or 0) <= (s.bar_thickness or 0):
                 f(_finding(s.id, "fehler",
-                           f"Stabteilung ({s.bar_spacing * 1000:.0f} mm) ist "
-                           "nicht größer als die Stabdicke "
-                           f"({s.bar_thickness * 1000:.0f} mm) — die lichte "
-                           "Weite wäre null, der Rechen dicht"))
+                           f"Stabteilung ({(s.bar_spacing or 0) * 1000:.0f} "
+                           "mm) ist nicht größer als die Stabdicke "
+                           f"({(s.bar_thickness or 0) * 1000:.0f} mm) — die "
+                           "lichte Weite wäre null, der Rechen dicht"))
             if s.resistance.blockage_ratio == 0:
                 f(_finding(s.id, "hinweis",
                            "Rechen ohne angesetzten Verlegungsgrad — für den "
                            "Nachweis ist meist eine Teilverlegung anzusetzen"))
+
+        # Die Zone ist ein Kasten aus ZELLEN. Ist sie dünner als eine
+        # Zelle, greift topoSet unter Umständen keine einzige — die
+        # Widerstandsquelle stünde dann in einer leeren cellZone und
+        # bremste nichts, ohne dass irgendwo ein Fehler erschiene.
+        if spec.mesh is not None:
+            pkte = np.asarray(s.plane_polygon, dtype=float)
+            mitte = pkte.mean(axis=0) if len(pkte) else None
+            zelle = _lokale_zelle(spec, s.patch, mitte)
+            n_quer = tiefe / zelle if zelle > 0 else 0.0
+            if 0 < n_quer < ZONE_ZELLEN_GUT:
+                anteil = zone_wirksam(n_quer)
+                grund = (f"Die Widerstandszone ist {tiefe:.2f} m tief, die "
+                         f"Zelle an dieser Stelle {zelle:.2f} m — das sind "
+                         f"nur {n_quer:.1f} Zellen quer zur Strömung. ")
+                if n_quer < 1:
+                    f(_finding(s.id, "fehler", grund
+                               + "topoSet wählt Zellen nach ihrem "
+                               "MITTELPUNKT: unter einer Zelle trifft der "
+                               "Kasten je nach Lage keine einzige, dann "
+                               "steht die Zone im Fall und bremst nichts."))
+                else:
+                    f(_finding(s.id, "warnung", grund
+                               + "Der Widerstand kommt nur zum Teil an — "
+                               f"nach Messung rund {anteil * 100:.0f} % des "
+                               "angesetzten Verlusts (gemessen an einem "
+                               "Kastenfall: 2 Zellen 63 %, 4 Zellen 83 %, "
+                               "8 Zellen 92 %). Zone tiefer machen oder "
+                               "hier verfeinern."))
+
+        # Der Ersatzansatz nimmt Impuls aus dem Wasser, aber er nimmt der
+        # Zone kein VOLUMEN weg: die Zellen speichern weiter vollen
+        # Wasserinhalt. Bei einer Steinschüttung ist das der Faktor 1/ε.
+        if art == "steinschuettung" and (s.resistance.porositaet or 1) < 0.8:
+            eps = float(s.resistance.porositaet)
+            f(_finding(s.id, "hinweis",
+                       f"Die Steinschüttung bremst, verdrängt aber kein "
+                       f"Wasser: OpenFOAM setzt hier eine Impulsquelle, "
+                       f"keine Porosität im Volumen. In der Zone passt "
+                       f"deshalb rund {1 / eps:.1f}-mal so viel Wasser wie "
+                       f"in Wirklichkeit (Porenanteil {eps:.2f}). Für die "
+                       f"Anströmung ist das brauchbar, für ein Speicher"
+                       f"volumen nicht."))
+
+        # Sehr große Beiwerte: explicitPorositySource ist eine EXPLIZITE
+        # Quelle — sie wird mit der Geschwindigkeit des letzten Zeitschritts
+        # gebildet. Stabil bleibt das nur, solange ½·f·u·Δt klein gegen 1
+        # ist; darüber schaukelt die Bremse auf, statt zu bremsen.
+        try:
+            _, f_eff = _screen_resistance(s)
+            xi = max(f_eff) * tiefe / max(
+                (1.0 - min(s.resistance.blockage_ratio, 0.95)) ** 2, 1e-6)
+        except Exception:                    # noqa: BLE001
+            xi = 0.0
+        if xi > 50:
+            gemeinsam = (f"Die Zone ist mit ξ ≈ {xi:.0f} praktisch dicht — "
+                         "das Wasser geht darüber, nicht hindurch. ")
+            if art == "steinschuettung":
+                f(_finding(s.id, "hinweis",
+                           gemeinsam + "Für eine Steinschüttung ist das "
+                           "richtig so; eine Sickerströmung im Inneren "
+                           "bildet dieses Modell nicht ab, sie wäre auch "
+                           "bei dieser Zellgröße nicht auflösbar. Was der "
+                           "Lauf zeigt, ist die Überströmung."))
+            else:
+                f(_finding(s.id, "warnung",
+                           gemeinsam + "Die Widerstandsquelle wird explizit "
+                           "gebildet; bei diesen Werten kann der Lauf am "
+                           "Zeitschritt hängen. Wenn die Zone wirklich "
+                           "dicht ist, ist eine Wand mit Öffnung das "
+                           "ehrlichere und schnellere Modell."))
     return befunde
 
 

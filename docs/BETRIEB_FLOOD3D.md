@@ -320,8 +320,49 @@ regelmaessig fuer Fehler gehalten werden):
 |---|---|---|
 | Visualisierungsgitter | 1,5 M Zellen / 4 GB | foamfields (Selbsttest-Abweichung steht im Laufmanifest) |
 | Erdkörper-Vorschau + STL-Export | 120 000 Rasterknoten | router (`koerper_zu_gross` bzw. 413) |
-| Rechen-Porositätszone | 0,15 m Tiefe | casebuilder `_SCREEN_ZONE_TIEFE` — Kirschmer-f ist DARAUF normiert |
+| Widerstandszone, Vorbelegung der Tiefe | 0,15 m | casebuilder `_SCREEN_ZONE_TIEFE`, überschreibbar je Bauwerk (`zonen_tiefe`) — Kirschmer-f ist DARAUF normiert |
 | Mesh-Preview | 1 gleichzeitige je Fall (409 sonst) | router `_laufende_previews` |
+
+## Widerstandszonen: was wirklich ankommt
+
+Rechen, Steinschüttung und Bewuchs sind dasselbe Bauwerk (`type: screen`,
+`resistance.kind` unterscheidet sie): eine Zellzone aus `topoSet` mit einer
+`explicitPorositySource`/`DarcyForchheimer` darauf. Keines von ihnen steht
+als Geometrie im Netz.
+
+**Der Beiwert kommt nicht vollständig an.** Die Quelle sitzt im
+Zellmittelpunkt, der Druck baut sich an den Flächen auf — über wenige
+Zellen fehlt ein Teil. An einem 1D-Kastenfall gemessen (interFoam v2406,
+Steinschüttung d_p 0,1 m / ε 0,4, u = 1 m/s, Zone 0,2 m, Ergun-Sollwert
+32 829 Pa):
+
+| Zellen quer durch die Zone | gerechnet | Anteil |
+|---|---|---|
+| 2 | 20 656 Pa | 63 % |
+| 4 | 27 240 Pa | 83 % |
+| 8 | 30 364 Pa | 92 % |
+| 16 | 31 843 Pa | 97 % |
+
+Erster Ordnung, Fehlbetrag rund 0,75/n. `validate.zone_wirksam` nennt den
+Anteil im Befund; unter einer Zelle ist es ein **Fehler**, weil `topoSet`
+nach Zellmittelpunkten wählt und dann womöglich gar keine Zelle trifft.
+
+Daraus folgt eine Asymmetrie, die man kennen muss:
+
+* Beim **Rechen** ist die Zonentiefe eine Rechengröße. ζ gilt für die
+  Ebene und wird verteilt (f = ζ/L) — die Zone zu vertiefen ändert den
+  Verlust nicht und ist deshalb der richtige Weg, statt das Netz zu
+  verfeinern. Der Editor tut das beim Einfügen automatisch (Client
+  `widerstand.zoneAnsNetz`, Ziel 4 Zellen).
+* Bei **Steinschüttung und Bewuchs** ist die Tiefe ein echtes Maß. Sie zu
+  vergrößern wäre eine Fälschung; dort hilft nur eine Verfeinerungsbox
+  (Client `preTemplates.zonenVerfeinerung`).
+
+**Nicht enthalten:** die Zone nimmt Impuls, aber kein Volumen. OpenFOAM
+setzt hier eine Impulsquelle, keine Porosität in der Kontinuität — in
+einer Steinschüttung mit ε = 0,4 steht deshalb 2,5-mal so viel Wasser wie
+in Wirklichkeit. Für die Anströmung brauchbar, für ein Speichervolumen
+nicht.
 
 ## Fallen (mehrfach real getroffen)
 

@@ -1,10 +1,11 @@
 ===============================================================================
  TESTLISTE flood-3D  ·  alle Entwicklungen vom 13.-17.08.2026
- Stand: Commit 773af58  ·  717 pytest / 329 vitest gruen (automatisch)
+ Stand: Commit 9beafc7+  ·  741 pytest / 350 vitest gruen (automatisch)
  Teil A (1-8):   13.-15.08. -- von dir durchgearbeitet, Befunde markiert
  Teil B (9-12):  16.08.     -- Speicher, Leerlauf, Laubkarten
  Teil C (13-16): 17.08.     -- deine Befunde aus Teil A, behoben
  Teil D (17-21): 17.08.     -- Laubkarten bedienbar, Rauigkeit, Belag
+ Teil E (22):    18.08.     -- Widerstandszonen (Steinschuettung, Bewuchs)
 ===============================================================================
 
 WO TESTEN
@@ -24,7 +25,9 @@ REIHENFOLGE, WENN DIE ZEIT KNAPP IST
   4. Abschnitte 13-15 -- Nachpruefen deiner eigenen Befunde
   5. Abschnitt 21 (Belag) -- neu und noch NIE durch einen Solverlauf
      gegangen; der letzte Punkt dort ist der wichtigste
-  6. Abschnitt 10 (Leerlauf) -- stoert nichts, solange es aus ist
+  6. Abschnitt 22 (Widerstandszonen) -- neu; der letzte Punkt dort
+     betrifft deinen BESTEHENDEN Rechen
+  7. Abschnitt 10 (Leerlauf) -- stoert nichts, solange es aus ist
 
 WIE DIESE LISTE BENUTZEN
   [ ] = anklicken/ausprobieren.  "!" = hier wurde etwas Riskantes geaendert,
@@ -946,7 +949,104 @@ tau-Karte danach vollstaendig ist. Genau dafuer der letzte Punkt unten.
 
 
 ===============================================================================
- 22  BEKANNTE GRENZEN (kein Fehler, bewusst offen)
+ 22  PRE / MODELL  --  Widerstandszonen: Steinschuettung und Bewuchs
+===============================================================================
+Deine Frage: den Rechen so erweitern, dass man auch eine Steinschuettung
+oder einen dichten Busch hinstellen kann -- "abstrakt eine Wand oder ein
+Quader, der eine Zone mit anderer Eigenschaft zeigt".
+
+Es war tatsaechlich fast nur UI. Der Rechen war NIE ein Bauteil im Netz:
+er ist seit jeher eine Zellzone (topoSet) mit einer Darcy-Forchheimer-
+Quelle darauf (constant/fvOptions). Die Staebe sind reine Darstellung.
+Damit ist eine Steinschuettung dasselbe Bauwerk -- nur eine andere Herkunft
+des Beiwerts:
+
+  Rechen          Kirschmer     zeta = beta (s/b)^(4/3) sin a, NUR senkrecht
+  Steinschuettung Ergun         aus Korngroesse und Porenanteil, ALLSEITIG
+  Bewuchs         Formwiderstand c_w * a (Staemme je m2 x Durchmesser)
+  manuell         d und f von Hand
+
+DER UNTERSCHIED, DER ZAEHLT: beim Rechen ist die Zonentiefe eine
+Rechengroesse (zeta gilt fuer die EBENE und wird auf die Tiefe verteilt,
+f = zeta/L). Bei Steinschuettung und Bewuchs ist sie ein echtes Mass --
+ein doppelt so dicker Steinwall bremst doppelt so stark.
+
+[ ] Modell > Neu anlegen > Bauwerksformen
+    Erwartung: neben "Rechen" stehen "Steinschuettung" und
+    "Bewuchs (Busch/Roehricht)".
+
+[ ] Eine Steinschuettung anlegen
+    Erwartung: im Baum steht "Steinschuettung", nicht "Widerstandszone".
+    In der Szene ein steingrauer Kasten (Rechen orange, Bewuchs gruen,
+    manuell violett) -- und zwar in der TIEFE, die im Panel steht.
+
+[ ] ! Untergruppe "Widerstand" > "Vorlage uebernehmen"
+    Erwartung: gruppiert nach Art. Fabios Beispiele stehen drin:
+    "Steinschuettung 80-120 mm, Fugen 3-5 cm" und "Busch, dicht bewachsen".
+    Nach der Auswahl stehen die Masse im Formular.
+
+[ ] ! Unter der Untergruppe steht eine Vorschauzeile
+    Erwartung: woraus der Beiwert kommt, was herauskommt (f in 1/m), der
+    Verlust ueber die ganze Zone als Vielfaches von 1/2 rho u2, ob er
+    allseitig wirkt -- und bei einer Schuettung die Fugenweite.
+    Gegenprobe: "Fugen 3-5 cm" muss dort rund 4,4 cm anzeigen. Steht da
+    etwas anderes, passt der Name der Vorlage nicht zur Rechnung.
+
+[ ] ! Die Art umschalten (Rechen -> Steinschuettung -> Bewuchs)
+    Erwartung: die Felder wechseln MIT. Nach dem Umschalten auf
+    Steinschuettung darf KEINE Stabteilung mehr im Formular stehen --
+    weder sichtbar noch im gespeicherten Fall. Zurueck auf Rechen: die
+    Stabmasse sind wieder da (ohne sie lehnt das Modell den Rechen ab).
+
+[ ] Speichern, Seite neu laden
+    Erwartung: Art, Masse und Zonentiefe stehen noch.
+
+[ ] ! Eine Steinschuettung DUENN machen (Tiefe unter die Zellgroesse)
+    Erwartung: Pruefliste meldet es -- unter einer Zelle als FEHLER, sonst
+    als Warnung MIT Prozentzahl ("rund 63 % des angesetzten Verlusts").
+    Hintergrund unten.
+
+[ ] Einen Rechen in einen groben Fall einfuegen
+    Erwartung: die Zonentiefe wird beim Einfuegen automatisch auf vier
+    Zellen vergroessert, mit Meldung. Der Verlust aendert sich dadurch
+    NICHT -- das ist der Grund, warum das beim Rechen erlaubt ist.
+
+[ ] Eine Steinschuettung in einen groben Fall einfuegen
+    Erwartung: hier wird NICHT die Zone vergroessert (das waere eine
+    Faelschung), sondern eine Verfeinerungsbox ergaenzt.
+
+[ ] Eine FLAECHENverfeinerung auf eine Widerstandszone zielen lassen
+    Erwartung: gelbe Warnung. Eine Zone hat keine Flaeche im Netz; die
+    Verfeinerung fand bisher stillschweigend nichts zu tun.
+
+[ ] ! Deinen bestehenden Fall (Rentrich_BetaTest08) oeffnen und die
+    Pruefliste ansehen
+    Erwartung: an rechen_3 steht jetzt eine Warnung, die vorher fehlte --
+    0,15 m Zone auf 0,12 m Zellen sind 1,2 Zellen quer, davon kommen rund
+    38 % des Kirschmer-Verlusts an. Das ist KEIN neuer Fehler, sondern
+    eine alte, bisher unsichtbare Eigenschaft.
+
+GEMESSEN, NICHT GESCHAETZT
+  Ein kleiner Kastenfall ist im OpenFOAM-Container wirklich gerechnet
+  worden (interFoam v2406, Steinschuettung d=0,1 m / Poren 0,4, u=1 m/s,
+  Zone 0,2 m). Ergebnis:
+    * interFoam laeuft mit der Zone durch, erkennt die Quelle
+      ("Selecting finite volume options type explicitPorositySource",
+      "selecting model: DarcyForchheimer", 1600 Zellen in der Zone)
+    * sie BREMST auch wirklich: 27 405 Pa gegen 0,16 Pa bei
+      abgeschalteter Quelle
+    * aber sie bremst nicht voll. Gegen den Ergun-Sollwert 32 829 Pa:
+        2 Zellen quer  20 656 Pa   63 %
+        4 Zellen quer  27 240 Pa   83 %
+        8 Zellen quer  30 364 Pa   92 %
+       16 Zellen quer  31 843 Pa   97 %
+      Erster Ordnung. Unabhaengig von momentumPredictor (beide Wege
+      liefern auf die Stelle dieselbe Zahl) -- es ist kein Solverproblem,
+      sondern die Aufloesung. Genau diese Kurve steht jetzt im Befund.
+
+
+===============================================================================
+ 23  BEKANNTE GRENZEN (kein Fehler, bewusst offen)
 ===============================================================================
  -  Grundriss: die Karten rechnen weiter mit EINEM Boden je Rasterspalte.
     Wassertiefe/Wasserspiegel INNERHALB einer Bohrung sind dort falsch
@@ -1017,9 +1117,40 @@ tau-Karte danach vollstaendig ist. Genau dafuer der letzte Punkt unten.
     Sinkgeschwindigkeit und Wiederaufwirbeln kennt das Modell nicht.
 
 
+
+ aus Teil E (18.08.):
+ -  Eine Widerstandszone nimmt Impuls, aber KEIN VOLUMEN. OpenFOAM setzt
+    dort eine Impulsquelle, keine Porositaet in der Kontinuitaet: in einer
+    Steinschuettung mit Porenanteil 0,4 steht 2,5-mal so viel Wasser wie
+    in Wirklichkeit. Fuer die Anstroemung brauchbar, fuer ein
+    Speichervolumen nicht -- die Pruefliste sagt das auch.
+ -  Eine Sickerstroemung IM Haufwerk bildet das nicht ab; bei diesen
+    Zellgroessen waere sie auch nicht aufloesbar. Was der Lauf zeigt, ist
+    die Ueberstroemung.
+ -  Bewuchs steht STEIF. Biegen, Abstromen und die jahreszeitliche
+    Aenderung der Bestandsdichte sind nicht drin; a (angestroemte Flaeche
+    je Volumen) ist eine Angabe des Bearbeiters, keine Messung.
+ -  Der Verlust kommt nur teilweise an, wenn die Zone wenige Zellen dick
+    ist (Abschnitt 22, gemessene Kurve). Das gilt rueckwirkend auch fuer
+    jeden Rechen, der bisher gerechnet wurde.
+ -  Die Vorlagen sind Anhaltswerte aus der Literatur (Ergun; Lindner/
+    DVWK-M 220 fuer c_w), keine Werte fuer ein konkretes Bauwerk. Wer eine
+    Messung oder eine Regelwerksangabe hat, traegt d/f von Hand ein --
+    die haben Vorrang.
+
 ===============================================================================
- 23  WAS BEI DIR OFFEN IST
+ 24  WAS BEI DIR OFFEN IST
 ===============================================================================
+ -  Widerstandszonen: der Mechanismus ist an einem Kastenfall wirklich
+    gerechnet (Abschnitt 22). Was NICHT gerechnet ist: eine Zone in einem
+    ECHTEN Fall mit Gelaende, snappy-Netz und freier Oberflaeche. Zu
+    erwarten ist nichts Neues -- die Zone haengt nur an topoSet und
+    fvOptions, beides laeuft dort schon --, aber gesehen habe ich es
+    nicht.
+ -  Soll dein rechen_3 in Rentrich_BetaTest08 nachgezogen werden? Die
+    Zone auf 0,5 m zu vertiefen aendert den angesetzten Verlust nicht,
+    laesst ihn aber zu rund 85 % statt 38 % ankommen. Das ist eine
+    fachliche Entscheidung, deshalb macht es niemand von selbst.
 [ ] RunPod-Konsole: Retries auf 0 setzen (sonst startet RunPod
     gescheiterte Jobs von selbst neu und es kostet doppelt).
 [ ] Rentrich_BetaTest08: Durchmesser 1,6 m -- war DN800 (0,8) gemeint?

@@ -46,6 +46,12 @@ export const ENUM_LABELS = {
   circular: 'Kreis', rectangular: 'Rechteck', arch: 'Maulprofil',
   kreis: 'Kreis (Rohrmündung)',
   darcy_forchheimer: 'Darcy-Forchheimer',
+  // Zonenart — schlüsselbewusst, weil 'rechen' sonst mit nichts kollidiert,
+  // 'manuell' aber sehr wohl (Herkunft eines Objekts)
+  'kind:rechen': 'Rechen (Stäbe, Kirschmer)',
+  'kind:steinschuettung': 'Steinschüttung (Haufwerk, Ergun)',
+  'kind:bewuchs': 'Bewuchs (Stämme/Halme, Formwiderstand)',
+  'kind:manuell': 'eigene Beiwerte d/f',
   frei: 'freie Höhenkante', sohle: 'Sohle (Ankerfläche)',
   beckenrand: 'Beckenrand', boeschung_ok: 'Böschungsoberkante',
   boeschung_uk: 'Böschungsunterkante', krone: 'Krone',
@@ -64,6 +70,8 @@ const GRUPPEN_ENUMS = {
   window: { shape: ['rechteck', 'kreis', 'trapez', 'polygon'] },
   // Bearbeitungen: eine Aussparung ist rund oder rechteckig, nichts sonst
   aussparung: { shape: ['kreis', 'rechteck'] },
+  // Was die Widerstandszone IST — daraus folgt, woraus der Beiwert kommt
+  resistance: { kind: ['rechen', 'steinschuettung', 'bewuchs', 'manuell'] },
 }
 
 // Auswahlwerte, die am TYP des übergeordneten Objekts hängen. `profile`
@@ -262,7 +270,12 @@ export function fehlendeBausteine(spec, kind) {
 // Felder verwirrten im Panel („Sohle des Erdkörpers"?). Altfälle mit
 // gesetztem Wert zeigen das Feld weiterhin (es ist dann nicht null) und
 // behalten ihre Beschriftung in TYP_LABELS.
-export const OPTIONAL_ZAHLEN = {}
+export const OPTIONAL_ZAHLEN = {
+  // null heißt „Vorbelegung des Fallaufbaus" (0,15 m). Ohne Eintrag hier
+  // verschwände das Feld, sobald es leer ist — und eine Steinschüttung
+  // ließe sich nie bemaßen.
+  screen: ['zonen_tiefe'],
+}
 
 export function widgetFor(key, v, typ) {
   if (REFERENZ_QUELLEN[typ]?.[key]) return 'referenz'
@@ -309,6 +322,14 @@ export const PFLICHTFELDER = {
       circular: ['kind', 'diameter', 'wandstaerke'],
       rectangular: ['kind', 'width', 'height', 'wandstaerke'],
       arch: ['kind', 'width', 'height', 'wandstaerke'],
+    },
+  },
+  screen: {
+    resistance: {
+      rechen: ['kind', 'blockage_ratio'],
+      steinschuettung: ['kind', 'korngroesse', 'porositaet', 'blockage_ratio'],
+      bewuchs: ['kind', 'flaechendichte', 'cw', 'blockage_ratio'],
+      manuell: ['kind', 'blockage_ratio'],
     },
   },
   graben: {
@@ -436,7 +457,8 @@ export const FIELD_LABELS = {
   wandstaerke: 'Wandstärke (m)',
   bohr_ueberstand: 'Fräs-Überstand (m) — so weit wird über jedes Achsende '
     + 'hinaus durchs Erdreich gebohrt',
-  plane_polygon: 'Rechenebene', bar_spacing: 'Stabteilung (m)',
+  plane_polygon: 'Anströmfläche der Zone', bar_spacing: 'Stabteilung (m)',
+  zonen_tiefe: 'Tiefe der Zone in Anströmrichtung (m)',
   bar_thickness: 'Stabdicke (m)',
   resistance: 'Widerstand',
   base_level: 'Fußhöhe (m)', top_level: 'Oberkante (m NHN)',
@@ -457,6 +479,9 @@ export const FIELD_LABELS = {
   // Felder in Untergruppen (Profil, Widerstand, Achse, Fenster)
   kind: 'Profilart', diameter: 'Durchmesser (m)', points: 'Stützpunkte',
   model: 'Widerstandsmodell', blockage_ratio: 'Verlegungsgrad (0…1)',
+  korngroesse: 'Korngröße d (m)', porositaet: 'Porenanteil (0…1)',
+  flaechendichte: 'Angeströmte Fläche je Volumen a (1/m)',
+  cw: 'Widerstandsbeiwert c_w der Stämme',
   z_min: 'Unterkante (m NHN)', z_max: 'Oberkante (m NHN)',
   z_center: 'Achshöhe (m NHN)', span: 'Lage entlang der Kante (von/bis)',
   follow: 'gekoppelt an', top_width: 'Breite Oberkante (m)',
@@ -478,9 +503,15 @@ export const FIELD_LABELS = {
 
 // In der Untergruppe heißen Felder teils anders als oben: `center` ist im
 // Randfenster die Lage ENTLANG der Kante, kein Mittelpunkt in x/y
+// Felder einer Untergruppe, die leer bleiben DÜRFEN: leer heißt dort
+// „Vorbelegung des Fallaufbaus", nicht „fehlt noch". Ohne diese Liste
+// stünde an c_w das Wort „nötig", obwohl 1,2 gilt, wenn nichts dasteht.
+export const GRUPPEN_OPTIONAL = { resistance: new Set(['cw']) }
+
 export const GRUPPEN_LABELS = {
   window: { center: 'Lage entlang der Kante (m)',
     bottom_width: 'Breite unten (m)', top_width: 'Breite oben (m)' },
+  resistance: { kind: 'Art der Zone' },
 }
 
 
@@ -500,6 +531,8 @@ export const NICHT_NEGATIV = new Set([
   'crest_width', 'wall_height', 'wall_thickness', 'einbindetiefe',
   'side_slope', 'base_cell', 'resolution', 'n_layers', 'expansion_ratio',
   'q', 'strength', 'falloff', 'wandstaerke', 'bohr_ueberstand',
+  'zonen_tiefe', 'korngroesse', 'porositaet', 'flaechendichte', 'cw',
+  'blockage_ratio', 'bar_spacing', 'bar_thickness', 'bar_depth',
 ])
 
 /** Untergrenze für ein Zahlenfeld — null, wenn es keine gibt. */
