@@ -209,3 +209,48 @@ describe('Name im Baum', () => {
     expect(zonenTiefe({ type: 'screen' })).toBe(0.15)
   })
 })
+
+describe('Vertrag zum Modell', () => {
+  // Welche Angaben das Backend je Art VERLANGT
+  // (casespec.ScreenResistance._felder_zur_art / StructScreen._masse_zur_art).
+  // Dieselbe Liste steht dort noch einmal als Test — läuft eine Seite weg,
+  // faellt es hier oder dort auf, nicht erst beim Speichern.
+  const PFLICHT = {
+    rechen: { struct: ['bar_spacing', 'bar_thickness'], widerstand: [] },
+    steinschuettung: { struct: [],
+      widerstand: ['korngroesse', 'porositaet'] },
+    bewuchs: { struct: [], widerstand: ['flaechendichte'] },
+    manuell: { struct: [], widerstand: [] },
+  }
+
+  it('jeder Artwechsel ergibt ein SPEICHERBARES Bauwerk', () => {
+    // Gefunden, indem jedes im Client erzeugte Objekt einmal durch das
+    // echte Pydantic-Modell geschickt wurde: der Wechsel auf
+    // Steinschuettung erzeugte ein Objekt ohne Korngroesse, das der
+    // Server ablehnt. Der Nutzer haette einen Fehler bekommen fuer etwas,
+    // das er nur ausgewaehlt hat — dieselbe Falle wie beim Rechteckprofil.
+    for (const [art, pflicht] of Object.entries(PFLICHT)) {
+      const z = zonenArtGewechselt(rechen(), art)
+      for (const k of pflicht.struct) expect(z[k], `${art}.${k}`).toBeTruthy()
+      for (const k of pflicht.widerstand) {
+        expect(z.resistance[k], `${art}.resistance.${k}`).toBeTruthy()
+      }
+      // „manuell" ist die Ausnahme und soll es sein: dort gibt es nichts
+      // abzuleiten, das Modell nimmt es an, und die Pruefung sagt, dass
+      // die Zone so nichts bremst.
+      if (art === 'manuell') expect(beiwerte(z)).toBeNull()
+      else expect(beiwerte(z), art).not.toBeNull()
+    }
+  })
+
+  it('auch jede Vorlage ist vollstaendig', () => {
+    for (const v of ZONEN_VORLAGEN) {
+      const z = vorlageAnwenden(rechen(), v)
+      const pflicht = PFLICHT[v.art]
+      for (const k of pflicht.struct) expect(z[k], `${v.id}.${k}`).toBeTruthy()
+      for (const k of pflicht.widerstand) {
+        expect(z.resistance[k], `${v.id}.${k}`).toBeTruthy()
+      }
+    }
+  })
+})

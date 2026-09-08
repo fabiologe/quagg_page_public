@@ -307,3 +307,39 @@ def test_flaechenverfeinerung_auf_eine_zone_wird_gemeldet(tmp_path):
     b = [x for x in validate_case(spec, tmp_path) if x["object_id"] == "fein_rechen"]
     assert b and b[0]["severity"] == "warnung"
     assert "Verfeinerungsbox" in b[0]["message"]
+
+
+# --- Vertrag zum Client ----------------------------------------------------
+# Dieselbe Tabelle steht im Client (test/widerstand.test.js) und speist dort
+# die Startwerte beim Artwechsel. Verlangt das Modell hier eines Tages mehr,
+# muss der Client mitziehen — sonst erzeugt ein Klick im Auswahlkasten ein
+# Bauwerk, das sich nicht speichern laesst.
+PFLICHT_JE_ART = {
+    "rechen": ["bar_spacing", "bar_thickness"],
+    "steinschuettung": ["korngroesse", "porositaet"],
+    "bewuchs": ["flaechendichte"],
+    "manuell": [],
+}
+
+
+@pytest.mark.parametrize("art", sorted(PFLICHT_JE_ART))
+def test_genau_diese_angaben_werden_verlangt(art):
+    """
+    Jedes Pflichtfeld EINZELN weglassen: fehlt es, muss das Modell nein
+    sagen. Sind alle da, muss es ja sagen. Ohne diesen Test koennte ein
+    Feld still zur Pflicht werden und der Client fuellte es nicht.
+    """
+    voll = {"rechen": dict(bar_spacing=0.02, bar_thickness=0.008),
+            "steinschuettung": dict(korngroesse=0.1, porositaet=0.4),
+            "bewuchs": dict(flaechendichte=3.0),
+            "manuell": {}}[art]
+    am_bauwerk = {"bar_spacing", "bar_thickness"}
+    bauen = lambda w: _zone(                                    # noqa: E731
+        bar_spacing=w.get("bar_spacing"), bar_thickness=w.get("bar_thickness"),
+        resistance=cs.ScreenResistance(kind=art, **{
+            k: v for k, v in w.items() if k not in am_bauwerk}))
+
+    bauen(voll)                                   # vollstaendig -> geht
+    for fehlt in PFLICHT_JE_ART[art]:
+        with pytest.raises(ValidationError):
+            bauen({k: v for k, v in voll.items() if k != fehlt})

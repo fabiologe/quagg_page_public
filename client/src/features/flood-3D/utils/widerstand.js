@@ -188,6 +188,28 @@ const MASSE_JE_ART = {
 const ALLE_MASSE = [...new Set(Object.values(MASSE_JE_ART).flat())]
 
 /**
+ * Womit eine frisch gewählte Art anfängt.
+ *
+ * Ohne diese Werte wäre der Artwechsel eine Sackgasse: das Modell lehnt
+ * eine Steinschüttung ohne Korngröße ab (casespec.ScreenResistance), und
+ * der Nutzer bekäme beim Speichern einen Fehler für etwas, das er nur
+ * ausgewählt hat. Gefunden, indem jedes im Client erzeugte Objekt einmal
+ * durch das echte Pydantic-Modell geschickt wurde.
+ *
+ * Die Werte sind die der jeweils naheliegendsten Vorlage — nichts
+ * Erfundenes: Wasserbausteine 80–120 mm und dichtes Gebüsch.
+ */
+export const START_WERTE = {
+  rechen: { bar_spacing: 0.02, bar_thickness: 0.008, bar_depth: 0.06 },
+  steinschuettung: { korngroesse: 0.1, porositaet: 0.4 },
+  bewuchs: { flaechendichte: 3.0, cw: 1.2 },
+  manuell: {},
+}
+
+// Welche Felder am BAUWERK liegen und welche in der Untergruppe
+const AM_BAUWERK = new Set(ALLE_MASSE)
+
+/**
  * Ein Bauwerk auf eine neue Zonenart umstellen — reine Funktion.
  *
  * Die Untergruppe räumt beim Artwechsel nur ihre EIGENEN Felder auf
@@ -200,11 +222,12 @@ export function zonenArtGewechselt(struct, neueArt) {
     resistance: { ...struct.resistance, kind: neueArt } }
   const bleibt = new Set(MASSE_JE_ART[neueArt] ?? [])
   for (const k of ALLE_MASSE) if (!bleibt.has(k)) neu[k] = null
-  if (neueArt === 'rechen' && !neu.bar_spacing) {
-    // Ohne Stabmaße lehnt das Modell den Rechen ab (casespec).
-    neu.bar_spacing = 0.02
-    neu.bar_thickness = 0.008
-    neu.bar_depth = 0.06
+  // Felder der ALTEN Art in der Untergruppe räumt die Untergruppe selbst
+  // weg (feldTypen.artGewechselt); hier zählt nur, dass die NEUE Art
+  // vollständig ist — sonst ist der Wechsel eine Sackgasse.
+  for (const [k, v] of Object.entries(START_WERTE[neueArt] ?? {})) {
+    const ziel = AM_BAUWERK.has(k) ? neu : neu.resistance
+    if (ziel[k] == null) ziel[k] = v
   }
   return neu
 }
