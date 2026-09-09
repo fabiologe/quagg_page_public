@@ -24,7 +24,7 @@
  *
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
-import { formeNach, massenAus, verschiebeOperationen } from '../gelaende/Operationen.js';
+import { formeNach, massenAus, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
 import { GRABENREGELN, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
 import { weltAusNn } from '../Hoehenbezug.js';
 import { rasterAbtasten } from '../geometrie/ops/Raster.js';
@@ -237,6 +237,35 @@ const ABLEITUNGEN_ERWEITERT = {
          * @param {object} quellen    {gelaende: raster} — vom Lauf aufgelöst
          * @param {object} kontext    {kernel, hoehenversatz}
          */
+        /**
+         * Das Gelände ein zweites Mal — FEIN und nur im Korridor um die
+         * Formung. Darauf rechnen Aushub, Auftrag und die Massen; das
+         * sichtbare DGM bleibt das volle Raster (siehe ERDBAU_ZELLE).
+         */
+        zusatzQuellen(parameter, quellen, genannt) {
+            const gid = genannt?.gelaende;
+            const ur = quellen?.gelaende;
+            if (!gid || !ur) return {};
+            // NUR WENN ER NÖTIG IST. Gemessen an Fabios Gerinne (4 m Sohle,
+            // 2-m-Zellen): ohne Korridor 4,4 s und eine Gegenprobe von
+            // 0,05 %, mit Korridor 6,6 s und 0,01 %. Zwei Sekunden für die
+            // dritte Nachkommastelle sind ein schlechtes Geschäft — die
+            // Sohle liegt ja über zwei Zellen. Anders beim Kanalgraben: ein
+            // 0,9-m-Graben verschwindet in 2-m-Zellen ganz, und dort ist der
+            // Korridor deshalb fest eingebaut.
+            if (!_zuFeinFuerZelle(ur, parameter?.operationen ?? [])) return {};
+            const b = _erdbauKorridor(ur, parameter?.operationen ?? []);
+            if (!b) return {};
+            const flaeche = (b.maxX - b.minX) * (b.maxZ - b.minZ);
+            const grob = Number(ur.cell) || Number(parameter?.raster?.cell) || 1;
+            // Fein, aber nicht unbegrenzt: über dem Budget wird die Zelle
+            // gröber, und wo sie den groben Wert erreicht, lohnt der zweite
+            // Durchgang gar nicht mehr.
+            const cell = Math.max(ERDBAU_ZELLE, Math.sqrt(flaeche / ERDBAU_ZELLBUDGET));
+            if (!(cell < grob * 0.9)) return {};
+            return { gelaendeFein: { gid, form: 'raster', opts: { cell, bereich: b } } };
+        },
+
         async leite(parameter, quellen, { kernel, hoehenversatz = 0 } = {}) {
             const ur = quellen?.gelaende;
             if (!ur) throw new Error('erdbau: Quellgelände fehlt');
@@ -248,9 +277,20 @@ const ABLEITUNGEN_ERWEITERT = {
             const { raster: neu, warnungen: w1 } = formeNach(ur, ops);
             warnungen.push(...w1);
 
-            const aushub = await kernel.op('koerperZwischenRastern', { oben: ur, unten: neu });
-            const auftrag = await kernel.op('koerperZwischenRastern', { oben: neu, unten: ur });
-            const massen = massenAus(ur, neu) ?? { aushub: 0, auftrag: 0 };
+            // KÖRPER UND MASSEN auf dem feinen Korridor, wenn es einen gibt —
+            // das DGM bleibt das volle Raster. Beides muss aus DERSELBEN
+            // Formung stammen, sonst widersprechen sich Bild und Zahl.
+            const fein = quellen?.gelaendeFein ?? null;
+            let rechenAlt = ur, rechenNeu = neu;
+            if (fein) {
+                const { raster: feinNeu, warnungen: w2 } = formeNach(fein, ops);
+                warnungen.push(...w2.filter(w => !w1.includes(w)));
+                rechenAlt = fein; rechenNeu = feinNeu;
+            }
+
+            const aushub = await kernel.op('koerperZwischenRastern', { oben: rechenAlt, unten: rechenNeu });
+            const auftrag = await kernel.op('koerperZwischenRastern', { oben: rechenNeu, unten: rechenAlt });
+            const massen = massenAus(rechenAlt, rechenNeu) ?? { aushub: 0, auftrag: 0 };
             _gegenprobe('Aushub', aushub.ergebnis, massen.aushub, befunde, warnungen);
             _gegenprobe('Auftrag', auftrag.ergebnis, massen.auftrag, befunde, warnungen);
 
@@ -268,6 +308,9 @@ const ABLEITUNGEN_ERWEITERT = {
                     aushubKoerper: aushub.ergebnis?.volumen ?? 0,
                     auftragKoerper: auftrag.ergebnis?.volumen ?? 0,
                     operationen: ops.length,
+                    zellweite: rechenAlt.cell,
+                    zellweiteDgm: ur.cell,
+                    korridor: !!fein,
                 },
                 befunde,
                 warnungen,
@@ -391,6 +434,66 @@ function _kanalgrabenWerte(parameter, rohr) {
 /** Eine Quelle oder eine Liste davon — als Liste. */
 const _liste = (q) => (q == null ? [] : (Array.isArray(q) ? q : [q]));
 /** Feinste Zellweite des Graben-Korridors (m) und sein Rand um Rohre und Schächte (m). */
+/**
+ * Ist eine der Operationen SCHMALER als zwei Zellen? Dann wird sie auf dem
+ * groben Raster nicht mehr richtig getroffen, und der feine Korridor lohnt.
+ * Dieselbe Frage, die `gerinne` schon als Warnung stellt — hier als
+ * Entscheidung, damit Warnung und Kur dieselbe Grösse messen.
+ */
+function _zuFeinFuerZelle(raster, operationen) {
+    const cell = Number(raster?.cell) || 0;
+    if (!cell) return false;
+    for (const op of operationen ?? []) {
+        const p = op?.parameter ?? {};
+        let mass = Infinity;
+        if (op.art === 'gerinne') mass = Number(p.sohlbreite) || 0;
+        else if (op.art === 'baugrube') {
+            mass = Math.min(
+                Number(p.laenge) || Infinity,
+                Number(p.breite) || Infinity,
+                (Number(p.radius) || Infinity) * 2,
+            );
+        } else continue;                       // Planum/Böschung sind flächig
+        if (mass > 0 && mass < cell * 2) return true;
+    }
+    return false;
+}
+
+/**
+ * Die gemeinsame Ausdehnung aller Operationen einer Formung, plus Rand.
+ *
+ * Sie kommt aus DEMSELBEN `wirkbereichVon`, das auch die Rasterschleifen
+ * eingrenzt — Korridor und Rechenbereich messen damit dieselbe Grösse.
+ * Zwei Wege dorthin wären zwei Antworten auf „wo wirkt das?" (Gesetz 7).
+ */
+function _erdbauKorridor(raster, operationen) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const op of operationen ?? []) {
+        const b = wirkbereichVon(raster, op?.art, op?.parameter ?? {});
+        if (!b) return null;                     // eine Operation ohne Grenze ⇒ kein Korridor
+        minX = Math.min(minX, b.minX); maxX = Math.max(maxX, b.maxX);
+        minZ = Math.min(minZ, b.minZ); maxZ = Math.max(maxZ, b.maxZ);
+    }
+    if (!Number.isFinite(minX)) return null;
+    const r = ERDBAU_KORRIDOR_RAND;
+    return { minX: minX - r, maxX: maxX + r, minZ: minZ - r, maxZ: maxZ + r };
+}
+
+/**
+ * Der ERDBAU-KORRIDOR (2026-09-09, auf Fabios „extrem heavy 3D").
+ *
+ * Zweimal derselbe Gedanke wie beim Kanalgraben, aus zwei Gründen:
+ *  - GENAUIGKEIT: eine 4-m-Sohle in 2-m-Zellen ist grob; im Korridor wird
+ *    feiner gerastert, und Massen wie Körper stimmen dadurch besser.
+ *  - TEMPO: gerechnet wird nur, wo die Formung wirkt.
+ * Das sichtbare DGM bleibt das VOLLE Raster — sonst hätte die Oberfläche
+ * ein Loch, wo der Korridor endet.
+ */
+export const ERDBAU_ZELLE = 0.5;
+export const ERDBAU_KORRIDOR_RAND = 15;
+/** Über so vielen Zellen lohnt der feine Korridor nicht mehr — dann gröber. */
+export const ERDBAU_ZELLBUDGET = 160000;
+
 export const KANALGRABEN_ZELLE = 0.5;
 export const KANALGRABEN_KORRIDOR_RAND = 12;
 

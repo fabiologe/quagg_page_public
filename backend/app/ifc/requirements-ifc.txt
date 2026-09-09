@@ -1,0 +1,20 @@
+# Werkzeugkette des IFC-Verbundexports.
+#
+# BEWUSST NICHT im Produktions-venv (backend/venv): dort haengt der laufende
+# pm2-Dienst quagg-api dran, und dort stehen numpy und shapely bereits — an
+# ihnen haengen trimesh, manifold3d und scipy. Ein pip-Lauf, der sie anfasst,
+# legt den Dienst lahm. Ausserdem faehrt uvicorn mit workers=1 (SQLite hat nur
+# einen Schreiber, backend/app/main.py:204): ein Merge im API-Prozess wuerde den
+# einzigen Arbeiter blockieren und im schlechten Fall per OOM sterben. Der
+# Verbund laeuft deshalb als Unterprozess in DIESEM venv.
+#
+# Hausmuster: backend/app/mcp/.venv-mcp (siehe projekt/core/env.py:1-4).
+#
+# Fassungen sind FESTGENAGELT: die benutzten API-Namen wandern zwischen den
+# 0.8.x-Staenden (util.schema.Migrator, util.unit.convert_file_length_units,
+# api.georeference.*). Der Vertragstest in tests/test_vertrag.py prueft sie.
+ifcopenshell==0.8.5
+ifcpatch==0.8.5
+# Die Tests dieses Ordners laufen mit DIESEM venv, nicht mit dem Produktions-venv
+# (dort steht pytest 9.1.1, aber ohne ifcopenshell waeren sie sinnlos).
+pytest

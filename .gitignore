@@ -147,6 +147,16 @@ backend/app/api/flood3D/*
 # Package, nur in backend/.env — die bleibt ignoriert.
 !backend/app/api/pedant/
 
+# IFC-Verbundexport (CDE): Quelltext versionieren, das venv NICHT.
+# ifcopenshell bekommt ein eigenes venv, weil das Produktions-venv den laufenden
+# pm2-Dienst traegt — dort stehen numpy und shapely bereits und haengen an
+# trimesh/manifold3d/scipy; ein pip-Lauf, der sie anfasst, legt quagg-api lahm.
+# Gleiches Muster wie backend/app/mcp/.venv-mcp (siehe projekt/core/env.py).
+# Ohne diese Ausnahme faellt der ganze Ordner unter backend/app/* und die Arbeit
+# laege nur auf der Platte.
+!backend/app/ifc/
+backend/app/ifc/.venv-ifc/
+
 # Projekt-Cockpit: erzeugte docx-Vorlagen (werden zur Laufzeit gebaut)
 backend/app/api/projekt/vorlagen/*.docx
 

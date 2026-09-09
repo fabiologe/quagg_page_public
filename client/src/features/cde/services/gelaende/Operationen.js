@@ -109,7 +109,7 @@ function _kopie(raster) {
  *
  * @returns {{raster, warnungen: string[]}}
  */
-export function gerinne(raster, { achse, sohlbreite, boeschung = 1.5, sohleAnfang, sohleEnde } = {}) {
+export function gerinne(raster, { achse, sohlbreite, boeschung = 1.5, sohleAnfang, sohleEnde } = {}, { bereich = null } = {}) {
     const warnungen = [];
     if (!Array.isArray(achse) || achse.length < 2) return { raster, warnungen: ['gerinne_ohne_achse'] };
     if (!Number.isFinite(sohleAnfang)) return { raster, warnungen: ['gerinne_ohne_sohle'] };
@@ -124,8 +124,10 @@ export function gerinne(raster, { achse, sohlbreite, boeschung = 1.5, sohleAnfan
 
     const neu = _kopie(raster);
     const { nx, nz, heights } = neu;
-    for (let ix = 0; ix < nx; ix++) {
-        for (let iz = 0; iz < nz; iz++) {
+    // Nur die Zellen im Wirkbereich — ausserhalb kann sich nichts ändern.
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
             const i = ix * nz + iz;
             const h = heights[i];
             if (!Number.isFinite(h)) continue;                    // NaN bleibt NaN
@@ -152,7 +154,7 @@ export function gerinne(raster, { achse, sohlbreite, boeschung = 1.5, sohleAnfan
  * Planum: innerhalb des Umrisses auf Sollhöhe — Aushub UND Auftrag.
  * Der Umriss ist ein Grundriss-Polygon aus {x,z}- oder [x,y,z]-Punkten.
  */
-export function planum(raster, { umriss, hoehe } = {}) {
+export function planum(raster, { umriss, hoehe } = {}, { bereich = null } = {}) {
     const warnungen = [];
     if (!Array.isArray(umriss) || umriss.length < 3) return { raster, warnungen: ['planum_ohne_umriss'] };
     if (!Number.isFinite(hoehe)) return { raster, warnungen: ['planum_ohne_hoehe'] };
@@ -160,8 +162,10 @@ export function planum(raster, { umriss, hoehe } = {}) {
 
     const neu = _kopie(raster);
     const { nx, nz, heights } = neu;
-    for (let ix = 0; ix < nx; ix++) {
-        for (let iz = 0; iz < nz; iz++) {
+    // Nur die Zellen im Wirkbereich — ausserhalb kann sich nichts ändern.
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
             const i = ix * nz + iz;
             if (!Number.isFinite(heights[i])) continue;
             const k = rasterKnoten(raster, ix, iz);
@@ -179,7 +183,7 @@ export function planum(raster, { umriss, hoehe } = {}) {
  * Gelände erreicht, endet ihr Einfluss von selbst. Innerhalb tut sie
  * nichts — das ist die Arbeit des Planums.
  */
-export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}) {
+export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}, { bereich = null } = {}) {
     const warnungen = [];
     if (!Array.isArray(umriss) || umriss.length < 3) return { raster, warnungen: ['boeschung_ohne_umriss'] };
     if (!Number.isFinite(hoehe)) return { raster, warnungen: ['boeschung_ohne_hoehe'] };
@@ -200,8 +204,10 @@ export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}) {
 
     const neu = _kopie(raster);
     const { nx, nz, heights } = neu;
-    for (let ix = 0; ix < nx; ix++) {
-        for (let iz = 0; iz < nz; iz++) {
+    // Nur die Zellen im Wirkbereich — ausserhalb kann sich nichts ändern.
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
             const i = ix * nz + iz;
             const h = heights[i];
             if (!Number.isFinite(h)) continue;
@@ -264,7 +270,7 @@ export function massenAus(vorher, nachher) {
  * Graben daneben wieder auffüllen. (Ein früherer Entwurf war rund; ein
  * `radius` wird noch als Quadrat der Seite 2·r gelesen.)
  */
-export function baugrube(raster, { mitte, laenge, breite, radius, richtung = null, sohle, neigung = 0 } = {}) {
+export function baugrube(raster, { mitte, laenge, breite, radius, richtung = null, sohle, neigung = 0 } = {}, { bereich = null } = {}) {
     const warnungen = [];
     const m = mitte ? _xz(mitte) : null;
     if (!m || !Number.isFinite(m.x) || !Number.isFinite(m.z)) return { raster, warnungen: ['baugrube_ohne_mitte'] };
@@ -285,8 +291,10 @@ export function baugrube(raster, { mitte, laenge, breite, radius, richtung = nul
     const neu = _kopie(raster);
     const { nx, nz, heights } = neu;
     let getroffen = 0;
-    for (let ix = 0; ix < nx; ix++) {
-        for (let iz = 0; iz < nz; iz++) {
+    // Nur die Zellen im Wirkbereich — ausserhalb kann sich nichts ändern.
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
             const i = ix * nz + iz;
             const h = heights[i];
             if (!Number.isFinite(h)) continue;
@@ -306,6 +314,131 @@ export function baugrube(raster, { mitte, laenge, breite, radius, richtung = nul
     }
     if (!getroffen) warnungen.push('baugrube_ohne_treffer: kein Rasterpunkt tiefer als das Gelände');
     return { raster: neu, warnungen };
+}
+
+/**
+ * DER WIRKBEREICH: welche Zellen eine Operation überhaupt anfassen kann.
+ *
+ * WARUM. Eine Formung lief bisher über JEDE Zelle des Geländes — bei einem
+ * DGM am Zellbudget sind das 250.000, und ein Gerinne von 200 × 60 m
+ * berührt davon rund 3.000. Gemessen kostete `formeNach` auf dem vollen
+ * Raster etwa eine Sekunde je Operation; mit dem Bereich sind es
+ * Millisekunden. Fabios Wort dafür war „extrem heavy 3D".
+ *
+ * DIE GEFAHR IST DAS STILLE ABSCHNEIDEN. Ein zu enger Bereich schneidet die
+ * Böschung ab, und das Ergebnis sieht plausibel aus. Deshalb zwei Dinge:
+ * der Rand wird aus den Parametern GERECHNET (Sohlbreite, Neigung, Tiefe),
+ * und nach dem Lauf wird am Rand des Bereichs geprüft, ob dort noch etwas
+ * passiert ist — wenn ja, sagt es die Warnung `wirkbereich_zu_klein`.
+ *
+ * Ohne Bereich bleibt alles wie zuvor: `null` heisst „das ganze Raster".
+ */
+const RAND_MINDEST_M = 4;
+
+/** Die XZ-Hülle einer Punktliste. */
+function _huelleXZ(punkte) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of punkte ?? []) {
+        const q = _xz(p);
+        if (!Number.isFinite(q?.x) || !Number.isFinite(q?.z)) continue;
+        if (q.x < minX) minX = q.x; if (q.x > maxX) maxX = q.x;
+        if (q.z < minZ) minZ = q.z; if (q.z > maxZ) maxZ = q.z;
+    }
+    return Number.isFinite(minX) ? { minX, maxX, minZ, maxZ } : null;
+}
+
+/** Die grösste Höhe des Rasters in einer XZ-Hülle — für die Tiefenschätzung. */
+function _hoechsteIn(raster, h) {
+    let max = -Infinity;
+    const a = _zellbereich(raster, h);
+    for (let ix = a.ix0; ix <= a.ix1; ix++) {
+        for (let iz = a.iz0; iz <= a.iz1; iz++) {
+            const v = raster.heights[ix * raster.nz + iz];
+            if (Number.isFinite(v) && v > max) max = v;
+        }
+    }
+    return Number.isFinite(max) ? max : null;
+}
+
+/**
+ * Der Wirkbereich EINER Operation, in Weltkoordinaten.
+ * @returns {{minX,maxX,minZ,maxZ}|null}  null = nicht eingrenzbar (alles)
+ */
+export function wirkbereichVon(raster, art, parameter = {}) {
+    const p = parameter ?? {};
+    let huelle = null;
+    let rand = RAND_MINDEST_M;
+
+    if (art === 'gerinne') {
+        huelle = _huelleXZ(p.achse);
+        if (!huelle) return null;
+        const neigung = Math.max(0, Number(p.boeschung) || 0);
+        const breite = Math.max(0, Number(p.sohlbreite) || 0) / 2;
+        const oben = _hoechsteIn(raster, huelle);
+        const sohle = Math.min(Number(p.sohleAnfang), Number(p.sohleEnde));
+        const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
+        rand += breite + tiefe * neigung;
+    } else if (art === 'planum' || art === 'boeschung') {
+        huelle = _huelleXZ(p.umriss);
+        if (!huelle) return null;
+        const neigung = Math.max(0, Number(p.neigung) || 0);
+        const oben = _hoechsteIn(raster, huelle);
+        const ziel = Number(p.hoehe);
+        const spanne = (Number.isFinite(oben) && Number.isFinite(ziel)) ? Math.abs(oben - ziel) : 0;
+        // Ein Planum ohne Böschung endet am Umriss; mit Böschung läuft es aus.
+        rand += (art === 'boeschung' || neigung > 0) ? spanne * neigung : 0;
+    } else if (art === 'baugrube') {
+        const m = p.mitte ? _xz(p.mitte) : null;
+        if (!m || !Number.isFinite(m.x)) return null;
+        const halb = Math.max(
+            Number(p.radius) || 0,
+            (Number(p.laenge) || 0) / 2,
+            (Number(p.breite) || 0) / 2,
+        );
+        // Gedreht: die Diagonale ist die sichere Schranke.
+        const d = halb * Math.SQRT2;
+        huelle = { minX: m.x - d, maxX: m.x + d, minZ: m.z - d, maxZ: m.z + d };
+        const neigung = Math.max(0, Number(p.neigung) || 0);
+        const oben = _hoechsteIn(raster, huelle);
+        const sohle = Number(p.sohle);
+        const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
+        rand += tiefe * neigung;
+    } else {
+        return null;
+    }
+    return {
+        minX: huelle.minX - rand, maxX: huelle.maxX + rand,
+        minZ: huelle.minZ - rand, maxZ: huelle.maxZ + rand,
+    };
+}
+
+/** Indexgrenzen zu einer Weltausdehnung — geklemmt aufs Raster. */
+function _zellbereich(raster, bereich) {
+    const { nx, nz, x0, z0, cell } = raster;
+    if (!bereich) return { ix0: 0, ix1: nx - 1, iz0: 0, iz1: nz - 1 };
+    const klemme = (v, hoch) => Math.max(0, Math.min(hoch, v));
+    return {
+        ix0: klemme(Math.floor((bereich.minX - x0) / cell), nx - 1),
+        ix1: klemme(Math.ceil((bereich.maxX - x0) / cell), nx - 1),
+        iz0: klemme(Math.floor((bereich.minZ - z0) / cell), nz - 1),
+        iz1: klemme(Math.ceil((bereich.maxZ - z0) / cell), nz - 1),
+    };
+}
+
+/**
+ * Hat die Operation den Rand ihres Bereichs erreicht? Dann wurde
+ * abgeschnitten — und das muss gesagt werden, nicht gehofft.
+ */
+function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
+    const nz = nachher.nz;
+    const pruefe = (ix, iz) => {
+        const i = ix * nz + iz;
+        const v = vorher.heights[i], n = nachher.heights[i];
+        return Number.isFinite(v) && Number.isFinite(n) && Math.abs(n - v) > eps;
+    };
+    for (let ix = a.ix0; ix <= a.ix1; ix++) if (pruefe(ix, a.iz0) || pruefe(ix, a.iz1)) return true;
+    for (let iz = a.iz0; iz <= a.iz1; iz++) if (pruefe(a.ix0, iz) || pruefe(a.ix1, iz)) return true;
+    return false;
 }
 
 export const GELAENDE_OPS = Object.freeze({
@@ -342,15 +475,25 @@ export function verschiebeOperationen(operationen, delta) {
     }));
 }
 
-export function formeNach(raster, operationen = []) {
+export function formeNach(raster, operationen = [], { bereich = null, ganzesRaster = false } = {}) {
     const warnungen = [];
     let stand = raster;
     for (const op of operationen) {
         const eintrag = GELAENDE_OPS[op?.art];
         if (!eintrag) { warnungen.push(`unbekannte_operation: ${op?.art ?? '—'}`); continue; }
-        const r = eintrag.wende(stand, op.parameter ?? {});
+        const p = op.parameter ?? {};
+        // Der Wirkbereich wird je Operation GERECHNET, wenn ihn niemand
+        // vorgibt (`ganzesRaster` schaltet ihn ab — für den Zweifelsfall).
+        const b = ganzesRaster ? null : (bereich ?? wirkbereichVon(stand, op.art, p));
+        const vor = stand;
+        const r = eintrag.wende(stand, p, { bereich: b });
         stand = r.raster;
         warnungen.push(...r.warnungen);
+        // ABGESCHNITTEN? Wenn am Rand des Bereichs noch etwas passiert ist,
+        // reichte er nicht — das darf nicht still bleiben.
+        if (b && _randBeruehrt(vor, stand, _zellbereich(vor, b))) {
+            warnungen.push(`wirkbereich_zu_klein: „${eintrag.titel}" wirkt bis an den Rand des gerechneten Bereichs`);
+        }
     }
     return { raster: stand, warnungen };
 }
