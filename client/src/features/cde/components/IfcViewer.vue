@@ -10,18 +10,32 @@
       <!-- ── Window chrome ── -->
       <!-- ── Canvas + overlays ── -->
       <div class="viewer-body">
-        <div class="canvas-root" :class="{ 'measure-cursor': messen.aktiv.value }" ref="canvasRef"></div>
+        <!-- Der Cursor kommt als KLASSE vom einen Besitzer (useZeiger, Teil XVI);
+             die Engine setzt keinen Inline-Style mehr. -->
+        <div class="canvas-root" :class="zeiger.klasse.value" ref="canvasRef"></div>
 
         <!-- Toolbar: Datei laden -->
         <div class="top-bar">
           <div class="top-bar-left">
-            <label class="action-btn primary">
-              <input type="file" accept=".ifc" @change="ablage.onFileUpload" class="sr-only" />
+            <!-- Während einer Ladung sichtbar gesperrt: die Ablage nimmt
+                 nur EINEN Vorgang zugleich, und ein Klick, der nichts tut,
+                 ist schlimmer als ein Knopf, der grau ist (Gesetz 10). -->
+            <label
+              class="action-btn primary"
+              :class="{ laedt: ablage.loading.value }"
+              :title="ablage.loading.value ? 'Es wird gerade ein Modell geladen' : 'IFC-Datei öffnen'"
+            >
+              <input type="file" accept=".ifc" :disabled="ablage.loading.value" @change="ablage.onFileUpload" class="sr-only" />
               <CdeIcon name="documents" :size="13" /> IFC laden
             </label>
 
-            <label v-if="ifc.modelList.length" class="action-btn secondary">
-              <input type="file" accept=".ifc" @change="ablage.onFileUploadAdd" class="sr-only" />
+            <label
+              v-if="ifc.modelList.length"
+              class="action-btn secondary"
+              :class="{ laedt: ablage.loading.value }"
+              :title="ablage.loading.value ? 'Es wird gerade ein Modell geladen' : 'Weiteres IFC dazuladen'"
+            >
+              <input type="file" accept=".ifc" :disabled="ablage.loading.value" @change="ablage.onFileUploadAdd" class="sr-only" />
               <CdeIcon name="add" :size="13" /> Hinzufügen
             </label>
 
@@ -66,6 +80,30 @@
           </div>
         </Transition>
 
+        <!-- Farbkatalog: was der Planer selbst gefärbt hat, bleibt stehen —
+             und die Frage steht hier, statt dass still übermalt wird. -->
+        <Transition name="fade">
+          <div v-if="erdbauEigene.length" class="nachspiel-hinweis">
+            <CdeIcon name="style" :size="14" />
+            <span>
+              {{ erdbauEigene.length }}
+              {{ erdbauEigene.length === 1 ? 'Bauteil bringt' : 'Bauteile bringen' }}
+              eine eigene Farbe mit — nicht eingefärbt.
+            </span>
+            <button class="erdbau-uebermalen" @click="erdbauFarbenUeberschreiben()">
+              Mit Erdbau-Farben überschreiben
+            </button>
+            <button
+              class="ablage-hinweis-zu"
+              @click="erdbauEigene = []"
+              title="Ausblenden"
+              aria-label="Ausblenden"
+            >
+              <CdeIcon name="close" :size="12" />
+            </button>
+          </div>
+        </Transition>
+
         <!-- B4: Zuletzt geöffnete Modelle (lokale Ablage) — nur im Leerzustand -->
         <div v-if="!ifc.modelList.length && !loading && recentModels.length" class="recent-panel">
           <div class="recent-title">Zuletzt geöffnete Modelle</div>
@@ -83,9 +121,14 @@
 
         <!-- B2: Model tags in separate row below top-bar -->
         <div v-if="ifc.modelList.length" class="model-tag-row">
-          <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag">
-            {{ m.name }}
-            <button class="tag-close" @click="removeModel(m.modelId)" title="Entfernen" aria-label="Modell entfernen">
+          <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag" :title="m.name">
+            <!-- Der Name in EIGENEM Element: als anonymes Flex-Kind schrumpfte
+                 er nicht (`min-width: auto`), schob das X aus dem 200-px-Chip
+                 und wurde von `overflow: hidden` mitsamt Knopf abgeschnitten.
+                 Das Entladen sah dadurch aus, als gäbe es keins. -->
+            <span class="model-tag-name">{{ m.name }}</span>
+            <button class="tag-close" @click="removeModel(m.modelId)"
+                    :title="`${m.name} entladen`" aria-label="Modell entladen">
               <CdeIcon name="close" :size="11" />
             </button>
           </span>
@@ -112,15 +155,42 @@
 
         <!-- MILLIMETER-WACHE: nicht wegklickbar, solange ein Modell mit
              Längenfaktor ≠ 1 geladen ist. Laut statt still — die Zahlen der
-             Prüfliste und Mengen stimmen in dieser Einheit nicht. -->
+             Prüfliste und Mengen stimmen in dieser Einheit nicht.
+             Seit 2026-09-03 ist es kein Sackgassen-Hinweis mehr, sondern ein
+             ANGEBOT: der Knopf lädt dasselbe Modell in Metern neu. Die Datei
+             des Planers bleibt unverändert — umgerechnet wird eine Kopie im
+             Speicher. -->
         <div v-if="einheitsWarnung" class="einheit-banner">
           <CdeIcon name="warn" :size="14" />
           <span>
             Dieses Modell ist in
             <strong>{{ einheitsWarnung.praefix === 'MILLI' ? 'Millimetern' : `${einheitsWarnung.name} × ${einheitsWarnung.faktor}` }}</strong>
             geschrieben. Ansehen und Messen in Modelleinheiten gehen; Bearbeitung,
-            Prüfliste und Mengen sind bis zur Einheiten-Umrechnung nicht belastbar.
+            Prüfliste und Mengen sind bis zur Umrechnung nicht belastbar.
           </span>
+          <button v-if="einheitsWarnung.modelId" class="einheit-knopf"
+                  :disabled="ablage.loading.value"
+                  title="Lädt dasselbe Modell in Metern neu. Die abgelegte Datei bleibt unverändert."
+                  @click="rechneInMeter()">
+            <CdeIcon name="refresh" :size="12" /> In Meter umrechnen
+          </button>
+        </div>
+        <!-- Was die Umrechnung getan hat — mit Zahlen, nicht mit „erledigt". -->
+        <div v-if="einheitsMeldung" class="einheit-banner" :class="{ ok: einheitsMeldung.ok }">
+          <CdeIcon :name="einheitsMeldung.ok ? 'check' : 'warn'" :size="14" />
+          <span>{{ einheitsMeldung.text }}</span>
+        </div>
+        <!-- DIE LESART (2026-09-07): dieses Modell wird nach deiner Festlegung
+             in Metern gelesen — sichtbar und rücknehmbar, sonst wäre die
+             gespeicherte Entscheidung eine stille. -->
+        <div v-else-if="meterLesart" class="einheit-banner ok einheit-lesart">
+          <CdeIcon name="check" :size="14" />
+          <span>In Metern gelesen — deine Festlegung{{ meterLesart.weg === 'ablage' ? ', aus der Ablage' : '' }}.</span>
+          <button class="einheit-knopf" :disabled="ablage.loading.value"
+                  title="Festlegung zurücknehmen und das Modell wieder in Modelleinheiten laden"
+                  @click="lesartZuruecknehmen()">
+            <CdeIcon name="undo" :size="12" /> Zurücknehmen
+          </button>
         </div>
 
         <!-- Das Ansicht-Popover (X2) — neben dem Anker, schliesst nach
@@ -273,12 +343,14 @@
           :projectToScreen="(p) => engine?.projectToScreen(p)"
           :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
           :getCanvas="() => canvasRef"
+          :zeigerMarke="zeigerMarke"
           @delete-measurement="messen.entferne"
           @zoom="onZoomSelected"
           @hide="onHideSelected"
           @isolate="onIsolateSelected"
           @properties="emit('open-properties')"
           @new-issue="issueAmBauteil"
+          @waehle-verbund="waehleVerbund"
         />
 
         <!-- Show-all button — visible whenever any category is currently hidden -->
@@ -286,7 +358,7 @@
           <button
             v-if="anyHidden"
             class="show-all-btn"
-            :class="{ hochgerueckt: messen.aktiv.value || annotationActive }"
+            :class="{ hochgerueckt: messen.aktiv.value || annotationActive || !!bearbeitung.scharf }"
             title="Alle wieder einblenden"
             @click="onShowAll"
           >
@@ -294,25 +366,25 @@
           </button>
         </Transition>
 
-        <!-- T3: Die Modus-Leiste STEHT, solange ein Tipp-Modus an ist — sie
-             sagt, was der nächste Tipp tut, und trägt den sichtbaren Ausgang
-             (Muster: Statuszeile flood-3D, Fertig-Knopf des Pre-Editors).
-             Auf dem Tablet gibt es weder Hover noch Esc — ohne die Leiste
-             sah ein Modus nach 3,5 s Toast tot aus. -->
+        <!-- Die KONTEXTLEISTE (Teil XVI, S2) ersetzt die Modus-Leiste aus T3:
+             Tipp-Werkzeuge zeigen ihren Hinweis und den sichtbaren Ausgang
+             (Fertig), eine scharfe Bearbeitung ihr Formular, die Chips der
+             Vorschau und Übernehmen/Abbrechen — unten in der Mitte, EIN Ort für „was tue ich
+             gerade". Auf dem Tablet gibt es weder Hover noch Esc. -->
         <Transition name="fade">
-          <div v-if="messen.aktiv.value || annotationActive" class="modus-leiste">
-            <CdeIcon :name="messen.aktiv.value ? 'measure' : 'issues'" :size="14" />
-            <span>{{ messen.aktiv.value
-              ? (messen.hinweis.value ?? 'Ersten Punkt antippen')
-              : 'Ort für die Notiz antippen' }}</span>
-            <button
-              class="modus-fertig"
-              :title="messen.aktiv.value ? 'Messen beenden [M]' : 'Notiz-Modus beenden'"
-              @click="messen.aktiv.value ? messen.beenden() : annotationen.umschalten()"
-            >
-              <CdeIcon name="check" :size="12" /> Fertig
-            </button>
-          </div>
+          <CdeKontextleiste
+            v-if="messen.aktiv.value || annotationActive || bearbeitung.scharf || rueckmeldung"
+            :tipp="tippWerkzeug"
+            :chips="vorschau.stand.value?.chips ?? []"
+            :rueckmeldung="rueckmeldung"
+            :motor="eingabe"
+            @fertig="messen.aktiv.value ? messen.beenden() : annotationen.umschalten()"
+            @uebernehmen="uebernehmen"
+            @geste="(feld) => eingabe.starteGeste(feld)"
+            @geste-ab="eingabe.brichGesteAb()"
+            @nochmal="nochmalStarten"
+            @rueckmeldung-zu="rueckmeldung = null"
+          />
         </Transition>
         <!-- Flüchtige Rückmeldung (Messwert, Fehlgriff) — über der Leiste. -->
         <Transition name="fade">
@@ -419,13 +491,27 @@ import { useModellAblage, fmtBytes, fmtDate } from '../composables/useModellAbla
 import { useSchnitt } from '../composables/useSchnitt.js';
 import { useMessen } from '../composables/useMessen.js';
 import { useAnnotationen } from '../composables/useAnnotationen.js';
+import { useZeiger } from '../composables/useZeiger.js';
+import { useVorschau } from '../composables/useVorschau.js';
+import { useEingabe } from '../composables/useEingabe.js';
+import { useGriffe } from '../composables/useGriffe.js';
+import { modellHerkunft } from '../services/IfcAutor.js';
+import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
 import { entwertetGeometrie } from '../services/bauform/FormSchreiber.js';
 import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
+import { quellenVon } from '../services/ableitung/Bezuege.js';
+import { GELAENDE_VORBELEGUNG, kandidatKategorien } from '../services/GelaendeQuelle.js';
+import { deklarierteBauform } from '../services/bauform/Bauformen.js';
+import { bauformAusRegel } from '../services/bauform/Bauformregeln.js';
+import { profilFuer } from '../services/bauform/Typprofile.js';
+import { pruefmassVon, zellweiteVorschlag } from '../services/geometrie/ops/Raster.js';
+import { grundrissAusMesh } from '../services/geometrie/ops/Umriss.js';
 import { useAenderungen, AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
 import { BEARBEITUNGEN, GRUPPEN } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
+import { ladeVorlagen } from '../services/Bibliothek.js';
 
 const emit = defineEmits(['close', 'open-properties', 'model-loaded']);
 const ifc  = useIfcStore();
@@ -463,7 +549,11 @@ const bezuege = shallowRef({});
  * Längenfaktor ≠ 1 wird ANGEZEIGT, aber Bearbeitung, Prüfliste und Mengen
  * stehen unter sichtbarem Vorbehalt — laut statt still.
  */
-const einheitsWarnung = shallowRef(null);   // { name, praefix, faktor } | null
+const einheitsWarnung = shallowRef(null);   // { name, praefix, faktor, modelId } | null
+/** Ergebnis der letzten Umrechnung — verschwindet beim nächsten Modellwechsel. */
+const einheitsMeldung = shallowRef(null);
+/** Gilt für das erste Modell die Lesart „in Metern"? {modelId, sha, weg} | null */
+const meterLesart = shallowRef(null);
 
 /**
  * Den Projektbezug aller geladenen Modelle neu bestimmen.
@@ -481,15 +571,65 @@ function _bezuegeNeuBestimmen() {
   }
   bezuege.value = out;
 
-  // Millimeter-Wache: der erste Faktor ≠ 1 gewinnt die Warnung.
+  // Die LESART-Zeile: das erste Modell, das nach Festlegung in Metern gelesen
+  // wird. Der Bericht sagt, ob gerechnet (worker/inline) oder aus der Ablage
+  // gelesen wurde.
+  meterLesart.value = null;
+  for (const m of engine.value?.getModelList?.() ?? []) {
+    const b = engine.value?.einheitsUmrechnung?.(m.modelId);
+    if (b?.ok) { meterLesart.value = { modelId: m.modelId, weg: b.weg ?? null }; break; }
+  }
+
+  // Millimeter-Wache: der erste Faktor ≠ 1 gewinnt die Warnung. Die modelId
+  // muss MIT — ohne sie wüsste der Umrechnen-Knopf nicht, welches Modell er
+  // neu laden soll.
   einheitsWarnung.value = null;
-  for (const g of Object.values(geo)) {
+  for (const [modelId, g] of Object.entries(geo)) {
     const e = g?.einheit;
     if (e && Number.isFinite(e.faktor) && Math.abs(e.faktor - 1) > 1e-9) {
-      einheitsWarnung.value = { name: e.name, praefix: e.praefix, faktor: e.faktor };
+      einheitsWarnung.value = { name: e.name, praefix: e.praefix, faktor: e.faktor, modelId };
       break;
     }
   }
+}
+
+/**
+ * Das Modell in Metern neu laden.
+ *
+ * Meldet MIT ZAHLEN, was geschehen ist: „umgerechnet" allein wäre wieder nur
+ * eine Behauptung, und bei einer Einheitenumrechnung ist genau die Frage
+ * „hat es wirklich alles erwischt?" die einzige, die zählt. Die Gegenprobe
+ * steckt im Dienst; hier wird sie sichtbar gemacht.
+ */
+async function rechneInMeter() {
+  const modelId = einheitsWarnung.value?.modelId;
+  if (!modelId) return;
+  einheitsMeldung.value = null;
+  const r = await ablage.ladeInMeterNeu(modelId);
+  if (!r?.ok) {
+    einheitsMeldung.value = { ok: false, text: `Nicht umgerechnet: ${r?.grund ?? 'unbekannter Grund'}` };
+    return;
+  }
+  // Nach dem Neuladen trägt die neue modelId den Bericht.
+  const neueId = engine.value?.getModelList?.()?.slice(-1)?.[0]?.modelId
+    ?? ifc.modelList?.[ifc.modelList.length - 1]?.modelId ?? null;
+  const b = neueId ? engine.value?.einheitsUmrechnung?.(neueId) : null;
+  einheitsMeldung.value = b?.ok
+    ? { ok: true, text: `In Meter umgerechnet: ${b.masse?.toLocaleString('de-DE') ?? '?'} Längenwerte in `
+        + `${b.zeilen?.toLocaleString('de-DE') ?? '?'} Zeilen, Hülle geprüft `
+        + `(${(b.vorher?.[0] ?? 0).toFixed(0)} → ${(b.nachher?.[0] ?? 0).toFixed(2)} m)`
+        + `${b.weg === 'inline' ? ' — im Hauptthread gerechnet, der Worker war nicht verfügbar' : ''}.` }
+    : { ok: false, text: `Nicht umgerechnet: ${b?.grund ?? 'kein Bericht'}` };
+}
+
+/** Die Lesart zurücknehmen — das Modell kommt in Modelleinheiten zurück, samt Banner. */
+async function lesartZuruecknehmen() {
+  const modelId = meterLesart.value?.modelId;
+  const sha = modelId ? ablage.identitaet(modelId)?.sha256 : null;
+  if (!sha) return;
+  einheitsMeldung.value = null;
+  const r = await ablage.lesartZuruecknehmen(sha);
+  if (!r?.ok) einheitsMeldung.value = { ok: false, text: `Nicht zurückgenommen: ${r?.grund ?? 'unbekannter Grund'}` };
 }
 
 /** Der Zeigerpunkt in Landeskoordinaten — oder null, wenn es keinen Bezug gibt. */
@@ -527,9 +667,9 @@ const showShortcuts = ref(false);
 
 // T1.3: Measurement
 // ── Messen (Sprint I, Stufe 5) ──────────────────────────────────────────────
-// `selection` wird als GETTER hereingereicht: der SelectionHandler entsteht
-// erst in onMounted, ein Wert wäre zur Aufrufzeit noch null.
-const messen = useMessen({ engine, ifc, selection: () => _selection, slot: { belege: bearbeitung.belegeWerkzeug, frei: bearbeitung.gebeWerkzeugFrei } });
+// Den Auswahl-Modus leitet der Viewer aus ALLEN Werkzeug-Zuständen ab
+// (`auswahlModusNachziehen`) — Messen setzt ihn nicht mehr selbst.
+const messen = useMessen({ engine, ifc, slot: { belege: bearbeitung.belegeWerkzeug, frei: bearbeitung.gebeWerkzeugFrei } });
 
 // ── Issue-Pins (Sprint I, Stufe 5) ──────────────────────────────────────────
 // `annotationActive` bleibt als Ref HIER: die CdeView liest ihn über
@@ -602,11 +742,207 @@ const nachspielen = useNachspielen({ engine, aenderungen });
 const annotationen = useAnnotationen({
   slot: { belege: bearbeitung.belegeWerkzeug, frei: bearbeitung.gebeWerkzeugFrei },
   engine, ifc, cde,
-  selection: () => _selection,
-  messen,
   viewpoint: () => erfasseViewpoint(),
   aktiv: annotationActive,
 });
+
+// ── Der Zeiger (Teil XVI, S1): Cursor-Klasse, Zielmarke, Pille — ein Besitzer ──
+const zeiger = useZeiger({ engine, bearbeitung, messenAktiv: messen.aktiv, notizAktiv: annotationActive });
+
+/** Koordinatentext eines Weltpunkts — Landeskoordinaten, wenn es einen Bezug gibt. */
+function koordText(punkt, modelId) {
+  if (!punkt) return '';
+  const alle = Object.values(bezuege.value);
+  const b = (modelId && bezuege.value[modelId]) || alle[0];
+  if (b && (b.geometrieIstVerortet || b.mapAngewandt)) {
+    const p = b.nachProjekt(punkt);
+    return `E ${p.ost.toFixed(2)} · N ${p.nord.toFixed(2)} · H ${p.hoehe.toFixed(2)}`;
+  }
+  return `X ${punkt.x.toFixed(2)} · Y ${punkt.y.toFixed(2)} · Z ${punkt.z.toFixed(2)}`;
+}
+
+/** Die Pille am Zeiger fürs HUD — beim Griff-Zug dessen Δ, sonst der Ort unter dem Zeiger. */
+const zeigerMarke = computed(() => {
+  const g = griffe.pille.value;
+  if (g) return { x: g.x, y: g.y, fang: null, text: g.text };
+  const m = zeiger.marke.value;
+  if (!m) return null;
+  return { x: m.x, y: m.y, fang: m.fang, text: koordText(m.punkt, m.modelId) };
+});
+
+/**
+ * DER AUSWAHL-MODUS, abgeleitet aus allen Werkzeug-Zuständen — eine Stelle.
+ *   Messen/Notiz laufen → 'werkzeug' (Tipp geht an sie, kein Pick)
+ *   Bearbeitung scharf  → 'gesperrt' (ein Klick wechselt das Subjekt nicht;
+ *                          Ecken/Kantenfang beim Schweben)
+ *   sonst               → 'single'
+ */
+function auswahlModusNachziehen() {
+  if (!_selection) return;
+  if (messen.aktiv.value || annotationActive.value) _selection.setMode('werkzeug');
+  else if (bearbeitung.scharfId) _selection.setMode('gesperrt', { fang: true });
+  else _selection.setMode('single');
+}
+watch(() => [messen.aktiv.value, annotationActive.value, bearbeitung.scharfId], auswahlModusNachziehen);
+
+// ── Die Vorschau am Objekt (Teil XVI, S2) ───────────────────────────────────
+// Sie beobachtet den Store und zeichnet über die Engine; der Viewer reicht
+// nur Höhe und Versatz herein.
+const vorschau = useVorschau({
+  engine, bearbeitung,
+  getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
+  getHoehenversatz: () => bearbeitung.bauteil?.hoehenversatz ?? _hoehenversatzAusBezug(),
+});
+function _hoehenversatzAusBezug() {
+  const b = Object.values(bezuege.value)[0] ?? null;
+  return b ? b.nachProjekt({ x: 0, y: 0, z: 0 }).hoehe : 0;
+}
+
+// ── Der Eingabe-Motor im RAUM (Teil XVI, S3) ────────────────────────────────
+// Dieselbe Maschine wie im Lageplan (`useZeichnen` ist ihre Hülle), derselbe
+// Zug im Store: Punkt 1 im Plan, Punkt 2 im Raum, ein Bauteil. Hier kommt
+// der Weltpunkt aus dem Raycast auf das Subjekt statt aus der Blattlage.
+let _letztesWerkzeugId = null;
+watch(() => bearbeitung.scharfId, (id) => { if (id) _letztesWerkzeugId = id; });
+const eingabe = useEingabe({
+  bearbeitung, cde,
+  getModellSha: () => ablage.geladeneModellSha?.() ?? null,
+  nachBauen: async (eintraege) => {
+    const r = await wendeEintragAn(eintraege);
+    _melderueck(r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Festlegung geführt.' : 'Eingetragen.', _letztesWerkzeugId);
+    return r;
+  },
+  getHoehenversatz: () => _hoehenversatzAusBezug(),
+  getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
+  bereiteHoehenVor: () => engine.value?.gelaendeSampler?.() ?? Promise.resolve(null),
+});
+
+/**
+ * Ein Tipp im Raum, solange der Motor läuft: der Treffer auf dem Subjekt wird
+ * zum Zug-Punkt oder füllt ein Feld per Geste. Gefangen wird über die
+ * Bibliothek (Ecken/Kanten); den Fang auf Schächte macht der Motor selbst.
+ * @returns {Promise<boolean>} verbraucht?
+ */
+async function tippFuerMotor(tipp) {
+  if (!eingabe.aktiv.value && !eingabe.geste.value) return false;
+  const t = await engine.value?.probeTreffer?.(tipp.x, tipp.y, { fang: true });
+  let globalId = null;
+  if (t && eingabe.geste.value?.art === 'auswahl') {
+    globalId = (await engine.value?.elementDatenVon?.(t.modelId, t.localId))?.globalId ?? null;
+  }
+  const verbraucht = eingabe.aufTreffer(t ? { ...t, point: t.fang?.punkt ?? t.point, globalId } : null);
+  if (eingabe.grund.value) melde(eingabe.grund.value);
+  return verbraucht;
+}
+
+/** Das Subjekt eines gelieferten Schachts, ohne die Auswahl zu ändern (G1) — für Plan- UND Raum-Griff. */
+async function schachtSubjekt(globalId) {
+  const ort = engine.value?.schachtOrt?.(globalId);
+  if (!ort) return null;
+  const h = (await engine.value?.huellenVon?.(ort.modelId, [ort.localId]))?.get(ort.localId);
+  const bezug = bezuege.value[ort.modelId] ?? Object.values(bezuege.value)[0] ?? null;
+  const versatz = engine.value?.getCoordOffsetForModel?.(ort.modelId) ?? null;
+  if (!h?.anker || !bezug || !versatz) return null;
+  // Auch hier den LIEFERSTAND einfrieren (Teil XVII): der Plan-Griff zieht
+  // Schächte, die nie angeklickt wurden — ohne den Anker hätte der Eintrag
+  // keine `basis` und das Fachmodell kein Δ. Der erste Wert gewinnt.
+  nachspielen.merkeLieferstand?.(globalId, { x: h.anker.x, y: h.anker.y, z: h.anker.z });
+  return {
+    globalId, modelId: ort.modelId, localId: ort.localId,
+    anker: h.anker,
+    lage: bezug.nachProjekt(h.anker),
+    versatz: { x: versatz.x, y: versatz.y, z: versatz.z },
+    lageUmkehrbar: !bezug.mapAngewandt,
+    anschluesse: engine.value?.anschluesseVon?.(ort.modelId, ort.localId) ?? [],
+  };
+}
+
+// ── Griffe im Raum (Teil XVI, S4) ───────────────────────────────────────────
+// Werkzeug-gebunden: jeder Griff bedient einen Katalogeintrag und legt über
+// DENSELBEN Weg ab wie der Lageplan-Griff. Die Fachlogik (welcher Griff wo,
+// welche Ebene, welcher Wert) liegt in `Griffe.js` — einmal für Plan und Raum.
+const griffe = useGriffe({
+  engine, bearbeitung, aenderungen,
+  getSubjekt: () => bearbeitung.bauteil,
+  getTypprofil: () => bearbeitung.typprofil,
+  getBauform: () => bearbeitung.einordnung?.bauform ?? null,
+  getVersatz: (modelId) => engine.value?.getCoordOffsetForModel?.(modelId) ?? null,
+  getHoehenversatz: () => _hoehenversatzAusBezug(),
+  getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
+  holeSchachtSubjekt: (gid) => schachtSubjekt(gid),
+  holeSchachtAnschluesse: (gid) => engine.value?.schachtAnschluesse?.(gid) ?? [],
+  lieferstandVon: (gid) => nachspielen.lieferstandVon(gid),
+  nachBauen: (eintraege) => wendeEintragAn(eintraege),
+  getModellSha: () => ablage.geladeneModellSha?.() ?? null,
+  getWer: () => cde.bearbeiter || '',
+  melde,
+});
+// Nach jeder Anwendung und jedem Neuaufbau stehen die Griffe neu (Journalstand, Geometrie).
+watch(() => ifc.geometrieStand, () => griffe.neuBauen());
+
+/** Übernehmen aus der Kontextleiste: der Motor, wenn ein Zug läuft — sonst das Formular. */
+function uebernehmen() {
+  if (eingabe.aktiv.value && eingabe.zug.value) eingabe.enter();
+  else uebernehmeScharf();
+}
+
+/** Was der nächste Tipp tut — für die Kontextleiste, wenn ein Tipp-Werkzeug läuft. */
+const tippWerkzeug = computed(() => {
+  if (messen.aktiv.value) return { icon: 'measure', hinweis: messen.hinweis.value ?? 'Ersten Punkt antippen', titel: 'Messen beenden [M]' };
+  if (annotationActive.value) return { icon: 'issues', hinweis: 'Ort für die Notiz antippen', titel: 'Notiz-Modus beenden' };
+  return null;
+});
+
+/** Nach dem Übernehmen: was passiert ist, und „Nochmal" — verschwindet mit dem nächsten Werkzeug. */
+const rueckmeldung = ref(null);
+let _rueckmeldungTimer = null;
+/** Gelieferte Bauteile mit EIGENER Farbe, die der Katalog nicht übermalt hat. */
+const erdbauEigene = ref([]);
+
+watch(() => bearbeitung.scharfId, (id) => { if (id) rueckmeldung.value = null; });
+function _melderueck(text, werkzeugId) {
+  rueckmeldung.value = { text, werkzeugId };
+  if (_rueckmeldungTimer) clearTimeout(_rueckmeldungTimer);
+  _rueckmeldungTimer = setTimeout(() => { if (rueckmeldung.value?.text === text) rueckmeldung.value = null; }, 8000);
+}
+function nochmalStarten(id) {
+  rueckmeldung.value = null;
+  bearbeitung.starte(id);
+}
+
+/**
+ * „Übernehmen" in der Kontextleiste — DERSELBE Weg wie Toolbox und HUD: eintragen,
+ * anwenden, neu einordnen. Fehler laut (Gesetz 10).
+ */
+async function uebernehmeScharf() {
+  const b = bearbeitung.scharf;
+  if (!b) return;
+  const el = bearbeitung.bauteil;
+  try {
+    const eintrag = await bearbeitung.ausfuehren({
+      wer: cde.bearbeiter || '',
+      modellSha: ablage.geladeneModellSha?.() ?? null,
+      basis: el?.globalId ? nachspielen.lieferstandVon(el.globalId) : undefined,
+      modell: el ? modellHerkunft(el.modelId) : undefined,
+    });
+    if (!eintrag) { melde(bearbeitung.letzterGrund || 'Nichts eingetragen.'); return; }
+    const r = await wendeEintragAn(eintrag);
+    _melderueck(!r ? 'Eingetragen.'
+      : r.auslegung ? 'Ausgelegt — so liest die CDE dieses Bauteil ab jetzt.'
+      : r.angewandt ? 'Übernommen.'
+      : r.nurFestlegung ? 'Als Festlegung geführt — die Geometrie bleibt beim Planer.'
+      : `Eingetragen, aber nicht angewandt: ${r.grund ?? 'unbekannt'}`, b.id);
+  } catch (fehler) {
+    console.error('cde: uebernehmen (Leiste)', fehler);
+    melde(`Fehler: ${fehler?.message ?? fehler}`);
+  }
+}
+
+/** Kurzmeldung des Modus-Knopfs — 4 s, dann weg (Gesetz 10: nie stumm). */
+function melde(text) {
+  modusMeldung.value = text;
+  setTimeout(() => { if (modusMeldung.value === text) modusMeldung.value = ''; }, 4000);
+}
 
 // Multi-model list
 
@@ -631,10 +967,7 @@ const COORD_MODI = Object.freeze({
 const COORD_REIHE = ['projekt', 'viewer', 'ifc'];
 const coordMode = ref('projekt');
 
-let _mouseDownAt = null;
-let _hoverTimer  = null;
-let _lastMouse   = null;
-let _selection   = null;  // IfcSelectionHandler — übernimmt Click/Hover/Marquee
+let _selection   = null;  // IfcSelectionHandler — der EINE Zeiger-Stapel (Tipp/Schweben/Rahmen)
 
 // ── Modelle laden und ablegen (Sprint I, Stufe 5) ───────────────────────────
 // Dateiladen, IndexedDB-Ablage und „zuletzt geöffnet" lagen hier zwischen
@@ -733,6 +1066,9 @@ const toolbarItems = computed(() => [
  * sonst verschöbe es um den absoluten Wert statt um die Differenz — und ein
  * Rohr auf Sohlhöhe 12,40 landete auf 12,40 ÜBER seiner jetzigen Lage.
  */
+/** Abstand Auswahlpunkt → Anker des zuletzt angeklickten Bauteils (Welt). */
+let _auswahlAbstand = null;
+
 async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
   let angereichert = result;
   try {
@@ -746,7 +1082,25 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       const bezug = bezuege.value[result.modelId] ?? Object.values(bezuege.value)[0] ?? null;
       const versatz = bezug ? bezug.nachProjekt({ x: 0, y: 0, z: 0 }).hoehe : 0;
       angereichert = { ...result, anker: h.anker, bezugshoehe: h.unterkante,
-                       oberkante: h.oberkante, hoehenversatz: versatz };
+                       oberkante: h.oberkante, box: h.box ?? null, hoehenversatz: versatz };
+      // DEN LIEFERSTAND EINFRIEREN, bevor irgendwer verschiebt (Teil XVII,
+      // Headless-Befund 2026-09-08): das Nachspielen friert beim Laden nur
+      // die Anker ein, die das Journal NENNT. Ein Bauteil, das zum ersten
+      // Mal angefasst wird, hatte keinen — der Eintrag bekam keine `basis`
+      // (Drei-Wege-Vergleich aus), und `entwerteNach` fand kein Δ: das
+      // Fachmodell sah das verschobene Rohr weiter am Lieferort. Hier ist
+      // der Anker noch der gelieferte (kein Eintrag, kein Delta); ein zweiter
+      // Aufruf nach einer Verschiebung überschreibt nichts (`merkeLieferstand`).
+      if (result.globalId && modellHerkunft(result.modelId) === 'geliefert') {
+        nachspielen.merkeLieferstand?.(result.globalId, { x: h.anker.x, y: h.anker.y, z: h.anker.z });
+      }
+      // DER AUSWAHLPUNKT (S5): wo der Klick das Bauteil traf — dort sitzt der
+      // Bauteil-Griff. Kommt die Einordnung ohne Treffer (frisch nach dem
+      // Anwenden), bleibt der Griff am gemerkten Abstand zum Anker.
+      const pkt = result.point && [result.point.x, result.point.y, result.point.z].every(Number.isFinite) ? result.point : null;
+      if (pkt) _auswahlAbstand = { x: pkt.x - h.anker.x, y: pkt.y - h.anker.y, z: pkt.z - h.anker.z };
+      const ab = _auswahlAbstand ?? { x: 0, y: 0, z: 0 };
+      angereichert.auswahlpunkt = pkt ?? { x: h.anker.x + ab.x, y: h.anker.y + ab.y, z: h.anker.z + ab.z };
     }
     // DIE ACHSE, falls es eine gibt. Sie kennt Anfang und Ende GETRENNT —
     // die Hülle kann das nicht, sie ist eine Bounding-Box und weiss nicht,
@@ -773,7 +1127,10 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       // Kein Lauf, also womöglich ein KNOTEN. Die Anschlüsse gehören ans
       // Bauteil, damit der Katalog rein bleiben kann — dieselbe Regel wie beim
       // Strang.
-      const anschluesse = engine.value?.anschluesseVon?.(result.modelId, result.localId) ?? [];
+      // Über die GLOBALID (B2): ein selbst gesetzter Schacht wohnt im Netz
+      // unter `cde:<gid>` — über den Ort fand ihn niemand, er hatte nie den
+      // Mitführen-Regler.
+      const anschluesse = engine.value?.anschluesseFuer?.(result.globalId) ?? [];
       if (anschluesse.length) angereichert = { ...angereichert, anschluesse };
     }
 
@@ -784,6 +1141,82 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     // Ladeversatzes — SOLANGE keine MapConversion gilt. Gälte eine, käme eine
     // Drehung dazu, und die Umkehrung wäre nicht mehr diese Formel. Deshalb
     // steht das Kennzeichen dabei, statt still falsch zu rechnen.
+    // DAS PRÜFMASS EINES GELÄNDES (Teil XIV): wer es formt, schreibt die
+    // Momentaufnahme der Quelle (Dreieckszahl, Ausdehnung) und eine Zellweite
+    // in den Bauplan — `anwenden` ist synchron und darf nicht rechnen, also
+    // liegt beides schon am Subjekt. Nur für Gelände: ein Rohr braucht das nicht.
+    // … und seit G6/G7 für JEDES Bauteil: Kanalgraben (Rohr) und Aussparung
+    // (Bauwerk) tragen das Prüfmass ihrer Quelle, damit ein vom Planer
+    // geändertes Bauteil beim Laden auffällt. Der Resolver cached je Element.
+    // DIE GELÄNDE-KANDIDATEN (G6, erweitert in Teil XIX): welches Gelände eine
+    // Ableitung als Quelle nehmen kann — mit Prüfmass und Zellweite, damit
+    // `anwenden` synchron bleibt. Bis Teil XIX hingen sie nur an Bauteilen MIT
+    // Achse (Kanalgraben); die Bauwerksgrube braucht sie am Fundament, am
+    // Schacht, an jedem Körper. Eigene DGM-Teile heissen im Journal, nicht in
+    // der Engine.
+    if (!angereichert.gelaendeQuellen) {
+      const kandidaten = await engine.value?.gelaendeKandidaten?.() ?? [];
+      if (kandidaten.length) {
+        const erzeugt = aenderungen.wirksamerStand('erzeugt');
+        angereichert = {
+          ...angereichert,
+          gelaendeQuellen: kandidaten
+            .filter(k => k.globalId !== result.globalId)          // nie sich selbst ausheben
+            .map(k => ({ ...k, name: k.name || erzeugt.get(k.globalId)?.name || '' })),
+        };
+      }
+    }
+
+    const kategorie = String(result.category ?? result.type ?? '').toUpperCase();
+    // DIE EIGENEN KÖRPER als Werkzeug einer Aussparung (G7) — aus dem Journal
+    // benannt, nie aus der Engine geraten.
+    const koerperKandidaten = engine.value?.koerperKandidaten?.() ?? [];
+    if (koerperKandidaten.length) angereichert = { ...angereichert, koerperQuellen: koerperKandidaten };
+    // DIE EIGENEN FLÄCHEN als Partner einer Vereinigung (S9) — aus dem
+    // Journal, mit ihren Punkten: `anwenden` ist synchron und rechnet die
+    // Vereinigung aus zwei Ringen, ohne die Engine zu fragen. Verdecktes
+    // (verborgene eigene Quellen) zählt nicht.
+    // EIGEN heisst: das Journal führt einen Bauplan zu dieser GlobalId — nicht
+    // der Modellname (der Headless-Lauf fand das Subjekt eines eigenen Bauteils
+    // unter einem anderen modelId-Wert, und die Listen blieben leer).
+    const erzeugtStand = aenderungen.wirksamerStand('erzeugt');
+    if (result.globalId && erzeugtStand.get(result.globalId)) {
+      const verdeckt = verdeckteAus(aenderungen.wirksamerStand('geloescht'));
+      const eigeneFlaechen = [...erzeugtStand]
+        .filter(([gid, plan]) => plan?.rezept === 'flaeche' && !verdeckt.has(gid) && Array.isArray(plan?.parameter?.punkte))
+        .map(([gid, plan]) => ({ globalId: gid, name: plan.name || '', punkte: plan.parameter.punkte }));
+      if (eigeneFlaechen.length) angereichert = { ...angereichert, eigeneFlaechen };
+      // DIE BIBLIOTHEK (9.8) für „Tauschen": Vorlagen sind Daten je Rezept —
+      // Projekt schlägt Büro schlägt eingebaut, dieselbe Liste wie im Zeichnen-Popover.
+      try {
+        const vorlagen = await ladeVorlagen(repo);
+        if (vorlagen.length) angereichert = { ...angereichert, vorlagen };
+      } catch (fehler) { console.warn('cde: vorlagen fürs Tauschen', fehler?.message ?? fehler); }
+    }
+    // Der Vorfilter fürs Prüfmass — dieselbe Kandidatenmenge wie beim Sampler,
+    // damit ein per Auslegung zum Gelände erklärter Proxy sein Prüfmass auch
+    // bekommt. Grosszügig sein kostet hier nur einen Resolver-Treffer.
+    // … und sobald eine GELÄNDE-ABLEITUNG möglich ist (Teil XIX): die
+    // Bauwerksgrube braucht Grundriss und Prüfmass ihres Bauteils, und das
+    // ist im Zweifel ein Schacht ohne Achse und ohne eigene Körper — der
+    // fiel durch alle vier Bedingungen (Headless 2026-09-09).
+    if (gelaendeKandidatKategorien().includes(kategorie) || engine.value?.istCdeGelaende?.(result.globalId)
+        || angereichert.achse || koerperKandidaten.length || angereichert.gelaendeQuellen?.length) {
+      const res = await engine.value?.makeGeometryResolver?.()
+        ?.forElements([{ modelId: result.modelId, localId: result.localId }])?.getForm('mesh');
+      const d = res?.data;
+      if (d?.positions?.length) {
+        const pruefmass = pruefmassVon({ positions: d.positions, triCount: d.triCount });
+        angereichert = { ...angereichert, quellmass: { pruefmass, cell: zellweiteVorschlag(pruefmass) } };
+        // DER GRUNDRISS (Teil XIX) — aus DEMSELBEN Netz, kein zweiter
+        // Resolver-Treffer. Die Bauwerksgrube braucht ihn für die Vorschau;
+        // gerechnet wird die Grube später aus der Quelle, nicht hieraus.
+        const schritt = d.triCount > 20000 ? Math.ceil(d.triCount / 20000) : 1;
+        const gr = grundrissAusMesh({ mesh: { positions: d.positions, triCount: d.triCount } }, { schritt });
+        if (gr.ergebnis) angereichert = { ...angereichert, grundriss: gr.ergebnis };
+      }
+    }
+
     const bezugFuerLage = bezuege.value[result.modelId] ?? Object.values(bezuege.value)[0] ?? null;
     const versatz = engine.value?.getCoordOffsetForModel?.(result.modelId) ?? null;
     if (bezugFuerLage && versatz && angereichert.anker) {
@@ -798,6 +1231,17 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     // Ohne Hülle wird eingeordnet wie bisher; die lagebezogenen Bearbeitungen
     // melden dann selbst, dass ihnen der Bezug fehlt.
     console.warn('cde: huelle lesen', fehler?.message ?? fehler);
+  }
+  // DIE BEZIEHUNGEN des Bauteils (Teil XVII): Anschlüsse, Überdeckung,
+  // Enthalten, Kreuzung, Nähe, Ableitung — aus dem EINEN Index, ans Subjekt
+  // gehängt, damit HUD und Katalog nicht selbst suchen. Ein Fehler hier hält
+  // die Einordnung nicht auf.
+  try {
+    const gid = angereichert.globalId ?? result.globalId ?? null;
+    const idx = gid ? await engine.value?.beziehungen?.() : null;
+    if (idx && gid) angereichert = { ...angereichert, beziehungen: idx.von(gid) };
+  } catch (fehler) {
+    console.warn('cde: beziehungen', fehler?.message ?? fehler);
   }
   return bearbeitung.einordne(angereichert, engine.value?.makeGeometryResolver?.(), { weitere });
 }
@@ -818,7 +1262,7 @@ function bearbeitenSperrgrund() {
   if (einheitsWarnung.value) {
     const e = einheitsWarnung.value;
     return `Modell in ${e.praefix === 'MILLI' ? 'Millimetern' : `${e.name} × ${e.faktor}`} — `
-      + 'Bearbeitung gesperrt, bis die Einheiten-Umrechnung gebaut ist.';
+      + 'Bearbeitung gesperrt. Oben „In Meter umrechnen" löst das.';
   }
   const sha = ablage.geladeneModellSha?.() ?? null;
   const dok = sha ? cde.dokumente.find(d => d.sha256 === sha) : null;
@@ -832,11 +1276,7 @@ function bearbeitenSperrgrund() {
 function bearbeitenUmschalten() {
   if (!bearbeitung.modusAn) {
     const grund = bearbeitenSperrgrund();
-    if (grund) {
-      modusMeldung.value = grund;
-      setTimeout(() => { if (modusMeldung.value === grund) modusMeldung.value = ''; }, 4000);
-      return false;
-    }
+    if (grund) { melde(grund); return false; }
     // E an = SITZUNG beginnen (U2). Liegt ein Entwurf vom letzten Mal, wird
     // er fortgesetzt — die Leiste zeigt seine Schritte sofort.
     aenderungen.beginneSitzung({ wer: cde.bearbeiter || '' });
@@ -889,6 +1329,42 @@ async function _mehrfachEinordnen(items) {
 }
 
 /**
+ * „Verbundenes wählen" (Teil XVII, B2): was mit dem gewählten Bauteil
+ * zusammenhängt, wird zur MEHRFACHAUSWAHL — über denselben Weg wie die
+ * Rahmenauswahl (`waehleOrte` + `_mehrfachEinordnen`), damit die
+ * mehrfachfähigen Werkzeuge (Kanalart, Material, Sanierung, Löschen) sofort
+ * greifen. `tiefe: 1` = nur die direkten Partner, sonst der ganze Verbund
+ * (transitiv über die genannten Arten). Das gewählte Bauteil bleibt das erste.
+ */
+async function waehleVerbund({ arten = ['anschluss'], tiefe = Infinity, titel = 'Verbund' } = {}) {
+  const gid = bearbeitung.bauteil?.globalId ?? ifc.selectedElement?.globalId ?? null;
+  if (!gid || !engine.value) return;
+  const idx = await engine.value.beziehungen?.().catch(() => null);
+  if (!idx) { melde('Beziehungen sind noch nicht gelesen.'); return; }
+  const menge = tiefe <= 1
+    ? new Set(idx.partner(gid).filter(p => arten.includes(p.art)).map(p => p.gid))
+    : idx.verbund(gid, arten);
+  const orte = [];
+  for (const g of [gid, ...menge]) {
+    const o = idx.objekt(g)?.ort ?? null;
+    if (o && !orte.some(x => x.modelId === o.modelId && x.localId === o.localId)) orte.push(o);
+  }
+  if (orte.length < 2) { melde(`Nichts Verbundenes gefunden (${titel}).`); return; }
+  const { items, count } = await engine.value.waehleOrte(orte);
+  // Das Subjekt zuerst — `_mehrfachEinordnen` nimmt den ersten Ort als Bauteil.
+  const erst = orte[0];
+  const sortiert = { [erst.modelId]: [Number(erst.localId)] };
+  for (const [modelId, ids] of Object.entries(items)) {
+    for (const id of ids) {
+      if (modelId === erst.modelId && id === Number(erst.localId)) continue;
+      (sortiert[modelId] ??= []).push(id);
+    }
+  }
+  await _mehrfachEinordnen(sortiert);
+  melde(`${count} Bauteile gewählt — ${titel}.`);
+}
+
+/**
  * Das CDE-eigene Modell aus dem Journal NEU aufbauen (Stufe 9.4).
  *
  * Benannte Funktion statt Objektschlüssel, weil `wendeEintragAn` sie
@@ -900,7 +1376,10 @@ async function baueErzeugteNeu() {
     for (const [globalId, wert] of aenderungen.wirksamerStand('erzeugt')) {
       plan.anzuwenden.push({ globalId, art: 'erzeugt', modell: 'cde', wert });
     }
-    const r = await engine.value.autor.baueErzeugte(plan.anzuwenden);
+    const r = await engine.value.autor.baueErzeugte(plan.anzuwenden, undefined, {
+      // Eigene Teile, die als Quelle eines Kanalgrabens verborgen sind (G6).
+      verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+    });
     if (r.misserfolge.length) {
       console.warn('[CDE] erzeugte Bauteile', r.misserfolge.map(m => m.grund));
     }
@@ -987,6 +1466,8 @@ provideViewerApi({
    */
   lieferstandVon:       (globalId) => nachspielen.lieferstandVon(globalId),
   getKonflikte:         () => nachspielen.konflikte.value,
+  /** Laute, nicht blockierende Meldungen des Nachspielens (quelle_geaendert, Teil XIV). */
+  getHinweise:          () => nachspielen.hinweise.value,
   // ── Schacht-Griffe im Lageplan (G1) ──────────────────────────────────────
   getSchachtGriffe:     () => engine.value?.schachtGriffe?.() ?? [],
   getSchachtAnschluesse: (globalId) => engine.value?.schachtAnschluesse?.(globalId) ?? [],
@@ -1000,24 +1481,21 @@ provideViewerApi({
    * Bezug, Versatz): eine zweite Lage-Rechnung daneben wäre exakt der
    * Auseinanderläufer, den 13.3 beseitigt hat.
    */
-  schachtSubjekt: async (globalId) => {
-    const ort = engine.value?.schachtOrt?.(globalId);
-    if (!ort) return null;
-    const h = (await engine.value?.huellenVon?.(ort.modelId, [ort.localId]))?.get(ort.localId);
-    const bezug = bezuege.value[ort.modelId] ?? Object.values(bezuege.value)[0] ?? null;
-    const versatz = engine.value?.getCoordOffsetForModel?.(ort.modelId) ?? null;
-    if (!h?.anker || !bezug || !versatz) return null;
-    return {
-      globalId, modelId: ort.modelId, localId: ort.localId,
-      anker: h.anker,
-      lage: bezug.nachProjekt(h.anker),
-      versatz: { x: versatz.x, y: versatz.y, z: versatz.z },
-      lageUmkehrbar: !bezug.mapAngewandt,
-      anschluesse: engine.value?.anschluesseVon?.(ort.modelId, ort.localId) ?? [],
-    };
-  },
+  schachtSubjekt: (globalId) => schachtSubjekt(globalId),
   ansichtAufsBlatt:     () => ansichtAufsBlatt(),
   hilfeUmschalten:      () => { showShortcuts.value = !showShortcuts.value; },
+  /** Höhe aus dem Gelände-Sampler (Teil XIV, G3) — synchron, undefined bis vorgewärmt. */
+  hoeheAn:              (x, z) => engine.value?.hoeheAn?.(x, z),
+  bereiteGelaendeVor:   () => engine.value?.gelaendeSampler?.() ?? Promise.resolve(null),
+  /** Böschungsoberkanten der Ableitungen für den Lageplan (G5). */
+  getAbleitungsBilder:  () => engine.value?.ableitungsBilder?.() ?? [],
+  /** Formsignatur eines Elements — was die Geometrie über die Form sagt (Bauformen-Panel). */
+  getFormsignatur:      (modelId, localId) => engine.value?.formsignaturVon?.({ modelId, localId }) ?? Promise.resolve(null),
+  /** Typen der Dateien, die das 4.3-Wörterbuch nicht kennt (gestrichen/exporteureigen). */
+  getFremdeTypen:       () => engine.value?.fremdeTypen?.() ?? [],
+  /** Server-Kernel (G7): Kollisionen eigener Körper gegen das gelieferte Modell. */
+  kollisionenPruefen:   (opts) => engine.value?.kollisionenPruefen?.(opts) ?? Promise.resolve({ ok: false, grund: 'keine Engine', paare: [] }),
+  kernelKann:           (name) => engine.value?.kernelKann?.(name) ?? { ok: false, grund: 'keine Engine' },
   /** Das ganze Modell prüfen — die Prüfliste (Stufe 14.4). */
   pruefeAlles:          (opts) => engine.value?.pruefeAlles(opts) ?? [],
   /** Länge, Nennweite und Merkmale je Bauteil — für den Mengenauszug. */
@@ -1099,12 +1577,7 @@ provideViewerApi({
    *
    * @returns {Promise<{weg, angewandt, nurFestlegung, grund}>}
    */
-  wendeEintragAn: async (eintragOderListe) => {
-    if (Array.isArray(eintragOderListe)) return wendeVorgangAn(eintragOderListe);
-    const r = await wendeEinenAn(eintragOderListe);
-    await entwerteNach([eintragOderListe?.art]);
-    return r;
-  },
+  wendeEintragAn: (eintragOderListe) => wendeEintragAn(eintragOderListe),
 
   baueErzeugteNeu,
 });
@@ -1119,6 +1592,60 @@ provideViewerApi({
  * dieselbe Fehlerklasse wie die Prozent-Bemaßung, ein richtiger Wert an
  * einer alten Stelle). Der Lageplan hängt am `geometrieStand`-Zähler.
  */
+/**
+ * In welchen Kategorien kann in DIESEM Projekt Gelände stecken?
+ *
+ * Regeln und Typprofile können jede Kategorie zum Höhenfeld erklären — die
+ * mitgelieferte Vorbelegung ist nur der Startwert.
+ */
+function gelaendeKandidatKategorien() {
+  return kandidatKategorien({
+    regeln: bearbeitung.regeln ?? [],
+    profilSatz: bearbeitung.profilSatz ?? {},
+    vorbelegung: GELAENDE_VORBELEGUNG,
+  });
+}
+
+/**
+ * Die DEKLARIERTE Bauform eines Bauteils — als Funktion für die Engine.
+ *
+ * Sie wohnt hier, weil nur der Viewer die drei Quellen zusammen hat: das
+ * JOURNAL (Auslegung je Bauteil), die REGELN und die TYPPROFILE. Die Engine
+ * hält kein Journal und soll keins halten.
+ *
+ * Gefragt wird `deklarierteBauform` — dieselbe Funktion, die auch `bestimme`
+ * benutzt. Sie ist synchron und geometriefrei, und das ist kein Zufall,
+ * sondern der Grund, warum das hier ohne Resolver geht: der Geometrie-Rückfall
+ * kann `hoehenfeld` gar nicht liefern, Gelände steht also ausnahmslos in einer
+ * Deklaration.
+ *
+ * EINE Funktion für zwei Verbraucher: der Gelände-Sampler fragt
+ * `=== 'hoehenfeld'`, das Formpaar-Gate der Ableitungen braucht den vollen
+ * Wert. Zwei Funktionen wären zwei Wege zu derselben Frage gewesen — und die
+ * laufen in diesem Haus zuverlässig auseinander.
+ *
+ * MOMENTAUFNAHME, mit Absicht: die Stände werden beim Bauen gelesen, nicht bei
+ * jedem Aufruf. Die Engine bekommt sie zusammen mit dem Journalstand, und
+ * beide gelten für denselben Augenblick.
+ */
+function baueBauformVon() {
+  const auslegung = aenderungen.wirksamerStand('bauform');
+  const bauplaene = aenderungen.wirksamerStand('erzeugt');
+  const regeln = bearbeitung.regeln ?? [];
+  const satz = bearbeitung.profilSatz ?? {};
+  return (ctx) => deklarierteBauform({
+    ausBauplan: ctx?.globalId ? (bauplaene.get(ctx.globalId)?.bauform ?? null) : null,
+    ausEinzelfall: ctx?.globalId ? (auslegung.get(ctx.globalId) ?? null) : null,
+    ausRegel: bauformAusRegel(regeln, ctx),
+    typprofil: profilFuer(ctx?.category, satz),
+  })?.bauform ?? null;
+}
+
+/** Braucht irgendeine wirksame Regel einen Merkmalssatz? Dann erst wird gelesen. */
+function gelaendeBrauchtMerkmale() {
+  return (bearbeitung.regeln ?? []).some(r => r?.bauform === 'hoehenfeld' && r?.condition?.psetName);
+}
+
 async function entwerteNach(arten) {
   if (!entwertetGeometrie(arten)) return;
   try {
@@ -1127,12 +1654,47 @@ async function entwerteNach(arten) {
     // kommen ins Fachmodell, Verdecktes fliegt heraus. Die Engine liest kein
     // Journal — sie bekommt den Stand als Daten; gerechnet wird er rein aus
     // den Bauplan-Parametern (CdeAchsen.js).
-    const { kanten, knoten } = cdeAchsenAus(aenderungen.wirksamerStand('erzeugt'));
+    const erzeugtStand = aenderungen.wirksamerStand('erzeugt');
+    const { kanten, knoten, gelaende, koerper } = cdeAchsenAus(erzeugtStand);
+    // S7: die wirksamen LAGEN gelieferter Bauteile als Δ gegen den Lieferstand —
+    // damit Strang, Fang, Sohlgriffe und Prüfliste das verschobene Rohr dort
+    // sehen, wo es steht. Ohne eingefrorenen Lieferstand kein Δ (nie raten).
+    const lagen = new Map();
+    for (const [gid, anker] of aenderungen.wirksamerStand('lage')) {
+      const basis = nachspielen.lieferstandVon?.(gid);
+      if (!basis || !anker) continue;
+      const d = { x: anker.x - basis.x, y: anker.y - basis.y, z: anker.z - basis.z };
+      if ([d.x, d.y, d.z].every(Number.isFinite)) lagen.set(gid, d);
+    }
+    // Teil XVII: Teil → Quelle als Paare für den Beziehungsindex (Art
+    // `ableitung`). Die Engine liest kein Journal — sie bekommt die Paare.
+    const ableitungen = [];
+    for (const [gid, plan] of erzeugtStand) {
+      for (const q of Object.values(quellenVon(plan?.parameter))) {
+        for (const quelle of (Array.isArray(q) ? q : [q])) {
+          if (quelle) ableitungen.push({ teil: gid, quelle, teilName: plan?.name ?? '' });
+        }
+      }
+    }
     engine.value?.setzeJournalStand?.({
-      kanten, knoten,
+      lagen, ableitungen,
+      kanten, knoten, gelaende, koerper,
       verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+      // Die NAMEN eigener Bauteile (G7): Prüfliste und Kandidatenlisten
+      // nennen sie beim Namen statt „eigener Körper".
+      namen: new Map([...erzeugtStand].map(([gid, b]) => [gid, b?.name ?? ''])),
+      // Was Gelände IST, entscheidet die BAUFORM — nicht mehr eine
+      // Kategorienliste. Die Engine bekommt Vorfilter und Entscheidung.
+      gelaendeKategorien: gelaendeKandidatKategorien(),
+      bauformVon: baueBauformVon(),
+      gelaendeBrauchtMerkmale: gelaendeBrauchtMerkmale(),
     });
     ansicht.setzeStand({ hatAchsen: (n + kanten.length) > 0 });
+    // Den BEZIEHUNGSINDEX gleich nachziehen (B2): Pille, Griffe und
+    // Mitführen lesen ihn synchron aus dem letzten Aufbau — der muss den
+    // neuen Stand kennen, bevor der nächste Klick kommt. Nur Berührtes
+    // wird gerechnet (Dirty-Menge aus `setzeJournalStand`).
+    await engine.value?.beziehungen?.()?.catch?.(e => console.warn('cde: beziehungen', e?.message ?? e));
     ifc.bumpGeometrieStand();
   } catch (fehler) {
     // Die ANWENDUNG war zu diesem Zeitpunkt erfolgreich — ein Fehler beim
@@ -1140,6 +1702,56 @@ async function entwerteNach(arten) {
     // lassen (Gesetz 10; genau so gemeldet am 2026-09-02).
     console.error('cde: entwerteNach', fehler);
   }
+}
+
+/**
+ * Einen Eintrag oder Vorgang anwenden — und danach das SUBJEKT NEU EINORDNEN
+ * (Teil XVI, S2). Vorher blieb es mit dem Stand von VOR der Änderung
+ * stehen: das nächste Werkzeug belegte aus alten Werten vor. Alle vier
+ * Aufrufer (Toolbox, HUD, Leiste, Lageplan) laufen hier durch.
+ */
+async function wendeEintragAn(eintragOderListe) {
+  let r;
+  if (Array.isArray(eintragOderListe)) {
+    r = await wendeVorgangAn(eintragOderListe);
+  } else {
+    r = await wendeEinenAn(eintragOderListe);
+    await entwerteNach([eintragOderListe?.art]);
+  }
+  await nachAusfuehrenEinordnen(eintragOderListe).catch(e => console.warn('cde: neu einordnen', e?.message ?? e));
+  return r;
+}
+
+/**
+ * Das gewählte Bauteil nach dem Anwenden frisch einordnen — ohne Kamerafahrt.
+ * Ist es durch den Vorgang ERSETZT worden (teilen, einfügen, formen), wird
+ * die Auswahl geleert und gesagt, warum. Ein CDE-eigenes Subjekt hat nach
+ * dem Neuaufbau eine neue localId — die GlobalId-Karte findet es wieder.
+ */
+async function nachAusfuehrenEinordnen(eintraege) {
+  const el = ifc.selectedElement;
+  if (!el || !engine.value) return;
+  const liste = (Array.isArray(eintraege) ? eintraege : [eintraege]).filter(Boolean);
+  if (liste.some(e => e.art === 'geloescht' && e.nachher && e.globalId === el.globalId)) {
+    await engine.value.clearSelection?.();
+    ifc.clearElement();
+    await bearbeitung.einordne(null, null);
+    melde('Das Bauteil wurde ersetzt — die Auswahl ist leer.');
+    return;
+  }
+  let ort = { modelId: el.modelId, localId: el.localId };
+  if (el.globalId && liste.some(e => anwendungsweg(e) === 'neuaufbau')) {
+    const { karte } = await karteMitEngine(engine.value, new Set([el.globalId]));
+    const o = karte.get(el.globalId);
+    if (o && (o.modelId !== ort.modelId || o.localId !== ort.localId)) {
+      ort = { modelId: o.modelId, localId: o.localId };
+      await engine.value.waehleOrt?.(o.modelId, o.localId);
+    }
+  }
+  const frisch = await engine.value.elementDatenVon?.(ort.modelId, ort.localId);
+  if (!frisch) return;
+  ifc.setElement(frisch);
+  await _einordnenMitHuelle(frisch);
 }
 
 async function wendeVorgangAn(eintraege) {
@@ -1173,6 +1785,10 @@ async function wendeEinenAn(eintrag) {
                grund: r?.misserfolge?.[0]?.grund ?? null };
     }
     if (weg === 'nur-festlegung') return { weg, angewandt: false, nurFestlegung: true, grund: null };
+    // Eine AUSLEGUNG gilt sofort — sie wirkt über die Entwertung, nicht über
+    // `wendeAn`. `angewandt: true` ist hier die Wahrheit und keine Beschönigung:
+    // nach dem `entwerteNach` des Aufrufers zeigt das Bild sie tatsächlich.
+    if (weg === 'auslegung') return { weg, angewandt: true, nurFestlegung: false, auslegung: true, grund: null };
 
     if (!engine.value || !eintrag?.globalId) return { weg, angewandt: false, nurFestlegung: false, grund: 'keine_engine' };
     const { karte } = await karteMitEngine(engine.value, new Set([eintrag.globalId]));
@@ -1213,7 +1829,7 @@ onMounted(async () => {
     ifc.clearElement();
     bearbeitung.einordne(null, null);
   });
-  _selection.onHover(pos => {
+  _selection.onHover((pos, treffer, px) => {
     coords.value = pos
       ? {
           x: pos.x.toFixed(3), y: pos.y.toFixed(3), z: pos.z.toFixed(3),
@@ -1225,7 +1841,32 @@ onMounted(async () => {
           _modelId: pos.modelId ?? null,
         }
       : null;
+    // EIN Treffer, drei Verbraucher: Zeiger (Klasse, Marke, Pille), Koordinaten-
+    // leiste, Mess-Hovermarker — kein zweiter Raycast für dieselbe Antwort.
+    if (px === null && treffer === null) zeiger.verlassen();
+    else zeiger.aufHover(treffer, px);
+    if (messen.aktiv.value) messen.bewegungAn(treffer?.point ?? null);
+    if (eingabe.aktiv.value) eingabe.bewegeZeiger(treffer ? (treffer.fang?.punkt ?? treffer.point) : null);
+    // Ein Griff unter dem Zeiger wächst — die Hand weiss, dass hier gezogen werden kann.
+    if (griffe.bereit.value && px && canvasRef.value) {
+      const r = canvasRef.value.getBoundingClientRect();
+      engine.value?.griffHervorheben?.(engine.value?.griffUnter?.(px.x + r.left, px.y + r.top));
+    }
   });
+  // Tipp-Verbraucher in Rangfolge — der erste, der zugreift, gewinnt. Das
+  // ersetzt den zweiten Maus-Stapel (eigene Klickschwelle, eigener Timer).
+  // GRIFFE (S4): beim Aufsetzen beanspruchen, dann Zug-Ereignisse statt Tipp/Schweben.
+  _selection.onGreifen((tipp) => griffe.greifen(tipp));
+  _selection.onZugStart((tipp) => griffe.zugStart(tipp));
+  _selection.onZugBewegt((tipp) => griffe.zugBewegt(tipp));
+  _selection.onZugEnde((ende) => { griffe.zugEnde(ende).catch(e => console.warn('cde: griff', e?.message ?? e)); });
+  _selection.onTipp(tippFuerMotor);
+  _selection.onTipp(async (tipp) => messen.klick(tipp.x, tipp.y));
+  _selection.onTipp(async (tipp) => annotationen.klick(tipp.event));
+  // Gesperrt: ein Klick während einer scharfen Bearbeitung wechselt das
+  // Subjekt nicht — und sagt, warum (die 3D-Fassung von `griffBereit`).
+  _selection.onGesperrt(() => melde('Bearbeitung läuft — „Übernehmen" schliesst sie ab, Esc bricht ab. Das Bauteil bleibt gewählt.'));
+  auswahlModusNachziehen();
   _selection.onMarqueeSelect(({ items, count }) => {
     if (!count) return;
     // DER RAHMEN ERREICHT JETZT DIE BEARBEITUNG (Stufe 14.10).
@@ -1235,13 +1876,6 @@ onMounted(async () => {
     // schwierig, sondern schlicht nicht verdrahtet.
     _mehrfachEinordnen(items).catch(e => console.warn('cde: mehrfach', e?.message ?? e));
   });
-
-  // Measure-/Annotation-Modi nutzen weiterhin den Vue-Click-Handler — wenn sie
-  // aktiv sind, schalten wir den SelectionHandler in den 'disabled'-Modus, damit
-  // ein Click nicht gleichzeitig selektiert UND einen Messpunkt setzt.
-  canvasRef.value.addEventListener('mousedown',  onMouseDown);
-  canvasRef.value.addEventListener('mouseup',    onMouseUp);
-  canvasRef.value.addEventListener('mousemove',  onMouseMoveForTools);
 
   // B4: lokale Modell-Ablage für den Leerzustand einlesen
   ablage.aktualisiereZuletzt();
@@ -1288,17 +1922,20 @@ onMounted(async () => {
   ]);
 
   // Büro-/Projektprofile einmal je Sitzung laden (Stufe 6: Vorrangregel).
-  bearbeitung.ladeProfile(repo).catch(e => console.warn('cde: typprofile', e?.message ?? e));
+  //
+  // DANACH NEU ENTWERTEN: Regeln und Typprofile entscheiden mit, WAS Gelände
+  // ist. Kommen sie nach dem ersten Modell an, gilt sonst bis zur nächsten
+  // Bearbeitung die Vorbelegung — eine Büroregel, die einen Proxy zum
+  // Höhenfeld erklärt, käme nie an. Der Ladevorgang selbst wird davon nicht
+  // aufgehalten (kein `await` an einer sichtbaren Stelle).
+  bearbeitung.ladeProfile(repo)
+    .then(() => entwerteNach(['bauform']))
+    .catch(e => console.warn('cde: typprofile', e?.message ?? e));
 });
 
 onBeforeUnmount(() => {
   cmds.unregister('viewer');
   document.removeEventListener('keydown', onKeyDown);
-  if (canvasRef.value) {
-    canvasRef.value.removeEventListener('mousedown',  onMouseDown);
-    canvasRef.value.removeEventListener('mouseup',    onMouseUp);
-    canvasRef.value.removeEventListener('mousemove',  onMouseMoveForTools);
-  }
   _selection?.detach();
   _selection = null;
   engine.value?.dispose();
@@ -1329,6 +1966,9 @@ async function anwendenViewpoint(vp) {
 
 defineExpose({
   openBySha: (sha) => ablage.openBySha(sha),
+  /** Die zuletzt offenen Modelle zurückholen — die Schale ruft es, weil sie
+      den Deep-Link kennt und der Vorrang hat. */
+  stelleOffeneWiederHer: () => ablage.stelleOffeneWiederHer(),
   openFromProjectPath: (pfad) => ablage.openFromProjectPath(pfad),
   zoomToPoint: (position) => annotationen.zoomeAufPin(position),
   applyViewpoint: anwendenViewpoint,
@@ -1344,6 +1984,10 @@ defineExpose({
    */
   messungen: () => ifc.messungen,
   geladeneModellSha: () => ablage.geladeneModellSha(),
+  /** Formsignatur eines Elements — das Panel „Bauformen" misst je Zeile ein Beispiel (2026-09-07). */
+  getFormsignatur: (modelId, localId) => engine.value?.formsignaturVon?.({ modelId, localId }) ?? Promise.resolve(null),
+  /** Typen ausserhalb des 4.3-Wörterbuchs — strukturell erkannt. */
+  getFremdeTypen: () => engine.value?.fremdeTypen?.() ?? [],
   /**
    * Der Pin-Modus wird als REF herausgegeben, nicht als Momentaufnahme.
    *
@@ -1358,59 +2002,94 @@ defineExpose({
   annotationActive,
 });
 
+/**
+ * Ein Modell entladen.
+ *
+ * Der Knopf am Chip war verdrahtet, aber die Nacharbeit fehlte: Bezüge,
+ * Welt- und Höhenversatz, Achsen und Journalstand blieben auf dem ENTLADENEN
+ * Modell stehen. Wer das erste von zwei Modellen schloss, arbeitete danach
+ * mit dessen Ladeversatz weiter, und die Achsen des Verschwundenen geisterten
+ * durch Netz, Strang und Prüfliste — dieselbe Klasse wie die Achsen, die bis
+ * Stufe 16 nur beim Laden gelesen wurden.
+ *
+ * Deshalb läuft das Entladen jetzt durch DENSELBEN Nachzug wie das Laden
+ * (Gesetz 7) und entwertet danach das Fachmodell.
+ */
 async function removeModel(modelId) {
   await engine.value?.unloadModel(modelId);
   ablage.vergiss(modelId);
-  ifc.setModelList(engine.value.getModelList());
+  await _modellmengeNachziehen();
+  // Der Journalstand gehört dazu: erzeugte Bauteile und Verdecktes beziehen
+  // sich auf Modelle, von denen eines gerade gegangen ist.
+  await entwerteNach(['erzeugt', 'lage']);
+}
+
+/**
+ * Was nach JEDER Änderung der Modellmenge gilt — beim Laden wie beim Entladen.
+ *
+ * Die Reihenfolge ist nicht beliebig: der Projektbezug entscheidet, was jede
+ * Koordinaten- und Höhenanzeige danach zeigt, und der Welt-Rahmen muss stehen,
+ * BEVOR das Journal gelesen wird (eine andere Modellmenge kann ein anderes
+ * Bounding-Box-Minimum haben — dann hebt JournalVersatz alle Punkte synchron).
+ */
+async function _modellmengeNachziehen() {
+  _bezuegeNeuBestimmen();
+
+  const erstes = engine.value?.getModelList()?.[0];
+  const rahmen = erstes ? engine.value?.getCoordOffsetForModel?.(erstes.modelId) : null;
+  if (rahmen) aenderungen.setzeWeltversatz({ x: rahmen.x, y: rahmen.y, z: rahmen.z });
+  const bezug = Object.values(bezuege.value)[0] ?? null;
+  engine.value?.setzeHoehenversatz?.(bezug ? bezug.nachProjekt({ x: 0, y: 0, z: 0 }).hoehe : 0);
+
+  // Die Achsen einmal zählen — davon hängt ab, ob der Längsschnitt bedienbar
+  // ist. Fehler halten nichts auf: eine Datei ohne Leitungen hat eben keine.
+  const achsen = await engine.value.leseAchsen().catch(() => 0);
+  ansicht.setzeStand({ hatAchsen: achsen > 0 });
+  // Der Beziehungsindex einmal je Modellmenge (B2) — danach nur Berührtes.
+  engine.value?.beziehungen?.()?.catch?.(e => console.warn('cde: beziehungen', e?.message ?? e));
+
   categoryList.value = engine.value.getCategoryList();
-  // Update spatial tree for first remaining model
-  const tree = await engine.value?.getSpatialTree();
+  ifc.setModelList(engine.value.getModelList());
+  const tree = await engine.value.getSpatialTree();
   ifc.setSpatialTree(tree ?? null);
-  // Refresh storey list (might be empty if all models with storeys are unloaded)
-  storeyList.value = (await engine.value?.getStoreyList()) ?? [];
+  engine.value.buildSearchIndex().then(entries => ifc.setSearchIndex(entries));
+  engine.value.getStoreyList().then(list => { storeyList.value = list; }).catch(() => {});
+
+  // Erdbau-Farben auf GELIEFERTES Material (2026-09-09). Erzeugtes trägt
+  // seine Farbe im Material und braucht das nicht. Was der Planer selbst
+  // gefärbt hat, bleibt — die CDE fragt dann, statt zu übermalen.
+  erdbauFarbenAnwenden().catch(e => console.warn('cde: erdbaufarben', e?.message ?? e));
+
+  // Und merken, was jetzt offen ist — der nächste Start holt genau das zurück.
+  ablage.merkeOffene();
+}
+
+/**
+ * Den Farbkatalog auf geliefertes Erdbau-Material anwenden.
+ *
+ * Ohne Rückfrage, solange niemand widerspricht: ein Gelände in neutralem
+ * Grau ist keine Aussage, sondern der Standard der Bibliothek. Bringt ein
+ * Bauteil eine EIGENE Farbe mit, bleibt sie stehen und die Frage steht in
+ * der Leiste — ein stilles Übermalen wäre Datenverlust in der Anschauung.
+ */
+async function erdbauFarbenAnwenden({ ueberschreiben = false } = {}) {
+  if (!engine.value?.erdbauFaerben) return;
+  const bericht = await engine.value.erdbauFaerben({ ueberschreiben });
+  erdbauEigene.value = ueberschreiben ? [] : (bericht.eigene ?? []);
+  return bericht;
+}
+
+/** „Doch überschreiben" — die Antwort auf die Rückfrage. */
+async function erdbauFarbenUeberschreiben() {
+  await erdbauFarbenAnwenden({ ueberschreiben: true });
 }
 
 /** Called after every successful loadIfc() to refresh UI state. */
 async function _onModelLoaded() {
-  // Projektbezug ZUERST: er entscheidet, was jede Koordinatenanzeige und jede
-  // Höhenbearbeitung danach zeigt. Einmal je Laden, nicht je Mausbewegung.
-  _bezuegeNeuBestimmen();
-
-  // Rahmen-Nachführung (Lücke ⑤): der Welt-Rahmen ist der Ladeversatz des
-  // ERSTEN Modells (COORDINATE_TO_ORIGIN). Das Journal muss ihn kennen,
-  // BEVOR das Nachspielen unten liest — eine neue Revision kann ein anderes
-  // Bounding-Box-Minimum haben, und dann werden alle gespeicherten Punkte
-  // synchron um das Delta gehoben (useAenderungen/JournalVersatz).
-  {
-    const erstes = engine.value?.getModelList()?.[0];
-    const rahmen = erstes ? engine.value?.getCoordOffsetForModel?.(erstes.modelId) : null;
-    if (rahmen) aenderungen.setzeWeltversatz({ x: rahmen.x, y: rahmen.y, z: rahmen.z });
-  }
-
-  // Die Achsen einmal zählen — davon hängt ab, ob der Längsschnitt bedienbar
-  // ist. `hatAchsen` wurde bis Stufe 14.1 NIRGENDS gesetzt, der Modus war
-  // damit dauerhaft gesperrt, obwohl die Fachrechnung dafür fertig dasteht.
-  // Gesetzt wird hier, weil hier gezählt wird — ein Beobachter anderswo
-  // liefe der Zählung davon. Fehler halten das Laden nicht auf: eine Datei
-  // ohne Leitungen ist kein Fehlerfall, sie hat eben keine Achsen.
-  const achsen = await engine.value.leseAchsen().catch(() => 0);
-  ansicht.setzeStand({ hatAchsen: achsen > 0 });
-
-  // Categories for Layer Panel
-  categoryList.value = engine.value.getCategoryList();
-
-  // Update multi-model list
-  ifc.setModelList(engine.value.getModelList());
-
-  // Spatial tree → store (IfcSpatialWindow reads from there)
-  const tree = await engine.value.getSpatialTree();
-  ifc.setSpatialTree(tree);
-
-  // T1.1: Build search index for Cmd/Ctrl+F (runs in background, non-blocking)
-  engine.value.buildSearchIndex().then(entries => ifc.setSearchIndex(entries));
-
-  // T1.5: Storey list for the quick-nav panel (skipped silently for infra models)
-  engine.value.getStoreyList().then(list => { storeyList.value = list; }).catch(() => {});
+  // Bezüge, Rahmen, Achsen, Listen — dieselbe Nacharbeit wie beim Entladen.
+  // Sie stand bis 2026-09-03 nur hier, und das Entladen liess deshalb den
+  // halben Zustand des verschwundenen Modells stehen.
+  await _modellmengeNachziehen();
 
   // T2.4: Load persisted annotations for this model + redraw any visuals.
   // Schlüssel ist die stabile Modell-Identität (IfcProject.GlobalId bzw.
@@ -1490,15 +2169,40 @@ function onKeyDown(e) {
     showPalette.value = true;
     return;
   }
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  // Im Eingabefeld gelten die Kürzel nicht — ausser Esc: „Esc bricht ab" muss
+  // auch gelten, wenn der Cursor gerade im Zahlenfeld der Kontextleiste steht
+  // (Headless-Lauf 2026-09-08: der Wächter schluckte es, das Werkzeug blieb).
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    if (e.key !== 'Escape' || !bearbeitung.werkzeug) return;
+    e.target.blur?.();
+  }
 
   // ? toggles the shortcut overlay
   if (e.key === '?') { e.preventDefault(); showShortcuts.value = !showShortcuts.value; return; }
   if (e.key === 'Escape' && showShortcuts.value) { showShortcuts.value = false; return; }
 
-  // T1.3: M toggles measure mode, Esc exits it
+  // T1.3: M toggles measure mode
   if (e.key === 'm' || e.key === 'M') { e.preventDefault(); messen.umschalten(); return; }
-  if (e.key === 'Escape' && messen.aktiv.value) { messen.umschalten(); return; }
+  // ESC — EIN Ausgang (Teil XVI): der Slot kennt seinen Besitzer und dessen
+  // Ausschalter (Messen, Notiz, scharfe Bearbeitung, Plan-Werkzeuge). Nur
+  // der Schnitt ist anders: Esc blendet dort die LEISTE aus, der Schnitt
+  // selbst bleibt — das ist kein Werkzeug-Ende, sondern Aufräumen.
+  // Ein laufender Griff-Zug zuerst (S7): Esc verwirft ihn wie ein
+  // pointercancel — sonst schaltet `slotAus` nur das Werkzeug ab, der Zug
+  // schriebe beim Loslassen trotzdem (Headless 2026-09-08).
+  if (e.key === 'Escape' && _selection?.ziehtGerade?.()) { _selection.zugAbbrechen(); return; }
+  if (e.key === 'Escape' && bearbeitung.werkzeug) {
+    if (bearbeitung.werkzeug === 'schnitt') { schnitt.leisteAusblenden(); return; }
+    // Stufenweise, wie im Lageplan: erst die Geste, dann das Werkzeug.
+    if (eingabe.brichGesteAb()) return;
+    bearbeitung.slotAus();
+    return;
+  }
+  // Der Motor im Raum: Enter schliesst ab (oder prüft), Rücktaste nimmt den letzten Punkt.
+  if (eingabe.aktiv.value) {
+    if (e.key === 'Enter') { e.preventDefault(); eingabe.enter(); return; }
+    if (e.key === 'Backspace') { e.preventDefault(); eingabe.entferneLetzten(); return; }
+  }
 
   // Stufe 9.3: G haengt den Griff an die Auswahl. Der Eintrag in der
   // Werkzeugleiste traegt `key: 'G'` — stuende die Taste nur DORT, verspraeche
@@ -1512,7 +2216,6 @@ function onKeyDown(e) {
 
   // T2.4: N toggles Notes panel, Esc exits annotation placement mode
   if (e.key === 'n' || e.key === 'N') { e.preventDefault(); panels.toggle('issues'); return; }
-  if (e.key === 'Escape' && annotationActive.value) { annotationen.umschalten(); return; }
 
   // T1.2: H = hide selected, I = isolate selected, Shift+A = show all
   if (ifc.selectedElement && (e.key === 'h' || e.key === 'H')) {
@@ -1529,7 +2232,6 @@ function onKeyDown(e) {
   if (!schnitt.aktiv.value) return;
   if (e.key === 't' || e.key === 'T') { e.preventDefault(); schnitt.setzeModus('translate'); }
   if (e.key === 'r' || e.key === 'R') { e.preventDefault(); schnitt.setzeModus('rotate'); }
-  if (e.key === 'Escape') schnitt.leisteAusblenden();
 }
 
 // ── Layer panel ───────────────────────────────────────────────────────────────
@@ -1598,43 +2300,11 @@ function onToggleNotes() { panels.toggle('issues'); }
 
 
 
-// ── mouse interaction ─────────────────────────────────────────────────────────
-// Selection + Hover + Marquee laufen über _selection (IfcSelectionHandler).
-// Hier nur noch die Tool-Modi (Measure / Annotation), die statt zu selektieren
-// Punkte/Pins setzen.
-
-function onMouseMoveForTools(e) {
-  // Nur aktiv im Measure-Modus — Live-Hover-Marker für den nächsten Messpunkt.
-  if (!messen.aktiv.value) return;
-  if (_hoverTimer) clearTimeout(_hoverTimer);
-  _lastMouse = { x: e.clientX, y: e.clientY };
-  _hoverTimer = setTimeout(() => {
-    const m = _lastMouse;
-    if (m) messen.bewegung(m.x, m.y);
-  }, 30);
-}
-
-function onMouseDown(e) {
-  if (e.button !== 0) return;
-  if (!(messen.aktiv.value || annotationActive.value)) return;
-  _mouseDownAt = { x: e.clientX, y: e.clientY };
-}
-
-async function onMouseUp(e) {
-  if (e.button !== 0) return;
-  if (!_mouseDownAt) return;
-  const dx = e.clientX - _mouseDownAt.x;
-  const dy = e.clientY - _mouseDownAt.y;
-  const downX = _mouseDownAt.x;
-  const downY = _mouseDownAt.y;
-  _mouseDownAt = null;
-
-  if (Math.hypot(dx, dy) > 8) return; // >8 px = Drag, nicht Click
-
-  if (await messen.klick(downX, downY)) return;
-
-  if (await annotationen.klick(e)) return;
-}
+// ── Zeiger-Interaktion ───────────────────────────────────────────────────────
+// Tipp, Schweben und Rahmen laufen über _selection (IfcSelectionHandler, EIN
+// Stapel). Messen und Notiz sind dort als Tipp-Verbraucher angemeldet — der
+// zweite Maus-Stapel mit eigener Klickschwelle und eigenem Timer ist Geschichte
+// (Teil XVI, S1).
 
 </script>
 
@@ -1771,9 +2441,20 @@ async function onMouseUp(e) {
 
 .canvas-root {
   position: absolute; inset: 0; background: var(--cde-bg-deep); z-index: 10;
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,0,0,0.55)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='white' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='2' fill='white'/%3E%3Ccircle cx='18' cy='18' r='2' fill='none' stroke='var(--cde-scrim)' stroke-width='1'/%3E%3C/svg%3E") 18 18, crosshair;
 }
-.canvas-root.measure-cursor {
+/* Der Zeiger — EIN Besitzer (useZeiger, Teil XVI). Die Engine setzte den
+   Cursor früher inline und schlug damit jede dieser Klassen. Die Farben in
+   den Grafiken gehören zum Bild, nicht zum Thema (siehe designTokens-Wächter). */
+.canvas-root.zeiger--auswahl {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,0,0,0.55)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='white' stroke-width='2'/%3E%3Ccircle cx='18' cy='18' r='2' fill='white'/%3E%3Ccircle cx='18' cy='18' r='2' fill='none' stroke='rgba(0,0,0,0.5)' stroke-width='1'/%3E%3C/svg%3E") 18 18, crosshair;
+}
+.canvas-root.zeiger--hover {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='rgba(0,80,0,0.7)' stroke-width='4'/%3E%3Ccircle cx='18' cy='18' r='14' fill='none' stroke='%2300ff22' stroke-width='2.5'/%3E%3Ccircle cx='18' cy='18' r='2' fill='%2300ff22'/%3E%3C/svg%3E") 18 18, pointer;
+}
+/* Werkzeug scharf: das Fadenkreuz des Browsers — die ZIELMARKE im Raum zeigt den
+   gefangenen Punkt, der Cursor selbst bleibt schlank. */
+.canvas-root.zeiger--werkzeug { cursor: crosshair; }
+.canvas-root.zeiger--messen {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect x='2' y='2' width='32' height='32' fill='none' stroke='rgba(0,0,0,0.6)' stroke-width='3'/%3E%3Crect x='2' y='2' width='32' height='32' fill='none' stroke='%23ffeb3b' stroke-width='1.5'/%3E%3Cline x1='18' y1='6' x2='18' y2='30' stroke='%23ffeb3b' stroke-width='2'/%3E%3Cline x1='6' y1='18' x2='30' y2='18' stroke='%23ffeb3b' stroke-width='2'/%3E%3C/svg%3E") 18 18, crosshair;
 }
 
@@ -1797,6 +2478,7 @@ async function onMouseUp(e) {
   transition: background 0.15s, transform 0.15s;
   display: inline-flex; align-items: center; gap: 0.4rem;
 }
+.action-btn.laedt { opacity: 0.45; cursor: progress; pointer-events: none; }
 .action-btn.primary { background: var(--cde-accent); color: var(--cde-bg-deep); }
 .action-btn.primary:hover { background: var(--cde-accent); transform: translateY(-1px); }
 /* Vorher hellgrau (#e2e8f0) auf dunkler Leiste — der einzige helle Knopf
@@ -1916,6 +2598,23 @@ async function onMouseUp(e) {
   color: var(--cde-text); font-size: var(--cde-font-sm);
   box-shadow: var(--cde-shadow);
 }
+/* Die Ergebnismeldung sitzt UNTER der Wache — sonst lägen beide übereinander
+   und man läse die Warnung, die man gerade erledigt hat. */
+.einheit-banner + .einheit-banner { top: 7.2rem; }
+.einheit-lesart { opacity: 0.92; }
+.einheit-banner.ok {
+  border-color: var(--cde-success);
+  border-left-color: var(--cde-success);
+}
+.einheit-knopf {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--cde-warn); border-radius: var(--cde-radius-sm);
+  background: transparent; color: var(--cde-text);
+  font-size: var(--cde-font-xs); cursor: pointer;
+}
+.einheit-knopf:hover:not(:disabled) { background: var(--cde-tint); }
+.einheit-knopf:disabled { opacity: 0.5; cursor: default; }
 
 .ansicht-popover {
   position: absolute; bottom: 1rem; left: 4.6rem; z-index: 21;
@@ -1955,12 +2654,19 @@ async function onMouseUp(e) {
   background: color-mix(in srgb, var(--cde-accent) 15%, transparent); border: 1px solid color-mix(in srgb, var(--cde-accent) 35%, transparent);
   border-radius: 4px; padding: 0.2rem 0.5rem;
   font-size: 0.78rem; color: var(--cde-accent-soft); max-width: 200px;
+  /* Der Chip schneidet NICHTS mehr ab — das tut der Name für sich. Ein
+     Doppelklick soll ausserdem entladen wollen, nicht Text markieren. */
+  user-select: none;
+}
+.model-tag-name {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;                 /* ohne das schrumpft ein Flex-Kind nie */
 }
 .tag-close {
   background: none; border: none; cursor: pointer;
   color: var(--cde-text-dimmer); font-size: 0.7rem; padding: 0; line-height: 1;
   flex-shrink: 0; transition: color 0.12s;
+  touch-action: manipulation;
 }
 .tag-close:hover { color: var(--cde-danger); }
 
@@ -1989,29 +2695,7 @@ async function onMouseUp(e) {
 .show-all-btn.hochgerueckt { bottom: 5.4rem; }
 
 /* T3: Die Modus-Leiste — unten mittig, wie die Statuszeile in flood-3D. */
-.modus-leiste {
-  position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
-  z-index: 21; display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.35rem 0.4rem 0.35rem 0.7rem;
-  background: var(--cde-surface-raised);
-  border: 1px solid var(--cde-accent-line);
-  border-radius: 999px;
-  color: var(--cde-text);
-  font-size: var(--cde-font-sm);
-  box-shadow: var(--cde-shadow);
-  white-space: nowrap;
-}
-.modus-fertig {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  padding: 0.25rem 0.6rem; cursor: pointer;
-  border: 1px solid color-mix(in srgb, var(--cde-success-strong) 50%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--cde-success-strong) 18%, transparent);
-  color: var(--cde-success);
-  font-size: var(--cde-font-xs); font-weight: 600;
-  touch-action: manipulation;
-}
-.modus-fertig:hover { background: color-mix(in srgb, var(--cde-success-strong) 28%, transparent); }
+/* Die Modus-Leiste wohnt seit Teil XVI in CdeKontextleiste.vue. */
 
 /* T1.3: Measurement UI */
 .measure-clear {
@@ -2047,6 +2731,18 @@ async function onMouseUp(e) {
 /* Stufe 9.2 — gleiche Gestalt wie der Ablage-Hinweis, eigene Bedeutung.
    Etwas tiefer, damit beide nebeneinander lesbar bleiben, wenn ein Upload und
    ein Konflikt zusammenfallen. */
+.erdbau-uebermalen {
+  padding: 6px 10px;
+  min-height: 34px;
+  border: 1px solid var(--cde-line);
+  border-radius: var(--cde-radius-sm);
+  background: var(--cde-surface-alt);
+  color: var(--cde-text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.erdbau-uebermalen:hover { background: var(--cde-float); }
+
 .nachspiel-hinweis {
   position: absolute;
   top: 7.2rem; left: 50%; transform: translateX(-50%);
@@ -2136,9 +2832,8 @@ async function onMouseUp(e) {
 .show-all-btn, .measure-clear, .bearb-marke-aus { touch-action: manipulation; }
 @media (pointer: coarse) {
   .snap-btn, .mode-btn { padding: 0.55rem 0.75rem; }
-  .modus-fertig { padding: 0.5rem 0.8rem; }
-  .section-close, .bearb-marke-aus { position: relative; }
-  .bearb-marke-aus::after { content: ''; position: absolute; inset: -10px; }
+  .section-close, .bearb-marke-aus, .tag-close { position: relative; }
+  .bearb-marke-aus::after, .tag-close::after { content: ''; position: absolute; inset: -10px; }
   .section-close::after, .measure-clear::after {
     content: ''; position: absolute; inset: -9px;
   }

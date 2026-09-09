@@ -36,9 +36,18 @@
  */
 
 import * as THREE from 'three';
-import { formeNach } from './gelaende/Operationen.js';
+import { formeNach, verschiebeOperationen } from './gelaende/Operationen.js';
 import { dreieckeAusRaster } from './geometry/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
+import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
+import { sweep, kreisProfil } from './geometrie/ops/Sweep.js';
+import { versetztePunkte, ringFlaeche } from './geometrie/ops/Linien.js';
+// Default-Import: der benannte lief im Dev-Server und brach im vite build
+// (CJS-Interop) — derselbe Weg wie in IfcShapeOutlines.
+import polygonClipping from 'polygon-clipping';
+import { quellenVon } from './ableitung/Bezuege.js';
+
+export { quellenVon };
 
 /**
  * Anzeigebreite einer Linie in Metern.
@@ -182,65 +191,67 @@ function flaechenGeometrie(punkte) {
  * ohnehin nur PUNKTE und DN — der Umstieg auf die parametrische Form ändert
  * dann nichts am Journal, nur an dieser Funktion.
  */
+/**
+ * Rohr und Schacht — seit G6 ein GESCHLOSSENER Sweep mit Kappen aus dem
+ * Kernel: daran stellt `meshVolume` ein Attest aus, und die Bauform-Schicht
+ * kann am eigenen Bauteil `gemessen` sagen. Vorher ein offener Schlauch aus
+ * Ringen ohne Enden — kein Körper, kein Volumen.
+ */
 function rohrGeometrie(punkte, dnMm = 300, seiten = 12) {
-    if (punkte.length < 2) return null;
-    const r = (Number(dnMm) || 300) / 2000;          // mm Durchmesser → m Radius
-    if (!(r > 0)) return null;
-
-    const ecken = [];
-    const indizes = [];
-    const OBEN = new THREE.Vector3(0, 1, 0);
-
-    for (let i = 0; i < punkte.length; i++) {
-        const hier = alsVec3(punkte[i]);
-        const vor = i > 0 ? alsVec3(punkte[i - 1]) : null;
-        const nach = i < punkte.length - 1 ? alsVec3(punkte[i + 1]) : null;
-        const richtung = new THREE.Vector3();
-        if (vor) richtung.add(hier.clone().sub(vor).normalize());
-        if (nach) richtung.add(nach.clone().sub(hier).normalize());
-        if (richtung.lengthSq() < 1e-12) richtung.set(1, 0, 0);
-        richtung.normalize();
-
-        // Ein Rahmen senkrecht zur Achse. Läuft die Achse fast senkrecht,
-        // taugt „oben" nicht als Bezug — dann wird die X-Achse genommen.
-        const bezug = Math.abs(richtung.dot(OBEN)) > 0.99
-            ? new THREE.Vector3(1, 0, 0)
-            : OBEN;
-        const u = new THREE.Vector3().crossVectors(bezug, richtung).normalize();
-        const v = new THREE.Vector3().crossVectors(richtung, u).normalize();
-
-        for (let k = 0; k < seiten; k++) {
-            const w = (k / seiten) * Math.PI * 2;
-            ecken.push(
-                hier.x + (u.x * Math.cos(w) + v.x * Math.sin(w)) * r,
-                hier.y + (u.y * Math.cos(w) + v.y * Math.sin(w)) * r,
-                hier.z + (u.z * Math.cos(w) + v.z * Math.sin(w)) * r,
-            );
-        }
-    }
-
-    for (let i = 0; i < punkte.length - 1; i++) {
-        for (let k = 0; k < seiten; k++) {
-            const a = i * seiten + k;
-            const b = i * seiten + ((k + 1) % seiten);
-            const c = a + seiten;
-            const d = b + seiten;
-            indizes.push(a, c, b, b, c, d);
-        }
-    }
-
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(ecken, 3));
-    g.setIndex(indizes);
-    g.computeVertexNormals();
-    return g;
+    const k = rohrKoerper(punkte, dnMm, seiten);
+    return k ? dreiecksGeometrie(k.positions) : null;
 }
 
-/** Nicht-indizierte Dreiecksliste (Welt) → BufferGeometry mit Normalen. */
+/** Der Rohrkörper als Kernel-Form `koerper` — null, wenn kein Körper entsteht. */
+export function rohrKoerper(punkte, dnMm = 300, seiten = 12) {
+    if (!Array.isArray(punkte) || punkte.length < 2) return null;
+    const r = (Number(dnMm) || 300) / 2000;          // mm Durchmesser → m Radius
+    if (!(r > 0)) return null;
+    const { ergebnis } = sweep({ profil: kreisProfil(r, seiten), achse: { punkte: punkte.map(_p) } });
+    return ergebnis ?? null;
+}
+
+/**
+ * Die Kernel-Form eines Rohrs/Schachts AUS DEM BAUPLAN (G6): der
+ * Ableitungslauf fragt so nach der Achse eines eigenen Rohrs, ohne dass das
+ * Rohr eine Ableitung sein müsste.
+ */
+function _formAusRohr(parameter, form, seiten) {
+    const punkte = punkteAus(parameter);
+    if (punkte.length < 2) return null;
+    if (form === 'linie') return { punkte: punkte.map(_p), dn: Number(parameter?.dn) || null };
+    if (form === 'koerper' || form === 'mesh') return rohrKoerper(punkte, parameter?.dn, seiten);
+    return null;
+}
+
+/**
+ * Dreiecksliste (Welt) → BufferGeometry mit Normalen — INDIZIERT.
+ *
+ * DER INDEX IST PFLICHT, nicht Kosmetik. `representationFromGeometry` der
+ * Bibliothek liest `geometry.index.array` ohne Prüfung
+ * (`@thatopen/fragments/dist/index.mjs`); eine unindizierte Geometrie lässt
+ * `createElements` mit „Cannot read properties of null (reading 'array')"
+ * abbrechen. Der Fehler kommt aus dem Editor zurück und landet in
+ * `misserfolge` — das Bauteil entsteht schlicht nicht, und im Raum fehlt es
+ * ohne Meldung an der Oberfläche. Genau daran kam KEIN Erdkörper je an
+ * (2026-09-09), während Linie und Fläche funktionierten: die beiden Bauer
+ * darüber setzen ihren Index von sich aus.
+ *
+ * Der Index ist trivial (0,1,2,…) und schweisst NICHTS zusammen: die Ecken
+ * bleiben je Dreieck eigen, damit `computeVertexNormals` flache Facetten
+ * liefert. Ein Erdkörper mit gemittelten Normalen sähe an der Böschungskante
+ * weich aus, wo eine Kante ist.
+ */
 function dreiecksGeometrie(positions) {
     if (!positions?.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(positions), 3));
+    const n = Math.floor(positions.length / 3);
+    // Über 65.535 Ecken trägt ein Uint16-Index nicht mehr — ein Gelände hat
+    // regelmässig Hunderttausende.
+    const index = n > 65535 ? new Uint32Array(n) : new Uint16Array(n);
+    for (let i = 0; i < n; i++) index[i] = i;
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
     geo.computeVertexNormals();
     return geo;
 }
@@ -262,25 +273,208 @@ function _verschiebePunktliste(parameter, delta) {
     };
 }
 
-/** Gelände: Achse/Umriss sind Grundriss-{x,z}; Sohlen/Höhen sind m NN und
- *  hängen NICHT am Rahmen — sie bleiben stehen. */
-function _verschiebeGelaende(parameter, delta) {
-    const ops = parameter?.operationen;
-    if (!Array.isArray(ops)) return parameter;
-    const punktXZ = (p) => (p && Number.isFinite(p.x) && Number.isFinite(p.z)
-        ? { ...p, x: p.x + delta.x, z: p.z + delta.z } : p);
+/** Der Schwerpunkt einer Punktliste in XZ (Welt), oder null. */
+export function schwerpunktXZ(punkte) {
+    const gut = (punkte ?? []).filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[2]));
+    if (!gut.length) return null;
+    let x = 0, z = 0;
+    for (const p of gut) { x += p[0]; z += p[2]; }
+    return { x: x / gut.length, z: z / gut.length };
+}
+
+/**
+ * Eine Punktliste um `grad` in der Waagerechten drehen (S8).
+ *
+ * Um `zentrum` (Vorgabe: Schwerpunkt), positiv = gegen den Uhrzeigersinn von
+ * oben (Nord). Die Höhe bleibt — gedreht wird der Grundriss, wie beim
+ * Ausrichten eines Bauteils. Rein.
+ */
+/** Bauplan-Tripel [x, y, z] → Grundriss {x, z} für den Kernel. */
+const _xz = (punkte) => punkte.map(p => ({ x: p[0], z: p[2] }));
+
+/**
+ * Eine Polylinie oder einen Ring im Grundriss um `abstand` versetzen (S9):
+ * DIESELBE Gehrung wie der Offset des Kernels (`versetztePunkte`), die Höhe
+ * je Stützpunkt bleibt am Index. Offen: positiv = links in Laufrichtung
+ * (three, Blick von oben). Ring: positiv = NACH AUSSEN — die Wicklung wird
+ * nicht vorausgesetzt, sondern an der Fläche abgelesen (sie muss wachsen).
+ * Punkte sind Tripel [x, y, z] wie im Bauplan.
+ */
+export function versetzePunktliste(punkte, abstand, { geschlossen = false } = {}) {
+    const d = Number(abstand);
+    if (!Array.isArray(punkte) || punkte.length < 2 || !Number.isFinite(d) || d === 0) return null;
+    const grund = _xz(punkte);
+    const zurueck = (xz) => xz.map((q, i) => [q.x, punkte[i][1], q.z]);
+    if (!geschlossen) return zurueck(versetztePunkte(grund, d));
+    // Welches Vorzeichen führt NACH AUSSEN? Eine Probe mit dem Betrag: wächst
+    // die Fläche, ist es +; sonst −. Der gewünschte Abstand folgt dann diesem
+    // Vorzeichen (negativ = nach innen), unabhängig von der Wicklung.
+    const betrag = Math.abs(d);
+    const a0 = ringFlaeche(grund);
+    const probe = versetztePunkte(grund, betrag, { geschlossen: true });
+    const nachAussen = ringFlaeche(probe) >= a0 ? betrag : -betrag;
+    return zurueck(versetztePunkte(grund, d > 0 ? nachAussen : -nachAussen, { geschlossen: true }));
+}
+
+/** Ein Ende einer Polylinie entlang seines Segments verlängern (> 0) oder kürzen (< 0). */
+export function trimmePunktliste(punkte, ende = 'ende', laenge = 0) {
+    const l = Number(laenge);
+    if (!Array.isArray(punkte) || punkte.length < 2 || !Number.isFinite(l) || Math.abs(l) < 1e-4) return null;
+    const pts = punkte.map(p => [p[0], p[1], p[2]]);
+    const [i, j] = ende === 'anfang' ? [0, 1] : [pts.length - 1, pts.length - 2];
+    const a = pts[i], b = pts[j];
+    const seg = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    if (seg < 1e-9 || l <= -seg + 0.01) return null;         // das Segment darf nicht verschwinden
+    const f = (seg + l) / seg;
+    pts[i] = [b[0] + (a[0] - b[0]) * f, b[1] + (a[1] - b[1]) * f, b[2] + (a[2] - b[2]) * f];
+    return pts;
+}
+
+/**
+ * Zwei Ringe (Bauplan-Tripel) im Grundriss VEREINIGEN (S9) — polygon-clipping,
+ * wie `IfcShapeOutlines` es für die Umrisse tut. Ergebnis ist EIN Ring ohne
+ * Löcher, sonst ein Grund: zwei Flächen, die sich nicht berühren, bleiben
+ * zwei; ein Ring um ein Loch ist keine Fläche dieses Rezepts. Höhen: jeder
+ * Ergebnispunkt nimmt die Höhe des nächsten Ausgangspunkts (Schnittpunkte
+ * liegen auf einer Kante und bekommen die Höhe des näheren Endes).
+ * @returns {{punkte: number[][]}|{grund: string}}
+ */
+export function vereinigeRinge(a, b) {
+    const ok = (r) => Array.isArray(r) && r.length >= 3 && r.every(p => Array.isArray(p) && p.length >= 3);
+    if (!ok(a) || !ok(b)) return { grund: 'Beide Flächen brauchen mindestens drei Punkte.' };
+    const ring = (r) => [[...r.map(p => [p[0], p[2]]), [r[0][0], r[0][2]]]];
+    let aus;
+    try { aus = polygonClipping.union(ring(a), ring(b)); }
+    catch (fehler) { return { grund: `Vereinigung nicht möglich: ${fehler?.message ?? fehler}` }; }
+    if (!Array.isArray(aus) || aus.length !== 1) {
+        return { grund: aus?.length > 1 ? 'Die Flächen berühren sich nicht — es blieben zwei.' : 'Die Vereinigung ist leer.' };
+    }
+    if (aus[0].length !== 1) return { grund: 'Die Vereinigung hätte ein Loch — das kann diese Fläche nicht tragen.' };
+    const quelle = [...a, ...b];
+    const hoehe = (x, z) => {
+        let best = quelle[0][1], d0 = Infinity;
+        for (const p of quelle) {
+            const d = Math.hypot(p[0] - x, p[2] - z);
+            if (d < d0) { d0 = d; best = p[1]; }
+        }
+        return best;
+    };
+    let ergebnis = aus[0][0].map(([x, z]) => [x, hoehe(x, z), z]);
+    // polygon-clipping schliesst den Ring (letzter = erster); das Rezept hält ihn offen.
+    const l = ergebnis.length;
+    if (l > 1 && Math.hypot(ergebnis[0][0] - ergebnis[l - 1][0], ergebnis[0][2] - ergebnis[l - 1][2]) < 1e-9) ergebnis = ergebnis.slice(0, -1);
+    if (ergebnis.length < 3) return { grund: 'Die Vereinigung ist entartet.' };
+    return { punkte: ergebnis };
+}
+
+/** Eine Polylinie an einer Station teilen — beide Teile enthalten den Teilpunkt. */
+export function teilePunktlisteAnStation(punkte, station) {
+    const s = Number(station);
+    if (!Array.isArray(punkte) || punkte.length < 2 || !Number.isFinite(s) || s <= 0.01) return null;
+    let gelaufen = 0;
+    for (let i = 1; i < punkte.length; i++) {
+        const a = punkte[i - 1], b = punkte[i];
+        const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+        if (d < 1e-9) continue;
+        if (s < gelaufen + d - 0.01) {
+            const t = (s - gelaufen) / d;
+            const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+            return [[...punkte.slice(0, i), p], [p, ...punkte.slice(i)]];
+        }
+        gelaufen += d;
+    }
+    return null;
+}
+
+/**
+ * Einen Ring mit einer Geraden (zwei Grundrisspunkte) in zwei Ringe teilen —
+ * Halbebenen-Zuschnitt (Sutherland–Hodgman) auf beiden Seiten, Höhen an den
+ * Schnittpunkten interpoliert. `null`, wenn die Gerade den Ring nicht trennt.
+ */
+export function teileRingMitGerade(punkte, p1, p2) {
+    if (!Array.isArray(punkte) || punkte.length < 3 || !p1 || !p2) return null;
+    const dx = p2.x - p1.x, dz = p2.z - p1.z;
+    const l = Math.hypot(dx, dz);
+    if (l < 1e-9) return null;
+    const seite = (p) => ((p[0] - p1.x) * dz - (p[2] - p1.z) * dx) / l;   // signierter Abstand zur Geraden
+    const schneide = (vorzeichen) => {
+        const aus = [];
+        const n = punkte.length;
+        for (let i = 0; i < n; i++) {
+            const a = punkte[i], b = punkte[(i + 1) % n];
+            const sa = seite(a) * vorzeichen, sb = seite(b) * vorzeichen;
+            if (sa >= 0) aus.push([a[0], a[1], a[2]]);
+            if ((sa >= 0) !== (sb >= 0)) {
+                const t = sa / (sa - sb);
+                aus.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+            }
+        }
+        // Doppelpunkte am Schnitt entfernen
+        return aus.filter((p, i) => i === 0 || Math.hypot(p[0] - aus[i - 1][0], p[2] - aus[i - 1][2]) > 1e-6);
+    };
+    const links = schneide(1), rechts = schneide(-1);
+    if (links.length < 3 || rechts.length < 3) return null;
+    if (ringFlaeche(_xz(links)) < 1e-6 || ringFlaeche(_xz(rechts)) < 1e-6) return null;
+    return [links, rechts];
+}
+
+export function drehePunktliste(parameter, grad, zentrum = null) {
+    const punkte = parameter?.punkte;
+    if (!Array.isArray(punkte) || !Number.isFinite(Number(grad))) return parameter;
+    const c = zentrum ?? schwerpunktXZ(punkte);
+    if (!c) return parameter;
+    const w = (Number(grad) * Math.PI) / 180;
+    const cos = Math.cos(w), sin = Math.sin(w);
     return {
         ...parameter,
-        operationen: ops.map(op => ({
-            ...op,
-            parameter: {
-                ...op.parameter,
-                ...(Array.isArray(op.parameter?.achse) ? { achse: op.parameter.achse.map(punktXZ) } : {}),
-                ...(Array.isArray(op.parameter?.umriss) ? { umriss: op.parameter.umriss.map(punktXZ) } : {}),
-            },
-        })),
+        punkte: punkte.map(p => {
+            if (!Array.isArray(p) || p.length < 3) return p;
+            const dx = p[0] - c.x, dz = p[2] - c.z;
+            // Standard-Drehung in XZ (y-Achse zeigt nach oben); Nord = −z.
+            return [c.x + dx * cos - dz * sin, p[1], c.z + dx * sin + dz * cos];
+        }),
     };
 }
+
+/** Gelände: die Operationsliste hebt `verschiebeOperationen` (Operationen.js). */
+function _verschiebeGelaende(parameter, delta) {
+    if (!Array.isArray(parameter?.operationen)) return parameter;
+    return { ...parameter, operationen: verschiebeOperationen(parameter.operationen, delta) };
+}
+
+
+// ── Fachmodell-Projektion (Stufe 17.3 → Teil XIV): jedes Rezept sagt selbst,
+//    was es dem Fachmodell gibt — Kanten, Knoten, Gelände, Körper. ────────
+function _p(p) {
+    if (Array.isArray(p)) return { x: p[0] ?? 0, y: p[1] ?? 0, z: p[2] ?? 0 };
+    return { x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0 };
+}
+function _laengeVon(punkte) {
+    let l = 0;
+    for (let i = 0; i + 1 < punkte.length; i++) {
+        l += Math.hypot(punkte[i + 1].x - punkte[i].x, punkte[i + 1].y - punkte[i].y, punkte[i + 1].z - punkte[i].z);
+    }
+    return l;
+}
+/** Nur ROHRE werden Kanten: eine gezeichnete Linie ist eine Trasse, kein Kanal. */
+function _fachmodellRohr(globalId, plan) {
+    const roh = plan?.parameter?.punkte;
+    if (!Array.isArray(roh) || roh.length < 2) return {};
+    const punkte = roh.map(_p);
+    return { kanten: [{
+        globalId, name: plan.name ?? '', kategorie: plan.kategorie ?? 'IFCPIPESEGMENT',
+        anfang: punkte[0], ende: punkte[punkte.length - 1], punkte,
+        laenge: _laengeVon(punkte), dn: Number(plan.parameter?.dn) || null, quelle: 'bauplan',
+    }] };
+}
+/** Der Netz-Knoten eines Schachts ist die SOHLE (dieselbe Konvention wie die Platzierung). */
+function _fachmodellSchacht(globalId, plan) {
+    const roh = plan?.parameter?.punkte;
+    if (!Array.isArray(roh) || !roh.length) return {};
+    return { knoten: [{ globalId, name: plan.name ?? '', punkt: _p(roh[0]) }] };
+}
+const _fachmodellNichts = () => ({});
+const _fachmodellGelaende = (globalId) => ({ gelaende: [globalId] });
 
 export const REZEPTE = Object.freeze({
     linie: {
@@ -294,9 +488,13 @@ export const REZEPTE = Object.freeze({
         felder: [
             { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
             { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
-            { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'hoehe', titel: 'Höhe (leer = auf dem Gelände)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
         ],
+        // Teil XIV, G5: eine Linie ohne eigene Höhe ist eine BRUCHKANTE — sie
+        // liegt auf dem Gelände. Wer eine Höhe tippt, zeichnet eine Trasse.
+        hoehenAus: 'gelaende',
         verschiebe: _verschiebePunktliste,
+        fachmodell: _fachmodellNichts,
         baue: (parameter) => bandGeometrie(punkteAus(parameter)),
     },
     flaeche: {
@@ -313,6 +511,7 @@ export const REZEPTE = Object.freeze({
             { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
         ],
         verschiebe: _verschiebePunktliste,
+        fachmodell: _fachmodellNichts,
         baue: (parameter) => flaechenGeometrie(punkteAus(parameter)),
     },
     gelaende: {
@@ -333,6 +532,7 @@ export const REZEPTE = Object.freeze({
          * Parameter bleiben rein deklarativ: Quelle + Operationsliste.
          */
         verschiebe: _verschiebeGelaende,
+        fachmodell: _fachmodellGelaende,
         braucht: 'quellraster',
         baue: null,
         baueMit: (parameter, quellraster) => {
@@ -357,6 +557,8 @@ export const REZEPTE = Object.freeze({
             { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, vorgabe: 300 },
         ],
         verschiebe: _verschiebePunktliste,
+        fachmodell: _fachmodellRohr,
+        formAus: (parameter, form) => _formAusRohr(parameter, form, 12),
         baue: (parameter) => rohrGeometrie(punkteAus(parameter), parameter?.dn),
     },
     schacht: {
@@ -380,13 +582,94 @@ export const REZEPTE = Object.freeze({
               min: 300, max: 4000, vorgabe: 1000 },
         ],
         verschiebe: _verschiebePunktliste,
+        fachmodell: _fachmodellSchacht,
+        formAus: (parameter, form) => _formAusRohr(parameter, form, 16),
         baue: (parameter) => rohrGeometrie(punkteAus(parameter), parameter?.dn, 16),
     },
 });
 
 /** Ein Rezept nach Id. Nie `undefined` durchreichen — `null` ist die Antwort. */
 export function rezeptNach(id) {
-    return REZEPTE[String(id ?? '')] ?? null;
+    const k = String(id ?? '');
+    return REZEPTE[k] ?? ABLEITUNGEN[k] ?? null;
+}
+
+/** Eine Ableitung rechnet aus anderen Objekten (`leite`); ein Rezept baut aus Parametern (`baue`). */
+export function istAbleitung(rezept) {
+    return typeof rezept?.leite === 'function';
+}
+
+/** Kennung einer Ableitung — die Klammer um ihre Teile im Journal. */
+export function neueAbleitungsId() {
+    return `ab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/**
+ * Die Teile einer Ableitung im wirksamen Stand: Rolle → {globalId, bauplan}.
+ * Gebraucht bei der Folgeformung — dieselben GlobalIds, volle Liste.
+ */
+export function teileVon(erzeugtStand, ableitungId) {
+    const teile = new Map();
+    if (!ableitungId) return teile;
+    for (const [globalId, plan] of erzeugtStand ?? []) {
+        if (plan?.ableitung === ableitungId && plan?.rolle) teile.set(plan.rolle, { globalId, bauplan: plan });
+    }
+    return teile;
+}
+
+/**
+ * Die Journaleinträge einer Ableitung — je Teil EIN `erzeugt`-Eintrag mit
+ * eigener GlobalId, derselben Klammer `ableitung` und den VOLLEN Parametern
+ * (absoluter Zielzustand je Bauteil, Gesetz 4). Bei `bestehend` bleiben die
+ * GlobalIds stehen; die Faltung „letzter gewinnt" ersetzt dann den Bauplan.
+ *
+ * Der Aufrufer legt die Einträge in EINEN Vorgang (ausfuehren tut das für
+ * Listen von selbst) — ein Teil allein wäre ein halbes Ding.
+ */
+export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, raster = {},
+                                     operationen = [], name = '', bestehend = null } = {}) {
+    const r = ABLEITUNGEN[rezept];
+    if (!r) throw new Error(`Ableitung „${rezept}" gibt es nicht`);
+    const ableitung = bestehend?.ableitung ?? neueAbleitungsId();
+    const parameter = { quellen, quellBasis, raster, operationen };
+    const vorhandene = bestehend?.teile instanceof Map ? bestehend.teile : new Map(Object.entries(bestehend?.teile ?? {}));
+    return r.teile.map(teil => {
+        const alt = vorhandene.get(teil.rolle);
+        const pt = typeof teil.predefinedType === 'function' ? teil.predefinedType(parameter) : (teil.predefinedType ?? null);
+        // Der IFC-Typ folgt aus der ROLLE — oder, wo das Teil es sagt, aus den
+        // Parametern (die Aussparung bleibt, was das Bauwerk war).
+        const kat = typeof teil.kategorie === 'function' ? teil.kategorie(parameter) : teil.kategorie;
+        return {
+            art: 'erzeugt',
+            globalId: alt?.globalId ?? neueGlobalId(),
+            modell: 'cde',
+            nachher: {
+                rezept, rolle: teil.rolle, ableitung,
+                bauform: teil.bauform,
+                kategorie: String(kat).toUpperCase(),
+                predefinedType: pt,
+                name: typeof teil.name === 'function' ? teil.name(name || r.titel) : (teil.name ?? name),
+                parameter,
+            },
+        };
+    });
+}
+
+/**
+ * Die Kernel-Form eines gebauten Teils → BufferGeometry, Float32 erst hier.
+ * Raster werden trianguliert (Löcher bleiben Löcher), Körper und Netze
+ * gehen so, wie sie sind.
+ */
+export function geometrieAusTeil(teil) {
+    if (!teil) return null;
+    if (teil.form === 'raster') {
+        const { positions, triCount } = dreieckeAusRaster(teil.daten);
+        return triCount ? dreiecksGeometrie(positions) : null;
+    }
+    if (teil.form === 'koerper' || teil.form === 'mesh') {
+        return teil.daten?.triCount ? dreiecksGeometrie(teil.daten.positions) : null;
+    }
+    return null;
 }
 
 /**
@@ -445,7 +728,10 @@ export async function baueMitAbleitung(bauplan, holeQuellraster) {
     if (!(bauplan.parameter?.operationen?.length)) {
         return { ok: false, fehler: [`${r.titel}: keine Operationen`] };
     }
-    const raster = await holeQuellraster?.(quelle);
+    // Die Zellweite steht im Bauplan (`raster.cell`), sobald einer sie
+    // festlegt — sonst rechnet die Automatik je Quelle eine andere, und zwei
+    // Raster derselben Ableitung hätten keinen gemeinsamen Bezug.
+    const raster = await holeQuellraster?.(quelle, { cell: bauplan.parameter?.raster?.cell ?? null });
     if (!raster) return { ok: false, fehler: [`${r.titel}: Quellraster zu „${quelle}" nicht ableitbar`] };
     const { geometrie, warnungen } = r.baueMit(bauplan.parameter, raster);
     if (!geometrie) return { ok: false, fehler: [`${r.titel}: Geometrie liess sich nicht bauen`] };

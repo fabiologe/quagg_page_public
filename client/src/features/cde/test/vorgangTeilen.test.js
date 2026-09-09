@@ -60,7 +60,14 @@ describe('Das Rohr-Rezept', () => {
         });
         expect(ok).toBe(true);
         const pos = geometrie.getAttribute('position');
-        expect(pos.count).toBe(24);                     // 2 Ringe à 12 Ecken
+        // Seit G6 ein GESCHLOSSENER Sweep: 12 Seitenquads (24 Δ) + zwei
+        // Deckel à 10 Δ = 44 Dreiecke à 3 Ecken. Die Ecken bleiben je
+        // Dreieck eigen (flache Facetten), der Index ist trivial — hier
+        // stand einmal `getIndex() === null`, und das war der Fehler
+        // selbst: unindiziert lehnt der Editor die Geometrie ab
+        // (`geometrieIndex.test.js`).
+        expect(pos.count).toBe(44 * 3);
+        expect(geometrie.getIndex()?.count).toBe(44 * 3);
         // Radius 0,25 m um die Achse — in Y wie in Z.
         let maxY = -Infinity;
         for (let i = 0; i < pos.count; i++) maxY = Math.max(maxY, pos.getY(i));

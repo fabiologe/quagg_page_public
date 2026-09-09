@@ -40,8 +40,11 @@
  */
 
 import * as THREE from 'three';
+import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
-import { baueAusBauplan, baueMitAbleitung, rezeptNach } from './Bauteilrezepte.js';
+import { BAUTEILFARBEN, farbeFuer, materialWerte } from './Bauteilfarben.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, rezeptNach } from './Bauteilrezepte.js';
+import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
 
@@ -74,6 +77,11 @@ export function huelleAusBox(box) {
         anker: { x: m.x, y: m.y, z: m.z },
         unterkante: box.min?.y ?? m.y,
         oberkante: box.max?.y ?? m.y,
+        // Die ganze Box (Teil XVI, S2): die Vorschau einer Lageänderung
+        // zeichnet den Drahtkasten am neuen Ort — ohne zweiten Boxen-Aufruf.
+        box: (box.min && box.max)
+            ? { min: { x: box.min.x, y: box.min.y, z: box.min.z }, max: { x: box.max.x, y: box.max.y, z: box.max.z } }
+            : null,
     };
 }
 
@@ -135,11 +143,26 @@ export class IfcAutor {
      *        `eigenesModell` tat es nicht. Erzeugte Bauteile entstanden
      *        dadurch fehlerfrei und blieben unsichtbar.
      */
-    constructor({ getFragments, getWelt, holeQuellraster } = {}) {
+    constructor({ getFragments, getWelt, holeQuellraster, holeQuellForm, holeQuellBauform,
+                  kernel, getHoehenversatz } = {}) {
         this._getFragments = getFragments ?? (() => null);
         this._getWelt = getWelt ?? (() => null);
         /** Stufe 15: Ableitung für Rezepte mit Bedarf (Gelände-Quellraster). */
         this._holeQuellraster = holeQuellraster ?? (async () => null);
+        /**
+         * Teil XIV: die Kernel-Form eines GELIEFERTEN Objekts (raster, mesh …)
+         * für Ableitungen, der Geometrie-Kernel selbst und der Höhenversatz,
+         * an dem die NN-Grenze der Rezepte hängt. Alles Getter-Closures — der
+         * Autor holt sich nichts.
+         */
+        this._holeQuellForm = holeQuellForm ?? (async () => null);
+        // Die BAUFORM eines gelieferten Bauteils — fürs Formpaar-Gate der
+        // Ableitungen. Ohne sie bleibt das Gate ungeprüft und sagt es.
+        this._holeQuellBauform = holeQuellBauform ?? null;
+        this._kernel = kernel ?? null;
+        this._getHoehenversatz = getHoehenversatz ?? (() => 0);
+        /** Kennzahlen/Befunde/Teile je Ableitung aus dem LETZTEN Aufbau — im Speicher, nie im Journal. */
+        this.ableitungen = new Map();
         /**
          * Welche Merkmalssätze DIESER LAUF schon geschrieben hat (Lücke ⑧).
          *
@@ -229,6 +252,11 @@ export class IfcAutor {
         return out;
     }
 
+    /** Die AKTUELLEN Boxen — Delta-Box vor Basis-Box (siehe `DeltaBoxen.js`). */
+    async _boxenAktuell(modell, ids) {
+        return boxenAktuell(modell, ids, (id) => this._modell(id));
+    }
+
     /**
      * Anker, Unter- und Oberkante mehrerer Bauteile — EIN Lesevorgang.
      *
@@ -245,7 +273,7 @@ export class IfcAutor {
         if (!modell || !ids.length) return out;
         let boxen = null;
         try {
-            boxen = await modell.getBoxes(ids);
+            boxen = await this._boxenAktuell(modell, ids);
         } catch (fehler) {
             console.warn('cde: huellen lesen', fehler?.message ?? fehler);
             return out;
@@ -253,6 +281,22 @@ export class IfcAutor {
         for (let i = 0; i < ids.length; i++) {
             const h = huelleAusBox(boxen?.[i]);
             if (h) out.set(ids[i], h);
+        }
+        return out;
+    }
+
+    /** Die Bounding-Boxen (min/max in Welt) — für die Kandidatensuche der Kollisionsprüfung (G7). */
+    async boxenVon(modelId, localIds) {
+        const modell = this._modell(modelId);
+        const ids = [...(localIds ?? [])];
+        const out = new Map();
+        if (!modell || !ids.length) return out;
+        let boxen = null;
+        try { boxen = await this._boxenAktuell(modell, ids); } catch { return out; }
+        for (let i = 0; i < ids.length; i++) {
+            const b = boxen?.[i];
+            if (!b?.min || !b?.max || (typeof b.isEmpty === 'function' && b.isEmpty())) continue;
+            out.set(ids[i], { min: { x: b.min.x, y: b.min.y, z: b.min.z }, max: { x: b.max.x, y: b.max.y, z: b.max.z } });
         }
         return out;
     }
@@ -331,6 +375,67 @@ export class IfcAutor {
     }
 
     /**
+     * WELT → MODELLRAHMEN: die eine Umrechnung an der Editor-Grenze.
+     *
+     * DER BEFUND (2026-09-09, am Browser gemessen). Die CDE baut ihre
+     * Geometrie durchgehend in WELTKOORDINATEN — der Lageplan, die Griffe,
+     * das Fachmodell und jedes Rezept rechnen darin. Die Bibliothek legt auf
+     * alles, was durch den Editor geht, ihren Koordinationspunkt obendrauf:
+     * `core.baseCoordinates`, gesetzt beim ersten geladenen Modell. Gemessen
+     * am ENQUIER-Netz mit dem Test-Erdkörper:
+     *
+     *     Ur-Gelände (Welt)      -216 /  -26 /    -15
+     *     erzeugtes DGM      -2577744 / -341 / 5465698
+     *     Differenz          -2577528 / -315 / 5465713  ==  baseCoordinates
+     *
+     * Jedes erzeugte Bauteil lag also 2,5 Millionen Meter neben der Szene.
+     * Es war fehlerfrei da — auffindbar, auswählbar, mit Hülle und Griffen —
+     * nur eben nicht im Bild. Aufgefallen ist es nie, weil alles, was die CDE
+     * über eigene Bauteile WEISS, aus dem Bauplan kommt (Journal, Lageplan,
+     * Massen, Griffe) und damit richtig lag; falsch war allein, was die
+     * Bibliothek daraus zeichnet.
+     *
+     * Die Umrechnung gehört an GENAU DIESE Grenze und nirgends sonst: die
+     * Rezepte bleiben rein und weltbezogen, und wer eine zweite Stelle
+     * einführt, hat wieder zwei Wahrheiten (Gesetz 7).
+     *
+     * @returns {THREE.Matrix4} Verschiebung um −baseCoordinates (Einheit, wenn
+     *   die Bibliothek keinen Koordinationspunkt führt)
+     */
+    _weltNachModell() {
+        const base = this._getFragments()?.core?.baseCoordinates ?? null;
+        if (!Array.isArray(base) || base.length < 3) return new THREE.Matrix4();
+        const [x, y, z] = base;
+        if (![x, y, z].every(Number.isFinite)) return new THREE.Matrix4();
+        return new THREE.Matrix4().makeTranslation(-x, -y, -z);
+    }
+
+    /**
+     * Das Material zu einem IFC-Typ — aus dem Farbkatalog (`Bauteilfarben`).
+     *
+     * Kennt der Katalog den Typ nicht, bleibt es beim Standard der
+     * Bibliothek: lieber neutral als eine erfundene Farbe.
+     *
+     * `depthWrite` fällt bei durchscheinendem Material weg — sonst
+     * verdeckt der Aushubkörper das Rohr in seinem Inneren, obwohl man
+     * hindurchsieht; das ist der klassische Fehler bei transparenten
+     * Volumen und genau der Fall, für den er gebaut ist.
+     */
+    _materialFuer(kategorie) {
+        const werte = materialWerte(farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN));
+        if (!werte) return new THREE.MeshLambertMaterial();
+        return new THREE.MeshLambertMaterial({
+            color: werte.color,
+            opacity: werte.opacity,
+            transparent: werte.transparent,
+            depthWrite: !werte.transparent,
+        });
+    }
+
+    /** Einen eigenen Farbsatz setzen (Büro-Ebene, Vorrang vor dem eingebauten). */
+    setzeFarbsatz(satz) { this._farbsatz = satz ?? null; }
+
+    /**
      * Ein Bauteil erzeugen.
      *
      * @param {object} bauteil { kategorie, name?, geometrie: THREE.BufferGeometry,
@@ -359,12 +464,26 @@ export class IfcAutor {
                     _category: { value: bauteil.kategorie ?? 'IFCBUILDINGELEMENTPROXY' },
                     ...(bauteil.globalId ? { _guid: { value: bauteil.globalId } } : {}),
                     Name: { value: bauteil.name ?? '' },
+                    // Der PredefinedType (TRENCH, TERRAIN …) steht als gewöhnliches
+                    // Attribut — alles ohne Unterstrich übernimmt fragments.
+                    ...(bauteil.predefinedType ? { PredefinedType: { value: bauteil.predefinedType } } : {}),
                 },
-                globalTransform: bauteil.platzierung ?? new THREE.Matrix4(),
+                // Die Platzierung des Aufrufers WELTBEZOGEN, danach in den
+                // Modellrahmen gehoben (`_weltNachModell`). Reihenfolge zählt:
+                // erst platzieren, dann umrechnen.
+                globalTransform: this._weltNachModell()
+                    .multiply(bauteil.platzierung ?? new THREE.Matrix4()),
                 samples: [{
                     localTransform: new THREE.Matrix4(),
                     representation: bauteil.geometrie,
-                    material: bauteil.material ?? new THREE.MeshLambertMaterial(),
+                    // DIE FARBE GEHÖRT DEM BAUTEIL, nicht der Ansicht.
+                    //
+                    // Sie kommt hier ins Material und damit in die
+                    // Fragmentdatei — ein Aushub ist also auch nach dem
+                    // Export braun und durchscheinend, und niemand muss eine
+                    // Einfärbung nachziehen. Ein Aufrufer, der ein eigenes
+                    // Material mitbringt, behält es (`bauteil.material`).
+                    material: bauteil.material ?? this._materialFuer(bauteil.kategorie),
                 }],
             }]);
             const element = elemente?.[0] ?? null;
@@ -456,31 +575,65 @@ export class IfcAutor {
      *   die localId entsteht erst hier und steht in keiner Zuordnung des
      *   gelieferten Modells.
      */
-    async baueErzeugte(schritte, modelId = CDE_MODELL_ID) {
+    async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set() } = {}) {
         const karte = new Map();
         const misserfolge = [];
         await this.verwirfEigenesModell(modelId);
-        if (!schritte?.length) return { karte, misserfolge };
+        if (!schritte?.length) { this.ableitungen = new Map(); return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [] }; }
 
         const angelegt = await this.eigenesModell(modelId);
         if (!angelegt.ok) {
             return { karte, misserfolge: schritte.map(s => ({ ...s, grund: angelegt.grund })) };
         }
 
+        // EIN Ableitungslauf für den ganzen Aufbau (Teil XIV): Quellen lösen
+        // sich lazy auf, `leite` läuft einmal je Ableitung, der Cache stirbt
+        // mit diesem Durchlauf.
+        const stand = new Map(schritte.map(s => [s.globalId, s.wert]));
+        const lauf = neuerAbleitungslauf({
+            stand, rezeptNach,
+            holeQuellForm: this._holeQuellForm,
+            holeQuellBauform: this._holeQuellBauform,
+            kernel: this._kernel,
+            hoehenversatz: this._getHoehenversatz() ?? 0,
+        });
+        const leer = [];
+        const verborgen = [];
+
         for (const schritt of schritte) {
+            // VERBORGEN, nicht gebaut (G6): ein eigenes DGM, das Quelle eines
+            // Kanalgrabens wurde, bleibt im Stand — der Lauf löst seine Form
+            // auf, sobald der Graben sie braucht —, kommt aber nicht in den
+            // Raum. `geloescht` heisst bei Eigenem also „nicht zeigen", bei
+            // Geliefertem „ausblenden" — beides ohne Löschen.
+            if (verdeckt.has(schritt.globalId)) { verborgen.push(schritt.globalId); continue; }
             // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
             // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
             // gemacht — siehe Kopf von Bauteilrezepte.js.
             const rezept = rezeptNach(schritt.wert?.rezept);
-            const gebaut = rezept?.braucht === 'quellraster'
-                ? await baueMitAbleitung(schritt.wert ?? {}, this._holeQuellraster)
-                : baueAusBauplan(schritt.wert ?? {});
+            let gebaut;
+            if (istAbleitung(rezept)) {
+                const r = await lauf.baue(schritt.globalId);
+                if (!r.ok) { misserfolge.push({ ...schritt, grund: r.fehler.join(' · ') }); continue; }
+                // Ein leeres Teil (kein Auftrag beim reinen Gerinne) ist kein
+                // Fehler: es entsteht kein Bauteil, die Kennzahl sagt null.
+                if (r.leer) { leer.push(schritt.globalId); continue; }
+                const geometrie = geometrieAusTeil(r.teil);
+                if (!geometrie) { misserfolge.push({ ...schritt, grund: 'Teil ohne Geometrie' }); continue; }
+                gebaut = { ok: true, geometrie, kategorie: schritt.wert.kategorie, name: schritt.wert.name,
+                           predefinedType: schritt.wert.predefinedType ?? null };
+            } else {
+                gebaut = rezept?.braucht === 'quellraster'
+                    ? await baueMitAbleitung(schritt.wert ?? {}, this._holeQuellraster)
+                    : baueAusBauplan(schritt.wert ?? {});
+            }
             if (!gebaut.ok) {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
             }
             const r = await this.erzeuge(modelId, {
                 kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
+                predefinedType: gebaut.predefinedType ?? null,
                 // Die im Journal vergebene Kennung mitgeben — dann findet auch
                 // `getLocalIdsByGuids` das erzeugte Bauteil, nicht nur die
                 // Karte aus diesem einen Lauf.
@@ -489,8 +642,9 @@ export class IfcAutor {
             if (r.ok) karte.set(schritt.globalId, r.localId);
             else misserfolge.push({ ...schritt, grund: r.grund });
         }
+        this.ableitungen = lauf.ableitungen;
         await this._neuZeichnen();
-        return { karte, misserfolge };
+        return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen };
     }
 
     /**
@@ -571,9 +725,14 @@ export class IfcAutor {
         // setzt `vollstaendig`, weil es den ganzen Stand kennt und Erzeugtes
         // auch dann abräumen muss, wenn nichts mehr übrig ist.
         const erzeugtSchritte = schritte.filter(s => s.art === 'erzeugt');
+        // Eigene Bauteile, die der Stand als `geloescht` führt, werden gebaut
+        // aber nicht gezeigt (G6, siehe baueErzeugte).
+        const verdeckt = new Set(schritte
+            .filter(s => s.art === 'geloescht' && s.modell === 'cde' && s.wert)
+            .map(s => s.globalId));
         let erzeugte = new Map();
         if (plan?.vollstaendig || erzeugtSchritte.length) {
-            const gebaut = await this.baueErzeugte(erzeugtSchritte);
+            const gebaut = await this.baueErzeugte(erzeugtSchritte, CDE_MODELL_ID, { verdeckt });
             erzeugte = gebaut.karte;
             misserfolge.push(...gebaut.misserfolge);
         }
