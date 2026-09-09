@@ -18,13 +18,23 @@ import { ref, computed } from 'vue';
 
 import { bestimme } from '../services/bauform/Bauformen.js';
 import {
-    REPO_KEY as REGEL_KEY, bauformAusRegel, ladeRegeln, namensvorschlaege, regelAus,
+    MITGELIEFERTE_REGELN, REPO_KEY as REGEL_KEY, bauformAusRegel, ladeRegeln,
+    alleVorschlaege, regelAus,
 } from '../services/bauform/Bauformregeln.js';
 import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
 import { GRUPPEN, felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
+import { teileVon } from '../services/Bauteilrezepte.js';
+import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
 import { befundeFuer } from '../services/Befunde.js';
+
+/** Der leere Eingabe-Zustand — je Aufruf ein frisches Objekt, nie geteilt. */
+function _eingabeLeer() {
+    // `auto`: welche Formularwerte der Zug vorbelegt hat (nachZug) — geteilt,
+    // damit Plan und Raum dieselben Werte als „unberührt" ansehen.
+    return { phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {} };
+}
 
 export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     /** Einordnung der aktuellen Auswahl: {bauform, guete, quelle, warnungen} */
@@ -51,14 +61,42 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      *
      * Nötig, weil manche Software alles als `IFCBUILDINGELEMENTPROXY` ausgibt:
      * dann sagt der Typ nichts, der Name aber sehr wohl („Haltung", „Schacht").
+     *
+     * VORBELEGT mit den mitgelieferten Regeln — derselbe Rückfall, den auch
+     * `ladeRegeln` ohne Repo nimmt. Eine leere Startliste war harmlos, solange
+     * die Regeln nur beim Klick auf ein Bauteil zählten; seit sie
+     * mitentscheiden, WAS Gelände ist, wäre sie ein Rennen: ein Modell, das
+     * vor dem Laden der Bürodaten fertig ist, verlöre sein IfcGeographicElement
+     * mit PredefinedType TERRAIN — und niemand sähe einen Fehler, nur fehlendes
+     * Gelände.
      */
-    const regeln = ref([]);
+    const regeln = ref([...MITGELIEFERTE_REGELN]);
     /** Id der scharfen Bearbeitung, oder null. */
     const scharfId = ref(null);
     /** Formularwerte der scharfen Bearbeitung. */
     const werte = ref({});
     /** Läuft gerade eine Einordnung? (Geometrie-Ableitung kann dauern.) */
     const laeuft = ref(false);
+
+    /**
+     * DER EINGABE-ZUSTAND (Teil XVI, S1) — was der Nutzer gerade sammelt.
+     *
+     * Wohnt im Store und nicht im Composable, weil ZWEI Flächen ihn lesen:
+     * der Lageplan zeichnet den Zug, der Raum zeigt ihn als Vorschau (S2)
+     * und setzt ab S3 selbst Punkte. Ein Zustand je Fläche wären zwei
+     * Züge — zwei Punkte im Plan, einer im Raum — und genau die Klasse
+     * „gespiegelter Zustand läuft auseinander", die das Haus schon zweimal
+     * getroffen hat.
+     *
+     *   phase           'aus' | 'sammeln' | 'pruefen'
+     *   punkte          [{x, y?, z, ausserhalb?}] in Welt — der Zug/Umriss
+     *   zeiger          {x, z} | null — nur fürs Gummiband, nie im Journal
+     *   geste           {feld, art, auf, kandidaten} | null — welches Feld
+     *                   gerade per Geste gefüllt wird (S3)
+     *   zugGeschlossen  ob der Zug schon abgeschlossen ist (PRÜFEN)
+     *   auto            {feld: wert} — vom Zug vorbelegte Werte (nachZug)
+     */
+    const eingabe = ref(_eingabeLeer());
 
     /**
      * DER BEARBEITEN-MODUS. Aus heisst: nichts ändert das Modell. Punkt.
@@ -99,7 +137,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         umgekehrt: bauteil.value?.stand?.fliessrichtung === 'umgekehrt',
         typprofil: typprofil.value,
     }));
-    const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value) : []));
+    const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value, bauteil.value) : []));
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
     const bereit = computed(() => !!scharf.value && fehler.value.length === 0);
 
@@ -118,7 +156,9 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * Argumenten, die beim nächsten Argument wieder auseinanderläuft.
      */
     const moeglich = computed(() => (einordnung.value
-        ? passende(einordnung.value, { typprofil: typprofil.value })
+        // `eigenes`: ein Bauplan im Stand heisst „von hier" — nur dort gibt es
+        // Werkzeuge wie „Stützpunkt verschieben" (Teil XVI, S4).
+        ? passende(einordnung.value, { typprofil: typprofil.value, eigenes: !!bauteil.value?.stand?.bauplan })
         : []));
 
     /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
@@ -135,11 +175,24 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * Nutzer raten zu lassen, wonach er suchen soll. Quelle ist der Suchindex,
      * der beim Laden ohnehin gebaut wird — kein zweiter Lauf über das Modell.
      */
-    function vorschlaege(suchindex) {
-        const roh = (suchindex ?? []).map(e => ({ category: e.category, attributes: { Name: e.name } }));
-        return namensvorschlaege(roh).map(v => ({
+    function vorschlaege(suchindex, feld = 'Name') {
+        const roh = (suchindex ?? []).map(e => ({
+            category: e.category,
+            attributes: {
+                Name: e.name ?? '',
+                PredefinedType: e.predefinedType ?? '',
+                ObjectType: e.objectType ?? '',
+                Description: e.description ?? '',
+            },
+            // Der ORT des Elements — das Panel misst je Gruppe an einem
+            // Beispiel die Formsignatur (2026-09-07).
+            ort: (e.modelId && e.localId != null) ? { modelId: e.modelId, localId: e.localId } : null,
+        }));
+        return alleVorschlaege(roh, { feld }).map(v => ({
             ...v,
-            bauform: bauformAusRegel(regeln.value, { category: v.category, attributes: { Name: v.name }, psets: {} })?.bauform ?? null,
+            bauform: bauformAusRegel(regeln.value, {
+                category: v.category, attributes: { [feld]: v.name }, psets: {},
+            })?.bauform ?? null,
         }));
     }
 
@@ -149,12 +202,33 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * Schreibt eine REGEL, keine Einzelzuweisung: derselbe Exporteur nennt die
      * Dinge in jeder Datei gleich, und eine Regel gilt damit auch für die
      * nächste Lieferung. `bauform: null` nimmt die Zuordnung zurück.
+     *
+     * `art` MUSS DURCHGEREICHT WERDEN. Bis 2026-09-03 fehlte es hier: die
+     * Oberfläche bot eine Gruppenzeile an („Haltung…", 18 Bauteile), gab
+     * `art: 'gruppe'` mit, und `regelAus` fiel auf seinen Standardwert
+     * `'genau'` zurück. Geschrieben wurde dann `equals 'Haltung'` — was auf
+     * „Haltung 1" … „Haltung 18" NIE passt. Die Abdeckung blieb bei null, es
+     * gab keinen Fehler, und kein Test kreuzte den Weg: `regelAus` wurde mit
+     * `art: 'gruppe'` geprüft, `ordneZu` nur ohne.
      */
-    async function ordneZu({ category, name, bauform }, ziel = repo) {
-        const ohneAlte = regeln.value.filter(
-            r => !(r.condition?.category === category && r.condition?.value === name && r.bauform),
-        );
-        const neu = bauform ? [...ohneAlte, regelAus({ category, name, bauform })] : ohneAlte;
+    async function ordneZu({ category, name, bauform, art = 'genau',
+                            propertyName = 'Name', psetName = null }, ziel = repo) {
+        // Der Schlüssel muss das FELD mitführen: dieselbe Kategorie kann eine
+        // Regel auf `Name` und eine auf `PredefinedType` tragen, und die eine
+        // darf die andere nicht wegräumen.
+        const ohneAlte = regeln.value.filter(r => {
+            if (!r.bauform || r.condition?.category !== category) return true;
+            // Eine Kategorie-Regel hat kein Merkmal — sie wird nur von einer
+            // Kategorie-Zuordnung ersetzt, nie von einer benannten.
+            if (art === 'kategorie') return !!(r.condition?.propertyName || r.condition?.psetName);
+            if (!r.condition?.propertyName && !r.condition?.psetName) return true;
+            return !(r.condition?.value === name
+                     && (r.condition?.propertyName ?? 'Name') === (propertyName || 'Name')
+                     && (r.condition?.psetName ?? null) === psetName);
+        });
+        const neu = bauform
+            ? [...ohneAlte, regelAus({ category, name, bauform, art, propertyName, psetName })]
+            : ohneAlte;
         regeln.value = neu;
         try {
             await ziel.set(REGEL_KEY, JSON.parse(JSON.stringify(neu)));
@@ -207,6 +281,9 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
                 // aus dem Rezept — sonst verlöre ein geformtes Gelände nach
                 // der ersten Formung seine Werkzeuge.
                 ausBauplan: bauteil.value?.stand?.bauplan?.bauform ?? null,
+                // Die Auslegung für GENAU dieses Bauteil — sie schlägt die
+                // Regel, aber nicht den Bauplan.
+                ausEinzelfall: bauteil.value?.stand?.bauformAusnahme ?? null,
             });
         } finally {
             laeuft.value = false;
@@ -240,11 +317,21 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             // Gelände-Werkzeuge hängen ihre Operation an die bestehende
             // Liste an, statt ein zweites geformtes Gelände zu erzeugen.
             bauplan: ae.wirksamerStand('erzeugt').get(globalId) ?? null,
+            // Die AUSLEGUNG dieses einen Bauteils: „lies diesen Volumenkörper
+            // als Höhenfeld". Sie schlägt die Regel, weil sie spezifischer
+            // ist — und wird vom Katalogeintrag `bauform-auslegen` als
+            // Vorbelegung gelesen, damit das Formular den geltenden Wert zeigt.
+            bauformAusnahme: ae.wirksamerStand('bauform').get(globalId) ?? null,
         };
         // `parametrik` faltet seit Stufe 14.2 je ROLLE (siehe `falte` dort) —
         // der Wert ist eine Karte und lässt sich unverändert übernehmen.
         // Vorher stand hier ein Notbehelf, der nur die zuletzt gesetzte Rolle
         // durchreichte, weil das Journal die übrigen ohnehin verloren hatte.
+        // Teil XIV: die Geschwister-Teile einer Ableitung (Aushub, Auftrag,
+        // DGM) — die Folgeformung schreibt sie unter denselben GlobalIds.
+        if (stand.bauplan?.ableitung) {
+            stand.teile = teileVon(ae.wirksamerStand('erzeugt'), stand.bauplan.ableitung);
+        }
         const masse = ae.wirksamerStand('parametrik').get(globalId);
         return masse && typeof masse === 'object' ? { ...stand, ...masse } : stand;
     }
@@ -361,7 +448,38 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         const war = scharfId.value;
         scharfId.value = null;
         werte.value = {};
+        leereEingabe();
         if (war) gebeWerkzeugFrei(`bearbeitung:${war}`);
+    }
+
+    /** Einzelne Felder des Eingabe-Zustands setzen — immer als neues Objekt (Reaktivität). */
+    function setzeEingabe(patch) {
+        eingabe.value = { ...eingabe.value, ...(patch ?? {}) };
+    }
+
+    function leereEingabe() {
+        eingabe.value = _eingabeLeer();
+    }
+
+    /**
+     * ESC — der EINE Ausgang aus dem Slot.
+     *
+     * Ruft den Ausschalter, den der Besitzer beim Belegen hinterlegt hat
+     * (Messen → beenden, Notiz → umschalten, Bearbeitung → abbrechen, Plan-
+     * Werkzeuge → ihre Schalter). Vorher stand Esc an fünf Stellen mit je
+     * eigener Rangfolge; jetzt fragt der Tastatur-Handler nur noch hier.
+     *
+     * @returns {boolean} ob ein Werkzeug offen war
+     */
+    function slotAus() {
+        const id = werkzeug.value;
+        if (!id) return false;
+        const aus = _werkzeugAus;
+        _werkzeugAus = null;
+        aus?.();
+        // Ein Ausschalter, der den Slot nicht freigibt, lässt ihn nicht hängen.
+        if (werkzeug.value === id) gebeWerkzeugFrei(id);
+        return true;
     }
 
     /**
@@ -459,14 +577,51 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             beschreibungen.push(...teil);
         }
         if (!beschreibungen.length) {
-            // Der häufigste Fall: `bezugshoehe-setzen` gibt null, wenn dem
-            // Bauteil der Anker fehlt (keine Hülle gelesen). Das ist etwas
-            // ganz anderes als „Wert galt schon".
-            letzterGrund.value = 'Dem Bauteil fehlt der Bezug für diese Bearbeitung.';
+            // DAS WERKZEUG DARF SAGEN, WARUM ES NICHT KANN (2026-09-09).
+            //
+            // `anwenden` gibt null — und der Store weiss nicht, weshalb. Hier
+            // stand deshalb EIN Satz für jeden Fall: „Dem Bauteil fehlt der
+            // Bezug." Am echten Netz gemessen war der bei den häufigsten
+            // Ablehnungen schlicht falsch: „Schacht entfernen" an einem
+            // ENDschacht lehnt zu Recht ab (es braucht genau zwei
+            // Anschlüsse), und „Schacht einfügen" bei einer Station
+            // ausserhalb der Haltung ebenso. Beide Male ist die Ablehnung
+            // richtig und die BEGRÜNDUNG irreführend — der Nutzer sucht
+            // einen fehlenden Bezug, den es gar nicht gibt (Gesetz 10: was
+            // nicht geht, nennt den Grund — den richtigen).
+            //
+            // Also fragt der Store das Werkzeug. `warumNicht` ist optional;
+            // wer es nicht hat, bekommt den alten Satz — er stimmt für die
+            // Fälle, für die er geschrieben wurde (fehlender Anker, fehlende
+            // Hülle).
+            let grund = null;
+            try { grund = b.warumNicht?.(gegenstaende[0], werte.value, { zug: zug ?? [] }) ?? null; }
+            catch { grund = null; }
+            letzterGrund.value = grund || 'Dem Bauteil fehlt der Bezug für diese Bearbeitung.';
             return null;
         }
 
         const aenderungen = useAenderungen();
+
+        // BEZÜGE PRÜFEN, bevor etwas im Journal steht (Teil XIV, G4): eine
+        // Ableitung, die auf sich selbst oder im Kreis zeigt, oder von der
+        // Auftragsebene auf ein Variantenbauteil — eine Zeile hier, kein
+        // topologischer Sortierer später.
+        const erzeugtStand = aenderungen.wirksamerStand('erzeugt');
+        for (const b of beschreibungen) {
+            const quellen = b?.art === 'erzeugt' ? b.nachher?.parameter?.quellen : null;
+            if (!quellen) continue;
+            const fehler = pruefeBezuege({
+                quellen, globalId: b.globalId, stand: erzeugtStand,
+                ebeneVon: (gid) => aenderungen.ebeneVon(gid),
+                zielEbene: aenderungen.vorgabeEbene,
+            });
+            if (fehler.length) {
+                letzterGrund.value = `Bezug unzulässig: ${fehler.join(' · ')}`;
+                return null;
+            }
+        }
+
         const mehrteilig = beschreibungen.length > 1;
         // Was nicht ging, wird GEZÄHLT und gemeldet. „Auf 12 von 15 angewandt"
         // ist eine Auskunft; ein stilles Überspringen wäre eine Behauptung.
@@ -507,7 +662,8 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     return {
         einordnung, bauteil, bauteile, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
         typprofil, scharf, felder, fehler, bereit, moeglich, befunde,
-        modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, commitDialogOffen, modusSetzen, modusUm,
+        modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
+        eingabe, setzeEingabe, leereEingabe,
         ladeProfile, einordne, starte, starteMitVorschlag, setzeWert, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
     };
